@@ -13,6 +13,7 @@ FirmwareReleaseInfo = provider(
         "image": "Image identity.",
         "metadata": "Machine-readable metadata file.",
         "package": "The standard H2Loader package.",
+        "package_format": "Managed package wire format: 1 or 2.",
         "platform": "Firmware platform family.",
         "recovery": "Loader recovery bundle or None.",
         "release_files": "Depset of release assets and metadata.",
@@ -115,7 +116,8 @@ def _h2loader_tar_zlib_impl(ctx):
         fail("h2loader firmware cannot declare package_data")
 
     stem = "%s-%s-%s" % (ctx.attr.board, ctx.attr.image, ctx.attr.target)
-    package = ctx.actions.declare_file(ctx.label.name + "/" + stem + ".update.tar.zlib")
+    suffix = ".update.tar" if ctx.attr.package_format == 2 else ".update.tar.zlib"
+    package = ctx.actions.declare_file(ctx.label.name + "/" + stem + suffix)
     metadata = ctx.actions.declare_file(ctx.label.name + "/" + stem + ".firmware.json")
     factory = None
     recovery = None
@@ -136,6 +138,7 @@ def _h2loader_tar_zlib_impl(ctx):
     args.add("--target", ctx.attr.target)
     args.add("--version", firmware.version)
     args.add("--package-output", package.path)
+    args.add("--package-format", ctx.attr.package_format)
     args.add("--metadata-output", metadata.path)
     if factory:
         args.add("--factory-image", firmware.factory_image.path)
@@ -185,6 +188,7 @@ def _h2loader_tar_zlib_impl(ctx):
             image = ctx.attr.image,
             metadata = metadata,
             package = package,
+            package_format = ctx.attr.package_format,
             platform = firmware.platform,
             recovery = recovery,
             release_files = release_files,
@@ -203,6 +207,7 @@ _h2loader_tar_zlib = rule(
         "image": attr.string(mandatory = True),
         "package_data": attr.label_list(allow_files = True),
         "package_data_root": attr.string(),
+        "package_format": attr.int(default = 1, values = [1, 2]),
         "role": attr.string(mandatory = True, values = ["app", "h2loader"]),
         "target": attr.string(mandatory = True),
     },

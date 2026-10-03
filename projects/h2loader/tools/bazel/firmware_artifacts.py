@@ -37,11 +37,14 @@ def write_package(
     board: str,
     target: str,
     version: str,
+    package_format: int = 1,
 ) -> None:
     validate_app_path(app_path)
     if not app_data:
         raise ValueError("missing app payload")
     validate_package_identity(role, board, target, version)
+    if type(package_format) is not int or package_format not in (1, 2):
+        raise ValueError(f"unsupported package format: {package_format}")
     if role == "h2loader" and data_entries:
         raise ValueError("h2loader packages cannot contain data entries")
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -53,6 +56,7 @@ def write_package(
         board=board,
         target=target,
         version=version,
+        package_format=package_format,
     )
     manifest = (
         f"format={metadata['format']}\n"
@@ -63,6 +67,32 @@ def write_package(
         f"image_size={metadata['image_size']}\n"
         f"image_sha256={metadata['image_sha256']}\n"
     ).encode("ascii")
+
+    if package_format == 2:
+        inner = io.BytesIO()
+        with tarfile.open(fileobj=inner, mode="w", format=tarfile.USTAR_FORMAT) as tar:
+            for entry in entries:
+                add_tar_file(tar, entry.name, entry.data)
+        data_tar = inner.getvalue()
+        app_zlib = zlib.compress(app_data, level=6)
+        data_zlib = zlib.compress(data_tar, level=6)
+        manifest += (
+            f"data_sha256={checksum}\n"
+            f"data_tar_size={len(data_tar)}\n"
+            f"data_bytes={sum(len(entry.data) for entry in entries if not entry.name.endswith('.pixa'))}\n"
+            f"pixa_bytes={sum(len(entry.data) for entry in entries if entry.name.endswith('.pixa'))}\n"
+            f"app_zlib_size={len(app_zlib)}\n"
+            f"app_zlib_sha256={hashlib.sha256(app_zlib).hexdigest()}\n"
+            f"data_zlib_size={len(data_zlib)}\n"
+            f"data_zlib_sha256={hashlib.sha256(data_zlib).hexdigest()}\n"
+        ).encode("ascii")
+        outer = io.BytesIO()
+        with tarfile.open(fileobj=outer, mode="w", format=tarfile.USTAR_FORMAT) as tar:
+            add_tar_file(tar, "manifest", manifest)
+            add_tar_file(tar, "data.tar.zlib", data_zlib)
+            add_tar_file(tar, "app.bin.zlib", app_zlib)
+        out_path.write_bytes(outer.getvalue())
+        return
 
     tar_data = io.BytesIO()
     with tarfile.open(fileobj=tar_data, mode="w", format=tarfile.USTAR_FORMAT) as tar:
@@ -81,12 +111,15 @@ def package_manifest(
     board: str,
     target: str,
     version: str,
+    package_format: int = 1,
 ) -> dict[str, str | int]:
     if not app_data:
         raise ValueError("missing app payload")
     validate_package_identity(role, board, target, version)
+    if type(package_format) is not int or package_format not in (1, 2):
+        raise ValueError(f"unsupported package format: {package_format}")
     return {
-        "format": 1,
+        "format": package_format,
         "role": role,
         "board": board,
         "target": target,

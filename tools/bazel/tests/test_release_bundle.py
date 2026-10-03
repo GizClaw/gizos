@@ -12,7 +12,7 @@ BATCH = "20260920-120000"
 
 
 class ReleaseBundleTest(unittest.TestCase):
-    def inputs(self, root, entries=(("devkit", "esp", "esp32s3", "0.1.0"),)):
+    def inputs(self, root, entries=(("devkit", "esp", "esp32s3", "0.1.0"),), package_format=1):
         catalog = []
         files = []
         for board, platform, target, version in entries:
@@ -21,7 +21,9 @@ class ReleaseBundleTest(unittest.TestCase):
                 board=board, image="loader", role="h2loader", target=target,
                 version=version, release_name="loader-" + board)
             catalog.append(identity)
-            metadata = {**identity, "package_manifest": dict(format=1, role="h2loader",
+            if package_format != 1:
+                identity["package_format"] = package_format
+            metadata = {**identity, "package_manifest": dict(format=package_format, role="h2loader",
                 board=board, target=target, version=version, image_size=7, image_sha256="0" * 64), "assets": []}
             for suffix, operation in sorted(expected_asset_contracts(identity)):
                 asset = root / f"{board}-loader-{target}{suffix}"
@@ -56,6 +58,38 @@ class ReleaseBundleTest(unittest.TestCase):
             for asset in item["assets"]:
                 self.assertEqual((output / asset["name"]).read_bytes(), ("devkit" + asset["release_suffix"]).encode())
                 self.assertIn(asset["name"], (output / "SHA256SUMS").read_text())
+
+    def test_assembles_independent_package_format(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            files = self.inputs(root, package_format=2)
+            assemble(files, root / "output", BATCH)
+            self.assertTrue((root / "output/loader-devkit.update.tar").is_file())
+            self.assertFalse((root / "output/loader-devkit.update.tar.zlib").exists())
+
+    def test_rejects_format_type_and_contract_mismatch(self):
+        for value in (True, 2.0, 0, 3, "2"):
+            with self.subTest(value=value), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory); files = self.inputs(root, package_format=2)
+                path = root / "devkit-loader-esp32s3.firmware.json"
+                metadata = json.loads(path.read_text())
+                metadata["package_format"] = value
+                path.write_text(json.dumps(metadata))
+                with self.assertRaises(ValueError): assemble(files, root / "output", BATCH)
+        for kind in ("manifest", "catalog", "suffix"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory); files = self.inputs(root, package_format=2)
+                path = root / "devkit-loader-esp32s3.firmware.json"
+                metadata = json.loads(path.read_text())
+                if kind == "manifest": metadata["package_manifest"]["format"] = 1
+                elif kind == "catalog":
+                    catalog = json.loads((root / "firmware-catalog.json").read_text())
+                    catalog[0]["package_format"] = 1
+                    (root / "firmware-catalog.json").write_text(json.dumps(catalog))
+                else:
+                    next(asset for asset in metadata["assets"] if asset["operation"] == "managed-install")["release_suffix"] = ".update.tar.zlib"
+                path.write_text(json.dumps(metadata))
+                with self.assertRaises(ValueError): assemble(files, root / "output", BATCH)
 
     def test_assembles_all_platforms_with_independent_versions(self):
         with tempfile.TemporaryDirectory() as directory:

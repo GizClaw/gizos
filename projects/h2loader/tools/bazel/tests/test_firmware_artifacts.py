@@ -6,11 +6,45 @@ import os
 import struct
 import tempfile
 import unittest
+import io
+import tarfile
+import zlib
 
 from projects.h2loader.tools.bazel.firmware_artifacts import BundleEntry, write_factory_bundle, write_package
 
 
 class FirmwareArtifactsTest(unittest.TestCase):
+    def test_independent_format2_members(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "update.tar"
+            options = dict(role="app", board="fixture", target="host", version="0", package_format=2)
+            entries = [BundleEntry("data/z.bin", b"zed"), BundleEntry("data/a.txt", b"alpha")]
+            write_package(output, "app/esp/app.bin", b"firmware", entries, **options)
+            original = output.read_bytes()
+            write_package(output, "app/esp/app.bin", b"firmware", list(reversed(entries)), **options)
+            self.assertEqual(original, output.read_bytes())
+            with tarfile.open(fileobj=io.BytesIO(original), mode="r:") as outer:
+                self.assertEqual(outer.getnames(), ["manifest", "data.tar.zlib", "app.bin.zlib"])
+                manifest = dict(line.split("=", 1) for line in outer.extractfile("manifest").read().decode().splitlines())
+                app = outer.extractfile("app.bin.zlib").read()
+                data = outer.extractfile("data.tar.zlib").read()
+                self.assertEqual(manifest["format"], "2")
+                self.assertEqual(hashlib.sha256(app).hexdigest(), manifest["app_zlib_sha256"])
+                self.assertEqual(hashlib.sha256(data).hexdigest(), manifest["data_zlib_sha256"])
+                self.assertEqual(zlib.decompress(app), b"firmware")
+                decoded = zlib.decompress(data)
+                self.assertEqual(len(decoded), int(manifest["data_tar_size"]))
+                with tarfile.open(fileobj=io.BytesIO(decoded), mode="r:") as inner:
+                    self.assertEqual(inner.getnames(), ["data/a.txt", "data/z.bin"])
+                    self.assertEqual(inner.extractfile("data/a.txt").read(), b"alpha")
+
+    def test_rejects_noninteger_package_formats(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            for value in (True, False, 1.0, 2.0, "2", 0, 3):
+                with self.subTest(value=value), self.assertRaisesRegex(ValueError, "package format"):
+                    write_package(Path(directory) / "update", "app/esp/app.bin", b"app", [],
+                        role="app", board="fixture", target="host", version="0", package_format=value)
+
     def test_canonical_h2loader_package_digest(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "update.tar.zlib"

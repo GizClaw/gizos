@@ -37,6 +37,8 @@ typedef struct h2_h2loader_host_package_writer_config {
     size_t data_entry_count;
     h2_h2loader_host_package_write_fn write;
     void *write_user;
+    /** 0 or 1 preserves format-1 tar.zlib; 2 selects independent tar members. */
+    uint32_t package_format;
 } h2_h2loader_host_package_writer_config_t;
 
 typedef struct h2_h2loader_host_package_writer_result {
@@ -45,17 +47,21 @@ typedef struct h2_h2loader_host_package_writer_result {
     char data_sha256[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
 } h2_h2loader_host_package_writer_result_t;
 
-/** Write one canonical format-1 USTAR+zlib package through callbacks. */
+/** Write a canonical package through callbacks, with bounded compression buffers.
+ * Sources are borrowed and must return immutable bytes across repeated reads.
+ * Output can be partial on failure and must not be published in that case. */
 h2_pal_result_t h2_h2loader_host_package_write(
     const h2_h2loader_host_package_writer_config_t *config,
     h2_h2loader_host_package_writer_result_t *out_result);
 
 /**
- * @brief Inspect one standalone format-1 update package.
+ * @brief Inspect a standalone format-1 or format-2 update package.
  *
  * The inspector reads bounded chunks through read_payload, validates the
- * zlib/USTAR layout and manifest, and returns an immutable managed asset.
- * Format 1 does not carry an App image name, so the returned entry has an
+ * format-1 zlib/USTAR layout or format-2 USTAR envelope and compressed-member
+ * digests, and returns an immutable managed asset. Format 2 does not inflate
+ * members here; the device verifies raw digests when installing changed members.
+ * Neither format carries an App image name, so the returned entry has an
  * empty image and PACKAGE_MANIFEST identity source. No package bytes are
  * retained after this call.
  */

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 from pathlib import Path
 import subprocess
@@ -18,6 +19,33 @@ os.environ["PYTHONPATH"] = str(ROOT)
 
 
 class H2LoaderTarZlibRunnerTest(unittest.TestCase):
+    def test_format2_output_and_release_contract(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            app = root / "app.bin"
+            app.write_bytes(b"firmware")
+            data = root / "data/test.txt"
+            data.parent.mkdir()
+            data.write_bytes(b"data")
+            package = root / "new.update.tar"
+            metadata = root / "new.firmware.json"
+            result = subprocess.run([
+                sys.executable, str(RUNNER), "--source-root", str(root),
+                "--app-image", str(app), "--app-path", "app/esp/app.bin",
+                "--entry", "entry", "--platform", "esp", "--board", "fixture",
+                "--image", "main", "--role", "app", "--target", "esp32s3", "--version", "1",
+                "--package-output", str(package), "--metadata-output", str(metadata),
+                "--package-format", "2", "--package-data-root", "data", "--package-data-file", "data/test.txt",
+            ], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            release = json.loads(metadata.read_text())
+            self.assertEqual(release["package_format"], 2)
+            self.assertEqual(release["package_manifest"]["format"], 2)
+            self.assertEqual(release["assets"][0]["release_suffix"], ".update.tar")
+            self.assertEqual(release["assets"][0]["sha256"], hashlib.sha256(package.read_bytes()).hexdigest())
+            with tarfile.open(package, "r:") as outer:
+                self.assertEqual(outer.getnames(), ["manifest", "data.tar.zlib", "app.bin.zlib"])
+
     def test_packages_br35_ufw_without_changing_payload(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

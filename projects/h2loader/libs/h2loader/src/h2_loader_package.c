@@ -1,6 +1,7 @@
 #include "h2_loader_package.h"
 
 #include "h2_bundle_tar.h"
+#include "h2_bundle_archive.h"
 #include "h2_bundle_types.h"
 #include "h2_loader_metadata.h"
 
@@ -1314,6 +1315,48 @@ static void layout_validator_abort(h2_loader_layout_validator_t *validator) {
     }
 }
 
+static h2_bundle_digest_api_t segment_digest(h2_loader_package_t *package) {
+    return (h2_bundle_digest_api_t){
+        .user = package->config.digest.user,
+        .start = package->config.digest.start,
+        .update = package->config.digest.update,
+        .finish = package->config.digest.finish,
+        .abort = package->config.digest.abort,
+    };
+}
+
+static int inspect_segmented_path(h2_loader_package_t *package, const char *path,
+                                  h2_loader_package_inspection_t *inspection) {
+    h2_pal_fs_stat_t stat;
+    h2_bundle_segmented_file_t source = {.fs = package->config.fs};
+    const h2_bundle_digest_api_t digest = segment_digest(package);
+    int rc = h2_pal_fs_stat(source.fs, path, &stat);
+    if (rc != H2_PAL_OK) return rc;
+    rc = h2_pal_fs_open(source.fs, path, H2_PAL_FS_OPEN_READ, &source.file);
+    if (rc != H2_PAL_OK) return rc;
+    rc = h2_bundle_segmented_inspect(h2_bundle_segmented_file_read, &source,
+        stat.size, &digest, &inspection->segments);
+    int close_rc = h2_pal_fs_close(source.fs, source.file);
+    if (rc == H2_PAL_OK) rc = close_rc;
+    if (rc != H2_PAL_OK) { memset(inspection, 0, sizeof(*inspection)); return rc; }
+    const h2_bundle_segmented_manifest_t *m = &inspection->segments;
+    inspection->manifest.format = 2u;
+    inspection->manifest.role = strcmp(m->role, "app") == 0
+        ? H2_LOADER_IMAGE_ROLE_APP : H2_LOADER_IMAGE_ROLE_H2LOADER;
+    copy_text(inspection->manifest.board, sizeof(inspection->manifest.board), m->board);
+    copy_text(inspection->manifest.target, sizeof(inspection->manifest.target), m->target);
+    copy_text(inspection->manifest.version, sizeof(inspection->manifest.version), m->version);
+    inspection->manifest.image_size = m->app.size;
+    copy_text(inspection->manifest.image_sha256, sizeof(inspection->manifest.image_sha256), m->image_sha256);
+    copy_text(inspection->image_path, sizeof(inspection->image_path), package->config.app_entry_path);
+    memcpy(inspection->data_checksum, m->data_sha256, 64u);
+    inspection->data_checksum[64] = '\n';
+    inspection->data_checksum_len = 65u;
+    inspection->data_bytes = m->data_bytes;
+    inspection->pixa_bytes = m->pixa_bytes;
+    return H2_PAL_OK;
+}
+
 int h2_loader_package_inspect_path(
     h2_loader_package_t *package,
     const char *archive_path,
@@ -1324,6 +1367,8 @@ int h2_loader_package_inspect_path(
     h2_pal_fs_file_t *archive = NULL;
     z_stream stream;
     int stream_done = 0;
+    size_t prefix_len = 0u;
+    int first_read = 1;
     int rc;
 
     if (package == NULL || package->config.fs == NULL || archive_path == NULL || out_inspection == NULL) {
@@ -1340,6 +1385,20 @@ int h2_loader_package_inspect_path(
     if (rc != H2_PAL_FS_OK) {
         return rc;
     }
+    while (prefix_len < 9u) {
+        size_t n = 0u;
+        rc = h2_pal_fs_read(package->config.fs, archive, in + prefix_len, 9u - prefix_len, &n);
+        if (rc != H2_PAL_OK || n > 9u - prefix_len) {
+            (void)h2_pal_fs_close(package->config.fs, archive);
+            return rc == H2_PAL_OK ? H2_PAL_ERR_IO : rc;
+        }
+        if (n == 0u) break;
+        prefix_len += n;
+    }
+    if (prefix_len == 9u && memcmp(in, "manifest\0", 9u) == 0) {
+        rc = h2_pal_fs_close(package->config.fs, archive);
+        return rc == H2_PAL_OK ? inspect_segmented_path(package, archive_path, out_inspection) : rc;
+    }
     memset(&stream, 0, sizeof(stream));
     if (package->config.allocator != NULL) {
         stream.zalloc = package_zlib_alloc;
@@ -1354,7 +1413,13 @@ int h2_loader_package_inspect_path(
 
     while (!stream_done) {
         size_t read_len = 0u;
-        rc = h2_pal_fs_read(package->config.fs, archive, in, sizeof(in), &read_len);
+        if (first_read) {
+            read_len = prefix_len;
+            first_read = 0;
+            rc = H2_PAL_OK;
+        } else {
+            rc = h2_pal_fs_read(package->config.fs, archive, in, sizeof(in), &read_len);
+        }
         if (rc != H2_PAL_FS_OK) {
             layout_validator_abort(&validator);
             (void)inflateEnd(&stream);
@@ -1556,6 +1621,62 @@ int h2_loader_package_install_staged(
     return h2_bundle_install_ota(&package->installer, &options);
 }
 
+typedef struct segment_app_output {
+    const h2_bundle_app_writer_t *writer;
+    const h2_bundle_entry_t *entry;
+    const h2_bundle_digest_api_t *digest;
+} segment_app_output_t;
+
+static int write_segment_app(void *user, const uint8_t *data, size_t len) {
+    segment_app_output_t *output = user;
+    int rc = output->digest->update(output->digest->user, data, len);
+    return rc == H2_PAL_OK ? output->writer->write(
+        output->writer->user, output->entry, data, len) : rc;
+}
+
+static int install_segments(h2_loader_package_t *package,
+    const h2_loader_package_inspection_t *inspection,
+    const h2_loader_package_install_plan_t *plan, const h2_bundle_ota_options_t *options) {
+    h2_bundle_segmented_file_t source = {.fs = package->config.fs};
+    const h2_bundle_segmented_manifest_t *m = &inspection->segments;
+    const h2_bundle_digest_api_t digest = segment_digest(package);
+    int rc;
+    if (!plan->update_app && !plan->update_data) return H2_PAL_OK;
+    rc = h2_pal_fs_open(source.fs, options->archive_path, H2_PAL_FS_OPEN_READ, &source.file);
+    if (rc != H2_PAL_OK) return rc;
+    if (plan->update_data) rc = h2_bundle_archive_install_data_zlib(
+        &package->installer, options, h2_bundle_segmented_file_read, &source,
+        m, &digest);
+    if (rc == H2_PAL_OK && plan->update_app) {
+        h2_bundle_entry_t entry = {.kind = H2_BUNDLE_ENTRY_FILE, .size = m->app.size};
+        copy_text(entry.path, sizeof(entry.path), inspection->image_path);
+        segment_app_output_t output = {.writer = options->app_writer, .entry = &entry, .digest = &digest};
+        uint8_t hash[32];
+        char actual[65];
+        rc = options->app_writer->begin(options->app_writer->user, &entry);
+        if (rc == H2_PAL_OK) rc = digest.start(digest.user);
+        if (rc == H2_PAL_OK) rc = h2_bundle_segmented_inflate(
+            h2_bundle_segmented_file_read, &source, &m->app,
+            package->config.allocator, write_segment_app, &output);
+        if (rc == H2_PAL_OK) rc = digest.finish(digest.user, hash);
+        digest.abort(digest.user);
+        if (rc == H2_PAL_OK) {
+            h2_bundle_digest_hex(hash, actual);
+            if (strcmp(actual, m->image_sha256) != 0) rc = H2_PAL_ERR_FORMAT;
+        }
+        if (rc == H2_PAL_OK) rc = options->app_writer->end(options->app_writer->user, &entry);
+        if (rc != H2_PAL_OK && options->app_writer->abort != NULL)
+            options->app_writer->abort(options->app_writer->user);
+    }
+    int close_rc = h2_pal_fs_close(source.fs, source.file);
+    return rc == H2_PAL_OK ? close_rc : rc;
+}
+
+static int segment_equal(const h2_bundle_segment_t *a, const h2_bundle_segment_t *b) {
+    return a->offset == b->offset && a->compressed_size == b->compressed_size &&
+        a->size == b->size && strcmp(a->compressed_sha256, b->compressed_sha256) == 0;
+}
+
 int h2_loader_package_install_to(
     h2_loader_package_t *package,
     const h2_loader_package_inspection_t *inspection,
@@ -1602,6 +1723,7 @@ int h2_loader_package_install_to(
     }
     rc = h2_loader_package_inspect_path(package, package->config.package_path, &fresh);
     if (rc != H2_PAL_OK || fresh.legacy != inspection->legacy ||
+        fresh.manifest.format != inspection->manifest.format ||
         fresh.manifest.role != inspection->manifest.role ||
         strcmp(fresh.manifest.board, inspection->manifest.board) != 0 ||
         strcmp(fresh.manifest.target, inspection->manifest.target) != 0 ||
@@ -1612,7 +1734,12 @@ int h2_loader_package_install_to(
         fresh.data_checksum_len != inspection->data_checksum_len ||
         memcmp(fresh.data_checksum,
             inspection->data_checksum,
-            inspection->data_checksum_len) != 0) {
+            inspection->data_checksum_len) != 0 ||
+        (fresh.manifest.format == 2u &&
+            (!segment_equal(&fresh.segments.app, &inspection->segments.app) ||
+             !segment_equal(&fresh.segments.data, &inspection->segments.data) ||
+             fresh.segments.data_bytes != inspection->segments.data_bytes ||
+             fresh.segments.pixa_bytes != inspection->segments.pixa_bytes))) {
         return rc == H2_PAL_OK ? H2_PAL_ERR_FORMAT : rc;
     }
     install_progress(package, H2_LOADER_INSTALL_PHASE_VALIDATE, 1u, 1u,
@@ -1659,7 +1786,13 @@ int h2_loader_package_install_to(
     options.clear_data_user = package->config.clear_data_user;
     options.skip_app_install = !plan->update_app;
     options.skip_data_install = !plan->update_data;
-    rc = h2_bundle_install_ota(&package->installer, &options);
+    if (fresh.manifest.format == 2u) {
+        rc = install_segments(package, &fresh, plan, &options);
+    } else if (plan->update_app || plan->update_data) {
+        rc = h2_bundle_install_ota(&package->installer, &options);
+    } else {
+        rc = H2_PAL_OK;
+    }
     if (rc != H2_BUNDLE_OK) {
         return rc;
     }

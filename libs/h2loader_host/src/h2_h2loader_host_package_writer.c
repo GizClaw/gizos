@@ -1,6 +1,7 @@
 #include "h2_h2loader_host_package.h"
 
 #include "h2_h2loader_host_internal.h"
+#include "h2_bundle_segmented.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -16,6 +17,7 @@ typedef struct package_stream {
     uint8_t output[PACKAGE_BUFFER_SIZE];
     uint64_t tar_bytes;
     uint64_t package_bytes;
+    int raw_tar;
 } package_stream_t;
 
 static voidpf package_zalloc(voidpf opaque, uInt items, uInt size) {
@@ -96,6 +98,15 @@ static h2_pal_result_t stream_flush_output(package_stream_t *stream) {
 }
 
 static h2_pal_result_t stream_write(package_stream_t *stream, const uint8_t *data, size_t len) {
+    if (stream->raw_tar) {
+        if (len > UINT64_MAX - stream->tar_bytes) return H2_PAL_ERR_NO_SPACE;
+        h2_pal_result_t rc = stream->config->write(stream->config->write_user, data, len);
+        if (rc == H2_PAL_OK) {
+            stream->tar_bytes += len;
+            stream->package_bytes += len;
+        }
+        return rc;
+    }
     while (len != 0u) {
         uInt take = len > UINT_MAX ? UINT_MAX : (uInt)len;
         stream->zlib.next_in = (Bytef *)data;
@@ -235,7 +246,8 @@ static h2_pal_result_t validate_config(const h2_h2loader_host_package_writer_con
         !h2_h2loader_host_is_safe_identity(config->target) || !safe_version(config->version) ||
         (config->data_entry_count != 0u && config->data_entries == NULL) ||
         config->data_entry_count > SIZE_MAX / sizeof(void *) ||
-        (strcmp(config->role, "h2loader") == 0 && config->data_entry_count != 0u)) {
+        (strcmp(config->role, "h2loader") == 0 && config->data_entry_count != 0u) ||
+        config->package_format > 2u) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     for (size_t i = 0u; i < config->data_entry_count; ++i) {
@@ -250,6 +262,127 @@ static h2_pal_result_t validate_config(const h2_h2loader_host_package_writer_con
         }
     }
     return H2_PAL_OK;
+}
+
+typedef struct compressed_output {
+    package_stream_t *outer;
+    h2_h2loader_host_sha256_t sha;
+    uint64_t bytes;
+} compressed_output_t;
+
+static int compressed_write(void *user, const uint8_t *data, size_t len) {
+    compressed_output_t *output = user;
+    if (len > UINT64_MAX - output->bytes) return H2_PAL_ERR_NO_SPACE;
+    h2_h2loader_host_sha256_update(&output->sha, data, len);
+    output->bytes += len;
+    return output->outer == NULL ? H2_PAL_OK : stream_write(output->outer, data, len);
+}
+
+static int tar_end(package_stream_t *stream) {
+    static const uint8_t zeros[TAR_RECORD_SIZE] = {0};
+    int rc = stream_write(stream, zeros, TAR_BLOCK_SIZE * 2u);
+    size_t padding = (size_t)((TAR_RECORD_SIZE - stream->tar_bytes % TAR_RECORD_SIZE) % TAR_RECORD_SIZE);
+    return rc == H2_PAL_OK && padding != 0u ? stream_write(stream, zeros, padding) : rc;
+}
+
+static int compress_member(const h2_h2loader_host_package_writer_config_t *config,
+    const h2_h2loader_host_package_source_t *const *sorted, int app,
+    package_stream_t *outer, h2_bundle_segment_t *out_segment) {
+    compressed_output_t output = {.outer = outer};
+    h2_h2loader_host_package_writer_config_t sink = *config;
+    package_stream_t stream = {.config = &sink};
+    uint8_t hash[32];
+    int rc = H2_PAL_OK;
+    h2_h2loader_host_sha256_init(&output.sha);
+    sink.write = compressed_write;
+    sink.write_user = &output;
+    stream.zlib.zalloc = package_zalloc;
+    stream.zlib.zfree = package_zfree;
+    stream.zlib.opaque = (voidpf)config->allocator;
+    stream.zlib.next_out = stream.output;
+    stream.zlib.avail_out = sizeof(stream.output);
+    if (deflateInit(&stream.zlib, 6) != Z_OK) return H2_PAL_ERR_NO_MEMORY;
+    if (app) {
+        uint8_t data[PACKAGE_BUFFER_SIZE];
+        uint64_t offset = 0u;
+        while (rc == H2_PAL_OK && offset < config->app.size) {
+            size_t n = config->app.size - offset > sizeof(data)
+                ? sizeof(data) : (size_t)(config->app.size - offset);
+            size_t got = 0u;
+            rc = config->app.read(config->app.user, offset, data, n, &got);
+            if (rc == H2_PAL_OK && (got == 0u || got > n)) rc = H2_PAL_ERR_IO;
+            if (rc == H2_PAL_OK) rc = stream_write(&stream, data, got);
+            offset += got;
+        }
+    } else {
+        for (size_t i = 0u; rc == H2_PAL_OK && i < config->data_entry_count; ++i)
+            rc = tar_source(&stream, sorted[i]);
+        if (rc == H2_PAL_OK) rc = tar_end(&stream);
+    }
+    int zrc = Z_OK;
+    while (rc == H2_PAL_OK && zrc != Z_STREAM_END) {
+        zrc = deflate(&stream.zlib, Z_FINISH);
+        if (zrc != Z_OK && zrc != Z_STREAM_END) { rc = H2_PAL_ERR_IO; break; }
+        rc = stream_flush_output(&stream);
+    }
+    (void)deflateEnd(&stream.zlib);
+    if (rc != H2_PAL_OK) return rc;
+    out_segment->size = stream.tar_bytes;
+    out_segment->compressed_size = output.bytes;
+    h2_h2loader_host_sha256_finish(&output.sha, hash);
+    h2_h2loader_host_sha256_hex(hash, out_segment->compressed_sha256);
+    return H2_PAL_OK;
+}
+
+static int write_segmented(const h2_h2loader_host_package_writer_config_t *config,
+    const h2_h2loader_host_package_source_t *const *sorted,
+    const char *image_hex, const char *data_hex,
+    h2_h2loader_host_package_writer_result_t *result) {
+    h2_bundle_segment_t app = {0}, data = {0}, written = {0};
+    package_stream_t outer = {.config = config, .raw_tar = 1};
+    char manifest[H2_BUNDLE_SEGMENTED_MANIFEST_MAX];
+    uint64_t data_bytes = 0u, pixa_bytes = 0u;
+    for (size_t i = 0u; i < config->data_entry_count; ++i) {
+        size_t len = strlen(sorted[i]->name);
+        uint64_t *total = len >= 5u && strcmp(sorted[i]->name + len - 5u, ".pixa") == 0
+            ? &pixa_bytes : &data_bytes;
+        if (sorted[i]->size > UINT64_MAX - *total) return H2_PAL_ERR_NO_SPACE;
+        *total += sorted[i]->size;
+    }
+    int rc = compress_member(config, sorted, 0, NULL, &data);
+    if (rc == H2_PAL_OK) rc = compress_member(config, sorted, 1, NULL, &app);
+    if (rc != H2_PAL_OK) return rc;
+    int n = snprintf(manifest, sizeof(manifest),
+        "format=2\nrole=%s\nboard=%s\ntarget=%s\nversion=%s\nimage_size=%llu\n"
+        "image_sha256=%s\ndata_sha256=%s\ndata_tar_size=%llu\ndata_bytes=%llu\npixa_bytes=%llu\n"
+        "app_zlib_size=%llu\napp_zlib_sha256=%s\ndata_zlib_size=%llu\ndata_zlib_sha256=%s\n",
+        config->role, config->board, config->target, config->version,
+        (unsigned long long)app.size, image_hex, data_hex, (unsigned long long)data.size,
+        (unsigned long long)data_bytes, (unsigned long long)pixa_bytes,
+        (unsigned long long)app.compressed_size, app.compressed_sha256,
+        (unsigned long long)data.compressed_size, data.compressed_sha256);
+    if (n < 0 || (size_t)n >= sizeof(manifest)) return H2_PAL_ERR_NO_SPACE;
+    rc = tar_header(&outer, "manifest", (uint64_t)n);
+    if (rc == H2_PAL_OK) rc = stream_write(&outer, (const uint8_t *)manifest, (size_t)n);
+    if (rc == H2_PAL_OK) rc = tar_padding(&outer, (uint64_t)n);
+    const h2_bundle_segment_t *segments[] = {&data, &app};
+    const char *names[] = {"data.tar.zlib", "app.bin.zlib"};
+    for (size_t i = 0u; rc == H2_PAL_OK && i < 2u; ++i) {
+        rc = tar_header(&outer, names[i], segments[i]->compressed_size);
+        if (rc == H2_PAL_OK) rc = compress_member(config, sorted, i == 1u, &outer, &written);
+        if (rc == H2_PAL_OK && (written.compressed_size != segments[i]->compressed_size ||
+            written.size != segments[i]->size ||
+            strcmp(written.compressed_sha256, segments[i]->compressed_sha256) != 0))
+            rc = H2_PAL_ERR_INVALID_STATE;
+        if (rc == H2_PAL_OK) rc = tar_padding(&outer, segments[i]->compressed_size);
+    }
+    if (rc == H2_PAL_OK) rc = tar_end(&outer);
+    if (rc == H2_PAL_OK) {
+        result->package_bytes = outer.package_bytes;
+        memcpy(result->image_sha256, image_hex, 65u);
+        memcpy(result->data_sha256, data_hex, 65u);
+    }
+    return rc;
 }
 
 h2_pal_result_t h2_h2loader_host_package_write(
@@ -307,6 +440,10 @@ h2_pal_result_t h2_h2loader_host_package_write(
     }
     h2_h2loader_host_sha256_finish(&data_sha, digest);
     h2_h2loader_host_sha256_hex(digest, data_hex);
+    if (config->package_format == 2u) {
+        rc = write_segmented(config, sorted, image_hex, data_hex, out_result);
+        goto cleanup;
+    }
     if (snprintf(manifest, sizeof(manifest),
             "format=1\nrole=%s\nboard=%s\ntarget=%s\nversion=%s\nimage_size=%llu\nimage_sha256=%s\n",
             config->role, config->board, config->target, config->version,

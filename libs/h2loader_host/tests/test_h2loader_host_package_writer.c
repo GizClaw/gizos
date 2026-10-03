@@ -96,6 +96,37 @@ int main(void) {
     assert(strcmp(asset.target, "host") == 0);
     assert(asset.bytes == output.len);
 
+    output_t segmented = {0}, repeat = {0};
+    config.package_format = 2u;
+    config.write_user = &segmented;
+    assert(h2_h2loader_host_package_write(&config, &result) == H2_PAL_OK);
+    assert(segmented.len == 10240u);
+    config.write_user = &repeat;
+    assert(h2_h2loader_host_package_write(&config, &result) == H2_PAL_OK);
+    assert(repeat.len == segmented.len && memcmp(repeat.data, segmented.data, repeat.len) == 0);
+    package = (bytes_t){.data = segmented.data, .len = segmented.len};
+    inspect.payload_bytes = segmented.len;
+    assert(h2_h2loader_host_package_inspect(&inspect, &asset) == H2_PAL_OK);
+    assert(asset.package_format == 2u && strcmp(asset.board, "fixture") == 0);
+    assert(strcmp(asset.image_sha256, result.image_sha256) == 0);
+    /* Header corruption, member digest mismatch, truncation and trailing data. */
+    segmented.data[0] ^= 1u;
+    assert(h2_h2loader_host_package_inspect(&inspect, &asset) != H2_PAL_OK);
+    segmented.data[0] ^= 1u;
+    segmented.data[2048] ^= 1u;
+    assert(h2_h2loader_host_package_inspect(&inspect, &asset) != H2_PAL_OK);
+    segmented.data[2048] ^= 1u;
+    inspect.payload_bytes -= 1u;
+    assert(h2_h2loader_host_package_inspect(&inspect, &asset) != H2_PAL_OK);
+    inspect.payload_bytes += 1u;
+    segmented.data[segmented.len - 1u] = 1u;
+    assert(h2_h2loader_host_package_inspect(&inspect, &asset) != H2_PAL_OK);
+    segmented.data[segmented.len - 1u] = 0u;
+    config.package_format = 3u;
+    assert(h2_h2loader_host_package_write(&config, &result) == H2_PAL_ERR_INVALID_ARG);
+    config.package_format = 0u;
+    config.write_user = &output;
+
     data[1].name = "data/z.bin";
     assert(h2_h2loader_host_package_write(&config, &result) == H2_PAL_ERR_INVALID_ARG);
     data[1].name = "data/a.txt";
