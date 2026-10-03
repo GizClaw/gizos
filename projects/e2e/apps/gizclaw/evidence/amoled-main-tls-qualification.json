@@ -87,6 +87,10 @@
       "required": 227,
       "covered": 227,
       "missing": 0
+    },
+    "capture_observation": {
+      "captured_at_utc": "2026-10-03T21:04:57.608602+00:00",
+      "captured_at_asia_singapore": "2026-10-04T05:04:57.608602+08:00"
     }
   },
   "managed_player": {
@@ -111,6 +115,10 @@
       "required": 227,
       "covered": 227,
       "missing": 0
+    },
+    "capture_observation": {
+      "captured_at_utc": "2026-10-03T21:12:43.557004+00:00",
+      "captured_at_asia_singapore": "2026-10-04T05:12:43.557004+08:00"
     }
   },
   "normal_player": {
@@ -118,5 +126,11 @@
     "cadence_elapsed_ms": 20002,
     "ended_position_ms": 138656,
     "ended_elapsed_ms": 138672
+  },
+  "observation_timezone": "Asia/Singapore (UTC+08:00)",
+  "host_verifier_revalidation": {
+    "boot_boundary_regression": "PASS",
+    "real_managed_and_normal_api_audits": "227/227",
+    "firmware_and_immutable_ledger_bytes_unchanged": true
   }
 }

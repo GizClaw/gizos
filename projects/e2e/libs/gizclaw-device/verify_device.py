@@ -25,8 +25,12 @@ def extract(data, *, version, previous_execution=None):
     changed_boots = set()
     for line in data.replace(b"\r\n", b"\n").split(b"\n"):
         boot = BOOT.fullmatch(line)
-        if boot or LAUNCHER.fullmatch(line) or line.startswith(b"H2_GIZCLAW_SETUP_FAIL "):
+        if (line.startswith(b"H2_GIZCLAW_BOOT ") or LAUNCHER.fullmatch(line)
+                or line.startswith(b"H2_GIZCLAW_SETUP_FAIL ")):
             # A reboot/setup failure after a good run cannot borrow that run.
+            # Early platform-only markers precede READY and the execution nonce.
+            # Retire old frozen identities even if their bytes replay afterwards.
+            changed_boots.update(frozen)
             candidate = None
             records = []
             accepted = None

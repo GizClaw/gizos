@@ -43,6 +43,8 @@ R51只将speaker改为17/CPU1，保持上述TCP配置；前20秒播放计数在�
 
 同步main的ESP证书校验修复后，R53以source503cb56c保留SDK bundle verifier委托与日期检查并重新实板验收；后续6454d1e的5个资格元数据文件与Bazel实际5166个固件输入交集为0。managed/normal分别以独立nonce完成8/8及227/227、cleanup/retained均为0、confirm=0；20秒探针分别为20032ms/19757ms及20128ms/20002ms，完整EOS位置均138656ms、耗时140775ms/138672ms。最终App/P2来源与包/镜像匹配、分区2/2、Stage为空、原P1及空crash基线保留。见[post-main TLS qualification](../../../../../projects/e2e/apps/gizclaw/evidence/amoled-main-tls-qualification.json)。R52的用户听感确认仍归属于R52，调度参数保持相同。
 
+Host verifier将任意`H2_GIZCLAW_BOOT`早期标记视为新启动边界，包括只有`platform=amoled reset_reason=...`、尚未分配execution nonce的标记；边界后清除旧admission结果，并永久拒绝此前冻结执行的重播。新启动在READY前失败、只输出entry失败或只留下不完整新账本时均不能借用旧PASS。R50–R53日期采用Asia/Singapore（UTC+08:00），2026-10-04对应UTC2026-10-03；public receipt逐轮保存UTC和本地的冻结账本观察时间。
+
 ## 固件下载诊断
 
 `--define=H2_GIZCLAW_E2E_FIRMWARE_ONLY=1` 单独执行真实固件元数据和完整下载用例，仍受相同长度、SHA、EOS和300秒deadline约束；它不会确认 App。可同时指定 `--define=H2_GIZCLAW_E2E_NET_IO_TRACE=1`，仅对当前测试包编译有界TLS读取统计，每个socket最多每5秒记录调用数、字节、超时和I/O耗时。统计不含TLS内容、URI或凭据，不改变读写结果或证书验证。完整资格包应保留默认八项用例。

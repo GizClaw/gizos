@@ -59,6 +59,28 @@ class LedgerAdmission(unittest.TestCase):
         with self.assertRaises(ValueError):
             extract(frame(body) + frame(body).replace(b"symbol=unit", b"symbol=evil"), version="unit-r1")
 
+    def test_amoled_reboot_before_ready_invalidates_previous_ledger(self):
+        body = b"H2_GIZCLAW_E2E symbol=unit stage=unit result=PASS rc=0\n"
+        good = frame(body)
+        boot = b"H2_GIZCLAW_BOOT platform=amoled reset_reason=3\n"
+        fresh = frame(body, "2" * 32)
+        for later in (boot,
+                      boot + b"H2_BOARD_ENTRY_FAIL board=amoled code=-5\n",
+                      boot + fresh[:-20],
+                      boot + good,
+                      boot + b"H2_GIZCLAW_E2E_AMOLED stage=launcher status=READY\n" + good):
+            with self.subTest(later=later), self.assertRaises(ValueError):
+                extract(good + later, version="unit-r1")
+        _, receipt = extract(good + boot + fresh, version="unit-r1")
+        self.assertEqual(receipt["execution"], "2" * 32)
+
+    def test_unknown_boot_marker_is_a_fail_closed_boundary(self):
+        body = b"H2_GIZCLAW_E2E symbol=unit stage=unit result=PASS rc=0\n"
+        for marker in (b"H2_GIZCLAW_BOOT platform=amoled reset_reason=unknown\n",
+                       b"H2_GIZCLAW_BOOT board=devkit version=broken\n"):
+            with self.subTest(marker=marker), self.assertRaises(ValueError):
+                extract(frame(body) + marker + frame(body), version="unit-r1")
+
     def test_changed_valid_replay_poisoning_is_permanent_for_that_boot(self):
         body = b"H2_GIZCLAW_E2E symbol=unit stage=unit result=PASS rc=0\n"
         changed = b"H2_GIZCLAW_E2E symbol=changed stage=unit result=PASS rc=0\n"

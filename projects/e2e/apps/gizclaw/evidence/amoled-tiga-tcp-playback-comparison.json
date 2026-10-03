@@ -79,7 +79,11 @@
       "physical_audio": true,
       "ledger_sha256": "9b9cb5d5ca61ce468da5e3dcaadca3e9fb43974bf1cf4078f3bf4fe4a566676a"
     },
-    "raw_capture_sha256": "efa856bd1f02b73961cb713422b2948c0ce231bc5a6c0b22b0c2a0509cca71d8"
+    "raw_capture_sha256": "efa856bd1f02b73961cb713422b2948c0ce231bc5a6c0b22b0c2a0509cca71d8",
+    "capture_observation": {
+      "captured_at_utc": "2026-10-03T18:44:22.911456+00:00",
+      "captured_at_asia_singapore": "2026-10-04T02:44:22.911456+08:00"
+    }
   },
   "r51": {
     "version": "gizclaw-amp-r51-speaker17",
@@ -171,7 +175,11 @@
       "physical_audio": true,
       "ledger_sha256": "c37b3f0a575747bb73a623685540905f32ad57dcdf9880d99cae1a8ec20015c3"
     },
-    "raw_capture_sha256": "c27984a4e387b0b901c8df33ab6994d98a06e28fb23e1a09701035aa459f5653"
+    "raw_capture_sha256": "c27984a4e387b0b901c8df33ab6994d98a06e28fb23e1a09701035aa459f5653",
+    "capture_observation": {
+      "captured_at_utc": "2026-10-03T18:58:48.123922+00:00",
+      "captured_at_asia_singapore": "2026-10-04T02:58:48.123922+08:00"
+    }
   },
   "conclusion_scope": "R52 combined speaker and E2E network scheduling changes passed full functional qualification in two independent boots with matched Tiga/Zero TCP defaults on this board/environment. The user reported continuous R52 playback. R50 and R51 failures are preserved. The experiments do not isolate one scheduling parameter or qualify microphone/general acoustic quality.",
   "r52": {
@@ -229,6 +237,10 @@
         "required": 227,
         "covered": 227,
         "missing": 0
+      },
+      "capture_observation": {
+        "captured_at_utc": "2026-10-03T19:12:39.307369+00:00",
+        "captured_at_asia_singapore": "2026-10-04T03:12:39.307369+08:00"
       }
     },
     "managed_player": {
@@ -269,6 +281,10 @@
         "required": 227,
         "covered": 227,
         "missing": 0
+      },
+      "capture_observation": {
+        "captured_at_utc": "2026-10-03T19:19:58.373069+00:00",
+        "captured_at_asia_singapore": "2026-10-04T03:19:58.373069+08:00"
       }
     },
     "normal_boot_independent": true,
@@ -308,5 +324,6 @@
     "log_sha256": "4469f70af71171e38b566ab3e9bb77ee0f404cce9e6def9b5f2cc9489825029f",
     "audio_scope": "Software audio delegate; Device API control only",
     "preflight_attempts": "Two setup attempts missing endpoint were rejected before business; preserved privately and not counted as device failures"
-  }
+  },
+  "observation_timezone": "Asia/Singapore (UTC+08:00)"
 }
