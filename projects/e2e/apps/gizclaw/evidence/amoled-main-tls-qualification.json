@@ -1,0 +1,122 @@
+{
+  "schema": 1,
+  "qualified": true,
+  "sdk_version": "0.23.2",
+  "server_version": "0.24.1",
+  "environment": "controlled Dev",
+  "runtime_profile": "gizos-e2e-626",
+  "endpoint": "edge-bj-01.dev.gizclaw.com:9821",
+  "platform": "amoled",
+  "device_uid": "30eda0ae0f86",
+  "version": "gizclaw-amp-r53-bundle",
+  "source_base": "503cb56c183f7ba76c5f27a5bb1eff85af578e14",
+  "main_tls_verifier_commit": "5e63ccb8b035c94dd8a07cea9cc6bd37b65f41fb",
+  "native_action_input_equivalence": {
+    "head": "6454d1e6aad6077ec6e5fe8b2dfeb928cc0b7e3f",
+    "changed_paths": [
+      "projects/e2e/apps/pal-net-tls/BUILD.bazel",
+      "projects/e2e/apps/pal-net-tls/README.md",
+      "projects/e2e/apps/pal-net-tls/check_qualification.py",
+      "projects/e2e/apps/pal-net-tls/gizclaw_public_https_provenance_main_tls.json",
+      "projects/e2e/apps/pal-net-tls/tests/test_evidence_rejection.py"
+    ],
+    "intersection_with_native_inputs": [],
+    "input_artifacts_checked": 5166,
+    "action_graph_sha256": "46b595483e771d5f327fca8974de13ea9a94cd383a8ca2026225d39c63e6a56c"
+  },
+  "package_sha256": "d241f8190452a1f2ae2e020dd697197d57c252d36eacfa73ae12fa3cfc081426",
+  "image_sha256": "8d35dab0b699ff7861550336fccec159215b28771869709e6794b3578394aaad",
+  "sdkconfig_sha256": "14373eff78487fa9de7e9096e36c406ed4ca27b5bc00770200bcd8ee469ad85f",
+  "actual_config": {
+    "send_buffer": 11520,
+    "receive_window": 11520,
+    "receive_mailbox": 12,
+    "tcpip_priority": 22,
+    "tcpip_core": 0,
+    "tcpip_mailbox": 32,
+    "mss": 1440,
+    "maximum_active_tcp": 2,
+    "maximum_listening_tcp": 1,
+    "maximum_sockets": 8,
+    "ooseq_max_pbufs": 0,
+    "sack_out": false,
+    "psram_wifi_lwip": true,
+    "speaker_priority": 17,
+    "speaker_core": 1,
+    "gizclaw_net_priority": 20,
+    "h2peer_net_priority": 20,
+    "h2peer_udp_priority": 21,
+    "network_core": 0
+  },
+  "selected": 8,
+  "passed": 8,
+  "cleanup_rc": 0,
+  "retained_resources": 0,
+  "normal_boot_independent": true,
+  "p1_preserved": true,
+  "coredump_status_unchanged": true,
+  "stage_final": 0,
+  "final_state": {
+    "active_role": "app",
+    "active_version": "gizclaw-amp-r53-bundle",
+    "active_checksum": "8d35dab0b699ff7861550336fccec159215b28771869709e6794b3578394aaad",
+    "running_partition": "2",
+    "next_partition": "2",
+    "stage_valid": "0",
+    "last_result": "0"
+  },
+  "audio_scope": "Actual BSP audio chain and deterministic PCM; R52 user listening observation stays bound to R52 and unchanged scheduling profile",
+  "previous_scheduling_evidence": "amoled-tiga-tcp-playback-comparison.json",
+  "raw_capture_sha256": {
+    "control-complete-snapshot.private.log": "d989e6eafde0780f6b9ece022b380f6ceb28f90c6b19f3cfa2d03d9c53cf7de6",
+    "normal-complete-snapshot.private.log": "5480d8e407c56f1381a01649e875037748aba26022f854a0e72da5c14d8e0754"
+  },
+  "managed": {
+    "version": "gizclaw-amp-r53-bundle",
+    "execution": "3cbdb92dfc70d1f13ed2bdbfc46ef201",
+    "physical_audio": true,
+    "confirm_rc": 0,
+    "records": 2059,
+    "record_bytes": 188522,
+    "transport_crc32": "85b6e5f3",
+    "ledger_sha256": "42dc29120b2d927035637c78869837461e8b25a00a5b2ef92d1ca9356a7ad145",
+    "discarded_frames": 0,
+    "qualified": true,
+    "api_coverage": {
+      "valid": true,
+      "required": 227,
+      "covered": 227,
+      "missing": 0
+    }
+  },
+  "managed_player": {
+    "cadence_position_ms": 20032,
+    "cadence_elapsed_ms": 19757,
+    "ended_position_ms": 138656,
+    "ended_elapsed_ms": 140775
+  },
+  "normal": {
+    "version": "gizclaw-amp-r53-bundle",
+    "execution": "7311283a5843e7a47be1788dc40b840d",
+    "physical_audio": true,
+    "confirm_rc": 0,
+    "records": 2044,
+    "record_bytes": 187190,
+    "transport_crc32": "9cbf85ba",
+    "ledger_sha256": "29314dc089514fa13f30d3aadca3765238748720737d628b175836c499446875",
+    "discarded_frames": 0,
+    "qualified": true,
+    "api_coverage": {
+      "valid": true,
+      "required": 227,
+      "covered": 227,
+      "missing": 0
+    }
+  },
+  "normal_player": {
+    "cadence_position_ms": 20128,
+    "cadence_elapsed_ms": 20002,
+    "ended_position_ms": 138656,
+    "ended_elapsed_ms": 138672
+  }
+}

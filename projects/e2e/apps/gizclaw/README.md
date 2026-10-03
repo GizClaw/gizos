@@ -2,6 +2,8 @@
 
 AMOLED 当前TCP配置与Tiga/Zero ESP一致：收发窗口11520字节、接收邮箱12项，TCP/IP优先级22且固定CPU0；乱序上限和selective ACK使用SDK默认值（0/关闭）。
 
+最新ESP源已保留main的SDK证书bundle委托与日期校验：R53在source503cb56c上重建，managed与独立normal各8/8及227/227通过，cleanup/retained均为0、confirm=0且nonce不同；App分区2/2、Stage为空、原P1和空crash基线保留。Bazel实际5166个输入确认后续资格元数据变更不进入固件。完整新来源、包/配置/账本SHA与两轮播放计数见[post-main TLS qualification](evidence/amoled-main-tls-qualification.json)。下述R52听感观察和原始六平台资格继续保留各自执行身份。
+
 R50在speaker优先级6、不固定核时出现连续播放延迟，Device API失败（全量7/8），用户报告声音断续。R51仅把speaker改为17/CPU1后，播放计数恢复每秒约1秒，但并发Device API状态查询超时（全量7/8）。R52再将本E2E launcher的GizClaw/H2Peer网络任务优先级对齐Tiga/Zero的20/20/21、固定CPU0；managed和独立normal启动均8/8及227/227通过，cleanup/retained均为0、confirm=0且nonce不同。两轮约20秒播放均用时约20秒，并观测到完整EOS；最终App分区2/2、Stage为空、原P1与空crash基线保留。用户另确认R52这一版听起来连续。各轮身份、播放计数和失败记录见[playback comparison](evidence/amoled-tiga-tcp-playback-comparison.json)。
 
 此前小接收配置的R49发送缓冲为65535、TCP/IP默认优先级18、speaker优先级6。R49在Dev 0.24.1的managed与独立normal启动各自8/8、227/227通过，cleanup/retained均为0、confirm=0、nonce不同。完整来源、包/配置/账本SHA和物理状态见[small RX qualification](evidence/amoled-small-rx-qualification.json)。

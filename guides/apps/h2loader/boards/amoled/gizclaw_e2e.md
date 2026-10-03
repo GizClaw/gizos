@@ -41,6 +41,8 @@ R50进一步将发送缓冲11520和TCP/IP优先级22与Tiga/Zero一致，speaker
 
 R51只将speaker改为17/CPU1，保持上述TCP配置；前20秒播放计数在每秒采样间前进960–1024ms，但并发`/device/status`查询返回TIMEOUT、HTTP状态0，全量7/8，cleanup/retained均为0，未确认镜像。R52再将本E2E launcher的`$gizclaw/net`、`$h2peer/net`和`$h2peer/udp`分别设为20、20、21，均固定CPU0，与Tiga/Zero的产品网络任务相同；managed与独立normal启动各8/8及227/227通过、confirm=0、cleanup/retained均为0，实际nonce不同。两轮分别播放到20128ms/20160ms，用时20008ms/20003ms；完整EOS位置均138656ms、耗时141019ms/140928ms。最终App分区2/2、Stage为空、原P1和空crash基线保留。主机同一Device API suite在16秒内1/1通过、5次设备状态查询均200；主机使用software音频delegate，只提供控制链路对照。各轮完整身份与诊断见 [AMOLED playback comparison](../../../../../projects/e2e/apps/gizclaw/evidence/amoled-tiga-tcp-playback-comparison.json)。用户另确认R52这一版听起来连续；功能审计与该听感观察分别记录，不能据这轮同时改变的调度参数认定单项因果。
 
+同步main的ESP证书校验修复后，R53以source503cb56c保留SDK bundle verifier委托与日期检查并重新实板验收；后续6454d1e的5个资格元数据文件与Bazel实际5166个固件输入交集为0。managed/normal分别以独立nonce完成8/8及227/227、cleanup/retained均为0、confirm=0；20秒探针分别为20032ms/19757ms及20128ms/20002ms，完整EOS位置均138656ms、耗时140775ms/138672ms。最终App/P2来源与包/镜像匹配、分区2/2、Stage为空、原P1及空crash基线保留。见[post-main TLS qualification](../../../../../projects/e2e/apps/gizclaw/evidence/amoled-main-tls-qualification.json)。R52的用户听感确认仍归属于R52，调度参数保持相同。
+
 ## 固件下载诊断
 
 `--define=H2_GIZCLAW_E2E_FIRMWARE_ONLY=1` 单独执行真实固件元数据和完整下载用例，仍受相同长度、SHA、EOS和300秒deadline约束；它不会确认 App。可同时指定 `--define=H2_GIZCLAW_E2E_NET_IO_TRACE=1`，仅对当前测试包编译有界TLS读取统计，每个socket最多每5秒记录调用数、字节、超时和I/O耗时。统计不含TLS内容、URI或凭据，不改变读写结果或证书验证。完整资格包应保留默认八项用例。
