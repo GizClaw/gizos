@@ -1182,13 +1182,17 @@ cc_library(
 
 cc_library(
     name = "bk7258_config",
-    hdrs = ["config/bk7258/lv_conf.h"],
+    hdrs = ["config/bk7258/h2_bk7258_lv_conf.h"],
+    # The generic public headers also expose Desktop lv_conf.h. Use LVGL's
+    # explicit config path so include ordering cannot select that ABI here.
+    defines = ["LV_CONF_PATH=\\\"h2_bk7258_lv_conf.h\\\""],
     includes = ["config/bk7258"],
 )
 
 cc_library(
     name = "esp_idf6_x_config",
-    hdrs = ["config/esp_idf6_x/lv_conf.h"],
+    hdrs = ["config/esp_idf6_x/h2_esp_idf6_x_lv_conf.h"],
+    defines = ["LV_CONF_PATH=\\\"h2_esp_idf6_x_lv_conf.h\\\""],
     includes = ["config/esp_idf6_x"],
 )
 
