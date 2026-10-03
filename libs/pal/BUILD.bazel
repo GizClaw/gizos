@@ -1,5 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
-load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_GNU_C11_OPTS", "H2_WARNING_COPTS", "h2_gnu_only_copts")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -253,6 +253,35 @@ cc_test(
         "src",
         "tests",
     ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":pal"],
+)
+
+cc_test(
+    name = "pal_result_representation_test",
+    srcs = ["tests/test_pal_result_representation.c"],
+    # Keep default MSVC C mode covered; the public header must not require C11.
+    conlyopts = H2_GNU_C11_OPTS,
+    copts = H2_WARNING_COPTS + h2_gnu_only_copts(["-fshort-enums"]),
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":pal"],
+)
+
+cc_test(
+    name = "pal_result_representation_cpp_test",
+    srcs = ["tests/test_pal_result_representation.cpp"],
+    copts = H2_WARNING_COPTS + h2_gnu_only_copts(["-fshort-enums"]),
+    cxxopts = H2_CXX17_OPTS,
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],
