@@ -32,6 +32,16 @@ static h2_pal_http_api_t fixture_http_api;
 static bool admitted;
 static int confirm_rc = H2_PAL_ERR_INVALID_STATE;
 
+static bool record_has(const char *record, size_t size, const char *text) {
+  const size_t length = strlen(text);
+  if (record == NULL || length > size)
+    return false;
+  for (size_t offset = 0u; offset <= size - length; ++offset)
+    if (memcmp(record + offset, text, length) == 0)
+      return true;
+  return false;
+}
+
 static void capture_evidence(void *user, const char *record, size_t size) {
   (void)user;
   if (h2_pal_mutex_lock(runtime->sync, evidence_mutex) != H2_PAL_OK) {
@@ -43,6 +53,17 @@ static void capture_evidence(void *user, const char *record, size_t size) {
     h2_atomic_store_explicit(&capture_failed, true, H2_ATOMIC_RELEASE);
   if (h2_pal_mutex_unlock(runtime->sync, evidence_mutex) != H2_PAL_OK)
     h2_atomic_store_explicit(&capture_failed, true, H2_ATOMIC_RELEASE);
+  /* Retained callbacks forbid freezing the acceptance ledger. Keep bounded,
+   * already-redacted failure/location records visible without streaming the
+   * full ledger or weakening that ownership gate. Never hold its mutex while
+   * the SDK console writes. Diagnostic lines cannot satisfy the API auditor. */
+  if (record != NULL && size > 0u && size < 1024u &&
+      (record_has(record, size, " rc=-") ||
+       record_has(record, size, " stage=device-api ") ||
+       record_has(record, size, " stage=local-player-error ") ||
+       record_has(record, size, " stage=player-ended ") ||
+       record_has(record, size, " stage=player-cadence ")))
+    printf("H2_GIZCLAW_DIAGNOSTIC %.*s", (int)size, record);
 }
 
 static void replay_ledger(void) {

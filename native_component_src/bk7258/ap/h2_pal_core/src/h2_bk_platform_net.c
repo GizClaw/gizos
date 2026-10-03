@@ -354,6 +354,14 @@ static h2_pal_result_t bk_net_tls_handshake(
         }
         if (result != MBEDTLS_ERR_SSL_WANT_READ &&
             result != MBEDTLS_ERR_SSL_WANT_WRITE) {
+            char diagnostic[128];
+            (void)snprintf(diagnostic, sizeof(diagnostic),
+                "tls_handshake ssl_rc=%d verify_flags=0x%x errno=%d",
+                result,
+                (unsigned)mbedtls_ssl_get_verify_result(&socket->ssl),
+                errno);
+            (void)h2_pal_log_write(h2_bk_platform_log_api(), H2_PAL_LOG_ERROR,
+                "pal/net", diagnostic);
             return result == MBEDTLS_ERR_X509_CERT_VERIFY_FAILED
                 ? H2_PAL_ERR_TLS_VERIFY
                 : H2_PAL_ERR_IO;
@@ -1313,8 +1321,16 @@ static h2_pal_result_t bk_net_tls_wrap(
         mbedtls_ssl_conf_alpn_protocols(&slot->config, slot->alpn) != 0) {
         rc = H2_PAL_ERR_IO;
     }
-    if (rc == H2_PAL_OK && mbedtls_ssl_setup(&slot->ssl, &slot->config) != 0) {
-        rc = H2_PAL_ERR_IO;
+    if (rc == H2_PAL_OK) {
+        result = mbedtls_ssl_setup(&slot->ssl, &slot->config);
+        if (result != 0) {
+            char diagnostic[64];
+            (void)snprintf(diagnostic, sizeof(diagnostic),
+                "tls_setup ssl_rc=%d", result);
+            (void)h2_pal_log_write(h2_bk_platform_log_api(), H2_PAL_LOG_ERROR,
+                "pal/net", diagnostic);
+            rc = H2_PAL_ERR_IO;
+        }
     }
     if (rc == H2_PAL_OK &&
         mbedtls_ssl_set_hostname(&slot->ssl, config->server_name) != 0) {
