@@ -9,7 +9,7 @@
   "source_sha256": {
     "projects/e2e/apps/pal-net-tls/app/src/h2_pal_net_tls_e2e.c": "ff8e9b0d9908805de76dff820b0ce56fd837896a92e1a186eafaf7d2c24954ac",
     "projects/e2e/apps/pal-net-tls/app/include/h2_pal_net_tls_cases.inc": "5ddae599acbe170d91a6da78372dcf6ccfc48cb343228175cbd733741a434535",
-    "projects/e2e/libs/pal-net-tls-fixture/fixture.py": "ad9d013e80f5c5c357aa71252961220e119ef63109e8127b56b22de29486199d",
+    "projects/e2e/libs/pal-net-tls-fixture/fixture.py": "92b42f50a6028822a8f30d4b1f20ddff0979467a95f34224c3692e7ae651eed9",
     "projects/e2e/libs/pal-net-tls-device/src/device.c": "fb43ae368cabb463d01f80ca409ecd1ce62d44fe91e6a58e66e6d7b62bd03592",
     "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_net.c": "8e19f097af4a0e55260e418f9582c0353e82abd9aa0f9e7e7fdafa6fa434816c",
     "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_wifi.c": "2e934634a6a60750012c4ff8944e289b5e5b64e5bf0a24fe4f367e07c51dd30c",
@@ -26,13 +26,17 @@
     "libs/pal/providers/android/pal_core/src/h2_android_net.c": "df6da3135a40359c732d4664438554560778478c8cc9b904dc1e807643b23717",
     "libs/pal/providers/posix/pal_core/src/h2_posix_net.c": "d8a954bad69dd68cfc2c8c952d2f5f7604e91f73c1a87a78433693c5dc6de5f3",
     "projects/e2e/libs/pal-net-tls-fixture/serve.py": "0a6e5b356f1ce070f012f5bd02c32f871b15a1ffe94b8c97829599c2d554a312",
-    "native_component_src/esp-idf6.x/h2_pal_core/src/h2_esp_platform_net.c": "35b8f2ee35d014319de5d40a9e3650a8490c0ad338b0823b778776c8dbe588e4",
+    "native_component_src/esp-idf6.x/h2_pal_core/src/h2_esp_platform_net.c": "293127699233754600f34df3b31f202fbe5c56f380f5ad29d3686caf5533b012",
     "libs/pal/providers/ios/pal_core/include/h2_ios_net.h": "6aebe3ac94e2bf79d85d3938bc3d1872c1b19bc10d19a252508d6f1142d2bf68",
     "libs/pal/providers/ios/pal_core/BUILD.bazel": "d41a9e9287092299b01efbedd85022c14b1ac38c2079f875246321556bb8902c",
     "libs/pal/providers/android/pal_core/include/h2_android_net.h": "154bc0e9ecb3b83a203bb708afe7cb7485251ca1e76dec7d685cd9f71f80f19a",
-    "projects/e2e/libs/pal-net-tls-device/assemble_board.py": "929836fc074f52d0a31e87d1b3a55501da4cd8eeda3f40e9e267649d28587468",
+    "projects/e2e/libs/pal-net-tls-device/assemble_board.py": "d30b5240a18a11b76e3368c1b022a605b8cb63e357b722264fcb54eea920f548",
     "libs/pal/providers/ios/pal_core/src/h2_ios_net.c": "7637fc2daa7993426dc59a90b13e36c3302444d39a4b9d5b37759cb973643111",
-    "libs/pal/providers/wolfssl/src/full/user_settings.h": "08d9e8697463e7d295c4a56c6c2461f3c3a17a6264ea49d8868d6c6bbd3d8a3b"
+    "libs/pal/providers/wolfssl/src/full/user_settings.h": "08d9e8697463e7d295c4a56c6c2461f3c3a17a6264ea49d8868d6c6bbd3d8a3b",
+    "native_component_src/esp-idf6.x/h2_pal_core/src/h2_esp_platform_net_tls_verify.c": "737b81ab6a201db6bf5e1a107f6a419e3de4dd2a631c10c057ee46f1892f3059",
+    "native_component_src/esp-idf6.x/h2_pal_core/src/h2_esp_platform_net_tls_verify.h": "3a9eb7d5da4a72a160ba1742490bd80d87e4c07aacc02e48c7831945f3e5aa5c",
+    "projects/e2e/libs/pal-net-tls-device/verify_device.py": "a9bd5e05da1cb20d258aa1d48c8a5d741ad1589ec1faf98dc5fe9a871a949327",
+    "projects/e2e/targets/h2loader_tar_zlib/pal-net-tls/devkit/main/main.c": "d1a1d910cd14e2682cd41c730c2b5340de41bd52388bf67b8672d729e90eeb9f"
   },
   "platforms": {
     "macos": {
@@ -117,20 +121,20 @@
       "environment_sha256": "1d1580b6bb78fb830e72c149658469f268a4a826d05a926c2290c4b67ac51314",
       "suite_sha256": "a2b653b93566a770c74626f6fb1dd94301f1602306f1ef4808e1ddbda9e60802"
     },
-    "devkit": {
-      "status": "PASS",
-      "core_qualified": true,
-      "evidence": "evidence/devkit/qualified.json",
-      "artifact_sha256": "cfd3dd55865f18aff3e2a1bdeaae46344b7d7b54d74fde767989654d5e4bb2d9",
-      "receipt_sha256": "6d703bbeae3b9898028af367a0d5e6e1da920c275305acdfebe8d4c075e51541",
-      "assessment_complete": true
-    },
     "bk7258": {
       "status": "PASS",
       "core_qualified": true,
       "evidence": "evidence/bk7258/qualified.json",
       "artifact_sha256": "7b490bd65107cd7eaea4b2a824ba32417ec7ace07a089b34835cc28d5f8452e3",
       "receipt_sha256": "5ce740d8ea2da71a44c8cc5335f7b043361ba4c19c0dd87982dca74773eb405c",
+      "assessment_complete": true
+    },
+    "esp32s3": {
+      "status": "PASS",
+      "core_qualified": true,
+      "evidence": "evidence/esp32s3/qualified.json",
+      "artifact_sha256": "0b7c7aa69a7886cd40522fb1d2442150cc50849808254faf9b1de86f8296d892",
+      "receipt_sha256": "b6bbc73d4a96711edd23e1d1e29b0d3e124a707d088d9ef95ec9962382b6204d",
       "assessment_complete": true
     }
   },

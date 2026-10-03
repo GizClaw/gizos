@@ -8,12 +8,14 @@ from datetime import datetime
 
 ROOT = Path(__file__).resolve().parents[4]
 APP = Path(__file__).resolve().parent
-PLATFORMS = {'macos', 'wasm', 'ios', 'android', 'devkit', 'bk7258'}
+PLATFORMS = {'macos', 'wasm', 'ios', 'android', 'esp32s3', 'bk7258'}
 TLS_VERIFY = -int(re.search(r'H2_PAL_ERR_TLS_VERIFY\s*=\s*-(\d+)',
     (ROOT / 'libs/pal/include/h2/pal/core/h2_pal_errors.h').read_text()).group(1))
 UNSUPPORTED = -3
 REQUIRED_PROVIDER_SOURCES = {
     'native_component_src/esp-idf6.x/h2_pal_core/src/h2_esp_platform_net.c',
+    'native_component_src/esp-idf6.x/h2_pal_core/src/h2_esp_platform_net_tls_verify.c',
+    'native_component_src/esp-idf6.x/h2_pal_core/src/h2_esp_platform_net_tls_verify.h',
     'native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_net.c',
     'libs/pal/providers/posix/pal_core/src/h2_posix_net.c',
     'libs/pal/providers/ios/pal_core/src/h2_ios_net.c',
@@ -38,6 +40,10 @@ def check_board_observation(receipt):
     assert receipt['observation_contract'] == 2
     baseline = receipt['observed_baseline']
     base_status, base_dump = baseline['status'], baseline['coredump']
+    execution_board = receipt.get('execution_board', receipt['platform'])
+    if receipt['platform'] == 'esp32s3':
+        assert execution_board in ('devkit', 'tiga_esp_v4_2', 'zero_esp_v3_0')
+        assert base_status['board'] == execution_board and base_status['target'] == 'esp32s3'
     assert base_status['device_uid'] == receipt['uid']
     for value in baseline['local_source_sha256'].values():
         assert re.fullmatch('[0-9a-f]{64}', value)
@@ -55,17 +61,20 @@ def check_board_observation(receipt):
         assert dump['result'] == base_dump['result'] == 'OK'
         assert dump['code'] == base_dump['code'] == '0'
         assert dump['blank'] == base_dump['blank'] and dump['stored_bytes'] == base_dump['stored_bytes']
+        assert dump['partition'] == base_dump['partition'] == 'coredump'
+        assert dump['bytes'] == base_dump['bytes']
         marker = boot['observed_boot']
-        assert marker == dict(board=receipt['platform'],version=receipt['version'],
+        assert marker == dict(board=execution_board,version=receipt['version'],
             session=boot['session'],boot_id=boot['boot_id'])
         assert set(boot['local_source_sha256']) == {'serial','status','coredump_status'}
         for value in boot['local_source_sha256'].values():
             assert re.fullmatch('[0-9a-f]{64}', value)
-    if receipt['platform'] == 'bk7258':
+    if base_dump['blank'] == '0':
         snapshots = receipt['observed_coredump_bytes']
         assert set(snapshots) == {'baseline','install','normal-reboot'}
         values = [bytes.fromhex(value) for value in snapshots.values()]
-        assert values[0] and all(value == values[0] for value in values)
+        assert len(values[0]) == int(base_dump['stored_bytes']) > 0
+        assert all(value == values[0] for value in values)
         assert hashlib.sha256(values[0]).hexdigest() == receipt['baseline_coredump_sha256']
     else:
         assert base_dump['blank'] == '1' and base_dump['stored_bytes'] == '0'
@@ -210,9 +219,12 @@ def check(root=ROOT, allow_pending=False, require_all_core=False):
         assert re.fullmatch('[0-9a-f]{64}', receipt['artifact_sha256'])
         assert entry['artifact_sha256'] == receipt['artifact_sha256']
         assert entry['receipt_sha256'] == hashlib.sha256((app / entry['evidence']).read_bytes()).hexdigest()
-        if platform in ('devkit','bk7258'):
-            board_dir = app / 'evidence' / platform
+        if platform in ('esp32s3','bk7258'):
+            board_dir = (app / entry['evidence']).parent
             metadata = json.loads((board_dir / 'firmware.json').read_text())
+            assert receipt['platform'] == platform
+            manifest_board = metadata['package_manifest']['board']
+            assert manifest_board == ('bk7258_v3_202405' if platform == 'bk7258' else receipt['execution_board'])
             assert metadata['assets'][0]['sha256'] == receipt['package_sha256']
             assert metadata['package_manifest']['image_sha256'] == receipt['image_sha256']
             assert metadata['package_manifest']['version'] == receipt['version']

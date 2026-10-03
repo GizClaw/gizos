@@ -1,0 +1,71 @@
+{
+  "assets": [
+    {
+      "name": "tiga_esp_v4_2-pal-net-tls-esp32s3.update.tar.zlib",
+      "operation": "managed-install",
+      "release_suffix": ".update.tar.zlib",
+      "sha256": "0b7c7aa69a7886cd40522fb1d2442150cc50849808254faf9b1de86f8296d892",
+      "size": 1106840
+    }
+  ],
+  "board": "tiga_esp_v4_2",
+  "entry": "projects/h106/targets/h2loader_tar_zlib/net_tls/tiga_esp_v4_2",
+  "image": "pal-net-tls",
+  "native_artifacts": [
+    {
+      "name": "firmware.elf",
+      "operation": "native-debug-or-flash",
+      "sha256": "31e3a77374766b2a60b85032933f92d0111bdde8c2e2d3b0fa7d0dd150fb4c5b",
+      "size": 18696608
+    },
+    {
+      "name": "firmware.map",
+      "operation": "native-debug-or-flash",
+      "sha256": "a7532ba9ae8df61b8ac9ea0ba43a9debb4dba65d49595c24882ebaff38fa7ba2",
+      "size": 16142288
+    },
+    {
+      "name": "app.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "21aca1e361e562633036b245b228c44dc8bd32e723b4e19692105b19f5dccac4",
+      "size": 1671312
+    },
+    {
+      "name": "bootloader.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "afac4c0f49fa816f7e51c3af6573be3fee240fba5d0ea78ea57e9e8b4a42f2c8",
+      "size": 19152
+    },
+    {
+      "name": "combined_factory.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "3df0d9605d866ac0971b984d90e409799b5a0192dde77fb786eb4e1fc4da56ec",
+      "size": 1802384
+    },
+    {
+      "name": "partition-table.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "3ad66743608d347e24c5cbf82798c0ece635776e6795a7b755050138e9c0e9e9",
+      "size": 3072
+    },
+    {
+      "name": "flasher_args.json",
+      "operation": "native-debug-or-flash",
+      "sha256": "781431a632ad4b3ed566f2011c8f9647a32d590cfa9e33b3275894bef0ab6a67",
+      "size": 993
+    }
+  ],
+  "package_manifest": {
+    "board": "tiga_esp_v4_2",
+    "format": 1,
+    "image_sha256": "21aca1e361e562633036b245b228c44dc8bd32e723b4e19692105b19f5dccac4",
+    "image_size": 1671312,
+    "role": "app",
+    "target": "esp32s3",
+    "version": "pal-net-tls-tiga-20261003-r2"
+  },
+  "platform": "esp",
+  "role": "app",
+  "target": "esp32s3",
+  "version": "pal-net-tls-tiga-20261003-r2"
+}

@@ -28,6 +28,8 @@ py_test(
         "//native_component_src/bk7258/ap/h2_pal_core:src/h2_bk_platform_net.c",
         "//native_component_src/bk7258/ap/h2_pal_core:src/h2_bk_platform_wifi.c",
         "//native_component_src/esp-idf6.x/h2_pal_core:src/h2_esp_platform_net.c",
+        "//native_component_src/esp-idf6.x/h2_pal_core:src/h2_esp_platform_net_tls_verify.c",
+        "//native_component_src/esp-idf6.x/h2_pal_core:src/h2_esp_platform_net_tls_verify.h",
         "//projects/e2e/apps/pal-net-tls/app:api_coverage.json",
         "//projects/e2e/apps/pal-net-tls/app:include/h2_pal_net_tls_cases.inc",
         "//projects/e2e/apps/pal-net-tls/app:include/h2_pal_net_tls_e2e.h",

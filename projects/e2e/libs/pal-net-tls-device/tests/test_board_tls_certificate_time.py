@@ -69,19 +69,33 @@ class CertificateTime(unittest.TestCase):
         ]:
             source = (ROOT / relative).read_text()
             self.assertIn('mbedtls_ssl_conf_verify(&slot->config,', source)
-            self.assertIn(backend+'_net_tls_verify_dates, NULL', source)
+            self.assertIn(backend+'_net_tls_verify_dates, '+('slot' if backend == 'esp' else 'NULL'), source)
             start = source.index('static int '+backend+'_net_tls_verify_dates(')
             end = source.index('static h2_pal_result_t '+backend+'_net_tls_handshake(', start)
             prelude = PRELUDE.replace('TIME_API', 'h2_'+backend+'_platform_time_api')
             if backend == 'esp':
                 prelude = prelude[:prelude.index('static const void *h2_bk_platform_log_api')]
+                a = prelude.index('typedef struct mbedtls_x509_time')
+                b = prelude.index('static uint64_t clock_ms;', a)
+                prelude = prelude[:a] + '#include "h2_esp_platform_net_tls_verify.h"\n' + prelude[b:]
+                prelude = prelude.replace('static int mbedtls_x509_time_cmp', 'int mbedtls_x509_time_cmp')
+                prelude += 'typedef struct esp_net_tls_socket { h2_esp_net_tls_verify_t verify; } esp_net_tls_socket_t;\n'
+                self.assertIn('.delegate = slot->config.MBEDTLS_PRIVATE(f_vrfy)', source)
+                self.assertIn('.delegate_user = slot->config.MBEDTLS_PRIVATE(p_vrfy)', source)
             main = MAIN.replace('CHECK', backend+'_net_tls_verify_dates')
+            extra_args = []
+            if backend == 'esp':
+                main = main.replace('leaf.version=3;', 'esp_net_tls_socket_t socket = {0};')
+                main = main.replace('CHECK', backend+'_net_tls_verify_dates').replace('verify_dates(NULL,', 'verify_dates(&socket,')
+                core = ROOT / 'native_component_src/esp-idf6.x/h2_pal_core'
+                extra_args = ['-I'+str(core/'src'), '-I'+str(core/'tests/tls_sdk'),
+                              str(core/'src/h2_esp_platform_net_tls_verify.c')]
             with tempfile.TemporaryDirectory(prefix='h2-net-tls-cert-time-') as temporary:
                 source_file = Path(temporary) / 'test.c'
                 executable = Path(temporary) / 'test'
                 source_file.write_text(prelude+source[start:end]+main)
                 subprocess.run([compiler, '-std=c11', '-Wall', '-Wextra', '-Werror',
-                    str(source_file), '-o', str(executable)], check=True, timeout=30)
+                    *extra_args, str(source_file), '-o', str(executable)], check=True, timeout=30)
                 subprocess.run([str(executable)], check=True, timeout=15)
 
 
