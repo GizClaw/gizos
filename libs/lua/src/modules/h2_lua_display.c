@@ -1209,6 +1209,29 @@ typedef struct display_material {
   uint16_t owner[]; /* zero is transparent; other values are palette index + 1 */
 } display_material_t;
 
+/* Call-local strip scratch. Source intervals/depth ratio are identical for
+ * every face in one draw, while immutable materials may share their U knots. */
+typedef struct display_material_mapping {
+  const display_material_t *material;
+  double u[DISPLAY_MATERIAL_KNOTS];
+} display_material_mapping_t;
+
+static const double *display_material_map_u(const display_material_t *m,
+    const display_quad_mapping_t *mapping, display_material_mapping_t *cache) {
+  if (mapping == NULL) return NULL;
+  const display_material_t *previous = cache->material;
+  if (previous != m) {
+    if (previous == NULL || previous->nu != m->nu ||
+        memcmp(previous->u, m->u, m->nu * sizeof(*m->u)) != 0) {
+      for (unsigned i = 0; i < m->nu; ++i)
+        cache->u[i] = display_quad_map_u(mapping, m->u[i]);
+    }
+    cache->material = m;
+  }
+  return cache->u;
+}
+
+
 static unsigned material_knot(lua_State *state, double *knots,
                               unsigned count, double value) {
   unsigned at = 0;
@@ -1305,7 +1328,8 @@ static void material_advance(material_edge_t *edge) {
 static int material_prepare(const display_material_t *m, const double *c,
                             int first, int end, material_edge_t *edges,
                             unsigned char indices[2 * DISPLAY_MATERIAL_KNOTS],
-                            const display_quad_mapping_t *mapping) {
+                            const display_quad_mapping_t *mapping,
+                            const double *mapped_u) {
   double orientation = 0;
   for (int i = 0; i < 4; ++i) {
     int j = (i + 1) % 4, k = (i + 2) % 4;
@@ -1314,10 +1338,11 @@ static int material_prepare(const display_material_t *m, const double *c,
     if (fabs(area) < 1e-8 || (i && ((area > 0) != (orientation > 0)))) return 0;
     orientation = area;
   }
+  if (mapped_u != NULL) mapping = NULL;
   unsigned used = 0;
   for (int axis = 0; axis < 2; ++axis) {
     unsigned count = axis ? m->nv : m->nu;
-    const double *knots = axis ? m->v : m->u;
+    const double *knots = axis ? m->v : (mapped_u != NULL ? mapped_u : m->u);
     int a = 0, b = axis ? 6 : 2, d = axis ? 2 : 6, e = 4;
     double px_delta = c[b] - c[a], py_delta = c[b+1] - c[a+1];
     double qx_delta = c[e] - c[d], qy_delta = c[e+1] - c[d+1];
@@ -1432,12 +1457,12 @@ __attribute__((noinline))
 static int display_raster_material(h2_lua_job_t *job,
     const display_material_t *m, const uint16_t *colors,
     const double corners[8], int top, int bottom,
-    const display_quad_mapping_t *mapping) {
+    const display_quad_mapping_t *mapping, const double *mapped_u) {
   if (m->u_first >= m->u_end || m->v_first >= m->v_end) return 1;
   material_edge_t edges[2 * DISPLAY_MATERIAL_KNOTS];
   unsigned char indices[2 * DISPLAY_MATERIAL_KNOTS];
   unsigned count = (unsigned)material_prepare(m, corners, top, bottom, edges,
-                                             indices, mapping);
+                                             indices, mapping, mapped_u);
   if (count == 0) return 0;
   material_clip_t clip[8];
   unsigned clip_count = material_prepare_clip(m, indices, clip);
@@ -1502,7 +1527,8 @@ static int display_raster_material(h2_lua_job_t *job,
 static int display_render_material(h2_lua_job_t *job,
     const display_material_t *m, const display_quad_batch_t *batch,
     const uint16_t *colors, const double corners[8], int top, int bottom,
-    const display_quad_mapping_t *mapping, int empty_source) {
+    const display_quad_mapping_t *mapping, const double *mapped_u,
+    int empty_source) {
   int clip_top = top, clip_bottom = bottom;
   double min_y = corners[1], max_y = corners[1];
   for (int i = 3; i < 8; i += 2) {
@@ -1514,7 +1540,7 @@ static int display_render_material(h2_lua_job_t *job,
    * The half-plane rule decides ownership there, not the bounding box. */
   if (max_y < bottom) bottom = max_y >= top ? (int)floor(max_y) + 1 : top;
   int rendered = empty_source || clip_top == clip_bottom ||
-      display_raster_material(job, m, colors, corners, top, bottom, mapping);
+      display_raster_material(job, m, colors, corners, top, bottom, mapping, mapped_u);
   if (!rendered && batch != NULL) {
     display_replay_quad_batch(job, batch, colors, corners, clip_top, clip_bottom,
                               mapping);
@@ -1571,7 +1597,7 @@ static int display_draw_quad_material_impl(lua_State *state, int projective) {
   int top, bottom;
   display_check_clip(state, job, required + 1, required + 2, &top, &bottom);
   int rendered = display_render_material(job, m, NULL, colors, corners,
-                                        top, bottom, mapping, empty_source);
+                                        top, bottom, mapping, NULL, empty_source);
   if (!rendered) {
     lua_getiuservalue(state, 1, 1);
     const display_quad_batch_t *batch = lua_touserdata(state, -1);
@@ -3371,13 +3397,18 @@ static int display_draw_material_strip(lua_State *state) {
   const display_quad_mapping_t *mapping = parameters.first == 0 &&
       parameters.last == 1 && parameters.ratio == 1 ? NULL : &parameters;
   int fast = 0, fallback = 0;
+  display_material_mapping_t cache;
+  cache.material = NULL;
   for (size_t i = 0; i < s->count; ++i) {
     const display_material_station_t *v = &s->stations[i], *w = v + 1;
     const display_material_face_t *f = &faces[i];
     double corners[8] = {v->first[0],v->first[1],v->last[0],v->last[1],
                         w->last[0],w->last[1],w->first[0],w->first[1]};
+    const double *mapped_u = parameters.first == parameters.last ? NULL :
+        display_material_map_u(f->material, mapping, &cache);
     int rendered = display_render_material(job, f->material, f->source,
-        f->palette->colors, corners, top, bottom, mapping, parameters.first == parameters.last);
+        f->palette->colors, corners, top, bottom, mapping, mapped_u,
+        parameters.first == parameters.last);
     fast += rendered; fallback += !rendered;
     if (lines && f->line_index)
       display_raster_line_rows(job, v->line[0], v->line[1], w->line[0], w->line[1],

@@ -138,6 +138,43 @@ assert(#blends==116)
 p.measure('strip_palette_blend_116_cost_probe',function()
  for _,palette in ipairs(blends) do d.blend_palette(palette,palette,palette,137) end
 end,116)
+-- One draw may reuse exact projective U values across distinct materials,
+-- but equal knot counts alone are insufficient. V knots/owners may differ.
+do
+ local function material(entries) return d.compile_quad_material(d.compile_quad_batch(entries)) end
+ local A=material({{.25,.75,1,.1,.9}})
+ local B=material({{.25,.75,2,.3,.7}})
+ local C=material({{.2,.8,1,.1,.9}})
+ local D=material({{0,1,2}})
+ local styles={A,B,C,A,D,D,B}
+ local palette=d.compile_palette({'red','blue'})
+ local palettes={};local first,last={},{}
+ for i=1,8 do
+  first[2*i-1],first[2*i]=-20+i%2*13,-30+(i-1)*43
+  last[2*i-1],last[2*i]=250-i%2*7,first[2*i]+4
+  if i<=7 then palettes[i]=palette end
+ end
+ local strip=d.material_strip(7)
+ strip:load(buffer(first),buffer(last),8);strip:bind(styles,palettes)
+ for _,q in ipairs({{0,1,0,1,1},{0,1,.1,.9,8},{.9,.1,.25,.75,.125},
+                    {0,1,.2,.8,1e-200},{0,1,.2,.8,1e200},{0,1,.5,.5,2},
+                    {.1,.9,.1,.9,2},{0,1,0,1,1}}) do
+  reset();local fast,fallback=0,0
+  for i=1,7 do
+   local j=2*i-1
+   local function xy(k,t) return first[k]+(last[k]-first[k])*t end
+   local result=d.draw_quad_material_projective(styles[i],palette,
+    xy(j,q[1]),xy(j+1,q[1]),xy(j,q[2]),xy(j+1,q[2]),
+    xy(j+2,q[2]),xy(j+3,q[2]),xy(j+2,q[1]),xy(j+3,q[1]),q[3],q[4],q[5],37,193)
+   fast=fast+(result and 1 or 0);fallback=fallback+(result and 0 or 1)
+  end
+  local a,b,c=snapshot();reset()
+  local nf,nb=d.draw_material_strip(strip,q[1],q[2],q[3],q[4],q[5],nil,37,193)
+  assert(nf==fast and nb==fallback,'mapped knot fallback selection')
+  equal(a,b,c,'mapped knot reuse and new-call parameters')
+ end
+ p.noalloc(function() d.draw_material_strip(strip,0,1,.1,.9,8) end)
+end
 -- No implicit first-draw cache. Measure a fresh constructor/load/bind/draw as
 -- well as a cold draw on a freshly bound object outside the timed setup.
 local g=poses[1][1]
