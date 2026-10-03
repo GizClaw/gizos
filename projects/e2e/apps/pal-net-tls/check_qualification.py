@@ -207,7 +207,7 @@ def check(root=ROOT, allow_pending=False, require_all_core=False):
     assert data['gate']['wifi_qualification_verified'] and data['gate']['hardware_released']
     assert data['gate']['tls_integration_started']
     assert data['source_sha256']
-    followup = json.loads((app / 'gizclaw_public_https_provenance.json').read_text())
+    followup = json.loads((app / 'gizclaw_public_https_provenance_main_tls.json').read_text())
     assert followup['historical_qualification_sha256'] == hashlib.sha256(
         (app / 'qualification.json').read_bytes()).hexdigest()
     check_sources(root, data['source_sha256'], followup)

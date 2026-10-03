@@ -23,7 +23,7 @@ def receipt():
 
 class Rejection(unittest.TestCase):
     def test_followup_cannot_replace_other_provider_or_claim_fresh_hardware(self):
-        followup=json.loads((APP/'gizclaw_public_https_provenance.json').read_text())
+        followup=json.loads((APP/'gizclaw_public_https_provenance_main_tls.json').read_text())
         historical=json.loads((APP/'qualification.json').read_text())['source_sha256']
         validation.check_sources(validation.ROOT,historical,followup)
         for mutate in [

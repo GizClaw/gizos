@@ -17,6 +17,7 @@ py_test(
     data = [
         "qualification.json",
         "gizclaw_public_https_provenance.json",
+        "gizclaw_public_https_provenance_main_tls.json",
         "//libs/pal:pal_header_files",
         "//libs/pal/providers/android/pal_core:BUILD.bazel",
         "//libs/pal/providers/android/pal_core:include/h2_android_net.h",
