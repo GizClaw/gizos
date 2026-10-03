@@ -475,6 +475,24 @@ cc_test(
 )
 
 cc_test(
+    name = "net_tls_verify_test",
+    srcs = [
+        "src/h2_esp_platform_net_tls_verify.c",
+        "src/h2_esp_platform_net_tls_verify.h",
+        "tests/test_h2_esp_platform_net_tls_verify.c",
+        "tests/tls_sdk/mbedtls/x509_crt.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src", "tests/tls_sdk"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+cc_test(
     name = "wifi_teardown_test",
     srcs = [
         "src/h2_esp_wifi_teardown.c",
