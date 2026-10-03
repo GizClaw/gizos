@@ -5,6 +5,28 @@ load("//tools/bazel:native_component.bzl", "firmware_native_component")
 package(default_visibility = ["//visibility:public"])
 
 cc_test(
+    name = "task_tls_test",
+    srcs = [
+        "src/h2_bk_task_tls.c",
+        "src/h2_bk_task_tls.h",
+        "src/h2_bk_task_tls_hooks.h",
+        "src/h2_bk_socket_errno_reader.h",
+        "src/h2_bk_socket_errno_writer.h",
+        "tests/test_h2_bk_socket_errno_writer.c",
+        "tests/test_h2_bk_task_tls.cpp",
+    ] + glob(["tests/task_tls_sdk/**/*.h"]),
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src", "tests/task_tls_sdk"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+cc_test(
     name = "psa_serialized_test",
     srcs = [
         "src/h2_bk_psa_serialized.c",

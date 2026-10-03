@@ -107,6 +107,7 @@ set(H2_BK_PLATFORM_CORE_SRCS
   "src/h2_bk_platform_uart_io_stream.c"
   "src/h2_bk_platform_crypto.c"
   "src/h2_bk_psa_serialized.c"
+  "src/h2_bk_task_tls.c"
   "src/h2_bk_platform_dtls.c"
   "src/h2_bk_platform_pref_flashdb.c"
   "src/h2_bk_platform_pref_flashdb_port.c"
@@ -167,6 +168,23 @@ target_compile_definitions(${COMPONENT_LIB} PRIVATE
 # requires an explicit http/1.1 offer. Enable the existing public Mbed TLS
 # implementation for both the SDK library and its consumers.
 target_compile_definitions(__armino_psa_mbedtls PUBLIC MBEDTLS_SSL_ALPN)
+
+# Bare-metal libgcc emutls and newlib errno otherwise share one global value.
+# Install task-scoped storage without modifying the SDK or its TCB layout.
+armino_build_set_property(LINK_OPTIONS "-Wl,--wrap=__emutls_get_address" APPEND)
+armino_build_set_property(LINK_OPTIONS "-Wl,--wrap=__errno" APPEND)
+set_property(SOURCE "${REPO_ROOT}/native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_task_tls.c"
+  TARGET_DIRECTORY ${COMPONENT_LIB} APPEND PROPERTY COMPILE_OPTIONS "-fno-lto")
+set_property(SOURCE "${BK_ARMINO_PATH}/components/os_source/freertos_smp_v2p0/FreeRTOS-Kernel/tasks.c"
+  TARGET_DIRECTORY __armino_os_source APPEND PROPERTY COMPILE_OPTIONS
+  "-include" "${CMAKE_CURRENT_LIST_DIR}/src/h2_bk_task_tls_hooks.h")
+# lwIP's vendor fork writes its own global int errno, bypassing newlib.
+# Bind socket error writes and PAL reads to the same task-local value.
+target_compile_options(__armino_lwip_intf_v2_1 PRIVATE
+  "-include" "${CMAKE_CURRENT_LIST_DIR}/src/h2_bk_socket_errno_writer.h")
+set_property(SOURCE "${REPO_ROOT}/native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_net.c"
+  TARGET_DIRECTORY ${COMPONENT_LIB} APPEND PROPERTY COMPILE_OPTIONS
+  "-include" "${CMAKE_CURRENT_LIST_DIR}/src/h2_bk_socket_errno_reader.h")
 
 # PSA's SDK key-slot registry is shared by PAL crypto and SDK TLS/DTLS.
 # Keep the implementation outside LTO so every external public call reaches
