@@ -1057,7 +1057,7 @@
     "//tools/bazel/vendor:repositories.bzl%vendor_repositories": {
       "general": {
         "bzlTransitiveDigest": "GN36J8ZXGtronxAfN2q+0sqa5qSORQLPGXJJoOa1qYw=",
-        "usagesDigest": "yhMc0BUXFHgva0gCCn5UrxpQ3dujXSPpgXlZ0qlyni8=",
+        "usagesDigest": "BXCVm/nOZTl3u9AwmquEM0lal9dFUX1bG13MiiwKcAU=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
           "h2_fdk_aac": {
@@ -1335,8 +1335,8 @@
               "nested_archive_strip_prefix": {},
               "nested_archive_urls": {},
               "overlay_files": {
-                "@@//third_party/lvgl_patch:config/bk7258/lv_conf.h": "config/bk7258/lv_conf.h",
-                "@@//third_party/lvgl_patch:config/esp_idf6_x/lv_conf.h": "config/esp_idf6_x/lv_conf.h"
+                "@@//third_party/lvgl_patch:config/bk7258/lv_conf.h": "config/bk7258/h2_bk7258_lv_conf.h",
+                "@@//third_party/lvgl_patch:config/esp_idf6_x/lv_conf.h": "config/esp_idf6_x/h2_esp_idf6_x_lv_conf.h"
               },
               "patches": [],
               "sha256": "68abe1316ce8f9a9ede55d89ad9788292753373ad4218480480ae81052fb005d",

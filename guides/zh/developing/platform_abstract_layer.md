@@ -114,6 +114,12 @@ h2/pal/core/h2_pal_types.h
 h2/pal/core/h2_pal_errors.h
 ```
 
+`h2_pal_result_t` 是 signed 32-bit C int scalar，public header 在 C 和 C++ 中检查 `int` 的宽度与完整 signed 32-bit 范围；默认 MSVC C 模式不需要启用 C11。命名 PAL 错误常量保持既有数值，provider 和 library 的扩展负错误也完整保留，包括 `-1000` 和 `INT32_MIN`，不受 `-fshort-enums` 等 enum ABI 选项影响。函数与 vtable 使用这一 typedef，保留 C int 回调类型兼容；`enum h2_pal_result` 只提供命名常量，不作为返回值或存储类型。
+
+升级该 contract 时，所有交换 PAL result 的 archive、provider 和 consumer 必须一起重新编译。使用 small-enum ABI 的旧 struct field 可能从一字节扩大到四字节，并改变 alignment、padding 和固定内存预算；下游 owner 必须重新验证自己的 layout 和 memory gate，不能混用旧二进制或降低预算检查。本地 C ABI 不定义 wire 或 persistent format；协议仍逐字段使用既有明确宽度和 byte order 编解码。
+
+`//libs/pal:pal_result_representation_test` 在 GNU-style compiler 的 `-fshort-enums` 下检查表示、signed 32-bit 边界和双向 C int callback 类型，在 Windows 上使用默认 MSVC C 模式；`//libs/pal:pal_result_representation_cpp_test` 检查相同的 C++ public contract 与 callback 类型。
+
 ### OS 操作系统抽象
 
 操作系统抽象为跨平台代码提供内存、日志、时间、并发、同步、存储和系统事件等基础运行能力。它隔离 allocator、RTOS primitive、文件系统和持久化存储的差异。

@@ -11,5 +11,8 @@ armino_component_register(
     PRIV_REQUIRES h2_pal_core bk_common bk_rtos)
 
 target_compile_definitions(${COMPONENT_LIB} INTERFACE
+    # Native consumers also inherit generic Bazel headers. Select the
+    # canonical platform source independently of their include ordering.
+    LV_CONF_PATH=\"${H2_LVGL_CONFIG_ROOT}/lv_conf.h\"
     LV_CONF_INCLUDE_SIMPLE
     LV_LVGL_H_INCLUDE_SIMPLE)

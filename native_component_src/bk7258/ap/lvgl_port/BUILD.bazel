@@ -20,7 +20,7 @@ firmware_native_component(
             "tests/**",
         ],
     ),
-    hdrs = glob(
+    hdrs = ["//third_party/lvgl_patch:config/bk7258/lv_conf.h"] + glob(
         [
             "**/*.h",
             "**/*.hh",

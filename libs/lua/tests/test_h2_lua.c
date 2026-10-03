@@ -2769,8 +2769,10 @@ int main(int argc, char **argv) {
   h2_atomic_int_destroy(&s_test_audio_mic_block);
     return 0;
   }
-  if (argc == 2 && strcmp(argv[1], "--raster-benchmark") == 0) {
-    test_display_raster2d(1, "libs/lua/tests/raster2d.lua");
+  if (argc == 2 && (strcmp(argv[1], "--raster-benchmark") == 0 ||
+                    strcmp(argv[1], "--quad-benchmark") == 0)) {
+    test_display_raster2d(1, strcmp(argv[1], "--quad-benchmark") == 0
+        ? "libs/lua/tests/quad_batch.lua" : "libs/lua/tests/raster2d.lua");
   h2_atomic_int_destroy(&s_source_effect_count);
   h2_atomic_int_destroy(&s_test_audio_close_count);
   h2_atomic_int_destroy(&s_test_audio_start_count);
@@ -2784,6 +2786,8 @@ int main(int argc, char **argv) {
   test_host_allocator();
   test_reserved_vm_heap();
   test_display_raster2d(0, "libs/lua/tests/raster2d.lua");
+  test_display_raster2d(0, "libs/lua/tests/quad_batch.lua");
+  test_display_raster2d(1, "libs/lua/tests/quad_batch_clip.lua");
   test_display_raster2d(0, "libs/lua/tests/geometry_batches.lua");
   test_display_raster2d(0, "libs/lua/tests/stroke_buffer.lua");
   test_display_mesh_identity();
