@@ -63,7 +63,7 @@ if __name__=='__main__':
     parser=argparse.ArgumentParser()
     parser.add_argument('--log',type=Path,required=True)
     parser.add_argument('--version',required=True)
-    parser.add_argument('--board',choices=['devkit','bk7258'],required=True)
+    parser.add_argument('--board',choices=['devkit','bk7258','tiga_esp_v4_2','zero_esp_v3_0'],required=True)
     parser.add_argument('--output',type=Path,required=True)
     args=parser.parse_args()
     result=parse(args.log.read_text(errors='replace'),args.version,args.board)

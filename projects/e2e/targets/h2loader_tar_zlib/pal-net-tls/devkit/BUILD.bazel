@@ -6,6 +6,9 @@ load("//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
 
 package(default_visibility = ["//visibility:public"])
 
+# Shared ESP launcher accepts the consuming entry's H2_PAL_NET_TLS_BOARD.
+exports_files(["main/main.c"])
+
 esp_target_task_policy(
     name = "task_policy",
     default_policy = "4 any 4096 psram",

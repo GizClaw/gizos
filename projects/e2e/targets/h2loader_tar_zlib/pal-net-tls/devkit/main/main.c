@@ -8,6 +8,10 @@
 #include "h2_pal_net_tls_device.h"
 #include <stdio.h>
 
+#ifndef H2_PAL_NET_TLS_BOARD
+#define H2_PAL_NET_TLS_BOARD "devkit"
+#endif
+
 static h2_runtime_t *runtime;
 static h2_net_tls_result_t result;
 static void hold(void) {
@@ -53,7 +57,8 @@ static void run(void *user) {
                                 : H2_PAL_ERR_INVALID_STATE;
   for (;;) {
     h2_pal_net_tls_device_report(runtime, &result);
-    printf("H2_PAL_NET_TLS_READY board=devkit rc=%d confirm=%d\n", rc, confirm);
+    printf("H2_PAL_NET_TLS_READY board=%s rc=%d confirm=%d\n",
+           H2_PAL_NET_TLS_BOARD, rc, confirm);
     fflush(stdout);
     vTaskDelay(pdMS_TO_TICKS(5000u));
   }
@@ -73,8 +78,8 @@ void app_main(void) {
   rc = h2_runtime_init(&config, &runtime);
   if (rc != H2_PAL_OK)
     fail("runtime", rc);
-  printf("H2_PAL_NET_TLS_BOOT board=devkit version=%s\n",
-         esp_app_get_description()->version);
+  printf("H2_PAL_NET_TLS_BOOT board=%s version=%s\n",
+         H2_PAL_NET_TLS_BOARD, esp_app_get_description()->version);
   const h2_pal_task_options_t options = {
       .name = h2_pal_net_tls_device_runner_task_name};
   h2_pal_task_t *runner = NULL;

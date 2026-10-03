@@ -38,7 +38,9 @@ def dump(path):
 
 
 def assemble(args):
-    board_name = 'devkit' if args.board == 'devkit' else 'bk7258_v3_202405'
+    board_name = 'bk7258_v3_202405' if args.board == 'bk7258' else args.board
+    execution_board = 'bk7258' if args.board == 'bk7258' else board_name
+    platform = 'esp32s3' if args.board in ('tiga_esp_v4_2', 'zero_esp_v3_0') else args.board
     version = args.version
     metadata = json.loads(args.firmware_metadata.read_text())
     image = metadata['package_manifest']
@@ -66,7 +68,7 @@ def assemble(args):
         assert dump_status['blank'] == base_dump['blank']
         assert dump_status['stored_bytes'] == base_dump['stored_bytes']
         entry = parse(log.read_text(errors='replace'), version,
-            'devkit' if args.board == 'devkit' else 'bk7258')
+            execution_board)
         assert entry['session'] == peer['session']
         observation = json.loads(args.dns_observation.read_text())
         assert observation['hostname'] == entry['dns']['host']
@@ -77,7 +79,7 @@ def assemble(args):
             loader_p1_preserved=True, stage_empty=True, coredump_unchanged=True,
             peer=peer,
             observed_status=current, observed_coredump=dump_status,
-            observed_boot=dict(board='devkit' if args.board == 'devkit' else 'bk7258',
+            observed_boot=dict(board=execution_board,
                 version=entry['version'], session=entry['session'], boot_id=entry['boot_id']),
             local_source_sha256=dict(serial=digest(log),
                 status=digest(getattr(args, kind.replace('-', '_') + '_status')),
@@ -98,7 +100,7 @@ def assemble(args):
         assert base_dump['blank'] == '1' and base_dump['stored_bytes'] == '0'
         coredump_sha = None
         coredump_bytes = None
-    return dict(observation_contract=2, platform=args.board, status='PASS', core_qualified=True,
+    return dict(observation_contract=2, platform=platform, execution_board=execution_board, status='PASS', core_qualified=True,
         full_net_qualified=False, uid=args.uid, version=version,
         artifact_sha256=package_sha, package_sha256=package_sha,
         image_sha256=image_sha, package_size=args.package.stat().st_size,
@@ -112,7 +114,7 @@ def assemble(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--board', choices=['devkit','bk7258'], required=True)
+    parser.add_argument('--board', choices=['devkit','bk7258','tiga_esp_v4_2','zero_esp_v3_0'], required=True)
     parser.add_argument('--uid', required=True)
     parser.add_argument('--version', required=True)
     parser.add_argument('--package', type=Path, required=True)
