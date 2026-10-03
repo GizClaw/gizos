@@ -2,12 +2,31 @@
 #include "driver/flash_partition.h"
 #include "flashdb.h"
 #include "os/os.h"
+#include "os/mem.h"
 
 #include <stdint.h>
+#include <string.h>
 
 #define H2_BK_FLASHDB_ERASE_SIZE (4u * 1024u)
+#define H2_BK_FLASHDB_READ_CACHE_SIZE 512u
 
 static beken_mutex_t s_flashdb_flash_mutex;
+/* FlashDB scans headers and CRC payloads in small adjacent reads. Cache only
+ * bytes actually read from this partition; never populate it from writes. */
+/* FAL has process lifetime and no deinit API. Keep the optional cache in
+ * PSRAM so Loader/App retain the existing internal-heap budget. */
+static uint8_t *s_flashdb_read_cache;
+static uint32_t s_flashdb_read_cache_offset;
+static size_t s_flashdb_read_cache_size;
+
+static void invalidate_mutated_range(uint32_t address, size_t size) {
+    const uint64_t end = (uint64_t)address + size;
+    const uint64_t cache_end = (uint64_t)s_flashdb_read_cache_offset +
+                               s_flashdb_read_cache_size;
+    if (size != 0u && s_flashdb_read_cache_size != 0u &&
+        address < cache_end && end > s_flashdb_read_cache_offset)
+        s_flashdb_read_cache_size = 0u;
+}
 
 static int bk_pref_flash_init(void) {
     const bk_logic_partition_t *partition =
@@ -25,8 +44,15 @@ static int bk_pref_flash_init(void) {
         rtos_init_mutex(&s_flashdb_flash_mutex) != kNoErr) {
         return -1;
     }
+    if (rtos_lock_mutex(&s_flashdb_flash_mutex) != kNoErr) {
+        return -1;
+    }
     g_flashdb0.len =
         partition->partition_start_addr + partition->partition_length;
+    s_flashdb_read_cache_size = 0u;
+    if (s_flashdb_read_cache == NULL)
+        s_flashdb_read_cache = psram_malloc(H2_BK_FLASHDB_READ_CACHE_SIZE);
+    (void)rtos_unlock_mutex(&s_flashdb_flash_mutex);
     return 0;
 }
 
@@ -39,7 +65,40 @@ static int bk_pref_flash_read(long offset, uint8_t *buffer, size_t size) {
     if (rtos_lock_mutex(&s_flashdb_flash_mutex) != kNoErr) {
         return -1;
     }
-    rc = bk_flash_read_bytes((uint32_t)offset, buffer, (uint32_t)size);
+    const uint32_t address = (uint32_t)offset;
+    const uint64_t partition_end = (uint64_t)CONFIG_FLASHDB_KVDB_START_ADDR +
+                                   CONFIG_FLASHDB_KVDB_SIZE;
+    uint32_t cache_offset = address & ~(H2_BK_FLASHDB_READ_CACHE_SIZE - 1u);
+    if (cache_offset < CONFIG_FLASHDB_KVDB_START_ADDR)
+        cache_offset = CONFIG_FLASHDB_KVDB_START_ADDR;
+    const size_t cache_size = cache_offset < partition_end
+        ? (size_t)(partition_end - cache_offset < H2_BK_FLASHDB_READ_CACHE_SIZE
+            ? partition_end - cache_offset : H2_BK_FLASHDB_READ_CACHE_SIZE)
+        : 0u;
+    if (s_flashdb_read_cache != NULL && size != 0u && address >= cache_offset &&
+        (uint64_t)address < partition_end &&
+        address - cache_offset < cache_size &&
+        size <= cache_size - (address - cache_offset)) {
+        if (s_flashdb_read_cache_size == 0u ||
+            address < s_flashdb_read_cache_offset ||
+            (uint64_t)address + size > (uint64_t)s_flashdb_read_cache_offset +
+                                       s_flashdb_read_cache_size) {
+            s_flashdb_read_cache_size = 0u;
+            rc = bk_flash_read_bytes(cache_offset, s_flashdb_read_cache,
+                                     (uint32_t)cache_size);
+            if (rc == BK_OK) {
+                s_flashdb_read_cache_offset = cache_offset;
+                s_flashdb_read_cache_size = cache_size;
+            }
+        } else {
+            rc = BK_OK;
+        }
+        if (rc == BK_OK)
+            memcpy(buffer, s_flashdb_read_cache +
+                           (address - s_flashdb_read_cache_offset), size);
+    } else {
+        rc = bk_flash_read_bytes(address, buffer, (uint32_t)size);
+    }
     (void)rtos_unlock_mutex(&s_flashdb_flash_mutex);
     return rc == BK_OK ? (int)size : -1;
 }
@@ -53,6 +112,9 @@ static int bk_pref_flash_write(long offset, const uint8_t *buffer, size_t size) 
     if (rtos_lock_mutex(&s_flashdb_flash_mutex) != kNoErr) {
         return -1;
     }
+    /* Invalidate overlapping bytes before a possibly uncertain commit. GC
+     * destination writes must not evict an unchanged source cache line. */
+    invalidate_mutated_range((uint32_t)offset, size);
     rc = bk_flash_write_bytes((uint32_t)offset, buffer, (uint32_t)size);
     (void)rtos_unlock_mutex(&s_flashdb_flash_mutex);
     return rc == BK_OK ? (int)size : -1;
@@ -73,6 +135,7 @@ static int bk_pref_flash_erase(long offset, size_t size) {
         return -1;
     }
 
+    invalidate_mutated_range((uint32_t)offset, size);
     protect_type = bk_flash_get_protect_type();
     if (protect_type != FLASH_PROTECT_NONE) {
         bk_flash_set_protect_type(FLASH_PROTECT_NONE);

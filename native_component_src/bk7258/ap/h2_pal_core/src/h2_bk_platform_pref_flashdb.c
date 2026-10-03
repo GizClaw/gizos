@@ -12,22 +12,28 @@
 /* Storage keys are "<namespace>.<key>"; FlashDB accepts names up to
  * FDB_KV_NAME_MAX, e.g. "h2loader.mfg_acceptance_revision" (32 chars). */
 #define H2_BK_PREF_KEY_MAX FDB_KV_NAME_MAX
-#define H2_BK_PREF_OPEN_MAX 4u
+
+/* Final diagnostic consumers may opt in; production images keep their
+ * existing code budget and do not acquire clocks solely for tracing. */
+#ifndef H2_BK_PLATFORM_PREF_TIMING_DIAGNOSTICS
+#define H2_BK_PLATFORM_PREF_TIMING_DIAGNOSTICS 0
+#endif
 
 typedef struct h2_bk_pref_namespace {
     h2_pal_pref_namespace_t base;
     char name_space[16];
     h2_pal_pref_open_mode_t mode;
-    int in_use;
 } h2_bk_pref_namespace_t;
 
-static h2_bk_pref_namespace_t s_pref_namespaces[H2_BK_PREF_OPEN_MAX];
 static struct fdb_kvdb s_pref_database;
 static beken_mutex_t s_pref_database_mutex;
 static beken_mutex_t s_pref_pool_mutex;
 static beken_mutex_t s_pref_operation_mutex;
 static int s_pref_database_ready;
 static int s_pref_pool_mutex_ready;
+
+static uint32_t pref_now_ms(void);
+static uint64_t type_hash(const void *bytes, size_t size);
 
 static int bk_pref_map_flashdb_error(fdb_err_t rc) {
     switch (rc) {
@@ -256,17 +262,11 @@ static int bk_pref_read_value(
 
 static int bk_pref_close(h2_pal_pref_namespace_t *ns) {
     h2_bk_pref_namespace_t *pref_ns = bk_pref_to_namespace(ns);
-    int rc;
 
     if (pref_ns == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    rc = bk_pref_lock_pool();
-    if (rc != H2_PAL_OK) {
-        return rc;
-    }
-    pref_ns->in_use = 0;
-    bk_pref_unlock_pool();
+    os_free(pref_ns);
     return H2_PAL_OK;
 }
 
@@ -328,14 +328,23 @@ static int bk_pref_set_blob(
     if (rc != H2_PAL_OK) {
         return rc;
     }
+    const uint32_t started = pref_now_ms();
     rc = bk_pref_map_flashdb_error(fdb_kv_set_blob(
         &s_pref_database,
         storage_key,
         fdb_blob_make(&blob, data, data_len)));
-    if (rc != H2_PAL_OK) {
-        return rc;
-    }
-    return bk_pref_delete_easyflash_value(storage_key);
+    const uint32_t stored = pref_now_ms();
+    if (rc == H2_PAL_OK)
+        rc = bk_pref_delete_easyflash_value(storage_key);
+    const uint32_t finished = pref_now_ms();
+    if (finished - started >= 250u)
+        printf("H2_BK_PREF_RAW key_tag=%016llx rc=%d fdb_ms=%lu legacy_ms=%lu "
+               "total_ms=%lu\n",
+               (unsigned long long)type_hash(storage_key, strlen(storage_key)), rc,
+               (unsigned long)(stored - started),
+               (unsigned long)(finished - stored),
+               (unsigned long)(finished - started));
+    return rc;
 }
 
 static int bk_pref_get_string(
@@ -481,6 +490,46 @@ static uint64_t type_hash(const void *bytes, size_t size) {
     h = (h ^ p[i]) * UINT64_C(1099511628211);
   return h;
 }
+static uint32_t pref_now_ms(void) {
+#if H2_BK_PLATFORM_PREF_TIMING_DIAGNOSTICS
+  uint64_t now = 0u;
+  if (h2_pal_time_get_monotonic_ms(h2_bk_platform_time_api(), &now) != H2_PAL_OK)
+    return 0u;
+  return (uint32_t)now;
+#else
+  return 0u;
+#endif
+}
+
+/* Report only slow calls, after releasing the storage mutex. Hash the key;
+ * preference payloads (including PINs and credentials) never enter logs. */
+static void trace_read(const char *operation, h2_pal_pref_namespace_t *base,
+                        const char *key, int rc, uint32_t started,
+                        uint32_t locked, uint32_t typed, uint32_t finished) {
+  char full[H2_BK_PREF_KEY_MAX];
+  if (finished - started < 250u ||
+      bk_pref_make_key(bk_pref_to_namespace(base), key, full) != H2_PAL_OK)
+    return;
+  printf("H2_BK_PREF_READ op=%s key_tag=%016llx rc=%d lock_ms=%lu "
+         "type_ms=%lu raw_ms=%lu total_ms=%lu\n", operation,
+         (unsigned long long)type_hash(full, strlen(full)), rc,
+         (unsigned long)(locked - started), (unsigned long)(typed - locked),
+         (unsigned long)(finished - typed), (unsigned long)(finished - started));
+}
+
+static void trace_write(const char *full, int rc, uint32_t started,
+                         uint32_t locked, uint32_t loaded, uint32_t metadata,
+                         uint32_t finished) {
+  if (finished - started < 250u)
+    return;
+  printf("H2_BK_PREF_WRITE key_tag=%016llx rc=%d lock_ms=%lu "
+         "load_ms=%lu metadata_ms=%lu raw_ms=%lu total_ms=%lu\n",
+         (unsigned long long)type_hash(full, strlen(full)), rc,
+         (unsigned long)(locked - started), (unsigned long)(loaded - locked),
+         (unsigned long)(metadata - loaded), (unsigned long)(finished - metadata),
+         (unsigned long)(finished - started));
+}
+
 static void metadata_key(const char *storage_key, char out[32]) {
   uint64_t hash = type_hash(storage_key, strlen(storage_key));
   snprintf(out, 32, "$h2t.%08lx%08lx", (unsigned long)(hash >> 32),
@@ -648,9 +697,12 @@ static int typed_set_value(h2_pal_pref_namespace_t *base, const char *key,
     rc = bk_pref_make_key(ns, key, full);
   if (rc)
     return rc;
+  const uint32_t started = pref_now_ms();
   rc = storage_lock();
+  const uint32_t locked = pref_now_ms();
   if (rc)
     return rc;
+  uint32_t loaded = locked, metadata = locked;
   uint8_t *previous = NULL;
   size_t previous_length = 0;
   h2_pal_pref_entry_type_t previous_type = H2_PAL_PREF_ENTRY_UNKNOWN;
@@ -660,6 +712,8 @@ static int typed_set_value(h2_pal_pref_namespace_t *base, const char *key,
     rc = H2_PAL_OK;
   if (!rc && existed)
     rc = read_metadata_type(full, previous, previous_length, &previous_type);
+  loaded = pref_now_ms();
+  metadata = loaded;
   if (!rc) {
     size_t probe = 0;
     int same = existed && previous_length == length &&
@@ -680,13 +734,17 @@ static int typed_set_value(h2_pal_pref_namespace_t *base, const char *key,
     struct fdb_blob blob;
     rc = bk_pref_map_flashdb_error(fdb_kv_set_blob(
         &s_pref_database, meta_key, fdb_blob_make(&blob, record, sizeof(record))));
+    metadata = pref_now_ms();
     /* Identical payloads (including type-only changes) commit with metadata
      * alone. load_value has already completed any legacy migration. */
     if (!rc && !same)
       rc = bk_pref_set_blob(base, key, data, length);
   }
+  const uint32_t finished = pref_now_ms();
   os_free(previous);
-  return storage_unlock(rc);
+  rc = storage_unlock(rc);
+  trace_write(full, rc, started, locked, loaded, metadata, finished);
+  return rc;
 }
 static int typed_set_blob(h2_pal_pref_namespace_t *base, const char *key,
                           const void *data, size_t size) {
@@ -718,13 +776,19 @@ static int typed_set_string(h2_pal_pref_namespace_t *base, const char *key,
     if (!out)                                                                  \
       return H2_PAL_ERR_INVALID_ARG;                                           \
     *out = 0;                                                                  \
+    const uint32_t started = pref_now_ms();                                   \
     int rc = storage_lock();                                                   \
+    const uint32_t locked = pref_now_ms();                                    \
     if (rc)                                                                    \
       return rc;                                                               \
     rc = check_type(base, key, kind);                                          \
+    const uint32_t typed = pref_now_ms();                                     \
     if (!rc)                                                                   \
       rc = bk_pref_get_##suffix(base, key, out);                               \
-    return storage_unlock(rc);                                                 \
+    const uint32_t finished = pref_now_ms();                                  \
+    rc = storage_unlock(rc);                                                   \
+    trace_read("get_" #suffix, base, key, rc, started, locked, typed, finished); \
+    return rc;                                                                 \
   }                                                                            \
   static int typed_set_##suffix(h2_pal_pref_namespace_t *base,                 \
                                 const char *key, ctype value) {                \
@@ -961,18 +1025,10 @@ static int bk_pref_open(
     if (rc != H2_PAL_OK) {
         return rc;
     }
-    rc = bk_pref_lock_pool();
-    if (rc != H2_PAL_OK) {
-        return rc;
-    }
-    for (size_t i = 0u; i < H2_BK_PREF_OPEN_MAX; ++i) {
-        if (!s_pref_namespaces[i].in_use) {
-            ns = &s_pref_namespaces[i];
-            ns->in_use = 1;
-            break;
-        }
-    }
-    bk_pref_unlock_pool();
+    /* Boot workers can hold more than four namespaces concurrently. Each
+     * handle owns its state until close; storage operations remain serialized
+     * by the database/transaction mutexes. */
+    ns = os_zalloc(sizeof(*ns));
     if (ns == NULL) {
         return H2_PAL_ERR_NO_MEMORY;
     }

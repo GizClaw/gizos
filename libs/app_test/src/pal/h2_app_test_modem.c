@@ -35,11 +35,30 @@ static h2_pal_result_t hangup(void *u, uint32_t ms) {
   m->last_hangup_timeout_ms = ms;
   return h2_app_test_fault_take(&m->hangup);
 }
+static h2_pal_result_t open_modem(void *u, uint32_t ms) {
+  h2_app_test_modem_t *m = u;
+  if (!m->lifecycle_supported) return H2_PAL_ERR_UNSUPPORTED;
+  m->last_open_timeout_ms = ms;
+  if (m->opened) return H2_PAL_OK;
+  int rc = h2_app_test_fault_take(&m->open);
+  if (rc == H2_PAL_OK) m->opened = true;
+  return rc;
+}
+static h2_pal_result_t close_modem(void *u, uint32_t ms) {
+  h2_app_test_modem_t *m = u;
+  if (!m->lifecycle_supported) return H2_PAL_ERR_UNSUPPORTED;
+  m->last_close_timeout_ms = ms;
+  int rc = h2_app_test_fault_take(&m->close);
+  if (rc == H2_PAL_OK) m->opened = false;
+  return rc;
+}
 static const h2_pal_modem_vtable_t vtable = {.get_capabilities = caps,
                                              .get_status = status,
                                              .call_dial = dial,
                                              .call_answer = answer,
-                                             .call_hangup = hangup};
+                                             .call_hangup = hangup,
+                                             .open = open_modem,
+                                             .close = close_modem};
 void h2_app_test_modem_init(h2_app_test_modem_t *m) {
   if (!m)
     return;

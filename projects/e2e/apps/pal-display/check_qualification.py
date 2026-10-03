@@ -107,6 +107,71 @@ AUDIT_SOURCES = {
     "guides/zh/developing/platform_abstract_layer.md",
 }
 
+BK_RGB_BUFFER_SOURCES = {
+    "boards/bk7258_v3_202405/bk7258/BUILD.bazel",
+    "boards/bk7258_v3_202405/bk7258/ap/BUILD.bazel",
+    "boards/bk7258_v3_202405/bk7258/ap/src/h2_bk7258_board_display.c",
+    "boards/bk7258_v3_202405/bk7258/ap/src/h2_bk7258_display_buffer.h",
+    "boards/bk7258_v3_202405/bk7258/ap/tests/test_h2_bk7258_display_buffer.c",
+    "guides/apps/h2loader/boards/bk7258_v3_202405/display.md",
+}
+
+
+def verify_bk_rgb_buffers(followup, historical, receipt, build):
+    """Bind only the changed BK buffer sources to fresh physical execution."""
+    assert followup["schema"] == 1 and followup["new_physical_run_claimed"] is True
+    assert hashlib.sha256((ROOT / "qualification.json").read_bytes()).hexdigest() == followup["historical_qualification_sha256"]
+    assert re.fullmatch(r"[0-9a-f]{40}", followup["source_snapshot_commit"])
+    assert receipt["source_snapshot_commit"] == followup["source_snapshot_commit"]
+    current = followup["current_source_sha256"]
+    assert set(current) == BK_RGB_BUFFER_SOURCES
+    assert followup["historical_source_sha256"] == {
+        path: historical[path] for path in current if path in historical}
+    for path, expected in current.items():
+        assert hashlib.sha256(Path(path).read_bytes()).hexdigest() == expected, path
+    assert receipt["board"] == "bk7258_v3_202405"
+    assert receipt["new_physical_run_claimed"] is True
+    assert receipt["driver_qualified"] and receipt["panel_qualified"]
+    assert receipt["optical_verified"] is False
+    first, second = receipt["install_boot"], receipt["independent_normal_reboot"]
+    assert first["log_sha256"] != second["log_sha256"]
+    for boot in (first, second):
+        assert boot["fresh_boot"] and boot["confirmed"]
+        assert boot["version"] == receipt["version"]
+        assert re.fullmatch(r"[0-9a-f]{64}", boot["log_sha256"])
+        report(boot["qualified"], boot["cases"])
+        observations = boot["real_driver_observations_received"]
+        assert 0 < len(observations) <= 23
+        assert all("rc=0" in item for item in observations)
+        if len(observations) < 23:
+            assert boot["transport_limitation"]
+    physical = receipt["physical_observation"]
+    assert physical["status"] == "PASS" and physical["source"] == "user"
+    assert physical["pattern_observed"] and physical["stable_image_observed"]
+    before, final = receipt["before_status"], receipt["final_status"]
+    for key in ("device_uid", "partition_1_package_checksum", "partition_1_image_checksum"):
+        assert before[key] == final[key]
+    assert physical["device_uid"] == final["device_uid"]
+    manifest = build["package_manifest"]
+    assert manifest["role"] == "app" and manifest["board"] == receipt["board"]
+    assert physical["image_version"] == receipt["version"] == manifest["version"] == final["active_version"]
+    assert physical["image_sha256"] == final["active_checksum"] == manifest["image_sha256"]
+    assert final["partition_2_package_checksum"] == receipt["package_sha256"] == build["assets"][0]["sha256"]
+    for key, expected in {"active_role": "app", "stage_valid": "0",
+                          "running_partition": "2", "next_partition": "2",
+                          "last_result": "0"}.items():
+        assert final[key] == expected
+    assert receipt["brightness_validation"] == {
+        "mandatory_cases": "PASS", "optical_measurement": "NOT_MEASURED"}
+    return {**historical, **current}
+
+
+def bk_rgb_buffer_requalification(historical):
+    followup = json.loads((ROOT / "bk_rgb_buffer_requalification.json").read_text(encoding="utf-8"))
+    receipt = json.loads(Path(followup["board_evidence"]).read_text(encoding="utf-8"))
+    build = json.loads(Path(followup["build_evidence"]).read_text(encoding="utf-8"))
+    return verify_bk_rgb_buffers(followup, historical, receipt, build)
+
 
 def runner_refactor(historical):
     """Check new mobile observations without relabeling old board evidence."""
@@ -158,7 +223,7 @@ def main():
         "macos", "wasm", "ios", "android", "amoled", "bk7258"}
     assert len(value["platforms"]) == 6
     overrides = value.get("review_fix_source_sha256", {})
-    runner_refactor({**value["source_sha256"], **overrides})
+    runner_refactor(bk_rgb_buffer_requalification({**value["source_sha256"], **overrides}))
     if overrides:
         fix = value["review_fix_validation"]
         assert value["source_snapshot_commit"]
@@ -186,7 +251,7 @@ def main():
     for path in ["h2_pal_display_e2e.c", "h2_sdl3_display.cpp"]:
         assert coverage[path]["functions"]["percent"] > 50
         assert coverage[path]["lines"]["percent"] > 50
-    print("PAL Display: historical six-platform qualification and shared mobile runner evidence verified; no new physical run claimed")
+    print("PAL Display: historical six-platform/mobile receipts preserved; current BK RGB buffers verified by two fresh physical runs")
 
 
 if __name__ == "__main__":

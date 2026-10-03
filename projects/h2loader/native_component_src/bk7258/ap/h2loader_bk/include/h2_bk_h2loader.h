@@ -29,6 +29,13 @@ extern "C" {
 #define H2_BK_H2LOADER_LOADER_COMMAND_STACK_SIZE 49152u
 
 int h2_bk_h2loader_sd_fs_init(h2_pal_fs_api_t *fs);
+/** Read the controller's Bluetooth identity MAC as 12 lowercase hex digits.
+ * Task context after bk_init(); synchronous, no allocation or retention.
+ * capacity includes NUL and must be >=13. Output is empty on failure;
+ * invalid arguments return INVALID_ARG, SDK read failure returns IO.
+ * Loader/App UART and BLE must use this same UID source.
+ */
+int h2_bk_h2loader_get_device_uid(char *out_uid, size_t capacity);
 void h2_bk_h2loader_prepare_sd_storage(void);
 void h2_bk_h2loader_release_sd_storage(void);
 int h2_bk_h2loader_mount_file_point(void *user, const char *path);

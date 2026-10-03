@@ -214,12 +214,19 @@ int h2_loader_metadata_read(
             rc = H2_PAL_OK;
         } else if (rc == H2_PAL_OK) {
             rc = h2_loader_metadata_decode(slot, data, len, out_metadata);
-            if (rc == H2_PAL_OK) *out_present = 1;
+            if (rc == H2_PAL_OK) {
+                *out_present = 1;
+            } else {
+                memset(out_metadata, 0, sizeof(*out_metadata));
+                rc = H2_PAL_ERR_FORMAT;
+            }
         }
     }
     if (data != NULL) h2_pal_mem_free(allocator, data);
     close_rc = ns != NULL && ns->close != NULL ? ns->close(ns) : H2_PAL_OK;
-    return rc == H2_PAL_OK ? close_rc : rc;
+    if (rc == H2_PAL_OK ||
+        (rc == H2_PAL_ERR_FORMAT && close_rc != H2_PAL_OK)) return close_rc;
+    return rc;
 }
 
 int h2_loader_metadata_write(

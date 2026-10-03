@@ -274,6 +274,17 @@ static const h2_pal_disk_api_t s_coredump_disk = {
     .vtable = &s_coredump_disk_vtable,
 };
 
+int h2_bk_h2loader_get_device_uid(char *out_uid, size_t capacity) {
+    if (out_uid == NULL) return H2_PAL_ERR_INVALID_ARG;
+    if (capacity != 0u) out_uid[0] = '\0';
+    if (capacity < 13u) return H2_PAL_ERR_INVALID_ARG;
+    uint8_t mac[6];
+    if (bk_get_mac(mac, MAC_TYPE_BLUETOOTH) != BK_OK) return H2_PAL_ERR_IO;
+    (void)snprintf(out_uid, capacity, "%02x%02x%02x%02x%02x%02x",
+        mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    return H2_PAL_OK;
+}
+
 int h2_bk_h2loader_init_app_client(
     h2_runtime_t *runtime,
     const char *active_name,
@@ -290,21 +301,13 @@ int h2_bk_h2loader_init_app_client(
         return rc;
     }
     h2_pal_firmware_info_t firmware_info;
-    uint8_t ble_mac[6];
     rc = h2_pal_firmware_info_get_current(
         runtime->firmware_info, &firmware_info);
     if (rc != H2_PAL_OK) {
         return rc;
     }
-    rc = bk_get_mac(ble_mac, MAC_TYPE_BLUETOOTH);
-    if (rc != BK_OK) {
-        return H2_PAL_ERR_IO;
-    }
-    (void)snprintf(
-        s_ble.device_uid,
-        sizeof(s_ble.device_uid),
-        "%02x%02x%02x%02x%02x%02x",
-        ble_mac[0], ble_mac[1], ble_mac[2], ble_mac[3], ble_mac[4], ble_mac[5]);
+    rc = h2_bk_h2loader_get_device_uid(s_ble.device_uid, sizeof(s_ble.device_uid));
+    if (rc != H2_PAL_OK) return rc;
     (void)snprintf(
         s_ble.active_version,
         sizeof(s_ble.active_version),
