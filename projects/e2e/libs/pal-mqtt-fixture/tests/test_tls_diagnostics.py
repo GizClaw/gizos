@@ -51,6 +51,11 @@ class TLSDiagnosticsTest(unittest.TestCase):
                                 for message in row['messages']))
             self.assertTrue(any(message['direction'] == 'write' and message['message_type'] == 11
                                 for message in row['messages']))
+            headers = [message for message in row['messages'] if message['content_type'] == 256]
+            self.assertTrue(headers)
+            self.assertTrue(all(message['data_length'] == 5 and message['record_length'] >= 0
+                                for message in headers))
+            self.assertEqual(fixture.tls.diagnostic_snapshot()['failures'], [])
 
 
 if __name__ == '__main__':

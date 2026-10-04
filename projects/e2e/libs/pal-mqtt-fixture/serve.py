@@ -60,7 +60,9 @@ def main():
                         witness.update(verified=True,observed_at_utc=datetime.now(timezone.utc).isoformat())
                         completed[session]=witness
                 data=dict(inputs=inputs,runs={**progress,**completed},arrivals=arrivals,
-                    tls_handshakes=fixture.tls.handshake_snapshot())
+                    tls_handshakes=fixture.tls.handshake_snapshot(),
+                    tcp_diagnostics=fixture.tcp.diagnostic_snapshot(),
+                    tls_diagnostics=fixture.tls.diagnostic_snapshot())
                 temporary=args.receipt.with_suffix('.tmp');temporary.write_text(json.dumps(data,indent=2)+'\n');temporary.replace(args.receipt)
                 time.sleep(1)
         except KeyboardInterrupt:

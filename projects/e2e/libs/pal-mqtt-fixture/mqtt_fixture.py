@@ -232,13 +232,18 @@ class Broker:
         self.thread.start()
 
     def tls_message(self, connection, direction, version, content_type, message_type, data):
-        del data
         event = getattr(connection, 'h2_event', None)
         if event is not None:
             with self.lock:
-                event['messages'].append(dict(direction=direction, version=int(version),
+                message = dict(direction=direction, version=int(version),
                     content_type=int(content_type), message_type=int(message_type),
-                    elapsed_ms=int((time.monotonic() - event['_started_monotonic']) * 1000)))
+                    elapsed_ms=int((time.monotonic() - event['_started_monotonic']) * 1000),
+                    data_length=len(data))
+                if int(content_type) == 256 and len(data) == 5:
+                    message['record_length'] = int.from_bytes(data[3:5], 'big')
+                if int(content_type) == 21 and len(data) == 2:
+                    message.update(alert_level=data[0], alert_description=data[1])
+                event['messages'].append(message)
                 if direction == 'read' and int(content_type) == 22 and int(message_type) == 1:
                     event['client_hello'] = True
                 if direction == 'write' and int(content_type) == 22 and int(message_type) == 11:
@@ -248,6 +253,12 @@ class Broker:
         with self.lock:
             return [{key:copy.deepcopy(value) for key,value in event.items() if not key.startswith('_')}
                     for event in self.handshakes]
+
+    def diagnostic_snapshot(self):
+        with self.lock:
+            return dict(failures=self.failures.copy(), active_clients=len(self.peers),
+                        client_ids=sorted(peer.client_id for peer in self.peers),
+                        arrivals=copy.deepcopy(self.arrivals))
 
     def record(self, client_id, operation):
         with self.lock:
