@@ -4481,8 +4481,9 @@ static h2_pal_result_t display_submit_retained(h2_lua_job_t *job, int bounds,
   display_presented_t *frame = job->display_presented;
   int width = job->display_info.width, height = job->display_info.height;
   if (!job->dirty_valid) return H2_PAL_OK;
-  h2_lua_display_plan_rect_t dirty = {job->dirty_min_x, job->dirty_min_y,
-      job->dirty_max_x + 1, job->dirty_max_y + 1};
+  h2_lua_display_plan_rect_t dirty = {(uint16_t)job->dirty_min_x,
+      (uint16_t)job->dirty_min_y, (uint16_t)(job->dirty_max_x + 1),
+      (uint16_t)(job->dirty_max_y + 1)};
   uint8_t *changed = (uint8_t *)(frame->pixels + frame->pixel_count);
   if (!h2_lua_display_plan_select(&frame->plan, job->framebuffer, frame->pixels,
                                   width, height, dirty, gap, changed, bounds, tiles_only)) {
@@ -4720,10 +4721,11 @@ static h2_pal_result_t display_submission_prepare(lua_State *state,
   if (!job->display_presented_valid) {
     worker->plan.count = 1;
     worker->plan.rects[0] = (h2_lua_display_plan_rect_t){0, 0,
-        job->display_info.width, job->display_info.height};
+        (uint16_t)job->display_info.width, (uint16_t)job->display_info.height};
   } else if (job->dirty_valid) {
-    h2_lua_display_plan_rect_t dirty = {job->dirty_min_x, job->dirty_min_y,
-        job->dirty_max_x + 1, job->dirty_max_y + 1};
+    h2_lua_display_plan_rect_t dirty = {(uint16_t)job->dirty_min_x,
+        (uint16_t)job->dirty_min_y, (uint16_t)(job->dirty_max_x + 1),
+        (uint16_t)(job->dirty_max_y + 1)};
     if (retained) {
       worker->tiled = !h2_lua_display_plan_select(&worker->plan, job->framebuffer,
           frame->pixels, job->display_info.width, job->display_info.height,

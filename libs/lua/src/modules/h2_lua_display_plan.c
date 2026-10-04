@@ -104,8 +104,10 @@ int h2_lua_display_plan_build(h2_lua_display_plan_t *plan,
       if (x == dirty.right) break;
       int left = x++;
       while (x < dirty.right && a[x] != b[x]) ++x;
+      /* The caller's clipped display bounds keep every endpoint in 0..4096. */
       if (++spans > 4096 || !append_span(plan,
-          (h2_lua_display_plan_rect_t){left, y, x, y + 1})) {
+          (h2_lua_display_plan_rect_t){(uint16_t)left, (uint16_t)y,
+              (uint16_t)x, (uint16_t)(y + 1)})) {
         plan->count = 0;
         return 0;
       }
@@ -152,9 +154,9 @@ int h2_lua_display_plan_guard(h2_lua_display_plan_t *plan) {
 
 static h2_lua_display_plan_rect_t tile_rect(int left, int top, int right,
                                             int bottom, int width, int height) {
-  return (h2_lua_display_plan_rect_t){left * 16, top * 16,
-      right * 16 < width ? right * 16 : width,
-      bottom * 16 < height ? bottom * 16 : height};
+  return (h2_lua_display_plan_rect_t){(uint16_t)(left * 16), (uint16_t)(top * 16),
+      (uint16_t)(right * 16 < width ? right * 16 : width),
+      (uint16_t)(bottom * 16 < height ? bottom * 16 : height)};
 }
 
 static void reset_tiles(uint8_t *tiles, int width, int height) {

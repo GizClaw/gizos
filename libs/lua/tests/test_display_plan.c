@@ -1,5 +1,9 @@
 #include "../src/modules/h2_lua_display_plan.h"
 
+/* Keep both checks and calls inside assert active in optimized CI builds. */
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -64,9 +68,9 @@ static int old_plan(int width, int height, rect_t dirty, int gap) {
       for (int y = ty; y < end_y; ++y)
         memset(changed+y*columns+tx, 0, (size_t)(end_x-tx));
       assert(count < MAX_RECTS);
-      legacy[count++] = (rect_t){tx*16, ty*16,
-          end_x*16 < width ? end_x*16 : width,
-          end_y*16 < height ? end_y*16 : height};
+      legacy[count++] = (rect_t){(uint16_t)(tx*16), (uint16_t)(ty*16),
+          (uint16_t)(end_x*16 < width ? end_x*16 : width),
+          (uint16_t)(end_y*16 < height ? end_y*16 : height)};
     }
   }
   return count;
@@ -257,7 +261,8 @@ int main(int argc, char **argv) {
         for (int col = x; col < r; ++col)
           if (random_u32()%7 == 0) current[row*w+col] ^= (uint16_t)random_u32();
       metrics_t m = {0};
-      measure(&m, w, h, (rect_t){x,y,r,b}, frame%9);
+      measure(&m, w, h,
+          (rect_t){(uint16_t)x, (uint16_t)y, (uint16_t)r, (uint16_t)b}, frame%9);
       memcpy(previous, current, sizeof(previous));
     }
   }
@@ -281,14 +286,14 @@ int main(int argc, char **argv) {
     memset(current, 0, sizeof(current));
     current[4095] = 0xffff;
     assert(h2_lua_display_plan_build(&plan, current, previous, w,
-                                    (rect_t){0,0,w,h}, 0));
+                                    (rect_t){0,0,(uint16_t)w,(uint16_t)h}, 0));
     assert(plan.count == 1 && plan.rects[0].right == w && plan.rects[0].bottom == h);
     assert(plan.rects[0].left == w-1 && plan.rects[0].top == h-1);
     h2_lua_display_plan_select(&plan, current, previous, w, h,
-                              (rect_t){0,0,w,h}, 0, tiles, 0, 0);
+                              (rect_t){0,0,(uint16_t)w,(uint16_t)h}, 0, tiles, 0, 0);
     assert(plan.count == 1 && plan.rects[0].left == w-1 && plan.rects[0].top == h-1);
     assert(h2_lua_display_plan_select(&plan, current, previous, w, h,
-                                      (rect_t){0,0,w,h}, 0, tiles, 0, 1));
+                                      (rect_t){0,0,(uint16_t)w,(uint16_t)h}, 0, tiles, 0, 1));
     assert(plan.count == 1 && plan.rects[0].right == w && plan.rects[0].bottom == h);
     assert(plan.rects[0].left == (vertical ? 0 : 4080) &&
            plan.rects[0].top == (vertical ? 4080 : 0));
