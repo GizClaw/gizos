@@ -345,7 +345,14 @@ static void run_case(const h2_pal_mqtt_e2e_config_t *config, h2_pal_mqtt_e2e_cas
             rc = wait_for(config, client, &state.received, 1u, config->timeout_ms);
             CHECK(rc == H2_PAL_OK && state.retain == 1);
             message.payload = (h2_pal_mqtt_bytes_t){NULL, 0u};
+            state.payload_len = 0u;
             rc = h2_pal_mqtt_publish(api, client, &message, NULL); CHECK(rc == H2_PAL_OK);
+            /* We are still subscribed: the broker forwards the clearing
+             * publish as an actual empty, non-retained message. Consume it
+             * before close; lwIP resets sockets with unread inbound data. */
+            rc = wait_for(config, client, &state.received, 2u, config->timeout_ms);
+            CHECK(rc == H2_PAL_OK && state.received == 2u && state.retain == 0 &&
+                state.qos == H2_PAL_MQTT_QOS0 && !state.invalid);
             break;
         case H2_PAL_MQTT_E2E_REPEATED_LIFECYCLE:
             for (unsigned i = 0u; i < 20u; ++i) {
