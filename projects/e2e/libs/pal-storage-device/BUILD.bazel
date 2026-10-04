@@ -36,3 +36,25 @@ py_test(
     main = "tests/test_verify_device.py",
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
 )
+
+py_test(
+    name = "bk_console_lifecycle_test",
+    srcs = ["tests/test_bk_console_lifecycle.py"],
+    data = [
+        "//projects/e2e/targets/h2loader_tar_zlib/pal-storage/bk7258_v3_202405:ap/ap_main.c",
+        "//libs/h2loader_host:src/h2_h2loader_host_serial.c",
+        "//libs/h2loader_host:include/h2_h2loader_host.h",
+        "//libs/h2loader_host:include/h2_h2loader_host_catalog.h",
+        "//libs/iostreamikcp:src/h2_iostreamikcp_frame.c",
+        "//libs/iostreamikcp:include/h2_iostreamikcp.h",
+        "//libs/iostreamikcp:include/h2_iostreamikcp_types.h",
+        "//libs/pal:pal_header_files",
+    ],
+    legacy_create_init = False,
+    main = "tests/test_bk_console_lifecycle.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
