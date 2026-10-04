@@ -29,6 +29,7 @@ armino_component_register(
     h2_firmware_lib
     h2loader_bk
     h2_pal_core
+    psa_mbedtls
     driver
     media_service
     multimedia
