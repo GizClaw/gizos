@@ -6,7 +6,7 @@
 #include "device_runner.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "mbedtls/sha256.h"
+#include "psa/crypto.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -36,7 +36,10 @@ static int snapshot(size_t out[10]) {
 }
 static int ca_digest(void *user, const uint8_t *bytes, size_t length, uint8_t digest[32]) {
     (void)user;
-    return mbedtls_sha256(bytes, length, digest, 0) == 0 ? H2_PAL_OK : H2_PAL_ERR_IO;
+    size_t written = 0u;
+    if (psa_crypto_init() != PSA_SUCCESS) return H2_PAL_ERR_IO;
+    return psa_hash_compute(PSA_ALG_SHA_256, bytes, length, digest, 32u, &written) == PSA_SUCCESS &&
+        written == 32u ? H2_PAL_OK : H2_PAL_ERR_IO;
 }
 static void run(void *user) {
     (void)user;
