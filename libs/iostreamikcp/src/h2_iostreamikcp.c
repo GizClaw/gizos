@@ -16,7 +16,6 @@ struct h2_iostreamikcp {
     size_t frame_buffer_size;
     h2_iostreamikcp_stats_t stats;
     h2_pal_result_t last_output_error;
-    int input_filter_detached;
 };
 
 static void *stream_alloc(const h2_pal_mem_api_t *allocator, size_t len) {
@@ -329,16 +328,6 @@ void h2_iostreamikcp_close(h2_iostreamikcp_t *stream) {
     stream_free(allocator, stream);
 }
 
-h2_pal_result_t h2_iostreamikcp_detach_input_filter(
-    h2_iostreamikcp_t *stream, h2_iostreamikcp_filter_t *out_filter) {
-    if (stream == NULL || out_filter == NULL) return H2_PAL_ERR_INVALID_ARG;
-    if (stream->input_filter_detached) return H2_PAL_ERR_INVALID_STATE;
-    *out_filter = stream->filter;
-    h2_iostreamikcp_filter_init(&stream->filter);
-    stream->input_filter_detached = 1;
-    return H2_PAL_OK;
-}
-
 h2_pal_result_t h2_iostreamikcp_input(
     h2_iostreamikcp_t *stream,
     const uint8_t *data,
@@ -346,7 +335,6 @@ h2_pal_result_t h2_iostreamikcp_input(
     if (stream == NULL || (len > 0u && data == NULL)) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    if (stream->input_filter_detached) return H2_PAL_ERR_INVALID_STATE;
     h2_pal_result_t rc = h2_iostreamikcp_filter_input_with_log(
         &stream->filter, data, len, stream_on_frame, stream,
         stream->config.on_log, stream->config.log_user);
@@ -361,7 +349,6 @@ h2_pal_result_t h2_iostreamikcp_poll(
     if (stream == NULL || stream->config.io.read == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    if (stream->input_filter_detached) return H2_PAL_ERR_INVALID_STATE;
     uint8_t buffer[256];
     size_t out_read = 0u;
     h2_pal_result_t rc = stream->config.io.read(

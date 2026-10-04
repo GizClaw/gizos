@@ -144,7 +144,3 @@ bazel test //libs/iostreamikcp:all
 ```
 
 `tests/` 需要覆盖日志前缀和日志夹杂、同步 log sink 的 borrowed lifetime、callback 错误/取消与精确 byte accounting、跨 read 的不完整 frame、伪 magic、重同步及失效 candidate 的 byte 到达 log sink、连续 frame、CRC 错误后的重同步、conversation ID 过滤、双端 round trip、RX backpressure、底层 write/flush timeout，以及 poll 的 timeout 和 would-block 语义。
-
-## 输入 decoder 移交
-
-`h2_iostreamikcp_detach_input_filter(stream, out_filter)` 在 input/poll callback 外把完整 physical decoder（包含跨 read 的 frame 前缀）移交给 caller。NULL 返回 INVALID_ARG，重复移交返回 INVALID_STATE；成功后原 stream 的 input/poll 返回 INVALID_STATE，避免两个消费者继续解析同一 UART。Caller 使用 `filter_input_with_log` 驱动物理输入，可继续通过 `input_frame`、read/update 消费原 KCP epoch，直到显式 close。移交和 close 都不关闭物理 I/O。收到设备 reset 的上层 caller 必须停止向旧 epoch 输入或更新并销毁其 KCP；未重新握手的后续 DATA frame 不能被当作新 session 数据或 ACK。H2Loader 连续观察用此机制保留物理 decoder，同时按 READY 退役旧会话。

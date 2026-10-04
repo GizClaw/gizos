@@ -44,8 +44,8 @@ cc_library(
 )
 
 cc_test(
-    name = "scan_control_lines_test",
-    srcs = ["tests/test_scan_control_lines.c"],
+    name = "cli_control_lines_test",
+    srcs = ["tests/test_cli_control_lines.c"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     target_compatible_with = select({

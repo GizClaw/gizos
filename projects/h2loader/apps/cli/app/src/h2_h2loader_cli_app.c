@@ -237,8 +237,7 @@ static const char help_text[] =
     "commands: package golden check scan status stats memory send send-url\n"
     "          stage wifi reboot monitor coredump bleikcp-speed\n\n"
     "stats:    stats [--data-checksum] (wait for installed-data checksum)\n"
-    "reboot:   reboot app|loader|upgrade [--monitor [--continuous-monitor]]\n"
-    "          --continuous-monitor: UART observation; verify final metadata separately\n"
+    "reboot:   reboot app|loader|upgrade [--monitor]\n"
     "wifi:     wifi scan [--limit <1-16>] [--timeout-ms <1-30000>]\n"
     "          wifi connect <ssid> <password>\n"
     "          wifi disconnect\n"
@@ -399,25 +398,20 @@ static h2_pal_result_t scan_probe_serial(
     uint32_t timeout_ms,
     h2_h2loader_host_status_t *out_status) {
     h2_h2loader_cli_context_t *context = user;
-    const h2_h2loader_host_serial_connection_config_t config = {
-        .serial = context->config->serial,
-        .time = context->runtime->time,
-        .allocator = context->runtime->mem,
-        .port_id = candidate->port_id,
-        .handshake_timeout_ms = timeout_ms,
-        .command_timeout_ms = timeout_ms,
-        /* Identity probing never owns device reset/boot control. */
-        .preserve_control_lines = 1,
+    h2_h2loader_cli_options_t options = {
+        .port = candidate->port_id,
+        .wait_timeout_ms = timeout_ms,
+        .read_timeout_ms = timeout_ms,
+        .transport = H2_H2LOADER_HOST_TRANSPORT_SERIAL,
     };
-    h2_h2loader_host_serial_connection_t *connection = NULL;
+    h2_h2loader_cli_transport_t transport;
     h2_pal_result_t rc;
     h2_pal_result_t disconnect_rc;
 
-    rc = h2_h2loader_host_serial_connect(&config, &connection);
-    if (rc == H2_PAL_OK) {
-        rc = h2_h2loader_host_serial_read_status(connection, out_status);
-    }
-    disconnect_rc = h2_h2loader_host_serial_disconnect(&connection);
+    h2_h2loader_cli_transport_init(
+        &transport, context, &options, timeout_ms);
+    rc = h2_h2loader_cli_transport_connect(&transport, out_status);
+    disconnect_rc = h2_h2loader_cli_transport_disconnect(&transport);
     return rc == H2_PAL_OK ? disconnect_rc : rc;
 }
 
@@ -859,7 +853,7 @@ static int device_command(
     const h2_h2loader_cli_options_t *options,
     int argc,
     const char *const *argv,
-    int monitor_after, int continuous_after) {
+    int monitor_after) {
     h2_h2loader_cli_transport_t transport;
     h2_h2loader_host_status_t status = {0};
     h2_h2loader_host_command_request_t request;
@@ -949,17 +943,12 @@ static int device_command(
     if (rc == H2_PAL_OK &&
         result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK &&
         monitor_after) {
-        if (continuous_after) {
-            rc = h2_h2loader_host_serial_monitor_continuous(transport.serial_connection,
-                context->config->is_cancelled, context->config->cancel_user);
-        } else {
-            h2_h2loader_host_status_t final_status = {0};
-            (void)h2_h2loader_cli_transport_disconnect(&transport);
-            rc = reconnect_and_verify_reboot(
-                context, &transport, kind, &status, &final_status);
-            if (rc == H2_PAL_OK) {
-                rc = monitor_transport(context, &transport, 1, kind, &status);
-            }
+        h2_h2loader_host_status_t final_status = {0};
+        (void)h2_h2loader_cli_transport_disconnect(&transport);
+        rc = reconnect_and_verify_reboot(
+            context, &transport, kind, &status, &final_status);
+        if (rc == H2_PAL_OK) {
+            rc = monitor_transport(context, &transport, 1, kind, &status);
         }
         if (rc == H2_PAL_EXIT) rc = H2_PAL_OK;
     } else if (rc == H2_PAL_OK &&
@@ -1233,14 +1222,6 @@ int h2_h2loader_cli_main(h2_runtime_t *runtime, const h2_h2loader_cli_config_t *
         const char *parts[H2_H2LOADER_CLI_DEVICE_ARGV_CAPACITY] = {command};
         int count = 1;
         int monitor_after = 0;
-        int continuous_after = 0;
-        if (strcmp(command, "reboot") == 0 && argc > 0 &&
-            strcmp(argv[argc - 1], "--continuous-monitor") == 0) {
-            continuous_after = 1;
-            --argc;
-            if (argc < 1 || strcmp(argv[argc - 1], "--monitor") != 0)
-                return H2_H2LOADER_CLI_EXIT_USAGE;
-        }
         if (strcmp(command, "reboot") == 0 && argc > 0 &&
             strcmp(argv[argc - 1], "--monitor") == 0) {
             monitor_after = 1;
@@ -1251,6 +1232,6 @@ int h2_h2loader_cli_main(h2_runtime_t *runtime, const h2_h2loader_cli_config_t *
             parts[count] = argv[count - 1];
             ++count;
         }
-        return device_command(&context, &options, count, parts, monitor_after, continuous_after);
+        return device_command(&context, &options, count, parts, monitor_after);
     }
 }

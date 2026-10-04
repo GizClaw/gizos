@@ -217,13 +217,6 @@ static void test_help_and_usage(void) {
     assert(strstr(output.bytes,
         "--monitor requires iostreamikcp log transport") != NULL);
 
-    const char *continuous_missing_monitor[]={"h2loader","--port","p","reboot","app","--continuous-monitor"};
-    memset(&output,0,sizeof(output));
-    assert(run_cli(&output,6,continuous_missing_monitor)==H2_H2LOADER_CLI_EXIT_USAGE);
-    const char *continuous_ble[]={"h2loader","--transport","bleikcp","--port","1:001122334455","reboot","app","--monitor","--continuous-monitor"};
-    memset(&output,0,sizeof(output));
-    assert(run_cli(&output,9,continuous_ble)==H2_H2LOADER_CLI_EXIT_RUNTIME);
-    assert(strstr(output.bytes,"--monitor requires iostreamikcp log transport")!=NULL);
     memset(&output, 0, sizeof(output));
     assert(run_cli(&output, 4, raw) == H2_H2LOADER_CLI_EXIT_USAGE);
     assert(strstr(output.bytes, "usage: h2loader") != NULL);

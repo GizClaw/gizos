@@ -11,8 +11,6 @@ struct h2_h2loader_host_serial_connection {
     size_t ready_prefix_len;
     int ready_line_rejected;
     int ready_banner_pending;
-    int continuous_monitor;
-    int retired_conversation;
 };
 
 /* SERIAL_LOG */

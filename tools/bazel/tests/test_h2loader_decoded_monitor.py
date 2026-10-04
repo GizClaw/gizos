@@ -14,7 +14,7 @@ class DecodedMonitor(unittest.TestCase):
         end = serial.index('static h2_pal_result_t serial_wait_ready_marker(', start)
         callback = serial[start:end]
         start = serial.index('/* Console output during a monitor session')
-        end = serial.index('static h2_pal_result_t serial_observe_frame(', start)
+        end = serial.index('h2_pal_result_t h2_h2loader_host_serial_disconnect(', start)
         monitor = serial[start:end]
         start = serial.index('static h2_pal_result_t serial_now(')
         end = serial.index('static uint32_t serial_stream_now_ms(', start)
