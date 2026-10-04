@@ -38,7 +38,7 @@ bazel test --config=macos_arm64 --nocache_test_results //projects/e2e/targets/cc
 
 ## 平台和退役边界
 
-当前独立 artifact entry 支持 macOS/Linux、iOS Simulator、Android Emulator、BK7258 与 DevKit ESP32-S3。macOS、指定 iOS Simulator、Android Emulator 和定向 DevKit 实板已有完整 36/36 运行与清理证据；DevKit 取得两次不同 nonce 的完整启动资格并恢复原 App、非空 Stage 和设置。Linux 尚未实跑，BK 的实际结果由台架 owner 独立补录。Browser 目前没有 raw TCP/TLS MQTT provider，不能算 mandatory MQTT PASS；没有将 host 或 simulator 结果改称六平台/实体手机通过。IPv6 由独立延期任务负责。
+当前独立 artifact entry 支持 macOS/Linux、iOS Simulator、Android Emulator、BK7258 与 DevKit ESP32-S3。macOS、指定 iOS Simulator、Android Emulator 和定向 DevKit 实板已有完整 36/36 运行与清理证据；DevKit 取得两次不同 nonce 的完整启动资格并恢复原 App、非空 Stage 和设置。Linux 尚未实跑；BK 已实际执行，最新为 34/36 FAIL，尚未 qualified。Browser 目前没有 raw TCP/TLS MQTT provider，不能算 mandatory MQTT PASS；没有将 host 或 simulator 结果改称六平台/实体手机通过。IPv6 由独立延期任务负责。
 
 旧 PAL App、loopback 和 public smoke 入口保留，直到对应平台、执行 scope 和 CI 迁移有完整证据。新 suite 通过不意味着旧 PAL 全部可以退役，也不把历史 MQTT receipt 改绑到新 App。
 
@@ -57,6 +57,8 @@ bazel test --config=macos_arm64 --nocache_test_results //projects/e2e/targets/cc
 BK 入口为 `//projects/e2e/targets/h2loader_tar_zlib/pal-mqtt/bk7258_v3_202405:package`，使用真实 board Runtime 的 coreMQTT provider，其 incoming/outgoing capacity 是 8/8、allocator 是 `h2_bk_platform_default_allocator()`。Standalone runner 使用 64 KiB PSRAM task，保留 UART/Wi-Fi command service；不改变 board 或生产 MQTT provider。Launcher 从编译配置注入精确 IPv4 host/ports、session prefix、CA/wrong CA 与 epoch，每次执行另取真实 Crypto nonce，实际计算 CA SHA256并校准 wall time，36-case 完成和 native resource before/after 平衡后才确认 App。
 
 LAN fixture 默认保留 2 秒服务端 TLS 握手预算，可通过 `serve --tls-handshake-timeout` 显式设置硬件诊断预算。Inputs receipt 记录实际预算，实时 receipt 对未合格执行也保留每次握手的 peer、ClientHello/Certificate、TLS 消息、实际耗时和错误；不会把超时或缺少证书交换的连接当成证书拒绝证据。每次改变 fixture 输入都应建立独立 CA/session/epoch/端口与新包，不重写旧执行记录。
+
+2026-10-04 的 BK 实跑记录见 [failed.json](../../targets/h2loader_tar_zlib/pal-mqtt/bk7258_v3_202405/evidence/failed.json)。`mqtt-bk-decc30e1-r5` 保留全部 36 case，可信 TLS 握手与消息往返、错误 CA/hostname 均通过；普通 TCP 的 `connect-events` 与 `remote-disconnect` 在连接阶段返回 IO，最终 34 PASS、2 FAIL。Native counters 从 25/51916 降到 24/51460，属于未满足资源基线平衡，不能直接解释为泄漏。该轮只把 `pal-mqtt` ledger 交给 native SDK console，portable runner 仍通过 PAL Log，生产 Log/Net/MQTT 默认实现未变。此前 r2/r3 的可信 TLS IO、r4 的 36 PASS 重放但初始 BOOT 缺失均保留独立身份；一次 broker 成功或已有重放不能代替完整验收，失败根因尚未确认。
 
 `//projects/e2e/libs/pal-mqtt-fixture:serve` 必须显式给出 `--bind`、`--advertised`、`--bazelrc` 和 `--receipt`，只监听指定 IPv4 interface 上的独占 ephemeral TCP/TLS ports。服务生成 test-only CA 与 build defines，不包含 Wi-Fi secret；真实设备使用已有 saved STA 配置。服务按本轮 nonce 区分 wire arrival、ACK、两次证书拒绝与零 live client/retained message，完整 witness 第一次成立时冻结该 run，后续 boot 不能改写旧 receipt。此服务不安装、重启、扫描或读取串口。
 
@@ -80,7 +82,7 @@ LAN fixture 默认保留 2 秒服务端 TLS 握手预算，可通过 `serve --tl
 | iOS Simulator | `5fede8800707089d0377f7e74a9927c7fa704bba`; explicit per-file mobile input equivalence to `afc4b236` | 36/36; SDK symbol/header, actual IPA/XCFramework and owner cleanup | `targets/ios_application/pal-mqtt/evidence` |
 | Android Emulator | fixed `afc4b2367a3a10210c32f9d75bfc04eae766061b` | 36/36; exported factory, actual APK/AAR byte identity and owner cleanup | `targets/android_binary/pal-mqtt/evidence` |
 | DevKit ESP32-S3 | fixed artifact source `955dcfce`; fixture `ad04417f`; host oracle `b569cf92` | 36/36 on two fresh boots, exact peer/native/provider cleanup; original App/Stage/settings restored | `targets/h2loader_tar_zlib/pal-mqtt/devkit/evidence` |
-| BK7258 | standalone P2 package/build and explicitly bound LAN fixture | physical execution pending; build cannot grant board PASS | root-owned directed UART/install/status/dump and `device_test` |
+| BK7258 | standalone P2 package and explicitly bound LAN fixture | actual latest 34/36 FAIL; TCP connection and resource-balance gates unmet | root-owned directed UART/install/status/dump and `device_test` |
 
 Each mobile evidence directory preserves the original successful `qualified.json`/`environment.json` plus `executed-source-inputs.json`; fixture JSON/CA/wrong CA/registry and actual artifact/SDK hashes remain the observed values. The first iOS observation without a fixture-input manifest and Android's initial TCP timeout with no CONNECT witness remain separate ignored validation journals and are not relabeled as these qualified runs. Later BK-only adapters or documentation commits do not rewrite the actual mobile execution identity.
 
