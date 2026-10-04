@@ -35,6 +35,7 @@ Platform artifact entry 持有 Runtime assembly、具体 provider、endpoint 与
 | PAL Core | `//projects/e2e/apps/pal-core/app:pal_core_e2e` | 独立 Core v2：46 个接口、41 个必过用例；macOS、Browser/WASM、DevKit ESP32-S3 USB 串口、BK7258 AP UART1 H2Loader |
 | PAL JSON | `//projects/e2e/apps/pal-json/app:pal_json_e2e` | 独立 JSON：24 个接口、15 个必过用例；macOS、Browser/WASM、iOS/Android 实际 SDK 包、DevKit 与 BK7258，记录完整运行与清理证据 |
 | PAL HTTP | `//projects/e2e/apps/pal-http/app:pal_http_e2e` | 独立 HTTP：45 个必跑 case；macOS、Browser、iOS/Android 实际 SDK 包消费 App 与 DevKit/BK7258 专用入口，逐平台保留真实运行证据 |
+| PAL Storage | `//projects/e2e/apps/pal-storage/app:pal_storage_e2e` | 独立 FS/Pref 契约 2：28 个操作、36 个必跑 case；三个独立启动阶段及完成后再次启动检查，逐平台保留实际资格记录 |
 | PAL MQTT | `//projects/e2e/apps/pal-mqtt/app:pal_mqtt_e2e` | 独立 MQTT：8 个操作、36 个必跑 case；真实 TCP/TLS broker、事件/ACK 与资源清理，按各平台实际执行记录验收 |
 | PAL WebRTC | `//projects/e2e/apps/pal-webrtc/app:pal_webrtc_e2e` | 独立 WebRTC：13 个操作、43 个 mandatory case；六端独立入口及真实 Pion 对端，按各端完整 ledger 授予资格 |
 | PAL Audio Decoder | `//projects/e2e/apps/pal-audio-decoder/app:pal_audio_decoder_e2e` | 独立 AAC-LC RAW 解码：8 个操作、29 个必过 case；六端入口已实现，实际资格以各端完整 PCM、生命周期与清理记录为准 |
@@ -226,11 +227,13 @@ Portable/desktop tests 证明 case contract、provider assembly、parser、failu
 
 ## PAL Storage
 
-`projects/e2e/apps/pal-storage` 是独立 portable App，覆盖 FileSystem 的 11 个 vtable 操作，以及 Preferences API 的 open 和 namespace 的 16 个方法，共 28 项。稳定 registry 包含 30 个必选 case；28 个操作的完整映射由独立 public-header inventory 测试校验。Disk 的分区擦写属于后续独立资格领域，不计入本 App。
+`projects/e2e/apps/pal-storage` 是独立 portable App，覆盖 FileSystem 的 11 个 vtable 操作，以及 Preferences API 的 open 和 namespace 的 16 个方法，共 28 项。契约 2 的稳定 registry 包含 36 个必选 case；28 个操作的完整映射由独立 public-header inventory 测试校验。Preferences 包含 16 KiB Blob、长度/整数/字符串边界、100 次 commit/close/reopen，以及 1000 次同键覆盖写后的精确键数和持久最终值。Disk 的分区擦写属于后续独立资格领域，不计入本 App。
 
-Storage 必须分两次独立进程或 boot 执行：seed 阶段执行 27 项并提交确定的数据，verify 阶段执行 3 项，读回与 nonce 绑定的文件及全部 Preferences 类型并清理专用数据。宿主只在两阶段 case 清单、nonce、版本、返回值和 cleanup 全部匹配时授予资格。Desktop/macOS 使用真实 OS FS 和 SQLite，Web 使用 IDBFS/localStorage 并重新启动整个浏览器，移动端测试 App 使用 SDK 包内的原生 storage owner，在两次独立 App 进程间保留 sandbox。DevKit 使用板载 Flash LittleFS，BK7258 使用 SD FATFS 和 FlashDB；板级测试数据限定在 `/data/pal-storage` 和 `h2storea`/`h2storeb`，`h2storectl` 只保存本测试版本绑定的阶段元数据。
+Storage 必须分三个独立进程或 boot 执行：seed 阶段执行 31 项并提交与 nonce 绑定的数据，verify 阶段执行 3 项，读回文件、16 KiB Blob、全部 Preferences 类型和覆盖写结果，再对 namespace A 逐键 remove+commit、namespace B clear+commit 并删除专用文件路径；clean-verify 阶段执行 2 项，使用全新 provider 确认测试键和文件路径均已持久删除。宿主最后再次启动检查完成状态仍为空；该重复结果单列，不增加唯一 case 通过数。只有全部阶段 case 清单、nonce、contract、版本、返回值和 cleanup 匹配才授予资格。Desktop/macOS 使用真实 OS FS 和 SQLite，Web 使用 IDBFS/localStorage 并重新启动整个浏览器，移动端使用实际 SDK 包中的原生 storage owner，并在四次独立 App 进程间保留 sandbox、核对 provider 导出与 SDK 字节。DevKit 使用板载 Flash LittleFS，BK7258 使用 SD FATFS 和 FlashDB；板级测试数据限定在 `/data/pal-storage` 和 `h2storea`/`h2storeb`，`h2storectl` 保存实际镜像版本、契约版本、nonce 和下一阶段。
 
-命令与平台证据见 `projects/e2e/apps/pal-storage/README.md`；iOS/Android 模拟器入口分别为 `make bazel-test-ios_pal_storage_simulator_test` 和 `make bazel-test-android_pal_storage_simulator_test`。外部设备与已启动模拟器的测试是 `manual`，其结果不能由旧缓存代替。正常重启验证不表示断电原子性或物理介质寿命已验证。
+命令与平台证据见 `projects/e2e/apps/pal-storage/README.md` 和 `qualification-v2.json`。iOS/Android 模拟器直接使用 `//projects/e2e/targets/ios_application/pal-storage:ios_pal_storage_simulator_test` 和 `//projects/e2e/targets/android_binary/pal-storage:android_pal_storage_simulator_test`，显式指定测试设备。外部设备与已启动模拟器的测试是 `manual`，每轮执行关闭测试结果缓存，构建缓存保持启用。历史契约 1 的 30-case 证据保留原始身份，不能代替契约 2 的新增强度；正常重启验证不表示断电原子性或物理介质寿命已验证。
+
+BK 的物理 FlashDB 分区为 128 KiB，其中原 `h2_pref` 保留 24 KiB/4 KiB sector 和已有编码，尾部 `h2_pref_large` 使用剩余 104 KiB。大值以真实 FlashDB 的不可变分片和最后发布的 manifest 保存，读取验证完整 generation，迭代只返回逻辑键和值大小；旧 Loader 的小值和管理数据继续走原区。未知非空尾部拒绝自动格式化。固定 SDK 的 GC/恢复错误由带原文件 SHA 校验的构建 overlay 修复，SDK checkout 不变；真实 NOR 回归和私有实板备份兼容检查分别验证故障恢复和旧值不变。实现及边界见 `native_component_src/bk7258/ap/h2_pal_core/tests/README.pref-large.md`。硬件诊断等待预算不减少 16 KiB、1000 次写入或五次 boot 的要求。
 
 ## PAL MQTT
 

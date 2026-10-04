@@ -129,10 +129,12 @@ h2_bazel_native_component_select_sources(
   ap
   ${H2_BK_PLATFORM_CORE_SRCS})
 
+include("${CMAKE_CURRENT_LIST_DIR}/src/flashdb/h2_fdb_gc_overlay.cmake")
+
 armino_component_register(
   SRCS ${H2_COMPONENT_SOURCES}
     "${BK_FLASHDB_DIR}/src/fdb.c"
-    "${BK_FLASHDB_DIR}/src/fdb_kvdb.c"
+    "${H2_BK_FLASHDB_KV_SOURCE}"
     "${BK_FLASHDB_DIR}/src/fdb_utils.c"
     "${BK_FLASHDB_DIR}/port/fal/src/fal.c"
     "${BK_FLASHDB_DIR}/port/fal/src/fal_flash.c"

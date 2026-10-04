@@ -7,6 +7,8 @@ s_app,,5100k,data,TRUE,TRUE
 ota_fina_executive,0x75f000,4k,data,TRUE,TRUE
 usr_config,0x760000,124K,data,TRUE,TRUE
 h2_boot_request,0x77f000,4K,data,TRUE,TRUE
+# FAL: legacy KV 0x780000/24K; large-value tail 0x786000/104K.
+# Both keep 4K FlashDB sectors; coredump and installed P1 addresses stay fixed.
 flashdb,0x780000,128K,data,TRUE,TRUE
 coredump,0x7a0000,360K,data,TRUE,TRUE
 easyflash,0x7fa000,8K,data,TRUE,TRUE
