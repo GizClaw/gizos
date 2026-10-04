@@ -68,7 +68,7 @@ int h2_bk_pref_large_empty_headers(void) {
     if (rtos_lock_mutex(&s_flashdb_flash_mutex) != kNoErr) return -1;
     for (uint32_t sector = 0; sector < H2_BK_PREF_LARGE_SIZE && safe; sector += H2_BK_FLASHDB_ERASE_SIZE) {
         uint32_t magic = 0;
-        if (bk_flash_read_bytes(H2_BK_PREF_LARGE_OFFSET + sector + 8u, &magic, sizeof(magic)) != BK_OK) { safe = -1; break; }
+        if (bk_flash_read_bytes(H2_BK_PREF_LARGE_OFFSET + sector + 8u, (uint8_t *)&magic, sizeof(magic)) != BK_OK) { safe = -1; break; }
         if (magic == 0x30424446u) continue; /* FlashDB 1.1.2 sector header */
         for (uint32_t offset = 20u; offset < H2_BK_FLASHDB_ERASE_SIZE;) {
             uint32_t size = H2_BK_FLASHDB_ERASE_SIZE - offset;

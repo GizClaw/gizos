@@ -30,7 +30,7 @@ static void persist(void) {
 static void bounds(uint32_t address, uint32_t size) {
   assert(address >= DB_START && address <= DB_END && size <= DB_END - address);
 }
-bk_err_t bk_flash_read_bytes(uint32_t address, void *data, uint32_t size) {
+bk_err_t bk_flash_read_bytes(uint32_t address, uint8_t *data, uint32_t size) {
   bounds(address, size);
   if (read_fault_once) {
     read_fault_once = 0;
@@ -40,7 +40,7 @@ bk_err_t bk_flash_read_bytes(uint32_t address, void *data, uint32_t size) {
   memcpy(data, flash + address, size);
   return BK_OK;
 }
-bk_err_t bk_flash_write_bytes(uint32_t address, const void *data,
+bk_err_t bk_flash_write_bytes(uint32_t address, const uint8_t *data,
                               uint32_t size) {
   bounds(address, size);
   if (fault_reached)
