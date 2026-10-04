@@ -29,6 +29,10 @@ class Verifier(unittest.TestCase):
         self.assertEqual(boot_ledger(prefixed,self.ids,'v1')['boot']['id'],self.execution)
     def test_late_platform_boot(self):
         with self.assertRaises(AssertionError):boot_ledger(self.good+'H2_PAL_MQTT_PLATFORM_BOOT board=bk7258\n',self.ids,'v1')
+    def test_late_rom_or_loader_startup_invalidates_ledger(self):
+        for marker in ['ESP-ROM:esp32s3-20210327', 'rst:0xc (RTC_SW_CPU_RST),boot:0x2b (SPI_FAST_FLASH_BOOT)',
+                       'H2_LOADER_STARTUP_EVENT event=write_partition_2 code=0']:
+            with self.assertRaises(AssertionError):boot_ledger(self.good+marker+'\n',self.ids,'v1')
     def test_late_other_version(self):
         with self.assertRaises(AssertionError):boot_ledger(self.good+'H2_PAL_MQTT_BOOT id='+('d'*32+'-'+'e'*16)+' version=v2\n',self.ids,'v1')
     def test_late_new_nonce(self):

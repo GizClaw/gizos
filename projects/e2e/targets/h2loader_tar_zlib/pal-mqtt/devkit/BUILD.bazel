@@ -98,4 +98,4 @@ h2loader_tar_zlib(
     target = "esp32s3",
 )
 
-mqtt_device_test(name = "device_test", package = ":package")
+mqtt_device_test(name = "device_test", package = ":package", target = "esp32s3")
