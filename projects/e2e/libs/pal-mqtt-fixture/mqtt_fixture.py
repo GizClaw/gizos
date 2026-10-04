@@ -39,9 +39,10 @@ def span(data, offset):
 
 
 class Peer:
-    def __init__(self, broker, connection):
+    def __init__(self, broker, connection, peer_ip):
         self.broker = broker
         self.connection = connection
+        self.peer_ip = peer_ip
         self.lock = threading.Lock()
         self.filters = {}
         self.client_id = ''
@@ -107,6 +108,13 @@ class Peer:
         if offset != len(body):
             raise ValueError('extra CONNECT bytes')
         self.broker.record(self.client_id, 'connect')
+        if self.client_id.endswith('-tls-trusted'):
+            run = self.client_id[:-len('-tls-trusted')]
+            with self.broker.lock:
+                self.broker.current_run_by_peer[self.peer_ip] = run
+            event = getattr(self.connection, 'h2_event', None)
+            if event is not None:
+                event['run'] = run
         if self.client_id.endswith('-connect-timeout'):
             return
         if self.client_id.endswith(('-authenticated', '-auth-refused')):
@@ -211,6 +219,7 @@ class Broker:
         self.arrivals = {}
         self.failures = []
         self.handshakes = []
+        self.current_run_by_peer = {}
         if context:
             context._msg_callback = self.tls_message
         self.thread = threading.Thread(target=self.accept, daemon=True)
@@ -233,21 +242,22 @@ class Broker:
     def accept(self):
         while not self.stopped.is_set():
             try:
-                connection, _ = self.listener.accept()
+                connection, address = self.listener.accept()
             except socket.timeout:
                 continue
             except OSError:
                 return
-            thread = threading.Thread(target=self.handle, args=(connection,), daemon=True)
+            thread = threading.Thread(target=self.handle, args=(connection, address[0]), daemon=True)
             self.threads.append(thread)
             thread.start()
 
-    def handle(self, connection):
+    def handle(self, connection, peer_ip):
         peer = None
         try:
             connection.settimeout(0.1)
             if self.context:
-                event = dict(client_hello=False, certificate_presented=False, succeeded=False, finished=False)
+                event = dict(client_hello=False, certificate_presented=False, succeeded=False, finished=False,
+                             peer_ip=peer_ip, run=self.current_run_by_peer.get(peer_ip))
                 with self.lock:
                     self.handshakes.append(event)
                 connection = self.context.wrap_socket(connection, server_side=True, do_handshake_on_connect=False)
@@ -261,7 +271,7 @@ class Broker:
                 finally:
                     event['finished'] = True
                 connection.settimeout(0.1)
-            peer = Peer(self, connection)
+            peer = Peer(self, connection, peer_ip)
             with self.lock:
                 self.peers.add(peer)
             peer.serve()
@@ -308,7 +318,8 @@ class Fixture:
         self.tcp.close()
         self.tls.close()
 
-    def verify(self, full=True):
+    def verify(self, full=True, session=None):
+        run_session = self.session if session is None else session
         deadline = time.monotonic() + 2
         while (self.tcp.peers or self.tls.peers) and time.monotonic() < deadline:
             time.sleep(0.01)
@@ -317,7 +328,7 @@ class Fixture:
         if self.tcp.failures or self.tls.failures:
             raise RuntimeError('broker protocol failures: ' + repr(self.tcp.failures + self.tls.failures))
         if full:
-            rejected = [event for event in self.tls.handshakes if not event['succeeded']]
+            rejected = [event for event in self.tls.handshakes if not event['succeeded'] and event['run'] == run_session]
             if len(rejected) != 2 or any(not event['finished'] or not event['client_hello'] or
                                        not event['certificate_presented'] for event in rejected):
                 raise RuntimeError('TLS rejection lacks two real certificate handshakes')
@@ -326,7 +337,7 @@ class Fixture:
                         'connect-timeout': 'connect', 'unsubscribe-ack': 'unsubscribe',
                         'keepalive-timeout': 'ping', 'remote-disconnect': 'connect'}
             for case, operation in required.items():
-                if not self.tcp.arrivals.get(self.session + '-' + case, {}).get(operation):
+                if not self.tcp.arrivals.get(run_session + '-' + case, {}).get(operation):
                     raise RuntimeError('missing broker witness: ' + case + '/' + operation)
             ordinary = ['connect-events', 'repeated-connect', 'subscribe-qos0', 'subscribe-qos1',
                         'subscribe-multi', 'publish-qos0', 'publish-qos1', 'publish-binary',
@@ -335,20 +346,23 @@ class Fixture:
                         'invalid-subscribe', 'invalid-unsubscribe', 'local-disconnect',
                         'reconnect', 'authenticated', 'qos-capacity', 'repeated-lifecycle']
             for case in ordinary:
-                row = self.tcp.arrivals.get(self.session + '-' + case, {})
+                row = self.tcp.arrivals.get(run_session + '-' + case, {})
                 if not row.get('connect') or row.get('connect') != row.get('disconnect'):
                     raise RuntimeError('missing balanced wire lifecycle: ' + case)
             for case in ['subscribe-qos0', 'subscribe-qos1', 'subscribe-multi', 'publish-qos0',
                          'publish-qos1', 'publish-binary', 'publish-empty', 'publish-large',
                          'input-lifetime', 'unsubscribe-ack', 'retained-delivery', 'reconnect',
                          'callback-close', 'repeated-lifecycle']:
-                if not self.tcp.arrivals.get(self.session + '-' + case, {}).get('subscribe'):
+                if not self.tcp.arrivals.get(run_session + '-' + case, {}).get('subscribe'):
                     raise RuntimeError('missing subscription wire witness: ' + case)
-            tls_row = self.tls.arrivals.get(self.session + '-tls-trusted', {})
+            tls_row = self.tls.arrivals.get(run_session + '-tls-trusted', {})
             if tls_row.get('connect') != 1 or tls_row.get('publish') != 1 or tls_row.get('disconnect') != 1:
                 raise RuntimeError('trusted TLS round trip has no broker witness')
-            lifecycle = self.tcp.arrivals[self.session + '-repeated-lifecycle']
+            lifecycle = self.tcp.arrivals[run_session + '-repeated-lifecycle']
             if lifecycle.get('connect') != 21 or lifecycle.get('disconnect') != 21 or lifecycle.get('publish') != 20:
                 raise RuntimeError('repeated lifecycle count differs from wire evidence')
-        return dict(tcp_arrivals=self.tcp.arrivals, tls_arrivals=self.tls.arrivals,
-                    tls_handshakes=self.tls.handshakes, active_clients=0, retained_messages=0)
+        return dict(session=run_session,
+                    tcp_arrivals={key:value for key,value in self.tcp.arrivals.items() if key.startswith(run_session + '-')},
+                    tls_arrivals={key:value for key,value in self.tls.arrivals.items() if key.startswith(run_session + '-')},
+                    tls_handshakes=[event for event in self.tls.handshakes if event['run'] == run_session],
+                    active_clients=0, retained_messages=0)
