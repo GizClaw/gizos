@@ -3,21 +3,23 @@
 load("@rules_python//python:defs.bzl", "py_test")
 load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
 
-def _firmware_impl(settings, attr):
+def _firmware_impl(_settings, attr):
     platforms = {"bk7258": "//tools/bazel/platforms:bk7258", "esp32s3": "//tools/bazel/platforms:esp32s3"}
     if attr.firmware_target not in platforms:
         fail("unsupported MQTT device firmware target")
-    defines = [value for value in settings["//command_line_option:define"] if not value.startswith("h2_firmware_target=")]
-    defines.append("h2_firmware_target=" + attr.firmware_target)
-    return {"//command_line_option:platforms": [platforms[attr.firmware_target]], "//command_line_option:define": defines}
+    # Bazel forbids transitions on --define. Inherit every fixture define and
+    # require the caller's explicit target define, as the native build does.
+    return {"//command_line_option:platforms": [platforms[attr.firmware_target]]}
 
 _firmware = transition(
     implementation = _firmware_impl,
-    inputs = ["//command_line_option:define"],
-    outputs = ["//command_line_option:platforms", "//command_line_option:define"],
+    inputs = [],
+    outputs = ["//command_line_option:platforms"],
 )
 
 def _package_impl(ctx):
+    if ctx.var.get("h2_firmware_target") != ctx.attr.firmware_target:
+        fail("device_test requires --define=h2_firmware_target=" + ctx.attr.firmware_target + " with the host test configuration")
     files = [file for file in ctx.attr.package[DefaultInfo].files.to_list() if file.basename.endswith(".update.tar.zlib")]
     if len(files) != 1:
         fail("MQTT verifier requires one actual managed package")
