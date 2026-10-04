@@ -1,0 +1,16 @@
+{
+  "status": "capture_failed",
+  "qualified": false,
+  "source_commit": "ac2ebebc0775c0e650b66c6b6fb6f36ec6221c81",
+  "version": "mqtt-bk-retained-r10",
+  "package_sha256": "fa93b0390257f091ebe6c71339881246ef0c7300d36aa74ff48e7a1a3b4089a8",
+  "image_sha256": "514ed5dbe7356f019a9dfbe8593430b696d020360d6e63f3562a7898fcab7a9a",
+  "reason": "First READY preceded a complete ordered ledger; strict oracle rejected the capture. Later replay retained but does not qualify this boot.",
+  "initial_case_rows": 29,
+  "initial_summary_present": false,
+  "actual_exit": 130,
+  "controlled_stop": false,
+  "raw_log_sha256": "0cebe55e7e6b9e7e012f06e1d8c1ee85327a13db690f23dde569c17ecd14d3a3",
+  "collector_receipt_sha256": "a3591211e3eace1f32dfd78da38fd2f34902d4917146ac19703ab86d89366d65",
+  "peer_snapshot_sha256": "4adc8a79f0e1dd8dc933294a43534f419c7e72ae070eca7a2e734dc590a2a817"
+}
