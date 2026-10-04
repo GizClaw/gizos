@@ -75,6 +75,14 @@ class Verifier(unittest.TestCase):
         self.assertEqual(boot_ledger(admitted,self.ids,'v1')['boot']['id'],self.execution)
         for text in [self.good,'H2_LOADER_REBOOT target=app result=accepted\n'+self.good,'H2_LOADER_REBOOT target=upgrade result=rejected\n'+self.good]:
             with self.assertRaises(AssertionError):after_accepted_reboot(text,'upgrade')
+    def test_real_uart_ack_interrupting_old_json(self):
+        interleaved='I (24488) pal-mqtt: H2_PAL_MQTT_CASE {"id":"publish-qos1","status":"PASS","detail":0,"'
+        text=interleaved+'H2_LOADER_REBOOT target=app result=accepted\n'+self.good
+        self.assertEqual(boot_ledger(after_accepted_reboot(text,'app'),self.ids,'v1')['boot']['id'],self.execution)
+        for prefix in ['FAKE_', 'x']:
+            with self.assertRaises(AssertionError):after_accepted_reboot(prefix+'H2_LOADER_REBOOT target=app result=accepted\n'+self.good,'app')
+        with self.assertRaises(AssertionError):after_accepted_reboot(text+'H2_LOADER_REBOOT target=app result=accepted\n','app')
+        with self.assertRaises(AssertionError):boot_ledger(after_accepted_reboot(self.good+interleaved+'H2_LOADER_REBOOT target=app result=accepted\n','app'),self.ids,'v1')
     def test_monitor_requires_validated_controlled_stop(self):
         with tempfile.TemporaryDirectory() as directory:
             log=Path(directory)/'managed.log';log.write_text('H2_LOADER_REBOOT target=upgrade result=accepted\n'+self.good)

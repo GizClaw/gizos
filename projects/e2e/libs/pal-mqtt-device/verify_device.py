@@ -55,7 +55,9 @@ def command_receipt(log_path, expected_command, port, controlled_capture=False):
 
 def after_accepted_reboot(text, target):
     text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
-    markers = list(re.finditer(r'(?m)(?:^|\s)H2_LOADER_REBOOT\s+([^\r\n]+)', text))
+    # UART command responses can interrupt an App's in-flight log fragment.
+    # Keep the exact marker boundary, unique ACK and subsequent fresh boot gate.
+    markers = list(re.finditer(r'(?<!\w)H2_LOADER_REBOOT\s+([^\r\n]+)', text))
     assert len(markers) == 1, 'missing or ambiguous actual reboot response'
     reboot = fields(markers[0].group(1))
     assert reboot.get('target') == target and reboot.get('result') == 'accepted', 'requested reboot not accepted'
