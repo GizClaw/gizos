@@ -25,3 +25,7 @@ bazel test //libs/pal/providers/coremqtt:all
 `tests/` 覆盖 MQTT API、client 和 transport adapter。未标记的共同 host PAL E2E 在
 Linux、macOS 和 Windows 通过 loopback broker 验证真实 `CoreMQTT -> Net PAL` 的
 connect、subscribe、publish echo 与 disconnect；它不使用公网 broker、credential 或 secret。
+
+## 发送期限
+
+CONNECT、publish、subscribe、unsubscribe 与 disconnect 使用调用方配置的 operation deadline；短的 `process_loop` poll budget 独立。Transport 的 scatter write 在一个 PAL deadline 内提交完整 vector，处理真实 short write 与 WOULD_BLOCK，并将剩余期限传给支持 send-timeout 的 Net PAL。发送已接受的 prefix 与失败保持真实，不因 vendor 的 10 ms 默认 send-loop budget 将合法的慢阻塞发送截断，也不把 partial packet 报成成功。回归使用真实 CoreMQTT serializer、25 ms PAL write、短 prefix/WOULD_BLOCK 与 60 ms 总期限验证完整发送和超时边界。
