@@ -157,7 +157,7 @@ static void display_dirty_full(h2_lua_job_t *job) {
 
 static h2_pal_result_t display_open(h2_lua_job_t *job) {
   size_t pixel_count;
-  h2_pal_result_t result;
+  h2_pal_result_t result = H2_PAL_OK;
   if (job->display_shutting_down)
     return H2_PAL_ERR_INVALID_STATE;
   if (job->display_open)
@@ -562,7 +562,7 @@ static int display_raster_quad_capture(h2_lua_job_t *job, const double *x,
     for (int i = 0; i < 4; ++i) {
       const display_quad_scan_edge_t *e = &edges[i];
       if (row < e->first || row >= e->end) continue;
-      int floor_x, ceil_x;
+      int floor_x = 0, ceil_x = 0;
       if (e->vertical) {
         floor_x = e->floor_x; ceil_x = e->ceil_x;
       } else {
