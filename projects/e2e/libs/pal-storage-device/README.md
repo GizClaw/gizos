@@ -24,7 +24,8 @@ bazel test //projects/e2e/libs/pal-storage-device:ledger_verifier_test
 The shared fixture emits one non-replay `H2_STORAGE_BOOT` during the actual
 `h2_storage_device_run`, after loading its persistent phase/version/nonce.
 `h2_storage_device_replay` remains explicitly `replay=1`; it never substitutes
-for the fresh marker. Every ledger/phase/completion line now flushes stdout.
+for the fresh marker. Console flushing stays in the native BK launcher; the
+portable archive does not access the SDK's standard-stream state.
 The 36-case contract, `1/2/3/4/4` lifecycle and strict c93 oracle are unchanged.
 
 BK alone gives the already-started rollback/control service a bounded 60-second

@@ -57,7 +57,7 @@ int h2_storage_device_run(h2_runtime_t *runtime,const char *directory,const char
   if (phase==4) {
     control_rc=0;
     printf("H2_STORAGE_ALREADY_COMPLETE no_new_run=1 empty=%d rc=%d\n",!run_rc,run_rc);
-      return run_rc;
+    return run_rc;
   }
   control_rc=run_rc?H2_PAL_ERR_INVALID_STATE:control(runtime,1);
   return run_rc?run_rc:control_rc;
@@ -66,11 +66,11 @@ void h2_storage_device_replay(h2_runtime_t *runtime) {
   printf("H2_STORAGE_BOOT contract=%u version=%s phase=%u nonce=%lu replay=1\n",H2_PAL_STORAGE_CONTRACT_VERSION,image_version,(unsigned)phase,(unsigned long)nonce);
   if (phase==4) {
     printf("H2_STORAGE_ALREADY_COMPLETE no_new_run=1 empty=%d rc=%d\n",!run_rc,run_rc);
-      return;
+    return;
   }
   for(size_t i=0;i<count;++i) {
     printf("H2_STORAGE_CASE {\"id\":\"%s\",\"status\":\"%s\",\"rc\":%d,\"phase\":%u,\"nonce\":%lu}\n",ledger[i].id,names[ledger[i].status],ledger[i].rc,(unsigned)phase,(unsigned long)nonce);
-      h2_pal_time_sleep_ms(runtime->time,90);
+    h2_pal_time_sleep_ms(runtime->time,90);
   }
   printf("H2_STORAGE_PHASE {\"contract\":%u,\"version\":\"%s\",\"phase\":%u,\"nonce\":%lu,\"passed\":%u,\"failed\":%u,\"blocked\":%u,\"cleanup\":%d,\"rc\":%d,\"control\":%d}\n",H2_PAL_STORAGE_CONTRACT_VERSION,image_version,(unsigned)phase,(unsigned long)nonce,(unsigned)result.passed,(unsigned)result.failed,(unsigned)result.blocked,result.cleanup_result,run_rc,control_rc);
 }
