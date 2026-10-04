@@ -669,7 +669,11 @@ workspace 默认通过 `load` 复制状态；可分发 Lua app 也可以创建�
 
 Prepared workspace 的 `displacements` 将指定范围的 double 位置差在相减后转成 f32，写入可复用的 packed xyz 输出前缀。`displacement-f32` 积分的 before/gain0/gain1 可分别使用 f32 或 f64，mobility/after/bounds 保持 f64；环境分支及系数公式仍由 Lua 决定。显式 `vmath.length3_refined` 使用原版 float 开方种子与一次 double 修正，适用范围、误差与 fallback 见 numeric Public Header；不改变原有 `length3` 或 `normalize3`。
 
+库内绘制回归使用通用生成输入和独立参考算法：`material_strip.lua` 覆盖 strip 与空面，`quad_material_projective.lua` 覆盖透视映射和 Q24 边界，`raster_workload.lua` 覆盖多边形与直线。完整应用姿态、玩法和整帧序列由消费仓库验证；公共测试不保存第二份游戏回放数据。默认测试保留正确性所需的完整回调次数，计时通过 `lua_test --strip-benchmark`、`--projective-benchmark`、`--primitive-benchmark` 等显式入口执行；脚本和 VM 的既有限额不因测试合并而放宽。
+
 ## 单在途 Display 提交原型
+
+Task inventory 按链接依赖图收集。消费 Lua Runtime 的 firmware artifact 必须在 task policy 中登记 `$lua/display`；沿用目标既有配置时写显式 `default` 行。该声明只补全构建审查，不创建任务，也不启用 Display worker；优先级、绑核与栈策略仍由消费目标拥有。
 
 Host 的 `display_worker` 是显式 opt-in，默认关闭。启用时必须设置 `display_exclusive` 并将 `max_jobs` 设为 1：调用方持有整个底层 Display 的独占权，先排空已有访问，并暂停其他 Host、Runtime 和 UI writer。Host 私有同步不能保护绕过它的直接 PAL 调用。后端必须允许串行移交到一个任务，而且成功的 draw/present 必须完成传输；这项资格由调用方验证，不根据平台名猜测。全部 open/info/draw/present/close 在同一个提交任务执行；`borrow_display` 保留不调用 PAL open/close 的合同。
 

@@ -310,19 +310,12 @@ cc_test(
         "tests/mesh_source_paths.lua",
         "tests/mesh_staging.lua",
         "tests/mesh_cache_sizing.lua",
-        "tests/line_workload.lua",
-        "tests/line_workload.txt",
         "tests/quad_batch.lua",
         "tests/quad_batch_clip.lua",
         "tests/quad_material.lua",
         "tests/material_strip.lua",
-        "tests/material_strip_empty.lua",
-        "tests/material_strip_workload.txt",
-        "tests/material_workload.lua",
-        "tests/material_workload.txt",
+        "tests/raster_workload.lua",
         "tests/masked_capture.lua",
-        "tests/polygon_workload.lua",
-        "tests/polygon_workload.txt",
         "tests/quad_material_projective.lua",
         "tests/raster2d.lua",
         "tests/smooth_cache.lua",
@@ -343,8 +336,7 @@ cc_test(
     ],
 )
 
-# Test-only two-device BLE air shared by the link tests and the Lua link E2E
-# App test.
+# Quarantine cases retain resources until their isolated process exits.
 py_test(
     name = "display_fault_test",
     srcs = ["tests/test_display_fault.py"],
@@ -359,6 +351,8 @@ py_test(
     }),
 )
 
+# Test-only two-device BLE air shared by the link tests and the Lua link E2E
+# App test.
 cc_library(
     name = "link_fake_ble",
     testonly = True,

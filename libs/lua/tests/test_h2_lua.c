@@ -1581,10 +1581,23 @@ static void *raster_measure_allocate(void *user, void *ptr, size_t old_size,
   return result;
 }
 
+static int s_raster_benchmark;
+
 static int test_raster_measure(lua_State *state) {
   const char *name = luaL_checkstring(state, 1);
   luaL_checktype(state, 2, LUA_TFUNCTION);
   lua_Integer boundaries = luaL_checkinteger(state, 3);
+  if (!s_raster_benchmark) {
+    /* Some fixtures verify every fresh object after this callback. Preserve
+     * their full iteration coverage while leaving timing opt-in. */
+    unsigned count = lua_toboolean(state, 4) ? 1u : 36u;
+    for (unsigned i = 0; i < count; ++i) {
+      lua_pushvalue(state, 2);
+      lua_pushinteger(state, i);
+      lua_call(state, 1, 0);
+    }
+    return 0;
+  }
   int once = lua_toboolean(state, 4);
   uint64_t samples[32];
   size_t calls = 0, peak = 0;
@@ -1970,54 +1983,6 @@ static int test_line_ranges(lua_State *state) {
   return 1;
 }
 
-static int test_material_workload(lua_State *state) {
-  int mode = lua_isboolean(state, 1) ? lua_toboolean(state, 1) :
-      (int)luaL_optinteger(state, 1, 0);
-  assert(mode >= 0 && mode <= 2);
-  int columns = mode == 2 ? 4 : mode == 1 ? 8 : 12;
-  FILE *file = fopen(mode == 2 ? "libs/lua/tests/line_workload.txt" :
-      mode == 1 ? "libs/lua/tests/polygon_workload.txt" :
-      "libs/lua/tests/material_workload.txt", "r");
-  assert(file != NULL);
-  lua_newtable(state);
-  double values[12];
-  int row = 0;
-  while (fscanf(file, "%lf", &values[0]) == 1) {
-    for (int i = 1; i < columns; ++i) assert(fscanf(file, "%lf", &values[i]) == 1);
-    lua_createtable(state, columns, 0);
-    for (int i = 0; i < columns; ++i) {
-      lua_pushnumber(state, values[i]); lua_rawseti(state, -2, i + 1);
-    }
-    lua_rawseti(state, -2, ++row);
-  }
-  assert(feof(file)); fclose(file);
-  return 1;
-}
-
-/* Captured two-rail fixture: sample/group,a/b/line_t,13 XY/XY stations,
- * source first/last/ratio, then 12 (visible,recipe-size,line565,64 palette565)
- * records. Hexadecimal floats preserve binary64 input exactly. Replay one
- * pose at a time so decoded fixtures also fit the 2 MiB VM. */
-static int test_material_strip_workload(lua_State *state) {
-  int pose = (int)luaL_checkinteger(state, 1);
-  FILE *file = fopen("libs/lua/tests/material_strip_workload.txt", "r");
-  assert(file != NULL);
-  lua_newtable(state);
-  double values[864];
-  int row = 0;
-  while (fscanf(file, "%lf", &values[0]) == 1) {
-    for (int i = 1; i < 864; ++i) assert(fscanf(file, "%lf", &values[i]) == 1);
-    if ((int)values[0] != pose) continue;
-    lua_createtable(state, 864, 0);
-    for (int i = 0; i < 864; ++i) {
-      lua_pushnumber(state, values[i]); lua_rawseti(state, -2, i + 1);
-    }
-    lua_rawseti(state, -2, ++row);
-  }
-  assert(feof(file)); fclose(file);
-  return 1;
-}
-
 /* Reserve charged userdata without string-builder temporary storage. */
 static int test_raster_reserve(lua_State *state) {
   lua_Integer bytes = luaL_checkinteger(state, 1);
@@ -2093,10 +2058,6 @@ static int test_raster_open(void *lua_state, void *user) {
   lua_setfield(state, -2, "line_ranges");
   lua_pushcfunction(state, test_material_reference);
   lua_setfield(state, -2, "material_reference");
-  lua_pushcfunction(state, test_material_strip_workload);
-  lua_setfield(state, -2, "material_strip_workload");
-  lua_pushcfunction(state, test_material_workload);
-  lua_setfield(state, -2, "material_workload");
   lua_pushcfunction(state, test_mesh_capacity);
   lua_setfield(state, -2, "mesh_capacity");
   lua_pushcfunction(state, test_mesh_shifted);
@@ -3752,6 +3713,7 @@ int main(int argc, char **argv) {
     return 0;
   }
   if (argc == 2 && strcmp(argv[1], "--prepared-benchmark") == 0) {
+    s_raster_benchmark = 1;
     test_display_raster2d(1, "libs/lua/tests/geometry_batches.lua");
   h2_atomic_int_destroy(&s_source_effect_count);
   h2_atomic_int_destroy(&s_test_audio_close_count);
@@ -3767,31 +3729,23 @@ int main(int argc, char **argv) {
                     strcmp(argv[1], "--material-benchmark") == 0 ||
                     strcmp(argv[1], "--smooth-benchmark") == 0 ||
                     strcmp(argv[1], "--projective-benchmark") == 0 ||
-                    strcmp(argv[1], "--material-workload") == 0 ||
                     strcmp(argv[1], "--strip-benchmark") == 0 ||
-                    strcmp(argv[1], "--strip-empty-benchmark") == 0 ||
                     strcmp(argv[1], "--capture-benchmark") == 0 ||
-                    strcmp(argv[1], "--polygon-benchmark") == 0 ||
                     strcmp(argv[1], "--mesh-cache-benchmark") == 0 ||
-                    strcmp(argv[1], "--line-benchmark") == 0)) {
+                    strcmp(argv[1], "--primitive-benchmark") == 0)) {
+    s_raster_benchmark = 1;
+    int primitive = strcmp(argv[1], "--primitive-benchmark") == 0;
     int strip = strcmp(argv[1], "--strip-benchmark") == 0;
-    int strip_empty = strcmp(argv[1], "--strip-empty-benchmark") == 0;
     int material = strcmp(argv[1], "--material-benchmark") == 0;
     int smooth = strcmp(argv[1], "--smooth-benchmark") == 0;
-    int line = strcmp(argv[1], "--line-benchmark") == 0;
     int mesh_cache = strcmp(argv[1], "--mesh-cache-benchmark") == 0;
-    int polygon = strcmp(argv[1], "--polygon-benchmark") == 0;
     int capture = strcmp(argv[1], "--capture-benchmark") == 0;
-    int workload = strcmp(argv[1], "--material-workload") == 0;
     int projective = strcmp(argv[1], "--projective-benchmark") == 0;
-    test_display_raster2d(strip || strip_empty || material || smooth || projective || workload || capture || polygon || mesh_cache || line ? 2 : 1,
-        strip_empty ? "libs/lua/tests/material_strip_empty.lua" :
+    test_display_raster2d(strip || material || smooth || projective || capture || mesh_cache || primitive ? 2 : 1,
+        primitive ? "libs/lua/tests/raster_workload.lua" :
         strip ? "libs/lua/tests/material_strip.lua" :
-        line ? "libs/lua/tests/line_workload.lua" :
         mesh_cache ? "libs/lua/tests/mesh_cache_sizing.lua" :
-        polygon ? "libs/lua/tests/polygon_workload.lua" :
         capture ? "libs/lua/tests/masked_capture.lua" :
-        workload ? "libs/lua/tests/material_workload.lua" :
         projective ? "libs/lua/tests/quad_material_projective.lua" :
         material ? "libs/lua/tests/quad_material.lua" :
         smooth ? "libs/lua/tests/smooth_cache.lua" :
@@ -3814,13 +3768,10 @@ int main(int argc, char **argv) {
   test_display_raster2d(0, "libs/lua/tests/quad_batch.lua");
   test_display_raster2d(1, "libs/lua/tests/quad_batch_clip.lua");
   test_display_raster2d(2, "libs/lua/tests/material_strip.lua");
-  test_display_raster2d(2, "libs/lua/tests/material_strip_empty.lua");
+  test_display_raster2d(2, "libs/lua/tests/raster_workload.lua");
   test_display_raster2d(2, "libs/lua/tests/quad_material.lua");
-  test_display_raster2d(2, "libs/lua/tests/material_workload.lua");
   test_display_raster2d(2, "libs/lua/tests/masked_capture.lua");
-  test_display_raster2d(2, "libs/lua/tests/polygon_workload.lua");
   test_display_raster2d(2, "libs/lua/tests/mesh_cache_sizing.lua");
-  test_display_raster2d(2, "libs/lua/tests/line_workload.lua");
   test_display_raster2d(2, "libs/lua/tests/quad_material_projective.lua");
   test_display_raster2d(2, "libs/lua/tests/smooth_cache.lua");
   test_display_raster2d(0, "libs/lua/tests/geometry_batches.lua");

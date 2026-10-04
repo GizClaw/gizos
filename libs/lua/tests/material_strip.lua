@@ -2,142 +2,12 @@ local d,p,v=require('display'),require('raster_test'),require('vmath')
 p.oom(function() d.material_strip(1) end)
 p.oom(function() d.material_strip(1) end,1)
 local function buffer(t) local b=v.buffer(#t,'f64');b:load(t);return b end
-local function rgb(c) return {r=(c>>11)*8,g=((c>>5)&63)*4,b=(c&31)*8} end
-local materials={}
-for _,bands in ipairs({1,9}) do
- local entries={}
- for band=1,bands do for level,width in ipairs({.52,.40,.29,.20,.12,.065}) do
-  local half=width/1.04
-  entries[#entries+1]={.5-half,.5+half,9+(band-1)*6+level,(band-1)/bands,band/bands}
- end end
- materials[bands*6]=d.compile_quad_material(d.compile_quad_batch(entries))
-end
 local bg=d.capture_region(0,0,240,240)
 local function reset() d.restore_background(bg);d.present() end
 local function snapshot() return p.display_snapshot(d.draw_material_strip,bg) end
 local function equal(a,b,c,label)
  local x,y,z=snapshot();assert(a==x,label..' pixels');assert(b==y,label..' damage');assert(c==z,label..' dirty')
 end
-local function make(r)
- local g={a=r[3],b=r[4],t=r[5]>=0 and r[5] or nil,u=r[58],w=r[59],ratio=r[60],
-  first={},last={},delta={},materials={},palettes={},indices={},colors={},visible={},ax={},bx={},lx={}}
- for i=1,13 do for axis=1,2 do
-  local j=2*i-2+axis;g.first[j]=r[5+4*(i-1)+axis];g.last[j]=r[7+4*(i-1)+axis]
-  g.delta[j]=g.last[j]-g.first[j]
- end end
- g.f,g.l=buffer(g.first),buffer(g.last)
- for i=1,12 do
-  local at=60+(i-1)*67
-  g.visible[i]=r[at+1]==1;g.materials[i]=materials[r[at+2]]
-  local colors={};for j=1,64 do colors[j]=rgb(r[at+3+j]) end
-  g.colors[i]=rgb(math.max(0,r[at+3]));assert(r[at+3]<0 or r[at+3]==r[at+67],'captured core palette index')
-  g.palettes[i]=d.compile_palette(colors);g.indices[i]=r[at+3]>=0 and 64 or 0
- end
- g.strip=d.material_strip(12);g.strip:load(g.f,g.l,13);g.strip:bind(g.materials,g.palettes,g.indices)
- return g
-end
-local function native(g,top,bottom)
- return d.draw_material_strip(g.strip,g.a,g.b,g.u,g.w,g.ratio,g.t,top,bottom)
-end
-local function shared(g)
- for j=1,26 do
-  g.ax[j]=g.first[j]+g.delta[j]*g.a;g.bx[j]=g.first[j]+g.delta[j]*g.b
-  if g.t then g.lx[j]=math.floor(g.first[j]+g.delta[j]*g.t) end
- end
-end
-local function face(g,i,share,top,bottom,all)
- local j=2*i-1;local ax,ay,bx,by,cx,cy,dx,dy
- if share then
-  ax,ay,bx,by=g.ax[j],g.ax[j+1],g.bx[j],g.bx[j+1]
-  cx,cy,dx,dy=g.bx[j+2],g.bx[j+3],g.ax[j+2],g.ax[j+3]
- else
-  local f,l=g.first,g.last
-  ax,ay=f[j]+(l[j]-f[j])*g.a,f[j+1]+(l[j+1]-f[j+1])*g.a
-  bx,by=f[j]+(l[j]-f[j])*g.b,f[j+1]+(l[j+1]-f[j+1])*g.b
-  cx,cy=f[j+2]+(l[j+2]-f[j+2])*g.b,f[j+3]+(l[j+3]-f[j+3])*g.b
-  dx,dy=f[j+2]+(l[j+2]-f[j+2])*g.a,f[j+3]+(l[j+3]-f[j+3])*g.a
- end
- local visible=math.max(ax,bx,cx,dx)>=-2 and math.min(ax,bx,cx,dx)<=242
-  and math.max(ay,by,cy,dy)>=-2 and math.min(ay,by,cy,dy)<=242
- if not all and not visible then return 0,0 end
- local fast=d.draw_quad_material_projective(g.materials[i],g.palettes[i],ax,ay,bx,by,cx,cy,dx,dy,g.u,g.w,g.ratio,top,bottom)
- if g.t and g.indices[i]>0 then
-  local x,y,X,Y
-  if share then x,y,X,Y=g.lx[j],g.lx[j+1],g.lx[j+2],g.lx[j+3]
-  else
-   local f,l,t=g.first,g.last,g.t
-   x,y=math.floor(f[j]+(l[j]-f[j])*t),math.floor(f[j+1]+(l[j+1]-f[j+1])*t)
-   X,Y=math.floor(f[j+2]+(l[j+2]-f[j+2])*t),math.floor(f[j+3]+(l[j+3]-f[j+3])*t)
-  end
-  d.draw_line(x,y,X,Y,g.colors[i])
- end
- return fast and 1 or 0,fast and 0 or 1
-end
-local function scalar(g,share,all)
- if share then shared(g) end
- local fast,fallback=0,0
- for i=1,12 do local a,b=face(g,i,share,nil,nil,all);fast,fallback=fast+a,fallback+b end
- return fast,fallback
-end
-local poses={};local cases=0
--- Real projected rails and per-face colors captured from 24 deterministic
--- application poses. Geometry/style selection is fixture data, never native policy.
-for pose=0,23 do
- local groups={};poses[#poses+1]=groups
- for _,r in ipairs(p.material_strip_workload(pose)) do groups[#groups+1]=make(r) end
- for _,g in ipairs(groups) do
-  reset();local fast,fallback=scalar(g,false,true);local a,b,c=snapshot()
-  reset();local x,y=native(g);assert(x==fast and y==fallback);equal(a,b,c,'interval')
-  reset();scalar(g,true,true);equal(a,b,c,'Lua shared endpoint')
-  -- Every individual face, including fallback and previously culled faces.
-  for i=1,12 do
-   local j=2*i-1;local one=d.material_strip(1)
-   one:load(buffer({g.first[j],g.first[j+1],g.first[j+2],g.first[j+3]}),
-            buffer({g.last[j],g.last[j+1],g.last[j+2],g.last[j+3]}),2)
-   one:bind({g.materials[i]},{g.palettes[i]},{g.indices[i]})
-   reset();local sf,sb=face(g,i,false,nil,nil,true);local a,b,c=snapshot()
-   reset();local nf,nb=d.draw_material_strip(one,g.a,g.b,g.u,g.w,g.ratio,g.t)
-   assert(sf==nf and sb==nb);equal(a,b,c,'face');cases=cases+1
-  end
- end
- reset();for _,g in ipairs(groups) do scalar(g,false,false) end;local a,b,c=snapshot()
- reset();for _,g in ipairs(groups) do native(g) end;equal(a,b,c,'whole pose')
- collectgarbage('collect')
-end
-local function replay(mode)
- for _,groups in ipairs(poses) do for _,g in ipairs(groups) do
-  if mode==0 then scalar(g,false,false) elseif mode==1 then scalar(g,true,false) else native(g) end
- end end
-end
-for mode=0,2 do
- p.noalloc(function() replay(mode) end)
- p.measure('strip_24_poses_'..({'scalar','Lua_shared','native'})[mode+1],function() replay(mode) end,mode==2 and 95 or 1612)
-end
-p.measure('strip_95_geometry_upload_load',function()
- for _,groups in ipairs(poses) do for _,g in ipairs(groups) do
-  g.f:load(g.first);g.l:load(g.last);g.strip:load(g.f,g.l,13)
- end end
-end,285)
-p.measure('strip_95_bind',function()
- for _,groups in ipairs(poses) do for _,g in ipairs(groups) do g.strip:bind(g.materials,g.palettes,g.indices) end end
-end,95)
-p.measure('strip_24_poses_turning_upload_bind_draw',function()
- for _,groups in ipairs(poses) do for _,g in ipairs(groups) do
-  g.f:load(g.first);g.l:load(g.last);g.strip:load(g.f,g.l,13)
-  g.strip:bind(g.materials,g.palettes,g.indices);native(g)
- end end
-end,475)
--- Dynamic blend arithmetic is timed separately with 116 captured visible lit
--- faces. Equal captured inputs preserve the oracle colors; this measures the
--- existing 64-entry blend call, not the consumer's color-selection recipe.
-local blends={}
-for _,groups in ipairs(poses) do for _,g in ipairs(groups) do for i=1,12 do
- if g.visible[i] and g.materials[i]==materials[54] then blends[#blends+1]=g.palettes[i] end
-end end end
-assert(#blends==116)
-p.measure('strip_palette_blend_116_cost_probe',function()
- for _,palette in ipairs(blends) do d.blend_palette(palette,palette,palette,137) end
-end,116)
 -- One draw may reuse exact projective U values across distinct materials,
 -- but equal knot counts alone are insufficient. V knots/owners may differ.
 do
@@ -175,20 +45,109 @@ do
  end
  p.noalloc(function() d.draw_material_strip(strip,0,1,.1,.9,8) end)
 end
--- No implicit first-draw cache. Measure a fresh constructor/load/bind/draw as
--- well as a cold draw on a freshly bound object outside the timed setup.
-local g=poses[1][1]
-p.measure('strip_cold_construct_load_bind_draw',function()
- local s=d.material_strip(12);s:load(g.f,g.l,13);s:bind(g.materials,g.palettes,g.indices)
- d.draw_material_strip(s,g.a,g.b,g.u,g.w,g.ratio,g.t)
-end,4,true)
-local fresh=d.material_strip(12);fresh:load(g.f,g.l,13);fresh:bind(g.materials,g.palettes,g.indices)
-p.measure('strip_cold_draw',function() d.draw_material_strip(fresh,g.a,g.b,g.u,g.w,g.ratio,g.t) end,1,true)
-p.measure('strip_hot_draw',function() native(g) end,1)
-print('material strip real workload: '..cases..' faces, 95 intervals, 24 complete poses matched pixels/damage/order')
+-- Empty faces must preserve scalar pixels, counts, lines and error preflight.
+-- Generic nine-face strips deliberately alternate equal and unequal U knots;
+-- none of this geometry or material selection depends on an application.
+do
+ local function material(entries) return d.compile_quad_material(d.compile_quad_batch(entries)) end
+ local A=material({{.15,.85,1}})
+ local B=material({{.15,.85,2,.2,.8}})
+ local C=material({{.25,.75,1,.1,.9}})
+ local E=material({})
+ local palette=d.compile_palette({'red','blue'})
+ local patterns={{A,A,A,B,B,C,C,A,A},{A,E,A,E,B,E,C,E,A},{E,E,E,E,E,E,E,E,E}}
+ local groups={{},{},{}}
+ local function render(g,q,top,bottom,scalar)
+  if not scalar then
+   return d.draw_material_strip(g.strip,q[1],q[2],q[3],q[4],q[5],q[6],top,bottom)
+  end
+  local fast,fallback=0,0
+  for i=1,9 do
+   local j=2*i-1
+   local function xy(k,t) return g.first[k]+(g.last[k]-g.first[k])*t end
+   local result=d.draw_quad_material_projective(g.styles[i],palette,
+    xy(j,q[1]),xy(j+1,q[1]),xy(j,q[2]),xy(j+1,q[2]),
+    xy(j+2,q[2]),xy(j+3,q[2]),xy(j+2,q[1]),xy(j+3,q[1]),q[3],q[4],q[5],top,bottom)
+   fast=fast+(result and 1 or 0);fallback=fallback+(result and 0 or 1)
+   if q[6] and g.lines[i]>0 then
+    if top<bottom then d.draw_line(math.floor(xy(j,q[6])),math.floor(xy(j+1,q[6])),
+     math.floor(xy(j+2,q[6])),math.floor(xy(j+3,q[6])),'blue') end
+   end
+  end
+  return fast,fallback
+ end
+ local checks={{0,1,0,1,1,.5},{.9,.1,.125,.875,2,.5},{0,1,.5,.5,2,.5},
+               {0,1,.2,.8,1e-200},{0,1,.2,.8,1e200},{0,0,.1,.9,2,0}}
+ local fallback_count=0
+ for pose=1,24 do
+  local first,last={},{}
+  for station=1,10 do
+   local j=2*station-1
+   first[j],first[j+1]=12+(pose+station)%7,8+(station-1)*24
+   last[j],last[j+1]=225-(pose+station)%11,first[j+1]+pose%5-2
+  end
+  -- One self-crossing pose exercises nonempty fallback around empty faces.
+  if pose==24 then last[2],last[4]=last[4],last[2] end
+  for pattern,styles in ipairs(patterns) do
+   local g={first=first,last=last,styles=styles,lines={},strip=d.material_strip(9)}
+   local palettes={}
+   for i=1,9 do palettes[i]=palette;g.lines[i]=i%3==0 and 2 or 0 end
+   g.strip:load(buffer(first),buffer(last),10);g.strip:bind(styles,palettes,g.lines)
+   groups[pattern][pose]=g
+   for _,q in ipairs(checks) do for _,clip in ipairs({{0,240},{37,193},{91,91}}) do
+    -- Scalar draw_line has no row clip; compare partial lines separately below.
+    local line_t=q[6];if clip[1]==37 then q[6]=nil end
+    reset();local sf,sb=render(g,q,clip[1],clip[2],true);local a,b,c=snapshot()
+    reset();local nf,nb=render(g,q,clip[1],clip[2],false)
+    assert(nf==sf and nb==sb and nf+nb==9,'empty face counts')
+    equal(a,b,c,'empty face pixels/lines/damage/order');fallback_count=fallback_count+nb;q[6]=line_t
+   end end
+  end
+ end
+ assert(fallback_count>0,'empty workload includes fallback')
+ local q={.1,.9,.125,.875,2,.5}
+ for pattern=2,3 do
+  local g=groups[pattern][1]
+  reset();local nf,nb=render(g,q,0,240,false);local a,b,c=snapshot()
+  reset()
+  for row=0,239 do
+   local rf,rb=render(g,q,row,row+1,false)
+   assert(rf+rb==nf+nb,'row clips keep empty face counts')
+  end
+  equal(a,b,c,'empty face line row composition')
+ end
+ for pattern,group in ipairs(groups) do
+  local function replay()
+   for repeat_index=1,16 do for _,g in ipairs(group) do render(g,q,0,240,false) end end
+  end
+  p.noalloc(replay)
+  p.measure('strip_generic_'..({'nonempty','mixed_empty','all_empty'})[pattern],replay,384)
+ end
+ local g=groups[2][1]
+ local function bad(fn)
+  reset();local a,b,c=snapshot();assert(not pcall(fn));equal(a,b,c,'empty preflight atomicity')
+ end
+ bad(function() d.draw_material_strip(g.strip,0/0,1,0,1,1) end)
+ bad(function() d.draw_material_strip(g.strip,0,1,1,0,1) end)
+ bad(function() d.draw_material_strip(g.strip,0,1,0,1,0) end)
+ bad(function() d.draw_material_strip(g.strip,0,1,0,1,1,2) end)
+ bad(function() d.draw_material_strip(g.strip,0,1,0,1,1,nil,-1,240) end)
+ -- The final empty face's line endpoint must fail before the first A writes.
+ local s=d.material_strip(2);local f=buffer({20,20,20,100,20,180})
+ s:load(f,buffer({180,20,180,100,900,900}),3)
+ s:bind({A,E},{palette,palette},{0,2})
+ bad(function() d.draw_material_strip(s,0,1,0,1,1,1) end)
+ bad(function() d.draw_material_strip(s,0,1,.5,.5,1,1,0,0) end)
+ s:load(f,buffer({180,20,180,100,180,180}),3)
+ reset();d.draw_material_strip(s,0,1,0,1,1,.5);local saved=(snapshot())
+ bad(function() s:bind({A,E},{palette,palette},{0,3}) end)
+ reset();d.draw_material_strip(s,0,1,0,1,1,.5);assert((snapshot())==saved,'failed empty bind unchanged')
+ s:load(f,f,2);bad(function() d.draw_material_strip(s,0,1,0,1,1) end)
+ print('material strip generic empty faces: 1296 scalar snapshot comparisons and noalloc passed')
+end
 -- Bounded generic topology, validation before writes, transactional updates,
 -- mutable palette identity and GC ownership. No consumer topology is assumed.
-poses=nil;fresh=nil;g=nil;collectgarbage('collect')
+collectgarbage('collect')
 local red=d.compile_palette({'red'});local blue=d.compile_palette({'blue'})
 local m=d.compile_quad_material(d.compile_quad_batch({{0,1,1}}))
 local s=d.material_strip(2)
