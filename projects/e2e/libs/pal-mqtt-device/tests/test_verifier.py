@@ -17,6 +17,12 @@ class Verifier(unittest.TestCase):
         self.good='H2_PAL_MQTT_PLATFORM_BOOT board=bk7258\nH2_PAL_MQTT_BOOT '+self.boot+'\nH2_PAL_MQTT_RUN '+self.boot+'\n'+rows+'\nH2_PAL_MQTT_SUMMARY '+json.dumps(summary)+'\nH2_PAL_MQTT_READY board=bk7258 rc=0 confirm=0\n'
     def test_complete(self):
         self.assertEqual(boot_ledger(self.good,self.ids,'v1')['boot']['id'],self.execution)
+    def test_esp_provider_cleanup_is_required(self):
+        esp = self.good.replace('board=bk7258', 'board=devkit')
+        with self.assertRaises(AssertionError):boot_ledger(esp,self.ids,'v1')
+        for result in ['-4', '1']:
+            with self.assertRaises(AssertionError):boot_ledger(esp.replace('confirm=0', 'confirm=0 provider_cleanup='+result),self.ids,'v1')
+        self.assertEqual(boot_ledger(esp.replace('confirm=0', 'confirm=0 provider_cleanup=0'),self.ids,'v1')['ready']['board'], 'devkit')
     def test_real_log_prefix_fields_and_color(self):
         prefixed='\n'.join('\x1b[32mcpu=0 tick='+str(index)+' '+line+'\x1b[0m'
             for index,line in enumerate(self.good.splitlines()))

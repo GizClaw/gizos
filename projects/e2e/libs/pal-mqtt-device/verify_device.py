@@ -95,6 +95,8 @@ def boot_ledger(text, ids, version, previous=None):
         elif 'H2_PAL_MQTT_READY ' in line:
             ready = fields(line.split('H2_PAL_MQTT_READY ', 1)[1])
             assert ready.get('rc') == '0' and ready.get('confirm') == '0', 'not admitted'
+            if ready.get('board') == 'devkit':
+                assert ready.get('provider_cleanup') == '0', 'ESP portable provider not released'
             assert summary is not None, 'ready without latest complete ledger'
             accepted = dict(boot=boot, cases=rows.copy(), summary=summary, ready=ready)
         if re.search(r'panic|hard fault|assert failed|H2_PAL_MQTT_SETUP_FAIL', line, re.I):
@@ -107,7 +109,8 @@ def package_manifest(package):
     with tarfile.open(fileobj=io.BytesIO(zlib.decompress(original))) as archive:
         manifest = dict(line.split('=', 1) for line in archive.extractfile('manifest').read().decode().splitlines() if line)
         members = [member for member in archive.getmembers() if member.name.startswith('app/') and member.isfile()]
-        assert len(members) == 1 and manifest['role'] == 'app' and manifest['target'] == 'bk7258'
+        assert len(members) == 1 and manifest['role'] == 'app'
+        assert (manifest['board'], manifest['target']) in (('bk7258_v3_202405', 'bk7258'), ('devkit', 'esp32s3')), 'unsupported device package'
         image = archive.extractfile(members[0]).read()
         assert len(image) == int(manifest['image_size']) and hashlib.sha256(image).hexdigest() == manifest['image_sha256']
     return manifest, hashlib.sha256(original).hexdigest()
@@ -164,6 +167,8 @@ def main():
     }
     first=boot_ledger(after_accepted_reboot((directory/'managed.log').read_text(),'upgrade'),ids,manifest['version'])
     second=boot_ledger(after_accepted_reboot((directory/'normal.log').read_text(),'app'),ids,manifest['version'],first['boot']['id'])
+    expected_board = 'devkit' if manifest['target'] == 'esp32s3' else 'bk7258'
+    assert first['ready'].get('board') == second['ready'].get('board') == expected_board, 'ledger belongs to another board'
     for name,command in [('before-status',['status']),('after-status',['status']),
                          ('before-coredump-status',['coredump','status']),('after-coredump-status',['coredump','status'])]:
         commands[name]=command_receipt(directory/(name+'.log'),command,port)
@@ -185,5 +190,5 @@ def main():
         fixture_inputs=peer['inputs'],commands=commands,registry_sha256=hashlib.sha256(args.registry.read_bytes()).hexdigest())
     output=Path(os.environ.get('TEST_UNDECLARED_OUTPUTS_DIR',directory));output.mkdir(parents=True,exist_ok=True)
     (output/'qualification.json').write_text(json.dumps(report,indent=2)+'\n')
-    print('BK7258 MQTT: 36/36 on two fresh boots; UID/P1/P2/Stage/coredump and exact peer proof preserved')
+    print(manifest['board'] + ' MQTT: 36/36 on two fresh boots; UID/P1/P2/Stage/coredump and exact peer proof preserved')
 if __name__=='__main__':main()
