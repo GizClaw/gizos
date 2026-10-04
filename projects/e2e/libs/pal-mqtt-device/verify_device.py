@@ -91,6 +91,17 @@ def verify_witness(receipt, execution):
     assert len(rejected) == 2 and all(event['run'] == boot['id'] and event['finished'] and event['client_hello'] and
                                     event['certificate_presented'] for event in rejected), 'TLS rejection proof crossed boot identity'
 
+def coredump_preserved(before, after, original=None, current=None):
+    assert before == after and before.get('result') == 'OK' and before.get('code') == '0'
+    stored = int(before['stored_bytes'])
+    assert stored >= 0, 'invalid stored dump length'
+    if stored:
+        assert before['blank'] == '0' and original is not None and current is not None
+        assert len(original) == len(current) == stored and original == current, 'actual coredump truncated/changed'
+        return hashlib.sha256(current).hexdigest()
+    assert before['blank'] == '1'
+    return None
+
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--package', required=True, type=Path)
@@ -108,14 +119,10 @@ def main():
     status_preserved(before,after,manifest,sha,uid)
     dumped_before=fields((directory/'before-coredump-status.log').read_text())
     dumped_after=fields((directory/'after-coredump-status.log').read_text())
-    assert dumped_before==dumped_after and dumped_before.get('result')=='OK' and dumped_before.get('code')=='0'
-    dump_sha=None
+    original=current=None
     if int(dumped_before['stored_bytes'])>0:
-        assert dumped_before['blank']=='0'
         original=(directory/'coredump-before.bin').read_bytes();current=(directory/'coredump-after.bin').read_bytes()
-        assert original==current and len(original)>0, 'actual coredump bytes changed/missing'
-        dump_sha=hashlib.sha256(current).hexdigest()
-    else:assert dumped_before['blank']=='1', 'invalid blank coredump status'
+    dump_sha=coredump_preserved(dumped_before,dumped_after,original,current)
     peer=json.loads((directory/'fixture-receipt.json').read_text())
     for execution in (first,second):verify_witness(peer,execution)
     report=dict(manifest=manifest,package_sha256=sha,uid=uid,port=port,managed=first,normal=second,
