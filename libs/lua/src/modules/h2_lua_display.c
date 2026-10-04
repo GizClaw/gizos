@@ -91,7 +91,8 @@ typedef struct display_region_run {
 typedef struct display_region {
   int width, height, masked;
   uint16_t key;
-  size_t pixel_count, run_count;
+  /* Fixed storage capacities; rows describe the currently captured content. */
+  size_t pixel_capacity, run_capacity;
   /* Rows, compiled runs, pixels, then background damage bytes. */
   display_region_row_t rows[];
 } display_region_t;
@@ -128,11 +129,11 @@ static display_region_run_t *display_region_runs(display_region_t *region) {
 }
 
 static uint16_t *display_region_pixels(display_region_t *region) {
-  return (uint16_t *)(display_region_runs(region) + region->run_count);
+  return (uint16_t *)(display_region_runs(region) + region->run_capacity);
 }
 
 static uint8_t *display_region_damage(display_region_t *region) {
-  return (uint8_t *)(display_region_pixels(region) + region->pixel_count);
+  return (uint8_t *)(display_region_pixels(region) + region->pixel_capacity);
 }
 
 static void display_damage_rect(h2_lua_job_t *job, int left, int top,
@@ -3995,8 +3996,8 @@ static display_region_t *display_new_region(lua_State *state, int width,
   region->height = height;
   region->masked = masked;
   region->key = key;
-  region->pixel_count = pixels;
-  region->run_count = runs;
+  region->pixel_capacity = pixels;
+  region->run_capacity = runs;
   lua_pushvalue(state, -2);
   lua_setmetatable(state, -2);
   lua_remove(state, -2);
@@ -4148,11 +4149,11 @@ static void display_masked_counts(const uint16_t *pixels, int stride,
 
 /* No allocation/callback: validate each write against the counted capacity.
  * A finalizer may have changed content during allocation, even with identical
- * framebuffer address/dimensions. Return false for any changed total capacity;
+ * framebuffer address/dimensions. Return false for any changed counted total;
  * the caller discards the private partial result and takes a stable snapshot.
  * Keep key pixels inside row bounds for opaque/different-key replay. */
 static int display_pack_masked(display_region_t *region,
-    const uint16_t *pixels, int stride) {
+    const uint16_t *pixels, int stride, size_t pixel_count, size_t run_count) {
   size_t offset = 0, run_index = 0;
   uint16_t *packed = display_region_pixels(region);
   display_region_run_t *runs = display_region_runs(region);
@@ -4162,7 +4163,7 @@ static int display_pack_masked(display_region_t *region,
     while (left < right && line[left] == region->key) ++left;
     while (right > left && line[right - 1] == region->key) --right;
     size_t length = (size_t)(right - left);
-    if (length > region->pixel_count - offset) return 0;
+    if (length > region->pixel_capacity - offset) return 0;
     display_region_row_t *r = &region->rows[row];
     *r = (display_region_row_t){offset, run_index, left, right, 0};
     memcpy(packed + offset, line + left, length * sizeof(uint16_t));
@@ -4171,19 +4172,32 @@ static int display_pack_masked(display_region_t *region,
       if (line[col] == region->key) { ++col; continue; }
       int first = col++;
       while (col < right && line[col] != region->key) ++col;
-      if (run_index == region->run_count) return 0;
+      if (run_index == region->run_capacity) return 0;
       runs[run_index++] = (display_region_run_t){(uint16_t)first, (uint16_t)col};
       ++r->run_count;
     }
   }
-  return offset == region->pixel_count && run_index == region->run_count;
+  return offset == pixel_count && run_index == run_count;
 }
 
 static int display_capture_masked(lua_State *state, h2_lua_job_t *job,
-    int x, int y, int width, int height, uint16_t key) {
+    int x, int y, int width, int height, uint16_t key, display_region_t *reuse) {
   size_t packed, runs;
   display_masked_counts(job->framebuffer + (size_t)y * job->display_info.width + x,
       job->display_info.width, width, height, key, &packed, &runs);
+  if (reuse != NULL && packed <= reuse->pixel_capacity &&
+      runs <= reuse->run_capacity) {
+    /* Same-sized rows and fixed storage offsets remain valid after shrinking.
+     * Counting through packing cannot allocate, call Lua or run a finalizer,
+     * so the validated source and both capacities cannot change mid-update. */
+    lua_pushvalue(state, 6);
+    if (!display_pack_masked(reuse,
+        job->framebuffer + (size_t)y * job->display_info.width + x,
+        job->display_info.width, packed, runs))
+      return luaL_error(state, "inconsistent capture snapshot");
+    return 1;
+  }
+  /* Insufficient capacity leaves the old region intact, including on OOM. */
   display_region_t *region = display_new_region(state, width, height,
                                                 packed, runs, 1, key);
   /* Allocation may close, resize or reacquire Display. Always fetch the current
@@ -4192,7 +4206,7 @@ static int display_capture_masked(lua_State *state, h2_lua_job_t *job,
   display_check_capture(state, job, x, y, width, height);
   if (display_pack_masked(region,
       job->framebuffer + (size_t)y * job->display_info.width + x,
-      job->display_info.width)) return 1;
+      job->display_info.width, packed, runs)) return 1;
   lua_pop(state, 1);
 
   /* Bounded fallback: the previous snapshot path. Allocation can run more
@@ -4207,7 +4221,7 @@ static int display_capture_masked(lua_State *state, h2_lua_job_t *job,
         (size_t)width * sizeof(uint16_t));
   display_masked_counts(captured, width, width, height, key, &packed, &runs);
   region = display_new_region(state, width, height, packed, runs, 1, key);
-  if (!display_pack_masked(region, captured, width))
+  if (!display_pack_masked(region, captured, width, packed, runs))
     return luaL_error(state, "inconsistent capture snapshot");
   return 1;
 }
@@ -4222,11 +4236,12 @@ static int display_capture_region(lua_State *state) {
   uint16_t key = masked ? check_color(state, 5) : 0;
   display_region_t *reuse = lua_isnoneornil(state, 6) ? NULL :
       luaL_checkudata(state, 6, H2_LUA_DISPLAY_REGION_META);
-  if (reuse != NULL && (masked || reuse->masked || reuse->width != width ||
-                        reuse->height != height))
-    return luaL_error(state, "region reuse requires matching opaque storage");
+  if (reuse != NULL && (reuse->masked != masked || reuse->width != width ||
+                        reuse->height != height || (masked && reuse->key != key)))
+    return luaL_error(state, "region reuse requires matching size and color key");
   display_check_capture(state, job, x, y, width, height);
-  if (masked) return display_capture_masked(state, job, x, y, width, height, key);
+  if (masked)
+    return display_capture_masked(state, job, x, y, width, height, key, reuse);
   size_t count = (size_t)width * height;
   display_region_t *region = reuse;
   if (region == NULL)
@@ -4344,7 +4359,7 @@ static int display_restore_background(lua_State *state) {
   uint16_t *pixels = display_region_pixels(region);
   uint8_t *damage = display_region_damage(region);
   if (!job->display_background_valid) {
-    memcpy(job->framebuffer, pixels, region->pixel_count * sizeof(uint16_t));
+    memcpy(job->framebuffer, pixels, region->pixel_capacity * sizeof(uint16_t));
     display_dirty_full(job);
   } else {
     int columns = (region->width + 15) / 16;
@@ -5020,6 +5035,8 @@ int h2_lua_push_display_proxy(lua_State *state, h2_lua_job_t *job) {
   set_function(state, "stroke_path", display_stroke_path, job);
   set_function(state, "region_from_string", display_region_from_string, job);
   set_function(state, "capture_region", display_capture_region, job);
+  lua_pushboolean(state, 1);
+  lua_setfield(state, -2, "masked_region_reuse");
   set_function(state, "draw_region", display_draw_region, job);
   set_function(state, "restore_background", display_restore_background, job);
   set_function(state, "release_background", display_release_background_lua, job);

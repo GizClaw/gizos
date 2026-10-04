@@ -81,9 +81,19 @@
  *   effects remain ordinary Lua behavior; capture itself does not draw.
  * - Closed/out-of-bounds acquisition at validation raises an error. A copied
  *   fallback snapshot survives later Display closure. OOM publishes no partial
- *   result. All temporary/final userdata are VM-charged and GC-owned. Reuse
- *   accepts only same-size opaque storage, with key omitted, and returns the
- *   same userdata without pixel allocation; masked reuse remains unsupported.
+ *   result. All temporary/final userdata are VM-charged and GC-owned.
+ * - Reuse requires identical dimensions and masking mode; masked reuse also
+ *   requires the same RGB565 key. Mismatches raise an error. Opaque reuse, or
+ *   masked reuse with sufficient existing pixel/run capacity, updates and
+ *   returns the same userdata without allocation or finalizer callbacks. All
+ *   aliases observe the updated content. Capacities do not shrink on reuse.
+ *   Insufficient masked capacity uses the ordinary allocation path, returning
+ *   a new region; the old region remains unchanged even on OOM (except for
+ *   explicit mutations by user finalizers). Callers must retain the return
+ *   value. No pool or extra capacity is allocated automatically.
+ *   display.masked_region_reuse == true advertises this contract; older
+ *   modules omit the field. It is informational like width/height: changing
+ *   the Lua table field does not enable or disable native support.
  *
  * Indexed rectangle Lua API (owning VM worker only):
  * - display.compile_rects(records) returns immutable userdata copied from a
