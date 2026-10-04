@@ -292,6 +292,10 @@ class Fixture:
         key, cert, self.ca, _ = certificate(directory, 'mqtt-trusted', '127.0.0.1')
         _, _, self.wrong_ca, _ = certificate(directory, 'mqtt-other-root', '127.0.0.1')
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        # This suite measures client cleanup, not process-wide session caching.
+        # MQTT/TLS resumption is outside its declared qualification scope.
+        context.options |= ssl.OP_NO_TICKET
+        context.num_tickets = 0
         context.load_cert_chain(cert, key)
         self.tcp = Broker(self.session, allow_smoke=allow_smoke)
         self.tls = Broker(self.session, context, allow_smoke=allow_smoke)
