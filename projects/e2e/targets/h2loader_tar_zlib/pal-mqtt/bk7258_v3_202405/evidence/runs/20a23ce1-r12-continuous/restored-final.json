@@ -1,0 +1,281 @@
+{
+  "uid": "c8478ca2a87c",
+  "port": "/dev/cu.usbserial-1240",
+  "original_status": {
+    "board": "bk7258_v3_202405",
+    "target": "bk7258",
+    "chip": "bk7258",
+    "device_uid": "c8478ca2a87c",
+    "capabilities": "0x00000003",
+    "command_availability": "0x001f3f1f",
+    "active_role": "app",
+    "active_version": "gizclaw-dev-r58-socketerrno",
+    "active_checksum": "434a71a57dc9bd986b4083f772e5f58dcf5f5b4daebabb98decea44346f071bc",
+    "active_image_size": "5222400",
+    "running_partition": "2",
+    "next_partition": "2",
+    "boot_intent": "auto",
+    "stage_valid": "0",
+    "stage_package_checksum": "-",
+    "stage_package_size": "0",
+    "stage_image_checksum": "-",
+    "stage_image_size": "0",
+    "stage_role": "unknown",
+    "stage_version": "-",
+    "stage_board": "-",
+    "stage_target": "-",
+    "partition_1_valid": "1",
+    "partition_1_package_checksum": "041769c71398254bf2103e873c2c5b28490cd7f02f402349919db6b704bf1731",
+    "partition_1_package_size": "1578984",
+    "partition_1_image_checksum": "31a3c6780e1b2918ff3af9e3d323826c154a9cb9cd0b60740888efc368f9cb86",
+    "partition_1_image_size": "2437120",
+    "partition_1_role": "loader",
+    "partition_1_version": "0.7.0",
+    "partition_1_board": "bk7258_v3_202405",
+    "partition_1_target": "bk7258",
+    "partition_2_valid": "1",
+    "partition_2_package_checksum": "2ed0045977458bc21788e8c222a0b697cbef4ca9b3388ed42f65ae0905ad74df",
+    "partition_2_package_size": "2271777",
+    "partition_2_image_checksum": "434a71a57dc9bd986b4083f772e5f58dcf5f5b4daebabb98decea44346f071bc",
+    "partition_2_image_size": "5222400",
+    "partition_2_role": "app",
+    "partition_2_version": "gizclaw-dev-r58-socketerrno",
+    "partition_2_board": "bk7258_v3_202405",
+    "partition_2_target": "bk7258",
+    "last_result": "0",
+    "mfg_mode": "1",
+    "mfg_steps": "0000000000000000000000"
+  },
+  "after_status": {
+    "board": "bk7258_v3_202405",
+    "target": "bk7258",
+    "chip": "bk7258",
+    "device_uid": "c8478ca2a87c",
+    "capabilities": "0x00000005",
+    "command_availability": "0x00081f1f",
+    "active_role": "loader",
+    "active_version": "0.7.0",
+    "active_checksum": "31a3c6780e1b2918ff3af9e3d323826c154a9cb9cd0b60740888efc368f9cb86",
+    "active_image_size": "2437120",
+    "running_partition": "1",
+    "next_partition": "1",
+    "boot_intent": "loader",
+    "stage_valid": "0",
+    "stage_package_checksum": "-",
+    "stage_package_size": "0",
+    "stage_image_checksum": "-",
+    "stage_image_size": "0",
+    "stage_role": "unknown",
+    "stage_version": "-",
+    "stage_board": "-",
+    "stage_target": "-",
+    "partition_1_valid": "1",
+    "partition_1_package_checksum": "041769c71398254bf2103e873c2c5b28490cd7f02f402349919db6b704bf1731",
+    "partition_1_package_size": "1578984",
+    "partition_1_image_checksum": "31a3c6780e1b2918ff3af9e3d323826c154a9cb9cd0b60740888efc368f9cb86",
+    "partition_1_image_size": "2437120",
+    "partition_1_role": "loader",
+    "partition_1_version": "0.7.0",
+    "partition_1_board": "bk7258_v3_202405",
+    "partition_1_target": "bk7258",
+    "partition_2_valid": "1",
+    "partition_2_package_checksum": "2ed0045977458bc21788e8c222a0b697cbef4ca9b3388ed42f65ae0905ad74df",
+    "partition_2_package_size": "2271777",
+    "partition_2_image_checksum": "434a71a57dc9bd986b4083f772e5f58dcf5f5b4daebabb98decea44346f071bc",
+    "partition_2_image_size": "5222400",
+    "partition_2_role": "app",
+    "partition_2_version": "gizclaw-dev-r58-socketerrno",
+    "partition_2_board": "bk7258_v3_202405",
+    "partition_2_target": "bk7258",
+    "last_result": "0",
+    "mfg_mode": "1",
+    "mfg_steps": "0000000000000000000000"
+  },
+  "p1_preserved": true,
+  "p2_restored": true,
+  "stage_restored_empty": true,
+  "coredump_status": {
+    "result": "OK",
+    "code": "0",
+    "partition": "coredump",
+    "bytes": "368640",
+    "stored_bytes": "32",
+    "blank": "0"
+  },
+  "coredump_sha256": "f59f522edd1cc5bd0aab008b938dc7cdfac8a4333c34fdf763404923210a3829",
+  "parked_role": "loader",
+  "reason": "Prevent automatic original GizClaw test/audio startup after qualification attempts",
+  "wifi_settings_written_by_this_task": false,
+  "wifi_getter_exit": 3,
+  "wifi_identity_verified": false,
+  "restored": true,
+  "restoration_scope": [
+    "original P1 identity preserved",
+    "original R58 P2 identity restored",
+    "Stage empty",
+    "original actual 32-byte coredump preserved",
+    "parked Loader with loader boot intent"
+  ],
+  "wifi_getter_code": -7,
+  "wifi_getter_terminal": 0,
+  "wifi_getter_error": "H2_PAL_ERR_INVALID_STATE",
+  "uart_release_verified": true,
+  "independently_verified_at_utc": "2026-10-04T18:56:58.034701+00:00",
+  "private_evidence_directory": "/Users/idy/.codex/task-evidence/pal-pref-mqtt-platforms-20261004/bk-restored-final-20261005",
+  "original_metadata_source": "/Users/idy/.codex/task-evidence/pal-pref-mqtt-platforms-20261004/bk-after-rts-status.private.log",
+  "original_metadata_log_sha256": "87ebbc92f3c3b305c2bc633f47e63721a224f08c940cb96df15f8de00071068b",
+  "root_restore_report_sha256": "46395b8a68efc6a620c320bde8373a0eaccb621e848f0d989e81b10249af6d21",
+  "coredump_actual_bytes_before": 32,
+  "coredump_actual_bytes_after": 32,
+  "host_commands": {
+    "before-coredump-dump-receipt.json": {
+      "command": [
+        "coredump",
+        "dump",
+        "--output",
+        "/Users/idy/.codex/task-evidence/pal-pref-mqtt-platforms-20261004/bk-restored-final-20261005/coredump-before.bin"
+      ],
+      "exit": 0,
+      "port": "/dev/cu.usbserial-1240",
+      "started_at_utc": "2026-10-04T18:46:43.752723+00:00",
+      "log_sha256": "5c6a8d7d36fea9c066de988831a65336fdaec6410aec3915f3a51da44b66bc8b",
+      "actual_log_filename": "before-coredump-dump.private.log"
+    },
+    "park-loader-receipt.json": {
+      "command": [
+        "reboot",
+        "loader"
+      ],
+      "exit": 0,
+      "port": "/dev/cu.usbserial-1240",
+      "started_at_utc": "2026-10-04T18:52:36.491300+00:00",
+      "log_sha256": "e3edb7132359fcac3847ba1187200be2e35b6bf258f763d8ce8406be7150fccd",
+      "actual_log_filename": "park-loader.private.log"
+    },
+    "final-coredump-dump-receipt.json": {
+      "command": [
+        "coredump",
+        "dump",
+        "--output",
+        "/Users/idy/.codex/task-evidence/pal-pref-mqtt-platforms-20261004/bk-restored-final-20261005/coredump-after.bin"
+      ],
+      "exit": 0,
+      "port": "/dev/cu.usbserial-1240",
+      "started_at_utc": "2026-10-04T18:53:34.188204+00:00",
+      "log_sha256": "11d57b39e03ed7f6604da8cb9effbbbdf0e5c181a5fef62c9053bf01118c518b",
+      "actual_log_filename": "final-coredump-dump.private.log"
+    },
+    "restore-upgrade-receipt.json": {
+      "command": [
+        "reboot",
+        "upgrade",
+        "--monitor",
+        "--continuous-monitor"
+      ],
+      "port": "/dev/cu.usbserial-1240",
+      "started_at_utc": "2026-10-04T18:48:30.226358+00:00",
+      "exit_after_capture": 130,
+      "controlled_stop": true,
+      "stop_reason": "Native App management task ready; park Loader before automatic GizClaw E2E",
+      "log_sha256": "4b299a5fe41f4e5f3de653765719468e0d1743159d7d199a5faaf068d6578e16",
+      "actual_log_filename": "restore-upgrade.private.log"
+    },
+    "clear-restoration-stage-receipt.json": {
+      "command": [
+        "stage",
+        "abort"
+      ],
+      "exit": 0,
+      "port": "/dev/cu.usbserial-1240",
+      "started_at_utc": "2026-10-04T18:53:11.787056+00:00",
+      "log_sha256": "b61a2bc23a60a4c42deee0c71d5302d2096e6d6862455fee6d006fc7b4c6f9ca",
+      "actual_log_filename": "clear-restoration-stage.private.log"
+    },
+    "staged-status-receipt.json": {
+      "command": [
+        "status"
+      ],
+      "exit": 0,
+      "port": "/dev/cu.usbserial-1240",
+      "started_at_utc": "2026-10-04T18:48:18.929695+00:00",
+      "log_sha256": "1e4315d7742ffb795d5ccd28c19b5b3a82c28fd10b1e4f755f5cdb2e17851507",
+      "actual_log_filename": "staged-status.private.log"
+    },
+    "restore-send-receipt.json": {
+      "command": [
+        "send",
+        "--file",
+        "/Users/idy/.codex/task-evidence/pal-pref-mqtt-platforms-20261004/bk-original-app-r58/package.update.tar.zlib"
+      ],
+      "exit": 0,
+      "port": "/dev/cu.usbserial-1240",
+      "started_at_utc": "2026-10-04T18:46:48.489275+00:00",
+      "log_sha256": "c2240c6a60e4286227da327fd12f8754f6ed1895a909361164a746b9baa3e2bc",
+      "actual_log_filename": "restore-send.private.log"
+    },
+    "final-wifi-status-receipt.json": {
+      "command": [
+        "wifi",
+        "status"
+      ],
+      "exit": 3,
+      "port": "/dev/cu.usbserial-1240",
+      "started_at_utc": "2026-10-04T18:53:38.755226+00:00",
+      "log_sha256": "a3d0475d7a36f8ca4161d6668e113463d7916774ed5f4869fc1d37e1f1ff121e",
+      "actual_log_filename": "final-wifi-status.private.log"
+    },
+    "final-status-receipt.json": {
+      "command": [
+        "status"
+      ],
+      "exit": 0,
+      "port": "/dev/cu.usbserial-1240",
+      "started_at_utc": "2026-10-04T18:53:20.429361+00:00",
+      "log_sha256": "3535571de2a4d11b24e379e03db6449dd43b8d28c8f60f3f75bf612aba166a32",
+      "actual_log_filename": "final-status.private.log"
+    },
+    "final-coredump-status-receipt.json": {
+      "command": [
+        "coredump",
+        "status"
+      ],
+      "exit": 0,
+      "port": "/dev/cu.usbserial-1240",
+      "started_at_utc": "2026-10-04T18:53:29.600693+00:00",
+      "log_sha256": "871dcafc5212b2c5520d923a2e7fc7bd38f5466e77ef0b5c3c951406f41d6621",
+      "actual_log_filename": "final-coredump-status.private.log"
+    },
+    "before-status-receipt.json": {
+      "command": [
+        "status"
+      ],
+      "exit": 0,
+      "port": "/dev/cu.usbserial-1240",
+      "started_at_utc": "2026-10-04T18:46:29.821995+00:00",
+      "log_sha256": "0c2d7c6fa0c21ff22719b5240c193a502294efea491b911f49a4b1ae5e6168d1",
+      "actual_log_filename": "before-status.private.log"
+    },
+    "before-coredump-status-receipt.json": {
+      "command": [
+        "coredump",
+        "status"
+      ],
+      "exit": 0,
+      "port": "/dev/cu.usbserial-1240",
+      "started_at_utc": "2026-10-04T18:46:39.000520+00:00",
+      "log_sha256": "871dcafc5212b2c5520d923a2e7fc7bd38f5466e77ef0b5c3c951406f41d6621",
+      "actual_log_filename": "before-coredump-status.private.log"
+    }
+  },
+  "uart_release_receipt": {
+    "command": [
+      "lsof",
+      "/dev/cu.usbserial-1240"
+    ],
+    "actual_exit": 1,
+    "stdout_bytes": 0,
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "observed_at_utc": "2026-10-04T18:58:01.453855+00:00",
+    "inspection": "read-only directed process inventory; no UART open"
+  }
+}

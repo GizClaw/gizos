@@ -38,7 +38,7 @@ bazel test --config=macos_arm64 --nocache_test_results //projects/e2e/targets/cc
 
 ## 平台和退役边界
 
-当前独立 artifact entry 支持 macOS/Linux、iOS Simulator、Android Emulator、BK7258 与 DevKit ESP32-S3。macOS、指定 iOS Simulator、Android Emulator 和定向 DevKit 实板已有完整 36/36 运行与清理证据；DevKit 取得两次不同 nonce 的完整启动资格并恢复原 App、非空 Stage 和设置。Linux 尚未实跑；BK 已使用 fixed R12 App 与连续 UART host 取得两次完整首轮 36/36、真实 wire/native/metadata/coredump 资格，恢复原 App 的记录由台架 owner 独立补录。Browser 目前没有 raw TCP/TLS MQTT provider，不能算 mandatory MQTT PASS；没有将 host 或 simulator 结果改称六平台/实体手机通过。IPv6 由独立延期任务负责。
+当前独立 artifact entry 支持 macOS/Linux、iOS Simulator、Android Emulator、BK7258 与 DevKit ESP32-S3。macOS、指定 iOS Simulator、Android Emulator 和定向 DevKit 实板已有完整 36/36 运行与清理证据；DevKit 取得两次不同 nonce 的完整启动资格并恢复原 App、非空 Stage 和设置。Linux 尚未实跑；BK 已使用 fixed R12 App 与连续 UART host 取得两次完整首轮 36/36、真实 wire/native/metadata/coredump 资格，原 P1/原 R58 P2/Stage/32-byte dump 的恢复及停 Loader 状态也已独立复验；Wi-Fi getter 失败不算身份或设置验证。Browser 目前没有 raw TCP/TLS MQTT provider，不能算 mandatory MQTT PASS；没有将 host 或 simulator 结果改称六平台/实体手机通过。IPv6 由独立延期任务负责。
 
 旧 PAL App、loopback 和 public smoke 入口保留，直到对应平台、执行 scope 和 CI 迁移有完整证据。新 suite 通过不意味着旧 PAL 全部可以退役，也不把历史 MQTT receipt 改绑到新 App。
 
@@ -114,3 +114,6 @@ BK R12 的新独立 continuous capture 已完成两次 fresh boot (`17a0eabff8cf
 设备 immutable package 仍来自 `20a23ce18783657ae00b2be568a30cf762be7ff3`，version `mqtt-bk-uart-r12`，package SHA256 `d267780072d167b4db54c747a45f64b1526af1757b3a0bcffd7ea62bb341f717`，image SHA256 `94ea138a86d7aa72e0d5e105b0cec53c1b6a3688e8d480cc0248b28ced2151c0`。新 host 实际 build/source `930d7563d453879ab52b86adaf436fb48ecc2bfc`、binary SHA256 `0831c388ebb4e65c616a0ed76555a60c0a97ae51459f4f52255e1c1028d7dbcd` 和 verifier snapshot/hash `73f6ca18...bea514d0` 分别保留；复用原设备 build receipt 不表示重新构建设备，也不将新 host/source 绑定旧失败 capture。连续观察只保证接收，不替代 final role/source/UID 验收。
 
 R9 retained wire、R10/R11 不完整首轮和旧 R12 normal 缺连续 13 行仍各保持 unqualified，摘要见 BK entry 的 `evidence/failures/`。旧 host 在 command service 暂停期间有 close/原 termios 恢复/500ms 重连等待窗口；新命令 `reboot <target> --monitor --continuous-monitor` 在 accepted ACK 后保持同一 physical UART/baud，避免这个采集空窗。原 R58 恢复是独立台架动作；新资格记录在恢复证明到达前明确保持 `restored=false`，原始 native diagnostics/storage/coredump bytes 留在私有证据目录。
+
+
+原 R58 恢复后的独立复验已完成：original authoritative raw status 对 final status 的 P1/P2 全部 identity 字段精确一致，P2 image `434a71a5...6f071bc` / package `2ed00459...05ad74df`，UID `c8478ca2a87c`，Stage=0，active role/boot intent=Loader、running/next partition=1。原实际 nonblank 32-byte coredump 前后 byte-equal、SHA256 `f59f522e...210a3829`；各实际 status/dump/stage abort/park/send 命令退出及 log SHA 已逐份验证。Restore monitor 在原 App management task ready 后受控退出130，再停 Loader，避免自动 GizClaw E2E继续启动；该停止理由属于恢复动作，不是 MQTT qualification。`environment.restored=true` 仅声明这些明确范围。Wi-Fi getter 的原始结果为 host exit3、code=-7 (`INVALID_STATE`)、terminal=0，保留 `wifi_identity_verified=false`；本轮未写 Wi-Fi 设置，未把 getter 失败冒充验证。UART 最终释放由台架 owner 另行定向核对。
