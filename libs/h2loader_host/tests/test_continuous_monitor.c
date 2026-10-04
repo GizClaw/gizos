@@ -71,7 +71,8 @@ static int uart_read(void *u, void *out, size_t capacity, size_t *read, uint32_t
             f->ready_sent=1;
             expect(f,ready,sizeof(ready)-1u);
             if (f->mode==4) {
-                assert(h2_iostreamikcp_write(f->peer,(const uint8_t *)ready,sizeof(ready)-1u)==0);
+                const char combined[]="H2_LOADER_READY target=bk status=ready\r\nSTALE-IN-SAME-KCP-MESSAGE\r\n";
+                assert(h2_iostreamikcp_write(f->peer,(const uint8_t *)combined,sizeof(combined)-1u)==0);
                 assert(h2_iostreamikcp_flush(f->peer)==0);
             } else {
                 memcpy(f->input,ready,sizeof(ready)-1u); f->input_length=sizeof(ready)-1u;

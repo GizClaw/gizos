@@ -669,9 +669,18 @@ static h2_pal_result_t serial_drain_decoded_logs(
         if (read == 0u) {
             return H2_PAL_OK;
         }
-        rc = serial_stream_log(connection, buffer, read);
-        if (rc != H2_PAL_OK) {
-            return rc;
+        if (connection->continuous_monitor) {
+            /* READY may share a decoded KCP message with stale epoch bytes.
+             * Stop exactly at its newline; physical raw logs after reset use
+             * their separate filter callback and still remain observable. */
+            for (size_t index = 0u; index < read; ++index) {
+                rc = serial_stream_log(connection, &buffer[index], 1u);
+                if (rc != H2_PAL_OK) return rc;
+                if (connection->retired_conversation) return H2_PAL_OK;
+            }
+        } else {
+            rc = serial_stream_log(connection, buffer, read);
+            if (rc != H2_PAL_OK) return rc;
         }
     }
 }
