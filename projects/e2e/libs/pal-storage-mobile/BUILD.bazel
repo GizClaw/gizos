@@ -39,6 +39,15 @@ py_test(
 
 mobile_e2e_suite(
     name = "mobile_e2e",
+    android_sdk = {
+        "required_header": "prefab/modules/h2_pal_core/include/h2_android_platform.h",
+        "public_symbols": [
+            "h2_android_storage_create",
+            "h2_android_storage_fs_api",
+            "h2_android_storage_pref_api",
+            "h2_android_storage_destroy",
+        ],
+    },
     case_count = 36,
     expected = {
         "contract": 2,
@@ -48,6 +57,16 @@ mobile_e2e_suite(
         "blocked": 0,
     },
     hook = "run_mobile.py",
+    ios_sdk = {
+        "executable": "GizOSPALStorageE2E",
+        "provider_symbols": [
+            "_h2_ios_storage_create",
+            "_h2_ios_storage_fs_api",
+            "_h2_ios_storage_pref_api",
+            "_h2_ios_storage_destroy",
+        ],
+        "portable_symbol": "_h2_pal_storage_e2e_run",
+    },
     options = {
         "root": "pal-storage",
         "nonce_bits": 32,
