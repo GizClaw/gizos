@@ -4,7 +4,9 @@ GizOS 使用 Bazel 9.2.0 作为 stable host C/C++ package 以及 ESP-IDF/BK7258/
 
 `BUILD.bazel`、`.bzl`、target 命名和 platform variant 同时遵守 [Bazel 代码规范](/zh/coding-styles/bazel)。
 
-H2Loader 的 `h2loader_tar_zlib` artifact rule 统一且仅输出 format 2 `.update.tar`，外层 USTAR 不压缩，app/data 是独立 zlib member；不存在 `package_format` 生成选项。Rule 名称及既有 target label 保留兼容。`FirmwareReleaseInfo.package_format`、`firmware_catalog.cquery` 和 `.firmware.json` 的 `package_format` 固定为 2，metadata 的 `package_manifest.format` 与 managed asset `release_suffix` 同步。Device/Host reader 继续兼容历史 format 1；发布 assembler 保留历史 archive 的读取校验。旧设备由已有双格式 reader 过渡包先更新 Loader，当前 build 不再生成旧包。
+H2Loader 保留两条固定格式的构建轨道：`h2loader_tar_zlib` 和既有 `targets/h2loader_tar_zlib/` label 输出 format 1 `.update.tar.zlib`；新增 `h2loader_zlib_tar` 和 `targets/h2loader_zlib_tar/` label 输出 format 2 `.update.tar`，外层 USTAR 不压缩，app/data 独立 zlib 压缩。两种 rule 都没有 `package_format` attribute。新 rule 使用 `source = "//.../h2loader_tar_zlib/...:package"`，通过 `FirmwareReleaseInfo.native`、`package_data` 和 `package_data_root` 借用原始输入；action 直接读取同一个 native image 和 data，不以旧压缩包为输入。原始 firmware target 与源码不复制，两个 package action 独立。Provider、catalog、metadata 的 `package_format`、manifest 与 suffix 必须对应 1/2。发布标签只挂在选定的新轨道，避免两个格式重复发布同一身份；旧 target 仍可显式构建并作为旧设备的过渡包。
+
+`h2loader_checksum_matrix` 消费两个同 board/target 的 App package source，要求不同 raw image，生成两种格式各五个独立 E2E fixture：baseline、unchanged、app-only、data-only、both-changed。新格式三个跳过用例的未变段故意设置无效 zlib CMF，并同步 compressed SHA-256；原始 App/data identity 不变。Fixture 属于测试，不挂发布标签。运行方式见 [Loader E2E runner](/apps/h2loader/boards/devkit/h2loader#e2e-runner)。
 
 ## Mobile E2E Python runtime
 

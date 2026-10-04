@@ -2,12 +2,14 @@
 
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include "h2_h2loader_host_package.h"
 #include <string.h>
 
 typedef struct fake_executor {
   size_t count;
-  h2_h2loader_e2e_case_t cases[80];
-  h2_h2loader_e2e_transport_t transports[80];
+  h2_h2loader_e2e_case_t cases[H2_H2LOADER_E2E_MAX_CASES];
+  h2_h2loader_e2e_transport_t transports[H2_H2LOADER_E2E_MAX_CASES];
 } fake_executor_t;
 
 static h2_pal_result_t execute_case(void *user,
@@ -40,7 +42,7 @@ static h2_pal_result_t execute_case(void *user,
 
 static void test_full_sequence_for_both_transports(void) {
   fake_executor_t fake = {0};
-  h2_h2loader_e2e_result_t result;
+  static h2_h2loader_e2e_result_t result;
   const h2_h2loader_e2e_config_t config = {
       .uart_endpoint = "/dev/test",
       .ble_endpoint = "4:001122334455",
@@ -141,7 +143,7 @@ static h2_pal_result_t execute_with_removed_availability(
 
 static void test_memory_follows_authoritative_availability(void) {
   fake_executor_t fake = {0};
-  h2_h2loader_e2e_result_t result;
+  static h2_h2loader_e2e_result_t result;
   const h2_h2loader_e2e_config_t config = {
       .uart_endpoint = "/dev/test",
       .repeat_count = 1u,
@@ -158,7 +160,7 @@ static void test_memory_follows_authoritative_availability(void) {
 
 static void test_legacy_check_uses_preceding_status_availability(void) {
   fake_executor_t fake = {0};
-  h2_h2loader_e2e_result_t result;
+  static h2_h2loader_e2e_result_t result;
   const h2_h2loader_e2e_config_t config = {
       .uart_endpoint = "/dev/test",
       .repeat_count = 1u,
@@ -173,7 +175,7 @@ static void test_legacy_check_uses_preceding_status_availability(void) {
 }
 
 static void test_failure_is_reported_without_hiding_cleanup(void) {
-  h2_h2loader_e2e_result_t result;
+  static h2_h2loader_e2e_result_t result;
   const h2_h2loader_e2e_config_t config = {
       .uart_endpoint = "/dev/test",
       .app_firmware = (const uint8_t *)"x",
@@ -191,7 +193,7 @@ static void test_failure_is_reported_without_hiding_cleanup(void) {
 }
 
 static void test_invalid_configs(void) {
-  h2_h2loader_e2e_result_t result;
+  static h2_h2loader_e2e_result_t result;
   h2_h2loader_e2e_config_t config = {.repeat_count = 1u};
   assert(h2_h2loader_e2e_run(&config, &result) == H2_PAL_ERR_INVALID_ARG);
   config.uart_endpoint = "/dev/test";
@@ -214,7 +216,7 @@ static void test_invalid_configs(void) {
 
 static void test_monitor_cases_are_uart_only_and_bounded(void) {
   fake_executor_t fake = {0};
-  h2_h2loader_e2e_result_t result;
+  static h2_h2loader_e2e_result_t result;
   const h2_h2loader_e2e_config_t config = {
       .uart_endpoint = "/dev/test",
       .ble_endpoint = "4:001122334455",
@@ -249,7 +251,7 @@ static void test_monitor_cases_are_uart_only_and_bounded(void) {
 
 static void test_monitor_runs_each_reboot_with_a_bootable_target(void) {
   fake_executor_t fake = {0};
-  h2_h2loader_e2e_result_t result;
+  static h2_h2loader_e2e_result_t result;
   const h2_h2loader_e2e_config_t config = {
       .uart_endpoint = "/dev/test",
       .app_firmware = (const uint8_t *)"x",
@@ -285,7 +287,7 @@ static void test_monitor_runs_each_reboot_with_a_bootable_target(void) {
 
 static void test_crash_app_runs_once_before_cross_transport_coredump(void) {
   fake_executor_t fake = {0};
-  h2_h2loader_e2e_result_t result;
+  static h2_h2loader_e2e_result_t result;
   const h2_h2loader_e2e_config_t config = {
       .uart_endpoint = "/dev/test",
       .ble_endpoint = "4:001122334455",
@@ -315,7 +317,7 @@ static int cancel_after_first_case(void *user) {
 
 static void test_cancel_does_not_execute_later_cases(void) {
   fake_executor_t fake = {0};
-  h2_h2loader_e2e_result_t result;
+  static h2_h2loader_e2e_result_t result;
   const h2_h2loader_e2e_config_t config = {
       .uart_endpoint = "/dev/test",
       .ble_endpoint = "4:001122334455",
@@ -363,7 +365,130 @@ static void test_names(void) {
              "install-crash-app") == 0);
 }
 
+static void *matrix_alloc(void *user, size_t len) { (void)user; return malloc(len); }
+static void *matrix_realloc(void *user, void *data, size_t len) { (void)user; return realloc(data, len); }
+static void matrix_free(void *user, void *data) { (void)user; free(data); }
+static const h2_pal_mem_vtable_t matrix_mem_vtable = {
+    .alloc = matrix_alloc, .realloc = matrix_realloc, .free = matrix_free};
+static const h2_pal_mem_api_t matrix_mem = {.vtable = &matrix_mem_vtable};
+
+typedef struct matrix_fixture {
+  fake_executor_t fake;
+  h2_runtime_t runtime;
+  h2_h2loader_e2e_config_t config;
+  h2_h2loader_host_catalog_entry_t assets[2][5];
+  int bad_data;
+} matrix_fixture_t;
+
+static h2_pal_result_t matrix_read(void *user, uint64_t offset, uint8_t *out,
+                                    size_t len, size_t *got) {
+  const h2_h2loader_e2e_package_t *package = user;
+  if (offset > package->size) return H2_PAL_ERR_INVALID_ARG;
+  if (len > package->size - (size_t)offset) len = package->size - (size_t)offset;
+  memcpy(out, package->data + offset, len); *got = len;
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t matrix_execute(void *user,
+    h2_h2loader_e2e_transport_t transport, h2_h2loader_e2e_case_t test_case,
+    h2_h2loader_e2e_case_result_t *out) {
+  matrix_fixture_t *fixture = user;
+  h2_pal_result_t rc = execute_case(&fixture->fake, transport, test_case, out);
+  if (test_case < H2_H2LOADER_E2E_CASE_TAR_ZLIB_BASELINE) return rc;
+  size_t offset = (size_t)(test_case - H2_H2LOADER_E2E_CASE_TAR_ZLIB_BASELINE);
+  size_t format = offset / 5u, index = offset % 5u;
+  const h2_h2loader_host_catalog_entry_t *asset = &fixture->assets[format][index];
+  out->status_valid = out->data_checksum_valid = 1u;
+  out->checksum_expectations_valid = index != 0u;
+  out->expected_update_app = index == 2u || index == 4u;
+  out->expected_update_data = index == 3u || index == 4u;
+  strcpy(out->data_sha256, asset->data_sha256);
+  if (fixture->bad_data && format == 0u && index == 3u)
+    strcpy(out->data_sha256, fixture->assets[0][2].data_sha256);
+  if (index != 0u) {
+    strcpy(out->before_image_sha256, fixture->assets[format][index - 1u].image_sha256);
+    strcpy(out->before_data_sha256, fixture->assets[format][index - 1u].data_sha256);
+  }
+  strcpy(out->status.board, asset->board);
+  strcpy(out->status.target, asset->target);
+  out->status.running_partition = 2u;
+  out->status.active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_APP;
+  strcpy(out->status.active_version, asset->version);
+  strcpy(out->status.active_checksum, asset->image_sha256);
+  h2_h2loader_host_metadata_t *metadata = &out->status.partition_2;
+  metadata->valid = 1u;
+  metadata->role = H2_H2LOADER_HOST_ACTIVE_ROLE_APP;
+  strcpy(metadata->board, asset->board); strcpy(metadata->target, asset->target);
+  strcpy(metadata->version, asset->version);
+  strcpy(metadata->image_checksum, asset->image_sha256);
+  strcpy(metadata->package_checksum, asset->sha256);
+  return rc;
+}
+
+static void matrix_init(matrix_fixture_t *fixture) {
+  static const char *names[] = {"baseline", "unchanged", "app-only", "data-only", "both-changed"};
+  memset(fixture, 0, sizeof(*fixture));
+  fixture->runtime.mem = &matrix_mem;
+  fixture->config.runtime = &fixture->runtime;
+  fixture->config.uart_endpoint = "/dev/test";
+  fixture->config.ble_endpoint = "4:001122334455";
+  fixture->config.repeat_count = 1u;
+  fixture->config.checksum_formats = 3u;
+  fixture->config.execute_case = matrix_execute;
+  fixture->config.execute_user = fixture;
+  for (size_t format = 0u; format < 2u; ++format)
+    for (size_t index = 0u; index < 5u; ++index) {
+      char path[2048];
+      int n = snprintf(path, sizeof(path), "%s/%s/projects/h2loader/apps/e2e-runner/tests/checksum-fixtures/%s/%s%s",
+          getenv("TEST_SRCDIR"), getenv("TEST_WORKSPACE"), format ? "zlib_tar" : "tar_zlib",
+          names[index], format ? ".update.tar" : ".update.tar.zlib");
+      assert(n > 0 && (size_t)n < sizeof(path));
+      FILE *file = fopen(path, "rb"); assert(file != NULL);
+      assert(fseek(file, 0, SEEK_END) == 0);
+      long length = ftell(file); assert(length > 0);
+      assert(fseek(file, 0, SEEK_SET) == 0);
+      uint8_t *data = malloc((size_t)length); assert(data != NULL);
+      assert(fread(data, 1u, (size_t)length, file) == (size_t)length);
+      assert(fclose(file) == 0);
+      fixture->config.checksum_packages[format][index] = (h2_h2loader_e2e_package_t){data, (size_t)length};
+      h2_h2loader_host_package_inspect_config_t inspect = {
+          .allocator = &matrix_mem, .payload_bytes = (uint64_t)length,
+          .read_payload = matrix_read, .payload_user = &fixture->config.checksum_packages[format][index]};
+      assert(h2_h2loader_host_package_inspect(&inspect, &fixture->assets[format][index]) == H2_PAL_OK);
+    }
+}
+
+static void matrix_close(matrix_fixture_t *fixture) {
+  for (size_t format = 0u; format < 2u; ++format)
+    for (size_t index = 0u; index < 5u; ++index)
+      free((void *)fixture->config.checksum_packages[format][index].data);
+}
+
+static void test_checksum_matrix_and_false_success(void) {
+  static matrix_fixture_t fixture;
+  static h2_h2loader_e2e_result_t result;
+  matrix_init(&fixture);
+  assert(h2_h2loader_e2e_run(&fixture.config, &result) == H2_PAL_OK);
+  assert(result.case_count == 30u && result.passed == 30u);
+  assert(strcmp(h2_h2loader_e2e_case_name(result.cases[6].test_case), "tar-zlib-unchanged") == 0);
+  assert(result.cases[14].package_format == 2u && result.cases[14].data_checksum_valid);
+  fixture.fake.count = 0u;
+  fixture.bad_data = 1;
+  assert(h2_h2loader_e2e_run(&fixture.config, &result) == H2_PAL_ERR_INVALID_STATE);
+  assert(result.cases[8].result == H2_PAL_ERR_INVALID_STATE);
+  assert(result.cases[9].result == H2_PAL_ERR_INVALID_STATE);
+  /* A valid but unguarded new packet must not claim skip proof. */
+  h2_h2loader_e2e_package_t saved = fixture.config.checksum_packages[1][1];
+  fixture.config.checksum_packages[1][1] = fixture.config.checksum_packages[1][0];
+  fixture.fake.count = 0u;
+  assert(h2_h2loader_e2e_run(&fixture.config, &result) == H2_PAL_ERR_FORMAT);
+  assert(result.case_count == 0u && fixture.fake.count == 0u);
+  fixture.config.checksum_packages[1][1] = saved;
+  matrix_close(&fixture);
+}
+
 int main(void) {
+  test_checksum_matrix_and_false_success();
   test_full_sequence_for_both_transports();
   test_failure_is_reported_without_hiding_cleanup();
   test_memory_follows_authoritative_availability();

@@ -5,9 +5,9 @@
 ```sh
 bazel build --config=esp32s3 \
   --//tools/bazel:firmware_version=<version> \
-  //projects/h2loader/targets/h2loader_tar_zlib/loader/devkit:package \
-  //projects/h2loader/targets/h2loader_tar_zlib/loader/devkit:package_uart_460800 \
-  //projects/h2loader/targets/h2loader_tar_zlib/e2e-app/devkit:package
+  //projects/h2loader/targets/h2loader_zlib_tar/loader/devkit:package \
+  //projects/h2loader/targets/h2loader_zlib_tar/loader/devkit:package_uart_460800 \
+  //projects/h2loader/targets/h2loader_zlib_tar/e2e-app/devkit:package
 ```
 
 默认 `package` 使用 USB Serial/JTAG console；`package_uart_460800` 使用 UART0 460800 console。每个 DevKit firmware Bazel target 必须通过 `console = "usb"` 或 `console = "uart"` 显式选择 profile，CMake 只消费 Bazel 传入的 defaults 文件，不自行猜测 console。内部 `bazel-bin/.../firmware/` 保存 raw image 与 recovery bundle，最终 `bazel-bin/.../package/` 保存 managed package 和 release metadata；ESP-IDF app descriptor 和 package manifest 使用同一个 Bazel firmware version。Board defaults 固定启用 PSRAM XIP。
@@ -63,3 +63,6 @@ checksum `8d2d88b5b52c4f1ea17315a4f4fb409880a323f5270cd2b9af8ea405c29193c6`。
 
 独立的预置 coredump fixture 报告为 UART/BLE 10/10 PASS，每种传输都流式读取 23200
 bytes 后 erase；它证明大于 8 KiB 的输出不会再聚合到固定响应缓冲区。
+
+
+四种 checksum 组合的双格式 fixture 由旧 E2E App entry 的 `:checksum-matrix` 生成；runner 的 `--checksum-tar-zlib DIR` 与 `--checksum-zlib-tar DIR` 可同时或分别选择两条轨道。它们复用真实 Stage/upgrade/reconnect 流程，并用设备 `stats` 的 installed data checksum 校验 data-only 与 both-changed 的实际结果。具体输入、guarded skipped streams 和报告合同见 [E2E runner README](https://github.com/GizClaw/gizos/blob/main/projects/h2loader/apps/e2e-runner/README.md)。

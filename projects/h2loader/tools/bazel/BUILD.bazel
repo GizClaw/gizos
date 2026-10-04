@@ -1,3 +1,6 @@
+load(":h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load(":h2loader_zlib_tar.bzl", "h2loader_zlib_tar")
+load(":tests/package_rules.bzl", "package_rules_firmware")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
@@ -5,6 +8,8 @@ package(default_visibility = ["//visibility:public"])
 exports_files([
     "h2loader_firmware.bzl",
     "h2loader_tar_zlib.bzl",
+    "h2loader_zlib_tar.bzl",
+    "checksum_matrix.bzl",
 ])
 
 py_library(
@@ -76,4 +81,48 @@ py_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [":firmware_output"],
+)
+
+py_binary(
+    name = "checksum_fixture_writer",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    srcs = ["checksum_fixture_writer.py"],
+    main = "checksum_fixture_writer.py",
+    legacy_create_init = 0,
+    deps = [":firmware_artifacts"],
+)
+
+_HOST_PACKAGE_TEST = select({
+    "//tools/bazel/platforms:host_linux_target_linux": [],
+    "//tools/bazel/platforms:host_macos_target_macos": [],
+    "//tools/bazel/platforms:host_windows_target_windows": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+package_rules_firmware(name = "package_rules_native", target_compatible_with = _HOST_PACKAGE_TEST)
+
+h2loader_tar_zlib(
+    name = "package_rules_old",
+    firmware = ":package_rules_native",
+    board = "fixture",
+    image = "app",
+    role = "app",
+    target = "esp32s3",
+)
+
+h2loader_zlib_tar(name = "package_rules_new", source = ":package_rules_old")
+
+py_test(
+    name = "package_rules_test",
+    target_compatible_with = _HOST_PACKAGE_TEST,
+    srcs = ["tests/test_package_rules.py"],
+    main = "tests/test_package_rules.py",
+    data = [":package_rules_old", ":package_rules_new"],
+    args = ["$(locations :package_rules_old)", "$(locations :package_rules_new)"],
+    legacy_create_init = 0,
 )

@@ -38,10 +38,20 @@ class FirmwareArtifactsTest(unittest.TestCase):
                     self.assertEqual(inner.getnames(), ["data/a.txt", "data/z.bin"])
                     self.assertEqual(inner.extractfile("data/a.txt").read(), b"alpha")
 
-    def test_legacy_producer_selection_is_unavailable(self) -> None:
-        with tempfile.TemporaryDirectory() as directory, self.assertRaises(TypeError):
-            write_package(Path(directory) / "update", "app/esp/app.bin", b"app", [],
+    def test_legacy_producer_preserves_frozen_bytes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "update.tar.zlib"
+            write_package(output, "app/esp/app.bin", bytes((0xE9, 1, 2, 3, 4, 5)),
+                [BundleEntry("data/a.txt", b"alpha"), BundleEntry("data/z.bin", bytes((0, 1, 2)))],
                 role="app", board="fixture", target="host", version="0", package_format=1)
+            root = Path(os.environ["TEST_SRCDIR"]) / os.environ["TEST_WORKSPACE"] / "projects/h2loader/tools/bazel/tests/fixtures"
+            self.assertEqual(output.read_bytes(), (root / "h2loader_format1.tar.zlib").read_bytes())
+
+    def test_invalid_package_formats_are_rejected(self) -> None:
+        for value in (True, 1.0, 0, 3):
+            with self.subTest(value=value), tempfile.TemporaryDirectory() as directory, self.assertRaises(ValueError):
+                write_package(Path(directory) / "update", "app/esp/app.bin", b"app", [],
+                    role="app", board="fixture", target="host", version="0", package_format=value)
 
     def test_frozen_legacy_archive_remains_readable(self) -> None:
         root = Path(os.environ["TEST_SRCDIR"]) / os.environ["TEST_WORKSPACE"] / "projects/h2loader/tools/bazel/tests/fixtures"

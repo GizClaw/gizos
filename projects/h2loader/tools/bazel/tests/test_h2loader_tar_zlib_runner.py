@@ -54,6 +54,27 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
             with tarfile.open(package, "r:") as outer:
                 self.assertEqual(outer.getnames(), ["manifest", "data.tar.zlib", "app.bin.zlib"])
 
+    def test_fixed_legacy_output_and_metadata(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            app = root / "app.bin"
+            app.write_bytes(b"firmware")
+            package, metadata = root / "old.update.tar.zlib", root / "old.firmware.json"
+            result = subprocess.run([
+                sys.executable, str(RUNNER), "--source-root", str(root),
+                "--app-image", str(app), "--app-path", "app/esp/app.bin",
+                "--entry", "old", "--platform", "esp", "--board", "fixture",
+                "--image", "main", "--role", "app", "--target", "esp32s3", "--version", "1",
+                "--package-format", "1", "--package-output", str(package), "--metadata-output", str(metadata),
+            ], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            release = json.loads(metadata.read_text())
+            self.assertEqual(release["package_format"], 1)
+            self.assertEqual(release["package_manifest"]["format"], 1)
+            self.assertEqual(release["assets"][0]["release_suffix"], ".update.tar.zlib")
+            with tarfile.open(fileobj=BytesIO(zlib.decompress(package.read_bytes())), mode="r:") as old:
+                self.assertEqual(old.extractfile("app/esp/app.bin").read(), app.read_bytes())
+
     def test_packages_br35_ufw_without_changing_payload(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

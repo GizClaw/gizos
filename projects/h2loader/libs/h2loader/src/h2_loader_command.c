@@ -969,6 +969,42 @@ static h2_pal_result_t h2loader_help_handler(
     return H2_PAL_OK;
 }
 
+/* Keep the status wire line stable; stats adds a separate read-only fact. */
+static h2_pal_result_t h2loader_data_checksum_line(h2_loader_command_t *self) {
+    char checksum[66] = {0};
+    char line[112];
+    const char *value = "unavailable";
+    const char *path = self->config.loader->package.config.installed_checksum_path;
+    h2_pal_fs_file_t *file = NULL;
+    const h2_pal_fs_api_t *fs = self->config.fs;
+    size_t len = 0u;
+    int rc = fs == NULL ? H2_PAL_ERR_UNSUPPORTED : h2_pal_fs_open(
+        fs, path == NULL ? "/data/.checksum" : path, H2_PAL_FS_OPEN_READ, &file);
+    if (rc == H2_PAL_ERR_NOT_FOUND) value = "none";
+    if (rc == H2_PAL_OK) {
+        while (len < sizeof(checksum)) {
+            size_t got = 0u;
+            rc = h2_pal_fs_read(fs, file, checksum + len, sizeof(checksum) - len, &got);
+            if (rc != H2_PAL_OK) break;
+            if (got > sizeof(checksum) - len) { rc = H2_PAL_ERR_FORMAT; break; }
+            len += got;
+            if (got == 0u) break;
+        }
+        int close_rc = h2_pal_fs_close(fs, file);
+        if (len == 65u && checksum[64] == '\n') len = 64u;
+        if (rc == H2_PAL_OK && close_rc == H2_PAL_OK && len == 64u) {
+            int valid = 1;
+            for (size_t i = 0u; i < len; ++i) {
+                if (!((checksum[i] >= '0' && checksum[i] <= '9') ||
+                      (checksum[i] >= 'a' && checksum[i] <= 'f'))) valid = 0;
+            }
+            if (valid) { checksum[64] = '\0'; value = checksum; }
+        }
+    }
+    (void)snprintf(line, sizeof(line), "H2_LOADER_DATA_CHECKSUM checksum=%s", value);
+    return h2loader_write_line(self, line);
+}
+
 static h2_pal_result_t h2loader_status_handler_unlocked(
     void *user,
     h2_command_t *command,
@@ -991,7 +1027,10 @@ static h2_pal_result_t h2loader_status_handler_unlocked(
     if (rc != H2_PAL_OK) {
         return (h2_pal_result_t)rc;
     }
-    return h2loader_write_line(self, line);
+    rc = h2loader_write_line(self, line);
+    if (rc == H2_PAL_OK && argc == 2u && strcmp(argv[1], "stats") == 0)
+        rc = h2loader_data_checksum_line(self);
+    return rc;
 }
 
 static h2_pal_result_t h2loader_memory_handler_unlocked(

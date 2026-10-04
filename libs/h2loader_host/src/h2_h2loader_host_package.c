@@ -548,6 +548,7 @@ static int inspect_segmented(const h2_h2loader_host_package_inspect_config_t *co
     asset.identity_source = H2_H2LOADER_HOST_ASSET_IDENTITY_PACKAGE_MANIFEST;
     asset.bytes = config->payload_bytes;
     asset.package_format = 2u;
+    memcpy(asset.data_sha256, m.data_sha256, sizeof(asset.data_sha256));
     *out_asset = asset;
     return H2_PAL_OK;
 }
@@ -678,6 +679,7 @@ h2_pal_result_t h2_h2loader_host_package_inspect(
         H2_H2LOADER_HOST_ASSET_OPERATION_MANAGED_INSTALL;
     tar.asset.identity_source =
         H2_H2LOADER_HOST_ASSET_IDENTITY_PACKAGE_MANIFEST;
+    memcpy(tar.asset.data_sha256, tar.data_checksum, sizeof(tar.asset.data_sha256));
     *out_asset = tar.asset;
     return H2_PAL_OK;
 }

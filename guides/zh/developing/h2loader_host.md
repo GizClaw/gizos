@@ -48,7 +48,7 @@ Managed payload stage 在发送任何 package bytes 前检查连接后 live stat
 
 ## Catalog 与 operation
 
-`firmware-index.json` 及其全部资源由 CI 聚合，随同一个 Release 原样嵌入 Desktop。Catalog parser 在暴露 entry 前校验 schema、枚举值、safe relative path、唯一性、bytes 和 SHA-256。Managed package 当前统一生成 format-2 `.update.tar`，仍可读取历史 `.update.tar.zlib`，recovery 使用 `.recovery.h2fb`。ESP Loader 的 `factory-flash` asset（从 offset `0` 直接烧录的 `.combined_factory.bin`）与 diagnostic asset 一样可以被 catalog 读取和查询，但不可安装，也不能提交给 scheduler。
+`firmware-index.json` 及其全部资源由 CI 聚合，随同一个 Release 原样嵌入 Desktop。Catalog parser 在暴露 entry 前校验 schema、枚举值、safe relative path、唯一性、bytes 和 SHA-256。Bazel 通过旧 `h2loader_tar_zlib` 与新 `h2loader_zlib_tar` 分别生成 format-1 `.update.tar.zlib` 和 format-2 `.update.tar`，Host reader 同时接受两者，recovery 使用 `.recovery.h2fb`。ESP Loader 的 `factory-flash` asset（从 offset `0` 直接烧录的 `.combined_factory.bin`）与 diagnostic asset 一样可以被 catalog 读取和查询，但不可安装，也不能提交给 scheduler。
 
 浏览器从本地选择 standalone format-2 `.update.tar` 或历史 format-1 `.update.tar.zlib` 时没有 Release catalog。Host Core 的 package inspector 通过 caller 提供的 offset reader 按 bounded chunk 读取，计算 archive SHA-256。Format 2 检查未压缩 tar 的 manifest、各独立压缩段的长度/SHA-256；format 1 流式解压整包，并复用 Bundle USTAR path contract 校验 manifest、checksum、data 与唯一 App image。它输出 `identity_source=PACKAGE_MANIFEST` 的 immutable managed asset；两种格式都不携带 App image name，因此 `image` 为空。只有这个显式 identity source 可以省略 name，既有 `RELEASE_CATALOG=0` caller 仍必须严格匹配 catalog image name，不能从文件名或 chooser label 推断 identity。
 
@@ -108,3 +108,6 @@ Browser SDK 的 snapshot Release 构建、确定性 tarball 与下游 `npm-index
 Fake、PTY 和 cross-compile 只证明 contract 与 host behavior。最终产品验收仍需在准确 reviewed build 上记录 live discovery、authoritative identity、Stage、reboot、partition copy-back 与最终 checksum/metadata。当前 ESP DevKit 已提供 UART/BLE 实板证据；BK 实板因硬件不可用明确 deferred，不能由 build 结果替代。
 
 BK7258 UART1 provider 的写入 deadline 同时覆盖互斥锁竞争、console FIFO 排空与发送背压；零超时不等待，有部分接收时返回已写字节数，无进展时返回 WOULD_BLOCK。不能调用无截止时间的 log flush 或满 FIFO 忙等发送。
+
+
+Package inspector 的 `data_sha256` 是验证后的 canonical data identity：format 1 来自已验证的 checksum entry，format 2 来自 compressed envelope manifest。仅从旧 catalog 读取时此 optional field 可以为空；不能把空值当成已安装 data identity。Loader checksum E2E 将 inspector 的 identity 与设备 `stats` 单独返回的 installed checksum 比较，现有 Host status parser 的严格 wire line 不变。

@@ -12,6 +12,7 @@ extern "C" {
 #endif
 
 #define H2_H2LOADER_E2E_MAX_CASES 512u
+#define H2_H2LOADER_E2E_CHECKSUM_PACKAGES 5u
 
 typedef enum h2_h2loader_e2e_transport {
   H2_H2LOADER_E2E_TRANSPORT_UART = 1,
@@ -56,6 +57,16 @@ typedef enum h2_h2loader_e2e_case {
   H2_H2LOADER_E2E_CASE_REBOOT_APP_MONITOR,
   H2_H2LOADER_E2E_CASE_REBOOT_UPGRADE_MONITOR,
   H2_H2LOADER_E2E_CASE_INSTALL_CRASH_APP,
+  H2_H2LOADER_E2E_CASE_TAR_ZLIB_BASELINE,
+  H2_H2LOADER_E2E_CASE_TAR_ZLIB_UNCHANGED,
+  H2_H2LOADER_E2E_CASE_TAR_ZLIB_APP_ONLY,
+  H2_H2LOADER_E2E_CASE_TAR_ZLIB_DATA_ONLY,
+  H2_H2LOADER_E2E_CASE_TAR_ZLIB_BOTH_CHANGED,
+  H2_H2LOADER_E2E_CASE_ZLIB_TAR_BASELINE,
+  H2_H2LOADER_E2E_CASE_ZLIB_TAR_UNCHANGED,
+  H2_H2LOADER_E2E_CASE_ZLIB_TAR_APP_ONLY,
+  H2_H2LOADER_E2E_CASE_ZLIB_TAR_DATA_ONLY,
+  H2_H2LOADER_E2E_CASE_ZLIB_TAR_BOTH_CHANGED,
 } h2_h2loader_e2e_case_t;
 
 typedef struct h2_h2loader_e2e_case_result {
@@ -70,6 +81,17 @@ typedef struct h2_h2loader_e2e_case_result {
   size_t output_bytes;
   size_t log_bytes;
   uint32_t reconnect_attempts;
+  /** Nonzero only for a checksum-matrix case. Expectations are validated
+   * against observed pre-install identities, not claimed writer counters. */
+  uint32_t package_format;
+  char package_sha256[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
+  uint8_t checksum_expectations_valid;
+  uint8_t expected_update_app;
+  uint8_t expected_update_data;
+  uint8_t data_checksum_valid;
+  char before_image_sha256[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
+  char before_data_sha256[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
+  char data_sha256[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
   uint8_t status_valid;
   h2_h2loader_host_status_t status;
 } h2_h2loader_e2e_case_result_t;
@@ -84,6 +106,12 @@ typedef void (*h2_h2loader_e2e_case_event_fn)(
 
 typedef void (*h2_h2loader_e2e_progress_event_fn)(
     void *user, const h2_h2loader_e2e_case_result_t *result);
+
+/** Immutable package bytes borrowed for the complete synchronous run. */
+typedef struct h2_h2loader_e2e_package {
+  const uint8_t *data;
+  size_t size;
+} h2_h2loader_e2e_package_t;
 
 typedef struct h2_h2loader_e2e_config {
   h2_runtime_t *runtime;
@@ -119,6 +147,11 @@ typedef struct h2_h2loader_e2e_config {
   uint8_t include_coredump;
   uint8_t include_monitor;
   uint8_t include_crash;
+  /** Bit 0 selects format 1, bit 1 format 2. Each row is baseline, unchanged,
+   * app-only, data-only, both-changed. All identities are inspected before
+   * any device connection; new-format unchanged members are guarded streams. */
+  uint8_t checksum_formats;
+  h2_h2loader_e2e_package_t checksum_packages[2][H2_H2LOADER_E2E_CHECKSUM_PACKAGES];
 
   h2_h2loader_host_cancelled_fn is_cancelled;
   void *cancel_user;

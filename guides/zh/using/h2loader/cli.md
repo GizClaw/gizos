@@ -185,7 +185,7 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
   --version dev
 ```
 
-`package` 与 `golden` 统一生成 format 2 的未压缩 tar，内含独立的 `data.tar.zlib` 和 `app.bin.zlib`；默认输出为 `/tmp/update.tar`，没有格式选择参数，也不生成旧 tar.zlib。新 Loader 继续接受 format 1。仍可管理的旧 Loader 使用已存在的双格式 reader 过渡 package 升级后再接收新 tar。格式和 checksum 合同见 [更新与恢复](/apps/h2loader/update)。
+`package` 与 `golden` 统一生成 format 2 的未压缩 tar，内含独立的 `data.tar.zlib` 和 `app.bin.zlib`；默认输出为 `/tmp/update.tar`，没有格式选择参数，也不生成旧 tar.zlib。新 Loader 继续接受 format 1。仍可管理的旧 Loader 先用保留的 Bazel `h2loader_tar_zlib` target 产出的双格式 reader Loader package 升级，再接收新 tar；新 `h2loader_zlib_tar` target 与旧轨道并行。格式和 checksum 合同见 [更新与恢复](/apps/h2loader/update)。
 
 当前 PAL FS contract 没有目录枚举，因此 native CLI 暂不支持 `--data-dir`；带该参数会明确返回 unsupported，不会绕过 PAL。`golden` 只生成 parser 和 desktop test 使用的确定性 fixture，不用于真实固件发布：
 

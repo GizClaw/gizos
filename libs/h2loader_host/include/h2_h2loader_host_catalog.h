@@ -32,7 +32,7 @@ typedef enum h2_h2loader_host_asset_operation {
 typedef enum h2_h2loader_host_asset_identity_source {
     /** Asset identity includes the release-catalog image name. */
     H2_H2LOADER_HOST_ASSET_IDENTITY_RELEASE_CATALOG = 0,
-    /** Standalone format-1 manifest; the package carries no image name. */
+    /** Standalone format-1/2 manifest; the package carries no image name. */
     H2_H2LOADER_HOST_ASSET_IDENTITY_PACKAGE_MANIFEST = 1,
 } h2_h2loader_host_asset_identity_source_t;
 
@@ -53,6 +53,9 @@ typedef struct h2_h2loader_host_catalog_entry {
     char sha256[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
     /** Device-reported image checksum from the package manifest. */
     char image_sha256[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
+    /** Canonical data identity verified by package inspection. Empty when a
+     * catalog does not carry this optional identity. */
+    char data_sha256[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
     uint64_t bytes;
     h2_h2loader_host_asset_role_t role;
     h2_h2loader_host_asset_operation_t operation;

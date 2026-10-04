@@ -61,7 +61,8 @@ def validate_package_manifest(item: dict[str, object]) -> None:
 
 
 RELEASE_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,190}$")
-LOADER_ROOT = "projects/h2loader/targets/h2loader_tar_zlib/loader/"
+LOADER_ROOT = "projects/h2loader/targets/h2loader_zlib_tar/loader/"
+LEGACY_LOADER_ROOT = "projects/h2loader/targets/h2loader_tar_zlib/loader/"
 PLATFORM_TARGETS = {"esp": {"esp32s3", "esp32p4"}, "bk7258": {"bk7258"}, "jieli": {"wl82"}}
 
 
@@ -94,7 +95,7 @@ def validate_catalog(catalog: object) -> list[dict[str, object]]:
         # e2e/example launchers remain diagnostic even if accidentally tagged.
         if (
             "/e2e/" in f"/{item['entry']}/"
-            or item["entry"] != LOADER_ROOT + item["board"]
+            or item["entry"] not in (LOADER_ROOT + item["board"], LEGACY_LOADER_ROOT + item["board"])
             or item["label"] != "//" + item["entry"] + ":package"
             or item["image"] != "loader"
             or item["role"] != "h2loader"
