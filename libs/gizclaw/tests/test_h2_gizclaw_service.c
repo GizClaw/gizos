@@ -10523,11 +10523,21 @@ static void test_speech_managed_requests(void) {
       continue;
     }
     assert(h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL) == H2_PAL_OK);
+    h2_gizclaw_audio_input_state_t input_state;
+    assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
+    assert(!input_state.active && !input_state.ready);
     assert(speech_audio_start(&test) == H2_PAL_OK);
+    if (mode == 13u) {
+      assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
+      assert(input_state.generation == 1u && input_state.active && !input_state.ready);
+      assert(input_state.route == H2_GIZCLAW_AUDIO_INPUT_SPEECH);
+    }
     assert(h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL) ==
            H2_PAL_ERR_INVALID_STATE);
     if (mode == 13u) {
       assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
+      assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
+      assert(!input_state.active && !input_state.ready);
       h2_atomic_store(&env.connect_gate, true);
     }
     if (mode == 12u) {
@@ -10586,6 +10596,10 @@ static void test_speech_managed_requests(void) {
             assert(h2_atomic_load(&test.captures) == 2u);
             assert(h2_atomic_load(&test.captured_bytes) == 1280u);
             assert(h2_atomic_load(&test.uploaded_bytes) == 0u);
+            assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
+            assert(input_state.route == H2_GIZCLAW_AUDIO_INPUT_SPEECH);
+            /* Stream readiness remains true while its single input slot is full. */
+            assert(input_state.active && input_state.ready);
           }
           assert(h2_gizclaw_req_wait(request, 0u) == H2_PAL_ERR_TIMEOUT);
         }
@@ -12000,6 +12014,11 @@ static void test_conversation_downlink_release_keeps_closed(void) {
   assert(h2_gizclaw_pcm_track_create(&config, &track) == H2_PAL_OK);
   assert(h2_gizclaw_service_set_track(service, track) == H2_PAL_OK);
   assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  h2_gizclaw_audio_input_state_t input_state;
+  assert(h2_gizclaw_service_audio_input_snapshot(NULL, &input_state) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_service_audio_input_snapshot(service, NULL) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
+  assert(input_state.generation == 0u && !input_state.active && !input_state.ready);
   h2_gizclaw_conversation_t *conversation = NULL;
   assert(h2_gizclaw_conversation_create(
              service, (h2_gizclaw_str_t){"workspace", 9u}, NULL,
@@ -12010,6 +12029,9 @@ static void test_conversation_downlink_release_keeps_closed(void) {
   assert(h2_gizclaw_service_pcm_write_internal(
              service, stale_pcm, sizeof(stale_pcm)) == H2_PAL_OK);
   assert(h2_gizclaw_service_audio_start(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
+  assert(input_state.generation == 1u && input_state.active && !input_state.ready);
+  assert(input_state.route == H2_GIZCLAW_AUDIO_INPUT_CONVERSATION);
   /* The press already dropped what the Track still held. */
   assert(h2_gizclaw_pcm_track_read(track, pcm, sizeof(pcm)) ==
          H2_PAL_ERR_WOULD_BLOCK);
@@ -12017,6 +12039,8 @@ static void test_conversation_downlink_release_keeps_closed(void) {
          H2_PAL_OK);
   assert(h2_gizclaw_test_downlink_frames(service) == 0u);
   assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
+  assert(!input_state.active && !input_state.ready);
   assert(h2_gizclaw_service_media_write_opus(service, packet, sizeof(packet)) ==
          H2_PAL_OK);
   assert(h2_gizclaw_test_downlink_frames(service) == 0u);
@@ -12026,7 +12050,33 @@ static void test_conversation_downlink_release_keeps_closed(void) {
          H2_PAL_OK);
   assert(h2_gizclaw_test_downlink_frames(service) == 1u);
   h2_gizclaw_conversation_release(conversation);
+  assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
+  assert(!input_state.active && !input_state.ready);
+  /* A fresh Conversation resets its own identity, but never the Service token. */
+  assert(h2_gizclaw_conversation_create(
+             service, (h2_gizclaw_str_t){"workspace", 9u}, NULL,
+             downlink_release_complete, &test, &conversation) == H2_PAL_OK);
+  assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
+  assert(!input_state.active && !input_state.ready);
+  assert(h2_gizclaw_service_audio_start(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
+  assert(input_state.generation == 2u && input_state.active && !input_state.ready);
+  assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
+  downlink_release_wait(&test, 2u);
+  h2_gizclaw_conversation_release(conversation);
+  assert(h2_gizclaw_conversation_create(
+             service, (h2_gizclaw_str_t){"workspace", 9u}, NULL,
+             downlink_release_complete, &test, &conversation) == H2_PAL_OK);
+  assert(h2_pal_mutex_lock(service->config.sync, service->audio_mutex) == H2_PAL_OK);
+  service->audio_input_generation = UINT64_MAX;
+  assert(h2_pal_mutex_unlock(service->config.sync, service->audio_mutex) == H2_PAL_OK);
+  assert(h2_gizclaw_service_audio_start(service) == H2_PAL_ERR_NO_SPACE);
+  assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
+  assert(input_state.generation == UINT64_MAX && !input_state.active && !input_state.ready);
+  h2_gizclaw_conversation_release(conversation);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
+  assert(!input_state.active && !input_state.ready);
   assert(h2_gizclaw_service_unset_track(service, track) == H2_PAL_OK);
   assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
@@ -12499,11 +12549,20 @@ static void test_conversation_public_audio_tasks(void) {
       } else if (mode == 1 && h2_atomic_load(&test.captured) > 0 && !input_ended) {
         assert(h2_gizclaw_conversation_cancel(conversation) == H2_PAL_OK);
         assert(h2_gizclaw_conversation_cancel(conversation) == H2_PAL_OK);
+        h2_gizclaw_audio_input_state_t canceled;
+        assert(h2_gizclaw_service_audio_input_snapshot(service, &canceled) == H2_PAL_OK);
+        assert(!canceled.active && !canceled.ready);
         input_ended = true;
       } else if ((mode == 0 || mode == 3 || mode == 4 ||
                   (mode >= 6 && mode <= 10) || mode == 19 || mode == 22 || mode == 24 || mode == 27) &&
                  h2_atomic_load(&test.captured) == 12 * 640 + 100 &&
                  !input_ended) {
+        if (mode == 0) {
+          h2_gizclaw_audio_input_state_t ready;
+          assert(h2_gizclaw_service_audio_input_snapshot(service, &ready) == H2_PAL_OK);
+          assert(ready.generation == 1u && ready.active && ready.ready);
+          assert(ready.route == H2_GIZCLAW_AUDIO_INPUT_CONVERSATION);
+        }
         assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
         assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
         input_ended = true;

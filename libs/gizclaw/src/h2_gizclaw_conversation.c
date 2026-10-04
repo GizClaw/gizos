@@ -2270,6 +2270,8 @@ h2_pal_result_t h2_gizclaw_service_audio_control_internal(
     rc = H2_PAL_ERR_CLOSED;
   else if (!started)
     rc = H2_PAL_ERR_INVALID_STATE;
+  else if (start && service->audio_input_generation == UINT64_MAX)
+    rc = H2_PAL_ERR_NO_SPACE;
   else if (!start && service->audio_ended)
     rc = H2_PAL_OK;
   else if (speech != NULL)
@@ -2285,6 +2287,11 @@ h2_pal_result_t h2_gizclaw_service_audio_control_internal(
                     H2_PAL_LOG_INFO, log);
   if (rc == H2_PAL_OK) {
     service->audio_ended = !start;
+    if (start) {
+      ++service->audio_input_generation;
+      service->audio_input_owner = speech != NULL ? speech
+          : (const void *)conversation->service_request;
+    }
     if (!start && out_empty != NULL && conversation != NULL &&
         conversation->service_request != NULL)
       *out_empty = h2_atomic_load_explicit(
@@ -2314,6 +2321,53 @@ h2_pal_result_t h2_gizclaw_service_audio_start(h2_gizclaw_service_t *service) {
 
 h2_pal_result_t h2_gizclaw_service_audio_end(h2_gizclaw_service_t *service) {
   return service_audio_control(service, false);
+}
+
+h2_pal_result_t h2_gizclaw_service_audio_input_snapshot(
+    h2_gizclaw_service_t *service, h2_gizclaw_audio_input_state_t *out_state) {
+  if (out_state == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_state, 0, sizeof(*out_state));
+  if (service == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  const h2_pal_sync_api_t *sync = service->config.sync;
+  h2_pal_result_t rc = h2_pal_mutex_lock(sync, service->audio_mutex);
+  if (rc != H2_PAL_OK)
+    return rc;
+  out_state->generation = service->audio_input_generation;
+  rc = h2_pal_mutex_lock(sync, service->mutex);
+  if (rc != H2_PAL_OK) {
+    (void)h2_pal_mutex_unlock(sync, service->audio_mutex);
+    memset(out_state, 0, sizeof(*out_state));
+    return rc;
+  }
+  void *speech = h2_atomic_load(&service->speech_request);
+  h2_gizclaw_conversation_t *conversation = service->audio_conversation;
+  const bool open = service->started && !service->stopping && !service->stopped &&
+                    !service->audio_ended && service->audio_input_generation != 0u;
+  if (open && speech == NULL && conversation != NULL &&
+      conversation->service_request != NULL && !conversation->input_ended &&
+      service->audio_input_owner == conversation->service_request) {
+    const h2_gizclaw_conversation_request_t *request = conversation->service_request;
+    const h2_gizclaw_operation_t *operation = request->operation;
+    out_state->route = H2_GIZCLAW_AUDIO_INPUT_CONVERSATION;
+    out_state->active = operation != NULL && !operation->cancel_requested &&
+                       !h2_atomic_load(&operation->terminal) &&
+                       h2_atomic_load(&request->audio_result) == H2_PAL_OK;
+    out_state->ready = out_state->active && h2_atomic_load(&request->wire_ready);
+  }
+  const bool current_speech = open && speech != NULL &&
+                              service->audio_input_owner == speech;
+  (void)h2_pal_mutex_unlock(sync, service->mutex);
+  if (current_speech) {
+    out_state->route = H2_GIZCLAW_AUDIO_INPUT_SPEECH;
+    rc = h2_gizclaw_speech_input_snapshot_internal(speech, &out_state->active,
+                                                  &out_state->ready);
+  }
+  (void)h2_pal_mutex_unlock(sync, service->audio_mutex);
+  if (rc != H2_PAL_OK)
+    memset(out_state, 0, sizeof(*out_state));
+  return rc;
 }
 
 h2_pal_result_t
@@ -2369,6 +2423,7 @@ void h2_gizclaw_conversation_release(h2_gizclaw_conversation_t *conversation) {
   if (conversation->service_request == NULL) {
     (void)h2_pal_mutex_lock(service->config.sync, service->mutex);
     service->audio_conversation = NULL;
+    service->audio_input_owner = NULL;
     --service->request_reference_count;
     (void)h2_pal_mutex_unlock(service->config.sync, service->mutex);
     h2_pal_mem_free(conversation->allocator, conversation);

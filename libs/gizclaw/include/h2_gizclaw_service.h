@@ -183,6 +183,37 @@ h2_pal_result_t h2_gizclaw_service_audio_start(h2_gizclaw_service_t *service);
  */
 h2_pal_result_t h2_gizclaw_service_audio_end(h2_gizclaw_service_t *service);
 
+typedef enum h2_gizclaw_audio_input_route {
+  H2_GIZCLAW_AUDIO_INPUT_NONE = 0,
+  H2_GIZCLAW_AUDIO_INPUT_CONVERSATION,
+  H2_GIZCLAW_AUDIO_INPUT_SPEECH,
+} h2_gizclaw_audio_input_route_t;
+
+/** Copied readiness of the currently started input, without RPC or PCM reads.
+ * generation advances on each successful audio_start within this Service's
+ * lifetime; it is independent of Conversation/request identity and never wraps.
+ * Pair it with the caller's Service lifetime when retaining observations.
+ * active/ready are false after end, cancellation, terminal result or route
+ * replacement. Conversation ready means this input's AUDIO_INPUT_READY was
+ * received; Speech ready means its managed input stream opened successfully.
+ * This is an initial protocol barrier, not per-frame queue credit or a promise
+ * that later realtime PCM writes cannot overrun. No pointer or payload escapes.
+ */
+typedef struct h2_gizclaw_audio_input_state {
+  uint64_t generation;
+  h2_gizclaw_audio_input_route_t route;
+  bool active;
+  bool ready;
+} h2_gizclaw_audio_input_state_t;
+
+/** Thread-safe copied read into caller storage; borrows the live Service for
+ * the call. Takes existing owner mutexes, so use task context, not an ISR or an
+ * internal callback holding those mutexes. Does not start or retry an input.
+ * Returns INVALID_ARG for NULL, otherwise propagates PAL locking errors.
+ * On failure, a non-NULL output is cleared. Deinit requires callers quiescent. */
+h2_pal_result_t h2_gizclaw_service_audio_input_snapshot(
+    h2_gizclaw_service_t *service, h2_gizclaw_audio_input_state_t *out_state);
+
 /** Unified request lifecycle.
  *
  * Create functions only retain protocol parameters. `do` starts an accepted
