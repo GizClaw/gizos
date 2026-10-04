@@ -1095,7 +1095,9 @@ static h2_pal_result_t audio_stream_read(void *user, uint8_t *out,
     (void)h2_pal_time_sleep_ms(d->config.time, 5);
   }
 }
-static int finish_audio_download(h2_gizclaw_device_t *d) {
+/* No reset or release is safe until the previous producer has left. A failed
+ * join retains its task, storage and cancel flag for the owner's retry. */
+static int join_audio_download(h2_gizclaw_device_t *d) {
   audio_download_t *download = d->download;
   if (!download)
     return H2_PAL_OK;
@@ -1104,48 +1106,73 @@ static int finish_audio_download(h2_gizclaw_device_t *d) {
     int rc = h2_pal_task_join(d->service->config.task, download->task);
     if (rc != H2_PAL_OK)
       return rc;
+    download->task = NULL;
   }
+  return H2_PAL_OK;
+}
+static int finish_audio_download(h2_gizclaw_device_t *d) {
+  int rc = join_audio_download(d);
+  if (rc != H2_PAL_OK || !d->download)
+    return rc;
+  audio_download_t *download = d->download;
   h2_pal_mem_free(d->config.allocator, download->data);
   h2_atomic_bool_destroy(&download->cancel);
   h2_pal_mem_free(d->config.allocator, download);
   d->download = NULL;
   return H2_PAL_OK;
 }
-/* Replaces d->download (joining the previous one) with a new request. */
+/* Reuse the same encoded ring for probe/range/fallback during one playback.
+ * Final playback cleanup frees it; no storage is carried across items. */
 static int start_audio_download(h2_gizclaw_device_t *d, const char *url,
                                 bool music, bool ranged, uint64_t first,
                                 uint64_t last, uint64_t expected_total) {
-  int rc = finish_audio_download(d);
+  int rc = join_audio_download(d);
   if (rc != H2_PAL_OK)
     return rc;
-  audio_download_t *download =
-      h2_pal_mem_alloc(d->config.allocator, sizeof(*download));
-  if (!download)
-    return H2_PAL_ERR_NO_MEMORY;
-  *download = (audio_download_t){.device = d,
-                                 .music = music,
-                                 .ranged = ranged,
-                                 .expected_total = expected_total,
-                                 .first = first,
-                                 .last = last,
+  audio_download_t *download = d->download;
+  if (!download) {
+    download = h2_pal_mem_alloc(d->config.allocator, sizeof(*download));
+    if (!download)
+      return H2_PAL_ERR_NO_MEMORY;
+    *download = (audio_download_t){.device = d,
                                  .capacity = d->config.audio_buffer_bytes
                                                  ? d->config.audio_buffer_bytes
                                                  : 65536u};
+    if (h2_atomic_bool_init(&download->cancel, false) != H2_ATOMIC_OK) {
+      h2_pal_mem_free(d->config.allocator, download);
+      return H2_PAL_ERR_NO_MEMORY;
+    }
+    d->download = download;
+    download->data = h2_pal_mem_alloc(d->config.allocator, download->capacity);
+    if (!download->data) {
+      (void)finish_audio_download(d);
+      return H2_PAL_ERR_NO_MEMORY;
+    }
+  }
+  /* The reader is synchronous on this player worker and the HTTP producer
+   * has joined. Preserve the initialized opaque atomic and fixed storage. */
+  download->music = music;
+  download->ranged = ranged;
+  download->expected_total = expected_total;
+  download->first = first;
+  download->last = last;
+  download->head = 0u;
+  download->count = 0u;
+  download->length = 0u;
+  download->range_seen = false;
+  download->body_checked = false;
+  download->range_first = 0u;
+  download->range_last = 0u;
+  download->range_total = 0u;
+  download->done = false;
+  download->ready = false;
+  download->result = H2_PAL_OK;
   strcpy(download->url, url);
   download->prebuffer =
       d->config.audio_prebuffer_bytes
           ? d->config.audio_prebuffer_bytes
           : (download->capacity < 16384u ? download->capacity : 16384u);
-  if (h2_atomic_bool_init(&download->cancel, false) != H2_ATOMIC_OK) {
-    h2_pal_mem_free(d->config.allocator, download);
-    return H2_PAL_ERR_NO_MEMORY;
-  }
-  d->download = download;
-  download->data = h2_pal_mem_alloc(d->config.allocator, download->capacity);
-  if (!download->data) {
-    (void)finish_audio_download(d);
-    return H2_PAL_ERR_NO_MEMORY;
-  }
+  h2_atomic_store(&download->cancel, false);
   const h2_pal_task_options_t options = {
       .name = H2_GIZCLAW_AUDIO_DOWNLOAD_TASK_NAME_VALUE,
       .min_stack_size = 32768};

@@ -43,6 +43,10 @@ FriendGroup 成员管理按 Social 的 create/parse/sync 生命周期覆盖 `ser
 
 `device.find` 与 `social.ping` 是由产品注册的 tool/v0 handler，见下文设备 provider。
 
+### 播放下载缓冲的生命周期
+
+同一次播放的探测、Range 和 plain fallback 复用最初分配的固定容量编码 ring 与下载 descriptor。替换前先 cancel 并 join 旧 HTTP producer；join 失败保留旧 task、数据与 cancel=true，禁止重置或启动新 producer。join 成功后清除请求、range 校验、缓冲索引/计数和结果状态，只重置已初始化的 cancel 值，不覆盖 opaque atomic。容量与预缓冲合同不变；reader 在播放 worker 上同步跟随当前下载。成功的播放清理、停止与销毁仍释放 ring/descriptor，不跨曲目保留缓冲，不修改 arena 或 PAL Track 大小。
+
 ## Request service
 
 `h2_gizclaw_service_t` 使用调用方注入的 PAL Task、Queue、Sync 和 client config 创建一个 client-owning worker。`submit` 进行 bounded admission 并返回 opaque operation handle；worker FIFO receive typed run callback，组合 caller cancel、service stop 和 operation cancel。普通 API operation 执行完成后只把 operation 放入 completion queue；需要多步交互的 conversation operation 可以在 client I/O 步骤之间调用 `h2_gizclaw_operation_dispatch_call()`，同步请求 dispatch caller 完成一次有界的产品状态步骤，再由同一个 worker 继续发送调用方已经编码的 Opus、poll reply 或关闭 conversation。App main loop 调用有界、非阻塞的 `dispatch`，progress 和 completion callback 才在 dispatch caller thread 执行。Service 可选持有一个 Runtime，只用 `h2_runtime_notify()` 叫醒 main loop 来 dispatch，不产生 Runtime event，不读取 Audio PAL，也不读取或修改产品 state、LVGL subject 或 widget。Progress 和 completion callback 必须保持有界；需要录音、编解码、文件 I/O 或其它长时间工作的调用方必须从 callback 投递到自己拥有的 Task，并立即返回。
