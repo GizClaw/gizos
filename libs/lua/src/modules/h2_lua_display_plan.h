@@ -34,14 +34,16 @@ int h2_lua_display_plan_guard(h2_lua_display_plan_t *plan);
 
 /* Build the original span plan or complete legacy tile fallback, then apply
  * the guard. tiles is caller-owned scratch of ceil(width/16)*ceil(height/16)
- * bytes. bounds forces the legacy tile-aligned box. Returns 1 for a complete
+ * bytes. tiles_only bypasses span building; bounds still forces the legacy
+ * tile-aligned box, including when tiles_only is set. Returns 1 for a complete
  * plan (including empty); 0 means a rejected guard and >128 fallback rects:
  * plan is empty and tiles is ready for next_tile with cursor=0. No partial
- * plan may be submitted. Only the original span failure triggers tile pixel
- * comparison; the guard never compares framebuffers or allocates storage. */
+ * plan may be submitted. Tile pixel comparison runs on span failure or an
+ * explicit bounds/tiles_only request; the guard never compares framebuffers
+ * or allocates storage. */
 int h2_lua_display_plan_select(h2_lua_display_plan_t *plan,
     const uint16_t *current, const uint16_t *previous, int width, int height,
-    h2_lua_display_plan_rect_t dirty, int gap, uint8_t *tiles, int bounds);
+    h2_lua_display_plan_rect_t dirty, int gap, uint8_t *tiles, int bounds, int tiles_only);
 
 /* Iterate the complete tile fallback after select returns 0. The scratch map
  * is consumed; width/height/gap must match select. Returns 0 at exhaustion. */

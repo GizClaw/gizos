@@ -6,7 +6,12 @@
  *
  * Submission prototype (owning VM worker only):
  * - submit(options=nil) returns sequence, planned_pixels, planned_rectangles.
- *   Supports retained (default true), bounds and merge_gap as present does.
+ *   Supports retained (default true), bounds, tiles and merge_gap as present does.
+ *   tiles=true explicitly skips fine span planning and compares 16x16 tiles
+ *   before the existing merge_gap/guard rules; omitted/false keeps the default.
+ *   This trades planning CPU for potentially more submitted pixels. bounds=true
+ *   still forces its tile-aligned union box. tiles is per-call and only affects
+ *   retained planning; first/invalid frames stay full, unchanged frames empty.
  *   The sequence is scoped to this acquisition/job generation. At most one
  *   submission may be in flight, including active transport. A full mailbox
  *   returns nil, display.BUSY without enqueueing or changing drawing state.
@@ -27,8 +32,11 @@
  *   return the current call's completed pixels/rectangles; they first drain
  *   any preceding submit. Existing callers that never submit are unchanged.
  * - Drawing can continue after successful submit; the worker uses one rooted
- *   immutable pixel snapshot and its own bounded plan/tile scratch. The VM
- *   commits the retained baseline only after the full transport succeeds.
+ *   immutable pixel snapshot and its own bounded plan/tile scratch. Snapshot
+ *   preparation copies every planned rectangle at the original row stride;
+ *   pixels outside submitted coverage need not be refreshed. Only after the
+ *   full transport succeeds does the VM copy that same coverage to the retained
+ *   baseline. First/invalid frames still copy the full frame.
  *   Snapshot, baseline and mailbox use VM quota. OOM raises a Lua error before
  *   publishing a new frame. First-use finalizer reentry can complete a nested
  *   submission; the outer preparation then returns BUSY without replacing its

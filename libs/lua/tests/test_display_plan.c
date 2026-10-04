@@ -79,8 +79,8 @@ static double now_us(void) {
 }
 
 typedef struct metrics {
-  double changed, pixels[2], rects[2], blocks[2], us[2];
-  double times[2][2048];
+  double changed, pixels[3], rects[3], blocks[3], us[3];
+  double times[3][2048];
   int frames, fallback;
 } metrics_t;
 
@@ -92,7 +92,7 @@ static void measure(metrics_t *m, int width, int height, rect_t dirty, int gap) 
   int baseline_count = spans ? plan.count : old_plan(width, height, dirty, gap);
   memcpy(baseline, spans ? plan.rects : legacy, (size_t)baseline_count*sizeof(*baseline));
   if (!spans) ++m->fallback;
-  for (int method = 0; method < 2; ++method) {
+  for (int method = 0; method < 3; ++method) {
     double begin = now_us();
     const rect_t *rects = NULL;
     int count = 0;
@@ -101,7 +101,7 @@ static void measure(metrics_t *m, int width, int height, rect_t dirty, int gap) 
         count = old_plan(width, height, dirty, gap); rects = legacy;
       } else {
         if (h2_lua_display_plan_select(&plan, current, previous,
-                width, height, dirty, gap, tiles, 0)) {
+                width, height, dirty, gap, tiles, 0, method == 2)) {
           count = plan.count;
           memcpy(selected, plan.rects, (size_t)count*sizeof(*selected));
         } else {
@@ -132,6 +132,19 @@ static void measure(metrics_t *m, int width, int height, rect_t dirty, int gap) 
         assert(memcmp(rects, baseline, (size_t)count*sizeof(*rects)) == 0);
       }
     }
+    if (method == 2) {
+      /* Explicit tiles must retain the complete legacy tile plan or its
+       * guarded union; it need not beat the finer default span plan. */
+      int legacy_count = old_plan(width, height, dirty, gap);
+      assert(submission_cost(rects, count, 222) <=
+             submission_cost(legacy, legacy_count, 222));
+      assert(submission_cost(rects, count, 286) <=
+             submission_cost(legacy, legacy_count, 286));
+      if (count != 1 || legacy_count == 1) {
+        assert(count == legacy_count);
+        assert(memcmp(rects, legacy, (size_t)count*sizeof(*rects)) == 0);
+      }
+    }
     memcpy(replay, previous, size*2);
     for (int i = 0; i < count; ++i) {
       rect_t r = rects[i];
@@ -156,10 +169,10 @@ static void report(const char *name, metrics_t *m) {
   printf("%s frames=%d changed=%.1f fallback=%d scratch=%zu\n", name, m->frames,
          m->changed/m->frames, m->fallback, sizeof(plan));
   int samples = m->frames < 2048 ? m->frames : 2048;
-  for (int i = 0; i < 2; ++i) {
+  for (int i = 0; i < 3; ++i) {
     qsort(m->times[i], (size_t)samples, sizeof(double), compare_double);
     printf("  %s pixels=%.1f rects=%.2f blocks16=%.2f planner_us=%.2f p50=%.2f p95=%.2f max=%.2f\n",
-           i ? "selected" : "tiles", m->pixels[i]/m->frames, m->rects[i]/m->frames,
+           i == 2 ? "direct-tiles" : i ? "selected" : "tiles", m->pixels[i]/m->frames, m->rects[i]/m->frames,
            m->blocks[i]/m->frames, m->us[i]/m->frames, m->times[i][samples/2],
            m->times[i][(samples-1)*95/100], m->times[i][samples-1]);
   }
@@ -272,17 +285,31 @@ int main(int argc, char **argv) {
     assert(plan.count == 1 && plan.rects[0].right == w && plan.rects[0].bottom == h);
     assert(plan.rects[0].left == w-1 && plan.rects[0].top == h-1);
     h2_lua_display_plan_select(&plan, current, previous, w, h,
-                              (rect_t){0,0,w,h}, 0, tiles, 0);
+                              (rect_t){0,0,w,h}, 0, tiles, 0, 0);
     assert(plan.count == 1 && plan.rects[0].left == w-1 && plan.rects[0].top == h-1);
+    assert(h2_lua_display_plan_select(&plan, current, previous, w, h,
+                                      (rect_t){0,0,w,h}, 0, tiles, 0, 1));
+    assert(plan.count == 1 && plan.rects[0].right == w && plan.rects[0].bottom == h);
+    assert(plan.rects[0].left == (vertical ? 0 : 4080) &&
+           plan.rects[0].top == (vertical ? 4080 : 0));
   }
   /* Explicit bounds retains tile precision even when spans are much smaller. */
   memset(previous, 0, sizeof(previous));
   memset(current, 0, sizeof(current));
   current[18*31+17] = 0xffff;
   h2_lua_display_plan_select(&plan, current, previous, 31, 35,
-                            (rect_t){17,18,18,19}, 0, tiles, 1);
+                            (rect_t){17,18,18,19}, 0, tiles, 1, 0);
   assert(plan.count == 1 && plan.rects[0].left == 16 && plan.rects[0].top == 16);
   assert(plan.rects[0].right == 31 && plan.rects[0].bottom == 32);
+  h2_lua_display_plan_t bounds_plan = plan;
+  h2_lua_display_plan_select(&plan, current, previous, 31, 35,
+                            (rect_t){17,18,18,19}, 0, tiles, 1, 1);
+  assert(plan.count == bounds_plan.count &&
+         memcmp(plan.rects, bounds_plan.rects, sizeof(rect_t)) == 0);
+  h2_lua_display_plan_select(&plan, current, previous, 31, 35,
+                            (rect_t){17,18,18,19}, 0, tiles, 0, 1);
+  assert(plan.count == 1 &&
+         memcmp(plan.rects, bounds_plan.rects, sizeof(rect_t)) == 0);
   /* Hundreds of disjoint tile runs cannot fit in the bounded plan; neither
    * exhausted tiles nor exhausted spans may publish a partial submission. */
   size_t large_count = 4096*33;
@@ -292,21 +319,24 @@ int main(int argc, char **argv) {
   assert(old && next);
   for (int y = 0; y < 33; y += 32)
     for (int x = 0; x < 4096; x += 32) next[y*4096+x] = 0xffff;
-  assert(!h2_lua_display_plan_select(&plan, next, old, 4096, 33,
-                                    (rect_t){0,0,4096,33}, 0, large_tiles, 0));
-  assert(plan.count == 0);
-  int cursor = 0, count = 0;
-  rect_t r;
-  while (h2_lua_display_plan_next_tile(large_tiles, 4096, 33, 0, &cursor, &r)) {
-    assert(r.left == (count%128)*32 && r.right == r.left+16);
-    assert(r.top == (count/128)*32 && r.bottom == (count<128 ? 16 : 33));
-    ++count;
-    for (int y = r.top; y < r.bottom; ++y)
-      memcpy(old+(size_t)y*4096+r.left, next+(size_t)y*4096+r.left,
-             (size_t)(r.right-r.left)*sizeof(*old));
+  for (int direct = 0; direct < 2; ++direct) {
+    memset(old, 0, large_count*sizeof(*old));
+    assert(!h2_lua_display_plan_select(&plan, next, old, 4096, 33,
+                                      (rect_t){0,0,4096,33}, 0, large_tiles, 0, direct));
+    assert(plan.count == 0);
+    int cursor = 0, count = 0;
+    rect_t r;
+    while (h2_lua_display_plan_next_tile(large_tiles, 4096, 33, 0, &cursor, &r)) {
+      assert(r.left == (count%128)*32 && r.right == r.left+16);
+      assert(r.top == (count/128)*32 && r.bottom == (count<128 ? 16 : 33));
+      ++count;
+      for (int y = r.top; y < r.bottom; ++y)
+        memcpy(old+(size_t)y*4096+r.left, next+(size_t)y*4096+r.left,
+               (size_t)(r.right-r.left)*sizeof(*old));
+    }
+    assert(count == 256);
+    assert(memcmp(old, next, large_count*sizeof(*old)) == 0);
   }
-  assert(count == 256);
-  assert(memcmp(old, next, large_count*sizeof(*old)) == 0);
   free(old); free(next);
   /* Guard boundary, ties and rejection preserve the completed plan exactly. */
   memset(&plan, 0, sizeof(plan));

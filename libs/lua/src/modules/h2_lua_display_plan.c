@@ -188,12 +188,12 @@ int h2_lua_display_plan_next_tile(uint8_t *tiles, int width, int height,
 
 int h2_lua_display_plan_select(h2_lua_display_plan_t *plan,
     const uint16_t *current, const uint16_t *previous, int width, int height,
-    h2_lua_display_plan_rect_t dirty, int gap, uint8_t *tiles, int bounds) {
+    h2_lua_display_plan_rect_t dirty, int gap, uint8_t *tiles, int bounds, int tiles_only) {
   plan->count = 0;
   if (dirty.left >= dirty.right || dirty.top >= dirty.bottom) return 1;
-  /* Preserve the complete baseline span plan and its original work limits.
-   * The guard reads rectangles only; a successful span path never scans tiles. */
-  if (!bounds && h2_lua_display_plan_build(plan, current, previous, width, dirty, gap)) {
+  /* Preserve the default span plan and its work limits. Explicit tiles_only
+   * skips straight to the same exact tile comparison and complete fallback. */
+  if (!bounds && !tiles_only && h2_lua_display_plan_build(plan, current, previous, width, dirty, gap)) {
     h2_lua_display_plan_guard(plan);
     return 1;
   }

@@ -957,6 +957,16 @@ static int test_submission_pixel(lua_State *state) {
   return 1;
 }
 
+static int test_submission_pixels(lua_State *state) {
+  luaL_checktype(state, 1, LUA_TFUNCTION);
+  assert(lua_getupvalue(state, 1, 1) != NULL);
+  h2_lua_job_t *job = lua_touserdata(state, -1);
+  assert(job != NULL && job->display_open);
+  assert(memcmp(job->framebuffer, s_test_display_fixture.pixels,
+      (size_t)job->display_info.width * job->display_info.height * 2) == 0);
+  return 0;
+}
+
 static int test_submission_pattern(lua_State *state) {
   int mode = (int)luaL_checkinteger(state, 1);
   assert(s_test_display_fixture.width == 4096 && s_test_display_fixture.height == 33);
@@ -981,6 +991,8 @@ static int test_submission_module(void *raw, void *user) {
   lua_setfield(state, -2, "in_call");
   lua_pushcfunction(state, test_submission_pattern);
   lua_setfield(state, -2, "pattern");
+  lua_pushcfunction(state, test_submission_pixels);
+  lua_setfield(state, -2, "pixels");
   return 1;
 }
 
@@ -1004,13 +1016,19 @@ static void test_display_submission(int threaded) {
   static const char script[] =
       "local d,p,r=require('display'),require('submit_test'),require('runtime')\n"
       "local function flush() local s,e=d.flush();while not s do assert(e<0);r.sleep(1);s,e=d.flush() end;return s end\n"
-      "d.clear('red');assert(d.submit()==1);d.clear('green')\n"
-      "if args.threaded=='yes' then local n,e=d.submit();assert(n==nil and e<0);assert(d.status().completed==0) end\n"
+      "d.clear('red');assert(d.submit({tiles=true})==1);d.clear('green')\n"
+      "if args.threaded=='yes' then local n,e=d.submit({tiles=true});assert(n==nil and e<0);assert(d.status().completed==0) end\n"
       "p.stage(1);local s=flush();assert(s.completed==1 and s.changed_frames==1);assert(p.pixel()==63488)\n"
-      "assert(d.submit()==2);s=flush();assert(s.completed==2 and s.changed_frames==2);assert(p.pixel()==1024)\n"
-      "assert(d.submit()==3);s=flush();assert(s.changed_frames==2 and s.pixels==0)\n"
-      "d.clear('blue');local n,m=d.present();assert(n==57600 and m==1);assert(p.pixel()==31)\n"
-      "s=d.status();assert(s.completed==4 and s.changed_frames==3 and s.clock_valid);p.stage(2)\n";
+      "assert(d.submit({tiles=true})==2);s=flush();assert(s.completed==2 and s.changed_frames==2);assert(p.pixel()==1024)\n"
+      "assert(d.submit({tiles=true})==3);s=flush();assert(s.changed_frames==2 and s.pixels==0)\n"
+      "d.clear('blue');local n,m=d.present({tiles=true});assert(n==57600 and m==1);assert(p.pixel()==31)\n"
+      "s=d.status();assert(s.completed==4 and s.changed_frames==3 and s.clock_valid);p.stage(2)\n"
+      "for _,options in ipairs({{tiles=true},{tiles=false},{tiles=true,bounds=true},{tiles=true,retained=false}}) do "
+      "for i=1,24 do d.fill_rect((i*37)%239,(i*53)%239,1,1,i%2==0 and 'white' or 'red');"
+      "d.fill_rect(17,18,1,1,i%2==0 and 'green' or 'red');"
+      "assert(d.submit(options));flush();p.pixels(d.submit);"
+      "local sequence,pixels,rects=d.submit(options);assert(sequence and pixels==0 and rects==0);"
+      "flush();p.pixels(d.submit) end end\n";
   h2_lua_arg_t args[] = {{"threaded", threaded ? "yes" : "no"}};
   h2_lua_job_id_t job;
   assert(h2_lua_job_submit_text(host, NULL, "@submit.lua", (const uint8_t *)script,
@@ -1300,11 +1318,13 @@ static void test_display_submission_large(void) {
       "local d,r,p=require('display'),require('runtime'),require('submit_test');"
       "local function flush() local s,e=d.flush();while not s do assert(e==d.BUSY);"
       "r.sleep(1);s,e=d.flush() end;return s end;"
-      "d.clear('black');assert(d.submit()==1);flush();"
+      "d.clear('black');assert(d.submit({tiles=true})==1);flush();"
       "for y=0,32,32 do for x=0,4095,32 do d.fill_rect(x,y,1,1,'white') end end;"
-      "local seq,pixels,rects=d.submit();assert(seq==2 and rects==256 and pixels==34816);"
+      "local seq,pixels,rects=d.submit({tiles=true});assert(seq==2 and rects==256 and pixels==34816);"
       "d.clear('blue');local s=flush();assert(s.rects==256 and s.pixels==34816);p.pattern(1);"
-      "assert(d.submit()==3);flush();p.pattern(2)";
+      "d.clear('black');for y=0,32,32 do for x=0,4095,32 do d.fill_rect(x,y,1,1,'white') end end;"
+      "seq,pixels,rects=d.submit({tiles=true});assert(seq==3 and pixels==0 and rects==0);flush();p.pattern(1);"
+      "d.clear('blue');assert(d.submit({tiles=true})==4);flush();p.pattern(2)";
   h2_lua_job_id_t job;
   assert(h2_lua_job_submit_text(host, NULL, "@large-submit.lua",
       (const uint8_t *)script, sizeof(script)-1, NULL, 0, &job) == H2_PAL_OK);
@@ -2427,7 +2447,9 @@ static int test_present_pixels(lua_State *state) {
   lua_pop(state, 1);
   assert(job != NULL && job->display_open);
   lua_pushvalue(state, 1);
-  lua_call(state, 0, 2);
+  if (lua_gettop(state) > 2) lua_pushvalue(state, 2);
+  else lua_pushnil(state);
+  lua_call(state, 1, 2);
   assert(memcmp(job->framebuffer, s_test_display_fixture.pixels,
       (size_t)job->display_info.width * job->display_info.height * 2) == 0);
   return 2;
@@ -2814,6 +2836,26 @@ static void test_display_regions(void) {
       "d.clear('black');p,n=d.present({merge_gap=1});assert(p==33 and n==1);"
       "d.clear('black');assert(d.present()==0)";
   (void)run_display_script_size(host, "@retained-merge.lua", merge, sizeof(merge)-1, 48, 48);
+  static const uint8_t direct_tiles[] =
+      "local d=require('display');local n=require('region_test');"
+      "local options={tiles=true};local function present() return n.present(d.present,options) end;"
+      "d.clear('black');d.present({retained=true,tiles=true});"
+      "assert(not pcall(d.present,{tiles=1}));assert(not pcall(d.submit,{tiles='true'}));"
+      "d.fill_rect(17,18,1,1,'red');local p,r=present();assert(p==256 and r==1);"
+      "d.fill_rect(17,18,1,1,'red');assert(present()==0);"
+      "local flip=false;n.noalloc(function() flip=not flip;d.fill_rect(17,18,1,1,flip and 'blue' or 'red');present() end);"
+      "d.fill_rect(17,18,1,1,'blue');p,r=d.present();assert(p==1 and r==1);"
+      "d.fill_rect(0,0,1,1,'red');d.fill_rect(47,47,1,1,'red');"
+      "p,r=d.present({tiles=true,bounds=true});assert(p==48*48 and r==1);"
+      "for _,failure in ipairs({1,2,0}) do "
+      "d.clear('black');present();d.fill_rect(0,0,1,1,'red');d.fill_rect(47,47,1,1,'blue');"
+      "n.fail(failure,failure==0);assert(not pcall(present));"
+      "p,r=present();assert(p==48*48 and r==1);assert(present()==0) end;"
+      "n.fail(0,true);assert(not pcall(present));assert(present()==48*48);"
+      "p,r=d.present({retained=false,tiles=true});assert(p==48*48 and r==1);"
+      "d.fill_rect(17,18,1,1,'white');p,r=present();assert(p==1 and r==1);";
+  (void)run_display_script_size(host, "@retained-tiles.lua", direct_tiles,
+                                sizeof(direct_tiles)-1, 48, 48);
   static const uint8_t guarded[] =
       "local d=require('display');local n=require('region_test');"
       "d.clear('black');d.present({retained=true});"

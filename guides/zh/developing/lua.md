@@ -184,7 +184,7 @@ smooth 的 `cache=true` 对单色且 `tolerance=0` 的笔画启用覆盖率缓�
 
 `display.restore_background(region)` 仅接受完整屏幕、不透明快照，并保留 VM 引用。首次绑定或恢复基线失效时完整复制；之后把所有绘制操作标记的 16×16 脏 tile 合并成相邻行段，仅恢复这些区域，然后清空背景损伤标记。背景恢复与上一帧提交是独立状态，不能用“已提交”代替“已恢复”。`display.release_background()` 幂等解除引用；快照本身仍可重放，最后一个引用释放后由 GC 回收。
 
-`display.present(options=nil)` 和 `end_frame(options=nil)` 返回实际提交的 `(pixel_count, rectangle_count)`。options 是普通表，字段用 raw lookup 读取：`retained` 为 boolean，显式启用或禁用上一成功帧比较，省略则沿用当前模式；`bounds` 为 boolean，当前调用合并为一个包围矩形；`merge_gap` 为 `0..8` 整数，限制 span/tile 局部合并之间可跨过的未变化 tile 数（仍按 16 像素网格衡量）；这是局部合并上限，不保证一定合并，自动包围矩形/整屏候选不受该上限限制。retained 首帧或失效后完整提交，之后先完成 dirty 范围内的像素比较和区域规划，再提交变化区域，完全静止时返回 `(0,0)`。`bounds=true` 保留原来的 tile 对齐包围矩形；默认规划可返回更紧的像素边界，调用方不能依赖固定 tile 大小或固定矩形数量。即使没有像素变化，也调用 PAL present 并传播其错误。任何 draw/present 失败都使提交基线失效并要求下次完整重试，部分成功的矩形不能作为完整成功帧。禁用 retained 时释放比较存储，并完整提交一次再恢复 dirty union 模式。这些统计是软件提交量，不是实机 FPS。
+`display.present(options=nil)` 和 `end_frame(options=nil)` 返回实际提交的 `(pixel_count, rectangle_count)`。options 是普通表，字段用 raw lookup 读取：`retained` 为 boolean，显式启用或禁用上一成功帧比较，省略则沿用当前模式；`bounds` 为 boolean，当前调用合并为一个包围矩形；`merge_gap` 为 `0..8` 整数，限制 span/tile 局部合并之间可跨过的未变化 tile 数（仍按 16 像素网格衡量）；这是局部合并上限，不保证一定合并，自动包围矩形/整屏候选不受该上限限制。retained 首帧或失效后完整提交，之后先完成 dirty 范围内的像素比较和区域规划，再提交变化区域，完全静止时返回 `(0,0)`。`tiles=true` 显式跳过精细 span 规划，直接精确比较 16×16 tile，再使用原有 `merge_gap` 与 guard 合并；省略或 false 保持默认。该选项仅影响当前调用的 retained 规划，用可能增加的提交像素换取更少规划 CPU，不保证总完成时间更短。`bounds=true` 保留原来的 tile 对齐包围矩形；默认规划可返回更紧的像素边界，调用方不能依赖固定 tile 大小或固定矩形数量。即使没有像素变化，也调用 PAL present 并传播其错误。任何 draw/present 失败都使提交基线失效并要求下次完整重试，部分成功的矩形不能作为完整成功帧。禁用 retained 时释放比较存储，并完整提交一次再恢复 dirty union 模式。这些统计是软件提交量，不是实机 FPS。
 
 快照、背景损伤标记、retained 比较图、矩形规划暂存区和基线像素都计入 VM 内存，原工作 framebuffer 保留 PAL ownership。Lua deinit、job release 和 Host teardown 在释放 framebuffer 或执行 VM finalizer 前断开全部显示缓存引用。teardown 期间不能重新打开 Display；正常 deinit 后旧 proxy 的绘制调用失败。OOM 不返回部分快照，释放其他 VM 数据后可重试；已有快照不因另一次捕获失败而失效。
 
@@ -202,7 +202,7 @@ smooth 的 `cache=true` 对单色且 `tolerance=0` 的笔画启用覆盖率缓�
 
 可直接运行 `bazel-bin/libs/lua/display_plan_test` 输出通用合成对比；可选 `--frames <path> [first last]` 读取本地 240×240、无 header、RGB565 big-endian 连续全帧，帧号从 1 开始，前序帧仍用于建立 baseline。该入口只用于离线验证，不是 Lua/PAL API；私有轨迹不得提交到公共仓库。时间以同一帧规划 10 次的均值采样，再统计 p50/p95/max，仅包括差分和规划（含回退），不包括绘制、baseline copy、PAL 提交或真实总线等待。对比统一采用全屏 dirty 候选和 `merge_gap=1`，与消费端每次实际传入的 dirty/options 可能不同。静止合成场景仍比较全屏；实际没有 dirty 的 present 会直接跳过规划。
 
-合成输出将原始 tile 与最终 `selected` 计划对比，`fallback` 统计原 span 规划失败后走完整 tile 路径的帧数。像素回放和成本约束则对照同帧、同 dirty/options 下 guard 前的完整 span/tile 基准。后处理 guard 可以跨过局部 `merge_gap`，但必须通过整个经验范围的严格获益判断；保留的原计划仍可能不是模型中的全局最优解。
+合成输出对比原始 `tiles`、默认 `selected` 和显式 `direct-tiles` 三种计划，`fallback` 统计原 span 规划失败后走完整 tile 路径的帧数。像素回放和成本约束则对照同帧、同 dirty/options 下 guard 前的完整 span/tile 基准。`direct-tiles` 逐像素回放验证最终帧，并以同帧完整原始 tile 计划检查 guard 成本，不要求优于默认精细 span 计划。后处理 guard 可以跨过局部 `merge_gap`，但必须通过整个经验范围的严格获益判断；保留的原计划仍可能不是模型中的全局最优解。
 
 像素减少可能伴随更多窗口和较高规划成本，不能把 host 时间或提交面积直接换算成 MCU FPS。消费端应测量目标设备的 planner、每窗口/分块固定成本、baseline copy 和实际传输时间，再判断是否值得保留当前成本权重；未经设备验证不承诺帧率。算法参考 [fbcp-ili9341 的 exact scanline diff 与 span merge](https://github.com/juj/fbcp-ili9341/blob/master/diff.cpp) 及 [LVGL 的 lv_refr_join_area](https://github.com/lvgl/lvgl/blob/v9.2.2/src/core/lv_refr.c)，两者均声明 MIT 许可（[fbcp](https://github.com/juj/fbcp-ili9341/blob/master/LICENSE.txt)、[LVGL](https://github.com/lvgl/lvgl/blob/v9.2.2/LICENCE.txt)）；此处独立实现有界规划，没有引入它们的平台代码或依赖。
 
@@ -673,7 +673,7 @@ Prepared workspace 的 `displacements` 将指定范围的 double 位置差在相
 
 Host 的 `display_worker` 是显式 opt-in，默认关闭。启用时必须设置 `display_exclusive` 并将 `max_jobs` 设为 1：调用方持有整个底层 Display 的独占权，先排空已有访问，并暂停其他 Host、Runtime 和 UI writer。Host 私有同步不能保护绕过它的直接 PAL 调用。后端必须允许串行移交到一个任务，而且成功的 draw/present 必须完成传输；这项资格由调用方验证，不根据平台名猜测。全部 open/info/draw/present/close 在同一个提交任务执行；`borrow_display` 保留不调用 PAL open/close 的合同。
 
-Lua 的 `submit/flush/status` 合同以 `h2_lua_display.h` 为准。Web 和未启用 worker 的 Host 使用同一 Lua 源码 inline 执行；已有 `present/end_frame` 保持同步。提交最多有一个未完成帧，包含正在执行的帧；busy 由 Lua 调用方通过 `runtime.sleep()` 后重试处理，没有额外排队帧或覆盖在途快照。成功入队后可绘制下一帧，完成回执只更新上一帧 baseline，不清除下一帧 dirty 状态。冻结 tile fallback 包含完整位图，超过矩形容量也不截断提交。
+Lua 的 `submit/flush/status` 合同以 `h2_lua_display.h` 为准。Web 和未启用 worker 的 Host 使用同一 Lua 源码 inline 执行；已有 `present/end_frame` 保持同步。提交最多有一个未完成帧，包含正在执行的帧；busy 由 Lua 调用方通过 `runtime.sleep()` 后重试处理，没有额外排队帧或覆盖在途快照。成功入队后可绘制下一帧，快照准备与成功回执仅复制最终计划覆盖的区域，保留原始行 stride；首帧或基线失效仍整帧复制。完整传输成功后，回执只更新上一帧 baseline 的相同覆盖区域，不清除下一帧 dirty 状态。冻结 tile fallback 包含完整位图，超过矩形容量也不截断提交。
 
 快照、baseline、mailbox 和计划使用 VM userdata，受 `vm_memory_limit_bytes` 与共享 VM 堆约束。240×240 RGB565 每份像素为 115200 字节；启用后保留 draw framebuffer、baseline 和一份快照。既有 draw framebuffer 属于 Host allocator，PAL Task/Atomic/Sync 的内部资源属于平台预算，不冒充 VM charge。`display_worker_stack_size` 默认请求 8192 字节，实际栈还受 target policy 下限影响。新增 `$lua/display` 任务必须在消费目标的 task policy 声明核、优先级、栈与内存区域，并实测总峰值及连续空闲块；库不修改驱动、SDK 或编译参数。
 

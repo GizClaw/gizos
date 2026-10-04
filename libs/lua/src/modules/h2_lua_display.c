@@ -4460,7 +4460,7 @@ static h2_pal_result_t display_submit_rect(h2_lua_job_t *job, int x, int y,
 }
 
 static h2_pal_result_t display_submit_retained(h2_lua_job_t *job, int bounds,
-                                               int gap, size_t *pixels,
+                                               int tiles_only, int gap, size_t *pixels,
                                                size_t *rects) {
   display_presented_t *frame = job->display_presented;
   int width = job->display_info.width, height = job->display_info.height;
@@ -4469,7 +4469,7 @@ static h2_pal_result_t display_submit_retained(h2_lua_job_t *job, int bounds,
       job->dirty_max_x + 1, job->dirty_max_y + 1};
   uint8_t *changed = (uint8_t *)(frame->pixels + frame->pixel_count);
   if (!h2_lua_display_plan_select(&frame->plan, job->framebuffer, frame->pixels,
-                                  width, height, dirty, gap, changed, bounds)) {
+                                  width, height, dirty, gap, changed, bounds, tiles_only)) {
     int cursor = 0;
     h2_lua_display_plan_rect_t r;
     while (h2_lua_display_plan_next_tile(changed, width, height, gap, &cursor, &r)) {
@@ -4559,6 +4559,44 @@ static h2_pal_result_t display_submission_open(lua_State *state,
   return result;
 }
 
+/* Copy only the final submitted coverage. Full-width rectangles stay one
+ * contiguous copy; other rectangles preserve the framebuffer row stride. */
+static void display_copy_submission_rect(uint16_t *destination,
+    const uint16_t *source, int width, h2_lua_display_plan_rect_t rect) {
+  size_t at = (size_t)rect.top * width + rect.left;
+  size_t columns = rect.right - rect.left;
+  if (columns == (size_t)width) {
+    memcpy(destination + at, source + at,
+           columns * (rect.bottom - rect.top) * sizeof(*source));
+  } else {
+    for (int y = rect.top; y < rect.bottom; ++y, at += width)
+      memcpy(destination + at, source + at, columns * sizeof(*source));
+  }
+}
+
+/* Called only after successful completion transferred ownership back to the
+ * VM. The tile iterator consumes bit 1; bit 0 retains the entire original map,
+ * including >128 rectangles. Reset consumption before replaying that same plan.
+ * Pixels outside the plan remain the previous successful baseline. */
+static void display_commit_submission(display_presented_t *frame,
+    display_submission_t *submission) {
+  h2_lua_display_worker_t *worker = &submission->worker;
+  if (worker->tiled) {
+    size_t count = display_tile_count(worker->info.width, worker->info.height);
+    for (size_t i = 0; i < count; ++i) worker->tiles[i] &= 1;
+    int cursor = 0;
+    h2_lua_display_plan_rect_t rect;
+    while (h2_lua_display_plan_next_tile(worker->tiles, worker->info.width,
+        worker->info.height, worker->gap, &cursor, &rect))
+      display_copy_submission_rect(frame->pixels, submission->snapshot,
+                                    worker->info.width, rect);
+  } else {
+    for (int i = 0; i < worker->plan.count; ++i)
+      display_copy_submission_rect(frame->pixels, submission->snapshot,
+                                    worker->info.width, worker->plan.rects[i]);
+  }
+}
+
 /* Owner-only completion collection. The worker never touches the VM or dirty
  * state; in particular, completing N cannot clear drawing performed for N+1. */
 static h2_pal_result_t display_submission_collect(h2_lua_job_t *job) {
@@ -4590,8 +4628,7 @@ static h2_pal_result_t display_submission_collect(h2_lua_job_t *job) {
       if (submission->changed) ++submission->changed_frames;
       display_presented_t *frame = job->display_presented;
       if (frame != NULL) {
-        memcpy(frame->pixels, submission->snapshot,
-               frame->pixel_count * sizeof(uint16_t));
+        display_commit_submission(frame, submission);
         job->display_presented_valid = 1;
       }
     }
@@ -4605,6 +4642,7 @@ static h2_pal_result_t display_submission_prepare(lua_State *state,
   if (!lua_isnoneornil(state, 1)) luaL_checktype(state, 1, LUA_TTABLE);
   int retained = display_boolean_option(state, "retained", default_retained);
   int bounds = display_boolean_option(state, "bounds", 0);
+  int tiles_only = display_boolean_option(state, "tiles", 0);
   display_option(state, "merge_gap");
   int gap = display_integer(state, -1, 0, 0, 8);
   lua_pop(state, 1);
@@ -4673,7 +4711,7 @@ static h2_pal_result_t display_submission_prepare(lua_State *state,
     if (retained) {
       worker->tiled = !h2_lua_display_plan_select(&worker->plan, job->framebuffer,
           frame->pixels, job->display_info.width, job->display_info.height,
-          dirty, gap, planning_tiles, bounds);
+          dirty, gap, planning_tiles, bounds, tiles_only);
     } else {
       worker->plan.count = 1;
       worker->plan.rects[0] = dirty;
@@ -4689,15 +4727,18 @@ static h2_pal_result_t display_submission_prepare(lua_State *state,
         worker->info.height, gap, &cursor, &rect)) {
       *pixels += (size_t)(rect.right - rect.left) * (rect.bottom - rect.top);
       ++*rects;
+      display_copy_submission_rect(submission->snapshot, job->framebuffer,
+                                    worker->info.width, rect);
     }
   } else {
     for (int i = 0; i < worker->plan.count; ++i) {
       h2_lua_display_plan_rect_t rect = worker->plan.rects[i];
       *pixels += (size_t)(rect.right - rect.left) * (rect.bottom - rect.top);
       ++*rects;
+      display_copy_submission_rect(submission->snapshot, job->framebuffer,
+                                    worker->info.width, rect);
     }
   }
-  memcpy(submission->snapshot, job->framebuffer, size);
   ++submission->submitted;
   submission->inflight = 1;
   submission->retained = retained;
@@ -4847,6 +4888,7 @@ static int display_present(lua_State *state) {
   if (!lua_isnoneornil(state, 1)) luaL_checktype(state, 1, LUA_TTABLE);
   int retained = display_boolean_option(state, "retained", job->display_presented != NULL);
   int bounds = display_boolean_option(state, "bounds", 0);
+  int tiles_only = display_boolean_option(state, "tiles", 0);
   display_option(state, "merge_gap");
   int gap = display_integer(state, -1, 0, 0, 8);
   lua_pop(state, 1);
@@ -4862,7 +4904,7 @@ static int display_present(lua_State *state) {
     result = display_submit_rect(job, 0, 0, job->display_info.width,
                                  job->display_info.height, &pixels, &rects);
   else if (retained)
-    result = display_submit_retained(job, bounds, gap, &pixels, &rects);
+    result = display_submit_retained(job, bounds, tiles_only, gap, &pixels, &rects);
   else if (job->dirty_valid)
     result = display_submit_rect(job, job->dirty_min_x, job->dirty_min_y,
         job->dirty_max_x - job->dirty_min_x + 1,
