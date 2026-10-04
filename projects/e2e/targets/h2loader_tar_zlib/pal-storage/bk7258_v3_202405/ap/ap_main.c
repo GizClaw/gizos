@@ -10,11 +10,13 @@ static h2_runtime_t *runtime;
 static volatile int finished;
 static void hold(void) {for(;;)rtos_delay_milliseconds(1000);}
 static void fail(const char *stage,int rc) {printf("H2_STORAGE_LAUNCHER_FAIL stage=%s rc=%d\n",stage,rc);hold();}
-static void watchdog(void *unused) {(void)unused;rtos_delay_milliseconds(600000);if(!finished)puts("H2_STORAGE_WATCHDOG timeout=600s");hold();}
+/* FlashDB calls cross the BK AP/CP flash boundary. Keep the full 1000-write
+ * contract while allowing its real hardware diagnostic run to complete. */
+static void watchdog(void *unused) {(void)unused;rtos_delay_milliseconds(3600000);if(!finished)puts("H2_STORAGE_WATCHDOG timeout=3600s");hold();}
 static void run(void *unused) {
   (void)unused;rtos_delay_milliseconds(5000);
   int rc=h2_storage_device_run(runtime,"/data/pal-storage",H2_STORAGE_VERSION);finished=1;
-  int confirm=h2_bk_h2loader_confirm_current_app(runtime);
+  int confirm=rc==H2_PAL_OK?h2_bk_h2loader_confirm_current_app(runtime):H2_PAL_ERR_INVALID_STATE;
   printf("H2_STORAGE_READY rc=%d confirm=%d\n",rc,confirm);
   for(;;){h2_storage_device_replay(runtime);rtos_delay_milliseconds(3000);}
 }
