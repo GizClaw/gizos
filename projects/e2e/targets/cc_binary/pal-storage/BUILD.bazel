@@ -12,7 +12,11 @@ _HOST = select({
 
 cc_binary(
     name = "pal_storage_e2e",
-    srcs = ["main.cpp", "host_config.c", "host_config.h"],
+    srcs = [
+        "host_config.c",
+        "host_config.h",
+        "main.cpp",
+    ],
     copts = H2_WARNING_COPTS,
     cxxopts = H2_CXX17_OPTS,
     target_compatible_with = _HOST,
@@ -21,6 +25,7 @@ cc_binary(
         "//libs/pal/providers/desktop/pal_core",
         "//libs/pal/providers/sqlite",
         "//projects/e2e/apps/pal-storage/app:pal_storage_e2e",
+        "//projects/e2e/libs/pal-storage-device:runner",
         "//projects/example/libs/host_runtime",
     ] + select({
         "@platforms//os:macos": ["//libs/pal/providers/darwin/pal_core"],
@@ -31,6 +36,7 @@ cc_binary(
 
 py_test(
     name = "desktop_test",
+    timeout = "long",
     srcs = ["run_desktop.py"],
     args = [
         "$(rootpath :pal_storage_e2e)",
@@ -42,5 +48,27 @@ py_test(
     ],
     legacy_create_init = 0,
     main = "run_desktop.py",
+    target_compatible_with = _HOST,
+)
+
+py_test(
+    name = "cleanup_persistence_test",
+    timeout = "long",
+    srcs = ["test_cleanup_persistence.py"],
+    args = ["$(rootpath :pal_storage_e2e)"],
+    data = [":pal_storage_e2e"],
+    legacy_create_init = 0,
+    main = "test_cleanup_persistence.py",
+    target_compatible_with = _HOST,
+)
+
+py_test(
+    name = "device_lifecycle_test",
+    timeout = "long",
+    srcs = ["test_device_lifecycle.py"],
+    args = ["$(rootpath :pal_storage_e2e)"],
+    data = [":pal_storage_e2e"],
+    legacy_create_init = 0,
+    main = "test_device_lifecycle.py",
     target_compatible_with = _HOST,
 )
