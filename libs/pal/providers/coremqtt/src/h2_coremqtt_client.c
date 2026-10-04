@@ -226,6 +226,7 @@ static h2_pal_result_t init_core_context(h2_pal_mqtt_client_t *client) {
     memset(&transport, 0, sizeof(transport));
     transport.recv = h2_coremqtt_transport_recv;
     transport.send = h2_coremqtt_transport_send;
+    transport.writev = h2_coremqtt_transport_writev;
     transport.pNetworkContext = &client->network;
     client->fixed_buffer.pBuffer = client->config.network_buffer;
     client->fixed_buffer.size = client->config.network_buffer_len;
