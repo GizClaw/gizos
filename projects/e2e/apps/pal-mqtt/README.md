@@ -81,8 +81,8 @@ LAN fixture 默认保留 2 秒服务端 TLS 握手预算，可通过 `serve --tl
 | Platform | Actual execution source | Result | Receipt |
 | --- | --- | --- | --- |
 | macOS host | current focused test invocation and App/binary inputs | 36/36, strict wire witness and zero final resources | Bazel `desktop_test` output |
-| iOS Simulator | `5fede8800707089d0377f7e74a9927c7fa704bba`; explicit per-file mobile input equivalence to `afc4b236` | 36/36; SDK symbol/header, actual IPA/XCFramework and owner cleanup | `targets/ios_application/pal-mqtt/evidence` |
-| Android Emulator | fixed `afc4b2367a3a10210c32f9d75bfc04eae766061b` | 36/36; exported factory, actual APK/AAR byte identity and owner cleanup | `targets/android_binary/pal-mqtt/evidence` |
+| iOS Simulator | fixed `da7704d9495c9da568cb0ed878395e5b7496ef01`, including configured send deadlines | 36/36; actual IPA/XCFramework, symbols/header, two allocation failures and owner cleanup | `targets/ios_application/pal-mqtt/evidence/runs/da7704d9` |
+| Android Emulator | fixed `da7704d9495c9da568cb0ed878395e5b7496ef01`, including configured send deadlines | 36/36; actual APK/AAR, symbols/header, two allocation failures and owner cleanup | `targets/android_binary/pal-mqtt/evidence/runs/da7704d9` |
 | DevKit ESP32-S3 | fixed artifact source `955dcfce`; fixture `ad04417f`; host oracle `b569cf92` | 36/36 on two fresh boots, exact peer/native/provider cleanup; original App/Stage/settings restored | `targets/h2loader_tar_zlib/pal-mqtt/devkit/evidence` |
 | BK7258 | standalone P2 package and explicitly bound LAN fixture | actual latest 34/36 FAIL; TCP connection and resource-balance gates unmet | root-owned directed UART/install/status/dump and `device_test` |
 
@@ -91,3 +91,5 @@ Each mobile evidence directory preserves the original successful `qualified.json
 Device `status` 的权威输入是唯一 `H2_LOADER_STATUS` 行；当前真实 CLI 不在该行输出 `result`/`code`，verifier 不添加或要求这些不存在的 device 字段。每份 `before-status.log`、`after-status.log`、`before-coredump-status.log`、`after-coredump-status.log` 都配同名 `*-receipt.json`，独立 host receipt 必须包含实际 `command`、精确整数 `exit=0`、指定 `port`、aware UTC `started_at_utc` 和匹配原 log bytes 的 `log_sha256`，不能用 stdout 文本伪造进程成功。
 
 `managed.log`/`normal.log` 配各自 receipt，command 分别是 `reboot upgrade --monitor` 与 `reboot app --monitor`。只有 `controlled_stop=true`、`stop_reason="validated complete ledger"`、真实 `exit_after_capture` 为 0/130/-SIGINT，并有不早于开始时间的 aware UTC `captured_at_utc` 才允许受控结束；若还记录 `exit`，两者必须一致。完整捕获前退出、因失败中断或其它错误码均不 qualified。原 log 必须有唯一且匹配 target 的 accepted reboot ACK，verifier 只接纳该 ACK 之后的 fresh BOOT/36-case/READY，并保持晚到新 boot 使旧 ledger 失效、fresh UID/P1/P2/Stage/实际 coredump bytes 的全部强 gate。
+
+The `da7704d9` mobile receipts are new fresh executions after the common coreMQTT deadline change. Their exact original fixture JSON/CA/wrong CA bytes and actual SDK/App files are preserved in the independent evidence capsules. The prior `5fede880` iOS and `afc4b236` Android files remain historical receipts under their original identities. Android's first new-output-base Maven resolver timeout occurred before App installation/execution and is retained as an infrastructure failure; the successful run used this task's existing enabled repository/action caches and `--nocache_test_results`.
