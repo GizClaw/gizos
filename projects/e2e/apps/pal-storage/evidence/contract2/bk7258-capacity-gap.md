@@ -9,3 +9,6 @@
 [公共 Preferences header](../../../../../../libs/pal/include/h2/pal/os/h2_pal_pref.h) 没有承诺跨 provider 的统一最大 value size；BK provider 也没有公开的 16 KiB 保证，只将 SDK 的 `FDB_SAVED_FULL` 透传为 `NO_SPACE`。现有 `pref_flashdb_test` 的 SDK shim 使用无容量限制的内存条目，因此不证明此真实 sector 边界。
 
 本次保留失败镜像、数据和 16 KiB/1000 次测试强度，没有改 provider、SDK、格式或 partition。直接把既有 DB 的 sector 改为 32 KiB 会在当前 24 KiB DB 触发初始化约束；即使扩到物理 128 KiB，也改变旧 4 KiB 数据的扫描和 erase 几何，不能作为无损配置修复。后续方案必须先审计和备份旧存储，在保持旧区域可读的前提下设计大值 backing、完整 generation 提交及错误回收；真实固定 FlashDB engine 配合 NOR/FAL 模拟应先复现此限制，再验证容量、GC、失败后旧值/类型保留、兼容和原 36 项实板资格。此文记录实际限制与未实施的修复要求，不宣称容量问题已解决。
+
+
+后续修复已在独立 Pref worktree 实现，并通过固定真实 FlashDB/FAL + NOR 的容量、覆盖/GC、失败恢复及私有实板备份兼容测试。方案保持原 24 KiB/4 KiB DB，新增同物理分区尾部 104 KiB 的独立分片/manifest backing；细节见 [BK large-value backing](../../../../../../native_component_src/bk7258/ap/h2_pal_core/tests/README.pref-large.md)。这里的 de68 实板 FAIL 是历史事实，不能重绑到新实现；新包在原 36 case / 五 fresh boot 资格完成前仍不能记 BK PASS。
