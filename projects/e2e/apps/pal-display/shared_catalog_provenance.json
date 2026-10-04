@@ -22,8 +22,8 @@
   },
   "current_source_sha256": {
     "projects/e2e/apps/pal-display/BUILD.bazel": "8cf47780717ae7d621197d5f98cfa80de4b50c7fd46a61da3b7bdf82505440ef",
-    "projects/e2e/apps/pal-display/README.md": "5f0546961067e4a1bb9ed8e95139dc758367fab85f42c5c851863f7a3c6582d4",
-    "projects/e2e/apps/pal-display/check_qualification.py": "bea93bfd8f6e54c717a0404f6e389e09acab79058808556ed93cedf75dd5178e"
+    "projects/e2e/apps/pal-display/README.md": "e26f59c6d1412cf268e43239b6c82b0767cecb1f62367a857587082f302f045b",
+    "projects/e2e/apps/pal-display/check_qualification.py": "59a54f70af2fdaffa6b7fb4005b4c3f65503e1299d880665a1e2ffe1f7ca4872"
   },
   "scope": "Host audit maintenance only; exact Display catalog section and row remain historical. Only the exact two BK Pref PAL-guide paragraphs are admitted. All qualification, mobile execution, artifact and hardware identities are unchanged."
 }
