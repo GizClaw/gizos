@@ -30,7 +30,7 @@ class MobileRunnerProvenanceTest(unittest.TestCase):
                          qualification.display_catalog_content(changed))
         original_read = qualification.Path.read_text
         def read(path, *args, **kwargs):
-            if str(path) == qualification.SHARED_CATALOG:
+            if path == qualification.Path(qualification.SHARED_CATALOG):
                 return changed
             return original_read(path, *args, **kwargs)
         with patch.object(qualification.Path, "read_text", new=read):
@@ -38,12 +38,13 @@ class MobileRunnerProvenanceTest(unittest.TestCase):
 
     def test_changed_display_section_or_launcher_row_fails(self):
         current = qualification.Path(qualification.SHARED_CATALOG).read_text(encoding="utf-8")
-        for changed in [current.replace("固定运行 24 个 mandatory case", "固定运行 1 个 mandatory case"),
-                        current.replace("| PAL Display |", "| PAL Display | changed")]:
-            with self.subTest(changed=changed):
+        for variant, changed in [
+                ("section", current.replace("固定运行 24 个 mandatory case", "固定运行 1 个 mandatory case")),
+                ("launcher_row", current.replace("| PAL Display |", "| PAL Display | changed"))]:
+            with self.subTest(variant=variant):
                 original_read = qualification.Path.read_text
                 def read(path, *args, **kwargs):
-                    if str(path) == qualification.SHARED_CATALOG:
+                    if path == qualification.Path(qualification.SHARED_CATALOG):
                         return changed
                     return original_read(path, *args, **kwargs)
                 with patch.object(qualification.Path, "read_text", new=read):
