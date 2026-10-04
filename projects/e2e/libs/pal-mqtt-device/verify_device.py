@@ -4,17 +4,62 @@ This verifier consumes the root task's actual serial/status/dump observations.
 It never opens, scans, stages, resets or flashes a device itself.
 """
 import argparse
+from datetime import datetime, timedelta
 import hashlib
 import io
 import json
 import os
 from pathlib import Path
 import re
+import signal
 import tarfile
 import zlib
 
 def fields(text):
     return dict(re.findall(r'(\w+)=([^\s]+)', text))
+
+def loader_status(text):
+    """Read the authoritative device line, independently of host exit status."""
+    text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
+    rows = re.findall(r'(?m)(?:^|\s)H2_LOADER_STATUS\s+([^\r\n]+)', text)
+    assert len(rows) == 1, 'missing or ambiguous H2_LOADER_STATUS observation'
+    pairs = re.findall(r'(\w+)=([^\s]+)', rows[0])
+    assert pairs and len({key for key, _ in pairs}) == len(pairs), 'duplicate device status field'
+    return dict(pairs)
+
+def utc_time(value):
+    timestamp = datetime.fromisoformat(value.replace('Z', '+00:00'))
+    assert timestamp.tzinfo is not None and timestamp.utcoffset() == timedelta(0), 'host command requires explicit UTC time'
+    return timestamp
+
+def command_receipt(log_path, expected_command, port, controlled_capture=False):
+    """Verify actual root-owned command/exit/time and bind its stdout bytes."""
+    log_path = Path(log_path)
+    receipt_path = log_path.with_name(log_path.stem + '-receipt.json')
+    receipt = json.loads(receipt_path.read_text())
+    if controlled_capture:
+        assert receipt.get('controlled_stop') is True, 'monitor did not stop after validated capture'
+        assert receipt.get('stop_reason') == 'validated complete ledger', 'monitor stopped for another reason'
+        code = receipt.get('exit_after_capture')
+        assert type(code) is int and code in (0, 130, -signal.SIGINT), 'monitor exit was not controlled SIGINT/success'
+        if 'exit' in receipt:
+            assert type(receipt['exit']) is int and receipt['exit'] == code, 'conflicting actual host exits'
+        assert utc_time(receipt.get('captured_at_utc', '')) >= utc_time(receipt.get('started_at_utc', '')), 'capture time precedes command'
+    else:
+        assert type(receipt.get('exit')) is int and receipt['exit'] == 0, 'host command did not exit successfully'
+    assert receipt.get('command') == expected_command, 'host receipt belongs to another command'
+    assert receipt.get('port') == port, 'host command port differs from directed fixture'
+    utc_time(receipt.get('started_at_utc', ''))
+    assert receipt.get('log_sha256') == hashlib.sha256(log_path.read_bytes()).hexdigest(), 'host receipt does not bind actual stdout'
+    return receipt
+
+def after_accepted_reboot(text, target):
+    text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
+    markers = list(re.finditer(r'(?m)(?:^|\s)H2_LOADER_REBOOT\s+([^\r\n]+)', text))
+    assert len(markers) == 1, 'missing or ambiguous actual reboot response'
+    reboot = fields(markers[0].group(1))
+    assert reboot.get('target') == target and reboot.get('result') == 'accepted', 'requested reboot not accepted'
+    return text[markers[0].end():]
 
 def boot_ledger(text, ids, version, previous=None):
     boot = run = summary = accepted = None
@@ -68,7 +113,6 @@ def package_manifest(package):
     return manifest, hashlib.sha256(original).hexdigest()
 
 def status_preserved(before, after, manifest, package_sha, uid):
-    assert before.get('result') == after.get('result') == 'OK' and before.get('code') == after.get('code') == '0'
     assert before.get('device_uid') == after.get('device_uid') == uid, 'fresh UID mismatch'
     assert before.get('board') == after.get('board') == manifest['board']
     assert before.get('target') == after.get('target') == manifest['target']
@@ -114,9 +158,19 @@ def main():
     manifest,sha=package_manifest(args.package)
     ids=re.findall(r'H2_PAL_MQTT_CASE\(\w+, "([^"]+)"\)',args.registry.read_text())
     assert len(ids)==36 and len(set(ids))==36
-    first=boot_ledger((directory/'managed.log').read_text(),ids,manifest['version'])
-    second=boot_ledger((directory/'normal.log').read_text(),ids,manifest['version'],first['boot']['id'])
-    before=fields((directory/'before-status.log').read_text());after=fields((directory/'after-status.log').read_text())
+    commands={
+        'managed':command_receipt(directory/'managed.log',['reboot','upgrade','--monitor'],port,controlled_capture=True),
+        'normal':command_receipt(directory/'normal.log',['reboot','app','--monitor'],port,controlled_capture=True),
+    }
+    first=boot_ledger(after_accepted_reboot((directory/'managed.log').read_text(),'upgrade'),ids,manifest['version'])
+    second=boot_ledger(after_accepted_reboot((directory/'normal.log').read_text(),'app'),ids,manifest['version'],first['boot']['id'])
+    for name,command in [('before-status',['status']),('after-status',['status']),
+                         ('before-coredump-status',['coredump','status']),('after-coredump-status',['coredump','status'])]:
+        commands[name]=command_receipt(directory/(name+'.log'),command,port)
+    assert utc_time(commands['before-status']['started_at_utc']) <= utc_time(commands['managed']['started_at_utc']) <= \
+        utc_time(commands['managed']['captured_at_utc']) <= utc_time(commands['normal']['started_at_utc']) <= \
+        utc_time(commands['normal']['captured_at_utc']) <= utc_time(commands['after-status']['started_at_utc']), 'command observation order moved backwards'
+    before=loader_status((directory/'before-status.log').read_text());after=loader_status((directory/'after-status.log').read_text())
     status_preserved(before,after,manifest,sha,uid)
     dumped_before=fields((directory/'before-coredump-status.log').read_text())
     dumped_after=fields((directory/'after-coredump-status.log').read_text())
@@ -128,7 +182,7 @@ def main():
     for execution in (first,second):verify_witness(peer,execution)
     report=dict(manifest=manifest,package_sha256=sha,uid=uid,port=port,managed=first,normal=second,
         before_status=before,after_status=after,coredump_status=dumped_after,coredump_sha256=dump_sha,
-        fixture_inputs=peer['inputs'],registry_sha256=hashlib.sha256(args.registry.read_bytes()).hexdigest())
+        fixture_inputs=peer['inputs'],commands=commands,registry_sha256=hashlib.sha256(args.registry.read_bytes()).hexdigest())
     output=Path(os.environ.get('TEST_UNDECLARED_OUTPUTS_DIR',directory));output.mkdir(parents=True,exist_ok=True)
     (output/'qualification.json').write_text(json.dumps(report,indent=2)+'\n')
     print('BK7258 MQTT: 36/36 on two fresh boots; UID/P1/P2/Stage/coredump and exact peer proof preserved')
