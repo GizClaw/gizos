@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 import re
 import unittest
-from verify_device import boot_ledger,status_preserved
+from verify_device import boot_ledger,status_preserved,coredump_preserved
 class Verifier(unittest.TestCase):
     def setUp(self):
         root=Path(__file__).absolute().parents[5]
@@ -31,4 +31,8 @@ class Verifier(unittest.TestCase):
         after['partition_2_valid']='0'
         with self.assertRaises(AssertionError):status_preserved(before,after,manifest,'d'*64,'uid')
         after['partition_2_valid']='1';status_preserved(before,after,manifest,'d'*64,'uid')
+    def test_equal_truncated_dump(self):
+        status=dict(result='OK',code='0',stored_bytes='8',blank='0')
+        with self.assertRaises(AssertionError):coredump_preserved(status,status,b'four',b'four')
+        self.assertIsNotNone(coredump_preserved(status,status,b'12345678',b'12345678'))
 if __name__=='__main__':unittest.main()
