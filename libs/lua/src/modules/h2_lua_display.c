@@ -1536,15 +1536,23 @@ static int display_raster_material(h2_lua_job_t *job,
       if (positive) mask |= e->boundary;
     }
     material_sort_events(events, used);
-    int left = row_left;
+    /* Coalesce damage only across consecutive painted spans. A positive-width
+     * transparent gap ends the run; coincident events do not create a gap. */
+    int left = row_left, pending_left = -1, pending_right = 0;
     for (unsigned i = 0; i <= used; ++i) {
       int right = i < used ? events[i].x : row_right;
-      if (left < right && mask == 5u && cell[0] >= 0 && cell[1] >= 0 &&
-          cell[0] < (int)m->nu-1 && cell[1] < (int)m->nv-1) {
-        unsigned owner = m->owner[cell[1] * (m->nu - 1) + cell[0]];
+      if (left < right) {
+        unsigned owner = 0;
+        if (mask == 5u && cell[0] >= 0 && cell[1] >= 0 &&
+            cell[0] < (int)m->nu-1 && cell[1] < (int)m->nv-1)
+          owner = m->owner[cell[1] * (m->nu - 1) + cell[0]];
         if (owner) {
           fill_span(job, y, left, right-1, colors[owner-1]);
-          mark_dirty_rect(job, left, y, right-left, 1);
+          if (pending_left < 0) pending_left = left;
+          pending_right = right;
+        } else if (pending_left >= 0) {
+          mark_dirty_rect(job, pending_left, y, pending_right-pending_left, 1);
+          pending_left = -1;
         }
       }
       if (i < used) {
@@ -1554,6 +1562,8 @@ static int display_raster_material(h2_lua_job_t *job,
       }
       left = right;
     }
+    if (pending_left >= 0)
+      mark_dirty_rect(job, pending_left, y, pending_right-pending_left, 1);
   }
   return 1;
 }

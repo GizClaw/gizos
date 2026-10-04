@@ -63,6 +63,50 @@ for _,q in ipairs(quads) do
     paint(d.draw_quad_material,material,palette,q,5,50);d.restore_background(bg)
     assert(d.present()==0,'material damage restoration')
 end
+-- Dirty/damage coverage must match independent pixel writes, including whole
+-- transparent tiles between painted runs and collapsed zero-width transitions.
+do
+    d.clear('black');d.present()
+    local bg=d.capture_region(0,0,d.width,d.height)
+    local function reset() d.restore_background(bg);d.present() end
+    local function snapshot() return p.display_snapshot(d.draw_quad_material,bg) end
+    local recipes={
+        {{0,.125,1},{.125,.25,2},{.75,.875,3},{.875,1,4}},
+        {{.125,.375,1},{.375,.375+2^-30,1},{.375+2^-30,.625,1},{.875,1,4}},
+        {{.4,.4,1},{0,1,2,.5,.5}},
+    }
+    local boxes={{0,16,64,16,64,48,0,48},{64,16,0,16,0,48,64,48},
+                 {0,48,64,48,64,16,0,16}}
+    for _,recipe in ipairs(recipes) do
+        local field=d.compile_quad_material(d.compile_quad_batch(recipe))
+        for _,q in ipairs(boxes) do
+            for _,clip in ipairs({{0,64},{17,31},{32,32}}) do
+                for prior=0,1 do
+                    reset()
+                    if prior==1 then d.fill_rect(80,80,1,1,'white') end
+                    for y=clip[1],clip[2]-1 do for x=0,64 do
+                        local u=(x-q[1])/(q[3]-q[1])
+                        local v=(y-q[2])/(q[8]-q[2])
+                        local owner
+                        for _,r in ipairs(recipe) do
+                            if u>=r[1] and u<r[2] and v>=(r[4] or 0)
+                                and v<(r[5] or 1) then owner=r[3] end
+                        end
+                        if owner then d.fill_rect(x,y,1,1,colors[owner]) end
+                    end end
+                    local pixels,damage,dirty=snapshot()
+                    reset()
+                    if prior==1 then d.fill_rect(80,80,1,1,'white') end
+                    assert(paint(d.draw_quad_material,field,palette,q,clip[1],clip[2]))
+                    local a,b,c=snapshot()
+                    assert(a==pixels,'material run pixel order')
+                    assert(b==damage,'material run damage must not bridge holes')
+                    assert(c==dirty,'material run dirty union/empty clip')
+                end
+            end
+        end
+    end
+end
 -- Sparse parameter bounds and holes must retain the independent pixel rule.
 -- These exercise clipping to material support rather than only the full face.
 local saved_entries=entries
