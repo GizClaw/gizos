@@ -1,0 +1,51 @@
+{
+  "contract": 2,
+  "operation_count": 28,
+  "case_count": 36,
+  "unique_phase_cases": {
+    "seed": 31,
+    "verify": 3,
+    "clean_verify": 2
+  },
+  "completion_replay_case_count": 2,
+  "source_revision": "de68d16a6b2e3f298eadbdf5b5a4dda0bd0b69a9",
+  "recorded_at": "2026-10-04T00:16:10Z",
+  "all_platforms_qualified": false,
+  "qualified_platforms": [
+    {
+      "platform": "macos",
+      "status": "qualified",
+      "receipt": "evidence/contract2/macos-qualified.json",
+      "source_revision": "de68d16a6b2e3f298eadbdf5b5a4dda0bd0b69a9",
+      "artifact_sha256": "f61f009190262e17c5fc6fdd7dabb320b9be4ed1c97fbe73d83aaebedce7f19d"
+    },
+    {
+      "platform": "wasm-chromium",
+      "status": "qualified",
+      "receipt": "evidence/contract2/wasm-chromium-qualified.json",
+      "source_revision": "de68d16a6b2e3f298eadbdf5b5a4dda0bd0b69a9",
+      "artifact_sha256": "4c89dbc7e2be92253d1676e08faaf1752d935614538928a2055b4f57dd408c70"
+    }
+  ],
+  "pending_platforms": [
+    "ios-simulator",
+    "android-emulator",
+    "esp32s3-devkit",
+    "bk7258"
+  ],
+  "firmware_builds": [
+    {
+      "target": "//projects/e2e/targets/h2loader_tar_zlib/pal-storage/devkit:package",
+      "version": "pref-strength-20261004-esp",
+      "status": "build_passed",
+      "hardware_qualification": "not_run"
+    },
+    {
+      "target": "//projects/e2e/targets/h2loader_tar_zlib/pal-storage/bk7258_v3_202405:package",
+      "version": "pref-strength-20261004-bk",
+      "status": "build_passed",
+      "hardware_qualification": "not_run"
+    }
+  ],
+  "qualification_boundary": "Host/browser receipts bind the executable sources at source_revision. Firmware builds do not establish board qualification; simulator and physical-board runs remain pending. Existing contract 1 receipts are historical and unchanged."
+}
