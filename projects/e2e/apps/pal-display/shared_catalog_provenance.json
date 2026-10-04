@@ -14,8 +14,8 @@
   },
   "current_source_sha256": {
     "projects/e2e/apps/pal-display/BUILD.bazel": "791f999667453cf775ab671b5fa794a5110b0d424831db347ae446b6e078a9f5",
-    "projects/e2e/apps/pal-display/README.md": "5b844bea2e272755ec32b7f5fa984497bf637ad5a8685554d2229ecb2e6d6537",
-    "projects/e2e/apps/pal-display/check_qualification.py": "91848b6c82a4bb195b930765178851c2144e28906266f638dab16fae0546ad6b"
+    "projects/e2e/apps/pal-display/README.md": "bfdb530b196cc5bc02f1a48557328b29d4c674855b660ec17d0643b1057083b8",
+    "projects/e2e/apps/pal-display/check_qualification.py": "c2e552cd99028166a0cd22a3492aa118f0e20fc89d2dbc64f1e353bc1dd02a15"
   },
   "scope": "Host audit maintenance only; exact Display catalog section and row remain historical. All qualification, mobile execution, artifact and hardware identities are unchanged."
 }
