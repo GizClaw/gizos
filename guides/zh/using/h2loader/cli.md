@@ -14,7 +14,7 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
 
 ```sh
 $(make h2loader-bin) -h
-$(make h2loader-bin) --port <serial-port> send --file bazel-bin/<...>/x.update.tar.zlib
+$(make h2loader-bin) --port <serial-port> send --file bazel-bin/<...>/x.update.tar
 ```
 
 `make h2loader-bin` 只把路径写到 stdout，编译日志走 stderr；host config 按 `uname` 选择 `macos`/`linux`，可用 `BAZEL_CONFIG` 覆盖。
@@ -177,7 +177,7 @@ create-exclusive contract。CLI 直接 truncate/write/sync 目标文件，写入
 
 ```sh
 bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- package \
-  --out /tmp/update.tar.zlib \
+  --out /tmp/update.tar \
   --app-bin /absolute/path/to/app.bin \
   --role app \
   --board amoled \
@@ -185,10 +185,12 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
   --version dev
 ```
 
+`package` 与 `golden` 统一生成 format 2 的未压缩 tar，内含独立的 `data.tar.zlib` 和 `app.bin.zlib`；默认输出为 `/tmp/update.tar`，没有格式选择参数，也不生成旧 tar.zlib。新 Loader 继续接受 format 1。仍可管理的旧 Loader 使用已存在的双格式 reader 过渡 package 升级后再接收新 tar。格式和 checksum 合同见 [更新与恢复](/apps/h2loader/update)。
+
 当前 PAL FS contract 没有目录枚举，因此 native CLI 暂不支持 `--data-dir`；带该参数会明确返回 unsupported，不会绕过 PAL。`golden` 只生成 parser 和 desktop test 使用的确定性 fixture，不用于真实固件发布：
 
 ```sh
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- golden --out /tmp/golden.tar.zlib
+bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- golden --out /tmp/golden.tar
 ```
 
 Loader image 使用 `--role h2loader`，且不能包含 `--data-dir`。将 package Stage 到设备后，显式执行 `bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> reboot upgrade`；仅 Stage 不会安装固件。
@@ -205,7 +207,7 @@ APP 与 Loader 都直接支持 `send`、`send-url` 和 `stage abort`。Host 不�
 bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- \
   --port <serial-port> \
   send \
-  --file /tmp/update.tar.zlib
+  --file /tmp/update.tar
 ```
 
 同一 `send` 流程也可以显式选择 BLE management endpoint；package bytes 通过当前 BLE-iKCP session stage。无响应 BLE write 遇到 controller queue backpressure 时最多重试 40 次、每次间隔 2 ms；如果 package 已完整确认但同连接暂时读不到 durable staged metadata，CLI 只在旧 connection 成功 disconnect 后执行 bounded reconnect，再核对 exact staged bytes/SHA-256；teardown 失败不会打开并发替代 session。它不会改写命令、另建 BLE 指令表或跨 scan 猜测物理设备：
@@ -215,10 +217,10 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
   --transport bleikcp \
   --port <ble-endpoint> \
   send \
-  --file /tmp/update.tar.zlib
+  --file /tmp/update.tar
 ```
 
-`--file`、`--out`、`--app-bin`、`--data-dir` 接受主机路径：相对路径按调用 shell 的目录解析（`bazel run` 会把 cwd 切到 runfiles，CLI 会改用它导出的 `BUILD_WORKING_DIRECTORY`），符号链接会被解析，因此可以直接传 `bazel-bin/<...>/x.update.tar.zlib`。解析后的真实路径必须落在 PAL filesystem 的挂载内（macOS 为 `/tmp`、`/Users`；Linux 为 `/tmp`、`/home`），否则 `send` 会在 `stat` 阶段失败并报 `h2loader: send failed step=stat file=<path> code=<rc>`，退出码 3——此时把 package 复制到 `/tmp` 再发送。
+`--file`、`--out`、`--app-bin`、`--data-dir` 接受主机路径：相对路径按调用 shell 的目录解析（`bazel run` 会把 cwd 切到 runfiles，CLI 会改用它导出的 `BUILD_WORKING_DIRECTORY`），符号链接会被解析，因此可以直接传 `bazel-bin/<...>/x.update.tar`。解析后的真实路径必须落在 PAL filesystem 的挂载内（macOS 为 `/tmp`、`/Users`；Linux 为 `/tmp`、`/home`），否则 `send` 会在 `stat` 阶段失败并报 `h2loader: send failed step=stat file=<path> code=<rc>`，退出码 3——此时把 package 复制到 `/tmp` 再发送。
 
 通过已经部署的 HTTP server 让设备下载 package：
 
@@ -228,7 +230,7 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
   send-url \
   --ssid <ssid> \
   --password <password> \
-  --url https://example.test/update.tar.zlib \
+  --url https://example.test/update.tar \
   --bytes <package-bytes> \
   --sha256 <package-sha256>
 ```
@@ -242,7 +244,7 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
   send-url \
   --ssid <ssid> \
   --password <password> \
-  --url https://example.test/update.tar.zlib \
+  --url https://example.test/update.tar \
   --bytes <package-bytes> \
   --sha256 <package-sha256>
 ```
@@ -260,7 +262,7 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
 bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- \
   --port <serial-port> \
   send \
-  --file /tmp/update.tar.zlib
+  --file /tmp/update.tar
 ```
 
 不要为了绕过 transport 故障改变 package 内容、降低验收条件或直接进入底层烧录。UART `send` 成功必须收到 `H2_LOADER_STAGE_RECEIVE result=OK` 和 `H2_LOADER_STAGE result=OK`；URL staging 成功仍必须收到 `H2_LOADER_DOWNLOAD state=done` 和 `H2_LOADER_STAGE result=OK`。

@@ -1,6 +1,7 @@
 #include "h2_h2loader_host_package.h"
 
 #include "h2_bundle_tar.h"
+#include "h2_bundle_segmented.h"
 #include "h2_h2loader_host_internal.h"
 
 #include <limits.h>
@@ -489,6 +490,68 @@ static h2_pal_result_t map_zlib_error(int rc) {
         : H2_PAL_ERR_FORMAT;
 }
 
+static int segment_sha_start(void *user) {
+    h2_h2loader_host_sha256_init(user);
+    return H2_PAL_OK;
+}
+
+static int segment_sha_update(void *user, const uint8_t *data, size_t len) {
+    h2_h2loader_host_sha256_update(user, data, len);
+    return H2_PAL_OK;
+}
+
+static int segment_sha_finish(void *user, uint8_t hash[32]) {
+    h2_h2loader_host_sha256_finish(user, hash);
+    return H2_PAL_OK;
+}
+
+static void segment_sha_abort(void *user) {
+    memset(user, 0, sizeof(h2_h2loader_host_sha256_t));
+}
+
+static int inspect_segmented(const h2_h2loader_host_package_inspect_config_t *config,
+                             h2_h2loader_host_catalog_entry_t *out_asset) {
+    h2_h2loader_host_sha256_t sha;
+    h2_bundle_segmented_manifest_t m;
+    h2_h2loader_host_catalog_entry_t asset = {0};
+    const h2_bundle_digest_api_t digest = {.user = &sha,
+        .start = segment_sha_start, .update = segment_sha_update,
+        .finish = segment_sha_finish, .abort = segment_sha_abort};
+    int rc = h2_bundle_segmented_inspect(config->read_payload, config->payload_user,
+        config->payload_bytes, &digest, &m);
+    if (rc != H2_PAL_OK) return rc;
+    uint8_t data[H2_H2LOADER_HOST_PACKAGE_IO_SIZE], hash[32];
+    uint64_t offset = 0u;
+    h2_h2loader_host_sha256_init(&sha);
+    while (offset < config->payload_bytes) {
+        size_t n = config->payload_bytes - offset > sizeof(data)
+            ? sizeof(data) : (size_t)(config->payload_bytes - offset);
+        size_t got = 0u;
+        rc = config->read_payload(config->payload_user, offset, data, n, &got);
+        if (rc != H2_PAL_OK) return rc;
+        if (got == 0u || got > n) return H2_PAL_ERR_TRUNCATED;
+        h2_h2loader_host_sha256_update(&sha, data, got);
+        offset += got;
+    }
+    size_t extra = 0u;
+    rc = config->read_payload(config->payload_user, offset, data, 1u, &extra);
+    if (rc != H2_PAL_OK || extra != 0u) return rc == H2_PAL_OK ? H2_PAL_ERR_FORMAT : rc;
+    h2_h2loader_host_sha256_finish(&sha, hash);
+    h2_h2loader_host_sha256_hex(hash, asset.sha256);
+    memcpy(asset.board, m.board, sizeof(asset.board));
+    memcpy(asset.target, m.target, sizeof(asset.target));
+    memcpy(asset.version, m.version, sizeof(asset.version));
+    memcpy(asset.image_sha256, m.image_sha256, sizeof(asset.image_sha256));
+    asset.role = strcmp(m.role, "app") == 0
+        ? H2_H2LOADER_HOST_ASSET_ROLE_APP : H2_H2LOADER_HOST_ASSET_ROLE_LOADER;
+    asset.operation = H2_H2LOADER_HOST_ASSET_OPERATION_MANAGED_INSTALL;
+    asset.identity_source = H2_H2LOADER_HOST_ASSET_IDENTITY_PACKAGE_MANIFEST;
+    asset.bytes = config->payload_bytes;
+    asset.package_format = 2u;
+    *out_asset = asset;
+    return H2_PAL_OK;
+}
+
 h2_pal_result_t h2_h2loader_host_package_inspect(
     const h2_h2loader_host_package_inspect_config_t *config,
     h2_h2loader_host_catalog_entry_t *out_asset) {
@@ -511,6 +574,18 @@ h2_pal_result_t h2_h2loader_host_package_inspect(
         config->payload_bytes == 0u) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    size_t prefix_len = 0u;
+    while (prefix_len < 9u && prefix_len < config->payload_bytes) {
+        size_t n = config->payload_bytes - prefix_len < 9u - prefix_len
+            ? (size_t)(config->payload_bytes - prefix_len) : 9u - prefix_len;
+        size_t got = 0u;
+        result = config->read_payload(config->payload_user, prefix_len, input + prefix_len, n, &got);
+        if (result != H2_PAL_OK) return result;
+        if (got == 0u || got > n) return H2_PAL_ERR_TRUNCATED;
+        prefix_len += got;
+    }
+    if (prefix_len == 9u && memcmp(input, "manifest\0", 9u) == 0)
+        return inspect_segmented(config, out_asset);
     memset(&tar, 0, sizeof(tar));
     tar.phase = PACKAGE_TAR_HEADER;
     memset(&stream, 0, sizeof(stream));
@@ -598,6 +673,7 @@ h2_pal_result_t h2_h2loader_host_package_inspect(
     h2_h2loader_host_sha256_finish(&archive_sha, digest);
     h2_h2loader_host_sha256_hex(digest, tar.asset.sha256);
     tar.asset.bytes = config->payload_bytes;
+    tar.asset.package_format = 1u;
     tar.asset.operation =
         H2_H2LOADER_HOST_ASSET_OPERATION_MANAGED_INSTALL;
     tar.asset.identity_source =

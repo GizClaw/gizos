@@ -4,6 +4,8 @@ GizOS 使用 Bazel 9.2.0 作为 stable host C/C++ package 以及 ESP-IDF/BK7258/
 
 `BUILD.bazel`、`.bzl`、target 命名和 platform variant 同时遵守 [Bazel 代码规范](/zh/coding-styles/bazel)。
 
+H2Loader 的 `h2loader_tar_zlib` artifact rule 统一且仅输出 format 2 `.update.tar`，外层 USTAR 不压缩，app/data 是独立 zlib member；不存在 `package_format` 生成选项。Rule 名称及既有 target label 保留兼容。`FirmwareReleaseInfo.package_format`、`firmware_catalog.cquery` 和 `.firmware.json` 的 `package_format` 固定为 2，metadata 的 `package_manifest.format` 与 managed asset `release_suffix` 同步。Device/Host reader 继续兼容历史 format 1；发布 assembler 保留历史 archive 的读取校验。旧设备由已有双格式 reader 过渡包先更新 Loader，当前 build 不再生成旧包。
+
 ## Mobile E2E Python runtime
 
 移动端 E2E 的 `mobile_e2e_test` 宏直接声明 `py_test`，所有移动 target 共用 `tools/bazel/mobile_e2e.py` main。Suite owner 在 BUILD 中用 `mobile_e2e_suite` 声明包名、报告路径、registry 格式/数量、期望字段、用例结果字段、超时、SDK/consumer 符号和可选 hook。Rule 只生成声明 JSON，转发 Python provider 与 registry、hook、fixture runfiles；实际启动、解析与严格断言都在公共 Python 工具内执行。标准 suite 无需独立 Python 文件，特殊流程和业务断言通过可选 hook 扩展，且不能绕过公共校验。IPA/APK 和 SDK 仍保持目标平台配置；`mobile_e2e_host_python` 在 exec configuration 中选择已有 hermetic Python runtime。声明与 Python 库使用 `HOST_OR_MOBILE_TOOL_COMPATIBILITY`，只允许匹配 host 和支持的 iOS/Android configuration，排除没有 Python runtime 的 embedded/K4B target。设备入口只声明 `manual` tag，并用 `local = True` 保证本机执行；批量验证使用 `--local_test_jobs=1` 并关闭测试结果缓存。接入合同见 `tools/bazel/mobile_e2e.md`。

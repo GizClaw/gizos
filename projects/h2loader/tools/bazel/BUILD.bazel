@@ -21,7 +21,11 @@ py_library(
 py_test(
     name = "firmware_artifacts_test",
     srcs = ["tests/test_firmware_artifacts.py"],
-    data = ["tests/fixtures/h2loader_format1.sha256"],
+    data = [
+        "tests/fixtures/h2loader_format1.sha256",
+        "tests/fixtures/h2loader_format1.tar.zlib",
+        "tests/fixtures/h2loader_format2.sha256",
+    ],
     legacy_create_init = 0,
     main = "tests/test_firmware_artifacts.py",
     target_compatible_with = select({

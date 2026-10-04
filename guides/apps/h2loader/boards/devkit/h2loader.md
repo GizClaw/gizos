@@ -39,8 +39,8 @@ bazel run //projects/h2loader/targets/cc_binary/e2e-runner:e2e-runner -- \
   --ble-id <ble-endpoint> \
   --expected-board devkit \
   --expected-target esp32s3 \
-  --app-firmware <devkit-e2e-app-esp32s3.update.tar.zlib> \
-  --loader-firmware <devkit-loader-esp32s3.update.tar.zlib> \
+  --app-firmware <devkit-e2e-app-esp32s3.update.tar> \
+  --loader-firmware <devkit-loader-esp32s3.update.tar> \
   --firmware-url <device-reachable-url> \
   --url-bytes <bytes> \
   --url-sha256 <sha256> \

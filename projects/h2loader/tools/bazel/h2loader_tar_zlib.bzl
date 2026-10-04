@@ -1,4 +1,4 @@
-"""Build one H2Loader archive from a standard native firmware provider."""
+"""Build one format-2 H2Loader tar from a standard native firmware provider."""
 
 load("//tools/bazel:bk7258.bzl", "Bk7258FirmwareInfo")
 load("//tools/bazel:esp_idf.bzl", "FirmwareInfo")
@@ -13,6 +13,7 @@ FirmwareReleaseInfo = provider(
         "image": "Image identity.",
         "metadata": "Machine-readable metadata file.",
         "package": "The standard H2Loader package.",
+        "package_format": "Produced managed package wire format (always 2).",
         "platform": "Firmware platform family.",
         "recovery": "Loader recovery bundle or None.",
         "release_files": "Depset of release assets and metadata.",
@@ -115,7 +116,7 @@ def _h2loader_tar_zlib_impl(ctx):
         fail("h2loader firmware cannot declare package_data")
 
     stem = "%s-%s-%s" % (ctx.attr.board, ctx.attr.image, ctx.attr.target)
-    package = ctx.actions.declare_file(ctx.label.name + "/" + stem + ".update.tar.zlib")
+    package = ctx.actions.declare_file(ctx.label.name + "/" + stem + ".update.tar")
     metadata = ctx.actions.declare_file(ctx.label.name + "/" + stem + ".firmware.json")
     factory = None
     recovery = None
@@ -168,7 +169,7 @@ def _h2loader_tar_zlib_impl(ctx):
         arguments = [args],
         executable = ctx.executable._runner,
         inputs = depset(action_inputs),
-        mnemonic = "H2LoaderTarZlib",
+        mnemonic = "H2LoaderTar",
         outputs = [package, metadata] + ([factory] if factory else []) + ([recovery] if recovery else []),
         progress_message = "Packaging H2Loader archive %{label}",
         tools = [ctx.executable._runner],
@@ -185,6 +186,7 @@ def _h2loader_tar_zlib_impl(ctx):
             image = ctx.attr.image,
             metadata = metadata,
             package = package,
+            package_format = 2,
             platform = firmware.platform,
             recovery = recovery,
             release_files = release_files,
@@ -209,7 +211,7 @@ _h2loader_tar_zlib = rule(
 )
 
 def h2loader_tar_zlib(name, board, image, role, target, **kwargs):
-    """Packages one standard native firmware target for H2Loader installation."""
+    """Produce only format-2 tar; the historical rule name preserves labels."""
     _validate_identity(board, image, role, target)
     if bool(kwargs.get("package_data")) != bool(kwargs.get("package_data_root")):
         fail("package_data and package_data_root must be declared together")

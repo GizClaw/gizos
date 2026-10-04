@@ -57,6 +57,8 @@ typedef struct h2_h2loader_host_catalog_entry {
     h2_h2loader_host_asset_role_t role;
     h2_h2loader_host_asset_operation_t operation;
     h2_h2loader_host_asset_identity_source_t identity_source;
+    /** Managed package format; zero in legacy catalogs means format 1. */
+    uint32_t package_format;
 } h2_h2loader_host_catalog_entry_t;
 
 typedef struct h2_h2loader_host_catalog h2_h2loader_host_catalog_t;

@@ -208,7 +208,7 @@ def publish_metadata(
             result["flash_offset"] = flash_offset
         return result
 
-    release_assets = [asset(package, "managed-install", ".update.tar.zlib")]
+    release_assets = [asset(package, "managed-install", ".update.tar")]
     if recovery is not None:
         release_assets.append(asset(recovery, "recovery", ".recovery.h2fb"))
     if factory is not None:
@@ -228,6 +228,7 @@ def publish_metadata(
         "role": role,
         "target": target,
         "version": version,
+        "package_format": 2,
         "package_manifest": package_manifest(
             app_image.read_bytes(),
             role=role,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 from pathlib import Path
 import subprocess
@@ -17,13 +18,48 @@ RUNNER = ROOT / "projects" / "h2loader" / "tools" / "bazel" / "h2loader_tar_zlib
 os.environ["PYTHONPATH"] = str(ROOT)
 
 
+def open_data_tar(package: Path):
+    with tarfile.open(package, mode="r:") as outer:
+        if outer.getnames() != ["manifest", "data.tar.zlib", "app.bin.zlib"]:
+            raise AssertionError("unexpected format-2 outer members")
+        data = outer.extractfile("data.tar.zlib").read()
+    return tarfile.open(fileobj=BytesIO(zlib.decompress(data)), mode="r:")
+
+
 class H2LoaderTarZlibRunnerTest(unittest.TestCase):
+    def test_format2_output_and_release_contract(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            app = root / "app.bin"
+            app.write_bytes(b"firmware")
+            data = root / "data/test.txt"
+            data.parent.mkdir()
+            data.write_bytes(b"data")
+            package = root / "new.update.tar"
+            metadata = root / "new.firmware.json"
+            result = subprocess.run([
+                sys.executable, str(RUNNER), "--source-root", str(root),
+                "--app-image", str(app), "--app-path", "app/esp/app.bin",
+                "--entry", "entry", "--platform", "esp", "--board", "fixture",
+                "--image", "main", "--role", "app", "--target", "esp32s3", "--version", "1",
+                "--package-output", str(package), "--metadata-output", str(metadata),
+                "--package-data-root", "data", "--package-data-file", "data/test.txt",
+            ], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            release = json.loads(metadata.read_text())
+            self.assertEqual(release["package_format"], 2)
+            self.assertEqual(release["package_manifest"]["format"], 2)
+            self.assertEqual(release["assets"][0]["release_suffix"], ".update.tar")
+            self.assertEqual(release["assets"][0]["sha256"], hashlib.sha256(package.read_bytes()).hexdigest())
+            with tarfile.open(package, "r:") as outer:
+                self.assertEqual(outer.getnames(), ["manifest", "data.tar.zlib", "app.bin.zlib"])
+
     def test_packages_br35_ufw_without_changing_payload(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             payload = root / "update.ufw"
             payload.write_bytes(b"BR35-test-UFW\x00\xff")
-            package = root / "pal.update.tar.zlib"
+            package = root / "pal.update.tar"
             metadata = root / "pal.firmware.json"
             result = subprocess.run([
                 sys.executable, str(RUNNER), "--source-root", str(root),
@@ -34,8 +70,8 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
                 "--package-output", str(package), "--metadata-output", str(metadata),
             ], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
-            with tarfile.open(fileobj=BytesIO(zlib.decompress(package.read_bytes()))) as tar:
-                self.assertEqual(tar.extractfile("app/jieli/update.ufw").read(), payload.read_bytes())
+            with tarfile.open(package, mode="r:") as tar:
+                self.assertEqual(zlib.decompress(tar.extractfile("app.bin.zlib").read()), payload.read_bytes())
             self.assertEqual(json.loads(metadata.read_text())["platform"], "jieli")
 
     def test_packages_esp_loader_recovery_from_symlinked_flash_tree(self):
@@ -56,7 +92,7 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
                 json.dumps({"flash_files": {"0x0": "bootloader/bootloader.bin"}}),
                 encoding="utf-8",
             )
-            package = root / "out/loader.update.tar.zlib"
+            package = root / "out/loader.update.tar"
             metadata = root / "out/loader.firmware.json"
             recovery = root / "out/loader.recovery.h2fb"
             factory_input = root / "firmware/combined_factory.bin"
@@ -129,7 +165,7 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
             app.write_bytes(b"application")
             actual_data.write_bytes(b"video")
             logical_data.symlink_to(actual_data)
-            package = root / "out/example.update.tar.zlib"
+            package = root / "out/example.update.tar"
             metadata = root / "out/example.firmware.json"
             result = subprocess.run(
                 [
@@ -168,10 +204,10 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
                 text=True,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
-            with tarfile.open(fileobj=BytesIO(zlib.decompress(package.read_bytes()))) as archive:
+            with open_data_tar(package) as archive:
                 self.assertEqual(
                     archive.getnames(),
-                    ["manifest", "checksum", "data/media/startup.mp4", "app/bk/app_ab_crc.rbl"],
+                    ["data/media/startup.mp4"],
                 )
 
     def test_packages_generated_data_under_its_repository_relative_name(self):
@@ -184,7 +220,7 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
             generated.parent.mkdir(parents=True)
             app.write_bytes(b"application")
             generated.write_bytes(b"video")
-            package = root / "out/example.update.tar.zlib"
+            package = root / "out/example.update.tar"
             result = subprocess.run(
                 [
                     sys.executable,
@@ -224,10 +260,10 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
                 text=True,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
-            with tarfile.open(fileobj=BytesIO(zlib.decompress(package.read_bytes()))) as archive:
+            with open_data_tar(package) as archive:
                 self.assertEqual(
                     archive.getnames(),
-                    ["manifest", "checksum", "data/media/startup.mp4", "app/bk/app_ab_crc.rbl"],
+                    ["data/media/startup.mp4"],
                 )
                 member = archive.extractfile("data/media/startup.mp4")
                 self.assertIsNotNone(member)
@@ -268,7 +304,7 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
                     "--version",
                     "1.2.3",
                     "--package-output",
-                    str(root / "out/example.update.tar.zlib"),
+                    str(root / "out/example.update.tar"),
                     "--metadata-output",
                     str(root / "out/example.firmware.json"),
                     "--package-data-root",
@@ -293,7 +329,7 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
             app.write_bytes(b"application")
             data.write_text("{}\n", encoding="utf-8")
             native.write_bytes(b"elf")
-            package = root / "out/example.update.tar.zlib"
+            package = root / "out/example.update.tar"
             metadata = root / "out/example.firmware.json"
             result = subprocess.run(
                 [
@@ -334,15 +370,15 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
                 text=True,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
-            with tarfile.open(fileobj=BytesIO(zlib.decompress(package.read_bytes()))) as archive:
+            with open_data_tar(package) as archive:
                 self.assertEqual(
                     archive.getnames(),
-                    ["manifest", "checksum", "data/config.json", "app/esp/app.bin"],
+                    ["data/config.json"],
                 )
             release = json.loads(metadata.read_text(encoding="utf-8"))
             self.assertEqual(release["entry"], "projects/example/targets/h2loader_tar_zlib/example/board")
             self.assertEqual(release["assets"][0]["operation"], "managed-install")
-            self.assertEqual(release["assets"][0]["release_suffix"], ".update.tar.zlib")
+            self.assertEqual(release["assets"][0]["release_suffix"], ".update.tar")
             self.assertEqual(release["native_artifacts"][0]["name"], "firmware.elf")
 
     def test_rejects_data_outside_declared_root(self):
@@ -377,7 +413,7 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
                     "--version",
                     "1.2.3",
                     "--package-output",
-                    str(root / "out.update.tar.zlib"),
+                    str(root / "out.update.tar"),
                     "--metadata-output",
                     str(root / "out.firmware.json"),
                     "--package-data-root",
@@ -423,7 +459,7 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
                     "--version",
                     "1.2.3",
                     "--package-output",
-                    str(root / "out.update.tar.zlib"),
+                    str(root / "out.update.tar"),
                     "--metadata-output",
                     str(root / "out.firmware.json"),
                     "--package-data-root",
@@ -449,7 +485,7 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
                 b"oid sha256:a12b33d85e0d6a25a2458352d4328c5826cde92a5818c9899c0454fd58d8baf0\r\n"
                 b"size 28588\r\n"
             )
-            package = root / "out.update.tar.zlib"
+            package = root / "out.update.tar"
             result = subprocess.run(
                 [
                     sys.executable,
@@ -498,7 +534,7 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
             app.parent.mkdir(parents=True)
             app.write_bytes(b"bk application")
             recovery.write_bytes(b"recovery")
-            package = root / "out/loader.update.tar.zlib"
+            package = root / "out/loader.update.tar"
             metadata = root / "out/loader.firmware.json"
             result = subprocess.run(
                 [
@@ -535,10 +571,10 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
                 text=True,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
-            with tarfile.open(fileobj=BytesIO(zlib.decompress(package.read_bytes()))) as archive:
+            with open_data_tar(package) as archive:
                 self.assertEqual(
                     archive.getnames(),
-                    ["manifest", "checksum", "app/bk/app_ab_crc.rbl"],
+                    [],
                 )
             release = json.loads(metadata.read_text(encoding="utf-8"))
             self.assertEqual(
@@ -547,7 +583,7 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
             )
             self.assertEqual(
                 [asset["release_suffix"] for asset in release["assets"]],
-                [".update.tar.zlib", ".recovery.h2fb"],
+                [".update.tar", ".recovery.h2fb"],
             )
 
 

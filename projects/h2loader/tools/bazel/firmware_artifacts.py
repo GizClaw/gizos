@@ -64,15 +64,29 @@ def write_package(
         f"image_sha256={metadata['image_sha256']}\n"
     ).encode("ascii")
 
-    tar_data = io.BytesIO()
-    with tarfile.open(fileobj=tar_data, mode="w", format=tarfile.USTAR_FORMAT) as tar:
-        add_tar_file(tar, "manifest", manifest)
-        add_tar_file(tar, "checksum", checksum.encode() + b"\n")
+    inner = io.BytesIO()
+    with tarfile.open(fileobj=inner, mode="w", format=tarfile.USTAR_FORMAT) as tar:
         for entry in entries:
             add_tar_file(tar, entry.name, entry.data)
-        add_tar_file(tar, app_path, app_data)
-    out_path.write_bytes(zlib.compress(tar_data.getvalue(), level=6))
-
+    data_tar = inner.getvalue()
+    app_zlib = zlib.compress(app_data, level=6)
+    data_zlib = zlib.compress(data_tar, level=6)
+    manifest += (
+        f"data_sha256={checksum}\n"
+        f"data_tar_size={len(data_tar)}\n"
+        f"data_bytes={sum(len(entry.data) for entry in entries if not entry.name.endswith('.pixa'))}\n"
+        f"pixa_bytes={sum(len(entry.data) for entry in entries if entry.name.endswith('.pixa'))}\n"
+        f"app_zlib_size={len(app_zlib)}\n"
+        f"app_zlib_sha256={hashlib.sha256(app_zlib).hexdigest()}\n"
+        f"data_zlib_size={len(data_zlib)}\n"
+        f"data_zlib_sha256={hashlib.sha256(data_zlib).hexdigest()}\n"
+    ).encode("ascii")
+    outer = io.BytesIO()
+    with tarfile.open(fileobj=outer, mode="w", format=tarfile.USTAR_FORMAT) as tar:
+        add_tar_file(tar, "manifest", manifest)
+        add_tar_file(tar, "data.tar.zlib", data_zlib)
+        add_tar_file(tar, "app.bin.zlib", app_zlib)
+    out_path.write_bytes(outer.getvalue())
 
 def package_manifest(
     app_data: bytes,
@@ -86,7 +100,7 @@ def package_manifest(
         raise ValueError("missing app payload")
     validate_package_identity(role, board, target, version)
     return {
-        "format": 1,
+        "format": 2,
         "role": role,
         "board": board,
         "target": target,
