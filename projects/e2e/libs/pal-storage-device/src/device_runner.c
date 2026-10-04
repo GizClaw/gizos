@@ -13,7 +13,6 @@ static void record(void *user,const char *id,h2_pal_storage_status_t status,h2_p
   (void)user;
   if (count<sizeof(ledger)/sizeof(ledger[0])) {ledger[count].id=id;ledger[count].status=status;ledger[count].rc=rc;++count;}
   printf("H2_STORAGE_CASE {\"id\":\"%s\",\"status\":\"%s\",\"rc\":%d,\"phase\":%u,\"nonce\":%lu}\n",id,names[status],rc,(unsigned)phase,(unsigned long)nonce);
-  fflush(stdout);
 }
 static int control(h2_runtime_t *runtime,int save) {
   h2_pal_pref_namespace_t *ns=NULL;
@@ -52,32 +51,26 @@ int h2_storage_device_run(h2_runtime_t *runtime,const char *directory,const char
   int rc=control_rc;
   if (rc) return rc;
   printf("H2_STORAGE_BOOT contract=%u version=%s phase=%u nonce=%lu\n",H2_PAL_STORAGE_CONTRACT_VERSION,version,(unsigned)phase,(unsigned long)nonce);
-  fflush(stdout);
   if (phase<1 || phase>4) return H2_PAL_ERR_INVALID_STATE;
   h2_pal_storage_config_t tests={.root=directory,.namespace_a="h2storea",.namespace_b="h2storeb",.nonce=nonce,.phase=phase==4?H2_PAL_STORAGE_CLEAN_VERIFY:(h2_pal_storage_phase_t)phase,.case_result=phase==4?NULL:record};
   run_rc=h2_pal_storage_e2e_run(runtime,&tests,&result);
   if (phase==4) {
     control_rc=0;
     printf("H2_STORAGE_ALREADY_COMPLETE no_new_run=1 empty=%d rc=%d\n",!run_rc,run_rc);
-    fflush(stdout);
-    return run_rc;
+      return run_rc;
   }
   control_rc=run_rc?H2_PAL_ERR_INVALID_STATE:control(runtime,1);
   return run_rc?run_rc:control_rc;
 }
 void h2_storage_device_replay(h2_runtime_t *runtime) {
   printf("H2_STORAGE_BOOT contract=%u version=%s phase=%u nonce=%lu replay=1\n",H2_PAL_STORAGE_CONTRACT_VERSION,image_version,(unsigned)phase,(unsigned long)nonce);
-  fflush(stdout);
   if (phase==4) {
     printf("H2_STORAGE_ALREADY_COMPLETE no_new_run=1 empty=%d rc=%d\n",!run_rc,run_rc);
-    fflush(stdout);
-    return;
+      return;
   }
   for(size_t i=0;i<count;++i) {
     printf("H2_STORAGE_CASE {\"id\":\"%s\",\"status\":\"%s\",\"rc\":%d,\"phase\":%u,\"nonce\":%lu}\n",ledger[i].id,names[ledger[i].status],ledger[i].rc,(unsigned)phase,(unsigned long)nonce);
-    fflush(stdout);
-    h2_pal_time_sleep_ms(runtime->time,90);
+      h2_pal_time_sleep_ms(runtime->time,90);
   }
   printf("H2_STORAGE_PHASE {\"contract\":%u,\"version\":\"%s\",\"phase\":%u,\"nonce\":%lu,\"passed\":%u,\"failed\":%u,\"blocked\":%u,\"cleanup\":%d,\"rc\":%d,\"control\":%d}\n",H2_PAL_STORAGE_CONTRACT_VERSION,image_version,(unsigned)phase,(unsigned long)nonce,(unsigned)result.passed,(unsigned)result.failed,(unsigned)result.blocked,result.cleanup_result,run_rc,control_rc);
-  fflush(stdout);
 }
