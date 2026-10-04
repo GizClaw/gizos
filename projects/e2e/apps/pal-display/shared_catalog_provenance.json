@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "new_physical_run_claimed": false,
+  "historical_harness_receipt_sha256": "cc54fc641d421634f0d233cf1d348e367cbddb6d40a59814b9170c7c038de125",
+  "catalog_baseline": {
+    "source_commit": "06f9c0cfa633646984d72f210ba18f889bbec528",
+    "source_path": "guides/apps/e2e.md",
+    "source_sha256": "0b3c34ff5e9f94d73dff968ffa7022043000ee5146a5bd5cef56d58038fb44e9"
+  },
+  "previous_source_sha256": {
+    "projects/e2e/apps/pal-display/BUILD.bazel": "16da9aa4077fea942e7c2a098a74ef021e8546f640e63ac994b4f589485161b5",
+    "projects/e2e/apps/pal-display/README.md": "d859ca0869851415ea64888815649fb7cf35b492c5c74f73d136ae5dc563c338",
+    "projects/e2e/apps/pal-display/check_qualification.py": "c3fe8defa194ee0691f1b7550fd8d71dca96d460d3a7c317bf403237ba0b2edf"
+  },
+  "current_source_sha256": {
+    "projects/e2e/apps/pal-display/BUILD.bazel": "791f999667453cf775ab671b5fa794a5110b0d424831db347ae446b6e078a9f5",
+    "projects/e2e/apps/pal-display/README.md": "5b844bea2e272755ec32b7f5fa984497bf637ad5a8685554d2229ecb2e6d6537",
+    "projects/e2e/apps/pal-display/check_qualification.py": "91848b6c82a4bb195b930765178851c2144e28906266f638dab16fae0546ad6b"
+  },
+  "scope": "Host audit maintenance only; exact Display catalog section and row remain historical. All qualification, mobile execution, artifact and hardware identities are unchanged."
+}
