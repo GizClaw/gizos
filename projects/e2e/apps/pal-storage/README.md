@@ -38,7 +38,9 @@ Desktop 三个生命周期测试的每进程预算为 180 秒，整个 Bazel tes
 
 ## 资格边界
 
-契约 2 的当前记录见 [qualification-v2.json](qualification-v2.json)：macOS、WASM/Chromium、iOS Simulator 和 Android Emulator 均完成 36 PASS、清理后的两次独立重新启动检查；各 receipt 绑定自己实际执行的源码 revision 与 artifact SHA，不把后来修复或 metadata 更新重绑到早先记录。iOS 同时核对 XCFramework 与 IPA 的 Storage provider 导出符号及 SDK/可执行文件哈希；Android 核对 APK 的 provider 与实际 AAR 同字节、四个公开 Storage 符号及两个 archive 哈希。ESP32-S3 DevKit 和 BK7258 的既有包保留原来的构建 source/image 身份，两块实板的契约 2 执行资格仍待取得。
+契约 2 的当前记录见 [qualification-v2.json](qualification-v2.json)：macOS、WASM/Chromium、iOS Simulator、Android Emulator 和 ESP32-S3 DevKit 均完成 36 PASS。各 receipt 绑定自己实际执行的源码 revision 与 artifact SHA，不把后来修复或 metadata 更新重绑到早先记录。iOS 同时核对 XCFramework 与 IPA 的 Storage provider 导出符号及 SDK/可执行文件哈希；Android 核对 APK 的 provider 与实际 AAR 同字节、四个公开 Storage 符号及两个 archive 哈希。DevKit 使用 de68 原包完成 1/2/3/4/4 独立 boot；资格时 P1/coredump 保持、Stage 为空，随后完整恢复原 App 与原非空 Stage并另存恢复状态。Pref App 下 WiFi 查询不可得，原持久设置和连接状态在恢复原 App 后核对不变，RSSI 为观察量。
+
+BK7258 已实际执行且失败，不属于尚未运行：`pal.storage.pref.overwrite-type` 返回 `H2_PAL_ERR_NO_SPACE (-13)`，后续 case 为 BLOCKED。固定 SDK 的单 KV 受 4 KiB logical sector 限制，16 KiB value 无法分配；基础 1537-byte Blob PASS 不能代表 16 KiB 已过。[有效失败记录](evidence/contract2/bk7258-failed.json)及[容量限制证据](evidence/contract2/bk7258-capacity-gap.md)保留原 de68/source、包和镜像身份。未改变 SDK、provider、格式或分区，也未减少 16 KiB/1000 次强度。现有契约 1 六端 30 PASS 仍是历史证据；契约 2 当前是五端通过、BK 容量失败。
 
 当前设备资格采集使用 1/2/3/4/4 五次独立 boot，最后两次都重新确认完成状态为空，且不产生新 case。完整 ledger、不可变 replay 及实际 UID/镜像/Loader/coredump 的前后核对方式见 [device verifier](../../libs/pal-storage-device/README.md)；验证器不替代宿主真实 reboot receipts。
 
