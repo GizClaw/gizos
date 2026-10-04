@@ -1728,7 +1728,10 @@ static void append_case(const h2_h2loader_e2e_config_t *config,
     memcpy(entry->package_sha256, asset->sha256, sizeof(entry->package_sha256));
     if (entry->result == H2_PAL_OK)
       entry->result = verify_checksum_result(context, checksum_format, checksum_index, entry);
-    if (entry->result != H2_PAL_OK) context->checksum_failed[checksum_format] = 1u;
+    if (entry->result != H2_PAL_OK) {
+      entry->data_checksum_valid = 0u;
+      context->checksum_failed[checksum_format] = 1u;
+    }
   }
   if (entry->result == H2_PAL_OK) {
     ++result->passed;

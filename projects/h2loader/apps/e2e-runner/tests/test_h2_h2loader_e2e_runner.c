@@ -476,6 +476,7 @@ static void test_checksum_matrix_and_false_success(void) {
   fixture.bad_data = 1;
   assert(h2_h2loader_e2e_run(&fixture.config, &result) == H2_PAL_ERR_INVALID_STATE);
   assert(result.cases[8].result == H2_PAL_ERR_INVALID_STATE);
+  assert(!result.cases[8].data_checksum_valid);
   assert(result.cases[9].result == H2_PAL_ERR_INVALID_STATE);
   /* A valid but unguarded new packet must not claim skip proof. */
   h2_h2loader_e2e_package_t saved = fixture.config.checksum_packages[1][1];
