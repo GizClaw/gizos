@@ -37,11 +37,13 @@ def main():
     marker = b"ESP LittleFS "
     assert pal_baseline.count(marker) == 1
     offset = pal_baseline.index(marker)
+    assert offset == qualification.SHARED_PAL_ADDITION_OFFSET
     addition_anchor = qualification.SHARED_PAL_ADDITION_COMMIT
     extended = subprocess.check_output(["git", "show", f"{addition_anchor}:{pal_path}"])
     suffix = pal_baseline[offset:]
     assert extended.startswith(pal_baseline[:offset]) and extended.endswith(suffix)
     addition = extended[offset:len(extended) - len(suffix)]
+    assert sha256(addition) == qualification.SHARED_PAL_ADDITION_SHA256
     assert extended == pal_baseline[:offset] + addition + suffix
     pal_current = Path(pal_path).read_bytes()
     assert pal_current in (pal_baseline, pal_baseline[:offset] + addition + pal_baseline[offset:])
