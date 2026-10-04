@@ -38,6 +38,8 @@ Desktop 三个生命周期测试的每进程预算为 180 秒，整个 Bazel tes
 
 ## 资格边界
 
+契约 2 的当前记录见 [qualification-v2.json](qualification-v2.json)：macOS 和 WASM/Chromium 均完成 36 PASS、清理后的两次独立重新启动检查；receipt 绑定实际执行的源码 revision 与 artifact SHA。ESP32-S3 DevKit 和 BK7258 包已构建通过，iOS Simulator、Android Emulator 和两块实板的契约 2 执行资格仍待取得。
+
 契约 2 的 36 case 必须重新取得各平台当前 source/artifact 对应的执行结果。下方以及已提交的 qualification JSON 是契约 1、30 case 的历史证据，不能证明新增 16 KiB、1000 次覆盖写或清理后重启强度已在六端通过。BK 当前不支持空 Blob 和空字符串，而其他 provider 支持；公共 Pref contract 没有统一空值保证，本套件不把此类差异补写成跨平台承诺。正常进程重启也不证明掉电恢复、跨键事务原子性或并发可见性。
 
 ## 历史实测结果（契约 1）
