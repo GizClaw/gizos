@@ -3448,13 +3448,19 @@ static int display_draw_material_strip(lua_State *state) {
   for (size_t i = 0; i < s->count; ++i) {
     const display_material_station_t *v = &s->stations[i], *w = v + 1;
     const display_material_face_t *f = &faces[i];
-    double corners[8] = {v->first[0],v->first[1],v->last[0],v->last[1],
-                        w->last[0],w->last[1],w->first[0],w->first[1]};
-    const double *mapped_u = parameters.first == parameters.last ? NULL :
-        display_material_map_u(f->material, mapping, &cache);
-    int rendered = display_render_material(job, f->material, f->source,
-        f->palette->colors, corners, top, bottom, mapping, mapped_u,
-        parameters.first == parameters.last);
+    /* Empty support is still a fast face with an independent optional line.
+     * Keep the preceding nonempty face's U cache after the full preflight. */
+    int rendered = 1;
+    if (f->material->u_first < f->material->u_end &&
+        f->material->v_first < f->material->v_end) {
+      double corners[8] = {v->first[0],v->first[1],v->last[0],v->last[1],
+                          w->last[0],w->last[1],w->first[0],w->first[1]};
+      const double *mapped_u = parameters.first == parameters.last ? NULL :
+          display_material_map_u(f->material, mapping, &cache);
+      rendered = display_render_material(job, f->material, f->source,
+          f->palette->colors, corners, top, bottom, mapping, mapped_u,
+          parameters.first == parameters.last);
+    }
     fast += rendered; fallback += !rendered;
     if (lines && f->line_index)
       display_raster_line_rows(job, v->line[0], v->line[1], w->line[0], w->line[1],

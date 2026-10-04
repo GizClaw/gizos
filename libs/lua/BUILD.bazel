@@ -316,6 +316,7 @@ cc_test(
         "tests/quad_batch_clip.lua",
         "tests/quad_material.lua",
         "tests/material_strip.lua",
+        "tests/material_strip_empty.lua",
         "tests/material_strip_workload.txt",
         "tests/material_workload.lua",
         "tests/material_workload.txt",

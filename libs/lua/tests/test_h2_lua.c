@@ -3769,11 +3769,13 @@ int main(int argc, char **argv) {
                     strcmp(argv[1], "--projective-benchmark") == 0 ||
                     strcmp(argv[1], "--material-workload") == 0 ||
                     strcmp(argv[1], "--strip-benchmark") == 0 ||
+                    strcmp(argv[1], "--strip-empty-benchmark") == 0 ||
                     strcmp(argv[1], "--capture-benchmark") == 0 ||
                     strcmp(argv[1], "--polygon-benchmark") == 0 ||
                     strcmp(argv[1], "--mesh-cache-benchmark") == 0 ||
                     strcmp(argv[1], "--line-benchmark") == 0)) {
     int strip = strcmp(argv[1], "--strip-benchmark") == 0;
+    int strip_empty = strcmp(argv[1], "--strip-empty-benchmark") == 0;
     int material = strcmp(argv[1], "--material-benchmark") == 0;
     int smooth = strcmp(argv[1], "--smooth-benchmark") == 0;
     int line = strcmp(argv[1], "--line-benchmark") == 0;
@@ -3782,7 +3784,8 @@ int main(int argc, char **argv) {
     int capture = strcmp(argv[1], "--capture-benchmark") == 0;
     int workload = strcmp(argv[1], "--material-workload") == 0;
     int projective = strcmp(argv[1], "--projective-benchmark") == 0;
-    test_display_raster2d(strip || material || smooth || projective || workload || capture || polygon || mesh_cache || line ? 2 : 1,
+    test_display_raster2d(strip || strip_empty || material || smooth || projective || workload || capture || polygon || mesh_cache || line ? 2 : 1,
+        strip_empty ? "libs/lua/tests/material_strip_empty.lua" :
         strip ? "libs/lua/tests/material_strip.lua" :
         line ? "libs/lua/tests/line_workload.lua" :
         mesh_cache ? "libs/lua/tests/mesh_cache_sizing.lua" :
@@ -3811,6 +3814,7 @@ int main(int argc, char **argv) {
   test_display_raster2d(0, "libs/lua/tests/quad_batch.lua");
   test_display_raster2d(1, "libs/lua/tests/quad_batch_clip.lua");
   test_display_raster2d(2, "libs/lua/tests/material_strip.lua");
+  test_display_raster2d(2, "libs/lua/tests/material_strip_empty.lua");
   test_display_raster2d(2, "libs/lua/tests/quad_material.lua");
   test_display_raster2d(2, "libs/lua/tests/material_workload.lua");
   test_display_raster2d(2, "libs/lua/tests/masked_capture.lua");
