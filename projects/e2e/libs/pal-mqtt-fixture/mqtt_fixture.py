@@ -3,6 +3,9 @@
 Implements subscriptions, retained delivery and QoS 0/1 acknowledgements.
 Faults are selected by the unique client ID case suffix, never by a fake PAL.
 """
+import copy
+from datetime import datetime, timezone
+import math
 import socket
 import ssl
 import struct
@@ -202,9 +205,12 @@ class Peer:
 
 
 class Broker:
-    def __init__(self, session, context=None, allow_smoke=False, bind='127.0.0.1'):
+    def __init__(self, session, context=None, allow_smoke=False, bind='127.0.0.1', tls_handshake_timeout=2):
+        if not math.isfinite(tls_handshake_timeout) or not 0 < tls_handshake_timeout <= 60:
+            raise ValueError('TLS handshake timeout must be in (0, 60] seconds')
         self.session = session
         self.context = context
+        self.tls_handshake_timeout = tls_handshake_timeout
         self.allow_smoke = allow_smoke
         self.listener = socket.socket()
         self.listener.bind((bind, 0))
@@ -226,13 +232,22 @@ class Broker:
         self.thread.start()
 
     def tls_message(self, connection, direction, version, content_type, message_type, data):
-        del version, data
+        del data
         event = getattr(connection, 'h2_event', None)
         if event is not None:
-            if direction == 'read' and int(content_type) == 22 and int(message_type) == 1:
-                event['client_hello'] = True
-            if direction == 'write' and int(content_type) == 22 and int(message_type) == 11:
-                event['certificate_presented'] = True
+            with self.lock:
+                event['messages'].append(dict(direction=direction, version=int(version),
+                    content_type=int(content_type), message_type=int(message_type),
+                    elapsed_ms=int((time.monotonic() - event['_started_monotonic']) * 1000)))
+                if direction == 'read' and int(content_type) == 22 and int(message_type) == 1:
+                    event['client_hello'] = True
+                if direction == 'write' and int(content_type) == 22 and int(message_type) == 11:
+                    event['certificate_presented'] = True
+
+    def handshake_snapshot(self):
+        with self.lock:
+            return [{key:copy.deepcopy(value) for key,value in event.items() if not key.startswith('_')}
+                    for event in self.handshakes]
 
     def record(self, client_id, operation):
         with self.lock:
@@ -247,29 +262,38 @@ class Broker:
                 continue
             except OSError:
                 return
-            thread = threading.Thread(target=self.handle, args=(connection, address[0]), daemon=True)
+            thread = threading.Thread(target=self.handle, args=(connection, address[0], address[1]), daemon=True)
             self.threads.append(thread)
             thread.start()
 
-    def handle(self, connection, peer_ip):
+    def handle(self, connection, peer_ip, peer_port):
         peer = None
         try:
             connection.settimeout(0.1)
             if self.context:
                 event = dict(client_hello=False, certificate_presented=False, succeeded=False, finished=False,
-                             peer_ip=peer_ip, run=self.current_run_by_peer.get(peer_ip))
+                             peer_ip=peer_ip, peer_port=peer_port, run=self.current_run_by_peer.get(peer_ip),
+                             timeout_seconds=self.tls_handshake_timeout, messages=[],
+                             started_at_utc=datetime.now(timezone.utc).isoformat(),
+                             _started_monotonic=time.monotonic())
                 with self.lock:
                     self.handshakes.append(event)
                 connection = self.context.wrap_socket(connection, server_side=True, do_handshake_on_connect=False)
                 connection.h2_event = event
-                connection.settimeout(2)
+                connection.settimeout(self.tls_handshake_timeout)
                 try:
                     connection.do_handshake()
-                    event['succeeded'] = True
-                except (ssl.SSLError, OSError):
+                    with self.lock:
+                        event.update(succeeded=True, tls_version=connection.version(), cipher=connection.cipher())
+                except (ssl.SSLError, OSError) as error:
+                    with self.lock:
+                        event['error'] = dict(type=type(error).__name__, message=str(error),
+                            errno=error.errno, library=getattr(error, 'library', None),
+                            reason=getattr(error, 'reason', None))
                     return
                 finally:
-                    event['finished'] = True
+                    with self.lock:
+                        event.update(finished=True, elapsed_ms=int((time.monotonic() - event['_started_monotonic']) * 1000))
                 connection.settimeout(0.1)
             peer = Peer(self, connection, peer_ip)
             with self.lock:
@@ -297,7 +321,9 @@ class Broker:
 
 
 class Fixture:
-    def __init__(self, directory, allow_smoke=False, bind='127.0.0.1', advertised='127.0.0.1'):
+    def __init__(self, directory, allow_smoke=False, bind='127.0.0.1', advertised='127.0.0.1', tls_handshake_timeout=2):
+        if not math.isfinite(tls_handshake_timeout) or not 0 < tls_handshake_timeout <= 60:
+            raise ValueError('TLS handshake timeout must be in (0, 60] seconds')
         self.session = uuid.uuid4().hex
         self.advertised = advertised
         key, cert, self.ca, _ = certificate(directory, 'mqtt-trusted', advertised)
@@ -309,7 +335,8 @@ class Fixture:
         context.num_tickets = 0
         context.load_cert_chain(cert, key)
         self.tcp = Broker(self.session, allow_smoke=allow_smoke, bind=bind)
-        self.tls = Broker(self.session, context, allow_smoke=allow_smoke, bind=bind)
+        self.tls = Broker(self.session, context, allow_smoke=allow_smoke, bind=bind,
+                          tls_handshake_timeout=tls_handshake_timeout)
 
     def __enter__(self):
         return self
@@ -364,5 +391,5 @@ class Fixture:
         return dict(session=run_session,
                     tcp_arrivals={key:value for key,value in self.tcp.arrivals.items() if key.startswith(run_session + '-')},
                     tls_arrivals={key:value for key,value in self.tls.arrivals.items() if key.startswith(run_session + '-')},
-                    tls_handshakes=[event for event in self.tls.handshakes if event['run'] == run_session],
+                    tls_handshakes=[event for event in self.tls.handshake_snapshot() if event['run'] == run_session],
                     active_clients=0, retained_messages=0)
