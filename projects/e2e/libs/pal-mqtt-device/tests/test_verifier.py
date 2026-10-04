@@ -83,6 +83,13 @@ class Verifier(unittest.TestCase):
             with self.assertRaises(AssertionError):after_accepted_reboot(prefix+'H2_LOADER_REBOOT target=app result=accepted\n'+self.good,'app')
         with self.assertRaises(AssertionError):after_accepted_reboot(text+'H2_LOADER_REBOOT target=app result=accepted\n','app')
         with self.assertRaises(AssertionError):boot_ledger(after_accepted_reboot(self.good+interleaved+'H2_LOADER_REBOOT target=app result=accepted\n','app'),self.ids,'v1')
+    def test_old_uart_tail_after_ack_cannot_supply_new_boot(self):
+        tail='H2_PAL_MQTT_CASE {"id":"publish-qos1","status":"PASS","detail":0}\n'
+        prefix='H2_LOADER_REBOOT target=app result=accepted\n'+tail
+        self.assertEqual(boot_ledger(after_accepted_reboot(prefix+self.good,'app'),self.ids,'v1')['boot']['id'],self.execution)
+        with self.assertRaises(AssertionError):after_accepted_reboot(prefix,'app')
+        stale=self.good.split('H2_PAL_MQTT_RUN ',1)[1]
+        with self.assertRaises(AssertionError):after_accepted_reboot(prefix+'H2_PAL_MQTT_RUN '+stale,'app')
     def test_monitor_requires_validated_controlled_stop(self):
         with tempfile.TemporaryDirectory() as directory:
             log=Path(directory)/'managed.log';log.write_text('H2_LOADER_REBOOT target=upgrade result=accepted\n'+self.good)
