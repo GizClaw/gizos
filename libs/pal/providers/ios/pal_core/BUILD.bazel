@@ -277,8 +277,7 @@ cc_library(
 
 cc_test(
     name = "mqtt_owner_lifetime_test",
-    srcs = ["src/h2_ios_mqtt.c", "tests/test_mqtt_owner.c"],
-    hdrs = ["include/h2_ios_mqtt.h", "include/h2_ios_net.h", "include/h2_ios_platform.h"],
+    srcs = ["src/h2_ios_mqtt.c", "tests/test_mqtt_owner.c", "include/h2_ios_mqtt.h", "include/h2_ios_net.h", "include/h2_ios_platform.h"],
     includes = ["include"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,

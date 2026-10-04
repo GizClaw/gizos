@@ -192,7 +192,8 @@ static void run_case(const h2_pal_mqtt_e2e_config_t *config, h2_pal_mqtt_e2e_cas
         const char *password = which == H2_PAL_MQTT_E2E_AUTH_REFUSED ? "wrong" : "fixture-password";
         client_config.password = (h2_pal_mqtt_bytes_t){(const uint8_t *)password, strlen(password)};
     }
-    if (which == H2_PAL_MQTT_E2E_CONNECT_TIMEOUT) client_config.connect_timeout_ms = 200u;
+    if (which == H2_PAL_MQTT_E2E_CONNECT_TIMEOUT)
+        client_config.connect_timeout_ms = config->negative_connect_timeout_ms == 0u ? 200u : config->negative_connect_timeout_ms;
     if (which == H2_PAL_MQTT_E2E_KEEPALIVE_TIMEOUT) client_config.keepalive_sec = 1u;
     if (which == H2_PAL_MQTT_E2E_INVALID_OPEN_HOST) client_config.endpoint.host.len = 0u;
     if (which == H2_PAL_MQTT_E2E_INVALID_OPEN_BUFFER) client_config.network_buffer = NULL;
@@ -218,6 +219,7 @@ static void run_case(const h2_pal_mqtt_e2e_config_t *config, h2_pal_mqtt_e2e_cas
         result->passed = 1;
         goto done;
     }
+    uint64_t connect_started = now(config);
     rc = h2_pal_mqtt_connect(api, client);
     if (which == H2_PAL_MQTT_E2E_AUTH_REFUSED || which == H2_PAL_MQTT_E2E_CONNECT_TIMEOUT ||
         which == H2_PAL_MQTT_E2E_TLS_UNTRUSTED || which == H2_PAL_MQTT_E2E_TLS_WRONG_NAME) {
@@ -226,6 +228,11 @@ static void run_case(const h2_pal_mqtt_e2e_config_t *config, h2_pal_mqtt_e2e_cas
         CHECK(rc == expected && state.errors == 1u && state.connected == 0u &&
             state.error_operation == H2_PAL_MQTT_OPERATION_CONNECT && state.error_result == rc && !state.error_connected);
         CHECK(h2_pal_mqtt_process(api, client, 20u) == H2_PAL_ERR_INVALID_STATE);
+        if (which == H2_PAL_MQTT_E2E_CONNECT_TIMEOUT) {
+            uint64_t elapsed = now(config) - connect_started;
+            uint64_t budget = client_config.connect_timeout_ms;
+            CHECK(elapsed >= budget && elapsed <= budget * 2u + 500u);
+        }
         result->passed = 1;
         goto done;
     }

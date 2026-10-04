@@ -49,3 +49,5 @@ bazel test --config=macos_arm64 --nocache_test_results //projects/e2e/targets/cc
 这次为 SDK 新增真实 `h2_ios_mqtt`/`h2_android_mqtt` owner，原 SDK/AppHost 的 MQTT 是 unsupported。Owner 持有独立 Net/WolfSSL 生命周期引用、4/4 QoS1 records 和可选 borrowed allocator；E2E 消费实际 XCFramework/AAR 的 factory，核对 public header、SDK/IPA symbols 或 APK/AAR binary identity，再执行 36 个相同用例。每个进程另外真实验证 owner 和 coreMQTT 分配失败回滚、owner destroy、native resource before/after、最终零 tracked allocation 与 Core shutdown。Host unit lifetime test 用 Net reference stub 检查 busy destroy 保留/重试，仅作为 SDK owner unit test，不能替代真实网络或移动证据。
 
 移动 hook 保留当轮 fixture JSON、CA、wrong CA 与 registry 的 SHA256 输入 manifest，以及实际 SDK/App artifact hash和真实 peer witness。新增移动资格必须以新 consumer artifact 与新 SDK 包的实际运行记录为准，不能改绑历史 SDK receipt。
+
+`connect-timeout` 由 launcher 注入 stage budget：host 默认为 200 ms，移动端与 BK 为 2000 ms，使真实 TCP setup 有机会完成。App 检查 elapsed 不低于 configured budget，且不超过两个 stage budget 加 500 ms 调度余量；broker 必须实际收到同一 execution 的 CONNECT 并保持 CONNACK 静默，TCP setup 本身超时不能代替该负例通过。
