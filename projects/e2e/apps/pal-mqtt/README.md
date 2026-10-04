@@ -51,3 +51,11 @@ bazel test --config=macos_arm64 --nocache_test_results //projects/e2e/targets/cc
 移动 hook 保留当轮 fixture JSON、CA、wrong CA 与 registry 的 SHA256 输入 manifest，以及实际 SDK/App artifact hash和真实 peer witness。新增移动资格必须以新 consumer artifact 与新 SDK 包的实际运行记录为准，不能改绑历史 SDK receipt。
 
 `connect-timeout` 由 launcher 注入 stage budget：host 默认为 200 ms，移动端与 BK 为 2000 ms，使真实 TCP setup 有机会完成。App 检查 elapsed 不低于 configured budget，且不超过两个 stage budget 加 500 ms 调度余量；broker 必须实际收到同一 execution 的 CONNECT 并保持 CONNACK 静默，TCP setup 本身超时不能代替该负例通过。
+
+## BK7258 LAN fixture and package
+
+BK 入口为 `//projects/e2e/targets/h2loader_tar_zlib/pal-mqtt/bk7258_v3_202405:package`，使用真实 board Runtime 的 coreMQTT provider，其 incoming/outgoing capacity 是 8/8、allocator 是 `h2_bk_platform_default_allocator()`。Standalone runner 使用 64 KiB PSRAM task，保留 UART/Wi-Fi command service；不改变 board 或生产 MQTT provider。Launcher 从编译配置注入精确 IPv4 host/ports、session prefix、CA/wrong CA 与 epoch，每次执行另取真实 Crypto nonce，实际计算 CA SHA256并校准 wall time，36-case 完成和 native resource before/after 平衡后才确认 App。
+
+`//projects/e2e/libs/pal-mqtt-fixture:serve` 必须显式给出 `--bind`、`--advertised`、`--bazelrc` 和 `--receipt`，只监听指定 IPv4 interface 上的独占 ephemeral TCP/TLS ports。服务生成 test-only CA 与 build defines，不包含 Wi-Fi secret；真实设备使用已有 saved STA 配置。服务按本轮 nonce 区分 wire arrival、ACK、两次证书拒绝与零 live client/retained message，完整 witness 第一次成立时冻结该 run，后续 boot 不能改写旧 receipt。此服务不安装、重启、扫描或读取串口。
+
+只读 direct verifier `//projects/e2e/targets/h2loader_tar_zlib/pal-mqtt/bk7258_v3_202405:device_test` 消费主任务统一完成的定向安装与监视数据。要求 `H2_MQTT_DEVICE_PORT`、`H2_MQTT_DEVICE_UID` 和 `H2_MQTT_DEVICE_EVIDENCE_DIR`；目录必须有 `managed.log`、`normal.log`、`before-status.log`、`after-status.log`、两份 `*-coredump-status.log` 和 `fixture-receipt.json`，非空 dump 另需真实 `coredump-before.bin`/`coredump-after.bin`。验收两次不同 nonce 下同 boot 的完整 36-case，任何之后出现的 BOOT/STARTUP、不同 version 或 nonce 都使旧 ledger 失效；并严格核对 fresh UID、原 P1 valid/role/package/image hash、P2 valid=1与 app/package/image/version、清空 Stage和实际 coredump 状态/bytes不变。默认 unit tests只验证该 oracle 的拒绝行为，不能当作物理 BK PASS。
