@@ -3969,50 +3969,51 @@ static void test_device_player_timed_start(void) {
 }
 
 static void test_device_seek_reuses_download_storage(void) {
-  static seek_test_state_t state;
-  memset(&state, 0, sizeof(state));
-  seek_test_state_atomics_init(&state);
-  seek_fixture_build(&state);
-  seek_ring_memory_t memory = {.mutex = PTHREAD_MUTEX_INITIALIZER};
-  const h2_pal_mem_vtable_t mem_vtable = {.alloc = seek_ring_alloc,
-      .realloc = seek_ring_realloc, .free = seek_ring_free};
-  const h2_pal_mem_api_t allocator = {.user = &memory, .vtable = &mem_vtable};
-  const h2_pal_audio_vtable_t audio_vtable = {.get_info = seek_audio_info,
-      .start_speaker = seek_speaker, .create_track = seek_track_create};
-  const h2_pal_audio_api_t audio = {.user = &state, .vtable = &audio_vtable};
-  const h2_pal_http_vtable_t http_vtable = {.request = seek_http};
-  const h2_pal_http_api_t http = {.user = &state, .vtable = &http_vtable};
-  test_env_t env;
-  h2_gizclaw_service_t *service = create_profile_service(&env);
-  service->client_config.audio = &audio;
-  service->client_config.http = &http;
-  service->client_config.allocator = &allocator;
-  service->client_config.audio_buffer_bytes = 262144u;
-  assert(h2_gizclaw_device_init_internal(service) == H2_PAL_OK);
-  h2_gizclaw_test_set_telemetry_send(device_telemetry, NULL);
-  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
   const unsigned modes[] = {SEEK_SERVER_RANGE, SEEK_SERVER_MISPLACE,
       SEEK_SERVER_NOT_206, SEEK_SERVER_RETOTAL, SEEK_SERVER_IGNORE};
+  h2_gizclaw_test_set_telemetry_send(device_telemetry, NULL);
   for (size_t i = 0u; i < sizeof(modes) / sizeof(modes[0]); ++i) {
-    pthread_mutex_lock(&memory.mutex);
-    assert(memory.ring == NULL);
-    memory.ring_attempts = 0u;
-    const unsigned baseline = memory.live;
-    pthread_mutex_unlock(&memory.mutex);
+    static seek_test_state_t state;
+    memset(&state, 0, sizeof(state));
+    seek_test_state_atomics_init(&state);
+    seek_fixture_build(&state);
     state.server = modes[i];
+    seek_ring_memory_t memory = {.mutex = PTHREAD_MUTEX_INITIALIZER};
+    const h2_pal_mem_vtable_t mem_vtable = {.alloc = seek_ring_alloc,
+        .realloc = seek_ring_realloc, .free = seek_ring_free};
+    const h2_pal_mem_api_t allocator = {.user = &memory, .vtable = &mem_vtable};
+    const h2_pal_audio_vtable_t audio_vtable = {.get_info = seek_audio_info,
+        .start_speaker = seek_speaker, .create_track = seek_track_create};
+    const h2_pal_audio_api_t audio = {.user = &state, .vtable = &audio_vtable};
+    const h2_pal_http_vtable_t http_vtable = {.request = seek_http};
+    const h2_pal_http_api_t http = {.user = &state, .vtable = &http_vtable};
+    test_env_t env;
+    h2_gizclaw_service_t *service = create_profile_service(&env);
+    service->client_config.audio = &audio;
+    service->client_config.http = &http;
+    service->client_config.allocator = &allocator;
+    service->client_config.audio_buffer_bytes = 262144u;
+    assert(h2_gizclaw_device_init_internal(service) == H2_PAL_OK);
+    assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
     assert(seek_play(service, &state, 30000u, 20000u, 20000u) ==
            seek_frames(&state, 20000u * 16u));
     assert(h2_atomic_load(&state.calls) ==
            (modes[i] == SEEK_SERVER_RANGE ? 2u : modes[i] == SEEK_SERVER_IGNORE ? 1u : 3u));
     pthread_mutex_lock(&memory.mutex);
     assert(memory.ring_attempts == 1u && memory.ring == NULL);
-    assert(memory.live == baseline);
     pthread_mutex_unlock(&memory.mutex);
+    /* EOS releases the download ring, but background status telemetry can
+     * still allocate on this same allocator. Join every owner before judging
+     * total resources; never use an in-flight telemetry count as a baseline. */
+    assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+    assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+    pthread_mutex_lock(&memory.mutex);
+    assert(memory.live == 0u && memory.ring == NULL);
+    pthread_mutex_unlock(&memory.mutex);
+    pthread_mutex_destroy(&memory.mutex);
+    h2_atomic_uint_destroy(&state.calls);
+    h2_atomic_uint_destroy(&state.writes);
   }
-  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
-  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
-  assert(memory.live == 0u);
-  pthread_mutex_destroy(&memory.mutex);
   h2_gizclaw_test_set_telemetry_send(NULL, NULL);
 }
 
