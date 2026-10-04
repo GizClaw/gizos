@@ -111,6 +111,52 @@ GIZCLAW_HARNESS_SOURCES = AUDIT_SOURCES | {
     "projects/e2e/apps/pal-display/check_qualification.py",
     "projects/e2e/apps/pal-display/BUILD.bazel",
 }
+SHARED_CATALOG = "guides/apps/e2e.md"
+SHARED_CATALOG_BASELINE_COMMIT = "06f9c0cfa633646984d72f210ba18f889bbec528"
+SHARED_CATALOG_AUDIT_SOURCES = {
+    "projects/e2e/apps/pal-display/check_qualification.py",
+    "projects/e2e/apps/pal-display/BUILD.bazel",
+    "projects/e2e/apps/pal-display/README.md",
+}
+
+
+def display_catalog_content(text):
+    """Extract the complete owned section and unique launcher-matrix row."""
+    headings = list(re.finditer(r"^## .*\n", text, re.MULTILINE))
+    matches = [index for index, heading in enumerate(headings)
+               if heading.group() == "## PAL Display\n"]
+    assert len(matches) == 1, "missing or duplicate Display catalog section"
+    index = matches[0]
+    end = headings[index + 1].start() if index + 1 < len(headings) else len(text)
+    rows = re.findall(r"^\| PAL Display \|[^\n]*\n", text, re.MULTILINE)
+    assert len(rows) == 1, "missing or duplicate Display catalog row"
+    return {"section": text[headings[index].start():end], "launcher_row": rows[0]}
+
+
+def shared_catalog_sources(previous):
+    """Preserve historical receipts while checking only owned catalog bytes."""
+    audit = json.JSONDecoder().decode(
+        (ROOT / "shared_catalog_provenance.json").read_text(encoding="utf-8"))
+    assert audit["schema"] == 1 and audit["new_physical_run_claimed"] is False
+    assert audit["historical_harness_receipt_sha256"] == hashlib.sha256(
+        (ROOT / "gizclaw_harness_provenance.json").read_bytes()).hexdigest()
+    baseline = audit["catalog_baseline"]
+    assert baseline["source_commit"] == SHARED_CATALOG_BASELINE_COMMIT
+    assert baseline["source_path"] == SHARED_CATALOG
+    assert baseline["source_sha256"] == previous[SHARED_CATALOG]
+    content = (ROOT / "shared_catalog_baseline.txt").read_bytes()
+    assert hashlib.sha256(content).hexdigest() == previous[SHARED_CATALOG]
+    assert display_catalog_content(content.decode("utf-8")) == display_catalog_content(
+        Path(SHARED_CATALOG).read_text(encoding="utf-8")), "Display catalog content changed"
+    assert audit["previous_source_sha256"] == {
+        path: previous[path] for path in SHARED_CATALOG_AUDIT_SOURCES}
+    replacements = audit["current_source_sha256"]
+    assert set(replacements) == SHARED_CATALOG_AUDIT_SOURCES
+    sources = {**previous, **replacements}
+    # The historical whole-file hash still authenticates the immutable baseline.
+    # Other Apps may update their catalog entries without a new Display run.
+    del sources[SHARED_CATALOG]
+    return sources
 
 
 def runner_refactor(historical):
@@ -143,7 +189,7 @@ def runner_refactor(historical):
     assert maintenance["validation"]["shared_mobile_contract"] == "PASS"
     for path, expected in followup["removed_source_sha256"].items():
         assert historical[path] == expected and not Path(path).exists(), path
-    for path, expected in {**previous, **replacements}.items():
+    for path, expected in shared_catalog_sources({**previous, **replacements}).items():
         if path not in REMOVED_RUNNERS:
             assert hashlib.sha256(Path(path).read_bytes()).hexdigest() == expected, path
     # These exact Python sources and consumer declarations executed the stored runs.
