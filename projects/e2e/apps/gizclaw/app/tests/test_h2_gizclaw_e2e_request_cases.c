@@ -48,7 +48,10 @@ enum {
   TIME_SYNC_FALSE_SUCCESS,
   TIME_SYNC_FALSE_RETRY,
   TIME_SYNC_UNSUPPORTED,
-  TIME_SYNC_RUNNING
+  TIME_SYNC_RUNNING,
+  INPUT_SNAPSHOT_ERROR,
+  INPUT_STILL_ACTIVE,
+  INPUT_STALE_READY
 };
 
 static unsigned s_mode, s_dos, s_accepted, s_waits;
@@ -300,6 +303,19 @@ h2_pal_result_t h2_gizclaw_service_get_time_sync_status(
   return H2_PAL_OK;
 }
 
+h2_pal_result_t h2_gizclaw_service_audio_input_snapshot(
+    h2_gizclaw_service_t *service, h2_gizclaw_audio_input_state_t *out) {
+  assert(service == (h2_gizclaw_service_t *)&s_service);
+  *out = (h2_gizclaw_audio_input_state_t){.generation = 17u};
+  if (s_mode == INPUT_SNAPSHOT_ERROR) {
+    *out = (h2_gizclaw_audio_input_state_t){0};
+    return H2_PAL_ERR_IO;
+  }
+  out->active = s_mode == INPUT_STILL_ACTIVE;
+  out->ready = s_mode == INPUT_STALE_READY;
+  return H2_PAL_OK;
+}
+
 static void reset(unsigned mode, bool concurrency) {
   assert(allocator.live_blocks == 0u);
   s_mode = mode;
@@ -332,6 +348,13 @@ int main(int argc, char **argv) {
     puts("H2_GIZCLAW_E2E stage=coverage-end case=service status=PASS rc=0 "
          "cleanup_rc=0");
     return 0;
+  }
+  for (unsigned mode = INPUT_SNAPSHOT_ERROR; mode <= INPUT_STALE_READY; ++mode) {
+    reset(mode, false);
+    const int rc = h2_gizclaw_e2e_run_service(&fixture);
+    assert(rc == (mode == INPUT_SNAPSHOT_ERROR ? H2_PAL_ERR_IO
+                                               : H2_PAL_ERR_INVALID_STATE));
+    assert(allocator.live_blocks == 0u);
   }
   static const unsigned base_modes[] = {NORMAL, BAD_PROFILE, CREATE_ERROR,
                                         DO_ERROR, WAIT_ERROR, PARSE_ERROR};

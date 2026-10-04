@@ -47,7 +47,7 @@ BK AP media TLS 使用 SDK PSRAM allocator；C emulated TLS 和两个 errno
 
 ## 历史资格快照（2026-10-02，保留原 source/SDK 身份）
 
-当前跟随 main 使用 GizClaw C SDK `0.23.2`，保留 MHS/HWD、tool-v0、catalog tags 和 safety-fence 协议。独立公开函数库存重新核对后仍为 **227 项**；类型和协议语义的更新须重新执行实际业务。下面 source-bound `0.19.0` 记录仅是历史结果，不资格化当前 SDK。当前主线 SCTP #617 与 PAL Net/TLS #621 已合入。source `e228d55b` 的 macOS、iOS Simulator、Android Emulator 均真实 8/8 及 227/227 通过，cleanup=0、retained=0，移动端 teardown=0；早期 source42a/75aad/d214 的独立记录保留原身份。早期 226/default profile 记录保留原身份。六端整体资格仍未完成。
+当前跟随 main 使用 GizClaw C SDK `0.23.2`，保留 MHS/HWD、tool-v0、catalog tags 和 safety-fence 协议。当前公开函数库存为 **228 项**，新增的初始输入 readiness 快照由 Service case 实际读取并断言无活动输入。原有 **227 项**执行记录仍保留其历史源码身份；新增库存和本地覆盖 wiring 不资格化那些旧运行。类型和协议语义的更新须重新执行实际业务。下面 source-bound `0.19.0` 记录仅是历史结果，不资格化当前 SDK。当前主线 SCTP #617 与 PAL Net/TLS #621 已合入。source `e228d55b` 的 macOS、iOS Simulator、Android Emulator 均真实 8/8 及 227/227 通过，cleanup=0、retained=0，移动端 teardown=0；早期 source42a/75aad/d214 的独立记录保留原身份。早期 226/default profile 记录保留原身份。六端整体资格仍未完成。
 
 | 平台 | 当前实际结果 | 尚缺条件 |
 | --- | --- | --- |

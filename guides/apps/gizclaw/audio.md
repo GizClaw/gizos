@@ -113,6 +113,22 @@ Conversation completion 表示本轮输入已发送，不等待服务端回复�
 
 开始输入先发送新 StreamID 的纯控制 BOS（kind 未指定，mime_type 为空），因此上游可以立即打断旧回复。第一块 PCM 到达后才发送同一 StreamID 的音频 BOS，并等待 AUDIO_INPUT_READY 后发送 Opus；结束时先发送已打开音频通道的 EOS，再发送纯控制 EOS。没有 PCM 的输入只发送纯控制 BOS/EOS，不等待音频 READY，也不生成静音包或空文本。
 
+`h2_gizclaw_service_audio_input_snapshot()` 只复制当前已开始输入的 route、
+Service 内单调的 successful-start generation、active 与 ready，不执行 RPC 或读
+PCM。调用方须把 generation 与自己的 Service 生命周期一起比较；它不采用会在新
+Conversation 中重新开始的 request identity，也不采用诊断 trace sequence。
+Conversation 的 ready 只表示本轮音频 BOS 收到匹配的 AUDIO_INPUT_READY；Speech
+表示本轮 managed input stream 已成功打开。未开始、结束、取消、失败或已换 owner
+的输入不能提供 active/ready；成功 start 的 generation 不回绕，耗尽时报 NO_SPACE。
+该快照不是动态 FIFO credit，不保证随后每帧都被接受或远端收到。
+
+有限语音 fixture 可在实际 capture 已开启、初始 ready 尚未到达时提供按原格式与
+速率发送的 lead-in silence，使首块 PCM 和音频 BOS 能正常产生；ready 后才开始
+有限内容，不把 fixture offset 或 EOF 提前推进。此测试边界不改变 production Mic
+的实时合同：READY 前用户已经说的话仍受原有固定 ring 与 overrun 丢帧策略限制。
+fixture 必须保留从实际采集起算的总预算，内容起播后不得按 queue credit 暂停、
+降速或隐去丢帧。成功的 fixture 测试不代表生产 pre-roll 无损。
+
 ### 完整文字输入
 
 `h2_gizclaw_session_send_text()` 在 Session 当前 Workspace 的空闲路由上复制并异步提交

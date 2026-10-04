@@ -173,5 +173,19 @@ int h2_gizclaw_e2e_run_service(h2_gizclaw_e2e_fixture_t *fixture) {
   }
   if (rc == H2_PAL_OK)
     rc = check_time_sync(service);
+  if (rc == H2_PAL_OK) {
+    h2_gizclaw_audio_input_state_t input = {0};
+    rc = h2_gizclaw_service_audio_input_snapshot(service, &input);
+    h2_gizclaw_e2e_evidence("h2_gizclaw_service_audio_input_snapshot", "service", rc);
+    /* This request-lifecycle case owns no live audio input. A lingering
+     * input/READY from an earlier case is an ownership failure, not idle. */
+    if (rc == H2_PAL_OK && (input.active || input.ready))
+      rc = H2_PAL_ERR_INVALID_STATE;
+    h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=input-state generation=%" PRIu64
+        " route=%u active=%u ready=%u rc=%d\n", input.generation,
+        (unsigned)input.route, (unsigned)input.active, (unsigned)input.ready, rc);
+    h2_gizclaw_e2e_evidence("h2_gizclaw_service_audio_input_snapshot",
+                            "service_audio_input_snapshot-assert", rc);
+  }
   return rc;
 }

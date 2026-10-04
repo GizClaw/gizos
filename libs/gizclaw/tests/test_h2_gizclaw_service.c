@@ -3969,50 +3969,51 @@ static void test_device_player_timed_start(void) {
 }
 
 static void test_device_seek_reuses_download_storage(void) {
-  static seek_test_state_t state;
-  memset(&state, 0, sizeof(state));
-  seek_test_state_atomics_init(&state);
-  seek_fixture_build(&state);
-  seek_ring_memory_t memory = {.mutex = PTHREAD_MUTEX_INITIALIZER};
-  const h2_pal_mem_vtable_t mem_vtable = {.alloc = seek_ring_alloc,
-      .realloc = seek_ring_realloc, .free = seek_ring_free};
-  const h2_pal_mem_api_t allocator = {.user = &memory, .vtable = &mem_vtable};
-  const h2_pal_audio_vtable_t audio_vtable = {.get_info = seek_audio_info,
-      .start_speaker = seek_speaker, .create_track = seek_track_create};
-  const h2_pal_audio_api_t audio = {.user = &state, .vtable = &audio_vtable};
-  const h2_pal_http_vtable_t http_vtable = {.request = seek_http};
-  const h2_pal_http_api_t http = {.user = &state, .vtable = &http_vtable};
-  test_env_t env;
-  h2_gizclaw_service_t *service = create_profile_service(&env);
-  service->client_config.audio = &audio;
-  service->client_config.http = &http;
-  service->client_config.allocator = &allocator;
-  service->client_config.audio_buffer_bytes = 262144u;
-  assert(h2_gizclaw_device_init_internal(service) == H2_PAL_OK);
-  h2_gizclaw_test_set_telemetry_send(device_telemetry, NULL);
-  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
   const unsigned modes[] = {SEEK_SERVER_RANGE, SEEK_SERVER_MISPLACE,
       SEEK_SERVER_NOT_206, SEEK_SERVER_RETOTAL, SEEK_SERVER_IGNORE};
+  h2_gizclaw_test_set_telemetry_send(device_telemetry, NULL);
   for (size_t i = 0u; i < sizeof(modes) / sizeof(modes[0]); ++i) {
-    pthread_mutex_lock(&memory.mutex);
-    assert(memory.ring == NULL);
-    memory.ring_attempts = 0u;
-    const unsigned baseline = memory.live;
-    pthread_mutex_unlock(&memory.mutex);
+    static seek_test_state_t state;
+    memset(&state, 0, sizeof(state));
+    seek_test_state_atomics_init(&state);
+    seek_fixture_build(&state);
     state.server = modes[i];
+    seek_ring_memory_t memory = {.mutex = PTHREAD_MUTEX_INITIALIZER};
+    const h2_pal_mem_vtable_t mem_vtable = {.alloc = seek_ring_alloc,
+        .realloc = seek_ring_realloc, .free = seek_ring_free};
+    const h2_pal_mem_api_t allocator = {.user = &memory, .vtable = &mem_vtable};
+    const h2_pal_audio_vtable_t audio_vtable = {.get_info = seek_audio_info,
+        .start_speaker = seek_speaker, .create_track = seek_track_create};
+    const h2_pal_audio_api_t audio = {.user = &state, .vtable = &audio_vtable};
+    const h2_pal_http_vtable_t http_vtable = {.request = seek_http};
+    const h2_pal_http_api_t http = {.user = &state, .vtable = &http_vtable};
+    test_env_t env;
+    h2_gizclaw_service_t *service = create_profile_service(&env);
+    service->client_config.audio = &audio;
+    service->client_config.http = &http;
+    service->client_config.allocator = &allocator;
+    service->client_config.audio_buffer_bytes = 262144u;
+    assert(h2_gizclaw_device_init_internal(service) == H2_PAL_OK);
+    assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
     assert(seek_play(service, &state, 30000u, 20000u, 20000u) ==
            seek_frames(&state, 20000u * 16u));
     assert(h2_atomic_load(&state.calls) ==
            (modes[i] == SEEK_SERVER_RANGE ? 2u : modes[i] == SEEK_SERVER_IGNORE ? 1u : 3u));
     pthread_mutex_lock(&memory.mutex);
     assert(memory.ring_attempts == 1u && memory.ring == NULL);
-    assert(memory.live == baseline);
     pthread_mutex_unlock(&memory.mutex);
+    /* EOS releases the download ring, but background status telemetry can
+     * still allocate on this same allocator. Join every owner before judging
+     * total resources; never use an in-flight telemetry count as a baseline. */
+    assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+    assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+    pthread_mutex_lock(&memory.mutex);
+    assert(memory.live == 0u && memory.ring == NULL);
+    pthread_mutex_unlock(&memory.mutex);
+    pthread_mutex_destroy(&memory.mutex);
+    h2_atomic_uint_destroy(&state.calls);
+    h2_atomic_uint_destroy(&state.writes);
   }
-  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
-  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
-  assert(memory.live == 0u);
-  pthread_mutex_destroy(&memory.mutex);
   h2_gizclaw_test_set_telemetry_send(NULL, NULL);
 }
 
@@ -10523,11 +10524,21 @@ static void test_speech_managed_requests(void) {
       continue;
     }
     assert(h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL) == H2_PAL_OK);
+    h2_gizclaw_audio_input_state_t input_state;
+    assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
+    assert(!input_state.active && !input_state.ready);
     assert(speech_audio_start(&test) == H2_PAL_OK);
+    if (mode == 13u) {
+      assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
+      assert(input_state.generation == 1u && input_state.active && !input_state.ready);
+      assert(input_state.route == H2_GIZCLAW_AUDIO_INPUT_SPEECH);
+    }
     assert(h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL) ==
            H2_PAL_ERR_INVALID_STATE);
     if (mode == 13u) {
       assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
+      assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
+      assert(!input_state.active && !input_state.ready);
       h2_atomic_store(&env.connect_gate, true);
     }
     if (mode == 12u) {
@@ -10586,6 +10597,10 @@ static void test_speech_managed_requests(void) {
             assert(h2_atomic_load(&test.captures) == 2u);
             assert(h2_atomic_load(&test.captured_bytes) == 1280u);
             assert(h2_atomic_load(&test.uploaded_bytes) == 0u);
+            assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
+            assert(input_state.route == H2_GIZCLAW_AUDIO_INPUT_SPEECH);
+            /* Stream readiness remains true while its single input slot is full. */
+            assert(input_state.active && input_state.ready);
           }
           assert(h2_gizclaw_req_wait(request, 0u) == H2_PAL_ERR_TIMEOUT);
         }
@@ -12000,6 +12015,11 @@ static void test_conversation_downlink_release_keeps_closed(void) {
   assert(h2_gizclaw_pcm_track_create(&config, &track) == H2_PAL_OK);
   assert(h2_gizclaw_service_set_track(service, track) == H2_PAL_OK);
   assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  h2_gizclaw_audio_input_state_t input_state;
+  assert(h2_gizclaw_service_audio_input_snapshot(NULL, &input_state) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_service_audio_input_snapshot(service, NULL) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
+  assert(input_state.generation == 0u && !input_state.active && !input_state.ready);
   h2_gizclaw_conversation_t *conversation = NULL;
   assert(h2_gizclaw_conversation_create(
              service, (h2_gizclaw_str_t){"workspace", 9u}, NULL,
@@ -12010,6 +12030,9 @@ static void test_conversation_downlink_release_keeps_closed(void) {
   assert(h2_gizclaw_service_pcm_write_internal(
              service, stale_pcm, sizeof(stale_pcm)) == H2_PAL_OK);
   assert(h2_gizclaw_service_audio_start(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
+  assert(input_state.generation == 1u && input_state.active && !input_state.ready);
+  assert(input_state.route == H2_GIZCLAW_AUDIO_INPUT_CONVERSATION);
   /* The press already dropped what the Track still held. */
   assert(h2_gizclaw_pcm_track_read(track, pcm, sizeof(pcm)) ==
          H2_PAL_ERR_WOULD_BLOCK);
@@ -12017,6 +12040,8 @@ static void test_conversation_downlink_release_keeps_closed(void) {
          H2_PAL_OK);
   assert(h2_gizclaw_test_downlink_frames(service) == 0u);
   assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
+  assert(!input_state.active && !input_state.ready);
   assert(h2_gizclaw_service_media_write_opus(service, packet, sizeof(packet)) ==
          H2_PAL_OK);
   assert(h2_gizclaw_test_downlink_frames(service) == 0u);
@@ -12026,7 +12051,33 @@ static void test_conversation_downlink_release_keeps_closed(void) {
          H2_PAL_OK);
   assert(h2_gizclaw_test_downlink_frames(service) == 1u);
   h2_gizclaw_conversation_release(conversation);
+  assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
+  assert(!input_state.active && !input_state.ready);
+  /* A fresh Conversation resets its own identity, but never the Service token. */
+  assert(h2_gizclaw_conversation_create(
+             service, (h2_gizclaw_str_t){"workspace", 9u}, NULL,
+             downlink_release_complete, &test, &conversation) == H2_PAL_OK);
+  assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
+  assert(!input_state.active && !input_state.ready);
+  assert(h2_gizclaw_service_audio_start(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
+  assert(input_state.generation == 2u && input_state.active && !input_state.ready);
+  assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
+  downlink_release_wait(&test, 2u);
+  h2_gizclaw_conversation_release(conversation);
+  assert(h2_gizclaw_conversation_create(
+             service, (h2_gizclaw_str_t){"workspace", 9u}, NULL,
+             downlink_release_complete, &test, &conversation) == H2_PAL_OK);
+  assert(h2_pal_mutex_lock(service->config.sync, service->audio_mutex) == H2_PAL_OK);
+  service->audio_input_generation = UINT64_MAX;
+  assert(h2_pal_mutex_unlock(service->config.sync, service->audio_mutex) == H2_PAL_OK);
+  assert(h2_gizclaw_service_audio_start(service) == H2_PAL_ERR_NO_SPACE);
+  assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
+  assert(input_state.generation == UINT64_MAX && !input_state.active && !input_state.ready);
+  h2_gizclaw_conversation_release(conversation);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
+  assert(!input_state.active && !input_state.ready);
   assert(h2_gizclaw_service_unset_track(service, track) == H2_PAL_OK);
   assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
@@ -12499,11 +12550,20 @@ static void test_conversation_public_audio_tasks(void) {
       } else if (mode == 1 && h2_atomic_load(&test.captured) > 0 && !input_ended) {
         assert(h2_gizclaw_conversation_cancel(conversation) == H2_PAL_OK);
         assert(h2_gizclaw_conversation_cancel(conversation) == H2_PAL_OK);
+        h2_gizclaw_audio_input_state_t canceled;
+        assert(h2_gizclaw_service_audio_input_snapshot(service, &canceled) == H2_PAL_OK);
+        assert(!canceled.active && !canceled.ready);
         input_ended = true;
       } else if ((mode == 0 || mode == 3 || mode == 4 ||
                   (mode >= 6 && mode <= 10) || mode == 19 || mode == 22 || mode == 24 || mode == 27) &&
                  h2_atomic_load(&test.captured) == 12 * 640 + 100 &&
                  !input_ended) {
+        if (mode == 0) {
+          h2_gizclaw_audio_input_state_t ready;
+          assert(h2_gizclaw_service_audio_input_snapshot(service, &ready) == H2_PAL_OK);
+          assert(ready.generation == 1u && ready.active && ready.ready);
+          assert(ready.route == H2_GIZCLAW_AUDIO_INPUT_CONVERSATION);
+        }
         assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
         assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
         input_ended = true;

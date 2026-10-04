@@ -85,6 +85,16 @@ Audio decorator 借用 delegate、Time、Memory 和 PCM，mic lifecycle 委托�
 
 Audio decorator 默认输出 fixture。后台麦克风泵持续读取的产品应在启动 Runtime 前暂停 fixture，再由公开 observation callback 发布实际 capture 状态；暂停期间继续采样真实麦克风健康，但 read 立即返回 WOULD_BLOCK 和零字节，不消耗 PCM。恢复保留样本位置与 EOF，从首次启用的 read 重新建立 pacing epoch，不补发暂停期间的帧；重复发布同一状态不重置时钟。暂停／恢复即使发生在两次 read 之间或 pacing sleep 内也会被检测。控制状态跨 mic stop/start 与 fixture 更换保留，mic start 仍回绕样本。调用方保持输出暂停后，可在后台 mic 持续运行时更换同格式 fixture；替换与在途帧复制互斥，成功后旧 PCM 可释放，进度与 EOF 清零，真实采集健康保留。替换需与 mic start/stop 串行，不在 observation callback 中执行。该控制只发布原子状态，不调用 PAL 或获取 fixture lock；已越过最终状态检查的在途 read 仍可能输出一帧，因此它不是停止上传的 completion barrier。产品采集状态、素材选择和业务断言由 consumer 拥有。
 
+`h2_app_test_audio_set_fixture_ready()` 是独立于 capture 的一次内容起播闸门，默认
+true 保持既有 caller 行为。mic start 或成功替换 fixture 时采样该值；若 false，
+实际 capture 开启后按相同 PCM 格式与速率输出 lead-in silence，记录
+`fixture_lead_in_bytes`，但不消耗 fixture offset、不提前 EOF。true 在下一到期帧
+开启内容，此后 false 不能暂停或降速当前内容；下一次 mic start 或暂停中的 fixture
+替换才重新采样。capture_active=false 仍返回 WOULD_BLOCK，真实采集健康计数继续
+独立记录。该 setter 只发布原子状态，不调用 PAL、分配或加 fixture lock；在途帧
+限制与 capture setter 相同。caller 应将真实请求的初始 ready 与本轮 owner 绑定，
+不能把动态 queue credit 当成起播条件，也不能重置总测试预算。
+
 ### 失败和 cleanup
 
 Fault 在有效调用到达对应操作时计数，零初始化默认成功；持续失败和有界失败均可配置。Preference commit filter 仅统计匹配 namespace/key 的调用。Wi-Fi connect 和 Modem call 不自动生成完成事件，Power transition 不重启 Host 或增加 boot count，Crypto fixture 不提供真实密码算法。
