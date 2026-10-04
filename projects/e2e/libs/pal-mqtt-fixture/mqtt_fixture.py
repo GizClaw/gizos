@@ -6,6 +6,9 @@ Faults are selected by the unique client ID case suffix, never by a fake PAL.
 import socket
 import ssl
 import struct
+import copy
+import json
+from datetime import datetime, timezone
 import threading
 import time
 import uuid
@@ -202,10 +205,13 @@ class Peer:
 
 
 class Broker:
-    def __init__(self, session, context=None, allow_smoke=False, bind='127.0.0.1'):
+    def __init__(self, session, context=None, allow_smoke=False, bind='127.0.0.1', handshake_timeout=2):
         self.session = session
         self.context = context
         self.allow_smoke = allow_smoke
+        if not 0 < handshake_timeout <= 60:
+            raise ValueError('TLS handshake budget must be positive and bounded')
+        self.handshake_timeout = handshake_timeout
         self.listener = socket.socket()
         self.listener.bind((bind, 0))
         self.listener.listen(32)
@@ -226,13 +232,20 @@ class Broker:
         self.thread.start()
 
     def tls_message(self, connection, direction, version, content_type, message_type, data):
-        del version, data
         event = getattr(connection, 'h2_event', None)
         if event is not None:
+            event['messages'].append(dict(direction=direction, version=str(version), content_type=int(content_type),
+                message_type=int(message_type), bytes=len(data), elapsed_ms=int((time.monotonic()-event['_started'])*1000)))
             if direction == 'read' and int(content_type) == 22 and int(message_type) == 1:
                 event['client_hello'] = True
             if direction == 'write' and int(content_type) == 22 and int(message_type) == 11:
                 event['certificate_presented'] = True
+            if direction == 'read' and int(content_type) == 21 and len(data) == 2:
+                event['peer_alerts'].append(int(data[1]))
+
+    def handshake_snapshot(self):
+        with self.lock:
+            return [{key:copy.deepcopy(value) for key,value in event.items() if key != '_started'} for event in self.handshakes]
 
     def record(self, client_id, operation):
         with self.lock:
@@ -257,19 +270,29 @@ class Broker:
             connection.settimeout(0.1)
             if self.context:
                 event = dict(client_hello=False, certificate_presented=False, succeeded=False, finished=False,
-                             peer_ip=peer_ip, run=self.current_run_by_peer.get(peer_ip))
+                             peer_ip=peer_ip, run=self.current_run_by_peer.get(peer_ip),
+                             started_at_utc=datetime.now(timezone.utc).isoformat(), _started=time.monotonic(),
+                             budget_seconds=self.handshake_timeout, error_type=None, error=None,
+                             elapsed_ms=None, negotiated_version=None, cipher=None, messages=[], peer_alerts=[])
                 with self.lock:
                     self.handshakes.append(event)
                 connection = self.context.wrap_socket(connection, server_side=True, do_handshake_on_connect=False)
                 connection.h2_event = event
-                connection.settimeout(2)
+                connection.settimeout(self.handshake_timeout)
                 try:
                     connection.do_handshake()
                     event['succeeded'] = True
-                except (ssl.SSLError, OSError):
+                    event['negotiated_version'] = connection.version()
+                    event['cipher'] = connection.cipher()
+                except (ssl.SSLError, OSError) as error:
+                    event['error_type'] = type(error).__name__
+                    event['error'] = str(error)
                     return
                 finally:
                     event['finished'] = True
+                    event['elapsed_ms'] = int((time.monotonic()-event['_started'])*1000)
+                    observed={key:value for key,value in event.items() if key != '_started'}
+                    print('H2_PAL_MQTT_TLS_TRACE '+json.dumps(observed),flush=True)
                 connection.settimeout(0.1)
             peer = Peer(self, connection, peer_ip)
             with self.lock:
@@ -297,7 +320,7 @@ class Broker:
 
 
 class Fixture:
-    def __init__(self, directory, allow_smoke=False, bind='127.0.0.1', advertised='127.0.0.1'):
+    def __init__(self, directory, allow_smoke=False, bind='127.0.0.1', advertised='127.0.0.1', handshake_timeout=2):
         self.session = uuid.uuid4().hex
         self.advertised = advertised
         key, cert, self.ca, _ = certificate(directory, 'mqtt-trusted', advertised)
@@ -309,7 +332,7 @@ class Fixture:
         context.num_tickets = 0
         context.load_cert_chain(cert, key)
         self.tcp = Broker(self.session, allow_smoke=allow_smoke, bind=bind)
-        self.tls = Broker(self.session, context, allow_smoke=allow_smoke, bind=bind)
+        self.tls = Broker(self.session, context, allow_smoke=allow_smoke, bind=bind, handshake_timeout=handshake_timeout)
 
     def __enter__(self):
         return self
@@ -364,5 +387,5 @@ class Fixture:
         return dict(session=run_session,
                     tcp_arrivals={key:value for key,value in self.tcp.arrivals.items() if key.startswith(run_session + '-')},
                     tls_arrivals={key:value for key,value in self.tls.arrivals.items() if key.startswith(run_session + '-')},
-                    tls_handshakes=[event for event in self.tls.handshakes if event['run'] == run_session],
+                    tls_handshakes=[event for event in self.tls.handshake_snapshot() if event['run'] == run_session],
                     active_clients=0, retained_messages=0)
