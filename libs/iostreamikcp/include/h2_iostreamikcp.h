@@ -51,6 +51,15 @@ h2_pal_result_t h2_iostreamikcp_open(
     const h2_iostreamikcp_config_t *config,
     h2_iostreamikcp_t **out_stream);
 void h2_iostreamikcp_close(h2_iostreamikcp_t *stream);
+/**
+ * Move the physical input decoder (including a partial frame) to its caller.
+ * Afterwards input/poll return INVALID_STATE. Caller-owned filtering may still
+ * feed input_frame and use read/update until close; the I/O handle stays owned
+ * by the caller. Only call outside input/poll callbacks.
+ */
+h2_pal_result_t h2_iostreamikcp_detach_input_filter(
+    h2_iostreamikcp_t *stream, h2_iostreamikcp_filter_t *out_filter);
+
 h2_pal_result_t h2_iostreamikcp_input(
     h2_iostreamikcp_t *stream,
     const uint8_t *data,

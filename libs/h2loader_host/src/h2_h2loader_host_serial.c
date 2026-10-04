@@ -34,6 +34,7 @@ struct h2_h2loader_host_serial_connection {
     int ready_line_rejected;
     int ready_banner_pending;
     int continuous_monitor;
+    int retired_conversation;
     int accepted_reboot;
 };
 
@@ -230,6 +231,9 @@ static h2_pal_result_t serial_stream_log(
         if (rc != H2_PAL_OK) {
             return rc;
         }
+    }
+    if (reset && connection->continuous_monitor) {
+        connection->retired_conversation = 1;
     }
     return reset && !connection->continuous_monitor ? H2_PAL_ERR_CLOSED : H2_PAL_OK;
 }
@@ -693,6 +697,19 @@ h2_pal_result_t h2_h2loader_host_serial_monitor_logs(
     return H2_PAL_EXIT;
 }
 
+/* The observer owns framing after admission, so READY can retire KCP without
+ * losing a partial physical frame or closing/reopening UART. Frames from any
+ * subsequent epoch remain untrusted and are filtered, never ACKed or decoded. */
+static h2_pal_result_t serial_observe_frame(
+    void *user, const h2_iostreamikcp_frame_t *frame) {
+    h2_h2loader_host_serial_connection_t *connection = user;
+    if (connection->retired_conversation || connection->stream == NULL ||
+        frame->flags != H2_IOSTREAMIKCP_FRAME_FLAG_DATA ||
+        frame->conv != connection->conversation_id) return H2_PAL_OK;
+    h2_pal_result_t rc = h2_iostreamikcp_input_frame(connection->stream, frame);
+    return rc == H2_PAL_OK ? serial_drain_decoded_logs(connection) : rc;
+}
+
 h2_pal_result_t h2_h2loader_host_serial_monitor_continuous(
     h2_h2loader_host_serial_connection_t *connection,
     h2_h2loader_host_cancelled_fn is_cancelled,
@@ -700,10 +717,42 @@ h2_pal_result_t h2_h2loader_host_serial_monitor_continuous(
     if (connection == NULL || is_cancelled == NULL) return H2_PAL_ERR_INVALID_ARG;
     if (!connection->accepted_reboot || connection->session == NULL || connection->stream == NULL)
         return H2_PAL_ERR_INVALID_STATE;
+    h2_iostreamikcp_filter_t filter;
+    h2_pal_result_t rc = h2_iostreamikcp_detach_input_filter(connection->stream, &filter);
+    if (rc != H2_PAL_OK) return rc;
     connection->continuous_monitor = 1;
-    h2_pal_result_t rc = h2_h2loader_host_serial_monitor_logs(connection, is_cancelled, cancel_user);
+    connection->retired_conversation = 0;
+    rc = serial_drain_decoded_logs(connection);
+    while (rc == H2_PAL_OK && !is_cancelled(cancel_user)) {
+        uint8_t buffer[256];
+        size_t read = 0u;
+        rc = h2_pal_uart_io_stream_read(connection->uart, buffer, sizeof(buffer),
+            &read, H2_H2LOADER_HOST_SERIAL_POLL_MS);
+        if (rc != H2_PAL_OK && rc != H2_PAL_ERR_TIMEOUT && rc != H2_PAL_ERR_WOULD_BLOCK) break;
+        if (read > sizeof(buffer)) { rc = H2_PAL_ERR_IO; break; }
+        rc = h2_iostreamikcp_filter_input_with_log(&filter, buffer, read,
+            serial_observe_frame, connection, serial_stream_log, connection);
+        if (rc != H2_PAL_OK) break;
+        if (connection->retired_conversation && connection->stream != NULL) {
+            h2_iostreamikcp_close(connection->stream);
+            connection->stream = NULL;
+            connection->conversation_id = 0u;
+        } else if (connection->stream != NULL) {
+            uint64_t now = 0u;
+            rc = serial_now(connection->time, &now);
+            if (rc == H2_PAL_OK) rc = h2_iostreamikcp_update(connection->stream, (uint32_t)now);
+        }
+    }
+    if (rc == H2_PAL_OK) rc = H2_PAL_EXIT;
     connection->continuous_monitor = 0;
     connection->accepted_reboot = 0;
+    /* Any observer exit relinquishes its logical epoch. The caller performs
+     * the single physical close, including restoration of original termios. */
+    if (connection->stream != NULL) {
+        h2_iostreamikcp_close(connection->stream);
+        connection->stream = NULL;
+        connection->conversation_id = 0u;
+    }
     return rc;
 }
 

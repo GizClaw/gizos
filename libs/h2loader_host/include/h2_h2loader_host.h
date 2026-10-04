@@ -268,6 +268,9 @@ h2_pal_result_t h2_h2loader_host_serial_monitor_logs(
 /** Observe UART continuously after an accepted reboot, until cancellation.
  * Keeps the same physical session and baud while command service is unavailable.
  * Raw startup bytes and the current session's framed console are forwarded.
+ * A complete READY line retires the old KCP epoch; later frames are filtered
+ * without decoding/ACK until a separate new session is admitted.
+ * All exits consume admission/release logical state; caller closes UART once.
  * Does not reconnect/admit a new logical session or verify the post-reboot role,
  * identity or firmware. Callers must independently read authoritative metadata
  * afterward. Requires a successful accepted reboot on this connection.

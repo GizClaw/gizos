@@ -114,8 +114,8 @@ Package inspector 的 `data_sha256` 是验证后的 canonical data identity：fo
 
 ### 重启后的连续 UART 观察
 
-`reboot app|loader|upgrade --monitor --continuous-monitor` 是显式 UART-only 观察模式。它先按既有 reliable session 执行并收到 accepted reboot，再使用 `h2_h2loader_host_serial_monitor_continuous()` 保持同一个 physical session 与波特率到取消或真实物理 I/O 失败。设备的 command service 暂停、MCU READY 或不能重新握手不会触发 disconnect、恢复原 termios 或 500 ms 重连等待；原始 startup 字节和当前 logical session 的 framed console 仍经现有解析路径完整转发。该模式不自动建立新 logical session。
+`reboot app|loader|upgrade --monitor --continuous-monitor` 是显式 UART-only 观察模式。它先按既有 reliable session 执行并收到 accepted reboot，再使用 `h2_h2loader_host_serial_monitor_continuous()` 保持同一个 physical session 与波特率到取消或真实物理 I/O 失败。设备的 command service 暂停、MCU READY 或不能重新握手不会触发 disconnect、恢复原 termios 或 500 ms 重连等待；原始 startup 字节和当前 logical session 的 framed console 仍完整转发。观察入口在 callback 外移交带未完成 frame 前缀的 physical decoder；每个合法当前会话 frame 解码后立即转发 console。完整 READY 行先交给 sink，再停止解码/ACK 旧 epoch，并在本次 input 返回后释放其 KCP，UART 与 physical decoder 继续保留。后续有效 frame 被过滤但不能作为新 session console 或触发 ACK，裸日志继续接收。该模式不自动建立新 logical session。
 
 连续观察不验证重启后的 role、UID、版本或 partition，也不将 accepted ACK 当作已验证目标状态。取消结束只表示观察结束；调用者必须另外取得 authoritative live status/coredump，并核对 UID、P1/P2/Stage、实际 firmware/source 和外部测试对端证据。默认 `--monitor`、其它普通命令与 BLE 生命周期保持原规则；BLE 与缺少 `--monitor` 的 continuous 参数被拒绝。
 
-`//libs/h2loader_host:continuous_monitor_test` 使用真实 Host serial/iKCP 代码，注入持续 UART 文本、MCU READY 和超过 20 秒无法命令握手的时钟，检查取消前没有 physical close/baud restore、原始字节与 framed console 全量转发，且缺少 accepted reboot 时拒绝进入。该 host 回归不替代任何设备资格。
+`//libs/h2loader_host:continuous_monitor_test` 使用真实 Host serial/iKCP 代码，注入持续 UART 文本、MCU READY 和超过 20 秒无法命令握手的时钟，检查取消前没有 physical close/baud restore、原始字节与 framed console 全量转发，且缺少 accepted reboot 时拒绝进入。测试通过 public typed reboot 执行真实 KCP request/accepted response，不直接改 admission flag；覆盖 raw/framed READY、移交前的部分 frame 前缀、同 conv stale payload 不可见且无 ACK，以及 UART unplug/CLOSED、sink IO failure、拒绝 reboot 后禁止监控。所有出口释放 logical stream，physical close 与原 termios 恢复仍由 caller 只执行一次。该 host 回归不替代任何设备资格。
