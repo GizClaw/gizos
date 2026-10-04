@@ -31,6 +31,8 @@ struct h2_pal_mqtt_client {
     int emitting;
     int close_requested;
     uint32_t recv_timeout_ms;
+    uint32_t send_timeout_ms;
+    h2_pal_result_t send_result;
     const h2_pal_time_api_t *time_api;
     MQTTContext_t mqtt;
     MQTTFixedBuffer_t fixed_buffer;

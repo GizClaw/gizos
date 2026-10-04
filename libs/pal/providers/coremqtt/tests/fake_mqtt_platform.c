@@ -151,7 +151,11 @@ static int fake_tcp_send(void *user, h2_pal_net_socket_t socket, const uint8_t *
     fake_mqtt_platform_t *fake = (fake_mqtt_platform_t *)user;
     fake->now_ms += fake->send_delay_ms;
     ++fake->send_calls;
-    if (fake->send_error != 0 && fake->send_calls > fake->send_error_after) return fake->send_error;
+    if (fake->send_error != 0 && fake->send_calls > fake->send_error_after) {
+        int rc = fake->send_error;
+        if (fake->send_error_once) fake->send_error = 0;
+        return rc;
+    }
     if (fake->send_limit != 0u && len > fake->send_limit) len = fake->send_limit;
     if (socket < 0 || (data == NULL && len != 0u) || fake->tx_len + len > sizeof(fake->tx)) {
         return H2_PAL_ERR_INVALID_ARG;
@@ -160,6 +164,16 @@ static int fake_tcp_send(void *user, h2_pal_net_socket_t socket, const uint8_t *
     fake->tx_len += len;
     maybe_auto_respond(fake);
     return (int)len;
+}
+
+static int fake_tcp_send_timeout(void *user, h2_pal_net_socket_t socket, const uint8_t *data, size_t len, uint32_t timeout_ms) {
+    fake_mqtt_platform_t *fake = user;
+    if (fake->send_timeout_calls < 128u) fake->send_timeouts[fake->send_timeout_calls++] = timeout_ms;
+    if (fake->send_delay_ms > timeout_ms) {
+        fake->now_ms += timeout_ms;
+        return H2_PAL_ERR_TIMEOUT;
+    }
+    return fake_tcp_send(user, socket, data, len);
 }
 
 static int fake_tcp_recv(void *user, h2_pal_net_socket_t socket, uint8_t *data, size_t len, uint32_t timeout_ms) {
@@ -244,6 +258,7 @@ void fake_mqtt_platform_init(fake_mqtt_platform_t *fake) {
         .tcp_open = fake_tcp_open,
         .tcp_connect = fake_tcp_connect,
         .tcp_send = fake_tcp_send,
+        .tcp_send_timeout = fake_tcp_send_timeout,
         .tcp_recv = fake_tcp_recv,
         .tls_wrap = fake_tls_wrap,
         .close = fake_close,

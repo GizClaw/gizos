@@ -170,7 +170,7 @@ static void run_case(const h2_pal_mqtt_e2e_config_t *config, h2_pal_mqtt_e2e_cas
         .endpoint = {{config->host, strlen(config->host)}, config->tcp_port},
         .client_id = {client_id, strlen(client_id)}, .clean_session = 1,
         .keepalive_sec = 30u, .connect_timeout_ms = config->timeout_ms,
-        .operation_timeout_ms = 20u, .network_buffer = scratch->network,
+        .operation_timeout_ms = config->timeout_ms, .network_buffer = scratch->network,
         .network_buffer_len = sizeof(scratch->network), .on_event = event_callback, .event_user = &state,
     };
     h2_pal_mqtt_publish_t message = {.topic = {topic, strlen(topic)},
