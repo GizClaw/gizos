@@ -1,0 +1,8 @@
+load("//projects/h2loader/tools/bazel:h2loader_zlib_tar.bzl", "h2loader_zlib_tar")
+
+package(default_visibility = ["//visibility:public"])
+
+h2loader_zlib_tar(
+    name = "package",
+    source = "//projects/e2e/targets/h2loader_tar_zlib/pal-audio-decoder/devkit:package",
+)

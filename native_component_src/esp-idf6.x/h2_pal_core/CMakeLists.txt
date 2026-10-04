@@ -1,8 +1,10 @@
 set(REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../..")
 
 option(H2_ESP_PLATFORM_ENABLE_WEBRTC "Enable ESP WebRTC platform implementation backed by H2Peer" OFF)
+option(H2_ESP_IO_PHASE_DIAGNOSTICS "Report slow FS/Pref flash-safe I/O phases" OFF)
 
 set(H2_ESP_PLATFORM_CORE_SRCS
+  "src/h2_esp_io_phase.c"
   "src/h2_esp_lazy_audio.c"
   "src/h2_esp_platform_mem.c"
   "src/h2_esp_resource_stats.c"
@@ -124,3 +126,6 @@ if(IDF_TARGET STREQUAL "esp32p4")
 endif()
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -Wall -Wextra -Werror)
+if(H2_ESP_IO_PHASE_DIAGNOSTICS)
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE H2_ESP_IO_PHASE_DIAGNOSTICS=1)
+endif()

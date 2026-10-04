@@ -236,6 +236,7 @@ static const char help_text[] =
     "                [--post-delay SECONDS] [--no-ble] COMMAND ...\n\n"
     "commands: package golden check scan status stats memory send send-url\n"
     "          stage wifi reboot monitor coredump bleikcp-speed\n\n"
+    "stats:    stats [--data-checksum] (wait for installed-data checksum)\n"
     "reboot:   reboot app|loader|upgrade [--monitor [--continuous-monitor]]\n"
     "          --continuous-monitor: UART observation; verify final metadata separately\n"
     "wifi:     wifi scan [--limit <1-16>] [--timeout-ms <1-30000>]\n"
@@ -560,6 +561,8 @@ static int scan_command(
 }
 
 static h2_h2loader_host_command_t command_kind(int argc, const char *const *argv) {
+    if (argc == 2 && strcmp(argv[0], "stats") == 0 &&
+        strcmp(argv[1], "--data-checksum") == 0) return H2_H2LOADER_HOST_COMMAND_DATA_CHECKSUM;
     if (argc == 1 && strcmp(argv[0], "status") == 0) return H2_H2LOADER_HOST_COMMAND_STATUS;
     if (argc == 1 && strcmp(argv[0], "stats") == 0) return H2_H2LOADER_HOST_COMMAND_STATS;
     if (argc == 1 && strcmp(argv[0], "memory") == 0) return H2_H2LOADER_HOST_COMMAND_MEMORY;

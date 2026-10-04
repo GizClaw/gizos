@@ -1,0 +1,13 @@
+load("//projects/h2loader/tools/bazel:h2loader_zlib_tar.bzl", "h2loader_zlib_tar")
+
+package(default_visibility = ["//visibility:public"])
+
+h2loader_zlib_tar(
+    name = "package",
+    source = "//projects/h2loader/targets/h2loader_tar_zlib/e2e-app/devkit:package",
+)
+
+h2loader_zlib_tar(
+    name = "package_alt",
+    source = "//projects/h2loader/targets/h2loader_tar_zlib/e2e-app/devkit:package_alt",
+)

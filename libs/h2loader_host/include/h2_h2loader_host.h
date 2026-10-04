@@ -294,6 +294,8 @@ typedef enum h2_h2loader_host_command {
     H2_H2LOADER_HOST_COMMAND_STAGE_URL = 18,
     H2_H2LOADER_HOST_COMMAND_WIFI_SCAN = 19,
     H2_H2LOADER_HOST_COMMAND_WIFI_STATUS = 20,
+    /** `stats`, waiting for its installed-data checksum line after status. */
+    H2_H2LOADER_HOST_COMMAND_DATA_CHECKSUM = 21,
 } h2_h2loader_host_command_t;
 
 /**

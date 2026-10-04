@@ -195,7 +195,11 @@ typedef enum h2_gizclaw_audio_input_route {
  * Pair it with the caller's Service lifetime when retaining observations.
  * active/ready are false after end, cancellation, terminal result or route
  * replacement. Conversation ready means this input's AUDIO_INPUT_READY was
- * received; Speech ready means its managed input stream opened successfully.
+ * received; Speech ready means its opened stream has admitted a first nonempty
+ * PCM frame to the local SDK queue after the request envelope was cleared.
+ * This one-shot local admission is not transport/server receipt or ongoing
+ * queue credit; later backpressure does not clear it. Lead-in PCM may progress
+ * while the stream is open but this public initial readiness is still false.
  * This is an initial protocol barrier, not per-frame queue credit or a promise
  * that later realtime PCM writes cannot overrun. No pointer or payload escapes.
  */
