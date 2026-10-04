@@ -1,4 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//tools/bazel/platforms:compatibility.bzl", "HOST_OR_MOBILE_TOOL_COMPATIBILITY")
 
 package(default_visibility = ["//visibility:public"])
@@ -16,6 +16,15 @@ py_binary(
     srcs = ["serve.py"],
     legacy_create_init = 0,
     main = "serve.py",
+    target_compatible_with = HOST_OR_MOBILE_TOOL_COMPATIBILITY,
+    deps = [":fixture"],
+)
+
+py_test(
+    name = "tls_diagnostics_test",
+    srcs = ["tests/test_tls_diagnostics.py"],
+    legacy_create_init = 0,
+    main = "tests/test_tls_diagnostics.py",
     target_compatible_with = HOST_OR_MOBILE_TOOL_COMPATIBILITY,
     deps = [":fixture"],
 )
