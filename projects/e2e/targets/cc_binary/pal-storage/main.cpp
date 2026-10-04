@@ -1,5 +1,6 @@
 #include "h2_desktop_platform.h"
 #include "h2_pal_storage_e2e.h"
+#include "device_runner.h"
 #include "host_config.h"
 #include "h2_sqlite.h"
 #if defined(__APPLE__)
@@ -82,7 +83,7 @@ void report(void *user, const char *id, h2_pal_storage_status_t status,
 }
 } // namespace
 int main(int argc, char **argv) {
-  if (argc != 4)
+  if (argc != 4 && argc != 5)
     return 2;
   unsigned phase = static_cast<unsigned>(std::strtoul(argv[1], nullptr, 10));
   uint32_t nonce = static_cast<uint32_t>(std::strtoul(argv[3], nullptr, 10));
@@ -120,15 +121,28 @@ int main(int argc, char **argv) {
   tests.case_result = report;
   tests.user = &reporter;
   h2_pal_storage_result_t result{};
-  const int rc = h2_pal_storage_e2e_run(runtime, &tests, &result);
+  const bool device_control = argc == 5;
+  const int rc = device_control
+                     ? h2_storage_device_run(runtime, tests.root, argv[4])
+                     : h2_pal_storage_e2e_run(runtime, &tests, &result);
+  if (device_control)
+    h2_storage_device_replay(runtime);
   bool balanced = allocations == before_allocations && bytes == before_bytes;
-  std::printf(
-      "H2_STORAGE_PHASE "
-      "{\"phase\":%u,\"nonce\":%u,\"pid\":%ld,\"passed\":%zu,\"failed\":%zu,"
-      "\"blocked\":%zu,\"cleanup\":%d,\"balanced\":%s}\n",
-      phase, nonce, static_cast<long>(getpid()), result.passed, result.failed,
-      result.blocked, result.cleanup_result, balanced ? "true" : "false");
-  if (result.retained_cleanup)
+  if (device_control) {
+    std::printf(
+        "H2_STORAGE_DEVICE_EXIT {\"rc\":%d,\"pid\":%ld,\"balanced\":%s}\n", rc,
+        static_cast<long>(getpid()), balanced ? "true" : "false");
+  } else {
+    std::printf("H2_STORAGE_PHASE "
+                "{\"contract\":%u,\"phase\":%u,\"nonce\":%u,\"pid\":%ld,"
+                "\"passed\":%zu,\"failed\":%zu,"
+                "\"blocked\":%zu,\"cleanup\":%d,\"balanced\":%s}\n",
+                H2_PAL_STORAGE_CONTRACT_VERSION, phase, nonce,
+                static_cast<long>(getpid()), result.passed, result.failed,
+                result.blocked, result.cleanup_result,
+                balanced ? "true" : "false");
+  }
+  if (result.retained_cleanup || (device_control && !balanced))
     return 6;
   h2_runtime_deinit(runtime);
   h2_sqlite_destroy(pref);
