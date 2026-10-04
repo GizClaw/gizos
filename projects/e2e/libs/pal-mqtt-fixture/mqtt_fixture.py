@@ -194,12 +194,12 @@ class Peer:
 
 
 class Broker:
-    def __init__(self, session, context=None, allow_smoke=False):
+    def __init__(self, session, context=None, allow_smoke=False, bind='127.0.0.1'):
         self.session = session
         self.context = context
         self.allow_smoke = allow_smoke
         self.listener = socket.socket()
-        self.listener.bind(('127.0.0.1', 0))
+        self.listener.bind((bind, 0))
         self.listener.listen(32)
         self.listener.settimeout(0.1)
         self.port = self.listener.getsockname()[1]
@@ -287,18 +287,19 @@ class Broker:
 
 
 class Fixture:
-    def __init__(self, directory, allow_smoke=False):
+    def __init__(self, directory, allow_smoke=False, bind='127.0.0.1', advertised='127.0.0.1'):
         self.session = uuid.uuid4().hex
-        key, cert, self.ca, _ = certificate(directory, 'mqtt-trusted', '127.0.0.1')
-        _, _, self.wrong_ca, _ = certificate(directory, 'mqtt-other-root', '127.0.0.1')
+        self.advertised = advertised
+        key, cert, self.ca, _ = certificate(directory, 'mqtt-trusted', advertised)
+        _, _, self.wrong_ca, _ = certificate(directory, 'mqtt-other-root', advertised)
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         # This suite measures client cleanup, not process-wide session caching.
         # MQTT/TLS resumption is outside its declared qualification scope.
         context.options |= ssl.OP_NO_TICKET
         context.num_tickets = 0
         context.load_cert_chain(cert, key)
-        self.tcp = Broker(self.session, allow_smoke=allow_smoke)
-        self.tls = Broker(self.session, context, allow_smoke=allow_smoke)
+        self.tcp = Broker(self.session, allow_smoke=allow_smoke, bind=bind)
+        self.tls = Broker(self.session, context, allow_smoke=allow_smoke, bind=bind)
 
     def __enter__(self):
         return self

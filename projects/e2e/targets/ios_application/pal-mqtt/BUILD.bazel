@@ -1,0 +1,51 @@
+load("@rules_apple//apple:ios.bzl", "ios_application")
+load("@rules_cc//cc:objc_library.bzl", "objc_library")
+load("//tools/bazel:cc_options.bzl", "H2_WARNING_COPTS")
+load("//tools/bazel:mobile_app_sdk.bzl", "mobile_app_sdk")
+load("//tools/bazel:mobile_e2e.bzl", "mobile_e2e_test")
+load("//tools/bazel/platforms:compatibility.bzl", "IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+objc_library(
+    name = "launcher",
+    srcs = ["main.m"],
+    copts = H2_WARNING_COPTS + ["-fobjc-arc"],
+    sdk_frameworks = [
+        "UIKit",
+        "Foundation",
+    ],
+    target_compatible_with = IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY,
+    deps = [
+        "//libs/app_host:ios_packaged",
+        "//projects/e2e/libs/pal-mqtt-mobile:runner",
+    ],
+)
+
+ios_application(
+    name = "pal_mqtt_e2e",
+    bundle_id = "com.haivivi.gizos.e2e.palmqtt",
+    bundle_name = "GizOSPALMQTTE2E",
+    families = [
+        "iphone",
+        "ipad",
+    ],
+    infoplists = ["Info.plist"],
+    minimum_os_version = "16.0",
+    target_compatible_with = IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY,
+    deps = [":launcher"],
+)
+
+mobile_e2e_test(
+    name = "ios_pal_mqtt_simulator_test",
+    app = ":pal_mqtt_e2e.ipa",
+    external = True,
+    platform = "ios",
+    sdk = ":app_sdk",
+    suite = "//projects/e2e/libs/pal-mqtt-mobile:mobile_e2e",
+)
+
+mobile_app_sdk(
+    name = "app_sdk",
+    app = ":pal_mqtt_e2e",
+)

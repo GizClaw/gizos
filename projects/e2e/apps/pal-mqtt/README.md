@@ -41,3 +41,11 @@ bazel test --config=macos_arm64 --nocache_test_results //projects/e2e/targets/cc
 当前独立 artifact entry 支持 macOS/Linux；实际资格须按当次测试和 artifact/source hash 判断。Browser 目前没有 raw TCP/TLS MQTT provider，不能算 mandatory MQTT PASS。iOS/Android SDK 消费、ESP32-S3 和 BK7258 的独立 entry 与真实运行证据尚未取得；没有将 host 结果改称六平台通过。IPv6 由独立延期任务负责。
 
 旧 PAL App、loopback 和 public smoke 入口保留，直到对应平台、执行 scope 和 CI 迁移有完整证据。新 suite 通过不意味着旧 PAL 全部可以退役，也不把历史 MQTT receipt 改绑到新 App。
+
+## Mobile SDK consumer
+
+移动端入口分别是 `//projects/e2e/targets/ios_application/pal-mqtt:ios_pal_mqtt_simulator_test` 和 `//projects/e2e/targets/android_binary/pal-mqtt:android_pal_mqtt_simulator_test`，复用 `tools/bazel/mobile_e2e.py` 的明确设备身份、安装、fixture、报告与 cleanup。测试声明 `manual`/`external`，要求 `--nocache_test_results --local_test_jobs=1`；iOS 通过 `--test_env=H2_IOS_SIMULATOR_UDID=<allocated UDID>`，Android 通过 `--test_env=H2_ANDROID_SERIAL=<allocated emulator>` 和显式 `ANDROID_HOME`/`ANDROID_NDK_HOME`。Runner 不 boot、reset 或 erase 模拟器。
+
+这次为 SDK 新增真实 `h2_ios_mqtt`/`h2_android_mqtt` owner，原 SDK/AppHost 的 MQTT 是 unsupported。Owner 持有独立 Net/WolfSSL 生命周期引用、4/4 QoS1 records 和可选 borrowed allocator；E2E 消费实际 XCFramework/AAR 的 factory，核对 public header、SDK/IPA symbols 或 APK/AAR binary identity，再执行 36 个相同用例。每个进程另外真实验证 owner 和 coreMQTT 分配失败回滚、owner destroy、native resource before/after、最终零 tracked allocation 与 Core shutdown。Host unit lifetime test 用 Net reference stub 检查 busy destroy 保留/重试，仅作为 SDK owner unit test，不能替代真实网络或移动证据。
+
+移动 hook 保留当轮 fixture JSON、CA、wrong CA 与 registry 的 SHA256 输入 manifest，以及实际 SDK/App artifact hash和真实 peer witness。新增移动资格必须以新 consumer artifact 与新 SDK 包的实际运行记录为准，不能改绑历史 SDK receipt。
