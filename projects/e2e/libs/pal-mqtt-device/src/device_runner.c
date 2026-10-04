@@ -69,8 +69,11 @@ int h2_mqtt_device_run(h2_runtime_t *runtime, unsigned capacity,
     rc=h2_pal_time_set_wall_ms(runtime->time,out->epoch_ms);if(rc!=H2_PAL_OK)goto done;
     h2_pal_firmware_info_t image={0};rc=h2_pal_firmware_info_get_current(runtime->firmware_info,&image);
     if(rc!=H2_PAL_OK)goto done;
-    printf("H2_PAL_MQTT_BOOT id=%s version=%s epoch_ms=%llu ca_sha256=%s\n",out->execution,image.version,
-        (unsigned long long)out->epoch_ms,out->ca_sha256);fflush(stdout);
+    char boot_line[384];
+    count=snprintf(boot_line,sizeof(boot_line),"H2_PAL_MQTT_BOOT id=%s version=%s epoch_ms=%llu ca_sha256=%s",
+        out->execution,image.version,(unsigned long long)out->epoch_ms,out->ca_sha256);
+    if(count<=0 || (size_t)count>=sizeof(boot_line)){rc=H2_PAL_ERR_NO_SPACE;goto done;}
+    if(h2_pal_log_write(runtime->log,H2_PAL_LOG_INFO,"pal-mqtt",boot_line)!=H2_PAL_LOG_OK){rc=H2_PAL_ERR_IO;goto done;}
     h2_pal_net_tls_config_t trusted={.server_name="localhost",.root_ca_pem=ca,.root_ca_pem_len=ca_length,.verify=H2_PAL_NET_TLS_VERIFY_REQUIRED};
     h2_pal_net_tls_config_t untrusted=trusted,wrong_name=trusted;
     untrusted.root_ca_pem=wrong;untrusted.root_ca_pem_len=wrong_length;wrong_name.server_name="wrong-name.invalid";
@@ -83,19 +86,40 @@ done:
     h2_pal_mem_free(runtime->mem,wrong);h2_pal_mem_free(runtime->mem,ca);
     out->rc=rc;return rc;
 }
+static int append_values(char *line,size_t capacity,size_t *offset,const size_t values[10]) {
+    for(unsigned i=0u;i<10u;++i){
+        int count=snprintf(line+*offset,capacity-*offset,"%s%zu",i?",":"",values[i]);
+        if(count<0 || (size_t)count>=capacity-*offset)return H2_PAL_ERR_NO_SPACE;
+        *offset+=(size_t)count;
+    }
+    return H2_PAL_OK;
+}
 void h2_mqtt_device_replay(h2_runtime_t *runtime,const h2_mqtt_device_result_t *result) {
     h2_pal_firmware_info_t image={0};if(h2_pal_firmware_info_get_current(runtime->firmware_info,&image)!=H2_PAL_OK)return;
-    printf("H2_PAL_MQTT_RUN id=%s version=%s epoch_ms=%llu ca_sha256=%s\n",result->execution,image.version,
-        (unsigned long long)result->epoch_ms,result->ca_sha256);
+    char line[768];
+    int count=snprintf(line,sizeof(line),"H2_PAL_MQTT_RUN id=%s version=%s epoch_ms=%llu ca_sha256=%s",
+        result->execution,image.version,(unsigned long long)result->epoch_ms,result->ca_sha256);
+    if(count<0 || (size_t)count>=sizeof(line))return;
+    if(h2_pal_log_write(runtime->log,H2_PAL_LOG_INFO,"pal-mqtt",line)!=H2_PAL_LOG_OK)return;
     for(unsigned i=0u;i<H2_PAL_MQTT_E2E_CASE_COUNT;++i){
         const h2_pal_mqtt_e2e_case_result_t *row=&result->suite.cases[i];
         if(row->id==NULL)continue;
-        printf("H2_PAL_MQTT_CASE {\"id\":\"%s\",\"status\":\"%s\",\"detail\":%d,\"line\":%u,\"elapsed_ms\":%llu,\"connected\":%u,\"received\":%u,\"disconnected\":%u}\n",
+        count=snprintf(line,sizeof(line),"H2_PAL_MQTT_CASE {\"id\":\"%s\",\"status\":\"%s\",\"detail\":%d,\"line\":%u,\"elapsed_ms\":%llu,\"connected\":%u,\"received\":%u,\"disconnected\":%u}",
             row->id,row->passed?"PASS":row->blocked?"BLOCKED":"FAIL",row->detail,row->line,(unsigned long long)row->elapsed_ms,row->connected,row->received,row->disconnected);
-        fflush(stdout);(void)h2_pal_time_sleep_ms(runtime->time,40u);
+        if(count<0 || (size_t)count>=sizeof(line))return;
+        if(h2_pal_log_write(runtime->log,H2_PAL_LOG_INFO,"pal-mqtt",line)!=H2_PAL_LOG_OK)return;
+        (void)h2_pal_time_sleep_ms(runtime->time,40u);
     }
-    printf("H2_PAL_MQTT_SUMMARY {\"selected\":%u,\"passed\":%u,\"failed\":%u,\"blocked\":%u,\"cleanup\":%d,\"rc\":%d,\"before\":[",
+    count=snprintf(line,sizeof(line),"H2_PAL_MQTT_SUMMARY {\"selected\":%u,\"passed\":%u,\"failed\":%u,\"blocked\":%u,\"cleanup\":%d,\"rc\":%d,\"before\":[",
         result->suite.selected,result->suite.passed,result->suite.failed,result->suite.blocked,result->cleanup,result->rc);
-    for(unsigned i=0u;i<10u;++i)printf("%s%zu",i?",":"",result->before[i]);
-    printf("],\"after\":[");for(unsigned i=0u;i<10u;++i)printf("%s%zu",i?",":"",result->after[i]);puts("]}");fflush(stdout);
+    if(count<0 || (size_t)count>=sizeof(line))return;
+    size_t offset=(size_t)count;
+    if(append_values(line,sizeof(line),&offset,result->before)!=H2_PAL_OK)return;
+    count=snprintf(line+offset,sizeof(line)-offset,"],\"after\":[");
+    if(count<0 || (size_t)count>=sizeof(line)-offset)return;
+    offset+=(size_t)count;
+    if(append_values(line,sizeof(line),&offset,result->after)!=H2_PAL_OK)return;
+    count=snprintf(line+offset,sizeof(line)-offset,"]}");
+    if(count<0 || (size_t)count>=sizeof(line)-offset)return;
+    (void)h2_pal_log_write(runtime->log,H2_PAL_LOG_INFO,"pal-mqtt",line);
 }

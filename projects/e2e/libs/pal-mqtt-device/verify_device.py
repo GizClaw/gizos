@@ -19,19 +19,20 @@ def fields(text):
 def boot_ledger(text, ids, version, previous=None):
     boot = run = summary = accepted = None
     rows = []
+    text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
     for line in text.splitlines():
         if re.search(r'H2_\w*(?:BOOT|STARTUP)\b|\bBooting\b', line):
             boot = run = summary = accepted = None
             rows = []
             if 'H2_PAL_MQTT_BOOT ' in line:
-                boot = fields(line)
+                boot = fields(line.split('H2_PAL_MQTT_BOOT ', 1)[1])
                 if boot.get('version') != version:
                     boot = None
                 elif not re.fullmatch(r'[0-9a-f]{32}-[0-9a-f]{16}', boot.get('id', '')):
                     raise AssertionError('invalid fresh execution nonce')
             continue
         if 'H2_PAL_MQTT_RUN ' in line:
-            run = fields(line); rows = []; summary = accepted = None
+            run = fields(line.split('H2_PAL_MQTT_RUN ', 1)[1]); rows = []; summary = accepted = None
             assert boot is not None and run == boot, 'replay does not belong to latest complete boot identity'
             assert run['id'] != previous, 'previous boot receipt replayed'
         elif 'H2_PAL_MQTT_CASE ' in line:
@@ -47,7 +48,7 @@ def boot_ledger(text, ids, version, previous=None):
                 assert summary.get(key) == value, ('summary', key)
             assert len(summary['before']) == 10 and summary['before'] == summary['after'], 'native resource leak'
         elif 'H2_PAL_MQTT_READY ' in line:
-            ready = fields(line)
+            ready = fields(line.split('H2_PAL_MQTT_READY ', 1)[1])
             assert ready.get('rc') == '0' and ready.get('confirm') == '0', 'not admitted'
             assert summary is not None, 'ready without latest complete ledger'
             accepted = dict(boot=boot, cases=rows.copy(), summary=summary, ready=ready)
