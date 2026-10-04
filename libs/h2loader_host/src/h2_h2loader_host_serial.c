@@ -33,6 +33,8 @@ struct h2_h2loader_host_serial_connection {
     size_t ready_prefix_len;
     int ready_line_rejected;
     int ready_banner_pending;
+    int continuous_monitor;
+    int accepted_reboot;
 };
 
 static h2_pal_result_t serial_finish_command_response(void *transport);
@@ -229,7 +231,7 @@ static h2_pal_result_t serial_stream_log(
             return rc;
         }
     }
-    return reset ? H2_PAL_ERR_CLOSED : H2_PAL_OK;
+    return reset && !connection->continuous_monitor ? H2_PAL_ERR_CLOSED : H2_PAL_OK;
 }
 
 static h2_pal_result_t serial_wait_ready_marker(
@@ -691,6 +693,20 @@ h2_pal_result_t h2_h2loader_host_serial_monitor_logs(
     return H2_PAL_EXIT;
 }
 
+h2_pal_result_t h2_h2loader_host_serial_monitor_continuous(
+    h2_h2loader_host_serial_connection_t *connection,
+    h2_h2loader_host_cancelled_fn is_cancelled,
+    void *cancel_user) {
+    if (connection == NULL || is_cancelled == NULL) return H2_PAL_ERR_INVALID_ARG;
+    if (!connection->accepted_reboot || connection->session == NULL || connection->stream == NULL)
+        return H2_PAL_ERR_INVALID_STATE;
+    connection->continuous_monitor = 1;
+    h2_pal_result_t rc = h2_h2loader_host_serial_monitor_logs(connection, is_cancelled, cancel_user);
+    connection->continuous_monitor = 0;
+    connection->accepted_reboot = 0;
+    return rc;
+}
+
 h2_pal_result_t h2_h2loader_host_serial_disconnect(
     h2_h2loader_host_serial_connection_t **inout_connection) {
     h2_h2loader_host_serial_connection_t *connection;
@@ -858,13 +874,20 @@ h2_pal_result_t h2_h2loader_host_serial_execute_command(
     h2_h2loader_host_serial_connection_t *connection,
     const h2_h2loader_host_command_request_t *request,
     h2_h2loader_host_command_result_t *out_result) {
-    return h2_h2loader_host_command_execute_transport(
+    if (connection != NULL) connection->accepted_reboot = 0;
+    h2_pal_result_t rc = h2_h2loader_host_command_execute_transport(
         connection,
         serial_command_write,
         serial_command_read,
         serial_finish_command_response,
         request,
         out_result);
+    if (rc == H2_PAL_OK && connection != NULL && request != NULL && out_result != NULL &&
+        out_result->terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK &&
+        (request->command == H2_H2LOADER_HOST_COMMAND_REBOOT_APP ||
+         request->command == H2_H2LOADER_HOST_COMMAND_REBOOT_LOADER ||
+         request->command == H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE)) connection->accepted_reboot = 1;
+    return rc;
 }
 
 typedef struct serial_stage_output {

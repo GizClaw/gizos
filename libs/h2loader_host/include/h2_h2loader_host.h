@@ -265,6 +265,18 @@ h2_pal_result_t h2_h2loader_host_serial_monitor_logs(
     h2_h2loader_host_cancelled_fn is_cancelled,
     void *cancel_user);
 
+/** Observe UART continuously after an accepted reboot, until cancellation.
+ * Keeps the same physical session and baud while command service is unavailable.
+ * Raw startup bytes and the current session's framed console are forwarded.
+ * Does not reconnect/admit a new logical session or verify the post-reboot role,
+ * identity or firmware. Callers must independently read authoritative metadata
+ * afterward. Requires a successful accepted reboot on this connection.
+ */
+h2_pal_result_t h2_h2loader_host_serial_monitor_continuous(
+    h2_h2loader_host_serial_connection_t *connection,
+    h2_h2loader_host_cancelled_fn is_cancelled,
+    void *cancel_user);
+
 typedef enum h2_h2loader_host_command {
     H2_H2LOADER_HOST_COMMAND_HELP = 1,
     H2_H2LOADER_HOST_COMMAND_STATUS = 2,
