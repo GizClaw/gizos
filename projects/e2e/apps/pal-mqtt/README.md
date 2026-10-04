@@ -38,7 +38,7 @@ bazel test --config=macos_arm64 --nocache_test_results //projects/e2e/targets/cc
 
 ## 平台和退役边界
 
-当前独立 artifact entry 支持 macOS/Linux、iOS Simulator、Android Emulator 与 BK7258。macOS、指定 iOS Simulator 与 Android Emulator 已有真实完整 36/36 运行与清理证据；Linux 尚未实跑，BK 仍需定向实板验收，ESP32-S3 暂无独立入口资格。Browser 目前没有 raw TCP/TLS MQTT provider，不能算 mandatory MQTT PASS；没有将 host 或 simulator 结果改称六平台/实体手机通过。IPv6 由独立延期任务负责。
+当前独立 artifact entry 支持 macOS/Linux、iOS Simulator、Android Emulator、BK7258 与 DevKit ESP32-S3。macOS、指定 iOS Simulator、Android Emulator 和定向 DevKit 实板已有完整 36/36 运行与清理证据；DevKit 取得两次不同 nonce 的完整启动资格并恢复原 App、非空 Stage 和设置。Linux 尚未实跑，BK 的实际结果由台架 owner 独立补录。Browser 目前没有 raw TCP/TLS MQTT provider，不能算 mandatory MQTT PASS；没有将 host 或 simulator 结果改称六平台/实体手机通过。IPv6 由独立延期任务负责。
 
 旧 PAL App、loopback 和 public smoke 入口保留，直到对应平台、执行 scope 和 CI 迁移有完整证据。新 suite 通过不意味着旧 PAL 全部可以退役，也不把历史 MQTT receipt 改绑到新 App。
 
@@ -50,7 +50,7 @@ bazel test --config=macos_arm64 --nocache_test_results //projects/e2e/targets/cc
 
 移动 hook 保留当轮 fixture JSON、CA、wrong CA 与 registry 的 SHA256 输入 manifest，以及实际 SDK/App artifact hash和真实 peer witness。新增移动资格必须以新 consumer artifact 与新 SDK 包的实际运行记录为准，不能改绑历史 SDK receipt。
 
-`connect-timeout` 由 launcher 注入 stage budget：host 默认为 200 ms，移动端与 BK 为 2000 ms，使真实 TCP setup 有机会完成。App 检查 elapsed 不低于 configured budget，且不超过两个 stage budget 加 500 ms 调度余量；broker 必须实际收到同一 execution 的 CONNECT 并保持 CONNACK 静默，TCP setup 本身超时不能代替该负例通过。
+`connect-timeout` 由 launcher 注入 stage budget：host 默认为 200 ms，移动端、BK 与 DevKit 为 2000 ms，使真实 TCP setup 有机会完成。App 检查 elapsed 不低于 configured budget，且不超过两个 stage budget 加 500 ms 调度余量；broker 必须实际收到同一 execution 的 CONNECT 并保持 CONNACK 静默，TCP setup 本身超时不能代替该负例通过。
 
 ## BK7258 LAN fixture and package
 
@@ -60,7 +60,17 @@ LAN fixture 默认保留 2 秒服务端 TLS 握手预算，可通过 `serve --tl
 
 `//projects/e2e/libs/pal-mqtt-fixture:serve` 必须显式给出 `--bind`、`--advertised`、`--bazelrc` 和 `--receipt`，只监听指定 IPv4 interface 上的独占 ephemeral TCP/TLS ports。服务生成 test-only CA 与 build defines，不包含 Wi-Fi secret；真实设备使用已有 saved STA 配置。服务按本轮 nonce 区分 wire arrival、ACK、两次证书拒绝与零 live client/retained message，完整 witness 第一次成立时冻结该 run，后续 boot 不能改写旧 receipt。此服务不安装、重启、扫描或读取串口。
 
-只读 direct verifier `//projects/e2e/targets/h2loader_tar_zlib/pal-mqtt/bk7258_v3_202405:device_test` 消费主任务统一完成的定向安装与监视数据。要求 `H2_MQTT_DEVICE_PORT`、`H2_MQTT_DEVICE_UID` 和 `H2_MQTT_DEVICE_EVIDENCE_DIR`；目录必须有 `managed.log`、`normal.log`、`before-status.log`、`after-status.log`、两份 `*-coredump-status.log` 和 `fixture-receipt.json`，非空 dump 另需真实 `coredump-before.bin`/`coredump-after.bin`。验收两次不同 nonce 下同 boot 的完整 36-case，任何之后出现的 BOOT/STARTUP、不同 version 或 nonce 都使旧 ledger 失效；并严格核对 fresh UID、原 P1 valid/role/package/image hash、P2 valid=1与 app/package/image/version、清空 Stage和实际 coredump 状态/bytes不变。默认 unit tests只验证该 oracle 的拒绝行为，不能当作物理 BK PASS。
+只读 direct verifier `//projects/e2e/targets/h2loader_tar_zlib/pal-mqtt/bk7258_v3_202405:device_test` 消费主任务统一完成的定向安装与监视数据。要求 `H2_MQTT_DEVICE_PORT`、`H2_MQTT_DEVICE_UID`、`H2_MQTT_DEVICE_EVIDENCE_DIR` 和本轮实际安装的 `H2_MQTT_DEVICE_PACKAGE`；目录必须有 `managed.log`、`normal.log`、`before-status.log`、`after-status.log`、两份 `*-coredump-status.log` 和 `fixture-receipt.json`，非空 dump 另需真实 `coredump-before.bin`/`coredump-after.bin`。验收两次不同 nonce 下同 boot 的完整 36-case，任何之后出现的 BOOT/STARTUP、不同 version 或 nonce 都使旧 ledger 失效；并严格核对 fresh UID、原 P1 valid/role/package/image hash、P2 valid=1与 app/package/image/version、清空 Stage和实际 coredump 状态/bytes不变。默认 unit tests只验证该 oracle 的拒绝行为，不能当作物理 BK PASS。
+
+## DevKit ESP32-S3
+
+独立入口为 `//projects/e2e/targets/h2loader_tar_zlib/pal-mqtt/devkit:package` 与 host 只读 `:device_test`。Launcher 直接创建完整 lifecycle 的 `h2_coremqtt`，使用既有真实 ESP Net/MbedTLS、Time、Log、PSRAM allocator 与 8/8 records；DevKit board 默认 MQTT 仍是 unsupported。64 KiB PSRAM worker 执行同一份 36 case，检查 suite 前后实际 native counters 相等，销毁 provider 并检查其 allocation 释放后才确认 App。CA digest 由 ESP-IDF PSA SHA256 callback 提供，portable App 不依赖目标 SDK。
+
+实跑 managed package 的固定 source 是 `955dcfcef0f5050b4a5a97d7e5e53be71cf0e22c`，version `mqtt-esp-abi-r3`，package SHA256 `563fdb6e9adde23023ededcca5685538cc71a396aca20cccc97894af0ee4fd47`，image SHA256 `f9c30bd870c45ff1299cae93d722044fd98043a4e1cb2a124cd04703c71e9798`。独立默认 2-second LAN fixture 实际 source 是 `ad04417f1b80455ca50963b9acf2f77b486e4ae6`；host oracle 是 `b569cf92a1fabbdc028d3edff20b663bcb3e7ae6`。三种输入 scope 分开保留，host-only 改动不改绑实际 App source。
+
+两个 qualified boot 都完成 36/36、三次真实 TLS handshake/两次证书拒绝、完整 CONNECT/ACK/message witness、零 broker client/retained、native before==after、provider_cleanup=0 与 confirm=0；严格 host verifier 核对原 P1、实际 P2 image/package/version/valid、Stage 清空及 coredump。资格 snapshot 保持在恢复前 Stage=0；恢复后原 R35 App 和原 Stage=1、设置、WiFi 与 coredump 同安装前一致。
+
+实际 CA/config/source 原始输入与 UART/host receipts 保存到本轮证据目录。初始两次 compile 失败、两次被 host parser 拒绝的 UART capture、缺工具链和新构建 image-mismatch 的 Bazel 失败保持独立且未 qualified。最终只读 `device_test` 必须显式消费本轮已安装的 immutable package，不为验收重建另一镜像。结构化结果见 `targets/h2loader_tar_zlib/pal-mqtt/devkit/evidence`。
 
 ## Recorded qualification
 
@@ -69,6 +79,7 @@ LAN fixture 默认保留 2 秒服务端 TLS 握手预算，可通过 `serve --tl
 | macOS host | current focused test invocation and App/binary inputs | 36/36, strict wire witness and zero final resources | Bazel `desktop_test` output |
 | iOS Simulator | `5fede8800707089d0377f7e74a9927c7fa704bba`; explicit per-file mobile input equivalence to `afc4b236` | 36/36; SDK symbol/header, actual IPA/XCFramework and owner cleanup | `targets/ios_application/pal-mqtt/evidence` |
 | Android Emulator | fixed `afc4b2367a3a10210c32f9d75bfc04eae766061b` | 36/36; exported factory, actual APK/AAR byte identity and owner cleanup | `targets/android_binary/pal-mqtt/evidence` |
+| DevKit ESP32-S3 | fixed artifact source `955dcfce`; fixture `ad04417f`; host oracle `b569cf92` | 36/36 on two fresh boots, exact peer/native/provider cleanup; original App/Stage/settings restored | `targets/h2loader_tar_zlib/pal-mqtt/devkit/evidence` |
 | BK7258 | standalone P2 package/build and explicitly bound LAN fixture | physical execution pending; build cannot grant board PASS | root-owned directed UART/install/status/dump and `device_test` |
 
 Each mobile evidence directory preserves the original successful `qualified.json`/`environment.json` plus `executed-source-inputs.json`; fixture JSON/CA/wrong CA/registry and actual artifact/SDK hashes remain the observed values. The first iOS observation without a fixture-input manifest and Android's initial TCP timeout with no CONNECT witness remain separate ignored validation journals and are not relabeled as these qualified runs. Later BK-only adapters or documentation commits do not rewrite the actual mobile execution identity.
