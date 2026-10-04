@@ -378,6 +378,7 @@ typedef struct matrix_fixture {
   h2_h2loader_e2e_config_t config;
   h2_h2loader_host_catalog_entry_t assets[2][5];
   int bad_data;
+  int bad_source;
 } matrix_fixture_t;
 
 static h2_pal_result_t matrix_read(void *user, uint64_t offset, uint8_t *out,
@@ -397,6 +398,16 @@ static h2_pal_result_t matrix_execute(void *user,
   if (test_case < H2_H2LOADER_E2E_CASE_TAR_ZLIB_BASELINE) return rc;
   size_t offset = (size_t)(test_case - H2_H2LOADER_E2E_CASE_TAR_ZLIB_BASELINE);
   size_t format = offset / 5u, index = offset % 5u;
+  int cross = test_case >= H2_H2LOADER_E2E_CASE_OLD_TO_NEW_UNCHANGED;
+  size_t source = 0u;
+  if (cross) {
+    offset = (size_t)(test_case - H2_H2LOADER_E2E_CASE_OLD_TO_NEW_UNCHANGED);
+    source = offset / 4u; format = 1u - source; index = offset % 4u + 1u;
+    out->source_package_format = (uint32_t)source + 1u;
+    strcpy(out->before_package_sha256, fixture->assets[source][index - 1u].sha256);
+    if (fixture->bad_source && source == 0u && index == 1u)
+      strcpy(out->before_package_sha256, fixture->assets[format][index - 1u].sha256);
+  }
   const h2_h2loader_host_catalog_entry_t *asset = &fixture->assets[format][index];
   out->status_valid = out->data_checksum_valid = 1u;
   out->checksum_expectations_valid = index != 0u;
@@ -469,7 +480,18 @@ static void test_checksum_matrix_and_false_success(void) {
   static h2_h2loader_e2e_result_t result;
   matrix_init(&fixture);
   assert(h2_h2loader_e2e_run(&fixture.config, &result) == H2_PAL_OK);
-  assert(result.case_count == 30u && result.passed == 30u);
+  assert(result.case_count == 46u && result.passed == 46u);
+  for (size_t direction = 0u; direction < 2u; ++direction)
+    for (size_t i = 0u; i < 4u; ++i) {
+      const h2_h2loader_e2e_case_result_t *entry = &result.cases[15u + direction * 4u + i];
+      assert(entry->source_package_format == direction + 1u);
+      assert(entry->package_format == 2u - direction && entry->data_checksum_valid);
+    }
+  fixture.fake.count = 0u; fixture.bad_source = 1;
+  assert(h2_h2loader_e2e_run(&fixture.config, &result) == H2_PAL_ERR_INVALID_STATE);
+  assert(result.cases[15].result == H2_PAL_ERR_INVALID_STATE);
+  assert(!result.cases[15].data_checksum_valid);
+  fixture.bad_source = 0;
   assert(strcmp(h2_h2loader_e2e_case_name(result.cases[6].test_case), "tar-zlib-unchanged") == 0);
   assert(result.cases[14].package_format == 2u && result.cases[14].data_checksum_valid);
   fixture.fake.count = 0u;

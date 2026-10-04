@@ -267,7 +267,8 @@ bool parse_options(int argc, char **argv, Options *out) {
     return false;
   const std::size_t cases =
       5u + (!out->checksum_fixtures[0].empty() ? 5u : 0u) +
-      (!out->checksum_fixtures[1].empty() ? 5u : 0u) + (!out->wifi_ssid.empty() ? 3u : 0u) +
+      (!out->checksum_fixtures[1].empty() ? 5u : 0u) +
+      (!out->checksum_fixtures[0].empty() && !out->checksum_fixtures[1].empty() ? 8u : 0u) + (!out->wifi_ssid.empty() ? 3u : 0u) +
       (!out->app_firmware.empty() ? 2u : 0u) + (has_url ? 2u : 0u) +
                             (!out->loader_firmware.empty() ? 4u : 0u) +
       (out->coredump_bytes != 0u || !out->crash_firmware.empty() ? 4u : 0u);
@@ -464,6 +465,8 @@ bool write_report(const std::filesystem::path &path, const Options &options,
     if (checksum_report) output << ", \"checksum_case\": ";
     if (checksum_report && entry.package_format != 0u) {
       output << "{\"format\": " << entry.package_format
+             << ", \"source_format\": " << entry.source_package_format
+             << ", \"before_package_sha256\": \"" << json_escape(entry.before_package_sha256) << "\""
              << ", \"package_sha256\": \"" << json_escape(entry.package_sha256) << "\""
              << ", \"expected_update_app\": " << (!entry.checksum_expectations_valid ? "null" : entry.expected_update_app ? "true" : "false")
              << ", \"expected_update_data\": " << (!entry.checksum_expectations_valid ? "null" : entry.expected_update_data ? "true" : "false")

@@ -147,6 +147,14 @@ const char *h2_h2loader_e2e_case_name(h2_h2loader_e2e_case_t test_case) {
   case H2_H2LOADER_E2E_CASE_ZLIB_TAR_APP_ONLY: return "zlib-tar-app-only";
   case H2_H2LOADER_E2E_CASE_ZLIB_TAR_DATA_ONLY: return "zlib-tar-data-only";
   case H2_H2LOADER_E2E_CASE_ZLIB_TAR_BOTH_CHANGED: return "zlib-tar-both-changed";
+  case H2_H2LOADER_E2E_CASE_OLD_TO_NEW_UNCHANGED: return "old-to-new-unchanged";
+  case H2_H2LOADER_E2E_CASE_OLD_TO_NEW_APP_ONLY: return "old-to-new-app-only";
+  case H2_H2LOADER_E2E_CASE_OLD_TO_NEW_DATA_ONLY: return "old-to-new-data-only";
+  case H2_H2LOADER_E2E_CASE_OLD_TO_NEW_BOTH_CHANGED: return "old-to-new-both-changed";
+  case H2_H2LOADER_E2E_CASE_NEW_TO_OLD_UNCHANGED: return "new-to-old-unchanged";
+  case H2_H2LOADER_E2E_CASE_NEW_TO_OLD_APP_ONLY: return "new-to-old-app-only";
+  case H2_H2LOADER_E2E_CASE_NEW_TO_OLD_DATA_ONLY: return "new-to-old-data-only";
+  case H2_H2LOADER_E2E_CASE_NEW_TO_OLD_BOTH_CHANGED: return "new-to-old-both-changed";
   default:
     return "unknown";
   }
@@ -1259,8 +1267,21 @@ run_install_monitor(h2_e2e_transport_context_t *context,
   return rc;
 }
 
+static int cross_case_index(h2_h2loader_e2e_case_t test_case,
+                            size_t *source, size_t *target, size_t *index) {
+  if (test_case < H2_H2LOADER_E2E_CASE_OLD_TO_NEW_UNCHANGED ||
+      test_case > H2_H2LOADER_E2E_CASE_NEW_TO_OLD_BOTH_CHANGED) return 0;
+  size_t offset = (size_t)(test_case - H2_H2LOADER_E2E_CASE_OLD_TO_NEW_UNCHANGED);
+  *source = offset / 4u;
+  *target = 1u - *source;
+  *index = offset % 4u + 1u;
+  return 1;
+}
+
 static int checksum_case_index(h2_h2loader_e2e_case_t test_case,
                                size_t *format, size_t *index) {
+  size_t source;
+  if (cross_case_index(test_case, &source, format, index)) return 1;
   if (test_case < H2_H2LOADER_E2E_CASE_TAR_ZLIB_BASELINE ||
       test_case > H2_H2LOADER_E2E_CASE_ZLIB_TAR_BOTH_CHANGED) return 0;
   size_t offset = (size_t)(test_case - H2_H2LOADER_E2E_CASE_TAR_ZLIB_BASELINE);
@@ -1299,6 +1320,12 @@ static h2_pal_result_t verify_checksum_result(
       strcmp(result->data_sha256, asset->data_sha256) != 0 ||
       h2_h2loader_host_status_verify_asset(&result->status, asset) != H2_PAL_OK)
     return H2_PAL_ERR_INVALID_STATE;
+  if (result->source_package_format != 0u) {
+    if (index == 0u || result->source_package_format != 2u - format ||
+        strcmp(result->before_package_sha256,
+               context->checksum_assets[1u - format][index - 1u].sha256) != 0)
+      return H2_PAL_ERR_INVALID_STATE;
+  }
   if (index != 0u) {
     const h2_h2loader_host_catalog_entry_t *before = &context->checksum_assets[format][index - 1u];
     if (!result->checksum_expectations_valid ||
@@ -1321,6 +1348,12 @@ static h2_pal_result_t run_checksum_case(h2_e2e_transport_context_t *context,
   result->checksum_expectations_valid = index != 0u;
   h2_pal_result_t rc = read_data_checksum(context, result->before_data_sha256);
   if (rc != H2_PAL_OK) return rc;
+  memcpy(result->before_package_sha256, result->status.partition_2.package_checksum,
+         sizeof(result->before_package_sha256));
+  if (result->source_package_format != 0u &&
+      h2_h2loader_host_status_verify_asset(&result->status,
+          &context->checksum_assets[1u - format][index - 1u]) != H2_PAL_OK)
+    return H2_PAL_ERR_INVALID_STATE;
   memcpy(result->before_image_sha256, result->status.active_checksum,
          sizeof(result->before_image_sha256));
   result->expected_update_app = strcmp(result->before_image_sha256, asset->image_sha256) != 0;
@@ -1343,6 +1376,18 @@ static h2_pal_result_t run_checksum_case(h2_e2e_transport_context_t *context,
     rc = H2_PAL_ERR_INVALID_STATE;
   result->data_checksum_valid = rc == H2_PAL_OK;
   return rc;
+}
+
+static h2_pal_result_t run_cross_checksum_case(h2_e2e_transport_context_t *context,
+                                              size_t source, size_t target, size_t index) {
+  if (context->checksum_failed[source] || context->checksum_failed[target])
+    return H2_PAL_ERR_INVALID_STATE;
+  const h2_h2loader_e2e_package_t *before = &context->config->checksum_packages[source][index - 1u];
+  h2_pal_result_t rc = run_install(context, &context->checksum_assets[source][index - 1u],
+                                    before->data, before->size);
+  if (rc != H2_PAL_OK) return rc;
+  context->case_result->source_package_format = (uint32_t)source + 1u;
+  return run_checksum_case(context, target, index);
 }
 
 static h2_pal_result_t require_case_active_role(
@@ -1370,7 +1415,9 @@ static h2_pal_result_t require_case_active_role(
 
 static h2_pal_result_t execute_real_case(h2_e2e_transport_context_t *context,
                                          h2_h2loader_e2e_case_t test_case) {
-  size_t format, index;
+  size_t source, format, index;
+  if (cross_case_index(test_case, &source, &format, &index))
+    return run_cross_checksum_case(context, source, format, index);
   if (checksum_case_index(test_case, &format, &index))
     return run_checksum_case(context, format, index);
   switch (test_case) {
@@ -1585,6 +1632,7 @@ static h2_pal_result_t prepare_checksum_packages(
 
 static size_t cases_per_transport(const h2_h2loader_e2e_config_t *config) {
   size_t count = 5u;
+  if (config->checksum_formats == 3u) count += 8u;
   if (config->checksum_formats & 1u) count += H2_H2LOADER_E2E_CHECKSUM_PACKAGES;
   if (config->checksum_formats & 2u) count += H2_H2LOADER_E2E_CHECKSUM_PACKAGES;
   if (config->include_wifi)
@@ -1707,8 +1755,11 @@ static void append_case(const h2_h2loader_e2e_config_t *config,
   (void)now_ms(config, &started);
   size_t format = 0u, index = 0u;
   int matrix_case = checksum_case_index(test_case, &format, &index);
+  size_t source_format = 0u;
+  int cross_case = cross_case_index(test_case, &source_format, &format, &index);
   entry->result = cancelled(config) ? H2_PAL_EXIT :
-      matrix_case && context->checksum_failed[format] ? H2_PAL_ERR_INVALID_STATE : config->execute_case != NULL
+      matrix_case && (context->checksum_failed[format] ||
+          (cross_case && context->checksum_failed[source_format])) ? H2_PAL_ERR_INVALID_STATE : config->execute_case != NULL
                       ? config->execute_case(config->execute_user, transport,
                                              test_case, entry)
                       : execute_real_case(context, test_case);
@@ -1725,6 +1776,7 @@ static void append_case(const h2_h2loader_e2e_config_t *config,
   if (checksum_case_index(test_case, &checksum_format, &checksum_index)) {
     const h2_h2loader_host_catalog_entry_t *asset = &context->checksum_assets[checksum_format][checksum_index];
     entry->package_format = (uint32_t)checksum_format + 1u;
+    if (cross_case) entry->source_package_format = (uint32_t)source_format + 1u;
     memcpy(entry->package_sha256, asset->sha256, sizeof(entry->package_sha256));
     if (entry->result == H2_PAL_OK)
       entry->result = verify_checksum_result(context, checksum_format, checksum_index, entry);
@@ -1875,6 +1927,13 @@ static void run_transport_iteration(const h2_h2loader_e2e_config_t *config,
       append_case(config, result, context, transport,
           (h2_h2loader_e2e_case_t)(H2_H2LOADER_E2E_CASE_TAR_ZLIB_BASELINE +
             format * H2_H2LOADER_E2E_CHECKSUM_PACKAGES + index), iteration);
+  }
+  if (config->checksum_formats == 3u) {
+    for (size_t direction = 0u; direction < 2u; ++direction)
+      for (size_t index = 0u; index < 4u; ++index)
+        append_case(config, result, context, transport,
+            (h2_h2loader_e2e_case_t)(H2_H2LOADER_E2E_CASE_OLD_TO_NEW_UNCHANGED +
+                                      direction * 4u + index), iteration);
   }
 }
 

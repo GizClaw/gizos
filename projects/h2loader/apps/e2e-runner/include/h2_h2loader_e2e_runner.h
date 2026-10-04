@@ -67,6 +67,14 @@ typedef enum h2_h2loader_e2e_case {
   H2_H2LOADER_E2E_CASE_ZLIB_TAR_APP_ONLY,
   H2_H2LOADER_E2E_CASE_ZLIB_TAR_DATA_ONLY,
   H2_H2LOADER_E2E_CASE_ZLIB_TAR_BOTH_CHANGED,
+  H2_H2LOADER_E2E_CASE_OLD_TO_NEW_UNCHANGED,
+  H2_H2LOADER_E2E_CASE_OLD_TO_NEW_APP_ONLY,
+  H2_H2LOADER_E2E_CASE_OLD_TO_NEW_DATA_ONLY,
+  H2_H2LOADER_E2E_CASE_OLD_TO_NEW_BOTH_CHANGED,
+  H2_H2LOADER_E2E_CASE_NEW_TO_OLD_UNCHANGED,
+  H2_H2LOADER_E2E_CASE_NEW_TO_OLD_APP_ONLY,
+  H2_H2LOADER_E2E_CASE_NEW_TO_OLD_DATA_ONLY,
+  H2_H2LOADER_E2E_CASE_NEW_TO_OLD_BOTH_CHANGED,
 } h2_h2loader_e2e_case_t;
 
 typedef struct h2_h2loader_e2e_case_result {
@@ -84,6 +92,10 @@ typedef struct h2_h2loader_e2e_case_result {
   /** Nonzero only for a checksum-matrix case. Expectations are validated
    * against observed pre-install identities, not claimed writer counters. */
   uint32_t package_format;
+  /** Nonzero for an explicit cross-format case, verified against the
+   * predecessor package recorded by the device before the transition. */
+  uint32_t source_package_format;
+  char before_package_sha256[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
   char package_sha256[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
   uint8_t checksum_expectations_valid;
   uint8_t expected_update_app;

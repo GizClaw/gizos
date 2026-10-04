@@ -135,3 +135,16 @@ it establishes the initial state. The elapsed time covers the full managed
 operation and observation, not an isolated decompression benchmark. Host tests
 exercise recipes, orchestration and negative acceptance; hardware PASS requires
 running these real cases on the directed endpoints and retaining their report.
+
+
+When both format directories are selected, eight additional independently named
+cross-format cases run on each selected transport in one iteration: old-to-new
+and new-to-old, each with unchanged, App-only, data-only and both-changed inputs.
+Each case first installs the predecessor through its source format, then verifies
+that the device's Partition 2 package checksum matches that exact source packet
+before installing the target-format candidate. Reports include `source_format`
+and the observed `before_package_sha256`; a matching App/data identity without
+the required source-package provenance cannot pass. These cases reuse the same
+ten fixtures and do not rely on a second transport or repeat to cover the reverse
+transition. A single transport with both directories now runs 23 cases (five
+command checks, ten within-format cases and eight cross-format cases).
