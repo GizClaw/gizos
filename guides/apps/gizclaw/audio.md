@@ -113,14 +113,7 @@ Conversation completion 表示本轮输入已发送，不等待服务端回复�
 
 开始输入先发送新 StreamID 的纯控制 BOS（kind 未指定，mime_type 为空），因此上游可以立即打断旧回复。第一块 PCM 到达后才发送同一 StreamID 的音频 BOS，并等待 AUDIO_INPUT_READY 后发送 Opus；结束时先发送已打开音频通道的 EOS，再发送纯控制 EOS。没有 PCM 的输入只发送纯控制 BOS/EOS，不等待音频 READY，也不生成静音包或空文本。
 
-`h2_gizclaw_service_audio_input_snapshot()` 只复制当前已开始输入的 route、
-Service 内单调的 successful-start generation、active 与 ready，不执行 RPC 或读
-PCM。调用方须把 generation 与自己的 Service 生命周期一起比较；它不采用会在新
-Conversation 中重新开始的 request identity，也不采用诊断 trace sequence。
-Conversation 的 ready 只表示本轮音频 BOS 收到匹配的 AUDIO_INPUT_READY；Speech
-表示本轮 managed input stream 已成功打开。未开始、结束、取消、失败或已换 owner
-的输入不能提供 active/ready；成功 start 的 generation 不回绕，耗尽时报 NO_SPACE。
-该快照不是动态 FIFO credit，不保证随后每帧都被接受或远端收到。
+`h2_gizclaw_service_audio_input_snapshot()` 只复制当前已开始输入的 route、 Service 内单调的 successful-start generation、active 与 ready，不执行 RPC 或读 PCM。调用方须把 generation 与自己的 Service 生命周期一起比较；它不采用会在新 Conversation 中重新开始的 request identity，也不采用诊断 trace sequence。 Conversation 的 ready 只表示本轮音频 BOS 收到匹配的 AUDIO_INPUT_READY；Speech 要求 managed input stream 已打开，并在请求 envelope 清空后，首个非空 PCM frame 已被本地 SDK queue 接受。后者只证明初始本地 admission，不代表 transport 或 server 已收到；后续 write 返回 WOULD_BLOCK 不撤销这一 one-shot 标记。内部 bootstrap PCM 仍可在 stream 已打开、公开 ready 为 false 时推进。 未开始、结束、取消、失败或已换 owner 的输入不能提供 active/ready；成功 start 的 generation 不回绕，耗尽时报 NO_SPACE。 该快照不是动态 FIFO credit，不保证随后每帧都被接受或远端收到。
 
 有限语音 fixture 可在实际 capture 已开启、初始 ready 尚未到达时提供按原格式与
 速率发送的 lead-in silence，使首块 PCM 和音频 BOS 能正常产生；ready 后才开始

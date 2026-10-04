@@ -14,6 +14,7 @@ typedef struct managed_stream {
   h2_pal_result_t sink_result; /* Service mutex; one-shot downstream result. */
   bool pcm_source;
   bool opened, input_closed; /* Service mutex. */
+  bool initial_pcm_submitted; /* Service mutex; one-shot local SDK admission. */
   size_t input_expected;
   size_t input_sent; /* Network owner; source task reads under Service mutex. */
   size_t input_ready;
@@ -636,6 +637,8 @@ managed_stream_network_step(managed_request_t *request,
       if (rc == H2_PAL_OK) {
         (void)h2_pal_mutex_lock(sync, service->mutex);
         stream->input_sent += count;
+        if (stream->pcm_source)
+          stream->initial_pcm_submitted = true;
         stream_data_activity(request);
         stream->input_ready = 0u;
         stream_mark_ready(request);
@@ -1181,7 +1184,7 @@ h2_pal_result_t h2_gizclaw_req_pcm_input_snapshot_internal(
   *active = !service->stopping && !service->stopped && operation != NULL &&
             !operation->cancel_requested && !h2_atomic_load(&operation->terminal) &&
             !stream->input_closed && stream->error == H2_PAL_OK;
-  *ready = *active && stream->opened;
+  *ready = *active && stream->opened && stream->initial_pcm_submitted;
   (void)h2_pal_mutex_unlock(service->config.sync, service->mutex);
   return H2_PAL_OK;
 }

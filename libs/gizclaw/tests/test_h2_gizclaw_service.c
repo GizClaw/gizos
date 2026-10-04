@@ -10191,6 +10191,7 @@ typedef struct speech_wire_test {
   pthread_t network_thread;
   bool network_thread_set;
   bool extract;
+  bool hold_after_first_write;
   unsigned mode;
   h2_gizclaw_rpc_stream_fn receive;
   void *receive_user;
@@ -10280,6 +10281,9 @@ static int speech_test_write(h2_gizclaw_rpc_request_t *request,
   test->bytes_len += len;
   h2_atomic_store_explicit(&test->uploaded_bytes, (unsigned)test->bytes_len,
                         H2_ATOMIC_RELEASE);
+  /* Hold the next frame after one real local admission in the readiness test. */
+  if (test->hold_after_first_write && test->bytes_len == len)
+    h2_atomic_store(&test->pause_write, true);
   return H2_PAL_OK;
 }
 
@@ -10471,6 +10475,7 @@ static void test_speech_managed_requests(void) {
     speech_wire_test_t test = {.service = service,
                                .app_thread = pthread_self(),
                                .extract = mode % 2u == 1u,
+                               .hold_after_first_write = mode == 0u,
                                .mode = mode,
                                .capture_total = mode == 0u ? 24000u : 1280u};
   speech_wire_test_atomics_init(&test);
@@ -10599,7 +10604,33 @@ static void test_speech_managed_requests(void) {
             assert(h2_atomic_load(&test.uploaded_bytes) == 0u);
             assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
             assert(input_state.route == H2_GIZCLAW_AUDIO_INPUT_SPEECH);
-            /* Stream readiness remains true while its single input slot is full. */
+            /* RPC open and bootstrap capture do not imply first PCM admission. */
+            assert(input_state.active && !input_state.ready);
+            h2_atomic_store(&test.pause_write, false);
+            wait_for_count(&test.uploaded_bytes, 640u);
+            uint64_t ready_started = 0u, ready_now = 0u;
+            assert(h2_pal_time_get_monotonic_ms(h2_desktop_platform_time_api(),
+                                               &ready_started) == H2_PAL_OK);
+            do {
+              assert(h2_gizclaw_service_audio_input_snapshot(
+                         service, &input_state) == H2_PAL_OK);
+              if (input_state.ready)
+                break;
+              assert(h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u) ==
+                     H2_PAL_OK);
+              assert(h2_pal_time_get_monotonic_ms(h2_desktop_platform_time_api(),
+                                                 &ready_now) == H2_PAL_OK);
+            } while (ready_now - ready_started < 5000u);
+            assert(input_state.active && input_state.ready);
+            /* The source can capture a third frame only after the network
+             * owner published the first successful write and cleared its slot. */
+            wait_for_count(&test.captures, 3u);
+            assert(h2_atomic_load(&test.pause_write));
+            nanosleep(&pause, NULL);
+            assert(h2_atomic_load(&test.uploaded_bytes) == 640u);
+            assert(h2_atomic_load(&test.captured_bytes) == 1920u);
+            assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
+            /* Later writer WOULD_BLOCK does not revoke the one-shot barrier. */
             assert(input_state.active && input_state.ready);
           }
           assert(h2_gizclaw_req_wait(request, 0u) == H2_PAL_ERR_TIMEOUT);
@@ -10618,6 +10649,10 @@ static void test_speech_managed_requests(void) {
           h2_gizclaw_req_release(conflict);
         }
         assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
+        if (mode == 0u) {
+          assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
+          assert(!input_state.active && !input_state.ready);
+        }
         unsigned accepted = h2_atomic_load(&test.captured_bytes);
         assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
         h2_atomic_store(&test.pause_write, false);
