@@ -1,5 +1,6 @@
 #include "h2_esp_board.h"
 #include "h2_esp_h2loader_runtime.h"
+#include "h2_esp_h2loader_ble.h"
 #include "h2_esp_platform_core.h"
 #include "h2_esp_target_task_policy.h"
 #include "h2_coremqtt.h"
