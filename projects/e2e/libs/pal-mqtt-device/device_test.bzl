@@ -20,7 +20,9 @@ _firmware = transition(
 def _package_impl(ctx):
     if ctx.var.get("h2_firmware_target") != ctx.attr.firmware_target:
         fail("device_test requires --define=h2_firmware_target=" + ctx.attr.firmware_target + " with the host test configuration")
-    files = [file for file in ctx.attr.package[DefaultInfo].files.to_list() if file.basename.endswith(".update.tar.zlib")]
+    if len(ctx.attr.package) != 1:
+        fail("MQTT verifier requires one native package configuration")
+    files = [file for file in ctx.attr.package[0][DefaultInfo].files.to_list() if file.basename.endswith(".update.tar.zlib")]
     if len(files) != 1:
         fail("MQTT verifier requires one actual managed package")
     return [DefaultInfo(files = depset(files))]
