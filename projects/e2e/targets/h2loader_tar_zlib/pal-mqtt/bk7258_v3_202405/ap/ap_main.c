@@ -44,6 +44,9 @@ static int snapshot(size_t out[10]){
 static int ca_digest(void *user,const uint8_t *bytes,size_t length,uint8_t digest[32]){
     (void)user;return mbedtls_sha256(bytes,length,digest,0)==0?H2_PAL_OK:H2_PAL_ERR_IO;
 }
+static int confirm_app(void *unused){
+    (void)unused;return h2_bk_h2loader_confirm_current_app(runtime);
+}
 static int restart_commands(void *unused){
     (void)unused;
     return h2_bk_h2loader_start_app_iostreamikcp_with_capabilities(runtime,"pal-mqtt",
@@ -110,14 +113,10 @@ restore_commands: ;
     }
     if(failed_stage!=NULL)(void)protocol_status(failed_stage,rc);
     result.rc=rc;
-    int confirm=h2_mqtt_bk_console_can_confirm(&console,rc)?h2_bk_h2loader_confirm_current_app(runtime):H2_PAL_ERR_INVALID_STATE;
-    char ready[160];int n=snprintf(ready,sizeof(ready),"H2_PAL_MQTT_READY board=bk7258 rc=%d confirm=%d",rc,confirm);
-    int output=n>0 && (size_t)n<sizeof(ready)?h2_mqtt_bk_console_record(&console,ready):H2_PAL_ERR_NO_SPACE;
+    int output=h2_mqtt_bk_console_finish(&console,rc,confirm_app,NULL);
     if(output!=H2_PAL_OK){
         result.rc=output;
-        /* The output channel itself can fail. Preserve failure locally and
-         * emit only an explicit failure through SDK diagnostics, never PASS. */
-        printf("H2_PAL_MQTT_SETUP_FAIL stage=ready-write rc=%d\n",output);fflush(stdout);
+        printf("H2_PAL_MQTT_SETUP_FAIL stage=ready-or-confirm rc=%d\n",output);fflush(stdout);
     }
     /* There is one first ledger/terminal. Later replay cannot repair a missing
      * record and cannot replace this boot's actual failed output evidence. */

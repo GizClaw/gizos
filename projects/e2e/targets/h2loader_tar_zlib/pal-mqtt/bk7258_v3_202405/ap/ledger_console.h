@@ -3,6 +3,7 @@
 
 #include "h2/pal/hal/h2_pal_uart_io_stream.h"
 #include <string.h>
+#include <stdio.h>
 
 /* Target policy: one bounded atomic write owns each complete ASCII record.
  * This holds the existing physical UART/RX owner across both resource snapshots.
@@ -74,6 +75,29 @@ static inline int h2_mqtt_bk_console_can_confirm(const h2_mqtt_bk_ledger_console
     int suite_rc) {
     return suite_rc == H2_PAL_OK && console->error == H2_PAL_OK &&
         !console->owned && console->writable;
+}
+
+/* Deliver the complete first READY before committing persistent confirmation.
+ * A separate actual confirmation terminal is required by the host admission;
+ * pending READY alone never qualifies a boot. */
+static inline int h2_mqtt_bk_console_finish(h2_mqtt_bk_ledger_console_t *console,
+    int suite_rc, int (*confirm)(void *), void *user) {
+    char line[160];
+    if (!h2_mqtt_bk_console_can_confirm(console, suite_rc) || confirm == NULL) {
+        int failure = suite_rc != H2_PAL_OK ? suite_rc :
+            console->error != H2_PAL_OK ? console->error : H2_PAL_ERR_INVALID_STATE;
+        (void)snprintf(line, sizeof(line), "H2_PAL_MQTT_READY board=bk7258 rc=%d confirm=%d",
+            failure, H2_PAL_ERR_INVALID_STATE);
+        (void)h2_mqtt_bk_console_record(console, line);
+        return failure;
+    }
+    int rc = h2_mqtt_bk_console_record(console,
+        "H2_PAL_MQTT_READY board=bk7258 rc=0 confirm=pending");
+    if (rc != H2_PAL_OK) return rc;
+    int confirmed = confirm(user);
+    (void)snprintf(line, sizeof(line), "H2_PAL_MQTT_CONFIRMED board=bk7258 rc=%d", confirmed);
+    rc = h2_mqtt_bk_console_record(console, line);
+    return confirmed != H2_PAL_OK ? confirmed : rc;
 }
 
 #endif

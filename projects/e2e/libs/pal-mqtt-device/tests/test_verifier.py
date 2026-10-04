@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 import re
 import unittest
-from verify_device import boot_ledger,status_preserved,coredump_preserved,loader_status,command_receipt,after_accepted_reboot,package_binding,uart_text,monitor_receipt
+from verify_device import boot_ledger,status_preserved,coredump_preserved,loader_status,command_receipt,after_accepted_reboot,package_binding,uart_text,monitor_receipt,load_package_binding,verify_witness
 class Verifier(unittest.TestCase):
     def setUp(self):
         root=Path(__file__).absolute().parents[5]
@@ -15,6 +15,48 @@ class Verifier(unittest.TestCase):
         rows='\n'.join('H2_PAL_MQTT_CASE '+json.dumps(dict(id=case,status='PASS',detail=0)) for case in self.ids)
         summary=dict(selected=36,passed=36,failed=0,blocked=0,cleanup=0,rc=0,before=[0]*10,after=[0]*10)
         self.good='H2_PAL_MQTT_PLATFORM_BOOT board=bk7258\nH2_PAL_MQTT_BOOT '+self.boot+'\nH2_PAL_MQTT_RUN '+self.boot+'\n'+rows+'\nH2_PAL_MQTT_SUMMARY '+json.dumps(summary)+'\nH2_PAL_MQTT_READY board=bk7258 rc=0 confirm=0\n'
+    def test_incomplete_first_run_cannot_be_replaced_by_replay(self):
+        first=self.good.split('H2_PAL_MQTT_SUMMARY',1)[0]
+        first=first.replace(next(line for line in first.splitlines() if '"id": "publish-qos1"' in line),'')
+        replay=self.good.split('H2_PAL_MQTT_RUN ',1)[1]
+        with self.assertRaisesRegex(AssertionError,'later replay'):
+            boot_ledger(first+'H2_PAL_MQTT_RUN '+replay,self.ids,'v1')
+    def test_ready_pending_requires_actual_post_delivery_confirmation(self):
+        pending=self.good.replace('confirm=0','confirm=pending')
+        with self.assertRaisesRegex(AssertionError,'missing post-READY'):boot_ledger(pending,self.ids,'v1')
+        final='H2_PAL_MQTT_CONFIRMED board=bk7258 rc=0\n'
+        self.assertEqual(boot_ledger(pending+final,self.ids,'v1')['confirmation']['rc'],'0')
+        for tail in [final.replace('rc=0','rc=-4'),final.replace('board=bk7258','board=devkit')]:
+            with self.assertRaises(AssertionError):boot_ledger(pending+tail,self.ids,'v1')
+        with self.assertRaises(AssertionError):boot_ledger(final+pending,self.ids,'v1')
+    def test_both_device_targets_require_fixed_source_binding_file(self):
+        for board,target in [('bk7258_v3_202405','bk7258'),('devkit','esp32s3')]:
+            manifest=dict(role='app',board=board,target=target,version='v1',image_size='42',image_sha256='c'*64)
+            inputs=dict(ca_sha256='d'*64,epoch_ms=123,session_prefix='a'*32)
+            binding=dict(package_sha256='b'*64,manifest=manifest,fixture_inputs=inputs,source_commit='e'*40,source_dirty=False)
+            with tempfile.TemporaryDirectory() as directory:
+                with self.assertRaisesRegex(AssertionError,'fixed-source'):load_package_binding(directory,manifest,'b'*64,inputs)
+                Path(directory,'package-binding.json').write_text(json.dumps(binding))
+                self.assertEqual(load_package_binding(directory,manifest,'b'*64,inputs),binding)
+    def test_distinct_tls_case_identity_and_reason_are_required(self):
+        execution=boot_ledger(self.good,self.ids,'v1')
+        events=[dict(run=self.execution,succeeded=False,finished=True,client_hello=True,certificate_presented=True,
+                     server_name='localhost',error=dict(reason='TLSV1_ALERT_UNKNOWN_CA')),
+                dict(run=self.execution,succeeded=False,finished=True,client_hello=True,certificate_presented=True,
+                     server_name='wrong-name.invalid',error=dict(reason='SSLV3_ALERT_BAD_CERTIFICATE'))]
+        receipt=dict(inputs=dict(ca_sha256='c'*64,epoch_ms=123,advertised='127.0.0.1'),
+                     runs={self.execution:dict(verified=True,session=self.execution,active_clients=0,retained_messages=0,tls_handshakes=events)})
+        verify_witness(receipt,execution)
+        for reason in ['TLSV1_ALERT_UNKNOWN_CA','UNEXPECTED_EOF_WHILE_READING',None]:
+            old=events[1]['error']['reason'];events[1]['error']['reason']=reason
+            with self.assertRaises(AssertionError):verify_witness(receipt,execution)
+            events[1]['error']['reason']=old
+        for key,value in [('server_name','localhost'),('run','other'),('certificate_presented',False)]:
+            old=events[1][key];events[1][key]=value
+            with self.assertRaises(AssertionError):verify_witness(receipt,execution)
+            events[1][key]=old
+        del events[1]['server_name']
+        with self.assertRaises(AssertionError):verify_witness(receipt,execution)
     def test_complete(self):
         self.assertEqual(boot_ledger(self.good,self.ids,'v1')['boot']['id'],self.execution)
     def test_native_non_utf8_noise_keeps_raw_hash_and_complete_records(self):

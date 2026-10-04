@@ -81,12 +81,12 @@ static void run(void *user) {
     if (rc == H2_PAL_OK && result.cleanup != H2_PAL_OK) rc = result.cleanup;
     result.rc = rc;
     int confirm = rc == H2_PAL_OK ? h2_esp_h2loader_app_confirm(runtime) : H2_PAL_ERR_INVALID_STATE;
-    for (;;) {
-        h2_mqtt_device_replay(runtime, &result);
-        printf("H2_PAL_MQTT_READY board=devkit rc=%d confirm=%d provider_cleanup=%d\n", rc, confirm, provider_cleanup);
-        fflush(stdout);
-        vTaskDelay(pdMS_TO_TICKS(5000u));
-    }
+    /* One immutable terminal ledger per boot. Later replay cannot replace an
+     * incomplete first capture in the independent host admission. */
+    h2_mqtt_device_replay(runtime, &result);
+    printf("H2_PAL_MQTT_READY board=devkit rc=%d confirm=%d provider_cleanup=%d\n", rc, confirm, provider_cleanup);
+    fflush(stdout);
+    hold();
 }
 void app_main(void) {
     puts("H2_PAL_MQTT_PLATFORM_BOOT board=devkit");

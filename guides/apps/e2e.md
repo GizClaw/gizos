@@ -246,6 +246,8 @@ iOS/Android 消费实际 SDK 包导出的显式 MQTT owner；owner 持有本平�
 
 Desktop 直接运行 `//projects/e2e/targets/cc_binary/pal-mqtt:desktop_test`；移动端分别使用 `//projects/e2e/targets/ios_application/pal-mqtt:ios_pal_mqtt_simulator_test` 和 `//projects/e2e/targets/android_binary/pal-mqtt:android_pal_mqtt_simulator_test`。公网 `:public_broker_test` 为 `manual`/`external`，同一 App 的单个 QoS0 round trip 只授予该子集通过，不能代替完整 registry。连接成功但没有 CONNACK 的负例预算由 launcher 注入，仍须 broker 实际观察到 CONNECT，并验证有限 deadline 的上下界；未到达 broker 的 TCP timeout 不满足该负例。入口、命令与平台能力边界见 `projects/e2e/apps/pal-mqtt/README.md`；缺少 raw TCP/TLS MQTT provider 的 Browser 保持明确 unsupported，不能把 host 结果当作六平台资格。
 
+新硬件 capture 的 BK/DevKit 均须 fixed-source package binding；首份 RUN 不完整时后续 replay 不能替代。DevKit 每 boot 只发送一次终态 ledger；BK 先完整交付 READY(confirm=pending)，再确认 App 并交付实际 CONFIRMED，缺少任一终态均不授予资格。TLS 拒绝分别绑定实际 CA/hostname alert 与 server-name，两个同类失败不算两种覆盖。旧资格保留原 host/verifier/fixture schema，不能改称当前修订版 hardware PASS。
+
 ## PAL Crypto E2E
 
 `projects/e2e/apps/pal-crypto` 独立覆盖 Crypto PAL 的 15 个操作和 22 个必选 case。macOS、WASM、iOS、Android、DevKit、BK7258 的入口分别位于 `targets/cc_binary/pal-crypto`、`targets/pkg_tar/pal-crypto`、`targets/ios_application/pal-crypto`、`targets/android_binary/pal-crypto` 和 `targets/h2loader_tar_zlib/pal-crypto/{devkit,bk7258_v3_202405}`。结果必须含完整 case ledger，全部 PASS 且 failed/blocked/not_run/rc 为零才 qualified。Host/browser/mobile runner 使用外部超时，设备有独立诊断 watchdog 并保留 H2Loader 串口服务；设备 replay 只重放当前 boot 的不可变结果，不算新执行。

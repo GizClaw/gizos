@@ -104,6 +104,7 @@ def boot_ledger(text, ids, version, previous=None):
                     raise AssertionError('invalid fresh execution nonce')
             continue
         if 'H2_PAL_MQTT_RUN ' in line:
+            assert run is None, 'later replay cannot replace the first ledger'
             run = fields(line.split('H2_PAL_MQTT_RUN ', 1)[1]); rows = []; summary = accepted = None
             assert boot is not None and run == boot, 'replay does not belong to latest complete boot identity'
             assert run['id'] != previous, 'previous boot receipt replayed'
@@ -121,14 +122,22 @@ def boot_ledger(text, ids, version, previous=None):
             assert len(summary['before']) == 10 and summary['before'] == summary['after'], 'native resource leak'
         elif 'H2_PAL_MQTT_READY ' in line:
             ready = fields(line.split('H2_PAL_MQTT_READY ', 1)[1])
-            assert ready.get('rc') == '0' and ready.get('confirm') == '0', 'not admitted'
+            assert ready.get('rc') == '0' and ready.get('confirm') in ('0', 'pending'), 'not admitted'
             if ready.get('board') == 'devkit':
                 assert ready.get('provider_cleanup') == '0', 'ESP portable provider not released'
             assert summary is not None, 'ready without latest complete ledger'
+            assert accepted is None, 'duplicate terminal ledger'
             accepted = dict(boot=boot, cases=rows.copy(), summary=summary, ready=ready)
+        elif 'H2_PAL_MQTT_CONFIRMED ' in line:
+            assert accepted is not None and 'confirmation' not in accepted, 'duplicate or premature confirmation'
+            confirmation = fields(line.split('H2_PAL_MQTT_CONFIRMED ', 1)[1])
+            assert accepted is not None and accepted['ready'].get('confirm') == 'pending', 'confirmation without delivered READY'
+            assert accepted['ready'].get('board') == confirmation.get('board') == 'bk7258' and confirmation.get('rc') == '0', 'app confirmation failed'
+            accepted['confirmation'] = confirmation
         if re.search(r'panic|hard fault|assert failed|H2_PAL_MQTT_SETUP_FAIL', line, re.I):
             raise AssertionError('boot/runtime failure')
     assert accepted is not None, 'latest boot/replay has no complete fresh MQTT qualification'
+    assert accepted['ready'].get('confirm') != 'pending' or 'confirmation' in accepted, 'missing post-READY confirmation'
     return accepted
 
 def package_manifest(package):
@@ -165,6 +174,21 @@ def verify_witness(receipt, execution):
     rejected = [event for event in run['tls_handshakes'] if not event['succeeded']]
     assert len(rejected) == 2 and all(event['run'] == boot['id'] and event['finished'] and event['client_hello'] and
                                     event['certificate_presented'] for event in rejected), 'TLS rejection proof crossed boot identity'
+    reasons = {'TLSV1_ALERT_UNKNOWN_CA': 'tls-untrusted', 'SSLV3_ALERT_BAD_CERTIFICATE': 'tls-wrong-name'}
+    observed = {}
+    for event in rejected:
+        case = reasons.get(event.get('error', {}).get('reason'))
+        assert case and case not in observed, 'missing or duplicate distinct TLS rejection reason'
+        assert 'server_name' in event, 'missing actual TLS server-name observation'
+        if case == 'tls-wrong-name':
+            assert event['server_name'] == 'wrong-name.invalid', 'wrong-name rejection belongs to another handshake'
+        else:
+            assert event['server_name'] in (None, 'localhost', receipt['inputs']['advertised']), 'untrusted CA rejection used wrong hostname'
+        row = next((row for row in execution['cases'] if row['id'] == case), None)
+        assert row and row['status'] == 'PASS' and row['detail'] == 0, 'TLS handshake has no matching device assertion'
+        observed[case] = event
+    assert set(observed) == {'tls-untrusted', 'tls-wrong-name'}, 'missing distinct TLS rejection cases'
+
 
 def coredump_preserved(before, after, original=None, current=None):
     assert before == after and before.get('result') == 'OK' and before.get('code') == '0'
@@ -183,6 +207,13 @@ def package_binding(binding, manifest, package_sha, inputs):
     assert binding['fixture_inputs'] == inputs, 'fixture inputs differ from installed package binding'
     assert re.fullmatch('[0-9a-f]{40}', binding.get('source_commit', '')), 'missing actual artifact source'
     assert binding.get('source_dirty') is False, 'artifact source not fixed before build'
+
+def load_package_binding(directory, manifest, package_sha, inputs):
+    path = Path(directory)/'package-binding.json'
+    assert path.is_file(), 'device execution requires its fixed-source package-binding.json'
+    binding=json.loads(path.read_text())
+    package_binding(binding,manifest,package_sha,inputs)
+    return binding
 
 def main():
     parser=argparse.ArgumentParser()
@@ -223,12 +254,7 @@ def main():
     dump_sha=coredump_preserved(dumped_before,dumped_after,original,current)
     peer=json.loads((directory/'fixture-receipt.json').read_text())
     for execution in (first,second):verify_witness(peer,execution)
-    binding=None
-    if (directory/'package-binding.json').is_file():
-        binding=json.loads((directory/'package-binding.json').read_text())
-        package_binding(binding,manifest,sha,peer['inputs'])
-    elif manifest['target']=='esp32s3':
-        raise AssertionError('ESP execution requires its fixed-source package-binding.json')
+    binding=load_package_binding(directory,manifest,sha,peer['inputs'])
     report=dict(manifest=manifest,package_sha256=sha,uid=uid,port=port,managed=first,normal=second,
         before_status=before,after_status=after,coredump_status=dumped_after,coredump_sha256=dump_sha,
         fixture_inputs=peer['inputs'],commands=commands,registry_sha256=hashlib.sha256(args.registry.read_bytes()).hexdigest(),

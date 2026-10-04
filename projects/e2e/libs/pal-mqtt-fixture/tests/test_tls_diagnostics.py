@@ -34,6 +34,25 @@ class TLSDiagnosticsTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'TLS rejection lacks two real certificate handshakes'):
                 fixture.verify()
 
+    def test_real_rejections_record_distinct_case_names_and_tls_alerts(self):
+        with tempfile.TemporaryDirectory() as directory, Fixture(directory) as fixture:
+            for ca,name,reason in [(fixture.wrong_ca,'localhost','TLSV1_ALERT_UNKNOWN_CA'),
+                                   (fixture.ca,'wrong-name.invalid','SSLV3_ALERT_BAD_CERTIFICATE')]:
+                context=ssl.create_default_context(cafile=str(ca))
+                previous=len(fixture.tls.handshake_snapshot())
+                with socket.create_connection(('127.0.0.1',fixture.tls.port)) as raw:
+                    with self.assertRaises(ssl.SSLCertVerificationError):context.wrap_socket(raw,server_hostname=name)
+                deadline=time.monotonic()+3
+                while time.monotonic()<deadline:
+                    rows=fixture.tls.handshake_snapshot()
+                    if len(rows)>previous and rows[-1]['finished']:break
+                    time.sleep(0.01)
+                self.assertGreater(len(rows),previous)
+                self.assertEqual(rows[-1]['server_name'],name)
+                self.assertEqual(rows[-1]['error']['reason'],reason)
+                self.assertTrue(rows[-1]['client_hello'] and rows[-1]['certificate_presented'])
+                self.assertFalse(rows[-1]['succeeded'])
+
     def test_trusted_handshake_preserves_default_budget_and_records_real_tls_messages(self):
         with tempfile.TemporaryDirectory() as directory, Fixture(directory) as fixture:
             context = ssl.create_default_context(cafile=str(fixture.ca))

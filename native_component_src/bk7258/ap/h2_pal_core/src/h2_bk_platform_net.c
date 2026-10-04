@@ -23,15 +23,6 @@
 #define H2_BK_NET_TLS_ALPN_LEN 16u
 #define H2_BK_NET_RESOLVER_MAX 8u
 
-#if defined(H2_BK_MQTT_NET_DIAGNOSTICS) && H2_BK_MQTT_NET_DIAGNOSTICS
-static void tcp_failure(const char *stage, int fd, int rc, int error, int socket_error) {
-    printf("H2_PAL_MQTT_TCP_FAILURE stage=%s fd=%d rc=%d errno=%d socket_error=%d\r\n",
-        stage, fd, rc, error, socket_error);
-}
-#else
-#define tcp_failure(stage, fd, rc, error, socket_error) ((void)0)
-#endif
-
 typedef enum bk_net_tls_socket_state {
     BK_NET_TLS_SOCKET_FREE = 0,
     BK_NET_TLS_SOCKET_ACTIVE,
@@ -913,20 +904,17 @@ static h2_pal_result_t bk_net_tcp_connect(
     if (flags < 0 || fcntl(socket_fd, F_SETFL, flags | O_NONBLOCK) < 0) {
         return H2_PAL_ERR_IO;
     }
-    int connected = connect(socket_fd, (struct sockaddr *)&storage, sock_len);
-    int connect_error = errno;
-    if (connected == 0 || connect_error == EISCONN) {
+    if (connect(socket_fd, (struct sockaddr *)&storage, sock_len) == 0 ||
+        errno == EISCONN) {
         (void)fcntl(socket_fd, F_SETFL, flags & ~O_NONBLOCK);
         return H2_PAL_OK;
     }
-    if (connect_error != EINPROGRESS && connect_error != EALREADY && connect_error != EINTR) {
-        tcp_failure("connect", socket_fd, connected, connect_error, 0);
+    if (errno != EINPROGRESS && errno != EALREADY && errno != EINTR) {
         (void)fcntl(socket_fd, F_SETFL, flags);
         return H2_PAL_ERR_IO;
     }
     rc = wait_fd(socket_fd, 1, timeout_ms);
     if (rc != H2_PAL_OK) {
-        tcp_failure("connect_wait", socket_fd, rc, errno, 0);
         if (rc != H2_PAL_ERR_TIMEOUT && rc != H2_PAL_ERR_WOULD_BLOCK) {
             (void)fcntl(socket_fd, F_SETFL, flags);
         }
@@ -934,9 +922,7 @@ static h2_pal_result_t bk_net_tcp_connect(
     }
     int so_error = 0;
     socklen_t so_error_len = sizeof(so_error);
-    int queried = getsockopt(socket_fd, SOL_SOCKET, SO_ERROR, &so_error, &so_error_len);
-    if (queried < 0 || so_error != 0) {
-        tcp_failure("connect_socket_error", socket_fd, queried, errno, so_error);
+    if (getsockopt(socket_fd, SOL_SOCKET, SO_ERROR, &so_error, &so_error_len) < 0 || so_error != 0) {
         (void)fcntl(socket_fd, F_SETFL, flags);
         return H2_PAL_ERR_IO;
     }
@@ -1143,7 +1129,6 @@ static int bk_net_tcp_send_timeout(
             return H2_PAL_ERR_CLOSED;
         }
         if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
-            tcp_failure("send", socket_fd, sent, errno, 0);
             return bk_net_socket_error();
         }
         if (timeout_ms == 0u) {
@@ -1215,7 +1200,6 @@ static int bk_net_tcp_recv(
         if (got > 0) return got;
         if (got == 0) return H2_PAL_ERR_CLOSED;
         if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
-            tcp_failure("recv", socket_fd, got, errno, 0);
             return bk_net_socket_error();
         }
         if (timeout_ms == 0u) return H2_PAL_ERR_WOULD_BLOCK;

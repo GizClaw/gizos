@@ -228,8 +228,15 @@ class Broker:
         self.current_run_by_peer = {}
         if context:
             context._msg_callback = self.tls_message
+            context.set_servername_callback(self.tls_server_name)
         self.thread = threading.Thread(target=self.accept, daemon=True)
         self.thread.start()
+
+    def tls_server_name(self, connection, server_name, context):
+        event = getattr(connection, 'h2_event', None)
+        if event is not None:
+            with self.lock:
+                event['server_name'] = server_name
 
     def tls_message(self, connection, direction, version, content_type, message_type, data):
         event = getattr(connection, 'h2_event', None)
@@ -370,6 +377,13 @@ class Fixture:
             if len(rejected) != 2 or any(not event['finished'] or not event['client_hello'] or
                                        not event['certificate_presented'] for event in rejected):
                 raise RuntimeError('TLS rejection lacks two real certificate handshakes')
+            by_reason = {event.get('error', {}).get('reason'): event for event in rejected}
+            if set(by_reason) != {'TLSV1_ALERT_UNKNOWN_CA', 'SSLV3_ALERT_BAD_CERTIFICATE'}:
+                raise RuntimeError('TLS rejection requires distinct untrusted-CA and wrong-name alerts')
+            if by_reason['SSLV3_ALERT_BAD_CERTIFICATE'].get('server_name') != 'wrong-name.invalid' or \
+                'server_name' not in by_reason['TLSV1_ALERT_UNKNOWN_CA'] or \
+                by_reason['TLSV1_ALERT_UNKNOWN_CA']['server_name'] not in (None, 'localhost', self.advertised):
+                raise RuntimeError('TLS rejection server-name does not match its case')
             required = {'publish-qos0': 'publish', 'publish-qos1': 'incoming-puback',
                         'authenticated': 'connect', 'auth-refused': 'auth-refused',
                         'connect-timeout': 'connect', 'unsubscribe-ack': 'unsubscribe',

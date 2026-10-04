@@ -3,7 +3,7 @@
 
 /* Fault injection for the launcher policy, not a mocked MQTT E2E provider. */
 static int configure_rc, write_rc, restart_rc, drain_rc;
-static int configures, writes, drains, releases, restarts;
+static int configures, writes, drains, releases, restarts, confirms, confirm_rc, terminal_write_rc;
 static size_t accepted, last_length;
 static char last_record[1024];
 static int configure(void *user,const h2_pal_uart_io_stream_config_t *config){
@@ -24,12 +24,19 @@ static void release(void){++releases;assert(!restarts);}
 static int restart(void *user){(void)user;++restarts;return restart_rc;}
 static void reset(h2_mqtt_bk_ledger_console_t *console){
     memset(console,0,sizeof(*console));configure_rc=write_rc=restart_rc=drain_rc=0;
-    configures=writes=drains=releases=restarts=0;accepted=1024u;last_length=0;
+    configures=writes=drains=releases=restarts=confirms=confirm_rc=terminal_write_rc=0;accepted=1024u;last_length=0;
 }
 static void start(h2_mqtt_bk_ledger_console_t *console){
     assert(h2_mqtt_bk_console_begin(console,&uart,460800u,5000u)==H2_PAL_OK);
     assert(configures==1 && console->owned && console->writable);
     assert(!h2_mqtt_bk_console_can_confirm(console,H2_PAL_OK));
+}
+static int confirm(void *user){
+    (void)user;++confirms;
+    const char ready[]="H2_PAL_MQTT_READY board=bk7258 rc=0 confirm=pending\r\n";
+    assert(last_length==sizeof(ready)-1u && memcmp(last_record,ready,last_length)==0);
+    write_rc=terminal_write_rc;
+    return confirm_rc;
 }
 int main(void){
     h2_mqtt_bk_ledger_console_t console;
@@ -70,5 +77,28 @@ int main(void){
     reset(&console);start(&console);
     assert(h2_mqtt_bk_console_record(&console,"one\ntwo")==H2_PAL_ERR_INVALID_ARG && writes==0);
     assert(h2_mqtt_bk_console_restore(&console,drain,release,restart,NULL)==0 && releases==1 && restarts==1);
+    reset(&console);start(&console);
+    assert(h2_mqtt_bk_console_restore(&console,drain,release,restart,NULL)==0);
+    accepted=3u;
+    assert(h2_mqtt_bk_console_finish(&console,0,confirm,NULL)==H2_PAL_ERR_IO && confirms==0);
+    reset(&console);start(&console);
+    assert(h2_mqtt_bk_console_restore(&console,drain,release,restart,NULL)==0);
+    write_rc=H2_PAL_ERR_TIMEOUT;
+    assert(h2_mqtt_bk_console_finish(&console,0,confirm,NULL)==H2_PAL_ERR_TIMEOUT && confirms==0);
+    reset(&console);start(&console);
+    assert(h2_mqtt_bk_console_restore(&console,drain,release,restart,NULL)==0);
+    assert(h2_mqtt_bk_console_finish(&console,0,confirm,NULL)==0 && confirms==1 && writes==2);
+    assert(memcmp(last_record,"H2_PAL_MQTT_CONFIRMED board=bk7258 rc=0",37u)==0);
+    reset(&console);start(&console);
+    assert(h2_mqtt_bk_console_restore(&console,drain,release,restart,NULL)==0);
+    confirm_rc=H2_PAL_ERR_IO;
+    assert(h2_mqtt_bk_console_finish(&console,0,confirm,NULL)==H2_PAL_ERR_IO && confirms==1);
+    reset(&console);start(&console);
+    assert(h2_mqtt_bk_console_restore(&console,drain,release,restart,NULL)==0);
+    terminal_write_rc=H2_PAL_ERR_TIMEOUT;
+    assert(h2_mqtt_bk_console_finish(&console,0,confirm,NULL)==H2_PAL_ERR_TIMEOUT && confirms==1);
+    reset(&console);start(&console);
+    assert(h2_mqtt_bk_console_restore(&console,drain,release,restart,NULL)==0);
+    assert(h2_mqtt_bk_console_finish(&console,H2_PAL_ERR_IO,confirm,NULL)==H2_PAL_ERR_IO && confirms==0);
     return 0;
 }
