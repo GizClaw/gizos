@@ -15,6 +15,8 @@ import signal
 import tarfile
 import zlib
 
+STARTUP_MARKER = r'H2_\w*(?:BOOT|STARTUP)(?:\b|_[A-Z_]+\b)|\bBooting\b|^ESP-ROM:|^rst:0x[0-9a-f]+'
+
 def fields(text):
     return dict(re.findall(r'(\w+)=([^\s]+)', text))
 
@@ -64,7 +66,7 @@ def after_accepted_reboot(text, target):
     remainder = text[markers[0].end():]
     # Serial buffers may still carry the old App's partial replay after its ACK.
     # Only the subsequent actual startup can begin the requested boot ledger.
-    startup = re.search(r'H2_\w*(?:BOOT|STARTUP)\b|\bBooting\b', remainder)
+    startup = re.search(STARTUP_MARKER, remainder, re.MULTILINE)
     assert startup is not None, 'no actual startup after accepted reboot'
     return remainder[startup.start():]
 
@@ -73,7 +75,7 @@ def boot_ledger(text, ids, version, previous=None):
     rows = []
     text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
     for line in text.splitlines():
-        if re.search(r'H2_\w*(?:BOOT|STARTUP)\b|\bBooting\b', line):
+        if re.search(STARTUP_MARKER, line):
             boot = run = summary = accepted = None
             rows = []
             if 'H2_PAL_MQTT_BOOT ' in line:
