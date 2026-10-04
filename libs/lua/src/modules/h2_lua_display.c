@@ -1448,6 +1448,45 @@ static int material_clip_row(const material_edge_t *edges,
   return 1;
 }
 
+/* Preserve edge order at equal X. Reversing a descending sequence also
+ * reverses its equal-X groups, so restore those groups before sweeping. */
+static void material_reverse_events(material_event_t *events,
+                                     unsigned first, unsigned end) {
+  while (first < end && first < --end) {
+    material_event_t value = events[first];
+    events[first++] = events[end];
+    events[end] = value;
+  }
+}
+
+static void material_sort_events(material_event_t *events, unsigned count) {
+  int ascending = 1, descending = 1;
+  for (unsigned i = 1; i < count; ++i) {
+    ascending &= events[i-1].x <= events[i].x;
+    descending &= events[i-1].x >= events[i].x;
+    if (!ascending && !descending) break;
+  }
+  if (ascending) return;
+  if (descending) {
+    material_reverse_events(events, 0, count);
+    for (unsigned first = 0; first < count;) {
+      unsigned end = first + 1;
+      while (end < count && events[end].x == events[first].x) ++end;
+      material_reverse_events(events, first, end);
+      first = end;
+    }
+    return;
+  }
+  for (unsigned i = 1; i < count; ++i) {
+    material_event_t value = events[i];
+    unsigned at = i;
+    while (at && events[at-1].x > value.x) {
+      events[at] = events[at-1]; --at;
+    }
+    events[at] = value;
+  }
+}
+
 /* Keep scan scratch out of the legacy fallback's call stack. */
 #if defined(_MSC_VER)
 __declspec(noinline)
@@ -1489,17 +1528,14 @@ static int display_raster_material(h2_lua_job_t *job,
         int crossing = material_threshold(e);
         positive = e->direction > 0 ? crossing <= row_left : crossing > row_left;
         if (crossing > row_left && crossing < row_right) {
-          unsigned at = used++;
-          while (at && events[at-1].x > crossing) {
-            events[at] = events[at-1]; --at;
-          }
-          events[at] = (material_event_t){(int)crossing, (int)i};
+          events[used++] = (material_event_t){(int)crossing, (int)i};
         }
         material_advance(e);
       }
       if (positive) cell[e->axis] += e->direction > 0 ? e->direction : -e->direction;
       if (positive) mask |= e->boundary;
     }
+    material_sort_events(events, used);
     int left = row_left;
     for (unsigned i = 0; i <= used; ++i) {
       int right = i < used ? events[i].x : row_right;
