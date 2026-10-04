@@ -61,7 +61,12 @@ def after_accepted_reboot(text, target):
     assert len(markers) == 1, 'missing or ambiguous actual reboot response'
     reboot = fields(markers[0].group(1))
     assert reboot.get('target') == target and reboot.get('result') == 'accepted', 'requested reboot not accepted'
-    return text[markers[0].end():]
+    remainder = text[markers[0].end():]
+    # Serial buffers may still carry the old App's partial replay after its ACK.
+    # Only the subsequent actual startup can begin the requested boot ledger.
+    startup = re.search(r'H2_\w*(?:BOOT|STARTUP)\b|\bBooting\b', remainder)
+    assert startup is not None, 'no actual startup after accepted reboot'
+    return remainder[startup.start():]
 
 def boot_ledger(text, ids, version, previous=None):
     boot = run = summary = accepted = None
