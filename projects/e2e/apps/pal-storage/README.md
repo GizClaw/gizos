@@ -40,11 +40,13 @@ Desktop 三个生命周期测试的每进程预算为 180 秒，整个 Bazel tes
 
 契约 2 的当前记录见 [qualification-v2.json](qualification-v2.json)：macOS、WASM/Chromium、iOS Simulator、Android Emulator 和 ESP32-S3 DevKit 均完成 36 PASS。各 receipt 绑定自己实际执行的源码 revision 与 artifact SHA，不把后来修复或 metadata 更新重绑到早先记录。iOS 同时核对 XCFramework 与 IPA 的 Storage provider 导出符号及 SDK/可执行文件哈希；Android 核对 APK 的 provider 与实际 AAR 同字节、四个公开 Storage 符号及两个 archive 哈希。DevKit 使用 de68 原包完成 1/2/3/4/4 独立 boot；资格时 P1/coredump 保持、Stage 为空，随后完整恢复原 App 与原非空 Stage并另存恢复状态。Pref App 下 WiFi 查询不可得，原持久设置和连接状态在恢复原 App 后核对不变，RSSI 为观察量。
 
-BK7258 已实际执行且失败，不属于尚未运行：`pal.storage.pref.overwrite-type` 返回 `H2_PAL_ERR_NO_SPACE (-13)`，后续 case 为 BLOCKED。固定 SDK 的单 KV 受 4 KiB logical sector 限制，16 KiB value 无法分配；基础 1537-byte Blob PASS 不能代表 16 KiB 已过。[有效失败记录](evidence/contract2/bk7258-failed.json)及[容量限制证据](evidence/contract2/bk7258-capacity-gap.md)保留原 de68/source、包和镜像身份。未改变 SDK、provider、格式或分区，也未减少 16 KiB/1000 次强度。现有契约 1 六端 30 PASS 仍是历史证据；契约 2 当前是五端通过、BK 容量失败。
+BK7258 R4 镜像 `pref-bk-console-r4-native` 已实际完成原 36 个必选 case 和五次独立 boot `1/2/3/4/4`：[R4 资格](evidence/contract2/bk7258-r4-qualified.json)绑定实际源码 `f7cc80a524795ba42021ecdd6fddf5c50adec134`、包和镜像 SHA，核对 P1 不变、P2 有效、Stage 为空及原非空 32-byte coredump 字节一致。第一轮原 monitor receipt 保留真实受控 SIGINT 退出 130 及原 collector 误拒记录，新增只读 admission 核对原 raw/receipt SHA 和完整 strict ledger；其余各轮也保留真实退出码，不改写成 0。契约 2 当前六个平台均有各自 source/artifact 绑定的 36 PASS；不把 BK R4 源码重绑到移动端或其他早期执行。
+
+旧 de68 执行的 `pal.storage.pref.overwrite-type` 曾真实返回 `H2_PAL_ERR_NO_SPACE (-13)`，4 KiB 单记录容量不足：[原失败](evidence/contract2/bk7258-failed.json)和[容量分析](evidence/contract2/bk7258-capacity-gap.md)保持原源码、包和镜像身份。后续[R2 collector 失败](evidence/contract2/bk7258-r2-capture-failed.json)与[R3 缺失 fresh 的失败](evidence/contract2/bk7258-r3-capture-failed.json)也保留；R3 的 phase 1/replay/confirmed App 不代替五 boot 资格。容量修复保留原 24 KiB/4 KiB Loader 数据格式，开放原物理 FlashDB 分区尾部 104 KiB 作为大值 backing；缓存及 BK native console 时序修复没有降低 16 KiB、4095 字符串或 1000 次覆盖写强度。真实 NOR/fault/旧数据兼容边界见[实现说明](../../../../native_component_src/bk7258/ap/h2_pal_core/tests/README.pref-large.md)。
 
 当前设备资格采集使用 1/2/3/4/4 五次独立 boot，最后两次都重新确认完成状态为空，且不产生新 case。完整 ledger、不可变 replay 及实际 UID/镜像/Loader/coredump 的前后核对方式见 [device verifier](../../libs/pal-storage-device/README.md)；验证器不替代宿主真实 reboot receipts。
 
-契约 2 的 36 case 必须重新取得各平台当前 source/artifact 对应的执行结果。下方以及已提交的 qualification JSON 是契约 1、30 case 的历史证据，不能证明新增 16 KiB、1000 次覆盖写或清理后重启强度已在六端通过。BK 当前不支持空 Blob 和空字符串，而其他 provider 支持；公共 Pref contract 没有统一空值保证，本套件不把此类差异补写成跨平台承诺。正常进程重启也不证明掉电恢复、跨键事务原子性或并发可见性。
+契约 2 的执行结果逐平台保留实际 source/artifact 对应的身份；后续源码变化不能重绑早期 receipt。下方及 `qualification.json` 是契约 1、30 case 的历史证据；新增 16 KiB、1000 次覆盖写及清理后重启强度由独立的 `qualification-v2.json` 与各端 36-case receipt 证明。BK 当前不支持空 Blob 和空字符串，而其他 provider 支持；公共 Pref contract 没有统一空值保证，本套件不把此类差异补写成跨平台承诺。正常进程重启也不证明掉电恢复、跨键事务原子性或并发可见性。
 
 ## 历史实测结果（契约 1）
 
