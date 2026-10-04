@@ -1,0 +1,41 @@
+{
+  "source_commit": "955dcfcef0f5050b4a5a97d7e5e53be71cf0e22c",
+  "source_dirty": false,
+  "package_path": "/Users/idy/.codex/worktrees/mqtt-e2e-qualification/gizos/build/validation/mqtt-esp-9cb20b50-r1/devkit-pal-mqtt-esp32s3.update.tar.zlib",
+  "package_sha256": "563fdb6e9adde23023ededcca5685538cc71a396aca20cccc97894af0ee4fd47",
+  "package_bytes": 992700,
+  "manifest": {
+    "format": "1",
+    "role": "app",
+    "board": "devkit",
+    "target": "esp32s3",
+    "version": "mqtt-esp-abi-r3",
+    "image_size": "1540048",
+    "image_sha256": "f9c30bd870c45ff1299cae93d722044fd98043a4e1cb2a124cd04703c71e9798"
+  },
+  "fixture_inputs": {
+    "bind": "192.168.31.151",
+    "advertised": "192.168.31.151",
+    "tcp_port": 57388,
+    "tls_port": 57389,
+    "session_prefix": "15c6d3d5db02469395e9b3bc5e3f67ca",
+    "epoch_ms": 1791111137224,
+    "ca_sha256": "4bf13f878b84eea1a75344014f805dcfc73e181258b143ed9e747480c8ffb0a5",
+    "wrong_ca_sha256": "669c6296330c1ab2d4fae1f3e55a15d6f137478ed63b45be121af117073f641d",
+    "bazelrc_sha256": "8c7a933eea456277d527d9c97ada7232726b9d75bcb1a2b13b928d3446fa7bc4",
+    "tls_handshake_timeout_seconds": 2.0
+  },
+  "fixture_source": {
+    "source_commit": "ad04417f1b80455ca50963b9acf2f77b486e4ae6",
+    "dirty": false,
+    "files": {
+      "projects/e2e/libs/pal-mqtt-fixture/serve.py": "0ae4bc5406825f222d528b7823dff4ebf0d529e9d46d0ae9d2106da1965ed3f2",
+      "projects/e2e/libs/pal-mqtt-fixture/mqtt_fixture.py": "6915d5b0571edd9c3db6342a29777e458d8d9473beca4ee0c28790dadb5f6c38",
+      "projects/e2e/libs/pal-http-fixture/fixture.py": "54a1304843be8f30f1b1f7351fe870874ba0e7bb409ef6135498b118b5d054cc"
+    },
+    "recorded_at_utc": "2026-10-04T10:52:59.476946+00:00"
+  },
+  "build_log_sha256": "672002fa19cc7de17bccf4a836b65e454afadd02ef14eaf126db1a74988d9f8d",
+  "physical_qualified": false,
+  "recorded_at_utc": "2026-10-04T10:56:05.183021+00:00"
+}
