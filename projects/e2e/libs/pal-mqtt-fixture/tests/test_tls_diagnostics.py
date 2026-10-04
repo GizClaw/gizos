@@ -40,16 +40,22 @@ class TLSDiagnosticsTest(unittest.TestCase):
                                    (fixture.ca,'wrong-name.invalid','SSLV3_ALERT_BAD_CERTIFICATE')]:
                 context=ssl.create_default_context(cafile=str(ca))
                 previous=len(fixture.tls.handshake_snapshot())
-                with socket.create_connection(('127.0.0.1',fixture.tls.port)) as raw:
-                    with self.assertRaises(ssl.SSLCertVerificationError):context.wrap_socket(raw,server_hostname=name)
-                deadline=time.monotonic()+3
-                while time.monotonic()<deadline:
-                    rows=fixture.tls.handshake_snapshot()
-                    if len(rows)>previous and rows[-1]['finished']:break
-                    time.sleep(0.01)
+                with socket.create_connection(('127.0.0.1',fixture.tls.port),timeout=3) as raw:
+                    # Automatic wrap_socket handshakes close on verification
+                    # failure, which can reset the stream before Windows has
+                    # delivered the fatal alert. Keep the real SSL socket open
+                    # until the server has observed the completed handshake.
+                    with context.wrap_socket(raw,server_hostname=name,do_handshake_on_connect=False) as connection:
+                        with self.assertRaises(ssl.SSLCertVerificationError):connection.do_handshake()
+                        deadline=time.monotonic()+3
+                        while time.monotonic()<deadline:
+                            rows=fixture.tls.handshake_snapshot()
+                            if len(rows)>previous and rows[-1]['finished']:break
+                            time.sleep(0.01)
                 self.assertGreater(len(rows),previous)
+                self.assertTrue(rows[-1]['finished'])
                 self.assertEqual(rows[-1]['server_name'],name)
-                self.assertEqual(rows[-1]['error']['reason'],reason)
+                self.assertEqual(rows[-1]['error']['reason'],reason,rows[-1]['error'])
                 self.assertTrue(rows[-1]['client_hello'] and rows[-1]['certificate_presented'])
                 self.assertFalse(rows[-1]['succeeded'])
 
