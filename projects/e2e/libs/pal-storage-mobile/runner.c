@@ -12,7 +12,7 @@ static void record(void *user,const char *id,h2_pal_storage_status_t status,h2_p
 int h2_storage_mobile_phase(h2_runtime_config_t config,unsigned phase,uint32_t nonce,
     const char *path,int (*teardown)(void *),void *owner) {
   FILE *file=fopen(path,"w");if (!file) return H2_PAL_ERR_IO;
-  fprintf(file,"{\"contract\":1,\"phase\":%u,\"nonce\":%u,\"pid\":%ld,\"cases\":[\n",phase,nonce,(long)getpid());
+  fprintf(file,"{\"contract\":%u,\"phase\":%u,\"nonce\":%u,\"pid\":%ld,\"cases\":[\n",H2_PAL_STORAGE_CONTRACT_VERSION,phase,nonce,(long)getpid());
   reporter_t reporter={file,phase,nonce,0};
   h2_runtime_t *runtime=NULL;
   int rc=h2_runtime_init(&config,&runtime),cleanup=H2_PAL_ERR_INVALID_STATE;

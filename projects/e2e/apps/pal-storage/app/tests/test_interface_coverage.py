@@ -18,7 +18,7 @@ class InventoryTest(unittest.TestCase):
         self.assertEqual(len(operations), len(actual))
         self.assertEqual({op["operation"] for op in operations}, actual)
         self.assertEqual(len(actual), manifest["operation_count"])
-        registry = re.findall(r'H2_PAL_STORAGE_CASE\("([^"]+)", ([12])\)', (ROOT / "include/h2_pal_storage_cases.inc").read_text())
+        registry = re.findall(r'H2_PAL_STORAGE_CASE\("([^"]+)", ([123])\)', (ROOT / "include/h2_pal_storage_cases.inc").read_text())
         ids = {name for name, phase in registry}
         self.assertEqual(len(ids), manifest["case_count"])
         self.assertEqual(len(ids), len(registry))
