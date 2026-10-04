@@ -56,6 +56,8 @@ bazel test --config=macos_arm64 --nocache_test_results //projects/e2e/targets/cc
 
 BK 入口为 `//projects/e2e/targets/h2loader_tar_zlib/pal-mqtt/bk7258_v3_202405:package`，使用真实 board Runtime 的 coreMQTT provider，其 incoming/outgoing capacity 是 8/8、allocator 是 `h2_bk_platform_default_allocator()`。Standalone runner 使用 64 KiB PSRAM task。资源测量前停止并 join 独立管理会话，避免正在读取 Pref 的控制缓冲进入 MQTT 基线；原生 SDK console 继续输出 fresh BOOT 和 ledger。成功或失败后都恢复 UART/Wi-Fi command service，stop/restart 错误保持明确 FAIL。Launcher 从编译配置注入精确 IPv4 host/ports、session prefix、CA/wrong CA 与 epoch，每次执行另取真实 Crypto nonce，实际计算 CA SHA256并校准 wall time，36-case 完成和 native resource before/after 严格平衡后才确认 App。
 
+BK SDK console 使用有容量上限的异步日志缓冲。测试 launcher 每条 PAL MQTT 协议记录输出后让出 90 ms，令 console worker 排空记录，再输出后续 ledger/READY；资源快照在 replay 之前完成。严格 verifier 仍拒绝缺行的首个 READY，后续重放不能把这种失败改为通过。
+
 LAN fixture 默认保留 2 秒服务端 TLS 握手预算，可通过 `serve --tls-handshake-timeout` 显式设置硬件诊断预算。Inputs receipt 记录实际预算，实时 receipt 对未合格执行也保留每次握手的 peer、ClientHello/Certificate、TLS 消息、实际耗时和错误；不会把超时或缺少证书交换的连接当成证书拒绝证据。每次改变 fixture 输入都应建立独立 CA/session/epoch/端口与新包，不重写旧执行记录。
 
 2026-10-04 的 BK 实跑记录见 [failed.json](../../targets/h2loader_tar_zlib/pal-mqtt/bk7258_v3_202405/evidence/failed.json)。`mqtt-bk-decc30e1-r5` 保留全部 36 case，可信 TLS 握手与消息往返、错误 CA/hostname 均通过；普通 TCP 的 `connect-events` 与 `remote-disconnect` 在连接阶段返回 IO，最终 34 PASS、2 FAIL。Native counters 从 25/51916 降到 24/51460，属于未满足资源基线平衡，不能直接解释为泄漏。该轮只把 `pal-mqtt` ledger 交给 native SDK console，portable runner 仍通过 PAL Log，生产 Log/Net/MQTT 默认实现未变。此前 r2/r3 的可信 TLS IO、r4 的 36 PASS 重放但初始 BOOT 缺失均保留独立身份；一次 broker 成功或已有重放不能代替完整验收，失败根因尚未确认。

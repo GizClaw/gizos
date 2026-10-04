@@ -22,6 +22,9 @@ static int ledger_log(void *user,h2_pal_log_level_t level,const char *scope,cons
     if(message==NULL)return H2_PAL_ERR_INVALID_ARG;
     if(scope!=NULL && strcmp(scope,"pal-mqtt")==0){
         if(printf("%s\r\n",message)<0 || fflush(stdout)!=0)return H2_PAL_ERR_IO;
+        /* SDK printf enqueues asynchronously. Yield between protocol records
+         * so its console worker can drain the whole ledger before READY. */
+        rtos_delay_milliseconds(90u);
         return H2_PAL_OK;
     }
     return h2_pal_log_write(board_log,level,scope,message);
