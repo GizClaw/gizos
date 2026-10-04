@@ -10,6 +10,10 @@
 #include <mbedtls/sha256.h>
 static h2_runtime_t *runtime;
 static h2_mqtt_device_result_t result;
+#if defined(H2_BK_MEM_DIAGNOSTICS) && H2_BK_MEM_DIAGNOSTICS
+extern void h2_bk_mqtt_mem_mark(void);
+extern void h2_bk_mqtt_mem_report(void);
+#endif
 static const h2_pal_log_api_t *board_log;
 /* The native SDK console owns stdio. Keep the portable runner behind PAL Log,
  * while its boot/ledger lines use the same console path as platform startup. */
@@ -42,9 +46,15 @@ static void run(void *unused){
         if(rc!=H2_PAL_ERR_NOT_FOUND && rc!=H2_PAL_ERR_UNAVAILABLE && rc!=H2_PAL_ERR_TIMEOUT && rc!=H2_PAL_ERR_BUSY)fail("network",rc);
         printf("H2_PAL_MQTT_SETUP_WAIT network=not_ready rc=%d cases_started=0\n",rc);fflush(stdout);rtos_delay_milliseconds(3000u);}
     rc=snapshot(result.before);if(rc!=H2_PAL_OK)fail("before",rc);
+#if defined(H2_BK_MEM_DIAGNOSTICS) && H2_BK_MEM_DIAGNOSTICS
+    h2_bk_mqtt_mem_mark();
+#endif
     /* The real BK Runtime provider selects eight incoming/outgoing records. */
     rc=h2_mqtt_device_run(runtime,8u,ca_digest,NULL,&result);
     int after=snapshot(result.after);
+#if defined(H2_BK_MEM_DIAGNOSTICS) && H2_BK_MEM_DIAGNOSTICS
+    h2_bk_mqtt_mem_report();
+#endif
     result.cleanup=after==H2_PAL_OK && memcmp(result.before,result.after,sizeof(result.before))==0?H2_PAL_OK:H2_PAL_ERR_IO;
     if(rc==H2_PAL_OK && result.cleanup!=H2_PAL_OK)rc=result.cleanup;
     result.rc=rc;
