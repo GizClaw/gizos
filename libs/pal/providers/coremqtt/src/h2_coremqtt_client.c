@@ -226,6 +226,7 @@ static h2_pal_result_t init_core_context(h2_pal_mqtt_client_t *client) {
     memset(&transport, 0, sizeof(transport));
     transport.recv = h2_coremqtt_transport_recv;
     transport.send = h2_coremqtt_transport_send;
+    transport.writev = h2_coremqtt_transport_writev;
     transport.pNetworkContext = &client->network;
     client->fixed_buffer.pBuffer = client->config.network_buffer;
     client->fixed_buffer.size = client->config.network_buffer_len;
@@ -282,6 +283,8 @@ h2_pal_result_t h2_coremqtt_client_open(
     client->network.client = client;
     client->time_api = provider->config.time;
     client->recv_timeout_ms = timeout_or_default(config->operation_timeout_ms, 1000u);
+    client->send_timeout_ms = client->recv_timeout_ms;
+    client->send_result = H2_PAL_OK;
     client->records.outgoing_count = provider->config.outgoing_publish_records;
     client->records.incoming_count = provider->config.incoming_publish_records;
     client->records.outgoing = (MQTTPubAckInfo_t *)h2_pal_mem_alloc(
@@ -391,7 +394,10 @@ h2_pal_result_t h2_coremqtt_client_connect(h2_coremqtt_t *provider, h2_pal_mqtt_
     info.passwordLength = (uint16_t)client->config.password.len;
 
     bool session_present = false;
+    client->send_timeout_ms = timeout_or_default(client->config.connect_timeout_ms, client->config.operation_timeout_ms);
     client->recv_timeout_ms = timeout_or_default(client->config.operation_timeout_ms, client->config.connect_timeout_ms);
+    if (client->recv_timeout_ms > client->send_timeout_ms) client->recv_timeout_ms = client->send_timeout_ms;
+    client->send_result = H2_PAL_OK;
     activate_client_time(client);
     MQTTStatus_t status = MQTT_Connect(
         &client->mqtt,
@@ -399,7 +405,8 @@ h2_pal_result_t h2_coremqtt_client_connect(h2_coremqtt_t *provider, h2_pal_mqtt_
         NULL,
         timeout_or_default(client->config.connect_timeout_ms, client->config.operation_timeout_ms),
         &session_present);
-    rc = h2_coremqtt_status_to_result(status);
+    rc = status == MQTTSendFailed && client->send_result != H2_PAL_OK
+        ? client->send_result : h2_coremqtt_status_to_result(status);
     if (rc != H2_PAL_OK) {
         close_client_socket(provider, client);
         emit_error(client, H2_PAL_MQTT_OPERATION_CONNECT, rc);
@@ -433,9 +440,12 @@ h2_pal_result_t h2_coremqtt_client_disconnect(
         return H2_PAL_ERR_INVALID_STATE;
     }
     client->recv_timeout_ms = timeout_or_default(timeout_ms, client->config.operation_timeout_ms);
+    client->send_timeout_ms = client->recv_timeout_ms;
+    client->send_result = H2_PAL_OK;
     activate_client_time(client);
     MQTTStatus_t status = MQTT_Disconnect(&client->mqtt);
-    rc = h2_coremqtt_status_to_result(status);
+    rc = status == MQTTSendFailed && client->send_result != H2_PAL_OK
+        ? client->send_result : h2_coremqtt_status_to_result(status);
     close_client_socket(provider, client);
     client->connected = 0;
     emit_disconnected(client, H2_PAL_MQTT_DISCONNECT_REASON_LOCAL, rc);
@@ -482,9 +492,12 @@ h2_pal_result_t h2_coremqtt_client_publish(
     info.payloadLength = message->payload.len;
     uint16_t packet_id = message->qos == H2_PAL_MQTT_QOS0 ? 0u : MQTT_GetPacketId(&client->mqtt);
     client->recv_timeout_ms = timeout_or_default(message->timeout_ms, client->config.operation_timeout_ms);
+    client->send_timeout_ms = client->recv_timeout_ms;
+    client->send_result = H2_PAL_OK;
     activate_client_time(client);
     MQTTStatus_t status = MQTT_Publish(&client->mqtt, &info, packet_id);
-    rc = h2_coremqtt_status_to_result(status);
+    rc = status == MQTTSendFailed && client->send_result != H2_PAL_OK
+        ? client->send_result : h2_coremqtt_status_to_result(status);
     if (out_packet_id != NULL && rc == H2_PAL_OK) {
         *out_packet_id = packet_id;
     }
@@ -557,10 +570,13 @@ h2_pal_result_t h2_coremqtt_client_subscribe(
     }
     uint16_t packet_id = MQTT_GetPacketId(&client->mqtt);
     client->recv_timeout_ms = timeout_or_default(request->timeout_ms, client->config.operation_timeout_ms);
+    client->send_timeout_ms = client->recv_timeout_ms;
+    client->send_result = H2_PAL_OK;
     activate_client_time(client);
     MQTTStatus_t status = MQTT_Subscribe(&client->mqtt, infos, request->item_count, packet_id);
     h2_pal_mem_free(provider->config.allocator, infos);
-    rc = h2_coremqtt_status_to_result(status);
+    rc = status == MQTTSendFailed && client->send_result != H2_PAL_OK
+        ? client->send_result : h2_coremqtt_status_to_result(status);
     if (out_packet_id != NULL && rc == H2_PAL_OK) {
         *out_packet_id = packet_id;
     }
@@ -616,10 +632,13 @@ h2_pal_result_t h2_coremqtt_client_unsubscribe(
     }
     uint16_t packet_id = MQTT_GetPacketId(&client->mqtt);
     client->recv_timeout_ms = timeout_or_default(request->timeout_ms, client->config.operation_timeout_ms);
+    client->send_timeout_ms = client->recv_timeout_ms;
+    client->send_result = H2_PAL_OK;
     activate_client_time(client);
     MQTTStatus_t status = MQTT_Unsubscribe(&client->mqtt, infos, request->filter_count, packet_id);
     h2_pal_mem_free(provider->config.allocator, infos);
-    rc = h2_coremqtt_status_to_result(status);
+    rc = status == MQTTSendFailed && client->send_result != H2_PAL_OK
+        ? client->send_result : h2_coremqtt_status_to_result(status);
     if (out_packet_id != NULL && rc == H2_PAL_OK) {
         *out_packet_id = packet_id;
     }
@@ -647,9 +666,12 @@ h2_pal_result_t h2_coremqtt_client_process(
         return H2_PAL_ERR_INVALID_STATE;
     }
     client->recv_timeout_ms = timeout_or_default(timeout_ms, client->config.operation_timeout_ms);
+    client->send_timeout_ms = client->recv_timeout_ms;
+    client->send_result = H2_PAL_OK;
     activate_client_time(client);
     MQTTStatus_t status = MQTT_ProcessLoop(&client->mqtt);
-    rc = h2_coremqtt_status_to_result(status);
+    rc = status == MQTTSendFailed && client->send_result != H2_PAL_OK
+        ? client->send_result : h2_coremqtt_status_to_result(status);
     if (status == MQTTKeepAliveTimeout) {
         client->connected = 0;
         close_client_socket(provider, client);
