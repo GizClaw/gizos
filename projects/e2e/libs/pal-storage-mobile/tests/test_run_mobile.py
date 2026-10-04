@@ -28,6 +28,9 @@ class StorageOracleTest(unittest.TestCase):
         self.assertEqual(report["passed"], 36)
         self.assertEqual(len(report["cases"]), 36)
         self.assertEqual(len(report["completion_replay"]), 2)
+        registry = re.findall(CONTRACT["registry_pattern"], REGISTRY.read_text())
+        self.assertEqual([case["id"] for case in report["cases"]], [name for name, _ in registry])
+        self.assertEqual([phase["phase"] for phase in report["phases"]], [1, 2, 3, 3])
 
     def test_same_process_stale_nonce_or_failed_cleanup_cannot_qualify(self):
         for key, value in (("pid", 100), ("nonce", 41), ("phase", 1), ("contract", 1),
