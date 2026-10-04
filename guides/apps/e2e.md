@@ -233,11 +233,15 @@ Storage 必须分三个独立进程或 boot 执行：seed 阶段执行 31 项并
 
 命令与平台证据见 `projects/e2e/apps/pal-storage/README.md` 和 `qualification-v2.json`。iOS/Android 模拟器直接使用 `//projects/e2e/targets/ios_application/pal-storage:ios_pal_storage_simulator_test` 和 `//projects/e2e/targets/android_binary/pal-storage:android_pal_storage_simulator_test`，显式指定测试设备。外部设备与已启动模拟器的测试是 `manual`，每轮执行关闭测试结果缓存，构建缓存保持启用。历史契约 1 的 30-case 证据保留原始身份，不能代替契约 2 的新增强度；正常重启验证不表示断电原子性或物理介质寿命已验证。
 
+BK 的物理 FlashDB 分区为 128 KiB，其中原 `h2_pref` 保留 24 KiB/4 KiB sector 和已有编码，尾部 `h2_pref_large` 使用剩余 104 KiB。大值以真实 FlashDB 的不可变分片和最后发布的 manifest 保存，读取验证完整 generation，迭代只返回逻辑键和值大小；旧 Loader 的小值和管理数据继续走原区。未知非空尾部拒绝自动格式化。固定 SDK 的 GC/恢复错误由带原文件 SHA 校验的构建 overlay 修复，SDK checkout 不变；真实 NOR 回归和私有实板备份兼容检查分别验证故障恢复和旧值不变。实现及边界见 `native_component_src/bk7258/ap/h2_pal_core/tests/README.pref-large.md`。硬件诊断等待预算不减少 16 KiB、1000 次写入或五次 boot 的要求。
+
 ## PAL MQTT
 
 `projects/e2e/apps/pal-mqtt` 持有 MQTT 八个公开 operation 的固定 36-case registry。Portable App 只借用 Runtime 中的真实 MQTT、Time、Memory 等能力；平台入口拥有 provider、网络端点和 lifecycle。验收覆盖 QoS0/QoS1、匹配 packet ID 的 ACK、多订阅/unsubscribe、二进制与大消息、同步提交后的输入 lifetime、认证拒绝、真实 TLS 的错误 CA/hostname、连接/keepalive timeout、远端断线、reconnect、capacity 恢复和重复 lifecycle。公开 API 没有 cancel，也不声明 QoS2、持久 session replay 或 TLS resumption 已通过。
 
 `projects/e2e/libs/pal-mqtt-fixture` 提供真实 MQTT 3.1.1 wire 对端，维护订阅路由、QoS ACK、retained 状态和各 case 的可控失败行为。TLS 由本轮测试 CA/certificate 提供，错误 CA/hostname 必须同时有真实 ClientHello、Certificate 和失败 handshake 的 witness；可信证书不能取得拒绝证据。Fixture 禁用 session ticket/resumption，所有 MQTT client 必须回到各自 allocation baseline，最后 teardown 检查 client、retained message 和资源清理。受控协议 subset 的通过不表示任意生产 broker 互通已完成。
+
+CoreMQTT 的私有传输在同一配置 deadline 内发送完整向量，继续处理真实短写和 `WOULD_BLOCK`，只计已接受的字节；超时保留 PAL timeout。Connect 使用连接预算，publish/subscribe/unsubscribe/disconnect 使用请求或 operation 预算，process 的短轮询预算保持独立。固定 10 ms 的 vendor 重试间隔不能截断仍在 PAL 操作预算内推进的分段发送。BK 在资源测量前 stop/join 管理会话，完整首份 ledger 通过原生 SDK console 输出后再恢复管理服务和确认 App；资源门槛仍严格比较 before/after。
 
 iOS/Android 消费实际 SDK 包导出的显式 MQTT owner；owner 持有本平台 Net/WolfSSL 引用、四个 incoming/outgoing QoS1 record 和借用 allocator，失败创建须回收已取得的资源，busy destroy 保留 owner 供重试。测试 launcher 显式注入其 MQTT API，AppHost 默认 assembly 保持 canonical unsupported。移动端核对 SDK public header/factory 符号、iOS IPA/XCFramework 或 Android APK/AAR 的实际字节，并检查两次分配失败、全部 36 case、native resource balance 和 provider/core teardown。每轮真实 JSON 配置、CA、registry 与 artifact/hash manifest 保留本轮身份；临时 TLS 输入已清理后不能倒推补造旧证据。
 
