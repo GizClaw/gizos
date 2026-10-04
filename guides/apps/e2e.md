@@ -241,6 +241,8 @@ Storage 必须分三个独立进程或 boot 执行：seed 阶段执行 31 项并
 
 iOS/Android 消费实际 SDK 包导出的显式 MQTT owner；owner 持有本平台 Net/WolfSSL 引用、四个 incoming/outgoing QoS1 record 和借用 allocator，失败创建须回收已取得的资源，busy destroy 保留 owner 供重试。测试 launcher 显式注入其 MQTT API，AppHost 默认 assembly 保持 canonical unsupported。移动端核对 SDK public header/factory 符号、iOS IPA/XCFramework 或 Android APK/AAR 的实际字节，并检查两次分配失败、全部 36 case、native resource balance 和 provider/core teardown。每轮真实 JSON 配置、CA、registry 与 artifact/hash manifest 保留本轮身份；临时 TLS 输入已清理后不能倒推补造旧证据。
 
+硬件独立入口为 `//projects/e2e/targets/h2loader_tar_zlib/pal-mqtt/devkit:package` 与 `//projects/e2e/targets/h2loader_tar_zlib/pal-mqtt/bk7258_v3_202405:package`。DevKit launcher 用真实 ESP Net/MbedTLS 与 PSRAM allocator 创建八个 incoming/outgoing record 的 coreMQTT，并在 suite 结束后销毁 provider、核对其实际 allocation 释放；BK 入口显式启用现有 native coreMQTT 开关，仍使用 board Runtime 的真实 provider。两者都要求受管升级与正常重启两次独立 36-case、对应 broker witness、原 Loader 与 coredump 保留、P2 有效且 Stage 清空。LAN fixture 默认 2 秒 TLS 握手预算，硬件诊断可显式指定其它预算并记录实际耗时和错误；新的 fixture 输入与固件包保持独立身份。
+
 Desktop 直接运行 `//projects/e2e/targets/cc_binary/pal-mqtt:desktop_test`；移动端分别使用 `//projects/e2e/targets/ios_application/pal-mqtt:ios_pal_mqtt_simulator_test` 和 `//projects/e2e/targets/android_binary/pal-mqtt:android_pal_mqtt_simulator_test`。公网 `:public_broker_test` 为 `manual`/`external`，同一 App 的单个 QoS0 round trip 只授予该子集通过，不能代替完整 registry。连接成功但没有 CONNACK 的负例预算由 launcher 注入，仍须 broker 实际观察到 CONNECT，并验证有限 deadline 的上下界；未到达 broker 的 TCP timeout 不满足该负例。入口、命令与平台能力边界见 `projects/e2e/apps/pal-mqtt/README.md`；缺少 raw TCP/TLS MQTT provider 的 Browser 保持明确 unsupported，不能把 host 结果当作六平台资格。
 
 ## PAL Crypto E2E
