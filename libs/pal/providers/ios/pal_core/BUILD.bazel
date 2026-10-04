@@ -125,13 +125,14 @@ objc_library(
 
 cc_library(
     name = "pal_core",
-    hdrs = ["include/h2_ios_platform.h", "include/h2_ios_net.h"],
+    hdrs = ["include/h2_ios_platform.h", "include/h2_ios_net.h", "include/h2_ios_mqtt.h"],
     includes = ["include"],
     target_compatible_with = ["@platforms//os:ios"],
     deps = [
         ":corebluetooth",
         ":http",
         ":net",
+        ":mqtt",
         ":webrtc",
         ":platform",
         ":storage",
@@ -178,7 +179,7 @@ apple_static_xcframework(
 h2_swift_package(
     name = "swift_package",
     xcframework = ":xcframework",
-    headers = ["include/h2_ios_platform.h", "include/h2_ios_net.h", "//libs/pal:pal_header_files", "//libs/pal/providers/yyjson:include/h2_yyjson_json.h"],
+    headers = ["include/h2_ios_platform.h", "include/h2_ios_net.h", "include/h2_ios_mqtt.h", "//libs/pal:pal_header_files", "//libs/pal/providers/yyjson:include/h2_yyjson_json.h"],
     module_name = "H2PALCore",
     version = "2.0.0",
     target_compatible_with = IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY,
@@ -261,4 +262,30 @@ cc_library(
     includes = ["include"],
     target_compatible_with = ["@platforms//os:ios"],
     deps = [":crypto", "//libs/pal:unsupported", "//libs/pal/providers/posix/pal_core:net"],
+)
+
+cc_library(
+    name = "mqtt",
+    srcs = ["src/h2_ios_mqtt.c"],
+    hdrs = ["include/h2_ios_mqtt.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    target_compatible_with = ["@platforms//os:ios"],
+    deps = [":net", "//libs/pal:unsupported", "//libs/pal/providers/coremqtt"],
+)
+
+cc_test(
+    name = "mqtt_owner_lifetime_test",
+    srcs = ["src/h2_ios_mqtt.c", "tests/test_mqtt_owner.c"],
+    hdrs = ["include/h2_ios_mqtt.h", "include/h2_ios_net.h", "include/h2_ios_platform.h"],
+    includes = ["include"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal:unsupported", "//libs/pal/providers/coremqtt"],
 )
