@@ -26,7 +26,6 @@ cc_library(
     includes = ["include"],
     deps = [
         ":tasks",
-        "//libs/pal/providers/wolfssl",
         "//projects/e2e/apps/pal-mqtt/app:pal_mqtt_e2e",
     ],
 )
