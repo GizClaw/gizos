@@ -40,7 +40,6 @@ def boot_ledger(text, registry, version, phase):
         return dict(phase=phase, nonce=nonce, passed=0, completion_rechecked=True, cases=[])
     cases = [json.loads(row) for row in re.findall(r'H2_STORAGE_CASE (\{[^\r\n]+\})', current)]
     unique = {}
-    first_order = []
     for case in cases:
         name = case['id']
         assert name in selected, "unexpected case"
@@ -50,8 +49,6 @@ def boot_ledger(text, registry, version, phase):
             assert case == unique[name], "immutable replay changed"
         else:
             unique[name] = case
-            first_order.append(name)
-    assert first_order == selected, "partial, missing or reordered first ledger"
     reports = [json.loads(row) for row in re.findall(r'H2_STORAGE_PHASE (\{[^\r\n]+\})', current)]
     assert reports, "no terminal phase report"
     for report in reports:
@@ -59,8 +56,28 @@ def boot_ledger(text, registry, version, phase):
                         passed=len(selected), failed=0, blocked=0, cleanup=0, rc=0, control=0)
         assert all(report.get(key) == value for key, value in expected.items()), "invalid phase report"
         assert report == reports[0], "terminal replay changed"
+    # The initial live output may lose individual UART lines. It cannot be
+    # repaired by pooling incomplete replay blocks: one independently framed
+    # replay must contain the entire ordered registry and its terminal report.
+    headers = list(re.finditer(r'H2_STORAGE_BOOT [^\r\n]*', current))
+    boundaries = [0] + [header.end() for header in headers]
+    ends = [header.start() for header in headers] + [len(current)]
+    complete_replays = 0
+    initial_count = 0
+    positions = {name: index for index, name in enumerate(selected)}
+    for index, (start, end) in enumerate(zip(boundaries, ends)):
+        block = current[start:end]
+        observed = [json.loads(row)['id'] for row in re.findall(r'H2_STORAGE_CASE (\{[^\r\n]+\})', block)]
+        order = [positions[name] for name in observed]
+        assert order == sorted(set(order)), "duplicate or reordered ledger block"
+        if index == 0:
+            initial_count = len(observed)
+        elif observed == selected and re.search(r'H2_STORAGE_PHASE (\{[^\r\n]+\})', block):
+            complete_replays += 1
+    assert complete_replays, "no complete ordered independent replay block"
     return dict(phase=phase, nonce=nonce, passed=len(selected), cases=[unique[name] for name in selected],
-                report=reports[0], duplicate_replay_rows=len(cases) - len(selected))
+                report=reports[0], duplicate_replay_rows=len(cases) - len(selected),
+                observed_initial_cases=initial_count, complete_replay_blocks=complete_replays)
 
 
 def verify_run(texts, registry, version):

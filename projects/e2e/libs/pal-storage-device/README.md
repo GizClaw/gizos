@@ -2,7 +2,7 @@
 
 宿主持有设备的显式 port/UID 分配，并保存安装前 status/coredump、实际 package/image checksum、五次独立正常 boot 的命令 receipt，以及安装后的 status/coredump。验证器不扫描、不重启也不写设备；单独的 case ledger 不能证明 UID、镜像、Loader 或 coredump 身份。
 
-当前契约 2 的采集顺序为 phase 1（31 个 seed case）、phase 2（3 个持久化读取及 cleanup case）、phase 3（2 个 cleanup persistence case）、phase 4、phase 4。最后两次只重新确认 empty=1/rc=0，不能产生新的 case 或重复增加通过数。每次 boot 需要实际的 `H2_STORAGE_BOOT contract=2 version=... phase=... nonce=...`，不能用 `replay=1` 代替；若宿主 monitor 到期，保留初始 BOOT 日志并拼接同一次 boot 的后续 replay，直到拿到完整 terminal phase。各 boot 使用同一版本及由版本生成的 nonce；UART 的不可变重放可以重复，但内容不能变化。
+当前契约 2 的采集顺序为 phase 1（31 个 seed case）、phase 2（3 个持久化读取及 cleanup case）、phase 3（2 个 cleanup persistence case）、phase 4、phase 4。最后两次只重新确认 empty=1/rc=0，不能产生新的 case 或重复增加通过数。每次 boot 需要实际的 `H2_STORAGE_BOOT contract=2 version=... phase=... nonce=...`，不能用 `replay=1` 代替；若宿主 monitor 到期或初始输出缺行，保留初始 BOOT 日志并拼接同一次 boot 的后续 replay。phase 1/2/3 必须至少包含一个以 replay BOOT 独立分隔的完整块：本块内按 registry 顺序出现全部 case 和 terminal phase，不能把多个残缺块拼成完整 ledger。所有有效观察行，包括不完整初始输出里的 FAIL，都仍参与身份、结果及不可变性检查。各 boot 使用同一版本及由版本生成的 nonce；UART 的不可变重放可以重复，但内容不能变化。
 
 在仓库根目录运行：
 

@@ -67,11 +67,43 @@ class LedgerTest(unittest.TestCase):
         with self.assertRaises(AssertionError):
             boot_ledger(capture(2) + '\nH2_STORAGE_PHASE ' + json.dumps(report), REGISTRY, VERSION, 2)
 
-    def test_partial_or_reordered_first_ledger_is_rejected(self):
+    def test_gaps_in_initial_output_are_recovered_by_complete_same_boot_replay(self):
+        lines = capture(1).splitlines()
+        boundary = next(index for index, line in enumerate(lines) if 'replay=1' in line)
+        missing = {'pal.storage.fs.clear', 'pal.storage.fs.path-isolation',
+                   'pal.storage.fs.arguments', 'pal.storage.fs.churn', 'pal.storage.pref.u32'}
+        initial = [line for line in lines[:boundary] if not any('"id": "' + name + '"' in line for name in missing)]
+        report = boot_ledger('\n'.join(initial + lines[boundary:]), REGISTRY, VERSION, 1)
+        self.assertEqual(report['passed'], 31)
+        self.assertEqual(report['observed_initial_cases'], 26)
+        self.assertEqual(report['complete_replay_blocks'], 1)
+        self.assertEqual(len(report['cases']), 31)
+
+    def test_incomplete_or_reordered_replay_cannot_rely_on_complete_initial_output(self):
         lines = capture(2).splitlines()
-        for changed in (lines[:1] + lines[2:], [lines[0], lines[2], lines[1], *lines[3:]]):
+        boundary = next(index for index, line in enumerate(lines) if 'replay=1' in line)
+        first = boundary + 1
+        for changed in (lines[:first] + lines[first + 1:],
+                        lines[:first] + [lines[first + 1], lines[first], *lines[first + 2:]]):
             with self.assertRaises(AssertionError):
                 boot_ledger('\n'.join(changed), REGISTRY, VERSION, 2)
+
+    def test_two_partial_replays_cannot_be_pooled_into_a_complete_block(self):
+        lines = capture(2).splitlines()
+        boundary = next(index for index, line in enumerate(lines) if 'replay=1' in line)
+        marker, rows, terminal = lines[boundary], lines[boundary + 1:-1], lines[-1]
+        changed = [*lines[:boundary], marker, rows[0], terminal,
+                   marker, *rows[1:], terminal]
+        with self.assertRaises(AssertionError):
+            boot_ledger('\n'.join(changed), REGISTRY, VERSION, 2)
+
+    def test_complete_replay_does_not_hide_valid_initial_failure(self):
+        lines = capture(1).splitlines()
+        row = json.loads(lines[1].removeprefix('H2_STORAGE_CASE '))
+        row.update(status='FAIL', rc=-13)
+        lines[1] = 'H2_STORAGE_CASE ' + json.dumps(row)
+        with self.assertRaises(AssertionError):
+            boot_ledger('\n'.join(lines), REGISTRY, VERSION, 1)
 
     def test_completion_and_all_five_boots_are_required(self):
         for changed in (capture(4).replace('empty=1', 'empty=0'),
