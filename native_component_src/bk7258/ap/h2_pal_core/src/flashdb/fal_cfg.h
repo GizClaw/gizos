@@ -17,6 +17,8 @@ int h2_bk_pref_large_empty_headers(void);
 #define H2_BK_PREF_LARGE_OWNER_KEY "$h2_large_backing_v1"
 int h2_bk_pref_flash_faulted(void);
 void h2_bk_pref_flash_clear_fault(void);
+void h2_bk_pref_flash_read_begin(void);
+void h2_bk_pref_flash_read_end(void);
 
 #define FAL_PART_HAS_TABLE_CFG
 

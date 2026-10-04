@@ -90,3 +90,35 @@ process. Only counts and canonical SHA256 values are printed; device values and
 private images must never be checked in. Host NOR success is not board
 qualification: the unchanged 36-case Pref contract still needs the new actual BK
 artifact to pass five fresh boots, `1/2/3/4/4`.
+
+
+## Bounded read and route caches
+
+The AP artifact uses the SDK Flash client; CP owns the physical Flash driver.
+FlashDB verifies each KV CRC in 32-byte reads, while each AP read performs both
+READ and READ_DONE mailbox handshakes. The SDK IPC payload is 512 bytes. The FAL
+port now keeps one 512-byte read-ahead window only during a serialized FlashDB
+operation; begin/end, write/erase attempts, read errors and recovery invalidate
+it under the Flash mutex. Filling stops at the current FAL partition boundary,
+never skips CRC verification, and a failed fill still returns I/O. Initialization
+is explicitly scoped before the normal DB callbacks are registered.
+
+A 16-entry volatile cache remembers only a complete logical key and its selected
+DB. It caches both large presence and absence, never a record address, payload or
+type; GC can relocate records without changing that selection. Any large mutation
+attempt, I/O failure or recovery invalidates it before later reads can select an
+old small duplicate. Successful publication can repopulate the known route.
+Namespace snapshots check their prefix before querying large presence, so unrelated
+old keys do not cause full large-DB scans. No on-flash record changes are involved.
+
+The pinned real NOR comparison uses a resident 16 KiB value and 200 consecutive
+4-byte counter replacements. Pre-cache production source `329cbe5f` performs
+441098 hardware reads / 13850774 bytes; the cached source performs 7500 reads /
+3833587 bytes (58.81x fewer hardware calls). This is a call-count result, not a
+board time or qualification claim. Run the comparison with `--compare-baseline`.
+The suite additionally checks a cached miss followed by creation, big-to-small
+overwrite, deletion/clear and a driver error after a complete manifest WRITE flag
+was programmed, ensuring recovery cannot choose the retained old small raw value.
+All previous real NOR faults, private-sample compatibility and ASan remain required.
+Historical r2 board source/package identity must not be rebound to this performance
+change.

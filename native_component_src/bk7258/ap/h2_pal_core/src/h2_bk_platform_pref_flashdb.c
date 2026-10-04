@@ -80,6 +80,9 @@ static void bk_pref_lock_database(fdb_db_t database) {
 
     if (mutex != NULL) {
         (void)rtos_lock_mutex(mutex);
+#ifdef H2_BK_PREF_LARGE_FLASHDB_PATH
+        h2_bk_pref_flash_read_begin();
+#endif
     }
 }
 
@@ -88,9 +91,58 @@ static void bk_pref_unlock_database(fdb_db_t database) {
         (beken_mutex_t *)database->user_data : NULL;
 
     if (mutex != NULL) {
+#ifdef H2_BK_PREF_LARGE_FLASHDB_PATH
+        h2_bk_pref_flash_read_end();
+#endif
         (void)rtos_unlock_mutex(mutex);
     }
 }
+
+#ifdef H2_BK_PREF_LARGE_FLASHDB_PATH
+/* This caches only the selected database, never an on-flash record address.
+ * All callers hold the PAL operation mutex (or initial pool mutex). Large
+ * mutations invalidate before attempting publication, including late failures.
+ */
+#define H2_BK_PREF_ROUTE_CACHE_COUNT 16u
+static struct {
+    char key[H2_BK_PREF_KEY_MAX];
+    fdb_kvdb_t database;
+    uint32_t age;
+} s_pref_route_cache[H2_BK_PREF_ROUTE_CACHE_COUNT];
+static uint32_t s_pref_route_age;
+static void bk_pref_route_invalidate(void) {
+    memset(s_pref_route_cache, 0, sizeof(s_pref_route_cache));
+    s_pref_route_age = 0;
+}
+static uint32_t bk_pref_route_next_age(void) {
+    if (s_pref_route_age == UINT32_MAX) bk_pref_route_invalidate();
+    return ++s_pref_route_age;
+}
+static void bk_pref_route_remember(const char *key, fdb_kvdb_t database) {
+    if (h2_bk_pref_flash_faulted()) { bk_pref_route_invalidate(); return; }
+    size_t selected = 0;
+    for (size_t i = 0; i < H2_BK_PREF_ROUTE_CACHE_COUNT; ++i) {
+        if (s_pref_route_cache[i].database && !strcmp(s_pref_route_cache[i].key, key)) { selected = i; break; }
+        if (!s_pref_route_cache[i].database || s_pref_route_cache[i].age < s_pref_route_cache[selected].age) selected = i;
+    }
+    uint32_t age = bk_pref_route_next_age();
+    (void)snprintf(s_pref_route_cache[selected].key, sizeof(s_pref_route_cache[selected].key), "%s", key);
+    s_pref_route_cache[selected].database = database;
+    s_pref_route_cache[selected].age = age;
+}
+static fdb_kvdb_t bk_pref_route_find(const char *key) {
+    if (h2_bk_pref_flash_faulted()) { bk_pref_route_invalidate(); return NULL; }
+    for (size_t i = 0; i < H2_BK_PREF_ROUTE_CACHE_COUNT; ++i) {
+        if (s_pref_route_cache[i].database && !strcmp(s_pref_route_cache[i].key, key)) {
+            fdb_kvdb_t database = s_pref_route_cache[i].database;
+            uint32_t age = bk_pref_route_next_age();
+            if (s_pref_route_cache[i].database) s_pref_route_cache[i].age = age;
+            return database;
+        }
+    }
+    return NULL;
+}
+#endif
 
 #ifdef H2_BK_PREF_LARGE_FLASHDB_PATH
 #include "h2_bk_pref_large.h"
@@ -123,9 +175,11 @@ static int bk_pref_init_large_database(void) {
     fdb_kvdb_control(&s_pref_large_database, FDB_KVDB_CTRL_SET_NOT_FORMAT, &not_formatable);
     /* Init is serialized by the pool/operation mutex. Install callbacks only
      * after init: SDK's invalid-header exit unlocks without first locking. */
+    h2_bk_pref_flash_read_begin();
     int rc = bk_pref_map_flashdb_error(fdb_kvdb_init(
         &s_pref_large_database, "h2_pref_large", H2_BK_PREF_LARGE_FLASHDB_PATH,
         NULL, &s_pref_database_mutex));
+    h2_bk_pref_flash_read_end();
     if (!rc) {
         fdb_kvdb_control(&s_pref_large_database, FDB_KVDB_CTRL_SET_LOCK, (void *)bk_pref_lock_database);
         fdb_kvdb_control(&s_pref_large_database, FDB_KVDB_CTRL_SET_UNLOCK, (void *)bk_pref_unlock_database);
@@ -139,9 +193,13 @@ static int bk_pref_init_large_database(void) {
  * Old Loader-sized values and their bytes remain in the original KVDB. */
 static fdb_kvdb_t bk_pref_value_database(const char *key) {
 #ifdef H2_BK_PREF_LARGE_FLASHDB_PATH
+    fdb_kvdb_t cached = bk_pref_route_find(key);
+    if (cached) return cached;
     struct fdb_kv item = {0};
-    if (fdb_kv_get_obj(&s_pref_large_database, key, &item))
-        return &s_pref_large_database;
+    fdb_kvdb_t selected = fdb_kv_get_obj(&s_pref_large_database, key, &item)
+        ? &s_pref_large_database : &s_pref_database;
+    bk_pref_route_remember(key, selected);
+    return selected;
 #endif
     (void)key;
     return &s_pref_database;
@@ -154,7 +212,12 @@ static int bk_pref_store_value(const char *key, const void *data, size_t length)
     if (length > H2_BK_PREF_INLINE_MAX) database = &s_pref_large_database;
 #endif
 #ifdef H2_BK_PREF_LARGE_FLASHDB_PATH
-    if (database == &s_pref_large_database) return large_write(key, data, length);
+    if (database == &s_pref_large_database) {
+        bk_pref_route_invalidate();
+        int rc = large_write(key, data, length);
+        if (!rc) bk_pref_route_remember(key, &s_pref_large_database);
+        return rc;
+    }
 #endif
     return bk_pref_map_flashdb_error(fdb_kv_set_blob(
         database, key, fdb_blob_make(&blob, data, length)));
@@ -181,7 +244,9 @@ static int bk_pref_init_database(void) {
         return H2_PAL_ERR_UNAVAILABLE;
     }
 #ifdef H2_BK_PREF_LARGE_FLASHDB_PATH
+    bk_pref_route_invalidate();
     h2_bk_pref_flash_clear_fault();
+    h2_bk_pref_flash_read_begin();
 #endif
     rc = bk_pref_map_flashdb_error(fdb_kvdb_init(
         &s_pref_database,
@@ -190,6 +255,7 @@ static int bk_pref_init_database(void) {
         NULL,
         &s_pref_database_mutex));
 #ifdef H2_BK_PREF_LARGE_FLASHDB_PATH
+    h2_bk_pref_flash_read_end();
     if (rc == H2_PAL_OK) rc = bk_pref_init_large_database();
     if (h2_bk_pref_flash_faulted()) rc = H2_PAL_ERR_IO;
 #endif
@@ -553,6 +619,7 @@ static int bk_pref_remove(h2_pal_pref_namespace_t *base, const char *key) {
         found = 1;
     }
 #ifdef H2_BK_PREF_LARGE_FLASHDB_PATH
+    bk_pref_route_invalidate();
     rc = large_remove(storage_key, &found);
     if (rc) return rc;
 #endif
@@ -711,6 +778,7 @@ static int check_type(h2_pal_pref_namespace_t *base, const char *key,
 }
 #ifdef H2_BK_PREF_LARGE_FLASHDB_PATH
 static int recover_databases(void) {
+    bk_pref_route_invalidate();
     (void)fdb_kvdb_deinit(&s_pref_database);
     (void)fdb_kvdb_deinit(&s_pref_large_database);
     memset(&s_pref_database, 0, sizeof(s_pref_database));
@@ -719,8 +787,10 @@ static int recover_databases(void) {
     /* Never auto-format a damaged legacy sector while handling a write error. */
     bool not_formatable = true;
     fdb_kvdb_control(&s_pref_database, FDB_KVDB_CTRL_SET_NOT_FORMAT, &not_formatable);
+    h2_bk_pref_flash_read_begin();
     int rc = bk_pref_map_flashdb_error(fdb_kvdb_init(&s_pref_database, "h2_pref",
         H2_BK_PREF_FLASHDB_PATH, NULL, &s_pref_database_mutex));
+    h2_bk_pref_flash_read_end();
     if (!rc) {
         fdb_kvdb_control(&s_pref_database, FDB_KVDB_CTRL_SET_LOCK, (void *)bk_pref_lock_database);
         fdb_kvdb_control(&s_pref_database, FDB_KVDB_CTRL_SET_UNLOCK, (void *)bk_pref_unlock_database);
@@ -744,7 +814,7 @@ static int storage_lock(void) {
 }
 static int storage_unlock(int rc) {
 #ifdef H2_BK_PREF_LARGE_FLASHDB_PATH
-  if (h2_bk_pref_flash_faulted()) { s_pref_recovery_required = 1; rc = H2_PAL_ERR_IO; }
+  if (h2_bk_pref_flash_faulted()) { bk_pref_route_invalidate(); s_pref_recovery_required = 1; rc = H2_PAL_ERR_IO; }
 #endif
   (void)rtos_unlock_mutex(&s_pref_operation_mutex);
   return rc;
@@ -976,7 +1046,8 @@ static int snapshot(h2_pal_pref_namespace_t *base, h2_pal_pref_cursor_t **out,
     struct fdb_kv *kv = &iterator.curr_kv;
 #ifdef H2_BK_PREF_LARGE_FLASHDB_PATH
     if (db_index && !strncmp(kv->name, LARGE_CHUNK_PREFIX, sizeof(LARGE_CHUNK_PREFIX) - 1u)) continue;
-    if (!db_index && bk_pref_value_database(kv->name) == &s_pref_large_database) continue;
+    if (!db_index && !strncmp(kv->name, prefix, len) &&
+        bk_pref_value_database(kv->name) == &s_pref_large_database) continue;
 #endif
     char orphan_key[H2_BK_PREF_KEY_MAX];
     int orphan = strncmp(kv->name, prefix, len) != 0;

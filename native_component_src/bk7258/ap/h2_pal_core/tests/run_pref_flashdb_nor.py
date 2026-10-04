@@ -22,6 +22,7 @@ def main():
     parser.add_argument("--fault-point", type=int)
     parser.add_argument("--sample", type=Path)
     parser.add_argument("--sample-sha256")
+    parser.add_argument("--compare-baseline", action="store_true", help="compare actual NOR hardware reads with the pre-cache production source")
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[5]
     component = repo / "native_component_src/bk7258/ap/h2_pal_core"
@@ -57,6 +58,29 @@ def main():
             subprocess.run([str(binary), str(image), phase], check=True, timeout=90)
         for phase in ("fault-seed", "fault", "fault-verify", "unknown-tail"):
             subprocess.run([str(binary), str(Path(tmp) / ("fault.bin" if phase != "unknown-tail" else "unknown.bin")), phase], check=True, timeout=90)
+        subprocess.run([str(binary),str(Path(tmp)/"port-cache.bin"),"port-cache"],check=True,timeout=90)
+        subprocess.run([str(binary),str(Path(tmp)/"port-cache.bin"),"clean"],check=True,timeout=90)
+        subprocess.run([str(binary),str(Path(tmp)/"cache.bin"),"cache"],check=True,timeout=90)
+        subprocess.run([str(binary),str(Path(tmp)/"cache.bin"),"clean"],check=True,timeout=90)
+        if args.compare_baseline:
+            old_root=Path(tmp)/"before-cache-source";old_root.mkdir()
+            for name in ("h2_bk_platform_pref_flashdb.c","h2_bk_platform_pref_flashdb_port.c"):
+                relative="native_component_src/bk7258/ap/h2_pal_core/src/"+name
+                old_root.joinpath(name).write_bytes(subprocess.check_output(["git","-C",str(repo),"show","329cbe5fdf2312b579270609af34913765e479b2:"+relative]))
+            old_binary=Path(tmp)/"pref_nor_before_cache"
+            old_command=[compiler,"-DH2_PREF_NOR_BASELINE","-std=c11","-O1","-g","-Wall","-Wextra","-Wno-unused-parameter",
+                "-I"+str(old_root),*["-I"+str(p) for p in includes],*map(str,compile_sources),
+                str(old_root/"h2_bk_platform_pref_flashdb_port.c"),str(component/"tests/test_h2_bk_pref_real_nor.c"),"-o",str(old_binary)]
+            subprocess.run(old_command,check=True,timeout=60)
+            results=[]
+            for executable,name in ((old_binary,"before"),(binary,"after")):
+                measured=subprocess.run([str(executable),str(Path(tmp)/("profile-"+name+".bin")),"profile"],check=True,text=True,capture_output=True,timeout=90)
+                row=next(json.loads(line.split(" ",1)[1]) for line in measured.stdout.splitlines() if line.startswith("NOR_PROFILE "))
+                results.append(row)
+            assert results[1]["hardware_reads"]*4<results[0]["hardware_reads"],results
+            print(json.dumps({"real_nor_before_cache":results[0],"real_nor_after_cache":results[1],
+                "hardware_read_reduction":results[0]["hardware_reads"]/results[1]["hardware_reads"],
+                "claim":"hardware call count only; not board wall-clock timing"},sort_keys=True))
         baseline = Path(tmp) / "fault-baseline.bin"
         subprocess.run([str(binary), str(baseline), "fault-seed"], check=True, timeout=90)
         points = [args.fault_point] if args.fault_point else list(range(1, 65)) + [80, 100, 150, 200, 350, 500, 800, 1100]

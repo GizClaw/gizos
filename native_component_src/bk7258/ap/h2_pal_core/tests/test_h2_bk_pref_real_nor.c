@@ -17,6 +17,10 @@
 static unsigned char flash[FLASH_SIZE];
 static const char *image_path;
 static unsigned erase_count, write_count;
+static uint64_t hardware_reads, hardware_read_bytes;
+static uint32_t last_hardware_read_end;
+static int fail_manifest_commit;
+static uint32_t manifest_commit_status;
 static int fail_large_write, fault_nth, fault_reached;
 static unsigned hardware_after_fault;
 static int erase_fault_mode, read_fault_once;
@@ -32,6 +36,9 @@ static void bounds(uint32_t address, uint32_t size) {
 }
 bk_err_t bk_flash_read_bytes(uint32_t address, uint8_t *data, uint32_t size) {
   bounds(address, size);
+  ++hardware_reads;
+  hardware_read_bytes += size;
+  last_hardware_read_end = address + size;
   if (read_fault_once) {
     read_fault_once = 0;
     fault_reached = 1;
@@ -64,6 +71,16 @@ bk_err_t bk_flash_write_bytes(uint32_t address, const uint8_t *data,
     flash[address + i] &= bytes[i];
   }
   ++write_count;
+  if (fail_manifest_commit && size == LARGE_MANIFEST_SIZE &&
+      !memcmp(bytes, "H2LGKV1", 8))
+    manifest_commit_status =
+        address - 28u - (uint32_t)strlen((const char *)bytes + 8) + 1u;
+  if (fail_manifest_commit && manifest_commit_status &&
+      address == manifest_commit_status && size == 1u && bytes[0] == 0u) {
+    fail_manifest_commit = 0;
+    fault_reached = 1;
+    return -1; /* physical WRITE flag committed, driver then reports IO */
+  }
   return failed ? -1 : BK_OK;
 }
 bk_err_t bk_flash_erase_sector(uint32_t address) {
@@ -414,9 +431,94 @@ int main(int argc, char **argv) {
     puts("PASS unknown occupied tail is not formatted");
     return 0;
   }
-  legacy_loader(!strcmp(phase, "seed") || !strcmp(phase, "fault-seed"));
+  legacy_loader(!strcmp(phase, "seed") || !strcmp(phase, "fault-seed") ||
+                !strcmp(phase, "profile") || !strcmp(phase, "cache") ||
+                !strcmp(phase, "port-cache"));
   h2_pal_pref_namespace_t *ns = open_ns("nor"), *isolated = open_ns("norother");
-  if (!strcmp(phase, "seed")) {
+#ifndef H2_PREF_NOR_BASELINE
+  if (!strcmp(phase, "port-cache")) {
+    const uint32_t sector = DB_END - 4096u, address = sector + 512u;
+    uint8_t out[32], changed = 0x7fu;
+    h2_bk_pref_flash_read_begin();
+    uint64_t start_reads = hardware_reads;
+    for (unsigned i = 0; i < 8u; ++i) {
+      assert(g_flashdb0.ops.read(address + i * 32u, out, sizeof(out)) ==
+             (int)sizeof(out));
+      for (size_t j = 0; j < sizeof(out); ++j)
+        assert(out[j] == 0xffu);
+    }
+    assert(hardware_reads == start_reads + 1u);
+    assert(g_flashdb0.ops.write(address, &changed, 1u) == 1);
+    assert(g_flashdb0.ops.read(address, out, 1u) == 1 && out[0] == changed);
+    h2_bk_pref_flash_read_end();
+    changed = 0x3fu;
+    assert(bk_flash_write_bytes(address, &changed, 1u) == BK_OK);
+    h2_bk_pref_flash_read_begin();
+    assert(g_flashdb0.ops.read(address, out, 1u) == 1 && out[0] == changed);
+    assert(g_flashdb0.ops.erase(sector, 4096u) == 4096);
+    assert(g_flashdb0.ops.read(address, out, 1u) == 1 && out[0] == 0xffu);
+    assert(g_flashdb0.ops.read(H2_BK_PREF_LARGE_OFFSET - 16u, out, 16u) == 16);
+    assert(last_hardware_read_end == H2_BK_PREF_LARGE_OFFSET);
+    assert(g_flashdb0.ops.read(DB_END - 8u, out, 8u) == 8);
+    assert(last_hardware_read_end == DB_END);
+    h2_bk_pref_flash_read_end();
+    puts("PASS bounded 512 read-ahead/begin/end/write/erase and both partition "
+         "ends");
+  } else
+#endif
+      if (!strcmp(phase, "profile")) {
+    assert(!ns->set_blob(ns, "resident", value, sizeof(value)));
+    assert(!ns->set_u32(ns, "counter", 1u));
+    uint32_t actual = 0;
+    assert(!ns->get_u32(ns, "counter", &actual) && actual == 1u);
+    uint64_t reads_before = hardware_reads, bytes_before = hardware_read_bytes;
+    for (uint32_t i = 0; i < 200u; ++i)
+      assert(!ns->set_u32(ns, "counter", i));
+    printf("NOR_PROFILE "
+           "{\"overwrites\":200,\"hardware_reads\":%llu,\"hardware_bytes\":%"
+           "llu}\n",
+           (unsigned long long)(hardware_reads - reads_before),
+           (unsigned long long)(hardware_read_bytes - bytes_before));
+    assert(!ns->get_u32(ns, "counter", &actual) && actual == 199u);
+    expect_blob(ns, "resident", value, sizeof(value));
+    assert(!ns->clear(ns));
+  } else if (!strcmp(phase, "cache")) {
+    void *out = NULL;
+    size_t length = 0;
+    assert(ns->get_blob(ns, &memory, "route", &out, &length) ==
+               H2_PAL_ERR_NOT_FOUND &&
+           !out && !length);
+    assert(!ns->set_u32(ns, "route", 42u));
+    uint32_t number = 0;
+    assert(!ns->get_u32(ns, "route", &number) && number == 42u);
+    assert(!ns->set_blob(ns, "route", value, sizeof(value)));
+    expect_blob(ns, "route", value, sizeof(value));
+    assert(!ns->set_blob(ns, "route", other, 1537));
+    expect_blob(ns, "route", other, 1537);
+    assert(!ns->remove(ns, "route"));
+    assert(ns->get_blob(ns, &memory, "route", &out, &length) ==
+               H2_PAL_ERR_NOT_FOUND &&
+           !out && !length);
+    assert(!ns->set_u32(ns, "route", 91u));
+    assert(!ns->get_u32(ns, "route", &number) && number == 91u);
+    /* Warm a negative route and then fail AFTER the manifest's WRITE flag is
+     * physically programmed. Old small raw bytes still exist for P1. */
+    fail_manifest_commit = 1;
+    assert(ns->set_blob(ns, "route", value, sizeof(value)) == H2_PAL_ERR_IO);
+    assert(fault_reached && !fail_manifest_commit && !hardware_after_fault);
+    fault_reached = 0;
+    expect_blob(ns, "route", value, sizeof(value));
+    assert(ns->get_u32(ns, "route", &number) == H2_PAL_ERR_INVALID_STATE);
+    assert(!isolated->set_blob(isolated, "route", other, sizeof(other)));
+    assert(!ns->clear(ns));
+    expect_blob(isolated, "route", other, sizeof(other));
+    assert(ns->get_blob(ns, &memory, "route", &out, &length) ==
+               H2_PAL_ERR_NOT_FOUND &&
+           !out && !length);
+    assert(!isolated->clear(isolated));
+    puts("PASS cached miss/create/overwrite/remove/clear and "
+         "failure-after-manifest-commit route recovery");
+  } else if (!strcmp(phase, "seed")) {
     assert(!ns->set_u32(ns, "number", 123));
     assert(!ns->set_blob(ns, "blob", value, sizeof(value)));
     assert(!ns->set_string(ns, "string", text));
