@@ -10,6 +10,8 @@ typedef struct h2_mqtt_device_result {
 } h2_mqtt_device_result_t;
 extern const char h2_pal_mqtt_device_runner_task_name[];
 int h2_mqtt_device_prepare(h2_runtime_t *runtime);
-int h2_mqtt_device_run(h2_runtime_t *runtime, unsigned outgoing_capacity, h2_mqtt_device_result_t *out);
+typedef int (*h2_mqtt_device_digest_fn)(void *user, const uint8_t *bytes, size_t length, uint8_t digest[32]);
+int h2_mqtt_device_run(h2_runtime_t *runtime, unsigned outgoing_capacity,
+    h2_mqtt_device_digest_fn digest, void *digest_user, h2_mqtt_device_result_t *out);
 void h2_mqtt_device_replay(h2_runtime_t *runtime, const h2_mqtt_device_result_t *result);
 #endif

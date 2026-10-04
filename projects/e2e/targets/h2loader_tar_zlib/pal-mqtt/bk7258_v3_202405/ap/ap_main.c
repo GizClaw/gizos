@@ -7,6 +7,7 @@
 #include <os/os.h>
 #include <stdio.h>
 #include <string.h>
+#include <mbedtls/sha256.h>
 static h2_runtime_t *runtime;
 static h2_mqtt_device_result_t result;
 static void hold(void){for(;;)rtos_delay_milliseconds(1000u);}
@@ -17,6 +18,9 @@ static int snapshot(size_t out[10]){
         s.live_conditions,s.live_timers,s.live_firmware_infos,s.allocations,s.allocation_bytes};memcpy(out,values,sizeof(values));}
     return rc;
 }
+static int ca_digest(void *user,const uint8_t *bytes,size_t length,uint8_t digest[32]){
+    (void)user;return mbedtls_sha256(bytes,length,digest,0)==0?H2_PAL_OK:H2_PAL_ERR_IO;
+}
 static void run(void *unused){
     (void)unused;rtos_delay_milliseconds(5000u);
     int rc;
@@ -25,7 +29,7 @@ static void run(void *unused){
         printf("H2_PAL_MQTT_SETUP_WAIT network=not_ready rc=%d cases_started=0\n",rc);fflush(stdout);rtos_delay_milliseconds(3000u);}
     rc=snapshot(result.before);if(rc!=H2_PAL_OK)fail("before",rc);
     /* The real BK Runtime provider selects eight incoming/outgoing records. */
-    rc=h2_mqtt_device_run(runtime,8u,&result);
+    rc=h2_mqtt_device_run(runtime,8u,ca_digest,NULL,&result);
     int after=snapshot(result.after);
     result.cleanup=after==H2_PAL_OK && memcmp(result.before,result.after,sizeof(result.before))==0?H2_PAL_OK:H2_PAL_ERR_IO;
     if(rc==H2_PAL_OK && result.cleanup!=H2_PAL_OK)rc=result.cleanup;

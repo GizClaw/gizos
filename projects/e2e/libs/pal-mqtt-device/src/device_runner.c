@@ -1,6 +1,5 @@
 #include "device_runner.h"
 #include "h2_pal_mqtt_fixture_config.h"
-#include "wolfssl/wolfcrypt/hash.h"
 #include <stdio.h>
 #include <string.h>
 const char h2_pal_mqtt_device_runner_task_name[] = "pal-mqtt/e2e/runner";
@@ -48,8 +47,9 @@ int h2_mqtt_device_prepare(h2_runtime_t *runtime) {
     }
     return rc;
 }
-int h2_mqtt_device_run(h2_runtime_t *runtime, unsigned capacity, h2_mqtt_device_result_t *out) {
-    if(runtime==NULL || out==NULL)return H2_PAL_ERR_INVALID_ARG;
+int h2_mqtt_device_run(h2_runtime_t *runtime, unsigned capacity,
+    h2_mqtt_device_digest_fn hash, void *hash_user, h2_mqtt_device_result_t *out) {
+    if(runtime==NULL || out==NULL || hash==NULL)return H2_PAL_ERR_INVALID_ARG;
     uint8_t *ca=NULL,*wrong=NULL;size_t ca_length=0u,wrong_length=0u;
     int rc=H2_PAL_ERR_INVALID_ARG;
     if(H2_PAL_MQTT_HOST[0]=='\0' || H2_PAL_MQTT_SESSION_PREFIX[0]=='\0' ||
@@ -63,7 +63,7 @@ int h2_mqtt_device_run(h2_runtime_t *runtime, unsigned capacity, h2_mqtt_device_
     encoded(nonce,sizeof(nonce),nonce_hex);
     int count=snprintf(out->execution,sizeof(out->execution),"%s-%s",H2_PAL_MQTT_SESSION_PREFIX,nonce_hex);
     if(count<=0 || (size_t)count>=sizeof(out->execution)){rc=H2_PAL_ERR_INVALID_ARG;goto done;}
-    if(wc_Sha256Hash(ca,(word32)ca_length,digest)!=0){rc=H2_PAL_ERR_IO;goto done;}
+    rc=hash(hash_user,ca,ca_length,digest);if(rc!=H2_PAL_OK)goto done;
     encoded(digest,sizeof(digest),out->ca_sha256);
     out->epoch_ms=H2_PAL_MQTT_FIXTURE_EPOCH_MS;
     rc=h2_pal_time_set_wall_ms(runtime->time,out->epoch_ms);if(rc!=H2_PAL_OK)goto done;
