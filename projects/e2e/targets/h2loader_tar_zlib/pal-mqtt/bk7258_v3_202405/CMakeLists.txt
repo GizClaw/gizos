@@ -33,7 +33,7 @@ if("${ARMINO_SOC}" STREQUAL "${H2_BK_TARGET}_ap")
     __armino_h2_pal_core COMPILE_DEFINITIONS)
   # Fixed, allocation-free diagnostics for the r5 asynchronous owner mismatch.
   # This affects only the standalone artifact and emits after measurement.
-  target_compile_definitions(__armino_h2_pal_core PRIVATE H2_BK_MEM_DIAGNOSTICS=1)
+  target_compile_definitions(__armino_h2_pal_core PRIVATE H2_BK_MEM_DIAGNOSTICS=1 H2_BK_MQTT_NET_DIAGNOSTICS=1)
   target_compile_definitions(__armino_ap PRIVATE H2_BK_MEM_DIAGNOSTICS=1)
   list(FIND H2_MQTT_PLATFORM_DEFINITIONS
     "H2_BK_PLATFORM_CORE_ENABLE_MQTT=1" H2_MQTT_ENABLED_INDEX)
