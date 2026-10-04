@@ -74,6 +74,9 @@ static void run(void *unused){
     result.cleanup=after==H2_PAL_OK && memcmp(result.before,result.after,sizeof(result.before))==0?H2_PAL_OK:H2_PAL_ERR_IO;
     if(rc==H2_PAL_OK && result.cleanup!=H2_PAL_OK)rc=result.cleanup;
     result.rc=rc;
+    /* Emit the first complete ledger before protocol traffic can interleave
+     * with its JSON. Admission still waits for management restoration below. */
+    h2_mqtt_device_replay(runtime,&result);
 restore_commands: ;
     /* Restore management on both successful and failed suite/snapshot outcomes. */
     int commands=h2_bk_h2loader_start_app_iostreamikcp_with_capabilities(runtime,"pal-mqtt",H2_LOADER_CAPABILITY_UART|H2_LOADER_CAPABILITY_WIFI);
@@ -85,7 +88,8 @@ restore_commands: ;
     }
     puts("H2_PAL_MQTT_CONTROL_RESTORED restart=0");fflush(stdout);
     int confirm=rc==H2_PAL_OK?h2_bk_h2loader_confirm_current_app(runtime):H2_PAL_ERR_INVALID_STATE;
-    for(;;){h2_mqtt_device_replay(runtime,&result);printf("H2_PAL_MQTT_READY board=bk7258 rc=%d confirm=%d\n",rc,confirm);fflush(stdout);rtos_delay_milliseconds(5000u);}
+    printf("H2_PAL_MQTT_READY board=bk7258 rc=%d confirm=%d\n",rc,confirm);fflush(stdout);
+    for(;;){rtos_delay_milliseconds(5000u);h2_mqtt_device_replay(runtime,&result);printf("H2_PAL_MQTT_READY board=bk7258 rc=%d confirm=%d\n",rc,confirm);fflush(stdout);}
 }
 static void entry(void *unused){
     (void)unused;puts("H2_PAL_MQTT_PLATFORM_BOOT board=bk7258");fflush(stdout);
