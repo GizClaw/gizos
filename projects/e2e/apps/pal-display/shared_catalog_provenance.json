@@ -7,15 +7,23 @@
     "source_path": "guides/apps/e2e.md",
     "source_sha256": "0b3c34ff5e9f94d73dff968ffa7022043000ee5146a5bd5cef56d58038fb44e9"
   },
+  "pal_guide_extension": {
+    "source_commit": "06f9c0cfa633646984d72f210ba18f889bbec528",
+    "source_path": "guides/zh/developing/platform_abstract_layer.md",
+    "source_sha256": "ae910c4b1fb40afc104ca9de342750db1bad9ff574a8b134f69c4f08dc3ffb74",
+    "addition_source_commit": "93c9578e54f1cd45d8d9bd118372f807e16076f4",
+    "insertion_offset": 72468,
+    "addition_sha256": "e34e59d847676c1d0bca583f8c824a124b1a8cb0dd684b097dcdc25aff429932"
+  },
   "previous_source_sha256": {
     "projects/e2e/apps/pal-display/BUILD.bazel": "16da9aa4077fea942e7c2a098a74ef021e8546f640e63ac994b4f589485161b5",
     "projects/e2e/apps/pal-display/README.md": "d859ca0869851415ea64888815649fb7cf35b492c5c74f73d136ae5dc563c338",
     "projects/e2e/apps/pal-display/check_qualification.py": "c3fe8defa194ee0691f1b7550fd8d71dca96d460d3a7c317bf403237ba0b2edf"
   },
   "current_source_sha256": {
-    "projects/e2e/apps/pal-display/BUILD.bazel": "791f999667453cf775ab671b5fa794a5110b0d424831db347ae446b6e078a9f5",
-    "projects/e2e/apps/pal-display/README.md": "bfdb530b196cc5bc02f1a48557328b29d4c674855b660ec17d0643b1057083b8",
-    "projects/e2e/apps/pal-display/check_qualification.py": "c2e552cd99028166a0cd22a3492aa118f0e20fc89d2dbc64f1e353bc1dd02a15"
+    "projects/e2e/apps/pal-display/BUILD.bazel": "8cf47780717ae7d621197d5f98cfa80de4b50c7fd46a61da3b7bdf82505440ef",
+    "projects/e2e/apps/pal-display/README.md": "5f0546961067e4a1bb9ed8e95139dc758367fab85f42c5c851863f7a3c6582d4",
+    "projects/e2e/apps/pal-display/check_qualification.py": "bea93bfd8f6e54c717a0404f6e389e09acab79058808556ed93cedf75dd5178e"
   },
-  "scope": "Host audit maintenance only; exact Display catalog section and row remain historical. All qualification, mobile execution, artifact and hardware identities are unchanged."
+  "scope": "Host audit maintenance only; exact Display catalog section and row remain historical. Only the exact two BK Pref PAL-guide paragraphs are admitted. All qualification, mobile execution, artifact and hardware identities are unchanged."
 }

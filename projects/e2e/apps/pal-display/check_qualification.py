@@ -112,7 +112,9 @@ GIZCLAW_HARNESS_SOURCES = AUDIT_SOURCES | {
     "projects/e2e/apps/pal-display/BUILD.bazel",
 }
 SHARED_CATALOG = "guides/apps/e2e.md"
+SHARED_PAL_GUIDE = "guides/zh/developing/platform_abstract_layer.md"
 SHARED_CATALOG_BASELINE_COMMIT = "06f9c0cfa633646984d72f210ba18f889bbec528"
+SHARED_PAL_ADDITION_COMMIT = "93c9578e54f1cd45d8d9bd118372f807e16076f4"
 SHARED_CATALOG_AUDIT_SOURCES = {
     "projects/e2e/apps/pal-display/check_qualification.py",
     "projects/e2e/apps/pal-display/BUILD.bazel",
@@ -174,6 +176,7 @@ def shared_catalog_sources(previous):
     assert hashlib.sha256(content).hexdigest() == previous[SHARED_CATALOG]
     assert display_catalog_content(content.decode("utf-8")) == display_catalog_content(
         Path(SHARED_CATALOG).read_text(encoding="utf-8")), "Display catalog content changed"
+    shared_pal_guide(previous, audit["pal_guide_extension"])
     assert audit["previous_source_sha256"] == {
         path: previous[path] for path in SHARED_CATALOG_AUDIT_SOURCES}
     replacements = audit["current_source_sha256"]
@@ -182,7 +185,35 @@ def shared_catalog_sources(previous):
     # The historical whole-file hash still authenticates the immutable baseline.
     # Other Apps may update their catalog entries without a new Display run.
     del sources[SHARED_CATALOG]
+    del sources[SHARED_PAL_GUIDE]
     return sources
+
+
+def shared_pal_guide(previous, extension):
+    """Admit only the exact two BK Pref additions at their recorded insertion."""
+    assert extension["source_commit"] == SHARED_CATALOG_BASELINE_COMMIT
+    assert extension["source_path"] == SHARED_PAL_GUIDE
+    assert extension["addition_source_commit"] == SHARED_PAL_ADDITION_COMMIT
+    assert extension["source_sha256"] == previous[SHARED_PAL_GUIDE]
+    record = json.JSONDecoder().decode(
+        (ROOT / "shared_pal_pref_addition.json").read_text(encoding="utf-8"))
+    assert record["source_commit"] == SHARED_PAL_ADDITION_COMMIT
+    assert record["source_path"] == SHARED_PAL_GUIDE
+    addition = record["addition_utf8"].encode("utf-8")
+    assert hashlib.sha256(addition).hexdigest() == extension["addition_sha256"]
+    paragraphs = addition.decode("utf-8").strip().split("\n\n")
+    assert len(paragraphs) == 2
+    assert paragraphs[0].startswith("BK7258 大值仍使用原 128 KiB physical FlashDB 分区：")
+    assert paragraphs[1].startswith("Tail v1 manifest 为 96 字节：")
+    current = Path(SHARED_PAL_GUIDE).read_bytes()
+    if hashlib.sha256(current).hexdigest() == previous[SHARED_PAL_GUIDE]:
+        return
+    offset = extension["insertion_offset"]
+    assert type(offset) is int and 0 <= offset < len(current)
+    assert current[offset:offset + len(addition)] == addition
+    restored = current[:offset] + current[offset + len(addition):]
+    assert hashlib.sha256(restored).hexdigest() == previous[SHARED_PAL_GUIDE], (
+        "shared PAL guide changed outside the exact BK Pref addition")
 
 
 def runner_refactor(historical):
