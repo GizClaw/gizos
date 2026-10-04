@@ -10,6 +10,13 @@ def run_suite(app, args):
         settings = dict(host=advertised, tcp_port=fixture.tcp.port, tls_port=fixture.tls.port,
                         session=fixture.session, ca=fixture.ca.read_text(), wrong_ca=fixture.wrong_ca.read_text())
         payload = json.dumps(settings)
+        # Preserve the exact public inputs before the temporary fixture exits.
+        # This receipt scope does not replace an earlier artifact/source run.
+        directory = args.output / 'fixture-inputs'
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / 'fixture.json').write_text(payload)
+        (directory / 'ca.pem').write_bytes(fixture.ca.read_bytes())
+        (directory / 'wrong-ca.pem').write_bytes(fixture.wrong_ca.read_bytes())
         inputs = dict(session=fixture.session, host=advertised, tcp_port=fixture.tcp.port, tls_port=fixture.tls.port,
             json_sha256=hashlib.sha256(payload.encode()).hexdigest(),
             ca_sha256=hashlib.sha256(fixture.ca.read_bytes()).hexdigest(),
