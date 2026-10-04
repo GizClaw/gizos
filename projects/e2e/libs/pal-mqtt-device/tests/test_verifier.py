@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 import re
 import unittest
-from verify_device import boot_ledger,status_preserved,coredump_preserved,loader_status,command_receipt,after_accepted_reboot,package_binding
+from verify_device import boot_ledger,status_preserved,coredump_preserved,loader_status,command_receipt,after_accepted_reboot,package_binding,uart_text
 class Verifier(unittest.TestCase):
     def setUp(self):
         root=Path(__file__).absolute().parents[5]
@@ -17,6 +17,21 @@ class Verifier(unittest.TestCase):
         self.good='H2_PAL_MQTT_PLATFORM_BOOT board=bk7258\nH2_PAL_MQTT_BOOT '+self.boot+'\nH2_PAL_MQTT_RUN '+self.boot+'\n'+rows+'\nH2_PAL_MQTT_SUMMARY '+json.dumps(summary)+'\nH2_PAL_MQTT_READY board=bk7258 rc=0 confirm=0\n'
     def test_complete(self):
         self.assertEqual(boot_ledger(self.good,self.ids,'v1')['boot']['id'],self.execution)
+    def test_native_non_utf8_noise_keeps_raw_hash_and_complete_records(self):
+        raw=b'\x8d\x00SDK startup\nH2_LOADER_REBOOT target=upgrade result=accepted\n'+b'\x8dSDK boot noise\n'+self.good.encode()
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'managed.log';path.write_bytes(raw)
+            digest=hashlib.sha256(raw).hexdigest()
+            text=uart_text(path)
+            self.assertIn('\ufffd',text)
+            self.assertEqual(boot_ledger(after_accepted_reboot(text,'upgrade'),self.ids,'v1')['boot']['id'],self.execution)
+            self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(),digest)
+    def test_non_utf8_inside_protocol_record_is_rejected(self):
+        for marker in [b'H2_PAL_MQTT_BOOT ',b'H2_PAL_MQTT_RUN ',b'H2_PAL_MQTT_CASE ',b'H2_PAL_MQTT_SUMMARY ',b'H2_PAL_MQTT_READY ']:
+            raw=self.good.encode().replace(marker,marker+b'\x8d',1)
+            with tempfile.TemporaryDirectory() as directory:
+                path=Path(directory)/'managed.log';path.write_bytes(raw)
+                with self.assertRaises(AssertionError):boot_ledger(uart_text(path),self.ids,'v1')
     def test_esp_provider_cleanup_is_required(self):
         esp = self.good.replace('board=bk7258', 'board=devkit')
         with self.assertRaises(AssertionError):boot_ledger(esp,self.ids,'v1')
