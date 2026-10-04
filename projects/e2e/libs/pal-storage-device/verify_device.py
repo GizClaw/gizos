@@ -27,8 +27,12 @@ def boot_ledger(text, registry, version, phase):
     assert 'H2_STORAGE_READY rc=0 confirm=0' in current, "App not confirmed or failed"
     assert not re.search(r'panic|hard fault|assert failed|H2_STORAGE_(?:LAUNCHER_FAIL|WATCHDOG)',
                          current, re.I), "boot failed"
-    for replay in marker.finditer(current):
-        assert int(replay.group(1)) == nonce, "replay nonce changed"
+    # Reboot monitor may precede this marker with the old App's replay. Once
+    # the selected new boot begins, every BOOT must identify its same replay.
+    for header in re.findall(r'H2_STORAGE_BOOT ([^\r\n]*)', current):
+        replay = fields(header)
+        expected = dict(contract='2', version=version, phase=str(phase), nonce=str(nonce), replay='1')
+        assert all(replay.get(key) == value for key, value in expected.items()), "new boot or changed replay identity"
     if phase == 4:
         completion = re.findall(r'H2_STORAGE_ALREADY_COMPLETE no_new_run=(\d+) empty=(\d+) rc=(-?\d+)', current)
         assert completion and all(row == ('1', '1', '0') for row in completion), "completion recheck failed"
@@ -80,10 +84,11 @@ def fields(text):
 def final_status(before, after, manifest, package_sha256, uid):
     initial, final = fields(before), fields(after)
     assert initial['device_uid'] == final['device_uid'] == uid, 'device changed'
+    assert initial.get('partition_1_valid') == '1' and initial.get('partition_1_role') == 'loader', 'invalid initial Loader'
     loader_keys = [key for key in initial if key.startswith('partition_1_')]
     assert loader_keys, 'missing initial Loader identity'
     assert all(final.get(key) == initial[key] for key in loader_keys), 'Loader changed'
-    expected = dict(active_role='app', running_partition='2', next_partition='2', stage_valid='0',
+    expected = dict(active_role='app', running_partition='2', next_partition='2', stage_valid='0', partition_2_valid='1',
                     last_result='0', active_version=manifest['version'], active_checksum=manifest['image_sha256'],
                     partition_2_version=manifest['version'], partition_2_image_checksum=manifest['image_sha256'],
                     partition_2_package_checksum=package_sha256)
