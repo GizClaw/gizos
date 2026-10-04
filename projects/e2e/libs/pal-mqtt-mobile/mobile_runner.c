@@ -108,7 +108,8 @@ int h2_mqtt_mobile_run(h2_runtime_config_t config, const char *host,
             .tcp_port = tcp_port, .tls_port = tls_port, .session = session,
             .topic_prefix = "h2/mqtt/e2e", .trusted_tls = &trusted,
             .untrusted_tls = &untrusted, .wrong_name_tls = &wrong_name,
-            .timeout_ms = 5000u, .qos_publish_capacity = 4u, .report = observe, .report_user = &tracker};
+            .timeout_ms = 5000u, .negative_connect_timeout_ms = 2000u,
+            .qos_publish_capacity = 4u, .report = observe, .report_user = &tracker};
         rc = h2_pal_mqtt_e2e_run(&fixture, &out->suite);
     }
     if (runtime != NULL) h2_runtime_deinit(runtime);

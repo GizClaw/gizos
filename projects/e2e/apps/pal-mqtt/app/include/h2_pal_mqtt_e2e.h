@@ -47,6 +47,9 @@ typedef struct h2_pal_mqtt_e2e_config {
     const char *session;
     const char *topic_prefix;
     uint32_t timeout_ms;
+    /** CONNECT stage budget for the owned silent-CONNACK fault; default 200 ms.
+     * TCP setup and broker response each consume a bounded stage budget. */
+    uint32_t negative_connect_timeout_ms;
     /** Outgoing QoS1 record capacity selected by the platform provider assembly. */
     unsigned qos_publish_capacity;
     /** Only the legacy-equivalent QoS0 round trip, for a real public broker. */
