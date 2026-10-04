@@ -158,6 +158,7 @@ H2_GIZCLAW_API(h2_gizclaw_rpc_telemetry_send)
 H2_GIZCLAW_API(h2_gizclaw_conversation_create)
 H2_GIZCLAW_API(h2_gizclaw_service_audio_start)
 H2_GIZCLAW_API(h2_gizclaw_service_audio_end)
+H2_GIZCLAW_API(h2_gizclaw_service_audio_input_snapshot)
 H2_GIZCLAW_API(h2_gizclaw_conversation_cancel)
 H2_GIZCLAW_API(h2_gizclaw_conversation_release)
 
