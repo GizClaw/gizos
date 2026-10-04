@@ -1,3 +1,5 @@
+load("@rules_cc//cc:defs.bzl", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//projects/e2e/libs/pal-mqtt-device:device_test.bzl", "mqtt_device_test")
 load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_bk7258_firmware")
 load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
@@ -54,7 +56,7 @@ firmware_native_component(
     srcs = [
         "ap/ap_main.c",
     ],
-    hdrs = [],
+    hdrs = ["ap/ledger_console.h"],
     component_directory = "projects/e2e/targets/h2loader_tar_zlib/pal-mqtt/bk7258_v3_202405/ap",
     component_name = "ap",
     data = ["ap/CMakeLists.txt"],
@@ -92,6 +94,7 @@ h2loader_bk7258_firmware(
         "CMakeLists.txt",
         "ap/CMakeLists.txt",
         "ap/ap_main.c",
+        "ap/ledger_console.h",
     ],
     ap_task_policy = ":ap_task_policy",
     board = "bk7258_v3_202405",
@@ -116,4 +119,19 @@ h2loader_tar_zlib(
 mqtt_device_test(
     name = "device_test",
     package = ":package",
+)
+
+cc_test(
+    name = "ledger_console_test",
+    srcs = ["tests/test_ledger_console.c", "ap/ledger_console.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["ap"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
 )

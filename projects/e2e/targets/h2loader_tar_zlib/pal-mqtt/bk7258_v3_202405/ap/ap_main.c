@@ -3,8 +3,11 @@
 #include "h2_bk_platform_core.h"
 #include "h2_bk_target_task_policy.h"
 #include "device_runner.h"
+#include "ledger_console.h"
+#include <common/sys_config.h>
 #include "bk_private/bk_init.h"
 #include <os/os.h>
+#include <driver/uart.h>
 #include <stdio.h>
 #include <string.h>
 #include <mbedtls/sha256.h>
@@ -15,18 +18,17 @@ extern void h2_bk_mqtt_mem_mark(void);
 extern void h2_bk_mqtt_mem_report(void);
 #endif
 static const h2_pal_log_api_t *board_log;
-/* The native SDK console owns stdio. Keep the portable runner behind PAL Log,
- * while its boot/ledger lines use the same console path as platform startup. */
+#if !CONFIG_SYS_PRINT_DEV_UART
+#error BK MQTT ledger requires the existing AP-owned physical UART provider
+#endif
+static h2_mqtt_bk_ledger_console_t console;
+/* The BK target console policy borrows the real bounded UART writer. SDK
+ * asynchronous printf cannot acknowledge delivery of mandatory records. */
 static int ledger_log(void *user,h2_pal_log_level_t level,const char *scope,const char *message){
     (void)user;
     if(message==NULL)return H2_PAL_ERR_INVALID_ARG;
-    if(scope!=NULL && strcmp(scope,"pal-mqtt")==0){
-        if(printf("%s\r\n",message)<0 || fflush(stdout)!=0)return H2_PAL_ERR_IO;
-        /* SDK printf enqueues asynchronously. Yield between protocol records
-         * so its console worker can drain the whole ledger before READY. */
-        rtos_delay_milliseconds(90u);
-        return H2_PAL_OK;
-    }
+    if(scope!=NULL && strcmp(scope,"pal-mqtt")==0)
+        return h2_mqtt_bk_console_record(&console,message);
     return h2_pal_log_write(board_log,level,scope,message);
 }
 static const h2_pal_log_vtable_t ledger_log_vtable={.write=ledger_log};
@@ -42,33 +44,49 @@ static int snapshot(size_t out[10]){
 static int ca_digest(void *user,const uint8_t *bytes,size_t length,uint8_t digest[32]){
     (void)user;return mbedtls_sha256(bytes,length,digest,0)==0?H2_PAL_OK:H2_PAL_ERR_IO;
 }
+static int restart_commands(void *unused){
+    (void)unused;
+    return h2_bk_h2loader_start_app_iostreamikcp_with_capabilities(runtime,"pal-mqtt",
+        H2_LOADER_CAPABILITY_UART|H2_LOADER_CAPABILITY_WIFI);
+}
+static int drain_console(void *unused){
+    (void)unused;uint32_t started=rtos_get_time();
+    while(!bk_uart_is_tx_over(CONFIG_UART_PRINT_PORT)){
+        if((uint32_t)(rtos_get_time()-started)>=console.timeout_ms)return H2_PAL_ERR_TIMEOUT;
+        rtos_delay_milliseconds(1u);
+    }
+    return H2_PAL_OK;
+}
+static int protocol_status(const char *stage,int rc){
+    char line[160];int n=snprintf(line,sizeof(line),"H2_PAL_MQTT_SETUP_FAIL stage=%s rc=%d",stage,rc);
+    if(n<0 || (size_t)n>=sizeof(line))return H2_PAL_ERR_NO_SPACE;
+    return h2_mqtt_bk_console_record(&console,line);
+}
 static void run(void *unused){
     (void)unused;rtos_delay_milliseconds(5000u);
     int rc;
     for(;;){rc=h2_mqtt_device_prepare(runtime);if(rc==H2_PAL_OK)break;
         if(rc!=H2_PAL_ERR_NOT_FOUND && rc!=H2_PAL_ERR_UNAVAILABLE && rc!=H2_PAL_ERR_TIMEOUT && rc!=H2_PAL_ERR_BUSY)fail("network",rc);
         printf("H2_PAL_MQTT_SETUP_WAIT network=not_ready rc=%d cases_started=0\n",rc);fflush(stdout);rtos_delay_milliseconds(3000u);}
-    /* Keep the startup rollback policy, then drain the independent control
-     * owner. Stop joins its console task and closes the KCP stream, so an
-     * in-flight Pref read cannot enter the MQTT resource baseline. The native
-     * SDK console still emits the fresh boot and ledger during this interval. */
+    console.uart=h2_bk_platform_uart_io_stream_api();
+    console.timeout_ms=5000u;
+    const char *failed_stage=NULL;
+    /* Stop joins management and destroys its physical owner. Reconfigure our
+     * console before measuring: RX stays out of SDK shell and TX records use
+     * the real provider's bounded mutex/FIFO/suspend-resume transaction. */
     rc=h2_bk_h2loader_stop_app_iostreamikcp();
-    if(rc!=H2_PAL_OK){
-        printf("H2_PAL_MQTT_SETUP_FAIL stage=commands-stop rc=%d\r\n",rc);
-        printf("H2_PAL_MQTT_READY board=bk7258 rc=%d confirm=%d\r\n",rc,H2_PAL_ERR_INVALID_STATE);
-        fflush(stdout);return;
-    }
-    puts("H2_PAL_MQTT_CONTROL_QUIESCENT stop=0");fflush(stdout);
+    if(rc!=H2_PAL_OK){failed_stage="commands-stop";goto restore_commands;}
+    rc=h2_mqtt_bk_console_begin(&console,console.uart,CONFIG_UART_PRINT_BAUD_RATE,5000u);
+    if(rc!=H2_PAL_OK){failed_stage="console-open";goto restore_commands;}
+    rc=h2_mqtt_bk_console_record(&console,"H2_PAL_MQTT_CONTROL_QUIESCENT stop=0");
+    if(rc!=H2_PAL_OK){failed_stage="console-quiescent";goto restore_commands;}
     rc=snapshot(result.before);
-    if(rc!=H2_PAL_OK){
-        result.rc=rc;result.cleanup=rc;
-        printf("H2_PAL_MQTT_SETUP_FAIL stage=before rc=%d\r\n",rc);fflush(stdout);
-        goto restore_commands;
-    }
+    if(rc!=H2_PAL_OK){result.cleanup=rc;failed_stage="before";goto restore_commands;}
 #if defined(H2_BK_MEM_DIAGNOSTICS) && H2_BK_MEM_DIAGNOSTICS
     h2_bk_mqtt_mem_mark();
 #endif
-    /* The real BK Runtime provider selects eight incoming/outgoing records. */
+    /* The real Runtime provider selects eight incoming/outgoing records. Both
+     * resource snapshots include the same physical console owner. */
     rc=h2_mqtt_device_run(runtime,8u,ca_digest,NULL,&result);
     int after=snapshot(result.after);
 #if defined(H2_BK_MEM_DIAGNOSTICS) && H2_BK_MEM_DIAGNOSTICS
@@ -77,22 +95,33 @@ static void run(void *unused){
     result.cleanup=after==H2_PAL_OK && memcmp(result.before,result.after,sizeof(result.before))==0?H2_PAL_OK:H2_PAL_ERR_IO;
     if(rc==H2_PAL_OK && result.cleanup!=H2_PAL_OK)rc=result.cleanup;
     result.rc=rc;
-    /* Emit the first complete ledger before protocol traffic can interleave
-     * with its JSON. Admission still waits for management restoration below. */
     h2_mqtt_device_replay(runtime,&result);
+    if(console.error!=H2_PAL_OK){rc=console.error;failed_stage="ledger-write";}
 restore_commands: ;
-    /* Restore management on both successful and failed suite/snapshot outcomes. */
-    int commands=h2_bk_h2loader_start_app_iostreamikcp_with_capabilities(runtime,"pal-mqtt",H2_LOADER_CAPABILITY_UART|H2_LOADER_CAPABILITY_WIFI);
-    if(commands!=H2_PAL_OK){
-        result.rc=commands;h2_mqtt_device_replay(runtime,&result);
-        printf("H2_PAL_MQTT_SETUP_FAIL stage=commands-restart rc=%d\r\n",commands);
-        printf("H2_PAL_MQTT_READY board=bk7258 rc=%d confirm=%d\r\n",commands,H2_PAL_ERR_INVALID_STATE);
-        fflush(stdout);return;
+    /* Release before restart so old monitor bytes/overflow cannot enter a new
+     * control session. Even setup/suite/output failure always attempts restore. */
+    int commands=h2_mqtt_bk_console_restore(&console,drain_console,h2_bk_platform_uart_io_stream_deinit,
+        restart_commands,NULL);
+    if(commands!=H2_PAL_OK){rc=commands;failed_stage="commands-restart";}
+    if(rc==H2_PAL_OK && console.error!=H2_PAL_OK){rc=console.error;failed_stage="console-write-or-drain";}
+    if(commands==H2_PAL_OK){
+        int output=h2_mqtt_bk_console_record(&console,"H2_PAL_MQTT_CONTROL_RESTORED restart=0");
+        if(output!=H2_PAL_OK){rc=output;failed_stage="console-restored";}
     }
-    puts("H2_PAL_MQTT_CONTROL_RESTORED restart=0");fflush(stdout);
-    int confirm=rc==H2_PAL_OK?h2_bk_h2loader_confirm_current_app(runtime):H2_PAL_ERR_INVALID_STATE;
-    printf("H2_PAL_MQTT_READY board=bk7258 rc=%d confirm=%d\n",rc,confirm);fflush(stdout);
-    for(;;){rtos_delay_milliseconds(5000u);h2_mqtt_device_replay(runtime,&result);printf("H2_PAL_MQTT_READY board=bk7258 rc=%d confirm=%d\n",rc,confirm);fflush(stdout);}
+    if(failed_stage!=NULL)(void)protocol_status(failed_stage,rc);
+    result.rc=rc;
+    int confirm=h2_mqtt_bk_console_can_confirm(&console,rc)?h2_bk_h2loader_confirm_current_app(runtime):H2_PAL_ERR_INVALID_STATE;
+    char ready[160];int n=snprintf(ready,sizeof(ready),"H2_PAL_MQTT_READY board=bk7258 rc=%d confirm=%d",rc,confirm);
+    int output=n>0 && (size_t)n<sizeof(ready)?h2_mqtt_bk_console_record(&console,ready):H2_PAL_ERR_NO_SPACE;
+    if(output!=H2_PAL_OK){
+        result.rc=output;
+        /* The output channel itself can fail. Preserve failure locally and
+         * emit only an explicit failure through SDK diagnostics, never PASS. */
+        printf("H2_PAL_MQTT_SETUP_FAIL stage=ready-write rc=%d\n",output);fflush(stdout);
+    }
+    /* There is one first ledger/terminal. Later replay cannot repair a missing
+     * record and cannot replace this boot's actual failed output evidence. */
+    hold();
 }
 static void entry(void *unused){
     (void)unused;puts("H2_PAL_MQTT_PLATFORM_BOOT board=bk7258");fflush(stdout);
