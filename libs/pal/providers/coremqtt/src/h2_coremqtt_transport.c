@@ -24,12 +24,23 @@ int32_t h2_coremqtt_transport_recv(NetworkContext_t *network, void *buffer, size
 
 static int transaction_start(h2_pal_mqtt_client_t *client, uint64_t *deadline) {
     if (client->send_result != H2_PAL_OK) return 0;
+    const h2_pal_net_api_t *net = client->provider->config.net;
+    if (net == NULL || net->vtable == NULL || net->vtable->tcp_send_timeout == NULL) {
+        client->send_result = H2_PAL_ERR_UNSUPPORTED;
+        return 0;
+    }
+    if (client->send_deadline_active) {
+        *deadline = client->send_deadline_ms;
+        return 1;
+    }
     uint64_t current = 0u;
     int rc = h2_pal_time_get_monotonic_ms(client->time_api, &current);
     if (rc != H2_PAL_OK) {client->send_result = rc;return 0;}
     uint32_t budget = client->send_timeout_ms != 0u ? client->send_timeout_ms :
         client->config.operation_timeout_ms != 0u ? client->config.operation_timeout_ms : 1000u;
     *deadline = h2_pal_time_deadline_ms(current, budget);
+    client->send_deadline_ms = *deadline;
+    client->send_deadline_active = 1;
     return 1;
 }
 
@@ -44,9 +55,7 @@ static int32_t send_prefix(h2_pal_mqtt_client_t *client, const uint8_t *buffer, 
         if (rc != H2_PAL_OK) {client->send_result = rc;break;}
         if (current >= deadline) {client->send_result = H2_PAL_ERR_TIMEOUT;break;}
         uint32_t remaining = (uint32_t)(deadline - current);
-        rc = net != NULL && net->vtable != NULL && net->vtable->tcp_send_timeout != NULL
-            ? h2_pal_net_tcp_send_timeout(net, socket, buffer + sent, length - sent, remaining)
-            : h2_pal_net_tcp_send(net, socket, buffer + sent, length - sent);
+        rc = h2_pal_net_tcp_send_timeout(net, socket, buffer + sent, length - sent, remaining);
         if (rc > 0) {
             if ((size_t)rc > length - sent) {client->send_result = H2_PAL_ERR_IO;break;}
             sent += (size_t)rc;
@@ -66,6 +75,7 @@ int32_t h2_coremqtt_transport_send(NetworkContext_t *network, const void *buffer
     if (network == NULL || network->client == NULL || (buffer == NULL && length != 0u) ||
         length > (size_t)INT32_MAX) return -1;
     h2_pal_mqtt_client_t *client = network->client;
+    if (length == 0u) return 0;
     uint64_t deadline = 0u;
     if (!transaction_start(client, &deadline)) return -1;
     return send_prefix(client, buffer, length, deadline);
@@ -80,6 +90,7 @@ int32_t h2_coremqtt_transport_writev(NetworkContext_t *network, TransportOutVect
         total += vectors[i].iov_len;
     }
     h2_pal_mqtt_client_t *client = network->client;
+    if (total == 0u) return 0;
     uint64_t deadline = 0u;
     if (!transaction_start(client, &deadline)) return -1;
     int32_t sent = 0;
