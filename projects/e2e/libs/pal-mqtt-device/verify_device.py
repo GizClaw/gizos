@@ -17,6 +17,11 @@ import zlib
 
 STARTUP_MARKER = r'H2_\w*(?:BOOT|STARTUP)(?:\b|_[A-Z_]+\b)|\bBooting\b|^ESP-ROM:|^rst:0x[0-9a-f]+'
 
+def uart_text(path):
+    # Keep the authoritative bytes for receipt hashes. SDK startup may emit
+    # native non-UTF8 noise around the ASCII protocol records.
+    return Path(path).read_bytes().decode('utf-8', errors='replace')
+
 def fields(text):
     return dict(re.findall(r'(\w+)=([^\s]+)', text))
 
@@ -25,6 +30,7 @@ def loader_status(text):
     text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
     rows = re.findall(r'(?m)(?:^|\s)H2_LOADER_STATUS\s+([^\r\n]+)', text)
     assert len(rows) == 1, 'missing or ambiguous H2_LOADER_STATUS observation'
+    assert '\ufffd' not in rows[0], 'corrupt device status record'
     pairs = re.findall(r'(\w+)=([^\s]+)', rows[0])
     assert pairs and len({key for key, _ in pairs}) == len(pairs), 'duplicate device status field'
     return dict(pairs)
@@ -61,6 +67,7 @@ def after_accepted_reboot(text, target):
     # Keep the exact marker boundary, unique ACK and subsequent fresh boot gate.
     markers = list(re.finditer(r'(?<!\w)H2_LOADER_REBOOT\s+([^\r\n]+)', text))
     assert len(markers) == 1, 'missing or ambiguous actual reboot response'
+    assert '\ufffd' not in markers[0].group(1), 'corrupt accepted reboot record'
     reboot = fields(markers[0].group(1))
     assert reboot.get('target') == target and reboot.get('result') == 'accepted', 'requested reboot not accepted'
     remainder = text[markers[0].end():]
@@ -75,6 +82,9 @@ def boot_ledger(text, ids, version, previous=None):
     rows = []
     text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
     for line in text.splitlines():
+        if 'H2_PAL_MQTT_' in line:
+            record = line.split('H2_PAL_MQTT_', 1)[1]
+            assert '\ufffd' not in record, 'corrupt MQTT protocol record'
         if re.search(STARTUP_MARKER, line):
             boot = run = summary = accepted = None
             rows = []
@@ -185,8 +195,8 @@ def main():
         'managed':command_receipt(directory/'managed.log',['reboot','upgrade','--monitor'],port,controlled_capture=True),
         'normal':command_receipt(directory/'normal.log',['reboot','app','--monitor'],port,controlled_capture=True),
     }
-    first=boot_ledger(after_accepted_reboot((directory/'managed.log').read_text(),'upgrade'),ids,manifest['version'])
-    second=boot_ledger(after_accepted_reboot((directory/'normal.log').read_text(),'app'),ids,manifest['version'],first['boot']['id'])
+    first=boot_ledger(after_accepted_reboot(uart_text(directory/'managed.log'),'upgrade'),ids,manifest['version'])
+    second=boot_ledger(after_accepted_reboot(uart_text(directory/'normal.log'),'app'),ids,manifest['version'],first['boot']['id'])
     expected_board = 'devkit' if manifest['target'] == 'esp32s3' else 'bk7258'
     assert first['ready'].get('board') == second['ready'].get('board') == expected_board, 'ledger belongs to another board'
     for name,command in [('before-status',['status']),('after-status',['status']),
@@ -195,10 +205,10 @@ def main():
     assert utc_time(commands['before-status']['started_at_utc']) <= utc_time(commands['managed']['started_at_utc']) <= \
         utc_time(commands['managed']['captured_at_utc']) <= utc_time(commands['normal']['started_at_utc']) <= \
         utc_time(commands['normal']['captured_at_utc']) <= utc_time(commands['after-status']['started_at_utc']), 'command observation order moved backwards'
-    before=loader_status((directory/'before-status.log').read_text());after=loader_status((directory/'after-status.log').read_text())
+    before=loader_status(uart_text(directory/'before-status.log'));after=loader_status(uart_text(directory/'after-status.log'))
     status_preserved(before,after,manifest,sha,uid)
-    dumped_before=fields((directory/'before-coredump-status.log').read_text())
-    dumped_after=fields((directory/'after-coredump-status.log').read_text())
+    dumped_before=fields(uart_text(directory/'before-coredump-status.log'))
+    dumped_after=fields(uart_text(directory/'after-coredump-status.log'))
     original=current=None
     if int(dumped_before['stored_bytes'])>0:
         original=(directory/'coredump-before.bin').read_bytes();current=(directory/'coredump-after.bin').read_bytes()
