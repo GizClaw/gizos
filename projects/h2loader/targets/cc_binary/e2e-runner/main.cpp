@@ -658,6 +658,7 @@ int main(int argc, char **argv) {
         .checksum_formats = static_cast<std::uint8_t>(
             (!options.checksum_fixtures[0].empty() ? 1u : 0u) |
             (!options.checksum_fixtures[1].empty() ? 2u : 0u)),
+        .checksum_packages = {},
         .is_cancelled = is_cancelled,
         .cancel_user = nullptr,
         .on_case = case_event,
