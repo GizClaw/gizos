@@ -20,6 +20,66 @@ class MobileRunnerProvenanceTest(unittest.TestCase):
     def test_separate_mobile_runs_preserve_historical_qualification(self):
         self.verify(self.followup)
 
+    def test_other_app_catalog_changes_preserve_display_content(self):
+        baseline = (qualification.ROOT / "shared_catalog_baseline.txt").read_text(encoding="utf-8")
+        current = qualification.Path(qualification.SHARED_CATALOG).read_text(encoding="utf-8")
+        self.assertEqual(qualification.display_catalog_content(baseline),
+                         qualification.display_catalog_content(current))
+        changed = current.replace("## PAL Storage\n", "## Another Storage App\n")
+        self.assertEqual(qualification.display_catalog_content(baseline),
+                         qualification.display_catalog_content(changed))
+        original_read = qualification.Path.read_text
+        def read(path, *args, **kwargs):
+            if str(path) == qualification.SHARED_CATALOG:
+                return changed
+            return original_read(path, *args, **kwargs)
+        with patch.object(qualification.Path, "read_text", new=read):
+            self.verify(self.followup)
+
+    def test_changed_display_section_or_launcher_row_fails(self):
+        current = qualification.Path(qualification.SHARED_CATALOG).read_text(encoding="utf-8")
+        for changed in [current.replace("固定运行 24 个 mandatory case", "固定运行 1 个 mandatory case"),
+                        current.replace("| PAL Display |", "| PAL Display | changed")]:
+            with self.subTest(changed=changed):
+                original_read = qualification.Path.read_text
+                def read(path, *args, **kwargs):
+                    if str(path) == qualification.SHARED_CATALOG:
+                        return changed
+                    return original_read(path, *args, **kwargs)
+                with patch.object(qualification.Path, "read_text", new=read):
+                    with self.assertRaises(AssertionError):
+                        self.verify(self.followup)
+
+    def test_missing_duplicate_display_scopes_fail(self):
+        current = qualification.Path(qualification.SHARED_CATALOG).read_text(encoding="utf-8")
+        for changed in [current.replace("## PAL Display\n", "## Hidden Display\n"),
+                        current + "\n## PAL Display\n", current + "\n| PAL Display | duplicate |\n"]:
+            with self.assertRaises(AssertionError):
+                qualification.display_catalog_content(changed)
+
+    def test_rewritten_historical_catalog_baseline_fails(self):
+        original_read = qualification.Path.read_bytes
+        def read(path):
+            content = original_read(path)
+            return content + b"changed" if path.name == "shared_catalog_baseline.txt" else content
+        with patch.object(qualification.Path, "read_bytes", new=read):
+            with self.assertRaises(AssertionError):
+                self.verify(self.followup)
+
+    def test_catalog_audit_cannot_exempt_provider_source(self):
+        path = qualification.ROOT / "shared_catalog_provenance.json"
+        audit = json.loads(path.read_text(encoding="utf-8"))
+        provider = "libs/pal/providers/sdl3/src/h2_sdl3_display.cpp"
+        audit["current_source_sha256"][provider] = "0" * 64
+        original_read = qualification.Path.read_text
+        def read(source, *args, **kwargs):
+            if source == path:
+                return json.JSONEncoder().encode(audit)
+            return original_read(source, *args, **kwargs)
+        with patch.object(qualification.Path, "read_text", new=read):
+            with self.assertRaises(AssertionError):
+                self.verify(self.followup)
+
     def test_native_source_cannot_be_exempted_as_runner_source(self):
         changed = copy.deepcopy(self.followup)
         changed["current_source_sha256"]["libs/pal/providers/sdl3/src/h2_sdl3_display.cpp"] = "0" * 64
