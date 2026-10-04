@@ -159,15 +159,26 @@ def coredump_preserved(before, after, original=None, current=None):
     assert before['blank'] == '1'
     return None
 
+def package_binding(binding, manifest, package_sha, inputs):
+    assert binding.get('package_sha256') == package_sha, 'artifact binding belongs to another package'
+    assert {key:str(value) for key,value in binding['manifest'].items()} == manifest, 'artifact manifest differs from execution inputs'
+    assert binding['fixture_inputs'] == inputs, 'fixture inputs differ from installed package binding'
+    assert re.fullmatch('[0-9a-f]{40}', binding.get('source_commit', '')), 'missing actual artifact source'
+    assert binding.get('source_dirty') is False, 'artifact source not fixed before build'
+
 def main():
     parser=argparse.ArgumentParser()
-    parser.add_argument('--package', required=True, type=Path)
+    parser.add_argument('--package', type=Path, default=os.environ.get('H2_MQTT_DEVICE_PACKAGE'))
     parser.add_argument('--registry', required=True, type=Path)
+    parser.add_argument('--expected-target', choices=('bk7258','esp32s3'))
+    parser.add_argument('--build-label')
     args=parser.parse_args()
+    if args.package is None:parser.error('explicit actually installed immutable --package or H2_MQTT_DEVICE_PACKAGE required')
     directory=Path(os.environ['H2_MQTT_DEVICE_EVIDENCE_DIR'])
     uid=os.environ.get('H2_MQTT_DEVICE_UID');port=os.environ.get('H2_MQTT_DEVICE_PORT')
     if not uid or not port:raise ValueError('explicit MQTT fixture UID/port required')
     manifest,sha=package_manifest(args.package)
+    if args.expected_target:assert manifest['target']==args.expected_target, 'package belongs to another device entry'
     ids=re.findall(r'H2_PAL_MQTT_CASE\(\w+, "([^"]+)"\)',args.registry.read_text())
     assert len(ids)==36 and len(set(ids))==36
     commands={
@@ -194,9 +205,16 @@ def main():
     dump_sha=coredump_preserved(dumped_before,dumped_after,original,current)
     peer=json.loads((directory/'fixture-receipt.json').read_text())
     for execution in (first,second):verify_witness(peer,execution)
+    binding=None
+    if (directory/'package-binding.json').is_file():
+        binding=json.loads((directory/'package-binding.json').read_text())
+        package_binding(binding,manifest,sha,peer['inputs'])
+    elif manifest['target']=='esp32s3':
+        raise AssertionError('ESP execution requires its fixed-source package-binding.json')
     report=dict(manifest=manifest,package_sha256=sha,uid=uid,port=port,managed=first,normal=second,
         before_status=before,after_status=after,coredump_status=dumped_after,coredump_sha256=dump_sha,
-        fixture_inputs=peer['inputs'],commands=commands,registry_sha256=hashlib.sha256(args.registry.read_bytes()).hexdigest())
+        fixture_inputs=peer['inputs'],commands=commands,registry_sha256=hashlib.sha256(args.registry.read_bytes()).hexdigest(),
+        artifact_binding=binding,build_label=args.build_label,host_verifier_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest())
     output=Path(os.environ.get('TEST_UNDECLARED_OUTPUTS_DIR',directory));output.mkdir(parents=True,exist_ok=True)
     (output/'qualification.json').write_text(json.dumps(report,indent=2)+'\n')
     print(manifest['board'] + ' MQTT: 36/36 on two fresh boots; UID/P1/P2/Stage/coredump and exact peer proof preserved')

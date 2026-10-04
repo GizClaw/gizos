@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 import re
 import unittest
-from verify_device import boot_ledger,status_preserved,coredump_preserved,loader_status,command_receipt,after_accepted_reboot
+from verify_device import boot_ledger,status_preserved,coredump_preserved,loader_status,command_receipt,after_accepted_reboot,package_binding
 class Verifier(unittest.TestCase):
     def setUp(self):
         root=Path(__file__).absolute().parents[5]
@@ -116,4 +116,14 @@ class Verifier(unittest.TestCase):
         status=dict(result='OK',code='0',stored_bytes='8',blank='0')
         with self.assertRaises(AssertionError):coredump_preserved(status,status,b'four',b'four')
         self.assertIsNotNone(coredump_preserved(status,status,b'12345678',b'12345678'))
+    def test_execution_package_and_fixture_binding(self):
+        manifest=dict(role='app',board='devkit',target='esp32s3',version='v1',image_size='42',image_sha256='c'*64)
+        inputs=dict(ca_sha256='d'*64,epoch_ms=123,session_prefix='a'*32)
+        binding=dict(package_sha256='b'*64,manifest=manifest.copy(),fixture_inputs=inputs.copy(),source_commit='e'*40,source_dirty=False)
+        package_binding(binding,manifest,'b'*64,inputs)
+        for key,value in [('package_sha256','f'*64),('manifest',{**manifest,'image_sha256':'f'*64}),
+                          ('fixture_inputs',{**inputs,'epoch_ms':124}),('source_commit',''),('source_dirty',True)]:
+            original=binding[key];binding[key]=value
+            with self.assertRaises(AssertionError):package_binding(binding,manifest,'b'*64,inputs)
+            binding[key]=original
 if __name__=='__main__':unittest.main()
