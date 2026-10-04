@@ -793,6 +793,17 @@ static h2_pal_result_t parse_identity(
     if (token == NULL || token->kind != JSON_TOKEN_OBJECT) {
         return H2_PAL_ERR_FORMAT;
     }
+    uint64_t package_format = 1u;
+    token = json_object_value(json, tokens, token_count, manifest_index, "format", NULL);
+    if (token != NULL && (!json_u64(json, token, &package_format) ||
+        (package_format != 1u && package_format != 2u))) return H2_PAL_ERR_FORMAT;
+    out_identity->package_format = (uint32_t)package_format;
+    token = json_object_value(json, tokens, token_count, item_index, "package_format", NULL);
+    if (token != NULL) {
+        uint64_t declared = 0u;
+        if (!json_u64(json, token, &declared) || declared != package_format)
+            return H2_PAL_ERR_FORMAT;
+    }
     token = json_object_value(
         json,
         tokens,

@@ -1,5 +1,7 @@
 load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_esp_idf_firmware")
 load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load("//tools/bazel:firmware.bzl", "firmware_version")
+load("//projects/h2loader/tools/bazel:checksum_matrix.bzl", "h2loader_checksum_matrix")
 load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
 load("//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
@@ -89,4 +91,40 @@ h2loader_tar_zlib(
     image = "e2e-app",
     role = "app",
     target = "esp32s3",
+)
+
+# A distinct linked App identity is required to exercise App-only and both.
+firmware_version(name = "alternate_version", value = "0.7.2-e2e-alt")
+
+h2loader_esp_idf_firmware(
+    name = "firmware_alt",
+    srcs = [
+        "CMakeLists.txt",
+        "main/CMakeLists.txt",
+        "main/idf_component.yml",
+        "main/main.c",
+    ],
+    board = "devkit",
+    console = "usb",
+    graph = [":e2e_app_launcher"],
+    project = "CMakeLists.txt",
+    project_name = "h2loader_e2e_app",
+    version = ":alternate_version",
+    target = "esp32s3",
+    task_policy = ":task_policy",
+)
+
+h2loader_tar_zlib(
+    name = "package_alt",
+    board = "devkit",
+    firmware = ":firmware_alt",
+    image = "e2e-app-alt",
+    role = "app",
+    target = "esp32s3",
+)
+
+h2loader_checksum_matrix(
+    name = "checksum-matrix",
+    base = ":package",
+    alternate = ":package_alt",
 )

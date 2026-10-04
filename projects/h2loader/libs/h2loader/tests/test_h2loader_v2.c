@@ -2,6 +2,7 @@
 #include "h2_loader_ble.h"
 #include "h2_loader_app_client.h"
 #include "h2_loader_status.h"
+#include "h2_loader_command.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -2163,7 +2164,77 @@ static void test_size_argument_accepts_only_bounded_decimal(void) {
   check_size_argument("0", 1);
 }
 
+typedef struct checksum_fs_fixture {
+  const char *value;
+  size_t offset;
+} checksum_fs_fixture_t;
+static int checksum_open(void *user, const char *path, h2_pal_fs_open_mode_t mode,
+                         h2_pal_fs_file_t **file) {
+  checksum_fs_fixture_t *fixture = user;
+  assert(strcmp(path, "/data/.checksum") == 0 && mode == H2_PAL_FS_OPEN_READ);
+  if (fixture->value == NULL) return H2_PAL_ERR_NOT_FOUND;
+  fixture->offset = 0u; *file = (h2_pal_fs_file_t *)fixture;
+  return H2_PAL_OK;
+}
+static int checksum_read(void *user, h2_pal_fs_file_t *file, void *out, size_t len, size_t *got) {
+  checksum_fs_fixture_t *fixture = user; assert(file == (h2_pal_fs_file_t *)fixture);
+  size_t available = strlen(fixture->value) - fixture->offset;
+  *got = len < available ? len : available;
+  if (*got > 7u) *got = 7u;
+  memcpy(out, fixture->value + fixture->offset, *got); fixture->offset += *got;
+  return H2_PAL_OK;
+}
+static int checksum_close(void *user, h2_pal_fs_file_t *file) {
+  assert(file == (h2_pal_fs_file_t *)user); return H2_PAL_OK;
+}
+typedef struct stats_output { char data[H2_LOADER_STATUS_LINE_MAX + 128u]; size_t len; } stats_output_t;
+static int stats_read(void *user, void *data, size_t len, size_t *got, uint32_t timeout) {
+  (void)user; (void)data; (void)len; (void)timeout; *got = 0u; return H2_PAL_ERR_TIMEOUT;
+}
+static int stats_write(void *user, const void *data, size_t len, size_t *got, uint32_t timeout) {
+  stats_output_t *output = user; (void)timeout;
+  assert(output->len + len < sizeof(output->data));
+  memcpy(output->data + output->len, data, len); output->len += len;
+  output->data[output->len] = '\0'; *got = len; return H2_PAL_OK;
+}
+static int stats_flush(void *user) { (void)user; return H2_PAL_OK; }
+static void test_stats_observes_installed_checksum(void) {
+  test_fixture_t fixture; fixture_init(&fixture, 2u);
+  assert(h2_loader_init(&fixture.loader, &fixture.config) == H2_PAL_OK);
+  h2_loader_command_t command;
+  stats_output_t output = {0};
+  static const h2_pal_fs_vtable_t fs_vtable = {.open = checksum_open, .read = checksum_read, .close = checksum_close};
+  checksum_fs_fixture_t checksum = {.value = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"};
+  h2_pal_fs_api_t fs = {.user = &checksum, .vtable = &fs_vtable};
+  static const h2_command_io_vtable_t io_vtable = {.read = stats_read, .write = stats_write, .flush = stats_flush};
+  static const h2_pal_http_vtable_t http_vtable = {0};
+  static const h2_pal_http_api_t http = {.vtable = &http_vtable};
+  static const h2_pal_wifi_sta_vtable_t wifi_vtable = {0};
+  static const h2_pal_wifi_sta_api_t wifi = {.vtable = &wifi_vtable};
+  static const h2_pal_disk_vtable_t disk_vtable = {0};
+  static const h2_pal_disk_api_t disk = {.vtable = &disk_vtable};
+  h2_loader_command_config_t config = {.loader = &fixture.loader, .fs = &fs, .http = &http,
+      .wifi = &wifi, .disk = &disk, .digest = fixture.config.package.digest,
+      .now_ms = app_test_now, .sleep_ms = app_test_sleep,
+      .io = {.user = &output, .vtable = &io_vtable}};
+  assert(h2_loader_command_init(&command, &config) == H2_PAL_OK);
+  const char *stats[] = {"h2loader", "stats"};
+  assert(h2_loader_command_execute(&command, 2u, stats) == H2_PAL_OK);
+  assert(strstr(output.data, "H2_LOADER_DATA_CHECKSUM checksum=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n") != NULL);
+  memset(&output, 0, sizeof(output)); checksum.value = NULL;
+  assert(h2_loader_command_execute(&command, 2u, stats) == H2_PAL_OK);
+  assert(strstr(output.data, "H2_LOADER_DATA_CHECKSUM checksum=none\n") != NULL);
+  memset(&output, 0, sizeof(output)); checksum.value = "not-a-checksum";
+  assert(h2_loader_command_execute(&command, 2u, stats) == H2_PAL_OK);
+  assert(strstr(output.data, "H2_LOADER_DATA_CHECKSUM checksum=unavailable\n") != NULL);
+  memset(&output, 0, sizeof(output)); const char *status[] = {"h2loader", "status"};
+  assert(h2_loader_command_execute(&command, 2u, status) == H2_PAL_OK);
+  assert(strstr(output.data, "H2_LOADER_DATA_CHECKSUM") == NULL);
+  h2_loader_deinit(&fixture.loader);
+}
+
 int main(void) {
+  test_stats_observes_installed_checksum();
   test_plan_missing_destination();
   test_install_verified_destination_does_not_abort();
   test_install_hash_mismatch_aborts();

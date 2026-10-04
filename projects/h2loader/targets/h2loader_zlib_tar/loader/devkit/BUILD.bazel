@@ -1,0 +1,14 @@
+load("//projects/h2loader/tools/bazel:h2loader_zlib_tar.bzl", "h2loader_zlib_tar")
+
+package(default_visibility = ["//visibility:public"])
+
+h2loader_zlib_tar(
+    name = "package",
+    tags = ["firmware-release"],
+    source = "//projects/h2loader/targets/h2loader_tar_zlib/loader/devkit:package",
+)
+
+h2loader_zlib_tar(
+    name = "package_uart_460800",
+    source = "//projects/h2loader/targets/h2loader_tar_zlib/loader/devkit:package_uart_460800",
+)

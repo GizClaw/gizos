@@ -33,9 +33,17 @@ def validate_firmware_version(value: object, entry: object) -> str:
     return value
 
 
+def package_format(item: dict[str, object]) -> int:
+    value = item.get("package_format", 1)
+    if type(value) is not int or value not in (1, 2):
+        raise ValueError(f"invalid package format: {item.get('entry')}")
+    return value
+
+
 def validate_package_manifest(item: dict[str, object]) -> None:
     manifest = item.get("package_manifest")
-    if not isinstance(manifest, dict) or manifest.get("format") != 1:
+    if (not isinstance(manifest, dict) or type(manifest.get("format")) is not int
+            or manifest["format"] != package_format(item)):
         raise ValueError(f"invalid package manifest: {item.get('entry')}")
     for key in ("board", "role", "target", "version"):
         if manifest.get(key) != item.get(key):
@@ -53,7 +61,8 @@ def validate_package_manifest(item: dict[str, object]) -> None:
 
 
 RELEASE_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,190}$")
-LOADER_ROOT = "projects/h2loader/targets/h2loader_tar_zlib/loader/"
+LOADER_ROOT = "projects/h2loader/targets/h2loader_zlib_tar/loader/"
+LEGACY_LOADER_ROOT = "projects/h2loader/targets/h2loader_tar_zlib/loader/"
 PLATFORM_TARGETS = {"esp": {"esp32s3", "esp32p4"}, "bk7258": {"bk7258"}, "jieli": {"wl82"}}
 
 
@@ -79,13 +88,14 @@ def validate_catalog(catalog: object) -> list[dict[str, object]]:
         ):
             raise ValueError("firmware catalog contains an invalid entry")
         validate_firmware_version(item.get("version"), item["entry"])
+        package_format(item)
         if item["target"] not in PLATFORM_TARGETS.get(item["platform"], set()):
             raise ValueError("firmware catalog contains an invalid entry platform/target")
         # Only canonical Loader entries may opt in. Alternate packages and all
         # e2e/example launchers remain diagnostic even if accidentally tagged.
         if (
             "/e2e/" in f"/{item['entry']}/"
-            or item["entry"] != LOADER_ROOT + item["board"]
+            or item["entry"] not in (LOADER_ROOT + item["board"], LEGACY_LOADER_ROOT + item["board"])
             or item["label"] != "//" + item["entry"] + ":package"
             or item["image"] != "loader"
             or item["role"] != "h2loader"
@@ -102,7 +112,8 @@ def validate_catalog(catalog: object) -> list[dict[str, object]]:
 
 
 def expected_asset_contracts(item: dict[str, object]) -> set[tuple[str, str]]:
-    contracts = {(".update.tar.zlib", "managed-install")}
+    suffix = ".update.tar" if package_format(item) == 2 else ".update.tar.zlib"
+    contracts = {(suffix, "managed-install")}
     if item["platform"] in {"esp", "bk7258"}:
         contracts.add((".recovery.h2fb", "recovery"))
     if item["platform"] == "esp":
@@ -198,7 +209,8 @@ def assemble(inputs: list[Path], output: Path, batch: str) -> None:
             f"unexpected={sorted(actual - expected)}"
         )
     catalog_identity = {
-        item["entry"]: {key: item[key] for key in ("platform", "board", "image", "role", "target", "version")}
+        item["entry"]: {**{key: item[key] for key in ("platform", "board", "image", "role", "target", "version")},
+            "package_format": package_format(item)}
         for item in catalog
     }
     if output.exists():
@@ -211,6 +223,7 @@ def assemble(inputs: list[Path], output: Path, batch: str) -> None:
     for item in firmware:
         validate_firmware_version(item.get("version"), item.get("entry"))
         identity = {key: item.get(key) for key in ("platform", "board", "image", "role", "target", "version")}
+        identity["package_format"] = package_format(item)
         if identity != catalog_identity[item["entry"]]:
             raise ValueError(f"firmware identity mismatch: {item['entry']}")
         validate_package_manifest(item)
