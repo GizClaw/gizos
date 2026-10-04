@@ -91,6 +91,32 @@ class MobileRunnerProvenanceTest(unittest.TestCase):
             with self.assertRaises(AssertionError):
                 self.verify(self.followup)
 
+    def test_shared_pal_guide_only_admits_exact_pref_extension(self):
+        audit = json.loads((qualification.ROOT / "shared_catalog_provenance.json").read_text(encoding="utf-8"))
+        extension = audit["pal_guide_extension"]
+        path = qualification.Path(qualification.SHARED_PAL_GUIDE)
+        current = path.read_bytes()
+        addition = json.loads((qualification.ROOT / "shared_pal_pref_addition.json").read_text(encoding="utf-8"))["addition_utf8"].encode("utf-8")
+        offset = extension["insertion_offset"]
+        baseline = current if qualification.hashlib.sha256(current).hexdigest() == extension["source_sha256"] else (
+            current[:offset] + current[offset + len(addition):])
+        extended = baseline[:offset] + addition + baseline[offset:]
+        previous = {qualification.SHARED_PAL_GUIDE: extension["source_sha256"]}
+        original_read = qualification.Path.read_bytes
+        for content, accepted in [(extended, True), (baseline, True),
+                                  (extended + b"\nunknown PAL policy\n", False),
+                                  (extended.replace(b"Display", b"ChangedDisplay", 1), False),
+                                  (baseline + addition, False),
+                                  (extended.replace(b"Tail v1 manifest", b"Tail v2 manifest", 1), False)]:
+            def read(source):
+                return content if source == path else original_read(source)
+            with patch.object(qualification.Path, "read_bytes", new=read):
+                if accepted:
+                    qualification.shared_pal_guide(previous, extension)
+                else:
+                    with self.assertRaises(AssertionError):
+                        qualification.shared_pal_guide(previous, extension)
+
     def test_native_source_cannot_be_exempted_as_runner_source(self):
         changed = copy.deepcopy(self.followup)
         changed["current_source_sha256"]["libs/pal/providers/sdl3/src/h2_sdl3_display.cpp"] = "0" * 64

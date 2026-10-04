@@ -11,6 +11,7 @@ py_test(
         "gizclaw_harness_provenance.json",
         "shared_catalog_baseline.txt",
         "shared_catalog_provenance.json",
+        "shared_pal_pref_addition.json",
         "//:Makefile",
         "//:scripts/bazel/bazel-test-android_pal_display_simulator_test.sh",
         "//:scripts/bazel/bazel-test-ios_pal_display_simulator_test.sh",
