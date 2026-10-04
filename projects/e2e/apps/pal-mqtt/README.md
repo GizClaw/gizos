@@ -18,6 +18,8 @@ MQTT 当前公开 enum 只提供 QoS0/QoS1，公开 API 没有 cancel operation�
 
 TLS 使用当次运行生成的两天有效 test-only CA/certificate。验收同时核对严格有序完整 case ledger、零失败/blocked、各 case allocation baseline、最终零 allocation/invalid free、broker arrival 和零 live client/retained message。错误 CA 和错误 hostname 各需服务端观察到 ClientHello、实际 Certificate 和失败 handshake。额外 negative test 把错误 CA 替换成可信 CA，要求 App 的证书拒绝 case 和 fixture witness 都拒绝该伪证据。
 
+受控 TLS fixture 禁用 session ticket/resumption，避免把 WolfSSL 正常的 process-wide ticket cache 计入本轮 client allocation baseline；本 suite 不声称 TLS resumption 已验收。每个 MQTT client 必须回到同一 allocation baseline，最后 provider destroy/deinit 必须回到零。
+
 ## 直接入口
 
 ```sh

@@ -103,6 +103,7 @@ static int parse_bool(const char *text, int *out) {
 }
 #endif
 
+
 int main(int argc, char **argv) {
     allocations_t tracker = {.backing = h2_desktop_platform_default_allocator()};
     h2_pal_mem_api_t memory = {.user = &tracker, .vtable = &tracked_vtable};
