@@ -102,8 +102,10 @@ typedef struct h2_gizclaw_config {
      * enables the Ogg/Opus, MP3 and WAV player. Track length is not limited
      * by this buffer, but its playing time is: 64 KiB is seconds of Opus or
      * MP3 and under half a second of 44.1 kHz stereo WAV. The fixed ring is
-     * reused between joined probe/range/fallback requests of one playback;
-     * it is released by successful playback cleanup or stop. */
+     * reused between joined probe/range/fallback requests and an already
+     * accepted immediate music-item continuation. Idle, final EOS, error and
+     * stop release it after the producer joins; failed joins retain ownership
+     * for retry and never reset an active producer. */
     size_t audio_buffer_bytes;
     /** Start/refill threshold <= ring capacity; zero selects min(16 KiB, ring).
      * A completed short response starts with the bytes available. */

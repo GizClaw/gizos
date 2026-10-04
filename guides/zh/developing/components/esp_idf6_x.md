@@ -347,3 +347,14 @@ DevKit 的 `pal-storage` managed App 使用板载 Flash 上的 LittleFS 与独�
 Crypto 的 `random(NULL, 0)` 是成功 no-op；ESP adapter 在零长度时不调用要求非空 buffer 的 `esp_fill_random`，避免合法 PAL 边界触发 SDK assert。`pal-crypto` DevKit E2E 覆盖该边界并验证完整 15 操作 / 22 case，同一 App 还在其他五个平台执行。
 
 X25519 raw key agreement 对格式错误或低阶远端公钥的 PSA INVALID_ARGUMENT 转换为 PAL FORMAT；失败路径清零 shared-secret 输出，成功路径仍校验并拒绝全零 shared secret。
+
+
+### Flash-safe I/O 阶段诊断
+
+`H2_ESP_IO_PHASE_DIAGNOSTICS` 是默认 OFF 的原生 CMake 诊断选项。调用方需在最终 firmware rule 的 `cmake_variables` 逐项允许该名称，再用`--define=H2_ESP_IO_PHASE_DIAGNOSTICS=ON` 显式启用；portable `cc_test`的宏定义不代表 SDK image 已启用。OFF 时不编译计时字段、时钟读取或日志，不改变 worker 的 priority、core、stack、context 容量或 16 KiB scratch。
+
+ON 时只对至少 100 ms 的操作输出 `H2_ESP_IO_PHASE` 数值记录。FS 操作号1–14 依次是 mkdir/open/read/seek/write/sync/close/stat/remove/rename/mount/unmount/format/clear；Pref 操作号 1–8 是 prepare/get/set/remove/clear/list/write-marker/read-marker。记录不包含路径、namespace、key、值、buffer 内容或指针。时间以 boot monotonic 微秒表示，日志输出发生在终点取时之后、所有外层 FS/scratch 锁释放之后。
+
+`fs_wait_us`、`scratch_wait_us` 和 `shared_wait_us` 分别记录 FS mutex、scratch mutex 与共享 SafeCall mutex 的等待。`dispatch_us` 从 request 提交到 worker 开始 callback；`native_us` 是 callback 的 wall time，包含其内部stdio、pref store 与调度等待，并不是纯 flash 或 CPU 耗时。`wake_copy_us`从 callback 返回到 caller 收到完成信号，包含 context copy 和唤醒。`direct_calls` 区分 internal-stack 直接调用；它不经过共享 dispatcher。READ/WRITE 在保留原 4096-byte 分块与 scratch 持有范围的同时累加各块计数，`native_max_us` 保留最慢 callback。Pref 保留整个原 store 操作和原子写入步骤，不为计时拆分 transaction。Pref 数字从内部 I/O wrapper 开始，不包含其外层Preference provider mutex 等待；VFS 内部锁仍在 callback wall time 内。READ/WRITE 的 `wall_us` 从 scratch acquire 之前开始；其他 FS 操作从内部 `littlefs_run_safe` 开始，OPEN 之前的 path translation 与 file-wrapper calloc 不在其中。因此总 `wall_us` 不是完整 PAL Open 时间，还包括该计时范围内的初始化、普通拷贝与 wrapper 工作，不能把嵌套记录相加或据缺失的快记录推定操作未执行。
+
+这是定位工具；ON 的时钟和输出会影响调度，记录不是硬件资格结果。实际用例仍需保留完整 CASE、原门限、checked canonical 输出与真实 cleanup 证据。
