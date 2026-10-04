@@ -1,0 +1,30 @@
+{
+  "source_commit": "cd3dda1dfc28f5d3666851d870779468286720aa",
+  "source_dirty": false,
+  "manifest": {
+    "format": "1",
+    "role": "app",
+    "board": "devkit",
+    "target": "esp32s3",
+    "version": "mqtt-esp-retained-cd3-r3",
+    "image_size": "1540752",
+    "image_sha256": "2501771e9f7af52b8518e0ba79ef3f6b6dc9f7a265777e83b8ff92b6b5a9bd34"
+  },
+  "package_sha256": "ceba56bdafcfad5ad7e98b241416f0b9bcb5ab9aa8bbf17e198ec5751fdcee8a",
+  "package_bytes": 993249,
+  "fixture_inputs": {
+    "bind": "192.168.31.151",
+    "advertised": "192.168.31.151",
+    "tcp_port": 53797,
+    "tls_port": 53798,
+    "session_prefix": "b789aa066e4241e6abaae70bb4359673",
+    "epoch_ms": 1791134081893,
+    "ca_sha256": "d491af25c1d4977f58a039c819d4efc407e2d5b16d27332c14e8456256f24c97",
+    "wrong_ca_sha256": "80ca800448404d3f193179958f3487890bed51d67418dd1a1bc2db840bbd6990",
+    "bazelrc_sha256": "6552f7971b7d9cc613995b2865feaf981e91967c8f0852f7ccd14b1fe91a723e",
+    "tls_handshake_timeout_seconds": 2.0
+  },
+  "hardware_qualified": false,
+  "build_log_sha256": "06657896ac306cb87fd604be9a6e6ec93020318a706a4702df21feb997c5123d",
+  "recorded_at_utc": "2026-10-04T17:17:04.532270+00:00"
+}
