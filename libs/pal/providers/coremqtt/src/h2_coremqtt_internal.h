@@ -31,6 +31,8 @@ struct h2_pal_mqtt_client {
     int emitting;
     int close_requested;
     uint32_t recv_timeout_ms;
+    uint32_t send_timeout_ms;
+    h2_pal_result_t send_result;
     const h2_pal_time_api_t *time_api;
     MQTTContext_t mqtt;
     MQTTFixedBuffer_t fixed_buffer;
@@ -76,5 +78,6 @@ void h2_coremqtt_emit_event(h2_pal_mqtt_client_t *client, const h2_pal_mqtt_even
 
 int32_t h2_coremqtt_transport_recv(NetworkContext_t *network, void *buffer, size_t bytes_to_recv);
 int32_t h2_coremqtt_transport_send(NetworkContext_t *network, const void *buffer, size_t bytes_to_send);
+int32_t h2_coremqtt_transport_writev(NetworkContext_t *network, TransportOutVector_t *vectors, size_t count);
 
 #endif
