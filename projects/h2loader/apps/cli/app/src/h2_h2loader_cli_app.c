@@ -399,20 +399,25 @@ static h2_pal_result_t scan_probe_serial(
     uint32_t timeout_ms,
     h2_h2loader_host_status_t *out_status) {
     h2_h2loader_cli_context_t *context = user;
-    h2_h2loader_cli_options_t options = {
-        .port = candidate->port_id,
-        .wait_timeout_ms = timeout_ms,
-        .read_timeout_ms = timeout_ms,
-        .transport = H2_H2LOADER_HOST_TRANSPORT_SERIAL,
+    const h2_h2loader_host_serial_connection_config_t config = {
+        .serial = context->config->serial,
+        .time = context->runtime->time,
+        .allocator = context->runtime->mem,
+        .port_id = candidate->port_id,
+        .handshake_timeout_ms = timeout_ms,
+        .command_timeout_ms = timeout_ms,
+        /* Identity probing never owns device reset/boot control. */
+        .preserve_control_lines = 1,
     };
-    h2_h2loader_cli_transport_t transport;
+    h2_h2loader_host_serial_connection_t *connection = NULL;
     h2_pal_result_t rc;
     h2_pal_result_t disconnect_rc;
 
-    h2_h2loader_cli_transport_init(
-        &transport, context, &options, timeout_ms);
-    rc = h2_h2loader_cli_transport_connect(&transport, out_status);
-    disconnect_rc = h2_h2loader_cli_transport_disconnect(&transport);
+    rc = h2_h2loader_host_serial_connect(&config, &connection);
+    if (rc == H2_PAL_OK) {
+        rc = h2_h2loader_host_serial_read_status(connection, out_status);
+    }
+    disconnect_rc = h2_h2loader_host_serial_disconnect(&connection);
     return rc == H2_PAL_OK ? disconnect_rc : rc;
 }
 
