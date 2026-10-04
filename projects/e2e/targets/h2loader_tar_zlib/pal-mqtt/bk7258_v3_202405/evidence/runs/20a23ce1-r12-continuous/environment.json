@@ -1,0 +1,23 @@
+{
+  "qualified": true,
+  "restored": false,
+  "artifact_source_commit": "20a23ce18783657ae00b2be568a30cf762be7ff3",
+  "host_verifier_sha256": "73f6ca1828890ff9e1abdd8f0ba88080a8496cfa4f27e9f9de3249a7bea514d0",
+  "version": "mqtt-bk-uart-r12",
+  "uid": "c8478ca2a87c",
+  "case_count": 36,
+  "boots": [
+    "4e75a5e79b1549dc80fc33618c370586-17a0eabff8cf5156",
+    "4e75a5e79b1549dc80fc33618c370586-5ade1d77809f0608"
+  ],
+  "raw_evidence_directory": "/Users/idy/.codex/task-evidence/pal-pref-mqtt-platforms-20261004/mqtt-bk-r12-continuous",
+  "recorded_at_utc": "2026-10-04T18:46:44.939674+00:00",
+  "note": "Qualification precedes the separately recorded root-owned restoration.",
+  "host_source_commit": "930d7563d453879ab52b86adaf436fb48ecc2bfc",
+  "host_binary_sha256": "0831c388ebb4e65c616a0ed76555a60c0a97ae51459f4f52255e1c1028d7dbcd",
+  "host_observation": "UART-only accepted reboot with --monitor --continuous-monitor; final authoritative metadata independently verified",
+  "host_verifier_snapshot": "host-verifier.py",
+  "host_verifier_source_commit": "930d7563d453879ab52b86adaf436fb48ecc2bfc",
+  "independent_readonly_import_source_commit": "08384bbf97c69c36084379c235e3286dd3f090d3",
+  "original_build_receipt": "/Users/idy/.codex/task-evidence/pal-pref-mqtt-platforms-20261004/mqtt-bk-r12/build-receipt.json"
+}

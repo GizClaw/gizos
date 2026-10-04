@@ -22,3 +22,5 @@ python3 -m unittest discover \
   -s projects/e2e/targets/h2loader_tar_zlib/pal-mqtt/bk7258_v3_202405/tools \
   -p test_import_qualification.py -v
 ```
+
+When a new capture reuses an immutable device package, pass `--artifact-build-receipt /absolute/path/to/the/original/build-receipt.json`. Its successful exit, original source and actual version are still verified and the original receipt is copied unchanged. This does not assert a new device build. The capture, new host build/source/binary, exact verifier snapshot/hash and subsequent restoration remain separate evidence identities.

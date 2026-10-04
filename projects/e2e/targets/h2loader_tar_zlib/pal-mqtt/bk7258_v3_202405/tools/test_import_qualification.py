@@ -60,6 +60,14 @@ class AdmissionTest(unittest.TestCase):
         self.update('collector-receipt.json', package_sha256='d' * 64)
         with self.assertRaises(AssertionError):admitted(self.folder, self.source, self.version)
 
+    def test_reused_package_requires_actual_original_build_receipt(self):
+        original = self.folder / 'original-build.json'
+        (self.folder / 'build-receipt.json').rename(original)
+        with self.assertRaises(FileNotFoundError):admitted(self.folder, self.source, self.version)
+        self.assertEqual(admitted(self.folder, self.source, self.version, original), self.collector)
+        self.update('original-build.json', source_commit='c' * 40)
+        with self.assertRaises(AssertionError):admitted(self.folder, self.source, self.version, original)
+
     def test_previous_destination_never_overwritten(self):
         destination = self.folder / 'old'
         destination.mkdir()

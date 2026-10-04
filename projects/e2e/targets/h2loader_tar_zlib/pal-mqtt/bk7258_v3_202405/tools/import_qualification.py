@@ -32,7 +32,7 @@ def write(path, value):
         output.write('\n')
 
 
-def admitted(folder, source, version):
+def admitted(folder, source, version, build_receipt=None):
     collector = read(folder / 'collector-receipt.json')
     assert collector.get('qualified') is True, 'collector has not qualified this run'
     assert type(collector.get('strict_verifier_exit')) is int and collector['strict_verifier_exit'] == 0, 'strict host verifier did not exit 0'
@@ -42,7 +42,7 @@ def admitted(folder, source, version):
     assert 'strict-verifier.log' in collector['logs_sha256'], 'missing actual strict invocation log'
     boundary = read(folder / 'source-boundary.json')
     assert boundary == dict(source_commit=source, source_dirty=False), 'build source was not fixed and clean'
-    build = read(folder / 'build-receipt.json')
+    build = read(build_receipt or folder / 'build-receipt.json')
     assert type(build.get('actual_exit')) is int and build['actual_exit'] == 0 and build['source_commit'] == source, 'build did not succeed on this source'
     assert '--//tools/bazel:firmware_version=' + version in build['argv'], 'build version differs'
     binding = read(folder / 'package-binding.json')
@@ -52,10 +52,10 @@ def admitted(folder, source, version):
     return collector
 
 
-def import_run(folder, destination, repo, source, version, uid, dump_sha):
+def import_run(folder, destination, repo, source, version, uid, dump_sha, build_receipt=None):
     assert not destination.exists(), 'refusing to overwrite historical qualification'
     assert re.fullmatch('[0-9a-f]{40}', source) and re.fullmatch('[0-9a-f]{64}', dump_sha)
-    collector = admitted(folder, source, version)
+    collector = admitted(folder, source, version, build_receipt)
     verifier = repo / 'projects/e2e/libs/pal-mqtt-device/verify_device.py'
     assert sha(verifier) == collector['verifier_sha256'], 'host verifier changed since the actual qualification'
     packages = list(folder.glob('*.update.tar.zlib'))
@@ -104,8 +104,9 @@ def import_run(folder, destination, repo, source, version, uid, dump_sha):
     assert len(set(sessions)) == 2, 'boot identity reused'
     destination.mkdir(parents=True, exist_ok=False)
     write(destination / 'qualified.json', qualified)
-    for name in ['source-boundary.json', 'build-receipt.json', 'package-binding.json', 'collector-receipt.json']:
+    for name in ['source-boundary.json', 'package-binding.json', 'collector-receipt.json']:
         shutil.copyfile(folder / name, destination / name)
+    shutil.copyfile(build_receipt or folder / 'build-receipt.json', destination / 'build-receipt.json')
     receipts = {path.name: read(path) for path in folder.glob('*-receipt.json') if 'command' in read(path)}
     write(destination / 'host-command-receipts.json', receipts)
     write(destination / 'peer-witness.json', dict(inputs=peer['inputs'], runs={session: peer['runs'][session] for session in sessions}))
@@ -128,9 +129,12 @@ def main():
     parser.add_argument('--expected-version', required=True)
     parser.add_argument('--expected-uid', required=True)
     parser.add_argument('--expected-coredump-sha256', required=True)
+    parser.add_argument('--artifact-build-receipt', type=Path,
+        help='Actual original build receipt when this capture reuses an immutable installed package')
     args = parser.parse_args()
     import_run(args.evidence_directory, args.output_directory, args.verifier_repo,
-        args.expected_source, args.expected_version, args.expected_uid, args.expected_coredump_sha256)
+        args.expected_source, args.expected_version, args.expected_uid, args.expected_coredump_sha256,
+        args.artifact_build_receipt)
 
 
 if __name__ == '__main__':
