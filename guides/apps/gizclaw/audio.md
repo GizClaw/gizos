@@ -28,6 +28,8 @@ Peer connection 内的上下行 Opus RTP track、双向 Agent Event Stream、BOS
 
 HTTPS 下载由独立 PAL task 写入有界压缩环形缓冲，默认容量 64 KiB、启动与补缓冲阈值 16 KiB。设备 worker 增量读取 Ogg page / MP3 帧 / WAV 采样，输出 16 kHz mono S16LE，并组装成 Audio PAL 要求的完整 PCM frame。下载侧缓冲满时等待，播放侧 `WOULD_BLOCK` 重试同一帧；不会把整首文件载入内存，也不会逐帧 drain 插入静音。只有尾帧补零，正常结束时 drain；播放进度扣除排队帧，最终不计补零样本。
 
+成功 join 旧下载任务后，探测、Range、回退以及已经接受的立即下一条音乐播放共用同一块固定容量缓冲。切歌会重置请求、Range、长度、读写位置和结果，不会把旧曲目的 PCM 或状态交给新代际。没有立即音乐播放意图、最终 EOS、错误和停止时释放；最终 `ended` 状态在资源清理之后发布。join 失败仍保留旧任务、缓冲和取消标记供 owner 重试，不重置、释放或启动新 producer。
+
 停止使当前 generation 失效并取消 HTTP，下载 task join 成功后才释放其缓冲；播放器只关闭自己的 Track，不关闭共享扬声器。下载、解码或输出失败进入 error 并上报 telemetry。命名音效由补充 vtable 解析名称为 HTTPS 音频 URL（格式同下）；名称须适合内部有界存储，非法输入在预留任务前拒绝。
 
 ### 音频格式
@@ -41,7 +43,7 @@ HTTPS 下载由独立 PAL task 写入有界压缩环形缓冲，默认容量 64 
 
 MP3 与 WAV 先把各声道取平均混成单声道，再重采样到 16 kHz：Kaiser 窗 sinc（β = 6，约 63 dB 阻带），截止在两侧 Nyquist 中较低者的 7/8，降采样时约 7 kHz；16 kHz 源原样直通。输出位置按整数有理数步进，长曲目不会漂移；WAV 和 MP3 定位后的样本与从头播放逐位相同。滤波系数是离线生成的常量表，库不依赖 libm。
 
-内存都从 config 的 PAL allocator 分配，条目结束即释放。在 host 上实测一个条目的解码峰值：Ogg/Opus 约 90 KiB（65,307 字节的最大 page 缓冲加约 18 KiB Opus 状态），MP3 约 41 KiB（其中 dr_mp3 解码器状态约 23 KiB，含其 16 KiB scratch），WAV 约 15 KiB。dr_mp3 把 scratch 放在调用方分配的解码器结构里，解码时在 ESP32-S3 上的静态栈用量不到 1 KiB。
+内存从 config 的 PAL allocator 分配；解码与变速临时内存每条目结束释放，压缩 ring 按上述立即交接与终态清理合同管理。在 host 上实测一个条目的解码峰值：Ogg/Opus 约 90 KiB（65,307 字节的最大 page 缓冲加约 18 KiB Opus 状态），MP3 约 41 KiB（其中 dr_mp3 解码器状态约 23 KiB，含其 16 KiB scratch），WAV 约 15 KiB。dr_mp3 把 scratch 放在调用方分配的解码器结构里，解码时在 ESP32-S3 上的静态栈用量不到 1 KiB。
 
 压缩环形缓冲按字节计：默认 64 KiB 对 Opus 和 MP3 是若干秒，对 44.1 kHz 立体声 16 位 WAV（约 1.4 Mbit/s）不到 0.4 秒，网络一抖就会断音。WAV 适合 8–16 kHz 单声道的提示音；产品要播放高码率 WAV 时，应相应加大 `audio_buffer_bytes` 与 `audio_prebuffer_bytes`。
 

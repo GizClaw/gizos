@@ -1121,8 +1121,8 @@ static int finish_audio_download(h2_gizclaw_device_t *d) {
   d->download = NULL;
   return H2_PAL_OK;
 }
-/* Reuse the same encoded ring for probe/range/fallback during one playback.
- * Final playback cleanup frees it; no storage is carried across items. */
+/* Reuse the joined producer's fixed ring for probe/range/fallback and an
+ * already selected music continuation. Idle, final EOS and stop release it. */
 static int start_audio_download(h2_gizclaw_device_t *d, const char *url,
                                 bool music, bool ranged, uint64_t first,
                                 uint64_t last, uint64_t expected_total) {
@@ -1608,7 +1608,9 @@ static int play_url(h2_gizclaw_device_t *d, const char *url, uint32_t limit_ms,
     trace(d, "player-speaker-release", 0, released);
   }
   h2_gizclaw_audio_decoder_destroy(decoder);
-  int joined = finish_audio_download(d);
+  /* The music worker decides whether an accepted next item needs this joined
+   * storage. A sound is a standalone operation and releases it here. */
+  int joined = music ? join_audio_download(d) : finish_audio_download(d);
   if (rc == H2_PAL_OK)
     rc = joined;
   return rc;
@@ -1750,7 +1752,7 @@ static void update_firmware(h2_gizclaw_device_t *d) {
 static void device_worker(void *user) {
   h2_gizclaw_device_t *d = user;
   while (!h2_atomic_load(&d->stopping)) {
-    if (finish_audio_download(d) != H2_PAL_OK) {
+    if (join_audio_download(d) != H2_PAL_OK) {
       (void)h2_pal_time_sleep_ms(d->config.time, 20);
       continue;
     }
@@ -1768,6 +1770,12 @@ static void device_worker(void *user) {
     }
     d->worker_generation = h2_atomic_load(&d->generation);
     unlock(d);
+    /* A joined ring belongs only to an immediate music continuation. Never
+     * carry it into idle or another tool; joining stays outside d's mutex. */
+    if ((!playing || pending) && finish_audio_download(d) != H2_PAL_OK) {
+      (void)h2_pal_time_sleep_ms(d->config.time, 20);
+      continue;
+    }
     if (dirty && d->config.audio != NULL)
       report_player(d);
     if (pending) {
@@ -1832,6 +1840,23 @@ static void device_worker(void *user) {
     } else if (playing) {
       int rc = play_url(d, url, 0, true, start_ms, duration_ms);
       lock(d);
+      if (!interrupted(d)) {
+        const bool continues =
+            rc == H2_PAL_OK &&
+            (!strcmp(d->status.repeat, "one") ||
+             d->status.current_index + 1 < d->playlist->items_count ||
+             !strcmp(d->status.repeat, "all"));
+        if (!continues) {
+          /* Ended is a cleanup barrier: release before exposing the final
+           * state. A command arriving during cleanup changes the generation
+           * and must not receive this old item's state or PCM. */
+          unlock(d);
+          const int finished = finish_audio_download(d);
+          if (rc == H2_PAL_OK)
+            rc = finished;
+          lock(d);
+        }
+      }
       if (!interrupted(d)) {
         /* Only the selected item starts late; advance and repeat start at 0. */
         d->start_ms = 0;
