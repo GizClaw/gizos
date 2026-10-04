@@ -1640,10 +1640,11 @@ static int install_segments(h2_loader_package_t *package,
     h2_bundle_segmented_file_t source = {.fs = package->config.fs};
     const h2_bundle_segmented_manifest_t *m = &inspection->segments;
     const h2_bundle_digest_api_t digest = segment_digest(package);
-    int rc;
     if (!plan->update_app && !plan->update_data) return H2_PAL_OK;
-    rc = h2_pal_fs_open(source.fs, options->archive_path, H2_PAL_FS_OPEN_READ, &source.file);
-    if (rc != H2_PAL_OK) return rc;
+    const int open_rc = h2_pal_fs_open(source.fs, options->archive_path,
+        H2_PAL_FS_OPEN_READ, &source.file);
+    if (open_rc != H2_PAL_OK) return open_rc;
+    int rc = H2_PAL_OK;
     if (plan->update_data) rc = h2_bundle_archive_install_data_zlib(
         &package->installer, options, h2_bundle_segmented_file_read, &source,
         m, &digest);
