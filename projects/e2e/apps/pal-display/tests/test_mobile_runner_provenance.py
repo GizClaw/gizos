@@ -57,6 +57,17 @@ class MobileRunnerProvenanceTest(unittest.TestCase):
             with self.assertRaises(AssertionError):
                 qualification.display_catalog_content(changed)
 
+    def test_display_row_must_remain_in_actual_apps_table(self):
+        current = qualification.Path(qualification.SHARED_CATALOG).read_text(encoding="utf-8")
+        row = qualification.display_catalog_content(current)["launcher_row"]
+        removed = current.replace(row, "")
+        changed = [removed + "\n" + row,
+                   removed.replace("## Atomic\n", row + "\n## Atomic\n"),
+                   removed.replace("## Atomic\n", "```text\n" + row + "```\n\n## Atomic\n")]
+        for text in changed:
+            with self.assertRaises(AssertionError):
+                qualification.display_catalog_content(text)
+
     def test_rewritten_historical_catalog_baseline_fails(self):
         original_read = qualification.Path.read_bytes
         def read(path):

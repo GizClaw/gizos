@@ -123,14 +123,40 @@ SHARED_CATALOG_AUDIT_SOURCES = {
 def display_catalog_content(text):
     """Extract the complete owned section and unique launcher-matrix row."""
     headings = list(re.finditer(r"^## .*\n", text, re.MULTILINE))
-    matches = [index for index, heading in enumerate(headings)
-               if heading.group() == "## PAL Display\n"]
-    assert len(matches) == 1, "missing or duplicate Display catalog section"
-    index = matches[0]
-    end = headings[index + 1].start() if index + 1 < len(headings) else len(text)
+    def section(title):
+        matches = [index for index, heading in enumerate(headings)
+                   if heading.group() == f"## {title}\n"]
+        assert len(matches) == 1, f"missing or duplicate {title} catalog section"
+        index = matches[0]
+        end = headings[index + 1].start() if index + 1 < len(headings) else len(text)
+        return text[headings[index].end():end]
+
+    display = "## PAL Display\n" + section("PAL Display")
+    apps = section("Apps")
+    # A copied row in prose, a code sample or another section is not a table entry.
+    visible = []
+    fence = None
+    for line in apps.splitlines(keepends=True):
+        marker = re.match(r"^ {0,3}(`{3,}|~{3,})", line)
+        if fence:
+            if marker and marker.group(1)[0] == fence[0] and len(marker.group(1)) >= len(fence) and not line[marker.end():].strip():
+                fence = None
+            visible.append("\n")
+        elif marker:
+            fence = marker.group(1)
+            visible.append("\n")
+        else:
+            visible.append(line)
+    tables = re.findall(
+        r"^\| App \| Portable target \| Current launcher matrix \|\n"
+        r"\| --- \| --- \| --- \|\n(?:\|[^\n]*\n)+",
+        "".join(visible), re.MULTILINE)
+    assert len(tables) == 1, "missing or duplicate Apps launcher matrix"
     rows = re.findall(r"^\| PAL Display \|[^\n]*\n", text, re.MULTILINE)
     assert len(rows) == 1, "missing or duplicate Display catalog row"
-    return {"section": text[headings[index].start():end], "launcher_row": rows[0]}
+    assert rows == re.findall(r"^\| PAL Display \|[^\n]*\n", tables[0], re.MULTILINE), (
+        "Display row is outside the Apps launcher matrix")
+    return {"section": display, "launcher_row": rows[0]}
 
 
 def shared_catalog_sources(previous):
