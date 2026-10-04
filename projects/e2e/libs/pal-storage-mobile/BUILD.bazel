@@ -39,9 +39,9 @@ py_test(
 
 mobile_e2e_suite(
     name = "mobile_e2e",
-    case_count = 30,
+    case_count = 36,
     expected = {
-        "contract": 1,
+        "contract": 2,
         "operations": 28,
         "qualified": True,
         "failed": 0,
@@ -52,7 +52,7 @@ mobile_e2e_suite(
         "root": "pal-storage",
         "nonce_bits": 32,
         "phase_expected": {
-            "contract": 1,
+            "contract": 2,
             "failed": 0,
             "blocked": 0,
             "cleanup": 0,
@@ -65,6 +65,6 @@ mobile_e2e_suite(
     plain_platform = True,
     prefix = "pal-storage",
     registry = "//projects/e2e/apps/pal-storage/app:include/h2_pal_storage_cases.inc",
-    registry_pattern = "H2_PAL_STORAGE_CASE\\(\"([^\"]+)\", ([12])\\)",
+    registry_pattern = "H2_PAL_STORAGE_CASE\\(\"([^\"]+)\", ([123])\\)",
     report = "pal-storage-phase.json",
 )

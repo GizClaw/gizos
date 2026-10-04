@@ -61,9 +61,9 @@ int main(int argc, char **argv) {
   int close_rc = h2_web_fs_close(fs);
   int destroy_rc = h2_web_platform_destroy(platform);
   printf("H2_STORAGE_PHASE "
-         "{\"phase\":%u,\"nonce\":%u,\"passed\":%zu,\"failed\":%zu,\"blocked\":"
+         "{\"contract\":%u,\"phase\":%u,\"nonce\":%u,\"passed\":%zu,\"failed\":%zu,\"blocked\":"
          "%zu,\"cleanup\":%d,\"fs_close\":%d,\"platform_destroy\":%d}\n",
-         r.phase, r.nonce, result.passed, result.failed, result.blocked,
+         H2_PAL_STORAGE_CONTRACT_VERSION, r.phase, r.nonce, result.passed, result.failed, result.blocked,
          result.cleanup_result, close_rc, destroy_rc);
   return rc || close_rc || destroy_rc ? 1 : 0;
 }

@@ -4,12 +4,16 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-#define H2_PAL_STORAGE_CONTRACT_VERSION 1u
+#define H2_PAL_STORAGE_CONTRACT_VERSION 2u
 /* The caller exclusively owns all paths/namespaces and keeps Runtime/provider
  * instances alive until all calls and retained cleanup have finished. */
 typedef enum h2_pal_storage_phase {
+  /* Run in separate provider/process lifetimes, in this order. */
   H2_PAL_STORAGE_SEED = 1,
   H2_PAL_STORAGE_VERIFY = 2,
+  /* Read-only verification after VERIFY committed remove/clear. Safe to
+   * repeat in another fresh process without reseeding or mutating data. */
+  H2_PAL_STORAGE_CLEAN_VERIFY = 3,
 } h2_pal_storage_phase_t;
 typedef enum h2_pal_storage_status {
   H2_PAL_STORAGE_NOT_RUN = 0,

@@ -1,7 +1,7 @@
 {
-  "contract": 1,
+  "contract": 2,
   "operation_count": 28,
-  "case_count": 30,
+  "case_count": 36,
   "operations": [
     {
       "operation": "fs.mkdir",
@@ -83,7 +83,8 @@
         "pal.storage.fs.remove",
         "pal.storage.fs.clear",
         "pal.storage.fs.path-isolation",
-        "pal.storage.fs.arguments"
+        "pal.storage.fs.arguments",
+        "pal.storage.cleanup.persist.fs"
       ]
     },
     {
@@ -117,7 +118,11 @@
         "pal.storage.pref.namespace-isolation",
         "pal.storage.pref.read-only",
         "pal.storage.pref.churn",
-        "pal.storage.persist.pref"
+        "pal.storage.persist.pref",
+        "pal.storage.pref.blob-boundaries",
+        "pal.storage.pref.string-boundaries",
+        "pal.storage.pref.overwrite-stress",
+        "pal.storage.cleanup.persist.pref"
       ]
     },
     {
@@ -135,7 +140,9 @@
       "owner_case": "pal.storage.pref.blob",
       "additional_cases": [
         "pal.storage.pref.allocation-failure",
-        "pal.storage.persist.pref"
+        "pal.storage.persist.pref",
+        "pal.storage.pref.blob-boundaries",
+        "pal.storage.cleanup.persist.pref"
       ]
     },
     {
@@ -143,7 +150,10 @@
       "header": "libs/pal/include/h2/pal/os/h2_pal_pref.h",
       "owner_case": "pal.storage.pref.blob",
       "additional_cases": [
-        "pal.storage.pref.overwrite-type"
+        "pal.storage.pref.overwrite-type",
+        "pal.storage.pref.blob-boundaries",
+        "pal.storage.pref.read-only",
+        "pal.storage.persist.seed"
       ]
     },
     {
@@ -153,14 +163,19 @@
       "additional_cases": [
         "pal.storage.pref.overwrite-type",
         "pal.storage.pref.allocation-failure",
-        "pal.storage.persist.pref"
+        "pal.storage.persist.pref",
+        "pal.storage.pref.string-boundaries",
+        "pal.storage.cleanup.persist.pref"
       ]
     },
     {
       "operation": "namespace.set_string",
       "header": "libs/pal/include/h2/pal/os/h2_pal_pref.h",
       "owner_case": "pal.storage.pref.string",
-      "additional_cases": []
+      "additional_cases": [
+        "pal.storage.pref.string-boundaries",
+        "pal.storage.pref.read-only"
+      ]
     },
     {
       "operation": "namespace.get_u32",
@@ -169,7 +184,10 @@
       "additional_cases": [
         "pal.storage.pref.namespace-isolation",
         "pal.storage.pref.remove",
-        "pal.storage.persist.pref"
+        "pal.storage.persist.pref",
+        "pal.storage.pref.integer-boundaries",
+        "pal.storage.pref.overwrite-stress",
+        "pal.storage.cleanup.persist.pref"
       ]
     },
     {
@@ -177,7 +195,9 @@
       "header": "libs/pal/include/h2/pal/os/h2_pal_pref.h",
       "owner_case": "pal.storage.pref.u32",
       "additional_cases": [
-        "pal.storage.pref.read-only"
+        "pal.storage.pref.read-only",
+        "pal.storage.pref.integer-boundaries",
+        "pal.storage.pref.overwrite-stress"
       ]
     },
     {
@@ -185,35 +205,44 @@
       "header": "libs/pal/include/h2/pal/os/h2_pal_pref.h",
       "owner_case": "pal.storage.pref.i32",
       "additional_cases": [
-        "pal.storage.persist.pref"
+        "pal.storage.persist.pref",
+        "pal.storage.pref.integer-boundaries",
+        "pal.storage.cleanup.persist.pref"
       ]
     },
     {
       "operation": "namespace.set_i32",
       "header": "libs/pal/include/h2/pal/os/h2_pal_pref.h",
       "owner_case": "pal.storage.pref.i32",
-      "additional_cases": []
+      "additional_cases": [
+        "pal.storage.pref.integer-boundaries",
+        "pal.storage.pref.read-only"
+      ]
     },
     {
       "operation": "namespace.get_bool",
       "header": "libs/pal/include/h2/pal/os/h2_pal_pref.h",
       "owner_case": "pal.storage.pref.bool",
       "additional_cases": [
-        "pal.storage.persist.pref"
+        "pal.storage.persist.pref",
+        "pal.storage.cleanup.persist.pref"
       ]
     },
     {
       "operation": "namespace.set_bool",
       "header": "libs/pal/include/h2/pal/os/h2_pal_pref.h",
       "owner_case": "pal.storage.pref.bool",
-      "additional_cases": []
+      "additional_cases": [
+        "pal.storage.pref.read-only"
+      ]
     },
     {
       "operation": "namespace.remove",
       "header": "libs/pal/include/h2/pal/os/h2_pal_pref.h",
       "owner_case": "pal.storage.pref.read-only",
       "additional_cases": [
-        "pal.storage.pref.remove"
+        "pal.storage.pref.remove",
+        "pal.storage.cleanup.storage"
       ]
     },
     {
@@ -232,7 +261,8 @@
       "additional_cases": [
         "pal.storage.pref.churn",
         "pal.storage.persist.seed",
-        "pal.storage.cleanup.storage"
+        "pal.storage.cleanup.storage",
+        "pal.storage.pref.overwrite-stress"
       ]
     },
     {
@@ -241,7 +271,10 @@
       "owner_case": "pal.storage.pref.iteration",
       "additional_cases": [
         "pal.storage.pref.cursor-close",
-        "pal.storage.pref.clear"
+        "pal.storage.pref.clear",
+        "pal.storage.pref.overwrite-stress",
+        "pal.storage.persist.pref",
+        "pal.storage.cleanup.persist.pref"
       ]
     },
     {
@@ -249,7 +282,10 @@
       "header": "libs/pal/include/h2/pal/os/h2_pal_pref.h",
       "owner_case": "pal.storage.pref.iteration",
       "additional_cases": [
-        "pal.storage.pref.cursor-close"
+        "pal.storage.pref.cursor-close",
+        "pal.storage.pref.overwrite-stress",
+        "pal.storage.persist.pref",
+        "pal.storage.cleanup.persist.pref"
       ]
     }
   ]
