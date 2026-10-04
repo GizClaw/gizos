@@ -10,6 +10,20 @@
 #include <mbedtls/sha256.h>
 static h2_runtime_t *runtime;
 static h2_mqtt_device_result_t result;
+static const h2_pal_log_api_t *board_log;
+/* The native SDK console owns stdio. Keep the portable runner behind PAL Log,
+ * while its boot/ledger lines use the same console path as platform startup. */
+static int ledger_log(void *user,h2_pal_log_level_t level,const char *scope,const char *message){
+    (void)user;
+    if(message==NULL)return H2_PAL_ERR_INVALID_ARG;
+    if(scope!=NULL && strcmp(scope,"pal-mqtt")==0){
+        if(printf("%s\r\n",message)<0 || fflush(stdout)!=0)return H2_PAL_ERR_IO;
+        return H2_PAL_OK;
+    }
+    return h2_pal_log_write(board_log,level,scope,message);
+}
+static const h2_pal_log_vtable_t ledger_log_vtable={.write=ledger_log};
+static const h2_pal_log_api_t ledger_log_api={.vtable=&ledger_log_vtable};
 static void hold(void){for(;;)rtos_delay_milliseconds(1000u);}
 static void fail(const char *stage,int rc){printf("H2_PAL_MQTT_SETUP_FAIL stage=%s rc=%d\n",stage,rc);fflush(stdout);hold();}
 static int snapshot(size_t out[10]){
@@ -40,6 +54,7 @@ static void run(void *unused){
 static void entry(void *unused){
     (void)unused;puts("H2_PAL_MQTT_PLATFORM_BOOT board=bk7258");fflush(stdout);
     h2_runtime_config_t config={0};int rc=h2_bk7258_board_runtime_config(&config);if(rc!=H2_PAL_OK)fail("board",rc);
+    board_log=config.log;config.log=&ledger_log_api;
     rc=h2_runtime_init(&config,&runtime);if(rc!=H2_PAL_OK)fail("runtime",rc);
     rc=h2_bk_h2loader_start_app_iostreamikcp_with_capabilities(runtime,"pal-mqtt",H2_LOADER_CAPABILITY_UART|H2_LOADER_CAPABILITY_WIFI);
     if(rc!=H2_PAL_OK)fail("commands",rc);

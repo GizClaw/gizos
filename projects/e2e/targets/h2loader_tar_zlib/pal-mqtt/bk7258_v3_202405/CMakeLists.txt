@@ -29,7 +29,6 @@ endif()
 project(h2_bk_pal_mqtt)
 
 if("${ARMINO_SOC}" STREQUAL "${H2_BK_TARGET}_ap")
-  target_compile_definitions(__armino_h2_pal_core PRIVATE H2_BK_NET_TLS_DIAGNOSTICS=1)
   get_target_property(H2_MQTT_PLATFORM_DEFINITIONS
     __armino_h2_pal_core COMPILE_DEFINITIONS)
   list(FIND H2_MQTT_PLATFORM_DEFINITIONS
