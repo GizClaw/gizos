@@ -3777,6 +3777,74 @@ static unsigned seek_play(h2_gizclaw_service_t *service,
   assert(status.position_ms == status.duration_ms);
   return h2_atomic_load(&state->writes);
 }
+/* An arena can admit the initial ring but refuse its replacement even
+ * after it was freed. Exercise real probe/range/fallback playback under
+ * that constraint; keeping the same producer-owned storage avoids it. */
+typedef struct seek_ring_memory {
+  pthread_mutex_t mutex;
+  unsigned ring_attempts, live;
+  void *ring;
+  void *owned[1024];
+} seek_ring_memory_t;
+static void *seek_ring_alloc(void *user, size_t bytes) {
+  seek_ring_memory_t *memory = user;
+  pthread_mutex_lock(&memory->mutex);
+  if (bytes == 262144u && ++memory->ring_attempts > 1u) {
+    pthread_mutex_unlock(&memory->mutex);
+    return NULL;
+  }
+  void *p = malloc(bytes);
+  if (p) {
+    size_t slot = 0u;
+    while (slot < 1024u && memory->owned[slot]) ++slot;
+    assert(slot < 1024u);
+    memory->owned[slot] = p;
+    ++memory->live;
+    if (bytes == 262144u)
+      memory->ring = p;
+  }
+  pthread_mutex_unlock(&memory->mutex);
+  return p;
+}
+static void seek_ring_free(void *user, void *p) {
+  if (!p) return;
+  seek_ring_memory_t *memory = user;
+  pthread_mutex_lock(&memory->mutex);
+  /* Protocol fixtures also deliver malloc-owned response payloads directly.
+   * Only charge storage actually obtained through this allocator. */
+  for (size_t slot = 0u; slot < 1024u; ++slot) {
+    if (memory->owned[slot] != p) continue;
+    memory->owned[slot] = NULL;
+    assert(memory->live > 0u);
+    --memory->live;
+    break;
+  }
+  if (memory->ring == p) memory->ring = NULL;
+  free(p);
+  pthread_mutex_unlock(&memory->mutex);
+}
+static void *seek_ring_realloc(void *user, void *p, size_t bytes) {
+  if (!p) return seek_ring_alloc(user, bytes);
+  if (!bytes) { seek_ring_free(user, p); return NULL; }
+  seek_ring_memory_t *memory = user;
+  pthread_mutex_lock(&memory->mutex);
+  assert(p != memory->ring); /* Ring capacity is fixed for the playback. */
+  size_t slot = 0u;
+  while (slot < 1024u && memory->owned[slot] != p) ++slot;
+  void *next = realloc(p, bytes);
+  if (next) {
+    if (slot == 1024u) {
+      slot = 0u;
+      while (slot < 1024u && memory->owned[slot]) ++slot;
+      assert(slot < 1024u);
+      ++memory->live;
+    }
+    memory->owned[slot] = next;
+  }
+  pthread_mutex_unlock(&memory->mutex);
+  return next;
+}
+
 /* Frames a playback starting at output sample origin16 writes. */
 static unsigned seek_frames(const seek_test_state_t *state, uint64_t origin16) {
   return (unsigned)((state->plain16 - origin16 + 159u) / 160u);
@@ -3898,6 +3966,278 @@ static void test_device_player_timed_start(void) {
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
   h2_gizclaw_test_set_telemetry_send(NULL, NULL);
+}
+
+static void test_device_seek_reuses_download_storage(void) {
+  const unsigned modes[] = {SEEK_SERVER_RANGE, SEEK_SERVER_MISPLACE,
+      SEEK_SERVER_NOT_206, SEEK_SERVER_RETOTAL, SEEK_SERVER_IGNORE};
+  h2_gizclaw_test_set_telemetry_send(device_telemetry, NULL);
+  for (size_t i = 0u; i < sizeof(modes) / sizeof(modes[0]); ++i) {
+    static seek_test_state_t state;
+    memset(&state, 0, sizeof(state));
+    seek_test_state_atomics_init(&state);
+    seek_fixture_build(&state);
+    state.server = modes[i];
+    seek_ring_memory_t memory = {.mutex = PTHREAD_MUTEX_INITIALIZER};
+    const h2_pal_mem_vtable_t mem_vtable = {.alloc = seek_ring_alloc,
+        .realloc = seek_ring_realloc, .free = seek_ring_free};
+    const h2_pal_mem_api_t allocator = {.user = &memory, .vtable = &mem_vtable};
+    const h2_pal_audio_vtable_t audio_vtable = {.get_info = seek_audio_info,
+        .start_speaker = seek_speaker, .create_track = seek_track_create};
+    const h2_pal_audio_api_t audio = {.user = &state, .vtable = &audio_vtable};
+    const h2_pal_http_vtable_t http_vtable = {.request = seek_http};
+    const h2_pal_http_api_t http = {.user = &state, .vtable = &http_vtable};
+    test_env_t env;
+    h2_gizclaw_service_t *service = create_profile_service(&env);
+    service->client_config.audio = &audio;
+    service->client_config.http = &http;
+    service->client_config.allocator = &allocator;
+    service->client_config.audio_buffer_bytes = 262144u;
+    assert(h2_gizclaw_device_init_internal(service) == H2_PAL_OK);
+    assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+    assert(seek_play(service, &state, 30000u, 20000u, 20000u) ==
+           seek_frames(&state, 20000u * 16u));
+    assert(h2_atomic_load(&state.calls) ==
+           (modes[i] == SEEK_SERVER_RANGE ? 2u : modes[i] == SEEK_SERVER_IGNORE ? 1u : 3u));
+    pthread_mutex_lock(&memory.mutex);
+    assert(memory.ring_attempts == 1u && memory.ring == NULL);
+    pthread_mutex_unlock(&memory.mutex);
+    /* EOS releases the download ring, but background status telemetry can
+     * still allocate on this same allocator. Join every owner before judging
+     * total resources; never use an in-flight telemetry count as a baseline. */
+    assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+    assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+    pthread_mutex_lock(&memory.mutex);
+    assert(memory.live == 0u && memory.ring == NULL);
+    pthread_mutex_unlock(&memory.mutex);
+    pthread_mutex_destroy(&memory.mutex);
+    h2_atomic_uint_destroy(&state.calls);
+    h2_atomic_uint_destroy(&state.writes);
+  }
+  h2_gizclaw_test_set_telemetry_send(NULL, NULL);
+}
+
+/* Delegate real tasks and playback, faulting only the named HTTP producer.
+ * Keep its first request alive after cancellation until a successful join,
+ * so a failed join cannot silently reset or free its borrowed request state. */
+typedef struct seek_download_faults {
+  pthread_mutex_t mutex;
+  seek_test_state_t *player;
+  seek_ring_memory_t *memory;
+  h2_pal_task_t *download;
+  int (*cancel)(void *user);
+  void *cancel_user;
+  unsigned attempts, starts, joins, joined, requests;
+  unsigned fail_start_at;
+  bool fail_first_join, hold_join, release_http, block_pcm;
+  h2_atomic_uint_t join_failures, blocked_writes, closes;
+  h2_pal_audio_track_t track;
+} seek_download_faults_t;
+
+static int seek_download_start(void *user,
+                                const h2_pal_task_options_t *options,
+                                h2_pal_task_entry_t entry, void *context,
+                                h2_pal_task_t **out) {
+  seek_download_faults_t *faults = user;
+  const bool download = options && options->name &&
+      !strcmp(options->name, H2_GIZCLAW_AUDIO_DOWNLOAD_TASK_NAME_VALUE);
+  if (download) {
+    pthread_mutex_lock(&faults->mutex);
+    assert(faults->download == NULL);
+    const bool fail = ++faults->attempts == faults->fail_start_at;
+    pthread_mutex_unlock(&faults->mutex);
+    if (fail) {
+      *out = NULL;
+      return H2_PAL_ERR_TASK;
+    }
+  }
+  int rc = h2_pal_task_start(h2_desktop_platform_task_api(), options,
+                             entry, context, out);
+  if (download && rc == H2_PAL_OK) {
+    pthread_mutex_lock(&faults->mutex);
+    faults->download = *out;
+    ++faults->starts;
+    pthread_mutex_unlock(&faults->mutex);
+  }
+  return rc;
+}
+
+static int seek_download_join(void *user, h2_pal_task_t *task) {
+  seek_download_faults_t *faults = user;
+  pthread_mutex_lock(&faults->mutex);
+  const bool download = task == faults->download;
+  if (download) {
+    ++faults->joins;
+    assert(faults->cancel && faults->cancel(faults->cancel_user));
+    pthread_mutex_lock(&faults->memory->mutex);
+    assert(faults->memory->ring != NULL &&
+           faults->memory->ring_attempts == 1u);
+    pthread_mutex_unlock(&faults->memory->mutex);
+    if (faults->hold_join || (faults->fail_first_join && faults->joins == 1u)) {
+      h2_atomic_fetch_add(&faults->join_failures, 1u);
+      pthread_mutex_unlock(&faults->mutex);
+      return H2_PAL_ERR_TASK;
+    }
+    faults->release_http = true;
+  }
+  pthread_mutex_unlock(&faults->mutex);
+  int rc = h2_pal_task_join(h2_desktop_platform_task_api(), task);
+  if (download && rc == H2_PAL_OK) {
+    pthread_mutex_lock(&faults->mutex);
+    assert(faults->download == task);
+    faults->download = NULL;
+    ++faults->joined;
+    pthread_mutex_unlock(&faults->mutex);
+  }
+  return rc;
+}
+
+static int seek_download_http(void *user,
+                               const h2_pal_http_request_t *request,
+                               h2_pal_http_response_t *response) {
+  seek_download_faults_t *faults = user;
+  pthread_mutex_lock(&faults->mutex);
+  const bool first = ++faults->requests == 1u;
+  faults->cancel = request->cancel_cb;
+  faults->cancel_user = request->cancel_user;
+  pthread_mutex_unlock(&faults->mutex);
+  const int rc = seek_http(faults->player, request, response);
+  if (!first)
+    return rc;
+  for (;;) {
+    pthread_mutex_lock(&faults->mutex);
+    const bool released = faults->release_http;
+    pthread_mutex_unlock(&faults->mutex);
+    if (released && request->cancel_cb(request->cancel_user))
+      return H2_PAL_ERR_CLOSED;
+    h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u);
+  }
+}
+
+static int seek_download_write(h2_pal_audio_track_t *track,
+                                const h2_audio_frame_t *frame,
+                                uint32_t timeout_ms) {
+  seek_download_faults_t *faults = track->user;
+  if (faults->block_pcm) {
+    h2_atomic_fetch_add(&faults->blocked_writes, 1u);
+    return H2_PAL_ERR_WOULD_BLOCK;
+  }
+  h2_pal_audio_track_t inner = {.user = faults->player};
+  return seek_pcm_write(&inner, frame, timeout_ms);
+}
+static int seek_download_close(h2_pal_audio_track_t *track) {
+  seek_download_faults_t *faults = track->user;
+  h2_atomic_fetch_add(&faults->closes, 1u);
+  return H2_PAL_OK;
+}
+static int seek_download_track(void *user,
+                                const h2_audio_track_config_t *config,
+                                h2_pal_audio_track_t **out) {
+  (void)config;
+  seek_download_faults_t *faults = user;
+  faults->track = (h2_pal_audio_track_t){.user = faults,
+      .write = seek_download_write, .drain = seek_pcm_drain,
+      .close = seek_download_close};
+  *out = &faults->track;
+  return H2_PAL_OK;
+}
+
+static void seek_download_wait(h2_atomic_uint_t *counter) {
+  for (unsigned n = 0u; n < 5000u; ++n) {
+    if (h2_atomic_load(counter) != 0u)
+      return;
+    h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u);
+  }
+  assert(!"download fault boundary was not reached");
+}
+
+static void test_device_seek_download_failures_and_stop(void) {
+  for (unsigned scenario = 0u; scenario < 3u; ++scenario) {
+    static seek_test_state_t state;
+    memset(&state, 0, sizeof(state));
+    seek_test_state_atomics_init(&state);
+    seek_fixture_build(&state);
+    state.server = SEEK_SERVER_RANGE;
+    seek_ring_memory_t memory = {.mutex = PTHREAD_MUTEX_INITIALIZER};
+    seek_download_faults_t faults = {.mutex = PTHREAD_MUTEX_INITIALIZER,
+        .player = &state, .memory = &memory,
+        .fail_first_join = scenario == 0u,
+        .fail_start_at = scenario == 1u ? 2u : 0u,
+        .hold_join = scenario == 2u, .block_pcm = scenario == 2u};
+    assert(h2_atomic_uint_init(&faults.join_failures, 0u) == H2_ATOMIC_OK);
+    assert(h2_atomic_uint_init(&faults.blocked_writes, 0u) == H2_ATOMIC_OK);
+    assert(h2_atomic_uint_init(&faults.closes, 0u) == H2_ATOMIC_OK);
+    const h2_pal_mem_vtable_t mv = {.alloc = seek_ring_alloc,
+        .realloc = seek_ring_realloc, .free = seek_ring_free};
+    const h2_pal_mem_api_t allocator = {.user = &memory, .vtable = &mv};
+    const h2_pal_task_vtable_t tv = {.start = seek_download_start,
+        .join = seek_download_join};
+    const h2_pal_task_api_t tasks = {.user = &faults, .vtable = &tv};
+    const h2_pal_http_vtable_t hv = {.request = seek_download_http};
+    const h2_pal_http_api_t http = {.user = &faults, .vtable = &hv};
+    const h2_pal_audio_vtable_t av = {.get_info = seek_audio_info,
+        .start_speaker = seek_speaker, .create_track = seek_download_track};
+    const h2_pal_audio_api_t audio = {.user = &faults, .vtable = &av};
+    test_env_t env;
+    h2_gizclaw_service_t *service = create_profile_service(&env);
+    service->config.task = &tasks;
+    service->client_config.audio = &audio;
+    service->client_config.http = &http;
+    service->client_config.allocator = &allocator;
+    service->client_config.audio_buffer_bytes = 262144u;
+    assert(h2_gizclaw_device_init_internal(service) == H2_PAL_OK);
+    h2_gizclaw_test_set_telemetry_send(device_telemetry, NULL);
+    assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+    pthread_mutex_lock(&memory.mutex);
+    const unsigned baseline = memory.live;
+    pthread_mutex_unlock(&memory.mutex);
+    if (scenario < 2u) {
+      /* A failed probe join or failed ranged task start falls back to plain
+       * playback, with the same ring and exactly the requested PCM origin. */
+      assert(seek_play(service, &state, 30000u, 20000u, 20000u) ==
+             seek_frames(&state, 20000u * 16u));
+      assert(h2_atomic_load(&state.calls) == 2u && state.ranges[1][0] == '\0');
+      assert(faults.attempts == (scenario == 0u ? 2u : 3u));
+      assert(faults.starts == 2u && faults.joined == 2u);
+      assert(h2_atomic_load(&faults.join_failures) == (scenario == 0u ? 1u : 0u));
+    } else {
+      h2_gizclaw_player_playlist_entry_t entry = {
+          .url = device_span("https://example.test/episode.ogg"),
+          .duration_ms = 30000u};
+      assert(h2_gizclaw_player_playlist_set(service, &entry, 1u) == H2_PAL_OK);
+      assert(h2_gizclaw_player_play_index_at(service, 0u, 0u) == H2_PAL_OK);
+      seek_download_wait(&faults.blocked_writes);
+      assert(h2_gizclaw_player_stop(service) == H2_PAL_OK);
+      seek_download_wait(&faults.join_failures);
+      assert(h2_gizclaw_service_stop(service) == H2_PAL_ERR_TASK);
+      assert(h2_gizclaw_service_deinit(service) == H2_PAL_ERR_INVALID_STATE);
+      pthread_mutex_lock(&memory.mutex);
+      assert(memory.ring != NULL && memory.ring_attempts == 1u);
+      pthread_mutex_unlock(&memory.mutex);
+      pthread_mutex_lock(&faults.mutex);
+      assert(faults.download != NULL && faults.starts == 1u && faults.joined == 0u);
+      assert(faults.cancel(faults.cancel_user));
+      faults.hold_join = false;
+      pthread_mutex_unlock(&faults.mutex);
+    }
+    assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+    pthread_mutex_lock(&memory.mutex);
+    assert(memory.ring == NULL && memory.ring_attempts == 1u &&
+           memory.live == baseline);
+    pthread_mutex_unlock(&memory.mutex);
+    assert(h2_atomic_load(&faults.closes) == 1u);
+    assert(faults.download == NULL && faults.starts == faults.joined);
+    assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+    assert(memory.live == 0u);
+    pthread_mutex_destroy(&faults.mutex);
+    pthread_mutex_destroy(&memory.mutex);
+    h2_atomic_uint_destroy(&faults.join_failures);
+    h2_atomic_uint_destroy(&faults.blocked_writes);
+    h2_atomic_uint_destroy(&faults.closes);
+    h2_atomic_uint_destroy(&state.calls);
+    h2_atomic_uint_destroy(&state.writes);
+    h2_gizclaw_test_set_telemetry_send(NULL, NULL);
+  }
 }
 
 /* 30 s of 8 kHz unsigned 8-bit mono WAV: 480000 samples at 16 kHz. */
@@ -10184,11 +10524,21 @@ static void test_speech_managed_requests(void) {
       continue;
     }
     assert(h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL) == H2_PAL_OK);
+    h2_gizclaw_audio_input_state_t input_state;
+    assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
+    assert(!input_state.active && !input_state.ready);
     assert(speech_audio_start(&test) == H2_PAL_OK);
+    if (mode == 13u) {
+      assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
+      assert(input_state.generation == 1u && input_state.active && !input_state.ready);
+      assert(input_state.route == H2_GIZCLAW_AUDIO_INPUT_SPEECH);
+    }
     assert(h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL) ==
            H2_PAL_ERR_INVALID_STATE);
     if (mode == 13u) {
       assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
+      assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
+      assert(!input_state.active && !input_state.ready);
       h2_atomic_store(&env.connect_gate, true);
     }
     if (mode == 12u) {
@@ -10247,6 +10597,10 @@ static void test_speech_managed_requests(void) {
             assert(h2_atomic_load(&test.captures) == 2u);
             assert(h2_atomic_load(&test.captured_bytes) == 1280u);
             assert(h2_atomic_load(&test.uploaded_bytes) == 0u);
+            assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
+            assert(input_state.route == H2_GIZCLAW_AUDIO_INPUT_SPEECH);
+            /* Stream readiness remains true while its single input slot is full. */
+            assert(input_state.active && input_state.ready);
           }
           assert(h2_gizclaw_req_wait(request, 0u) == H2_PAL_ERR_TIMEOUT);
         }
@@ -11661,6 +12015,11 @@ static void test_conversation_downlink_release_keeps_closed(void) {
   assert(h2_gizclaw_pcm_track_create(&config, &track) == H2_PAL_OK);
   assert(h2_gizclaw_service_set_track(service, track) == H2_PAL_OK);
   assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  h2_gizclaw_audio_input_state_t input_state;
+  assert(h2_gizclaw_service_audio_input_snapshot(NULL, &input_state) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_service_audio_input_snapshot(service, NULL) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
+  assert(input_state.generation == 0u && !input_state.active && !input_state.ready);
   h2_gizclaw_conversation_t *conversation = NULL;
   assert(h2_gizclaw_conversation_create(
              service, (h2_gizclaw_str_t){"workspace", 9u}, NULL,
@@ -11671,6 +12030,9 @@ static void test_conversation_downlink_release_keeps_closed(void) {
   assert(h2_gizclaw_service_pcm_write_internal(
              service, stale_pcm, sizeof(stale_pcm)) == H2_PAL_OK);
   assert(h2_gizclaw_service_audio_start(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
+  assert(input_state.generation == 1u && input_state.active && !input_state.ready);
+  assert(input_state.route == H2_GIZCLAW_AUDIO_INPUT_CONVERSATION);
   /* The press already dropped what the Track still held. */
   assert(h2_gizclaw_pcm_track_read(track, pcm, sizeof(pcm)) ==
          H2_PAL_ERR_WOULD_BLOCK);
@@ -11678,6 +12040,8 @@ static void test_conversation_downlink_release_keeps_closed(void) {
          H2_PAL_OK);
   assert(h2_gizclaw_test_downlink_frames(service) == 0u);
   assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
+  assert(!input_state.active && !input_state.ready);
   assert(h2_gizclaw_service_media_write_opus(service, packet, sizeof(packet)) ==
          H2_PAL_OK);
   assert(h2_gizclaw_test_downlink_frames(service) == 0u);
@@ -11687,7 +12051,33 @@ static void test_conversation_downlink_release_keeps_closed(void) {
          H2_PAL_OK);
   assert(h2_gizclaw_test_downlink_frames(service) == 1u);
   h2_gizclaw_conversation_release(conversation);
+  assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
+  assert(!input_state.active && !input_state.ready);
+  /* A fresh Conversation resets its own identity, but never the Service token. */
+  assert(h2_gizclaw_conversation_create(
+             service, (h2_gizclaw_str_t){"workspace", 9u}, NULL,
+             downlink_release_complete, &test, &conversation) == H2_PAL_OK);
+  assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
+  assert(!input_state.active && !input_state.ready);
+  assert(h2_gizclaw_service_audio_start(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
+  assert(input_state.generation == 2u && input_state.active && !input_state.ready);
+  assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
+  downlink_release_wait(&test, 2u);
+  h2_gizclaw_conversation_release(conversation);
+  assert(h2_gizclaw_conversation_create(
+             service, (h2_gizclaw_str_t){"workspace", 9u}, NULL,
+             downlink_release_complete, &test, &conversation) == H2_PAL_OK);
+  assert(h2_pal_mutex_lock(service->config.sync, service->audio_mutex) == H2_PAL_OK);
+  service->audio_input_generation = UINT64_MAX;
+  assert(h2_pal_mutex_unlock(service->config.sync, service->audio_mutex) == H2_PAL_OK);
+  assert(h2_gizclaw_service_audio_start(service) == H2_PAL_ERR_NO_SPACE);
+  assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
+  assert(input_state.generation == UINT64_MAX && !input_state.active && !input_state.ready);
+  h2_gizclaw_conversation_release(conversation);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_audio_input_snapshot(service, &input_state) == H2_PAL_OK);
+  assert(!input_state.active && !input_state.ready);
   assert(h2_gizclaw_service_unset_track(service, track) == H2_PAL_OK);
   assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
@@ -12160,11 +12550,20 @@ static void test_conversation_public_audio_tasks(void) {
       } else if (mode == 1 && h2_atomic_load(&test.captured) > 0 && !input_ended) {
         assert(h2_gizclaw_conversation_cancel(conversation) == H2_PAL_OK);
         assert(h2_gizclaw_conversation_cancel(conversation) == H2_PAL_OK);
+        h2_gizclaw_audio_input_state_t canceled;
+        assert(h2_gizclaw_service_audio_input_snapshot(service, &canceled) == H2_PAL_OK);
+        assert(!canceled.active && !canceled.ready);
         input_ended = true;
       } else if ((mode == 0 || mode == 3 || mode == 4 ||
                   (mode >= 6 && mode <= 10) || mode == 19 || mode == 22 || mode == 24 || mode == 27) &&
                  h2_atomic_load(&test.captured) == 12 * 640 + 100 &&
                  !input_ended) {
+        if (mode == 0) {
+          h2_gizclaw_audio_input_state_t ready;
+          assert(h2_gizclaw_service_audio_input_snapshot(service, &ready) == H2_PAL_OK);
+          assert(ready.generation == 1u && ready.active && ready.ready);
+          assert(ready.route == H2_GIZCLAW_AUDIO_INPUT_CONVERSATION);
+        }
         assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
         assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
         input_ended = true;
@@ -14428,6 +14827,8 @@ int main(int argc, char **argv) {
   test_device_modem_and_battery_hwd();
   test_device_playback_speaker_hooks();
   test_device_player_timed_start();
+  test_device_seek_reuses_download_storage();
+  test_device_seek_download_failures_and_stop();
   test_device_player_formats();
   test_device_player_rate();
   test_device_forwards_find_and_social_ping();

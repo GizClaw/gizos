@@ -36,7 +36,7 @@ class ServiceCoverageTest(unittest.TestCase):
                     expected = set()
                 self.assertEqual(observed, expected)
                 self.assertFalse(result["valid"])
-                self.assertEqual(result["missing"], 227 - len(expected))
+                self.assertEqual(result["missing"], 228 - len(expected))
 
     def test_fixture_lifecycle_and_failure_gates(self):
         root = api_coverage.repository_root()
@@ -59,7 +59,7 @@ class ServiceCoverageTest(unittest.TestCase):
                             ("init", "start", "stop", "deinit")} if mode == 0 else set()
                 self.assertEqual(observed, expected)
                 self.assertFalse(result["valid"])
-                self.assertEqual(result["missing"], 227 - len(expected))
+                self.assertEqual(result["missing"], 228 - len(expected))
 
     def test_request_lifecycle_and_poll_records(self):
         root = api_coverage.repository_root()
@@ -76,11 +76,11 @@ class ServiceCoverageTest(unittest.TestCase):
                                    profile="default", platform="macos", process_exit_code=run.returncode)
         expected = {"h2_gizclaw_req_" + method for method in
                     ("do", "wait", "cancel", "release")}
-        expected.update(("h2_gizclaw_service_poll", "h2_gizclaw_service_get_time_sync_status"))
+        expected.update(("h2_gizclaw_service_poll", "h2_gizclaw_service_get_time_sync_status", "h2_gizclaw_service_audio_input_snapshot"))
         observed = {row["symbol"] for row in result["functions"] if row["status"] == "covered"}
         self.assertEqual(observed, expected)
         self.assertFalse(result["valid"])
-        self.assertEqual(result["missing"], 227 - 6)
+        self.assertEqual(result["missing"], 228 - 7)
 
 
 if __name__ == "__main__":

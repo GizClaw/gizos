@@ -163,6 +163,9 @@ h2_pal_result_t h2_gizclaw_req_create_pcm_stream_internal(
     void (*detach)(void *), void (*destroy)(void *), void *context,
     h2_gizclaw_req_t **out_request);
 bool h2_gizclaw_req_pcm_ready_internal(h2_gizclaw_req_t *request);
+/* audio_mutex keeps the request alive; this helper takes service->mutex. */
+h2_pal_result_t h2_gizclaw_req_pcm_input_snapshot_internal(
+    h2_gizclaw_req_t *request, bool *active, bool *ready);
 h2_pal_result_t h2_gizclaw_req_pcm_write_internal(h2_gizclaw_req_t *request,
                                                   const uint8_t *data,
                                                   size_t len);
@@ -240,6 +243,8 @@ struct h2_gizclaw_service {
   h2_pal_mutex_t *audio_mutex;
   h2_gizclaw_conversation_t *audio_conversation;
   bool audio_ended; /* audio_mutex; repeated button release is harmless. */
+  uint64_t audio_input_generation; /* audio_mutex; successful starts only. */
+  const void *audio_input_owner; /* audio_mutex; equality only, never dereferenced. */
   h2_pal_cond_t *progress_cond;
   h2_pal_task_t *net_task;
   h2_pal_task_t *time_task;
@@ -345,6 +350,8 @@ h2_pal_result_t h2_gizclaw_service_pcm_input_internal(
     size_t *out_len);
 h2_pal_result_t h2_gizclaw_speech_audio_start_internal(void *context);
 h2_pal_result_t h2_gizclaw_speech_audio_end_internal(void *context);
+h2_pal_result_t h2_gizclaw_speech_input_snapshot_internal(
+    void *context, bool *active, bool *ready);
 void h2_gizclaw_speech_uplink_step_internal(h2_gizclaw_service_t *service);
 void h2_gizclaw_conversation_uplink_step_internal(
     h2_gizclaw_service_t *service);

@@ -373,7 +373,66 @@ static void test_contended_backoff_failure(void) {
   assert(h2_app_test_audio_destroy(audio) == H2_PAL_OK);
 }
 
+static void test_fixture_ready_lead_in(void) {
+  const h2_pal_mem_api_t mem = {.vtable = &s_mem_vtable};
+  fake_time_t time = {.now_ms = 1000u};
+  time.api = (h2_pal_time_api_t){.user = &time, .vtable = &s_time_vtable};
+  fake_audio_t fake = {.mic_format = {16000u, 320u, 1u, H2_AUDIO_SAMPLE_S16LE}};
+  fake.api = (h2_pal_audio_api_t){.user = &fake, .vtable = &s_audio_vtable};
+  uint8_t content[1280];
+  memset(content, 0x35, 640u);
+  memset(content + 640u, 0x71, 640u);
+  const h2_app_test_audio_fixture_t input = {content, sizeof(content), fake.mic_format};
+  h2_app_test_audio_t *audio = NULL;
+  assert(h2_app_test_audio_create(&mem, &time.api, &fake.api, &input, &audio) == H2_PAL_OK);
+  const h2_pal_audio_api_t *api = h2_app_test_audio_api(audio);
+  h2_app_test_audio_set_fixture_ready(audio, false);
+  assert(h2_pal_audio_start_mic(api) == H2_PAL_OK);
+  uint8_t output[640];
+  h2_audio_frame_t frame = h2_audio_frame_for_buffer(output, sizeof(output), input.format);
+  for (unsigned i = 0u; i < 3u; ++i) {
+    memset(output, 0xff, sizeof(output));
+    assert(h2_pal_audio_mic_read(api, &frame, 20u) == H2_PAL_OK);
+    assert(frame.bytes == sizeof(output) && frame.samples_per_channel == 320u);
+    for (size_t j = 0u; j < sizeof(output); ++j) assert(output[j] == 0u);
+  }
+  assert(time.now_ms == 1040u && fake.reads == 3u);
+  h2_app_test_audio_evidence_t evidence;
+  assert(h2_app_test_audio_copy_evidence(audio, &evidence) == H2_PAL_OK);
+  assert(evidence.fixture_lead_in_bytes == 1920u && evidence.fixture_bytes_emitted == 0u);
+  assert(!evidence.fixture_content_started && !evidence.fixture_complete);
+  h2_app_test_audio_set_capture_active(audio, false);
+  assert(h2_pal_audio_mic_read(api, &frame, 100u) == H2_PAL_ERR_WOULD_BLOCK);
+  assert(frame.bytes == 0u && time.now_ms == 1040u);
+  h2_app_test_audio_set_capture_active(audio, true);
+  h2_app_test_audio_set_fixture_ready(audio, true);
+  assert(h2_pal_audio_mic_read(api, &frame, 20u) == H2_PAL_OK);
+  assert(memcmp(output, content, sizeof(output)) == 0);
+  h2_app_test_audio_set_fixture_ready(audio, false);
+  assert(h2_pal_audio_mic_read(api, &frame, 20u) == H2_PAL_OK);
+  assert(memcmp(output, content + 640u, sizeof(output)) == 0);
+  assert(h2_app_test_audio_copy_evidence(audio, &evidence) == H2_PAL_OK);
+  assert(evidence.fixture_complete && evidence.fixture_content_started);
+  assert(evidence.fixture_bytes_emitted == sizeof(content) && evidence.fixture_lead_in_bytes == 1920u);
+  /* A replaced fixture while the persistent mic is paused re-arms its barrier. */
+  h2_app_test_audio_set_capture_active(audio, false);
+  assert(h2_app_test_audio_set_fixture(audio, &input) == H2_PAL_OK);
+  h2_app_test_audio_set_capture_active(audio, true);
+  assert(h2_pal_audio_mic_read(api, &frame, 20u) == H2_PAL_OK);
+  for (size_t j = 0u; j < sizeof(output); ++j) assert(output[j] == 0u);
+  assert(h2_app_test_audio_copy_evidence(audio, &evidence) == H2_PAL_OK);
+  assert(evidence.fixture_bytes_emitted == 0u && evidence.fixture_lead_in_bytes == 640u);
+  assert(h2_pal_audio_stop_mic(api) == H2_PAL_OK);
+  assert(h2_pal_audio_start_mic(api) == H2_PAL_OK);
+  assert(h2_pal_audio_mic_read(api, &frame, 20u) == H2_PAL_OK);
+  assert(h2_app_test_audio_copy_evidence(audio, &evidence) == H2_PAL_OK);
+  assert(evidence.fixture_bytes_emitted == 0u && evidence.fixture_lead_in_bytes == 640u);
+  assert(h2_pal_audio_stop_mic(api) == H2_PAL_OK);
+  assert(h2_app_test_audio_destroy(audio) == H2_PAL_OK);
+}
+
 int main(void) {
+  test_fixture_ready_lead_in();
   test_contended_backoff_failure();
   test_capture_gate();
   const h2_pal_mem_api_t mem = {.vtable = &s_mem_vtable};

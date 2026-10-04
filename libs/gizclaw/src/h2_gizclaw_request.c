@@ -1167,6 +1167,25 @@ bool h2_gizclaw_req_pcm_ready_internal(h2_gizclaw_req_t *base) {
   return ready;
 }
 
+h2_pal_result_t h2_gizclaw_req_pcm_input_snapshot_internal(
+    h2_gizclaw_req_t *base, bool *active, bool *ready) {
+  managed_request_t *request = (managed_request_t *)base;
+  h2_gizclaw_service_t *service = request->service;
+  *active = false;
+  *ready = false;
+  const h2_pal_result_t rc = h2_pal_mutex_lock(service->config.sync, service->mutex);
+  if (rc != H2_PAL_OK)
+    return rc;
+  const managed_stream_t *stream = request->stream;
+  const h2_gizclaw_operation_t *operation = request->operation;
+  *active = !service->stopping && !service->stopped && operation != NULL &&
+            !operation->cancel_requested && !h2_atomic_load(&operation->terminal) &&
+            !stream->input_closed && stream->error == H2_PAL_OK;
+  *ready = *active && stream->opened;
+  (void)h2_pal_mutex_unlock(service->config.sync, service->mutex);
+  return H2_PAL_OK;
+}
+
 h2_pal_result_t h2_gizclaw_req_pcm_write_internal(h2_gizclaw_req_t *base,
                                                   const uint8_t *data,
                                                   size_t len) {

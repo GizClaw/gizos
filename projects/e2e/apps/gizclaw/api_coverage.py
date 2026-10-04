@@ -81,7 +81,7 @@ def requirements():
                 rules.append(Rule(rpc, case, (rpc,), rpc, stage))
     symbol = PREFIX + "rpc_run_stop"
     rules.append(Rule(symbol, "rpc/catalog-workspace", (symbol,), symbol, "run_stop-assert"))
-    for method in "init start set_track unset_track audio_start audio_end poll stop deinit get_time_sync_status".split():
+    for method in "init start set_track unset_track audio_start audio_end audio_input_snapshot poll stop deinit get_time_sync_status".split():
         symbol = PREFIX + "service_" + method
         case = "voice" if method in {"set_track", "unset_track", "audio_start", "audio_end"} else "service"
         rules.append(Rule(symbol, case, (symbol,), symbol, "service_" + method + "-assert"))
@@ -149,9 +149,9 @@ def validate_inventory(rules, text):
     text = re.sub(r"/\*.*?\*/|//[^\n]*", "", text, flags=re.S)
     inventory = re.findall(r"H2_GIZCLAW_API\((h2_gizclaw_\w+)\)", text)
     names = [rule.symbol for rule in rules]
-    if (len(inventory) != 227 or len(set(inventory)) != 227 or
-            len(names) != 227 or len(set(names)) != 227 or set(names) != set(inventory)):
-        raise ValueError("coverage matrix does not match the approved 227-function inventory")
+    if (len(inventory) != 228 or len(set(inventory)) != 228 or
+            len(names) != 228 or len(set(names)) != 228 or set(names) != set(inventory)):
+        raise ValueError("coverage matrix does not match the approved 228-function inventory")
     if any(rule.case not in CASES for rule in rules):
         raise ValueError("coverage matrix references an unknown case")
 

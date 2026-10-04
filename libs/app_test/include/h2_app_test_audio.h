@@ -23,6 +23,9 @@ typedef struct h2_app_test_audio_evidence {
   uint64_t mic_read_count;
   uint64_t fixture_bytes_emitted;
   bool fixture_complete;
+  /** Paced silence emitted before the one-shot content-start barrier opens. */
+  uint64_t fixture_lead_in_bytes;
+  bool fixture_content_started;
   uint64_t real_capture_frames;
   uint64_t real_capture_no_frame;
   int real_capture_first_error;
@@ -96,6 +99,21 @@ const h2_pal_audio_api_t *h2_app_test_audio_api(h2_app_test_audio_t *audio);
  */
 void h2_app_test_audio_set_capture_active(h2_app_test_audio_t *audio,
                                          bool active);
+
+/** Control the initial content barrier independently of capture activity.
+ * Defaults to true for existing callers. If false when mic starts, active
+ * capture reads emit format-correct paced silence without advancing fixture
+ * bytes/EOF. Publishing true starts the finite fixture on the next due frame.
+ * Once content starts, later false values cannot pause, slow or rewind that
+ * capture; the current setting is sampled again on mic start or successful
+ * fixture replacement (including replacement while capture is paused).
+ * Lead-in silence allows protocols that require PCM before their initial READY
+ * acknowledgement to progress. It does not wait for dynamic FIFO credit or
+ * prevent post-start realtime overruns. Existing capture_active=false still
+ * returns WOULD_BLOCK, including during lead-in. Atomic-only publication has
+ * the same concurrency/lifetime and in-flight-frame limits as capture_active.
+ */
+void h2_app_test_audio_set_fixture_ready(h2_app_test_audio_t *audio, bool ready);
 
 /** Replace and rewind borrowed PCM while mic is stopped or emission is paused;
  * active emission returns INVALID_STATE. With a running mic, format must match

@@ -142,6 +142,8 @@ static void detach_input(speech_t *speech) {
   void *expected = speech;
   (void)h2_atomic_compare_exchange_strong(&service->speech_request, &expected,
                                        NULL);
+  if (service->audio_input_owner == speech)
+    service->audio_input_owner = NULL;
   while (speech->uplink_refs != 0u)
     (void)h2_pal_cond_wait(sync, service->progress_cond, service->mutex,
                            H2_PAL_SYNC_WAIT_FOREVER);
@@ -167,6 +169,12 @@ h2_pal_result_t h2_gizclaw_speech_audio_start_internal(void *context) {
 
 h2_pal_result_t h2_gizclaw_speech_audio_end_internal(void *context) {
   return speech_audio_control(context, H2_GIZCLAW_PCM_INPUT_END);
+}
+
+h2_pal_result_t h2_gizclaw_speech_input_snapshot_internal(
+    void *context, bool *active, bool *ready) {
+  speech_t *speech = context;
+  return h2_gizclaw_req_pcm_input_snapshot_internal(speech->request, active, ready);
 }
 
 static int speech_frame(void *context,
@@ -212,6 +220,7 @@ static h2_pal_result_t speech_admit(void *context) {
   else {
     h2_atomic_store(&service->speech_request, speech);
     service->audio_ended = false;
+    service->audio_input_owner = NULL;
   }
   (void)h2_pal_mutex_unlock(service->config.sync, service->mutex);
   (void)h2_pal_mutex_unlock(service->config.sync, service->audio_mutex);
