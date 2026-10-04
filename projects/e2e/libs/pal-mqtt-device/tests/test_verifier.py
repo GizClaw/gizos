@@ -1,8 +1,10 @@
+import hashlib
 import json
+import tempfile
 from pathlib import Path
 import re
 import unittest
-from verify_device import boot_ledger,status_preserved,coredump_preserved
+from verify_device import boot_ledger,status_preserved,coredump_preserved,loader_status,command_receipt,after_accepted_reboot
 class Verifier(unittest.TestCase):
     def setUp(self):
         root=Path(__file__).absolute().parents[5]
@@ -28,13 +30,63 @@ class Verifier(unittest.TestCase):
     def test_previous_boot_replay(self):
         with self.assertRaises(AssertionError):boot_ledger(self.good,self.ids,'v1',self.execution)
     def test_missing_p2_valid(self):
-        before=dict(result='OK',code='0',device_uid='uid',board='board',target='bk7258',partition_1_valid='1',partition_1_role='loader',partition_1_package_checksum='a'*64,partition_1_image_checksum='b'*64)
+        before=dict(device_uid='uid',board='board',target='bk7258',partition_1_valid='1',partition_1_role='loader',partition_1_package_checksum='a'*64,partition_1_image_checksum='b'*64)
         after={**before,**dict(active_role='app',running_partition='2',next_partition='2',stage_valid='0',last_result='0',active_version='v1',active_checksum='c'*64,partition_2_role='app',partition_2_version='v1',partition_2_image_checksum='c'*64,partition_2_package_checksum='d'*64)}
         manifest=dict(board='board',target='bk7258',version='v1',image_sha256='c'*64)
         with self.assertRaises(AssertionError):status_preserved(before,after,manifest,'d'*64,'uid')
         after['partition_2_valid']='0'
         with self.assertRaises(AssertionError):status_preserved(before,after,manifest,'d'*64,'uid')
         after['partition_2_valid']='1';status_preserved(before,after,manifest,'d'*64,'uid')
+    def test_real_status_without_synthetic_result(self):
+        before_text='H2_LOADER_STATUS board=board target=bk7258 device_uid=uid partition_1_valid=1 partition_1_role=loader partition_1_package_checksum='+('a'*64)+' partition_1_image_checksum='+('b'*64)+'\n'
+        after_text=before_text.rstrip()+' active_role=app running_partition=2 next_partition=2 stage_valid=0 last_result=0 active_version=v1 active_checksum='+('c'*64)+' partition_2_valid=1 partition_2_role=app partition_2_version=v1 partition_2_image_checksum='+('c'*64)+' partition_2_package_checksum='+('d'*64)+'\n'
+        before=loader_status(before_text);after=loader_status(after_text)
+        self.assertNotIn('result',before);self.assertNotIn('code',after)
+        manifest=dict(board='board',target='bk7258',version='v1',image_sha256='c'*64)
+        status_preserved(before,after,manifest,'d'*64,'uid')
+        after['device_uid']='wrong'
+        with self.assertRaises(AssertionError):status_preserved(before,after,manifest,'d'*64,'uid')
+    def test_status_marker_required_and_unique(self):
+        with self.assertRaises(AssertionError):loader_status('result=OK code=0 device_uid=uid')
+        with self.assertRaises(AssertionError):loader_status('H2_LOADER_STATUS device_uid=uid\nH2_LOADER_STATUS device_uid=uid\n')
+        with self.assertRaises(AssertionError):loader_status('H2_LOADER_STATUS device_uid=wrong device_uid=uid')
+    def test_host_receipt_must_bind_successful_actual_command(self):
+        with tempfile.TemporaryDirectory() as directory:
+            log=Path(directory)/'before-status.log';log.write_text('H2_LOADER_STATUS device_uid=uid\n')
+            receipt_path=Path(directory)/'before-status-receipt.json'
+            receipt=dict(command=['status'],exit=0,port='/dev/fixture',started_at_utc='2026-10-04T09:58:15.167980+00:00',log_sha256=hashlib.sha256(log.read_bytes()).hexdigest())
+            def write():receipt_path.write_text(json.dumps(receipt))
+            with self.assertRaises(FileNotFoundError):command_receipt(log,['status'],'/dev/fixture')
+            write();self.assertEqual(command_receipt(log,['status'],'/dev/fixture'),receipt)
+            for key,value in [('exit',1),('exit',False),('command',['info']),('port','/dev/other'),('started_at_utc','2026-10-04T09:58:15'),('log_sha256','0'*64)]:
+                original=receipt[key];receipt[key]=value;write()
+                with self.assertRaises((AssertionError,ValueError)):command_receipt(log,['status'],'/dev/fixture')
+                receipt[key]=original
+    def test_only_post_ack_fresh_execution_is_admitted(self):
+        acknowledged=self.good+'H2_LOADER_REBOOT target=upgrade result=accepted\n'
+        with self.assertRaises(AssertionError):boot_ledger(after_accepted_reboot(acknowledged,'upgrade'),self.ids,'v1')
+        admitted=after_accepted_reboot('H2_LOADER_REBOOT target=upgrade result=accepted\n'+self.good,'upgrade')
+        self.assertEqual(boot_ledger(admitted,self.ids,'v1')['boot']['id'],self.execution)
+        for text in [self.good,'H2_LOADER_REBOOT target=app result=accepted\n'+self.good,'H2_LOADER_REBOOT target=upgrade result=rejected\n'+self.good]:
+            with self.assertRaises(AssertionError):after_accepted_reboot(text,'upgrade')
+    def test_monitor_requires_validated_controlled_stop(self):
+        with tempfile.TemporaryDirectory() as directory:
+            log=Path(directory)/'managed.log';log.write_text('H2_LOADER_REBOOT target=upgrade result=accepted\n'+self.good)
+            receipt_path=Path(directory)/'managed-receipt.json'
+            receipt=dict(command=['reboot','upgrade','--monitor'],port='/dev/fixture',started_at_utc='2026-10-04T09:58:15+00:00',
+                captured_at_utc='2026-10-04T10:00:15+00:00',controlled_stop=True,stop_reason='validated complete ledger',
+                exit_after_capture=130,log_sha256=hashlib.sha256(log.read_bytes()).hexdigest())
+            def write():receipt_path.write_text(json.dumps(receipt))
+            for code in [0,130,-2]:
+                receipt['exit_after_capture']=code;write()
+                self.assertEqual(command_receipt(log,['reboot','upgrade','--monitor'],'/dev/fixture',True)['exit_after_capture'],code)
+            for key,value in [('exit_after_capture',1),('exit_after_capture',-9),('controlled_stop',False),('stop_reason','failed ledger'),
+                              ('captured_at_utc','2026-10-04T09:00:15+00:00'),('captured_at_utc','2026-10-04T10:00:15')]:
+                original=receipt[key];receipt[key]=value;write()
+                with self.assertRaises((AssertionError,ValueError)):command_receipt(log,['reboot','upgrade','--monitor'],'/dev/fixture',True)
+                receipt[key]=original
+            receipt['exit']=0;write()
+            with self.assertRaises(AssertionError):command_receipt(log,['reboot','upgrade','--monitor'],'/dev/fixture',True)
     def test_equal_truncated_dump(self):
         status=dict(result='OK',code='0',stored_bytes='8',blank='0')
         with self.assertRaises(AssertionError):coredump_preserved(status,status,b'four',b'four')
