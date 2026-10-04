@@ -120,7 +120,9 @@ unguarded packets cannot report skip proof. A successful device install proves
 those skipped streams were not inflated. All changed streams are valid.
 
 A current Loader/App command implementation must return the separate
-`H2_LOADER_DATA_CHECKSUM` fact from `stats`; older or unsupported implementations
+`H2_LOADER_DATA_CHECKSUM` fact from `stats`; the typed Host `DATA_CHECKSUM`
+request waits for that complete line even when it arrives after a separate
+status frame. Older or unsupported implementations
 fail before the first baseline mutation. Before each transition compare the
 observed App/data checksums with the previous successful fixture, then use the
 normal managed Stage/activate/reconnect flow. Afterward require the expected

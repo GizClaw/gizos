@@ -110,4 +110,4 @@ Fake、PTY 和 cross-compile 只证明 contract 与 host behavior。最终产品
 BK7258 UART1 provider 的写入 deadline 同时覆盖互斥锁竞争、console FIFO 排空与发送背压；零超时不等待，有部分接收时返回已写字节数，无进展时返回 WOULD_BLOCK。不能调用无截止时间的 log flush 或满 FIFO 忙等发送。
 
 
-Package inspector 的 `data_sha256` 是验证后的 canonical data identity：format 1 来自已验证的 checksum entry，format 2 来自 compressed envelope manifest。仅从旧 catalog 读取时此 optional field 可以为空；不能把空值当成已安装 data identity。Loader checksum E2E 将 inspector 的 identity 与设备 `stats` 单独返回的 installed checksum 比较，现有 Host status parser 的严格 wire line 不变。
+Package inspector 的 `data_sha256` 是验证后的 canonical data identity：format 1 来自已验证的 checksum entry，format 2 来自 compressed envelope manifest。仅从旧 catalog 读取时此 optional field 可以为空；不能把空值当成已安装 data identity。Loader checksum E2E 将 inspector 的 identity 与设备 `stats` 单独返回的 installed checksum 比较，现有 Host status parser 的严格 wire line 不变。Host typed command `DATA_CHECKSUM` 使用同一条 `h2loader stats` wire command 和 STATS availability，但等待完整 `H2_LOADER_DATA_CHECKSUM checksum=` 行才结束；App 分开返回 status 和 checksum 时，第一行不能提前结束此请求。普通 `STATS` 保留原 status terminal，旧设备仍可使用。

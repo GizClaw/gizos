@@ -1296,7 +1296,7 @@ static h2_pal_result_t read_data_checksum(h2_e2e_transport_context_t *context,
   out[0] = '\0';
   context->command_output_size = 0u;
   context->command_output[0] = '\0';
-  h2_pal_result_t rc = run_simple_command(context, H2_H2LOADER_HOST_COMMAND_STATS);
+  h2_pal_result_t rc = run_simple_command(context, H2_H2LOADER_HOST_COMMAND_DATA_CHECKSUM);
   if (rc != H2_PAL_OK) return rc;
   const char *line = strstr(context->command_output, marker);
   if (line == NULL) return H2_PAL_ERR_UNSUPPORTED;

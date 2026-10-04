@@ -485,6 +485,60 @@ static int command_transport_cancelled(void *user) {
     return ((command_transport_fixture_t *)user)->cancelled;
 }
 
+static void test_data_checksum_waits_for_second_line(void) {
+    static const uint8_t status_only[] = "H2_LOADER_STATUS board=devkit\n";
+    static const uint8_t response[] =
+        "H2_LOADER_STATUS board=devkit\n"
+        "H2_LOADER_DATA_CHECKSUM checksum="
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n";
+    h2_h2loader_host_status_t app = command_status(
+        H2_H2LOADER_HOST_ACTIVE_ROLE_APP,
+        H2_H2LOADER_HOST_COMMAND_AVAILABLE_STATS);
+    command_transport_fixture_t fixture = {
+        .response = response,
+        .response_len = sizeof(response) - 1u,
+        .output_chunk_size = 7u,
+    };
+    h2_h2loader_host_command_request_t request = {
+        .command = H2_H2LOADER_HOST_COMMAND_DATA_CHECKSUM,
+        .status = &app,
+        .on_output = command_transport_output,
+        .output_user = &fixture,
+    };
+    h2_h2loader_host_command_contract_t contract = {0};
+    h2_h2loader_host_command_result_t result = {0};
+    assert(h2_h2loader_host_command_contract(&request, &contract) == H2_PAL_OK);
+    assert(h2_h2loader_host_command_parse_terminal(
+        status_only, sizeof(status_only) - 1u, &contract) ==
+        H2_H2LOADER_HOST_COMMAND_TERMINAL_NONE);
+    assert(h2_h2loader_host_command_execute_transport(
+        &fixture, command_transport_write, command_transport_read, NULL,
+        &request, &result) == H2_PAL_OK);
+    assert(strcmp(fixture.line, "h2loader stats\n") == 0);
+    assert(strcmp(fixture.marker, "H2_LOADER_DATA_CHECKSUM checksum=") == 0);
+    assert(fixture.output_count > 1u);
+    assert(result.output_bytes == sizeof(response) - 1u);
+    assert(result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK);
+
+    /* A status response alone cannot establish the installed-data fact. */
+    fixture.response = status_only;
+    fixture.response_len = sizeof(status_only) - 1u;
+    assert(h2_h2loader_host_command_execute_transport(
+        &fixture, command_transport_write, command_transport_read, NULL,
+        &request, &result) == H2_PAL_ERR_IO);
+    assert(result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_NONE);
+
+    /* Ordinary stats keeps accepting legacy devices with only status. */
+    request.command = H2_H2LOADER_HOST_COMMAND_STATS;
+    assert(h2_h2loader_host_command_execute_transport(
+        &fixture, command_transport_write, command_transport_read, NULL,
+        &request, &result) == H2_PAL_OK);
+    app.command_availability = 0u;
+    request.command = H2_H2LOADER_HOST_COMMAND_DATA_CHECKSUM;
+    assert(h2_h2loader_host_command_validate(&app, 0u, request.command) ==
+        H2_PAL_ERR_INVALID_STATE);
+}
+
 static void test_typed_command_transport_execution(void) {
     static const uint8_t ok[] =
         "diagnostic\nH2_LOADER_STATUS board=amoled active_role=app\n";
@@ -2455,6 +2509,7 @@ int main(void) {
     test_typed_command_role_parity();
     test_typed_command_wire_contract();
     test_typed_command_terminal_contract();
+    test_data_checksum_waits_for_second_line();
     test_typed_command_transport_execution();
     test_catalog();
     test_catalog_esp_loader_assets();
