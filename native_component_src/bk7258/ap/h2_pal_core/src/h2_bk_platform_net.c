@@ -61,17 +61,6 @@ static int wait_fd(int fd, int write_ready, uint32_t timeout_ms);
 static uint64_t bk_net_now_ms(void);
 static uint32_t bk_net_timeout_remaining_ms(uint64_t deadline_ms);
 
-#if defined(H2_BK_NET_TLS_DIAGNOSTICS) && H2_BK_NET_TLS_DIAGNOSTICS
-static void bk_net_tls_diagnostic(const char *operation, int fd, size_t length, int result) {
-    char message[128];
-    (void)snprintf(message, sizeof(message), "tls_io operation=%s fd=%d length=%zu native_result=%d",
-        operation, fd, length, result);
-    (void)h2_pal_log_write(h2_bk_platform_log_api(), H2_PAL_LOG_INFO, "pal/net", message);
-}
-#else
-#define bk_net_tls_diagnostic(operation, fd, length, result) ((void)0)
-#endif
-
 static void bk_net_tls_init(void) {
     if (!s_bk_tls_mutex_ready &&
         rtos_init_mutex(&s_bk_tls_mutex) == kNoErr) {
@@ -354,9 +343,6 @@ static h2_pal_result_t bk_net_tls_handshake(
     uint64_t deadline = bk_net_now_ms() + timeout_ms;
     for (;;) {
         int result = mbedtls_ssl_handshake(&socket->ssl);
-        if (result != MBEDTLS_ERR_SSL_WANT_READ && result != MBEDTLS_ERR_SSL_WANT_WRITE) {
-            bk_net_tls_diagnostic("handshake", socket->fd, 0u, result);
-        }
         if (result == 0) {
             if (verify_mode == H2_PAL_NET_TLS_VERIFY_INSECURE_TEST_ONLY) {
                 return H2_PAL_OK;
@@ -1049,7 +1035,6 @@ static int bk_net_tcp_send(void *user, h2_pal_net_socket_t socket_fd, const uint
     }
     if (tls_result > 0) {
         int result = mbedtls_ssl_write(&tls_socket->ssl, data, len);
-        bk_net_tls_diagnostic("send", socket_fd, len, result);
         bk_net_tls_release(tls_slot);
         if (result > 0) {
             return result;
@@ -1092,7 +1077,6 @@ static int bk_net_tcp_send_timeout(
     if (tls_result > 0) {
         for (;;) {
             int result = mbedtls_ssl_write(&tls_socket->ssl, data, len);
-            bk_net_tls_diagnostic("send-timeout", socket_fd, len, result);
             if (result > 0) {
                 bk_net_tls_release(tls_slot);
                 return result;
@@ -1177,7 +1161,6 @@ static int bk_net_tcp_recv(
     if (tls_result > 0) {
         for (;;) {
             int result = mbedtls_ssl_read(&tls_socket->ssl, data, len);
-            bk_net_tls_diagnostic("recv", socket_fd, len, result);
             if (result > 0) {
                 bk_net_tls_release(tls_slot);
                 return result;
