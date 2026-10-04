@@ -89,7 +89,7 @@ def import_run(folder, destination, repo, source, version, uid, dump_sha):
         assert wire['publish'] == 2 and wire['disconnect'] == 1, 'exact retained wire lifecycle missing'
         receipt = read(folder / (name + '-receipt.json'))
         assert receipt['controlled_stop'] is True and receipt['stop_reason'] == 'validated complete ledger'
-        assert receipt['command'] == ['reboot', target, '--monitor']
+        assert receipt['command'] in (['reboot', target, '--monitor'], ['reboot', target, '--monitor', '--continuous-monitor'])
         # Check the first READY, not a later complete replay after an incomplete
         # terminal. The actual verifier already checks the whole stream/late BOOT.
         text = (folder / (name + '.log')).read_bytes().decode('utf-8', errors='replace')

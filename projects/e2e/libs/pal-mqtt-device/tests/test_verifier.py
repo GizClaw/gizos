@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 import re
 import unittest
-from verify_device import boot_ledger,status_preserved,coredump_preserved,loader_status,command_receipt,after_accepted_reboot,package_binding,uart_text
+from verify_device import boot_ledger,status_preserved,coredump_preserved,loader_status,command_receipt,after_accepted_reboot,package_binding,uart_text,monitor_receipt
 class Verifier(unittest.TestCase):
     def setUp(self):
         root=Path(__file__).absolute().parents[5]
@@ -127,6 +127,27 @@ class Verifier(unittest.TestCase):
                 receipt[key]=original
             receipt['exit']=0;write()
             with self.assertRaises(AssertionError):command_receipt(log,['reboot','upgrade','--monitor'],'/dev/fixture',True)
+    def test_continuous_monitor_requires_actual_supported_argv_and_all_old_gates(self):
+        with tempfile.TemporaryDirectory() as directory:
+            log=Path(directory)/'managed.log';log.write_text('H2_LOADER_REBOOT target=upgrade result=accepted\n'+self.good)
+            path=Path(directory)/'managed-receipt.json'
+            receipt=dict(command=['reboot','upgrade','--monitor','--continuous-monitor'],port='/dev/fixture',
+                started_at_utc='2026-10-04T09:58:15+00:00',captured_at_utc='2026-10-04T10:00:15+00:00',
+                controlled_stop=True,stop_reason='validated complete ledger',exit_after_capture=130,
+                log_sha256=hashlib.sha256(log.read_bytes()).hexdigest())
+            def write():path.write_text(json.dumps(receipt))
+            write();self.assertEqual(monitor_receipt(log,'upgrade','/dev/fixture')['command'],receipt['command'])
+            for argv in [['reboot','app','--monitor','--continuous-monitor'],['reboot','upgrade','--continuous-monitor'],
+                         ['reboot','upgrade','--monitor','--raw'],['--continuous-monitor','reboot','upgrade','--monitor']]:
+                original=receipt['command'];receipt['command']=argv;write()
+                with self.assertRaises(AssertionError):monitor_receipt(log,'upgrade','/dev/fixture')
+                receipt['command']=original
+            for key,value in [('controlled_stop',False),('exit_after_capture',1),('port','/wrong'),('log_sha256','0'*64)]:
+                original=receipt[key];receipt[key]=value;write()
+                with self.assertRaises(AssertionError):monitor_receipt(log,'upgrade','/dev/fixture')
+                receipt[key]=original
+            receipt['command']=['reboot','upgrade','--monitor'];write()
+            self.assertEqual(monitor_receipt(log,'upgrade','/dev/fixture')['command'],receipt['command'])
     def test_equal_truncated_dump(self):
         status=dict(result='OK',code='0',stored_bytes='8',blank='0')
         with self.assertRaises(AssertionError):coredump_preserved(status,status,b'four',b'four')

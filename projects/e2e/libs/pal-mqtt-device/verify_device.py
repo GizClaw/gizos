@@ -61,6 +61,14 @@ def command_receipt(log_path, expected_command, port, controlled_capture=False):
     assert receipt.get('log_sha256') == hashlib.sha256(log_path.read_bytes()).hexdigest(), 'host receipt does not bind actual stdout'
     return receipt
 
+def monitor_receipt(log_path, target, port):
+    """Accept only the actual supported UART observation command argv."""
+    path = Path(log_path)
+    actual = json.loads(path.with_name(path.stem + '-receipt.json').read_text())['command']
+    base = ['reboot', target, '--monitor']
+    assert actual in (base, base + ['--continuous-monitor']), 'unsupported monitor command argv'
+    return command_receipt(path, actual, port, controlled_capture=True)
+
 def after_accepted_reboot(text, target):
     text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
     # UART command responses can interrupt an App's in-flight log fragment.
@@ -192,8 +200,8 @@ def main():
     ids=re.findall(r'H2_PAL_MQTT_CASE\(\w+, "([^"]+)"\)',args.registry.read_text())
     assert len(ids)==36 and len(set(ids))==36
     commands={
-        'managed':command_receipt(directory/'managed.log',['reboot','upgrade','--monitor'],port,controlled_capture=True),
-        'normal':command_receipt(directory/'normal.log',['reboot','app','--monitor'],port,controlled_capture=True),
+        'managed':monitor_receipt(directory/'managed.log','upgrade',port),
+        'normal':monitor_receipt(directory/'normal.log','app',port),
     }
     first=boot_ledger(after_accepted_reboot(uart_text(directory/'managed.log'),'upgrade'),ids,manifest['version'])
     second=boot_ledger(after_accepted_reboot(uart_text(directory/'normal.log'),'app'),ids,manifest['version'],first['boot']['id'])

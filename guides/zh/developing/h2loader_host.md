@@ -108,3 +108,12 @@ Browser SDK 的 snapshot Release 构建、确定性 tarball 与下游 `npm-index
 Fake、PTY 和 cross-compile 只证明 contract 与 host behavior。最终产品验收仍需在准确 reviewed build 上记录 live discovery、authoritative identity、Stage、reboot、partition copy-back 与最终 checksum/metadata。当前 ESP DevKit 已提供 UART/BLE 实板证据；BK 实板因硬件不可用明确 deferred，不能由 build 结果替代。
 
 BK7258 UART1 provider 的写入 deadline 同时覆盖互斥锁竞争、console FIFO 排空与发送背压；零超时不等待，有部分接收时返回已写字节数，无进展时返回 WOULD_BLOCK。不能调用无截止时间的 log flush 或满 FIFO 忙等发送。
+
+
+### 重启后的连续 UART 观察
+
+`reboot app|loader|upgrade --monitor --continuous-monitor` 是显式 UART-only 观察模式。它先按既有 reliable session 执行并收到 accepted reboot，再使用 `h2_h2loader_host_serial_monitor_continuous()` 保持同一个 physical session 与波特率到取消或真实物理 I/O 失败。设备的 command service 暂停、MCU READY 或不能重新握手不会触发 disconnect、恢复原 termios 或 500 ms 重连等待；原始 startup 字节和当前 logical session 的 framed console 仍经现有解析路径完整转发。该模式不自动建立新 logical session。
+
+连续观察不验证重启后的 role、UID、版本或 partition，也不将 accepted ACK 当作已验证目标状态。取消结束只表示观察结束；调用者必须另外取得 authoritative live status/coredump，并核对 UID、P1/P2/Stage、实际 firmware/source 和外部测试对端证据。默认 `--monitor`、其它普通命令与 BLE 生命周期保持原规则；BLE 与缺少 `--monitor` 的 continuous 参数被拒绝。
+
+`//libs/h2loader_host:continuous_monitor_test` 使用真实 Host serial/iKCP 代码，注入持续 UART 文本、MCU READY 和超过 20 秒无法命令握手的时钟，检查取消前没有 physical close/baud restore、原始字节与 framed console 全量转发，且缺少 accepted reboot 时拒绝进入。该 host 回归不替代任何设备资格。
