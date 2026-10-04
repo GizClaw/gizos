@@ -17,13 +17,13 @@ from web_archive_browser_test import Cdp, find_browser
 from web_archive_server import prepared_archive, make_handler, read_header_policy
 
 
-def run_phase(browser, profile, url, phase, nonce):
+def run_phase(browser, profile, url, phase, nonce, execution):
     incoming, outgoing = os.pipe(), os.pipe()
     events = queue.Queue()
     def pipes():
         reader, writer = os.dup(incoming[0]), os.dup(outgoing[1])
         os.dup2(reader, 3); os.dup2(writer, 4)
-    with (profile / f"browser-{phase}.log").open("w") as log:
+    with (profile / f"browser-{execution}-phase-{phase}.log").open("w") as log:
         proc = subprocess.Popen([str(browser), "--headless", "--no-sandbox", "--remote-debugging-pipe",
                                  "--autoplay-policy=no-user-gesture-required", f"--user-data-dir={profile}/data", "about:blank"],
                                 preexec_fn=pipes, pass_fds=(3, 4), stdout=log, stderr=log)
@@ -70,7 +70,7 @@ def run_phase(browser, profile, url, phase, nonce):
 
 def main():
     archive, registry = Path(sys.argv[1]), Path(sys.argv[2])
-    expected = {name: int(phase) for name, phase in re.findall(r'H2_PAL_STORAGE_CASE\("([^"]+)", ([12])\)', registry.read_text())}
+    expected = {name: int(phase) for name, phase in re.findall(r'H2_PAL_STORAGE_CASE\("([^"]+)", ([123])\)', registry.read_text())}
     nonce, all_cases, phases = secrets.randbits(32), [], []
     with prepared_archive(archive.resolve()) as root, tempfile.TemporaryDirectory(prefix="pal-storage-browser-") as directory:
         profile = Path(directory)
@@ -78,20 +78,25 @@ def main():
         server.daemon_threads = True
         threading.Thread(target=server.serve_forever, daemon=True).start()
         try:
-            for phase in (1, 2):
-                cases, result = run_phase(find_browser(), profile, f"http://127.0.0.1:{server.server_address[1]}/", phase, nonce)
+            completion_replay = None
+            for execution, phase in enumerate((1, 2, 3, 3), 1):
+                cases, result = run_phase(find_browser(), profile, f"http://127.0.0.1:{server.server_address[1]}/", phase, nonce, execution)
                 ids = {name for name, value in expected.items() if value == phase}
                 assert len(cases) == len(ids) and {c["id"] for c in cases} == ids
                 assert all(c["phase"] == phase and c["nonce"] == nonce and c["status"] == "PASS" and c["rc"] == 0 for c in cases)
-                assert result["phase"] == phase and result["nonce"] == nonce and result["passed"] == len(ids)
+                assert result["contract"] == 2 and result["phase"] == phase and result["nonce"] == nonce and result["passed"] == len(ids)
                 assert result["failed"] == result["blocked"] == result["cleanup"] == result["fs_close"] == result["platform_destroy"] == 0
-                all_cases.extend(cases); phases.append(result)
-            assert phases[0]["browser_pid"] != phases[1]["browser_pid"]
-            assert len(all_cases) == len(expected) == 30
-            output = {"platform": "wasm-chromium", "contract": 1, "operations": 28, "qualified": True, "passed": 30, "failed": 0, "blocked": 0, "cases": all_cases, "phases": phases}
+                if len(phases) < 3:
+                    all_cases.extend(cases)
+                else:
+                    completion_replay = cases
+                phases.append(result)
+            assert len({phase["browser_pid"] for phase in phases}) == len(phases)
+            assert len(all_cases) == len(expected) == 36
+            output = {"platform": "wasm-chromium", "contract": 2, "operations": 28, "qualified": True, "passed": len(all_cases), "failed": 0, "blocked": 0, "cases": all_cases, "phases": phases, "completion_replay": completion_replay}
             if os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR"):
                 (Path(os.environ["TEST_UNDECLARED_OUTPUTS_DIR"]) / "qualified.json").write_text(json.dumps(output, indent=2) + "\n")
-            print("PAL_STORAGE_WASM operations=28 passed=30 failed=0 blocked=0 browser_restart=PASS qualified=1")
+            print(f"PAL_STORAGE_WASM contract=2 operations=28 passed={len(all_cases)} failed=0 blocked=0 browser_restart=PASS cleanup_restart=PASS completion_replay=PASS qualified=1")
         finally: server.shutdown(); server.server_close()
 
 if __name__ == "__main__": main()
