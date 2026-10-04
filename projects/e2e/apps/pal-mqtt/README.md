@@ -54,7 +54,7 @@ bazel test --config=macos_arm64 --nocache_test_results //projects/e2e/targets/cc
 
 ## BK7258 LAN fixture and package
 
-BK 入口为 `//projects/e2e/targets/h2loader_tar_zlib/pal-mqtt/bk7258_v3_202405:package`，使用真实 board Runtime 的 coreMQTT provider，其 incoming/outgoing capacity 是 8/8、allocator 是 `h2_bk_platform_default_allocator()`。Standalone runner 使用 64 KiB PSRAM task，保留 UART/Wi-Fi command service；不改变 board 或生产 MQTT provider。Launcher 从编译配置注入精确 IPv4 host/ports、session prefix、CA/wrong CA 与 epoch，每次执行另取真实 Crypto nonce，实际计算 CA SHA256并校准 wall time，36-case 完成和 native resource before/after 平衡后才确认 App。
+BK 入口为 `//projects/e2e/targets/h2loader_tar_zlib/pal-mqtt/bk7258_v3_202405:package`，使用真实 board Runtime 的 coreMQTT provider，其 incoming/outgoing capacity 是 8/8、allocator 是 `h2_bk_platform_default_allocator()`。Standalone runner 使用 64 KiB PSRAM task。资源测量前停止并 join 独立管理会话，避免正在读取 Pref 的控制缓冲进入 MQTT 基线；原生 SDK console 继续输出 fresh BOOT 和 ledger。成功或失败后都恢复 UART/Wi-Fi command service，stop/restart 错误保持明确 FAIL。Launcher 从编译配置注入精确 IPv4 host/ports、session prefix、CA/wrong CA 与 epoch，每次执行另取真实 Crypto nonce，实际计算 CA SHA256并校准 wall time，36-case 完成和 native resource before/after 严格平衡后才确认 App。
 
 LAN fixture 默认保留 2 秒服务端 TLS 握手预算，可通过 `serve --tls-handshake-timeout` 显式设置硬件诊断预算。Inputs receipt 记录实际预算，实时 receipt 对未合格执行也保留每次握手的 peer、ClientHello/Certificate、TLS 消息、实际耗时和错误；不会把超时或缺少证书交换的连接当成证书拒绝证据。每次改变 fixture 输入都应建立独立 CA/session/epoch/端口与新包，不重写旧执行记录。
 

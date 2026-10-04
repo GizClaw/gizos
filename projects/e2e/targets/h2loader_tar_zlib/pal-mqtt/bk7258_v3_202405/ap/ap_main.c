@@ -45,7 +45,23 @@ static void run(void *unused){
     for(;;){rc=h2_mqtt_device_prepare(runtime);if(rc==H2_PAL_OK)break;
         if(rc!=H2_PAL_ERR_NOT_FOUND && rc!=H2_PAL_ERR_UNAVAILABLE && rc!=H2_PAL_ERR_TIMEOUT && rc!=H2_PAL_ERR_BUSY)fail("network",rc);
         printf("H2_PAL_MQTT_SETUP_WAIT network=not_ready rc=%d cases_started=0\n",rc);fflush(stdout);rtos_delay_milliseconds(3000u);}
-    rc=snapshot(result.before);if(rc!=H2_PAL_OK)fail("before",rc);
+    /* Keep the startup rollback policy, then drain the independent control
+     * owner. Stop joins its console task and closes the KCP stream, so an
+     * in-flight Pref read cannot enter the MQTT resource baseline. The native
+     * SDK console still emits the fresh boot and ledger during this interval. */
+    rc=h2_bk_h2loader_stop_app_iostreamikcp();
+    if(rc!=H2_PAL_OK){
+        printf("H2_PAL_MQTT_SETUP_FAIL stage=commands-stop rc=%d\r\n",rc);
+        printf("H2_PAL_MQTT_READY board=bk7258 rc=%d confirm=%d\r\n",rc,H2_PAL_ERR_INVALID_STATE);
+        fflush(stdout);return;
+    }
+    puts("H2_PAL_MQTT_CONTROL_QUIESCENT stop=0");fflush(stdout);
+    rc=snapshot(result.before);
+    if(rc!=H2_PAL_OK){
+        result.rc=rc;result.cleanup=rc;
+        printf("H2_PAL_MQTT_SETUP_FAIL stage=before rc=%d\r\n",rc);fflush(stdout);
+        goto restore_commands;
+    }
 #if defined(H2_BK_MEM_DIAGNOSTICS) && H2_BK_MEM_DIAGNOSTICS
     h2_bk_mqtt_mem_mark();
 #endif
@@ -58,6 +74,16 @@ static void run(void *unused){
     result.cleanup=after==H2_PAL_OK && memcmp(result.before,result.after,sizeof(result.before))==0?H2_PAL_OK:H2_PAL_ERR_IO;
     if(rc==H2_PAL_OK && result.cleanup!=H2_PAL_OK)rc=result.cleanup;
     result.rc=rc;
+restore_commands: ;
+    /* Restore management on both successful and failed suite/snapshot outcomes. */
+    int commands=h2_bk_h2loader_start_app_iostreamikcp_with_capabilities(runtime,"pal-mqtt",H2_LOADER_CAPABILITY_UART|H2_LOADER_CAPABILITY_WIFI);
+    if(commands!=H2_PAL_OK){
+        result.rc=commands;h2_mqtt_device_replay(runtime,&result);
+        printf("H2_PAL_MQTT_SETUP_FAIL stage=commands-restart rc=%d\r\n",commands);
+        printf("H2_PAL_MQTT_READY board=bk7258 rc=%d confirm=%d\r\n",commands,H2_PAL_ERR_INVALID_STATE);
+        fflush(stdout);return;
+    }
+    puts("H2_PAL_MQTT_CONTROL_RESTORED restart=0");fflush(stdout);
     int confirm=rc==H2_PAL_OK?h2_bk_h2loader_confirm_current_app(runtime):H2_PAL_ERR_INVALID_STATE;
     for(;;){h2_mqtt_device_replay(runtime,&result);printf("H2_PAL_MQTT_READY board=bk7258 rc=%d confirm=%d\n",rc,confirm);fflush(stdout);rtos_delay_milliseconds(5000u);}
 }
