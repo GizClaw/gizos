@@ -387,6 +387,9 @@ class Fixture:
                 row = self.tcp.arrivals.get(run_session + '-' + case, {})
                 if not row.get('connect') or row.get('connect') != row.get('disconnect'):
                     raise RuntimeError('missing balanced wire lifecycle: ' + case)
+            retained_row = self.tcp.arrivals[run_session + '-retained-delivery']
+            if retained_row.get('connect') != 1 or retained_row.get('publish') != 2 or retained_row.get('disconnect') != 1:
+                raise RuntimeError('retained clear requires two real publishes and a completed disconnect')
             for case in ['subscribe-qos0', 'subscribe-qos1', 'subscribe-multi', 'publish-qos0',
                          'publish-qos1', 'publish-binary', 'publish-empty', 'publish-large',
                          'input-lifetime', 'unsubscribe-ack', 'retained-delivery', 'reconnect',

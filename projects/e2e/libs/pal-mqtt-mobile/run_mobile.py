@@ -44,3 +44,6 @@ def verify_report(report, args):
         raise AssertionError('missing actual SDK factory/lifetime validation')
     if report['fixture']['active_clients'] != 0 or report['fixture']['retained_messages'] != 0:
         raise AssertionError('real broker resource leak')
+    retained = next(row for row in rows if row['id'] == 'retained-delivery')
+    if retained.get('received') != 2:
+        raise AssertionError('retained clear did not observe the actual empty payload echo')

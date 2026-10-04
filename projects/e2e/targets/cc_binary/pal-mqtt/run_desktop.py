@@ -26,6 +26,10 @@ def validate(output, registry, smoke=False):
         raise RuntimeError('MQTT summary or final cleanup failed')
     if any(row['live_allocations'] != rows[0]['live_allocations'] or row['invalid_frees'] != 0 for row in rows):
         raise RuntimeError('MQTT case retained a provider allocation')
+    if not smoke:
+        retained = next(row for row in rows if row['id'] == 'retained-delivery')
+        if retained.get('received') != 2:
+            raise RuntimeError('retained clear did not observe the actual empty payload echo')
     return dict(cases=rows, summary=summaries[0])
 
 
