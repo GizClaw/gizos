@@ -76,5 +76,6 @@ void h2_coremqtt_emit_event(h2_pal_mqtt_client_t *client, const h2_pal_mqtt_even
 
 int32_t h2_coremqtt_transport_recv(NetworkContext_t *network, void *buffer, size_t bytes_to_recv);
 int32_t h2_coremqtt_transport_send(NetworkContext_t *network, const void *buffer, size_t bytes_to_send);
+int32_t h2_coremqtt_transport_writev(NetworkContext_t *network, TransportOutVector_t *vectors, size_t count);
 
 #endif
