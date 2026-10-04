@@ -21,6 +21,11 @@ def verify(phases, registry, platform, nonce, contract):
             assert result[key] == value, (key, result)
         if index < 3:
             cases.extend(result["cases"])
+    # Stable registry order is independent of phase execution order. Preserve
+    # each raw phase and emit the aggregate in the canonical registry order.
+    by_id = {case["id"]: case for case in cases}
+    assert len(by_id) == len(expected)
+    cases = [by_id[name] for name in expected]
     return dict(contract["expected"], platform=platform, passed=len(cases), cases=cases, phases=phases,
                 completion_replay=phases[-1]["cases"])
 
