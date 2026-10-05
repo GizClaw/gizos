@@ -32,7 +32,7 @@ def baseline(path):
 
 
 def summary(path, prefix):
-    rows = [json.loads(line[len(prefix):]) for line in path.read_text().splitlines()
+    rows = [json.loads(line[len(prefix):]) for line in path.read_text(encoding="utf-8").splitlines()
             if line.startswith(prefix)]
     assert len(rows) == 1
     return rows[0]
@@ -45,7 +45,7 @@ def main():
     v6log = args.validation_dir / "desktop_pal_ipv6_test.raw.log"
     v4log = args.validation_dir / "desktop_pal_net_tls_test.raw.log"
     rejected = args.validation_dir / "desktop_pal_net_tls_endpoint_rejection_test.raw.log"
-    host = json.loads((args.validation_dir / "host_source_manifest.json").read_text())
+    host = json.loads((args.validation_dir / "host_source_manifest.json").read_text(encoding="utf-8"))
     assert host["schema"] == 1 and host["platform"] == "macos"
     for path, expected in host["source_sha256"].items():
         assert digest((ROOT / path).read_bytes()) == expected, "host closure changed; capture a fresh run: " + path
@@ -57,8 +57,8 @@ def main():
     for value in (v4, v6):
         assert all(value[name] == 0 for name in ("failed", "blocked", "rc", "teardown",
                      "retained_sockets", "retained_resolvers", "retained_allocations"))
-    historical = json.loads((NET / "qualification.json").read_text())
-    https = json.loads((NET / "gizclaw_public_https_provenance_main_tls.json").read_text())
+    historical = json.loads((NET / "qualification.json").read_text(encoding="utf-8"))
+    https = json.loads((NET / "gizclaw_public_https_provenance_main_tls.json").read_text(encoding="utf-8"))
     prior = {**historical["source_sha256"], **https["current_source_sha256"]}
     sources = set(SOURCES)
     for path in (BK, BK_WIFI):
@@ -82,9 +82,9 @@ def main():
             "get_host_addr_family": ["netif-ipv6-address"]},
         "validation": validation,
         "scope": "Current IPv6 parameterization/provider source maintenance and fresh host regression only. Historical device, mobile, browser, source, image and artifact receipts remain byte-for-byte unchanged. Historical 21-operation receipts do not qualify the four additive IPv6 operations or current physical provider images."}
-    audit = json.loads((DISPLAY / "shared_catalog_provenance.json").read_text())
+    audit = json.loads((DISPLAY / "shared_catalog_provenance.json").read_text(encoding="utf-8"))
     old = baseline(GUIDE).decode()
-    current = (ROOT / GUIDE).read_text()
+    current = (ROOT / GUIDE).read_text(encoding="utf-8")
     changes = []
     for tag, heading, end in [("net_ipv6", "\n## IPv6 地址与 DNS\n", None),
                               ("wifi_ipv6_readiness", "## Wi-Fi IPv6 就绪\n", "## Wi-Fi 连接与持久化\n")]:
@@ -110,7 +110,7 @@ def main():
         "network_config_changes": {},
         "scope": "Host audit and explicitly reversed Net/Wi-Fi guide deltas only. Display provider/App/catalog content and historical physical/mobile/artifact receipts are unchanged; no current Display hardware qualification is claimed."}
     cfg = "boards/bk7258_v3_202405/bk7258/ap.defaults"
-    before, after = baseline(cfg).decode(), (ROOT / cfg).read_text()
+    before, after = baseline(cfg).decode(), (ROOT / cfg).read_text(encoding="utf-8")
     if before != after:
         matcher = difflib.SequenceMatcher(None, before.splitlines(keepends=True), after.splitlines(keepends=True))
         hunks = [(i, j, k, l) for op, i, j, k, l in matcher.get_opcodes() if op != "equal"]
@@ -124,7 +124,7 @@ def main():
             "current_sha256": digest(after.encode()), "before_utf8": previous, "after_utf8": updated}
     for path, value in [(NET / "ipv6_source_maintenance.json", net_record),
                         (DISPLAY / "shared_ipv6_maintenance.json", display_record)]:
-        path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n")
+        path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":
