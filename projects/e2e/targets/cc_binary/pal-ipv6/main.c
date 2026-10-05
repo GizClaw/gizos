@@ -7,10 +7,12 @@
 #include "h2_darwin_platform.h"
 #define host_net h2_darwin_net_api
 #define host_entropy h2_darwin_entropy
+#define host_platform "macos"
 #else
 #include "h2_linux_platform.h"
 #define host_net h2_linux_net_api
 #define host_entropy h2_linux_entropy
+#define host_platform "linux"
 #endif
 #include <net/if.h>
 #include <stdio.h>
@@ -38,6 +40,7 @@ int main(int argc, char **argv) {
   if (!end || *end || !port || port > 65535u)
     return 2;
   h2_runtime_t runtime = {.mem = h2_desktop_platform_default_allocator(),
+                          .log = h2_desktop_platform_log_api(),
                           .net = host_net(),
                           .time = h2_desktop_platform_time_api()};
   h2_wolfssl_config_t tls = {.mem = *runtime.mem, .entropy = host_entropy};
@@ -106,6 +109,6 @@ int main(int argc, char **argv) {
   int rc = h2_pal_ipv6_e2e_run(&config, &result);
   backend.destroy(backend.state);
   int teardown = h2_wolfssl_deinit();
-  h2_ipv6_write_report(NULL, "macos", &result, rc, teardown);
+  h2_ipv6_write_report(NULL, host_platform, &result, rc, teardown);
   return rc == H2_PAL_OK && teardown == H2_PAL_OK ? 0 : 1;
 }
