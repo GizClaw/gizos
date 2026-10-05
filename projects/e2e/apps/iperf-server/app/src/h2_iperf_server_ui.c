@@ -362,7 +362,8 @@ h2_pal_result_t h2_iperf_server_app_run_ui(h2_iperf_server_app_t *app,
   lv_tick_set_cb(tick);
   lv_display_set_color_format(ui.display, LV_COLOR_FORMAT_RGB565);
   lv_display_set_flush_cb(ui.display, flush);
-  lv_display_set_buffers(ui.display, ui.pixels, NULL, buffer_bytes,
+  /* The validated RGB565 viewport fits LVGL's 32-bit buffer byte count. */
+  lv_display_set_buffers(ui.display, ui.pixels, NULL, (uint32_t)buffer_bytes,
                          LV_DISPLAY_RENDER_MODE_FULL);
   ui.pointer = lv_indev_create();
   if (ui.pointer == NULL) {
