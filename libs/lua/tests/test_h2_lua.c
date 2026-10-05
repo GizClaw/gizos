@@ -1217,7 +1217,7 @@ static test_display_gate_t s_copy_gate;
 static pthread_t s_copy_controller;
 
 /* Hold the worker before it copies A. Fail the Lua thread's handoff wait,
- * then release the worker; the caller must freeze drawing while A is borrowed. */
+ * and release only after Lua observes COPYING as busy and drawing is frozen. */
 static h2_pal_result_t test_copy_clock(void *user, uint64_t *out_us) {
   assert(pthread_mutex_lock(&s_copy_gate.mutex) == 0);
   if (s_copy_gate.has_owner &&
@@ -1235,13 +1235,29 @@ static h2_pal_result_t test_copy_sleep(void *user, uint32_t ms) {
   if (!pthread_equal(s_copy_controller, pthread_self()) &&
       h2_atomic_load(&s_copy_gate.stage) == 1) {
     assert(pthread_mutex_lock(&s_copy_gate.mutex) == 0);
-    s_copy_gate.block = 0;
     h2_atomic_store(&s_copy_gate.stage, 2);
-    assert(pthread_cond_signal(&s_copy_gate.cond) == 0);
     assert(pthread_mutex_unlock(&s_copy_gate.mutex) == 0);
     return H2_PAL_ERR_IO;
   }
   return s_copy_time_base->vtable->sleep_ms(user, ms);
+}
+
+static int test_copy_release(lua_State *state) {
+  (void)state;
+  assert(pthread_mutex_lock(&s_copy_gate.mutex) == 0);
+  assert(s_copy_gate.block && h2_atomic_load(&s_copy_gate.stage) == 2);
+  s_copy_gate.block = 0;
+  h2_atomic_store(&s_copy_gate.stage, 3);
+  assert(pthread_cond_signal(&s_copy_gate.cond) == 0);
+  assert(pthread_mutex_unlock(&s_copy_gate.mutex) == 0);
+  return 0;
+}
+
+static int test_copy_module(void *raw, void *user) {
+  lua_State *state = raw;
+  (void)user;
+  lua_pushcfunction(state, test_copy_release);
+  return 1;
 }
 
 static int test_wake_task_start(void *user, const h2_pal_task_options_t *options,
@@ -1326,6 +1342,8 @@ static void test_display_submission_fault(int mode) {
       .vm_memory_limit_bytes = 2u * 1024u * 1024u};
   assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
   assert(h2_lua_register_module(host, "region_test", test_region_open, NULL) == H2_PAL_OK);
+  if (mode == 11)
+    assert(h2_lua_register_module(host, "copy_test", test_copy_module, NULL) == H2_PAL_OK);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
   const char script[] =
       "local d,r=require('display'),require('runtime');d.clear('red');"
@@ -1336,8 +1354,12 @@ static void test_display_submission_fault(int mode) {
       "local n,e=d.submit({tiles=true});if args.wake=='yes' then "
       "assert(n==nil and e<0 and e~=d.BUSY);"
       "local n2,e2=d.submit();assert(n2==nil and e2==e);"
-      "assert(d.status().error==e);assert(not pcall(d.present));"
-      "assert(not pcall(d.clear,'blue'));return end;"
+      "local record=d.status();assert(record.error==e);"
+      "if args.copy=='yes' then "
+      "assert(record.busy,'COPYING is in flight but status.busy is false');"
+      "assert(record.submitted==1 and record.completed==0 and record.successful==0);"
+      "assert(not pcall(d.clear,'blue'));require('copy_test')() end;"
+      "assert(not pcall(d.present));assert(not pcall(d.clear,'blue'));return end;"
       "assert(n==(args.partial=='no' and 1 or 2));local s,e=d.flush();"
       "while not s and e==d.BUSY do r.sleep(1);s,e=d.flush() end;"
       "if args.close=='yes' then assert(s);local _;_,e=d.deinit();"
@@ -1348,16 +1370,17 @@ static void test_display_submission_fault(int mode) {
       "assert(not pcall(d.present));";
   h2_lua_arg_t args[] = {{"close", mode == 3 ? "yes" : "no"},
                         {"wake", mode == 5 || mode == 11 ? "yes" : "no"},
+                        {"copy", mode == 11 ? "yes" : "no"},
                         {"partial", mode == 8 ? "2" : mode == 9 ? "130" : mode == 10 ? "0" : "no"}};
   h2_lua_job_id_t job;
   assert(h2_lua_job_submit_text(host, NULL, "@submission-fault.lua",
-      (const uint8_t *)script, sizeof(script)-1, args, 3, &job) == H2_PAL_OK);
+      (const uint8_t *)script, sizeof(script)-1, args, 4, &job) == H2_PAL_OK);
   run_until_terminal(host, job, 6000);
   h2_lua_job_status_t state = status(host, job);
   if (mode != 4 && mode != 7 && mode != 6 && state.state != H2_LUA_JOB_SUCCEEDED)
     fprintf(stderr, "fault mode=%d: %s\n", mode, state.message);
   assert(state.state == (mode == 4 || mode == 7 || mode == 6 ? H2_LUA_JOB_FAILED : H2_LUA_JOB_SUCCEEDED));
-  if (mode == 11) assert(h2_atomic_load(&s_copy_gate.stage) == 2);
+  if (mode == 11) assert(h2_atomic_load(&s_copy_gate.stage) == 3);
   h2_pal_result_t expected = mode == 4 || mode == 7 ? H2_DISPLAY_ERR_INVALID_ARG
       : mode == 6 ? H2_PAL_ERR_TASK : H2_PAL_ERR_IO;
   h2_pal_result_t result = H2_PAL_ERR_BUSY;

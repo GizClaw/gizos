@@ -4712,8 +4712,10 @@ static int display_status(lua_State *state) {
     value.rects = source->rects;
     value.fault = source->fault;
     value.closing = source->closing;
-    busy = source->worker.initialized &&
-        h2_lua_display_worker_phase(&source->worker) == H2_LUA_DISPLAY_PENDING;
+    if (source->worker.initialized) {
+      int phase = h2_lua_display_worker_phase(&source->worker);
+      busy = phase == H2_LUA_DISPLAY_COPYING || phase == H2_LUA_DISPLAY_PENDING;
+    }
   }
   /* Copy completed scalar fields before table allocation can run finalizers. */
   lua_createtable(state, 0, 12);
