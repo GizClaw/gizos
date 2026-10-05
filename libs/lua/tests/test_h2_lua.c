@@ -902,10 +902,10 @@ static h2_lua_job_status_t run_display_script_size(h2_lua_host_t *host,
   s_test_display_fixture.height = height;
   assert(h2_lua_job_submit_text(host, NULL, name, script, script_size, NULL, 0u,
                                 &job_id) == H2_PAL_OK);
-  /* Pixel oracles run on an independent worker with up to a five-second job
-   * deadline. Allow that deadline to report failure instead of imposing a
-   * 64 ms scheduler-speed requirement on loaded CI hosts. */
-  run_until_terminal(host, job_id, 6000u);
+  /* Allow the configured job deadline to report failure even for the longer
+   * pixel oracles. Each polling step sleeps at least one millisecond. */
+  run_until_terminal(host, job_id,
+                     (size_t)host->config.execution_timeout_ms + 1000u);
   job_status = status(host, job_id);
   if (job_status.state != H2_LUA_JOB_SUCCEEDED)
     fprintf(stderr, "%s: %s\n", name, job_status.message);
@@ -3185,7 +3185,10 @@ static void test_display_strokes(void) {
 
 static void test_display_mesh_identity(void) {
   h2_runtime_t *runtime = create_runtime();
-  h2_lua_host_t *host = create_unstarted_host_with_scheduler(runtime,1000,0,5000,8192);
+  /* The 16 frames x 12 transforms x 6 presents require 1152 worker round
+   * trips. This is a pixel oracle, so allow scheduler latency on loaded CI
+   * hosts while retaining a finite job deadline and every comparison. */
+  h2_lua_host_t *host = create_unstarted_host_with_scheduler(runtime,1000,0,30000,8192);
   assert(h2_lua_register_module(host,"mesh_test",test_mesh_open,NULL) == H2_PAL_OK);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
   /* Reference positions evaluate the original binary64 expression in Lua.
