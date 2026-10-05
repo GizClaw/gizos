@@ -59,6 +59,7 @@ class MobileRunnerProvenanceTest(unittest.TestCase):
 
     def test_bk_network_change_rejects_checksum_consistent_unowned_hunks(self):
         cfg = qualification.Path("boards/bk7258_v3_202405/bk7258/ap.defaults")
+        cfg_key = cfg.as_posix()
         path = qualification.ROOT / "shared_ipv6_maintenance.json"
         record = json.loads(path.read_text(encoding="utf-8"))
         before = b"# CONFIG_IPV6 is not set\n"
@@ -67,13 +68,13 @@ class MobileRunnerProvenanceTest(unittest.TestCase):
         if enabled in baseline:
             baseline = baseline.replace(enabled, before, 1)
         self.assertEqual(hashlib.sha256(baseline).hexdigest(),
-                         self.historical[str(cfg)])
+                         self.historical[cfg_key])
         for after in (b"CONFIG_IPV6=n\n",
                       b"CONFIG_IPV6=y\nCONFIG_LWIP_IPV6_NUM_ADDRESSES=1\n"):
             content = baseline.replace(before, after, 1)
             bad = copy.deepcopy(record)
-            bad["network_config_changes"] = {str(cfg): {
-                "previous_sha256": self.historical[str(cfg)],
+            bad["network_config_changes"] = {cfg_key: {
+                "previous_sha256": self.historical[cfg_key],
                 "current_sha256": hashlib.sha256(content).hexdigest(),
                 "before_utf8": before.decode(), "after_utf8": after.decode(),
             }}
