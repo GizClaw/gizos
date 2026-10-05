@@ -20,6 +20,26 @@ class MobileRunnerProvenanceTest(unittest.TestCase):
     def test_separate_mobile_runs_preserve_historical_qualification(self):
         self.verify(self.followup)
 
+    def test_ipv6_maintenance_does_not_admit_unowned_or_physical_changes(self):
+        path = qualification.ROOT / "shared_ipv6_maintenance.json"
+        record = json.loads(path.read_text())
+        original_read = qualification.Path.read_text
+        mutations = [
+            lambda value: value.update(new_physical_run_claimed=True),
+            lambda value: value.update(historical_baseline_sha256="0" * 64),
+            lambda value: value["guide_changes"].append({"owner": "display", "before_utf8": "", "after_utf8": "unowned"}),
+            lambda value: value["guide_changes"].append(copy.deepcopy(value["guide_changes"][0])),
+            lambda value: value["current_audit_sha256"].update({"libs/pal/providers/sdl3/src/h2_sdl3_display.cpp": "0" * 64}),
+        ]
+        for mutate in mutations:
+            bad = copy.deepcopy(record)
+            mutate(bad)
+            def read(source, *args, **kwargs):
+                return json.JSONEncoder().encode(bad) if source == path else original_read(source, *args, **kwargs)
+            with patch.object(qualification.Path, "read_text", new=read):
+                with self.assertRaises(AssertionError):
+                    self.verify(self.followup)
+
     def test_other_app_catalog_changes_preserve_display_content(self):
         baseline = (qualification.ROOT / "shared_catalog_baseline.txt").read_text(encoding="utf-8")
         current = qualification.Path(qualification.SHARED_CATALOG).read_text(encoding="utf-8")

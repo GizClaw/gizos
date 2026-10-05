@@ -35,6 +35,33 @@ class Rejection(unittest.TestCase):
             bad=copy.deepcopy(followup);mutate(bad)
             with self.assertRaises(AssertionError):validation.check_sources(validation.ROOT,historical,bad)
 
+    def test_ipv6_maintenance_cannot_relabel_or_exempt_other_sources(self):
+        path = APP / 'ipv6_source_maintenance.json'
+        record = json.loads(path.read_text())
+        old = json.loads((APP / 'qualification.json').read_text())['source_sha256']
+        https = json.loads((APP / 'gizclaw_public_https_provenance_main_tls.json').read_text())
+        effective = {**old, **https['current_source_sha256']}
+        original_read = Path.read_text
+        from unittest.mock import patch
+        mutations = [
+            lambda value: value.update(new_physical_run_claimed=True),
+            lambda value: value.update(historical_physical_qualification_applies_to_current_sources=True),
+            lambda value: value.update(historical_qualification_sha256='0' * 64),
+            lambda value: value['current_source_sha256'].update({'libs/pal/providers/ios/pal_core/src/h2_ios_net.c': '0' * 64}),
+            lambda value: value['previous_source_sha256'].update({'libs/pal/include/h2/pal/net/h2_pal_net.h': '0' * 64}),
+            lambda value: value['current_source_sha256'].update({'libs/pal/providers/posix/pal_core/src/h2_posix_net.c': '0' * 64}),
+            lambda value: value['new_slots'].update(resolve_all=['not-a-real-case']),
+            lambda value: value['validation']['host_execution']['source_sha256'].pop('MODULE.bazel'),
+        ]
+        for mutate in mutations:
+            bad = copy.deepcopy(record)
+            mutate(bad)
+            def read(source, *args, **kwargs):
+                return json.dumps(bad) if source == path else original_read(source, *args, **kwargs)
+            with patch.object(Path, 'read_text', new=read):
+                with self.assertRaises(AssertionError):
+                    validation.ipv6_source_updates(validation.ROOT, effective)
+
     def test_additive_mqtt_build_owner_does_not_rebind_net_tls_sources(self):
         import hashlib
         sources=json.loads((APP/'qualification.json').read_text())['source_sha256']
