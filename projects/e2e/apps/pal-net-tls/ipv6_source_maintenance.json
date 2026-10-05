@@ -49,7 +49,7 @@
     "new_physical_run_claimed": false,
     "host_execution": {
       "schema": 1,
-      "executed_source_commit": "57644e6cf9fb4c189da814588c2f532215a97e44",
+      "executed_source_commit": "fbe2aaab3ad3e6814c25e9f66cdc69489e5384af",
       "platform": "macos",
       "config": "macos_arm64",
       "source_sha256": {
@@ -63,6 +63,7 @@
         "libs/pal/providers/posix/pal_core/src/h2_posix_net.c": "515cba31db970cf6f20977adf53d8d35df3ec5d122128e65f1da163b358f4625",
         "projects/e2e/apps/pal-ipv6/app/src/h2_pal_ipv6_e2e.c": "6c828f8660c518b62ede31268084af64ac18fb0204f684f0563a965aa4db21ce",
         "projects/e2e/apps/pal-net-tls/app/src/h2_pal_net_tls_e2e.c": "f67f2f4afb97b6648a84c1af47e29980baea02a77649c4a726394562bc1a5a63",
+        "projects/e2e/libs/pal-ipv6-fixture/fixture_ipv6.py": "3e34b84ba2b675538b137f240adcd261ca7f0af12a2a2a0bec8c9728f4b52425",
         "projects/e2e/libs/pal-net-tls-fixture/fixture.py": "4833a8b2ae1b9b859e5f2238624a1c0036eeb9085d79ac2d452e6556be90cccd",
         "projects/e2e/targets/cc_binary/pal-ipv6/main.c": "e6743bedc7a09d5f44e74e34f2d8249a73102cf8cc540b409a97037591aa917d",
         "projects/e2e/targets/cc_binary/pal-ipv6/run_desktop.py": "cd41dce09e9d28dba39876b49c2da2146dcb16e0225422f2a242aead70956db6",
@@ -72,12 +73,24 @@
         "projects/e2e/targets/cc_binary/pal-ipv6/pal_ipv6": "5c8361771bc83c658ebc3b6ad182e0bd66d44f096d2ff4544e83939e87cd0d01",
         "projects/e2e/targets/cc_binary/pal-net-tls/pal_net_tls": "13007f7cb55ffa7d78f1e0c6eae31aedccf3177c13ce2a92d6bde3a4a8bb1cd6",
         "tools/webrtc-test-server/webrtc_test_server_/webrtc_test_server": "8ecf85a75e2ae317e6c2a532f343e1c69b436617e909494792965bd498dac839"
+      },
+      "complete_input_capture": {
+        "all_before_after_identical": true,
+        "actions_count": 375,
+        "input_count": 9967,
+        "first_party_sources_count": 287,
+        "sha256": {
+          "full_source_manifest": "dca3049cc7fed879c9f18e26fe15fde1d9690b9ac7c94873dd52a8d0f5e3b365",
+          "selected_action_closure": "555263fe3abcd79c5d4622bf0a556094cad1e8179e516dd103419f063fd44bec",
+          "action_input_manifest": "a80d743ea54acac36c24cf1d689f40522a04e9652bc155510ec9699be98a24cc",
+          "input_verification": "383319fd52b5dd620f5a83e2d3c2cdd14b3db798e0488b3df745de131ad591dc"
+        }
       }
     },
     "raw_log_sha256": {
-      "desktop_pal_ipv6_test.raw.log": "fdc547278f0f3f24208b77d9f18c2114499ee130e77e1a89b4d96fa3f1341d61",
-      "desktop_pal_net_tls_test.raw.log": "f7b07db8ec34b04dae5c297d0b31f5b71b893c3fd89bd58e65a631dde314f9a1",
-      "desktop_pal_net_tls_endpoint_rejection_test.raw.log": "dbed4068114f7d05427025d32f141027e0f5ea1a203b829d59e660d1b1cb65b5"
+      "desktop_pal_ipv6_test.raw.log": "deac37a8ce278bac9eda4074637379ab84dab5f8e639eb3f952ba207af8304e2",
+      "desktop_pal_net_tls_test.raw.log": "7f8544abd324f1c7f2167593a541cdeade444fc42733aa9e0d4f0c03cccebf57",
+      "desktop_pal_net_tls_endpoint_rejection_test.raw.log": "905dd0e2a79ab0e7091f7ca6258770ccd8bbfff4253eac2b8f3800bdfadb592a"
     }
   },
   "scope": "Current IPv6 parameterization/provider source maintenance and fresh host regression only. Historical device, mobile, browser, source, image and artifact receipts remain byte-for-byte unchanged. Historical 21-operation receipts do not qualify the four additive IPv6 operations or current physical provider images."
