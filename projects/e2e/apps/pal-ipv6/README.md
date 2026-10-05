@@ -10,7 +10,7 @@ WASM exercises actual browser Fetch on an IPv6 literal and WebRTC/DTLS/SCTP on a
 
 ## Commands
 
-Finish implementation before running the matrix. Live targets use `external` tags so each invocation obtains fresh peers while build/disk caches remain on.
+The Desktop test starts all declared peers on loopback and runs automatically in the compatible host CI graph without tags. Browser and mobile tests require their prepared environment and remain `manual`/`external`, so each invocation observes fresh state while build/disk caches remain on. Explicit external DNS qualification with the Desktop target must use `--nocache_test_results`.
 
 ```sh
 bazel test --config=macos_arm64 \

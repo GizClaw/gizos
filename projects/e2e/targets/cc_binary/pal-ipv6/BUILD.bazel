@@ -43,10 +43,6 @@ py_test(
     ],
     legacy_create_init = 0,
     main = "run_desktop.py",
-    tags = [
-        "external",
-        "manual",
-    ],
     target_compatible_with = _HOST,
     deps = ["//projects/e2e/libs/pal-ipv6-fixture:fixture"],
 )
