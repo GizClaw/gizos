@@ -23,7 +23,7 @@ class MobileRunnerProvenanceTest(unittest.TestCase):
 
     def test_ipv6_maintenance_does_not_admit_unowned_or_physical_changes(self):
         path = qualification.ROOT / "shared_ipv6_maintenance.json"
-        record = json.loads(path.read_text())
+        record = json.loads(path.read_text(encoding="utf-8"))
         original_read = qualification.Path.read_text
         mutations = [
             lambda value: value.update(new_physical_run_claimed=True),
