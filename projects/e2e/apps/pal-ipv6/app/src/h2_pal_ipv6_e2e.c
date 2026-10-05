@@ -200,6 +200,7 @@ static int mqtt(const h2_pal_ipv6_config_t *config) {
 typedef struct webrtc_fixture {
   h2_webrtc_fixture_client_t client;
   unsigned ipv6_pairs;
+  const h2_pal_log_api_t *log;
 } webrtc_fixture_t;
 static int webrtc_close(void *user) {
   webrtc_fixture_t *fixture = user;
@@ -220,6 +221,12 @@ static int webrtc_close(void *user) {
   if (rc == H2_PAL_OK && response.status_code == 200 &&
       strstr(body, "\"local_family\":6") && strstr(body, "\"remote_family\":6"))
     ++fixture->ipv6_pairs;
+  char line[120];
+  snprintf(line, sizeof(line),
+           "H2_PAL_IPV6_ICE_WITNESS status=%d rc=%d local6=%d remote6=%d",
+           response.status_code, rc, strstr(body, "\"local_family\":6") != NULL,
+           strstr(body, "\"remote_family\":6") != NULL);
+  h2_pal_log_write(fixture->log, H2_PAL_LOG_INFO, "pal-ipv6", line);
   h2_pal_http_response_free(client->http, &response);
   return h2_webrtc_fixture_close(&fixture->client);
 }
@@ -249,7 +256,7 @@ static int webrtc(const h2_pal_ipv6_config_t *config) {
   if (rc != H2_PAL_OK)
     return rc;
   webrtc_fixture_t witness = {
-      .client = {.http = &api, .offer_url = config->offer_url}};
+      .client = {.http = &api, .offer_url = config->offer_url}, .log = runtime->log};
   h2_pal_webrtc_e2e_config_t fixture = {.runtime = runtime,
                                         .stun_url = config->stun_url,
                                         .exchange_offer =
