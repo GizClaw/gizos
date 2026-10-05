@@ -126,7 +126,7 @@ class MobileRunnerProvenanceTest(unittest.TestCase):
     def test_bk_network_change_rejects_checksum_consistent_unowned_hunks(self):
         cfg = qualification.Path("boards/bk7258_v3_202405/bk7258/ap.defaults")
         path = qualification.ROOT / "shared_ipv6_maintenance.json"
-        record = json.loads(path.read_text())
+        record = json.loads(path.read_text(encoding="utf-8"))
         before = b"# CONFIG_IPV6 is not set\n"
         enabled = b"CONFIG_IPV6=y\n"
         baseline = cfg.read_bytes()
