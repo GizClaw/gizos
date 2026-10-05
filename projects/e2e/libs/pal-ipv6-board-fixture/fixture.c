@@ -512,13 +512,15 @@ static void mqtt_worker(void *user) {
     if (!rc) {
       int size = mqtt_packet(client, body, sizeof(body) - 1, &kind);
       if (size > 32 && kind == 1 &&
-          !memcmp(body + size - 32, H2_PAL_IPV6_SESSION, 32)) {
+          !memcmp(body + size - 32, H2_PAL_IPV6_SESSION,
+                  sizeof(H2_PAL_IPV6_SESSION) - 1)) {
         static const uint8_t ack[] = {0x20, 2, 0, 0};
         write_all(client, ack, sizeof(ack));
         size = mqtt_packet(client, body, sizeof(body), &kind);
         if (size == 42 && kind == 3 && body[0] == 0 && body[1] == 8 &&
             !memcmp(body + 2, "pal/ipv6", 8) &&
-            !memcmp(body + 10, H2_PAL_IPV6_SESSION, 32) &&
+            !memcmp(body + 10, H2_PAL_IPV6_SESSION,
+                    sizeof(H2_PAL_IPV6_SESSION) - 1) &&
             mqtt_packet(client, body, sizeof(body), &kind) == 0 && kind == 14)
           log_line(
               "H2_IPV6_FIXTURE_MQTT family=6 publish_valid=1 disconnected=1");
