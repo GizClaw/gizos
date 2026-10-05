@@ -194,8 +194,9 @@ static h2_pal_result_t netif_status(esp_netif_t *netif,
        ++i) {
     esp_netif_dns_info_t dns;
     memset(&dns, 0, sizeof(dns));
-    if (esp_netif_get_dns_info(netif, dns_types[i], &dns) == ESP_OK &&
-        IP_IS_V4(&dns.ip) && ip_2_ip4(&dns.ip)->addr != 0u) {
+    if (esp_netif_get_dns_info(netif, dns_types[i], &dns) != ESP_OK)
+      continue;
+    if (IP_IS_V4(&dns.ip) && ip_2_ip4(&dns.ip)->addr != 0u) {
       set_ipv4(&out_status->dns[out_status->dns_count].addr,
                ip_2_ip4(&dns.ip)->addr);
       ++out_status->dns_count;
