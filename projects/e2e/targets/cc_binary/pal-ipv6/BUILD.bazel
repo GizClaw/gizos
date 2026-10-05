@@ -17,7 +17,9 @@ cc_binary(
     copts = H2_WARNING_COPTS,
     target_compatible_with = _HOST,
     deps = [
-        "//libs/pal/providers/desktop:webrtc_h2peer_test_support",
+        "//libs/atomic/providers/c11",
+        "//libs/pal/providers/h2peer",
+        "//libs/pal/providers/h2sctp",
         "//libs/pal/providers/desktop/pal_core",
         "//libs/pal/providers/wolfssl",
         "//projects/e2e/libs/pal-ipv6-runner:runner",
