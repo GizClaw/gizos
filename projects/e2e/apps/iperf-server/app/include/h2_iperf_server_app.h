@@ -86,6 +86,10 @@ h2_iperf_server_app_create(h2_runtime_t *runtime,
                            h2_iperf_server_app_t **out_app);
 /** Thread-safe nonblocking request. Mode changes require STOPPED or ERROR.
  * Stop cancels idle accepts, incomplete handshakes and active measurements.
+ * A cleanup failure retains STOPPING and its error with live handles owned;
+ * another Stop request retries cleanup. Start/mode changes stay busy until
+ * cleanup succeeds. A fatal manager synchronization error closes requests;
+ * destroy still retains/retries owned cleanup.
  */
 h2_pal_result_t h2_iperf_server_app_request(h2_iperf_server_app_t *app,
                                             h2_iperf_server_app_mode_t mode,
@@ -96,6 +100,9 @@ h2_iperf_server_app_snapshot(h2_iperf_server_app_t *app,
                              h2_iperf_server_app_snapshot_t *out_snapshot);
 /** Stop, join workers/manager and release storage. Blocks on the caller task.
  * On join/cleanup error retain the handle so the caller can retry.
+ * The manager terminates after one cleanup attempt on shutdown; destroy
+ * retries cleanup once after joining it, never looping on a persistent error.
+ * The borrowed task joins/network callbacks may themselves block.
  * The caller must quiesce concurrent request/snapshot calls before destroying.
  */
 h2_pal_result_t h2_iperf_server_app_destroy(h2_iperf_server_app_t **app);

@@ -248,8 +248,11 @@ static int refresh(ui_state_t *ui) {
                                  "Stopping...", "Start failed"};
   h2_pal_wifi_ap_status_t ap = {0};
   (void)h2_pal_wifi_ap_get_status(ui->app->runtime->wifi_ap, &ap);
+  bool retry_stop = state->phase == H2_IPERF_SERVER_APP_STOPPING &&
+                    state->error != H2_PAL_OK;
   if (state->error != H2_PAL_OK)
-    (void)snprintf(text, sizeof(text), "%s  (%d)", phases[state->phase],
+    (void)snprintf(text, sizeof(text), "%s  (%d)",
+                   retry_stop ? "Stop failed" : phases[state->phase],
                    state->error);
   else if (state->phase == H2_IPERF_SERVER_APP_LISTENING) {
     int failed = 0;
@@ -267,12 +270,13 @@ static int refresh(ui_state_t *ui) {
   lv_label_set_text(ui->status, text);
   lv_label_set_text(ui->action_label,
                     idle ? "Start server"
+                    : retry_stop ? "Retry stop"
                     : state->phase == H2_IPERF_SERVER_APP_STOPPING
                         ? "Stopping..."
                         : "Stop server");
   lv_obj_set_style_bg_color(ui->action,
                             lv_color_hex(idle ? 0x0891b2 : 0xbe123c), 0);
-  if (state->phase == H2_IPERF_SERVER_APP_STOPPING)
+  if (state->phase == H2_IPERF_SERVER_APP_STOPPING && !retry_stop)
     lv_obj_add_state(ui->action, LV_STATE_DISABLED);
   else
     lv_obj_remove_state(ui->action, LV_STATE_DISABLED);

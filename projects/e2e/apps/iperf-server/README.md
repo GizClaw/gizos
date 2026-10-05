@@ -4,6 +4,10 @@ Touch-operated network throughput bench under `projects/e2e`. The portable App o
 
 Select **IPv4**, **IPv6** or **Dual stack**, then tap **Start server**. **Stop server** cancels accepted clients and measurements, joins the server tasks, and stops the AP. Change modes while stopped. Boot defaults to dual stack, stopped; UI readiness confirms the H2Loader App only after Display and Touch open and the first rendered frame completes.
 
+If a task join or AP stop fails, the controller retains `STOPPING` and the error with its resources still owned. The screen shows **Stop failed** and enables **Retry stop**; Start and mode changes stay locked until cleanup succeeds. Each Stop request makes one cleanup attempt and waits for an explicit retry after failure.
+
+Shutdown makes one manager cleanup attempt and exits that task. `destroy()` joins it and retries cleanup once on the caller; an error retains the App and any unjoined task/server/AP resources for a later destroy retry. Runtime and callbacks remain borrowed until successful destruction. Task joins and network callbacks remain blocking according to their own contracts. A fatal manager mutex error closes request handling and leaves retained cleanup to destruction.
+
 | Setting | Value |
 | --- | --- |
 | SSID | `GizOS-iPerf` |
@@ -48,4 +52,4 @@ bazel test --config=macos_arm64 //projects/e2e/apps/iperf-server/app:controller_
 bazel test --config=macos_arm64 //libs/iperf:all
 ```
 
-The controller test uses real PAL sockets: 16 TCP/UDP forward/reverse scenarios across single-family and dual modes, eight official iperf3 client interop scenarios, six control/data-handshake/result-exchange cancellation scenarios, four active-test cancellations, oversized block/JSON rejection and recovery, failed startup recovery, queued-start cancellation and repeated teardown/rebind. The UI test sends nine Touch PAL down/up pairs through the production LVGL input callback to select/start/stop all three modes and verifies Display/Touch lifecycle; it exports production RGB565 rendering as PPM for inspection. These host tests do not replace an AMOLED optical/touch check or an external client's over-the-air throughput run.
+The controller test uses real PAL sockets: 16 TCP/UDP forward/reverse scenarios across single-family and dual modes, eight official iperf3 client interop scenarios, six control/data-handshake/result-exchange cancellation scenarios, four active-test cancellations, oversized block/JSON rejection and recovery, failed startup recovery, queued-start cancellation and repeated teardown/rebind. Four persistent cleanup failure scenarios cover AP stop after normal stop/partial startup, retained worker join and manager mutex failure; destroy returns an error without freeing borrowed/live state and succeeds on retry after the fault is cleared. The UI test sends ten Touch PAL down/up pairs through the production LVGL input callback to select/start/stop all three modes and retry a failed stop, and verifies Display/Touch lifecycle; it exports production RGB565 rendering as PPM for inspection. These host tests do not replace an AMOLED optical/touch check or an external client's over-the-air throughput run.

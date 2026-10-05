@@ -1,4 +1,5 @@
 #include "h2_desktop_platform.h"
+#include "h2_atomic.h"
 #include "h2_iperf_server_app.h"
 #include "h2_iperf_test_support.h"
 
@@ -270,6 +271,212 @@ static void cancel_running(h2_iperf_server_app_t *app, h2_iperf_test_env_t *env,
   printf("PASS cancellation active protocol=%s reverse=%d\n",
          udp ? "udp" : "tcp", reverse);
 }
+
+typedef struct cleanup_fixture {
+  const h2_pal_task_api_t *task;
+  const h2_pal_sync_api_t *sync;
+  h2_pal_task_entry_t manager_entry;
+  void *manager_context;
+  h2_pal_task_t *manager;
+  h2_pal_task_t *workers[2];
+  h2_atomic_bool_t fail_manager_lock;
+  h2_atomic_bool_t manager_lock_failed;
+  bool invalid_ipv6;
+  bool fail_network_stop;
+  bool fail_worker_join;
+  bool network_active;
+  h2_atomic_u32_t stop_calls;
+} cleanup_fixture_t;
+
+static _Thread_local bool cleanup_manager_thread;
+static void cleanup_manager_entry(void *user) {
+  cleanup_fixture_t *f = user;
+  cleanup_manager_thread = true;
+  f->manager_entry(f->manager_context);
+}
+static int cleanup_task_start(void *user, const h2_pal_task_options_t *options,
+                              h2_pal_task_entry_t entry, void *context,
+                              h2_pal_task_t **out) {
+  cleanup_fixture_t *f = user;
+  if (strcmp(options->name, "iperf-server/control") == 0) {
+    f->manager_entry = entry;
+    f->manager_context = context;
+    int rc = h2_pal_task_start(f->task, options, cleanup_manager_entry, f, out);
+    if (rc == H2_PAL_OK)
+      f->manager = *out;
+    return rc;
+  }
+  unsigned index = strcmp(options->name, "iperf-server/ipv4") == 0 ? 0u : 1u;
+  int rc = h2_pal_task_start(f->task, options, entry, context, out);
+  if (rc == H2_PAL_OK)
+    f->workers[index] = *out;
+  return rc;
+}
+static int cleanup_task_join(void *user, h2_pal_task_t *task) {
+  cleanup_fixture_t *f = user;
+  if (task == f->manager) {
+    int rc = h2_pal_task_join(f->task, task);
+    if (rc == H2_PAL_OK)
+      f->manager = NULL;
+    return rc;
+  }
+  for (unsigned i = 0; i < 2u; ++i) {
+    if (task != f->workers[i])
+      continue;
+    if (f->fail_worker_join)
+      return H2_PAL_ERR_IO;
+    int rc = h2_pal_task_join(f->task, task);
+    if (rc == H2_PAL_OK)
+      f->workers[i] = NULL;
+    return rc;
+  }
+  return h2_pal_task_join(f->task, task);
+}
+static h2_pal_result_t cleanup_mutex_create(void *user,
+                                            const h2_pal_mutex_config_t *config,
+                                            h2_pal_mutex_t **out) {
+  return h2_pal_mutex_create(((cleanup_fixture_t *)user)->sync, config, out);
+}
+static h2_pal_result_t cleanup_mutex_destroy(void *user, h2_pal_mutex_t *mutex) {
+  return h2_pal_mutex_destroy(((cleanup_fixture_t *)user)->sync, mutex);
+}
+static h2_pal_result_t cleanup_mutex_lock(void *user, h2_pal_mutex_t *mutex) {
+  cleanup_fixture_t *f = user;
+  if (cleanup_manager_thread &&
+      h2_atomic_bool_load(&f->fail_manager_lock, H2_ATOMIC_ACQUIRE)) {
+    h2_atomic_bool_store(&f->manager_lock_failed, true, H2_ATOMIC_RELEASE);
+    return H2_PAL_ERR_IO;
+  }
+  return h2_pal_mutex_lock(f->sync, mutex);
+}
+static h2_pal_result_t cleanup_mutex_unlock(void *user, h2_pal_mutex_t *mutex) {
+  return h2_pal_mutex_unlock(((cleanup_fixture_t *)user)->sync, mutex);
+}
+static int cleanup_network_start(void *user, h2_iperf_server_app_mode_t mode,
+                                 h2_iperf_server_app_network_t *out) {
+  cleanup_fixture_t *f = user;
+  assert(mode == H2_IPERF_SERVER_APP_MODE_DUAL);
+  f->network_active = true;
+  out->ipv4 = loopback(4u, 0u);
+  if (!f->invalid_ipv6)
+    out->ipv6 = loopback(6u, 0u);
+  return H2_PAL_OK;
+}
+static int cleanup_network_stop(void *user) {
+  cleanup_fixture_t *f = user;
+  /* No AP teardown is allowed while a failed join retains worker ownership. */
+  assert(f->workers[0] == NULL && f->workers[1] == NULL);
+  (void)h2_atomic_u32_fetch_add(&f->stop_calls, 1u, H2_ATOMIC_RELAXED);
+  if (f->fail_network_stop)
+    return H2_PAL_ERR_IO;
+  f->network_active = false;
+  return H2_PAL_OK;
+}
+typedef struct destroy_attempt {
+  h2_iperf_server_app_t *app;
+  h2_atomic_bool_t done;
+  int rc;
+} destroy_attempt_t;
+static void *destroy_once(void *user) {
+  destroy_attempt_t *attempt = user;
+  attempt->rc = h2_iperf_server_app_destroy(&attempt->app);
+  h2_atomic_bool_store(&attempt->done, true, H2_ATOMIC_RELEASE);
+  return NULL;
+}
+static void test_cleanup_failure(h2_iperf_test_env_t *env, unsigned scenario) {
+  cleanup_fixture_t f = {.task = h2_desktop_platform_task_api(),
+                         .sync = h2_desktop_platform_sync_api(),
+                         .invalid_ipv6 = scenario == 1u,
+                         .fail_network_stop = scenario != 2u,
+                         .fail_worker_join = scenario == 2u};
+  assert(h2_atomic_bool_init(&f.fail_manager_lock, false) == H2_ATOMIC_OK);
+  assert(h2_atomic_bool_init(&f.manager_lock_failed, false) == H2_ATOMIC_OK);
+  assert(h2_atomic_u32_init(&f.stop_calls, 0u) == H2_ATOMIC_OK);
+  const h2_pal_task_vtable_t task_vtable = {
+      .start = cleanup_task_start, .join = cleanup_task_join};
+  const h2_pal_task_api_t task = {&f, &task_vtable};
+  const h2_pal_sync_vtable_t sync_vtable = {
+      .create_mutex = cleanup_mutex_create,
+      .destroy_mutex = cleanup_mutex_destroy,
+      .lock_mutex = cleanup_mutex_lock,
+      .unlock_mutex = cleanup_mutex_unlock};
+  const h2_pal_sync_api_t sync = {&f, &sync_vtable};
+  h2_runtime_t runtime = {.mem = env->config.mem,
+                          .net = env->config.net,
+                          .time = env->config.time,
+                          .crypto = env->config.crypto,
+                          .log = env->config.log,
+                          .task = &task,
+                          .sync = &sync};
+  const h2_iperf_server_app_config_t config = {
+      .network_user = &f,
+      .network_start = cleanup_network_start,
+      .network_stop = cleanup_network_stop,
+      .port = h2_iperf_test_free_port(env->config.net)};
+  h2_iperf_server_app_t *app = NULL;
+  assert(h2_iperf_server_app_create(&runtime, &config, &app) == H2_PAL_OK);
+  assert(h2_iperf_server_app_request(app, H2_IPERF_SERVER_APP_MODE_DUAL, true) ==
+         H2_PAL_OK);
+  if (scenario != 1u)
+    (void)wait_phase(app, H2_IPERF_SERVER_APP_LISTENING, env->config.time);
+  uint64_t deadline = now(env->config.time) + 2000u;
+  if (scenario == 3u) {
+    h2_atomic_bool_store(&f.fail_manager_lock, true, H2_ATOMIC_RELEASE);
+    while (!h2_atomic_bool_load(&f.manager_lock_failed, H2_ATOMIC_ACQUIRE) &&
+           now(env->config.time) < deadline)
+      h2_iperf_test_sleep_ms(5u);
+    assert(h2_atomic_bool_load(&f.manager_lock_failed, H2_ATOMIC_ACQUIRE));
+  } else {
+    if (scenario != 1u)
+      assert(h2_iperf_server_app_request(app, H2_IPERF_SERVER_APP_MODE_DUAL,
+                                         false) == H2_PAL_OK);
+    h2_iperf_server_app_snapshot_t snapshot;
+    do {
+      snapshot = wait_phase(app, H2_IPERF_SERVER_APP_STOPPING, env->config.time);
+      if (snapshot.error == H2_PAL_ERR_IO)
+        break;
+      h2_iperf_test_sleep_ms(5u);
+    } while (now(env->config.time) < deadline);
+    assert(snapshot.error == H2_PAL_ERR_IO);
+    unsigned stop_calls = h2_atomic_u32_load(&f.stop_calls, H2_ATOMIC_RELAXED);
+    h2_iperf_test_sleep_ms(100u);
+    assert(h2_atomic_u32_load(&f.stop_calls, H2_ATOMIC_RELAXED) == stop_calls);
+    assert(h2_iperf_server_app_request(app, H2_IPERF_SERVER_APP_MODE_DUAL,
+                                       true) == H2_PAL_ERR_BUSY);
+    assert(h2_iperf_server_app_request(app, H2_IPERF_SERVER_APP_MODE_IPV4,
+                                       false) == H2_PAL_ERR_BUSY);
+    if (scenario == 2u)
+      assert(h2_atomic_u32_load(&f.stop_calls, H2_ATOMIC_RELAXED) == 0u &&
+             f.workers[0] != NULL);
+  }
+  destroy_attempt_t attempt = {.app = app};
+  assert(h2_atomic_bool_init(&attempt.done, false) == H2_ATOMIC_OK);
+  pthread_t thread;
+  assert(pthread_create(&thread, NULL, destroy_once, &attempt) == 0);
+  deadline = now(env->config.time) + 1000u;
+  while (!h2_atomic_bool_load(&attempt.done, H2_ATOMIC_ACQUIRE) &&
+         now(env->config.time) < deadline)
+    h2_iperf_test_sleep_ms(5u);
+  assert(h2_atomic_bool_load(&attempt.done, H2_ATOMIC_ACQUIRE));
+  assert(pthread_join(thread, NULL) == 0);
+  assert(attempt.rc == H2_PAL_ERR_IO && attempt.app == app && f.network_active);
+  if (scenario == 2u)
+    assert(h2_atomic_u32_load(&f.stop_calls, H2_ATOMIC_RELAXED) == 0u &&
+           f.workers[0] != NULL);
+  assert(h2_iperf_server_app_request(app, H2_IPERF_SERVER_APP_MODE_DUAL, false) ==
+         H2_PAL_ERR_CLOSED);
+  f.fail_network_stop = false;
+  f.fail_worker_join = false;
+  h2_atomic_bool_store(&f.fail_manager_lock, false, H2_ATOMIC_RELEASE);
+  assert(h2_iperf_server_app_destroy(&app) == H2_PAL_OK && app == NULL);
+  assert(!f.network_active && f.workers[0] == NULL && f.workers[1] == NULL);
+  h2_atomic_bool_destroy(&attempt.done);
+  h2_atomic_bool_destroy(&f.fail_manager_lock);
+  h2_atomic_bool_destroy(&f.manager_lock_failed);
+  h2_atomic_u32_destroy(&f.stop_calls);
+  printf("PASS cleanup failure scenario=%u retained=1 destroy-retry=1\n",
+         scenario);
+}
 int main(int argc, char **argv) {
   assert(argc == 2);
   h2_iperf_test_env_t env;
@@ -356,6 +563,8 @@ int main(int argc, char **argv) {
   (void)wait_phase(app, H2_IPERF_SERVER_APP_STOPPED, env.config.time);
   assert(h2_iperf_server_app_destroy(&app) == H2_PAL_OK && app == NULL);
   assert(starts == stops + 1); // Exactly one network-start failure.
+  for (unsigned scenario = 0u; scenario < 4u; ++scenario)
+    test_cleanup_failure(&env, scenario);
   h2_iperf_test_env_deinit(&env);
   puts("H2_IPERF_SERVER_CONTROLLER_PASS modes=3 pal-wire=16 official-wire=8 "
        "control-cancel=6 active-cancel=4 limits=2");
