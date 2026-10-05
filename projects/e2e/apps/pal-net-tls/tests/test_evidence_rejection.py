@@ -59,6 +59,12 @@ class Rejection(unittest.TestCase):
             lambda value: value['validation']['host_execution']['complete_input_capture'].update(input_count=0),
             lambda value: value['validation']['host_execution']['complete_input_capture']['sha256'].update(
                 action_input_manifest='not-a-sha256'),
+            lambda value: value['validation']['host_execution']['complete_input_capture']['sha256'].update(
+                action_input_manifest='f' * 64),
+            lambda value: value['validation']['host_execution']['complete_input_capture'].update(input_count=9968),
+            lambda value: value['validation']['host_execution'].update(executed_source_commit='f' * 40),
+            lambda value: value['validation']['host_execution']['artifact_sha256'].update(
+                {'projects/e2e/targets/cc_binary/pal-ipv6/pal_ipv6': 'f' * 64}),
         ]
         for mutate in mutations:
             bad = copy.deepcopy(record)
@@ -68,6 +74,26 @@ class Rejection(unittest.TestCase):
             with patch.object(Path, 'read_text', new=read):
                 with self.assertRaises(AssertionError):
                     validation.ipv6_source_updates(validation.ROOT, effective)
+
+    def test_independent_capture_pins_reject_missing_and_false_identity(self):
+        path = APP / 'ipv6_host_input_pins.json'
+        pins = json.loads(path.read_text())
+        host = json.loads((APP / 'ipv6_source_maintenance.json').read_text())['validation']['host_execution']
+        validation.check_ipv6_host_capture_pin(host)
+        other = next(source for source in pins['captures'] if source != host['executed_source_commit'])
+        false_identity = copy.deepcopy(host)
+        false_identity['executed_source_commit'] = other
+        with self.assertRaises(AssertionError):
+            validation.check_ipv6_host_capture_pin(false_identity)
+        missing = copy.deepcopy(pins)
+        missing['captures'].pop(host['executed_source_commit'])
+        original_read = Path.read_text
+        from unittest.mock import patch
+        def read(source, *args, **kwargs):
+            return json.dumps(missing) if source == path else original_read(source, *args, **kwargs)
+        with patch.object(Path, 'read_text', new=read):
+            with self.assertRaises(AssertionError):
+                validation.check_ipv6_host_capture_pin(host)
 
     def test_additive_mqtt_build_owner_does_not_rebind_net_tls_sources(self):
         import hashlib
