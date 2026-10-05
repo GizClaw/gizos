@@ -94,8 +94,8 @@ class IPv6Fixture:
                 if name != owner.raw.session + '.ipv6.test': return
                 response = packet[:2] + b'\x85\x80\x00\x01\x00\x01\x00\x00\x00\x00' + packet[12:]
                 response += b'\xc0\x0c\x00\x1c\x00\x01\x00\x00\x00\x01\x00\x10' + owner.dns_answer
-                transport.sendto(response, self.client_address)
                 with owner.lock:
+                    transport.sendto(response, self.client_address)
                     owner.records.append(dict(protocol='dns-aaaa', family=socket.AF_INET6,
                         peer=self.client_address[0], name=name, txid=int.from_bytes(packet[:2], 'big'),
                         answer=socket.inet_ntop(socket.AF_INET6, owner.dns_answer)))
