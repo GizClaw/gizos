@@ -1,0 +1,25 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_OR_MOBILE_TOOL_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "fixture",
+    srcs = ["fixture_ipv6.py"],
+    imports = ["."],
+    target_compatible_with = HOST_OR_MOBILE_TOOL_COMPATIBILITY,
+    deps = ["//projects/e2e/libs/pal-net-tls-fixture:fixture"],
+)
+
+py_binary(
+    name = "serve",
+    srcs = ["serve.py"],
+    args = [
+        "--server",
+        "$(location //projects/e2e/libs/pal-webrtc-fixture:server)",
+    ],
+    data = ["//projects/e2e/libs/pal-webrtc-fixture:server"],
+    main = "serve.py",
+    target_compatible_with = HOST_OR_MOBILE_TOOL_COMPATIBILITY,
+    deps = [":fixture"],
+)

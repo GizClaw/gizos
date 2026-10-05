@@ -180,30 +180,44 @@ static h2_pal_result_t remaining_ms(
 static h2_pal_result_t open_transport(
     h2_corehttp_exchange_t *exchange,
     const h2_corehttp_url_t *url) {
-    exchange->stage = "bind";
-    h2_pal_net_bind_t bind;
-    h2_pal_net_bind_t *bind_ptr = NULL;
-    memset(&bind, 0, sizeof(bind));
-    if (exchange->request->interface_name != NULL &&
-        exchange->request->interface_name[0] != '\0') {
-        bind.type = H2_PAL_NET_BIND_SOURCE_ADDR;
-        h2_pal_result_t bind_rc = h2_pal_net_get_host_addr(
-            exchange->provider->config.net,
-            exchange->request->interface_name,
-            &bind.source_addr);
-        if (bind_rc != H2_PAL_OK) {
-            return bind_rc;
+    const h2_pal_net_api_t *net = exchange->provider->config.net;
+    h2_pal_net_addr_t sources[2] = {{0}, {0}};
+    h2_pal_result_t source_results[2] = {H2_PAL_ERR_UNAVAILABLE, H2_PAL_ERR_UNAVAILABLE};
+    bool explicit_interface = exchange->request->interface_name != NULL &&
+        exchange->request->interface_name[0] != '\0';
+    if (explicit_interface) {
+        exchange->stage = "bind";
+        if (net->vtable != NULL && net->vtable->get_host_addr_family != NULL) {
+            const h2_pal_net_family_t families[2] = {H2_PAL_NET_FAMILY_IPV4, H2_PAL_NET_FAMILY_IPV6};
+            for (size_t index = 0u; index < 2u; ++index) {
+                source_results[index] = h2_pal_net_get_host_addr_family(net,
+                    exchange->request->interface_name, families[index], &sources[index]);
+                if (source_results[index] == H2_PAL_OK && sources[index].family != families[index])
+                    source_results[index] = H2_PAL_ERR_FORMAT;
+            }
+        } else {
+            h2_pal_net_addr_t source = {0};
+            h2_pal_result_t found = h2_pal_net_get_host_addr(net, exchange->request->interface_name, &source);
+            if (found != H2_PAL_OK)
+                return found;
+            if (source.family != H2_PAL_NET_FAMILY_IPV4 && source.family != H2_PAL_NET_FAMILY_IPV6)
+                return H2_PAL_ERR_FORMAT;
+            size_t index = source.family == H2_PAL_NET_FAMILY_IPV6 ? 1u : 0u;
+            sources[index] = source;
+            source_results[index] = H2_PAL_OK;
         }
-        bind.source_addr.port = 0u;
-        bind_ptr = &bind;
+        if (source_results[0] != H2_PAL_OK && source_results[1] != H2_PAL_OK)
+            return source_results[0];
     }
-
-    h2_pal_net_addr_t remote;
-    memset(&remote, 0, sizeof(remote));
+    h2_pal_net_addr_list_t addresses = {0};
     exchange->stage = "dns";
     h2_pal_net_resolver_t *resolver = NULL;
-    h2_pal_result_t rc = h2_pal_net_resolve_start(
-        exchange->provider->config.net, url->host, &resolver);
+    h2_pal_result_t rc = h2_pal_net_resolve_start_family(
+        net, url->host, H2_PAL_NET_FAMILY_ANY, &resolver);
+    bool multiple = rc != H2_PAL_ERR_UNSUPPORTED;
+    if (!multiple) {
+        rc = h2_pal_net_resolve_start(net, url->host, &resolver);
+    }
     if (rc != H2_PAL_OK) {
         return rc;
     }
@@ -213,46 +227,88 @@ static h2_pal_result_t open_transport(
         if (rc != H2_PAL_OK) {
             break;
         }
-        rc = h2_pal_net_resolve_poll(
-            exchange->provider->config.net, resolver, &remote, timeout_ms);
+        if (multiple) {
+            rc = h2_pal_net_resolve_poll_all(net, resolver, &addresses, timeout_ms);
+        } else {
+            rc = h2_pal_net_resolve_poll(net, resolver, &addresses.addrs[0], timeout_ms);
+            addresses.count = rc == H2_PAL_OK ? 1u : 0u;
+        }
         if (rc != H2_PAL_ERR_TIMEOUT && rc != H2_PAL_ERR_WOULD_BLOCK) {
             break;
         }
     }
-    h2_pal_net_resolve_close(exchange->provider->config.net, resolver);
+    h2_pal_net_resolve_close(net, resolver);
     if (rc != H2_PAL_OK) {
         return rc;
     }
-    remote.port = url->port;
-
-    if (bind_ptr != NULL) {
-        exchange->stage = "bind";
-        if (bind.source_addr.family != remote.family) {
-            return H2_PAL_ERR_UNAVAILABLE;
+    if (addresses.count == 0u || addresses.count > H2_PAL_NET_ADDR_MAX) {
+        return H2_PAL_ERR_FORMAT;
+    }
+    for (size_t candidate = 0u; candidate < addresses.count; ++candidate) {
+        h2_pal_net_addr_t remote = addresses.addrs[candidate];
+        remote.port = url->port;
+        h2_pal_net_bind_t bind = {0};
+        h2_pal_net_bind_t *bind_ptr = NULL;
+        if (explicit_interface) {
+            exchange->stage = "bind";
+            size_t index = remote.family == H2_PAL_NET_FAMILY_IPV6 ? 1u : 0u;
+            bind.type = H2_PAL_NET_BIND_SOURCE_ADDR;
+            rc = source_results[index];
+            if (rc != H2_PAL_OK) {
+                continue;
+            }
+            bind.source_addr = sources[index];
+            bind.source_addr.port = 0u;
+            bind_ptr = &bind;
         }
-    }
-    exchange->stage = "tcp_open";
-    rc = h2_pal_net_tcp_open_bound(
-        exchange->provider->config.net, remote.family, bind_ptr,
-        &exchange->socket);
-    if (rc != H2_PAL_OK) {
-        return rc;
-    }
-
-    exchange->stage = "tcp_connect";
-    for (;;) {
-        uint32_t timeout_ms = 0u;
-        rc = remaining_ms(exchange, true, &timeout_ms);
+        uint64_t started = 0u;
+        rc = h2_pal_time_get_monotonic_ms(exchange->provider->config.time, &started);
         if (rc != H2_PAL_OK) {
             return rc;
         }
-        rc = h2_pal_net_tcp_connect(
-            exchange->provider->config.net, exchange->socket, &remote,
-            timeout_ms);
-        if (rc == H2_PAL_ERR_TIMEOUT || rc == H2_PAL_ERR_WOULD_BLOCK) {
+        /* Bound each unsuccessful address while preserving the request's
+         * original deadline, cancellation checks and pending-connect contract. */
+        if (started >= exchange->deadline_ms) {
+            return H2_PAL_ERR_TIMEOUT;
+        }
+        uint64_t candidate_deadline = exchange->deadline_ms;
+        if (candidate + 1u < addresses.count && candidate_deadline - started > 250u) {
+            candidate_deadline = started + 250u;
+        }
+        exchange->stage = "tcp_open";
+        rc = h2_pal_net_tcp_open_bound(net, remote.family, bind_ptr, &exchange->socket);
+        if (rc != H2_PAL_OK) {
             continue;
         }
-        break;
+        exchange->stage = "tcp_connect";
+        for (;;) {
+            uint32_t timeout_ms = 0u;
+            rc = remaining_ms(exchange, true, &timeout_ms);
+            if (rc != H2_PAL_OK) {
+                break;
+            }
+            uint64_t now = 0u;
+            rc = h2_pal_time_get_monotonic_ms(exchange->provider->config.time, &now);
+            if (rc != H2_PAL_OK || now >= candidate_deadline) {
+                rc = rc != H2_PAL_OK ? rc : H2_PAL_ERR_TIMEOUT;
+                break;
+            }
+            if (timeout_ms > candidate_deadline - now) {
+                timeout_ms = (uint32_t)(candidate_deadline - now);
+            }
+            rc = h2_pal_net_tcp_connect(net, exchange->socket, &remote, timeout_ms);
+            if (rc != H2_PAL_ERR_TIMEOUT && rc != H2_PAL_ERR_WOULD_BLOCK) {
+                break;
+            }
+        }
+        if (rc == H2_PAL_OK) {
+            break;
+        }
+        h2_pal_net_close(net, exchange->socket);
+        exchange->socket = -1;
+        if (h2_pal_http_request_is_canceled(exchange->request)) {
+            return H2_PAL_ERR_CLOSED;
+        }
     }
     if (rc != H2_PAL_OK || !url->secure) {
         return rc;

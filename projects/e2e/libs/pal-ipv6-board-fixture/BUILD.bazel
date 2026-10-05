@@ -1,0 +1,42 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
+load(":config.bzl", "ipv6_server_config")
+
+package(default_visibility = ["//projects/e2e:__subpackages__"])
+
+h2_tasks(
+    name = "tasks",
+    tasks = [
+        "pal-ipv6/fixture/control",
+        "pal-ipv6/fixture/raw",
+        "pal-ipv6/fixture/http",
+        "pal-ipv6/fixture/mqtt",
+        "pal-ipv6/fixture/udp",
+    ],
+)
+
+ipv6_server_config(name = "server_inputs")
+
+cc_library(
+    name = "server_config",
+    hdrs = [":server_inputs"],
+    includes = ["include"],
+)
+
+cc_library(
+    name = "fixture",
+    srcs = ["fixture.c"],
+    hdrs = ["include/fixture.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    deps = [
+        ":server_config",
+        ":tasks",
+        "//libs/pal/providers/h2peer:portable_protocol_providers",
+        "//libs/pal/providers/h2sctp",
+        "//libs/runtime",
+        "//projects/e2e/libs/pal-ipv6-device:config",
+    ],
+)

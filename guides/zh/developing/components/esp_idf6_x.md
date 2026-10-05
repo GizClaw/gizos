@@ -348,6 +348,7 @@ Crypto 的 `random(NULL, 0)` 是成功 no-op；ESP adapter 在零长度时不调
 
 X25519 raw key agreement 对格式错误或低阶远端公钥的 PSA INVALID_ARGUMENT 转换为 PAL FORMAT；失败路径清零 shared-secret 输出，成功路径仍校验并拒绝全零 shared secret。
 
+`pal-ipv6` DevKit entry 显式启用 lwIP IPv6、自动配置与 loopback；复用保存的 Wi-Fi 后创建 link-local 地址，并在有限预算内等待 DAD 地址可用。ESP Net 保留 scope、按地址族查询 DNS，并通过实际 netif index 执行接口绑定。硬件资格仍要求明确端口/UID、可达 IPv6 夹具和 Loader/P1、Settings、Stage、coredump 记录，不能由 package build 代替。
 
 ### Flash-safe I/O 阶段诊断
 

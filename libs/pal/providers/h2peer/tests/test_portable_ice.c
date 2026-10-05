@@ -1,5 +1,6 @@
 #include "agent.h"
 #include "ice.h"
+#include "stun.h"
 
 // These tests use assertions for both checks and the operations under test.
 #ifdef NDEBUG
@@ -22,7 +23,8 @@ static int test_resolve(
         out_addr->ip[3] = 1u;
         return H2_PAL_OK;
     }
-    if (strcmp(host, "2001:db8::1") == 0) {
+    if (strcmp(host, "2001:db8::1") == 0 ||
+        strcmp(host, "2001:0db8:0000:0000:0000:0000:0000:0001") == 0) {
         static const uint8_t ipv6[16] = {
             0x20u, 0x01u, 0x0du, 0xb8u, 0u, 0u, 0u, 0u,
             0u, 0u, 0u, 0u, 0u, 0u, 0u, 1u,
@@ -68,6 +70,9 @@ static int test_tcp_open_bound(
     const h2_pal_net_bind_t *bind_config,
     h2_pal_net_socket_t *out_socket) {
     test_connect_state_t *state = user;
+    if (family == H2_PAL_NET_FAMILY_IPV6) {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
     assert(family == H2_PAL_NET_FAMILY_IPV4);
     assert(bind_config != NULL &&
            bind_config->type == H2_PAL_NET_BIND_SOURCE_ADDR);
@@ -476,7 +481,73 @@ static void test_ice_server_url_bounds(void) {
                &agent, "stun:127.0.0.1:70000", NULL, NULL) != 0);
 }
 
+static uint8_t request_header[STUN_HEADER_SIZE];
+static h2_pal_result_t test_stun_entropy(void *user, uint8_t *data, size_t size) {
+    (void)user;
+    memset(data, 7, size);
+    return H2_PAL_OK;
+}
+static int test_stun_send(void *user, h2_pal_net_socket_t fd,
+    const h2_pal_net_addr_t *peer, const uint8_t *data, size_t size) {
+    (void)user;
+    assert(fd == 9 && peer->family == H2_PAL_NET_FAMILY_IPV6);
+    assert(size == sizeof(request_header));
+    memcpy(request_header, data, size);
+    return (int)size;
+}
+static int test_stun_receive(void *user, h2_pal_net_socket_t fd,
+    h2_pal_net_addr_t *peer, uint8_t *data, size_t capacity, uint32_t timeout) {
+    (void)user; (void)timeout;
+    assert(peer != NULL);
+    memset(peer, 0, sizeof(*peer));
+    peer->family = H2_PAL_NET_FAMILY_IPV6;
+    assert(fd == 9 && capacity >= 44);
+    memcpy(data, request_header, sizeof(request_header));
+    data[0] = 1; data[1] = 1; data[2] = 0; data[3] = 24;
+    data[20] = 0; data[21] = 0x20; data[22] = 0; data[23] = 20;
+    data[24] = 0; data[25] = 2;
+    uint16_t port = 6000u ^ 0x2112u;
+    data[26] = (uint8_t)(port >> 8); data[27] = (uint8_t)port;
+    h2_pal_net_addr_t address;
+    assert(test_resolve(NULL, "2001:db8::1", &address) == H2_PAL_OK);
+    for (size_t i = 0; i < 16; ++i) data[28+i] = address.ip[i] ^ data[4+i];
+    return 44;
+}
+static void test_ipv6_stun_preserves_base_address(void) {
+    h2_pal_net_vtable_t network_vtable = test_net_vtable;
+    network_vtable.udp_sendto = test_stun_send;
+    network_vtable.udp_recvfrom = test_stun_receive;
+    h2_pal_net_api_t network = {NULL, &network_vtable};
+    const h2_pal_crypto_vtable_t crypto_vtable = {.random = test_stun_entropy};
+    const h2_pal_crypto_api_t crypto = {NULL, &crypto_vtable};
+    uint64_t clock = 0;
+    const h2_pal_time_api_t time = {&clock, &test_time_vtable};
+    Agent agent = {0};
+    agent.net = &network; agent.crypto = &crypto; agent.time = &time;
+    agent.udp_sockets[0].fd = -1; agent.udp_sockets[1].fd = 9;
+    agent.udp_sockets[1].net = &network;
+    h2_pal_net_addr_t base;
+    assert(test_resolve(NULL, "2001:db8::1", &base) == H2_PAL_OK);
+    base.port = 5000;
+    ice_candidate_create(&agent.local_candidates[0], 0, ICE_CANDIDATE_TYPE_HOST, &base);
+    agent.local_candidates_count = 1;
+    assert(agent_gather_candidate(&agent, "stun:[2001:db8::1]:3478", NULL, NULL) >= 0);
+    assert(agent.local_candidates_count == 2);
+    const IceCandidate *mapped = &agent.local_candidates[1];
+    assert(mapped->type == ICE_CANDIDATE_TYPE_SRFLX && mapped->addr.port == 6000);
+    assert(mapped->raddr.family == H2_PAL_NET_FAMILY_IPV6 && mapped->raddr.port == 5000);
+    assert(memcmp(mapped->raddr.ip, base.ip, 16) == 0);
+    char description[320];
+    ice_candidate_to_description(&agent.local_candidates[1], description, sizeof(description));
+    assert(strstr(description, "raddr  rport") == NULL);
+    assert(strstr(description, "rport 5000") != NULL);
+    IceCandidate parsed;
+    assert(ice_candidate_from_description(&network, &parsed, description,
+               description + strlen(description) - 2) == ICE_CANDIDATE_PARSE_OK);
+}
+
 int main(void) {
+    test_ipv6_stun_preserves_base_address();
     test_bounded_candidate_parser();
     test_remote_description_keeps_udp_and_passive_tcp();
     test_local_tcp_format_and_pair_order();

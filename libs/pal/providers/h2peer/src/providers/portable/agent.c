@@ -68,23 +68,18 @@ int agent_create(Agent* agent) {
   memset(&agent->transport, 0, sizeof(agent->transport));
   agent->transport.tcp_socket.fd = -1;
   agent->transport_pair = NULL;
-  if ((ret = udp_socket_open(&agent->udp_sockets[0], agent->net,
-                             H2_PAL_NET_FAMILY_IPV4, 0u)) < 0) {
-    H2_PEER_LOGE(agent->log, "Failed to create UDP socket.");
-    return ret;
-  }
-  H2_PEER_LOGI(agent->log, "create IPv4 UDP socket: %d",
-               agent->udp_sockets[0].fd);
-
+  ret = udp_socket_open(&agent->udp_sockets[0], agent->net,
+                        H2_PAL_NET_FAMILY_IPV4, 0u);
 #if CONFIG_IPV6
-  if ((ret = udp_socket_open(&agent->udp_sockets[1], agent->net,
-                             H2_PAL_NET_FAMILY_IPV6, 0u)) < 0) {
-    H2_PEER_LOGE(agent->log, "Failed to create IPv6 UDP socket.");
-    udp_socket_close(&agent->udp_sockets[0]);
+  int ipv6_result = udp_socket_open(&agent->udp_sockets[1], agent->net,
+                                   H2_PAL_NET_FAMILY_IPV6, 0u);
+  if (ret < 0 && ipv6_result < 0) {
     return ret;
   }
-  H2_PEER_LOGI(agent->log, "create IPv6 UDP socket: %d",
-               agent->udp_sockets[1].fd);
+#else
+  if (ret < 0) {
+    return ret;
+  }
 #endif
 
   agent_clear_candidates(agent);
@@ -114,11 +109,15 @@ void agent_destroy(Agent* agent) {
 static int agent_socket_recv(
     Agent* agent, h2_pal_net_addr_t* addr, uint8_t* buf, int len) {
   memset(buf, 0, (size_t)len);
-  int ret = udp_socket_recvfrom(&agent->udp_sockets[0], addr, buf, len,
-                                AGENT_POLL_TIMEOUT);
+  int ret = 0;
+  if (agent->udp_sockets[0].fd >= 0) {
+    ret = udp_socket_recvfrom(&agent->udp_sockets[0], addr, buf, len,
+                             AGENT_POLL_TIMEOUT);
+  }
 #if CONFIG_IPV6
-  if (ret == 0) {
-    ret = udp_socket_recvfrom(&agent->udp_sockets[1], addr, buf, len, 0u);
+  if (ret == 0 && agent->udp_sockets[1].fd >= 0) {
+    ret = udp_socket_recvfrom(&agent->udp_sockets[1], addr, buf, len,
+                             agent->udp_sockets[0].fd >= 0 ? 0u : AGENT_POLL_TIMEOUT);
   }
 #endif
   return ret;
@@ -153,7 +152,7 @@ static int agent_socket_send(
 static int agent_addr_equal(const h2_pal_net_addr_t* left,
                             const h2_pal_net_addr_t* right) {
   if (left == NULL || right == NULL || left->family != right->family ||
-      left->port != right->port) {
+      left->port != right->port || left->scope_id != right->scope_id) {
     return 0;
   }
   size_t ip_len = left->family == H2_PAL_NET_FAMILY_IPV4 ? 4u : 16u;
@@ -351,6 +350,9 @@ static int agent_create_host_addr(Agent* agent) {
   h2_pal_net_addr_t host_sources[2];
   size_t host_source_count = 0u;
   for (i = 0; i < sizeof(addr_type) / sizeof(addr_type[0]); i++) {
+    if (agent->udp_sockets[i].fd < 0) {
+      continue;
+    }
     for (j = 0; j < sizeof(iface_prefx) / sizeof(iface_prefx[0]); j++) {
       if (agent->local_candidates_count >= AGENT_MAX_CANDIDATES) {
         return -1;
@@ -362,6 +364,10 @@ static int agent_create_host_addr(Agent* agent) {
       // if resolve host addr, add to local candidate
       if (ports_get_host_addr(agent->net, &ice_candidate->addr,
                               iface_prefx[j])) {
+        if (ice_candidate->addr.family == H2_PAL_NET_FAMILY_IPV6 &&
+            ice_candidate->addr.scope_id != 0u) {
+          continue;
+        }
         if (host_source_count < sizeof(host_sources) / sizeof(host_sources[0])) {
           host_sources[host_source_count++] = ice_candidate->addr;
         }
@@ -399,7 +405,7 @@ static int agent_create_stun_addr(
 
   ret = agent_socket_send(agent, serv_addr, send_msg.buf, send_msg.size);
 
-  if (ret == -1) {
+  if (ret < 0) {
     H2_PEER_LOGE(agent->log, "Failed to send STUN Binding Request.");
     return ret;
   }
@@ -409,7 +415,7 @@ static int agent_create_stun_addr(
                                    AGENT_STUN_RECV_MAXTIMES);
   if (ret <= 0) {
     H2_PEER_LOGD(agent->log, "Failed to receive STUN Binding Response.");
-    return ret;
+    return ret < 0 ? ret : -1;
   }
 
   recv_msg.size = (size_t)ret;
@@ -418,11 +424,25 @@ static int agent_create_stun_addr(
     return -1;
   }
   bind_addr = recv_msg.mapped_addr;
+  const IceCandidate* base_candidate = NULL;
+  for (int index = 0; index < agent->local_candidates_count; ++index) {
+    const IceCandidate* host = &agent->local_candidates[index];
+    if (host->type == ICE_CANDIDATE_TYPE_HOST &&
+        host->transport == ICE_TRANSPORT_UDP &&
+        host->addr.family == bind_addr.family) {
+      base_candidate = host;
+      break;
+    }
+  }
+  if (base_candidate == NULL) {
+    return -1;
+  }
   if (agent->local_candidates_count >= AGENT_MAX_CANDIDATES) {
     return -1;
   }
   IceCandidate* ice_candidate = agent->local_candidates + agent->local_candidates_count++;
   ice_candidate_create(ice_candidate, agent->local_candidates_count, ICE_CANDIDATE_TYPE_SRFLX, &bind_addr);
+  ice_candidate->raddr = base_candidate->addr;
   return ret;
 }
 
@@ -548,9 +568,6 @@ int agent_gather_candidate(
   const char* pos;
   char hostname[64];
   char addr_string[H2_PEER_NET_ADDR_STRING_SIZE];
-  int i;
-  h2_pal_net_family_t addr_type[1] = {
-      H2_PAL_NET_FAMILY_IPV4};  // ipv6 no need stun
   h2_pal_net_addr_t resolved_addr;
   memset(hostname, 0, sizeof(hostname));
 
@@ -563,10 +580,19 @@ int agent_gather_candidate(
     return -1;
   }
   const char *hostname_start = urls + 5;
-  if ((pos = strchr(hostname_start, ':')) == NULL) {
-    H2_PEER_LOGE(agent->log, "Invalid URL");
-    return -1;
+  if (*hostname_start == '[') {
+    ++hostname_start;
+    pos = strchr(hostname_start, ']');
+    if (pos == NULL || pos[1] != ':') {
+      return -1;
+    }
+  } else {
+    pos = strchr(hostname_start, ':');
+    if (pos == NULL) {
+      return -1;
+    }
   }
+  const char *port_start = *pos == ']' ? pos + 2 : pos + 1;
 
   size_t hostname_len = (size_t)(pos - hostname_start);
   if (hostname_len == 0u || hostname_len >= sizeof(hostname)) {
@@ -575,8 +601,8 @@ int agent_gather_candidate(
   }
 
   char* port_end = NULL;
-  long parsed_port = strtol(pos + 1, &port_end, 10);
-  if (parsed_port <= 0 || parsed_port > UINT16_MAX || port_end == pos + 1 ||
+  long parsed_port = strtol(port_start, &port_end, 10);
+  if (parsed_port <= 0 || parsed_port > UINT16_MAX || port_end == port_start ||
       (*port_end != '\0' && *port_end != '?')) {
     H2_PEER_LOGE(agent->log, "Cannot parse port");
     return -1;
@@ -586,11 +612,21 @@ int agent_gather_candidate(
   memcpy(hostname, hostname_start, hostname_len);
   hostname[hostname_len] = '\0';
 
-  for (i = 0; i < sizeof(addr_type) / sizeof(addr_type[0]); i++) {
-    if (ports_resolve_addr(agent->net, hostname, &resolved_addr) == 0) {
-      if (resolved_addr.family != addr_type[i]) {
-        continue;
-      }
+  h2_pal_net_addr_list_t servers = {0};
+  int lookup = h2_pal_net_resolve_all(agent->net, hostname, H2_PAL_NET_FAMILY_ANY, &servers);
+  if (lookup == H2_PAL_ERR_UNSUPPORTED) {
+    lookup = ports_resolve_addr(agent->net, hostname, &servers.addrs[0]);
+    servers.count = lookup == 0 ? 1u : 0u;
+  }
+  if (lookup != H2_PAL_OK || servers.count > H2_PAL_NET_ADDR_MAX) {
+    return -1;
+  }
+  for (size_t i = 0u; i < servers.count; ++i) {
+    resolved_addr = servers.addrs[i];
+    size_t socket_index = resolved_addr.family == H2_PAL_NET_FAMILY_IPV6 ? 1u : 0u;
+    if (agent->udp_sockets[socket_index].fd < 0) {
+      continue;
+    }
       resolved_addr.port = (uint16_t)port;
       h2_peer_net_addr_format(&resolved_addr, addr_string, sizeof(addr_string));
       H2_PEER_LOGI(agent->log, "Resolved stun/turn server %s:%d", addr_string,
@@ -598,15 +634,15 @@ int agent_gather_candidate(
 
       if (strncmp(urls, "stun:", 5) == 0) {
         H2_PEER_LOGD(agent->log, "Create stun addr");
-        return agent_create_stun_addr(agent, &resolved_addr) < 0 ? -1 : 0;
+        if (agent_create_stun_addr(agent, &resolved_addr) >= 0) {
+          return 0;
+        }
       } else if (strncmp(urls, "turn:", 5) == 0) {
         H2_PEER_LOGD(agent->log, "Create turn addr");
-        return agent_create_turn_addr(agent, &resolved_addr, username,
-                                      credential) < 0
-                   ? -1
-                   : 0;
+        if (agent_create_turn_addr(agent, &resolved_addr, username, credential) >= 0) {
+          return 0;
+        }
       }
-    }
   }
   return -1;
 }
@@ -879,6 +915,8 @@ int agent_set_remote_description(Agent* agent, char* description) {
       size_t value_len =
           (size_t)(line_end - line_start) - strlen("a=ice-ufrag:");
       if (value_len >= sizeof(agent->remote_ufrag)) {
+        h2_pal_log_write(agent->log, H2_PAL_LOG_ERROR, "h2peer",
+                         "ICE rejected: ufrag length");
         goto rollback;
       }
       memcpy(agent->remote_ufrag,
@@ -889,6 +927,8 @@ int agent_set_remote_description(Agent* agent, char* description) {
       size_t value_len =
           (size_t)(line_end - line_start) - strlen("a=ice-pwd:");
       if (value_len >= sizeof(agent->remote_upwd)) {
+        h2_pal_log_write(agent->log, H2_PAL_LOG_ERROR, "h2peer",
+                         "ICE rejected: password length");
         goto rollback;
       }
       memcpy(agent->remote_upwd,
@@ -917,6 +957,11 @@ int agent_set_remote_description(Agent* agent, char* description) {
           agent->remote_candidates_count++;
         }
       } else if (parse_result != ICE_CANDIDATE_PARSE_UNSUPPORTED) {
+        char detail[320];
+        size_t length = (size_t)(line_end - line_start);
+        snprintf(detail, sizeof(detail), "ICE rejected candidate: %.*s",
+                 (int)(length > 260u ? 260u : length), line_start);
+        h2_pal_log_write(agent->log, H2_PAL_LOG_ERROR, "h2peer", detail);
         goto rollback;
       }
     }
@@ -925,6 +970,8 @@ int agent_set_remote_description(Agent* agent, char* description) {
   }
 
   if (agent_update_candidate_pairs(agent) != 0) {
+    h2_pal_log_write(agent->log, H2_PAL_LOG_ERROR, "h2peer",
+                     "ICE rejected: candidate pair capacity");
     goto rollback;
   }
   H2_PEER_LOGD(agent->log, "remote ICE candidates: %d",

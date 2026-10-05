@@ -1,0 +1,28 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "pal_ipv6_e2e",
+    srcs = ["src/h2_pal_ipv6_e2e.c"],
+    hdrs = ["include/h2_pal_ipv6_e2e.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    deps = [
+        "//libs/dns",
+        "//libs/pal",
+        "//libs/pal/providers/corehttp",
+        "//libs/pal/providers/coremqtt",
+        "//libs/runtime",
+        "//projects/e2e/apps/pal-net-tls/app:pal_net_tls_e2e",
+        "//projects/e2e/apps/pal-webrtc/app:pal_webrtc_e2e",
+        "//projects/e2e/libs/pal-webrtc-fixture:client",
+    ],
+)
+
+exports_files([
+    "include/h2_pal_ipv6_cases.inc",
+    "src/h2_pal_ipv6_e2e.c",
+])

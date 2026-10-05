@@ -69,3 +69,5 @@ HTTP/HTTPS fixture 验证真实 `coreHTTP -> Net PAL -> wolfSSL` 路径。Firmwa
 ## HTTP 资格验证
 
 独立 `projects/e2e/apps/pal-http` App 通过真实 local HTTP/HTTPS fixture 验证 CoreHTTP 与 Browser HTTP 的公共生命周期。相对 redirect 在合成新 URL 时按 RFC 3986 消除 literal dot segment，并保留 query 和 escaped bytes；请求整体 deadline、callback 返回错误和已交付 body 的不可重试边界保持不变。请求指定不存在的 interface 时底层 Net 必须报错，不能回退到其他 route。POSIX TLS 对数字 authority 使用 IP SAN 检查，对 DNS authority 使用域名检查；二者均保留证书链验证。完整 WolfSSL 配置启用 IP SAN，以便真实数字地址 HTTPS 与错误地址拒绝均可验证。
+
+IPv6 列表解析在同一个请求 deadline 内尝试各个地址族和地址；失败连接关闭后再回退。显式 interface 在 DNS 前预取 IPv4/IPv6 可用 source，两个地址族都不可用时不产生 DNS activity；连接阶段只使用对应地址族的已验证 source。TLS 验证失败保持终态，不能作为地址回退或验证降级理由。

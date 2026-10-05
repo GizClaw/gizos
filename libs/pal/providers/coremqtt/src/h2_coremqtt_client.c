@@ -352,26 +352,77 @@ h2_pal_result_t h2_coremqtt_client_connect(h2_coremqtt_t *provider, h2_pal_mqtt_
     }
     memcpy(host, client->config.endpoint.host.data, client->config.endpoint.host.len);
     host[client->config.endpoint.host.len] = '\0';
-    rc = h2_pal_net_resolve_addr(net, host, &addr);
+    h2_pal_net_addr_list_t addresses = {0};
+    uint64_t started = 0u;
+    uint64_t deadline = 0u;
+    rc = h2_pal_time_get_monotonic_ms(provider->config.time, &started);
+    if (rc == H2_PAL_OK) {
+        deadline = h2_pal_time_deadline_ms(started,
+            timeout_or_default(client->config.connect_timeout_ms, client->config.operation_timeout_ms));
+        h2_pal_net_resolver_t *resolver = NULL;
+        rc = h2_pal_net_resolve_start_family(net, host, H2_PAL_NET_FAMILY_ANY, &resolver);
+        if (rc == H2_PAL_ERR_UNSUPPORTED) {
+            rc = h2_pal_net_resolve_addr(net, host, &addresses.addrs[0]);
+            addresses.count = rc == H2_PAL_OK ? 1u : 0u;
+        } else if (rc == H2_PAL_OK) {
+            do {
+                uint64_t now = 0u;
+                rc = h2_pal_time_get_monotonic_ms(provider->config.time, &now);
+                if (rc != H2_PAL_OK || now >= deadline) {
+                    rc = rc != H2_PAL_OK ? rc : H2_PAL_ERR_TIMEOUT;
+                    break;
+                }
+                rc = h2_pal_net_resolve_poll_all(net, resolver, &addresses, (uint32_t)(deadline - now));
+            } while (rc == H2_PAL_ERR_TIMEOUT || rc == H2_PAL_ERR_WOULD_BLOCK);
+            h2_pal_net_resolve_close(net, resolver);
+        }
+        if (rc == H2_PAL_OK && (addresses.count == 0u || addresses.count > H2_PAL_NET_ADDR_MAX)) {
+            rc = H2_PAL_ERR_FORMAT;
+        }
+    }
     h2_pal_mem_free(allocator, host);
     if (rc == H2_PAL_OK) {
-        addr.port = client->config.endpoint.port;
-        rc = h2_pal_net_tcp_open_bound(net, addr.family, client->config.bind, &client->socket);
-    }
-    if (rc == H2_PAL_OK) {
-        rc = h2_pal_net_tcp_connect(
-            net,
-            client->socket,
-            &addr,
-            timeout_or_default(client->config.connect_timeout_ms, client->config.operation_timeout_ms));
+        for (size_t candidate = 0u; candidate < addresses.count; ++candidate) {
+            addr = addresses.addrs[candidate];
+            addr.port = client->config.endpoint.port;
+            uint64_t now = 0u;
+            rc = h2_pal_time_get_monotonic_ms(provider->config.time, &now);
+            if (rc != H2_PAL_OK || now >= deadline) {
+                rc = rc != H2_PAL_OK ? rc : H2_PAL_ERR_TIMEOUT;
+                break;
+            }
+            uint64_t candidate_deadline = deadline;
+            if (candidate + 1u < addresses.count && deadline - now > 250u) {
+                candidate_deadline = now + 250u;
+            }
+            rc = h2_pal_net_tcp_open_bound(net, addr.family, client->config.bind, &client->socket);
+            if (rc != H2_PAL_OK) {
+                continue;
+            }
+            do {
+                rc = h2_pal_time_get_monotonic_ms(provider->config.time, &now);
+                if (rc != H2_PAL_OK || now >= candidate_deadline) {
+                    rc = rc != H2_PAL_OK ? rc : H2_PAL_ERR_TIMEOUT;
+                    break;
+                }
+                rc = h2_pal_net_tcp_connect(net, client->socket, &addr,
+                    (uint32_t)(candidate_deadline - now));
+            } while (rc == H2_PAL_ERR_TIMEOUT || rc == H2_PAL_ERR_WOULD_BLOCK);
+            if (rc == H2_PAL_OK) {
+                break;
+            }
+            h2_pal_net_close(net, client->socket);
+            client->socket = -1;
+        }
     }
     if (rc == H2_PAL_OK && client->config.transport == H2_PAL_MQTT_TRANSPORT_TLS) {
-        rc = h2_pal_net_tls_wrap(
-            net,
-            client->socket,
-            client->config.tls,
-            timeout_or_default(client->config.connect_timeout_ms, client->config.operation_timeout_ms),
-            &client->tls_socket);
+        uint64_t now = 0u;
+        rc = h2_pal_time_get_monotonic_ms(provider->config.time, &now);
+        if (rc == H2_PAL_OK && now >= deadline)
+            rc = H2_PAL_ERR_TIMEOUT;
+        if (rc == H2_PAL_OK)
+            rc = h2_pal_net_tls_wrap(net, client->socket, client->config.tls,
+                (uint32_t)(deadline - now), &client->tls_socket);
     }
     if (rc != H2_PAL_OK) {
         if (client->socket >= 0) {
