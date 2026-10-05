@@ -19,6 +19,7 @@ SOURCES = {
     "native_component_src/esp-idf6.x/h2_pal_core/src/h2_esp_platform_net.c",
 }
 BK = "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_net.c"
+BK_WIFI = "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_wifi.c"
 GUIDE = "guides/zh/developing/platform_abstract_layer.md"
 
 
@@ -60,8 +61,9 @@ def main():
     https = json.loads((NET / "gizclaw_public_https_provenance_main_tls.json").read_text())
     prior = {**historical["source_sha256"], **https["current_source_sha256"]}
     sources = set(SOURCES)
-    if digest((ROOT / BK).read_bytes()) != prior[BK]:
-        sources.add(BK)
+    for path in (BK, BK_WIFI):
+        if digest((ROOT / path).read_bytes()) != prior[path]:
+            sources.add(path)
     validation = {
         "desktop_ipv6_mandatory_passed": 56, "desktop_net_tls_mandatory_passed": 37,
         "retained_resources": 0, "endpoint_rejection": "EXPECTED_REJECTION",
@@ -116,8 +118,8 @@ def main():
         i, j, k, l = hunks[0]
         previous = "".join(before.splitlines(keepends=True)[i:j])
         updated = "".join(after.splitlines(keepends=True)[k:l])
-        assert updated and all(not line or line.startswith("CONFIG_LWIP_IPV6")
-                     for line in (previous + updated).splitlines())
+        assert previous == "# CONFIG_IPV6 is not set\n"
+        assert updated == "CONFIG_IPV6=y\n"
         display_record["network_config_changes"][cfg] = {"previous_sha256": digest(before.encode()),
             "current_sha256": digest(after.encode()), "before_utf8": previous, "after_utf8": updated}
     for path, value in [(NET / "ipv6_source_maintenance.json", net_record),

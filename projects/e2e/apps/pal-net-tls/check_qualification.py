@@ -62,6 +62,7 @@ IPV6_SOURCE_UPDATES = {
     'native_component_src/esp-idf6.x/h2_pal_core/src/h2_esp_platform_net.c',
 }
 IPV6_BK_SOURCE = 'native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_net.c'
+IPV6_BK_WIFI_SOURCE = 'native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_wifi.c'
 IPV6_SLOTS = {'resolve_all', 'resolve_start_family', 'resolve_poll_all',
               'get_host_addr_family'}
 IPV6_HOST_SOURCES = {
@@ -91,7 +92,8 @@ def ipv6_source_updates(root, effective):
     assert record['historical_https_provenance_sha256'] == hashlib.sha256(
         (APP / 'gizclaw_public_https_provenance_main_tls.json').read_bytes()).hexdigest()
     current = record['current_source_sha256']
-    assert IPV6_SOURCE_UPDATES <= set(current) <= IPV6_SOURCE_UPDATES | {IPV6_BK_SOURCE}
+    assert IPV6_SOURCE_UPDATES <= set(current) <= IPV6_SOURCE_UPDATES | {
+        IPV6_BK_SOURCE, IPV6_BK_WIFI_SOURCE}
     assert record['previous_source_sha256'] == {path: effective[path] for path in current}
     assert record['historical_physical_qualification_applies_to_current_sources'] is False
     for path, expected in current.items():
