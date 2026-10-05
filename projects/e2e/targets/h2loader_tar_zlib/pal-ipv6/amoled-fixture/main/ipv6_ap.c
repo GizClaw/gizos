@@ -17,6 +17,7 @@ static struct raw_pcb *advertiser;
 static atomic_int advertiser_result = H2_PAL_ERR_WOULD_BLOCK;
 static atomic_int advertiser_enabled;
 static int ap_owned;
+static int advertiser_cleanup_pending;
 static uint8_t prefix[16];
 static void advertise(void *user) {
   (void)user;
@@ -86,21 +87,27 @@ int h2_ipv6_ap_stop(h2_runtime_t *runtime) {
   if (!runtime)
     return H2_PAL_ERR_INVALID_ARG;
   advertiser_enabled = 0;
-  if (!ap_owned)
+  if (!ap_owned && !advertiser_cleanup_pending)
     return H2_PAL_OK;
   /* This synchronous TCP/IP callback also fences a queued startup callback.
    * A late callback checks enabled and cannot revive the advertiser. */
-  if (esp_netif_tcpip_exec(stop_advertiser, NULL) != ESP_OK)
-    return H2_PAL_ERR_IO;
-  int rc = h2_pal_wifi_ap_stop(runtime->wifi_ap, 10000);
-  if (!rc)
+  int cleaned = esp_netif_tcpip_exec(stop_advertiser, NULL) == ESP_OK
+                    ? H2_PAL_OK : H2_PAL_ERR_IO;
+  advertiser_cleanup_pending = cleaned != H2_PAL_OK;
+  /* Service owners have already released the interface. ESP AP stop also
+   * serializes netif destruction through the SDK TCP/IP thread, fencing any
+   * advertisement already in flight; future callbacks see enabled == false. */
+  int stopped = ap_owned ? h2_pal_wifi_ap_stop(runtime->wifi_ap, 10000) : H2_PAL_OK;
+  if (!stopped)
     ap_owned = 0;
-  return rc;
+  /* A failed callback retains PCB/timeout cleanup ownership even when radio
+   * stop succeeds. A later stop retries it; a new AP must not reuse it. */
+  return cleaned ? cleaned : stopped;
 }
 int h2_ipv6_ap_start(h2_runtime_t *runtime) {
   if (!runtime || !runtime->time)
     return H2_PAL_ERR_INVALID_ARG;
-  if (ap_owned)
+  if (ap_owned || advertiser_cleanup_pending)
     return H2_PAL_ERR_INVALID_STATE;
   advertiser_result = H2_PAL_ERR_WOULD_BLOCK;
   advertiser_enabled = 0;
