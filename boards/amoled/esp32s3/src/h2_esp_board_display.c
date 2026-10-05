@@ -1,6 +1,7 @@
 #include "h2_esp_board_private.h"
 #include "h2_esp_board_internal.h"
 #include "h2_esp_board.h"
+#include "h2_esp_board_display_config_internal.h"
 #include "h2_amoled_display_capture.h"
 
 #include "driver/gpio.h"
@@ -229,8 +230,8 @@ static int init_display(h2_esp_amoled_display_state_t *state) {
     }
     if (state->dma_buffer == NULL) {
         /* Halve the chunk until the fragmented internal DMA heap can serve it. */
-        int ceiling = s_display_config.dma_buffer_rows != 0u
-            ? (int)s_display_config.dma_buffer_rows : LCD_DRAW_ROWS;
+        int ceiling = (int)h2_esp_board_display_dma_rows(
+            &s_display_config, LCD_DRAW_ROWS);
         for (int rows = ceiling; rows >= LCD_DRAW_ROWS_MIN; rows /= 2) {
             const size_t pixels = (size_t)LCD_WIDTH * (size_t)rows;
             const size_t bytes = pixels * sizeof(uint16_t);
