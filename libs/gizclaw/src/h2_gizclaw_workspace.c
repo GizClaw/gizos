@@ -417,10 +417,6 @@ static int decode_workspace_get(const h2_pal_mem_api_t *allocator,
     const gizclaw_rpc_v1_WorkspaceParameters *parameters =
         &decoded.value.parameters;
     switch (parameters->which_value) {
-    case gizclaw_rpc_v1_WorkspaceParameters_flowcraft_workspace_parameters_tag:
-      if (parameters->value.flowcraft_workspace_parameters.has_safety_fence_level)
-        fence = parameters->value.flowcraft_workspace_parameters.safety_fence_level;
-      break;
     case gizclaw_rpc_v1_WorkspaceParameters_doubao_realtime_workspace_parameters_tag:
       if (parameters->value.doubao_realtime_workspace_parameters.has_safety_fence_level)
         fence = parameters->value.doubao_realtime_workspace_parameters.safety_fence_level;
