@@ -39,6 +39,8 @@ Token 是企业身份凭据：仓库不提供默认值，也不接受把真实 t
 
 `nfc/fm175xx` 实现 FM175xx reader、ISO 14443 Type A card activation 和 NTAG 数据读取。Transport object 提供 register I/O 与 sleep callback。
 
+每次 activation 先以 HLTA 结束前次扫描留下的 ACTIVE selection，再用 WUPA 唤醒 IDLE／HALT 中的卡，随后执行 anticollision 和 SELECT，保持 selection 给后续 NTAG READ。HLTA 不返回应答，其 RF timeout 是协议规定的正常结果；其它总线、寄存器和协议错误继续返回失败。调用方串行化 scan 与 read，读内容前重新激活并检查 expected UID，不把持续贴着的卡因重复 REQA 无应答误判为拿开。Host `//libs/drivers/nfc/fm175xx:activation_test` 以寄存器／FIFO transport 模拟 IDLE、ACTIVE、HALT、移卡和总线失败，覆盖重复扫描之后的完整用户区读取。
+
 ### FM17660K
 
 `nfc/fm17660k` 实现 reader、card emulation、FIFO 与 RF protocol state。它只依赖 exact `write_reg/write_regs/read_reg/read_regs`、reset、monotonic time 和 fallible sleep。连续读写是否固定在 FIFO data register、UART command byte/read flag/echo validation 都是芯片协议，归 portable driver；I2C/SPI/UART controller、exact-byte readiness、IRQ ring、pin 和 SDK handle 归调用方。Public transport 不暴露 `fifo_read/fifo_write`、partial offset、UART type 或 libco。
