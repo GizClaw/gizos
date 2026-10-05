@@ -112,7 +112,7 @@ h2_pal_result_t h2_lua_job_get_result(const h2_lua_host_t *host,
                                       size_t capacity, size_t *out_size,
                                       int *out_has_result);
 
-/** Release a terminal job. Opt-in Display drain/close/join may return BUSY or
+/** Release a terminal job. Display drain/close/join may return BUSY or
  * a latched error; the job, VM roots and borrowed Display remain owned until
  * success. Retrying BUSY does not submit another frame. */
 h2_pal_result_t h2_lua_job_release(h2_lua_host_t *host, h2_lua_job_id_t job_id);

@@ -1,6 +1,6 @@
 #include "h2_lua_task_names.h"
 /* Exercise the actual generic Lua entry. Only acquisition boundaries are
- * wrapped to enable opt-in Display and inject errors in real Web providers. */
+ * wrapped to inject lifecycle errors in the real Web providers. */
 #include "h2_lua.h"
 #include "h2_lua_job.h"
 #include "h2_web_app_host.h"

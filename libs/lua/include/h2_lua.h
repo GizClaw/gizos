@@ -149,7 +149,7 @@ h2_pal_result_t h2_lua_host_start(h2_lua_host_t *host);
 h2_pal_result_t h2_lua_host_stop(h2_lua_host_t *host);
 
 /** Joins every Runtime worker after stop. Safe after a successful join.
- * Opt-in Display shutdown may return BUSY while transport/close is pending,
+ * Display shutdown may return BUSY while transport/close is pending,
  * or a latched backend/join error. Retry BUSY; retain the Host, Runtime and
  * Display lease on every failure. A faulted Display is quarantined and has
  * no automatic recovery. Runtime worker join and synchronous PAL calls may
