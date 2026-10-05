@@ -20,6 +20,20 @@ err_t h2_bk_wifi_ipv6_install(struct netif *sta,
                               h2_pal_wifi_sta_status_t *status,
                               uint32_t *cp_generation) {
 #if LWIP_IPV6
+  /* Slot zero belongs to link-local. Validate a complete fitting snapshot
+   * before clearing the prior generation or publishing any new IP status. */
+  if (snapshot->connected) {
+    if (snapshot->count > H2_BK_WIFI_IPV6_MAX)
+      return ERR_BUF;
+    unsigned non_link_local = 0u;
+    for (uint32_t i = 0u; i < snapshot->count; ++i) {
+      ip6_addr_t address = {0};
+      memcpy(address.addr, snapshot->addresses[i].address, 16u);
+      if (!ip6_addr_islinklocal(&address) &&
+          ++non_link_local >= LWIP_IPV6_NUM_ADDRESSES)
+        return ERR_BUF;
+    }
+  }
   memset(&status->ip, 0, sizeof(status->ip));
   status->ip_valid = 0u;
   if (!snapshot->connected) {
@@ -50,8 +64,6 @@ err_t h2_bk_wifi_ipv6_install(struct netif *sta,
     ip6_addr_t address = {0};
     memcpy(address.addr, snapshot->addresses[i].address, 16u);
     const unsigned slot = ip6_addr_islinklocal(&address) ? 0u : next++;
-    if (slot >= LWIP_IPV6_NUM_ADDRESSES)
-      return ERR_BUF;
     used[slot] = 1u;
     ip6_addr_assign_zone(&address, IP6_UNICAST, sta);
     if (memcmp(netif_ip6_addr(sta, slot)->addr, address.addr, 16u) != 0)
