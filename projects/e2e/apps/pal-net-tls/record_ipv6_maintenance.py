@@ -1,5 +1,6 @@
 """Record only IPv6 source/audit maintenance; retain every physical receipt."""
 import argparse
+import ast
 import difflib
 import hashlib
 import json
@@ -46,6 +47,33 @@ def main():
     rejected = args.validation_dir / "desktop_pal_net_tls_endpoint_rejection_test.raw.log"
     host = json.loads((args.validation_dir / "host_source_manifest.json").read_text(encoding="utf-8"))
     assert host["schema"] == 1 and host["platform"] == "macos"
+    full = json.loads((args.validation_dir / "host_source_manifest.full.json").read_text(encoding="utf-8"))
+    inputs = json.loads((args.validation_dir / "action-input-manifest.before.json").read_text(encoding="utf-8"))
+    verified = json.loads((args.validation_dir / "action-input-verification.json").read_text(encoding="utf-8"))
+    assert full["executed_source_commit"] == inputs["executed_source_commit"] == \
+        verified["source_head"] == host["executed_source_commit"]
+    assert full["artifact_sha256"] == host["artifact_sha256"]
+    assert verified["all_before_after_identical"] is True
+    assert verified["input_count"] == len(inputs["inputs"])
+    assert verified["actions_count"] == len(inputs["actions"])
+    assert verified["before_manifest_sha256"] == digest(
+        (args.validation_dir / "action-input-manifest.before.json").read_bytes())
+    for path, expected in full["source_sha256"].items():
+        assert digest((ROOT / path).read_bytes()) == expected, "full host source changed: " + path
+    syntax = ast.parse((NET / "check_qualification.py").read_text(encoding="utf-8"))
+    wanted = next(ast.literal_eval(node.value) for node in syntax.body if isinstance(node, ast.Assign)
+                  and any(isinstance(target, ast.Name) and target.id == "IPV6_HOST_SOURCES"
+                          for target in node.targets))
+    host["source_sha256"] = {path: full["source_sha256"][path] for path in sorted(wanted)}
+    host["complete_input_capture"] = {
+        "all_before_after_identical": True,
+        "actions_count": verified["actions_count"], "input_count": verified["input_count"],
+        "first_party_sources_count": len(full["source_sha256"]),
+        "sha256": {key: digest((args.validation_dir / name).read_bytes()) for key, name in {
+            "full_source_manifest": "host_source_manifest.full.json",
+            "selected_action_closure": "selected-action-closure.json",
+            "action_input_manifest": "action-input-manifest.before.json",
+            "input_verification": "action-input-verification.json"}.items()}}
     for path, expected in host["source_sha256"].items():
         assert digest((ROOT / path).read_bytes()) == expected, "host closure changed; capture a fresh run: " + path
     v6 = summary(v6log, "H2_PAL_IPV6_SUMMARY ")

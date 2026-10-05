@@ -52,6 +52,13 @@ class Rejection(unittest.TestCase):
             lambda value: value['current_source_sha256'].update({'libs/pal/providers/posix/pal_core/src/h2_posix_net.c': '0' * 64}),
             lambda value: value['new_slots'].update(resolve_all=['not-a-real-case']),
             lambda value: value['validation']['host_execution']['source_sha256'].pop('MODULE.bazel'),
+            lambda value: value['validation']['host_execution']['source_sha256'].pop(
+                'projects/e2e/libs/pal-ipv6-fixture/fixture_ipv6.py'),
+            lambda value: value['validation']['host_execution']['complete_input_capture'].update(
+                all_before_after_identical=False),
+            lambda value: value['validation']['host_execution']['complete_input_capture'].update(input_count=0),
+            lambda value: value['validation']['host_execution']['complete_input_capture']['sha256'].update(
+                action_input_manifest='not-a-sha256'),
         ]
         for mutate in mutations:
             bad = copy.deepcopy(record)
