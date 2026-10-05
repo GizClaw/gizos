@@ -196,8 +196,8 @@ def shared_catalog_sources(previous):
         assert hashlib.sha256(content).hexdigest() == change["current_sha256"]
         before, after = change["before_utf8"].encode(), change["after_utf8"].encode()
         assert after and content.count(after) == 1
-        for line in before.decode().splitlines() + after.decode().splitlines():
-            assert not line or line.startswith("CONFIG_LWIP_IPV6")
+        assert before == b"# CONFIG_IPV6 is not set\n"
+        assert after == b"CONFIG_IPV6=y\n"
         restored = content.replace(after, before, 1)
         assert hashlib.sha256(restored).hexdigest() == previous[path]
         sources[path] = change["current_sha256"]

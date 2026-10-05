@@ -1,5 +1,6 @@
 """A host-runner refactor must not weaken historical qualification checks."""
 import copy
+import hashlib
 import json
 import unittest
 from unittest.mock import patch
@@ -55,6 +56,38 @@ class MobileRunnerProvenanceTest(unittest.TestCase):
             return original_read(path, *args, **kwargs)
         with patch.object(qualification.Path, "read_text", new=read):
             self.verify(self.followup)
+
+    def test_bk_network_change_rejects_checksum_consistent_unowned_hunks(self):
+        cfg = qualification.Path("boards/bk7258_v3_202405/bk7258/ap.defaults")
+        path = qualification.ROOT / "shared_ipv6_maintenance.json"
+        record = json.loads(path.read_text())
+        before = b"# CONFIG_IPV6 is not set\n"
+        enabled = b"CONFIG_IPV6=y\n"
+        baseline = cfg.read_bytes()
+        if enabled in baseline:
+            baseline = baseline.replace(enabled, before, 1)
+        self.assertEqual(hashlib.sha256(baseline).hexdigest(),
+                         self.historical[str(cfg)])
+        for after in (b"CONFIG_IPV6=n\n",
+                      b"CONFIG_IPV6=y\nCONFIG_LWIP_IPV6_NUM_ADDRESSES=1\n"):
+            content = baseline.replace(before, after, 1)
+            bad = copy.deepcopy(record)
+            bad["network_config_changes"] = {str(cfg): {
+                "previous_sha256": self.historical[str(cfg)],
+                "current_sha256": hashlib.sha256(content).hexdigest(),
+                "before_utf8": before.decode(), "after_utf8": after.decode(),
+            }}
+            original_text = qualification.Path.read_text
+            original_bytes = qualification.Path.read_bytes
+            def read_text(source, *args, **kwargs):
+                return (json.JSONEncoder().encode(bad) if source == path
+                        else original_text(source, *args, **kwargs))
+            def read_bytes(source):
+                return content if source == cfg else original_bytes(source)
+            with patch.object(qualification.Path, "read_text", new=read_text), \
+                    patch.object(qualification.Path, "read_bytes", new=read_bytes):
+                with self.assertRaises(AssertionError):
+                    self.verify(self.followup)
 
     def test_changed_display_section_or_launcher_row_fails(self):
         current = qualification.Path(qualification.SHARED_CATALOG).read_text(encoding="utf-8")
@@ -116,7 +149,7 @@ class MobileRunnerProvenanceTest(unittest.TestCase):
         audit = json.loads((qualification.ROOT / "shared_catalog_provenance.json").read_text(encoding="utf-8"))
         extension = audit["pal_guide_extension"]
         path = qualification.Path(qualification.SHARED_PAL_GUIDE)
-        current = path.read_bytes()
+        current = qualification.shared_pal_before_ipv6(path.read_bytes())
         addition = json.loads((qualification.ROOT / "shared_pal_pref_addition.json").read_text(encoding="utf-8"))["addition_utf8"].encode("utf-8")
         offset = extension["insertion_offset"]
         baseline = current if qualification.hashlib.sha256(current).hexdigest() == extension["source_sha256"] else (
@@ -145,7 +178,7 @@ class MobileRunnerProvenanceTest(unittest.TestCase):
         fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
         addition = fixture["addition_utf8"].encode("utf-8")
         path = qualification.Path(qualification.SHARED_PAL_GUIDE)
-        current = path.read_bytes()
+        current = qualification.shared_pal_before_ipv6(path.read_bytes())
         offset = extension["insertion_offset"]
         baseline = current if qualification.hashlib.sha256(current).hexdigest() == extension["source_sha256"] else (
             current[:offset] + current[offset + len(addition):])
