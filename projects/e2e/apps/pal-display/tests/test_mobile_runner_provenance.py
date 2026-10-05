@@ -57,6 +57,72 @@ class MobileRunnerProvenanceTest(unittest.TestCase):
         with patch.object(qualification.Path, "read_text", new=read):
             self.verify(self.followup)
 
+    def test_amoled_source_audit_cannot_claim_physical_or_rebind_inputs(self):
+        path = qualification.ROOT / "amoled_dma_maintenance.json"
+        record = json.loads(path.read_text())
+        mutations = [
+            lambda r: r.update(new_physical_run_claimed=True),
+            lambda r: r.update(current_physical_qualification=True),
+            lambda r: r.update(qualified_driver_sha256="0" * 64),
+            lambda r: r["closed_input_sha256"].update({"unlisted.c": "0" * 64}),
+            lambda r: r["host_validation"].update(default_dma_rows=32),
+            lambda r: r["host_validation"].update(current_driver_physical_test="PASS"),
+            lambda r: r["host_validation"].update(executed_source_commit="0" * 40),
+            lambda r: r["host_validation"].update(raw_log_sha256="0" * 64),
+            lambda r: r["host_validation"].update(test_binary_sha256="0" * 64),
+        ]
+        original_read = qualification.Path.read_text
+        for mutate in mutations:
+            bad = copy.deepcopy(record)
+            mutate(bad)
+            def read(source, *args, **kwargs):
+                return json.dumps(bad) if source == path else original_read(source, *args, **kwargs)
+            with patch.object(qualification.Path, "read_text", new=read):
+                with self.assertRaises(AssertionError):
+                    self.verify(self.followup)
+
+    def test_amoled_extra_driver_code_or_default_cannot_be_self_blessed(self):
+        source = qualification.Path(qualification.AMOLED_DMA_SOURCE)
+        path = qualification.ROOT / "amoled_dma_maintenance.json"
+        record = json.loads(path.read_text())
+        current = source.read_bytes()
+        mutations = [current + b"\n/* unlisted driver change */\n",
+                     current.replace(b"#define LCD_DRAW_ROWS 64\n", b"#define LCD_DRAW_ROWS 32\n"),
+                     current.replace(b"#define LCD_WIDTH 368\n", b"#define LCD_WIDTH 369\n")]
+        original_text = qualification.Path.read_text
+        original_bytes = qualification.Path.read_bytes
+        for content in mutations:
+            bad = copy.deepcopy(record)
+            bad["current_driver_sha256"] = hashlib.sha256(content).hexdigest()
+            def read_text(p, *args, **kwargs):
+                return json.dumps(bad) if p == path else original_text(p, *args, **kwargs)
+            def read_bytes(p):
+                return content if p == source else original_bytes(p)
+            with patch.object(qualification.Path, "read_text", new=read_text), \
+                    patch.object(qualification.Path, "read_bytes", new=read_bytes):
+                with self.assertRaises(AssertionError):
+                    self.verify(self.followup)
+
+    def test_amoled_closed_header_config_touch_flags_cannot_be_rebound(self):
+        path = qualification.ROOT / "amoled_dma_maintenance.json"
+        record = json.loads(path.read_text())
+        original_text = qualification.Path.read_text
+        original_bytes = qualification.Path.read_bytes
+        for name in qualification.AMOLED_DMA_INPUT_SHA256:
+            source = qualification.Path(name)
+            content = source.read_bytes() + b"\n/* unlisted closed input */\n"
+            bad = copy.deepcopy(record)
+            bad["closed_input_sha256"][name] = hashlib.sha256(content).hexdigest()
+            bad["host_validation"]["source_sha256"][name] = hashlib.sha256(content).hexdigest()
+            def read_text(p, *args, **kwargs):
+                return json.dumps(bad) if p == path else original_text(p, *args, **kwargs)
+            def read_bytes(p):
+                return content if p == source else original_bytes(p)
+            with patch.object(qualification.Path, "read_text", new=read_text), \
+                    patch.object(qualification.Path, "read_bytes", new=read_bytes):
+                with self.assertRaises(AssertionError):
+                    self.verify(self.followup)
+
     def test_bk_network_change_rejects_checksum_consistent_unowned_hunks(self):
         cfg = qualification.Path("boards/bk7258_v3_202405/bk7258/ap.defaults")
         path = qualification.ROOT / "shared_ipv6_maintenance.json"

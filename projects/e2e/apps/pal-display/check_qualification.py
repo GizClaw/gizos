@@ -85,7 +85,8 @@ def mobile(platform, environment):
 
 
 # Only host harness/audit files can supersede historical source receipts here.
-# Production provider, App, registry and board receipts remain mandatory.
+# Production receipts stay immutable; the exact opt-in AMOLED DMA delta below
+# is separately audited without claiming current physical qualification.
 RUNNER_SOURCES = {
     "projects/e2e/apps/pal-display/BUILD.bazel",
     "projects/e2e/apps/pal-display/check_qualification.py",
@@ -122,6 +123,76 @@ SHARED_CATALOG_AUDIT_SOURCES = {
     "projects/e2e/apps/pal-display/BUILD.bazel",
     "projects/e2e/apps/pal-display/README.md",
 }
+
+
+# This source admission authenticates only the exact opt-in DMA/diagnostic
+# delta. It preserves historical images and never qualifies a current image.
+AMOLED_DMA_SOURCE = "boards/amoled/esp32s3/src/h2_esp_board_display.c"
+AMOLED_DMA_QUALIFIED_SHA256 = "834fe172281d46519c0039aa79b190af85f1c6892f90709fc760f6216db7c001"
+AMOLED_DMA_EXECUTION_COMMIT = "1eed91f5ddacca5bcc901b6096284b18e2ffd727"
+AMOLED_DMA_LOG_SHA256 = "03c0443704c816addc2d167185ecc3bcadf47ec52f3432e6148906a113931012"
+AMOLED_DMA_BINARY_SHA256 = "daf0aa4d3de51691b84672bfc6605584edf7ad70d23b13da75b8a92703d605a7"
+AMOLED_DMA_INCLUDE = b'#include "h2_esp_board_display_config_internal.h"\n'
+AMOLED_DMA_OLD_LOOP = b'        for (int rows = LCD_DRAW_ROWS; rows >= LCD_DRAW_ROWS_MIN; rows /= 2) {\n'
+AMOLED_DMA_NEW_LOOP = (b'        int ceiling = (int)h2_esp_board_display_dma_rows(\n'
+                       b'            &s_display_config, LCD_DRAW_ROWS);\n'
+                       b'        for (int rows = ceiling; rows >= LCD_DRAW_ROWS_MIN; rows /= 2) {\n')
+AMOLED_DMA_INPUT_SHA256 = {'boards/amoled/esp32s3/BUILD.bazel': 'd0d66bf6e362fac981b6a8e5b80b4ac5caff4a56f1d6484152e64edf59fd6719',
+ 'boards/amoled/esp32s3/CMakeLists.txt': '36993f7696860a40c545fd71e00d2fdc8b19eecf75b9dbe92e78dcab2194ea2f',
+ 'boards/amoled/esp32s3/idf_component.yml': '842c1305b4e86caa90f2ddc347a10e529954eccc17f5d1744d27e56655dd484d',
+ 'boards/amoled/esp32s3/include/h2_esp_board.h': '82b9cf36925d56e6cc57b7f3cd8a88d67603865d8afed7ec0b668e6837a2643d',
+ 'boards/amoled/esp32s3/sdkconfig.defaults': '9f831f6776b47d84e266a2cbb72947b4abe87a4ccd345742f07bae9b1bfbd6b9',
+ 'boards/amoled/esp32s3/src/h2_esp_board_display_config.c': '1eec9ab5a885fa44a18c69a9f21ce258cb63a6dbd38d35d2a3510b15e3d747c4',
+ 'boards/amoled/esp32s3/src/h2_esp_board_display_config_internal.h': 'b54ed1def340a3bf1384ed81c782cd67c1d27c978cf18a4243a70f9ff2b9cb9d',
+ 'boards/amoled/esp32s3/src/h2_esp_board_touch_ft3168.c': 'd91b2adc40017b76549a08f4951e15015a2ee14d8c8c1b709d93c98fde947def',
+ 'boards/amoled/esp32s3/tests/test_h2_esp_board_display_config.c': 'ce25d51d8d7845653e9f60492e51c631b511771a4af04ed97e9199fdc144ffe4'}
+AMOLED_TOUCH_BASELINE_SHA256 = "bd4643c3e5152e4ffeafbc991ad23d635c436bae7eaf33c092f6dbf29230eae2"
+AMOLED_TOUCH_DIAGNOSTIC_EDITS = [(b'    bool contact_active;\n', b'    bool contact_active;\n    bool read_error_reported;\n'),
+ (b'    s_touch.contact_active = false;\n    ESP_LOGI(TAG, "FT3168 ready',
+  b'    s_touch.contact_active = false;\n    s_touch.read_error_reported = false;\n    ESP_LOGI(TA'
+  b'G, "FT3168 ready'),
+ (b'    if (err != ESP_OK) {\n        return map_esp_err(err);\n    }\n    const uint8_t contact_co'
+  b'unt',
+  b'    if (err != ESP_OK) {\n        if (!s_touch.read_error_reported) {\n            ESP_LOGW(TA'
+  b'G, "FT3168 touch read failed: %s", esp_err_to_name(err));\n            s_touch.read_error_rep'
+  b'orted = true;\n        }\n        return map_esp_err(err);\n    }\n    s_touch.read_error_re'
+  b'ported = false;\n    const uint8_t contact_count')]
+
+
+def amoled_dma_maintenance_sources(previous):
+    record = json.JSONDecoder().decode(
+        (ROOT / "amoled_dma_maintenance.json").read_text(encoding="utf-8"))
+    assert record["schema"] == 1
+    assert record["new_physical_run_claimed"] is False
+    assert record["current_physical_qualification"] is False
+    assert record["historical_qualification_sha256"] == hashlib.sha256(
+        (ROOT / "qualification.json").read_bytes()).hexdigest()
+    assert record["qualified_driver_sha256"] == previous[AMOLED_DMA_SOURCE] == AMOLED_DMA_QUALIFIED_SHA256
+    assert record["closed_input_sha256"] == AMOLED_DMA_INPUT_SHA256
+    for path, expected in AMOLED_DMA_INPUT_SHA256.items():
+        assert hashlib.sha256(Path(path).read_bytes()).hexdigest() == expected, path
+    content = Path(AMOLED_DMA_SOURCE).read_bytes()
+    assert content.count(AMOLED_DMA_INCLUDE) == content.count(AMOLED_DMA_NEW_LOOP) == 1
+    restored = content.replace(AMOLED_DMA_NEW_LOOP, AMOLED_DMA_OLD_LOOP, 1)
+    restored = restored.replace(AMOLED_DMA_INCLUDE, b"", 1)
+    assert hashlib.sha256(restored).hexdigest() == previous[AMOLED_DMA_SOURCE], (
+        "unlisted Display code/default/flags changed")
+    current_sha = hashlib.sha256(content).hexdigest()
+    assert record["current_driver_sha256"] == current_sha
+    touch = Path("boards/amoled/esp32s3/src/h2_esp_board_touch_ft3168.c").read_bytes()
+    for before, after in reversed(AMOLED_TOUCH_DIAGNOSTIC_EDITS):
+        assert touch.count(after) == 1
+        touch = touch.replace(after, before, 1)
+    assert hashlib.sha256(touch).hexdigest() == AMOLED_TOUCH_BASELINE_SHA256, (
+        "Touch maintenance is diagnostics only")
+    execution = record["host_validation"]
+    assert execution["default_dma_rows"] == 64 and execution["status"] == "PASS"
+    assert execution["current_driver_physical_test"] == "NOT_RUN"
+    assert execution["executed_source_commit"] == AMOLED_DMA_EXECUTION_COMMIT
+    assert execution["raw_log_sha256"] == AMOLED_DMA_LOG_SHA256
+    assert execution["test_binary_sha256"] == AMOLED_DMA_BINARY_SHA256
+    assert execution["source_sha256"] == AMOLED_DMA_INPUT_SHA256
+    return {**previous, AMOLED_DMA_SOURCE: current_sha}
 
 
 def display_catalog_content(text):
@@ -201,6 +272,7 @@ def shared_catalog_sources(previous):
         restored = content.replace(after, before, 1)
         assert hashlib.sha256(restored).hexdigest() == previous[path]
         sources[path] = change["current_sha256"]
+    sources = amoled_dma_maintenance_sources(sources)
     # The historical whole-file hash still authenticates the immutable baseline.
     # Other Apps may update their catalog entries without a new Display run.
     del sources[SHARED_CATALOG]
@@ -375,7 +447,7 @@ def main():
     for path in ["h2_pal_display_e2e.c", "h2_sdl3_display.cpp"]:
         assert coverage[path]["functions"]["percent"] > 50
         assert coverage[path]["lines"]["percent"] > 50
-    print("PAL Display: historical six-platform qualification and shared mobile runner evidence verified; no new physical run claimed")
+    print("PAL Display: historical six-platform receipts and exact source maintenance verified; current AMOLED DMA source/artifact is not physically requalified")
 
 
 if __name__ == "__main__":

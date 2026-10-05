@@ -20,6 +20,8 @@ IPv6 是隔离的 on-link ULA 网络，Router Advertisement 的 router lifetime 
 
 数据 block 上限为 128 KiB，控制 JSON 为 4 KiB，UDP 完整接收缓冲为 64 KiB；数据和 UI allocation 使用 PSRAM；368 × 448 RGB565 完整帧为 322 KiB，UI 使用 full-frame render。可选的 iperf 停止回调将阻塞 I/O 分为最多 100 ms 的等待，避免 idle client 阻塞 Stop。这个测速 image 只启动 H2Loader 串口管理，不初始化 BLE 控制器。启动时先初始化 Wi-Fi，LCD DMA chunk 上限固定为 8 行（5888 B），为 Wi-Fi/lwIP 保留内部 SRAM。
 
+AMOLED board 的 DMA option 零值沿用 64 行默认值，只有这个 App 显式选择 8 行；驱动实际调用的同一 ceiling helper 覆盖默认值和边界测试。Display 的独立 source maintenance 只接受这一精确改动与 Touch 诊断增量，保留原 source/image/实板记录；当前修改后的固件需要单独实板验收，旧记录不自动认可 App 的 8 行配置。
+
 ## 构建和运行
 
 ```sh
