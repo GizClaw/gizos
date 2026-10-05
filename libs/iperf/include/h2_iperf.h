@@ -55,6 +55,15 @@ typedef enum h2_iperf_protocol {
     H2_IPERF_PROTOCOL_SCTP = 2,
 } h2_iperf_protocol_t;
 
+/** Borrowed, cumulative data-phase snapshot delivered on the calling task. */
+typedef struct h2_iperf_progress {
+    h2_iperf_protocol_t protocol;
+    bool sending;
+    uint64_t bytes;
+    uint64_t packets;
+    uint32_t duration_ms;
+} h2_iperf_progress_t;
+
 /** Borrowed PAL capabilities shared by the client and the server. */
 typedef struct h2_iperf_config {
     /** Required allocator for buffers and server state. */
@@ -69,6 +78,19 @@ typedef struct h2_iperf_config {
     const h2_pal_sctp_api_t *sctp;
     /** Optional diagnostics sink. */
     const h2_pal_log_api_t *log;
+    /** Optional cooperative cancellation. Return true to terminate with CLOSED.
+     * Called on the task running the test; must be fast and must not reenter it.
+     * With this callback, blocking I/O is sliced to at most 100 ms.
+     */
+    bool (*should_stop)(void *user);
+    /** Optional data-phase observer, at most once per 100 ms plus first/final
+     * samples. Copy the borrowed snapshot before returning; do not reenter.
+     */
+    void (*on_progress)(void *user, const h2_iperf_progress_t *progress);
+    /** Borrowed context for both callbacks, valid until the test returns. */
+    void *callback_user;
+    /** Maximum received control JSON bytes; zero preserves the 64 KiB limit. */
+    uint32_t max_json_len;
 } h2_iperf_config_t;
 
 /** Per-endpoint measurement of one stream. */
@@ -149,6 +171,11 @@ typedef struct h2_iperf_server_params {
     uint16_t sctp_packet_size;
     /** Timeout for each control message; zero selects thirty seconds. */
     uint32_t control_timeout_ms;
+    /** Negotiated block length limit; zero preserves the 1 MiB ceiling.
+     * TCP receive buffers are independently capped at this value. UDP still
+     * reserves 64 KiB to receive complete datagrams without truncation.
+     */
+    uint32_t max_block_len;
 } h2_iperf_server_params_t;
 
 /** Opaque server instance owning its listeners. */

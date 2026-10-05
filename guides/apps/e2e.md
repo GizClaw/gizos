@@ -45,6 +45,8 @@ Platform artifact entry 持有 Runtime assembly、具体 provider、endpoint 与
 | H2Loader Serial | `//projects/e2e/apps/h2loader-serial/app:h2loader_serial_e2e` | macOS Desktop；desktop Chrome Browser |
 | WebRTC Performance | `//projects/e2e/apps/webrtc-performance/app:webrtc_performance` | Desktop H2Peer + local Pion；DevKit 与 AMOLED ESP32-S3 H2Peer + operator LAN Pion |
 | iperf | `//projects/e2e/apps/iperf/app:iperf_e2e` | Desktop host client + PAL server；AMOLED ESP32-S3 + operator LAN PAL server |
+| iperf Server | `//projects/e2e/apps/iperf-server/app:iperf_server` | AMOLED ESP32-S3 触屏 AP/server；IPv4、IPv6 与双栈 |
+| iperf Client | `//projects/e2e/apps/iperf-client/app:iperf_client` | DevKit ESP32-S3 → AMOLED；TCP/UDP 双向，三轮 IPv4/IPv6/双栈测量 |
 
 独立 HTTP 与 MQTT 测试分别由 `pal-http` 和 `pal-mqtt` App 持有公共 case 和平台验收合同。PAL App 只验证 PAL API 的跨目标公共行为，不吸收 backend-local unit、fake 或 protocol tests。Provider 名属于 launcher target；不能为了 H2Peer、Pion 或另一 backend 复制 portable case registry。H106 production App、adapter、UI 与业务 policy 继续属于 `projects/h106`；H106 E2E 的 evidence boundary 和运行合同见 产品 E2E。
 
@@ -182,6 +184,14 @@ Desktop launcher 位于 `projects/e2e/targets/cc_binary/webrtc-performance`，�
 `h2_iperf_e2e_run()` 只消费 launcher 借用的 Memory、Net、Time、Crypto、可选 SCTP 与 Log PAL，以及 operator 提供的 server 地址。portable App 拥有固定顺序的 case 矩阵（TCP 参考、UDP 上下行 10/20/40 Mbit/s 与 1200 B datagram、SCTP 上下行 1200 B 与 1400 B packet budget）、每个 case 的 deadline、non-fail-fast aggregation、每 case 一行 `H2_IPERF_E2E_CASE` JSON 和 `H2_IPERF_E2E_SUMMARY`。它不读取 environment 或文件，不连接 Wi-Fi，也不选择 provider；SCTP case 在没有 SCTP PAL 时记为 `UNSUPPORTED` 并继续。
 
 App-local `iperf_e2e_test` 用 `//libs/iperf:test_support` 在 loopback 上对同一个 PAL server 顺序执行 TCP、UDP reverse 与两条 SCTP association，验证共享封装 socket 上的后续 association 不会被前一条的尾包污染。host launcher `//projects/e2e/targets/cc_binary/iperf:h2iperf` 同时提供 `server`（TCP/UDP/SCTP-over-UDP 的 PAL server）和 `client <host>`（同一矩阵）。AMOLED launcher 位于 `projects/e2e/targets/h2loader_tar_zlib/iperf/amoled`，从 Runtime `wifi_settings` 取回 Loader 保存的 STA 配置，用 `--define=H2_IPERF_SERVER` 指定 LAN server，并用 `--define=H2_IPERF_POWER_SAVE` 选择 Wi-Fi 省电策略。
+
+## iperf Server
+
+`projects/e2e/apps/iperf-server/app` 拥有跨平台触屏 UI、异步服务控制器和 `libs/iperf` 的 IPv4/IPv6 TCP/UDP server。网络生命周期由 launcher 注入；AMOLED 入口位于 `projects/e2e/targets/h2loader_tar_zlib/iperf-server/amoled`，负责固定 SSID/密码的临时 AP、IPv4 DHCP、IPv6 ULA/SLAAC 与 H2Loader 确认。选择模式后触摸启动/停止，控制器在关闭 AP 前取消、join 并回收所有 server；UI 与测速线程通过复制的 snapshot 交互，只有 UI 线程调用 LVGL。详见 [AMOLED iperf Server](/apps/h2loader/boards/amoled/iperf_server)。
+
+## iperf Client
+
+`projects/e2e/apps/iperf-client/app` 通过 Runtime 复用 `iperf_e2e`，每个地址族执行三轮 TCP 双向和 UDP 5/10/20/40 Mbit/s 双向矩阵，所有 UDP payload 固定为 1200 B。`projects/e2e/targets/h2loader_tar_zlib/iperf-client/devkit` 临时连接 AMOLED 的 `GizOS-iPerf` AP，等待 DHCP/SLAAC/DAD 后按实际可用地址族选择 IPv4、IPv6 或双栈；不写保存凭据，不要求 IPv6-only 网络获得 IPv4。每次服务器换模式后重新启动 client，避免继承旧 netif 地址。双栈为 IPv4 和 IPv6 各自独立测量，三轮结果以接收端吞吐中位数比较，同时保留 UDP 丢包、抖动及 RSSI/信道/内存。30/60 个 case 的完成只表示协议测量成功，不代表任意性能阈值通过。详细步骤见 [DevKit iperf Client](/apps/h2loader/boards/devkit/iperf_client)。
 
 ## Validation Boundary
 

@@ -229,7 +229,9 @@ static int init_display(h2_esp_amoled_display_state_t *state) {
     }
     if (state->dma_buffer == NULL) {
         /* Halve the chunk until the fragmented internal DMA heap can serve it. */
-        for (int rows = LCD_DRAW_ROWS; rows >= LCD_DRAW_ROWS_MIN; rows /= 2) {
+        int ceiling = s_display_config.dma_buffer_rows != 0u
+            ? (int)s_display_config.dma_buffer_rows : LCD_DRAW_ROWS;
+        for (int rows = ceiling; rows >= LCD_DRAW_ROWS_MIN; rows /= 2) {
             const size_t pixels = (size_t)LCD_WIDTH * (size_t)rows;
             const size_t bytes = pixels * sizeof(uint16_t);
             state->dma_buffer = (uint16_t *)heap_caps_malloc(bytes, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
