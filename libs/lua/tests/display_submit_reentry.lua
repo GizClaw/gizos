@@ -4,14 +4,9 @@ local function flush()
  while not s do assert(e==d.BUSY);r.sleep(1);s,e=d.flush() end
  return s
 end
-local function close()
- local _,e=d.deinit()
- while e do assert(e==d.BUSY);r.sleep(1);_,e=d.deinit() end
-end
-for mode=1,(args.threaded=='yes' and 1 or 2) do
- if mode>1 then close();package.loaded.display=nil;d=require('display') end
- -- Exercise baseline allocation and snapshot allocation independently.
- if mode==2 then d.present({retained=true}) end
+-- Both present and submit now allocate the worker baseline and snapshot on
+-- first use. Force finalizer reentry during that first submission.
+do
  collectgarbage('collect');collectgarbage('incremental')
  local pause=collectgarbage('param','pause',0)
  local mul=collectgarbage('param','stepmul',0)
@@ -24,7 +19,7 @@ for mode=1,(args.threaded=='yes' and 1 or 2) do
  end})
  garbage=nil;collectgarbage('restart')
  local sequence,err=d.submit()
- assert(fired and sequence==nil and err<0,'outer preparation must yield: '..mode..'/'..tostring(fired)..'/'..tostring(sequence)..'/'..tostring(err))
+ assert(fired and sequence==nil and err<0,'outer preparation must yield: '..tostring(fired)..'/'..tostring(sequence)..'/'..tostring(err))
  collectgarbage('param','pause',pause);collectgarbage('param','stepmul',mul)
  collectgarbage('param','stepsize',step)
  local s=flush();assert(s.completed==1 and s.successful==1 and p.pixel()==63488)

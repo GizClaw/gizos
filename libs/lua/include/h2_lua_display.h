@@ -25,12 +25,14 @@
  *   completed attempt, usable only when clock_valid is true. pixels/rects
  *   count successful draw calls in that attempt. error latches the first
  *   fault; busy and closing describe the acquisition. completion_kind is
- *   transport for a qualified worker Host, pal_return for inline execution;
- *   neither proves scanout. No-change submits do not increment changed_frames.
- * - Without Host display_worker_task_name opt-in, submit executes inline with this same
- *   contract (including on Web). present/end_frame remain synchronous and
- *   return the current call's completed pixels/rectangles; they first drain
- *   any preceding submit. Existing callers that never submit are unchanged.
+ *   transport on every target; it does not prove scanout. No-change submits do not increment changed_frames.
+ * - Every target, including Web, starts a Display worker on acquisition.
+ *   All PAL Display calls execute there; borrowed Display skips open/close.
+ *   Only one Job per Host may acquire Display at a time; another acquisition
+ *   fails with BUSY until checked release succeeds. Other Hosts and external
+ *   writers must be serialized by the caller. present/end_frame wait for the
+ *   current call's completed pixels/rectangles after draining preceding submit.
+ *   Their backend also uses the worker and VM-charged snapshot/baseline.
  * - Drawing can continue after successful submit; the worker uses one rooted
  *   immutable pixel snapshot and its own bounded plan/tile scratch. Snapshot
  *   preparation copies every planned rectangle at the original row stride;

@@ -14,7 +14,7 @@ h2_web_app(
     name = "lifecycle",
     app_name = "lifecycle-normal",
     srcs = ["lifecycle.c"],
-    deps = [":entry_source", "//libs/lua:lua_display_worker"],
+    deps = [":entry_source", "//libs/lua"],
     passes = ["LIFECYCLE checks=PASS"],
 )
 

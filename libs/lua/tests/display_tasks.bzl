@@ -24,21 +24,20 @@ _audit_test = analysistest.make(_audit_impl)
 def _missing_impl(ctx):
     env = analysistest.begin(ctx)
     asserts.expect_failure(env, "$lua/display")
-    asserts.expect_failure(env, "display_worker_tasks")
+    asserts.expect_failure(env, "libs/lua:tasks")
     return analysistest.end(env)
 
 _missing_test = analysistest.make(_missing_impl, expect_failure = True)
 
 def display_task_tests():
-    """Default consumers need no Display policy; opted-in consumers still do."""
+    """Every Lua consumer carries the Display task and must cover its policy."""
     compatible = select({
         Label("//tools/bazel/platforms:host_linux_target_linux"): [],
         Label("//tools/bazel/platforms:host_macos_target_macos"): [],
         "//conditions:default": ["@platforms//:incompatible"],
     })
     for name, library, tasks in [
-        ("inline", ":lua_runtime", ["$lua/worker", "$runtime/input", "$runtime/nfc"]),
-        ("worker", ":lua_display_worker", ["$lua/display", "$lua/worker", "$runtime/input", "$runtime/nfc"]),
+        ("worker", ":lua_runtime", ["$lua/display", "$lua/worker", "$runtime/input", "$runtime/nfc"]),
     ]:
         h2_tasks(
             name = "display_" + name + "_inventory",
@@ -68,7 +67,7 @@ def display_task_tests():
     task_policy_audit(
         name = "display_worker_missing_policy",
         testonly = True,
-        graph = [":lua_display_worker"],
+        graph = [":lua_runtime"],
         default_tasks = ["$lua/worker", "$runtime/input", "$runtime/nfc"],
         policies_json = "{}",
         policy_label = "display_worker_missing_policy",

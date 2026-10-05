@@ -19,6 +19,7 @@ static void destroy_host_atomics(h2_lua_host_t *host) {
   h2_atomic_destroy(&host->started);
   h2_atomic_destroy(&host->stopping);
   h2_atomic_destroy(&host->joined);
+  h2_atomic_destroy(&host->display_active);
 }
 
 static int module_name_is_reserved(const char *name) {
@@ -268,14 +269,6 @@ h2_pal_result_t h2_lua_host_create(const h2_lua_host_config_t *config,
                                      ? 64u * 1024u
                                      : normalized.worker_stack_size;
   normalized.max_jobs = normalized.max_jobs == 0u ? 4u : normalized.max_jobs;
-  if (normalized.display_worker_task_name != NULL &&
-      (strcmp(normalized.display_worker_task_name,
-              H2_LUA_DISPLAY_TASK_NAME_VALUE) != 0 ||
-       !normalized.display_exclusive || normalized.max_jobs != 1u))
-    return H2_PAL_ERR_INVALID_ARG;
-  /* Borrow only the optional library symbol at create; keep a stable name. */
-  if (normalized.display_worker_task_name != NULL)
-    normalized.display_worker_task_name = H2_LUA_DISPLAY_TASK_NAME_VALUE;
   if (normalized.display_worker_stack_size == 0u)
     normalized.display_worker_stack_size = 8192u;
   normalized.event_delivery_capacity = normalized.event_delivery_capacity == 0u
@@ -373,7 +366,8 @@ h2_pal_result_t h2_lua_host_create(const h2_lua_host_config_t *config,
   host->config = normalized;
   if (h2_atomic_init(&host->started, 0) != H2_ATOMIC_OK ||
       h2_atomic_init(&host->stopping, 0) != H2_ATOMIC_OK ||
-      h2_atomic_init(&host->joined, 0) != H2_ATOMIC_OK) {
+      h2_atomic_init(&host->joined, 0) != H2_ATOMIC_OK ||
+      h2_atomic_init(&host->display_active, 0) != H2_ATOMIC_OK) {
     destroy_host_atomics(host);
     h2_pal_mem_free(normalized.allocator, host);
     return H2_PAL_ERR_NO_MEMORY;

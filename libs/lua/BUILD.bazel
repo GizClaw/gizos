@@ -16,26 +16,7 @@ h2_tasks(
     name = "tasks",
     tasks = [
         "$lua/worker",
-    ],
-)
-
-# Referencing this library's task-name symbol opts the caller into the task
-# inventory without changing the shared Runtime or its synchronous default.
-h2_tasks(
-    name = "display_worker_tasks",
-    tasks = ["$lua/display"],
-)
-
-cc_library(
-    name = "lua_display_worker",
-    srcs = ["src/runtime/h2_lua_display_task.c"],
-    hdrs = ["include/h2_lua_task_names.h"],
-    conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS,
-    includes = ["include"],
-    deps = [
-        ":display_worker_tasks",
-        ":lua_runtime",
+        "$lua/display",
     ],
 )
 
@@ -350,7 +331,7 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
-        ":lua_display_worker",
+        ":lua_runtime",
         "//libs/atomic/providers/c11",
         "//libs/pal:unsupported",
         "//libs/pal/providers/desktop/pal_core",
@@ -507,7 +488,7 @@ cc_test(
 
 lua_source_package(
     name = "runtime_source_files",
-    runtime = ":lua_display_worker",
+    runtime = ":lua_runtime",
     target_compatible_with = select({
         "@platforms//os:linux": [],
         "@platforms//os:macos": [],

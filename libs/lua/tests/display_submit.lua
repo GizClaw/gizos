@@ -1,4 +1,4 @@
--- Identical source runs on a native worker Host and a Web inline Host.
+-- Identical source runs on native and Web worker Hosts.
 local d, runtime = require('display'), require('runtime')
 local function submit(options)
   local sequence, code = d.submit(options)

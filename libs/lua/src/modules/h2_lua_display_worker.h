@@ -15,7 +15,6 @@ typedef struct h2_lua_display_worker {
   h2_pal_semaphore_t *wake;
   h2_atomic_int_t phase;
   int initialized;
-  int threaded;
   int borrowed;
   int opened;
   int operation;
@@ -47,11 +46,12 @@ enum {
 
 h2_pal_result_t h2_lua_display_worker_init(h2_lua_display_worker_t *worker,
     const h2_runtime_t *runtime, const h2_pal_mem_api_t *allocator,
-    const char *task_name, int borrowed, size_t stack_size);
+    int borrowed, size_t stack_size);
 h2_pal_result_t h2_lua_display_worker_post(h2_lua_display_worker_t *worker,
                                          int operation);
 int h2_lua_display_worker_phase(h2_lua_display_worker_t *worker);
 void h2_lua_display_worker_ack(h2_lua_display_worker_t *worker);
-/* Nonblocking until the entry has exited. A failed join retains all handles. */
+/* Joins only after exit is requested or observed. A failed join retains all
+ * handles; the PAL join may block or return BUSY according to its contract. */
 h2_pal_result_t h2_lua_display_worker_join(h2_lua_display_worker_t *worker);
 #endif

@@ -86,9 +86,10 @@ typedef struct h2_lua_host_config {
   const h2_lua_resource_t *resources;
   size_t resource_count;
   /** Nonzero borrows an already-open Display without calling PAL open/close.
-   * The caller must serialize display-using jobs and suspend other writers
-   * before submission. Keep Display alive until job release or Host stop/join
-   * and destruction finish. Lua deinit only frees its framebuffer in this mode.
+   * The Host rejects competing Display acquisitions with BUSY. The caller must
+   * suspend external writers before submission and keep Display alive until
+   * checked release succeeds. Lua deinit drains/joins its worker and frees its
+   * buffers without closing the borrowed PAL Display.
    * Zero preserves the default job-owned open/close lifecycle. */
   int borrow_display;
   /** Per-app persistent storage; zero-initialized leaves it unconfigured. */
@@ -122,19 +123,15 @@ typedef struct h2_lua_host_config {
    * per-block overhead; measure the workload rather than assuming the quota.
    * Destroy releases every block after all jobs and VMs are released. */
   size_t vm_heap_bytes;
-  /** Optional exclusive Display worker. NULL keeps all existing
-   * present/end_frame calls synchronous on the VM worker. Enable by linking
-   * //libs/lua:lua_display_worker and setting h2_lua_display_task_name from
-   * h2_lua_task_names.h; arbitrary task names are rejected. This requires
-   * max_jobs=1 and display_exclusive=1. The caller must suspend every other
-   * writer/closer of this underlying Display, including other Runtime/Host
-   * instances, until checked destruction succeeds. All PAL calls must permit
-   * serial transfer to one task; successful draw/present must finish transport.
-   * No hardware cancellation or bounded shutdown is implied. */
-  const char *display_worker_task_name;
-  /** Explicit caller assertion of the exclusive ownership above. */
-  int display_exclusive;
-  /** Minimum PAL worker stack bytes; zero selects 8192. Stack/TCB and PAL
+  /** Display uses a dedicated worker on every target, started lazily on first
+   * acquisition. A Host allows one Display-owning Job at a time; other Jobs
+   * can run but competing Display acquisition returns BUSY. Callers must
+   * suspend external Display writers/closers, including other Hosts/Runtime
+   * instances, until checked cleanup succeeds. PAL calls must allow serial
+   * transfer to the worker and finish transport before successful return.
+   * There is no synchronous backend or forced hardware cancellation.
+   *
+   * Minimum PAL worker stack bytes; zero selects 8192. Stack/TCB and PAL
    * synchronization storage use platform budgets, not VM quota. Snapshot,
    * frozen plan and mailbox are VM-accounted. */
   size_t display_worker_stack_size;

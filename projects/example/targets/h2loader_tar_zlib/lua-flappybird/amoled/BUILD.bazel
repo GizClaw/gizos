@@ -22,6 +22,7 @@ esp_target_task_policy(
         "$runtime/nfc           default",
         "lua-flappybird/runner  default",
         "$lua/worker            default",
+        "$lua/display            default",
         "$h2loader/uartcmd      default",
     ],
 )

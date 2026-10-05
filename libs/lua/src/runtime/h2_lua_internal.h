@@ -167,6 +167,7 @@ typedef struct h2_lua_job {
   void *display_smooth;
   int display_smooth_ref;
   int display_shutting_down;
+  int display_lease;
   void *display_submission;
   int display_submission_ref;
   uint8_t display_fade_phase;
@@ -225,6 +226,7 @@ struct h2_lua_host {
   h2_atomic_int_t started;
   h2_atomic_int_t stopping;
   h2_atomic_int_t joined;
+  h2_atomic_int_t display_active;
   h2_lua_worker_t *workers;
   h2_pal_mutex_t *jobs_mutex;
   void *vm_heap;

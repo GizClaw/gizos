@@ -673,28 +673,16 @@ Prepared workspace 的 `displacements` 将指定范围的 double 位置差在相
 
 ## 单在途 Display 提交原型
 
-Task inventory 按链接依赖图收集。默认 `//libs/lua` / `:lua_runtime` 的 Lua 自有任务只有 `$lua/worker`，下层 Runtime 的既有任务清单不变，Display 同步提交；未启用显示 worker 的旧 consumer 无需新增 `$lua/display` 策略行。需要异步显示时，消费代码的 Bazel `deps` 显式加入 `//libs/lua:lua_display_worker`，并从 `h2_lua_task_names.h` 引用该库导出的 `h2_lua_display_task_name`，设置 Host 的 `display_worker_task_name`。该可选库复用同一运行时，只提供任务名符号并携带 `$lua/display` 清单；漏链接会产生 undefined-symbol 错误，已链接但漏配策略仍由原有 task-policy audit 拒绝。不要手写任务名字串或只添加清单以绕过接入点。
+所有 target（含 Web）的 Display 都使用公共显示 worker，没有同步后端模式或启用开关。首次 `require("display")` 获取 Display 时创建 `$lua/display` 任务，未使用 Display 的 Job 不创建显示任务。`present/end_frame` 仍等待当前帧完成；`submit/flush/status` 提供单在途异步提交，完整合同以 `h2_lua_display.h` 为准。
 
-```c
-#include "h2_lua.h"
-#include "h2_lua_task_names.h"
+默认 `//libs/lua` / `:lua_runtime` 的任务清单包含 `$lua/worker` 和 `$lua/display`，下层 Runtime 的既有任务清单不变。消费目标必须为 `$lua/display` 配置核、优先级、栈和内存区域，或审查预算后显式填写 `default`；缺失策略仍由原有 task-policy audit 拒绝。源码包包含同一实现，非 Bazel embedder 提供 PAL Task、Sync semaphore、Time 和 Display，并负责自己的任务预算。Host 零初始化配置即可使用 worker，`display_worker_stack_size` 只调整栈预算。
 
-h2_lua_host_config_t config = {
-    .runtime = runtime,
-    .max_jobs = 1,
-    .display_exclusive = 1,
-    .display_worker_task_name = h2_lua_display_task_name,
-};
-```
+Host 支持多个 Job，但同时只允许一个 Job 获取 Display，竞争获取返回 busy；成功 `deinit` 或 checked release 后其他 Job 可重新获取。这个占用保护不能协调其他 Host、Runtime 和直接 PAL/UI writer，调用方必须先排空并暂停这些外部访问。后端必须允许串行移交到一个任务，且成功的 draw/present 必须完成传输。open/info/draw/present/close 在同一提交任务执行；`borrow_display` 保留不调用 PAL open/close 的合同。
 
-消费目标为 `$lua/display` 配置具体预算，或在审查预算后显式填写 `default`。任务策略行只配置调度，不能启用功能；链接可选库但保持 `display_worker_task_name = NULL` 也仍同步执行。未启用者的零初始化配置保持同步提交。源码包仍包含可选任务名的编译单元，非 Bazel embedder 按 manifest 编译并负责自己的任务预算；默认 Runtime 不引用该可选符号。
+提交最多有一个未完成帧，包含正在执行的帧；busy 由 Lua 调用方通过 `runtime.sleep()` 后重试处理，没有额外排队帧或覆盖在途快照。成功入队后可绘制下一帧，快照准备与成功回执仅复制最终计划覆盖的区域，保留原始行 stride；首帧或基线失效仍整帧复制。完整传输成功后，回执只更新上一帧 baseline 的相同覆盖区域，不清除下一帧 dirty 状态。冻结 tile fallback 包含完整位图，超过矩形容量也不截断提交。
 
-Host 的 `display_worker_task_name` 是显式 opt-in，默认 `NULL`；其他任务名会在 Host 创建时被拒绝。启用时必须设置 `display_exclusive` 并将 `max_jobs` 设为 1：调用方持有整个底层 Display 的独占权，先排空已有访问，并暂停其他 Host、Runtime 和 UI writer。Host 私有同步不能保护绕过它的直接 PAL 调用。后端必须允许串行移交到一个任务，而且成功的 draw/present 必须完成传输；这项资格由调用方验证，不根据平台名猜测。全部 open/info/draw/present/close 在同一个提交任务执行；`borrow_display` 保留不调用 PAL open/close 的合同。
+快照、baseline、mailbox 和计划使用 VM userdata，受 `vm_memory_limit_bytes` 与共享 VM 堆约束。240×240 RGB565 每份像素为 115200 字节；获取时保留 draw framebuffer，首次提交（包括 `present`）分配 baseline 和一份快照。既有 draw framebuffer 属于 Host allocator，PAL Task/Atomic/Sync 的内部资源属于平台预算，不冒充 VM charge。`display_worker_stack_size` 默认请求 8192 字节，实际栈还受 target policy 下限影响。新增 `$lua/display` 任务必须在消费目标的 task policy 声明核、优先级、栈与内存区域，并实测总峰值及连续空闲块；库不修改驱动、SDK 或编译参数。
 
-Lua 的 `submit/flush/status` 合同以 `h2_lua_display.h` 为准。Web 和未启用 worker 的 Host 使用同一 Lua 源码 inline 执行；已有 `present/end_frame` 保持同步。提交最多有一个未完成帧，包含正在执行的帧；busy 由 Lua 调用方通过 `runtime.sleep()` 后重试处理，没有额外排队帧或覆盖在途快照。成功入队后可绘制下一帧，快照准备与成功回执仅复制最终计划覆盖的区域，保留原始行 stride；首帧或基线失效仍整帧复制。完整传输成功后，回执只更新上一帧 baseline 的相同覆盖区域，不清除下一帧 dirty 状态。冻结 tile fallback 包含完整位图，超过矩形容量也不截断提交。
+`deinit`、job release 和 Host join 在帧传输未完成时返回 busy，保留 VM 引用和所有权，调用方稍后重试。关闭请求通过同一 worker 执行；随后 PAL join 可等待退出或返回 busy，成功后才释放占用和缓冲区。`h2_lua_host_destroy_checked()` 只有成功才释放 Host；失败后不能销毁 Runtime 或恢复借用 Display 的 UI。兼容的 void destroy 也保留失败对象，但调用方必须使用 checked 入口判断释放是否完成。PAL 错误会锁存并停止新提交，提交任务退出后可 join，但不会在不确定设备状态下自动 close/open 或重试。该原型没有解除故障隔离的 API：fault 后保留 Host/VM/device lease，消费端须维持依赖并走其外部恢复或进程重启流程。PAL 的无限等待可能令同步调用或任务无法退出；软件 busy 不意味着已取消硬件，不能强删任务后 free。
 
-快照、baseline、mailbox 和计划使用 VM userdata，受 `vm_memory_limit_bytes` 与共享 VM 堆约束。240×240 RGB565 每份像素为 115200 字节；启用后保留 draw framebuffer、baseline 和一份快照。既有 draw framebuffer 属于 Host allocator，PAL Task/Atomic/Sync 的内部资源属于平台预算，不冒充 VM charge。`display_worker_stack_size` 默认请求 8192 字节，实际栈还受 target policy 下限影响。新增 `$lua/display` 任务必须在消费目标的 task policy 声明核、优先级、栈与内存区域，并实测总峰值及连续空闲块；库不修改驱动、SDK 或编译参数。
-
-`deinit`、job release 和 Host join 在提交或关闭未完成时返回 busy，保留 VM 引用和所有权，调用方稍后重试。`h2_lua_host_destroy_checked()` 只有成功才释放 Host；失败后不能销毁 Runtime 或恢复借用 Display 的 UI。兼容的 void destroy 也保留失败对象，但调用方必须使用 checked 入口判断释放是否完成。PAL 错误会锁存并停止新提交，提交任务退出后可 join，但不会在不确定设备状态下自动 close/open 或重试。该原型没有解除故障隔离的 API：fault 后保留 Host/VM/device lease，消费端须维持依赖并走其外部恢复或进程重启流程。PAL 的无限等待可能令同步调用或任务无法退出；软件 busy 不意味着已取消硬件，不能强删任务后 free。
-
-帧率只用成功且像素变化的完成记录计算；submitted、无变化 submit 和失败都不能计为变化帧 FPS。时间是 PAL monotonic transport 完成时间，不是面板 scanout；Web inline 的 PAL 返回也不证明浏览器已合成到屏幕。观察者不能并发读取 worker 正在更新的普通 64 位字段，应消费 `status/flush` 发布的完成记录。已提交的同源消费例位于 `libs/lua/tests/display_submit.lua`，由 native inline/worker 和 `projects/example/targets/pkg_tar/lua-script-submit` 的浏览器测试共同运行。
+帧率只用成功且像素变化的完成记录计算；submitted、无变化 submit 和失败都不能计为变化帧 FPS。时间是 PAL monotonic transport 完成时间，不是面板 scanout；Web 的传输完成也不证明浏览器已合成到屏幕。观察者不能并发读取 worker 正在更新的普通 64 位字段，应消费 `status/flush` 发布的完成记录。已提交的同源消费例位于 `libs/lua/tests/display_submit.lua`，由 native worker 和 `projects/example/targets/pkg_tar/lua-script-submit` 的浏览器测试共同运行。
