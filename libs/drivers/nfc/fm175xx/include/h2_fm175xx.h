@@ -41,6 +41,13 @@ typedef struct h2_fm175xx_type_a_card {
 
 int h2_fm175xx_init(h2_fm175xx_t *reader, const h2_fm175xx_transport_t *transport);
 int h2_fm175xx_open_type_a(h2_fm175xx_t *reader);
+/**
+ * Select a Type A card for subsequent reads. Each call ends a preceding
+ * selection with HLTA and wakes IDLE/HALT cards with WUPA, so repeated polls
+ * and a read after a poll can select the same retained card. HLTA silence is
+ * expected; register/transport errors still propagate. The caller serializes
+ * this operation with all other reader operations.
+ */
 int h2_fm175xx_type_a_activate(h2_fm175xx_t *reader, h2_fm175xx_type_a_card_t *out_card);
 int h2_fm175xx_ntag_read_all(h2_fm175xx_t *reader, uint8_t *out_data, size_t capacity, size_t *out_len);
 
