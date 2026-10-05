@@ -659,6 +659,10 @@ static int cleanup_fixture(void) {
   dtls_api = NULL;
   return H2_PAL_OK;
 }
+int h2_ipv6_board_fixture_ownership_released(void) {
+  return rt == NULL;
+}
+
 int h2_ipv6_board_fixture_run(h2_runtime_t *runtime,
                               const h2_pal_dtls_api_t *dtls,
                               const h2_ipv6_tls_server_api_t *tls,

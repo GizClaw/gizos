@@ -12,6 +12,7 @@ static struct netif iface;
 static struct raw_pcb pcb;
 static struct pbuf buffer;
 static unsigned failure, ap_live, pcbs, sends, stops, starts;
+static int fail_tcpip_exec;
 static void (*queued)(void *), (*timer)(void *);
 static void *queued_user, *timer_user;
 static int ap_start(void *user, const h2_pal_wifi_ap_config_t *config,
@@ -26,7 +27,7 @@ static int ap_start(void *user, const h2_pal_wifi_ap_config_t *config,
 }
 static int ap_stop(void *user, uint32_t timeout) {
   (void)user; (void)timeout;
-  assert(ap_live && !pcbs && !timer);
+  assert(ap_live && ((!pcbs && !timer) || fail_tcpip_exec));
   ++stops;
   ap_live = 0u;
   return H2_PAL_OK;
@@ -70,6 +71,8 @@ int tcpip_callback(void (*callback)(void *), void *user) {
   return ERR_OK;
 }
 esp_err_t esp_netif_tcpip_exec(esp_err_t (*callback)(void *), void *user) {
+  if (fail_tcpip_exec)
+    return ESP_FAIL;
   if (queued) {
     void (*pending)(void *) = queued;
     queued = NULL;
@@ -150,6 +153,22 @@ int main(void) {
   assert(h2_ipv6_ap_start(&runtime) == H2_PAL_OK);
   assert(h2_ipv6_ap_stop(&runtime) == H2_PAL_OK);
   assert(starts == 11u);
+  assert(h2_ipv6_ap_start(&runtime) == H2_PAL_OK);
+  unsigned previous_stops = stops, previous_sends = sends;
+  late = timer;
+  late_user = timer_user;
+  fail_tcpip_exec = 1;
+  assert(h2_ipv6_ap_stop(&runtime) == H2_PAL_ERR_IO);
+  assert(ap_live == 0u && stops == previous_stops + 1u);
+  assert(pcbs == 1u && timer != NULL);
+  late(late_user);
+  assert(sends == previous_sends);
+  assert(h2_ipv6_ap_start(&runtime) == H2_PAL_ERR_INVALID_STATE);
+  fail_tcpip_exec = 0;
+  assert(h2_ipv6_ap_stop(&runtime) == H2_PAL_OK);
+  assert(!pcbs && !timer && !ap_live && stops == previous_stops + 1u);
+  assert(h2_ipv6_ap_start(&runtime) == H2_PAL_OK);
+  assert(h2_ipv6_ap_stop(&runtime) == H2_PAL_OK);
   puts("AP startup cleanup: 9 failure paths, late callbacks and restart passed");
   return 0;
 }
