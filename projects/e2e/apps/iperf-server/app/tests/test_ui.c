@@ -22,6 +22,8 @@ typedef struct fixture {
   bool fail_touch;
   unsigned touch_errors;
   bool retry_cancelled_click;
+  bool retried_stop;
+  unsigned stop_attempts;
   unsigned step;
   unsigned display_open, display_close, touch_open, touch_close, starts, stops;
   uint64_t deadline, next_edge;
@@ -48,6 +50,8 @@ static int network_start(void *user, h2_iperf_server_app_mode_t mode,
 }
 static int network_stop(void *user) {
   fixture_t *f = user;
+  if (++f->stop_attempts == 1u)
+    return H2_PAL_ERR_IO;
   ++f->stops;
   return H2_PAL_OK;
 }
@@ -108,6 +112,22 @@ static bool tap_ready(unsigned step) {
   }
   return false;
 }
+static bool retry_stop_ready(void) {
+  lv_obj_t *screen = lv_screen_active();
+  for (uint32_t i = 0; i < lv_obj_get_child_count(screen); ++i) {
+    lv_obj_t *object = lv_obj_get_child(screen, (int32_t)i);
+    if (!lv_obj_is_clickable(object) ||
+        lv_obj_has_state(object, LV_STATE_DISABLED))
+      continue;
+    for (uint32_t j = 0; j < lv_obj_get_child_count(object); ++j) {
+      lv_obj_t *child = lv_obj_get_child(object, (int32_t)j);
+      if (lv_obj_check_type(child, &lv_label_class) &&
+          strcmp(lv_label_get_text(child), "Retry stop") == 0)
+        return true;
+    }
+  }
+  return false;
+}
 static int touch_poll(void *user, h2_pal_touch_event_t *event) {
   fixture_t *f = user;
   if (f->fail_touch)
@@ -125,6 +145,20 @@ static int touch_poll(void *user, h2_pal_touch_event_t *event) {
     return H2_PAL_ERR_WOULD_BLOCK;
   h2_iperf_server_app_snapshot_t snapshot;
   assert(h2_iperf_server_app_snapshot(f->app, &snapshot) == H2_PAL_OK);
+  if (f->step == 3u && !f->retried_stop &&
+      snapshot.phase == H2_IPERF_SERVER_APP_STOPPING &&
+      snapshot.error == H2_PAL_ERR_IO) {
+    if (!retry_stop_ready())
+      return H2_PAL_ERR_WOULD_BLOCK;
+    *event = (h2_pal_touch_event_t){.kind = f->pressed ? H2_PAL_TOUCH_EVENT_UP
+                                                       : H2_PAL_TOUCH_EVENT_DOWN,
+                                    .x = 180, .y = 290};
+    f->pressed = !f->pressed;
+    if (!f->pressed)
+      f->retried_stop = true;
+    f->next_edge = now(f) + 100u;
+    return H2_PAL_OK;
+  }
   if (!f->pressed) {
     if (f->step == 1 && f->touch_errors == 2 && !f->retry_cancelled_click)
       assert(f->starts ==
@@ -233,6 +267,7 @@ int main(void) {
   assert(h2_iperf_server_app_run_ui(f.app, finished, &f) == H2_PAL_OK);
   assert(h2_iperf_server_app_destroy(&f.app) == H2_PAL_OK);
   assert(f.ready && f.step == 9 && f.starts == 3 && f.stops == 3);
+  assert(f.retried_stop && f.stop_attempts == 4u);
   assert(f.display_open == 1 && f.display_close == 1 && f.touch_open == 1 &&
          f.touch_close == 1);
   f.ready = false;
@@ -260,8 +295,8 @@ int main(void) {
   assert(f.display_open == 4 && f.display_close == 4 && f.touch_open == 4 &&
          f.touch_close == 4);
   h2_iperf_test_env_deinit(&env);
-  puts("H2_IPERF_SERVER_UI_PASS touch-clicks=9 modes=3 display-closed=1 "
+  puts("H2_IPERF_SERVER_UI_PASS touch-clicks=10 modes=3 display-closed=1 "
        "touch-closed=1 failed-ui-unconfirmed=3 touch-faults-recovered=2 "
-       "cancelled-click=1");
+       "cancelled-click=1 failed-stop-retry=1");
   return 0;
 }

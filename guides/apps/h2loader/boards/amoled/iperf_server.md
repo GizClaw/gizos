@@ -6,6 +6,8 @@
 
 启动时默认选择双栈，server 和 AP 均处于停止状态。点选 IPv4、IPv6 或 Dual stack，再点 Start server；其他设备连入显示的 Wi-Fi 后即可测速。运行过程中模式按钮锁定，点 Stop server 可取消尚未完成的控制/数据握手和正在运行的测试。后台先 join 并回收监听，再关闭 AP；停止后可以换模式、重新启动。
 
+如果 join 或 AP 停止返回错误，屏幕显示 Stop failed 和错误码，并允许点 Retry stop 再尝试一次清理。清理成功前保留资源和停止状态，模式选择与 Start 保持锁定。销毁入口在 manager 退出后再尝试一次清理，持续失败则返回错误并保留 App 供后续重试；Runtime 和 callbacks 的生命周期覆盖成功销毁，底层 join/callback 仍遵守各自的阻塞合同。
+
 | 模式 | AP 网络 | Server |
 | --- | --- | --- |
 | IPv4 | `192.168.4.1`，DHCPv4 | IPv4 TCP/UDP |
@@ -40,4 +42,4 @@ iperf3 -6 -c fd53:697a:6f73:626::1 -u -b 10M -l 1200 -t 10 -R
 
 ## 验证边界
 
-`controller_test` 在真实 PAL loopback sockets 上覆盖三种模式、TCP/UDP 双向、官方 iperf3 client IPv4/IPv6 互通、握手/运行中取消、启动失败恢复和反复启停。`ui_test` 把 Touch PAL down/up 事件送入生产 LVGL callback，完成九次选择/启动/停止操作并验证 Display/Touch 关闭，输出实际 RGB565 渲染供检查。AMOLED 还需单独保留 exact package、UI/Touch 实板观察、外部 client 的无线测量和停止/重启记录；host 结果不能替代这些资格。
+`controller_test` 在真实 PAL loopback sockets 上覆盖三种模式、TCP/UDP 双向、官方 iperf3 client IPv4/IPv6 互通、握手/运行中取消、启动失败恢复和反复启停，并注入持续 AP stop、worker join、manager mutex 错误，验证销毁返回错误、保留所有权和恢复后重试成功。`ui_test` 把 Touch PAL down/up 事件送入生产 LVGL callback，完成十次选择/启动/停止与失败停止重试操作并验证 Display/Touch 关闭，输出实际 RGB565 渲染供检查。AMOLED 还需单独保留 exact package、UI/Touch 实板观察、外部 client 的无线测量和停止/重启记录；host 结果不能替代这些资格。

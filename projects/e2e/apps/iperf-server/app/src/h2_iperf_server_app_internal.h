@@ -18,6 +18,8 @@ struct h2_iperf_server_app {
   h2_atomic_bool_t stop;
   h2_atomic_bool_t shutdown;
   bool requested;
+  /* Guarded by mutex; one explicit stop/cleanup retry request. */
+  bool cleanup_requested;
   bool network_active;
   h2_iperf_server_app_snapshot_t snapshot;
   h2_iperf_server_app_worker_t workers[2];
