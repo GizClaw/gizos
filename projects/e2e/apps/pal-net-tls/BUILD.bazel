@@ -6,7 +6,10 @@ package(default_visibility = ["//visibility:public"])
 py_library(
     name = "evidence_validator",
     srcs = ["check_qualification.py"],
-    data = ["//libs/pal:pal_header_files"],
+    data = [
+        "ipv6_host_input_pins.json",
+        "//libs/pal:pal_header_files",
+    ],
     imports = ["."],
     target_compatible_with = HOST_OR_MOBILE_TOOL_COMPATIBILITY,
 )
@@ -19,6 +22,7 @@ py_test(
         "gizclaw_public_https_provenance.json",
         "gizclaw_public_https_provenance_main_tls.json",
         "ipv6_source_maintenance.json",
+        "ipv6_host_input_pins.json",
         "//projects/e2e/apps/pal-ipv6/app:include/h2_pal_ipv6_cases.inc",
         "//:MODULE.bazel",
         "//libs/pal/providers/corehttp:src/h2_corehttp.c",
@@ -71,6 +75,7 @@ exports_files([
     "check_qualification.py",
     "qualification.json",
     "record_ipv6_maintenance.py",
+    "ipv6_host_input_pins.json",
 ])
 
 py_test(
