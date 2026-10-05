@@ -1,5 +1,4 @@
 #include "esp_app_desc.h"
-#include "esp_netif.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "h2_esp_board.h"
@@ -44,13 +43,6 @@ static void run(void *user) {
   }
   if (rc != H2_PAL_OK)
     fail("saved_wifi", rc);
-  /* Association can be reported before ESP-NETIF handles the connected event.
-   * IPv6 setup belongs to the station, independent of an IPv4 default route. */
-  esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
-  for (unsigned i = 0; netif && !esp_netif_is_netif_up(netif) && i < 100; ++i)
-    vTaskDelay(pdMS_TO_TICKS(50u));
-  if (!netif || esp_netif_create_ip6_linklocal(netif) != ESP_OK)
-    fail("ipv6_interface", H2_PAL_ERR_UNAVAILABLE);
   uint64_t start = 0u;
   if (h2_pal_time_get_monotonic_ms(runtime->time, &start) != H2_PAL_OK)
     fail("ipv6_clock", H2_PAL_ERR_IO);

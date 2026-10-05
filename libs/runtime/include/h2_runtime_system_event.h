@@ -184,6 +184,9 @@ typedef struct h2_runtime_system_wifi_ip_info {
     uint32_t ip4;
     uint32_t netmask4;
     uint32_t gateway4;
+    /** Preferred non-link-local IPv6 address and readiness, copied from PAL. */
+    uint8_t ip6[16];
+    uint8_t ip6_valid;
 } h2_runtime_system_wifi_ip_info_t;
 
 typedef struct h2_runtime_system_event_gpio_irq {

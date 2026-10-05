@@ -143,8 +143,8 @@ cc_test(
 cc_test(
     name = "safe_call_policy_test",
     srcs = [
-        "src/h2_esp_io_phase.h",
         "include/h2_esp_platform_safe_call.h",
+        "src/h2_esp_io_phase.h",
         "src/h2_esp_platform_safe_call.c",
         "tests/test_h2_esp_platform_safe_call.c",
     ] + glob(["tests/sdk/**/*.h"]),
@@ -174,7 +174,11 @@ cc_test(
     ] + glob(["tests/sdk/**/*.h"]),
     conlyopts = H2_C11_OPTS + ["-DH2_ESP_IO_PHASE_DIAGNOSTICS=1"],
     copts = H2_WARNING_COPTS,
-    includes = ["include", "src", "tests/sdk"],
+    includes = [
+        "include",
+        "src",
+        "tests/sdk",
+    ],
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],
@@ -349,8 +353,8 @@ cc_test(
 cc_test(
     name = "pref_io_test",
     srcs = [
-        "src/h2_esp_io_phase.h",
         "include/h2_esp_platform_safe_call.h",
+        "src/h2_esp_io_phase.h",
         "src/h2_esp_platform_littlefs_io.c",
         "src/h2_esp_platform_littlefs_io.h",
         "src/h2_esp_platform_pref_store.c",
@@ -391,7 +395,11 @@ cc_test(
         "-Dprintf=h2_io_phase_test_printf",
     ],
     copts = H2_WARNING_COPTS,
-    includes = ["include", "src", "tests/sdk"],
+    includes = [
+        "include",
+        "src",
+        "tests/sdk",
+    ],
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],
@@ -419,7 +427,11 @@ cc_test(
         "-Dprintf=h2_io_phase_test_printf",
     ],
     copts = H2_WARNING_COPTS,
-    includes = ["include", "src", "tests/sdk"],
+    includes = [
+        "include",
+        "src",
+        "tests/sdk",
+    ],
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],
@@ -561,7 +573,10 @@ cc_test(
     ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
-    includes = ["src", "tests/tls_sdk"],
+    includes = [
+        "src",
+        "tests/tls_sdk",
+    ],
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],
@@ -598,7 +613,10 @@ cc_test(
     ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
-    includes = ["include", "src"],
+    includes = [
+        "include",
+        "src",
+    ],
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],
@@ -640,10 +658,10 @@ cc_test(
     name = "arena_spill_test",
     srcs = [
         "src/h2_esp_platform_arena.c",
-        "tests/test_h2_esp_platform_arena.c",
         "tests/arena_sdk/esp_cpu_utils.h",
         "tests/arena_sdk/esp_debug_helpers.h",
         "tests/arena_sdk/esp_log.h",
+        "tests/test_h2_esp_platform_arena.c",
     ] + glob(["tests/sdk/**/*.h"]),
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
@@ -671,10 +689,10 @@ cc_test(
     name = "arena_spill_riscv_test",
     srcs = [
         "src/h2_esp_platform_arena.c",
-        "tests/test_h2_esp_platform_arena.c",
         "tests/arena_sdk/esp_cpu_utils.h",
         "tests/arena_sdk/esp_debug_helpers.h",
         "tests/arena_sdk/esp_log.h",
+        "tests/test_h2_esp_platform_arena.c",
     ] + glob(["tests/sdk/**/*.h"]),
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
@@ -709,7 +727,100 @@ cc_test(
     ] + glob(["tests/sdk/**/*.h"]),
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
-    includes = ["include", "tests/sdk"],
+    includes = [
+        "include",
+        "tests/sdk",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "wifi_ip_test",
+    srcs = [
+        "src/h2_esp_wifi_ip.c",
+        "src/h2_esp_wifi_ip.h",
+        "tests/test_h2_esp_wifi_ip.c",
+        "tests/wifi_ip_sdk/esp_netif.h",
+        "tests/wifi_ip_sdk/esp_netif_net_stack.h",
+        "tests/wifi_ip_sdk/lwip/def.h",
+        "tests/wifi_ip_sdk/lwip/nd6.h",
+        "tests/wifi_ip_sdk/lwip/netif.h",
+        "tests/wifi_ip_sdk/lwip/priv/tcpip_priv.h",
+        "tests/wifi_ip_sdk/lwip/tcpip.h",
+        "tests/wifi_ip_sdk/sdkconfig.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "src",
+        "tests/wifi_ip_sdk",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "wifi_ipv6_off_test",
+    srcs = [
+        "src/h2_esp_wifi_ip.c",
+        "src/h2_esp_wifi_ip.h",
+        "tests/test_h2_esp_wifi_ip_off.c",
+        "tests/wifi_ip_sdk/esp_netif.h",
+        "tests/wifi_ip_sdk/esp_netif_net_stack.h",
+        "tests/wifi_ip_sdk/lwip/def.h",
+        "tests/wifi_ip_sdk/lwip/nd6.h",
+        "tests/wifi_ip_sdk/lwip/netif.h",
+        "tests/wifi_ip_sdk/lwip/priv/tcpip_priv.h",
+        "tests/wifi_ip_sdk/lwip/tcpip.h",
+        "tests/wifi_ip_sdk/sdkconfig.h",
+    ],
+    conlyopts = H2_C11_OPTS + [
+        "-DCONFIG_LWIP_IPV6=0",
+        "-DCONFIG_LWIP_IPV6_AUTOCONFIG=0",
+    ],
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "src",
+        "tests/wifi_ip_sdk",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "wifi_slaac_off_test",
+    srcs = [
+        "src/h2_esp_wifi_ip.c",
+        "src/h2_esp_wifi_ip.h",
+        "tests/test_h2_esp_wifi_ip_off.c",
+        "tests/wifi_ip_sdk/esp_netif.h",
+        "tests/wifi_ip_sdk/esp_netif_net_stack.h",
+        "tests/wifi_ip_sdk/lwip/def.h",
+        "tests/wifi_ip_sdk/lwip/nd6.h",
+        "tests/wifi_ip_sdk/lwip/netif.h",
+        "tests/wifi_ip_sdk/lwip/priv/tcpip_priv.h",
+        "tests/wifi_ip_sdk/lwip/tcpip.h",
+        "tests/wifi_ip_sdk/sdkconfig.h",
+    ],
+    conlyopts = H2_C11_OPTS + ["-DCONFIG_LWIP_IPV6_AUTOCONFIG=0"],
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "src",
+        "tests/wifi_ip_sdk",
+    ],
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],

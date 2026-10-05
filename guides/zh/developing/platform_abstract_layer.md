@@ -434,6 +434,12 @@ Scan timing 有两个互斥形式。`interval_units_625us/window_units_625us` �
 
 Host Serial PAL 不解析 H2Loader response、不推断 board、不合并 BLE identity，也不决定 managed install 或 raw recovery policy。Linux provider 归 `libs/pal/providers/linux/serial_host`，Darwin provider 归 `libs/pal/providers/darwin/pal_core`；两者只通过 private `libs/pal/providers/posix/serial_host` 共享 termios/session lifecycle。Windows provider 归 `libs/pal/providers/windows/serial_host`。各 provider 都实现同一 contract，不向 public header 泄漏 file descriptor、termios、IOKit、udev 或 Win32 handle。
 
+## Wi-Fi IPv6 就绪
+
+Wi-Fi STA 的关联与 IP 就绪是不同状态。启用 IPv6 的 ESP/BK provider 在关联流程中初始化 link-local 与 SLAAC，产品和 E2E entry 不调用 SDK IPv6 初始化。`GOT_IP` 表示 IPv4 或 preferred 非 link-local IPv6 至少一种可用，原 `ip_valid` 始终只代表 IPv4；IPv6 地址与就绪从同一 IP snapshot/event 传播。`h2_pal_wifi_sta_status_has_ip()` 是配网和共享 consumer 的地址就绪判定，link-local、unspecified、loopback、multicast 和 IPv4-mapped 地址不会完成配网。就绪不承诺 default router、DNS 或 Internet 服务可达。
+
+Provider 对当前关联读取实际 preferred 地址，IPv4 失租但 IPv6 仍可用时保留 `GOT_IP`；最后一种可用地址消失才发布 `LOST_IP`。断开和重新关联清除旧 IPv6，过期或 deprecated 地址不继续报告 ready。ESP/BK 原生配置必须同时开启其 SDK IPv6/SLAAC；显式关闭的平台仍只提供其实际启用的族，不由测试入口补齐。
+
 ## Wi-Fi 连接与持久化
 
 Wi-Fi Settings 始终只保存**一条** STA 凭据，表示“最近一次连上的网络”（由成功的 `connect_and_save` 更新）。`set_saved_sta_config` 原子替换该条，写失败保留旧值；`get_saved_sta_config` 返回该条，空时返回 NOT_FOUND；`clear_saved_sta_config` 清除该条。显式 get/set/clear 不改变当前连接；临时 `connect` 不更新保存值。PAL 不提供网络集合、list/remove 或多网络排序能力，provider 和原有单条格式保持不变。
@@ -442,7 +448,7 @@ Wi-Fi Settings 始终只保存**一条** STA 凭据，表示“最近一次连�
 
 Runtime 配网入口先调用 PAL `connect_and_save`，成功后才记录到自己的集合；best-saved 则按扫描 RSSI 和集合顺序尝试 PAL `connect`，成功后只更新 Runtime 集合，不写 PAL 凭据、不等待 IP。原有 `h2_runtime_wifi_connect_saved` 继续只恢复 PAL 单条凭据。
 
-Wi-Fi STA 的 `connect` 与 `connect_and_save` 是两个独立 operation。前者对所有 timeout 都只改变当前连接；后者必须重新验证目标凭据，取得目标 SSID（指定 BSSID 时也匹配 BSSID）的有效非零 IPv4 后才调用 Wi-Fi Settings 保存。后者要求非零关联/DHCP 总预算，零值无副作用地返回 INVALID_ARG。连接、IP 或保存失败均不得伪装为配网成功；旧凭据在连接失败时保留，保存失败由 Settings 原子替换合同保护。get/set/clear/has_saved_sta_config 仍是显式的独立存储能力。
+Wi-Fi STA 的 `connect` 与 `connect_and_save` 是两个独立 operation。前者对所有 timeout 都只改变当前连接；后者必须重新验证目标凭据，取得目标 SSID（指定 BSSID 时也匹配 BSSID）的有效非零 IPv4 或 preferred 非 link-local IPv6 后才调用 Wi-Fi Settings 保存。后者要求非零关联/地址配置总预算，零值无副作用地返回 INVALID_ARG。连接、IP 或保存失败均不得伪装为配网成功；旧凭据在连接失败时保留，保存失败由 Settings 原子替换合同保护。get/set/clear/has_saved_sta_config 仍是显式的独立存储能力。
 
 ESP-IDF、BK7258、Desktop simulator 和 testing PAL 共用 `libs/wifi_sta` 的事务算法。Runtime 的配网入口复用同一 PAL 事务，成功后独立更新自己的集合；不可在 Runtime、BLE、RPC 或 Loader 中重复实现 PAL 的等待 IP 与单条凭据保存算法。Desktop 与 testing PAL 的 Settings 是进程内模拟，不能据此声称设备断电持久化通过。无 Wi-Fi 的 canonical unsupported 与 ESP32-P4 unsupported provider 对新 operation 明确返回 UNSUPPORTED。
 
@@ -654,6 +660,6 @@ iOS 和 Android 的 WebRTC owner 位于各自 `pal_core/src/h2_*_webrtc.c`，组
 
 ## IPv6 地址与 DNS
 
-POSIX 与 ESP 的 resolver 在本地处理保留名称：`localhost` 及其子域返回真实 loopback 地址，`.invalid` 及其子域直接返回 `NOT_FOUND`，不依赖当前网络的 DNS 服务器。名称比较不区分大小写并接受末尾的点，遵循 [RFC 6761](https://www.rfc-editor.org/rfc/rfc6761.html#section-6.4)。独立的 nonce AAAA wire fixture 仍通过真实 IPv6 UDP 验证报文，不由这些本地规则替代。
+POSIX、ESP 与 BK 的 resolver 在本地处理保留名称：`localhost` 及其子域返回真实 loopback 地址，`.invalid` 及其子域直接返回 `NOT_FOUND`，不依赖当前网络的 DNS 服务器。名称比较不区分大小写并接受末尾的点，遵循 [RFC 6761](https://www.rfc-editor.org/rfc/rfc6761.html#section-6.4)。独立的 nonce AAAA wire fixture 仍通过真实 IPv6 UDP 验证报文，不由这些本地规则替代。
 
 Net 地址新增 `scope_id`，表示本机 IPv6 接口索引；link-local 目标必须携带作用域， IPv4 地址必须为零。作用域不能作为 IP 地址的一部分发送到 STUN 或 SDP。 新 DNS 列表接口支持 ANY、IPv4、IPv6 筛选、有界去重列表与截断标志；异步操作沿用 复制 hostname、有限容量、poll 总预算和取消后 backend 自行回收的合同。 旧单地址接口保留 IPv4 优先，并在没有 IPv4 时接受 IPv6。HTTP/MQTT 根据每个结果的 地址族创建 socket，失败后关闭并在原始连接预算内回退。TLS 验证失败不会触发降级。 `pal-ipv6` 提供独立 E2E；浏览器原始 Net 的 UNSUPPORTED 与 Fetch/WebRTC 的 IPv6 实际执行分开记录。新 provider 代码不改变历史实板记录的执行身份。
