@@ -284,3 +284,7 @@ The mobile consumer imports actual native SDK packages and injects the public ow
 ## IPv6 qualification
 
 `projects/e2e/apps/pal-ipv6` owns the independent IPv6 matrix. Native targets parameterize all 37 mandatory raw Net/TLS cases and add DNS family/list/cancel, scoped addressing, interface binding, HTTP/MQTT, IPv6 UDP DTLS, and IPv6 ICE WebRTC/SCTP checks. Browser Fetch/WebRTC execute their actual IPv6 capabilities; raw Net remains explicitly unsupported. See the suite README for direct Bazel entrypoints and source/artifact/peer evidence boundaries. Existing historical qualification JSON is not relabeled after an IPv6 provider change.
+
+## IPv6 Wi-Fi iperf bench
+
+`iperf-client` 的 DevKit 与 BK7258 launcher 都通过同一 portable App 的公共 Wi-Fi/Net/Runtime 流程连接 AMOLED server，不再在测试 entry 调用 SDK IPv6 初始化。IPv4-only、IPv6-only 与双栈各自验证公共地址就绪、Runtime snapshot、断开/重连清理和保存凭据未变，再保留 TCP/UDP 正反向三轮性能 ledger。SDK provider 的 lifecycle、作用域/地址/结果列表边界有 focused host tests；平台 package、硬件性能和原固件恢复分别提供 source/artifact-bound evidence。双栈逐族测试，不把两族吞吐相加；SCTP provider 未在这两个 App 启用。
