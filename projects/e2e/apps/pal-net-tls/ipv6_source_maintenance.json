@@ -49,7 +49,7 @@
     "new_physical_run_claimed": false,
     "host_execution": {
       "schema": 1,
-      "executed_source_commit": "59d235e936cd122fb28b3dd45b9a85bf2215749d",
+      "executed_source_commit": "5d688eaa6419d0d78338b8e0ca537fe2b36c3533",
       "platform": "macos",
       "config": "macos_arm64",
       "source_sha256": {
@@ -75,9 +75,9 @@
       }
     },
     "raw_log_sha256": {
-      "desktop_pal_ipv6_test.raw.log": "fc2e5745dced797707b6cd977cc332f3a1440b2ebef63e3869acd88d21cacaa0",
-      "desktop_pal_net_tls_test.raw.log": "6400643718ea4f8455c87593e751a8ff0c55b95091776c44601e6ee3292a1e7d",
-      "desktop_pal_net_tls_endpoint_rejection_test.raw.log": "b549be2c00296a430c54d224067925b8ed4f8bfe0f85753c5ed10836f8812d98"
+      "desktop_pal_ipv6_test.raw.log": "24de0ea7c650384b30b62ed5906c10070a6f789075598cf83586fed7ad2de8a2",
+      "desktop_pal_net_tls_test.raw.log": "543f0fddd54aca1b7ff19bc89287701053b4790ad5ae9709275fb6294ab46cb0",
+      "desktop_pal_net_tls_endpoint_rejection_test.raw.log": "aceee28cd117b760032bd6b7ee52cc4601e6fd40e9922b29ef8453acc13ae6e4"
     }
   },
   "scope": "Current IPv6 parameterization/provider source maintenance and fresh host regression only. Historical device, mobile, browser, source, image and artifact receipts remain byte-for-byte unchanged. Historical 21-operation receipts do not qualify the four additive IPv6 operations or current physical provider images."
