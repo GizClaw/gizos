@@ -84,6 +84,25 @@ IPV6_HOST_SOURCES = {
 }
 
 
+def check_ipv6_host_capture_pin(host):
+    """Compare a claim with independently reviewed raw-capture expectations."""
+    pins = json.loads((APP / 'ipv6_host_input_pins.json').read_text(encoding='utf-8'))
+    assert pins['schema'] == 1
+    commit = host['executed_source_commit']
+    assert commit in pins['captures'], 'host capture has no independently reviewed pin: ' + commit
+    assert type(host['schema']) is int and host['schema'] == 1
+    capture = host['complete_input_capture']
+    assert capture['all_before_after_identical'] is True
+    assert all(type(capture[key]) is int for key in
+               ('actions_count', 'input_count', 'first_party_sources_count'))
+    expected = pins['captures'][commit]
+    assert set(expected) == {'schema', 'platform', 'config', 'executed_source_commit',
+                             'source_sha256', 'artifact_sha256', 'complete_input_capture'}
+    assert expected['executed_source_commit'] == commit
+    for key, value in expected.items():
+        assert host.get(key) == value, 'host capture differs from independent pin: ' + key
+
+
 def ipv6_source_updates(root, effective):
     """Validate current source maintenance without rebinding old hardware."""
     record = json.JSONDecoder().decode((APP / 'ipv6_source_maintenance.json').read_text())
@@ -120,6 +139,7 @@ def ipv6_source_updates(root, effective):
     assert set(capture['sha256']) == {'full_source_manifest', 'selected_action_closure',
                                      'action_input_manifest', 'input_verification'}
     assert all(re.fullmatch('[0-9a-f]{64}', value) for value in capture['sha256'].values())
+    check_ipv6_host_capture_pin(host)
     return current
 
 

@@ -6,6 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+from check_qualification import check_ipv6_host_capture_pin
 
 BASE = "e9ee7e6b4d2a15b70bb3a7a9147bacf3937365c3"
 ROOT = Path(__file__).resolve().parents[4]
@@ -75,6 +76,9 @@ def main():
             "selected_action_closure": "selected-action-closure.json",
             "action_input_manifest": "action-input-manifest.before.json",
             "input_verification": "action-input-verification.json"}.items()}}
+    # The mutable record generator can consume reviewed captures, never create
+    # their independent authority or silently approve a new execution identity.
+    check_ipv6_host_capture_pin(host)
     for path, expected in host["source_sha256"].items():
         assert digest((ROOT / path).read_bytes()) == expected, "host closure changed; capture a fresh run: " + path
     v6 = summary(v6log, "H2_PAL_IPV6_SUMMARY ")
