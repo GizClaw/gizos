@@ -36,6 +36,7 @@ class TLSDiagnosticsTest(unittest.TestCase):
 
     def test_real_rejections_record_distinct_case_names_and_tls_alerts(self):
         with tempfile.TemporaryDirectory() as directory, Fixture(directory) as fixture:
+            fixture.tls.current_run_by_peer['127.0.0.1']=fixture.session
             for ca,name,reason in [(fixture.wrong_ca,'localhost','TLSV1_ALERT_UNKNOWN_CA'),
                                    (fixture.ca,'wrong-name.invalid','SSLV3_ALERT_BAD_CERTIFICATE')]:
                 context=ssl.create_default_context(cafile=str(ca))
@@ -58,6 +59,15 @@ class TLSDiagnosticsTest(unittest.TestCase):
                 self.assertEqual(rows[-1]['error']['reason'],reason,rows[-1]['error'])
                 self.assertTrue(rows[-1]['client_hello'] and rows[-1]['certificate_presented'])
                 self.assertFalse(rows[-1]['succeeded'])
+            # Missing observed SNI must not be accepted as the normal-name
+            # rejection, even when the real fatal alert and Certificate exist.
+            for missing in [None, '']:
+                fixture.tls.handshakes[0]['server_name']=missing
+                with self.assertRaisesRegex(RuntimeError,'server-name'):
+                    fixture.verify()
+            del fixture.tls.handshakes[0]['server_name']
+            with self.assertRaisesRegex(RuntimeError,'server-name'):
+                fixture.verify()
 
     def test_trusted_handshake_preserves_default_budget_and_records_real_tls_messages(self):
         with tempfile.TemporaryDirectory() as directory, Fixture(directory) as fixture:

@@ -94,32 +94,38 @@ static int append_values(char *line,size_t capacity,size_t *offset,const size_t 
     }
     return H2_PAL_OK;
 }
-void h2_mqtt_device_replay(h2_runtime_t *runtime,const h2_mqtt_device_result_t *result) {
-    h2_pal_firmware_info_t image={0};if(h2_pal_firmware_info_get_current(runtime->firmware_info,&image)!=H2_PAL_OK)return;
+int h2_mqtt_device_replay(h2_runtime_t *runtime,const h2_mqtt_device_result_t *result) {
+    if(runtime==NULL || result==NULL)return H2_PAL_ERR_INVALID_ARG;
+    h2_pal_firmware_info_t image={0};
+    int rc=h2_pal_firmware_info_get_current(runtime->firmware_info,&image);
+    if(rc!=H2_PAL_OK)return rc;
     char line[768];
     int count=snprintf(line,sizeof(line),"H2_PAL_MQTT_RUN id=%s version=%s epoch_ms=%llu ca_sha256=%s",
         result->execution,image.version,(unsigned long long)result->epoch_ms,result->ca_sha256);
-    if(count<0 || (size_t)count>=sizeof(line))return;
-    if(h2_pal_log_write(runtime->log,H2_PAL_LOG_INFO,"pal-mqtt",line)!=H2_PAL_LOG_OK)return;
+    if(count<0 || (size_t)count>=sizeof(line))return H2_PAL_ERR_NO_SPACE;
+    rc=h2_pal_log_write(runtime->log,H2_PAL_LOG_INFO,"pal-mqtt",line);
+    if(rc!=H2_PAL_LOG_OK)return rc;
     for(unsigned i=0u;i<H2_PAL_MQTT_E2E_CASE_COUNT;++i){
         const h2_pal_mqtt_e2e_case_result_t *row=&result->suite.cases[i];
-        if(row->id==NULL)continue;
+        if(row->id==NULL)return H2_PAL_ERR_INVALID_STATE;
         count=snprintf(line,sizeof(line),"H2_PAL_MQTT_CASE {\"id\":\"%s\",\"status\":\"%s\",\"detail\":%d,\"line\":%u,\"elapsed_ms\":%llu,\"connected\":%u,\"received\":%u,\"disconnected\":%u}",
             row->id,row->passed?"PASS":row->blocked?"BLOCKED":"FAIL",row->detail,row->line,(unsigned long long)row->elapsed_ms,row->connected,row->received,row->disconnected);
-        if(count<0 || (size_t)count>=sizeof(line))return;
-        if(h2_pal_log_write(runtime->log,H2_PAL_LOG_INFO,"pal-mqtt",line)!=H2_PAL_LOG_OK)return;
-        (void)h2_pal_time_sleep_ms(runtime->time,40u);
+        if(count<0 || (size_t)count>=sizeof(line))return H2_PAL_ERR_NO_SPACE;
+        rc=h2_pal_log_write(runtime->log,H2_PAL_LOG_INFO,"pal-mqtt",line);
+        if(rc!=H2_PAL_LOG_OK)return rc;
+        rc=h2_pal_time_sleep_ms(runtime->time,40u);
+        if(rc!=H2_PAL_OK)return rc;
     }
     count=snprintf(line,sizeof(line),"H2_PAL_MQTT_SUMMARY {\"selected\":%u,\"passed\":%u,\"failed\":%u,\"blocked\":%u,\"cleanup\":%d,\"rc\":%d,\"before\":[",
         result->suite.selected,result->suite.passed,result->suite.failed,result->suite.blocked,result->cleanup,result->rc);
-    if(count<0 || (size_t)count>=sizeof(line))return;
+    if(count<0 || (size_t)count>=sizeof(line))return H2_PAL_ERR_NO_SPACE;
     size_t offset=(size_t)count;
-    if(append_values(line,sizeof(line),&offset,result->before)!=H2_PAL_OK)return;
+    if(append_values(line,sizeof(line),&offset,result->before)!=H2_PAL_OK)return H2_PAL_ERR_NO_SPACE;
     count=snprintf(line+offset,sizeof(line)-offset,"],\"after\":[");
-    if(count<0 || (size_t)count>=sizeof(line)-offset)return;
+    if(count<0 || (size_t)count>=sizeof(line)-offset)return H2_PAL_ERR_NO_SPACE;
     offset+=(size_t)count;
-    if(append_values(line,sizeof(line),&offset,result->after)!=H2_PAL_OK)return;
+    if(append_values(line,sizeof(line),&offset,result->after)!=H2_PAL_OK)return H2_PAL_ERR_NO_SPACE;
     count=snprintf(line+offset,sizeof(line)-offset,"]}");
-    if(count<0 || (size_t)count>=sizeof(line)-offset)return;
-    (void)h2_pal_log_write(runtime->log,H2_PAL_LOG_INFO,"pal-mqtt",line);
+    if(count<0 || (size_t)count>=sizeof(line)-offset)return H2_PAL_ERR_NO_SPACE;
+    return h2_pal_log_write(runtime->log,H2_PAL_LOG_INFO,"pal-mqtt",line);
 }

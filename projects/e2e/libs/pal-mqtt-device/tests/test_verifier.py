@@ -21,6 +21,18 @@ class Verifier(unittest.TestCase):
         replay=self.good.split('H2_PAL_MQTT_RUN ',1)[1]
         with self.assertRaisesRegex(AssertionError,'later replay'):
             boot_ledger(first+'H2_PAL_MQTT_RUN '+replay,self.ids,'v1')
+    def test_incomplete_first_boot_cannot_be_replaced_by_later_startup(self):
+        for first in [self.good.split('H2_PAL_MQTT_BOOT ',1)[0],
+                      self.good.split('H2_PAL_MQTT_RUN ',1)[0],
+                      self.good.split('H2_PAL_MQTT_SUMMARY ',1)[0]]:
+            for startup in ['', 'ESP-ROM:esp32s3-20210327\n', 'H2_LOADER_STARTUP_EVENT event=boot\n']:
+                with self.subTest(first=first[-60:], startup=startup):
+                    with self.assertRaisesRegex(AssertionError,'later startup'):
+                        boot_ledger(first+startup+self.good,self.ids,'v1')
+        initial='ESP-ROM:esp32s3-20210327\nrst:0xc (RTC_SW_CPU_RST)\nBooting App\n'
+        self.assertEqual(boot_ledger(initial+self.good,self.ids,'v1')['boot']['id'],self.execution)
+        with self.assertRaisesRegex(AssertionError,'later startup'):
+            boot_ledger(initial+initial+self.good,self.ids,'v1')
     def test_ready_pending_requires_actual_post_delivery_confirmation(self):
         pending=self.good.replace('confirm=0','confirm=pending')
         with self.assertRaisesRegex(AssertionError,'missing post-READY'):boot_ledger(pending,self.ids,'v1')
@@ -29,6 +41,10 @@ class Verifier(unittest.TestCase):
         for tail in [final.replace('rc=0','rc=-4'),final.replace('board=bk7258','board=devkit')]:
             with self.assertRaises(AssertionError):boot_ledger(pending+tail,self.ids,'v1')
         with self.assertRaises(AssertionError):boot_ledger(final+pending,self.ids,'v1')
+        devkit=pending.replace('board=bk7258','board=devkit').replace('confirm=pending','confirm=pending provider_cleanup=0')
+        with self.assertRaisesRegex(AssertionError,'missing post-READY'):boot_ledger(devkit,self.ids,'v1')
+        self.assertEqual(boot_ledger(devkit+final.replace('board=bk7258','board=devkit'),self.ids,'v1')['confirmation']['rc'],'0')
+        with self.assertRaises(AssertionError):boot_ledger(devkit+final,self.ids,'v1')
     def test_both_device_targets_require_fixed_source_binding_file(self):
         for board,target in [('bk7258_v3_202405','bk7258'),('devkit','esp32s3')]:
             manifest=dict(role='app',board=board,target=target,version='v1',image_size='42',image_sha256='c'*64)
@@ -47,6 +63,13 @@ class Verifier(unittest.TestCase):
         receipt=dict(inputs=dict(ca_sha256='c'*64,epoch_ms=123,advertised='127.0.0.1'),
                      runs={self.execution:dict(verified=True,session=self.execution,active_clients=0,retained_messages=0,tls_handshakes=events)})
         verify_witness(receipt,execution)
+        for name in [None, '', 'unobserved.invalid']:
+            events[0]['server_name']=name
+            with self.assertRaisesRegex(AssertionError,'observed hostname'):verify_witness(receipt,execution)
+        events[0]['server_name']='localhost'
+        del events[0]['server_name']
+        with self.assertRaisesRegex(AssertionError,'server-name observation'):verify_witness(receipt,execution)
+        events[0]['server_name']='localhost'
         for reason in ['TLSV1_ALERT_UNKNOWN_CA','UNEXPECTED_EOF_WHILE_READING',None]:
             old=events[1]['error']['reason'];events[1]['error']['reason']=reason
             with self.assertRaises(AssertionError):verify_witness(receipt,execution)

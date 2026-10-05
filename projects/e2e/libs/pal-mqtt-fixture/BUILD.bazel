@@ -30,6 +30,15 @@ py_test(
 )
 
 py_test(
+    name = "serve_command_test",
+    srcs = ["serve.py", "tests/test_serve.py"],
+    legacy_create_init = 0,
+    main = "tests/test_serve.py",
+    target_compatible_with = HOST_OR_MOBILE_TOOL_COMPATIBILITY,
+    deps = [":fixture"],
+)
+
+py_test(
     name = "retained_clear_test",
     srcs = ["tests/test_retained_clear.py"],
     legacy_create_init = 0,

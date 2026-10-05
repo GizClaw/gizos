@@ -32,6 +32,13 @@ def write(path, value):
         output.write('\n')
 
 
+def captured_verifier(folder, collector):
+    verifier = folder / 'host-verifier.py'
+    assert verifier.is_file(), 'missing captured historical host-verifier.py'
+    assert sha(verifier) == collector['verifier_sha256'], 'captured host verifier differs from the actual qualification'
+    return verifier
+
+
 def admitted(folder, source, version, build_receipt=None):
     collector = read(folder / 'collector-receipt.json')
     assert collector.get('qualified') is True, 'collector has not qualified this run'
@@ -56,8 +63,7 @@ def import_run(folder, destination, repo, source, version, uid, dump_sha, build_
     assert not destination.exists(), 'refusing to overwrite historical qualification'
     assert re.fullmatch('[0-9a-f]{40}', source) and re.fullmatch('[0-9a-f]{64}', dump_sha)
     collector = admitted(folder, source, version, build_receipt)
-    verifier = repo / 'projects/e2e/libs/pal-mqtt-device/verify_device.py'
-    assert sha(verifier) == collector['verifier_sha256'], 'host verifier changed since the actual qualification'
+    verifier = captured_verifier(folder, collector)
     packages = list(folder.glob('*.update.tar.zlib'))
     assert len(packages) == 1 and sha(packages[0]) == collector['package_sha256'], 'immutable installed package missing/changed'
     original = read(folder / 'qualification.json')

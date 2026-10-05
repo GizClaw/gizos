@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from import_qualification import admitted, import_run, sha, write
+from import_qualification import admitted, captured_verifier, import_run, sha, write
 
 
 class AdmissionTest(unittest.TestCase):
@@ -76,6 +76,24 @@ class AdmissionTest(unittest.TestCase):
         with self.assertRaises(AssertionError):
             import_run(self.folder, destination, Path('/unused'), self.source, self.version, 'unused', 'e' * 64)
         self.assertEqual(sentinel.read_text(), 'original immutable record')
+
+    def test_historical_verifier_is_selected_and_bound_to_the_capture(self):
+        verifier=self.folder/'host-verifier.py'
+        verifier.write_text('captured verifier bytes\n')
+        collector={'verifier_sha256':sha(verifier)}
+        self.assertEqual(captured_verifier(self.folder,collector),verifier)
+        # Current checkout revisions do not replace the capture's authority.
+        current=self.folder/'current-verifier.py';current.write_text('new stricter verifier\n')
+        self.assertNotEqual(sha(current),collector['verifier_sha256'])
+        verifier.write_text('modified historical verifier\n')
+        with self.assertRaisesRegex(AssertionError,'differs'):captured_verifier(self.folder,collector)
+        verifier.unlink()
+        with self.assertRaisesRegex(AssertionError,'missing captured'):captured_verifier(self.folder,collector)
+
+    def test_original_captured_verifier_matches_the_immutable_collector(self):
+        folder=Path(__file__).parent.parent/'evidence/runs/20a23ce1-r12-continuous'
+        collector=json.loads((folder/'collector-receipt.json').read_text())
+        self.assertEqual(captured_verifier(folder,collector),folder/'host-verifier.py')
 
 
 if __name__ == '__main__':

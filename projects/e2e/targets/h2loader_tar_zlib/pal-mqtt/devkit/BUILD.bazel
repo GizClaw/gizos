@@ -1,3 +1,5 @@
+load("@rules_cc//cc:defs.bzl", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//projects/e2e/libs/pal-mqtt-device:device_test.bzl", "mqtt_device_test")
 load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_esp_idf_firmware")
 load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
@@ -52,6 +54,7 @@ firmware_lib_component(
 firmware_native_component(
     name = "launcher",
     srcs = ["main/main.c"],
+    hdrs = ["main/ledger_console.h"],
     component_directory = "projects/e2e/targets/h2loader_tar_zlib/pal-mqtt/devkit/main",
     component_name = "main",
     data = [
@@ -78,6 +81,7 @@ h2loader_esp_idf_firmware(
         "main/CMakeLists.txt",
         "main/idf_component.yml",
         "main/main.c",
+        "main/ledger_console.h",
         "sdkconfig.pal-mqtt.defaults",
     ],
     board = "devkit",
@@ -99,3 +103,18 @@ h2loader_tar_zlib(
 )
 
 mqtt_device_test(name = "device_test", package = ":package", target = "esp32s3")
+
+cc_test(
+    name = "ledger_console_test",
+    srcs = ["main/ledger_console.h", "tests/test_ledger_console.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["main"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//projects/e2e/libs/pal-mqtt-device:runner"],
+)

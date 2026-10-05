@@ -382,7 +382,7 @@ class Fixture:
                 raise RuntimeError('TLS rejection requires distinct untrusted-CA and wrong-name alerts')
             if by_reason['SSLV3_ALERT_BAD_CERTIFICATE'].get('server_name') != 'wrong-name.invalid' or \
                 'server_name' not in by_reason['TLSV1_ALERT_UNKNOWN_CA'] or \
-                by_reason['TLSV1_ALERT_UNKNOWN_CA']['server_name'] not in (None, 'localhost', self.advertised):
+                by_reason['TLSV1_ALERT_UNKNOWN_CA']['server_name'] not in ('localhost', self.advertised):
                 raise RuntimeError('TLS rejection server-name does not match its case')
             required = {'publish-qos0': 'publish', 'publish-qos1': 'incoming-puback',
                         'authenticated': 'connect', 'auth-refused': 'auth-refused',

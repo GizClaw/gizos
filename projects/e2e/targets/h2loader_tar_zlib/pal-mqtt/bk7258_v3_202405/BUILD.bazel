@@ -1,4 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_test")
+load("@rules_python//python:defs.bzl", "py_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//projects/e2e/libs/pal-mqtt-device:device_test.bzl", "mqtt_device_test")
 load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_bk7258_firmware")
@@ -134,4 +135,22 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = ["//libs/pal"],
+)
+
+py_test(
+    name = "import_qualification_test",
+    srcs = ["tools/import_qualification.py", "tools/test_import_qualification.py"],
+    data = [
+        "evidence/runs/20a23ce1-r12-continuous/collector-receipt.json",
+        "evidence/runs/20a23ce1-r12-continuous/host-verifier.py",
+    ],
+    imports = ["tools"],
+    legacy_create_init = 0,
+    main = "tools/test_import_qualification.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
 )

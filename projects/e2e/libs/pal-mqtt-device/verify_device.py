@@ -88,20 +88,26 @@ def after_accepted_reboot(text, target):
 def boot_ledger(text, ids, version, previous=None):
     boot = run = summary = accepted = None
     rows = []
+    startup_markers = set()
+    platform_started = False
     text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
     for line in text.splitlines():
         if 'H2_PAL_MQTT_' in line:
             record = line.split('H2_PAL_MQTT_', 1)[1]
             assert '\ufffd' not in record, 'corrupt MQTT protocol record'
-        if re.search(STARTUP_MARKER, line):
-            boot = run = summary = accepted = None
-            rows = []
+        startup = re.search(STARTUP_MARKER, line)
+        if startup:
+            execution_boot = 'H2_PAL_MQTT_BOOT ' in line
+            assert boot is None and run is None and accepted is None and \
+                (not platform_started or execution_boot), 'later startup cannot replace the first boot'
+            assert startup.group(0) not in startup_markers, 'later startup cannot replace the first boot'
+            startup_markers.add(startup.group(0))
+            if 'H2_PAL_MQTT_PLATFORM_BOOT ' in line:
+                platform_started = True
             if 'H2_PAL_MQTT_BOOT ' in line:
                 boot = fields(line.split('H2_PAL_MQTT_BOOT ', 1)[1])
-                if boot.get('version') != version:
-                    boot = None
-                elif not re.fullmatch(r'[0-9a-f]{32}-[0-9a-f]{16}', boot.get('id', '')):
-                    raise AssertionError('invalid fresh execution nonce')
+                assert boot.get('version') == version, 'first boot belongs to another version'
+                assert re.fullmatch(r'[0-9a-f]{32}-[0-9a-f]{16}', boot.get('id', '')), 'invalid fresh execution nonce'
             continue
         if 'H2_PAL_MQTT_RUN ' in line:
             assert run is None, 'later replay cannot replace the first ledger'
@@ -132,7 +138,8 @@ def boot_ledger(text, ids, version, previous=None):
             assert accepted is not None and 'confirmation' not in accepted, 'duplicate or premature confirmation'
             confirmation = fields(line.split('H2_PAL_MQTT_CONFIRMED ', 1)[1])
             assert accepted is not None and accepted['ready'].get('confirm') == 'pending', 'confirmation without delivered READY'
-            assert accepted['ready'].get('board') == confirmation.get('board') == 'bk7258' and confirmation.get('rc') == '0', 'app confirmation failed'
+            assert accepted['ready'].get('board') in ('bk7258','devkit') and \
+                accepted['ready'].get('board') == confirmation.get('board') and confirmation.get('rc') == '0', 'app confirmation failed'
             accepted['confirmation'] = confirmation
         if re.search(r'panic|hard fault|assert failed|H2_PAL_MQTT_SETUP_FAIL', line, re.I):
             raise AssertionError('boot/runtime failure')
@@ -183,7 +190,7 @@ def verify_witness(receipt, execution):
         if case == 'tls-wrong-name':
             assert event['server_name'] == 'wrong-name.invalid', 'wrong-name rejection belongs to another handshake'
         else:
-            assert event['server_name'] in (None, 'localhost', receipt['inputs']['advertised']), 'untrusted CA rejection used wrong hostname'
+            assert event['server_name'] in ('localhost', receipt['inputs']['advertised']), 'untrusted CA rejection lacks its observed hostname'
         row = next((row for row in execution['cases'] if row['id'] == case), None)
         assert row and row['status'] == 'PASS' and row['detail'] == 0, 'TLS handshake has no matching device assertion'
         observed[case] = event

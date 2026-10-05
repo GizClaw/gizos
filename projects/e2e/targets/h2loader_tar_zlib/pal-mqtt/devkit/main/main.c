@@ -5,6 +5,7 @@
 #include "h2_esp_target_task_policy.h"
 #include "h2_coremqtt.h"
 #include "device_runner.h"
+#include "ledger_console.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "psa/crypto.h"
@@ -16,6 +17,17 @@ static h2_coremqtt_t *mqtt;
 static h2_pal_mqtt_api_t mqtt_api;
 static h2_mqtt_device_result_t result;
 static size_t owner_bytes;
+static h2_mqtt_esp_ledger_console_t console;
+static const h2_pal_log_api_t *board_log;
+
+static int ledger_log(void *user,h2_pal_log_level_t level,const char *scope,const char *message) {
+    (void)user;
+    if(scope!=NULL && strcmp(scope,"pal-mqtt")==0)return h2_mqtt_esp_console_record(&console,message);
+    return h2_pal_log_write(board_log,level,scope,message);
+}
+static const h2_pal_log_vtable_t ledger_log_vtable={.write=ledger_log};
+static const h2_pal_log_api_t ledger_log_api={.vtable=&ledger_log_vtable};
+static int confirm_app(void *user) { return h2_esp_h2loader_app_confirm(user); }
 
 static void hold(void) { for (;;) vTaskDelay(pdMS_TO_TICKS(1000u)); }
 static void fail(const char *stage, int rc) {
@@ -80,12 +92,10 @@ static void run(void *user) {
     if (provider_cleanup != H2_PAL_OK) result.cleanup = provider_cleanup;
     if (rc == H2_PAL_OK && result.cleanup != H2_PAL_OK) rc = result.cleanup;
     result.rc = rc;
-    int confirm = rc == H2_PAL_OK ? h2_esp_h2loader_app_confirm(runtime) : H2_PAL_ERR_INVALID_STATE;
     /* One immutable terminal ledger per boot. Later replay cannot replace an
      * incomplete first capture in the independent host admission. */
-    h2_mqtt_device_replay(runtime, &result);
-    printf("H2_PAL_MQTT_READY board=devkit rc=%d confirm=%d provider_cleanup=%d\n", rc, confirm, provider_cleanup);
-    fflush(stdout);
+    int delivered=h2_mqtt_esp_console_complete(&console,runtime,&result,provider_cleanup,confirm_app,runtime);
+    if(delivered!=H2_PAL_OK)fail("ledger-or-confirm",delivered);
     hold();
 }
 void app_main(void) {
@@ -123,6 +133,10 @@ void app_main(void) {
         mqtt = NULL;
         fail("runtime-or-commands", rc);
     }
+    board_log=runtime->log;
+    console.usb=h2_esp_platform_usb_jtag_io_stream_api();
+    console.timeout_ms=5000u;
+    runtime->log=&ledger_log_api;
     printf("H2_PAL_MQTT_PROVIDER policy=coremqtt allocator=psram incoming=8 outgoing=8 owner_bytes=%zu\n", owner_bytes);
     const h2_pal_task_options_t options = {.name = h2_pal_mqtt_device_runner_task_name, .min_stack_size = 65536u};
     h2_pal_task_t *task = NULL;

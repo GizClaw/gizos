@@ -98,7 +98,8 @@ static void run(void *unused){
     result.cleanup=after==H2_PAL_OK && memcmp(result.before,result.after,sizeof(result.before))==0?H2_PAL_OK:H2_PAL_ERR_IO;
     if(rc==H2_PAL_OK && result.cleanup!=H2_PAL_OK)rc=result.cleanup;
     result.rc=rc;
-    h2_mqtt_device_replay(runtime,&result);
+    int ledger=h2_mqtt_device_replay(runtime,&result);
+    if(ledger!=H2_PAL_OK){rc=ledger;failed_stage="ledger-delivery";}
     if(console.error!=H2_PAL_OK){rc=console.error;failed_stage="ledger-write";}
 restore_commands: ;
     /* Release before restart so old monitor bytes/overflow cannot enter a new

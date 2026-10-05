@@ -13,5 +13,6 @@ int h2_mqtt_device_prepare(h2_runtime_t *runtime);
 typedef int (*h2_mqtt_device_digest_fn)(void *user, const uint8_t *bytes, size_t length, uint8_t digest[32]);
 int h2_mqtt_device_run(h2_runtime_t *runtime, unsigned outgoing_capacity,
     h2_mqtt_device_digest_fn digest, void *digest_user, h2_mqtt_device_result_t *out);
-void h2_mqtt_device_replay(h2_runtime_t *runtime, const h2_mqtt_device_result_t *result);
+/* Return only after every first-ledger record was accepted by the log sink. */
+int h2_mqtt_device_replay(h2_runtime_t *runtime, const h2_mqtt_device_result_t *result);
 #endif
