@@ -8,6 +8,8 @@ The POSIX DNS list preserves the order of retained resolver answers, deduplicate
 
 WASM exercises actual browser Fetch on an IPv6 literal and WebRTC/DTLS/SCTP on an IPv6 ICE link. Its canonical raw Net boundary remains an explicit SKIP; a browser PASS never claims raw TCP/UDP/TLS or raw resolver qualification. Signaling forwarding in the browser harness carries only fixture SDP/control; ICE/data/media traffic goes directly to the local IPv6 Pion endpoint.
 
+The DNS peer witness is published after a successful nonce-bound AAAA response send. The send and record append share the snapshot/verification lock, so verification waits for this publication after the client receives the response. `//projects/e2e/libs/pal-ipv6-fixture:dns_publication_test` automatically exercises this ordering with real loopback UDP and Events on compatible macOS/Linux hosts; failed sends and wrong nonces must still reject qualification.
+
 ## Commands
 
 The Desktop test starts all declared peers on loopback and runs automatically in the compatible host CI graph without tags. Browser and mobile tests require their prepared environment and remain `manual`/`external`, so each invocation observes fresh state while build/disk caches remain on. Explicit external DNS qualification with the Desktop target must use `--nocache_test_results`.
