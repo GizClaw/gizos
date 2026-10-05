@@ -75,10 +75,11 @@ int h2_ntp_sync(const h2_ntp_client_config_t *config, h2_ntp_sync_result_t *out_
         if (rc != H2_PAL_OK) {
             return H2_NTP_ERR_UNSUPPORTED;
         }
-        /* An uncalibrated clock cannot supply UTC yet. Its monotonic value
-         * supplies the request's echoed transaction timestamp and the local
-         * elapsed-time reference only; never publish it as wall time. The
-         * validated server response supplies UTC for the first calibration. */
+        /* Cold clocks use a synthetic Unix-valued reference for the echoed
+         * timestamp, era selection and offset calculation. The packet decoder
+         * selects the nearest nonnegative era; ordinary boot uptimes select
+         * its first post-1970 occurrence. Never publish this reference as UTC:
+         * the validated server response supplies the clock estimate. */
         if (cold_start) {
             wall_ms = mono_start_ms;
         }

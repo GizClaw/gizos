@@ -8,6 +8,7 @@
 typedef struct fixture {
     uint64_t monotonic_ms;
     uint64_t wall_ms;
+    uint64_t server_ms;
     uint32_t opens;
     uint32_t closes;
     uint32_t sends;
@@ -90,13 +91,19 @@ static int receive_udp(void *user, h2_pal_net_socket_t socket,
     /* Model a server reply: mode=server, stratum=2, echoed request timestamp,
      * and equal receive/transmit times so the fixture has 20 ms round trip. */
     uint8_t server_packet[H2_NTP_PACKET_SIZE];
-    assert(h2_ntp_build_request(SERVER_TIME_MS, server_packet) == H2_NTP_OK);
+    assert(h2_ntp_build_request(f->server_ms == 0u ? SERVER_TIME_MS : f->server_ms,
+                                server_packet) == H2_NTP_OK);
     memset(packet, 0, len);
     packet[0] = 0x24u;
-    packet[1] = f->bad_reply ? 0u : 2u;
+    packet[1] = f->bad_reply == 1 ? 0u : 2u;
     memcpy(packet + 24u, f->request + 40u, 8u);
     memcpy(packet + 32u, server_packet + 40u, 8u);
     memcpy(packet + 40u, server_packet + 40u, 8u);
+    if (f->bad_reply == 2) {
+        packet[24] ^= 1u;
+    } else if (f->bad_reply == 3) {
+        memset(packet + 32u, 0, 16u);
+    }
     return (int)len;
 }
 
@@ -138,6 +145,10 @@ int main(void) {
     assert(cold.valid && cold.sets == 1u);
     assert(cold.wall_ms == SERVER_TIME_MS + 10u);
     assert(result.wall_clock_set && result.applied_wall_ms == cold.wall_ms);
+    assert(result.server_unix_ms == SERVER_TIME_MS);
+    assert(result.local_receive_monotonic_ms == 123476u);
+    assert(result.offset_ms == (int64_t)SERVER_TIME_MS - 123466);
+    assert(result.round_trip_ms == 20u);
     assert(cold.opens == 1u && cold.closes == 1u);
 
     fixture_t warm = {
@@ -146,6 +157,33 @@ int main(void) {
     };
     assert(sync(&warm, 0u, &result) == H2_NTP_OK);
     assert(warm.wall_ms == SERVER_TIME_MS + 10u && warm.sets == 1u);
+    assert(result.offset_ms == 9990 && result.round_trip_ms == 20u);
+
+    /* With no calendar reference, the identical timestamp in a later era
+     * folds to the first post-1970 occurrence. A warm clock resolves it. */
+    const uint64_t era_ms = (UINT64_C(1) << 32) * 1000u;
+    fixture_t alias = {
+        .monotonic_ms = 123456u, .server_ms = SERVER_TIME_MS + era_ms,
+    };
+    assert(sync(&alias, 0u, &result) == H2_NTP_OK);
+    assert(result.server_unix_ms == SERVER_TIME_MS);
+    assert(alias.wall_ms == SERVER_TIME_MS + 10u);
+    fixture_t later = {
+        .monotonic_ms = 123456u, .server_ms = SERVER_TIME_MS + era_ms,
+        .wall_ms = SERVER_TIME_MS + era_ms - 10000u, .valid = 1,
+    };
+    assert(sync(&later, 0u, &result) == H2_NTP_OK);
+    assert(result.server_unix_ms == later.server_ms);
+    assert(later.wall_ms == later.server_ms + 10u && result.offset_ms == 9990);
+
+    /* The first nonzero millisecond after the 2036 rollover is era 1;
+     * an all-zero server timestamp remains invalid rather than being guessed. */
+    fixture_t rollover = {
+        .monotonic_ms = 123456u, .server_ms = UINT64_C(2085978496001),
+    };
+    assert(sync(&rollover, 0u, &result) == H2_NTP_OK);
+    assert(result.server_unix_ms == rollover.server_ms);
+    assert(rollover.wall_ms == rollover.server_ms + 10u);
 
     fixture_t timeout = {.monotonic_ms = 123456u, .timeouts = 3u};
     assert(sync(&timeout, 2u, &result) == H2_NTP_ERR_TIMEOUT);
@@ -159,6 +197,13 @@ int main(void) {
     fixture_t bad = {.monotonic_ms = 123456u, .bad_reply = 1};
     assert(sync(&bad, 0u, &result) == H2_NTP_ERR_UNSYNCED);
     assert(!bad.valid && bad.sets == 0u && bad.closes == 1u);
+
+    fixture_t txid = {.monotonic_ms = 123456u, .bad_reply = 2};
+    assert(sync(&txid, 0u, &result) == H2_NTP_ERR_TXID_MISMATCH);
+    assert(!txid.valid && txid.sets == 0u && txid.closes == 1u);
+    fixture_t zero = {.monotonic_ms = 123456u, .bad_reply = 3};
+    assert(sync(&zero, 0u, &result) == H2_NTP_ERR_MALFORMED);
+    assert(!zero.valid && zero.sets == 0u && zero.closes == 1u);
 
     fixture_t clock_error = {.status_result = H2_PAL_ERR_IO};
     assert(sync(&clock_error, 0u, &result) == H2_NTP_ERR_UNSUPPORTED);
