@@ -55,6 +55,14 @@ int h2_ntp_parse_response(
     uint64_t local_receive_wall_ms,
     uint64_t local_receive_monotonic_ms,
     h2_ntp_sync_result_t *out_result);
+/**
+ * Synchronize against the configured UDP server, with bounded per-attempt
+ * receive waits. An uncalibrated wall clock is supported: monotonic time is
+ * used only as the request transaction reference until the validated reply
+ * supplies UTC. Other clock-provider errors do not start network traffic.
+ * If set_wall_clock is nonzero, success requires setting the caller's clock;
+ * an unsupported setter returns H2_NTP_OK_TIME_SET_UNSUPPORTED instead.
+ */
 int h2_ntp_sync(const h2_ntp_client_config_t *config, h2_ntp_sync_result_t *out_result);
 
 #ifdef __cplusplus
