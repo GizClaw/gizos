@@ -1,6 +1,7 @@
 #include "h2_desktop_platform.h"
 #include "h2_pal_ipv6_runner.h"
-#include "h2_webrtc_compat_factory.h"
+#include "h2_peer.h"
+#include "h2_sctp.h"
 #include "h2_wolfssl.h"
 #include "projects/e2e/libs/pal-net-tls-runner/runner.h"
 #if defined(__APPLE__)
@@ -17,6 +18,40 @@
 #include <net/if.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+/* Every peer in this Desktop fixture is on loopback. Select that actual OS
+ * interface for ICE host candidates instead of depending on an active NIC
+ * having a signalable, non-link-local IPv6 address. Socket I/O stays real. */
+static int loopback_host_family(void *user, const char *prefix,
+    h2_pal_net_family_t family, h2_pal_net_addr_t *out) {
+  (void)user;
+  if (prefix && prefix[0])
+    return h2_pal_net_get_host_addr_family(host_net(), prefix, family, out);
+  h2_pal_net_addr_t assigned;
+  int rc = h2_pal_net_get_host_addr_family(host_net(),
+#if defined(__APPLE__)
+      "lo0",
+#else
+      "lo",
+#endif
+      family, &assigned);
+  if (rc != H2_PAL_OK)
+    return rc;
+  /* An UP loopback interface may also have a scoped fe80 address. Obtain its
+   * unscoped localhost answer from the owned resolver; do not serialize a
+   * host-local interface scope or invent a candidate address. */
+  h2_pal_net_addr_list_t addresses;
+  rc = h2_pal_net_resolve_all(host_net(), "localhost", family, &addresses);
+  if (rc != H2_PAL_OK || addresses.count == 0u)
+    return rc != H2_PAL_OK ? rc : H2_PAL_ERR_NOT_FOUND;
+  *out = addresses.addrs[0];
+  char line[100];
+  snprintf(line, sizeof(line),
+           "H2_PAL_IPV6_HOST_SELECTION family=%d assigned_scope=%u selected_scope=%u",
+           (int)family, assigned.scope_id, out->scope_id);
+  h2_pal_log_write(h2_desktop_platform_log_api(), H2_PAL_LOG_INFO, "pal-ipv6", line);
+  return H2_PAL_OK;
+}
 
 static size_t read_ca(const char *path, uint8_t *bytes, size_t capacity) {
   FILE *file = fopen(path, "rb");
@@ -46,13 +81,28 @@ int main(int argc, char **argv) {
   h2_wolfssl_config_t tls = {.mem = *runtime.mem, .entropy = host_entropy};
   if (h2_wolfssl_init(&tls) != H2_PAL_OK)
     return 2;
-  h2_webrtc_compat_backend_t backend = {0};
-  if (h2_webrtc_compat_backend_create(&backend) != H2_PAL_OK) {
+  runtime.crypto = h2_wolfssl_crypto_api();
+  h2_pal_net_vtable_t ice_vtable = *runtime.net->vtable;
+  ice_vtable.get_host_addr_family = loopback_host_family;
+  const h2_pal_net_api_t ice_net = {runtime.net->user, &ice_vtable};
+  h2_sctp_t *sctp = NULL;
+  const h2_sctp_config_t sctp_config = {.mem = runtime.mem, .crypto = runtime.crypto};
+  if (h2_sctp_create(&sctp_config, &sctp) != H2_PAL_OK) {
     (void)h2_wolfssl_deinit();
     return 2;
   }
-  runtime.webrtc = backend.api;
-  runtime.crypto = h2_wolfssl_crypto_api();
+  h2_peer_t *peer = NULL;
+  const h2_peer_config_t peer_config = {.mem = runtime.mem, .log = runtime.log,
+      .net = &ice_net, .queue = h2_desktop_platform_queue_api(),
+      .sync = h2_desktop_platform_sync_api(), .task = h2_desktop_platform_task_api(),
+      .time = runtime.time, .crypto = runtime.crypto,
+      .dtls = h2_wolfssl_dtls_api(), .sctp = h2_sctp_api(sctp)};
+  if (h2_peer_create(&peer_config, &peer) != H2_PAL_OK) {
+    (void)h2_sctp_destroy(&sctp);
+    (void)h2_wolfssl_deinit();
+    return 2;
+  }
+  runtime.webrtc = h2_peer_webrtc_api(peer);
   h2_net_tls_fixture_client_t client = {.runtime = &runtime,
                                         .host = argv[1],
                                         .session = argv[3],
@@ -93,13 +143,15 @@ int main(int argc, char **argv) {
                     .family = H2_PAL_NET_FAMILY_IPV6}};
   if (h2_ipv6_parse_address(runtime.net, argv[7],
                             &config.transport.dns_expected) != H2_PAL_OK) {
-    backend.destroy(backend.state);
+    h2_peer_destroy(&peer);
+    (void)h2_sctp_destroy(&sctp);
     (void)h2_wolfssl_deinit();
     return 2;
   }
   if (h2_ipv6_parse_address(runtime.net, argv[1], &config.dns_server) !=
       H2_PAL_OK) {
-    backend.destroy(backend.state);
+    h2_peer_destroy(&peer);
+    (void)h2_sctp_destroy(&sctp);
     (void)h2_wolfssl_deinit();
     return 2;
   }
@@ -107,8 +159,11 @@ int main(int argc, char **argv) {
   config.dns_server.port = (uint16_t)strtoul(argv[13], NULL, 10);
   h2_pal_ipv6_result_t result;
   int rc = h2_pal_ipv6_e2e_run(&config, &result);
-  backend.destroy(backend.state);
-  int teardown = h2_wolfssl_deinit();
+  h2_peer_destroy(&peer);
+  int teardown = h2_sctp_destroy(&sctp);
+  int crypto_teardown = h2_wolfssl_deinit();
+  if (teardown == H2_PAL_OK)
+    teardown = crypto_teardown;
   h2_ipv6_write_report(NULL, host_platform, &result, rc, teardown);
   return rc == H2_PAL_OK && teardown == H2_PAL_OK ? 0 : 1;
 }
