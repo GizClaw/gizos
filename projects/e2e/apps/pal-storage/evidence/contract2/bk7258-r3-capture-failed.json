@@ -1,0 +1,19 @@
+{
+  "contract": 2,
+  "platform": "bk7258",
+  "qualified": false,
+  "status": "capture_failed",
+  "source_revision": "05f2ac2219dbb8687e616b5a568b50c0ce68447b",
+  "version": "pref-bk-cache-r3",
+  "artifact": {
+    "sha256": "872eee1b8bccab214072e0f6596e1056ca62dd1b82a0cbcd0fe66fd6ad56f8c7",
+    "image_sha256": "6f78023275ab5e375f63b9aa7d0e2d2a3ded9c6773b00d1144cd8522aceb4c4f"
+  },
+  "observed_fresh_boots": 0,
+  "observed_replay_boots": 259,
+  "actual_cli_exit": 3,
+  "raw_log_sha256": "e970745ae8559acd81f3ca9301bd448e3c5ec336295ee76abda41a634c5a6f2e",
+  "recorded_at_utc": "2026-10-04T14:32:18.773797+00:00",
+  "reason": "collector did not establish five independent qualified boots",
+  "evidence_boundary": "Historical collector failure, not a new-source result and not five-boot qualification. Phase-local PASS/replay/confirmation cannot supply a missing fresh marker or the other phases."
+}

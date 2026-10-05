@@ -35,6 +35,8 @@ Platform artifact entry 持有 Runtime assembly、具体 provider、endpoint 与
 | PAL Core | `//projects/e2e/apps/pal-core/app:pal_core_e2e` | 独立 Core v2：46 个接口、41 个必过用例；macOS、Browser/WASM、DevKit ESP32-S3 USB 串口、BK7258 AP UART1 H2Loader |
 | PAL JSON | `//projects/e2e/apps/pal-json/app:pal_json_e2e` | 独立 JSON：24 个接口、15 个必过用例；macOS、Browser/WASM、iOS/Android 实际 SDK 包、DevKit 与 BK7258，记录完整运行与清理证据 |
 | PAL HTTP | `//projects/e2e/apps/pal-http/app:pal_http_e2e` | 独立 HTTP：45 个必跑 case；macOS、Browser、iOS/Android 实际 SDK 包消费 App 与 DevKit/BK7258 专用入口，逐平台保留真实运行证据 |
+| PAL Storage | `//projects/e2e/apps/pal-storage/app:pal_storage_e2e` | 独立 FS/Pref 契约 2：28 个操作、36 个必跑 case；三个独立启动阶段及完成后再次启动检查，逐平台保留实际资格记录 |
+| PAL MQTT | `//projects/e2e/apps/pal-mqtt/app:pal_mqtt_e2e` | 独立 MQTT：8 个操作、36 个必跑 case；真实 TCP/TLS broker、事件/ACK 与资源清理，按各平台实际执行记录验收 |
 | PAL WebRTC | `//projects/e2e/apps/pal-webrtc/app:pal_webrtc_e2e` | 独立 WebRTC：13 个操作、43 个 mandatory case；六端独立入口及真实 Pion 对端，按各端完整 ledger 授予资格 |
 | PAL Audio Decoder | `//projects/e2e/apps/pal-audio-decoder/app:pal_audio_decoder_e2e` | 独立 AAC-LC RAW 解码：8 个操作、29 个必过 case；六端入口已实现，实际资格以各端完整 PCM、生命周期与清理记录为准 |
 | PAL Audio | `//projects/e2e/apps/pal-audio/app:pal_audio_e2e` | 独立 Audio：11 个 provider 与 5 个 track 操作、24 个必过 case；macOS、真实 Chromium Worker、iOS/Android SDK 包消费 App、AMOLED ESP32-S3 与 BK7258，逐端验证 30 秒同时采播和完整清理 |
@@ -44,7 +46,7 @@ Platform artifact entry 持有 Runtime assembly、具体 provider、endpoint 与
 | WebRTC Performance | `//projects/e2e/apps/webrtc-performance/app:webrtc_performance` | Desktop H2Peer + local Pion；DevKit 与 AMOLED ESP32-S3 H2Peer + operator LAN Pion |
 | iperf | `//projects/e2e/apps/iperf/app:iperf_e2e` | Desktop host client + PAL server；AMOLED ESP32-S3 + operator LAN PAL server |
 
-未来独立的 `corehttp` 与 `coremqtt` 只有在 case 和 platform matrix 已经定义时才创建。PAL App 只验证 PAL API 的跨目标公共行为，不吸收 backend-local unit、fake 或 protocol tests。Provider 名属于 launcher target；不能为了 H2Peer、Pion 或另一 backend 复制 portable case registry。H106 production App、adapter、UI 与业务 policy 继续属于 `projects/h106`；H106 E2E 的 evidence boundary 和运行合同见 产品 E2E。
+独立 HTTP 与 MQTT 测试分别由 `pal-http` 和 `pal-mqtt` App 持有公共 case 和平台验收合同。PAL App 只验证 PAL API 的跨目标公共行为，不吸收 backend-local unit、fake 或 protocol tests。Provider 名属于 launcher target；不能为了 H2Peer、Pion 或另一 backend 复制 portable case registry。H106 production App、adapter、UI 与业务 policy 继续属于 `projects/h106`；H106 E2E 的 evidence boundary 和运行合同见 产品 E2E。
 
 ## Atomic
 
@@ -225,11 +227,29 @@ Portable/desktop tests 证明 case contract、provider assembly、parser、failu
 
 ## PAL Storage
 
-`projects/e2e/apps/pal-storage` 是独立 portable App，覆盖 FileSystem 的 11 个 vtable 操作，以及 Preferences API 的 open 和 namespace 的 16 个方法，共 28 项。稳定 registry 包含 30 个必选 case；28 个操作的完整映射由独立 public-header inventory 测试校验。Disk 的分区擦写属于后续独立资格领域，不计入本 App。
+`projects/e2e/apps/pal-storage` 是独立 portable App，覆盖 FileSystem 的 11 个 vtable 操作，以及 Preferences API 的 open 和 namespace 的 16 个方法，共 28 项。契约 2 的稳定 registry 包含 36 个必选 case；28 个操作的完整映射由独立 public-header inventory 测试校验。Preferences 包含 16 KiB Blob、长度/整数/字符串边界、100 次 commit/close/reopen，以及 1000 次同键覆盖写后的精确键数和持久最终值。Disk 的分区擦写属于后续独立资格领域，不计入本 App。
 
-Storage 必须分两次独立进程或 boot 执行：seed 阶段执行 27 项并提交确定的数据，verify 阶段执行 3 项，读回与 nonce 绑定的文件及全部 Preferences 类型并清理专用数据。宿主只在两阶段 case 清单、nonce、版本、返回值和 cleanup 全部匹配时授予资格。Desktop/macOS 使用真实 OS FS 和 SQLite，Web 使用 IDBFS/localStorage 并重新启动整个浏览器，移动端测试 App 使用 SDK 包内的原生 storage owner，在两次独立 App 进程间保留 sandbox。DevKit 使用板载 Flash LittleFS，BK7258 使用 SD FATFS 和 FlashDB；板级测试数据限定在 `/data/pal-storage` 和 `h2storea`/`h2storeb`，`h2storectl` 只保存本测试版本绑定的阶段元数据。
+Storage 必须分三个独立进程或 boot 执行：seed 阶段执行 31 项并提交与 nonce 绑定的数据，verify 阶段执行 3 项，读回文件、16 KiB Blob、全部 Preferences 类型和覆盖写结果，再对 namespace A 逐键 remove+commit、namespace B clear+commit 并删除专用文件路径；clean-verify 阶段执行 2 项，使用全新 provider 确认测试键和文件路径均已持久删除。宿主最后再次启动检查完成状态仍为空；该重复结果单列，不增加唯一 case 通过数。只有全部阶段 case 清单、nonce、contract、版本、返回值和 cleanup 匹配才授予资格。Desktop/macOS 使用真实 OS FS 和 SQLite，Web 使用 IDBFS/localStorage 并重新启动整个浏览器，移动端使用实际 SDK 包中的原生 storage owner，并在四次独立 App 进程间保留 sandbox、核对 provider 导出与 SDK 字节。DevKit 使用板载 Flash LittleFS，BK7258 使用 SD FATFS 和 FlashDB；板级测试数据限定在 `/data/pal-storage` 和 `h2storea`/`h2storeb`，`h2storectl` 保存实际镜像版本、契约版本、nonce 和下一阶段。
 
-命令与平台证据见 `projects/e2e/apps/pal-storage/README.md`；iOS/Android 模拟器入口分别为 `make bazel-test-ios_pal_storage_simulator_test` 和 `make bazel-test-android_pal_storage_simulator_test`。外部设备与已启动模拟器的测试是 `manual`，其结果不能由旧缓存代替。正常重启验证不表示断电原子性或物理介质寿命已验证。
+命令与平台证据见 `projects/e2e/apps/pal-storage/README.md` 和 `qualification-v2.json`。iOS/Android 模拟器直接使用 `//projects/e2e/targets/ios_application/pal-storage:ios_pal_storage_simulator_test` 和 `//projects/e2e/targets/android_binary/pal-storage:android_pal_storage_simulator_test`，显式指定测试设备。外部设备与已启动模拟器的测试是 `manual`，每轮执行关闭测试结果缓存，构建缓存保持启用。历史契约 1 的 30-case 证据保留原始身份，不能代替契约 2 的新增强度；正常重启验证不表示断电原子性或物理介质寿命已验证。
+
+BK 的物理 FlashDB 分区为 128 KiB，其中原 `h2_pref` 保留 24 KiB/4 KiB sector 和已有编码，尾部 `h2_pref_large` 使用剩余 104 KiB。大值以真实 FlashDB 的不可变分片和最后发布的 manifest 保存，读取验证完整 generation，迭代只返回逻辑键和值大小；旧 Loader 的小值和管理数据继续走原区。未知非空尾部拒绝自动格式化。固定 SDK 的 GC/恢复错误由带原文件 SHA 校验的构建 overlay 修复，SDK checkout 不变；真实 NOR 回归和私有实板备份兼容检查分别验证故障恢复和旧值不变。实现及边界见 `native_component_src/bk7258/ap/h2_pal_core/tests/README.pref-large.md`。硬件诊断等待预算不减少 16 KiB、1000 次写入或五次 boot 的要求。
+
+## PAL MQTT
+
+`projects/e2e/apps/pal-mqtt` 持有 MQTT 八个公开 operation 的固定 36-case registry。Portable App 只借用 Runtime 中的真实 MQTT、Time、Memory 等能力；平台入口拥有 provider、网络端点和 lifecycle。验收覆盖 QoS0/QoS1、匹配 packet ID 的 ACK、多订阅/unsubscribe、二进制与大消息、同步提交后的输入 lifetime、认证拒绝、真实 TLS 的错误 CA/hostname、连接/keepalive timeout、远端断线、reconnect、capacity 恢复和重复 lifecycle。公开 API 没有 cancel，也不声明 QoS2、持久 session replay 或 TLS resumption 已通过。
+
+`projects/e2e/libs/pal-mqtt-fixture` 提供真实 MQTT 3.1.1 wire 对端，维护订阅路由、QoS ACK、retained 状态和各 case 的可控失败行为。TLS 由本轮测试 CA/certificate 提供，错误 CA/hostname 必须同时有真实 ClientHello、Certificate 和失败 handshake 的 witness；可信证书不能取得拒绝证据。Fixture 禁用 session ticket/resumption，所有 MQTT client 必须回到各自 allocation baseline，最后 teardown 检查 client、retained message 和资源清理。受控协议 subset 的通过不表示任意生产 broker 互通已完成。
+
+CoreMQTT 的私有传输在同一配置 deadline 内发送完整向量，继续处理真实短写和 `WOULD_BLOCK`，只计已接受的字节；超时保留 PAL timeout。Connect 使用连接预算，publish/subscribe/unsubscribe/disconnect 使用请求或 operation 预算，process 的短轮询预算保持独立。固定 10 ms 的 vendor 重试间隔不能截断仍在 PAL 操作预算内推进的分段发送。BK 在资源测量前 stop/join 管理会话，完整首份 ledger 通过原生 SDK console 输出后再恢复管理服务和确认 App；资源门槛仍严格比较 before/after。
+
+iOS/Android 消费实际 SDK 包导出的显式 MQTT owner；owner 持有本平台 Net/WolfSSL 引用、四个 incoming/outgoing QoS1 record 和借用 allocator，失败创建须回收已取得的资源，busy destroy 保留 owner 供重试。测试 launcher 显式注入其 MQTT API，AppHost 默认 assembly 保持 canonical unsupported。移动端核对 SDK public header/factory 符号、iOS IPA/XCFramework 或 Android APK/AAR 的实际字节，并检查两次分配失败、全部 36 case、native resource balance 和 provider/core teardown。每轮真实 JSON 配置、CA、registry 与 artifact/hash manifest 保留本轮身份；临时 TLS 输入已清理后不能倒推补造旧证据。
+
+硬件独立入口为 `//projects/e2e/targets/h2loader_tar_zlib/pal-mqtt/devkit:package` 与 `//projects/e2e/targets/h2loader_tar_zlib/pal-mqtt/bk7258_v3_202405:package`。DevKit launcher 用真实 ESP Net/MbedTLS 与 PSRAM allocator 创建八个 incoming/outgoing record 的 coreMQTT，并在 suite 结束后销毁 provider、核对其实际 allocation 释放；BK 入口显式启用现有 native coreMQTT 开关，仍使用 board Runtime 的真实 provider。两者都要求受管升级与正常重启两次独立 36-case、对应 broker witness、原 Loader 与 coredump 保留、P2 有效且 Stage 清空。LAN fixture 默认 2 秒 TLS 握手预算，硬件诊断可显式指定其它预算并记录实际耗时和错误；新的 fixture 输入与固件包保持独立身份。
+
+Desktop 直接运行 `//projects/e2e/targets/cc_binary/pal-mqtt:desktop_test`；移动端分别使用 `//projects/e2e/targets/ios_application/pal-mqtt:ios_pal_mqtt_simulator_test` 和 `//projects/e2e/targets/android_binary/pal-mqtt:android_pal_mqtt_simulator_test`。公网 `:public_broker_test` 为 `manual`/`external`，同一 App 的单个 QoS0 round trip 只授予该子集通过，不能代替完整 registry。连接成功但没有 CONNACK 的负例预算由 launcher 注入，仍须 broker 实际观察到 CONNECT，并验证有限 deadline 的上下界；未到达 broker 的 TCP timeout 不满足该负例。入口、命令与平台能力边界见 `projects/e2e/apps/pal-mqtt/README.md`；缺少 raw TCP/TLS MQTT provider 的 Browser 保持明确 unsupported，不能把 host 结果当作六平台资格。
+
+新硬件 capture 的 BK/DevKit 均须 fixed-source package binding；首份 boot/RUN 不完整时后续 replay 或新 startup 不能替代。两者先完整交付首轮 ledger 与 READY(confirm=pending)，再确认 App 并交付实际 CONFIRMED，当前 verifier 拒绝缺少终态或以 confirm=0 绕过该时序的记录。DevKit 借用现有 USB JTAG PAL，逐条检查有界 write 的完整字节数和真实 TX flush；BK 保留原有 UART owner 与管理恢复流程。TLS 拒绝分别绑定实际 CA/hostname alert 与观察到的正常/错误 server-name，null 或缺失 SNI、两个同类失败均不能通过。LAN fixture 要求显式 `--evidence` 保存实际 CA/config/inputs。历史 BK 导入只运行并校验 capture 内的 `host-verifier.py`，其旧 confirm=0 schema 保留原含义；旧资格保留原 host/verifier/fixture schema，不能改称当前修订版 hardware PASS。
 
 ## PAL Crypto E2E
 

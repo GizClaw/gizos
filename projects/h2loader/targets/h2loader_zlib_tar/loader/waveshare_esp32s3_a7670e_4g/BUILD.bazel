@@ -1,0 +1,8 @@
+load("//projects/h2loader/tools/bazel:h2loader_zlib_tar.bzl", "h2loader_zlib_tar")
+
+package(default_visibility = ["//visibility:public"])
+
+h2loader_zlib_tar(
+    name = "package",
+    source = "//projects/h2loader/targets/h2loader_tar_zlib/loader/waveshare_esp32s3_a7670e_4g:package",
+)

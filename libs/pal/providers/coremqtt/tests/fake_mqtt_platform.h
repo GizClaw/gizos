@@ -27,6 +27,17 @@ typedef struct fake_mqtt_platform {
     int tls_verify_fail;
     int tls_called;
     int auto_respond;
+    uint32_t send_delay_ms;
+    size_t send_limit;
+    unsigned send_calls;
+    unsigned send_error_after;
+    int send_error;
+    int send_error_once;
+    uint32_t send_timeouts[128];
+    unsigned send_timeout_calls;
+    unsigned legacy_send_calls;
+    size_t live_allocations;
+    uint32_t recv_timeout_ms;
 } fake_mqtt_platform_t;
 
 void fake_mqtt_platform_init(fake_mqtt_platform_t *fake);

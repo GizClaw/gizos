@@ -79,7 +79,7 @@ int h2_h2loader_cli_server_options_parse(
     if (out == NULL) return 0;
     *out = (h2_h2loader_cli_server_options_t){
         .bind_host = "0.0.0.0",
-        .url_path = "/update.tar.zlib",
+        .url_path = "/update.tar",
         .download_timeout_ms = 660000u,
     };
     for (int i = 0; i < argc; ++i) {

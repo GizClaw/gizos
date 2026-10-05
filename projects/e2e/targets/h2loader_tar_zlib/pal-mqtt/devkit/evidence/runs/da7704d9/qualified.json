@@ -1,0 +1,1049 @@
+{
+  "manifest": {
+    "format": "1",
+    "role": "app",
+    "board": "devkit",
+    "target": "esp32s3",
+    "version": "mqtt-esp-da7704d9-r2",
+    "image_size": "1540688",
+    "image_sha256": "8dfc91b86ec0f013e327efc9e250dde83e8d53fe13a7ac1baa40202d5a3dc364"
+  },
+  "package_sha256": "40b83628cedd612b058994a1b3264db0e77e5240f13ec7cf1a7c6360f0c62845",
+  "uid": "9888e0115c52",
+  "port": "/dev/cu.usbmodem132201",
+  "managed": {
+    "boot": {
+      "id": "a71fa80023dd4e46ae6c880a4ded8339-786a90208ce9f979",
+      "version": "mqtt-esp-da7704d9-r2",
+      "epoch_ms": "1791119238503",
+      "ca_sha256": "1c6e541a10c2bcfec098bafdc6ecc890b122194c7a2fd0406b209e4c21a4602a"
+    },
+    "cases": [
+      {
+        "id": "open-close",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 0,
+        "connected": 0,
+        "received": 0,
+        "disconnected": 0
+      },
+      {
+        "id": "invalid-open-host",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 0,
+        "connected": 0,
+        "received": 0,
+        "disconnected": 0
+      },
+      {
+        "id": "invalid-open-buffer",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 1,
+        "connected": 0,
+        "received": 0,
+        "disconnected": 0
+      },
+      {
+        "id": "invalid-open-tls",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 0,
+        "connected": 0,
+        "received": 0,
+        "disconnected": 0
+      },
+      {
+        "id": "disconnected-operations",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 0,
+        "connected": 0,
+        "received": 0,
+        "disconnected": 0
+      },
+      {
+        "id": "connect-events",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 362,
+        "connected": 1,
+        "received": 0,
+        "disconnected": 1
+      },
+      {
+        "id": "repeated-connect",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 41,
+        "connected": 1,
+        "received": 0,
+        "disconnected": 1
+      },
+      {
+        "id": "subscribe-qos0",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 60,
+        "connected": 1,
+        "received": 0,
+        "disconnected": 1
+      },
+      {
+        "id": "subscribe-qos1",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 51,
+        "connected": 1,
+        "received": 0,
+        "disconnected": 1
+      },
+      {
+        "id": "subscribe-multi",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 89,
+        "connected": 1,
+        "received": 2,
+        "disconnected": 1
+      },
+      {
+        "id": "publish-qos0",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 208,
+        "connected": 1,
+        "received": 1,
+        "disconnected": 1
+      },
+      {
+        "id": "publish-qos1",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 201,
+        "connected": 1,
+        "received": 1,
+        "disconnected": 1
+      },
+      {
+        "id": "publish-binary",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 71,
+        "connected": 1,
+        "received": 1,
+        "disconnected": 1
+      },
+      {
+        "id": "publish-empty",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 78,
+        "connected": 1,
+        "received": 1,
+        "disconnected": 1
+      },
+      {
+        "id": "publish-large",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 79,
+        "connected": 1,
+        "received": 1,
+        "disconnected": 1
+      },
+      {
+        "id": "input-lifetime",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 78,
+        "connected": 1,
+        "received": 1,
+        "disconnected": 1
+      },
+      {
+        "id": "unsubscribe-ack",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 284,
+        "connected": 1,
+        "received": 0,
+        "disconnected": 1
+      },
+      {
+        "id": "retained-delivery",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 161,
+        "connected": 1,
+        "received": 1,
+        "disconnected": 1
+      },
+      {
+        "id": "idle-process",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 85,
+        "connected": 1,
+        "received": 0,
+        "disconnected": 1
+      },
+      {
+        "id": "invalid-qos",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 33,
+        "connected": 1,
+        "received": 0,
+        "disconnected": 1
+      },
+      {
+        "id": "invalid-publish",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 29,
+        "connected": 1,
+        "received": 0,
+        "disconnected": 1
+      },
+      {
+        "id": "invalid-subscribe",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 43,
+        "connected": 1,
+        "received": 0,
+        "disconnected": 1
+      },
+      {
+        "id": "invalid-unsubscribe",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 29,
+        "connected": 1,
+        "received": 0,
+        "disconnected": 1
+      },
+      {
+        "id": "local-disconnect",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 31,
+        "connected": 1,
+        "received": 0,
+        "disconnected": 1
+      },
+      {
+        "id": "reconnect",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 100,
+        "connected": 2,
+        "received": 1,
+        "disconnected": 2
+      },
+      {
+        "id": "authenticated",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 40,
+        "connected": 1,
+        "received": 0,
+        "disconnected": 1
+      },
+      {
+        "id": "auth-refused",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 29,
+        "connected": 0,
+        "received": 0,
+        "disconnected": 0
+      },
+      {
+        "id": "tls-trusted",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 444,
+        "connected": 1,
+        "received": 1,
+        "disconnected": 1
+      },
+      {
+        "id": "tls-untrusted",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 29,
+        "connected": 0,
+        "received": 0,
+        "disconnected": 0
+      },
+      {
+        "id": "tls-wrong-name",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 46,
+        "connected": 0,
+        "received": 0,
+        "disconnected": 0
+      },
+      {
+        "id": "connect-timeout",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 2014,
+        "connected": 0,
+        "received": 0,
+        "disconnected": 0
+      },
+      {
+        "id": "remote-disconnect",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 38,
+        "connected": 1,
+        "received": 0,
+        "disconnected": 1
+      },
+      {
+        "id": "qos-capacity",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 318,
+        "connected": 1,
+        "received": 0,
+        "disconnected": 1
+      },
+      {
+        "id": "callback-close",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 74,
+        "connected": 1,
+        "received": 1,
+        "disconnected": 0
+      },
+      {
+        "id": "repeated-lifecycle",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 1820,
+        "connected": 21,
+        "received": 20,
+        "disconnected": 21
+      },
+      {
+        "id": "keepalive-timeout",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 2054,
+        "connected": 1,
+        "received": 0,
+        "disconnected": 1
+      }
+    ],
+    "summary": {
+      "selected": 36,
+      "passed": 36,
+      "failed": 0,
+      "blocked": 0,
+      "cleanup": 0,
+      "rc": 0,
+      "before": [
+        2,
+        98304,
+        4,
+        2,
+        0,
+        0,
+        0,
+        1,
+        23,
+        66744
+      ],
+      "after": [
+        2,
+        98304,
+        4,
+        2,
+        0,
+        0,
+        0,
+        1,
+        23,
+        66744
+      ]
+    },
+    "ready": {
+      "board": "devkit",
+      "rc": "0",
+      "confirm": "0",
+      "provider_cleanup": "0"
+    }
+  },
+  "normal": {
+    "boot": {
+      "id": "a71fa80023dd4e46ae6c880a4ded8339-4fd50d52ee3d1cbb",
+      "version": "mqtt-esp-da7704d9-r2",
+      "epoch_ms": "1791119238503",
+      "ca_sha256": "1c6e541a10c2bcfec098bafdc6ecc890b122194c7a2fd0406b209e4c21a4602a"
+    },
+    "cases": [
+      {
+        "id": "open-close",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 0,
+        "connected": 0,
+        "received": 0,
+        "disconnected": 0
+      },
+      {
+        "id": "invalid-open-host",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 0,
+        "connected": 0,
+        "received": 0,
+        "disconnected": 0
+      },
+      {
+        "id": "invalid-open-buffer",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 0,
+        "connected": 0,
+        "received": 0,
+        "disconnected": 0
+      },
+      {
+        "id": "invalid-open-tls",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 0,
+        "connected": 0,
+        "received": 0,
+        "disconnected": 0
+      },
+      {
+        "id": "disconnected-operations",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 1,
+        "connected": 0,
+        "received": 0,
+        "disconnected": 0
+      },
+      {
+        "id": "connect-events",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 54,
+        "connected": 1,
+        "received": 0,
+        "disconnected": 1
+      },
+      {
+        "id": "repeated-connect",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 28,
+        "connected": 1,
+        "received": 0,
+        "disconnected": 1
+      },
+      {
+        "id": "subscribe-qos0",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 47,
+        "connected": 1,
+        "received": 0,
+        "disconnected": 1
+      },
+      {
+        "id": "subscribe-qos1",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 53,
+        "connected": 1,
+        "received": 0,
+        "disconnected": 1
+      },
+      {
+        "id": "subscribe-multi",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 100,
+        "connected": 1,
+        "received": 2,
+        "disconnected": 1
+      },
+      {
+        "id": "publish-qos0",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 72,
+        "connected": 1,
+        "received": 1,
+        "disconnected": 1
+      },
+      {
+        "id": "publish-qos1",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 159,
+        "connected": 1,
+        "received": 1,
+        "disconnected": 1
+      },
+      {
+        "id": "publish-binary",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 76,
+        "connected": 1,
+        "received": 1,
+        "disconnected": 1
+      },
+      {
+        "id": "publish-empty",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 84,
+        "connected": 1,
+        "received": 1,
+        "disconnected": 1
+      },
+      {
+        "id": "publish-large",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 71,
+        "connected": 1,
+        "received": 1,
+        "disconnected": 1
+      },
+      {
+        "id": "input-lifetime",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 68,
+        "connected": 1,
+        "received": 1,
+        "disconnected": 1
+      },
+      {
+        "id": "unsubscribe-ack",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 234,
+        "connected": 1,
+        "received": 0,
+        "disconnected": 1
+      },
+      {
+        "id": "retained-delivery",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 219,
+        "connected": 1,
+        "received": 1,
+        "disconnected": 1
+      },
+      {
+        "id": "idle-process",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 97,
+        "connected": 1,
+        "received": 0,
+        "disconnected": 1
+      },
+      {
+        "id": "invalid-qos",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 31,
+        "connected": 1,
+        "received": 0,
+        "disconnected": 1
+      },
+      {
+        "id": "invalid-publish",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 26,
+        "connected": 1,
+        "received": 0,
+        "disconnected": 1
+      },
+      {
+        "id": "invalid-subscribe",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 33,
+        "connected": 1,
+        "received": 0,
+        "disconnected": 1
+      },
+      {
+        "id": "invalid-unsubscribe",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 33,
+        "connected": 1,
+        "received": 0,
+        "disconnected": 1
+      },
+      {
+        "id": "local-disconnect",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 26,
+        "connected": 1,
+        "received": 0,
+        "disconnected": 1
+      },
+      {
+        "id": "reconnect",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 101,
+        "connected": 2,
+        "received": 1,
+        "disconnected": 2
+      },
+      {
+        "id": "authenticated",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 27,
+        "connected": 1,
+        "received": 0,
+        "disconnected": 1
+      },
+      {
+        "id": "auth-refused",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 31,
+        "connected": 0,
+        "received": 0,
+        "disconnected": 0
+      },
+      {
+        "id": "tls-trusted",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 323,
+        "connected": 1,
+        "received": 1,
+        "disconnected": 1
+      },
+      {
+        "id": "tls-untrusted",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 21,
+        "connected": 0,
+        "received": 0,
+        "disconnected": 0
+      },
+      {
+        "id": "tls-wrong-name",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 52,
+        "connected": 0,
+        "received": 0,
+        "disconnected": 0
+      },
+      {
+        "id": "connect-timeout",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 2015,
+        "connected": 0,
+        "received": 0,
+        "disconnected": 0
+      },
+      {
+        "id": "remote-disconnect",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 30,
+        "connected": 1,
+        "received": 0,
+        "disconnected": 1
+      },
+      {
+        "id": "qos-capacity",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 212,
+        "connected": 1,
+        "received": 0,
+        "disconnected": 1
+      },
+      {
+        "id": "callback-close",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 79,
+        "connected": 1,
+        "received": 1,
+        "disconnected": 0
+      },
+      {
+        "id": "repeated-lifecycle",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 1611,
+        "connected": 21,
+        "received": 20,
+        "disconnected": 21
+      },
+      {
+        "id": "keepalive-timeout",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 2059,
+        "connected": 1,
+        "received": 0,
+        "disconnected": 1
+      }
+    ],
+    "summary": {
+      "selected": 36,
+      "passed": 36,
+      "failed": 0,
+      "blocked": 0,
+      "cleanup": 0,
+      "rc": 0,
+      "before": [
+        2,
+        98304,
+        4,
+        2,
+        0,
+        0,
+        0,
+        1,
+        23,
+        66744
+      ],
+      "after": [
+        2,
+        98304,
+        4,
+        2,
+        0,
+        0,
+        0,
+        1,
+        23,
+        66744
+      ]
+    },
+    "ready": {
+      "board": "devkit",
+      "rc": "0",
+      "confirm": "0",
+      "provider_cleanup": "0"
+    }
+  },
+  "before_status": {
+    "board": "devkit",
+    "target": "esp32s3",
+    "chip": "esp32s3",
+    "device_uid": "9888e0115c52",
+    "capabilities": "0x00000007",
+    "command_availability": "0x001f3d3f",
+    "active_role": "app",
+    "active_version": "gizclaw-fwdiag-r35-adbbc722",
+    "active_checksum": "c6d08c6500d1c76548f9368253a1f8f64d30f6f7ce467fbc76e9543dadb9e2f2",
+    "active_image_size": "2252032",
+    "running_partition": "2",
+    "next_partition": "2",
+    "boot_intent": "auto",
+    "stage_valid": "1",
+    "stage_package_checksum": "c692f382849746682c5d3e4c77a212ce2bd3dad9d434e8bdb8940ba8a0572cb8",
+    "stage_package_size": "1494537",
+    "stage_image_checksum": "c6d08c6500d1c76548f9368253a1f8f64d30f6f7ce467fbc76e9543dadb9e2f2",
+    "stage_image_size": "2252032",
+    "stage_role": "app",
+    "stage_version": "gizclaw-fwdiag-r35-adbbc722",
+    "stage_board": "devkit",
+    "stage_target": "esp32s3",
+    "partition_1_valid": "1",
+    "partition_1_package_checksum": "4a49186722ec477d75eeeac4865030c6cc5d017eb4d00acbee731b9d7d79775f",
+    "partition_1_package_size": "986408",
+    "partition_1_image_checksum": "7109a515fb662b76abb2bf4927cffd294c4c26a02e1610b8a2bf8eebbf4ae136",
+    "partition_1_image_size": "1512240",
+    "partition_1_role": "loader",
+    "partition_1_version": "0.2.3-atomic-541",
+    "partition_1_board": "devkit",
+    "partition_1_target": "esp32s3",
+    "partition_2_valid": "1",
+    "partition_2_package_checksum": "c692f382849746682c5d3e4c77a212ce2bd3dad9d434e8bdb8940ba8a0572cb8",
+    "partition_2_package_size": "1494537",
+    "partition_2_image_checksum": "c6d08c6500d1c76548f9368253a1f8f64d30f6f7ce467fbc76e9543dadb9e2f2",
+    "partition_2_image_size": "2252032",
+    "partition_2_role": "app",
+    "partition_2_version": "gizclaw-fwdiag-r35-adbbc722",
+    "partition_2_board": "devkit",
+    "partition_2_target": "esp32s3",
+    "last_result": "0",
+    "mfg_mode": "1",
+    "mfg_steps": "0000000000000000000000"
+  },
+  "after_status": {
+    "board": "devkit",
+    "target": "esp32s3",
+    "chip": "esp32s3",
+    "device_uid": "9888e0115c52",
+    "capabilities": "0x00000003",
+    "command_availability": "0x001f3d3f",
+    "active_role": "app",
+    "active_version": "mqtt-esp-da7704d9-r2",
+    "active_checksum": "8dfc91b86ec0f013e327efc9e250dde83e8d53fe13a7ac1baa40202d5a3dc364",
+    "active_image_size": "1540688",
+    "running_partition": "2",
+    "next_partition": "2",
+    "boot_intent": "auto",
+    "stage_valid": "0",
+    "stage_package_checksum": "-",
+    "stage_package_size": "0",
+    "stage_image_checksum": "-",
+    "stage_image_size": "0",
+    "stage_role": "unknown",
+    "stage_version": "-",
+    "stage_board": "-",
+    "stage_target": "-",
+    "partition_1_valid": "1",
+    "partition_1_package_checksum": "4a49186722ec477d75eeeac4865030c6cc5d017eb4d00acbee731b9d7d79775f",
+    "partition_1_package_size": "986408",
+    "partition_1_image_checksum": "7109a515fb662b76abb2bf4927cffd294c4c26a02e1610b8a2bf8eebbf4ae136",
+    "partition_1_image_size": "1512240",
+    "partition_1_role": "loader",
+    "partition_1_version": "0.2.3-atomic-541",
+    "partition_1_board": "devkit",
+    "partition_1_target": "esp32s3",
+    "partition_2_valid": "1",
+    "partition_2_package_checksum": "40b83628cedd612b058994a1b3264db0e77e5240f13ec7cf1a7c6360f0c62845",
+    "partition_2_package_size": "993295",
+    "partition_2_image_checksum": "8dfc91b86ec0f013e327efc9e250dde83e8d53fe13a7ac1baa40202d5a3dc364",
+    "partition_2_image_size": "1540688",
+    "partition_2_role": "app",
+    "partition_2_version": "mqtt-esp-da7704d9-r2",
+    "partition_2_board": "devkit",
+    "partition_2_target": "esp32s3",
+    "last_result": "0",
+    "mfg_mode": "1",
+    "mfg_steps": "0000000000000000000000"
+  },
+  "coredump_status": {
+    "result": "OK",
+    "code": "0",
+    "partition": "coredump",
+    "bytes": "65536",
+    "stored_bytes": "0",
+    "blank": "1"
+  },
+  "coredump_sha256": null,
+  "fixture_inputs": {
+    "bind": "192.168.31.151",
+    "advertised": "192.168.31.151",
+    "tcp_port": 55601,
+    "tls_port": 55602,
+    "session_prefix": "a71fa80023dd4e46ae6c880a4ded8339",
+    "epoch_ms": 1791119238503,
+    "ca_sha256": "1c6e541a10c2bcfec098bafdc6ecc890b122194c7a2fd0406b209e4c21a4602a",
+    "wrong_ca_sha256": "f2b7e83901983549355b0cbf9aa7ba0d41e7769431ac12594706d97d06db82c1",
+    "bazelrc_sha256": "549e6ca953684c712f32ba34acc4d76b625dba4e6f3c47fd7152cddd0e1cc140",
+    "tls_handshake_timeout_seconds": 2.0
+  },
+  "commands": {
+    "managed": {
+      "command": [
+        "reboot",
+        "upgrade",
+        "--monitor"
+      ],
+      "port": "/dev/cu.usbmodem132201",
+      "started_at_utc": "2026-10-04T13:17:34.326770+00:00",
+      "captured_at_utc": "2026-10-04T13:18:12.183358+00:00",
+      "host_pid": 12775,
+      "exit_after_capture": 130,
+      "controlled_stop": true,
+      "stop_reason": "validated complete ledger",
+      "log_sha256": "ce652740ec5bb541ba1eeafe6b7b5b59852c64a1f9ccc4f47dc19fe84a999822"
+    },
+    "normal": {
+      "command": [
+        "reboot",
+        "app",
+        "--monitor"
+      ],
+      "port": "/dev/cu.usbmodem132201",
+      "started_at_utc": "2026-10-04T13:18:17.255900+00:00",
+      "captured_at_utc": "2026-10-04T13:18:34.769166+00:00",
+      "host_pid": 13287,
+      "exit_after_capture": 130,
+      "controlled_stop": true,
+      "stop_reason": "validated complete ledger",
+      "log_sha256": "85858b745bbed925227875a8ce5de30c4c9c3becd5d4d8fb6cd6f78e74c4ac13"
+    },
+    "before-status": {
+      "command": [
+        "status"
+      ],
+      "exit": 0,
+      "port": "/dev/cu.usbmodem132201",
+      "started_at_utc": "2026-10-04T13:15:59.362661+00:00",
+      "finished_at_utc": "2026-10-04T13:16:00.208279+00:00",
+      "log_sha256": "40bd6455daa75d3a344d1cbcb8bcc4162a694ee489199fd7864567158eaf4610"
+    },
+    "after-status": {
+      "command": [
+        "status"
+      ],
+      "exit": 0,
+      "port": "/dev/cu.usbmodem132201",
+      "started_at_utc": "2026-10-04T13:19:25.821459+00:00",
+      "finished_at_utc": "2026-10-04T13:19:26.362993+00:00",
+      "log_sha256": "8554e76369f97397a2c16980a7dbaa53612abcac5922e9db112d98a490a8f481"
+    },
+    "before-coredump-status": {
+      "command": [
+        "coredump",
+        "status"
+      ],
+      "exit": 0,
+      "port": "/dev/cu.usbmodem132201",
+      "started_at_utc": "2026-10-04T13:16:00.209433+00:00",
+      "finished_at_utc": "2026-10-04T13:16:00.675545+00:00",
+      "log_sha256": "5bdf63243c04b65d6759ad5a1cbd04f6b4cfdf8a5b1824698fd2ec92ac7d0cec"
+    },
+    "after-coredump-status": {
+      "command": [
+        "coredump",
+        "status"
+      ],
+      "exit": 0,
+      "port": "/dev/cu.usbmodem132201",
+      "started_at_utc": "2026-10-04T13:19:26.363445+00:00",
+      "finished_at_utc": "2026-10-04T13:19:26.765417+00:00",
+      "log_sha256": "5bdf63243c04b65d6759ad5a1cbd04f6b4cfdf8a5b1824698fd2ec92ac7d0cec"
+    }
+  },
+  "registry_sha256": "f3f5798bb6f8793eeede6f3464c847be1b6ad807d6059bc17b759fad6995837f",
+  "artifact_binding": {
+    "source_commit": "da7704d9495c9da568cb0ed878395e5b7496ef01",
+    "source_dirty": false,
+    "manifest": {
+      "format": "1",
+      "role": "app",
+      "board": "devkit",
+      "target": "esp32s3",
+      "version": "mqtt-esp-da7704d9-r2",
+      "image_size": "1540688",
+      "image_sha256": "8dfc91b86ec0f013e327efc9e250dde83e8d53fe13a7ac1baa40202d5a3dc364"
+    },
+    "package_sha256": "40b83628cedd612b058994a1b3264db0e77e5240f13ec7cf1a7c6360f0c62845",
+    "package_bytes": 993295,
+    "package_path": "/Users/idy/.codex/worktrees/mqtt-e2e-qualification/gizos/build/validation/mqtt-esp-da7704d9-r2/devkit-pal-mqtt-esp32s3.update.tar.zlib",
+    "fixture_inputs": {
+      "bind": "192.168.31.151",
+      "advertised": "192.168.31.151",
+      "tcp_port": 55601,
+      "tls_port": 55602,
+      "session_prefix": "a71fa80023dd4e46ae6c880a4ded8339",
+      "epoch_ms": 1791119238503,
+      "ca_sha256": "1c6e541a10c2bcfec098bafdc6ecc890b122194c7a2fd0406b209e4c21a4602a",
+      "wrong_ca_sha256": "f2b7e83901983549355b0cbf9aa7ba0d41e7769431ac12594706d97d06db82c1",
+      "bazelrc_sha256": "549e6ca953684c712f32ba34acc4d76b625dba4e6f3c47fd7152cddd0e1cc140",
+      "tls_handshake_timeout_seconds": 2.0
+    },
+    "build_log_sha256": "58c7ba6379e2aa9f45d8c3ed73ca38ce908e6db9e37d5294ae23176d0d8375af",
+    "hardware_qualified": false,
+    "recorded_at_utc": "2026-10-04T13:08:43.885421+00:00"
+  },
+  "build_label": ":package",
+  "host_verifier_sha256": "00ff59aa9a89b02c57c93de4d2afa80002ec383cb5c4f77872f94d95a1d10d94"
+}

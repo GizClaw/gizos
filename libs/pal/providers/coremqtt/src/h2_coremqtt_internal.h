@@ -31,12 +31,26 @@ struct h2_pal_mqtt_client {
     int emitting;
     int close_requested;
     uint32_t recv_timeout_ms;
+    uint32_t send_timeout_ms;
+    h2_pal_result_t send_result;
+    uint64_t send_deadline_ms;
+    int send_deadline_active;
     const h2_pal_time_api_t *time_api;
     MQTTContext_t mqtt;
     MQTTFixedBuffer_t fixed_buffer;
     struct NetworkContext network;
     h2_coremqtt_client_records_t records;
 };
+
+/* Begin one vendor operation's send phase. The first nonempty callback starts
+ * its deadline; later callbacks share it rather than renewing the budget. */
+static inline void h2_coremqtt_begin_send(h2_pal_mqtt_client_t *client, uint32_t budget_ms) {
+    client->send_timeout_ms = budget_ms != 0u ? budget_ms :
+        client->config.operation_timeout_ms != 0u ? client->config.operation_timeout_ms : 1000u;
+    client->send_result = H2_PAL_OK;
+    client->send_deadline_ms = 0u;
+    client->send_deadline_active = 0;
+}
 
 h2_pal_result_t h2_coremqtt_client_open(
     h2_coremqtt_t *provider,
@@ -76,5 +90,6 @@ void h2_coremqtt_emit_event(h2_pal_mqtt_client_t *client, const h2_pal_mqtt_even
 
 int32_t h2_coremqtt_transport_recv(NetworkContext_t *network, void *buffer, size_t bytes_to_recv);
 int32_t h2_coremqtt_transport_send(NetworkContext_t *network, const void *buffer, size_t bytes_to_send);
+int32_t h2_coremqtt_transport_writev(NetworkContext_t *network, TransportOutVector_t *vectors, size_t count);
 
 #endif

@@ -32,7 +32,7 @@ BATCH_PATTERN = re.compile(r"^[0-9]{8}-[0-9]{6}$")
 RELEASE_TAG = "firmware-release"
 RELEASE_QUERY = (
     'attr("tags", "firmware-release", '
-    'kind("h2loader_tar_zlib rule", //projects/...))'
+    'kind("h2loader_zlib_tar rule", //projects/...))'
 )
 SLICES = (
     "catalog",

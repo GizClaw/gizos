@@ -111,6 +111,114 @@ GIZCLAW_HARNESS_SOURCES = AUDIT_SOURCES | {
     "projects/e2e/apps/pal-display/check_qualification.py",
     "projects/e2e/apps/pal-display/BUILD.bazel",
 }
+SHARED_CATALOG = "guides/apps/e2e.md"
+SHARED_PAL_GUIDE = "guides/zh/developing/platform_abstract_layer.md"
+SHARED_CATALOG_BASELINE_COMMIT = "06f9c0cfa633646984d72f210ba18f889bbec528"
+SHARED_PAL_ADDITION_COMMIT = "93c9578e54f1cd45d8d9bd118372f807e16076f4"
+SHARED_PAL_ADDITION_SHA256 = "e34e59d847676c1d0bca583f8c824a124b1a8cb0dd684b097dcdc25aff429932"
+SHARED_PAL_ADDITION_OFFSET = 72468
+SHARED_CATALOG_AUDIT_SOURCES = {
+    "projects/e2e/apps/pal-display/check_qualification.py",
+    "projects/e2e/apps/pal-display/BUILD.bazel",
+    "projects/e2e/apps/pal-display/README.md",
+}
+
+
+def display_catalog_content(text):
+    """Extract the complete owned section and unique launcher-matrix row."""
+    headings = list(re.finditer(r"^## .*\n", text, re.MULTILINE))
+    def section(title):
+        matches = [index for index, heading in enumerate(headings)
+                   if heading.group() == f"## {title}\n"]
+        assert len(matches) == 1, f"missing or duplicate {title} catalog section"
+        index = matches[0]
+        end = headings[index + 1].start() if index + 1 < len(headings) else len(text)
+        return text[headings[index].end():end]
+
+    display = "## PAL Display\n" + section("PAL Display")
+    apps = section("Apps")
+    # A copied row in prose, a code sample or another section is not a table entry.
+    visible = []
+    fence = None
+    for line in apps.splitlines(keepends=True):
+        marker = re.match(r"^ {0,3}(`{3,}|~{3,})", line)
+        if fence:
+            if marker and marker.group(1)[0] == fence[0] and len(marker.group(1)) >= len(fence) and not line[marker.end():].strip():
+                fence = None
+            visible.append("\n")
+        elif marker:
+            fence = marker.group(1)
+            visible.append("\n")
+        else:
+            visible.append(line)
+    tables = re.findall(
+        r"^\| App \| Portable target \| Current launcher matrix \|\n"
+        r"\| --- \| --- \| --- \|\n(?:\|[^\n]*\n)+",
+        "".join(visible), re.MULTILINE)
+    assert len(tables) == 1, "missing or duplicate Apps launcher matrix"
+    rows = re.findall(r"^\| PAL Display \|[^\n]*\n", text, re.MULTILINE)
+    assert len(rows) == 1, "missing or duplicate Display catalog row"
+    assert rows == re.findall(r"^\| PAL Display \|[^\n]*\n", tables[0], re.MULTILINE), (
+        "Display row is outside the Apps launcher matrix")
+    return {"section": display, "launcher_row": rows[0]}
+
+
+def shared_catalog_sources(previous):
+    """Preserve historical receipts while checking only owned catalog bytes."""
+    audit = json.JSONDecoder().decode(
+        (ROOT / "shared_catalog_provenance.json").read_text(encoding="utf-8"))
+    assert audit["schema"] == 1 and audit["new_physical_run_claimed"] is False
+    assert audit["historical_harness_receipt_sha256"] == hashlib.sha256(
+        (ROOT / "gizclaw_harness_provenance.json").read_bytes()).hexdigest()
+    baseline = audit["catalog_baseline"]
+    assert baseline["source_commit"] == SHARED_CATALOG_BASELINE_COMMIT
+    assert baseline["source_path"] == SHARED_CATALOG
+    assert baseline["source_sha256"] == previous[SHARED_CATALOG]
+    content = (ROOT / "shared_catalog_baseline.txt").read_bytes()
+    assert hashlib.sha256(content).hexdigest() == previous[SHARED_CATALOG]
+    assert display_catalog_content(content.decode("utf-8")) == display_catalog_content(
+        Path(SHARED_CATALOG).read_text(encoding="utf-8")), "Display catalog content changed"
+    shared_pal_guide(previous, audit["pal_guide_extension"])
+    assert audit["previous_source_sha256"] == {
+        path: previous[path] for path in SHARED_CATALOG_AUDIT_SOURCES}
+    replacements = audit["current_source_sha256"]
+    assert set(replacements) == SHARED_CATALOG_AUDIT_SOURCES
+    sources = {**previous, **replacements}
+    # The historical whole-file hash still authenticates the immutable baseline.
+    # Other Apps may update their catalog entries without a new Display run.
+    del sources[SHARED_CATALOG]
+    del sources[SHARED_PAL_GUIDE]
+    return sources
+
+
+def shared_pal_guide(previous, extension):
+    """Admit only the exact two BK Pref additions at their recorded insertion."""
+    assert extension["source_commit"] == SHARED_CATALOG_BASELINE_COMMIT
+    assert extension["source_path"] == SHARED_PAL_GUIDE
+    assert extension["addition_source_commit"] == SHARED_PAL_ADDITION_COMMIT
+    assert extension["addition_sha256"] == SHARED_PAL_ADDITION_SHA256
+    assert type(extension["insertion_offset"]) is int
+    assert extension["insertion_offset"] == SHARED_PAL_ADDITION_OFFSET
+    assert extension["source_sha256"] == previous[SHARED_PAL_GUIDE]
+    record = json.JSONDecoder().decode(
+        (ROOT / "shared_pal_pref_addition.json").read_text(encoding="utf-8"))
+    assert record["source_commit"] == SHARED_PAL_ADDITION_COMMIT
+    assert record["source_path"] == SHARED_PAL_GUIDE
+    addition = record["addition_utf8"].encode("utf-8")
+    assert hashlib.sha256(addition).hexdigest() == SHARED_PAL_ADDITION_SHA256
+    paragraphs = addition.decode("utf-8").strip().split("\n\n")
+    assert len(paragraphs) == 2
+    assert paragraphs[0].startswith("BK7258 大值仍使用原 128 KiB physical FlashDB 分区：")
+    assert paragraphs[1].startswith("Tail v1 manifest 为 96 字节：")
+    current = Path(SHARED_PAL_GUIDE).read_bytes()
+    if hashlib.sha256(current).hexdigest() == previous[SHARED_PAL_GUIDE]:
+        return
+    offset = extension["insertion_offset"]
+    assert type(offset) is int and 0 <= offset < len(current)
+    assert current[offset:offset + len(addition)] == addition
+    restored = current[:offset] + current[offset + len(addition):]
+    assert hashlib.sha256(restored).hexdigest() == previous[SHARED_PAL_GUIDE], (
+        "shared PAL guide changed outside the exact BK Pref addition")
 
 
 def runner_refactor(historical):
@@ -143,7 +251,7 @@ def runner_refactor(historical):
     assert maintenance["validation"]["shared_mobile_contract"] == "PASS"
     for path, expected in followup["removed_source_sha256"].items():
         assert historical[path] == expected and not Path(path).exists(), path
-    for path, expected in {**previous, **replacements}.items():
+    for path, expected in shared_catalog_sources({**previous, **replacements}).items():
         if path not in REMOVED_RUNNERS:
             assert hashlib.sha256(Path(path).read_bytes()).hexdigest() == expected, path
     # These exact Python sources and consumer declarations executed the stored runs.

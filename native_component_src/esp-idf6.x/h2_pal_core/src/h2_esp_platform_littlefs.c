@@ -1,7 +1,9 @@
 #include "h2_esp_platform_core.h"
 #include "h2_esp_platform_safe_call.h"
+#include "h2_esp_io_phase.h"
 
 #include "esp_err.h"
+#include "esp_attr.h"
 #include "esp_littlefs.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -54,6 +56,9 @@ typedef struct h2_esp_littlefs_safe_call {
     int result;
     int error_number;
     int format_if_mount_failed;
+#if H2_ESP_IO_PHASE_DIAGNOSTICS
+    h2_esp_io_phase_t phase;
+#endif
 } h2_esp_littlefs_safe_call_t;
 
 /* Runs on the existing internal-stack flash-safe path. Clear affects only
@@ -153,17 +158,37 @@ static SemaphoreHandle_t littlefs_safe_mutex(void) {
 }
 
 static int littlefs_run_safe(h2_esp_littlefs_safe_call_t *call) {
+#if H2_ESP_IO_PHASE_DIAGNOSTICS
+    h2_esp_io_phase_t phase = {.started_us = h2_esp_io_phase_now()};
+#endif
     SemaphoreHandle_t mutex = littlefs_safe_mutex();
     if (mutex == NULL ||
         xSemaphoreTake(mutex, portMAX_DELAY) != pdTRUE) {
         return H2_PAL_FS_ERR_IO;
     }
+#if H2_ESP_IO_PHASE_DIAGNOSTICS
+    phase.fs_wait_us = h2_esp_io_phase_elapsed(
+        phase.started_us, h2_esp_io_phase_now());
+    h2_pal_result_t rc = h2_esp_platform_safe_call_timed(
+        littlefs_safe_callback, call, sizeof(*call),
+        H2_ESP_LITTLEFS_SAFE_STACK_DEPTH, &phase);
+#else
     h2_pal_result_t rc = h2_esp_platform_safe_call(
         littlefs_safe_callback,
         call,
         sizeof(*call),
         H2_ESP_LITTLEFS_SAFE_STACK_DEPTH);
+#endif
     (void)xSemaphoreGive(mutex);
+#if H2_ESP_IO_PHASE_DIAGNOSTICS
+    call->phase = phase;
+    /* READ/WRITE still own scratch: their outer wrapper reports only once
+     * after all chunks and the scratch release. Other ops own no scratch. */
+    if (call->op != H2_ESP_LITTLEFS_READ &&
+        call->op != H2_ESP_LITTLEFS_WRITE)
+        h2_esp_io_phase_report("fs", (unsigned)call->op, call->len,
+                              rc == H2_PAL_OK ? call->result : rc, &phase);
+#endif
     return rc == H2_PAL_OK ? H2_PAL_FS_OK : rc;
 }
 
@@ -345,8 +370,15 @@ static int littlefs_read(void *user, h2_pal_fs_file_t *raw_file, void *data, siz
     }
     uint8_t *internal_data = NULL;
     size_t safe_capacity = 0u;
+#if H2_ESP_IO_PHASE_DIAGNOSTICS
+    h2_esp_io_phase_t phase = {.started_us = h2_esp_io_phase_now()};
+#endif
     h2_pal_result_t safe_rc = h2_esp_platform_safe_io_acquire(
         &internal_data, &safe_capacity);
+#if H2_ESP_IO_PHASE_DIAGNOSTICS
+    phase.scratch_wait_us = h2_esp_io_phase_elapsed(
+        phase.started_us, h2_esp_io_phase_now());
+#endif
     if (safe_rc != H2_PAL_OK ||
         internal_data == NULL || safe_capacity == 0u) {
         if (safe_rc == H2_PAL_OK) {
@@ -371,6 +403,9 @@ static int littlefs_read(void *user, h2_pal_fs_file_t *raw_file, void *data, siz
                 : len - *out_read,
         };
         rc = littlefs_run_safe(&call);
+#if H2_ESP_IO_PHASE_DIAGNOSTICS
+        h2_esp_io_phase_add(&phase, &call.phase);
+#endif
         if (rc != H2_PAL_FS_OK || call.result != 0) {
             rc = rc != H2_PAL_FS_OK
                 ? rc
@@ -384,6 +419,9 @@ static int littlefs_read(void *user, h2_pal_fs_file_t *raw_file, void *data, siz
         }
     }
     h2_esp_platform_safe_io_release();
+#if H2_ESP_IO_PHASE_DIAGNOSTICS
+    h2_esp_io_phase_report("fs", H2_ESP_LITTLEFS_READ, len, rc, &phase);
+#endif
     return rc;
 }
 
@@ -422,8 +460,15 @@ static int littlefs_write(void *user, h2_pal_fs_file_t *raw_file, const void *da
     }
     uint8_t *internal_data = NULL;
     size_t internal_capacity = 0u;
+#if H2_ESP_IO_PHASE_DIAGNOSTICS
+    h2_esp_io_phase_t phase = {.started_us = h2_esp_io_phase_now()};
+#endif
     h2_pal_result_t safe_rc = h2_esp_platform_safe_io_acquire(
         &internal_data, &internal_capacity);
+#if H2_ESP_IO_PHASE_DIAGNOSTICS
+    phase.scratch_wait_us = h2_esp_io_phase_elapsed(
+        phase.started_us, h2_esp_io_phase_now());
+#endif
     if (safe_rc != H2_PAL_OK ||
         internal_data == NULL) {
         if (safe_rc == H2_PAL_OK) {
@@ -447,6 +492,9 @@ static int littlefs_write(void *user, h2_pal_fs_file_t *raw_file, const void *da
         };
         memcpy(internal_data, (const uint8_t *)data + *out_written, call.len);
         rc = littlefs_run_safe(&call);
+#if H2_ESP_IO_PHASE_DIAGNOSTICS
+        h2_esp_io_phase_add(&phase, &call.phase);
+#endif
         *out_written += call.processed;
         if (rc != H2_PAL_FS_OK || call.result != 0) {
             rc = rc != H2_PAL_FS_OK
@@ -456,6 +504,9 @@ static int littlefs_write(void *user, h2_pal_fs_file_t *raw_file, const void *da
         }
     }
     h2_esp_platform_safe_io_release();
+#if H2_ESP_IO_PHASE_DIAGNOSTICS
+    h2_esp_io_phase_report("fs", H2_ESP_LITTLEFS_WRITE, len, rc, &phase);
+#endif
     return rc;
 }
 

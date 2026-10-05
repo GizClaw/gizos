@@ -39,20 +39,39 @@ py_test(
 
 mobile_e2e_suite(
     name = "mobile_e2e",
-    case_count = 30,
+    android_sdk = {
+        "required_header": "prefab/modules/h2_pal_core/include/h2_android_platform.h",
+        "public_symbols": [
+            "h2_android_storage_create",
+            "h2_android_storage_fs_api",
+            "h2_android_storage_pref_api",
+            "h2_android_storage_destroy",
+        ],
+    },
+    case_count = 36,
     expected = {
-        "contract": 1,
+        "contract": 2,
         "operations": 28,
         "qualified": True,
         "failed": 0,
         "blocked": 0,
     },
     hook = "run_mobile.py",
+    ios_sdk = {
+        "executable": "GizOSPALStorageE2E",
+        "provider_symbols": [
+            "_h2_ios_storage_create",
+            "_h2_ios_storage_fs_api",
+            "_h2_ios_storage_pref_api",
+            "_h2_ios_storage_destroy",
+        ],
+        "portable_symbol": "_h2_pal_storage_e2e_run",
+    },
     options = {
         "root": "pal-storage",
         "nonce_bits": 32,
         "phase_expected": {
-            "contract": 1,
+            "contract": 2,
             "failed": 0,
             "blocked": 0,
             "cleanup": 0,
@@ -65,6 +84,6 @@ mobile_e2e_suite(
     plain_platform = True,
     prefix = "pal-storage",
     registry = "//projects/e2e/apps/pal-storage/app:include/h2_pal_storage_cases.inc",
-    registry_pattern = "H2_PAL_STORAGE_CASE\\(\"([^\"]+)\", ([12])\\)",
+    registry_pattern = "H2_PAL_STORAGE_CASE\\(\"([^\"]+)\", ([123])\\)",
     report = "pal-storage-phase.json",
 )

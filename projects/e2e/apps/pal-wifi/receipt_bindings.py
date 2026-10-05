@@ -92,7 +92,7 @@ def _check_snapshot(report, snapshot):
         assert value == report[field]["sha256"], ("raw receipt identity", field)
     metadata = snapshot["metadata"]
     asset, manifest = metadata["assets"][0], metadata["package_manifest"]
-    assert manifest["format"] == 1 and manifest["role"] == "app"
+    assert type(manifest["format"]) is int and manifest["format"] in (1, 2) and manifest["role"] == "app"
     assert manifest["version"] == report["version"]
     assert metadata["version"] == manifest["version"] and metadata["board"] == manifest["board"]
     assert metadata["target"] == manifest["target"]
@@ -104,7 +104,19 @@ def _check_snapshot(report, snapshot):
     assert package == {"sha256": asset["sha256"], "size": asset["size"]}
     assert image == {"sha256": manifest["image_sha256"], "size": manifest["image_size"]}
     assert package["sha256"] == report["package_sha256"] and image["sha256"] == report["image_sha256"]
-    assert snapshot["archive_manifest"] == {k: str(v) for k, v in manifest.items()}
+    embedded = snapshot["archive_manifest"]
+    expected = {k: str(v) for k, v in manifest.items()}
+    if manifest["format"] == 1:
+        assert embedded == expected
+    else:
+        extra = {"data_sha256", "data_tar_size", "data_bytes", "pixa_bytes", "app_zlib_size",
+                 "app_zlib_sha256", "data_zlib_size", "data_zlib_sha256"}
+        assert embedded.keys() == expected.keys() | extra
+        assert all(embedded[k] == v for k, v in expected.items()), "manifest identity mismatch"
+        for key in ("data_sha256", "app_zlib_sha256", "data_zlib_sha256"):
+            _hash(embedded[key])
+        for key in ("data_tar_size", "data_bytes", "pixa_bytes", "app_zlib_size", "data_zlib_size"):
+            assert re.fullmatch(r"[0-9]+", embedded[key]), ("manifest length", key)
     baseline, stage = snapshot["baseline_status"], snapshot["stage_status"]
     assert baseline["device_uid"] == report["uid"], "wrong baseline device"
     p1 = {k: v for k, v in baseline.items() if k.startswith("partition_1_")}
@@ -170,7 +182,9 @@ def _audit_snapshot(report):
     _verify_historical_git_blobs(historical)
     metadata = json.loads(bound_ref(report["firmware"]).read_text(encoding="utf-8"))
     package = bound_ref(report["package"])
-    with tarfile.open(fileobj=io.BytesIO(zlib.decompress(package.read_bytes())), mode="r:") as archive:
+    original = package.read_bytes()
+    plain = original if original.startswith(b"manifest\0") else zlib.decompress(original)
+    with tarfile.open(fileobj=io.BytesIO(plain), mode="r:") as archive:
         members = archive.getmembers()
         assert len({m.name for m in members}) == len(members), "duplicate archive members"
         manifest_entry = archive.getmember("manifest")
@@ -182,9 +196,20 @@ def _audit_snapshot(report):
         target = metadata["package_manifest"]["target"]
         assert target in {"esp32s3", "bk7258"}
         app_path = "app/esp/app.bin" if target == "esp32s3" else "app/bk/app_ab_crc.rbl"
-        member = archive.getmember(app_path)
-        assert member.isfile()
-        image = archive.extractfile(member).read()
+        if parsed.get("format") == "2":
+            assert archive.getnames() == ["manifest", "data.tar.zlib", "app.bin.zlib"]
+            for name, prefix in (("data.tar.zlib", "data"), ("app.bin.zlib", "app")):
+                member = archive.getmember(name)
+                assert member.isfile()
+                compressed = archive.extractfile(member).read()
+                assert len(compressed) == int(parsed[prefix + "_zlib_size"])
+                assert hashlib.sha256(compressed).hexdigest() == parsed[prefix + "_zlib_sha256"]
+                if prefix == "app": image = zlib.decompress(compressed)
+        else:
+            assert parsed.get("format") == "1"
+            member = archive.getmember(app_path)
+            assert member.isfile()
+            image = archive.extractfile(member).read()
     snapshot = {"schema": 1, "capture_method": "verified-local-package-and-loader-bytes",
                 "uid": report["uid"], "version": report["version"], "metadata": metadata,
                 "package": _file_identity(report["package"]),

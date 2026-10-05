@@ -1,0 +1,369 @@
+{
+  "before-data-checksum-receipt.json": {
+    "command": [
+      "stats",
+      "--data-checksum"
+    ],
+    "exit": 0,
+    "port": "/dev/cu.usbmodem132201",
+    "started_at_utc": "2026-10-04T17:24:21.843131+00:00",
+    "finished_at_utc": "2026-10-04T17:24:22.416189+00:00",
+    "log_sha256": "d8f6e4999697fd64c15bc63c90313e2cedea6179f04100638d0ef8629c0e6e68"
+  },
+  "before-wifi-receipt.json": {
+    "command": [
+      "wifi",
+      "status"
+    ],
+    "exit": 0,
+    "port": "/dev/cu.usbmodem132201",
+    "started_at_utc": "2026-10-04T17:22:19.703405+00:00",
+    "finished_at_utc": "2026-10-04T17:22:20.102514+00:00",
+    "log_sha256": "0f5c7d88d31d31eab7ff225a317c4f1f2803b529cebdef1d87316d58e3024627"
+  },
+  "restored-reboot-app-receipt.json": {
+    "command": [
+      "reboot",
+      "app"
+    ],
+    "exit": 0,
+    "port": "/dev/cu.usbmodem132201",
+    "started_at_utc": "2026-10-04T17:32:59.310650+00:00",
+    "finished_at_utc": "2026-10-04T17:33:01.964895+00:00",
+    "log_sha256": "b16f236c94c026b7350b87b64bed2aec2b7a91c2dd656957ce5de8acf0f6c157",
+    "timed_out": false,
+    "timeout_seconds": 120,
+    "host_pid": 47149
+  },
+  "uart-release-receipt.json": {
+    "command": [
+      "lsof",
+      "/dev/cu.usbmodem132201"
+    ],
+    "exit": 1,
+    "stdout_bytes": 0,
+    "observed_at_utc": "2026-10-04T17:34:29.564997+00:00"
+  },
+  "restored-final-wifi-receipt.json": {
+    "command": [
+      "wifi",
+      "status"
+    ],
+    "exit": 0,
+    "port": "/dev/cu.usbmodem132201",
+    "started_at_utc": "2026-10-04T17:33:02.577754+00:00",
+    "finished_at_utc": "2026-10-04T17:33:03.041730+00:00",
+    "log_sha256": "a40eaf726eafb0a772018a6e4f56fdbcd6522127cc6a8d91375f49ce59170ad4",
+    "timed_out": false,
+    "timeout_seconds": 120,
+    "host_pid": 47162
+  },
+  "baseline-reboot-loader-receipt.json": {
+    "command": [
+      "reboot",
+      "loader"
+    ],
+    "exit": 0,
+    "port": "/dev/cu.usbmodem132201",
+    "started_at_utc": "2026-10-04T17:24:19.311147+00:00",
+    "finished_at_utc": "2026-10-04T17:24:21.842383+00:00",
+    "log_sha256": "e3edb7132359fcac3847ba1187200be2e35b6bf258f763d8ce8406be7150fccd"
+  },
+  "restored-final-status-receipt.json": {
+    "command": [
+      "status"
+    ],
+    "exit": 0,
+    "port": "/dev/cu.usbmodem132201",
+    "started_at_utc": "2026-10-04T17:33:01.965386+00:00",
+    "finished_at_utc": "2026-10-04T17:33:02.577254+00:00",
+    "log_sha256": "40bd6455daa75d3a344d1cbcb8bcc4162a694ee489199fd7864567158eaf4610",
+    "timed_out": false,
+    "timeout_seconds": 120,
+    "host_pid": 47159
+  },
+  "restored-final-wifi-stable-receipt.json": {
+    "command": [
+      "wifi",
+      "status"
+    ],
+    "exit": 0,
+    "port": "/dev/cu.usbmodem132201",
+    "started_at_utc": "2026-10-04T17:33:50.073059+00:00",
+    "finished_at_utc": "2026-10-04T17:33:50.530153+00:00",
+    "log_sha256": "0f5c7d88d31d31eab7ff225a317c4f1f2803b529cebdef1d87316d58e3024627",
+    "timed_out": false,
+    "timeout_seconds": 120,
+    "host_pid": 47409
+  },
+  "restored-wifi-receipt.json": {
+    "command": [
+      "wifi",
+      "status"
+    ],
+    "exit": 0,
+    "port": "/dev/cu.usbmodem132201",
+    "started_at_utc": "2026-10-04T17:32:30.765131+00:00",
+    "finished_at_utc": "2026-10-04T17:32:31.235537+00:00",
+    "log_sha256": "a549d18cd2a0180feb1854a6776761f4d30d7799c65e57671d0b57f2a9ca9281",
+    "timed_out": false,
+    "timeout_seconds": 120,
+    "host_pid": 46962
+  },
+  "after-status-receipt.json": {
+    "command": [
+      "status"
+    ],
+    "exit": 0,
+    "port": "/dev/cu.usbmodem132201",
+    "started_at_utc": "2026-10-04T17:26:22.963680+00:00",
+    "finished_at_utc": "2026-10-04T17:26:23.501409+00:00",
+    "log_sha256": "593994c4543c57770c2b48c03aab182712039412b35455a067bb41262ba0ce88"
+  },
+  "restore-original-send-receipt.json": {
+    "command": [
+      "send",
+      "--file",
+      "/Users/idy/.codex/worktrees/mqtt-e2e-qualification/gizos/build/validation/mqtt-esp-retained-cd3dda1d/original-app-and-stage.update.tar.zlib"
+    ],
+    "exit": 0,
+    "port": "/dev/cu.usbmodem132201",
+    "started_at_utc": "2026-10-04T17:27:06.182995+00:00",
+    "finished_at_utc": "2026-10-04T17:27:55.685326+00:00",
+    "log_sha256": "7e87572d92c9006d673597f34d9e68b41d75556458a176df8bb76620d4a89b3a",
+    "timed_out": false,
+    "timeout_seconds": 180,
+    "host_pid": 41497
+  },
+  "normal-receipt.json": {
+    "command": [
+      "reboot",
+      "app",
+      "--monitor"
+    ],
+    "port": "/dev/cu.usbmodem132201",
+    "started_at_utc": "2026-10-04T17:25:54.303123+00:00",
+    "captured_at_utc": "2026-10-04T17:26:12.006824+00:00",
+    "host_pid": 40056,
+    "exit_after_capture": 130,
+    "controlled_stop": true,
+    "stop_reason": "validated complete ledger",
+    "log_sha256": "64ab7de30d477f8b3fc52029db07f06e2c543890beae5f0f5e8bdddc4e5954ae"
+  },
+  "restore-upgrade-receipt.json": {
+    "command": [
+      "reboot",
+      "upgrade"
+    ],
+    "exit": -9,
+    "port": "/dev/cu.usbmodem132201",
+    "started_at_utc": "2026-10-04T17:27:55.686494+00:00",
+    "finished_at_utc": "2026-10-04T17:29:55.698069+00:00",
+    "log_sha256": "ba32df9d7991a55c5633d6e862af21e9c0111a33ee50c33dc625ae7a23dc953d",
+    "timed_out": true,
+    "timeout_seconds": 120,
+    "host_pid": 42159
+  },
+  "device-test-receipt.json": {
+    "exit": 0,
+    "command": [
+      "bazel",
+      "test",
+      "--config=macos_arm64",
+      "--nocache_test_results",
+      "//projects/e2e/targets/h2loader_tar_zlib/pal-mqtt/devkit:device_test"
+    ],
+    "log_sha256": "a6757872531b5f376e48cf7fbc5bbd116957b396214a91262098e2e8d87d2805",
+    "qualification_sha256": "d139f2eb742480999601f6b0be1b70574ece44ac6d2bd4a7ed1585274327ee2e"
+  },
+  "managed-send-receipt.json": {
+    "command": [
+      "send",
+      "--file",
+      "/Users/idy/.codex/worktrees/mqtt-e2e-qualification/gizos/build/validation/mqtt-esp-retained-cd3dda1d/devkit-pal-mqtt-esp32s3.update.tar.zlib"
+    ],
+    "exit": 0,
+    "port": "/dev/cu.usbmodem132201",
+    "started_at_utc": "2026-10-04T17:24:22.417748+00:00",
+    "finished_at_utc": "2026-10-04T17:24:58.324940+00:00",
+    "log_sha256": "b6e82b73fd124fa0814eaa6b9c2f02b7cab8a84dba2dcd0324cef53087117bd6"
+  },
+  "after-coredump-status-receipt.json": {
+    "command": [
+      "coredump",
+      "status"
+    ],
+    "exit": 0,
+    "port": "/dev/cu.usbmodem132201",
+    "started_at_utc": "2026-10-04T17:26:23.502114+00:00",
+    "finished_at_utc": "2026-10-04T17:26:23.914063+00:00",
+    "log_sha256": "5bdf63243c04b65d6759ad5a1cbd04f6b4cfdf8a5b1824698fd2ec92ac7d0cec"
+  },
+  "restored-final-coredump-status-receipt.json": {
+    "command": [
+      "coredump",
+      "status"
+    ],
+    "exit": 0,
+    "port": "/dev/cu.usbmodem132201",
+    "started_at_utc": "2026-10-04T17:33:03.042206+00:00",
+    "finished_at_utc": "2026-10-04T17:33:03.465375+00:00",
+    "log_sha256": "5bdf63243c04b65d6759ad5a1cbd04f6b4cfdf8a5b1824698fd2ec92ac7d0cec",
+    "timed_out": false,
+    "timeout_seconds": 120,
+    "host_pid": 47164
+  },
+  "staged-status-receipt.json": {
+    "command": [
+      "status"
+    ],
+    "exit": 0,
+    "port": "/dev/cu.usbmodem132201",
+    "started_at_utc": "2026-10-04T17:24:58.327501+00:00",
+    "finished_at_utc": "2026-10-04T17:24:58.893856+00:00",
+    "log_sha256": "8a2e4444567d8062b827c89a739b0fd5ccc75e24b0874151e327441ba0db177e"
+  },
+  "restored-final-data-checksum-receipt.json": {
+    "command": [
+      "stats",
+      "--data-checksum"
+    ],
+    "exit": 0,
+    "port": "/dev/cu.usbmodem132201",
+    "started_at_utc": "2026-10-04T17:32:58.668938+00:00",
+    "finished_at_utc": "2026-10-04T17:32:59.310116+00:00",
+    "log_sha256": "b98f47585fe1b5ef1ba73d68e5a15d24419b4a0d0d6518932b86f63f1fe21fde",
+    "timed_out": false,
+    "timeout_seconds": 120,
+    "host_pid": 47140
+  },
+  "restored-coredump-status-receipt.json": {
+    "command": [
+      "coredump",
+      "status"
+    ],
+    "exit": 0,
+    "port": "/dev/cu.usbmodem132201",
+    "started_at_utc": "2026-10-04T17:32:31.236048+00:00",
+    "finished_at_utc": "2026-10-04T17:32:31.691658+00:00",
+    "log_sha256": "5bdf63243c04b65d6759ad5a1cbd04f6b4cfdf8a5b1824698fd2ec92ac7d0cec",
+    "timed_out": false,
+    "timeout_seconds": 120,
+    "host_pid": 46966
+  },
+  "restored-status-receipt.json": {
+    "command": [
+      "status"
+    ],
+    "exit": 3,
+    "port": "/dev/cu.usbmodem132201",
+    "started_at_utc": "2026-10-04T17:29:55.699424+00:00",
+    "finished_at_utc": "2026-10-04T17:30:03.744648+00:00",
+    "log_sha256": "d483e1839f73aa26afb14fb39e4d29ee31f7f3592fd565079391be1bf71ec793",
+    "timed_out": false,
+    "timeout_seconds": 120,
+    "host_pid": 44327
+  },
+  "restored-status-after-reset-receipt.json": {
+    "command": [
+      "status"
+    ],
+    "exit": 0,
+    "port": "/dev/cu.usbmodem132201",
+    "started_at_utc": "2026-10-04T17:32:30.135335+00:00",
+    "finished_at_utc": "2026-10-04T17:32:30.764532+00:00",
+    "log_sha256": "8df70c7dcbbd0a291564d983d19fb98e1c22822033f424ede6217127544f175c",
+    "timed_out": false,
+    "timeout_seconds": 120,
+    "host_pid": 46961
+  },
+  "managed-receipt.json": {
+    "command": [
+      "reboot",
+      "upgrade",
+      "--monitor"
+    ],
+    "port": "/dev/cu.usbmodem132201",
+    "started_at_utc": "2026-10-04T17:25:16.696388+00:00",
+    "captured_at_utc": "2026-10-04T17:25:54.302447+00:00",
+    "host_pid": 39746,
+    "exit_after_capture": 130,
+    "controlled_stop": true,
+    "stop_reason": "validated complete ledger",
+    "log_sha256": "331b751c5af9eddf598bd66c64cacddd5352a1aba291eeee9aae04adf47828e9"
+  },
+  "after-data-checksum-receipt.json": {
+    "command": [
+      "stats",
+      "--data-checksum"
+    ],
+    "exit": 0,
+    "port": "/dev/cu.usbmodem132201",
+    "started_at_utc": "2026-10-04T17:27:05.658484+00:00",
+    "finished_at_utc": "2026-10-04T17:27:06.181368+00:00",
+    "log_sha256": "0cbbe8c3ca4ae58967b4a9cb6d077d54fa8005928f28e892532f6cbe30a3c84b",
+    "timed_out": false,
+    "timeout_seconds": 120,
+    "host_pid": 41482
+  },
+  "restore-directed-reset-receipt.json": {
+    "command": [
+      "esptool.reset.HardReset",
+      "uses_usb=True"
+    ],
+    "port": "/dev/cu.usbmodem132201",
+    "started_at_utc": "2026-10-04T17:32:14.448323+00:00",
+    "finished_at_utc": "2026-10-04T17:32:30.071254+00:00",
+    "exit": 0,
+    "flash_writes": 0,
+    "log_sha256": "c125851950e0b53aee793c4d43abb398365c2cd5ae94c4937a7fed206a17e0e6"
+  },
+  "restored-status-retry-receipt.json": {
+    "command": [
+      "status"
+    ],
+    "exit": 3,
+    "port": "/dev/cu.usbmodem132201",
+    "started_at_utc": "2026-10-04T17:30:23.735461+00:00",
+    "finished_at_utc": "2026-10-04T17:30:53.755863+00:00",
+    "log_sha256": "d483e1839f73aa26afb14fb39e4d29ee31f7f3592fd565079391be1bf71ec793",
+    "timed_out": false,
+    "timeout_seconds": 120,
+    "host_pid": 44777
+  },
+  "after-reboot-loader-receipt.json": {
+    "command": [
+      "reboot",
+      "loader"
+    ],
+    "exit": 0,
+    "port": "/dev/cu.usbmodem132201",
+    "started_at_utc": "2026-10-04T17:27:03.020573+00:00",
+    "finished_at_utc": "2026-10-04T17:27:05.658025+00:00",
+    "log_sha256": "e3edb7132359fcac3847ba1187200be2e35b6bf258f763d8ce8406be7150fccd",
+    "timed_out": false,
+    "timeout_seconds": 120,
+    "host_pid": 41473
+  },
+  "before-status-receipt.json": {
+    "command": [
+      "status"
+    ],
+    "exit": 0,
+    "port": "/dev/cu.usbmodem132201",
+    "started_at_utc": "2026-10-04T17:22:17.738211+00:00",
+    "finished_at_utc": "2026-10-04T17:22:19.284970+00:00",
+    "log_sha256": "40bd6455daa75d3a344d1cbcb8bcc4162a694ee489199fd7864567158eaf4610"
+  },
+  "before-coredump-status-receipt.json": {
+    "command": [
+      "coredump",
+      "status"
+    ],
+    "exit": 0,
+    "port": "/dev/cu.usbmodem132201",
+    "started_at_utc": "2026-10-04T17:22:19.286029+00:00",
+    "finished_at_utc": "2026-10-04T17:22:19.702746+00:00",
+    "log_sha256": "5bdf63243c04b65d6759ad5a1cbd04f6b4cfdf8a5b1824698fd2ec92ac7d0cec"
+  }
+}
