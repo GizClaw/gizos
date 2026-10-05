@@ -77,9 +77,9 @@ py_test(
         "@gizos_bk7258_sdk//:locator.json",
     ],
     legacy_create_init = False,
+    local = True,
     main = "tests/test_wifi_ipv6_timeout.py",
     tags = [
-        "local",
         "manual",
     ],
     target_compatible_with = select({

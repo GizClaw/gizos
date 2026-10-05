@@ -64,9 +64,18 @@ PROBE = r'''
 #include "h2_bk_wifi_rpc.h"
 #include "h2_bk_dhcp_ring.h"
 #include "h2_bk_wifi_lease.h"
+#include "h2_bk_wifi_ipv6.h"
 struct bk_msg_hdr { uint32_t cmd_id; };
 struct packet { struct bk_msg_hdr hdr; uint32_t argc; uintptr_t args[4]; };
 extern int started,connected,vif,calls,associate_calls,confirmed,failure;
+static int ipv6_calls,ipv6_result;
+int h2_bk_wifi_ipv6_snapshot(h2_bk_wifi_ipv6_snapshot_t *out) {
+    ++ipv6_calls;
+    if (ipv6_result) return ipv6_result;
+    *out=(h2_bk_wifi_ipv6_snapshot_t){.version=H2_BK_WIFI_IPV6_VERSION,
+        .size=sizeof(*out),.generation=5,.connected=1};
+    return 0;
+}
 int cif_handle_wifi_api_cmd(struct bk_msg_hdr *);
 int cif_send_customer_event(uint8_t *data, uint16_t len) { (void)data; (void)len; return 0; }
 #define CHECK(x) do { if(!(x)) {fprintf(stderr,"line%d\n",__LINE__); return 1;} } while(0)
@@ -116,6 +125,17 @@ int main(void) {
     CHECK(cif_handle_wifi_api_cmd(&p.hdr)==0 && confirmed==0);
     CHECK(leases.version==H2_BK_WIFI_LEASE_VERSION && leases.count==1 &&
           leases.records[0].ip4==0xc0a8bc64u && leases.records[0].xid==567u);
+    p.hdr.cmd_id=H2_BK_WIFI_RPC_IPV6_SNAPSHOT; p.argc=0;
+    CHECK(cif_handle_wifi_api_cmd(&p.hdr)==0 && confirmed==-1 && ipv6_calls==0);
+    p.argc=1; p.args[0]=0;
+    CHECK(cif_handle_wifi_api_cmd(&p.hdr)==0 && confirmed==-1 && ipv6_calls==0);
+    h2_bk_wifi_ipv6_snapshot_t ip6={.size=sizeof(ip6)};
+    p.args[0]=(uintptr_t)&ip6; ipv6_result=-12;
+    CHECK(cif_handle_wifi_api_cmd(&p.hdr)==0 && confirmed==-12 && ipv6_calls==1);
+    ipv6_result=0;
+    CHECK(cif_handle_wifi_api_cmd(&p.hdr)==0 && confirmed==0 && ipv6_calls==2);
+    CHECK(ip6.version==H2_BK_WIFI_IPV6_VERSION && ip6.size==sizeof(ip6) &&
+          ip6.generation==5 && ip6.connected==1 && ip6.count==0);
 #else
     CHECK(confirmed==-2 && connected==1 && started==1 && vif==7 && calls==0);
     p.hdr.cmd_id=H2_BK_WIFI_RPC_STA_ASSOCIATE;
@@ -123,6 +143,8 @@ int main(void) {
     CHECK(confirmed==-2 && connected==1 && started==1 && vif==7 && associate_calls==0);
     p.hdr.cmd_id=H2_BK_WIFI_RPC_LEASE_SNAPSHOT;
     CHECK(cif_handle_wifi_api_cmd(&p.hdr)==0 && confirmed==-2);
+    p.hdr.cmd_id=H2_BK_WIFI_RPC_IPV6_SNAPSHOT;
+    CHECK(cif_handle_wifi_api_cmd(&p.hdr)==0 && confirmed==-2 && ipv6_calls==0);
 #endif
     puts("CP_RPC_CONFIRMED_PAYLOAD_AND_SERVICE_PRESERVATION PASS");
     return 0;

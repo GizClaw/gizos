@@ -3,6 +3,8 @@
 #include "h2_bk_wifi_ipv6_internal.h"
 #include "lwip/netif.h"
 /* TCP/IP context only. CP owns SLAAC/DAD; AP installs its preferred snapshot.
+ * ERR_BUF rejects a snapshot that cannot fit before changing addresses,
+ * status, or the installed generation. Slot zero is reserved for link-local.
  */
 void h2_bk_wifi_ipv6_clear(struct netif *sta);
 err_t h2_bk_wifi_ipv6_install(struct netif *sta,

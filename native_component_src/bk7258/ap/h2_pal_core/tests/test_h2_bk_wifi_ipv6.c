@@ -160,6 +160,27 @@ int main(void) {
          ERR_OK);
   in_tcpip = 0;
   assert(cleanup_count == 1);
+  /* A new generation with three non-link-local addresses cannot fit while
+   * reserving AP slot zero for link-local. Reject before changing anything. */
+  h2_bk_wifi_ipv6_snapshot_t oversized = out;
+  ++oversized.generation;
+  oversized.count = 3u;
+  for (uint32_t i = 0u; i < oversized.count; ++i) {
+    memcpy(oversized.addresses[i].address, ula, sizeof(ula));
+    oversized.addresses[i].address[15] = (uint8_t)(i + 3u);
+  }
+  uint8_t previous_station[sizeof(station)];
+  uint8_t previous_status[sizeof(status)];
+  memcpy(previous_station, &station, sizeof(station));
+  memcpy(previous_status, &status, sizeof(status));
+  uint32_t previous_generation = generation;
+  in_tcpip = 1;
+  assert(h2_bk_wifi_ipv6_install(&station, &oversized, &status, &generation) ==
+         ERR_BUF);
+  in_tcpip = 0;
+  assert(memcmp(previous_station, &station, sizeof(station)) == 0);
+  assert(memcmp(previous_status, &status, sizeof(status)) == 0);
+  assert(generation == previous_generation && cleanup_count == 1u);
   out.size--;
   assert(!h2_bk_wifi_ipv6_snapshot_matches(&out, &config));
   out.size++;
