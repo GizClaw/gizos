@@ -463,7 +463,7 @@ static int bound_interface(const h2_pal_ipv6_config_t *config, int tcp) {
       return found;
   }
   int sockets[3] = {-1, -1, -1};
-  h2_pal_net_addr_t bound, peer;
+  h2_pal_net_addr_t bound = {0}, peer = {0};
   int rc;
   if (tcp) {
     rc = h2_pal_net_tcp_listen(net, target.family, 0u, &bind, &sockets[0],
