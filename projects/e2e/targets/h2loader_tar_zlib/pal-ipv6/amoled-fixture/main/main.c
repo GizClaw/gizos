@@ -33,6 +33,8 @@ static void run(void *user) {
     fail("ap_ipv6", rc);
   rc = h2_ipv6_board_fixture_run(runtime, h2_esp_platform_dtls_api(),
                                  &h2_ipv6_tls_server, confirm);
+  if (!h2_ipv6_board_fixture_ownership_released())
+    fail("services_cleanup", rc);
   int cleaned = h2_ipv6_ap_stop(runtime);
   if (cleaned)
     fail("ap_cleanup", cleaned);

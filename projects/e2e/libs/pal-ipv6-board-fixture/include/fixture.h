@@ -25,6 +25,11 @@ const char *h2_ipv6_fixture_key(void);
  * A terminal PAL join/destroy failure retains the affected state and borrowed
  * APIs, rejects a new run and returns the cleanup error; the caller must keep
  * those dependencies alive rather than freeing a potentially live context. */
+/* Query only on the runner/control thread after run returns. False means a
+ * terminal cleanup error retains workers/listeners or protocol dependencies;
+ * keep the Runtime and its AP/Net interface alive until process recovery. */
+int h2_ipv6_board_fixture_ownership_released(void);
+
 int h2_ipv6_board_fixture_run(h2_runtime_t *, const h2_pal_dtls_api_t *,
                               const h2_ipv6_tls_server_api_t *,
                               int (*ready)(h2_runtime_t *));

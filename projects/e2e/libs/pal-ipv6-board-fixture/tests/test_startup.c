@@ -161,9 +161,19 @@ int main(void) {
     fail_join = scenario == 11u ? 1u : 0u;
     assert(h2_ipv6_board_fixture_run(&runtime, &dtls, &tls, ready_failure) < 0);
     assert(!sockets && !workers && !providers && !peers && !mutex.live);
+    assert(h2_ipv6_board_fixture_ownership_released());
     if (scenario == 11u)
       assert(joins == 4u);
   }
-  puts("board fixture startup: 12 failure paths; all owned resources released");
+  starts = opens = joins = 0u;
+  fail_mutex = fail_provider = fail_peer = 0;
+  fail_open = fail_start = 0u;
+  fail_join = 9u;
+  assert(h2_ipv6_board_fixture_run(&runtime, &dtls, &tls, ready_failure) == H2_PAL_ERR_TIMEOUT);
+  assert(!h2_ipv6_board_fixture_ownership_released());
+  assert(sockets == 5u && workers == 3u && providers == 1u && peers == 1u && mutex.live);
+  assert(joins == 9u);
+  assert(h2_ipv6_board_fixture_run(&runtime, &dtls, &tls, ready_failure) == H2_PAL_ERR_INVALID_STATE);
+  puts("board fixture startup: 12 released paths; persistent join failure retains ownership and dependencies");
   return 0;
 }
