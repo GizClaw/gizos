@@ -244,9 +244,8 @@ def shared_pal_before_ipv6(content):
             assert "\n\n" not in before.decode().strip() and "\n\n" not in after.decode().strip()
         else:
             raise AssertionError("unowned shared PAL change")
-        if after in content:
-            assert content.count(after) == 1
-            content = content.replace(after, before, 1)
+        assert content.count(after) == 1, "recorded guide delta missing or duplicated: " + owner
+        content = content.replace(after, before, 1)
     return content
 
 

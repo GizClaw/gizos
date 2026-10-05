@@ -29,7 +29,7 @@
   "current_audit_sha256": {
     "projects/e2e/apps/pal-display/BUILD.bazel": "87c6346998da40e8b8b1753e8eb18997ddd68939507709ba4aecf7a2aff5c84b",
     "projects/e2e/apps/pal-display/README.md": "74b3849400315b472667a42455286988cae99500fe1f7c075fad98763e6a38e4",
-    "projects/e2e/apps/pal-display/check_qualification.py": "39a87cd88236f90986fea8b95f698b247106bb50ed21f8ee07c26c789d2aaf1d"
+    "projects/e2e/apps/pal-display/check_qualification.py": "710bf99ab823d29005bafc0b64260f0c5699b1a4be40db0f7cdfd77c822d4627"
   },
   "network_config_changes": {
     "boards/bk7258_v3_202405/bk7258/ap.defaults": {

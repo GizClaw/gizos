@@ -41,6 +41,16 @@ class MobileRunnerProvenanceTest(unittest.TestCase):
                 with self.assertRaises(AssertionError):
                     self.verify(self.followup)
 
+    def test_recorded_ipv6_guide_fragment_is_required_exactly_once(self):
+        record = json.loads((qualification.ROOT / "shared_ipv6_maintenance.json").read_text(encoding="utf-8"))
+        current = qualification.Path(qualification.SHARED_PAL_GUIDE).read_bytes()
+        for change in record["guide_changes"]:
+            fragment = change["after_utf8"].encode("utf-8")
+            self.assertEqual(current.count(fragment), 1)
+            for broken in [current.replace(fragment, b"", 1), current + fragment]:
+                with self.assertRaises(AssertionError):
+                    qualification.shared_pal_before_ipv6(broken)
+
     def test_other_app_catalog_changes_preserve_display_content(self):
         baseline = (qualification.ROOT / "shared_catalog_baseline.txt").read_text(encoding="utf-8")
         current = qualification.Path(qualification.SHARED_CATALOG).read_text(encoding="utf-8")
