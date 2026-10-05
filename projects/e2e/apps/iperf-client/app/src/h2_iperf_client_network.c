@@ -117,21 +117,13 @@ h2_pal_result_t h2_iperf_client_app_bench(h2_runtime_t *runtime,
   if (runtime == NULL || target == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   uint8_t before[32] = {0}, after[32] = {0};
-  int rc = saved_signature(runtime, before);
-  if (rc != H2_PAL_OK)
-    return rc;
   h2_pal_wifi_sta_config_t wifi = {.ssid = "GizOS-iPerf",
                                    .ssid_len = 11u,
                                    .password = "gizosiperf",
                                    .password_len = 10u,
                                    .channel = 6u};
   h2_iperf_client_app_network_t network = {0};
-  rc = h2_iperf_client_app_connect(runtime, &wifi, &network);
-  if (rc != H2_PAL_OK)
-    goto done;
-  report_network(runtime, target, "initial", &network);
   h2_iperf_client_app_config_t config = {
-      .mode = network.mode,
       .target = target,
       .ipv4 = {.family = H2_PAL_NET_FAMILY_IPV4, .ip = {192, 168, 4, 1}},
       .ipv6 = {.family = H2_PAL_NET_FAMILY_IPV6,
@@ -142,35 +134,64 @@ h2_pal_result_t h2_iperf_client_app_bench(h2_runtime_t *runtime,
       .checkpoint = checkpoint,
       .checkpoint_user = checkpoint_user};
   h2_iperf_client_app_report_t report = {0};
-  const int matrix = h2_iperf_client_app_run(runtime, &config, &report);
-  rc = h2_pal_wifi_sta_disconnect(runtime->wifi_sta);
-  if (rc == H2_PAL_OK)
-    rc = verify_disconnected(runtime);
-  if (rc == H2_PAL_OK)
-    rc = h2_iperf_client_app_connect(runtime, &wifi, &network);
-  if (rc == H2_PAL_OK && network.mode != config.mode)
-    rc = H2_PAL_ERR_INVALID_STATE;
-  if (rc == H2_PAL_OK)
+  int matrix = H2_PAL_ERR_INVALID_STATE;
+  int matrix_started = 0, radio_attempted = 0;
+  int initial_ready = 0, reconnected = 0;
+  int rc = saved_signature(runtime, before);
+  const int before_valid = rc == H2_PAL_OK;
+  if (rc != H2_PAL_OK)
+    goto finished;
+  radio_attempted = 1;
+  rc = h2_iperf_client_app_connect(runtime, &wifi, &network);
+  if (rc != H2_PAL_OK)
+    goto finished;
+  config.mode = network.mode;
+  initial_ready = network.runtime_ready;
+  report_network(runtime, target, "initial", &network);
+  matrix_started = 1;
+  matrix = h2_iperf_client_app_run(runtime, &config, &report);
+  rc = matrix;
+  int lifecycle = h2_pal_wifi_sta_disconnect(runtime->wifi_sta);
+  if (lifecycle == H2_PAL_OK)
+    lifecycle = verify_disconnected(runtime);
+  if (lifecycle == H2_PAL_OK)
+    lifecycle = h2_iperf_client_app_connect(runtime, &wifi, &network);
+  if (lifecycle == H2_PAL_OK && network.mode != config.mode)
+    lifecycle = H2_PAL_ERR_INVALID_STATE;
+  if (lifecycle == H2_PAL_OK) {
+    reconnected = 1;
     report_network(runtime, target, "reconnect", &network);
+  }
   if (rc == H2_PAL_OK)
-    rc = saved_signature(runtime, after);
-  if (rc == H2_PAL_OK && memcmp(before, after, sizeof(before)))
-    rc = H2_PAL_ERR_INVALID_STATE;
-  char line[240];
+    rc = lifecycle;
+finished:
+  if (rc != H2_PAL_OK && radio_attempted)
+    (void)h2_pal_wifi_sta_disconnect(runtime->wifi_sta);
+  /* Every valid bench reaches the final settings observation, even if setup
+   * never started the matrix. Keep the first qualification error intact. */
+  int saved_check = saved_signature(runtime, after);
+  if (saved_check == H2_PAL_OK &&
+      (!before_valid || memcmp(before, after, sizeof(before))))
+    saved_check = H2_PAL_ERR_INVALID_STATE;
+  if (rc == H2_PAL_OK && saved_check != H2_PAL_OK) {
+    rc = saved_check;
+    if (radio_attempted)
+      (void)h2_pal_wifi_sta_disconnect(runtime->wifi_sta);
+  }
+  const int qualified = rc == H2_PAL_OK;
+  char line[384];
   (void)snprintf(
       line, sizeof(line),
       "H2_IPERF_CLIENT_COMPLETE board=%s mode=%u rc=%d passed=%u total=%u "
       "matrix_rc=%d public_wifi=%u runtime_ip=%u disconnect_reconnect=%u "
-      "saved_unchanged=%u",
-      target, (unsigned)config.mode, rc == H2_PAL_OK ? matrix : rc,
-      report.passed, report.total, matrix, network.runtime_ready,
-      network.runtime_ready, rc == H2_PAL_OK, rc == H2_PAL_OK);
+      "saved_unchanged=%u matrix_started=%u saved_check_rc=%d",
+      target, (unsigned)config.mode, rc, report.passed, report.total, matrix,
+      (unsigned)(qualified && initial_ready),
+      (unsigned)(qualified && initial_ready),
+      (unsigned)(qualified && reconnected),
+      (unsigned)(qualified && saved_check == H2_PAL_OK),
+      (unsigned)matrix_started, saved_check);
   (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "iperf-client", line);
-  if (rc == H2_PAL_OK)
-    rc = matrix;
-  if (rc != H2_PAL_OK)
-    (void)h2_pal_wifi_sta_disconnect(runtime->wifi_sta);
-done:
   memset(&wifi, 0, sizeof(wifi));
   memset(before, 0, sizeof(before));
   memset(after, 0, sizeof(after));
