@@ -15,15 +15,20 @@ IPv4-only and IPv6-only each produce 30 cases. Dual stack produces 60 cases, fir
 
 The BK launcher places benchmark buffers and its 32-KiB runner stack in the existing PSRAM provider so receive buffers do not exhaust internal Wi-Fi/control memory. It pauses and joins UART management while measuring, writes ledger records through a bounded UART PAL sink, drains/closes the sink and restarts management before image confirmation. Capture all ledger bytes: CLI protocol demultiplexing can consume binary-looking SDK output, so qualification can hand off from the actual BOOT monitor to a sole directed raw UART collector before setup begins. Keep that same boot's BOOT prefix and raw capture hashes; missing records invalidate the run.
 
+Setup failure after association disconnects the temporary test network best-effort and retains the original setup error. Failed measurement or post-measurement qualification also disconnects best-effort. A successful bench leaves the verified association active for the launcher; only then does the DevKit launcher confirm the image and emit `H2_IPERF_CLIENT_CONFIRMED rc=0`. A failed bench never confirms its image.
+
 ## Build and verify
 
 ```sh
 bazel test --config=macos_arm64 //projects/e2e/apps/iperf-client/app:client_test
+bazel test --config=macos_arm64 //projects/e2e/apps/iperf-client/app:network_test
 bazel build --config=esp32s3 //projects/e2e/targets/h2loader_tar_zlib/iperf-client/devkit:package
 bazel build --config=bk7258 //projects/e2e/targets/h2loader_tar_zlib/iperf-client/bk7258_v3_202405:package
 ```
 
 The host test uses real loopback IPv4/IPv6 sockets, exercises 60 TCP/UDP exchanges including repeated dual-family rounds, validates non-fail-fast accounting on a refused endpoint and rejects inconsistent mode/family configuration before traffic. Hardware qualification additionally requires exact UID/port, source/package/image hashes, complete serial logs and final coredump/firmware state.
+
+`network_test` injects public PAL/Runtime outcomes into the production network helper. It checks event alignment, bounded readiness timeout, setup/matrix/post-measurement failure cleanup, and preservation of the primary error when disconnect also fails.
 
 ## Two-board performance qualification
 
