@@ -63,6 +63,7 @@
         "libs/pal/providers/posix/pal_core/src/h2_posix_net.c": "515cba31db970cf6f20977adf53d8d35df3ec5d122128e65f1da163b358f4625",
         "projects/e2e/apps/pal-ipv6/app/src/h2_pal_ipv6_e2e.c": "6c828f8660c518b62ede31268084af64ac18fb0204f684f0563a965aa4db21ce",
         "projects/e2e/apps/pal-net-tls/app/src/h2_pal_net_tls_e2e.c": "f67f2f4afb97b6648a84c1af47e29980baea02a77649c4a726394562bc1a5a63",
+        "projects/e2e/libs/pal-ipv6-fixture/fixture_ipv6.py": "3e34b84ba2b675538b137f240adcd261ca7f0af12a2a2a0bec8c9728f4b52425",
         "projects/e2e/libs/pal-net-tls-fixture/fixture.py": "4833a8b2ae1b9b859e5f2238624a1c0036eeb9085d79ac2d452e6556be90cccd",
         "projects/e2e/targets/cc_binary/pal-ipv6/main.c": "e6743bedc7a09d5f44e74e34f2d8249a73102cf8cc540b409a97037591aa917d",
         "projects/e2e/targets/cc_binary/pal-ipv6/run_desktop.py": "cd41dce09e9d28dba39876b49c2da2146dcb16e0225422f2a242aead70956db6",
@@ -72,6 +73,18 @@
         "projects/e2e/targets/cc_binary/pal-ipv6/pal_ipv6": "5c8361771bc83c658ebc3b6ad182e0bd66d44f096d2ff4544e83939e87cd0d01",
         "projects/e2e/targets/cc_binary/pal-net-tls/pal_net_tls": "13007f7cb55ffa7d78f1e0c6eae31aedccf3177c13ce2a92d6bde3a4a8bb1cd6",
         "tools/webrtc-test-server/webrtc_test_server_/webrtc_test_server": "8ecf85a75e2ae317e6c2a532f343e1c69b436617e909494792965bd498dac839"
+      },
+      "complete_input_capture": {
+        "all_before_after_identical": true,
+        "actions_count": 375,
+        "input_count": 9967,
+        "first_party_sources_count": 287,
+        "sha256": {
+          "full_source_manifest": "2e5ad65c5208b3e0c2eda0e580ec08e9e43adda7b49a46f60ad082e5d8bea9d1",
+          "selected_action_closure": "555263fe3abcd79c5d4622bf0a556094cad1e8179e516dd103419f063fd44bec",
+          "action_input_manifest": "74f8556446aa55f022861a70d1056588c7eeca44cb52fe1242bef6509bf96316",
+          "input_verification": "8fc7edd2956adeb00773cdfbeec5a3cd0f988cb87c2658bdccdb42647579c2ed"
+        }
       }
     },
     "raw_log_sha256": {
