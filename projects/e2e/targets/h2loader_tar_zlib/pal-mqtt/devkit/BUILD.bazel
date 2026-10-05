@@ -1,4 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_test")
+load("@rules_python//python:defs.bzl", "py_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//projects/e2e/libs/pal-mqtt-device:device_test.bzl", "mqtt_device_test")
 load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_esp_idf_firmware")
@@ -106,7 +107,11 @@ mqtt_device_test(name = "device_test", package = ":package", target = "esp32s3")
 
 cc_test(
     name = "ledger_console_test",
-    srcs = ["main/ledger_console.h", "tests/test_ledger_console.c"],
+    srcs = [
+        "main/ledger_console.h",
+        "tests/test_ledger_console.c",
+        "//projects/e2e/targets/h2loader_tar_zlib/pal-mqtt/bk7258_v3_202405:ap/ledger_console.h",
+    ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = ["main"],
@@ -117,4 +122,29 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = ["//projects/e2e/libs/pal-mqtt-device:runner"],
+)
+
+py_test(
+    name = "ledger_admission_test",
+    srcs = [
+        "tests/test_ledger_admission.py",
+        "//projects/e2e/libs/pal-mqtt-device:verify_device.py",
+    ],
+    args = [
+        "$(location :ledger_console_test)",
+        "$(location //projects/e2e/apps/pal-mqtt/app:include/h2_pal_mqtt_cases.inc)",
+    ],
+    data = [
+        ":ledger_console_test",
+        "//projects/e2e/apps/pal-mqtt/app:include/h2_pal_mqtt_cases.inc",
+    ],
+    imports = ["../../../../libs/pal-mqtt-device"],
+    legacy_create_init = 0,
+    main = "tests/test_ledger_admission.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
 )

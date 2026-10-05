@@ -14,7 +14,7 @@ class Verifier(unittest.TestCase):
         self.boot=f'id={self.execution} version=v1 epoch_ms=123 ca_sha256='+('c'*64)
         rows='\n'.join('H2_PAL_MQTT_CASE '+json.dumps(dict(id=case,status='PASS',detail=0)) for case in self.ids)
         summary=dict(selected=36,passed=36,failed=0,blocked=0,cleanup=0,rc=0,before=[0]*10,after=[0]*10)
-        self.good='H2_PAL_MQTT_PLATFORM_BOOT board=bk7258\nH2_PAL_MQTT_BOOT '+self.boot+'\nH2_PAL_MQTT_RUN '+self.boot+'\n'+rows+'\nH2_PAL_MQTT_SUMMARY '+json.dumps(summary)+'\nH2_PAL_MQTT_READY board=bk7258 rc=0 confirm=0\n'
+        self.good='H2_PAL_MQTT_PLATFORM_BOOT board=bk7258\nH2_PAL_MQTT_BOOT '+self.boot+'\nH2_PAL_MQTT_RUN '+self.boot+'\n'+rows+'\nH2_PAL_MQTT_SUMMARY '+json.dumps(summary)+'\nH2_PAL_MQTT_READY board=bk7258 rc=0 confirm=pending\nH2_PAL_MQTT_CONFIRMED board=bk7258 rc=0\n'
     def test_incomplete_first_run_cannot_be_replaced_by_replay(self):
         first=self.good.split('H2_PAL_MQTT_SUMMARY',1)[0]
         first=first.replace(next(line for line in first.splitlines() if '"id": "publish-qos1"' in line),'')
@@ -34,7 +34,7 @@ class Verifier(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError,'later startup'):
             boot_ledger(initial+initial+self.good,self.ids,'v1')
     def test_ready_pending_requires_actual_post_delivery_confirmation(self):
-        pending=self.good.replace('confirm=0','confirm=pending')
+        pending=self.good.split('H2_PAL_MQTT_CONFIRMED ',1)[0]
         with self.assertRaisesRegex(AssertionError,'missing post-READY'):boot_ledger(pending,self.ids,'v1')
         final='H2_PAL_MQTT_CONFIRMED board=bk7258 rc=0\n'
         self.assertEqual(boot_ledger(pending+final,self.ids,'v1')['confirmation']['rc'],'0')
@@ -45,6 +45,9 @@ class Verifier(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError,'missing post-READY'):boot_ledger(devkit,self.ids,'v1')
         self.assertEqual(boot_ledger(devkit+final.replace('board=bk7258','board=devkit'),self.ids,'v1')['confirmation']['rc'],'0')
         with self.assertRaises(AssertionError):boot_ledger(devkit+final,self.ids,'v1')
+        for board in ['bk7258','devkit']:
+            legacy=pending.replace('board=bk7258','board='+board).replace('confirm=pending','confirm=0 provider_cleanup=0')
+            with self.assertRaisesRegex(AssertionError,'current admission'):boot_ledger(legacy,self.ids,'v1')
     def test_both_device_targets_require_fixed_source_binding_file(self):
         for board,target in [('bk7258_v3_202405','bk7258'),('devkit','esp32s3')]:
             manifest=dict(role='app',board=board,target=target,version='v1',image_size='42',image_sha256='c'*64)
@@ -101,8 +104,8 @@ class Verifier(unittest.TestCase):
         esp = self.good.replace('board=bk7258', 'board=devkit')
         with self.assertRaises(AssertionError):boot_ledger(esp,self.ids,'v1')
         for result in ['-4', '1']:
-            with self.assertRaises(AssertionError):boot_ledger(esp.replace('confirm=0', 'confirm=0 provider_cleanup='+result),self.ids,'v1')
-        self.assertEqual(boot_ledger(esp.replace('confirm=0', 'confirm=0 provider_cleanup=0'),self.ids,'v1')['ready']['board'], 'devkit')
+            with self.assertRaises(AssertionError):boot_ledger(esp.replace('confirm=pending', 'confirm=pending provider_cleanup='+result),self.ids,'v1')
+        self.assertEqual(boot_ledger(esp.replace('confirm=pending', 'confirm=pending provider_cleanup=0'),self.ids,'v1')['ready']['board'], 'devkit')
     def test_real_log_prefix_fields_and_color(self):
         prefixed='\n'.join('\x1b[32mcpu=0 tick='+str(index)+' '+line+'\x1b[0m'
             for index,line in enumerate(self.good.splitlines()))

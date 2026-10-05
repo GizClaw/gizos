@@ -1,5 +1,6 @@
 """Format/admission guard tests only; these do not create E2E qualification."""
 import json
+import runpy
 from pathlib import Path
 import tempfile
 import unittest
@@ -94,6 +95,19 @@ class AdmissionTest(unittest.TestCase):
         folder=Path(__file__).parent.parent/'evidence/runs/20a23ce1-r12-continuous'
         collector=json.loads((folder/'collector-receipt.json').read_text())
         self.assertEqual(captured_verifier(folder,collector),folder/'host-verifier.py')
+
+    def test_captured_verifier_preserves_its_original_confirmation_schema(self):
+        folder=Path(__file__).parent.parent/'evidence/runs/20a23ce1-r12-continuous'
+        collector=json.loads((folder/'collector-receipt.json').read_text())
+        original=runpy.run_path(str(captured_verifier(folder,collector)),run_name='historical_contract')
+        ids=['case-'+str(index) for index in range(36)]
+        identity='a'*32+'-'+'b'*16
+        boot='id='+identity+' version=v1 epoch_ms=123 ca_sha256='+'c'*64
+        rows='\n'.join('H2_PAL_MQTT_CASE '+json.dumps({'id':case,'status':'PASS','detail':0}) for case in ids)
+        summary=dict(selected=36,passed=36,failed=0,blocked=0,cleanup=0,rc=0,before=[0]*10,after=[0]*10)
+        text='H2_PAL_MQTT_PLATFORM_BOOT board=bk7258\nH2_PAL_MQTT_BOOT '+boot+'\nH2_PAL_MQTT_RUN '+boot+'\n'+rows+ \
+             '\nH2_PAL_MQTT_SUMMARY '+json.dumps(summary)+'\nH2_PAL_MQTT_READY board=bk7258 rc=0 confirm=0\n'
+        self.assertEqual(original['boot_ledger'](text,ids,'v1')['ready']['confirm'],'0')
 
 
 if __name__ == '__main__':

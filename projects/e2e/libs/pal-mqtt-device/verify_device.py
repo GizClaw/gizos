@@ -128,7 +128,7 @@ def boot_ledger(text, ids, version, previous=None):
             assert len(summary['before']) == 10 and summary['before'] == summary['after'], 'native resource leak'
         elif 'H2_PAL_MQTT_READY ' in line:
             ready = fields(line.split('H2_PAL_MQTT_READY ', 1)[1])
-            assert ready.get('rc') == '0' and ready.get('confirm') in ('0', 'pending'), 'not admitted'
+            assert ready.get('rc') == '0' and ready.get('confirm') == 'pending', 'current admission requires post-delivery confirmation'
             if ready.get('board') == 'devkit':
                 assert ready.get('provider_cleanup') == '0', 'ESP portable provider not released'
             assert summary is not None, 'ready without latest complete ledger'

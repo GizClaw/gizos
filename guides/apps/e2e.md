@@ -249,7 +249,7 @@ iOS/Android 消费实际 SDK 包导出的显式 MQTT owner；owner 持有本平�
 
 Desktop 直接运行 `//projects/e2e/targets/cc_binary/pal-mqtt:desktop_test`；移动端分别使用 `//projects/e2e/targets/ios_application/pal-mqtt:ios_pal_mqtt_simulator_test` 和 `//projects/e2e/targets/android_binary/pal-mqtt:android_pal_mqtt_simulator_test`。公网 `:public_broker_test` 为 `manual`/`external`，同一 App 的单个 QoS0 round trip 只授予该子集通过，不能代替完整 registry。连接成功但没有 CONNACK 的负例预算由 launcher 注入，仍须 broker 实际观察到 CONNECT，并验证有限 deadline 的上下界；未到达 broker 的 TCP timeout 不满足该负例。入口、命令与平台能力边界见 `projects/e2e/apps/pal-mqtt/README.md`；缺少 raw TCP/TLS MQTT provider 的 Browser 保持明确 unsupported，不能把 host 结果当作六平台资格。
 
-新硬件 capture 的 BK/DevKit 均须 fixed-source package binding；首份 boot/RUN 不完整时后续 replay 或新 startup 不能替代。两者先完整交付首轮 ledger 与 READY(confirm=pending)，再确认 App 并交付实际 CONFIRMED，缺少任一终态均不授予资格。DevKit 借用现有 USB JTAG PAL，逐条检查有界 write 的完整字节数和真实 TX flush；BK 保留原有 UART owner 与管理恢复流程。TLS 拒绝分别绑定实际 CA/hostname alert 与观察到的正常/错误 server-name，null 或缺失 SNI、两个同类失败均不能通过。LAN fixture 要求显式 `--evidence` 保存实际 CA/config/inputs。历史 BK 导入只运行并校验 capture 内的 `host-verifier.py`，旧资格保留原 host/verifier/fixture schema，不能改称当前修订版 hardware PASS。
+新硬件 capture 的 BK/DevKit 均须 fixed-source package binding；首份 boot/RUN 不完整时后续 replay 或新 startup 不能替代。两者先完整交付首轮 ledger 与 READY(confirm=pending)，再确认 App 并交付实际 CONFIRMED，当前 verifier 拒绝缺少终态或以 confirm=0 绕过该时序的记录。DevKit 借用现有 USB JTAG PAL，逐条检查有界 write 的完整字节数和真实 TX flush；BK 保留原有 UART owner 与管理恢复流程。TLS 拒绝分别绑定实际 CA/hostname alert 与观察到的正常/错误 server-name，null 或缺失 SNI、两个同类失败均不能通过。LAN fixture 要求显式 `--evidence` 保存实际 CA/config/inputs。历史 BK 导入只运行并校验 capture 内的 `host-verifier.py`，其旧 confirm=0 schema 保留原含义；旧资格保留原 host/verifier/fixture schema，不能改称当前修订版 hardware PASS。
 
 ## PAL Crypto E2E
 
