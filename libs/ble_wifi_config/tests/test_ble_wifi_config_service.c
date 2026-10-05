@@ -1191,6 +1191,7 @@ static void test_provision_success(void) {
     fake_add_scan_entry(&runtime, "office", -45, H2_PAL_WIFI_SECURITY_WPA2);
     runtime.status.state = H2_PAL_WIFI_STA_STATE_GOT_IP;
     runtime.status.ip_valid = 1u;
+    runtime.status.ip.ip4 = 0xc0000201u;
     h2_ble_wifi_config_t *service = open_service(&runtime, NULL);
     connect_and_subscribe(&runtime);
 
@@ -1259,21 +1260,30 @@ static void test_provision_ap_not_found(void) {
 }
 
 static void test_provision_save_failure(void) {
-    fake_runtime_t runtime;
-    fake_runtime_init(&runtime);
-    fake_add_scan_entry(&runtime, "office", -45, H2_PAL_WIFI_SECURITY_WPA2);
-    runtime.status.state = H2_PAL_WIFI_STA_STATE_GOT_IP;
-    runtime.status.ip_valid = 1u;
-    runtime.connect_result = H2_PAL_ERR_IO; /* Provider connected but could not save. */
-    h2_ble_wifi_config_t *service = open_service(&runtime, NULL);
-    connect_and_subscribe(&runtime);
-    write_credentials(&runtime, "office", "hunter2!");
-    fake_notification_t result = fake_wait_final(&runtime);
-    CHECK(result.data[1] == 0x01u);
-    CHECK(result.data[2] == (uint8_t)H2_BLE_WIFI_CONFIG_REASON_UNKNOWN);
-    CHECK(runtime.connect_calls == 1);
-    CHECK(h2_ble_wifi_config_close(service) == H2_PAL_OK);
-    fake_runtime_deinit(&runtime);
+    for (unsigned ipv6_only = 0u; ipv6_only < 2u; ++ipv6_only) {
+        fake_runtime_t runtime;
+        fake_runtime_init(&runtime);
+        fake_add_scan_entry(&runtime, "office", -45, H2_PAL_WIFI_SECURITY_WPA2);
+        runtime.status.state = H2_PAL_WIFI_STA_STATE_GOT_IP;
+        if (ipv6_only) {
+            runtime.status.ip.ip6[0] = 0xfdu;
+            runtime.status.ip.ip6[15] = 1u;
+            runtime.status.ip.ip6_valid = 1u;
+        } else {
+            runtime.status.ip_valid = 1u;
+            runtime.status.ip.ip4 = 0xc0000201u;
+        }
+        runtime.connect_result = H2_PAL_ERR_IO; /* Provider connected but could not save. */
+        h2_ble_wifi_config_t *service = open_service(&runtime, NULL);
+        connect_and_subscribe(&runtime);
+        write_credentials(&runtime, "office", "hunter2!");
+        fake_notification_t result = fake_wait_final(&runtime);
+        CHECK(result.data[1] == 0x01u);
+        CHECK(result.data[2] == (uint8_t)H2_BLE_WIFI_CONFIG_REASON_UNKNOWN);
+        CHECK(runtime.connect_calls == 1);
+        CHECK(h2_ble_wifi_config_close(service) == H2_PAL_OK);
+        fake_runtime_deinit(&runtime);
+    }
 }
 
 static void test_provision_dhcp_failure(void) {
@@ -1306,6 +1316,7 @@ static void test_provision_open_network(void) {
     fake_add_scan_entry(&runtime, "guest", -55, H2_PAL_WIFI_SECURITY_OPEN);
     runtime.status.state = H2_PAL_WIFI_STA_STATE_GOT_IP;
     runtime.status.ip_valid = 1u;
+    runtime.status.ip.ip4 = 0xc0000201u;
     h2_ble_wifi_config_config_t config;
     memset(&config, 0, sizeof(config));
     config.skip_ap_verification_before_connect = true;

@@ -1,7 +1,18 @@
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include "h2_bk_net_addr.h"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+
+static void assert_same_address(const h2_pal_net_addr_t *left,
+                                  const h2_pal_net_addr_t *right) {
+  /* Struct padding is unspecified, including after compound-literal copies. */
+  assert(left->family == right->family && left->port == right->port &&
+         left->scope_id == right->scope_id &&
+         memcmp(left->ip, right->ip, sizeof(left->ip)) == 0);
+}
 
 int main(void) {
   h2_pal_net_addr_t addr = {
@@ -15,7 +26,7 @@ int main(void) {
   h2_pal_net_addr_t got;
   assert(h2_bk_net_from_sockaddr((struct sockaddr *)&storage, &got) ==
          H2_PAL_OK);
-  assert(!memcmp(&got, &addr, sizeof(got)));
+  assert_same_address(&got, &addr);
   addr.ip[0] = 0xfe;
   addr.ip[1] = 0x80;
   assert(h2_bk_net_to_sockaddr(&addr, &storage, &size) ==
@@ -33,7 +44,7 @@ int main(void) {
   assert(h2_bk_net_to_sockaddr(&addr, &storage, &size) == H2_PAL_OK);
   assert(h2_bk_net_from_sockaddr((struct sockaddr *)&storage, &got) ==
          H2_PAL_OK);
-  assert(!memcmp(&addr, &got, sizeof(addr)));
+  assert_same_address(&addr, &got);
   h2_pal_net_addr_list_t list;
   assert(h2_bk_net_resolve_all(NULL, "fd53::1", H2_PAL_NET_FAMILY_IPV6,
                                &list) == H2_PAL_OK);
