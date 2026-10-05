@@ -67,12 +67,20 @@ int h2_ntp_sync(const h2_ntp_client_config_t *config, h2_ntp_sync_result_t *out_
         uint64_t wall_ms = 0u;
         uint64_t mono_start_ms = 0u;
         int rc = h2_pal_time_get_wall_ms(config->time, &wall_ms);
-        if (rc != H2_PAL_OK) {
+        const int cold_start = rc == H2_PAL_TIME_ERR_UNCALIBRATED;
+        if (rc != H2_PAL_OK && !cold_start) {
             return H2_NTP_ERR_UNSUPPORTED;
         }
         rc = h2_pal_time_get_monotonic_ms(config->time, &mono_start_ms);
         if (rc != H2_PAL_OK) {
             return H2_NTP_ERR_UNSUPPORTED;
+        }
+        /* An uncalibrated clock cannot supply UTC yet. Its monotonic value
+         * supplies the request's echoed transaction timestamp and the local
+         * elapsed-time reference only; never publish it as wall time. The
+         * validated server response supplies UTC for the first calibration. */
+        if (cold_start) {
+            wall_ms = mono_start_ms;
         }
         uint8_t request[H2_NTP_PACKET_SIZE];
         uint8_t response[H2_NTP_PACKET_SIZE];

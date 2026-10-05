@@ -12,6 +12,8 @@
 
 NTP 不直接访问 socket 或系统时钟。Server、bind、timeout、retry 和是否设置 wall clock 由调用方通过 config 决定。
 
+冷启动时 PAL wall clock 可以报告 `H2_PAL_TIME_ERR_UNCALIBRATED`。Client 此时只用 monotonic time 生成请求 transaction timestamp 和计算往返耗时，不把启动计时器写为 UTC；收到来源、originate timestamp 和服务器状态都有效的响应后，才按调用方的 `set_wall_clock` 配置写入真实 UTC。其它 clock provider 错误仍直接失败。依赖证书时间的 HTTPS consumer 必须等校时成功且 wall clock 可读后再连接。
+
 ## 构建与测试
 
 ```sh
