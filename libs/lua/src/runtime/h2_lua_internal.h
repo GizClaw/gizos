@@ -167,6 +167,9 @@ typedef struct h2_lua_job {
   void *display_smooth;
   int display_smooth_ref;
   int display_shutting_down;
+  int display_lease;
+  void *display_submission;
+  int display_submission_ref;
   uint8_t display_fade_phase;
   int touch_open;
   int touch_initialized;
@@ -190,7 +193,7 @@ typedef struct h2_lua_job {
 } h2_lua_job_t;
 
 /* Detach Display storage before VM finalizers run; forbid reopening on teardown. */
-void h2_lua_job_close_display(h2_lua_job_t *job);
+h2_pal_result_t h2_lua_job_close_display(h2_lua_job_t *job);
 
 /*
  * Hooks installed by //libs/lua:lua_link before Host start. open_module adds
@@ -223,6 +226,7 @@ struct h2_lua_host {
   h2_atomic_int_t started;
   h2_atomic_int_t stopping;
   h2_atomic_int_t joined;
+  h2_atomic_int_t display_active;
   h2_lua_worker_t *workers;
   h2_pal_mutex_t *jobs_mutex;
   void *vm_heap;

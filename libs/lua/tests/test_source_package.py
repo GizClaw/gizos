@@ -51,7 +51,8 @@ def main():
         optimized = {
             "h2_lua_numeric_prepared.c", "h2_lua_geometry_prepared.c",
             "h2_lua_geometry_batches.c", "h2_lua_vmath.c",
-            "h2_lua_geometry.c", "h2_lua_display.c",
+            "h2_lua_geometry.c", "h2_lua_display.c", "h2_lua_display_plan.c",
+            "h2_lua_display_worker.c",
         }
         seen = set()
         for unit in manifest["compilation_units"]:

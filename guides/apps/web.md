@@ -209,9 +209,13 @@ release 规则，例如只接受长按。`run_ms` 非零时在该时长后发出
 `@gizos//libs/app_host:web_app.bzl` 与
 `@gizos//libs/lua/web:lua_web_app.bzl`。
 
+Lua Display 与其他 target 一样，在获取时启动公共 `$lua/display` worker；没有 inline 后端模式，`present/end_frame` 等待该 worker 完成当前帧。Lua 通用入口执行 checked shutdown，并启用 `managed_shutdown`：Stop 请求取消 Lua job，等待依赖完成清理；不会在 2 秒后强制取消拥有传输 worker 的 App task。后端一直不返回时，清理可能无限等待。后端或 join 失败时，入口通过 App Host 的 quarantine 通知保留 Lua Host、Runtime、FS、platform 和仍存活的 task；shell 报告 `result=FAIL ... retained=1`，重复启动和输入被拒绝。已 join 的 worker 不等于传输状态已知安全；没有 reset、discard 或自动恢复 API，最终释放边界是页面／Wasm module 销毁。普通 Lua 错误在 checked shutdown 成功后仍完整释放，不进入永久隔离。
+
+App Host 把配置、Button/hardware descriptor、名字和路径复制到一个拥有的 allocation；`owner_bytes` 报告它的大小。opaque callback/provider/allocator user context 仍由调用方拥有，必须使用能覆盖隔离期的 static 或 owned heap 存储，不能借用已返回的栈。公共 ownership 与返回值合同见 `h2_web_app_host.h`。`//libs/lua/web/tests/lifecycle:all` 在真实浏览器中验证共享 Lua 入口的正常释放、普通错误、慢传输 Stop、传输故障、Display/App join 失败及 FS 忙时的依赖保留。
+
 #### Lua 脚本配置与预算
 
-`h2_lua_web_app()` 的 `vm_memory_limit_bytes` 默认 524288（512 KiB），允许 65536..16777216；`source_limit_bytes` 默认 131072（128 KiB），允许 1..1048576。两者必须是整数，不能传入 bool 或字符串。默认调用的预算不变，较大的程序由自己的 artifact entry 显式选择预算；可接受的配置不保证任意程序都能在该预算内运行。超限源码仍按 Host resource 校验失败，VM 分配耗尽仍报告 job failure，不自动扩容。
+`h2_lua_web_app()` 的 `vm_memory_limit_bytes` 默认 524288（512 KiB），允许 65536..16777216；`source_limit_bytes` 默认 131072（128 KiB），允许 1..1048576。两者必须是整数，不能传入 bool 或字符串。默认调用的预算不变，较大的程序由自己的 artifact entry 显式选择预算；Display 的 VM 计费发送缓冲兼任 baseline，需要宽×高×2 字节加元数据，Host allocator 另持有一份绘制缓冲；现有应用还需脚本与图层缓存空间，因此 AMOLED、800×480/480×800、1024×600 board 示例分别显式选择 1、2、3 MiB VM 预算；可接受的配置不保证任意程序都能在该预算内运行。超限源码仍按 Host resource 校验失败，VM 分配耗尽仍报告 job failure，不自动扩容。
 
 可选 `script_args` 是最多 16 项的 string-to-string 字典。名字为 1..32 个 ASCII `[a-z0-9_]` 字符，值为最多 256 个可打印 ASCII 字符，允许空值、引号和反斜线；控制字符和非 ASCII 内容会被拒绝。宏按名字排序并转义为固定 C 字符串，参数在提交时复制为 Lua `args` 字符串，不执行 Lua 表达式。任何名字与所选 board 的 Button（包括 `exit_button`）冲突都会在 analysis 阶段失败，不能覆盖 board 的输入 ID。参数属于 App 配置，不改变 board/skin 或共享入口的 lifecycle。
 
