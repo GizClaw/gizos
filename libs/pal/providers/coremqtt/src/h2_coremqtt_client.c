@@ -392,9 +392,6 @@ h2_pal_result_t h2_coremqtt_client_connect(h2_coremqtt_t *provider, h2_pal_mqtt_
                 break;
             }
             uint64_t candidate_deadline = deadline;
-            if (candidate + 1u < addresses.count && deadline - now > 250u) {
-                candidate_deadline = now + 250u;
-            }
             rc = h2_pal_net_tcp_open_bound(net, addr.family, client->config.bind, &client->socket);
             if (rc != H2_PAL_OK) {
                 continue;
