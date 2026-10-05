@@ -4556,7 +4556,7 @@ static h2_pal_result_t display_submission_create(lua_State *state,
   }
   h2_pal_result_t result = h2_lua_display_worker_init(&submission->worker,
       job->host->config.runtime, job->host->config.allocator,
-      job->host->config.display_worker, job->host->config.borrow_display,
+      job->host->config.display_worker_task_name, job->host->config.borrow_display,
       job->host->config.display_worker_stack_size);
   if (result != H2_PAL_OK) {
     if (submission->worker.initialized) {
@@ -5023,7 +5023,7 @@ int h2_lua_push_display_proxy(lua_State *state, h2_lua_job_t *job) {
     lua_pushboolean(state, 0);
     lua_rawsetp(state, LUA_REGISTRYINDEX, &s_mesh_stage_key);
   }
-  result = job->host->config.display_worker
+  result = job->host->config.display_worker_task_name != NULL
       ? display_submission_open(state, job) : H2_PAL_OK;
   if (result == H2_PAL_OK) result = display_open(job);
   if (result != H2_PAL_OK) {

@@ -6,6 +6,7 @@ load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
 load("//tools/bazel:tasks.bzl", "h2_tasks")
 load(":lua_resource.bzl", "h2_lua_resource")
 load(":source_package.bzl", "lua_source_package")
+load(":tests/display_tasks.bzl", "display_task_tests")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -15,9 +16,30 @@ h2_tasks(
     name = "tasks",
     tasks = [
         "$lua/worker",
-        "$lua/display",
     ],
 )
+
+# Referencing this library's task-name symbol opts the caller into the task
+# inventory without changing the shared Runtime or its synchronous default.
+h2_tasks(
+    name = "display_worker_tasks",
+    tasks = ["$lua/display"],
+)
+
+cc_library(
+    name = "lua_display_worker",
+    srcs = ["src/runtime/h2_lua_display_task.c"],
+    hdrs = ["include/h2_lua_task_names.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    deps = [
+        ":display_worker_tasks",
+        ":lua_runtime",
+    ],
+)
+
+display_task_tests()
 
 py_binary(
     name = "embed_resource",
@@ -328,7 +350,7 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
-        ":lua_runtime",
+        ":lua_display_worker",
         "//libs/atomic/providers/c11",
         "//libs/pal:unsupported",
         "//libs/pal/providers/desktop/pal_core",
@@ -485,7 +507,7 @@ cc_test(
 
 lua_source_package(
     name = "runtime_source_files",
-    runtime = ":lua_runtime",
+    runtime = ":lua_display_worker",
     target_compatible_with = select({
         "@platforms//os:linux": [],
         "@platforms//os:macos": [],

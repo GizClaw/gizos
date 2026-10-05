@@ -673,9 +673,23 @@ Prepared workspace 的 `displacements` 将指定范围的 double 位置差在相
 
 ## 单在途 Display 提交原型
 
-Task inventory 按链接依赖图收集。消费 Lua Runtime 的 firmware artifact 必须在 task policy 中登记 `$lua/display`；沿用目标既有配置时写显式 `default` 行。该声明只补全构建审查，不创建任务，也不启用 Display worker；优先级、绑核与栈策略仍由消费目标拥有。
+Task inventory 按链接依赖图收集。默认 `//libs/lua` / `:lua_runtime` 的 Lua 自有任务只有 `$lua/worker`，下层 Runtime 的既有任务清单不变，Display 同步提交；未启用显示 worker 的旧 consumer 无需新增 `$lua/display` 策略行。需要异步显示时，消费代码的 Bazel `deps` 显式加入 `//libs/lua:lua_display_worker`，并从 `h2_lua_task_names.h` 引用该库导出的 `h2_lua_display_task_name`，设置 Host 的 `display_worker_task_name`。该可选库复用同一运行时，只提供任务名符号并携带 `$lua/display` 清单；漏链接会产生 undefined-symbol 错误，已链接但漏配策略仍由原有 task-policy audit 拒绝。不要手写任务名字串或只添加清单以绕过接入点。
 
-Host 的 `display_worker` 是显式 opt-in，默认关闭。启用时必须设置 `display_exclusive` 并将 `max_jobs` 设为 1：调用方持有整个底层 Display 的独占权，先排空已有访问，并暂停其他 Host、Runtime 和 UI writer。Host 私有同步不能保护绕过它的直接 PAL 调用。后端必须允许串行移交到一个任务，而且成功的 draw/present 必须完成传输；这项资格由调用方验证，不根据平台名猜测。全部 open/info/draw/present/close 在同一个提交任务执行；`borrow_display` 保留不调用 PAL open/close 的合同。
+```c
+#include "h2_lua.h"
+#include "h2_lua_task_names.h"
+
+h2_lua_host_config_t config = {
+    .runtime = runtime,
+    .max_jobs = 1,
+    .display_exclusive = 1,
+    .display_worker_task_name = h2_lua_display_task_name,
+};
+```
+
+消费目标为 `$lua/display` 配置具体预算，或在审查预算后显式填写 `default`。任务策略行只配置调度，不能启用功能；链接可选库但保持 `display_worker_task_name = NULL` 也仍同步执行。未启用者的零初始化配置保持同步提交。源码包仍包含可选任务名的编译单元，非 Bazel embedder 按 manifest 编译并负责自己的任务预算；默认 Runtime 不引用该可选符号。
+
+Host 的 `display_worker_task_name` 是显式 opt-in，默认 `NULL`；其他任务名会在 Host 创建时被拒绝。启用时必须设置 `display_exclusive` 并将 `max_jobs` 设为 1：调用方持有整个底层 Display 的独占权，先排空已有访问，并暂停其他 Host、Runtime 和 UI writer。Host 私有同步不能保护绕过它的直接 PAL 调用。后端必须允许串行移交到一个任务，而且成功的 draw/present 必须完成传输；这项资格由调用方验证，不根据平台名猜测。全部 open/info/draw/present/close 在同一个提交任务执行；`borrow_display` 保留不调用 PAL open/close 的合同。
 
 Lua 的 `submit/flush/status` 合同以 `h2_lua_display.h` 为准。Web 和未启用 worker 的 Host 使用同一 Lua 源码 inline 执行；已有 `present/end_frame` 保持同步。提交最多有一个未完成帧，包含正在执行的帧；busy 由 Lua 调用方通过 `runtime.sleep()` 后重试处理，没有额外排队帧或覆盖在途快照。成功入队后可绘制下一帧，快照准备与成功回执仅复制最终计划覆盖的区域，保留原始行 stride；首帧或基线失效仍整帧复制。完整传输成功后，回执只更新上一帧 baseline 的相同覆盖区域，不清除下一帧 dirty 状态。冻结 tile fallback 包含完整位图，超过矩形容量也不截断提交。
 

@@ -1,5 +1,4 @@
 #include "h2_lua_display_worker.h"
-#include "h2_lua_task_names.h"
 
 #include <string.h>
 
@@ -82,22 +81,22 @@ static void worker_entry(void *context) {
 
 h2_pal_result_t h2_lua_display_worker_init(h2_lua_display_worker_t *worker,
     const h2_runtime_t *runtime, const h2_pal_mem_api_t *allocator,
-    int threaded, int borrowed, size_t stack_size) {
+    const char *task_name, int borrowed, size_t stack_size) {
   memset(worker, 0, sizeof(*worker));
   worker->runtime = runtime;
   worker->allocator = allocator;
-  worker->threaded = threaded;
+  worker->threaded = task_name != NULL;
   worker->borrowed = borrowed;
   if (h2_atomic_int_init(&worker->phase, H2_LUA_DISPLAY_IDLE) != H2_ATOMIC_OK)
     return H2_PAL_ERR_NO_MEMORY;
   worker->initialized = 1;
-  if (!threaded) return H2_PAL_OK;
+  if (!worker->threaded) return H2_PAL_OK;
   h2_pal_result_t result = h2_pal_semaphore_create(runtime->sync,
       &(h2_pal_semaphore_config_t){.name = "$lua/display/wake",
           .allocator = allocator, .max_count = 1}, &worker->wake);
   if (result == H2_PAL_OK)
     result = h2_pal_task_start(runtime->task,
-        &(h2_pal_task_options_t){.name = h2_lua_display_task_name,
+        &(h2_pal_task_options_t){.name = task_name,
                                  .min_stack_size = stack_size},
         worker_entry, worker, &worker->task);
   if (result != H2_PAL_OK) {

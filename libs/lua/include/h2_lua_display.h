@@ -27,7 +27,7 @@
  *   fault; busy and closing describe the acquisition. completion_kind is
  *   transport for a qualified worker Host, pal_return for inline execution;
  *   neither proves scanout. No-change submits do not increment changed_frames.
- * - Without Host display_worker opt-in, submit executes inline with this same
+ * - Without Host display_worker_task_name opt-in, submit executes inline with this same
  *   contract (including on Web). present/end_frame remain synchronous and
  *   return the current call's completed pixels/rectangles; they first drain
  *   any preceding submit. Existing callers that never submit are unchanged.

@@ -268,9 +268,14 @@ h2_pal_result_t h2_lua_host_create(const h2_lua_host_config_t *config,
                                      ? 64u * 1024u
                                      : normalized.worker_stack_size;
   normalized.max_jobs = normalized.max_jobs == 0u ? 4u : normalized.max_jobs;
-  if (normalized.display_worker &&
-      (!normalized.display_exclusive || normalized.max_jobs != 1u))
+  if (normalized.display_worker_task_name != NULL &&
+      (strcmp(normalized.display_worker_task_name,
+              H2_LUA_DISPLAY_TASK_NAME_VALUE) != 0 ||
+       !normalized.display_exclusive || normalized.max_jobs != 1u))
     return H2_PAL_ERR_INVALID_ARG;
+  /* Borrow only the optional library symbol at create; keep a stable name. */
+  if (normalized.display_worker_task_name != NULL)
+    normalized.display_worker_task_name = H2_LUA_DISPLAY_TASK_NAME_VALUE;
   if (normalized.display_worker_stack_size == 0u)
     normalized.display_worker_stack_size = 8192u;
   normalized.event_delivery_capacity = normalized.event_delivery_capacity == 0u

@@ -1,3 +1,4 @@
+#include "h2_lua_task_names.h"
 /* Exercise the actual generic Lua entry. Only acquisition boundaries are
  * wrapped to enable opt-in Display and inject errors in real Web providers. */
 #include "h2_lua.h"
@@ -105,7 +106,7 @@ static h2_pal_result_t configure(void *user, h2_runtime_config_t *config) {
 static h2_pal_result_t create_lua(const h2_lua_host_config_t *config,
                                   h2_lua_host_t **out) {
   h2_lua_host_config_t copy = *config;
-  copy.display_worker = 1;
+  copy.display_worker_task_name = h2_lua_display_task_name;
   copy.display_exclusive = 1;
   runtime = copy.runtime;
   h2_pal_result_t rc = h2_lua_host_create(&copy, out);

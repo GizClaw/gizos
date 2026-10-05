@@ -74,12 +74,28 @@ def main():
                 objects.append(obj)
                 compiled.append(source)
         assert sorted(compiled) == sorted(manifest["sources"])
+        optional = "libs/lua/src/runtime/h2_lua_display_task.c"
+        assert optional in compiled
+        optional_object = objects[compiled.index(optional)]
+        default_objects = [obj for obj in objects if obj != optional_object]
         executable = str(root / "embedder")
         subprocess.run(compiler + flags + ["-std=c11", "-Wall", "-Wextra", "-Werror",
-                       "-pthread", str(harness)] + objects +
+                       "-pthread", str(harness)] + default_objects +
                        manifest["per_os"][sys.platform]["link_flags"] +
                        ["-o", executable], cwd=root, check=True)
         subprocess.run([executable], cwd=root, check=True, timeout=30)
+        # The default runtime links without the optional symbol; explicit use
+        # must link its owning unit instead of silently bypassing task inventory.
+        probe = root / "worker_probe.c"
+        probe.write_text('#include "h2_lua_task_names.h"\n'
+                         '#include <string.h>\n'
+                         'int main(void) { return strcmp(h2_lua_display_task_name, '
+                         '"$lua/display"); }\n')
+        command = compiler + flags + [str(probe), "-o", str(root / "worker_probe")]
+        missing = subprocess.run(command, cwd=root, capture_output=True)
+        assert missing.returncode != 0, "worker symbol must require its optional unit"
+        subprocess.run(command + [optional_object], cwd=root, check=True)
+        subprocess.run([str(root / "worker_probe")], cwd=root, check=True)
         print(f"PASS: {len(compiled)} packaged C sources compiled and linked with {compiler[0]}")
 
 

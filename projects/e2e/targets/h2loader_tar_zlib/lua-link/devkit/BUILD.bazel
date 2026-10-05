@@ -22,7 +22,6 @@ esp_target_task_policy(
         "$runtime/nfc       default",
         "$h2loader/uartcmd  default",
         "$lua/worker        default",
-        "$lua/display            default",
         "$lua/link          default",
     ],
 )

@@ -122,14 +122,16 @@ typedef struct h2_lua_host_config {
    * per-block overhead; measure the workload rather than assuming the quota.
    * Destroy releases every block after all jobs and VMs are released. */
   size_t vm_heap_bytes;
-  /** Prototype opt-in: one exclusive Display worker. Zero keeps all existing
-   * present/end_frame calls synchronous on the VM worker. Nonzero requires
+  /** Optional exclusive Display worker. NULL keeps all existing
+   * present/end_frame calls synchronous on the VM worker. Enable by linking
+   * //libs/lua:lua_display_worker and setting h2_lua_display_task_name from
+   * h2_lua_task_names.h; arbitrary task names are rejected. This requires
    * max_jobs=1 and display_exclusive=1. The caller must suspend every other
    * writer/closer of this underlying Display, including other Runtime/Host
    * instances, until checked destruction succeeds. All PAL calls must permit
    * serial transfer to one task; successful draw/present must finish transport.
    * No hardware cancellation or bounded shutdown is implied. */
-  int display_worker;
+  const char *display_worker_task_name;
   /** Explicit caller assertion of the exclusive ownership above. */
   int display_exclusive;
   /** Minimum PAL worker stack bytes; zero selects 8192. Stack/TCB and PAL

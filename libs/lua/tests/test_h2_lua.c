@@ -1,3 +1,4 @@
+#include "h2_lua_task_names.h"
 #include "../src/modules/h2_lua_display_internal.h"
 #include "h2_desktop_platform.h"
 #include "h2_lua.h"
@@ -1007,9 +1008,21 @@ static void test_display_submission(int threaded) {
   h2_runtime_t *runtime = create_runtime();
   h2_lua_host_t *host = NULL;
   h2_lua_host_config_t config = {.runtime = runtime, .max_jobs = 1,
-      .display_worker = threaded, .display_exclusive = threaded,
+      .display_worker_task_name = threaded ? h2_lua_display_task_name : NULL, .display_exclusive = threaded,
       .vm_memory_limit_bytes = 2u * 1024u * 1024u,
       .vm_heap_bytes = 1792u * 1024u, .execution_timeout_ms = 10000};
+  if (threaded) {
+    config.display_worker_task_name = "$lua/other";
+    assert(h2_lua_host_create(&config, &host) == H2_PAL_ERR_INVALID_ARG);
+    assert(host == NULL);
+    config.display_worker_task_name = h2_lua_display_task_name;
+    config.display_exclusive = 0;
+    assert(h2_lua_host_create(&config, &host) == H2_PAL_ERR_INVALID_ARG);
+    config.display_exclusive = 1;
+    config.max_jobs = 2;
+    assert(h2_lua_host_create(&config, &host) == H2_PAL_ERR_INVALID_ARG);
+    config.max_jobs = 1;
+  }
   assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
   assert(h2_lua_register_module(host, "submit_test", test_submission_module, NULL) == H2_PAL_OK);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
@@ -1104,7 +1117,7 @@ static void test_display_submission_stop(int borrowed_display) {
   }
   h2_lua_host_t *host = NULL;
   h2_lua_host_config_t config = {.runtime = runtime, .max_jobs = 1,
-      .display_worker = 1, .display_exclusive = 1,
+      .display_worker_task_name = h2_lua_display_task_name, .display_exclusive = 1,
       .borrow_display = borrowed_display, .vm_memory_limit_bytes = 2u * 1024u * 1024u};
   assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
   assert(h2_lua_register_module(host, "submit_test", test_submission_module, NULL) == H2_PAL_OK);
@@ -1157,7 +1170,7 @@ static void test_display_submission_oom(void) {
   h2_runtime_t *runtime=create_runtime();
   h2_lua_host_t *host=NULL;
   h2_lua_host_config_t config={.runtime=runtime,.max_jobs=1,
-      .display_worker=1,.display_exclusive=1,.vm_memory_limit_bytes=2u*1024u*1024u};
+      .display_worker_task_name=h2_lua_display_task_name,.display_exclusive=1,.vm_memory_limit_bytes=2u*1024u*1024u};
   assert(h2_lua_host_create(&config,&host)==H2_PAL_OK);
   assert(h2_lua_host_start(host)==H2_PAL_OK);
   const char script[]="local d=require('display');local keep={};"
@@ -1253,7 +1266,7 @@ static void test_display_submission_fault(int mode) {
   }
   h2_lua_host_t *host = NULL;
   h2_lua_host_config_t config = {.runtime = runtime, .max_jobs = 1,
-      .display_worker = 1, .display_exclusive = 1,
+      .display_worker_task_name = h2_lua_display_task_name, .display_exclusive = 1,
       .vm_memory_limit_bytes = 2u * 1024u * 1024u};
   assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
@@ -1309,7 +1322,7 @@ static void test_display_submission_large(void) {
   h2_runtime_t *runtime = create_runtime();
   h2_lua_host_t *host = NULL;
   h2_lua_host_config_t config = {.runtime = runtime, .max_jobs = 1,
-      .display_worker = 1, .display_exclusive = 1,
+      .display_worker_task_name = h2_lua_display_task_name, .display_exclusive = 1,
       .vm_memory_limit_bytes = 2u * 1024u * 1024u};
   assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
   assert(h2_lua_register_module(host, "submit_test", test_submission_module, NULL) == H2_PAL_OK);
@@ -1352,7 +1365,7 @@ static void test_display_worker_join_failure(void) {
   borrowed.task = &task;
   h2_lua_host_t *host = NULL;
   h2_lua_host_config_t config = {.runtime = &borrowed, .max_jobs = 1,
-      .display_worker = 1, .display_exclusive = 1,
+      .display_worker_task_name = h2_lua_display_task_name, .display_exclusive = 1,
       .vm_memory_limit_bytes = 2u * 1024u * 1024u};
   assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
   assert(h2_lua_host_start(host) == H2_PAL_OK);

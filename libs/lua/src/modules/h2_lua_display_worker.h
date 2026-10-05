@@ -47,7 +47,7 @@ enum {
 
 h2_pal_result_t h2_lua_display_worker_init(h2_lua_display_worker_t *worker,
     const h2_runtime_t *runtime, const h2_pal_mem_api_t *allocator,
-    int threaded, int borrowed, size_t stack_size);
+    const char *task_name, int borrowed, size_t stack_size);
 h2_pal_result_t h2_lua_display_worker_post(h2_lua_display_worker_t *worker,
                                          int operation);
 int h2_lua_display_worker_phase(h2_lua_display_worker_t *worker);
