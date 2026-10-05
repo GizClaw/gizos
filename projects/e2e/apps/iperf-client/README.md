@@ -19,6 +19,8 @@ BK management restart synchronously configures the same static UART PAL API befo
 
 Setup failure after association disconnects the temporary test network best-effort and retains the original setup error. Failed measurement or post-measurement qualification also disconnects best-effort. A successful bench leaves the verified association active for the launcher; only then does the DevKit launcher confirm the image and emit `H2_IPERF_CLIENT_CONFIRMED rc=0`. A failed bench never confirms its image.
 
+Every valid bench invocation attempts the final saved-credential observation and exactly one `H2_IPERF_CLIENT_COMPLETE`, including failure before association or family discovery. `matrix_started=0`, zero cases and `matrix_rc=INVALID_STATE` identify an unstarted matrix; mode is zero until discovery succeeds. `saved_check_rc` reports comparison/read failure without printing credentials or signature bytes. The first error remains the terminal rc even if later cleanup or saved-state verification fails. Every COMPLETE qualification gate is zero on failure; LINK records remain actual observations rather than qualification claims.
+
 ## Build and verify
 
 ```sh
@@ -30,7 +32,7 @@ bazel build --config=bk7258 //projects/e2e/targets/h2loader_tar_zlib/iperf-clien
 
 The host test uses real loopback IPv4/IPv6 sockets, exercises 60 TCP/UDP exchanges including repeated dual-family rounds, validates non-fail-fast accounting on a refused endpoint and rejects inconsistent mode/family configuration before traffic. Hardware qualification additionally requires exact UID/port, source/package/image hashes, complete serial logs and final coredump/firmware state.
 
-`network_test` injects public PAL/Runtime outcomes into the production network helper. It checks event alignment, bounded readiness timeout, setup/matrix/post-measurement failure cleanup, and preservation of the primary error when disconnect also fails.
+`network_test` injects public PAL/Runtime outcomes into the production network helper. It checks event alignment, bounded readiness timeout, setup/matrix/post-measurement failure cleanup, exactly-once terminal accounting and final saved-state checks on setup failure, no invented cases or positive gates on failure, and preservation of the primary error when disconnect or the subsequent saved-state check also fails.
 
 ## Two-board performance qualification
 

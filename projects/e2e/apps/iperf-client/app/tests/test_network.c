@@ -18,7 +18,9 @@ typedef enum failure {
   FAILURE_ADDRESS,
   FAILURE_SLEEP,
   FAILURE_TIMEOUT,
+  FAILURE_SAVED_BEFORE,
   FAILURE_SAVED_AFTER,
+  FAILURE_SAVED_CHANGED,
 } failure_t;
 
 typedef struct fixture {
@@ -28,6 +30,11 @@ typedef struct fixture {
   unsigned connects;
   unsigned disconnects;
   unsigned saved_reads;
+  unsigned matrix_calls;
+  unsigned complete_records;
+  char complete[384];
+  char signature_hex[65];
+  failure_t secondary_saved;
   int disconnect_error;
   int matrix_error;
   int pending_event;
@@ -155,8 +162,19 @@ static int get_saved(void *user, h2_pal_wifi_sta_config_t *out) {
   fixture_t *f = user;
   memset(out, 0, sizeof(*out));
   ++f->saved_reads;
-  if (f->failure == FAILURE_SAVED_AFTER && f->saved_reads == 2u)
+  if ((f->failure == FAILURE_SAVED_BEFORE && f->saved_reads == 1u) ||
+      ((f->failure == FAILURE_SAVED_AFTER ||
+        f->secondary_saved == FAILURE_SAVED_AFTER) && f->saved_reads == 2u))
     return H2_PAL_ERR_IO;
+  if (f->failure == FAILURE_SAVED_CHANGED ||
+      f->secondary_saved == FAILURE_SAVED_CHANGED) {
+    const char *ssid = f->saved_reads == 1u ? "home" : "away";
+    memcpy(out->ssid, ssid, 4u);
+    out->ssid_len = 4u;
+    memcpy(out->password, "private-secret", 14u);
+    out->password_len = 14u;
+    return H2_PAL_OK;
+  }
   return H2_PAL_ERR_NOT_FOUND;
 }
 
@@ -164,14 +182,19 @@ static h2_pal_result_t signature(void *user, const uint8_t *secret,
                                  size_t secret_len, const uint8_t *salt,
                                  size_t salt_len, const uint8_t *info,
                                  size_t info_len, uint8_t *out, size_t out_len) {
-  (void)user;
-  (void)secret;
-  (void)secret_len;
+  fixture_t *f = user;
+  assert(secret_len == 108u && out_len == 32u);
   (void)salt;
   (void)salt_len;
   (void)info;
   (void)info_len;
-  memset(out, 0x51, out_len);
+  /* Inject deterministic digest bytes; the equality check still observes the
+   * actual canonical saved-config record built by the production helper. */
+  memset(out, 0, out_len);
+  for (size_t i = 0u; i < secret_len; ++i)
+    out[i % out_len] ^= secret[i];
+  for (size_t i = 0u; i < out_len; ++i)
+    (void)snprintf(f->signature_hex + i * 2u, 3u, "%02x", out[i]);
   return H2_PAL_OK;
 }
 
@@ -181,16 +204,43 @@ h2_pal_result_t h2_iperf_client_app_run(
     h2_iperf_client_app_report_t *out) {
   fixture_t *f = runtime->wifi_sta->user;
   assert(f->associated && config->mode == H2_IPERF_CLIENT_APP_IPV4);
+  ++f->matrix_calls;
   out->total = 30u;
   out->passed = f->matrix_error ? 29u : 30u;
   return f->matrix_error;
 }
 
-static void test_case(failure_t failure, int matrix_error,
-                      int disconnect_error, int expected, int bench) {
+static int log_record(void *user, h2_pal_log_level_t level, const char *scope,
+                       const char *message) {
+  fixture_t *f = user;
+  assert(level == H2_PAL_LOG_INFO && strcmp(scope, "iperf-client") == 0);
+  assert(strstr(message, "private-secret") == NULL);
+  if (f->signature_hex[0])
+    assert(strstr(message, f->signature_hex) == NULL);
+  assert(strstr(message, "CONFIRMED") == NULL);
+  if (strstr(message, "H2_IPERF_CLIENT_COMPLETE ") == message) {
+    ++f->complete_records;
+    assert(strlen(message) < sizeof(f->complete));
+    strcpy(f->complete, message);
+  }
+  return H2_PAL_OK;
+}
+
+static int result_field(const char *line, const char *name) {
+  const char *start = strstr(line, name);
+  assert(start != NULL);
+  int value = 0;
+  assert(sscanf(start + strlen(name), "%d", &value) == 1);
+  return value;
+}
+
+static void test_case_impl(failure_t failure, int matrix_error,
+                           int disconnect_error, int expected, int bench,
+                           failure_t secondary_saved) {
   fixture_t f = {.failure = failure,
                  .matrix_error = matrix_error,
-                 .disconnect_error = disconnect_error};
+                 .disconnect_error = disconnect_error,
+                 .secondary_saved = secondary_saved};
   const h2_pal_wifi_sta_vtable_t wifi_vtable = {
       .connect = connect_wifi,
       .disconnect = disconnect_wifi,
@@ -209,12 +259,15 @@ static void test_case(failure_t failure, int matrix_error,
   const h2_pal_wifi_settings_api_t settings = {&f, &settings_vtable};
   const h2_pal_crypto_vtable_t crypto_vtable = {.hkdf_sha256 = signature};
   const h2_pal_crypto_api_t crypto = {&f, &crypto_vtable};
+  const h2_pal_log_vtable_t log_vtable = {.write = log_record};
+  const h2_pal_log_api_t log = {&f, &log_vtable};
   h2_runtime_t runtime = {.wifi_sta = &wifi,
                           .time = &time,
                           .net = &net,
                           .netif = &netif,
                           .wifi_settings = &settings,
-                          .crypto = &crypto};
+                          .crypto = &crypto,
+                          .log = &log};
   int rc;
   if (bench) {
     rc = h2_iperf_client_app_bench(&runtime, "test", NULL, NULL);
@@ -231,16 +284,49 @@ static void test_case(failure_t failure, int matrix_error,
     }
   }
   assert(rc == expected);
+  if (bench) {
+    assert(f.saved_reads == 2u);
+    assert(f.complete_records == 1u);
+    assert(result_field(f.complete, " rc=") == expected);
+    assert(result_field(f.complete, " matrix_started=") == (int)f.matrix_calls);
+    if (f.matrix_calls == 0u) {
+      assert(result_field(f.complete, " total=") == 0);
+      assert(result_field(f.complete, " passed=") == 0);
+      assert(result_field(f.complete, " matrix_rc=") == H2_PAL_ERR_INVALID_STATE);
+    }
+    const char *gates[] = {" public_wifi=", " runtime_ip=",
+                           " disconnect_reconnect=", " saved_unchanged="};
+    for (unsigned i = 0u; i < sizeof(gates) / sizeof(gates[0]); ++i)
+      assert(result_field(f.complete, gates[i]) == (expected == H2_PAL_OK));
+    int saved_expected = failure == FAILURE_SAVED_AFTER ||
+                         secondary_saved == FAILURE_SAVED_AFTER ? H2_PAL_ERR_IO
+        : failure == FAILURE_SAVED_BEFORE || failure == FAILURE_SAVED_CHANGED ||
+                  secondary_saved == FAILURE_SAVED_CHANGED ? H2_PAL_ERR_INVALID_STATE
+                                                          : H2_PAL_OK;
+    assert(result_field(f.complete, " saved_check_rc=") == saved_expected);
+  } else {
+    assert(f.saved_reads == 0u && f.complete_records == 0u);
+  }
   if (expected == H2_PAL_OK) {
     assert(f.associated);
     assert(f.disconnects == (bench ? 1u : 0u));
   } else {
-    assert(f.disconnects == (bench && failure >= FAILURE_SAVED_AFTER ? 2u
-                             : bench && matrix_error ? 2u : 1u));
+    assert(f.disconnects >= (failure == FAILURE_SAVED_BEFORE ? 0u : 1u));
     assert(disconnect_error != H2_PAL_OK || !f.associated);
   }
-  assert(f.connects == (bench && (failure == FAILURE_NONE ||
-                                   failure == FAILURE_SAVED_AFTER) ? 2u : 1u));
+  if (failure == FAILURE_SAVED_BEFORE)
+    assert(f.connects == 0u);
+  else if (!bench || failure <= FAILURE_TIMEOUT || disconnect_error != H2_PAL_OK)
+    assert(f.connects == (failure == FAILURE_NONE && bench &&
+                         disconnect_error == H2_PAL_OK ? 2u : 1u));
+  else
+    assert(f.connects == 2u);
+}
+
+static void test_case(failure_t failure, int matrix_error,
+                      int disconnect_error, int expected, int bench) {
+  test_case_impl(failure, matrix_error, disconnect_error, expected, bench,
+                 FAILURE_NONE);
 }
 
 int main(void) {
@@ -256,6 +342,13 @@ int main(void) {
   test_case(FAILURE_NONE, H2_PAL_OK, H2_PAL_OK, H2_PAL_OK, 1);
   test_case(FAILURE_NONE, H2_PAL_ERR_IO, H2_PAL_OK, H2_PAL_ERR_IO, 1);
   test_case(FAILURE_SAVED_AFTER, H2_PAL_OK, H2_PAL_OK, H2_PAL_ERR_IO, 1);
+  test_case(FAILURE_SAVED_BEFORE, H2_PAL_OK, H2_PAL_OK, H2_PAL_ERR_IO, 1);
+  test_case(FAILURE_SAVED_CHANGED, H2_PAL_OK, H2_PAL_OK, H2_PAL_ERR_INVALID_STATE, 1);
+  test_case_impl(FAILURE_CONNECT, H2_PAL_OK, H2_PAL_OK, H2_PAL_ERR_IO, 1,
+                 FAILURE_SAVED_CHANGED);
+  test_case_impl(FAILURE_TIMEOUT, H2_PAL_OK, H2_PAL_OK, H2_PAL_ERR_TIMEOUT, 1,
+                 FAILURE_SAVED_AFTER);
+  test_case(FAILURE_NONE, H2_PAL_ERR_IO, H2_PAL_ERR_BUSY, H2_PAL_ERR_IO, 1);
   puts("iperf-client network PASS: aligned events and failure cleanup");
   return 0;
 }

@@ -66,6 +66,13 @@ h2_iperf_client_app_connect(h2_runtime_t *runtime,
  * confirm a firmware image. Reports typed readiness and performance receipts.
  * Leaves the verified association active on success; disconnects best-effort
  * on qualification failure and preserves the qualification error.
+ * For non-NULL Runtime/target, always observes saved credentials after setup
+ * or measurement and attempts exactly one COMPLETE record through Log PAL.
+ * The first error survives later lifecycle/saved-state errors. Before family
+ * discovery mode is zero; an unstarted matrix has zero cases,
+ * matrix_started=0 and matrix_rc=INVALID_STATE. Failure clears all COMPLETE
+ * qualification gates; saved_check_rc reports the private comparison result,
+ * without exposing credential or signature bytes.
  */
 h2_pal_result_t h2_iperf_client_app_bench(h2_runtime_t *runtime,
                                           const char *target,
