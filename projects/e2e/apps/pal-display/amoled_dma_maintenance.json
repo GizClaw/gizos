@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "new_physical_run_claimed": false,
+  "current_physical_qualification": false,
+  "historical_qualification_sha256": "efe8c01f0d379886b2d7cb1cbcde998e9bcc4386cecf19104c499ec3ea98f448",
+  "qualified_driver_sha256": "834fe172281d46519c0039aa79b190af85f1c6892f90709fc760f6216db7c001",
+  "current_driver_sha256": "c8e18ee70d22abbc75303f51cca23b495eb8ccbb8e218296b293b30ab5f92471",
+  "closed_input_sha256": {
+    "boards/amoled/esp32s3/BUILD.bazel": "d0d66bf6e362fac981b6a8e5b80b4ac5caff4a56f1d6484152e64edf59fd6719",
+    "boards/amoled/esp32s3/CMakeLists.txt": "36993f7696860a40c545fd71e00d2fdc8b19eecf75b9dbe92e78dcab2194ea2f",
+    "boards/amoled/esp32s3/idf_component.yml": "842c1305b4e86caa90f2ddc347a10e529954eccc17f5d1744d27e56655dd484d",
+    "boards/amoled/esp32s3/include/h2_esp_board.h": "82b9cf36925d56e6cc57b7f3cd8a88d67603865d8afed7ec0b668e6837a2643d",
+    "boards/amoled/esp32s3/sdkconfig.defaults": "9f831f6776b47d84e266a2cbb72947b4abe87a4ccd345742f07bae9b1bfbd6b9",
+    "boards/amoled/esp32s3/src/h2_esp_board_display_config.c": "1eec9ab5a885fa44a18c69a9f21ce258cb63a6dbd38d35d2a3510b15e3d747c4",
+    "boards/amoled/esp32s3/src/h2_esp_board_display_config_internal.h": "b54ed1def340a3bf1384ed81c782cd67c1d27c978cf18a4243a70f9ff2b9cb9d",
+    "boards/amoled/esp32s3/src/h2_esp_board_touch_ft3168.c": "d91b2adc40017b76549a08f4951e15015a2ee14d8c8c1b709d93c98fde947def",
+    "boards/amoled/esp32s3/tests/test_h2_esp_board_display_config.c": "ce25d51d8d7845653e9f60492e51c631b511771a4af04ed97e9199fdc144ffe4"
+  },
+  "host_validation": {
+    "executed_source_commit": "1eed91f5ddacca5bcc901b6096284b18e2ffd727",
+    "source_sha256": {
+      "boards/amoled/esp32s3/BUILD.bazel": "d0d66bf6e362fac981b6a8e5b80b4ac5caff4a56f1d6484152e64edf59fd6719",
+      "boards/amoled/esp32s3/CMakeLists.txt": "36993f7696860a40c545fd71e00d2fdc8b19eecf75b9dbe92e78dcab2194ea2f",
+      "boards/amoled/esp32s3/idf_component.yml": "842c1305b4e86caa90f2ddc347a10e529954eccc17f5d1744d27e56655dd484d",
+      "boards/amoled/esp32s3/sdkconfig.defaults": "9f831f6776b47d84e266a2cbb72947b4abe87a4ccd345742f07bae9b1bfbd6b9",
+      "boards/amoled/esp32s3/include/h2_esp_board.h": "82b9cf36925d56e6cc57b7f3cd8a88d67603865d8afed7ec0b668e6837a2643d",
+      "boards/amoled/esp32s3/src/h2_esp_board_display_config.c": "1eec9ab5a885fa44a18c69a9f21ce258cb63a6dbd38d35d2a3510b15e3d747c4",
+      "boards/amoled/esp32s3/src/h2_esp_board_display_config_internal.h": "b54ed1def340a3bf1384ed81c782cd67c1d27c978cf18a4243a70f9ff2b9cb9d",
+      "boards/amoled/esp32s3/src/h2_esp_board_touch_ft3168.c": "d91b2adc40017b76549a08f4951e15015a2ee14d8c8c1b709d93c98fde947def",
+      "boards/amoled/esp32s3/tests/test_h2_esp_board_display_config.c": "ce25d51d8d7845653e9f60492e51c631b511771a4af04ed97e9199fdc144ffe4"
+    },
+    "raw_log_sha256": "03c0443704c816addc2d167185ecc3bcadf47ec52f3432e6148906a113931012",
+    "test_binary_sha256": "daf0aa4d3de51691b84672bfc6605584edf7ad70d23b13da75b8a92703d605a7",
+    "command": "bazel test --config=macos_arm64 //boards/amoled/esp32s3:display_config_host_test",
+    "default_dma_rows": 64,
+    "status": "PASS",
+    "current_driver_physical_test": "NOT_RUN"
+  },
+  "scope": "Exact opt-in DMA ceiling with unchanged default 0-to-64 behavior and diagnostics-only FT3168 delta. Historical physical/mobile/image/artifact receipts stay byte-identical. Current board source/artifact is not physically requalified; opt-in 8-row behavior is separate from old hardware acceptance. Native current-head builds and physical/finger checks remain separate evidence."
+}
