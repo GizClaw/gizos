@@ -7,11 +7,121 @@
 #undef NDEBUG
 #endif
 #include <assert.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 static uint16_t framebuffer[368 * 448];
+typedef struct listener_fixture {
+  const h2_pal_net_api_t *base;
+  h2_pal_net_socket_t reserved[2], owned[2];
+  h2_pal_net_addr_t addresses[2];
+  unsigned opened, closed;
+} listener_fixture_t;
+static listener_fixture_t listeners;
+
+static int reserve_ipv6(const h2_pal_net_api_t *net,
+                        h2_pal_net_socket_t ipv4,
+                        const h2_pal_net_addr_t *bound,
+                        listener_fixture_t *out, int *bind_errno) {
+  *out = (listener_fixture_t){.base = net,
+                              .reserved = {ipv4, -1},
+                              .owned = {-1, -1}};
+  out->addresses[0] = *bound;
+  const h2_pal_net_bind_t bind = {
+      .type = H2_PAL_NET_BIND_SOURCE_ADDR,
+      .source_addr = {.family = H2_PAL_NET_FAMILY_IPV6, .ip = {[15] = 1}}};
+  int rc = h2_pal_net_tcp_listen(net, H2_PAL_NET_FAMILY_IPV6, bound->port,
+                                &bind, &out->reserved[1], &out->addresses[1]);
+  *bind_errno = rc == H2_PAL_OK ? 0 : errno;
+  if (rc != H2_PAL_OK) {
+    h2_pal_net_close(net, ipv4);
+    out->reserved[0] = -1;
+  }
+  return rc;
+}
+
+static void reserve_listeners(const h2_pal_net_api_t *net,
+                               listener_fixture_t *out) {
+  const h2_pal_net_bind_t bind = {
+      .type = H2_PAL_NET_BIND_SOURCE_ADDR,
+      .source_addr = {.family = H2_PAL_NET_FAMILY_IPV4,
+                      .ip = {127, 0, 0, 1}}};
+  for (unsigned attempt = 0; attempt < 32; ++attempt) {
+    h2_pal_net_socket_t ipv4 = -1;
+    h2_pal_net_addr_t bound;
+    assert(h2_pal_net_tcp_listen(net, H2_PAL_NET_FAMILY_IPV4, 0, &bind,
+                                 &ipv4, &bound) == H2_PAL_OK);
+    assert(bound.port != 0);
+    int bind_errno = 0;
+    int rc = reserve_ipv6(net, ipv4, &bound, out, &bind_errno);
+    if (rc == H2_PAL_OK)
+      return;
+    /* Retry only a real cross-family collision, before the UI starts. */
+    assert(rc == H2_PAL_ERR_IO && bind_errno == EADDRINUSE);
+  }
+  assert(!"no port available for both real loopback listeners");
+}
+
+static int reserved_listen(void *user, h2_pal_net_family_t family,
+                            uint16_t port, const h2_pal_net_bind_t *bind,
+                            h2_pal_net_socket_t *out_socket,
+                            h2_pal_net_addr_t *out_bound) {
+  unsigned index = family == H2_PAL_NET_FAMILY_IPV4 ? 0u : 1u;
+  assert(family == H2_PAL_NET_FAMILY_IPV4 || family == H2_PAL_NET_FAMILY_IPV6);
+  assert(user == listeners.base->user && port == listeners.addresses[index].port);
+  assert(bind != NULL && bind->type == H2_PAL_NET_BIND_SOURCE_ADDR);
+  assert(bind->source_addr.family == family);
+  assert(memcmp(bind->source_addr.ip, listeners.addresses[index].ip,
+                 family == H2_PAL_NET_FAMILY_IPV4 ? 4u : 16u) == 0);
+  assert(listeners.owned[index] < 0);
+  /* The fixture retains the reservation across modes; each production server
+   * owns a distinct descriptor of the actual family/port listener. */
+  int socket = dup(listeners.reserved[index]);
+  assert(socket >= 0);
+  listeners.owned[index] = socket;
+  ++listeners.opened;
+  *out_socket = socket;
+  *out_bound = listeners.addresses[index];
+  return H2_PAL_OK;
+}
+
+static void close_owned(void *user, h2_pal_net_socket_t socket) {
+  assert(socket != listeners.reserved[0] && socket != listeners.reserved[1]);
+  bool owned = false;
+  for (unsigned i = 0; i < 2; ++i) {
+    if (listeners.owned[i] == socket) {
+      listeners.owned[i] = -1;
+      ++listeners.closed;
+      owned = true;
+    }
+  }
+  listeners.base->vtable->close(user, socket);
+  if (owned)
+    assert(fcntl(socket, F_GETFD) == -1 && errno == EBADF);
+}
+
+static void reject_ipv6_collision(const h2_pal_net_api_t *net) {
+  listener_fixture_t busy;
+  reserve_listeners(net, &busy);
+  h2_pal_net_socket_t ipv4 = busy.reserved[0];
+  int bind_errno = 0;
+  /* IPv4 is already reserved successfully; only IPv6 is occupied. */
+  listener_fixture_t rejected;
+  assert(reserve_ipv6(net, ipv4, &busy.addresses[0], &rejected, &bind_errno) ==
+         H2_PAL_ERR_IO);
+  assert(bind_errno == EADDRINUSE);
+  printf("H2_IPERF_UI_IPV6_COLLISION port=%u errno=%d ipv4-reserved=1\n",
+         (unsigned)busy.addresses[0].port, bind_errno);
+  assert(rejected.reserved[0] == -1 && rejected.reserved[1] == -1);
+  assert(fcntl(ipv4, F_GETFD) == -1 && errno == EBADF);
+  h2_pal_net_close(net, busy.reserved[1]);
+  assert(fcntl(busy.reserved[1], F_GETFD) == -1 && errno == EBADF);
+}
+
 typedef struct fixture {
   h2_iperf_server_app_t *app;
   const h2_pal_time_api_t *time;
@@ -50,6 +160,7 @@ static int network_start(void *user, h2_iperf_server_app_mode_t mode,
 }
 static int network_stop(void *user) {
   fixture_t *f = user;
+  assert(listeners.owned[0] < 0 && listeners.owned[1] < 0);
   if (++f->stop_attempts == 1u)
     return H2_PAL_ERR_IO;
   ++f->stops;
@@ -233,6 +344,14 @@ static bool finished(void *user) {
 int main(void) {
   h2_iperf_test_env_t env;
   h2_iperf_test_env_init(&env, false);
+  reject_ipv6_collision(env.config.net);
+  reserve_listeners(env.config.net, &listeners);
+  h2_pal_net_vtable_t net_vtable = *env.config.net->vtable;
+  net_vtable.tcp_listen = reserved_listen;
+  net_vtable.close = close_owned;
+  const h2_pal_net_api_t net = {.user = env.config.net->user,
+                                .vtable = &net_vtable};
+  env.config.net = &net;
   fixture_t f = {.time = env.config.time};
   f.deadline = now(&f) + 60000;
   const h2_pal_display_vtable_t display_vtable = {.open = display_open,
@@ -262,7 +381,7 @@ int main(void) {
       .network_stop = network_stop,
       .ui_ready = ui_ready,
       .ui_user = &f,
-      .port = h2_iperf_test_free_port(env.config.net)};
+      .port = listeners.addresses[0].port};
   assert(h2_iperf_server_app_create(&runtime, &config, &f.app) == H2_PAL_OK);
   assert(h2_iperf_server_app_run_ui(f.app, finished, &f) == H2_PAL_OK);
   assert(h2_iperf_server_app_destroy(&f.app) == H2_PAL_OK);
@@ -294,9 +413,17 @@ int main(void) {
   assert(h2_iperf_server_app_destroy(&f.app) == H2_PAL_OK);
   assert(f.display_open == 4 && f.display_close == 4 && f.touch_open == 4 &&
          f.touch_close == 4);
+  assert(listeners.opened == 4 && listeners.closed == 4);
+  assert(listeners.owned[0] < 0 && listeners.owned[1] < 0);
+  for (unsigned i = 0; i < 2; ++i) {
+    assert(fcntl(listeners.reserved[i], F_GETFD) >= 0);
+    h2_pal_net_close(listeners.base, listeners.reserved[i]);
+    assert(fcntl(listeners.reserved[i], F_GETFD) == -1 && errno == EBADF);
+  }
   h2_iperf_test_env_deinit(&env);
   puts("H2_IPERF_SERVER_UI_PASS touch-clicks=10 modes=3 display-closed=1 "
        "touch-closed=1 failed-ui-unconfirmed=3 touch-faults-recovered=2 "
-       "cancelled-click=1 failed-stop-retry=1");
+       "cancelled-click=1 failed-stop-retry=1 ipv6-port-collision-rejected=1 "
+       "owned-listeners-closed=4 reservations-closed=2");
   return 0;
 }
