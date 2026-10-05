@@ -80,6 +80,7 @@ IPV6_HOST_SOURCES = {
     'projects/e2e/libs/pal-net-tls-fixture/fixture.py',
     'tools/webrtc-test-server/main.go',
     'MODULE.bazel',
+    'projects/e2e/libs/pal-ipv6-fixture/fixture_ipv6.py',
 }
 
 
@@ -112,6 +113,13 @@ def ipv6_source_updates(root, effective):
     assert host['artifact_sha256'] and set(host['source_sha256']) == IPV6_HOST_SOURCES
     for path, expected in host['source_sha256'].items():
         assert hashlib.sha256((root / path).read_bytes()).hexdigest() == expected, path
+    capture = host['complete_input_capture']
+    assert capture['all_before_after_identical'] is True
+    assert all(type(capture[key]) is int and capture[key] > 0 for key in
+               ('actions_count', 'input_count', 'first_party_sources_count'))
+    assert set(capture['sha256']) == {'full_source_manifest', 'selected_action_closure',
+                                     'action_input_manifest', 'input_verification'}
+    assert all(re.fullmatch('[0-9a-f]{64}', value) for value in capture['sha256'].values())
     return current
 
 
