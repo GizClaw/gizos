@@ -14,6 +14,7 @@
 #include "payload/social.pb.h"
 #include "payload/system.pb.h"
 #include "payload/workspace.pb.h"
+#include "pb_decode.h"
 #include "pb_encode.h"
 
 #ifdef NDEBUG
@@ -678,6 +679,8 @@ static int test_downstream_events_carry_no_state(
         {BOS, "assistant", "reply-2", false, NULL},
         {EOS, "assistant", "reply-1", true, "STREAM_INTERRUPTED"},
         {EOS, "assistant", "reply-3", true, "MODEL_FAILED"},
+        {EOS, "assistant", "quota-reply-1", false, "QUOTA_EXHAUSTED"},
+        {EOS, "assistant", "quota-reply-2", true, "QUOTA_UNAVAILABLE"},
         {BOS, "assistant", input, true, NULL},
         {EOS, "assistant", input, true, "STREAM_INTERRUPTED"},
         {EOS, "transcript", input, false, "ASR_FAILED"},
@@ -712,14 +715,34 @@ static int test_downstream_events_carry_no_state(
                         out.kind == H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DONE &&
                         out.text_len == 6u,
                     "text done is forwarded");
-    /* The server refusing our own input is the one error. */
-    event = test_reply_event(EOS, "", input, "", "INPUT_DENIED");
-    fails += expect(test_feed_reply_event(&stream, conv, &event, &out) ==
-                            H2_PAL_OK &&
-                        out.kind == H2_GIZCLAW_CONVERSATION_EVENT_ERROR &&
-                        out.error_code != NULL &&
-                        strcmp(out.error_code, "INPUT_DENIED") == 0,
-                    "a refusal of our input is an error");
+    /* New error names travel in existing string fields, including names this
+     * client has never seen. Decode the wire before testing their projection. */
+    const struct {
+      const char *code;
+      bool retryable;
+    } refusals[] = {
+        {"INPUT_DENIED", false},
+        {"QUOTA_EXHAUSTED", false},
+        {"QUOTA_UNAVAILABLE", true},
+        {"FUTURE_SERVER_ERROR", true},
+    };
+    for (size_t i = 0u; i < sizeof(refusals) / sizeof(refusals[0]); ++i) {
+      event = test_reply_event(EOS, "", input, "", refusals[i].code);
+      event.payload.eos.error.retryable = refusals[i].retryable;
+      uint8_t bytes[512];
+      pb_ostream_t encoded = pb_ostream_from_buffer(bytes, sizeof(bytes));
+      assert(pb_encode(&encoded, gizclaw_events_v1_PeerEvent_fields, &event));
+      gzc_peer_event_t decoded = gizclaw_events_v1_PeerEvent_init_zero;
+      pb_istream_t wire = pb_istream_from_buffer(bytes, encoded.bytes_written);
+      assert(pb_decode(&wire, gizclaw_events_v1_PeerEvent_fields, &decoded));
+      fails += expect(test_feed_reply_event(&stream, conv, &decoded, &out) ==
+                              H2_PAL_OK &&
+                          out.kind == H2_GIZCLAW_CONVERSATION_EVENT_ERROR &&
+                          out.error_code != NULL &&
+                          strcmp(out.error_code, refusals[i].code) == 0 &&
+                          out.retryable == refusals[i].retryable,
+                      "input refusals preserve unfamiliar codes and retryability");
+    }
     event = test_reply_event(EOS, "demo-home", input, "", "INPUT_DENIED");
     fails += expect(test_feed_reply_event(&stream, conv, &event, &out) ==
                             H2_PAL_OK &&
