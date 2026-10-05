@@ -5,6 +5,7 @@
 #include "peer.h"
 #include "peer_connection.h"
 #include "sctp.h"
+#include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -34,6 +35,14 @@ typedef struct record {
   h2_ipv6_tls_evidence_t tls;
 } record_t;
 static record_t record;
+static atomic_int stopping;
+static int control = -1, http = -1, mqtt = -1, udp[2] = {-1, -1};
+static h2_pal_task_t *service_workers[3];
+static int peer_initialized;
+
+static int is_stopping(void) {
+  return atomic_load_explicit(&stopping, memory_order_acquire);
+}
 
 static uint64_t now(void) {
   uint64_t value = 0;
@@ -60,12 +69,16 @@ static int udp_on(uint16_t port, int *fd) {
   return rc ? rc : (int)actual.port;
 }
 static int receive(int fd, void *data, size_t size) {
+  if (is_stopping())
+    return H2_PAL_ERR_CLOSED;
   return h2_pal_net_tcp_recv(rt->net, fd, data, size, 1000);
 }
 static int write_all(int fd, const void *data, size_t size) {
   const uint8_t *bytes = data;
   size_t offset = 0;
   while (offset < size) {
+    if (is_stopping())
+      return H2_PAL_ERR_CLOSED;
     int sent = h2_pal_net_tcp_send_timeout(rt->net, fd, bytes + offset,
                                            size - offset, 5000);
     if (sent <= 0)
@@ -147,7 +160,7 @@ static void raw_worker(void *unused) {
     if (!tls)
       goto done;
   }
-  while (got < 96 + 4097) {
+  while (got < 96 + 4097 && !is_stopping()) {
     rc = tls ? tls_api->read(tls, buffer + got, 96 + 4097 - got)
              : receive(client, buffer + got, 96 + 4097 - got);
     if (rc <= 0)
@@ -226,12 +239,26 @@ static int proof(unsigned kind) {
   h2_pal_mutex_unlock(rt->sync, record_lock);
   return valid;
 }
-static void retire_worker(void) {
-  if (record.worker) {
-    h2_pal_task_join(rt->task, record.worker);
-    record.worker = NULL;
+static int join_worker(h2_pal_task_t **worker) {
+  if (!*worker)
+    return H2_PAL_OK;
+  int rc = H2_PAL_ERR_IO;
+  for (unsigned attempt = 0; attempt < 3; ++attempt) {
+    rc = h2_pal_task_join(rt->task, *worker);
+    if (!rc) {
+      *worker = NULL;
+      return H2_PAL_OK;
+    }
   }
+  return rc;
+}
+static int retire_worker(void) {
+  int rc = join_worker(&record.worker);
+  if (rc)
+    return rc;
   h2_pal_net_close(rt->net, record.listener);
+  record.listener = -1;
+  return H2_PAL_OK;
 }
 
 /* The answerer uses H2Peer's existing portable protocol engine. This fixture
@@ -468,12 +495,12 @@ done:
 }
 static void http_worker(void *user) {
   int listener = *(int *)user;
-  for (;;) {
+  while (!is_stopping()) {
     pump_peer();
     int client = -1;
     h2_pal_net_addr_t peer;
     int rc = h2_pal_net_tcp_accept(rt->net, listener, &client, &peer, 2);
-    if (!rc && peer.family == H2_PAL_NET_FAMILY_IPV6)
+    if (!rc && !is_stopping() && peer.family == H2_PAL_NET_FAMILY_IPV6)
       http_request(client);
     h2_pal_net_close(rt->net, client);
     h2_pal_time_sleep_ms(rt->time, 1);
@@ -503,7 +530,7 @@ static int mqtt_packet(int fd, uint8_t *body, size_t cap, unsigned *kind) {
 }
 static void mqtt_worker(void *user) {
   int listener = *(int *)user;
-  for (;;) {
+  while (!is_stopping()) {
     int client = -1;
     h2_pal_net_addr_t peer;
     uint8_t body[512];
@@ -531,7 +558,7 @@ static void mqtt_worker(void *user) {
 }
 static void udp_worker(void *user) {
   int *sockets = user;
-  for (;;) {
+  while (!is_stopping()) {
     uint8_t packet[1024];
     h2_pal_net_addr_t peer;
     int size = h2_pal_net_udp_recvfrom(rt->net, sockets[0], &peer, packet,
@@ -592,66 +619,114 @@ static void udp_worker(void *user) {
     }
   }
 }
+/* Workers borrow the Runtime and listener storage. Join every started worker
+ * before closing sockets or releasing protocol state and the record mutex. A
+ * failed join retains global ownership rather than freeing a live context. */
+static int cleanup_fixture(void) {
+  atomic_store_explicit(&stopping, 1, memory_order_release);
+  int rc = H2_PAL_OK;
+  for (unsigned i = 0; i < 3; ++i) {
+    int joined = join_worker(&service_workers[i]);
+    if (joined && !rc)
+      rc = joined;
+  }
+  if (rc)
+    return rc;
+  rc = retire_worker();
+  if (rc)
+    return rc;
+  int *sockets[] = {&control, &http, &mqtt, &udp[0], &udp[1]};
+  for (unsigned i = 0; i < sizeof(sockets) / sizeof(sockets[0]); ++i) {
+    h2_pal_net_close(rt->net, *sockets[i]);
+    *sockets[i] = -1;
+  }
+  peer_closed();
+  if (peer_initialized) {
+    peer_deinit();
+    peer_initialized = 0;
+  }
+  rc = h2_sctp_destroy(&sctp_provider);
+  if (rc)
+    return rc;
+  if (record_lock) {
+    rc = h2_pal_mutex_destroy(rt->sync, record_lock);
+    if (rc)
+      return rc;
+    record_lock = NULL;
+  }
+  rt = NULL;
+  tls_api = NULL;
+  dtls_api = NULL;
+  return H2_PAL_OK;
+}
 int h2_ipv6_board_fixture_run(h2_runtime_t *runtime,
                               const h2_pal_dtls_api_t *dtls,
                               const h2_ipv6_tls_server_api_t *tls,
                               int (*ready)(h2_runtime_t *)) {
+  if (!runtime || !runtime->net || !runtime->mem || !runtime->task ||
+      !runtime->sync || !runtime->time || !runtime->crypto || !tls || !dtls ||
+      !hex_id(H2_PAL_IPV6_SESSION, 32))
+    return H2_PAL_ERR_INVALID_ARG;
+  if (rt)
+    return H2_PAL_ERR_INVALID_STATE;
   rt = runtime;
   dtls_api = dtls;
   tls_api = tls;
-  if (!hex_id(H2_PAL_IPV6_SESSION, 32) || !tls || !dtls)
-    return H2_PAL_ERR_INVALID_ARG;
+  atomic_store_explicit(&stopping, 0, memory_order_release);
+  memset(&record, 0, sizeof(record));
+  record.listener = record.client = -1;
   int rc = h2_pal_net_resolve_addr(rt->net, H2_PAL_IPV6_HOST, &host);
-  if (rc || host.family != H2_PAL_NET_FAMILY_IPV6)
-    return H2_PAL_ERR_INVALID_ARG;
+  if (rc || host.family != H2_PAL_NET_FAMILY_IPV6) {
+    rc = H2_PAL_ERR_INVALID_ARG;
+    goto cleanup;
+  }
   h2_pal_mutex_config_t mutex = {.name = "pal-ipv6/fixture/record"};
   rc = h2_pal_mutex_create(rt->sync, &mutex, &record_lock);
   if (rc)
-    return rc;
+    goto cleanup;
   h2_sctp_config_t sctp = {.mem = rt->mem, .crypto = rt->crypto};
   rc = h2_sctp_create(&sctp, &sctp_provider);
   if (rc)
-    return rc;
+    goto cleanup;
   rc = peer_init(rt->mem, rt->crypto);
   if (rc)
-    return rc;
+    goto cleanup;
+  peer_initialized = 1;
   peer_net_vtable = *rt->net->vtable;
   peer_net_vtable.get_host_addr = only_ipv6_host;
   peer_net_vtable.get_host_addr_family = only_ipv6_host_family;
   peer_net = (h2_pal_net_api_t){rt->net->user, &peer_net_vtable};
-  static int control, http, mqtt, udp[2];
   rc = listen_on((uint16_t)H2_PAL_IPV6_PORT, &control);
   if (rc < 0)
-    return rc;
+    goto cleanup;
   rc = listen_on(18080, &http);
   if (rc < 0)
-    return rc;
+    goto cleanup;
   rc = listen_on((uint16_t)H2_PAL_IPV6_MQTT_PORT, &mqtt);
   if (rc < 0)
-    return rc;
+    goto cleanup;
   rc = udp_on((uint16_t)H2_PAL_IPV6_DNS_PORT, &udp[0]);
   if (rc < 0)
-    return rc;
+    goto cleanup;
   rc = udp_on(13478, &udp[1]);
   if (rc < 0)
-    return rc;
-  h2_pal_task_t *task;
+    goto cleanup;
   h2_pal_task_options_t options = {.name = h2_ipv6_fixture_http_task_name};
-  rc = h2_pal_task_start(rt->task, &options, http_worker, &http, &task);
+  rc = h2_pal_task_start(rt->task, &options, http_worker, &http, &service_workers[0]);
   if (!rc) {
     options.name = h2_ipv6_fixture_mqtt_task_name;
-    rc = h2_pal_task_start(rt->task, &options, mqtt_worker, &mqtt, &task);
+    rc = h2_pal_task_start(rt->task, &options, mqtt_worker, &mqtt, &service_workers[1]);
   }
   if (!rc) {
     options.name = h2_ipv6_fixture_udp_task_name;
-    rc = h2_pal_task_start(rt->task, &options, udp_worker, udp, &task);
+    rc = h2_pal_task_start(rt->task, &options, udp_worker, udp, &service_workers[2]);
   }
   if (rc)
-    return rc;
+    goto cleanup;
   log_line(
       "H2_IPV6_FIXTURE_READY board=amoled host=fd53:697a:6f73:626::1 family=6");
   if (ready && (rc = ready(rt)) != H2_PAL_OK)
-    return rc;
+    goto cleanup;
   record.listener = record.client = -1;
   for (;;) {
     int client = -1;
@@ -676,7 +751,11 @@ int h2_ipv6_board_fixture_run(h2_runtime_t *runtime,
         hex_id(run, 16) && peer.family == H2_PAL_NET_FAMILY_IPV6) {
       if (fields == 6 && !strcmp(action, "ARM") && mode < 7 &&
           ((mode == 6) == (callback != 0)) && callback <= 65535) {
-        retire_worker();
+        rc = retire_worker();
+        if (rc) {
+          h2_pal_net_close(rt->net, client);
+          continue;
+        }
         memset(&record, 0, sizeof(record));
         memcpy(record.id, id, strlen(id) + 1);
         memcpy(record.run, run, 17);
@@ -710,5 +789,10 @@ int h2_ipv6_board_fixture_run(h2_runtime_t *runtime,
                  port < 0 ? 0 : (unsigned)port);
     write_all(client, reply, (size_t)length);
     h2_pal_net_close(rt->net, client);
+  }
+cleanup:
+  {
+    int cleaned = cleanup_fixture();
+    return cleaned ? cleaned : rc;
   }
 }

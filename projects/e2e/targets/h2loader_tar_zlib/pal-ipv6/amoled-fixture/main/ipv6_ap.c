@@ -15,9 +15,13 @@
 static struct netif *ap_netif;
 static struct raw_pcb *advertiser;
 static atomic_int advertiser_result = H2_PAL_ERR_WOULD_BLOCK;
+static atomic_int advertiser_enabled;
+static int ap_owned;
 static uint8_t prefix[16];
 static void advertise(void *user) {
   (void)user;
+  if (!advertiser_enabled || !advertiser || !ap_netif)
+    return;
   uint8_t packet[56] = {134, 0, 0, 0, 64};
   packet[16] = 1; /* source link-layer address */
   packet[17] = 1;
@@ -44,10 +48,13 @@ static void advertise(void *user) {
     pbuf_free(buffer);
   }
   /* Repeated advertisements also cover a station joining after AP startup. */
-  sys_timeout(6000, advertise, NULL);
+  if (advertiser_enabled)
+    sys_timeout(6000, advertise, NULL);
 }
 static void start_advertiser(void *user) {
   (void)user;
+  if (!advertiser_enabled || !ap_netif)
+    return;
   ip6_addr_t subnet;
   ip6addr_aton("fd53:697a:6f73:626::", &subnet);
   memcpy(prefix, subnet.addr, sizeof(prefix));
@@ -65,7 +72,38 @@ static void start_advertiser(void *user) {
   advertise(NULL);
   advertiser_result = H2_PAL_OK;
 }
+static esp_err_t stop_advertiser(void *user) {
+  (void)user;
+  sys_untimeout(advertise, NULL);
+  if (advertiser) {
+    raw_remove(advertiser);
+    advertiser = NULL;
+  }
+  ap_netif = NULL;
+  return ESP_OK;
+}
+int h2_ipv6_ap_stop(h2_runtime_t *runtime) {
+  if (!runtime)
+    return H2_PAL_ERR_INVALID_ARG;
+  advertiser_enabled = 0;
+  if (!ap_owned)
+    return H2_PAL_OK;
+  /* This synchronous TCP/IP callback also fences a queued startup callback.
+   * A late callback checks enabled and cannot revive the advertiser. */
+  if (esp_netif_tcpip_exec(stop_advertiser, NULL) != ESP_OK)
+    return H2_PAL_ERR_IO;
+  int rc = h2_pal_wifi_ap_stop(runtime->wifi_ap, 10000);
+  if (!rc)
+    ap_owned = 0;
+  return rc;
+}
 int h2_ipv6_ap_start(h2_runtime_t *runtime) {
+  if (!runtime || !runtime->time)
+    return H2_PAL_ERR_INVALID_ARG;
+  if (ap_owned)
+    return H2_PAL_ERR_INVALID_STATE;
+  advertiser_result = H2_PAL_ERR_WOULD_BLOCK;
+  advertiser_enabled = 0;
   h2_pal_wifi_ap_config_t config = {.ssid = "h2ipv6-amoled",
                                     .ssid_len = 13,
                                     .password = "palipv6e2e",
@@ -78,26 +116,48 @@ int h2_ipv6_ap_start(h2_runtime_t *runtime) {
     rc = h2_pal_wifi_ap_start(runtime->wifi_ap, &config, 10000);
   if (rc)
     return rc;
+  ap_owned = 1;
   esp_netif_t *ap = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
-  if (!ap || esp_netif_create_ip6_linklocal(ap) != ESP_OK)
-    return H2_PAL_ERR_UNAVAILABLE;
+  if (!ap || esp_netif_create_ip6_linklocal(ap) != ESP_OK) {
+    rc = H2_PAL_ERR_UNAVAILABLE;
+    goto cleanup;
+  }
   esp_ip6_addr_t address;
   if (!ip6addr_aton("fd53:697a:6f73:626::1", (ip6_addr_t *)&address) ||
-      esp_netif_add_ip6_address(ap, address, true) != ESP_OK)
-    return H2_PAL_ERR_IO;
+      esp_netif_add_ip6_address(ap, address, true) != ESP_OK) {
+    rc = H2_PAL_ERR_IO;
+    goto cleanup;
+  }
   ap_netif = esp_netif_get_netif_impl(ap);
+  if (!ap_netif) {
+    rc = H2_PAL_ERR_UNAVAILABLE;
+    goto cleanup;
+  }
   /* DAD must finish before the link-local source can advertise the prefix. */
   for (unsigned i = 0; i < 50; ++i) {
     esp_ip6_addr_t link_local;
     if (esp_netif_get_ip6_linklocal(ap, &link_local) == ESP_OK) {
-      if (tcpip_callback(start_advertiser, NULL) != ERR_OK)
-        return H2_PAL_ERR_IO;
+      advertiser_enabled = 1;
+      if (tcpip_callback(start_advertiser, NULL) != ERR_OK) {
+        rc = H2_PAL_ERR_IO;
+        goto cleanup;
+      }
       for (unsigned j = 0;
            j < 100 && advertiser_result == H2_PAL_ERR_WOULD_BLOCK; ++j)
         h2_pal_time_sleep_ms(runtime->time, 10);
-      return advertiser_result;
+      rc = advertiser_result;
+      if (rc == H2_PAL_ERR_WOULD_BLOCK)
+        rc = H2_PAL_ERR_TIMEOUT;
+      if (rc)
+        goto cleanup;
+      return H2_PAL_OK;
     }
     h2_pal_time_sleep_ms(runtime->time, 100);
   }
-  return H2_PAL_ERR_TIMEOUT;
+  rc = H2_PAL_ERR_TIMEOUT;
+cleanup:
+  {
+    int cleaned = h2_ipv6_ap_stop(runtime);
+    return cleaned ? cleaned : rc;
+  }
 }
