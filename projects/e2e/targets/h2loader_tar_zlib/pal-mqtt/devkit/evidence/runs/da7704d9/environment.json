@@ -1,0 +1,19 @@
+{
+  "artifact_source_commit": "da7704d9495c9da568cb0ed878395e5b7496ef01",
+  "host_oracle_source_commit": "10b5cd4803e7eae9fadfd6526b8ebd12d6b0c995",
+  "version": "mqtt-esp-da7704d9-r2",
+  "qualified": true,
+  "case_count": 36,
+  "boots": [
+    "a71fa80023dd4e46ae6c880a4ded8339-786a90208ce9f979",
+    "a71fa80023dd4e46ae6c880a4ded8339-4fd50d52ee3d1cbb"
+  ],
+  "new_p1_loader_image_sha256": "7109a515fb662b76abb2bf4927cffd294c4c26a02e1610b8a2bf8eebbf4ae136",
+  "new_p1_loader_package_sha256": "4a49186722ec477d75eeeac4865030c6cc5d017eb4d00acbee731b9d7d79775f",
+  "restored": true,
+  "uart_released": true,
+  "original_955dcf_receipt_preserved": true,
+  "restore_host_timeout_preserved": true,
+  "raw_evidence_directory": "/Users/idy/.codex/task-evidence/pal-pref-mqtt-platforms-20261004/mqtt-esp-source-da7704d9-qualified",
+  "recorded_at_utc": "2026-10-04T13:26:50.985871+00:00"
+}

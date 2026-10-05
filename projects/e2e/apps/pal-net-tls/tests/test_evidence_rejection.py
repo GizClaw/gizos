@@ -35,6 +35,22 @@ class Rejection(unittest.TestCase):
             bad=copy.deepcopy(followup);mutate(bad)
             with self.assertRaises(AssertionError):validation.check_sources(validation.ROOT,historical,bad)
 
+    def test_additive_mqtt_build_owner_does_not_rebind_net_tls_sources(self):
+        import hashlib
+        sources=json.loads((APP/'qualification.json').read_text())['source_sha256']
+        for platform in ['ios','android']:
+            path='libs/pal/providers/'+platform+'/pal_core/BUILD.bazel'
+            current=(validation.ROOT/path).read_bytes()
+            projected=validation.net_tls_build_input(path,current)
+            self.assertEqual(hashlib.sha256(projected).hexdigest(),sources[path])
+            for bad in [current.replace(b'h2_'+platform.encode()+b'_net.c',b'h2_'+platform.encode()+b'_net_changed.c'),
+                        current.replace(b'//libs/pal/providers/wolfssl',b'//libs/pal/providers/untrusted_tls'),
+                        current+b'\n# unknown shared build mutation\n']:
+                self.assertNotEqual(hashlib.sha256(validation.net_tls_build_input(path,bad)).hexdigest(),sources[path])
+        provider='libs/pal/providers/ios/pal_core/src/h2_ios_net.c'
+        current=(validation.ROOT/provider).read_bytes()
+        self.assertEqual(validation.net_tls_build_input(provider,current),current)
+
     def test_every_native_provider_source_is_mandatory(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)

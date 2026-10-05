@@ -29,6 +29,30 @@ REQUIRED_PROVIDER_SOURCES = {
 }
 
 
+
+def net_tls_build_input(relative, content):
+    """Exclude only additive MQTT ownership wiring from shared mobile BUILD.
+
+    The remaining entire file still has to match its immutable Net/TLS hash.
+    This comparison preserves historical evidence, never qualifies a new SDK.
+    """
+    platform = {'libs/pal/providers/ios/pal_core/BUILD.bazel': 'ios',
+                'libs/pal/providers/android/pal_core/BUILD.bazel': 'android'}.get(relative)
+    if platform is None:
+        return content
+    text = content.decode('utf-8')
+    text = text.replace(', "include/h2_' + platform + '_mqtt.h"', '')
+    if platform == 'ios':
+        text = text.replace('        ":mqtt",\n', '')
+        for rule, name in [('cc_library', 'mqtt'), ('cc_test', 'mqtt_owner_lifetime_test')]:
+            pattern = r'\n' + rule + r'\(\n    name = "' + name + r'",.*?\n\)\n'
+            text, count = re.subn(pattern, '', text, flags=re.DOTALL)
+            assert count <= 1, 'duplicate additive MQTT owner rule'
+    else:
+        text = text.replace('        "src/h2_android_mqtt.c",\n', '')
+        text = text.replace('        "//libs/pal/providers/coremqtt",\n', '')
+    return text.encode('utf-8')
+
 def check_sources(root, sources, followup=None):
     assert REQUIRED_PROVIDER_SOURCES <= set(sources), 'missing qualified provider/config source receipt'
     effective = dict(sources)
@@ -48,7 +72,10 @@ def check_sources(root, sources, followup=None):
         assert followup['validation']['shared_mobile_contract'] == 'PASS'
         effective.update(followup['current_source_sha256'])
     for relative, expected in effective.items():
-        assert hashlib.sha256((root / relative).read_bytes()).hexdigest() == expected, relative
+        content = (root / relative).read_bytes()
+        if hashlib.sha256(content).hexdigest() != expected:
+            content = net_tls_build_input(relative, content)
+        assert hashlib.sha256(content).hexdigest() == expected, relative
 
 
 def check_board_observation(receipt):

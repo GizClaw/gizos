@@ -1,0 +1,38 @@
+{
+  "restored": true,
+  "uid": "9888e0115c52",
+  "active_version": "gizclaw-fwdiag-r35-adbbc722",
+  "active_image_sha256": "c6d08c6500d1c76548f9368253a1f8f64d30f6f7ce467fbc76e9543dadb9e2f2",
+  "stage_valid": 1,
+  "stage_package_sha256": "c692f382849746682c5d3e4c77a212ce2bd3dad9d434e8bdb8940ba8a0572cb8",
+  "p1_image_sha256": "7109a515fb662b76abb2bf4927cffd294c4c26a02e1610b8a2bf8eebbf4ae136",
+  "p1_package_sha256": "4a49186722ec477d75eeeac4865030c6cc5d017eb4d00acbee731b9d7d79775f",
+  "p1_unchanged": true,
+  "coredump_unchanged": true,
+  "wifi_settings_and_state_preserved": true,
+  "wifi_observational_changes": [
+    "rssi"
+  ],
+  "data_checksum_before_and_after": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "qualification_snapshot": "qualified-before-restore.json",
+  "qualification_stage_valid": 0,
+  "restore_stage_valid": 1,
+  "restore_host_timeout_preserved": "restore-upgrade-host-timeout.json",
+  "recorded_at_utc": "2026-10-04T13:25:16.642991+00:00",
+  "final_data_checksum_observed_after_restoration": true,
+  "final_status_log": "restored-final-status.log",
+  "final_data_checksum_log": "restored-final-data-checksum.log",
+  "uart_released": true,
+  "snapshot_sha256": {
+    "before-status.log": "40bd6455daa75d3a344d1cbcb8bcc4162a694ee489199fd7864567158eaf4610",
+    "after-status.log": "8554e76369f97397a2c16980a7dbaa53612abcac5922e9db112d98a490a8f481",
+    "restored-final-status.log": "40bd6455daa75d3a344d1cbcb8bcc4162a694ee489199fd7864567158eaf4610",
+    "before-wifi.log": "f0997fefdfd584199070d000b2bde981ec6ec9e1d55b041feff12c1ca25b72e6",
+    "restored-final-wifi.log": "220c693495447b6030c3d570d3be59df25dc6693d1e4b8c41e6c4f3766659955",
+    "before-coredump-status.log": "5bdf63243c04b65d6759ad5a1cbd04f6b4cfdf8a5b1824698fd2ec92ac7d0cec",
+    "restored-final-coredump-status.log": "5bdf63243c04b65d6759ad5a1cbd04f6b4cfdf8a5b1824698fd2ec92ac7d0cec",
+    "before-data-checksum.log": "d8f6e4999697fd64c15bc63c90313e2cedea6179f04100638d0ef8629c0e6e68",
+    "after-data-checksum.log": "af4ffa9a4fadf67a591ac36c4a271e3f8e7f029e6408412be2fbdadb9c864c90",
+    "restored-final-data-checksum.log": "d8f6e4999697fd64c15bc63c90313e2cedea6179f04100638d0ef8629c0e6e68"
+  }
+}
