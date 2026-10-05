@@ -19,7 +19,7 @@
   "current_audit_sha256": {
     "projects/e2e/apps/pal-display/BUILD.bazel": "87c6346998da40e8b8b1753e8eb18997ddd68939507709ba4aecf7a2aff5c84b",
     "projects/e2e/apps/pal-display/README.md": "74b3849400315b472667a42455286988cae99500fe1f7c075fad98763e6a38e4",
-    "projects/e2e/apps/pal-display/check_qualification.py": "e5f1092df908bbddf97921effbada2dcc827ca5f8476da2bf797f41c62af24d1"
+    "projects/e2e/apps/pal-display/check_qualification.py": "ecefe81d6578b5d7689facb59941644220cba3ad4755432b55508072528a37ab"
   },
   "network_config_changes": {},
   "scope": "Host audit and explicitly reversed Net/Wi-Fi guide deltas only. Display provider/App/catalog content and historical physical/mobile/artifact receipts are unchanged; no current Display hardware qualification is claimed."
