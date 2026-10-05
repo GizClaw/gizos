@@ -266,15 +266,13 @@ static h2_pal_result_t open_transport(
         if (rc != H2_PAL_OK) {
             return rc;
         }
-        /* Bound each unsuccessful address while preserving the request's
-         * original deadline, cancellation checks and pending-connect contract. */
+        /* Poll a pending address under the original request deadline. Only a
+         * terminal failure permits fallback; TIMEOUT/WOULD_BLOCK keep this
+         * socket alive rather than imposing an arbitrary candidate budget. */
         if (started >= exchange->deadline_ms) {
             return H2_PAL_ERR_TIMEOUT;
         }
         uint64_t candidate_deadline = exchange->deadline_ms;
-        if (candidate + 1u < addresses.count && candidate_deadline - started > 250u) {
-            candidate_deadline = started + 250u;
-        }
         exchange->stage = "tcp_open";
         rc = h2_pal_net_tcp_open_bound(net, remote.family, bind_ptr, &exchange->socket);
         if (rc != H2_PAL_OK) {
