@@ -7,6 +7,8 @@
 
 /* This mailbox and its pixel/tile payload are rooted, VM-accounted storage.
  * Only the producer writes a command; release/acquire transfers ownership.
+ * Source A is borrowed until COPYING publishes PENDING; send/baseline B and
+ * plan/tile storage remain worker-owned until DONE.
  * Task/atomic/semaphore implementation storage belongs to the PAL provider. */
 typedef struct h2_lua_display_worker {
   const h2_runtime_t *runtime;
@@ -22,7 +24,8 @@ typedef struct h2_lua_display_worker {
   h2_pal_result_t result;
   h2_display_info_t info;
   h2_lua_display_plan_t plan;
-  const uint16_t *pixels;
+  const uint16_t *source;
+  uint16_t *pixels;
   uint8_t *tiles;
   int tiled;
   int gap;
@@ -33,6 +36,7 @@ typedef struct h2_lua_display_worker {
 
 enum {
   H2_LUA_DISPLAY_IDLE,
+  H2_LUA_DISPLAY_COPYING,
   H2_LUA_DISPLAY_PENDING,
   H2_LUA_DISPLAY_DONE,
   H2_LUA_DISPLAY_EXITED,

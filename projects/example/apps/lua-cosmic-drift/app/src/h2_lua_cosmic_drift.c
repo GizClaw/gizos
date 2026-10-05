@@ -56,7 +56,7 @@ h2_lua_cosmic_drift_run(h2_runtime_t *runtime,
           .max_jobs = 1u,
           .event_delivery_capacity = 8u,
           .callback_capacity_per_job = 8u,
-          /* AMOLED 368x448: two worker frames need 659456 pixel bytes. */
+          /* AMOLED 368x448: VM send frame needs 329728 bytes plus app state. */
           .vm_memory_limit_bytes = 1024u * 1024u,
           .source_limit_bytes = 128u * 1024u,
           .output_limit_bytes = 1024u,

@@ -680,6 +680,10 @@ static h2_runtime_t *create_runtime(void) {
   return create_runtime_with_time(h2_desktop_platform_time_api());
 }
 
+/* Dense pixel oracles include hundreds of worker round trips; their budget
+ * tolerates host scheduling latency without altering timeout contract tests. */
+#define TEST_DISPLAY_ORACLE_TIMEOUT_MS 30000u
+
 static h2_lua_host_t *create_unstarted_host_with_scheduler(
     h2_runtime_t *runtime, uint32_t instruction_quantum,
     uint32_t resume_time_budget_ms, uint32_t execution_timeout_ms,
@@ -1018,9 +1022,13 @@ static void test_display_submission(int blocked) {
   static const char script[] =
       "local d,p,r=require('display'),require('submit_test'),require('runtime')\n"
       "local function flush() local s,e=d.flush();while not s do assert(e<0);r.sleep(1);s,e=d.flush() end;return s end\n"
+      "collectgarbage('collect');local before=collectgarbage('count')*1024;"
       "d.clear('red');assert(d.submit({tiles=true})==1);d.clear('green')\n"
       "if args.blocked=='yes' then local n,e=d.submit({tiles=true});assert(n==nil and e<0);assert(d.status().completed==0) end\n"
       "p.stage(1);local s=flush();assert(s.completed==1 and s.changed_frames==1);assert(p.pixel()==63488)\n"
+      "collectgarbage('collect');local bytes=collectgarbage('count')*1024-before;"
+      "assert(bytes>=115200 and bytes<115200+8192,'one VM send buffer: '..bytes);"
+      "print('two-buffer 240x240 VM growth',bytes)\n"
       "assert(d.submit({tiles=true})==2);s=flush();assert(s.completed==2 and s.changed_frames==2);assert(p.pixel()==1024)\n"
       "assert(d.submit({tiles=true})==3);s=flush();assert(s.changed_frames==2 and s.pixels==0)\n"
       "d.clear('blue');local n,m=d.present({tiles=true});assert(n==57600 and m==1);assert(p.pixel()==31)\n"
@@ -1162,18 +1170,23 @@ static void test_display_submission_oom(void) {
   assert(h2_lua_host_create(&config,&host)==H2_PAL_OK);
   assert(h2_lua_host_start(host)==H2_PAL_OK);
   const char script[]="local d=require('display');local keep={};"
-      "for i=1,29 do keep[i]=string.rep(string.char(i),65536);collectgarbage('collect') end;"
+      "for i=1,31 do keep[i]=string.rep(string.char(i),65536);collectgarbage('collect') end;"
       "d.clear('red');local ok,e=pcall(d.submit);assert(not ok and tostring(e):find('memory'));"
-      "assert(#keep==29)";
+      "assert(#keep==31);keep=nil;collectgarbage('collect');"
+      "assert(d.submit()==1,'OOM must clear preparation guard without publishing');"
+      "local r=require('runtime');local done,e=d.flush();"
+      "while not done do assert(e==d.BUSY);r.sleep(1);done,e=d.flush() end;"
+      "assert(done.successful==1);d.deinit()";
   h2_lua_job_id_t job;
   assert(h2_lua_job_submit_text(host,NULL,"@submit-oom.lua",(const uint8_t*)script,
       sizeof(script)-1,NULL,0,&job)==H2_PAL_OK);
   run_until_terminal(host,job,6000);
   if(status(host,job).state!=H2_LUA_JOB_SUCCEEDED) fprintf(stderr,"OOM: %s\n",status(host,job).message);
   assert(status(host,job).state==H2_LUA_JOB_SUCCEEDED);
-  assert(s_test_display_fixture.draw_count==0);
+  assert(s_test_display_fixture.draw_count==1);
+  assert(s_test_display_fixture.pixels[0]==0xf800u);
   assert(status(host,job).memory_used<=2u*1024u*1024u);
-  printf("display_submit quota_pressure vm_bytes=%zu limit=2097152 snapshot_oom=PASS\n",status(host,job).memory_used);
+  printf("display_submit quota_pressure vm_bytes=%zu limit=2097152 send_buffer_oom=PASS\n",status(host,job).memory_used);
   assert(h2_lua_host_stop(host)==H2_PAL_OK);
   h2_pal_result_t result=H2_PAL_ERR_BUSY;
   for(unsigned wait=0;wait<3000 && result==H2_PAL_ERR_BUSY;++wait) {
@@ -1197,6 +1210,40 @@ static int s_wake_init_fault;
 static const h2_pal_task_api_t *s_wake_tasks_base;
 static h2_pal_task_api_t s_wake_tasks;
 static h2_pal_task_vtable_t s_wake_tasks_vtable;
+static const h2_pal_time_api_t *s_copy_time_base;
+static h2_pal_time_api_t s_copy_time_api;
+static h2_pal_time_vtable_t s_copy_time_vtable;
+static test_display_gate_t s_copy_gate;
+static pthread_t s_copy_controller;
+
+/* Hold the worker before it copies A. Fail the Lua thread's handoff wait,
+ * then release the worker; the caller must freeze drawing while A is borrowed. */
+static h2_pal_result_t test_copy_clock(void *user, uint64_t *out_us) {
+  assert(pthread_mutex_lock(&s_copy_gate.mutex) == 0);
+  if (s_copy_gate.has_owner &&
+      pthread_equal(s_copy_gate.owner, pthread_self()) &&
+      h2_atomic_load(&s_copy_gate.stage) == 0) {
+    h2_atomic_store(&s_copy_gate.stage, 1);
+    while (s_copy_gate.block)
+      assert(pthread_cond_wait(&s_copy_gate.cond, &s_copy_gate.mutex) == 0);
+  }
+  assert(pthread_mutex_unlock(&s_copy_gate.mutex) == 0);
+  return s_copy_time_base->vtable->get_monotonic_us(user, out_us);
+}
+
+static h2_pal_result_t test_copy_sleep(void *user, uint32_t ms) {
+  if (!pthread_equal(s_copy_controller, pthread_self()) &&
+      h2_atomic_load(&s_copy_gate.stage) == 1) {
+    assert(pthread_mutex_lock(&s_copy_gate.mutex) == 0);
+    s_copy_gate.block = 0;
+    h2_atomic_store(&s_copy_gate.stage, 2);
+    assert(pthread_cond_signal(&s_copy_gate.cond) == 0);
+    assert(pthread_mutex_unlock(&s_copy_gate.mutex) == 0);
+    return H2_PAL_ERR_IO;
+  }
+  return s_copy_time_base->vtable->sleep_ms(user, ms);
+}
+
 static int test_wake_task_start(void *user, const h2_pal_task_options_t *options,
     h2_pal_task_entry_t entry, void *context, h2_pal_task_t **out) {
   if (strcmp(options->name, "$lua/display") == 0) {
@@ -1234,11 +1281,26 @@ static void test_display_submission_fault(int mode) {
   s_test_display_fixture.fail_present = mode == 2;
   s_test_display_fixture.fail_close = mode == 3;
   s_test_display_fixture.fail_info = mode == 4 || mode == 7;
-  if (mode >= 8) {
+  if (mode >= 8 && mode <= 10) {
     s_test_display_fixture.width = mode == 9 ? 4096 : 48;
     s_test_display_fixture.height = mode == 9 ? 33 : 48;
   }
   h2_runtime_t *runtime = create_runtime();
+  if (mode == 11) {
+    s_copy_gate.block = s_copy_gate.enforce_owner = 1;
+    s_copy_controller = pthread_self();
+    assert(pthread_mutex_init(&s_copy_gate.mutex, NULL) == 0);
+    assert(pthread_cond_init(&s_copy_gate.cond, NULL) == 0);
+    assert(h2_atomic_int_init(&s_copy_gate.stage, 0) == H2_ATOMIC_OK);
+    s_display_gate = &s_copy_gate;
+    s_copy_time_base = runtime->time;
+    s_copy_time_vtable = *runtime->time->vtable;
+    s_copy_time_vtable.get_monotonic_us = test_copy_clock;
+    s_copy_time_vtable.sleep_ms = test_copy_sleep;
+    s_copy_time_api = *runtime->time;
+    s_copy_time_api.vtable = &s_copy_time_vtable;
+    runtime->time = &s_copy_time_api;
+  }
   if (mode == 7) assert(h2_pal_display_open(runtime->display) == H2_PAL_OK);
   if (mode == 5 || mode == 6) {
     s_wake_init_fault = mode == 6;
@@ -1274,7 +1336,8 @@ static void test_display_submission_fault(int mode) {
       "local n,e=d.submit({tiles=true});if args.wake=='yes' then "
       "assert(n==nil and e<0 and e~=d.BUSY);"
       "local n2,e2=d.submit();assert(n2==nil and e2==e);"
-      "assert(d.status().error==e);assert(not pcall(d.present));return end;"
+      "assert(d.status().error==e);assert(not pcall(d.present));"
+      "assert(not pcall(d.clear,'blue'));return end;"
       "assert(n==(args.partial=='no' and 1 or 2));local s,e=d.flush();"
       "while not s and e==d.BUSY do r.sleep(1);s,e=d.flush() end;"
       "if args.close=='yes' then assert(s);local _;_,e=d.deinit();"
@@ -1284,7 +1347,7 @@ static void test_display_submission_fault(int mode) {
       "local record=d.status();assert(record.error==e);"
       "assert(not pcall(d.present));";
   h2_lua_arg_t args[] = {{"close", mode == 3 ? "yes" : "no"},
-                        {"wake", mode == 5 ? "yes" : "no"},
+                        {"wake", mode == 5 || mode == 11 ? "yes" : "no"},
                         {"partial", mode == 8 ? "2" : mode == 9 ? "130" : mode == 10 ? "0" : "no"}};
   h2_lua_job_id_t job;
   assert(h2_lua_job_submit_text(host, NULL, "@submission-fault.lua",
@@ -1294,6 +1357,7 @@ static void test_display_submission_fault(int mode) {
   if (mode != 4 && mode != 7 && mode != 6 && state.state != H2_LUA_JOB_SUCCEEDED)
     fprintf(stderr, "fault mode=%d: %s\n", mode, state.message);
   assert(state.state == (mode == 4 || mode == 7 || mode == 6 ? H2_LUA_JOB_FAILED : H2_LUA_JOB_SUCCEEDED));
+  if (mode == 11) assert(h2_atomic_load(&s_copy_gate.stage) == 2);
   h2_pal_result_t expected = mode == 4 || mode == 7 ? H2_DISPLAY_ERR_INVALID_ARG
       : mode == 6 ? H2_PAL_ERR_TASK : H2_PAL_ERR_IO;
   h2_pal_result_t result = H2_PAL_ERR_BUSY;
@@ -2892,7 +2956,7 @@ static void test_display_regions(void) {
       "collectgarbage('collect');"
       "local before=collectgarbage('count');d.present({retained=true});"
       "collectgarbage('collect');local bytes=(collectgarbage('count')-before)*1024;"
-      "assert(bytes>=w*h*4 and bytes<w*h*4+4096,'charged worker pixel storage: '..bytes);"
+      "assert(bytes>=w*h*2 and bytes<w*h*2+4096,'charged worker pixel storage: '..bytes);"
       "print('retained 120x120 charged VM bytes',bytes);"
       "local function present() return n.present(d.present) end;"
       "for frame=1,24 do d.clear('black');local radius=25+frame;"
@@ -2907,7 +2971,7 @@ static void test_display_regions(void) {
       "d.fill_rect(0,0,1,1,flip and 'red' or 'blue');assert(d.present()>0) end;"
       "n.noalloc(warm);present();"
       "d.present({retained=false});collectgarbage('collect');"
-      "assert(collectgarbage('count')>=before+w*h*4/1024,'worker buffers retained');"
+      "assert(collectgarbage('count')>=before+w*h*2/1024,'single send/baseline buffer retained');"
       "d.deinit();collectgarbage('collect');"
       "assert(collectgarbage('count')<before+4,'worker storage released')";
   (void)run_display_script_size(host, "@present-spans.lua", present_spans,
@@ -3024,7 +3088,8 @@ static void test_display_regions(void) {
   h2_lua_host_t *restore_host = NULL;
   const h2_lua_host_config_t restore_config = {
       .runtime = runtime, .worker_count = 1u, .max_jobs = 1u,
-      .vm_memory_limit_bytes = 4u * 1024u * 1024u, .execution_timeout_ms = 5000u,
+      .vm_memory_limit_bytes = 4u * 1024u * 1024u,
+      .execution_timeout_ms = TEST_DISPLAY_ORACLE_TIMEOUT_MS,
   };
   assert(h2_lua_host_create(&restore_config, &restore_host) == H2_PAL_OK);
   assert(h2_lua_register_module(restore_host, "region_test", test_region_open, NULL) == H2_PAL_OK);
@@ -3080,7 +3145,8 @@ static void test_display_regions(void) {
 
 static void test_display_strokes(void) {
   h2_runtime_t *runtime = create_runtime();
-  h2_lua_host_t *host = create_unstarted_host_with_scheduler(runtime, 1000, 0, 5000, 8192);
+  h2_lua_host_t *host = create_unstarted_host_with_scheduler(runtime, 1000, 0,
+      TEST_DISPLAY_ORACLE_TIMEOUT_MS, 8192);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
   static const uint8_t reference[] =
       "local d=require('display');math.randomseed(354);"
@@ -3188,7 +3254,8 @@ static void test_display_mesh_identity(void) {
   /* The 16 frames x 12 transforms x 6 presents require 1152 worker round
    * trips. This is a pixel oracle, so allow scheduler latency on loaded CI
    * hosts while retaining a finite job deadline and every comparison. */
-  h2_lua_host_t *host = create_unstarted_host_with_scheduler(runtime,1000,0,30000,8192);
+  h2_lua_host_t *host = create_unstarted_host_with_scheduler(runtime, 1000, 0,
+      TEST_DISPLAY_ORACLE_TIMEOUT_MS, 8192);
   assert(h2_lua_register_module(host,"mesh_test",test_mesh_open,NULL) == H2_PAL_OK);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
   /* Reference positions evaluate the original binary64 expression in Lua.
@@ -3248,7 +3315,8 @@ static void test_display_mesh_identity(void) {
 
 static void test_display_mesh_cache(void) {
   h2_runtime_t *runtime = create_runtime();
-  h2_lua_host_t *host = create_unstarted_host_with_scheduler(runtime,1000,0,5000,8192);
+  h2_lua_host_t *host = create_unstarted_host_with_scheduler(runtime, 1000, 0,
+      TEST_DISPLAY_ORACLE_TIMEOUT_MS, 8192);
   assert(h2_lua_register_module(host,"mesh_test",test_mesh_open,NULL) == H2_PAL_OK);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
   static const uint8_t cache[] =
@@ -3275,7 +3343,8 @@ static void test_display_mesh_cache(void) {
   assert_only_pixels(0,NULL,0);
   h2_lua_host_destroy(host);
   const h2_lua_host_config_t config = {.runtime=runtime,.worker_count=1,.max_jobs=1,
-      .vm_memory_limit_bytes=4u*1024u*1024u,.execution_timeout_ms=5000};
+      .vm_memory_limit_bytes=4u*1024u*1024u,
+      .execution_timeout_ms=TEST_DISPLAY_ORACLE_TIMEOUT_MS};
   assert(h2_lua_host_create(&config,&host) == H2_PAL_OK);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
   static const uint8_t capacity[] =

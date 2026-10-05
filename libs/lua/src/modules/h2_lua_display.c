@@ -99,15 +99,14 @@ typedef struct display_region {
 
 typedef struct display_presented {
   size_t pixel_count;
-  /* Full last-successful frame followed by one comparison byte per tile. */
+  /* Send buffer and successful baseline share pixels; pending contents are
+   * tentative. One comparison/iteration byte follows per tile. */
   uint16_t pixels[];
 } display_presented_t;
 
 typedef struct display_submission {
   h2_lua_display_worker_t worker;
-  uint16_t *snapshot;
-  int snapshot_ref;
-  int closing, fault, inflight, changed, retained;
+  int closing, fault, inflight, changed, retained, preparing;
   uint64_t submitted, completed, successful, changed_frames;
   uint64_t started_us, completed_us;
   int clock_valid;
@@ -4437,10 +4436,15 @@ static void display_enable_retained(lua_State *state, h2_lua_job_t *job) {
     luaL_unref(state, LUA_REGISTRYINDEX, ref);
     luaL_error(state, "display changed while enabling retained mode");
   }
-  /* GC may have installed another baseline; detach it before publishing ours. */
+  /* Guarded first use publishes the sole send/baseline buffer. */
   display_release_presented(state, job);
   job->display_presented = frame;
   job->display_presented_ref = ref;
+}
+
+static int display_allocate_send_buffer(lua_State *state) {
+  display_enable_retained(state, lua_touserdata(state, 1));
+  return 0;
 }
 
 static h2_pal_result_t display_submission_fault(h2_lua_job_t *job,
@@ -4453,12 +4457,13 @@ static h2_pal_result_t display_submission_fault(h2_lua_job_t *job,
 }
 
 static h2_pal_result_t display_submission_wait(display_submission_t *submission) {
-  /* A failed wake can leave PENDING forever. The fault already proves that
+  /* A failed wake can leave COPYING/PENDING forever. The fault proves that
    * synchronous reuse must fail without waiting for an unobservable worker. */
   if (submission->fault) return (h2_pal_result_t)submission->fault;
   if (!submission->worker.initialized)
     return submission->fault ? submission->fault : H2_PAL_ERR_INVALID_STATE;
-  while (h2_lua_display_worker_phase(&submission->worker) == H2_LUA_DISPLAY_PENDING) {
+  while (h2_lua_display_worker_phase(&submission->worker) == H2_LUA_DISPLAY_COPYING ||
+         h2_lua_display_worker_phase(&submission->worker) == H2_LUA_DISPLAY_PENDING) {
     h2_pal_result_t result = h2_pal_time_sleep_ms(submission->worker.runtime->time, 1);
     if (result != H2_PAL_OK) return result;
   }
@@ -4521,44 +4526,6 @@ static h2_pal_result_t display_submission_open(lua_State *state,
   return result;
 }
 
-/* Copy only the final submitted coverage. Full-width rectangles stay one
- * contiguous copy; other rectangles preserve the framebuffer row stride. */
-static void display_copy_submission_rect(uint16_t *destination,
-    const uint16_t *source, int width, h2_lua_display_plan_rect_t rect) {
-  size_t at = (size_t)rect.top * width + rect.left;
-  size_t columns = rect.right - rect.left;
-  if (columns == (size_t)width) {
-    memcpy(destination + at, source + at,
-           columns * (rect.bottom - rect.top) * sizeof(*source));
-  } else {
-    for (int y = rect.top; y < rect.bottom; ++y, at += width)
-      memcpy(destination + at, source + at, columns * sizeof(*source));
-  }
-}
-
-/* Called only after successful completion transferred ownership back to the
- * VM. The tile iterator consumes bit 1; bit 0 retains the entire original map,
- * including >128 rectangles. Reset consumption before replaying that same plan.
- * Pixels outside the plan remain the previous successful baseline. */
-static void display_commit_submission(display_presented_t *frame,
-    display_submission_t *submission) {
-  h2_lua_display_worker_t *worker = &submission->worker;
-  if (worker->tiled) {
-    size_t count = display_tile_count(worker->info.width, worker->info.height);
-    for (size_t i = 0; i < count; ++i) worker->tiles[i] &= 1;
-    int cursor = 0;
-    h2_lua_display_plan_rect_t rect;
-    while (h2_lua_display_plan_next_tile(worker->tiles, worker->info.width,
-        worker->info.height, worker->gap, &cursor, &rect))
-      display_copy_submission_rect(frame->pixels, submission->snapshot,
-                                    worker->info.width, rect);
-  } else {
-    for (int i = 0; i < worker->plan.count; ++i)
-      display_copy_submission_rect(frame->pixels, submission->snapshot,
-                                    worker->info.width, worker->plan.rects[i]);
-  }
-}
-
 /* Owner-only completion collection. The worker never touches the VM or dirty
  * state; in particular, completing N cannot clear drawing performed for N+1. */
 static h2_pal_result_t display_submission_collect(h2_lua_job_t *job) {
@@ -4568,7 +4535,7 @@ static h2_pal_result_t display_submission_collect(h2_lua_job_t *job) {
   if (!worker->initialized) return submission->fault ? submission->fault : H2_PAL_OK;
   int phase = h2_lua_display_worker_phase(worker);
   if (phase < 0) return display_submission_fault(job, (h2_pal_result_t)phase);
-  if (phase == H2_LUA_DISPLAY_PENDING)
+  if (phase == H2_LUA_DISPLAY_COPYING || phase == H2_LUA_DISPLAY_PENDING)
     return submission->fault ? submission->fault : H2_PAL_ERR_BUSY;
   if (phase == H2_LUA_DISPLAY_EXITED && submission->inflight) {
     return display_submission_fault(job,
@@ -4589,10 +4556,7 @@ static h2_pal_result_t display_submission_collect(h2_lua_job_t *job) {
       ++submission->successful;
       if (submission->changed) ++submission->changed_frames;
       display_presented_t *frame = job->display_presented;
-      if (frame != NULL) {
-        display_commit_submission(frame, submission);
-        job->display_presented_valid = 1;
-      }
+      if (frame != NULL) job->display_presented_valid = 1;
     }
     h2_lua_display_worker_ack(worker);
   }
@@ -4608,18 +4572,28 @@ static h2_pal_result_t display_submission_prepare(lua_State *state,
   display_option(state, "merge_gap");
   int gap = display_integer(state, -1, 0, 0, 8);
   lua_pop(state, 1);
-  if (!job->display_open || job->display_shutting_down) return H2_PAL_ERR_INVALID_STATE;
   h2_pal_result_t result = display_submission_collect(job);
   if (result != H2_PAL_OK) return result;
+  if (!job->display_open || job->display_shutting_down) return H2_PAL_ERR_INVALID_STATE;
   if (job->display_submission == NULL) return H2_PAL_ERR_INVALID_STATE;
   display_submission_t *submission = job->display_submission;
   if (submission->closing || submission->fault) return H2_PAL_ERR_INVALID_STATE;
+  if (submission->preparing) return H2_PAL_ERR_BUSY;
   /* Finalizers can submit/close/reopen while first-use storage is allocated.
    * Root the old context and verify its sequence before publishing any plan. */
   lua_rawgeti(state, LUA_REGISTRYINDEX, job->display_submission_ref);
   uint64_t sequence = submission->submitted;
   if (submission->submitted == (uint64_t)LUA_MAXINTEGER) return H2_PAL_ERR_NO_SPACE;
-  if (job->display_presented == NULL) display_enable_retained(state, job);
+  if (job->display_presented == NULL) {
+    /* A finalizer must not allocate a second B or replace the active root.
+     * Protect allocation so OOM also clears the guard before propagating. */
+    submission->preparing = 1;
+    lua_pushcfunction(state, display_allocate_send_buffer);
+    lua_pushlightuserdata(state, job);
+    int status = lua_pcall(state, 1, 0, 0);
+    submission->preparing = 0;
+    if (status != LUA_OK) return lua_error(state);
+  }
   if (job->display_submission != submission || !job->display_open ||
       submission->closing || job->display_shutting_down)
     return H2_PAL_ERR_INVALID_STATE;
@@ -4629,31 +4603,14 @@ static h2_pal_result_t display_submission_prepare(lua_State *state,
   display_presented_t *frame = job->display_presented;
   lua_rawgeti(state, LUA_REGISTRYINDEX, job->display_presented_ref);
   size_t size = frame->pixel_count * sizeof(uint16_t);
-  if (submission->snapshot == NULL) {
-    uint16_t *snapshot = lua_newuserdatauv(state,
-        size + display_tile_count(job->display_info.width, job->display_info.height), 0);
-    int ref = luaL_ref(state, LUA_REGISTRYINDEX);
-    if (job->display_submission != submission || !job->display_open ||
-        job->display_presented != frame || submission->closing ||
-        job->display_shutting_down) {
-      luaL_unref(state, LUA_REGISTRYINDEX, ref);
-      return H2_PAL_ERR_INVALID_STATE;
-    }
-    result = display_submission_collect(job);
-    if (result != H2_PAL_OK || submission->submitted != sequence) {
-      luaL_unref(state, LUA_REGISTRYINDEX, ref);
-      return result != H2_PAL_OK ? result : H2_PAL_ERR_BUSY;
-    }
-    submission->snapshot = snapshot;
-    submission->snapshot_ref = ref;
-  }
   h2_lua_display_worker_t *worker = &submission->worker;
   worker->plan.count = 0;
   worker->tiled = 0;
   worker->gap = gap;
-  worker->pixels = submission->snapshot;
-  worker->tiles = (uint8_t *)(submission->snapshot + frame->pixel_count);
-  uint8_t *planning_tiles = (uint8_t *)(frame->pixels + frame->pixel_count);
+  worker->source = job->framebuffer;
+  worker->pixels = frame->pixels;
+  worker->tiles = (uint8_t *)(frame->pixels + frame->pixel_count);
+  uint8_t *planning_tiles = worker->tiles;
   submission->changed = !job->display_presented_valid ||
       memcmp(job->framebuffer, frame->pixels, size) != 0;
   /* Switching retained policy refreshes the full baseline, as present did. */
@@ -4676,31 +4633,44 @@ static h2_pal_result_t display_submission_prepare(lua_State *state,
   }
   *pixels = *rects = 0;
   if (worker->tiled) {
-    memcpy(worker->tiles, planning_tiles,
-        display_tile_count(worker->info.width, worker->info.height));
     int cursor = 0;
     h2_lua_display_plan_rect_t rect;
     while (h2_lua_display_plan_next_tile(planning_tiles, worker->info.width,
         worker->info.height, gap, &cursor, &rect)) {
       *pixels += (size_t)(rect.right - rect.left) * (rect.bottom - rect.top);
       ++*rects;
-      display_copy_submission_rect(submission->snapshot, job->framebuffer,
-                                    worker->info.width, rect);
     }
+    for (size_t i = 0; i < display_tile_count(worker->info.width, worker->info.height); ++i)
+      worker->tiles[i] &= 1;
   } else {
     for (int i = 0; i < worker->plan.count; ++i) {
       h2_lua_display_plan_rect_t rect = worker->plan.rects[i];
       *pixels += (size_t)(rect.right - rect.left) * (rect.bottom - rect.top);
       ++*rects;
-      display_copy_submission_rect(submission->snapshot, job->framebuffer,
-                                    worker->info.width, rect);
     }
   }
   ++submission->submitted;
   submission->inflight = 1;
   submission->retained = retained;
   result = h2_lua_display_worker_post(worker, H2_LUA_DISPLAY_FRAME);
-  if (result != H2_PAL_OK) return display_submission_fault(job, result);
+  if (result == H2_PAL_OK) {
+    /* Keep A stable only for the worker copy. Once PENDING is published, Lua
+     * may draw A while the worker submits B, without a third full frame. */
+    while (h2_lua_display_worker_phase(worker) == H2_LUA_DISPLAY_COPYING) {
+      result = h2_pal_time_sleep_ms(worker->runtime->time, 1);
+      if (result != H2_PAL_OK) break;
+    }
+    int phase = h2_lua_display_worker_phase(worker);
+    if (result == H2_PAL_OK && phase < 0) result = (h2_pal_result_t)phase;
+  }
+  if (result != H2_PAL_OK) {
+    (void)display_submission_fault(job, result);
+    /* Wake/sleep failure cannot prove that copying stopped. Freeze drawing
+     * and retain both buffers until checked teardown or external recovery. */
+    job->display_open = 0;
+    job->display_shutting_down = 1;
+    return result;
+  }
   job->dirty_valid = 0;
   return H2_PAL_OK;
 }
@@ -4781,10 +4751,12 @@ static h2_pal_result_t display_submission_release(lua_State *state,
                                                   h2_lua_job_t *job) {
   display_submission_t *submission = job->display_submission;
   if (submission == NULL) return H2_PAL_OK;
+  if (submission->preparing) return H2_PAL_ERR_BUSY;
   submission->closing = 1;
   h2_pal_result_t result = display_submission_collect(job);
   if (submission->worker.initialized &&
-      h2_lua_display_worker_phase(&submission->worker) == H2_LUA_DISPLAY_PENDING)
+      (h2_lua_display_worker_phase(&submission->worker) == H2_LUA_DISPLAY_COPYING ||
+       h2_lua_display_worker_phase(&submission->worker) == H2_LUA_DISPLAY_PENDING))
     return submission->fault ? submission->fault : H2_PAL_ERR_BUSY;
   h2_lua_display_worker_t *worker = &submission->worker;
   if (worker->initialized) {
@@ -4809,11 +4781,9 @@ static h2_pal_result_t display_submission_release(lua_State *state,
   }
   if (worker->fault) (void)display_submission_fault(job, worker->fault);
   if (submission->fault) return submission->fault;
-  int snapshot_ref = submission->snapshot_ref;
   int ref = job->display_submission_ref;
   job->display_submission = NULL;
   job->display_submission_ref = 0;
-  if (snapshot_ref > 0) luaL_unref(state, LUA_REGISTRYINDEX, snapshot_ref);
   luaL_unref(state, LUA_REGISTRYINDEX, ref);
   return H2_PAL_OK;
 }

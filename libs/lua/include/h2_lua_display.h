@@ -32,17 +32,25 @@
  *   fails with BUSY until checked release succeeds. Other Hosts and external
  *   writers must be serialized by the caller. present/end_frame wait for the
  *   current call's completed pixels/rectangles after draining preceding submit.
- *   Their backend also uses the worker and VM-charged snapshot/baseline.
- * - Drawing can continue after successful submit; the worker uses one rooted
- *   immutable pixel snapshot and its own bounded plan/tile scratch. Snapshot
- *   preparation copies every planned rectangle at the original row stride;
- *   pixels outside submitted coverage need not be refreshed. Only after the
- *   full transport succeeds does the VM copy that same coverage to the retained
- *   baseline. First/invalid frames still copy the full frame.
- *   Snapshot, baseline and mailbox use VM quota. OOM raises a Lua error before
- *   publishing a new frame. First-use finalizer reentry can complete a nested
- *   submission; the outer preparation then returns BUSY without replacing its
- *   pending snapshot/plan. Closed or replaced acquisitions return an error.
+ *   Their backend also uses the same two buffers and worker.
+ * - Display owns exactly two full RGB565 pixel buffers: a Host-allocated draw
+ *   framebuffer A and a VM-charged send/baseline buffer B, allocated on first
+ *   submit/present. Planning compares A with the last successful B before
+ *   publishing. The worker copies the planned coverage from A to B, preserving
+ *   row stride, then publishes that A is free for drawing and submits B to PAL.
+ *   submit waits only for this copy handoff; it does not wait for transport.
+ *   Lua may then draw A while the worker transports B. First/invalid frames
+ *   copy the full frame; unchanged frames copy no pixels. No third full-frame
+ *   snapshot or completion copy is allocated. After full transport succeeds,
+ *   B is the retained baseline; faults invalidate it and stop new submissions.
+ *   The complete tile map is replayed for copy and transport without truncation.
+ *   B, mailbox and bounded plan/tile scratch use VM quota. OOM raises a Lua
+ *   error before publishing a new frame. First-use allocation is guarded:
+ *   finalizer reentry into submit returns BUSY without allocating another B,
+ *   and the guard is cleared on OOM. Drawing from a finalizer is included in
+ *   the outer submission; closed acquisitions return an error. A wake or
+ *   copy-handoff wait failure freezes drawing and retains both buffers, since
+ *   it cannot prove that the worker stopped reading A.
  *   Task/atomic/semaphore storage is platform-owned.
  * - Faults stop further submissions; there is no automatic retry or backend
  *   recovery. deinit returns nil, BUSY/error until close and task join succeed;
