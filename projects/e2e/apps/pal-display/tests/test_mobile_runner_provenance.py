@@ -168,13 +168,30 @@ class MobileRunnerProvenanceTest(unittest.TestCase):
         extended = baseline[:offset] + addition + baseline[offset:]
         previous = {qualification.SHARED_PAL_GUIDE: extension["source_sha256"]}
         original_read = qualification.Path.read_bytes
+        maintenance = qualification.shared_ipv6_maintenance()
         for content, accepted in [(extended, True), (baseline, True),
                                   (extended + b"\nunknown PAL policy\n", False),
                                   (extended.replace(b"Display", b"ChangedDisplay", 1), False),
                                   (baseline + addition, False),
                                   (extended.replace(b"Tail v1 manifest", b"Tail v2 manifest", 1), False)]:
             def read(source):
-                return content if source == path else original_read(source)
+                if source != path:
+                    return original_read(source)
+                # This fixture varies only the historical Pref addition. Keep
+                # every declared current IPv6/Wi-Fi fragment present, so its
+                # independent exact-once guard is still exercised normally.
+                current_content = content
+                for change in maintenance["guide_changes"]:
+                    before = change["before_utf8"].encode("utf-8")
+                    after = change["after_utf8"].encode("utf-8")
+                    if before:
+                        current_content = current_content.replace(before, after, 1)
+                    elif change["owner"] == "net_ipv6":
+                        current_content += after
+                    elif change["owner"] == "wifi_ipv6_readiness":
+                        anchor = "## Wi-Fi 连接与持久化\n".encode("utf-8")
+                        current_content = current_content.replace(anchor, after + anchor, 1)
+                return current_content
             with patch.object(qualification.Path, "read_bytes", new=read):
                 if accepted:
                     qualification.shared_pal_guide(previous, extension)
