@@ -52,7 +52,9 @@ typedef struct h2_iperf_client_app_network {
  * Runtime IP event/state and Net addresses. Waits 15 seconds after association
  * for DHCP/SLAAC/DAD to settle, within a 45-second budget after association.
  * Drains Runtime events as their single consumer. Link-local alone is
- * insufficient. */
+ * insufficient. On success the caller owns the temporary association; on
+ * failure after connecting, disconnects best-effort and preserves the
+ * original setup error. Clears out_network on failure. */
 h2_pal_result_t
 h2_iperf_client_app_connect(h2_runtime_t *runtime,
                             const h2_pal_wifi_sta_config_t *config,
@@ -62,6 +64,8 @@ h2_iperf_client_app_connect(h2_runtime_t *runtime,
  * the three-round performance matrix, verify disconnect/reconnect and saved
  * credential preservation. Does not persist, initialize SDK networking, or
  * confirm a firmware image. Reports typed readiness and performance receipts.
+ * Leaves the verified association active on success; disconnects best-effort
+ * on qualification failure and preserves the qualification error.
  */
 h2_pal_result_t h2_iperf_client_app_bench(h2_runtime_t *runtime,
                                           const char *target,

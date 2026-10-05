@@ -13,14 +13,19 @@ IPv4-only and IPv6-only each produce 30 cases. Dual stack produces 60 cases, fir
 
 `H2_IPERF_E2E_CASE` reports receiver and sender bps, UDP highest received sequence (including gaps), receiver loss and jitter. UDP loss percentage is `lost / packets * 100`; the sequence denominator already includes missing datagrams. The target token `devkit-m46-f6-r2` identifies board, server mode, wire family and round. Receive bps uses the receiver's own measured data interval; the `ms` field is client wall time including setup/results. `H2_IPERF_CLIENT_LINK` records actual local addresses, RSSI, channel, BSSID and radio policy. `H2_IPERF_CLIENT_MEMORY` records internal SRAM and PSRAM before/after each case. `H2_IPERF_CLIENT_COMPLETE` accounts for every case, including failures. PASS means a successful result exchange with received payload; there is no arbitrary throughput or loss pass threshold.
 
+Setup failure after association disconnects the temporary test network best-effort and retains the original setup error. Failed measurement or post-measurement qualification also disconnects best-effort. A successful bench leaves the verified association active for the launcher; only then does the DevKit launcher confirm the image and emit `H2_IPERF_CLIENT_CONFIRMED rc=0`. A failed bench never confirms its image.
+
 ## Build and verify
 
 ```sh
 bazel test --config=macos_arm64 //projects/e2e/apps/iperf-client/app:client_test
+bazel test --config=macos_arm64 //projects/e2e/apps/iperf-client/app:network_test
 bazel build --config=esp32s3 //projects/e2e/targets/h2loader_tar_zlib/iperf-client/devkit:package
 ```
 
 The host test uses real loopback IPv4/IPv6 sockets, exercises 60 TCP/UDP exchanges including repeated dual-family rounds, validates non-fail-fast accounting on a refused endpoint and rejects inconsistent mode/family configuration before traffic. Hardware qualification additionally requires exact UID/port, source/package/image hashes, complete serial logs and final coredump/firmware state.
+
+`network_test` injects public PAL/Runtime outcomes into the production network helper. It checks event alignment, bounded readiness timeout, setup/matrix/post-measurement failure cleanup, and preservation of the primary error when disconnect also fails.
 
 ## Two-board performance qualification
 

@@ -35,14 +35,16 @@ static void memory(void *user, const char *checkpoint) {
 }
 static void run(void *user) {
   (void)user;
-  int rc = h2_esp_h2loader_app_confirm(runtime);
-  if (rc != H2_PAL_OK)
-    fail("confirm", rc);
   memory(NULL, "matrix-start");
-  rc = h2_iperf_client_app_bench(runtime, "devkit", memory, NULL);
+  int rc = h2_iperf_client_app_bench(runtime, "devkit", memory, NULL);
   memory(NULL, "matrix-end");
   if (rc != H2_PAL_OK)
     fail("bench", rc);
+  rc = h2_esp_h2loader_app_confirm(runtime);
+  if (rc != H2_PAL_OK)
+    fail("confirm", rc);
+  printf("H2_IPERF_CLIENT_CONFIRMED rc=%d\n", rc);
+  fflush(stdout);
   hold();
 }
 void app_main(void) {

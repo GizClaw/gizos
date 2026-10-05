@@ -74,7 +74,7 @@ static int verify_disconnected(h2_runtime_t *runtime) {
   int lost = 0;
   for (;;) {
     union {
-      max_align_t alignment;
+      h2_runtime_system_event_wifi_sta_t wifi;
       uint8_t bytes[H2_RUNTIME_EVENT_PAYLOAD_MAX];
     } payload;
     h2_runtime_event_t event = {.payload = payload.bytes,
@@ -168,6 +168,8 @@ h2_pal_result_t h2_iperf_client_app_bench(h2_runtime_t *runtime,
   (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "iperf-client", line);
   if (rc == H2_PAL_OK)
     rc = matrix;
+  if (rc != H2_PAL_OK)
+    (void)h2_pal_wifi_sta_disconnect(runtime->wifi_sta);
 done:
   memset(&wifi, 0, sizeof(wifi));
   memset(before, 0, sizeof(before));
@@ -183,21 +185,23 @@ h2_iperf_client_app_connect(h2_runtime_t *runtime,
     memset(out_network, 0, sizeof(*out_network));
   if (runtime == NULL || config == NULL || out_network == NULL)
     return H2_PAL_ERR_INVALID_ARG;
+  if (h2_pal_wifi_settings_validate_sta_config(config) != H2_PAL_OK)
+    return H2_PAL_ERR_INVALID_ARG;
   int rc = h2_pal_wifi_sta_connect(runtime->wifi_sta, config, 20000u);
   if (rc != H2_PAL_OK)
-    return rc;
+    goto failed;
   rc = h2_pal_wifi_sta_set_power_save(runtime->wifi_sta,
                                       H2_PAL_WIFI_POWER_SAVE_NONE);
   if (rc != H2_PAL_OK)
-    return rc;
+    goto failed;
   uint64_t started = 0u;
   rc = h2_pal_time_get_monotonic_ms(runtime->time, &started);
   if (rc != H2_PAL_OK)
-    return rc;
+    goto failed;
   int observed_ready = 0;
   for (;;) {
     union {
-      max_align_t alignment;
+      h2_runtime_system_event_wifi_sta_t wifi;
       uint8_t bytes[H2_RUNTIME_EVENT_PAYLOAD_MAX];
     } payload;
     h2_runtime_event_t event = {.payload = payload.bytes,
@@ -213,17 +217,19 @@ h2_iperf_client_app_connect(h2_runtime_t *runtime,
       }
     }
     if (rc != H2_PAL_ERR_WOULD_BLOCK && rc != H2_PAL_ERR_TIMEOUT)
-      return rc;
+      goto failed;
     h2_pal_wifi_sta_status_t wifi = {0};
     rc = h2_pal_wifi_sta_get_status(runtime->wifi_sta, &wifi);
     if (rc != H2_PAL_OK)
-      return rc;
+      goto failed;
     uint64_t now = 0u;
     rc = h2_pal_time_get_monotonic_ms(runtime->time, &now);
     if (rc != H2_PAL_OK)
-      return rc;
-    if (now < started || now - started >= 45000u)
-      return H2_PAL_ERR_TIMEOUT;
+      goto failed;
+    if (now < started || now - started >= 45000u) {
+      rc = H2_PAL_ERR_TIMEOUT;
+      goto failed;
+    }
     if (now - started >= 15000u && h2_pal_wifi_sta_status_has_ip(&wifi) &&
         wifi.ssid_len == config->ssid_len &&
         memcmp(wifi.ssid, config->ssid, config->ssid_len) == 0) {
@@ -236,14 +242,18 @@ h2_iperf_client_app_connect(h2_runtime_t *runtime,
                                                H2_PAL_NET_FAMILY_IPV4, &local);
           uint8_t expected[4];
           h2_pal_wifi_ip4_to_bytes(wifi.ip.ip4, expected);
-          if (rc != H2_PAL_OK || memcmp(local.ip, expected, sizeof(expected)))
-            return H2_PAL_ERR_INVALID_STATE;
+          if (rc != H2_PAL_OK || memcmp(local.ip, expected, sizeof(expected))) {
+            rc = H2_PAL_ERR_INVALID_STATE;
+            goto failed;
+          }
         }
         if (wifi.ip.ip6_valid) {
           rc = h2_pal_net_get_host_addr_family(runtime->net, NULL,
                                                H2_PAL_NET_FAMILY_IPV6, &local);
-          if (rc != H2_PAL_OK || memcmp(local.ip, wifi.ip.ip6, 16u))
-            return H2_PAL_ERR_INVALID_STATE;
+          if (rc != H2_PAL_OK || memcmp(local.ip, wifi.ip.ip6, 16u)) {
+            rc = H2_PAL_ERR_INVALID_STATE;
+            goto failed;
+          }
         }
         out_network->mode = wifi.ip_valid && wifi.ip.ip6_valid
                                 ? H2_IPERF_CLIENT_APP_DUAL
@@ -254,10 +264,14 @@ h2_iperf_client_app_connect(h2_runtime_t *runtime,
         return H2_PAL_OK;
       }
       if (rc != H2_PAL_OK && rc != H2_PAL_ERR_NOT_FOUND)
-        return rc;
+        goto failed;
     }
     rc = h2_pal_time_sleep_ms(runtime->time, 100u);
     if (rc != H2_PAL_OK)
-      return rc;
+      goto failed;
   }
+failed:
+  /* Preserve the setup error if the provider also fails to disconnect. */
+  (void)h2_pal_wifi_sta_disconnect(runtime->wifi_sta);
+  return rc;
 }

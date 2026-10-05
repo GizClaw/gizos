@@ -42,3 +42,11 @@ cc_test(
         "//libs/iperf:test_support",
     ],
 )
+
+cc_test(
+    name = "network_test",
+    srcs = ["tests/test_network.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    deps = [":iperf_client"],
+)
