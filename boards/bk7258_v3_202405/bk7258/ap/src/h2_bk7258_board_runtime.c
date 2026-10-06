@@ -27,7 +27,10 @@ struct h2_pal_fs_file {
     FIL file;
 };
 
-static FATFS s_sd_fs;
+/* The task-context FatFs work area includes its 4 KiB sector window. The
+ * pinned SDIO driver reads through FIFO into the caller buffer; no ISR owns
+ * this object. Keep it in fixed PSRAM with the board's other working sets. */
+static FATFS s_sd_fs __attribute__((section(".psram.bss"), aligned(64)));
 static int s_sd_mounted;
 static h2_pal_fs_api_t s_runtime_fs;
 static h2_runtime_config_t s_runtime_config;

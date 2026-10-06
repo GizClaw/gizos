@@ -333,7 +333,10 @@ cc_test(
         "src/h2_bk_platform_pref_flashdb.c",
         "tests/test_h2_bk_platform_pref_flashdb.c",
     ] + glob(["tests/pref_sdk/**/*.h"]),
-    conlyopts = H2_C11_OPTS,
+    conlyopts = H2_C11_OPTS + [
+        "-DH2_BK_PLATFORM_PREF_TIMING_DIAGNOSTICS=1",
+        "-Dprintf=h2_test_pref_printf",
+    ],
     copts = H2_WARNING_COPTS,
     includes = ["include", "tests/pref_sdk"],
     target_compatible_with = select({

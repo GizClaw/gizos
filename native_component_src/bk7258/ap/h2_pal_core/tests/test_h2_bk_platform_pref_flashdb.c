@@ -23,6 +23,23 @@ static unsigned char legacy_data[64];
 static size_t legacy_size;
 static int fail_legacy_delete;
 static unsigned mutexes[4], mutex_count;
+static unsigned diagnostic_records;
+
+/* Diagnostics may block: require every real provider mutex to be released. */
+int h2_test_pref_printf(const char *format, ...) {
+  (void)format;
+  for (unsigned i = 0; i < mutex_count; ++i)
+    assert(mutexes[i] == 0u);
+  ++diagnostic_records;
+  return 0;
+}
+
+static h2_pal_result_t diagnostic_now(void *user, uint64_t *out) {
+  static uint64_t now;
+  (void)user;
+  *out = (now += 1000u); /* Exercise each slow-call diagnostic boundary. */
+  return H2_PAL_OK;
+}
 static int find(const char *key) {
   for (unsigned i = 0; i < 64; ++i)
     if (entries[i].data && !strcmp(entries[i].key, key))
@@ -136,7 +153,11 @@ int ef_del_env(const char *key) {
     legacy_size = 0;
   return EF_NO_ERR;
 }
-const h2_pal_time_api_t *h2_bk_platform_time_api(void) { return NULL; }
+const h2_pal_time_api_t *h2_bk_platform_time_api(void) {
+  static const h2_pal_time_vtable_t vtable = {.get_monotonic_ms = diagnostic_now};
+  static const h2_pal_time_api_t api = {.vtable = &vtable};
+  return &api;
+}
 int rtos_init_mutex(beken_mutex_t *mutex) {
   assert(mutex_count < 4);
   *mutex = &mutexes[mutex_count++];
@@ -442,6 +463,7 @@ int main(void) {
     free(entries[i].data);
   for (unsigned i = 0; i < mutex_count; ++i)
     assert(mutexes[i] == 0);
+  assert(diagnostic_records != 0u);
   puts("BK Preferences: namespace isolation and metadata/value failure "
        "consistency PASS");
   return 0;

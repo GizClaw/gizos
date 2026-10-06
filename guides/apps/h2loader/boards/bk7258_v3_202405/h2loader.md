@@ -1,5 +1,7 @@
 # BK7258 V3 202405 H2Loader
 
+SD 的 FatFs 实例和 sector window 使用 64-byte 对齐的固定 `.psram.bss`，生命周期覆盖本次启动。SDK 的 SDIO FIFO read 向调用方 buffer 写入，FatFs mount/read/write 继续在 task context 执行；UART ISR buffer 和所有通信 deadline 保持原有存储和行为。Native consumer 的 post-link contract 应验证该 symbol 的大小、对齐和 PSRAM 地址，当前源码布局不代表新版 package 的 SD 真机资格已通过。
+
 ## 构建
 
 ```sh

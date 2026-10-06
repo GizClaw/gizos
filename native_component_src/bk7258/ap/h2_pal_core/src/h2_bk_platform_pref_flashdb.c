@@ -487,19 +487,9 @@ static int bk_pref_set_blob(
     if (rc != H2_PAL_OK) {
         return rc;
     }
-    const uint32_t started = pref_now_ms();
     rc = bk_pref_store_value(storage_key, data, data_len);
-    const uint32_t stored = pref_now_ms();
     if (rc == H2_PAL_OK)
         rc = bk_pref_delete_easyflash_value(storage_key);
-    const uint32_t finished = pref_now_ms();
-    if (finished - started >= 250u)
-        printf("H2_BK_PREF_RAW key_tag=%016llx rc=%d fdb_ms=%lu legacy_ms=%lu "
-               "total_ms=%lu\n",
-               (unsigned long long)type_hash(storage_key, strlen(storage_key)), rc,
-               (unsigned long)(stored - started),
-               (unsigned long)(finished - stored),
-               (unsigned long)(finished - started));
     return rc;
 }
 
