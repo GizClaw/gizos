@@ -335,7 +335,7 @@ cc_test(
     ] + glob(["tests/pref_sdk/**/*.h"]),
     conlyopts = H2_C11_OPTS + [
         "-DH2_BK_PLATFORM_PREF_TIMING_DIAGNOSTICS=1",
-        "-Dprintf=h2_test_pref_printf",
+        "-DH2_BK_PREF_DIAGNOSTIC_PRINTF=h2_test_pref_printf",
     ],
     copts = H2_WARNING_COPTS,
     includes = ["include", "tests/pref_sdk"],

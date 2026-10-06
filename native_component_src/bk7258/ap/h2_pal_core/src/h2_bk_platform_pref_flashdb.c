@@ -18,6 +18,9 @@
 #ifndef H2_BK_PLATFORM_PREF_TIMING_DIAGNOSTICS
 #define H2_BK_PLATFORM_PREF_TIMING_DIAGNOSTICS 0
 #endif
+#ifndef H2_BK_PREF_DIAGNOSTIC_PRINTF
+#define H2_BK_PREF_DIAGNOSTIC_PRINTF printf
+#endif
 
 typedef struct h2_bk_pref_namespace {
     h2_pal_pref_namespace_t base;
@@ -664,7 +667,7 @@ static void trace_read(const char *operation, h2_pal_pref_namespace_t *base,
   if (finished - started < 250u ||
       bk_pref_make_key(bk_pref_to_namespace(base), key, full) != H2_PAL_OK)
     return;
-  printf("H2_BK_PREF_READ op=%s key_tag=%016llx rc=%d lock_ms=%lu "
+  H2_BK_PREF_DIAGNOSTIC_PRINTF("H2_BK_PREF_READ op=%s key_tag=%016llx rc=%d lock_ms=%lu "
          "type_ms=%lu raw_ms=%lu total_ms=%lu\n", operation,
          (unsigned long long)type_hash(full, strlen(full)), rc,
          (unsigned long)(locked - started), (unsigned long)(typed - locked),
@@ -676,7 +679,7 @@ static void trace_write(const char *full, int rc, uint32_t started,
                          uint32_t finished) {
   if (finished - started < 250u)
     return;
-  printf("H2_BK_PREF_WRITE key_tag=%016llx rc=%d lock_ms=%lu "
+  H2_BK_PREF_DIAGNOSTIC_PRINTF("H2_BK_PREF_WRITE key_tag=%016llx rc=%d lock_ms=%lu "
          "load_ms=%lu metadata_ms=%lu raw_ms=%lu total_ms=%lu\n",
          (unsigned long long)type_hash(full, strlen(full)), rc,
          (unsigned long)(locked - started), (unsigned long)(loaded - locked),
