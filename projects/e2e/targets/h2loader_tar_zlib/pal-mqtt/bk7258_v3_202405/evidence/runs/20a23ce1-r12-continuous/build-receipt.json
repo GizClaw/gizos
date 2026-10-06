@@ -1,0 +1,14 @@
+{
+  "argv": [
+    "bazel",
+    "--bazelrc=/Users/idy/.codex/task-evidence/pal-pref-mqtt-platforms-20261004/mqtt-bk-r10-fixture/fixture.bazelrc",
+    "build",
+    "--config=bk7258",
+    "--//tools/bazel:firmware_version=mqtt-bk-uart-r12",
+    "//projects/e2e/targets/h2loader_tar_zlib/pal-mqtt/bk7258_v3_202405:package"
+  ],
+  "actual_exit": 0,
+  "source_commit": "20a23ce18783657ae00b2be568a30cf762be7ff3",
+  "started_at_utc": "2026-10-04T18:07:15.440669+00:00",
+  "finished_at_utc": "2026-10-04T18:07:47.647812+00:00"
+}

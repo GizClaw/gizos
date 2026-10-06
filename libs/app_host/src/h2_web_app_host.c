@@ -8,6 +8,7 @@
 
 #include <emscripten.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 struct h2_web_app_host {
@@ -18,9 +19,17 @@ struct h2_web_app_host {
   void *user;
   const h2_pal_fs_api_t *fs;
   _Atomic(h2_pal_task_t *) app_task;
+  h2_pal_task_t *host_task;
   _Atomic double stop_at_ms;
   h2_pal_result_t result;
   _Atomic int done;
+  _Atomic int retained_error;
+  _Atomic(void *) retained_owner;
+  size_t allocation_bytes;
+  h2_web_fs_t *owned_fs;
+  h2_web_app_host_config_t owned_config;
+  h2_web_app_host_button_t owned_buttons[H2_WEB_APP_HOST_MAX_BUTTONS];
+  h2_web_app_host_hardware_t owned_hardware;
 };
 
 // Time an App gets to honour should_stop before its task is cancelled.
@@ -29,6 +38,103 @@ struct h2_web_app_host {
 static _Atomic int s_stop_requested;
 static _Atomic(h2_web_app_host_t *) s_host;
 
+/* Copy structural configuration and strings. Opaque callback contexts remain
+ * borrowed: their owner must retain them when run returns RETAINED. */
+static int host_string_bytes(size_t *bytes, const char *text) {
+  if (text == NULL)
+    return 1;
+  size_t length = strlen(text);
+  if (length == SIZE_MAX || *bytes > SIZE_MAX - length - 1u)
+    return 0;
+  *bytes += length + 1u;
+  return 1;
+}
+
+static const char *host_copy_string(char **cursor, const char *text) {
+  if (text == NULL)
+    return NULL;
+  size_t length = strlen(text) + 1u;
+  char *copy = *cursor;
+  memcpy(copy, text, length);
+  *cursor += length;
+  return copy;
+}
+
+static h2_web_app_host_t *host_create(const h2_web_app_host_config_t *config,
+                                      h2_web_app_host_entry_fn entry,
+                                      void *user) {
+  size_t bytes = sizeof(h2_web_app_host_t);
+  if (config->readonly_root_count > (SIZE_MAX - bytes) / sizeof(char *))
+    return NULL;
+  bytes += config->readonly_root_count * sizeof(char *);
+  if (!host_string_bytes(&bytes, config->name) ||
+      !host_string_bytes(&bytes, config->persistent_root))
+    return NULL;
+  for (size_t i = 0; i < config->readonly_root_count; ++i)
+    if (!host_string_bytes(&bytes, config->readonly_roots[i]))
+      return NULL;
+  for (size_t i = 0; i < config->button_count; ++i)
+    if (!host_string_bytes(&bytes, config->buttons[i].key) ||
+        !host_string_bytes(&bytes, config->buttons[i].name))
+      return NULL;
+  h2_web_app_host_t *host = calloc(1, bytes);
+  if (host == NULL)
+    return NULL;
+  atomic_init(&host->app_task, NULL);
+  atomic_init(&host->stop_at_ms, 0.0);
+  atomic_init(&host->done, 0);
+  atomic_init(&host->retained_error, H2_PAL_OK);
+  atomic_init(&host->retained_owner, NULL);
+  host->allocation_bytes = bytes;
+  host->owned_config = *config;
+  host->config = &host->owned_config;
+  host->entry = entry;
+  host->user = user;
+  host->result = H2_PAL_ERR_TASK;
+  const char **roots = (const char **)(host + 1);
+  char *cursor = (char *)(roots + config->readonly_root_count);
+  host->owned_config.name = host_copy_string(&cursor, config->name);
+  host->owned_config.persistent_root =
+      host_copy_string(&cursor, config->persistent_root);
+  host->owned_config.readonly_roots = roots;
+  for (size_t i = 0; i < config->readonly_root_count; ++i)
+    roots[i] = host_copy_string(&cursor, config->readonly_roots[i]);
+  host->owned_config.buttons = host->owned_buttons;
+  for (size_t i = 0; i < config->button_count; ++i) {
+    host->owned_buttons[i] = config->buttons[i];
+    host->owned_buttons[i].key =
+        host_copy_string(&cursor, config->buttons[i].key);
+    host->owned_buttons[i].name =
+        host_copy_string(&cursor, config->buttons[i].name);
+  }
+  if (config->hardware != NULL) {
+    host->owned_hardware = *config->hardware;
+    host->owned_config.hardware = &host->owned_hardware;
+  }
+  return host;
+}
+
+h2_pal_result_t h2_web_app_host_quarantine(h2_web_app_host_t *host, void *owner,
+                                           h2_pal_result_t reason) {
+  if (host == NULL || reason == H2_PAL_OK)
+    return H2_PAL_ERR_INVALID_ARG;
+  /* EXIT also cannot establish a managed owner's dependency safety. */
+  if (reason > H2_PAL_OK)
+    reason = H2_PAL_ERR_TASK;
+  /* Single owner: repeated notification must never discard its lifetime root.
+   */
+  if (owner != NULL) {
+    void *expected = NULL;
+    if (!atomic_compare_exchange_strong(&host->retained_owner, &expected,
+                                        owner) &&
+        expected != owner)
+      return H2_PAL_ERR_BUSY;
+  }
+  int expected = H2_PAL_OK;
+  (void)atomic_compare_exchange_strong(&host->retained_error, &expected,
+                                       reason);
+  return H2_PAL_OK;
+}
 static const h2_pal_periph_single_button_payload_t s_button_payload = {
     .delivery = H2_PAL_BUTTON_DELIVERY_PUSH_EDGE,
 };
@@ -148,6 +254,8 @@ static const h2_pal_periph_api_t s_periph = {
 
 /* Called by the shell with the button index and 1 down / 0 up. */
 EMSCRIPTEN_KEEPALIVE int h2_web_app_host_button(int index, int pressed) {
+  if (s_host != NULL && atomic_load(&s_host->retained_error) != H2_PAL_OK)
+    return H2_PAL_ERR_BUSY;
   if (s_host == NULL || s_host->runtime == NULL || index < 0 ||
       (size_t)index >= s_host->config->button_count)
     return H2_PAL_ERR_UNAVAILABLE;
@@ -240,6 +348,9 @@ int h2_web_app_host_should_stop(void *user) {
 }
 
 h2_pal_result_t h2_web_app_host_ready(void *user) {
+  h2_web_app_host_t *host = user;
+  if (host == NULL || atomic_load(&host->retained_error) != H2_PAL_OK)
+    return H2_PAL_ERR_INVALID_STATE;
   h2_web_app_host_mark(user, "ready");
   return H2_PAL_OK;
 }
@@ -362,8 +473,14 @@ static void h2_web_app_host_task(void *user) {
   if (result == H2_PAL_OK) {
     const h2_pal_result_t joined =
         h2_pal_task_join(host->runtime->task, host->app_task);
-    host->app_task = NULL;
-    result = host->result;
+    if (joined != H2_PAL_OK &&
+        (joined != H2_PAL_EXIT || config->managed_shutdown)) {
+      (void)h2_web_app_host_quarantine(host, NULL, (h2_pal_result_t)joined);
+      result = (h2_pal_result_t)joined;
+    } else {
+      host->app_task = NULL;
+      result = host->result;
+    }
     // A requested stop that ends the App through cancellation is normal.
     if (joined == H2_PAL_EXIT ||
         (s_stop_requested &&
@@ -371,9 +488,12 @@ static void h2_web_app_host_task(void *user) {
       result = s_stop_requested ? H2_PAL_OK : H2_PAL_EXIT;
   }
   (void)h2_web_main_call(h2_web_app_host_unbind_buttons, NULL);
-  if (host->runtime != NULL)
-    h2_runtime_deinit(host->runtime);
-  host->runtime = NULL;
+  if (atomic_load(&host->retained_error) == H2_PAL_OK) {
+    if (host->runtime != NULL) h2_runtime_deinit(host->runtime);
+    host->runtime = NULL;
+  } else {
+    result = (h2_pal_result_t)atomic_load(&host->retained_error);
+  }
   host->result = result;
   host->done = 1;
 }
@@ -382,15 +502,23 @@ int h2_web_app_host_run(const h2_web_app_host_config_t *config,
                         h2_web_app_host_entry_fn entry, void *user) {
   if (config == NULL || config->name == NULL || entry == NULL ||
       config->button_count > H2_WEB_APP_HOST_MAX_BUTTONS ||
-      (config->button_count != 0u && config->buttons == NULL))
+      (config->button_count != 0u && config->buttons == NULL) ||
+      (config->readonly_root_count != 0u && config->readonly_roots == NULL))
     return 1;
-  h2_web_app_host_t host = {
-      .config = config,
-      .entry = entry,
-      .user = user,
-      .result = H2_PAL_ERR_TASK,
-  };
-  s_host = &host;
+  if (atomic_load(&s_host) != NULL) {
+    puts("H2_WEB_APP start=REJECTED owner_retained=1");
+    return H2_WEB_APP_HOST_RETAINED;
+  }
+  h2_web_app_host_t *host = host_create(config, entry, user);
+  if (host == NULL) return 1;
+  config = host->config;
+  h2_web_app_host_t *expected = NULL;
+  if (!atomic_compare_exchange_strong(&s_host, &expected, host)) {
+    free(host);
+    return H2_WEB_APP_HOST_RETAINED;
+  }
+  atomic_store(&s_stop_requested, 0);
+  printf("H2_WEB_APP name=%s owner_bytes=%zu\n", config->name, host->allocation_bytes);
   const int32_t width = config->display_width != 0 ? config->display_width
                                                    : h2_web_board.display_width;
   const int32_t height = config->display_height != 0
@@ -402,12 +530,12 @@ int h2_web_app_host_run(const h2_web_app_host_config_t *config,
   };
   (void)h2_web_main_call(h2_web_app_host_size_canvas,
                          (const void *[]){&(int){width}, &(int){height}});
-  host.platform = h2_web_platform_create(&platform_config);
+  host->platform = h2_web_platform_create(&platform_config);
   h2_pal_result_t result =
-      host.platform != NULL ? H2_PAL_OK : H2_PAL_ERR_NO_MEMORY;
+      host->platform != NULL ? H2_PAL_OK : H2_PAL_ERR_NO_MEMORY;
   const h2_web_app_host_hardware_t *hardware = config->hardware;
   if (result == H2_PAL_OK && hardware != NULL && hardware->prepare != NULL)
-    result = hardware->prepare(hardware->user, host.platform);
+    result = hardware->prepare(hardware->user, host->platform);
   h2_web_fs_t *fs = NULL;
   if (result == H2_PAL_OK && config->persistent_root != NULL) {
     const h2_web_fs_config_t fs_config = {
@@ -415,17 +543,18 @@ int h2_web_app_host_run(const h2_web_app_host_config_t *config,
         .readonly_roots = config->readonly_roots,
         .readonly_root_count = config->readonly_root_count,
     };
-    result = h2_web_fs_open(host.platform, &fs_config, &fs);
-    host.fs = h2_web_fs_api(fs);
+    result = h2_web_fs_open(host->platform, &fs_config, &fs);
+    host->fs = h2_web_fs_api(fs);
+    host->owned_fs = fs;
   }
   int lvgl = 0;
   if (result == H2_PAL_OK && config->lvgl) {
     const h2_lvgl_platform_config_t lvgl_config = {
         .allocator = h2_web_platform_mem_api(),
-        .task_api = h2_web_platform_task_api(host.platform),
-        .sync_api = h2_web_platform_sync_api(host.platform),
-        .queue_api = h2_web_platform_queue_api(host.platform),
-        .time_api = h2_web_platform_time_api(host.platform),
+        .task_api = h2_web_platform_task_api(host->platform),
+        .sync_api = h2_web_platform_sync_api(host->platform),
+        .queue_api = h2_web_platform_queue_api(host->platform),
+        .time_api = h2_web_platform_time_api(host->platform),
     };
     result = h2_lvgl_platform_init(&lvgl_config) == 0 ? H2_PAL_OK
                                                       : H2_PAL_ERR_UNAVAILABLE;
@@ -433,53 +562,83 @@ int h2_web_app_host_run(const h2_web_app_host_config_t *config,
   }
   h2_pal_task_t *task = NULL;
   const h2_pal_task_api_t *tasks =
-      host.platform != NULL ? h2_web_platform_task_api(host.platform) : NULL;
+      host->platform != NULL ? h2_web_platform_task_api(host->platform) : NULL;
   if (result == H2_PAL_OK) {
     const h2_pal_task_options_t options = {
         .name = "web-app-host",
         .min_stack_size = 65536u,
     };
-    result = h2_pal_task_start(tasks, &options, h2_web_app_host_task, &host,
+    result = h2_pal_task_start(tasks, &options, h2_web_app_host_task, host,
                                &task);
+    host->host_task = task;
   }
   double cancel_at_ms = 0.0;
   int cancelled = 0;
-  while (result == H2_PAL_OK && !host.done) {
+  while (result == H2_PAL_OK && !host->done) {
     // Apps without a should_stop hook are cancelled cooperatively: their
     // next PAL wait returns EXIT once the stop grace period has passed.
-    if (!cancelled && host.app_task != NULL &&
-        h2_web_app_host_should_stop(&host)) {
+    if (!config->managed_shutdown && !cancelled && host->app_task != NULL &&
+        h2_web_app_host_should_stop(host)) {
       if (cancel_at_ms == 0.0) {
         cancel_at_ms = emscripten_get_now() + H2_WEB_APP_HOST_STOP_GRACE_MS;
       } else if (emscripten_get_now() >= cancel_at_ms) {
         cancelled = 1;
-        h2_web_app_host_mark(&host, "cancel");
-        (void)h2_web_platform_task_cancel(host.platform, host.app_task);
+        h2_web_app_host_mark(host, "cancel");
+        (void)h2_web_platform_task_cancel(host->platform, host->app_task);
       }
     }
-    result = h2_web_platform_pump(host.platform, 64u, NULL);
-    if (result == H2_PAL_OK && !host.done)
-      h2_pal_time_sleep_ms(h2_web_platform_time_api(host.platform), 1u);
+    result = h2_web_platform_pump(host->platform, 64u, NULL);
+    if (result == H2_PAL_OK && !host->done)
+      h2_pal_time_sleep_ms(h2_web_platform_time_api(host->platform), 1u);
   }
   while (task != NULL) {
     const h2_pal_result_t joined = h2_pal_task_join(tasks, task);
     if (joined != H2_PAL_ERR_BUSY) {
-      if (result == H2_PAL_OK && joined != H2_PAL_OK)
-        result = joined;
+      if (joined != H2_PAL_OK) {
+        (void)h2_web_app_host_quarantine(host, NULL, (h2_pal_result_t)joined);
+        if (result == H2_PAL_OK) result = joined;
+      } else {
+        host->host_task = NULL;
+      }
       break;
     }
-    (void)h2_web_platform_pump(host.platform, 64u, NULL);
-    h2_pal_time_sleep_ms(h2_web_platform_time_api(host.platform), 1u);
+    (void)h2_web_platform_pump(host->platform, 64u, NULL);
+    h2_pal_time_sleep_ms(h2_web_platform_time_api(host->platform), 1u);
   }
   if (result == H2_PAL_OK)
-    result = host.result;
+    result = host->result;
+  h2_pal_result_t fs_result = H2_PAL_OK;
+  h2_pal_result_t destroy_result = H2_PAL_OK;
+  if (atomic_load(&host->retained_error) == H2_PAL_OK) {
+    if (lvgl)
+      h2_lvgl_platform_deinit();
+    fs_result = h2_web_fs_close(fs);
+    /* BUSY/TIMEOUT keep the provider live; other errors report a failed final
+     * commit after freeing it. Never destroy a platform below a live FS. */
+    if (fs_result == H2_PAL_ERR_BUSY || fs_result == H2_PAL_ERR_TIMEOUT) {
+      (void)h2_web_app_host_quarantine(host, NULL, fs_result);
+    } else {
+      host->owned_fs = NULL;
+      host->fs = NULL;
+      destroy_result = h2_web_platform_destroy(host->platform);
+      if (destroy_result != H2_PAL_OK)
+        (void)h2_web_app_host_quarantine(host, NULL, destroy_result);
+    }
+  }
+  int retained = atomic_load(&host->retained_error);
+  if (retained != H2_PAL_OK) {
+    char line[192];
+    (void)snprintf(line, sizeof(line),
+        "H2_WEB_APP name=%s result=FAIL rc=%d retained=1 owner_bytes=%zu",
+        config->name, retained, host->allocation_bytes);
+    puts(line);
+    (void)h2_web_main_call(h2_web_app_host_status,
+                           (const void *[]){&(const char *){line}});
+    return H2_WEB_APP_HOST_RETAINED;
+  }
   s_host = NULL;
-  if (lvgl)
-    h2_lvgl_platform_deinit();
-  const h2_pal_result_t fs_result = h2_web_fs_close(fs);
-  const h2_pal_result_t destroy_result = h2_web_platform_destroy(host.platform);
   const int pass = result == H2_PAL_OK && fs_result == H2_PAL_OK &&
-                   destroy_result == H2_PAL_OK && host.platform != NULL;
+                   destroy_result == H2_PAL_OK && host->platform != NULL;
   char line[192];
   (void)snprintf(line, sizeof(line),
                  "H2_WEB_APP name=%s result=%s rc=%d fs=%d destroy=%d",
@@ -488,5 +647,6 @@ int h2_web_app_host_run(const h2_web_app_host_config_t *config,
   puts(line);
   (void)h2_web_main_call(h2_web_app_host_status,
                          (const void *[]){&(const char *){line}});
+  free(host);
   return pass ? 0 : 1;
 }

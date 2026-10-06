@@ -28,6 +28,8 @@ Peer connection 内的上下行 Opus RTP track、双向 Agent Event Stream、BOS
 
 HTTPS 下载由独立 PAL task 写入有界压缩环形缓冲，默认容量 64 KiB、启动与补缓冲阈值 16 KiB。设备 worker 增量读取 Ogg page / MP3 帧 / WAV 采样，输出 16 kHz mono S16LE，并组装成 Audio PAL 要求的完整 PCM frame。下载侧缓冲满时等待，播放侧 `WOULD_BLOCK` 重试同一帧；不会把整首文件载入内存，也不会逐帧 drain 插入静音。只有尾帧补零，正常结束时 drain；播放进度扣除排队帧，最终不计补零样本。
 
+成功 join 旧下载任务后，探测、Range、回退以及已经接受的立即下一条音乐播放共用同一块固定容量缓冲。切歌会重置请求、Range、长度、读写位置和结果，不会把旧曲目的 PCM 或状态交给新代际。没有立即音乐播放意图、最终 EOS、错误和停止时释放；最终 `ended` 状态在资源清理之后发布。join 失败仍保留旧任务、缓冲和取消标记供 owner 重试，不重置、释放或启动新 producer。
+
 停止使当前 generation 失效并取消 HTTP，下载 task join 成功后才释放其缓冲；播放器只关闭自己的 Track，不关闭共享扬声器。下载、解码或输出失败进入 error 并上报 telemetry。命名音效由补充 vtable 解析名称为 HTTPS 音频 URL（格式同下）；名称须适合内部有界存储，非法输入在预留任务前拒绝。
 
 ### 音频格式
@@ -41,7 +43,7 @@ HTTPS 下载由独立 PAL task 写入有界压缩环形缓冲，默认容量 64 
 
 MP3 与 WAV 先把各声道取平均混成单声道，再重采样到 16 kHz：Kaiser 窗 sinc（β = 6，约 63 dB 阻带），截止在两侧 Nyquist 中较低者的 7/8，降采样时约 7 kHz；16 kHz 源原样直通。输出位置按整数有理数步进，长曲目不会漂移；WAV 和 MP3 定位后的样本与从头播放逐位相同。滤波系数是离线生成的常量表，库不依赖 libm。
 
-内存都从 config 的 PAL allocator 分配，条目结束即释放。在 host 上实测一个条目的解码峰值：Ogg/Opus 约 90 KiB（65,307 字节的最大 page 缓冲加约 18 KiB Opus 状态），MP3 约 41 KiB（其中 dr_mp3 解码器状态约 23 KiB，含其 16 KiB scratch），WAV 约 15 KiB。dr_mp3 把 scratch 放在调用方分配的解码器结构里，解码时在 ESP32-S3 上的静态栈用量不到 1 KiB。
+内存从 config 的 PAL allocator 分配；解码与变速临时内存每条目结束释放，压缩 ring 按上述立即交接与终态清理合同管理。在 host 上实测一个条目的解码峰值：Ogg/Opus 约 90 KiB（65,307 字节的最大 page 缓冲加约 18 KiB Opus 状态），MP3 约 41 KiB（其中 dr_mp3 解码器状态约 23 KiB，含其 16 KiB scratch），WAV 约 15 KiB。dr_mp3 把 scratch 放在调用方分配的解码器结构里，解码时在 ESP32-S3 上的静态栈用量不到 1 KiB。
 
 压缩环形缓冲按字节计：默认 64 KiB 对 Opus 和 MP3 是若干秒，对 44.1 kHz 立体声 16 位 WAV（约 1.4 Mbit/s）不到 0.4 秒，网络一抖就会断音。WAV 适合 8–16 kHz 单声道的提示音；产品要播放高码率 WAV 时，应相应加大 `audio_buffer_bytes` 与 `audio_prebuffer_bytes`。
 
@@ -113,6 +115,15 @@ Conversation completion 表示本轮输入已发送，不等待服务端回复�
 
 开始输入先发送新 StreamID 的纯控制 BOS（kind 未指定，mime_type 为空），因此上游可以立即打断旧回复。第一块 PCM 到达后才发送同一 StreamID 的音频 BOS，并等待 AUDIO_INPUT_READY 后发送 Opus；结束时先发送已打开音频通道的 EOS，再发送纯控制 EOS。没有 PCM 的输入只发送纯控制 BOS/EOS，不等待音频 READY，也不生成静音包或空文本。
 
+`h2_gizclaw_service_audio_input_snapshot()` 只复制当前已开始输入的 route、 Service 内单调的 successful-start generation、active 与 ready，不执行 RPC 或读 PCM。调用方须把 generation 与自己的 Service 生命周期一起比较；它不采用会在新 Conversation 中重新开始的 request identity，也不采用诊断 trace sequence。 Conversation 的 ready 只表示本轮音频 BOS 收到匹配的 AUDIO_INPUT_READY；Speech 要求 managed input stream 已打开，并在请求 envelope 清空后，首个非空 PCM frame 已被本地 SDK queue 接受。后者只证明初始本地 admission，不代表 transport 或 server 已收到；后续 write 返回 WOULD_BLOCK 不撤销这一 one-shot 标记。内部 bootstrap PCM 仍可在 stream 已打开、公开 ready 为 false 时推进。 未开始、结束、取消、失败或已换 owner 的输入不能提供 active/ready；成功 start 的 generation 不回绕，耗尽时报 NO_SPACE。 该快照不是动态 FIFO credit，不保证随后每帧都被接受或远端收到。
+
+有限语音 fixture 可在实际 capture 已开启、初始 ready 尚未到达时提供按原格式与
+速率发送的 lead-in silence，使首块 PCM 和音频 BOS 能正常产生；ready 后才开始
+有限内容，不把 fixture offset 或 EOF 提前推进。此测试边界不改变 production Mic
+的实时合同：READY 前用户已经说的话仍受原有固定 ring 与 overrun 丢帧策略限制。
+fixture 必须保留从实际采集起算的总预算，内容起播后不得按 queue credit 暂停、
+降速或隐去丢帧。成功的 fixture 测试不代表生产 pre-roll 无损。
+
 ### 完整文字输入
 
 `h2_gizclaw_session_send_text()` 在 Session 当前 Workspace 的空闲路由上复制并异步提交
@@ -176,7 +187,7 @@ H106 首页的 `record` component action 按本页边界接入。Tiga 的 ADC re
 - 同一 GizClaw connection generation 和 Workspace 的连续 conversation 不重复 activate；连接重建或 Workspace 切换后重新确认一次。
 - 输入 PCM 由 App-owned Mic Task 写入 GizClaw PCM ring，由 GizClaw uplink Task 每 20 ms 切片、编码并通过 WebRTC audio RTP 上行；ring 满时返回 `WOULD_BLOCK`，App 丢弃当前 realtime chunk 并记录 overrun，不等待或改写 payload。
 - Speech Transcribe/Extract 按 `content_type` 接受不超过 1280 bytes 的 audio chunk；测试覆盖 timeout 透传、queue 满背压、audio-before-EOS FIFO，以及 commit/terminal 后拒绝写入。
-- PTT 一轮在输入结束发出后完成，不等待服务端；翻译、flowcraft 等多段回复都只是之后到达的下行音频，照常播放。Realtime 一轮持续到挂断。下行事件只以 DEBUG 记录。Friend / Friend Group 的 SFU Workspace 不给发言者任何下行音频，发送后本轮正常完成。
+- PTT 一轮在输入结束发出后完成，不等待服务端；翻译、Eino 等多段回复都只是之后到达的下行音频，照常播放。Realtime 一轮持续到挂断。下行事件只以 DEBUG 记录。Friend / Friend Group 的 SFU Workspace 不给发言者任何下行音频，发送后本轮正常完成。
 - Cancel、disconnect 和 Audio failure 都关闭本轮 mic/track，不泄漏 task、queue 或 buffer。
 - 后台 Audio callback 不直接更新 LVGL；GizClaw callback 由 App main loop dispatch。
 - H2Peer host performance gate 在三条并发 request DataChannel（其中一条执行双向各 1 MiB 传输）以及长期 Packet/Event traffic 期间发送 50 个 20 ms Opus RTP frame，要求 frame 完整、有序、无 submit deadline miss，且相邻到达间隔不超过 40 ms；该 gate 验证 transport coexistence，不替代真实设备声学验收。

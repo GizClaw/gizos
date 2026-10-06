@@ -1,5 +1,6 @@
 #include "h2_gizclaw_e2e_service.h"
 
+#include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -10,7 +11,7 @@
  * chain in the coverage auditor. */
 static int expect_result(const char *operation, int actual, int expected) {
   const int rc = actual == expected ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE;
-  printf("H2_GIZCLAW_E2E stage=service-contract-check operation=%s "
+  h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=service-contract-check operation=%s "
          "actual_rc=%d expected_rc=%d result=%s rc=%d\n",
          operation, actual, expected, rc == H2_PAL_OK ? "PASS" : "FAIL", rc);
   return rc;
@@ -63,6 +64,51 @@ static int canceled_before_do(h2_gizclaw_e2e_fixture_t *fixture,
   h2_gizclaw_e2e_evidence("h2_gizclaw_req_release", "service-cancel-new",
                           H2_PAL_OK);
   h2_gizclaw_e2e_evidence("h2_gizclaw_req_cancel", "req_cancel-assert", rc);
+  return rc;
+}
+
+/* Registration waits deliberately do not poll. Afterwards, exercise the real
+ * dispatch boundary and require its bounded queue to become empty. */
+static int drain_service(h2_gizclaw_service_t *service) {
+  int rc = H2_PAL_ERR_TIMEOUT;
+  for (unsigned attempt = 0u; attempt < 32u; ++attempt) {
+    size_t dispatched = SIZE_MAX;
+    rc = h2_gizclaw_service_poll(service, 8u, &dispatched);
+    h2_gizclaw_e2e_evidence("h2_gizclaw_service_poll", "service", rc);
+    if (rc != H2_PAL_OK)
+      break;
+    if (dispatched > 8u) {
+      rc = H2_PAL_ERR_INVALID_STATE;
+      break;
+    }
+    if (dispatched == 0u)
+      break;
+    rc = H2_PAL_ERR_TIMEOUT;
+  }
+  return rc;
+}
+
+/* A connected Service has completed at least one calibration attempt. Host
+ * clocks may be unsettable; report that outcome without claiming calibration. */
+static int check_time_sync(h2_gizclaw_service_t *service) {
+  h2_gizclaw_time_sync_status_t status = {0};
+  int rc = h2_gizclaw_service_get_time_sync_status(service, &status);
+  h2_gizclaw_e2e_evidence("h2_gizclaw_service_get_time_sync_status", "service", rc);
+  if (rc == H2_PAL_OK &&
+      (status.attempts == 0u || status.state < H2_GIZCLAW_TIME_SYNC_RUNNING ||
+       status.state > H2_GIZCLAW_TIME_SYNC_SUCCEEDED ||
+       (status.state == H2_GIZCLAW_TIME_SYNC_SUCCEEDED &&
+        status.last_result != H2_PAL_OK) ||
+       (status.state == H2_GIZCLAW_TIME_SYNC_RETRY &&
+        status.last_result == H2_PAL_OK)))
+    rc = H2_PAL_ERR_INVALID_STATE;
+  h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=time-sync-state state=%u attempts=%" PRIu32 " "
+         "last_rc=%d calibrated=%u result=%s rc=%d\n",
+         (unsigned)status.state, status.attempts, status.last_result,
+         rc == H2_PAL_OK && status.state == H2_GIZCLAW_TIME_SYNC_SUCCEEDED,
+         rc == H2_PAL_OK ? "PASS" : "FAIL", rc);
+  h2_gizclaw_e2e_evidence("h2_gizclaw_service_get_time_sync_status",
+                         "service_get_time_sync_status-assert", rc);
   return rc;
 }
 
@@ -119,8 +165,27 @@ int h2_gizclaw_e2e_run_service(h2_gizclaw_e2e_fixture_t *fixture) {
   h2_gizclaw_e2e_evidence("h2_gizclaw_req_do", "req_do-assert", rc);
   h2_gizclaw_e2e_evidence("h2_gizclaw_req_wait", "req_wait-assert", rc);
   h2_gizclaw_e2e_evidence("h2_gizclaw_req_release", "req_release-assert", rc);
-  h2_gizclaw_e2e_evidence("h2_gizclaw_service_poll", "service_poll-assert", rc);
   if (rc == H2_PAL_OK)
     rc = canceled_before_do(fixture, service);
+  if (rc == H2_PAL_OK) {
+    rc = drain_service(service);
+    h2_gizclaw_e2e_evidence("h2_gizclaw_service_poll", "service_poll-assert", rc);
+  }
+  if (rc == H2_PAL_OK)
+    rc = check_time_sync(service);
+  if (rc == H2_PAL_OK) {
+    h2_gizclaw_audio_input_state_t input = {0};
+    rc = h2_gizclaw_service_audio_input_snapshot(service, &input);
+    h2_gizclaw_e2e_evidence("h2_gizclaw_service_audio_input_snapshot", "service", rc);
+    /* This request-lifecycle case owns no live audio input. A lingering
+     * input/READY from an earlier case is an ownership failure, not idle. */
+    if (rc == H2_PAL_OK && (input.active || input.ready))
+      rc = H2_PAL_ERR_INVALID_STATE;
+    h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=input-state generation=%" PRIu64
+        " route=%u active=%u ready=%u rc=%d\n", input.generation,
+        (unsigned)input.route, (unsigned)input.active, (unsigned)input.ready, rc);
+    h2_gizclaw_e2e_evidence("h2_gizclaw_service_audio_input_snapshot",
+                            "service_audio_input_snapshot-assert", rc);
+  }
   return rc;
 }

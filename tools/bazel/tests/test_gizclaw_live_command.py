@@ -1,4 +1,4 @@
-"""Exercise the real workflow shell, Make and wrappers without running Bazel."""
+"""Exercise direct Bazel workflow dispatch, fixture preflight and failure aggregation."""
 
 import json
 import os
@@ -40,6 +40,12 @@ class LiveCommandTest(unittest.TestCase):
             "H2_GIZCLAW_E2E_SUITE": "all",
             "E2E_SCOPE": "gizclaw",
             "E2E_BACKEND": "h2peer",
+            "H2_GIZCLAW_E2E_REGISTRATION_TOKEN": "mock-token",
+            "GIZCLAW_FIXTURE_PROFILE": "controlled-test",
+            "GIZCLAW_FIXTURE_KEY": "known.key",
+            "GIZCLAW_FIXTURE_VALUE": '{"known":true}',
+            "H2_GIZCLAW_E2E_DEVICE_API_URL": "https://api.example.invalid",
+            "H2_GIZCLAW_E2E_AUDIO_URL": "https://audio.example.invalid/tone.ogg",
         }
 
     def calls(self):
@@ -81,35 +87,46 @@ class LiveCommandTest(unittest.TestCase):
             ["--test_arg=--endpoint=" + self.env["H2_GIZCLAW_E2E_ENDPOINT"]],
         )
         self.assertEqual(call["suite"], self.env["H2_GIZCLAW_E2E_SUITE"])
+        for suffix, name in (("profile", "GIZCLAW_FIXTURE_PROFILE"),
+                             ("key", "GIZCLAW_FIXTURE_KEY"),
+                             ("value", "GIZCLAW_FIXTURE_VALUE")):
+            self.assertIn("--//projects/e2e/apps/gizclaw:app_config_fixture_" +
+                          suffix + "=" + self.env[name], args)
+        self.assertTrue(any(arg.startswith("--disk_cache=") and arg != "--disk_cache=" for arg in args))
+        self.assertFalse(any("mock-token" in arg for arg in args))
 
-    def test_make_both_wrappers(self):
+    def test_direct_workflow_both_backends(self):
+        self.env["H2_GIZCLAW_E2E_SUITE"] = "voice"
         for backend in ("h2peer", "pion"):
             with self.subTest(backend=backend):
-                result = self.run_command(["make", "bazel-test-gizclaw_" + backend + "_live_test"])
+                self.env["E2E_BACKEND"] = backend
+                result = self.workflow()
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assert_live_call(self.calls()[-1], backend)
 
-    def test_missing_endpoint_stops_before_bazel(self):
-        for endpoint in (None, ""):
-            for backend in ("h2peer", "pion"):
-                with self.subTest(endpoint=endpoint, backend=backend):
-                    self.env.pop("H2_GIZCLAW_E2E_ENDPOINT", None)
-                    if endpoint is not None:
-                        self.env["H2_GIZCLAW_E2E_ENDPOINT"] = endpoint
-                    result = self.run_command(["sh", "scripts/bazel/bazel-test-gizclaw_" + backend + "_live_test.sh"])
-                    self.assertNotEqual(result.returncode, 0)
-                    self.assertIn("set H2_GIZCLAW_E2E_ENDPOINT", result.stderr)
-                    self.assertEqual(self.calls(), [])
+    def test_missing_live_inputs_stop_before_bazel(self):
+        for name in ("H2_GIZCLAW_E2E_ENDPOINT", "H2_GIZCLAW_E2E_REGISTRATION_TOKEN",
+                     "GIZCLAW_FIXTURE_PROFILE", "GIZCLAW_FIXTURE_KEY",
+                     "GIZCLAW_FIXTURE_VALUE", "H2_GIZCLAW_E2E_DEVICE_API_URL",
+                     "H2_GIZCLAW_E2E_AUDIO_URL"):
+            with self.subTest(name=name):
+                original = self.env.pop(name)
+                result = self.workflow()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(self.calls(), [])
+                self.env[name] = original
 
-    def test_endpoint_is_one_argument_without_shell_evaluation(self):
+    def test_inputs_are_single_arguments_without_shell_evaluation(self):
         marker = self.directory / "must-not-exist"
-        for backend in ("h2peer", "pion"):
-            self.env["H2_GIZCLAW_E2E_ENDPOINT"] = f"host:9821 --other; $(touch {marker})"
-            result = self.run_command(["make", "bazel-test-gizclaw_" + backend + "_live_test"])
+        for name in ("H2_GIZCLAW_E2E_ENDPOINT", "GIZCLAW_FIXTURE_VALUE"):
+            original = self.env[name]
+            self.env[name] = f"host:9821 --other; $(touch {marker})"
+            result = self.workflow()
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assert_live_call(self.calls()[-1], backend)
+            self.assert_live_call(self.calls()[-1], "h2peer")
             self.assertFalse(marker.exists())
-        # The production Desktop parser, not this wrapper, rejects this value.
+            self.env[name] = original
+        # Production Bazel/launcher validation rejects malformed fixture values.
 
     def test_workflow_h2peer_service(self):
         self.env["H2_GIZCLAW_E2E_SUITE"] = "service"

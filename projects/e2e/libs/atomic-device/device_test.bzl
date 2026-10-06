@@ -10,7 +10,7 @@ _host_cli = rule(implementation = _host_cli_impl, attrs = {
 })
 
 def _package_impl(ctx):
-    files = [f for f in ctx.attr.package[DefaultInfo].files.to_list() if f.basename.endswith(".update.tar.zlib")]
+    files = [f for f in ctx.attr.package[DefaultInfo].files.to_list() if (f.basename.endswith(".update.tar") or f.basename.endswith(".update.tar.zlib"))]
     if len(files) != 1:
         fail("Atomic package must produce one update archive")
     return [DefaultInfo(files = depset(files))]

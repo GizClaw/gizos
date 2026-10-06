@@ -1095,7 +1095,9 @@ static h2_pal_result_t audio_stream_read(void *user, uint8_t *out,
     (void)h2_pal_time_sleep_ms(d->config.time, 5);
   }
 }
-static int finish_audio_download(h2_gizclaw_device_t *d) {
+/* No reset or release is safe until the previous producer has left. A failed
+ * join retains its task, storage and cancel flag for the owner's retry. */
+static int join_audio_download(h2_gizclaw_device_t *d) {
   audio_download_t *download = d->download;
   if (!download)
     return H2_PAL_OK;
@@ -1104,48 +1106,73 @@ static int finish_audio_download(h2_gizclaw_device_t *d) {
     int rc = h2_pal_task_join(d->service->config.task, download->task);
     if (rc != H2_PAL_OK)
       return rc;
+    download->task = NULL;
   }
+  return H2_PAL_OK;
+}
+static int finish_audio_download(h2_gizclaw_device_t *d) {
+  int rc = join_audio_download(d);
+  if (rc != H2_PAL_OK || !d->download)
+    return rc;
+  audio_download_t *download = d->download;
   h2_pal_mem_free(d->config.allocator, download->data);
   h2_atomic_bool_destroy(&download->cancel);
   h2_pal_mem_free(d->config.allocator, download);
   d->download = NULL;
   return H2_PAL_OK;
 }
-/* Replaces d->download (joining the previous one) with a new request. */
+/* Reuse the joined producer's fixed ring for probe/range/fallback and an
+ * already selected music continuation. Idle, final EOS and stop release it. */
 static int start_audio_download(h2_gizclaw_device_t *d, const char *url,
                                 bool music, bool ranged, uint64_t first,
                                 uint64_t last, uint64_t expected_total) {
-  int rc = finish_audio_download(d);
+  int rc = join_audio_download(d);
   if (rc != H2_PAL_OK)
     return rc;
-  audio_download_t *download =
-      h2_pal_mem_alloc(d->config.allocator, sizeof(*download));
-  if (!download)
-    return H2_PAL_ERR_NO_MEMORY;
-  *download = (audio_download_t){.device = d,
-                                 .music = music,
-                                 .ranged = ranged,
-                                 .expected_total = expected_total,
-                                 .first = first,
-                                 .last = last,
+  audio_download_t *download = d->download;
+  if (!download) {
+    download = h2_pal_mem_alloc(d->config.allocator, sizeof(*download));
+    if (!download)
+      return H2_PAL_ERR_NO_MEMORY;
+    *download = (audio_download_t){.device = d,
                                  .capacity = d->config.audio_buffer_bytes
                                                  ? d->config.audio_buffer_bytes
                                                  : 65536u};
+    if (h2_atomic_bool_init(&download->cancel, false) != H2_ATOMIC_OK) {
+      h2_pal_mem_free(d->config.allocator, download);
+      return H2_PAL_ERR_NO_MEMORY;
+    }
+    d->download = download;
+    download->data = h2_pal_mem_alloc(d->config.allocator, download->capacity);
+    if (!download->data) {
+      (void)finish_audio_download(d);
+      return H2_PAL_ERR_NO_MEMORY;
+    }
+  }
+  /* The reader is synchronous on this player worker and the HTTP producer
+   * has joined. Preserve the initialized opaque atomic and fixed storage. */
+  download->music = music;
+  download->ranged = ranged;
+  download->expected_total = expected_total;
+  download->first = first;
+  download->last = last;
+  download->head = 0u;
+  download->count = 0u;
+  download->length = 0u;
+  download->range_seen = false;
+  download->body_checked = false;
+  download->range_first = 0u;
+  download->range_last = 0u;
+  download->range_total = 0u;
+  download->done = false;
+  download->ready = false;
+  download->result = H2_PAL_OK;
   strcpy(download->url, url);
   download->prebuffer =
       d->config.audio_prebuffer_bytes
           ? d->config.audio_prebuffer_bytes
           : (download->capacity < 16384u ? download->capacity : 16384u);
-  if (h2_atomic_bool_init(&download->cancel, false) != H2_ATOMIC_OK) {
-    h2_pal_mem_free(d->config.allocator, download);
-    return H2_PAL_ERR_NO_MEMORY;
-  }
-  d->download = download;
-  download->data = h2_pal_mem_alloc(d->config.allocator, download->capacity);
-  if (!download->data) {
-    (void)finish_audio_download(d);
-    return H2_PAL_ERR_NO_MEMORY;
-  }
+  h2_atomic_store(&download->cancel, false);
   const h2_pal_task_options_t options = {
       .name = H2_GIZCLAW_AUDIO_DOWNLOAD_TASK_NAME_VALUE,
       .min_stack_size = 32768};
@@ -1581,7 +1608,9 @@ static int play_url(h2_gizclaw_device_t *d, const char *url, uint32_t limit_ms,
     trace(d, "player-speaker-release", 0, released);
   }
   h2_gizclaw_audio_decoder_destroy(decoder);
-  int joined = finish_audio_download(d);
+  /* The music worker decides whether an accepted next item needs this joined
+   * storage. A sound is a standalone operation and releases it here. */
+  int joined = music ? join_audio_download(d) : finish_audio_download(d);
   if (rc == H2_PAL_OK)
     rc = joined;
   return rc;
@@ -1723,7 +1752,7 @@ static void update_firmware(h2_gizclaw_device_t *d) {
 static void device_worker(void *user) {
   h2_gizclaw_device_t *d = user;
   while (!h2_atomic_load(&d->stopping)) {
-    if (finish_audio_download(d) != H2_PAL_OK) {
+    if (join_audio_download(d) != H2_PAL_OK) {
       (void)h2_pal_time_sleep_ms(d->config.time, 20);
       continue;
     }
@@ -1741,6 +1770,12 @@ static void device_worker(void *user) {
     }
     d->worker_generation = h2_atomic_load(&d->generation);
     unlock(d);
+    /* A joined ring belongs only to an immediate music continuation. Never
+     * carry it into idle or another tool; joining stays outside d's mutex. */
+    if ((!playing || pending) && finish_audio_download(d) != H2_PAL_OK) {
+      (void)h2_pal_time_sleep_ms(d->config.time, 20);
+      continue;
+    }
     if (dirty && d->config.audio != NULL)
       report_player(d);
     if (pending) {
@@ -1805,6 +1840,23 @@ static void device_worker(void *user) {
     } else if (playing) {
       int rc = play_url(d, url, 0, true, start_ms, duration_ms);
       lock(d);
+      if (!interrupted(d)) {
+        const bool continues =
+            rc == H2_PAL_OK &&
+            (!strcmp(d->status.repeat, "one") ||
+             d->status.current_index + 1 < d->playlist->items_count ||
+             !strcmp(d->status.repeat, "all"));
+        if (!continues) {
+          /* Ended is a cleanup barrier: release before exposing the final
+           * state. A command arriving during cleanup changes the generation
+           * and must not receive this old item's state or PCM. */
+          unlock(d);
+          const int finished = finish_audio_download(d);
+          if (rc == H2_PAL_OK)
+            rc = finished;
+          lock(d);
+        }
+      }
       if (!interrupted(d)) {
         /* Only the selected item starts late; advance and repeat start at 0. */
         d->start_ms = 0;

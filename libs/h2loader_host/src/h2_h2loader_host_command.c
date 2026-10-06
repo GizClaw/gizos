@@ -36,6 +36,7 @@ h2_pal_result_t h2_h2loader_host_command_validate(
             availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_STATUS;
             break;
         case H2_H2LOADER_HOST_COMMAND_STATS:
+        case H2_H2LOADER_HOST_COMMAND_DATA_CHECKSUM:
             availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_STATS;
             break;
         case H2_H2LOADER_HOST_COMMAND_MEMORY:
@@ -127,6 +128,11 @@ h2_pal_result_t h2_h2loader_host_command_contract(
         case H2_H2LOADER_HOST_COMMAND_STATS:
             SET_LINE("h2loader stats\n");
             out_contract->marker = "H2_LOADER_STATUS ";
+            out_contract->marker_is_success = 1u;
+            break;
+        case H2_H2LOADER_HOST_COMMAND_DATA_CHECKSUM:
+            SET_LINE("h2loader stats\n");
+            out_contract->marker = "H2_LOADER_DATA_CHECKSUM checksum=";
             out_contract->marker_is_success = 1u;
             break;
         case H2_H2LOADER_HOST_COMMAND_MEMORY:

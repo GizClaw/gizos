@@ -1,0 +1,122 @@
+{
+  "contract": 2,
+  "operation_count": 28,
+  "case_count": 36,
+  "unique_phase_cases": {
+    "seed": 31,
+    "verify": 3,
+    "clean_verify": 2
+  },
+  "completion_replay_case_count": 2,
+  "recorded_at": "2026-10-04T00:16:10Z",
+  "all_platforms_qualified": true,
+  "qualified_platforms": [
+    {
+      "platform": "macos",
+      "status": "qualified",
+      "receipt": "evidence/contract2/macos-qualified.json",
+      "source_revision": "de68d16a6b2e3f298eadbdf5b5a4dda0bd0b69a9",
+      "artifact_sha256": "f61f009190262e17c5fc6fdd7dabb320b9be4ed1c97fbe73d83aaebedce7f19d"
+    },
+    {
+      "platform": "wasm-chromium",
+      "status": "qualified",
+      "receipt": "evidence/contract2/wasm-chromium-qualified.json",
+      "source_revision": "de68d16a6b2e3f298eadbdf5b5a4dda0bd0b69a9",
+      "artifact_sha256": "4c89dbc7e2be92253d1676e08faaf1752d935614538928a2055b4f57dd408c70"
+    },
+    {
+      "platform": "ios-simulator",
+      "status": "qualified",
+      "receipt": "evidence/contract2/ios-simulator-qualified.json",
+      "source_revision": "424d75efaa6fb14f23ce6dfa3d5e62a7e2d366ca",
+      "artifact_sha256": "931db05129facc08e097cadb39d81e67dce842943ace28b3cdb4447fe6a578be",
+      "sdk_archive_sha256": "4368eae8d5d4649dc72bd5df3fbd44ab23ddbe887ee287e55caeed4265912871"
+    },
+    {
+      "platform": "android-emulator",
+      "status": "qualified",
+      "receipt": "evidence/contract2/android-emulator-qualified.json",
+      "source_revision": "424d75efaa6fb14f23ce6dfa3d5e62a7e2d366ca",
+      "artifact_sha256": "027d509246347206611f21fe7746921b1f17cfdc4a357cc5110fd49aca2349c6",
+      "sdk_archive_sha256": "7e4b40da1791ebd7c581a951a747e382ea271784c5a71d8905816faa5495fefc"
+    },
+    {
+      "platform": "esp32s3-devkit",
+      "status": "qualified",
+      "receipt": "evidence/contract2/esp32s3-devkit-qualified.json",
+      "source_revision": "de68d16a6b2e3f298eadbdf5b5a4dda0bd0b69a9",
+      "host_verifier_revision": "c93c02dc62fcc745953e03042688967e2777ba61",
+      "artifact_sha256": "d551ef08ba2e9b91db88c9283323df6f0cc0c3744a0261df60c0cfcbc27c4f86",
+      "image_sha256": "b96c1b45dc478a33a73bdadcd91a772bcd31b5285deeff5c29ef7dd08fb8dfa9"
+    },
+    {
+      "platform": "bk7258",
+      "status": "qualified",
+      "receipt": "evidence/contract2/bk7258-r4-qualified.json",
+      "source_revision": "f7cc80a524795ba42021ecdd6fddf5c50adec134",
+      "version": "pref-bk-console-r4-native",
+      "artifact_sha256": "2e1f394b4116b5a637f2897f5a5c5f5d4bb3facbd79c09a4326d901f23654762",
+      "image_sha256": "831a078236ec5ec7fb2cef72e7078b0e6d174dd8f929de902b30fdbca13a64ff",
+      "host_verifier_sha256": "0756b4f4a41f63a2d3efeb749ee339b5271112dfbb1ee5b1845e3351ffe07770"
+    }
+  ],
+  "pending_platforms": [],
+  "firmware_builds": [
+    {
+      "target": "//projects/e2e/targets/h2loader_tar_zlib/pal-storage/devkit:package",
+      "version": "pref-strength-20261004-esp",
+      "status": "build_passed",
+      "hardware_qualification": "passed",
+      "source_revision": "de68d16a6b2e3f298eadbdf5b5a4dda0bd0b69a9"
+    },
+    {
+      "target": "//projects/e2e/targets/h2loader_tar_zlib/pal-storage/bk7258_v3_202405:package",
+      "version": "pref-strength-20261004-bk",
+      "status": "build_passed",
+      "hardware_qualification": "failed_capacity_gap",
+      "source_revision": "de68d16a6b2e3f298eadbdf5b5a4dda0bd0b69a9"
+    },
+    {
+      "target": "//projects/e2e/targets/h2loader_tar_zlib/pal-storage/bk7258_v3_202405:package",
+      "source_revision": "f7cc80a524795ba42021ecdd6fddf5c50adec134",
+      "version": "pref-bk-console-r4-native",
+      "status": "build_passed",
+      "hardware_qualification": "passed",
+      "artifact_sha256": "2e1f394b4116b5a637f2897f5a5c5f5d4bb3facbd79c09a4326d901f23654762",
+      "image_sha256": "831a078236ec5ec7fb2cef72e7078b0e6d174dd8f929de902b30fdbca13a64ff"
+    }
+  ],
+  "qualification_boundary": "All six platforms have their own source/artifact-bound contract 2 36-case receipt. BK R4 completes five fresh 1/2/3/4/4 boots, valid P2/Stage empty, unchanged original P1 and nonblank dump. The original de68 capacity failure and R2/R3 collector failures remain historical evidence. Mobile and other earlier source identities are unchanged; no physical-phone or power-loss guarantee is inferred. DevKit Stage-empty qualification precedes its separately recorded restoration of the original App and original nonempty Stage. Contract 1 historical receipts remain unchanged.",
+  "source_identity_rule": "Each platform receipt retains its actual executed source_revision; firmware builds retain their original compiled source_revision. Metadata-only updates do not rebind earlier receipts.",
+  "failed_platforms": [],
+  "updated_at": "2026-10-04T17:28:40.374567+00:00",
+  "historical_failures": [
+    {
+      "platform": "bk7258",
+      "status": "failed",
+      "reason": "capacity-gap",
+      "receipt": "evidence/contract2/bk7258-failed.json",
+      "source_revision": "de68d16a6b2e3f298eadbdf5b5a4dda0bd0b69a9",
+      "version": "pref-strength-20261004-bk",
+      "failed_case": "pal.storage.pref.overwrite-type",
+      "result": -13,
+      "sdk_logical_sector_bytes": 4096,
+      "evidence": "evidence/contract2/bk7258-capacity-gap.md"
+    },
+    {
+      "platform": "bk7258",
+      "status": "capture_failed",
+      "receipt": "evidence/contract2/bk7258-r2-capture-failed.json",
+      "source_revision": "ffb095c562e9e42b05df92b8a9bc6bce50b8cb3f",
+      "version": "pref-bk-large-native-r2"
+    },
+    {
+      "platform": "bk7258",
+      "status": "capture_failed",
+      "receipt": "evidence/contract2/bk7258-r3-capture-failed.json",
+      "source_revision": "05f2ac2219dbb8687e616b5a568b50c0ce68447b",
+      "version": "pref-bk-cache-r3"
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "new_physical_run_claimed": false,
+  "historical_harness_receipt_sha256": "cc54fc641d421634f0d233cf1d348e367cbddb6d40a59814b9170c7c038de125",
+  "catalog_baseline": {
+    "source_commit": "06f9c0cfa633646984d72f210ba18f889bbec528",
+    "source_path": "guides/apps/e2e.md",
+    "source_sha256": "0b3c34ff5e9f94d73dff968ffa7022043000ee5146a5bd5cef56d58038fb44e9"
+  },
+  "pal_guide_extension": {
+    "source_commit": "06f9c0cfa633646984d72f210ba18f889bbec528",
+    "source_path": "guides/zh/developing/platform_abstract_layer.md",
+    "source_sha256": "ae910c4b1fb40afc104ca9de342750db1bad9ff574a8b134f69c4f08dc3ffb74",
+    "addition_source_commit": "93c9578e54f1cd45d8d9bd118372f807e16076f4",
+    "insertion_offset": 72468,
+    "addition_sha256": "e34e59d847676c1d0bca583f8c824a124b1a8cb0dd684b097dcdc25aff429932"
+  },
+  "previous_source_sha256": {
+    "projects/e2e/apps/pal-display/BUILD.bazel": "16da9aa4077fea942e7c2a098a74ef021e8546f640e63ac994b4f589485161b5",
+    "projects/e2e/apps/pal-display/README.md": "d859ca0869851415ea64888815649fb7cf35b492c5c74f73d136ae5dc563c338",
+    "projects/e2e/apps/pal-display/check_qualification.py": "c3fe8defa194ee0691f1b7550fd8d71dca96d460d3a7c317bf403237ba0b2edf"
+  },
+  "current_source_sha256": {
+    "projects/e2e/apps/pal-display/BUILD.bazel": "49b3c815011b929f2669db38f941cd2f743ed5a2cbe2fa8b8d08eadebbaf498c",
+    "projects/e2e/apps/pal-display/README.md": "48d4e4d97c00d8a26cfdad69370ada1035448cb78016e80cd7abb6b205addf58",
+    "projects/e2e/apps/pal-display/check_qualification.py": "e646fbc59e46afd1c7b3e5df1725ef943f7ed024e1fdab89aa0ccee7fbe841a5"
+  },
+  "scope": "Host audit maintenance only; exact Display catalog section and row remain historical. Only the exact two BK Pref PAL-guide paragraphs are admitted. All qualification, mobile execution, artifact and hardware identities are unchanged."
+}

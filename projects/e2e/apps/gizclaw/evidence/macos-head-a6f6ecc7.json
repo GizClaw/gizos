@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "qualified": true,
+  "platform": "macos",
+  "source_head": "a6f6ecc786b7eff7e564e13c4e24b48be35668f7",
+  "sdk_version": "0.19.0",
+  "api_count": 227,
+  "summary": {
+    "stage": "summary",
+    "platform": "macos",
+    "endpoint": "edge-bj-01.e2e.gizclaw.com:9821",
+    "backend": "h2peer",
+    "suite": "all",
+    "profile": "h106-tiga",
+    "selected": "8",
+    "terminal": "8",
+    "pass": "8",
+    "fail": "0",
+    "error": "0",
+    "blocked": "0",
+    "cancelled": "0",
+    "first_failure_case": "-",
+    "first_failure_rc": "0",
+    "cleanup_rc": "0",
+    "retained_resources": "0",
+    "complete": "true",
+    "exit_code": "0"
+  },
+  "process_exit_code": 0,
+  "log_sha256": "839bb8847e316d0ab00fd800f7fa82e749cc453a02f802509fec9960c61114eb",
+  "api_audit": {
+    "valid": true,
+    "required": 227,
+    "covered": 227,
+    "missing": 0
+  },
+  "raw_log_local": "build/validation/gizclaw-227/macos-social-owner-r29/test.log",
+  "audio_scope": "Actual service traffic and software PCM/speaker delegates; no microphone or acoustic qualification."
+}

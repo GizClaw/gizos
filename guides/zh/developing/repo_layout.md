@@ -525,3 +525,8 @@ guides/.vitepress/dist/
 ```
 
 生成产物不能作为 include、package、asset 或运行时输入的稳定来源，也不能提交成新的源码目录。需要提交的 generated contract 或 fixture 必须由对应 library、project 或 tool 明确拥有，并提供可重复生成和验证的方法。
+
+
+### H2Loader 双格式产物
+
+保留 `targets/h2loader_tar_zlib/<image>/<board>/` 的 native firmware ownership 与 format-1 package。新增 `targets/h2loader_zlib_tar/<image>/<board>/` 只声明 format-2 artifact wrapper，其 `source` 指向对应旧 package 的原始输入 provider，不复制 CMake、native component、task policy 或 App source。H106 private consumer 使用相同边界。两类安装产物的实现归 `projects/h2loader/tools/bazel/`；checksum matrix fixture builder 与两种 package action 复用 native image，不取得 firmware ownership。

@@ -22,6 +22,35 @@ def receipt():
 
 
 class Rejection(unittest.TestCase):
+    def test_followup_cannot_replace_other_provider_or_claim_fresh_hardware(self):
+        followup=json.loads((APP/'gizclaw_public_https_provenance_main_tls.json').read_text())
+        historical=json.loads((APP/'qualification.json').read_text())['source_sha256']
+        validation.check_sources(validation.ROOT,historical,followup)
+        for mutate in [
+            lambda value:value.update(new_physical_run_claimed=True),
+            lambda value:value['current_source_sha256'].update({'libs/pal/providers/ios/pal_core/src/h2_ios_net.c':'0'*64}),
+            lambda value:value['previous_source_sha256'].update({'tools/bazel/mobile_e2e.py':'0'*64}),
+            lambda value:value['current_source_sha256'].update({'tools/bazel/mobile_e2e.py':'0'*64}),
+        ]:
+            bad=copy.deepcopy(followup);mutate(bad)
+            with self.assertRaises(AssertionError):validation.check_sources(validation.ROOT,historical,bad)
+
+    def test_additive_mqtt_build_owner_does_not_rebind_net_tls_sources(self):
+        import hashlib
+        sources=json.loads((APP/'qualification.json').read_text())['source_sha256']
+        for platform in ['ios','android']:
+            path='libs/pal/providers/'+platform+'/pal_core/BUILD.bazel'
+            current=(validation.ROOT/path).read_bytes()
+            projected=validation.net_tls_build_input(path,current)
+            self.assertEqual(hashlib.sha256(projected).hexdigest(),sources[path])
+            for bad in [current.replace(b'h2_'+platform.encode()+b'_net.c',b'h2_'+platform.encode()+b'_net_changed.c'),
+                        current.replace(b'//libs/pal/providers/wolfssl',b'//libs/pal/providers/untrusted_tls'),
+                        current+b'\n# unknown shared build mutation\n']:
+                self.assertNotEqual(hashlib.sha256(validation.net_tls_build_input(path,bad)).hexdigest(),sources[path])
+        provider='libs/pal/providers/ios/pal_core/src/h2_ios_net.c'
+        current=(validation.ROOT/provider).read_bytes()
+        self.assertEqual(validation.net_tls_build_input(provider,current),current)
+
     def test_every_native_provider_source_is_mandatory(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)
@@ -45,6 +74,25 @@ class Rejection(unittest.TestCase):
             with self.assertRaises(AssertionError):validation.check_board_observation(bad)
         bad=copy.deepcopy(board);bad['observed_coredump_bytes']['install']='00'*32
         with self.assertRaises(AssertionError):validation.check_board_observation(bad)
+
+    def test_esp_family_retains_exact_execution_board_and_dump_bytes(self):
+        board = json.loads((APP/'evidence/bk7258/qualified.json').read_text())
+        board['platform'] = 'esp32s3'
+        board['execution_board'] = 'zero_esp_v3_0'
+        states = [board['observed_baseline']['status']] + [boot['observed_status'] for boot in board['boots']]
+        for status in states:
+            status.update(board='zero_esp_v3_0', target='esp32s3')
+        for boot in board['boots']:
+            boot['observed_boot']['board'] = 'zero_esp_v3_0'
+        validation.check_board_observation(board)
+        bad = copy.deepcopy(board)
+        bad['boots'][0]['observed_boot']['board'] = 'devkit'
+        with self.assertRaises(AssertionError):
+            validation.check_board_observation(bad)
+        bad = copy.deepcopy(board)
+        bad['observed_coredump_bytes']['install'] = '00' * 32
+        with self.assertRaises(AssertionError):
+            validation.check_board_observation(bad)
 
     def test_typed_evidence_required(self):
         valid=receipt()

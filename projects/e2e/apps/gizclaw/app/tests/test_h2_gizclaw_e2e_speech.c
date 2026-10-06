@@ -57,7 +57,9 @@ h2_gizclaw_str_t h2_gizclaw_e2e_str(const char *value) {
   return (h2_gizclaw_str_t){.data = value, .len = strlen(value)};
 }
 void h2_gizclaw_e2e_evidence(const char *symbol, const char *stage, int rc) {
-  assert(symbol != NULL && strcmp(stage, "speech") == 0);
+  assert(symbol != NULL && (strcmp(stage, "speech") == 0 ||
+      strcmp(stage, "speech_transcribe-assert") == 0 ||
+      strcmp(stage, "speech_extract-assert") == 0));
   (void)rc;
 }
 h2_pal_result_t h2_gizclaw_service_set_track(h2_gizclaw_service_t *service,

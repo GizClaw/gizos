@@ -687,8 +687,8 @@ static int conversation_rounds(voice_state_t *state, bool realtime) {
      * neither changes the Session nor leaves anything in the Track. */
     int interrupt_rc = rc;
     if (rc == H2_PAL_OK) {
-      interrupt_rc =
-          h2_gizclaw_session_interrupt_playback(voice_session(state));
+      interrupt_rc = evidence("h2_gizclaw_session_interrupt_playback", "voice",
+          h2_gizclaw_session_interrupt_playback(voice_session(state)));
       h2_gizclaw_session_state_t after;
       if (interrupt_rc == H2_PAL_OK)
         interrupt_rc = h2_gizclaw_session_snapshot(voice_session(state), &after);
@@ -711,7 +711,7 @@ static int conversation_rounds(voice_state_t *state, bool realtime) {
                     : voice_session(state) ? "h2_gizclaw_session_audio_end" : "h2_gizclaw_service_audio_end",
            realtime ? "conversation_cancel-assert" : voice_session(state) ? "session_audio_end-assert" : "service_audio_end-assert",
            rc);
-  printf("H2_GIZCLAW_E2E stage=voice mode=%s result=%s rc=%d rounds=%u "
+  h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=voice mode=%s result=%s rc=%d rounds=%u "
          "capture_bytes=%zu playback_bytes=%zu\n",
          realtime ? "realtime-vad" : "ptt", rc == H2_PAL_OK ? "PASS" : "FAIL",
          rc, h2_atomic_load(&state->rounds), h2_atomic_load(&state->captured),
@@ -743,7 +743,7 @@ static int text_round(voice_state_t *state) {
     if (rc == H2_PAL_OK &&
         (snapshot.conversation_input_open || snapshot.can_start ||
          snapshot.conversation != H2_GIZCLAW_SESSION_CONVERSATION_WAITING)) {
-      printf("H2_GIZCLAW_E2E stage=text-waiting-assert status=FAIL "
+      h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=text-waiting-assert status=FAIL "
              "input_open=%d can_start=%d conversation=%d\n",
              snapshot.conversation_input_open, snapshot.can_start,
              (int)snapshot.conversation);
@@ -757,7 +757,7 @@ static int text_round(voice_state_t *state) {
       rc = step(state);
   }
   if (rc != H2_PAL_OK) {
-    printf("H2_GIZCLAW_E2E stage=text-progress status=FAIL rc=%d "
+    h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=text-progress status=FAIL rc=%d "
            "hook_error=%d active=%d completions=%u rounds=%u\n",
            rc, h2_atomic_load(&state->hook_error),
            h2_atomic_load(&state->active),
@@ -767,7 +767,7 @@ static int text_round(voice_state_t *state) {
   if (rc == H2_PAL_OK) {
     rc = drain_completed_output(state);
     if (rc != H2_PAL_OK)
-      printf("H2_GIZCLAW_E2E stage=text-drain status=FAIL rc=%d\n", rc);
+      h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=text-drain status=FAIL rc=%d\n", rc);
   }
   const size_t written = h2_atomic_load(&state->written);
   uint8_t leftover[2];
@@ -785,7 +785,7 @@ static int text_round(voice_state_t *state) {
             ? h2_gizclaw_pcm_track_read(state->track, leftover, sizeof(leftover))
             : H2_PAL_OK;
     if (!counts_valid || leftover_rc != H2_PAL_ERR_WOULD_BLOCK) {
-      printf("H2_GIZCLAW_E2E stage=text-completion-assert status=FAIL "
+      h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=text-completion-assert status=FAIL "
              "completions=%u terminal_kind=%d rounds=%u captured=%zu "
              "written=%zu non_silent=%d leftover_checked=%d leftover_rc=%d\n",
              completions, terminal_kind, rounds, captured, written, non_silent,
@@ -802,7 +802,7 @@ static int text_round(voice_state_t *state) {
     if (rc == H2_PAL_OK &&
         (snapshot.conversation_input_open || snapshot.can_start ||
          snapshot.conversation != H2_GIZCLAW_SESSION_CONVERSATION_IDLE)) {
-      printf("H2_GIZCLAW_E2E stage=text-idle-assert status=FAIL "
+      h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=text-idle-assert status=FAIL "
              "input_open=%d can_start=%d conversation=%d\n",
              snapshot.conversation_input_open, snapshot.can_start,
              (int)snapshot.conversation);
@@ -810,7 +810,7 @@ static int text_round(voice_state_t *state) {
     }
   }
   evidence("h2_gizclaw_session_send_text", "session_send_text-assert", rc);
-  printf("H2_GIZCLAW_E2E stage=voice mode=text result=%s rc=%d "
+  h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=voice mode=text result=%s rc=%d "
          "playback_bytes=%zu\n",
          rc == H2_PAL_OK ? "PASS" : "FAIL", rc, written);
   return rc;
@@ -1046,7 +1046,7 @@ static int play_history(voice_state_t *state, const char *id, bool cancel) {
       rc = H2_PAL_ERR_INVALID_STATE;
     evidence("h2_gizclaw_req_create_audio_play", "audio_play-assert", rc);
   }
-  printf("H2_GIZCLAW_E2E stage=history-play cancel=%s result=%s rc=%d "
+  h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=history-play cancel=%s result=%s rc=%d "
          "pcm_bytes=%zu\n",
          cancel ? "true" : "false", rc == H2_PAL_OK ? "PASS" : "FAIL", rc,
          h2_atomic_load(&state->written));
@@ -1139,7 +1139,7 @@ static int dispose_voice(h2_gizclaw_e2e_fixture_t *fixture) {
     rc = h2_app_test_audio_copy_evidence(state->audio_wrapper, &observed);
     if (rc != H2_PAL_OK)
       return rc;
-    printf("H2_GIZCLAW_E2E stage=testing-audio delegate=%s mic_starts=%" PRIu64
+    h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=testing-audio delegate=%s mic_starts=%" PRIu64
            " mic_reads=%" PRIu64 " fixture_bytes=%" PRIu64
            " capture_frames=%" PRIu64 " capture_no_frame=%" PRIu64
            " capture_first_error=%d capture_last_error=%d mic_active=%d\n",
@@ -1384,7 +1384,7 @@ static int run_voice(h2_gizclaw_e2e_fixture_t *fixture, bool group_talk) {
     const int cleanup_rc = dispose_voice(fixture);
     if (rc == H2_PAL_OK)
       rc = cleanup_rc;
-    printf("H2_GIZCLAW_E2E stage=group-talk result=%s rc=%d "
+    h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=group-talk result=%s rc=%d "
            "capture_bytes=%zu\n",
            rc == H2_PAL_OK ? "PASS" : "FAIL", rc, captured);
     return rc;

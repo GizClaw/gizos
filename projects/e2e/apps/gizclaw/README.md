@@ -1,5 +1,81 @@
 # GizClaw E2E
 
+AMOLED 当前TCP配置与Tiga/Zero ESP一致：收发窗口11520字节、接收邮箱12项，TCP/IP优先级22且固定CPU0；乱序上限和selective ACK使用SDK默认值（0/关闭）。
+
+最新ESP源已保留main的SDK证书bundle委托与日期校验：R53在source503cb56c上重建，managed与独立normal各8/8及227/227通过，cleanup/retained均为0、confirm=0且nonce不同；App分区2/2、Stage为空、原P1和空crash基线保留。Bazel实际5166个输入确认后续资格元数据变更不进入固件。完整新来源、包/配置/账本SHA与两轮播放计数见[post-main TLS qualification](evidence/amoled-main-tls-qualification.json)。下述R52听感观察和原始六平台资格继续保留各自执行身份。
+
+R50在speaker优先级6、不固定核时出现连续播放延迟，Device API失败（全量7/8），用户报告声音断续。R51仅把speaker改为17/CPU1后，播放计数恢复每秒约1秒，但并发Device API状态查询超时（全量7/8）。R52再将本E2E launcher的GizClaw/H2Peer网络任务优先级对齐Tiga/Zero的20/20/21、固定CPU0；managed和独立normal启动均8/8及227/227通过，cleanup/retained均为0、confirm=0且nonce不同。两轮约20秒播放均用时约20秒，并观测到完整EOS；最终App分区2/2、Stage为空、原P1与空crash基线保留。用户另确认R52这一版听起来连续。各轮身份、播放计数和失败记录见[playback comparison](evidence/amoled-tiga-tcp-playback-comparison.json)。
+
+此前小接收配置的R49发送缓冲为65535、TCP/IP默认优先级18、speaker优先级6。R49在Dev 0.24.1的managed与独立normal启动各自8/8、227/227通过，cleanup/retained均为0、confirm=0、nonce不同。完整来源、包/配置/账本SHA和物理状态见[small RX qualification](evidence/amoled-small-rx-qualification.json)。
+
+此前R47大接收窗口撤回TCP覆盖值的失败及原R45对照仍保留在[TCP defaults comparison](evidence/amoled-tcp-defaults-comparison.json)；R48首轮注册CLOSED失败也保留原身份，未作为通过记录。下述六平台原始资格不改标为R49或新Server版本的执行。
+
+## 六平台原始资格（2026-10-03，PAL signed32）
+
+GizClaw C SDK `0.23.2` 的完整 portable registry 已在六个平台通过：每个平台
+**8/8 业务用例、独立 227/227 API 审计、cleanup=0、retained=0**；hosted
+平台 teardown=0。Provider、archive 与 consumer 一起重建，使用 main 的
+signed32-bit C int PAL result 合同。受控 Dev profile 为 `gizos-e2e-626`。
+完整来源、包/日志 SHA、实际执行身份与两轮硬件账本见
+[`sdk0232-pal32-qualification.json`](evidence/sdk0232-pal32-qualification.json)。
+
+| 平台 | 实际执行身份与结果 |
+| --- | --- |
+| macOS / H2Peer | source `f0245f78`，8/8、227/227，实际进程退出 0 |
+| WASM / Chromium Worker | source `a8e67dfb`，8/8、227/227，worker=1、cross-origin isolated |
+| iOS Simulator / XCFramework | source `a8e67dfb`，8/8、227/227，SDK/App 包 SHA 与单次启动身份已记录 |
+| Android Emulator / AAR | source `a8e67dfb`，8/8、227/227，APK/AAR binary 相同，实际 Emulator 身份已记录 |
+| ESP32-S3 / AMOLED | source `a8e67dfb`、R45，managed 与独立 normal 各 8/8、227/227、confirm=0，nonce 不同 |
+| BK7258 | R58，实际 base+patch 输入与 `8fa618c8` 一致；managed 与独立 normal 各 8/8、227/227、confirm=0，nonce 不同 |
+
+两块硬件均已核对实际 App 分区 2/2、空 Stage、原 P1 和未改变的 crash
+基线（AMOLED 空；BK 原有 32 字节 dump SHA 不变）。BSP 音频路径和确定性
+PCM 输入验证业务功能；移动端为 Simulator/Emulator，结果不宣称手机实机、
+麦克风或声学质量验收。较早的执行保留原 source、SDK 与 artifact 身份，
+随后只修改 BK runtime 或文档不会把它们改标为新 head 的 binary。
+
+BK AP media TLS 使用 SDK PSRAM allocator；C emulated TLS 和两个 errno
+来源使用 task-local 存储，SDK lwIP 写入与 PAL Net 读取经实际 ELF 核对。
+任务结束后的 TCB cleanup 释放这些对象并保留原 port cleanup。故障实验、
+被严格账本审计拒收的截断/坏帧和原始日志均留在忽略的 validation 目录。
+证书、总 deadline、完整 payload size/SHA/EOS、全部 mandatory case 与
+零清理残留的确认门槛保持原合同。
+
+下面的快照及“尚未插桩/尚待验收”问题记录对应较早的实现阶段；当前业务
+调用/断言的完成范围以本节和上述版本绑定的 227 项审计为准。分页快照、
+声学质量等明确超出测试合同的限制继续有效。
+
+## 历史资格快照（2026-10-02，保留原 source/SDK 身份）
+
+当前跟随 main 使用 GizClaw C SDK `0.23.2`，保留 MHS/HWD、tool-v0、catalog tags 和 safety-fence 协议。当前公开函数库存为 **228 项**，新增的初始输入 readiness 快照由 Service case 实际读取并断言无活动输入。原有 **227 项**执行记录仍保留其历史源码身份；新增库存和本地覆盖 wiring 不资格化那些旧运行。类型和协议语义的更新须重新执行实际业务。下面 source-bound `0.19.0` 记录仅是历史结果，不资格化当前 SDK。当前主线 SCTP #617 与 PAL Net/TLS #621 已合入。source `e228d55b` 的 macOS、iOS Simulator、Android Emulator 均真实 8/8 及 227/227 通过，cleanup=0、retained=0，移动端 teardown=0；早期 source42a/75aad/d214 的独立记录保留原身份。早期 226/default profile 记录保留原身份。六端整体资格仍未完成。
+
+| 平台 | 当前实际结果 | 尚缺条件 |
+| --- | --- | --- |
+| macOS / H2Peer | sourcee228d55b，8/8、227/227，cleanup=0、retained=0 | 受控 E2E h106-tiga，显式 key/value；已完成该 source 实际运行 |
+| iOS Simulator / XCFramework | sourcee228d55b，8/8、227/227，cleanup/retained/teardown=0 | 仅模拟器资格；不代表iOS实机 |
+| Android Emulator / AAR | sourcee228d55b，8/8、227/227，cleanup/retained/teardown=0 | 仅模拟器资格；不代表Android实机 |
+| WASM / Chromium Worker | source4596acba，7/8，cleanup=0、teardown=0 | 真实Edge preflight缺PUT；GizClaw/gizclaw#1422 已合并并进入 v0.23.6；live E2E 仍为0.21.3，尚待经授权部署后fresh Worker验证 |
+| ESP32-S3 / AMOLED | sourcecdd 的 R31 完整执行7/8、Firmware真实超时、cleanup=-10、retained=1；DevKit R30同样7/8；均未确认 | 新 managed boot 和独立 normal boot 仍需完成；coredump 空不能证明没有 reset |
+| BK7258 | sourcee0 的 R33 已使用真实H2Peer owner，运行到Firmware TLS FORMAT失败；无完整通过/确认 | 已定位并修复旧heap/worker栈/WebRTC owner装配问题；重取板卡归属及新Loader/P1/Stage/crash基线后继续完整双boot |
+
+版本、逐 case 终态、未覆盖 API、清理及日志 SHA 保存在 `evidence/*-phase*.json`。macOS/iOS/Android 的上述音频结果验证真实服务上的录音 fixture、回复解码、历史重播及 PCM 消费；输入和扬声器使用确定性测试 delegate，**不构成麦克风或声学验收**。
+
+并发 case 统计六个本地创建的 channel 生命周期、峰值占用及最终零开放；反向 RPC 不计入客户端请求，SID 在关闭后可以复用，但同时打开的 channel 不能共享 SID。
+
+本轮补齐了实际 Service poll/排空和校时状态、AppConfig 两套读取接口、PublicProfile 去重及读回、接收端观测的 Friend/Group ping、Debug durable 设置与异步 snapshot、playlist 索引播放及 1 秒 seek。Voice 分别执行 Session 和直接 Conversation/Service audio 路径；Session 的 `cancel_pending` 在真实 catalog BEGIN 内触发，必须出现 ABORT 且不能 COMMIT，随后同连接重新 refresh 恢复。AppConfig 必须由受控 E2E profile 提供至少一个非敏感 fixture key；空列表保持失败，不通过修改服务器或读取其他账户规避。
+
+新平台入口复用完整 portable App，分别为：
+
+```sh
+bazel test --config=ios_sim_arm64 //projects/e2e/targets/ios_application/gizclaw:ios_gizclaw_simulator_test
+bazel test --config=android_arm64 //projects/e2e/targets/android_binary/gizclaw:android_gizclaw_simulator_test
+bazel test --config=macos_arm64 //projects/e2e/targets/pkg_tar/gizclaw:gizclaw_wasm_live_test
+```
+
+三者都要求显式注入 `H2_GIZCLAW_E2E_ENDPOINT`、`H2_GIZCLAW_E2E_REGISTRATION_TOKEN`、`H2_GIZCLAW_E2E_DEVICE_API_URL`、`H2_GIZCLAW_E2E_AUDIO_URL`；移动端还需指定独占的 `H2_IOS_SIMULATOR_UDID` 或 `H2_ANDROID_SERIAL`。测试保留实际包副本和 SHA，删除 sandbox 内的凭据 fixture，并在用例、清理、227 项 API 审计全部通过后才授予资格。Chrome 始终保持 CORS 校验；报告只保存失败类型与主机，不保存 firmware URL 或授权内容。
+
+下面保留原有测试合同与历史问题记录；历史通过结果不转移到本轮版本。
+
 流式数据在 `h2_gizclaw_req_do(request, user, input_read, output_write)` 绑定。data-up task 按需调用 `input_read`，`WOULD_BLOCK` 留到下一轮，`OK + 0` 表示输入结束；data-down 数据只在调用方执行 `service_poll` 时交给 `output_write`，部分写入和 `WOULD_BLOCK` 都保留剩余字节。协议 RESPONSE/EOS/COMPLETE 不暴露为用户事件。每个方向只允许一个 active request，同方向冲突立即返回 BUSY，上下行互不阻塞。真实 BJ 验收尚待补充，不能将本地线程交接测试当成网络覆盖。
 
 后续本地修复已统一业务 404 和流式 PAL 错误，并将 Telemetry 改为单次提交、WOULD_BLOCK 不重试；下面的网络数据来自这些修复之前，未重新验收。既有清理义务仍保持未确认。
@@ -18,7 +94,7 @@ Fixture 仅在注册 profile 非空、完整终止且与已有 actor 一致后�
 
 Workspace 清理分别记录主/隔离 actor 的有效删除确认。case 删除后若列表验证失败，Fixture 保留确认并在重试时 get 检查目标缺失；确认存在且 get 返回 NOT_FOUND 才退还义务。未确认删除的 NOT_FOUND、错误对象或查询失败不能算完成；仍查到目标时允许下一次重试删除。清理预算耗尽后不再发送 Peer delete，保留身份用于重试。两个 actor 的 36 组边界场景覆盖此状态交接；不能据此声称超时创建永远不会迟到。
 
-当前固定 GizClaw C SDK 0.18.16，公开 API 共 227 个：包括独立的 Workspace reload 和 reload-with-options、统一的 Service audio_start/audio_end 和库内 PCM Track；已删除 req_finish_input 及 Conversation 的旧 begin/end。Firmware case 已接入新的 req/resp/rpc，完整网络验收仍需逐用例记录，不以编译通过代替。Connectivity 在同一注册连接上用 req/resp 和同步 RPC 各做三轮上传、下载，每轮 1 MiB；输出传输耗时和请求总耗时，建连不计入传输。上传计时截止服务器 EOS 确认，不以本地发送完成代替。独立本地测试使用模拟传输，不能作为真实 Mbps 或业务 E2E 结果。
+当前 GizClaw C SDK 0.23.2 的公开函数库存仍为 227 个：包括独立的 Workspace reload 和 reload-with-options、统一的 Service audio_start/audio_end 和库内 PCM Track；已删除 req_finish_input 及 Conversation 的旧 begin/end。Firmware case 已接入新的 req/resp/rpc，完整网络验收仍需逐用例记录，不以编译通过代替。Connectivity 在同一注册连接上用 req/resp 和同步 RPC 各做三轮上传、下载，每轮 1 MiB；输出传输耗时和请求总耗时，建连不计入传输。上传计时截止服务器 EOS 确认，不以本地发送完成代替。独立本地测试使用模拟传输，不能作为真实 Mbps 或业务 E2E 结果。
 
 Connectivity 使用两个隔离 Peer，以便分别验证 req/resp 和同步 RPC 的 peer_delete；注册复验、ping 与全部测速始终使用同一个主 Service，不在测量间重连。全部测速成功后才删除两个 Peer，有效删除响应清除对应义务，任何失败仍交给 Fixture 收尾。`gizclaw_e2e_connectivity_test` 的本地场景覆盖调用阶段失败、错误响应、取消失败、预算耗尽、时钟读取失败、上传读取、下载写入、块顺序/内容和 poll 失败；`connectivity_coverage_test` 检查 12 个业务函数、12 条测量记录及六条数据搬运记录，缺少实际 dispatch 记录不能认证 req/resp 下载测速。正常场景仍为 `valid=false`，不是实际网络速度或远端清理验收。
 
@@ -49,15 +125,9 @@ bazel test --config=macos_arm64 \
 
 上述命令要求环境中已配置真实 RegistrationToken；`H2_GIZCLAW_E2E_SUITE=connectivity` 可选择独立测速，不得把它当成 `all` 验收。Bazel 默认 args 提供 PCM fixture 与 suite；endpoint 没有默认值。
 
-Make 包装器通过 `H2_GIZCLAW_E2E_ENDPOINT` 显式生成同一个 `--endpoint` 参数；变量缺失或为空时，不启动 Bazel。示例：
 
-```sh
-H2_GIZCLAW_E2E_ENDPOINT=edge-bj-01.e2e.gizclaw.com:9821 \
-H2_GIZCLAW_E2E_SUITE=connectivity \
-make bazel-test-gizclaw_h2peer_live_test BAZEL_CONFIG=macos_arm64
-```
 
-手动 Live E2E workflow 同样要求显式 `endpoint` 输入，不再接收 `entry` 区域别名。H2Peer 支持全部 suite（含 `service`）；Pion 及 `both` 仅接受 `rpc`、`firmware`、`voice`、`firmware-voice`。`both` 会运行两个后端，但任一失败都会使整个步骤失败。`//tools/bazel:gizclaw_live_command_test` 用假 Bazel 检查真实 workflow shell → Make → 包装器的参数和退出状态，不连接任何服务，不能用它证明 live E2E 已通过。
+手动 Live E2E workflow 同样要求显式 `endpoint` 输入，不再接收 `entry` 区域别名。H2Peer 支持全部 suite（含 `service`）；Pion 及 `both` 仅接受 `rpc`、`firmware`、`voice`、`firmware-voice`。`both` 会运行两个后端，但任一失败都会使整个步骤失败。`//tools/bazel:gizclaw_live_command_test` 用假 Bazel 检查真实 workflow shell → direct Bazel 的参数和退出状态，不连接任何服务，不能用它证明 live E2E 已通过。
 
 ## 逐函数覆盖验收
 
@@ -77,7 +147,7 @@ Workspace 响应校验 arena、数组边界/对齐、字符串与 profile/revisi
 
 Runner 在 actor 初始化前输出 `coverage-begin`，在清理后输出 `coverage-end`；RPC domain 使用 `rpc/<domain>` 嵌套范围。校验器拒绝缺失、重复、乱序、失败或未关闭的范围，父用例清理失败会使子范围失效。最终只接受指定平台、backend、endpoint 和 profile 的一次 `all` 完整运行，以及全部八个顶层用例和矩阵要求的全部 RPC domain。测试进程真实退出码和日志内 summary 都必须成功；不能把 summary 的 exit_code 当成真实进程退出码。
 
-Service case 的四个通用 req 函数和 `service_poll` 已接入调用/断言记录：验证不依赖 poll 的重复 wait、释放用户引用，以及空闲 poll 的分发数量。取消检查使用尚未 do 的请求，验证幂等、CLOSED 终态、错误输出清零及禁止再次启动；不代表网络中途取消已经验收。`service_coverage_test` 分别检查请求、Fixture 生命周期和 Voice Track 三类本地记录，不能拼接这些日志当成完整运行或真实服务器的覆盖证明。
+Service case 的四个通用 req 函数和 `service_poll` 已接入调用/断言记录：验证不依赖 poll 的重复 wait、释放用户引用，以及实际 poll 的分发数量。注册与取消完成后由 portable case 自己有界排空，拒绝超过批次上限的计数或始终无法排空的队列，测试入口不再额外补造调用证据。取消检查使用尚未 do 的请求，验证幂等、CLOSED 终态、错误输出清零及禁止再次启动；不代表网络中途取消已经验收。`service_coverage_test` 分别检查请求、Fixture 生命周期和 Voice Track 三类本地记录，不能拼接这些日志当成完整运行或真实服务器的覆盖证明。
 
 Track 的 set/unset 覆盖归属于 `voice`：同一 Track 必须实际完成 PTT 上行及非静音回复，才证明绑定可用；完成对话后解绑旧 Track、绑定第二个接收 Track，在同一 Service 重播本次生成的历史音频。新 Track 必须收到非静音 PCM，旧 Track 的读写调用次数必须不变，且第二个 Track 也要成功解绑。观察期间保留两个 Track 的状态；解绑失败时仍由 Fixture 持有供清理重试。这一探针验证替换期间的数据路由，不替代在途回调阻塞测试或无限时间的无迟到访问证明。
 
@@ -107,7 +177,7 @@ Desktop 将 Runtime、provider、配置、endpoint、token 和 PCM 放在同一 
 
 Debug 的 `req_create_debug_set` / `resp_parse_debug_set`、`req_create_debug_get` / `resp_parse_debug_get`，以及 Service 维护快照的 `debug_snapshot` / `debug_refresh` / `debug_set_mode` 纳入 227 项审计要求；`device-api` 必须提供真实调用链和 `debug_set-assert` 才能计为覆盖。当前尚未加入该设备场景，因此完整覆盖审计仍会报告这两项缺失，不能用单元测试替代真实验收。
 
-`h2_gizclaw_service_get_time_sync_status` 纳入 227 项审计要求，属于 `service` 用例；必须提供成功调用和 `service_get_time_sync_status-assert` 的校时状态业务断言。尚未插桩的真实场景继续报告缺失，不能用本地测试替代在线校时验收。
+`h2_gizclaw_service_get_time_sync_status` 纳入 227 项审计要求，属于 `service` 用例；必须提供成功调用和 `service_get_time_sync_status-assert` 的校时状态业务断言。Service 实际读取并验证校时状态与尝试次数；`calibrated=1` 仅在 SUCCEEDED 且 last_rc=0 时记录。RETRY/UNSUPPORTED 可证明状态查询契约，但不能证明成功校时。本地边界测试分别覆盖读取失败、未尝试、错误状态和虚假成功，在线结果仍须单独验收。
 
 Session 的 15 个公开操作纳入同一 fail-closed 审计，归属独立 Voice case。Voice 使用真实 Session 进行注册、完整 catalog 加载与刷新、Workspace 选择、PTT/Realtime 输入与终态观察、完整文字输入、释放和重连。文字输入在 PTT 轮次之后用 `h2_gizclaw_session_send_text` 提交一段文字，`session_send_text-assert` 要求 Session 先进入 WAITING、completion 恰好一次且为 FINISHED/OK、随后从 Track 听到非静音回复并回到 IDLE。一轮语音结束、Session 回到 IDLE 后调用 `h2_gizclaw_session_interrupt_playback`，`session_interrupt_playback-assert` 要求返回成功、Session 状态不变且 Track 仍为空；打断正在播放的回复由产品 E2E 覆盖。准备取消仍缺少 live 场景；底层 API 的独立调用要求也不能用 Session 内部调用补记，因此完整 227 项审计仍按缺失 evidence 拒绝通过。AMOLED 的构建和设备验收见 [Session E2E](/apps/h2loader/boards/amoled/gizclaw_e2e)。
 
@@ -127,7 +197,7 @@ Session 的 15 个公开操作纳入同一 fail-closed 审计，归属独立 Voi
 
 `h2_gizclaw_player_rate_set` 纳入 227 项审计要求，属于 `device-api` 用例，该场景已经插桩。`player_rate_set-assert` 在本地播放器条目播放期间（或刚播完）把速率设为 800‰，要求 `get_status` 立即读回 800、非法速率 3000 被 `H2_PAL_ERR_INVALID_ARG` 拒绝且速率不变、条目仍处于 playing / buffering / ended 而非 error，再恢复 1000 并读回；之后的循环与远程播放按原速测节奏。慢放的时长、位置映射与音调由 library 专项测试覆盖，该 E2E 只证明设备侧调用在真实 Service 上生效。
 
-`h2_gizclaw_ota_get_status` 纳入 227 项审计要求。`device-api` 在本地 OTA 的受控失败场景读取状态，必须同时观察本地 `failed`、非零错误及服务端失败记录，才输出 `ota_get_status-assert`；该场景不证明真实 package 安装成功。
+`h2_gizclaw_ota_get_status` 纳入227项审计。Device的受控delegate在观察到实际stream bytes后的首write明确返回FORMAT；本地status必须同时为failed/FORMAT，反向API也必须观察该错误和不同update ID，才承认对应控制接口。API HTTP在有界job内执行，App持续poll本端Service以处理反向RPC。该策略不写Flash、不证明finish/activate或真实package安装；独立Firmware case仍要求完整payload/size/SHA-256，不能以部分流或传输超时代替。
 
 
 AppConfig 的 list/get 六个 typed API 纳入 `rpc/app-config` 的审计要求，分别要求直接异步调用链或同步调用，以及 `app_config_list-assert` / `app_config_get-assert` 业务断言。当前尚无该场景的真实调用与断言证据，完整覆盖审计会报告缺失；新增库单测和合成日志审计测试不代表真实 Server/device E2E 已通过。
@@ -157,3 +227,31 @@ API key state 的 5 个公开操作归属 `rpc/api-key`：create 验证初始空
 API key state 的六个公开函数归属 `rpc/api-key`：create、request_refresh、request_revoke、snapshot、close、destroy。真实应用在成功创建后调用 request_revoke，并有界轮询至快照 invalid、idle、非 stale、last_error=OK、name/secret 已擦除且 revision 递增，才输出 `api_key_state_request_revoke-assert`。覆盖规则要求调用后实际读取 snapshot，单有返回 OK 不计入覆盖。
 
 Workspace 覆盖包含 28 个函数。`h2_gizclaw_rpc_run_stop` 在独立 req/resp 与 RPC 场景结束后，通过 Session 选择已运行的 Workspace，停止 run 并验证 EMPTY、当前名称及参数清空，再选择同名 Workspace，验证经 get/reload 后恢复 READY。调用失败或状态断言失败均记录失败证据；主机故障注入不代表真实设备验收。
+
+## 显式 AppConfig fixture
+
+`gizclaw_e2e_fixture` macro 生成只包含非敏感 key 的 C 配置及 JSON contract。RPC/all 必须通过 `--//projects/e2e/apps/gizclaw:app_config_fixture_key=<key>`、`app_config_fixture_profile=<profile>`、`app_config_fixture_value=<known-value>` 明确传入受控 E2E profile 的 key 和期望 bytes；为空在注册和业务资源 mutation 之前失败，不再从列表任取第一项。两套 list 必须找到该 key，两套 get 验证 profile/revision、storage ownership、长度和逐字节一致性。凭据仍独立注入，key 不进入日志。
+
+只读核对 Deploy 的 E2E 资源 checkpoint：`RuntimeProfile/default` 当前没有 `app_config`；`h106-tiga`、`h106-zero` 各有 64 项，例如非敏感的 `media.songs.en-us`。选择这些受控 E2E profile 时必须同时显式使用其注册 fixture 身份并保存全新结果，不能在 default 结果中使用其他 profile 的 key。此源码改动未修改服务器、Terraform、旧设备证据或旧通过记录。
+
+移动端直接由共享 `mobile_e2e.py` 安装/运行/清理，静态合同在 `gizclaw-mobile/BUILD.bazel`。唯一 `suite.py` hook 负责私有服务输入、AppConfig preflight、真实227接口审计与逐case oracle，不再重复模拟器生命周期，也不调用Bazel。全量真实网络资格必须同时通过8个顶层case、227接口审计、profile/value身份、零retained/cleanup/teardown；缺AppConfig输入、CORS故障、资源残留均不能skip。旧Make和shell转发入口已删除，使用直接 `bazel test --nocache_test_results`，磁盘构建缓存保持启用。
+
+实板没有宿主进程环境，因此还必须在同一macro声明中显式传入 `app_config_fixture_endpoint` 与 `app_config_fixture_token`（只使用受控E2E token，不提供源码默认值）。其生成C配置只作为本次私有构建输入；JSON/audit合同不保存token，运行日志也不打印token。宿主端继续只通过运行环境注入凭据。
+
+Device/all 实板还须显式传入 `app_config_fixture_device_api_url` 与 `app_config_fixture_audio_url` 的HTTPS输入，不在源码固定GitHub地址，不允许明文音频输入绕过TLS。受控E2E profile的已部署非敏感media对象可作为输入；绑定实际HTTP对象身份、大小和SHA，并保留全新六端结果。注册、RPC、Device API、Firmware metadata和语音业务仍使用真实E2E服务。
+
+Firmware 完整下载使用至多300秒且不超过剩余case预算的有界超时；HTTP在已有有界job任务内运行，App任务持续poll真实Service，包括DNS/握手/receive阻塞阶段，避免慢传输期间Peer失活；同一Service不由两任务并发poll。任何poll错误、取消、截断、长度或SHA-256不匹配仍失败，不能只验证前30秒或部分bytes。
+
+ESP32-S3还要求显式 `app_config_fixture_time_server=<DNS-or-IPv4>`，由本次网络fixture提供真实NTP时间，不使用源码固定外网pool。SNTP失败保持pending、不启动业务套件；TLS校验仍使用同步后的真实UTC且不关闭验证。H2Loader CLI upgrade的短验证窗口可能先于长业务套件的最后confirmation结束，必须另接当前boot的日志并最终核对package/P1/Stage/coredump，不能提前确认来绕过该窗口。
+
+业务验收的board音频delegate由 `app_config_fixture_physical_audio` bool macro参数显式选择，默认software（确定性PCM输入和真实回复解码/Track消费）；true才借用实际BSP capture/speaker。software资格不是物理speaker/capture资格，任何physical-only故障单独保留，不伪装成physical PASS。
+
+AMOLED实板的可选evidence observer在App任务内同步复制非敏感的原始接口/断言记录。384KiB上限溢出或format失败阻止确认；任务join后才冻结单次boot账本。实际crypto随机execution nonce、版本、完整byte/record计数和CRC32校验绑定每次重播；CRC32只检测串口传输损失，host另存完整账本SHA-256，不声称密码学来源认证。只有完整用例与零cleanup/retained、完整capture和实际App confirmation成功才 `admitted=1`。命令服务在资格任务结束后启动；不会提前确认pending长测试来绕过CLI重连窗口。`gizclaw-device:verify_device`只校验一份完整账本及独立227接口矩阵，不调用Bazel或拼多轮日志；normal App boot必须提供上一boot的execution供拒绝旧重播。
+
+BK7258 没有系统 CA bundle。该测试启动器必须通过 `app_config_fixture_root_ca_hex` 提供所选真实 HTTPS fixture 的公共 PEM 根证书十六进制字节（上限 16 KiB），并创建测试进程持有的 coreHTTP provider；TLS 保持 REQUIRED、真实 hostname/链/日期校验。缺少 CA 是配置失败，不能改成 SKIP 或关闭验证。BK 与 AMOLED 使用同一 384 KiB 有界证据账本、随机 execution nonce、完整 CRC32 帧及独立 227 项审计；旧 boot 的重播不能满足第二次 normal boot。
+
+BK 的 GizClaw target 选择已存在的 board-owned `media` RAM layout（AP heap4.25MiB，显示保留区1.8125MiB），并将本业务的 audio/data/Device/H2Peer worker stacks 放入 PSRAM；GPIO、AP/CP SRAM 与 managed partition 继续由 Board layout 持有。此前 display-oriented640KiB heap 的实际 OOM 记录保留原源码与未确认状态。Native launcher 明确启用真实 H2Peer PAL；误编译 canonical unsupported provider 是接线错误，不能授予能力 SKIP。
+
+2026-10-02 main 同步保留新增独立 `workspace-fence` lane；它需要显式 Workflow 和两个不同 fence ID，不包含在八项 `all` admission 中。三类板卡共用的 admission 要求 complete、selected/terminal/passed 均为8、所有失败计数与 cleanup/retained 均为0；Voice-only、部分完成或清理残留不能确认镜像。SDK0.23.2 headless actors 注册 INFO_GET、IDENTIFIERS_GET、SOCIAL_PING 三个 tool handler；有 Device vtable 的 actor 只注册 SOCIAL_PING，避免和内置工具重复。真实 Service 初始化及44项 App/oracle/provenance/dispatch focused测试通过，当前SDK实际六端重测仍待完成。
+
+SDK0.23.2/source123565bf 的真实 macOS 全量执行为5/8，cleanup=-8、retained=4；live0.21.3对MHS/tool-v0返回404，Workspace create/Session select为-1000，social ping没有接收交付，属于支持协议失败而不是SKIP。Firmware本轮完整size/SHA通过。新iOS/Android包构建成功仅证明包集成；最新SDK全量实际重测仍需兼容服务。板端解析器扫描完整UART日志并只接受最新boot的完整账本；后续失败/未完成boot不得借用此前成功，同nonce/header/body的冻结账本重播不计为独立boot。

@@ -152,6 +152,12 @@ Component 定义 config shape，BSP 填写当前 board 的 bus handle、GPIO、a
 
 AMOLED Board 在 `h2_esp_board_runtime_config()` 之前，通过可选的 `h2_esp_board_audio_configure()` 和 `h2_esp_board_display_configure()` 声明 workload-owned 调优：前者覆盖 I2S DMA descriptor/frame 数、`mic_gain_db`、mic queue frame 数和 `aggressive_aec_nlp`；后者覆盖 SH8601 面板 `pclk_hz`（`0` 保留 component 默认）。两者都只在对应资源（audio system/panel IO）尚未初始化时接受调用，之后调用返回 `H2_PAL_ERR_INVALID_STATE`；重复调用以最后一次为准，字段校验与该 lifecycle guard 都拆成独立的纯函数（`h2_esp_board_audio_config_is_valid`/`_may_apply` 与 display 对应函数），由 host test 直接覆盖。Board 保留未覆盖字段的既有默认值，不引入 Board 级常量表之外的隐式状态。这两个 API 不暴露 mic/speaker task 优先级或绑核：按本节前述约定，portable task name 到 absolute priority、core affinity、minimum stack 的映射只属于最终 firmware target 的 policy table，`h2_es8311_audio_system_config_t` 的 `mic_task_priority`/`mic_task_core_id`/`speaker_task_priority`/`speaker_task_core_id` 继续由 Board 按既有硬编码值传入，不作为 workload 可调项。
 
+### ES8311 control-port startup
+
+单 ES8311 audio system 的 lazy prepare/start 先启用 I2S 时钟，再完成 codec control-port 就绪握手，随后才写入 clock/reset/ADC/DAC 配置和启动 worker。握手使用已有的 `0x44=0x08` noise-immunity 写入，保留 ready codec 的两次初始写入；该序列来自 [Espressif ES8311 driver](https://github.com/espressif/esp-adf/blob/release/v2.x/components/esp_codec_dev/device/es8311/es8311.c#L514-L517)。首次访问可能连续返回 `ESP_ERR_INVALID_RESPONSE` 或 `ESP_ERR_TIMEOUT`，因此只在握手阶段按 20 ms 间隔重试，并用一个包含每次 I2C 等待的 2 秒总 deadline 限制初始化。已就绪的硬件没有固定 sleep；PA 和 mic/speaker worker 在握手完成前保持关闭。持续无应答在 deadline 后返回 `H2_AUDIO_ERR_IO`，其它错误直接返回既有映射结果，握手之后的配置写入不使用此重试策略。I2C API 的 timeout 参数始终以毫秒传入。
+
+`codec control not ready`、`codec control ready` 和 `codec control readiness timeout` 日志分别记录等待、恢复和耗尽 deadline。Host regression 覆盖连续 NACK/timeout 后恢复、永久无应答、tick rollover、正常热启动无额外延迟，以及首写和后续配置写入的真实错误。真机验收须分别覆盖断电后的首次 microphone/speaker 启动和保留供电的软件重启，不能用软件重启代替冷上电。
+
 ## Library 与 Third-party Integration
 
 不依赖最终 `sdkconfig.h`、IDF lifecycle 或 IDF-owned source selection 的 portable library，由最终 firmware entry 的唯一 `firmware_lib_component` 统一选择；runner 将其主 `.a` 与 `CcInfo` 传递静态依赖注册为单个 `h2_firmware_lib` component，并作为一个 rescan group 链接。依赖最终 IDF configuration 的 first-party source 由 `firmware_native_component` 声明，runner 为当前 action 生成 component directory/name/direct-source manifest，再由 `idf_component_register()` 在同一次 `idf.py build` 中编译。共享 archive import helper 位于 `native_component_src/esp-idf6.x/cmake/`。
@@ -162,7 +168,9 @@ DevKit `libco-smoke` 从 `projects/e2e/apps/libco` 编译 portable App，并直�
 
 `h2_audio_mixer`、`h2_bleikcp`、`h2_iostreamikcp`、`h2_pixa`、`h2_mp4_decoder`、`h2_tinyh264`、`h2_utils`、`h2_yyjson`、libco、PAL 和 CoreHTTP 等 portable libraries，都由消费它们的 firmware entry 在同一个 `firmware_lib_component` 中列举；跨平台 library package 和 `h2_pal_core` 不定义 image composition target。PIXA Games 不创建逐游戏 native component wrapper；project-owned game library 仍由对应 firmware entry 完成 archive handoff。静态 archive 只按最终链接中的真实未解析符号抽取 object，不使用全库 retention。`lvgl_port`、`h2_esp_audio_decoder`、`opus_port` 和 `zlib` 是 SDK-dependent source component，由相同 firmware graph 声明 direct source、header 与 metadata，并继续由 IDF 使用最终 configuration 编译。ESP32 的 AEC 由 `esp-sr` managed component 提供，不创建 SpeexDSP archive adapter。GizOS 的跨平台 API 仍然属于对应 library owner。
 
-ESP Net 的 UDP source-address bind 使用真实 lwIP `bind` 和 `getsockname`；失败时释放新 socket 并保持输出无有效 handle。Raw TLS 在握手时对每个 peer-chain certificate 使用校准后的 PAL wall time 校验有效期，即使 SDK 未启用内置日期检查或不保留完成后的 chain，`REQUIRED`/`DEFAULT` 也不能接受 expired/future certificate；时钟不可用时 fail closed。显式 `INSECURE_TEST_ONLY` 保持测试专用行为，无效 verify enum 返回 `INVALID_ARG`。独立 Net/TLS E2E 对已有 ICMP callback 执行真实 echo，不能将支持项标成未评估。
+ESP Net 的 UDP source-address bind 使用真实 lwIP `bind` 和 `getsockname`；失败时释放新 socket 并保持输出无有效 handle。Raw TLS 保留 ESP-IDF 在证书 bundle attach 时安装的验证 callback，由该 callback 继续决定 bundle membership、签名信任与 SDK flags，再对每个真实 peer-chain certificate 使用校准后的 PAL wall time 校验有效期，即使 SDK 未启用内置日期检查或不保留完成后的 chain，`REQUIRED`/`DEFAULT` 也不能接受 expired/future certificate；时钟不可用时 fail closed。ESP-IDF cross-signed bundle 的 CA lookup 可以生成只含 subject/SPKI、没有 DER 与有效期字段的信任锚；只有 bundle delegate 存在、depth 大于 0、raw 为空且两端 year 都为 0 的此类锚不重复添加日期错误，SDK 的未信任 flags 和 fatal result 始终保留，真实叶证书、intermediate 与显式 PEM CA 不使用该例外。校准时钟不可用仍失败。显式 `INSECURE_TEST_ONLY` 保持测试专用行为，无效 verify enum 返回 `INVALID_ARG`。独立 Net/TLS E2E 对已有 ICMP callback 执行真实 echo，不能将支持项标成未评估。
+
+使用默认证书包时，日期检查必须组合 `esp_crt_bundle_attach` 已安装的信任/签名回调，不能覆盖它。ESP bundle 的合成父证书只含 subject/public key，没有 DER 和有效期；只有经过原回调且 `depth > 0`、无 DER、两端年份均为零的合成父证书免于重复日期检查，仍保留其信任失败 flags。真实 leaf/intermediate、显式 CA 和所有已有验证失败保持严格校验。
 
 ## Build Validation
 
@@ -345,3 +353,14 @@ DevKit 的 `pal-storage` managed App 使用板载 Flash 上的 LittleFS 与独�
 Crypto 的 `random(NULL, 0)` 是成功 no-op；ESP adapter 在零长度时不调用要求非空 buffer 的 `esp_fill_random`，避免合法 PAL 边界触发 SDK assert。`pal-crypto` DevKit E2E 覆盖该边界并验证完整 15 操作 / 22 case，同一 App 还在其他五个平台执行。
 
 X25519 raw key agreement 对格式错误或低阶远端公钥的 PSA INVALID_ARGUMENT 转换为 PAL FORMAT；失败路径清零 shared-secret 输出，成功路径仍校验并拒绝全零 shared secret。
+
+
+### Flash-safe I/O 阶段诊断
+
+`H2_ESP_IO_PHASE_DIAGNOSTICS` 是默认 OFF 的原生 CMake 诊断选项。调用方需在最终 firmware rule 的 `cmake_variables` 逐项允许该名称，再用`--define=H2_ESP_IO_PHASE_DIAGNOSTICS=ON` 显式启用；portable `cc_test`的宏定义不代表 SDK image 已启用。OFF 时不编译计时字段、时钟读取或日志，不改变 worker 的 priority、core、stack、context 容量或 16 KiB scratch。
+
+ON 时只对至少 100 ms 的操作输出 `H2_ESP_IO_PHASE` 数值记录。FS 操作号1–14 依次是 mkdir/open/read/seek/write/sync/close/stat/remove/rename/mount/unmount/format/clear；Pref 操作号 1–8 是 prepare/get/set/remove/clear/list/write-marker/read-marker。记录不包含路径、namespace、key、值、buffer 内容或指针。时间以 boot monotonic 微秒表示，日志输出发生在终点取时之后、所有外层 FS/scratch 锁释放之后。
+
+`fs_wait_us`、`scratch_wait_us` 和 `shared_wait_us` 分别记录 FS mutex、scratch mutex 与共享 SafeCall mutex 的等待。`dispatch_us` 从 request 提交到 worker 开始 callback；`native_us` 是 callback 的 wall time，包含其内部stdio、pref store 与调度等待，并不是纯 flash 或 CPU 耗时。`wake_copy_us`从 callback 返回到 caller 收到完成信号，包含 context copy 和唤醒。`direct_calls` 区分 internal-stack 直接调用；它不经过共享 dispatcher。READ/WRITE 在保留原 4096-byte 分块与 scratch 持有范围的同时累加各块计数，`native_max_us` 保留最慢 callback。Pref 保留整个原 store 操作和原子写入步骤，不为计时拆分 transaction。Pref 数字从内部 I/O wrapper 开始，不包含其外层Preference provider mutex 等待；VFS 内部锁仍在 callback wall time 内。READ/WRITE 的 `wall_us` 从 scratch acquire 之前开始；其他 FS 操作从内部 `littlefs_run_safe` 开始，OPEN 之前的 path translation 与 file-wrapper calloc 不在其中。因此总 `wall_us` 不是完整 PAL Open 时间，还包括该计时范围内的初始化、普通拷贝与 wrapper 工作，不能把嵌套记录相加或据缺失的快记录推定操作未执行。
+
+这是定位工具；ON 的时钟和输出会影响调度，记录不是硬件资格结果。实际用例仍需保留完整 CASE、原门限、checked canonical 输出与真实 cleanup 证据。

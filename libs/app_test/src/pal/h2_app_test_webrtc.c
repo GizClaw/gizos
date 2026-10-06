@@ -6,6 +6,7 @@ typedef struct channel {
   peer_t *peer;
   h2_pal_webrtc_channel_t *delegate;
   struct channel *next;
+  bool created_locally;
 } channel_t;
 struct h2_app_test_webrtc {
   h2_pal_webrtc_api_t api;
@@ -107,6 +108,7 @@ peer_create_data_channel(h2_pal_webrtc_peer_t *peer,
       h2_pal_webrtc_channel_close(p->owner->delegate, raw);
       return H2_PAL_ERR_NO_MEMORY;
     }
+    channel->created_locally = true;
     *out = (h2_pal_webrtc_channel_t *)channel;
   }
   return rc;
@@ -228,4 +230,8 @@ h2_pal_result_t h2_app_test_webrtc_destroy(h2_app_test_webrtc_t *w) {
   h2_atomic_destroy(&w->events);
   h2_pal_mem_free(w->mem, w);
   return H2_PAL_OK;
+}
+
+bool h2_app_test_webrtc_channel_created_locally(const h2_pal_webrtc_channel_t *channel) {
+  return channel && ((const channel_t *)channel)->created_locally;
 }

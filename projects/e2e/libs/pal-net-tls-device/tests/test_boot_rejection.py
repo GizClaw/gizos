@@ -26,6 +26,12 @@ def log():
 class FreshBoot(unittest.TestCase):
     def test_complete(self):
         self.assertEqual(len(validation.parse(log(),'test-version','bk7258')['cases']),len(REGISTRY))
+    def test_private_esp_board_identity_is_exact(self):
+        text = log().replace('board=bk7258', 'board=zero_esp_v3_0')
+        self.assertEqual(len(validation.parse(text, 'test-version', 'zero_esp_v3_0')['cases']), len(REGISTRY))
+        with self.assertRaises(AssertionError):
+            validation.parse(text, 'test-version', 'devkit')
+
     def test_missing_execution_cannot_be_replay(self):
         text=log()
         for damaged in [text.replace('H2_PAL_NET_TLS_EXECUTION','REPLAY'),text+'\n'+text,

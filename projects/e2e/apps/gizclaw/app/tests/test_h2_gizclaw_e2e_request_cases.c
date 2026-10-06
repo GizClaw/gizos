@@ -40,7 +40,18 @@ enum {
   CANCEL_BUDGET_ERROR,
   WAIT_BUDGET_ERROR,
   SECOND_WAIT_BUDGET_ERROR,
-  NO_MEMORY
+  NO_MEMORY,
+  POLL_NEVER_EMPTY,
+  TIME_SYNC_ERROR,
+  TIME_SYNC_NO_ATTEMPT,
+  TIME_SYNC_BAD_STATE,
+  TIME_SYNC_FALSE_SUCCESS,
+  TIME_SYNC_FALSE_RETRY,
+  TIME_SYNC_UNSUPPORTED,
+  TIME_SYNC_RUNNING,
+  INPUT_SNAPSHOT_ERROR,
+  INPUT_STILL_ACTIVE,
+  INPUT_STALE_READY
 };
 
 static unsigned s_mode, s_dos, s_accepted, s_waits;
@@ -257,11 +268,51 @@ h2_pal_result_t h2_gizclaw_service_poll(h2_gizclaw_service_t *service,
                                         size_t maximum, size_t *out_count) {
   assert(service == (h2_gizclaw_service_t *)&s_service && maximum > 0u);
   ++s_polls;
-  *out_count = 0u;
+  *out_count = s_mode == POLL_OVERCOUNT ? maximum + 1u
+               : s_mode == POLL_NEVER_EMPTY ? maximum : 0u;
   if (s_mode == POLL_ERROR)
     return H2_PAL_ERR_IO;
   if (s_mode == HOLD_CALLBACK || s_mode == SLEEP_ERROR)
     return H2_PAL_OK;
+  return H2_PAL_OK;
+}
+
+h2_pal_result_t h2_gizclaw_service_get_time_sync_status(
+    h2_gizclaw_service_t *service, h2_gizclaw_time_sync_status_t *out) {
+  assert(service == (h2_gizclaw_service_t *)&s_service);
+  *out = (h2_gizclaw_time_sync_status_t){
+      .state = H2_GIZCLAW_TIME_SYNC_SUCCEEDED, .attempts = 1u,
+      .last_result = H2_PAL_OK};
+  switch (s_mode) {
+  case TIME_SYNC_ERROR: return H2_PAL_ERR_IO;
+  case TIME_SYNC_NO_ATTEMPT: out->attempts = 0u; break;
+  case TIME_SYNC_BAD_STATE: out->state = H2_GIZCLAW_TIME_SYNC_WAITING; break;
+  case TIME_SYNC_FALSE_SUCCESS: out->last_result = H2_PAL_ERR_IO; break;
+  case TIME_SYNC_FALSE_RETRY: out->state = H2_GIZCLAW_TIME_SYNC_RETRY; break;
+  case TIME_SYNC_UNSUPPORTED:
+    out->state = H2_GIZCLAW_TIME_SYNC_RETRY;
+    out->last_result = H2_PAL_ERR_UNSUPPORTED;
+    break;
+  case TIME_SYNC_RUNNING:
+    out->state = H2_GIZCLAW_TIME_SYNC_RUNNING;
+    out->last_result = H2_PAL_ERR_IO;
+    ++out->attempts;
+    break;
+  default: break;
+  }
+  return H2_PAL_OK;
+}
+
+h2_pal_result_t h2_gizclaw_service_audio_input_snapshot(
+    h2_gizclaw_service_t *service, h2_gizclaw_audio_input_state_t *out) {
+  assert(service == (h2_gizclaw_service_t *)&s_service);
+  *out = (h2_gizclaw_audio_input_state_t){.generation = 17u};
+  if (s_mode == INPUT_SNAPSHOT_ERROR) {
+    *out = (h2_gizclaw_audio_input_state_t){0};
+    return H2_PAL_ERR_IO;
+  }
+  out->active = s_mode == INPUT_STILL_ACTIVE;
+  out->ready = s_mode == INPUT_STALE_READY;
   return H2_PAL_OK;
 }
 
@@ -294,18 +345,16 @@ int main(int argc, char **argv) {
     puts("H2_GIZCLAW_E2E stage=coverage-begin case=service");
     assert(h2_gizclaw_e2e_run_service(&fixture) == H2_PAL_OK);
     assert(allocator.live_blocks == 0u);
-    size_t dispatched = 0u;
-    int poll_rc = h2_gizclaw_service_poll(fixture.actors[0].service, 1u,
-                                          &dispatched);
-    h2_gizclaw_e2e_evidence("h2_gizclaw_service_poll", "service", poll_rc);
-    h2_gizclaw_e2e_evidence("h2_gizclaw_service_poll",
-                            "service_poll-assert",
-                            poll_rc == H2_PAL_OK && dispatched == 0u
-                                ? H2_PAL_OK
-                                : H2_PAL_ERR_INVALID_STATE);
     puts("H2_GIZCLAW_E2E stage=coverage-end case=service status=PASS rc=0 "
          "cleanup_rc=0");
     return 0;
+  }
+  for (unsigned mode = INPUT_SNAPSHOT_ERROR; mode <= INPUT_STALE_READY; ++mode) {
+    reset(mode, false);
+    const int rc = h2_gizclaw_e2e_run_service(&fixture);
+    assert(rc == (mode == INPUT_SNAPSHOT_ERROR ? H2_PAL_ERR_IO
+                                               : H2_PAL_ERR_INVALID_STATE));
+    assert(allocator.live_blocks == 0u);
   }
   static const unsigned base_modes[] = {NORMAL, BAD_PROFILE, CREATE_ERROR,
                                         DO_ERROR, WAIT_ERROR, PARSE_ERROR};
@@ -325,7 +374,7 @@ int main(int argc, char **argv) {
               expected[index], rc);
     assert(rc == expected[index]);
     if (mode == NORMAL)
-      assert(s_waits == 2u && s_polls == 0u && s_cancels == 2u);
+      assert(s_waits == 2u && s_polls == 1u && s_cancels == 2u);
     assert(allocator.live_blocks == 0u);
   }
   const unsigned service_modes[] = {
@@ -357,6 +406,20 @@ int main(int argc, char **argv) {
       fprintf(stderr, "service mode=%u expected=%d actual=%d\n",
               service_modes[i], service_results[i], rc);
     assert(rc == service_results[i]);
+    assert(allocator.live_blocks == 0u);
+  }
+  const unsigned observation_modes[] = {
+      POLL_ERROR, POLL_OVERCOUNT, POLL_NEVER_EMPTY, TIME_SYNC_ERROR,
+      TIME_SYNC_NO_ATTEMPT, TIME_SYNC_BAD_STATE, TIME_SYNC_FALSE_SUCCESS,
+      TIME_SYNC_FALSE_RETRY, TIME_SYNC_UNSUPPORTED, TIME_SYNC_RUNNING};
+  const int observation_results[] = {
+      H2_PAL_ERR_IO, H2_PAL_ERR_INVALID_STATE, H2_PAL_ERR_TIMEOUT,
+      H2_PAL_ERR_IO, H2_PAL_ERR_INVALID_STATE, H2_PAL_ERR_INVALID_STATE,
+      H2_PAL_ERR_INVALID_STATE, H2_PAL_ERR_INVALID_STATE, H2_PAL_OK, H2_PAL_OK};
+  for (size_t i = 0; i < sizeof(observation_modes) / sizeof(observation_modes[0]); ++i) {
+    reset(observation_modes[i], false);
+    assert(h2_gizclaw_e2e_run_service(&fixture) == observation_results[i]);
+    assert(s_polls == (s_mode == POLL_NEVER_EMPTY ? 32u : 1u));
     assert(allocator.live_blocks == 0u);
   }
   reset(NORMAL, false);

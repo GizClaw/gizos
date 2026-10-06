@@ -48,6 +48,26 @@ def boot_ledger(text, ids, version, previous=None):
         return report
     raise AssertionError('missing complete fresh execution receipt')
 
+def package_identity(original, target):
+    plain = original if original.startswith(b'manifest\0') else zlib.decompress(original)
+    with tarfile.open(fileobj=io.BytesIO(plain), mode='r:') as tar:
+        manifest=dict(line.split('=',1) for line in tar.extractfile('manifest').read().decode().splitlines() if line)
+        if manifest.get('format') == '2':
+            assert tar.getnames() == ['manifest','data.tar.zlib','app.bin.zlib'], 'format-2 envelope'
+            compressed=tar.extractfile('app.bin.zlib').read()
+            assert len(compressed)==int(manifest['app_zlib_size'])
+            assert hashlib.sha256(compressed).hexdigest()==manifest['app_zlib_sha256']
+            image_bytes=zlib.decompress(compressed)
+        else:
+            assert manifest.get('format') == '1', 'unsupported package format'
+            image_members=[m for m in tar.getmembers() if m.name.startswith('app/') and m.isfile()]
+            assert len(image_members)==1, 'managed App image'
+            image_bytes=tar.extractfile(image_members[0]).read()
+        assert manifest.get('role')=='app' and manifest.get('target')==target
+        assert hashlib.sha256(image_bytes).hexdigest()==manifest['image_sha256']
+        assert len(image_bytes)==int(manifest['image_size'])
+        return manifest
+
 def main():
     package, cli, registry, target = map(str,sys.argv[1:])
     port=os.environ.get('H2_ATOMIC_DEVICE_PORT')
@@ -56,19 +76,12 @@ def main():
     ids=re.findall(r'H2_ATOMIC_CASE\("([^"]+)"',Path(registry).read_text())
     assert len(ids)==28 and len(set(ids))==28
     original=Path(package).read_bytes()
-    with tarfile.open(fileobj=io.BytesIO(zlib.decompress(original))) as tar:
-        manifest=dict(line.split('=',1) for line in tar.extractfile('manifest').read().decode().splitlines() if line)
-        image_members=[m for m in tar.getmembers() if m.name.startswith('app/') and m.isfile()]
-        assert len(image_members)==1, 'managed App image'
-        image_bytes=tar.extractfile(image_members[0]).read()
-        assert manifest.get('role')=='app' and manifest.get('target')==target
-        assert hashlib.sha256(image_bytes).hexdigest()==manifest['image_sha256']
-        assert len(image_bytes)==int(manifest['image_size'])
+    manifest=package_identity(original,target)
     version=manifest['version']
     output=Path(os.environ['TEST_UNDECLARED_OUTPUTS_DIR']);output.mkdir(exist_ok=True,parents=True)
     # Native CLI mounts /tmp and home. Keep readable CLI payloads under /tmp.
     with tempfile.TemporaryDirectory(prefix='atomic-device-',dir='/tmp') as directory:
-        local=Path(directory);image=local/'atomic.update.tar.zlib';image.write_bytes(original)
+        local=Path(directory);image=local/'atomic.update.tar';image.write_bytes(original)
         index=0
         def run(label,*args,timeout=180,monitor=False,previous=None):
             nonlocal index

@@ -153,6 +153,12 @@ int h2_esp_es8311_audio_system_deinit(
 /**
  * Initialize the codec and reserve both I2S DMA rings without starting the
  * microphone or speaker worker tasks.
+ *
+ * Blocking task-context call, serialized with all Audio PAL/lifecycle calls.
+ * Lazy prepare/start keeps PA and workers off while the initial ES8311 control
+ * write returns NACK/timeout, retrying within a 2 s control-readiness deadline.
+ * Ready hardware has no mandatory delay. Persistent non-response returns
+ * H2_AUDIO_ERR_IO; other SDK failures retain their mapped Audio result.
  */
 int h2_esp_es8311_audio_system_prepare(
     h2_esp_es8311_audio_system_t *system);

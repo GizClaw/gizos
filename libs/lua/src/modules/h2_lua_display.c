@@ -6,6 +6,8 @@
 #include "h2_lua_geometry_batches_internal.h"
 #include "h2_f32_math.h"
 #include "h2_lua_display_internal.h"
+#include "h2_lua_display_plan.h"
+#include "h2_lua_display_worker.h"
 
 #include <float.h>
 #include <limits.h>
@@ -89,16 +91,32 @@ typedef struct display_region_run {
 typedef struct display_region {
   int width, height, masked;
   uint16_t key;
-  size_t pixel_count, run_count;
+  /* Fixed storage capacities; rows describe the currently captured content. */
+  size_t pixel_capacity, run_capacity;
   /* Rows, compiled runs, pixels, then background damage bytes. */
   display_region_row_t rows[];
 } display_region_t;
 
 typedef struct display_presented {
   size_t pixel_count;
-  /* Full last-successful frame followed by one comparison byte per tile. */
+  /* Send buffer and successful baseline share pixels; pending contents are
+   * tentative. One comparison/iteration byte follows per tile. */
   uint16_t pixels[];
 } display_presented_t;
+
+typedef struct display_submission {
+  h2_lua_display_worker_t worker;
+  int closing, fault, inflight, changed, retained, preparing;
+  uint64_t submitted, completed, successful, changed_frames;
+  uint64_t started_us, completed_us;
+  int clock_valid;
+  size_t pixels, rects;
+} display_submission_t;
+
+static h2_pal_result_t display_submission_open(lua_State *state,
+                                               h2_lua_job_t *job);
+static h2_pal_result_t display_submission_release(lua_State *state,
+                                                  h2_lua_job_t *job);
 
 static size_t display_tile_count(int width, int height) {
   return (size_t)((width + 15) / 16) * (size_t)((height + 15) / 16);
@@ -109,11 +127,11 @@ static display_region_run_t *display_region_runs(display_region_t *region) {
 }
 
 static uint16_t *display_region_pixels(display_region_t *region) {
-  return (uint16_t *)(display_region_runs(region) + region->run_count);
+  return (uint16_t *)(display_region_runs(region) + region->run_capacity);
 }
 
 static uint8_t *display_region_damage(display_region_t *region) {
-  return (uint8_t *)(display_region_pixels(region) + region->pixel_count);
+  return (uint8_t *)(display_region_pixels(region) + region->pixel_capacity);
 }
 
 static void display_damage_rect(h2_lua_job_t *job, int left, int top,
@@ -138,43 +156,28 @@ static void display_dirty_full(h2_lua_job_t *job) {
 
 static h2_pal_result_t display_open(h2_lua_job_t *job) {
   size_t pixel_count;
-  h2_pal_result_t result;
   if (job->display_shutting_down)
     return H2_PAL_ERR_INVALID_STATE;
   if (job->display_open)
     return H2_PAL_OK;
-  if (!job->host->config.borrow_display) {
-    result =
-        (h2_pal_result_t)h2_pal_display_open(job->host->config.runtime->display);
-    if (result != H2_PAL_OK)
-      return result;
-  }
-  result = (h2_pal_result_t)h2_pal_display_get_info(
-      job->host->config.runtime->display, &job->display_info);
-  if (result != H2_PAL_OK || job->display_info.width <= 0 ||
-      job->display_info.height <= 0) {
-    if (!job->host->config.borrow_display)
-      (void)h2_pal_display_close(job->host->config.runtime->display);
-    return result == H2_PAL_OK ? H2_PAL_ERR_INVALID_STATE : result;
-  }
+  display_submission_t *submission = job->display_submission;
+  if (submission == NULL || submission->fault || submission->closing)
+    return H2_PAL_ERR_INVALID_STATE;
+  job->display_info = submission->worker.info;
+  if (job->display_info.width <= 0 || job->display_info.height <= 0)
+    return H2_PAL_ERR_INVALID_STATE;
   if ((size_t)job->display_info.width >
       SIZE_MAX / (size_t)job->display_info.height) {
-    if (!job->host->config.borrow_display)
-      (void)h2_pal_display_close(job->host->config.runtime->display);
     return H2_PAL_ERR_NO_SPACE;
   }
   pixel_count =
       (size_t)job->display_info.width * (size_t)job->display_info.height;
   if (pixel_count > SIZE_MAX / sizeof(*job->framebuffer)) {
-    if (!job->host->config.borrow_display)
-      (void)h2_pal_display_close(job->host->config.runtime->display);
     return H2_PAL_ERR_NO_SPACE;
   }
   job->framebuffer = h2_pal_mem_alloc(job->host->config.allocator,
                                       pixel_count * sizeof(*job->framebuffer));
   if (job->framebuffer == NULL) {
-    if (!job->host->config.borrow_display)
-      (void)h2_pal_display_close(job->host->config.runtime->display);
     return H2_PAL_ERR_NO_MEMORY;
   }
   memset(job->framebuffer, 0, pixel_count * sizeof(*job->framebuffer));
@@ -405,7 +408,12 @@ static void display_cache_record(display_span_cache_t *cache, int left,
       (display_cached_span_t){left, right, y, end_y, color};
 }
 
-static void display_raster_polygon_rect_capture(h2_lua_job_t *job, const double *x,
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+static void display_raster_polygon_rect_legacy(h2_lua_job_t *job, const double *x,
                                      const double *y, size_t count,
                                      uint16_t color, double offset,
                                      int top, int bottom, int clip_left,
@@ -471,6 +479,116 @@ static void display_raster_polygon_rect_capture(h2_lua_job_t *job, const double 
       }
     }
   }
+}
+
+typedef struct display_quad_scan_edge {
+  int first, end, vertical, floor_x, ceil_x;
+  float x, y, slope, error;
+} display_quad_scan_edge_t;
+
+/* Zero-offset quads with at most two crossings on every clipped integer row.
+ * This includes convex quads. Four-crossing rows keep the legacy even-odd
+ * path. Preserve its guarded float expression and exact double fallback;
+ * only the rounded span endpoints stay integer instead of becoming double
+ * intersections that are sorted and rounded again on every scanline. */
+static int display_raster_quad_capture(h2_lua_job_t *job, const double *x,
+    const double *y, uint16_t color, int top, int bottom, int clip_left,
+    int clip_right, display_span_cache_t *cache) {
+  int vertex_row[4], first = bottom, end = top;
+  display_quad_scan_edge_t edges[4];
+  for (int i = 0; i < 4; ++i) {
+    /* Bound integer conversion and span arithmetic; larger valid geometry
+     * still uses the original general polygon path. */
+    if (fabs(x[i]) > 1000000 || fabs(y[i]) > 1000000) return 0;
+    vertex_row[i] = (int)ceil(y[i]);
+    if (vertex_row[i] < first) first = vertex_row[i];
+    if (vertex_row[i] > end) end = vertex_row[i];
+  }
+  if (first < top) first = top;
+  if (end > bottom) end = bottom;
+  if (first >= end) return 1;
+  int four_first = first, four_end = end;
+  for (int i = 0; i < 4; ++i) {
+    int next = (i + 1) % 4;
+    display_quad_scan_edge_t *e = &edges[i];
+    e->first = vertex_row[i] < vertex_row[next] ? vertex_row[i] : vertex_row[next];
+    e->end = vertex_row[i] > vertex_row[next] ? vertex_row[i] : vertex_row[next];
+    if (e->first > four_first) four_first = e->first;
+    if (e->end < four_end) four_end = e->end;
+  }
+  /* Half-open edge incidence in a closed polygon is even. Excluding a row
+   * where all four edges meet therefore leaves only zero or two crossings. */
+  if (four_first < four_end) return 0;
+  for (int i = 0; i < 4; ++i) {
+    display_quad_scan_edge_t *e = &edges[i];
+    if (e->first >= e->end || e->first >= end || e->end <= first) continue;
+    int next = (i + 1) % 4;
+    e->vertical = x[i] == x[next];
+    if (e->vertical) {
+      e->floor_x = (int)floor(x[i]); e->ceil_x = (int)ceil(x[i]);
+    } else {
+      e->x = (float)x[i]; e->y = (float)y[i];
+      float dx = (float)x[next] - e->x, dy = (float)y[next] - e->y;
+      e->slope = fabsf(dy) < 1e-5f ? 0 : dx / dy;
+      e->error = fabsf(dy) < 1e-5f ? 1 :
+          32 * FLT_EPSILON * (fabsf(e->x) + fabsf(dx) *
+          (1 + (fabsf(e->y) + job->display_info.height) / fabsf(dy))) + 1e-7f;
+    }
+  }
+  for (int row = first; row < end; ++row) {
+    int used = 0, left = INT_MAX, right = INT_MIN;
+    for (int i = 0; i < 4; ++i) {
+      const display_quad_scan_edge_t *e = &edges[i];
+      if (row < e->first || row >= e->end) continue;
+      int floor_x = 0, ceil_x = 0;
+      if (e->vertical) {
+        floor_x = e->floor_x; ceil_x = e->ceil_x;
+      } else {
+        int accepted = 0;
+        if (e->error < .25f) {
+          float fast = e->x + ((float)row - e->y) * e->slope;
+          if (fast >= -2000000 && fast <= 2000000) {
+            /* Within this range every integer is exactly representable in
+             * float. Truncation plus sign correction equals floorf without
+             * a library call; the original fractional-error guard is intact. */
+            int whole = (int)fast;
+            floor_x = whole - (fast < (float)whole);
+            float fraction = fast - (float)floor_x;
+            if (fraction > e->error && fraction < 1 - e->error) {
+              ceil_x = floor_x + 1;
+              accepted = 1;
+            }
+          }
+        }
+        if (!accepted) {
+          int next = (i + 1) % 4;
+          double cross = x[i] + (row - y[i]) * (x[next] - x[i]) / (y[next] - y[i]);
+          floor_x = (int)floor(cross); ceil_x = (int)ceil(cross);
+        }
+      }
+      if (ceil_x < left) left = ceil_x;
+      if (floor_x > right) right = floor_x;
+      ++used;
+    }
+    if (used != 2) continue;
+    if (left < clip_left) left = clip_left;
+    if (right >= clip_right) right = clip_right - 1;
+    if (left <= right) {
+      fill_span(job, row, left, right, color);
+      mark_dirty_rect(job, left, row, right - left + 1, 1);
+      display_cache_record(cache, left, right, row, -1, color);
+    }
+  }
+  return 1;
+}
+
+static void display_raster_polygon_rect_capture(h2_lua_job_t *job, const double *x,
+    const double *y, size_t count, uint16_t color, double offset,
+    int top, int bottom, int clip_left, int clip_right, display_span_cache_t *cache) {
+  if (count == 4 && offset == 0 && display_raster_quad_capture(job, x, y,
+      color, top, bottom, clip_left, clip_right, cache)) return;
+  display_raster_polygon_rect_legacy(job, x, y, count, color, offset,
+                                    top, bottom, clip_left, clip_right, cache);
 }
 
 static void display_raster_polygon_rect(h2_lua_job_t *job, const double *x,
@@ -944,6 +1062,76 @@ static double display_quad_lerp(double origin, double delta, double t) {
   return origin + step;
 }
 
+/* A source U crop mapped to an already projected target quadrilateral.
+ * Ratio is the endpoint homogeneous depth last/first, both with one sign. */
+typedef struct display_quad_mapping {
+  double first, last, ratio;
+} display_quad_mapping_t;
+
+static double display_quad_map_u(const display_quad_mapping_t *mapping,
+                                 double u) {
+  if (u <= mapping->first) return 0;
+  if (u >= mapping->last) return 1;
+  double s = (u - mapping->first) / (mapping->last - mapping->first);
+  if (mapping->ratio == 1) return s;
+  /* Equivalent to s*r/(1+(r-1)*s), without overflow or cancellation of
+   * the denominator for extreme positive ratios. Endpoints stay exact. */
+  if (mapping->ratio >= 1)
+    return s / (s + (1 - s) / mapping->ratio);
+  volatile double scaled = s * mapping->ratio;
+  return scaled / ((1 - s) + scaled);
+}
+
+static void display_replay_quad_batch(h2_lua_job_t *job,
+    const display_quad_batch_t *batch, const uint16_t *colors,
+    const double corners[8], int top, int bottom,
+    const display_quad_mapping_t *mapping) {
+  double edges[8] = {0};
+  const display_quad_strip_t *previous = NULL;
+  for (size_t i = 0; i < batch->count; ++i) {
+    const display_quad_strip_t *strip = &batch->strips[i];
+    double left = strip->left, right = strip->right;
+    if (mapping != NULL) {
+      if (left < mapping->first) left = mapping->first;
+      if (right > mapping->last) right = mapping->last;
+      if (left >= right) continue;
+      left = display_quad_map_u(mapping, left);
+      right = display_quad_map_u(mapping, right);
+    }
+    if (previous == NULL || strip->patch != previous->patch ||
+        strip->top != previous->top || strip->bottom != previous->bottom) {
+      double patch[8];
+      memcpy(patch, corners, sizeof(patch));
+      if (strip->patch) {
+        for (int axis = 0; axis < 2; ++axis) {
+          double ad = corners[6 + axis] - corners[axis];
+          double bc = corners[4 + axis] - corners[2 + axis];
+          patch[axis] = display_quad_lerp(corners[axis], ad, strip->top);
+          patch[2 + axis] = display_quad_lerp(corners[2 + axis], bc, strip->top);
+          patch[4 + axis] = display_quad_lerp(corners[2 + axis], bc, strip->bottom);
+          patch[6 + axis] = display_quad_lerp(corners[axis], ad, strip->bottom);
+        }
+      }
+      for (int axis = 0; axis < 2; ++axis) {
+        edges[axis] = patch[axis];
+        edges[2 + axis] = patch[2 + axis] - patch[axis];
+        edges[4 + axis] = patch[6 + axis];
+        edges[6 + axis] = patch[4 + axis] - patch[6 + axis];
+      }
+    }
+    double xy[2][4];
+    for (int axis = 0; axis < 2; ++axis) {
+      xy[axis][0] = display_quad_lerp(edges[axis], edges[2 + axis], left);
+      xy[axis][1] = display_quad_lerp(edges[axis], edges[2 + axis], right);
+      xy[axis][2] = display_quad_lerp(edges[4 + axis], edges[6 + axis], right);
+      xy[axis][3] = display_quad_lerp(edges[4 + axis], edges[6 + axis], left);
+    }
+    display_raster_polygon(job, xy[0], xy[1], 4, colors[strip->color_index],
+                           0, top, bottom);
+    previous = strip;
+  }
+}
+
 static int display_draw_quad_batch(lua_State *state) {
   h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
   const display_quad_batch_t *batch =
@@ -980,43 +1168,439 @@ static int display_draw_quad_batch(lua_State *state) {
   display_check_clip(state, job, 11, 12, &top, &bottom);
   if (top == bottom)
     return 0;
-  double edges[8] = {0};
-  const display_quad_strip_t *previous = NULL;
+  display_replay_quad_batch(job, batch, colors, corners, top, bottom, NULL);
+  return 0;
+}
+
+/* Opt-in material: final painter-owned cells in parameter space.
+ * Old quad batches keep their original raster semantics. */
+#define DISPLAY_MATERIAL_META "h2.display.quad_material"
+#define DISPLAY_MATERIAL_KNOTS 32
+#define DISPLAY_MATERIAL_CELLS 256
+#define DISPLAY_MATERIAL_UNIT INT64_C(16777216)
+typedef struct display_material {
+  unsigned nu, nv;
+  /* Smallest rectangle containing all nontransparent parameter cells. */
+  unsigned u_first, u_end, v_first, v_end;
+  size_t color_count;
+  double u[DISPLAY_MATERIAL_KNOTS], v[DISPLAY_MATERIAL_KNOTS];
+  uint16_t owner[]; /* zero is transparent; other values are palette index + 1 */
+} display_material_t;
+
+/* Call-local strip scratch. Source intervals/depth ratio are identical for
+ * every face in one draw, while immutable materials may share their U knots. */
+typedef struct display_material_mapping {
+  const display_material_t *material;
+  double u[DISPLAY_MATERIAL_KNOTS];
+} display_material_mapping_t;
+
+static const double *display_material_map_u(const display_material_t *m,
+    const display_quad_mapping_t *mapping, display_material_mapping_t *cache) {
+  if (mapping == NULL) return NULL;
+  const display_material_t *previous = cache->material;
+  if (previous != m) {
+    if (previous == NULL || previous->nu != m->nu ||
+        memcmp(previous->u, m->u, m->nu * sizeof(*m->u)) != 0) {
+      for (unsigned i = 0; i < m->nu; ++i)
+        cache->u[i] = display_quad_map_u(mapping, m->u[i]);
+    }
+    cache->material = m;
+  }
+  return cache->u;
+}
+
+
+static unsigned material_knot(lua_State *state, double *knots,
+                              unsigned count, double value) {
+  unsigned at = 0;
+  while (at < count && knots[at] < value) ++at;
+  if (at < count && knots[at] == value) return count;
+  if (count == DISPLAY_MATERIAL_KNOTS)
+    luaL_error(state, "material has too many parameter boundaries");
+  memmove(knots + at + 1, knots + at, (count - at) * sizeof(double));
+  knots[at] = value;
+  return count + 1;
+}
+
+static int display_compile_quad_material(lua_State *state) {
+  const display_quad_batch_t *batch =
+      luaL_checkudata(state, 1, H2_LUA_QUAD_BATCH_META);
+  double u[DISPLAY_MATERIAL_KNOTS] = {0, 1};
+  double v[DISPLAY_MATERIAL_KNOTS] = {0, 1};
+  unsigned nu = 2, nv = 2;
   for (size_t i = 0; i < batch->count; ++i) {
-    const display_quad_strip_t *strip = &batch->strips[i];
-    if (previous == NULL || strip->patch != previous->patch ||
-        strip->top != previous->top || strip->bottom != previous->bottom) {
-      double patch[8];
-      memcpy(patch, corners, sizeof(patch));
-      if (strip->patch) {
-        for (int axis = 0; axis < 2; ++axis) {
-          double ad = corners[6 + axis] - corners[axis];
-          double bc = corners[4 + axis] - corners[2 + axis];
-          patch[axis] = display_quad_lerp(corners[axis], ad, strip->top);
-          patch[2 + axis] = display_quad_lerp(corners[2 + axis], bc, strip->top);
-          patch[4 + axis] = display_quad_lerp(corners[2 + axis], bc, strip->bottom);
-          patch[6 + axis] = display_quad_lerp(corners[axis], ad, strip->bottom);
+    const display_quad_strip_t *s = &batch->strips[i];
+    nu = material_knot(state, u, nu, s->left);
+    nu = material_knot(state, u, nu, s->right);
+    nv = material_knot(state, v, nv, s->top);
+    nv = material_knot(state, v, nv, s->bottom);
+  }
+  unsigned cells = (nu - 1) * (nv - 1);
+  if (cells > DISPLAY_MATERIAL_CELLS)
+    return luaL_error(state, "material has too many cells");
+  display_material_t *m = lua_newuserdatauv(state,
+      sizeof(*m) + cells * sizeof(*m->owner), 1);
+  m->nu = nu; m->nv = nv; m->color_count = batch->color_count;
+  m->u_first = nu - 1; m->v_first = nv - 1;
+  m->u_end = m->v_end = 0;
+  memcpy(m->u, u, nu * sizeof(double));
+  memcpy(m->v, v, nv * sizeof(double));
+  for (unsigned y = 0; y + 1 < nv; ++y) {
+    for (unsigned x = 0; x + 1 < nu; ++x) {
+      uint16_t owner = 0;
+      for (size_t i = 0; i < batch->count; ++i) {
+        const display_quad_strip_t *s = &batch->strips[i];
+        if (u[x] >= s->left && u[x + 1] <= s->right &&
+            v[y] >= s->top && v[y + 1] <= s->bottom)
+          owner = (uint16_t)(s->color_index + 1);
+      }
+      m->owner[y * (nu - 1) + x] = owner;
+      if (owner) {
+        if (x < m->u_first) m->u_first = x;
+        if (y < m->v_first) m->v_first = y;
+        if (x + 1 > m->u_end) m->u_end = x + 1;
+        if (y + 1 > m->v_end) m->v_end = y + 1;
+      }
+    }
+  }
+  lua_pushvalue(state, 1);
+  lua_setiuservalue(state, -2, 1); /* Original immutable batch for fallback. */
+  luaL_newmetatable(state, DISPLAY_MATERIAL_META);
+  lua_setmetatable(state, -2);
+  return 1;
+}
+
+typedef struct material_edge {
+  int32_t x, step;
+  uint32_t fraction, step_fraction;
+  int axis, direction, horizontal, row_switch;
+  unsigned boundary;
+} material_edge_t;
+typedef struct material_event { int x, edge; } material_event_t;
+
+static double material_cross(double ax, double ay, double bx, double by) {
+  return ax * by - ay * bx;
+}
+
+/* Split a signed Q24 value into floor(value) and an unsigned fraction.
+ * Division stays in setup. Row advances below are exact 32-bit additions. */
+static void material_split(int64_t value, int32_t *whole, uint32_t *fraction) {
+  int64_t integer = value / DISPLAY_MATERIAL_UNIT;
+  int64_t remainder = value % DISPLAY_MATERIAL_UNIT;
+  if (remainder < 0) { --integer; remainder += DISPLAY_MATERIAL_UNIT; }
+  *whole = (int32_t)integer;
+  *fraction = (uint32_t)remainder;
+}
+
+static void material_advance(material_edge_t *edge) {
+  uint32_t sum = edge->fraction + edge->step_fraction;
+  edge->x += edge->step + (int32_t)(sum >> 24);
+  edge->fraction = sum & UINT32_C(0xffffff);
+}
+
+/* Setup only: double coordinates, followed by Q24 additions per scanline.
+ * No per-pixel division, UV inversion, geometry expansion or allocation.
+ * The 1e9 envelope bounds whole coordinates/slopes (plus subpixel rounding),
+ * so signed 32-bit advances cannot overflow; two fractions sum below 2^25.
+ */
+static int material_prepare(const display_material_t *m, const double *c,
+                            int first, int end, material_edge_t *edges,
+                            unsigned char indices[2 * DISPLAY_MATERIAL_KNOTS],
+                            const display_quad_mapping_t *mapping,
+                            const double *mapped_u) {
+  double orientation = 0;
+  for (int i = 0; i < 4; ++i) {
+    int j = (i + 1) % 4, k = (i + 2) % 4;
+    double area = material_cross(c[2*j]-c[2*i], c[2*j+1]-c[2*i+1],
+                                c[2*k]-c[2*j], c[2*k+1]-c[2*j+1]);
+    if (fabs(area) < 1e-8 || (i && ((area > 0) != (orientation > 0)))) return 0;
+    orientation = area;
+  }
+  if (mapped_u != NULL) mapping = NULL;
+  unsigned used = 0;
+  for (int axis = 0; axis < 2; ++axis) {
+    unsigned count = axis ? m->nv : m->nu;
+    const double *knots = axis ? m->v : (mapped_u != NULL ? mapped_u : m->u);
+    int a = 0, b = axis ? 6 : 2, d = axis ? 2 : 6, e = 4;
+    double px_delta = c[b] - c[a], py_delta = c[b+1] - c[a+1];
+    double qx_delta = c[e] - c[d], qy_delta = c[e+1] - c[d+1];
+    int reverse = (orientation > 0) != (axis != 0);
+    double previous_t = -1;
+    for (unsigned i = 0; i < count; ++i) {
+      double t = knots[i];
+      if (axis == 0 && mapping != NULL)
+        t = display_quad_map_u(mapping, t);
+      material_edge_t *edge = &edges[used];
+      unsigned boundary = i == 0 ? (axis ? 4u : 1u) :
+                          i == count - 1 ? (axis ? 8u : 2u) : 0;
+      /* Equal mapped knots are one geometric event with multiplicity. The
+       * signed direction retains their original cell-count change; coincident
+       * transitions have no intervening pixels, including reverse edges. */
+      if (i && t == previous_t) {
+        edge = &edges[used - 1];
+        edge->direction += edge->direction > 0 ? 1 : -1;
+        edge->boundary |= boundary;
+        indices[(axis ? m->nu : 0) + i] = (unsigned char)(used - 1);
+        continue;
+      }
+      indices[(axis ? m->nu : 0) + i] = (unsigned char)used++;
+      previous_t = t;
+      double px = c[a], py = c[a+1], qx = c[d], qy = c[d+1];
+      /* t=0 adds only signed zero; no later sign test distinguishes it.
+       * Do not shortcut t=1: subtraction/addition rounding can differ. */
+      if (t != 0) {
+        px += t * px_delta; py += t * py_delta;
+        qx += t * qx_delta; qy += t * qy_delta;
+      }
+      double nx = -(qy - py), ny = qx - px;
+      if (reverse) { nx = -nx; ny = -ny; }
+      edge->axis = axis;
+      edge->boundary = boundary;
+      edge->row_switch = 0;
+      edge->horizontal = nx == 0;
+      if (edge->horizontal) {
+        edge->direction = ny > 0 ? 1 : -1;
+        edge->row_switch = ny > 0 ? (int)ceil(py) : (int)floor(py) + 1;
+        edge->x = edge->step = 0;
+        edge->fraction = edge->step_fraction = 0;
+      } else {
+        double step = -ny / nx;
+        double x = px - py * step;
+        if (!isfinite(x) || !isfinite(step) ||
+            fabs(x) + fabs(step) * (end + 1.0) > 1e9) return 0;
+        edge->direction = nx > 0 ? 1 : -1;
+        int64_t fixed_x = h2_lua_display_q24(x);
+        int64_t fixed_step = h2_lua_display_q24(step);
+        material_split(fixed_x + fixed_step * first, &edge->x, &edge->fraction);
+        material_split(fixed_step, &edge->step, &edge->step_fraction);
+      }
+    }
+  }
+  return (int)used;
+}
+
+/* First integer X after a sign transition. Match the original Q24 sweep,
+ * including negative coordinates and equality on decreasing boundaries. */
+static int material_threshold(const material_edge_t *edge) {
+  return edge->x + (edge->direction < 0 || edge->fraction != 0);
+}
+
+typedef struct material_clip {
+  unsigned char edge, positive;
+} material_clip_t;
+
+/* The support rectangle and outer half-planes do not change between rows.
+ * Cropped boundaries can coincide; retain opposite constraints, deduplicate
+ * only identical edge/sign pairs. */
+static unsigned material_prepare_clip(const display_material_t *m,
+    const unsigned char *indices, material_clip_t clip[8]) {
+  const unsigned boundaries[8] = {0, m->nu - 1, m->nu, m->nu + m->nv - 1,
+      m->u_first, m->u_end, m->nu + m->v_first, m->nu + m->v_end};
+  unsigned used = 0;
+  for (unsigned i = 0; i < 8; ++i) {
+    material_clip_t next = {indices[boundaries[i]], !(i & 1u)};
+    unsigned j = 0;
+    while (j < used && (clip[j].edge != next.edge ||
+                       clip[j].positive != next.positive)) ++j;
+    if (j == used) clip[used++] = next;
+  }
+  return used;
+}
+
+static int material_clip_row(const material_edge_t *edges,
+    const material_clip_t *clip, unsigned count, int y, int *left, int *right) {
+  for (unsigned i = 0; i < count; ++i) {
+    const material_edge_t *edge = &edges[clip[i].edge];
+    int positive = clip[i].positive;
+    if (edge->horizontal) {
+      int sign = edge->direction > 0 ? y >= edge->row_switch : y < edge->row_switch;
+      if (sign != positive) return 0;
+    } else {
+      int crossing = material_threshold(edge);
+      if ((edge->direction > 0) == positive) {
+        if (crossing > *left) *left = crossing;
+      } else if (crossing < *right) *right = crossing;
+      if (*left >= *right) return 0;
+    }
+  }
+  return 1;
+}
+
+/* Keep scan scratch out of the legacy fallback's call stack. */
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+static int display_raster_material(h2_lua_job_t *job,
+    const display_material_t *m, const uint16_t *colors,
+    const double corners[8], int top, int bottom,
+    const display_quad_mapping_t *mapping, const double *mapped_u) {
+  if (m->u_first >= m->u_end || m->v_first >= m->v_end) return 1;
+  material_edge_t edges[2 * DISPLAY_MATERIAL_KNOTS];
+  unsigned char indices[2 * DISPLAY_MATERIAL_KNOTS];
+  unsigned count = (unsigned)material_prepare(m, corners, top, bottom, edges,
+                                             indices, mapping, mapped_u);
+  if (count == 0) return 0;
+  material_clip_t clip[8];
+  unsigned clip_count = material_prepare_clip(m, indices, clip);
+  int width = job->display_info.width;
+  for (int y = top; y < bottom; ++y) {
+    int row_left = 0, row_right = width;
+    if (!material_clip_row(edges, clip, clip_count, y, &row_left, &row_right)) {
+      for (unsigned i = 0; i < count; ++i) material_advance(&edges[i]);
+      continue;
+    }
+    /* Inside a convex bilinear patch, positive-side boundary counts give
+     * the cell indices without inverting its rational parameter mapping.
+     * Infinite grid lines can meet outside the patch, so also track the four
+     * outer half-planes: u>=0, u<1, v>=0, v<1 is the bit pattern 0101. */
+    int cell[2] = {-1, -1};
+    unsigned mask = 0, used = 0;
+    material_event_t events[2 * DISPLAY_MATERIAL_KNOTS];
+    for (unsigned i = 0; i < count; ++i) {
+      material_edge_t *e = &edges[i];
+      int positive;
+      if (e->horizontal) {
+        positive = e->direction > 0 ? y >= e->row_switch : y < e->row_switch;
+      } else {
+        int crossing = material_threshold(e);
+        positive = e->direction > 0 ? crossing <= row_left : crossing > row_left;
+        if (crossing > row_left && crossing < row_right) {
+          unsigned at = used++;
+          while (at && events[at-1].x > crossing) {
+            events[at] = events[at-1]; --at;
+          }
+          events[at] = (material_event_t){(int)crossing, (int)i};
+        }
+        material_advance(e);
+      }
+      if (positive) cell[e->axis] += e->direction > 0 ? e->direction : -e->direction;
+      if (positive) mask |= e->boundary;
+    }
+    /* Coalesce damage only across consecutive painted spans. A positive-width
+     * transparent gap ends the run; coincident events do not create a gap. */
+    int left = row_left, pending_left = -1, pending_right = 0;
+    for (unsigned i = 0; i <= used; ++i) {
+      int right = i < used ? events[i].x : row_right;
+      if (left < right) {
+        unsigned owner = 0;
+        if (mask == 5u && cell[0] >= 0 && cell[1] >= 0 &&
+            cell[0] < (int)m->nu-1 && cell[1] < (int)m->nv-1)
+          owner = m->owner[cell[1] * (m->nu - 1) + cell[0]];
+        if (owner) {
+          fill_span(job, y, left, right-1, colors[owner-1]);
+          if (pending_left < 0) pending_left = left;
+          pending_right = right;
+        } else if (pending_left >= 0) {
+          mark_dirty_rect(job, pending_left, y, pending_right-pending_left, 1);
+          pending_left = -1;
         }
       }
-      for (int axis = 0; axis < 2; ++axis) {
-        edges[axis] = patch[axis];
-        edges[2 + axis] = patch[2 + axis] - patch[axis];
-        edges[4 + axis] = patch[6 + axis];
-        edges[6 + axis] = patch[4 + axis] - patch[6 + axis];
+      if (i < used) {
+        material_edge_t *e = &edges[events[i].edge];
+        cell[e->axis] += e->direction;
+        mask ^= e->boundary;
       }
+      left = right;
     }
-    double xy[2][4];
-    for (int axis = 0; axis < 2; ++axis) {
-      xy[axis][0] = display_quad_lerp(edges[axis], edges[2 + axis], strip->left);
-      xy[axis][1] = display_quad_lerp(edges[axis], edges[2 + axis], strip->right);
-      xy[axis][2] = display_quad_lerp(edges[4 + axis], edges[6 + axis], strip->right);
-      xy[axis][3] = display_quad_lerp(edges[4 + axis], edges[6 + axis], strip->left);
-    }
-    display_raster_polygon(job, xy[0], xy[1], 4, colors[strip->color_index],
-                           0, top, bottom);
-    previous = strip;
+    if (pending_left >= 0)
+      mark_dirty_rect(job, pending_left, y, pending_right-pending_left, 1);
   }
-  return 0;
+  return 1;
+}
+
+/* Shared scalar/strip dispatch. A NULL batch lets scalar callers fetch their
+ * Lua fallback reference only when the material path actually declines. */
+static int display_render_material(h2_lua_job_t *job,
+    const display_material_t *m, const display_quad_batch_t *batch,
+    const uint16_t *colors, const double corners[8], int top, int bottom,
+    const display_quad_mapping_t *mapping, const double *mapped_u,
+    int empty_source) {
+  int clip_top = top, clip_bottom = bottom;
+  double min_y = corners[1], max_y = corners[1];
+  for (int i = 3; i < 8; i += 2) {
+    if (corners[i] < min_y) min_y = corners[i];
+    if (corners[i] > max_y) max_y = corners[i];
+  }
+  if (min_y > top) top = min_y < bottom ? (int)ceil(min_y) : bottom;
+  /* A reversed V axis can include a vertex on the maximum integer row.
+   * The half-plane rule decides ownership there, not the bounding box. */
+  if (max_y < bottom) bottom = max_y >= top ? (int)floor(max_y) + 1 : top;
+  int rendered = empty_source || clip_top == clip_bottom ||
+      display_raster_material(job, m, colors, corners, top, bottom, mapping, mapped_u);
+  if (!rendered && batch != NULL) {
+    display_replay_quad_batch(job, batch, colors, corners, clip_top, clip_bottom,
+                              mapping);
+  }
+  return rendered;
+}
+
+static int display_draw_quad_material_impl(lua_State *state, int projective) {
+  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+  const display_material_t *m = luaL_checkudata(state, 1, DISPLAY_MATERIAL_META);
+  int required = projective ? 13 : 10;
+  if (lua_gettop(state) < required || lua_gettop(state) > required + 2)
+    return luaL_error(state, projective
+        ? "projective material needs colors, eight coordinates, source U bounds, depth ratio and optional row clip"
+        : "material needs colors, eight coordinates and row clip");
+  double corners[8];
+  for (int i = 0; i < 8; ++i) corners[i] = check_geometry_number(state, i + 3);
+  display_quad_mapping_t parameters;
+  const display_quad_mapping_t *mapping = NULL;
+  int empty_source = 0;
+  if (projective) {
+    parameters.first = luaL_checknumber(state, 11);
+    parameters.last = luaL_checknumber(state, 12);
+    parameters.ratio = luaL_checknumber(state, 13);
+    if (!isfinite(parameters.first) || !isfinite(parameters.last) ||
+        parameters.first < 0 || parameters.last > 1 ||
+        parameters.first > parameters.last)
+      return luaL_error(state, "material source U bounds must satisfy 0 <= first <= last <= 1");
+    if (!isfinite(parameters.ratio) || parameters.ratio <= 0)
+      return luaL_error(state, "material depth ratio must be finite and positive");
+    empty_source = parameters.first == parameters.last;
+    if (parameters.first != 0 || parameters.last != 1 || parameters.ratio != 1)
+      mapping = &parameters;
+  }
+  /* Palette decoding is identical to draw_quad_batch, including callbacks.
+   * Do it before checking framebuffer lifetime or writing any pixels. */
+  uint16_t decoded[H2_LUA_QUAD_BATCH_LIMIT];
+  const uint16_t *colors;
+  const display_palette_t *palette = luaL_testudata(state, 2, H2_LUA_PALETTE_META);
+  if (palette) {
+    if (palette->count < m->color_count) return luaL_error(state, "material palette too short");
+    colors = palette->colors;
+  } else {
+    luaL_checktype(state, 2, LUA_TTABLE);
+    size_t count = lua_rawlen(state, 2);
+    if (count < m->color_count || count > H2_LUA_QUAD_BATCH_LIMIT)
+      return luaL_error(state, "material color count out of range");
+    for (size_t i = 0; i < count; ++i) {
+      lua_rawgeti(state, 2, (lua_Integer)i + 1);
+      decoded[i] = check_color(state, -1); lua_pop(state, 1);
+    }
+    colors = decoded;
+  }
+  int top, bottom;
+  display_check_clip(state, job, required + 1, required + 2, &top, &bottom);
+  int rendered = display_render_material(job, m, NULL, colors, corners,
+                                        top, bottom, mapping, NULL, empty_source);
+  if (!rendered) {
+    lua_getiuservalue(state, 1, 1);
+    const display_quad_batch_t *batch = lua_touserdata(state, -1);
+    display_replay_quad_batch(job, batch, colors, corners, top, bottom, mapping);
+  }
+  lua_pushboolean(state, rendered);
+  return 1;
+}
+
+static int display_draw_quad_material(lua_State *state) {
+  return display_draw_quad_material_impl(state, 0);
+}
+
+static int display_draw_quad_material_projective(lua_State *state) {
+  return display_draw_quad_material_impl(state, 1);
 }
 
 /* One representation for Lua tables and allocation-free native updates. */
@@ -1287,8 +1871,50 @@ static h2_lua_display_vertex_t mesh_transform(
  * the maximum. Once a static mesh replays, the cache is reallocated to the
  * spans it actually produced. */
 #define MESH_SPAN_INITIAL_CAPACITY 512u
+#define MESH_SPAN_MIN_INITIAL_CAPACITY 16u
+#define MESH_SPAN_ESTIMATE_VERTICES 128u
 #define MESH_SPAN_CAPACITY 8192u
 #define MESH_SPAN_COMPACT_SLACK 256u
+
+/* Conservative record bound for an identity draw. A polygon emits at most
+ * floor(edges/2) spans per clipped integer row; a line records one command.
+ * Stop at the existing initial capacity and bound geometry inspection so
+ * large/complex meshes keep their old cold allocation and growth policy.
+ * This is only an allocation hint: finalizers may change the mesh/viewport
+ * afterward, and the existing overflow path still renders every primitive. */
+static size_t mesh_span_initial_capacity(h2_lua_display_mesh_t *mesh,
+                                          int top, int bottom) {
+  size_t records = 0, inspected = 0;
+  const h2_lua_display_vertex_t *vertices = mesh_vertices(mesh);
+  const h2_lua_display_primitive_t *primitives = mesh_primitives(mesh);
+  if (top == bottom) return MESH_SPAN_MIN_INITIAL_CAPACITY;
+  for (size_t i = 0; i < mesh->primitive_count; ++i) {
+    const h2_lua_display_primitive_t *p = &primitives[i];
+    if (p->kind == H2_LUA_DISPLAY_LINE) {
+      if (++records >= MESH_SPAN_INITIAL_CAPACITY) return MESH_SPAN_INITIAL_CAPACITY;
+      continue;
+    }
+    if (p->count > MESH_SPAN_ESTIMATE_VERTICES - inspected)
+      return MESH_SPAN_INITIAL_CAPACITY;
+    inspected += p->count;
+    double low = vertices[p->first].y, high = low;
+    for (size_t j = 1; j < p->count; ++j) {
+      double y = vertices[p->first + j].y;
+      if (y < low) low = y;
+      if (y > high) high = y;
+    }
+    double first = ceil(low), end = ceil(high);
+    if (first < top) first = top;
+    if (end > bottom) end = bottom;
+    if (first >= end) continue;
+    size_t rows = (size_t)(end - first), per_row = p->count / 2;
+    if (rows >= (MESH_SPAN_INITIAL_CAPACITY - records + per_row - 1) / per_row)
+      return MESH_SPAN_INITIAL_CAPACITY;
+    records += rows * per_row;
+  }
+  return records < MESH_SPAN_MIN_INITIAL_CAPACITY
+      ? MESH_SPAN_MIN_INITIAL_CAPACITY : records;
+}
 
 /* Mesh span snapshots follow the span array. Their lifetime is the cache
  * userdata's, independently of source updates or non-retained draws. */
@@ -1454,10 +2080,14 @@ static int display_draw_mesh(lua_State *state) {
     lua_getiuservalue(state, 1, 1);
     if (lua_isnil(state, -1)) {
       lua_pop(state, 1);
-      cache = lua_newuserdatauv(state, mesh_span_snapshot_offset(MESH_SPAN_INITIAL_CAPACITY) +
+      size_t initial_capacity = MESH_SPAN_INITIAL_CAPACITY;
+      if (identity && job->display_open && top >= 0 && top <= bottom &&
+          bottom <= job->display_info.height)
+        initial_capacity = mesh_span_initial_capacity(mesh, (int)top, (int)bottom);
+      cache = lua_newuserdatauv(state, mesh_span_snapshot_offset(initial_capacity) +
           mesh_span_snapshot_bytes(mesh), 0);
       memset(cache, 0, sizeof(*cache));
-      cache->capacity = MESH_SPAN_INITIAL_CAPACITY;
+      cache->capacity = initial_capacity;
       cache_at = lua_gettop(state);
       /* A finalizer may have installed a complete candidate during allocation.
        * Reuse it; do not overwrite it with the outer call's empty cache. */
@@ -2005,9 +2635,20 @@ typedef struct display_smooth_scratch {
   uint16_t pixels[];
 } display_smooth_scratch_t;
 
+typedef struct display_smooth_cache {
+  size_t count;
+  double offset, scale;
+  int top, bottom, width, height;
+  /* x[count], y[count], widths[count-1], then one coverage byte per pixel. */
+  double data[];
+} display_smooth_cache_t;
+
 static const char s_stroke_cache_key = 0, s_stroke_normals_key = 0;
+static const char s_smooth_cache_key = 0;
 #define H2_LUA_STROKE_META "h2.display.stroke"
 #define H2_LUA_NORMALS_META "h2.display.normals"
+#define H2_LUA_SMOOTH_META "h2.display.smooth"
+#define H2_LUA_SMOOTH_CACHE_LIMIT (16u * 1024u)
 
 static int display_optional_boolean(lua_State *state, int index) {
   if (!lua_isnoneornil(state, index)) luaL_checktype(state, index, LUA_TBOOLEAN);
@@ -2116,9 +2757,10 @@ static void display_stroke_simplify(display_stroke_data_t *path, double toleranc
   path->count = write + 1;
 }
 
-static void display_stroke_smooth(lua_State *state, h2_lua_job_t *job,
+static void display_smooth_bounds(h2_lua_job_t *job,
                                    const display_stroke_data_t *path,
-                                   double offset, int top, int bottom) {
+                                   double offset, int top, int bottom,
+                                   int *left, int *right, int *first, int *end) {
   double min_x = job->display_info.width, max_x = 0, min_y = bottom, max_y = top;
   for (size_t i = 0; i + 1 < path->count; ++i) {
     double radius = path->width[i] * .5 + 1;
@@ -2127,11 +2769,20 @@ static void display_stroke_smooth(lua_State *state, h2_lua_job_t *job,
     min_y = fmin(min_y, fmin(path->y[i], path->y[i+1]) - radius);
     max_y = fmax(max_y, fmax(path->y[i], path->y[i+1]) + radius);
   }
+  int width = job->display_info.width;
+  *left = (int)fmax(0, fmin(width, floor(min_x)));
+  *right = (int)fmax(0, fmin(width, ceil(max_x)));
+  *first = (int)fmax(top, fmin(bottom, floor(min_y)));
+  *end = (int)fmax(top, fmin(bottom, ceil(max_y)));
+}
+
+static void display_stroke_smooth(lua_State *state, h2_lua_job_t *job,
+                                   const display_stroke_data_t *path,
+                                   double offset, int top, int bottom,
+                                   uint8_t *capture) {
   int width = job->display_info.width, height = job->display_info.height;
-  int left = (int)fmax(0, fmin(width, floor(min_x)));
-  int right = (int)fmax(0, fmin(width, ceil(max_x)));
-  int first = (int)fmax(top, fmin(bottom, floor(min_y)));
-  int end = (int)fmax(top, fmin(bottom, ceil(max_y)));
+  int left, right, first, end;
+  display_smooth_bounds(job, path, offset, top, bottom, &left, &right, &first, &end);
   if (right <= left || end <= first) return;
   size_t stride = (size_t)(right - left);
   if ((size_t)(end - first) > SIZE_MAX / stride)
@@ -2196,11 +2847,100 @@ static void display_stroke_smooth(lua_State *state, h2_lua_job_t *job,
       if (alpha > coverage[at]) { coverage[at] = (uint8_t)alpha; ink[at] = path->color[i]; }
     }
   }
+  if (capture != NULL) {
+    memcpy(capture, coverage, count);
+    return;
+  }
   for (int y = first; y < end; ++y) for (int x = left; x < right; ++x) {
     size_t at = (size_t)(y-first)*stride + (size_t)(x-left);
     if (coverage[at]) blend_pixel(job, x, y, ink[at], coverage[at]);
   }
   mark_dirty_rect(job, left, first, right-left, end-first);
+}
+
+static void display_smooth_replay(h2_lua_job_t *job, const uint8_t *coverage,
+                                   int left, int right, int first, int end,
+                                   uint16_t color) {
+  size_t stride = (size_t)(right - left);
+  for (int y = first; y < end; ++y) for (int x = left; x < right; ++x) {
+    unsigned alpha = coverage[(size_t)(y - first) * stride + (size_t)(x - left)];
+    if (alpha) blend_pixel(job, x, y, color, alpha);
+  }
+  mark_dirty_rect(job, left, first, right - left, end - first);
+}
+
+/* Only single-color, unsimplified strokes enter this path. Keep the uncached
+ * raster as the cold/reference path; retain its quantized alpha, never ink or
+ * framebuffer pixels. Every allocation precedes that raster's first write. */
+static int display_stroke_smooth_cached(lua_State *state, h2_lua_job_t *job,
+                                        const display_stroke_data_t *path,
+                                        double offset, int top, int bottom,
+                                        double scale, uint16_t color) {
+  int width = job->display_info.width, height = job->display_info.height;
+  int left, right, first, end;
+  display_smooth_bounds(job, path, offset, top, bottom, &left, &right, &first, &end);
+  if (right <= left || end <= first) return 0;
+  size_t stride = (size_t)(right - left);
+  size_t key_bytes = (3u * path->count - 1u) * sizeof(double);
+  size_t header = sizeof(display_smooth_cache_t) + key_bytes;
+  /* Check before multiplying, including on 32-bit Hosts. The cap covers the
+   * complete userdata payload, not Lua/allocator bookkeeping or job scratch. */
+  if (header > H2_LUA_SMOOTH_CACHE_LIMIT ||
+      (size_t)(end - first) > (H2_LUA_SMOOTH_CACHE_LIMIT - header) / stride) {
+    display_stroke_smooth(state, job, path, offset, top, bottom, NULL);
+    return 0;
+  }
+  size_t count = stride * (size_t)(end - first);
+  lua_rawgetp(state, 2, &s_smooth_cache_key);
+  const display_smooth_cache_t *old =
+      luaL_testudata(state, -1, H2_LUA_SMOOTH_META);
+  size_t n = path->count;
+  if (old != NULL && old->count == n &&
+      !memcmp(&old->offset, &offset, sizeof(offset)) && old->scale == scale &&
+      old->top == top && old->bottom == bottom &&
+      old->width == width && old->height == height &&
+      !memcmp(old->data, path->x, n * sizeof(double)) &&
+      !memcmp(old->data + n, path->y, n * sizeof(double)) &&
+      !memcmp(old->data + 2u * n, path->width, (n - 1u) * sizeof(double))) {
+    const uint8_t *coverage = (const uint8_t *)old->data + key_bytes;
+    display_smooth_replay(job, coverage, left, right, first, end, color);
+    lua_pop(state, 1);
+    return 1;
+  }
+  lua_pop(state, 1);
+  display_smooth_cache_t *cache = lua_newuserdatauv(state, header + count, 0);
+  if (luaL_newmetatable(state, H2_LUA_SMOOTH_META)) {
+    lua_pushliteral(state, "display smooth coverage cache");
+    lua_setfield(state, -2, "__metatable");
+  }
+  lua_setmetatable(state, -2);
+  int staged = lua_gettop(state);
+  /* GC/finalizers can reenter, replace this owner's slot or close Display.
+   * Staging stays rooted and unpublished until coverage is complete. */
+  if (!job->display_open || job->display_info.width != width ||
+      job->display_info.height != height)
+    return luaL_error(state, "display changed during smooth cache allocation");
+  uint8_t *coverage = (uint8_t *)cache->data + key_bytes;
+  display_stroke_smooth(state, job, path, offset, top, bottom, coverage);
+  cache->count = n;
+  cache->offset = offset;
+  cache->scale = scale;
+  cache->top = top; cache->bottom = bottom;
+  cache->width = width; cache->height = height;
+  memcpy(cache->data, path->x, n * sizeof(double));
+  memcpy(cache->data + n, path->y, n * sizeof(double));
+  memcpy(cache->data + 2u * n, path->width, (n - 1u) * sizeof(double));
+  lua_pushvalue(state, staged);
+  /* First insertion may allocate, and finalizers may even remove a prior
+   * slot. Publish only complete data, before any writes; replay our rooted
+   * staging buffer, never the shared job scratch after this allocation. */
+  lua_rawsetp(state, 2, &s_smooth_cache_key);
+  if (!job->display_open || job->display_info.width != width ||
+      job->display_info.height != height)
+    return luaL_error(state, "display changed during smooth cache publication");
+  display_smooth_replay(job, coverage, left, right, first, end, color);
+  lua_pop(state, 1);
+  return 0;
 }
 
 static int display_stroke_path(lua_State *state) {
@@ -2277,9 +3017,14 @@ static int display_stroke_path(lua_State *state) {
   int top, bottom;
   display_check_clip(state, job, 5, 6, &top, &bottom);
   if (smooth) {
+    int hit = 0;
     if (tolerance > 0) display_stroke_simplify(&path, tolerance);
-    display_stroke_smooth(state, job, &path, offset, top, bottom);
-    lua_pushboolean(state, 0); lua_pushinteger(state, 0);
+    if (retain && !colors && tolerance == 0)
+      hit = display_stroke_smooth_cached(state, job, &path, offset, top, bottom,
+                                         scale, single);
+    else
+      display_stroke_smooth(state, job, &path, offset, top, bottom, NULL);
+    lua_pushboolean(state, hit); lua_pushinteger(state, 0);
     return 2;
   }
   display_stroke_cache_t *retained = NULL;
@@ -2411,6 +3156,262 @@ static int display_fill_rect(lua_State *state) {
   return 0;
 }
 
+/* Keep the original integer Bresenham phase. Clipping/re-rounding endpoints
+ * and restarting the walk would select different tie pixels. */
+static void display_raster_line_rows(h2_lua_job_t *job, int x0, int y0,
+    int x1, int y1, uint16_t color, int top, int bottom) {
+  int min_x = x0 < x1 ? x0 : x1, max_x = x0 > x1 ? x0 : x1;
+  int min_y = y0 < y1 ? y0 : y1, max_y = y0 > y1 ? y0 : y1;
+  if (max_x < 0 || min_x >= job->display_info.width ||
+      max_y < top || min_y >= bottom || top == bottom) return;
+  int64_t dx = llabs((int64_t)x1 - x0), dy = -llabs((int64_t)y1 - y0);
+  int sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+  int dirty_top = min_y < top ? top : min_y;
+  int dirty_bottom = max_y >= bottom ? bottom : max_y + 1;
+  mark_dirty_rect(job, min_x, dirty_top, (int)dx + 1, dirty_bottom - dirty_top);
+  int64_t error = dx + dy;
+  int x_major = dx >= -dy;
+  uint32_t remaining = (uint32_t)(x_major ? dx : -dy);
+  /* Within this bound k*minor + major/2 fits uint32. Larger valid lines retain
+   * the original walk, avoiding a 64-bit division helper on small targets. */
+  if (remaining != 0 && remaining <= UINT16_MAX) {
+    int origin = x_major ? x0 : y0, target = x_major ? x1 : y1;
+    int limit = x_major ? job->display_info.width : job->display_info.height;
+    int direction = x_major ? sx : sy;
+    uint32_t first = 0, last = remaining;
+    if (direction > 0) {
+      if (origin < 0) first = (uint32_t)(-(int64_t)origin);
+      if (target >= limit) last = (uint32_t)((int64_t)limit - 1 - origin);
+    } else {
+      if (origin >= limit) first = (uint32_t)((int64_t)origin - limit + 1);
+      if (target < 0) last = (uint32_t)origin;
+    }
+    if (first != 0) {
+      uint32_t major = remaining, minor = (uint32_t)(x_major ? -dy : dx);
+      /* After k major steps, minor steps are floor((k*minor+major/2)/major).
+       * Recover error from the remainder, never from a clipped endpoint. */
+      uint32_t numerator = first * minor + major / 2;
+      uint32_t advance = minor == 0 ? 0 : minor == major ? first : numerator / major;
+      int64_t delta = (int64_t)(numerator - advance * major) - major / 2;
+      if (x_major) {
+        x0 += (int)first * sx; y0 += (int)advance * sy; error -= delta;
+      } else {
+        x0 += (int)advance * sx; y0 += (int)first * sy; error += delta;
+      }
+    }
+    remaining = last - first;
+  }
+  for (;;) {
+    if (y0 >= top && y0 < bottom) write_pixel(job, x0, y0, color);
+    if (remaining == 0) break;
+    --remaining;
+    int64_t twice = 2 * error;
+    if (twice >= dy) { error += dy; x0 += sx; }
+    if (twice <= dx) { error += dx; y0 += sy; }
+  }
+}
+
+#define DISPLAY_MATERIAL_STRIP_META "h2.display.material_strip"
+
+typedef struct display_material_station {
+  double origin[2], delta[2], first[2], last[2];
+  int line[2];
+} display_material_station_t;
+
+typedef struct display_material_face {
+  const display_material_t *material;
+  const display_quad_batch_t *source;
+  const display_palette_t *palette;
+  unsigned line_index;
+} display_material_face_t;
+
+typedef struct display_material_strip {
+  size_t capacity, count;
+  int bound;
+  /* Stations followed by faces; references live in the userdata uservalues. */
+  display_material_station_t stations[];
+} display_material_strip_t;
+
+static display_material_face_t *display_strip_faces(display_material_strip_t *s) {
+  return (display_material_face_t *)(s->stations + s->capacity + 1);
+}
+
+_Static_assert(_Alignof(display_material_station_t) >=
+               _Alignof(display_material_face_t), "material strip alignment");
+
+static int display_material_strip_load(lua_State *state) {
+  /* A stack growth can run finalizers: do it before acquiring mutable state. */
+  luaL_checkstack(state, 8, "material strip load");
+  display_material_strip_t *s = luaL_checkudata(state, 1, DISPLAY_MATERIAL_STRIP_META);
+  lua_Integer count = luaL_checkinteger(state, 4);
+  if (count < 0 || count == 1 || (size_t)count > s->capacity + 1)
+    return luaL_error(state, "material strip station count out of range");
+  const double *first = display_f64(state, 2, 2 * (size_t)count);
+  const double *last = display_f64(state, 3, 2 * (size_t)count);
+  for (size_t i = 0; i < 2 * (size_t)count; ++i) {
+    if (!isfinite(first[i]) || fabs(first[i]) > 100000 ||
+        !isfinite(last[i]) || fabs(last[i]) > 100000)
+      return luaL_error(state, "material strip coordinate out of range");
+  }
+  size_t faces = count ? (size_t)count - 1 : 0;
+  if (faces != s->count) {
+    /* Invalidate styles on a topology change, releasing every old reference. */
+    for (size_t i = 0; i < 2 * s->count; ++i) {
+      lua_pushnil(state); lua_setiuservalue(state, 1, (int)i + 1);
+    }
+    memset(display_strip_faces(s), 0, s->capacity * sizeof(display_material_face_t));
+    s->bound = faces == 0;
+  }
+  for (size_t i = 0; i < (size_t)count; ++i) {
+    for (int axis = 0; axis < 2; ++axis) {
+      s->stations[i].origin[axis] = first[2*i + axis];
+      s->stations[i].delta[axis] = last[2*i + axis] - first[2*i + axis];
+    }
+  }
+  s->count = faces;
+  return 0;
+}
+
+static int display_material_strip_bind(lua_State *state) {
+  luaL_checkstack(state, 8, "material strip bind");
+  display_material_strip_t *s = luaL_checkudata(state, 1, DISPLAY_MATERIAL_STRIP_META);
+  luaL_checktype(state, 2, LUA_TTABLE); luaL_checktype(state, 3, LUA_TTABLE);
+  int lines = !lua_isnoneornil(state, 4);
+  if (lines) luaL_checktype(state, 4, LUA_TTABLE);
+  if (lua_rawlen(state, 2) != s->count || lua_rawlen(state, 3) != s->count ||
+      (lines && lua_rawlen(state, 4) != s->count))
+    return luaL_error(state, "material strip binding count mismatch");
+  /* Raw dense arrays and typed handles: no getters, allocations or callbacks
+   * in either pass. Complete validation precedes any reference replacement. */
+  for (size_t i = 0; i < s->count; ++i) {
+    lua_rawgeti(state, 2, (lua_Integer)i + 1);
+    const display_material_t *m = luaL_checkudata(state, -1, DISPLAY_MATERIAL_META);
+    lua_rawgeti(state, 3, (lua_Integer)i + 1);
+    const display_palette_t *p = luaL_checkudata(state, -1, H2_LUA_PALETTE_META);
+    if (p->count < m->color_count) return luaL_error(state, "material palette too short");
+    if (lines) {
+      lua_rawgeti(state, 4, (lua_Integer)i + 1);
+      lua_Integer index = luaL_checkinteger(state, -1);
+      if (index < 0 || (lua_Unsigned)index > p->count)
+        return luaL_error(state, "material strip line index out of range");
+      lua_pop(state, 1);
+    }
+    lua_pop(state, 2);
+  }
+  display_material_face_t *faces = display_strip_faces(s);
+  for (size_t i = 0; i < s->count; ++i) {
+    lua_rawgeti(state, 2, (lua_Integer)i + 1);
+    faces[i].material = lua_touserdata(state, -1);
+    lua_getiuservalue(state, -1, 1);
+    faces[i].source = lua_touserdata(state, -1); lua_pop(state, 1);
+    lua_setiuservalue(state, 1, 2 * (int)i + 1);
+    lua_rawgeti(state, 3, (lua_Integer)i + 1);
+    faces[i].palette = lua_touserdata(state, -1);
+    lua_setiuservalue(state, 1, 2 * (int)i + 2);
+    faces[i].line_index = 0;
+    if (lines) {
+      lua_rawgeti(state, 4, (lua_Integer)i + 1);
+      faces[i].line_index = (unsigned)lua_tointeger(state, -1); lua_pop(state, 1);
+    }
+  }
+  s->bound = 1;
+  return 0;
+}
+
+static int display_material_strip(lua_State *state) {
+  lua_Integer capacity = luaL_checkinteger(state, 1);
+  if (capacity < 0 || capacity > H2_LUA_QUAD_BATCH_LIMIT)
+    return luaL_error(state, "material strip capacity out of range");
+  /* Publish the metatable before allocating an object; partial/OOM creation
+   * has no raw allocation or registry root to reclaim. */
+  luaL_newmetatable(state, DISPLAY_MATERIAL_STRIP_META);
+  /* Also repair a metatable left by an earlier allocation failure. */
+  lua_pushcfunction(state, display_material_strip_load); lua_setfield(state, -2, "load");
+  lua_pushcfunction(state, display_material_strip_bind); lua_setfield(state, -2, "bind");
+  lua_pushvalue(state, -1); lua_setfield(state, -2, "__index");
+  size_t bytes = sizeof(display_material_strip_t) +
+      ((size_t)capacity + 1) * sizeof(display_material_station_t) +
+      (size_t)capacity * sizeof(display_material_face_t);
+  display_material_strip_t *s = lua_newuserdatauv(state, bytes, 2 * (int)capacity);
+  memset(s, 0, bytes); s->capacity = (size_t)capacity; s->bound = 1;
+  lua_pushvalue(state, -2); lua_setmetatable(state, -2);
+  return 1;
+}
+
+static int display_draw_material_strip(lua_State *state) {
+  luaL_checkstack(state, 8, "material strip draw");
+  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+  display_material_strip_t *s = luaL_checkudata(state, 1, DISPLAY_MATERIAL_STRIP_META);
+  if (lua_gettop(state) < 6 || lua_gettop(state) > 9)
+    return luaL_error(state, "material strip needs a,b,source U bounds,ratio and optional line t,row clip");
+  double a = luaL_checknumber(state, 2), b = luaL_checknumber(state, 3);
+  display_quad_mapping_t parameters = {luaL_checknumber(state, 4),
+      luaL_checknumber(state, 5), luaL_checknumber(state, 6)};
+  int lines = !lua_isnoneornil(state, 7);
+  double t = lines ? luaL_checknumber(state, 7) : 0;
+  if (!isfinite(a) || !isfinite(b) || a < 0 || a > 1 || b < 0 || b > 1 ||
+      (lines && (!isfinite(t) || t < fmin(a, b) || t > fmax(a, b))))
+    return luaL_error(state, "material strip interval out of range");
+  if (!isfinite(parameters.first) || !isfinite(parameters.last) ||
+      parameters.first < 0 || parameters.last > 1 || parameters.first > parameters.last ||
+      !isfinite(parameters.ratio) || parameters.ratio <= 0)
+    return luaL_error(state, "material strip source mapping out of range");
+  int top, bottom;
+  display_check_clip(state, job, 8, 9, &top, &bottom);
+  if (!s->bound) return luaL_error(state, "material strip requires bind after station count change");
+  display_material_face_t *faces = display_strip_faces(s);
+  /* Stage every station before the first framebuffer write. No subsequent
+   * operation allocates or reenters Lua, so this scratch has one owner. */
+  for (size_t i = 0; s->count && i <= s->count; ++i) {
+    display_material_station_t *v = &s->stations[i];
+    int need_line = lines && ((i && faces[i-1].line_index) ||
+                               (i < s->count && faces[i].line_index));
+    for (int axis = 0; axis < 2; ++axis) {
+      v->first[axis] = display_quad_lerp(v->origin[axis], v->delta[axis], a);
+      v->last[axis] = display_quad_lerp(v->origin[axis], v->delta[axis], b);
+      if (!isfinite(v->first[axis]) || fabs(v->first[axis]) > 100000 ||
+          !isfinite(v->last[axis]) || fabs(v->last[axis]) > 100000)
+        return luaL_error(state, "material strip generated coordinate out of range");
+      if (need_line) {
+        double value = floor(display_quad_lerp(v->origin[axis], v->delta[axis], t));
+        if (!isfinite(value) || value < INT_MIN || value > INT_MAX)
+          return luaL_error(state, "material strip line endpoint out of range");
+        v->line[axis] = (int)value;
+      }
+    }
+    if (need_line && !point_is_bounded(job, v->line[0], v->line[1]))
+      return luaL_error(state, "material strip line endpoint out of range");
+  }
+  const display_quad_mapping_t *mapping = parameters.first == 0 &&
+      parameters.last == 1 && parameters.ratio == 1 ? NULL : &parameters;
+  int fast = 0, fallback = 0;
+  display_material_mapping_t cache;
+  cache.material = NULL;
+  for (size_t i = 0; i < s->count; ++i) {
+    const display_material_station_t *v = &s->stations[i], *w = v + 1;
+    const display_material_face_t *f = &faces[i];
+    /* Empty support is still a fast face with an independent optional line.
+     * Keep the preceding nonempty face's U cache after the full preflight. */
+    int rendered = 1;
+    if (f->material->u_first < f->material->u_end &&
+        f->material->v_first < f->material->v_end) {
+      double corners[8] = {v->first[0],v->first[1],v->last[0],v->last[1],
+                          w->last[0],w->last[1],w->first[0],w->first[1]};
+      const double *mapped_u = parameters.first == parameters.last ? NULL :
+          display_material_map_u(f->material, mapping, &cache);
+      rendered = display_render_material(job, f->material, f->source,
+          f->palette->colors, corners, top, bottom, mapping, mapped_u,
+          parameters.first == parameters.last);
+    }
+    fast += rendered; fallback += !rendered;
+    if (lines && f->line_index)
+      display_raster_line_rows(job, v->line[0], v->line[1], w->line[0], w->line[1],
+                              f->palette->colors[f->line_index-1], top, bottom);
+  }
+  lua_pushinteger(state, fast); lua_pushinteger(state, fallback);
+  return 2;
+}
+
 static int display_draw_line(lua_State *state) {
   h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
   int x0 = check_pixel_number(state, 1);
@@ -2418,38 +3419,11 @@ static int display_draw_line(lua_State *state) {
   int x1 = check_pixel_number(state, 3);
   int y1 = check_pixel_number(state, 4);
   uint16_t color = check_color(state, 5);
-  int64_t dx;
-  int64_t dy;
-  int64_t error;
-  int sx;
-  int sy;
   if (!job->display_open || !point_is_bounded(job, x0, y0) ||
-      !point_is_bounded(job, x1, y1)) {
+      !point_is_bounded(job, x1, y1))
     return luaL_error(state, "invalid draw_line");
-  }
-  dx = llabs((int64_t)x1 - x0);
-  sx = x0 < x1 ? 1 : -1;
-  dy = -llabs((int64_t)y1 - y0);
-  sy = y0 < y1 ? 1 : -1;
-  mark_dirty_rect(job, x0 < x1 ? x0 : x1, y0 < y1 ? y0 : y1, (int)dx + 1,
-                  (int)(-dy) + 1);
-  error = dx + dy;
-  for (;;) {
-    int64_t twice;
-    write_pixel(job, x0, y0, color);
-    if (x0 == x1 && y0 == y1) {
-      break;
-    }
-    twice = 2 * error;
-    if (twice >= dy) {
-      error += dy;
-      x0 += sx;
-    }
-    if (twice <= dx) {
-      error += dx;
-      y0 += sy;
-    }
-  }
+  display_raster_line_rows(job, x0, y0, x1, y1, color,
+                           0, job->display_info.height);
   return 0;
 }
 
@@ -2999,8 +3973,8 @@ static display_region_t *display_new_region(lua_State *state, int width,
   region->height = height;
   region->masked = masked;
   region->key = key;
-  region->pixel_count = pixels;
-  region->run_count = runs;
+  region->pixel_capacity = pixels;
+  region->run_capacity = runs;
   lua_pushvalue(state, -2);
   lua_setmetatable(state, -2);
   lua_remove(state, -2);
@@ -3135,6 +4109,100 @@ static void display_check_capture(lua_State *state, h2_lua_job_t *job,
     luaL_error(state, "invalid capture region or closed display");
 }
 
+/* Scan current pixels without allocating or retaining a framebuffer pointer. */
+static void display_masked_counts(const uint16_t *pixels, int stride,
+    int width, int height, uint16_t key, size_t *packed, size_t *runs) {
+  *packed = *runs = 0;
+  for (int row = 0; row < height; ++row) {
+    const uint16_t *line = pixels + (size_t)row * stride;
+    int left = 0, right = width;
+    while (left < right && line[left] == key) ++left;
+    while (right > left && line[right - 1] == key) --right;
+    *packed += (size_t)(right - left);
+    for (int col = left; col < right; ++col)
+      if (line[col] != key && (col == left || line[col - 1] == key)) ++*runs;
+  }
+}
+
+/* No allocation/callback: validate each write against the counted capacity.
+ * A finalizer may have changed content during allocation, even with identical
+ * framebuffer address/dimensions. Return false for any changed counted total;
+ * the caller discards the private partial result and takes a stable snapshot.
+ * Keep key pixels inside row bounds for opaque/different-key replay. */
+static int display_pack_masked(display_region_t *region,
+    const uint16_t *pixels, int stride, size_t pixel_count, size_t run_count) {
+  size_t offset = 0, run_index = 0;
+  uint16_t *packed = display_region_pixels(region);
+  display_region_run_t *runs = display_region_runs(region);
+  for (int row = 0; row < region->height; ++row) {
+    const uint16_t *line = pixels + (size_t)row * stride;
+    int left = 0, right = region->width;
+    while (left < right && line[left] == region->key) ++left;
+    while (right > left && line[right - 1] == region->key) --right;
+    size_t length = (size_t)(right - left);
+    if (length > region->pixel_capacity - offset) return 0;
+    display_region_row_t *r = &region->rows[row];
+    *r = (display_region_row_t){offset, run_index, left, right, 0};
+    memcpy(packed + offset, line + left, length * sizeof(uint16_t));
+    offset += length;
+    for (int col = left; col < right;) {
+      if (line[col] == region->key) { ++col; continue; }
+      int first = col++;
+      while (col < right && line[col] != region->key) ++col;
+      if (run_index == region->run_capacity) return 0;
+      runs[run_index++] = (display_region_run_t){(uint16_t)first, (uint16_t)col};
+      ++r->run_count;
+    }
+  }
+  return offset == pixel_count && run_index == run_count;
+}
+
+static int display_capture_masked(lua_State *state, h2_lua_job_t *job,
+    int x, int y, int width, int height, uint16_t key, display_region_t *reuse) {
+  size_t packed, runs;
+  display_masked_counts(job->framebuffer + (size_t)y * job->display_info.width + x,
+      job->display_info.width, width, height, key, &packed, &runs);
+  if (reuse != NULL && packed <= reuse->pixel_capacity &&
+      runs <= reuse->run_capacity) {
+    /* Same-sized rows and fixed storage offsets remain valid after shrinking.
+     * Counting through packing cannot allocate, call Lua or run a finalizer,
+     * so the validated source and both capacities cannot change mid-update. */
+    lua_pushvalue(state, 6);
+    if (!display_pack_masked(reuse,
+        job->framebuffer + (size_t)y * job->display_info.width + x,
+        job->display_info.width, packed, runs))
+      return luaL_error(state, "inconsistent capture snapshot");
+    return 1;
+  }
+  /* Insufficient capacity leaves the old region intact, including on OOM. */
+  display_region_t *region = display_new_region(state, width, height,
+                                                packed, runs, 1, key);
+  /* Allocation may close, resize or reacquire Display. Always fetch the current
+   * framebuffer and stride after validation, including when its address was
+   * recycled; no pre-allocation pointer is used by the packing pass. */
+  display_check_capture(state, job, x, y, width, height);
+  if (display_pack_masked(region,
+      job->framebuffer + (size_t)y * job->display_info.width + x,
+      job->display_info.width, packed, runs)) return 1;
+  lua_pop(state, 1);
+
+  /* Bounded fallback: the previous snapshot path. Allocation can run more
+   * finalizers; revalidate before copying, then pack only immutable VM data.
+   * No retry loop, persistent cache, external allocation or GC suppression. */
+  uint16_t *captured = lua_newuserdatauv(state,
+      (size_t)width * height * sizeof(uint16_t), 0);
+  display_check_capture(state, job, x, y, width, height);
+  for (int row = 0; row < height; ++row)
+    memcpy(captured + (size_t)row * width,
+        job->framebuffer + (size_t)(row + y) * job->display_info.width + x,
+        (size_t)width * sizeof(uint16_t));
+  display_masked_counts(captured, width, width, height, key, &packed, &runs);
+  region = display_new_region(state, width, height, packed, runs, 1, key);
+  if (!display_pack_masked(region, captured, width, packed, runs))
+    return luaL_error(state, "inconsistent capture snapshot");
+  return 1;
+}
+
 static int display_capture_region(lua_State *state) {
   h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
   int x = display_integer(state, 1, -1, 0, 100000);
@@ -3145,67 +4213,30 @@ static int display_capture_region(lua_State *state) {
   uint16_t key = masked ? check_color(state, 5) : 0;
   display_region_t *reuse = lua_isnoneornil(state, 6) ? NULL :
       luaL_checkudata(state, 6, H2_LUA_DISPLAY_REGION_META);
-  if (reuse != NULL && (masked || reuse->masked || reuse->width != width ||
-                        reuse->height != height))
-    return luaL_error(state, "region reuse requires matching opaque storage");
+  if (reuse != NULL && (reuse->masked != masked || reuse->width != width ||
+                        reuse->height != height || (masked && reuse->key != key)))
+    return luaL_error(state, "region reuse requires matching size and color key");
   display_check_capture(state, job, x, y, width, height);
+  if (masked)
+    return display_capture_masked(state, job, x, y, width, height, key, reuse);
   size_t count = (size_t)width * height;
   display_region_t *region = reuse;
-  uint16_t *captured;
-  if (masked) {
-    captured = lua_newuserdatauv(state, count * sizeof(uint16_t), 0);
-  } else {
-    if (region == NULL)
-      region = display_new_region(state, width, height, count, 0, 0, 0);
-    else
-      lua_pushvalue(state, 6);
-    captured = display_region_pixels(region);
-  }
+  if (region == NULL)
+    region = display_new_region(state, width, height, count, 0, 0, 0);
+  else
+    lua_pushvalue(state, 6);
   /* Allocation may run arbitrary finalizers, including deinit/reacquire. */
   display_check_capture(state, job, x, y, width, height);
-  for (int row = 0; row < height; ++row)
+  uint16_t *captured = display_region_pixels(region);
+  for (int row = 0; row < height; ++row) {
     memcpy(captured + (size_t)row * width,
            job->framebuffer + (size_t)(row + y) * job->display_info.width + x,
            (size_t)width * sizeof(uint16_t));
-  if (masked) {
-    size_t packed = 0, runs = 0;
-    for (int row = 0; row < height; ++row) {
-      const uint16_t *line = captured + (size_t)row * width;
-      int left = 0, right = width;
-      while (left < right && line[left] == key) ++left;
-      while (right > left && line[right - 1] == key) --right;
-      packed += (size_t)(right - left);
-      for (int col = left; col < right; ++col)
-        if (line[col] != key && (col == left || line[col - 1] == key)) ++runs;
-    }
-    region = display_new_region(state, width, height, packed, runs, 1, key);
-    size_t offset = 0, run_index = 0;
-    for (int row = 0; row < height; ++row) {
-      const uint16_t *line = captured + (size_t)row * width;
-      int left = 0, right = width;
-      while (left < right && line[left] == key) ++left;
-      while (right > left && line[right - 1] == key) --right;
-      display_region_row_t *r = &region->rows[row];
-      *r = (display_region_row_t){offset, run_index, left, right, 0};
-      memcpy(display_region_pixels(region) + offset, line + left,
-             (size_t)(right - left) * sizeof(uint16_t));
-      offset += (size_t)(right - left);
-      for (int col = left; col < right;) {
-        if (line[col] == key) { ++col; continue; }
-        int first = col++;
-        while (col < right && line[col] != key) ++col;
-        display_region_runs(region)[run_index++] =
-            (display_region_run_t){(uint16_t)first, (uint16_t)col};
-        ++r->run_count;
-      }
-    }
-  } else {
-    for (int row = 0; row < height; ++row)
-      region->rows[row] = (display_region_row_t){(size_t)row * width, 0,
-                                                0, width, 0};
-    if (job->display_background == region)
-      job->display_background_valid = 0;
+    region->rows[row] = (display_region_row_t){(size_t)row * width, 0,
+                                              0, width, 0};
   }
+  if (job->display_background == region)
+    job->display_background_valid = 0;
   return 1;
 }
 
@@ -3305,7 +4336,7 @@ static int display_restore_background(lua_State *state) {
   uint16_t *pixels = display_region_pixels(region);
   uint8_t *damage = display_region_damage(region);
   if (!job->display_background_valid) {
-    memcpy(job->framebuffer, pixels, region->pixel_count * sizeof(uint16_t));
+    memcpy(job->framebuffer, pixels, region->pixel_capacity * sizeof(uint16_t));
     display_dirty_full(job);
   } else {
     int columns = (region->width + 15) / 16;
@@ -3405,144 +4436,374 @@ static void display_enable_retained(lua_State *state, h2_lua_job_t *job) {
     luaL_unref(state, LUA_REGISTRYINDEX, ref);
     luaL_error(state, "display changed while enabling retained mode");
   }
-  /* GC may have installed another baseline; detach it before publishing ours. */
+  /* Guarded first use publishes the sole send/baseline buffer. */
   display_release_presented(state, job);
   job->display_presented = frame;
   job->display_presented_ref = ref;
 }
 
-static h2_pal_result_t display_submit_rect(h2_lua_job_t *job, int x, int y,
-                                           int width, int height,
-                                           size_t *pixels, size_t *rects) {
-  h2_display_rect_t rect = {x, y, width, height};
-  if (job->display_presented != NULL) job->display_presented_valid = 0;
-  h2_pal_result_t result = (h2_pal_result_t)h2_pal_display_draw_bitmap(
-      job->host->config.runtime->display, &rect,
-      job->framebuffer + (size_t)y * job->display_info.width + x,
-      (size_t)job->display_info.width * sizeof(uint16_t), H2_DISPLAY_PIXEL_RGB565);
-  if (result == H2_PAL_OK) {
-    *pixels += (size_t)width * height;
-    ++*rects;
-    display_presented_t *frame = job->display_presented;
-    if (frame != NULL) {
-      /* Tentative until present succeeds. Failure forces a complete retry. */
-      for (int row = y; row < y + height; ++row) {
-        size_t at = (size_t)row * job->display_info.width + x;
-        memcpy(frame->pixels + at, job->framebuffer + at,
-               (size_t)width * sizeof(uint16_t));
-      }
-    }
-  }
-  return result;
-}
-
-static int display_tile_changed(h2_lua_job_t *job, display_presented_t *frame,
-                                 int tx, int ty) {
-  int width = job->display_info.width, height = job->display_info.height;
-  int x = tx * 16, y = ty * 16;
-  int right = x + 16 < width ? x + 16 : width;
-  int bottom = y + 16 < height ? y + 16 : height;
-  for (; y < bottom; ++y) {
-    size_t at = (size_t)y * width + x;
-    if (memcmp(job->framebuffer + at, frame->pixels + at,
-               (size_t)(right - x) * sizeof(uint16_t)) != 0) return 1;
-  }
+static int display_allocate_send_buffer(lua_State *state) {
+  display_enable_retained(state, lua_touserdata(state, 1));
   return 0;
 }
 
-static h2_pal_result_t display_submit_retained(h2_lua_job_t *job, int bounds,
-                                               int gap, size_t *pixels,
-                                               size_t *rects) {
+static h2_pal_result_t display_submission_fault(h2_lua_job_t *job,
+                                                 h2_pal_result_t error) {
+  display_submission_t *submission = job->display_submission;
+  if (!submission->fault) submission->fault = error;
+  job->display_presented_valid = job->display_background_valid = 0;
+  if (job->display_open) display_dirty_full(job);
+  return (h2_pal_result_t)submission->fault;
+}
+
+static h2_pal_result_t display_submission_wait(display_submission_t *submission) {
+  /* A failed wake can leave COPYING/PENDING forever. The fault proves that
+   * synchronous reuse must fail without waiting for an unobservable worker. */
+  if (submission->fault) return (h2_pal_result_t)submission->fault;
+  if (!submission->worker.initialized)
+    return submission->fault ? submission->fault : H2_PAL_ERR_INVALID_STATE;
+  while (h2_lua_display_worker_phase(&submission->worker) == H2_LUA_DISPLAY_COPYING ||
+         h2_lua_display_worker_phase(&submission->worker) == H2_LUA_DISPLAY_PENDING) {
+    h2_pal_result_t result = h2_pal_time_sleep_ms(submission->worker.runtime->time, 1);
+    if (result != H2_PAL_OK) return result;
+  }
+  int phase = h2_lua_display_worker_phase(&submission->worker);
+  return phase < 0 ? (h2_pal_result_t)phase : H2_PAL_OK;
+}
+
+static h2_pal_result_t display_submission_create(lua_State *state,
+                                                 h2_lua_job_t *job) {
+  if (job->display_submission != NULL) return H2_PAL_OK;
+  display_submission_t *submission = lua_newuserdatauv(state, sizeof(*submission), 0);
+  memset(submission, 0, sizeof(*submission));
+  int ref = luaL_ref(state, LUA_REGISTRYINDEX);
+  /* Allocation/finalizers can close Display. Do not resurrect teardown. */
+  if (!job->display_lease || job->display_shutting_down ||
+      job->display_submission != NULL) {
+    luaL_unref(state, LUA_REGISTRYINDEX, ref);
+    return H2_PAL_ERR_INVALID_STATE;
+  }
+  h2_pal_result_t result = h2_lua_display_worker_init(&submission->worker,
+      job->host->config.runtime, job->host->config.allocator,
+      job->host->config.borrow_display,
+      job->host->config.display_worker_stack_size);
+  if (result != H2_PAL_OK) {
+    if (submission->worker.initialized) {
+      job->display_submission = submission;
+      job->display_submission_ref = ref;
+      return display_submission_fault(job, result);
+    }
+    luaL_unref(state, LUA_REGISTRYINDEX, ref);
+    return result;
+  }
+  job->display_submission = submission;
+  job->display_submission_ref = ref;
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t display_submission_open(lua_State *state,
+                                               h2_lua_job_t *job) {
+  if (job->display_shutting_down) return H2_PAL_ERR_INVALID_STATE;
+  if (job->display_submission != NULL) {
+    display_submission_t *submission = job->display_submission;
+    return submission->fault || submission->closing ? H2_PAL_ERR_INVALID_STATE : H2_PAL_OK;
+  }
+  if (!job->display_lease) {
+    int expected = 0;
+    if (!h2_atomic_compare_exchange_strong(&job->host->display_active, &expected, 1))
+      return H2_PAL_ERR_BUSY;
+    job->display_lease = 1;
+  }
+  h2_pal_result_t result = display_submission_create(state, job);
+  if (result != H2_PAL_OK) return result;
+  display_submission_t *submission = job->display_submission;
+  result = h2_lua_display_worker_post(&submission->worker, H2_LUA_DISPLAY_OPEN);
+  if (result == H2_PAL_OK) result = display_submission_wait(submission);
+  if (result == H2_PAL_OK) result = submission->worker.result;
+  if (h2_lua_display_worker_phase(&submission->worker) == H2_LUA_DISPLAY_DONE)
+    h2_lua_display_worker_ack(&submission->worker);
+  if (result != H2_PAL_OK) return display_submission_fault(job, result);
+  return result;
+}
+
+/* Owner-only completion collection. The worker never touches the VM or dirty
+ * state; in particular, completing N cannot clear drawing performed for N+1. */
+static h2_pal_result_t display_submission_collect(h2_lua_job_t *job) {
+  display_submission_t *submission = job->display_submission;
+  if (submission == NULL) return H2_PAL_OK;
+  h2_lua_display_worker_t *worker = &submission->worker;
+  if (!worker->initialized) return submission->fault ? submission->fault : H2_PAL_OK;
+  int phase = h2_lua_display_worker_phase(worker);
+  if (phase < 0) return display_submission_fault(job, (h2_pal_result_t)phase);
+  if (phase == H2_LUA_DISPLAY_COPYING || phase == H2_LUA_DISPLAY_PENDING)
+    return submission->fault ? submission->fault : H2_PAL_ERR_BUSY;
+  if (phase == H2_LUA_DISPLAY_EXITED && submission->inflight) {
+    return display_submission_fault(job,
+        worker->fault ? worker->fault : H2_PAL_ERR_IO);
+  }
+  if (phase == H2_LUA_DISPLAY_DONE && submission->inflight) {
+    submission->inflight = 0;
+    submission->completed = submission->submitted;
+    submission->pixels = worker->sent_pixels;
+    submission->rects = worker->sent_rects;
+    submission->started_us = worker->started_us;
+    submission->completed_us = worker->completed_us;
+    submission->clock_valid = worker->clock_valid;
+    if (worker->result != H2_PAL_OK || submission->fault) {
+      (void)display_submission_fault(job,
+          worker->result != H2_PAL_OK ? worker->result : submission->fault);
+    } else {
+      ++submission->successful;
+      if (submission->changed) ++submission->changed_frames;
+      display_presented_t *frame = job->display_presented;
+      if (frame != NULL) job->display_presented_valid = 1;
+    }
+    h2_lua_display_worker_ack(worker);
+  }
+  return submission->fault ? submission->fault : H2_PAL_OK;
+}
+
+static h2_pal_result_t display_submission_prepare(lua_State *state,
+    h2_lua_job_t *job, int default_retained, size_t *pixels, size_t *rects) {
+  if (!lua_isnoneornil(state, 1)) luaL_checktype(state, 1, LUA_TTABLE);
+  int retained = display_boolean_option(state, "retained", default_retained);
+  int bounds = display_boolean_option(state, "bounds", 0);
+  int tiles_only = display_boolean_option(state, "tiles", 0);
+  display_option(state, "merge_gap");
+  int gap = display_integer(state, -1, 0, 0, 8);
+  lua_pop(state, 1);
+  h2_pal_result_t result = display_submission_collect(job);
+  if (result != H2_PAL_OK) return result;
+  if (!job->display_open || job->display_shutting_down) return H2_PAL_ERR_INVALID_STATE;
+  if (job->display_submission == NULL) return H2_PAL_ERR_INVALID_STATE;
+  display_submission_t *submission = job->display_submission;
+  if (submission->closing || submission->fault) return H2_PAL_ERR_INVALID_STATE;
+  if (submission->preparing) return H2_PAL_ERR_BUSY;
+  /* Finalizers can submit/close/reopen while first-use storage is allocated.
+   * Root the old context and verify its sequence before publishing any plan. */
+  lua_rawgeti(state, LUA_REGISTRYINDEX, job->display_submission_ref);
+  uint64_t sequence = submission->submitted;
+  if (submission->submitted == (uint64_t)LUA_MAXINTEGER) return H2_PAL_ERR_NO_SPACE;
+  if (job->display_presented == NULL) {
+    /* A finalizer must not allocate a second B or replace the active root.
+     * Protect allocation so OOM also clears the guard before propagating. */
+    submission->preparing = 1;
+    lua_pushcfunction(state, display_allocate_send_buffer);
+    lua_pushlightuserdata(state, job);
+    int status = lua_pcall(state, 1, 0, 0);
+    submission->preparing = 0;
+    if (status != LUA_OK) return lua_error(state);
+  }
+  if (job->display_submission != submission || !job->display_open ||
+      submission->closing || job->display_shutting_down)
+    return H2_PAL_ERR_INVALID_STATE;
+  result = display_submission_collect(job);
+  if (result != H2_PAL_OK) return result;
+  if (submission->submitted != sequence) return H2_PAL_ERR_BUSY;
   display_presented_t *frame = job->display_presented;
-  int width = job->display_info.width, height = job->display_info.height;
-  int columns = (width + 15) / 16, rows = (height + 15) / 16;
-  uint8_t *changed = (uint8_t *)(frame->pixels + frame->pixel_count);
-  memset(changed, 0, (size_t)columns * rows);
-  int left = columns, top = rows, right = 0, bottom = 0;
-  /* Finish every comparison before touching the backend or baseline. */
-  if (job->dirty_valid) {
-    for (int ty = job->dirty_min_y / 16; ty <= job->dirty_max_y / 16; ++ty) {
-      for (int tx = job->dirty_min_x / 16; tx <= job->dirty_max_x / 16; ++tx) {
-        if (!display_tile_changed(job, frame, tx, ty)) continue;
-        changed[(size_t)ty * columns + tx] = 1;
-        if (tx < left) left = tx;
-        if (ty < top) top = ty;
-        if (tx + 1 > right) right = tx + 1;
-        if (ty + 1 > bottom) bottom = ty + 1;
-      }
+  lua_rawgeti(state, LUA_REGISTRYINDEX, job->display_presented_ref);
+  size_t size = frame->pixel_count * sizeof(uint16_t);
+  h2_lua_display_worker_t *worker = &submission->worker;
+  worker->plan.count = 0;
+  worker->tiled = 0;
+  worker->gap = gap;
+  worker->source = job->framebuffer;
+  worker->pixels = frame->pixels;
+  worker->tiles = (uint8_t *)(frame->pixels + frame->pixel_count);
+  uint8_t *planning_tiles = worker->tiles;
+  submission->changed = !job->display_presented_valid ||
+      memcmp(job->framebuffer, frame->pixels, size) != 0;
+  /* Switching retained policy refreshes the full baseline, as present did. */
+  if (!job->display_presented_valid || retained != submission->retained) {
+    worker->plan.count = 1;
+    worker->plan.rects[0] = (h2_lua_display_plan_rect_t){0, 0,
+        (uint16_t)job->display_info.width, (uint16_t)job->display_info.height};
+  } else if (job->dirty_valid) {
+    h2_lua_display_plan_rect_t dirty = {(uint16_t)job->dirty_min_x,
+        (uint16_t)job->dirty_min_y, (uint16_t)(job->dirty_max_x + 1),
+        (uint16_t)(job->dirty_max_y + 1)};
+    if (retained) {
+      worker->tiled = !h2_lua_display_plan_select(&worker->plan, job->framebuffer,
+          frame->pixels, job->display_info.width, job->display_info.height,
+          dirty, gap, planning_tiles, bounds, tiles_only);
+    } else {
+      worker->plan.count = 1;
+      worker->plan.rects[0] = dirty;
     }
   }
-  if (right == 0) return H2_PAL_OK;
-  if (bounds) {
-    int r = right * 16 < width ? right * 16 : width;
-    int b = bottom * 16 < height ? bottom * 16 : height;
-    return display_submit_rect(job, left * 16, top * 16,
-                               r - left * 16, b - top * 16, pixels, rects);
-  }
-  for (int ty = top; ty < bottom; ++ty) {
-    for (int tx = left; tx < right; ++tx) {
-      if (!changed[(size_t)ty * columns + tx]) continue;
-      int end_x = tx + 1;
-      for (int x = end_x; x < right && x - end_x <= gap; ++x)
-        if (changed[(size_t)ty * columns + x]) end_x = x + 1;
-      int end_y = ty + 1;
-      for (int y = end_y; y < bottom && y - end_y <= gap; ++y) {
-        int any = 0;
-        for (int x = tx; x < end_x; ++x) any |= changed[(size_t)y * columns + x];
-        if (any) end_y = y + 1;
-      }
-      for (int y = ty; y < end_y; ++y)
-        memset(changed + (size_t)y * columns + tx, 0, (size_t)(end_x - tx));
-      int r = end_x * 16 < width ? end_x * 16 : width;
-      int b = end_y * 16 < height ? end_y * 16 : height;
-      h2_pal_result_t result = display_submit_rect(job, tx * 16, ty * 16,
-          r - tx * 16, b - ty * 16, pixels, rects);
-      if (result != H2_PAL_OK) return result;
+  *pixels = *rects = 0;
+  if (worker->tiled) {
+    int cursor = 0;
+    h2_lua_display_plan_rect_t rect;
+    while (h2_lua_display_plan_next_tile(planning_tiles, worker->info.width,
+        worker->info.height, gap, &cursor, &rect)) {
+      *pixels += (size_t)(rect.right - rect.left) * (rect.bottom - rect.top);
+      ++*rects;
+    }
+    for (size_t i = 0; i < display_tile_count(worker->info.width, worker->info.height); ++i)
+      worker->tiles[i] &= 1;
+  } else {
+    for (int i = 0; i < worker->plan.count; ++i) {
+      h2_lua_display_plan_rect_t rect = worker->plan.rects[i];
+      *pixels += (size_t)(rect.right - rect.left) * (rect.bottom - rect.top);
+      ++*rects;
     }
   }
+  ++submission->submitted;
+  submission->inflight = 1;
+  submission->retained = retained;
+  result = h2_lua_display_worker_post(worker, H2_LUA_DISPLAY_FRAME);
+  if (result == H2_PAL_OK) {
+    /* Keep A stable only for the worker copy. Once PENDING is published, Lua
+     * may draw A while the worker submits B, without a third full frame. */
+    while (h2_lua_display_worker_phase(worker) == H2_LUA_DISPLAY_COPYING) {
+      result = h2_pal_time_sleep_ms(worker->runtime->time, 1);
+      if (result != H2_PAL_OK) break;
+    }
+    int phase = h2_lua_display_worker_phase(worker);
+    if (result == H2_PAL_OK && phase < 0) result = (h2_pal_result_t)phase;
+  }
+  if (result != H2_PAL_OK) {
+    (void)display_submission_fault(job, result);
+    /* Wake/sleep failure cannot prove that copying stopped. Freeze drawing
+     * and retain both buffers until checked teardown or external recovery. */
+    job->display_open = 0;
+    job->display_shutting_down = 1;
+    return result;
+  }
+  job->dirty_valid = 0;
+  return H2_PAL_OK;
+}
+
+static int display_submission_error(lua_State *state, h2_pal_result_t result) {
+  lua_pushnil(state);
+  lua_pushinteger(state, result);
+  return 2;
+}
+
+static int display_submit(lua_State *state) {
+  luaL_checkstack(state, 12, "display submit");
+  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+  size_t pixels, rects;
+  h2_pal_result_t result = display_submission_prepare(state, job, 1, &pixels, &rects);
+  if (result != H2_PAL_OK) return display_submission_error(state, result);
+  display_submission_t *submission = job->display_submission;
+  lua_pushinteger(state, (lua_Integer)submission->submitted);
+  lua_pushinteger(state, (lua_Integer)pixels);
+  lua_pushinteger(state, (lua_Integer)rects);
+  return 3;
+}
+
+static int display_status(lua_State *state) {
+  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+  h2_pal_result_t result = display_submission_collect(job);
+  display_submission_t value = {0};
+  int busy = 0;
+  if (job->display_submission != NULL) {
+    display_submission_t *source = job->display_submission;
+    value.submitted = source->submitted;
+    value.completed = source->completed;
+    value.successful = source->successful;
+    value.changed_frames = source->changed_frames;
+    value.started_us = source->started_us;
+    value.completed_us = source->completed_us;
+    value.clock_valid = source->clock_valid;
+    value.pixels = source->pixels;
+    value.rects = source->rects;
+    value.fault = source->fault;
+    value.closing = source->closing;
+    if (source->worker.initialized) {
+      int phase = h2_lua_display_worker_phase(&source->worker);
+      busy = phase == H2_LUA_DISPLAY_COPYING || phase == H2_LUA_DISPLAY_PENDING;
+    }
+  }
+  /* Copy completed scalar fields before table allocation can run finalizers. */
+  lua_createtable(state, 0, 12);
+#define STATUS_INT(key, number) do { lua_pushinteger(state, (lua_Integer)(number)); \
+  lua_setfield(state, -2, key); } while (0)
+  STATUS_INT("submitted", value.submitted);
+  STATUS_INT("completed", value.completed);
+  STATUS_INT("successful", value.successful);
+  STATUS_INT("changed_frames", value.changed_frames);
+  STATUS_INT("started_us", value.started_us);
+  STATUS_INT("completed_us", value.completed_us);
+  STATUS_INT("pixels", value.pixels);
+  STATUS_INT("rects", value.rects);
+  STATUS_INT("error", value.fault ? value.fault : (result == H2_PAL_ERR_BUSY ? 0 : result));
+#undef STATUS_INT
+  lua_pushboolean(state, busy);
+  lua_setfield(state, -2, "busy");
+  lua_pushboolean(state, value.clock_valid);
+  lua_setfield(state, -2, "clock_valid");
+  lua_pushboolean(state, value.closing);
+  lua_setfield(state, -2, "closing");
+  lua_pushstring(state, "transport");
+  lua_setfield(state, -2, "completion_kind");
+  return 1;
+}
+
+static int display_flush(lua_State *state) {
+  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+  h2_pal_result_t result = display_submission_collect(job);
+  if (result != H2_PAL_OK) return display_submission_error(state, result);
+  return display_status(state);
+}
+
+static h2_pal_result_t display_submission_release(lua_State *state,
+                                                  h2_lua_job_t *job) {
+  display_submission_t *submission = job->display_submission;
+  if (submission == NULL) return H2_PAL_OK;
+  if (submission->preparing) return H2_PAL_ERR_BUSY;
+  submission->closing = 1;
+  h2_pal_result_t result = display_submission_collect(job);
+  if (submission->worker.initialized &&
+      (h2_lua_display_worker_phase(&submission->worker) == H2_LUA_DISPLAY_COPYING ||
+       h2_lua_display_worker_phase(&submission->worker) == H2_LUA_DISPLAY_PENDING))
+    return submission->fault ? submission->fault : H2_PAL_ERR_BUSY;
+  h2_lua_display_worker_t *worker = &submission->worker;
+  if (worker->initialized) {
+    int phase = h2_lua_display_worker_phase(worker);
+    if (phase == H2_LUA_DISPLAY_DONE) {
+      if (worker->result != H2_PAL_OK)
+        (void)display_submission_fault(job, worker->result);
+      h2_lua_display_worker_ack(worker);
+      phase = H2_LUA_DISPLAY_IDLE;
+    }
+    if (phase == H2_LUA_DISPLAY_IDLE) {
+      /* Faulted backends are not retried or closed speculatively. Exit the
+       * task, but retain the VM and Display lease for external recovery. */
+      int operation = !submission->fault && worker->opened
+          ? H2_LUA_DISPLAY_CLOSE : H2_LUA_DISPLAY_EXIT;
+      result = h2_lua_display_worker_post(worker, operation);
+      if (result != H2_PAL_OK) return display_submission_fault(job, result);
+    }
+    result = h2_lua_display_worker_join(worker);
+    if (result != H2_PAL_OK)
+      return submission->fault ? (h2_pal_result_t)submission->fault : result;
+  }
+  if (worker->fault) (void)display_submission_fault(job, worker->fault);
+  if (submission->fault) return submission->fault;
+  int ref = job->display_submission_ref;
+  job->display_submission = NULL;
+  job->display_submission_ref = 0;
+  luaL_unref(state, LUA_REGISTRYINDEX, ref);
   return H2_PAL_OK;
 }
 
 static int display_present(lua_State *state) {
   h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
-  if (!lua_isnoneornil(state, 1)) luaL_checktype(state, 1, LUA_TTABLE);
-  int retained = display_boolean_option(state, "retained", job->display_presented != NULL);
-  int bounds = display_boolean_option(state, "bounds", 0);
-  display_option(state, "merge_gap");
-  int gap = display_integer(state, -1, 0, 0, 8);
-  lua_pop(state, 1);
-  if (!job->display_open) return luaL_error(state, "display is not open");
-  if (retained && job->display_presented == NULL) display_enable_retained(state, job);
-  else if (!retained && job->display_presented != NULL) {
-    display_release_presented(state, job);
-    display_dirty_full(job);
-  }
+  display_submission_t *submission = job->display_submission;
+  if (submission == NULL || !job->display_open)
+    return luaL_error(state, "display is not open");
+  h2_pal_result_t result = display_submission_wait(submission);
   size_t pixels = 0, rects = 0;
-  h2_pal_result_t result = H2_PAL_OK;
-  if (retained && !job->display_presented_valid)
-    result = display_submit_rect(job, 0, 0, job->display_info.width,
-                                 job->display_info.height, &pixels, &rects);
-  else if (retained)
-    result = display_submit_retained(job, bounds, gap, &pixels, &rects);
-  else if (job->dirty_valid)
-    result = display_submit_rect(job, job->dirty_min_x, job->dirty_min_y,
-        job->dirty_max_x - job->dirty_min_x + 1,
-        job->dirty_max_y - job->dirty_min_y + 1, &pixels, &rects);
-  if (result == H2_PAL_OK) {
-    result = (h2_pal_result_t)h2_pal_display_present(
-        job->host->config.runtime->display);
-  }
-  if (result != H2_PAL_OK) {
-    job->display_presented_valid = 0;
-    job->display_background_valid = 0;
-    display_dirty_full(job);
+  if (result == H2_PAL_OK)
+    result = display_submission_prepare(state, job, submission->retained,
+                                          &pixels, &rects);
+  if (result == H2_PAL_OK) result = display_submission_wait(job->display_submission);
+  if (result == H2_PAL_OK) result = display_submission_collect(job);
+  if (result != H2_PAL_OK)
     return luaL_error(state, "display present failed: %d", result);
-  }
-  if (retained) {
-    /* Only the whole successful present commits the tentative baseline. */
-    job->display_presented_valid = 1;
-  }
-  job->dirty_valid = 0;
   lua_pushinteger(state, (lua_Integer)pixels);
   lua_pushinteger(state, (lua_Integer)rects);
   return 2;
@@ -3557,9 +4818,10 @@ static int display_end_frame(lua_State *state) {
   return display_present(state);
 }
 
-static void display_release(lua_State *state, h2_lua_job_t *job) {
+static h2_pal_result_t display_release(lua_State *state, h2_lua_job_t *job) {
+  h2_pal_result_t result = display_submission_release(state, job);
+  if (result != H2_PAL_OK) return result;
   uint16_t *pixels = job->framebuffer;
-  int was_open = job->display_open;
   job->framebuffer = NULL;
   job->display_open = job->frame_open = job->dirty_valid = 0;
   if (state != NULL) {
@@ -3577,18 +4839,23 @@ static void display_release(lua_State *state, h2_lua_job_t *job) {
     job->display_smooth_ref = 0;
     if (smooth_ref > 0) luaL_unref(state, LUA_REGISTRYINDEX, smooth_ref);
   }
-  if (was_open && !job->host->config.borrow_display)
-    (void)h2_pal_display_close(job->host->config.runtime->display);
+  if (job->display_lease) {
+    job->display_lease = 0;
+    h2_atomic_store(&job->host->display_active, 0);
+  }
   h2_pal_mem_free(job->host->config.allocator, pixels);
+  return H2_PAL_OK;
 }
 
-void h2_lua_job_close_display(h2_lua_job_t *job) {
+h2_pal_result_t h2_lua_job_close_display(h2_lua_job_t *job) {
   job->display_shutting_down = 1;
-  display_release(job->vm != NULL ? job->vm->state : NULL, job);
+  return display_release(job->vm != NULL ? job->vm->state : NULL, job);
 }
 
 static int display_close(lua_State *state) {
-  display_release(state, lua_touserdata(state, lua_upvalueindex(1)));
+  h2_pal_result_t result = display_release(state,
+      lua_touserdata(state, lua_upvalueindex(1)));
+  if (result != H2_PAL_OK) return display_submission_error(state, result);
   return 0;
 }
 
@@ -3603,7 +4870,8 @@ int h2_lua_push_display_proxy(lua_State *state, h2_lua_job_t *job) {
     lua_pushboolean(state, 0);
     lua_rawsetp(state, LUA_REGISTRYINDEX, &s_mesh_stage_key);
   }
-  result = display_open(job);
+  result = display_submission_open(state, job);
+  if (result == H2_PAL_OK) result = display_open(job);
   if (result != H2_PAL_OK) {
     lua_pushnil(state);
     lua_pushfstring(state, "display open failed: %d", result);
@@ -3613,12 +4881,20 @@ int h2_lua_push_display_proxy(lua_State *state, h2_lua_job_t *job) {
   set_function(state, "stroke_path", display_stroke_path, job);
   set_function(state, "region_from_string", display_region_from_string, job);
   set_function(state, "capture_region", display_capture_region, job);
+  lua_pushboolean(state, 1);
+  lua_setfield(state, -2, "masked_region_reuse");
   set_function(state, "draw_region", display_draw_region, job);
   set_function(state, "restore_background", display_restore_background, job);
   set_function(state, "release_background", display_release_background_lua, job);
   set_function(state, "compile_mesh", display_compile_mesh, job);
   set_function(state, "compile_quad_batch", display_compile_quad_batch, job);
   set_function(state, "draw_quad_batch", display_draw_quad_batch, job);
+  set_function(state, "material_strip", display_material_strip, job);
+  set_function(state, "draw_material_strip", display_draw_material_strip, job);
+  set_function(state, "compile_quad_material", display_compile_quad_material, job);
+  set_function(state, "draw_quad_material", display_draw_quad_material, job);
+  set_function(state, "draw_quad_material_projective",
+               display_draw_quad_material_projective, job);
   set_function(state, "update_mesh", display_update_mesh, job);
   set_function(state, "draw_mesh", display_draw_mesh, job);
   set_function(state, "draw_pose", display_draw_pose, job);
@@ -3649,6 +4925,11 @@ int h2_lua_push_display_proxy(lua_State *state, h2_lua_job_t *job) {
   set_function(state, "begin_frame", display_begin_frame, job);
   set_function(state, "end_frame", display_end_frame, job);
   set_function(state, "present", display_present, job);
+  set_function(state, "submit", display_submit, job);
+  set_function(state, "flush", display_flush, job);
+  set_function(state, "status", display_status, job);
+  lua_pushinteger(state, H2_PAL_ERR_BUSY);
+  lua_setfield(state, -2, "BUSY");
   set_function(state, "deinit", display_close, job);
   lua_pushinteger(state, job->display_info.width);
   lua_setfield(state, -2, "width");
@@ -3656,4 +4937,3 @@ int h2_lua_push_display_proxy(lua_State *state, h2_lua_job_t *job) {
   lua_setfield(state, -2, "height");
   return 1;
 }
-

@@ -1,0 +1,20 @@
+{
+  "source_commit": "cd3dda1dfc28f5d3666851d870779468286720aa",
+  "source_dirty": false,
+  "platform": "android",
+  "qualified": true,
+  "retained_received": 2,
+  "artifact_sha256": "c77435af590c1937ccaa17659f7b0a00cc16fe0022db670a8cb11d3986b5db6b",
+  "sdk_sha256": "4fd298a58d5bbe7d7af51540845b4acab229324752607055ba26b3b3f5afbdae",
+  "fixture_inputs": {
+    "session": "e015b096a7714ee197c4b211bfcecf76",
+    "host": "10.0.2.2",
+    "tcp_port": 50864,
+    "tls_port": 50865,
+    "json_sha256": "79b90e1f9449397be162635560d9b01e12064ea7e356018d11c30192cbc42ad3",
+    "ca_sha256": "f802345e4a0ba33db8a94bccdfaf88a666956d4ab76111523af71d99bbe0e500",
+    "wrong_ca_sha256": "87e6585c9aa03507b3215661787bf7b465d9694436e62de5ded89bef2bfcfbad",
+    "registry_sha256": "f3f5798bb6f8793eeede6f3464c847be1b6ad807d6059bc17b759fad6995837f"
+  },
+  "historical_da770_preserved": true
+}

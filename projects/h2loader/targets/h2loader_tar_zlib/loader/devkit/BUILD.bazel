@@ -102,7 +102,6 @@ h2loader_tar_zlib(
     firmware = ":firmware",
     image = "loader",
     role = "h2loader",
-    tags = ["firmware-release"],
     target = "esp32s3",
 )
 

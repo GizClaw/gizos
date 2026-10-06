@@ -19,7 +19,7 @@ H2Loader 是 GizOS 的固件管理产品。它由工厂 Batch Loader、repositor
 
 ## App Board Matrix
 
-矩阵以 `projects/<owner>/targets/h2loader_tar_zlib/<image>/<board>/` 中当前具备 `:package` 构建入口的 image 为准，不把“存在 entry”误写成“已经完成实机验收”。
+原始固件矩阵以 `projects/<owner>/targets/h2loader_tar_zlib/<image>/<board>/` 中当前具备 `:package` 构建入口的 image 为准，不把“存在 entry”误写成“已经完成实机验收”。
 
 - `✓`：当前存在可构建的 Loader 或 App image 入口。
 - `△`：入口已完成构建验证，但对应真机验收尚未完成。
@@ -92,11 +92,11 @@ App image 是由 H2Loader 安装和启动的目标固件。Launcher 初始化 BS
 
 `.github/workflows/release.yml` 只由 `workflow_dispatch` 触发，且必须从仓库默认分支运行，不接收 version 输入。`catalog` 在 checkout 前拒绝非默认分支，checkout 后校验触发提交；所有 GizOS job 都固定 checkout 到该 `github.sha`。从 UTC 时钟生成 `RELEASE_BATCH=YYYYMMDD-HHMMSS` 和 `v<batch>` tag；batch 是发布批次，不是产品版本。DAG 为 `catalog → ESP32-S3/ESP32-P4/BK7258 → firmware-bundle → package → release-bundle → publish`，并行的 `npm-packages` producer 直接汇入最终 `release-bundle`。每一步保留 producer 子目录，拒绝重复 basename、symlink、缺失或额外文件。 Catalog 还构建供 LiteLink 使用的 Lua Runtime 源码包，由 LiteLink 在 Flutter App 原生层实现 PAL。
 
-发布选择为 opt-in：Bazel 查询 `//projects/...` 中带精确 `firmware-release` tag 的 `h2loader_tar_zlib` rule，并要求它是 Loader 目录中的 canonical `:package`，identity 为 `image=loader`、`role=h2loader`。`projects/e2e`、`projects/example`、H2Loader `e2e-app` 以及 alternate package 均为诊断目标，即使误加发布 tag 也会被校验拒绝。现存 `no-release` 仅保留为诊断标记，发布选择不再读取它。
+发布选择为 opt-in：Bazel 查询 `//projects/...` 中带精确 `firmware-release` tag 的 `h2loader_zlib_tar` rule，并要求它是 Loader 目录中的 canonical `:package`，identity 为 `image=loader`、`role=h2loader`。`projects/e2e`、`projects/example`、H2Loader `e2e-app` 以及 alternate package 均为诊断目标，即使误加发布 tag 也会被校验拒绝。现存 `no-release` 仅保留为诊断标记，发布选择不再读取它。
 
 发布集合已确定为以下三块板，每个现有平台 slice 各一块；三块板的首个正式发布版本均已确认为 `0.1.0`。只有这些 target 标记 `firmware-release`；catalog 必须覆盖全部三项，不能悄悄漏掉不兼容配置。
 
-| `//projects/h2loader/targets/h2loader_tar_zlib/loader/<board>:package` 的 board | Slice | 固件版本 |
+| `//projects/h2loader/targets/h2loader_zlib_tar/loader/<board>:package` 的 board | Slice | 固件版本 |
 | --- | --- | --- |
 | `bk7258_v3_202405` | `bk7258` | `0.1.0` |
 | `devkit` | `esp32s3` | `0.1.0` |
@@ -116,7 +116,7 @@ GitHub Release 包含以下资产：
 
 ZIP 内只有 `firmware-release-v<batch>/` 前缀下的文件：
 
-- `loader-<board>.update.tar.zlib`：三个 Loader 的 managed install 包。
+- `loader-<board>.update.tar`：三个 Loader 的 managed install 包。
 - `loader-<board>.recovery.h2fb`：两个 ESP Loader 和 BK7258 Loader 的 recovery bundle。
 - `loader-<board>.combined_factory.bin`：两个 ESP Loader 从 offset `0` 直接烧录的 combined image。
 - `firmware-index.json`：顶层 `batch` 是 UTC 批次，各 firmware 的 `version` 是独立 SemVer；`release_name` 必须等于 `<image>-<board>`，每个 asset name 必须等于 `release_name + release_suffix`。
@@ -194,3 +194,6 @@ H2Loader 的完成条件不是“传输成功”或“reboot accepted”。App �
 普通 Loader 初始化前必须取得完整的 `active_identity`，仅填版本不能通过初始化。公共 `h2_loader_read_current_loader_identity` 在真实 Image Reader 上计算镜像字节的 checksum：只有 running-slot 的记录存在、valid、role 为 H2LOADER，且 board、target、version 都与输入一致时，才使用记录的 image size 和预期 checksum。缺失、格式损坏或不匹配的记录使用 primary Loader capacity，避免候选借用较大的 App window 时把 App capacity 当作 Loader image size。长度必须非零且不超过 running-slot capacity，实际 SHA 必须匹配被采用的记录，否则返回 FORMAT；错误的 running partition 返回 INVALID_STATE，缺失依赖或非法输入返回 INVALID_ARG，分配失败返回 NO_MEMORY，Preference、Image Reader 和 digest 的真实错误继续返回。Metadata read 将损坏 blob 与非法调用参数区分为 FORMAT，关闭 namespace 的错误优先于损坏记录，防止回退隐藏 I/O 故障。输出使用调用方 storage，成功后包含独立的 identity 和字符串副本，失败时清零；临时 4 KiB buffer 在所有路径释放，digest 失败执行 abort。该操作在 task context 阻塞读取，必须与其它 package/digest 操作串行，不写 preferences、不迁移 MFG 记录，也不代替升级后的最终状态核对。BK 的 Loader/App UART 与 BLE 使用同一个 `h2_bk_h2loader_get_device_uid` 读取 controller identity MAC；版本、board 名或 endpoint 不能代替 UID。
 
 设备仍能通过 H2Loader command transport 通信时，安装、更新、回退和恢复必须继续使用 H2Loader。只有 H2Loader 已验证无法通信或无法自我恢复时，才能进入对应 board 使用文档定义的底层 recovery。
+
+
+安装包双轨并行：原 `h2loader_tar_zlib` entry 保留 native 源码与 format-1 `.update.tar.zlib`；对应 `h2loader_zlib_tar` entry 只借用其原始 native/data 输入生成 format-2 `.update.tar`。两种 package 都可独立构建和被新 Loader 读取。Canonical release 使用新轨道的发布标签，旧轨道继续用于过渡与对照测试，不重复发布同一 image identity。C Writer/CLI 默认使用新格式。

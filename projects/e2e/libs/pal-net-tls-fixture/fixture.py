@@ -210,7 +210,11 @@ class Fixture:
                     record['client_hello'] = len(raw) > 5 and raw[0] == 22 and raw[5] == 1
                 except socket.timeout:
                     pass
-                self.stop.wait(0.2)
+                # Keep the silent peer open beyond the 100 ms PAL deadline
+                # plus its 500 ms scheduling/crypto allowance. Closing at
+                # 200 ms races constrained ClientHello generation and turns
+                # the deadline test into a connection-reset test.
+                self.stop.wait(1.0)
                 return
             if record['mode'] in self.contexts:
                 connection = self.contexts[record['mode']].wrap_socket(connection,

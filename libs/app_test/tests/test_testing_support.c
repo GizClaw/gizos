@@ -170,6 +170,7 @@ int main(void) {
     b->send_result = H2_PAL_ERR_WOULD_BLOCK;
     assert(h2_pal_webrtc_channel_send(api, event.channel, &byte, 1, 0) ==
            H2_PAL_ERR_WOULD_BLOCK);
+    assert(!h2_app_test_webrtc_channel_created_locally(event.channel));
     h2_pal_webrtc_channel_t *channel = event.channel;
     h2_pal_webrtc_event_release(&event);
     assert(b->releases == 1 && !event._private);
@@ -193,6 +194,7 @@ int main(void) {
       assert(created[j] != NULL);
       for (size_t k = 0; k < j; ++k)
         assert(created[j] != created[k]);
+      assert(h2_app_test_webrtc_channel_created_locally(created[j]));
       h2_pal_webrtc_channel_close(api, created[j]);
     }
     assert(b->channel_creates == 21 && b->channel_closes == 21);

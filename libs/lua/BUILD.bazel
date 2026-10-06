@@ -6,17 +6,21 @@ load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
 load("//tools/bazel:tasks.bzl", "h2_tasks")
 load(":lua_resource.bzl", "h2_lua_resource")
 load(":source_package.bzl", "lua_source_package")
+load(":tests/display_tasks.bzl", "display_task_tests")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files(["lua_resource.bzl"])
+exports_files(["lua_resource.bzl", "tests/display_submit.lua"])
 
 h2_tasks(
     name = "tasks",
     tasks = [
         "$lua/worker",
+        "$lua/display",
     ],
 )
+
+display_task_tests()
 
 py_binary(
     name = "embed_resource",
@@ -131,6 +135,10 @@ cc_library(
         "src/core/h2_lua_internal.h",
         "src/modules/h2_lua_display.c",
         "src/modules/h2_lua_display_internal.h",
+        "src/modules/h2_lua_display_plan.c",
+        "src/modules/h2_lua_display_plan.h",
+        "src/modules/h2_lua_display_worker.c",
+        "src/modules/h2_lua_display_worker.h",
         "src/modules/h2_lua_geometry.c",
         "src/modules/h2_lua_geometry_batches_internal.h",
         "src/modules/h2_lua_geometry_kernels.h",
@@ -290,17 +298,30 @@ cc_test(
 
 cc_test(
     name = "lua_test",
-    srcs = ["tests/test_h2_lua.c"],
+    srcs = [
+        "tests/material_reference.h",
+        "tests/polygon_reference.h",
+        "tests/test_h2_lua.c",
+    ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     cxxopts = H2_CXX17_OPTS,
     data = [
+        "tests/display_submit.lua",
+        "tests/display_submit_reentry.lua",
         "tests/geometry_batches.lua",
         "tests/mesh_source_paths.lua",
         "tests/mesh_staging.lua",
+        "tests/mesh_cache_sizing.lua",
         "tests/quad_batch.lua",
         "tests/quad_batch_clip.lua",
+        "tests/quad_material.lua",
+        "tests/material_strip.lua",
+        "tests/raster_workload.lua",
+        "tests/masked_capture.lua",
+        "tests/quad_material_projective.lua",
         "tests/raster2d.lua",
+        "tests/smooth_cache.lua",
         "tests/stroke_buffer.lua",
     ],
     target_compatible_with = select({
@@ -316,6 +337,21 @@ cc_test(
         "//libs/pal/providers/desktop/pal_core",
         "//tools/bazel:vendor_third_party_lua",
     ],
+)
+
+# Quarantine cases retain resources until their isolated process exits.
+py_test(
+    name = "display_fault_test",
+    srcs = ["tests/test_display_fault.py"],
+    main = "tests/test_display_fault.py",
+    args = ["$(location :lua_test)"],
+    data = [":lua_test"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
 )
 
 # Test-only two-device BLE air shared by the link tests and the Lua link E2E
@@ -491,6 +527,23 @@ py_test(
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+cc_test(
+    name = "display_plan_test",
+    srcs = [
+        "src/modules/h2_lua_display_plan.c",
+        "src/modules/h2_lua_display_plan.h",
+        "tests/test_display_plan.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + h2_gnu_only_copts(["-O3"]),
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
 )

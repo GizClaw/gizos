@@ -1,0 +1,112 @@
+{
+  "schema": 1,
+  "sdk_version": "0.23.2",
+  "environment": "controlled Dev",
+  "server_version": "0.24.1",
+  "runtime_profile": "gizos-e2e-626",
+  "endpoint": "edge-bj-01.dev.gizclaw.com:9821",
+  "device_uid": "30eda0ae0f86",
+  "withdrawn_tcp_overrides": {
+    "version": "gizclaw-amp-r47-tcp-defaults",
+    "source_base": "c29d6958658b89ab7af7ce4fcaac755383bc4d44",
+    "source_patch_sha256": "ba1e8a4bffbdd83e09de07270422a2e2ae62885f81db75b44fc790c1b87f262a",
+    "package_sha256": "31171ecdf68dc4157a27f876a9b89a6e80a6cd5682e2033c391240055cd7ba6a",
+    "image_sha256": "5a7f39feedb203e05542a2c1c36a8c55a83455f9d98d9cae597a81c6a86016ed",
+    "actual_tcp_config": {
+      "ooseq_max_pbufs": 0,
+      "sack_out": false,
+      "snd_buf": 65535,
+      "receive_window": 65535,
+      "receive_mailbox": 32,
+      "psram_wifi_lwip": true,
+      "speaker_priority": 6
+    },
+    "server_version": "0.24.1",
+    "execution": "4f52415c85ef598263ead727e6a2ab84",
+    "ledger_sha256": "42bdabc0c1b474a6a9451408feb233ac2bbc3e42d7f30918502132624e9cdcbb",
+    "records": 1301,
+    "schema": 1,
+    "qualified": false,
+    "selected": 8,
+    "passed": 6,
+    "failed": 2,
+    "cleanup_rc": 0,
+    "retained_resources": 0,
+    "admitted": false,
+    "confirm_rc": -7,
+    "failures": [
+      {
+        "case": "device-api",
+        "rc": -10,
+        "stage": "registration",
+        "playback_reached": false
+      },
+      {
+        "case": "firmware",
+        "rc": -6,
+        "received": 228056,
+        "expected": 5337909,
+        "digest_match": false
+      }
+    ],
+    "host_firmware_control": {
+      "passed": true,
+      "elapsed_seconds": 2.6
+    },
+    "p1_preserved": true,
+    "coredump_status_unchanged": true,
+    "scope": "Actual BSP audio and complete all suite; no microphone/acoustic quality claim. Prior service-preflight failures and old replay are separately preserved.",
+    "device_uid": "30eda0ae0f86",
+    "api_coverage": {
+      "valid": false,
+      "required": 227,
+      "covered": 206,
+      "missing": 21
+    }
+  },
+  "original_r45_control": {
+    "version": "gizclaw-dev-amp-r45-pal32",
+    "package_sha256": "48f4c42540d599b31018e69acd5e2e80171d7156a5568bf8d4b1eaf88da7caca",
+    "image_sha256": "342500a003e27d9508f499c89a83ffe919d16af6cf743292fef160aa80f1ab2a",
+    "execution": "3335e92bdffe2a4cdd4ce36fc0b90caa",
+    "source_commit": "a8e67dfb8929fb76ce095e1eebc7af1785985bd8",
+    "qualified": true,
+    "selected": 8,
+    "passed": 8,
+    "failed": 0,
+    "cleanup_rc": 0,
+    "retained_resources": 0,
+    "ooseq_max_pbufs": 4,
+    "sack_out": true,
+    "speaker_priority": 6,
+    "firmware": {
+      "received": 5337909,
+      "expected": 5337909,
+      "digest_match": true
+    },
+    "confirm_rc": 0,
+    "admitted": true,
+    "physical_audio": true,
+    "api_coverage": {
+      "valid": true,
+      "required": 227,
+      "covered": 227,
+      "missing": 0
+    },
+    "ledger_sha256": "4033552742ea5100f4b17585716832a4e641fd801cc970f46fcab452485c57ee",
+    "receipt_sha256": "d842cd01524174678752b169dae6b1923d413aab030c1a76247325ad32e58472"
+  },
+  "host_firmware_control": {
+    "passed": true,
+    "elapsed_seconds": 2.6
+  },
+  "final_device_state": {
+    "version": "gizclaw-dev-amp-r45-pal32",
+    "running_partition": 2,
+    "next_partition": 2,
+    "stage_valid": false,
+    "p1_preserved": true,
+    "blank_crash_preserved": true
+  },
+  "scope": "One actual full managed run per configuration on the same restored Dev environment. R47 uses ESP-IDF defaults (OOSEQ0/SACKoff), R45 retains OOSEQ4/SACKon; both speaker priority6 and PSRAM. R47 Device API closed during registration before playback; Firmware independently timed out. This comparison does not isolate SACK from the queue limit or claim microphone/acoustic quality. Original R45 source/artifact identity is preserved; R46 HTTP502 setup failures and rejected old/corrupt observations stay recorded separately."
+}

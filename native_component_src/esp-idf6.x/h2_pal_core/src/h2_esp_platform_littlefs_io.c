@@ -1,6 +1,7 @@
 #include "h2_esp_platform_littlefs_io.h"
 
 #include "h2_esp_platform_safe_call.h"
+#include "h2_esp_io_phase.h"
 
 #include "esp_attr.h"
 
@@ -43,6 +44,9 @@ typedef struct h2_esp_pref_io_call {
     h2_esp_pref_store_entry_t *entries;
     size_t count;
     int result;
+#if H2_ESP_IO_PHASE_DIAGNOSTICS
+    h2_esp_io_phase_t phase;
+#endif
 } h2_esp_pref_io_call_t;
 
 static int copy_text(char *out, size_t out_size, const char *text) {
@@ -60,6 +64,9 @@ static int init_call(h2_esp_pref_io_call_t *call,
     if (call == NULL || store == NULL || store->base_path == NULL)
         return H2_PAL_ERR_INVALID_ARG;
     memset(call, 0, sizeof(*call));
+#if H2_ESP_IO_PHASE_DIAGNOSTICS
+    call->phase.started_us = h2_esp_io_phase_now();
+#endif
     call->op = op;
     call->committed_budget = store->committed_budget;
     call->committed_total = store->committed_total;
@@ -120,8 +127,21 @@ static void IRAM_ATTR pref_io_callback(void *context) {
 
 static int run_call_on(h2_esp_pref_store_t *store,
                        h2_esp_pref_io_call_t *call) {
+#if H2_ESP_IO_PHASE_DIAGNOSTICS
+    h2_esp_io_phase_t phase = call->phase;
+    int rc = h2_esp_platform_safe_call_timed(
+        pref_io_callback, call, sizeof(*call),
+        H2_ESP_PREF_IO_STACK_DEPTH, &phase);
+    call->phase = phase;
+    /* GET/SET have an enclosing scratch lock. Defer those records until
+     * their wrapper releases it; do not split the store transaction. */
+    if (call->op != H2_ESP_PREF_IO_GET && call->op != H2_ESP_PREF_IO_SET)
+        h2_esp_io_phase_report("pref", (unsigned)call->op, call->value_size,
+                              rc == H2_PAL_OK ? call->result : rc, &phase);
+#else
     int rc = h2_esp_platform_safe_call(pref_io_callback, call, sizeof(*call),
                                        H2_ESP_PREF_IO_STACK_DEPTH);
+#endif
     if (rc != H2_PAL_OK) return rc;
     store->committed_total = call->committed_total;
     store->committed_total_valid = call->committed_total_valid;
@@ -150,7 +170,14 @@ int h2_esp_pref_io_get(h2_esp_pref_store_t *store,
     if (rc == H2_PAL_OK) rc = copy_text(call.name_space, sizeof(call.name_space), name_space);
     if (rc == H2_PAL_OK) rc = copy_text(call.key, sizeof(call.key), key);
     if (rc != H2_PAL_OK) return rc;
+#if H2_ESP_IO_PHASE_DIAGNOSTICS
+    const uint64_t scratch_started = h2_esp_io_phase_now();
+#endif
     rc = h2_esp_platform_safe_io_acquire(&scratch, &capacity);
+#if H2_ESP_IO_PHASE_DIAGNOSTICS
+    call.phase.scratch_wait_us = h2_esp_io_phase_elapsed(
+        scratch_started, h2_esp_io_phase_now());
+#endif
     if (rc != H2_PAL_OK) return rc;
     if (capacity < H2_ESP_PREF_IO_VALUE_MAX) {
         h2_esp_platform_safe_io_release();
@@ -169,6 +196,10 @@ int h2_esp_pref_io_get(h2_esp_pref_store_t *store,
         }
     }
     h2_esp_platform_safe_io_release();
+#if H2_ESP_IO_PHASE_DIAGNOSTICS
+    h2_esp_io_phase_report("pref", H2_ESP_PREF_IO_GET, call.value_size,
+                          rc, &call.phase);
+#endif
     return rc;
 }
 
@@ -185,7 +216,14 @@ int h2_esp_pref_io_set(h2_esp_pref_store_t *store,
     if (rc != H2_PAL_OK || (value == NULL && value_size != 0u) ||
         value_size > H2_ESP_PREF_IO_VALUE_MAX)
         return rc == H2_PAL_OK ? H2_PAL_ERR_INVALID_ARG : rc;
+#if H2_ESP_IO_PHASE_DIAGNOSTICS
+    const uint64_t scratch_started = h2_esp_io_phase_now();
+#endif
     rc = h2_esp_platform_safe_io_acquire(&scratch, &capacity);
+#if H2_ESP_IO_PHASE_DIAGNOSTICS
+    call.phase.scratch_wait_us = h2_esp_io_phase_elapsed(
+        scratch_started, h2_esp_io_phase_now());
+#endif
     if (rc != H2_PAL_OK) return rc;
     if (capacity < value_size) {
         h2_esp_platform_safe_io_release();
@@ -197,6 +235,10 @@ int h2_esp_pref_io_set(h2_esp_pref_store_t *store,
     call.value_size = value_size;
     rc = run_call_on(store, &call);
     h2_esp_platform_safe_io_release();
+#if H2_ESP_IO_PHASE_DIAGNOSTICS
+    h2_esp_io_phase_report("pref", H2_ESP_PREF_IO_SET, value_size,
+                          rc, &call.phase);
+#endif
     return rc;
 }
 
