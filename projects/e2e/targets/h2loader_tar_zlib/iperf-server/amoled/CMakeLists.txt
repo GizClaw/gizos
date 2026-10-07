@@ -15,6 +15,8 @@ if(NOT DEFINED IDF_TARGET)
   set(IDF_TARGET "${H2_ESP_TARGET}" CACHE STRING "ESP-IDF target")
 endif()
 set(SDKCONFIG "${CMAKE_BINARY_DIR}/sdkconfig" CACHE FILEPATH "ESP-IDF sdkconfig" FORCE)
+# Both following support files are board-owned and explicitly declared by
+# the firmware target; the native runner copies them into its build project.
 set(SDKCONFIG_DEFAULTS
   "${H2_ESP_BOARD_DIR}/sdkconfig.defaults;${CMAKE_CURRENT_LIST_DIR}/sdkconfig.h2loader.defaults;${CMAKE_CURRENT_LIST_DIR}/sdkconfig.iperf-server.defaults"
   CACHE STRING "ESP-IDF sdkconfig defaults" FORCE)

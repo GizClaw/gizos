@@ -116,9 +116,15 @@ h2loader_esp_idf_firmware(
         "main/iperf_ap.c",
         "main/iperf_ap.h",
         "main/main.c",
-        "sdkconfig.iperf-server.defaults",
     ],
     board = "amoled",
+    layout_files = {
+        "partition": "//boards/amoled/esp32s3/layouts/h2loader:partition.csv",
+        "project_support_files": [
+            "//boards/amoled/esp32s3/layouts/h2loader:sdkconfig.h2loader.defaults",
+            "//boards/amoled/esp32s3/layouts/h2loader:sdkconfig.iperf-server.defaults",
+        ],
+    },
     cmake_variables = ["H2_IPERF_SERVER_AUTOSTART_MODE"],
     graph = [":launcher"],
     project = "CMakeLists.txt",

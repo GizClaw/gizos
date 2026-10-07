@@ -15,10 +15,8 @@ if(NOT DEFINED IDF_TARGET)
   set(IDF_TARGET "${H2_ESP_TARGET}" CACHE STRING "ESP-IDF target")
 endif()
 set(SDKCONFIG "${CMAKE_BINARY_DIR}/sdkconfig" CACHE FILEPATH "ESP-IDF sdkconfig" FORCE)
-# sdkconfig.h2loader.defaults is not checked in next to this launcher: the
-# h2loader_esp_idf_firmware rule copies the board layout file from
-# boards/devkit/esp32s3/layouts/h2loader/ into the project directory before
-# the native build runs, so it is appended after the board defaults here.
+# Both following support files are board-owned and explicitly declared by
+# the firmware target; the native runner copies them into its build project.
 if(NOT DEFINED H2_ESP_CONSOLE_DEFAULTS)
   message(FATAL_ERROR "Bazel target did not select H2_ESP_CONSOLE_DEFAULTS")
 endif()

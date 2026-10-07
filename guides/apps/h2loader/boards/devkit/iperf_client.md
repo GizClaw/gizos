@@ -21,3 +21,5 @@ bazel build --config=esp32s3 //projects/e2e/targets/h2loader_tar_zlib/iperf-clie
 有效 bench 即使在首次连接或地址族发现前失败，也会执行最终保存凭据核验并尝试输出一次 `H2_IPERF_CLIENT_COMPLETE`。未运行矩阵记录 `matrix_started=0`、零个 case 和 `matrix_rc=INVALID_STATE`，尚未识别模式时 mode 为零；`saved_check_rc` 只记录结果，不输出密码或 signature。失败时资格 gates 全为零，后续清理或凭据核验错误不会覆盖第一项错误，失败流程保持未确认。
 
 当前配对 App 只启用 TCP/UDP 正向和反向单 stream；`libs/iperf` 支持的 SCTP-over-UDP 尚未给两个 App 接线。ESP-IDF 原生 iperf2 示例不能与此 iperf3 server 互通。
+
+SDK 配置由 DevKit board 拥有：canonical `sdkconfig.defaults` 提供 IPv6/SLAAC，`layouts/h2loader/sdkconfig.iperf-client.defaults` 保留 INFO 诊断及 12 socket / 6 active TCP / 4 listener 的预算。target 显式声明共同 Loader defaults、该资源 variant 和 USB console 输入；原生 runner 只把声明的 board support file 复制到构建目录。
