@@ -11,6 +11,10 @@
  * `h2_web_lua_app_extension` (a second definition is a link error). Without an
  * extension the entry never references the symbol. Every hook runs on the App
  * task, never on a Lua worker, and a NULL field keeps the default behaviour.
+ * Registered module/capability/provider contexts must be static or owned heap
+ * storage and remain alive if checked shutdown quarantines the Lua Host. The
+ * outer Web App Host retains Runtime/platform dependencies and reports failure;
+ * no extension cleanup or successful hardware release is implied on failure.
  */
 
 #include "h2_lua.h"

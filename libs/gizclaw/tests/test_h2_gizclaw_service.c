@@ -7410,10 +7410,10 @@ static void test_workspace_fence_server_readback(void) {
     response.value.available = true;
     response.value.has_parameters = true;
     response.value.parameters.which_value =
-        gizclaw_rpc_v1_WorkspaceParameters_flowcraft_workspace_parameters_tag;
-    response.value.parameters.value.flowcraft_workspace_parameters
+        gizclaw_rpc_v1_WorkspaceParameters_eino_workspace_parameters_tag;
+    response.value.parameters.value.eino_workspace_parameters
         .has_safety_fence_level = scenario != 1u;
-    strcpy(response.value.parameters.value.flowcraft_workspace_parameters
+    strcpy(response.value.parameters.value.eino_workspace_parameters
                .safety_fence_level,
            scenario == 2u ? "Invalid" : "safe");
     response.runtime_profile_name = (pb_callback_t){
