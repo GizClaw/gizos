@@ -49,7 +49,10 @@ typedef struct h2_iperf_client_app_network {
 } h2_iperf_client_app_network_t;
 
 /** Temporarily associate using public Wi-Fi PAL and verify the corresponding
- * Runtime IP event/state and Net addresses. Waits 15 seconds after association
+ * Runtime IP event/state against the associated Wi-Fi STA Netif snapshot.
+ * Each ready family must match that station's actual address; another
+ * interface's preferred/default address does not select or reject this bench.
+ * Waits 15 seconds after association
  * for DHCP/SLAAC/DAD to settle, within a 45-second budget after association.
  * Drains Runtime events as their single consumer. Link-local alone is
  * insufficient. On success the caller owns the temporary association; on
@@ -60,7 +63,7 @@ h2_iperf_client_app_connect(h2_runtime_t *runtime,
                             const h2_pal_wifi_sta_config_t *config,
                             h2_iperf_client_app_network_t *out_network);
 
-/** Fixed GizOS-iPerf bench: verify public Wi-Fi/Runtime/Net readiness, run
+/** Fixed GizOS-iPerf bench: verify public Wi-Fi/Runtime/STA Netif readiness, run
  * the three-round performance matrix, verify disconnect/reconnect and saved
  * credential preservation. Does not persist, initialize SDK networking, or
  * confirm a firmware image. Reports typed readiness and performance receipts.
