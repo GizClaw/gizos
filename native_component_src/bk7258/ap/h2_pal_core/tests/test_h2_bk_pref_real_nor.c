@@ -433,7 +433,8 @@ int main(int argc, char **argv) {
   }
   legacy_loader(!strcmp(phase, "seed") || !strcmp(phase, "fault-seed") ||
                 !strcmp(phase, "profile") || !strcmp(phase, "cache") ||
-                !strcmp(phase, "port-cache"));
+                !strcmp(phase, "port-cache") ||
+                !strcmp(phase, "remove-prefetch"));
   h2_pal_pref_namespace_t *ns = open_ns("nor"), *isolated = open_ns("norother");
 #ifndef H2_PREF_NOR_BASELINE
   if (!strcmp(phase, "port-cache")) {
@@ -482,6 +483,24 @@ int main(int argc, char **argv) {
     assert(!ns->get_u32(ns, "counter", &actual) && actual == 199u);
     expect_blob(ns, "resident", value, sizeof(value));
     assert(!ns->clear(ns));
+  } else if (!strcmp(phase, "remove-prefetch")) {
+    assert(!ns->set_blob(ns, "resident", value, sizeof(value)));
+    assert(!isolated->set_blob(isolated, "resident", other, sizeof(other)));
+    assert(!ns->set_u32(ns, "pin", 1234u));
+    uint64_t reads_before = hardware_reads;
+    assert(!ns->remove(ns, "pin"));
+    uint64_t reads = hardware_reads - reads_before;
+    /* Without iterator prefetch this exact real-engine layout needs 1614
+     * hardware reads. Keep a call budget, not a host wall-clock assertion. */
+    assert(reads <= 512u);
+    uint32_t pin = 99u;
+    assert(ns->get_u32(ns, "pin", &pin) == H2_PAL_ERR_NOT_FOUND && pin == 0u);
+    expect_blob(ns, "resident", value, sizeof(value));
+    expect_blob(isolated, "resident", other, sizeof(other));
+    assert(!ns->clear(ns));
+    assert(!isolated->clear(isolated));
+    printf("PASS real SDK small remove/iterator prefetch reads=%llu\n",
+           (unsigned long long)reads);
   } else if (!strcmp(phase, "cache")) {
     void *out = NULL;
     size_t length = 0;

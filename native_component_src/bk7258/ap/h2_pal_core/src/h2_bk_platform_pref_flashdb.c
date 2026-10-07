@@ -107,6 +107,21 @@ static void bk_pref_unlock_database(fdb_db_t database) {
     }
 }
 
+/* The SDK iterator omits the database lock callbacks used by get/set. Its
+ * caller already holds the PAL operation mutex; bound prefetch to this one
+ * iterator step so CRC reads are covered without retaining bytes afterward. */
+static bool bk_pref_iterate_database(fdb_kvdb_t database,
+                                     struct fdb_kv_iterator *iterator) {
+#ifdef H2_BK_PREF_LARGE_FLASHDB_PATH
+    h2_bk_pref_flash_read_begin();
+#endif
+    bool found = fdb_kv_iterate(database, iterator);
+#ifdef H2_BK_PREF_LARGE_FLASHDB_PATH
+    h2_bk_pref_flash_read_end();
+#endif
+    return found;
+}
+
 #ifdef H2_BK_PREF_LARGE_FLASHDB_PATH
 /* This caches only the selected database, never an on-flash record address.
  * All callers hold the PAL operation mutex (or initial pool mutex). Large
@@ -1099,7 +1114,7 @@ static int snapshot(h2_pal_pref_namespace_t *base, h2_pal_pref_cursor_t **out,
   };
   for (size_t db_index = 0; db_index < sizeof(databases) / sizeof(databases[0]) && !rc; ++db_index) {
   fdb_kv_iterator_init(&iterator);
-  while (fdb_kv_iterate(databases[db_index], &iterator)) {
+  while (bk_pref_iterate_database(databases[db_index], &iterator)) {
     struct fdb_kv *kv = &iterator.curr_kv;
 #ifdef H2_BK_PREF_LARGE_FLASHDB_PATH
     if (db_index && !strncmp(kv->name, LARGE_CHUNK_PREFIX, sizeof(LARGE_CHUNK_PREFIX) - 1u)) continue;
