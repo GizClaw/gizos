@@ -321,6 +321,178 @@
           "input_verification": "a7591deda9584b84687d123c9afd029ffd23e53548986194f46e244b05384646"
         }
       }
+    },
+    "f44bea20769f53651ab0228f4696bb000279dd9e": {
+      "schema": 1,
+      "platform": "macos",
+      "config": "macos_arm64",
+      "executed_source_commit": "f44bea20769f53651ab0228f4696bb000279dd9e",
+      "source_sha256": {
+        "MODULE.bazel": "61f00c03baaa66d833f6681882e3999815879846bf935d89a0dd0ded0b3b57aa",
+        "libs/pal/include/h2/pal/net/h2_pal_net.h": "a81556a78aa440af6056b35ee8c1bb6c87137ce0a83cfd6efd205a00a843a4b4",
+        "libs/pal/providers/corehttp/src/h2_corehttp.c": "8dc765eb2a8d43a507b4831a727c4e6ce18ab1756218f6693eadcdcf910e237f",
+        "libs/pal/providers/coremqtt/src/h2_coremqtt_client.c": "bc234df89e7bdcd5417453e62e6028a10c80066c629ae5f0a359f091ecf4fd36",
+        "libs/pal/providers/darwin/pal_core/src/h2_darwin_netif.c": "625171c4d792e7462b6e80a3fd0fbfb4c139ab8431694cb0fc508d04e9d5a1a6",
+        "libs/pal/providers/h2peer/src/providers/portable/agent.c": "c21e91ffb1a79a37a847eb5e28118e724663c5650876ba66645cf9b696594c8c",
+        "libs/pal/providers/h2peer/src/providers/portable/ports.c": "4bc10a6cd5f9bada5ccfe59056451c7c7f34260cf331d5359f2c779e469e937d",
+        "libs/pal/providers/posix/pal_core/src/h2_posix_net.c": "515cba31db970cf6f20977adf53d8d35df3ec5d122128e65f1da163b358f4625",
+        "projects/e2e/apps/pal-ipv6/app/include/h2_pal_ipv6_e2e.h": "f5ee2c52883b78dec3b1a0abf6956a4a8d0efba0011721afe43c906c5db7a2f8",
+        "projects/e2e/apps/pal-ipv6/app/src/h2_pal_ipv6_e2e.c": "1190c79b2c8e410dfa81e498e819bf97b3ce6f54286a41dc92b9d4cb48ca504b",
+        "projects/e2e/apps/pal-ipv6/app/src/h2_pal_ipv6_local.c": "1672e8473fc121d4782de207c3a3ccae8b618317510bdb4aca3435207bb5ba49",
+        "projects/e2e/apps/pal-ipv6/app/src/h2_pal_ipv6_local.h": "69ff5e9ce9c7ef37d64bf923765ec8ba978f796ebb40c1f984b57887d3f13609",
+        "projects/e2e/apps/pal-net-tls/app/src/h2_pal_net_tls_e2e.c": "f67f2f4afb97b6648a84c1af47e29980baea02a77649c4a726394562bc1a5a63",
+        "projects/e2e/libs/pal-ipv6-fixture/fixture_ipv6.py": "99dc33b02e9e36b881655cd1c5f9c14de3bdc486624edaed39215d17fba0e35c",
+        "projects/e2e/libs/pal-net-tls-fixture/fixture.py": "4833a8b2ae1b9b859e5f2238624a1c0036eeb9085d79ac2d452e6556be90cccd",
+        "projects/e2e/targets/cc_binary/pal-ipv6/main.c": "e8f7abd278b075a929d4ff9ac457eedfa4c01492dc4911f5a64fe46803e4267c",
+        "projects/e2e/targets/cc_binary/pal-ipv6/run_desktop.py": "cd41dce09e9d28dba39876b49c2da2146dcb16e0225422f2a242aead70956db6",
+        "tools/webrtc-test-server/main.go": "13687c783f074c003f62623add55e3b5985f35fd69cf8f965aa604b40830ec51"
+      },
+      "artifact_sha256": {
+        "projects/e2e/targets/cc_binary/pal-ipv6/pal_ipv6": "67bd31536c07c81f62a0ba1cf385638d8da81952efe4bcaa9d41e9c61df6e855",
+        "projects/e2e/targets/cc_binary/pal-net-tls/pal_net_tls": "13007f7cb55ffa7d78f1e0c6eae31aedccf3177c13ce2a92d6bde3a4a8bb1cd6",
+        "tools/webrtc-test-server/webrtc_test_server_/webrtc_test_server": "8ecf85a75e2ae317e6c2a532f343e1c69b436617e909494792965bd498dac839"
+      },
+      "complete_input_capture": {
+        "all_before_after_identical": true,
+        "actions_count": 377,
+        "input_count": 9971,
+        "first_party_sources_count": 289,
+        "sha256": {
+          "full_source_manifest": "10dd50f28addc9a83a19de1345a0bb3b6053ca4fe43cac0cf75c58e6723eb34f",
+          "selected_action_closure": "148d080ff9e865cd14417146d30b906a3f1606418d74d7778426e7890e370730",
+          "action_input_manifest": "b13eb0f1bc31ae0ceda988064bf37cc1a9c5ff4e997aa057aff293ad21f2d78b",
+          "input_verification": "428c4032d1b7b4a756d00757bed6810139157d2f2887f4627fb7061b296bcaa2"
+        }
+      }
+    },
+    "561df0691b52fe9537a53586978c8e95c04e5536": {
+      "schema": 1,
+      "platform": "macos",
+      "config": "macos_arm64",
+      "executed_source_commit": "561df0691b52fe9537a53586978c8e95c04e5536",
+      "source_sha256": {
+        "MODULE.bazel": "61f00c03baaa66d833f6681882e3999815879846bf935d89a0dd0ded0b3b57aa",
+        "libs/pal/include/h2/pal/net/h2_pal_net.h": "a81556a78aa440af6056b35ee8c1bb6c87137ce0a83cfd6efd205a00a843a4b4",
+        "libs/pal/providers/corehttp/src/h2_corehttp.c": "8dc765eb2a8d43a507b4831a727c4e6ce18ab1756218f6693eadcdcf910e237f",
+        "libs/pal/providers/coremqtt/src/h2_coremqtt_client.c": "bc234df89e7bdcd5417453e62e6028a10c80066c629ae5f0a359f091ecf4fd36",
+        "libs/pal/providers/darwin/pal_core/src/h2_darwin_netif.c": "625171c4d792e7462b6e80a3fd0fbfb4c139ab8431694cb0fc508d04e9d5a1a6",
+        "libs/pal/providers/h2peer/src/providers/portable/agent.c": "c21e91ffb1a79a37a847eb5e28118e724663c5650876ba66645cf9b696594c8c",
+        "libs/pal/providers/h2peer/src/providers/portable/ports.c": "4bc10a6cd5f9bada5ccfe59056451c7c7f34260cf331d5359f2c779e469e937d",
+        "libs/pal/providers/posix/pal_core/src/h2_posix_net.c": "515cba31db970cf6f20977adf53d8d35df3ec5d122128e65f1da163b358f4625",
+        "projects/e2e/apps/pal-ipv6/app/include/h2_pal_ipv6_e2e.h": "f5ee2c52883b78dec3b1a0abf6956a4a8d0efba0011721afe43c906c5db7a2f8",
+        "projects/e2e/apps/pal-ipv6/app/src/h2_pal_ipv6_e2e.c": "1190c79b2c8e410dfa81e498e819bf97b3ce6f54286a41dc92b9d4cb48ca504b",
+        "projects/e2e/apps/pal-ipv6/app/src/h2_pal_ipv6_local.c": "1672e8473fc121d4782de207c3a3ccae8b618317510bdb4aca3435207bb5ba49",
+        "projects/e2e/apps/pal-ipv6/app/src/h2_pal_ipv6_local.h": "69ff5e9ce9c7ef37d64bf923765ec8ba978f796ebb40c1f984b57887d3f13609",
+        "projects/e2e/apps/pal-net-tls/app/src/h2_pal_net_tls_e2e.c": "f67f2f4afb97b6648a84c1af47e29980baea02a77649c4a726394562bc1a5a63",
+        "projects/e2e/libs/pal-ipv6-fixture/fixture_ipv6.py": "99dc33b02e9e36b881655cd1c5f9c14de3bdc486624edaed39215d17fba0e35c",
+        "projects/e2e/libs/pal-net-tls-fixture/fixture.py": "4833a8b2ae1b9b859e5f2238624a1c0036eeb9085d79ac2d452e6556be90cccd",
+        "projects/e2e/targets/cc_binary/pal-ipv6/main.c": "e8f7abd278b075a929d4ff9ac457eedfa4c01492dc4911f5a64fe46803e4267c",
+        "projects/e2e/targets/cc_binary/pal-ipv6/run_desktop.py": "cd41dce09e9d28dba39876b49c2da2146dcb16e0225422f2a242aead70956db6",
+        "tools/webrtc-test-server/main.go": "13687c783f074c003f62623add55e3b5985f35fd69cf8f965aa604b40830ec51"
+      },
+      "artifact_sha256": {
+        "projects/e2e/targets/cc_binary/pal-ipv6/pal_ipv6": "67bd31536c07c81f62a0ba1cf385638d8da81952efe4bcaa9d41e9c61df6e855",
+        "projects/e2e/targets/cc_binary/pal-net-tls/pal_net_tls": "13007f7cb55ffa7d78f1e0c6eae31aedccf3177c13ce2a92d6bde3a4a8bb1cd6",
+        "tools/webrtc-test-server/webrtc_test_server_/webrtc_test_server": "8ecf85a75e2ae317e6c2a532f343e1c69b436617e909494792965bd498dac839"
+      },
+      "complete_input_capture": {
+        "all_before_after_identical": true,
+        "actions_count": 377,
+        "input_count": 9971,
+        "first_party_sources_count": 289,
+        "sha256": {
+          "full_source_manifest": "ef362807673e014d70c42e32d3e34b31a0aac8554ec0673acc158b5f0dd94074",
+          "selected_action_closure": "148d080ff9e865cd14417146d30b906a3f1606418d74d7778426e7890e370730",
+          "action_input_manifest": "fd8423ba6a08c34d3129341e85191fe6d3ee0a98ae328de3e7f8f460d3863509",
+          "input_verification": "61c90c35bdcbfa7f785cde90f1aea0176ba90f7ef36b2946702baf823abba5dc"
+        }
+      }
+    },
+    "41a3a6e9982ab32e9b62f40322d78b123d88cce5": {
+      "schema": 1,
+      "platform": "macos",
+      "config": "macos_arm64",
+      "executed_source_commit": "41a3a6e9982ab32e9b62f40322d78b123d88cce5",
+      "source_sha256": {
+        "MODULE.bazel": "61f00c03baaa66d833f6681882e3999815879846bf935d89a0dd0ded0b3b57aa",
+        "libs/pal/include/h2/pal/net/h2_pal_net.h": "a81556a78aa440af6056b35ee8c1bb6c87137ce0a83cfd6efd205a00a843a4b4",
+        "libs/pal/providers/corehttp/src/h2_corehttp.c": "8dc765eb2a8d43a507b4831a727c4e6ce18ab1756218f6693eadcdcf910e237f",
+        "libs/pal/providers/coremqtt/src/h2_coremqtt_client.c": "bc234df89e7bdcd5417453e62e6028a10c80066c629ae5f0a359f091ecf4fd36",
+        "libs/pal/providers/darwin/pal_core/src/h2_darwin_netif.c": "625171c4d792e7462b6e80a3fd0fbfb4c139ab8431694cb0fc508d04e9d5a1a6",
+        "libs/pal/providers/h2peer/src/providers/portable/agent.c": "c21e91ffb1a79a37a847eb5e28118e724663c5650876ba66645cf9b696594c8c",
+        "libs/pal/providers/h2peer/src/providers/portable/ports.c": "4bc10a6cd5f9bada5ccfe59056451c7c7f34260cf331d5359f2c779e469e937d",
+        "libs/pal/providers/posix/pal_core/src/h2_posix_net.c": "515cba31db970cf6f20977adf53d8d35df3ec5d122128e65f1da163b358f4625",
+        "projects/e2e/apps/pal-ipv6/app/include/h2_pal_ipv6_e2e.h": "f5ee2c52883b78dec3b1a0abf6956a4a8d0efba0011721afe43c906c5db7a2f8",
+        "projects/e2e/apps/pal-ipv6/app/src/h2_pal_ipv6_e2e.c": "1190c79b2c8e410dfa81e498e819bf97b3ce6f54286a41dc92b9d4cb48ca504b",
+        "projects/e2e/apps/pal-ipv6/app/src/h2_pal_ipv6_local.c": "1672e8473fc121d4782de207c3a3ccae8b618317510bdb4aca3435207bb5ba49",
+        "projects/e2e/apps/pal-ipv6/app/src/h2_pal_ipv6_local.h": "69ff5e9ce9c7ef37d64bf923765ec8ba978f796ebb40c1f984b57887d3f13609",
+        "projects/e2e/apps/pal-net-tls/app/src/h2_pal_net_tls_e2e.c": "f67f2f4afb97b6648a84c1af47e29980baea02a77649c4a726394562bc1a5a63",
+        "projects/e2e/libs/pal-ipv6-fixture/fixture_ipv6.py": "99dc33b02e9e36b881655cd1c5f9c14de3bdc486624edaed39215d17fba0e35c",
+        "projects/e2e/libs/pal-net-tls-fixture/fixture.py": "4833a8b2ae1b9b859e5f2238624a1c0036eeb9085d79ac2d452e6556be90cccd",
+        "projects/e2e/targets/cc_binary/pal-ipv6/main.c": "e8f7abd278b075a929d4ff9ac457eedfa4c01492dc4911f5a64fe46803e4267c",
+        "projects/e2e/targets/cc_binary/pal-ipv6/run_desktop.py": "cd41dce09e9d28dba39876b49c2da2146dcb16e0225422f2a242aead70956db6",
+        "tools/webrtc-test-server/main.go": "13687c783f074c003f62623add55e3b5985f35fd69cf8f965aa604b40830ec51"
+      },
+      "artifact_sha256": {
+        "projects/e2e/targets/cc_binary/pal-ipv6/pal_ipv6": "67bd31536c07c81f62a0ba1cf385638d8da81952efe4bcaa9d41e9c61df6e855",
+        "projects/e2e/targets/cc_binary/pal-net-tls/pal_net_tls": "13007f7cb55ffa7d78f1e0c6eae31aedccf3177c13ce2a92d6bde3a4a8bb1cd6",
+        "tools/webrtc-test-server/webrtc_test_server_/webrtc_test_server": "8ecf85a75e2ae317e6c2a532f343e1c69b436617e909494792965bd498dac839"
+      },
+      "complete_input_capture": {
+        "all_before_after_identical": true,
+        "actions_count": 377,
+        "input_count": 9971,
+        "first_party_sources_count": 289,
+        "sha256": {
+          "full_source_manifest": "2b324b2f706e54892caa5ac88806fe2034b41b4d93141774ff202dea57ed0318",
+          "selected_action_closure": "148d080ff9e865cd14417146d30b906a3f1606418d74d7778426e7890e370730",
+          "action_input_manifest": "595eeb8584a57ed07776353824fb256404722bc748299ba9a8440506516b2117",
+          "input_verification": "9e89ec30371343123e6bb45c3e218ebd20c98bfbf26e13ac5cab4ab391780820"
+        }
+      }
+    },
+    "9bb14eb06aa3a709c769b7ff0b0a025eddd64398": {
+      "schema": 1,
+      "platform": "macos",
+      "config": "macos_arm64",
+      "executed_source_commit": "9bb14eb06aa3a709c769b7ff0b0a025eddd64398",
+      "source_sha256": {
+        "MODULE.bazel": "61f00c03baaa66d833f6681882e3999815879846bf935d89a0dd0ded0b3b57aa",
+        "libs/pal/include/h2/pal/net/h2_pal_net.h": "a81556a78aa440af6056b35ee8c1bb6c87137ce0a83cfd6efd205a00a843a4b4",
+        "libs/pal/providers/corehttp/src/h2_corehttp.c": "8dc765eb2a8d43a507b4831a727c4e6ce18ab1756218f6693eadcdcf910e237f",
+        "libs/pal/providers/coremqtt/src/h2_coremqtt_client.c": "bc234df89e7bdcd5417453e62e6028a10c80066c629ae5f0a359f091ecf4fd36",
+        "libs/pal/providers/darwin/pal_core/src/h2_darwin_netif.c": "625171c4d792e7462b6e80a3fd0fbfb4c139ab8431694cb0fc508d04e9d5a1a6",
+        "libs/pal/providers/h2peer/src/providers/portable/agent.c": "c21e91ffb1a79a37a847eb5e28118e724663c5650876ba66645cf9b696594c8c",
+        "libs/pal/providers/h2peer/src/providers/portable/ports.c": "4bc10a6cd5f9bada5ccfe59056451c7c7f34260cf331d5359f2c779e469e937d",
+        "libs/pal/providers/posix/pal_core/src/h2_posix_net.c": "515cba31db970cf6f20977adf53d8d35df3ec5d122128e65f1da163b358f4625",
+        "projects/e2e/apps/pal-ipv6/app/include/h2_pal_ipv6_e2e.h": "f5ee2c52883b78dec3b1a0abf6956a4a8d0efba0011721afe43c906c5db7a2f8",
+        "projects/e2e/apps/pal-ipv6/app/src/h2_pal_ipv6_e2e.c": "1190c79b2c8e410dfa81e498e819bf97b3ce6f54286a41dc92b9d4cb48ca504b",
+        "projects/e2e/apps/pal-ipv6/app/src/h2_pal_ipv6_local.c": "1672e8473fc121d4782de207c3a3ccae8b618317510bdb4aca3435207bb5ba49",
+        "projects/e2e/apps/pal-ipv6/app/src/h2_pal_ipv6_local.h": "69ff5e9ce9c7ef37d64bf923765ec8ba978f796ebb40c1f984b57887d3f13609",
+        "projects/e2e/apps/pal-net-tls/app/src/h2_pal_net_tls_e2e.c": "f67f2f4afb97b6648a84c1af47e29980baea02a77649c4a726394562bc1a5a63",
+        "projects/e2e/libs/pal-ipv6-fixture/fixture_ipv6.py": "99dc33b02e9e36b881655cd1c5f9c14de3bdc486624edaed39215d17fba0e35c",
+        "projects/e2e/libs/pal-net-tls-fixture/fixture.py": "4833a8b2ae1b9b859e5f2238624a1c0036eeb9085d79ac2d452e6556be90cccd",
+        "projects/e2e/targets/cc_binary/pal-ipv6/main.c": "e8f7abd278b075a929d4ff9ac457eedfa4c01492dc4911f5a64fe46803e4267c",
+        "projects/e2e/targets/cc_binary/pal-ipv6/run_desktop.py": "cd41dce09e9d28dba39876b49c2da2146dcb16e0225422f2a242aead70956db6",
+        "tools/webrtc-test-server/main.go": "13687c783f074c003f62623add55e3b5985f35fd69cf8f965aa604b40830ec51"
+      },
+      "artifact_sha256": {
+        "projects/e2e/targets/cc_binary/pal-ipv6/pal_ipv6": "67bd31536c07c81f62a0ba1cf385638d8da81952efe4bcaa9d41e9c61df6e855",
+        "projects/e2e/targets/cc_binary/pal-net-tls/pal_net_tls": "13007f7cb55ffa7d78f1e0c6eae31aedccf3177c13ce2a92d6bde3a4a8bb1cd6",
+        "tools/webrtc-test-server/webrtc_test_server_/webrtc_test_server": "8ecf85a75e2ae317e6c2a532f343e1c69b436617e909494792965bd498dac839"
+      },
+      "complete_input_capture": {
+        "all_before_after_identical": true,
+        "actions_count": 377,
+        "input_count": 9971,
+        "first_party_sources_count": 289,
+        "sha256": {
+          "full_source_manifest": "7a67ea776124b7d1e6b9cfef97d59727da2a61d585f9b48f3ec845e9fc579144",
+          "selected_action_closure": "148d080ff9e865cd14417146d30b906a3f1606418d74d7778426e7890e370730",
+          "action_input_manifest": "6d3aa29f5a98b94a09173227d7f37ed07c5f4e3424f07e8135cac9f3cde1596b",
+          "input_verification": "0642ba384a6b7a0b49d47b05e5a8928f22f30e433c652f6482859d9f78fa170d"
+        }
+      }
     }
   }
 }
