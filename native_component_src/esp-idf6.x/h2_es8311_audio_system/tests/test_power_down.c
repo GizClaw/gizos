@@ -13,6 +13,10 @@ static size_t write_count;
 static int fail_write = -1;
 static int removed, disabled, pa_enabled, pa_fail;
 static TickType_t ticks;
+static int cold_writes_remaining;
+static esp_err_t cold_write_error = ESP_ERR_INVALID_RESPONSE;
+static unsigned cold_write_delay_ms;
+static unsigned i2s_creations;
 static h2_esp_es8311_audio_system_t *running;
 static int join_workers = 1;
 static unsigned device_index(i2c_master_dev_handle_t dev) {
@@ -20,7 +24,6 @@ static unsigned device_index(i2c_master_dev_handle_t dev) {
     return (unsigned)(uintptr_t)dev - 1u;
 }
 int i2c_master_transmit(i2c_master_dev_handle_t dev, const uint8_t *data, size_t size, int timeout) {
-    (void)timeout;
     assert(size == 2 && write_count < 1024);
     if (running && running->codec_shutdown_pending) {
         assert(!pa_enabled && !running->mic_task && !running->playback_task);
@@ -30,6 +33,13 @@ int i2c_master_transmit(i2c_master_dev_handle_t dev, const uint8_t *data, size_t
     writes[write_count].reg = data[0];
     writes[write_count].value = data[1];
     if ((int)write_count++ == fail_write) return ESP_FAIL;
+    if (data[0] == 0x44 && data[1] == 0x08 && cold_writes_remaining != 0) {
+        if (cold_writes_remaining > 0) --cold_writes_remaining;
+        const unsigned delay_ms = cold_write_delay_ms < (unsigned)timeout
+            ? cold_write_delay_ms : (unsigned)timeout;
+        ticks += pdMS_TO_TICKS(delay_ms);
+        return cold_write_error;
+    }
     registers[index][data[0]] = data[1];
     return ESP_OK;
 }
@@ -46,7 +56,7 @@ int i2c_new_master_bus(const i2c_master_bus_config_t *cfg, i2c_master_bus_handle
 int i2c_master_get_bus_handle(int port, i2c_master_bus_handle_t *out) { (void)port; *out = (void *)3; return ESP_OK; }
 int i2c_master_bus_rm_device(i2c_master_dev_handle_t dev) { (void)dev; assert(!pa_enabled); ++removed; return ESP_OK; }
 int i2c_del_master_bus(i2c_master_bus_handle_t bus) { (void)bus; return ESP_OK; }
-int i2s_new_channel(const i2s_chan_config_t *cfg, i2s_chan_handle_t *tx, i2s_chan_handle_t *rx) { (void)cfg; *tx = (void *)4; *rx = (void *)5; return ESP_OK; }
+int i2s_new_channel(const i2s_chan_config_t *cfg, i2s_chan_handle_t *tx, i2s_chan_handle_t *rx) { (void)cfg; ++i2s_creations; *tx = (void *)4; *rx = (void *)5; return ESP_OK; }
 int i2s_channel_init_std_mode(i2s_chan_handle_t ch, const i2s_std_config_t *cfg) { (void)ch; (void)cfg; return ESP_OK; }
 int i2s_channel_enable(i2s_chan_handle_t ch) { (void)ch; return ESP_OK; }
 int i2s_channel_disable(i2s_chan_handle_t ch) { (void)ch; assert(!pa_enabled); ++disabled; return ESP_OK; }
@@ -112,7 +122,73 @@ static void assert_sequence(void) {
         assert(writes[i].value == expected[i][2]);
     }
 }
+
+static void test_cold_control_startup(void) {
+    const esp_err_t transient_errors[] = {
+        ESP_ERR_INVALID_RESPONSE, ESP_ERR_TIMEOUT,
+    };
+    for (size_t i = 0; i < sizeof(transient_errors) / sizeof(transient_errors[0]); ++i) {
+        h2_esp_es8311_audio_system_t s = {0};
+        h2_esp_es8311_audio_system_config_t cfg = config();
+        running = NULL;
+        ticks = 0;
+        write_count = 0;
+        i2s_creations = 0;
+        cold_writes_remaining = 8;
+        cold_write_delay_ms = 100;
+        cold_write_error = transient_errors[i];
+        assert(h2_esp_es8311_audio_system_init(&s, &cfg) == H2_AUDIO_OK);
+        assert(h2_esp_es8311_audio_system_prepare(&s) == H2_AUDIO_OK);
+        assert(cold_writes_remaining == 0 && i2s_creations == 1);
+        assert(ticks >= pdMS_TO_TICKS(800) && ticks < pdMS_TO_TICKS(2000));
+        assert(s.opened && !s.mic_started && !s.playback_started && !pa_enabled);
+        /* No clock/reset programming is sent while the control port NACKs. */
+        for (size_t j = 0; j < 8; ++j) {
+            assert(writes[j].reg == 0x44 && writes[j].value == 0x08);
+        }
+        assert(h2_esp_es8311_audio_system_deinit(&s) == H2_AUDIO_OK);
+    }
+    h2_esp_es8311_audio_system_t s = {0};
+    h2_esp_es8311_audio_system_config_t cfg = config();
+    running = NULL;
+    for (size_t i = 0; i < sizeof(transient_errors) / sizeof(transient_errors[0]); ++i) {
+        const TickType_t initial_ticks = i == 0 ? 0 : UINT32_MAX - 100u;
+        ticks = initial_ticks;
+        write_count = 0;
+        cold_writes_remaining = -1;
+        cold_write_error = transient_errors[i];
+        assert(h2_esp_es8311_audio_system_init(&s, &cfg) == H2_AUDIO_OK);
+        assert(h2_esp_es8311_audio_system_prepare(&s) == H2_AUDIO_ERR_IO);
+        assert(ticks - initial_ticks == pdMS_TO_TICKS(2000));
+        assert(!s.opened && !s.mic_started && !s.playback_started && !pa_enabled);
+        assert(h2_esp_es8311_audio_system_deinit(&s) == H2_AUDIO_OK);
+    }
+    cold_writes_remaining = 0;
+    ticks = 0;
+    write_count = 0;
+    assert(h2_esp_es8311_audio_system_init(&s, &cfg) == H2_AUDIO_OK);
+    assert(h2_esp_es8311_audio_system_prepare(&s) == H2_AUDIO_OK);
+    assert(ticks == 0); /* Warm/ready hardware has no unconditional delay. */
+    assert(h2_esp_es8311_audio_system_deinit(&s) == H2_AUDIO_OK);
+    write_count = 0;
+    fail_write = 0;
+    ticks = 0;
+    assert(h2_esp_es8311_audio_system_init(&s, &cfg) == H2_AUDIO_OK);
+    assert(h2_esp_es8311_audio_system_prepare(&s) == H2_AUDIO_ERR_IO);
+    assert(write_count == 1 && ticks == 0);
+    assert(h2_esp_es8311_audio_system_deinit(&s) == H2_AUDIO_OK);
+    fail_write = -1;
+    write_count = 0;
+    fail_write = 2; /* Fail clock programming after a successful handshake. */
+    assert(h2_esp_es8311_audio_system_init(&s, &cfg) == H2_AUDIO_OK);
+    assert(h2_esp_es8311_audio_system_prepare(&s) == H2_AUDIO_ERR_IO);
+    assert(write_count == 3 && ticks == 0);
+    assert(h2_esp_es8311_audio_system_deinit(&s) == H2_AUDIO_OK);
+    fail_write = -1;
+    write_count = 0;
+}
 int main(void) {
+    test_cold_control_startup();
     h2_esp_es8311_audio_system_t s = {0};
     assert(h2_esp_es8311_audio_system_power_down(NULL) == H2_AUDIO_ERR_INVALID_ARG);
     assert(h2_esp_es8311_audio_system_power_down(&s) == H2_AUDIO_OK);

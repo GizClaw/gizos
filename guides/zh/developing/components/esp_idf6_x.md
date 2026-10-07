@@ -152,6 +152,12 @@ Component 定义 config shape，BSP 填写当前 board 的 bus handle、GPIO、a
 
 AMOLED Board 在 `h2_esp_board_runtime_config()` 之前，通过可选的 `h2_esp_board_audio_configure()` 和 `h2_esp_board_display_configure()` 声明 workload-owned 调优：前者覆盖 I2S DMA descriptor/frame 数、`mic_gain_db`、mic queue frame 数和 `aggressive_aec_nlp`；后者覆盖 SH8601 面板 `pclk_hz`（`0` 保留 component 默认）。两者都只在对应资源（audio system/panel IO）尚未初始化时接受调用，之后调用返回 `H2_PAL_ERR_INVALID_STATE`；重复调用以最后一次为准，字段校验与该 lifecycle guard 都拆成独立的纯函数（`h2_esp_board_audio_config_is_valid`/`_may_apply` 与 display 对应函数），由 host test 直接覆盖。Board 保留未覆盖字段的既有默认值，不引入 Board 级常量表之外的隐式状态。这两个 API 不暴露 mic/speaker task 优先级或绑核：按本节前述约定，portable task name 到 absolute priority、core affinity、minimum stack 的映射只属于最终 firmware target 的 policy table，`h2_es8311_audio_system_config_t` 的 `mic_task_priority`/`mic_task_core_id`/`speaker_task_priority`/`speaker_task_core_id` 继续由 Board 按既有硬编码值传入，不作为 workload 可调项。
 
+### ES8311 control-port startup
+
+单 ES8311 audio system 的 lazy prepare/start 先启用 I2S 时钟，再完成 codec control-port 就绪握手，随后才写入 clock/reset/ADC/DAC 配置和启动 worker。握手使用已有的 `0x44=0x08` noise-immunity 写入，保留 ready codec 的两次初始写入；该序列来自 [Espressif ES8311 driver](https://github.com/espressif/esp-adf/blob/release/v2.x/components/esp_codec_dev/device/es8311/es8311.c#L514-L517)。首次访问可能连续返回 `ESP_ERR_INVALID_RESPONSE` 或 `ESP_ERR_TIMEOUT`，因此只在握手阶段按 20 ms 间隔重试，并用一个包含每次 I2C 等待的 2 秒总 deadline 限制初始化。已就绪的硬件没有固定 sleep；PA 和 mic/speaker worker 在握手完成前保持关闭。持续无应答在 deadline 后返回 `H2_AUDIO_ERR_IO`，其它错误直接返回既有映射结果，握手之后的配置写入不使用此重试策略。I2C API 的 timeout 参数始终以毫秒传入。
+
+`codec control not ready`、`codec control ready` 和 `codec control readiness timeout` 日志分别记录等待、恢复和耗尽 deadline。Host regression 覆盖连续 NACK/timeout 后恢复、永久无应答、tick rollover、正常热启动无额外延迟，以及首写和后续配置写入的真实错误。真机验收须分别覆盖断电后的首次 microphone/speaker 启动和保留供电的软件重启，不能用软件重启代替冷上电。
+
 ## Library 与 Third-party Integration
 
 不依赖最终 `sdkconfig.h`、IDF lifecycle 或 IDF-owned source selection 的 portable library，由最终 firmware entry 的唯一 `firmware_lib_component` 统一选择；runner 将其主 `.a` 与 `CcInfo` 传递静态依赖注册为单个 `h2_firmware_lib` component，并作为一个 rescan group 链接。依赖最终 IDF configuration 的 first-party source 由 `firmware_native_component` 声明，runner 为当前 action 生成 component directory/name/direct-source manifest，再由 `idf_component_register()` 在同一次 `idf.py build` 中编译。共享 archive import helper 位于 `native_component_src/esp-idf6.x/cmake/`。
