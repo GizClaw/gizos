@@ -1,0 +1,80 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:mobile_e2e.bzl", "mobile_e2e_suite")
+
+package(default_visibility = ["//projects/e2e:__subpackages__"])
+
+cc_library(
+    name = "runner",
+    srcs = ["mobile_runner.c"],
+    hdrs = ["mobile_runner.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["."],
+    target_compatible_with = select({
+        "@platforms//os:ios": [],
+        "@platforms//os:android": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/pal/providers/wolfssl",
+        "//projects/e2e/libs/pal-ipv6-runner:runner",
+        "//projects/e2e/libs/pal-net-tls-runner:runner",
+    ],
+)
+
+exports_files([
+    "BUILD.bazel",
+    "run_mobile.py",
+])
+
+mobile_e2e_suite(
+    name = "mobile_e2e",
+    android_sdk = {
+        "required_header": "prefab/modules/h2_pal_core/include/h2_android_net.h",
+        "public_symbols": [
+            "h2_android_net_create",
+            "h2_android_net_api",
+            "h2_android_net_destroy",
+            "h2_android_webrtc_create",
+            "h2_android_webrtc_api",
+            "h2_android_webrtc_destroy",
+        ],
+    },
+    case_count = 56,
+    case_result = "detail",
+    expected = {
+        "profile": "pal-ipv6-native",
+        "passed": 56,
+        "failed": 0,
+        "blocked": 0,
+        "retained_allocations": 0,
+        "retained_sockets": 0,
+        "retained_resolvers": 0,
+        "rc": 0,
+        "teardown": 0,
+    },
+    fixtures = {"server": "//projects/e2e/libs/pal-webrtc-fixture:server"},
+    hook = "run_mobile.py",
+    ios_sdk = {
+        "executable": "GizOSPALIPv6E2E",
+        "provider_symbols": [
+            "_h2_ios_net_create",
+            "_h2_ios_net_api",
+            "_h2_ios_net_destroy",
+            "_h2_ios_webrtc_create",
+            "_h2_ios_webrtc_api",
+            "_h2_ios_webrtc_destroy",
+        ],
+        "portable_symbol": "_h2_pal_ipv6_e2e_run",
+        "header_member": "H2PALCore.xcframework/ios-arm64-simulator/H2PALCore.framework/Headers/h2_ios_net.h",
+    },
+    package = "com.haivivi.gizos.e2e.palipv6",
+    registry = "//projects/e2e/apps/pal-ipv6/app:include/h2_pal_ipv6_cases.inc",
+    registry_pattern = "H2_PAL_IPV6_CASE\\(\\w+, \"([^\"]+)\"\\)",
+    report = "pal-ipv6-result.json",
+    timeout_seconds = 600,
+    deps = [
+        "//projects/e2e/libs/pal-ipv6-fixture:fixture",
+    ],
+)

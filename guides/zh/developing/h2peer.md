@@ -120,3 +120,7 @@ Package test 使用 deterministic PAL fake 和 package-private provider fake，�
 ESP target 上有两项测量时必须显式控制的平台状态。第一，lwIP 把 `SO_RCVTIMEO=0` 当作永久阻塞，ESP Net PAL 的 `tcp_recv`/`udp_recvfrom` 因此把 PAL timeout `0` 实现为 `MSG_DONTWAIT` 轮询、把有界 timeout 实现为 `SO_RCVTIMEO` 阻塞读；H2Peer owner 用 timeout `0` 轮询 TCP/TURN socket 时依赖这一语义。第二，H2Loader App command service 的 BLE 广播会让 Wi-Fi 共存调度把 station 每秒睡眠约十次，即使 `WIFI_PS_NONE` 也是如此，AMOLED 上实测 UDP 吞吐因此降到三分之一；AMOLED launcher 的 `H2_WEBRTC_PERF_BLE_ADV=0` 在 workload 前暂停广播，产品在语音会话期间应采用同样策略。
 
 ESP-IDF 和 BK 的 production firmware 必须通过各自 native build 入口验证。BK H106 还通过 image-owned memory contract 检查 H2Peer、其私有 libSRTP、H2SCTP 与 BLE required symbols，拒绝 Classic Bluetooth symbols，并保持 AP image 在物理 `2380 KiB` partition 内；不能通过扩大 partition 掩盖集成成本。
+
+## IPv6 ICE
+
+Portable Agent 尝试两个地址族，允许实际仅支持其中一个地址族的 Net provider。 每个候选使用自己的 UDP socket；无 socket 的地址族不产生候选。IPv6 host 候选与 IPv6 STUN Binding 均走真实 IPv6 socket；STUN URL 的 IPv6 字面量使用方括号。 Link-local 作用域属于本机，不能直接写入远端 SDP，因此不发布带本机 scope 的 host 候选。独立 `pal-ipv6` E2E 使用只提供 IPv6 ICE 候选的受控 Pion 夹具验证 DTLS/SCTP。

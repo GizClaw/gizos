@@ -141,7 +141,7 @@ static int fake_tcp_open(
     h2_pal_net_family_t family,
     h2_pal_net_socket_t *out_socket) {
     fake_http_platform_t *platform = (fake_http_platform_t *)user;
-    if (family != H2_PAL_NET_FAMILY_IPV4 || out_socket == NULL ||
+    if ((family != H2_PAL_NET_FAMILY_IPV4 && family != H2_PAL_NET_FAMILY_IPV6) || out_socket == NULL ||
         platform->response_index >= platform->response_count) {
         return H2_PAL_ERR_UNAVAILABLE;
     }
@@ -174,6 +174,18 @@ static h2_pal_result_t fake_connect(
         return H2_PAL_ERR_INVALID_ARG;
     }
     platform->connect_count += 1;
+    if (addr->family == H2_PAL_NET_FAMILY_IPV6) {
+        if (platform->fail_ipv6_connect)
+            return H2_PAL_ERR_IO;
+        uint32_t delay = platform->ipv6_connect_remaining_ms;
+        if (delay > timeout_ms)
+            delay = timeout_ms;
+        platform->now_ms += delay;
+        platform->ipv6_connect_remaining_ms -= delay;
+        if (platform->ipv6_connect_remaining_ms)
+            return H2_PAL_ERR_TIMEOUT;
+    }
+    platform->connected_family = addr->family;
     return platform->connect_result;
 }
 

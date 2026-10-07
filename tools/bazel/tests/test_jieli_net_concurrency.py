@@ -240,6 +240,8 @@ def run(main, extra='', source=None):
     source = SOURCE.read_text() if source is None else source
     # Reference every extracted entry so -Werror also checks the whole provider slice.
     refs = '(void)resolver_reap; (void)tcp_send; (void)h2_jieli_atomic_cas_u32; (void)h2_jieli_atomic_store_u32; (void)os_time_dly; (void)udp_open; (void)tcp_open_bound; (void)udp_join_multicast; (void)udp_sendto; (void)udp_recvfrom; (void)close_socket; (void)connector; (void)sender; (void)receiver; (void)stopper; (void)wait_blocked; (void)release_blocked;'
+    if 'resolve_all_unsupported' in source:
+        refs += '(void)resolve_all_unsupported; (void)resolve_start_family_unsupported; (void)resolve_poll_all_unsupported; (void)get_host_addr_family_unsupported;'
     main = main.replace('int main(void) {', 'int main(void) {' + refs + ' assert(h2_atomic_int_init(&stopped, 0) == H2_ATOMIC_OK);')
     main = main.replace(' return 0;\n}', ' h2_atomic_int_destroy(&stopped); return 0;\n}')
     with tempfile.TemporaryDirectory(prefix='h2-net-thread-') as directory:

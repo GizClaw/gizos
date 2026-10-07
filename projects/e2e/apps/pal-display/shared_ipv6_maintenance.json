@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "new_physical_run_claimed": false,
+  "historical_shared_catalog_provenance_sha256": "99d902e94ca36d5a11b4638b548282c50d2e62e52174e1f4e7f04b3de1adc9c0",
+  "historical_baseline_commit": "e9ee7e6b4d2a15b70bb3a7a9147bacf3937365c3",
+  "historical_baseline_sha256": "36480ff0007d77faeb060ddd7ddc753dbf1bc4110244792a7312487d8b0381ca",
+  "guide_changes": [
+    {
+      "owner": "net_ipv6",
+      "before_utf8": "",
+      "after_utf8": "\n## IPv6 地址与 DNS\n\nPOSIX 与 ESP 的 resolver 在本地处理保留名称：`localhost` 及其子域返回真实 loopback 地址，`.invalid` 及其子域直接返回 `NOT_FOUND`，不依赖当前网络的 DNS 服务器。名称比较不区分大小写并接受末尾的点，遵循 [RFC 6761](https://www.rfc-editor.org/rfc/rfc6761.html#section-6.4)。独立的 nonce AAAA wire fixture 仍通过真实 IPv6 UDP 验证报文，不由这些本地规则替代。\n\nNet 地址新增 `scope_id`，表示本机 IPv6 接口索引；link-local 目标必须携带作用域， IPv4 地址必须为零。作用域不能作为 IP 地址的一部分发送到 STUN 或 SDP。 新 DNS 列表接口支持 ANY、IPv4、IPv6 筛选、有界去重列表与截断标志；异步操作沿用 复制 hostname、有限容量、poll 总预算和取消后 backend 自行回收的合同。 旧单地址接口保留 IPv4 优先，并在没有 IPv4 时接受 IPv6。HTTP/MQTT 根据每个结果的 地址族创建 socket，失败后关闭并在原始连接预算内回退。pending TCP 连接的 `TIMEOUT`/`WOULD_BLOCK` 沿用原始总预算并继续同一 socket；只有终态连接失败才回退，不为候选地址设置独立的 250 ms 上限。TLS 验证失败不会触发降级。 `pal-ipv6` 提供独立 E2E；浏览器原始 Net 的 UNSUPPORTED 与 Fetch/WebRTC 的 IPv6 实际执行分开记录。新 provider 代码不改变历史实板记录的执行身份。\n"
+    }
+  ],
+  "previous_audit_sha256": {
+    "projects/e2e/apps/pal-display/BUILD.bazel": "8cf47780717ae7d621197d5f98cfa80de4b50c7fd46a61da3b7bdf82505440ef",
+    "projects/e2e/apps/pal-display/README.md": "e26f59c6d1412cf268e43239b6c82b0767cecb1f62367a857587082f302f045b",
+    "projects/e2e/apps/pal-display/check_qualification.py": "59a54f70af2fdaffa6b7fb4005b4c3f65503e1299d880665a1e2ffe1f7ca4872"
+  },
+  "current_audit_sha256": {
+    "projects/e2e/apps/pal-display/BUILD.bazel": "87c6346998da40e8b8b1753e8eb18997ddd68939507709ba4aecf7a2aff5c84b",
+    "projects/e2e/apps/pal-display/README.md": "74b3849400315b472667a42455286988cae99500fe1f7c075fad98763e6a38e4",
+    "projects/e2e/apps/pal-display/check_qualification.py": "ecefe81d6578b5d7689facb59941644220cba3ad4755432b55508072528a37ab"
+  },
+  "network_config_changes": {},
+  "scope": "Host audit and explicitly reversed Net/Wi-Fi guide deltas only. Display provider/App/catalog content and historical physical/mobile/artifact receipts are unchanged; no current Display hardware qualification is claimed."
+}
