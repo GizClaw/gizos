@@ -53,6 +53,99 @@ def net_tls_build_input(relative, content):
         text = text.replace('        "//libs/pal/providers/coremqtt",\n', '')
     return text.encode('utf-8')
 
+IPV6_SOURCE_UPDATES = {
+    'projects/e2e/apps/pal-net-tls/app/src/h2_pal_net_tls_e2e.c',
+    'projects/e2e/apps/pal-net-tls/app/include/h2_pal_net_tls_e2e.h',
+    'projects/e2e/libs/pal-net-tls-fixture/fixture.py',
+    'libs/pal/include/h2/pal/net/h2_pal_net.h',
+    'libs/pal/providers/posix/pal_core/src/h2_posix_net.c',
+    'native_component_src/esp-idf6.x/h2_pal_core/src/h2_esp_platform_net.c',
+}
+IPV6_BK_SOURCE = 'native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_net.c'
+IPV6_BK_WIFI_SOURCE = 'native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_wifi.c'
+IPV6_SLOTS = {'resolve_all', 'resolve_start_family', 'resolve_poll_all',
+              'get_host_addr_family'}
+IPV6_HOST_SOURCES = {
+    'libs/pal/include/h2/pal/net/h2_pal_net.h',
+    'libs/pal/providers/posix/pal_core/src/h2_posix_net.c',
+    'libs/pal/providers/darwin/pal_core/src/h2_darwin_netif.c',
+    'libs/pal/providers/corehttp/src/h2_corehttp.c',
+    'libs/pal/providers/coremqtt/src/h2_coremqtt_client.c',
+    'libs/pal/providers/h2peer/src/providers/portable/agent.c',
+    'libs/pal/providers/h2peer/src/providers/portable/ports.c',
+    'projects/e2e/apps/pal-ipv6/app/src/h2_pal_ipv6_e2e.c',
+    'projects/e2e/apps/pal-ipv6/app/include/h2_pal_ipv6_e2e.h',
+    'projects/e2e/apps/pal-ipv6/app/src/h2_pal_ipv6_local.c',
+    'projects/e2e/apps/pal-ipv6/app/src/h2_pal_ipv6_local.h',
+    'projects/e2e/targets/cc_binary/pal-ipv6/main.c',
+    'projects/e2e/targets/cc_binary/pal-ipv6/run_desktop.py',
+    'projects/e2e/apps/pal-net-tls/app/src/h2_pal_net_tls_e2e.c',
+    'projects/e2e/libs/pal-net-tls-fixture/fixture.py',
+    'tools/webrtc-test-server/main.go',
+    'MODULE.bazel',
+    'projects/e2e/libs/pal-ipv6-fixture/fixture_ipv6.py',
+}
+
+
+def check_ipv6_host_capture_pin(host):
+    """Compare a claim with independently reviewed raw-capture expectations."""
+    pins = json.loads((APP / 'ipv6_host_input_pins.json').read_text(encoding='utf-8'))
+    assert pins['schema'] == 1
+    commit = host['executed_source_commit']
+    assert commit in pins['captures'], 'host capture has no independently reviewed pin: ' + commit
+    assert type(host['schema']) is int and host['schema'] == 1
+    capture = host['complete_input_capture']
+    assert capture['all_before_after_identical'] is True
+    assert all(type(capture[key]) is int for key in
+               ('actions_count', 'input_count', 'first_party_sources_count'))
+    expected = pins['captures'][commit]
+    assert set(expected) == {'schema', 'platform', 'config', 'executed_source_commit',
+                             'source_sha256', 'artifact_sha256', 'complete_input_capture'}
+    assert expected['executed_source_commit'] == commit
+    for key, value in expected.items():
+        assert host.get(key) == value, 'host capture differs from independent pin: ' + key
+
+
+def ipv6_source_updates(root, effective):
+    """Validate current source maintenance without rebinding old hardware."""
+    record = json.JSONDecoder().decode((APP / 'ipv6_source_maintenance.json').read_text())
+    assert record['schema'] == 1 and record['new_physical_run_claimed'] is False
+    assert record['historical_qualification_sha256'] == hashlib.sha256(
+        (APP / 'qualification.json').read_bytes()).hexdigest()
+    assert record['historical_https_provenance_sha256'] == hashlib.sha256(
+        (APP / 'gizclaw_public_https_provenance_main_tls.json').read_bytes()).hexdigest()
+    current = record['current_source_sha256']
+    assert IPV6_SOURCE_UPDATES <= set(current) <= IPV6_SOURCE_UPDATES | {
+        IPV6_BK_SOURCE, IPV6_BK_WIFI_SOURCE}
+    assert record['previous_source_sha256'] == {path: effective[path] for path in current}
+    assert record['historical_physical_qualification_applies_to_current_sources'] is False
+    for path, expected in current.items():
+        assert re.fullmatch(r'[0-9a-f]{64}', expected)
+        assert hashlib.sha256((root / path).read_bytes()).hexdigest() == expected, path
+    assert set(record['new_slots']) == IPV6_SLOTS
+    registry = set(re.findall(r'H2_PAL_IPV6_CASE\(\w+, "([^\"]+)"\)',
+        (root / 'projects/e2e/apps/pal-ipv6/app/include/h2_pal_ipv6_cases.inc').read_text()))
+    assert all(cases and set(cases) <= registry for cases in record['new_slots'].values())
+    assert record['validation']['desktop_ipv6_mandatory_passed'] == 56
+    assert record['validation']['desktop_net_tls_mandatory_passed'] == 37
+    assert record['validation']['retained_resources'] == 0
+    host = record['validation']['host_execution']
+    assert host['schema'] == 1 and host['platform'] == 'macos'
+    assert re.fullmatch(r'[0-9a-f]{40}', host['executed_source_commit'])
+    assert host['artifact_sha256'] and set(host['source_sha256']) == IPV6_HOST_SOURCES
+    for path, expected in host['source_sha256'].items():
+        assert hashlib.sha256((root / path).read_bytes()).hexdigest() == expected, path
+    capture = host['complete_input_capture']
+    assert capture['all_before_after_identical'] is True
+    assert all(type(capture[key]) is int and capture[key] > 0 for key in
+               ('actions_count', 'input_count', 'first_party_sources_count'))
+    assert set(capture['sha256']) == {'full_source_manifest', 'selected_action_closure',
+                                     'action_input_manifest', 'input_verification'}
+    assert all(re.fullmatch('[0-9a-f]{64}', value) for value in capture['sha256'].values())
+    check_ipv6_host_capture_pin(host)
+    return current
+
+
 def check_sources(root, sources, followup=None):
     assert REQUIRED_PROVIDER_SOURCES <= set(sources), 'missing qualified provider/config source receipt'
     effective = dict(sources)
@@ -71,6 +164,7 @@ def check_sources(root, sources, followup=None):
         assert followup['validation']['untrusted_and_date_failures'] == 'PASS'
         assert followup['validation']['shared_mobile_contract'] == 'PASS'
         effective.update(followup['current_source_sha256'])
+        effective.update(ipv6_source_updates(root, effective))
     for relative, expected in effective.items():
         content = (root / relative).read_bytes()
         if hashlib.sha256(content).hexdigest() != expected:
@@ -244,7 +338,7 @@ def check(root=ROOT, allow_pending=False, require_all_core=False):
     slots = json.loads((app / 'app/api_coverage.json').read_text())['slots']
     header = (root / 'libs/pal/include/h2/pal/net/h2_pal_net.h').read_text()
     vtable = header.split('typedef struct h2_pal_net_vtable {', 1)[1].split('} h2_pal_net_vtable_t;', 1)[0]
-    assert set(slots) == set(re.findall(r'\(\*(\w+)\)', vtable))
+    assert set(slots) | IPV6_SLOTS == set(re.findall(r'\(\*(\w+)\)', vtable))
     for platform, entry in data['platforms'].items():
         receipt = json.loads((app / entry['evidence']).read_text())
         if platform in pending:
@@ -306,4 +400,5 @@ if __name__ == '__main__':
     parser.add_argument('--require-all-core',action='store_true')
     args=parser.parse_args()
     result=check(allow_pending=args.allow_pending, require_all_core=args.require_all_core)
-    print('Net/TLS assessment complete:', result['assessment_complete'])
+    print('Net/TLS historical assessment complete:', result['assessment_complete'],
+          '; IPv6 provider maintenance is separate and claims no new physical run')

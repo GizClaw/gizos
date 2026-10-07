@@ -8,8 +8,9 @@ from pathlib import Path
 
 @contextlib.contextmanager
 def fixture(binary, address='127.0.0.1'):
-    process = subprocess.Popen([str(Path(binary).resolve()), '--listen=' + address + ':0',
-        '--stun-listen=' + address + ':0', '--turn-listen=127.0.0.1:0',
+    endpoint = '[' + address + ']:0' if ':' in address else address + ':0'
+    process = subprocess.Popen([str(Path(binary).resolve()), '--listen=' + endpoint,
+        '--stun-listen=' + endpoint, '--turn-listen=127.0.0.1:0',
         '--candidate-ip=' + address, '--ice-mode=udp'],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     try:

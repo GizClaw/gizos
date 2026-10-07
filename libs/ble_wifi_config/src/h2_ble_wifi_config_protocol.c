@@ -274,9 +274,9 @@ h2_ble_wifi_config_reason_t h2_ble_wifi_config_default_reason(
     if (status != NULL &&
         (status->state == H2_PAL_WIFI_STA_STATE_CONNECTED ||
          status->state == H2_PAL_WIFI_STA_STATE_GOT_IP) &&
-        status->ip_valid == 0u) {
-        /* Associated without an address: the lease failed, not the key. */
-        return H2_BLE_WIFI_CONFIG_REASON_DHCP_FAILED;
+        !h2_pal_wifi_sta_status_has_ip(status)) {
+      /* Associated without an address: the lease failed, not the key. */
+      return H2_BLE_WIFI_CONFIG_REASON_DHCP_FAILED;
     }
     if (connect_result == H2_PAL_ERR_TIMEOUT) {
         return H2_BLE_WIFI_CONFIG_REASON_CONNECT_TIMEOUT;

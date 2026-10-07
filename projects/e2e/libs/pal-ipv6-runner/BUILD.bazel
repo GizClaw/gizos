@@ -1,0 +1,22 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//projects/e2e:__subpackages__"])
+
+cc_library(
+    name = "fixture_client",
+    srcs = ["address.c"],
+    hdrs = ["h2_pal_ipv6_runner.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["."],
+    deps = ["//projects/e2e/apps/pal-ipv6/app:pal_ipv6_e2e"],
+)
+
+cc_library(
+    name = "runner",
+    srcs = ["report.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    deps = [":fixture_client"],
+)

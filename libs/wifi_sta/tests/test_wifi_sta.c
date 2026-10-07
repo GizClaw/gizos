@@ -11,7 +11,7 @@ typedef struct fixture {
     uint32_t connect_ms, disconnect_ms, timeout;
     unsigned int connects, disconnects, saves, reads, ready_after;
     int connect_rc, save_rc, status_rc, sleep_rc, get_rc;
-    bool wrong_ssid, wrong_bssid, zero_ip;
+    bool wrong_ssid, wrong_bssid, zero_ip, ipv6_only, link_local;
 } fixture_t;
 
 static int get_saved(void *user, h2_pal_wifi_sta_config_t *out) {
@@ -22,7 +22,7 @@ static int get_saved(void *user, h2_pal_wifi_sta_config_t *out) {
 static int save(void *user, const h2_pal_wifi_sta_config_t *config) {
     fixture_t *f = user;
     assert(f->status.state == H2_PAL_WIFI_STA_STATE_GOT_IP);
-    assert(f->status.ip_valid && f->status.ip.ip4);
+    assert(h2_pal_wifi_sta_status_has_ip(&f->status));
     assert(!f->wrong_ssid && !f->wrong_bssid);
     ++f->saves;
     if (!f->save_rc) f->saved = *config;
@@ -49,8 +49,14 @@ static int status(void *user, h2_pal_wifi_sta_status_t *out) {
     fixture_t *f = user;
     if (f->connects && ++f->reads > f->ready_after) {
         f->status.state = H2_PAL_WIFI_STA_STATE_GOT_IP;
-        f->status.ip_valid = 1;
-        f->status.ip.ip4 = f->zero_ip ? 0 : 0xc0000201;
+        f->status.ip_valid = !f->ipv6_only;
+        f->status.ip.ip4 = f->zero_ip || f->ipv6_only ? 0 : 0xc0000201;
+        if (f->ipv6_only) {
+          f->status.ip.ip6_valid = 1u;
+          f->status.ip.ip6[0] = f->link_local ? 0xfe : 0xfd;
+          f->status.ip.ip6[1] = f->link_local ? 0x80 : 0x53;
+          f->status.ip.ip6[15] = 1;
+        }
         f->status.ssid_len = f->target.ssid_len;
         memcpy(f->status.ssid, f->target.ssid, f->target.ssid_len);
         if (f->wrong_ssid) f->status.ssid[0] ^= 1;
@@ -134,6 +140,13 @@ static void run_cases(void) {
     f = (fixture_t){.saved = old, .connect_ms = 100};
     assert(h2_wifi_sta_connect_and_save(&deps, &target, 100) == H2_PAL_ERR_TIMEOUT);
     assert(!f.saves);
+    f = (fixture_t){.saved = old, .ipv6_only = true};
+    assert(h2_wifi_sta_connect_and_save(&deps, &target, 100) == H2_PAL_OK);
+    assert(f.saves == 1 && !f.status.ip_valid && f.status.ip.ip6_valid);
+    f = (fixture_t){.saved = old, .ipv6_only = true, .link_local = true};
+    assert(h2_wifi_sta_connect_and_save(&deps, &target, 31) ==
+           H2_PAL_ERR_TIMEOUT);
+    assert(!f.saves && !memcmp(&f.saved, &old, sizeof(old)));
     f = (fixture_t){.saved = old, .get_rc = H2_PAL_ERR_UNSUPPORTED};
     assert(h2_wifi_sta_connect_and_save(&deps, &target, 100) == H2_PAL_ERR_UNSUPPORTED);
     assert(!f.connects && !f.disconnects && !f.saves);

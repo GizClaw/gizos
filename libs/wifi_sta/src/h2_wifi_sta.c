@@ -61,12 +61,13 @@ int h2_wifi_sta_connect_and_save(const h2_wifi_sta_dependencies_t *deps,
         rc = remaining_budget(deps, started, budget, &remaining);
         if (rc != H2_PAL_OK)
             break;
-        if (status.state == H2_PAL_WIFI_STA_STATE_GOT_IP && status.ip_valid && status.ip.ip4 != 0u &&
+        if (h2_pal_wifi_sta_status_has_ip(&status) &&
             status.ssid_len == config->ssid_len &&
             memcmp(status.ssid, config->ssid, config->ssid_len) == 0 &&
-            (!config->bssid_set || (status.bssid_set &&
-             memcmp(status.bssid, config->bssid, sizeof(config->bssid)) == 0))) {
-            return h2_pal_wifi_settings_set_saved_sta_config(settings, config);
+            (!config->bssid_set ||
+             (status.bssid_set && memcmp(status.bssid, config->bssid,
+                                         sizeof(config->bssid)) == 0))) {
+          return h2_pal_wifi_settings_set_saved_sta_config(settings, config);
         }
         if (status.state == H2_PAL_WIFI_STA_STATE_FAILED ||
             status.state == H2_PAL_WIFI_STA_STATE_DISCONNECTED)

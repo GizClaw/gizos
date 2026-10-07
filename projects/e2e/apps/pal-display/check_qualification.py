@@ -183,7 +183,24 @@ def shared_catalog_sources(previous):
         path: previous[path] for path in SHARED_CATALOG_AUDIT_SOURCES}
     replacements = audit["current_source_sha256"]
     assert set(replacements) == SHARED_CATALOG_AUDIT_SOURCES
-    sources = {**previous, **replacements}
+    maintenance = shared_ipv6_maintenance()
+    assert maintenance["previous_audit_sha256"] == replacements
+    updates = maintenance["current_audit_sha256"]
+    assert set(updates) == SHARED_CATALOG_AUDIT_SOURCES
+    sources = {**previous, **replacements, **updates}
+    network = maintenance.get("network_config_changes", {})
+    assert set(network) <= {"boards/bk7258_v3_202405/bk7258/ap.defaults"}
+    for path, change in network.items():
+        assert change["previous_sha256"] == previous[path]
+        content = Path(path).read_bytes()
+        assert hashlib.sha256(content).hexdigest() == change["current_sha256"]
+        before, after = change["before_utf8"].encode(), change["after_utf8"].encode()
+        assert after and content.count(after) == 1
+        assert before == b"# CONFIG_IPV6 is not set\n"
+        assert after == b"CONFIG_IPV6=y\n"
+        restored = content.replace(after, before, 1)
+        assert hashlib.sha256(restored).hexdigest() == previous[path]
+        sources[path] = change["current_sha256"]
     # The historical whole-file hash still authenticates the immutable baseline.
     # Other Apps may update their catalog entries without a new Display run.
     del sources[SHARED_CATALOG]
@@ -191,8 +208,49 @@ def shared_catalog_sources(previous):
     return sources
 
 
+SHARED_PAL_IPV6_BASELINE_SHA256 = "36480ff0007d77faeb060ddd7ddc753dbf1bc4110244792a7312487d8b0381ca"
+SHARED_PAL_IPV6_OWNERS = {"net_ipv6", "wifi_ipv6_readiness",
+                         "wifi_ipv6_persistence"}
+
+
+def shared_ipv6_maintenance():
+    record = json.JSONDecoder().decode(
+        (ROOT / "shared_ipv6_maintenance.json").read_text(encoding="utf-8"))
+    assert record["schema"] == 1 and record["new_physical_run_claimed"] is False
+    assert record["historical_shared_catalog_provenance_sha256"] == hashlib.sha256(
+        (ROOT / "shared_catalog_provenance.json").read_bytes()).hexdigest()
+    assert record["historical_baseline_commit"] == "e9ee7e6b4d2a15b70bb3a7a9147bacf3937365c3"
+    assert record["historical_baseline_sha256"] == SHARED_PAL_IPV6_BASELINE_SHA256
+    return record
+
+
+def shared_pal_before_ipv6(content):
+    """Reverse only explicitly recorded owned deltas; all other bytes stay exact."""
+    record = shared_ipv6_maintenance()
+    owners = [change["owner"] for change in record["guide_changes"]]
+    assert len(owners) == len(set(owners)) and set(owners) <= SHARED_PAL_IPV6_OWNERS
+    assert "net_ipv6" in owners
+    for change in reversed(record["guide_changes"]):
+        before, after = change["before_utf8"].encode(), change["after_utf8"].encode()
+        assert after and before != after
+        owner = change["owner"]
+        if owner == "net_ipv6":
+            assert before == b"" and after.decode().startswith("\n## IPv6 地址与 DNS\n")
+        elif owner == "wifi_ipv6_readiness":
+            assert before == b"" and after.decode().startswith("## Wi-Fi IPv6 就绪\n")
+        elif owner == "wifi_ipv6_persistence":
+            assert before.decode().startswith("Wi-Fi STA 的 `connect` 与 `connect_and_save`")
+            assert after.decode().startswith("Wi-Fi STA 的 `connect` 与 `connect_and_save`")
+            assert "\n\n" not in before.decode().strip() and "\n\n" not in after.decode().strip()
+        else:
+            raise AssertionError("unowned shared PAL change")
+        assert content.count(after) == 1, "recorded guide delta missing or duplicated: " + owner
+        content = content.replace(after, before, 1)
+    return content
+
+
 def shared_pal_guide(previous, extension):
-    """Admit only the exact two BK Pref additions at their recorded insertion."""
+    """After owned IPv6 reversal, require the exact historical BK Pref insertion."""
     assert extension["source_commit"] == SHARED_CATALOG_BASELINE_COMMIT
     assert extension["source_path"] == SHARED_PAL_GUIDE
     assert extension["addition_source_commit"] == SHARED_PAL_ADDITION_COMMIT
@@ -211,6 +269,7 @@ def shared_pal_guide(previous, extension):
     assert paragraphs[0].startswith("BK7258 大值仍使用原 128 KiB physical FlashDB 分区：")
     assert paragraphs[1].startswith("Tail v1 manifest 为 96 字节：")
     current = Path(SHARED_PAL_GUIDE).read_bytes()
+    current = shared_pal_before_ipv6(current)
     if hashlib.sha256(current).hexdigest() == previous[SHARED_PAL_GUIDE]:
         return
     offset = extension["insertion_offset"]

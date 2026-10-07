@@ -1,0 +1,74 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
+load(":config.bzl", "ipv6_server_config")
+
+package(default_visibility = ["//projects/e2e:__subpackages__"])
+
+h2_tasks(
+    name = "tasks",
+    tasks = [
+        "pal-ipv6/fixture/control",
+        "pal-ipv6/fixture/raw",
+        "pal-ipv6/fixture/http",
+        "pal-ipv6/fixture/mqtt",
+        "pal-ipv6/fixture/udp",
+    ],
+)
+
+ipv6_server_config(name = "server_inputs")
+
+cc_library(
+    name = "server_config",
+    hdrs = [":server_inputs"],
+    includes = ["include"],
+)
+
+cc_library(
+    name = "fixture",
+    srcs = ["fixture.c"],
+    hdrs = ["include/fixture.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    deps = [
+        ":server_config",
+        ":tasks",
+        "//libs/pal/providers/h2peer:portable_protocol_providers",
+        "//libs/pal/providers/h2sctp",
+        "//libs/runtime",
+        "//projects/e2e/libs/pal-ipv6-device:config",
+    ],
+)
+
+# The production constructor/workers run against controlled PAL failure points.
+cc_test(
+    name = "startup_cleanup_test",
+    srcs = [
+        "fixture.c",
+        "include/fixture.h",
+        "tests/h2_pal_ipv6_fixture_config.h",
+        "tests/h2_pal_ipv6_server_config.h",
+        "tests/test_startup.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + [
+        "-Dpeer_init=h2_test_peer_init",
+        "-Dpeer_deinit=h2_test_peer_deinit",
+        "-Dh2_sctp_create=h2_test_sctp_create",
+        "-Dh2_sctp_destroy=h2_test_sctp_destroy",
+    ],
+    includes = ["include", "tests"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":tasks",
+        "//libs/atomic/providers/c11",
+        "//libs/pal/providers/h2peer:portable_protocol_providers",
+        "//libs/pal/providers/h2sctp",
+        "//libs/runtime",
+    ],
+)

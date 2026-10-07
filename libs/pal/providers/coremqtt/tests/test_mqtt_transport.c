@@ -42,6 +42,28 @@ int main(void) {
     tls.verify = H2_PAL_NET_TLS_VERIFY_REQUIRED;
 
     fake_mqtt_platform_t fake;
+    /* A pending IPv6 connection gets the caller's 1s budget; a terminal
+     * failure instead closes it and tries the next actual address family. */
+    for (unsigned rejected = 0u; rejected < 2u; ++rejected) {
+        fake_mqtt_platform_init(&fake);
+        fake.resolver_answers = 2;
+        fake.ipv6_connect_remaining_ms = 300u;
+        fake.fail_ipv6_connect = (int)rejected;
+        h2_coremqtt_t *candidate_provider = NULL;
+        h2_pal_mqtt_api_t candidate_api = make_api(&fake, &candidate_provider);
+        uint8_t candidate_buffer[1024];
+        h2_pal_mqtt_client_config_t candidate_config = base_config(candidate_buffer, sizeof(candidate_buffer));
+        candidate_config.connect_timeout_ms = 1000u;
+        h2_pal_mqtt_client_t *candidate_client = NULL;
+        assert(candidate_api.vtable->open(candidate_api.user, &candidate_config, &candidate_client) == H2_PAL_OK);
+        assert(candidate_api.vtable->connect(candidate_api.user, candidate_client) == H2_PAL_OK);
+        assert(fake.connected_family == (rejected ? H2_PAL_NET_FAMILY_IPV4 : H2_PAL_NET_FAMILY_IPV6));
+        assert(fake.close_count == (rejected ? 1 : 0) && fake.resolver_active == 0);
+        assert(fake.now_ms < 1000u);
+        candidate_api.vtable->close(candidate_api.user, candidate_client);
+        h2_coremqtt_destroy(candidate_provider);
+        assert(fake.live_allocations == 0u && !fake.socket_open);
+    }
     fake_mqtt_platform_init(&fake);
     fake.tls_supported = 0;
     h2_coremqtt_t *provider = NULL;

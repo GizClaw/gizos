@@ -437,9 +437,8 @@ static int h2loader_stage_url(
             fflush(stdout);
             return rc;
         }
-        if (wifi_status.state == H2_PAL_WIFI_STA_STATE_GOT_IP &&
-            wifi_status.ip_valid != 0u) {
-            break;
+        if (h2_pal_wifi_sta_status_has_ip(&wifi_status)) {
+          break;
         }
         if (waited_ms >= H2_LOADER_WIFI_READY_TIMEOUT_MS ||
             (wifi_status.state != H2_PAL_WIFI_STA_STATE_CONNECTING &&

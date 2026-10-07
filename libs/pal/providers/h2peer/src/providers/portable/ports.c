@@ -11,8 +11,11 @@ int ports_get_host_addr(const h2_pal_net_api_t* net, h2_pal_net_addr_t* addr,
   h2_pal_net_addr_t host;
   h2_pal_net_family_t requested = addr->family;
   memset(&host, 0, sizeof(host));
-  if (h2_pal_net_get_host_addr(net, iface_prefix, &host) != H2_PAL_OK ||
-      host.family != requested) {
+  int rc = h2_pal_net_get_host_addr_family(net, iface_prefix, requested, &host);
+  if (rc == H2_PAL_ERR_UNSUPPORTED) {
+    rc = h2_pal_net_get_host_addr(net, iface_prefix, &host);
+  }
+  if (rc != H2_PAL_OK || host.family != requested) {
     return 0;
   }
   uint16_t port = addr->port;

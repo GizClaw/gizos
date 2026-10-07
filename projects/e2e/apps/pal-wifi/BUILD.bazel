@@ -61,6 +61,8 @@ py_test(
         "//native_component_src/bk7258/shared:h2_bk_dhcp_ring.h",
         "//native_component_src/bk7258/shared:h2_bk_wifi_lease.h",
         "//native_component_src/bk7258/shared:h2_bk_wifi_rpc.h",
+        "//native_component_src/bk7258/shared:h2_bk_wifi_ipv6.h",
+        "//native_component_src/bk7258/shared:h2_bk_wifi_ipv6.cmake",
         "//native_component_src/bk7258/shared:h2_bk_dhcp_trace.cmake",
         "//native_component_src/bk7258/shared:h2_bk_cp_psram.cmake",
         "//native_component_src/bk7258/shared:h2_bk_cp_lease.cmake",

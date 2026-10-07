@@ -3,6 +3,7 @@
 
 #include "h2/pal/core/h2_pal_errors.h"
 #include "h2/pal/hal/h2_pal_wifi_settings.h"
+#include "h2/pal/net/h2_pal_net.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -33,14 +34,15 @@ typedef enum h2_pal_wifi_security {
 } h2_pal_wifi_security_t;
 
 typedef enum h2_pal_wifi_sta_state {
-    H2_PAL_WIFI_STA_STATE_UNKNOWN = 0,
-    H2_PAL_WIFI_STA_STATE_IDLE = 1,
-    H2_PAL_WIFI_STA_STATE_SCANNING = 2,
-    H2_PAL_WIFI_STA_STATE_CONNECTING = 3,
-    H2_PAL_WIFI_STA_STATE_CONNECTED = 4,
-    H2_PAL_WIFI_STA_STATE_GOT_IP = 5,
-    H2_PAL_WIFI_STA_STATE_DISCONNECTED = 6,
-    H2_PAL_WIFI_STA_STATE_FAILED = 7,
+  H2_PAL_WIFI_STA_STATE_UNKNOWN = 0,
+  H2_PAL_WIFI_STA_STATE_IDLE = 1,
+  H2_PAL_WIFI_STA_STATE_SCANNING = 2,
+  H2_PAL_WIFI_STA_STATE_CONNECTING = 3,
+  H2_PAL_WIFI_STA_STATE_CONNECTED = 4,
+  /** At least one IPv4 or preferred non-link-local IPv6 address is ready. */
+  H2_PAL_WIFI_STA_STATE_GOT_IP = 5,
+  H2_PAL_WIFI_STA_STATE_DISCONNECTED = 6,
+  H2_PAL_WIFI_STA_STATE_FAILED = 7,
 } h2_pal_wifi_sta_state_t;
 
 /**
@@ -69,6 +71,11 @@ typedef struct h2_pal_wifi_ip_info {
     uint32_t ip4;
     uint32_t netmask4;
     uint32_t gateway4;
+    /** Preferred non-link-local unicast IPv6 address, in network byte order.
+     * Zeroed when unavailable; no router or Internet reachability is implied.
+     */
+    uint8_t ip6[16];
+    uint8_t ip6_valid;
 } h2_pal_wifi_ip_info_t;
 
 static inline void h2_pal_wifi_ip4_to_bytes(uint32_t ip4, uint8_t out[4]) {
@@ -105,9 +112,22 @@ typedef struct h2_pal_wifi_sta_status {
     uint8_t channel;
     int rssi;
     h2_pal_wifi_ip_info_t ip;
+    /** IPv4 only; IPv6 availability is ip.ip6_valid. */
     uint8_t ip_valid;
     int disconnect_reason;
 } h2_pal_wifi_sta_status_t;
+
+/** Return nonzero when an associated station owns a usable IP address.
+ * A link-local address alone never completes provisioning. */
+static inline int
+h2_pal_wifi_sta_status_has_ip(const h2_pal_wifi_sta_status_t *status) {
+  if (status == NULL || status->state != H2_PAL_WIFI_STA_STATE_GOT_IP)
+    return 0;
+  if (status->ip_valid && status->ip.ip4 != 0u)
+    return 1;
+  return status->ip.ip6_valid &&
+         h2_pal_net_ipv6_is_non_link_local_unicast(status->ip.ip6);
+}
 
 typedef struct h2_pal_wifi_ap_config {
     char ssid[H2_PAL_WIFI_SSID_MAX + 1];
