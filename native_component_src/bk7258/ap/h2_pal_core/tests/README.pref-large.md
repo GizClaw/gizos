@@ -55,6 +55,11 @@ its bytes. This is not a new cross-provider transaction or power-loss guarantee.
 The NOR model exercises failed programming, erased-header recovery and erase
 errors before/after a complete 4 KiB erase, not arbitrary partial-sector damage.
 
+Setting the same bytes with the same verified type performs no Flash write.
+The existing value and matching sidecar are still read and validated under the
+operation mutex; read failures remain errors. Unknown types and type-only changes
+still publish metadata, and legacy migration remains part of the normal read.
+
 Run the real engine test explicitly with an unchanged pinned SDK and native C
 compiler:
 

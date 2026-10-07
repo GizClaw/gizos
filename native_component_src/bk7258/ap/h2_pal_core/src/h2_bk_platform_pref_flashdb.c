@@ -922,10 +922,13 @@ static int typed_set_value(h2_pal_pref_namespace_t *base, const char *key,
     rc = read_metadata_type(full, previous, previous_length, &previous_type);
   loaded = pref_now_ms();
   metadata = loaded;
-  if (!rc) {
+  int same = !rc && existed && previous_length == length &&
+             !memcmp(previous, data, length);
+  /* The bytes and their matching type were both verified under the storage
+   * lock. Rewriting an identical sidecar can otherwise trigger synchronous GC.
+   * Unknown types and type-only changes still publish their metadata. */
+  if (!rc && !(same && previous_type == type)) {
     size_t probe = 0;
-    int same = existed && previous_length == length &&
-               !memcmp(previous, data, length);
     if (existed && !same && previous_length == length) {
       while (previous[probe] == ((const uint8_t *)data)[probe])
         ++probe;

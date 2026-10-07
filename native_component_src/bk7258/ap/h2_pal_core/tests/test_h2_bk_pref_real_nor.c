@@ -542,6 +542,13 @@ int main(int argc, char **argv) {
     assert(!ns->set_blob(ns, "blob", value, sizeof(value)));
     assert(!ns->set_string(ns, "string", text));
     assert(!isolated->set_blob(isolated, "blob", other, sizeof(other)));
+    unsigned writes_before = write_count, erases_before = erase_count;
+    for (unsigned i = 0; i < 200u; ++i) {
+      assert(!ns->set_u32(ns, "number", 123u));
+      assert(!ns->set_blob(ns, "blob", value, sizeof(value)));
+      assert(!ns->set_string(ns, "string", text));
+    }
+    assert(write_count == writes_before && erase_count == erases_before);
     /* Stay in the real tail DB even when a large key shrinks and grows. */
     assert(!ns->set_blob(ns, "blob", value, 1537));
     expect_blob(ns, "blob", value, 1537);

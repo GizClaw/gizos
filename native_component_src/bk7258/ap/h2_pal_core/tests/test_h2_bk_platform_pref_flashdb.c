@@ -308,6 +308,21 @@ static void identical_bytes_and_types(void) {
   assert(write_count == 1 && !strncmp(write_keys[0], "$h2t.", 5));
   reset_faults();
   expect_type(ns, "key", H2_PAL_PREF_ENTRY_U32);
+  reset_faults();
+  fail_metadata = 1;
+  fail_value = 1;
+  assert(ns->set_u32(ns, "key", value) == H2_PAL_OK);
+  assert(write_count == 0);
+  reset_faults();
+  expect_type(ns, "key", H2_PAL_PREF_ENTRY_U32);
+  store("same.unknown", &value, sizeof(value));
+  expect_type(ns, "unknown", H2_PAL_PREF_ENTRY_UNKNOWN);
+  reset_faults();
+  fail_value = 1;
+  assert(ns->set_u32(ns, "unknown", value) == H2_PAL_OK);
+  assert(write_count == 1 && !strncmp(write_keys[0], "$h2t.", 5));
+  reset_faults();
+  expect_type(ns, "unknown", H2_PAL_PREF_ENTRY_U32);
   assert(ns->set_i32(ns, "signed", -12) == 0);
   int32_t signed_value;
   assert(ns->get_i32(ns, "signed", &signed_value) == 0 && signed_value == -12);
@@ -321,10 +336,13 @@ static void read_and_allocation_failures(void) {
   assert(ns->set_u32(ns, "key", 42) == 0);
   reset_faults();
   fail_alloc = 1;
+  assert(ns->set_u32(ns, "key", 42) == H2_PAL_ERR_NO_MEMORY &&
+         write_count == 0);
   assert(ns->set_string(ns, "key", "changed") == H2_PAL_ERR_NO_MEMORY &&
          write_count == 0);
   reset_faults();
   fail_reads = 1;
+  assert(ns->set_u32(ns, "key", 42) == H2_PAL_ERR_IO && write_count == 0);
   assert(ns->set_string(ns, "key", "changed") == H2_PAL_ERR_IO &&
          write_count == 0);
   reset_faults();
