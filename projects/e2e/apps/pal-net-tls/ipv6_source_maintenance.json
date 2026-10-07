@@ -49,11 +49,11 @@
     "new_physical_run_claimed": false,
     "host_execution": {
       "schema": 1,
-      "executed_source_commit": "fbe2aaab3ad3e6814c25e9f66cdc69489e5384af",
+      "executed_source_commit": "4e10e959585ab768fa7ebdc81a05f6e2d4575c2c",
       "platform": "macos",
       "config": "macos_arm64",
       "source_sha256": {
-        "MODULE.bazel": "eb1ad2f3602f62f6c8f783b988c12024c3ccb62cbd228a8af6a5fe02227ccd3a",
+        "MODULE.bazel": "61f00c03baaa66d833f6681882e3999815879846bf935d89a0dd0ded0b3b57aa",
         "libs/pal/include/h2/pal/net/h2_pal_net.h": "a81556a78aa440af6056b35ee8c1bb6c87137ce0a83cfd6efd205a00a843a4b4",
         "libs/pal/providers/corehttp/src/h2_corehttp.c": "8dc765eb2a8d43a507b4831a727c4e6ce18ab1756218f6693eadcdcf910e237f",
         "libs/pal/providers/coremqtt/src/h2_coremqtt_client.c": "bc234df89e7bdcd5417453e62e6028a10c80066c629ae5f0a359f091ecf4fd36",
@@ -80,17 +80,17 @@
         "input_count": 9967,
         "first_party_sources_count": 287,
         "sha256": {
-          "full_source_manifest": "dca3049cc7fed879c9f18e26fe15fde1d9690b9ac7c94873dd52a8d0f5e3b365",
+          "full_source_manifest": "ac2660565969a0557c9704e349b6037cafe8f7bceb04c6bd94912592dd8e1be5",
           "selected_action_closure": "555263fe3abcd79c5d4622bf0a556094cad1e8179e516dd103419f063fd44bec",
-          "action_input_manifest": "a80d743ea54acac36c24cf1d689f40522a04e9652bc155510ec9699be98a24cc",
-          "input_verification": "383319fd52b5dd620f5a83e2d3c2cdd14b3db798e0488b3df745de131ad591dc"
+          "action_input_manifest": "de2bb0b6022bdf5a16e51e247cbcca059bf0c4537084ef3a97eff9849239341d",
+          "input_verification": "a7591deda9584b84687d123c9afd029ffd23e53548986194f46e244b05384646"
         }
       }
     },
     "raw_log_sha256": {
-      "desktop_pal_ipv6_test.raw.log": "deac37a8ce278bac9eda4074637379ab84dab5f8e639eb3f952ba207af8304e2",
-      "desktop_pal_net_tls_test.raw.log": "7f8544abd324f1c7f2167593a541cdeade444fc42733aa9e0d4f0c03cccebf57",
-      "desktop_pal_net_tls_endpoint_rejection_test.raw.log": "905dd0e2a79ab0e7091f7ca6258770ccd8bbfff4253eac2b8f3800bdfadb592a"
+      "desktop_pal_ipv6_test.raw.log": "91e174dadc5efe636af80564ff7118c58b6720026bc27c4d7e11b58f0aeaed29",
+      "desktop_pal_net_tls_test.raw.log": "45e2192be14dca356cbc3ef8350a9d6782a0fc9aa56bc7b928bf986de149e453",
+      "desktop_pal_net_tls_endpoint_rejection_test.raw.log": "7dda2bfa4637c934d50f805a84b9ae671d9c3c06b1ca3e63207381c033997bde"
     }
   },
   "scope": "Current IPv6 parameterization/provider source maintenance and fresh host regression only. Historical device, mobile, browser, source, image and artifact receipts remain byte-for-byte unchanged. Historical 21-operation receipts do not qualify the four additive IPv6 operations or current physical provider images."
