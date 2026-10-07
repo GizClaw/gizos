@@ -73,6 +73,8 @@ event post 串行化，避免 ESP event-loop 与 modem task 的旧快照反向�
 
 Host fixture 编译实际 `h2_esp_platform_netif.c`，通过 `//native_component_src/esp-idf6.x/h2_pal_core:netif_dns_test`、`:netif_dns_ipv4_test` 和 `:netif_dns_global_test` 覆盖 SDK 同时更新两份 DNS、重复 reconcile、默认接口切换与丢失、global fallback、IPv4/IPv6、完整读取失败和 monitor 生命周期。Fixture 验证失效触发和 TCPIP context，不替代真实 DHCP/PPP 与 lwIP 在途查询的设备验收。
 
+公共 PPP quiescence 入口供 modem/board 在 transport 销毁前执行终止检查：在 TCPIP context 中请求关闭并确认真实 `PPP_PHASE_DEAD`。`DISCONNECT` 通知、历史 status event 或 esp_modem 的 `PPP_STARTED` bit 均不能作为释放依据：lwIP 的 `ppp_free()` 在非 DEAD phase 返回失败，ESP-NETIF 的销毁路径不会保留调用方资源。Quiescence 超时或 SDK 失败时，调用方必须保留 DCE、netif、event handler 和 event group，并在排除新的 PPP start 后重试；只有成功后才可依次注销 handler、销毁 transport 和 netif。该入口不依赖事件回调完成、不重新上电，未启用 PPP 的 image 返回 `UNSUPPORTED`。Host 的 `ppp_quiesce_test` 与 `ppp_quiesce_unsupported_test` 编译实际实现，覆盖已终止、协商中关闭、DISCONNECT 未终止、timeout/retry、SDK 错误、无效接口与 compile-time unsupported；真实 PPP/CMUX 开关仍需设备回归。
+
 ESP SIMCOM 的数据会话关闭与整机关闭是两个独立生命周期。`data_close` 让 modem 保持供电，通过 COMMAND/PPP 交互有界地退出数据模式；失败时保留非 `CLOSED` 状态供调用方重试。整机 `close` 不复用该交互路径：transport 先驱动配置的 modem power GPIO 到关闭电平，再只依赖 ESP 本机状态恢复 default netif、同步注销 PPP/IP event handler、销毁 DCE、PPP netif 和 event group。default netif 恢复失败会在销毁 PPP netif 前返回并保留 route ownership state，供下一次 close 重试。
 
 PPP/IP handler 注销利用 ESP-IDF default event loop 的 mutex 作为 quiescence barrier：从普通 task 调用 close 时，注销要么在 event loop 空闲时直接移除 handler，要么等待正在执行的 callback 释放 loop mutex；返回成功后，已排队 event 也不会再调用被注销的实例。因此只有全部 handler 注销成功后，teardown 才能释放 DCE、PPP netif 和 event group；任一次注销失败均立即返回并保留尚未销毁的本机资源供重试。SIMCOM 的私有 PPP/IP callback 不调用 close；从 ESP default event-loop callback 内重入整机 close 不受支持，调用方必须把 close handoff 到普通 task。`power_gpio < 0` 明确表示 BSP 没有可驱动的物理断电能力；此时 teardown 仍释放本机资源，但不能据此声称 modem 已物理断电。

@@ -4,6 +4,37 @@ load("//tools/bazel:native_component.bzl", "firmware_native_component")
 
 package(default_visibility = ["//visibility:public"])
 
+[
+    cc_test(
+        name = "ppp_quiesce" + suffix + "_test",
+        srcs = [
+            "include/h2_esp_platform_core.h",
+            "src/h2_esp_platform_ppp.c",
+            "tests/test_h2_esp_platform_ppp.c",
+        ] + glob([
+            "tests/ppp_sdk/**/*.h",
+            "tests/sdk/**/*.h",
+        ]),
+        conlyopts = H2_C11_OPTS + ["-DCONFIG_PPP_SUPPORT=" + support],
+        copts = H2_WARNING_COPTS,
+        includes = [
+            "include",
+            "tests/ppp_sdk",
+            "tests/sdk",
+        ],
+        target_compatible_with = select({
+            "//tools/bazel/platforms:host_linux_target_linux": [],
+            "//tools/bazel/platforms:host_macos_target_macos": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        deps = ["//libs/pal"],
+    )
+    for suffix, support in [
+        ("", "1"),
+        ("_unsupported", "0"),
+    ]
+]
+
 firmware_native_component(
     name = "h2_pal_core",
     srcs = glob(
