@@ -1,7 +1,24 @@
-load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 
 package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "local_peer",
+    srcs = ["src/h2_pal_ipv6_local.c"],
+    hdrs = [
+        "include/h2_pal_ipv6_e2e.h",
+        "src/h2_pal_ipv6_local.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include", "src"],
+    deps = [
+        "//libs/pal",
+        "//libs/runtime",
+        "//projects/e2e/apps/pal-net-tls/app:pal_net_tls_e2e",
+    ],
+)
 
 cc_library(
     name = "pal_ipv6_e2e",
@@ -11,6 +28,7 @@ cc_library(
     copts = H2_WARNING_COPTS,
     includes = ["include"],
     deps = [
+        ":local_peer",
         "//libs/dns",
         "//libs/pal",
         "//libs/pal/providers/corehttp",
@@ -20,6 +38,26 @@ cc_library(
         "//projects/e2e/apps/pal-webrtc/app:pal_webrtc_e2e",
         "//projects/e2e/libs/pal-webrtc-fixture:client",
     ],
+)
+
+cc_test(
+    name = "local_peer_lifecycle_test",
+    srcs = ["tests/test_h2_pal_ipv6_local.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "@platforms//os:macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":local_peer",
+        "//libs/pal/providers/desktop/pal_core:core",
+    ] + select({
+        "@platforms//os:linux": ["//libs/pal/providers/linux/pal_core"],
+        "@platforms//os:macos": ["//libs/pal/providers/darwin/pal_core"],
+        "//conditions:default": [],
+    }),
 )
 
 exports_files([

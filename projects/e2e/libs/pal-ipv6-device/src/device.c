@@ -56,16 +56,20 @@ void h2_pal_ipv6_device_report(const h2_runtime_t *runtime,
   snprintf(line, sizeof(line),
            "H2_PAL_IPV6_SUMMARY {\"passed\":%u,\"failed\":%u,\"blocked\":%u,"
            "\"retained_sockets\":%zu,\"retained_resolvers\":%zu,\"retained_"
-           "allocations\":%zu,\"boot_id\":\"%s\"}",
+           "allocations\":%zu,\"retained_tasks\":%zu,\"cleanup_error\":%d,"
+           "\"boot_id\":\"%s\"}",
            result->passed, result->failed, result->blocked,
            result->retained_sockets, result->retained_resolvers,
-           result->retained_allocations, boot_id);
+           result->retained_allocations, result->retained_tasks,
+           result->cleanup_error, boot_id);
   h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-ipv6", line);
 }
 int h2_pal_ipv6_device_run(h2_runtime_t *runtime, const h2_pal_dtls_api_t *dtls,
                            h2_pal_ipv6_result_t *result) {
   if (!runtime || !result)
     return H2_PAL_ERR_INVALID_ARG;
+  if (result->retained_cleanup || result->retained_runtime)
+    return H2_PAL_ERR_INVALID_STATE;
   memset(result, 0, sizeof(*result));
   if (!H2_PAL_IPV6_HOST[0] || strlen(H2_PAL_IPV6_SESSION) != 32u ||
       !H2_PAL_IPV6_PORT || H2_PAL_IPV6_PORT > UINT16_MAX ||

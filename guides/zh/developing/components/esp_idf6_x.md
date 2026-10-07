@@ -354,7 +354,9 @@ Crypto 的 `random(NULL, 0)` 是成功 no-op；ESP adapter 在零长度时不调
 
 X25519 raw key agreement 对格式错误或低阶远端公钥的 PSA INVALID_ARGUMENT 转换为 PAL FORMAT；失败路径清零 shared-secret 输出，成功路径仍校验并拒绝全零 shared secret。
 
-`pal-ipv6` DevKit entry 显式启用 lwIP IPv6、自动配置与 loopback；复用保存的 Wi-Fi 后创建 link-local 地址，并在有限预算内等待 DAD 地址可用。ESP Net 保留 scope、按地址族查询 DNS，并通过实际 netif index 执行接口绑定。硬件资格仍要求明确端口/UID、可达 IPv6 夹具和 Loader/P1、Settings、Stage、coredump 记录，不能由 package build 代替。
+`pal-ipv6` 的 IPv6、SLAAC 与地址槽位设置由 DevKit/AMOLED 的 canonical `sdkconfig.defaults` 声明。诊断日志由板级 H2Loader `sdkconfig.ipv6-client.defaults`/`sdkconfig.ipv6-fixture.defaults` registration variant 提供；fixture 的 24 sockets、12 active TCP、8 listeners 与 8192-byte TCP/IP stack 只属于该 fixture 的板级 memory variant，不扩大一般 board budget。Target 用既有 `layout_files` 的 `partition`、`project_support_files` 与 DevKit USB `support_files` 明确列举源文件，runner 仅复制这些声明的板级支持文件到隔离 project；工程目录不再拥有 SDK defaults，也不增加 config-profile registry。SDK 原有 per-interface loopback 与 SNI 默认保持开启。
+
+Net 实现阶段的 DevKit qualification adapter 在既有 STA connect 返回后等待真实 netif UP，再一次性创建 link-local 地址并有界等待 DAD；这只准备 Net 用例环境，不宣称 public Wi-Fi PAL 已实现 IPv6-only readiness、reconnect 或 saved-credential 生命周期。完整的 STA IPv6 初始化、preferred-address readiness 与 disconnect/reconnect cleanup 属于后续 Wi-Fi provider 实现，该阶段替换 adapter 的直接 SDK 初始化。ESP Net 保留 scope、按地址族查询 DNS，并通过实际 netif index 执行接口绑定。硬件资格仍要求明确端口/UID、可达 IPv6 夹具和 Loader/P1、Settings、Stage、coredump 记录，不能由 package build 代替。
 
 ### Flash-safe I/O 阶段诊断
 

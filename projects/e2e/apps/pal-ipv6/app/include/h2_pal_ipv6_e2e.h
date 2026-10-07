@@ -24,14 +24,24 @@ typedef struct h2_pal_ipv6_config {
   h2_pal_net_addr_t dns_server;
   h2_pal_net_addr_t dns_answer;
 } h2_pal_ipv6_config_t;
+typedef struct h2_pal_ipv6_cleanup h2_pal_ipv6_cleanup_t;
 typedef struct h2_pal_ipv6_result {
   unsigned passed, failed, blocked;
   size_t retained_sockets, retained_resolvers, retained_allocations;
+  size_t retained_tasks;
+  int cleanup_error;
+  h2_pal_ipv6_cleanup_t *retained_cleanup;
+  /* Owned by the mobile adapter after failed cleanup, never a stack Runtime. */
+  h2_runtime_t *retained_runtime;
   h2_net_tls_case_result_t cases[H2_PAL_IPV6_CASES];
 } h2_pal_ipv6_result_t;
-/* Borrow providers and fixture through return; execute all mandatory transport
- * cases on IPv6 and the address-selection/application cases below. */
+/* The result must initially be zeroed. Providers remain borrowed until cleanup
+ * succeeds, including when a failed join retains a local worker after return.
+ * A result with retained_cleanup cannot be reused for another run. */
 int h2_pal_ipv6_e2e_run(const h2_pal_ipv6_config_t *, h2_pal_ipv6_result_t *);
+/* Retry retained worker cleanup. Failure preserves every handle and borrow;
+ * success releases the worker, listener and its owned context exactly once. */
+int h2_pal_ipv6_e2e_cleanup(h2_pal_ipv6_result_t *);
 #ifdef __cplusplus
 }
 #endif
