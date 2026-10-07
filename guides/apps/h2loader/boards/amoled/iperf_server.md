@@ -47,3 +47,5 @@ iperf3 -6 -c fd53:697a:6f73:626::1 -u -b 10M -l 1200 -t 10 -R
 ## 验证边界
 
 `controller_test` 在真实 PAL loopback sockets 上覆盖三种模式、TCP/UDP 双向、官方 iperf3 client IPv4/IPv6 互通、握手/运行中取消、启动失败恢复和反复启停，并注入持续 AP stop、worker join、manager mutex 错误，验证销毁返回错误、保留所有权和恢复后重试成功。`ui_test` 把 Touch PAL down/up 事件送入生产 LVGL callback，完成十次选择/启动/停止与失败停止重试操作并验证 Display/Touch 关闭，输出实际 RGB565 渲染供检查。AMOLED 还需单独保留 exact package、UI/Touch 实板观察、外部 client 的无线测量和停止/重启记录；host 结果不能替代这些资格。
+
+SDK 配置由 AMOLED board 拥有：canonical `sdkconfig.defaults` 提供 IPv6/SLAAC，`layouts/h2loader/sdkconfig.iperf-server.defaults` 保留 INFO 诊断及 12 socket / 6 active TCP / 4 listener 的预算。target 显式声明共同 Loader defaults 和该资源 variant；原生 runner 只把声明的 board support file 复制到构建目录。
