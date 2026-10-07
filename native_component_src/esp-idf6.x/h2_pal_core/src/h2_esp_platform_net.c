@@ -957,7 +957,7 @@ static int esp_net_read_host(esp_netif_t *netif, h2_pal_net_family_t family,
 #if LWIP_IPV6
     if (netif != NULL && esp_netif_is_netif_up(netif)) {
         esp_ip6_addr_t addresses[CONFIG_LWIP_IPV6_NUM_ADDRESSES];
-        int count = esp_netif_get_all_ip6(netif, addresses);
+        int count = esp_netif_get_all_preferred_ip6(netif, addresses);
         for (int i = 0; i < count; ++i) {
             memset(out_addr, 0, sizeof(*out_addr));
             out_addr->family = H2_PAL_NET_FAMILY_IPV6;

@@ -65,6 +65,7 @@ int agent_create(Agent* agent) {
   }
   agent->udp_sockets[0].fd = -1;
   agent->udp_sockets[1].fd = -1;
+  agent->udp_receive_next = 0u;
   memset(&agent->transport, 0, sizeof(agent->transport));
   agent->transport.tcp_socket.fd = -1;
   agent->transport_pair = NULL;
@@ -109,15 +110,25 @@ void agent_destroy(Agent* agent) {
 static int agent_socket_recv(
     Agent* agent, h2_pal_net_addr_t* addr, uint8_t* buf, int len) {
   memset(buf, 0, (size_t)len);
+  unsigned first = 0u;
+#if CONFIG_IPV6
+  if (agent->udp_sockets[0].fd >= 0 && agent->udp_sockets[1].fd >= 0) {
+    /* Rotate the first receive so a busy family cannot starve the other. */
+    first = agent->udp_receive_next & 1u;
+    agent->udp_receive_next = first ^ 1u;
+  } else if (agent->udp_sockets[1].fd >= 0) {
+    first = 1u;
+  }
+#endif
   int ret = 0;
-  if (agent->udp_sockets[0].fd >= 0) {
-    ret = udp_socket_recvfrom(&agent->udp_sockets[0], addr, buf, len,
+  if (agent->udp_sockets[first].fd >= 0) {
+    ret = udp_socket_recvfrom(&agent->udp_sockets[first], addr, buf, len,
                              AGENT_POLL_TIMEOUT);
   }
 #if CONFIG_IPV6
-  if (ret == 0 && agent->udp_sockets[1].fd >= 0) {
-    ret = udp_socket_recvfrom(&agent->udp_sockets[1], addr, buf, len,
-                             agent->udp_sockets[0].fd >= 0 ? 0u : AGENT_POLL_TIMEOUT);
+  unsigned other = first ^ 1u;
+  if (ret == 0 && agent->udp_sockets[other].fd >= 0) {
+    ret = udp_socket_recvfrom(&agent->udp_sockets[other], addr, buf, len, 0u);
   }
 #endif
   return ret;
