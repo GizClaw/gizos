@@ -218,7 +218,7 @@ reload，不会被当成“参数没变”跳过，成功后语速出现在
 
 同一 Workspace 上的普通省略保留 confirmed 档位；成功切换到另一 Workspace 时，旧 Workspace 的 confirmed 档位失效。同步 `parameters.set` 与 Session 的选择、reload 共享串行请求槽，但不停止当前对话，也不提前改变已确认档位。一次可能已发送的围栏 set 或失败的围栏 reload 后，后续省略档位的成功 reload 只能把 Session 的已应用围栏标为 unknown，不能从旧快照推断最新保存值。`h2_gizclaw_rpc_workspace_get` 的结果另行公开服务端已保存的 `has_safety_fence_level` / `safety_fence_level` 与 Profile revision，供产品页面回读；这个存储回读本身不证明当前 run 使用了相应提示词。再次显式设置档位且 reload 成功才恢复 Session 的应用确认；Session 不会因为请求恰好等于旧 confirmed 值而跳过必要的 reload。
 
-实际围栏文案属于 RuntimeProfile 的 `spec.safety_fences.<id>.prompt`，每档为独立完整的 1–4096 字符提示词，不继承其他档位。Flowcraft 的 Workflow 必须引用 `${board.safety_fence}`，Eino 必须绑定 `input.safety_fence`，Realtime Workflow 必须在 instructions 中引用 `${input.safety_fence}`。缺少所选 Profile 条目时，支持注入的 driver reload 明确失败；没有引用变量的 Workflow 不会注入围栏。ASTTranslate 保存合法值但不注入，SFU 接受合法值但 no-op。RPC 成功和 Session confirmed patch 都不是内容审核效果或产品档位回读的证明，设备不执行替代性的本地关键词过滤。
+实际围栏文案属于 RuntimeProfile 的 `spec.safety_fences.<id>.prompt`，每档为独立完整的 1–4096 字符提示词，不继承其他档位。GizClaw 0.26.0 已退役 Flowcraft；Eino 必须绑定 `input.safety_fence`，Realtime Workflow 必须在 instructions 中引用 `${input.safety_fence}`。缺少所选 Profile 条目时，支持注入的 driver reload 明确失败；没有引用变量的 Workflow 不会注入围栏。ASTTranslate 保存合法值但不注入，SFU 接受合法值但 no-op。RPC 成功和 Session confirmed patch 都不是内容审核效果或产品档位回读的证明，设备不执行替代性的本地关键词过滤。
 
 公共协议不固定档位数量、顺序或文案，也不定义产品年龄过滤。H106 的四档必须在产品 RuntimeProfile 中逐档配置完整文案，并只展示 `safety_fences` 中真正可用的选项；年龄选择另行保存，不映射成围栏 ID。
 
@@ -253,6 +253,15 @@ private key。
 Service stop 会取消并丢弃在途请求，快照保留最后确认的模式。
 
 ## 上游 API 同步
+
+GizClaw 0.26.0 的 quota 错误仍复用已有字段：Workspace EOS 的 `EventError.code`
+传递 `QUOTA_EXHAUSTED`（`retryable=false`）或 `QUOTA_UNAVAILABLE`
+（`retryable=true`）；speech RPC 使用已有的 `PERMISSION_DENIED`（7）或
+`UNAVAILABLE`（14），并在 `ErrorInfo.reason` 中携带同名原因。0.23.2 的
+C SDK 已能解码这些字符串，不会因为名称陌生而崩溃或自动转成 `UNKNOWN`。
+GizOS 的 generic RPC 仍把这两种状态归为 `H2_GIZCLAW_ERR_REMOTE`；
+Conversation 只把自身输入 Stream 的拒绝投影为错误事件，回复 Stream 的
+EOS 不产生该错误通知。因此 SDK 升级本身不会增加 quota 的产品提示。
 
 `@gizclaw_c_sdk//:gizclaw_core` 中的 RPC registry 与 protobuf payload 是 wire contract 的生成结果。RPC schema 更新时，先把 `MODULE.bazel` 中 `gizclaw_c_sdk` 的 `bazel_dep` 版本更新到同一个规范版本，再同步已有 `libs/gizclaw` stable wrapper；不能只修改手写 method number、复制旧 protobuf struct，或只更新产品文档。没有 GizOS-owned domain/lifecycle 语义的 RPC（例如 Firmware metadata）直接使用 generic RPC API 与 pinned generated schema，不为相同字段再增加一层 typed wrapper。GizOS 中公开的 RPC method 常量通过 compile-time assertion 与上游 registry 对齐，registry 再次漂移时必须使 build 失败。
 

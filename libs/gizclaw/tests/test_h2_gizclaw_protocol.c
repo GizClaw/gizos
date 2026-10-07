@@ -2,6 +2,7 @@
 #include "h2_desktop_platform.h"
 #include "h2_gizclaw_internal.h"
 #include "h2_gizclaw_service_internal.h"
+#include "payload/workspace.pb.h"
 #include "pb_decode.h"
 #include "pb_encode.h"
 
@@ -163,6 +164,59 @@ static bool decode_bytes(pb_istream_t *in, const pb_field_t *field,
   *bytes = gzc_str_from_parts(in->state, in->bytes_left);
   return pb_read(in, NULL, in->bytes_left);
 }
+
+static void test_retired_workspace_parameters(void) {
+  /* Retired Flowcraft oneof tag 1, containing safety_fence_level tag 50.
+   * Reserved wire data must be skipped, without becoming another driver. */
+  const uint8_t archived[] = {0x0a, 0x07, 0x92, 0x03, 0x04,
+                              's', 'a', 'f', 'e'};
+  gizclaw_rpc_v1_WorkspaceParameters parameters =
+      gizclaw_rpc_v1_WorkspaceParameters_init_zero;
+  pb_istream_t wire = pb_istream_from_buffer(archived, sizeof(archived));
+  assert(pb_decode(&wire, gizclaw_rpc_v1_WorkspaceParameters_fields,
+                   &parameters));
+  assert(wire.bytes_left == 0u && parameters.which_value == 0u);
+}
+
+static void test_quota_rpc_errors(void) {
+  const struct {
+    gizclaw_rpc_v1_StatusCode status;
+    const char *reason;
+    const char *message;
+  } cases[] = {
+      {gizclaw_rpc_v1_StatusCode_STATUS_CODE_PERMISSION_DENIED,
+       "QUOTA_EXHAUSTED", "Quota exhausted."},
+      {gizclaw_rpc_v1_StatusCode_STATUS_CODE_UNAVAILABLE,
+       "QUOTA_UNAVAILABLE", "Quota unavailable."},
+  };
+  for (size_t i = 0u; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+    gzc_str_t reason = gzc_str_from_cstr(cases[i].reason);
+    gzc_str_t message = gzc_str_from_cstr(cases[i].message);
+    gizclaw_rpc_v1_RpcResponse envelope = gizclaw_rpc_v1_RpcResponse_init_zero;
+    envelope.has_status = true;
+    envelope.status.code = cases[i].status;
+    envelope.status.message.funcs.encode = encode_bytes;
+    envelope.status.message.arg = &message;
+    envelope.status.has_info = true;
+    envelope.status.info.reason.funcs.encode = encode_bytes;
+    envelope.status.info.reason.arg = &reason;
+    uint8_t bytes[256];
+    pb_ostream_t encoded = pb_ostream_from_buffer(bytes, sizeof(bytes));
+    assert(pb_encode(&encoded, gizclaw_rpc_v1_RpcResponse_fields, &envelope));
+    gzc_rpc_response_t decoded = {0};
+    assert(gzc_rpc_decode_response_envelope(
+               gzc_str_from_parts((const char *)bytes, encoded.bytes_written),
+               &decoded) == GZC_OK);
+    assert(decoded.has_error && decoded.error.code == (int)cases[i].status);
+    assert(decoded.error.reason.len == reason.len &&
+           memcmp(decoded.error.reason.data, reason.data, reason.len) == 0);
+    assert(decoded.error.message.len == message.len &&
+           memcmp(decoded.error.message.data, message.data, message.len) == 0);
+    assert(h2_gizclaw_rpc_error_result_internal(decoded.error.code) ==
+           H2_GIZCLAW_ERR_REMOTE);
+  }
+}
+
 static gzc_rpc_response_t invoke(wire_fixture_t *f, int tool,
                                  gzc_str_t payload) {
   gizclaw_rpc_v1_ClientToolV0InvokeRequest request = {
@@ -325,6 +379,8 @@ create_channel(h2_pal_webrtc_peer_t *peer,
   return H2_PAL_ERR_IO;
 }
 int main(void) {
+  test_retired_workspace_parameters();
+  test_quota_rpc_errors();
   fixture.value = 7;
   const h2_pal_webrtc_vtable_t webrtc_vtable = {
       .peer_create_with_config = create_peer,

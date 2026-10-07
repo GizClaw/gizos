@@ -43,7 +43,8 @@ static bool exit_requested(const h2_runtime_event_t *event) {
 
 static h2_pal_result_t run_script(h2_web_app_host_t *app_host,
                                   h2_runtime_t *runtime, void *user) {
-  const h2_lua_resource_t resource = {
+  static h2_lua_resource_t resource;
+  resource = (h2_lua_resource_t){
       .name = "app.lua",
       .source = H2_WEB_LUA_APP_SOURCE,
       .source_size = H2_WEB_LUA_APP_SOURCE_SIZE,
@@ -147,9 +148,18 @@ static h2_pal_result_t run_script(h2_web_app_host_t *app_host,
     if (status.state >= H2_LUA_JOB_SUCCEEDED)
       (void)h2_lua_job_release(host, job);
   }
-  (void)h2_lua_host_stop(host);
-  (void)h2_lua_host_join(host);
-  h2_lua_host_destroy(host);
+  /* A cleanup failure retains the Lua Host and the outer dependency graph.
+   * This App uses managed shutdown, so Stop cannot cancel this owner task. */
+  h2_pal_result_t cleanup = h2_lua_host_destroy_checked(host);
+  while (cleanup == H2_PAL_ERR_BUSY) {
+    h2_pal_result_t wait = h2_pal_time_sleep_ms(runtime->time, 1u);
+    if (wait != H2_PAL_OK) { cleanup = wait; break; }
+    cleanup = h2_lua_host_destroy_checked(host);
+  }
+  if (cleanup != H2_PAL_OK) {
+    (void)h2_web_app_host_quarantine(app_host, host, cleanup);
+    return cleanup;
+  }
   /* A cancelled job (exit Button or Stop) ends the App with OK. */
   return rc;
 }
@@ -172,6 +182,7 @@ int main(void) {
       .button_count = button_count,
       .run_ms = H2_WEB_LUA_APP_RUN_MS,
       .stack_size = 262144u,
+      .managed_shutdown = 1,
   };
   return h2_web_app_host_run(&config, run_script, NULL);
 }

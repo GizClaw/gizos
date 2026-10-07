@@ -55,6 +55,7 @@
 #define H2_ESP_ES8311_IO_TIMEOUT_MS 100u
 #define H2_ESP_ES8311_STOP_TIMEOUT_MS 200u
 #define H2_ESP_ES8311_RETRY_DELAY_MS 20u
+#define H2_ESP_ES8311_CONTROL_READY_TIMEOUT_MS 2000u
 
 static const char *TAG = "h2_es8311_audio";
 
@@ -165,11 +166,11 @@ static int es8311_audio_set_pa(h2_esp_es8311_audio_system_t *state, int enabled)
 
 static esp_err_t es8311_write_reg(h2_esp_es8311_audio_system_t *state, uint8_t reg, uint8_t value) {
     const uint8_t data[2] = { reg, value };
-    return i2c_master_transmit(state->codec, data, sizeof(data), pdMS_TO_TICKS(100));
+    return i2c_master_transmit(state->codec, data, sizeof(data), H2_ESP_ES8311_CONTROL_TIMEOUT_MS);
 }
 
 static esp_err_t es8311_read_reg(h2_esp_es8311_audio_system_t *state, uint8_t reg, uint8_t *value) {
-    return i2c_master_transmit_receive(state->codec, &reg, sizeof(reg), value, sizeof(*value), pdMS_TO_TICKS(100));
+    return i2c_master_transmit_receive(state->codec, &reg, sizeof(reg), value, sizeof(*value), H2_ESP_ES8311_CONTROL_TIMEOUT_MS);
 }
 
 static esp_err_t es8311_update_reg(h2_esp_es8311_audio_system_t *state, uint8_t reg, uint8_t mask, uint8_t value) {
@@ -213,12 +214,56 @@ static esp_err_t es8311_set_sample_rate_16k(h2_esp_es8311_audio_system_t *state)
     return ESP_OK;
 }
 
-static esp_err_t es8311_open(h2_esp_es8311_audio_system_t *state) {
-    esp_err_t err = es8311_write_reg(state, ES8311_REG_GPIO_44, 0x08);
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "initial gpio44 write failed (%s), retrying", esp_err_to_name(err));
+static esp_err_t es8311_wait_control_ready(h2_esp_es8311_audio_system_t *state) {
+    const uint8_t data[2] = { ES8311_REG_GPIO_44, 0x08 };
+    const TickType_t started_at = xTaskGetTickCount();
+    const TickType_t budget = pdMS_TO_TICKS(H2_ESP_ES8311_CONTROL_READY_TIMEOUT_MS);
+    esp_err_t err = ESP_OK;
+    unsigned attempts = 0u;
+    for (;;) {
+        const TickType_t elapsed = xTaskGetTickCount() - started_at;
+        if (elapsed >= budget) {
+            ESP_LOGE(TAG, "codec control readiness timeout attempts=%u last_err=0x%x",
+                attempts, (unsigned)err);
+            /* A missing codec is a real I/O failure after the startup budget;
+             * do not leave callers in an endless WOULD_BLOCK state. */
+            return ESP_FAIL;
+        }
+        const uint32_t remaining_ms = pdTICKS_TO_MS(budget - elapsed);
+        const uint32_t timeout_ms = remaining_ms < H2_ESP_ES8311_CONTROL_TIMEOUT_MS
+            ? remaining_ms : H2_ESP_ES8311_CONTROL_TIMEOUT_MS;
+        err = i2c_master_transmit(state->codec, data, sizeof(data), timeout_ms);
+        ++attempts;
+        if (err == ESP_OK) {
+            /* Preserve ES8311's two initial noise-immunity writes on a ready
+             * codec. Cold hardware can NACK more than those two writes. */
+            if (attempts == 1u) {
+                continue;
+            }
+            if (attempts > 2u) {
+                ESP_LOGI(TAG, "codec control ready attempts=%u elapsed_ms=%u",
+                    attempts, (unsigned)pdTICKS_TO_MS(xTaskGetTickCount() - started_at));
+            }
+            return ESP_OK;
+        }
+        if (err != ESP_ERR_INVALID_RESPONSE && err != ESP_ERR_TIMEOUT) {
+            return err;
+        }
+        if (attempts == 1u) {
+            ESP_LOGW(TAG, "codec control not ready err=0x%x; waiting up to %u ms",
+                (unsigned)err, H2_ESP_ES8311_CONTROL_READY_TIMEOUT_MS);
+        }
+        const TickType_t waited = xTaskGetTickCount() - started_at;
+        if (waited < budget) {
+            const TickType_t remaining = budget - waited;
+            const TickType_t retry_delay = pdMS_TO_TICKS(H2_ESP_ES8311_RETRY_DELAY_MS);
+            vTaskDelay(remaining < retry_delay ? remaining : retry_delay);
+        }
     }
-    ESP_RETURN_ON_ERROR(es8311_write_reg(state, ES8311_REG_GPIO_44, 0x08), TAG, "gpio44");
+}
+
+static esp_err_t es8311_open(h2_esp_es8311_audio_system_t *state) {
+    ESP_RETURN_ON_ERROR(es8311_wait_control_ready(state), TAG, "codec control readiness");
     ESP_RETURN_ON_ERROR(es8311_write_reg(state, ES8311_REG_CLK_MANAGER_01, 0x30), TAG, "clk1");
     ESP_RETURN_ON_ERROR(es8311_write_reg(state, ES8311_REG_CLK_MANAGER_02, 0x00), TAG, "clk2");
     ESP_RETURN_ON_ERROR(es8311_write_reg(state, ES8311_REG_CLK_MANAGER_03, 0x10), TAG, "clk3");

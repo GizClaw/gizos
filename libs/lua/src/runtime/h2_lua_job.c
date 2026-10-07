@@ -1146,6 +1146,12 @@ h2_pal_result_t h2_lua_job_release(h2_lua_host_t *host,
     (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
     return H2_PAL_ERR_BUSY;
   }
+  result = h2_lua_job_close_display(job);
+  if (result != H2_PAL_OK) {
+    h2_lua_unlock_job(job);
+    (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
+    return result;
+  }
   mem = host->config.allocator;
   job_generation = job->generation;
   /* Stop link posts and wakes for this slot before it is cleared. */

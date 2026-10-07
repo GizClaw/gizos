@@ -187,7 +187,7 @@ H106 首页的 `record` component action 按本页边界接入。Tiga 的 ADC re
 - 同一 GizClaw connection generation 和 Workspace 的连续 conversation 不重复 activate；连接重建或 Workspace 切换后重新确认一次。
 - 输入 PCM 由 App-owned Mic Task 写入 GizClaw PCM ring，由 GizClaw uplink Task 每 20 ms 切片、编码并通过 WebRTC audio RTP 上行；ring 满时返回 `WOULD_BLOCK`，App 丢弃当前 realtime chunk 并记录 overrun，不等待或改写 payload。
 - Speech Transcribe/Extract 按 `content_type` 接受不超过 1280 bytes 的 audio chunk；测试覆盖 timeout 透传、queue 满背压、audio-before-EOS FIFO，以及 commit/terminal 后拒绝写入。
-- PTT 一轮在输入结束发出后完成，不等待服务端；翻译、flowcraft 等多段回复都只是之后到达的下行音频，照常播放。Realtime 一轮持续到挂断。下行事件只以 DEBUG 记录。Friend / Friend Group 的 SFU Workspace 不给发言者任何下行音频，发送后本轮正常完成。
+- PTT 一轮在输入结束发出后完成，不等待服务端；翻译、Eino 等多段回复都只是之后到达的下行音频，照常播放。Realtime 一轮持续到挂断。下行事件只以 DEBUG 记录。Friend / Friend Group 的 SFU Workspace 不给发言者任何下行音频，发送后本轮正常完成。
 - Cancel、disconnect 和 Audio failure 都关闭本轮 mic/track，不泄漏 task、queue 或 buffer。
 - 后台 Audio callback 不直接更新 LVGL；GizClaw callback 由 App main loop dispatch。
 - H2Peer host performance gate 在三条并发 request DataChannel（其中一条执行双向各 1 MiB 传输）以及长期 Packet/Event traffic 期间发送 50 个 20 ms Opus RTP frame，要求 frame 完整、有序、无 submit deadline miss，且相邻到达间隔不超过 40 ms；该 gate 验证 transport coexistence，不替代真实设备声学验收。

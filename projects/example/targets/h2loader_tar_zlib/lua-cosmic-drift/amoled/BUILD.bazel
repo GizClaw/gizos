@@ -26,6 +26,7 @@ esp_target_task_policy(
         "$h2peer/udp              7        0  4096  psram",
         "$runtime/input           6        0  4096  psram",
         "$lua/worker              5        0  4096  psram",
+        "$lua/display            default",
         "amoled/lua-cosmic-drift  4        0  4096  psram",
         "$runtime/nfc             default",
         "$h2loader/uartcmd        default",
