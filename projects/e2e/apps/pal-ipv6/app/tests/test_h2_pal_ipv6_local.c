@@ -5,6 +5,9 @@
 #elif defined(__linux__)
 #include "h2_linux_platform.h"
 #endif
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
