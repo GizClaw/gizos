@@ -549,6 +549,7 @@ static void test_ipv6_stun_preserves_base_address(void) {
 typedef struct test_receive_state {
     unsigned polls[2];
     unsigned waits;
+    uint32_t elapsed_ms;
     int ready[2];
 } test_receive_state_t;
 
@@ -565,6 +566,7 @@ static int test_dual_family_receive(
     ++state->polls[index];
     state->waits += timeout_ms != 0u;
     if (!state->ready[index]) {
+        state->elapsed_ms += timeout_ms;
         return H2_PAL_ERR_TIMEOUT;
     }
     assert(capacity >= 1u);
@@ -607,6 +609,9 @@ static void test_mixed_family_receive_makes_progress(void) {
             assert(data[0] == (family == 0u ? H2_PAL_NET_FAMILY_IPV4
                                           : H2_PAL_NET_FAMILY_IPV6));
         }
+        // An empty other-family queue must not impose artificial waiting while
+        // this family's packets are already available.
+        assert(state.elapsed_ms == 0u);
         assert(state.waits <= 8u);
 
         // A provider with only one supported family never polls a closed fd.
@@ -624,7 +629,8 @@ static void test_mixed_family_receive_makes_progress(void) {
     memset(&state, 0, sizeof(state));
     uint8_t data[1];
     assert(agent_recv(&agent, data, sizeof(data), 10u) == 0);
-    assert(state.polls[0] == 1u && state.polls[1] == 1u && state.waits == 1u);
+    assert(state.polls[0] == 2u && state.polls[1] == 2u && state.waits == 1u);
+    assert(state.elapsed_ms == 10u);
 }
 
 int main(void) {

@@ -3,6 +3,37 @@
 #include "h2_mobile_app_host.h"
 #include "mobile_runner.h"
 #import <UIKit/UIKit.h>
+#include <stdlib.h>
+#include <string.h>
+
+typedef struct mobile_owner {
+  h2_ios_net_t *net;
+  h2_ios_webrtc_t *webrtc;
+  h2_pal_ipv6_result_t result;
+  char *report_path;
+  int rc;
+} mobile_owner_t;
+static mobile_owner_t *retained_owner;
+static int cleanup_owner(mobile_owner_t *owner) {
+  int rc = h2_ipv6_mobile_cleanup(&owner->result);
+  if (rc == H2_PAL_OK)
+    rc = h2_ios_webrtc_destroy(&owner->webrtc);
+  if (rc == H2_PAL_OK)
+    rc = h2_ios_net_destroy(&owner->net);
+  if (rc == H2_PAL_OK)
+    rc = h2_ios_platform_core_shutdown();
+  return rc;
+}
+static void release_owner(mobile_owner_t *owner) {
+  free(owner->report_path);
+  free(owner);
+}
+static dispatch_queue_t ipv6_run_queue(void) {
+  static dispatch_queue_t queue;
+  static dispatch_once_t once;
+  dispatch_once(&once, ^{ queue = dispatch_queue_create("pal-ipv6.run", DISPATCH_QUEUE_SERIAL); });
+  return queue;
+}
 
 @interface IPv6ViewController : UIViewController
 @end
@@ -20,7 +51,7 @@
                             .firstObject;
   NSString *report =
       [documents stringByAppendingPathComponent:@"pal-ipv6-result.json"];
-  dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+  dispatch_async(ipv6_run_queue(), ^{
     @autoreleasepool {
       NSData *data = [NSData
           dataWithContentsOfFile:
@@ -30,20 +61,39 @@
                                                                     options:0
                                                                       error:nil]
                                   : nil;
-      h2_pal_ipv6_result_t result = {0};
-      h2_ios_net_t *owner = NULL;
-      h2_ios_webrtc_t *webrtc = NULL;
+      if (retained_owner) {
+        int cleanup = cleanup_owner(retained_owner);
+        (void)h2_ipv6_write_report(retained_owner->report_path, "ios-simulator",
+            &retained_owner->result, retained_owner->rc, cleanup);
+        if (cleanup != H2_PAL_OK) {
+          dispatch_async(dispatch_get_main_queue(), ^{
+            view.text = [NSString stringWithFormat:@"PAL IPv6: FAIL (%d)", cleanup];
+          });
+          return;
+        }
+        release_owner(retained_owner);
+        retained_owner = NULL;
+      }
+      mobile_owner_t *owner = calloc(1u, sizeof(*owner));
+      if (!owner)
+        return;
+      owner->report_path = malloc(strlen(report.fileSystemRepresentation) + 1u);
+      if (!owner->report_path) {
+        free(owner);
+        return;
+      }
+      strcpy(owner->report_path, report.fileSystemRepresentation);
       NSData *pem = [fixture[@"ca"] dataUsingEncoding:NSUTF8StringEncoding];
       NSData *wrong =
           [fixture[@"wrong_ca"] dataUsingEncoding:NSUTF8StringEncoding];
       int rc =
-          pem && wrong ? h2_ios_net_create(&owner) : H2_PAL_ERR_INVALID_ARG;
+          pem && wrong ? h2_ios_net_create(&owner->net) : H2_PAL_ERR_INVALID_ARG;
       if (rc == H2_PAL_OK)
-        rc = h2_ios_webrtc_create(&webrtc);
+        rc = h2_ios_webrtc_create(&owner->webrtc);
       if (rc == H2_PAL_OK) {
         h2_runtime_config_t config = h2_ios_app_host_config();
-        config.net = h2_ios_net_api(owner);
-        config.webrtc = h2_ios_webrtc_api(webrtc);
+        config.net = h2_ios_net_api(owner->net);
+        config.webrtc = h2_ios_webrtc_api(owner->webrtc);
         rc = h2_ipv6_mobile_run(
             config, [fixture[@"host"] UTF8String],
             (uint16_t)[fixture[@"port"] unsignedIntValue],
@@ -53,19 +103,20 @@
             [fixture[@"fallback_url"] UTF8String],
             (uint16_t)[fixture[@"mqtt_port"] unsignedIntValue],
             [fixture[@"offer"] UTF8String], [fixture[@"stun"] UTF8String],
-            (uint16_t)[fixture[@"dns_port"] unsignedIntValue], &result);
+            (uint16_t)[fixture[@"dns_port"] unsignedIntValue], &owner->result);
       }
-      int teardown = h2_ios_webrtc_destroy(&webrtc);
-      int net_cleanup = h2_ios_net_destroy(&owner);
-      if (teardown == H2_PAL_OK)
-        teardown = net_cleanup;
-      if (teardown == H2_PAL_OK)
-        teardown = h2_ios_platform_core_shutdown();
-      int written =
-          h2_ipv6_write_report(report.fileSystemRepresentation, "ios-simulator",
-                               &result, rc, teardown);
+      owner->rc = rc;
+      int teardown = cleanup_owner(owner);
+      int written = h2_ipv6_write_report(owner->report_path, "ios-simulator",
+                                         &owner->result, rc, teardown);
+      if (rc == H2_PAL_OK && teardown != H2_PAL_OK)
+        rc = teardown;
       if (written != H2_PAL_OK)
         rc = written;
+      if (teardown != H2_PAL_OK)
+        retained_owner = owner;
+      else
+        release_owner(owner);
       NSString *text = [NSString stringWithContentsOfFile:report
                                                  encoding:NSUTF8StringEncoding
                                                     error:nil];

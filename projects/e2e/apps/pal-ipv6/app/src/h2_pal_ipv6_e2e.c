@@ -1,4 +1,5 @@
 #include "h2_pal_ipv6_e2e.h"
+#include "h2_pal_ipv6_local.h"
 #include "client.h"
 #include "h2_corehttp.h"
 #include "h2_coremqtt.h"
@@ -77,81 +78,23 @@ static int http(const h2_pal_ipv6_config_t *config, const char *url) {
   h2_corehttp_destroy(provider);
   return rc;
 }
-typedef struct local_http_peer {
-  const h2_runtime_t *runtime;
-  int listener;
-  int rc;
-  const char *session;
-} local_http_peer_t;
-static void local_http_serve(void *user) {
-  local_http_peer_t *peer = user;
-  int client = -1;
-  h2_pal_net_addr_t remote;
-  const h2_pal_net_api_t *net = peer->runtime->net;
-  peer->rc =
-      h2_pal_net_tcp_accept(net, peer->listener, &client, &remote, 5000u);
-  if (peer->rc == H2_PAL_OK && remote.family != H2_PAL_NET_FAMILY_IPV4)
-    peer->rc = H2_PAL_ERR_FORMAT;
-  char request[1024] = {0};
-  size_t used = 0u;
-  while (peer->rc == H2_PAL_OK && strstr(request, "\r\n\r\n") == NULL) {
-    int got = h2_pal_net_tcp_recv(net, client, (uint8_t *)request + used,
-                                  sizeof(request) - used - 1u, 1000u);
-    if (got <= 0 || (size_t)got >= sizeof(request) - used) {
-      peer->rc = got < 0 ? got : H2_PAL_ERR_FORMAT;
-      break;
-    }
-    used += (size_t)got;
-    if (used == sizeof(request) - 1u)
-      peer->rc = H2_PAL_ERR_NO_SPACE;
-  }
-  if (peer->rc == H2_PAL_OK && strstr(request, peer->session) == NULL)
-    peer->rc = H2_PAL_ERR_FORMAT;
-  const char headers[] =
-      "HTTP/1.1 200 OK\r\nContent-Length: 32\r\nConnection: close\r\n\r\n";
-  char reply[sizeof(headers) + 32u];
-  memcpy(reply, headers, sizeof(headers) - 1u);
-  memcpy(reply + sizeof(headers) - 1u, peer->session, 32u);
-  size_t offset = 0u, size = sizeof(headers) - 1u + 32u;
-  while (peer->rc == H2_PAL_OK && offset < size) {
-    int sent = h2_pal_net_tcp_send_timeout(
-        net, client, (const uint8_t *)reply + offset, size - offset, 1000u);
-    if (sent <= 0) {
-      peer->rc = sent < 0 ? sent : H2_PAL_ERR_IO;
-      break;
-    }
-    offset += (size_t)sent;
-  }
-  h2_pal_net_close(net, client);
+static int http_local_call(void *user, const char *url) {
+  return http((const h2_pal_ipv6_config_t *)user, url);
 }
-static int http_local_fallback(const h2_pal_ipv6_config_t *config) {
-  const h2_runtime_t *runtime = config->transport.runtime;
-  h2_pal_net_addr_t address;
-  h2_pal_net_bind_t bind = {
-      .type = H2_PAL_NET_BIND_SOURCE_ADDR,
-      .source_addr = {.family = H2_PAL_NET_FAMILY_IPV4, .ip = {127, 0, 0, 1}}};
-  local_http_peer_t peer = {
-      .runtime = runtime, .listener = -1, .session = config->transport.session};
-  int rc = h2_pal_net_tcp_listen(runtime->net, H2_PAL_NET_FAMILY_IPV4, 0u,
-                                 &bind, &peer.listener, &address);
-  if (rc != H2_PAL_OK)
-    return rc;
-  h2_pal_task_t *task = NULL;
-  h2_pal_task_options_t options = {.name = "pal-ipv6/e2e/http-peer"};
-  rc = h2_pal_task_start(runtime->task, &options, local_http_serve, &peer,
-                         &task);
-  if (rc == H2_PAL_OK) {
-    char url[128];
-    snprintf(url, sizeof(url), "http://localhost:%u/%s", (unsigned)address.port,
-             config->transport.session);
-    rc = http(config, url);
-    int joined = h2_pal_task_join(runtime->task, task);
-    if (rc == H2_PAL_OK)
-      rc = joined != H2_PAL_OK ? joined : peer.rc;
+static int http_local_fallback(const h2_pal_ipv6_config_t *config,
+                              h2_pal_ipv6_result_t *out) {
+  int rc = h2_pal_ipv6_local_http(config->transport.runtime,
+      config->transport.session, http_local_call, (void *)config,
+      &out->retained_cleanup);
+  if (out->retained_cleanup) {
+    ++out->retained_sockets;
+    ++out->retained_allocations;
+    ++out->retained_tasks;
+    out->cleanup_error = h2_pal_ipv6_local_cleanup_error(out->retained_cleanup);
   }
-  h2_pal_net_close(runtime->net, peer.listener);
   return rc;
 }
+
 static int mqtt(const h2_pal_ipv6_config_t *config) {
   if (!config->mqtt_host || !config->mqtt_port)
     return H2_PAL_ERR_UNAVAILABLE;
@@ -519,7 +462,8 @@ cleanup:
     h2_pal_net_close(net, sockets[i]);
   return rc;
 }
-static int extra(const h2_pal_ipv6_config_t *config, unsigned index) {
+static int extra(const h2_pal_ipv6_config_t *config, unsigned index,
+                 h2_pal_ipv6_result_t *out) {
   const h2_runtime_t *runtime = config->transport.runtime;
   const h2_pal_net_api_t *net = runtime->net;
   h2_pal_net_addr_list_t list = {0};
@@ -597,22 +541,8 @@ static int extra(const h2_pal_ipv6_config_t *config, unsigned index) {
     h2_pal_net_close(net, socket);
     return rc == H2_PAL_ERR_INVALID_ARG ? H2_PAL_OK : H2_PAL_ERR_FORMAT;
   }
-  case 7: {
-    int socket = -1;
-    h2_pal_net_addr_t bound, addr = {.family = H2_PAL_NET_FAMILY_IPV4,
-                                     .port = 9u,
-                                     .ip = {127, 0, 0, 1}};
-    rc = h2_pal_net_udp_open_bound(net, H2_PAL_NET_FAMILY_IPV6, 0u, NULL,
-                                   &socket, &bound);
-    if (rc == H2_PAL_OK) {
-      int sent =
-          h2_pal_net_udp_sendto(net, socket, &addr, (const uint8_t *)"x", 1u);
-      if (sent >= 0)
-        rc = H2_PAL_ERR_FORMAT;
-    }
-    h2_pal_net_close(net, socket);
-    return rc;
-  }
+  case 7:
+    return h2_pal_ipv6_local_isolation(net);
   case 8: {
     h2_pal_net_addr_t addr;
     rc = h2_pal_net_get_host_addr_family(net, NULL, H2_PAL_NET_FAMILY_IPV6,
@@ -628,7 +558,7 @@ static int extra(const h2_pal_ipv6_config_t *config, unsigned index) {
   case 10:
     return config->fallback_url && config->fallback_url[0]
                ? http(config, config->fallback_url)
-               : http_local_fallback(config);
+               : http_local_fallback(config, out);
   case 11:
     return mqtt(config);
   case 12:
@@ -678,6 +608,8 @@ int h2_pal_ipv6_e2e_run(const h2_pal_ipv6_config_t *config,
                         h2_pal_ipv6_result_t *out) {
   if (!config || !out || !config->transport.runtime)
     return H2_PAL_ERR_INVALID_ARG;
+  if (out->retained_cleanup || out->retained_runtime)
+    return H2_PAL_ERR_INVALID_STATE;
   memset(out, 0, sizeof(*out));
   h2_net_tls_config_t transport = config->transport;
   transport.family = H2_PAL_NET_FAMILY_IPV6;
@@ -700,7 +632,8 @@ int h2_pal_ipv6_e2e_run(const h2_pal_ipv6_config_t *config,
     h2_net_tls_case_result_t *item = &out->cases[slot++];
     item->id = ids[i];
     item->mandatory = 1;
-    item->detail = extra(config, i);
+    item->detail = out->retained_cleanup ? H2_PAL_ERR_UNAVAILABLE
+                                         : extra(config, i, out);
     item->passed = item->detail == H2_PAL_OK;
     item->blocked = item->detail == H2_PAL_ERR_UNAVAILABLE;
   }
@@ -716,8 +649,27 @@ int h2_pal_ipv6_e2e_run(const h2_pal_ipv6_config_t *config,
       config->transport.report(config->transport.report_user, item);
   }
   return !out->failed && !out->blocked && !out->retained_sockets &&
-                 !out->retained_resolvers && !out->retained_allocations
+                 !out->retained_resolvers && !out->retained_allocations &&
+                 !out->retained_tasks && !out->retained_cleanup
              ? H2_PAL_OK
          : out->blocked ? H2_PAL_ERR_UNAVAILABLE
                         : H2_PAL_ERR_INVALID_STATE;
+}
+
+int h2_pal_ipv6_e2e_cleanup(h2_pal_ipv6_result_t *out) {
+  if (!out)
+    return H2_PAL_ERR_INVALID_ARG;
+  if (!out->retained_cleanup)
+    return H2_PAL_OK;
+  int rc = h2_pal_ipv6_local_cleanup(&out->retained_cleanup);
+  out->cleanup_error = rc;
+  if (rc == H2_PAL_OK) {
+    if (out->retained_sockets)
+      --out->retained_sockets;
+    if (out->retained_allocations)
+      --out->retained_allocations;
+    if (out->retained_tasks)
+      --out->retained_tasks;
+  }
+  return rc;
 }

@@ -19,7 +19,7 @@ if(NOT DEFINED H2_ESP_CONSOLE_DEFAULTS)
   message(FATAL_ERROR "Bazel target did not select H2_ESP_CONSOLE_DEFAULTS")
 endif()
 set(SDKCONFIG_DEFAULTS
-  "${H2_ESP_BOARD_DIR}/layouts/h2loader/${H2_ESP_CONSOLE_DEFAULTS};${H2_ESP_BOARD_DIR}/sdkconfig.defaults;${CMAKE_CURRENT_LIST_DIR}/sdkconfig.h2loader.defaults;${CMAKE_CURRENT_LIST_DIR}/sdkconfig.pal-ipv6.defaults"
+  "${H2_ESP_BOARD_DIR}/layouts/h2loader/${H2_ESP_CONSOLE_DEFAULTS};${H2_ESP_BOARD_DIR}/sdkconfig.defaults;${CMAKE_CURRENT_LIST_DIR}/sdkconfig.h2loader.defaults;${CMAKE_CURRENT_LIST_DIR}/sdkconfig.ipv6-client.defaults"
   CACHE STRING "ESP-IDF sdkconfig defaults" FORCE)
 
 set(H2_ESP_BOARD_ALIAS_DIR "${CMAKE_BINARY_DIR}/h2_esp_board")
