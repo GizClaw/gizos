@@ -9,7 +9,8 @@
 #include <os/os.h>
 #include <string.h>
 
-static uint32_t generation = 1u, ready_epoch, cache_guard, cache_valid;
+static uint32_t generation = 1u, associated_epoch, association_observed;
+static uint32_t ready_epoch, cache_guard, cache_valid;
 static uint32_t
     cache_words[sizeof(h2_bk_wifi_ipv6_snapshot_t) / sizeof(uint32_t)];
 static int registered;
@@ -20,10 +21,13 @@ static bk_err_t h2_bk_wifi_ipv6_association(void *arg, event_module_t module,
                                             int event, void *data) {
   (void)arg;
   (void)module;
-  (void)event;
   (void)data;
-  (void)__atomic_add_fetch(&generation, 1u, __ATOMIC_ACQ_REL);
+  __atomic_store_n(&association_observed, 1u, __ATOMIC_RELEASE);
+  __atomic_store_n(&associated_epoch, 0u, __ATOMIC_RELEASE);
+  uint32_t epoch = __atomic_add_fetch(&generation, 1u, __ATOMIC_ACQ_REL);
   __atomic_store_n(&ready_epoch, 0u, __ATOMIC_RELEASE);
+  if (event == EVENT_WIFI_STA_CONNECTED)
+    __atomic_store_n(&associated_epoch, epoch, __ATOMIC_RELEASE);
   return BK_OK;
 }
 
@@ -33,10 +37,13 @@ static void h2_bk_wifi_ipv6_refresh_cache(void *user) {
   (void)user;
   h2_bk_wifi_ipv6_snapshot_t snapshot = {0};
   snapshot.generation = __atomic_load_n(&generation, __ATOMIC_ACQUIRE);
+  uint32_t associated =
+      __atomic_load_n(&associated_epoch, __ATOMIC_ACQUIRE);
   uint32_t ready = 0u;
 #if LWIP_IPV6
   struct netif *sta = (struct netif *)net_get_sta_handle();
-  if (sta != NULL && netif_is_up(sta)) {
+  if (associated != 0u && associated == snapshot.generation &&
+      sta != NULL && netif_is_up(sta)) {
     for (unsigned i = 0u; i < LWIP_IPV6_NUM_ADDRESSES; ++i) {
       if (!ip6_addr_ispreferred(netif_ip6_addr_state(sta, i)))
         continue;
@@ -50,6 +57,17 @@ static void h2_bk_wifi_ipv6_refresh_cache(void *user) {
     }
   }
 #endif
+  /* A disconnect can leave lwIP up with the old preferred addresses. Neither
+   * a later refresh nor a capture interrupted by an association event may
+   * publish those addresses as belonging to the new radio association. */
+  if (associated != snapshot.generation ||
+      snapshot.generation != __atomic_load_n(&generation, __ATOMIC_ACQUIRE) ||
+      snapshot.generation !=
+          __atomic_load_n(&associated_epoch, __ATOMIC_ACQUIRE)) {
+    snapshot.count = 0u;
+    memset(snapshot.addresses, 0, sizeof(snapshot.addresses));
+    ready = 0u;
+  }
   uint32_t words[sizeof(cache_words) / sizeof(cache_words[0])];
   memcpy(words, &snapshot, sizeof(words));
   uint32_t before = __atomic_load_n(&cache_guard, __ATOMIC_SEQ_CST);
@@ -88,7 +106,8 @@ int h2_bk_wifi_ipv6_snapshot(h2_bk_wifi_ipv6_snapshot_t *out) {
   if (out == NULL || out->size != sizeof(*out))
     return BK_ERR_PARAM;
   memset(out, 0, sizeof(*out));
-  if (!registered) {
+  int start_cache = !registered;
+  if (start_cache) {
     bk_err_t rc = bk_event_register_cb(EVENT_MOD_WIFI, EVENT_WIFI_STA_CONNECTED,
                                        h2_bk_wifi_ipv6_association, NULL);
     if (rc != BK_OK && rc != BK_ERR_EVENT_CB_EXIST)
@@ -97,18 +116,34 @@ int h2_bk_wifi_ipv6_snapshot(h2_bk_wifi_ipv6_snapshot_t *out) {
                               h2_bk_wifi_ipv6_association, NULL);
     if (rc != BK_OK && rc != BK_ERR_EVENT_CB_EXIST)
       return rc;
-    if (tcpip_callback(h2_bk_wifi_ipv6_refresh_cache, NULL) != ERR_OK)
-      return BK_ERR_BUSY;
-    registered = 1;
   }
   uint32_t before = __atomic_load_n(&generation, __ATOMIC_ACQUIRE);
   wifi_link_status_t link = {0};
   int rc = bk_wifi_sta_get_link_status(&link);
   if (rc != BK_OK)
     goto failure;
+  if (start_cache) {
+    /* The first RPC may arrive after the radio already connected. Seed only
+     * before any observed event; a stale link-status reply must never undo a
+     * disconnect. CAS preserves a newer association event racing this seed. */
+    if ((link.state == WIFI_LINKSTATE_STA_CONNECTED ||
+         link.state == WIFI_LINKSTATE_STA_GOT_IP) &&
+        !__atomic_load_n(&association_observed, __ATOMIC_ACQUIRE) &&
+        before == __atomic_load_n(&generation, __ATOMIC_ACQUIRE)) {
+      uint32_t empty = 0u;
+      (void)__atomic_compare_exchange_n(&associated_epoch, &empty, before, 0,
+                                        __ATOMIC_RELEASE, __ATOMIC_RELAXED);
+    }
+    if (tcpip_callback(h2_bk_wifi_ipv6_refresh_cache, NULL) != ERR_OK) {
+      rc = BK_ERR_BUSY;
+      goto failure;
+    }
+    registered = 1;
+  }
   out->generation = before;
-  if (link.state == WIFI_LINKSTATE_STA_CONNECTED ||
-      link.state == WIFI_LINKSTATE_STA_GOT_IP) {
+  if ((link.state == WIFI_LINKSTATE_STA_CONNECTED ||
+       link.state == WIFI_LINKSTATE_STA_GOT_IP) &&
+      __atomic_load_n(&associated_epoch, __ATOMIC_ACQUIRE) == before) {
     h2_bk_wifi_ipv6_snapshot_t cached;
     rc = h2_bk_wifi_ipv6_cache_read(&cached);
     if (rc != BK_OK || cached.generation != before) {
@@ -127,6 +162,11 @@ int h2_bk_wifi_ipv6_snapshot(h2_bk_wifi_ipv6_snapshot_t *out) {
     out->channel = link.channel;
     out->rssi = link.rssi;
   } else {
+    /* This RPC's radio observation may precede the event callback. Do not
+     * clear a newer association if the status read raced that callback. */
+    uint32_t expected = before;
+    (void)__atomic_compare_exchange_n(&associated_epoch, &expected, 0u, 0,
+                                      __ATOMIC_RELEASE, __ATOMIC_RELAXED);
     __atomic_store_n(&ready_epoch, 0u, __ATOMIC_RELEASE);
   }
   if (before != __atomic_load_n(&generation, __ATOMIC_ACQUIRE)) {
@@ -146,5 +186,6 @@ int h2_bk_wifi_ipv6_ready(void) {
   uint32_t before = __atomic_load_n(&generation, __ATOMIC_ACQUIRE);
   const uint32_t epoch = __atomic_load_n(&ready_epoch, __ATOMIC_ACQUIRE);
   return epoch != 0u && epoch == before &&
+         epoch == __atomic_load_n(&associated_epoch, __ATOMIC_ACQUIRE) &&
          before == __atomic_load_n(&generation, __ATOMIC_ACQUIRE);
 }

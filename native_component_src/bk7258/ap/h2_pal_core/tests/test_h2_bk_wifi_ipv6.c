@@ -14,15 +14,28 @@ static test_event_callback_t connected_callback, disconnected_callback;
 static int link_error, tcpip_error, race, in_tcpip;
 static unsigned cleanup_count, api_calls;
 static int capture_race;
+static int capture_disconnect, publish_disconnect;
 static int observe_no_ready;
 static void (*cache_tick)(void *);
 
 void test_after_atomic_store(void) {
+  if (publish_disconnect) {
+    publish_disconnect = 0;
+    disconnected_callback(NULL, EVENT_MOD_WIFI, EVENT_WIFI_STA_DISCONNECTED,
+                          NULL);
+    observe_no_ready = 1;
+  }
   if (observe_no_ready)
     assert(!h2_bk_wifi_ipv6_ready());
 }
 
 void test_capture_edge(void) {
+  if (capture_disconnect) {
+    capture_disconnect = 0;
+    disconnected_callback(NULL, EVENT_MOD_WIFI, EVENT_WIFI_STA_DISCONNECTED,
+                          NULL);
+    observe_no_ready = 1;
+  }
   if (capture_race) {
     capture_race = 0;
     connected_callback(NULL, EVENT_MOD_WIFI, EVENT_WIFI_STA_CONNECTED, NULL);
@@ -123,7 +136,20 @@ static h2_bk_wifi_ipv6_snapshot_t snapshot(void) {
   assert(h2_bk_wifi_ipv6_snapshot(&out) == BK_OK);
   return out;
 }
-int main(void) {
+int main(int argc, char **argv) {
+  unsigned selected = 3u;
+  if (argc == 2) {
+    if (!strcmp(argv[1], "after-disconnect"))
+      selected = 0u;
+    else if (!strcmp(argv[1], "during-capture"))
+      selected = 1u;
+    else if (!strcmp(argv[1], "during-publication"))
+      selected = 2u;
+    else
+      assert(!"unknown CP cache interleaving");
+  } else {
+    assert(argc == 1);
+  }
   station = (struct netif){.up = 1, .link = 1, .index = 2, .autoconfig = 1};
   link = (wifi_link_status_t){.state = WIFI_LINKSTATE_STA_GOT_IP,
                               .ssid = "bench",
@@ -141,6 +167,50 @@ int main(void) {
   station.state[1] = IP6_ADDR_PREFERRED;
   out = snapshot();
   assert(out.count == 2 && h2_bk_wifi_ipv6_ready());
+  for (unsigned boundary = 0u; boundary < 3u; ++boundary) {
+    if (selected != 3u && selected != boundary)
+      continue;
+    uint32_t previous_epoch = out.generation;
+    if (boundary == 0u) {
+      /* Radio disconnect precedes lwIP teardown and even a stale SDK status
+       * reply. A refresh must not re-arm ready under the new epoch. */
+      disconnected_callback(NULL, EVENT_MOD_WIFI, EVENT_WIFI_STA_DISCONNECTED,
+                            NULL);
+      observe_no_ready = 1;
+    } else if (boundary == 1u) {
+      /* Inject the real event while production reads an old preferred address
+       * after capturing generation. Observe every later atomic store. */
+      capture_disconnect = 1;
+    } else {
+      /* Also inject after validation, at the first cache publication store. */
+      publish_disconnect = 1;
+    }
+    tick();
+    assert(!capture_disconnect && !publish_disconnect &&
+           !h2_bk_wifi_ipv6_ready());
+    if (boundary != 0u) {
+      h2_bk_wifi_ipv6_snapshot_t stale = {.size = sizeof(stale)};
+      int stale_rc = h2_bk_wifi_ipv6_snapshot(&stale);
+      assert((stale_rc == BK_ERR_BUSY && stale.version == 0u) ||
+             (stale_rc == BK_OK && stale.generation != previous_epoch &&
+              !stale.connected && stale.count == 0u));
+    }
+    tick();
+    observe_no_ready = 0;
+    out = snapshot();
+    assert(station.up && station.state[1] == IP6_ADDR_PREFERRED);
+    assert(link.state == WIFI_LINKSTATE_STA_GOT_IP);
+    assert(out.generation != previous_epoch && !out.connected &&
+           out.count == 0u &&
+           !h2_bk_wifi_ipv6_ready());
+    connected_callback(NULL, EVENT_MOD_WIFI, EVENT_WIFI_STA_CONNECTED, NULL);
+    out = snapshot();
+    assert(out.count == 2 && h2_bk_wifi_ipv6_ready());
+  }
+  if (selected != 3u) {
+    puts("BK CP production controlled disconnect/cache interleaving PASS");
+    return 0;
+  }
   h2_pal_wifi_sta_config_t config = {.ssid = "bench", .ssid_len = 5};
   assert(h2_bk_wifi_ipv6_snapshot_matches(&out, &config));
   uint32_t generation = 0;
@@ -230,6 +300,11 @@ int main(void) {
   link.state = WIFI_LINKSTATE_STA_DISCONNECTED;
   out = snapshot();
   assert(!out.connected && !out.count && !h2_bk_wifi_ipv6_ready());
+  /* A radio-down snapshot also latches the loss before a delayed event. */
+  observe_no_ready = 1;
+  tick();
+  observe_no_ready = 0;
+  assert(!h2_bk_wifi_ipv6_ready());
   in_tcpip = 1;
   assert(h2_bk_wifi_ipv6_install(&station, &out, &status, &generation) ==
          ERR_OK);
@@ -241,6 +316,7 @@ int main(void) {
   station.up = 1;
   station.state[1] = IP6_ADDR_PREFERRED;
   memcpy(station.ip6[1].addr, ula, 16);
+  connected_callback(NULL, EVENT_MOD_WIFI, EVENT_WIFI_STA_CONNECTED, NULL);
   out = snapshot();
   assert(h2_bk_wifi_ipv6_ready());
   link_error = BK_FAIL;
