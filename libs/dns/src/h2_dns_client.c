@@ -13,7 +13,7 @@ static int map_pal_result(int rc) {
 }
 
 static int addr_matches(const h2_pal_net_addr_t *actual, const h2_pal_net_addr_t *expected) {
-    if (actual == NULL || expected == NULL || actual->family != expected->family || actual->port != expected->port) {
+    if (actual == NULL || expected == NULL || actual->family != expected->family || actual->port != expected->port || actual->scope_id != expected->scope_id) {
         return 0;
     }
     size_t ip_len = expected->family == H2_PAL_NET_FAMILY_IPV4 ? 4u : 16u;

@@ -79,6 +79,7 @@ cc_test(
     srcs = [
         "include/h2_esp_board.h",
         "src/h2_esp_board_display_config.c",
+        "src/h2_esp_board_display_config_internal.h",
         "tests/test_h2_esp_board_display_config.c",
     ],
     conlyopts = H2_C11_OPTS,

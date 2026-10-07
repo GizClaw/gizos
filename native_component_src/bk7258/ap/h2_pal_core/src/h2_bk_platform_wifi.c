@@ -1,22 +1,25 @@
 #include "h2_bk_platform_core.h"
 
+#include "h2_bk_dhcp_ring.h"
+#include "h2_bk_wifi_ipv6_internal.h"
+#include "h2_bk_wifi_ipv6_sync.h"
+#include "h2_bk_wifi_lease.h"
+#include "h2_bk_wifi_lease_slots.h"
+#include "h2_bk_wifi_rpc.h"
+#include "lwip/def.h"
+#include "lwip/nd6.h"
+#include "lwip/netif.h"
+#include "lwip/priv/tcpip_priv.h"
+#include "lwip/tcpip.h"
+#include "net.h"
+#include "wdrv_cntrl.h"
+#include "wifi_api_ipc.h"
 #include <common/bk_err.h>
 #include <components/event.h>
 #include <components/netif.h>
 #include <modules/wifi.h>
 #include <os/mem.h>
 #include <os/os.h>
-#include "lwip/def.h"
-#include "lwip/netif.h"
-#include "lwip/priv/tcpip_priv.h"
-#include "lwip/tcpip.h"
-#include "net.h"
-#include "wifi_api_ipc.h"
-#include "wdrv_cntrl.h"
-#include "h2_bk_wifi_rpc.h"
-#include "h2_bk_wifi_lease.h"
-#include "h2_bk_wifi_lease_slots.h"
-#include "h2_bk_dhcp_ring.h"
 
 /* Exported by the pinned AP SDK, although omitted from its public header. */
 extern bool wifi_sta_is_started(void);
@@ -31,6 +34,12 @@ extern bool wifi_sta_is_started(void);
 
 static beken_semaphore_t s_h2_bk_wifi_scan_sem;
 static int s_h2_bk_wifi_events_registered;
+static StaticSemaphore_t s_h2_bk_wifi_ipv6_mutex_control;
+static beken_mutex_t s_h2_bk_wifi_ipv6_mutex;
+#if LWIP_IPV6
+static uint32_t s_h2_bk_wifi_cp_generation;
+static int s_h2_bk_wifi_ipv6_watch_started;
+#endif
 static int s_h2_bk_wifi_ap_active;
 static int s_h2_bk_wifi_ap_starting;
 static h2_pal_wifi_ap_status_t s_h2_bk_wifi_ap_status;
@@ -101,6 +110,11 @@ static void h2_bk_wifi_status_unlock(void) {
         (void)rtos_unlock_mutex(&s_h2_bk_wifi_status_mutex);
     }
 }
+
+static int h2_bk_wifi_ipv6_refresh(void);
+#if LWIP_IPV6
+static void h2_bk_wifi_ipv6_watch(void *user);
+#endif
 
 static int h2_bk_wifi_sta_get_status(
     h2_pal_wifi_sta_t *sta,
@@ -659,6 +673,16 @@ static void h2_bk_wifi_fill_sta_ip(h2_pal_wifi_sta_status_t *status) {
         return;
     }
 
+    h2_pal_netif_ref_t ref = {.type = H2_PAL_NETIF_REF_KIND,
+                              .kind = H2_PAL_NETIF_KIND_WIFI_STA};
+    h2_pal_netif_status_t network = {0};
+    if (h2_pal_netif_get_status(h2_bk_platform_netif_api(), &ref, &network) ==
+            H2_PAL_OK &&
+        (network.flags & H2_PAL_NETIF_FLAG_HAS_IPV6) &&
+        h2_pal_net_ipv6_is_non_link_local_unicast(network.ipv6.ip)) {
+      memcpy(status->ip.ip6, network.ipv6.ip, sizeof(status->ip.ip6));
+      status->ip.ip6_valid = 1u;
+    }
     netif_ip4_config_t ip4_config;
     memset(&ip4_config, 0, sizeof(ip4_config));
     if (bk_netif_get_ip4_config(NETIF_IF_STA, &ip4_config) != BK_OK) {
@@ -774,11 +798,20 @@ static bk_err_t h2_bk_wifi_system_event_handler(
             if (h2_bk_wifi_event_lock() != H2_PAL_OK) return BK_FAIL;
             h2_pal_wifi_sta_status_t status;
             memset(&status, 0, sizeof(status));
-            status.state = H2_PAL_WIFI_STA_STATE_DISCONNECTED;
-            int had_ip = __atomic_exchange_n(&s_h2_bk_wifi_had_ip, 0u, __ATOMIC_ACQ_REL);
+            (void)h2_bk_wifi_load_sta_status(&status);
+            memset(&status.ip, 0, sizeof(status.ip));
+            status.ip_valid = 0u;
+            h2_bk_wifi_fill_sta_ip(&status);
+            status.state = H2_PAL_WIFI_STA_STATE_GOT_IP;
+            const int ready = h2_pal_wifi_sta_status_has_ip(&status);
+            if (!ready)
+              status.state = H2_PAL_WIFI_STA_STATE_CONNECTED;
+            int had_ip = __atomic_exchange_n(&s_h2_bk_wifi_had_ip, ready,
+                                             __ATOMIC_ACQ_REL);
             h2_bk_wifi_store_sta_status(&status);
-            if (had_ip)
-                h2_bk_wifi_post_sta_system_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_LOST_IP, &status);
+            if (had_ip && !ready)
+              h2_bk_wifi_post_sta_system_event(
+                  H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_LOST_IP, &status);
             h2_bk_wifi_event_unlock();
             (void)h2_bk_platform_netif_reconcile_default_async();
             return BK_OK;
@@ -913,6 +946,19 @@ static int h2_bk_wifi_ensure_events_registered(void) {
         return h2_bk_wifi_map_error(err);
     }
 
+    if (s_h2_bk_wifi_ipv6_mutex == NULL)
+      s_h2_bk_wifi_ipv6_mutex = (beken_mutex_t)xSemaphoreCreateMutexStatic(
+          &s_h2_bk_wifi_ipv6_mutex_control);
+    if (s_h2_bk_wifi_ipv6_mutex == NULL)
+      return H2_PAL_ERR_NO_MEMORY;
+#if LWIP_IPV6
+    if (!s_h2_bk_wifi_ipv6_watch_started) {
+      if (rtos_create_thread(NULL, BEKEN_APPLICATION_PRIORITY, "h2_wifi_ip6",
+                             h2_bk_wifi_ipv6_watch, 4096u, NULL) != kNoErr)
+        return H2_PAL_ERR_NO_MEMORY;
+      s_h2_bk_wifi_ipv6_watch_started = 1;
+    }
+#endif
     bk_customer_event_register_callback(h2_bk_wifi_lease_wake_callback);
     s_h2_bk_wifi_events_registered = 1;
     return H2_PAL_OK;
@@ -954,6 +1000,8 @@ static int h2_bk_wifi_sta_get_status(
     if (out_status == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    memset(out_status, 0, sizeof(*out_status));
+    (void)h2_bk_wifi_ipv6_refresh();
     int power_rc = __atomic_load_n(&s_h2_bk_wifi_power_save_error, __ATOMIC_ACQUIRE);
     if (power_rc != H2_PAL_OK) return power_rc;
     if (__atomic_load_n(
@@ -963,11 +1011,12 @@ static int h2_bk_wifi_sta_get_status(
         return H2_PAL_OK;
     }
     if (h2_bk_wifi_load_sta_status(out_status) != 0) {
-        if ((out_status->state == H2_PAL_WIFI_STA_STATE_GOT_IP && out_status->ip_valid != 0u) ||
-            (out_status->state == H2_PAL_WIFI_STA_STATE_DISCONNECTED &&
-             __atomic_load_n(&s_h2_bk_wifi_last_config_valid, __ATOMIC_ACQUIRE) == 0)) {
-            return H2_PAL_OK;
-        }
+      if (h2_pal_wifi_sta_status_has_ip(out_status) ||
+          (out_status->state == H2_PAL_WIFI_STA_STATE_DISCONNECTED &&
+           __atomic_load_n(&s_h2_bk_wifi_last_config_valid, __ATOMIC_ACQUIRE) ==
+               0)) {
+        return H2_PAL_OK;
+      }
     }
     memset(out_status, 0, sizeof(*out_status));
     out_status->state = H2_PAL_WIFI_STA_STATE_IDLE;
@@ -991,9 +1040,9 @@ static int h2_bk_wifi_sta_get_status(
     out_status->channel = link_status.channel;
     out_status->rssi = link_status.rssi;
     h2_bk_wifi_fill_sta_ip(out_status);
-    if (out_status->ip_valid != 0u) {
-        out_status->state = H2_PAL_WIFI_STA_STATE_GOT_IP;
-    }
+    out_status->state = H2_PAL_WIFI_STA_STATE_GOT_IP;
+    if (!h2_pal_wifi_sta_status_has_ip(out_status))
+      out_status->state = h2_bk_wifi_state(link_status.state);
     h2_bk_wifi_store_sta_status(out_status);
     return H2_PAL_OK;
 }
@@ -1097,6 +1146,17 @@ static int h2_bk_wifi_sta_is_connected(
         memcmp(link_status->ssid, config->ssid, ssid_len) == 0;
 }
 
+static int
+h2_bk_wifi_sta_cached_connected(const h2_pal_wifi_sta_config_t *config) {
+  h2_pal_wifi_sta_status_t status = {0};
+  return h2_bk_wifi_load_sta_status(&status) &&
+         h2_pal_wifi_sta_status_has_ip(&status) &&
+         status.ssid_len == config->ssid_len &&
+         memcmp(status.ssid, config->ssid, config->ssid_len) == 0 &&
+         (!config->bssid_set ||
+          (status.bssid_set && memcmp(status.bssid, config->bssid, 6u) == 0));
+}
+
 typedef struct h2_bk_wifi_connect_request {
     h2_pal_wifi_sta_config_t requested_config;
     wifi_sta_config_t sdk_config;
@@ -1117,6 +1177,8 @@ static void h2_bk_wifi_connect_worker(void *arg) {
                     __ATOMIC_ACQUIRE) != generation) {
                 break;
             }
+            if (h2_bk_wifi_sta_cached_connected(&request->requested_config))
+              goto done;
             wifi_link_status_t current_status;
             memset(&current_status, 0, sizeof(current_status));
             bk_err_t err = bk_wifi_sta_get_link_status(&current_status);
@@ -1162,6 +1224,9 @@ static void h2_bk_wifi_connect_worker(void *arg) {
                             __ATOMIC_ACQUIRE) != generation) {
                         goto done;
                     }
+                    if (h2_bk_wifi_sta_cached_connected(
+                            &request->requested_config))
+                      goto done;
                     memset(&current_status, 0, sizeof(current_status));
                     if (bk_wifi_sta_get_link_status(&current_status) == BK_OK &&
                         h2_bk_wifi_sta_is_connected(
@@ -1248,23 +1313,26 @@ static int h2_bk_wifi_sta_connect(
             s_h2_bk_wifi_last_config.ssid,
             config->ssid,
             config->ssid_len) == 0) {
-        if (h2_bk_wifi_sta_get_status(NULL, &cached_status) == H2_PAL_OK &&
-            cached_status.state == H2_PAL_WIFI_STA_STATE_GOT_IP &&
-            cached_status.ip_valid != 0u && cached_status.ssid_len == config->ssid_len &&
-            memcmp(cached_status.ssid, config->ssid, config->ssid_len) == 0) {
-            h2_bk_wifi_request_unlock();
-            return H2_PAL_OK;
-        }
+      if (h2_bk_wifi_sta_get_status(NULL, &cached_status) == H2_PAL_OK &&
+          cached_status.state == H2_PAL_WIFI_STA_STATE_GOT_IP &&
+          h2_pal_wifi_sta_status_has_ip(&cached_status) &&
+          cached_status.ssid_len == config->ssid_len &&
+          memcmp(cached_status.ssid, config->ssid, config->ssid_len) == 0) {
+        h2_bk_wifi_request_unlock();
+        return H2_PAL_OK;
+      }
     }
     if (h2_bk_wifi_load_sta_status(&cached_status) != 0 &&
         cached_status.state == H2_PAL_WIFI_STA_STATE_GOT_IP &&
-        cached_status.ip_valid != 0u &&
+        h2_pal_wifi_sta_status_has_ip(&cached_status) &&
         cached_status.ssid_len == config->ssid_len &&
         memcmp(cached_status.ssid, config->ssid, config->ssid_len) == 0) {
-        h2_bk_wifi_request_unlock();
-        return H2_PAL_OK;
+      h2_bk_wifi_request_unlock();
+      return H2_PAL_OK;
     }
 
+    (void)__atomic_add_fetch(&s_h2_bk_wifi_connect_generation, 1u,
+                             __ATOMIC_ACQ_REL);
     wifi_sta_config_t bk_config;
     h2_bk_wifi_copy_sta_config(&bk_config, config);
     s_h2_bk_wifi_last_config = *config;
@@ -1302,10 +1370,8 @@ static int h2_bk_wifi_sta_connect(
         }
         request->requested_config = *config;
         request->sdk_config = bk_config;
-        request->generation = __atomic_add_fetch(
-            &s_h2_bk_wifi_connect_generation,
-            1u,
-            __ATOMIC_ACQ_REL);
+        request->generation =
+            __atomic_load_n(&s_h2_bk_wifi_connect_generation, __ATOMIC_ACQUIRE);
         if (rtos_create_thread(
                 NULL,
                 BEKEN_APPLICATION_PRIORITY,
@@ -1389,13 +1455,14 @@ static int h2_bk_wifi_sta_connect(
 
     uint32_t elapsed = 0u;
     while (elapsed < timeout_ms) {
-        wifi_link_status_t link_status;
-        memset(&link_status, 0, sizeof(link_status));
-        err = bk_wifi_sta_get_link_status(&link_status);
-        if (err == BK_OK && h2_bk_wifi_sta_is_connected(
-                &link_status, config)) {
-            return H2_PAL_OK;
-        }
+      if (h2_bk_wifi_sta_cached_connected(config))
+        return H2_PAL_OK;
+      wifi_link_status_t link_status;
+      memset(&link_status, 0, sizeof(link_status));
+      err = bk_wifi_sta_get_link_status(&link_status);
+      if (err == BK_OK && h2_bk_wifi_sta_is_connected(&link_status, config)) {
+        return H2_PAL_OK;
+      }
         if (err != BK_OK &&
             err != BK_ERR_WIFI_STA_NOT_STARTED &&
             err != BK_ERR_WIFI_STA_NOT_CONFIG && err != BK_FAIL && err != BK_ERR_WIFI_DRIVER) {
@@ -1415,6 +1482,9 @@ typedef struct h2_bk_wifi_sta_down_call {
 static err_t h2_bk_wifi_sta_down_api_call(struct tcpip_api_call_data *data) {
     h2_bk_wifi_sta_down_call_t *request = (h2_bk_wifi_sta_down_call_t *)data;
     if (request->sta == NULL) return ERR_IF;
+#if LWIP_IPV6
+    h2_bk_wifi_ipv6_clear(request->sta);
+#endif
     ip4_addr_t zero;
     ip4_addr_set_zero(&zero);
     netif_set_link_down(request->sta);
@@ -1423,6 +1493,138 @@ static err_t h2_bk_wifi_sta_down_api_call(struct tcpip_api_call_data *data) {
     if (netif_default == request->sta) netif_set_default(NULL);
     return ERR_OK;
 }
+
+#if LWIP_IPV6
+typedef struct h2_bk_wifi_ipv6_sync_call {
+  struct tcpip_api_call_data call;
+  const h2_bk_wifi_ipv6_snapshot_t *snapshot;
+  uint32_t generation;
+  h2_pal_wifi_sta_status_t *status;
+} h2_bk_wifi_ipv6_sync_call_t;
+
+static err_t h2_bk_wifi_ipv6_sync(struct tcpip_api_call_data *raw) {
+  h2_bk_wifi_ipv6_sync_call_t *request = (h2_bk_wifi_ipv6_sync_call_t *)raw;
+  if (!__atomic_load_n(&s_h2_bk_wifi_last_config_valid, __ATOMIC_ACQUIRE) ||
+      request->generation !=
+          __atomic_load_n(&s_h2_bk_wifi_connect_generation, __ATOMIC_ACQUIRE))
+    return ERR_IF;
+  struct netif *sta = (struct netif *)net_get_sta_handle();
+  if (sta == NULL)
+    return ERR_IF;
+  return h2_bk_wifi_ipv6_install(sta, request->snapshot, request->status,
+                                 &s_h2_bk_wifi_cp_generation);
+}
+#endif
+
+static int h2_bk_wifi_ipv6_refresh(void) {
+#if LWIP_IPV6
+  if (s_h2_bk_wifi_ipv6_mutex == NULL ||
+      rtos_lock_mutex(&s_h2_bk_wifi_ipv6_mutex) != kNoErr)
+    return H2_PAL_ERR_INVALID_STATE;
+  h2_pal_wifi_sta_config_t config = {0};
+  uint32_t generation = 0u;
+  int rc = h2_bk_wifi_request_lock();
+  if (rc != H2_PAL_OK)
+    goto done;
+  if (!__atomic_load_n(&s_h2_bk_wifi_last_config_valid, __ATOMIC_ACQUIRE)) {
+    h2_bk_wifi_request_unlock();
+    goto done;
+  }
+  config = s_h2_bk_wifi_last_config;
+  generation =
+      __atomic_load_n(&s_h2_bk_wifi_connect_generation, __ATOMIC_ACQUIRE);
+  h2_bk_wifi_request_unlock();
+  h2_bk_wifi_ipv6_snapshot_t *shared = os_malloc(sizeof(*shared));
+  if (shared == NULL) {
+    rc = H2_PAL_ERR_NO_MEMORY;
+    goto done;
+  }
+  memset(shared, 0, sizeof(*shared));
+  shared->size = sizeof(*shared);
+  bk_err_t sdk = wifi_send_com_api_cmd(H2_BK_WIFI_RPC_IPV6_SNAPSHOT, 1,
+                                       (uint32_t)(uintptr_t)shared);
+  h2_bk_wifi_ipv6_snapshot_t snapshot = *shared;
+  os_free(shared);
+  if (sdk != BK_OK) {
+    rc = h2_bk_wifi_map_error(sdk);
+    goto done;
+  }
+  if (!h2_bk_wifi_ipv6_snapshot_matches(&snapshot, &config)) {
+    rc = H2_PAL_ERR_INVALID_STATE;
+    goto done;
+  }
+  h2_pal_wifi_sta_status_t status = {0};
+  status.state = snapshot.connected ? H2_PAL_WIFI_STA_STATE_CONNECTED
+                                    : H2_PAL_WIFI_STA_STATE_DISCONNECTED;
+  status.ssid_len = snapshot.ssid_len;
+  memcpy(status.ssid, snapshot.ssid, status.ssid_len);
+  memcpy(status.bssid, snapshot.bssid, sizeof(status.bssid));
+  status.bssid_set = snapshot.connected;
+  rc = h2_bk_wifi_request_lock();
+  if (rc != H2_PAL_OK)
+    goto done;
+  h2_bk_wifi_ipv6_sync_call_t sync = {
+      .snapshot = &snapshot, .generation = generation, .status = &status};
+  const err_t applied = tcpip_api_call(h2_bk_wifi_ipv6_sync, &sync.call);
+  h2_bk_wifi_request_unlock();
+  if (applied != ERR_OK) {
+    rc = H2_PAL_ERR_UNAVAILABLE;
+    goto done;
+  }
+  h2_pal_wifi_sta_status_t previous = {0};
+  if (h2_bk_wifi_event_lock() != H2_PAL_OK) {
+    rc = H2_PAL_ERR_INVALID_STATE;
+    goto done;
+  }
+  if (generation !=
+      __atomic_load_n(&s_h2_bk_wifi_connect_generation, __ATOMIC_ACQUIRE)) {
+    h2_bk_wifi_event_unlock();
+    rc = H2_PAL_ERR_UNAVAILABLE;
+    goto done;
+  }
+  (void)h2_bk_wifi_load_sta_status(&previous);
+  status.channel = (uint8_t)snapshot.channel;
+  status.rssi = snapshot.rssi;
+  status.state = snapshot.connected ? H2_PAL_WIFI_STA_STATE_GOT_IP
+                                    : H2_PAL_WIFI_STA_STATE_DISCONNECTED;
+  const int ready = h2_pal_wifi_sta_status_has_ip(&status);
+  if (!ready && snapshot.connected)
+    status.state = H2_PAL_WIFI_STA_STATE_CONNECTED;
+  const int changed = status.ip_valid != previous.ip_valid ||
+                      memcmp(&status.ip, &previous.ip, sizeof(status.ip)) != 0;
+  int had_ip =
+      __atomic_exchange_n(&s_h2_bk_wifi_had_ip, ready, __ATOMIC_ACQ_REL);
+  h2_bk_wifi_store_sta_status(&status);
+  if (changed && ready)
+    h2_bk_wifi_post_sta_system_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_GOT_IP,
+                                     &status);
+  else if (had_ip && !ready)
+    h2_bk_wifi_post_sta_system_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_LOST_IP,
+                                     &status);
+  h2_bk_wifi_event_unlock();
+  (void)h2_bk_platform_netif_reconcile_default_async();
+  rc = H2_PAL_OK;
+done:
+  memset(&config, 0, sizeof(config));
+  (void)rtos_unlock_mutex(&s_h2_bk_wifi_ipv6_mutex);
+  return rc;
+#else
+  return H2_PAL_ERR_UNSUPPORTED;
+#endif
+}
+
+#if LWIP_IPV6
+static void h2_bk_wifi_ipv6_watch(void *user) {
+  (void)user;
+  /* Provider/event registrations are image-lifetime singletons. This worker
+   * is shared by all Runtime consumers and never owns saved credentials. */
+  for (;;) {
+    (void)h2_bk_wifi_ipv6_refresh();
+    rtos_delay_milliseconds(500u);
+  }
+}
+
+#endif
 
 static int h2_bk_wifi_sta_disconnect(h2_pal_wifi_sta_t *sta) {
     (void)sta;

@@ -267,7 +267,7 @@ int ice_candidate_equal(
       first->transport != second->transport ||
       first->type != second->type || first->tcp_type != second->tcp_type ||
       first->addr.family != second->addr.family ||
-      first->addr.port != second->addr.port) {
+      first->addr.port != second->addr.port || first->addr.scope_id != second->addr.scope_id) {
     return 0;
   }
   size_t address_len = first->addr.family == H2_PAL_NET_FAMILY_IPV6 ? 16u : 4u;

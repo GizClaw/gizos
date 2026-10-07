@@ -151,6 +151,7 @@ const appItems = [
               { text: "GizClaw Ping Speed", link: "/apps/h2loader/boards/amoled/gizclaw_ping_speed" },
               { text: "Crash Before Confirm", link: "/apps/h2loader/boards/amoled/crash_before_confirm" },
               { text: "iperf", link: "/apps/h2loader/boards/amoled/iperf" },
+              { text: "iperf Server", link: "/apps/h2loader/boards/amoled/iperf_server" },
               { text: "WebRTC Performance", link: "/apps/h2loader/boards/amoled/webrtc_performance" },
             ],
           },
@@ -171,6 +172,7 @@ const appItems = [
             items: [
               { text: "总览", link: "/apps/h2loader/boards/devkit/" },
               { text: "H2Loader", link: "/apps/h2loader/boards/devkit/h2loader" },
+              { text: "iperf Client", link: "/apps/h2loader/boards/devkit/iperf_client" },
             ],
           },
           {

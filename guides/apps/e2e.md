@@ -1,6 +1,6 @@
 # E2E 测试 App
 
-`projects/e2e` 持有没有其他产品 owner、可以由 Desktop 与真实设备 entry 复用的 headless 测试 App。这里的 App 以机器可验证的 case、结果和清理合同验证 Runtime/PAL 与目标 library 的集成；启动完整 production Main App、依赖产品页面与 policy 的 E2E 属于对应产品的 `projects/<product>/apps/e2e/app`。用于向人展示能力组合的 runnable 场景仍属于 [Examples](/apps/example)，library-local unit、fake、parser 和 protocol test 仍属于对应 `libs/<library>/tests`。
+`projects/e2e` 持有没有其他产品 owner、可以由 Desktop 与真实设备 entry 复用的测试 App 与设备间吞吐测试台。这里的 App 以机器可验证的 case、结果和清理合同验证 Runtime/PAL 与目标 library 的集成；`iperf-server` 还提供触屏控制的网络吞吐测试台，供外部设备发起测量；启动完整 production Main App、依赖产品页面与 policy 的 E2E 属于对应产品的 `projects/<product>/apps/e2e/app`。用于向人展示能力组合的 runnable 场景仍属于 [Examples](/apps/example)，library-local unit、fake、parser 和 protocol test 仍属于对应 `libs/<library>/tests`。
 
 ## Ownership
 
@@ -45,6 +45,8 @@ Platform artifact entry 持有 Runtime assembly、具体 provider、endpoint 与
 | H2Loader Serial | `//projects/e2e/apps/h2loader-serial/app:h2loader_serial_e2e` | macOS Desktop；desktop Chrome Browser |
 | WebRTC Performance | `//projects/e2e/apps/webrtc-performance/app:webrtc_performance` | Desktop H2Peer + local Pion；DevKit 与 AMOLED ESP32-S3 H2Peer + operator LAN Pion |
 | iperf | `//projects/e2e/apps/iperf/app:iperf_e2e` | Desktop host client + PAL server；AMOLED ESP32-S3 + operator LAN PAL server |
+| iperf Server | `//projects/e2e/apps/iperf-server/app:iperf_server` | AMOLED ESP32-S3 触屏 AP/server；IPv4、IPv6 与双栈 |
+| iperf Client | `//projects/e2e/apps/iperf-client/app:iperf_client` | DevKit ESP32-S3 → AMOLED；TCP/UDP 双向，三轮 IPv4/IPv6/双栈测量 |
 
 独立 HTTP 与 MQTT 测试分别由 `pal-http` 和 `pal-mqtt` App 持有公共 case 和平台验收合同。PAL App 只验证 PAL API 的跨目标公共行为，不吸收 backend-local unit、fake 或 protocol tests。Provider 名属于 launcher target；不能为了 H2Peer、Pion 或另一 backend 复制 portable case registry。H106 production App、adapter、UI 与业务 policy 继续属于 `projects/h106`；H106 E2E 的 evidence boundary 和运行合同见 产品 E2E。
 
@@ -183,6 +185,14 @@ Desktop launcher 位于 `projects/e2e/targets/cc_binary/webrtc-performance`，�
 
 App-local `iperf_e2e_test` 用 `//libs/iperf:test_support` 在 loopback 上对同一个 PAL server 顺序执行 TCP、UDP reverse 与两条 SCTP association，验证共享封装 socket 上的后续 association 不会被前一条的尾包污染。host launcher `//projects/e2e/targets/cc_binary/iperf:h2iperf` 同时提供 `server`（TCP/UDP/SCTP-over-UDP 的 PAL server）和 `client <host>`（同一矩阵）。AMOLED launcher 位于 `projects/e2e/targets/h2loader_tar_zlib/iperf/amoled`，从 Runtime `wifi_settings` 取回 Loader 保存的 STA 配置，用 `--define=H2_IPERF_SERVER` 指定 LAN server，并用 `--define=H2_IPERF_POWER_SAVE` 选择 Wi-Fi 省电策略。
 
+## iperf Server
+
+`projects/e2e/apps/iperf-server/app` 拥有跨平台触屏 UI、异步服务控制器和 `libs/iperf` 的 IPv4/IPv6 TCP/UDP server。网络生命周期由 launcher 注入；AMOLED 入口位于 `projects/e2e/targets/h2loader_tar_zlib/iperf-server/amoled`，负责固定 SSID/密码的临时 AP、IPv4 DHCP、IPv6 ULA/SLAAC 与 H2Loader 确认。选择模式后触摸启动/停止，控制器在关闭 AP 前取消、join 并回收所有 server；UI 与测速线程通过复制的 snapshot 交互，只有 UI 线程调用 LVGL。详见 [AMOLED iperf Server](/apps/h2loader/boards/amoled/iperf_server)。
+
+## iperf Client
+
+`projects/e2e/apps/iperf-client/app` 通过 Runtime 复用 `iperf_e2e`，每个地址族执行三轮 TCP 双向和 UDP 5/10/20/40 Mbit/s 双向矩阵，所有 UDP payload 固定为 1200 B。`projects/e2e/targets/h2loader_tar_zlib/iperf-client/devkit` 临时连接 AMOLED 的 `GizOS-iPerf` AP，等待 DHCP/SLAAC/DAD 后按实际可用地址族选择 IPv4、IPv6 或双栈；不写保存凭据，不要求 IPv6-only 网络获得 IPv4。每次服务器换模式后重新启动 client，避免继承旧 netif 地址。双栈为 IPv4 和 IPv6 各自独立测量，三轮结果以接收端吞吐中位数比较，同时保留 UDP 丢包、抖动及 RSSI/信道/内存。30/60 个 case 的完成只表示协议测量成功，不代表任意性能阈值通过。详细步骤见 [DevKit iperf Client](/apps/h2loader/boards/devkit/iperf_client)。
+
 ## Validation Boundary
 
 `projects/e2e/apps/pal-wifi` independently maps all 21 STA/AP/Settings/Netif
@@ -271,3 +281,12 @@ H2_ANDROID_SERIAL=emulator-5580 make bazel-test-android_pal_crypto_simulator_tes
 `projects/e2e/apps/pal-net-tls` independently qualifies the raw `h2_pal_net.h` core profile with 37 mandatory cases and two explicit optional capability cases. The 21-operation inventory includes bounded asynchronous DNS, UDP/TCP/source bind, listen/accept, full byte streams, TLS trust/name/expiry rejection, SNI/ALPN peer evidence, deadlines and session recovery. Certificate rejection requires typed `TLS_VERIFY` and this run's observed ClientHello, emitted Certificate and no application payload; a post-handshake expiry rejection also requires a zero-payload close. Generic IO and bad endpoints cannot pass. Host/mobile and board resolver views have independently recorded, timestamped operator DNS expectations; both sync and copied-host async PAL answers must exactly match their declared expected address. Committed board evidence is typed JSON with local raw-source SHA references and byte-identity snapshots; raw logs stay local. HTTP/Fetch/WebRTC do not replace raw Net/TLS evidence.
 
 The mobile consumer imports actual native SDK packages and injects the public owned Net provider. Device launchers borrow saved Wi-Fi configuration, keep H2Loader service, confirm only complete success and require two independent boots with Loader/Stage/coredump preservation. Browser executes the actual Worker/AppHost unsupported raw Net diagnostic boundary, reporting core qualification false. The six-platform capability assessment is complete when supported capabilities pass and genuinely unsupported capabilities are explicitly skipped. Browser raw Net/TLS remains `SKIP` with `core_qualified=false`, never functional PASS; its actual 21-operation unsupported probe, Worker identity and teardown are verified. Browser-local semantics are preserved without a remote relay. Optional ICMP and multicast membership are exercised where implemented: DevKit validates a real echo, and macOS/iOS/Android/BK validate membership setup. Missing callbacks are explicit skips. Multicast delivery, IPv6, NETIF binding, DTLS, and OS public-root trust are separate scopes. Source/artifact-bound receipts and direct `bazel test` commands with exact labels, platform configs and explicit simulator `--test_env` inputs are described in `projects/e2e/apps/pal-net-tls/README.md`. Bazel calls the shared Python fixture/device lifecycle engine; that engine does not schedule Bazel. Wi-Fi qualifies before raw Net/TLS integration begins; fake/oracle/fixture self-checks are not platform E2E evidence.
+## IPv6 qualification
+
+`projects/e2e/apps/pal-ipv6` owns the independent IPv6 matrix. Native targets parameterize all 37 mandatory raw Net/TLS cases and add DNS family/list/cancel, scoped addressing, interface binding, HTTP/MQTT, IPv6 UDP DTLS, and IPv6 ICE WebRTC/SCTP checks. The Desktop target starts all declared loopback peers and runs automatically without tags in the compatible host CI graph; prepared browser/mobile environments remain opt-in. Browser Fetch/WebRTC execute their actual IPv6 capabilities; raw Net remains explicitly unsupported. See the suite README for direct Bazel entrypoints and source/artifact/peer evidence boundaries. Existing historical qualification JSON is not relabeled after an IPv6 provider change.
+
+The nonce-bound AAAA peer witness is committed with its successful UDP send under the same lock used by verification. The automatic host `//projects/e2e/libs/pal-ipv6-fixture:dns_publication_test` uses real UDP and Events to prevent a received reply from racing its record publication, and preserves strict rejection for failed sends and wrong nonces.
+
+## IPv6 Wi-Fi iperf bench
+
+`iperf-client` 的 DevKit 与 BK7258 launcher 都通过同一 portable App 的公共 Wi-Fi/Net/Runtime 流程连接 AMOLED server，不再在测试 entry 调用 SDK IPv6 初始化。IPv4-only、IPv6-only 与双栈各自验证公共地址就绪、Runtime snapshot、断开/重连清理和保存凭据未变，再保留 TCP/UDP 正反向三轮性能 ledger。SDK provider 的 lifecycle、作用域/地址/结果列表边界有 focused host tests；平台 package、硬件性能和原固件恢复分别提供 source/artifact-bound evidence。双栈逐族测试，不把两族吞吐相加；SCTP provider 未在这两个 App 启用。

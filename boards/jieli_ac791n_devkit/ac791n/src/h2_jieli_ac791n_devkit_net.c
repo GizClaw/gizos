@@ -792,9 +792,46 @@ static void close_socket(void *user, h2_pal_net_socket_t socket_fd) {
   stack_leave();
 }
 
+/* This SDK configuration remains IPv4-only. Explicit optional entries keep
+ * the vtable complete without advertising unsupported family-list behavior. */
+static h2_pal_result_t resolve_all_unsupported(void *user, const char *host,
+    h2_pal_net_family_t family, h2_pal_net_addr_list_t *out) {
+  (void)user; (void)host; (void)family;
+  if (out)
+    memset(out, 0, sizeof(*out));
+  return H2_PAL_ERR_UNSUPPORTED;
+}
+static h2_pal_result_t resolve_start_family_unsupported(void *user,
+    const char *host, h2_pal_net_family_t family,
+    h2_pal_net_resolver_t **out) {
+  (void)user; (void)host; (void)family;
+  if (out)
+    *out = NULL;
+  return H2_PAL_ERR_UNSUPPORTED;
+}
+static h2_pal_result_t resolve_poll_all_unsupported(void *user,
+    h2_pal_net_resolver_t *resolver, h2_pal_net_addr_list_t *out,
+    uint32_t timeout_ms) {
+  (void)user; (void)resolver; (void)timeout_ms;
+  if (out)
+    memset(out, 0, sizeof(*out));
+  return H2_PAL_ERR_UNSUPPORTED;
+}
+static int get_host_addr_family_unsupported(void *user, const char *prefix,
+    h2_pal_net_family_t family, h2_pal_net_addr_t *out) {
+  (void)user; (void)prefix; (void)family;
+  if (out)
+    memset(out, 0, sizeof(*out));
+  return H2_PAL_ERR_UNSUPPORTED;
+}
+
 const h2_pal_net_api_t *h2_jieli_ac791n_devkit_net_api(void) {
   static const h2_pal_net_vtable_t vtable = {
       .resolve_addr = resolve_addr,
+      .resolve_all = resolve_all_unsupported,
+      .resolve_start_family = resolve_start_family_unsupported,
+      .resolve_poll_all = resolve_poll_all_unsupported,
+      .get_host_addr_family = get_host_addr_family_unsupported,
       .resolve_start = resolve_start,
       .resolve_poll = resolve_poll,
       .resolve_close = resolve_close,

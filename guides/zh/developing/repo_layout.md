@@ -318,9 +318,11 @@ Example 不能 include target SDK、launcher private type 或 H2Loader product p
 
 ### E2E 测试 App
 
-`projects/e2e/` 是 reusable cross-target headless test App project group。每个 portable registry 位于 `projects/e2e/apps/<test-app>/app/`，持有机器可验证的 case、deadline、progress、non-fail-fast aggregation、result schema 与 App-owned cleanup；library-local unit、fake、parser 和 protocol test 仍留在对应 library owner。
+`projects/e2e/` 是 reusable cross-target test App 与设备间吞吐测试台 project group。每个 portable registry 位于 `projects/e2e/apps/<test-app>/app/`，持有机器可验证的 case、deadline、progress、non-fail-fast aggregation、result schema 与 App-owned cleanup；library-local unit、fake、parser 和 protocol test 仍留在对应 library owner。
 
 Portable E2E App 只依赖 Runtime/PAL 和被测 target-independent library，不能依赖 Desktop、OS、Board、SDK、H2Loader、process environment、host filesystem path 或具体 backend。Desktop 与 firmware launcher 持有 Runtime/provider assembly、endpoint/fixture 注入、platform lifecycle 与结果输出。Provider 名属于 launcher target，不通过复制 portable registry 表达。
+
+`iperf-server` 是交互式吞吐测试台：portable App 持有触屏页面、异步控制器、测量结果和 server 生命周期，launcher 注入 AP 网络生命周期并持有 SDK-specific IPv4 DHCP/IPv6 SLAAC 配置。它与 headless case registry 共用相同的 Runtime/PAL 与 artifact ownership 边界。
 
 H2Loader-managed E2E image 位于 `projects/e2e/targets/h2loader_tar_zlib/<image>/<board>/`。`h2loader_tar_zlib` 表示安装产物类型，不改变 E2E App ownership。没有 H2Loader 的 standalone diagnostic image 位于 `projects/e2e/targets/<firmware-rule>/<image>/<board>/`。比如 BK3633 Libco Smoke 位于 `projects/e2e/targets/bk3633_firmware/libco-smoke/tapdoki_v2_0/`；它使用 TapDoki v2.0 Board 与 BK3633 component，但不属于 TapDoki production project。
 

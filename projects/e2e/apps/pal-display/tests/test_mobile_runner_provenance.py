@@ -1,5 +1,6 @@
 """A host-runner refactor must not weaken historical qualification checks."""
 import copy
+import hashlib
 import json
 import unittest
 from unittest.mock import patch
@@ -20,6 +21,36 @@ class MobileRunnerProvenanceTest(unittest.TestCase):
     def test_separate_mobile_runs_preserve_historical_qualification(self):
         self.verify(self.followup)
 
+    def test_ipv6_maintenance_does_not_admit_unowned_or_physical_changes(self):
+        path = qualification.ROOT / "shared_ipv6_maintenance.json"
+        record = json.loads(path.read_text(encoding="utf-8"))
+        original_read = qualification.Path.read_text
+        mutations = [
+            lambda value: value.update(new_physical_run_claimed=True),
+            lambda value: value.update(historical_baseline_sha256="0" * 64),
+            lambda value: value["guide_changes"].append({"owner": "display", "before_utf8": "", "after_utf8": "unowned"}),
+            lambda value: value["guide_changes"].append(copy.deepcopy(value["guide_changes"][0])),
+            lambda value: value["current_audit_sha256"].update({"libs/pal/providers/sdl3/src/h2_sdl3_display.cpp": "0" * 64}),
+        ]
+        for mutate in mutations:
+            bad = copy.deepcopy(record)
+            mutate(bad)
+            def read(source, *args, **kwargs):
+                return json.JSONEncoder().encode(bad) if source == path else original_read(source, *args, **kwargs)
+            with patch.object(qualification.Path, "read_text", new=read):
+                with self.assertRaises(AssertionError):
+                    self.verify(self.followup)
+
+    def test_recorded_ipv6_guide_fragment_is_required_exactly_once(self):
+        record = json.loads((qualification.ROOT / "shared_ipv6_maintenance.json").read_text(encoding="utf-8"))
+        current = qualification.Path(qualification.SHARED_PAL_GUIDE).read_bytes()
+        for change in record["guide_changes"]:
+            fragment = change["after_utf8"].encode("utf-8")
+            self.assertEqual(current.count(fragment), 1)
+            for broken in [current.replace(fragment, b"", 1), current + fragment]:
+                with self.assertRaises(AssertionError):
+                    qualification.shared_pal_before_ipv6(broken)
+
     def test_other_app_catalog_changes_preserve_display_content(self):
         baseline = (qualification.ROOT / "shared_catalog_baseline.txt").read_text(encoding="utf-8")
         current = qualification.Path(qualification.SHARED_CATALOG).read_text(encoding="utf-8")
@@ -35,6 +66,105 @@ class MobileRunnerProvenanceTest(unittest.TestCase):
             return original_read(path, *args, **kwargs)
         with patch.object(qualification.Path, "read_text", new=read):
             self.verify(self.followup)
+
+    def test_amoled_source_audit_cannot_claim_physical_or_rebind_inputs(self):
+        path = qualification.ROOT / "amoled_dma_maintenance.json"
+        record = json.loads(path.read_text())
+        mutations = [
+            lambda r: r.update(new_physical_run_claimed=True),
+            lambda r: r.update(current_physical_qualification=True),
+            lambda r: r.update(qualified_driver_sha256="0" * 64),
+            lambda r: r["closed_input_sha256"].update({"unlisted.c": "0" * 64}),
+            lambda r: r["host_validation"].update(default_dma_rows=32),
+            lambda r: r["host_validation"].update(current_driver_physical_test="PASS"),
+            lambda r: r["host_validation"].update(executed_source_commit="0" * 40),
+            lambda r: r["host_validation"].update(raw_log_sha256="0" * 64),
+            lambda r: r["host_validation"].update(test_binary_sha256="0" * 64),
+        ]
+        original_read = qualification.Path.read_text
+        for mutate in mutations:
+            bad = copy.deepcopy(record)
+            mutate(bad)
+            def read(source, *args, **kwargs):
+                return json.dumps(bad) if source == path else original_read(source, *args, **kwargs)
+            with patch.object(qualification.Path, "read_text", new=read):
+                with self.assertRaises(AssertionError):
+                    self.verify(self.followup)
+
+    def test_amoled_extra_driver_code_or_default_cannot_be_self_blessed(self):
+        source = qualification.Path(qualification.AMOLED_DMA_SOURCE)
+        path = qualification.ROOT / "amoled_dma_maintenance.json"
+        record = json.loads(path.read_text())
+        current = source.read_bytes()
+        mutations = [current + b"\n/* unlisted driver change */\n",
+                     current.replace(b"#define LCD_DRAW_ROWS 64\n", b"#define LCD_DRAW_ROWS 32\n"),
+                     current.replace(b"#define LCD_WIDTH 368\n", b"#define LCD_WIDTH 369\n")]
+        original_text = qualification.Path.read_text
+        original_bytes = qualification.Path.read_bytes
+        for content in mutations:
+            bad = copy.deepcopy(record)
+            bad["current_driver_sha256"] = hashlib.sha256(content).hexdigest()
+            def read_text(p, *args, **kwargs):
+                return json.dumps(bad) if p == path else original_text(p, *args, **kwargs)
+            def read_bytes(p):
+                return content if p == source else original_bytes(p)
+            with patch.object(qualification.Path, "read_text", new=read_text), \
+                    patch.object(qualification.Path, "read_bytes", new=read_bytes):
+                with self.assertRaises(AssertionError):
+                    self.verify(self.followup)
+
+    def test_amoled_closed_header_config_touch_flags_cannot_be_rebound(self):
+        path = qualification.ROOT / "amoled_dma_maintenance.json"
+        record = json.loads(path.read_text())
+        original_text = qualification.Path.read_text
+        original_bytes = qualification.Path.read_bytes
+        for name in qualification.AMOLED_DMA_INPUT_SHA256:
+            source = qualification.Path(name)
+            content = source.read_bytes() + b"\n/* unlisted closed input */\n"
+            bad = copy.deepcopy(record)
+            bad["closed_input_sha256"][name] = hashlib.sha256(content).hexdigest()
+            bad["host_validation"]["source_sha256"][name] = hashlib.sha256(content).hexdigest()
+            def read_text(p, *args, **kwargs):
+                return json.dumps(bad) if p == path else original_text(p, *args, **kwargs)
+            def read_bytes(p):
+                return content if p == source else original_bytes(p)
+            with patch.object(qualification.Path, "read_text", new=read_text), \
+                    patch.object(qualification.Path, "read_bytes", new=read_bytes):
+                with self.assertRaises(AssertionError):
+                    self.verify(self.followup)
+
+    def test_bk_network_change_rejects_checksum_consistent_unowned_hunks(self):
+        cfg = qualification.Path("boards/bk7258_v3_202405/bk7258/ap.defaults")
+        cfg_key = cfg.as_posix()
+        path = qualification.ROOT / "shared_ipv6_maintenance.json"
+        record = json.loads(path.read_text(encoding="utf-8"))
+        before = b"# CONFIG_IPV6 is not set\n"
+        enabled = b"CONFIG_IPV6=y\n"
+        baseline = cfg.read_bytes()
+        if enabled in baseline:
+            baseline = baseline.replace(enabled, before, 1)
+        self.assertEqual(hashlib.sha256(baseline).hexdigest(),
+                         self.historical[cfg_key])
+        for after in (b"CONFIG_IPV6=n\n",
+                      b"CONFIG_IPV6=y\nCONFIG_LWIP_IPV6_NUM_ADDRESSES=1\n"):
+            content = baseline.replace(before, after, 1)
+            bad = copy.deepcopy(record)
+            bad["network_config_changes"] = {cfg_key: {
+                "previous_sha256": self.historical[cfg_key],
+                "current_sha256": hashlib.sha256(content).hexdigest(),
+                "before_utf8": before.decode(), "after_utf8": after.decode(),
+            }}
+            original_text = qualification.Path.read_text
+            original_bytes = qualification.Path.read_bytes
+            def read_text(source, *args, **kwargs):
+                return (json.JSONEncoder().encode(bad) if source == path
+                        else original_text(source, *args, **kwargs))
+            def read_bytes(source):
+                return content if source == cfg else original_bytes(source)
+            with patch.object(qualification.Path, "read_text", new=read_text), \
+                    patch.object(qualification.Path, "read_bytes", new=read_bytes):
+                with self.assertRaises(AssertionError):
+                    self.verify(self.followup)
 
     def test_changed_display_section_or_launcher_row_fails(self):
         current = qualification.Path(qualification.SHARED_CATALOG).read_text(encoding="utf-8")
@@ -96,7 +226,7 @@ class MobileRunnerProvenanceTest(unittest.TestCase):
         audit = json.loads((qualification.ROOT / "shared_catalog_provenance.json").read_text(encoding="utf-8"))
         extension = audit["pal_guide_extension"]
         path = qualification.Path(qualification.SHARED_PAL_GUIDE)
-        current = path.read_bytes()
+        current = qualification.shared_pal_before_ipv6(path.read_bytes())
         addition = json.loads((qualification.ROOT / "shared_pal_pref_addition.json").read_text(encoding="utf-8"))["addition_utf8"].encode("utf-8")
         offset = extension["insertion_offset"]
         baseline = current if qualification.hashlib.sha256(current).hexdigest() == extension["source_sha256"] else (
@@ -104,13 +234,30 @@ class MobileRunnerProvenanceTest(unittest.TestCase):
         extended = baseline[:offset] + addition + baseline[offset:]
         previous = {qualification.SHARED_PAL_GUIDE: extension["source_sha256"]}
         original_read = qualification.Path.read_bytes
+        maintenance = qualification.shared_ipv6_maintenance()
         for content, accepted in [(extended, True), (baseline, True),
                                   (extended + b"\nunknown PAL policy\n", False),
                                   (extended.replace(b"Display", b"ChangedDisplay", 1), False),
                                   (baseline + addition, False),
                                   (extended.replace(b"Tail v1 manifest", b"Tail v2 manifest", 1), False)]:
             def read(source):
-                return content if source == path else original_read(source)
+                if source != path:
+                    return original_read(source)
+                # This fixture varies only the historical Pref addition. Keep
+                # every declared current IPv6/Wi-Fi fragment present, so its
+                # independent exact-once guard is still exercised normally.
+                current_content = content
+                for change in maintenance["guide_changes"]:
+                    before = change["before_utf8"].encode("utf-8")
+                    after = change["after_utf8"].encode("utf-8")
+                    if before:
+                        current_content = current_content.replace(before, after, 1)
+                    elif change["owner"] == "net_ipv6":
+                        current_content += after
+                    elif change["owner"] == "wifi_ipv6_readiness":
+                        anchor = "## Wi-Fi 连接与持久化\n".encode("utf-8")
+                        current_content = current_content.replace(anchor, after + anchor, 1)
+                return current_content
             with patch.object(qualification.Path, "read_bytes", new=read):
                 if accepted:
                     qualification.shared_pal_guide(previous, extension)
@@ -125,7 +272,7 @@ class MobileRunnerProvenanceTest(unittest.TestCase):
         fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
         addition = fixture["addition_utf8"].encode("utf-8")
         path = qualification.Path(qualification.SHARED_PAL_GUIDE)
-        current = path.read_bytes()
+        current = qualification.shared_pal_before_ipv6(path.read_bytes())
         offset = extension["insertion_offset"]
         baseline = current if qualification.hashlib.sha256(current).hexdigest() == extension["source_sha256"] else (
             current[:offset] + current[offset + len(addition):])
