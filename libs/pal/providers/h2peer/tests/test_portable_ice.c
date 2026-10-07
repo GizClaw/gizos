@@ -546,7 +546,89 @@ static void test_ipv6_stun_preserves_base_address(void) {
                description + strlen(description) - 2) == ICE_CANDIDATE_PARSE_OK);
 }
 
+typedef struct test_receive_state {
+    unsigned polls[2];
+    unsigned waits;
+    int ready[2];
+} test_receive_state_t;
+
+static int test_dual_family_receive(
+    void *user,
+    h2_pal_net_socket_t socket_fd,
+    h2_pal_net_addr_t *peer,
+    uint8_t *data,
+    size_t capacity,
+    uint32_t timeout_ms) {
+    test_receive_state_t *state = user;
+    assert(socket_fd == 14 || socket_fd == 16);
+    unsigned index = socket_fd == 14 ? 0u : 1u;
+    ++state->polls[index];
+    state->waits += timeout_ms != 0u;
+    if (!state->ready[index]) {
+        return H2_PAL_ERR_TIMEOUT;
+    }
+    assert(capacity >= 1u);
+    memset(peer, 0, sizeof(*peer));
+    peer->family = index == 0u ? H2_PAL_NET_FAMILY_IPV4
+                              : H2_PAL_NET_FAMILY_IPV6;
+    data[0] = (uint8_t)peer->family;
+    return 1;
+}
+
+static void test_mixed_family_receive_makes_progress(void) {
+    test_receive_state_t state = {.ready = {1, 1}};
+    const h2_pal_net_vtable_t vtable = {.udp_recvfrom = test_dual_family_receive};
+    const h2_pal_net_api_t network = {.user = &state, .vtable = &vtable};
+    Agent agent = {0};
+    agent.udp_sockets[0].fd = 14;
+    agent.udp_sockets[1].fd = 16;
+    agent.udp_sockets[0].net = agent.udp_sockets[1].net = &network;
+    unsigned delivered[2] = {0};
+    for (unsigned i = 0; i < 32u; ++i) {
+        uint8_t data[1] = {0};
+        assert(agent_recv(&agent, data, sizeof(data), 10u) == 1);
+        assert(data[0] == H2_PAL_NET_FAMILY_IPV4 ||
+               data[0] == H2_PAL_NET_FAMILY_IPV6);
+        ++delivered[data[0] == H2_PAL_NET_FAMILY_IPV4 ? 0u : 1u];
+        if ((i & 1u) != 0u) {
+            // Neither family may wait behind an unbounded stream of the other.
+            assert(delivered[0] > 0u && delivered[1] > 0u);
+            memset(delivered, 0, sizeof(delivered));
+        }
+    }
+    assert(state.waits <= 32u);
+
+    for (unsigned family = 0; family < 2u; ++family) {
+        memset(&state, 0, sizeof(state));
+        state.ready[family] = 1;
+        for (unsigned i = 0; i < 8u; ++i) {
+            uint8_t data[1];
+            assert(agent_recv(&agent, data, sizeof(data), 10u) == 1);
+            assert(data[0] == (family == 0u ? H2_PAL_NET_FAMILY_IPV4
+                                          : H2_PAL_NET_FAMILY_IPV6));
+        }
+        assert(state.waits <= 8u);
+
+        // A provider with only one supported family never polls a closed fd.
+        agent.udp_sockets[family ^ 1u].fd = -1;
+        memset(state.polls, 0, sizeof(state.polls));
+        state.waits = 0;
+        for (unsigned i = 0; i < 8u; ++i) {
+            uint8_t data[1];
+            assert(agent_recv(&agent, data, sizeof(data), 10u) == 1);
+        }
+        assert(state.polls[family] == 8u && state.polls[family ^ 1u] == 0u);
+        assert(state.waits <= 8u);
+        agent.udp_sockets[family ^ 1u].fd = family == 0u ? 16 : 14;
+    }
+    memset(&state, 0, sizeof(state));
+    uint8_t data[1];
+    assert(agent_recv(&agent, data, sizeof(data), 10u) == 0);
+    assert(state.polls[0] == 1u && state.polls[1] == 1u && state.waits == 1u);
+}
+
 int main(void) {
+    test_mixed_family_receive_makes_progress();
     test_ipv6_stun_preserves_base_address();
     test_bounded_candidate_parser();
     test_remote_description_keeps_udp_and_passive_tcp();

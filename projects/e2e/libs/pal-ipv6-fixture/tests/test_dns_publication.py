@@ -101,7 +101,8 @@ class DNSPublicationTest(unittest.TestCase):
             server.finish_request = finish
             connection = http.client.HTTPConnection(host, server.server_port, timeout=5)
             try:
-                connection.request("GET", "/ipv6/" + self.fixture.raw.session)
+                path = "/ipv6/" if server.address_family == socket.AF_INET6 else "/fallback/"
+                connection.request("GET", path + self.fixture.raw.session)
                 response = connection.getresponse()
                 self.assertEqual(response.status, 200)
                 self.assertEqual(response.read(), self.fixture.raw.session.encode())
@@ -209,6 +210,44 @@ class DNSPublicationTest(unittest.TestCase):
         self.assertEqual(self.errors, [])
         self.assertFalse(self.transport.sent.is_set())
         with self.assertRaises(AssertionError):
+            self.fixture.verify()
+
+    def test_wrong_http_path_never_returns_session_or_publishes_a_witness(self):
+        for server, host, prefix in [(self.fixture.http6, "::1", "/ipv6/"),
+                                     (self.fixture.http4, "127.0.0.1", "/fallback/")]:
+            before = self.fixture.snapshot()["applications"]
+            for path in ["/", prefix + "wrong", "/other/" + self.fixture.raw.session,
+                         prefix + self.fixture.raw.session + "/extra",
+                         prefix + self.fixture.raw.session + "?wrong=1"]:
+                with self.subTest(family=server.address_family, path=path):
+                    connection = http.client.HTTPConnection(host, server.server_port, timeout=5)
+                    try:
+                        connection.request("GET", path)
+                        response = connection.getresponse()
+                        self.assertEqual(response.status, 404)
+                        self.assertNotIn(self.fixture.raw.session.encode(), response.read())
+                    finally:
+                        connection.close()
+            self.assertEqual(self.fixture.snapshot()["applications"], before)
+
+    def test_verifier_rejects_http_path_corruption_with_correct_payload(self):
+        self.transport.release.set()
+        with socket.socket(socket.AF_INET6, socket.SOCK_DGRAM) as client:
+            client.settimeout(5)
+            client.sendto(self.query(), ("::1", self.fixture.dns_port))
+            client.recvfrom(512)
+        self.assertTrue(self.done.wait(5))
+        self.fixture.verify()
+        for family in (socket.AF_INET6, socket.AF_INET):
+            with self.fixture.lock:
+                record = next(row for row in self.fixture.records
+                              if row["protocol"] == "http" and row["family"] == family)
+                original = record["path"]
+                record["path"] = "/other/" + self.fixture.raw.session
+            with self.assertRaises(AssertionError):
+                self.fixture.verify()
+            with self.fixture.lock:
+                record["path"] = original
             self.fixture.verify()
 
 
