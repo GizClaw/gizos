@@ -39,6 +39,8 @@ typedef struct fixture {
   int matrix_error;
   int pending_event;
   int associated;
+  h2_iperf_client_app_mode_t mode;
+  int other_interface;
 } fixture_t;
 
 static int connect_wifi(void *user, const h2_pal_wifi_sta_config_t *config,
@@ -51,8 +53,17 @@ static int connect_wifi(void *user, const h2_pal_wifi_sta_config_t *config,
   f->wifi.state = H2_PAL_WIFI_STA_STATE_GOT_IP;
   f->wifi.ssid_len = config->ssid_len;
   memcpy(f->wifi.ssid, config->ssid, config->ssid_len);
-  f->wifi.ip_valid = f->failure != FAILURE_TIMEOUT;
+  f->wifi.ip_valid = f->failure != FAILURE_TIMEOUT &&
+                     f->mode != H2_IPERF_CLIENT_APP_IPV6;
   f->wifi.ip.ip4 = f->wifi.ip_valid ? 0xc0a80402u : 0u;
+  f->wifi.ip.ip6_valid = f->failure != FAILURE_TIMEOUT &&
+      (f->mode == H2_IPERF_CLIENT_APP_IPV6 ||
+       f->mode == H2_IPERF_CLIENT_APP_DUAL);
+  if (f->wifi.ip.ip6_valid) {
+    const uint8_t address[16] = {0xfd, 0x53, 0x69, 0x7a, 0x6f, 0x73,
+                                0x06, 0x26, 0, 0, 0, 0, 0, 0, 0, 2};
+    memcpy(f->wifi.ip.ip6, address, sizeof(address));
+  }
   f->pending_event = H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_GOT_IP;
   return f->failure == FAILURE_CONNECT ? H2_PAL_ERR_IO : H2_PAL_OK;
 }
@@ -114,6 +125,8 @@ h2_pal_result_t h2_runtime_poll_event(h2_runtime_t *runtime,
   memcpy(payload.ssid, f->wifi.ssid, f->wifi.ssid_len);
   payload.ip_valid = f->wifi.ip_valid;
   payload.ip.ip4 = f->wifi.ip.ip4;
+  payload.ip.ip6_valid = f->wifi.ip.ip6_valid;
+  memcpy(payload.ip.ip6, f->wifi.ip.ip6, sizeof(payload.ip.ip6));
   assert(event->payload_capacity >= sizeof(payload));
   memcpy(event->payload, &payload, sizeof(payload));
   event->payload_size = sizeof(payload);
@@ -135,6 +148,8 @@ h2_pal_result_t h2_runtime_system_state_wifi_sta(
   memcpy(out->ssid, f->wifi.ssid, f->wifi.ssid_len);
   out->ip_valid = f->wifi.ip_valid;
   out->ip.ip4 = f->wifi.ip.ip4;
+  out->ip.ip6_valid = f->wifi.ip.ip6_valid;
+  memcpy(out->ip.ip6, f->wifi.ip.ip6, sizeof(out->ip.ip6));
   return H2_PAL_OK;
 }
 
@@ -144,6 +159,10 @@ static int host_address(void *user, const char *prefix,
   assert(prefix == NULL && family == H2_PAL_NET_FAMILY_IPV4);
   out->family = family;
   h2_pal_wifi_ip4_to_bytes(f->wifi.ip.ip4, out->ip);
+  if (f->other_interface) {
+    const uint8_t ethernet[4] = {10, 0, 0, 2};
+    memcpy(out->ip, ethernet, sizeof(ethernet));
+  }
   if (f->failure == FAILURE_ADDRESS)
     out->ip[3] ^= 1u;
   return H2_PAL_OK;
@@ -153,8 +172,26 @@ static h2_pal_result_t netif_status(void *user, const h2_pal_netif_ref_t *ref,
                                      h2_pal_netif_status_t *out) {
   fixture_t *f = user;
   assert(ref->kind == H2_PAL_NETIF_KIND_WIFI_STA);
+  assert(ref->type == H2_PAL_NETIF_REF_KIND);
   memset(out, 0, sizeof(*out));
-  out->flags = f->associated ? H2_PAL_NETIF_FLAG_HAS_IPV4 : 0u;
+  out->kind = H2_PAL_NETIF_KIND_WIFI_STA;
+  if (f->associated) {
+    out->flags = H2_PAL_NETIF_FLAG_UP | H2_PAL_NETIF_FLAG_LINK_UP;
+    if (f->wifi.ip_valid) {
+      out->flags |= H2_PAL_NETIF_FLAG_HAS_IPV4;
+      out->ipv4.family = H2_PAL_NET_FAMILY_IPV4;
+      h2_pal_wifi_ip4_to_bytes(f->wifi.ip.ip4, out->ipv4.ip);
+      if (f->failure == FAILURE_ADDRESS)
+        out->ipv4.ip[3] ^= 1u;
+    }
+    if (f->wifi.ip.ip6_valid) {
+      out->flags |= H2_PAL_NETIF_FLAG_HAS_IPV6;
+      out->ipv6.family = H2_PAL_NET_FAMILY_IPV6;
+      memcpy(out->ipv6.ip, f->wifi.ip.ip6, sizeof(out->ipv6.ip));
+      if (f->failure == FAILURE_ADDRESS)
+        out->ipv6.ip[15] ^= 1u;
+    }
+  }
   return H2_PAL_OK;
 }
 
@@ -236,11 +273,13 @@ static int result_field(const char *line, const char *name) {
 
 static void test_case_impl(failure_t failure, int matrix_error,
                            int disconnect_error, int expected, int bench,
-                           failure_t secondary_saved) {
+                           failure_t secondary_saved,
+                           h2_iperf_client_app_mode_t mode, int other_interface) {
   fixture_t f = {.failure = failure,
                  .matrix_error = matrix_error,
                  .disconnect_error = disconnect_error,
-                 .secondary_saved = secondary_saved};
+                 .secondary_saved = secondary_saved,
+                 .mode = mode, .other_interface = other_interface};
   const h2_pal_wifi_sta_vtable_t wifi_vtable = {
       .connect = connect_wifi,
       .disconnect = disconnect_wifi,
@@ -280,7 +319,7 @@ static void test_case_impl(failure_t failure, int matrix_error,
       const h2_iperf_client_app_network_t empty = {0};
       assert(memcmp(&network, &empty, sizeof(empty)) == 0);
     } else {
-      assert(network.runtime_ready && network.mode == H2_IPERF_CLIENT_APP_IPV4);
+      assert(network.runtime_ready && network.mode == mode);
     }
   }
   assert(rc == expected);
@@ -326,7 +365,7 @@ static void test_case_impl(failure_t failure, int matrix_error,
 static void test_case(failure_t failure, int matrix_error,
                       int disconnect_error, int expected, int bench) {
   test_case_impl(failure, matrix_error, disconnect_error, expected, bench,
-                 FAILURE_NONE);
+                 FAILURE_NONE, H2_IPERF_CLIENT_APP_IPV4, 0);
 }
 
 int main(void) {
@@ -345,9 +384,17 @@ int main(void) {
   test_case(FAILURE_SAVED_BEFORE, H2_PAL_OK, H2_PAL_OK, H2_PAL_ERR_IO, 1);
   test_case(FAILURE_SAVED_CHANGED, H2_PAL_OK, H2_PAL_OK, H2_PAL_ERR_INVALID_STATE, 1);
   test_case_impl(FAILURE_CONNECT, H2_PAL_OK, H2_PAL_OK, H2_PAL_ERR_IO, 1,
-                 FAILURE_SAVED_CHANGED);
+                 FAILURE_SAVED_CHANGED, H2_IPERF_CLIENT_APP_IPV4, 0);
   test_case_impl(FAILURE_TIMEOUT, H2_PAL_OK, H2_PAL_OK, H2_PAL_ERR_TIMEOUT, 1,
-                 FAILURE_SAVED_AFTER);
+                 FAILURE_SAVED_AFTER, H2_IPERF_CLIENT_APP_IPV4, 0);
+  const h2_iperf_client_app_mode_t modes[] = {H2_IPERF_CLIENT_APP_IPV4,
+      H2_IPERF_CLIENT_APP_IPV6, H2_IPERF_CLIENT_APP_DUAL};
+  for (unsigned i = 0u; i < sizeof(modes) / sizeof(modes[0]); ++i) {
+    test_case_impl(FAILURE_NONE, H2_PAL_OK, H2_PAL_OK, H2_PAL_OK, 0,
+                   FAILURE_NONE, modes[i], 1);
+    test_case_impl(FAILURE_ADDRESS, H2_PAL_OK, H2_PAL_OK,
+                   H2_PAL_ERR_INVALID_STATE, 0, FAILURE_NONE, modes[i], 1);
+  }
   test_case(FAILURE_NONE, H2_PAL_ERR_IO, H2_PAL_ERR_BUSY, H2_PAL_ERR_IO, 1);
   puts("iperf-client network PASS: aligned events and failure cleanup");
   return 0;

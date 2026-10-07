@@ -71,6 +71,8 @@ int h2_iperf_amoled_ap_stop(void *user) {
   h2_iperf_amoled_ap_t *state = user;
   if (state == NULL)
     return H2_PAL_ERR_INVALID_ARG;
+  if (!state->active)
+    return H2_PAL_OK;
   /* Wait for timer/PCB removal before the Wi-Fi provider destroys its netif. */
   if (state->advertiser != NULL &&
       tcpip_callback_wait(stop_advertiser, state) != ERR_OK)
@@ -176,10 +178,10 @@ int h2_iperf_amoled_ap_start(void *user, h2_iperf_server_app_mode_t mode,
            sizeof(H2_IPERF_SERVER_APP_IPV6_TEXT));
   }
   return H2_PAL_OK;
-failed:
-  /* Cleanup must complete before the manager can retry another mode. */
-  while (h2_iperf_amoled_ap_stop(state) != H2_PAL_OK)
-    (void)h2_pal_time_sleep_ms(state->runtime->time, 100u);
+failed: {
+  /* Keep a failed cleanup owned so the manager's Stop request can retry. */
+  const int cleanup = h2_iperf_amoled_ap_stop(state);
   memset(out_network, 0, sizeof(*out_network));
-  return rc;
+  return cleanup == H2_PAL_OK ? rc : cleanup;
+}
 }

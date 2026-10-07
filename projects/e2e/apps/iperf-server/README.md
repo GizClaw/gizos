@@ -6,6 +6,8 @@ Select **IPv4**, **IPv6** or **Dual stack**, then tap **Start server**. **Stop s
 
 If a task join or AP stop fails, the controller retains `STOPPING` and the error with its resources still owned. The screen shows **Stop failed** and enables **Retry stop**; Start and mode changes stay locked until cleanup succeeds. Each Stop request makes one cleanup attempt and waits for an explicit retry after failure.
 
+The controller owns cleanup from the start of every network-start attempt. The AMOLED adapter attempts partial-start cleanup once, returns any cleanup error, and retains its AP state for Stop/retry. The stop hook is a successful no-op when no network is owned; a failed start never spins until cleanup succeeds.
+
 Shutdown makes one manager cleanup attempt and exits that task. `destroy()` joins it and retries cleanup once on the caller; an error retains the App and any unjoined task/server/AP resources for a later destroy retry. Runtime and callbacks remain borrowed until successful destruction. Task joins and network callbacks remain blocking according to their own contracts. A fatal manager mutex error closes request handling and leaves retained cleanup to destruction.
 
 | Setting | Value |

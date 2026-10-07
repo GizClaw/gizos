@@ -8,6 +8,8 @@
 
 如果 join 或 AP 停止返回错误，屏幕显示 Stop failed 和错误码，并允许点 Retry stop 再尝试一次清理。清理成功前保留资源和停止状态，模式选择与 Start 保持锁定。销毁入口在 manager 退出后再尝试一次清理，持续失败则返回错误并保留 App 供后续重试；Runtime 和 callbacks 的生命周期覆盖成功销毁，底层 join/callback 仍遵守各自的阻塞合同。
 
+网络启动失败也进入同一清理流程。AMOLED adapter 只尝试一次部分启动清理；失败时保留 AP 状态并返回错误，controller 继续持有清理责任，等待明确的 Stop/retry。没有已拥有资源时 Stop 成功返回，启动流程不会无限轮询 AP 停止。
+
 | 模式 | AP 网络 | Server |
 | --- | --- | --- |
 | IPv4 | `192.168.4.1`，DHCPv4 | IPv4 TCP/UDP |

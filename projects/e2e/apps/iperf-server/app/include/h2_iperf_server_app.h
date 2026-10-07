@@ -57,8 +57,10 @@ typedef struct h2_iperf_server_app_snapshot {
 } h2_iperf_server_app_snapshot_t;
 
 /** Borrowed network lifecycle hooks, called serially on the manager task.
- * start must return actual ready addresses and unwind all resources on error.
- * stop runs only after both server tasks have joined; it must tolerate retries.
+ * start returns actual ready addresses on success. On error it may retain
+ * partial ownership when cleanup fails; it must return without retrying forever.
+ * stop runs after every start attempt and only after both server tasks have
+ * joined. It must succeed when nothing is owned and tolerate cleanup retries.
  * Hooks must not change saved STA credentials and must not reenter this App.
  */
 typedef struct h2_iperf_server_app_config {
