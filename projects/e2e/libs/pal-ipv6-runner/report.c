@@ -31,10 +31,12 @@ int h2_ipv6_write_report(const char *path, const char *platform,
           "{\"platform\":\"%s\",\"profile\":\"pal-ipv6-native\",\"passed\":%u,"
           "\"failed\":%u,\"blocked\":%u,\"retained_sockets\":%zu,\"retained_"
           "resolvers\":%zu,"
-          "\"retained_allocations\":%zu,\"rc\":%d,\"teardown\":%d,\"cases\":[",
+          "\"retained_allocations\":%zu,\"retained_tasks\":%zu,"
+          "\"cleanup_error\":%d,\"rc\":%d,\"teardown\":%d,\"cases\":[",
           platform, result->passed, result->failed, result->blocked,
           result->retained_sockets, result->retained_resolvers,
-          result->retained_allocations, rc, cleanup);
+          result->retained_allocations, result->retained_tasks,
+          result->cleanup_error, rc, cleanup);
   for (unsigned i = 0u; i < H2_PAL_IPV6_CASES; ++i) {
     if (i)
       fputc(',', file);
