@@ -120,9 +120,57 @@ static void test_replay(void) {
          H2_PAL_ERR_INVALID_ARG);
 }
 
+/* Compare the public replay against independent pixel writes, including both
+ * word alignments, the long-span threshold and every four-pixel loop tail. */
+static void test_fill_alignment(void) {
+  enum { WIDTH = 513, HEIGHT = 2, STRIDE = 515, STORAGE = 1040 };
+  _Alignas(uint32_t) uint16_t actual[STORAGE], expected[STORAGE];
+  const uint16_t colors[] = {0, 0xffff, 0x1234, 0xf800, 0x07e0, 0x001f, 0x8001};
+  for (size_t offset = 0; offset < 4; ++offset) {
+    h2_raster2d_surface_t surface = {
+        actual + offset, STRIDE + WIDTH, WIDTH, HEIGHT, STRIDE};
+    for (size_t count = 0; count <= WIDTH; ++count) {
+      for (size_t c = 0; c < sizeof(colors) / sizeof(*colors); ++c) {
+        for (size_t i = 0; i < STORAGE; ++i)
+          actual[i] = expected[i] = 0xa55a;
+        for (size_t y = 0; y < HEIGHT; ++y)
+          for (size_t x = 0; x < count; ++x)
+            expected[offset + y * STRIDE + x] = colors[c];
+        h2_raster2d_rect_t rect = {0, 0, (uint32_t)count, HEIGHT, 0};
+        assert(h2_raster2d_draw_rects(&surface, &rect, 1, &colors[c], 1,
+                                    NULL) == H2_PAL_OK);
+        assert(memcmp(actual, expected, sizeof(actual)) == 0);
+      }
+    }
+  }
+  /* Every RGB565 value across the threshold and all peeled-loop remainders.
+   * Explicit clips also shift the start address independently of the surface. */
+  const uint32_t lengths[] = {16, 17, 18, 19, 20, 33};
+  _Alignas(uint32_t) uint16_t short_actual[48], short_expected[48];
+  for (unsigned color = 0; color <= UINT16_MAX; ++color) {
+    uint16_t value = (uint16_t)color;
+    for (size_t offset = 0; offset < 4; ++offset) {
+      h2_raster2d_surface_t surface = {short_actual + offset, 40, 40, 1, 40};
+      h2_raster2d_rect_t rect = {0, 0, 40, 1, 0};
+      for (size_t n = 0; n < sizeof(lengths) / sizeof(*lengths); ++n) {
+        size_t left = n % 2;
+        h2_raster2d_clip_t clip = {left, 0, left + lengths[n], 1};
+        for (size_t i = 0; i < 48; ++i)
+          short_actual[i] = short_expected[i] = 0xa55a;
+        for (size_t x = left; x < left + lengths[n]; ++x)
+          short_expected[offset + x] = value;
+        assert(h2_raster2d_draw_rects(&surface, &rect, 1, &value, 1,
+                                    &clip) == H2_PAL_OK);
+        assert(memcmp(short_actual, short_expected, sizeof(short_actual)) == 0);
+      }
+    }
+  }
+}
+
 int main(void) {
   test_palette();
   test_replay();
+  test_fill_alignment();
   puts("raster2d pixels, palette and bounds: PASS");
   return 0;
 }

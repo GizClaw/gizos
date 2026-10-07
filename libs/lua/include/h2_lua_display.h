@@ -4,6 +4,64 @@
 /** @file h2_lua_display.h
  * @brief VM-owned procedural geometry shared by native producers and Display.
  *
+ * Submission prototype (owning VM worker only):
+ * - submit(options=nil) returns sequence, planned_pixels, planned_rectangles.
+ *   Supports retained (default true), bounds, tiles and merge_gap as present does.
+ *   tiles=true explicitly skips fine span planning and compares 16x16 tiles
+ *   before the existing merge_gap/guard rules; omitted/false keeps the default.
+ *   This trades planning CPU for potentially more submitted pixels. bounds=true
+ *   still forces its tile-aligned union box. tiles is per-call and only affects
+ *   retained planning; first/invalid frames stay full, unchanged frames empty.
+ *   The sequence is scoped to this acquisition/job generation. At most one
+ *   submission may be in flight, including active transport. A full mailbox
+ *   returns nil, display.BUSY without enqueueing or changing drawing state.
+ *   Runtime.sleep() may be used before retry; submit does not busy-spin.
+ * - flush() polls the latest accepted submission, returning nil, display.BUSY
+ *   while pending, nil, PAL_error on fault, or the same record as status().
+ *   status() never waits for transport. completed counts finished attempts;
+ *   successful counts successful attempts; changed_frames counts only actual
+ *   changed successful frames. submitted is not a displayed-frame counter.
+ *   started_us/completed_us are monotonic PAL timestamps for the latest
+ *   completed attempt, usable only when clock_valid is true. pixels/rects
+ *   count successful draw calls in that attempt. error latches the first
+ *   fault; busy and closing describe the acquisition. completion_kind is
+ *   transport on every target; it does not prove scanout. No-change submits do not increment changed_frames.
+ * - Every target, including Web, starts a Display worker on acquisition.
+ *   All PAL Display calls execute there; borrowed Display skips open/close.
+ *   Only one Job per Host may acquire Display at a time; another acquisition
+ *   fails with BUSY until checked release succeeds. Other Hosts and external
+ *   writers must be serialized by the caller. present/end_frame wait for the
+ *   current call's completed pixels/rectangles after draining preceding submit.
+ *   Their backend also uses the same two buffers and worker.
+ * - Display owns exactly two full RGB565 pixel buffers: a Host-allocated draw
+ *   framebuffer A and a VM-charged send/baseline buffer B, allocated on first
+ *   submit/present. Planning compares A with the last successful B before
+ *   publishing. The worker copies the planned coverage from A to B, preserving
+ *   row stride, then publishes that A is free for drawing and submits B to PAL.
+ *   submit waits only for this copy handoff; it does not wait for transport.
+ *   Lua may then draw A while the worker transports B. First/invalid frames
+ *   copy the full frame; unchanged frames copy no pixels. No third full-frame
+ *   snapshot or completion copy is allocated. After full transport succeeds,
+ *   B is the retained baseline; faults invalidate it and stop new submissions.
+ *   The complete tile map is replayed for copy and transport without truncation.
+ *   B, mailbox and bounded plan/tile scratch use VM quota. OOM raises a Lua
+ *   error before publishing a new frame. First-use allocation is guarded:
+ *   finalizer reentry into submit returns BUSY without allocating another B,
+ *   and the guard is cleared on OOM. Drawing from a finalizer is included in
+ *   the outer submission; closed acquisitions return an error. A wake or
+ *   copy-handoff wait failure freezes drawing and retains both buffers, since
+ *   it cannot prove that the worker stopped reading A.
+ *   Task/atomic/semaphore storage is platform-owned.
+ * - Faults stop further submissions; there is no automatic retry or backend
+ *   recovery. deinit returns nil, BUSY/error until close and task join succeed;
+ *   success keeps its existing no-values return. A faulted backend is not
+ *   closed speculatively: its Host/VM/device lease remains quarantined. Keep
+ *   dependencies alive and inspect host_destroy_checked rather than treating
+ *   void host_destroy returning as permission to resume an external writer.
+ *   The prototype has no recovery/unquarantine API. An unresponsive PAL can
+ *   prevent shutdown indefinitely; no task deletion or hardware cancellation
+ *   is attempted. The caller must retain the entire failed acquisition.
+ *
  * String region Lua API (owning VM worker only):
  * - display.region_from_string(width,height,data,encoding="rgb565be") creates
  *   opaque region userdata for draw_region and full-screen restore_background.
@@ -19,6 +77,33 @@
  *   Padding must be zero, all input must be consumed, output must match the
  *   dimensions, and standard LZ4 final-sequence conditions apply. Malformed
  *   data raises a Lua error. Decoding uses the output userdata directly.
+ *
+ * Framebuffer capture Lua API (owning VM worker only):
+ * - display.capture_region(x,y,width,height,key=nil,reuse=nil) captures an
+ *   in-bounds RGB565 rectangle. Integer dimensions are 1..4096; x/y >= 0.
+ *   A key trims only each row's outer margins and compiles non-key runs;
+ *   interior key pixels remain available for opaque/different-key replay.
+ * - Masked capture counts then allocates final VM storage directly. After
+ *   allocation-triggered finalizers it revalidates the current acquisition,
+ *   bounds and stride, and checks every pixel/run write against capacity.
+ *   Changed totals use one stable VM snapshot fallback, never an unbounded
+ *   retry or a framebuffer pointer retained across allocation. Finalizer
+ *   effects remain ordinary Lua behavior; capture itself does not draw.
+ * - Closed/out-of-bounds acquisition at validation raises an error. A copied
+ *   fallback snapshot survives later Display closure. OOM publishes no partial
+ *   result. All temporary/final userdata are VM-charged and GC-owned.
+ * - Reuse requires identical dimensions and masking mode; masked reuse also
+ *   requires the same RGB565 key. Mismatches raise an error. Opaque reuse, or
+ *   masked reuse with sufficient existing pixel/run capacity, updates and
+ *   returns the same userdata without allocation or finalizer callbacks. All
+ *   aliases observe the updated content. Capacities do not shrink on reuse.
+ *   Insufficient masked capacity uses the ordinary allocation path, returning
+ *   a new region; the old region remains unchanged even on OOM (except for
+ *   explicit mutations by user finalizers). Callers must retain the return
+ *   value. No pool or extra capacity is allocated automatically.
+ *   display.masked_region_reuse == true advertises this contract; older
+ *   modules omit the field. It is informational like width/height: changing
+ *   the Lua table field does not enable or disable native support.
  *
  * Indexed rectangle Lua API (owning VM worker only):
  * - display.compile_rects(records) returns immutable userdata copied from a
@@ -79,6 +164,117 @@
  *   supported ABIs, charged to VM memory, with ordinary GC/teardown cleanup
  *   including failed construction. There are no retained registry roots.
  *
+ * Two-rail material strips (experimental, owning VM worker only):
+ * - display.material_strip(face_capacity) constructs bounded VM userdata;
+ *   capacity is an integer 0..256. Initially empty and bound. No Display
+ *   acquisition is required by construction, load or bind on an existing proxy.
+ * - strip:load(first_xy_f64,last_xy_f64,station_count) copies two interleaved
+ *   screen-space XY rails from existing vmath f64 buffers (capacity >= 2*count).
+ *   Count is 0 or 2..face_capacity+1. Coordinates are finite +/-100000.
+ *   Count N defines N-1 consecutive faces; closure requires an explicit final
+ *   station. No topology, projection, interval or visibility policy is inferred.
+ *   Each stored delta is last-first, rounded to binary64. Same-count load keeps
+ *   bindings; a count change releases all bindings and requires bind for a
+ *   nonempty strip. Failed load preserves the previous geometry and bindings.
+ * - strip:bind(materials,palettes[,line_color_indices]) takes raw dense arrays
+ *   with exactly one entry per active face. Materials are compile_quad_material
+ *   handles; palettes are compile_palette handles covering every material index.
+ *   Optional line indices are integers 0 (disabled) or 1..that palette's length;
+ *   omission disables all lines. No color tables/getters are accepted. Complete
+ *   validation precedes replacement. Strong userdata references retain handles
+ *   and original fallback batches; the input arrays are not retained.
+ * - display.draw_material_strip(strip,a,b,u_first,u_last,ratio,
+ *   line_t=nil,clip_top=0,clip_bottom=height) returns (fast_faces,fallback_faces).
+ *   a,b are finite [0,1], including reversed/equal intervals. Source U bounds
+ *   satisfy 0<=first<=last<=1; ratio is finite and positive. Optional line_t is
+ *   finite and between min(a,b) and max(a,b). Clip selects integer half-open
+ *   rows inside the acquired framebuffer. Nil clip bounds use the defaults.
+ *   Empty geometry/source/clip still validates inputs, binding and acquisition.
+ * - Station evaluation is origin + delta*t, with each multiplication/addition
+ *   rounded separately to binary64, even at t=1. Face i uses station i at a,b,
+ *   then station i+1 at b,a. Each face draws its material followed immediately
+ *   by its optional line before the next face. Material coverage, projective
+ *   source cropping and complete original-batch fallback match the scalar
+ *   draw_quad_material_projective API. Empty source/clip counts as fast.
+ * - Lines use floor of the separately evaluated station coordinates, then the
+ *   existing draw_line integer Bresenham phase. Row clips suppress writes,
+ *   without restarting at clipped endpoints. Every enabled line endpoint must
+ *   lie in [-width,2*width] x [-height,2*height], even for empty clips/source.
+ *   nil line_t disables all lines. Empty source alone does not suppress a line.
+ * - Each palette is read synchronously at draw time. Aliased mutable handles
+ *   show the same current values in every referencing face: distinct colors in
+ *   one strip draw need distinct handles. A palette may be blended/reused after
+ *   the draw returns. No deferred commands, palette snapshots or registry roots.
+ * - Successful load, bind and draw have no heap allocation or Lua callbacks
+ *   after stack capacity is secured. Stack growth may run ordinary finalizers
+ *   before mutable state/acquisition is read. Every generated corner and enabled
+ *   line endpoint is validated before any framebuffer write; errors preserve
+ *   pixels except ordinary finalizer side effects. Scratch is instance-owned;
+ *   no allocation/reentry occurs during drawing. OOM construction publishes no
+ *   partial object and is retryable. Storage is VM-charged, fixed at construction
+ *   and reclaimed by GC/VM teardown, including bound handles when unreferenced.
+ *   Draw uses existing dirty/background tracking and does not present. This is
+ *   a CPU batching candidate, not an asynchronous submission or raster cache.
+ *
+ * Quad materials (opt-in parameter-space coverage, owning VM worker only):
+ * - display.compile_quad_material(batch) precomposes an immutable quad batch
+ *   into last-record-wins palette cells. Each normalized interval is half-open;
+ *   zero-width/height records have no coverage. Unowned cells are transparent.
+ *   At most 32 unique boundaries per axis (including 0 and 1) and 256 cells
+ *   are accepted; excess complexity raises a Lua error before allocation.
+ *   The material retains its source batch for fallback. Both are VM-charged
+ *   userdata reclaimed by GC; there is no registry root or external allocator.
+ * - display.draw_quad_material(material,colors,ax,ay,bx,by,cx,cy,dx,dy,
+ *   clip_top=0,clip_bottom=height) has the same input validation, palette,
+ *   callback, acquisition, row clip, damage and present rules as quad batches.
+ *   Convex quads map the final cells bilinearly with integer-pixel samples.
+ *   Grid-line X intercepts and row slopes are rounded to signed Q24 once at
+ *   setup (nearest, ties away from zero); each row advances by that slope.
+ *   Half-open parameter boundaries select the owner at shared edges. This
+ *   differs from drawing separately rounded, inclusive polygon spans: callers
+ *   explicitly opt in, and existing batch output is unchanged.
+ * - Returns true when the material path handles the draw (including an empty
+ *   clip/support), false when non-convex/degenerate or unsafe numeric geometry
+ *   replays the original batch with its original raster rules and row clip.
+ *   Setup rejects corner turn magnitudes below 1e-8, inconsistent turns, or
+ *   X-intercept/slope envelopes above 1e9. Valid coordinates remain +/-100000.
+ * - Drawing allocates no storage itself. Fixed call-local scratch is bounded
+ *   by 64 grid edges and events. Compile work is O(records*cells); draw work
+ *   is O(clipped_rows*boundaries^2 + written_pixels), independent of overdraw.
+ *   Material payload is sizeof(private header) + 2*cells, at most 1056 bytes
+ *   on the supported 32/64-bit ABIs, plus source batch and Lua object overhead.
+ *   Constructors do not acquire Display; errors use ordinary Lua validation
+ *   or quota/OOM errors. Geometry, palettes and cache policy stay with Lua.
+ *
+ * Cropped one-dimensional projective material mapping:
+ * - display.draw_quad_material_projective(material,colors,
+ *   ax,ay,bx,by,cx,cy,dx,dy,u_first,u_last,depth_ratio,
+ *   clip_top=0,clip_bottom=height) uses an existing material and palette.
+ *   All three mapping parameters are required. Source U bounds are finite
+ *   0<=u_first<=u_last<=1; depth_ratio is finite and strictly positive.
+ *   Equal U bounds draw nothing, but still validate all arguments, colors,
+ *   row clip and live Display. V parameters are unchanged.
+ * - The caller supplies corners of the projected cropped interval: A/D at
+ *   u_first, B/C at u_last. For each source U boundary, clamp
+ *   s=(u-u_first)/(u_last-u_first) to [0,1], then map it to target parameter
+ *   t=s*r/(1+(r-1)*s), r=depth_ratio. For perspective depth use
+ *   r=Z_last/Z_first, with same-sign endpoint depths and no horizon crossing.
+ *   Stable equivalent arithmetic avoids intermediate overflow/cancellation;
+ *   endpoints are exact. Lua owns projection, source/world units and palettes.
+ * - Uses the same half-open cells, transparent holes, Q24 grid scan, row clip,
+ *   dirty tracking and explicit present as draw_quad_material. Original cell
+ *   ownership survives repeated/clipped grid boundaries. Ratio 1 is affine;
+ *   (u_first,u_last,ratio)=(0,1,1) preserves the original draw exactly.
+ * - Returns true on the material path (including empty crops/clips), false on
+ *   fallback. Fallback intersects each original record with the U crop, skips
+ *   empty U intervals, projects its endpoints and replays polygon records in
+ *   order using the caller's original row clip. Exact identity delegates to
+ *   the unchanged original fallback, including degenerate records.
+ * - No new material, cache, atlas or allocation is created by a draw. Storage
+ *   adds only three doubles of call-local mapping parameters to the existing
+ *   bounded scan scratch; setup maps at most 32 U boundaries. Validation and
+ *   color-getter lifecycle behavior are the same as draw_quad_material.
+ *
  * Existing stroke_path(points,widths,color,offset_x=0,top=0,bottom=height,
  * cache=false,fast=false,smooth=false,scale=1,tolerance=0) also accepts
  * points={buffer=xy,count=n}: xy is an f64 packed xy buffer, capacity>=2n,
@@ -91,6 +287,29 @@
  * buffer pointer survives the call; roots survive getter/GC reentry, and
  * Display acquisition is rechecked before writes. Warm cache use allocates
  * nothing; cold cache/smooth scratch may allocate bounded VM storage.
+ *
+ * Smooth stroke coverage cache:
+ * - With cache=true, smooth=true, a single color and tolerance=0, widths owns
+ *   one immutable coverage entry separate from the hard-stroke span cache.
+ *   It stores only quantized alpha, never color or framebuffer pixels; cold
+ *   and hot draws preserve the uncached AA raster, blend order and damage.
+ *   Color/background changes reuse coverage and blend into current pixels.
+ * - The key includes point count, scaled coordinates/widths, scale, exact
+ *   offset, row clip and viewport dimensions. Point/buffer identity alone is
+ *   not a key. Changed values replace the entry; releasing widths permits GC.
+ *   fast has no effect in smooth mode and does not invalidate coverage.
+ * - Payload is sizeof(private header)+(3*n-1)*sizeof(double)+coverage_pixels,
+ *   capped at 16 KiB per owner, excluding Lua overhead and existing job scratch.
+ *   Both entry and scratch count toward VM quota. Multicolor, tolerance>0,
+ *   oversized or empty bounds use the uncached path, report no hit, and keep
+ *   any prior entry. Per-owner entries survive deinit while their owner lives;
+ *   drawing requires reacquisition and revalidates the viewport and full key.
+ * - Warm hits allocate nothing and return (true,0). Cold/fallback draws return
+ *   (false,0). Invalid input or allocation failure does not draw or replace a
+ *   complete entry. Allocation-driven Lua finalizers may reenter or close the
+ *   Display; coverage is staged privately, acquisition rechecked, and only a
+ *   complete entry is published before replay. Getter/finalizer side effects
+ *   retain their normal Lua semantics. No new opacity or cache API is needed.
  *
  * Mesh draw extension (standard Host, owning VM worker only):
  * - display.draw_mesh(mesh,{transform={x=...,y=...,scale=...,angle=...},
@@ -108,9 +327,16 @@
  *   Different source/transform values may produce equal final coordinates.
  *   Failed operations preserve prior candidates; all final values validate
  *   before publishing derived results or pixels. Warm drawing allocates nothing.
- *   Cold retained drawing allocates 8192 span records plus one vertex/primitive
- *   snapshot at the mesh's declared capacities, alignment and fixed metadata.
- *   Cache overflow still draws completely and never replays a partial cache.
+ *   Cold retained identity drawing estimates 16..512 span records from clipped
+ *   polygon row bounds and edge counts (one record per line), inspecting at
+ *   most 128 polygon vertices. Larger/complex or transformed draws start at
+ *   512. Each cache also owns one vertex/primitive snapshot at the declared
+ *   mesh capacities, alignment and fixed metadata. Overflow draws completely
+ *   without publishing partial spans; subsequent draws grow fourfold up to
+ *   8192. A replayed cache with >=256 spare records shrinks to actual count;
+ *   overflow after shrinking returns to 8192 and disables further shrinking.
+ *   Initial estimation is only a hint: allocation finalizers may update mesh
+ *   geometry or acquisition; normal revalidation and overflow rules remain.
  * - Nonidentity transforms of at most 1024 active vertices may stage once in
  *   independent VM-accounted storage shared by Display meshes. Reserve up to
  *   min(vertex_capacity,1024)*16 payload bytes plus userdata metadata, growing

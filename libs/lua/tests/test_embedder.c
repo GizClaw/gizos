@@ -123,10 +123,64 @@ static h2_pal_result_t mutex_unlock(void *user, h2_pal_mutex_t *mutex) {
   assert(pthread_mutex_unlock(&mutex->mutex) == 0);
   return H2_PAL_OK;
 }
-static const h2_pal_sync_vtable_t sync_vtable = {.create_mutex = mutex_create,
-                                                 .destroy_mutex = mutex_destroy,
-                                                 .lock_mutex = mutex_lock,
-                                                 .unlock_mutex = mutex_unlock};
+static struct timespec deadline(uint32_t ms);
+struct h2_pal_semaphore {
+  pthread_mutex_t mutex;
+  pthread_cond_t changed;
+  uint32_t count, max_count;
+};
+static h2_pal_result_t semaphore_create(void *user,
+    const h2_pal_semaphore_config_t *config, h2_pal_semaphore_t **out) {
+  (void)user;
+  *out = calloc(1, sizeof(**out));
+  assert(*out != NULL);
+  (*out)->count = config->initial_count;
+  (*out)->max_count = config->max_count;
+  assert(pthread_mutex_init(&(*out)->mutex, NULL) == 0);
+  assert(pthread_cond_init(&(*out)->changed, NULL) == 0);
+  return H2_PAL_OK;
+}
+static h2_pal_result_t semaphore_destroy(void *user, h2_pal_semaphore_t *sem) {
+  (void)user;
+  assert(pthread_cond_destroy(&sem->changed) == 0);
+  assert(pthread_mutex_destroy(&sem->mutex) == 0);
+  free(sem);
+  return H2_PAL_OK;
+}
+static h2_pal_result_t semaphore_take(void *user, h2_pal_semaphore_t *sem,
+                                      uint32_t ms) {
+  (void)user;
+  struct timespec end = deadline(ms);
+  h2_pal_result_t result = H2_PAL_OK;
+  assert(pthread_mutex_lock(&sem->mutex) == 0);
+  while (sem->count == 0) {
+    int rc = ms == 0 ? ETIMEDOUT : ms == H2_PAL_SYNC_WAIT_FOREVER
+        ? pthread_cond_wait(&sem->changed, &sem->mutex)
+        : pthread_cond_timedwait(&sem->changed, &sem->mutex, &end);
+    if (rc == ETIMEDOUT) { result = H2_PAL_ERR_TIMEOUT; break; }
+    assert(rc == 0);
+  }
+  if (result == H2_PAL_OK) --sem->count;
+  assert(pthread_mutex_unlock(&sem->mutex) == 0);
+  return result;
+}
+static h2_pal_result_t semaphore_give(void *user, h2_pal_semaphore_t *sem) {
+  (void)user;
+  assert(pthread_mutex_lock(&sem->mutex) == 0);
+  h2_pal_result_t result = H2_PAL_ERR_NO_SPACE;
+  if (sem->count < sem->max_count) {
+    ++sem->count;
+    assert(pthread_cond_signal(&sem->changed) == 0);
+    result = H2_PAL_OK;
+  }
+  assert(pthread_mutex_unlock(&sem->mutex) == 0);
+  return result;
+}
+static const h2_pal_sync_vtable_t sync_vtable = {
+    .create_mutex = mutex_create, .destroy_mutex = mutex_destroy,
+    .lock_mutex = mutex_lock, .unlock_mutex = mutex_unlock,
+    .create_semaphore = semaphore_create, .destroy_semaphore = semaphore_destroy,
+    .take_semaphore = semaphore_take, .give_semaphore = semaphore_give};
 static const h2_pal_sync_api_t sync_api = {.vtable = &sync_vtable};
 
 struct h2_pal_queue {

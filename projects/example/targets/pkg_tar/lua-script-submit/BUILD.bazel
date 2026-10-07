@@ -1,0 +1,29 @@
+load("//libs/lua/web:lua_web_app.bzl", "h2_lua_web_app")
+
+package(default_visibility = ["//visibility:public"])
+
+h2_lua_web_app(
+    name = "lua-script-submit",
+    board = "//projects/example/libs/web/demo_board",
+    script = "//libs/lua:tests/display_submit.lua",
+    script_args = {"hold": "yes"},
+    vm_memory_limit_bytes = 2 * 1024 * 1024,
+    canvas_min = 100,
+    clicks = [["LUA_SUBMIT pixels=PASS", "#stop"]],
+    evals = [[
+        "LUA_SUBMIT contract=PASS",
+        """(() => {
+          const canvas = document.getElementById('canvas');
+          const pixel = (x,y) => Array.from(canvas.getContext('2d').getImageData(x,y,1,1).data).join(',');
+          if (pixel(0,0)!=='0,0,255,255' || pixel(40,0)!=='255,0,0,255' || pixel(80,0)!=='0,0,0,255')
+            console.error('LUA_SUBMIT pixels=FAIL');
+          else console.log('LUA_SUBMIT pixels=PASS');
+        })()""",
+    ]],
+    passes = [
+        "LUA_SUBMIT contract=PASS",
+        "LUA_SUBMIT pixels=PASS",
+        "H2_WEB_APP name=lua-script-submit result=PASS rc=0 fs=0 destroy=0",
+    ],
+    fails = ["LUA_SUBMIT pixels=FAIL"],
+)

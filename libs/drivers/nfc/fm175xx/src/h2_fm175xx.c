@@ -223,6 +223,30 @@ static int transceive(
     return post_cmd(reader, H2_FM175XX_ERR_TIMEOUT);
 }
 
+static int type_a_halt(h2_fm175xx_t *reader) {
+    int rc = write_reg(reader, H2_FM175XX_REG_BIT_FRAMING, 0x00u);
+    if (rc == H2_FM175XX_OK) {
+        rc = set_bit_mask(reader, H2_FM175XX_REG_TX_MODE, 0x80u);
+    }
+    if (rc == H2_FM175XX_OK) {
+        rc = set_bit_mask(reader, H2_FM175XX_REG_RX_MODE, 0x80u);
+    }
+    if (rc == H2_FM175XX_OK) {
+        rc = set_timer(reader, 1u);
+    }
+    if (rc != H2_FM175XX_OK) {
+        return rc;
+    }
+    const uint8_t halt[2] = {0x50u, 0x00u};
+    uint8_t response[1];
+    size_t bits = 0u;
+    rc = transceive(reader, halt, sizeof(halt), response, sizeof(response), &bits);
+    /* HLTA has no response. A previously selected tag enters HALT; tags
+     * already in IDLE/HALT ignore it. Bus failures must still propagate. */
+    return rc == H2_FM175XX_ERR_TIMEOUT ? H2_FM175XX_OK
+                                      : (rc == H2_FM175XX_OK ? H2_FM175XX_ERR_PROTOCOL : rc);
+}
+
 static int type_a_request(h2_fm175xx_t *reader, uint8_t out_atqa[2]) {
     int rc = clear_bit_mask(reader, H2_FM175XX_REG_TX_MODE, 0x80u);
     if (rc == H2_FM175XX_OK) {
@@ -240,7 +264,7 @@ static int type_a_request(h2_fm175xx_t *reader, uint8_t out_atqa[2]) {
     if (rc != H2_FM175XX_OK) {
         return rc;
     }
-    const uint8_t request = 0x26u;
+    const uint8_t request = 0x52u;
     size_t bits = 0u;
     rc = transceive(reader, &request, 1u, out_atqa, 2u, &bits);
     if (rc != H2_FM175XX_OK) {
@@ -376,7 +400,13 @@ int h2_fm175xx_type_a_activate(h2_fm175xx_t *reader, h2_fm175xx_type_a_card_t *o
         return H2_FM175XX_ERR_INVALID_ARG;
     }
     memset(out_card, 0, sizeof(*out_card));
-    int rc = type_a_request(reader, out_card->atqa);
+    /* Polling and content reads share the reader. The preceding scan leaves
+     * its tag ACTIVE, where REQA is ignored. End that selection, then WUPA
+     * wakes both a newly presented IDLE tag and the retained HALT tag. */
+    int rc = type_a_halt(reader);
+    if (rc == H2_FM175XX_OK) {
+        rc = type_a_request(reader, out_card->atqa);
+    }
     if (rc != H2_FM175XX_OK) {
         return rc;
     }
