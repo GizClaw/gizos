@@ -4,6 +4,8 @@
 
 The client temporarily associates with the AMOLED server AP `GizOS-iPerf` / `gizosiperf`, channel 6. It never calls `connect_and_save`, clears credentials or modifies the Loader partition. The App does not start its management BLE service and Wi-Fi power save is set to NONE. BK SDK still initializes its Bluetooth controller; this is not a controller-off bench. IPv4 comes from DHCP, IPv6 from the server's on-link ULA/SLAAC. After 15 seconds for DHCP, RA and DAD, the App identifies the available families and requires matching PAL and Runtime readiness. IPv6-only requires public Wi-Fi GOT_IP with IPv4 invalid and IPv6 ready, without entry-side SDK initialization. Reboot the App after changing the server mode so the station starts with a fresh netif.
 
+Readiness compares enabled-family addresses with the associated Wi-Fi STA Netif snapshot. Another active or preferred default interface does not replace the station's addresses or cause a ready station to fail validation.
+
 Each enabled family runs three rounds, with ten five-second measurements per round:
 
 - Unlimited TCP, 16-KiB blocks, client → AMOLED and AMOLED → client (`-R`).

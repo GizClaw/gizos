@@ -282,6 +282,7 @@ typedef struct cleanup_fixture {
   h2_atomic_bool_t fail_manager_lock;
   h2_atomic_bool_t manager_lock_failed;
   bool invalid_ipv6;
+  bool fail_network_start;
   bool fail_network_stop;
   bool fail_worker_join;
   bool network_active;
@@ -357,6 +358,8 @@ static int cleanup_network_start(void *user, h2_iperf_server_app_mode_t mode,
   cleanup_fixture_t *f = user;
   assert(mode == H2_IPERF_SERVER_APP_MODE_DUAL);
   f->network_active = true;
+  if (f->fail_network_start)
+    return H2_PAL_ERR_IO;
   out->ipv4 = loopback(4u, 0u);
   if (!f->invalid_ipv6)
     out->ipv6 = loopback(6u, 0u);
@@ -387,6 +390,7 @@ static void test_cleanup_failure(h2_iperf_test_env_t *env, unsigned scenario) {
   cleanup_fixture_t f = {.task = h2_desktop_platform_task_api(),
                          .sync = h2_desktop_platform_sync_api(),
                          .invalid_ipv6 = scenario == 1u,
+                         .fail_network_start = scenario == 4u,
                          .fail_network_stop = scenario != 2u,
                          .fail_worker_join = scenario == 2u};
   assert(h2_atomic_bool_init(&f.fail_manager_lock, false) == H2_ATOMIC_OK);
@@ -417,7 +421,7 @@ static void test_cleanup_failure(h2_iperf_test_env_t *env, unsigned scenario) {
   assert(h2_iperf_server_app_create(&runtime, &config, &app) == H2_PAL_OK);
   assert(h2_iperf_server_app_request(app, H2_IPERF_SERVER_APP_MODE_DUAL, true) ==
          H2_PAL_OK);
-  if (scenario != 1u)
+  if (scenario != 1u && scenario != 4u)
     (void)wait_phase(app, H2_IPERF_SERVER_APP_LISTENING, env->config.time);
   uint64_t deadline = now(env->config.time) + 2000u;
   if (scenario == 3u) {
@@ -427,7 +431,7 @@ static void test_cleanup_failure(h2_iperf_test_env_t *env, unsigned scenario) {
       h2_iperf_test_sleep_ms(5u);
     assert(h2_atomic_bool_load(&f.manager_lock_failed, H2_ATOMIC_ACQUIRE));
   } else {
-    if (scenario != 1u)
+    if (scenario != 1u && scenario != 4u)
       assert(h2_iperf_server_app_request(app, H2_IPERF_SERVER_APP_MODE_DUAL,
                                          false) == H2_PAL_OK);
     h2_iperf_server_app_snapshot_t snapshot;
@@ -448,6 +452,21 @@ static void test_cleanup_failure(h2_iperf_test_env_t *env, unsigned scenario) {
     if (scenario == 2u)
       assert(h2_atomic_u32_load(&f.stop_calls, H2_ATOMIC_RELAXED) == 0u &&
              f.workers[0] != NULL);
+  }
+  if (scenario == 4u) {
+    /* Failed start still owns its network. A Stop retry releases it before
+     * another Start, without spinning or creating either server task. */
+    assert(f.network_active && f.workers[0] == NULL && f.workers[1] == NULL);
+    f.fail_network_stop = false;
+    assert(h2_iperf_server_app_request(app, H2_IPERF_SERVER_APP_MODE_DUAL,
+                                       false) == H2_PAL_OK);
+    (void)wait_phase(app, H2_IPERF_SERVER_APP_STOPPED, env->config.time);
+    assert(!f.network_active);
+    f.fail_network_start = false;
+    assert(h2_iperf_server_app_request(app, H2_IPERF_SERVER_APP_MODE_DUAL,
+                                       true) == H2_PAL_OK);
+    (void)wait_phase(app, H2_IPERF_SERVER_APP_LISTENING, env->config.time);
+    f.fail_network_stop = true;
   }
   destroy_attempt_t attempt = {.app = app};
   assert(h2_atomic_bool_init(&attempt.done, false) == H2_ATOMIC_OK);
@@ -562,8 +581,8 @@ int main(int argc, char **argv) {
                                      false) == H2_PAL_OK);
   (void)wait_phase(app, H2_IPERF_SERVER_APP_STOPPED, env.config.time);
   assert(h2_iperf_server_app_destroy(&app) == H2_PAL_OK && app == NULL);
-  assert(starts == stops + 1); // Exactly one network-start failure.
-  for (unsigned scenario = 0u; scenario < 4u; ++scenario)
+  assert(starts == stops); // Every start attempt has a matching cleanup.
+  for (unsigned scenario = 0u; scenario < 5u; ++scenario)
     test_cleanup_failure(&env, scenario);
   h2_iperf_test_env_deinit(&env);
   puts("H2_IPERF_SERVER_CONTROLLER_PASS modes=3 pal-wire=16 official-wire=8 "

@@ -6,6 +6,8 @@
 
 每个地址族执行三轮，每轮 TCP 正向/反向各一次（16 KiB block，不限速），UDP 5/10/20/40 Mbit/s 正向/反向各一次（1200 B datagram），每次 5 秒。单栈共 30 case，双栈共 60 case；双栈的两个地址族依次独立测量，不相加。UDP 配置速率是 offered load；性能报告取接收端实际吞吐，并保留丢包、抖动。
 
+地址就绪校验明确读取已关联的 Wi-Fi STA Netif snapshot，并逐项匹配该 station 的 IPv4/IPv6 与 PAL/Runtime 状态。其他活动接口或默认路由接口不会替代 station，也不会使有效的 Wi-Fi association 被误判为失败。
+
 ```sh
 bazel test --config=macos_arm64 //projects/e2e/apps/iperf-client/app:client_test
 bazel test --config=macos_arm64 //projects/e2e/apps/iperf-client/app:network_test

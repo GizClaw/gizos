@@ -257,21 +257,29 @@ h2_iperf_client_app_connect(h2_runtime_t *runtime,
       h2_runtime_system_wifi_sta_state_t state = {0};
       rc = h2_runtime_system_state_wifi_sta(runtime, &state);
       if (rc == H2_PAL_OK && observed_ready && same_addresses(&wifi, &state)) {
-        h2_pal_net_addr_t local = {0};
+        const h2_pal_netif_ref_t station = {
+            .type = H2_PAL_NETIF_REF_KIND, .kind = H2_PAL_NETIF_KIND_WIFI_STA};
+        h2_pal_netif_status_t local = {0};
+        rc = h2_pal_netif_get_status(runtime->netif, &station, &local);
+        if (rc != H2_PAL_OK || local.kind != H2_PAL_NETIF_KIND_WIFI_STA ||
+            !(local.flags & H2_PAL_NETIF_FLAG_UP)) {
+          rc = H2_PAL_ERR_INVALID_STATE;
+          goto failed;
+        }
         if (wifi.ip_valid) {
-          rc = h2_pal_net_get_host_addr_family(runtime->net, NULL,
-                                               H2_PAL_NET_FAMILY_IPV4, &local);
           uint8_t expected[4];
           h2_pal_wifi_ip4_to_bytes(wifi.ip.ip4, expected);
-          if (rc != H2_PAL_OK || memcmp(local.ip, expected, sizeof(expected))) {
+          if (!(local.flags & H2_PAL_NETIF_FLAG_HAS_IPV4) ||
+              local.ipv4.family != H2_PAL_NET_FAMILY_IPV4 ||
+              memcmp(local.ipv4.ip, expected, sizeof(expected))) {
             rc = H2_PAL_ERR_INVALID_STATE;
             goto failed;
           }
         }
         if (wifi.ip.ip6_valid) {
-          rc = h2_pal_net_get_host_addr_family(runtime->net, NULL,
-                                               H2_PAL_NET_FAMILY_IPV6, &local);
-          if (rc != H2_PAL_OK || memcmp(local.ip, wifi.ip.ip6, 16u)) {
+          if (!(local.flags & H2_PAL_NETIF_FLAG_HAS_IPV6) ||
+              local.ipv6.family != H2_PAL_NET_FAMILY_IPV6 ||
+              memcmp(local.ipv6.ip, wifi.ip.ip6, 16u)) {
             rc = H2_PAL_ERR_INVALID_STATE;
             goto failed;
           }

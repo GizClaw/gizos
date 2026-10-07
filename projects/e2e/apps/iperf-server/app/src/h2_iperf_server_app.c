@@ -176,10 +176,12 @@ static void manage(void *user) {
     if (requested && !serving && !cleanup_pending) {
       publish_phase(app, H2_IPERF_SERVER_APP_STARTING, H2_PAL_OK);
       h2_iperf_server_app_network_t network = {0};
+      /* A failed start can retain partial ownership. Stop must run before
+       * releasing its borrowed network state, even without a ready address. */
+      app->network_active = true;
       int rc =
           app->config.network_start(app->config.network_user, mode, &network);
       if (rc == H2_PAL_OK) {
-        app->network_active = true;
         if (lock(app) == H2_PAL_OK) {
           app->snapshot.network = network;
           unlock(app);
