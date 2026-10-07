@@ -18,6 +18,10 @@ class IPv6Fixture:
         class HTTP(BaseHTTPRequestHandler):
             def log_message(self, *_): pass
             def do_GET(self):
+                prefix = '/ipv6/' if self.server.address_family == socket.AF_INET6 else '/fallback/'
+                if self.path != prefix + owner.raw.session:
+                    self.send_error(404)
+                    return
                 body = owner.raw.session.encode('ascii')
                 self.send_response(200)
                 self.send_header('Content-Length', str(len(body)))
@@ -122,6 +126,11 @@ class IPv6Fixture:
         assert any(r['protocol']=='http' and r['family']==socket.AF_INET6 for r in records), records
         if not local_fallback:
             assert any(r['protocol']=='http' and r['family']==socket.AF_INET for r in records), records
+        for record in records:
+            if record['protocol'] == 'http':
+                assert record['family'] in (socket.AF_INET6, socket.AF_INET), records
+                prefix = '/ipv6/' if record['family'] == socket.AF_INET6 else '/fallback/'
+                assert record.get('path') == prefix + self.raw.session, records
         assert any(r['protocol']=='mqtt' and r['family']==socket.AF_INET6 for r in records), records
         assert all(r.get('payload', self.raw.session)==self.raw.session for r in records), records
         assert any(r['protocol']=='dns-aaaa' and r['family']==socket.AF_INET6 for r in records), records
