@@ -51,6 +51,7 @@ typedef enum h2_net_tls_fixture_proof {
 
 typedef struct h2_net_tls_config {
   const h2_runtime_t *runtime;
+  h2_pal_net_family_t family; /* Zero preserves the original IPv4 profile. */
   const char *host; /* Numerical fixture address; not a public service. */
   const char
       *dns_host; /* Explicit real hostname, separate from local TLS peer. */

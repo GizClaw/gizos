@@ -14,6 +14,7 @@ set(H2_BK_PLATFORM_CORE_PRIV_REQUIRES
   easy_flash
   bk_netif
   bk_rtos
+  bk_pm
   driver
   h2_firmware_lib
   lwip_intf_v2_1
@@ -100,6 +101,7 @@ set(H2_BK_PLATFORM_CORE_SRCS
   "src/h2_bk_platform_firmware_info.c"
   "src/h2_bk_platform_sync.c"
   "src/h2_bk_platform_net.c"
+  "src/h2_bk_net_addr.c"
   "src/h2_bk_platform_netif.c"
   "src/h2_bk_platform_task.c"
   "src/h2_bk_platform_queue.c"
@@ -116,6 +118,7 @@ set(H2_BK_PLATFORM_CORE_SRCS
   "src/h2_bk_platform_system_event.c"
   "src/h2_bk_platform_modem_unsupported.c"
   "src/h2_bk_platform_wifi.c"
+  "src/h2_bk_wifi_ipv6_sync.c"
   "src/h2_bk_platform_wifi_csi.c"
   ${H2_BK_PLATFORM_WIFI_EVENT_DISPATCH_SOURCE}
   "src/h2_bk_platform_wifi_settings.c"
@@ -320,6 +323,19 @@ set(H2_BK_STA_SYNC_REPLACEMENT "${H2_BK_STA_SYNC_SIGNATURE}
     }")
 string(REPLACE "${H2_BK_STA_SYNC_SIGNATURE}" "${H2_BK_STA_SYNC_REPLACEMENT}"
   H2_BK_SDK_NETIF_CORRECTED "${H2_BK_SDK_NETIF_CONTENT}")
+# PAL queries the current CP snapshot and applies it on AP TCP/IP. Remove
+# the pinned unversioned, event-thread address write before it can race PAL.
+set(H2_BK_IP6_START "\tcase EVENT_WIFI_STA_GOT_IPV6:")
+set(H2_BK_IP6_END "\tcase EVENT_WIFI_STA_DISCONNECTED:")
+string(FIND "${H2_BK_SDK_NETIF_CORRECTED}" "${H2_BK_IP6_START}" ip6_start)
+string(FIND "${H2_BK_SDK_NETIF_CORRECTED}" "${H2_BK_IP6_END}" ip6_end)
+if(ip6_start EQUAL -1 OR ip6_end LESS_EQUAL ip6_start)
+  message(FATAL_ERROR "Pinned BK AP IPv6 callback changed")
+endif()
+math(EXPR ip6_length "${ip6_end} - ${ip6_start}")
+string(SUBSTRING "${H2_BK_SDK_NETIF_CORRECTED}" ${ip6_start} ${ip6_length} ip6_case)
+string(REPLACE "${ip6_case}" "\tcase EVENT_WIFI_STA_GOT_IPV6: break;\n"
+  H2_BK_SDK_NETIF_CORRECTED "${H2_BK_SDK_NETIF_CORRECTED}")
 set(H2_BK_NETIF_CORRECTED_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/h2_bk_sdk_netif.c")
 file(WRITE "${H2_BK_NETIF_CORRECTED_SOURCE}" "${H2_BK_SDK_NETIF_CORRECTED}")
 get_target_property(H2_BK_NETIF_SOURCES ${H2_BK_NETIF_LIB} SOURCES)

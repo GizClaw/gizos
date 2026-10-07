@@ -1329,6 +1329,19 @@ static void assert_system_event_mapping(
     assert(event.kind == kind);
     assert(event.sequence != 0u);
     assert(event.payload_size == runtime_payload_size);
+    if (component == H2_RUNTIME_COMPONENT_SYSTEM_WIFI &&
+        runtime_payload_size == sizeof(h2_runtime_system_event_wifi_sta_t)) {
+      const h2_pal_wifi_sta_status_t *pal = pal_payload;
+      h2_runtime_system_event_wifi_sta_t copied;
+      memcpy(&copied, event.payload, sizeof(copied));
+      assert(copied.ip_valid == pal->ip_valid && copied.ip.ip4 == pal->ip.ip4);
+      assert(copied.ip.ip6_valid == pal->ip.ip6_valid);
+      assert(memcmp(copied.ip.ip6, pal->ip.ip6, sizeof(pal->ip.ip6)) == 0);
+      h2_runtime_system_wifi_sta_state_t state;
+      assert(h2_runtime_system_state_wifi_sta(runtime, &state) == H2_PAL_OK);
+      assert(state.ip.ip6_valid == pal->ip.ip6_valid);
+      assert(memcmp(state.ip.ip6, pal->ip.ip6, sizeof(pal->ip.ip6)) == 0);
+    }
     if (kind == H2_RUNTIME_SYSTEM_EVENT_MODEM_SIGNAL_CHANGED) {
         const h2_pal_modem_signal_t *pal = pal_payload;
         h2_runtime_system_event_modem_signal_t signal;
@@ -1630,6 +1643,27 @@ static void test_system_event_projects_all_scope_events(void) {
             H2_RUNTIME_COMPONENT_SYSTEM_WIFI, sta_kinds[i],
             sizeof(h2_runtime_system_event_wifi_sta_t));
     }
+
+    sta.ip.ip6_valid = 1u;
+    sta.ip.ip6[0] = 0xfd;
+    sta.ip.ip6[15] = 1u;
+    for (unsigned family = 0u; family < 2u; ++family) {
+      sta.ip_valid = family != 0u;
+      sta.ip.ip4 = family != 0u ? 0x01020304u : 0u;
+      assert_system_event_mapping(
+          &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_GOT_IP, &sta,
+          sizeof(sta), H2_RUNTIME_COMPONENT_SYSTEM_WIFI,
+          H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_GOT_IP,
+          sizeof(h2_runtime_system_event_wifi_sta_t));
+    }
+    memset(&sta.ip, 0, sizeof(sta.ip));
+    sta.ip_valid = 0u;
+    sta.state = H2_PAL_WIFI_STA_STATE_DISCONNECTED;
+    assert_system_event_mapping(&env, runtime,
+                                H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_LOST_IP, &sta,
+                                sizeof(sta), H2_RUNTIME_COMPONENT_SYSTEM_WIFI,
+                                H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_LOST_IP,
+                                sizeof(h2_runtime_system_event_wifi_sta_t));
 
     assert_system_event_mapping(
         &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_WIFI_AP_STARTED, &ap, sizeof(ap),

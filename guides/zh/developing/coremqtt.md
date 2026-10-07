@@ -41,3 +41,5 @@ connect、subscribe、publish echo 与 disconnect；它不使用公网 broker、
 `tcp_send_timeout` 对通用 Net PAL 仍是 optional；CoreMQTT 的有界发送明确要求它。缺少 callback 时在 MQTT bytes 发送前返回 UNSUPPORTED；callback 返回 UNSUPPORTED 时保存该结果。两者都禁止回落到可能无界阻塞的 `tcp_send`。Create/open 不将通用 Net provider 判为无效；CONNECT 遇到该错误关闭已建立的 TCP/TLS handles，并可随后关闭 client/destroy provider。平台必须提供遵守剩余期限的 timed send callback 才支持这项 CoreMQTT 能力；本改动不修改平台 provider 或假称未运行平台已通过。
 
 Focused host 回归使用真实 vendor serializer/ProcessLoop 与可控 Net fixture，覆盖 25 ms send、positive short prefix、prefix 后 WOULD_BLOCK、60 ms total deadline、跨 callback 不续期、0/fallback/expired、实际 PINGREQ/PINGRESP 下 1 ms poll 与 100 ms send budget、missing/UNSUPPORTED timed capability 且 legacy call=0、failed CONNECT socket cleanup 和最终 allocation=0。这些是 provider contract 回归；硬件/真实 broker 的独立资格必须绑定其实际 source/artifact，不能由这些 tests 或历史 receipt 重绑定到新 revision。
+
+TCP transport setup 使用 DNS 列表的实际地址族。DNS、各次 TCP attempt 和 TLS 共用原始 transport-setup deadline；pending `TIMEOUT`/`WOULD_BLOCK` 继续同一 socket，不把非末尾候选限制为 250 ms。终态连接错误关闭该 socket 后才回退到下一地址。MQTT CONNECT 发送和 CONNACK 仍遵守既有独立 stage 预算。

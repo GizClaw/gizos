@@ -89,12 +89,24 @@ func (m iceMode) usesTCP() bool {
 }
 
 func (m iceMode) networkTypes() []webrtc.NetworkType {
+	return m.networkTypesForFamily(false)
+}
+
+func (m iceMode) networkTypesForFamily(ipv6 bool) []webrtc.NetworkType {
 	types := make([]webrtc.NetworkType, 0, 2)
 	if m.usesUDP() {
-		types = append(types, webrtc.NetworkTypeUDP4)
+		if ipv6 {
+			types = append(types, webrtc.NetworkTypeUDP6)
+		} else {
+			types = append(types, webrtc.NetworkTypeUDP4)
+		}
 	}
 	if m.usesTCP() {
-		types = append(types, webrtc.NetworkTypeTCP4)
+		if ipv6 {
+			types = append(types, webrtc.NetworkTypeTCP6)
+		} else {
+			types = append(types, webrtc.NetworkTypeTCP4)
+		}
 	}
 	return types
 }
@@ -181,6 +193,8 @@ func (c *inboundDroppingPacketConn) ReadFrom(data []byte) (int, net.Addr, error)
 }
 
 type icePairSnapshot struct {
+	LocalFamily    int     `json:"local_family,omitempty"`
+	RemoteFamily   int     `json:"remote_family,omitempty"`
 	Mode           iceMode `json:"mode"`
 	LocalProtocol  string  `json:"local_protocol"`
 	RemoteProtocol string  `json:"remote_protocol"`
@@ -269,6 +283,7 @@ func main() {
 	stunListen := flag.String("stun-listen", defaultSTUNListen, "STUN UDP listen address")
 	turnListen := flag.String("turn-listen", defaultTURNListen, "TURN UDP listen address")
 	candidateIP := flag.String("candidate-ip", "", "ICE host candidate IP to advertise; defaults to non-loopback IPv4 addresses")
+	advertisedCandidateIP := flag.String("advertised-candidate-ip", "", "explicit same-family IPv6/IPv4 NAT host alias to publish")
 	iceModeValue := flag.String("ice-mode", string(iceModeUDP), "ICE transport mode: udp, tcp, mixed, or mixed-drop-udp")
 	dtlsKeyLog := flag.String("dtls-key-log", "", "optional DTLS key log path for local packet diagnostics")
 	dtlsCipherSuites := flag.String("dtls-cipher-suites", "", "optional comma-separated DTLS cipher suite preference (server order wins): gcm, ccm, ccm8, chacha")
@@ -289,7 +304,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go s.cleanupLoop(ctx)
-	stunConn, err := net.ListenPacket("udp4", *stunListen)
+	stunConn, err := net.ListenPacket("udp", *stunListen)
 	if err != nil {
 		log.Fatalf("listen STUN: %v", err)
 	}
@@ -320,20 +335,31 @@ func main() {
 		}
 		setting.SetDTLSCipherSuites(suites...)
 	}
-	setting.SetNetworkTypes(mode.networkTypes())
+	ipv6 := s.candidateIP != nil && s.candidateIP.To4() == nil
+	udpNetwork, tcpNetwork := "udp4", "tcp4"
+	if ipv6 {
+		udpNetwork, tcpNetwork = "udp6", "tcp6"
+	}
+	setting.SetNetworkTypes(mode.networkTypesForFamily(ipv6))
+	if *advertisedCandidateIP != "" {
+		advertised := net.ParseIP(*advertisedCandidateIP)
+		if advertised == nil || (advertised.To4() == nil) != ipv6 {
+			log.Fatal("advertised candidate must be a valid address of the same family")
+		}
+		setting.SetNAT1To1IPs([]string{advertised.String()}, webrtc.ICECandidateTypeHost)
+	}
 	setting.SetIncludeLoopbackCandidate(true)
 	setting.SetIPFilter(func(ip net.IP) bool {
-		ip4 := ip.To4()
-		if ip4 == nil || ip.IsUnspecified() {
+		if ip.IsUnspecified() || (ip.To4() == nil) != ipv6 {
 			return false
 		}
 		if s.candidateIP != nil {
-			return ip4.Equal(s.candidateIP.To4())
+			return ip.Equal(s.candidateIP)
 		}
 		return !ip.IsLoopback()
 	})
 	if mode.usesUDP() {
-		iceUDPConn, err = net.ListenPacket("udp4", iceMuxListenAddress(s.candidateIP))
+		iceUDPConn, err = net.ListenPacket(udpNetwork, iceMuxListenAddress(s.candidateIP))
 		if err != nil {
 			log.Fatalf("listen ICE UDP: %v", err)
 		}
@@ -350,7 +376,7 @@ func main() {
 		setting.SetICEUDPMux(udpMux)
 	}
 	if mode.usesTCP() {
-		iceTCPListener, err = net.Listen("tcp4", iceMuxListenAddress(s.candidateIP))
+		iceTCPListener, err = net.Listen(tcpNetwork, iceMuxListenAddress(s.candidateIP))
 		if err != nil {
 			log.Fatalf("listen ICE TCP: %v", err)
 		}
@@ -402,7 +428,7 @@ func main() {
 		log.Fatalf("start TURN: %v", err)
 	}
 
-	httpListener, err := net.Listen("tcp4", *listen)
+	httpListener, err := net.Listen("tcp", *listen)
 	if err != nil {
 		log.Fatalf("listen HTTP: %v", err)
 	}
@@ -707,7 +733,16 @@ func (s *server) handleSession(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "selected ICE pair unavailable", http.StatusConflict)
 			return
 		}
+		localFamily, remoteFamily := 4, 4
+		if ip := net.ParseIP(pair.Local.Address); ip != nil && ip.To4() == nil {
+			localFamily = 6
+		}
+		if ip := net.ParseIP(pair.Remote.Address); ip != nil && ip.To4() == nil {
+			remoteFamily = 6
+		}
 		snapshot := icePairSnapshot{
+			LocalFamily:    localFamily,
+			RemoteFamily:   remoteFamily,
 			Mode:           s.iceMode,
 			LocalProtocol:  pair.Local.Protocol.String(),
 			RemoteProtocol: pair.Remote.Protocol.String(),

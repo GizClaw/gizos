@@ -6,7 +6,10 @@ package(default_visibility = ["//visibility:public"])
 py_library(
     name = "evidence_validator",
     srcs = ["check_qualification.py"],
-    data = ["//libs/pal:pal_header_files"],
+    data = [
+        "ipv6_host_input_pins.json",
+        "//libs/pal:pal_header_files",
+    ],
     imports = ["."],
     target_compatible_with = HOST_OR_MOBILE_TOOL_COMPATIBILITY,
 )
@@ -18,6 +21,19 @@ py_test(
         "qualification.json",
         "gizclaw_public_https_provenance.json",
         "gizclaw_public_https_provenance_main_tls.json",
+        "ipv6_source_maintenance.json",
+        "ipv6_host_input_pins.json",
+        "//projects/e2e/apps/pal-ipv6/app:include/h2_pal_ipv6_cases.inc",
+        "//:MODULE.bazel",
+        "//libs/pal/providers/corehttp:src/h2_corehttp.c",
+        "//libs/pal/providers/coremqtt:src/h2_coremqtt_client.c",
+        "//libs/pal/providers/darwin/pal_core:src/h2_darwin_netif.c",
+        "//libs/pal/providers/h2peer:src/providers/portable/agent.c",
+        "//libs/pal/providers/h2peer:src/providers/portable/ports.c",
+        "//projects/e2e/apps/pal-ipv6/app:src/h2_pal_ipv6_e2e.c",
+        "//projects/e2e/targets/cc_binary/pal-ipv6:main.c",
+        "//projects/e2e/targets/cc_binary/pal-ipv6:run_desktop.py",
+        "//tools/webrtc-test-server:main.go",
         "//libs/pal:pal_header_files",
         "//libs/pal/providers/android/pal_core:BUILD.bazel",
         "//libs/pal/providers/android/pal_core:include/h2_android_net.h",
@@ -58,6 +74,8 @@ py_test(
 exports_files([
     "check_qualification.py",
     "qualification.json",
+    "record_ipv6_maintenance.py",
+    "ipv6_host_input_pins.json",
 ])
 
 py_test(

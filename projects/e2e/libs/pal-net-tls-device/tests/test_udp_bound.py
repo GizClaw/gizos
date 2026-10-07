@@ -8,11 +8,12 @@ import unittest
 ROOT=Path(__file__).resolve().parents[5]
 PREFIX=r'''
 #include "h2/pal/net/h2_pal_net.h"
+#include "h2/pal/net/h2_pal_netif.h"
 #include <arpa/inet.h>
 #include <assert.h>
 #include <string.h>
 #include <sys/socket.h>
-static int stage, created, closed, fallback;
+static int stage, created, closed, fallback, netif_case;
 static int family_to_lwip(h2_pal_net_family_t family) {return family==H2_PAL_NET_FAMILY_IPV4?AF_INET:AF_INET6;}
 static int fake_socket(int family,int type,int protocol){(void)family;(void)type;(void)protocol;if(stage==1)return -1;++created;return 7;}
 static int fake_setsockopt(int fd,int level,int key,const void *value,socklen_t length){(void)fd;(void)level;(void)key;(void)value;(void)length;return 0;}
@@ -40,7 +41,26 @@ class UDPBound(unittest.TestCase):
             start=source.index('static int '+backend+'_net_udp_open_bound(')
             end=source.index('static int '+backend+'_net_udp_sendto(',start)
             entry=source[start:end]
-            fallback=f'''static int {backend}_net_udp_open(void *user,h2_pal_net_family_t family,uint16_t port,int *out,h2_pal_net_addr_t *addr){{(void)user;(void)family;(void)port;(void)addr;++fallback;*out=11;return H2_PAL_OK;}}\n'''
+            fallback=f'''static int {backend}_net_udp_open(void *user,h2_pal_net_family_t family,uint16_t port,int *out,h2_pal_net_addr_t *addr){{(void)user;(void)family;(void)port;if(netif_case){{++created;*out=7;memset(addr,0xa5,sizeof(*addr));return H2_PAL_OK;}}++fallback;*out=11;return H2_PAL_OK;}}\n'''
+            helpers = ""
+            if backend == 'esp':
+                helpers = r'''
+static int esp_net_open_socket(h2_pal_net_family_t family,int type){int fd=fake_socket(family_to_lwip(family),type,0);return fd<0?H2_PAL_ERR_IO:fd;}
+static int esp_net_bind_interface(int fd,const struct h2_pal_netif_ref *ref){(void)fd;return ref==NULL?H2_PAL_ERR_INVALID_ARG:H2_PAL_ERR_UNSUPPORTED;}
+'''
+            else:
+                # Exercise the production socket helper, including its close
+                # path, with the same deterministic syscalls as the entry.
+                start = source.index('static int bk_net_open_socket(')
+                end = source.index('static int bk_net_bind_interface(', start)
+                helpers = source[start:end] + r'''
+static int bk_net_bind_interface(int fd,const struct h2_pal_netif_ref *ref){(void)fd;return ref==NULL?H2_PAL_ERR_INVALID_ARG:H2_PAL_ERR_UNSUPPORTED;}
+'''
+            prefix = PREFIX
+            if backend == 'bk':
+                prefix = prefix.replace('family_to_lwip', 'h2_bk_net_family')
+                prefix = prefix.replace('addr_to_sockaddr', 'h2_bk_net_to_sockaddr')
+                prefix = prefix.replace('sockaddr_to_addr', 'h2_bk_net_from_sockaddr')
             main=r'''
 int main(void){
  h2_pal_net_bind_t source={.type=H2_PAL_NET_BIND_SOURCE_ADDR,.source_addr={.family=H2_PAL_NET_FAMILY_IPV4,.port=99,.ip={192,168,9,2}}};
@@ -48,10 +68,17 @@ int main(void){
  for(stage=0;stage<=5;++stage){created=closed=0;socket_fd=88;memset(&bound,0xa5,sizeof(bound));
  int result=ENTRY(NULL,H2_PAL_NET_FAMILY_IPV4,4242,&source,&socket_fd,&bound);
  if(!stage){assert(result==H2_PAL_OK&&socket_fd==7&&bound.port==4242&&memcmp(bound.ip,source.source_addr.ip,16)==0);assert(created==1&&closed==0);}
- else{assert(result!=H2_PAL_OK&&socket_fd==-1);assert(created==closed);}
+ else{assert(result!=H2_PAL_OK&&socket_fd==-1);assert(created==closed);assert(bound.family==H2_PAL_NET_FAMILY_ANY);}
  }
+ stage=0;netif_case=1;
  source.type=H2_PAL_NET_BIND_NETIF;created=closed=0;socket_fd=88;
- assert(ENTRY(NULL,H2_PAL_NET_FAMILY_IPV4,4242,&source,&socket_fd,&bound)==H2_PAL_ERR_UNSUPPORTED&&socket_fd==-1&&created==0);
+ assert(ENTRY(NULL,H2_PAL_NET_FAMILY_IPV4,4242,&source,&socket_fd,&bound)==H2_PAL_ERR_INVALID_ARG&&socket_fd==-1&&created==closed);
+ assert(bound.family==H2_PAL_NET_FAMILY_ANY);
+ h2_pal_netif_ref_t ref={.type=H2_PAL_NETIF_REF_ID,.id=1u};source.netif=&ref;
+ created=closed=0;socket_fd=88;memset(&bound,0xa5,sizeof(bound));
+ assert(ENTRY(NULL,H2_PAL_NET_FAMILY_IPV4,4242,&source,&socket_fd,&bound)==H2_PAL_ERR_UNSUPPORTED&&socket_fd==-1&&created==closed);
+ assert(bound.family==H2_PAL_NET_FAMILY_ANY);
+ netif_case=0;created=closed=0;
  source.type=H2_PAL_NET_BIND_SOURCE_ADDR;source.source_addr.family=H2_PAL_NET_FAMILY_IPV6;
  assert(ENTRY(NULL,H2_PAL_NET_FAMILY_IPV4,4242,&source,&socket_fd,&bound)==H2_PAL_ERR_INVALID_ARG&&created==0);
  assert(ENTRY(NULL,H2_PAL_NET_FAMILY_IPV4,4242,NULL,&socket_fd,&bound)==H2_PAL_OK&&fallback==1&&socket_fd==11);
@@ -60,7 +87,7 @@ int main(void){
 '''.replace('ENTRY',backend+'_net_udp_open_bound')
             with tempfile.TemporaryDirectory(prefix='h2-net-udp-fault-') as temporary:
                 test=Path(temporary)/'entry.c';binary=Path(temporary)/'entry'
-                test.write_text(PREFIX+fallback+entry+main)
+                test.write_text(prefix+fallback+helpers+entry+main)
                 subprocess.run([compiler,'-std=c11','-Wall','-Wextra','-Werror','-I'+str(ROOT/'libs/pal/include'),str(test),'-o',str(binary)],check=True,timeout=30)
                 subprocess.run([str(binary)],check=True,timeout=15)
 

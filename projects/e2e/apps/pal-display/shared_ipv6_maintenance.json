@@ -1,0 +1,43 @@
+{
+  "schema": 1,
+  "new_physical_run_claimed": false,
+  "historical_shared_catalog_provenance_sha256": "99d902e94ca36d5a11b4638b548282c50d2e62e52174e1f4e7f04b3de1adc9c0",
+  "historical_baseline_commit": "e9ee7e6b4d2a15b70bb3a7a9147bacf3937365c3",
+  "historical_baseline_sha256": "36480ff0007d77faeb060ddd7ddc753dbf1bc4110244792a7312487d8b0381ca",
+  "guide_changes": [
+    {
+      "owner": "net_ipv6",
+      "before_utf8": "",
+      "after_utf8": "\n## IPv6 地址与 DNS\n\nPOSIX、ESP 与 BK 的 resolver 在本地处理保留名称：`localhost` 及其子域返回真实 loopback 地址，`.invalid` 及其子域直接返回 `NOT_FOUND`，不依赖当前网络的 DNS 服务器。名称比较不区分大小写并接受末尾的点，遵循 [RFC 6761](https://www.rfc-editor.org/rfc/rfc6761.html#section-6.4)。独立的 nonce AAAA wire fixture 仍通过真实 IPv6 UDP 验证报文，不由这些本地规则替代。\n\nNet 地址新增 `scope_id`，表示本机 IPv6 接口索引；link-local 目标必须携带作用域， IPv4 地址必须为零。作用域不能作为 IP 地址的一部分发送到 STUN 或 SDP。 新 DNS 列表接口支持 ANY、IPv4、IPv6 筛选、有界去重列表与截断标志；异步操作沿用 复制 hostname、有限容量、poll 总预算和取消后 backend 自行回收的合同。 旧单地址接口保留 IPv4 优先，并在没有 IPv4 时接受 IPv6。HTTP/MQTT 根据每个结果的 地址族创建 socket，失败后关闭并在原始连接预算内回退。pending TCP 连接的 `TIMEOUT`/`WOULD_BLOCK` 沿用原始总预算并继续同一 socket；只有终态连接失败才回退，不为候选地址设置独立的 250 ms 上限。TLS 验证失败不会触发降级。 `pal-ipv6` 提供独立 E2E；浏览器原始 Net 的 UNSUPPORTED 与 Fetch/WebRTC 的 IPv6 实际执行分开记录。新 provider 代码不改变历史实板记录的执行身份。\n"
+    },
+    {
+      "owner": "wifi_ipv6_readiness",
+      "before_utf8": "",
+      "after_utf8": "## Wi-Fi IPv6 就绪\n\nWi-Fi STA 的关联与 IP 就绪是不同状态。启用 IPv6 的 ESP/BK provider 在关联流程中初始化 link-local 与 SLAAC，产品和 E2E entry 不调用 SDK IPv6 初始化。`GOT_IP` 表示 IPv4 或 preferred 非 link-local IPv6 至少一种可用，原 `ip_valid` 始终只代表 IPv4；IPv6 地址与就绪从同一 IP snapshot/event 传播。`h2_pal_wifi_sta_status_has_ip()` 是配网和共享 consumer 的地址就绪判定，link-local、unspecified、loopback、multicast 和 IPv4-mapped 地址不会完成配网。就绪不承诺 default router、DNS 或 Internet 服务可达。\n\nProvider 对当前关联读取实际 preferred 地址，IPv4 失租但 IPv6 仍可用时保留 `GOT_IP`；最后一种可用地址消失才发布 `LOST_IP`。断开和重新关联清除旧 IPv6，过期或 deprecated 地址不继续报告 ready。ESP/BK 原生配置必须同时开启其 SDK IPv6/SLAAC；显式关闭的平台仍只提供其实际启用的族，不由测试入口补齐。\n\n"
+    },
+    {
+      "owner": "wifi_ipv6_persistence",
+      "before_utf8": "Wi-Fi STA 的 `connect` 与 `connect_and_save` 是两个独立 operation。前者对所有 timeout 都只改变当前连接；后者必须重新验证目标凭据，取得目标 SSID（指定 BSSID 时也匹配 BSSID）的有效非零 IPv4 后才调用 Wi-Fi Settings 保存。后者要求非零关联/DHCP 总预算，零值无副作用地返回 INVALID_ARG。连接、IP 或保存失败均不得伪装为配网成功；旧凭据在连接失败时保留，保存失败由 Settings 原子替换合同保护。get/set/clear/has_saved_sta_config 仍是显式的独立存储能力。",
+      "after_utf8": "Wi-Fi STA 的 `connect` 与 `connect_and_save` 是两个独立 operation。前者对所有 timeout 都只改变当前连接；后者必须重新验证目标凭据，取得目标 SSID（指定 BSSID 时也匹配 BSSID）的有效非零 IPv4 或 preferred 非 link-local IPv6 后才调用 Wi-Fi Settings 保存。后者要求非零关联/地址配置总预算，零值无副作用地返回 INVALID_ARG。连接、IP 或保存失败均不得伪装为配网成功；旧凭据在连接失败时保留，保存失败由 Settings 原子替换合同保护。get/set/clear/has_saved_sta_config 仍是显式的独立存储能力。"
+    }
+  ],
+  "previous_audit_sha256": {
+    "projects/e2e/apps/pal-display/BUILD.bazel": "8cf47780717ae7d621197d5f98cfa80de4b50c7fd46a61da3b7bdf82505440ef",
+    "projects/e2e/apps/pal-display/README.md": "e26f59c6d1412cf268e43239b6c82b0767cecb1f62367a857587082f302f045b",
+    "projects/e2e/apps/pal-display/check_qualification.py": "59a54f70af2fdaffa6b7fb4005b4c3f65503e1299d880665a1e2ffe1f7ca4872"
+  },
+  "current_audit_sha256": {
+    "projects/e2e/apps/pal-display/BUILD.bazel": "ad9468eb1ed07537fdc4fbbd335da4630d303b3eb60ea5d39543b8bb8ed9366b",
+    "projects/e2e/apps/pal-display/README.md": "9e281038f4e03960fad12d70e7b443011ac811ad49303e6a05a1e41942b473ec",
+    "projects/e2e/apps/pal-display/check_qualification.py": "4661c131a40307bba7ae595c9a4e889e37ae49b0de76bad1276363dcfbcfd60a"
+  },
+  "network_config_changes": {
+    "boards/bk7258_v3_202405/bk7258/ap.defaults": {
+      "previous_sha256": "232da0a1de7c7c60cd1c523a365beec4114d5b910cbcf63348d9ce1a7416beb8",
+      "current_sha256": "e46a10d34681f0a39a5497e07a60569a2f01dfb11908ab1688fd1f8608fab6a2",
+      "before_utf8": "# CONFIG_IPV6 is not set\n",
+      "after_utf8": "CONFIG_IPV6=y\n"
+    }
+  },
+  "scope": "Host audit and explicitly reversed Net/Wi-Fi guide deltas only. Display provider/App/catalog content and historical physical/mobile/artifact receipts are unchanged; no current Display hardware qualification is claimed."
+}

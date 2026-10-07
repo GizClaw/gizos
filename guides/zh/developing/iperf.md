@@ -24,6 +24,8 @@ listener（以及 SCTP 封装 UDP socket），`h2_iperf_server_run_once()` 服�
 零值字段选择 iperf3 默认：port 5201、10 s、TCP 128 KiB / UDP 1460 B / SCTP 64 KiB block、
 UDP 1 Mbit/s、SCTP 封装端口 9899（Linux kernel `net.sctp.udp_port` 的默认值）。
 
+`h2_iperf_config_t` 可借用 `should_stop` 与 `on_progress` callback：测试线程在分段 I/O 和 data loop 中检查停止请求，以 `CLOSED` 结束并执行普通清理；进度为累计本端字节、packet 与时间，最多每 100 ms 发布一次，加上首次和末次 snapshot。Callback 不得重入测试，所有跨线程存储由调用方同步。`max_json_len` 限制接收的控制 JSON，server 的 `max_block_len` 限制协商数据 block；零值保持原有上限，UDP 仍为完整 datagram 保留 64 KiB 接收缓冲。
+
 ## 依赖和边界
 
 - 库本身不包含任何 POSIX 调用；socket、时钟、随机数全部来自 PAL。
@@ -72,3 +74,5 @@ server 在同一个封装 UDP socket 上顺序服务多条 SCTP association，�
 建立新的 passive association，前一条 association 的迟到 SACK/HEARTBEAT/SHUTDOWN 不会
 把下一条带偏。见 [E2E 测试 App](/apps/e2e#iperf) 与
 [AMOLED iperf](/apps/h2loader/boards/amoled/iperf)。
+
+触屏测试台 `projects/e2e/apps/iperf-server/app` 复用同一个 server，AMOLED launcher 提供 IPv4、IPv6 与双栈 AP 网络并将数据缓冲分配到 PSRAM。详见 [AMOLED iperf Server](/apps/h2loader/boards/amoled/iperf_server)。

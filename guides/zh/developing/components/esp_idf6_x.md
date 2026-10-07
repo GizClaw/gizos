@@ -354,6 +354,9 @@ Crypto 的 `random(NULL, 0)` 是成功 no-op；ESP adapter 在零长度时不调
 
 X25519 raw key agreement 对格式错误或低阶远端公钥的 PSA INVALID_ARGUMENT 转换为 PAL FORMAT；失败路径清零 shared-secret 输出，成功路径仍校验并拒绝全零 shared secret。
 
+`pal-ipv6` 的 IPv6、SLAAC 与地址槽位设置由 DevKit/AMOLED 的 canonical `sdkconfig.defaults` 声明。诊断日志由板级 H2Loader `sdkconfig.ipv6-client.defaults`/`sdkconfig.ipv6-fixture.defaults` registration variant 提供；fixture 的 24 sockets、12 active TCP、8 listeners 与 8192-byte TCP/IP stack 只属于该 fixture 的板级 memory variant，不扩大一般 board budget。Target 用既有 `layout_files` 的 `partition`、`project_support_files` 与 DevKit USB `support_files` 明确列举源文件，runner 仅复制这些声明的板级支持文件到隔离 project；工程目录不再拥有 SDK defaults，也不增加 config-profile registry。SDK 原有 per-interface loopback 与 SNI 默认保持开启。
+
+前置 Net 实现阶段的 DevKit qualification adapter 仅准备 Net 用例环境，不宣称 public Wi-Fi PAL 已实现 IPv6-only readiness、reconnect 或 saved-credential 生命周期。本 Wi-Fi 实现阶段已用公共 Wi-Fi provider 替换 adapter 的直接 SDK 初始化：provider 在 STA 关联时初始化 IPv6/SLAAC，DevKit entry 只调用公共 Wi-Fi PAL，并在有限预算内等待 preferred 地址可用；disconnect/reconnect cleanup 由 Wi-Fi provider 拥有。ESP Net 保留 scope、按地址族查询 DNS，并通过实际 netif index 执行接口绑定。硬件资格仍要求明确端口/UID、可达 IPv6 夹具和 Loader/P1、Settings、Stage、coredump 记录，不能由 package build 代替。
 
 ### Flash-safe I/O 阶段诊断
 
@@ -364,3 +367,7 @@ ON 时只对至少 100 ms 的操作输出 `H2_ESP_IO_PHASE` 数值记录。FS �
 `fs_wait_us`、`scratch_wait_us` 和 `shared_wait_us` 分别记录 FS mutex、scratch mutex 与共享 SafeCall mutex 的等待。`dispatch_us` 从 request 提交到 worker 开始 callback；`native_us` 是 callback 的 wall time，包含其内部stdio、pref store 与调度等待，并不是纯 flash 或 CPU 耗时。`wake_copy_us`从 callback 返回到 caller 收到完成信号，包含 context copy 和唤醒。`direct_calls` 区分 internal-stack 直接调用；它不经过共享 dispatcher。READ/WRITE 在保留原 4096-byte 分块与 scratch 持有范围的同时累加各块计数，`native_max_us` 保留最慢 callback。Pref 保留整个原 store 操作和原子写入步骤，不为计时拆分 transaction。Pref 数字从内部 I/O wrapper 开始，不包含其外层Preference provider mutex 等待；VFS 内部锁仍在 callback wall time 内。READ/WRITE 的 `wall_us` 从 scratch acquire 之前开始；其他 FS 操作从内部 `littlefs_run_safe` 开始，OPEN 之前的 path translation 与 file-wrapper calloc 不在其中。因此总 `wall_us` 不是完整 PAL Open 时间，还包括该计时范围内的初始化、普通拷贝与 wrapper 工作，不能把嵌套记录相加或据缺失的快记录推定操作未执行。
 
 这是定位工具；ON 的时钟和输出会影响调度，记录不是硬件资格结果。实际用例仍需保留完整 CASE、原门限、checked canonical 输出与真实 cleanup 证据。
+
+### Wi-Fi IPv6 生命周期
+
+STA id-specific observer 位于 ESP-NETIF 默认 connected handler 之后，在 TCP/IP 上初始化本次关联的 IPv6；测试/产品 entry 只调用公共 Wi-Fi PAL。事件 loop 拥有关联和 IP 状态，GOT_IP4/GOT_IP6 对 netif 与当前 peer 重新核对，周期地址事件补齐 preferred 地址过期/IPv4 失租。旧关联 IPv6 与 ND cache 在断开和新关联开始时清理；地址只从实际 preferred 列表选择，ULA 与其他非 link-local 单播都可完成就绪。公共 station status、system event 和 Runtime state 的 IPv4/IPv6 内容一致，IPv4 `ip_valid` 保持原含义。原生 board defaults 开启 IPv6 与 AUTOCONFIG；ESP32-P4 的 unsupported Wi-Fi 路径不因此获得 radio capability。

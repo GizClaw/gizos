@@ -53,6 +53,8 @@ extern "C" {
 uint64_t h2_iperf_now_us(const h2_iperf_config_t *config);
 uint64_t h2_iperf_now_ms(const h2_iperf_config_t *config);
 void h2_iperf_sleep_ms(const h2_iperf_config_t *config, uint32_t ms);
+bool h2_iperf_should_stop(const h2_iperf_config_t *config);
+uint32_t h2_iperf_io_slice(const h2_iperf_config_t *config, uint32_t ms);
 void h2_iperf_random_fill(
     const h2_iperf_config_t *config,
     uint32_t *state,
