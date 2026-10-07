@@ -54,6 +54,18 @@ class Rejection(unittest.TestCase):
             lambda value: value['validation']['host_execution']['source_sha256'].pop('MODULE.bazel'),
             lambda value: value['validation']['host_execution']['source_sha256'].pop(
                 'projects/e2e/libs/pal-ipv6-fixture/fixture_ipv6.py'),
+            lambda value: value['validation']['host_execution']['source_sha256'].pop(
+                'projects/e2e/apps/pal-ipv6/app/src/h2_pal_ipv6_local.c'),
+            lambda value: value['validation']['host_execution']['source_sha256'].pop(
+                'projects/e2e/apps/pal-ipv6/app/src/h2_pal_ipv6_local.h'),
+            lambda value: value['validation']['host_execution']['source_sha256'].pop(
+                'projects/e2e/apps/pal-ipv6/app/include/h2_pal_ipv6_e2e.h'),
+            lambda value: value['validation']['host_execution']['source_sha256'].update(
+                {'projects/e2e/apps/pal-ipv6/app/src/h2_pal_ipv6_local.c': 'f' * 64}),
+            lambda value: value['validation']['host_execution']['source_sha256'].update(
+                {'projects/e2e/apps/pal-ipv6/app/src/h2_pal_ipv6_local.h': 'f' * 64}),
+            lambda value: value['validation']['host_execution']['source_sha256'].update(
+                {'projects/e2e/apps/pal-ipv6/app/include/h2_pal_ipv6_e2e.h': 'f' * 64}),
             lambda value: value['validation']['host_execution']['complete_input_capture'].update(
                 all_before_after_identical=False),
             lambda value: value['validation']['host_execution']['complete_input_capture'].update(input_count=0),

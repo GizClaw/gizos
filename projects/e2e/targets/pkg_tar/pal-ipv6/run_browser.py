@@ -124,7 +124,8 @@ def run(args):
             os.dup2(writer, 4)
 
         events = queue.Queue()
-        process = subprocess.Popen([str(find_browser()), '--headless', '--no-sandbox',
+        platform_flags = ['--use-mock-keychain'] if sys.platform == 'darwin' else []
+        process = subprocess.Popen([str(find_browser()), '--headless', '--no-sandbox', *platform_flags,
                                     '--remote-debugging-pipe', '--autoplay-policy=no-user-gesture-required',
                                     '--user-data-dir=' + temp + '/profile', 'about:blank'],
                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,

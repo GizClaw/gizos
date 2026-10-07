@@ -58,6 +58,18 @@ int h2_ipv6_mobile_run(h2_runtime_config_t settings, const char *host,
   config.dns_server.port = dns_port;
   if (rc == H2_PAL_OK)
     rc = h2_pal_ipv6_e2e_run(&config, result);
-  h2_runtime_deinit(runtime);
+  if (result->retained_cleanup)
+    result->retained_runtime = runtime;
+  else
+    h2_runtime_deinit(runtime);
+  return rc;
+}
+
+int h2_ipv6_mobile_cleanup(h2_pal_ipv6_result_t *result) {
+  int rc = h2_pal_ipv6_e2e_cleanup(result);
+  if (rc == H2_PAL_OK && result->retained_runtime) {
+    h2_runtime_deinit(result->retained_runtime);
+    result->retained_runtime = NULL;
+  }
   return rc;
 }

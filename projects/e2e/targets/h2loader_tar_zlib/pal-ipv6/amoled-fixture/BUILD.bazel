@@ -94,9 +94,15 @@ h2loader_esp_idf_firmware(
         "main/main.c",
         "main/tls_server.c",
         "main/tls_server.h",
-        "sdkconfig.pal-ipv6.defaults",
     ],
     board = "amoled",
+    layout_files = {
+        "partition": "//boards/amoled/esp32s3/layouts/h2loader:partition.csv",
+        "project_support_files": [
+            "//boards/amoled/esp32s3/layouts/h2loader:sdkconfig.h2loader.defaults",
+            "//boards/amoled/esp32s3/layouts/h2loader:sdkconfig.ipv6-fixture.defaults",
+        ],
+    },
     graph = [":launcher"],
     project = "CMakeLists.txt",
     project_name = "h2_pal_ipv6_fixture",

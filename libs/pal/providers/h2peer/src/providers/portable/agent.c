@@ -120,18 +120,29 @@ static int agent_socket_recv(
     first = 1u;
   }
 #endif
-  int ret = 0;
-  if (agent->udp_sockets[first].fd >= 0) {
-    ret = udp_socket_recvfrom(&agent->udp_sockets[first], addr, buf, len,
-                             AGENT_POLL_TIMEOUT);
-  }
 #if CONFIG_IPV6
   unsigned other = first ^ 1u;
-  if (ret == 0 && agent->udp_sockets[other].fd >= 0) {
+  if (agent->udp_sockets[first].fd >= 0 &&
+      agent->udp_sockets[other].fd >= 0) {
+    /* Ready traffic never waits behind an empty other-family queue. */
+    int ret = udp_socket_recvfrom(&agent->udp_sockets[first], addr, buf, len, 0u);
+    if (ret != 0)
+      return ret;
     ret = udp_socket_recvfrom(&agent->udp_sockets[other], addr, buf, len, 0u);
+    if (ret != 0)
+      return ret;
+    /* With both queues empty, spend at most one receive budget. */
+    ret = udp_socket_recvfrom(&agent->udp_sockets[first], addr, buf, len,
+                             AGENT_POLL_TIMEOUT);
+    if (ret != 0)
+      return ret;
+    return udp_socket_recvfrom(&agent->udp_sockets[other], addr, buf, len, 0u);
   }
 #endif
-  return ret;
+  if (agent->udp_sockets[first].fd >= 0)
+    return udp_socket_recvfrom(&agent->udp_sockets[first], addr, buf, len,
+                               AGENT_POLL_TIMEOUT);
+  return 0;
 }
 
 static int agent_socket_recv_attempts(

@@ -1,0 +1,10 @@
+# Diagnostic console settings for the native Net IPv6 E2E fixture.
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_LOG_MAXIMUM_LEVEL_DEBUG=y
+CONFIG_LOG_COLORS=n
+
+# The dual-family fixture retains its listeners, protocol state and workers.
+CONFIG_LWIP_MAX_SOCKETS=24
+CONFIG_LWIP_MAX_ACTIVE_TCP=12
+CONFIG_LWIP_MAX_LISTENING_TCP=8
+CONFIG_LWIP_TCPIP_TASK_STACK_SIZE=8192

@@ -4,4 +4,5 @@ exports_files([
     "partition.csv",
     "sdkconfig.h2loader.defaults",
     "sdkconfig.iperf-server.defaults",
+    "sdkconfig.ipv6-fixture.defaults",
 ])
