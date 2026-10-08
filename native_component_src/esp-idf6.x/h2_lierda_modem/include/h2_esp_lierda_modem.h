@@ -37,8 +37,10 @@ typedef struct h2_esp_lierda_modem_config {
  * The ESP native SDK owns DTE/PPP tasks. IP callbacks do not call provider APIs.
  * Single-UART data mode excludes AT operations, including after lost IP or a
  * failed DATA/COMMAND transition. Successful data_close keeps module power and
- * command transport; close uses board power-off then quiesces handlers before
- * SDK resource destruction. Errors retain ownership for retry.
+ * command transport; close uses board power-off, common TCPIP PPP quiescence,
+ * then handler quiescence before SDK resource destruction. Only actual
+ * PPP_PHASE_DEAD confirms termination; DISCONNECT/status history does not.
+ * Errors retain ownership for retry.
  * The adapter registers a MODEM_DATA netif; default-route selection remains
  * with the product's PAL netif policy and ESP-NETIF route-priority behavior.
  * No private AT, CMUX, call, GNSS, OTA, SIM hotplug or low-power behavior exists.

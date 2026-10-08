@@ -29,9 +29,9 @@ Canonical board `sdkconfig.defaults` 必须启用 `CONFIG_LWIP_PPP_SUPPORT=y`、
 
 普通 AT 默认使用模组的 115200 波特率。配置中的 baud 必须已经与模组实际 UART 匹配；adapter 不发送 IPR，不自动改速，不启用 RTS/CTS 或 CMUX。NT26-KCN B 硬件手册 Rev2.3 §4.2.1 列出的普通 AT/data 可配值截至 460800，921600 单独列为固件升级默认；不能从其他产品旧源码的提速调用推断普通 921600 PPP 已获厂商保证。其他速率必须由 consumer 结合具体模组固件单独核验。
 
-每次拨号先更新 Generic DCE 内部 APN/PDP context，再配置 host PPP auth、进入 DATA 并等待当前 SDK netif 真实 IPv4。API 接入 `MODEM_DATA` netif registry，不手动抢占 Wi-Fi default；产品按 PAL netif policy 选择 route，SDK保留自身 route-priority 与销毁时重选行为，接口变化后 reconcile DNS。Callback 过滤所属 netif；关闭中和没有当前 SDK IPv4 的迟到 GOT_IP 不恢复 OPEN。Lost IP/PPP failure 保留非 CLOSED 状态，防止发送 AT 混入数据。Data close 分别保留 COMMAND 已确认与本轮停止通知，超时后重试不会丢弃迟到 DEAD；清空 SDK 旧 IP 成功后才报告 CLOSED。
+每次拨号先更新 Generic DCE 内部 APN/PDP context，再配置 host PPP auth、进入 DATA 并等待当前 SDK netif 真实 IPv4。API 接入 `MODEM_DATA` netif registry，不手动抢占 Wi-Fi default；产品按 PAL netif policy 选择 route，SDK保留自身 route-priority 与销毁时重选行为，接口变化后 reconcile DNS。Callback 过滤所属 netif；关闭中和没有当前 SDK IPv4 的迟到 GOT_IP 不恢复 OPEN。Lost IP/PPP failure 保留非 CLOSED 状态，防止发送 AT 混入数据。Data close 保留 COMMAND 已确认状态，每次通过公共 PPP quiescence helper 检查当前真实 DEAD，不使用历史停止通知作完成依据；清空 SDK 旧 IP 成功后才报告 CLOSED。
 
-整机 close 先调用 board power-off，再从普通 task 同步注销默认 event-loop handlers，随后销毁 DCE/netif/event group。注销失败时停止释放，保留 callback 引用和资源供重试；callback 内调用 close/destroy 不受支持。SDK C API 的固定 response 长度边界保守返回 TRUNCATED，不把静默截断前缀当作完整身份或状态。真实 UART、SIM、APN auth、运营商网络、GPIO电源与串口改速须由 consumer 实机验收；`lierda_ppp_test` 使用 SDK fixture 编译真实 adapter source，属于 host 状态与 teardown 回归。
+整机 close 先调用 board power-off，再通过公共 `h2_esp_platform_ppp_quiesce` 在 TCPIP context 请求停止并确认实际 `PPP_PHASE_DEAD`，之后从普通 task 同步注销默认 event-loop handlers，最后销毁 DCE/netif/event group。电源关闭、DISCONNECT、历史 DEAD event 或 SDK `PPP_STARTED` bit 均不作为释放依据；data close 在 COMMAND 已确认后也使用同一公共终止检查。PPP quiescence 或注销失败时停止释放，保留 DCE/netif、callback 引用和 event group 供重试；callback 内调用 close/destroy 不受支持。SDK C API 的固定 response 长度边界保守返回 TRUNCATED，不把静默截断前缀当作完整身份或状态。真实 UART、SIM、APN auth、运营商网络、GPIO电源与串口改速须由 consumer 实机验收；`lierda_ppp_test` 使用 SDK fixture 编译真实 adapter source，属于 host 状态与 teardown 回归。
 
 ```sh
 bazel test --config=macos_arm64 //libs/pal/providers/modem/lierda:lierda_modem_test //native_component_src/esp-idf6.x/h2_lierda_modem:lierda_ppp_test //native_component_src/esp-idf6.x/h2_lierda_modem:lierda_ppp_no_auth_test
