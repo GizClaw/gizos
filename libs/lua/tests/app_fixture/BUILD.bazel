@@ -37,3 +37,27 @@ filegroup(
     srcs = [":xyz"],
     output_group = "archive",
 )
+
+filegroup(
+    name = "abc_manifest",
+    srcs = [":abc"],
+    output_group = "manifest",
+)
+
+filegroup(
+    name = "abc_metadata",
+    srcs = [":abc"],
+    output_group = "metadata",
+)
+
+filegroup(
+    name = "xyz_manifest",
+    srcs = [":xyz"],
+    output_group = "manifest",
+)
+
+filegroup(
+    name = "xyz_metadata",
+    srcs = [":xyz"],
+    output_group = "metadata",
+)
