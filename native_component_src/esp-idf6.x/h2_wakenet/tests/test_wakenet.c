@@ -12,7 +12,7 @@ static struct model_iface_data model;
 static struct h2_pal_fs_file file;
 static srmodel_list_t registry;
 static int registry_live, fs_close_fail, model_fail, unsupported_rate;
-static int detect_count, clean_count, sdk_loads, allocations, alloc_fail_at;
+static int detect_count, create_count, destroy_count, sdk_loads, allocations, alloc_fail_at;
 static int misalign_blob;
 static void *shifted_storage, *shifted_view;
 static uint8_t fixture[128];
@@ -119,6 +119,7 @@ static model_iface_data_t *create_model(const void *name, det_mode_t mode) {
     assert(strcmp(name, "wn9_fixture") == 0 && mode == DET_MODE_90);
     if (model_fail)
         return NULL;
+    ++create_count;
     model.live = 1;
     model.inferred = 0;
     return &model;
@@ -135,10 +136,14 @@ static wakenet_state_t detect(model_iface_data_t *m, int16_t *samples) {
     return WAKENET_NO_DETECT;
 }
 static void clean(model_iface_data_t *m) {
-    assert(m == &model && model.inferred);
-    ++clean_count;
+    (void)m;
+    assert(0 && "the SDK clean path is unsafe and must never be called");
 }
-static void destroy_model(model_iface_data_t *m) { assert(m == &model); model.live = 0; }
+static void destroy_model(model_iface_data_t *m) {
+    assert(m == &model && model.live);
+    model.live = 0;
+    ++destroy_count;
+}
 static const esp_wn_iface_t iface = {
     .create = create_model, .get_samp_chunksize = chunks, .get_samp_rate = rate,
     .get_channel_num = channels, .detect = detect, .clean = clean, .destroy = destroy_model,
@@ -170,7 +175,8 @@ static void test_streaming_and_registry(void) {
     assert(h2_esp_wakenet_process(d, samples + 1u, 3u, &result) == H2_PAL_OK && result == 1);
     assert(h2_esp_wakenet_process(d, samples + 4u, 4u, &result) == H2_PAL_OK && result == 0);
     assert(h2_esp_wakenet_process(d, samples, 1u, &result) == H2_PAL_OK);
-    assert(h2_esp_wakenet_reset(d) == H2_PAL_OK && clean_count == 1);
+    int creates = create_count;
+    assert(h2_esp_wakenet_reset(d) == H2_PAL_OK && create_count == creates + 1);
     assert(h2_esp_wakenet_process(d, samples + 1u, 4u, &result) == H2_PAL_OK && result == 0);
     assert(h2_esp_wakenet_destroy(&d) == H2_PAL_OK && d == NULL && !registry_live);
     assert(h2_esp_wakenet_destroy(&d) == H2_PAL_OK);
@@ -235,18 +241,31 @@ static void test_reset_before_first_inference(void) {
     fixture_init();
     h2_esp_wakenet_t *d = make_detector();
     assert(h2_esp_wakenet_open(d) == H2_PAL_OK);
-    int cleans = clean_count, detects = detect_count, result = 0;
+    int creates = create_count, detects = detect_count, result = 0;
     const int16_t samples[] = {7, 0, 0, 0};
     assert(h2_esp_wakenet_reset(d) == H2_PAL_OK);
     assert(h2_esp_wakenet_process(d, samples, 1u, &result) == H2_PAL_OK);
-    assert(h2_esp_wakenet_reset(d) == H2_PAL_OK && clean_count == cleans);
+    assert(h2_esp_wakenet_reset(d) == H2_PAL_OK && create_count == creates);
     assert(h2_esp_wakenet_process(d, samples + 1u, 3u, &result) == H2_PAL_OK);
     assert(detect_count == detects);
     assert(h2_esp_wakenet_process(d, samples + 3u, 1u, &result) == H2_PAL_OK);
     assert(detect_count == detects + 1 && result == 0);
-    assert(h2_esp_wakenet_reset(d) == H2_PAL_OK && clean_count == cleans + 1);
-    assert(h2_esp_wakenet_reset(d) == H2_PAL_OK && clean_count == cleans + 2);
+    assert(h2_esp_wakenet_reset(d) == H2_PAL_OK && create_count == creates + 1);
+    assert(h2_esp_wakenet_reset(d) == H2_PAL_OK && create_count == creates + 1);
     assert(h2_esp_wakenet_destroy(&d) == H2_PAL_OK);
+}
+static void test_reset_recreation_failure(void) {
+    fixture_init();
+    h2_esp_wakenet_t *d = make_detector();
+    assert(h2_esp_wakenet_open(d) == H2_PAL_OK);
+    const int16_t samples[] = {0, 0, 0, 0};
+    int result = 0;
+    assert(h2_esp_wakenet_process(d, samples, 4u, &result) == H2_PAL_OK);
+    model_fail = 1;
+    assert(h2_esp_wakenet_reset(d) == H2_PAL_ERR_NO_MEMORY && !model.live);
+    assert(h2_esp_wakenet_process(d, samples, 4u, &result) == H2_PAL_ERR_INVALID_STATE);
+    assert(h2_esp_wakenet_destroy(&d) == H2_PAL_OK && !registry_live);
+    model_fail = 0;
 }
 int main(void) {
     test_streaming_and_registry();
@@ -254,6 +273,8 @@ int main(void) {
     test_malformed_index_never_reaches_sdk();
     test_misaligned_allocator();
     test_reset_before_first_inference();
-    assert(!registry_live && !file.live && !model.live && detect_count == 4);
+    test_reset_recreation_failure();
+    assert(!registry_live && !file.live && !model.live && detect_count == 5);
+    assert(create_count == destroy_count);
     return 0;
 }
