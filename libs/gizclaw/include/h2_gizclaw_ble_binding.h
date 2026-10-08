@@ -115,7 +115,7 @@ typedef struct h2_gizclaw_ble_binding_snapshot {
   h2_pal_result_t last_error; /**< BLE operation/event or key/format failure. */
 } h2_gizclaw_ble_binding_snapshot_t;
 
-/** Format https://<origin>/api-keys/<secret>[?icon=...][&name=...].
+/** Format an HTTPS API-key URL with optional icon/name query parameters.
  * server_origin includes https://; default port spelling is preserved.
  * Required secret has gizclaw_sk_v1_ prefix, 15..95 URL-safe ASCII bytes.
  * Other text follows config's limits. Inputs and output must not overlap.
