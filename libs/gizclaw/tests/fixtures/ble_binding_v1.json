@@ -1,0 +1,42 @@
+{
+  "protocol_version": 1,
+  "service_uuid": "14edd4b0-91a6-4b0d-8c2f-b12be4f83b36",
+  "uuid_att_hex": {
+    "service": "363bf8e42bb12f8c0d4ba691b0d4ed14",
+    "info": "363bf8e42bb12f8c0d4ba691b1d4ed14",
+    "request": "363bf8e42bb12f8c0d4ba691b2d4ed14",
+    "credential": "363bf8e42bb12f8c0d4ba691b3d4ed14"
+  },
+  "url_cases": [
+    {
+      "origin": "https://ap.gizclaw.com",
+      "icon": "h106_tiga",
+      "name": "客厅",
+      "secret": "gizclaw_sk_v1_test",
+      "url": "https://ap.gizclaw.com/api-keys/gizclaw_sk_v1_test?icon=h106_tiga&name=%E5%AE%A2%E5%8E%85"
+    },
+    {
+      "origin": "https://dev.gizclaw.com:8443",
+      "icon": "",
+      "name": "A & B/?#",
+      "secret": "gizclaw_sk_v1_a-_9",
+      "url": "https://dev.gizclaw.com:8443/api-keys/gizclaw_sk_v1_a-_9?name=A%20%26%20B%2F%3F%23"
+    },
+    {
+      "origin": "https://192.0.2.1",
+      "icon": "",
+      "name": "",
+      "secret": "gizclaw_sk_v1_test",
+      "url": "https://192.0.2.1/api-keys/gizclaw_sk_v1_test"
+    }
+  ],
+  "transfer": {
+    "revision": "2",
+    "mtu": 23,
+    "url": "https://ap.gizclaw.com/api-keys/gizclaw_sk_v1_test?icon=h106_tiga&name=%E5%AE%A2%E5%8E%85",
+    "info_hex": "0101020000000000000059000800",
+    "request_hex": "0102000000000000000000e700",
+    "first_response_hex": "0102000000000000000000590068747470733a2f2f",
+    "empty_response_hex": "01020000000000000059005900"
+  }
+}
