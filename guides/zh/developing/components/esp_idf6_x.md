@@ -165,7 +165,7 @@ AMOLED Board 在 `h2_esp_board_runtime_config()` 之前，通过可选的 `h2_es
 
 `h2_wakenet` 是 ESP-SR 2.4.7 的 SDK adapter。它借用 caller 的 FS 与 allocator，从安装包的数据目录读取模型到 allocator-owned memory，保存原始分配基址并将 model view 对齐到 16 bytes；校验有界 little-endian model index 与同样对齐的 payload offsets 后调用 `srmodel_load()`。它不要求额外的 `model` flash partition，也不负责烧录、录音、Task 或网络。ESP-SR model registry 是全局资源，一个模型 owner 的 open/process/reset/close/destroy 必须串行，已被占用时 open 明确失败。Close 先关闭仍持有的文件；失败保留全部资源供重试，destroy 成功才清除 caller handle。SDK type 不进入 public header。
 
-Caller 把已经拥有的 16 kHz mono S16LE microphone stream 交给 `h2_esp_wakenet_process()`。Adapter 按模型的实际 chunk size 聚合输入，只把 `WAKENET_DETECTED` 投影为唤醒；channel verification 不算唤醒。暂停输入后可 reset 清除部分 PCM 和 neural history，销毁前先停止该 stream 的 producer。产品自己决定唤醒后是否启动对话，以及挂断、音乐与网络恢复的行为。
+Caller 把已经拥有的 16 kHz mono S16LE microphone stream 交给 `h2_esp_wakenet_process()`。Adapter 按模型的实际 chunk size 聚合输入，只把 `WAKENET_DETECTED` 投影为唤醒；channel verification 不算唤醒。暂停输入后可 reset 清除部分 PCM 和 neural history；在首次完整 chunk 推理前只清理 adapter 的部分 PCM，避免 SDK `clean()` 访问尚未创建的 convolution queues。销毁前先停止该 stream 的 producer。产品自己决定唤醒后是否启动对话，以及挂断、音乐与网络恢复的行为。
 
 `//tools/esp_sr_model:nihaoxiaozhi` 从 `MODULE.bazel` 固定 revision/SHA-256 的上游模型文件生成单模型 binary，使用明确的小端索引及 16-byte data alignment。Weights 受上游 [ESP-SR License](https://github.com/espressif/esp-sr/blob/7ff63a7da40e15e502681be48c4d0e78475544a3/LICENSE) 约束，没有 vendor 到本仓库。该 artifact 对应 `wn9_nihaoxiaozhi_tts` / “你好小智”；产品把它放到自己的 package data path，不能将仅修改显示名字当成新模型。自训 TFLite 模型需要另外的推理 backend。
 

@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-struct model_iface_data { int live; };
+struct model_iface_data { int live, inferred; };
 struct h2_pal_fs_file { int live; };
 static struct model_iface_data model;
 static struct h2_pal_fs_file file;
@@ -120,6 +120,7 @@ static model_iface_data_t *create_model(const void *name, det_mode_t mode) {
     if (model_fail)
         return NULL;
     model.live = 1;
+    model.inferred = 0;
     return &model;
 }
 static int chunks(model_iface_data_t *m) { assert(m == &model); return 4; }
@@ -127,12 +128,16 @@ static int rate(model_iface_data_t *m) { assert(m == &model); return unsupported
 static int channels(model_iface_data_t *m) { assert(m == &model); return 1; }
 static wakenet_state_t detect(model_iface_data_t *m, int16_t *samples) {
     assert(m == &model && model.live);
+    model.inferred = 1;
     ++detect_count;
     if (samples[0] == 7) return WAKENET_DETECTED;
     if (samples[0] == 3) return WAKENET_CHANNEL_VERIFIED;
     return WAKENET_NO_DETECT;
 }
-static void clean(model_iface_data_t *m) { assert(m == &model); ++clean_count; }
+static void clean(model_iface_data_t *m) {
+    assert(m == &model && model.inferred);
+    ++clean_count;
+}
 static void destroy_model(model_iface_data_t *m) { assert(m == &model); model.live = 0; }
 static const esp_wn_iface_t iface = {
     .create = create_model, .get_samp_chunksize = chunks, .get_samp_rate = rate,
@@ -226,11 +231,29 @@ static void test_misaligned_allocator(void) {
     assert(h2_esp_wakenet_destroy(&d) == H2_PAL_OK && shifted_view == NULL);
     misalign_blob = 0;
 }
+static void test_reset_before_first_inference(void) {
+    fixture_init();
+    h2_esp_wakenet_t *d = make_detector();
+    assert(h2_esp_wakenet_open(d) == H2_PAL_OK);
+    int cleans = clean_count, detects = detect_count, result = 0;
+    const int16_t samples[] = {7, 0, 0, 0};
+    assert(h2_esp_wakenet_reset(d) == H2_PAL_OK);
+    assert(h2_esp_wakenet_process(d, samples, 1u, &result) == H2_PAL_OK);
+    assert(h2_esp_wakenet_reset(d) == H2_PAL_OK && clean_count == cleans);
+    assert(h2_esp_wakenet_process(d, samples + 1u, 3u, &result) == H2_PAL_OK);
+    assert(detect_count == detects);
+    assert(h2_esp_wakenet_process(d, samples + 3u, 1u, &result) == H2_PAL_OK);
+    assert(detect_count == detects + 1 && result == 0);
+    assert(h2_esp_wakenet_reset(d) == H2_PAL_OK && clean_count == cleans + 1);
+    assert(h2_esp_wakenet_reset(d) == H2_PAL_OK && clean_count == cleans + 2);
+    assert(h2_esp_wakenet_destroy(&d) == H2_PAL_OK);
+}
 int main(void) {
     test_streaming_and_registry();
     test_failures_and_close_retry();
     test_malformed_index_never_reaches_sdk();
     test_misaligned_allocator();
-    assert(!registry_live && !file.live && !model.live && detect_count == 3);
+    test_reset_before_first_inference();
+    assert(!registry_live && !file.live && !model.live && detect_count == 4);
     return 0;
 }

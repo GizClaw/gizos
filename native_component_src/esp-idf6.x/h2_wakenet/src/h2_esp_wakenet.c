@@ -22,6 +22,7 @@ struct h2_esp_wakenet {
     size_t chunk_samples;
     size_t filled;
     bool opened;
+    bool inferred;
 };
 
 static uint32_t read_u32(const uint8_t *data) {
@@ -185,6 +186,7 @@ h2_pal_result_t h2_esp_wakenet_process(h2_esp_wakenet_t *d, const int16_t *pcm,
         samples -= count;
         if (d->filled == d->chunk_samples) {
             wakenet_state_t result = d->iface->detect(d->model, d->chunk);
+            d->inferred = true;
             if (result == WAKENET_DETECTED)
                 *out_detected = 1;
             d->filled = 0u;
@@ -198,7 +200,11 @@ h2_pal_result_t h2_esp_wakenet_reset(h2_esp_wakenet_t *d) {
         return H2_PAL_ERR_INVALID_ARG;
     if (!d->opened)
         return H2_PAL_ERR_INVALID_STATE;
-    d->iface->clean(d->model);
+    /* WakeNet9 creates convolution queues lazily in detect(). Its clean()
+     * dereferences those queues even on a freshly created model. No neural
+     * history exists until inference, so only discard partial PCM then. */
+    if (d->inferred)
+        d->iface->clean(d->model);
     d->filled = 0u;
     return H2_PAL_OK;
 }
@@ -225,6 +231,7 @@ h2_pal_result_t h2_esp_wakenet_close(h2_esp_wakenet_t *d) {
     d->blob = NULL;
     d->blob_storage = NULL;
     d->filled = 0u;
+    d->inferred = false;
     return H2_PAL_OK;
 }
 
