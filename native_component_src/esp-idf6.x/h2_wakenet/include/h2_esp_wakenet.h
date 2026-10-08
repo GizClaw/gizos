@@ -34,7 +34,10 @@ h2_pal_result_t h2_esp_wakenet_open(h2_esp_wakenet_t *detector);
 h2_pal_result_t h2_esp_wakenet_process(h2_esp_wakenet_t *detector,
                                       const int16_t *pcm, size_t samples,
                                       int *out_detected);
-/** Forget partial PCM and neural history; unopened objects return INVALID_STATE. */
+/** Forget partial PCM and neural history; unopened objects return INVALID_STATE.
+ * After inference, recreates the SDK instance instead of its unsafe clean().
+ * On recreation failure, retains partial resources for close/destroy and
+ * leaves the detector unopened; this can return NO_MEMORY or UNSUPPORTED. */
 h2_pal_result_t h2_esp_wakenet_reset(h2_esp_wakenet_t *detector);
 /** Idempotent. Failed FS close retains the handle for retry. Never races process. */
 h2_pal_result_t h2_esp_wakenet_close(h2_esp_wakenet_t *detector);

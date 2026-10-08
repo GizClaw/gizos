@@ -200,12 +200,23 @@ h2_pal_result_t h2_esp_wakenet_reset(h2_esp_wakenet_t *d) {
         return H2_PAL_ERR_INVALID_ARG;
     if (!d->opened)
         return H2_PAL_ERR_INVALID_STATE;
-    /* WakeNet9 creates convolution queues lazily in detect(). Its clean()
-     * dereferences those queues even on a freshly created model. No neural
-     * history exists until inference, so only discard partial PCM then. */
-    if (d->inferred)
-        d->iface->clean(d->model);
     d->filled = 0u;
+    /* Some supplied WakeNet9 models also crash in clean() after inference.
+     * Recreate the SDK instance to reset history without that unsafe path. */
+    if (d->inferred) {
+        d->opened = false;
+        d->iface->destroy(d->model);
+        d->model = NULL;
+        d->inferred = false;
+        d->model = d->iface->create(d->config.model_name, DET_MODE_90);
+        if (d->model == NULL)
+            return H2_PAL_ERR_NO_MEMORY;
+        if (d->iface->get_samp_chunksize(d->model) != (int)d->chunk_samples ||
+            d->iface->get_samp_rate(d->model) != 16000 ||
+            d->iface->get_channel_num(d->model) != 1)
+            return H2_PAL_ERR_UNSUPPORTED;
+        d->opened = true;
+    }
     return H2_PAL_OK;
 }
 
