@@ -159,6 +159,10 @@ void h2_quectel_handle_urc_locked(h2_quectel_modem_t *modem, const char *line) {
     if (modem == NULL || line == NULL || line[0] == '\0') {
         return;
     }
+    if (h2_quectel_is_ota_urc(line)) {
+        h2_quectel_ota_urc(modem, line);
+        return;
+    }
 
     if (strcmp(line, "+QIND: SMS DONE") == 0 ||
         strcmp(line, "+QIND: PB DONE") == 0 || strcmp(line, "Call Ready") == 0) {
@@ -385,6 +389,7 @@ void h2_quectel_cpin_response_locked(h2_quectel_modem_t *modem, const char *line
 }
 
 void h2_quectel_reset_state(h2_quectel_modem_t *modem) {
+    if (modem->ota_hold && modem->ota_end_seen) { modem->ota_ready_seen = 1u; }
     modem->raw_cpin_uncertain = 0u;
     modem->call_generation++;
     modem->dsci_voice_seen = 0u;
@@ -396,6 +401,8 @@ void h2_quectel_reset_state(h2_quectel_modem_t *modem) {
     modem->packet_seen = 0u;
     modem->signal_seen = 0u;
     modem->prepared = 0u;
+    modem->model_checked = 0u;
+    modem->family = H2_QUECTEL_MODEM_FAMILY_UNKNOWN;
     modem->power_configured = 0u;
     modem->cell_locate_token_sent = 0u;
     modem->gnss_hold = 0u;

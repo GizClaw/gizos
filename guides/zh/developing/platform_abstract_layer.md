@@ -336,7 +336,15 @@ Single-button periph payload 同时声明输入交付模式。`POLL_STATE` 表�
 
 `h2_pal_modem` 通过 `H2_PAL_MODEM_CAPABILITY_CALL_VOLUME` 声明通话扬声器音量能力，`h2_pal_modem_set_call_volume()` / `h2_pal_modem_get_call_volume()` 统一使用 `0..100` percent，模块原生档位由 provider 映射。Quectel 使用 `AT+CLVL`，每次 open 后首次使用时探测并缓存范围；SIMCom 暂不实现，未提供该能力的 provider 返回 `H2_PAL_ERR_UNSUPPORTED`。该接口不控制麦克风、铃声、音频路由或功放，也不要求已有通话，可在拨号前设置。
 
-两个调用都是 task context 下的阻塞操作，与其它 AT 操作串行，应由处理拨号、接听和挂断的 modem task 调用，不能放在 UI/main loop 或 ISR 中。支持 LOW_POWER 的 Quectel 实例要求 modem 已 open，并在命令前完成唤醒准备；音量操作不改变通话持有的唤醒状态。音量是模块的易失状态，不隐式跨 close/open 保存或恢复，调用方应在需要时重新设置。
+两个调用都是 task context 下的阻塞操作，与其它 AT 操作串行，应由处理拨号、接听和挂断的 modem task 调用，不能放在 UI/main loop 或 ISR 中。支持 LOW_POWER 的 Quectel 实例要求 modem 已 open，并在命令前完成唤醒准备；音量操作不改变通话持有的唤醒状态。Provider 不隐式跨 close/open 保存或恢复音量，调用方应在需要时重新设置；模块可能自行保存设置，例如 EC800M 的 CLVL，PAL 不承诺模块设置易失。
+
+### Modem 紧急号码和固件升级
+
+`h2_pal_modem_get_emergency_numbers()` 与 `H2_PAL_MODEM_CAPABILITY_EMERGENCY_NUMBERS` 提供只读号码发现，结果保存字符串、SIM 适用范围、来源和可选类别；未知字段保持 UNKNOWN，不能用手册示例填补。调用要求 modem 已 open，但不以 SIM READY 或网络注册为门槛。列表必须完整，截断、容量不足或格式错误均失败并清空输出；临时电话本选择在成功前恢复。号码不由 provider 跨调用缓存，应用自己的缓存必须随 SIM、模块重启及相关网络变化失效。该查询不拨号，也不承诺网络可以接通。
+
+`h2_pal_modem_ota_start()`／`h2_pal_modem_ota_get_status()` 与 `H2_PAL_MODEM_CAPABILITY_OTA` 提供模组自身固件的 URL 升级。请求包含一个 URL、目标版本及可选源版本约束；当前版本由 `get_identity().revision` 读取。版本是厂商标识，按完整字符串比较，由应用选择升级包及升级时机。OK 只表示请求被接受；Quectel 后端在完成通知、重启及实际目标版本确认后报告 SUCCEEDED。超时可能保留 UNKNOWN；升级期间禁止再次启动、普通 AT 操作、关闭和销毁，保留实例、供电及 URC 接收，不自动重试或断电。状态仅保留在当前 provider 实例，跨主控重启的意图及恢复策略由应用负责。所有阻塞命令及状态确认都在 modem task 中执行，不能进入 ISR、通知回调或 UI loop。
+
+未实现的方法返回 UNSUPPORTED。Quectel 的 EC25／EC800M 查询及升级协议、MiniFOTA 单 URL 和内部 PDP 的接入条件见 [Drivers](./drivers.md#model-families)；该 capability 不代表任意型号／固件／网络都能完成操作。
 
 ### Touch
 

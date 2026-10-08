@@ -53,6 +53,7 @@ static h2_pal_result_t h2_quectel_modem_prepare_impl(h2_quectel_modem_t *modem) 
     if (modem == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    if (modem->ota_hold) { return H2_PAL_ERR_BUSY; }
     if (modem->prepared != 0u) {
         return H2_PAL_OK;
     }
@@ -213,9 +214,7 @@ static h2_pal_result_t h2_quectel_modem_get_identity_impl(
     if (h2_quectel_at_exchange(modem, "AT+CGMM", &response, 0) == H2_PAL_OK && response.count > 0u) {
         h2_quectel_copy_token(out_identity->model, sizeof(out_identity->model), response.lines[0]);
     }
-    if (h2_quectel_at_exchange(modem, "AT+CGMR", &response, 0) == H2_PAL_OK && response.count > 0u) {
-        h2_quectel_copy_token(out_identity->revision, sizeof(out_identity->revision), response.lines[0]);
-    }
+    (void)h2_quectel_read_revision(modem, 0u, out_identity->revision, sizeof(out_identity->revision));
     if (h2_quectel_at_exchange(modem, "AT+CGSN", &response, 0) == H2_PAL_OK && response.count > 0u) {
         h2_quectel_copy_token(out_identity->imei, sizeof(out_identity->imei), response.lines[0]);
     }
@@ -279,20 +278,33 @@ static h2_pal_result_t h2_quectel_modem_get_signal_impl(
     out_signal->rat = H2_PAL_MODEM_RAT_LTE;
     const uint32_t reset_generation = modem->reset_generation;
     const uint32_t sim_generation = modem->sim_generation;
-    rc = h2_quectel_at_exchange(modem, "AT+QCSQ", &response, 0);
+    const h2_pal_result_t model_result = h2_quectel_resolve_model(modem);
+    const int ec800m = modem->family == H2_QUECTEL_MODEM_FAMILY_EC800M;
+    rc = model_result == H2_PAL_OK
+        ? h2_quectel_at_exchange(modem, ec800m ? "AT+QENG=\"servingcell\"" : "AT+QCSQ", &response, 0)
+        : model_result;
     if (reset_generation != modem->reset_generation || sim_generation != modem->sim_generation) {
         /* Keep the successful CSQ result, but do not publish across invalidation. */
         return H2_PAL_OK;
     }
     if (rc == H2_PAL_OK) {
-        line = h2_quectel_response_find(&response, "+QCSQ:");
-        char mode[16];
-        int rssi, rsrp, sinr, rsrq;
-        if (line != NULL &&
-            sscanf(line, "+QCSQ: \"%15[^\"]\",%d,%d,%d,%d", mode, &rssi, &rsrp, &sinr, &rsrq) == 5 &&
-            strcmp(mode, "LTE") == 0 && rsrp >= -156 && rsrp <= -31) {
-            out_signal->rsrp_dbm = rsrp;
-            out_signal->rsrp_valid = 1u;
+        if (ec800m) {
+            int32_t rsrp;
+            line = h2_quectel_response_find(&response, "+QENG:");
+            if (!response.truncated && h2_quectel_ec800m_parse_rsrp(line, &rsrp)) {
+                out_signal->rsrp_dbm = rsrp;
+                out_signal->rsrp_valid = 1u;
+            }
+        } else {
+            line = h2_quectel_response_find(&response, "+QCSQ:");
+            char mode[16];
+            int rssi, rsrp, sinr, rsrq;
+            if (!response.truncated && line != NULL &&
+                sscanf(line, "+QCSQ: \"%15[^\"]\",%d,%d,%d,%d", mode, &rssi, &rsrp, &sinr, &rsrq) == 5 &&
+                strcmp(mode, "LTE") == 0 && rsrp >= -156 && rsrp <= -31) {
+                out_signal->rsrp_dbm = rsrp;
+                out_signal->rsrp_valid = 1u;
+            }
         }
     }
     h2_quectel_post_system_event(
@@ -437,7 +449,7 @@ void h2_quectel_sim_recover(void *user) {
     h2_quectel_modem_t *modem = user;
     if (modem == NULL) { return; }
     if (h2_quectel_state_lock(modem) != H2_PAL_OK) { return; }
-    if (modem->transport_closed || !modem->opened) {
+    if (modem->transport_closed || !modem->opened || modem->ota_hold) {
         h2_quectel_state_unlock(modem);
         return;
     }
@@ -458,7 +470,7 @@ void h2_quectel_sim_recover(void *user) {
         (void)h2_pal_mutex_unlock(modem->config.sync_api, modem->operation_lock);
     }
     if (rc != H2_PAL_OK) { return; }
-    if (modem->transport_closed || !modem->opened ||
+    if (modem->transport_closed || !modem->opened || modem->ota_hold ||
         (modem->sim_poll_remaining == 0u && modem->sim_refresh_pending == 0u &&
          modem->sim_query_pending == 0u)) {
         (void)h2_quectel_operation_end(modem, H2_PAL_OK);

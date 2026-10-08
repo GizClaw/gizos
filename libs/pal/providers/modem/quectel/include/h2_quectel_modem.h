@@ -15,6 +15,10 @@ extern "C" {
 #endif
 
 #define H2_QUECTEL_LINE_MAX 192u
+/* AT responses can contain 20 maximum-length ECC numbers on one line. URC
+ * queues and receive taps retain their independent 192-byte line limit. */
+#define H2_QUECTEL_AT_LINE_MAX 768u
+#define H2_QUECTEL_COMMAND_MAX 288u
 #define H2_QUECTEL_RESPONSE_MAX 4u
 /* QuecLocator accepts at most 127 bytes of token. */
 #define H2_QUECTEL_CELL_LOCATE_TOKEN_MAX 127u
@@ -25,6 +29,7 @@ typedef struct h2_quectel_response {
     size_t count;
     int connected;
     int truncated;
+    int ok; /* A received terminal OK, distinct from a transport success. */
 } h2_quectel_response_t;
 
 typedef struct h2_quectel_modem h2_quectel_modem_t;
@@ -58,7 +63,15 @@ typedef h2_pal_result_t (*h2_quectel_modem_command_fn)(
 typedef enum h2_quectel_modem_profile {
     H2_QUECTEL_MODEM_PROFILE_UNSPECIFIED = 0,
     H2_QUECTEL_MODEM_PROFILE_EC25_UART = 1,
+    H2_QUECTEL_MODEM_PROFILE_EC800M_UART = 2,
 } h2_quectel_modem_profile_t;
+
+/** Library-owned family resolved from CGMM, independently of UART wiring. */
+typedef enum h2_quectel_modem_family {
+    H2_QUECTEL_MODEM_FAMILY_UNKNOWN = 0,
+    H2_QUECTEL_MODEM_FAMILY_EC25 = 1,
+    H2_QUECTEL_MODEM_FAMILY_EC800M = 2,
+} h2_quectel_modem_family_t;
 
 /** @brief Board sleep gate, called under provider lock in task context.
  * false: drive DTR low and wait until UART/CMUX command transport is usable.
@@ -138,12 +151,14 @@ typedef struct h2_quectel_modem_config {
     /* Timeout for one cell locate round trip, 0 selects
      * H2_QUECTEL_CELL_LOCATE_TIMEOUT_MS. */
     uint32_t cell_locate_timeout_ms;
-    /** Explicit module family; never inferred from generic capabilities. */
+    /** UART integration profile. EC25_UART retains compatibility with existing
+     * EC800M boards; CGMM selects the protocol family. EC800M_UART additionally
+     * requires the detected model to be EC800M/EC800M-*. */
     h2_quectel_modem_profile_t profile;
     /** Required with sync_api and independent command channel for low power. */
     h2_quectel_modem_sleep_gate_fn sleep_gate;
-    /** Optional hot-plug request. Requires EC25 UART profile (EC25/EC800M
-     * families), sync_api, command and invalidate_data; sleep_gate is optional.
+    /** Optional hot-plug request. Requires an EC25/EC800M UART profile,
+     * sync_api, command and invalidate_data; sleep_gate is optional.
      * SIM_DET must be wired at sim_insert_level (0 or 1). Changed QSIMDET uses
      * restart_module once, then replays prepare and verifies the target value.
      * Failed readback returns INVALID_STATE without another write/restart.
@@ -168,7 +183,7 @@ struct h2_quectel_modem {
     /* Raw command text is separate from parsed responses. AT exchanges reuse
      * it under operation_lock (external serialization without sync_api).
      * Transport/event callbacks must not reenter AT operations. */
-    char command_response[H2_QUECTEL_LINE_MAX * H2_QUECTEL_RESPONSE_MAX];
+    char command_response[H2_QUECTEL_AT_LINE_MAX * H2_QUECTEL_RESPONSE_MAX];
     h2_pal_modem_status_t observed_status;
     h2_pal_modem_signal_t observed_signal;
     uint8_t registration_seen;
@@ -188,6 +203,11 @@ struct h2_quectel_modem {
     uint8_t call_hold;
     uint8_t data_hold;
     uint8_t model_checked;
+    h2_quectel_modem_family_t family;
+    /* EC800M phonebook discovery restores this selection before success.
+     * A failed restore is retried before another query or close. */
+    char phonebook_restore_storage[16];
+    uint8_t phonebook_restore_pending;
     uint8_t sim_restart_required;
     uint8_t sim_restart_attempted;
     uint8_t preparing;
@@ -218,6 +238,14 @@ struct h2_quectel_modem {
     /* Optional DSCI configuration is volatile; ERROR is latched per instance. */
     uint8_t dsci_unsupported;
     uint8_t dsci_voice_seen;
+    h2_pal_modem_ota_status_t ota_status;
+    uint8_t ota_hold; /* Includes an uncertain start and post-upgrade verification. */
+    uint8_t ota_command_allowed; /* Owned by operation_lock; only start/verification. */
+    uint8_t ota_activity_seen;
+    uint8_t ota_end_seen;
+    uint8_t ota_ready_seen;
+    uint8_t ota_mini;
+    uint8_t ota_flash_started;
     /* Per incoming occurrence: polling stops after voice DSCI or answer/end.
      * Without task/queue APIs there is no autonomous watchdog. Busy operations
      * skip a tick; failed CLCC is unknown and never synthesizes an end. */
@@ -251,7 +279,9 @@ h2_pal_result_t h2_quectel_modem_deinit(h2_quectel_modem_t *modem);
  * @param modem Provider instance; NULL returns INVALID_ARG.
  * The caller holds the operation lock and has stopped all RX producers.
  * Keeps the provider worker alive, ignoring late notifications until prepare.
- * @return OK on reset, or the state-lock error. No callbacks may reenter here.
+ * @return BUSY during OTA (including an uncertain start), OK on reset, or the
+ * state-lock error. Keep the instance/URC route while rebinding a port after an
+ * OTA-induced module reboot. No callbacks may reenter here.
  */
 h2_pal_result_t h2_quectel_modem_transport_closed(h2_quectel_modem_t *modem);
 
