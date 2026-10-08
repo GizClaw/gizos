@@ -1,12 +1,16 @@
 load("@rules_cc//cc:defs.bzl", "cc_test")
-load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
 
 package(default_visibility = ["//visibility:public"])
 
 firmware_native_component(
     name = "h2_lierda_modem",
-    srcs = ["src/h2_esp_lierda_modem.c"],
+    srcs = [
+        "src/h2_esp_lierda_command.cpp",
+        "src/h2_esp_lierda_command.h",
+        "src/h2_esp_lierda_modem.c",
+    ],
     hdrs = ["include/h2_esp_lierda_modem.h"],
     data = ["CMakeLists.txt", "idf_component.yml"],
     tags = ["manual"],
@@ -18,29 +22,36 @@ firmware_native_component(
 
 _SDK_TEST_SOURCES = [
         "src/h2_esp_lierda_modem.c",
+        "src/h2_esp_lierda_command.cpp",
+        "src/h2_esp_lierda_command.h",
         "include/h2_esp_lierda_modem.h",
         "tests/sdk/driver/gpio.h",
         "tests/sdk/driver/uart.h",
+        "tests/sdk/cxx_include/esp_modem_api.hpp",
         "tests/sdk/esp_event.h",
+        "tests/sdk/esp_log.h",
         "tests/sdk/esp_modem_api.h",
         "tests/sdk/esp_modem_c_api_types.h",
         "tests/sdk/esp_modem_config.h",
         "tests/sdk/esp_netif.h",
         "tests/sdk/esp_netif_defaults.h",
         "tests/sdk/esp_netif_ppp.h",
+        "tests/sdk/esp_private/c_api_wrapper.hpp",
         "tests/sdk/freertos/FreeRTOS.h",
         "tests/sdk/freertos/event_groups.h",
         "tests/sdk/h2_esp_platform_core.h",
         "tests/sdk/lierda_test_sdk.h",
         "tests/sdk/sdkconfig.h",
         "tests/test_lierda_ppp.c",
+        "tests/test_lierda_sdk.cpp",
 ]
 
 cc_test(
     name = "lierda_ppp_test",
     srcs = _SDK_TEST_SOURCES,
-    includes = ["include", "tests/sdk"],
+    includes = ["include", "src", "tests/sdk"],
     conlyopts = H2_C11_OPTS,
+    cxxopts = H2_CXX17_OPTS,
     copts = H2_WARNING_COPTS,
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
@@ -55,8 +66,9 @@ cc_test(
     name = "lierda_ppp_no_auth_test",
     srcs = _SDK_TEST_SOURCES,
     defines = ["CONFIG_LWIP_PPP_PAP_SUPPORT=0", "CONFIG_LWIP_PPP_CHAP_SUPPORT=0"],
-    includes = ["include", "tests/sdk"],
+    includes = ["include", "src", "tests/sdk"],
     conlyopts = H2_C11_OPTS,
+    cxxopts = H2_CXX17_OPTS,
     copts = H2_WARNING_COPTS,
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],

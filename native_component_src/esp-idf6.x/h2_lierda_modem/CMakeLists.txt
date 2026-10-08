@@ -7,4 +7,7 @@ idf_component_register(
     "${REPO_ROOT}/libs/pal/providers/modem/lierda/include"
     "${REPO_ROOT}/libs/pal/include"
   REQUIRES h2_firmware_lib esp_driver_uart esp_driver_gpio esp_event esp_modem esp_netif h2_pal_core)
-target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu11 -Wall -Wextra -Werror)
+target_compile_options(${COMPONENT_LIB} PRIVATE
+  "$<$<COMPILE_LANGUAGE:C>:-std=gnu11>" -Wall -Wextra -Werror)
+set_target_properties(${COMPONENT_LIB} PROPERTIES
+  CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS ON)

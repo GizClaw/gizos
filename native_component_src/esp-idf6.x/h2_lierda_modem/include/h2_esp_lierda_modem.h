@@ -47,6 +47,17 @@ typedef struct h2_esp_lierda_modem_config {
  * SDK config requires LWIP_PPP_SUPPORT and LWIP_IPV4; credentials additionally
  * require a compiled LWIP_PPP_PAP_SUPPORT and/or LWIP_PPP_CHAP_SUPPORT backend.
  * Missing auth backends return UNSUPPORTED, never an unauthenticated fallback.
+ * Command responses preserve complete information lines within a 512-byte
+ * whole-response bound, including final framing; duplicate lines are not
+ * reduced to the SDK's last line. Only exact completed OK/ERROR/CME/CMS result
+ * lines terminate commands. Truncated/malformed input is consumed to its final
+ * result or timeout before returning an error; failed output is empty.
+ * No complete result (timeout/SDK receive failure) fences further AT and data
+ * open with INVALID_STATE until successful whole close/reopen. This prevents
+ * a pending old result being accepted as a new command's acknowledgement.
+ * Failure logs contain fixed step labels, SDK/PAL codes and a strictly numeric
+ * CME code (0..65535, otherwise -1/unknown), never command/response text,
+ * APN credentials or modem identity. No vendor error meaning is inferred.
  * On failure a non-NULL out_modem is retained only when cleanup failed; keep it
  * and dependencies alive and call destroy again. */
 h2_pal_result_t h2_esp_lierda_modem_create(

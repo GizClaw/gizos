@@ -1,8 +1,10 @@
 #include "h2_esp_lierda_modem.h"
+#include "h2_esp_lierda_command.h"
 #include "lierda_test_sdk.h"
 
 #include <assert.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -29,6 +31,14 @@ static struct {
     h2_pal_result_t quiesce_error;
     bool silent_data, silent_stop, command_mode, fail_command_mode, fail_power_off, fail_unregister;
     bool fail_ip_clear, long_response;
+    const char *raw_response;
+    const char *raw_command;
+    size_t raw_size;
+    const char *fail_command;
+    size_t response_chunk;
+    unsigned logs;
+    size_t received;
+    char log_message[160];
     esp_modem_dte_config_t dte;
     char dial_apn[64];
 } sdk;
@@ -166,6 +176,10 @@ esp_modem_dce_t *esp_modem_new(const esp_modem_dte_config_t *dte,
     ++sdk.dces;
     esp_modem_dce_t *out = malloc(sizeof(*out));
     out->netif = netif;
+    out->dce = lierda_test_dce_create();
+    out->dte = out;
+    out->modem_type = ESP_MODEM_DCE_GENERIC;
+    out->dte_type = 0;
     strcpy(out->apn, dce->apn);
     sdk.command_mode = true;
     sdk.ppp_dead = true;
@@ -175,28 +189,62 @@ void esp_modem_destroy(esp_modem_dce_t *dce) {
     assert(sdk.power_off != 0u && sdk.ppp_dead && sdk.quiesces != 0u);
     for (size_t i = 0u; i < 3u; ++i) assert(!sdk.handlers[i].active);
     --sdk.dces;
+    lierda_test_dce_destroy(dce->dce);
     free(dce);
 }
-esp_err_t esp_modem_at(esp_modem_dce_t *dce, const char *cmd, char *response, int timeout) {
-    (void)dce;
+void lierda_test_log(const char *tag, const char *format, ...) {
+    assert(strcmp(tag, "lierda_modem") == 0);
+    va_list args;
+    va_start(args, format);
+    (void)vsnprintf(sdk.log_message, sizeof(sdk.log_message), format, args);
+    va_end(args);
+    ++sdk.logs;
+}
+int lierda_test_exchange(const char *wire, void *user,
+    int (*callback)(void *, uint8_t *, size_t), uint32_t timeout) {
     assert(timeout > 0);
+    const size_t length = strlen(wire);
+    assert(length != 0u && wire[length - 1u] == '\r' && length < 128u);
+    char cmd[128];
+    memcpy(cmd, wire, length - 1u);
+    cmd[length - 1u] = '\0';
     ++sdk.commands;
-    if (sdk.long_response) {
-        memset(response, 'X', 127u);
-        response[127] = '\0';
-        return ESP_OK;
-    }
     const char *reply = "";
     if (strcmp(cmd, "AT+CPIN?") == 0) reply = "+CPIN: READY";
     else if (strcmp(cmd, "AT+CEREG?") == 0) reply = "+CEREG: 0,1";
     else if (strcmp(cmd, "AT+CGATT?") == 0) reply = "+CGATT: 1";
     else if (strcmp(cmd, "AT+CSQ") == 0) reply = "+CSQ: 10,0";
+    else if (strcmp(cmd, "AT+CGMI") == 0) reply = "fixture manufacturer";
+    else if (strcmp(cmd, "AT+CGMM") == 0) reply = "fixture model";
+    else if (strcmp(cmd, "AT+CGMR") == 0) reply = "fixture revision";
+    else if (strcmp(cmd, "AT+CGSN") == 0) reply = "123456789012345";
+    else if (strcmp(cmd, "AT+CIMI") == 0) reply = "123456789012346";
     else if (strcmp(cmd, "AT") != 0 && strcmp(cmd, "ATE0") != 0 &&
              strcmp(cmd, "AT+CMEE=2") != 0 && strncmp(cmd, "AT+CGDCONT=", 11u) != 0) {
         assert(!"unexpected native AT command");
     }
-    strcpy(response, reply);
-    return ESP_OK;
+    char raw[640];
+    if (sdk.long_response) {
+        memset(raw, 'X', 520u);
+        strcpy(raw + 520u, "\r\nOK\r\n");
+    } else if (sdk.raw_response != NULL &&
+        (sdk.raw_command == NULL || strcmp(sdk.raw_command, cmd) == 0)) {
+        const size_t count = sdk.raw_size != 0u ? sdk.raw_size : strlen(sdk.raw_response) + 1u;
+        assert(count < sizeof(raw));
+        memcpy(raw, sdk.raw_response, count);
+    } else if (sdk.fail_command != NULL && strcmp(sdk.fail_command, cmd) == 0) {
+        strcpy(raw, "\r\n+CME ERROR: fixture only\r\n");
+    } else (void)snprintf(raw, sizeof(raw), "\r\n%s\r\nOK\r\n", reply);
+    const size_t size = sdk.raw_size != 0u ? sdk.raw_size : strlen(raw);
+    const size_t chunk = sdk.response_chunk != 0u ? sdk.response_chunk : size;
+    /* Fixed SDK DTE replays cumulative data when receive chunks split lines. */
+    for (size_t offset = 0u; offset < size;) {
+        offset = chunk < size - offset ? offset + chunk : size;
+        sdk.received = offset;
+        const int rc = callback(user, (uint8_t *)raw, offset);
+        if (rc != ESP_ERR_TIMEOUT) return rc;
+    }
+    return ESP_ERR_TIMEOUT;
 }
 esp_err_t esp_modem_set_apn(esp_modem_dce_t *dce, const char *apn) {
     assert(sdk.command_mode);
@@ -446,6 +494,129 @@ static void authentication_backend(void) {
     destroy(modem);
 }
 
+static void complete_response_and_failure_labels(void) {
+    h2_esp_lierda_modem_t *modem = create();
+    h2_pal_modem_api_t *api = h2_esp_lierda_modem_api(modem);
+    assert(h2_pal_modem_open(api, 0u) == H2_PAL_OK && sdk.logs == 0u);
+    sdk.response_chunk = 1u;
+    h2_pal_modem_status_t status;
+    sdk.fail_command = "AT+CPIN?";
+    assert(h2_pal_modem_get_status(api, &status) == H2_PAL_ERR_IO);
+    assert(status.sim == 0 && sdk.dces == 1u && sdk.power_off == 0u);
+    assert(strcmp(sdk.log_message, "LIERDA_FAIL stage=at_sim sdk_rc=-1 pal_rc=-4 cme_code=-1") == 0);
+    assert(strstr(sdk.log_message, "fixture") == NULL && strstr(sdk.log_message, "AT+") == NULL);
+    sdk.fail_command = NULL;
+    assert(h2_pal_modem_get_status(api, &status) == H2_PAL_OK);
+    assert(status.sim == H2_PAL_MODEM_SIM_STATE_READY);
+    sdk.raw_command = "AT+CPIN?";
+    sdk.raw_response = "\r\n+CPIN: READY\r\n+CPIN: READY\r\nOK\r\n";
+    assert(h2_pal_modem_get_status(api, &status) == H2_PAL_ERR_FORMAT && status.sim == 0);
+    sdk.raw_command = "AT+CIMI";
+    sdk.raw_response = "\r\n123456789012345\r\n123456789012346\r\nOK\r\n";
+    h2_pal_modem_identity_t identity;
+    memset(&identity, 'X', sizeof(identity));
+    assert(h2_pal_modem_get_identity(api, &identity) == H2_PAL_ERR_FORMAT);
+    assert(identity.imei[0] == '\0' && identity.imsi[0] == '\0');
+    sdk.raw_response = NULL;
+    assert(h2_pal_modem_get_identity(api, &identity) == H2_PAL_OK);
+    assert(strcmp(identity.imsi, "123456789012346") == 0);
+    sdk.raw_command = "AT+CSQ"; sdk.raw_response = "\r\n+CSQ: 10,0\r\n";
+    h2_pal_modem_signal_t signal;
+    assert(h2_pal_modem_get_signal(api, &signal) == H2_PAL_ERR_TIMEOUT);
+    const unsigned before = sdk.commands;
+    assert(h2_pal_modem_get_status(api, &status) == H2_PAL_ERR_INVALID_STATE);
+    assert(h2_pal_modem_data_open(api, 1u) == H2_PAL_ERR_INVALID_STATE);
+    assert(sdk.commands == before && sdk.command_mode && sdk.dces == 1u);
+    sdk.raw_response = NULL;
+    assert(h2_pal_modem_close(api, 1u) == H2_PAL_OK);
+    assert(h2_pal_modem_open(api, 1u) == H2_PAL_OK);
+    assert(h2_pal_modem_get_status(api, &status) == H2_PAL_OK);
+    destroy(modem);
+}
+
+static void raw_results_and_bounds(void) {
+    /* A separate SDK handle tests the private bridge directly, without
+     * borrowing one from the opaque adapter or copying production layout. */
+    memset(&sdk, 0, sizeof(sdk));
+    esp_modem_dce_t dce = {.dce = lierda_test_dce_create(), .modem_type = ESP_MODEM_DCE_GENERIC};
+    dce.dte = &dce;
+    h2_esp_lierda_command_status_t sdk_error;
+    char response[64];
+    const char *errors[] = {
+        "\r\nERROR\r\n", "\r\n+CME ERROR: 14\r\n", "\r\n+CMS ERROR: text\r\n",
+    };
+    sdk.response_chunk = 1u;
+    for (size_t i = 0u; i < sizeof(errors) / sizeof(errors[0]); ++i) {
+        sdk.raw_response = errors[i];
+        assert(h2_esp_lierda_command(&dce, "AT+CSQ", response, sizeof(response), 1u,
+            &sdk_error) == H2_PAL_ERR_IO);
+        assert(sdk_error.sdk_error == ESP_FAIL && response[0] == '\0');
+        assert(sdk_error.command_started && sdk_error.final_result);
+        assert(sdk_error.cme_error == (i == 1u ? 14 : -1));
+        assert(sdk.received == strlen(errors[i])); /* complete result consumed */
+    }
+    sdk.raw_response = "\r\nLOOKUP_OK ERROR text\r\nOK\r\n";
+    assert(h2_esp_lierda_command(&dce, "AT+CSQ", response, sizeof(response), 1u,
+        &sdk_error) == H2_PAL_OK);
+    assert(strcmp(response, "\r\nLOOKUP_OK ERROR text\r\n") == 0);
+    sdk.raw_response = "\r\ninfo\r\nOK"; /* no complete final result line */
+    assert(h2_esp_lierda_command(&dce, "AT+CSQ", response, sizeof(response), 1u,
+        &sdk_error) == H2_PAL_ERR_TIMEOUT && response[0] == '\0');
+    assert(sdk_error.sdk_error == ESP_ERR_TIMEOUT);
+    assert(sdk_error.command_started && !sdk_error.final_result);
+    const char *unknown_cme[] = {
+        "\r\n+CME ERROR: SIM busy\r\n", "\r\n+CME ERROR: 65536\r\n",
+        "\r\n+CME ERROR: 14oops\r\n", "\r\n+CME ERROR: -14\r\n",
+    };
+    for (size_t i = 0u; i < sizeof(unknown_cme) / sizeof(unknown_cme[0]); ++i) {
+        sdk.raw_response = unknown_cme[i];
+        assert(h2_esp_lierda_command(&dce, "AT+CSQ", response, sizeof(response), 1u,
+            &sdk_error) == H2_PAL_ERR_IO && sdk_error.cme_error == -1);
+    }
+    sdk.raw_response = "\r\nABC\r\nOK\r\n";
+    const size_t whole_size = strlen(sdk.raw_response);
+    memset(response, 'X', sizeof(response));
+    assert(h2_esp_lierda_command(&dce, "AT+CSQ", response, whole_size, 1u,
+        &sdk_error) == H2_PAL_ERR_TRUNCATED);
+    assert(response[0] == '\0' && response[whole_size] == 'X');
+    assert(sdk.received == whole_size); /* do not abandon an oversized result */
+    assert(h2_esp_lierda_command(&dce, "AT+CSQ", response, whole_size + 1u, 1u,
+        &sdk_error) == H2_PAL_OK && strcmp(response, "\r\nABC\r\n") == 0);
+    const char embedded_nul[] = "\r\nABC\0DEF\r\nOK\r\n";
+    sdk.raw_response = embedded_nul;
+    sdk.raw_size = sizeof(embedded_nul) - 1u;
+    assert(h2_esp_lierda_command(&dce, "AT+CSQ", response, sizeof(response), 1u,
+        &sdk_error) == H2_PAL_ERR_FORMAT && response[0] == '\0');
+    assert(sdk.received == sdk.raw_size);
+    sdk.raw_size = 0u;
+    sdk.raw_response = "\nABC\nOK\n";
+    assert(h2_esp_lierda_command(&dce, "AT+CSQ", response, sizeof(response), 1u,
+        &sdk_error) == H2_PAL_OK && strcmp(response, "\nABC\n") == 0);
+    const unsigned before = sdk.commands;
+    dce.modem_type = 77;
+    assert(h2_esp_lierda_command(&dce, "AT", response, sizeof(response), 1u,
+        &sdk_error) == H2_PAL_ERR_INVALID_ARG);
+    dce.modem_type = ESP_MODEM_DCE_GENERIC; dce.dte_type = 1;
+    assert(h2_esp_lierda_command(&dce, "AT", response, sizeof(response), 1u,
+        &sdk_error) == H2_PAL_ERR_INVALID_ARG);
+    dce.dte_type = 0; dce.dte = NULL;
+    assert(h2_esp_lierda_command(&dce, "AT", response, sizeof(response), 1u,
+        &sdk_error) == H2_PAL_ERR_INVALID_ARG);
+    assert(h2_esp_lierda_command(NULL, "AT", response, sizeof(response), 1u,
+        &sdk_error) == H2_PAL_ERR_INVALID_ARG);
+    assert(sdk.commands == before && response[0] == '\0');
+    assert(!sdk_error.command_started && !sdk_error.final_result);
+    dce.dte = &dce;
+    void *driver = dce.dce;
+    dce.dce = NULL;
+    assert(h2_esp_lierda_command(&dce, "AT", response, sizeof(response), 1u,
+        &sdk_error) == H2_PAL_ERR_INVALID_ARG && sdk.commands == before);
+    dce.dce = driver;
+    assert(h2_esp_lierda_command(&dce, "AT\r", response, sizeof(response), 1u,
+        &sdk_error) == H2_PAL_ERR_INVALID_ARG && sdk.commands == before);
+    lierda_test_dce_destroy(dce.dce);
+}
+
 int main(void) {
     live_data_and_teardown();
     timeout_and_old_ip();
@@ -453,6 +624,8 @@ int main(void) {
     authentication_backend();
     disconnect_is_not_dead();
     partial_open_quiescence();
+    complete_response_and_failure_labels();
+    raw_results_and_bounds();
     puts("Lierda native PPP state/teardown tests passed");
     return 0;
 }
