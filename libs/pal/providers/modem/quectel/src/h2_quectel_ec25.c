@@ -80,7 +80,7 @@ h2_pal_result_t h2_quectel_ec25_emergency_numbers(
     }
     if (rc == H2_PAL_OK) {
         rc = query.result;
-        if (rc == H2_PAL_OK && query.seen != 3u) { rc = H2_PAL_ERR_TRUNCATED; }
+        if (rc == H2_PAL_OK && (!response.ok || query.seen != 3u)) { rc = H2_PAL_ERR_TRUNCATED; }
     }
     if (rc == H2_PAL_OK) { *out_count = query.count; }
     return rc;

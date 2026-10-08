@@ -338,6 +338,9 @@ static h2_pal_result_t at_exchange_timeout(
     h2_quectel_response_t *response,
     int allow_connect,
     uint32_t timeout_ms, h2_quectel_at_line_fn collect, void *collect_user) {
+    /* Callers inspect terminal error evidence even when the exchange fails.
+     * Clear it before lock/admission/wake failures can return without I/O. */
+    if (response != NULL) { memset(response, 0, sizeof(*response)); }
     h2_pal_result_t rc = h2_quectel_operation_begin(modem);
     if (rc != H2_PAL_OK) {
         return rc;
@@ -352,9 +355,6 @@ static h2_pal_result_t at_exchange_timeout(
     if (timeout_ms != 0u) {
         modem->config.command_timeout_ms = timeout_ms;
         modem->config.io_timeout_ms = timeout_ms;
-    }
-    if (response != NULL) {
-        memset(response, 0, sizeof(*response));
     }
     rc = h2_quectel_power_wake(modem);
     /* Do not flush here: unsolicited SIM/call notifications must survive. */

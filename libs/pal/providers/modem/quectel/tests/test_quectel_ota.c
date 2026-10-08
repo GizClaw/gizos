@@ -6,17 +6,24 @@
 #include <stdlib.h>
 #include <string.h>
 
-struct h2_pal_mutex { unsigned depth; };
+/* Private exchange symbol: verify its early-failure output contract. */
+extern h2_pal_result_t h2_quectel_at_exchange_timeout(h2_quectel_modem_t *, const char *,
+    h2_quectel_response_t *, int, uint32_t);
+static int fail_operation_lock;
+struct h2_pal_mutex { unsigned depth; int operation; };
 static h2_pal_result_t mutex_create(void *u, const h2_pal_mutex_config_t *c, h2_pal_mutex_t **out) {
-    (void)u; (void)c;
+    (void)u;
     *out = calloc(1u, sizeof(**out));
+    if (*out != NULL) { (*out)->operation = strcmp(c->name, "quectel/operation") == 0; }
     return *out != NULL ? H2_PAL_OK : H2_PAL_ERR_NO_MEMORY;
 }
 static h2_pal_result_t mutex_destroy(void *u, h2_pal_mutex_t *m) {
     (void)u; assert(m->depth == 0u); free(m); return H2_PAL_OK;
 }
 static h2_pal_result_t mutex_lock(void *u, h2_pal_mutex_t *m) {
-    (void)u; m->depth++; return H2_PAL_OK;
+    (void)u;
+    if (m->operation && fail_operation_lock) { fail_operation_lock = 0; return H2_PAL_ERR_IO; }
+    m->depth++; return H2_PAL_OK;
 }
 static h2_pal_result_t mutex_unlock(void *u, h2_pal_mutex_t *m) {
     (void)u; assert(m->depth != 0u); m->depth--; return H2_PAL_OK;
@@ -36,6 +43,8 @@ typedef struct fixture {
     uint32_t start_timeout;
     int asleep;
     int raw_echo;
+    int fail_after_revision, fail_after_probe;
+    unsigned wakes, fail_wake_at;
     char last_start[H2_QUECTEL_COMMAND_MAX];
     char raw_reply[1024];
     size_t raw_offset;
@@ -51,6 +60,7 @@ static h2_pal_result_t exchange(fixture_t *f, const char *cmd, char *out, size_t
     }
     if (strcmp(cmd, "AT+CGMR") == 0) {
         f->revisions++;
+        if (f->fail_after_revision) { f->fail_after_revision = 0; fail_operation_lock = 1; }
         if (f->revision_reply == NULL) {
             snprintf(out, capacity, "%s\r\nOK\r\n", f->revision);
             return f->revision_result;
@@ -59,6 +69,7 @@ static h2_pal_result_t exchange(fixture_t *f, const char *cmd, char *out, size_t
         rc = f->revision_result;
     } else if (strcmp(cmd, "AT+QFOTADL=?") == 0) {
         f->probes++;
+        if (f->fail_after_probe) { f->fail_after_probe = 0; fail_operation_lock = 1; }
         reply = f->probe_reply;
         rc = f->probe_result;
     } else if (strncmp(cmd, "AT+QFOTADL=", 11u) == 0) {
@@ -108,7 +119,9 @@ static h2_pal_result_t raw_read(void *u, uint8_t *out, size_t length, uint32_t t
     return H2_PAL_OK;
 }
 static h2_pal_result_t gate(void *u, int asleep) {
-    ((fixture_t *)u)->asleep = asleep; return H2_PAL_OK;
+    fixture_t *f = u;
+    if (!asleep && ++f->wakes == f->fail_wake_at) { return H2_PAL_ERR_IO; }
+    f->asleep = asleep; return H2_PAL_OK;
 }
 static h2_pal_result_t deinit(void *u) { ((fixture_t *)u)->deinits++; return H2_PAL_OK; }
 static void init(fixture_t *f, const char *model, const char *revision, int raw) {
@@ -294,6 +307,34 @@ static void test_failures(void) {
     assert(f.starts == 1u);
 }
 
+static void test_early_exchange_failure(void) {
+    fixture_t f;
+    init(&f, "EC25", "EC25-R01", 0);
+    h2_quectel_response_t response;
+    memset(&response, 0xff, sizeof(response));
+    fail_operation_lock = 1;
+    assert(h2_quectel_at_exchange_timeout(&f.modem, "AT+QFOTADL=?", &response, 0, 100u) == H2_PAL_ERR_IO);
+    assert(response.count == 0u && !response.ok && !response.truncated && response.lines[0][0] == '\0');
+    const h2_pal_modem_ota_request_t r = request("https://example.com/fw.zip", "EC25-R01", "EC25-R02");
+    f.fail_after_revision = 1;
+    assert(h2_pal_modem_ota_start(&f.modem.platform, &r) == H2_PAL_ERR_IO);
+    assert(!f.starts && !f.probes && !f.modem.ota_hold);
+    uint32_t capabilities;
+    assert(h2_pal_modem_get_capabilities(&f.modem.platform, &capabilities) == H2_PAL_OK);
+    assert(capabilities & H2_PAL_MODEM_CAPABILITY_OTA);
+    f.wakes = 0u; f.fail_wake_at = 2u; /* Revision succeeds; capability probe cannot wake. */
+    assert(h2_pal_modem_ota_start(&f.modem.platform, &r) == H2_PAL_ERR_IO);
+    assert(!f.starts && !f.probes && !f.modem.ota_hold);
+    assert(h2_pal_modem_get_capabilities(&f.modem.platform, &capabilities) == H2_PAL_OK);
+    assert(capabilities & H2_PAL_MODEM_CAPABILITY_OTA);
+    f.fail_wake_at = 0u;
+    f.fail_after_probe = 1;
+    assert(h2_pal_modem_ota_start(&f.modem.platform, &r) == H2_PAL_ERR_IO);
+    assert(!f.starts && f.probes == 1u && status(&f).state == H2_PAL_MODEM_OTA_UNKNOWN);
+    assert(h2_pal_modem_close(&f.modem.platform, 0u) == H2_PAL_ERR_BUSY);
+    finish(&f);
+}
+
 static void test_admission_and_urls(void) {
     fixture_t f;
     init(&f, "EC800M", "EC800MCNLER06A07M08", 0);
@@ -356,6 +397,7 @@ int main(void) {
     test_flow("EC25", "EC25-R01", "EC25-R02", "https://example.com/fw.zip", 1);
     test_version_guards();
     test_failures();
+    test_early_exchange_failure();
     test_admission_and_urls();
     return 0;
 }

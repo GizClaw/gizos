@@ -42,6 +42,7 @@ typedef struct fixture {
     h2_quectel_modem_t modem;
     const char *model, *supported, *ranges, *read_reply, *quality_reply;
     const char *fail_command, *fail_reply, *invalidate_command;
+    const char *missing_ok_command;
     unsigned fail_at, fail_seen;
     h2_pal_result_t failure;
     int apply_failed_selection, invalidate;
@@ -122,6 +123,11 @@ static h2_pal_result_t command(void *user, const char *cmd, char *response,
         if (f->fail_reply != NULL) { strcpy(response, f->fail_reply); }
         return f->failure;
     }
+    if (f->missing_ok_command != NULL && strcmp(cmd, f->missing_ok_command) == 0) {
+        char *ok = strstr(response, "OK\r\n");
+        assert(ok != NULL);
+        *ok = '\0';
+    }
     return H2_PAL_OK;
 }
 
@@ -198,6 +204,24 @@ static void query(fixture_t *f, h2_pal_result_t expected, size_t capacity, size_
     assert(f->modem.config.command_timeout_ms == 5000u && f->modem.config.io_timeout_ms == 200u);
     assert_released(f);
 }
+static void test_missing_terminal_ok(void) {
+    const char *commands[] = {
+        "AT+CPBS=?", "AT+CPBS?", "AT+CPBS=\"EN\"", "AT+CPBR=?", "AT+CPBR=1,3", "AT+CPBS=\"SM\"",
+    };
+    for (size_t i = 0u; i < sizeof(commands) / sizeof(commands[0]); i++) {
+        fixture_t f;
+        init(&f, "EC800M", H2_QUECTEL_MODEM_PROFILE_EC800M_UART);
+        f.missing_ok_command = commands[i];
+        query(&f, H2_PAL_ERR_TRUNCATED, 64u, 0u);
+        if (strcmp(commands[i], "AT+CPBS=\"SM\"") == 0) {
+            assert(f.modem.phonebook_restore_pending);
+        }
+        f.missing_ok_command = NULL;
+        query(&f, H2_PAL_OK, 64u, 2u);
+        assert(!f.modem.phonebook_restore_pending && strcmp(f.storage, "SM") == 0);
+        assert(h2_quectel_modem_deinit(&f.modem) == H2_PAL_OK);
+    }
+}
 static void finish(fixture_t *f) {
     f->fail_command = NULL;
     assert(h2_quectel_modem_deinit(&f->modem) == H2_PAL_OK);
@@ -263,7 +287,8 @@ static void test_phonebook_variants(void) {
     assert(calls(&f, "AT+CPBS=\"") == 0u);
     finish(&f);
     init(&f, "EC800M", H2_QUECTEL_MODEM_PROFILE_UNSPECIFIED);
-    f.used = f.entry_count = 0u;
+    f.used = 0u;
+    f.entry_count = 0u;
     query(&f, H2_PAL_OK, 64u, 0u);
     assert(calls(&f, "AT+CPBR") == 0u && strcmp(f.storage, "SM") == 0);
     finish(&f);
@@ -279,7 +304,8 @@ static void test_phonebook_variants(void) {
     assert(calls(&f, "AT+CPBR=") == 2u); /* One normalized read plus test. */
     finish(&f);
     init(&f, "EC800M", H2_QUECTEL_MODEM_PROFILE_UNSPECIFIED);
-    f.used = f.total = f.entry_count = 40u;
+    f.used = f.total = 40u;
+    f.entry_count = 40u;
     f.ranges = "+CPBR: (1-40),20,14";
     for (unsigned i = 0u; i < 40u; i++) { f.entries[i] = (phonebook_entry_t){i + 1u, "112"}; }
     query(&f, H2_PAL_OK, 64u, 40u);
@@ -444,6 +470,7 @@ static void test_shared_gnss_and_power(void) {
 }
 
 int main(void) {
+    test_missing_terminal_ok();
     test_models();
     test_phonebook_variants();
     test_failures_and_restore();

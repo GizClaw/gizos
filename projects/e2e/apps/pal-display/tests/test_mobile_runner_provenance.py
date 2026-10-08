@@ -92,11 +92,62 @@ class MobileRunnerProvenanceTest(unittest.TestCase):
             with self.assertRaises(AssertionError):
                 self.verify(self.followup)
 
+    def test_modem_guide_changes_preserve_display_qualification(self):
+        path = qualification.Path(qualification.SHARED_PAL_GUIDE)
+        current = path.read_bytes()
+        start, end = qualification.modem_guide_section(current)
+        changed = current[:start] + current[start:end].replace(
+            "两个调用".encode("utf-8"), "Modem 两个调用".encode("utf-8"), 1) + current[end:]
+        self.assertNotEqual(current, changed)
+        original_read = qualification.Path.read_bytes
+        def read(source):
+            return changed if source == path else original_read(source)
+        with patch.object(qualification.Path, "read_bytes", new=read):
+            self.verify(self.followup)
+
+    def test_modem_scope_cannot_exempt_touch_or_general_pal_changes(self):
+        path = qualification.Path(qualification.SHARED_PAL_GUIDE)
+        current = path.read_bytes()
+        start, end = qualification.modem_guide_section(current)
+        variants = [
+            current.replace("Touch PAL 不识别".encode("utf-8"), b"Changed Touch policy", 1),
+            current[:end] + b"### Display\nInjected policy\n\n" + current[end:],
+            current + "\n### Modem 通话扬声器音量\n".encode("utf-8"),
+            current[:start] + current[end:] + current[start:end],
+        ]
+        original_read = qualification.Path.read_bytes
+        for changed in variants:
+            self.assertNotEqual(current, changed)
+            def read(source):
+                return changed if source == path else original_read(source)
+            with patch.object(qualification.Path, "read_bytes", new=read):
+                with self.assertRaises(AssertionError):
+                    self.verify(self.followup)
+
+    def test_modem_fixture_and_sidecar_cannot_rebind_historical_bytes(self):
+        fixture_path = qualification.ROOT / "shared_pal_modem_baseline.json"
+        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+        fixture["section_utf8"] += "changed baseline\n"
+        audit_path = qualification.ROOT / "shared_catalog_provenance.json"
+        audit = json.loads(audit_path.read_text(encoding="utf-8"))
+        audit["pal_modem_scope"]["baseline_sha256"] = qualification.hashlib.sha256(
+            fixture["section_utf8"].encode("utf-8")).hexdigest()
+        original_read = qualification.Path.read_text
+        def read(source, *args, **kwargs):
+            if source == fixture_path:
+                return json.JSONEncoder().encode(fixture)
+            if source == audit_path:
+                return json.JSONEncoder().encode(audit)
+            return original_read(source, *args, **kwargs)
+        with patch.object(qualification.Path, "read_text", new=read):
+            with self.assertRaises(AssertionError):
+                self.verify(self.followup)
+
     def test_shared_pal_guide_only_admits_exact_pref_extension(self):
         audit = json.loads((qualification.ROOT / "shared_catalog_provenance.json").read_text(encoding="utf-8"))
         extension = audit["pal_guide_extension"]
         path = qualification.Path(qualification.SHARED_PAL_GUIDE)
-        current = path.read_bytes()
+        current = qualification.historical_modem_guide(path.read_bytes())
         addition = json.loads((qualification.ROOT / "shared_pal_pref_addition.json").read_text(encoding="utf-8"))["addition_utf8"].encode("utf-8")
         offset = extension["insertion_offset"]
         baseline = current if qualification.hashlib.sha256(current).hexdigest() == extension["source_sha256"] else (
@@ -125,7 +176,7 @@ class MobileRunnerProvenanceTest(unittest.TestCase):
         fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
         addition = fixture["addition_utf8"].encode("utf-8")
         path = qualification.Path(qualification.SHARED_PAL_GUIDE)
-        current = path.read_bytes()
+        current = qualification.historical_modem_guide(path.read_bytes())
         offset = extension["insertion_offset"]
         baseline = current if qualification.hashlib.sha256(current).hexdigest() == extension["source_sha256"] else (
             current[:offset] + current[offset + len(addition):])
@@ -149,7 +200,7 @@ class MobileRunnerProvenanceTest(unittest.TestCase):
         extension = audit["pal_guide_extension"]
         addition = json.loads((qualification.ROOT / "shared_pal_pref_addition.json").read_text(encoding="utf-8"))["addition_utf8"].encode("utf-8")
         path = qualification.Path(qualification.SHARED_PAL_GUIDE)
-        current = path.read_bytes()
+        current = qualification.historical_modem_guide(path.read_bytes())
         offset = extension["insertion_offset"]
         baseline = current if qualification.hashlib.sha256(current).hexdigest() == extension["source_sha256"] else (
             current[:offset] + current[offset + len(addition):])

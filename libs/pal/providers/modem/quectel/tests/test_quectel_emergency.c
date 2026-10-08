@@ -230,6 +230,8 @@ static void test_failure_and_generation(void) {
     query(&f, H2_PAL_ERR_TRUNCATED, 40u, 0u);
     f.reply = "+QECCNUM: 0,\"110\"\r\nOK\r\n";
     query(&f, H2_PAL_ERR_TRUNCATED, 40u, 0u);
+    f.reply = "+QECCNUM: 0,\"110\"\r\n+QECCNUM: 1,\"112\"\r\n";
+    query(&f, H2_PAL_ERR_TRUNCATED, 40u, 0u);
     const char *malformed[] = {
         "+QECCNUM: 0,\"110\"\r\n+QECCNUM: 0,\"112\"\r\nOK\r\n",
         "+QECCNUM: 2,\"110\"\r\n+QECCNUM: 1,\"112\"\r\nOK\r\n",

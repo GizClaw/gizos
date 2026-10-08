@@ -117,6 +117,7 @@ SHARED_CATALOG_BASELINE_COMMIT = "06f9c0cfa633646984d72f210ba18f889bbec528"
 SHARED_PAL_ADDITION_COMMIT = "93c9578e54f1cd45d8d9bd118372f807e16076f4"
 SHARED_PAL_ADDITION_SHA256 = "e34e59d847676c1d0bca583f8c824a124b1a8cb0dd684b097dcdc25aff429932"
 SHARED_PAL_ADDITION_OFFSET = 72468
+SHARED_PAL_MODEM_BASELINE_SHA256 = "78e3d827b63a6c85f92c1b913058530e1bfe5fdbbba45f1709ab7e1836ec7d3d"
 SHARED_CATALOG_AUDIT_SOURCES = {
     "projects/e2e/apps/pal-display/check_qualification.py",
     "projects/e2e/apps/pal-display/BUILD.bazel",
@@ -179,6 +180,12 @@ def shared_catalog_sources(previous):
     assert display_catalog_content(content.decode("utf-8")) == display_catalog_content(
         Path(SHARED_CATALOG).read_text(encoding="utf-8")), "Display catalog content changed"
     shared_pal_guide(previous, audit["pal_guide_extension"])
+    assert audit["pal_modem_scope"] == {
+        "source_commit": SHARED_CATALOG_BASELINE_COMMIT,
+        "source_path": SHARED_PAL_GUIDE,
+        "baseline_sha256": SHARED_PAL_MODEM_BASELINE_SHA256,
+        "scope": "Only Modem volume and emergency/OTA sections; no Display or general PAL policy changes",
+    }
     assert audit["previous_source_sha256"] == {
         path: previous[path] for path in SHARED_CATALOG_AUDIT_SOURCES}
     replacements = audit["current_source_sha256"]
@@ -191,8 +198,39 @@ def shared_catalog_sources(previous):
     return sources
 
 
+def modem_guide_section(content):
+    """A closed Modem-only region, bounded by the historical following section."""
+    start_marker = "### Modem 通话扬声器音量\n".encode("utf-8")
+    end_marker = b"### Touch\n"
+    assert content.count(start_marker) == 1 and content.count(end_marker) == 1, (
+        "missing or duplicate Modem/Touch section boundary")
+    start, end = content.index(start_marker), content.index(end_marker)
+    assert start < end, "Modem section moved past Touch"
+    headings = re.findall(rb"^#{1,6} [^\n]*\n", content[start:end], re.MULTILINE)
+    allowed = [start_marker, "### Modem 紧急号码和固件升级\n".encode("utf-8")]
+    assert headings in (allowed[:1], allowed), "non-Modem section inside Modem ownership region"
+    return start, end
+
+
+def historical_modem_guide(content):
+    """Project independent Modem docs onto authenticated historical Display input.
+
+    All bytes outside this closed region remain subject to the original
+    whole-file digest; this does not requalify any production source or board.
+    """
+    record = json.JSONDecoder().decode(
+        (ROOT / "shared_pal_modem_baseline.json").read_text(encoding="utf-8"))
+    assert record["source_commit"] == SHARED_CATALOG_BASELINE_COMMIT
+    assert record["source_path"] == SHARED_PAL_GUIDE
+    baseline = record["section_utf8"].encode("utf-8")
+    assert hashlib.sha256(baseline).hexdigest() == SHARED_PAL_MODEM_BASELINE_SHA256, (
+        "historical Modem baseline changed")
+    start, end = modem_guide_section(content)
+    return content[:start] + baseline + content[end:]
+
+
 def shared_pal_guide(previous, extension):
-    """Admit only the exact two BK Pref additions at their recorded insertion."""
+    """Preserve the whole historical guide outside independent Modem docs."""
     assert extension["source_commit"] == SHARED_CATALOG_BASELINE_COMMIT
     assert extension["source_path"] == SHARED_PAL_GUIDE
     assert extension["addition_source_commit"] == SHARED_PAL_ADDITION_COMMIT
@@ -210,7 +248,7 @@ def shared_pal_guide(previous, extension):
     assert len(paragraphs) == 2
     assert paragraphs[0].startswith("BK7258 大值仍使用原 128 KiB physical FlashDB 分区：")
     assert paragraphs[1].startswith("Tail v1 manifest 为 96 字节：")
-    current = Path(SHARED_PAL_GUIDE).read_bytes()
+    current = historical_modem_guide(Path(SHARED_PAL_GUIDE).read_bytes())
     if hashlib.sha256(current).hexdigest() == previous[SHARED_PAL_GUIDE]:
         return
     offset = extension["insertion_offset"]
@@ -218,7 +256,7 @@ def shared_pal_guide(previous, extension):
     assert current[offset:offset + len(addition)] == addition
     restored = current[:offset] + current[offset + len(addition):]
     assert hashlib.sha256(restored).hexdigest() == previous[SHARED_PAL_GUIDE], (
-        "shared PAL guide changed outside the exact BK Pref addition")
+        "shared PAL guide changed outside the exact BK Pref addition and Modem-owned sections")
 
 
 def runner_refactor(historical):

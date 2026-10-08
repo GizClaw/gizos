@@ -22,7 +22,7 @@ h2_pal_result_t h2_quectel_read_revision(h2_quectel_modem_t *modem,
     uint32_t timeout_ms, char *out_revision, size_t capacity) {
     if (out_revision == NULL || capacity == 0u) { return H2_PAL_ERR_INVALID_ARG; }
     out_revision[0] = '\0';
-    h2_quectel_response_t response;
+    h2_quectel_response_t response = {0};
     const uint32_t reset_generation = modem->reset_generation;
     const uint32_t sim_generation = modem->sim_generation;
     h2_pal_result_t rc = h2_quectel_at_exchange_timeout(modem, "AT+CGMR", &response, 0, timeout_ms);
@@ -145,18 +145,18 @@ h2_pal_result_t h2_quectel_ota_start(void *user, const h2_pal_modem_ota_request_
          (strncmp(request->url, "ftp://", 6u) == 0 || strncmp(request->url, "FTP://", 6u) == 0)))) {
         return h2_quectel_operation_end(modem, H2_PAL_ERR_UNSUPPORTED);
     }
-    h2_quectel_response_t response;
+    h2_quectel_response_t response = {0};
     const uint32_t reset_generation = modem->reset_generation;
     const uint32_t sim_generation = modem->sim_generation;
     rc = h2_quectel_at_exchange_timeout(modem, "AT+QFOTADL=?", &response, 0, request->timeout_ms);
     if (reset_generation != modem->reset_generation || sim_generation != modem->sim_generation) {
         return h2_quectel_operation_end(modem, H2_PAL_ERR_INVALID_STATE);
     }
-    if (probe_unsupported(&response)) {
+    if (response.count != 0u && probe_unsupported(&response)) {
         modem->capabilities &= ~(uint32_t)H2_PAL_MODEM_CAPABILITY_OTA;
         return h2_quectel_operation_end(modem, H2_PAL_ERR_UNSUPPORTED);
     }
-    if (terminal_error(&response)) { return h2_quectel_operation_end(modem, H2_PAL_ERR_IO); }
+    if (response.count != 0u && terminal_error(&response)) { return h2_quectel_operation_end(modem, H2_PAL_ERR_IO); }
     if (rc != H2_PAL_OK || response.truncated || !response.ok) {
         return h2_quectel_operation_end(modem, rc != H2_PAL_OK ? rc : H2_PAL_ERR_FORMAT);
     }

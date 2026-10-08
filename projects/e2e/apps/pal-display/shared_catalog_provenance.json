@@ -15,15 +15,21 @@
     "insertion_offset": 72468,
     "addition_sha256": "e34e59d847676c1d0bca583f8c824a124b1a8cb0dd684b097dcdc25aff429932"
   },
+  "pal_modem_scope": {
+    "source_commit": "06f9c0cfa633646984d72f210ba18f889bbec528",
+    "source_path": "guides/zh/developing/platform_abstract_layer.md",
+    "baseline_sha256": "78e3d827b63a6c85f92c1b913058530e1bfe5fdbbba45f1709ab7e1836ec7d3d",
+    "scope": "Only Modem volume and emergency/OTA sections; no Display or general PAL policy changes"
+  },
   "previous_source_sha256": {
     "projects/e2e/apps/pal-display/BUILD.bazel": "16da9aa4077fea942e7c2a098a74ef021e8546f640e63ac994b4f589485161b5",
     "projects/e2e/apps/pal-display/README.md": "d859ca0869851415ea64888815649fb7cf35b492c5c74f73d136ae5dc563c338",
     "projects/e2e/apps/pal-display/check_qualification.py": "c3fe8defa194ee0691f1b7550fd8d71dca96d460d3a7c317bf403237ba0b2edf"
   },
   "current_source_sha256": {
-    "projects/e2e/apps/pal-display/BUILD.bazel": "8cf47780717ae7d621197d5f98cfa80de4b50c7fd46a61da3b7bdf82505440ef",
-    "projects/e2e/apps/pal-display/README.md": "e26f59c6d1412cf268e43239b6c82b0767cecb1f62367a857587082f302f045b",
-    "projects/e2e/apps/pal-display/check_qualification.py": "59a54f70af2fdaffa6b7fb4005b4c3f65503e1299d880665a1e2ffe1f7ca4872"
+    "projects/e2e/apps/pal-display/BUILD.bazel": "8e423fda1ffeeb7c56775aa6171478c45ae06ae4d5289fb277e2f8901bb17813",
+    "projects/e2e/apps/pal-display/README.md": "8543c1a03e9a62c1a752fce946d97f78fe97159f2005e58bd8700e48f47de603",
+    "projects/e2e/apps/pal-display/check_qualification.py": "a7965d41c3fa41b9bff86e3a5d3995ae1ba3f063519e501e8c83d20ff7735899"
   },
-  "scope": "Host audit maintenance only; exact Display catalog section and row remain historical. Only the exact two BK Pref PAL-guide paragraphs are admitted. All qualification, mobile execution, artifact and hardware identities are unchanged."
+  "scope": "Host audit maintenance only; exact Display catalog section and row remain historical. The shared PAL guide admits only the exact two BK Pref paragraphs and independent Modem-owned sections projected onto their immutable baseline. All other guide bytes, qualification, mobile execution, artifact and hardware identities are unchanged."
 }

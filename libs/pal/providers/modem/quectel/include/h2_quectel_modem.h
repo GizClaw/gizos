@@ -52,7 +52,9 @@ typedef h2_pal_result_t (*h2_quectel_modem_write_fn)(
 /** @brief Serialized command transaction with caller-owned response storage.
  * Returned text must belong to this command. After interruption the transport
  * must discard/resynchronize old replies before admitting another transaction;
- * SIM/reset generations do not identify serial responses. Honor timeout_ms. */
+ * SIM/reset generations do not identify serial responses. Include terminal
+ * modem OK/error text: transport success alone is not an acknowledged
+ * emergency-table query, phonebook restoration or OTA request. Honor timeout_ms. */
 typedef h2_pal_result_t (*h2_quectel_modem_command_fn)(
     void *user,
     const char *cmd,

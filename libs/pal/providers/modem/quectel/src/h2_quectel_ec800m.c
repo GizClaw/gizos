@@ -79,7 +79,7 @@ static h2_pal_result_t exchange(h2_quectel_modem_t *modem, const char *command,
     if (h2_quectel_response_find(response, "ERROR") != NULL) {
         return probe ? H2_PAL_ERR_UNSUPPORTED : H2_PAL_ERR_IO;
     }
-    if (rc == H2_PAL_OK && response->truncated) { return H2_PAL_ERR_TRUNCATED; }
+    if (rc == H2_PAL_OK && (response->truncated || !response->ok)) { return H2_PAL_ERR_TRUNCATED; }
     return rc;
 }
 
