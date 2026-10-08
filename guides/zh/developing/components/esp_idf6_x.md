@@ -366,3 +366,7 @@ ON 时只对至少 100 ms 的操作输出 `H2_ESP_IO_PHASE` 数值记录。FS �
 `fs_wait_us`、`scratch_wait_us` 和 `shared_wait_us` 分别记录 FS mutex、scratch mutex 与共享 SafeCall mutex 的等待。`dispatch_us` 从 request 提交到 worker 开始 callback；`native_us` 是 callback 的 wall time，包含其内部stdio、pref store 与调度等待，并不是纯 flash 或 CPU 耗时。`wake_copy_us`从 callback 返回到 caller 收到完成信号，包含 context copy 和唤醒。`direct_calls` 区分 internal-stack 直接调用；它不经过共享 dispatcher。READ/WRITE 在保留原 4096-byte 分块与 scratch 持有范围的同时累加各块计数，`native_max_us` 保留最慢 callback。Pref 保留整个原 store 操作和原子写入步骤，不为计时拆分 transaction。Pref 数字从内部 I/O wrapper 开始，不包含其外层Preference provider mutex 等待；VFS 内部锁仍在 callback wall time 内。READ/WRITE 的 `wall_us` 从 scratch acquire 之前开始；其他 FS 操作从内部 `littlefs_run_safe` 开始，OPEN 之前的 path translation 与 file-wrapper calloc 不在其中。因此总 `wall_us` 不是完整 PAL Open 时间，还包括该计时范围内的初始化、普通拷贝与 wrapper 工作，不能把嵌套记录相加或据缺失的快记录推定操作未执行。
 
 这是定位工具；ON 的时钟和输出会影响调度，记录不是硬件资格结果。实际用例仍需保留完整 CASE、原门限、checked canonical 输出与真实 cleanup 证据。
+
+## App BLE command display name
+
+ESP App command config 的可选 `ble_local_name` 传给公共 H2Loader BLE service；NULL 保留默认无名广播，非空名字在 service open 时复制，并在断开、共存 pause/resume 后保留。它不替代 board、Service UUID、versioned identity 或 `device_uid`。产品只在自己的 launcher 构造名字，不修改 NimBLE backend 或公共 registry。Legacy 名字与 manufacturer identity 共享 31-byte scan response；公共 service 在 identity 编码前预留名字空间，超出容量明确失败。最终 consumer 必须用真实 scan response 和连接后 status 交叉验证名字、board 与 UID；host packing test 不代表手机显示已经通过。
