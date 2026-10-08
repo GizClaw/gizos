@@ -259,7 +259,19 @@ static h2_pal_result_t windows_copy_mounts(
         (void)CloseHandle(source_handle);
         platform->mounts[index].source_len = wcslen(
             platform->mounts[index].source);
-        while (platform->mounts[index].source_len > 3u &&
+        const wchar_t *canonical = platform->mounts[index].source;
+        size_t root_length = 3u;
+        if (platform->mounts[index].source_len >= 7u &&
+            canonical[0] == L'\\' && canonical[1] == L'\\' &&
+            canonical[2] == L'?' && canonical[3] == L'\\' &&
+            ((canonical[4] >= L'A' && canonical[4] <= L'Z') ||
+             (canonical[4] >= L'a' && canonical[4] <= L'z')) &&
+            canonical[5] == L':' && canonical[6] == L'\\') {
+            root_length = 7u;
+        }
+        /* A canonical extended DOS drive root needs its final separator
+         * to name a directory rather than a volume. */
+        while (platform->mounts[index].source_len > root_length &&
                platform->mounts[index]
                        .source[platform->mounts[index].source_len - 1u] ==
                    L'\\') {

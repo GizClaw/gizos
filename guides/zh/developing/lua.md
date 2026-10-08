@@ -438,7 +438,10 @@ Release consumer 使用公共 `lua_app_catalog.cquery` 从 Provider 读取 app i
 
 ```sh
 bazel test --config=macos_arm64 //libs/lua:app_package_test
+make bazel-test-downstream-consumer
 ```
+
+Host package test 同时校验 archive、manifest 和 metadata 三个 output group。Downstream consumer 用真实 `@gizos` rule 声明无 data 与有 data 的应用，执行两个公共 cquery formatter，再通过 `bazel test` 把 Provider identity、formatter 路径和 `DefaultInfo` 文件集合与全部生成文件逐一核对；同一测试也校验包内 manifest、payload 和发布下载校验值。
 
 ## App 存储
 
