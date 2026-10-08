@@ -67,6 +67,8 @@ Lierda `NT26KCNB20NNC` profile 使用同步 solicited AT response 与独立的 h
 
 ESP adapter 通过每次调用的 raw collector 保留完整信息行，按完整行消费 OK/ERROR/CME/CMS，超长/NUL 输入仍消费到 final result 或 timeout；不能用只留下 SDK 最后一行的结果证明响应无歧义。SDK 同步 command 清除 callback 后才归还输出 storage；迟到 RX 不访问上次调用的借出缓冲。具体固定 SDK C-extension header、全响应边界和无正文失败诊断见 [ESP-IDF component](./components/esp_idf6_x#lierda-data-only-uart-ppp)。
 
+标准 CPIN CME busy/absent/PIN/PUK 分类使用本次同步 command 的可选 typed error metadata，不是 URC 或 cached SIM 推断。Metadata 在下一条命令或 close 前清空；缺失 metadata、unknown/bare ERROR/timeout 保持原错误。Busy 返回 WOULD_BLOCK 后由调用方继续轮询，不能立即关电后再次从冷启动开始；产品拥有轮询间隔与截止、用户提示及恢复策略。
+
 ## 插卡后的就绪恢复
 
 `h2_quectel_is_urc` 接受 `+QSIMSTAT` 和非对应查询期间的 `+CPIN:`；

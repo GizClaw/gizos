@@ -15,6 +15,15 @@ typedef enum h2_lierda_modem_model {
     H2_LIERDA_MODEM_MODEL_NT26KCNB20NNC = 1,
 } h2_lierda_modem_model_t;
 
+/** Metadata for the immediately preceding command on this transport instance.
+ * cme_valid is 0 or 1; a valid code is a complete numeric/recognized standard
+ * verbose CME result (0..65535), never a guess from timeout or generic IO.
+ * Command/response text and identity are deliberately absent. */
+typedef struct h2_lierda_command_error {
+    uint32_t cme_valid;
+    uint32_t cme_code;
+} h2_lierda_command_error_t;
+
 /** Borrowed transport. Callbacks run under the provider operation mutex and
  * must not reenter its API. SDK/IP callbacks update transport-owned state,
  * never call the provider. All callbacks return errors without logging
@@ -42,6 +51,16 @@ typedef struct h2_lierda_modem_transport {
     h2_pal_result_t (*data_close)(void *user, uint32_t timeout_ms);
     h2_pal_result_t (*data_status)(
         void *user, h2_pal_modem_data_status_t *out_status);
+    /** Optional. Reads only the command just returned, under the same operation
+     * mutex; does not send AT. Reset metadata before EVERY command attempt,
+     * including rejected/timeout attempts, and on close. Failed/incomplete
+     * frames must not reuse an earlier CME. Missing/failed callback preserves IO.
+     * CPIN CME14 returns WOULD_BLOCK with empty status; keep power and poll
+     * from the caller's bounded readiness policy. CME10 reports ABSENT; defined
+     * PIN/PUK requirements report LOCKED. No PIN write or automatic reset occurs.
+     * Unknown CME, SIM failure/wrong and non-CME IO remain errors. */
+    h2_pal_result_t (*get_command_error)(
+        void *user, h2_lierda_command_error_t *out_error);
 } h2_lierda_modem_transport_t;
 
 typedef struct h2_lierda_modem_config {
@@ -62,7 +81,13 @@ typedef struct h2_lierda_modem_config {
  * URC/call/GNSS/OTA/CMUX/power-policy capability is exposed.
  * Outputs are cleared on failure. create returns a retained out_modem only if
  * a partially created mutex could not be destroyed; destroy must then be retried.
- * All PAL operations may block in their transport callback; timeout is ms. */
+ * All PAL operations may block in their transport callback; timeout is ms.
+ * get_status CPIN CME14 is WOULD_BLOCK with cleared output, not a transport
+ * teardown; callers keep power and poll at their own interval/deadline. A
+ * single call does not loop/sleep or wait for SIM initialization. Known absent
+ * or credential requirements are typed statuses; only READY permits further
+ * registration/attachment queries and data startup. PIN2/PUK2 describe a
+ * pending credential, not a claim that all MT/network operations are blocked. */
 h2_pal_result_t h2_lierda_modem_create(
     const h2_lierda_modem_config_t *config, h2_lierda_modem_t **out_modem);
 

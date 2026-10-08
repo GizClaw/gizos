@@ -13,19 +13,53 @@ static h2_pal_modem_registration_state_t registration(unsigned value) {
     }
 }
 
+static bool pin_required(const char *value) {
+    static const char *const codes[] = {
+        "SIM PIN", "SIM PUK", "PH-SIM PIN", "PH-FSIM PIN", "PH-FSIM PUK",
+        "SIM PIN2", "SIM PUK2", "PH-NET PIN", "PH-NET PUK",
+        "PH-NETSUB PIN", "PH-NETSUB PUK", "PH-SP PIN", "PH-SP PUK",
+        "PH-CORP PIN", "PH-CORP PUK",
+    };
+    for (size_t i = 0u; i < sizeof(codes) / sizeof(codes[0]); ++i)
+        if (strcmp(value, codes[i]) == 0) return true;
+    return false;
+}
+
 h2_pal_result_t h2_lierda_read_status(
     h2_lierda_modem_t *modem, h2_pal_modem_status_t *out_status) {
     char response[H2_LIERDA_RESPONSE_SIZE];
     char line[H2_LIERDA_RESPONSE_SIZE];
     h2_pal_modem_status_t status = {.capabilities = H2_PAL_MODEM_CAPABILITY_DATA};
     h2_pal_result_t rc = h2_lierda_command(modem, "AT+CPIN?", response);
+    if (rc == H2_PAL_ERR_IO && modem->config.transport.get_command_error != NULL) {
+        h2_lierda_command_error_t error = {0};
+        const h2_pal_result_t metadata = modem->config.transport.get_command_error(
+            modem->config.transport.user, &error);
+        if (metadata != H2_PAL_OK) return rc; /* no trusted CME: preserve command IO */
+        if (error.cme_valid > 1u || (error.cme_valid && error.cme_code > 65535u))
+            return H2_PAL_ERR_FORMAT;
+        if (error.cme_valid) {
+            switch (error.cme_code) {
+                case 14u: return H2_PAL_ERR_WOULD_BLOCK;
+                case 10u: status.sim = H2_PAL_MODEM_SIM_STATE_ABSENT; break;
+                case 5u: case 6u: case 7u: case 11u: case 12u:
+                case 17u: case 18u:
+                case 40u: case 41u: case 42u: case 43u:
+                case 44u: case 45u: case 46u: case 47u:
+                    status.sim = H2_PAL_MODEM_SIM_STATE_LOCKED; break;
+                default: return rc; /* failure/wrong/unknown is not absent/busy */
+            }
+            *out_status = status;
+            return H2_PAL_OK; /* no registration/attachment query without READY */
+        }
+    }
     if (rc != H2_PAL_OK) return rc;
     rc = h2_lierda_response_line(response, "+CPIN:", line, sizeof(line));
     if (rc != H2_PAL_OK) return rc;
     const char *sim = line;
     while (*sim == ' ' || *sim == '\t') ++sim;
     if (strcmp(sim, "READY") == 0) status.sim = H2_PAL_MODEM_SIM_STATE_READY;
-    else if (strstr(sim, "PIN") != NULL || strstr(sim, "PUK") != NULL) {
+    else if (pin_required(sim)) {
         status.sim = H2_PAL_MODEM_SIM_STATE_LOCKED;
     } else status.sim = H2_PAL_MODEM_SIM_STATE_UNKNOWN;
     /* No vendor-specific absent-SIM error/URC guess. */

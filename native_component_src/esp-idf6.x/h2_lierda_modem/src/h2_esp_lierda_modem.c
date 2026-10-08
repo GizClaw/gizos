@@ -40,6 +40,7 @@ struct h2_esp_lierda_modem {
     bool closing;
     bool initialized;
     h2_pal_modem_data_status_t data;
+    h2_lierda_command_error_t command_error;
 };
 
 static h2_pal_result_t map_error(esp_err_t error) {
@@ -192,6 +193,7 @@ static h2_pal_result_t remove_handler(
 
 static h2_pal_result_t transport_close(void *user, uint32_t timeout_ms) {
     h2_esp_lierda_modem_t *modem = user;
+    memset(&modem->command_error, 0, sizeof(modem->command_error));
     h2_pal_result_t rc = lock(modem);
     if (rc != H2_PAL_OK) return rc;
     modem->closing = true;
@@ -246,6 +248,7 @@ static h2_pal_result_t transport_close(void *user, uint32_t timeout_ms) {
 
 static h2_pal_result_t transport_open(void *user, uint32_t timeout_ms) {
     h2_esp_lierda_modem_t *modem = user;
+    memset(&modem->command_error, 0, sizeof(modem->command_error));
     if (modem->dce != NULL || modem->powered || modem->netif != NULL) {
         return H2_PAL_ERR_INVALID_STATE;
     }
@@ -308,6 +311,8 @@ static h2_pal_result_t transport_status(void *user, h2_pal_modem_data_status_t *
 static h2_pal_result_t transport_command(
     void *user, const char *command, char *response, size_t size, uint32_t timeout_ms) {
     h2_esp_lierda_modem_t *modem = user;
+    /* Operation mutex owns this per-instance record, never SDK callbacks. */
+    memset(&modem->command_error, 0, sizeof(modem->command_error));
     if (size < 2u || timeout_ms > INT_MAX || modem->dce == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
@@ -321,11 +326,22 @@ static h2_pal_result_t transport_command(
     rc = h2_esp_lierda_command(modem->dce, command, response, size, timeout_ms, &command_status);
     if (command_status.command_started && !command_status.final_result)
         modem->command_fenced = true; /* pending wire result cannot be reused */
+    if (rc == H2_PAL_ERR_IO && command_status.final_result && command_status.cme_error >= 0) {
+        modem->command_error.cme_valid = 1u;
+        modem->command_error.cme_code = (uint32_t)command_status.cme_error;
+    }
     if (rc != H2_PAL_OK)
-        ESP_LOGW("lierda_modem", "LIERDA_FAIL stage=%s sdk_rc=%d pal_rc=%d cme_code=%d",
+        ESP_LOGW("lierda_modem", "LIERDA_FAIL stage=%s sdk_rc=%d pal_rc=%d cme_code=%d cme_present=%d complete=%d",
             command_stage(command), (int)command_status.sdk_error, (int)rc,
-            (int)command_status.cme_error);
+            (int)command_status.cme_error, (int)command_status.cme_present,
+            (int)command_status.final_result);
     return rc;
+}
+
+static h2_pal_result_t transport_command_error(void *user, h2_lierda_command_error_t *out_error) {
+    if (out_error == NULL) return H2_PAL_ERR_INVALID_ARG;
+    *out_error = ((h2_esp_lierda_modem_t *)user)->command_error;
+    return H2_PAL_OK;
 }
 
 static h2_pal_result_t transport_data_open(
@@ -444,7 +460,8 @@ h2_pal_result_t h2_esp_lierda_modem_create(
             .sync_api = config->sync_api, .apn = config->apn,
             .transport = {.user = modem, .open = transport_open, .close = transport_close,
                 .command = transport_command, .data_open = transport_data_open,
-                .data_close = transport_data_close, .data_status = transport_status},
+                .data_close = transport_data_close, .data_status = transport_status,
+                .get_command_error = transport_command_error},
         };
         rc = h2_lierda_modem_create(&provider_config, &modem->provider);
     }

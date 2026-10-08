@@ -503,7 +503,7 @@ static void complete_response_and_failure_labels(void) {
     sdk.fail_command = "AT+CPIN?";
     assert(h2_pal_modem_get_status(api, &status) == H2_PAL_ERR_IO);
     assert(status.sim == 0 && sdk.dces == 1u && sdk.power_off == 0u);
-    assert(strcmp(sdk.log_message, "LIERDA_FAIL stage=at_sim sdk_rc=-1 pal_rc=-4 cme_code=-1") == 0);
+    assert(strcmp(sdk.log_message, "LIERDA_FAIL stage=at_sim sdk_rc=-1 pal_rc=-4 cme_code=-1 cme_present=1 complete=1") == 0);
     assert(strstr(sdk.log_message, "fixture") == NULL && strstr(sdk.log_message, "AT+") == NULL);
     sdk.fail_command = NULL;
     assert(h2_pal_modem_get_status(api, &status) == H2_PAL_OK);
@@ -553,6 +553,7 @@ static void raw_results_and_bounds(void) {
         assert(sdk_error.sdk_error == ESP_FAIL && response[0] == '\0');
         assert(sdk_error.command_started && sdk_error.final_result);
         assert(sdk_error.cme_error == (i == 1u ? 14 : -1));
+        assert(sdk_error.cme_present == (i == 1u));
         assert(sdk.received == strlen(errors[i])); /* complete result consumed */
     }
     sdk.raw_response = "\r\nLOOKUP_OK ERROR text\r\nOK\r\n";
@@ -565,7 +566,7 @@ static void raw_results_and_bounds(void) {
     assert(sdk_error.sdk_error == ESP_ERR_TIMEOUT);
     assert(sdk_error.command_started && !sdk_error.final_result);
     const char *unknown_cme[] = {
-        "\r\n+CME ERROR: SIM busy\r\n", "\r\n+CME ERROR: 65536\r\n",
+        "\r\n+CME ERROR: SIM busy now\r\n", "\r\n+CME ERROR: 65536\r\n",
         "\r\n+CME ERROR: 14oops\r\n", "\r\n+CME ERROR: -14\r\n",
     };
     for (size_t i = 0u; i < sizeof(unknown_cme) / sizeof(unknown_cme[0]); ++i) {
@@ -617,6 +618,76 @@ static void raw_results_and_bounds(void) {
     lierda_test_dce_destroy(dce.dce);
 }
 
+static void standard_sim_readiness(void) {
+    h2_esp_lierda_modem_t *modem = create();
+    h2_pal_modem_api_t *api = h2_esp_lierda_modem_api(modem);
+    assert(h2_pal_modem_open(api, 1u) == H2_PAL_OK);
+    sdk.raw_command = "AT+CPIN?"; sdk.response_chunk = 1u;
+    sdk.raw_response = "\r\n+CME ERROR: SIM busy\r\n";
+    h2_pal_modem_status_t status;
+    assert(h2_pal_modem_get_status(api, &status) == H2_PAL_ERR_WOULD_BLOCK);
+    assert(status.capabilities == 0u && sdk.power_off == 0u && sdk.power_on == 1u);
+    assert(strstr(sdk.log_message, "cme_code=14") != NULL);
+    assert(strstr(sdk.log_message, "SIM busy") == NULL);
+    assert(h2_pal_modem_data_open(api, 1u) == H2_PAL_ERR_WOULD_BLOCK);
+    assert(sdk.command_mode && sdk.power_off == 0u);
+    const char *absent[] = {"\r\n+CME ERROR: 10\r\n", "\r\n+CME ERROR: SIM not inserted\r\n"};
+    for (size_t i = 0u; i < sizeof(absent) / sizeof(absent[0]); ++i) {
+        sdk.raw_response = absent[i];
+        const unsigned before = sdk.commands;
+        assert(h2_pal_modem_get_status(api, &status) == H2_PAL_OK);
+        assert(status.sim == H2_PAL_MODEM_SIM_STATE_ABSENT && sdk.commands == before + 1u);
+        assert(status.registration == H2_PAL_MODEM_REGISTRATION_UNKNOWN);
+    }
+    const char *locks[] = {
+        "\r\n+CME ERROR: SIM PIN required\r\n", "\r\n+CME ERROR: SIM PUK required\r\n",
+        "\r\n+CME ERROR: SIM PIN2 required\r\n", "\r\n+CME ERROR: SIM PUK2 required\r\n",
+    };
+    for (size_t i = 0u; i < sizeof(locks) / sizeof(locks[0]); ++i) {
+        sdk.raw_response = locks[i];
+        const unsigned before = sdk.commands;
+        assert(h2_pal_modem_get_status(api, &status) == H2_PAL_OK);
+        assert(status.sim == H2_PAL_MODEM_SIM_STATE_LOCKED && sdk.commands == before + 1u);
+    }
+    const char *errors[] = {
+        "\r\n+CME ERROR: SIM failure\r\n", "\r\n+CME ERROR: SIM wrong\r\n",
+        "\r\n+CME ERROR: SIM busy vendor suffix\r\n", "\r\n+CME ERROR: sim busy\r\n",
+        "\r\nERROR\r\n", "\r\n+CME ERROR: 99\r\n",
+    };
+    for (size_t i = 0u; i < sizeof(errors) / sizeof(errors[0]); ++i) {
+        sdk.raw_response = errors[i];
+        assert(h2_pal_modem_get_status(api, &status) == H2_PAL_ERR_IO && status.sim == 0);
+    }
+    sdk.raw_response = NULL;
+    assert(h2_pal_modem_get_status(api, &status) == H2_PAL_OK);
+    assert(status.sim == H2_PAL_MODEM_SIM_STATE_READY && sdk.power_on == 1u && sdk.power_off == 0u);
+    sdk.raw_response = "\r\n+CME ERROR: SIM busy\r\n";
+    assert(h2_pal_modem_get_status(api, &status) == H2_PAL_ERR_WOULD_BLOCK);
+    sdk.raw_response = "\r\nERROR\r\n"; /* previous busy cannot classify generic IO */
+    assert(h2_pal_modem_get_status(api, &status) == H2_PAL_ERR_IO);
+    assert(strstr(sdk.log_message, "cme_present=0 complete=1") != NULL);
+    sdk.raw_response = "\r\n+CME ERROR: SIM busy\r\n";
+    assert(h2_pal_modem_get_status(api, &status) == H2_PAL_ERR_WOULD_BLOCK);
+    sdk.raw_response = "\r\npartial\r\n";
+    assert(h2_pal_modem_get_status(api, &status) == H2_PAL_ERR_TIMEOUT);
+    assert(h2_pal_modem_get_status(api, &status) == H2_PAL_ERR_INVALID_STATE);
+    sdk.fail_power_off = true;
+    assert(h2_pal_modem_close(api, 1u) == H2_PAL_ERR_IO && sdk.dces == 1u);
+    sdk.fail_power_off = false;
+    assert(h2_pal_modem_close(api, 1u) == H2_PAL_OK);
+    sdk.raw_response = NULL;
+    assert(h2_pal_modem_open(api, 1u) == H2_PAL_OK);
+    assert(h2_pal_modem_get_status(api, &status) == H2_PAL_OK && status.sim == H2_PAL_MODEM_SIM_STATE_READY);
+    destroy(modem);
+    modem = create(); api = h2_esp_lierda_modem_api(modem);
+    sdk.fail_command = "AT";
+    assert(h2_pal_modem_open(api, 1u) == H2_PAL_ERR_IO && sdk.dces == 0u);
+    sdk.fail_command = NULL;
+    assert(h2_pal_modem_open(api, 1u) == H2_PAL_OK);
+    assert(h2_pal_modem_get_status(api, &status) == H2_PAL_OK);
+    destroy(modem);
+}
+
 int main(void) {
     live_data_and_teardown();
     timeout_and_old_ip();
@@ -626,6 +697,7 @@ int main(void) {
     partial_open_quiescence();
     complete_response_and_failure_labels();
     raw_results_and_bounds();
+    standard_sim_readiness();
     puts("Lierda native PPP state/teardown tests passed");
     return 0;
 }

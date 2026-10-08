@@ -56,8 +56,11 @@ typedef struct h2_esp_lierda_modem_config {
  * open with INVALID_STATE until successful whole close/reopen. This prevents
  * a pending old result being accepted as a new command's acknowledgement.
  * Failure logs contain fixed step labels, SDK/PAL codes and a strictly numeric
- * CME code (0..65535, otherwise -1/unknown), never command/response text,
+ * CME code (numeric0..65535 or exact TS27.007 verbose text, otherwise -1), never command/response text,
  * APN credentials or modem identity. No vendor error meaning is inferred.
+ * Completed CPIN CME14 is reported by the PAL as WOULD_BLOCK so the caller
+ * can keep power and poll; CME10 is ABSENT and defined PIN/PUK errors LOCKED.
+ * Unknown/failure/wrong errors remain IO. No automatic PIN or reset is sent.
  * On failure a non-NULL out_modem is retained only when cleanup failed; keep it
  * and dependencies alive and call destroy again. */
 h2_pal_result_t h2_esp_lierda_modem_create(
