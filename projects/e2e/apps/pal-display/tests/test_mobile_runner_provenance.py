@@ -112,6 +112,10 @@ class MobileRunnerProvenanceTest(unittest.TestCase):
         variants = [
             current.replace("Touch PAL 不识别".encode("utf-8"), b"Changed Touch policy", 1),
             current[:end] + b"### Display\nInjected policy\n\n" + current[end:],
+            current[:end] + b"###\tDisplay\nInjected policy\n\n" + current[end:],
+            current[:end] + b"   ###  Display\nInjected policy\n\n" + current[end:],
+            current[:end] + b"###\nInjected empty heading\n\n" + current[end:],
+            current[:end] + b"Display\n=======\nInjected policy\n\n" + current[end:],
             current + "\n### Modem 通话扬声器音量\n".encode("utf-8"),
             current[:start] + current[end:] + current[start:end],
         ]

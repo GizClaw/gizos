@@ -206,7 +206,13 @@ def modem_guide_section(content):
         "missing or duplicate Modem/Touch section boundary")
     start, end = content.index(start_marker), content.index(end_marker)
     assert start < end, "Modem section moved past Touch"
-    headings = re.findall(rb"^#{1,6} [^\n]*\n", content[start:end], re.MULTILINE)
+    region = content[start:end]
+    # CommonMark permits tabs after hashes, up to three leading spaces and
+    # empty ATX headings. Detect those forms even though only our exact two
+    # Modem headings are admitted. Setext headings are outside this profile.
+    headings = re.findall(rb"^ {0,3}#{1,6}(?:[ \t]+[^\r\n]*|)(?:\r?\n|\Z)", region, re.MULTILINE)
+    assert not re.search(rb"^ {0,3}(?:=+|-+)[ \t]*\r?$", region, re.MULTILINE), (
+        "Setext heading or underline inside Modem ownership region")
     allowed = [start_marker, "### Modem 紧急号码和固件升级\n".encode("utf-8")]
     assert headings in (allowed[:1], allowed), "non-Modem section inside Modem ownership region"
     return start, end
