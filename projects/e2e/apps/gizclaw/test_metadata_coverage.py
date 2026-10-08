@@ -26,7 +26,7 @@ class MetadataCoverageTest(unittest.TestCase):
         self.assertEqual({x["symbol"] for x in result["functions"]
                           if x["status"] == "covered"}, expected)
         self.assertFalse(result["valid"])
-        self.assertEqual(result["missing"], 228 - 9)
+        self.assertEqual(result["missing"], 236 - 9)
         self.assertNotIn("value=value", run.stdout)
 
     def test_social_ping_requires_receiver_evidence(self):
@@ -47,7 +47,7 @@ class MetadataCoverageTest(unittest.TestCase):
         self.assertEqual({x["symbol"] for x in result["functions"]
                           if x["status"] == "covered"}, expected)
         self.assertFalse(result["valid"])
-        self.assertEqual(result["missing"], 228 - 6)
+        self.assertEqual(result["missing"], 236 - 6)
 
 
 if __name__ == "__main__":
