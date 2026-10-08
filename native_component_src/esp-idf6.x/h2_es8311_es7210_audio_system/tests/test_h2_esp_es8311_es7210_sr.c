@@ -7,6 +7,8 @@
 
 static h2_esp_es8311_es7210_aec_stats_t observed;
 static unsigned observation_count;
+static bool observation_enabled;
+static bool observe_enabled(void *user) { (void)user; return observation_enabled; }
 static void observe(void *user, const h2_esp_es8311_es7210_aec_stats_t *stats) {
     ++*(unsigned *)user;
     observed = *stats;
@@ -117,6 +119,16 @@ int main(void) {
     CHECK(h2_esp_es8311_es7210_sr_process(&state, &raw_frame, &out_frame, 0u) == H2_AUDIO_OK);
     CHECK(observed.lane_clipped[0] == 2u);
     CHECK(observed.lane_peak[0] == 32768u);
+    h2_esp_es8311_es7210_sr_deinit(&state);
+    aggressive.aec_observe_enabled = observe_enabled;
+    observation_enabled = false;
+    unsigned count_before = observation_count;
+    CHECK(h2_esp_es8311_es7210_sr_init(&state, &aggressive) == H2_AUDIO_OK);
+    CHECK(h2_esp_es8311_es7210_sr_process(&state, &raw_frame, &out_frame, 0u) == H2_AUDIO_OK);
+    CHECK(observation_count == count_before);
+    observation_enabled = true;
+    CHECK(h2_esp_es8311_es7210_sr_process(&state, &raw_frame, &out_frame, 0u) == H2_AUDIO_OK);
+    CHECK(observation_count == count_before + 1u);
     h2_esp_es8311_es7210_sr_deinit(&state);
     aggressive.aec_nlp_level = (h2_esp_es8311_es7210_aec_nlp_level_t)9;
     CHECK(h2_esp_es8311_es7210_sr_init(&state, &aggressive) == H2_AUDIO_ERR_INVALID_ARG);
