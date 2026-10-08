@@ -100,6 +100,19 @@ const h2_pal_audio_api_t *h2_app_test_audio_api(h2_app_test_audio_t *audio);
 void h2_app_test_audio_set_capture_active(h2_app_test_audio_t *audio,
                                          bool active);
 
+/** Switch mic reads to the delegate's actual PCM for acoustic/AEC acceptance.
+ * Defaults to false. With passthrough enabled, capture_active and the fixture
+ * content barrier do not suppress real frames. Reads poll the delegate without
+ * waiting and return its result (empty success becomes WOULD_BLOCK), never
+ * synthesize silence after a hardware error, and do not advance the fixture.
+ * Valid fixture/mic start requirements remain unchanged. Disabling returns to
+ * fixture mode with a fresh pacing epoch and the existing fixture offset.
+ * Atomic-only, callable concurrently with reads; one in-flight frame can still
+ * come from the previous source. Does not start/stop the delegate or retain PCM.
+ * Callers remain quiescent before destroy. NULL is ignored. */
+void h2_app_test_audio_set_capture_passthrough(h2_app_test_audio_t *audio,
+                                               bool enabled);
+
 /** Control the initial content barrier independently of capture activity.
  * Defaults to true for existing callers. If false when mic starts, active
  * capture reads emit format-correct paced silence without advancing fixture

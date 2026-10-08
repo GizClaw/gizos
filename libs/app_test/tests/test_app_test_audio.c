@@ -14,6 +14,8 @@ typedef struct fake_audio {
   unsigned int drains;
   unsigned int closes;
   int mic_read_rc;
+  bool empty_mic;
+  bool oversized_mic;
   int stop_mic_rc;
   int drain_rc;
   int close_rc;
@@ -108,7 +110,7 @@ static int fake_mic_read(void *user, h2_audio_frame_t *frame,
     return audio->mic_read_rc;
   }
   memset(frame->data, 0x7f, 8u);
-  frame->bytes = 8u;
+  frame->bytes = audio->empty_mic ? 0u : audio->oversized_mic ? 16u : 8u;
   return H2_PAL_OK;
 }
 static int fake_track_write(h2_pal_audio_track_t *track,
@@ -431,7 +433,49 @@ static void test_fixture_ready_lead_in(void) {
   assert(h2_app_test_audio_destroy(audio) == H2_PAL_OK);
 }
 
+static void test_real_capture_passthrough(void) {
+  const h2_pal_mem_api_t mem = {.vtable = &s_mem_vtable};
+  fake_time_t clock = {.now_ms = 1000u};
+  clock.api = (h2_pal_time_api_t){.user = &clock, .vtable = &s_time_vtable};
+  fake_audio_t fake = {.mic_format = {16000u, 4u, 1u, H2_AUDIO_SAMPLE_S16LE}};
+  fake.api = (h2_pal_audio_api_t){.user = &fake, .vtable = &s_audio_vtable};
+  const uint8_t pcm[16] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+  const h2_app_test_audio_fixture_t fixture = {pcm, sizeof(pcm), fake.mic_format};
+  h2_app_test_audio_t *audio = NULL;
+  assert(h2_app_test_audio_create(&mem, &clock.api, &fake.api, &fixture, &audio) == H2_PAL_OK);
+  const h2_pal_audio_api_t *api = h2_app_test_audio_api(audio);
+  assert(h2_pal_audio_start_mic(api) == H2_PAL_OK);
+  uint8_t buffer[8] = {0};
+  h2_audio_frame_t frame = h2_audio_frame_for_buffer(buffer, sizeof(buffer), fake.mic_format);
+  assert(h2_pal_audio_mic_read(api, &frame, 0u) == H2_PAL_OK);
+  assert(memcmp(buffer, pcm, sizeof(buffer)) == 0);
+  h2_app_test_audio_set_capture_active(audio, false);
+  h2_app_test_audio_set_capture_passthrough(audio, true);
+  assert(h2_pal_audio_mic_read(api, &frame, 100u) == H2_PAL_OK && frame.bytes == 8u);
+  for (unsigned i = 0u; i < sizeof(buffer); ++i) assert(buffer[i] == 0x7fu);
+  h2_app_test_audio_evidence_t evidence = {0};
+  assert(h2_app_test_audio_copy_evidence(audio, &evidence) == H2_PAL_OK);
+  assert(evidence.fixture_bytes_emitted == 8u && !evidence.fixture_complete);
+  fake.mic_read_rc = H2_PAL_ERR_IO;
+  assert(h2_pal_audio_mic_read(api, &frame, 100u) == H2_PAL_ERR_IO && frame.bytes == 0u);
+  fake.mic_read_rc = H2_PAL_ERR_WOULD_BLOCK;
+  assert(h2_pal_audio_mic_read(api, &frame, 100u) == H2_PAL_ERR_WOULD_BLOCK && frame.bytes == 0u);
+  fake.mic_read_rc = H2_PAL_OK; fake.empty_mic = true;
+  assert(h2_pal_audio_mic_read(api, &frame, 100u) == H2_PAL_ERR_WOULD_BLOCK && frame.bytes == 0u);
+  fake.empty_mic = false; fake.oversized_mic = true;
+  assert(h2_pal_audio_mic_read(api, &frame, 100u) == H2_PAL_ERR_FORMAT && frame.bytes == 0u);
+  fake.oversized_mic = false;
+  h2_app_test_audio_set_capture_passthrough(audio, false);
+  h2_app_test_audio_set_capture_active(audio, true);
+  clock.now_ms += 3000u;
+  assert(h2_pal_audio_mic_read(api, &frame, 0u) == H2_PAL_OK);
+  assert(memcmp(buffer, pcm + 8, sizeof(buffer)) == 0);
+  assert(h2_pal_audio_stop_mic(api) == H2_PAL_OK);
+  assert(h2_app_test_audio_destroy(audio) == H2_PAL_OK);
+}
+
 int main(void) {
+  test_real_capture_passthrough();
   test_fixture_ready_lead_in();
   test_contended_backoff_failure();
   test_capture_gate();

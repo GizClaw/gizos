@@ -65,6 +65,8 @@ int h2_esp_es8311_es7210_audio_system_init(
         return H2_AUDIO_ERR_INVALID_ARG;
     }
     if (config->sample_rate_hz == 0u ||
+        (config->aec_nlp_level != H2_ESP_ES8311_ES7210_AEC_NLP_NORMAL &&
+         config->aec_nlp_level != H2_ESP_ES8311_ES7210_AEC_NLP_AGGRESSIVE) ||
         config->frame_samples_per_channel == 0u ||
         config->frame_samples_per_channel > H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_MAX_FRAME_SAMPLES ||
         config->raw_channels == 0u ||

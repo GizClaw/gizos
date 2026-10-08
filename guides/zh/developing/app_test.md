@@ -508,6 +508,8 @@ Preference writer 的修改在 commit 前只对该 writer 可见，reader 读取
 
 Audio decorator 要求 Time PAL 提供会让出当前任务的 `sleep_ms`，缺少时 create 返回 `INVALID_ARG`；它既用于 fixture 节拍，也用于 fixture lock 忙时的退避，避免高优先级 mic 读取在同核自旋饿死持锁方。Audio decorator 默认输出 fixture。后台麦克风泵持续读取的产品应在启动 Runtime 前暂停 fixture，再由公开 observation callback 发布实际 capture 状态；暂停期间继续采样真实麦克风健康，但 read 立即返回 WOULD_BLOCK 和零字节，不消耗 PCM。恢复保留样本位置与 EOF，从首次启用的 read 重新建立 pacing epoch，不补发暂停期间的帧；重复发布同一状态不重置时钟。暂停／恢复即使发生在两次 read 之间或 pacing sleep 内也会被检测。控制状态跨 mic stop/start 与 fixture 更换保留，mic start 仍回绕样本。调用方保持输出暂停后，可在后台 mic 持续运行时更换同格式 fixture；替换与在途帧复制互斥，成功后旧 PCM 可释放，进度与 EOF 清零，真实采集健康保留。替换需与 mic start/stop 串行，不在 observation callback 中执行。该控制只发布原子状态，不调用 PAL 或获取 fixture lock；已越过最终状态检查的在途 read 仍可能输出一帧，因此它不是停止上传的 completion barrier。产品采集状态、素材选择和业务断言由 consumer 拥有。
 
+声学／AEC 验收可以在固定语音发送完成后开启 `h2_app_test_audio_set_capture_passthrough()`，将后续真实 delegate PCM 交给生产 App，而不是继续用 EOF 静音覆盖硬件。该模式不推进 fixture，直接传播采集错误或空队列；暂停 fixture 与 content barrier 不抑制真实帧。恢复 fixture 模式保留 offset，并通过原子 capture generation 重建节拍。切换不改变 mic 生命周期，在途帧仍可能来自旧 source；关闭和更换 fixture 的既有串行约束不变。测试的安静窗口、回声衰减和再次应答判定属于 consumer，不把注入后的静音当作声学通过。
+
 测试方通过 `h2_app_test_audio_copy_evidence()` 读取独立的 PAL 证据；App/UI 的 paired snapshot 仍由 App adapter 提供。Evidence 支持并发读取，但多字段不是原子快照，一致性断言应放在测试的 completion barrier 后。公共头文件定义具体并发与容量边界。
 
 ## Memory Driver

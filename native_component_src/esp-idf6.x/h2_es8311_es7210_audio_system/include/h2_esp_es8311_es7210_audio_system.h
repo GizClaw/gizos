@@ -15,6 +15,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "h2_esp_es8311_es7210_aec_stats.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -84,6 +85,10 @@ typedef struct h2_esp_es8311_es7210_audio_system_config {
     const h2_pal_queue_api_t *queue_api;
     const h2_pal_sync_api_t *sync_api;
     int enable_aec;
+    /** Zero preserves normal FD nonlinear processing. */
+    h2_esp_es8311_es7210_aec_nlp_level_t aec_nlp_level;
+    h2_esp_es8311_es7210_aec_observe_fn aec_observe;
+    void *aec_observer_user;
     /** Optional board curve; zero initialization preserves legacy mapping. */
     h2_es8311_volume_config_t speaker_volume;
 } h2_esp_es8311_es7210_audio_system_config_t;
@@ -103,6 +108,8 @@ typedef struct h2_esp_es8311_es7210_sr_state {
     int16_t *ref_frame;
     int16_t *out_frame;
     uint32_t processed_frame_count;
+    h2_esp_es8311_es7210_aec_observe_fn observe;
+    void *observer_user;
 } h2_esp_es8311_es7210_sr_state_t;
 
 typedef struct h2_esp_es8311_es7210_audio_system {
