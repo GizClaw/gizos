@@ -22,6 +22,7 @@ typedef struct h2_esp_wakenet_config {
 h2_pal_result_t h2_esp_wakenet_create(const h2_esp_wakenet_config_t *config,
                                      h2_esp_wakenet_t **out_detector);
 /** Load a bounded, packaged ESP-SR model from FS into allocator-owned memory.
+ * The adapter aligns its model view and requires payload offsets aligned to 16.
  * ESP-SR has one global model registry; an occupied registry returns
  * INVALID_STATE. All lifecycle/process calls have one caller and never race.
  * On failure retain the object and call close/destroy to release partial state.

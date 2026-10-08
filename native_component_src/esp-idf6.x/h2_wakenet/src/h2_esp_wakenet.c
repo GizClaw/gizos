@@ -7,10 +7,12 @@
 #include <string.h>
 
 #define MODEL_MAX_BYTES (1024u * 1024u)
+#define MODEL_ALIGNMENT 16u
 
 struct h2_esp_wakenet {
     h2_esp_wakenet_config_t config;
     h2_pal_fs_file_t *file;
+    uint8_t *blob_storage;
     uint8_t *blob;
     size_t blob_size;
     srmodel_list_t *models;
@@ -61,7 +63,7 @@ static bool valid_blob(const uint8_t *blob, size_t size) {
             uint32_t offset = read_u32(blob + cursor + 32u);
             uint32_t length = read_u32(blob + cursor + 36u);
             if (offset < header_end || offset > size || length == 0u ||
-                length > size - offset || (offset & 3u) != 0u)
+                length > size - offset || (offset & (MODEL_ALIGNMENT - 1u)) != 0u)
                 return false;
             if (strcmp((const char *)blob + cursor, "_MODEL_INFO_") == 0)
                 info = true;
@@ -111,9 +113,13 @@ h2_pal_result_t h2_esp_wakenet_open(h2_esp_wakenet_t *d) {
     if (stat.is_dir || stat.size < 4u || stat.size > MODEL_MAX_BYTES)
         return H2_PAL_ERR_FORMAT;
     d->blob_size = (size_t)stat.size;
-    d->blob = h2_pal_mem_alloc(d->config.allocator, d->blob_size);
-    if (d->blob == NULL)
+    d->blob_storage = h2_pal_mem_alloc(
+        d->config.allocator, d->blob_size + MODEL_ALIGNMENT - 1u);
+    if (d->blob_storage == NULL)
         return H2_PAL_ERR_NO_MEMORY;
+    uintptr_t base = (uintptr_t)d->blob_storage;
+    d->blob = (uint8_t *)((base + MODEL_ALIGNMENT - 1u) &
+                         ~(uintptr_t)(MODEL_ALIGNMENT - 1u));
     rc = h2_pal_fs_open(d->config.fs, d->config.model_path, H2_PAL_FS_OPEN_READ, &d->file);
     if (rc != H2_PAL_OK)
         return rc;
@@ -214,9 +220,10 @@ h2_pal_result_t h2_esp_wakenet_close(h2_esp_wakenet_t *d) {
         srmodel_host_deinit(d->models);
     d->models = NULL;
     h2_pal_mem_free(d->config.allocator, d->chunk);
-    h2_pal_mem_free(d->config.allocator, d->blob);
+    h2_pal_mem_free(d->config.allocator, d->blob_storage);
     d->chunk = NULL;
     d->blob = NULL;
+    d->blob_storage = NULL;
     d->filled = 0u;
     return H2_PAL_OK;
 }

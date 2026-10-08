@@ -13,6 +13,8 @@ static struct h2_pal_fs_file file;
 static srmodel_list_t registry;
 static int registry_live, fs_close_fail, model_fail, unsupported_rate;
 static int detect_count, clean_count, sdk_loads, allocations, alloc_fail_at;
+static int misalign_blob;
+static void *shifted_storage, *shifted_view;
 static uint8_t fixture[128];
 static size_t fixture_size, file_offset;
 
@@ -33,11 +35,28 @@ static void fixture_init(void) {
 }
 static void *allocate(void *user, size_t bytes) {
     (void)user;
-    if (alloc_fail_at > 0 && ++allocations == alloc_fail_at)
+    ++allocations;
+    if (alloc_fail_at > 0 && allocations == alloc_fail_at)
         return NULL;
+    if (misalign_blob && allocations == 2) {
+        shifted_storage = malloc(bytes + 31u);
+        assert(shifted_storage != NULL);
+        shifted_view = (void *)((((uintptr_t)shifted_storage + 15u) &
+                                  ~(uintptr_t)15u) + 8u);
+        assert(((uintptr_t)shifted_view & 15u) == 8u);
+        return shifted_view;
+    }
     return malloc(bytes);
 }
-static void release(void *user, void *ptr) { (void)user; free(ptr); }
+static void release(void *user, void *ptr) {
+    (void)user;
+    if (ptr != NULL && ptr == shifted_view) {
+        free(shifted_storage);
+        shifted_storage = shifted_view = NULL;
+    } else {
+        free(ptr);
+    }
+}
 static const h2_pal_mem_vtable_t memory_vtable = {.alloc = allocate, .free = release};
 static const h2_pal_mem_api_t memory = {.vtable = &memory_vtable};
 static int stat_file(void *user, const char *path, h2_pal_fs_stat_t *out) {
@@ -82,6 +101,8 @@ static const h2_pal_fs_api_t fs = {.vtable = &fs_vtable};
 srmodel_list_t *get_static_srmodels(void) { return registry_live ? &registry : NULL; }
 srmodel_list_t *srmodel_load(const void *root) {
     assert(root != NULL && !registry_live);
+    assert(((uintptr_t)root & 15u) == 0u);
+    assert((((uintptr_t)root + 80u) & 15u) == 0u);
     ++sdk_loads;
     registry_live = 1;
     return &registry;
@@ -180,7 +201,7 @@ static void test_failures_and_close_retry(void) {
     alloc_fail_at = 0;
 }
 static void test_malformed_index_never_reaches_sdk(void) {
-    for (int variant = 0; variant < 6; ++variant) {
+    for (int variant = 0; variant < 7; ++variant) {
         fixture_init();
         if (variant == 0) u32(fixture, 0xffffffffu);
         if (variant == 1) u32(fixture + 36u, 99u);
@@ -188,6 +209,7 @@ static void test_malformed_index_never_reaches_sdk(void) {
         if (variant == 3) u32(fixture + 76u, 0xffffffffu);
         if (variant == 4) memset(fixture + 40u, 'x', 32u);
         if (variant == 5) u32(fixture + 72u, 81u);
+        if (variant == 6) { u32(fixture + 72u, 84u); fixture_size = 88u; }
         h2_esp_wakenet_t *d = make_detector();
         int loads = sdk_loads;
         assert(h2_esp_wakenet_open(d) == H2_PAL_ERR_FORMAT);
@@ -195,10 +217,20 @@ static void test_malformed_index_never_reaches_sdk(void) {
         assert(h2_esp_wakenet_destroy(&d) == H2_PAL_OK);
     }
 }
+static void test_misaligned_allocator(void) {
+    fixture_init();
+    allocations = 0;
+    misalign_blob = 1;
+    h2_esp_wakenet_t *d = make_detector();
+    assert(h2_esp_wakenet_open(d) == H2_PAL_OK && shifted_view != NULL);
+    assert(h2_esp_wakenet_destroy(&d) == H2_PAL_OK && shifted_view == NULL);
+    misalign_blob = 0;
+}
 int main(void) {
     test_streaming_and_registry();
     test_failures_and_close_retry();
     test_malformed_index_never_reaches_sdk();
+    test_misaligned_allocator();
     assert(!registry_live && !file.live && !model.live && detect_count == 3);
     return 0;
 }
