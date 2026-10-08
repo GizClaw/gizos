@@ -14,6 +14,8 @@ Windows 文件参数接受本机 DOS absolute path（含 `\\?\C:\...`）、调�
 
 平台、KCP 或参数初始化失败时，CLI 在 stderr 写明失败阶段并保留 runtime exit code `3`。`--help` 和 `check` 可通过重定向 stdout/stderr 的父进程运行，不需要串口设备；成功启动不等于设备握手或刷写验收。
 
+`//projects/h2loader/targets/cc_binary/cli:native_cli_test` 直接运行当前构建的 CLI：重定向 stdio 的 help、实际中文文件的 absolute/relative path、`BUILD_WORKING_DIRECTORY`、Windows extended/portable DOS path 和受控平台初始化失败日志。它检查生成 archive 中的 image bytes，使用临时文件且不访问设备。
+
 也可以让 Make 先编译再返回当前 host 的二进制路径，直接在自己的 shell 里调用（cwd 保持不变，相对路径按当前目录解析）：
 
 ```sh
