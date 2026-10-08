@@ -35,6 +35,12 @@ Token 是企业身份凭据：仓库不提供默认值，也不接受把真实 t
 
 `motion/qmi8658` 实现 QMI8658 IMU 初始化、打开和采样。Transport object 提供 register read/write 与 sleep callback。
 
+### SC7A20H
+
+`motion/sc7a20h` 提供 SC7A20H 的同步 I²C 加速度采样，依据士兰微 [SC7A20H 产品页](https://www.silan.com.cn/en/index.php/product/details/3235.html)和 [SC7A20H 说明书 v1.1](https://www.unikeyic.com/media/datasheet/4c/2e/d932/4c2ed93210c2506ae969004cfd38fd37.pdf) §11.1、§13.2–13.14、§13.37 实现。配置支持四档量程和高性能模式的数据率；打开时联合校验 `WHO_AM_I=0x11`、`VERSION=0x28`，开启 BDU、小端 XYZ 和 FIFO bypass。每个 sample 先检查三轴 data-ready，再以 `0xA8` 连续读取六字节。mg 换算使用 §13.13 的数据示例和满量程比例，不能把 ±4g 当作 ±2g 缩放。
+
+调用方注入 allocator、精确 I²C register transport 和可失败的 sleep；7-bit 地址 `0x18/0x19`、bus、GPIO 和同步归 BSP。Driver 不覆盖保留寄存器和工厂校准区，不实现 SPI、FIFO 消费、运动算法或 GPIO IRQ provider。INT1 可选输出 data-ready，仍由调用方接线。公开 header 定义 ownership、串行调用、未就绪返回 WOULD_BLOCK 和失败清零；close/destroy 的 power-down 失败保留 instance 供重试。Host 测试覆盖身份、量程换算、burst、重复 lifecycle、配置/读取/cleanup 失败。
+
 ### FM175xx
 
 `nfc/fm175xx` 实现 FM175xx reader、ISO 14443 Type A card activation 和 NTAG 数据读取。Transport object 提供 register I/O 与 sleep callback。
