@@ -13,11 +13,28 @@ native_component_src/esp-idf6.x/
 ├── h2_es8311_audio_system/         # Hardware capability component
 ├── h2_es8311_es7210_audio_system/
 ├── h2_nfc_fm175xx/
+├── h2_lierda_modem/                # Explicit NT26-KCN B data-only UART PPP
 ├── opus_port/
 └── zlib/
 ```
 
 只有包含 ESP-IDF implementation source，或拥有独立 SDK dependency 或 registration identity 的 component 才放在这个 root。没有该 native contract 的 Bazel archive 由真实 source component 或 firmware composition owner 直接导入，不建立只转发 include 和 `.a` 的目录。具体 board 的 `sdkconfig.defaults`、partition、GPIO 和 wiring 仍然属于 `boards/<board>/<esp-chip>/` 或具体 image entry。SDK 配置的所有权分两层并按序合并：board 拥有完整的 canonical `sdkconfig.defaults`；layout 只拥有 partition/rollback 或注册变体（如诊断串口、E2E 内存保留）等 layout 专属项。ESP 没有具名 config profile，也没有 project-local SDK config；配置项不得替代 component 依赖声明。
+
+## Lierda data-only UART PPP
+
+`native_component_src/esp-idf6.x/h2_lierda_modem` 将 `libs/pal/providers/modem/lierda:lierda_modem` 接到 esp_modem 1.4.3 Generic UART DCE 与 ESP-NETIF PPP。最终 firmware 的 `firmware_lib_component` 必须包含 portable library，BSP 依赖 native component 并提供显式 SKU、独占 UART/TX/RX、实际 AT 波特率、PAL allocator/sync、APN，以及借用 context 的幂等 power callback。Power callback 拥有当前板的供电/PWRKEY/settling 和异常恢复；adapter 不解释某个 enable GPIO 的硬件意义，不包含私有 board 的引脚或电压渐升策略。
+
+Canonical board `sdkconfig.defaults` 必须启用 `CONFIG_LWIP_PPP_SUPPORT=y`、`CONFIG_LWIP_PPP_NOTIFY_PHASE_SUPPORT=y` 和 `CONFIG_LWIP_IPV4=y`；仅有 `REQUIRES esp_modem` 不代替产品配置。提供 PPP username/password 时还需要 `CONFIG_LWIP_PPP_PAP_SUPPORT=y` 和/或 `CONFIG_LWIP_PPP_CHAP_SUPPORT=y`，按 carrier 与固件配置编译实际认证协议。无认证 backend 时带凭据的 data open 返回 UNSUPPORTED，不降级为无认证拨号。IPv4/PPP 未编译时 adapter creation 不提供 DATA backend。
+
+普通 AT 默认使用模组的 115200 波特率。配置中的 baud 必须已经与模组实际 UART 匹配；adapter 不发送 IPR，不自动改速，不启用 RTS/CTS 或 CMUX。NT26-KCN B 硬件手册 Rev2.3 §4.2.1 列出的普通 AT/data 可配值截至 460800，921600 单独列为固件升级默认；不能从其他产品旧源码的提速调用推断普通 921600 PPP 已获厂商保证。其他速率必须由 consumer 结合具体模组固件单独核验。
+
+每次拨号先更新 Generic DCE 内部 APN/PDP context，再配置 host PPP auth、进入 DATA 并等待当前 SDK netif 真实 IPv4。API 接入 `MODEM_DATA` netif registry，不手动抢占 Wi-Fi default；产品按 PAL netif policy 选择 route，SDK保留自身 route-priority 与销毁时重选行为，接口变化后 reconcile DNS。Callback 过滤所属 netif；关闭中和没有当前 SDK IPv4 的迟到 GOT_IP 不恢复 OPEN。Lost IP/PPP failure 保留非 CLOSED 状态，防止发送 AT 混入数据。Data close 分别保留 COMMAND 已确认与本轮停止通知，超时后重试不会丢弃迟到 DEAD；清空 SDK 旧 IP 成功后才报告 CLOSED。
+
+整机 close 先调用 board power-off，再从普通 task 同步注销默认 event-loop handlers，随后销毁 DCE/netif/event group。注销失败时停止释放，保留 callback 引用和资源供重试；callback 内调用 close/destroy 不受支持。SDK C API 的固定 response 长度边界保守返回 TRUNCATED，不把静默截断前缀当作完整身份或状态。真实 UART、SIM、APN auth、运营商网络、GPIO电源与串口改速须由 consumer 实机验收；`lierda_ppp_test` 使用 SDK fixture 编译真实 adapter source，属于 host 状态与 teardown 回归。
+
+```sh
+bazel test --config=macos_arm64 //libs/pal/providers/modem/lierda:lierda_modem_test //native_component_src/esp-idf6.x/h2_lierda_modem:lierda_ppp_test //native_component_src/esp-idf6.x/h2_lierda_modem:lierda_ppp_no_auth_test
+```
 
 ## Chip 差异
 
