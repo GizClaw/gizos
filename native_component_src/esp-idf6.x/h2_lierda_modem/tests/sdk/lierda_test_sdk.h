@@ -6,6 +6,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef int esp_err_t;
 #define ESP_OK 0
 #define ESP_FAIL -1
@@ -118,14 +122,32 @@ typedef struct {
 } esp_modem_dte_config_t;
 typedef struct { const char *apn; } esp_modem_dce_config_t;
 #define ESP_MODEM_DCE_DEFAULT_CONFIG(value) ((esp_modem_dce_config_t){.apn = (value)})
-typedef struct esp_modem_dce { esp_netif_t *netif; char apn[64]; } esp_modem_dce_t;
+typedef struct esp_modem_dce {
+#ifdef __cplusplus
+    enum class modem_wrap_dte_type { UART, VFS, USB };
+#endif
+    esp_netif_t *netif;
+    char apn[96];
+    void *dce, *dte;
+    int modem_type, dte_type;
+} esp_modem_dce_t;
+#define ESP_MODEM_DCE_GENERIC 0
 #define ESP_MODEM_MODE_COMMAND 0
 #define ESP_MODEM_MODE_DATA 1
 esp_modem_dce_t *esp_modem_new(const esp_modem_dte_config_t *dte,
     const esp_modem_dce_config_t *dce, esp_netif_t *netif);
 void esp_modem_destroy(esp_modem_dce_t *dce);
-esp_err_t esp_modem_at(esp_modem_dce_t *dce, const char *cmd, char *response, int timeout);
 esp_err_t esp_modem_set_apn(esp_modem_dce_t *dce, const char *apn);
 esp_err_t esp_modem_set_mode(esp_modem_dce_t *dce, int mode);
+
+void *lierda_test_dce_create(void);
+void lierda_test_dce_destroy(void *driver);
+int lierda_test_exchange(const char *wire, void *user,
+    int (*callback)(void *, uint8_t *, size_t), uint32_t timeout);
+void lierda_test_log(const char *tag, const char *format, ...);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

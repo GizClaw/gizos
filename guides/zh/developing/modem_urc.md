@@ -65,6 +65,8 @@ Quectel 的信号变化去重包含三个新增字段，RSRP 单独变化也会�
 
 Lierda `NT26KCNB20NNC` profile 使用同步 solicited AT response 与独立的 host PPP 状态，不装配本页的异步 URC worker，也不宣称 SIM hotplug 或语音通知能力。Transport 必须消耗完整 final result，并对截断或有歧义的信息行返回错误；普通 getter 不把异步通知当作本次查询。COMMAND/DATA 转换由固定 Generic DCE 负责，PPP 活跃、拨号结果未确认或关闭未完成时禁止 AT。失去 IPv4 不等于 UART 回到 command mode；只有实际 COMMAND 转换与 PPP 停止完成后才开放查询。SDK IP/PPP callback 只更新 adapter 自有状态，不重入 portable provider，其生命周期必须在释放 netif/event group/instance 前完成 unregister quiescence。
 
+ESP adapter 通过每次调用的 raw collector 保留完整信息行，按完整行消费 OK/ERROR/CME/CMS，超长/NUL 输入仍消费到 final result 或 timeout；不能用只留下 SDK 最后一行的结果证明响应无歧义。SDK 同步 command 清除 callback 后才归还输出 storage；迟到 RX 不访问上次调用的借出缓冲。具体固定 SDK C-extension header、全响应边界和无正文失败诊断见 [ESP-IDF component](./components/esp_idf6_x#lierda-data-only-uart-ppp)。
+
 ## 插卡后的就绪恢复
 
 `h2_quectel_is_urc` 接受 `+QSIMSTAT` 和非对应查询期间的 `+CPIN:`；

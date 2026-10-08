@@ -1,10 +1,12 @@
 #include "h2_esp_lierda_modem.h"
+#include "h2_esp_lierda_command.h"
 #include "sdkconfig.h"
 
 #include "h2_esp_platform_core.h"
 #include "driver/gpio.h"
 #include "driver/uart.h"
 #include "esp_event.h"
+#include "esp_log.h"
 #include "esp_modem_api.h"
 #include "esp_modem_c_api_types.h"
 #include "esp_modem_config.h"
@@ -20,9 +22,6 @@
 
 #define LIERDA_IP BIT0
 #define LIERDA_ERROR BIT2
-#ifndef CONFIG_ESP_MODEM_C_API_STR_MAX
-#define CONFIG_ESP_MODEM_C_API_STR_MAX 128
-#endif
 
 struct h2_esp_lierda_modem {
     h2_esp_lierda_modem_config_t config;
@@ -37,6 +36,7 @@ struct h2_esp_lierda_modem {
     bool powered;
     bool data_mode;
     bool command_confirmed;
+    bool command_fenced;
     bool closing;
     bool initialized;
     h2_pal_modem_data_status_t data;
@@ -52,6 +52,39 @@ static h2_pal_result_t map_error(esp_err_t error) {
         case ESP_ERR_NOT_SUPPORTED: return H2_PAL_ERR_UNSUPPORTED;
         default: return H2_PAL_ERR_IO;
     }
+}
+
+static h2_pal_result_t pal_failure(const char *stage, h2_pal_result_t rc) {
+    if (rc != H2_PAL_OK)
+        ESP_LOGW("lierda_modem", "LIERDA_FAIL stage=%s pal_rc=%d", stage, (int)rc);
+    return rc;
+}
+
+static h2_pal_result_t sdk_result(const char *stage, esp_err_t error) {
+    const h2_pal_result_t rc = map_error(error);
+    if (rc != H2_PAL_OK)
+        ESP_LOGW("lierda_modem", "LIERDA_FAIL stage=%s sdk_rc=%d pal_rc=%d",
+            stage, (int)error, (int)rc);
+    return rc;
+}
+
+/* Fixed labels only: never log the AT body, APN, identity or response text. */
+static const char *command_stage(const char *command) {
+    if (strcmp(command, "AT") == 0) return "at_sync";
+    if (strcmp(command, "ATE0") == 0) return "at_echo";
+    if (strcmp(command, "AT+CMEE=2") == 0) return "at_errors";
+    if (strcmp(command, "AT+CPIN?") == 0) return "at_sim";
+    if (strcmp(command, "AT+CEREG?") == 0) return "at_registration";
+    if (strcmp(command, "AT+CGATT?") == 0) return "at_attach";
+    if (strcmp(command, "AT+CGMI") == 0) return "at_manufacturer";
+    if (strcmp(command, "AT+CGMM") == 0) return "at_model";
+    if (strcmp(command, "AT+CGMR") == 0) return "at_revision";
+    if (strcmp(command, "AT+CGSN") == 0) return "at_imei";
+    if (strcmp(command, "AT+CIMI") == 0) return "at_imsi";
+    if (strcmp(command, "AT+COPS?") == 0) return "at_operator";
+    if (strcmp(command, "AT+CSQ") == 0) return "at_signal";
+    if (strncmp(command, "AT+CGDCONT=", 11u) == 0) return "at_pdp";
+    return "at_other";
 }
 
 static h2_pal_result_t lock(h2_esp_lierda_modem_t *modem) {
@@ -167,7 +200,7 @@ static h2_pal_result_t transport_close(void *user, uint32_t timeout_ms) {
     if (rc != H2_PAL_OK) return rc;
     if (modem->powered) {
         rc = modem->config.power(modem->config.power_user, 0, timeout_ms);
-        if (rc != H2_PAL_OK) return rc;
+        if (rc != H2_PAL_OK) return pal_failure("power_off", rc);
         modem->powered = false;
     }
     if (modem->netif != NULL) {
@@ -176,14 +209,14 @@ static h2_pal_result_t transport_close(void *user, uint32_t timeout_ms) {
          * the common TCPIP-context termination check actually succeeds. */
         rc = h2_esp_platform_ppp_quiesce(
             modem->netif, timeout_ms != 0u ? timeout_ms : 5000u);
-        if (rc != H2_PAL_OK) return data_failure(modem, rc);
+        if (rc != H2_PAL_OK) return data_failure(modem, pal_failure("ppp_quiesce", rc));
     }
     /* Default-loop unregister synchronizes with an active handler. Stop on
      * any failure, retaining all resources still referenced by its callback. */
     rc = remove_handler(NETIF_PPP_STATUS, ESP_EVENT_ANY_ID, &modem->ppp_status);
     if (rc == H2_PAL_OK) rc = remove_handler(IP_EVENT, IP_EVENT_PPP_LOST_IP, &modem->lost_ip);
     if (rc == H2_PAL_OK) rc = remove_handler(IP_EVENT, IP_EVENT_PPP_GOT_IP, &modem->got_ip);
-    if (rc != H2_PAL_OK) return rc;
+    if (rc != H2_PAL_OK) return pal_failure("handlers_remove", rc);
     if (modem->dce != NULL) {
         esp_modem_destroy(modem->dce);
         modem->dce = NULL;
@@ -203,6 +236,7 @@ static h2_pal_result_t transport_close(void *user, uint32_t timeout_ms) {
     if (rc != H2_PAL_OK) return rc;
     modem->data_mode = false;
     modem->command_confirmed = true;
+    modem->command_fenced = false;
     modem->closing = false;
     memset(&modem->data, 0, sizeof(modem->data));
     rc = unlock(modem, H2_PAL_OK);
@@ -217,28 +251,30 @@ static h2_pal_result_t transport_open(void *user, uint32_t timeout_ms) {
     }
     modem->powered = true; /* retain even partially failed board power-on */
     h2_pal_result_t rc = modem->config.power(modem->config.power_user, 1, timeout_ms);
-    if (rc != H2_PAL_OK) return rc;
+    if (rc != H2_PAL_OK) return pal_failure("power_on", rc);
     esp_err_t error = esp_netif_init();
-    if (error != ESP_OK && error != ESP_ERR_INVALID_STATE) return map_error(error);
+    if (error != ESP_OK && error != ESP_ERR_INVALID_STATE) return sdk_result("netif_init", error);
     error = esp_event_loop_create_default();
-    if (error != ESP_OK && error != ESP_ERR_INVALID_STATE) return map_error(error);
+    if (error != ESP_OK && error != ESP_ERR_INVALID_STATE) return sdk_result("event_loop", error);
     modem->events = xEventGroupCreate();
-    if (modem->events == NULL) return H2_PAL_ERR_NO_MEMORY;
+    if (modem->events == NULL) return pal_failure("event_group", H2_PAL_ERR_NO_MEMORY);
     const esp_netif_config_t netif_config = ESP_NETIF_DEFAULT_PPP();
     modem->netif = esp_netif_new(&netif_config);
-    if (modem->netif == NULL) return H2_PAL_ERR_NO_MEMORY;
+    if (modem->netif == NULL) return pal_failure("netif_new", H2_PAL_ERR_NO_MEMORY);
     h2_esp_platform_netif_register(modem->netif, H2_PAL_NETIF_KIND_MODEM_DATA);
     const esp_netif_ppp_config_t ppp_config = {
         .ppp_phase_event_enabled = true, .ppp_error_event_enabled = true,
     };
     error = esp_netif_ppp_set_params(modem->netif, &ppp_config);
-    if (error == ESP_OK) error = esp_event_handler_instance_register(
+    if (error != ESP_OK) return sdk_result("ppp_params", error);
+    error = esp_event_handler_instance_register(
         IP_EVENT, IP_EVENT_PPP_GOT_IP, ip_event, modem, &modem->got_ip);
+    if (error != ESP_OK) return sdk_result("got_ip_register", error);
     if (error == ESP_OK) error = esp_event_handler_instance_register(
         IP_EVENT, IP_EVENT_PPP_LOST_IP, ip_event, modem, &modem->lost_ip);
     if (error == ESP_OK) error = esp_event_handler_instance_register(
         NETIF_PPP_STATUS, ESP_EVENT_ANY_ID, ppp_event, modem, &modem->ppp_status);
-    if (error != ESP_OK) return map_error(error);
+    if (error != ESP_OK) return sdk_result("handlers_register", error);
     const esp_modem_dte_config_t dte = {
         .dte_buffer_size = 2048u,
         .task_stack_size = modem->config.dte_stack_size != 0u ? modem->config.dte_stack_size : 8192u,
@@ -256,7 +292,7 @@ static h2_pal_result_t transport_open(void *user, uint32_t timeout_ms) {
     };
     const esp_modem_dce_config_t dce = ESP_MODEM_DCE_DEFAULT_CONFIG(modem->config.apn.apn);
     modem->dce = esp_modem_new(&dte, &dce, modem->netif);
-    if (modem->dce == NULL) return H2_PAL_ERR_NO_MEMORY;
+    if (modem->dce == NULL) return pal_failure("dce_new", H2_PAL_ERR_NO_MEMORY);
     return H2_PAL_OK;
 }
 
@@ -272,20 +308,23 @@ static h2_pal_result_t transport_status(void *user, h2_pal_modem_data_status_t *
 static h2_pal_result_t transport_command(
     void *user, const char *command, char *response, size_t size, uint32_t timeout_ms) {
     h2_esp_lierda_modem_t *modem = user;
-    if (size < CONFIG_ESP_MODEM_C_API_STR_MAX || timeout_ms > INT_MAX || modem->dce == NULL) {
+    if (size < 2u || timeout_ms > INT_MAX || modem->dce == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    if (modem->command_fenced) return H2_PAL_ERR_INVALID_STATE;
     h2_pal_modem_data_status_t status;
     h2_pal_result_t rc = transport_status(modem, &status);
     if (rc != H2_PAL_OK) return rc;
     if (status.state != H2_PAL_MODEM_DATA_CLOSED) return H2_PAL_ERR_BUSY;
     response[0] = '\0';
-    rc = map_error(esp_modem_at(modem->dce, command, response, (int)timeout_ms));
-    /* 1.4.3 C API silently limits strings; conservatively reject the boundary,
-     * rather than treating a truncated prefix as a complete reply. */
-    if (rc == H2_PAL_OK && strlen(response) >= CONFIG_ESP_MODEM_C_API_STR_MAX - 1u) {
-        return H2_PAL_ERR_TRUNCATED;
-    }
+    h2_esp_lierda_command_status_t command_status;
+    rc = h2_esp_lierda_command(modem->dce, command, response, size, timeout_ms, &command_status);
+    if (command_status.command_started && !command_status.final_result)
+        modem->command_fenced = true; /* pending wire result cannot be reused */
+    if (rc != H2_PAL_OK)
+        ESP_LOGW("lierda_modem", "LIERDA_FAIL stage=%s sdk_rc=%d pal_rc=%d cme_code=%d",
+            command_stage(command), (int)command_status.sdk_error, (int)rc,
+            (int)command_status.cme_error);
     return rc;
 }
 
@@ -293,6 +332,7 @@ static h2_pal_result_t transport_data_open(
     void *user, const h2_pal_modem_apn_config_t *apn, uint32_t timeout_ms) {
     h2_esp_lierda_modem_t *modem = user;
     if (modem->dce == NULL) return H2_PAL_ERR_CLOSED;
+    if (modem->command_fenced) return H2_PAL_ERR_INVALID_STATE;
     /* GenericModule setup_data_mode uses its own stored PDP context. Update
      * that context as well as the provider's CGDCONT before every new dial. */
     esp_err_t error = esp_modem_set_apn(modem->dce, apn->apn);
