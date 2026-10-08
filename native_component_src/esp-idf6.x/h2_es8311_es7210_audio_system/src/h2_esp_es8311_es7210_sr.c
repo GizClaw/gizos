@@ -66,7 +66,7 @@ int h2_esp_es8311_es7210_sr_init(
         config->processed_channels != 1u ||
         config->mic_channel_count == 0u ||
         config->mic_channel_count > H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_MAX_MIC_CHANNELS ||
-        config->raw_channels == 0u ||
+        config->raw_channels == 0u || config->raw_channels > 4u ||
         config->ref_channel_index >= config->raw_channels) {
         return H2_AUDIO_ERR_UNSUPPORTED;
     }
@@ -75,6 +75,9 @@ int h2_esp_es8311_es7210_sr_init(
             return H2_AUDIO_ERR_UNSUPPORTED;
         }
     }
+    if (config->aec_nlp_level != H2_ESP_ES8311_ES7210_AEC_NLP_NORMAL &&
+        config->aec_nlp_level != H2_ESP_ES8311_ES7210_AEC_NLP_AGGRESSIVE)
+        return H2_AUDIO_ERR_INVALID_ARG;
 
     aec_config_t aec_config = {
         .mic_num = (int)config->mic_channel_count,
@@ -84,7 +87,8 @@ int h2_esp_es8311_es7210_sr_init(
         .sample_rate = (int)config->sample_rate_hz,
         .caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT,
         .mode = AEC_MODE_FD_LOW_COST,
-        .nlp_level = AEC_NLP_LEVEL_NORMAL,
+        .nlp_level = config->aec_nlp_level == H2_ESP_ES8311_ES7210_AEC_NLP_AGGRESSIVE
+            ? AEC_NLP_LEVEL_AGGR : AEC_NLP_LEVEL_NORMAL,
     };
     state->aec_handle = aec_create_from_config(&aec_config);
     if (state->aec_handle == NULL) {
@@ -107,6 +111,8 @@ int h2_esp_es8311_es7210_sr_init(
         sizeof(state->mic_channel_indices));
     state->ref_channel_index = config->ref_channel_index;
     state->reference_gain_milli = config->aec_reference_gain_milli;
+    state->observe = config->aec_observe;
+    state->observer_user = config->aec_observer_user;
 
     const size_t mic_sample_count = state->frame_samples * state->mic_channel_count;
     state->mic_frame = aec_calloc(mic_sample_count, sizeof(int16_t));
@@ -162,8 +168,25 @@ int h2_esp_es8311_es7210_sr_process(
     uint32_t ref_raw_peak = 0u;
     uint32_t ref_peak = 0u;
     uint32_t mic_peaks[H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_MAX_MIC_CHANNELS] = {0u, 0u};
+    h2_esp_es8311_es7210_aec_stats_t stats = {
+        .samples = (uint16_t)state->frame_samples,
+        .raw_channels = state->raw_channels,
+        .mic_lane = state->mic_channel_indices[0],
+        .ref_lane = state->ref_channel_index,
+    };
+    uint64_t lane_energy[4] = {0u};
+    uint64_t output_energy = 0u;
     for (size_t sample = 0u; sample < state->frame_samples; ++sample) {
         const size_t raw_offset = sample * state->raw_channels;
+        if (state->observe != NULL) {
+            for (uint8_t lane = 0u; lane < state->raw_channels; ++lane) {
+                const int32_t value = raw[raw_offset + lane];
+                const uint32_t magnitude = sample_magnitude((int16_t)value);
+                lane_energy[lane] += (uint64_t)((int64_t)value * value);
+                if (magnitude > stats.lane_peak[lane]) stats.lane_peak[lane] = magnitude;
+                if (magnitude >= 32760u) ++stats.lane_clipped[lane];
+            }
+        }
         const int16_t ref_raw = raw[raw_offset + state->ref_channel_index];
         const int16_t ref = scale_reference(ref_raw, state->reference_gain_milli);
         state->ref_frame[sample] = ref;
@@ -200,8 +223,21 @@ int h2_esp_es8311_es7210_sr_process(
         if (magnitude > out_peak) {
             out_peak = magnitude;
         }
+        if (state->observe != NULL) {
+            const int32_t value = state->out_frame[sample];
+            output_energy += (uint64_t)((int64_t)value * value);
+            if (magnitude >= 32760u) ++stats.output_clipped;
+        }
     }
     state->processed_frame_count++;
+    if (state->observe != NULL) {
+        stats.frame = state->processed_frame_count;
+        for (uint8_t lane = 0u; lane < state->raw_channels; ++lane)
+            stats.lane_power[lane] = (uint32_t)(lane_energy[lane] / state->frame_samples);
+        stats.output_power = (uint32_t)(output_energy / state->frame_samples);
+        stats.output_peak = out_peak;
+        state->observe(state->observer_user, &stats);
+    }
     if ((state->processed_frame_count % H2_ESP_ES8311_ES7210_AEC_LOG_INTERVAL_FRAMES) == 0u) {
         ESP_LOGI(
             TAG,
