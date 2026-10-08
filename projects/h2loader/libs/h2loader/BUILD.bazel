@@ -68,6 +68,27 @@ cc_library(
 )
 
 cc_test(
+    name = "ble_name_test",
+    srcs = [
+        "tests/test_h2_loader_ble_name.c",
+        "//libs/pal/providers/desktop/pal_core:tests/h2_desktop_test_system_event.c",
+        "//libs/pal/providers/desktop/pal_core:tests/h2_desktop_test_system_event.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":h2loader",
+        "//libs/atomic/providers/c11",
+        "//libs/pal/providers/desktop/pal_core:pal_core",
+    ],
+)
+
+cc_test(
     name = "h2loader_sha256_test",
     srcs = ["tests/test_h2loader_sha256.c"],
     conlyopts = H2_C11_OPTS,
