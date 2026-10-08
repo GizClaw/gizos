@@ -57,3 +57,5 @@ make guides-build
 ```
 
 测试使用真实异步 API-key state/Service 和 fake RPC/BLE PAL，逐字节验证 URL/frame，以及 invalid/stale/busy/closed、刷新 revision、默认/协商 MTU、response capacity、手机自动长读终止、连接隔离和 handle 复用、部分 export、ledger backpressure、共存资源、重开窗口和可重试 cleanup。物理 ESP32-S3/BK7258 与手机发现、GATT 交付、并行 H2Loader 和产品页面的最终绑定验证需要对应硬件与 consumer 集成后单独执行；host 测试不替代这些验收。
+
+`projects/e2e/apps/gizclaw/api_coverage.py` 为八个 BLE Binding API 保留独立的 `device-api` 调用和业务断言要求。Fake-PAL host 测试不计入 live E2E evidence，旧 228 项日志仍会缺少这些要求；真实 Server/BLE/手机 lane 完成前，完整审计应继续报告 missing。
