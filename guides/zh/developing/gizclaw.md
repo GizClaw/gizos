@@ -375,6 +375,8 @@ completion 后不延长文字订阅。应用无需新增下行音频处理流程
 
 ## API key 异步状态
 
+授权绑定窗口可以把同一状态注入 [GizClaw BLE 绑定](./gizclaw_ble_binding.md)，通过公共 HTTPS URL formatter 与二维码保持一致。广播只提供发现；BLE 暴露记录保留实际 key name/revision，产品离页时与二维码已展示记录合并后处理 revoke。
+
 扫码绑定等需要异步刷新和撤销的产品使用 `h2_gizclaw_api_key_state_t`：创建时注入借用的 Service、Mem、Sync、Time 和非零 `timeout_ms`，`display_name` 会复制。产品调用 `request_refresh` 登记请求，主循环继续调用 `service_poll` 驱动 completion，再读取 `snapshot` 展示有效 key。无需创建线程、join 或等待 RPC；原有同步 helper 和 request 接口行为不变。
 
 `request_refresh(true)` 在当前 key 有效时先撤销再创建；撤销成功或 `NOT_FOUND` 后擦除旧 key 并提交 create，其它撤销错误保留 `valid && stale` 的旧 key，下一次 `request_refresh(true)` 可重试撤销。创建成功后 key 有效且不 stale，创建失败则失效。busy 期间重复刷新返回 OK，合并到当前链，不叠加请求、清除 revoke-after 标记、不延长截止时间。每次 refresh 的总时限包含排队、连接、撤销和创建；`snapshot` 或 `request_refresh` 检查到期后将当前请求分离为 orphan（不取消），清除 busy 并记录 `H2_PAL_ERR_TIMEOUT`，保留的旧 key 标为 stale。检查到期的 `request_refresh` 随后可开始新一代刷新。
