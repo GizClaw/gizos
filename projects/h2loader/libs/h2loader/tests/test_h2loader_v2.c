@@ -1917,6 +1917,18 @@ static void test_ble_diagnostics_preserve_failure_and_cleanup(void) {
   int expected = h2_loader_ble_service_open(&config, &service);
   assert(expected != H2_PAL_OK && service == NULL);
   assert(fixture.allocations == 0u && fixture.writes == 0u);
+  config.local_name = "";
+  service = (h2_loader_ble_service_t *)&fixture;
+  assert(h2_loader_ble_service_open(&config, &service) == H2_PAL_ERR_INVALID_ARG);
+  assert(service == NULL && fixture.allocations == 0u);
+  const char oversized[] = "123456789012345678901234567890";
+  config.local_name = oversized;
+  assert(h2_loader_ble_service_open(&config, &service) == H2_PAL_ERR_INVALID_ARG);
+  assert(service == NULL && fixture.allocations == 0u);
+  config.local_name = "H200-38DE";
+  assert(h2_loader_ble_service_open(&config, &service) == expected);
+  assert(service == NULL && fixture.allocations == 0u);
+  config.local_name = NULL;
   config.log = &log;
   assert(h2_loader_ble_service_open(&config, &service) == expected);
   assert(service == NULL && fixture.allocations == 0u && fixture.writes == 1u);
@@ -2035,6 +2047,12 @@ static void test_ble_identity_capacity(void) {
   const char *board = "12345678901234567890";
   uint8_t data[64], compact[64];
   size_t length = 0u, compact_length = 0u;
+  /* A nine-byte product name uses eleven scan-response bytes. With both AD
+   * headers, 18 identity bytes fit exactly; a short private board stays inline. */
+  assert(h2_loader_ble_encode_identity(H2_LOADER_CAPABILITIES_ALL, "h200",
+                                      data, 18u, &length) == H2_PAL_OK);
+  assert(data[4] == H2_LOADER_BLE_PROTOCOL_VERSION && length == 15u);
+  assert(memcmp(data + 11u, "h200", 4u) == 0);
   assert(strlen(board) <= H2_LOADER_BLE_INLINE_BOARD_MAX);
   assert(h2_loader_ble_encode_identity(H2_LOADER_CAPABILITIES_ALL, board, data, 29u, &length) ==
          H2_PAL_OK);
