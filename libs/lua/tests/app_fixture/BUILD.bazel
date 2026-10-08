@@ -1,0 +1,39 @@
+load("//libs/lua:lua_app.bzl", "lua_app")
+load("//tools/bazel:firmware.bzl", "firmware_version")
+
+package(default_visibility = ["//libs/lua:__pkg__"])
+
+firmware_version(
+    name = "abc_version",
+    value = "1.2.3",
+)
+
+lua_app(
+    name = "abc",
+    entry = "abc.lua",
+    version = ":abc_version",
+)
+
+firmware_version(
+    name = "xyz_version",
+    value = "2.0.0-rc.1",
+)
+
+lua_app(
+    name = "xyz",
+    data = ["xyz/tone.pcm"],
+    entry = "xyz.lua",
+    version = ":xyz_version",
+)
+
+filegroup(
+    name = "abc_archive",
+    srcs = [":abc"],
+    output_group = "archive",
+)
+
+filegroup(
+    name = "xyz_archive",
+    srcs = [":xyz"],
+    output_group = "archive",
+)

@@ -8,6 +8,10 @@ H2Loader 保留两条固定格式的构建轨道：`h2loader_tar_zlib` 和既有
 
 `h2loader_checksum_matrix` 消费两个同 board/target 的 App package source，要求不同 raw image，生成两种格式各五个独立 E2E fixture：baseline、unchanged、app-only、data-only、both-changed。新格式三个跳过用例的未变段故意设置无效 zlib CMF，并同步 compressed SHA-256；原始 App/data identity 不变。Fixture 属于测试，不挂发布标签。运行方式见 [Loader E2E runner](/apps/h2loader/boards/devkit/h2loader#e2e-runner)。
 
+## Lua App artifact
+
+公共 `//libs/lua:lua_app.bzl` 的 `lua_app` rule 以一个文本入口和可选同名 data 目录声明平台无关的 Lua app 包。每个 target 必须显式消费独立的 `FirmwareVersionInfo` 声明；版本不来自 release batch 或 native firmware。Rule 的 packaging action 使用 exec-configured Python，不依赖 SDK、board、C compiler 或设备。`LuaAppInfo`、manifest、release metadata 和公共 cquery formatter 使用同一 identity/version；consumer 在自己的 release assembly 中决定 publication admission。结构与验证见 [Lua App 发布包](./lua.md#lua-app-发布包)。
+
 ## Mobile E2E Python runtime
 
 移动端 E2E 的 `mobile_e2e_test` 宏直接声明 `py_test`，所有移动 target 共用 `tools/bazel/mobile_e2e.py` main。Suite owner 在 BUILD 中用 `mobile_e2e_suite` 声明包名、报告路径、registry 格式/数量、期望字段、用例结果字段、超时、SDK/consumer 符号和可选 hook。Rule 只生成声明 JSON，转发 Python provider 与 registry、hook、fixture runfiles；实际启动、解析与严格断言都在公共 Python 工具内执行。标准 suite 无需独立 Python 文件，特殊流程和业务断言通过可选 hook 扩展，且不能绕过公共校验。IPA/APK 和 SDK 仍保持目标平台配置；`mobile_e2e_host_python` 在 exec configuration 中选择已有 hermetic Python runtime。声明与 Python 库使用 `HOST_OR_MOBILE_TOOL_COMPATIBILITY`，只允许匹配 host 和支持的 iOS/Android configuration，排除没有 Python runtime 的 embedded/K4B target。设备入口只声明 `manual` tag，并用 `local = True` 保证本机执行；批量验证使用 `--local_test_jobs=1` 并关闭测试结果缓存。接入合同见 `tools/bazel/mobile_e2e.md`。
