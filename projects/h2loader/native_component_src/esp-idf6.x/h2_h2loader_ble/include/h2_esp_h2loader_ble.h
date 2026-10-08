@@ -24,6 +24,10 @@ typedef struct h2_esp_h2loader_app_commands_config {
     uint32_t hardware_capabilities;
     uint32_t h2loader_partition_id;
     uint32_t coredump_partition_id;
+    /** Optional local name passed to the shared BLE command service. Borrowed
+     * until start completes; the portable service copies it for later resumes.
+     * NULL retains the existing unnamed advertisement. */
+    const char *ble_local_name;
 } h2_esp_h2loader_app_commands_config_t;
 
 /**
