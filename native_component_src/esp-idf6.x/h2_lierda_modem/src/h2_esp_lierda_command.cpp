@@ -38,6 +38,35 @@ int32_t numeric_cme(const char *line, size_t length) {
     return pos == length ? static_cast<int32_t>(value) : -1;
 }
 
+int32_t standard_cme(const char *line, size_t length) {
+    const int32_t numeric = numeric_cme(line, length);
+    if (numeric >= 0) return numeric;
+    const size_t prefix = std::strlen("+CME ERROR:");
+    line += prefix; length -= prefix;
+    while (length != 0u && (*line == ' ' || *line == '\t')) { ++line; --length; }
+    while (length != 0u && (line[length - 1u] == ' ' || line[length - 1u] == '\t')) --length;
+    /* Exact TS27.007 V17.6.0 §9.2.1 text. Unknown/vendor/case variants are not
+     * classified, and no response text escapes this callback. */
+    static const struct { const char *text; int32_t code; } errors[] = {
+        {"PH-SIM PIN required", 5}, {"PH-FSIM PIN required", 6},
+        {"PH-FSIM PUK required", 7}, {"SIM not inserted", 10},
+        {"SIM PIN required", 11}, {"SIM PUK required", 12},
+        {"SIM failure", 13}, {"SIM busy", 14}, {"SIM wrong", 15},
+        {"SIM PIN2 required", 17}, {"SIM PUK2 required", 18},
+        {"network personalization PIN required", 40},
+        {"network personalization PUK required", 41},
+        {"network subset personalization PIN required", 42},
+        {"network subset personalization PUK required", 43},
+        {"service provider personalization PIN required", 44},
+        {"service provider personalization PUK required", 45},
+        {"corporate personalization PIN required", 46},
+        {"corporate personalization PUK required", 47},
+    };
+    for (const auto &error : errors)
+        if (matches(line, length, error.text)) return error.code;
+    return -1;
+}
+
 h2_pal_result_t execute(esp_modem_dce_t *dce, const char *command,
     char *response, size_t capacity, uint32_t timeout_ms, h2_esp_lierda_command_status_t *out_status) {
     const std::string wire = std::string(command) + "\r";
@@ -74,7 +103,10 @@ h2_pal_result_t execute(esp_modem_dce_t *dce, const char *command,
                 if (matches(data + start, line_size, "ERROR") || cme ||
                     extended_error(data + start, line_size, "+CMS ERROR:")) {
                     out_status->final_result = true;
-                    if (cme) out_status->cme_error = numeric_cme(data + start, line_size);
+                    if (cme) {
+                        out_status->cme_present = true;
+                        out_status->cme_error = standard_cme(data + start, line_size);
+                    }
                     if (result == H2_PAL_ERR_TIMEOUT) result = H2_PAL_ERR_IO;
                     return esp_modem::command_result::FAIL;
                 }
@@ -103,7 +135,7 @@ extern "C" h2_pal_result_t h2_esp_lierda_command(
     size_t capacity, uint32_t timeout_ms, h2_esp_lierda_command_status_t *out_status) {
     if (response != nullptr && capacity != 0u) response[0] = '\0';
     if (out_status == nullptr) return H2_PAL_ERR_INVALID_ARG;
-    *out_status = {ESP_ERR_INVALID_ARG, -1, false, false};
+    *out_status = {ESP_ERR_INVALID_ARG, -1, false, false, false};
     if (dce == nullptr || dce->dce == nullptr || !dce->dte ||
         dce->modem_type != convert_modem_enum(ESP_MODEM_DCE_GENERIC) ||
         static_cast<int>(dce->dte_type) !=

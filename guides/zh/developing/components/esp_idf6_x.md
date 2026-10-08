@@ -36,7 +36,11 @@ Native 私有 C++ bridge 使用固定 esp_modem 1.4.3 公开导出的 [`include/
 
 固定 SDK DTE callback 重放累计响应，collector 每次检查完整已收前缀；成功保留全部信息行并消耗 final result，随后 portable parser 拒绝重复或有歧义的 CPIN/CIMI 等信息。整次响应（包含 final framing）要求少于 512 字节且无嵌入 NUL；超长或异常时继续等完整结束标记，不在错误正文中途放弃，避免残留 OK 被下一条命令接受。只把完整行 `OK`、`ERROR`、`+CME ERROR:`、`+CMS ERROR:` 作为终态，信息字段内包含 OK/ERROR 不结束事务。SDK `DTE::command` 返回或超时前，在 line lock 下清除 callback；借出的输出及捕获状态不逃出同步调用。失败时输出为空，Error/CME 不作为成功信息交给 portable getter。已经发出命令但没有完整 final result（包括 timeout/SDK 接收失败）时，后续 AT/data open 返回 INVALID_STATE，直到 successful whole close/reopen；普通 data close 不解除这个命令 fence，迟到 ACK 不能作为新命令的确认。
 
-仅失败时输出 `LIERDA_FAIL`，字段是固定步骤/命令标签、SDK/PAL result，以及严格完整十进制 `0..65535` 的 CME code；文本或超范围 CME 为 `-1`（unknown）。没有 AT 正文、回包文本、APN/认证数据、IMEI/IMSI，也不从未知 CME 推断没卡、忙或运营商故障。产品总体网络失败日志不能单凭一个 IO 码证明 DCE 构造失败，需结合这些具体调用边界和设备证据。
+仅失败时输出 `LIERDA_FAIL`，字段是固定步骤/命令标签、SDK/PAL result，以及严格完整十进制 `0..65535` 或 TS27.007 §9.2.1 精确标准 verbose 白名单归一的 CME code；未知文本、大小写/后缀变种或超范围 CME 为 `-1`（unknown）。没有 AT 正文、回包文本、APN/认证数据、IMEI/IMSI，也不从未知 CME 推断没卡、忙或运营商故障。产品总体网络失败日志不能单凭一个 IO 码证明 DCE 构造失败，需结合这些具体调用边界和设备证据。
+
+`CMEE=2` 依据 TS27.007 §9.1 返回 verbose error。Native 在原始 command 返回 IO 后，只有完整有效 CME final result 才保存本次 typed metadata，并在每条命令（含拒绝/timeout）以及 open/close 前清空；记录属于当前 instance/operation mutex，不会把前一次 busy 借给后一次 generic ERROR、超时或损坏回复。Portable 仅消费刚完成的 CPIN metadata：14→WOULD_BLOCK，10→ABSENT，定义的 PIN/PUK requirement→LOCKED；13/15/unknown 保持 IO，错误正文仍清空。产品已有轮询可保持电源等待 busy→READY；无公共固定上电延时、阻塞等待、自动 PIN/复位、SIM 插卡假设或网络参数修改。
+
+固定诊断中的 `cme_present`、`complete` 布尔字段分别表明是否看到 CME final line、是否完整结束；仅 `cme_code=-1` 不能区分未知文本 CME 与 bare ERROR，不作为“忙/没卡”证据。这两个字段不包含回包文本。
 
 ```sh
 bazel test --config=macos_arm64 //libs/pal/providers/modem/lierda:lierda_modem_test //native_component_src/esp-idf6.x/h2_lierda_modem:lierda_ppp_test //native_component_src/esp-idf6.x/h2_lierda_modem:lierda_ppp_no_auth_test

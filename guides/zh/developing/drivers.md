@@ -105,6 +105,8 @@ Token 是企业身份凭据：仓库不提供默认值，也不接受把真实 t
 
 Close 通过 transport 关闭整个模块，允许在 graceful data close 失败后恢复；失败保留 instance、mutex、callback 与 dependency 生命周期供重试。销毁前必须停止并 join 外部调用者。具体 ESP 接线与 SDK callback quiescence 见 [ESP-IDF Lierda UART PPP](./components/esp_idf6_x#lierda-data-only-uart-ppp)。Host protocol/state tests 证明有界解析与失败恢复，不能替代真实 SIM、运营商、功耗、UART 波特率和 PPP acceptance。
 
+SIM 查询按 TS27.007 V17.6.0 §8.3、§9.1 和 §9.2.1 区分标准终态。可选 `get_command_error` callback 只提供本实例刚返回的命令 CME 数字元数据，每次命令/拒绝/timeout/close 前清空；没有该 callback 的 transport 保留原 IO 行为。只有 CPIN 本次完成的可信 CME14 才返回 WOULD_BLOCK，输出清空，调用方保持模块供电并按产品定义的间隔/截止策略轮询；一次 getter 不自动 sleep、重置或关电。CME10 返回 ABSENT，明确 PIN/PUK requirement 返回 LOCKED，随后不查询注册/attach、不拨号。CME13/15、未知码、非 CME IO 或不完整回复不当作无卡/忙。PIN2/PUK2 表示当前 credential requirement，不能据此宣称所有 MT 操作都不可用。成功 CPIN 的 READY/标准锁定码也精确匹配，不使用 PIN/PUK 子串推断。Driver 不提供 PIN 猜测、自动输入或模组复位策略。
+
 ### QMI8658
 
 `motion/qmi8658` 实现 QMI8658 IMU 初始化、打开和采样。Transport object 提供 register read/write 与 sleep callback。

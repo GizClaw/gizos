@@ -29,6 +29,9 @@ typedef struct fixture {
     const char *override_command;
     const char *override_response;
     bool unterminated;
+    bool no_error_metadata;
+    h2_lierda_command_error_t metadata, next_metadata;
+    h2_pal_result_t metadata_error;
     h2_pal_modem_data_status_t data;
     h2_pal_modem_apn_config_t dial_apn;
 } fixture_t;
@@ -96,8 +99,10 @@ static h2_pal_result_t command(
     fixture_t *f = user;
     assert(f->mutex.locked && f->data.state == H2_PAL_MODEM_DATA_CLOSED);
     assert(timeout_ms != 0u);
+    memset(&f->metadata, 0, sizeof(f->metadata));
     ++f->commands;
     if (f->error_command != NULL && strcmp(cmd, f->error_command) == 0) {
+        f->metadata = f->next_metadata;
         return f->command_error;
     }
     const char *reply = "";
@@ -158,6 +163,13 @@ static h2_pal_result_t data_status(void *user, h2_pal_modem_data_status_t *out_s
     return H2_PAL_OK;
 }
 
+static h2_pal_result_t command_error_metadata(void *user, h2_lierda_command_error_t *out_error) {
+    fixture_t *f = user;
+    assert(f->mutex.locked);
+    *out_error = f->metadata;
+    return f->metadata_error;
+}
+
 static const h2_pal_mem_vtable_t memory_vtable = {.alloc = allocate, .free = release};
 static const h2_pal_sync_vtable_t sync_vtable = {
     .create_mutex = mutex_create, .destroy_mutex = mutex_destroy,
@@ -170,7 +182,8 @@ static h2_lierda_modem_config_t configuration(
         .model = H2_LIERDA_MODEM_MODEL_NT26KCNB20NNC,
         .transport = {.user = f, .open = transport_open, .close = transport_close,
             .command = command, .data_open = dial, .data_close = data_close,
-            .data_status = data_status},
+            .data_status = data_status,
+            .get_command_error = f->no_error_metadata ? NULL : command_error_metadata},
         .allocator = mem, .sync_api = sync, .apn = {.apn = "test.apn"},
     };
     return config;
@@ -345,11 +358,67 @@ static void configuration_and_cleanup_failures(void) {
     destroy(&f);
 }
 
+static void standard_sim_errors(void) {
+    fixture_t f = {0};
+    h2_pal_mem_api_t mem;
+    h2_pal_sync_api_t sync;
+    create(&f, &mem, &sync);
+    assert(h2_pal_modem_open(f.api, 0u) == H2_PAL_OK);
+    f.error_command = "AT+CPIN?"; f.command_error = H2_PAL_ERR_IO;
+    h2_pal_modem_status_t status;
+    f.next_metadata = (h2_lierda_command_error_t){.cme_valid = 1u, .cme_code = 14u};
+    const unsigned before = f.commands;
+    assert(h2_pal_modem_get_status(f.api, &status) == H2_PAL_ERR_WOULD_BLOCK);
+    assert(status.capabilities == 0u && status.sim == H2_PAL_MODEM_SIM_STATE_UNKNOWN);
+    assert(h2_pal_modem_data_open(f.api, 1u) == H2_PAL_ERR_WOULD_BLOCK);
+    assert(f.commands == before + 2u && f.closes == 0u && f.opens == 1u && f.dials == 0u);
+    const unsigned locked[] = {5u, 6u, 7u, 11u, 12u, 17u, 18u, 40u, 47u};
+    for (size_t i = 0u; i < sizeof(locked) / sizeof(locked[0]); ++i) {
+        f.next_metadata.cme_code = locked[i];
+        const unsigned start = f.commands;
+        assert(h2_pal_modem_get_status(f.api, &status) == H2_PAL_OK);
+        assert(status.sim == H2_PAL_MODEM_SIM_STATE_LOCKED && f.commands == start + 1u);
+        assert(status.registration == H2_PAL_MODEM_REGISTRATION_UNKNOWN);
+    }
+    f.next_metadata.cme_code = 10u;
+    assert(h2_pal_modem_get_status(f.api, &status) == H2_PAL_OK);
+    assert(status.sim == H2_PAL_MODEM_SIM_STATE_ABSENT && f.dials == 0u);
+    const unsigned failures[] = {13u, 15u, 16u, 99u};
+    for (size_t i = 0u; i < sizeof(failures) / sizeof(failures[0]); ++i) {
+        f.next_metadata.cme_code = failures[i];
+        assert(h2_pal_modem_get_status(f.api, &status) == H2_PAL_ERR_IO && status.sim == 0);
+    }
+    f.next_metadata = (h2_lierda_command_error_t){0}; /* non-CME clears old code */
+    assert(h2_pal_modem_get_status(f.api, &status) == H2_PAL_ERR_IO);
+    f.next_metadata = (h2_lierda_command_error_t){.cme_valid = 1u, .cme_code = 14u};
+    f.command_error = H2_PAL_ERR_TIMEOUT;
+    assert(h2_pal_modem_get_status(f.api, &status) == H2_PAL_ERR_TIMEOUT);
+    f.command_error = H2_PAL_ERR_IO; f.metadata_error = H2_PAL_ERR_TRUNCATED;
+    assert(h2_pal_modem_get_status(f.api, &status) == H2_PAL_ERR_IO);
+    f.metadata_error = H2_PAL_ERR_WOULD_BLOCK;
+    assert(h2_pal_modem_get_status(f.api, &status) == H2_PAL_ERR_IO);
+    f.metadata_error = H2_PAL_OK; f.error_command = NULL;
+    assert(h2_pal_modem_get_status(f.api, &status) == H2_PAL_OK);
+    assert(status.sim == H2_PAL_MODEM_SIM_STATE_READY && f.opens == 1u && f.closes == 0u);
+    f.override_command = "AT+CPIN?"; f.override_response = "+CPIN: NOT_PIN_CODE";
+    assert(h2_pal_modem_get_status(f.api, &status) == H2_PAL_OK);
+    assert(status.sim == H2_PAL_MODEM_SIM_STATE_UNKNOWN);
+    destroy(&f);
+    memset(&f, 0, sizeof(f)); f.no_error_metadata = true;
+    create(&f, &mem, &sync);
+    assert(h2_pal_modem_open(f.api, 1u) == H2_PAL_OK);
+    f.error_command = "AT+CPIN?"; f.command_error = H2_PAL_ERR_IO;
+    f.next_metadata = (h2_lierda_command_error_t){.cme_valid = 1u, .cme_code = 14u};
+    assert(h2_pal_modem_get_status(f.api, &status) == H2_PAL_ERR_IO);
+    destroy(&f);
+}
+
 int main(void) {
     lifecycle_and_data();
     identity_and_signal_failures();
     sim_and_registration_gates();
     configuration_and_cleanup_failures();
+    standard_sim_errors();
     puts("Lierda data-only protocol and lifecycle tests passed");
     return 0;
 }

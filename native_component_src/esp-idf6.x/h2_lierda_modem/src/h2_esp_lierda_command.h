@@ -13,9 +13,10 @@ extern "C" {
 
 typedef struct h2_esp_lierda_command_status {
     esp_err_t sdk_error;
-    int32_t cme_error; /* Strict decimal final CME 0..65535, else -1/unknown. */
+    int32_t cme_error; /* Decimal0..65535 or exact standard text, else -1. */
     bool command_started;
     bool final_result;
+    bool cme_present;
 } h2_esp_lierda_command_status_t;
 
 /* Private SDK bridge. Response storage is borrowed only through this blocking
