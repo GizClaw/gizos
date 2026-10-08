@@ -136,6 +136,9 @@ static h2_pal_result_t quectel_cell_locate(
  * table when it is not configured, so the PAL wrapper answers UNSUPPORTED
  * without the provider having to hold an unusable token. */
 #define H2_QUECTEL_MODEM_VTABLE_BASE \
+    .ota_start = h2_quectel_ota_start, \
+    .ota_get_status = h2_quectel_ota_get_status, \
+    .get_emergency_numbers = h2_quectel_get_emergency_numbers, \
     .set_power_policy = h2_quectel_set_power_policy, \
     .get_power_status = h2_quectel_get_power_status, \
     .open = quectel_open, \
@@ -205,10 +208,21 @@ static h2_pal_result_t h2_quectel_modem_close_impl(h2_pal_modem_t *platform, uin
     if (modem == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    if (modem->ota_hold) { return H2_PAL_ERR_BUSY; }
     if (modem->opened == 0u) {
         return H2_PAL_OK;
     }
     h2_pal_result_t result = h2_quectel_power_wake(modem);
+    h2_pal_result_t restore_result = H2_PAL_OK;
+    if (modem->phonebook_restore_pending && result == H2_PAL_OK) {
+        restore_result = h2_quectel_resolve_model(modem);
+        if (restore_result == H2_PAL_OK) {
+            restore_result = h2_quectel_ec800m_restore_phonebook(modem, timeout_ms);
+        }
+        /* Selection cleanup is not an active call/data session. In particular
+         * an absent SIM must not prevent transport teardown merely because
+         * restoring SM fails. Preserve the error after successful shutdown. */
+    }
     if (modem->gnss_hold != 0u) {
         h2_pal_result_t rc = h2_quectel_modem_gnss_stop(platform, timeout_ms);
         if (result == H2_PAL_OK) { result = rc; }
@@ -238,13 +252,18 @@ static h2_pal_result_t h2_quectel_modem_close_impl(h2_pal_modem_t *platform, uin
             return rc;
         }
     }
-    return h2_quectel_modem_transport_closed(modem);
+    rc = h2_quectel_modem_transport_closed(modem);
+    return rc == H2_PAL_OK ? restore_result : rc;
 }
 
 h2_pal_result_t h2_quectel_modem_transport_closed(h2_quectel_modem_t *modem) {
     if (modem == NULL) return H2_PAL_ERR_INVALID_ARG;
     const h2_pal_result_t rc = h2_quectel_state_lock(modem);
     if (rc != H2_PAL_OK) return rc;
+    if (modem->ota_hold) {
+        h2_quectel_state_unlock(modem);
+        return H2_PAL_ERR_BUSY;
+    }
     modem->transport_closed = 1u;
     modem->sim_restart_required = 0u;
     modem->sim_restart_attempted = 0u;
@@ -257,6 +276,9 @@ h2_pal_result_t h2_quectel_modem_transport_closed(h2_quectel_modem_t *modem) {
     modem->call_hold = 0u;
     modem->data_hold = 0u;
     modem->model_checked = 0u;
+    modem->family = H2_QUECTEL_MODEM_FAMILY_UNKNOWN;
+    modem->phonebook_restore_pending = 0u;
+    memset(modem->phonebook_restore_storage, 0, sizeof(modem->phonebook_restore_storage));
     modem->sim_probe_ticks = 0u;
     modem->sim_query_pending = 0u;
     modem->sim_hint_seen = 0u;
@@ -371,6 +393,11 @@ h2_pal_result_t h2_quectel_modem_init(
         (config->command == NULL && (config->read == NULL || config->write == NULL))) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    if (config->profile != H2_QUECTEL_MODEM_PROFILE_UNSPECIFIED &&
+        config->profile != H2_QUECTEL_MODEM_PROFILE_EC25_UART &&
+        config->profile != H2_QUECTEL_MODEM_PROFILE_EC800M_UART) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
     if ((config->urc_task_api != NULL || config->urc_queue_api != NULL) &&
         (config->urc_task_api == NULL || config->urc_queue_api == NULL || config->sync_api == NULL ||
          config->sync_api->vtable == NULL || config->sync_api->vtable->try_lock_mutex == NULL)) {
@@ -388,13 +415,16 @@ h2_pal_result_t h2_quectel_modem_init(
         ? config->capabilities
         : (H2_PAL_MODEM_CAPABILITY_CALL | H2_PAL_MODEM_CAPABILITY_GNSS);
     modem->capabilities |= H2_PAL_MODEM_CAPABILITY_CALL_VOLUME;
+    modem->capabilities |= H2_PAL_MODEM_CAPABILITY_EMERGENCY_NUMBERS;
+    modem->capabilities |= H2_PAL_MODEM_CAPABILITY_OTA;
     modem->capabilities &= ~(uint32_t)H2_PAL_MODEM_CAPABILITY_LOW_POWER;
-    if (config->profile == H2_QUECTEL_MODEM_PROFILE_EC25_UART &&
-        config->sleep_gate != NULL && config->sync_api != NULL && config->command != NULL) {
+    const int uart_profile = config->profile == H2_QUECTEL_MODEM_PROFILE_EC25_UART ||
+        config->profile == H2_QUECTEL_MODEM_PROFILE_EC800M_UART;
+    if (uart_profile && config->sleep_gate != NULL && config->sync_api != NULL && config->command != NULL) {
         modem->capabilities |= H2_PAL_MODEM_CAPABILITY_LOW_POWER;
     }
     if (config->sim_hotplug != 0u &&
-        (config->profile != H2_QUECTEL_MODEM_PROFILE_EC25_UART ||
+        (!uart_profile ||
          config->sync_api == NULL || config->command == NULL || config->invalidate_data == NULL)) {
         return H2_PAL_ERR_UNSUPPORTED;
     }

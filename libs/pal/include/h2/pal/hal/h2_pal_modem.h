@@ -5,6 +5,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -25,6 +26,10 @@ typedef enum h2_pal_modem_capability {
     H2_PAL_MODEM_CAPABILITY_CELL_LOCATE = 1u << 3,
     H2_PAL_MODEM_CAPABILITY_LOW_POWER = 1u << 4,
     H2_PAL_MODEM_CAPABILITY_CALL_VOLUME = 1u << 5,
+    /** Provider supports discovery; this does not guarantee call connectivity. */
+    H2_PAL_MODEM_CAPABILITY_EMERGENCY_NUMBERS = 1u << 6,
+    /** URL-based modem firmware OTA. Set only with a callable PAL OTA backend. */
+    H2_PAL_MODEM_CAPABILITY_OTA = 1u << 7,
 } h2_pal_modem_capability_t;
 
 /** Modem policy is volatile; product preferences remain owned by the app. */
@@ -164,6 +169,33 @@ typedef struct h2_pal_modem_call_request {
     uint32_t timeout_ms;
 } h2_pal_modem_call_request_t;
 
+/** SIM applicability reported by the queried table, not the current SIM state. */
+typedef enum h2_pal_modem_emergency_scope {
+    H2_PAL_MODEM_EMERGENCY_SCOPE_UNKNOWN = 0,
+    H2_PAL_MODEM_EMERGENCY_SCOPE_WITHOUT_SIM = 1,
+    H2_PAL_MODEM_EMERGENCY_SCOPE_WITH_SIM = 2,
+    H2_PAL_MODEM_EMERGENCY_SCOPE_ANY = 3,
+} h2_pal_modem_emergency_scope_t;
+
+/** The table queried by the provider. MODULE does not imply that the provider
+ * has also enumerated SIM files or network-supplied emergency numbers. */
+typedef enum h2_pal_modem_emergency_source {
+    H2_PAL_MODEM_EMERGENCY_SOURCE_UNKNOWN = 0,
+    H2_PAL_MODEM_EMERGENCY_SOURCE_MODULE = 1,
+    H2_PAL_MODEM_EMERGENCY_SOURCE_SIM = 2,
+    H2_PAL_MODEM_EMERGENCY_SOURCE_NETWORK = 3,
+} h2_pal_modem_emergency_source_t;
+
+/** One discovered emergency number. A number may occur in multiple scopes.
+ * This observation is not a promise that the network will connect a call. */
+typedef struct h2_pal_modem_emergency_number {
+    char number[H2_PAL_MODEM_PHONE_NUMBER_MAX]; /**< NUL-terminated decimal digits. */
+    h2_pal_modem_emergency_scope_t scope;
+    h2_pal_modem_emergency_source_t source;
+    uint32_t categories; /**< 3GPP emergency-service category bitmap, when known. */
+    uint8_t categories_valid; /**< 0 when the query does not report categories. */
+} h2_pal_modem_emergency_number_t;
+
 typedef struct h2_pal_modem_call_status {
     int32_t call_id;
     h2_pal_modem_call_direction_t direction;
@@ -209,6 +241,39 @@ typedef struct h2_pal_modem_cell_location {
     uint32_t accuracy_m; /* Horizontal accuracy reported by the service, 0 when unknown. */
 } h2_pal_modem_cell_location_t;
 
+typedef enum h2_pal_modem_ota_state {
+    H2_PAL_MODEM_OTA_IDLE = 0,
+    H2_PAL_MODEM_OTA_STARTING = 1,
+    H2_PAL_MODEM_OTA_DOWNLOADING = 2,
+    H2_PAL_MODEM_OTA_UPDATING = 3,
+    H2_PAL_MODEM_OTA_VERIFYING = 4,
+    H2_PAL_MODEM_OTA_SUCCEEDED = 5,
+    H2_PAL_MODEM_OTA_FAILED = 6,
+    H2_PAL_MODEM_OTA_UNKNOWN = 7,
+} h2_pal_modem_ota_state_t;
+
+/** Strings are borrowed for ota_start only. Revisions are opaque identifiers
+ * as returned in identity.revision, compared exactly, never ordered as semver. */
+typedef struct h2_pal_modem_ota_request {
+    const char *url; /**< One package URL; scheme/length limits are provider-specific. */
+    const char *expected_revision; /**< Optional source-version guard; NULL disables it. */
+    const char *target_revision; /**< Required, nonempty; fewer than IDENTITY_MAX bytes. */
+    uint32_t timeout_ms; /**< Per-command start timeout; 0 uses provider config. */
+} h2_pal_modem_ota_request_t;
+
+/** Snapshot of the last request in this provider instance; not persisted. */
+typedef struct h2_pal_modem_ota_status {
+    uint32_t attempt_id; /**< Nonzero request sequence, including already-at-target requests. */
+    h2_pal_modem_ota_state_t state;
+    uint32_t progress_percent; /**< Progress within state, only if progress_valid. */
+    uint8_t progress_valid;
+    h2_pal_result_t last_error;
+    int32_t vendor_code; /**< Vendor terminal code; 0 when none has been reported. */
+    char source_revision[H2_PAL_MODEM_IDENTITY_MAX];
+    char target_revision[H2_PAL_MODEM_IDENTITY_MAX];
+    char observed_revision[H2_PAL_MODEM_IDENTITY_MAX];
+} h2_pal_modem_ota_status_t;
+
 typedef struct h2_pal_modem_vtable {
     h2_pal_result_t (*open)(void *user, uint32_t timeout_ms);
     h2_pal_result_t (*close)(void *user, uint32_t timeout_ms);
@@ -228,8 +293,9 @@ typedef struct h2_pal_modem_vtable {
     /** Call speaker volume in 0..100 percent, mapped to the module's scale.
      * Both operations block in task context and serialize with other AT
      * operations. Use the modem task, never a UI/main loop or ISR. No active
-     * call is required. Volume is volatile: no implicit save or restore across
-     * close/open; callers re-apply it when needed. */
+     * call is required. The provider does not save or restore volume across
+     * close/open; callers re-apply it when needed. A module may automatically
+     * persist its volume setting (for example EC800M CLVL). */
     h2_pal_result_t (*set_call_volume)(void *user, uint32_t percent);
     h2_pal_result_t (*get_call_volume)(void *user, uint32_t *out_percent);
     h2_pal_result_t (*gnss_start)(void *user, uint32_t timeout_ms);
@@ -255,12 +321,121 @@ typedef struct h2_pal_modem_vtable {
      * modem merely to query it. Report UNKNOWN without reliable observation.
      * Fails INVALID_STATE when closed; unsupported backends return UNSUPPORTED. */
     h2_pal_result_t (*get_power_status)(void *user, h2_pal_modem_power_status_t *out_status);
+    /** Read-only discovery on an open modem, blocking in task context and
+     * serialized with other AT operations. Must attempt discovery without a
+     * SIM-ready or registration gate; a backend can report SIM availability
+     * errors. Does not open data, dial, or change stored numbers. A provider
+     * that temporarily selects a phonebook must restore the previous selection
+     * before success and report any restore failure.
+     * Return only queried entries, never a manual's defaults or examples.
+     * timeout_ms == 0 selects the provider's command timeout. An incomplete
+     * response or insufficient capacity returns TRUNCATED, never a partial
+     * successful list. No entries are retained across calls. */
+    h2_pal_result_t (*get_emergency_numbers)(void *user, uint32_t timeout_ms,
+        h2_pal_modem_emergency_number_t *out_numbers, size_t capacity,
+        size_t *out_count);
+    /** Start module firmware OTA on an open modem in task context. OK accepts
+     * the request, not completion. Providers copy the target version, validate
+     * the optional source guard and return BUSY while another OTA/session owns
+     * the modem. An already-matching target may succeed without downloading.
+     * A timeout can leave the outcome UNKNOWN: inspect status before retrying.
+     * Keep module power, instance and URC reception alive across module resets;
+     * close/deinit must reject an ongoing or uncertain update. No implicit
+     * power cycle, cancellation, retry, host OTA or preference persistence. */
+    h2_pal_result_t (*ota_start)(void *user, const h2_pal_modem_ota_request_t *request);
+    /** Observe the last request. May perform one bounded firmware-version
+     * query after the module's completion and restart notifications. SUCCEEDED
+     * requires a fresh target-version match, or the target already being active
+     * at start. Progress 100 and download completion alone are insufficient.
+     * Missing backend returns UNSUPPORTED. Call from the modem task, not a URC
+     * callback/ISR/UI loop. An in-progress snapshot can carry last_error while
+     * returning OK. Output is cleared on API failure. */
+    h2_pal_result_t (*ota_get_status)(void *user, uint32_t timeout_ms,
+        h2_pal_modem_ota_status_t *out_status);
 } h2_pal_modem_vtable_t;
 
 struct h2_pal_modem_api {
     void *user;
     const h2_pal_modem_vtable_t *vtable;
 };
+
+static inline int h2_pal_modem_ota_revision_valid(const char *revision) {
+    if (revision == NULL || revision[0] == '\0') { return 0; }
+    for (size_t i = 0u; i < H2_PAL_MODEM_IDENTITY_MAX; i++) {
+        if (revision[i] == '\0') { return 1; }
+        if ((unsigned char)revision[i] < 0x20u || (unsigned char)revision[i] > 0x7eu) { return 0; }
+    }
+    return 0;
+}
+
+/** @brief Start URL OTA; see the vtable lifecycle and version-check contract. */
+static inline h2_pal_result_t h2_pal_modem_ota_start(
+    const h2_pal_modem_api_t *modem, const h2_pal_modem_ota_request_t *request) {
+    if (request == NULL || request->url == NULL || request->url[0] == '\0' ||
+        !h2_pal_modem_ota_revision_valid(request->target_revision) ||
+        (request->expected_revision != NULL &&
+         !h2_pal_modem_ota_revision_valid(request->expected_revision))) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    if (modem == NULL || modem->vtable == NULL || modem->vtable->ota_start == NULL) {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
+    return modem->vtable->ota_start(modem->user, request);
+}
+
+/** @brief Read OTA progress and confirmed version; 0 uses provider timeout. */
+static inline h2_pal_result_t h2_pal_modem_ota_get_status(
+    const h2_pal_modem_api_t *modem, uint32_t timeout_ms,
+    h2_pal_modem_ota_status_t *out_status) {
+    if (out_status == NULL) { return H2_PAL_ERR_INVALID_ARG; }
+    memset(out_status, 0, sizeof(*out_status));
+    if (modem == NULL || modem->vtable == NULL || modem->vtable->ota_get_status == NULL) {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
+    h2_pal_result_t rc = modem->vtable->ota_get_status(modem->user, timeout_ms, out_status);
+    if (rc != H2_PAL_OK) { memset(out_status, 0, sizeof(*out_status)); }
+    return rc;
+}
+
+/** @brief Query emergency numbers and their reported applicability/source.
+ * @param modem Borrowed modem API; a missing API/operation is UNSUPPORTED.
+ * @param timeout_ms Command timeout in milliseconds; 0 uses provider config.
+ * @param out_numbers Required caller-owned array, with at least capacity entries.
+ * @param capacity Nonzero array capacity, in entries, not bytes.
+ * @param out_count Required caller-owned count. Zero on every failure.
+ * @return OK for a complete list (possibly empty), UNSUPPORTED for an absent
+ * backend, CLOSED when not open, TRUNCATED for incomplete output, or the
+ * provider's error. For valid output arguments, the array is cleared before
+ * dispatch and on failure; no stale or partial list is exposed. Call from the
+ * modem task, never an ISR, UI loop, or a provider notification callback.
+ * Consumers must retain scope/source and invalidate any own cache on modem
+ * reset, SIM changes, and relevant network changes. See the vtable contract.
+ */
+static inline h2_pal_result_t h2_pal_modem_get_emergency_numbers(
+    const h2_pal_modem_api_t *modem, uint32_t timeout_ms,
+    h2_pal_modem_emergency_number_t *out_numbers, size_t capacity,
+    size_t *out_count) {
+    if (out_count != NULL) { *out_count = 0u; }
+    if (out_numbers == NULL || out_count == NULL || capacity == 0u ||
+        capacity > SIZE_MAX / sizeof(*out_numbers)) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    memset(out_numbers, 0, capacity * sizeof(*out_numbers));
+    if (modem == NULL || modem->vtable == NULL ||
+        modem->vtable->get_emergency_numbers == NULL) {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
+    h2_pal_result_t rc = modem->vtable->get_emergency_numbers(
+        modem->user, timeout_ms, out_numbers, capacity, out_count);
+    if (rc == H2_PAL_OK && *out_count > capacity) {
+        rc = H2_PAL_ERR_FORMAT;
+    }
+    if (rc != H2_PAL_OK) {
+        *out_count = 0u;
+        memset(out_numbers, 0, capacity * sizeof(*out_numbers));
+    }
+    return rc;
+}
 
 /** @brief Set the volatile modem policy; see the vtable lifecycle contract. */
 static inline h2_pal_result_t h2_pal_modem_set_power_policy(
@@ -453,7 +628,7 @@ static inline h2_pal_result_t h2_pal_modem_get_call_status(
     return modem->vtable->get_call_status(modem->user, out_status);
 }
 
-/** @brief Set volatile call speaker volume; see the blocking vtable contract. */
+/** @brief Set call speaker volume; see the blocking vtable contract. */
 static inline h2_pal_result_t h2_pal_modem_set_call_volume(
     const h2_pal_modem_api_t *modem, uint32_t percent) {
     if (percent > 100u) {
