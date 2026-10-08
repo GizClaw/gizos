@@ -9,6 +9,15 @@ typedef struct h2_gizclaw_api_key {
   char name[27];
   char secret[96];
 } h2_gizclaw_api_key_t;
+/** API-key create was rejected with canonical RESOURCE_EXHAUSTED (8).
+ * A server key-count limit or other creation resource budget can cause this;
+ * no numeric quota or arbitrary message is inferred. Scoped to create:
+ * req_wait, parse, synchronous create and key-state last_error agree. Revoke
+ * and unrelated generic/Social RPC errors retain their existing mappings.
+ * A state identifies server exhaustion by this result AND has_rpc_error with
+ * rpc_error_code=RESOURCE_EXHAUSTED; an equal local domain result is not quota.
+ */
+#define H2_GIZCLAW_API_KEY_ERR_EXHAUSTED ((h2_pal_result_t) - 1001)
 h2_pal_result_t h2_gizclaw_req_create_api_key_create(
     h2_gizclaw_service_t *service, uint64_t identity,
     h2_gizclaw_str_t display_name, bool manage_api_keys, uint32_t timeout_ms,
@@ -56,9 +65,17 @@ typedef struct h2_gizclaw_api_key_snapshot {
   bool stale;        /**< Initial, refreshing, failed or closed state. */
   bool busy;         /**< A refresh or revoke is active. */
   bool closed;       /**< No further refresh accepted. */
-  /** Last refresh/revoke result, or CLOSED after close. */
+  /** Last refresh/revoke result (possibly the previous completion while busy),
+   * or CLOSED after close. Check busy before presenting a terminal error.
+   */
   h2_pal_result_t last_error;
   h2_gizclaw_api_key_t key;
+  /** Original canonical RPC status for the last failed generation.
+   * Cleared at new refresh/revoke admission, success and local timeout/close;
+   * orphan completions cannot overwrite it. No server message is retained.
+   */
+  bool has_rpc_error;
+  int32_t rpc_error_code;
 } h2_gizclaw_api_key_snapshot_t;
 
 /** Allocate an initially invalid, stale, idle state; sends no RPC.
@@ -69,11 +86,15 @@ h2_gizclaw_api_key_state_create(const h2_gizclaw_api_key_state_config_t *config,
                                 h2_gizclaw_api_key_state_t **out_state);
 
 /** Submit without waiting for RPC. Busy calls return OK and coalesce without
- * extending its deadline; they clear a pending revoke-after request. Closed returns CLOSED.
- * Optionally revoke the valid key first; OK/NOT_FOUND proceeds to create.
- * Revoke failure retains a valid, stale key; create failure invalidates it.
- * Submission errors are returned and stored as last_error. A refresh that has
- * expired is detached as an orphan first, then this call may start a new generation.
+ * extending its deadline; they clear a pending revoke-after request. Closed
+ * returns CLOSED. Optionally revoke the valid key first; OK/NOT_FOUND proceeds
+ * to create. Revoke failure retains a valid, stale key; create failure
+ * invalidates it, except RESOURCE_EXHAUSTED retains an existing key as
+ * valid+stale. It is not exposed while stale. A completed explicit revoke
+ * cannot be undone. No other keys are listed/deleted to make room; a caller may
+ * retry after quota changes. Submission errors are returned and stored as
+ * last_error. A refresh that has expired is detached as an orphan first, then
+ * this call may start a new generation.
  */
 h2_pal_result_t
 h2_gizclaw_api_key_state_request_refresh(h2_gizclaw_api_key_state_t *state,
@@ -114,10 +135,10 @@ h2_pal_result_t
 h2_gizclaw_api_key_state_close(h2_gizclaw_api_key_state_t *state);
 
 /** Erase secrets and free, setting *state to NULL; NULL *state is harmless.
- * Returns BUSY without freeing while any accepted completion, including orphan revokes, is undrained.
- * Teardown: close -> Service stop -> service_poll drain -> destroy -> Service
- * deinit. Never joins or waits for RPC; callers must exclude concurrent
- * readers.
+ * Returns BUSY without freeing while any accepted completion, including orphan
+ * revokes, is undrained. Teardown: close -> Service stop -> service_poll drain
+ * -> destroy -> Service deinit. Never joins or waits for RPC; callers must
+ * exclude concurrent readers.
  */
 h2_pal_result_t
 h2_gizclaw_api_key_state_destroy(h2_gizclaw_api_key_state_t **state);

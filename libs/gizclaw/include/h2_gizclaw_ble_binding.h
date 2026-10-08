@@ -23,6 +23,13 @@ extern "C" {
 #define H2_GIZCLAW_BLE_BINDING_FRAME_MAX 244u
 /** Bounded undrained exposure records; a full queue prevents a new export. */
 #define H2_GIZCLAW_BLE_BINDING_EXPOSURE_MAX 8u
+/** INFO primary status flags; at most one is set (zero means idle not-ready).
+ */
+#define H2_GIZCLAW_BLE_BINDING_READY 0x01u
+#define H2_GIZCLAW_BLE_BINDING_BUSY 0x02u
+#define H2_GIZCLAW_BLE_BINDING_EXHAUSTED 0x04u
+#define H2_GIZCLAW_BLE_BINDING_CLOSED 0x08u
+#define H2_GIZCLAW_BLE_BINDING_FAILED 0x10u
 
 /**
  * @brief Version 1 GATT wire contract, with UUID bytes in PAL/ATT little
@@ -35,10 +42,15 @@ extern "C" {
  *
  * All integers are unsigned little endian; no frame has a trailing NUL.
  * INFO is {version:u8, flags:u8, revision:u64, url_len:u16,
- * max_payload:u16}. Only flags bit 0 (ready) is defined; other bits are zero.
- * Not-ready INFO has url_len=0. revision is the live API-key snapshot revision.
- * max_payload=min(244, ATT_MTU-2)-13; unknown MTU uses 23 (8 payload bytes).
- * INFO readiness is transient and is not account binding or credential receipt.
+ * max_payload:u16}. flags contains one primary status (or zero): CLOSED wins
+ * over BUSY, then READY, EXHAUSTED (API-key create RESOURCE_EXHAUSTED), FAILED
+ * (other terminal key/format error), or idle not-ready. Remaining bits are
+ * zero. BUSY masks the previous generation's terminal error during a retry;
+ * READY requires a valid, nonstale, idle key. No numeric server quota is
+ * encoded. Not-ready INFO has url_len=0. revision is the live API-key snapshot
+ * revision. max_payload=min(244, ATT_MTU-2)-13; unknown MTU uses 23 (8 payload
+ * bytes). INFO readiness is transient and is not account binding or credential
+ * receipt.
  *
  * REQUEST is {version:u8, expected_revision:u64, url_offset:u16,
  * payload_limit:u16}. Exact length, version=1, offset<=url_len, and a limit in
@@ -113,6 +125,10 @@ typedef struct h2_gizclaw_ble_binding_snapshot {
   size_t url_len;
   size_t pending_exposures;
   h2_pal_result_t last_error; /**< BLE operation/event or key/format failure. */
+  uint8_t info_flags; /**< Same primary status and precedence as INFO. */
+  bool has_rpc_error; /**< API-key state's original terminal RPC error. */
+  int32_t
+      rpc_error_code; /**< Canonical status, e.g. 8; never a server message. */
 } h2_gizclaw_ble_binding_snapshot_t;
 
 /** Format an HTTPS API-key URL with optional icon/name query parameters.
@@ -164,6 +180,7 @@ h2_pal_result_t h2_gizclaw_ble_binding_snapshot(
 /** Pop an exposure, including after stop. WOULD_BLOCK means empty.
  * A first nonempty credential response per key name/revision enqueues before
  * returning bytes to PAL; even partial transfer/provider send failure counts.
+ * Deduplication persists across stop/start and draining for this instance.
  * A full queue returns NO_SPACE for a previously unrecorded generation before
  * copying credential bytes. Keep possibly exposed keys on page exit; revoke
  * unexposed/in-flight/orphan keys using the existing API-key state lifecycle.

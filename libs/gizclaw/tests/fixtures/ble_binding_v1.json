@@ -38,5 +38,61 @@
     "request_hex": "0102000000000000000000e700",
     "first_response_hex": "0102000000000000000000670068747470733a2f2f",
     "empty_response_hex": "01020000000000000067006700"
+  },
+  "info_states": {
+    "quota_no_key": {
+      "revision": "2",
+      "flags": 4,
+      "url_len": 0,
+      "info_hex": "0104020000000000000000000800"
+    },
+    "quota_retained_key": {
+      "revision": "4",
+      "flags": 4,
+      "url_len": 0,
+      "info_hex": "0104040000000000000000000800"
+    },
+    "busy_retry_no_key": {
+      "revision": "3",
+      "flags": 2,
+      "url_len": 0,
+      "info_hex": "0102030000000000000000000800"
+    },
+    "busy_retry_retained_key": {
+      "revision": "5",
+      "flags": 2,
+      "url_len": 0,
+      "info_hex": "0102050000000000000000000800"
+    },
+    "recovered_no_key": {
+      "revision": "4",
+      "flags": 1,
+      "url_len": 103,
+      "info_hex": "0101040000000000000067000800"
+    },
+    "recovered_retained_key": {
+      "revision": "6",
+      "flags": 1,
+      "url_len": 103,
+      "info_hex": "0101060000000000000067000800"
+    },
+    "closed_no_key": {
+      "revision": "5",
+      "flags": 8,
+      "url_len": 0,
+      "info_hex": "0108050000000000000000000800"
+    },
+    "closed_retained_key": {
+      "revision": "7",
+      "flags": 8,
+      "url_len": 0,
+      "info_hex": "0108070000000000000000000800"
+    },
+    "failed_permission": {
+      "revision": "2",
+      "flags": 16,
+      "url_len": 0,
+      "info_hex": "0110020000000000000000000800"
+    }
   }
 }

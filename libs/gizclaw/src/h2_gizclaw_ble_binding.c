@@ -316,6 +316,24 @@ static bool access_valid(const h2_pal_ble_gatt_access_t *access) {
          access->offset == 0u;
 }
 
+static uint8_t key_status(const h2_gizclaw_api_key_snapshot_t *key,
+                          h2_pal_result_t credential_result) {
+  if (key->closed)
+    return H2_GIZCLAW_BLE_BINDING_CLOSED;
+  if (key->busy)
+    return H2_GIZCLAW_BLE_BINDING_BUSY;
+  if (credential_result == H2_PAL_OK)
+    return H2_GIZCLAW_BLE_BINDING_READY;
+  if (key->last_error == H2_GIZCLAW_API_KEY_ERR_EXHAUSTED &&
+      key->has_rpc_error &&
+      key->rpc_error_code == H2_GIZCLAW_RPC_ERROR_RESOURCE_EXHAUSTED)
+    return H2_GIZCLAW_BLE_BINDING_EXHAUSTED;
+  if (key->last_error != H2_PAL_OK ||
+      credential_result != H2_PAL_ERR_INVALID_STATE)
+    return H2_GIZCLAW_BLE_BINDING_FAILED;
+  return 0u;
+}
+
 static h2_pal_result_t info_read(void *user,
                                  const h2_pal_ble_gatt_access_t *access,
                                  uint8_t *out, size_t capacity,
@@ -338,15 +356,13 @@ static h2_pal_result_t info_read(void *user,
   char url[H2_GIZCLAW_BLE_BINDING_URL_MAX + 1u] = {0};
   size_t url_len = 0u;
   rc = credential(binding, &key, url, &url_len);
-  if (rc == H2_PAL_OK || rc == H2_PAL_ERR_INVALID_STATE) {
-    out[0] = H2_GIZCLAW_BLE_BINDING_VERSION;
-    out[1] = rc == H2_PAL_OK ? 1u : 0u;
-    put_u64(out + 2u, key.revision);
-    put_u16(out + 10u, (uint16_t)url_len);
-    put_u16(out + 12u, payload_max(binding, access->conn_handle));
-    *out_len = H2_GIZCLAW_BLE_BINDING_INFO_LEN;
-    rc = H2_PAL_OK;
-  }
+  out[0] = H2_GIZCLAW_BLE_BINDING_VERSION;
+  out[1] = key_status(&key, rc);
+  put_u64(out + 2u, key.revision);
+  put_u16(out + 10u, (uint16_t)url_len);
+  put_u16(out + 12u, payload_max(binding, access->conn_handle));
+  *out_len = H2_GIZCLAW_BLE_BINDING_INFO_LEN;
+  rc = H2_PAL_OK;
   erase(&key, sizeof(key));
   erase(url, sizeof(url));
   unlock(binding);
@@ -743,7 +759,7 @@ h2_gizclaw_ble_binding_start(h2_gizclaw_ble_binding_t *binding) {
     goto failed;
   }
   binding->open = true;
-  memset(&binding->last_exposed, 0, sizeof(binding->last_exposed));
+  /* Exposure obligations and deduplication span this instance's windows. */
   unlock(binding);
   return H2_PAL_OK;
 failed:
@@ -778,7 +794,11 @@ h2_pal_result_t h2_gizclaw_ble_binding_snapshot(
   out_snapshot->revision = key.revision;
   out_snapshot->ready = binding->open && rc == H2_PAL_OK;
   out_snapshot->url_len = out_snapshot->ready ? len : 0u;
-  if (rc != H2_PAL_OK)
+  out_snapshot->info_flags =
+      binding->open ? key_status(&key, rc) : H2_GIZCLAW_BLE_BINDING_CLOSED;
+  out_snapshot->has_rpc_error = key.has_rpc_error;
+  out_snapshot->rpc_error_code = key.rpc_error_code;
+  if (rc != H2_PAL_OK && !key.busy)
     out_snapshot->last_error =
         rc == H2_PAL_ERR_INVALID_STATE ? key.last_error : rc;
   erase(&key, sizeof(key));

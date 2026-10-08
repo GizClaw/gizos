@@ -63,6 +63,8 @@ typedef struct h2_gizclaw_managed_request {
   size_t payload_len;
   h2_gizclaw_rpc_request_t *wire_request;
   h2_gizclaw_rpc_response_t response;
+  h2_pal_result_t (*normalize_rpc_error)(int error_code);
+  bool rpc_error_received;
   h2_pal_result_t result;
   uint64_t started_ms;
   uint64_t completed_ms;
@@ -134,7 +136,9 @@ static void managed_log_remote_result(const managed_request_t *request,
   const h2_pal_log_api_t *log = request->service->client_config.log;
   if (log == NULL)
     return;
-  h2_pal_result_t result = h2_gizclaw_rpc_error_result_internal(code);
+  h2_pal_result_t result = request->normalize_rpc_error != NULL
+                              ? request->normalize_rpc_error(code)
+                              : h2_gizclaw_rpc_error_result_internal(code);
   bool absent = result == H2_PAL_ERR_NOT_FOUND;
   char message[224];
   (void)snprintf(message, sizeof(message),
@@ -542,8 +546,12 @@ static void managed_settle(void *user, h2_gizclaw_operation_t *operation,
   managed_request_t *request = user;
   request->result = result->result;
   if (request->result == H2_PAL_OK && request->response.has_error) {
+    request->rpc_error_received = true;
     request->result =
-        h2_gizclaw_rpc_error_result_internal(request->response.error_code);
+        request->normalize_rpc_error != NULL
+            ? request->normalize_rpc_error(request->response.error_code)
+            : h2_gizclaw_rpc_error_result_internal(
+                  request->response.error_code);
     managed_log_remote_result(request, "rpc", request->response.error_code,
                               request->response.error_message_len);
   }
@@ -1281,6 +1289,50 @@ h2_pal_result_t h2_gizclaw_req_response_internal(
   if (request->result != H2_PAL_OK)
     return request->result;
   *out_response = &request->response;
+  return H2_PAL_OK;
+}
+
+h2_pal_result_t h2_gizclaw_req_set_rpc_error_normalizer_internal(
+    h2_gizclaw_req_t *base, const void *tag,
+    h2_pal_result_t (*normalize)(int error_code)) {
+  if (base == NULL || base->vtable != &managed_vtable || normalize == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  managed_request_t *request = (managed_request_t *)base;
+  if (request->tag != tag || request->send != NULL || request->stream != NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_pal_result_t rc =
+      h2_pal_mutex_lock(request->service->config.sync, request->mutex);
+  if (rc != H2_PAL_OK)
+    return rc;
+  if (request->started || h2_atomic_load(&request->terminal)) {
+    rc = H2_PAL_ERR_INVALID_STATE;
+  } else {
+    request->normalize_rpc_error = normalize;
+  }
+  (void)h2_pal_mutex_unlock(request->service->config.sync, request->mutex);
+  return rc;
+}
+
+h2_pal_result_t h2_gizclaw_req_rpc_status_internal(const h2_gizclaw_req_t *base,
+                                                   const void *tag,
+                                                   bool *out_has_error,
+                                                   int32_t *out_error_code) {
+  if (out_has_error != NULL)
+    *out_has_error = false;
+  if (out_error_code != NULL)
+    *out_error_code = 0;
+  if (base == NULL || base->vtable != &managed_vtable ||
+      out_has_error == NULL || out_error_code == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  const managed_request_t *request = (const managed_request_t *)base;
+  if (request->tag != tag || request->send != NULL || request->stream != NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  if (!h2_atomic_load_explicit(&request->terminal, H2_ATOMIC_ACQUIRE))
+    return H2_PAL_ERR_INVALID_STATE;
+  if (request->rpc_error_received) {
+    *out_has_error = true;
+    *out_error_code = request->response.error_code;
+  }
   return H2_PAL_OK;
 }
 

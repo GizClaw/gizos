@@ -32,6 +32,8 @@ typedef struct test_env {
   int method;
   h2_pal_result_t revoke_result;
   h2_pal_result_t create_result;
+  bool create_rpc_error, revoke_rpc_error;
+  int create_rpc_code, revoke_rpc_code;
   h2_pal_time_api_t time;
 } test_env_t;
 static test_env_t *s_env;
@@ -130,8 +132,15 @@ static int fake_result(h2_gizclaw_rpc_request_t *request,
   if (!h2_atomic_load(&s_env->reply))
     return H2_PAL_ERR_WOULD_BLOCK;
   int rc = s_env->method == 98 ? s_env->revoke_result : s_env->create_result;
+  *out_response = (h2_gizclaw_rpc_response_t){
+      .has_error = s_env->method == 98 ? s_env->revoke_rpc_error
+                                       : s_env->create_rpc_error,
+      .error_code = s_env->method == 98 ? s_env->revoke_rpc_code
+                                        : s_env->create_rpc_code};
   if (rc != H2_PAL_OK)
     return rc;
+  if (out_response->has_error)
+    return H2_PAL_OK;
   uint8_t bytes[256];
   pb_ostream_t stream = pb_ostream_from_buffer(bytes, sizeof(bytes));
   if (s_env->method == 96) {
@@ -756,7 +765,7 @@ static void test_refresh_connection_and_boundaries(void) {
          len == 0u);
   assert(read_value(&ble, 0u, 1u, 0u, bytes, sizeof(bytes), &len) ==
              H2_PAL_OK &&
-         bytes[1] == 0u && u16(bytes + 10u) == 0u);
+         bytes[1] == H2_GIZCLAW_BLE_BINDING_BUSY && u16(bytes + 10u) == 0u);
   assert(!binding_snapshot(binding).ready);
   h2_atomic_store(&env.reply, true);
   finish(&env);
@@ -826,7 +835,7 @@ static void test_stale_failed_and_timeout(void) {
   size_t len;
   assert(read_value(&ble, 0u, 1u, 0u, bytes, sizeof(bytes), &len) ==
              H2_PAL_OK &&
-         bytes[1] == 0u);
+         bytes[1] == H2_GIZCLAW_BLE_BINDING_FAILED);
   assert(request(&ble, 1u, key.revision, 0u, 1u) == H2_PAL_ERR_INVALID_STATE);
   h2_atomic_store(&env.reply, true);
   assert(h2_gizclaw_ble_binding_close(&binding) == H2_PAL_OK);
@@ -945,6 +954,156 @@ static void test_retryable_cleanup_and_reopen(void) {
   teardown(&env);
 }
 
+static void test_reopen_preserves_exposure_deduplication(void) {
+  test_env_t env;
+  fake_ble_t ble;
+  setup(&env, true);
+  ble_setup(&ble);
+  refresh(&env, false);
+  h2_gizclaw_ble_binding_t *binding = binding_open(&env, &ble);
+  const uint64_t revision = snapshot(&env).revision;
+  uint8_t bytes[244];
+  size_t len;
+  /* Keep the first exposure undrained across more windows than queue slots. */
+  for (size_t i = 0u; i < H2_GIZCLAW_BLE_BINDING_EXPOSURE_MAX + 3u; ++i) {
+    assert(h2_gizclaw_ble_binding_start(binding) == H2_PAL_OK);
+    assert(request(&ble, 1u, revision, 0u, 1u) == H2_PAL_OK);
+    assert(read_value(&ble, 2u, 1u, 0u, bytes, sizeof(bytes), &len) ==
+           H2_PAL_OK);
+    assert(len == 14u);
+    assert(binding_snapshot(binding).pending_exposures == 1u);
+    assert(h2_gizclaw_ble_binding_stop(binding) == H2_PAL_OK);
+  }
+  h2_gizclaw_ble_binding_exposure_t exposure;
+  assert(h2_gizclaw_ble_binding_next_exposure(binding, &exposure) == H2_PAL_OK);
+  assert(exposure.revision == revision &&
+         strcmp(exposure.key_name, "key-name") == 0);
+  assert(h2_gizclaw_ble_binding_start(binding) == H2_PAL_OK);
+  assert(request(&ble, 1u, revision, 0u, 1u) == H2_PAL_OK);
+  assert(read_value(&ble, 2u, 1u, 0u, bytes, sizeof(bytes), &len) == H2_PAL_OK);
+  assert(binding_snapshot(binding).pending_exposures == 0u);
+  /* A genuinely new revision still needs its own obligation record. */
+  refresh(&env, false);
+  const uint64_t next_revision = snapshot(&env).revision;
+  assert(next_revision != revision);
+  assert(request(&ble, 1u, next_revision, 0u, 1u) == H2_PAL_OK);
+  assert(read_value(&ble, 2u, 1u, 0u, bytes, sizeof(bytes), &len) == H2_PAL_OK);
+  assert(binding_snapshot(binding).pending_exposures == 1u);
+  assert(h2_gizclaw_ble_binding_stop(binding) == H2_PAL_OK);
+  assert(h2_gizclaw_ble_binding_next_exposure(binding, &exposure) == H2_PAL_OK);
+  assert(exposure.revision == next_revision);
+  assert(h2_gizclaw_ble_binding_close(&binding) == H2_PAL_OK);
+  teardown(&env);
+}
+
+static void assert_info_state(fake_ble_t *ble, yyjson_val *states,
+                              const char *name) {
+  uint8_t bytes[244];
+  size_t len;
+  assert(read_value(ble, 0u, 1u, 0u, bytes, sizeof(bytes), &len) == H2_PAL_OK);
+  yyjson_val *state = yyjson_obj_get(states, name);
+  assert(state != NULL);
+  equals_hex(bytes, len, json_string(state, "info_hex"));
+}
+
+static void test_quota_wire_and_recovery(yyjson_val *fixture) {
+  yyjson_val *states = yyjson_obj_get(fixture, "info_states");
+  for (unsigned old_key = 0u; old_key < 2u; ++old_key) {
+    test_env_t env;
+    fake_ble_t ble;
+    setup(&env, true);
+    ble_setup(&ble);
+    if (old_key != 0u)
+      refresh(&env, false);
+    h2_gizclaw_ble_binding_t *binding = binding_open(&env, &ble);
+    assert(h2_gizclaw_ble_binding_start(binding) == H2_PAL_OK);
+    uint8_t bytes[244];
+    size_t len;
+    if (old_key != 0u) {
+      assert(request(&ble, 1u, 2u, 0u, 1u) == H2_PAL_OK);
+      assert(read_value(&ble, 2u, 1u, 0u, bytes, sizeof(bytes), &len) ==
+             H2_PAL_OK);
+    }
+    env.create_rpc_error = true;
+    env.create_rpc_code = H2_GIZCLAW_RPC_ERROR_RESOURCE_EXHAUSTED;
+    refresh(&env, false);
+    assert_info_state(&ble, states,
+                      old_key != 0u ? "quota_retained_key" : "quota_no_key");
+    h2_gizclaw_ble_binding_snapshot_t rejected = binding_snapshot(binding);
+    assert(!rejected.ready && rejected.url_len == 0u &&
+           rejected.info_flags == H2_GIZCLAW_BLE_BINDING_EXHAUSTED);
+    assert(rejected.last_error == H2_GIZCLAW_API_KEY_ERR_EXHAUSTED &&
+           rejected.has_rpc_error && rejected.rpc_error_code == 8);
+    assert(snapshot(&env).valid == (old_key != 0u));
+    assert(request(&ble, 1u, rejected.revision, 0u, 1u) ==
+           H2_PAL_ERR_INVALID_STATE);
+    assert(binding_snapshot(binding).pending_exposures == old_key);
+    for (unsigned i = 0u; i < h2_atomic_load(&env.starts); ++i)
+      assert(env.methods[i] == 96); /* Never remove any key to evade quota. */
+    env.create_rpc_error = false;
+    h2_atomic_store(&env.reply, false);
+    assert(h2_gizclaw_api_key_state_request_refresh(env.state, false) ==
+           H2_PAL_OK);
+    assert_info_state(&ble, states,
+                      old_key != 0u ? "busy_retry_retained_key"
+                                    : "busy_retry_no_key");
+    h2_gizclaw_ble_binding_snapshot_t retry = binding_snapshot(binding);
+    assert(retry.info_flags == H2_GIZCLAW_BLE_BINDING_BUSY && !retry.ready &&
+           retry.last_error == H2_PAL_OK && !retry.has_rpc_error &&
+           retry.rpc_error_code == 0);
+    assert(request(&ble, 1u, retry.revision, 0u, 1u) ==
+           H2_PAL_ERR_INVALID_STATE);
+    h2_atomic_store(&env.reply, true);
+    finish(&env);
+    assert_info_state(&ble, states,
+                      old_key != 0u ? "recovered_retained_key"
+                                    : "recovered_no_key");
+    assert(binding_snapshot(binding).ready &&
+           !binding_snapshot(binding).has_rpc_error);
+    assert(h2_gizclaw_api_key_state_close(env.state) == H2_PAL_OK);
+    assert_info_state(&ble, states,
+                      old_key != 0u ? "closed_retained_key" : "closed_no_key");
+    assert(binding_snapshot(binding).info_flags ==
+               H2_GIZCLAW_BLE_BINDING_CLOSED &&
+           !binding_snapshot(binding).ready);
+    assert(h2_gizclaw_ble_binding_stop(binding) == H2_PAL_OK);
+    h2_gizclaw_ble_binding_exposure_t exposure;
+    if (old_key != 0u) {
+      assert(h2_gizclaw_ble_binding_next_exposure(binding, &exposure) ==
+             H2_PAL_OK);
+      assert(exposure.revision == 2u &&
+             strcmp(exposure.key_name, "key-name") == 0);
+    }
+    assert(h2_gizclaw_ble_binding_close(&binding) == H2_PAL_OK);
+    teardown(&env);
+  }
+  test_env_t env;
+  fake_ble_t ble;
+  setup(&env, true);
+  ble_setup(&ble);
+  h2_gizclaw_ble_binding_t *binding = binding_open(&env, &ble);
+  assert(h2_gizclaw_ble_binding_start(binding) == H2_PAL_OK);
+  env.create_rpc_error = true;
+  env.create_rpc_code = H2_GIZCLAW_RPC_ERROR_PERMISSION_DENIED;
+  refresh(&env, false);
+  assert_info_state(&ble, states, "failed_permission");
+  h2_gizclaw_ble_binding_snapshot_t failed = binding_snapshot(binding);
+  assert(failed.last_error == H2_GIZCLAW_ERR_REMOTE && failed.has_rpc_error &&
+         failed.rpc_error_code == H2_GIZCLAW_RPC_ERROR_PERMISSION_DENIED);
+  env.create_rpc_error = false;
+  refresh(&env, false);
+  env.create_result = H2_GIZCLAW_API_KEY_ERR_EXHAUSTED;
+  env.create_rpc_error = true;
+  env.create_rpc_code = H2_GIZCLAW_RPC_ERROR_RESOURCE_EXHAUSTED;
+  refresh(&env, false);
+  failed = binding_snapshot(binding);
+  assert(!failed.ready && failed.info_flags == H2_GIZCLAW_BLE_BINDING_FAILED &&
+         !failed.has_rpc_error && failed.rpc_error_code == 0);
+  assert(!snapshot(&env).valid && snapshot(&env).key.secret[0] == 0);
+  assert(h2_gizclaw_ble_binding_close(&binding) == H2_PAL_OK);
+  teardown(&env);
+}
+
 typedef struct concurrent_reader {
   h2_pal_ble_gatt_characteristic_t info, request, credential;
   h2_atomic_bool_t finish;
@@ -1023,6 +1182,8 @@ int main(int argc, char **argv) {
   test_stale_failed_and_timeout();
   test_exposure_backpressure();
   test_retryable_cleanup_and_reopen();
+  test_reopen_preserves_exposure_deduplication();
+  test_quota_wire_and_recovery(root);
   test_stop_during_reads();
   yyjson_doc_free(fixture);
   puts("gizclaw BLE binding protocol/lifecycle tests passed");

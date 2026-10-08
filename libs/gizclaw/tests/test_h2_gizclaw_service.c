@@ -6696,6 +6696,8 @@ static void test_req_remote_error_mapping(void) {
        H2_GIZCLAW_ERR_REMOTE},
       {true, H2_GIZCLAW_RPC_ERROR_FAILED_PRECONDITION, H2_PAL_OK,
        H2_GIZCLAW_ERR_REMOTE},
+      {true, H2_GIZCLAW_RPC_ERROR_RESOURCE_EXHAUSTED, H2_PAL_OK,
+       H2_GIZCLAW_ERR_REMOTE},
       {true, H2_GIZCLAW_RPC_ERROR_UNAVAILABLE, H2_PAL_OK, H2_GIZCLAW_ERR_REMOTE},
       /* The retired HTTP number is no longer resource absence. */
       {true, 404, H2_PAL_OK, H2_GIZCLAW_ERR_REMOTE},

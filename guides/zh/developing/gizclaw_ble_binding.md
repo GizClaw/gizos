@@ -26,7 +26,7 @@ Stop/destroy/unbind 失败时 instance 仍存在且 admission 已关闭，依赖
 
 ## 手机交互
 
-手机按 service UUID 发现设备并连接，发现 INFO、REQUEST、CREDENTIAL 三个 characteristic。INFO 是瞬时可见状态；客户端不得把 ready、连接建立或广告可见作为设备绑定完成。INFO 不占用绑定 connection；只有第一个有效 REQUEST 会采纳连接，其他连接的 REQUEST/CREDENTIAL 在它断开或窗口停止前返回 BUSY。
+手机按 service UUID 发现设备并连接，发现 INFO、REQUEST、CREDENTIAL 三个 characteristic。INFO 保持 14 bytes，flags 只含一个 primary status：CLOSED（0x08）优先于 BUSY（0x02）、READY（0x01）、EXHAUSTED（0x04）、FAILED（0x10），零表示 idle not-ready，其余 bits 为零。CLOSED 是 terminal；BUSY 在重试时盖过上次 generation 的终态错误；READY 只在 key valid、nonstale、idle 时出现。EXHAUSTED 同时要求 scoped create result 与真实 RPC presence/code=8，其它终态 key/format/transport 失败为 FAILED；所有 non-ready status 的 URL length 都为零。INFO 是瞬时可见状态；客户端不得把 ready、连接建立或广告可见作为设备绑定完成。INFO 不占用绑定 connection；只有第一个有效 REQUEST 会采纳连接，其他连接的 REQUEST/CREDENTIAL 在它断开或窗口停止前返回 BUSY。
 
 客户端读取 INFO 获得 revision、URL 字节长度和当前最大 payload，随后按 `(revision, offset, payload_limit)` 写入 REQUEST 并读取一块 CREDENTIAL。每块包含相同 revision、对应 offset、完整 URL 长度和 URL bytes。客户端逐项校验并按收到的 payload 长度推进 offset；空 payload 只在 offset 等于总长度时有效。一个 connection 只有一个待处理 REQUEST，相同请求可幂等重写，尚未读取时另一个请求返回 BUSY；读成功即消费请求，传输失败需要重写 REQUEST 后重试。
 
@@ -40,13 +40,13 @@ Refresh、not-ready、断连、重连或 revision 拒绝后，手机丢弃部分
 
 每个 key name/revision 的第一次非空 credential response 在返回字节前登记 exposure；只交付一个字节、发送随后失败、手机断开或 URL 尚未完整取得，都保守算作可能已暴露。它不表示手机确认或服务端绑定成功。INFO、空 EOF response、请求校验失败及不包含 credential bytes 的失败不会创建 exposure。
 
-Exposure ledger 最多保留 8 个未消费记录。满时，新 generation 的 read 在复制 secret 前返回 NO_SPACE；相同已记录 generation 的后续 chunk 不重复记录。Owner 应持续 drain，并在 `stop` 返回后再次 drain，覆盖读与离页并发的最后一条记录。`close` 在记录未 drain 时返回 BUSY，保留 sealed instance，不能静默丢弃义务。
+Exposure ledger 最多保留 8 个未消费记录。满时，新 generation 的 read 在复制 secret 前返回 NO_SPACE；相同已记录 key name/revision 的后续 chunk 不重复记录，这份 instance 内的去重状态在 stop/start 和 drain 后仍保留。重复打开同一 key revision 的窗口不会耗尽 ledger，新的 revision 仍创建独立记录。Owner 应持续 drain，并在 `stop` 返回后再次 drain，覆盖读与离页并发的最后一条记录。`close` 在记录未 drain 时返回 BUSY，保留 sealed instance，不能静默丢弃义务。
 
 产品合并二维码已经展示的 key name 与 BLE exposure key name，保留任一渠道可能披露的凭证；当前 key 没有被两条路径披露时继续走既有非阻塞 revoke，刷新在途结果继续使用 revoke-after/orphan 规则。Binding service 不替产品决定 refresh 或 revoke，也不改变 API-key state 既有 close/drain/destroy 语义。
 
 ## 验证
 
-Cross-language golden vectors 位于 `libs/gizclaw/tests/fixtures/ble_binding_v1.json`，包含 UUID ATT byte order、HTTPS origin、可选 metadata、UTF-8 percent encoding、INFO/REQUEST/首块与空 EOF response。LiteLink Dart/微信客户端可以直接读取这份 JSON，不使用不同协议的旧 device-token vectors。
+Cross-language golden vectors 位于 `libs/gizclaw/tests/fixtures/ble_binding_v1.json`，包含 UUID ATT byte order、HTTPS origin、可选 metadata、UTF-8 percent encoding、INFO/REQUEST/首块与空 EOF response，以及资源耗尽、busy retry、恢复 ready 和 closed 的 INFO 状态。LiteLink Dart/微信客户端可以直接读取这份 JSON，不使用不同协议的旧 device-token vectors。
 
 ```sh
 bazel test --config=macos_arm64 //libs/gizclaw:h2_gizclaw_ble_binding_test
@@ -59,3 +59,9 @@ make guides-build
 测试使用真实异步 API-key state/Service 和 fake RPC/BLE PAL，逐字节验证 URL/frame，以及 invalid/stale/busy/closed、刷新 revision、默认/协商 MTU、response capacity、手机自动长读终止、连接隔离和 handle 复用、部分 export、ledger backpressure、共存资源、重开窗口和可重试 cleanup。物理 ESP32-S3/BK7258 与手机发现、GATT 交付、并行 H2Loader 和产品页面的最终绑定验证需要对应硬件与 consumer 集成后单独执行；host 测试不替代这些验收。
 
 `projects/e2e/apps/gizclaw/api_coverage.py` 为八个 BLE Binding API 保留独立的 `device-api` 调用和业务断言要求。Fake-PAL host 测试不计入 live E2E evidence，旧 228 项日志仍会缺少这些要求；真实 Server/BLE/手机 lane 完成前，完整审计应继续报告 missing。
+
+## API key 资源限制的投影
+
+产品读取 binding snapshot 的 `info_flags`、`last_error`、`has_rpc_error` 和 `rpc_error_code`，可区分服务端资源耗尽、当前 busy generation 与其它失败；last_error 不把 key 的历史 quota completion 冒充当前 busy 错误。BLE 手机从 INFO flags 获得相同 primary status，不会只看到无限期 ready=false。协议只报告 canonical 8 的资源耗尽，不编码某个 key-count 数字，也不传递任意 server message。
+
+Quota-rejected refresh(false) 保留的旧 key 仍 stale，因此绑定 URL 不交付；此前的真实曝光记录和去重仍有效。错误不触发删除其它 key 或撤销已披露凭证。调用方明确 retry 后，INFO 转 BUSY，再根据新 completion 进入 READY、EXHAUSTED 或 FAILED；成功必须来自新 create 结果，不能把 retained stale key 直接改为 ready。相关 fake RPC/PAL 回归与 golden vectors 不代表真实 Server count-cap 或手机/板端资格化。
