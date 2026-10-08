@@ -1,3 +1,4 @@
+load("@gizos//libs/lua:lua_app.bzl", "lua_app")
 load("@gizos//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_bk7258_firmware", "h2loader_esp_idf_firmware")
 load("@gizos//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
 load("@gizos//tools/bazel:bk7258.bzl", "bk7258_firmware")
@@ -10,7 +11,97 @@ load("@gizos//tools/bazel:tasks.bzl", "h2_tasks")
 load("@gizos//tools/lvgl/font_conv:font_conv.bzl", "lvgl_font")
 load("@gizos//tools/lvgl/ttf_subset:ttf_subset.bzl", "ttf_subset_c")
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("@rules_python//python:defs.bzl", "py_test")
 load(":consumer.bzl", "fake_firmware", "native_component_paths")
+
+firmware_version(
+    name = "abc_lua_version",
+    value = "1.2.3",
+)
+
+lua_app(
+    name = "abc_lua_app",
+    entry = "abc.lua",
+    version = ":abc_lua_version",
+)
+
+firmware_version(
+    name = "xyz_lua_version",
+    value = "2.0.0-rc.1",
+)
+
+lua_app(
+    name = "xyz_lua_app",
+    compact = True,
+    data = ["xyz/tone.pcm"],
+    entry = "xyz.lua",
+    version = ":xyz_lua_version",
+)
+
+filegroup(
+    name = "abc_lua_archive",
+    srcs = [":abc_lua_app"],
+    output_group = "archive",
+)
+
+filegroup(
+    name = "abc_lua_manifest",
+    srcs = [":abc_lua_app"],
+    output_group = "manifest",
+)
+
+filegroup(
+    name = "abc_lua_metadata",
+    srcs = [":abc_lua_app"],
+    output_group = "metadata",
+)
+
+filegroup(
+    name = "xyz_lua_archive",
+    srcs = [":xyz_lua_app"],
+    output_group = "archive",
+)
+
+filegroup(
+    name = "xyz_lua_manifest",
+    srcs = [":xyz_lua_app"],
+    output_group = "manifest",
+)
+
+filegroup(
+    name = "xyz_lua_metadata",
+    srcs = [":xyz_lua_app"],
+    output_group = "metadata",
+)
+
+py_test(
+    name = "lua_app_release_test",
+    srcs = ["test_lua_app.py"],
+    args = [
+        "$(location lua_app_catalog.jsonl)",
+        "$(location lua_app_release_files.jsonl)",
+        "$(location lua_app_default_files.txt)",
+        "$(location :abc_lua_archive)",
+        "$(location :abc_lua_manifest)",
+        "$(location :abc_lua_metadata)",
+        "$(location :xyz_lua_archive)",
+        "$(location :xyz_lua_manifest)",
+        "$(location :xyz_lua_metadata)",
+    ],
+    data = [
+        "lua_app_catalog.jsonl",
+        "lua_app_release_files.jsonl",
+        "lua_app_default_files.txt",
+        ":abc_lua_archive",
+        ":abc_lua_manifest",
+        ":abc_lua_metadata",
+        ":xyz_lua_archive",
+        ":xyz_lua_manifest",
+        ":xyz_lua_metadata",
+    ],
+    legacy_create_init = 0,
+    main = "test_lua_app.py",
+)
 
 alias(
     name = "runtime",

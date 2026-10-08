@@ -10,7 +10,63 @@ load(":tests/display_tasks.bzl", "display_task_tests")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files(["lua_resource.bzl", "tests/display_submit.lua"])
+exports_files([
+    "lua_app.bzl",
+    "lua_app_catalog.cquery",
+    "lua_app_release_files.cquery",
+    "lua_resource.bzl",
+    "tests/display_submit.lua",
+])
+
+py_binary(
+    name = "app_package",
+    srcs = [
+        "app_package.py",
+        "embed_resource.py",
+    ],
+    imports = ["."],
+    legacy_create_init = 0,
+    main = "app_package.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
+    name = "app_package_test",
+    srcs = [
+        "app_package.py",
+        "embed_resource.py",
+        "tests/test_app_package.py",
+    ],
+    args = [
+        "$(location //libs/lua/tests/app_fixture:abc_archive)",
+        "$(location //libs/lua/tests/app_fixture:abc_manifest)",
+        "$(location //libs/lua/tests/app_fixture:abc_metadata)",
+        "$(location //libs/lua/tests/app_fixture:xyz_archive)",
+        "$(location //libs/lua/tests/app_fixture:xyz_manifest)",
+        "$(location //libs/lua/tests/app_fixture:xyz_metadata)",
+    ],
+    data = [
+        "//libs/lua/tests/app_fixture:abc_archive",
+        "//libs/lua/tests/app_fixture:abc_manifest",
+        "//libs/lua/tests/app_fixture:abc_metadata",
+        "//libs/lua/tests/app_fixture:xyz_archive",
+        "//libs/lua/tests/app_fixture:xyz_manifest",
+        "//libs/lua/tests/app_fixture:xyz_metadata",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_app_package.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
 
 h2_tasks(
     name = "tasks",
@@ -310,17 +366,17 @@ cc_test(
         "tests/display_submit.lua",
         "tests/display_submit_reentry.lua",
         "tests/geometry_batches.lua",
+        "tests/masked_capture.lua",
+        "tests/material_strip.lua",
+        "tests/mesh_cache_sizing.lua",
         "tests/mesh_source_paths.lua",
         "tests/mesh_staging.lua",
-        "tests/mesh_cache_sizing.lua",
         "tests/quad_batch.lua",
         "tests/quad_batch_clip.lua",
         "tests/quad_material.lua",
-        "tests/material_strip.lua",
-        "tests/raster_workload.lua",
-        "tests/masked_capture.lua",
         "tests/quad_material_projective.lua",
         "tests/raster2d.lua",
+        "tests/raster_workload.lua",
         "tests/smooth_cache.lua",
         "tests/stroke_buffer.lua",
     ],
@@ -343,9 +399,9 @@ cc_test(
 py_test(
     name = "display_fault_test",
     srcs = ["tests/test_display_fault.py"],
-    main = "tests/test_display_fault.py",
     args = ["$(location :lua_test)"],
     data = [":lua_test"],
+    main = "tests/test_display_fault.py",
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],
