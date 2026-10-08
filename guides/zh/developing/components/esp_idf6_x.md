@@ -410,3 +410,6 @@ ON 时只对至少 100 ms 的操作输出 `H2_ESP_IO_PHASE` 数值记录。FS �
 ## App BLE command display name
 
 ESP App command config 的可选 `ble_local_name` 传给公共 H2Loader BLE service；NULL 保留默认无名广播，非空名字在 service open 时复制，并在断开、共存 pause/resume 后保留。它不替代 board、Service UUID、versioned identity 或 `device_uid`。产品只在自己的 launcher 构造名字，不修改 NimBLE backend 或公共 registry。Legacy 名字与 manufacturer identity 共享 31-byte scan response；公共 service 在 identity 编码前预留名字空间，超出容量明确失败。最终 consumer 必须用真实 scan response 和连接后 status 交叉验证名字、board 与 UID；host packing test 不代表手机显示已经通过。
+## Positive Time delays
+
+ESP Time PAL converts milliseconds to FreeRTOS ticks with ceiling division using 64-bit arithmetic. Every positive delay blocks for at least one tick; zero preserves the explicit yield. This keeps short capture/playback backoff from becoming a CPU spin at a 100 Hz tick rate. Unrepresentable tick counts return INVALID_ARG without delaying; wall-clock retention and calibration are unchanged. Host tests cover 100 Hz and 1000 Hz boundaries, including UINT32_MAX.

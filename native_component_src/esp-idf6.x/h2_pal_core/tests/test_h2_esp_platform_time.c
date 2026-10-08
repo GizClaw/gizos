@@ -35,7 +35,8 @@ int h2_esp_platform_time_test_settimeofday(const struct timeval *tv) {
 
 int64_t esp_timer_get_time(void) { return 0; }
 
-void vTaskDelay(TickType_t ticks) { (void)ticks; }
+static TickType_t s_sleep_ticks;
+void vTaskDelay(TickType_t ticks) { s_sleep_ticks = ticks; }
 
 static void set_clock_ms(uint64_t ms) {
   s_clock.tv_sec = (time_t)(ms / 1000u);
@@ -133,6 +134,13 @@ static void test_pre_epoch_clock_is_unavailable(const h2_pal_time_api_t *api) {
 int main(void) {
   const h2_pal_time_api_t *api = h2_esp_platform_time_api();
   assert(api != NULL);
+  const uint32_t delays[] = {0u, 1u, 5u, 10u, 11u, 32u, UINT32_MAX};
+  for (unsigned i = 0u; i < sizeof(delays) / sizeof(delays[0]); ++i) {
+    const uint64_t expected = ((uint64_t)delays[i] * configTICK_RATE_HZ + 999u) / 1000u;
+    assert(h2_pal_time_sleep_ms(api, delays[i]) == H2_PAL_OK);
+    assert(s_sleep_ticks == expected);
+    if (delays[i] != 0u) assert(s_sleep_ticks != 0u);
+  }
   test_epoch_clock_is_invalid(api);
   test_set_makes_clock_valid(api);
   test_clock_carried_over_stays_valid(api);
