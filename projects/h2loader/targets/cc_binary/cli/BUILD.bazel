@@ -1,5 +1,6 @@
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel/platforms:compatibility.bzl", "WINDOWS_X86_64_ARTIFACT_COMPATIBILITY")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -31,6 +32,15 @@ cc_test(
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    deps = [":host_path"],
+)
+
+cc_test(
+    name = "windows_host_path_test",
+    srcs = ["h2_h2loader_cli_host_path_windows_test.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = WINDOWS_X86_64_ARTIFACT_COMPATIBILITY,
     deps = [":host_path"],
 )
 

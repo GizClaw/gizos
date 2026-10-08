@@ -6,6 +6,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
+
 static volatile sig_atomic_t cancelled;
 
 static void handle_signal(int signal_number) {
@@ -85,23 +92,40 @@ static const char *const *resolve_path_arguments(int argc, char **argv) {
     return args;
 }
 
-int main(int argc, char **argv) {
+static void release_path_arguments(
+    int argc, char **argv, const char *const *args) {
+    for (int i = 0; i < argc; ++i) {
+        if (args[i] != argv[i]) free((void *)args[i]);
+    }
+    free((void *)args);
+}
+
+static int cli_main(int argc, char **argv) {
     static const h2_command_io_vtable_t stdio_vtable = {
         .write = stdio_write,
         .flush = stdio_flush,
     };
     h2_command_io_api_t stdout_io = {.user = stdout, .vtable = &stdio_vtable};
     h2_command_io_api_t stderr_io = {.user = stderr, .vtable = &stdio_vtable};
-    if (h2_h2loader_cli_target_start() != H2_PAL_OK) return 3;
-    if (h2_bleikcp_global_init() != H2_PAL_OK) {
+    h2_pal_result_t startup = h2_h2loader_cli_target_start();
+    if (startup != H2_PAL_OK) {
+        fprintf(stderr, "h2loader: native platform initialization failed code=%d\n",
+                startup);
+        return H2_H2LOADER_CLI_EXIT_RUNTIME;
+    }
+    int kcp_result = h2_bleikcp_global_init();
+    if (kcp_result != H2_PAL_OK) {
+        fprintf(stderr, "h2loader: KCP initialization failed code=%d\n",
+                kcp_result);
         h2_h2loader_cli_target_stop();
-        return 3;
+        return H2_H2LOADER_CLI_EXIT_RUNTIME;
     }
     const char *const *args = resolve_path_arguments(argc, argv);
     if (args == NULL) {
+        fprintf(stderr, "h2loader: cannot allocate command arguments\n");
         (void)h2_bleikcp_global_shutdown();
         h2_h2loader_cli_target_stop();
-        return 3;
+        return H2_H2LOADER_CLI_EXIT_RUNTIME;
     }
     const h2_pal_mem_api_t *mem = h2_h2loader_cli_target_mem();
     const h2_pal_ble_host_api_t *ble = h2_h2loader_cli_target_ble(mem);
@@ -137,5 +161,36 @@ int main(int argc, char **argv) {
     if (started_ble != NULL) (void)h2_pal_ble_stop(started_ble);
     (void)h2_bleikcp_global_shutdown();
     h2_h2loader_cli_target_stop();
+    release_path_arguments(argc, argv, args);
     return cancelled ? 130 : result;
 }
+
+#ifndef _WIN32
+int main(int argc, char **argv) { return cli_main(argc, argv); }
+#else
+/* Decode the UTF-16 arguments supplied by Windows parents without the CRT's
+ * ANSI main() conversion losing Unicode file paths. */
+int wmain(int argc, wchar_t **wide_argv) {
+    char **argv = calloc((size_t)argc + 1u, sizeof(*argv));
+    if (argv == NULL) {
+        fprintf(stderr, "h2loader: cannot allocate UTF-8 command arguments\n");
+        return H2_H2LOADER_CLI_EXIT_RUNTIME;
+    }
+    int result = H2_H2LOADER_CLI_EXIT_RUNTIME;
+    for (int i = 0; i < argc; ++i) {
+        int size = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS,
+                                      wide_argv[i], -1, NULL, 0, NULL, NULL);
+        if (size <= 0 || (argv[i] = malloc((size_t)size)) == NULL ||
+            WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide_argv[i],
+                                -1, argv[i], size, NULL, NULL) != size) {
+            fprintf(stderr, "h2loader: cannot decode UTF-8 command arguments\n");
+            goto cleanup;
+        }
+    }
+    result = cli_main(argc, argv);
+cleanup:
+    for (int i = 0; i < argc; ++i) free(argv[i]);
+    free(argv);
+    return result;
+}
+#endif
