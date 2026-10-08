@@ -8,7 +8,7 @@
 
 产品决定何时打开绑定窗口，例如在受密码保护的扫码页进入后打开、离页或休眠前关闭。产品提供 HTTPS server origin 和可选 icon/name；RPC endpoint 的 transport port 不能当作 HTTPS origin。二维码与 BLE 应使用同一 key snapshot 与公共 URL formatter：URL 为 `https://<host[:port]>/api-keys/<secret>`，可选 query 按 icon、name 顺序加入，UTF-8 name 使用百分号编码。Origin 接受 DNS/IPv4 host 和可选非零 16-bit port；不接受路径、userinfo、query 或 fragment。产品自己的型号、图标选择和页面布局留在 consumer repository。
 
-广播仅携带通用 vendor service UUID，不含 key secret、credential URL、key name 或产品名字。GATT 只在授权窗口中交付凭证，采用明文 Read/Write；当前窗口授权与二维码展示具有相同的凭证披露范围，不额外建立 BLE pairing/bonding 身份。调用方必须在结束展示时停止窗口，不能把 service 永久打开。Library 不记录 secret 或 URL，回调的短期 snapshot 和 URL buffer 在返回前擦除。
+广播仅携带通用 vendor service UUID，不含 key secret、credential URL、key name 或产品名字。GATT 只在授权窗口中交付凭证，采用明文 Read/Write；打开窗口即允许附近客户端读取与二维码相同的凭证，不额外建立 BLE pairing/bonding 身份。调用方必须在结束展示时停止窗口，不能把 service 永久打开。Library 不记录 secret 或 URL，回调的短期 snapshot 和 URL buffer 在返回前擦除。
 
 只要 snapshot 为 invalid、stale、busy 或 closed，就不交付 credential。每次 REQUEST 和 CREDENTIAL 都重新读取 key state，不从上一次 poll 缓存 secret；刷新后的 revision 不同，旧 REQUEST 被拒绝。一个与刷新并发、已通过 snapshot 校验的 read 仍可能返回先前 revision 的字节，这类披露由 exposure ledger 保守记录，调用方按实际 key name 处理，不能根据当前 snapshot 覆盖这条义务。
 

@@ -173,7 +173,7 @@ static const h2_pal_time_vtable_t time_ops = {.get_monotonic_ms = fake_time};
 
 static void setup(test_env_t *env, bool connected) {
   memset(env, 0, sizeof(*env));
-  strcpy(env->secret, "gizclaw_sk_v1_test");
+  strcpy(env->secret, "gizclaw_sk_v1_public_fixture_001");
   strcpy(env->key_name, "key-name");
   assert(h2_atomic_bool_init(&env->connected, connected) == H2_ATOMIC_OK);
   assert(h2_atomic_bool_init(&env->reply, true) == H2_ATOMIC_OK);
@@ -585,8 +585,9 @@ static void test_url_contract(yyjson_val *fixture) {
     char out[200];
     size_t len;
     assert(h2_gizclaw_ble_binding_format_url(
-               text(origins[i]), text(""), text(""), text("gizclaw_sk_v1_test"),
-               out, sizeof(out), &len) == H2_PAL_ERR_INVALID_ARG);
+               text(origins[i]), text(""), text(""),
+               text("gizclaw_sk_v1_public_fixture_001"), out, sizeof(out),
+               &len) == H2_PAL_ERR_INVALID_ARG);
     assert(out[0] == 0 && len == 0u);
   }
   const char *secrets[] = {"gizclaw_sk_v1_", "test-secret",
@@ -612,14 +613,14 @@ static void test_url_contract(yyjson_val *fixture) {
     size_t len;
     assert(h2_gizclaw_ble_binding_format_url(
                text("https://ap.gizclaw.com"), text(""), text(names[i]),
-               text("gizclaw_sk_v1_test"), out, sizeof(out),
+               text("gizclaw_sk_v1_public_fixture_001"), out, sizeof(out),
                &len) == H2_PAL_ERR_INVALID_ARG);
   }
   char out[200];
   memset(out, 'x', sizeof(out));
   assert(h2_gizclaw_ble_binding_format_url(
              text("https://ap.gizclaw.com"), text(""), text(""),
-             text("gizclaw_sk_v1_test"), out, sizeof(out),
+             text("gizclaw_sk_v1_public_fixture_001"), out, sizeof(out),
              NULL) == H2_PAL_ERR_INVALID_ARG);
   for (size_t i = 0u; i < sizeof(out); ++i)
     assert(out[i] == 0);
