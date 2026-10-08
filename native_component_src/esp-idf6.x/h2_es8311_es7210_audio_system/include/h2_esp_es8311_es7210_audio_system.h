@@ -88,6 +88,7 @@ typedef struct h2_esp_es8311_es7210_audio_system_config {
     /** Zero preserves normal FD nonlinear processing. */
     h2_esp_es8311_es7210_aec_nlp_level_t aec_nlp_level;
     h2_esp_es8311_es7210_aec_observe_fn aec_observe;
+    h2_esp_es8311_es7210_aec_observe_enabled_fn aec_observe_enabled;
     void *aec_observer_user;
     /** Optional board curve; zero initialization preserves legacy mapping. */
     h2_es8311_volume_config_t speaker_volume;
@@ -109,6 +110,7 @@ typedef struct h2_esp_es8311_es7210_sr_state {
     int16_t *out_frame;
     uint32_t processed_frame_count;
     h2_esp_es8311_es7210_aec_observe_fn observe;
+    h2_esp_es8311_es7210_aec_observe_enabled_fn observe_enabled;
     void *observer_user;
 } h2_esp_es8311_es7210_sr_state_t;
 

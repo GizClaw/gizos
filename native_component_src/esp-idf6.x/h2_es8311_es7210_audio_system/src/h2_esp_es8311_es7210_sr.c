@@ -112,6 +112,7 @@ int h2_esp_es8311_es7210_sr_init(
     state->ref_channel_index = config->ref_channel_index;
     state->reference_gain_milli = config->aec_reference_gain_milli;
     state->observe = config->aec_observe;
+    state->observe_enabled = config->aec_observe_enabled;
     state->observer_user = config->aec_observer_user;
 
     const size_t mic_sample_count = state->frame_samples * state->mic_channel_count;
@@ -164,6 +165,8 @@ int h2_esp_es8311_es7210_sr_process(
         return H2_AUDIO_ERR_UNSUPPORTED;
     }
 
+    const bool observe_frame = state->observe != NULL &&
+        (state->observe_enabled == NULL || state->observe_enabled(state->observer_user));
     const int16_t *raw = (const int16_t *)raw_frame->data;
     uint32_t ref_raw_peak = 0u;
     uint32_t ref_peak = 0u;
@@ -178,7 +181,7 @@ int h2_esp_es8311_es7210_sr_process(
     uint64_t output_energy = 0u;
     for (size_t sample = 0u; sample < state->frame_samples; ++sample) {
         const size_t raw_offset = sample * state->raw_channels;
-        if (state->observe != NULL) {
+        if (observe_frame) {
             for (uint8_t lane = 0u; lane < state->raw_channels; ++lane) {
                 const int32_t value = raw[raw_offset + lane];
                 const uint32_t magnitude = sample_magnitude((int16_t)value);
@@ -223,14 +226,14 @@ int h2_esp_es8311_es7210_sr_process(
         if (magnitude > out_peak) {
             out_peak = magnitude;
         }
-        if (state->observe != NULL) {
+        if (observe_frame) {
             const int32_t value = state->out_frame[sample];
             output_energy += (uint64_t)((int64_t)value * value);
             if (magnitude >= 32760u) ++stats.output_clipped;
         }
     }
     state->processed_frame_count++;
-    if (state->observe != NULL) {
+    if (observe_frame) {
         stats.frame = state->processed_frame_count;
         for (uint8_t lane = 0u; lane < state->raw_channels; ++lane)
             stats.lane_power[lane] = (uint32_t)(lane_energy[lane] / state->frame_samples);

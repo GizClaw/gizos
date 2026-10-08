@@ -2,6 +2,7 @@
 #define H2_ESP_ES8311_ES7210_AEC_STATS_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 typedef enum h2_esp_es8311_es7210_aec_nlp_level {
     H2_ESP_ES8311_ES7210_AEC_NLP_NORMAL = 0,
@@ -31,5 +32,10 @@ typedef struct h2_esp_es8311_es7210_aec_stats {
  * keeps user alive through successful Audio System deinit. */
 typedef void (*h2_esp_es8311_es7210_aec_observe_fn)(
     void *user, const h2_esp_es8311_es7210_aec_stats_t *stats);
+
+/** Optional bounded per-frame request check on the same mic task and user.
+ * False skips diagnostic energy calculation and delivery, without altering
+ * AEC processing. NULL requests every frame whenever observe is installed. */
+typedef bool (*h2_esp_es8311_es7210_aec_observe_enabled_fn)(void *user);
 
 #endif
