@@ -14,7 +14,7 @@ sys.path.insert(0, str(MODULE.parent))
 SPEC = importlib.util.spec_from_file_location("app_package", MODULE)
 package = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(package)
-BAZEL_ARCHIVES = [Path(path) for path in sys.argv[1:]]
+BAZEL_OUTPUTS = [Path(path) for path in sys.argv[1:]]
 sys.argv[1:] = []
 
 
@@ -174,10 +174,29 @@ class LuaAppPackageTest(unittest.TestCase):
                     self.build(root, specification)
 
     @unittest.skipUnless(
-        BAZEL_ARCHIVES, "Bazel artifacts are tested by the Bazel target"
+        BAZEL_OUTPUTS, "Bazel artifacts are tested by the Bazel target"
     )
     def test_declared_bazel_rule_outputs(self):
-        plain, with_data = [self.inspect(path) for path in BAZEL_ARCHIVES]
+        self.assertEqual(len(BAZEL_OUTPUTS), 6)
+        manifests = []
+        for index in (0, 3):
+            archive, manifest, metadata = BAZEL_OUTPUTS[index:index + 3]
+            value = self.inspect(archive)
+            self.assertEqual(value, json.loads(manifest.read_text()))
+            release = json.loads(metadata.read_text())
+            self.assertEqual(release["manifest"], value)
+            for field in ("format", "type", "app_id", "version", "entry", "data_dir", "compact"):
+                self.assertEqual(release[field], value[field])
+            self.assertEqual(
+                release["package"],
+                {
+                    "name": archive.name,
+                    "size": archive.stat().st_size,
+                    "sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
+                },
+            )
+            manifests.append(value)
+        plain, with_data = manifests
         self.assertEqual(
             (plain["app_id"], plain["version"], plain["data_dir"]),
             ("abc", "1.2.3", None),
