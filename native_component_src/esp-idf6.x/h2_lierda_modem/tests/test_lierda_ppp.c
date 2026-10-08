@@ -23,6 +23,10 @@ static struct {
     unsigned power_on, power_off, unregisters;
     unsigned registry_entries;
     unsigned reconciles;
+    unsigned quiesces;
+    bool ppp_dead, hold_ppp_active;
+    bool fail_dce_create;
+    h2_pal_result_t quiesce_error;
     bool silent_data, silent_stop, command_mode, fail_command_mode, fail_power_off, fail_unregister;
     bool fail_ip_clear, long_response;
     esp_modem_dte_config_t dte;
@@ -95,10 +99,11 @@ esp_netif_t *esp_netif_new(const esp_netif_config_t *config) {
     (void)config;
     ++sdk.netifs;
     sdk.netif = calloc(1u, sizeof(*sdk.netif));
+    sdk.ppp_dead = true; /* SDK creates an idle PPP control block */
     return sdk.netif;
 }
 void esp_netif_destroy(esp_netif_t *netif) {
-    assert(sdk.dces == 0u && sdk.registry_entries == 0u);
+    assert(sdk.dces == 0u && sdk.registry_entries == 0u && sdk.ppp_dead);
     for (size_t i = 0u; i < 3u; ++i) assert(!sdk.handlers[i].active);
     --sdk.netifs;
     free(netif);
@@ -143,20 +148,31 @@ h2_pal_result_t h2_esp_platform_netif_reconcile_default(void) {
     ++sdk.reconciles;
     return H2_PAL_OK;
 }
+h2_pal_result_t h2_esp_platform_ppp_quiesce(void *netif_handle, uint32_t timeout_ms) {
+    (void)timeout_ms;
+    assert(netif_handle == sdk.netif);
+    ++sdk.quiesces;
+    if (sdk.quiesce_error != H2_PAL_OK) return sdk.quiesce_error;
+    if (!sdk.ppp_dead && sdk.hold_ppp_active) return H2_PAL_ERR_TIMEOUT;
+    sdk.ppp_dead = true; /* local TCPIP close/check, independent of event bits */
+    return H2_PAL_OK;
+}
 
 esp_modem_dce_t *esp_modem_new(const esp_modem_dte_config_t *dte,
     const esp_modem_dce_config_t *dce, esp_netif_t *netif) {
     assert(strcmp(dce->apn, "test.apn") == 0);
+    if (sdk.fail_dce_create) return NULL;
     sdk.dte = *dte;
     ++sdk.dces;
     esp_modem_dce_t *out = malloc(sizeof(*out));
     out->netif = netif;
     strcpy(out->apn, dce->apn);
     sdk.command_mode = true;
+    sdk.ppp_dead = true;
     return out;
 }
 void esp_modem_destroy(esp_modem_dce_t *dce) {
-    assert(sdk.power_off != 0u);
+    assert(sdk.power_off != 0u && sdk.ppp_dead && sdk.quiesces != 0u);
     for (size_t i = 0u; i < 3u; ++i) assert(!sdk.handlers[i].active);
     --sdk.dces;
     free(dce);
@@ -190,6 +206,7 @@ esp_err_t esp_modem_set_apn(esp_modem_dce_t *dce, const char *apn) {
 }
 esp_err_t esp_modem_set_mode(esp_modem_dce_t *dce, int mode) {
     if (mode == ESP_MODEM_MODE_DATA) {
+        sdk.ppp_dead = false;
         sdk.command_mode = false;
         strcpy(sdk.dial_apn, dce->apn); /* Generic setup uses its stored APN */
         if (!sdk.silent_data) got_ip(0x04030201u, true);
@@ -198,6 +215,7 @@ esp_err_t esp_modem_set_mode(esp_modem_dce_t *dce, int mode) {
         if (!sdk.command_mode) {
             sdk.command_mode = true;
             if (!sdk.silent_stop) {
+                sdk.ppp_dead = true;
                 esp_netif_t *netif = dce->netif;
                 event(NETIF_PPP_STATUS, NETIF_PPP_PHASE_DEAD, &netif);
             }
@@ -297,6 +315,11 @@ static void live_data_and_teardown(void) {
     assert(h2_esp_lierda_modem_destroy(modem) == H2_PAL_ERR_IO);
     assert(sdk.dces == 1u && sdk.groups == 1u && sdk.unregisters == 0u);
     sdk.fail_power_off = false;
+    sdk.hold_ppp_active = true;
+    assert(h2_esp_lierda_modem_destroy(modem) == H2_PAL_ERR_TIMEOUT);
+    assert(sdk.dces == 1u && sdk.netifs == 1u && sdk.groups == 1u);
+    assert(sdk.unregisters == 0u && !sdk.ppp_dead);
+    sdk.hold_ppp_active = false;
     sdk.fail_unregister = true;
     assert(h2_esp_lierda_modem_destroy(modem) == H2_PAL_ERR_IO);
     assert(sdk.dces == 1u && sdk.netifs == 1u && sdk.allocations != 0u);
@@ -351,17 +374,55 @@ static void apn_and_late_stop_retry(void) {
     assert(h2_pal_modem_data_open(api, 1u) == H2_PAL_OK);
     assert(strcmp(sdk.dial_apn, "updated.apn") == 0);
     sdk.silent_stop = true;
+    sdk.hold_ppp_active = true;
     assert(h2_pal_modem_data_close(api, 1u) == H2_PAL_ERR_TIMEOUT);
     assert(sdk.command_mode); /* repeated COMMAND will not send another DEAD */
     esp_netif_t *netif = sdk.netif;
+    sdk.ppp_dead = true;
     event(NETIF_PPP_STATUS, NETIF_PPP_PHASE_DEAD, &netif);
     assert(h2_pal_modem_data_close(api, 1u) == H2_PAL_OK);
     sdk.silent_stop = false;
+    sdk.hold_ppp_active = false;
     assert(h2_pal_modem_data_open(api, 1u) == H2_PAL_OK);
     sdk.fail_ip_clear = true;
     assert(h2_pal_modem_data_close(api, 1u) == H2_PAL_ERR_IO);
     sdk.fail_ip_clear = false;
     assert(h2_pal_modem_data_close(api, 1u) == H2_PAL_OK);
+    destroy(modem);
+}
+
+static void disconnect_is_not_dead(void) {
+    h2_esp_lierda_modem_t *modem = create();
+    h2_pal_modem_api_t *api = h2_esp_lierda_modem_api(modem);
+    assert(h2_pal_modem_open(api, 0u) == H2_PAL_OK);
+    assert(h2_pal_modem_data_open(api, 1u) == H2_PAL_OK);
+    sdk.silent_stop = true;
+    sdk.hold_ppp_active = true;
+    esp_netif_t *netif = sdk.netif;
+    event(NETIF_PPP_STATUS, NETIF_PPP_PHASE_DISCONNECT, &netif);
+    assert(!sdk.ppp_dead);
+    assert(h2_pal_modem_data_close(api, 1u) == H2_PAL_ERR_TIMEOUT);
+    h2_pal_modem_signal_t signal;
+    assert(h2_pal_modem_get_signal(api, &signal) == H2_PAL_ERR_BUSY);
+    assert(h2_pal_modem_data_open(api, 1u) == H2_PAL_ERR_BUSY);
+    event(NETIF_PPP_STATUS, NETIF_PPP_PHASE_DEAD, &netif); /* stale event alone */
+    assert(h2_pal_modem_data_close(api, 1u) == H2_PAL_ERR_TIMEOUT);
+    sdk.ppp_dead = true;
+    assert(h2_pal_modem_data_close(api, 1u) == H2_PAL_OK);
+    destroy(modem);
+}
+
+static void partial_open_quiescence(void) {
+    h2_esp_lierda_modem_t *modem = create();
+    h2_pal_modem_api_t *api = h2_esp_lierda_modem_api(modem);
+    sdk.fail_dce_create = true;
+    sdk.quiesce_error = H2_PAL_ERR_TIMEOUT;
+    assert(h2_pal_modem_open(api, 1u) == H2_PAL_ERR_TIMEOUT);
+    assert(sdk.dces == 0u && sdk.netifs == 1u && sdk.groups == 1u);
+    assert(sdk.unregisters == 0u && sdk.registry_entries == 1u);
+    assert(h2_esp_lierda_modem_destroy(modem) == H2_PAL_ERR_TIMEOUT);
+    assert(sdk.netifs == 1u && sdk.groups == 1u && sdk.unregisters == 0u);
+    sdk.quiesce_error = H2_PAL_OK;
     destroy(modem);
 }
 
@@ -390,6 +451,8 @@ int main(void) {
     timeout_and_old_ip();
     apn_and_late_stop_retry();
     authentication_backend();
+    disconnect_is_not_dead();
+    partial_open_quiescence();
     puts("Lierda native PPP state/teardown tests passed");
     return 0;
 }

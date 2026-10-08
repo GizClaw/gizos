@@ -104,6 +104,7 @@ esp_err_t esp_netif_ppp_set_auth(esp_netif_t *netif, esp_netif_auth_type_t type,
 void h2_esp_platform_netif_register(esp_netif_t *netif, h2_pal_netif_kind_t kind);
 void h2_esp_platform_netif_unregister(esp_netif_t *netif);
 h2_pal_result_t h2_esp_platform_netif_reconcile_default(void);
+h2_pal_result_t h2_esp_platform_ppp_quiesce(void *netif_handle, uint32_t timeout_ms);
 
 typedef struct {
     size_t dte_buffer_size;

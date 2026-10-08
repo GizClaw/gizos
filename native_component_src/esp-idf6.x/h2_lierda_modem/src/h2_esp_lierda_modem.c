@@ -19,7 +19,6 @@
 #include <string.h>
 
 #define LIERDA_IP BIT0
-#define LIERDA_STOP BIT1
 #define LIERDA_ERROR BIT2
 #ifndef CONFIG_ESP_MODEM_C_API_STR_MAX
 #define CONFIG_ESP_MODEM_C_API_STR_MAX 128
@@ -132,7 +131,6 @@ static void ppp_event(void *user, esp_event_base_t base, int32_t id, void *event
         *(esp_netif_t **)event_data != modem->netif) return;
     if (lock(modem) != H2_PAL_OK) return;
     if (id == NETIF_PPP_PHASE_DEAD || id == NETIF_PPP_PHASE_DISCONNECT) {
-        xEventGroupSetBits(modem->events, LIERDA_STOP);
         if (modem->data_mode) {
             modem->data = (h2_pal_modem_data_status_t){
                 .state = H2_PAL_MODEM_DATA_CLOSING,
@@ -171,6 +169,14 @@ static h2_pal_result_t transport_close(void *user, uint32_t timeout_ms) {
         rc = modem->config.power(modem->config.power_user, 0, timeout_ms);
         if (rc != H2_PAL_OK) return rc;
         modem->powered = false;
+    }
+    if (modem->netif != NULL) {
+        /* Module power-off and SDK PPP_STARTED bookkeeping cannot prove the
+         * lwIP control block is dead. Keep every resource/callback alive until
+         * the common TCPIP-context termination check actually succeeds. */
+        rc = h2_esp_platform_ppp_quiesce(
+            modem->netif, timeout_ms != 0u ? timeout_ms : 5000u);
+        if (rc != H2_PAL_OK) return data_failure(modem, rc);
     }
     /* Default-loop unregister synchronizes with an active handler. Stop on
      * any failure, retaining all resources still referenced by its callback. */
@@ -309,7 +315,7 @@ static h2_pal_result_t transport_data_open(
     modem->command_confirmed = false;
     modem->closing = false;
     modem->data = (h2_pal_modem_data_status_t){.state = H2_PAL_MODEM_DATA_OPENING};
-    xEventGroupClearBits(modem->events, LIERDA_IP | LIERDA_STOP | LIERDA_ERROR);
+    xEventGroupClearBits(modem->events, LIERDA_IP | LIERDA_ERROR);
     rc = unlock(modem, H2_PAL_OK);
     if (rc != H2_PAL_OK) return rc;
     error = esp_modem_set_mode(modem->dce, ESP_MODEM_MODE_DATA);
@@ -335,7 +341,6 @@ static h2_pal_result_t transport_data_close(void *user, uint32_t timeout_ms) {
     const bool need_command = need_stop && !modem->command_confirmed;
     modem->closing = true;
     modem->data = (h2_pal_modem_data_status_t){.state = H2_PAL_MODEM_DATA_CLOSING};
-    if (need_command) xEventGroupClearBits(modem->events, LIERDA_STOP);
     rc = unlock(modem, H2_PAL_OK);
     if (rc != H2_PAL_OK) return rc;
     if (need_command) {
@@ -348,9 +353,9 @@ static h2_pal_result_t transport_data_close(void *user, uint32_t timeout_ms) {
         if (rc != H2_PAL_OK) return rc;
     }
     if (need_stop) {
-        const EventBits_t bits = xEventGroupWaitBits(modem->events, LIERDA_STOP,
-            pdFALSE, pdFALSE, pdMS_TO_TICKS(timeout_ms != 0u ? timeout_ms : 5000u));
-        if ((bits & LIERDA_STOP) == 0u) return data_failure(modem, H2_PAL_ERR_TIMEOUT);
+        rc = h2_esp_platform_ppp_quiesce(
+            modem->netif, timeout_ms != 0u ? timeout_ms : 5000u);
+        if (rc != H2_PAL_OK) return data_failure(modem, rc);
     }
     /* PPP netif must not preserve an old address for the next session. */
     const esp_netif_ip_info_t empty_ip = {0};
