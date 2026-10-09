@@ -22,6 +22,19 @@ SEMVER = re.compile(
 )
 
 
+class ZlibArchiveWriter:
+    def __init__(self, output):
+        self.output = output
+        self.compressor = zlib.compressobj(level=9)
+
+    def write(self, data: bytes) -> int:
+        self.output.write(self.compressor.compress(data))
+        return len(data)
+
+    def finish(self) -> None:
+        self.output.write(self.compressor.flush(zlib.Z_FINISH))
+
+
 def json_bytes(value: object) -> bytes:
     return (
         json.dumps(value, sort_keys=True, indent=2, ensure_ascii=False) + "\n"
@@ -102,16 +115,17 @@ def build_package(
     manifest_bytes = json_bytes(value)
     contents["manifest.json"] = manifest_bytes
     # USTAR, zero timestamps and fixed ownership avoid machine/run provenance.
-    with io.BytesIO() as tar_bytes:
+    with archive.open("wb") as output:
+        compressed = ZlibArchiveWriter(output)
         with tarfile.open(
-            fileobj=tar_bytes, mode="w", format=tarfile.USTAR_FORMAT
+            fileobj=compressed, mode="w|", format=tarfile.USTAR_FORMAT
         ) as package:
             for name, data in sorted(contents.items()):
                 info = tarfile.TarInfo(name)
                 info.size = len(data)
                 info.mode = 0o644
                 package.addfile(info, io.BytesIO(data))
-        archive.write_bytes(zlib.compress(tar_bytes.getvalue(), level=9))
+        compressed.finish()
     manifest.write_bytes(manifest_bytes)
     metadata.write_bytes(
         json_bytes(
