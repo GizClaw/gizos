@@ -5,6 +5,11 @@
 #include "pb_encode.h"
 #include <string.h>
 static const char create_tag, revoke_tag;
+static h2_pal_result_t create_error_result(int error_code) {
+  return error_code == H2_GIZCLAW_RPC_ERROR_RESOURCE_EXHAUSTED
+             ? H2_GIZCLAW_API_KEY_ERR_EXHAUSTED
+             : h2_gizclaw_rpc_error_result_internal(error_code);
+}
 static bool copy_text(char *out, size_t size, h2_gizclaw_str_t text) {
   if (!text.data || !text.len || text.len >= size ||
       memchr(text.data, 0, text.len))
@@ -36,9 +41,18 @@ h2_pal_result_t h2_gizclaw_req_create_api_key_create(
   if (!copy_text(message.display_name, sizeof(message.display_name),
                  display_name))
     return H2_PAL_ERR_INVALID_ARG;
-  return create_request(service, identity, 96, &create_tag,
-                        gizclaw_rpc_v1_APIKeyCreateRequest_fields, &message,
-                        timeout_ms, out_request);
+  h2_pal_result_t rc = create_request(service, identity, 96, &create_tag,
+                                      gizclaw_rpc_v1_APIKeyCreateRequest_fields,
+                                      &message, timeout_ms, out_request);
+  if (rc == H2_PAL_OK) {
+    rc = h2_gizclaw_req_set_rpc_error_normalizer_internal(
+        *out_request, &create_tag, create_error_result);
+    if (rc != H2_PAL_OK) {
+      h2_gizclaw_req_release(*out_request);
+      *out_request = NULL;
+    }
+  }
+  return rc;
 }
 h2_pal_result_t
 h2_gizclaw_resp_parse_api_key_create(const h2_gizclaw_req_t *request,
@@ -142,7 +156,8 @@ struct h2_gizclaw_api_key_state {
   h2_gizclaw_api_key_state_config_t config;
   h2_pal_mutex_t *mutex;
   h2_gizclaw_api_key_snapshot_t snapshot;
-  char display_name[sizeof(((gizclaw_rpc_v1_APIKeyCreateRequest *)0)->display_name)];
+  char display_name[sizeof(
+      ((gizclaw_rpc_v1_APIKeyCreateRequest *)0)->display_name)];
   uint64_t generation;
   uint64_t started_ms;
   size_t pending_count;
@@ -161,6 +176,11 @@ static void api_key_finish(h2_gizclaw_api_key_state_t *state,
                            h2_pal_result_t result) {
   state->snapshot.busy = false;
   state->snapshot.last_error = result;
+  if (result == H2_PAL_OK || result == H2_PAL_ERR_TIMEOUT ||
+      result == H2_PAL_ERR_CLOSED) {
+    state->snapshot.has_rpc_error = false;
+    state->snapshot.rpc_error_code = 0;
+  }
   ++state->snapshot.revision;
 }
 
@@ -192,9 +212,10 @@ static h2_pal_result_t api_key_submit(h2_gizclaw_api_key_state_t *state,
       h2_pal_mem_alloc(state->config.mem, sizeof(*pending));
   if (pending == NULL)
     return H2_PAL_ERR_NO_MEMORY;
-  *pending = (api_key_pending_t){
-      .state = state, .generation = state->generation, .revoke = revoke,
-      .orphan = orphan};
+  *pending = (api_key_pending_t){.state = state,
+                                 .generation = state->generation,
+                                 .revoke = revoke,
+                                 .orphan = orphan};
   h2_pal_result_t rc;
   if (revoke) {
     h2_gizclaw_str_t name = {revoke_name, strlen(revoke_name)};
@@ -232,6 +253,9 @@ static void api_key_complete(void *user, h2_gizclaw_req_t *request,
       !state->snapshot.closed) {
     state->current = NULL;
     h2_pal_result_t rc = result->result;
+    (void)h2_gizclaw_req_rpc_status_internal(
+        request, pending->revoke ? &revoke_tag : &create_tag,
+        &state->snapshot.has_rpc_error, &state->snapshot.rpc_error_code);
     if (pending->revoke) {
       if (rc == H2_PAL_OK)
         rc = h2_gizclaw_resp_parse_api_key_revoke(request);
@@ -251,10 +275,16 @@ static void api_key_complete(void *user, h2_gizclaw_req_t *request,
         api_key_finish(state, rc);
       }
     } else {
-      api_key_erase(&state->snapshot.key, sizeof(state->snapshot.key));
       h2_gizclaw_api_key_t key = {0};
       if (rc == H2_PAL_OK)
         rc = h2_gizclaw_resp_parse_api_key_create(request, &key);
+      const bool retain_existing = rc == H2_GIZCLAW_API_KEY_ERR_EXHAUSTED &&
+                                   state->snapshot.valid &&
+                                   state->snapshot.has_rpc_error &&
+                                   state->snapshot.rpc_error_code ==
+                                       H2_GIZCLAW_RPC_ERROR_RESOURCE_EXHAUSTED;
+      if (!retain_existing)
+        api_key_erase(&state->snapshot.key, sizeof(state->snapshot.key));
       if (rc == H2_PAL_OK && state->revoke_after) {
         state->snapshot.valid = false;
         ++state->snapshot.revision;
@@ -269,7 +299,7 @@ static void api_key_complete(void *user, h2_gizclaw_req_t *request,
       if (rc == H2_PAL_OK)
         state->snapshot.key = key;
       api_key_erase(&key, sizeof(key));
-      state->snapshot.valid = rc == H2_PAL_OK;
+      state->snapshot.valid = rc == H2_PAL_OK || retain_existing;
       state->snapshot.stale = rc != H2_PAL_OK;
       api_key_finish(state, rc);
     }
@@ -355,6 +385,8 @@ h2_gizclaw_api_key_state_request_refresh(h2_gizclaw_api_key_state_t *state,
       ++state->generation;
       state->snapshot.busy = true;
       state->snapshot.stale = true;
+      state->snapshot.has_rpc_error = false;
+      state->snapshot.rpc_error_code = 0;
       ++state->snapshot.revision;
       state->refresh = true;
       bool revoke = revoke_current && state->snapshot.valid;
@@ -392,6 +424,8 @@ h2_gizclaw_api_key_state_request_revoke(h2_gizclaw_api_key_state_t *state) {
       state->revoke_after = false;
       state->snapshot.busy = true;
       state->snapshot.stale = true;
+      state->snapshot.has_rpc_error = false;
+      state->snapshot.rpc_error_code = 0;
       ++state->snapshot.revision;
       rc = api_key_submit(state, true, state->snapshot.key.name, false);
       if (rc != H2_PAL_OK)

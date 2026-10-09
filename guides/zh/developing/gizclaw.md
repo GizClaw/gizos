@@ -375,12 +375,22 @@ completion 后不延长文字订阅。应用无需新增下行音频处理流程
 
 ## API key 异步状态
 
+授权绑定窗口可以把同一状态注入 [GizClaw BLE 绑定](./gizclaw_ble_binding.md)，通过公共 HTTPS URL formatter 与二维码保持一致。广播只提供发现；BLE 暴露记录保留实际 key name/revision，产品离页时与二维码已展示记录合并后处理 revoke。
+
 扫码绑定等需要异步刷新和撤销的产品使用 `h2_gizclaw_api_key_state_t`：创建时注入借用的 Service、Mem、Sync、Time 和非零 `timeout_ms`，`display_name` 会复制。产品调用 `request_refresh` 登记请求，主循环继续调用 `service_poll` 驱动 completion，再读取 `snapshot` 展示有效 key。无需创建线程、join 或等待 RPC；原有同步 helper 和 request 接口行为不变。
 
-`request_refresh(true)` 在当前 key 有效时先撤销再创建；撤销成功或 `NOT_FOUND` 后擦除旧 key 并提交 create，其它撤销错误保留 `valid && stale` 的旧 key，下一次 `request_refresh(true)` 可重试撤销。创建成功后 key 有效且不 stale，创建失败则失效。busy 期间重复刷新返回 OK，合并到当前链，不叠加请求、清除 revoke-after 标记、不延长截止时间。每次 refresh 的总时限包含排队、连接、撤销和创建；`snapshot` 或 `request_refresh` 检查到期后将当前请求分离为 orphan（不取消），清除 busy 并记录 `H2_PAL_ERR_TIMEOUT`，保留的旧 key 标为 stale。检查到期的 `request_refresh` 随后可开始新一代刷新。
+`request_refresh(true)` 在当前 key 有效时先撤销再创建；撤销成功或 `NOT_FOUND` 后擦除旧 key 并提交 create，其它撤销错误保留 `valid && stale` 的旧 key，下一次 `request_refresh(true)` 可重试撤销。创建成功后 key 有效且不 stale，普通创建失败则失效；唯一的资源耗尽保留例外见下文。busy 期间重复刷新返回 OK，合并到当前链，不叠加请求、清除 revoke-after 标记、不延长截止时间。每次 refresh 的总时限包含排队、连接、撤销和创建；`snapshot` 或 `request_refresh` 检查到期后将当前请求分离为 orphan（不取消），清除 busy 并记录 `H2_PAL_ERR_TIMEOUT`，保留的旧 key 标为 stale。检查到期的 `request_refresh` 随后可开始新一代刷新。
 
-快照只在 mutex 内短读，不发 RPC；包含 key、valid、stale、busy、closed、last_error 和每次可见变化递增的 revision。`request_refresh`、`request_revoke`、`close` 与 `service_poll` 在同一个 owner task 上调用，`snapshot` 也可从其它线程读取并执行到期分离。completion 只在 owner task 串行执行，每个请求的 generation 隔离超时、close 后的迟到结果。初始状态 invalid、stale、idle；close 后保留的 key 仍可读但 stale，last_error 为 CLOSED，新 refresh 返回 CLOSED。
+快照只在 mutex 内短读，不发 RPC；包含 key、valid、stale、busy、closed、last_error、原始 RPC error presence/code 和每次可见变化递增的 revision。last_error 在 busy 期间可以仍是上次 completion，调用方先判断 busy；原始 RPC error projection 则在新 generation、成功、timeout 或 close 时清除。`request_refresh`、`request_revoke`、`close` 与 `service_poll` 在同一个 owner task 上调用，`snapshot` 也可从其它线程读取并执行到期分离。completion 只在 owner task 串行执行，每个请求的 generation 隔离超时、close 后的迟到结果。初始状态 invalid、stale、idle；close 后保留的 key 仍可读但 stale，last_error 为 CLOSED，新 refresh 返回 CLOSED。
 
 生命周期顺序必须是 `close` → Service stop → `service_poll` drain → `destroy` → Service deinit。close 可在 Service stop 之前调用，立即停止接收刷新和撤销请求，并将在途请求分离为 orphan；destroy 在任何 completion（包括 orphan revoke）尚未分发时返回 BUSY，调用方继续 drain 后重试，不等待 RPC。destroy 需要排除并发读者，会擦除持有的 secret；快照中的 secret 副本由调用方擦除，不能写日志。超时或 close 后迟到的 create 成功响应会立即触发内部 best-effort revoke：解析 name 后立即擦除 secret，不进入快照；迟到的 revoke 或失败 create 无需后续操作。Service stop 后提交 revoke 可能返回 CLOSED，忽略该错误。无法撤销的情况是 Service 已停止或传输先失败导致 create 响应未到设备，设备从未获知 key 的 name；服务端 owner 的 list API 可返回明文 secret，因此未展示不代表凭证无效。状态对象不做持久化、二维码或 URL 格式化，也不属于 resource store 的 kind。
 
 `h2_gizclaw_api_key_state_request_revoke` 非阻塞：idle 且有有效 key 时提交撤销，期间 busy；OK/NOT_FOUND 后擦除 key 并置 valid=false，失败保留 valid+stale 及 last_error。无 key 返回 OK。刷新 busy 时设置 revoke-after，create 成功后直接撤销新 key 而不展示，最终 valid=false，撤销成功 last_error=OK，失败记录错误且不暴露 secret。busy 期间再次 request_refresh 会清除该标记，表示调用方重新需要刷新结果。closed 返回 CLOSED。
+
+## API key 资源耗尽
+
+API-key create 的 canonical `RESOURCE_EXHAUSTED`（8）在该 typed request 的创建阶段安装私有、tag-checked error projection；`req_wait`、typed parse、同步 create 和状态 completion 一致返回 `H2_GIZCLAW_API_KEY_ERR_EXHAUSTED`（-1001）。原始 code 仍为 8，由 snapshot 的 `has_rpc_error` / `rpc_error_code` 保留；quota/resource 判断同时核对三项，不能从本地相同负值或任意 server message 推断。Revoke、generic 和 Social RPC 的映射不变，其它失败保留原始 canonical code 与原有 PAL/domain result。Transport、clock、queue 或 orphan 结果不伪装成服务端 quota。
+
+`request_refresh(false)` 的 create 被真实 canonical 8 拒绝时，已有有效 key 的 name/secret 保留为 valid+stale，busy 结束并发布资源耗尽错误；QR/BLE 不使用 stale key，也不把旧 key 重新标记为 ready。没有旧 key 时保持 invalid+stale。若调用方明确请求了 revoke_current 且 revoke 已完成，旧 key 已无效，资源耗尽不会把它复活。Library 不自动 list/delete 其它 key 腾额度，也不硬编码限额；调用方在外部配额/资源恢复后显式重试，busy 重复刷新仍只合并一次请求。已披露 key 的远端有效性不会因一次失败的新 create 而改变。
+
+此合同消费标准 RPC status，与服务端实际执行的 key-count/resource budget 分离；本地 fake RPC regression 是兼容性验证，真实限额触发与恢复必须由拥有该策略的 Server 和 consumer lane 单独资格化。

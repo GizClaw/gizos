@@ -452,6 +452,15 @@ h2_pal_result_t h2_gizclaw_req_create_rpc_internal(
 h2_pal_result_t h2_gizclaw_req_response_internal(
     const h2_gizclaw_req_t *request, const void *tag,
     const h2_gizclaw_rpc_response_t **out_response);
+/** Install a domain-owned unary RPC error projection before req_do. */
+h2_pal_result_t h2_gizclaw_req_set_rpc_error_normalizer_internal(
+    h2_gizclaw_req_t *request, const void *tag,
+    h2_pal_result_t (*normalize)(int error_code));
+/** Copy only a genuine terminal unary RPC error, never a transport failure. */
+h2_pal_result_t
+h2_gizclaw_req_rpc_status_internal(const h2_gizclaw_req_t *request,
+                                   const void *tag, bool *out_has_error,
+                                   int32_t *out_error_code);
 h2_pal_result_t h2_gizclaw_req_elapsed_internal(const h2_gizclaw_req_t *request,
                                                 const void *tag,
                                                 uint64_t *out_elapsed_ms);
