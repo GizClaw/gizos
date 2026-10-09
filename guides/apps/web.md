@@ -2,6 +2,30 @@
 
 Web 入口归 portable App 的 project owner。Web 不是 Mobile 子平台；它有独立的 lifecycle、toolchain 和 hosting contract。
 
+## Opt-in fake Wi-Fi and modem
+
+An embedding host can call `h2WebAppHostConfigureEnvironment()` on the app_host page before Start, then again to change the simulated network scenario. A session started without this opt-in rejects later environment injection; reinstall the page to enable fake radios. The version-1 object is copied to `Module.h2WebEnvironment`:
+
+```js
+{
+  version: 1,
+  wifi: { enabled: true, connected: true, ssid: 'Browser Wi-Fi', rssi: -48 },
+  modem: { enabled: true, simPresent: true, registered: true, rssi: -70 }
+}
+```
+
+Only opted-in platforms install the Web fake Wi-Fi STA/settings and modem PAL APIs; ordinary pages keep the canonical unsupported radios. Invalid objects reject platform creation. Radio snapshots are read on the browser main thread, and each platform owns mutex-protected volatile connection/settings/power state. Wi-Fi offers one open simulated AP, synthetic locally administered addresses and a documentation-range lease. Connect does not save; connect-and-save updates the simulation's saved credentials only after successful connection. A new platform starts with its configured simulated AP saved and connected. Settings are in-memory only. Modem supports open/close, SIM/registration/signal, data open/close and power policy; calls, GNSS and cell location remain unsupported. Identity explicitly names the simulation and exposes no fabricated IMEI/IMSI.
+
+Real Fetch/WebRTC transports remain responsible for server communication. The HOST Netif is usable only when the browser is online and at least one simulated data path is open. Environment updates and radio operations trigger the existing Netif event flow. Closing both paths removes the usable default route, rejects new HTTP requests, WebRTC offers and outgoing data/Opus; applications observe the Netif change and manage their established sessions normally. The fake radios do not scan, connect or control the computer's real Wi-Fi/modem. This simulation is separate from evidence of a successful server connection.
+
+`//libs/pal/providers/web/pal_core:fake_network_test` executes the real pthread WASM provider against deterministic browser network inputs, covering opt-in, invalid configuration, Wi-Fi saved-state semantics, modem data/power, no-SIM, offline HTTP rejection and teardown. The existing Netif test preserves the non-simulated browser contract.
+
+## Runtime 输出到嵌入宿主
+
+Web PAL 在主线程发布版本 1 的 `Module.h2WebOutputs`：`display.brightnessPercent` 是最后一次有效 Display PAL 背光设置，`speakerVolumePercent` 是扬声器主音量，`leds[id]` 包含板级 Periph 的 id/name、原始 RGBW `pixels` 和独立 `brightnessPercent`。这些都是实际 PAL 调用产生的输出，宿主只负责呈现，不据此改写固件状态。复制 canvas 到模型纹理不会复制 CSS brightness，因此嵌入宿主必须显式消费背光输出；100% 不应再被机身摄影棚曝光压暗。
+
+App host 在产品 hardware hook 完成后，将 Periph API 绑定到公共 Web LED provider；产品已经提供自己的 LED API 时保持其实现。板级 mapper/Periph 拥有 LED_STRIP id、名字和 RGB/RGBW 像素数量，Web provider 支持 1..256 像素，提供 get_info、set_frame、set_solid、clear 和 brightness，未知 id 返回 NOT_FOUND、尺寸错误无副作用。借用的 Periph user/vtable/payload 必须覆盖 platform 生命周期。灯效、闪烁和亮度策略仍完全由 App/Runtime 决定，provider 不生成演示动画。`//libs/pal/providers/web/pal_core:outputs_test` 验证真实 WASM PAL 的颜色、亮度、无效输入与背光输出。
+
 ## Structure
 
 ```text
@@ -88,13 +112,15 @@ Audio PAL 的麦克风通过 `getUserMedia` 与 `AudioWorklet` 采集，显式�
 | WebRTC | `h2_web_platform_webrtc_api()` | 已实现（浏览器媒体 Track 与 Opus Track） | `:webrtc_browser_test`、`:webrtc_opus_browser_test`（Pion 回环）、`:webrtc_track_test`、`:async_test` |
 | 麦克风 / 扬声器 | `h2_web_platform_audio_api()` | 已实现 | `:mic_test`、`:mic_browser_test`、`:browser_platform_test` speaker |
 | H.264 / AAC 解码 | `h2_web_platform_video_decoder_api()`、`h2_web_platform_audio_decoder_api()` | 已实现，依赖浏览器编解码器 | `:browser_platform_test` media（需 `H2_WEB_TEST_BROWSER` 指向 Google Chrome） |
-| Display | `h2_web_platform_display_api()` | 已实现 | `:browser_platform_test` display |
+| Display | `h2_web_platform_display_api()` | 已实现，背光同时发布宿主输出 | `:browser_platform_test` display |
+| LED | `h2_web_platform_led_api()` | 基于板级 Periph 的模拟光学输出 | `:outputs_test` |
 | Pref | `h2_web_platform_pref_api()`（localStorage） | 已实现 | `:pal_core_test` |
-| raw Net socket、MQTT、Wi-Fi、蜂窝、BLE、NFC、真实电池、板上 OTA | canonical unsupported | 不支持，返回 `UNSUPPORTED` | — |
+| Wi-Fi / 蜂窝 | 显式 opt-in 的 Web fake PAL | 模拟 radio 状态与数据链路；默认 unsupported | `:fake_network_test` |
+| raw Net socket、MQTT、BLE、NFC、真实电池、板上 OTA | canonical unsupported | 不支持，返回 `UNSUPPORTED` | — |
 
 ### 默认网络（Netif）
 
-浏览器只暴露一个默认路径：NAME `browser`、kind `H2_PAL_NETIF_KIND_HOST`。在线时状态为 `UP | LINK_UP | DEFAULT_ROUTE`；离线时 DEFAULT ref 返回 `NOT_FOUND`，`browser` ref 仍可查询但只有 `UP`。浏览器不暴露本机 IP、网关、DNS、MTU、MAC，provider 从不设置 `HAS_IPV4/HAS_IPV6`，也不填写这些字段。其它 kind、名称和 ID 返回 `NOT_FOUND`，不模拟 Wi-Fi 或蜂窝接口；对 `browser` 调用 `get_dns_servers` 或 `set_default` 返回 `UNSUPPORTED`，因为解析与路由归浏览器所有。没有布尔型 `navigator.onLine` 时所有调用返回 `UNSUPPORTED`。
+浏览器只暴露一个默认路径：NAME `browser`、kind `H2_PAL_NETIF_KIND_HOST`。在线时状态为 `UP | LINK_UP | DEFAULT_ROUTE`；离线时 DEFAULT ref 返回 `NOT_FOUND`，`browser` ref 仍可查询但只有 `UP`。浏览器不暴露本机 IP、网关、DNS、MTU、MAC，provider 从不设置 `HAS_IPV4/HAS_IPV6`，也不填写这些字段。其它 kind、名称和 ID 返回 `NOT_FOUND`，不额外暴露 Wi-Fi 或蜂窝 Netif；对 `browser` 调用 `get_dns_servers` 或 `set_default` 返回 `UNSUPPORTED`，因为解析与路由归浏览器所有。没有布尔型 `navigator.onLine` 时所有调用返回 `UNSUPPORTED`。启用 fake radio 后还要求至少一条模拟数据链路可用，具体见前文模拟网络约定。
 
 `online`/`offline` 事件在下一次 platform pump 中发布为 `H2_PAL_SYSTEM_EVENT_TYPE_NETIF_DEFAULT_CHANGED`，同一 pump 内相互抵消或重复的通知被去重。Consumer 必须用 `h2_pal_netif_status_is_usable()` 判断默认网络；`navigator.onLine == true` 只说明宿主有网络，目标服务是否可达（captive portal、防火墙、CORS、服务端故障）由实际 HTTP/WebRTC 结果决定。
 

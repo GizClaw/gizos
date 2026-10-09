@@ -86,6 +86,8 @@ EM_JS(void, h2_web_set_brightness_js,
   const canvas = Module['canvas'];
   if (!canvas) return 0;
   canvas.style.filter = `brightness(${percent}%)`;
+  const output = Module.h2WebOutputs ||= {version: 1};
+  output.display = {brightnessPercent: percent};
   return 1;
 });
 });
