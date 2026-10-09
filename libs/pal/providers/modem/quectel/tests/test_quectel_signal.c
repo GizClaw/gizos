@@ -15,7 +15,9 @@ static h2_pal_result_t command(void *user, const char *cmd, char *response,
     (void)user;
     (void)timeout_ms;
     const char *text;
-    if (strcmp(cmd, "AT+CSQ") == 0) {
+    if (strcmp(cmd, "AT+CGMM") == 0) {
+        text = "EC25\r\nOK\r\n";
+    } else if (strcmp(cmd, "AT+CSQ") == 0) {
         assert(exchanges++ == 0u);
         text = csq_reply;
     } else {

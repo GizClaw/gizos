@@ -8,9 +8,14 @@ cc_library(
     srcs = [
         "src/h2_quectel_at.c",
         "src/h2_quectel_call.c",
+        "src/h2_quectel_emergency.c",
+        "src/h2_quectel_ec25.c",
+        "src/h2_quectel_ec800m.c",
         "src/h2_quectel_gnss.c",
         "src/h2_quectel_internal.h",
         "src/h2_quectel_modem.c",
+        "src/h2_quectel_model.c",
+        "src/h2_quectel_ota.c",
         "src/h2_quectel_power.c",
         "src/h2_quectel_ppp.c",
         "src/h2_quectel_rx.c",
@@ -105,4 +110,51 @@ cc_test(
         "//libs/pal:unsupported",
         "//libs/pal/providers/modem/simcom:simcom_modem",
     ],
+)
+
+cc_test(
+    name = "quectel_emergency_test",
+    srcs = ["tests/test_quectel_emergency.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":quectel_modem",
+        "//libs/atomic/providers/c11",
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/modem/simcom:simcom_modem",
+    ],
+)
+
+cc_test(
+    name = "quectel_ec800m_test",
+    srcs = ["tests/test_quectel_ec800m.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":quectel_modem", "//libs/atomic/providers/c11"],
+)
+
+cc_test(
+    name = "quectel_ota_test",
+    srcs = ["tests/test_quectel_ota.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":quectel_modem", "//libs/atomic/providers/c11", "//libs/pal:unsupported"],
 )
