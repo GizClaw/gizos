@@ -70,6 +70,7 @@ h2_aec_calibration_limits_t h2_aec_calibration_default_limits(void) {
         .measurement_frames = 96u,
         .stability_frames = 640u,
         .io_timeout_ms = 1000u,
+        .source_timeout_ms = 5000u,
         .max_cadence_milli = 1250u,
         .cadence_margin_ms = 100u,
         .max_echo_residual_milli = 100u,
@@ -87,6 +88,7 @@ static bool valid_limits(const h2_aec_calibration_limits_t *l) {
         l->measurement_frames >= 8u && l->measurement_frames <= 4096u &&
         l->stability_frames >= l->measurement_frames && l->stability_frames <= 4096u &&
         l->io_timeout_ms > 0u && l->io_timeout_ms <= 10000u &&
+        l->source_timeout_ms > 0u && l->source_timeout_ms <= 30000u &&
         l->max_cadence_milli >= 1000u && l->max_cadence_milli <= 2000u &&
         l->cadence_margin_ms <= 1000u &&
         l->max_echo_residual_milli > 0u && l->max_echo_residual_milli < 1000u &&
@@ -206,7 +208,8 @@ static void observe_capture(void *user, const h2_audio_aec_frame_t *f) {
     if (r->capture_remaining == 0u)
         return;
     if (m->frames != 0u && (m->raw_channels != f->raw->channels ||
-        m->microphone_mask != f->microphone_mask || m->reference_lane != f->reference_lane)) {
+        m->microphone_mask != f->microphone_mask || m->microphone_lane != f->microphone_lane ||
+        m->reference_lane != f->reference_lane)) {
         m->diagnostic_rc = H2_PAL_ERR_FORMAT;
         return;
     }
@@ -214,6 +217,7 @@ static void observe_capture(void *user, const h2_audio_aec_frame_t *f) {
     ++m->frames;
     m->raw_channels = f->raw->channels;
     m->microphone_mask = f->microphone_mask;
+    m->microphone_lane = f->microphone_lane;
     m->reference_lane = f->reference_lane;
     m->samples += f->raw->samples_per_channel;
     const void *raw = f->raw->data;
@@ -274,13 +278,35 @@ static void observe_error(void *user, int capture, int result) {
         r->playback_rc = result == H2_PAL_OK ? H2_PAL_ERR_IO : result;
 }
 
+static int control_near_source(h2_aec_calibration_t *r, bool enabled) {
+    uint64_t start = 0u, end = 0u;
+    int rc = h2_pal_time_get_monotonic_ms(r->config.time, &start);
+    if (rc != H2_PAL_OK)
+        return rc;
+    if (r->meter->source_control_calls == UINT32_MAX)
+        return H2_PAL_ERR_IO;
+    ++r->meter->source_control_calls;
+    rc = r->config.near_source(r->config.near_source_user, enabled,
+        &r->result.format, r->near_probe, r->result.format.frame_samples_per_channel,
+        r->config.limits.source_timeout_ms);
+    const int clock_rc = h2_pal_time_get_monotonic_ms(r->config.time, &end);
+    if (clock_rc != H2_PAL_OK)
+        return rc != H2_PAL_OK ? rc : clock_rc;
+    if (end < start || UINT64_MAX - r->meter->source_control_ms < end - start)
+        return H2_PAL_ERR_IO;
+    r->meter->source_control_ms += end - start;
+    if (end - start > r->meter->source_control_max_ms)
+        r->meter->source_control_max_ms = end - start;
+    if (rc == H2_PAL_OK && end - start > r->config.limits.source_timeout_ms)
+        return H2_PAL_ERR_TIMEOUT;
+    return rc;
+}
+
 static int stop_phase(h2_aec_calibration_t *r) {
     const h2_pal_audio_api_t *a = r->config.audio;
     int rc, first = H2_PAL_OK;
     if (r->near_retained) {
-        rc = r->config.near_source(r->config.near_source_user, false,
-                                   &r->result.format, r->near_probe,
-                                   r->result.format.frame_samples_per_channel);
+        rc = control_near_source(r, false);
         if (rc != H2_PAL_OK)
             first = rc;
         else
@@ -432,8 +458,7 @@ static int phase(h2_aec_calibration_t *r, h2_aec_calibration_measurement_t *m,
     r->sequence = 0u;
     r->playback_rc = H2_PAL_OK;
     r->near_retained = true;
-    int rc = r->config.near_source(r->config.near_source_user, near, &r->result.format,
-                                   r->near_probe, r->result.format.frame_samples_per_channel);
+    int rc = control_near_source(r, near);
     if (rc == H2_PAL_OK && !near)
         r->near_retained = false;
     uint64_t start = 0u, end = 0u;
@@ -605,11 +630,16 @@ h2_pal_result_t h2_aec_calibration_run(h2_aec_calibration_t *r,
         return H2_PAL_ERR_INVALID_STATE;
     r->ran = true;
     int rc = prepare_format(r);
-    if (rc != H2_PAL_OK)
+    if (rc != H2_PAL_OK) {
+        for (size_t i = 0u; i < r->result.count; ++i)
+            r->result.candidates[i].result = rc;
+        r->result.execution_rc = rc;
         return rc;
+    }
     if (r->config.near_source == NULL) {
         for (size_t i = 0u; i < r->result.count; ++i)
             r->result.candidates[i].result = H2_PAL_ERR_UNSUPPORTED;
+        r->result.execution_rc = H2_PAL_ERR_UNSUPPORTED;
         return H2_PAL_ERR_UNSUPPORTED;
     }
     const h2_audio_aec_observer_t observer = {
@@ -656,9 +686,11 @@ h2_pal_result_t h2_aec_calibration_run(h2_aec_calibration_t *r,
     if (r->result.complete)
         select_candidates(r);
     const int cleanup = h2_aec_calibration_cleanup(r);
-    if (cleanup != H2_PAL_OK)
+    if (cleanup != H2_PAL_OK) {
+        r->result.execution_rc = cleanup;
         return cleanup;
-    if (rc != H2_PAL_OK)
-        return rc;
-    return r->result.passed > 0u ? H2_PAL_OK : H2_PAL_ERR_IO;
+    }
+    r->result.execution_rc = rc != H2_PAL_OK ? rc :
+        (r->result.passed > 0u ? H2_PAL_OK : H2_PAL_ERR_IO);
+    return r->result.execution_rc;
 }

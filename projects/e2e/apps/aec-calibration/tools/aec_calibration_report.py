@@ -50,17 +50,22 @@ def _limits(begin):
         raise InvalidCalibration("unsupported calibration schema/probe")
     count = integer(begin, "count", 1, 16)
     integer(begin, "selection", 0, 2)
-    rate = integer(begin, "sample_rate", 8000, 48000)
-    samples = integer(begin, "frame_samples", 256, 1024)
+    rate = integer(begin, "sample_rate", 0, 48000)
+    samples = integer(begin, "frame_samples", 0, 1024)
     bins = array(begin, "far_bins", 3) + array(begin, "near_bins", 3)
-    expected = [(frequency * samples + rate // 2) // rate
-                for frequency in (437, 1031, 2156, 719, 1438, 2938)]
-    if bins != expected or len(set(bins)) != 6 or min(bins) < 1 or max(bins) >= samples // 2:
-        raise InvalidCalibration("wrong probe frequency bins")
+    if rate == 0:
+        if samples != 0 or any(bins):
+            raise InvalidCalibration("inconsistent unavailable Audio format")
+    else:
+        expected = [(frequency * samples + rate // 2) // rate
+                    for frequency in (437, 1031, 2156, 719, 1438, 2938)]
+        if rate < 8000 or samples < 256 or bins != expected or len(set(bins)) != 6 or min(bins) < 1 or max(bins) >= samples // 2:
+            raise InvalidCalibration("wrong probe frequency bins")
     warmup = integer(begin, "warmup", 4, 4096)
     measured = integer(begin, "measurement", 8, 4096)
     integer(begin, "stability", measured, 4096)
     integer(begin, "io_timeout_ms", 1, 10000)
+    integer(begin, "source_timeout_ms", 1, 30000)
     integer(begin, "max_cadence_milli", 1000, 2000)
     integer(begin, "cadence_margin_ms", 0, 1000)
     integer(begin, "max_residual_milli", 1, 999)
@@ -81,9 +86,11 @@ def _measurement(record, begin, phase):
     samples = integer(record, "samples", maximum=4096 * 1024)
     channels = integer(record, "raw_channels", maximum=8)
     mask = integer(record, "mic_mask", maximum=255)
+    microphone = integer(record, "mic_lane", maximum=7)
     reference = integer(record, "reference_lane", maximum=7)
     if frames and (channels < 2 or not mask or mask >= 1 << channels or
-                   reference >= channels or mask & (1 << reference)):
+                   reference >= channels or mask & (1 << reference) or
+                   microphone >= channels or not mask & (1 << microphone)):
         raise InvalidCalibration("invalid ADC microphone/reference lanes")
     if samples != frames * begin["frame_samples"]:
         raise InvalidCalibration("inconsistent complete-frame sample count")
@@ -99,13 +106,24 @@ def _measurement(record, begin, phase):
             playback_peak >= begin["peak_limit"] and playback_clipped == 0):
         raise InvalidCalibration("peak contradicts clipping/headroom count")
     integer(record, "elapsed_ms")
+    source_ms = integer(record, "source_control_ms")
+    source_max = integer(record, "source_control_max_ms")
+    source_calls = integer(record, "source_control_calls", maximum=2**32 - 1)
+    if source_max > source_ms or source_ms > source_calls * source_max:
+        raise InvalidCalibration("inconsistent external source-control timing")
     integer(record, "diagnostic_rc", -(2**31), 2**31 - 1)
+    if begin["sample_rate"] == 0:
+        if frames or playback or samples or any(peaks):
+            raise InvalidCalibration("measurements without an available Audio format")
+        return False
     expected = begin["stability"] if phase == 4 else begin["measurement"]
     minimum = expected * begin["frame_samples"] * 1000 // begin["sample_rate"]
     nominal = (expected + begin["warmup"]) * begin["frame_samples"] * 1000 // begin["sample_rate"]
     maximum = nominal * begin["max_cadence_milli"] // 1000 + begin["cadence_margin_ms"]
     return (frames == expected and playback >= expected // 2 and
             minimum <= record["elapsed_ms"] <= maximum and
+            source_calls == (1 if phase in (0, 1) else 2) and
+            source_max <= begin["source_timeout_ms"] and
             record["diagnostic_rc"] == 0 and clipped == 0 and playback_clipped == 0)
 
 
@@ -202,6 +220,10 @@ def validate(log: bytes | str, run: str | None = None) -> dict:
     complete = boolean(summary, "complete")
     retained = boolean(summary, "retained")
     selected = boolean(summary, "selected")
+    execution = integer(summary, "rc", -(2**31), 2**31 - 1)
+    integer(summary, "selected_index", maximum=begin["count"] - 1)
+    if complete and begin["sample_rate"] == 0:
+        raise InvalidCalibration("unavailable Audio cannot complete a measurement search")
     if integer(summary, "count") != begin["count"]:
         raise InvalidCalibration("wrong summary count")
     if len(phases) != begin["count"] * 2 * 5:
@@ -228,17 +250,21 @@ def validate(log: bytes | str, run: str | None = None) -> dict:
     if retained != (cleanup != 0) or (retained and selected):
         raise InvalidCalibration("unsafe cleanup/selection")
     if selected:
-        if begin["selection"] == 0 or not complete or not frontier:
+        if begin["selection"] == 0 or not complete or not frontier or execution != 0:
             raise InvalidCalibration("selection contradicts policy")
         order = (0, 1) if begin["selection"] == 1 else (1, 0)
         expected = max(frontier, key=lambda i: tuple(candidates[i]["actual"][axis] for axis in order))
         if integer(summary, "selected_index", maximum=begin["count"] - 1) != expected:
             raise InvalidCalibration("selection is not the best measured candidate for its policy")
-    elif complete and frontier and begin["selection"] != 0 and not retained:
+    elif complete and frontier and begin["selection"] != 0 and not retained and execution == 0:
         raise InvalidCalibration("missing requested selection")
+    eligible = complete and not retained and bool(passed) and cleanup == 0
+    if execution == 0 and not eligible:
+        raise InvalidCalibration("execution result contradicts acoustic/cleanup qualification")
+    qualified = eligible and execution == 0
     return {"begin": begin, "candidates": list(candidates.values()),
             "phases": list(phases.values()), "summary": summary,
-            "qualified": complete and not retained and bool(passed) and cleanup == 0}
+            "qualified": qualified}
 
 
 def main():

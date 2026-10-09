@@ -51,7 +51,7 @@ Platform artifact entry 持有 Runtime assembly、具体 provider、endpoint 与
 
 ## AEC 校准
 
-AEC Calibration 通过真实 Audio PAL 在独立近端声源参与时测量 noise、far-only、near-only、double-talk 和持续窗口，搜索调用方给出的 speaker/mic 候选，保留所有测量与 Pareto frontier，并按显式 policy 推荐实测候选。公共 App、JSON formatter 与独立报告验证器都由 `projects/e2e/apps/aec-calibration` 持有；SDK、board安全上限、设备／夹具身份、安装与产品持久化留给 consumer。缺少真实 pre/post-AEC diagnostics 或独立声源时 `UNSUPPORTED`，不能继承仅 far output energy 下降的声学 PASS。默认三频点、两幅度的分频探针只证明此次输入与摆位条件，不代替重叠语音、全幅或长期产品资格。详见仓库内 `projects/e2e/apps/aec-calibration/README.md`。
+AEC Calibration 通过真实 Audio PAL 在独立近端声源参与时测量 noise、far-only、near-only、double-talk 和持续窗口，搜索调用方给出的 speaker/mic 候选，保留所有测量与 Pareto frontier，并按显式 policy 推荐实测候选。公共 App、JSON formatter 与独立报告验证器都由 `projects/e2e/apps/aec-calibration` 持有；SDK、board安全上限、设备／夹具身份、安装与产品持久化留给 consumer。缺少真实 pre/post-AEC diagnostics 或独立声源时 `UNSUPPORTED`，不能继承仅 far output energy 下降的声学 PASS。默认三频点、两幅度的分频探针只证明此次输入与摆位条件，不代替重叠语音、全幅或长期产品资格。公共 observation 合同见 [Audio AEC Calibration PAL](/zh/developing/audio_aec_calibration)，执行与探针边界见仓库内 `projects/e2e/apps/aec-calibration/README.md`。
 
 ## Atomic
 

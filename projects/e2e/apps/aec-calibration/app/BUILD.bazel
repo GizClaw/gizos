@@ -4,6 +4,8 @@ load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files(["tests/test_calibration.c"])
+
 cc_library(
     name = "aec_calibration",
     srcs = ["src/h2_aec_calibration.c", "src/h2_aec_calibration_report.c"],

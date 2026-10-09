@@ -14,6 +14,7 @@ class Reports(unittest.TestCase):
     def setUpClass(cls):
         executable = runfiles.Create().Rlocation(
             "_main/projects/e2e/apps/aec-calibration/app/calibration_test")
+        cls.executable = executable
         cls.log = subprocess.check_output([executable, "--report"]).decode()
         cls.records = [json.loads(row.split(" ", 1)[1]) for row in cls.log.splitlines()]
 
@@ -28,6 +29,13 @@ class Reports(unittest.TestCase):
         self.assertEqual(result["summary"]["passed"], 3)
         self.assertEqual(result["summary"]["pareto_count"], 2)
         self.assertFalse(result["summary"]["selected"])
+
+    def test_unavailable_audio_is_an_honest_unsupported_report(self):
+        log = subprocess.check_output([self.executable, "--unsupported-report"])
+        result = validate(log)
+        self.assertFalse(result["qualified"])
+        self.assertEqual(result["summary"]["rc"], -3)
+        self.assertFalse(result["summary"]["complete"])
 
     def test_reject_missing_near_and_double_talk_preservation(self):
         for phase in (2, 3, 4):
@@ -44,6 +52,13 @@ class Reports(unittest.TestCase):
             next(r for r in records if r["kind"] == "phase" and r["index"] == 1)["elapsed_ms"] = 100000
         with self.assertRaises(InvalidCalibration):
             validate(self.altered(slow))
+
+    def test_reject_late_external_source_control(self):
+        def slow_source(records):
+            record = next(r for r in records if r["kind"] == "phase" and r["index"] == 1 and r["phase"] == 2)
+            record.update(source_control_ms=6000, source_control_max_ms=6000)
+        with self.assertRaises(InvalidCalibration):
+            validate(self.altered(slow_source))
 
     def test_reject_clip_or_reference_loss(self):
         for field, value in (("clipped", 1), ("playback_clipped", 1), ("reference_energy", 0),

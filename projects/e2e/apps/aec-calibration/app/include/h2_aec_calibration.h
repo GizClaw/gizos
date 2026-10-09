@@ -35,16 +35,22 @@ typedef struct h2_aec_calibration_pair {
 } h2_aec_calibration_pair_t;
 
 /** All energy fields are sums over complete measured frames, before background
- * subtraction. near_band_* are per-band mean-square estimates summed over
- * frames. The report contains metadata only, never microphone PCM. */
+ * subtraction. mic_energy and near_band_mic use the reported primary mic lane;
+ * mic_peak/clipped also check every active microphone in microphone_mask.
+ * near_band_* are per-band mean-square estimates summed over frames. The
+ * report contains metadata only, never microphone PCM. */
 typedef struct h2_aec_calibration_measurement {
     uint32_t frames;
     uint32_t playback_frames;
     uint8_t raw_channels;
     uint8_t microphone_mask;
+    uint8_t microphone_lane;
     uint8_t reference_lane;
     uint64_t samples;
     uint64_t elapsed_ms;
+    uint64_t source_control_ms;
+    uint64_t source_control_max_ms;
+    uint32_t source_control_calls;
     uint64_t mic_energy;
     uint64_t reference_energy;
     uint64_t aec_reference_energy;
@@ -77,6 +83,7 @@ typedef struct h2_aec_calibration_limits {
     uint32_t measurement_frames;
     uint32_t stability_frames;
     uint32_t io_timeout_ms;
+    uint32_t source_timeout_ms;
     uint32_t max_cadence_milli;
     uint32_t cadence_margin_ms;
     uint32_t max_echo_residual_milli;
@@ -94,10 +101,12 @@ typedef struct h2_aec_calibration_limits {
  * the source state. enable=false stops it and is idempotent; failure retains
  * the borrowed probe/user until a successful retry. Called from runner task,
  * with all DUT workers stopped. No independent source means UNSUPPORTED.
- * The source must keep the same geometry/level within a candidate's phases. */
+ * The source must keep the same geometry/level within a candidate's phases and
+ * honor the finite timeout_ms. Runner also rejects a late completed callback;
+ * it cannot preempt a callback that violates its bounded-call contract. */
 typedef h2_pal_result_t (*h2_aec_calibration_near_source_fn)(
     void *user, bool enable, const h2_audio_pcm_format_t *format,
-    const int16_t *probe, size_t samples);
+    const int16_t *probe, size_t samples, uint32_t timeout_ms);
 
 typedef struct h2_aec_calibration_config {
     const h2_pal_audio_api_t *audio;
@@ -124,6 +133,7 @@ typedef struct h2_aec_calibration_result {
     bool selected;
     bool complete;
     bool retained;
+    h2_pal_result_t execution_rc;
     h2_pal_result_t cleanup_rc;
     h2_aec_calibration_candidate_t candidates[H2_AEC_CALIBRATION_MAX_CANDIDATES];
 } h2_aec_calibration_result_t;

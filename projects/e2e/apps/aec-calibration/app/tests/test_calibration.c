@@ -19,6 +19,7 @@ typedef struct fixture {
     bool clip_input_reference;
     bool clip_second_mic;
     bool dac_error;
+    bool slow_source;
     unsigned allocations, frees, near_starts;
     int16_t playback[512];
     const int16_t *near_probe;
@@ -178,9 +179,12 @@ static int read_mic(void *u, h2_audio_frame_t *out, uint32_t timeout) {
     return H2_AUDIO_OK;
 }
 static int near_source(void *u, bool enabled, const h2_audio_pcm_format_t *fmt,
-                         const int16_t *probe, size_t samples) {
+                         const int16_t *probe, size_t samples, uint32_t timeout_ms) {
     fixture_t *f = u;
     assert(fmt->sample_rate_hz == 16000u && samples == 512u);
+    assert(timeout_ms == 5000u);
+    if (f->slow_source && enabled)
+        f->now += 6000u;
     if (!enabled && f->fail_source_stop && f->near)
         return H2_PAL_ERR_IO;
     f->near = enabled;
@@ -257,6 +261,7 @@ static void rejects_test(unsigned failure) {
         case 7: f.slow_clock = true; break;
         case 8: f.clip_second_mic = true; break;
         case 9: f.dac_error = true; break;
+        case 10: f.slow_source = true; break;
         default: abort();
     }
     h2_aec_calibration_t *runner = NULL;
@@ -295,6 +300,9 @@ static void unsupported_and_validation_test(void) {
     fixture_t f = {0};
     h2_pal_mem_api_t mem;
     h2_aec_calibration_config_t c = config(&f, &mem);
+    const h2_audio_aec_observer_t invalid = {0};
+    assert(h2_pal_audio_set_aec_observer(NULL, NULL) == H2_AUDIO_ERR_INVALID_ARG);
+    assert(h2_pal_audio_set_aec_observer(c.audio, &invalid) == H2_AUDIO_ERR_INVALID_ARG);
     h2_aec_calibration_t *runner = NULL;
     const h2_aec_calibration_result_t *r = NULL;
     c.near_source = NULL;
@@ -338,14 +346,19 @@ static int reject_record(void *user, const char *line, size_t length) {
     return H2_PAL_ERR_IO;
 }
 int main(int argc, char **argv) {
-    if (argc == 2 && strcmp(argv[1], "--report") == 0) {
+    if (argc == 2 && (strcmp(argv[1], "--report") == 0 ||
+                      strcmp(argv[1], "--unsupported-report") == 0)) {
         fixture_t f = {0};
         h2_pal_mem_api_t mem;
         h2_aec_calibration_config_t c = config(&f, &mem);
+        const bool unsupported = strcmp(argv[1], "--unsupported-report") == 0;
+        if (unsupported)
+            c.audio = h2_pal_unsupported_audio_api();
         h2_aec_calibration_t *runner = NULL;
         const h2_aec_calibration_result_t *result = NULL;
         assert(h2_aec_calibration_create(&c, &runner) == H2_PAL_OK);
-        assert(h2_aec_calibration_run(runner, &result) == H2_PAL_OK);
+        assert(h2_aec_calibration_run(runner, &result) ==
+               (unsupported ? H2_PAL_ERR_UNSUPPORTED : H2_PAL_OK));
         assert(h2_aec_calibration_report(result, 1u, reject_record, NULL) == H2_PAL_ERR_IO);
         assert(h2_aec_calibration_report(result, 1u, print_record, NULL) == H2_PAL_OK);
         assert(h2_aec_calibration_destroy(runner) == H2_PAL_OK);
@@ -354,7 +367,7 @@ int main(int argc, char **argv) {
     selection_test(H2_AEC_CALIBRATION_PARETO_ONLY);
     selection_test(H2_AEC_CALIBRATION_SPEAKER_FIRST);
     selection_test(H2_AEC_CALIBRATION_MIC_FIRST);
-    for (unsigned i = 0u; i < 10u; ++i)
+    for (unsigned i = 0u; i < 11u; ++i)
         rejects_test(i);
     for (unsigned i = 0u; i < 3u; ++i)
         retained_test(i);

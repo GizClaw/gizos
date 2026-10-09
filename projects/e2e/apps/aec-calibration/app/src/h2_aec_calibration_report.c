@@ -24,7 +24,7 @@ h2_pal_result_t h2_aec_calibration_report(const h2_aec_calibration_result_t *r,
         "\"count\":%u,\"selection\":%u,\"sample_rate\":%u,\"frame_samples\":%u,"
         "\"far_bins\":[%u,%u,%u],\"near_bins\":[%u,%u,%u],"
         "\"amplitude\":[%u,%u],\"warmup\":%u,\"measurement\":%u,\"stability\":%u,"
-        "\"io_timeout_ms\":%u,\"max_cadence_milli\":%u,\"cadence_margin_ms\":%u,"
+        "\"io_timeout_ms\":%u,\"source_timeout_ms\":%u,\"max_cadence_milli\":%u,\"cadence_margin_ms\":%u,"
         "\"max_residual_milli\":%u,\"min_near_milli\":%u,\"min_double_milli\":%u,"
         "\"min_reference_power\":%u,\"min_snr\":%u,\"peak_limit\":%u}",
         run, (unsigned)r->count, (unsigned)r->selection,
@@ -32,7 +32,8 @@ h2_pal_result_t h2_aec_calibration_report(const h2_aec_calibration_result_t *r,
         r->far_bins[0], r->far_bins[1], r->far_bins[2],
         r->near_bins[0], r->near_bins[1], r->near_bins[2], l->amplitude[0], l->amplitude[1],
         (unsigned)l->warmup_frames, (unsigned)l->measurement_frames, (unsigned)l->stability_frames,
-        (unsigned)l->io_timeout_ms, (unsigned)l->max_cadence_milli, (unsigned)l->cadence_margin_ms,
+        (unsigned)l->io_timeout_ms, (unsigned)l->source_timeout_ms,
+        (unsigned)l->max_cadence_milli, (unsigned)l->cadence_margin_ms,
         (unsigned)l->max_echo_residual_milli, (unsigned)l->min_near_retention_milli,
         (unsigned)l->min_double_talk_retention_milli, (unsigned)l->min_reference_power,
         (unsigned)l->min_signal_noise_ratio, (unsigned)l->peak_limit);
@@ -52,8 +53,9 @@ h2_pal_result_t h2_aec_calibration_report(const h2_aec_calibration_result_t *r,
                 n = snprintf(line, sizeof(line), PREFIX
                     "\"kind\":\"phase\",\"index\":%u,\"level\":%u,\"phase\":%u,"
                     "\"frames\":%u,\"playback_frames\":%u,\"samples\":%" PRIu64 ","
-                    "\"raw_channels\":%u,\"mic_mask\":%u,\"reference_lane\":%u,"
-                    "\"elapsed_ms\":%" PRIu64 ",\"mic_energy\":%" PRIu64 ","
+                    "\"raw_channels\":%u,\"mic_mask\":%u,\"mic_lane\":%u,\"reference_lane\":%u,"
+                    "\"elapsed_ms\":%" PRIu64 ",\"source_control_ms\":%" PRIu64 ","
+                    "\"source_control_max_ms\":%" PRIu64 ",\"source_control_calls\":%u,\"mic_energy\":%" PRIu64 ","
                     "\"reference_energy\":%" PRIu64 ",\"aec_reference_energy\":%" PRIu64 ","
                     "\"output_energy\":%" PRIu64 ",\"near_mic\":[%" PRIu64 ",%" PRIu64 ",%" PRIu64 "],"
                     "\"near_output\":[%" PRIu64 ",%" PRIu64 ",%" PRIu64 "],"
@@ -61,7 +63,10 @@ h2_pal_result_t h2_aec_calibration_report(const h2_aec_calibration_result_t *r,
                     "\"playback_peak\":%u,\"playback_clipped\":%" PRIu64 ",\"diagnostic_rc\":%d}",
                     run, (unsigned)i, level, p, (unsigned)m->frames, (unsigned)m->playback_frames,
                     m->samples, (unsigned)m->raw_channels, (unsigned)m->microphone_mask,
-                    (unsigned)m->reference_lane, m->elapsed_ms, m->mic_energy, m->reference_energy,
+                    (unsigned)m->microphone_lane, (unsigned)m->reference_lane,
+                    m->elapsed_ms, m->source_control_ms,
+                    m->source_control_max_ms, (unsigned)m->source_control_calls,
+                    m->mic_energy, m->reference_energy,
                     m->aec_reference_energy, m->output_energy,
                     m->near_band_mic[0], m->near_band_mic[1], m->near_band_mic[2],
                     m->near_band_output[0], m->near_band_output[1], m->near_band_output[2],
@@ -75,9 +80,9 @@ h2_pal_result_t h2_aec_calibration_report(const h2_aec_calibration_result_t *r,
         return rc;
     n = snprintf(line, sizeof(line), PREFIX
         "\"kind\":\"summary\",\"count\":%u,\"passed\":%u,\"pareto_count\":%u,"
-        "\"selected\":%s,\"selected_index\":%u,\"complete\":%s,\"retained\":%s,\"cleanup_rc\":%d}",
+        "\"selected\":%s,\"selected_index\":%u,\"complete\":%s,\"retained\":%s,\"rc\":%d,\"cleanup_rc\":%d}",
         run, (unsigned)r->count, (unsigned)r->passed, (unsigned)r->pareto_count,
         r->selected ? "true" : "false", (unsigned)r->selected_index,
-        r->complete ? "true" : "false", r->retained ? "true" : "false", r->cleanup_rc);
+        r->complete ? "true" : "false", r->retained ? "true" : "false", r->execution_rc, r->cleanup_rc);
     return send(emit, user, line, n, sizeof(line));
 }
