@@ -18,7 +18,7 @@ libs/pal/providers/desktop/
 └── tests/                          # 只保留跨 package Desktop integration
 ```
 
-Desktop 的 semantic target 是 `//libs/pal/providers/desktop/pal_core:pal_core`；顶层 `BUILD.bazel` 只保存跨 package integration test，不是第二个 semantic owner。`pal_core/` 只包含跨 Linux/macOS 的 standard C/C++ core 与确定性 simulator；`app_support/` 选择真实 Linux/Darwin owner 与可复用 provider，并负责 consumer-first teardown。Windows 的 Memory、Time、Task、Queue、Sync、Filesystem、Net、Netif 和 System Event 等 OS capability 由 `//libs/pal/providers/windows/pal_core:pal_core` 独立拥有，不能反向依赖 Desktop；共享的 `//projects/e2e/targets/cc_binary/pal:pal_e2e_test` 只复用 OS-neutral case registry。SDL3、PortAudio、FFmpeg 与 SQLite 分别由 `libs/pal/providers/<provider>/` 拥有；LVGL Display adapter 由 `libs/lvgl` 拥有。Opus 没有 GizOS adapter，Desktop、H106 与 Audio System consumer 直接依赖 `//tools/bazel:vendor_third_party_opus`，不保留 implementation-free 的 `desktop/pkgs/opus` forwarding package。PortAudio 直接依赖完整的 `@h2_vendor_speexdsp//:speexdsp`，不保留 implementation-free 的 `libs/speexdsp` 或 Desktop forwarding package。
+Desktop 的 semantic target 是 `//libs/pal/providers/desktop/pal_core:pal_core`；顶层 `BUILD.bazel` 只保存跨 package integration test，不是第二个 semantic owner。`pal_core/` 只包含跨 Linux/macOS 的 standard C/C++ core 与确定性 simulator；`app_support/` 选择真实 Linux/Darwin owner 与可复用 provider，并负责 consumer-first teardown。Windows 的 Memory、Time、Task、Queue、Sync、Filesystem、Net、Netif 和 System Event 等 OS capability 由 `//libs/pal/providers/windows/pal_core:pal_core` 独立拥有，不能反向依赖 Desktop。旧混合 Host E2E 已下线，独立 PAL App 的 Linux/Windows 覆盖缺口见 `projects/e2e/apps/README.md`。SDL3、PortAudio、FFmpeg 与 SQLite 分别由 `libs/pal/providers/<provider>/` 拥有；LVGL Display adapter 由 `libs/lvgl` 拥有。Opus 没有 GizOS adapter，Desktop、H106 与 Audio System consumer 直接依赖 `//tools/bazel:vendor_third_party_opus`，不保留 implementation-free 的 `desktop/pkgs/opus` forwarding package。PortAudio 直接依赖完整的 `@h2_vendor_speexdsp//:speexdsp`，不保留 implementation-free 的 `libs/speexdsp` 或 Desktop forwarding package。
 
 Desktop executable 归 App owner project：
 
@@ -260,13 +260,14 @@ label，不使用 Make 聚合入口。Live E2E 通过 exact label 请求 `manual
 `--cache_test_results=no`，防止默认自动测试触发外部服务或复用旧结果。
 
 默认 package test 通过 `//libs/pal/providers/desktop/app_support:network_services_test` 验证 wolfSSL、CoreMQTT、H2SCTP 与 H2Peer 的初始化顺序、API wiring 和反向清理。Portable MQTT live flow 属于
-`//projects/e2e/apps/pal/app:pal_e2e`；
-`//projects/e2e/targets/cc_binary/pal:mqtt_loopback_test` 只装配 Desktop Runtime/provider 和进程内
-broker fixture，并通过该 App 完成 connect、subscribe、publish echo 和 disconnect，不依赖外部服务。
-访问公共 broker 的 Desktop launcher 也调用同一 portable flow，按需执行：
+`//projects/e2e/apps/pal-mqtt/app:pal_mqtt_e2e`；
+`//projects/e2e/targets/cc_binary/pal-mqtt:desktop_test` 装配真实 Desktop provider 与受控
+TCP/TLS broker fixture，执行完整 36-case 合同并验证 ACK、事件、TLS 拒绝和清理。
+访问公共 broker 的独立 smoke target 按需执行，不代表完整 MQTT 资格：
 
 ```sh
-bazel run --config=macos_arm64 //projects/e2e/targets/cc_binary/pal:mqtt_public_broker_smoke
+bazel test --config=macos_arm64 --cache_test_results=no \
+  //projects/e2e/targets/cc_binary/pal-mqtt:public_broker_test
 ```
 
 ## 边界

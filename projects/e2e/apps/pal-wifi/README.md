@@ -1,6 +1,6 @@
 # PAL Wi-Fi / Netif qualification
 
-This independent App preserves the legacy mixed PAL App. Its 38 non-fail-fast
+This independent App owns Wi-Fi/Netif qualification. Its 38 non-fail-fast
 cases cover all 21 operations: STA 7, AP 5, Settings 4 and Netif 5. Device runner
 adds `settings-restart-persistence`, qualified only on a later independent boot
 that reads the prior fixed v1 canonical Settings record. A seed boot returns

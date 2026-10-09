@@ -154,34 +154,18 @@ SDK locator 使用 `JIELI_AC707N_SDK_PATH`，由 firmware-devenv 导出为
 `h2vivi/e_badge_707_sdk_200@d0167685d032d745d88fe50233302edd46941622`。
 这是 2.0.0 系列吧唧 SDK；头文件位于 `interface`。
 
-`boards/ac707n_chip/ac707n/layouts/compile_only` 拥有最小原生工程，使用 SDK 的
-BR35 startup、CPU/system/config/VM/FS/device 库和链接脚本。仓库 launcher
-启动 UCOS 后组装 Runtime，调用现有 `projects/e2e/apps/pal/app:pal_e2e` 的 core suite。
-测试结果保留在 `h2_ac707n_pal_e2e_result`；未启用的外设使用 PAL unsupported provider。
+`boards/ac707n_chip/ac707n/layouts/compile_only` 保留 SDK 的 BR35 startup、
+CPU/system/config/VM/FS/device 库和链接脚本配置。旧 PAL Core launcher、普通
+firmware 与 H2Loader package 入口已经下线；独立 `pal-core` 尚无 AC707N
+launcher。JieLi 之前未进行 PAL E2E v2 验收，当前已纳入后续平台接入缺口；
+旧入口清理与待补范围记录在 `projects/e2e/apps/README.md`。
+保留的 toolchain/layout 不表示仍有完整 Runtime E2E image。
 
-在 Linux x86_64 开发环境（macOS 使用 Linux/amd64 容器）内运行：
-
-```sh
-bazel build --config=ac707n //projects/e2e/targets/h2loader_tar_zlib/pal/ac707n_chip:firmware
-```
-
-firmware-devenv 的 `make jieli-ac707n-toolchain-check` 另行验证 BR35 参数下
-的编译及 `r3-large` 运行库链接，不代表硬件运行验收。
-
-输出目录为 `bazel-bin/projects/e2e/targets/h2loader_tar_zlib/pal/ac707n_chip/firmware/`，
-包含 `firmware.elf`、`symbols.txt`、`jl_isd.bin`、`jl_isd.fw`、`update.ufw` 和固定依赖版本的 `manifest.json`。
-CI native build matrix 包含 AC707N。编译、链接与离线打包可验证；没有开发板，
-启动、时钟、Flash 配置和升级包的硬件适配尚未验收。当前 compile-only 配置
+firmware-devenv 的 `make jieli-ac707n-toolchain-check` 可以另行验证 BR35 参数下
+的编译及 `r3-large` 运行库链接，不代表硬件运行验收。当前 compile-only 配置
 采用 8 MiB Flash、24 MHz 晶振和 PB07 reset，实际板卡必须另建并验证板级配置。
-
-普通固件入口是 `//projects/e2e/targets/native_firmware/pal/ac707n_chip:firmware`，
-遵循上文定义的 standalone vendor artifact contract，而不是新增 SDK demo 或新的
-底层 firmware rule。
-H2Loader 入口 `//projects/e2e/targets/h2loader_tar_zlib/pal/ac707n_chip:package`
-产出 H2Loader format-1 tar.zlib，固件成员为
-`app/jieli/update.ufw`。这只验证封装和依赖图；设备端 H2Loader UFW 安装、
-Loader/App 选择及回退还需要 BR35 专用 backend，不能把普通 SDK 双 bank OTA
-当作已完成的 H2Loader 启动协议。
+设备端 H2Loader UFW 安装、Loader/App 选择及回退仍需 BR35 专用 backend 验收，
+普通 SDK 双 bank OTA 不代表已完成 H2Loader 启动协议。
 
 BR35 PAL core 在 `native_component_src/jieli/br35/h2_pal_core`，使用 UCOS，
 仅 CPU0；互斥量采用二值信号量，零等待在关中断区域查询并消费已有 token，

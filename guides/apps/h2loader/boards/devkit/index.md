@@ -8,7 +8,7 @@
 - [GizClaw E2E](./gizclaw_e2e)
 - [Libco Smoke](./libco_smoke)
 - [Lua Link E2E](./lua_link_e2e)
-- [PAL Preference](./pal_pref)
+- [PAL Storage E2E](/apps/e2e#pal-storage)
 - [WebRTC Performance](./webrtc_performance)
 
 该 board family 为 Loader 和全部现有 H2Loader-managed App image 启用 BLE iKCP。Loader 与 App 都通过 Service Data 广播 `devkit` identity，不携带 local name；Host 显示为 `h2l.devkit`，role 和 command capabilities 由 Service Data 区分。

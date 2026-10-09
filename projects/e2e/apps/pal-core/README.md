@@ -1,6 +1,6 @@
 # PAL Core E2E App
 
-This independent App checks all **46 operations** in the nine PAL Core vtables. Contract v2 contains **41 required cases**. A qualification run must execute all 41 with no FAIL, BLOCKED or NOT_RUN and restore its resource baseline. The old `projects/e2e/apps/pal` App and its launchers remain unchanged; neither App calls the other. This App owns the `pal-core/e2e/*` task namespace.
+This independent App checks all **46 operations** in the nine PAL Core vtables. Contract v2 contains **41 required cases**. A qualification run must execute all 41 with no FAIL, BLOCKED or NOT_RUN and restore its resource baseline. The mixed PAL App has been retired; [the Apps README](../README.md) records its replacements and remaining coverage gaps. This App owns the `pal-core/e2e/*` task namespace.
 
 ## Interface coverage
 
@@ -40,7 +40,7 @@ Desktop Task uses a provider-owned allocation as its actual pthread stack and re
 
 ## Execution and ownership
 
-The App borrows a fully initialized Runtime and typed launcher observations. It never selects an OS/provider, reads process environment, or changes the old PAL App. Current cases have fixed finite workloads and operation budgets; launchers additionally need an independent process/device watchdog because Task join and mutex lock do not expose a timeout parameter.
+The App borrows a fully initialized Runtime and typed launcher observations. It never selects an OS/provider or reads process environment. Current cases have fixed finite workloads and operation budgets; launchers additionally need an independent process/device watchdog because Task join and mutex lock do not expose a timeout parameter.
 
 All worker/callback state has a lifetime covering its actual use. Failed join, timer/sync destruction, queue close or wall restoration preserves the owning state and stops dependent execution. `h2_pal_core_e2e_cleanup()` retries it; recovering cleanup never upgrades the original failed case. System Event lifecycle tests own an exclusive fixture, not the Runtime's borrowed/default loop. Cross-thread subscription cleanup waits for callbacks before freeing context; self-unsubscribe stops admission without waiting for itself.
 
