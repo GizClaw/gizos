@@ -21,6 +21,7 @@ typedef struct fixture {
     bool dac_error;
     bool slow_source;
     bool drop_playback, zero_playback, moderately_fast;
+    bool clock_fails_while_near;
     unsigned writes;
     unsigned allocations, frees, near_starts;
     int16_t playback[512];
@@ -38,7 +39,10 @@ static void release(void *u, void *ptr) {
     free(ptr);
 }
 static int now(void *u, uint64_t *value) {
-    *value = ((fixture_t *)u)->now;
+    fixture_t *f = u;
+    if (f->clock_fails_while_near && f->near)
+        return H2_PAL_ERR_IO;
+    *value = f->now;
     return H2_PAL_OK;
 }
 static h2_audio_pcm_format_t format(void) {
@@ -278,6 +282,7 @@ static void rejects_test(unsigned failure) {
             f.moderately_fast = true;
             c.limits.stability_frames = c.limits.measurement_frames;
             break;
+        case 14: f.clock_fails_while_near = true; break;
         default: abort();
     }
     h2_aec_calibration_t *runner = NULL;
@@ -285,6 +290,7 @@ static void rejects_test(unsigned failure) {
     const h2_aec_calibration_result_t *r = NULL;
     assert(h2_aec_calibration_run(runner, &r) != H2_PAL_OK);
     assert(!r->selected && r->passed == 0 && !r->retained);
+    assert(!f.near);
     if (failure == 11u || failure == 13u)
         assert(f.near_starts == 0u);
     assert(h2_aec_calibration_destroy(runner) == H2_PAL_OK);
@@ -346,6 +352,11 @@ static void unsupported_and_validation_test(void) {
     c.limits.amplitude[1] = 32767;
     assert(h2_aec_calibration_create(&c, &runner) == H2_PAL_ERR_INVALID_ARG && runner == NULL);
     c = config(&f, &mem);
+    c.selection = (h2_aec_calibration_selection_t)-1;
+    assert(h2_aec_calibration_create(&c, &runner) == H2_PAL_ERR_INVALID_ARG && runner == NULL);
+    c.selection = (h2_aec_calibration_selection_t)3;
+    assert(h2_aec_calibration_create(&c, &runner) == H2_PAL_ERR_INVALID_ARG && runner == NULL);
+    c = config(&f, &mem);
     const h2_aec_calibration_pair_t repeated[] = {{100, 50}, {100, 50}};
     c.candidates = repeated;
     c.candidate_count = 2;
@@ -385,7 +396,7 @@ int main(int argc, char **argv) {
     selection_test(H2_AEC_CALIBRATION_PARETO_ONLY);
     selection_test(H2_AEC_CALIBRATION_SPEAKER_FIRST);
     selection_test(H2_AEC_CALIBRATION_MIC_FIRST);
-    for (unsigned i = 0u; i < 14u; ++i)
+    for (unsigned i = 0u; i < 15u; ++i)
         rejects_test(i);
     for (unsigned i = 0u; i < 3u; ++i)
         retained_test(i);
