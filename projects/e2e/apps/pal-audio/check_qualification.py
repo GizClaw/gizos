@@ -9,6 +9,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+from aec_compatibility import source_content
 
 ROOT = Path("projects/e2e/apps/pal-audio")
 EXPECTED_PLATFORMS = {
@@ -18,7 +19,7 @@ EXPECTED_PLATFORMS = {
 
 
 def digest(path):
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    return hashlib.sha256(source_content(path, path.read_bytes())).hexdigest()
 
 
 def records(text, prefix):

@@ -27,9 +27,9 @@
     "projects/e2e/apps/pal-display/check_qualification.py": "c3fe8defa194ee0691f1b7550fd8d71dca96d460d3a7c317bf403237ba0b2edf"
   },
   "current_source_sha256": {
-    "projects/e2e/apps/pal-display/BUILD.bazel": "8e423fda1ffeeb7c56775aa6171478c45ae06ae4d5289fb277e2f8901bb17813",
-    "projects/e2e/apps/pal-display/README.md": "df0c5008bad51ae533638395385aa9fb741bf534220acd249bdb7ad732780ed3",
-    "projects/e2e/apps/pal-display/check_qualification.py": "499247983b2cda4dc8433379b661e0768de47578167f031509f511bdf04361f2"
+    "projects/e2e/apps/pal-display/BUILD.bazel": "813dfebe34e07c66275939cc71f5ae8263bbe03c0ae24c698ad895dd81042579",
+    "projects/e2e/apps/pal-display/README.md": "f3a46da1356c4ca654d72ea38ae181a1a45383a02dcaea9ea302995a5637b722",
+    "projects/e2e/apps/pal-display/check_qualification.py": "400fa630180fd4837597405b7935b043154c222b7dd42d59b0be2cb95746cef9"
   },
   "scope": "Host audit maintenance only; exact Display catalog section and row remain historical. The shared PAL guide admits only the exact two BK Pref paragraphs and independent Modem-owned sections projected onto their immutable baseline. Makefile admits only removal of the legacy PAL MQTT phony token and forwarding recipe: reinserting those exact bytes must match its historical whole-file digest. All other guide bytes, qualification, mobile execution, artifact and hardware identities are unchanged."
 }

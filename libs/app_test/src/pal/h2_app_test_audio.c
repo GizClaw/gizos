@@ -31,6 +31,7 @@ struct h2_app_test_audio {
   h2_atomic_flag_t fixture_lock;
   /* Low bit is enabled; each transition increments the unsigned generation. */
   h2_atomic_u32_t capture_state;
+  h2_atomic_bool_t capture_passthrough;
   uint32_t fixture_capture_state;
   bool fixture_clock_needs_reset;
   h2_atomic_bool_t mic_active;
@@ -63,6 +64,7 @@ static void destroy_audio_atomics(h2_app_test_audio_t *audio) {
   h2_atomic_destroy(&audio->fixture_lock);
   h2_atomic_destroy(&audio->mic_active);
   h2_atomic_destroy(&audio->capture_state);
+  h2_atomic_destroy(&audio->capture_passthrough);
   h2_atomic_destroy(&audio->mic_start_count);
   h2_atomic_destroy(&audio->mic_read_count);
   h2_atomic_destroy(&audio->fixture_bytes_emitted);
@@ -304,6 +306,8 @@ static int decorated_mic_read(void *user, h2_audio_frame_t *out_frame,
 
   h2_audio_frame_t real = h2_audio_frame_for_buffer(
       audio->scratch, sizeof(audio->scratch), audio->info.mic_format);
+  const bool passthrough = h2_atomic_load_explicit(
+      &audio->capture_passthrough, H2_ATOMIC_ACQUIRE);
   const int real_rc = h2_pal_audio_mic_read(audio->delegate, &real, 0u);
   if (real_rc == H2_PAL_OK && real.bytes != 0u) {
     counter_add_saturated(&audio->real_capture_frames, 1u);
@@ -313,6 +317,27 @@ static int decorated_mic_read(void *user, h2_audio_frame_t *out_frame,
     counter_add_saturated(&audio->real_capture_no_frame, 1u);
   } else {
     record_real_error(audio, real_rc);
+  }
+  if (passthrough) {
+    int rc = real_rc;
+    if (rc == H2_PAL_OK && real.bytes == 0u) rc = H2_PAL_ERR_WOULD_BLOCK;
+    if (rc == H2_PAL_OK && (real.bytes > frame_bytes ||
+        real.bytes % h2_audio_pcm_frame_bytes(&audio->info.mic_format) != 0u ||
+        real.sample_rate_hz != audio->info.mic_format.sample_rate_hz ||
+        real.channels != audio->info.mic_format.channels ||
+        real.sample_format != audio->info.mic_format.sample_format)) rc = H2_PAL_ERR_FORMAT;
+    if (rc == H2_PAL_OK) {
+      memcpy(out_frame->data, real.data, real.bytes);
+      out_frame->bytes = real.bytes;
+      out_frame->samples_per_channel = (uint16_t)(real.bytes /
+          h2_audio_pcm_frame_bytes(&audio->info.mic_format));
+      out_frame->sample_rate_hz = real.sample_rate_hz;
+      out_frame->channels = real.channels;
+      out_frame->sample_format = real.sample_format;
+      counter_add_saturated(&audio->mic_read_count, 1u);
+    }
+    memset(audio->scratch, 0, sizeof(audio->scratch));
+    return rc;
   }
   /*
    * Physical capture health is independent evidence.  It must never pace or
@@ -592,6 +617,13 @@ static int decorated_set_mic_gain(void *user, uint32_t percent) {
   return h2_pal_audio_set_mic_gain_percent(audio->delegate, percent);
 }
 
+static int audio_aec_diagnostics_unsupported(void *user,
+    const h2_audio_aec_observer_t *observer) {
+    (void)user;
+    (void)observer;
+    return H2_AUDIO_ERR_UNSUPPORTED;
+}
+
 static const h2_pal_audio_vtable_t s_audio_vtable = {
     .get_info = decorated_get_info,
     .start_mic = decorated_start_mic,
@@ -604,6 +636,7 @@ static const h2_pal_audio_vtable_t s_audio_vtable = {
     .set_speaker_volume_percent = decorated_set_volume,
     .get_mic_gain_percent = decorated_get_mic_gain,
     .set_mic_gain_percent = decorated_set_mic_gain,
+    .set_aec_observer = audio_aec_diagnostics_unsupported,
 };
 
 h2_pal_result_t
@@ -631,6 +664,7 @@ h2_app_test_audio_create(const h2_pal_mem_api_t *mem,
   if (h2_atomic_flag_init(&audio->fixture_lock) != H2_ATOMIC_OK ||
       h2_atomic_init(&audio->mic_active, false) != H2_ATOMIC_OK ||
       h2_atomic_init(&audio->capture_state, 1u) != H2_ATOMIC_OK ||
+      h2_atomic_init(&audio->capture_passthrough, false) != H2_ATOMIC_OK ||
       h2_atomic_init(&audio->mic_start_count, 0u) != H2_ATOMIC_OK ||
       h2_atomic_init(&audio->mic_read_count, 0u) != H2_ATOMIC_OK ||
       h2_atomic_init(&audio->fixture_bytes_emitted, 0u) != H2_ATOMIC_OK ||
@@ -674,6 +708,13 @@ h2_app_test_audio_create(const h2_pal_mem_api_t *mem,
 
 const h2_pal_audio_api_t *h2_app_test_audio_api(h2_app_test_audio_t *audio) {
   return audio == NULL ? NULL : &audio->api;
+}
+
+void h2_app_test_audio_set_capture_passthrough(h2_app_test_audio_t *audio,
+                                               bool enabled) {
+  if (audio != NULL && h2_atomic_exchange_explicit(&audio->capture_passthrough,
+        enabled, H2_ATOMIC_ACQ_REL) != enabled)
+    (void)h2_atomic_fetch_add_explicit(&audio->capture_state, 2u, H2_ATOMIC_ACQ_REL);
 }
 
 void h2_app_test_audio_set_fixture_ready(h2_app_test_audio_t *audio, bool ready) {

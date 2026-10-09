@@ -3,6 +3,7 @@ from pathlib import Path
 import hashlib
 import json
 import re
+from aec_compatibility import source_content
 
 
 ROOT = Path("projects/e2e/apps/pal-display")
@@ -318,7 +319,7 @@ def runner_refactor(historical):
         assert historical[path] == expected and not Path(path).exists(), path
     for path, expected in shared_catalog_sources({**previous, **replacements}).items():
         if path not in REMOVED_RUNNERS:
-            assert hashlib.sha256(Path(path).read_bytes()).hexdigest() == expected, path
+            assert hashlib.sha256(source_content(path, Path(path).read_bytes())).hexdigest() == expected, path
     # These exact Python sources and consumer declarations executed the stored runs.
     executed = followup["executed_runner_sha256"]
     assert set(executed) == {
