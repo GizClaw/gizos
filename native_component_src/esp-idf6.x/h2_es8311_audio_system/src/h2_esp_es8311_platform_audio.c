@@ -1187,6 +1187,13 @@ static int es8311_audio_set_mic_gain_percent(void *user, uint32_t percent) {
     return H2_AUDIO_OK;
 }
 
+static int audio_aec_diagnostics_unsupported(void *user,
+    const h2_audio_aec_observer_t *observer) {
+    (void)user;
+    (void)observer;
+    return H2_AUDIO_ERR_UNSUPPORTED;
+}
+
 h2_pal_audio_t *h2_esp_es8311_audio_system_audio(h2_esp_es8311_audio_system_t *system) {
     if (system == NULL) {
         return NULL;
@@ -1203,6 +1210,7 @@ h2_pal_audio_t *h2_esp_es8311_audio_system_audio(h2_esp_es8311_audio_system_t *s
         .set_speaker_volume_percent = es8311_audio_set_speaker_volume_percent,
         .get_mic_gain_percent = es8311_audio_get_mic_gain_percent,
         .set_mic_gain_percent = es8311_audio_set_mic_gain_percent,
+        .set_aec_observer = audio_aec_diagnostics_unsupported,
     };
     system->audio.user = system;
     system->audio.vtable = &vtable;

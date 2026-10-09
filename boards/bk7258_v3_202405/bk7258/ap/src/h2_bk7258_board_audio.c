@@ -694,6 +694,13 @@ static int bk_audio_set_mic_gain_percent(void *user, uint32_t percent) {
     return H2_AUDIO_OK;
 }
 
+static int audio_aec_diagnostics_unsupported(void *user,
+    const h2_audio_aec_observer_t *observer) {
+    (void)user;
+    (void)observer;
+    return H2_AUDIO_ERR_UNSUPPORTED;
+}
+
 h2_pal_audio_t *h2_bk7258_board_audio(void) {
     if (!s_audio_state.mic_gain_initialized) {
         const uint32_t min_gain = h2_bk7258_audio_config.mic_gain_min;
@@ -720,6 +727,7 @@ h2_pal_audio_t *h2_bk7258_board_audio(void) {
         .set_speaker_volume_percent = bk_audio_set_speaker_volume_percent,
         .get_mic_gain_percent = bk_audio_get_mic_gain_percent,
         .set_mic_gain_percent = bk_audio_set_mic_gain_percent,
+        .set_aec_observer = audio_aec_diagnostics_unsupported,
     };
     static h2_pal_audio_t audio = {
         .user = &s_audio_state,

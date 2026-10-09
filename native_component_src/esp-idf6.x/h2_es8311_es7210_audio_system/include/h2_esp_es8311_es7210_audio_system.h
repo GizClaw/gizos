@@ -117,6 +117,8 @@ typedef struct h2_esp_es8311_es7210_sr_state {
 typedef struct h2_esp_es8311_es7210_audio_system {
     h2_esp_es8311_es7210_audio_system_config_t config;
     h2_esp_es8311_es7210_sr_state_t sr;
+    h2_audio_aec_observer_t aec_observer;
+    uint64_t aec_sequence;
     int pa_initialized;
     int opened;
     /* 0: normal operation, 1: suspend requested, 2: suspend writes completed. */

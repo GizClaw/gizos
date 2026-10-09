@@ -1,7 +1,40 @@
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
+load("@rules_python//python:defs.bzl", "py_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY", "WINDOWS_X86_64_ARTIFACT_COMPATIBILITY")
 
 package(default_visibility = ["//visibility:public"])
+
+cc_binary(
+    name = "startup_failure_fixture",
+    srcs = [
+        "h2_h2loader_cli_startup_failure_fixture.c",
+        "h2_h2loader_cli_target.h",
+        "main.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    visibility = ["//visibility:private"],
+    deps = ["//projects/h2loader/apps/cli/app:h2loader_cli_app"],
+)
+
+py_test(
+    name = "native_cli_test",
+    size = "small",
+    srcs = ["test_h2_h2loader_cli_native.py"],
+    args = [
+        "$(location :h2loader)",
+        "$(location :startup_failure_fixture)",
+    ],
+    data = [
+        ":h2loader",
+        ":startup_failure_fixture",
+    ],
+    legacy_create_init = 0,
+    main = "test_h2_h2loader_cli_native.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
 
 cc_library(
     name = "host_path",
@@ -31,6 +64,15 @@ cc_test(
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    deps = [":host_path"],
+)
+
+cc_test(
+    name = "windows_host_path_test",
+    srcs = ["h2_h2loader_cli_host_path_windows_test.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = WINDOWS_X86_64_ARTIFACT_COMPATIBILITY,
     deps = [":host_path"],
 )
 

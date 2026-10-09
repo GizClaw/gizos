@@ -21,11 +21,75 @@ Quectel 和 SIMCom 共用 `providers/modem/common:urc`，通过 `h2_tasks` 声�
 worker 从 provider init 存活到 deinit。销毁前必须停止并等待外部 API/RX 调用退出；deinit 在 Modem 锁外关闭队列并 join worker，停止时尚未处理的通知可以丢弃。deinit 返回错误时必须保留整个实例并重试，不能释放仍被 worker 引用的资源。worker 回调及 AT command 不能相互等待，也不能在 worker 中调用 deinit。同步轮询 transport 可不配置 worker，但调用方仍须满足原有同步入口的串行化要求。
 
 
+#### Model Families
+
+UART 接线 profile 和 AT 协议 family 是两个独立维度。`h2_quectel_model.c` 从实际 `AT+CGMM` 应答识别 EC25／EC25- 与 EC800M／EC800M- 家族，并在模块重启或 close 后重新识别。`EC800MX`、`EC25X` 和其他型号不借用这两类的紧急号码／QuecLocator 后端。`H2_QUECTEL_MODEM_PROFILE_EC800M_UART` 可显式要求 EC800M；原 `EC25_UART` 保留现有 EC800M board 的接线兼容性，但具体协议始终由实际型号决定。
+
+型号差异放在 `h2_quectel_ec25.c`、`h2_quectel_ec800m.c`，共用的 AT transport、operation/state lock、URC、通话、PPP 和生命周期保持一份实现。当前适配范围如下：
+
+| 能力 | EC25 | EC800M |
+| --- | --- | --- |
+| 紧急号码 | `QECCNUM` 的两类模组配置表 | 先探测 `CPBS` 的 EN 存储区，再通过 `CPBR` 读取 |
+| LTE RSRP | `QCSQ` | `QENG="servingcell"` 的当前 LTE 小区字段；SEARCH、邻区、缺失／异常值不当作测量 |
+| GNSS | `QGPS`／`QGPSEND`／`QGPSLOC=0` | 应用指导定义相同的命令和字段顺序，复用现有路径 |
+| UART sleep／SIM hot-plug | `QSCLK`、DTR／RI、`QSIMDET`／`QSIMSTAT` | 共用命令；仍需 board 明确注入接线和 transport 能力 |
+| 呼叫音量 | 探测 `CLVL` 等级并映射百分比 | 同样探测等级；厂商音频手册说明设置自动保存，PAL 不承诺易失性 |
+| token 型 QuecLocator | 通过配置 token 启用 `QLBSCFG`／`QLBS` | 提供的文档未建立这一后端的支持；不发布该 capability，也不发送 token 命令 |
+| 模组固件 URL OTA | `QFOTADL`，EC25 DFOTA 参数与进度 | `QFOTADL`，按固件 flash 标识／包名区分 DFOTA 和 MiniFOTA |
+
+EC800M 核对依据为厂商提供的 LTE Standard(A) AT 命令手册 V1.4（2026-06-30）§8.3–8.4、§11.3，QuecCell 应用指导 V1.6 §2.3，音频应用指导 V1.3 §2.1，GNSS 应用指导 V1.1 §2.3.2–2.3.4，以及低功耗模式应用指导 V1.2 的 UART 接入说明。AT 手册明确包含 EC800M-CN，并注明部分软件版本不支持电话本命令；识别到 family 不代表所有固件都具有所有可选能力。实际拒绝命令仍返回错误，主机 mock 测试不代替型号／固件／接线的设备验收。
+
+#### Module OTA
+
+`H2_PAL_MODEM_CAPABILITY_OTA`（`1u << 7`）表示 provider 提供模组自身固件的 URL OTA 后端。PAL 的 `ota_start`／`ota_get_status` 及对应 wrapper 由 Quectel 接通；SIMCom、Desktop 和无 Modem 后端未接通，调用返回 UNSUPPORTED。Quectel 首次使用确认实际 family，仅 EC25／EC800M 使用该路径；开始前还会以 `AT+QFOTADL=?` 检查固件支持，明确不支持时清除 capability，其他错误照实返回。
+
+现有 `h2_pal_modem_get_identity()` 每次通过 `AT+CGMR` 读取 `identity.revision`。这是厂商的版本标识，按完整字符串匹配；不能按字典序或通用 semver 规则判断新旧。读取失败或回复不完整时 revision 为空，不能据此选差分包。应用根据型号、当前版本及升级包元数据决定是否升级，并选取匹配源版本／目标版本的原始厂商差分包。OTA request 提供一个 URL、必填的 `target_revision`、可选的 `expected_revision` 和每条 AT 命令的启动超时；字符串只借用至 `ota_start` 返回，provider 保存版本标识，不保存 URL。如果当前已经是目标版本，直接报告 SUCCEEDED，不下载；否则源版本不符返回 INVALID_STATE，不发送升级指令。
+
+```c
+/* package_url / target_revision come from application package metadata. */
+h2_pal_modem_identity_t identity = {0};
+h2_pal_result_t rc = h2_pal_modem_get_identity(modem, &identity);
+if (rc == H2_PAL_OK && identity.revision[0] != '\0') {
+    h2_pal_modem_ota_request_t request = {
+        .url = package_url,
+        .expected_revision = identity.revision,
+        .target_revision = target_revision,
+        .timeout_ms = 5000u,
+    };
+    rc = h2_pal_modem_ota_start(modem, &request);
+    /* OK accepts the request; observe ota_get_status in the modem task. */
+}
+```
+
+EC25 发送 `AT+QFOTADL="<url>"`，HTTP(S)／FTP URL 最长 255 字节。EC800M 的固件标识 `M02`／`M04`／`M08` 表示 MiniFOTA，URL 必须指向 `.mini_1`、最长 128 字节；同名 `.mini_2` 由模组自行下载，服务器须同时提供两个包，PAL 不拼接或下发第二个 URL。`M16` 走 DFOTA，最长 255 字节，并发送 `,0,100`，以 100 条下载报告让计数与百分比一致。未知 flash 标识保守限制为 128 字节，并结合 `.mini_1` 包名选择 MiniFOTA 参数。2 MB 不支持 HTTPS，2／4 MB 不支持 FTP；错误后缀、引号、反斜杠、空白／控制字符、URL fragment 和超长输入在下发前拒绝。HTTP(S)／FTP 的访问及网络配置由模组和接入方负责；普通 EC800M DFOTA 使用模组内部 PDP，接入方须按 DFOTA 指导准备相应上下文，PAL 不通过 host PPP 下载，也不改写接入方 APN／PDP 配置。
+
+`+QIND: "FOTA",...` 经现有命令感知 RX 分流和 URC worker 更新状态，或由已串行化的 task 调用 `h2_quectel_handle_urc_line()`。只有命令 callback 而未接入异步通知，不能获得完整升级进展。状态保留请求序号、源／目标／观察到的版本、阶段进度及厂商结果码；MiniFOTA 没有下载进度时 `progress_valid = 0`，不得伪造百分比。`OK` 只表示请求接受，下载结束或 UPDATING 100 也不表示成功。收到 FOTA END 和之后的 RDY／APP RDY 后进入版本确认，`ota_get_status` 最多执行一条 CGMR；只有 END 结果为 0 且实际版本匹配目标，才报告 SUCCEEDED。版本查询暂时失败保留 VERIFYING 和错误，后续查询可重试；确认到不同版本报告 FAILED。重复 END 通知保留已观察到的重启。
+
+开始要求已 open 且通话／GNSS／host 数据会话已停止；不会自行关闭它们。升级期间保持唤醒，普通 AT 操作、再次启动、close／deinit 和逻辑 transport teardown 返回 BUSY；模块自身的多次重启保留升级状态。USB 等 transport 自动断开时，接入方重新绑定物理命令端口并保留 provider 实例与通知路由，不能把这次重启当作主动关闭。启动超时、丢失完成通知或 MiniFOTA 下载错误可能留下 UNKNOWN／未确认状态；provider 不自动重复发送升级命令、不重启或断电。MiniFOTA 的非零 END 也可能留下下载系统，此时即使读到版本仍保持会话，交由接入方按厂商流程恢复。状态仅在当前 provider 实例中保存；跨主控重启的升级意图和恢复策略由应用负责。
+
+EC25 协议依据为 [EC2x&EG2x-G&EG9x&EM05 DFOTA Application Note V1.1 §3.2.1、§4](https://quectel.com/content/uploads/2024/02/Quectel_EC2xEG2x-GEG9xEM05_Series_DFOTA_Application_Note_V1.1-2.pdf)。EC800M 依据为本次提供的 LTE Standard(A) DFOTA 升级指导 V1.5 §3.3.1、§4–5。上述测试是 host transport／URC 测试；实际升级包、运营商网络、供电及端口重绑定须在对应模组固件上验收。
+
+#### Emergency Numbers
+
+`h2_pal_modem_get_emergency_numbers()` 是只读、阻塞的 Modem PAL 查询，vtable 的 `get_emergency_numbers` 和 `H2_PAL_MODEM_CAPABILITY_EMERGENCY_NUMBERS` 暴露该能力。调用方提供号码数组、容量和 count；每条结果保留号码字符串、无卡／有卡适用范围、查询来源和可选类别。完整列表才返回 OK；容量不足或 transport 截断返回 TRUNCATED，格式错误返回 FORMAT，其他失败保留 provider 错误。有效输出参数在失败时清空，不能把旧表或部分表当成本次查询结果。
+
+EC25 后端每次实际发送 `AT+QECCNUM?`，解析 type 0 的无 (U)SIM 表和 type 1 的有 (U)SIM 表，保留前导零、两类表中的重复号码以及回包顺序；号码不从手册默认值或 Example 中补齐。两类表各最多 20 个号码，响应必须包含两类表且不能重复 type。返回来源为 MODULE、类别为未知，表示查询到的模组配置表；该指令并未标明单独的 SIM 文件／网络来源，不能据此声称枚举了全部有效紧急号码。
+
+EC800M 后端先用 `AT+CPBS=?` 确认支持 EN，保存 `AT+CPBS?` 报告的原选择，再选择 EN、查询 used／total 和 `AT+CPBR=?` 的实际支持索引。单值、稀疏或重叠区间会排序合并，每页最多 8 个索引；读取超过 16 个区间或 4096 个不同槽位返回 TRUNCATED，这是 provider 的事务边界，不是模组容量声明。每页通过 collector 读取完整条目；实际条目数必须与 EN 的 used 相符，不能把空应答、错误或缺页当作完整空表。EN 在手册中表示 SIM 或 ME 紧急号码，未给出两者的独立来源或无卡／有卡适用范围，因此返回 UNKNOWN，不能根据当前 SIM 状态猜测。
+
+选择 EN 和恢复原选择属于同一 operation lock 下的事务，不发送 CPBW 或号码增删命令。原选择已经是 EN 时不重复设置。恢复失败时查询失败、输出清空，并在下一次查询或 close 时重试；close 仍按原有合同确认通话／GNSS／数据停止并 teardown，单独的电话本恢复失败不能阻挡关闭，但会返回其错误。已关闭的会话丢弃恢复状态。SIM/reset 失效时拒绝旧回包，不在失效事务中重放选择；下次操作先重新确认型号。
+
+该查询要求 Modem 已 open；关闭时返回 CLOSED，不自行开机。不以 SIM READY、网络注册或 packet data 作前置门槛，也不拨号或修改号码；固件若因 SIM 状态拒绝电话本访问，则照实报告错误。调用在 Modem task 中执行，复用 operation lock、唤醒／休眠保持、超时恢复及 SIM/reset generation 检查；查询期间换卡或模块重启会拒绝旧回包。Provider 不缓存号码表；应用若缓存，须在模块重启、SIM 或相关网络状态变化时失效。`timeout_ms = 0` 使用已配置的 command timeout，超时参数应用于每次 AT 事务。长 AT 应答用逐行 collector 解析，AT 行上限 768 字节；普通 response 数组和 URC 队列仍使用独立的 192 字节行容量。Command transport 必须尊重传入 response_size、保证 NUL 结尾，并提供完整的本次应答。
+
+Capability 表示 provider 实现了查询入口；具体型号／固件拒绝指令或查询失败时照实返回错误，不能把它解释成空号码表，也不能据此保证网络接通。当前 SIMCom、Desktop 和无 Modem backend 未实现此能力，调用返回 UNSUPPORTED。`libs/app_test` 的 Modem fake 可由 scenario 注入表和失败，默认不启用该 capability。
+
+`QECCNUM` 是移远扩展；3GPP 的 `AT+CEN?` 是可选的网络紧急号码查询，两者并不等价。协议依据见 [EC25&EC21 AT Commands Manual V1.3 §7.19](https://quectel.com/content/uploads/2021/03/Quectel_EC25EC21_AT_Commands_Manual_V1.3.pdf) 和 [TS 27.007 §8.67](https://www.etsi.org/deliver/etsi_ts/127000_127099/127007/17.06.00_60/ts_127007v170600p.pdf)。公开参数、ownership 与错误合同以 PAL header 的 API Reference 为准。
+
 #### Cell Locate
 
 Cell locate 是 QuecLocator 基站定位，与卫星定位是两条独立路径：它不依赖卫星信号，室内和冷启动也能返回粗略位置，代价是每次查询都要经 packet data 访问运营商定位服务。Provider 用 `AT+QLBSCFG="token",<token>` 配置身份、`AT+QLBS` 发起单次查询（成功应答为 `+QLBS: 0,<经度>,<纬度>[,…]`，经度在前），结果通过 `h2_pal_modem_cell_locate()` 返回 `h2_pal_modem_cell_location_t`。`valid = 0` 表示服务未能定位，是正常返回而非错误。何时查询、缓存多久、如何与 GNSS fix 融合都属于产品策略，不在 PAL 或 provider 内决定。
 
-Token 由集成方通过 `h2_quectel_modem_config_t` 的 `cell_locate_token` 注入，字符串是借用的，生命周期必须覆盖 modem instance；`cell_locate_timeout_ms` 控制单次查询超时，0 取默认 60 s。Token 为 NULL 或空串时 `cell_locate` 不装配进 vtable，`get_capabilities` 不置 `H2_PAL_MODEM_CAPABILITY_CELL_LOCATE`，调用返回 `H2_PAL_ERR_UNSUPPORTED`，模组上不会出现任何 QLBS 命令。含引号、逗号或换行、或超过 127 字节的 token 会让 `h2_quectel_modem_init` 返回 `H2_PAL_ERR_INVALID_ARG`。
+Token 由集成方通过 `h2_quectel_modem_config_t` 的 `cell_locate_token` 注入，字符串是借用的，生命周期必须覆盖 modem instance；`cell_locate_timeout_ms` 控制单次查询超时，0 取默认 60 s。Token 为 NULL 或空串时 `cell_locate` 不装配进 vtable，`get_capabilities` 不置 `H2_PAL_MODEM_CAPABILITY_CELL_LOCATE`，调用返回 `H2_PAL_ERR_UNSUPPORTED`，模组上不会出现任何 QLBS 命令。配置 token 仅表示候选后端；首次使用前通过 CGMM 确认 EC25，EC800M／未知型号清除该 capability 并返回 UNSUPPORTED。含引号、逗号或换行、或超过 127 字节的 token 会让 `h2_quectel_modem_init` 返回 `H2_PAL_ERR_INVALID_ARG`。
 
 前置条件是 packet data 已激活，provider 不会自行拉起 PPP；数据不可用时返回 `H2_PAL_ERR_INVALID_STATE`。Token 在首次 `cell_locate` 时惰性下发一次，`close` 后重置，因此没有用到基站定位的产品完全不会发出 token。
 
@@ -79,7 +143,7 @@ bazel test //libs/drivers/...
 
 Modem 的 ACTIVE/AUTO_SLEEP 是易失策略；实际状态独立报告。当前 Quectel provider 没有可信的休眠状态传感器，`get_power_status` 始终报告 UNKNOWN，也不发送 AT 或为查询唤醒模组。成功设置 AUTO_SLEEP 只表示允许空闲休眠。关闭后策略回到 ACTIVE；意外 RDY 后在下一次功能调用恢复配置。AT 或 sleep gate 失败会禁止自动释放唤醒，调用方可重试设置策略；尚未确认结束的通话、GNSS 和数据会话仍须成功停止。
 
-支持范围使用 EC25 UART profile，并在准备时通过 CGMM 校验 EC25/EC25- 与 EC800M/EC800M- 家族型号。未声明 profile、缺少独立 command channel、sleep gate 或 PAL recursive mutex 时不发布 LOW_POWER capability，调用返回 UNSUPPORTED。其他 Quectel 系列、USB-only 接线及 SIMCom 等 provider 不因通用 capability 配置而获得低功耗支持。独立 command channel 可以是由 transport 维护的 CMUX AT DLCI；PPP 数据 DLCI 活跃期间保持唤醒，不依赖未经验证的 CMUX/PPP 休眠行为。
+支持范围使用 EC25／EC800M UART profile，并在准备时通过共用的 CGMM 识别校验型号。显式 EC800M_UART 不接受其他型号；原 EC25_UART 保留 EC800M board 的接线兼容性，协议分派仍跟随实际型号。未声明 profile、缺少独立 command channel、sleep gate 或 PAL recursive mutex 时不发布 LOW_POWER capability，调用返回 UNSUPPORTED。其他 Quectel 系列、USB-only 接线及 SIMCom 等 provider 不因通用 capability 配置而获得低功耗支持。独立 command channel 可以是由 transport 维护的 CMUX AT DLCI；PPP 数据 DLCI 活跃期间保持唤醒，不依赖未经验证的 CMUX/PPP 休眠行为。
 
 [EC25 Hardware Design V2.4](https://quectel.com/content/uploads/2024/02/Quectel_EC25_Series_Hardware_Design_V2.4-4.pdf) §3.4–3.5.1.1 说明普通 sleep 保留网络寻呼及语音来电，UART 场景用 QSCLK 与 DTR 配合，DTR 拉低唤醒，RI 通知主机。Provider 使用 QSCLK 0/1，不使用关闭 RF/SIM 的 CFUN 模式。Board 的 sleep gate 负责 DTR 电平、唤醒后 transport 就绪等待、所有 DLCI 排空、RI 唤醒及无损 URC 接收；存在 USB、WAKEUP_IN 或 AP_READY 时还要满足该板接线条件。官方资料未给出适用于所有固件和接线的固定唤醒延迟，因此 portable provider 不硬编码通用毫秒值。
 

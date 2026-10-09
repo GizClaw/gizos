@@ -209,6 +209,11 @@ jobs:
           if [ -n "${BAZEL_REMOTE_CACHE_URL:-}" ]; then
             cache_args+=("--remote_cache=$BAZEL_REMOTE_CACHE_URL" --google_default_credentials --remote_upload_local_results=true)
           fi
+          run_pal() {
+            "$RUNNER_TEMP/bazel" test "--config=$H2_BAZEL_CONFIG" \
+              "${cache_args[@]}" --cache_test_results=no \
+              //projects/e2e/targets/cc_binary/pal-mqtt:public_broker_test
+          }
           run_gizclaw_target() {
             "$RUNNER_TEMP/bazel" test "--config=$H2_BAZEL_CONFIG" \
               "${cache_args[@]}" --cache_test_results=no \
@@ -241,8 +246,8 @@ jobs:
             esac
           }
           case "$E2E_SCOPE" in
-            all) make bazel-test-mqtt_public_broker_smoke BAZEL_BIN="$RUNNER_TEMP/bazel" BAZEL_CONFIG="$H2_BAZEL_CONFIG"; run_gizclaw ;;
-            pal) make bazel-test-mqtt_public_broker_smoke BAZEL_BIN="$RUNNER_TEMP/bazel" BAZEL_CONFIG="$H2_BAZEL_CONFIG" ;;
+            all) run_pal; run_gizclaw ;;
+            pal) run_pal ;;
             gizclaw) run_gizclaw ;;
             *) printf 'unsupported live E2E scope: %s\n' "$E2E_SCOPE" >&2; exit 2 ;;
           esac

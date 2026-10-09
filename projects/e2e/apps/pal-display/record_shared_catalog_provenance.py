@@ -34,6 +34,17 @@ def main():
     pal_path = qualification.SHARED_PAL_GUIDE
     pal_baseline = subprocess.check_output(["git", "show", f"{anchor}:{pal_path}"])
     assert sha256(pal_baseline) == previous[pal_path]
+    start, end = qualification.modem_guide_section(pal_baseline)
+    modem_section = pal_baseline[start:end]
+    assert sha256(modem_section) == qualification.SHARED_PAL_MODEM_BASELINE_SHA256
+    modem_record = (json.dumps({"source_commit": anchor, "source_path": pal_path,
+                               "section_utf8": modem_section.decode("utf-8")},
+                              ensure_ascii=False, indent=2) + "\n").encode()
+    modem_path = root / "shared_pal_modem_baseline.json"
+    if args.apply:
+        modem_path.write_bytes(modem_record)
+    else:
+        assert modem_path.read_bytes() == modem_record
     marker = b"ESP LittleFS "
     assert pal_baseline.count(marker) == 1
     offset = pal_baseline.index(marker)
@@ -45,8 +56,9 @@ def main():
     addition = extended[offset:len(extended) - len(suffix)]
     assert sha256(addition) == qualification.SHARED_PAL_ADDITION_SHA256
     assert extended == pal_baseline[:offset] + addition + suffix
-    pal_current = Path(pal_path).read_bytes()
+    pal_current = qualification.historical_modem_guide(Path(pal_path).read_bytes())
     assert pal_current in (pal_baseline, pal_baseline[:offset] + addition + pal_baseline[offset:])
+    qualification.retired_pal_makefile_source(Path("Makefile").read_bytes(), previous["Makefile"])
     sources = sorted(qualification.SHARED_CATALOG_AUDIT_SOURCES)
     value = {
         "schema": 1,
@@ -58,9 +70,12 @@ def main():
                                 "source_sha256": sha256(pal_baseline),
                                 "addition_source_commit": addition_anchor,
                                 "insertion_offset": offset, "addition_sha256": sha256(addition)},
+        "pal_modem_scope": {"source_commit": anchor, "source_path": pal_path,
+                            "baseline_sha256": qualification.SHARED_PAL_MODEM_BASELINE_SHA256,
+                            "scope": "Only Modem volume and emergency/OTA sections; no Display or general PAL policy changes"},
         "previous_source_sha256": {item: previous[item] for item in sources},
         "current_source_sha256": {item: sha256(Path(item).read_bytes()) for item in sources},
-        "scope": "Host audit maintenance only; exact Display catalog section and row remain historical. Only the exact two BK Pref PAL-guide paragraphs are admitted. All qualification, mobile execution, artifact and hardware identities are unchanged.",
+        "scope": "Host audit maintenance only; exact Display catalog section and row remain historical. The shared PAL guide admits only the exact two BK Pref paragraphs and independent Modem-owned sections projected onto their immutable baseline. Makefile admits only removal of the legacy PAL MQTT phony token and forwarding recipe: reinserting those exact bytes must match its historical whole-file digest. All other guide bytes, qualification, mobile execution, artifact and hardware identities are unchanged.",
     }
     encoded = (json.dumps(value, indent=2) + "\n").encode()
     baseline_path = root / "shared_catalog_baseline.txt"

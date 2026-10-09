@@ -49,6 +49,7 @@ py_test(
         "include/h2_pal_audio_cases.inc",
         "src/h2_pal_audio_e2e.c",
         "//libs/pal:pal_header_files",
+        "//projects/e2e/apps/aec-calibration/app:tests/test_calibration.c",
     ],
     legacy_create_init = 0,
     main = "tests/test_interface_coverage.py",

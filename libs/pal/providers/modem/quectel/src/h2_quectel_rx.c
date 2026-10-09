@@ -16,6 +16,7 @@ int h2_quectel_is_urc(const char *line, const char *command) {
     if (line == NULL || line[0] == '\0') {
         return 0;
     }
+    if (h2_quectel_is_ota_urc(line)) { return 1; }
     if (strcmp(line, "RING") == 0 || strcmp(line, "NO CARRIER") == 0 ||
         strcmp(line, "BUSY") == 0 || strcmp(line, "NO ANSWER") == 0 ||
         strcmp(line, "+QIND: SMS DONE") == 0 || strcmp(line, "+QIND: PB DONE") == 0 ||

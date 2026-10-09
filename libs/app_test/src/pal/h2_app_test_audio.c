@@ -617,6 +617,13 @@ static int decorated_set_mic_gain(void *user, uint32_t percent) {
   return h2_pal_audio_set_mic_gain_percent(audio->delegate, percent);
 }
 
+static int audio_aec_diagnostics_unsupported(void *user,
+    const h2_audio_aec_observer_t *observer) {
+    (void)user;
+    (void)observer;
+    return H2_AUDIO_ERR_UNSUPPORTED;
+}
+
 static const h2_pal_audio_vtable_t s_audio_vtable = {
     .get_info = decorated_get_info,
     .start_mic = decorated_start_mic,
@@ -629,6 +636,7 @@ static const h2_pal_audio_vtable_t s_audio_vtable = {
     .set_speaker_volume_percent = decorated_set_volume,
     .get_mic_gain_percent = decorated_get_mic_gain,
     .set_mic_gain_percent = decorated_set_mic_gain,
+    .set_aec_observer = audio_aec_diagnostics_unsupported,
 };
 
 h2_pal_result_t

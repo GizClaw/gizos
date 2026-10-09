@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "new_physical_run_claimed": false,
+  "baseline_commit": "1d67967e87717875a701e5ac708b4f556ab59b5d",
+  "provider_change_commit": "9121126bdc20d41e56afbc6513edcaea7725bd9e",
+  "scope": "Exact optional Audio AEC UNSUPPORTED function/vtable additions only; old eleven-operation Audio behavior and every historical receipt remain unchanged. The checker calls a fixed audited projection; no current diagnostic, combined SDK, board or new physical run is claimed.",
+  "files": {
+    "libs/pal/providers/ios/pal_core/src/h2_ios_audio.m": {
+      "previous_sha256": "a910b0f140c8481bcfef80f6472c061d87cf4cc2809f0269d5aa2adc491991dd",
+      "changes": [
+        {
+          "before_utf8": "  return H2_AUDIO_OK;\n}\n\nstatic const h2_pal_audio_vtable_t audio_vtable = {\n    .get_info = audio_get_info,\n    .start_mic = audio_start_mic, .stop_mic = audio_stop_mic,\n",
+          "after_utf8": "  return H2_AUDIO_OK;\n}\n\nstatic int audio_aec_diagnostics_unsupported(void *user,\n    const h2_audio_aec_observer_t *observer) {\n    (void)user;\n    (void)observer;\n    return H2_AUDIO_ERR_UNSUPPORTED;\n}\n\nstatic const h2_pal_audio_vtable_t audio_vtable = {\n    .get_info = audio_get_info,\n    .start_mic = audio_start_mic, .stop_mic = audio_stop_mic,\n"
+        },
+        {
+          "before_utf8": "    .get_speaker_volume_percent = audio_get_speaker_volume,\n    .set_speaker_volume_percent = audio_set_speaker_volume,\n    .get_mic_gain_percent = audio_get_mic_gain,\n    .set_mic_gain_percent = audio_set_mic_gain};\n\nh2_pal_result_t h2_ios_audio_create(h2_ios_audio_t **out_audio) {\n  if (out_audio == NULL) return H2_PAL_ERR_INVALID_ARG;\n",
+          "after_utf8": "    .get_speaker_volume_percent = audio_get_speaker_volume,\n    .set_speaker_volume_percent = audio_set_speaker_volume,\n    .get_mic_gain_percent = audio_get_mic_gain,\n    .set_mic_gain_percent = audio_set_mic_gain,\n    .set_aec_observer = audio_aec_diagnostics_unsupported,\n};\n\nh2_pal_result_t h2_ios_audio_create(h2_ios_audio_t **out_audio) {\n  if (out_audio == NULL) return H2_PAL_ERR_INVALID_ARG;\n"
+        }
+      ]
+    },
+    "libs/pal/providers/android/pal_core/src/h2_android_platform.c": {
+      "previous_sha256": "694a63b7ff2bc650b3398c81339af9678c721b9260598f168127b1627fb950bb",
+      "changes": [
+        {
+          "before_utf8": "  return H2_AUDIO_OK;\n}\n\nstatic const h2_pal_audio_vtable_t s_android_audio_vtable = {\n    .get_info = android_audio_get_info,\n    .start_mic = android_audio_start_mic,\n",
+          "after_utf8": "  return H2_AUDIO_OK;\n}\n\nstatic int audio_aec_diagnostics_unsupported(void *user,\n    const h2_audio_aec_observer_t *observer) {\n    (void)user;\n    (void)observer;\n    return H2_AUDIO_ERR_UNSUPPORTED;\n}\n\nstatic const h2_pal_audio_vtable_t s_android_audio_vtable = {\n    .get_info = android_audio_get_info,\n    .start_mic = android_audio_start_mic,\n"
+        },
+        {
+          "before_utf8": "    .set_speaker_volume_percent = android_audio_set_speaker_volume,\n    .get_mic_gain_percent = android_audio_get_mic_gain,\n    .set_mic_gain_percent = android_audio_set_mic_gain,\n};\n\nstatic int android_display_open(void *user) {\n",
+          "after_utf8": "    .set_speaker_volume_percent = android_audio_set_speaker_volume,\n    .get_mic_gain_percent = android_audio_get_mic_gain,\n    .set_mic_gain_percent = android_audio_set_mic_gain,\n    .set_aec_observer = audio_aec_diagnostics_unsupported,\n};\n\nstatic int android_display_open(void *user) {\n"
+        }
+      ]
+    },
+    "boards/bk7258_v3_202405/bk7258/ap/src/h2_bk7258_board_audio.c": {
+      "previous_sha256": "79e299e4ae267444f7ad8b44d64a08165cf9574a86b733d995011fb731a09ed8",
+      "changes": [
+        {
+          "before_utf8": "    return H2_AUDIO_OK;\n}\n\nh2_pal_audio_t *h2_bk7258_board_audio(void) {\n    if (!s_audio_state.mic_gain_initialized) {\n        const uint32_t min_gain = h2_bk7258_audio_config.mic_gain_min;\n",
+          "after_utf8": "    return H2_AUDIO_OK;\n}\n\nstatic int audio_aec_diagnostics_unsupported(void *user,\n    const h2_audio_aec_observer_t *observer) {\n    (void)user;\n    (void)observer;\n    return H2_AUDIO_ERR_UNSUPPORTED;\n}\n\nh2_pal_audio_t *h2_bk7258_board_audio(void) {\n    if (!s_audio_state.mic_gain_initialized) {\n        const uint32_t min_gain = h2_bk7258_audio_config.mic_gain_min;\n"
+        },
+        {
+          "before_utf8": "        .set_speaker_volume_percent = bk_audio_set_speaker_volume_percent,\n        .get_mic_gain_percent = bk_audio_get_mic_gain_percent,\n        .set_mic_gain_percent = bk_audio_set_mic_gain_percent,\n    };\n    static h2_pal_audio_t audio = {\n        .user = &s_audio_state,\n",
+          "after_utf8": "        .set_speaker_volume_percent = bk_audio_set_speaker_volume_percent,\n        .get_mic_gain_percent = bk_audio_get_mic_gain_percent,\n        .set_mic_gain_percent = bk_audio_set_mic_gain_percent,\n        .set_aec_observer = audio_aec_diagnostics_unsupported,\n    };\n    static h2_pal_audio_t audio = {\n        .user = &s_audio_state,\n"
+        }
+      ]
+    },
+    "projects/e2e/apps/pal-audio/check_qualification.py": {
+      "previous_sha256": "aaadd29608d6a5cf83ada92cff3a717ce197a64b9993fbb525a774217d804df9",
+      "changes": [
+        {
+          "before_utf8": "import json\nfrom pathlib import Path\nimport re\n\nROOT = Path(\"projects/e2e/apps/pal-audio\")\nEXPECTED_PLATFORMS = {\n",
+          "after_utf8": "import json\nfrom pathlib import Path\nimport re\nfrom aec_compatibility import source_content\n\nROOT = Path(\"projects/e2e/apps/pal-audio\")\nEXPECTED_PLATFORMS = {\n"
+        },
+        {
+          "before_utf8": "\n\ndef digest(path):\n    return hashlib.sha256(path.read_bytes()).hexdigest()\n\n\ndef records(text, prefix):\n",
+          "after_utf8": "\n\ndef digest(path):\n    return hashlib.sha256(source_content(path, path.read_bytes())).hexdigest()\n\n\ndef records(text, prefix):\n"
+        }
+      ]
+    }
+  }
+}

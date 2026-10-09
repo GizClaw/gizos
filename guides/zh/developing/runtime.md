@@ -176,6 +176,8 @@ App 不直接调用 `runtime->xxx_api->vtable->operation(...)`，也不自己传
 
 `runtime->audio` 的 `create_track` 不是透明转发：Runtime 返回自己持有的 wrapper track，用于测量播放帧的电平（见[音频电平](#音频电平)）。wrapper 把 `write`、`close`、`get_volume_factor`、`set_volume_factor`、`drain` 原样转发给 backend track，backend 没有提供的 operation 在 wrapper 上同样是 `NULL`，PAL wrapper 的报错行为不变。`close` 关闭 backend track 并释放 wrapper，调用方仍然只 close 一次。
 
+`runtime->audio` 的可选 `set_aec_observer` 透明转发到底层 Audio provider，不从 Runtime 的内容电平推导 raw ADC／AEC 资格。注册与撤销仍要求停止并 join mic／speaker；observer user 的借用和失败保留合同由 Audio PAL 定义。独立校准应在没有生产 Audio borrower 的窗口运行，保存并恢复同一 provider 的控制值；恢复后的 Runtime 音量 snapshot 会按已有逻辑与实际值对齐。
+
 `runtime->buzzer` 同样是透明 PAL proxy。Runtime 把 `h2_runtime_config_t.buzzer` 的 API object 按值复制到 private storage，再暴露稳定的 App-facing pointer；它不取得物理 provider、tone 或 PWM channel 的 ownership，也不实现 melody sequencing。Buzzer 是 complete capability surface 的必选 binding：真实支持它的 Board 绑定 provider，其余 Runtime owner 显式绑定 `h2_pal_unsupported_buzzer_api()`，传入 `NULL` 会使 Runtime 初始化失败。
 
 BLE 使用一个 `ble_host` API。Runtime 提供对应的 BLE host proxy；同一个 host 可以同时执行 advertising 和 scan，也可以同时提供 GATT server 与 GATT client 能力，不按 peripheral/central role 拆成两个 API。

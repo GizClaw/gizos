@@ -4,6 +4,7 @@ load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
 package(default_visibility = ["//visibility:public"])
 
 py_test(
+    deps = ["//projects/e2e/apps/pal-audio:aec_optional_provenance"],
     name = "qualification_evidence_test",
     srcs = ["check_qualification.py"],
     data = [
@@ -13,6 +14,7 @@ py_test(
         "shared_catalog_baseline.txt",
         "shared_catalog_provenance.json",
         "shared_pal_pref_addition.json",
+        "shared_pal_modem_baseline.json",
         "//:Makefile",
         "//:scripts/bazel/bazel-test-android_pal_display_simulator_test.sh",
         "//:scripts/bazel/bazel-test-ios_pal_display_simulator_test.sh",
@@ -110,6 +112,7 @@ py_test(
 )
 
 py_test(
+    deps = ["//projects/e2e/apps/pal-audio:aec_optional_provenance"],
     name = "mobile_runner_provenance_test",
     srcs = [
         "check_qualification.py",

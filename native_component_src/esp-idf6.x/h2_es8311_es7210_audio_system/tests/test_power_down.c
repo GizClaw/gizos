@@ -116,7 +116,69 @@ static void assert_sequence(void) {
         assert(writes[i].value == expected[i][2]);
     }
 }
+static unsigned capture_observations;
+static void capture_observe(void *user, const h2_audio_aec_frame_t *frame) {
+    assert(user == &capture_observations);
+    assert(frame->sequence == ++capture_observations);
+    assert(frame->raw->channels == 4u && frame->raw->samples_per_channel == 160u);
+    assert(frame->microphone_lane == 1u && frame->reference_lane == 0u);
+    assert(frame->microphone_mask == 2u);
+    assert(frame->reference_input->channels == 1u &&
+           frame->reference_input->samples_per_channel == frame->processed->samples_per_channel);
+    assert(((int16_t *)frame->raw->data)[1] == 123);
+    assert(((int16_t *)frame->reference_input->data)[0] == 456);
+    assert(((int16_t *)frame->processed->data)[0] == 78);
+}
+static void playback_observe(void *user, const h2_audio_frame_t *frame) {
+    (void)user;
+    (void)frame;
+}
+static void error_observe(void *user, int capture, int result) {
+    (void)user; (void)capture; (void)result;
+}
+static void aec_contract_test(void) {
+    h2_esp_es8311_es7210_audio_system_t s = {0};
+    h2_esp_es8311_es7210_audio_system_config_t cfg = config();
+    cfg.enable_aec = 1;
+    cfg.aec_reference_gain_milli = 1000u;
+    assert(h2_esp_es8311_es7210_audio_system_init(&s, &cfg) == H2_AUDIO_OK);
+    assert(audio_open(&s) == H2_AUDIO_OK);
+    running = &s;
+    s.sr.available = 1;
+    h2_pal_audio_t *audio = h2_esp_es8311_es7210_audio_system_audio(&s);
+    const uint8_t reference_gain = registers[1][ES7210_REG_MIC1_GAIN];
+    assert(h2_pal_audio_set_mic_gain_percent(audio, 100u) == H2_AUDIO_OK);
+    assert(registers[1][ES7210_REG_MIC1_GAIN] == reference_gain);
+    assert((registers[1][ES7210_REG_MIC2_GAIN] & 0x0fu) == 14u);
+    const h2_audio_aec_observer_t observer = {
+        .user = &capture_observations, .on_capture = capture_observe,
+        .on_playback = playback_observe, .on_error = error_observe,
+    };
+    assert(h2_pal_audio_set_aec_observer(audio, &observer) == H2_AUDIO_OK);
+    s.mic_started = 1;
+    assert(h2_pal_audio_set_aec_observer(audio, NULL) == H2_AUDIO_ERR_INVALID_STATE);
+    s.mic_started = 0;
+    s.playback_task = (void *)7;
+    assert(h2_pal_audio_set_aec_observer(audio, NULL) == H2_AUDIO_ERR_INVALID_STATE);
+    s.playback_task = NULL;
+    int16_t raw[640] = {0}, reference[160] = {0}, output[160] = {0};
+    raw[1] = 123; reference[0] = 456; output[0] = 78;
+    s.sr.ref_frame = reference;
+    h2_audio_frame_t raw_frame = h2_audio_frame_for_buffer(raw, sizeof(raw), audio_raw_mic_format(&s));
+    h2_audio_frame_t processed = h2_audio_frame_for_buffer(output, sizeof(output), audio_mic_format(&s));
+    raw_frame.bytes = sizeof(raw); processed.bytes = sizeof(output);
+    observe_aec_capture(&s, &raw_frame, &processed);
+    observe_aec_capture(&s, &raw_frame, &processed);
+    assert(capture_observations == 2u);
+    assert(h2_pal_audio_set_aec_observer(audio, NULL) == H2_AUDIO_OK);
+    observe_aec_capture(&s, &raw_frame, &processed);
+    assert(capture_observations == 2u);
+    assert(h2_esp_es8311_es7210_audio_system_deinit(&s) == H2_AUDIO_OK);
+    running = NULL;
+    write_count = removed = disabled = 0;
+}
 int main(void) {
+    aec_contract_test();
     h2_esp_es8311_es7210_audio_system_t s = {0};
     assert(h2_esp_es8311_es7210_audio_system_power_down(NULL) == H2_AUDIO_ERR_INVALID_ARG);
     assert(h2_esp_es8311_es7210_audio_system_power_down(&s) == H2_AUDIO_OK);

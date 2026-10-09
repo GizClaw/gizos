@@ -1,8 +1,0 @@
-package(default_visibility = ["//visibility:public"])
-
-filegroup(
-    name = "pal_e2e",
-    srcs = [
-        "//projects/e2e/apps/pal/app:pal_e2e",
-    ],
-)

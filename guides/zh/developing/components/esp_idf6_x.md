@@ -6,6 +6,7 @@
 
 ```text
 native_component_src/esp-idf6.x/
+├── h2_wakenet/                     # Single-stream WakeNet inference from packaged model data
 ├── h2_pal_core/                    # ESP-IDF PAL backend
 ├── h2_adc_oneshot/                 # Shared ADC OneShot service and stabilization policies
 ├── h2_esp_audio_decoder/           # ESP Audio Codec AAC-LC PAL provider
@@ -13,7 +14,6 @@ native_component_src/esp-idf6.x/
 ├── h2_es8311_audio_system/         # Hardware capability component
 ├── h2_es8311_es7210_audio_system/
 ├── h2_nfc_fm175xx/
-├── h2_wakenet/                     # Single-stream WakeNet inference from packaged model data
 ├── h2_lierda_modem/                # Explicit NT26-KCN B data-only UART PPP
 ├── opus_port/
 └── zlib/
@@ -162,6 +162,10 @@ Crypto provider 通过 public PSA API 实现 random、X25519、HKDF-SHA256、
 AES-GCM/ChaCha20-Poly1305、AES-CTR、MD5、HMAC-SHA1、P-256 和 ECDSA。
 实现不能 include `mbedtls/private/**`，也不能为缺失 operation 保留 private
 SHA fallback；portable libSRTP 等 consumer 因此可以注入同一完整 Crypto PAL。
+
+## App BLE command display name
+
+ESP App command adapter 优先把 Runtime 的 `ble_local_name` 传给公共 H2Loader BLE service；Runtime 未提供时使用 App command config 的可选同名字段，两者都为 NULL 时保持无名广播。非空名称在 service open 时复制，并在断开、共存 pause/resume 后保留。产品在自己的 Board／launcher 构造稳定名称，不修改 NimBLE backend 或公共 registry。Legacy 名称与 compact manufacturer identity 能同时装入 31-byte scan response 时保留两者；较长名称只携带管理 UUID 与完整名称，Host 通过连接后的 `status` 获取 board／capabilities 与 `device_uid`。显示名称不用于 package identity 校验。最终 consumer 必须用真实 scan response 和连接后 status 交叉验证名称、board 与 UID；host packing test 不代表手机显示已经通过。
 
 ## Hardware Capability
 
@@ -411,6 +415,14 @@ ON 时只对至少 100 ms 的操作输出 `H2_ESP_IO_PHASE` 数值记录。FS �
 
 ESP App command adapter 优先把 Runtime 的 `ble_local_name` 传给公共 H2Loader BLE service；Runtime 未提供时使用 App command config 的可选同名字段，两者都为 NULL 时保持无名广播。非空名称在 service open 时复制，并在断开、共存 pause/resume 后保留。产品在自己的 Board／launcher 构造稳定名称，不修改 NimBLE backend 或公共 registry。Legacy 名称与 compact manufacturer identity 能同时装入 31-byte scan response 时保留两者；较长名称只携带管理 UUID 与完整名称，Host 通过连接后的 `status` 获取 board／capabilities 与 `device_uid`。显示名称不用于 package identity 校验。最终 consumer 必须用真实 scan response 和连接后 status 交叉验证名称、board 与 UID；host packing test 不代表手机显示已经通过。
 
-## Positive Time delays
+### Positive Time delays
 
 ESP Time PAL converts milliseconds to FreeRTOS ticks with ceiling division using 64-bit arithmetic. Every positive delay blocks for at least one tick; zero preserves the explicit yield. This keeps short capture/playback backoff from becoming a CPU spin at a 100 Hz tick rate. Unrepresentable tick counts return INVALID_ARG without delaying; wall-clock retention and calibration are unchanged. Host tests cover 100 Hz and 1000 Hz boundaries, including UINT32_MAX.
+
+## AEC Calibration PAL observation
+
+`h2_es8311_es7210_audio_system` 在 Audio PAL 提供 `set_aec_observer`：只在实际 AEC 可用且 mic／speaker worker 都已停止并 join 时复制或撤销 descriptor；运行中或 shutdown pending 时拒绝。Capture callback 在完整 AEC 处理之后同步借用同帧 raw packed ADC、AEC 实际使用的 gain-scaled mono reference 和 processed mono output；sequence 每次 mic session 重置，mic mask 包含所有实际 AEC microphone lanes。Playback callback 仅在完整 I2S DAC write 成功后观察混音后的 PCM，partial/error write 不交付 PCM，但通过 per-worker error callback 显式报告失败。两个 worker 的 callback 可互相并发，停止对应 worker 后才允许 caller 读取其测量；native SDK 类型不进入公共校准 App。
+
+Mic gain setter 调整 active microphone PGA 并保留 board trim；AEC 的独立 reference ADC input 不参与 mic gain 上调，实际增益回读与失败 rollback 合同保持有效。校准只搜索 board 定义的百分比范围，不更改 codec 模拟上限、raw lane mapping 或 reference gain。原非内容 ES7210 energy observer、正常／aggressive NLP 与按需统计仍可独立使用；新 PAL observer 不替代这些已有接口，也不把处理 metadata 当作物理验收。
+
+公共 `projects/e2e/apps/aec-calibration` App 和验证器只消费 PAL。生产 target 必须另提供独立真实近端声源与同设备原始日志、package/image、摆位和输入电平证据；缺失时 `UNSUPPORTED`。默认分频、两幅度探针的推荐仅适用于本次实测条件，真实重叠语音、满幅压力、长期运行和 provider 的硬件 ADC drop 资格仍需独立证据。

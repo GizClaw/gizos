@@ -468,7 +468,7 @@ Testing PAL 目前有两个独立 target，均不依赖 LVGL 或 Memory driver�
 | Preference | `h2_app_test_pref.h` | namespace/key 隔离，bool/i32/u32/string/blob，事务 commit，按 namespace 和修改 key 筛选 commit 故障 |
 | FS | `h2_app_test_fs.h` | 内存文件读写、seek/stat/remove/rename、短读、close/sync 故障 |
 | Wi-Fi / Settings | `h2_app_test_wifi.h` | scan 列表与过滤、连接请求、显式状态、保存／忘记网络 |
-| Modem | `h2_app_test_modem.h` | 状态输入、dial/answer/hangup 请求与失败 |
+| Modem | `h2_app_test_modem.h` | 状态／版本输入、dial/answer/hangup 请求与失败、scenario 紧急号码表、URL OTA 请求记录与状态／失败输入 |
 | Power | `h2_app_test_power.h` | capabilities/boot info、hold、reboot/sleep/shutdown 意图、深睡定时唤醒时长 |
 | Display | `h2_app_test_display.h` | open/close、亮度值及失败；不绘制像素 |
 | Periph / Button / Input / PWM | `h2_app_test_periph.h` | 可配置 ID registry、按键状态、电量／温度、振动 duty |
@@ -511,6 +511,8 @@ Audio decorator 要求 Time PAL 提供会让出当前任务的 `sleep_ms`，缺�
 声学／AEC 验收可以在固定语音发送完成后开启 `h2_app_test_audio_set_capture_passthrough()`，将后续真实 delegate PCM 交给生产 App，而不是继续用 EOF 静音覆盖硬件。该模式不推进 fixture，直接传播采集错误或空队列；暂停 fixture 与 content barrier 不抑制真实帧。恢复 fixture 模式保留 offset，并通过原子 capture generation 重建节拍。切换不改变 mic 生命周期，在途帧仍可能来自旧 source；关闭和更换 fixture 的既有串行约束不变。测试的安静窗口、回声衰减和再次应答判定属于 consumer，不把注入后的静音当作声学通过。
 
 测试方通过 `h2_app_test_audio_copy_evidence()` 读取独立的 PAL 证据；App/UI 的 paired snapshot 仍由 App adapter 提供。Evidence 支持并发读取，但多字段不是原子快照，一致性断言应放在测试的 completion barrier 后。公共头文件定义具体并发与容量边界。
+
+AEC Calibration 不经 Testing Audio 的 fixture／passthrough decorator 取得诊断资格。Decorator 的 `set_aec_observer` 明确返回 `UNSUPPORTED`，即使下层有 AEC 也不把替换后的 capture 当作真实输入。Consumer 将底层真实 Audio PAL 直接交给公共校准 App；其独立近端源、同帧 raw/reference/processed 和实际 DAC 证据与后续业务 fixture 测试分开记录。
 
 ## Memory Driver
 

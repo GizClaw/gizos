@@ -472,6 +472,13 @@ static int audio_set_mic_gain(void *user, uint32_t value) {
   return H2_AUDIO_OK;
 }
 
+static int audio_aec_diagnostics_unsupported(void *user,
+    const h2_audio_aec_observer_t *observer) {
+    (void)user;
+    (void)observer;
+    return H2_AUDIO_ERR_UNSUPPORTED;
+}
+
 static const h2_pal_audio_vtable_t audio_vtable = {
     .get_info = audio_get_info,
     .start_mic = audio_start_mic, .stop_mic = audio_stop_mic,
@@ -480,7 +487,9 @@ static const h2_pal_audio_vtable_t audio_vtable = {
     .get_speaker_volume_percent = audio_get_speaker_volume,
     .set_speaker_volume_percent = audio_set_speaker_volume,
     .get_mic_gain_percent = audio_get_mic_gain,
-    .set_mic_gain_percent = audio_set_mic_gain};
+    .set_mic_gain_percent = audio_set_mic_gain,
+    .set_aec_observer = audio_aec_diagnostics_unsupported,
+};
 
 h2_pal_result_t h2_ios_audio_create(h2_ios_audio_t **out_audio) {
   if (out_audio == NULL) return H2_PAL_ERR_INVALID_ARG;

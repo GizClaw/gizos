@@ -10,6 +10,12 @@ CLI 由 Bazel 直接编译为当前 host 的 native executable，不使用 Pytho
 bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- -h
 ```
 
+Windows 文件参数接受本机 DOS absolute path（含 `\\?\C:\...`）、调用目录下的 relative path，以及既有 `/c/...` portable path。CLI 用 wide-character entrypoint 将 Windows UTF-16 参数转换为 UTF-8；relative path 优先使用 `BUILD_WORKING_DIRECTORY`，否则使用本机 cwd，不改变进程目录。Native path adapter 只做 lexical normalization，reparse component 继续由 Windows PAL filesystem 拒绝；UNC、device 和 `C:file` drive-relative path 不转换为其他 mount。
+
+平台、KCP 或参数初始化失败时，CLI 在 stderr 写明失败阶段并保留 runtime exit code `3`。`--help` 和 `check` 可通过重定向 stdout/stderr 的父进程运行，不需要串口设备；成功启动不等于设备握手或刷写验收。
+
+`//projects/h2loader/targets/cc_binary/cli:native_cli_test` 直接运行当前构建的 CLI：重定向 stdio 的 help、实际中文文件的 absolute/relative path、`BUILD_WORKING_DIRECTORY`、Windows extended/portable DOS path 和受控平台初始化失败日志。它检查生成 archive 中的 image bytes，使用临时文件且不访问设备。
+
 也可以让 Make 先编译再返回当前 host 的二进制路径，直接在自己的 shell 里调用（cwd 保持不变，相对路径按当前目录解析）：
 
 ```sh

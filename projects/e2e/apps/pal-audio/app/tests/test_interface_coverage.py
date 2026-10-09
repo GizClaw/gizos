@@ -25,9 +25,10 @@ class InterfaceCoverage(unittest.TestCase):
         provider_ops = set(re.findall(r"\(\*(\w+)\)\s*\(", provider))
         track = re.search(r"struct h2_pal_audio_track\s*\{(.*?)\};", header, re.S).group(1)
         track_ops = set(re.findall(r"h2_pal_audio_track_\w+_fn\s+(\w+)\s*;", track))
-        self.assertEqual(provider_ops, set(manifest["provider_operations"]))
+        self.assertEqual(provider_ops, set(manifest["provider_operations"]) |
+                         set(manifest["optional_provider_operations"]))
         self.assertEqual(track_ops, set(manifest["track_operations"]))
-        self.assertEqual(len(provider_ops), 11)
+        self.assertEqual(len(provider_ops), 12)
         self.assertEqual(len(track_ops), 5)
         cases = re.findall(r'H2_PAL_AUDIO_CASE\(\w+, "([^"]+)"\)', registry)
         self.assertEqual(len(cases), len(set(cases)))
@@ -36,6 +37,10 @@ class InterfaceCoverage(unittest.TestCase):
             self.assertTrue(ids, operation)
             self.assertIn(f"h2_pal_audio_{operation}(", source)
             self.assertTrue(set(ids) <= set(cases), operation)
+        for operation, path in manifest["optional_provider_operations"].items():
+            optional_test = (ROOT / path).read_text()
+            self.assertIn(f"h2_pal_audio_{operation}(", optional_test)
+            self.assertIn("H2_AUDIO_ERR_UNSUPPORTED", optional_test)
         for operation, ids in manifest["track_operations"].items():
             self.assertTrue(ids, operation)
             self.assertIn(f"h2_pal_audio_track_{operation}(", source)
