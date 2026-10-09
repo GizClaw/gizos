@@ -62,8 +62,9 @@ struct h2_aec_calibration {
     int16_t far_probe[H2_AEC_CALIBRATION_MAX_SAMPLES];
     int16_t near_probe[H2_AEC_CALIBRATION_MAX_SAMPLES];
     int16_t capture[H2_AEC_CALIBRATION_MAX_SAMPLES];
-    int16_t basis_sin[H2_AEC_CALIBRATION_BANDS][H2_AEC_CALIBRATION_MAX_SAMPLES];
-    int16_t basis_cos[H2_AEC_CALIBRATION_BANDS][H2_AEC_CALIBRATION_MAX_SAMPLES];
+    /* Near bases first, then far bases; both measurements use identical math. */
+    int16_t basis_sin[H2_AEC_CALIBRATION_BANDS * 2u][H2_AEC_CALIBRATION_MAX_SAMPLES];
+    int16_t basis_cos[H2_AEC_CALIBRATION_BANDS * 2u][H2_AEC_CALIBRATION_MAX_SAMPLES];
 };
 
 h2_aec_calibration_limits_t h2_aec_calibration_default_limits(void) {
@@ -247,6 +248,10 @@ static void observe_capture(void *user, const h2_audio_aec_frame_t *f) {
     for (unsigned b = 0u; b < H2_AEC_CALIBRATION_BANDS; ++b) {
         m->near_band_mic[b] += band_power(r, raw, f->raw->channels, f->microphone_lane, b);
         m->near_band_output[b] += band_power(r, output, 1u, 0u, b);
+        m->far_band_mic[b] += band_power(r, raw, f->raw->channels, f->microphone_lane,
+                                         b + H2_AEC_CALIBRATION_BANDS);
+        m->far_band_output[b] += band_power(r, output, 1u, 0u,
+                                            b + H2_AEC_CALIBRATION_BANDS);
     }
     if (r->capture_remaining == 0u) {
         const int rc = h2_pal_time_get_monotonic_ms(r->config.time, &r->capture_end_ms);
@@ -443,9 +448,11 @@ static int prepare_format(h2_aec_calibration_t *r) {
     }
     memcpy(r->result.far_bins, bins, sizeof(r->result.far_bins));
     memcpy(r->result.near_bins, bins + 3u, sizeof(r->result.near_bins));
-    for (unsigned b = 0u; b < H2_AEC_CALIBRATION_BANDS; ++b)
+    for (unsigned b = 0u; b < H2_AEC_CALIBRATION_BANDS * 2u; ++b)
         for (size_t i = 0u; i < f.frame_samples_per_channel; ++i) {
-            const unsigned phase = (unsigned)(i * bins[b + 3u] * 256u /
+            const unsigned bin = b < H2_AEC_CALIBRATION_BANDS ?
+                bins[b + H2_AEC_CALIBRATION_BANDS] : bins[b - H2_AEC_CALIBRATION_BANDS];
+            const unsigned phase = (unsigned)(i * bin * 256u /
                                                f.frame_samples_per_channel) % 256u;
             r->basis_sin[b][i] = sine[phase];
             r->basis_cos[b][i] = sine[(phase + 64u) % 256u];
@@ -593,6 +600,13 @@ static bool accepted_level(const h2_aec_calibration_t *r,
             far->reference_energy / far->samples / l->min_signal_noise_ratio)
         return false;
     for (unsigned b = 0u; b < H2_AEC_CALIBRATION_BANDS; ++b) {
+        const uint64_t far_background = noise->far_band_mic[b] / noise->frames;
+        const uint64_t far_raw = above(far->far_band_mic[b] / far->frames, far_background);
+        const uint64_t far_out = above(far->far_band_output[b] / far->frames,
+                                        noise->far_band_output[b] / noise->frames);
+        if (far_raw <= (far_background + 1u) * l->min_signal_noise_ratio ||
+            far_out * 1000u > far_raw * l->max_echo_residual_milli)
+            return false;
         const uint64_t background = noise->near_band_mic[b] / noise->frames;
         const uint64_t raw = above(near->near_band_mic[b] / near->frames, background);
         const uint64_t output = above(near->near_band_output[b] / near->frames,
@@ -606,8 +620,17 @@ static bool accepted_level(const h2_aec_calibration_t *r,
                                            far->near_band_mic[b] / far->frames);
             const uint64_t dt_out = above(m[p].near_band_output[b] / m[p].frames,
                                            far->near_band_output[b] / far->frames);
+            /* Near-only is the far-bin background for the same independent
+             * source/level. Preserved near speech cannot conceal leaked echo. */
+            const uint64_t dt_far_raw = above(m[p].far_band_mic[b] / m[p].frames,
+                                               near->far_band_mic[b] / near->frames);
+            const uint64_t dt_far_out = above(m[p].far_band_output[b] / m[p].frames,
+                                               near->far_band_output[b] / near->frames);
             if (m[p].playback_peak == 0u ||
                 m[p].reference_energy / m[p].samples < l->min_reference_power ||
+                m[p].aec_reference_energy / m[p].samples < l->min_reference_power ||
+                dt_far_raw < far_raw / 2u || dt_far_raw > far_raw * 2u ||
+                dt_far_out * 1000u > dt_far_raw * l->max_echo_residual_milli ||
                 dt_raw < raw / 2u || dt_raw > raw * 2u ||
                 !ratio_at_least(dt_out, dt_raw, l->min_near_retention_milli) ||
                 !ratio_at_least(dt_out, output, l->min_double_talk_retention_milli))

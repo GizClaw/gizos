@@ -18,7 +18,7 @@
 
 每个计分帧都要求一次完整成功的实际 DAC 回调，不能只收到部分窗口；far／double-talk／持续阶段的每一帧还必须含非零 PCM，noise／near-only 的 DUT PCM 则必须静音，补零的缺失 probe 不能通过。
 
-所有计分阶段检查 raw mic、raw reference、缩放后 AEC reference、AEC output 和实际 DAC PCM 的 peak／headroom。默认 peak limit 为 30000，达到该阈值就拒绝，统计中的 clipped 同时包含这种保守 headroom 违规。Far-only 要求真实 reference 活性、足够高于 noise 的 raw mic 信号与默认至少 10 dB 的背景扣除后回声功率抑制。每个 near 频带在 near-only 必须活跃并保留默认至少 25% raw power；double-talk 与持续窗口还必须保留默认至少 50% near-only output power，并核对独立源输入稳定性。三个 near 频带分别检查，far 残留不能仅靠总能量代替近端证据。
+所有计分阶段检查 raw mic、raw reference、缩放后 AEC reference、AEC output 和实际 DAC PCM 的 peak／headroom。默认 peak limit 为 30000，达到该阈值就拒绝，统计中的 clipped 同时包含这种保守 headroom 违规。Far-only 要求真实 reference 活性、足够高于 noise 的 raw mic 信号与默认至少 10 dB 的背景扣除后回声功率抑制，同时逐一检查三个 far 频带。Double-talk 与持续窗口以同电平 near-only 的 far-bin 能量为背景，要求每个 far 频带的真实回声输入在 far-only 的 0.5–2 倍内，并仍满足相同抑制阈值；双讲时保留近端但放行远端回声不能通过。每个 near 频带在 near-only 必须活跃并保留默认至少 25% raw power；double-talk 与持续窗口还必须保留默认至少 50% near-only output power，并核对独立源输入稳定性。三个 near 频带分别检查，far 残留不能仅靠总能量代替近端证据。
 
 数字 DAC PCM 与 raw ADC 的 headroom 不能代替模拟功放／扬声器的失真测量。
 
@@ -30,7 +30,7 @@
 
 Runner 由 Memory PAL 分配，复制候选与 limits，借用 provider 和独立源 user。Callbacks 不等待、不分配、不调用 Audio；capture 与 playback 各自写独立测量计数，停止并 join 后才由 runner 读取。注册／撤销 observer 需要两个 worker 都停止；失败必须保留旧 registration user。任何阶段、stop、close、unregister 或恢复原控制值失败都不能授予资格。清理尽量停止独立资源；独立声源停止失败仍尝试停 DUT，track close 失败则保留其 handle 与 speaker，避免 provider 销毁 track 后重试悬空地址。失败保留 runner／probe／依赖供 `cleanup` 或 `destroy` 重试，直到成功才释放。
 
-`h2_aec_calibration_report()` 通过调用方 writer 输出带统一 run identity 的 `AEC_CALIBRATION` JSON records，包含格式、probe、幅度、频点、阈值、请求／实际控制、每阶段完整测量、Pareto、selection、complete 与 cleanup。Writer 必须校验完整写入并自行加入换行。独立公共验证器重新核对阶段、能量／削波／near retention、cadence、Pareto 与选择策略，拒绝缺失、重复、混合 run 或矛盾的 PASS。
+`h2_aec_calibration_report()` 通过调用方 writer 输出带统一 run identity 的 `AEC_CALIBRATION` JSON records，包含格式、probe、幅度、频点、阈值、请求／实际控制、每阶段完整测量、Pareto、selection、complete 与 cleanup。Writer 必须校验完整写入并自行加入换行。`three-band-two-level-v2` probe identity 绑定双讲逐 far 频带抑制条件；旧 probe 记录不能继承这项资格。独立公共验证器重新核对阶段、能量／削波／逐频带 far suppression／near retention、cadence、Pareto 与选择策略，拒绝缺失、重复、混合 run 或矛盾的 PASS。
 
 ```sh
 bazel run --config=macos_arm64 \
@@ -42,4 +42,4 @@ bazel run --config=macos_arm64 \
 
 ## 验证
 
-`//projects/e2e/apps/aec-calibration/app:calibration_test` 用独立 fake 验证候选选择、两种优先策略、Pareto、最低 mic gain、量化 readback、静音／双讲过度抑制／无回声消除／缺 reference／reference 削波／格式错误／过快和过慢时钟，以及各资源失败后保留和重试。`//projects/e2e/apps/aec-calibration/tools:report_test` 运行同一个 C runner／formatter，再独立校验记录并拒绝被篡改的 near、reference、clipping、cadence、Pareto、selection 和 run identity。Host 结果证明执行与拒绝合同；每个实际 provider／产品仍需要原生 package 编译和真实夹具运行证据。
+`//projects/e2e/apps/aec-calibration/app:calibration_test` 用独立 fake 验证候选选择、两种优先策略、Pareto、最低 mic gain、量化 readback、静音／双讲过度抑制／无回声消除／仅双讲或持续阶段漏回声／缺 reference／reference 削波／格式错误／过快和过慢时钟，以及各资源失败后保留和重试。`//projects/e2e/apps/aec-calibration/tools:report_test` 运行同一个 C runner／formatter，再独立校验记录并拒绝被篡改的 near、far、reference、clipping、cadence、Pareto、selection 和 run identity。Host 结果证明执行与拒绝合同；每个实际 provider／产品仍需要原生 package 编译和真实夹具运行证据。
