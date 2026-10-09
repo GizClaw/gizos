@@ -91,6 +91,7 @@ static int open_command_service(
             .allocator = runtime->mem,
         },
         .board = board,
+        .local_name = runtime->ble_local_name,
         .capabilities = capabilities,
         .advertising_mode = H2_LOADER_BLE_ADVERTISING_LEGACY,
         .handler = handle_session,
