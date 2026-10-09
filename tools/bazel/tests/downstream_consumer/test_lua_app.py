@@ -1,11 +1,13 @@
 """Check real public cquery receipts and every downstream Lua app output."""
 
 import hashlib
+import io
 import json
 from pathlib import Path
 import sys
 import tarfile
 import unittest
+import zlib
 
 CATALOG, RELEASE_FILES, DEFAULT_FILES, *OUTPUTS = [Path(path) for path in sys.argv[1:]]
 sys.argv[1:] = []
@@ -44,7 +46,7 @@ class LuaAppReleaseTest(unittest.TestCase):
                 )
                 archive, manifest, metadata = OUTPUTS[index * 3:index * 3 + 3]
                 stem = app_id + "-" + version + ".lua-app"
-                self.assertEqual(archive.name, stem + ".tar.gz")
+                self.assertEqual(archive.name, stem + ".tar.zlib")
                 self.assertEqual(manifest.name, stem + ".manifest.json")
                 self.assertEqual(metadata.name, stem + ".json")
                 structured = release_files[archive.name]
@@ -68,7 +70,11 @@ class LuaAppReleaseTest(unittest.TestCase):
                     "size": archive.stat().st_size,
                     "sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
                 })
-                with tarfile.open(archive) as package:
+                decoder = zlib.decompressobj()
+                contents = decoder.decompress(archive.read_bytes()) + decoder.flush()
+                self.assertTrue(decoder.eof)
+                self.assertEqual(decoder.unused_data, b"")
+                with tarfile.open(fileobj=io.BytesIO(contents), mode="r:") as package:
                     self.assertEqual(package.extractfile("manifest.json").read(),
                                      manifest.read_bytes())
                     self.assertEqual(set(package.getnames()),

@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import argparse
-import gzip
 import hashlib
 import io
 import json
 from pathlib import Path, PurePosixPath
 import re
 import tarfile
+import zlib
 
 from embed_resource import compact_source
 
@@ -20,6 +20,19 @@ SEMVER = re.compile(
     r"(?:\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?"
     r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
 )
+
+
+class ZlibArchiveWriter:
+    def __init__(self, output):
+        self.output = output
+        self.compressor = zlib.compressobj(level=9)
+
+    def write(self, data: bytes) -> int:
+        self.output.write(self.compressor.compress(data))
+        return len(data)
+
+    def finish(self) -> None:
+        self.output.write(self.compressor.flush(zlib.Z_FINISH))
 
 
 def json_bytes(value: object) -> bytes:
@@ -103,17 +116,16 @@ def build_package(
     contents["manifest.json"] = manifest_bytes
     # USTAR, zero timestamps and fixed ownership avoid machine/run provenance.
     with archive.open("wb") as output:
-        with gzip.GzipFile(
-            filename="", fileobj=output, mode="wb", mtime=0, compresslevel=9
-        ) as compressed:
-            with tarfile.open(
-                fileobj=compressed, mode="w", format=tarfile.USTAR_FORMAT
-            ) as package:
-                for name, data in sorted(contents.items()):
-                    info = tarfile.TarInfo(name)
-                    info.size = len(data)
-                    info.mode = 0o644
-                    package.addfile(info, io.BytesIO(data))
+        compressed = ZlibArchiveWriter(output)
+        with tarfile.open(
+            fileobj=compressed, mode="w|", format=tarfile.USTAR_FORMAT
+        ) as package:
+            for name, data in sorted(contents.items()):
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                info.mode = 0o644
+                package.addfile(info, io.BytesIO(data))
+        compressed.finish()
     manifest.write_bytes(manifest_bytes)
     metadata.write_bytes(
         json_bytes(
