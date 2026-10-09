@@ -16,6 +16,7 @@ extern "C" {
 #define H2_LOADER_BLE_COMPACT_PROTOCOL_VERSION 2u
 #define H2_LOADER_BLE_BOARD_MAX 63u
 #define H2_LOADER_BLE_INLINE_BOARD_MAX 32u
+#define H2_LOADER_BLE_LOCAL_NAME_MAX 29u
 
 typedef enum h2_loader_ble_advertising_mode {
     H2_LOADER_BLE_ADVERTISING_EXTENDED = 0,
@@ -49,6 +50,13 @@ typedef struct h2_loader_ble_service_config {
      * only. Missing sinks discard diagnostics; write failures never replace
      * the operation result. No standard-stream fallback is used. */
     const h2_pal_log_api_t *log;
+    /** Optional nonempty complete name, at most LOCAL_NAME_MAX printable ASCII
+     * bytes, copied on open. NULL preserves unnamed advertisements. Legacy mode
+     * reserves identity space when it fits; longer names retain the management
+     * UUID and obtain board/capabilities from connected command status instead.
+     * Extended mode retains identity data. Names are public display metadata,
+     * never credentials or an authenticated device identity. */
+    const char *local_name;
 } h2_loader_ble_service_config_t;
 
 int h2_loader_ble_service_open(

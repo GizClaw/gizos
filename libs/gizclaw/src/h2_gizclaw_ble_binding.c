@@ -7,6 +7,7 @@
 #define BINDING_ORIGIN_MAX 192u
 #define BINDING_ICON_MAX 32u
 #define BINDING_NAME_MAX 160u
+#define BINDING_LOCAL_NAME_MAX 29u
 
 /* Reverse RFC 4122 display order, as required by BLE PAL UUID values. */
 #define BINDING_UUID(slot)                                                     \
@@ -35,6 +36,7 @@ struct h2_gizclaw_ble_binding {
   char origin[BINDING_ORIGIN_MAX + 1u];
   char icon[BINDING_ICON_MAX + 1u];
   char name[BINDING_NAME_MAX + 1u];
+  char local_name[BINDING_LOCAL_NAME_MAX + 1u];
   h2_pal_mutex_t *mutex;
   h2_pal_ble_gatt_service_t service;
   h2_pal_ble_gatt_characteristic_t characteristics[3];
@@ -75,6 +77,15 @@ static bool span_valid(h2_gizclaw_str_t text, size_t max_len) {
 static bool ascii_alnum(unsigned char c) {
   return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
          (c >= '0' && c <= '9');
+}
+
+static bool local_name_valid(h2_gizclaw_str_t text) {
+  if (!span_valid(text, BINDING_LOCAL_NAME_MAX)) return false;
+  for (size_t i = 0u; i < text.len; ++i) {
+    const unsigned char c = (unsigned char)text.data[i];
+    if (c < 0x20u || c > 0x7eu) return false;
+  }
+  return true;
 }
 
 static bool unreserved(unsigned char c) {
@@ -596,7 +607,8 @@ h2_gizclaw_ble_binding_open(const h2_gizclaw_ble_binding_config_t *config,
   if (config == NULL || out_binding == NULL || config->api_key_state == NULL ||
       config->ble == NULL || config->mem == NULL || config->sync == NULL ||
       config->system_event == NULL || !origin_valid(config->server_origin) ||
-      !icon_valid(config->icon) || !name_valid(config->name))
+      !icon_valid(config->icon) || !name_valid(config->name) ||
+      !local_name_valid(config->local_name))
     return H2_PAL_ERR_INVALID_ARG;
   if (config->system_event->vtable == NULL ||
       config->system_event->vtable->subscribe == NULL ||
@@ -616,6 +628,7 @@ h2_gizclaw_ble_binding_open(const h2_gizclaw_ble_binding_config_t *config,
   copy_span(binding->origin, &binding->config.server_origin);
   copy_span(binding->icon, &binding->config.icon);
   copy_span(binding->name, &binding->config.name);
+  copy_span(binding->local_name, &binding->config.local_name);
   binding->conn_handle = H2_PAL_BLE_INVALID_CONN_HANDLE;
   for (size_t i = 0u; i < BINDING_CONNECTION_MAX; ++i)
     binding->connections[i].handle = H2_PAL_BLE_INVALID_CONN_HANDLE;
@@ -740,7 +753,10 @@ h2_gizclaw_ble_binding_start(h2_gizclaw_ble_binding_t *binding) {
   }
   binding->adv_set = set;
   unlock(binding);
-  h2_pal_ble_adv_data_t data = {.service_uuids =
+  h2_pal_ble_adv_data_t data = {.local_name =
+                                  binding->config.local_name.len != 0u
+                                      ? binding->local_name : NULL,
+                                .service_uuids =
                                     &h2_gizclaw_ble_binding_service_uuid,
                                 .service_uuid_count = 1u};
   rc =

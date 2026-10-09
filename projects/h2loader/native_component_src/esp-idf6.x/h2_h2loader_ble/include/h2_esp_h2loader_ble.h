@@ -24,6 +24,11 @@ typedef struct h2_esp_h2loader_app_commands_config {
     uint32_t hardware_capabilities;
     uint32_t h2loader_partition_id;
     uint32_t coredump_partition_id;
+    /** Optional fallback name when Runtime has no canonical product name.
+     * Runtime ble_local_name takes precedence so Loader/App share one spelling.
+     * Borrowed until start completes, then copied by the portable service.
+     * NULL and an unnamed Runtime preserve unnamed advertising. */
+    const char *ble_local_name;
 } h2_esp_h2loader_app_commands_config_t;
 
 /**
