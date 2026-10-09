@@ -687,6 +687,7 @@ static int h2_web_http_request(void *user,
       request->url.len > UINT32_MAX || request->body_len > UINT32_MAX) {
     return H2_PAL_ERR_INVALID_ARG;
   }
+  if (!h2_web_platform_fake_network_available(platform)) return H2_PAL_ERR_UNAVAILABLE;
   // The URL is a byte span. Reject embedded controls before UTF8ToString can
   // truncate it or fetch can reinterpret it relative to the document URL.
   for (size_t index = 0u; index < request->url.len; ++index) {

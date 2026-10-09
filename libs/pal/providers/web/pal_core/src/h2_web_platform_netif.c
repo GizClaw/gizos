@@ -76,6 +76,7 @@ EM_JS(void, h2_web_netif_install_js,
   if (typeof globalThis.addEventListener === 'function') {
     globalThis.addEventListener('online', onchange);
     globalThis.addEventListener('offline', onchange);
+    globalThis.addEventListener('h2-web-environment-change', onchange);
   }
   entries.set(platform_address, entry);
   return 1;
@@ -95,6 +96,7 @@ EM_JS(void, h2_web_netif_uninstall_js,
   if (typeof globalThis.removeEventListener === 'function') {
     globalThis.removeEventListener('online', entry.onchange);
     globalThis.removeEventListener('offline', entry.onchange);
+    globalThis.removeEventListener('h2-web-environment-change', entry.onchange);
   }
 });
 });
@@ -111,7 +113,7 @@ EM_JS(void, h2_web_netif_online_js,
 /* clang-format on */
 
 static bool h2_web_netif_online(h2_web_platform_t *platform) {
-  return platform->netif_supported &&
+  return platform->netif_supported && h2_web_platform_fake_network_available(platform) &&
          ((int)h2_web_main_call(h2_web_netif_online_js, NULL).i32) != 0;
 }
 
