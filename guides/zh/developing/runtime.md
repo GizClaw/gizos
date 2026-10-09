@@ -69,6 +69,10 @@ contract，`poll/wait` 仍要求 caller 提供至少 640 B 的 buffer，并在 b
 `get()`，不复制完整 Board periph inventory；只有实际接受的 mapping 或 mapped
 input source 超出所选容量时才返回 `H2_PAL_ERR_NO_SPACE`。
 
+## 产品蓝牙名称
+
+Board 或 launcher 可以用 Runtime config 的 `ble_local_name` 提供可选的稳定产品广播名称；Runtime 原样借用该字符串直到 deinit，不生成型号或设备后缀。H2Loader 管理与产品 App 通过同一个 Runtime 字段使用名称，产品自己的 spelling、factory address 选择和生命周期留在 consumer。名称最多 29 bytes，只包含公开显示元数据，不含凭据，也不能代替 board／target／capabilities 的协议校验。
+
 ## Wi-Fi 凭据与恢复
 
 Runtime 拥有最多 `H2_RUNTIME_WIFI_SAVED_MAX`（8）条网络的集合。`h2_runtime_wifi_saved_list` 按最近连接优先复制，容量不足时截断，`out_count` 返回实际复制数量，零容量允许空缓冲区。`h2_runtime_wifi_saved_save` 按 SSID 长度及大小写敏感字节值去重，更新凭据并置顶；满额插入新 SSID 时淘汰末尾。`h2_runtime_wifi_saved_remove` 只删除指定 SSID，保留其余顺序，不存在返回 NOT_FOUND；`h2_runtime_wifi_saved_clear` 写入空集合。这些操作不改变 PAL 单条凭据，也不改变当前连接。

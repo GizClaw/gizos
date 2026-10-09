@@ -300,6 +300,7 @@ typedef struct fake_ble {
   h2_pal_result_t register_result, unregister_result;
   unsigned fail_subscribe_at;
   bool read_during_unregister;
+  char local_name[30];
 } fake_ble_t;
 
 static bool uuid_equal(const h2_pal_ble_uuid_t *a, const h2_pal_ble_uuid_t *b) {
@@ -403,7 +404,9 @@ static h2_pal_result_t fake_set_data(void *user, h2_pal_ble_adv_set_t *set,
                                      const h2_pal_ble_adv_data_t *data) {
   fake_ble_t *ble = user;
   assert(set == &ble->set && set->live);
-  assert(data->local_name == NULL && data->service_uuid_count == 1u);
+  assert(data->service_uuid_count == 1u);
+  assert(data->local_name == NULL || strlen(data->local_name) < sizeof(ble->local_name));
+  strcpy(ble->local_name, data->local_name != NULL ? data->local_name : "");
   assert(uuid_equal(data->service_uuids, &h2_gizclaw_ble_binding_service_uuid));
   assert(data->manufacturer_data.len == 0u && data->service_data.len == 0u);
   assert(data->service_data_uuid.len == 0u);
@@ -453,8 +456,9 @@ static void ble_setup(fake_ble_t *ble) {
 static h2_gizclaw_str_t text(const char *value) {
   return (h2_gizclaw_str_t){value, strlen(value)};
 }
-static h2_gizclaw_ble_binding_t *binding_open(test_env_t *env,
-                                              fake_ble_t *ble) {
+static h2_gizclaw_ble_binding_t *binding_open_named(test_env_t *env,
+                                                   fake_ble_t *ble,
+                                                   const char *local_name) {
   h2_gizclaw_ble_binding_config_t config = {
       .api_key_state = env->state,
       .ble = &ble->api,
@@ -463,10 +467,15 @@ static h2_gizclaw_ble_binding_t *binding_open(test_env_t *env,
       .sync = h2_desktop_platform_sync_api(),
       .server_origin = text("https://ap.gizclaw.com"),
       .icon = text("h106_tiga"),
-      .name = text("客厅")};
+      .name = text("客厅"),
+      .local_name = text(local_name)};
   h2_gizclaw_ble_binding_t *binding = NULL;
   assert(h2_gizclaw_ble_binding_open(&config, &binding) == H2_PAL_OK);
   return binding;
+}
+static h2_gizclaw_ble_binding_t *binding_open(test_env_t *env,
+                                              fake_ble_t *ble) {
+  return binding_open_named(env, ble, "");
 }
 static h2_gizclaw_ble_binding_snapshot_t
 binding_snapshot(h2_gizclaw_ble_binding_t *binding) {
@@ -1171,6 +1180,31 @@ static void test_stop_during_reads(void) {
   teardown(&env);
 }
 
+static void test_copied_advertising_name(void) {
+  test_env_t env;
+  fake_ble_t ble;
+  setup(&env, true);
+  ble_setup(&ble);
+  char name[] = "h106-tiga-A1B2C3";
+  h2_gizclaw_ble_binding_t *binding = binding_open_named(&env, &ble, name);
+  memset(name, 'X', sizeof(name) - 1u);
+  assert(h2_gizclaw_ble_binding_start(binding) == H2_PAL_OK);
+  assert(strcmp(ble.local_name, "h106-tiga-A1B2C3") == 0);
+  assert(h2_gizclaw_ble_binding_close(&binding) == H2_PAL_OK);
+  h2_gizclaw_ble_binding_config_t config = {
+      .api_key_state = env.state, .ble = &ble.api, .system_event = &ble.events,
+      .mem = h2_desktop_platform_default_allocator(),
+      .sync = h2_desktop_platform_sync_api(),
+      .server_origin = text("https://ap.gizclaw.com"),
+      .local_name = text("invalid\nname")};
+  assert(h2_gizclaw_ble_binding_open(&config, &binding) == H2_PAL_ERR_INVALID_ARG);
+  assert(binding == NULL);
+  config.local_name = text("012345678901234567890123456789");
+  assert(h2_gizclaw_ble_binding_open(&config, &binding) == H2_PAL_ERR_INVALID_ARG);
+  assert(binding == NULL);
+  teardown(&env);
+}
+
 int main(int argc, char **argv) {
   assert(argc == 2);
   yyjson_doc *fixture = yyjson_read_file(argv[1], 0u, NULL, NULL);
@@ -1185,6 +1219,7 @@ int main(int argc, char **argv) {
   test_reopen_preserves_exposure_deduplication();
   test_quota_wire_and_recovery(root);
   test_stop_during_reads();
+  test_copied_advertising_name();
   yyjson_doc_free(fixture);
   puts("gizclaw BLE binding protocol/lifecycle tests passed");
   return 0;
