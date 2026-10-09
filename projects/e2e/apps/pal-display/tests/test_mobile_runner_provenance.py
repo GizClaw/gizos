@@ -36,7 +36,7 @@ class MobileRunnerProvenanceTest(unittest.TestCase):
         expected = record["current_source_sha256"][qualification.BK_DISPLAY_GUIDE]
         self.assertEqual(self.verify_guide_format(record), expected)
         self.assertEqual(self.historical[qualification.BK_DISPLAY_GUIDE], expected)
-        followup = json.loads((qualification.ROOT / "bk_rgb_buffer_requalification.json").read_text())
+        followup = json.loads((qualification.ROOT / "bk_rgb_buffer_requalification.json").read_text(encoding="utf-8"))
         self.assertNotEqual(followup["current_source_sha256"][qualification.BK_DISPLAY_GUIDE], expected)
         for path, sha in followup["current_source_sha256"].items():
             if path != qualification.BK_DISPLAY_GUIDE:
@@ -102,9 +102,9 @@ class MobileRunnerProvenanceTest(unittest.TestCase):
                 qualification.bk_rgb_buffer_requalification(self.original)
 
     def test_bk_guide_format_cannot_retag_historical_source(self):
-        followup = json.loads((qualification.ROOT / "bk_rgb_buffer_requalification.json").read_text())
-        receipt = json.loads(qualification.Path(followup["board_evidence"]).read_text())
-        build = json.loads(qualification.Path(followup["build_evidence"]).read_text())
+        followup = json.loads((qualification.ROOT / "bk_rgb_buffer_requalification.json").read_text(encoding="utf-8"))
+        receipt = json.loads(qualification.Path(followup["board_evidence"]).read_text(encoding="utf-8"))
+        build = json.loads(qualification.Path(followup["build_evidence"]).read_text(encoding="utf-8"))
         followup["current_source_sha256"][qualification.BK_DISPLAY_GUIDE] = self.guide_format_record()["current_source_sha256"][qualification.BK_DISPLAY_GUIDE]
         with self.assertRaises(AssertionError):
             qualification.verify_bk_rgb_buffers(followup, self.original, receipt, build)
