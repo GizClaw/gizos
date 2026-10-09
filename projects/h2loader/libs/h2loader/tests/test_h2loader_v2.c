@@ -2330,7 +2330,99 @@ static void test_stats_observes_installed_checksum(void) {
   h2_loader_deinit(&fixture.loader);
 }
 
+typedef struct reconnect_probe {
+  unsigned offset;
+  unsigned ready;
+  unsigned write_closed;
+  unsigned replacement_started;
+  unsigned status_attempts;
+  unsigned recovered_status;
+  unsigned explicit_stop;
+  int emit_reset;
+  int close_at_line_end;
+} reconnect_probe_t;
+
+static int reconnect_read(void *user, uint32_t timeout_ms) {
+  reconnect_probe_t *probe = user;
+  static const char input[] = "h2loader status\n";
+  (void)timeout_ms;
+  if (probe->write_closed && !probe->replacement_started) {
+    probe->replacement_started = 1u;
+    probe->offset = 0u;
+    if (probe->emit_reset) return H2_LOADER_APP_CLIENT_SESSION_RESET;
+  }
+  if (probe->offset < sizeof(input) - 1u)
+    return input[probe->offset++];
+  probe->explicit_stop = 1u;
+  return H2_LOADER_APP_CLIENT_SESSION_CLOSED;
+}
+
+static int reconnect_write(void *user, const char *data, size_t len) {
+  reconnect_probe_t *probe = user;
+  static const char ready[] = "H2_LOADER_APP_COMMAND_READY";
+  static const char status[] = "H2_LOADER_STATUS";
+  if (len >= sizeof(ready) - 1u && !memcmp(data, ready, sizeof(ready) - 1u)) {
+    ++probe->ready;
+    return H2_PAL_OK;
+  }
+  if (len >= sizeof(status) - 1u && !memcmp(data, status, sizeof(status) - 1u)) {
+    ++probe->status_attempts;
+    if (!probe->write_closed && !probe->close_at_line_end) {
+      /* A close or replacement during a response aborts this old session. */
+      probe->write_closed = 1u;
+      return H2_PAL_ERR_CLOSED;
+    }
+    if (probe->write_closed) ++probe->recovered_status;
+  }
+  if (probe->close_at_line_end && !probe->write_closed &&
+      probe->status_attempts == 1u && len != 0u && data[len - 1u] == '\n') {
+    /* Native App adapters flush at the logical response line boundary. */
+    probe->write_closed = 1u;
+    return H2_PAL_ERR_CLOSED;
+  }
+  return H2_PAL_OK;
+}
+
+static void test_app_console_survives_closed_response(void) {
+  test_fixture_t fixture;
+  fixture_init(&fixture, 2u);
+  static const h2_pal_http_api_t http = {0};
+  static const h2_pal_wifi_sta_api_t wifi = {0};
+  static const h2_pal_disk_api_t disk = {0};
+  h2_loader_app_client_t client;
+  const h2_loader_app_client_config_t config = {
+      .pref = &fixture.pref, .power = &fixture.power, .allocator = &fixture.mem,
+      .fs = &fixture.fs, .http = &http, .wifi = &wifi, .disk = &disk,
+      .digest = fixture.config.package.digest,
+      .board = "devkit", .target = "esp32s3", .chip = "test",
+      .active_identity = identity(H2_LOADER_IMAGE_ROLE_APP, SHA_A),
+      .hardware_capabilities = H2_LOADER_CAPABILITY_UART,
+      .h2loader_partition_id = 1u, .app_partition_id = 2u,
+      .now_ms = app_test_now, .sleep_ms = app_test_sleep,
+  };
+  assert(h2_loader_app_client_init(&client, &config) == H2_PAL_OK);
+  for (int emit_reset = 0; emit_reset <= 1; ++emit_reset) {
+    for (int close_at_line_end = 0; close_at_line_end <= 1; ++close_at_line_end) {
+      reconnect_probe_t probe = {
+          .emit_reset = emit_reset, .close_at_line_end = close_at_line_end,
+      };
+      const h2_loader_app_client_return_console_config_t console = {
+          .client = &client, .read_user = &probe, .read_byte = reconnect_read,
+          .write_user = &probe, .write = reconnect_write,
+      };
+      assert(h2_loader_app_client_run_return_console(&console) == H2_PAL_OK);
+      assert(probe.ready == 1u && probe.write_closed == 1u);
+      assert(probe.replacement_started == 1u && probe.explicit_stop == 1u);
+      assert(probe.status_attempts == 2u && probe.recovered_status == 1u);
+      assert(client.return_console_private == NULL);
+      assert(client.return_console_task == NULL);
+    }
+  }
+  h2_loader_deinit(&client.loader);
+}
+
 int main(void) {
+  test_app_console_survives_closed_response();
   test_current_loader_identity_ignores_corrupt_metadata();
   test_read_current_loader_identity();
   test_stats_observes_installed_checksum();

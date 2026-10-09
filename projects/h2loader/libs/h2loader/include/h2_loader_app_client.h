@@ -78,9 +78,14 @@ typedef struct h2_loader_app_client_return_console_config {
     h2_loader_app_client_t *client;
     const h2_pal_task_api_t *task;
     void *read_user;
-    /** Returns one byte, EOF when no byte is available, or SESSION_RESET. */
+    /** Returns one byte, EOF when no byte is available, SESSION_RESET for a
+     * new peer, or SESSION_CLOSED when the service transport is permanently
+     * closed. A peer closing its connection does not stop the service. */
     int (*read_byte)(void *user, uint32_t timeout_ms);
     void *write_user;
+    /** A CLOSED response aborts the old peer's command. The console keeps
+     * accepting sessions until read_byte reports permanent SESSION_CLOSED
+     * or the caller explicitly stops the task. */
     h2_loader_app_client_write_fn write;
     const char *task_name;
     size_t stack_size;
@@ -100,8 +105,9 @@ int h2_loader_app_client_coredump(
     const char *subcommand,
     void *write_user,
     h2_loader_app_client_write_fn write);
-/** Run on the calling session task until transport closure. Borrows client and
- * I/O only until return; creates no task and requires exclusive client ownership.
+/** Run on the calling task until permanent service transport closure. Borrows
+ * client and I/O only until return; creates no task and requires exclusive
+ * client ownership.
  * task, task_name and stack_size are unused; the caller supplies command stack. */
 int h2_loader_app_client_run_return_console(
     const h2_loader_app_client_return_console_config_t *config);
