@@ -27,9 +27,9 @@
     "projects/e2e/apps/pal-display/check_qualification.py": "c3fe8defa194ee0691f1b7550fd8d71dca96d460d3a7c317bf403237ba0b2edf"
   },
   "current_source_sha256": {
-    "projects/e2e/apps/pal-display/BUILD.bazel": "a93deaf2dfc4ff1ff802cc2c0e9596c05a32560115e522001f4827f93c6c4c6b",
-    "projects/e2e/apps/pal-display/README.md": "22d22c673c0d56fadc8f68cabd080aedb02706ffb0482a2e4a0e24f1adc7dc5d",
-    "projects/e2e/apps/pal-display/check_qualification.py": "b0b3075903f5aaa277f25b3ac7733dff8563277a9ae53c92a9c911fc88b6e7a9"
+    "projects/e2e/apps/pal-display/BUILD.bazel": "dd080e281c3702030c5178a741b8ab9c4ab1aa284fc59774009f716b2727869e",
+    "projects/e2e/apps/pal-display/README.md": "fe41374d477bedd0cc386244d1e05a47f05f31fe2f528eaec6d0874d36951890",
+    "projects/e2e/apps/pal-display/check_qualification.py": "fab38add0270fdce7ed4a0713fcd50d130a847f19f2f1493c9235d4b941d6e58"
   },
   "scope": "Host audit maintenance only; exact Display catalog section and row remain historical. The shared PAL guide admits only the exact two BK Pref paragraphs and independent Modem-owned sections projected onto their immutable baseline. All other guide bytes, qualification, mobile execution, artifact and hardware identities are unchanged."
 }

@@ -83,14 +83,35 @@ def main():
                                   "addition_utf8": addition.decode("utf-8")},
                                  ensure_ascii=False, indent=2) + "\n").encode()
     provenance_path = root / "shared_catalog_provenance.json"
+    guide_path = qualification.BK_DISPLAY_GUIDE
+    guide_anchor = qualification.BK_DISPLAY_GUIDE_FORMAT_COMMIT
+    guide_baseline = subprocess.check_output(["git", "show", f"{guide_anchor}:{guide_path}"])
+    guide_current = Path(guide_path).read_bytes()
+    assert guide_current == qualification.formatted_bk_display_guide(guide_baseline)
+    guide_record = {
+        "schema": 1,
+        "new_physical_run_claimed": False,
+        "source_commit": guide_anchor,
+        "source_path": guide_path,
+        "baseline_sha256": sha256(guide_baseline),
+        "baseline_utf8": guide_baseline.decode("utf-8"),
+        "paragraph_prefixes_utf8": [
+            prefix for prefix, _ in qualification.BK_DISPLAY_GUIDE_FORMAT_PARAGRAPHS],
+        "current_source_sha256": {guide_path: sha256(guide_current)},
+        "scope": qualification.BK_DISPLAY_GUIDE_FORMAT_SCOPE,
+    }
+    guide_encoded = (json.dumps(guide_record, ensure_ascii=False, indent=2) + "\n").encode()
+    guide_provenance_path = root / "bk_display_guide_format_provenance.json"
     if args.apply:
         baseline_path.write_bytes(baseline)
         addition_path.write_bytes(addition_record)
         provenance_path.write_bytes(encoded)
+        guide_provenance_path.write_bytes(guide_encoded)
     else:
         assert baseline_path.read_bytes() == baseline
         assert addition_path.read_bytes() == addition_record
         assert provenance_path.read_bytes() == encoded
+        assert guide_provenance_path.read_bytes() == guide_encoded
     print("PASS immutable catalog baseline and separate host audit provenance")
 
 
