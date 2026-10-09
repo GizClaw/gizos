@@ -18,7 +18,9 @@ int mosaico_camera_get_frame(mosaico_camera_handle_t p, mosaico_camera_frame_t *
 int mosaico_camera_return_frame(mosaico_camera_handle_t p,const mosaico_camera_frame_t *f) {
     (void)p;assert(f->data==bytes);++returns;return give_error;
 }
+void h2_test_camera_cpp_linkage(void);
 int main(void) {
+    h2_test_camera_cpp_linkage();
     const h2_pal_camera_api_t *a=h2_mosaico_camera();
     h2_pal_camera_frame_t f,other,old;
     assert(h2_pal_camera_start(NULL)==H2_PAL_ERR_UNSUPPORTED);
