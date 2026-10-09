@@ -16,8 +16,12 @@ extern "C" {
  *
  * Creates the Web platform, optionally the persistent Filesystem and the LVGL
  * platform, assembles a Runtime with every Web provider (Display, Touch,
- * Audio, decoders, HTTP, WebRTC, Netif, System Event, Pref, Crypto, Timer)
- * and the canonical unsupported APIs elsewhere, runs the App entry in a task,
+ * Audio, decoders, HTTP, WebRTC, Netif, System Event, Pref, Crypto, Timer,
+ * and LED output for board-owned Periph descriptors)
+ * and the canonical unsupported APIs elsewhere. Explicit Module.h2WebEnvironment
+ * configuration opts into fake Wi-Fi/settings/modem (see the Web guide).
+ * Missing configuration keeps radios unsupported; simulated radio state never
+ * fabricates a server connection. The host runs the App entry in a task,
  * pumps until it returns, and tears everything down. Progress and the result
  * go to the console and #status as
  *   H2_WEB_APP name=<name> stage=running
