@@ -71,7 +71,7 @@ input source 超出所选容量时才返回 `H2_PAL_ERR_NO_SPACE`。
 
 ## 产品蓝牙名称
 
-Board 或 launcher 可以用 Runtime config 的 `ble_local_name` 提供可选的稳定产品广播名称；Runtime 原样借用该字符串直到 deinit，不生成型号或设备后缀。H2Loader 管理与产品 App 通过同一个 Runtime 字段使用名称，产品自己的 spelling、factory address 选择和生命周期留在 consumer。名称最多 29 bytes，只包含公开显示元数据，不含凭据，也不能代替 board／target／capabilities 的协议校验。
+Board 或 launcher 可以用 Runtime config 的 `ble_local_name` 提供可选的稳定产品广播名称；Runtime 原样借用该字符串直到 deinit，不生成型号或设备后缀。H2Loader 管理与产品 App 通过同一个 Runtime 字段使用名称，产品自己的 spelling、factory address 选择和生命周期留在 consumer。名称必须是非空、最多 29 bytes 的 printable ASCII；无效名称使初始化返回 INVALID_ARG。它只包含公开显示元数据，不含凭据，也不能代替 board／target／capabilities 的协议校验。
 
 ## Wi-Fi 凭据与恢复
 
