@@ -259,11 +259,7 @@ metadata、重复 terminal 和反向通道由本地 unit/受控 Pion 测试负�
 label，不使用 Make 聚合入口。Live E2E 通过 exact label 请求 `manual` target，并使用
 `--cache_test_results=no`，防止默认自动测试触发外部服务或复用旧结果。
 
-默认 package test 通过 `//libs/pal/providers/desktop/app_support:network_services_test` 验证 wolfSSL、CoreMQTT、H2SCTP 与 H2Peer 的初始化顺序、API wiring 和反向清理。Portable MQTT live flow 属于
-`//projects/e2e/apps/pal-mqtt/app:pal_mqtt_e2e`；
-`//projects/e2e/targets/cc_binary/pal-mqtt:desktop_test` 装配真实 Desktop provider 与受控
-TCP/TLS broker fixture，执行完整 36-case 合同并验证 ACK、事件、TLS 拒绝和清理。
-访问公共 broker 的独立 smoke target 按需执行，不代表完整 MQTT 资格：
+默认 package test 通过 `//libs/pal/providers/desktop/app_support:network_services_test` 验证 wolfSSL、CoreMQTT、H2SCTP 与 H2Peer 的初始化顺序、API wiring 和反向清理。Portable MQTT live flow 属于 `//projects/e2e/apps/pal-mqtt/app:pal_mqtt_e2e`； `//projects/e2e/targets/cc_binary/pal-mqtt:desktop_test` 装配真实 Desktop provider 与受控 TCP/TLS broker fixture，执行完整 36-case 合同并验证 ACK、事件、TLS 拒绝和清理。 访问公共 broker 的独立 smoke target 按需执行，不代表完整 MQTT 资格：
 
 ```sh
 bazel test --config=macos_arm64 --cache_test_results=no \

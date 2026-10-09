@@ -154,18 +154,9 @@ SDK locator 使用 `JIELI_AC707N_SDK_PATH`，由 firmware-devenv 导出为
 `h2vivi/e_badge_707_sdk_200@d0167685d032d745d88fe50233302edd46941622`。
 这是 2.0.0 系列吧唧 SDK；头文件位于 `interface`。
 
-`boards/ac707n_chip/ac707n/layouts/compile_only` 保留 SDK 的 BR35 startup、
-CPU/system/config/VM/FS/device 库和链接脚本配置。旧 PAL Core launcher、普通
-firmware 与 H2Loader package 入口已经下线；独立 `pal-core` 尚无 AC707N
-launcher。JieLi 之前未进行 PAL E2E v2 验收，当前已纳入后续平台接入缺口；
-旧入口清理与待补范围记录在 `projects/e2e/apps/README.md`。
-保留的 toolchain/layout 不表示仍有完整 Runtime E2E image。
+`boards/ac707n_chip/ac707n/layouts/compile_only` 保留 SDK 的 BR35 startup、 CPU/system/config/VM/FS/device 库和链接脚本配置。旧 PAL Core launcher、普通 firmware 与 H2Loader package 入口已经下线；独立 `pal-core` 尚无 AC707N launcher。JieLi 之前未进行 PAL E2E v2 验收，当前已纳入后续平台接入缺口； 旧入口清理与待补范围记录在 `projects/e2e/apps/README.md`。 保留的 toolchain/layout 不表示仍有完整 Runtime E2E image。
 
-firmware-devenv 的 `make jieli-ac707n-toolchain-check` 可以另行验证 BR35 参数下
-的编译及 `r3-large` 运行库链接，不代表硬件运行验收。当前 compile-only 配置
-采用 8 MiB Flash、24 MHz 晶振和 PB07 reset，实际板卡必须另建并验证板级配置。
-设备端 H2Loader UFW 安装、Loader/App 选择及回退仍需 BR35 专用 backend 验收，
-普通 SDK 双 bank OTA 不代表已完成 H2Loader 启动协议。
+firmware-devenv 的 `make jieli-ac707n-toolchain-check` 可以另行验证 BR35 参数下 的编译及 `r3-large` 运行库链接，不代表硬件运行验收。当前 compile-only 配置 采用 8 MiB Flash、24 MHz 晶振和 PB07 reset，实际板卡必须另建并验证板级配置。 设备端 H2Loader UFW 安装、Loader/App 选择及回退仍需 BR35 专用 backend 验收， 普通 SDK 双 bank OTA 不代表已完成 H2Loader 启动协议。
 
 BR35 PAL core 在 `native_component_src/jieli/br35/h2_pal_core`，使用 UCOS，
 仅 CPU0；互斥量采用二值信号量，零等待在关中断区域查询并消费已有 token，
