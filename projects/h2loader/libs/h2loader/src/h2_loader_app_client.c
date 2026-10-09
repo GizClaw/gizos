@@ -218,10 +218,13 @@ static int run_return_console(void *ctx) {
     while (!h2_atomic_bool_load(&console->stop_requested, H2_ATOMIC_ACQUIRE)) {
         int rc = h2_loader_command_poll(
             &console->command, H2_LOADER_APP_CLIENT_POLL_MS);
-        if (console->session_closed || rc == H2_PAL_ERR_CLOSED) break;
-        if (console->session_reset) {
+        if (console->session_closed) break;
+        /* CLOSED from an old peer's response ends that session, not the
+         * device's management service. Native owners keep accepting opens. */
+        if (console->session_reset || rc == H2_PAL_ERR_CLOSED) {
             console->session_reset = 0;
-            (void)h2_loader_command_init(&console->command, &config);
+            int reset_rc = h2_loader_command_init(&console->command, &config);
+            if (reset_rc != H2_PAL_OK) return reset_rc;
         }
     }
     return H2_PAL_OK;

@@ -264,6 +264,128 @@ def shared_pal_guide(previous, extension):
     assert hashlib.sha256(restored).hexdigest() == previous[SHARED_PAL_GUIDE], (
         "shared PAL guide changed outside the exact BK Pref addition and Modem-owned sections")
 
+BK_DISPLAY_GUIDE = "guides/apps/h2loader/boards/bk7258_v3_202405/display.md"
+BK_DISPLAY_GUIDE_FORMAT_COMMIT = "75d83ca4a9c9297cc7018ce3d2d0cdb0be87fe84"
+BK_DISPLAY_GUIDE_FORMAT_BASELINE_SHA256 = "c8505cc1e667add97a78e1720b7ecab58248a207d0ac1c705dd3a174d67c1574"
+BK_DISPLAY_GUIDE_FORMAT_SCOPE = "Host audit only; join soft line breaks in the two named paragraphs. Original framebuffer and hardware receipts remain unchanged."
+# Fixed joins preserve word boundaries; Chinese words split by the former
+# print width reconnect without adding spaces. No other whitespace is changed.
+BK_DISPLAY_GUIDE_FORMAT_PARAGRAPHS = (
+    ("RGB Display 在 open 时保留", (b"", b" ", b"", b"", b" ")),
+    ("诊断 image 可以仅为", (b" ", b"", b" ", b"", b" ", b" ")),
+)
+
+
+def formatted_bk_display_guide(baseline):
+    """A closed recipe over independently authenticated historical bytes."""
+    assert hashlib.sha256(baseline).hexdigest() == BK_DISPLAY_GUIDE_FORMAT_BASELINE_SHA256, (
+        "historical BK Display guide baseline changed")
+    paragraphs = baseline.split(b"\n\n")
+    for prefix, joins in BK_DISPLAY_GUIDE_FORMAT_PARAGRAPHS:
+        matches = [index for index, paragraph in enumerate(paragraphs)
+                   if paragraph.startswith(prefix.encode("utf-8"))]
+        assert len(matches) == 1, "missing or duplicate format-owned paragraph"
+        index = matches[0]
+        lines = paragraphs[index].split(b"\n")
+        assert len(lines) == len(joins) + 1
+        paragraphs[index] = lines[0] + b"".join(
+            join + line for join, line in zip(joins, lines[1:]))
+    return b"\n\n".join(paragraphs)
+
+
+def bk_display_guide_format_source(historical_sha256):
+    """Prove only this guide's exact two-paragraph format maintenance."""
+    assert historical_sha256 == BK_DISPLAY_GUIDE_FORMAT_BASELINE_SHA256
+    record = json.JSONDecoder().decode(
+        (ROOT / "bk_display_guide_format_provenance.json").read_text(encoding="utf-8"))
+    assert set(record) == {"schema", "new_physical_run_claimed", "source_commit",
+                           "source_path", "baseline_sha256", "baseline_utf8",
+                           "paragraph_prefixes_utf8", "current_source_sha256", "scope"}
+    assert record["schema"] == 1 and record["new_physical_run_claimed"] is False
+    assert record["source_commit"] == BK_DISPLAY_GUIDE_FORMAT_COMMIT
+    assert record["source_path"] == BK_DISPLAY_GUIDE
+    assert record["baseline_sha256"] == BK_DISPLAY_GUIDE_FORMAT_BASELINE_SHA256
+    assert record["paragraph_prefixes_utf8"] == [
+        prefix for prefix, _ in BK_DISPLAY_GUIDE_FORMAT_PARAGRAPHS]
+    assert record["scope"] == BK_DISPLAY_GUIDE_FORMAT_SCOPE
+    baseline = record["baseline_utf8"].encode("utf-8")
+    current = Path(BK_DISPLAY_GUIDE).read_bytes()
+    assert current == formatted_bk_display_guide(baseline), (
+        "BK Display guide changed outside the exact two-paragraph soft-line joins")
+    current_sha256 = hashlib.sha256(current).hexdigest()
+    assert record["current_source_sha256"] == {BK_DISPLAY_GUIDE: current_sha256}
+    return current_sha256
+
+
+BK_RGB_BUFFER_SOURCES = {
+    "boards/bk7258_v3_202405/bk7258/BUILD.bazel",
+    "boards/bk7258_v3_202405/bk7258/ap/BUILD.bazel",
+    "boards/bk7258_v3_202405/bk7258/ap/src/h2_bk7258_board_display.c",
+    "boards/bk7258_v3_202405/bk7258/ap/src/h2_bk7258_display_buffer.h",
+    "boards/bk7258_v3_202405/bk7258/ap/tests/test_h2_bk7258_display_buffer.c",
+    BK_DISPLAY_GUIDE,
+}
+
+
+def verify_bk_rgb_buffers(followup, historical, receipt, build):
+    """Bind only the changed BK buffer sources to fresh physical execution."""
+    assert followup["schema"] == 1 and followup["new_physical_run_claimed"] is True
+    assert hashlib.sha256((ROOT / "qualification.json").read_bytes()).hexdigest() == followup["historical_qualification_sha256"]
+    assert re.fullmatch(r"[0-9a-f]{40}", followup["source_snapshot_commit"])
+    assert receipt["source_snapshot_commit"] == followup["source_snapshot_commit"]
+    current = followup["current_source_sha256"]
+    assert set(current) == BK_RGB_BUFFER_SOURCES
+    assert followup["historical_source_sha256"] == {
+        path: historical[path] for path in current if path in historical}
+    verified_sources = dict(current)
+    for path, expected in current.items():
+        if path == BK_DISPLAY_GUIDE:
+            verified_sources[path] = bk_display_guide_format_source(expected)
+        else:
+            assert hashlib.sha256(Path(path).read_bytes()).hexdigest() == expected, path
+    assert receipt["board"] == "bk7258_v3_202405"
+    assert receipt["new_physical_run_claimed"] is True
+    assert receipt["driver_qualified"] and receipt["panel_qualified"]
+    assert receipt["optical_verified"] is False
+    first, second = receipt["install_boot"], receipt["independent_normal_reboot"]
+    assert first["log_sha256"] != second["log_sha256"]
+    for boot in (first, second):
+        assert boot["fresh_boot"] and boot["confirmed"]
+        assert boot["version"] == receipt["version"]
+        assert re.fullmatch(r"[0-9a-f]{64}", boot["log_sha256"])
+        report(boot["qualified"], boot["cases"])
+        observations = boot["real_driver_observations_received"]
+        assert 0 < len(observations) <= 23
+        assert all("rc=0" in item for item in observations)
+        if len(observations) < 23:
+            assert boot["transport_limitation"]
+    physical = receipt["physical_observation"]
+    assert physical["status"] == "PASS" and physical["source"] == "user"
+    assert physical["pattern_observed"] and physical["stable_image_observed"]
+    before, final = receipt["before_status"], receipt["final_status"]
+    for key in ("device_uid", "partition_1_package_checksum", "partition_1_image_checksum"):
+        assert before[key] == final[key]
+    assert physical["device_uid"] == final["device_uid"]
+    manifest = build["package_manifest"]
+    assert manifest["role"] == "app" and manifest["board"] == receipt["board"]
+    assert physical["image_version"] == receipt["version"] == manifest["version"] == final["active_version"]
+    assert physical["image_sha256"] == final["active_checksum"] == manifest["image_sha256"]
+    assert final["partition_2_package_checksum"] == receipt["package_sha256"] == build["assets"][0]["sha256"]
+    for key, expected in {"active_role": "app", "stage_valid": "0",
+                          "running_partition": "2", "next_partition": "2",
+                          "last_result": "0"}.items():
+        assert final[key] == expected
+    assert receipt["brightness_validation"] == {
+        "mandatory_cases": "PASS", "optical_measurement": "NOT_MEASURED"}
+    return {**historical, **verified_sources}
+
+
+def bk_rgb_buffer_requalification(historical):
+    followup = json.loads((ROOT / "bk_rgb_buffer_requalification.json").read_text(encoding="utf-8"))
+    receipt = json.loads(Path(followup["board_evidence"]).read_text(encoding="utf-8"))
+    build = json.loads(Path(followup["build_evidence"]).read_text(encoding="utf-8"))
+    return verify_bk_rgb_buffers(followup, historical, receipt, build)
+
 
 def runner_refactor(historical):
     """Check new mobile observations without relabeling old board evidence."""
@@ -331,7 +453,7 @@ def main():
         "macos", "wasm", "ios", "android", "amoled", "bk7258"}
     assert len(value["platforms"]) == 6
     overrides = value.get("review_fix_source_sha256", {})
-    runner_refactor({**value["source_sha256"], **overrides})
+    runner_refactor(bk_rgb_buffer_requalification({**value["source_sha256"], **overrides}))
     if overrides:
         fix = value["review_fix_validation"]
         assert value["source_snapshot_commit"]
@@ -359,7 +481,7 @@ def main():
     for path in ["h2_pal_display_e2e.c", "h2_sdl3_display.cpp"]:
         assert coverage[path]["functions"]["percent"] > 50
         assert coverage[path]["lines"]["percent"] > 50
-    print("PAL Display: historical six-platform qualification and shared mobile runner evidence verified; no new physical run claimed")
+    print("PAL Display: historical six-platform/mobile/BK RGB receipts preserved; framebuffer bytes and exact guide-format maintenance verified")
 
 
 if __name__ == "__main__":

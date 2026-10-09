@@ -10,8 +10,126 @@ import check_qualification as qualification
 class MobileRunnerProvenanceTest(unittest.TestCase):
     def setUp(self):
         old = json.loads((qualification.ROOT / "qualification.json").read_text(encoding="utf-8"))
-        self.historical = {**old["source_sha256"], **old["review_fix_source_sha256"]}
+        self.original = {**old["source_sha256"], **old["review_fix_source_sha256"]}
+        self.historical = qualification.bk_rgb_buffer_requalification(self.original)
         self.followup = json.loads((qualification.ROOT / "mobile_runner_refactor.json").read_text(encoding="utf-8"))
+
+    def guide_format_record(self):
+        return json.loads((qualification.ROOT / "bk_display_guide_format_provenance.json").read_text(encoding="utf-8"))
+
+    def verify_guide_format(self, record, guide=None):
+        fixture_path = qualification.ROOT / "bk_display_guide_format_provenance.json"
+        guide_path = qualification.Path(qualification.BK_DISPLAY_GUIDE)
+        original_text = qualification.Path.read_text
+        original_bytes = qualification.Path.read_bytes
+        def read_text(source, *args, **kwargs):
+            return json.JSONEncoder().encode(record) if source == fixture_path else original_text(source, *args, **kwargs)
+        def read_bytes(source):
+            return guide if guide is not None and source == guide_path else original_bytes(source)
+        with patch.object(qualification.Path, "read_text", new=read_text), patch.object(
+                qualification.Path, "read_bytes", new=read_bytes):
+            return qualification.bk_display_guide_format_source(
+                qualification.BK_DISPLAY_GUIDE_FORMAT_BASELINE_SHA256)
+
+    def test_exact_bk_guide_format_projects_only_the_doc_hash(self):
+        record = self.guide_format_record()
+        expected = record["current_source_sha256"][qualification.BK_DISPLAY_GUIDE]
+        self.assertEqual(self.verify_guide_format(record), expected)
+        self.assertEqual(self.historical[qualification.BK_DISPLAY_GUIDE], expected)
+        followup = json.loads((qualification.ROOT / "bk_rgb_buffer_requalification.json").read_text(encoding="utf-8"))
+        self.assertNotEqual(followup["current_source_sha256"][qualification.BK_DISPLAY_GUIDE], expected)
+        for path, sha in followup["current_source_sha256"].items():
+            if path != qualification.BK_DISPLAY_GUIDE:
+                self.assertEqual(self.historical[path], sha)
+
+    def test_bk_guide_format_rejects_semantic_structure_and_other_format_changes(self):
+        current = qualification.Path(qualification.BK_DISPLAY_GUIDE).read_bytes()
+        variants = [
+            current.replace(b"canonical shadow", b"mutable shadow", 1),
+            current.replace("## 预期表现".encode(), "## Another section".encode(), 1),
+            current.replace(b"H2_BK7258_DISPLAY_DIAGNOSTICS=1", b"H2_BK7258_DISPLAY_DIAGNOSTICS=0", 1),
+            current.replace("H050IWV 800×480 RGB".encode(), "H050IWV 800×480 QSPI".encode(), 1),
+            current.replace("dirty 矩形".encode(), "dirty矩形".encode(), 1),
+            current + b"\n```c\nchanged_driver();\n```\n",
+        ]
+        for guide in variants:
+            self.assertNotEqual(current, guide)
+            record = self.guide_format_record()
+            record["current_source_sha256"][qualification.BK_DISPLAY_GUIDE] = qualification.hashlib.sha256(guide).hexdigest()
+            with self.assertRaises(AssertionError):
+                self.verify_guide_format(record, guide)
+
+    def test_bk_guide_format_baseline_and_hash_cannot_be_rebound(self):
+        for rewrite_hash in (False, True):
+            record = self.guide_format_record()
+            record["baseline_utf8"] = record["baseline_utf8"].replace("canonical shadow", "mutable shadow", 1)
+            if rewrite_hash:
+                record["baseline_sha256"] = qualification.hashlib.sha256(record["baseline_utf8"].encode()).hexdigest()
+            guide = qualification.Path(qualification.BK_DISPLAY_GUIDE).read_bytes().replace(b"canonical shadow", b"mutable shadow", 1)
+            record["current_source_sha256"][qualification.BK_DISPLAY_GUIDE] = qualification.hashlib.sha256(guide).hexdigest()
+            with self.assertRaises(AssertionError):
+                self.verify_guide_format(record, guide)
+
+    def test_bk_guide_format_scope_cannot_expand_or_claim_physical_execution(self):
+        original = self.guide_format_record()
+        provider = "boards/bk7258_v3_202405/bk7258/ap/src/h2_bk7258_board_display.c"
+        provider_sha = qualification.hashlib.sha256(qualification.Path(provider).read_bytes()).hexdigest()
+        variants = []
+        record = copy.deepcopy(original)
+        record["current_source_sha256"][provider] = provider_sha
+        variants.append(record)
+        record = copy.deepcopy(original)
+        record["source_path"] = provider
+        variants.append(record)
+        record = copy.deepcopy(original)
+        record["paragraph_prefixes_utf8"].append("H050IWV 800×480 RGB")
+        variants.append(record)
+        record = copy.deepcopy(original)
+        record["new_physical_run_claimed"] = True
+        variants.append(record)
+        for record in variants:
+            with self.assertRaises(AssertionError):
+                self.verify_guide_format(record)
+
+    def test_bk_guide_format_cannot_hide_changed_framebuffer_bytes(self):
+        provider = qualification.Path("boards/bk7258_v3_202405/bk7258/ap/src/h2_bk7258_board_display.c")
+        changed = provider.read_bytes() + b"\nchanged_framebuffer_source\n"
+        original_read = qualification.Path.read_bytes
+        def read(source):
+            return changed if source == provider else original_read(source)
+        with patch.object(qualification.Path, "read_bytes", new=read):
+            with self.assertRaises(AssertionError):
+                qualification.bk_rgb_buffer_requalification(self.original)
+
+    def test_bk_guide_format_cannot_retag_historical_source(self):
+        followup = json.loads((qualification.ROOT / "bk_rgb_buffer_requalification.json").read_text(encoding="utf-8"))
+        receipt = json.loads(qualification.Path(followup["board_evidence"]).read_text(encoding="utf-8"))
+        build = json.loads(qualification.Path(followup["build_evidence"]).read_text(encoding="utf-8"))
+        followup["current_source_sha256"][qualification.BK_DISPLAY_GUIDE] = self.guide_format_record()["current_source_sha256"][qualification.BK_DISPLAY_GUIDE]
+        with self.assertRaises(AssertionError):
+            qualification.verify_bk_rgb_buffers(followup, self.original, receipt, build)
+
+    def test_new_bk_receipt_cannot_hide_an_unqualified_source_or_failed_case(self):
+        followup = json.loads((qualification.ROOT / "bk_rgb_buffer_requalification.json").read_text(encoding="utf-8"))
+        receipt = json.loads(qualification.Path(followup["board_evidence"]).read_text(encoding="utf-8"))
+        build = json.loads(qualification.Path(followup["build_evidence"]).read_text(encoding="utf-8"))
+        qualification.verify_bk_rgb_buffers(followup, self.original, receipt, build)
+        wrong = copy.deepcopy(followup)
+        wrong["current_source_sha256"]["libs/pal/providers/sdl3/src/h2_sdl3_display.cpp"] = "0" * 64
+        with self.assertRaises(AssertionError):
+            qualification.verify_bk_rgb_buffers(wrong, self.original, receipt, build)
+        wrong = copy.deepcopy(receipt)
+        wrong["independent_normal_reboot"]["cases"][0]["status"] = "FAIL"
+        with self.assertRaises(AssertionError):
+            qualification.verify_bk_rgb_buffers(followup, self.original, wrong, build)
+        wrong = copy.deepcopy(receipt)
+        wrong["independent_normal_reboot"]["log_sha256"] = wrong["install_boot"]["log_sha256"]
+        with self.assertRaises(AssertionError):
+            qualification.verify_bk_rgb_buffers(followup, self.original, wrong, build)
+        wrong = copy.deepcopy(receipt)
+        wrong["physical_observation"]["stable_image_observed"] = False
+        with self.assertRaises(AssertionError):
+            qualification.verify_bk_rgb_buffers(followup, self.original, wrong, build)
 
     def verify(self, followup):
         with patch.object(qualification.json, "loads", return_value=followup):

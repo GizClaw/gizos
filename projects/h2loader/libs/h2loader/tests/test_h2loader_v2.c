@@ -45,6 +45,8 @@ typedef struct test_fixture {
   int commit_result;
   unsigned commit_fail_at;
   unsigned commits;
+  int pref_open_result;
+  int pref_close_result;
 
   uint32_t running_partition;
   uint32_t next_partition;
@@ -73,6 +75,8 @@ typedef struct test_fixture {
   int read_after_finish;
   uint8_t digest_byte;
   int digest_finish_result;
+  unsigned digest_aborts;
+  size_t digest_bytes;
 
   int package_present;
   unsigned package_removes;
@@ -107,8 +111,8 @@ static pref_record_t *find_record(test_fixture_t *fixture, const char *key) {
 }
 
 static int pref_close(h2_pal_pref_namespace_t *ns) {
-  (void)ns;
-  return H2_PAL_OK;
+  test_fixture_t *fixture = ns->user;
+  return fixture->pref_close_result;
 }
 
 static int pref_get_blob(h2_pal_pref_namespace_t *ns,
@@ -266,6 +270,7 @@ static int pref_open(void *user, const char *name_space,
   test_fixture_t *fixture = user;
   (void)mode;
   assert(strcmp(name_space, H2_LOADER_PREF_NAMESPACE) == 0);
+  if (fixture->pref_open_result != H2_PAL_OK) return fixture->pref_open_result;
   fixture->ns = (h2_pal_pref_namespace_t){
       .user = fixture,
       .close = pref_close,
@@ -419,12 +424,12 @@ static void image_abort(void *user) {
 }
 
 static int digest_start(void *user) {
-  (void)user;
+  ((test_fixture_t *)user)->digest_bytes = 0u;
   return H2_PAL_OK;
 }
 
 static int digest_update(void *user, const uint8_t *data, size_t len) {
-  (void)user;
+  ((test_fixture_t *)user)->digest_bytes += len;
   (void)data;
   (void)len;
   return H2_PAL_OK;
@@ -438,7 +443,7 @@ static int digest_finish(void *user, uint8_t out[32]) {
   return H2_PAL_OK;
 }
 
-static void digest_abort(void *user) { (void)user; }
+static void digest_abort(void *user) { ++((test_fixture_t *)user)->digest_aborts; }
 
 static h2_loader_image_identity_t identity(h2_loader_image_role_t role,
                                            const char *sha) {
@@ -2164,6 +2169,98 @@ static void test_size_argument_accepts_only_bounded_decimal(void) {
   check_size_argument("0", 1);
 }
 
+static int larger_app_capacity(void *user, uint32_t partition, uint64_t *out) {
+  (void)user;
+  if (partition != 1u && partition != 2u) return H2_PAL_ERR_NOT_FOUND;
+  *out = partition == 1u ? 128u : 256u;
+  return H2_PAL_OK;
+}
+
+static void test_read_current_loader_identity(void) {
+  test_fixture_t fixture;
+  fixture_init(&fixture, 1u);
+  /* Corrupt legacy MFG data must not be read, migrated or rewritten by this
+   * identity-only operation. The regular Loader lifecycle owns that policy. */
+  fixture.records[3].present = 1;
+  fixture.records[3].len = 1u;
+  fixture.records[3].data[0] = 0xffu;
+  h2_loader_image_identity_t actual = {0};
+  assert(h2_loader_read_current_loader_identity(&fixture.config, "0.2.0", &actual) == H2_PAL_OK);
+  assert(actual.image_size == 128u && fixture.digest_bytes == 128u);
+  assert(fixture.commits == 0u && fixture.records[3].len == 1u &&
+         fixture.records[3].data[0] == 0xffu);
+  assert(strcmp(actual.image_sha256, SHA_A) == 0 && strcmp(actual.board, "devkit") == 0);
+  h2_loader_metadata_t stored = metadata(H2_LOADER_IMAGE_ROLE_H2LOADER, SHA_A);
+  write_metadata(&fixture, H2_LOADER_METADATA_SLOT_PARTITION_1, &stored);
+  assert(h2_loader_read_current_loader_identity(&fixture.config, "0.2.0", &actual) == H2_PAL_OK);
+  assert(actual.image_size == 64u && fixture.digest_bytes == 64u);
+  fixture.digest_byte = 0xcdu;
+  assert(h2_loader_read_current_loader_identity(&fixture.config, "0.2.0", &actual) == H2_PAL_ERR_FORMAT);
+  assert(actual.format == 0u && actual.image_size == 0u);
+  fixture.digest_byte = 0xabu;
+  fixture.running_partition = 2u;
+  h2_loader_image_reader_vtable_t reader_ops = *fixture.reader.vtable;
+  reader_ops.get_capacity = larger_app_capacity;
+  fixture.reader.vtable = &reader_ops;
+  /* A candidate's larger physical App capacity must not change Loader size. */
+  assert(h2_loader_read_current_loader_identity(&fixture.config, "0.2.0", &actual) == H2_PAL_OK);
+  assert(actual.image_size == 128u && fixture.digest_bytes == 128u);
+  write_metadata(&fixture, H2_LOADER_METADATA_SLOT_PARTITION_2, &stored);
+  assert(h2_loader_read_current_loader_identity(&fixture.config, "0.2.0", &actual) == H2_PAL_OK);
+  assert(actual.image_size == 64u && fixture.digest_bytes == 64u);
+  fixture.reader_result = H2_PAL_ERR_IO;
+  assert(h2_loader_read_current_loader_identity(&fixture.config, "0.2.0", &actual) == H2_PAL_ERR_IO);
+  assert(actual.format == 0u && fixture.digest_aborts == 1u);
+  fixture.reader_result = H2_PAL_OK;
+  fixture.digest_finish_result = H2_PAL_ERR_IO;
+  assert(h2_loader_read_current_loader_identity(&fixture.config, "0.2.0", &actual) == H2_PAL_ERR_IO);
+  assert(actual.format == 0u && fixture.digest_aborts == 2u);
+  fixture.running_partition = 9u;
+  assert(h2_loader_read_current_loader_identity(&fixture.config, "0.2.0", &actual) == H2_PAL_ERR_INVALID_STATE);
+  fixture.config.package.digest.update = NULL;
+  assert(h2_loader_read_current_loader_identity(&fixture.config, "0.2.0", &actual) == H2_PAL_ERR_INVALID_ARG);
+}
+
+static void test_current_loader_identity_ignores_corrupt_metadata(void) {
+  for (uint32_t partition = 1u; partition <= 2u; ++partition) {
+    test_fixture_t fixture;
+    fixture_init(&fixture, partition);
+    pref_record_t *record = &fixture.records[partition];
+    record->present = 1;
+    record->len = 1u;
+    record->data[0] = 0xffu;
+    h2_loader_image_identity_t actual = {0};
+    assert(h2_loader_read_current_loader_identity(
+               &fixture.config, "0.2.0", &actual) == H2_PAL_OK);
+    assert(actual.image_size == 128u && fixture.digest_bytes == 128u);
+    assert(strcmp(actual.image_sha256, SHA_A) == 0);
+    assert(fixture.commits == 0u && record->len == 1u && record->data[0] == 0xffu);
+
+    /* A decoded but invalid identity must not supply a partially decoded size. */
+    h2_loader_metadata_t stored = metadata(H2_LOADER_IMAGE_ROLE_H2LOADER, SHA_A);
+    const h2_loader_metadata_slot_t slot = partition == 1u
+        ? H2_LOADER_METADATA_SLOT_PARTITION_1 : H2_LOADER_METADATA_SLOT_PARTITION_2;
+    write_metadata(&fixture, slot, &stored);
+    record->data[16] = 0xffu;
+    unsigned commits = fixture.commits;
+    assert(h2_loader_read_current_loader_identity(
+               &fixture.config, "0.2.0", &actual) == H2_PAL_OK);
+    assert(actual.image_size == 128u && fixture.digest_bytes == 128u);
+    assert(fixture.commits == commits && record->data[16] == 0xffu);
+
+    /* Genuine backend failures must not become a successful fallback. */
+    fixture.pref_close_result = H2_PAL_ERR_IO;
+    assert(h2_loader_read_current_loader_identity(
+               &fixture.config, "0.2.0", &actual) == H2_PAL_ERR_IO);
+    assert(actual.format == 0u && actual.image_size == 0u);
+    fixture.pref_close_result = H2_PAL_OK;
+    fixture.pref_open_result = H2_PAL_ERR_IO;
+    assert(h2_loader_read_current_loader_identity(
+               &fixture.config, "0.2.0", &actual) == H2_PAL_ERR_IO);
+    assert(actual.format == 0u && actual.image_size == 0u);
+  }
+}
+
 typedef struct checksum_fs_fixture {
   const char *value;
   size_t offset;
@@ -2233,7 +2330,101 @@ static void test_stats_observes_installed_checksum(void) {
   h2_loader_deinit(&fixture.loader);
 }
 
+typedef struct reconnect_probe {
+  unsigned offset;
+  unsigned ready;
+  unsigned write_closed;
+  unsigned replacement_started;
+  unsigned status_attempts;
+  unsigned recovered_status;
+  unsigned explicit_stop;
+  int emit_reset;
+  int close_at_line_end;
+} reconnect_probe_t;
+
+static int reconnect_read(void *user, uint32_t timeout_ms) {
+  reconnect_probe_t *probe = user;
+  static const char input[] = "h2loader status\n";
+  (void)timeout_ms;
+  if (probe->write_closed && !probe->replacement_started) {
+    probe->replacement_started = 1u;
+    probe->offset = 0u;
+    if (probe->emit_reset) return H2_LOADER_APP_CLIENT_SESSION_RESET;
+  }
+  if (probe->offset < sizeof(input) - 1u)
+    return input[probe->offset++];
+  probe->explicit_stop = 1u;
+  return H2_LOADER_APP_CLIENT_SESSION_CLOSED;
+}
+
+static int reconnect_write(void *user, const char *data, size_t len) {
+  reconnect_probe_t *probe = user;
+  static const char ready[] = "H2_LOADER_APP_COMMAND_READY";
+  static const char status[] = "H2_LOADER_STATUS";
+  if (len >= sizeof(ready) - 1u && !memcmp(data, ready, sizeof(ready) - 1u)) {
+    ++probe->ready;
+    return H2_PAL_OK;
+  }
+  if (len >= sizeof(status) - 1u && !memcmp(data, status, sizeof(status) - 1u)) {
+    ++probe->status_attempts;
+    if (!probe->write_closed && !probe->close_at_line_end) {
+      /* A close or replacement during a response aborts this old session. */
+      probe->write_closed = 1u;
+      return H2_PAL_ERR_CLOSED;
+    }
+    if (probe->write_closed) ++probe->recovered_status;
+  }
+  if (probe->close_at_line_end && !probe->write_closed &&
+      probe->status_attempts == 1u && len != 0u && data[len - 1u] == '\n') {
+    /* Native App adapters flush at the logical response line boundary. */
+    probe->write_closed = 1u;
+    return H2_PAL_ERR_CLOSED;
+  }
+  return H2_PAL_OK;
+}
+
+static void test_app_console_survives_closed_response(void) {
+  test_fixture_t fixture;
+  fixture_init(&fixture, 2u);
+  static const h2_pal_http_api_t http = {0};
+  static const h2_pal_wifi_sta_api_t wifi = {0};
+  static const h2_pal_disk_api_t disk = {0};
+  h2_loader_app_client_t client;
+  const h2_loader_app_client_config_t config = {
+      .pref = &fixture.pref, .power = &fixture.power, .allocator = &fixture.mem,
+      .fs = &fixture.fs, .http = &http, .wifi = &wifi, .disk = &disk,
+      .digest = fixture.config.package.digest,
+      .board = "devkit", .target = "esp32s3", .chip = "test",
+      .active_identity = identity(H2_LOADER_IMAGE_ROLE_APP, SHA_A),
+      .hardware_capabilities = H2_LOADER_CAPABILITY_UART,
+      .h2loader_partition_id = 1u, .app_partition_id = 2u,
+      .now_ms = app_test_now, .sleep_ms = app_test_sleep,
+  };
+  assert(h2_loader_app_client_init(&client, &config) == H2_PAL_OK);
+  for (int emit_reset = 0; emit_reset <= 1; ++emit_reset) {
+    for (int close_at_line_end = 0; close_at_line_end <= 1; ++close_at_line_end) {
+      reconnect_probe_t probe = {
+          .emit_reset = emit_reset, .close_at_line_end = close_at_line_end,
+      };
+      const h2_loader_app_client_return_console_config_t console = {
+          .client = &client, .read_user = &probe, .read_byte = reconnect_read,
+          .write_user = &probe, .write = reconnect_write,
+      };
+      assert(h2_loader_app_client_run_return_console(&console) == H2_PAL_OK);
+      assert(probe.ready == 1u && probe.write_closed == 1u);
+      assert(probe.replacement_started == 1u && probe.explicit_stop == 1u);
+      assert(probe.status_attempts == 2u && probe.recovered_status == 1u);
+      assert(client.return_console_private == NULL);
+      assert(client.return_console_task == NULL);
+    }
+  }
+  h2_loader_deinit(&client.loader);
+}
+
 int main(void) {
+  test_app_console_survives_closed_response();
+  test_current_loader_identity_ignores_corrupt_metadata();
+  test_read_current_loader_identity();
   test_stats_observes_installed_checksum();
   test_plan_missing_destination();
   test_install_verified_destination_does_not_abort();

@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "new_physical_run_claimed": true,
+  "source_snapshot_commit": "75d83ca4a9c9297cc7018ce3d2d0cdb0be87fe84",
+  "historical_qualification_sha256": "efe8c01f0d379886b2d7cb1cbcde998e9bcc4386cecf19104c499ec3ea98f448",
+  "historical_source_sha256": {
+    "boards/bk7258_v3_202405/bk7258/ap/BUILD.bazel": "9b5ad8ce1e5fd9edcbb7443e7486db9eed08424463f63739e18e8844fd9a265a",
+    "boards/bk7258_v3_202405/bk7258/ap/src/h2_bk7258_board_display.c": "ba771cd3351bfb02f95778b1450249ba08de0da5bd0c37c849091b6a8da757a3",
+    "guides/apps/h2loader/boards/bk7258_v3_202405/display.md": "20aa6aa7d28e3ce0c2d0448f1ed0af923f463e82e765d9aeba75f17ac84b8b6a"
+  },
+  "current_source_sha256": {
+    "boards/bk7258_v3_202405/bk7258/BUILD.bazel": "baa21f8863778a59923438bafb02f0d823ee5d51782d5e6b4b9075ac70a8d206",
+    "boards/bk7258_v3_202405/bk7258/ap/BUILD.bazel": "12c40d0411402e3f116ca0c4b8e750e56ee37426c9a5ad0a41bc1e7cdc93f8b0",
+    "boards/bk7258_v3_202405/bk7258/ap/src/h2_bk7258_board_display.c": "e3bb44bacf942c48a01ef79cde2dc633e9b0e41766329be3ed4968f47e5712dd",
+    "boards/bk7258_v3_202405/bk7258/ap/src/h2_bk7258_display_buffer.h": "9cfb0f14b190df949b612abdb04218ea38c89d42dd3ce7a8c803b49a443f9da5",
+    "boards/bk7258_v3_202405/bk7258/ap/tests/test_h2_bk7258_display_buffer.c": "e81e52238188936cb314fd18487b9ea1e6930ca6c9887bc573479deec447e36d",
+    "guides/apps/h2loader/boards/bk7258_v3_202405/display.md": "c8505cc1e667add97a78e1720b7ecab58248a207d0ac1c705dd3a174d67c1574"
+  },
+  "board_evidence": "projects/e2e/targets/h2loader_tar_zlib/pal-display/bk7258_v3_202405/evidence/rgb-buffer-qualified.json",
+  "build_evidence": "projects/e2e/targets/h2loader_tar_zlib/pal-display/bk7258_v3_202405/evidence/rgb-buffer-build.json",
+  "scope": "BK RGB framebuffer ownership and changed-region copies; historical six-platform and mobile receipts are preserved. No new qualification is claimed for another board or platform.",
+  "coredump_invariance": "NOT_SAMPLED_FOR_THIS_FOLLOWUP"
+}

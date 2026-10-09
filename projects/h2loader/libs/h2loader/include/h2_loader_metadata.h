@@ -54,7 +54,10 @@ int h2_loader_metadata_decode(
 
 /**
  * Read one slot. A missing key returns OK with out_present set to zero and an
- * all-zero invalid record.
+ * all-zero invalid record. A malformed stored blob returns FORMAT with both
+ * outputs zeroed. Invalid arguments and Preference backend failures propagate;
+ * a close failure takes precedence over FORMAT so readers cannot hide I/O
+ * failures by treating a malformed record as absent. The blob is never changed.
  */
 int h2_loader_metadata_read(
     const h2_pal_pref_api_t *pref,

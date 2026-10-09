@@ -185,11 +185,15 @@ Repository CLI 提供 H2Loader management BLE provider，并与 serial 复用同
 
 串口和 BLE 可以同时等待输入，但共享 operation mutex 串行执行命令。Command line、stage bytes 和 response 始终绑定发起它的 transport；断开的 operation 失败，不转移到另一 transport，也不自动 replay。
 
+App return-console 区分 peer 会话结束和设备管理服务结束。ESP/BK 的 UART peer 在响应期间断开或被新 session 替换时，旧 command 的 I/O 可以返回 `CLOSED`；完成旧 command 清理后重置 parser，管理 task 继续接受新的 session，不重放失败 command。只有 read callback 明确返回 `SESSION_CLOSED` 或 launcher 显式停止 task 才结束该服务。回归在首个 status 的响应正文或行尾 flush 中注入 `CLOSED`，覆盖有无后续 `SESSION_RESET` 的路径，验证同一 console 只处理新 session 的 status，最后以永久关闭 marker 正常退出。
+
 BLE command service 的诊断由 composition root 显式借用 Log PAL，与 command response 分离，不直接写 `stdout` 或 `stderr`。日志接口和其 `user` 必须覆盖 service 生命周期，支持并发 task 调用，且不得从日志回调重入 service。诊断为 optional：缺少可用接口时不输出，写入失败不覆盖通信操作的原始返回值。每条记录遵守 PAL message 容量；会话统计拆成带 connection handle 的多条记录，保留所有计数与 high-water 信息，底层日志 provider 决定实际 UART、USB 或其它输出位置。
 
 ## Image 生命周期
 
 H2Loader 的完成条件不是“传输成功”或“reboot accepted”。App 更新必须经过 package 校验、Partition 2 写入和新 App 启动；新 App 以自身固件 identity 提交 Partition 2 metadata，并清理匹配的 Stage。Loader self-update 必须经过 Partition 1 → Partition 2 → Partition 1 回写；最终验收重新连接设备，确认预期 role/version/board/target、active image checksum/size、running/next partition、`boot_intent`、Stage 与 Partition 1/2 metadata。App 终态要求运行 Partition 2 且 Stage invalid；Loader 终态要求运行 Partition 1、`boot_intent=AUTO`、Partition 1/2 valid 且 image checksum 相同、Stage invalid，随后再做 power-cycle 复查。
+
+普通 Loader 初始化前必须取得完整的 `active_identity`，仅填版本不能通过初始化。公共 `h2_loader_read_current_loader_identity` 在真实 Image Reader 上计算镜像字节的 checksum：只有 running-slot 的记录存在、valid、role 为 H2LOADER，且 board、target、version 都与输入一致时，才使用记录的 image size 和预期 checksum。缺失、格式损坏或不匹配的记录使用 primary Loader capacity，避免候选借用较大的 App window 时把 App capacity 当作 Loader image size。长度必须非零且不超过 running-slot capacity，实际 SHA 必须匹配被采用的记录，否则返回 FORMAT；错误的 running partition 返回 INVALID_STATE，缺失依赖或非法输入返回 INVALID_ARG，分配失败返回 NO_MEMORY，Preference、Image Reader 和 digest 的真实错误继续返回。Metadata read 将损坏 blob 与非法调用参数区分为 FORMAT，关闭 namespace 的错误优先于损坏记录，防止回退隐藏 I/O 故障。输出使用调用方 storage，成功后包含独立的 identity 和字符串副本，失败时清零；临时 4 KiB buffer 在所有路径释放，digest 失败执行 abort。该操作在 task context 阻塞读取，必须与其它 package/digest 操作串行，不写 preferences、不迁移 MFG 记录，也不代替升级后的最终状态核对。BK 的 Loader/App UART 与 BLE 使用同一个 `h2_bk_h2loader_get_device_uid` 读取 controller identity MAC；版本、board 名或 endpoint 不能代替 UID。
 
 设备仍能通过 H2Loader command transport 通信时，安装、更新、回退和恢复必须继续使用 H2Loader。只有 H2Loader 已验证无法通信或无法自我恢复时，才能进入对应 board 使用文档定义的底层 recovery。
 

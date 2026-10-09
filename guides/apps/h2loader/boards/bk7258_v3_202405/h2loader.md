@@ -1,5 +1,7 @@
 # BK7258 V3 202405 H2Loader
 
+SD 的 FatFs 实例和 sector window 使用 64-byte 对齐的固定 `.psram.bss`，生命周期覆盖本次启动。SDK 的 SDIO FIFO read 向调用方 buffer 写入，FatFs mount/read/write 继续在 task context 执行；UART ISR buffer 和所有通信 deadline 保持原有存储和行为。Native consumer 的 post-link contract 应验证该 symbol 的大小、对齐和 PSRAM 地址，当前源码布局不代表新版 package 的 SD 真机资格已通过。
+
 ## 构建
 
 ```sh
@@ -33,6 +35,8 @@ Loader 与 App 使用各自的分区表，分别链接到最终地址。上表�
 从旧等大布局迁移必须使用系统烧录路径，安装新 Loader 及其原生 Bootloader 分区表，并初始化启动控制记录。不能把新 Loader 包当作旧布局的普通 self-update。App 的 `all-app.bin` 包含 SDK 打包器生成的引导内容，**不能作为整机恢复镜像烧录**；App 使用 managed `update.tar.zlib` 安装到独立 App 区域。Loader 通过 managed Loader 包自升级，流程见下文“Loader 自升级”。
 
 ## 平台配置
+
+公共 BK Preference provider 为每个 namespace handle 分配独立状态，在关闭后释放；并发数量由实际 allocator 余量决定。不要继续使用关闭后的 handle 或 cursor。并发读写仍使用公共 FlashDB 的数据库与事务锁，格式和持久化语义不变。2026-10-02 的 H106 E2E 诊断发现，旧四槽池在多个启动任务同时打开设置、使用限额和身份 namespace 时返回 `H2_PAL_ERR_NO_MEMORY`，当时内部堆空闲 136344 bytes、PSRAM 空闲 4814344 bytes；因此不能将该失败归因于堆耗尽。
 
 Loader 和 H2Loader APP layout 使用 AP 直驱的 UART1 承载 managed UART 与 AP 日志，固定为 460800 8N1。板级 AP defaults 选择 UART1，GPIO 表同时声明 P0=`UART1_TXD`、P1=`UART1_RXD`；SDK 会拒绝映射未出现在该表中的引脚，因此只修改串口号不足以启用 UART1。USB 转串口的 RXD 接 P0/TX，TXD 接 P1/RX，并与开发板共地。UART0 保留 ROM 下载与 CP 日志，UART0 转串口的 RTS 可以接 CEN 控制复位；两路串口可同时连接，均不启用硬件流控。
 

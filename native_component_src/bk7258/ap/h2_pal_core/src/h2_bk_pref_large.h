@@ -120,7 +120,7 @@ static int large_collect(const char *full,
                          const bk_pref_large_manifest_t *live) {
   struct fdb_kv_iterator iterator;
   fdb_kv_iterator_init(&iterator);
-  while (fdb_kv_iterate(&s_pref_large_database, &iterator)) {
+  while (bk_pref_iterate_database(&s_pref_large_database, &iterator)) {
     struct fdb_kv *item = &iterator.curr_kv;
     if (strncmp(item->name, LARGE_CHUNK_PREFIX,
                 sizeof(LARGE_CHUNK_PREFIX) - 1u))

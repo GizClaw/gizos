@@ -2,6 +2,7 @@
 #define H2_APP_TEST_MODEM_H
 #include "h2/pal/hal/h2_pal_modem.h"
 #include "h2_app_test_fault.h"
+#include <stdbool.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -29,6 +30,12 @@ typedef struct h2_app_test_modem {
   uint32_t last_emergency_numbers_timeout_ms;
   h2_app_test_fault_t get_emergency_numbers;
   h2_app_test_fault_t get_status, dial, answer, hangup;
+  /** Opt-in scripted lifecycle. When false open/close return UNSUPPORTED.
+   * Successful calls only record intent; they never operate physical power.
+   * Failures retain opened. Configure while quiescent, then serialize calls. */
+  bool lifecycle_supported, opened;
+  uint32_t last_open_timeout_ms, last_close_timeout_ms;
+  h2_app_test_fault_t open, close;
 } h2_app_test_modem_t;
 /** Initialize caller storage with CALL capability; status is otherwise unknown.
  */
