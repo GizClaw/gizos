@@ -15,7 +15,9 @@ typedef int portMUX_TYPE;
 #define pdPASS 1
 #define pdTRUE 1
 #define pdFALSE 0
+#ifndef portMAX_DELAY
 #define portMAX_DELAY 0xffffffffu
+#endif
 #define configMAX_PRIORITIES 16u
 #define CONFIG_FREERTOS_NUMBER_OF_CORES 2
 #define CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM 1

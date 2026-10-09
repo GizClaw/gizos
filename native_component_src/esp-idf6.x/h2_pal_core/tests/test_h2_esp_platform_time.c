@@ -36,7 +36,11 @@ int h2_esp_platform_time_test_settimeofday(const struct timeval *tv) {
 int64_t esp_timer_get_time(void) { return 0; }
 
 static TickType_t s_sleep_ticks;
-void vTaskDelay(TickType_t ticks) { s_sleep_ticks = ticks; }
+static unsigned s_sleep_calls;
+void vTaskDelay(TickType_t ticks) {
+  s_sleep_ticks = ticks;
+  ++s_sleep_calls;
+}
 
 static void set_clock_ms(uint64_t ms) {
   s_clock.tv_sec = (time_t)(ms / 1000u);
@@ -137,9 +141,27 @@ int main(void) {
   const uint32_t delays[] = {0u, 1u, 5u, 10u, 11u, 32u, UINT32_MAX};
   for (unsigned i = 0u; i < sizeof(delays) / sizeof(delays[0]); ++i) {
     const uint64_t expected = ((uint64_t)delays[i] * configTICK_RATE_HZ + 999u) / 1000u;
-    assert(h2_pal_time_sleep_ms(api, delays[i]) == H2_PAL_OK);
-    assert(s_sleep_ticks == expected);
-    if (delays[i] != 0u) assert(s_sleep_ticks != 0u);
+    s_sleep_calls = 0u;
+    s_sleep_ticks = 123u;
+    const h2_pal_result_t rc = h2_pal_time_sleep_ms(api, delays[i]);
+    if (expected > portMAX_DELAY) {
+      assert(rc == H2_PAL_ERR_INVALID_ARG);
+      assert(s_sleep_calls == 0u && s_sleep_ticks == 123u);
+    } else {
+      assert(rc == H2_PAL_OK);
+      assert(s_sleep_calls == 1u && s_sleep_ticks == expected);
+      if (delays[i] != 0u) assert(s_sleep_ticks != 0u);
+    }
+  }
+  /* A reduced SDK tick limit reaches both sides of the representability
+   * boundary without requiring a millisecond value wider than the PAL API. */
+  const uint64_t limit_ms = (uint64_t)portMAX_DELAY * 1000u / configTICK_RATE_HZ;
+  if (limit_ms < UINT32_MAX) {
+    assert(h2_pal_time_sleep_ms(api, (uint32_t)limit_ms) == H2_PAL_OK);
+    assert(s_sleep_ticks == portMAX_DELAY);
+    s_sleep_calls = 0u;
+    assert(h2_pal_time_sleep_ms(api, (uint32_t)limit_ms + 1u) == H2_PAL_ERR_INVALID_ARG);
+    assert(s_sleep_calls == 0u && s_sleep_ticks == portMAX_DELAY);
   }
   test_epoch_clock_is_invalid(api);
   test_set_makes_clock_valid(api);
