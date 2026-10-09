@@ -167,10 +167,19 @@ int h2_esp_board_fs_mount_all(void) {
     if (rc != H2_PAL_FS_OK) {
         return rc;
     }
-    return h2_esp_board_fs_mount("/data");
+    rc = h2_esp_board_fs_mount("/data");
+    if (rc != H2_PAL_FS_OK) {
+        /* Preserve the startup error; a failed rollback remains retryable. */
+        (void)h2_esp_board_fs_unmount_all();
+    }
+    return rc;
 }
 
 int h2_esp_board_fs_unmount_all(void) {
-    s_board_mount_fs_ready = 0;
-    return h2_esp_board_fs_deinit();
+    int rc = h2_esp_board_fs_deinit();
+    if (rc == H2_PAL_FS_OK) {
+        s_board_mount_fs_ready = 0;
+        memset(&s_board_mount_fs, 0, sizeof(s_board_mount_fs));
+    }
+    return rc;
 }
