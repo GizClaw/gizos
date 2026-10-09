@@ -6,8 +6,10 @@ exec bazel test \
   //projects/example/targets/pkg_tar/... \
   //projects/e2e/targets/pkg_tar/libco/... \
   //projects/e2e/targets/pkg_tar/lua-runtime/... \
-  //projects/e2e/targets/pkg_tar/pal/... \
   //projects/e2e/targets/pkg_tar/pal-core:browser_test \
+  //projects/e2e/targets/pkg_tar/pal-storage/... \
+  //projects/e2e/targets/pkg_tar/pal-http/... \
+  //projects/e2e/targets/pkg_tar/pal-wifi/... \
   //projects/e2e/targets/pkg_tar/atomic/... \
   //projects/e2e/targets/pkg_tar/h2loader-serial:archive_test \
   //projects/e2e/targets/pkg_tar/h2loader-serial:h2loader_serial_wasm_test \
