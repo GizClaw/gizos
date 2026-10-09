@@ -88,6 +88,9 @@ static int case_wrapper_arguments(state_t *state) {
   REQUIRE(state, h2_pal_audio_track_drain(NULL, 0u) == H2_AUDIO_ERR_INVALID_ARG);
   REQUIRE(state, h2_pal_audio_track_get_volume_factor(NULL, &value) == H2_AUDIO_ERR_INVALID_ARG);
   REQUIRE(state, h2_pal_audio_track_set_volume_factor(NULL, 500u) == H2_AUDIO_ERR_INVALID_ARG);
+  REQUIRE(state, h2_pal_audio_set_aec_observer(NULL, NULL) == H2_AUDIO_ERR_INVALID_ARG);
+  const h2_audio_aec_observer_t invalid = {0};
+  REQUIRE(state, h2_pal_audio_set_aec_observer(audio, &invalid) == H2_AUDIO_ERR_INVALID_ARG);
   return H2_AUDIO_OK;
 }
 

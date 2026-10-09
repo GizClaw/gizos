@@ -368,3 +368,11 @@ ON 时只对至少 100 ms 的操作输出 `H2_ESP_IO_PHASE` 数值记录。FS �
 `fs_wait_us`、`scratch_wait_us` 和 `shared_wait_us` 分别记录 FS mutex、scratch mutex 与共享 SafeCall mutex 的等待。`dispatch_us` 从 request 提交到 worker 开始 callback；`native_us` 是 callback 的 wall time，包含其内部stdio、pref store 与调度等待，并不是纯 flash 或 CPU 耗时。`wake_copy_us`从 callback 返回到 caller 收到完成信号，包含 context copy 和唤醒。`direct_calls` 区分 internal-stack 直接调用；它不经过共享 dispatcher。READ/WRITE 在保留原 4096-byte 分块与 scratch 持有范围的同时累加各块计数，`native_max_us` 保留最慢 callback。Pref 保留整个原 store 操作和原子写入步骤，不为计时拆分 transaction。Pref 数字从内部 I/O wrapper 开始，不包含其外层Preference provider mutex 等待；VFS 内部锁仍在 callback wall time 内。READ/WRITE 的 `wall_us` 从 scratch acquire 之前开始；其他 FS 操作从内部 `littlefs_run_safe` 开始，OPEN 之前的 path translation 与 file-wrapper calloc 不在其中。因此总 `wall_us` 不是完整 PAL Open 时间，还包括该计时范围内的初始化、普通拷贝与 wrapper 工作，不能把嵌套记录相加或据缺失的快记录推定操作未执行。
 
 这是定位工具；ON 的时钟和输出会影响调度，记录不是硬件资格结果。实际用例仍需保留完整 CASE、原门限、checked canonical 输出与真实 cleanup 证据。
+
+## AEC Calibration PAL observation
+
+`h2_es8311_es7210_audio_system` 在 Audio PAL 提供 `set_aec_observer`：只在实际 AEC 可用且 mic／speaker worker 都已停止并 join 时复制或撤销 descriptor；运行中或 shutdown pending 时拒绝。Capture callback 在完整 AEC 处理之后同步借用同帧 raw packed ADC、AEC 实际使用的 gain-scaled mono reference 和 processed mono output；sequence 每次 mic session 重置，mic mask 包含所有实际 AEC microphone lanes。Playback callback 仅在完整 I2S DAC write 成功后观察混音后的 PCM，partial/error write 不交付。两个 worker 的 callback 可互相并发，停止对应 worker 后才允许 caller 读取其测量；native SDK 类型不进入公共校准 App。
+
+Mic gain setter 调整 active microphone PGA 并保留 board trim；AEC 的独立 reference ADC input 不参与 mic gain 上调，实际增益回读与失败 rollback 合同保持有效。校准只搜索 board 定义的百分比范围，不更改 codec 模拟上限、raw lane mapping 或 reference gain。原非内容 ES7210 energy observer、正常／aggressive NLP 与按需统计仍可独立使用；新 PAL observer 不替代这些已有接口，也不把处理 metadata 当作物理验收。
+
+公共 `projects/e2e/apps/aec-calibration` App 和验证器只消费 PAL。生产 target 必须另提供独立真实近端声源与同设备原始日志、package/image、摆位和输入电平证据；缺失时 `UNSUPPORTED`。默认分频、两幅度探针的推荐仅适用于本次实测条件，真实重叠语音、满幅压力、长期运行和 provider 的硬件 ADC drop 资格仍需独立证据。

@@ -11,7 +11,8 @@
     "get_speaker_volume_percent": ["speaker-volume-bounds", "speaker-volume-roundtrip"],
     "set_speaker_volume_percent": ["speaker-volume-bounds", "speaker-volume-roundtrip"],
     "get_mic_gain_percent": ["mic-gain-bounds", "mic-gain-roundtrip", "mic-gain-live"],
-    "set_mic_gain_percent": ["mic-gain-bounds", "mic-gain-roundtrip", "mic-gain-live"]
+    "set_mic_gain_percent": ["mic-gain-bounds", "mic-gain-roundtrip", "mic-gain-live"],
+    "set_aec_observer": ["wrapper-arguments"]
   },
   "track_operations": {
     "write": ["track-write-bounds", "track-write", "stability"],

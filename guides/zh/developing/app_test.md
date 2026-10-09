@@ -512,6 +512,8 @@ Audio decorator 要求 Time PAL 提供会让出当前任务的 `sleep_ms`，缺�
 
 测试方通过 `h2_app_test_audio_copy_evidence()` 读取独立的 PAL 证据；App/UI 的 paired snapshot 仍由 App adapter 提供。Evidence 支持并发读取，但多字段不是原子快照，一致性断言应放在测试的 completion barrier 后。公共头文件定义具体并发与容量边界。
 
+AEC Calibration 不经 Testing Audio 的 fixture／passthrough decorator 取得诊断资格。Decorator 的 `set_aec_observer` 明确返回 `UNSUPPORTED`，即使下层有 AEC 也不把替换后的 capture 当作真实输入。Consumer 将底层真实 Audio PAL 直接交给公共校准 App；其独立近端源、同帧 raw/reference/processed 和实际 DAC 证据与后续业务 fixture 测试分开记录。
+
 ## Memory Driver
 
 Host 测试入口：

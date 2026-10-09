@@ -27,7 +27,7 @@ class InterfaceCoverage(unittest.TestCase):
         track_ops = set(re.findall(r"h2_pal_audio_track_\w+_fn\s+(\w+)\s*;", track))
         self.assertEqual(provider_ops, set(manifest["provider_operations"]))
         self.assertEqual(track_ops, set(manifest["track_operations"]))
-        self.assertEqual(len(provider_ops), 11)
+        self.assertEqual(len(provider_ops), 12)
         self.assertEqual(len(track_ops), 5)
         cases = re.findall(r'H2_PAL_AUDIO_CASE\(\w+, "([^"]+)"\)', registry)
         self.assertEqual(len(cases), len(set(cases)))

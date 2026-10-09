@@ -214,6 +214,13 @@ static int create_track(void *u, const h2_audio_track_config_t *c,
   }
   return H2_PAL_ERR_NO_SPACE;
 }
+static int audio_aec_diagnostics_unsupported(void *user,
+    const h2_audio_aec_observer_t *observer) {
+    (void)user;
+    (void)observer;
+    return H2_AUDIO_ERR_UNSUPPORTED;
+}
+
 static const h2_pal_audio_vtable_t vtable = {
     .get_info = info,
     .start_mic = start_mic,
@@ -225,7 +232,9 @@ static const h2_pal_audio_vtable_t vtable = {
     .get_speaker_volume_percent = get_volume,
     .set_speaker_volume_percent = set_volume,
     .get_mic_gain_percent = get_mic_gain,
-    .set_mic_gain_percent = set_mic_gain};
+    .set_mic_gain_percent = set_mic_gain,
+    .set_aec_observer = audio_aec_diagnostics_unsupported,
+};
 h2_pal_result_t h2_app_test_audio_fake_init(h2_app_test_audio_fake_t *a,
                                             const h2_pal_mem_api_t *m) {
   if (!a)

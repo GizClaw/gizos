@@ -26,6 +26,7 @@ Platform artifact entry 持有 Runtime assembly、具体 provider、endpoint 与
 
 | App | Portable target | Current launcher matrix |
 | --- | --- | --- |
+| AEC Calibration | `//projects/e2e/apps/aec-calibration/app:aec_calibration` | Public real-Audio PAL acoustic probe search; private products own provider/independent-source assembly and physical evidence |
 | Atomic | `//projects/e2e/apps/atomic/app:atomic_e2e` | macOS、真实 Browser/WASM pthread Workers、iOS/Android 模拟器、DevKit ESP32-S3 与 BK7258 的完整 typed 接口资格 |
 | GizClaw | `//projects/e2e/apps/gizclaw/app:gizclaw_e2e` | Desktop H2Peer/Pion；Chromium Worker；iOS XCFramework / Android AAR 消费 App；DevKit、AMOLED、BK7258 入口，实际资格见 App README |
 | H106 | `//projects/e2e/apps/h106/app:h106_e2e` | Desktop Tiga/Zero、Tiga V4.2 与 Zero BK 1.0；完整 production Main App、Runtime Test Control 与公开 observation |
@@ -39,7 +40,7 @@ Platform artifact entry 持有 Runtime assembly、具体 provider、endpoint 与
 | PAL MQTT | `//projects/e2e/apps/pal-mqtt/app:pal_mqtt_e2e` | 独立 MQTT：8 个操作、36 个必跑 case；真实 TCP/TLS broker、事件/ACK 与资源清理，按各平台实际执行记录验收 |
 | PAL WebRTC | `//projects/e2e/apps/pal-webrtc/app:pal_webrtc_e2e` | 独立 WebRTC：13 个操作、43 个 mandatory case；六端独立入口及真实 Pion 对端，按各端完整 ledger 授予资格 |
 | PAL Audio Decoder | `//projects/e2e/apps/pal-audio-decoder/app:pal_audio_decoder_e2e` | 独立 AAC-LC RAW 解码：8 个操作、29 个必过 case；六端入口已实现，实际资格以各端完整 PCM、生命周期与清理记录为准 |
-| PAL Audio | `//projects/e2e/apps/pal-audio/app:pal_audio_e2e` | 独立 Audio：11 个 provider 与 5 个 track 操作、24 个必过 case；macOS、真实 Chromium Worker、iOS/Android SDK 包消费 App、AMOLED ESP32-S3 与 BK7258，逐端验证 30 秒同时采播和完整清理 |
+| PAL Audio | `//projects/e2e/apps/pal-audio/app:pal_audio_e2e` | 独立 Audio：11 个常规 provider、1 个可选 AEC diagnostics 与 5 个 track 操作、24 个必过 case；macOS、真实 Chromium Worker、iOS/Android SDK 包消费 App、AMOLED ESP32-S3 与 BK7258，逐端验证 30 秒同时采播和完整清理 |
 | PAL Display | `//projects/e2e/apps/pal-display/app:pal_display_e2e` | 独立 Display：6 个操作、24 个必过 case；macOS SDL、Chromium Worker、iOS/Android 实际 SDK 包、AMOLED 与 BK7258，验证实际输出并单独记录物理屏幕观察 |
 | PAL | `//projects/e2e/apps/pal/app:pal_e2e` | Linux/macOS/Windows 共同 host OS/Filesystem/Net/TLS/CoreHTTP/CoreMQTT；Desktop core/MQTT/SQLite Preference；Browser core；DevKit 与 Tiga V4.2 H2Loader `pal-pref` |
 | H2Loader Serial | `//projects/e2e/apps/h2loader-serial/app:h2loader_serial_e2e` | macOS Desktop；desktop Chrome Browser |
@@ -47,6 +48,10 @@ Platform artifact entry 持有 Runtime assembly、具体 provider、endpoint 与
 | iperf | `//projects/e2e/apps/iperf/app:iperf_e2e` | Desktop host client + PAL server；AMOLED ESP32-S3 + operator LAN PAL server |
 
 独立 HTTP 与 MQTT 测试分别由 `pal-http` 和 `pal-mqtt` App 持有公共 case 和平台验收合同。PAL App 只验证 PAL API 的跨目标公共行为，不吸收 backend-local unit、fake 或 protocol tests。Provider 名属于 launcher target；不能为了 H2Peer、Pion 或另一 backend 复制 portable case registry。H106 production App、adapter、UI 与业务 policy 继续属于 `projects/h106`；H106 E2E 的 evidence boundary 和运行合同见 产品 E2E。
+
+## AEC 校准
+
+AEC Calibration 通过真实 Audio PAL 在独立近端声源参与时测量 noise、far-only、near-only、double-talk 和持续窗口，搜索调用方给出的 speaker/mic 候选，保留所有测量与 Pareto frontier，并按显式 policy 推荐实测候选。公共 App、JSON formatter 与独立报告验证器都由 `projects/e2e/apps/aec-calibration` 持有；SDK、board安全上限、设备／夹具身份、安装与产品持久化留给 consumer。缺少真实 pre/post-AEC diagnostics 或独立声源时 `UNSUPPORTED`，不能继承仅 far output energy 下降的声学 PASS。默认三频点、两幅度的分频探针只证明此次输入与摆位条件，不代替重叠语音、全幅或长期产品资格。详见仓库内 `projects/e2e/apps/aec-calibration/README.md`。
 
 ## Atomic
 
