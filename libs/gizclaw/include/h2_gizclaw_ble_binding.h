@@ -106,6 +106,10 @@ typedef struct h2_gizclaw_ble_binding_config {
    * Control characters are rejected; query values are percent-encoded.
    */
   h2_gizclaw_str_t name;
+  /** Optional complete BLE advertising name, at most 29 printable ASCII
+   * bytes. Copied on open; separate from credential URL metadata. Contains
+   * only public product/device display metadata, never a key or credential. */
+  h2_gizclaw_str_t local_name;
 } h2_gizclaw_ble_binding_config_t;
 
 /** No secret. A record means bytes may have reached a phone, not confirmation.
@@ -155,7 +159,8 @@ h2_gizclaw_ble_binding_open(const h2_gizclaw_ble_binding_config_t *config,
 
 /** Open the authorized window: subscribe, register only this GATT service and
  * create/start a dedicated legacy connectable advertising set (100..200 ms),
- * containing only its service UUID. Repeated successful start is an OK no-op.
+ * containing its service UUID and optional local name. The legacy provider
+ * places the name in its scan response. Repeated successful start is an OK no-op.
  * A partial failure seals admission and attempts stop; failed cleanup retains
  * the instance/resources for stop retry. A new start is BUSY until cleanup
  * succeeds. Providers must support handle sets and per-service unregistration;

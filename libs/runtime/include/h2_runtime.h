@@ -39,6 +39,11 @@ typedef struct h2_runtime_config {
     const char *board;
     const char *target;
     const char *chip;
+    /** Optional nonempty product BLE local name, NUL-terminated and at most
+     * 29 printable ASCII bytes; invalid names fail Runtime initialization.
+     * Borrowed through Runtime deinit. The product owns its spelling and stable
+     * device suffix; it is display metadata, never an authenticated identity. */
+    const char *ble_local_name;
 
     const h2_pal_firmware_info_api_t *firmware_info;
 
@@ -114,6 +119,8 @@ struct h2_runtime {
     const char *board;
     const char *target;
     const char *chip;
+    /** Borrowed product advertising name from the Runtime config, or NULL. */
+    const char *ble_local_name;
 
     const h2_pal_firmware_info_api_t *firmware_info;
 

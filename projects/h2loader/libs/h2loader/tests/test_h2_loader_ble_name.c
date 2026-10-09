@@ -95,11 +95,11 @@ int main(void) {
     assert(h2_loader_ble_service_open(&config, &service) == H2_PAL_OK);
     expect_name(NULL);
     assert(h2_loader_ble_service_close(service) == H2_PAL_OK && live == 0u);
-    config.advertising_mode = H2_LOADER_BLE_ADVERTISING_LEGACY;
+    config.advertising_mode = H2_LOADER_BLE_ADVERTISING_EXTENDED;
     config.board = "a-long-board-identity";
     config.local_name = "ABCDEFGHIJKLMN";
-    assert(h2_loader_ble_service_open(&config, &service) == H2_PAL_ERR_INVALID_ARG);
-    assert(service == NULL && live == 0u);
+    assert(h2_loader_ble_service_open(&config, &service) == H2_PAL_OK);
+    assert(h2_loader_ble_service_close(service) == H2_PAL_OK && live == 0u);
     h2_pal_system_event_unsubscribe(events, subscription);
     assert(h2_pal_ble_stop(ble) == H2_PAL_OK);
     assert(h2_bleikcp_global_shutdown() == H2_PAL_OK);

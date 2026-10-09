@@ -50,10 +50,12 @@ typedef struct h2_loader_ble_service_config {
      * only. Missing sinks discard diagnostics; write failures never replace
      * the operation result. No standard-stream fallback is used. */
     const h2_pal_log_api_t *log;
-    /** Optional nonempty local name, at most LOCAL_NAME_MAX bytes. Copied on
-     * open. NULL preserves unnamed advertisements. Legacy mode reserves scan
-     * response space for the name and rejects name/identity combinations that
-     * cannot fit; discovery identity and service UUID remain present. */
+    /** Optional nonempty complete name, at most LOCAL_NAME_MAX printable ASCII
+     * bytes, copied on open. NULL preserves unnamed advertisements. Legacy mode
+     * reserves identity space when it fits; longer names retain the management
+     * UUID and obtain board/capabilities from connected command status instead.
+     * Extended mode retains identity data. Names are public display metadata,
+     * never credentials or an authenticated device identity. */
     const char *local_name;
 } h2_loader_ble_service_config_t;
 
