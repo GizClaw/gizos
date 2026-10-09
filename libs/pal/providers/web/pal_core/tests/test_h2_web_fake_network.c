@@ -146,6 +146,12 @@ int main(void) {
   CHECK(h2_pal_modem_get_power_status(modem, &power) == H2_PAL_OK &&
         power.state == H2_PAL_MODEM_POWER_STATE_ASLEEP);
   CHECK(h2_pal_modem_close(modem, 10) == H2_PAL_OK);
+  set_mode(3);
+  CHECK(h2_pal_modem_open(modem, 10) == H2_PAL_OK);
+  CHECK(h2_pal_modem_data_open(modem, 10) == H2_PAL_ERR_UNAVAILABLE);
+  set_mode(2);
+  CHECK(h2_pal_modem_data_open(modem, 10) == H2_PAL_OK);
+  CHECK(h2_pal_modem_close(modem, 10) == H2_PAL_OK);
   CHECK(destroy_idle(p) == H2_PAL_OK);
   puts("H2_WEB_FAKE_NETWORK PASS");
   emscripten_force_exit(0);

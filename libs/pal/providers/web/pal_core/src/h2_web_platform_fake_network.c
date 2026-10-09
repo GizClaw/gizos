@@ -268,8 +268,8 @@ static h2_pal_result_t modem_open(void *user, uint32_t timeout) {
   int rc = snapshot(user, &e);
   if (rc != H2_PAL_OK)
     return rc;
-  if (!e.flags[H2_WEB_FAKE_MODEM_ENABLED])
-    return H2_PAL_ERR_UNAVAILABLE;
+  /* Opening the driver does not require coverage or an enabled radio. Keep
+   * it usable when the host later changes an offline boot to cellular. */
   h2_web_platform_t *p = user;
   h2_web_fake_network_t *s = p->fake_network;
   pthread_mutex_lock(&s->mutex);
