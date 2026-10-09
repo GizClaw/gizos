@@ -93,6 +93,41 @@ filegroup(name = "runtime", srcs = glob(["**"]))
     ],
 )
 
+# Offline WakeNet9 assets use the same upstream revision as the ESP-SR
+# component's model data. No model weights are vendored in GizOS.
+http_file = use_repo_rule(
+    "@bazel_tools//tools/build_defs/repo:http.bzl",
+    "http_file",
+)
+
+http_file(
+    name = "h2_wakenet_nihaoxiaozhi_info",
+    downloaded_file_path = "_MODEL_INFO_",
+    sha256 = "058c04f027862ab745c056b8c8d896396b1cf871e0a8098537610f1a0e16a108",
+    urls = ["https://raw.githubusercontent.com/espressif/esp-sr/7ff63a7da40e15e502681be48c4d0e78475544a3/model/wakenet_model/wn9_nihaoxiaozhi_tts/_MODEL_INFO_"],
+)
+
+http_file(
+    name = "h2_wakenet_nihaoxiaozhi_index",
+    downloaded_file_path = "wn9_index",
+    sha256 = "b463a5051d01bddc1f5723cddc8f3d5f11a6c750106694ca4aa0c8fdc235032c",
+    urls = ["https://raw.githubusercontent.com/espressif/esp-sr/7ff63a7da40e15e502681be48c4d0e78475544a3/model/wakenet_model/wn9_nihaoxiaozhi_tts/wn9_index"],
+)
+
+http_file(
+    name = "h2_wakenet_nihaoxiaozhi_data",
+    downloaded_file_path = "wn9_data",
+    sha256 = "3bd2998013971a5999ca024745bf282381ce93c1ac79468a674abfe3d91399d8",
+    urls = ["https://raw.githubusercontent.com/espressif/esp-sr/7ff63a7da40e15e502681be48c4d0e78475544a3/model/wakenet_model/wn9_nihaoxiaozhi_tts/wn9_data"],
+)
+
+http_file(
+    name = "h2_wakenet_license",
+    downloaded_file_path = "ESP_SR_LICENSE.txt",
+    sha256 = "7d916fb00bc0742c47cafb0d0144b67f826d76779730b1cb8796045ea6ba1b9a",
+    urls = ["https://raw.githubusercontent.com/espressif/esp-sr/7ff63a7da40e15e502681be48c4d0e78475544a3/LICENSE"],
+)
+
 # Toolchain registrations from dependency modules are not applied to the root
 # module, so mirror emsdk's official host registrations here.
 register_toolchains(
@@ -160,6 +195,7 @@ python.toolchain(python_version = "3.11")
 use_repo(python, "python_3_11")
 
 register_toolchains("@python_3_11//:all")
+
 register_toolchains(
     "//tools/bazel:mobile_e2e_python_ios",
     "//tools/bazel:mobile_e2e_python_android",
@@ -261,6 +297,7 @@ vendor_repositories = use_extension(
     "//tools/bazel/vendor:repositories.bzl",
     "vendor_repositories",
 )
+
 # dr_mp3 0.7.3 (tag mp3-0.7.3); only its low-level frame decoder is used.
 vendor_repositories.repository(
     name = "h2_vendor_dr_libs",

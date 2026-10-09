@@ -13,6 +13,7 @@ native_component_src/esp-idf6.x/
 ├── h2_es8311_audio_system/         # Hardware capability component
 ├── h2_es8311_es7210_audio_system/
 ├── h2_nfc_fm175xx/
+├── h2_wakenet/                     # Single-stream WakeNet inference from packaged model data
 ├── opus_port/
 └── zlib/
 ```
@@ -159,6 +160,16 @@ AMOLED Board 在 `h2_esp_board_runtime_config()` 之前，通过可选的 `h2_es
 单 ES8311 audio system 的 lazy prepare/start 先启用 I2S 时钟，再完成 codec control-port 就绪握手，随后才写入 clock/reset/ADC/DAC 配置和启动 worker。握手使用已有的 `0x44=0x08` noise-immunity 写入，保留 ready codec 的两次初始写入；该序列来自 [Espressif ES8311 driver](https://github.com/espressif/esp-adf/blob/release/v2.x/components/esp_codec_dev/device/es8311/es8311.c#L514-L517)。首次访问可能连续返回 `ESP_ERR_INVALID_RESPONSE` 或 `ESP_ERR_TIMEOUT`，因此只在握手阶段按 20 ms 间隔重试，并用一个包含每次 I2C 等待的 2 秒总 deadline 限制初始化。已就绪的硬件没有固定 sleep；PA 和 mic/speaker worker 在握手完成前保持关闭。持续无应答在 deadline 后返回 `H2_AUDIO_ERR_IO`，其它错误直接返回既有映射结果，握手之后的配置写入不使用此重试策略。I2C API 的 timeout 参数始终以毫秒传入。
 
 `codec control not ready`、`codec control ready` 和 `codec control readiness timeout` 日志分别记录等待、恢复和耗尽 deadline。Host regression 覆盖连续 NACK/timeout 后恢复、永久无应答、tick rollover、正常热启动无额外延迟，以及首写和后续配置写入的真实错误。真机验收须分别覆盖断电后的首次 microphone/speaker 启动和保留供电的软件重启，不能用软件重启代替冷上电。
+
+### 本地 WakeNet
+
+`h2_wakenet` 是 ESP-SR 2.4.7 的 SDK adapter。它借用 caller 的 FS 与 allocator，从安装包的数据目录读取模型到 allocator-owned memory，保存原始分配基址并将 model view 对齐到 16 bytes；校验有界 little-endian model index 与同样对齐的 payload offsets 后调用 `srmodel_load()`。它不要求额外的 `model` flash partition，也不负责烧录、录音、Task 或网络。ESP-SR model registry 是全局资源，一个模型 owner 的 open/process/reset/close/destroy 必须串行，已被占用时 open 明确失败。Close 先关闭仍持有的文件；失败保留全部资源供重试，destroy 成功才清除 caller handle。SDK type 不进入 public header。
+
+Caller 把已经拥有的 16 kHz mono S16LE microphone stream 交给 `h2_esp_wakenet_process()`。Adapter 按模型的实际 chunk size 聚合输入，只把 `WAKENET_DETECTED` 投影为唤醒；channel verification 不算唤醒。暂停输入后可 reset 清除部分 PCM 和 neural history；首次完整 chunk 推理前只清理 adapter 的部分 PCM；推理后通过 destroy/create 重建 SDK instance，避开当前模型即使 warm reset 也可能崩溃的 `clean()`。重建失败将 detector 留在 unopened 状态并保留资源供 close/destroy，明确返回错误，不继续处理部分初始化模型。销毁前先停止该 stream 的 producer。产品自己决定唤醒后是否启动对话，以及挂断、音乐与网络恢复的行为。
+
+`//tools/esp_sr_model:nihaoxiaozhi` 从 `MODULE.bazel` 固定 revision/SHA-256 的上游模型文件生成单模型 binary，使用明确的小端索引及 16-byte data alignment。Weights 受上游 [ESP-SR License](https://github.com/espressif/esp-sr/blob/7ff63a7da40e15e502681be48c4d0e78475544a3/LICENSE) 约束，没有 vendor 到本仓库。该 artifact 对应 `wn9_nihaoxiaozhi_tts` / “你好小智”；产品把它放到自己的 package data path，不能将仅修改显示名字当成新模型。自训 TFLite 模型需要另外的推理 backend。
+
+Host 验证为 `//native_component_src/esp-idf6.x/h2_wakenet:wakenet_test` 与 `//tools/esp_sr_model:pack_test`；最终 consumer 还必须构建 native firmware，并以真实 microphone stream 验证检测效果。Fake SDK 的通过不代表真机唤醒率。
 
 ## Library 与 Third-party Integration
 
