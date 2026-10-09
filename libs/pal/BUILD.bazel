@@ -24,6 +24,7 @@ cc_library(
         "include/h2/pal/hal/h2_pal_audio_task_names.h",
         "include/h2/pal/hal/h2_pal_ble.h",
         "include/h2/pal/hal/h2_pal_button.h",
+        "include/h2/pal/hal/h2_pal_camera.h",
         "include/h2/pal/hal/h2_pal_buzzer.h",
         "include/h2/pal/hal/h2_pal_display.h",
         "include/h2/pal/hal/h2_pal_gpio_irq.h",
@@ -79,6 +80,7 @@ cc_library(
         "src/unsupported/audio_decoder.c",
         "src/unsupported/ble_host.c",
         "src/unsupported/button.c",
+        "src/unsupported/camera.c",
         "src/unsupported/buzzer.c",
         "src/unsupported/crypto.c",
         "src/unsupported/disk.c",
@@ -228,6 +230,22 @@ cc_test(
 cc_test(
     name = "pal_buzzer_test",
     srcs = ["tests/src/test_buzzer.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":unsupported",
+    ],
+)
+
+cc_test(
+    name = "pal_camera_test",
+    srcs = ["tests/test_pal_camera.c"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     target_compatible_with = select({

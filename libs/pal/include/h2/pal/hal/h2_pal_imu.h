@@ -14,7 +14,14 @@ typedef enum h2_pal_imu_flags {
     H2_PAL_IMU_HAS_ACCEL = 1u << 0,
     H2_PAL_IMU_HAS_GYRO = 1u << 1,
     H2_PAL_IMU_HAS_MAG = 1u << 2,
+    /* A successful magnetic sample can contain saturated axes. Their values
+     * are H2_PAL_IMU_MAG_INVALID, not magnetic field measurements. */
+    H2_PAL_IMU_MAG_X_SATURATED = 1u << 3,
+    H2_PAL_IMU_MAG_Y_SATURATED = 1u << 4,
+    H2_PAL_IMU_MAG_Z_SATURATED = 1u << 5,
 } h2_pal_imu_flags_t;
+
+#define H2_PAL_IMU_MAG_INVALID INT32_MIN
 
 typedef struct h2_pal_imu_reading {
     h2_pal_periph_id_t id;

@@ -24,6 +24,7 @@
 #include "h2/pal/os/h2_pal_task.h"
 #include "h2/pal/hal/h2_pal_periph.h"
 #include "h2/pal/hal/h2_pal_button.h"
+#include "h2/pal/hal/h2_pal_camera.h"
 #include "h2/pal/hal/h2_pal_touch.h"
 #include "h2/pal/hal/h2_pal_buzzer.h"
 #include "h2/pal/hal/h2_pal_nfc.h"

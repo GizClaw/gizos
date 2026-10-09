@@ -5,6 +5,7 @@ load("//tools/bazel:esp_idf.bzl", "esp_idf_firmware")
 load("//tools/bazel:jieli.bzl", "jieli_firmware")
 
 _ESP_LAYOUTS = {
+    ("esp32s31", "esp_mosaico"): struct(root = "//boards/esp_mosaico/esp32s31/layouts/h2loader"),
     ("esp32s3", "amoled"): struct(root = "//boards/amoled/esp32s3/layouts/h2loader"),
     ("esp32s3", "devkit"): struct(
         root = "//boards/devkit/esp32s3/layouts/h2loader",

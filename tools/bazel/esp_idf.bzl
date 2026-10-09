@@ -82,6 +82,7 @@ def _native_build_jobs(ctx):
     return jobs
 
 _TARGET_CONFIGS = {
+    "esp32s31": Label("//tools/bazel/platforms:is_esp32s31"),
     "esp32c5": Label("//tools/bazel/platforms:is_esp32c5"),
     "esp32p4": Label("//tools/bazel/platforms:is_esp32p4"),
     "esp32s3": Label("//tools/bazel/platforms:is_esp32s3"),
@@ -110,6 +111,10 @@ def _esp_idf_firmware_impl(ctx):
         flash_files,
         flash_metadata,
     ]
+    sdk_version = ctx.file._s31_sdk_version if ctx.attr.target == "esp32s31" else ctx.file._sdk_version
+    tool_versions = ctx.file._s31_tool_versions if ctx.attr.target == "esp32s31" else ctx.file._tool_versions
+    sdk_locator = ctx.file._s31_sdk_locator if ctx.attr.target == "esp32s31" else ctx.file._sdk_locator
+    tools_locator = ctx.file._s31_tools_locator if ctx.attr.target == "esp32s31" else ctx.file._tools_locator
     support_files = ctx.files.support_files
     graph_sources = [
         dependency[H2NativeComponentInfo].files
@@ -120,7 +125,7 @@ def _esp_idf_firmware_impl(ctx):
     prebuilt_files = [component.archive for component in prebuilt_components]
     prebuilt_headers = [component.headers for component in prebuilt_components]
     inputs = depset(
-        [ctx.file.project, ctx.file.partition, ctx.file._archive_cmake, ctx.file._native_component_cmake, ctx.file._sdk_version, ctx.file._tool_versions, ctx.file._sdk_locator, ctx.file._tools_locator, ctx.file._ccache_locator] + ctx.files.srcs + support_files + ctx.files.project_support_files + prebuilt_files,
+        [ctx.file.project, ctx.file.partition, ctx.file._archive_cmake, ctx.file._native_component_cmake, sdk_version, tool_versions, sdk_locator, tools_locator, ctx.file._ccache_locator] + ctx.files.srcs + support_files + ctx.files.project_support_files + prebuilt_files,
         transitive = graph_sources + prebuilt_headers,
     )
 
@@ -132,10 +137,10 @@ def _esp_idf_firmware_impl(ctx):
     args.add("--target", ctx.attr.target)
     args.add("--board", ctx.attr.board)
     args.add("--version", version)
-    args.add("--idf-version-file", ctx.file._sdk_version.path)
-    args.add("--idf-tool-versions-file", ctx.file._tool_versions.path)
-    args.add("--idf-sdk-locator", ctx.file._sdk_locator.path)
-    args.add("--idf-tools-locator", ctx.file._tools_locator.path)
+    args.add("--idf-version-file", sdk_version.path)
+    args.add("--idf-tool-versions-file", tool_versions.path)
+    args.add("--idf-sdk-locator", sdk_locator.path)
+    args.add("--idf-tools-locator", tools_locator.path)
     args.add("--ccache-runtime-locator", ctx.file._ccache_locator.path)
     if ctx.attr.h2loader_wifi_environment:
         args.add("--h2loader-wifi-environment")
@@ -222,6 +227,10 @@ def _esp_idf_firmware_impl(ctx):
 _esp_idf_firmware = rule(
     implementation = _esp_idf_firmware_impl,
     attrs = {
+        "_s31_tools_locator": attr.label(allow_single_file = True, default = "@gizos_esp_idf_s31_tools//:locator.json"),
+        "_s31_sdk_locator": attr.label(allow_single_file = True, default = "@gizos_esp_idf_s31_sdk//:locator.json"),
+        "_s31_tool_versions": attr.label(allow_single_file = True, default = "//tools/bazel:native_versions/esp_idf_s31_tool_versions.txt"),
+        "_s31_sdk_version": attr.label(allow_single_file = True, default = "//tools/bazel:native_versions/esp_idf_s31_commit.txt"),
         "_runner": attr.label(
             default = "//tools/bazel:esp_idf_runner",
             cfg = "exec",

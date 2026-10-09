@@ -117,3 +117,9 @@ build:ac791n --config=jieli
 build:ac791n --define=h2_firmware_target=ac791n
 build:ac791n --platforms=//tools/bazel/platforms:ac791n
 build:ac791n --repo_env=JIELI_AC791N_SDK_PATH
+
+build:esp32s31 --repo_env=IDF_S31_PATH
+build:esp32s31 --repo_env=IDF_S31_TOOLS_PATH
+build:esp32s31 --repo_env=H2_NATIVE_CCACHE_RUNTIME_ROOT
+build:esp32s31 --define=h2_firmware_target=esp32s31
+build:esp32s31 --platforms=//tools/bazel/platforms:esp32s31
