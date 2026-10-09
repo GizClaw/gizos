@@ -136,9 +136,9 @@ ESP Preference provider 挂载独立 label `pref` 到私有 `/h2pref`，要求 p
 
 PAL backend 只处理 platform/SDK 能力。具体 display、audio codec、sensor、modem 和 GPIO wiring 由硬件 capability component 与 BSP 继续组装。
 
-NimBLE GATT server schema 的静态上限是 4 个 service、每个 service 3 个 characteristic；每个 characteristic 的值副本（最多 514 字节）以 `EXT_RAM_BSS_ATTR` 声明，板级开启 `CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY` 时位于 PSRAM，否则仍在内部 DRAM；超出的注册在改变 state 前返回 `H2_PAL_ERR_UNSUPPORTED`。Characteristic 与 NimBLE access callback 之间的 index 在注册时写入，不来自手写的常量列表——否则扩大表格会让靠后的槽位读成 index 0，把一个 characteristic 的读写派发到另一个上。
+NimBLE GATT server schema 的静态上限是 6 个 service、每个 service 3 个 characteristic，共 18 个 characteristic slot。容量按 Host 曾注册的不同 UUID 累计，不按当前活跃页面计数；management、配网、LuaLink、好友邀请、战队邀请和绑定窗口可以各保留一个独立 schema。第 7 个新 UUID 在改变 state 前返回 `H2_PAL_ERR_NO_MEMORY`；单次注册必须是一份 service declaration，超过 3 个 characteristic 的布局返回 `H2_PAL_ERR_UNSUPPORTED`。每个 characteristic 的值副本（最多 514 字节）以 `EXT_RAM_BSS_ATTR` 声明，板级开启 `CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY` 时位于 PSRAM，否则仍在内部 DRAM；值副本总共占 9252 字节，另有 UUID、callback 和 SDK metadata。Characteristic 与 NimBLE access callback 之间的 index 在注册时写入，不来自手写的常量列表——否则扩大表格会让靠后的槽位读成 index 0，把一个 characteristic 的读写派发到另一个上。
 
-`h2_pal_ble_unregister_gatt_service()` 在 GATT mutex 下仅清除指定 UUID 对应 service 的 read/write callback、user context 和 output-handle 指针，保留 slot 供同 UUID 重注册；其他 service 的绑定不变。仅在所有 service 都没有绑定回调时清除 `gatt_attached`，未知 UUID 返回 `H2_PAL_ERR_NOT_FOUND`。全局 unregister 仍解绑全部 service。
+`h2_pal_ble_unregister_gatt_service()` 在 GATT mutex 下仅清除指定 UUID 对应 service 的 read/write callback、user context 和 output-handle 指针，保留 slot 供同 UUID 重注册；其他 service 的绑定不变。同 UUID、同 characteristic 数量和 UUID 顺序重开时复用原 slot，即使 6 个 slot 都曾使用也不会因重开耗尽容量；改变已保留布局返回 `H2_PAL_ERR_INVALID_STATE`。仅在所有 service 都没有绑定回调时清除 `gatt_attached`，未知 UUID 返回 `H2_PAL_ERR_NOT_FOUND`。全局 unregister 仍解绑全部 service，不能用它回收某个页面的容量。
 
 启用动态服务时，component 在 Host 启动前通过 `ble_gatts_count_cfg()` 按上述容量预留资源，包含每个 characteristic 在每条连接及缓存中的 CCCD；容量定义只用于计数，不注册服务。NimBLE 的 connectable advertising 检查要求 CCCD 池仍有空闲项，仅靠动态注册的 heap fallback 不足以保证广播可以启动。仅按启动时已注册服务分配，会使随后打开的 BLE 配网服务耗尽初始池并返回 `H2_PAL_ERR_NO_MEMORY`。验证时需要覆盖先启动 Host、再打开配网、手机连接及通知、退出后重新打开；`CONFIG_BT_NIMBLE_MAX_CCCDS` 控制持久化 CCCD 数量，不能替代运行时池预留。
 

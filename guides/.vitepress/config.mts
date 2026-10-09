@@ -65,6 +65,7 @@ const zhDevelopmentItems = [
       { text: "Desktop 录像", link: "/zh/developing/desktop_recording" },
       { text: "Game Runtime", link: "/zh/developing/game_runtime" },
       { text: "GizClaw", link: "/zh/developing/gizclaw" },
+      { text: "GizClaw BLE 绑定", link: "/zh/developing/gizclaw_ble_binding" },
       { text: "H2Peer", link: "/zh/developing/h2peer" },
       { text: "H2SCTP", link: "/zh/developing/h2sctp" },
       { text: "libSRTP", link: "/zh/developing/libsrtp" },
