@@ -776,5 +776,24 @@ class EspIdfRunnerTest(unittest.TestCase):
                 self.assertIn("error:", result.stderr)
 
 
+class S31ToolContractTest(unittest.TestCase):
+    def test_s31_contract_does_not_require_xtensa(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "versions.txt"
+            path.write_text("esp32s31=compiler16\nninja=1.13.2\npython=esp-idf-v6.2-constraints\n")
+            versions = runner.read_expected_tool_versions(str(path), "esp32s31")
+            self.assertEqual(versions["esp32s31"], "compiler16")
+            with self.assertRaises(runner.RunnerError):
+                runner.read_expected_tool_versions(str(path), "esp32s3")
+            path.write_text("esp32p4=compiler15\nninja=1.13.2\npython=esp-idf-v6.0-constraints\n")
+            with self.assertRaises(runner.RunnerError):
+                runner.read_expected_tool_versions(str(path), "esp32s31")
+
+    def test_sdk_versions_are_target_owned(self):
+        self.assertEqual(runner.idf_version_for_target("esp32s31"), "6.2")
+        for target in ("esp32s3", "esp32p4", "esp32c5"):
+            self.assertEqual(runner.idf_version_for_target(target), "6.0")
+
+
 if __name__ == "__main__":
     unittest.main()

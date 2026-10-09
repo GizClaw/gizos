@@ -1,0 +1,89 @@
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "bsp_sources",
+    srcs = [
+        "components/esp-mosaico-bsp/onboard/audio.c",
+        "components/esp-mosaico-bsp/onboard/battery.c",
+        "components/esp-mosaico-bsp/onboard/display.c",
+        "components/esp-mosaico-bsp/onboard/esp_mosaico.c",
+        "components/esp-mosaico-bsp/onboard/nand_flash.c",
+        "components/esp-mosaico-bsp/onboard/sensors.c",
+        "components/esp-mosaico-bsp/onboard/subboard.c",
+    ],
+)
+
+filegroup(
+    name = "bsp_headers",
+    srcs = [
+        "components/esp-mosaico-bsp/include/bsp/audio.h",
+        "components/esp-mosaico-bsp/include/bsp/battery.h",
+        "components/esp-mosaico-bsp/include/bsp/button.h",
+        "components/esp-mosaico-bsp/include/bsp/display.h",
+        "components/esp-mosaico-bsp/include/bsp/esp_mosaico.h",
+        "components/esp-mosaico-bsp/include/bsp/imu.h",
+        "components/esp-mosaico-bsp/include/bsp/led.h",
+        "components/esp-mosaico-bsp/include/bsp/magnetometer.h",
+        "components/esp-mosaico-bsp/include/bsp/motor.h",
+        "components/esp-mosaico-bsp/include/bsp/nand_flash.h",
+        "components/esp-mosaico-bsp/include/bsp/power.h",
+        "components/esp-mosaico-bsp/include/bsp/subboard.h",
+    ],
+)
+
+filegroup(
+    name = "bsp_metadata",
+    srcs = [
+        "components/esp-mosaico-bsp/CMakeLists.txt",
+        "components/esp-mosaico-bsp/idf_component.yml",
+        "components/esp-mosaico-bsp/Kconfig",
+    ],
+)
+
+filegroup(
+    name = "boot_splash_sources",
+    srcs = [
+    ],
+)
+
+filegroup(
+    name = "boot_splash_headers",
+    srcs = [
+        "components/mosaico_boot_splash/include/mosaico_boot_handoff.h",
+    ],
+)
+
+filegroup(
+    name = "boot_splash_metadata",
+    srcs = [
+        "components/mosaico_boot_splash/CMakeLists.txt",
+        "components/mosaico_boot_splash/idf_component.yml",
+    ],
+)
+
+
+filegroup(
+    name = "mosaico_module_mgr_sources",
+    srcs = glob(["components/mosaico_module_mgr/*.c"]),
+)
+filegroup(
+    name = "mosaico_module_mgr_headers",
+    srcs = glob(["components/mosaico_module_mgr/include/*.h"]),
+)
+filegroup(
+    name = "mosaico_module_mgr_metadata",
+    srcs = glob(["components/mosaico_module_mgr/CMakeLists.txt", "components/mosaico_module_mgr/idf_component.yml"]),
+)
+
+filegroup(
+    name = "mosaico_module_camera_sources",
+    srcs = glob(["components/mosaico_module_camera/*.c"]),
+)
+filegroup(
+    name = "mosaico_module_camera_headers",
+    srcs = glob(["components/mosaico_module_camera/include/*.h"]),
+)
+filegroup(
+    name = "mosaico_module_camera_metadata",
+    srcs = glob(["components/mosaico_module_camera/CMakeLists.txt", "components/mosaico_module_camera/idf_component.yml", "components/mosaico_module_camera/Kconfig", "components/mosaico_module_camera/patches/*"]),
+)

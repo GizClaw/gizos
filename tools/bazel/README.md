@@ -335,3 +335,13 @@ toolchain, checkout-cleanliness, output, package, or Release validation.
 ## Mobile E2E
 
 [Packaged mobile runners](mobile_e2e.md) share simulator/emulator lifecycle, artifact identity and failure evidence through a direct Python Bazel test. Suite fixtures, phase plans and qualification assertions remain suite-owned.
+## ESP32-S31 / ESP-Mosaico
+
+`--config=esp32s31` uses independent `IDF_S31_PATH` and `IDF_S31_TOOLS_PATH`
+locators. SDK commit and compiler/Python/Ninja identities are pinned in
+`native_versions/esp_idf_s31_commit.txt` and `esp_idf_s31_tool_versions.txt`.
+The SDK must be a clean checkout including submodules, with exactly one matching
+IDF 6.2 Python environment. Existing S3/P4/C5 identities remain unchanged.
+See the [board package](../../boards/esp_mosaico/README.md) for setup and optional
+camera integration. Native builds never flash hardware; an H2Loader artifact
+build does not qualify installation, recovery or rollback.

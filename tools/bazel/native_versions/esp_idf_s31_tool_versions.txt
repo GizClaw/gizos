@@ -1,0 +1,3 @@
+esp32s31=riscv32-esp-elf-gcc (crosstool-NG esp-16.1.0_20260609) 16.1.0
+ninja=1.13.2
+python=esp-idf-v6.2-constraints

@@ -1,0 +1,17 @@
+cmake_minimum_required(VERSION 3.16)
+
+if(NOT DEFINED H2_REPO_ROOT)
+  get_filename_component(H2_REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../../../.." ABSOLUTE)
+else()
+  get_filename_component(H2_REPO_ROOT "${H2_REPO_ROOT}" ABSOLUTE)
+endif()
+
+set(H2_ESP_TARGET "esp32s31")
+set(SDKCONFIG "${CMAKE_BINARY_DIR}/sdkconfig" CACHE FILEPATH "ESP-IDF sdkconfig" FORCE)
+set(SDKCONFIG_DEFAULTS "${H2_REPO_ROOT}/boards/esp_mosaico/esp32s31/sdkconfig.defaults;${CMAKE_CURRENT_LIST_DIR}/sdkconfig.e2e.defaults" CACHE STRING "ESP-IDF sdkconfig defaults" FORCE)
+include("$ENV{H2_BAZEL_COMPONENT_MANIFEST}")
+set(EXTRA_COMPONENT_DIRS ${H2_BAZEL_COMPONENT_DIRS})
+include("${H2_REPO_ROOT}/boards/esp_mosaico/esp32s31/camera/sdk_setup.cmake")
+set(COMPONENTS ${H2_BAZEL_COMPONENT_NAMES})
+include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+project(h2_mosaico_board_e2e)

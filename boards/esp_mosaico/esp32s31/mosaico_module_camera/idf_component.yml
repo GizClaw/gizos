@@ -1,0 +1,4 @@
+dependencies:
+  espressif/esp_video:
+    version: "2.5.0"
+    public: true
