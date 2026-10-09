@@ -95,6 +95,18 @@ Token 由集成方通过 `h2_quectel_modem_config_t` 的 `cell_locate_token` 注
 
 Token 是企业身份凭据：仓库不提供默认值，也不接受把真实 token 写进代码、测试或注释。除了必须携带它的那一条 QLBSCFG 命令外，token 不进入 modem state、response buffer、错误信息和任何日志输出；模组回显 token 时该次调用按 `H2_PAL_ERR_IO` 失败。返回的坐标同样不写入日志。
 
+### Lierda NT26-KCN B
+
+`libs/pal/providers/modem/lierda` 提供显式选型 `NT26KCNB20NNC` 的 data-only Modem PAL。配置复制 APN 和 callback 表，借用 allocator、sync 与 transport context 至成功销毁。GPIO、UART、供电/复位时序、SIM/APN 策略及默认路由归 BSP/产品；driver 不把 CGMM 文本当作产品料号，也不从品牌或前缀推断型号。Identity 使用标准 CGMI/CGMM/CGMR/CGSN/CIMI 的有界信息文本；需要完整身份时，失败或截断清空输出并传播错误，不打印身份或认证数据。
+
+型号与 PPP/UART 能力依据利尔达编写的 [NT26-KCN B 硬件设计手册 Rev2.3](https://atta.szlcsc.com/upload/public/pdf/source/20260202/50AC12B44A6E1249D82013542CE67719.pdf) 选型表、§2.2 和 §4.2.1。所用 CPIN、CEREG、CGATT、COPS、CSQ 与 CGDCONT 属于 [TS 27.007 V17.6.0](https://www.etsi.org/deliver/etsi_ts/127000_127099/127007/17.06.00_60/ts_127007v170600p.pdf) 标准命令；host PPP 拨号与 COMMAND/DATA 转换交给已固定的 [esp_modem 1.4.3 Generic DCE](https://github.com/espressif/esp-protocols/tree/modem-v1.4.3/components/esp_modem)。完整私有 AT/PPP application note 未公开验证，因此不添加供应商私有指令、CALL/GNSS/OTA、CMUX、SIM hotplug 或低功耗 capability。现有其他 NT26 系列与 firmware 功能选配不在此 profile 的支持声明内。
+
+所有控制操作由 mutex 串行化；callback 不得重入 provider。单 UART 的 OPENING/OPEN/CLOSING data 状态下，AT-backed getter 和 `set_apn` 返回 BUSY，PPP 数据不会输入文字 parser。Data open 先确认 SIM READY、HOME/ROAMING 与 packet attach，再设置 IPv4 PDP context，并要求 transport 确认真实 PPP IPv4 地址；未就绪由产品重试，不自动修改 SIM 或网络偏好。`get_data_status` 只查询 host link，不发送 AT。CSQ 仅 `0..31` 有效，其余非负值（包括 99）报告 RSSI invalid；负数、整数溢出、重复信息行、非法 BER 或不完整响应返回 FORMAT/TRUNCATED。此 profile 不查询 RSRP，RAT 仅在明确的标准 COPS AcT 中报告，不能从 RSSI 或 SKU 推断。
+
+Close 通过 transport 关闭整个模块，允许在 graceful data close 失败后恢复；失败保留 instance、mutex、callback 与 dependency 生命周期供重试。销毁前必须停止并 join 外部调用者。具体 ESP 接线与 SDK callback quiescence 见 [ESP-IDF Lierda UART PPP](./components/esp_idf6_x#lierda-data-only-uart-ppp)。Host protocol/state tests 证明有界解析与失败恢复，不能替代真实 SIM、运营商、功耗、UART 波特率和 PPP acceptance。
+
+SIM 查询按 TS27.007 V17.6.0 §8.3、§9.1 和 §9.2.1 区分标准终态。可选 `get_command_error` callback 只提供本实例刚返回的命令 CME 数字元数据，每次命令/拒绝/timeout/close 前清空；没有该 callback 的 transport 保留原 IO 行为。只有 CPIN 本次完成的可信 CME14 才返回 WOULD_BLOCK，输出清空，调用方保持模块供电并按产品定义的间隔/截止策略轮询；一次 getter 不自动 sleep、重置或关电。CME10 返回 ABSENT，明确 PIN/PUK requirement 返回 LOCKED，随后不查询注册/attach、不拨号。CME13/15、未知码、非 CME IO 或不完整回复不当作无卡/忙。PIN2/PUK2 表示当前 credential requirement，不能据此宣称所有 MT 操作都不可用。成功 CPIN 的 READY/标准锁定码也精确匹配，不使用 PIN/PUK 子串推断。Driver 不提供 PIN 猜测、自动输入或模组复位策略。
+
 ### QMI8658
 
 `motion/qmi8658` 实现 QMI8658 IMU 初始化、打开和采样。Transport object 提供 register read/write 与 sleep callback。

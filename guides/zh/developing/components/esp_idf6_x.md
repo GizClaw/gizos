@@ -13,11 +13,38 @@ native_component_src/esp-idf6.x/
 ├── h2_es8311_audio_system/         # Hardware capability component
 ├── h2_es8311_es7210_audio_system/
 ├── h2_nfc_fm175xx/
+├── h2_lierda_modem/                # Explicit NT26-KCN B data-only UART PPP
 ├── opus_port/
 └── zlib/
 ```
 
 只有包含 ESP-IDF implementation source，或拥有独立 SDK dependency 或 registration identity 的 component 才放在这个 root。没有该 native contract 的 Bazel archive 由真实 source component 或 firmware composition owner 直接导入，不建立只转发 include 和 `.a` 的目录。具体 board 的 `sdkconfig.defaults`、partition、GPIO 和 wiring 仍然属于 `boards/<board>/<esp-chip>/` 或具体 image entry。SDK 配置的所有权分两层并按序合并：board 拥有完整的 canonical `sdkconfig.defaults`；layout 只拥有 partition/rollback 或注册变体（如诊断串口、E2E 内存保留）等 layout 专属项。ESP 没有具名 config profile，也没有 project-local SDK config；配置项不得替代 component 依赖声明。
+
+## Lierda data-only UART PPP
+
+`native_component_src/esp-idf6.x/h2_lierda_modem` 将 `libs/pal/providers/modem/lierda:lierda_modem` 接到 esp_modem 1.4.3 Generic UART DCE 与 ESP-NETIF PPP。最终 firmware 的 `firmware_lib_component` 必须包含 portable library，BSP 依赖 native component 并提供显式 SKU、独占 UART/TX/RX、实际 AT 波特率、PAL allocator/sync、APN，以及借用 context 的幂等 power callback。Power callback 拥有当前板的供电/PWRKEY/settling 和异常恢复；adapter 不解释某个 enable GPIO 的硬件意义，不包含私有 board 的引脚或电压渐升策略。
+
+Canonical board `sdkconfig.defaults` 必须启用 `CONFIG_LWIP_PPP_SUPPORT=y`、`CONFIG_LWIP_PPP_NOTIFY_PHASE_SUPPORT=y` 和 `CONFIG_LWIP_IPV4=y`；仅有 `REQUIRES esp_modem` 不代替产品配置。提供 PPP username/password 时还需要 `CONFIG_LWIP_PPP_PAP_SUPPORT=y` 和/或 `CONFIG_LWIP_PPP_CHAP_SUPPORT=y`，按 carrier 与固件配置编译实际认证协议。无认证 backend 时带凭据的 data open 返回 UNSUPPORTED，不降级为无认证拨号。IPv4/PPP 未编译时 adapter creation 不提供 DATA backend。
+
+普通 AT 默认使用模组的 115200 波特率。配置中的 baud 必须已经与模组实际 UART 匹配；adapter 不发送 IPR，不自动改速，不启用 RTS/CTS 或 CMUX。NT26-KCN B 硬件手册 Rev2.3 §4.2.1 列出的普通 AT/data 可配值截至 460800，921600 单独列为固件升级默认；不能从其他产品旧源码的提速调用推断普通 921600 PPP 已获厂商保证。其他速率必须由 consumer 结合具体模组固件单独核验。
+
+每次拨号先更新 Generic DCE 内部 APN/PDP context，再配置 host PPP auth、进入 DATA 并等待当前 SDK netif 真实 IPv4。API 接入 `MODEM_DATA` netif registry，不手动抢占 Wi-Fi default；产品按 PAL netif policy 选择 route，SDK保留自身 route-priority 与销毁时重选行为，接口变化后 reconcile DNS。Callback 过滤所属 netif；关闭中和没有当前 SDK IPv4 的迟到 GOT_IP 不恢复 OPEN。Lost IP/PPP failure 保留非 CLOSED 状态，防止发送 AT 混入数据。Data close 保留 COMMAND 已确认状态，每次通过公共 PPP quiescence helper 检查当前真实 DEAD，不使用历史停止通知作完成依据；清空 SDK 旧 IP 成功后才报告 CLOSED。
+
+整机 close 先调用 board power-off，再通过公共 `h2_esp_platform_ppp_quiesce` 在 TCPIP context 请求停止并确认实际 `PPP_PHASE_DEAD`，之后从普通 task 同步注销默认 event-loop handlers，最后销毁 DCE/netif/event group。电源关闭、DISCONNECT、历史 DEAD event 或 SDK `PPP_STARTED` bit 均不作为释放依据；data close 在 COMMAND 已确认后也使用同一公共终止检查。PPP quiescence 或注销失败时停止释放，保留 DCE/netif、callback 引用和 event group 供重试；callback 内调用 close/destroy 不受支持。真实 UART、SIM、APN auth、运营商网络、GPIO电源与串口改速须由 consumer 实机验收；`lierda_ppp_test` 使用 SDK fixture 编译真实 adapter source，属于 host 状态与 teardown 回归。
+
+Native 私有 C++ bridge 使用固定 esp_modem 1.4.3 公开导出的 [`include/esp_private/c_api_wrapper.hpp`](https://github.com/espressif/esp-protocols/blob/modem-v1.4.3/components/esp_modem/include/esp_private/c_api_wrapper.hpp)。该 header 明确用于 C-extension 开发者；adapter 使用 vendor 定义的 Generic UART wrapper 和公开 `DCE::command`，不复制 wrapper 布局，不使用 SDK `private_include`，不把 SDK type 暴露到生产 public header。普通 `esp_modem_at` 只保留最后信息行，raw C API 的单个 pass/fail 子串也不能完整表达多种 final result，因此这里用每次调用捕获的 collector；不使用全局当前命令指针。
+
+固定 SDK DTE callback 重放累计响应，collector 每次检查完整已收前缀；成功保留全部信息行并消耗 final result，随后 portable parser 拒绝重复或有歧义的 CPIN/CIMI 等信息。整次响应（包含 final framing）要求少于 512 字节且无嵌入 NUL；超长或异常时继续等完整结束标记，不在错误正文中途放弃，避免残留 OK 被下一条命令接受。只把完整行 `OK`、`ERROR`、`+CME ERROR:`、`+CMS ERROR:` 作为终态，信息字段内包含 OK/ERROR 不结束事务。SDK `DTE::command` 返回或超时前，在 line lock 下清除 callback；借出的输出及捕获状态不逃出同步调用。失败时输出为空，Error/CME 不作为成功信息交给 portable getter。已经发出命令但没有完整 final result（包括 timeout/SDK 接收失败）时，后续 AT/data open 返回 INVALID_STATE，直到 successful whole close/reopen；普通 data close 不解除这个命令 fence，迟到 ACK 不能作为新命令的确认。
+
+仅失败时输出 `LIERDA_FAIL`，字段是固定步骤/命令标签、SDK/PAL result，以及严格完整十进制 `0..65535` 或 TS27.007 §9.2.1 精确标准 verbose 白名单归一的 CME code；未知文本、大小写/后缀变种或超范围 CME 为 `-1`（unknown）。没有 AT 正文、回包文本、APN/认证数据、IMEI/IMSI，也不从未知 CME 推断没卡、忙或运营商故障。产品总体网络失败日志不能单凭一个 IO 码证明 DCE 构造失败，需结合这些具体调用边界和设备证据。
+
+`CMEE=2` 依据 TS27.007 §9.1 返回 verbose error。Native 在原始 command 返回 IO 后，只有完整有效 CME final result 才保存本次 typed metadata，并在每条命令（含拒绝/timeout）以及 open/close 前清空；记录属于当前 instance/operation mutex，不会把前一次 busy 借给后一次 generic ERROR、超时或损坏回复。Portable 仅消费刚完成的 CPIN metadata：14→WOULD_BLOCK，10→ABSENT，定义的 PIN/PUK requirement→LOCKED；13/15/unknown 保持 IO，错误正文仍清空。产品已有轮询可保持电源等待 busy→READY；无公共固定上电延时、阻塞等待、自动 PIN/复位、SIM 插卡假设或网络参数修改。
+
+固定诊断中的 `cme_present`、`complete` 布尔字段分别表明是否看到 CME final line、是否完整结束；仅 `cme_code=-1` 不能区分未知文本 CME 与 bare ERROR，不作为“忙/没卡”证据。这两个字段不包含回包文本。
+
+```sh
+bazel test --config=macos_arm64 //libs/pal/providers/modem/lierda:lierda_modem_test //native_component_src/esp-idf6.x/h2_lierda_modem:lierda_ppp_test //native_component_src/esp-idf6.x/h2_lierda_modem:lierda_ppp_no_auth_test
+```
 
 ## Chip 差异
 
