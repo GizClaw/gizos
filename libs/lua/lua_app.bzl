@@ -10,7 +10,7 @@ LuaAppInfo = provider(
         "entry": "Package-relative Lua entry filename.",
         "data_dir": "Optional package-relative sibling data directory, or None.",
         "compact": "Whether the shared Lua source compactor is selected.",
-        "archive": "Deterministic .lua-app.tar.gz package.",
+        "archive": "Deterministic .lua-app.tar.zlib package.",
         "manifest": "Package manifest with file lengths and SHA-256 values.",
         "metadata": "Release metadata with package length and SHA-256.",
     },
@@ -37,7 +37,7 @@ def _lua_app_impl(ctx):
             fail("Duplicate Lua app package path: " + path)
         files[path] = source.path
     stem = app_id + "-" + version + ".lua-app"
-    archive = ctx.actions.declare_file(stem + ".tar.gz")
+    archive = ctx.actions.declare_file(stem + ".tar.zlib")
     manifest = ctx.actions.declare_file(stem + ".manifest.json")
     metadata = ctx.actions.declare_file(stem + ".json")
     specification = ctx.actions.declare_file(ctx.label.name + ".inputs.json")
