@@ -412,6 +412,8 @@ Peripheral、central、GATT server 和 GATT client 是 BLE connection 或 operat
 
 `h2_pal_ble_register_gatt_services()` 注册 service schema。可选的 `h2_pal_ble_unregister_gatt_service(ble, service_uuid)` 只解绑指定 service 的 read/write callback、user context 和 output-handle 指针，保留 schema slot；相同 UUID 和 characteristic 布局重新注册时复用该 slot，其他 service 保持绑定。未知 UUID 返回 `H2_PAL_ERR_NOT_FOUND`，NULL 参数返回 `H2_PAL_ERR_INVALID_ARG`。Provider 未实现时返回 `H2_PAL_ERR_UNSUPPORTED`；bleikcp server 和 BLE Wi-Fi 配网 close 仅在此结果下回退到全局 `h2_pal_ble_unregister_gatt_services()`，其他错误保留实例供重试。全局 unregister 仍解绑所有 service。
 
+保留 schema 的 provider 按 Host 生命周期累计不同 service UUID，因此互斥的页面也可能耗尽容量；调用方必须遵守 provider 的累计上限，不能把 unregister 当作释放 schema。ESP-IDF NimBLE 支持 6 个 retained service、每个 3 个 characteristic；同布局重注册复用原 slot，具体错误和资源预留见 [ESP-IDF component](./components/esp_idf6_x)。这不是所有 BLE provider 的统一数量保证。
+
 `h2_pal_ble_indicate()` 是唯一的 GATT server indication operation。调用方提供明确 timeout；`H2_PAL_OK` 只表示 peer 已确认，提交失败、协议拒绝、断连、Host stop 或 timeout 直接作为该调用的最终结果返回。`timeout_ms == 0` 只有在无需等待即可完成时才能成功，否则必须在发送前返回 `H2_PAL_ERR_WOULD_BLOCK`。Provider 可以只允许一个未完成 indication，并以 `H2_PAL_ERR_BUSY` 拒绝冲突调用；SDK sequence、generation 和迟到 completion 都是 provider private state，不能通过 indication ID 或 System Event 泄漏。Notification 仍只报告提交结果。
 
 当前 BK3633、ESP-IDF 6.x NimBLE 和 BK7258 AP EtherMind backend 等待各自 stack 的 peer confirmation。无法可靠观察 confirmation 的 BK7258 legacy BLE stack、Desktop simulator 和 CoreBluetooth backend 在发送前返回 `H2_PAL_ERR_UNSUPPORTED`，不得把普通“已发出”回调伪装为确认。
