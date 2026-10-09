@@ -41,6 +41,7 @@ embedded_include_paths_check(
         "//tools/bazel/platforms:is_bk7258": [],
         "//tools/bazel/platforms:is_esp32c5": [],
         "//tools/bazel/platforms:is_esp32p4": [],
+        "//tools/bazel/platforms:is_esp32s31": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
 )
