@@ -113,8 +113,9 @@ h2_pal_result_t h2_aec_calibration_create(const h2_aec_calibration_config_t *c,
         c->mem->vtable->alloc == NULL || c->mem->vtable->free == NULL ||
         c->time == NULL || c->candidates == NULL || c->candidate_count == 0u ||
         c->candidate_count > H2_AEC_CALIBRATION_MAX_CANDIDATES ||
-        c->selection < H2_AEC_CALIBRATION_PARETO_ONLY ||
-        c->selection > H2_AEC_CALIBRATION_MIC_FIRST || !valid_limits(&c->limits))
+        (c->selection != H2_AEC_CALIBRATION_PARETO_ONLY &&
+         c->selection != H2_AEC_CALIBRATION_SPEAKER_FIRST &&
+         c->selection != H2_AEC_CALIBRATION_MIC_FIRST) || !valid_limits(&c->limits))
         return H2_PAL_ERR_INVALID_ARG;
     for (size_t i = 0u; i < c->candidate_count; ++i) {
         if (c->candidates[i].speaker_percent == 0u || c->candidates[i].speaker_percent > 100u ||
@@ -297,7 +298,8 @@ static void observe_error(void *user, int capture, int result) {
 static int control_near_source(h2_aec_calibration_t *r, bool enabled) {
     uint64_t start = 0u, end = 0u;
     int rc = h2_pal_time_get_monotonic_ms(r->config.time, &start);
-    if (rc != H2_PAL_OK)
+    const int start_rc = rc;
+    if (rc != H2_PAL_OK && enabled)
         return rc;
     if (r->meter->source_control_calls == UINT32_MAX)
         return H2_PAL_ERR_IO;
@@ -305,7 +307,13 @@ static int control_near_source(h2_aec_calibration_t *r, bool enabled) {
     rc = r->config.near_source(r->config.near_source_user, enabled,
         &r->result.format, r->near_probe, r->result.format.frame_samples_per_channel,
         r->config.limits.source_timeout_ms);
+    /* A stopped independent source no longer borrows the probe, even when
+     * its timing cannot be qualified. Clock errors must never skip stop. */
+    if (!enabled && rc == H2_PAL_OK)
+        r->near_retained = false;
     const int clock_rc = h2_pal_time_get_monotonic_ms(r->config.time, &end);
+    if (start_rc != H2_PAL_OK)
+        return rc != H2_PAL_OK ? rc : start_rc;
     if (clock_rc != H2_PAL_OK)
         return rc != H2_PAL_OK ? rc : clock_rc;
     if (end < start || UINT64_MAX - r->meter->source_control_ms < end - start)

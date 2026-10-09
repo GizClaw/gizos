@@ -2,7 +2,7 @@
 
 import hashlib
 import json
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import unittest
 from unittest.mock import patch
 
@@ -43,6 +43,21 @@ class Compatibility(unittest.TestCase):
     def test_scope_cannot_exempt_another_capability(self):
         content = b"unrelated Display provider bytes"
         self.assertEqual(compatibility.source_content("display.c", content), content)
+
+    def test_windows_path_keys_preserve_projection_and_reject_mutations(self):
+        audit = json.loads(compatibility.RECORD.read_bytes())
+        for name, record in audit["files"].items():
+            source = Path(name).read_bytes()
+            for key in (PureWindowsPath(name), str(PureWindowsPath(name))):
+                restored = compatibility.source_content(key, source)
+                self.assertEqual(hashlib.sha256(restored).hexdigest(), record["previous_sha256"])
+                with self.assertRaises(AssertionError):
+                    compatibility.source_content(key, source + b"\nchanged ordinary behavior\n")
+                if name == "libs/pal/providers/ios/pal_core/src/h2_ios_audio.m":
+                    modified_stub = source.replace(
+                        b"    return H2_AUDIO_ERR_UNSUPPORTED;", b"    return H2_AUDIO_OK;", 1)
+                    with self.assertRaises(AssertionError):
+                        compatibility.source_content(key, modified_stub)
 
 
 if __name__ == "__main__":

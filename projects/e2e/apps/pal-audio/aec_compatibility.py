@@ -7,7 +7,7 @@ Every byte outside the fixed compatibility patch must still match those runs.
 
 import hashlib
 import json
-from pathlib import Path
+from pathlib import Path, PurePath, PureWindowsPath
 
 
 SCOPE_DIGEST = "9cc4550ac57ba03c41209c1edd44975706cefc189b207f53aba2a3f137210a97"
@@ -21,7 +21,7 @@ RECORD = Path("projects/e2e/apps/pal-audio/aec_optional_compatibility.json")
 
 
 def source_content(path, content):
-    name = str(path)
+    name = path.as_posix() if isinstance(path, PurePath) else PureWindowsPath(str(path)).as_posix()
     if name not in PATHS:
         return content
     encoded = RECORD.read_bytes()
