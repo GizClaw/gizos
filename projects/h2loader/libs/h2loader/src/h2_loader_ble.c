@@ -766,14 +766,12 @@ int h2_loader_ble_service_open(
             H2_LOADER_BLE_ADVERTISING_LEGACY
         ? H2_PAL_BLE_LEGACY_ADV_DATA_MAX_LEN - 2u
         : H2_LOADER_BLE_SERVICE_DATA_FIXED_LEN + H2_LOADER_BLE_BOARD_MAX;
-    /* Long complete names use UUID discovery plus connected command status. */
-    const bool name_only_legacy =
-        config->advertising_mode == H2_LOADER_BLE_ADVERTISING_LEGACY &&
-        name_len != 0u &&
-        name_len + 2u + H2_LOADER_BLE_COMPACT_SERVICE_DATA_LEN > identity_capacity;
     if (config->advertising_mode == H2_LOADER_BLE_ADVERTISING_LEGACY &&
-        name_len != 0u && !name_only_legacy) {
-        identity_capacity -= name_len + 2u;
+        name_len != 0u) {
+        if (name_len + 2u < identity_capacity)
+            identity_capacity -= name_len + 2u;
+        else
+            identity_capacity = 0u;
     }
     if (!h2_bleikcp_global_ready()) return H2_PAL_ERR_INVALID_STATE;
     service = h2_pal_mem_alloc(config->api.allocator, sizeof(*service));
@@ -794,7 +792,6 @@ int h2_loader_ble_service_open(
                                                    : H2_PAL_ERR_NO_MEMORY;
     }
     service->config = *config;
-    service->name_only_legacy = name_only_legacy;
     if (name_len != 0u) {
         memcpy(service->local_name, config->local_name, name_len);
         service->config.local_name = service->local_name;
@@ -805,6 +802,15 @@ int h2_loader_ble_service_open(
         config->capabilities, config->board,
         service->service_data, identity_capacity,
         &service->service_data_len);
+    if (rc != H2_PAL_OK && name_len != 0u &&
+        config->advertising_mode == H2_LOADER_BLE_ADVERTISING_LEGACY) {
+        /* Keep a complete long name and the management UUID. Discovery then
+         * reads authoritative identity from command status after connecting. */
+        rc = h2_loader_ble_encode_identity(
+            config->capabilities, config->board, service->service_data,
+            H2_PAL_BLE_LEGACY_ADV_DATA_MAX_LEN - 2u, &service->service_data_len);
+        service->name_only_legacy = rc == H2_PAL_OK;
+    }
     if (rc != H2_PAL_OK) {
         goto fail;
     }

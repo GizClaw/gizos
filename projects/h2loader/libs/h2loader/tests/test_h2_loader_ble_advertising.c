@@ -117,6 +117,7 @@ static void test_mode(h2_loader_ble_advertising_mode_t mode, bool named) {
     memset(name, 'X', sizeof(name) - 1u);
     assert(h2_loader_ble_service_pause_advertising(service) == H2_PAL_OK);
     assert(h2_loader_ble_service_resume_advertising(service) == H2_PAL_OK);
+    assert(h2_loader_ble_service_set_additional_advertised_services(service, NULL, 0u) == H2_PAL_OK);
     assert(capture.updates >= 2u);
     assert(strcmp(capture.name, named ? "h106-tiga-A1B2C3" : "") == 0);
     assert(h2_loader_ble_service_close(service) == H2_PAL_OK);

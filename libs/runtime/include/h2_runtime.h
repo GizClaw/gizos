@@ -39,7 +39,8 @@ typedef struct h2_runtime_config {
     const char *board;
     const char *target;
     const char *chip;
-    /** Optional product BLE local name, NUL-terminated and at most 29 bytes.
+    /** Optional nonempty product BLE local name, NUL-terminated and at most
+     * 29 printable ASCII bytes; invalid names fail Runtime initialization.
      * Borrowed through Runtime deinit. The product owns its spelling and stable
      * device suffix; it is display metadata, never an authenticated identity. */
     const char *ble_local_name;

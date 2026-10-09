@@ -238,6 +238,13 @@ static int runtime_config_is_valid(const h2_runtime_config_t *config) {
         config->chip == NULL) {
         return 0;
     }
+    if (config->ble_local_name != NULL) {
+        if (config->ble_local_name[0] == '\0') return 0;
+        for (size_t i = 0u; config->ble_local_name[i] != '\0'; ++i) {
+            const unsigned char c = (unsigned char)config->ble_local_name[i];
+            if (i >= 29u || c < 0x20u || c > 0x7eu) return 0;
+        }
+    }
 #define H2_RUNTIME_CONFIG_HAS_API(field) \
     (config->field != NULL)
     const int has_complete_surface =

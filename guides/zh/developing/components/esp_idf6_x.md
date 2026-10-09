@@ -400,4 +400,4 @@ ESP Time PAL converts milliseconds to FreeRTOS ticks with ceiling division using
 
 ## App BLE command display name
 
-ESP App command config 的可选 `ble_local_name` 传给公共 H2Loader BLE service；NULL 保留默认无名广播，非空名字在 service open 时复制，并在断开、共存 pause/resume 后保留。它不替代 board、Service UUID、versioned identity 或 `device_uid`。产品只在自己的 launcher 构造名字，不修改 NimBLE backend 或公共 registry。Legacy 名字与 manufacturer identity 共享 31-byte scan response；公共 service 在 identity 编码前预留名字空间，超出容量明确失败。最终 consumer 必须用真实 scan response 和连接后 status 交叉验证名字、board 与 UID；host packing test 不代表手机显示已经通过。
+ESP App command adapter 优先把 Runtime 的 `ble_local_name` 传给公共 H2Loader BLE service；Runtime 未提供时使用 App command config 的可选同名字段，两者都为 NULL 时保持无名广播。非空名称在 service open 时复制，并在断开、共存 pause/resume 后保留。产品在自己的 Board／launcher 构造稳定名称，不修改 NimBLE backend 或公共 registry。Legacy 名称与 compact manufacturer identity 能同时装入 31-byte scan response 时保留两者；较长名称只携带管理 UUID 与完整名称，Host 通过连接后的 `status` 获取 board／capabilities 与 `device_uid`。显示名称不用于 package identity 校验。最终 consumer 必须用真实 scan response 和连接后 status 交叉验证名称、board 与 UID；host packing test 不代表手机显示已经通过。
