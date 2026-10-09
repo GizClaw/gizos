@@ -147,6 +147,7 @@ struct h2_loader_ble_service {
     uint8_t service_data[H2_LOADER_BLE_SERVICE_DATA_FIXED_LEN +
                          H2_LOADER_BLE_BOARD_MAX];
     size_t service_data_len;
+    bool name_only_legacy;
     char local_name[H2_LOADER_BLE_LOCAL_NAME_MAX + 1u];
     h2_pal_ble_uuid_t additional_services[
         H2_LOADER_BLE_MAX_ADDITIONAL_ADVERTISED_SERVICES];
@@ -209,10 +210,12 @@ static int h2_loader_ble_service_update_advertising(
     };
     if (service->config.advertising_mode ==
         H2_LOADER_BLE_ADVERTISING_LEGACY) {
-        adv_data.manufacturer_data = (h2_pal_ble_bytes_t){
-            .data = service->service_data,
-            .len = service->service_data_len,
-        };
+        if (!service->name_only_legacy) {
+            adv_data.manufacturer_data = (h2_pal_ble_bytes_t){
+                .data = service->service_data,
+                .len = service->service_data_len,
+            };
+        }
     } else {
         adv_data.service_data_uuid = services[0];
         adv_data.service_data = (h2_pal_ble_bytes_t){
@@ -754,14 +757,22 @@ int h2_loader_ble_service_open(
             ++name_len;
         if (name_len == 0u || name_len > H2_LOADER_BLE_LOCAL_NAME_MAX)
             return H2_PAL_ERR_INVALID_ARG;
+        for (size_t i = 0u; i < name_len; ++i) {
+            const unsigned char c = (unsigned char)config->local_name[i];
+            if (c < 0x20u || c > 0x7eu) return H2_PAL_ERR_INVALID_ARG;
+        }
     }
     size_t identity_capacity = config->advertising_mode ==
             H2_LOADER_BLE_ADVERTISING_LEGACY
         ? H2_PAL_BLE_LEGACY_ADV_DATA_MAX_LEN - 2u
         : H2_LOADER_BLE_SERVICE_DATA_FIXED_LEN + H2_LOADER_BLE_BOARD_MAX;
-    if (config->advertising_mode == H2_LOADER_BLE_ADVERTISING_LEGACY && name_len != 0u) {
-        if (name_len + 2u >= identity_capacity)
-            return H2_PAL_ERR_INVALID_ARG;
+    /* Long complete names use UUID discovery plus connected command status. */
+    const bool name_only_legacy =
+        config->advertising_mode == H2_LOADER_BLE_ADVERTISING_LEGACY &&
+        name_len != 0u &&
+        name_len + 2u + H2_LOADER_BLE_COMPACT_SERVICE_DATA_LEN > identity_capacity;
+    if (config->advertising_mode == H2_LOADER_BLE_ADVERTISING_LEGACY &&
+        name_len != 0u && !name_only_legacy) {
         identity_capacity -= name_len + 2u;
     }
     if (!h2_bleikcp_global_ready()) return H2_PAL_ERR_INVALID_STATE;
@@ -783,6 +794,7 @@ int h2_loader_ble_service_open(
                                                    : H2_PAL_ERR_NO_MEMORY;
     }
     service->config = *config;
+    service->name_only_legacy = name_only_legacy;
     if (name_len != 0u) {
         memcpy(service->local_name, config->local_name, name_len);
         service->config.local_name = service->local_name;

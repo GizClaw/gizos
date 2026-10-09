@@ -17,6 +17,12 @@ H2Loader 是 GizOS 的固件管理产品。它由工厂 Batch Loader、repositor
 | [BLE iKCP Baseline](./apps/bleikcp_speed/) | 两台设备之间的 BLE iKCP 吞吐和断线恢复基准 |
 | [Wi-Fi CSI Smoke](./apps/wifi_csi/) | 在屏幕上显示 Wi-Fi CSI、链路元数据和诊断错误 |
 
+## 产品广播名称
+
+H2Loader Loader 与 App 管理 adapter 消费 Runtime 的可选 `ble_local_name`；portable BLE service 在 open 时校验并复制名称，pause／resume 与断线重开继续使用同一个值。产品／board 在自己的仓库决定型号前缀和稳定设备后缀，公共 H2Loader 不维护私有机型列表。
+
+具名 legacy 广播保留管理 service UUID，完整名称由 provider 放入 scan response；为保证较长名称不会使两个 31-byte PDU 溢出，且不依赖各 backend 重排 AD record，此时省略 manufacturer identity。Host 已支持仅凭管理 UUID 接纳候选，再连接并通过 command `status` 获得真实 board 和 capabilities；名称不参与 package identity 校验。未提供名称的 legacy 广播以及 extended 广播保留原来的 identity payload，extended 广播额外携带名称。
+
 ## App Board Matrix
 
 原始固件矩阵以 `projects/<owner>/targets/h2loader_tar_zlib/<image>/<board>/` 中当前具备 `:package` 构建入口的 image 为准，不把“存在 entry”误写成“已经完成实机验收”。

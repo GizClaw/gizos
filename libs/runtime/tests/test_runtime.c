@@ -873,9 +873,11 @@ static h2_runtime_config_t test_runtime_config(test_runtime_env_t *env) {
 
 static h2_runtime_t *test_runtime_create(test_runtime_env_t *env) {
     h2_runtime_config_t config = test_runtime_config(env);
+    config.ble_local_name = "h106-tiga-A1B2C3";
     h2_runtime_t *runtime = NULL;
     assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
     assert(runtime != NULL);
+    assert(runtime->ble_local_name == config.ble_local_name);
     assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_OK);
     return runtime;
 }

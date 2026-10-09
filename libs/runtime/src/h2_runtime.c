@@ -414,6 +414,7 @@ h2_pal_result_t h2_runtime_init(
     runtime->board = config->board;
     runtime->target = config->target;
     runtime->chip = config->chip;
+    runtime->ble_local_name = config->ble_local_name;
     runtime->private_state = private_state;
     h2_pal_result_t atomic_rc = runtime_atomic_init(private_state);
     if (atomic_rc != H2_PAL_OK) {
