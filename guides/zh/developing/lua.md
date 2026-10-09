@@ -428,7 +428,7 @@ lua_app(
 )
 ```
 
-Rule 输出 `<app_id>-<version>.lua-app.tar.gz`、同 stem 的 `.manifest.json` 和 `.json` release metadata，并通过 `LuaAppInfo` 暴露 identity 与三个 File。Archive 是 gzip 压缩的 USTAR，含 `manifest.json`、入口和 data 文件；文件排序、mtime、mode、uid/gid 和 gzip header 固定，不包含机器路径或发布批次。Manifest `format=1`、`type=lua-app`，记录 app id、version、entry、可空的 data_dir，以及每个 payload 文件的 path、size 和 SHA-256。Release metadata 保留 manifest，并记录压缩包 basename、size 和 SHA-256；下载校验值与包内文件校验值分别使用。
+Rule 输出 `<app_id>-<version>.lua-app.tar.zlib`、同 stem 的 `.manifest.json` 和 `.json` release metadata，并通过 `LuaAppInfo` 暴露 identity 与三个 File。Archive 是 zlib 格式压缩的 USTAR（RFC 1950 包装的 DEFLATE），含 `manifest.json`、入口和 data 文件，可使用现有 zlib inflate 模式解压；文件排序、mtime、mode、uid/gid 和压缩参数固定，不包含机器路径或发布批次。Manifest `format=1`、`type=lua-app`，记录 app id、version、entry、可空的 data_dir，以及每个 payload 文件的 path、size 和 SHA-256。Release metadata 保留 manifest，并记录压缩包 basename、size 和 SHA-256；下载校验值与包内文件校验值分别使用。
 
 可选的 `compact=True` 复用同一公共 `embed_resource.py` 源码精简器，保留 literal bytes 和源码行数，manifest 与 release metadata 的 `compact` 字段记录该选择；默认保持原始文本。Data 文件必须来自入口旁的同名目录，不能包含绝对路径、路径穿越、隐藏文件或保留的 `.kv`/`.index` 存档。所有 archive entry 都是普通文件；入口拒绝 bytecode 和 NUL。Package 可以声明多层 data 路径，但这不改变下文现有 `storage` 的扁平目录合同；消费宿主必须按自身资源访问能力和配额验证兼容性。打包不创建 Runtime、不运行脚本、不安装设备，也不改变已有存档。
 

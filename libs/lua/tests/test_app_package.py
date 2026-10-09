@@ -2,12 +2,14 @@
 
 import hashlib
 import importlib.util
+import io
 import json
 from pathlib import Path
 import sys
 import tarfile
 import tempfile
 import unittest
+import zlib
 
 MODULE = Path(__file__).resolve().parents[1] / "app_package.py"
 sys.path.insert(0, str(MODULE.parent))
@@ -30,14 +32,21 @@ class LuaAppPackageTest(unittest.TestCase):
         return {"app_id": "abc", "version": "1.2.3", "entry": "abc.lua", "files": files}
 
     def build(self, root, specification):
-        archive = root / "abc-1.2.3.lua-app.tar.gz"
+        archive = root / "abc-1.2.3.lua-app.tar.zlib"
         manifest = root / "manifest.json"
         metadata = root / "metadata.json"
         package.build_package(specification, archive, manifest, metadata)
         return archive, manifest, metadata
 
+    def open_archive(self, path):
+        decoder = zlib.decompressobj()
+        contents = decoder.decompress(path.read_bytes()) + decoder.flush()
+        self.assertTrue(decoder.eof)
+        self.assertEqual(decoder.unused_data, b"")
+        return tarfile.open(fileobj=io.BytesIO(contents), mode="r:")
+
     def inspect(self, path):
-        with tarfile.open(path, "r:gz") as archive:
+        with self.open_archive(path) as archive:
             members = archive.getmembers()
             self.assertTrue(
                 all(
@@ -110,7 +119,7 @@ class LuaAppPackageTest(unittest.TestCase):
                 specification["files"][name] = specification["files"]["abc.lua"]
                 with self.assertRaises(ValueError):
                     self.build(root, specification)
-                self.assertFalse((root / "abc-1.2.3.lua-app.tar.gz").exists())
+                self.assertFalse((root / "abc-1.2.3.lua-app.tar.zlib").exists())
 
     def test_rejects_invalid_versions_and_identity(self):
         for field, value in (
@@ -155,7 +164,7 @@ class LuaAppPackageTest(unittest.TestCase):
             Path(specification["files"]["abc.lua"]).write_bytes(original)
             specification["compact"] = True
             archive, _, _ = self.build(root, specification)
-            with tarfile.open(archive) as result:
+            with self.open_archive(archive) as result:
                 self.assertEqual(
                     result.extractfile("abc.lua").read(),
                     package.compact_source(original),
