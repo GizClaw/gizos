@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import argparse
-import gzip
 import hashlib
 import io
 import json
 from pathlib import Path, PurePosixPath
 import re
 import tarfile
+import zlib
 
 from embed_resource import compact_source
 
@@ -102,18 +102,16 @@ def build_package(
     manifest_bytes = json_bytes(value)
     contents["manifest.json"] = manifest_bytes
     # USTAR, zero timestamps and fixed ownership avoid machine/run provenance.
-    with archive.open("wb") as output:
-        with gzip.GzipFile(
-            filename="", fileobj=output, mode="wb", mtime=0, compresslevel=9
-        ) as compressed:
-            with tarfile.open(
-                fileobj=compressed, mode="w", format=tarfile.USTAR_FORMAT
-            ) as package:
-                for name, data in sorted(contents.items()):
-                    info = tarfile.TarInfo(name)
-                    info.size = len(data)
-                    info.mode = 0o644
-                    package.addfile(info, io.BytesIO(data))
+    with io.BytesIO() as tar_bytes:
+        with tarfile.open(
+            fileobj=tar_bytes, mode="w", format=tarfile.USTAR_FORMAT
+        ) as package:
+            for name, data in sorted(contents.items()):
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                info.mode = 0o644
+                package.addfile(info, io.BytesIO(data))
+        archive.write_bytes(zlib.compress(tar_bytes.getvalue(), level=9))
     manifest.write_bytes(manifest_bytes)
     metadata.write_bytes(
         json_bytes(
