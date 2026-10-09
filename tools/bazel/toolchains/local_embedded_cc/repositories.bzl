@@ -371,6 +371,33 @@ def _extension_impl(_module_ctx):
     )
 
     local_embedded_cc_repository(
+        name = "gizos_esp32s31_cc_toolchain",
+        compile_flags = [
+            "-Os",
+            "-march=rv32imafcb_zicsr_zifencei",
+            "-mabi=ilp32f",
+            "-ffunction-sections",
+            "-fdata-sections",
+            "-fno-common",
+        ],
+        family = "riscv32-esp-elf",
+        layout = "idf_tools",
+        locator = "@gizos_esp_idf_s31_tools//:locator.json",
+        locator_path = "tools_root",
+        prefix = "riscv32-esp-elf-",
+        target_constraints = [
+            "@gizos//tools/bazel/platforms:cpu_riscv32",
+            "@gizos//tools/bazel/platforms:target_esp32s31",
+            "@platforms//os:none",
+        ],
+        target_cpu = "riscv32",
+        target_system_name = "esp32s31-elf",
+        toolchain_identifier = "esp32s31-local-esp-16.1.0",
+        version_key = "esp32s31",
+        versions_file = "//tools/bazel:native_versions/esp_idf_s31_tool_versions.txt",
+    )
+
+    local_embedded_cc_repository(
         name = "gizos_jieli_ac707n_cc_toolchain",
         compile_flags = [
             "-target",

@@ -97,6 +97,7 @@ const zhDevelopmentItems = [
         text: "ESP-IDF 6.x",
         link: "/zh/developing/components/esp_idf6_x",
       },
+      { text: "ESP-Mosaico", link: "/zh/developing/esp_mosaico" },
       { text: "BK7258", link: "/zh/developing/components/bk7258" },
       { text: "BK3633", link: "/zh/developing/components/bk3633" },
       { text: "JieLi", link: "/zh/developing/components/jieli" },

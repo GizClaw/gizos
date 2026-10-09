@@ -1,0 +1,63 @@
+load("//tools/bazel:esp_idf.bzl", "esp_idf_firmware")
+load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+load("//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
+package(default_visibility = ["//visibility:public"])
+
+esp_target_task_policy(
+    default_policy = "4 any 8192 psram",
+    graph = [":main"],
+    policies = [
+        "$runtime/input default",
+        "$runtime/nfc default",
+        "pal/e2e/core default",
+        "pal-audio/e2e/runner default",
+        "pal/e2e/runner default",
+        "pal/e2e/queue default",
+        "pal/e2e/condition default",
+        "pal/e2e/consumer default",
+        "pal/e2e/producer default",
+        "$h2peer/net default",
+        "$h2peer/udp default",
+    ],
+)
+firmware_lib_component(
+    name = "firmware_lib",
+    deps = [
+        "//libs/audio_mixer",
+        "//libs/drivers/audio/es8311",
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/corehttp",
+        "//libs/runtime",
+        "//libs/wifi_sta",
+        "//projects/e2e/apps/pal/app:pal_e2e",
+        "//projects/e2e/apps/pal-audio/app:pal_audio_e2e",
+    ],
+)
+firmware_native_component(
+    name = "main",
+    srcs = ["main/main.c", "main/diagnostics.c", "main/camera_probe.c", "main/camera_e2e.c", "main/diagnostics.h"],
+    component_directory = "projects/e2e/targets/esp_idf_firmware/mosaico-board/esp_mosaico/main",
+    component_name = "main",
+    data = ["main/CMakeLists.txt"],
+    deps = [
+        ":firmware_lib",
+        "//boards/esp_mosaico/esp32s31",
+        "//boards/esp_mosaico/esp32s31:usb_console",
+        "//boards/esp_mosaico/esp32s31:camera",
+        "//projects/e2e/apps/pal/app:pal_e2e",
+        "//projects/e2e/apps/pal-audio/app:pal_audio_e2e",
+    ],
+)
+esp_idf_firmware(
+    name = "firmware",
+    srcs = ["CMakeLists.txt", "sdkconfig.e2e.defaults", "main/main.c", "main/diagnostics.c", "main/camera_probe.c", "main/camera_e2e.c", "main/diagnostics.h", "main/CMakeLists.txt"],
+    board = "esp_mosaico",
+    graph = [":main"],
+    partition = "//boards/esp_mosaico/esp32s31/layouts/board_e2e:partition.csv",
+    project = "CMakeLists.txt",
+    project_name = "h2_mosaico_board_e2e",
+    project_support_files = ["//boards/esp_mosaico/esp32s31:sdkconfig.defaults"],
+    target = "esp32s31",
+    task_policy = ":task_policy",
+)

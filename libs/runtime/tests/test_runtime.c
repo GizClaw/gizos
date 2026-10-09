@@ -3081,6 +3081,31 @@ static void test_imu_ignores_samples_without_required_flags(void) {
     h2_runtime_deinit(runtime);
 }
 
+static void test_imu_saturated_magnetometer_does_not_emit_motion(void) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    add_periph(&env, 30u, H2_PAL_PERIPH_TYPE_IMU, NULL, 0u);
+    env.imu_state.reading = (h2_pal_imu_reading_t){
+        .flags = H2_PAL_IMU_HAS_MAG | H2_PAL_IMU_MAG_Y_SATURATED,
+        .mag_mgauss = { .x = 100, .y = H2_PAL_IMU_MAG_INVALID, .z = -100 },
+        .accel_mg = { .x = H2_RUNTIME_IMU_TILT_THRESHOLD_MG, .y = 0, .z = 0 },
+        .gyro_mdps = { .x = 0, .y = 0, .z = H2_RUNTIME_IMU_FLIP_GYRO_THRESHOLD_MDPS },
+    };
+    env.time_state.now_ms = H2_RUNTIME_IMU_TILT_DEBOUNCE_MS;
+    h2_runtime_t *runtime = test_runtime_create(&env);
+    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+
+    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+    h2_runtime_event_t event = event_with_payload(payload);
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_WOULD_BLOCK);
+
+    h2_runtime_imu_state_t state;
+    assert(h2_runtime_component_state_imu(runtime, 1u, &state) == H2_PAL_OK);
+    assert(state.gesture_kind == H2_RUNTIME_IMU_GESTURE_NONE);
+
+    h2_runtime_deinit(runtime);
+}
+
 static void test_nfc_rejects_oversized_uid_len(void) {
     test_runtime_env_t env;
     test_env_init(&env);
@@ -5150,6 +5175,7 @@ int main(void) {
     test_imu_shake_suppresses_intermediate_tilt();
     test_imu_int32_min_sample_is_safe();
     test_imu_ignores_samples_without_required_flags();
+    test_imu_saturated_magnetometer_does_not_emit_motion();
     test_nfc_rejects_oversized_uid_len();
     test_periph_id_and_unsupported_component_state();
     test_runtime_component_registry_queries_physical_kind();

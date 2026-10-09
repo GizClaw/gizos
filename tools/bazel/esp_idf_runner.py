@@ -32,7 +32,12 @@ H2LOADER_WIFI_CREDENTIALS = "H2LOADER_WIFI_CREDENTIALS"
 NATIVE_BUILD_JOBS = "H2_NATIVE_BUILD_JOBS"
 GIZOS_ROOT = Path(__file__).resolve().parents[2]
 EXPECTED_IDF_VERSION = "6.0"
+
+def idf_version_for_target(target: str) -> str:
+    return "6.2" if target == "esp32s31" else EXPECTED_IDF_VERSION
+
 TARGET_COMPILERS = {
+    "esp32s31": "riscv32-esp-elf-gcc",
     "esp32c5": "riscv32-esp-elf-gcc",
     "esp32p4": "riscv32-esp-elf-gcc",
     "esp32s3": "xtensa-esp-elf-gcc",
@@ -41,8 +46,9 @@ SAFE_PROJECT_NAME = re.compile(r"^[A-Za-z0-9_]+$")
 SAFE_COMPONENT_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 SAFE_CMAKE_VARIABLE_NAME = re.compile(r"^[A-Z][A-Z0-9_]*$")
 COMMIT = re.compile(r"^[0-9a-f]{40}$")
-REQUIRED_TOOL_VERSION_KEYS = frozenset((*TARGET_COMPILERS, "ninja", "python"))
+REQUIRED_TOOL_VERSION_KEYS = frozenset(("esp32s3", "esp32p4", "esp32c5", "ninja", "python"))
 TOOL_VERSION_KEYS = REQUIRED_TOOL_VERSION_KEYS | {
+    "esp32s31",
     "esp32s3_archive_compiler",
     "esp32s3_dynconfig",
 }
@@ -66,7 +72,7 @@ def read_expected_commit(path: str, label: str) -> str:
     return commit
 
 
-def read_expected_tool_versions(path: str) -> dict[str, str]:
+def read_expected_tool_versions(path: str, target: str = "esp32s3") -> dict[str, str]:
     try:
         lines = Path(path).read_text(encoding="utf-8").splitlines()
     except OSError as error:
@@ -84,8 +90,9 @@ def read_expected_tool_versions(path: str) -> dict[str, str]:
         ):
             raise RunnerError(f"invalid ESP-IDF tool version entry: {line}")
         versions[key] = value
-    if not REQUIRED_TOOL_VERSION_KEYS.issubset(versions):
-        missing = ", ".join(sorted(REQUIRED_TOOL_VERSION_KEYS - versions.keys()))
+    required = frozenset(("esp32s31", "ninja", "python")) if target == "esp32s31" else REQUIRED_TOOL_VERSION_KEYS
+    if not required.issubset(versions):
+        missing = ", ".join(sorted(required - versions.keys()))
         raise RunnerError(f"ESP-IDF tool versions are incomplete: {missing}")
     return versions
 
@@ -260,7 +267,7 @@ def validate_tool_versions(
             f"Ninja version mismatch: expected {expected['ninja']}, "
             f"found {ninja_version}"
         )
-    if expected["python"] != "esp-idf-v6.0-constraints":
+    if expected["python"] != f"esp-idf-v{idf_version_for_target(target)}-constraints":
         raise RunnerError(f"unsupported ESP-IDF Python identity: {expected['python']}")
     idf_tools = idf_path / "tools" / "idf_tools.py"
     for operation in ("check", "check-python-dependencies"):
@@ -731,6 +738,7 @@ def run(arguments: argparse.Namespace) -> None:
     validate_commit(idf_path, expected_idf_commit, environment)
     expected_tool_versions = read_expected_tool_versions(
         arguments.idf_tool_versions_file,
+        arguments.target,
     )
     validate_tool_versions(
         idf_path,
@@ -775,7 +783,7 @@ def run(arguments: argparse.Namespace) -> None:
         raise RunnerError(f"launcher project escapes source root: {source_project}") from error
 
     subprocess_environment = dict(environment)
-    subprocess_environment["ESP_IDF_VERSION"] = EXPECTED_IDF_VERSION
+    subprocess_environment["ESP_IDF_VERSION"] = idf_version_for_target(arguments.target)
     subprocess_environment["H2_REPO_ROOT"] = str(source_root)
     subprocess_environment["H2_GIZOS_ROOT"] = str(GIZOS_ROOT)
     subprocess_environment["H2_FIRMWARE_VERSION"] = arguments.version

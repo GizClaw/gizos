@@ -1,2 +1,5 @@
 dependencies:
-  espressif/esp-sr: "2.4.6"
+  espressif/esp-sr:
+    version: "2.4.6"
+    rules:
+      - if: "target != esp32s31"
