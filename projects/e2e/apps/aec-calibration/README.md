@@ -14,7 +14,9 @@
 
 每个候选在两个幅度等级分别执行 noise、far-only、near-only、double-talk 和持续 double-talk 五个阶段，每阶段独立停止并 join DUT Audio，重新预热后计分。默认每个纯音幅度为 2048 与 4096，三个纯音相加的理论峰值不超过三个单音幅度；这不代表满幅语音压力。默认期望 far 频率约为 437、1031、2156 Hz，near 约为 719、1438、2938 Hz，实际频率取 `bin × sample_rate / frame_samples` 并随格式写入报告。不同格式可能改变实际频率，无法得到六个独立有效 bin 时明确拒绝。
 
-默认预热 64 帧、常规计分 96 帧、持续计分 640 帧，在 16 kHz／512 samples 下分别约 2.05、3.07、20.48 秒。每次 PAL I/O 有独立有限 timeout；处理窗口的总时间还必须在真实 PCM 时长的 125% 加 100 ms 内，不能用逐帧长 timeout 把低吞吐量伪装成持续实时处理。报告保留 frames、samples 与实际 elapsed_ms。Provider 的软件 sequence 用于检查诊断交付顺序，不等于硬件 ADC 无丢帧证明；没有硬件 drop counter 的平台只能授予这里可验证的处理 cadence 资格。
+默认预热 64 帧、常规计分 96 帧、持续计分 640 帧，在 16 kHz／512 samples 下分别约 2.05、3.07、20.48 秒。每次 PAL I/O 有独立有限 timeout；计时从 mic 启动之前开始，覆盖全部 warmup 与 measurement，并延伸至最后实际 capture／DAC 完成；下界包含全部帧，只容许 1 ms 单调时钟采样粒度差，总时间还必须在真实 PCM 时长的 125% 加 100 ms 内，不能用逐帧长 timeout 把低吞吐量伪装成持续实时处理。报告保留 frames、samples 与实际 elapsed_ms。Provider 的软件 sequence 用于检查诊断交付顺序，不等于硬件 ADC 无丢帧证明；没有硬件 drop counter 的平台只能授予这里可验证的处理 cadence 资格。
+
+每个计分帧都要求一次完整成功的实际 DAC 回调，不能只收到部分窗口；far／double-talk／持续阶段的每一帧还必须含非零 PCM，noise／near-only 的 DUT PCM 则必须静音，补零的缺失 probe 不能通过。
 
 所有计分阶段检查 raw mic、raw reference、缩放后 AEC reference、AEC output 和实际 DAC PCM 的 peak／headroom。默认 peak limit 为 30000，达到该阈值就拒绝，统计中的 clipped 同时包含这种保守 headroom 违规。Far-only 要求真实 reference 活性、足够高于 noise 的 raw mic 信号与默认至少 10 dB 的背景扣除后回声功率抑制。每个 near 频带在 near-only 必须活跃并保留默认至少 25% raw power；double-talk 与持续窗口还必须保留默认至少 50% near-only output power，并核对独立源输入稳定性。三个 near 频带分别检查，far 残留不能仅靠总能量代替近端证据。
 

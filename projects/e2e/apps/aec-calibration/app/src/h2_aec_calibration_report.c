@@ -52,7 +52,7 @@ h2_pal_result_t h2_aec_calibration_report(const h2_aec_calibration_result_t *r,
                 const h2_aec_calibration_measurement_t *m = &c->measurements[level][p];
                 n = snprintf(line, sizeof(line), PREFIX
                     "\"kind\":\"phase\",\"index\":%u,\"level\":%u,\"phase\":%u,"
-                    "\"frames\":%u,\"playback_frames\":%u,\"samples\":%" PRIu64 ","
+                    "\"frames\":%u,\"playback_frames\":%u,\"playback_active_frames\":%u,\"samples\":%" PRIu64 ","
                     "\"raw_channels\":%u,\"mic_mask\":%u,\"mic_lane\":%u,\"reference_lane\":%u,"
                     "\"elapsed_ms\":%" PRIu64 ",\"source_control_ms\":%" PRIu64 ","
                     "\"source_control_max_ms\":%" PRIu64 ",\"source_control_calls\":%u,\"mic_energy\":%" PRIu64 ","
@@ -62,6 +62,7 @@ h2_pal_result_t h2_aec_calibration_report(const h2_aec_calibration_result_t *r,
                     "\"peak\":[%u,%u,%u,%u],\"clipped\":%" PRIu64 ","
                     "\"playback_peak\":%u,\"playback_clipped\":%" PRIu64 ",\"diagnostic_rc\":%d}",
                     run, (unsigned)i, level, p, (unsigned)m->frames, (unsigned)m->playback_frames,
+                    (unsigned)m->playback_active_frames,
                     m->samples, (unsigned)m->raw_channels, (unsigned)m->microphone_mask,
                     (unsigned)m->microphone_lane, (unsigned)m->reference_lane,
                     m->elapsed_ms, m->source_control_ms,

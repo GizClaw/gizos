@@ -56,6 +56,8 @@ struct h2_aec_calibration {
     uint32_t playback_skip;
     uint32_t playback_remaining;
     uint64_t sequence;
+    uint64_t capture_end_ms;
+    uint64_t playback_end_ms;
     h2_pal_result_t playback_rc;
     int16_t far_probe[H2_AEC_CALIBRATION_MAX_SAMPLES];
     int16_t near_probe[H2_AEC_CALIBRATION_MAX_SAMPLES];
@@ -245,6 +247,11 @@ static void observe_capture(void *user, const h2_audio_aec_frame_t *f) {
         m->near_band_mic[b] += band_power(r, raw, f->raw->channels, f->microphone_lane, b);
         m->near_band_output[b] += band_power(r, output, 1u, 0u, b);
     }
+    if (r->capture_remaining == 0u) {
+        const int rc = h2_pal_time_get_monotonic_ms(r->config.time, &r->capture_end_ms);
+        if (rc != H2_PAL_OK && m->diagnostic_rc == H2_PAL_OK)
+            m->diagnostic_rc = rc;
+    }
 }
 
 static void observe_playback(void *user, const h2_audio_frame_t *f) {
@@ -261,12 +268,21 @@ static void observe_playback(void *user, const h2_audio_frame_t *f) {
         return;
     --r->playback_remaining;
     ++r->meter->playback_frames;
+    bool active = false;
     for (size_t i = 0u; i < f->samples_per_channel; ++i) {
         const uint32_t m = magnitude(sample_at(f->data, i));
+        active = active || m != 0u;
         if (m > r->meter->playback_peak)
             r->meter->playback_peak = m;
         if (m >= r->config.limits.peak_limit)
             ++r->meter->playback_clipped;
+    }
+    if (active)
+        ++r->meter->playback_active_frames;
+    if (r->playback_remaining == 0u) {
+        const int rc = h2_pal_time_get_monotonic_ms(r->config.time, &r->playback_end_ms);
+        if (rc != H2_PAL_OK)
+            r->playback_rc = rc;
     }
 }
 
@@ -456,12 +472,15 @@ static int phase(h2_aec_calibration_t *r, h2_aec_calibration_measurement_t *m,
     r->capture_skip = r->playback_skip = r->config.limits.warmup_frames;
     r->capture_remaining = r->playback_remaining = measured;
     r->sequence = 0u;
+    r->capture_end_ms = r->playback_end_ms = 0u;
     r->playback_rc = H2_PAL_OK;
     r->near_retained = true;
     int rc = control_near_source(r, near);
     if (rc == H2_PAL_OK && !near)
         r->near_retained = false;
     uint64_t start = 0u, end = 0u;
+    if (rc == H2_PAL_OK)
+        rc = h2_pal_time_get_monotonic_ms(r->config.time, &start);
     if (rc == H2_PAL_OK) {
         r->mic_started = true;
         rc = h2_pal_audio_start_mic(r->config.audio);
@@ -476,8 +495,6 @@ static int phase(h2_aec_calibration_t *r, h2_aec_calibration_measurement_t *m,
     };
     if (rc == H2_PAL_OK)
         rc = h2_pal_audio_create_track(r->config.audio, &track, &r->track);
-    if (rc == H2_PAL_OK)
-        rc = h2_pal_time_get_monotonic_ms(r->config.time, &start);
     int16_t silence[H2_AEC_CALIBRATION_MAX_SAMPLES] = {0};
     const size_t bytes = (size_t)r->result.format.frame_samples_per_channel * sizeof(int16_t);
     const uint32_t frames = r->config.limits.warmup_frames + measured;
@@ -510,6 +527,10 @@ static int phase(h2_aec_calibration_t *r, h2_aec_calibration_measurement_t *m,
         return cleaned;
     }
     /* Both worker callbacks are now quiescent; no shared state was read live. */
+    if (r->capture_end_ms > end)
+        end = r->capture_end_ms;
+    if (r->playback_end_ms > end)
+        end = r->playback_end_ms;
     m->elapsed_ms = end >= start ? end - start : 0u;
     if (m->diagnostic_rc == H2_PAL_OK && r->playback_rc != H2_PAL_OK)
         m->diagnostic_rc = r->playback_rc;
@@ -519,10 +540,15 @@ static int phase(h2_aec_calibration_t *r, h2_aec_calibration_measurement_t *m,
         return m->diagnostic_rc;
     if (r->playback_rc != H2_PAL_OK)
         return r->playback_rc;
-    const uint64_t minimum_ms = (uint64_t)measured *
+    const uint64_t nominal_ms = (uint64_t)frames *
         r->result.format.frame_samples_per_channel * 1000u / r->result.format.sample_rate_hz;
-    if (m->frames != measured || m->playback_frames < measured / 2u ||
-        m->elapsed_ms < minimum_ms)
+    /* Two integer millisecond samples can differ from the physical duration
+     * by one millisecond; no frame or warmup is omitted from the lower bound. */
+    const uint64_t minimum_ms = nominal_ms > 0u ? nominal_ms - 1u : 0u;
+    const uint64_t maximum_ms = nominal_ms * r->config.limits.max_cadence_milli / 1000u +
+        r->config.limits.cadence_margin_ms;
+    if (m->frames != measured || m->playback_frames != measured ||
+        m->elapsed_ms < minimum_ms || m->elapsed_ms > maximum_ms)
         return H2_PAL_ERR_INVALID_STATE;
     return H2_PAL_OK;
 }
@@ -540,7 +566,9 @@ static bool accepted_level(const h2_aec_calibration_t *r,
     const h2_aec_calibration_limits_t *l = &r->config.limits;
     for (unsigned p = 0u; p < H2_AEC_CALIBRATION_PHASE_COUNT; ++p)
         if (m[p].clipped != 0u || m[p].playback_clipped != 0u ||
-            m[p].samples == 0u || m[p].diagnostic_rc != H2_PAL_OK)
+            m[p].samples == 0u || m[p].diagnostic_rc != H2_PAL_OK ||
+            m[p].playback_active_frames !=
+                (p == H2_AEC_CALIBRATION_NOISE || p == H2_AEC_CALIBRATION_NEAR ? 0u : m[p].frames))
             return false;
     const h2_aec_calibration_measurement_t *noise = &m[H2_AEC_CALIBRATION_NOISE];
     const h2_aec_calibration_measurement_t *far = &m[H2_AEC_CALIBRATION_FAR];
