@@ -7,6 +7,7 @@ py_library(
     name = "report_lib",
     srcs = ["aec_calibration_report.py"],
     imports = ["."],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
 )
 
 py_binary(

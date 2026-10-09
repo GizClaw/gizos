@@ -9,6 +9,7 @@ py_library(
     srcs = ["aec_compatibility.py"],
     data = ["aec_optional_compatibility.json"],
     imports = ["."],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
 )
 
 py_test(

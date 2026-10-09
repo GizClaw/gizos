@@ -42,6 +42,7 @@ typedef struct h2_aec_calibration_pair {
 typedef struct h2_aec_calibration_measurement {
     uint32_t frames;
     uint32_t playback_frames;
+    uint32_t playback_active_frames;
     uint8_t raw_channels;
     uint8_t microphone_mask;
     uint8_t microphone_lane;
@@ -111,6 +112,8 @@ typedef h2_pal_result_t (*h2_aec_calibration_near_source_fn)(
 typedef struct h2_aec_calibration_config {
     const h2_pal_audio_api_t *audio;
     const h2_pal_mem_api_t *mem;
+    /** Borrowed nonblocking, concurrent monotonic getter; observers timestamp
+     * their final capture/DAC frame on the corresponding provider worker. */
     const h2_pal_time_api_t *time;
     const h2_aec_calibration_pair_t *candidates;
     size_t candidate_count;

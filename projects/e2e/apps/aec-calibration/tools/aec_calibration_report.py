@@ -83,6 +83,7 @@ def _limits(begin):
 def _measurement(record, begin, phase):
     frames = integer(record, "frames", maximum=4096)
     playback = integer(record, "playback_frames", maximum=4096)
+    active = integer(record, "playback_active_frames", maximum=playback)
     samples = integer(record, "samples", maximum=4096 * 1024)
     channels = integer(record, "raw_channels", maximum=8)
     mask = integer(record, "mic_mask", maximum=255)
@@ -117,10 +118,11 @@ def _measurement(record, begin, phase):
             raise InvalidCalibration("measurements without an available Audio format")
         return False
     expected = begin["stability"] if phase == 4 else begin["measurement"]
-    minimum = expected * begin["frame_samples"] * 1000 // begin["sample_rate"]
     nominal = (expected + begin["warmup"]) * begin["frame_samples"] * 1000 // begin["sample_rate"]
+    minimum = max(0, nominal - 1)
     maximum = nominal * begin["max_cadence_milli"] // 1000 + begin["cadence_margin_ms"]
-    return (frames == expected and playback >= expected // 2 and
+    return (frames == expected and playback == expected and
+            active == (0 if phase in (0, 2) else expected) and
             minimum <= record["elapsed_ms"] <= maximum and
             source_calls == (1 if phase in (0, 1) else 2) and
             source_max <= begin["source_timeout_ms"] and

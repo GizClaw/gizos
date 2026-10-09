@@ -53,6 +53,23 @@ class Reports(unittest.TestCase):
         with self.assertRaises(InvalidCalibration):
             validate(self.altered(slow))
 
+    def test_reject_playback_drops_or_zero_filled_probe_frames(self):
+        for field, value in (("playback_frames", 4), ("playback_active_frames", 4)):
+            def dropped(records):
+                record = next(r for r in records if r["kind"] == "phase" and r["index"] == 1 and r["phase"] == 1)
+                record[field] = value
+                if field == "playback_frames":
+                    record["playback_active_frames"] = value
+            with self.assertRaises(InvalidCalibration):
+                validate(self.altered(dropped))
+
+    def test_reject_elapsed_that_omits_warmup(self):
+        def accelerated(records):
+            record = next(r for r in records if r["kind"] == "phase" and r["index"] == 1)
+            record["elapsed_ms"] = 288  # Above 8 measured frames, below all 12 frames.
+        with self.assertRaises(InvalidCalibration):
+            validate(self.altered(accelerated))
+
     def test_reject_late_external_source_control(self):
         def slow_source(records):
             record = next(r for r in records if r["kind"] == "phase" and r["index"] == 1 and r["phase"] == 2)

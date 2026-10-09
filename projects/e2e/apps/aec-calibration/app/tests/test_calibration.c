@@ -20,6 +20,8 @@ typedef struct fixture {
     bool clip_second_mic;
     bool dac_error;
     bool slow_source;
+    bool drop_playback, zero_playback, moderately_fast;
+    unsigned writes;
     unsigned allocations, frees, near_starts;
     int16_t playback[512];
     const int16_t *near_probe;
@@ -53,6 +55,7 @@ static int mic_start(void *u) {
     fixture_t *f = u;
     f->mic = true;
     f->sequence = 0u;
+    f->writes = 0u;
     return H2_AUDIO_OK;
 }
 static int mic_stop(void *u) {
@@ -99,9 +102,16 @@ static int write_track(h2_pal_audio_track_t *track, const h2_audio_frame_t *fram
                         uint32_t timeout) {
     (void)timeout;
     fixture_t *f = track->user;
-    memcpy(f->playback, frame->data, sizeof(f->playback));
-    if (f->observer.on_playback != NULL)
-        f->observer.on_playback(f->observer.user, frame);
+    ++f->writes;
+    const bool alternate_measured = f->writes > 4u && f->writes % 2u == 0u;
+    if (f->zero_playback && alternate_measured)
+        memset(f->playback, 0, sizeof(f->playback));
+    else
+        memcpy(f->playback, frame->data, sizeof(f->playback));
+    h2_audio_frame_t observed = *frame;
+    observed.data = f->playback;
+    if (f->observer.on_playback != NULL && !(f->drop_playback && alternate_measured))
+        f->observer.on_playback(f->observer.user, &observed);
     if (f->dac_error && f->observer.on_error != NULL)
         f->observer.on_error(f->observer.user, 0, H2_AUDIO_ERR_IO);
     return H2_AUDIO_OK;
@@ -175,7 +185,7 @@ static int read_mic(void *u, h2_audio_frame_t *out, uint32_t timeout) {
     memcpy(out->data, processed, sizeof(processed));
     out->bytes = sizeof(processed);
     out->samples_per_channel = 512;
-    f->now += f->fast_clock ? 1u : (f->slow_clock ? 96u : 32u);
+    f->now += f->fast_clock ? 1u : (f->slow_clock ? 96u : (f->moderately_fast ? 24u : 32u));
     return H2_AUDIO_OK;
 }
 static int near_source(void *u, bool enabled, const h2_audio_pcm_format_t *fmt,
@@ -262,6 +272,12 @@ static void rejects_test(unsigned failure) {
         case 8: f.clip_second_mic = true; break;
         case 9: f.dac_error = true; break;
         case 10: f.slow_source = true; break;
+        case 11: f.drop_playback = true; break;
+        case 12: f.zero_playback = true; break;
+        case 13:
+            f.moderately_fast = true;
+            c.limits.stability_frames = c.limits.measurement_frames;
+            break;
         default: abort();
     }
     h2_aec_calibration_t *runner = NULL;
@@ -269,6 +285,8 @@ static void rejects_test(unsigned failure) {
     const h2_aec_calibration_result_t *r = NULL;
     assert(h2_aec_calibration_run(runner, &r) != H2_PAL_OK);
     assert(!r->selected && r->passed == 0 && !r->retained);
+    if (failure == 11u || failure == 13u)
+        assert(f.near_starts == 0u);
     assert(h2_aec_calibration_destroy(runner) == H2_PAL_OK);
     assert(f.allocations == f.frees);
 }
@@ -367,7 +385,7 @@ int main(int argc, char **argv) {
     selection_test(H2_AEC_CALIBRATION_PARETO_ONLY);
     selection_test(H2_AEC_CALIBRATION_SPEAKER_FIRST);
     selection_test(H2_AEC_CALIBRATION_MIC_FIRST);
-    for (unsigned i = 0u; i < 11u; ++i)
+    for (unsigned i = 0u; i < 14u; ++i)
         rejects_test(i);
     for (unsigned i = 0u; i < 3u; ++i)
         retained_test(i);
