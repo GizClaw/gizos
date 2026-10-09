@@ -164,6 +164,25 @@ def display_catalog_content(text):
     return {"section": display, "launcher_row": rows[0]}
 
 
+def retired_pal_makefile_source(content, expected):
+    """Admit only the removed legacy MQTT alias against the original hash."""
+    current = hashlib.sha256(content).hexdigest()
+    if current == expected:
+        return current
+    prefix = b".PHONY: help cfg-doctor bazel-build bazel-test bazel-test-downstream-consumer"
+    retired = b" bazel-test-mqtt_public_broker_smoke"
+    anchor = b"\nbazel-coverage-report:\n"
+    target = (b"\nbazel-test-mqtt_public_broker_smoke:\n"
+              b"\t@scripts/bazel/bazel-test-mqtt_public_broker_smoke.sh\n")
+    assert content.count(prefix + b" bazel-coverage-report") == 1
+    assert content.count(anchor) == 1 and retired not in content
+    restored = content.replace(prefix, prefix + retired, 1)
+    restored = restored.replace(anchor, target + anchor, 1)
+    assert hashlib.sha256(restored).hexdigest() == expected, (
+        "Makefile changed outside the retired PAL MQTT alias")
+    return current
+
+
 def shared_catalog_sources(previous):
     """Preserve historical receipts while checking only owned catalog bytes."""
     audit = json.JSONDecoder().decode(
@@ -191,6 +210,8 @@ def shared_catalog_sources(previous):
     replacements = audit["current_source_sha256"]
     assert set(replacements) == SHARED_CATALOG_AUDIT_SOURCES
     sources = {**previous, **replacements}
+    sources["Makefile"] = retired_pal_makefile_source(
+        Path("Makefile").read_bytes(), previous["Makefile"])
     # The historical whole-file hash still authenticates the immutable baseline.
     # Other Apps may update their catalog entries without a new Display run.
     del sources[SHARED_CATALOG]

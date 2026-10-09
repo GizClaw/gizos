@@ -248,7 +248,7 @@ App Host 把配置、Button/hardware descriptor、名字和路径复制到一个
 
 未提供 Web target 的 App：`gizclaw-ping-speed` 依赖必需的 Wi-Fi API；BLE、Wi-Fi CSI、modem、crash-before-confirm、partial-update 依赖浏览器不存在的硬件或板上能力；`lua-bloomspeaker` 依赖 BLE 配对；iperf 需要 raw socket。GizClaw 真实服务端注册与 H106 业务流程需要真实 token，不在自动测试范围内。
 
-`//projects/e2e/targets/pkg_tar/pal` 注入了 Netif 与 System Event。真实浏览器测试：
+独立 `pal-core` Browser suite 验证 Core 与 System Event；`pal-wifi` Browser suite 验证 Netif 和真实 offline/online Runtime event；`pal-net-tls` 的 boundary test 验证 raw socket 不可用。`scripts/test/test-web.sh` 显式运行这些入口。Web provider 另有真实浏览器测试：
 
 ```sh
 bazel test --config=macos_arm64 //libs/pal/providers/web/pal_core:browser_platform_test

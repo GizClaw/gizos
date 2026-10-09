@@ -80,13 +80,13 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
             root = Path(temporary)
             payload = root / "update.ufw"
             payload.write_bytes(b"BR35-test-UFW\x00\xff")
-            package = root / "pal.update.tar"
-            metadata = root / "pal.firmware.json"
+            package = root / "fixture.update.tar"
+            metadata = root / "fixture.firmware.json"
             result = subprocess.run([
                 sys.executable, str(RUNNER), "--source-root", str(root),
                 "--app-image", str(payload), "--app-path", "app/jieli/update.ufw",
-                "--entry", "projects/e2e/targets/h2loader_tar_zlib/pal/ac707n_chip",
-                "--platform", "jieli", "--board", "ac707n_chip", "--image", "pal",
+                "--entry", "projects/test/targets/h2loader_tar_zlib/fixture/ac707n_chip",
+                "--platform", "jieli", "--board", "ac707n_chip", "--image", "fixture",
                 "--role", "app", "--target", "ac707n", "--version", "1.0.0",
                 "--package-output", str(package), "--metadata-output", str(metadata),
             ], capture_output=True, text=True)

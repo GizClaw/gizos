@@ -20,7 +20,7 @@ Platform 不拥有 wolfSSL 全局初始化。Composition 按 Windows Memory 与 
 
 `--config=windows_x86_64` 在原生 Windows x86_64 host 上通过 `rules_cc` 的 `local_config_cc` 选择 MSVC ABI toolchain。Required CI 的 Windows Build/Test job 通过 `FIRMWARE_WINDOWS_RUNNER` 选择 Windows Server 2025 runner，顺序执行完整 compatible `//...` graph；Bazel 通过 `target_compatible_with` 选择目标，只有 opt-in 测试使用 `manual`。Graph Test 只从 Git inventory 读取一方 source，不能跟随 Windows workspace junction 进入 `bazel-*` output、external repository 或 cache tree。
 
-Windows provider 的普通单元测试覆盖 capability lifecycle、错误、timeout、token generation 和 callback drain；`windows_pal_compile_smoke` 引用全部 vtable operation，`corehttp_coremqtt_link_smoke` 强制形成 Windows PAL、完整 wolfSSL、CoreHTTP 和 CoreMQTT 的 PE link closure。未标记的 `//projects/e2e/targets/cc_binary/pal:pal_e2e_test` 在 Linux、macOS 和 Windows 运行相同 OS-neutral host case ledger，只使用 loopback、临时目录和仓库内测试证书。
+Windows provider 的普通单元测试覆盖 capability lifecycle、错误、timeout、token generation 和 callback drain；`windows_pal_compile_smoke` 引用全部 vtable operation，`corehttp_coremqtt_link_smoke` 强制形成 Windows PAL、完整 wolfSSL、CoreHTTP 和 CoreMQTT 的 PE link closure。旧混合 PAL Host E2E 已下线，独立 Core、Storage、HTTP、MQTT、Net/TLS launcher 尚未接入 Windows；该 Runtime 集成覆盖缺口记录在 `projects/e2e/apps/README.md`，不能由 provider 单元测试或 link smoke 代替。
 
 `//libs/pal/providers/windows/pal_core:fs_test` 同时覆盖实际 DOS drive-root 和独立临时 directory mount：root stat、临时子文件的读写/删除、非法名称、遍历、root 删除和 junction escape。Drive-root 初始化不能由仅使用临时子目录的测试替代。
 

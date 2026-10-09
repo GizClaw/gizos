@@ -237,6 +237,29 @@ class MobileRunnerProvenanceTest(unittest.TestCase):
         with self.assertRaises(AssertionError):
             self.verify(self.followup)
 
+    def test_retirement_cannot_hide_changed_display_make_command(self):
+        path = qualification.Path("Makefile")
+        content = path.read_bytes()
+        changed = content.replace(b"scripts/bazel/bazel-test-ios_pal_display_simulator_test.sh",
+                                  b"scripts/bazel/skip-display.sh")
+        self.assertNotEqual(content, changed)
+        original_read = qualification.Path.read_bytes
+        def read(source):
+            return changed if source == path else original_read(source)
+        with patch.object(qualification.Path, "read_bytes", new=read):
+            with self.assertRaises(AssertionError):
+                self.verify(self.followup)
+
+    def test_retirement_cannot_hide_other_makefile_changes(self):
+        path = qualification.Path("Makefile")
+        content = path.read_bytes() + b"\nbazel-test-ios_pal_display_simulator_test: ; true\n"
+        original_read = qualification.Path.read_bytes
+        def read(source):
+            return content if source == path else original_read(source)
+        with patch.object(qualification.Path, "read_bytes", new=read):
+            with self.assertRaises(AssertionError):
+                self.verify(self.followup)
+
     def test_failed_mobile_case_or_false_physical_claim_fails(self):
         changed = copy.deepcopy(self.followup)
         changed["mobile_runs"]["android"]["qualified"]["cases"][0]["status"] = "FAIL"
