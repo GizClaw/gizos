@@ -22,6 +22,7 @@ typedef struct fixture {
     bool slow_source;
     bool drop_playback, zero_playback, moderately_fast;
     bool clock_fails_while_near;
+    bool leak_double, leak_stability;
     unsigned writes;
     unsigned allocations, frees, near_starts;
     int16_t playback[512];
@@ -165,7 +166,9 @@ static int read_mic(void *u, h2_audio_frame_t *out, uint32_t timeout) {
         if (f->clip_second_mic)
             raw[i * channels + 2u] = INT16_MAX;
         reference[i] = f->clip_input_reference ? INT16_MAX : raw[i * channels + 1u];
-        int value = f->no_aec ? mic : (far / 32 + near * 3 / 4) * (int)f->gain / 100 + 8;
+        const bool leaked = f->no_aec || (f->near && playing &&
+            (f->leak_double || (f->leak_stability && f->near_starts % 3u == 0u)));
+        int value = leaked ? mic : (far / 32 + near * 3 / 4) * (int)f->gain / 100 + 8;
         if (f->mute || (f->mute_double && f->near && playing))
             value = 0;
         processed[i] = clamp(value);
@@ -283,6 +286,8 @@ static void rejects_test(unsigned failure) {
             c.limits.stability_frames = c.limits.measurement_frames;
             break;
         case 14: f.clock_fails_while_near = true; break;
+        case 15: f.leak_double = true; break;
+        case 16: f.leak_stability = true; break;
         default: abort();
     }
     h2_aec_calibration_t *runner = NULL;
@@ -396,7 +401,7 @@ int main(int argc, char **argv) {
     selection_test(H2_AEC_CALIBRATION_PARETO_ONLY);
     selection_test(H2_AEC_CALIBRATION_SPEAKER_FIRST);
     selection_test(H2_AEC_CALIBRATION_MIC_FIRST);
-    for (unsigned i = 0u; i < 15u; ++i)
+    for (unsigned i = 0u; i < 17u; ++i)
         rejects_test(i);
     for (unsigned i = 0u; i < 3u; ++i)
         retained_test(i);

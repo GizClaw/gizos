@@ -46,7 +46,7 @@ def unique_object(pairs):
 
 
 def _limits(begin):
-    if begin.get("schema") != 1 or begin.get("probe") != "three-band-two-level-v1":
+    if begin.get("schema") != 1 or begin.get("probe") != "three-band-two-level-v2":
         raise InvalidCalibration("unsupported calibration schema/probe")
     count = integer(begin, "count", 1, 16)
     integer(begin, "selection", 0, 2)
@@ -97,7 +97,7 @@ def _measurement(record, begin, phase):
         raise InvalidCalibration("inconsistent complete-frame sample count")
     for key in ("mic_energy", "reference_energy", "aec_reference_energy", "output_energy"):
         integer(record, key, maximum=samples * 32768**2)
-    for key in ("near_mic", "near_output"):
+    for key in ("near_mic", "near_output", "far_mic", "far_output"):
         array(record, key, 3, frames * 2 * 32768**2)
     peaks = array(record, "peak", 4, 32768)
     clipped = integer(record, "clipped", maximum=samples * 10)
@@ -149,6 +149,12 @@ def _accept(phases, begin):
             return False
         band = lambda m, key, b: m[key][b] // m["frames"]
         for b in range(3):
+            far_floor = band(noise, "far_mic", b)
+            far_raw = max(0, band(far, "far_mic", b) - far_floor)
+            far_out = max(0, band(far, "far_output", b) - band(noise, "far_output", b))
+            if (far_raw <= (far_floor + 1) * snr or
+                    far_out * 1000 > far_raw * begin["max_residual_milli"]):
+                return False
             floor = band(noise, "near_mic", b)
             raw = max(0, band(near, "near_mic", b) - floor)
             output = max(0, band(near, "near_output", b) - band(noise, "near_output", b))
@@ -158,8 +164,13 @@ def _accept(phases, begin):
             for dt in (double, stable):
                 dt_raw = max(0, band(dt, "near_mic", b) - band(far, "near_mic", b))
                 dt_out = max(0, band(dt, "near_output", b) - band(far, "near_output", b))
+                dt_far_raw = max(0, band(dt, "far_mic", b) - band(near, "far_mic", b))
+                dt_far_out = max(0, band(dt, "far_output", b) - band(near, "far_output", b))
                 if (dt["playback_peak"] == 0 or
                         power(dt, "reference_energy") < begin["min_reference_power"] or
+                        power(dt, "aec_reference_energy") < begin["min_reference_power"] or
+                        not far_raw // 2 <= dt_far_raw <= far_raw * 2 or
+                        dt_far_out * 1000 > dt_far_raw * begin["max_residual_milli"] or
                         not raw // 2 <= dt_raw <= raw * 2 or
                         dt_out * 1000 < dt_raw * begin["min_near_milli"] or
                         dt_out * 1000 < output * begin["min_double_milli"]):

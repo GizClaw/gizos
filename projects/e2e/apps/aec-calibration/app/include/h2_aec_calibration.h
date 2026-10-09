@@ -35,9 +35,9 @@ typedef struct h2_aec_calibration_pair {
 } h2_aec_calibration_pair_t;
 
 /** All energy fields are sums over complete measured frames, before background
- * subtraction. mic_energy and near_band_mic use the reported primary mic lane;
+ * subtraction. mic_energy and *_band_mic use the reported primary mic lane;
  * mic_peak/clipped also check every active microphone in microphone_mask.
- * near_band_* are per-band mean-square estimates summed over frames. The
+ * near_band_* and far_band_* are per-band mean-square estimates summed over frames. The
  * report contains metadata only, never microphone PCM. */
 typedef struct h2_aec_calibration_measurement {
     uint32_t frames;
@@ -58,6 +58,8 @@ typedef struct h2_aec_calibration_measurement {
     uint64_t output_energy;
     uint64_t near_band_mic[H2_AEC_CALIBRATION_BANDS];
     uint64_t near_band_output[H2_AEC_CALIBRATION_BANDS];
+    uint64_t far_band_mic[H2_AEC_CALIBRATION_BANDS];
+    uint64_t far_band_output[H2_AEC_CALIBRATION_BANDS];
     uint32_t mic_peak;
     uint32_t reference_peak;
     uint32_t aec_reference_peak;

@@ -20,7 +20,7 @@ h2_pal_result_t h2_aec_calibration_report(const h2_aec_calibration_result_t *r,
     char line[2048];
     const h2_aec_calibration_limits_t *l = &r->limits;
     int n = snprintf(line, sizeof(line), PREFIX
-        "\"kind\":\"begin\",\"schema\":1,\"probe\":\"three-band-two-level-v1\","
+        "\"kind\":\"begin\",\"schema\":1,\"probe\":\"three-band-two-level-v2\","
         "\"count\":%u,\"selection\":%u,\"sample_rate\":%u,\"frame_samples\":%u,"
         "\"far_bins\":[%u,%u,%u],\"near_bins\":[%u,%u,%u],"
         "\"amplitude\":[%u,%u],\"warmup\":%u,\"measurement\":%u,\"stability\":%u,"
@@ -59,6 +59,8 @@ h2_pal_result_t h2_aec_calibration_report(const h2_aec_calibration_result_t *r,
                     "\"reference_energy\":%" PRIu64 ",\"aec_reference_energy\":%" PRIu64 ","
                     "\"output_energy\":%" PRIu64 ",\"near_mic\":[%" PRIu64 ",%" PRIu64 ",%" PRIu64 "],"
                     "\"near_output\":[%" PRIu64 ",%" PRIu64 ",%" PRIu64 "],"
+                    "\"far_mic\":[%" PRIu64 ",%" PRIu64 ",%" PRIu64 "],"
+                    "\"far_output\":[%" PRIu64 ",%" PRIu64 ",%" PRIu64 "],"
                     "\"peak\":[%u,%u,%u,%u],\"clipped\":%" PRIu64 ","
                     "\"playback_peak\":%u,\"playback_clipped\":%" PRIu64 ",\"diagnostic_rc\":%d}",
                     run, (unsigned)i, level, p, (unsigned)m->frames, (unsigned)m->playback_frames,
@@ -71,6 +73,8 @@ h2_pal_result_t h2_aec_calibration_report(const h2_aec_calibration_result_t *r,
                     m->aec_reference_energy, m->output_energy,
                     m->near_band_mic[0], m->near_band_mic[1], m->near_band_mic[2],
                     m->near_band_output[0], m->near_band_output[1], m->near_band_output[2],
+                    m->far_band_mic[0], m->far_band_mic[1], m->far_band_mic[2],
+                    m->far_band_output[0], m->far_band_output[1], m->far_band_output[2],
                     (unsigned)m->mic_peak, (unsigned)m->reference_peak,
                     (unsigned)m->aec_reference_peak, (unsigned)m->output_peak, m->clipped,
                     (unsigned)m->playback_peak, m->playback_clipped, m->diagnostic_rc);

@@ -53,6 +53,20 @@ class Reports(unittest.TestCase):
         with self.assertRaises(InvalidCalibration):
             validate(self.altered(slow))
 
+    def test_reject_far_echo_in_single_or_double_talk_with_preserved_near(self):
+        for phase in (1, 3, 4):
+            for band in range(3):
+                def leaked(records):
+                    for record in records:
+                        if record["kind"] == "phase" and record["index"] == 1 and record["phase"] == phase:
+                            record["far_output"][band] = record["far_mic"][band]
+                with self.subTest(phase=phase, band=band), self.assertRaises(InvalidCalibration):
+                    validate(self.altered(leaked))
+
+    def test_older_probe_cannot_inherit_double_talk_echo_qualification(self):
+        with self.assertRaises(InvalidCalibration):
+            validate(self.altered(lambda records: records[0].update(probe="three-band-two-level-v1")))
+
     def test_reject_playback_drops_or_zero_filled_probe_frames(self):
         for field, value in (("playback_frames", 4), ("playback_active_frames", 4)):
             def dropped(records):
