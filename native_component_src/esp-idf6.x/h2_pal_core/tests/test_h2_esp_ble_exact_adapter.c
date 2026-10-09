@@ -116,6 +116,18 @@ int main(void) {
         &too_long, &primary, scan_response, sizeof(scan_response),
         &scan_response_len) == H2_PAL_ERR_INVALID_ARG);
 
+    const h2_pal_ble_adv_data_t named_product = {
+        .local_name = "h106-tiga-A1B2C3", .service_uuids = &uuid,
+        .service_uuid_count = 1u,
+    };
+    assert(h2_esp_ble_prepare_legacy_structured_data(
+               &named_product, &primary, scan_response, sizeof(scan_response),
+               &scan_response_len) == H2_PAL_OK);
+    assert(primary.service_uuids == &uuid && primary.service_uuid_count == 1u);
+    assert(primary.local_name == NULL && primary.manufacturer_data.len == 0u);
+    assert(scan_response_len == 18u && scan_response[0] == 17u && scan_response[1] == 0x09u);
+    assert(memcmp(scan_response + 2u, "h106-tiga-A1B2C3", 16u) == 0);
+
     h2_pal_ble_scan_params_t params = {
         .interval_units_625us = 4u,
         .window_units_625us = 4u,
