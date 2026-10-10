@@ -7,6 +7,7 @@
 #include "h2_lua_link_e2e.h"
 
 #include "esp_system.h"
+#include "esp_app_desc.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/idf_additions.h"
@@ -14,9 +15,12 @@
 
 #include <stdio.h>
 
-/* The esp_mosaico runs the host side; the other board runs the opposite role. */
+/* The host entry defaults to host; the peer artifact compiles the same source
+ * with the opposite role. Both execute the unchanged portable script. */
 #define H2_LUA_LINK_E2E_ROUNDS 5u
+#ifndef H2_LUA_LINK_E2E_ROLE
 #define H2_LUA_LINK_E2E_ROLE "host"
+#endif
 
 static void hold(void) {
   for (;;) {
@@ -57,10 +61,6 @@ static void image_entry(void *user) {
   if (rc != H2_PAL_OK) {
     fail("command_start", rc, 0);
   }
-  rc = h2_esp_h2loader_app_confirm(runtime);
-  if (rc != H2_PAL_OK) {
-    fail("confirm", rc, 1);
-  }
   /* Several sessions in a row: each round opens and closes the link, so the
    * retained GATT service is reattached on every host round. */
   unsigned passed = 0u;
@@ -80,6 +80,14 @@ static void image_entry(void *user) {
   printf("H2_LUA_LINK_E2E stage=summary board=%s role=%s passed=%u rounds=%u\n",
          "esp_mosaico", H2_LUA_LINK_E2E_ROLE, passed, H2_LUA_LINK_E2E_ROUNDS);
   fflush(stdout);
+  if (passed != H2_LUA_LINK_E2E_ROUNDS)
+    fail("rounds", H2_PAL_ERR_INVALID_STATE, 1);
+  rc = h2_esp_h2loader_app_confirm(runtime);
+  if (rc != H2_PAL_OK)
+    fail("confirm", rc, 1);
+  printf("H2_LUA_LINK_E2E stage=confirmed role=%s rc=0\n",
+         H2_LUA_LINK_E2E_ROLE);
+  fflush(stdout);
   /* Final session stays up until the link drops (e.g. the peer resets). */
   (void)h2_lua_link_e2e_run(runtime, &(h2_lua_link_e2e_config_t){
                                          .role = H2_LUA_LINK_E2E_ROLE,
@@ -93,6 +101,10 @@ static void image_entry(void *user) {
 /* Artifact-owned startup stack policy; no board-owned application task. */
 static void entry_task(void *unused) {
   (void)unused;
+  vTaskDelay(pdMS_TO_TICKS(3000u));
+  printf("H2_LUA_LINK_E2E stage=boot board=esp_mosaico role=%s version=%s\n",
+         H2_LUA_LINK_E2E_ROLE, esp_app_get_description()->version);
+  fflush(stdout);
   image_entry(NULL);
   (void)h2_esp_board_runtime_deinit();
   vTaskDeleteWithCaps(NULL);

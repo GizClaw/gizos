@@ -29,7 +29,15 @@ static void run(void *unused) {
   int rc = h2_crypto_device_run(runtime, esp_app_get_description()->version);
   esp_timer_stop(watchdog);
   esp_timer_delete(watchdog);
+  /* Preserve actual failed cases without confirming an unqualified image. */
+  h2_crypto_device_replay(runtime);
+  if (rc != H2_PAL_OK) {
+    printf("H2_CRYPTO_QUALIFICATION_FAIL rc=%d confirm=not-attempted\n", rc);
+    fail("qualification", rc);
+  }
   int confirm = h2_esp_h2loader_app_confirm(runtime);
+  if (confirm != H2_PAL_OK)
+    fail("confirm", confirm);
   printf("H2_CRYPTO_READY rc=%d confirm=%d\n", rc, confirm);
   for (;;) {
     h2_crypto_device_replay(runtime);

@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <string.h>
 static h2_runtime_t *runtime;
+static h2_pal_display_e2e_result_t display_result;
 static esp_timer_handle_t watchdog;
 static uint16_t *transferred;
 static size_t transfer_count;
@@ -60,8 +61,18 @@ static void run(void *unused) {
     fail("capture-allocation", H2_DISPLAY_ERR_NO_MEMORY);
   memset(transferred, 0, 480u * 480u * 2u);
   h2_mosaico_display_set_transfer_capture(capture, NULL);
-  int rc = h2_display_device_run(runtime, esp_app_get_description()->version,
-                                 observe, NULL, NULL);
+  /* Native RGB565 is mandatory. Optional formats and partial bounds are
+   * exercised as explicit rejection contracts, matching the real provider. */
+  const h2_pal_display_e2e_config_t profile = {
+      .supported_formats = 1u << H2_DISPLAY_PIXEL_RGB565,
+      .clips_rectangles = 0,
+      .observe = observe};
+  printf("H2_DISPLAY_BOOT version=%s formats=%u clips=%d\n",
+         esp_app_get_description()->version,
+         (unsigned)profile.supported_formats, profile.clips_rectangles);
+  int rc = h2_pal_display_e2e_run(runtime, &profile, &display_result);
+  printf("H2_DISPLAY_PHASE run rc=%d\n", rc);
+  h2_pal_display_e2e_print(&display_result, "board-driver", rc, 0);
   h2_mosaico_display_set_transfer_capture(NULL, NULL);
   h2_pal_mem_free(runtime->mem, transferred);
   transferred = NULL;
@@ -83,7 +94,12 @@ static void run(void *unused) {
     fail("stable-pattern", visual);
   printf("H2_DISPLAY_STABLE brightness=100 rc=%d optical_verified=0\n", visual);
   for (;;) {
-    h2_display_device_replay(runtime);
+    printf("H2_DISPLAY_PHASE replay rc=%d\n", rc);
+    printf("H2_DISPLAY_IDENTITY version=%s evidence=driver-transfer "
+           "optical_verified=0 formats=%u clips=%d\n",
+           esp_app_get_description()->version,
+           (unsigned)profile.supported_formats, profile.clips_rectangles);
+    h2_pal_display_e2e_print(&display_result, "board-driver", rc, 0);
     vTaskDelay(pdMS_TO_TICKS(3000));
   }
 }
