@@ -62,3 +62,18 @@ E2E 的 `sdkconfig.e2e.defaults` 是诊断配置示例。当前实机只验收 S
 S31 的 Bazel 库和 native SDK 必须统一使用 Picolibc：工具链用 `-specs=picolibc.specs` 探测并镜像系统头文件，编译时使用对应的 TLS/栈保护 ABI 参数，
 板级 SDK defaults 显式选择 `CONFIG_LIBC_PICOLIBC=y`。不能将默认 Newlib 头文件构建的库
 与 Picolibc 固件混用；Lua 字符分类和标准 IO 会暴露这种 ABI 不匹配。
+
+### Type-C H2Loader transport
+
+The Loader and E2E launchers opt into `esp32s31:loader_usb` before starting the
+Runtime or command service. Its two CDC interfaces isolate diagnostic stdio
+(CDC0) from reliable H2Loader IO Stream iKCP commands (CDC1). The board adapter
+owns TinyUSB initialization and bounded physical I/O; it registers callbacks with
+the public ESP H2Loader startup interface. The portable protocol and other boards'
+UART/USB Serial-JTAG defaults are unchanged. Standalone board diagnostics may
+continue using the single-CDC console without importing H2Loader.
+
+Use the command interface for the host CLI and the diagnostic interface for E2E
+ledgers. Verify physical USB identity and the authoritative H2Loader UID before
+installing; do not select an unrelated USB-UART adapter. Real handshake, install,
+upgrade and recovery qualification is tracked separately in the E2E matrix.

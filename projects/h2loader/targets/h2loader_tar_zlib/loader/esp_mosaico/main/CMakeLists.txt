@@ -14,6 +14,7 @@ idf_component_register(
     "${H2_REPO_ROOT}/libs/pal/include"
     "${H2_REPO_ROOT}/libs/bundle/include"
   REQUIRES
+    h2_mosaico_loader_usb
     h2_esp_target_task_policy
     espcoredump
     h2_firmware_lib

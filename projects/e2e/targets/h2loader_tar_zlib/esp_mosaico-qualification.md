@@ -14,7 +14,7 @@ of admission; it must not be silently removed from the registry.
 
 | Suite | Reference launcher | Mosaico entry | Final-source device status |
 | --- | --- | --- | --- |
-| pal-core | `pal-core/devkit` | [`pal-core/esp_mosaico`](pal-core/esp_mosaico/BUILD.bazel) | 41/41 on two boots; managed-install gate pending |
+| pal-core | `pal-core/devkit` | [`pal-core/esp_mosaico`](pal-core/esp_mosaico/BUILD.bazel) | 41/41 on two boots before dual CDC; current artifact pending |
 | pal-storage | `pal-storage/devkit` | [`pal-storage/esp_mosaico`](pal-storage/esp_mosaico/BUILD.bazel) | NOT_RUN |
 | pal-crypto | `pal-crypto/devkit` | [`pal-crypto/esp_mosaico`](pal-crypto/esp_mosaico/BUILD.bazel) | NOT_RUN |
 | pal-json | `pal-json/devkit` | [`pal-json/esp_mosaico`](pal-json/esp_mosaico/BUILD.bazel) | NOT_RUN |
@@ -72,13 +72,23 @@ installation/recovery and the remaining suites still block overall acceptance.
   read-only battery, audio and camera on the final artifact. Observe actual sound
   and pixels separately from successful API calls. Camera insertion needs its real
   empty-slot-to-insert-to-capture sequence; live removal remains unsupported.
-- Managed H2Loader transport: these entries use the existing board UART console
-  profile. Mosaico's main Type-C TinyUSB diagnostic console is not proof of a
-  working managed H2Loader serial channel. The connected test board currently has
-  Type-C only; its unrelated USB-UART port must not be used. Core additionally
-  routes its diagnostic ledger through TinyUSB CDC for direct-flash investigation;
-  that does not qualify managed installation or recovery. Validate the actual physical transport,
-  fresh UID and protocol before installation; do not silently select a ROM port.
+- Managed H2Loader transport: Loader and all 16 launchers now opt into a
+  board-owned TinyUSB adapter. CDC0 carries diagnostic output and CDC1 carries
+  the existing IO Stream iKCP protocol. The shared ESP H2Loader accepts a physical
+  I/O override at startup; other boards retain their existing UART/USB Serial-JTAG
+  defaults. All 16 dual-CDC packages build. Host callback/configuration tests,
+  the public serial E2E status/identity case, and App-to-Loader return passed on
+  hardware. The device reports UID `1c2904d0a629`, diagnostic CDC at interface 0
+  and command CDC at interface 1 (USB VID:PID `303a:4002`). The first dual-CDC Core
+  image (`cef6f7a41b839d50845a1ced1daa2ee3eea0c9c2028bf1f392623bc97621c5d4`)
+  also passed 41/41 before the managed-install attempt.
+  Managed installation reached `write_partition_2` but repeatedly reset;
+  the host retry was stopped. This is a failed installation, not qualification.
+  Unlike DevKit's 64 KiB entry task, the initial Mosaico Loader used the 16 KiB
+  SDK main stack. The launcher now owns a 64 KiB PSRAM entry task and reports
+  reset reason plus installation/launch stack headroom. Its device verification
+  remains pending; stack pressure is a hypothesis until measured.
+  The unrelated USB-UART adapter must not be used.
 - Install a qualified Loader first, record original partitions/coredump and verify
   Stage/package/image identity, managed upgrade, independent reboot, cleanup and
   recovery according to each suite. Preserve a full Flash backup before replacing
