@@ -35,6 +35,40 @@ package(default_visibility = ["//visibility:public"])
     ]
 ]
 
+[
+    cc_test(
+        name = "power_reboot_prepare_" + profile + "_test",
+        srcs = [
+            "include/h2_esp_platform_core.h",
+            "include/h2_esp_platform_safe_call.h",
+            "src/h2_esp_power_reboot_prepare.c",
+            "src/h2_esp_power_reboot_prepare.h",
+            "tests/sdk/sdkconfig.h",
+            "tests/test_h2_esp_power_reboot_prepare.c",
+        ],
+        conlyopts = H2_C11_OPTS + [
+            "-DCONFIG_IDF_TARGET_ESP32S31=" + s31,
+            "-DCONFIG_BT_NIMBLE_ENABLED=" + nimble,
+            "-DCONFIG_ESP_HOSTED_ENABLE_BT_NIMBLE=" + hosted,
+        ],
+        copts = H2_WARNING_COPTS,
+        includes = ["include", "src", "tests/sdk"],
+        target_compatible_with = select({
+            "//tools/bazel/platforms:host_linux_target_linux": [],
+            "//tools/bazel/platforms:host_macos_target_macos": [],
+            "//tools/bazel/platforms:host_windows_target_windows": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        deps = ["//libs/pal"],
+    )
+    for profile, s31, nimble, hosted in [
+        ("s31", "1", "1", "0"),
+        ("other_target", "0", "1", "0"),
+        ("no_ble", "1", "0", "0"),
+        ("hosted", "1", "1", "1"),
+    ]
+]
+
 firmware_native_component(
     name = "h2_pal_core",
     srcs = glob(
