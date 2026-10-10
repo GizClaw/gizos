@@ -28,6 +28,7 @@ set(H2_ESP_PLATFORM_CORE_SRCS
   "src/h2_esp_platform_dtls_state.c"
   "src/h2_esp_platform_net_socket.c"
   "src/h2_esp_platform_power.c"
+  "src/h2_esp_power_reboot_prepare.c"
   "src/h2_esp_platform_disk.c"
   "src/h2_esp_platform_littlefs_io.c"
   "src/h2_esp_platform_pref_littlefs.c"
