@@ -406,9 +406,15 @@ static void run(void *user) {
     portEXIT_CRITICAL(&observation_lock);
     (void)esp_timer_stop(watchdog);
     (void)esp_timer_delete(watchdog);
-    int confirm = h2_esp_h2loader_app_confirm(runtime);
+    const int eligible = rc == H2_PAL_OK && result.qualified &&
+                         probe == H2_PAL_OK && wall_restore == H2_PAL_OK;
+    int confirm = eligible ? h2_esp_h2loader_app_confirm(runtime)
+                           : H2_PAL_ERR_INVALID_STATE;
+    if (!eligible)
+        printf("H2_PAL_CORE_QUALIFICATION_FAIL rc=%d task_probe=%d "
+               "wall_restore=%d confirm=not-attempted\n", rc, probe, wall_restore);
     printf("H2_PAL_CORE_E2E_READY qualified=%d task_probe=%d confirm=%d wall_restore=%d\n",
-           result.qualified && probe == 0 && confirm == 0 && wall_restore == 0,
+           eligible && confirm == H2_PAL_OK,
            probe, confirm, wall_restore);
     fflush(stdout);
     /* Plain console bytes during reboot handoff are not a reliable result
@@ -436,7 +442,7 @@ static void run(void *user) {
         vTaskDelay(pdMS_TO_TICKS(100u));
         puts(wall_fixture_report);
         printf("H2_PAL_CORE_E2E_READY qualified=%d task_probe=%d confirm=%d wall_restore=%d\n",
-               result.qualified && probe == 0 && confirm == 0 && wall_restore == 0,
+               eligible && confirm == H2_PAL_OK,
                probe, confirm, wall_restore);
         fflush(stdout);
     }

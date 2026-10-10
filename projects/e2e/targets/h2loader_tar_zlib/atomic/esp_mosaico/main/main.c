@@ -16,10 +16,11 @@ static bool commands_started;
 static int start_commands(void) {
   if (commands_started)
     return H2_PAL_OK;
-  int rc = h2_esp_h2loader_app_commands_prepare_serial(
-      &runtime_config, "atomic-e2e", 1, 3);
-  if (!rc)
-    rc = h2_esp_h2loader_app_commands_start(runtime, "atomic-e2e", 1, 3);
+  const h2_esp_h2loader_app_commands_config_t commands = {
+      .active_name = "atomic-e2e", .hardware_capabilities = H2_LOADER_CAPABILITY_UART,
+      .h2loader_partition_id = 1, .coredump_partition_id = 3};
+  int rc = h2_esp_h2loader_app_commands_prepare_serial_with_config(
+      &runtime_config, &commands);
   if (!rc)
     commands_started = true;
   return rc;
