@@ -14,7 +14,7 @@ of admission; it must not be silently removed from the registry.
 
 | Suite | Reference launcher | Mosaico entry | Recorded device status (artifact-bound) |
 | --- | --- | --- | --- |
-| pal-core | `pal-core/devkit` | [`pal-core/esp_mosaico`](pal-core/esp_mosaico/BUILD.bazel) | r8 41/41 on two independent boots; clock/probe restoration, confirmation and managed install PASS |
+| pal-core | `pal-core/devkit` | [`pal-core/esp_mosaico`](pal-core/esp_mosaico/BUILD.bazel) | r19 peer 41/41 on two independent boots; clock/probe restoration, confirmation, Loader/Stage/coredump preservation and managed install PASS (r8 DUT also retained) |
 | pal-storage | `pal-storage/devkit` | [`pal-storage/esp_mosaico`](pal-storage/esp_mosaico/BUILD.bazel) | r8 36/36 across five boots (1/2/3/4/4); persistence and managed install PASS |
 | pal-crypto | `pal-crypto/devkit` | [`pal-crypto/esp_mosaico`](pal-crypto/esp_mosaico/BUILD.bazel) | r8 22/22 on two independent peer boots; cleanup/confirmation and managed install PASS |
 | pal-json | `pal-json/devkit` | [`pal-json/esp_mosaico`](pal-json/esp_mosaico/BUILD.bazel) | r8 15/15 on two independent peer boots; cleanup/confirmation and managed install PASS |
@@ -28,7 +28,7 @@ of admission; it must not be silently removed from the registry.
 | pal-display | `pal-display/amoled` | [`pal-display/esp_mosaico`](pal-display/esp_mosaico/BUILD.bazel) | r8 24/24 on two independent boots; DMA/cleanup/confirmation PASS; user confirmed four quadrants and earlier dimming |
 | atomic | `atomic/devkit` | [`atomic/esp_mosaico`](atomic/esp_mosaico/BUILD.bazel) | r8 56/56 on two independent executions, 20/20 workers joined; cleanup/confirmation and managed install PASS |
 | libco-smoke | `libco-smoke/devkit` | [`libco-smoke/esp_mosaico`](libco-smoke/esp_mosaico/BUILD.bazel) | r8 six phases / 10,000 switches on ten independent boots PASS; real coredump preserved |
-| lua-link | `lua-link/devkit` | [`lua-link/esp_mosaico`](lua-link/esp_mosaico/BUILD.bazel) | NOT QUALIFIED: both r8 roles produced five PASS rounds, but host hold observation and public BLE App-to-Loader return failed; r10 diagnostics in progress |
+| lua-link | `lua-link/devkit` | [`lua-link/esp_mosaico`](lua-link/esp_mosaico/BUILD.bazel) | NOT QUALIFIED: historical bilateral rounds and r18 host loss retained; r20 BLE-command App warm returns pass three times, but final bilateral transfer/loss qualification is still required |
 | pal-pref | `pal-pref/devkit` | [`pal-pref/esp_mosaico`](pal-pref/esp_mosaico/BUILD.bazel) | r8 shared seed/verify/clean: 31 operations plus independent empty recheck PASS |
 
 PAL Core requires 41 cases covering 46 interface operations; the old board page's
@@ -424,3 +424,91 @@ the existing shared reboot path and flushes diagnostic logs. It does not change
 OTA selection, confirmation policy or the portable BLE test. MQTT, Net/TLS,
 Wi-Fi, WebRTC and Lua Link admission, deterministic Loader rollback/recovery and
 final peripheral observations remain required. PR #709 remains draft.
+
+## Type-C and bilateral diagnostics continuation
+
+The Windows USB production-fragment test passed after moving compilation to the
+Bazel host toolchain. Native platform CI then found an unscoped Python generator;
+its generator and source targets now use the existing host compatibility set.
+Host callback tests and S31 board analysis pass.
+
+MQTT's entry incorrectly selected the native UART sink despite the Type-C-only
+connection. A separate optional board CDC0 output component now supplies bounded
+writes and checked drain. Only MQTT opts in; command CDC1, Runtime UART, shared
+PAL and reference-board providers are unchanged. Two channel/fault/ledger host
+tests pass and the r15 package/native artifacts build and are archived. Hardware
+MQTT admission remains pending.
+
+Both r11 and r14 Lua roles produced five successful rounds and observed final
+hold connections. Their operator windows expired before the requested physical
+reset, so those attempts do not qualify physical loss. Confirmed App-to-Loader
+return still failed even after the link became idle: selection was Loader/NEW
+before reboot, followed by Loader/ABORTED and fallback to the confirmed App. The
+existing DUT 20,640-byte coredump stayed byte-identical.
+
+An independent Loader debug package records startup milestones in the reserved
+`mos_ota_diag` test namespace through an internal-stack SDK safe call; it never
+erases NVS or changes normal Loader confirmation. Lua diagnostic entries query
+actual OTA states and initialize the SDK NVS reader without formatting. SDK query
+errors remain visible. The r18 control/experiment packages have the same fifteen-
+minute operator window. The experimental package additionally invokes the
+existing PAL BLE stop API before shared reset; it is not a default platform fix
+and its effectiveness is unqualified.
+
+The shared E2E App adds optional `hold_timeout_ms`, with zero preserving the
+five-minute default on existing boards. Transfer-suite deadlines and the Lua
+script are unchanged. Fake-air tests verify transfer timing ignores the hold
+override, default/configured hold succeeds, and deadline expiry releases all
+owned resources.
+
+The actual r18 host completed five rounds, confirmed the App and observed
+`lost:-10` 4,039 ms after the last datagram following the user's second-board
+reset. The second board's USB interface was absent and its r18 identity and full
+boot ledger could not be read. Retain this as partial host evidence, not complete
+bilateral qualification. The required MQTT, Net/TLS, Wi-Fi, WebRTC, full Lua
+admission and Loader recovery/rollback gates remain open.
+
+## S31 reboot preparation and r19 continuation
+
+The r18 controlled peer experiment called the existing BLE stop API through the
+internal-stack worker and reported `safe=0 stop=0`. Its subsequent public return
+started the Loader with a new persisted startup counter (3 to 4). The normal DUT
+control returned to App instead. This comparison supports full local-controller
+shutdown before S31 restart; it does not establish an exact upstream SDK defect
+or qualify the incomplete bilateral Lua run.
+
+The preparation now belongs to the native ESP power provider, after its optional
+observation hook and before SDK restart. It calls the existing native BLE stop
+provider through a safe internal-stack context only for S31 with local NimBLE.
+Other chips, disabled BLE and hosted BLE remain no-op profiles. Worker and stop
+errors propagate; the helper does not extend PAL or change OTA confirmation.
+Temporary application-owned shutdown variants were removed. Four actual-helper
+host profiles pass in both normal and optimized builds; assertions are retained
+under `NDEBUG`. Further real BLE return cycles are required for admission.
+
+All nineteen r19 packages build and are archived with their native ELF, map and
+Flash files against frozen source inputs. The subsequent assertion-only test
+source delta is recorded separately; no archived build hash was rewritten.
+The peer passed public Loader self-update and an independent Loader reboot,
+including a real P1 package checksum and unchanged blank coredump. The DUT Core
+candidate is verified in Stage with its running P1/P2 unchanged; ROM-assisted
+startup recovery is still required and is not counted as public installation.
+
+The r19 peer Core package passed all 41 cases on managed installation and an
+independent App reboot. Clock restoration, the task probe and App confirmation
+passed; P1, empty Stage and blank coredump were preserved. This does not replace
+the remaining active-BLE return and bilateral Lua gates.
+
+The native power review also corrected next-boot restoration after preparation
+failure: skipping an SDK write requires both running and selected partitions to
+match the target. Merely running the target is insufficient after a different
+slot was selected. The four optimized profiles cover same-slot preservation and
+both restoration directions; no direct otadata manipulation was added.
+
+The r20 Loader, Core and normal lifecycle fixture build and have immutable
+package/native bindings. On the peer, the confirmed lifecycle App starts the real
+BLE command service and returns through the public protocol to Loader on three
+successive warm cycles. P1/P2 image and package checksums remain unchanged,
+Stage remains empty and last_result remains zero. The fixture's managed install
+also preserved the blank coredump. This is a BLE-enabled command-service return
+check, not a bilateral Lua transfer or physical-disconnection admission.
