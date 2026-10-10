@@ -1189,6 +1189,8 @@ h2_web_webrtc_peer_start_offer(h2_pal_webrtc_peer_t *peer) {
   H2_WEB_STATE_GUARD();
   if (peer == NULL || peer->closed)
     return H2_PAL_ERR_CLOSED;
+  if (!h2_web_platform_fake_network_available(peer->owner))
+    return H2_PAL_ERR_UNAVAILABLE;
   if (peer->offer_started)
     return H2_PAL_ERR_INVALID_STATE;
   if (peer->media_track == NULL && !peer->opus_mode) {
@@ -1584,6 +1586,7 @@ static h2_pal_result_t h2_web_webrtc_peer_send_opus(h2_pal_webrtc_peer_t *peer,
   if (peer->state != H2_PAL_WEBRTC_PEER_CONNECTED)
     return H2_PAL_ERR_INVALID_STATE;
   if (!peer->opus_mode) return H2_PAL_ERR_UNSUPPORTED;
+  if (!h2_web_platform_fake_network_available(peer->owner)) return H2_PAL_ERR_UNAVAILABLE;
   int queued = (int)h2_web_main_call(h2_web_webrtc_opus_tx_queued_js,
       (const void *[]){&(uintptr_t){(uintptr_t)peer}}).i32;
   if (queued < 0) return H2_PAL_ERR_CLOSED;
@@ -1603,6 +1606,7 @@ h2_web_webrtc_channel_send(h2_pal_webrtc_channel_t *channel,
   H2_WEB_STATE_GUARD();
   if (channel == NULL || channel->terminal)
     return H2_PAL_ERR_CLOSED;
+  if (!h2_web_platform_fake_network_available(channel->peer->owner)) return H2_PAL_ERR_UNAVAILABLE;
   if (channel->peer->event_error != H2_PAL_OK)
     return channel->peer->event_error;
   return (h2_pal_result_t)((int)h2_web_main_call(
