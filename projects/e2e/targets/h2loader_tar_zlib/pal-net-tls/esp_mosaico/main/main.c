@@ -70,6 +70,8 @@ void app_main(void) {
     printf("H2_MOSAICO_USB_FAIL rc=%d\n", usb_rc);
     return;
   }
+  /* Keep the initial executing BOOT observable after CDC enumeration. */
+  vTaskDelay(pdMS_TO_TICKS(3000u));
   int rc = h2_esp_target_task_policy_install();
   if (rc != H2_PAL_OK)
     fail("task_policy", rc);
@@ -86,6 +88,7 @@ void app_main(void) {
     fail("runtime", rc);
   printf("H2_PAL_NET_TLS_BOOT board=%s version=%s\n",
          H2_PAL_NET_TLS_BOARD, esp_app_get_description()->version);
+  fflush(stdout);
   const h2_pal_task_options_t options = {
       .name = h2_pal_net_tls_device_runner_task_name};
   h2_pal_task_t *runner = NULL;
