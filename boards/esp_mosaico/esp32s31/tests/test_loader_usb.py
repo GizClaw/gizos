@@ -52,6 +52,7 @@ int main(void) {
     def test_faults(self):
         root = Path(__file__).resolve().parents[4]
         source = (root / "boards/esp_mosaico/esp32s31/loader_usb/transport.c").read_text()
+        source += "\n" + (root / "boards/esp_mosaico/esp32s31/usb_diagnostic/stream.c").read_text()
         # Replace only SDK includes; compile the actual callback implementation.
         source = "\n".join(line for line in source.splitlines() if not line.startswith("#include"))
         prefix = r"""
@@ -60,7 +61,9 @@ int main(void) {
 #include <string.h>
 #include "h2_iostreamikcp_types.h"
 #define CONFIG_TINYUSB_CDC_COUNT 2
+#define TINYUSB_CDC_ACM_0 0
 #define TINYUSB_CDC_ACM_1 1
+#include "h2/pal/hal/h2_pal_uart_io_stream.h"
 #define ESP_OK 0
 #define ESP_ERR_TIMEOUT 1
 #define ESP_ERR_NOT_FINISHED 2
@@ -70,6 +73,7 @@ typedef struct { int cdc_port; } tinyusb_config_cdcacm_t;
 static int64_t now;
 static int rx_ready, rx_error, flush_result, console_error, init_error;
 static size_t chunk = 3, sent;
+static int expected_port = 1;
 static h2_iostreamikcp_io_t configured;
 static int64_t esp_timer_get_time(void) { return now; }
 static void vTaskDelay(int ticks) { now += ticks * 1000; }
@@ -80,10 +84,10 @@ static int tinyusb_cdcacm_read(int port, void *buf, size_t len, size_t *out) {
  return 0;
 }
 static size_t tinyusb_cdcacm_write_queue(int port,const uint8_t *buf,size_t len) {
- assert(port == 1 && buf); size_t n = len < chunk ? len : chunk; sent += n; return n;
+ assert(port == expected_port && buf); size_t n = len < chunk ? len : chunk; sent += n; return n;
 }
 static int tinyusb_cdcacm_write_flush(int port, unsigned ticks) {
- assert(port == 1); (void)ticks; return flush_result;
+ assert(port == expected_port); (void)ticks; return flush_result;
 }
 static int h2_mosaico_usb_console_init(void) { return console_error; }
 static int tinyusb_cdcacm_init(const tinyusb_config_cdcacm_t *cfg) {
@@ -110,6 +114,20 @@ int main(void) {
  assert(configured.write(0, bytes, 10, &n, 2) == H2_PAL_ERR_IO && n == 3);
  flush_result = ESP_ERR_TIMEOUT; assert(configured.flush(0) == H2_PAL_ERR_TIMEOUT);
  flush_result = ESP_OK; assert(configured.flush(0) == 0);
+ expected_port = 0;
+ const h2_pal_uart_io_stream_api_t *diagnostic = h2_mosaico_usb_diagnostic_api();
+ assert(diagnostic && !diagnostic->vtable->read && !diagnostic->vtable->configure);
+ sent = 0;
+ assert(h2_pal_uart_io_stream_write(diagnostic, bytes, 10, &n, 10) == 0 && n == 10 && sent == 10);
+ assert(h2_pal_uart_io_stream_flush(diagnostic) == 0);
+ chunk = 0; before = now;
+ assert(h2_pal_uart_io_stream_write(diagnostic, bytes, 10, &n, 2) == H2_PAL_ERR_TIMEOUT);
+ assert(n == 0 && now - before == 2000);
+ chunk = 3; flush_result = -1;
+ assert(h2_pal_uart_io_stream_write(diagnostic, bytes, 10, &n, 2) == H2_PAL_ERR_IO && n == 3);
+ flush_result = ESP_ERR_TIMEOUT;
+ assert(h2_pal_uart_io_stream_flush(diagnostic) == H2_PAL_ERR_TIMEOUT);
+ expected_port = 1;
  console_error = -1; assert(h2_mosaico_loader_usb_init() == H2_PAL_ERR_IO);
  console_error = 0; init_error = -1; assert(h2_mosaico_loader_usb_init() == H2_PAL_ERR_IO);
  return 0;

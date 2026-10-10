@@ -181,11 +181,22 @@ firmware_native_component(
     deps = [":usb_console", "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_runtime"],
 )
 
+firmware_native_component(
+    name = "usb_diagnostic",
+    srcs = ["usb_diagnostic/stream.c"],
+    hdrs = ["include/h2_mosaico_usb_diagnostic.h"],
+    component_directory = "boards/esp_mosaico/esp32s31/usb_diagnostic",
+    component_name = "h2_mosaico_usb_diagnostic",
+    data = ["usb_diagnostic/CMakeLists.txt"],
+    deps = [":usb_console", "//native_component_src/esp-idf6.x/h2_pal_core", "//libs/pal"],
+)
+
 py_binary(
     name = "loader_usb_fixture_generator",
     srcs = ["tests/test_loader_usb.py"],
     data = [
         "loader_usb/transport.c",
+        "usb_diagnostic/stream.c",
         "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_runtime:src/h2_esp_h2loader_iostreamikcp.c",
         "//libs/pal:pal_header_files",
         "//libs/iostreamikcp:include/h2_iostreamikcp_types.h",

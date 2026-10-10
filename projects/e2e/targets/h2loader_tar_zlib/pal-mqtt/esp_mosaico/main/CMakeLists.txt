@@ -20,6 +20,7 @@ idf_component_register(
     "${H2_REPO_ROOT}/projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_runtime/include"
   REQUIRES
     h2_mosaico_loader_usb
+    h2_mosaico_usb_diagnostic
     h2_esp_target_task_policy
     mbedtls
     app_update

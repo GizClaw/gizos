@@ -1,4 +1,5 @@
 #include "h2_mosaico_loader_usb.h"
+#include "h2_mosaico_usb_diagnostic.h"
 #include "h2_esp_board.h"
 #include "h2_esp_h2loader_runtime.h"
 #include "h2_esp_h2loader_ble.h"
@@ -140,7 +141,7 @@ void app_main(void) {
         fail("runtime-or-commands", rc);
     }
     board_log=runtime->log;
-    console.uart=h2_esp_platform_uart_io_stream_api();
+    console.uart=h2_mosaico_usb_diagnostic_api();
     console.timeout_ms=5000u;
     runtime->log=&ledger_log_api;
     printf("H2_PAL_MQTT_PROVIDER policy=coremqtt allocator=psram incoming=8 outgoing=8 owner_bytes=%zu\n", owner_bytes);

@@ -6,7 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 
-/* This target uses the existing USB JTAG driver installed by H2Loader. Each
+/* This target uses the board diagnostic CDC0 sink initialized at startup. Each
  * record has one bounded write and a checked physical TX drain; no prefix retry
  * can make an incomplete first ledger eligible for persistent confirmation. */
 typedef struct h2_mqtt_esp_ledger_console {
