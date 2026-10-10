@@ -1,8 +1,22 @@
 """Exercise production USB callbacks with bounded partial-I/O SDK faults."""
 from pathlib import Path
 import subprocess
-import tempfile
+import argparse
+import sys
 import unittest
+
+
+EMIT_KIND = None
+EMIT_OUTPUT = None
+EXECUTABLES = {}
+
+def verify_fixture(kind, source):
+    # Native assertions use the selected Bazel C toolchain on every host.
+    if EMIT_KIND is not None:
+        assert kind == EMIT_KIND
+        EMIT_OUTPUT.write_text("#ifdef NDEBUG\n#undef NDEBUG\n#endif\n" + source)
+    else:
+        subprocess.run([str(EXECUTABLES[kind])], check=True)
 
 
 class LoaderUsbTest(unittest.TestCase):
@@ -33,14 +47,7 @@ int main(void) {
  return 0;
 }
 """
-        with tempfile.TemporaryDirectory() as tmp:
-            src, exe = Path(tmp) / "test.c", Path(tmp) / "test"
-            src.write_text(prefix + source + checks)
-            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
-                            "-I" + str(root / "libs/pal/include"),
-                            "-I" + str(root / "libs/iostreamikcp/include"),
-                            str(src), "-o", str(exe)], check=True)
-            subprocess.run([str(exe)], check=True)
+        verify_fixture("config", prefix + source + checks)
 
     def test_faults(self):
         root = Path(__file__).resolve().parents[4]
@@ -108,16 +115,22 @@ int main(void) {
  return 0;
 }
 """
-        with tempfile.TemporaryDirectory() as tmp:
-            src = Path(tmp) / "test.c"
-            exe = Path(tmp) / "test"
-            src.write_text(prefix + source + checks)
-            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
-                            "-I" + str(root / "libs/pal/include"),
-                            "-I" + str(root / "libs/iostreamikcp/include"),
-                            str(src), "-o", str(exe)], check=True)
-            subprocess.run([str(exe)], check=True)
+        verify_fixture("callbacks", prefix + source + checks)
 
 
 if __name__ == "__main__":
-    unittest.main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--emit-kind", choices=["config", "callbacks"])
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--config-exe", type=Path)
+    parser.add_argument("--callbacks-exe", type=Path)
+    args = parser.parse_args()
+    if args.emit_kind:
+        EMIT_KIND, EMIT_OUTPUT = args.emit_kind, args.output
+        assert EMIT_OUTPUT is not None
+        name = "test_configuration_is_startup_only" if EMIT_KIND == "config" else "test_faults"
+        getattr(LoaderUsbTest(name), name)()
+    else:
+        assert args.config_exe and args.callbacks_exe
+        EXECUTABLES = {"config": args.config_exe.resolve(), "callbacks": args.callbacks_exe.resolve()}
+        unittest.main(argv=[sys.argv[0]])
