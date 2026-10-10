@@ -14,10 +14,10 @@ of admission; it must not be silently removed from the registry.
 
 | Suite | Reference launcher | Mosaico entry | Final-source device status |
 | --- | --- | --- | --- |
-| pal-core | `pal-core/devkit` | [`pal-core/esp_mosaico`](pal-core/esp_mosaico/BUILD.bazel) | 41/41 on two boots before dual CDC; current artifact pending |
+| pal-core | `pal-core/devkit` | [`pal-core/esp_mosaico`](pal-core/esp_mosaico/BUILD.bazel) | 41/41 on two managed-App boots at ae9a21d6; final-source rerun pending |
 | pal-storage | `pal-storage/devkit` | [`pal-storage/esp_mosaico`](pal-storage/esp_mosaico/BUILD.bazel) | NOT_RUN |
-| pal-crypto | `pal-crypto/devkit` | [`pal-crypto/esp_mosaico`](pal-crypto/esp_mosaico/BUILD.bazel) | NOT_RUN |
-| pal-json | `pal-json/devkit` | [`pal-json/esp_mosaico`](pal-json/esp_mosaico/BUILD.bazel) | NOT_RUN |
+| pal-crypto | `pal-crypto/devkit` | [`pal-crypto/esp_mosaico`](pal-crypto/esp_mosaico/BUILD.bazel) | 22/22 on two boots after board ChaCha configuration fix; managed install PASS |
+| pal-json | `pal-json/devkit` | [`pal-json/esp_mosaico`](pal-json/esp_mosaico/BUILD.bazel) | 15/15 on two boots at ae9a21d6; managed install PASS; final-source rerun pending |
 | pal-http | `pal-http/devkit` | [`pal-http/esp_mosaico`](pal-http/esp_mosaico/BUILD.bazel) | NOT_RUN |
 | pal-mqtt | `pal-mqtt/devkit` | [`pal-mqtt/esp_mosaico`](pal-mqtt/esp_mosaico/BUILD.bazel) | NOT_RUN |
 | pal-net-tls | `pal-net-tls/devkit` | [`pal-net-tls/esp_mosaico`](pal-net-tls/esp_mosaico/BUILD.bazel) | NOT_RUN |
@@ -86,8 +86,12 @@ installation/recovery and the remaining suites still block overall acceptance.
   the host retry was stopped. This is a failed installation, not qualification.
   Unlike DevKit's 64 KiB entry task, the initial Mosaico Loader used the 16 KiB
   SDK main stack. The launcher now owns a 64 KiB PSRAM entry task and reports
-  reset reason plus installation/launch stack headroom. Its device verification
-  remains pending; stack pressure is a hypothesis until measured.
+  reset reason plus installation/launch stack headroom. The revised Loader
+  resumed the preserved Stage and successfully wrote and booted Core. Minimum observed launch stack headroom was 41,628 bytes out of
+  65,536: the observed 23,908-byte usage exceeds the original 16 KiB stack.
+  The saved coredump partition was all 0xff, so no panic backtrace is available.
+  A fresh JSON public managed-install E2E then passed, including all package
+  bytes acknowledged, expected image identity, unchanged Loader and empty Stage.
   The unrelated USB-UART adapter must not be used.
 - Install a qualified Loader first, record original partitions/coredump and verify
   Stage/package/image identity, managed upgrade, independent reboot, cleanup and
@@ -104,6 +108,41 @@ installation/recovery and the remaining suites still block overall acceptance.
   on other boards; their workload/product/recovery prerequisites must be explicitly
   included or excluded before claiming every repository E2E applies to this board.
   Their Mosaico qualification is pending, not implicitly passed by this matrix.
+
+## Managed-install receipts and Crypto configuration correction
+
+These observations belong to the exact artifacts below, not to later rebuilds.
+The Type-C management port was CDC1; CDC0 independently captured device ledgers.
+
+- Loader image SHA-256: `392beed152935ef8808f701eac70aa8f1cc2b5a9bf8ffc7de5645b324115a4ea`.
+- Core image SHA-256: `1040ec93a7c96404bff68b2663b1a05e781cb7df69f9b21f6690ad2bcbce7266`.
+  Its preserved Stage resumed after the Loader-only ROM repair. Both first boot
+  and an independent managed reboot passed 41/41, with cleanup, task probe,
+  startup confirmation and clock restoration all zero. This is not a PASS receipt
+  for the earlier interrupted host install session. Final status reported App
+  partition 2, empty Stage and last result zero.
+- JSON image SHA-256: `275864d35026d5c7bb4344f1e27922b02a9f59b5c5a25c4b4a1f538d9feddb1a`.
+  Package SHA-256: `e2b6be40d97195a5a16b38f3922a2f919dd116b7eb5ba7d3f715153a64391470`.
+  Public serial install E2E passed with all 983,023 bytes acknowledged and
+  cleanup zero. Two independent boots each passed all 15 cases, with complete
+  and qualified true, confirmation zero and no failed/blocked/not-run cases.
+- Crypto image SHA-256: `7c552f713fb8ed700cb3b88f6e145bbbeefbc57e3036a929dfc95ced270d73b9`.
+  Managed install passed; device qualification failed: 19 passed, two ChaCha
+  cases failed and AEAD capacity was blocked. The SDK disables ChaCha by default;
+  Mosaico lacked the two enables already present on DevKit/AMOLED. Board defaults
+  now enable ChaCha20 and ChaCha20-Poly1305. The rebuilt App passed all 22 cases
+  on first boot and an independent managed reboot, both with confirmation zero.
+  Public install E2E passed with all 934,129 bytes acknowledged and cleanup zero.
+  App SHA-256: `f2d0cda58e44339fcd2f98d077085f4b1f693c9cfa15b24a6bb10646306cca91`;
+  package SHA-256: `82681385c2806897e57c5c9fa3f6a527418e66202206088e313eb55647dac47f`.
+  This App contains the board configuration fix on top of ae9a21d6. Final status
+  retained the Loader above, selected App/P2, cleared Stage and reported result
+  zero; the 65,536-byte coredump partition remained blank. Each boot has a full
+  22-case ledger and a complete/qualified report; a truncated replay line at the
+  USB reboot boundary is preserved in the raw log and is not counted as a case.
+
+Loader self-update and rollback qualification remain pending. The Stage resume
+above does not replace their public acceptance scenarios.
 
 ## Build and execute
 
