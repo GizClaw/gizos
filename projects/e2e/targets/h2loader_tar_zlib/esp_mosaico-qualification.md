@@ -38,6 +38,24 @@ optical verification. Shared suite READMEs and registries own the exact counts a
 peer/cleanup requirements, including Storage's multi-boot persistence sequence and
 MQTT's first-run ledger, broker/TLS witnesses and post-delivery confirmation.
 
+## Core direct-flash investigation
+
+The correctly selected OTA1 App built from `ef7eb77a` executed all 41 shared
+Core cases: 40 passed and `pal.core.time.wall-set` failed with `-2000`
+(UNCALIBRATED). Cleanup, the 4/16/64 KiB stack observations, allocation-failure
+recovery and the 100-task resource probe passed. App SHA-256:
+`1b1603a53c64a1269bded8105e30c0e194110ae0f76f183d14a50cd01d015937`.
+This is a failed bring-up receipt, not final-source qualification or proof of
+managed installation.
+
+The wall-set case needs calibrated UTC to save and restore before testing its
+write operation. The Mosaico launcher now verifies the cold UNCALIBRATED state,
+uses the native SDK to establish a controlled fixture epoch, and runs the shared
+suite unchanged. It then restores the raw boot clock plus elapsed monotonic time,
+checks that PAL again reports UNCALIBRATED, and includes restoration in its READY
+qualification gate. The fixture epoch is test data, not a claim of actual UTC.
+The updated firmware builds; its device rerun remains pending.
+
 ## Remaining hardware and integration gates
 
 - Board diagnostics: rerun display/touch/buttons, both magnetometers, BMI270,

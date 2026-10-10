@@ -19,6 +19,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/time.h>
 
 /* Test instrumentation belongs to this launcher. Every PAL operation still
  * reaches the board's real provider; missing capabilities stay BLOCKED. */
@@ -309,9 +310,65 @@ static int task_probe(void) {
     puts(task_report);
     return rc;
 }
+/* The shared wall-set case restores a calibrated UTC baseline. On a cold
+ * ESP boot, prepare that baseline through the independent SDK clock, retaining
+ * the raw boot clock so the fixture can restore the original invalid status.
+ * All suite operations still use the real PAL under test. */
+static struct timeval original_wall;
+static int64_t original_wall_mono;
+static int wall_fixture_active;
+static char wall_fixture_report[192];
+
+static int restore_wall_fixture(void) {
+    if (!wall_fixture_active) return H2_PAL_OK;
+    int64_t elapsed = esp_timer_get_time() - original_wall_mono;
+    if (elapsed < 0) return H2_PAL_ERR_INVALID_STATE;
+    int64_t usec = (int64_t)original_wall.tv_usec + elapsed;
+    struct timeval restored = {
+        .tv_sec = original_wall.tv_sec + (time_t)(usec / 1000000),
+        .tv_usec = (suseconds_t)(usec % 1000000),
+    };
+    if (settimeofday(&restored, NULL) != 0) return H2_PAL_ERR_IO;
+    h2_pal_time_wall_status_t status = {0};
+    int rc = h2_pal_time_get_wall_status(runtime->time, &status);
+    if (rc != H2_PAL_OK) return rc;
+    uint64_t wall = UINT64_MAX;
+    rc = h2_pal_time_get_wall_ms(runtime->time, &wall);
+    if (status.valid || rc != H2_PAL_TIME_ERR_UNCALIBRATED || wall != 0u)
+        return H2_PAL_ERR_INVALID_STATE;
+    wall_fixture_active = 0;
+    return H2_PAL_OK;
+}
+
+static int prepare_wall_fixture(int *out_prepared) {
+    *out_prepared = 0;
+    h2_pal_time_wall_status_t status = {0};
+    int rc = h2_pal_time_get_wall_status(runtime->time, &status);
+    if (rc != H2_PAL_OK || status.valid) return rc;
+    uint64_t wall = UINT64_MAX;
+    rc = h2_pal_time_get_wall_ms(runtime->time, &wall);
+    if (rc != H2_PAL_TIME_ERR_UNCALIBRATED || wall != 0u)
+        return H2_PAL_ERR_INVALID_STATE;
+    if (gettimeofday(&original_wall, NULL) != 0) return H2_PAL_ERR_IO;
+    original_wall_mono = esp_timer_get_time();
+    /* A controlled fixture epoch distinct from the shared case's target. */
+    const struct timeval fixture = {.tv_sec = 1609459200, .tv_usec = 0};
+    wall_fixture_active = 1;
+    if (settimeofday(&fixture, NULL) != 0) return H2_PAL_ERR_IO;
+    *out_prepared = 1;
+    return H2_PAL_OK;
+}
+
 static void run(void *user) {
     (void)user;
     vTaskDelay(pdMS_TO_TICKS(5000u));
+    int wall_prepared = 0;
+    int fixture_rc = prepare_wall_fixture(&wall_prepared);
+    if (fixture_rc != H2_PAL_OK) {
+        int restore_rc = restore_wall_fixture();
+        printf("H2_PAL_CORE_WALL_FIXTURE prepare=%d restore=%d\n", fixture_rc, restore_rc);
+        fail("wall_fixture", fixture_rc);
+    }
     previous_log = vprintf;
     previous_log = esp_log_set_vprintf(log_sink);
     esp_log_level_set("pal-core", ESP_LOG_DEBUG);
@@ -330,6 +387,11 @@ static void run(void *user) {
     };
     int rc = h2_pal_core_e2e_run(runtime, &config, &result);
     (void)esp_log_set_vprintf(previous_log);
+    int wall_restore = restore_wall_fixture();
+    snprintf(wall_fixture_report, sizeof(wall_fixture_report),
+             "H2_PAL_CORE_WALL_FIXTURE cold_boot_prepared=%d restore=%d",
+             wall_prepared, wall_restore);
+    puts(wall_fixture_report);
     while (reported_cases < H2_PAL_CORE_E2E_CASE_COUNT)
         report_case(reported_cases++);
     printf("H2_PAL_CORE_E2E contract=%u passed=%zu failed=%zu blocked=%zu not_run=%zu "
@@ -345,8 +407,9 @@ static void run(void *user) {
     (void)esp_timer_stop(watchdog);
     (void)esp_timer_delete(watchdog);
     int confirm = h2_esp_h2loader_app_confirm(runtime);
-    printf("H2_PAL_CORE_E2E_READY qualified=%d task_probe=%d confirm=%d\n",
-           result.qualified, probe, confirm);
+    printf("H2_PAL_CORE_E2E_READY qualified=%d task_probe=%d confirm=%d wall_restore=%d\n",
+           result.qualified && probe == 0 && confirm == 0 && wall_restore == 0,
+           probe, confirm, wall_restore);
     fflush(stdout);
     /* Plain console bytes during reboot handoff are not a reliable result
      * channel. Replay the immutable ledger slowly after installation settles;
@@ -371,8 +434,10 @@ static void run(void *user) {
         vTaskDelay(pdMS_TO_TICKS(100u));
         if (task_report[0]) puts(task_report);
         vTaskDelay(pdMS_TO_TICKS(100u));
-        printf("H2_PAL_CORE_E2E_READY qualified=%d task_probe=%d confirm=%d\n",
-               result.qualified, probe, confirm);
+        puts(wall_fixture_report);
+        printf("H2_PAL_CORE_E2E_READY qualified=%d task_probe=%d confirm=%d wall_restore=%d\n",
+               result.qualified && probe == 0 && confirm == 0 && wall_restore == 0,
+               probe, confirm, wall_restore);
         fflush(stdout);
     }
 }
