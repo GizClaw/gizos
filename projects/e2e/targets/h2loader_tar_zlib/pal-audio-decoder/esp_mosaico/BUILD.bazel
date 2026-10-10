@@ -62,6 +62,7 @@ firmware_native_component(
     deps = [
         ":firmware_lib",
         "//boards/esp_mosaico/esp32s31",
+        "//boards/esp_mosaico/esp32s31:loader_usb",
         "//libs/atomic",
         "//libs/runtime",
         "//native_component_src/esp-idf6.x/h2_esp_audio_decoder",

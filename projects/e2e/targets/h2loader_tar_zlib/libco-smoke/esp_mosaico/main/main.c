@@ -1,3 +1,4 @@
+#include "h2_mosaico_loader_usb.h"
 #include "h2_esp_board.h"
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_h2loader_runtime.h"
@@ -29,6 +30,11 @@ static void h2_libco_smoke_fail(const char *stage, int result,
 }
 
 void app_main(void) {
+  int usb_rc = h2_mosaico_loader_usb_init();
+  if (usb_rc != H2_PAL_OK) {
+    printf("H2_MOSAICO_USB_FAIL rc=%d\n", usb_rc);
+    return;
+  }
     if (h2_esp_target_task_policy_install() != H2_PAL_OK) {
         return;
     }
