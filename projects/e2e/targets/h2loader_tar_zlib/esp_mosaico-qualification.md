@@ -46,12 +46,16 @@ MQTT's first-run ledger, broker/TLS witnesses and post-delivery confirmation.
   empty-slot-to-insert-to-capture sequence; live removal remains unsupported.
 - Managed H2Loader transport: these entries use the existing board UART console
   profile. Mosaico's main Type-C TinyUSB diagnostic console is not proof of a
-  working managed H2Loader serial channel. Validate the actual physical transport,
+  working managed H2Loader serial channel. The connected test board currently has
+  Type-C only; its unrelated USB-UART port must not be used. Core additionally
+  routes its diagnostic ledger through TinyUSB CDC for direct-flash investigation;
+  that does not qualify managed installation or recovery. Validate the actual physical transport,
   fresh UID and protocol before installation; do not silently select a ROM port.
 - Install a qualified Loader first, record original partitions/coredump and verify
   Stage/package/image identity, managed upgrade, independent reboot, cleanup and
-  recovery according to each suite. No connected device was available when these
-  entries were added. No destructive recovery or flash has been performed here.
+  recovery according to each suite. Preserve a full Flash backup before replacing
+  the historical diagnostic image; bind subsequent receipts to exact source and
+  artifact hashes.
 - Network suites need a controlled AP and reachable TCP/TLS/HTTP/MQTT/WebRTC peers,
   trusted fixture configuration and peer witnesses. Never commit credentials.
   Existing scan/AP and BLE advertisement smoke do not prove these scenarios.
