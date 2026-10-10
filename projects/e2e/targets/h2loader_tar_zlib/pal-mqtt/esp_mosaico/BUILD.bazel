@@ -69,6 +69,7 @@ firmware_native_component(
         ":firmware_lib",
         "//boards/esp_mosaico/esp32s31",
         "//boards/esp_mosaico/esp32s31:loader_usb",
+        "//boards/esp_mosaico/esp32s31:usb_diagnostic",
         "//libs/atomic",
         "//libs/runtime",
         "//native_component_src/esp-idf6.x/h2_pal_core",
