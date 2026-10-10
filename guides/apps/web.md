@@ -10,7 +10,8 @@ An embedding host can call `h2WebAppHostConfigureEnvironment()` on the app_host 
 {
   version: 1,
   wifi: { enabled: true, connected: true, ssid: 'Browser Wi-Fi', rssi: -48 },
-  modem: { enabled: true, simPresent: true, registered: true, rssi: -70 }
+  modem: { enabled: true, simPresent: true, registered: true, rssi: -70 },
+  ble: { enabled: true }
 }
 ```
 
@@ -19,6 +20,16 @@ Only opted-in platforms install the Web fake Wi-Fi STA/settings and modem PAL AP
 Real Fetch/WebRTC transports remain responsible for server communication. The HOST Netif is usable only when the browser is online and at least one simulated data path is open. Environment updates and radio operations trigger the existing Netif event flow. Closing both paths removes the usable default route, rejects new HTTP requests, WebRTC offers and outgoing data/Opus; applications observe the Netif change and manage their established sessions normally. The fake radios do not scan, connect or control the computer's real Wi-Fi/modem. This simulation is separate from evidence of a successful server connection.
 
 `//libs/pal/providers/web/pal_core:fake_network_test` executes the real pthread WASM provider against deterministic browser network inputs, covering opt-in, invalid configuration, Wi-Fi saved-state semantics, modem data/power, no-SIM, offline HTTP rejection and teardown. The existing Netif test preserves the non-simulated browser contract.
+
+## Opt-in simulated BLE peripheral
+
+The optional `ble.enabled: true` installs the Web BLE simulator in the same Runtime. Configure it before Start; its admission is fixed for that platform lifecycle. Omitted or false retains the unsupported provider. It supports a single simulated central, advertising discovery, six registered GATT services with 24 total characteristics, MTU 517, plain ATT reads/writes, CCCD notification subscriptions and real BLE System Events. Registered callback contexts remain borrowed until successful unregister, which fences in-flight requests. A callback trying to unregister itself gets BUSY. Security, bonding, indications, handle-scoped advertising sets and PAL central operations remain unsupported.
+
+`Module.h2WebBluetooth` is the current platform's simulated central; `snapshot` and `notifications` return copies, and `scan()` returns the actual active advertising snapshot with its name and service UUID bytes. The host calls asynchronous `connect()`, `subscribe(valueHandle, enabled)`, `write(valueHandle, Uint8Array)`, `read(valueHandle)` and `disconnect()`. `snapshot.services` contains actual registered UUID bytes as hexadecimal strings and allocated value/CCCD handles. `addEventListener('notification', handler)` receives `event.data` with sequence, connection, valueHandle and copied value bytes; the retained history is bounded to 128 notifications. These APIs do not access the computer's Bluetooth adapter or bypass the application's GATT protocol.
+
+ATT requests copy input into a queue bounded to 32 requests, are dispatched by the existing platform pump Worker, and resolve with `{result: 0, value: Uint8Array}` or reject with an Error's PAL `code`. Native callback errors pass through unchanged. Queued requests time out after 10 seconds and are removed; an already executing callback can still finish after a host timeout. Platform teardown rejects outstanding requests with CLOSED and invalidates retained central objects. GATT callbacks never run inside `notify()` or on the browser UI thread. ATT writes are not logged or added to the notification observation history.
+
+`//libs/pal/providers/web/pal_core:fake_ble_test` exercises the real pthread WASM provider with a simulated central, including opt-out, invalid configuration, discovery, connection/subscription events, read/write callbacks, notifications, malformed and stale handles, callback unregister fencing, and cleanup. Product acceptance must also run the application's actual provisioning service and navigation flow; a BLE provider test alone does not establish physical radio operation.
 
 ## Runtime 输出到嵌入宿主
 
@@ -96,7 +107,7 @@ Audio PAL 的麦克风通过 `getUserMedia` 与 `AudioWorklet` 采集，显式�
 
 `//libs/pal/providers/web/pal_core:mic_test` 验证授权失败、延迟授权取消、device ended、超时、停止唤醒与重新启动；`:mic_browser_test` 在真实 Chromium 中用 48 kHz 合成麦克风设备验证 getUserMedia、AudioWorklet 与 16 kHz PAL PCM。自动测试不代表用户物理麦克风的收音质量验收。
 
-`h2_pal_webrtc_peer_send_opus()` 仍返回 `H2_PAL_ERR_UNSUPPORTED`。`native_handle == NULL` 且带 read/write vtable 的 Opus Track（GizClaw 使用的 native provider 模型）通过 encoded transform 运行：provider 发送一条静音浏览器 track，把每个外发 encoded payload 替换为 `read()` 取得的 Opus packet，并把收到的 payload 交给 `write()`，不经浏览器解码播放；优先使用 `RTCRtpScriptTransform`（worker，CSP 需允许 `blob:` worker），缺失时使用 Chromium `createEncodedStreams`，两者都没有时返回 `UNSUPPORTED`。每个外发浏览器帧（20 ms packet time）替换为一个 Track packet，RTP timestamp 由浏览器生成，因此 Track 必须产生 20 ms Opus packet；read/write 只在 platform 拥有的 media task 中调用；收到的丢包不产生 zero-length marker。静音源依赖已解锁的 `Module.h2WebAudioContext`，页面须在用户手势中创建或恢复它；AudioContext 未运行时 set_track 在 Console 警告，上行在其恢复前没有帧。Task、Queue、Sync 和 Timer 由 pthread 实现；Task 使用 allocator 分配的真实原生栈，join 等待线程退出后回收栈和 Task 记录。线程取消是协作取消，在阻塞等待边界观察，不强制终止持有对象的 Worker。Web Serial、Fetch、WebRTC、WebCodecs、IndexedDB 与 Web Locks 的 JS 入口通过 `h2_web_main_thread.h` 同步代理到 UI，Promise 完成通过条件变量唤醒等待的 Worker；JS 对象和 DOM 留在主线程。Web PAL 不依赖 libco 或 Asyncify。`h2_web_platform_pump()` 保留为事件导入兼容入口，不负责 Task 调度，后台 Worker 自动处理网络事件。端口授权必须直接来自用户手势。不具备浏览器 API 对应能力的控制线读取、raw socket Net、BLE 和其余 PAL 使用 canonical unsupported provider 返回 `H2_PAL_ERR_UNSUPPORTED`，不能伪造成功或平台身份。
+`h2_pal_webrtc_peer_send_opus()` 仍返回 `H2_PAL_ERR_UNSUPPORTED`。`native_handle == NULL` 且带 read/write vtable 的 Opus Track（GizClaw 使用的 native provider 模型）通过 encoded transform 运行：provider 发送一条静音浏览器 track，把每个外发 encoded payload 替换为 `read()` 取得的 Opus packet，并把收到的 payload 交给 `write()`，不经浏览器解码播放；优先使用 `RTCRtpScriptTransform`（worker，CSP 需允许 `blob:` worker），缺失时使用 Chromium `createEncodedStreams`，两者都没有时返回 `UNSUPPORTED`。每个外发浏览器帧（20 ms packet time）替换为一个 Track packet，RTP timestamp 由浏览器生成，因此 Track 必须产生 20 ms Opus packet；read/write 只在 platform 拥有的 media task 中调用；收到的丢包不产生 zero-length marker。静音源依赖已解锁的 `Module.h2WebAudioContext`，页面须在用户手势中创建或恢复它；AudioContext 未运行时 set_track 在 Console 警告，上行在其恢复前没有帧。Task、Queue、Sync 和 Timer 由 pthread 实现；Task 使用 allocator 分配的真实原生栈，join 等待线程退出后回收栈和 Task 记录。线程取消是协作取消，在阻塞等待边界观察，不强制终止持有对象的 Worker。Web Serial、Fetch、WebRTC、WebCodecs、IndexedDB 与 Web Locks 的 JS 入口通过 `h2_web_main_thread.h` 同步代理到 UI，Promise 完成通过条件变量唤醒等待的 Worker；JS 对象和 DOM 留在主线程。Web PAL 不依赖 libco 或 Asyncify。`h2_web_platform_pump()` 保留为事件导入兼容入口，不负责 Task 调度，后台 Worker 自动处理网络事件。端口授权必须直接来自用户手势。不具备浏览器 API 对应能力的控制线读取、raw socket Net、未 opt-in 的 BLE 和其余 PAL 使用 canonical unsupported provider 返回 `H2_PAL_ERR_UNSUPPORTED`，不能伪造成功或平台身份。
 
 生产 Web App 必须定义 hosting headers、browser lifecycle、permissions、release packaging 和 supported-browser acceptance，不能把 smoke page 成功运行当作 Web 平台完成证据。持有 Runtime 的 Web entry 在 `pagehide`/freeze shutdown handler 返回前必须同步拒绝新操作、请求 task cancellation、使 pending Serial I/O 以 `CLOSED` 退出，由 Worker 等待活动 PAL 调用退出，再依次 join task、deinit Runtime 和销毁 platform；UI 生命周期回调不能阻塞等待 Worker。Web Serial 仅提供 Promise 形式的 reader/writer cancellation 和 port close；活动 session 的页面生命周期 shutdown 必须返回 `UNSUPPORTED`，只能同步失效回调并发起 best-effort 浏览器清理，不能声称这些 Promise 在 handler 返回前完成。需要确定性关闭证据的产品必须在页面仍可推进 event loop 时提供显式、可等待的 close 流程。
 
@@ -115,8 +126,9 @@ Audio PAL 的麦克风通过 `getUserMedia` 与 `AudioWorklet` 采集，显式�
 | Display | `h2_web_platform_display_api()` | 已实现，背光同时发布宿主输出 | `:browser_platform_test` display |
 | LED | `h2_web_platform_led_api()` | 基于板级 Periph 的模拟光学输出 | `:outputs_test` |
 | Pref | `h2_web_platform_pref_api()`（localStorage） | 已实现 | `:pal_core_test` |
+| 模拟 BLE peripheral | 显式 opt-in 的 Web fake PAL | 广播、GATT 与通知；默认 unsupported | `:fake_ble_test` |
 | Wi-Fi / 蜂窝 | 显式 opt-in 的 Web fake PAL | 模拟 radio 状态与数据链路；默认 unsupported | `:fake_network_test` |
-| raw Net socket、MQTT、BLE、NFC、真实电池、板上 OTA | canonical unsupported | 不支持，返回 `UNSUPPORTED` | — |
+| raw Net socket、MQTT、未 opt-in 的 BLE、NFC、真实电池、板上 OTA | canonical unsupported | 不支持，返回 `UNSUPPORTED` | — |
 
 ### 默认网络（Netif）
 
@@ -272,7 +284,7 @@ App Host 把配置、Button/hardware descriptor、名字和路径复制到一个
 | `lua-script-vector` | 共享 Lua 入口绘制多边形、椭圆、硬边/平滑笔画和保留命令；唯一 native extension 经公开 Display API 创建／更新几何并重放缓存；真实 Canvas 检查边界、裁剪、变换、颜色与错误更新后旧数据，验证背景恢复、透明快照、retained 提交量、GC 后绘制和页面 Stop 回收 |
 | `mp4-player`（manual） | WebCodecs H.264/AAC 播放完成；`:large_browser_test` 播放 1024×600 大文件；需 `H2_WEB_TEST_BROWSER` 指向 Google Chrome |
 
-未提供 Web target 的 App：`gizclaw-ping-speed` 依赖必需的 Wi-Fi API；BLE、Wi-Fi CSI、modem、crash-before-confirm、partial-update 依赖浏览器不存在的硬件或板上能力；`lua-bloomspeaker` 依赖 BLE 配对；iperf 需要 raw socket。GizClaw 真实服务端注册与 H106 业务流程需要真实 token，不在自动测试范围内。
+未提供 Web target 的 App：`gizclaw-ping-speed` 依赖必需的 Wi-Fi API；BLE central／配对、Wi-Fi CSI、真实 modem、crash-before-confirm、partial-update 依赖浏览器不存在的硬件或板上能力；`lua-bloomspeaker` 依赖 BLE 配对；iperf 需要 raw socket。GizClaw 真实服务端注册与 H106 业务流程需要真实 token，不在自动测试范围内。
 
 独立 `pal-core` Browser suite 验证 Core 与 System Event；`pal-wifi` Browser suite 验证 Netif 和真实 offline/online Runtime event；`pal-net-tls` 的 boundary test 验证 raw socket 不可用。`scripts/test/test-web.sh` 显式运行这些入口。Web provider 另有真实浏览器测试：
 

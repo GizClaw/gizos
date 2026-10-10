@@ -123,6 +123,20 @@ h2_web_platform_http_api(h2_web_platform_t *platform);
 const h2_pal_wifi_sta_api_t *h2_web_platform_fake_wifi_sta_api(h2_web_platform_t *platform);
 const h2_pal_wifi_settings_api_t *h2_web_platform_fake_wifi_settings_api(h2_web_platform_t *platform);
 const h2_pal_modem_api_t *h2_web_platform_fake_modem_api(h2_web_platform_t *platform);
+/**
+ * @brief Borrow an explicitly opted-in BLE peripheral simulator.
+ * Module.h2WebEnvironment.ble.enabled must be true before creation; otherwise
+ * returns NULL. No real Bluetooth adapter is used. Supports advertising,
+ * six GATT services / 24 characteristics, one simulated central, MTU 517,
+ * plain ATT read/write and notifications. Schemas' callback contexts and
+ * handle storage are borrowed until unregister returns successfully.
+ * Call PAL operations from Workers. ATT callbacks run on the platform pump
+ * Worker; unregister/stop fence in-flight callbacks and return BUSY when
+ * called by the callback itself. Encryption, bonding, indications, central
+ * PAL operations and handle-scoped advertising sets remain unsupported.
+ * The browser host uses Module.h2WebBluetooth; see the Web guide.
+ */
+const h2_pal_ble_api_t *h2_web_platform_fake_ble_api(h2_web_platform_t *platform);
 /** wolfCrypt provider seeded from browser cryptographic randomness. */
 const h2_pal_crypto_api_t *
 h2_web_platform_crypto_api(h2_web_platform_t *platform);

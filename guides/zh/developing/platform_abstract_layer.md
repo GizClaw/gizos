@@ -70,6 +70,8 @@ PAL component。
 
 PAL contract 不能依赖 ESP-IDF、Armino、FreeRTOS、desktop platform、具体 board header 或其他 target-private API。
 
+Web 宿主可在创建 platform 前显式 opt-in 模拟 Wi-Fi／modem 和 BLE peripheral。BLE 的 GATT 请求由现有 pump Worker 调用应用注册的回调，发布真实 System Event 和通知；关闭及 unregister 必须先隔离在途回调。模拟入口、容量、生命周期与不支持的 radio 操作见 [Web](/apps/web)，不能据此声明实机射频验收。
+
 ## 关系
 
 PAL 有两条实现来源。第一条是平台或芯片实现：`components` 将 SDK 和芯片能力封装为可复用组件。第二条是 third-party 跨平台集成：`third_party` 提供上游代码，`libs/pal/providers/<integration>` 完成跨平台 provider。Portable provider 已有完整 lifecycle 和 API accessor 时，BSP 直接注入 target component 提供的底层能力并组装 provider；只有 target build adapter 或额外的可复用 target policy 确实存在时才增加 component，不能创建只转发 library init/deinit/api 和 ready 状态的 wrapper。BSP 仍只负责当前物理 board 的差异配置、wiring 和 capability assembly，例如 GPIO、总线、外设实例和 `periph_id`。

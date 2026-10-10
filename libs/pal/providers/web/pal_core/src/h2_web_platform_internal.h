@@ -94,6 +94,7 @@ struct h2_web_platform {
   _Atomic bool netif_dirty;
   void *serial_state;
   void *fake_network;
+  void *fake_ble;
   h2_pal_webrtc_peer_t *webrtc_peers;
   h2_web_webrtc_zombie_t *webrtc_zombies;
   bool pointer_installed;
@@ -154,6 +155,9 @@ void h2_web_platform_netif_init(h2_web_platform_t *platform);
 h2_pal_result_t h2_web_platform_fake_network_init(h2_web_platform_t *platform);
 void h2_web_platform_fake_network_deinit(h2_web_platform_t *platform);
 bool h2_web_platform_fake_network_available(h2_web_platform_t *platform);
+h2_pal_result_t h2_web_platform_fake_ble_init(h2_web_platform_t *platform);
+void h2_web_platform_fake_ble_deinit(h2_web_platform_t *platform);
+void h2_web_platform_fake_ble_poll(h2_web_platform_t *platform);
 void h2_web_platform_netif_deinit(h2_web_platform_t *platform);
 void h2_web_platform_netif_poll(h2_web_platform_t *platform);
 void h2_web_platform_event_retire(h2_web_platform_t *platform);

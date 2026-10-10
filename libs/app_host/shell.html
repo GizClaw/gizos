@@ -55,11 +55,15 @@
       globalThis.h2WebAppHostConfigureEnvironment = environment => {
         if (h2HostStarted && Module.h2WebEnvironment === undefined)
           throw new Error('Configure the simulated environment before Start');
+        if (h2HostStarted && (environment?.ble?.enabled === true) !==
+            (Module.h2WebEnvironment?.ble?.enabled === true))
+          throw new Error('Configure simulated BLE before Start');
         const w = environment?.wifi, m = environment?.modem;
         if (environment?.version !== 1 || !w || !m ||
             [w.enabled, w.connected, m.enabled, m.simPresent, m.registered].some(v => typeof v !== 'boolean') ||
             typeof w.ssid !== 'string' || !w.ssid || w.ssid.includes('\0') || new TextEncoder().encode(w.ssid).length > 32 ||
-            [w.rssi, m.rssi].some(v => !Number.isInteger(v) || v < -127 || v > 0)) {
+            [w.rssi, m.rssi].some(v => !Number.isInteger(v) || v < -127 || v > 0) ||
+            (environment.ble !== undefined && typeof environment.ble?.enabled !== 'boolean')) {
           throw new TypeError('Invalid simulated radio environment');
         }
         Module.h2WebEnvironment = structuredClone(environment);

@@ -19,7 +19,8 @@ extern "C" {
  * Audio, decoders, HTTP, WebRTC, Netif, System Event, Pref, Crypto, Timer,
  * and LED output for board-owned Periph descriptors)
  * and the canonical unsupported APIs elsewhere. Explicit Module.h2WebEnvironment
- * configuration opts into fake Wi-Fi/settings/modem (see the Web guide).
+ * configuration opts into fake Wi-Fi/settings/modem and optional BLE peripheral
+ * simulation (see the Web guide).
  * Missing configuration keeps radios unsupported; simulated radio state never
  * fabricates a server connection. The host runs the App entry in a task,
  * pumps until it returns, and tears everything down. Progress and the result

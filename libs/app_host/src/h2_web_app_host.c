@@ -388,6 +388,8 @@ static h2_runtime_config_t h2_web_app_host_runtime_config(
   config.wifi_csi = h2_pal_unsupported_wifi_csi_api();
   config.wifi_settings = h2_pal_unsupported_wifi_settings_api();
   config.ble_host = h2_pal_unsupported_ble_host_api();
+  if (h2_web_platform_fake_ble_api(platform) != NULL)
+    config.ble_host = h2_web_platform_fake_ble_api(platform);
   config.modem = h2_pal_unsupported_modem_api();
   if (h2_web_platform_fake_wifi_sta_api(platform) != NULL) {
     config.wifi_sta = h2_web_platform_fake_wifi_sta_api(platform);

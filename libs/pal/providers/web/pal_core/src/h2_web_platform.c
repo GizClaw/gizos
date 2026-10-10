@@ -283,7 +283,9 @@ h2_web_platform_t *h2_web_platform_create_with_task_allocator(
   h2_web_platform_audio_decoder_init(platform);
   h2_web_platform_video_decoder_init(platform);
   h2_web_platform_display_init(platform);
-  if (h2_web_platform_fake_network_init(platform) != H2_PAL_OK) {
+  if (h2_web_platform_fake_network_init(platform) != H2_PAL_OK ||
+      h2_web_platform_fake_ble_init(platform) != H2_PAL_OK) {
+    h2_web_platform_fake_network_deinit(platform);
     h2_web_platform_display_deinit(platform);
     h2_web_platform_audio_deinit(platform);
     h2_web_platform_crypto_deinit(platform);
@@ -300,6 +302,7 @@ h2_web_platform_t *h2_web_platform_create_with_task_allocator(
   h2_web_platform_netif_init(platform);
   h2_web_platform_webrtc_init(platform);
   if (h2_web_platform_serial_init(platform) != H2_PAL_OK) {
+    h2_web_platform_fake_ble_deinit(platform);
     h2_web_platform_webrtc_deinit(platform);
     h2_web_platform_netif_deinit(platform);
     h2_web_platform_fake_network_deinit(platform);
@@ -366,6 +369,7 @@ h2_pal_result_t h2_web_platform_destroy(h2_web_platform_t *platform) {
     platform->pump_thread = 0;
   }
   h2_web_platform_serial_deinit(platform);
+  h2_web_platform_fake_ble_deinit(platform);
   h2_web_platform_webrtc_deinit(platform);
   h2_web_platform_netif_deinit(platform);
   h2_web_platform_fake_network_deinit(platform);
@@ -413,6 +417,7 @@ h2_pal_result_t h2_web_platform_pump(h2_web_platform_t *platform,
   h2_web_platform_webrtc_reap(platform);
   h2_web_platform_event_retire(platform);
   h2_web_platform_netif_poll(platform);
+  h2_web_platform_fake_ble_poll(platform);
   pthread_mutex_lock(&platform->pump_mutex);
   platform->pumping = false;
   pthread_cond_broadcast(&platform->pump_changed);
