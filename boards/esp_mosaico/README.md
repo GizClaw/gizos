@@ -58,3 +58,7 @@ bazel build --config=esp32s31 //projects/e2e/targets/esp_idf_firmware/reference-
 E2E 的 `sdkconfig.e2e.defaults` 是诊断配置示例。当前实机只验收 SC101IOT。
 
 实现边界、资源契约和证据范围见 [适配指南](../../guides/zh/developing/esp_mosaico.md)。
+
+S31 的 Bazel 库和 native SDK 必须统一使用 Picolibc：工具链用 `-specs=picolibc.specs` 探测并镜像系统头文件，编译时使用对应的 TLS/栈保护 ABI 参数，
+板级 SDK defaults 显式选择 `CONFIG_LIBC_PICOLIBC=y`。不能将默认 Newlib 头文件构建的库
+与 Picolibc 固件混用；Lua 字符分类和标准 IO 会暴露这种 ABI 不匹配。

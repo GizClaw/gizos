@@ -20,3 +20,6 @@ CONFIG_BSP_DISPLAY_LVGL_ENABLE=n
 CONFIG_BSP_CO5300_ENABLE_TE=n
 # Shared PAL permits PSRAM stacks only when flash/cache operations are safe.
 CONFIG_SPIRAM_XIP_FROM_PSRAM=y
+
+# Match the S31 Bazel toolchain libc headers and ABI.
+CONFIG_LIBC_PICOLIBC=y
