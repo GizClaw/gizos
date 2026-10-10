@@ -1,0 +1,6 @@
+# Observe every actual PAL log level at the ESP-IDF output sink.
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_LOG_MAXIMUM_LEVEL_DEBUG=y
+CONFIG_LOG_COLORS=n
+# Native stack-bound observations require the real FreeRTOS task metadata.
+CONFIG_FREERTOS_USE_TRACE_FACILITY=y

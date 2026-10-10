@@ -1,4 +1,5 @@
 #include "h2_mosaico_display.h"
+#include "h2_mosaico_display_capture.h"
 #include "h2_mosaico_surface.h"
 #include "bsp/display.h"
 #include "esp_heap_caps.h"
@@ -19,6 +20,13 @@ static bool pressed;
 static uint16_t last_x, last_y;
 static StaticSemaphore_t lock_storage;
 static SemaphoreHandle_t mutex;
+static h2_mosaico_transfer_capture_fn transfer_capture;
+static void *transfer_capture_user;
+
+void h2_mosaico_display_set_transfer_capture(h2_mosaico_transfer_capture_fn capture, void *user) {
+    transfer_capture = capture;
+    transfer_capture_user = user;
+}
 
 int h2_mosaico_display_init(void) {
     if (!mutex) mutex = xSemaphoreCreateMutexStatic(&lock_storage);
@@ -99,6 +107,10 @@ static int display_draw(void *user, const h2_display_rect_t *rect,
                     BSP_LCD_H_RES, y + H2_MOSAICO_DMA_ROWS, row));
         const int drained = drain();
         if (rc == H2_PAL_OK) rc = drained;
+        if (rc == H2_PAL_OK && transfer_capture) {
+            const h2_display_rect_t chunk = {0, y, BSP_LCD_H_RES, H2_MOSAICO_DMA_ROWS};
+            transfer_capture(transfer_capture_user, &chunk, row);
+        }
     }
     xSemaphoreGive(mutex);
     return rc;
