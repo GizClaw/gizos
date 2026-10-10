@@ -57,6 +57,7 @@ firmware_native_component(
     hdrs = [
         "include/h2_esp_board.h",
         "include/h2_esp_board_config.h",
+        "include/h2_mosaico_display_capture.h",
         "src/h2_esp_board_private.h",
         "src/h2_mosaico_peripherals.h",
         "src/h2_mosaico_mag.h",
