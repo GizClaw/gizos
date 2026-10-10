@@ -3,6 +3,8 @@
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_h2loader_runtime.h"
 #include "h2_esp_platform_core.h"
+#include "h2_esp_platform_safe_call.h"
+#include "esp_ota_ops.h"
 #include "h2_esp_target_task_policy.h"
 #include "h2_lua_link_e2e.h"
 
@@ -21,6 +23,57 @@
 #ifndef H2_LUA_LINK_E2E_ROLE
 #define H2_LUA_LINK_E2E_ROLE "host"
 #endif
+
+typedef struct ota_observation {
+  uint32_t running;
+  uint32_t next;
+  int loader_state;
+  int app_state;
+  int loader_state_rc;
+  int app_state_rc;
+} ota_observation_t;
+static void observe_ota(void *user) {
+  ota_observation_t *out = user;
+  const esp_partition_t *p = esp_ota_get_running_partition();
+  out->running = p != NULL ? p->address : 0;
+  p = esp_ota_get_boot_partition();
+  out->next = p != NULL ? p->address : 0;
+  esp_ota_img_states_t state = ESP_OTA_IMG_UNDEFINED;
+  p = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, NULL);
+  out->loader_state_rc = p != NULL ? esp_ota_get_state_partition(p, &state) : ESP_ERR_NOT_FOUND;
+  out->loader_state = state;
+  state = ESP_OTA_IMG_UNDEFINED;
+  p = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_1, NULL);
+  out->app_state_rc = p != NULL ? esp_ota_get_state_partition(p, &state) : ESP_ERR_NOT_FOUND;
+  out->app_state = state;
+}
+static void report_ota(const char *phase) {
+  ota_observation_t observation = {0};
+  int rc = h2_esp_platform_safe_call(observe_ota, &observation, sizeof(observation), 4096u);
+  printf("H2_LUA_OTA_TRACE phase=%s rc=%d running=%lx next=%lx p1_state=%d p2_state=%d p1_rc=%d p2_rc=%d\n",
+         phase, rc, (unsigned long)observation.running, (unsigned long)observation.next,
+         observation.loader_state, observation.app_state,
+         observation.loader_state_rc, observation.app_state_rc);
+  fflush(stdout);
+}
+/* Observe the normal shared reboot path; do not change its selection or result. */
+int h2_esp_platform_power_before_reboot(uint32_t reason) {
+  (void)reason;
+  report_ota("before-reboot");
+  return H2_PAL_OK;
+}
+
+/* Diagnostic entry owns reliable console delivery, not the portable script. */
+static const h2_pal_log_api_t *board_log;
+static int observed_log(void *user, h2_pal_log_level_t level,
+                        const char *scope, const char *message) {
+  (void)user;
+  int rc = h2_pal_log_write(board_log, level, scope, message);
+  if (fflush(stdout) != 0 && rc == H2_PAL_OK) rc = H2_PAL_ERR_IO;
+  return rc;
+}
+static const h2_pal_log_vtable_t observed_log_vtable = {.write = observed_log};
+static const h2_pal_log_api_t observed_log_api = {.vtable = &observed_log_vtable};
 
 static void hold(void) {
   for (;;) {
@@ -46,6 +99,8 @@ static void image_entry(void *user) {
     fail("runtime_config", rc, 0);
   }
   config.mem = h2_esp_platform_psram_allocator();
+  board_log = config.log;
+  config.log = &observed_log_api;
   rc = h2_esp_h2loader_app_commands_prepare_serial(&config, "lua-link-e2e", 1u,
                                                    3u);
   if (rc != H2_PAL_OK) {
@@ -105,6 +160,7 @@ static void entry_task(void *unused) {
   printf("H2_LUA_LINK_E2E stage=boot board=esp_mosaico role=%s version=%s\n",
          H2_LUA_LINK_E2E_ROLE, esp_app_get_description()->version);
   fflush(stdout);
+  report_ota("boot");
   image_entry(NULL);
   (void)h2_esp_board_runtime_deinit();
   vTaskDeleteWithCaps(NULL);

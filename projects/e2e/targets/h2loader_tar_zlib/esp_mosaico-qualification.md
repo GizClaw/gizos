@@ -14,22 +14,22 @@ of admission; it must not be silently removed from the registry.
 
 | Suite | Reference launcher | Mosaico entry | Recorded device status (artifact-bound) |
 | --- | --- | --- | --- |
-| pal-core | `pal-core/devkit` | [`pal-core/esp_mosaico`](pal-core/esp_mosaico/BUILD.bazel) | r5 41/41 on two independent boots; guarded confirmation and managed install PASS |
-| pal-storage | `pal-storage/devkit` | [`pal-storage/esp_mosaico`](pal-storage/esp_mosaico/BUILD.bazel) | 36/36 across five boots (1/2/3/4/4) at 85487ab1; install recheck PASS |
-| pal-crypto | `pal-crypto/devkit` | [`pal-crypto/esp_mosaico`](pal-crypto/esp_mosaico/BUILD.bazel) | r7 22/22 on two independent peer boots; managed install PASS |
-| pal-json | `pal-json/devkit` | [`pal-json/esp_mosaico`](pal-json/esp_mosaico/BUILD.bazel) | r7 15/15 on two independent peer boots; managed install PASS |
-| pal-http | `pal-http/devkit` | [`pal-http/esp_mosaico`](pal-http/esp_mosaico/BUILD.bazel) | NOT_RUN |
+| pal-core | `pal-core/devkit` | [`pal-core/esp_mosaico`](pal-core/esp_mosaico/BUILD.bazel) | r8 41/41 on two independent boots; clock/probe restoration, confirmation and managed install PASS |
+| pal-storage | `pal-storage/devkit` | [`pal-storage/esp_mosaico`](pal-storage/esp_mosaico/BUILD.bazel) | r8 36/36 across five boots (1/2/3/4/4); persistence and managed install PASS |
+| pal-crypto | `pal-crypto/devkit` | [`pal-crypto/esp_mosaico`](pal-crypto/esp_mosaico/BUILD.bazel) | r8 22/22 on two independent peer boots; cleanup/confirmation and managed install PASS |
+| pal-json | `pal-json/devkit` | [`pal-json/esp_mosaico`](pal-json/esp_mosaico/BUILD.bazel) | r8 15/15 on two independent peer boots; cleanup/confirmation and managed install PASS |
+| pal-http | `pal-http/devkit` | [`pal-http/esp_mosaico`](pal-http/esp_mosaico/BUILD.bazel) | r9 45/45 on two independent boots; distinct nonces, real HTTP/TLS peer witnesses, cleanup/confirmation and managed install PASS |
 | pal-mqtt | `pal-mqtt/devkit` | [`pal-mqtt/esp_mosaico`](pal-mqtt/esp_mosaico/BUILD.bazel) | NOT_RUN |
 | pal-net-tls | `pal-net-tls/devkit` | [`pal-net-tls/esp_mosaico`](pal-net-tls/esp_mosaico/BUILD.bazel) | NOT_RUN |
 | pal-wifi | `pal-wifi/devkit` | [`pal-wifi/esp_mosaico`](pal-wifi/esp_mosaico/BUILD.bazel) | NOT_RUN |
 | pal-webrtc | `pal-webrtc/devkit` | [`pal-webrtc/esp_mosaico`](pal-webrtc/esp_mosaico/BUILD.bazel) | NOT_RUN |
-| pal-audio | `pal-audio/amoled` | [`pal-audio/esp_mosaico`](pal-audio/esp_mosaico/BUILD.bazel) | r7 24/24 on two independent peer boots; capture/output/30s soak and managed install PASS |
-| pal-audio-decoder | `pal-audio-decoder/devkit` | [`pal-audio-decoder/esp_mosaico`](pal-audio-decoder/esp_mosaico/BUILD.bazel) | r7 29/29 on two independent peer boots; managed install/status PASS; older input snapshot retained |
-| pal-display | `pal-display/amoled` | [`pal-display/esp_mosaico`](pal-display/esp_mosaico/BUILD.bazel) | r3 24/24 on two independent boots; DMA/cleanup/confirmation PASS; user confirmed pattern and dimming |
-| atomic | `atomic/devkit` | [`atomic/esp_mosaico`](atomic/esp_mosaico/BUILD.bazel) | 56/56 on two independent r2 executions; managed install, cleanup and confirmation PASS |
+| pal-audio | `pal-audio/amoled` | [`pal-audio/esp_mosaico`](pal-audio/esp_mosaico/BUILD.bazel) | r8 24/24 on two independent peer boots; capture/output/30s soak and managed install PASS; acoustic observation unavailable |
+| pal-audio-decoder | `pal-audio-decoder/devkit` | [`pal-audio-decoder/esp_mosaico`](pal-audio-decoder/esp_mosaico/BUILD.bazel) | r8 29/29 on two independent peer boots; cleanup/confirmation and managed install PASS |
+| pal-display | `pal-display/amoled` | [`pal-display/esp_mosaico`](pal-display/esp_mosaico/BUILD.bazel) | r8 24/24 on two independent boots; DMA/cleanup/confirmation PASS; user confirmed four quadrants and earlier dimming |
+| atomic | `atomic/devkit` | [`atomic/esp_mosaico`](atomic/esp_mosaico/BUILD.bazel) | r8 56/56 on two independent executions, 20/20 workers joined; cleanup/confirmation and managed install PASS |
 | libco-smoke | `libco-smoke/devkit` | [`libco-smoke/esp_mosaico`](libco-smoke/esp_mosaico/BUILD.bazel) | r8 six phases / 10,000 switches on ten independent boots PASS; real coredump preserved |
-| lua-link | `lua-link/devkit` | [`lua-link/esp_mosaico`](lua-link/esp_mosaico/BUILD.bazel) | NOT_RUN |
-| pal-pref | `pal-pref/devkit` | [`pal-pref/esp_mosaico`](pal-pref/esp_mosaico/BUILD.bazel) | r7 shared seed/verify/clean: 31 operations and independent empty recheck PASS |
+| lua-link | `lua-link/devkit` | [`lua-link/esp_mosaico`](lua-link/esp_mosaico/BUILD.bazel) | NOT QUALIFIED: both r8 roles produced five PASS rounds, but host hold observation and public BLE App-to-Loader return failed; r10 diagnostics in progress |
+| pal-pref | `pal-pref/devkit` | [`pal-pref/esp_mosaico`](pal-pref/esp_mosaico/BUILD.bazel) | r8 shared seed/verify/clean: 31 operations plus independent empty recheck PASS |
 
 PAL Core requires 41 cases covering 46 interface operations; the old board page's
 8 Core cases cannot close it. Display requires the portable 24-case registry with
@@ -401,3 +401,26 @@ and enforces the same ESP provider cleanup and confirmation contract as DevKit.
 Do not mark PR #709 ready or close Issue #708 based on this file alone. Record real
 results and exact artifacts after execution; keep unavailable hardware/fixtures
 visible as blockers. Never populate evidence with the reference board's receipts.
+
+## Artifact-bound continuation status (2026-10-10)
+
+Eleven of the sixteen portable suites now have admitted device receipts. The ten
+r8 suites in the table were built against the frozen non-document inputs of
+`a304f25e`; their startup/library inputs are unchanged by the later observation
+fixes. HTTP r9 includes its own USB observation delay and flush change. Its two
+independent boots each passed the entire 45-case registry, with different run
+nonces and independent server arrival/TLS-rejection receipts. Both public Loader
+r7-to-r8 self-updates and subsequent independent Loader reboots passed; this
+does not qualify the still-pending deterministic rollback/checksum matrix.
+
+Both boards retain their verified full-flash backups and immutable package/native
+ELF/map archives outside Git. The real DUT coredump was preserved byte-for-byte
+through these completed suites. ROM repair of the 8 KiB OTA selection restored
+the Loader and resumed the previously staged HTTP r9 image; that repair and
+resume are separate from the subsequent successful public HTTP installation.
+
+The Lua r10 entry records read-only running/next partition and OTA states around
+the existing shared reboot path and flushes diagnostic logs. It does not change
+OTA selection, confirmation policy or the portable BLE test. MQTT, Net/TLS,
+Wi-Fi, WebRTC and Lua Link admission, deterministic Loader rollback/recovery and
+final peripheral observations remain required. PR #709 remains draft.
