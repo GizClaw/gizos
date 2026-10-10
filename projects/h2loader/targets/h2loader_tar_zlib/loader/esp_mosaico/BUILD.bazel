@@ -100,3 +100,32 @@ h2loader_tar_zlib(
     role = "h2loader",
     target = "esp32s31",
 )
+
+# Diagnostic-only NVS milestones; normal Loader confirmation is unchanged.
+h2loader_esp_idf_firmware(
+    name = "firmware_debug",
+    srcs = [
+        "CMakeLists.txt",
+        "main/CMakeLists.txt",
+        "main/idf_component.yml",
+        "main/main.c",
+    ],
+    board = "esp_mosaico",
+    graph = [
+        ":h2loader_launcher",
+    ],
+    project = "CMakeLists.txt",
+    project_name = "h2loader",
+    cmake_definitions = {"H2_MOSAICO_OTA_DIAGNOSTIC": "ON"},
+    target = "esp32s31",
+    task_policy = ":task_policy",
+)
+
+h2loader_tar_zlib(
+    name = "package_debug",
+    board = "esp_mosaico",
+    firmware = ":firmware_debug",
+    image = "loader-ota-debug",
+    role = "h2loader",
+    target = "esp32s31",
+)

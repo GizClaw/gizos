@@ -5,6 +5,8 @@
 #include "h2_esp_platform_core.h"
 #include "h2_esp_platform_safe_call.h"
 #include "esp_ota_ops.h"
+#include "nvs.h"
+#include "nvs_flash.h"
 #include "h2_esp_target_task_policy.h"
 #include "h2_lua_link_e2e.h"
 
@@ -31,6 +33,11 @@ typedef struct ota_observation {
   int app_state;
   int loader_state_rc;
   int app_state_rc;
+  uint32_t loader_boot;
+  char loader_phase[24];
+  int32_t loader_result;
+  int32_t loader_reset;
+  int diagnostic_rc;
 } ota_observation_t;
 static void observe_ota(void *user) {
   ota_observation_t *out = user;
@@ -46,17 +53,33 @@ static void observe_ota(void *user) {
   p = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_1, NULL);
   out->app_state_rc = p != NULL ? esp_ota_get_state_partition(p, &state) : ESP_ERR_NOT_FOUND;
   out->app_state = state;
+  nvs_handle_t handle;
+  out->diagnostic_rc = nvs_flash_init();
+  if (out->diagnostic_rc == ESP_OK)
+    out->diagnostic_rc = nvs_open("mos_ota_diag", NVS_READONLY, &handle);
+  if (out->diagnostic_rc == ESP_OK) {
+    esp_err_t rc = nvs_get_u32(handle, "boot", &out->loader_boot);
+    size_t length = sizeof(out->loader_phase);
+    if (rc == ESP_OK) rc = nvs_get_str(handle, "phase", out->loader_phase, &length);
+    if (rc == ESP_OK) rc = nvs_get_i32(handle, "result", &out->loader_result);
+    if (rc == ESP_OK) rc = nvs_get_i32(handle, "reset", &out->loader_reset);
+    nvs_close(handle);
+    out->diagnostic_rc = rc;
+  }
 }
 static void report_ota(const char *phase) {
   ota_observation_t observation = {0};
-  int rc = h2_esp_platform_safe_call(observe_ota, &observation, sizeof(observation), 4096u);
+  int rc = h2_esp_platform_safe_call(observe_ota, &observation, sizeof(observation), 8192u);
   printf("H2_LUA_OTA_TRACE phase=%s rc=%d running=%lx next=%lx p1_state=%d p2_state=%d p1_rc=%d p2_rc=%d\n",
          phase, rc, (unsigned long)observation.running, (unsigned long)observation.next,
          observation.loader_state, observation.app_state,
          observation.loader_state_rc, observation.app_state_rc);
+  printf("H2_LUA_LOADER_TRACE phase=%s query=%d boot=%lu loader_phase=%s result=%d reset=%d\n",
+         phase, observation.diagnostic_rc, (unsigned long)observation.loader_boot,
+         observation.loader_phase, (int)observation.loader_result, (int)observation.loader_reset);
   fflush(stdout);
 }
-/* Observe the normal shared reboot path; do not change its selection or result. */
+/* Passive observation cannot replace the platform's mandatory preparation. */
 int h2_esp_platform_power_before_reboot(uint32_t reason) {
   (void)reason;
   report_ota("before-reboot");
@@ -110,6 +133,7 @@ static void image_entry(void *user) {
   if (rc != H2_PAL_OK) {
     fail("runtime_init", rc, 0);
   }
+  report_ota("runtime-ready");
   /* Starts the BLE Host for the H2Loader command service; the link uses the
    * same Host. Wi-Fi is never started. */
   rc = h2_esp_h2loader_app_commands_start(runtime, "lua-link-e2e", 1u, 3u);
@@ -149,6 +173,7 @@ static void image_entry(void *user) {
                                          .adv_type = H2_PAL_BLE_ADV_TYPE_EXTENDED,
                                          .scan_type = H2_PAL_BLE_SCAN_TYPE_EXTENDED,
                                          .hold = 1,
+                                         .hold_timeout_ms = 900000u,
                                      });
   hold();
 }

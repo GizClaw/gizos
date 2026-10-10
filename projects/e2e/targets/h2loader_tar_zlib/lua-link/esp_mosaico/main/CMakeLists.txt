@@ -14,6 +14,7 @@ idf_component_register(
     "${H2_REPO_ROOT}/libs/pal/include"
     "${H2_REPO_ROOT}/libs/runtime/include"
     "${H2_REPO_ROOT}/projects/h2loader/libs/h2loader/include"
+  PRIV_REQUIRES nvs_flash
   REQUIRES
     h2_mosaico_loader_usb
     h2_esp_target_task_policy
