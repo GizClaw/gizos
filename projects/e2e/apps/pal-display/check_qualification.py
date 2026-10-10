@@ -163,6 +163,21 @@ def display_catalog_content(text):
     return {"section": display, "launcher_row": rows[0]}
 
 
+def web_display_output_source(content, expected):
+    """Admit only host backlight observation, retaining every display operation."""
+    current = hashlib.sha256(content).hexdigest()
+    if current == expected:
+        return current
+    anchor = b"  canvas.style.filter = `brightness(${percent}%)`;\n"
+    addition = (b"  const output = Module.h2WebOutputs ||= {version: 1};\n"
+                b"  output.display = {brightnessPercent: percent};\n")
+    assert content.count(anchor + addition) == 1
+    restored = content.replace(anchor + addition, anchor, 1)
+    assert hashlib.sha256(restored).hexdigest() == expected, (
+        "Web display changed outside the exact backlight observation")
+    return current
+
+
 def shared_catalog_sources(previous):
     """Preserve historical receipts while checking only owned catalog bytes."""
     audit = json.JSONDecoder().decode(
@@ -184,6 +199,8 @@ def shared_catalog_sources(previous):
     replacements = audit["current_source_sha256"]
     assert set(replacements) == SHARED_CATALOG_AUDIT_SOURCES
     sources = {**previous, **replacements}
+    web_display = "libs/pal/providers/web/pal_core/src/h2_web_platform_display.c"
+    sources[web_display] = web_display_output_source(Path(web_display).read_bytes(), previous[web_display])
     # The historical whole-file hash still authenticates the immutable baseline.
     # Other Apps may update their catalog entries without a new Display run.
     del sources[SHARED_CATALOG]

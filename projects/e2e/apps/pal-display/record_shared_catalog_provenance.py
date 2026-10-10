@@ -47,6 +47,8 @@ def main():
     assert extended == pal_baseline[:offset] + addition + suffix
     pal_current = Path(pal_path).read_bytes()
     assert pal_current in (pal_baseline, pal_baseline[:offset] + addition + pal_baseline[offset:])
+    web_display = "libs/pal/providers/web/pal_core/src/h2_web_platform_display.c"
+    qualification.web_display_output_source(Path(web_display).read_bytes(), previous[web_display])
     sources = sorted(qualification.SHARED_CATALOG_AUDIT_SOURCES)
     value = {
         "schema": 1,
@@ -60,7 +62,7 @@ def main():
                                 "insertion_offset": offset, "addition_sha256": sha256(addition)},
         "previous_source_sha256": {item: previous[item] for item in sources},
         "current_source_sha256": {item: sha256(Path(item).read_bytes()) for item in sources},
-        "scope": "Host audit maintenance only; exact Display catalog section and row remain historical. Only the exact two BK Pref PAL-guide paragraphs are admitted. All qualification, mobile execution, artifact and hardware identities are unchanged.",
+        "scope": "Host audit maintenance only; exact Display catalog section and row remain historical. Only the exact two BK Pref PAL-guide paragraphs are admitted. Web display admits only the two exact host backlight snapshot assignments, whose removal reconstructs the historical provider digest. All qualification, mobile execution, artifact and hardware identities are unchanged.",
     }
     encoded = (json.dumps(value, indent=2) + "\n").encode()
     baseline_path = root / "shared_catalog_baseline.txt"

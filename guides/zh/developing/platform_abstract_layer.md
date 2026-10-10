@@ -95,8 +95,6 @@ Browser 的 reusable provider 位于 `libs/pal/providers/web/pal_core`，暴露�
 
 ## Display lifecycle 和诊断
 
-Web App host 可通过显式 `Module.h2WebEnvironment` 注入 fake Wi-Fi STA/settings 与 modem PAL，用于模型播放器的模拟网络；默认仍保留 unsupported。Provider 位于既有 `libs/pal/providers/web/pal_core`，不放在 PAL contract 中。Wi-Fi 扫描、连接、设置和 modem SIM/数据/信号/电源均为虚拟状态，真实请求继续由 Fetch/WebRTC 负责；浏览器离线或两条模拟链路关闭时，HOST Netif 不可用并阻止新 HTTP/WebRTC 发送。配置、生命周期与范围见 [Web 模拟网络](/apps/web#opt-in-fake-wi-fi-and-modem)。
-
 Display 的 `open` 幂等；`get_info`、`draw_bitmap`、`present` 和亮度操作必须在成功 open 后调用。重复 open 不增加关闭所需的引用数，close 后调用返回 `INVALID_STATE`。Bitmap 输入只在 draw 调用期间借用，provider 不可把输入指针留给随后 present；stride、source span 和矩形端点必须先做有界计算，再访问像素。native format 必须实现，额外格式和矩形裁剪仍由各 provider 明确支持范围。亮度参数为 0..100，超过范围返回 `INVALID_ARG`，不会静默改变亮度。
 
 Desktop 的 composition frame callback 提供未调亮度的组合 framebuffer；独立、可选的 renderer capture callback 在真正 SDL texture/render/亮度处理后读取 RGBA 像素。未注册时不会执行昂贵 GPU readback，两个 callback 的输入都只在回调期间借用，禁止重入 SDL provider。iOS/Android 的 Display E2E launcher 创建真实 UIKit/Android View 并注入自己的 Runtime；全局 headless App Host 继续使用 unsupported Display。
