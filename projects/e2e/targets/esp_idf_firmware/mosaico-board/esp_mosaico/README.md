@@ -33,6 +33,13 @@ python -m esptool --chip esp32s31 --port "$MOSAICO_PORT" --no-stub write-flash -
 - Camera 自动测试执行两轮启停、每轮 20 帧。持续预览单独统计帧数，返回诊断页释放资源。
 - MAG2 的饱和轴显示 SAT，保留其他有效轴；SAT 不等于通信失败，也不表示恢复量程内测量。
 
+## 完整资格验收状态
+
+**当前未通过完整 Mosaico E2E 验收。** 本入口是交互式 bring-up 诊断，Core 8/8 不是新版 PAL Core 41 项资格测试。
+CI 通过只能证明其配置中的构建和主机测试通过。所有实板结果必须绑定最终源码、固件包与镜像 SHA；
+其他板子的通过记录、历史 bring-up、编译成功、NOT_RUN/BLOCKED 或重放旧日志均不能代替实际执行。
+完整清单和设备依赖见 [Mosaico E2E qualification](../../../h2loader_tar_zlib/esp_mosaico-qualification.md)。
+
 ## 测试边界
 
 | 项目 | 覆盖 | 不包含 |

@@ -1,10 +1,13 @@
 import hashlib
+import io
+import tarfile
+import zlib
 import json
 import tempfile
 from pathlib import Path
 import re
 import unittest
-from verify_device import boot_ledger,status_preserved,coredump_preserved,loader_status,command_receipt,after_accepted_reboot,package_binding,uart_text,monitor_receipt,load_package_binding,verify_witness
+from verify_device import boot_ledger,status_preserved,coredump_preserved,loader_status,command_receipt,after_accepted_reboot,package_binding,uart_text,monitor_receipt,load_package_binding,verify_witness,package_manifest
 class Verifier(unittest.TestCase):
     def setUp(self):
         root=Path(__file__).absolute().parents[5]
@@ -15,6 +18,35 @@ class Verifier(unittest.TestCase):
         rows='\n'.join('H2_PAL_MQTT_CASE '+json.dumps(dict(id=case,status='PASS',detail=0)) for case in self.ids)
         summary=dict(selected=36,passed=36,failed=0,blocked=0,cleanup=0,rc=0,before=[0]*10,after=[0]*10)
         self.good='H2_PAL_MQTT_PLATFORM_BOOT board=bk7258\nH2_PAL_MQTT_BOOT '+self.boot+'\nH2_PAL_MQTT_RUN '+self.boot+'\n'+rows+'\nH2_PAL_MQTT_SUMMARY '+json.dumps(summary)+'\nH2_PAL_MQTT_READY board=bk7258 rc=0 confirm=pending\nH2_PAL_MQTT_CONFIRMED board=bk7258 rc=0\n'
+    def test_mosaico_package_identity_is_exact(self):
+        image = b'mosaico-test-image'
+        for target, accepted in [('esp32s31', True), ('esp32s3', False)]:
+            manifest = ('board=esp_mosaico\ntarget=' + target + '\nrole=app\nimage_size=' +
+                        str(len(image)) + '\nimage_sha256=' + hashlib.sha256(image).hexdigest() + '\n').encode()
+            data = io.BytesIO()
+            with tarfile.open(fileobj=data, mode='w') as archive:
+                for name, content in [('manifest', manifest), ('app/app.bin', image)]:
+                    member = tarfile.TarInfo(name)
+                    member.size = len(content)
+                    archive.addfile(member, io.BytesIO(content))
+            with tempfile.TemporaryDirectory() as directory:
+                package = Path(directory) / 'app.tar.zlib'
+                package.write_bytes(zlib.compress(data.getvalue()))
+                if accepted:
+                    self.assertEqual(package_manifest(package)[0]['target'], target)
+                else:
+                    with self.assertRaisesRegex(AssertionError, 'unsupported device package'):
+                        package_manifest(package)
+
+    def test_mosaico_requires_provider_cleanup_and_matching_confirmation(self):
+        ledger = self.good.replace('board=bk7258', 'board=esp_mosaico')
+        with self.assertRaisesRegex(AssertionError, 'provider not released'):
+            boot_ledger(ledger, self.ids, 'v1')
+        ledger = ledger.replace('rc=0 confirm=pending', 'rc=0 confirm=pending provider_cleanup=0')
+        self.assertEqual(boot_ledger(ledger, self.ids, 'v1')['ready']['board'], 'esp_mosaico')
+        with self.assertRaisesRegex(AssertionError, 'app confirmation failed'):
+            boot_ledger(ledger.replace('CONFIRMED board=esp_mosaico', 'CONFIRMED board=devkit'), self.ids, 'v1')
+
     def test_incomplete_first_run_cannot_be_replaced_by_replay(self):
         first=self.good.split('H2_PAL_MQTT_SUMMARY',1)[0]
         first=first.replace(next(line for line in first.splitlines() if '"id": "publish-qos1"' in line),'')
