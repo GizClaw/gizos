@@ -75,6 +75,15 @@ Prepare the pinned S31 SDK per the board README, then build an individual packag
 bazel build --config=esp32s31 //projects/e2e/targets/h2loader_tar_zlib/pal-core/esp_mosaico:package
 ```
 
+For direct-flash investigation, preserve the partition roles: `h2loader` / OTA0
+is at `0x20000`, while the E2E App / OTA1 is at `0x220000`. SDK-generated
+App factory flash arguments place its binary in the first OTA slot; using those
+arguments unmodified for a managed App causes the command preflight to reject
+the recovery slot with `H2_PAL_ERR_INVALID_STATE`. Install through a qualified
+Loader for acceptance. A diagnostic ROM flash into the App slot with explicit
+OTA selection is useful for debugging but does not prove managed installation
+or the OTA pending/confirm/rollback sequence.
+
 Change the suite segment for the entries above. Build success is a separate field
 from execution. After device/transport/fixture validation, follow the corresponding
 shared suite's device procedure and collect the actual first execution, immutable
