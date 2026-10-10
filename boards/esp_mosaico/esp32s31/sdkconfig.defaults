@@ -23,3 +23,7 @@ CONFIG_SPIRAM_XIP_FROM_PSRAM=y
 
 # Match the S31 Bazel toolchain libc headers and ABI.
 CONFIG_LIBC_PICOLIBC=y
+
+# Supply the AEAD algorithms exposed by the shared ESP PAL crypto provider.
+CONFIG_MBEDTLS_CHACHA20_C=y
+CONFIG_MBEDTLS_CHACHAPOLY_C=y
