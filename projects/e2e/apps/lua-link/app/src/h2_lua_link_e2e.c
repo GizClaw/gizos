@@ -187,7 +187,8 @@ h2_pal_result_t h2_lua_link_e2e_run(h2_runtime_t *runtime,
         .runtime = runtime,
         .worker_count = 1u,
         .max_jobs = 1u,
-        .execution_timeout_ms = 300000u,
+        .execution_timeout_ms = config->hold && config->hold_timeout_ms != 0u
+                                    ? config->hold_timeout_ms : 300000u,
         .vm_memory_limit_bytes = 512u * 1024u,
         .output_limit_bytes = 8192u,
     };

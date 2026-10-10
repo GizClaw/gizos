@@ -14,7 +14,11 @@ side. Each session logs `LINK stage=...` lines on the Runtime Log and ends with
 
 `hold` mode keeps one session up with 10 Hz datagrams until the link drops and
 logs `hold_end reason=... ms_since_last_datagram=...`, so an operator can reset
-one board and read how fast the other reports `lost`.
+one board and read how fast the other reports `lost`. The optional
+`hold_timeout_ms` controls only the human-operated hold window; zero preserves
+the five-minute default. Transfer-suite timing and assertions are unchanged.
+Mosaico selects a fifteen-minute hold window so a delayed operator response does
+not expire the link before a physical reset.
 
 The App only uses the Runtime and the Lua `link` module; board launchers own the
 BLE Host (started by the H2Loader command service), the role and the
