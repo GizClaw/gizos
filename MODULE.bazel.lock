@@ -857,7 +857,7 @@
     },
     "//tools/bazel/toolchains/local_embedded_cc:repositories.bzl%local_embedded_cc_toolchains": {
       "general": {
-        "bzlTransitiveDigest": "vtsilLD9ATAxnSl2ImW+YDvOclMQrggDjl58UaCPjM0=",
+        "bzlTransitiveDigest": "w90RwuIMhjH6wZST332A91gWFxDqly4VkyklWmMBAZ0=",
         "usagesDigest": "B/O908nh4na4DNodhC/G5N8iv+2coljLauBD/qYw1+8=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
@@ -976,8 +976,13 @@
           "gizos_esp32s31_cc_toolchain": {
             "repoRuleId": "@@//tools/bazel/toolchains/local_embedded_cc:repositories.bzl%local_embedded_cc_repository",
             "attributes": {
+              "include_probe_flags": [
+                "-specs=picolibc.specs"
+              ],
               "compile_flags": [
                 "-Os",
+                "-ftls-model=local-exec",
+                "-mstack-protector-guard=global",
                 "-march=rv32imafcb_zicsr_zifencei",
                 "-mabi=ilp32f",
                 "-ffunction-sections",

@@ -1,4 +1,5 @@
 #include "h2_esp_board.h"
+#include "h2_mosaico_usb_console.h"
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_h2loader_runtime.h"
 #include "h2_esp_platform_core.h"
@@ -377,7 +378,9 @@ static void run(void *user) {
     }
 }
 void app_main(void) {
-    int rc = h2_esp_target_task_policy_install_with_configure(configure_tasks);
+    int rc = h2_mosaico_usb_console_init();
+    if (rc != 0) fail("usb_console", rc);
+    rc = h2_esp_target_task_policy_install_with_configure(configure_tasks);
     if (rc != H2_PAL_OK) fail("task_policy", rc);
     h2_runtime_config_t runtime_config = {0};
     rc = h2_esp_board_runtime_config(&runtime_config);
