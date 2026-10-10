@@ -15,6 +15,7 @@ typedef struct side {
   h2_runtime_t *runtime;
   const char *role;
   int hold;
+  uint32_t hold_timeout_ms;
   h2_pal_result_t rc;
 } side_t;
 
@@ -26,11 +27,12 @@ static void *run_side(void *user) {
                          .adv_type = H2_PAL_BLE_ADV_TYPE_EXTENDED,
                          .scan_type = H2_PAL_BLE_SCAN_TYPE_EXTENDED,
                          .hold = side->hold,
+                         .hold_timeout_ms = side->hold_timeout_ms,
                      });
   return NULL;
 }
 
-static void run_pair(int hold) {
+static void run_pair(int hold, uint32_t hold_timeout_ms) {
   fake_air_t air;
   side_t sides[2];
   pthread_t threads[2];
@@ -41,6 +43,7 @@ static void run_pair(int hold) {
                                        &air.devices[i].events),
         .role = i == 0 ? "host" : "join",
         .hold = hold,
+        .hold_timeout_ms = hold_timeout_ms,
         .rc = H2_PAL_ERR_INVALID_STATE,
     };
     fake_set_baseline(&air.devices[i]);
@@ -99,11 +102,30 @@ static void test_rejected_runs(void) {
   h2_runtime_deinit(runtime);
 }
 
+static void test_hold_deadline_cleanup(void) {
+  fake_air_t air;
+  fake_air_init(&air);
+  h2_runtime_t *runtime = fake_create_runtime(&air.devices[0].ble,
+                                             &air.devices[0].events);
+  fake_set_baseline(&air.devices[0]);
+  const h2_lua_link_e2e_config_t config = {
+      .role = "host", .adv_type = H2_PAL_BLE_ADV_TYPE_EXTENDED,
+      .scan_type = H2_PAL_BLE_SCAN_TYPE_EXTENDED,
+      .hold = 1, .hold_timeout_ms = 10u,
+  };
+  assert(h2_lua_link_e2e_run(runtime, &config) == H2_PAL_ERR_TIMEOUT);
+  assert(fake_is_released(&air.devices[0]));
+  h2_runtime_deinit(runtime);
+}
+
 int main(void) {
   assert(h2_bleikcp_global_init() == H2_PAL_OK);
   test_rejected_runs();
-  run_pair(0);
-  run_pair(1);
+  /* A hold override must not shorten the transfer suite. */
+  run_pair(0, 1u);
+  run_pair(1, 0u);
+  run_pair(1, 60000u);
+  test_hold_deadline_cleanup();
   puts("lua link e2e tests passed");
   assert(h2_bleikcp_global_shutdown() == H2_PAL_OK);
   return 0;
