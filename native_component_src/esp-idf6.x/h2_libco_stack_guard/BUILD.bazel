@@ -1,0 +1,38 @@
+load("@rules_cc//cc:defs.bzl", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+firmware_native_component(
+    name = "h2_libco_stack_guard",
+    srcs = ["src/h2_esp_libco_stack_guard.c"],
+    hdrs = ["src/h2_esp_libco_stack_guard.h"],
+    data = ["CMakeLists.txt"],
+)
+
+# Actual SDK adapter with deterministic stack/interrupt fixtures; hardware E2E
+# separately executes the real assembly and FreeRTOS interrupt path.
+[
+    cc_test(
+        name = "libco_stack_guard" + suffix + "_test",
+        srcs = [
+            "src/h2_esp_libco_stack_guard.c",
+            "src/h2_esp_libco_stack_guard.h",
+            "tests/test_libco_stack_guard.c",
+            "tests/libco_stack_sdk/h2_esp_libco_stack_guard_test_sdk.h",
+        ],
+        includes = ["src", "tests/libco_stack_sdk"],
+        conlyopts = H2_C11_OPTS + [
+            "-DH2_ESP_LIBCO_STACK_GUARD_HOST_TEST=1",
+            "-DCONFIG_ESP_SYSTEM_HW_STACK_GUARD=" + enabled,
+        ],
+        copts = H2_WARNING_COPTS,
+        target_compatible_with = select({
+            "//tools/bazel/platforms:host_linux_target_linux": [],
+            "//tools/bazel/platforms:host_macos_target_macos": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+    )
+    for suffix, enabled in [("", "1"), ("_no_hardware", "0")]
+]

@@ -10,6 +10,7 @@
 #include "h2_mosaico_audio.h"
 
 #include "h2_esp_platform_core.h"
+#include "h2_esp_libco_stack_guard.h"
 
 #include <string.h>
 
@@ -30,6 +31,8 @@ h2_pal_result_t h2_esp_board_runtime_config(h2_runtime_config_t *out_config) {
     if (out_config == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    /* Board composition selects the S31 FreeRTOS stack-switch adapter. */
+    h2_esp_libco_stack_guard_link();
     memset(out_config, 0, sizeof(*out_config));
     if (s_runtime_config_ready) {
         *out_config = s_runtime_config;

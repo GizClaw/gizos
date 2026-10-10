@@ -75,6 +75,7 @@ firmware_native_component(
         "//libs/runtime",
         "//libs/pal/providers/corehttp",
         "//native_component_src/esp-idf6.x/h2_pal_core",
+        "//native_component_src/esp-idf6.x/h2_libco_stack_guard",
         "//native_component_src/esp-idf6.x/h2_es8311_audio_system",
     ],
 )

@@ -6,6 +6,7 @@
 #include "h2_esp_target_task_policy.h"
 
 #include "esp_system.h"
+#include "esp_app_desc.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/idf_additions.h"
@@ -25,12 +26,16 @@ static void run_entry(void *user) {
   int rc;
   (void)user;
   rc = h2_esp_board_runtime_config(&runtime_config);
+  /* Preparing serial already starts the Type-C management channel. */
+  const h2_esp_h2loader_app_commands_config_t commands = {
+      .active_name = "pal-pref",
+      .hardware_capabilities = H2_LOADER_CAPABILITY_UART,
+      .h2loader_partition_id = 1u,
+      .coredump_partition_id = 3u};
   if (rc == H2_PAL_OK)
-    rc = h2_esp_h2loader_app_commands_prepare_serial(&runtime_config,
-                                                       "pal-pref", 1u, 3u);
+    rc = h2_esp_h2loader_app_commands_prepare_serial_with_config(
+        &runtime_config, &commands);
   if (rc == H2_PAL_OK) rc = h2_runtime_init(&runtime_config, &runtime);
-  if (rc == H2_PAL_OK)
-    rc = h2_esp_h2loader_app_commands_start(runtime, "pal-pref", 1u, 3u);
   if (rc != H2_PAL_OK) {
     printf("H2_PAL_PREF_E2E_FAIL stage=runtime rc=%d\n", rc);
     fflush(stdout);
@@ -69,6 +74,10 @@ static void run_entry(void *user) {
 /* Artifact-owned startup stack policy; no board-owned application task. */
 static void entry_task(void *unused) {
   (void)unused;
+  vTaskDelay(pdMS_TO_TICKS(3000u));
+  printf("H2_PAL_PREF_E2E_BOOT board=esp_mosaico version=%s\n",
+         esp_app_get_description()->version);
+  fflush(stdout);
   run_entry(NULL);
   (void)h2_esp_board_runtime_deinit();
   vTaskDeleteWithCaps(NULL);

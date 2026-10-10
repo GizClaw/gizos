@@ -32,6 +32,33 @@ _Static_assert(offsetof(h2_libco_riscv32_context_t, fs) ==
                    H2_LIBCO_RISCV32_FP_S0,
                "RV32 FS0 offset must match assembly");
 
+/* A platform can reserve native metadata above the coroutine's usable SP. */
+__attribute__((weak, noinline)) uint32_t h2_libco_riscv32_stack_prepare(
+    uint32_t stack_min, uint32_t stack_max) {
+  (void)stack_min;
+  return stack_max;
+}
+
+/* Strong platform implementations may update RTOS stack accounting/guards.
+ * Other RV32 consumers preserve their existing execution behavior. */
+__attribute__((weak, noinline)) uint32_t h2_libco_riscv32_stack_switch_enter(
+    uint32_t next_min, uint32_t next_max,
+    uint32_t *previous_min, uint32_t *previous_max) {
+  (void)next_min;
+  (void)next_max;
+  (void)previous_min;
+  (void)previous_max;
+  return 0;
+}
+__attribute__((weak, noinline)) void h2_libco_riscv32_stack_switch_exit(uint32_t token) {
+  (void)token;
+}
+
+_Static_assert(offsetof(h2_libco_riscv32_context_t, stack_min) ==
+                   H2_LIBCO_RISCV32_STACK_MIN, "RV32 stack bounds offset");
+_Static_assert(offsetof(h2_libco_riscv32_context_t, switch_token) ==
+                   H2_LIBCO_RISCV32_SWITCH_TOKEN, "RV32 switch token offset");
+
 static h2_libco_riscv32_context_t s_root_context;
 static h2_libco_riscv32_context_t *s_active_context;
 
@@ -59,7 +86,14 @@ cothread_t co_derive(void *memory, unsigned int size,
   }
   context = memory;
   memset(context, 0, sizeof(*context));
-  context->sp = (uint32_t)top;
+  context->stack_min = (uint32_t)(base + H2_LIBCO_RISCV32_CONTEXT_SIZE);
+  context->stack_max = (uint32_t)top;
+  /* ESP's software canary/high-watermark checks use the active stack range. */
+  memset((void *)(uintptr_t)context->stack_min, 0xa5,
+         top - context->stack_min);
+  context->sp = h2_libco_riscv32_stack_prepare(context->stack_min, context->stack_max);
+  if (context->sp <= context->stack_min + 64u || context->sp > context->stack_max)
+    return NULL;
   context->ra = (uint32_t)(uintptr_t)entrypoint;
   (void)VALGRIND_STACK_REGISTER(memory, (uint8_t *)memory + size);
   return context;

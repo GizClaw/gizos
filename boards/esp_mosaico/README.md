@@ -18,8 +18,8 @@ bazel build --config=esp32s31 //projects/e2e/targets/esp_idf_firmware/reference-
 完整 Runtime 的独立诊断入口和烧录说明见
 [board E2E](../../projects/e2e/targets/esp_idf_firmware/mosaico-board/esp_mosaico/README.md)。
 该入口接入主 Type-C TinyUSB CDC，运行共享 PAL 基础 Core suite，并提供色条、
-触摸/按键事件、IMU/磁力计和电量观测。这里的 CDC 是可选 board component；
-前述最小 smoke 和当前 H2Loader 的 UART 通信入口不会因此自动切换为 USB。
+触摸/按键事件、IMU/磁力计和电量观测。这里的单 CDC 是可选 board component；
+完整 H2Loader 与套件入口另行显式选择双 CDC 管理组件，最小 smoke 保留扩展 UART。
 可选 SC101IOT 摄像头采集和动态预览已完成 bring-up 验证；NAND 和完整外设资格测试仍未完成。
 
 ## 版本与上游
@@ -77,3 +77,28 @@ Use the command interface for the host CLI and the diagnostic interface for E2E
 ledgers. Verify physical USB identity and the authoritative H2Loader UID before
 installing; do not select an unrelated USB-UART adapter. Real handshake, install,
 upgrade and recovery qualification is tracked separately in the E2E matrix.
+
+## 完整套件验证
+
+套件入口和精确镜像资格记录见
+[E2E qualification](../../projects/e2e/targets/h2loader_tar_zlib/esp_mosaico-qualification.md)。
+构建全部套件不等于通过全部真机测试。Wi-Fi 使用第二块板子运行
+`pal-wifi/esp_mosaico-fixture` 的真实 AP/STA fixture；Lua Link 的第二块板子运行
+`lua-link/esp_mosaico-join`，复用 host 入口源码并固定为 join 角色。
+HTTP、MQTT、Net/TLS、WebRTC 使用仓库共用的隔离服务端与独立 peer witnesses。
+
+板级 SDK defaults 启用共享 BLE provider 所需的 NimBLE、动态 GATT 和扩展广播，
+以及共享 DTLS provider 所需的证书生成和 DTLS-SRTP。测试入口负责决定是否启动
+这些服务；Atomic、libco 和 legacy Pref 的串口管理不附带启动 BLE。
+Mosaico Display 套件声明实际 RGB565/no-clipping 能力画像，全部 24 项断言仍执行，
+可选格式和部分越界按准确拒绝及画面保持验证。参考板的共享 helper 不变。
+
+The dual-CDC artifact defaults select esp_tinyusb's eFuse base-MAC USB serial
+instead of its fixed example serial. This allows two Mosaico boards to be
+identified across resets. Identify CDC0 diagnostics and CDC1 management by their
+USB interfaces and verify the public Loader UID before installing firmware.
+Mosaico selects an optional native S31 libco stack-guard adapter: private RV32
+hooks update FreeRTOS active stack accounting during coroutine switches while
+retaining hardware protection. This SDK-specific adapter is tied to the pinned
+SDK layout; shared ESP PAL task sources and reference-board composition remain
+unchanged. Build success is not proof of dual-board reconnection or recovery.

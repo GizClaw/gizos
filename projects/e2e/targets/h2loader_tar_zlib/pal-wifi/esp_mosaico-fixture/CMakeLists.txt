@@ -16,7 +16,7 @@ if(NOT DEFINED IDF_TARGET)
 endif()
 set(SDKCONFIG "${CMAKE_BINARY_DIR}/sdkconfig" CACHE FILEPATH "ESP-IDF sdkconfig" FORCE)
 set(SDKCONFIG_DEFAULTS
-  "${H2_ESP_BOARD_DIR}/sdkconfig.defaults;${CMAKE_CURRENT_LIST_DIR}/sdkconfig.h2loader.defaults;${CMAKE_CURRENT_LIST_DIR}/sdkconfig.libco-e2e.defaults;${H2_ESP_BOARD_DIR}/loader_usb/sdkconfig.defaults"
+  "${H2_ESP_BOARD_DIR}/sdkconfig.defaults;${CMAKE_CURRENT_LIST_DIR}/sdkconfig.h2loader.defaults;${CMAKE_CURRENT_LIST_DIR}/sdkconfig.pal-wifi.defaults;${H2_ESP_BOARD_DIR}/loader_usb/sdkconfig.defaults"
   CACHE STRING "ESP-IDF sdkconfig defaults" FORCE)
 
 set(H2_ESP_BOARD_ALIAS_DIR "${CMAKE_BINARY_DIR}/h2_esp_board")
@@ -28,4 +28,4 @@ set(EXTRA_COMPONENT_DIRS ${H2_BAZEL_COMPONENT_DIRS})
 set(COMPONENTS ${H2_BAZEL_COMPONENT_NAMES})
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
-project(h2_libco_smoke)
+project(h2_pal_wifi_e2e)

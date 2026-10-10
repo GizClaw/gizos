@@ -6,8 +6,6 @@ load("//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
 
 package(default_visibility = ["//visibility:public"])
 
-# The opposite-role artifact reuses this exact launcher source.
-exports_files(["main/main.c"], visibility = ["//projects/e2e:__subpackages__"])
 
 esp_target_task_policy(
     default_policy = "4 any 4096 psram",
@@ -53,8 +51,8 @@ firmware_lib_component(
 
 firmware_native_component(
     name = "lua_link_launcher",
-    srcs = ["main/main.c"],
-    component_directory = "projects/e2e/targets/h2loader_tar_zlib/lua-link/esp_mosaico/main",
+    srcs = ["//projects/e2e/targets/h2loader_tar_zlib/lua-link/esp_mosaico:main/main.c"],
+    component_directory = "projects/e2e/targets/h2loader_tar_zlib/lua-link/esp_mosaico-join/main",
     component_name = "main",
     data = [
         "main/CMakeLists.txt",
@@ -81,12 +79,12 @@ h2loader_esp_idf_firmware(
         "CMakeLists.txt",
         "main/CMakeLists.txt",
         "main/idf_component.yml",
-        "main/main.c",
+        "//projects/e2e/targets/h2loader_tar_zlib/lua-link/esp_mosaico:main/main.c",
     ],
     board = "esp_mosaico",
     graph = [":lua_link_launcher"],
     project = "CMakeLists.txt",
-    project_name = "h2_lua_link_e2e_esp_mosaico",
+    project_name = "h2_lua_link_join_e2e_esp_mosaico",
     target = "esp32s31",
     task_policy = ":task_policy",
 )
@@ -95,7 +93,7 @@ h2loader_tar_zlib(
     name = "package",
     board = "esp_mosaico",
     firmware = ":firmware",
-    image = "lua-link-e2e",
+    image = "lua-link-join-e2e",
     role = "app",
     target = "esp32s31",
 )

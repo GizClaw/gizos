@@ -15,8 +15,13 @@ if(NOT DEFINED IDF_TARGET)
   set(IDF_TARGET "${H2_ESP_TARGET}" CACHE STRING "ESP-IDF target")
 endif()
 set(SDKCONFIG "${CMAKE_BINARY_DIR}/sdkconfig" CACHE FILEPATH "ESP-IDF sdkconfig" FORCE)
-set(SDKCONFIG_DEFAULTS
-  "${H2_ESP_BOARD_DIR}/sdkconfig.defaults;${CMAKE_CURRENT_LIST_DIR}/sdkconfig.h2loader.defaults;${CMAKE_CURRENT_LIST_DIR}/sdkconfig.libco-e2e.defaults;${H2_ESP_BOARD_DIR}/loader_usb/sdkconfig.defaults"
+# sdkconfig.h2loader.defaults is not checked in next to this launcher: the
+# h2loader_esp_idf_firmware rule copies the board layout file from
+# boards/esp_mosaico/esp32s31/layouts/h2loader/ into the project directory before
+# the native build runs, so it is appended after the board defaults here.
+set(
+  SDKCONFIG_DEFAULTS
+  "${H2_ESP_BOARD_DIR}/sdkconfig.defaults;${CMAKE_CURRENT_LIST_DIR}/sdkconfig.h2loader.defaults;${H2_ESP_BOARD_DIR}/loader_usb/sdkconfig.defaults"
   CACHE STRING "ESP-IDF sdkconfig defaults" FORCE)
 
 set(H2_ESP_BOARD_ALIAS_DIR "${CMAKE_BINARY_DIR}/h2_esp_board")
@@ -28,4 +33,4 @@ set(EXTRA_COMPONENT_DIRS ${H2_BAZEL_COMPONENT_DIRS})
 set(COMPONENTS ${H2_BAZEL_COMPONENT_NAMES})
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
-project(h2_libco_smoke)
+project(h2_lua_link_join_e2e_esp_mosaico)

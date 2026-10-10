@@ -81,6 +81,7 @@ h2loader_esp_idf_firmware(
         "main/CMakeLists.txt",
         "main/idf_component.yml",
         "main/main.c",
+        "sdkconfig.libco-e2e.defaults",
     ],
     board = "esp_mosaico",
     graph = [

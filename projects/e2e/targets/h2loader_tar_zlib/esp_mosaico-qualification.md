@@ -12,24 +12,24 @@ hardware evidence. No other board's evidence files are copied. A missing provide
 BLOCKED/NOT_RUN case, failed cleanup or missing independent boot remains a failure
 of admission; it must not be silently removed from the registry.
 
-| Suite | Reference launcher | Mosaico entry | Final-source device status |
+| Suite | Reference launcher | Mosaico entry | Recorded device status (artifact-bound) |
 | --- | --- | --- | --- |
-| pal-core | `pal-core/devkit` | [`pal-core/esp_mosaico`](pal-core/esp_mosaico/BUILD.bazel) | 41/41 on two managed-App boots at ae9a21d6; final-source rerun pending |
-| pal-storage | `pal-storage/devkit` | [`pal-storage/esp_mosaico`](pal-storage/esp_mosaico/BUILD.bazel) | NOT_RUN |
-| pal-crypto | `pal-crypto/devkit` | [`pal-crypto/esp_mosaico`](pal-crypto/esp_mosaico/BUILD.bazel) | 22/22 on two boots after board ChaCha configuration fix; managed install PASS |
-| pal-json | `pal-json/devkit` | [`pal-json/esp_mosaico`](pal-json/esp_mosaico/BUILD.bazel) | 15/15 on two boots at ae9a21d6; managed install PASS; final-source rerun pending |
+| pal-core | `pal-core/devkit` | [`pal-core/esp_mosaico`](pal-core/esp_mosaico/BUILD.bazel) | r5 41/41 on two independent boots; guarded confirmation and managed install PASS |
+| pal-storage | `pal-storage/devkit` | [`pal-storage/esp_mosaico`](pal-storage/esp_mosaico/BUILD.bazel) | 36/36 across five boots (1/2/3/4/4) at 85487ab1; install recheck PASS |
+| pal-crypto | `pal-crypto/devkit` | [`pal-crypto/esp_mosaico`](pal-crypto/esp_mosaico/BUILD.bazel) | r7 22/22 on two independent peer boots; managed install PASS |
+| pal-json | `pal-json/devkit` | [`pal-json/esp_mosaico`](pal-json/esp_mosaico/BUILD.bazel) | r7 15/15 on two independent peer boots; managed install PASS |
 | pal-http | `pal-http/devkit` | [`pal-http/esp_mosaico`](pal-http/esp_mosaico/BUILD.bazel) | NOT_RUN |
 | pal-mqtt | `pal-mqtt/devkit` | [`pal-mqtt/esp_mosaico`](pal-mqtt/esp_mosaico/BUILD.bazel) | NOT_RUN |
 | pal-net-tls | `pal-net-tls/devkit` | [`pal-net-tls/esp_mosaico`](pal-net-tls/esp_mosaico/BUILD.bazel) | NOT_RUN |
 | pal-wifi | `pal-wifi/devkit` | [`pal-wifi/esp_mosaico`](pal-wifi/esp_mosaico/BUILD.bazel) | NOT_RUN |
 | pal-webrtc | `pal-webrtc/devkit` | [`pal-webrtc/esp_mosaico`](pal-webrtc/esp_mosaico/BUILD.bazel) | NOT_RUN |
-| pal-audio | `pal-audio/amoled` | [`pal-audio/esp_mosaico`](pal-audio/esp_mosaico/BUILD.bazel) | NOT_RUN |
-| pal-audio-decoder | `pal-audio-decoder/devkit` | [`pal-audio-decoder/esp_mosaico`](pal-audio-decoder/esp_mosaico/BUILD.bazel) | NOT_RUN |
-| pal-display | `pal-display/amoled` | [`pal-display/esp_mosaico`](pal-display/esp_mosaico/BUILD.bazel) | NOT_RUN |
-| atomic | `atomic/devkit` | [`atomic/esp_mosaico`](atomic/esp_mosaico/BUILD.bazel) | NOT_RUN |
-| libco-smoke | `libco-smoke/devkit` | [`libco-smoke/esp_mosaico`](libco-smoke/esp_mosaico/BUILD.bazel) | NOT_RUN |
+| pal-audio | `pal-audio/amoled` | [`pal-audio/esp_mosaico`](pal-audio/esp_mosaico/BUILD.bazel) | r7 24/24 on two independent peer boots; capture/output/30s soak and managed install PASS |
+| pal-audio-decoder | `pal-audio-decoder/devkit` | [`pal-audio-decoder/esp_mosaico`](pal-audio-decoder/esp_mosaico/BUILD.bazel) | r7 29/29 on two independent peer boots; managed install/status PASS; older input snapshot retained |
+| pal-display | `pal-display/amoled` | [`pal-display/esp_mosaico`](pal-display/esp_mosaico/BUILD.bazel) | r3 24/24 on two independent boots; DMA/cleanup/confirmation PASS; user confirmed pattern and dimming |
+| atomic | `atomic/devkit` | [`atomic/esp_mosaico`](atomic/esp_mosaico/BUILD.bazel) | 56/56 on two independent r2 executions; managed install, cleanup and confirmation PASS |
+| libco-smoke | `libco-smoke/devkit` | [`libco-smoke/esp_mosaico`](libco-smoke/esp_mosaico/BUILD.bazel) | r8 six phases / 10,000 switches on ten independent boots PASS; real coredump preserved |
 | lua-link | `lua-link/devkit` | [`lua-link/esp_mosaico`](lua-link/esp_mosaico/BUILD.bazel) | NOT_RUN |
-| pal-pref | `pal-pref/devkit` | [`pal-pref/esp_mosaico`](pal-pref/esp_mosaico/BUILD.bazel) | NOT_RUN |
+| pal-pref | `pal-pref/devkit` | [`pal-pref/esp_mosaico`](pal-pref/esp_mosaico/BUILD.bazel) | r7 shared seed/verify/clean: 31 operations and independent empty recheck PASS |
 
 PAL Core requires 41 cases covering 46 interface operations; the old board page's
 8 Core cases cannot close it. Display requires the portable 24-case registry with
@@ -143,6 +143,236 @@ The Type-C management port was CDC1; CDC0 independently captured device ledgers.
 
 Loader self-update and rollback qualification remain pending. The Stage resume
 above does not replace their public acceptance scenarios.
+
+## Full-suite revalidation at 85487ab1
+
+All 16 E2E packages build after the board Crypto configuration correction.
+Hardware observations remain suite-specific; this is not a 16-suite PASS.
+
+- Core: fresh managed install PASS and two independent boots each 41/41, with
+  cleanup, clock restoration, confirmation and task-probe result zero. Image
+  `66a1fbd0bffc7b4e56a1c78083d2765e3f0bb45a919488c4885eb5562cdbf24d`;
+  package `36f507d3b7ca8bd3c63a51bdd08153ffe73e735336258368f4350095cff202f7`.
+- JSON: fresh public managed install PASS and two independent boots each 15/15,
+  with cleanup and confirmation zero and complete/qualified true. Image
+  `3e0f22ae650361375d5c7e24e0fd88b657fc195dc9ba0eb7d15f1e1596d9210a`;
+  package `00e52ca99c1b2ddf0205ba39bb37bdbbe032eb7217fe9cde1038164a586adc8d`.
+- Storage: the repository verifier accepted all 36 cases over five independent
+  boots in order 1/2/3/4/4, including persistence and repeated empty-state checks.
+  The first host install runner exhausted its eight reconnect attempts before
+  the stress phase confirmed the App; its FAIL receipt is preserved. The App
+  completed successfully, and a separate reinstall of the same immutable package
+  passed the public managed-install E2E with a longer host reconnect budget.
+  Image `ef2ebb1ec7efd5db8db21d177ceba9b5b65be81589de82a24fa1bad20b6070b2`;
+  package `ac0a045baba6ad63f2437839c7cd527d5c611795c57f89606d1b2a1e8b989a33`.
+- Audio Decoder: the shared verifier accepted 29/29 on two independent boots,
+  each decoding 169 frames / 505,856 PCM bytes, with retained=0 and confirmation
+  zero. Public managed installation passed. Image
+  `75d1ad9dc59aa5913c71d9828dce4b1e370d816037d1cf40149362f657db364c`;
+  package `7ca6c8fd0cf4214b67e80fc598aabead4d807c4901c317689bb0ceac5c7b5e60`.
+
+Each completed revalidation above checked UID, exact package/image, unchanged
+Loader/P1, App/P2, empty Stage, result zero and unchanged blank coredump. The earlier
+raw serial logs and binary artifacts were held in a temporary directory outside
+Git; that directory was no longer available when this run resumed. The hashes
+and observed results above remain historical artifact-bound records. Retain new
+receipts and immutable packages outside Git in durable local storage. Lua Link requires a
+real BLE peer; single-board startup cannot qualify its link sessions.
+
+## Qualification continuation
+
+The first Atomic execution completed the resource comparison with cleanup zero,
+then failed at the redundant BLE command startup (`server_open=-3`); confirmation
+was not attempted and Stage was not cleared. App image
+`13fd31e7f3a14e7705cfdf5855eb09461c2a487d86d2faeaa154b37b1a6ef8d2`;
+package `7ffbf8b7e162642aa3f2c28c5d28436aadc97a0eaa37fb166d1664cada9d793e`.
+This is FAIL, not an admitted 56-case PASS. Atomic, libco and legacy Pref now use
+the already-started serial command service with explicit UART capability and do
+not require BLE to confirm unrelated suites. Lua Link keeps its real BLE startup.
+
+Board defaults previously omitted NimBLE and the certificate-generation/DTLS-SRTP
+features required by the shared ESP BLE and DTLS providers. Enable the existing
+provider requirements at the board SDK boundary, matching the reference boards;
+do not replace their assertions with unsupported results. These settings require
+new builds and device revalidation. No suite is relabeled as passing on these new
+artifacts from an older receipt. Lua Link still needs a real opposite-role board,
+and network suites need reachable fixtures and independent peer witnesses.
+
+The first unified `mosaico-e2e-20261010-r2` Display App executed 8 PASS / 1 FAIL /
+15 NOT_RUN: `rgb888` returned UNSUPPORTED. Its entry incorrectly selected the
+reference AMOLED's conversion/clipping profile. Mosaico's actual provider accepts
+only RGB565 and rejects partial bounds. The Mosaico artifact now passes its
+fixed profile directly to the existing portable App; shared device helpers and
+reference entries remain byte-identical. Mosaico selects RGB565/no-clipping and
+still executes all 24 cases, including exact unsupported-format and unchanged
+output assertions. No mandatory case or cleanup gate is removed. This first run
+is FAIL, with confirmation not attempted; the corrected artifact needs a rerun.
+Two separately identified Mosaico boards are available for the shared Wi-Fi fixture
+and opposite-role Lua Link. Their new artifact entries reuse the portable runners;
+the Lua join build compiles the same startup source as host with a fixed peer role.
+
+Atomic rerun (`mosaico-e2e-20261010-r2`): public managed installation passed and
+both managed boot and independent ordinary App reboot each admitted 56/56 cases,
+20/20 workers joined, cleanup zero and confirmation zero. Execution IDs were
+`dd9fdb1ba2ae1afcda3f3d0e31a4d4f8` and
+`1c5e3385ed3b2540e0dd88986de1501e`. Loader/P1 was unchanged,
+Stage cleared, final result was zero and the coredump remained unchanged blank.
+App SHA-256: `7e085cdaa4694845052a510e2e84eed9e1aee6dc54e13cf4ffebddbecb5f2938`;
+package SHA-256: `c8cc1363600f3f8c062a75c2e513b24d4db6d5b016a1f5d964e30f850aa4c134`. This receipt belongs to the
+recorded build inputs, not to subsequent artifact changes. All 19 packages
+(16 suites, two peer artifacts and Loader) built after BLE/DTLS configuration;
+Display's profile correction is separately built as r3. Overall qualification
+remains pending.
+
+Display rerun (`mosaico-display-20261010-r3`): public installation passed; both
+managed and independent ordinary App boots passed all 24 cases with cleanup zero,
+confirmation zero and 23 completed-DMA output observations each. RGB565 and
+no-clipping were fixed before execution; unsupported optional-format cases still
+checked exact errors and unchanged output. Loader/P1, empty Stage, result zero
+and unchanged blank coredump passed. The user separately confirmed normal
+four-quadrant output and the brightness sweep on this artifact. This human
+observation is recorded separately; the DMA report still has optical_verified=0.
+App SHA-256:
+`2268ef0b099d2a15963713abe5d07a02bd5dda72aa88c876d74a30c5af7ffc71`;
+package SHA-256: `cd6fc350bd443e506885e4eb75dd1f97f94e621ec540257acfeb6aa8e4059c23`.
+libco's Mosaico entry now uses an affine CPU0 64 KiB stack and a bounded initial
+USB observation delay; its coroutine stacks and 10,000-switch contract are
+unchanged. The revised package builds; device evidence remains pending.
+
+Audio r2 public installation passed with all 1,232,331 package bytes acknowledged,
+cleanup zero and empty Stage. Actual device output reported 24/24, 941 microphone
+frames with nonzero peak/energy, 943 speaker frames and 30,014 ms soak; confirmation
+was zero. However, the diagnostic interface reconnected after the early BOOT and
+first cases, so the strict independent-boot oracle did not admit this run. Preserve
+the incomplete first capture instead of inferring a fresh run from replay. The
+Mosaico entry now delays initial startup three seconds for CDC enumeration and
+explicitly flushes its BOOT line. Rebuild/retest is required; this is not a full
+Audio two-boot qualification or an acoustic-pressure measurement.
+
+Audio r3 rerun (`mosaico-audio-20261010-r3`): public install passed and both
+managed/independent ordinary App boots had complete BOOT markers and 24/24
+qualified ledgers. Both reported nonzero actual microphone peak/energy and output,
+soak >=30,000 ms, cleanup/confirmation success and unchanged Loader/P1, empty Stage,
+result zero and unchanged blank coredump. Acoustic observation remains separate.
+App SHA-256: `dc08247d9c44b5a4ba446dca3d6bcbd0d26d6492c14146055131c4e199d32c45`;
+package SHA-256: `2315367f2b9ec2e24f551fd2d8af894fa377796dae02f2f2f432127508397364`.
+
+libco r3 failed: all 1,223,085 package bytes were acknowledged, but the App reset
+with SDK reason 4 (PANIC) before a complete phase ledger or confirmation. Public
+install E2E returned timeout (-7). The coredump partition remained blank, so no
+backtrace is claimed. The r4 diagnostic entry uses an internal CPU0-affine native
+stack, precise startup markers and artifact-only flash coredump configuration.
+It preserves the same 8 KiB coroutine stacks, six phases and 10,000 switches;
+this placement change is a diagnostic hypothesis, not a proven root-cause fix.
+Core/Crypto now gate confirmation on complete success and Core's probe/clock
+restoration; Lua confirms only after all five real peer rounds pass. These
+Mosaico-only safeguards build and still require their own physical reruns.
+
+## Stack protection, dual-board identity and recovery continuation
+
+The r4 libco diagnostic still panicked after its first stackful switch. A real
+20,384-byte flash coredump was saved and decoded with the matching ELF. The SDK
+substitutes a synthetic frame when the current SP is outside its recorded task
+bounds, so its synthetic PC/SP must not be reported as a real crashing address.
+The hardware stack monitor and FreeRTOS interrupt return use the TCB stack range;
+changing SP alone leaves them describing the root stack.
+
+The RV32 backend now has private weak platform hooks around its actual assembly
+SP change. The S31 SDK adapter captures/restores the task's active stack bounds,
+updates the SDK TCB accounting and stack watchpoint, and holds a critical section
+across the SP transition. Hardware monitoring remains enabled. The platform hook
+is an independent native component selected by Mosaico composition, with no
+changes to shared PAL task APIs or the existing ESP task provider sources. Other
+RV32 builds retain no-op hooks; Xtensa and desktop backends are unchanged. The
+adapter depends on the pinned SDK layout and must be revalidated on SDK upgrades.
+
+`mosaico-libco-20261010-r5` passed all six shared phases and 10,000 actual switches
+on both managed and independent ordinary App boots. Public installation passed;
+Loader/P1, empty Stage and result zero checks passed. The pre-existing real
+coredump was downloaded before and after and remained byte-identical, SHA-256
+`67118d17d7a99844923a433271058656e1bde17be4d197ddc842cf88bc7aa66c`.
+App SHA-256: `9b73bdaa23fc9d8b3ca310725c23115790cb25bf52d4d17d2edfe6193d0d5d65`;
+package SHA-256: `fcfd363f421b25c0a15e599d91815c1793adc5af5ab11ba32fa1a7330cbb77fd`.
+This pass used the adapter before it was separated into its optional component;
+the final component composition requires another device run.
+
+Core `mosaico-e2e-20261010-r5` passed all 41 cases on two independent boots with
+probe/clock restoration/cleanup/confirmation zero, public managed installation,
+unchanged Loader/P1, empty Stage and the same preserved real coredump. App
+SHA-256: `f3ecb0e0a3585b2c783259168b7a6d3d7c608bbb65aed72921ad26ebef2bef7b`;
+package SHA-256: `db2db9ab29ec28266e99660947d9181f6690674c1011937e2367965cb897be1d`.
+It does not qualify later USB/composition changes.
+
+Both 16 MB Flash images were backed up before writes. The second board's ROM MAC
+is `1c2904d09548`, public UID `1c2904d09549`; the DUT remains `1c2904d0a629`.
+Second-board Loader ROM flash and public Type-C identity/status passed. Simultaneous
+Lua host/join testing exposed default USB serial `123456` collisions: macOS moved
+port names between devices during reset, and the first capture selected channels
+by filename order. The host emitted five successful rounds, but missing reliable
+peer/startup/managed-install evidence prevents qualification. These interrupted
+attempts are retained as not admitted, not a dual-board PASS.
+
+The dual-CDC artifact defaults now set an empty TinyUSB serial string. Pinned
+esp_tinyusb 2.4.0 derives its persistent serial from the eFuse base MAC in this
+case. Both Loader and App select the same defaults. Host capture identifies
+physical USB location and actual data-interface number (1 for CDC0, 3 for CDC1),
+then checks the protocol UID before a mutation; lexicographic device names are
+not authoritative identities. Unique enumeration and managed reconnection need
+physical reruns. Pref adds a bounded startup delay and version marker so its
+seed/verify/clean boots are independently observable.
+
+A subsequent DUT `reboot loader` acknowledged the command, but the host reported
+an incomplete transition and the new diagnostic boot still ran the Lua App.
+Second-board management also timed out twice. This is a recovery failure under
+investigation, not a successful App-to-Loader return. ROM refresh of the public
+Loader is planned with existing dumps preserved; ROM repair does not replace the
+public self-update/return/rollback gates. Network suites have not executed yet.
+
+The historical shared PAL Wi-Fi consistency audit currently rejects changed
+`.bazelrc` inputs from the S31 integration. Its recorded hashes were not rewritten
+and its old board evidence was not reused. New Mosaico qualification remains
+separate; this historical audit is not reported as passing.
+
+## Final coroutine memory layout correction
+
+After the adapter was isolated, `mosaico-e2e-20261010-r7` panicked during the
+later libco phases. Its real 20,640-byte coredump and matching ELF were saved;
+this failure supersedes the earlier two-boot confidence and does not erase the
+r5 artifact-bound observations. Pinned FreeRTOS also locates its FPU/PIE/HWLOOP
+save-area bookkeeping from the active TCB stack top. The first adapter changed
+that top without reserving or initializing this metadata, allowing interrupt
+saves to interpret ordinary coroutine bytes as task state.
+
+A private stack-preparation hook now reserves SDK metadata above the coroutine's
+usable SP. The S31 switch hook allocates the supported coprocessor save buffers
+in the original task stack before replacing its bounds and propagates their
+bookkeeping to the destination stack. Buffers remain owned by the RTOS task;
+coroutine closure cannot free them. TCB bounds, watchpoint and hardware protection
+still follow the actual SP. Default hooks on other RV32 builds remain no-ops.
+The real-adapter host tests exercise metadata reservation, task-owned buffers,
+interrupt saves, nested switches and root restoration with guards on and off.
+
+`mosaico-e2e-20261010-r8` then passed all six phases and 10,000 switches on each
+of ten independent boots. Public managed installation, exact App/package identity,
+unchanged Loader/P1, empty Stage and final result zero passed. The new real
+coredump remained byte-identical before/after, SHA-256
+`1a4b21392369112099de8e553d68874fd9ffde7c872c15258e6e99c65ed9704a`.
+App SHA-256: `0394afca0e9121d791005188c5862436b10db2cb22fc05538a0f609de6cb64ed`;
+package SHA-256: `814015f7f362ae844bbb879fd81d807c6902ddf9621dfc4c78c5d670e3086c53`.
+All non-document source inputs, including new files, were frozen with this build
+and still matched at completion. Other suites need the final r8 package reruns.
+
+Both boards now enumerate with distinct eFuse serials after Loader-only refresh.
+Their current ROM partition tables were read and verified before writing only
+OTA0 and otadata. NVS, App/P2, filesystems and coredump were not flashed.
+The refreshed Loaders and public UID/status handshake succeeded on both boards.
+Peer JSON r7 15/15, Crypto r7 22/22, Audio Decoder r7 29/29 and Audio r7 24/24 each
+passed on two independently captured boots, including public managed installation,
+cleanup/confirmation and Loader/Stage/coredump checks. These remain tied to their
+r7 input snapshot; the later coroutine correction is not silently attributed to
+them. The Decoder captures were validated directly after a host receipt-source
+consistency assertion detected the ongoing source change; no device ledger was
+regenerated or repaired from another boot.
 
 ## Build and execute
 

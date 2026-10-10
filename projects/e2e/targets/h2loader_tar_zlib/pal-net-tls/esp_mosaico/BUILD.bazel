@@ -1,3 +1,5 @@
+load("@rules_python//python:defs.bzl", "py_binary")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
 load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_esp_idf_firmware")
 load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
 load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
@@ -98,4 +100,17 @@ h2loader_tar_zlib(
     image = "pal-net-tls",
     role = "app",
     target = "esp32s31",
+)
+
+# Host-only evidence parsing; no build, install, reset or serial actions.
+py_binary(
+    name = "verify_device",
+    srcs = ["verify_mosaico.py"],
+    data = [
+        "//projects/e2e/libs/pal-net-tls-device:verify_device.py",
+        "//projects/e2e/apps/pal-net-tls/app:include/h2_pal_net_tls_cases.inc",
+    ],
+    main = "verify_mosaico.py",
+    legacy_create_init = False,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
 )
