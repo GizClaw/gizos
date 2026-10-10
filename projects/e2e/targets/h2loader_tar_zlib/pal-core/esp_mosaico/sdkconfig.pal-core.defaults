@@ -5,5 +5,5 @@ CONFIG_LOG_COLORS=n
 # Native stack-bound observations require the real FreeRTOS task metadata.
 CONFIG_FREERTOS_USE_TRACE_FACILITY=y
 
-# Type-C is the device ledger channel; managed command UART is separate.
+# Type-C diagnostic CDC is separate from the board Loader command CDC.
 CONFIG_TINYUSB_CDC_ENABLED=y

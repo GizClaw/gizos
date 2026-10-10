@@ -1,3 +1,4 @@
+#include "h2_mosaico_loader_usb.h"
 #include "h2_esp_board.h"
 #include "h2_esp_h2loader_runtime.h"
 #include "h2_esp_h2loader_ble.h"
@@ -22,6 +23,11 @@ static void run(void *unused) {
   for(;;) {h2_storage_device_replay(runtime);vTaskDelay(pdMS_TO_TICKS(3000));}
 }
 void app_main(void) {
+  int usb_rc = h2_mosaico_loader_usb_init();
+  if (usb_rc != H2_PAL_OK) {
+    printf("H2_MOSAICO_USB_FAIL rc=%d\n", usb_rc);
+    return;
+  }
   int rc=h2_esp_target_task_policy_install();if(rc)fail("task-policy",rc);
   h2_runtime_config_t config={0};rc=h2_esp_board_runtime_config(&config);if(rc)fail("board",rc);
   config.system_event=h2_pal_unsupported_system_event_api();

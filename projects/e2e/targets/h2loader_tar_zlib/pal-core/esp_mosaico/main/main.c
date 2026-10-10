@@ -1,5 +1,5 @@
 #include "h2_esp_board.h"
-#include "h2_mosaico_usb_console.h"
+#include "h2_mosaico_loader_usb.h"
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_h2loader_runtime.h"
 #include "h2_esp_platform_core.h"
@@ -442,7 +442,7 @@ static void run(void *user) {
     }
 }
 void app_main(void) {
-    int rc = h2_mosaico_usb_console_init();
+    int rc = h2_mosaico_loader_usb_init();
     if (rc != 0) fail("usb_console", rc);
     /* USB re-enumeration must finish before one-shot startup diagnostics. */
     vTaskDelay(pdMS_TO_TICKS(5000u));

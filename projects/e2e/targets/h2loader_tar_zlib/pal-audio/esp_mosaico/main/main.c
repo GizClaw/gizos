@@ -1,3 +1,4 @@
+#include "h2_mosaico_loader_usb.h"
 #ifdef H2_PAL_AUDIO_BOARD_HOST_TEST
 #include "h2_pal_audio_board_test_sdk.h"
 #else
@@ -137,6 +138,11 @@ static void entry_task(void *unused) {
   vTaskDeleteWithCaps(NULL);
 }
 void app_main(void) {
+  int usb_rc = h2_mosaico_loader_usb_init();
+  if (usb_rc != H2_PAL_OK) {
+    printf("H2_MOSAICO_USB_FAIL rc=%d\n", usb_rc);
+    return;
+  }
   int rc = h2_esp_target_task_policy_install();
   if (rc != H2_PAL_OK) fail("task_policy", rc);
   rc = (xTaskCreatePinnedToCoreWithCaps(entry_task, "esp_mosaico/pal-audio", 65536u, NULL,

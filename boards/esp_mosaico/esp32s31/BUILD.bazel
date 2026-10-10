@@ -1,3 +1,4 @@
+load("@rules_python//python:defs.bzl", "py_test")
 load("@rules_cc//cc:defs.bzl", "cc_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
@@ -165,5 +166,28 @@ cc_test(
     copts = H2_WARNING_COPTS,
     includes = ["src", "tests/fs_fakes"],
     deps = ["//libs/runtime"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+firmware_native_component(
+    name = "loader_usb",
+    srcs = ["loader_usb/transport.c"],
+    hdrs = ["include/h2_mosaico_loader_usb.h"],
+    component_directory = "boards/esp_mosaico/esp32s31/loader_usb",
+    component_name = "h2_mosaico_loader_usb",
+    data = ["loader_usb/CMakeLists.txt", "loader_usb/sdkconfig.defaults"],
+    deps = [":usb_console", "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_runtime"],
+)
+
+py_test(
+    name = "loader_usb_test",
+    srcs = ["tests/test_loader_usb.py"],
+    data = [
+        "loader_usb/transport.c",
+        "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_runtime:src/h2_esp_h2loader_iostreamikcp.c",
+        "//libs/pal:pal_header_files",
+        "//libs/iostreamikcp:include/h2_iostreamikcp_types.h",
+    ],
+    main = "tests/test_loader_usb.py",
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
 )

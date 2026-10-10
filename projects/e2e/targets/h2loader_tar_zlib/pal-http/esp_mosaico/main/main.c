@@ -1,3 +1,4 @@
+#include "h2_mosaico_loader_usb.h"
 #include "h2_esp_board.h"
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_h2loader_runtime.h"
@@ -40,6 +41,11 @@ static void run(void *user) {
     }
 }
 void app_main(void) {
+  int usb_rc = h2_mosaico_loader_usb_init();
+  if (usb_rc != H2_PAL_OK) {
+    printf("H2_MOSAICO_USB_FAIL rc=%d\n", usb_rc);
+    return;
+  }
     int rc = h2_esp_target_task_policy_install();
     if (rc != H2_PAL_OK) fail("task_policy", rc);
     h2_runtime_config_t config = {0};
