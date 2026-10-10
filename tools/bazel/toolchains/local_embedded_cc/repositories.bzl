@@ -167,7 +167,7 @@ def _repository_impl(repository_ctx):
             expected_version,
             actual_version,
         ))
-    probe_flags = list(repository_ctx.attr.compile_flags)
+    probe_flags = list(repository_ctx.attr.compile_flags) + repository_ctx.attr.include_probe_flags
     for relative in repository_ctx.attr.system_include_dirs:
         directory = bin_dir.get_child(relative)
         if not directory.exists:
@@ -233,6 +233,9 @@ local_embedded_cc_repository = repository_rule(
     attrs = {
         "build_file": attr.label(default = "//tools/bazel/toolchains/local_embedded_cc:toolchain.BUILD.bazel"),
         "compile_flags": attr.string_list(),
+        "include_probe_flags": attr.string_list(
+            doc = "Flags used only to discover system headers; compile actions use their mirrored paths.",
+        ),
         "compiler_kind": attr.string(default = "gcc", values = ["gcc", "clang"]),
         "config_file": attr.label(default = "//tools/bazel/toolchains/local_embedded_cc:cc_toolchain_config.bzl"),
         "exec_hosts": attr.string_list(
@@ -368,6 +371,38 @@ def _extension_impl(_module_ctx):
         toolchain_identifier = "esp32p4-local-esp-15.2.0",
         version_key = "esp32p4",
         versions_file = "//tools/bazel:native_versions/esp_idf_tool_versions.txt",
+    )
+
+    local_embedded_cc_repository(
+        name = "gizos_esp32s31_cc_toolchain",
+        # Specs inject absolute include paths even with -nostdinc. Probe them
+        # once, then compile with mirrored headers and the same ABI options.
+        include_probe_flags = ["-specs=picolibc.specs"],
+        compile_flags = [
+            "-Os",
+            "-ftls-model=local-exec",
+            "-mstack-protector-guard=global",
+            "-march=rv32imafcb_zicsr_zifencei",
+            "-mabi=ilp32f",
+            "-ffunction-sections",
+            "-fdata-sections",
+            "-fno-common",
+        ],
+        family = "riscv32-esp-elf",
+        layout = "idf_tools",
+        locator = "@gizos_esp_idf_s31_tools//:locator.json",
+        locator_path = "tools_root",
+        prefix = "riscv32-esp-elf-",
+        target_constraints = [
+            "@gizos//tools/bazel/platforms:cpu_riscv32",
+            "@gizos//tools/bazel/platforms:target_esp32s31",
+            "@platforms//os:none",
+        ],
+        target_cpu = "riscv32",
+        target_system_name = "esp32s31-elf",
+        toolchain_identifier = "esp32s31-local-esp-16.1.0",
+        version_key = "esp32s31",
+        versions_file = "//tools/bazel:native_versions/esp_idf_s31_tool_versions.txt",
     )
 
     local_embedded_cc_repository(

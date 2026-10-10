@@ -197,6 +197,7 @@ _local_sdk_repository = repository_rule(
     },
     environ = [
         "IDF_PATH",
+        "IDF_S31_PATH",
         "BK7258_PATH",
         "BK3633_PATH",
         "JIELI_AC695N_SDK_PATH",
@@ -205,7 +206,7 @@ _local_sdk_repository = repository_rule(
 )
 
 def _esp_tools_repository_impl(repository_ctx):
-    tools_root_value = _environment_value(repository_ctx, "IDF_TOOLS_PATH")
+    tools_root_value = _environment_value(repository_ctx, repository_ctx.attr.environment_variable)
     if not tools_root_value:
         _write_locator(
             repository_ctx,
@@ -229,11 +230,11 @@ def _esp_tools_repository_impl(repository_ctx):
         repository_ctx.attr.tool_versions_file,
         "ESP-IDF tool version",
     )
-    required = ["esp32p4", "esp32s3", "ninja", "python"]
+    required = repository_ctx.attr.targets + ["ninja", "python"]
     missing = [key for key in required if not contract.get(key)]
     if missing:
         fail("ESP-IDF tool versions are incomplete: %s" % ", ".join(missing))
-    if contract["python"] != "esp-idf-v6.0-constraints":
+    if contract["python"] != "esp-idf-v%s-constraints" % repository_ctx.attr.idf_version:
         fail("unsupported ESP-IDF Python identity: %s" % contract["python"])
     python_environment_root = tools_root.get_child("python_env")
     if not python_environment_root.exists or not python_environment_root.is_dir:
@@ -242,20 +243,20 @@ def _esp_tools_repository_impl(repository_ctx):
         candidate.basename
         for candidate in python_environment_root.readdir()
         if candidate.is_dir and
-           candidate.basename.startswith("idf6.0_py") and
+           candidate.basename.startswith("idf%s_py" % repository_ctx.attr.idf_version) and
            candidate.basename.endswith("_env") and
            candidate.get_child("bin").get_child("python").exists
     ])
     if len(python_environment_names) != 1:
-        fail("expected exactly one ESP-IDF 6.0 Python environment under %s, found %s" % (
+        fail("expected exactly one ESP-IDF Python environment under %s, found %s" % (
             python_environment_root,
             python_environment_names,
         ))
     python_root = python_environment_root.get_child(python_environment_names[0])
     python = python_root.get_child("bin").get_child("python")
     compiler_contracts = [
-        ("esp32p4", "riscv32-esp-elf", "riscv32-esp-elf-gcc"),
-        ("esp32s3", "xtensa-esp-elf", "xtensa-esp-elf-gcc"),
+        (target, "xtensa-esp-elf" if target == "esp32s3" else "riscv32-esp-elf", "xtensa-esp-elf-gcc" if target == "esp32s3" else "riscv32-esp-elf-gcc")
+        for target in repository_ctx.attr.targets
     ]
     environment = {
         "HOME": "/tmp",
@@ -316,6 +317,9 @@ def _esp_tools_repository_impl(repository_ctx):
 _esp_tools_repository = repository_rule(
     implementation = _esp_tools_repository_impl,
     attrs = {
+        "environment_variable": attr.string(default = "IDF_TOOLS_PATH"),
+        "idf_version": attr.string(default = "6.0"),
+        "targets": attr.string_list(default = ["esp32p4", "esp32s3"]),
         "sdk_locator": attr.label(
             allow_single_file = True,
             mandatory = True,
@@ -325,7 +329,7 @@ _esp_tools_repository = repository_rule(
             mandatory = True,
         ),
     },
-    environ = ["IDF_TOOLS_PATH"],
+    environ = ["IDF_TOOLS_PATH", "IDF_S31_TOOLS_PATH"],
 )
 
 def _ccache_runtime_repository_impl(repository_ctx):
@@ -371,6 +375,21 @@ def _extension_impl(_module_ctx):
         name = "gizos_esp_idf_tools",
         sdk_locator = "@gizos_esp_idf_sdk//:locator.json",
         tool_versions_file = "//tools/bazel:native_versions/esp_idf_tool_versions.txt",
+    )
+    _local_sdk_repository(
+        name = "gizos_esp_idf_s31_sdk",
+        commit_file = "//tools/bazel:native_versions/esp_idf_s31_commit.txt",
+        environment_variable = "IDF_S31_PATH",
+        kind = "esp-idf-sdk",
+        required_files = ["tools/idf.py", "tools/cmake/toolchain-esp32s31.cmake"],
+    )
+    _esp_tools_repository(
+        name = "gizos_esp_idf_s31_tools",
+        environment_variable = "IDF_S31_TOOLS_PATH",
+        idf_version = "6.2",
+        targets = ["esp32s31"],
+        sdk_locator = "@gizos_esp_idf_s31_sdk//:locator.json",
+        tool_versions_file = "//tools/bazel:native_versions/esp_idf_s31_tool_versions.txt",
     )
     _ccache_runtime_repository(name = "gizos_native_ccache_runtime")
 

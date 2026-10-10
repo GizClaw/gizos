@@ -23,9 +23,12 @@
 
 static const char *TAG = "h2_es8311_aec";
 
+#if H2_ESP_ES8311_HAVE_DIRECT_AEC
 static void *aec_calloc(size_t count, size_t size) {
     return heap_caps_aligned_calloc(16u, count, size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 }
+
+#endif
 
 static void sr_free_buffers(h2_esp_es8311_sr_state_t *state) {
     if (state == NULL) {

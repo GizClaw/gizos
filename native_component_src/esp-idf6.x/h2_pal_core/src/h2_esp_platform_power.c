@@ -1,4 +1,5 @@
 #include "h2_esp_platform_core.h"
+#include "h2_esp_power_reboot_prepare.h"
 #include "h2_esp_platform_power_wake.h"
 #include "h2_esp_platform_pref_migration.h"
 #include "h2_esp_platform_safe_call.h"
@@ -124,11 +125,13 @@ static void IRAM_ATTR power_ota_safe_callback(void *context) {
             {
                 const esp_partition_t *running =
                     esp_ota_get_running_partition();
-                /* Re-selecting the running OTA slot changes its otadata state
-                 * back to NEW. A same-slot reboot must leave a confirmed image
-                 * VALID so callers can distinguish it from a real slot switch. */
-                call->result = running != NULL &&
-                        running->address == call->partition->address
+                const esp_partition_t *selected = esp_ota_get_boot_partition();
+                /* Preserve VALID on a true same-slot reboot. A rollback after
+                 * preparation failure must still restore the selected slot. */
+                call->result = running != NULL && selected != NULL &&
+                        h2_esp_power_boot_selection_is_current(
+                            running->address, selected->address,
+                            call->partition->address)
                     ? ESP_OK
                     : esp_ota_set_boot_partition(call->partition);
             }
@@ -457,6 +460,10 @@ static h2_pal_result_t power_reboot(void *user, uint32_t reason) {
 
     (void)user;
     h2_pal_result_t rc = h2_esp_platform_power_before_reboot(reason);
+    if (rc != H2_PAL_OK) {
+        return rc;
+    }
+    rc = h2_esp_power_reboot_prepare();
     if (rc != H2_PAL_OK) {
         return rc;
     }

@@ -15,6 +15,7 @@ REMOTE_CCACHE_VERSION = "4.13.6"
 RUNTIME_SCHEMA = "h2.native-ccache-runtime.v1"
 REMOTE_FAMILY_BY_NAMESPACE = {
     "esp32c5": "esp",
+    "esp32s31": "esp",
     "esp32p4": "esp",
     "esp32s3": "esp",
     "bk3633": "bk",

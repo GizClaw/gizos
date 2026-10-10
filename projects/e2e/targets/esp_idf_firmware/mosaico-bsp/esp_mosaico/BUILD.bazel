@@ -1,0 +1,42 @@
+load("//tools/bazel:esp_idf.bzl", "esp_idf_firmware")
+load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+firmware_lib_component(
+    name = "firmware_lib",
+    deps = ["//projects/e2e/libs/reference_smoke"],
+)
+
+firmware_native_component(
+    name = "main",
+    srcs = ["main/main.c"],
+    component_directory = "projects/e2e/targets/esp_idf_firmware/mosaico-bsp/esp_mosaico/main",
+    component_name = "main",
+    data = ["main/CMakeLists.txt"],
+    deps = [
+        ":firmware_lib",
+        "//boards/esp_mosaico/esp32s31:revision",
+        "//boards/esp_mosaico/esp32s31:bsp",
+        "//projects/e2e/libs/reference_smoke",
+    ],
+)
+
+esp_idf_firmware(
+    name = "firmware",
+    srcs = [
+        "CMakeLists.txt",
+        "main/CMakeLists.txt",
+        "main/main.c",
+    ],
+    board = "esp_mosaico",
+    graph = [
+        ":main",
+    ],
+    partition = "//boards/esp_mosaico/esp32s31/layouts/compile_only:partition.csv",
+    project = "CMakeLists.txt",
+    project_name = "h2_mosaico_bsp_smoke",
+    project_support_files = ["//boards/esp_mosaico/esp32s31/layouts/compile_only:sdkconfig"],
+    target = "esp32s31",
+)

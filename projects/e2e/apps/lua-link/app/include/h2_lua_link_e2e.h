@@ -18,6 +18,9 @@ typedef struct h2_lua_link_e2e_config {
   /** Nonzero stays connected at 10 Hz until the link drops and reports how
    * fast the drop surfaced, instead of running the transfer suite. */
   int hold;
+  /** Optional hold-only VM deadline; zero retains the 300,000 ms default.
+   * Transfer-suite deadlines are unchanged. */
+  uint32_t hold_timeout_ms;
 } h2_lua_link_e2e_config_t;
 
 /**

@@ -31,7 +31,7 @@ GizOS provides a shared foundation for building portable firmware and applicatio
 
 | Family | Targets |
 | --- | --- |
-| Embedded | ESP32-S3, ESP32-P4, ESP32-C5, BK7258 AP/CP, BK3633, AC695N, AC791N, T113-S3 |
+| Embedded | ESP32-S3, ESP32-S31 (ESP-Mosaico), ESP32-P4, ESP32-C5, BK7258 AP/CP, BK3633, AC695N, AC791N, T113-S3 |
 | Desktop | Linux x86_64, macOS arm64, Windows x86_64 |
 | Mobile | iOS Simulator arm64, Android arm64 |
 | Web | WebAssembly via Emscripten |

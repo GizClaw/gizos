@@ -97,6 +97,8 @@ exports_files([
     "native_versions/bk_tool_versions.txt",
     "native_versions/bk_toolchain_archives.txt",
     "native_versions/esp_idf_commit.txt",
+    "native_versions/esp_idf_s31_commit.txt",
+    "native_versions/esp_idf_s31_tool_versions.txt",
     "native_versions/esp_idf_tool_versions.txt",
     "native_versions/jieli_ac695n_sdk_commit.txt",
     "native_versions/jieli_ac707n_sdk_commit.txt",

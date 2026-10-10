@@ -33,6 +33,19 @@ typedef struct h2_esp_h2loader_app_iostreamikcp {
 static h2_esp_h2loader_app_iostreamikcp_t s_app_transport;
 static int s_app_transport_started;
 static int s_console_initialized;
+static int s_physical_io_configured;
+static h2_iostreamikcp_io_t s_physical_io;
+
+h2_pal_result_t h2_esp_h2loader_configure_physical_io(
+    const h2_iostreamikcp_io_t *io) {
+    if (io == NULL || io->read == NULL || io->write == NULL)
+        return H2_PAL_ERR_INVALID_ARG;
+    if (s_console_initialized || s_physical_io_configured)
+        return H2_PAL_ERR_INVALID_STATE;
+    s_physical_io = *io;
+    s_physical_io_configured = 1;
+    return H2_PAL_OK;
+}
 
 static uint32_t transport_now_ms(void *user) {
     (void)user;
@@ -40,7 +53,8 @@ static uint32_t transport_now_ms(void *user) {
 }
 
 h2_pal_result_t h2_esp_h2loader_console_init(void) {
-    if (s_console_initialized) {
+    if (s_console_initialized || s_physical_io_configured) {
+        s_console_initialized = 1;
         return H2_PAL_OK;
     }
 #if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
@@ -332,6 +346,9 @@ h2_pal_result_t h2_esp_h2loader_command_transport_init(
     memset(transport, 0, sizeof(*transport));
     transport->allocator = allocator;
     transport->write_timeout_ms = H2_LOADER_TRANSPORT_DEFAULT_WRITE_TIMEOUT_MS;
+    if (s_physical_io_configured) {
+        transport->physical_io = s_physical_io;
+    } else {
 #if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
     transport->physical_io = h2_iostreamikcp_io_from_usb_jtag(
         h2_esp_platform_usb_jtag_io_stream_api());
@@ -339,6 +356,7 @@ h2_pal_result_t h2_esp_h2loader_command_transport_init(
     transport->physical_io = h2_iostreamikcp_io_from_uart(
         h2_esp_platform_uart_io_stream_api());
 #endif
+    }
     transport->receive_window = H2_LOADER_TRANSPORT_RECEIVE_WINDOW;
     h2_iostreamikcp_filter_init(&transport->filter);
     return H2_PAL_OK;
