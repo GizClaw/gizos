@@ -14,7 +14,7 @@ of admission; it must not be silently removed from the registry.
 
 | Suite | Reference launcher | Mosaico entry | Final-source device status |
 | --- | --- | --- | --- |
-| pal-core | `pal-core/devkit` | [`pal-core/esp_mosaico`](pal-core/esp_mosaico/BUILD.bazel) | NOT_RUN |
+| pal-core | `pal-core/devkit` | [`pal-core/esp_mosaico`](pal-core/esp_mosaico/BUILD.bazel) | 41/41 on two boots; managed-install gate pending |
 | pal-storage | `pal-storage/devkit` | [`pal-storage/esp_mosaico`](pal-storage/esp_mosaico/BUILD.bazel) | NOT_RUN |
 | pal-crypto | `pal-crypto/devkit` | [`pal-crypto/esp_mosaico`](pal-crypto/esp_mosaico/BUILD.bazel) | NOT_RUN |
 | pal-json | `pal-json/devkit` | [`pal-json/esp_mosaico`](pal-json/esp_mosaico/BUILD.bazel) | NOT_RUN |
@@ -54,7 +54,17 @@ uses the native SDK to establish a controlled fixture epoch, and runs the shared
 suite unchanged. It then restores the raw boot clock plus elapsed monotonic time,
 checks that PAL again reports UNCALIBRATED, and includes restoration in its READY
 qualification gate. The fixture epoch is test data, not a claim of actual UTC.
-The updated firmware builds; its device rerun remains pending.
+The corrected source committed as `3ec6deda` passed 41/41 cases on the first boot
+and a separate user-triggered RESET. Both executions reported `cleanup=0`,
+`cold_boot_prepared=1 restore=0`, `task_probe=0` and `confirm=0`. The stack,
+allocation-failure recovery and 100-task resource observations passed on both
+boots. The flashed App was 1,574,848 bytes with SHA-256
+`76f530981ba6897c4a91f74c1a8a5eee6bfdf426a7f8c8466e03208a6164885d`.
+The build preceded the commit but contained exactly its launcher source; the
+commit also added this qualification documentation. Separate startup/BOOT markers
+identify the second execution; repeated ledgers alone are not reboot evidence.
+This qualifies the observed Core assertions on this artifact, while managed
+installation/recovery and the remaining suites still block overall acceptance.
 
 ## Remaining hardware and integration gates
 
