@@ -192,10 +192,11 @@ py_binary(
     ],
     main = "tests/test_loader_usb.py",
     legacy_create_init = 0,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
 )
 
 [
-    loader_usb_fixture(name = "loader_usb_" + kind + "_source", kind = kind, generator = ":loader_usb_fixture_generator")
+    loader_usb_fixture(name = "loader_usb_" + kind + "_source", kind = kind, generator = ":loader_usb_fixture_generator", target_compatible_with = HOST_TOOL_COMPATIBILITY)
     for kind in ["config", "callbacks"]
 ]
 [
