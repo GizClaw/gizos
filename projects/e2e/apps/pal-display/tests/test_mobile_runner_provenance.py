@@ -20,6 +20,20 @@ class MobileRunnerProvenanceTest(unittest.TestCase):
     def test_separate_mobile_runs_preserve_historical_qualification(self):
         self.verify(self.followup)
 
+    def test_web_backlight_observation_preserves_the_display_source(self):
+        path = "libs/pal/providers/web/pal_core/src/h2_web_platform_display.c"
+        current = qualification.Path(path).read_bytes()
+        qualification.web_display_output_source(current, self.historical[path])
+        variants = [
+            current.replace(b"output.display = {brightnessPercent: percent}", b"output.display = {brightnessPercent: 100}"),
+            current.replace(b"brightness(${percent}%)", b"brightness(100%)"),
+            current + b"\nvoid changed_display_operation(void) {}\n",
+        ]
+        for content in variants:
+            self.assertNotEqual(content, current)
+            with self.assertRaises(AssertionError):
+                qualification.web_display_output_source(content, self.historical[path])
+
     def test_other_app_catalog_changes_preserve_display_content(self):
         baseline = (qualification.ROOT / "shared_catalog_baseline.txt").read_text(encoding="utf-8")
         current = qualification.Path(qualification.SHARED_CATALOG).read_text(encoding="utf-8")
