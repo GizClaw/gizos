@@ -40,13 +40,12 @@ static struct { void *address; size_t size; } stacks[STACK_RECORDS];
 static int fail_after = -1;
 static size_t stack_count, stack_bytes;
 
-static void hold(void) {
-    for (;;) vTaskDelay(pdMS_TO_TICKS(1000u));
-}
 static void fail(const char *stage, int rc) {
-    printf("H2_PAL_CORE_E2E_LAUNCHER_FAIL stage=%s rc=%d\n", stage, rc);
-    fflush(stdout);
-    hold();
+    for (;;) {
+        printf("H2_PAL_CORE_E2E_LAUNCHER_FAIL stage=%s rc=%d\n", stage, rc);
+        fflush(stdout);
+        vTaskDelay(pdMS_TO_TICKS(2000u));
+    }
 }
 static void *stack_allocate(void *user, size_t size) {
     (void)user;
@@ -380,9 +379,15 @@ static void run(void *user) {
 void app_main(void) {
     int rc = h2_mosaico_usb_console_init();
     if (rc != 0) fail("usb_console", rc);
+    /* USB re-enumeration must finish before one-shot startup diagnostics. */
+    vTaskDelay(pdMS_TO_TICKS(5000u));
+    puts("H2_PAL_CORE_E2E_START stage=task_policy");
+    fflush(stdout);
     rc = h2_esp_target_task_policy_install_with_configure(configure_tasks);
     if (rc != H2_PAL_OK) fail("task_policy", rc);
     h2_runtime_config_t runtime_config = {0};
+    puts("H2_PAL_CORE_E2E_START stage=runtime_config");
+    fflush(stdout);
     rc = h2_esp_board_runtime_config(&runtime_config);
     if (rc != H2_PAL_OK) fail("runtime_config", rc);
     /* The Core App owns an exclusive real event fixture. The serial command
@@ -394,8 +399,12 @@ void app_main(void) {
     };
     h2_runtime_config_t transport_config = runtime_config;
     transport_config.mem = &transport_memory;
+    puts("H2_PAL_CORE_E2E_START stage=command_prepare");
+    fflush(stdout);
     rc = h2_esp_h2loader_app_commands_prepare_serial_with_config(&transport_config, &commands);
     if (rc != H2_PAL_OK) fail("command_prepare", rc);
+    puts("H2_PAL_CORE_E2E_START stage=runtime_init");
+    fflush(stdout);
     rc = h2_runtime_init(&runtime_config, &runtime);
     if (rc != H2_PAL_OK) fail("runtime_init", rc);
     const esp_timer_create_args_t timer = {.callback = deadline, .name = "pal-core-watchdog"};
