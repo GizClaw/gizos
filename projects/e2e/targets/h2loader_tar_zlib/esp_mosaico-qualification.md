@@ -19,8 +19,8 @@ of admission; it must not be silently removed from the registry.
 | pal-crypto | `pal-crypto/devkit` | [`pal-crypto/esp_mosaico`](pal-crypto/esp_mosaico/BUILD.bazel) | r8 22/22 on two independent peer boots; cleanup/confirmation and managed install PASS |
 | pal-json | `pal-json/devkit` | [`pal-json/esp_mosaico`](pal-json/esp_mosaico/BUILD.bazel) | r8 15/15 on two independent peer boots; cleanup/confirmation and managed install PASS |
 | pal-http | `pal-http/devkit` | [`pal-http/esp_mosaico`](pal-http/esp_mosaico/BUILD.bazel) | r9 45/45 on two independent boots; distinct nonces, real HTTP/TLS peer witnesses, cleanup/confirmation and managed install PASS |
-| pal-mqtt | `pal-mqtt/devkit` | [`pal-mqtt/esp_mosaico`](pal-mqtt/esp_mosaico/BUILD.bazel) | NOT_RUN |
-| pal-net-tls | `pal-net-tls/devkit` | [`pal-net-tls/esp_mosaico`](pal-net-tls/esp_mosaico/BUILD.bazel) | NOT_RUN |
+| pal-mqtt | `pal-mqtt/devkit` | [`pal-mqtt/esp_mosaico`](pal-mqtt/esp_mosaico/BUILD.bazel) | r21 36/36 on two independent boots; scoped native resources/provider release, delivery/confirmation and real broker/TLS witnesses PASS |
+| pal-net-tls | `pal-net-tls/devkit` | [`pal-net-tls/esp_mosaico`](pal-net-tls/esp_mosaico/BUILD.bazel) | r20 core profile: 37 mandatory / 38 total passes on two boots, one optional unsupported; real peer/cleanup/confirmation PASS; full-Net unqualified |
 | pal-wifi | `pal-wifi/devkit` | [`pal-wifi/esp_mosaico`](pal-wifi/esp_mosaico/BUILD.bazel) | NOT_RUN |
 | pal-webrtc | `pal-webrtc/devkit` | [`pal-webrtc/esp_mosaico`](pal-webrtc/esp_mosaico/BUILD.bazel) | NOT_RUN |
 | pal-audio | `pal-audio/amoled` | [`pal-audio/esp_mosaico`](pal-audio/esp_mosaico/BUILD.bazel) | r8 24/24 on two independent peer boots; capture/output/30s soak and managed install PASS; acoustic observation unavailable |
@@ -512,3 +512,55 @@ successive warm cycles. P1/P2 image and package checksums remain unchanged,
 Stage remains empty and last_result remains zero. The fixture's managed install
 also preserved the blank coredump. This is a BLE-enabled command-service return
 check, not a bilateral Lua transfer or physical-disconnection admission.
+
+## Common IDF 6.2 and October 11 qualification
+
+The user expanded this change to unify all GizOS ESP SDK consumers. S3/P4/C5
+now select the same `ddb3852ab5c7f9e6dbc268203ef9d612de391bf8` SDK commit and
+GCC 16.1 baseline as S31. CI/release install that exact checkout and all four
+compiler targets, then restore explicit SDK aliases after the legacy provider
+export. Both project-level IDF component constraints select the 6.2 series.
+P4 remote 1.6.5 recognizes the SDK's integrated Wi-Fi implementation; Hosted
+stays at its existing version. This is a pinned SDK revision, not an unbounded
+SDK branch update.
+
+IDF 6.2 requires explicit PSRAM component discovery in the native PAL composition.
+The task provider rejects unavailable external stacks when the Kconfig option
+is absent. The existing private SDK coprocessor adapter is now selected by the
+RISC-V task provider: S31/P4 retain task-owned FPU/PIE/HWLOOP buffers, and targets
+without coprocessors retain libco defaults. Xtensa gets no RISC-V override.
+Builder regressions, task policy and missing-option compilation, hardware-guard
+profiles, zero-coprocessor behavior and optimized assertion checks pass. Actual
+S3 AMOLED Lua/Wi-Fi/Loader and reference Core builds, P4 reference and board
+Display/remote-Wi-Fi/PAL builds, C5 reference and S31 MQTT builds pass. These
+results do not claim physical P4/C5 execution or the complete CI graph.
+
+The DUT r20 Core passes 41/41 on two independent boots and its public r20 Loader
+self-update/reboot passes with the original 20,640-byte coredump retained. The
+r20 Net/TLS core profile passes on two independent boots: 37 mandatory cases,
+38 total passes and one explicitly unsupported optional case, covering 21 core
+operations. Actual fixture records show typed TLS rejection, no handshake or
+payload for invalid configuration/CA, successful recovery, cleanup and App
+confirmation. Optional full-Net capability is not qualified by this profile.
+
+MQTT r20 passed 36 functions but failed raw global allocation equality; that
+failure and unconfirmed status are preserved. The r21 artifact separately tracks
+actual borrowed management allocations with synchronized native usable sizes.
+All allocations still reach the native counters; raw, command-owned and
+App-owned totals are reported separately. Only command-owned live buffers are
+excluded from App-owned cleanup. The actual-helper regression includes a leak
+that would otherwise cancel command-buffer frees. Both r21 boots pass 36/36,
+provider release, delivery-before-confirmation and exact broker/TLS witnesses.
+App-owned before/after counts are 18/58,796 bytes, and provider release removes
+one actual 32-byte allocation. P1, empty Stage and the original coredump are
+preserved. The host verifier accepts Loader progress only before App execution;
+late progress/startup, replay and missing confirmation still fail admission.
+
+The operator-connected AMOLED is identified through the public protocol and has
+a full 16 MB pre-test backup (SHA-256
+`4bb1c08604e8d7c852afbbe0b4608d1800f74881832bd5e043594c4b3baac3cd`).
+Its existing Wi-Fi and Lua opposite-role artifacts can serve the peer. Their new
+6.2 builds do not yet count as actual peer device runs. Historical results now
+cover 13 of 16 portable suites; Wi-Fi, WebRTC, complete bilateral Lua, final
+peripherals/acoustic observations and Loader recovery/rollback/checksum gates
+remain open. Final-source package binding and regression remain required.
