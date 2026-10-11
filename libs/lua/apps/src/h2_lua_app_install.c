@@ -470,7 +470,10 @@ static int commit(install_t *s, h2_lua_app_info_t *out) {
     rc = H2_PAL_ERR_CLOSED;
   if (rc == H2_PAL_OK) {
     app_record_t record = {
-        .info = s->parsed.info, .bytes = s->parsed.bytes, .slot = slot};
+        .info = s->parsed.info,
+        .bytes = s->parsed.bytes,
+        .slot = slot,
+        .preinstalled = position >= 0 && apps->records[position].preinstalled};
     rc = h2_lua_apps_publish(apps, &record,
                              position < 0 ? apps->count : (size_t)position);
   }

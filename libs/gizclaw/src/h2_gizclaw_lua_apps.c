@@ -138,6 +138,25 @@ static bool run_request(h2_gizclaw_rpc_bytes_t bytes, lua_run_t *run) {
   return id && h2_lua_app_id_valid(run->value.app.app_id);
 }
 
+static bool uninstall_request(h2_gizclaw_rpc_bytes_t bytes, char id[33]) {
+  pb_istream_t stream = pb_istream_from_buffer(bytes.data, bytes.len);
+  bool seen = false;
+  while (stream.bytes_left) {
+    pb_wire_type_t wire;
+    uint32_t tag;
+    bool eof;
+    if (!pb_decode_tag(&stream, &wire, &tag, &eof) || eof)
+      return false;
+    if (tag == 1) {
+      if (seen || wire != PB_WT_STRING || !read_text(&stream, id, 33u))
+        return false;
+      seen = true;
+    } else if (!pb_skip_field(&stream, wire))
+      return false;
+  }
+  return seen && h2_lua_app_id_valid(id);
+}
+
 typedef struct install_request {
   h2_lua_app_source_t source;
   char sha256[65];
@@ -296,6 +315,12 @@ int h2_gizclaw_lua_apps_rpc_internal(h2_gizclaw_lua_apps_t *apps,
   }
   if (apps->handoff.complete)
     return H2_PAL_ERR_BUSY;
+  if (tool == H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL) {
+    char id[33] = {0};
+    if (!uninstall_request(bytes, id))
+      return H2_PAL_ERR_INVALID_ARG;
+    return h2_lua_apps_uninstall(apps->config.lua_apps, id);
+  }
   if (tool == H2_GIZCLAW_TOOL_LUA_APP_INSTALL) {
     install_request_t request = {0};
     if (!install_request(bytes, &request))

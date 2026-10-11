@@ -33,6 +33,7 @@ typedef enum h2_gizclaw_tool {
   H2_GIZCLAW_TOOL_LUA_APP_LIST = 22,
   H2_GIZCLAW_TOOL_LUA_APP_INSTALL = 23,
   H2_GIZCLAW_TOOL_LUA_APP_RUN = 24,
+  H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL = 27,
 } h2_gizclaw_tool_t;
 
 /** Invoke one tool on the RPC owner. Payloads are the tool's inner protobuf

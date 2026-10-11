@@ -193,7 +193,12 @@ Provider 在 `h2_gizclaw_client_poll()` 所在线程同步运行。上游 C SDK 
 
 ### Lua App
 
-产品创建共享 `h2_lua_apps_t`，配置预装 index、安装目录和存储预算，再放入 `h2_gizclaw_config_t.lua_apps`。该 handle 由产品持有，必须覆盖 Service 的完整生命周期，可供本地菜单和后续 Service 重连复用。LIST 在配置目录时启用，INSTALL 需要可写 Filesystem，RUN 还需要 `vtable.prepare_lua_app_run`；没有相应能力时按 SDK 的 unsupported 路径回答。
+产品创建共享 `h2_lua_apps_t`，配置预装 index、安装目录和存储预算，再放入 `h2_gizclaw_config_t.lua_apps`。该 handle 由产品持有，必须覆盖 Service 的完整生命周期，可供本地菜单和后续 Service 重连复用。LIST 在配置目录时启用，INSTALL 和 UNINSTALL 需要可写 Filesystem，RUN 还需要 `vtable.prepare_lua_app_run`；没有相应能力时按 SDK 的 unsupported 路径回答。
+
+C SDK 依赖使用 registry 的 `gizclaw_c_sdk` 0.30.0 及 `third_party/gizclaw_c_sdk_lua_app_uninstall.patch`，补丁直接来自 [GizClaw 的卸载 contract 提交](https://github.com/GizClaw/gizclaw/commit/155a9d512ca4669f02391a89bbc30be3bd128f15)，包含生成消息、Tool 27 和 C provider 输入校验。
+
+`H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL` 对齐 GizClaw ClientTool 27，解码有界 `app_id` 后使用共享 `h2_lua_apps_uninstall`。空身份、路径、重复 ID 字段、嵌入 NUL 和非 ASCII 字节在设备入口拒绝；成功返回空 tool payload。安装中的目录 reservation 或待完成的启动 handoff 返回 BUSY。卸载与预装持久隐藏、清理重试和用户数据保留的语义见 [Lua 应用目录](./lua.md#lua-app-目录与流式安装)。
+
 
 `lua.app.list/install/run` 使用 SDK 的 tool/v0 编码；URL 安装支持 HTTP、HTTPS 和两种 Base64 data URL。独立 RPC 139 `client.lua.app.install` 由 SDK streaming provider 处理：小 metadata、同一请求中的 Binary 帧、请求 EOS、验证并发布后的最终响应。SDK 自动发送多帧，不需要调用方把一次安装拆成多次 RPC。C SDK 0.30.0 的直推限制为 512 KiB、单帧最多 65535 字节、总期限 120 秒；更大的 archive 使用 HTTP(S) URL。
 

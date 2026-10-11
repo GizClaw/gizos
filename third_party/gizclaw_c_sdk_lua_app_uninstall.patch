@@ -1,0 +1,108 @@
+# Generated C SDK dependency delta from GizClaw commit 155a9d512ca4669f02391a89bbc30be3bd128f15.
+# Source: https://github.com/GizClaw/gizclaw/commit/155a9d512ca4669f02391a89bbc30be3bd128f15
+# Apply to the integrity-pinned gizclaw_c_sdk 0.30.0 source module.
+--- a/generated/payload/lua_app.pb.c
++++ b/generated/payload/lua_app.pb.c
+@@ -35,0 +36 @@
++PB_BIND(gizclaw_rpc_v1_ClientLuaAppUninstallRequest, gizclaw_rpc_v1_ClientLuaAppUninstallRequest, AUTO)
+@@ -36,0 +38,5 @@
++
++PB_BIND(gizclaw_rpc_v1_ClientLuaAppUninstallResponse, gizclaw_rpc_v1_ClientLuaAppUninstallResponse, AUTO)
++
++
++
+--- a/generated/payload/lua_app.pb.h
++++ b/generated/payload/lua_app.pb.h
+@@ -84,0 +85,16 @@
++/* Remove an app from the device's persistent catalog, including a preinstalled
++ identity or an installed override. Preserve its independent user storage.
++ Idempotent: an absent app succeeds. Success means it cannot be listed or
++ launched, including after restart, and mutable package files were reclaimed.
++ Immutable preinstalled files remain in the firmware. Reinstallation makes
++ the identity available again. No automatic replay after timeout.
++ An index publication failure preserves the app. Cleanup can fail after
++ publication; the app stays unavailable and a repeated uninstall retries it. */
++typedef struct _gizclaw_rpc_v1_ClientLuaAppUninstallRequest {
++    char app_id[33]; /* Same stable package identity and bounds as LuaAppInfo. */
++} gizclaw_rpc_v1_ClientLuaAppUninstallRequest;
++
++typedef struct _gizclaw_rpc_v1_ClientLuaAppUninstallResponse {
++    char dummy_field;
++} gizclaw_rpc_v1_ClientLuaAppUninstallResponse;
++
+@@ -99,0 +116,2 @@
++#define gizclaw_rpc_v1_ClientLuaAppUninstallRequest_init_default {""}
++#define gizclaw_rpc_v1_ClientLuaAppUninstallResponse_init_default {0}
+@@ -108,0 +127,2 @@
++#define gizclaw_rpc_v1_ClientLuaAppUninstallRequest_init_zero {""}
++#define gizclaw_rpc_v1_ClientLuaAppUninstallResponse_init_zero {0}
+@@ -124,0 +145 @@
++#define gizclaw_rpc_v1_ClientLuaAppUninstallRequest_app_id_tag 1
+@@ -180,0 +202,10 @@
++
++#define gizclaw_rpc_v1_ClientLuaAppUninstallRequest_FIELDLIST(X, a) \
++X(a, STATIC,   SINGULAR, STRING,   app_id,            1)
++#define gizclaw_rpc_v1_ClientLuaAppUninstallRequest_CALLBACK NULL
++#define gizclaw_rpc_v1_ClientLuaAppUninstallRequest_DEFAULT NULL
++
++#define gizclaw_rpc_v1_ClientLuaAppUninstallResponse_FIELDLIST(X, a) \
++
++#define gizclaw_rpc_v1_ClientLuaAppUninstallResponse_CALLBACK NULL
++#define gizclaw_rpc_v1_ClientLuaAppUninstallResponse_DEFAULT NULL
+@@ -190,0 +222,2 @@
++extern const pb_msgdesc_t gizclaw_rpc_v1_ClientLuaAppUninstallRequest_msg;
++extern const pb_msgdesc_t gizclaw_rpc_v1_ClientLuaAppUninstallResponse_msg;
+@@ -201,0 +235,2 @@
++#define gizclaw_rpc_v1_ClientLuaAppUninstallRequest_fields &gizclaw_rpc_v1_ClientLuaAppUninstallRequest_msg
++#define gizclaw_rpc_v1_ClientLuaAppUninstallResponse_fields &gizclaw_rpc_v1_ClientLuaAppUninstallResponse_msg
+@@ -212,0 +248,2 @@
++#define gizclaw_rpc_v1_ClientLuaAppUninstallRequest_size 34
++#define gizclaw_rpc_v1_ClientLuaAppUninstallResponse_size 0
+--- a/generated/payload/tool.pb.h
++++ b/generated/payload/tool.pb.h
+@@ -44 +44,2 @@
+-    gizclaw_rpc_v1_ClientTool_CLIENT_TOOL_GNSS_REPORTING_SET = 26
++    gizclaw_rpc_v1_ClientTool_CLIENT_TOOL_GNSS_REPORTING_SET = 26,
++    gizclaw_rpc_v1_ClientTool_CLIENT_TOOL_LUA_APP_UNINSTALL = 27
+@@ -95,2 +96,2 @@
+-#define _gizclaw_rpc_v1_ClientTool_MAX gizclaw_rpc_v1_ClientTool_CLIENT_TOOL_GNSS_REPORTING_SET
+-#define _gizclaw_rpc_v1_ClientTool_ARRAYSIZE ((gizclaw_rpc_v1_ClientTool)(gizclaw_rpc_v1_ClientTool_CLIENT_TOOL_GNSS_REPORTING_SET+1))
++#define _gizclaw_rpc_v1_ClientTool_MAX gizclaw_rpc_v1_ClientTool_CLIENT_TOOL_LUA_APP_UNINSTALL
++#define _gizclaw_rpc_v1_ClientTool_ARRAYSIZE ((gizclaw_rpc_v1_ClientTool)(gizclaw_rpc_v1_ClientTool_CLIENT_TOOL_LUA_APP_UNINSTALL+1))
+--- a/src/gzc_client.c
++++ b/src/gzc_client.c
+@@ -2012,0 +2013,30 @@
++static bool valid_lua_app_uninstall(gzc_str_t payload) {
++  pb_istream_t stream = pb_istream_from_buffer((const pb_byte_t *)payload.data, payload.len);
++  bool seen = false;
++  while (stream.bytes_left != 0u) {
++    pb_wire_type_t wire;
++    uint32_t tag;
++    bool eof;
++    if (!pb_decode_tag(&stream, &wire, &tag, &eof) || eof)
++      return false;
++    if (tag == 1u) {
++      uint64_t size;
++      if (seen || wire != PB_WT_STRING || !pb_decode_varint(&stream, &size) ||
++          size == 0u || size > 32u || size > stream.bytes_left)
++        return false;
++      const char *id = payload.data + payload.len - stream.bytes_left;
++      for (size_t i = 0; i < (size_t)size; ++i) {
++        char c = id[i];
++        if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' ||
++              c == '-' || (i != 0u && c == '.')))
++          return false;
++      }
++      if (!pb_read(&stream, NULL, (size_t)size))
++        return false;
++      seen = true;
++    } else if (!pb_skip_field(&stream, wire))
++      return false;
++  }
++  return seen;
++}
++
+@@ -2123 +2153,2 @@
+-        (request.tool == gizclaw_rpc_v1_ClientTool_CLIENT_TOOL_LUA_APP_INSTALL && !valid_lua_app_install(payload))) {
++        (request.tool == gizclaw_rpc_v1_ClientTool_CLIENT_TOOL_LUA_APP_INSTALL && !valid_lua_app_install(payload)) ||
++        (request.tool == gizclaw_rpc_v1_ClientTool_CLIENT_TOOL_LUA_APP_UNINSTALL && !valid_lua_app_uninstall(payload))) {

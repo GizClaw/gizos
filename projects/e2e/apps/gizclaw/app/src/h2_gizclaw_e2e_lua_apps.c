@@ -441,8 +441,8 @@ static int verify_catalog(h2_gizclaw_e2e_api_t *api, const char *game,
       found |= text.len == strlen(game) && !memcmp(text.data, game, text.len);
     }
   }
-  return rc == H2_PAL_OK &&
-                 (!preinstalled || (installed && (!found || count != 2u)))
+  return rc == H2_PAL_OK && (!preinstalled || found != installed ||
+                             count != (installed ? 2u : 1u))
              ? H2_PAL_ERR_FORMAT
              : rc;
 }
@@ -525,7 +525,7 @@ int h2_gizclaw_e2e_run_lua_apps(h2_gizclaw_e2e_fixture_t *fixture) {
   rc = h2_gizclaw_rpc_api_key_create(
       service, h2_gizclaw_e2e_str("gizos-lua-golden"), false, 15000, &api.key);
   if (rc == H2_PAL_OK)
-    rc = verify_catalog(&api, c->lua_app_id, false);
+    rc = verify_catalog(&api, c->lua_app_id, c->lua_expect_persisted);
   if (rc == H2_PAL_OK)
     rc = verify_retained(&api, s);
   if (rc == H2_PAL_OK)
@@ -611,6 +611,44 @@ int h2_gizclaw_e2e_run_lua_apps(h2_gizclaw_e2e_fixture_t *fixture) {
   if (rc == H2_PAL_OK)
     rc = verify_catalog(&api, c->lua_app_id, true);
   int first = rc;
+  if (first == H2_PAL_OK) {
+    h2_lua_app_info_t prior;
+    first = h2_lua_apps_get(s->apps, c->lua_app_id, &prior);
+    char args[64];
+    int n = snprintf(args, sizeof(args), "{\"app_id\":\"%s\"}", c->lua_app_id);
+    if (n < 0 || (size_t)n >= sizeof(args))
+      first = H2_PAL_ERR_NO_SPACE;
+    for (unsigned attempt = 0; first == H2_PAL_OK && attempt < 2u; ++attempt)
+      first = h2_gizclaw_e2e_tool_call(&api, "lua.app.uninstall", args, 200);
+    if (first == H2_PAL_OK)
+      first = verify_catalog(&api, c->lua_app_id, false);
+    if (first == H2_PAL_OK)
+      first = h2_gizclaw_e2e_tool_call(&api, "lua.app.run", args, 404);
+    h2_pal_fs_stat_t stat = {0};
+    if (first == H2_PAL_OK && h2_pal_fs_stat(fixture->runtime->fs, prior.entry,
+                                             &stat) != H2_PAL_ERR_NOT_FOUND)
+      first = H2_PAL_ERR_FORMAT;
+    h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=lua-uninstall repeated=1 "
+                        "catalog_absent=%d entry_reclaimed=%d rc=%d\n",
+                        first == H2_PAL_OK, first == H2_PAL_OK, first);
+    size_t capacity = strlen(c->lua_app_url) + 128u;
+    char *install = h2_pal_mem_alloc(fixture->allocator, capacity);
+    if (first == H2_PAL_OK && !install)
+      first = H2_PAL_ERR_NO_MEMORY;
+    if (first == H2_PAL_OK) {
+      n = snprintf(install, capacity, "{\"url\":\"%s\",\"sha256\":\"%s\"}",
+                   c->lua_app_url, c->lua_archive_sha256);
+      if (n < 0 || (size_t)n >= capacity)
+        first = H2_PAL_ERR_NO_SPACE;
+    }
+    if (first == H2_PAL_OK)
+      first = h2_gizclaw_e2e_tool_call(&api, "lua.app.install", install, 200);
+    h2_pal_mem_free(fixture->allocator, install);
+    if (first == H2_PAL_OK)
+      first = verify_catalog(&api, c->lua_app_id, true);
+    if (first == H2_PAL_OK)
+      first = run_game(&api, s);
+  }
   if (api.key.name[0]) {
     int cleanup = h2_gizclaw_rpc_api_key_revoke(
         service, h2_gizclaw_e2e_str(api.key.name), 15000);
