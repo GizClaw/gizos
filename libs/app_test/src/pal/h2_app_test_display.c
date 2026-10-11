@@ -36,16 +36,31 @@ static int brightness(void *u, uint32_t percent) {
 }
 static int draw(void *u, const h2_display_rect_t *r, const void *p, size_t s,
                 h2_display_pixel_format_t f) {
-  (void)u;
-  (void)r;
-  (void)p;
-  (void)s;
-  (void)f;
-  return H2_PAL_ERR_UNSUPPORTED;
+  h2_app_test_display_t *d = u;
+  if (!d->accept_bitmaps)
+    return H2_PAL_ERR_UNSUPPORTED;
+  if (!d->opened)
+    return H2_PAL_ERR_INVALID_STATE;
+  if (f != H2_DISPLAY_PIXEL_RGB565)
+    return H2_PAL_ERR_UNSUPPORTED;
+  if (!r || !p || r->x < 0 || r->y < 0 || r->width <= 0 || r->height <= 0 ||
+      r->x > d->info.width || r->y > d->info.height ||
+      r->width > d->info.width - r->x || r->height > d->info.height - r->y ||
+      (size_t)r->width > SIZE_MAX / 2u || s < (size_t)r->width * 2u ||
+      (r->height > 1 &&
+       s > (SIZE_MAX - (size_t)r->width * 2u) / (size_t)(r->height - 1)))
+    return H2_PAL_ERR_INVALID_ARG;
+  ++d->draw_count;
+  return H2_PAL_OK;
 }
 static int present(void *u) {
-  (void)u;
-  return H2_PAL_ERR_UNSUPPORTED;
+  h2_app_test_display_t *d = u;
+  if (!d->accept_bitmaps)
+    return H2_PAL_ERR_UNSUPPORTED;
+  if (!d->opened)
+    return H2_PAL_ERR_INVALID_STATE;
+  ++d->present_count;
+  return H2_PAL_OK;
 }
 static const h2_pal_display_vtable_t vtable = {.open = open_display,
                                                .close = close_display,

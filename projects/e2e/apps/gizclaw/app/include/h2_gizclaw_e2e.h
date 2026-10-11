@@ -30,6 +30,7 @@ typedef enum h2_gizclaw_e2e_suite {
   H2_GIZCLAW_E2E_SUITE_DEVICE = 1u << 6,
   H2_GIZCLAW_E2E_SUITE_RESOURCE = 1u << 7,
   H2_GIZCLAW_E2E_SUITE_FENCE = 1u << 8,
+  H2_GIZCLAW_E2E_SUITE_LUA_APPS = 1u << 9,
   H2_GIZCLAW_E2E_SUITE_ALL = (1u << 8) - 1u,
 } h2_gizclaw_e2e_suite_t;
 
@@ -93,6 +94,27 @@ typedef struct h2_gizclaw_e2e_config {
   /** Optional dedicated device-API acceptance lane endpoints. */
   const char *device_api_url;
   const char *device_audio_url;
+  /** Dedicated Lua install/run golden lane: three addresses for the same
+   * package, its ID and digests. data URL remains borrowed for the whole run.
+   * A host reference run may record the first-frame digest explicitly; device
+   * qualification requires the independently recorded expected frame digest. */
+  const char *lua_app_url;
+  const char *lua_app_http_url;
+  const char *lua_app_https_url;
+  const char *lua_app_id;
+  const char *lua_archive_sha256;
+  const char *lua_entry_sha256;
+  const char *lua_frame_sha256;
+  const char *lua_storage_root;
+  bool lua_record_golden;
+  /** Keep the installed catalog and its isolated KV directory after releasing
+   * all live handles. Useful for device persistence checks; host runs default
+   * to removing the owned fixture subtree. Published files are not live
+   * retained resources. */
+  bool lua_preserve_storage;
+  /** Optional lowercase hex PEM trust fixture (at most 16 KiB decoded).
+   * Creates a case-owned coreHTTP provider with required TLS verification. */
+  const char *tls_root_ca_hex;
   /** Test Profile selectors for the dedicated safety-fence lane. */
   const char *fence_workflow_name;
   const char *fence_first_id;
@@ -130,6 +152,13 @@ const char *h2_gizclaw_e2e_fixture_device_api_url(void);
 const char *h2_gizclaw_e2e_fixture_audio_url(void);
 /** Explicit public trust roots for launchers without a native CA bundle. */
 const char *h2_gizclaw_e2e_fixture_root_ca_hex(void);
+const char *h2_gizclaw_e2e_fixture_lua_app_url(void);
+const char *h2_gizclaw_e2e_fixture_lua_app_http_url(void);
+const char *h2_gizclaw_e2e_fixture_lua_app_https_url(void);
+const char *h2_gizclaw_e2e_fixture_lua_app_id(void);
+const char *h2_gizclaw_e2e_fixture_lua_archive_sha256(void);
+const char *h2_gizclaw_e2e_fixture_lua_entry_sha256(void);
+const char *h2_gizclaw_e2e_fixture_lua_frame_sha256(void);
 
 typedef struct h2_gizclaw_e2e_result {
   size_t selected;

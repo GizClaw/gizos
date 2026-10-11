@@ -112,6 +112,9 @@ H2_GIZCLAW_ASSERT_TOOL(AUDIOPLAYER_PLAYLIST_SET);
 H2_GIZCLAW_ASSERT_TOOL(AUDIOPLAYER_PLAYLIST_APPEND);
 H2_GIZCLAW_ASSERT_TOOL(RUN_WORKSPACE_SET);
 H2_GIZCLAW_ASSERT_TOOL(SOCIAL_PING);
+H2_GIZCLAW_ASSERT_TOOL(LUA_APP_LIST);
+H2_GIZCLAW_ASSERT_TOOL(LUA_APP_INSTALL);
+H2_GIZCLAW_ASSERT_TOOL(LUA_APP_RUN);
 #undef H2_GIZCLAW_ASSERT_TOOL
 
 #define H2_GIZCLAW_ASSERT_RPC_STATUS_SAME(name)                                \
@@ -182,8 +185,8 @@ typedef struct h2_gizclaw_tool_binding {
 struct h2_gizclaw_client {
   struct h2_gizclaw_client *next_client;
   h2_gizclaw_config_t config;
-  gzc_tool_handler_t tools[H2_GIZCLAW_TOOL_SOCIAL_PING];
-  h2_gizclaw_tool_binding_t tool_bindings[H2_GIZCLAW_TOOL_SOCIAL_PING];
+  gzc_tool_handler_t tools[H2_GIZCLAW_TOOL_LUA_APP_RUN];
+  h2_gizclaw_tool_binding_t tool_bindings[H2_GIZCLAW_TOOL_LUA_APP_RUN];
   gzc_platform_t platform;
   gzc_platform_crypto_t crypto;
   gzc_http_vtable_t http;
@@ -1998,11 +2001,11 @@ static void h2_gzc_peer_close(gzc_rtc_peer_t *peer) {
 
 int h2_gizclaw_tools_validate_internal(
     const h2_gizclaw_tool_handler_t *handlers, size_t count) {
-  if ((count && !handlers) || count > H2_GIZCLAW_TOOL_SOCIAL_PING)
+  if ((count && !handlers) || count > H2_GIZCLAW_TOOL_LUA_APP_RUN)
     return H2_PAL_ERR_INVALID_ARG;
   for (size_t i = 0; i < count; ++i) {
     if (handlers[i].tool < H2_GIZCLAW_TOOL_INFO_GET ||
-        handlers[i].tool > H2_GIZCLAW_TOOL_SOCIAL_PING || !handlers[i].invoke)
+        handlers[i].tool > H2_GIZCLAW_TOOL_LUA_APP_RUN || !handlers[i].invoke)
       return H2_PAL_ERR_INVALID_ARG;
     for (size_t j = 0; j < i; ++j)
       if (handlers[i].tool == handlers[j].tool)
@@ -2024,6 +2027,14 @@ static int h2_gizclaw_config_valid(const h2_gizclaw_config_t *config) {
 
 int h2_gizclaw_client_init(const h2_gizclaw_config_t *config,
                            h2_gizclaw_client_t **out_client) {
+  return h2_gizclaw_client_init_with_lua_stream_internal(config, NULL,
+                                                         out_client);
+}
+
+int h2_gizclaw_client_init_with_lua_stream_internal(
+    const h2_gizclaw_config_t *config,
+    const gzc_rpc_stream_provider_t *provider,
+    h2_gizclaw_client_t **out_client) {
   if (!h2_gizclaw_config_valid(config) || out_client == NULL ||
       h2_gizclaw_tools_validate_internal(
           config->tool_handlers, config->tool_handler_count) != H2_PAL_OK ||
@@ -2103,6 +2114,7 @@ int h2_gizclaw_client_init(const h2_gizclaw_config_t *config,
   }
   gzc_config.tool_handlers = config->tool_handler_count ? client->tools : NULL;
   gzc_config.tool_handler_count = config->tool_handler_count;
+  gzc_config.lua_app_install = provider;
   int rc = gzc_client_create(&gzc_config, &client->gzc);
   if (rc != GZC_OK) {
     h2_pal_mem_free(config->allocator, client);

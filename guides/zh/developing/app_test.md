@@ -466,11 +466,11 @@ Testing PAL 目前有两个独立 target，均不依赖 LVGL 或 Memory driver�
 | Task / Sync | `h2_app_test_task.h`、`h2_app_test_sync.h` | 串行生命周期测试：显式执行 entry、start/join 故障、mutex ownership；不模拟并发 |
 | WebRTC decorator | `h2_app_test_webrtc.h` | 委托真实／fake provider，包装 peer/channel 与 owned event，同步观察事件 |
 | Preference | `h2_app_test_pref.h` | namespace/key 隔离，bool/i32/u32/string/blob，事务 commit，按 namespace 和修改 key 筛选 commit 故障 |
-| FS | `h2_app_test_fs.h` | 内存文件读写、seek/stat/remove/rename、短读、close/sync 故障 |
+| FS | `h2_app_test_fs.h` | 内存文件与目录、seek/stat/remove/rename、短读、close/sync 故障 |
 | Wi-Fi / Settings | `h2_app_test_wifi.h` | scan 列表与过滤、连接请求、显式状态、保存／忘记网络 |
 | Modem | `h2_app_test_modem.h` | 状态／版本输入、dial/answer/hangup 请求与失败、scenario 紧急号码表、URL OTA 请求记录与状态／失败输入 |
 | Power | `h2_app_test_power.h` | capabilities/boot info、hold、reboot/sleep/shutdown 意图、深睡定时唤醒时长 |
-| Display | `h2_app_test_display.h` | open/close、亮度值及失败；不绘制像素 |
+| Display | `h2_app_test_display.h` | open/close、亮度值及失败；可选校验并计数 RGB565 提交，不保留像素 |
 | Periph / Button / Input / PWM | `h2_app_test_periph.h` | 可配置 ID registry、按键状态、电量／温度、振动 duty |
 | Audio fake | `h2_app_test_audio_fake.h` | 无硬件 mic/speaker/track、音量、静音输入、输出字节、失败与 ownership |
 | Crypto fixture | `h2_app_test_crypto.h` | 显式随机字节序列和已知 X25519 keypair，供 identity 存取测试 |
@@ -489,7 +489,7 @@ H106 Host 对 Timer、HTTP、WebRTC、NFC 等未实现能力继续选择 canonic
 
 Wi-Fi connect 和 Modem call 成功只表示操作被接受，不自动生成 GOT_IP 或通话完成； scenario 明确配置后续 PAL status，并通过 Runtime test control 注入相应 event。 Power fake 记录 transition 意图，不重启 Host，不自动增加 boot_count。这样不会把一个成功的 API 返回值当成完整异步产品结果。
 
-Preference writer 的修改在 commit 前只对该 writer 可见，reader 读取已提交数据。 commit 失败保留待提交修改供重试，close 放弃未提交修改。FS 仅模拟 exact-path regular file，目录操作不支持；所有容量和借用关系由 public header 定义。
+Preference writer 的修改在 commit 前只对该 writer 可见，reader 读取已提交数据。 commit 失败保留待提交修改供重试，close 放弃未提交修改。FS 模拟 exact-path 文件与目录，mkdir 对已有目录幂等，stat 区分目录，非空目录不能 remove；directory clear 与 rename 仍 unsupported。Display 默认不支持 draw/present；显式 `accept_bitmaps` 只校验 RGB565 范围与 stride 并计数，golden 像素来自 renderer 自己的成功-present observer。所有容量和借用关系由 public header 定义。
 
 ### Audio decorator 接线
 

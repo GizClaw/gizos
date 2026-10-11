@@ -6,15 +6,16 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-#define H2_APP_TEST_FS_FILES_MAX 16u
+#define H2_APP_TEST_FS_FILES_MAX 128u
 #define H2_APP_TEST_FS_PATH_MAX 127u
-/** In-memory regular files keyed by exact path (no directory normalization).
- * One open handle per path. write/seek are bounded by max_file_bytes (default
- * 1 MiB); sparse gaps read as zero. remove/rename reject open files. mkdir and
- * directory clear are unsupported. Paths/data are copied, never host files.
- * max_read_bytes limits each successful read for partial-read tests
- * (0=unlimited). Configure controls while quiescent; follow fault.h
- * serialization rules. */
+/** In-memory files and directories keyed by exact path (no directory
+ * normalization). One open handle per path. write/seek are bounded by
+ * max_file_bytes (default 1 MiB); sparse gaps read as zero. remove/rename
+ * reject open files. mkdir is idempotent for existing directories; removing
+ * nonempty directories fails. Directory clear and directory rename are
+ * unsupported. Paths/data are copied, never host files. max_read_bytes limits
+ * each successful read for partial-read tests (0=unlimited). Configure controls
+ * while quiescent; follow fault.h serialization rules. */
 typedef struct h2_app_test_fs {
   h2_pal_fs_api_t api;
   const h2_pal_mem_api_t *mem;

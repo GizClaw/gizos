@@ -52,6 +52,12 @@ gizclaw_e2e_desktop_live_test(
 )
 
 gizclaw_e2e_desktop_live_test(
+    name = "gizclaw_h2peer_lua_apps_live_test",
+    app = "//projects/e2e/apps/gizclaw/app:lua_apps_app",
+    suite = "lua-apps",
+)
+
+gizclaw_e2e_desktop_live_test(
     name = "gizclaw_pion_live_test",
     backend = "pion",
     suite = "firmware-voice",

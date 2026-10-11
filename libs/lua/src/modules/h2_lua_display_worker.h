@@ -13,6 +13,9 @@
 typedef struct h2_lua_display_worker {
   const h2_runtime_t *runtime;
   const h2_pal_mem_api_t *allocator;
+  h2_lua_display_present_fn on_present;
+  void *present_user;
+  h2_lua_job_id_t job_id;
   h2_pal_task_t *task;
   h2_pal_semaphore_t *wake;
   h2_atomic_int_t phase;

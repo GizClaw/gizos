@@ -3,6 +3,7 @@
 #include "h2_gizclaw_e2e_desktop_options.h"
 
 #include "h2_corehttp.h"
+#include "h2_app_test_display.h"
 #include "h2_desktop_app_support.h"
 #include "h2_desktop_platform.h"
 #include "h2_gizclaw_e2e.h"
@@ -13,10 +14,12 @@
 
 #include <algorithm>
 #include <csignal>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <filesystem>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -84,6 +87,11 @@ struct DesktopSession {
   std::string fence_first_id;
   std::string fence_second_id;
   std::vector<uint8_t> pcm;
+  std::vector<uint8_t> root_ca;
+  std::string storage_root;
+  bool storage_owned = false;
+  std::unique_ptr<h2::desktop::OwnedFilesystem> filesystem;
+  h2_app_test_display_t display = {};
   h2::desktop::OwnedNetworkServices network;
   h2_corehttp_t *http_provider = nullptr;
   h2_pal_http_api_t http_api = {};
@@ -105,7 +113,15 @@ struct DesktopSession {
 #endif
     h2_corehttp_destroy(http_provider);
     http_provider = nullptr;
-    return network.reset();
+    int rc = network.reset();
+    if (rc == H2_PAL_OK && storage_owned) {
+      filesystem.reset();
+      std::error_code error;
+      std::filesystem::remove_all(storage_root, error);
+      if (error) rc = H2_PAL_ERR_IO;
+      else { storage_root.clear(); storage_owned = false; }
+    }
+    return rc;
   }
 
   ~DesktopSession() {
@@ -263,6 +279,17 @@ int run_desktop(int argc, char **argv) {
     session->fence_second_id = options.fence_second_id;
   }
   const uint32_t suites = options.suites;
+  const char *ca_hex = h2_gizclaw_e2e_fixture_root_ca_hex();
+  const size_t ca_size = std::strlen(ca_hex);
+  if (ca_size % 2u) return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
+  session->root_ca.resize(ca_size / 2u);
+  for (size_t i = 0; i < ca_size; i += 2u) {
+    const char *digits = "0123456789abcdef";
+    const char *high = std::strchr(digits, ca_hex[i]);
+    const char *low = std::strchr(digits, ca_hex[i + 1u]);
+    if (!high || !low) return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
+    session->root_ca[i / 2u] = static_cast<uint8_t>((high - digits) * 16 + (low - digits));
+  }
   auto &pcm = session->pcm;
   if ((suites & (H2_GIZCLAW_E2E_SUITE_RPC | H2_GIZCLAW_E2E_SUITE_VOICE)) !=
           0u &&
@@ -286,8 +313,8 @@ int run_desktop(int argc, char **argv) {
       .time = h2_desktop_platform_time_api(),
       .log = h2_desktop_platform_log_api(),
       .tls_verify = H2_PAL_NET_TLS_VERIFY_DEFAULT,
-      .root_ca_pem = nullptr,
-      .root_ca_pem_len = 0u,
+      .root_ca_pem = session->root_ca.empty() ? nullptr : session->root_ca.data(),
+      .root_ca_pem_len = session->root_ca.size(),
       .max_header_bytes = 0u,
       .max_redirects = 0u,
       .default_timeout_ms = 0u,
@@ -325,8 +352,25 @@ int run_desktop(int argc, char **argv) {
 #endif
 
   auto &runtime = session->runtime;
+  if (rc == H2_PAL_OK && (suites & H2_GIZCLAW_E2E_SUITE_LUA_APPS) != 0u) {
+    const auto nonce = std::chrono::steady_clock::now().time_since_epoch().count();
+    session->storage_root = (std::filesystem::temp_directory_path() /
+        ("gizos-lua-e2e-" + std::to_string(nonce))).string();
+    if (!std::filesystem::create_directory(session->storage_root)) rc = H2_PAL_ERR_IO;
+    else session->storage_owned = true;
+    if (rc == H2_PAL_OK) {
+      session->filesystem = std::make_unique<h2::desktop::OwnedFilesystem>();
+      const h2::desktop::FilesystemMount mount = {session->storage_root.c_str(), "/data"};
+      const h2::desktop::Layout layout = {"gizclaw-lua-e2e", "Lua E2E", 368, 448, &mount, 1, nullptr, 0, nullptr};
+      rc = h2::desktop::open_filesystem(layout, session->filesystem.get());
+      h2_app_test_display_init(&session->display);
+      session->display.accept_bitmaps = true;
+      session->display.info = {368, 448, H2_DISPLAY_PIXEL_RGB565};
+    }
+  }
   if (rc == H2_PAL_OK) {
-    h2_runtime_config_t runtime_config = h2::desktop::runtime_config(nullptr);
+    h2_runtime_config_t runtime_config = h2::desktop::runtime_config(session->filesystem ? session->filesystem->api() : nullptr);
+    if (session->filesystem) runtime_config.display = &session->display.api;
     runtime_config.crypto = network.crypto();
     runtime_config.http = &http_api;
     runtime_config.net = h2::desktop::host_net_api();
@@ -353,8 +397,19 @@ int run_desktop(int argc, char **argv) {
           h2_gizclaw_e2e_fixture_profile() : nullptr,
       .app_config_expected_value = {h2_gizclaw_e2e_fixture_value(),
                                    strlen(h2_gizclaw_e2e_fixture_value())},
-      .device_api_url = std::getenv("H2_GIZCLAW_E2E_DEVICE_API_URL"),
+      .device_api_url = std::getenv("H2_GIZCLAW_E2E_DEVICE_API_URL") ?
+          std::getenv("H2_GIZCLAW_E2E_DEVICE_API_URL") : h2_gizclaw_e2e_fixture_device_api_url(),
       .device_audio_url = std::getenv("H2_GIZCLAW_E2E_AUDIO_URL"),
+      .lua_app_url = h2_gizclaw_e2e_fixture_lua_app_url(),
+      .lua_app_http_url = h2_gizclaw_e2e_fixture_lua_app_http_url(),
+      .lua_app_https_url = h2_gizclaw_e2e_fixture_lua_app_https_url(),
+      .lua_app_id = h2_gizclaw_e2e_fixture_lua_app_id(),
+      .lua_archive_sha256 = h2_gizclaw_e2e_fixture_lua_archive_sha256(),
+      .lua_entry_sha256 = h2_gizclaw_e2e_fixture_lua_entry_sha256(),
+      .lua_frame_sha256 = h2_gizclaw_e2e_fixture_lua_frame_sha256(),
+      .lua_record_golden = std::getenv("H2_GIZCLAW_E2E_LUA_RECORD_GOLDEN") &&
+          !std::strcmp(std::getenv("H2_GIZCLAW_E2E_LUA_RECORD_GOLDEN"), "1"),
+      .tls_root_ca_hex = h2_gizclaw_e2e_fixture_root_ca_hex(),
       .fence_workflow_name = session->fence_workflow_name.c_str(),
       .fence_first_id = session->fence_first_id.c_str(),
       .fence_second_id = session->fence_second_id.c_str(),

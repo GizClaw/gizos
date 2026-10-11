@@ -1,4 +1,4 @@
-load("//libs/lua:lua_app.bzl", "lua_app")
+load("//libs/lua:lua_app.bzl", "lua_app", "lua_app_index")
 load("//tools/bazel:firmware.bzl", "firmware_version")
 
 package(default_visibility = ["//libs/lua:__pkg__"])
@@ -10,8 +10,36 @@ firmware_version(
 
 lua_app(
     name = "abc",
+    description = "Preinstalled Lua fixture",
+    display_name = "ABC",
     entry = "abc.lua",
     version = ":abc_version",
+)
+
+lua_app_index(
+    name = "preinstalled_index",
+    apps = [
+        ":abc",
+        ":xyz",
+    ],
+    root = "/preinstalled",
+)
+
+filegroup(
+    name = "abc_installed",
+    srcs = [":abc"],
+    output_group = "installed_files",
+)
+
+filegroup(
+    name = "xyz_installed_entry",
+    srcs = [":xyz"],
+    output_group = "installed_entry",
+)
+
+filegroup(
+    name = "xyz_installed_resource",
+    srcs = ["xyz/tone.pcm"],
 )
 
 firmware_version(
