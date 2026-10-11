@@ -110,9 +110,93 @@ static void check_version(h2_lua_apps_t *apps, const char *version) {
   assert(h2_lua_apps_get(apps, "demo", &found) == 0 &&
          !strcmp(found.entry, info[0].entry));
 }
+
+static const h2_pal_fs_vtable_t *base_fs;
+static void normalize(const char *input, char out[H2_LUA_APP_PATH_MAX]) {
+  size_t at = 0;
+  for (size_t i = 0;; ++i) {
+    if (!input[i] || input[i] == '/')
+      while (at && out[at - 1u] == '.')
+        --at;
+    assert(at < H2_LUA_APP_PATH_MAX);
+    out[at++] = input[i];
+    if (!input[i])
+      break;
+  }
+}
+static int alias_mkdir(void *user, const char *path) {
+  char normalized[H2_LUA_APP_PATH_MAX];
+  normalize(path, normalized);
+  return base_fs->mkdir(user, normalized);
+}
+static int alias_open(void *user, const char *path, h2_pal_fs_open_mode_t mode,
+                       h2_pal_fs_file_t **out) {
+  char normalized[H2_LUA_APP_PATH_MAX];
+  normalize(path, normalized);
+  return base_fs->open(user, normalized, mode, out);
+}
+static int alias_stat(void *user, const char *path, h2_pal_fs_stat_t *out) {
+  char normalized[H2_LUA_APP_PATH_MAX];
+  normalize(path, normalized);
+  return base_fs->stat(user, normalized, out);
+}
+static int alias_remove(void *user, const char *path) {
+  char normalized[H2_LUA_APP_PATH_MAX];
+  normalize(path, normalized);
+  return base_fs->remove(user, normalized);
+}
+static int alias_rename(void *user, const char *from, const char *to) {
+  char normalized_from[H2_LUA_APP_PATH_MAX], normalized_to[H2_LUA_APP_PATH_MAX];
+  normalize(from, normalized_from);
+  normalize(to, normalized_to);
+  return base_fs->rename(user, normalized_from, normalized_to);
+}
+static void check_directory_alias(const h2_pal_sync_api_t *sync) {
+  h2_app_test_fs_t fs;
+  assert(h2_app_test_fs_init(&fs, &storage) == 0);
+  base_fs = fs.api.vtable;
+  h2_pal_fs_vtable_t aliases = *base_fs;
+  aliases.mkdir = alias_mkdir;
+  aliases.open = alias_open;
+  aliases.stat = alias_stat;
+  aliases.remove = alias_remove;
+  aliases.rename = alias_rename;
+  fs.api.vtable = &aliases;
+  h2_lua_apps_config_t config = {.allocator = &allocator,
+                                 .fs = &fs.api,
+                                 .sync = sync,
+                                 .install_root = "/apps"};
+  h2_lua_apps_t *apps = NULL;
+  h2_lua_app_info_t info, original;
+  assert(h2_lua_apps_create(&config, &apps) == 0);
+  http_t h = {.archive = fixture_valid,
+              .size = sizeof(fixture_valid), .chunk = 7};
+  h2_pal_http_api_t http = {.user = &h, .vtable = &http_vtable};
+  for (unsigned generation = 0; generation < 2u; ++generation) {
+    h = (http_t){.archive = generation ? fixture_update : fixture_valid,
+                  .size = generation ? sizeof(fixture_update)
+                                     : sizeof(fixture_valid), .chunk = 7};
+    assert(h2_lua_apps_install(apps, &http, URI("https://example.test/app"),
+                               NULL, 1000, NULL, NULL, &original) == 0);
+    h = (http_t){.archive = fixture_alias_id,
+                  .size = sizeof(fixture_alias_id), .chunk = 7};
+    assert(h2_lua_apps_install(apps, &http, URI("https://example.test/app"),
+                               NULL, 1000, NULL, NULL, &info) ==
+           H2_PAL_ERR_FORMAT);
+    check_version(apps, generation ? "2.0.0" : "1.0.0");
+    expect_file(&fs.api, original.entry, source, sizeof(source) - 1u);
+  }
+  assert(h2_lua_apps_destroy(apps) == 0);
+  assert(h2_lua_apps_create(&config, &apps) == 0);
+  check_version(apps, "2.0.0");
+  expect_file(&fs.api, original.entry, source, sizeof(source) - 1u);
+  assert(h2_lua_apps_destroy(apps) == 0);
+  h2_app_test_fs_deinit(&fs);
+}
 int main(void) {
   const h2_pal_mem_api_t *mem = &allocator;
   const h2_pal_sync_api_t *sync = h2_desktop_platform_sync_api();
+  check_directory_alias(sync);
   h2_app_test_fs_t fs;
   /* Backend storage of the extracted file is independent of installer
    * scratch. The installer must never allocate this archive in one buffer. */

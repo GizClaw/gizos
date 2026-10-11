@@ -592,15 +592,15 @@ int h2_lua_apps_publish(h2_lua_apps_t *apps, const app_record_t *record,
   return rc;
 }
 
-int h2_lua_apps_remove_slot(h2_lua_apps_t *apps, const char *root) {
+static int slot(h2_lua_apps_t *apps, const char *root, const char *app_id,
+                 bool remove) {
   app_manifest_t *m = h2_pal_mem_alloc(apps->config.allocator, sizeof(*m));
   if (m == NULL)
     return H2_PAL_ERR_NO_MEMORY;
-  char temporary[H2_LUA_APP_PATH_MAX];
-  if (h2_lua_apps_join(temporary, root, "manifest.tmp") == H2_PAL_OK)
-    (void)h2_pal_fs_remove(apps->config.fs, temporary);
   int rc = read_manifest(apps, root, m);
-  if (rc == H2_PAL_OK) {
+  if (rc == H2_PAL_OK && strcmp(m->info.app_id, app_id))
+    rc = H2_PAL_ERR_FORMAT;
+  if (rc == H2_PAL_OK && remove) {
     for (size_t i = 0; i < m->count; ++i) {
       char path[H2_LUA_APP_PATH_MAX];
       rc = h2_lua_apps_join(path, root, m->files[i].path);
@@ -624,8 +624,21 @@ int h2_lua_apps_remove_slot(h2_lua_apps_t *apps, const char *root) {
       rc = h2_pal_fs_remove(apps->config.fs, path);
   } else if (rc == H2_PAL_ERR_NOT_FOUND)
     rc = H2_PAL_OK;
-  if (rc == H2_PAL_OK)
+  if (rc == H2_PAL_OK && remove) {
+    char temporary[H2_LUA_APP_PATH_MAX];
+    if (h2_lua_apps_join(temporary, root, "manifest.tmp") == H2_PAL_OK)
+      (void)h2_pal_fs_remove(apps->config.fs, temporary);
     (void)h2_pal_fs_remove(apps->config.fs, root);
+  }
   h2_pal_mem_free(apps->config.allocator, m);
   return rc;
+}
+
+int h2_lua_apps_check_slot(h2_lua_apps_t *apps, const char *root,
+                            const char *app_id) {
+  return slot(apps, root, app_id, false);
+}
+int h2_lua_apps_remove_slot(h2_lua_apps_t *apps, const char *root,
+                             const char *app_id) {
+  return slot(apps, root, app_id, true);
 }

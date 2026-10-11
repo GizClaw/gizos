@@ -56,7 +56,10 @@ int h2_lua_apps_resolve(h2_lua_apps_t *apps, app_manifest_t *manifest,
                         const char *root);
 int h2_lua_apps_publish(h2_lua_apps_t *apps, const app_record_t *record,
                         size_t position);
-int h2_lua_apps_remove_slot(h2_lua_apps_t *apps, const char *root);
+int h2_lua_apps_check_slot(h2_lua_apps_t *apps, const char *root,
+                            const char *app_id);
+int h2_lua_apps_remove_slot(h2_lua_apps_t *apps, const char *root,
+                             const char *app_id);
 int h2_lua_apps_try_lock(h2_lua_apps_t *apps);
 void h2_lua_apps_unlock(h2_lua_apps_t *apps);
 int h2_lua_apps_find(const h2_lua_apps_t *apps, const char *id);

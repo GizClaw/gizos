@@ -411,6 +411,18 @@ static int commit(install_t *s, h2_lua_app_info_t *out) {
     return H2_PAL_ERR_NO_SPACE;
   int old_slot = position < 0 ? -1 : apps->records[position].slot;
   int slot = old_slot == 0 ? 1 : 0;
+  /* Directory names themselves may alias on the backend. Check both slots
+   * before any cleanup so a new identity cannot erase another app's files. */
+  for (unsigned candidate = 0; candidate < 2u; ++candidate) {
+    char relative[40], location[H2_LUA_APP_PATH_MAX];
+    (void)snprintf(relative, sizeof(relative), "%s/%u",
+                     s->parsed.info.app_id, candidate);
+    int rc = h2_lua_apps_join(location, apps->root, relative);
+    if (rc == H2_PAL_OK)
+      rc = h2_lua_apps_check_slot(apps, location, s->parsed.info.app_id);
+    if (rc != H2_PAL_OK)
+      return rc;
+  }
   char name[40], base[H2_LUA_APP_PATH_MAX] = {0},
                  manifest_path[H2_LUA_APP_PATH_MAX],
                  manifest_tmp[H2_LUA_APP_PATH_MAX];
@@ -418,7 +430,7 @@ static int commit(install_t *s, h2_lua_app_info_t *out) {
                  slot == 1 ? '1' : '0');
   int rc = h2_lua_apps_join(base, apps->root, name);
   if (rc == H2_PAL_OK)
-    rc = h2_lua_apps_remove_slot(apps, base);
+    rc = h2_lua_apps_remove_slot(apps, base, s->parsed.info.app_id);
   if (rc == H2_PAL_OK)
     rc = h2_lua_apps_join(manifest_path, base, "manifest.json");
   /* Persist the cleanup inventory before moving any staged payload. A power
@@ -464,7 +476,7 @@ static int commit(install_t *s, h2_lua_app_info_t *out) {
   }
   if (rc != H2_PAL_OK) {
     if (*base)
-      (void)h2_lua_apps_remove_slot(apps, base);
+      (void)h2_lua_apps_remove_slot(apps, base, s->parsed.info.app_id);
     return rc;
   }
   *out = s->parsed.info;
@@ -475,7 +487,7 @@ static int commit(install_t *s, h2_lua_app_info_t *out) {
     (void)snprintf(name, sizeof(name), "%s/%c", s->parsed.info.app_id,
                    old_slot == 1 ? '1' : '0');
     if (h2_lua_apps_join(base, apps->root, name) == H2_PAL_OK)
-      (void)h2_lua_apps_remove_slot(apps, base);
+      (void)h2_lua_apps_remove_slot(apps, base, s->parsed.info.app_id);
   }
   return H2_PAL_OK;
 }

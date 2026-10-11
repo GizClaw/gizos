@@ -425,8 +425,10 @@ int run_desktop(int argc, char **argv) {
       .lua_archive_sha256 = h2_gizclaw_e2e_fixture_lua_archive_sha256(),
       .lua_entry_sha256 = h2_gizclaw_e2e_fixture_lua_entry_sha256(),
       .lua_frame_sha256 = h2_gizclaw_e2e_fixture_lua_frame_sha256(),
+      .lua_storage_root = nullptr,
       .lua_record_golden = std::getenv("H2_GIZCLAW_E2E_LUA_RECORD_GOLDEN") &&
           !std::strcmp(std::getenv("H2_GIZCLAW_E2E_LUA_RECORD_GOLDEN"), "1"),
+      .lua_preserve_storage = false,
       .tls_root_ca_hex = h2_gizclaw_e2e_fixture_root_ca_hex(),
       .fence_workflow_name = session->fence_workflow_name.c_str(),
       .fence_first_id = session->fence_first_id.c_str(),

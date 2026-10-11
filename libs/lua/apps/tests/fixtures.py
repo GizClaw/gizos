@@ -11,12 +11,13 @@ import zlib
 
 def package(version="1.0.0", *, source=b'assert(args.mode == "single")\n',
             name="demo.lua", hash_bad=False, extra=False, duplicate=False,
-            terminator=1024, trailing=b"", data=False, unicode_name=False):
+            terminator=1024, trailing=b"", data=False, unicode_name=False,
+            app_id="demo"):
     files = {name: source}
     if data:
         files["demo/资源.txt" if unicode_name else "demo/nested/readme.txt"] = b"immutable resource"
-    manifest = {"format": 1, "type": "lua-app", "app_id": "demo",
-                "version": version, "entry": "demo.lua",
+    manifest = {"format": 1, "type": "lua-app", "app_id": app_id,
+                "version": version, "entry": app_id + ".lua",
                 "data_dir": "demo" if data else None,
                 "files": [{"path": key, "size": len(value),
                            "sha256": "0" * 64 if hash_bad else hashlib.sha256(value).hexdigest()}
@@ -45,6 +46,7 @@ def main():
     fixtures = {}
     for name, options in {
         "valid": {}, "update": {"version": "2.0.0"},
+        "alias_id": {"app_id": "demo.", "name": "demo..lua"},
         "data": {"data": True}, "unicode": {"data": True, "unicode_name": True}, "hash": {"hash_bad": True},
         "extra": {"extra": True}, "duplicate": {"duplicate": True},
         "truncated_tar": {"terminator": 512}, "unaligned_tar": {"trailing": b"\0"},
