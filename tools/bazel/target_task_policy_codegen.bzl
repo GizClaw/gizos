@@ -273,6 +273,18 @@ def _route(name):
         return _literal(name[:-1]), "H2_TRIE_ROUTE_PREFIX"
     return _literal(name), "H2_TRIE_ROUTE_EXACT"
 
+def _route_capacity(tasks):
+    keys = [task.name[:-1] if task.name.endswith("*") else task.name for task in tasks]
+
+    # sizeof keeps the conservative byte bound for non-ASCII C literals.
+    if [key for key in keys if [char for char in key.elems() if char < " " or char > "~"]]:
+        return "1u" + "".join([" + H2_TRIE_LITERAL_NODE_COUNT(%s)" % _literal(key) for key in keys])
+    prefixes = {"": True}
+    for key in keys:
+        for end in range(1, len(key) + 1):
+            prefixes[key[:end]] = True
+    return "%du" % len(prefixes)
+
 def _install_log(flavor, target_directory, stage):
     if stage:
         return [
@@ -351,17 +363,16 @@ def render_policy_source(
             "",
             "static const h2_trie_route_t s_routes[] = {",
         ])
-        capacity = ["1u"]
         for task in tasks:
             key, mode = _route(task.name)
             lines.append("    {%s, %s, handle_policy," % (key, mode))
             lines.append("     &%s}," % shared[_policy_key(task.policy)])
-            capacity.append("H2_TRIE_LITERAL_NODE_COUNT(%s)" % key)
         lines.extend([
             "};",
             "",
             "enum {",
-            "  ROUTE_NODE_CAPACITY = " + ("\n" + " " * 24 + "+ ").join(capacity) + ",",
+            "  /* Share ASCII prefixes; otherwise preserve the C literal byte bound. */",
+            "  ROUTE_NODE_CAPACITY = " + _route_capacity(tasks) + ",",
             "};",
             "",
             "%sstatic h2_trie_node_t s_route_nodes[ROUTE_NODE_CAPACITY];" % flavor.route_storage,

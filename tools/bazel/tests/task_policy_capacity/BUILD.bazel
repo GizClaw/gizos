@@ -1,0 +1,82 @@
+load("@rules_python//python:defs.bzl", "py_test")
+load("//tools/bazel:target_task_policy.bzl", "bk7258_target_task_policy", "esp_target_task_policy")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
+
+h2_tasks(
+    name = "tasks",
+    tasks = [
+        "fixture",
+        "fixture/load",
+        "fixture/save",
+        "fixture/nested/child",
+        "fixture/nested/leaf",
+    ],
+)
+
+_POLICIES = [
+    "fixture 4 0 4096 psram",
+    "fixture/load 4 0 4096 psram",
+    "fixture/save 4 0 4096 psram",
+    "fixture/nested/* 5 0 8192 psram",
+    "fixture/nested/leaf 6 0 16384 psram",
+]
+
+esp_target_task_policy(
+    name = "esp",
+    default_policy = "4 0 4096 psram",
+    directory = "esp",
+    graph = [":tasks"],
+    policies = _POLICIES,
+)
+
+bk7258_target_task_policy(
+    ap_default_policy = "4 0 4096 psram",
+    ap_name = "ap",
+    ap_policies = _POLICIES,
+    cp_default_policy = "4 4096 default",
+    cp_name = "cp",
+    directory = "bk",
+    graph = [":tasks"],
+)
+
+h2_tasks(
+    name = "unicode_tasks",
+    tasks = [
+        "µ/load",
+        "µ/save",
+    ],
+)
+
+esp_target_task_policy(
+    name = "unicode",
+    default_policy = "4 0 4096 psram",
+    directory = "unicode",
+    graph = [":unicode_tasks"],
+    policies = [
+        "µ/load 4 0 4096 psram",
+        "µ/save 5 0 8192 psram",
+    ],
+)
+
+py_test(
+    name = "capacity_test",
+    srcs = ["test_capacity.py"],
+    args = [
+        "$(location :esp_source)",
+        "$(location :ap_source)",
+        "$(location :unicode_source)",
+    ],
+    data = [
+        ":ap_source",
+        ":esp_source",
+        ":unicode_source",
+    ],
+    legacy_create_init = 0,
+    main = "test_capacity.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
