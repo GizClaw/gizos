@@ -1,15 +1,21 @@
 #ifndef H2_ESP_LIBCO_STACK_GUARD_TEST_SDK_H
 #define H2_ESP_LIBCO_STACK_GUARD_TEST_SDK_H
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <assert.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#define CONFIG_IDF_TARGET_ESP32S31 1
+#define CONFIG_IDF_TARGET_ARCH_RISCV 1
+#ifndef SOC_CPU_COPROC_NUM
+#define SOC_CPU_COPROC_NUM 3
+#endif
 #define CONFIG_FREERTOS_WATCHPOINT_END_OF_STACK 1
 #define configASSERT assert
-#define SOC_CPU_HAS_FPU 1
-#define SOC_CPU_HAS_PIE 1
-#define SOC_CPU_HAS_HWLOOP 1
+#define SOC_CPU_HAS_FPU (SOC_CPU_COPROC_NUM > 0)
+#define SOC_CPU_HAS_PIE (SOC_CPU_COPROC_NUM > 0)
+#define SOC_CPU_HAS_HWLOOP (SOC_CPU_COPROC_NUM > 0)
 typedef struct { uint32_t sa_enable; void *sa_tcbstack; uint32_t sa_allocator; void *sa_coprocs[3]; } RvCoprocSaveArea;
 typedef int portMUX_TYPE;
 #define portMUX_INITIALIZER_UNLOCKED 0

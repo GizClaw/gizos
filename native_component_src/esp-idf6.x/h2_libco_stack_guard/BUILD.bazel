@@ -36,3 +36,20 @@ firmware_native_component(
     )
     for suffix, enabled in [("", "1"), ("_no_hardware", "0")]
 ]
+
+cc_test(
+    name = "libco_no_coprocessor_test",
+    srcs = [
+        "src/h2_esp_libco_stack_guard.c", "src/h2_esp_libco_stack_guard.h",
+        "tests/test_no_coprocessor.c",
+        "tests/libco_stack_sdk/h2_esp_libco_stack_guard_test_sdk.h",
+    ],
+    includes = ["src", "tests/libco_stack_sdk"],
+    conlyopts = H2_C11_OPTS + ["-DH2_ESP_LIBCO_STACK_GUARD_HOST_TEST=1", "-DSOC_CPU_COPROC_NUM=0"],
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)

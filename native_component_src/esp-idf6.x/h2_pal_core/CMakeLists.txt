@@ -72,6 +72,7 @@ set(H2_ESP_PLATFORM_CORE_REQUIRES
   bt
   esp_event
   esp_netif
+  esp_psram
   esp_timer
   esp_wifi
   app_update
@@ -98,6 +99,10 @@ if(H2_ESP_PLATFORM_ENABLE_WEBRTC)
   list(APPEND H2_ESP_PLATFORM_CORE_SRCS "src/h2_esp_platform_webrtc.c")
 else()
   list(APPEND H2_ESP_PLATFORM_CORE_SRCS "src/h2_esp_platform_webrtc_unsupported.c")
+endif()
+
+if(IDF_TARGET MATCHES "^(esp32p4|esp32c5|esp32s31)$")
+  list(APPEND H2_ESP_PLATFORM_CORE_REQUIRES h2_libco_stack_guard)
 endif()
 
 include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native_component.cmake")

@@ -1,3 +1,6 @@
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include "h2_test_allocator.h"
 #include "h2_esp_platform_core.h"
 

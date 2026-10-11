@@ -84,10 +84,11 @@ application, or packaging. Issue #835 owns Windows PAL integration.
 
 ## ESP-IDF external builds
 
-Source `.env/devenv` before requesting an ESP build. The sibling
-`firmware-devenv` provider exports `IDF_PATH` and
-`IDF_TOOLS_PATH` for Bazel. The tools repository derives the unique
-`python_env/idf6.0_py*_env` installation from that tools root, validates it
+Source `.env/devenv` for the native development tools, then explicitly select
+a clean ESP-IDF 6.2 checkout matching `native_versions/esp_idf_commit.txt`
+and its GCC 16.1 tools. A provider exporting an older SDK must be overridden
+with `IDF_PATH` and `IDF_TOOLS_PATH`. The tools repository derives the unique
+`python_env/idf6.2_py*_env` installation from that tools root, validates it
 against the pinned ESP-IDF constraints, and materializes versioned SDK/tool
 locators. The native action receives those locator files instead of the
 machine paths or caller `PATH`.
@@ -96,6 +97,8 @@ machine paths or caller `PATH`.
 REPO_ROOT=$PWD
 export REPO_ROOT
 . .env/devenv
+export IDF_PATH=/path/to/pinned-esp-idf-6.2
+export IDF_TOOLS_PATH=/path/to/esp-idf-6.2-tools
 bazel build --config=esp32s3  //projects/example/targets/h2loader_tar_zlib/ble-broadcaster/devkit:package
 bazel build --config=esp32p4  //projects/example/targets/h2loader_tar_zlib/display/waveshare_esp32p4_wifi6_touch_lcd_4_3:package
 ```
@@ -326,7 +329,7 @@ toolchain, checkout-cleanliness, output, package, or Release validation.
 locators. SDK commit and compiler/Python/Ninja identities are pinned in
 `native_versions/esp_idf_s31_commit.txt` and `esp_idf_s31_tool_versions.txt`.
 The SDK must be a clean checkout including submodules, with exactly one matching
-IDF 6.2 Python environment. Existing S3/P4/C5 identities remain unchanged.
+IDF 6.2 Python environment. S3/P4/C5 and S31 share the same pinned IDF 6.2 commit and GCC 16.1 tool baseline. The S31 environment aliases remain supported for existing callers.
 See the [board package](../../boards/esp_mosaico/README.md) for setup and optional
 camera integration. Native builds never flash hardware; an H2Loader artifact
 build does not qualify installation, recovery or rollback.

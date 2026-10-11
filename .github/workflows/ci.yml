@@ -568,18 +568,18 @@ jobs:
           submodules: false
           token: ${{ steps.app-token.outputs.token }}
 
-      - name: Check out ESP-IDF from Firmwares devenv
+      - name: Check out pinned ESP-IDF 6.2
         shell: bash
-        # ESP-IDF's own submodules are provisioned here, before any build. Its
-        # CMake otherwise initializes whatever is missing during configure,
-        # which writes the SDK checkout that every firmware action shares; two
-        # launchers configuring at once then race and the build fails with
-        # "Git submodule init failed". Provisioning up front leaves that check
-        # read-only and costs nothing extra, since it walks and initializes the
-        # same set either way.
         run: |
-          git -C firmware-devenv submodule update --init --depth 1 third_party/esp_idf_6.0
-          git -C firmware-devenv/third_party/esp_idf_6.0 submodule update --init --recursive
+          sdk_root="$RUNNER_TEMP/esp-idf-6.2"
+          sdk_commit="$(cat tools/bazel/native_versions/esp_idf_commit.txt)"
+          test "$sdk_commit" = "$(cat tools/bazel/native_versions/esp_idf_s31_commit.txt)"
+          git init "$sdk_root"
+          git -C "$sdk_root" remote add origin https://github.com/espressif/esp-idf.git
+          git -C "$sdk_root" fetch --depth 1 origin "$sdk_commit"
+          git -C "$sdk_root" checkout --detach FETCH_HEAD
+          git -C "$sdk_root" submodule update --init --recursive --depth 1
+          printf 'H2_ESP_IDF_SDK_ROOT=%s\n' "$sdk_root" >> "$GITHUB_ENV"
 
       - name: Restore ESP-IDF tool cache
         id: esp-idf-cache
@@ -587,28 +587,14 @@ jobs:
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: firmware-devenv/.tools/esp-idf
-          key: esp-idf-v2-${{ runner.os }}-${{ hashFiles('tools/bazel/native_versions/esp_idf_commit.txt') }}-esp32s3-esp32p4-esp32c5
+          key: esp-idf-v3-${{ runner.os }}-${{ hashFiles('tools/bazel/native_versions/esp_idf_commit.txt', 'tools/bazel/native_versions/esp_idf_tool_versions.txt') }}-esp32s3-esp32p4-esp32c5-esp32s31
 
-      - name: Install ESP-IDF tools
+      - name: Install ESP-IDF 6.2 tools
         shell: bash
         run: |
-          export IDF_TOOLS_PATH="$GITHUB_WORKSPACE/firmware-devenv/.tools/esp-idf"
-          firmware-devenv/third_party/esp_idf_6.0/install.sh esp32s3,esp32p4,esp32c5
-
-      - name: Install pinned ESP32-S31 SDK and tools
-        if: matrix.config == 'esp32s31'
-        shell: bash
-        run: |
-          sdk_root="$RUNNER_TEMP/esp-idf-s31"
-          tools_root="$RUNNER_TEMP/esp-idf-s31-tools"
-          sdk_commit="$(cat tools/bazel/native_versions/esp_idf_s31_commit.txt)"
-          git init "$sdk_root"
-          git -C "$sdk_root" remote add origin https://github.com/espressif/esp-idf.git
-          git -C "$sdk_root" fetch --depth 1 origin "$sdk_commit"
-          git -C "$sdk_root" checkout --detach FETCH_HEAD
-          git -C "$sdk_root" submodule update --init --recursive --depth 1
-          IDF_TOOLS_PATH="$tools_root" "$sdk_root/install.sh" esp32s31
-          printf 'IDF_S31_PATH=%s\nIDF_S31_TOOLS_PATH=%s\n' "$sdk_root" "$tools_root" >> "$GITHUB_ENV"
+          tools_root="$GITHUB_WORKSPACE/firmware-devenv/.tools/esp-idf"
+          IDF_TOOLS_PATH="$tools_root" "$H2_ESP_IDF_SDK_ROOT/install.sh" esp32s3,esp32p4,esp32c5,esp32s31
+          printf 'H2_ESP_IDF_TOOLS_ROOT=%s\nIDF_S31_PATH=%s\nIDF_S31_TOOLS_PATH=%s\n' "$tools_root" "$H2_ESP_IDF_SDK_ROOT" "$tools_root" >> "$GITHUB_ENV"
 
       - name: Install native compiler cache
         shell: bash
@@ -764,6 +750,10 @@ jobs:
           BAZEL_NATIVE_BUILD_JOBS: ${{ matrix.native_build_jobs }}
         run: |
           . firmware-devenv/export.sh
+          export IDF_PATH="$H2_ESP_IDF_SDK_ROOT"
+          export IDF_TOOLS_PATH="$H2_ESP_IDF_TOOLS_ROOT"
+          export IDF_S31_PATH="$H2_ESP_IDF_SDK_ROOT"
+          export IDF_S31_TOOLS_PATH="$H2_ESP_IDF_TOOLS_ROOT"
           make bazel-build BAZEL_CONFIG=${{ matrix.config }}
 
       - name: Show native compiler cache statistics

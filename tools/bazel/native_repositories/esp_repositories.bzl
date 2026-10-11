@@ -318,7 +318,7 @@ _esp_tools_repository = repository_rule(
     implementation = _esp_tools_repository_impl,
     attrs = {
         "environment_variable": attr.string(default = "IDF_TOOLS_PATH"),
-        "idf_version": attr.string(default = "6.0"),
+        "idf_version": attr.string(default = "6.2"),
         "targets": attr.string_list(default = ["esp32p4", "esp32s3"]),
         "sdk_locator": attr.label(
             allow_single_file = True,
