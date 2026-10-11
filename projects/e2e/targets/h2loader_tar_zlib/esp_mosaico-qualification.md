@@ -635,3 +635,29 @@ assertions remain active with explicit NDEBUG and optimized builds. This shared
 ESP provider change requires no public PAL API or per-board configuration change.
 Fresh S31/S3 builds and real bilateral loss/return are still required; host tests
 do not yet qualify the new callback artifact or resolve the assisted peer return.
+
+## S3 peer warm restart control and pending physical reset
+
+The clean `9fbdd654` Mosaico r24 host and experimental AMOLED r5 join each
+complete five real rounds and confirm their Apps. The candidate extends the
+existing internal-stack, full local BLE stop before restart from S31 to S3;
+other targets, disabled BLE and Hosted remain no-op profiles. All seven profiles
+pass optimized host tests, including stop/worker failure propagation and restoring
+App selection after a failed preparation. It changes no public PAL contract.
+
+AMOLED r4 lost USB management after warm launch despite functional peer traffic;
+the user's true power cycle restored confirmed App/P2 and a blank coredump.
+This does not establish a particular SDK defect. The r5 candidate passes public
+Loader self-update, independent Loader reboot and bilateral five-round control.
+The public peer Loader return produces actual lost:-10 without advertising errors;
+both public Loader returns pass, Stage clears, the original DUT dump is unchanged
+and the peer dump stays blank. The experimental source diff is bound separately
+(SHA-256 `e0f18f004dd7b6f0e294561917214cae9de8bedbd999b985988363d561d8dbe6`).
+
+A subsequent operator-reset window expired without physical loss. The peer's
+five-minute default then closed gracefully; neither timeout nor peer_closed is
+admitted as physical loss. The AMOLED launcher now selects the same existing
+15-minute hold option as Mosaico, leaving the portable default, transfer deadlines
+and assertions unchanged. New artifacts must pass a fresh operator reset, actual
+lost, post-loss advertising and both public Loader returns before Lua admission.
+Historical r24/r5 control receipts are not relabeled as final-source qualification.

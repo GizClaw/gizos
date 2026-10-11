@@ -77,12 +77,13 @@ static void image_entry(void *user) {
   printf("H2_LUA_LINK_E2E stage=summary board=%s role=%s passed=%u rounds=%u\n",
          "amoled", H2_LUA_LINK_E2E_ROLE, passed, H2_LUA_LINK_E2E_ROUNDS);
   fflush(stdout);
-  /* Final session stays up until the link drops (e.g. the peer resets). */
+  /* Match the Mosaico operator window; transfer deadlines stay unchanged. */
   (void)h2_lua_link_e2e_run(runtime, &(h2_lua_link_e2e_config_t){
                                          .role = H2_LUA_LINK_E2E_ROLE,
                                          .adv_type = H2_PAL_BLE_ADV_TYPE_EXTENDED,
                                          .scan_type = H2_PAL_BLE_SCAN_TYPE_EXTENDED,
                                          .hold = 1,
+                                         .hold_timeout_ms = 900000u,
                                      });
   hold();
 }

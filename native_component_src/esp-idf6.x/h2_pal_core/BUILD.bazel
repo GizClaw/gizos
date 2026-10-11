@@ -50,6 +50,7 @@ package(default_visibility = ["//visibility:public"])
         ],
         conlyopts = H2_C11_OPTS + [
             "-DCONFIG_IDF_TARGET_ESP32S31=" + s31,
+            "-DCONFIG_IDF_TARGET_ESP32S3=" + s3,
             "-DCONFIG_BT_NIMBLE_ENABLED=" + nimble,
             "-DCONFIG_ESP_HOSTED_ENABLE_BT_NIMBLE=" + hosted,
         ],
@@ -63,11 +64,14 @@ package(default_visibility = ["//visibility:public"])
         }),
         deps = ["//libs/pal"],
     )
-    for profile, s31, nimble, hosted in [
-        ("s31", "1", "1", "0"),
-        ("other_target", "0", "1", "0"),
-        ("no_ble", "1", "0", "0"),
-        ("hosted", "1", "1", "1"),
+    for profile, s31, s3, nimble, hosted in [
+        ("s31", "1", "0", "1", "0"),
+        ("s3", "0", "1", "1", "0"),
+        ("other_target", "0", "0", "1", "0"),
+        ("no_ble", "1", "0", "0", "0"),
+        ("s3_no_ble", "0", "1", "0", "0"),
+        ("hosted", "1", "0", "1", "1"),
+        ("s3_hosted", "0", "1", "1", "1"),
     ]
 ]
 

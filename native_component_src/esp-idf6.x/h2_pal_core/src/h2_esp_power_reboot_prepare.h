@@ -6,7 +6,8 @@
 #include <stdint.h>
 
 /* Private native preparation; ordinary task callers only. No-op on targets
- * without S31's local NimBLE controller. Errors prevent the SDK restart. */
+ * without S31/S3 local NimBLE, or when Bluetooth is Hosted. Errors prevent
+ * the SDK restart. */
 h2_pal_result_t h2_esp_power_reboot_prepare(void);
 
 /* Skip the SDK write only when both execution and next-boot selection already
