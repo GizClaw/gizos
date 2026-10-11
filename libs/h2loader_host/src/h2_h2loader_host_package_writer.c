@@ -1,6 +1,7 @@
 #include "h2_h2loader_host_package.h"
 
 #include "h2_h2loader_host_internal.h"
+#include "h2_sha256.h"
 #include "h2_bundle_segmented.h"
 
 #include <stdio.h>
@@ -184,7 +185,7 @@ static h2_pal_result_t tar_padding(package_stream_t *stream, uint64_t size) {
 
 static h2_pal_result_t hash_source(
     const h2_h2loader_host_package_source_t *source,
-    h2_h2loader_host_sha256_t *sha) {
+    h2_sha256_t *sha) {
     uint8_t buffer[PACKAGE_BUFFER_SIZE];
     uint64_t offset = 0u;
     while (offset != source->size) {
@@ -198,7 +199,7 @@ static h2_pal_result_t hash_source(
         if (read == 0u || read > take) {
             return H2_PAL_ERR_IO;
         }
-        h2_h2loader_host_sha256_update(sha, buffer, read);
+        h2_sha256_update(sha, buffer, read);
         offset += read;
     }
     return H2_PAL_OK;
@@ -265,14 +266,14 @@ static h2_pal_result_t validate_config(const h2_h2loader_host_package_writer_con
 
 typedef struct compressed_output {
     package_stream_t *outer;
-    h2_h2loader_host_sha256_t sha;
+    h2_sha256_t sha;
     uint64_t bytes;
 } compressed_output_t;
 
 static int compressed_write(void *user, const uint8_t *data, size_t len) {
     compressed_output_t *output = user;
     if (len > UINT64_MAX - output->bytes) return H2_PAL_ERR_NO_SPACE;
-    h2_h2loader_host_sha256_update(&output->sha, data, len);
+    h2_sha256_update(&output->sha, data, len);
     output->bytes += len;
     return output->outer == NULL ? H2_PAL_OK : stream_write(output->outer, data, len);
 }
@@ -292,7 +293,7 @@ static int compress_member(const h2_h2loader_host_package_writer_config_t *confi
     package_stream_t stream = {.config = &sink};
     uint8_t hash[32];
     int rc = H2_PAL_OK;
-    h2_h2loader_host_sha256_init(&output.sha);
+    h2_sha256_init(&output.sha);
     sink.write = compressed_write;
     sink.write_user = &output;
     stream.zlib.zalloc = package_zalloc;
@@ -328,8 +329,8 @@ static int compress_member(const h2_h2loader_host_package_writer_config_t *confi
     if (rc != H2_PAL_OK) return rc;
     out_segment->size = stream.tar_bytes;
     out_segment->compressed_size = output.bytes;
-    h2_h2loader_host_sha256_finish(&output.sha, hash);
-    h2_h2loader_host_sha256_hex(hash, out_segment->compressed_sha256);
+    h2_sha256_finish(&output.sha, hash);
+    h2_sha256_hex(hash, out_segment->compressed_sha256);
     return H2_PAL_OK;
 }
 
@@ -388,8 +389,8 @@ h2_pal_result_t h2_h2loader_host_package_write(
     const h2_h2loader_host_package_writer_config_t *config,
     h2_h2loader_host_package_writer_result_t *out_result) {
     const h2_h2loader_host_package_source_t **sorted = NULL;
-    h2_h2loader_host_sha256_t image_sha;
-    h2_h2loader_host_sha256_t data_sha;
+    h2_sha256_t image_sha;
+    h2_sha256_t data_sha;
     uint8_t digest[32];
     char image_hex[65];
     char data_hex[65];
@@ -414,27 +415,27 @@ h2_pal_result_t h2_h2loader_host_package_write(
             }
         }
     }
-    h2_h2loader_host_sha256_init(&image_sha);
+    h2_sha256_init(&image_sha);
     rc = hash_source(&config->app, &image_sha);
     if (rc != H2_PAL_OK) {
         goto cleanup;
     }
-    h2_h2loader_host_sha256_finish(&image_sha, digest);
-    h2_h2loader_host_sha256_hex(digest, image_hex);
-    h2_h2loader_host_sha256_init(&data_sha);
+    h2_sha256_finish(&image_sha, digest);
+    h2_sha256_hex(digest, image_hex);
+    h2_sha256_init(&data_sha);
     for (size_t i = 0u; i < config->data_entry_count; ++i) {
         const h2_h2loader_host_package_source_t *source = sorted[i];
         const uint8_t zero = 0u;
-        h2_h2loader_host_sha256_update(&data_sha, (const uint8_t *)source->name, strlen(source->name));
-        h2_h2loader_host_sha256_update(&data_sha, &zero, 1u);
+        h2_sha256_update(&data_sha, (const uint8_t *)source->name, strlen(source->name));
+        h2_sha256_update(&data_sha, &zero, 1u);
         rc = hash_source(source, &data_sha);
         if (rc != H2_PAL_OK) {
             goto cleanup;
         }
-        h2_h2loader_host_sha256_update(&data_sha, &zero, 1u);
+        h2_sha256_update(&data_sha, &zero, 1u);
     }
-    h2_h2loader_host_sha256_finish(&data_sha, digest);
-    h2_h2loader_host_sha256_hex(digest, data_hex);
+    h2_sha256_finish(&data_sha, digest);
+    h2_sha256_hex(digest, data_hex);
     rc = write_segmented(config, sorted, image_hex, data_hex, out_result);
 cleanup:
     h2_pal_mem_free(config->allocator, sorted);

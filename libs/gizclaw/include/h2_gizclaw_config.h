@@ -14,6 +14,7 @@
 #include "h2_gizclaw_mhs.h"
 #include "h2_gizclaw_rpc.h"
 #include "h2_gizclaw_tool.h"
+#include "h2_gizclaw_lua_apps.h"
 #include "h2_runtime_component.h"
 #include "h2_gizclaw_vtable.h"
 
@@ -129,6 +130,11 @@ typedef struct h2_gizclaw_config {
     size_t mhs_device_count;
     h2_gizclaw_cancel_fn cancel_requested;
     void *cancel_user;
+    /** Optional shared Lua application directory/installer. Borrowed through
+     * service_deinit; its caller-owned lifetime can span reconnects. LIST is
+     * enabled with this handle, INSTALL needs writable storage (HTTP(S) also
+     * needs HTTP), RUN additionally needs vtable.prepare_lua_app_run. */
+    h2_lua_apps_t *lua_apps;
 } h2_gizclaw_config_t;
 
 #ifdef __cplusplus

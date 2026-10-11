@@ -4,6 +4,7 @@
 #include "esp_loader_io.h"
 #include "h2_h2loader_host_factory.h"
 #include "h2_h2loader_host_internal.h"
+#include "h2_sha256.h"
 
 #include "h2_atomic_static.h"
 #include <string.h>
@@ -346,10 +347,10 @@ static h2_pal_result_t esp_flash_verify(
     for (size_t i = 0u; i < context->manifest.file_count; ++i) {
         const h2_h2loader_host_factory_file_t *file =
             &context->manifest.files[i];
-        h2_h2loader_host_sha256_t sha;
+        h2_sha256_t sha;
         uint8_t digest[32];
         char actual[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
-        h2_h2loader_host_sha256_init(&sha);
+        h2_sha256_init(&sha);
         for (uint64_t offset = 0u; offset < file->bytes;) {
             if (is_cancelled != NULL && is_cancelled(cancel_user)) {
                 return H2_PAL_EXIT;
@@ -369,11 +370,11 @@ static h2_pal_result_t esp_flash_verify(
             if (rc != H2_PAL_OK) {
                 return rc;
             }
-            h2_h2loader_host_sha256_update(&sha, buffer, request);
+            h2_sha256_update(&sha, buffer, request);
             offset += request;
         }
-        h2_h2loader_host_sha256_finish(&sha, digest);
-        h2_h2loader_host_sha256_hex(digest, actual);
+        h2_sha256_finish(&sha, digest);
+        h2_sha256_hex(digest, actual);
         if (strcmp(actual, file->sha256) != 0) {
             return H2_PAL_ERR_FORMAT;
         }

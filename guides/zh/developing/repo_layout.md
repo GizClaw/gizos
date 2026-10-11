@@ -23,6 +23,8 @@
 │   └── common/                           # 两个以上 Make target 共用的实现
 │
 ├── libs/                                 # 仓库级 Bazel libraries
+│   ├── crypto/                           # 按算法分类的密码学 library family
+│   │   └── sha256/                       # 独立的增量 SHA-256 library，含 include/src/tests/BUILD.bazel
 │   ├── atomic/                            # 独立原子值 contract 与 provider 模板
 │   │   ├── include/h2_atomic.h            # Typed wrapper、order、result 与生命周期 API
 │   │   ├── providers/                     # C11、pthread、locked 与 unsupported 实现

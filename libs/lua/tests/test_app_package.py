@@ -16,6 +16,9 @@ sys.path.insert(0, str(MODULE.parent))
 SPEC = importlib.util.spec_from_file_location("app_package", MODULE)
 package = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(package)
+INDEX_SPEC = importlib.util.spec_from_file_location("app_index", MODULE.with_name("app_index.py"))
+app_index = importlib.util.module_from_spec(INDEX_SPEC)
+INDEX_SPEC.loader.exec_module(app_index)
 BAZEL_OUTPUTS = [Path(path) for path in sys.argv[1:]]
 sys.argv[1:] = []
 
@@ -186,7 +189,7 @@ class LuaAppPackageTest(unittest.TestCase):
         BAZEL_OUTPUTS, "Bazel artifacts are tested by the Bazel target"
     )
     def test_declared_bazel_rule_outputs(self):
-        self.assertEqual(len(BAZEL_OUTPUTS), 6)
+        self.assertEqual(len(BAZEL_OUTPUTS), 10)
         manifests = []
         for index in (0, 3):
             archive, manifest, metadata = BAZEL_OUTPUTS[index:index + 3]
@@ -214,6 +217,39 @@ class LuaAppPackageTest(unittest.TestCase):
             (with_data["app_id"], with_data["version"], with_data["data_dir"]),
             ("xyz", "2.0.0-rc.1", "xyz"),
         )
+        self.assertEqual(plain["display_name"], "ABC")
+        index = json.loads(BAZEL_OUTPUTS[6].read_text())
+        self.assertEqual(index, {"format": 1, "apps": [
+            {"root": "/preinstalled", "manifest": value} for value in manifests]})
+        installed = {path.name: path for path in BAZEL_OUTPUTS[7:]}
+        for offset, entry in ((0, "abc.lua"), (3, "xyz.lua")):
+            with self.open_archive(BAZEL_OUTPUTS[offset]) as archive:
+                self.assertEqual(installed[entry].read_bytes(), archive.extractfile(entry).read())
+        with self.open_archive(BAZEL_OUTPUTS[3]) as archive:
+            self.assertEqual(installed["tone.pcm"].read_bytes(), archive.extractfile("xyz/tone.pcm").read())
+
+    def test_installed_compact_entry_matches_archive(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            specification = self.fixture(root)
+            specification.update(compact=True, display_name="小程序", description="description")
+            installed = root / "installed.lua"
+            archive = root / "app.tar.zlib"
+            package.build_package(specification, archive, root / "manifest.json", root / "metadata.json", installed)
+            with self.open_archive(archive) as contents:
+                self.assertEqual(installed.read_bytes(), contents.extractfile("abc.lua").read())
+            self.assertEqual(self.inspect(archive)["display_name"], "小程序")
+
+    def test_preinstalled_index_rejects_ambiguous_roots_and_duplicates(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _, manifest, _ = self.build(root, self.fixture(root))
+            for location in ("/", "/apps/", "/apps/./lua", "/apps//lua", "/apps/../lua", "/apps/.hidden", "//apps", "/apps\0", "/apps\x7f", "/apps:demo"):
+                with self.subTest(root=location), self.assertRaises(ValueError):
+                    app_index.build_index({"root": location, "manifests": [str(manifest)]})
+            with self.assertRaises(ValueError):
+                app_index.build_index({"root": "/apps", "manifests": [str(manifest), str(manifest)]})
+            self.assertEqual(app_index.build_index({"root": "/apps", "manifests": []}), {"format": 1, "apps": []})
 
 
 if __name__ == "__main__":

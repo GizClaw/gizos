@@ -1,9 +1,13 @@
 #ifndef H2_GIZCLAW_DEVICE_INTERNAL_H
 #define H2_GIZCLAW_DEVICE_INTERNAL_H
 #include "h2_gizclaw_service.h"
+#include "gzc_client.h"
 typedef struct h2_gizclaw_device h2_gizclaw_device_t;
 h2_pal_result_t h2_gizclaw_device_init_internal(h2_gizclaw_service_t *service);
 h2_pal_result_t h2_gizclaw_device_start_internal(h2_gizclaw_device_t *device);
+int h2_gizclaw_device_start_lua_stream_internal(h2_gizclaw_device_t *device);
+const gzc_rpc_stream_provider_t *
+h2_gizclaw_device_lua_stream_internal(h2_gizclaw_device_t *device);
 /** Test support only. Re-point the product vtable and power PAL of a
  * quiescent device: no inbound RPC may be in flight and no action may be
  * accepted (BUSY otherwise). Readers are not synchronized beyond that. */
