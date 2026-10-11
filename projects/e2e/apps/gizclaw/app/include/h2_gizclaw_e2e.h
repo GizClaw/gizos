@@ -112,6 +112,10 @@ typedef struct h2_gizclaw_e2e_config {
    * to removing the owned fixture subtree. Published files are not live
    * retained resources. */
   bool lua_preserve_storage;
+  /** Require the prior installation and its entry digest before any upload;
+   * then run that retained entry against the same frame golden. Set this for
+   * the independent persistence boot, including when the whole index is lost. */
+  bool lua_expect_persisted;
   /** Optional lowercase hex PEM trust fixture (at most 16 KiB decoded).
    * Creates a case-owned coreHTTP provider with required TLS verification. */
   const char *tls_root_ca_hex;

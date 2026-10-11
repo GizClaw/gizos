@@ -565,4 +565,6 @@ rendered pixel、perceived audio、真实网络或产品验收。
 
 这些接入不需要第二个 Runtime。真实 E2E 保留真实网络、加密、存储和调度；Testing PAL 证据补充业务断言，不替代服务器结果和真机验收。
 
+Lua App live lane 在同一私有 Filesystem 上重建目录与 Service 执行第二轮；任何安装请求之前必须验证 retained entry 的 SHA，并通过远程 run 核对其 frame golden。Host 的显式 `missing`/`digest` fault modes 在两轮之间删除或等长损坏 entry，要求该持久化检查失败且资源清理成功。设备通过 `H2_GIZCLAW_E2E_LUA_EXPECT_PERSISTED` 选择必须已有安装的独立启动验收，不能用随后重装掩盖丢失。
+
 Wi-Fi fake 的 `connect_status` 可脚本化下一次成功连接的状态；UNKNOWN 不改变当前状态。`connect_and_save` 使用同一 `libs/wifi_sta` 事务和内嵌虚拟 Time，只有目标 GOT_IP 且非零有效 IPv4 才写模拟 Settings。测试可注入连接、状态、时钟与保存错误；该 fake 仍由调用方串行使用。

@@ -475,6 +475,44 @@ static int fixture_archive(lua_state_t *s, uint8_t **out, size_t *out_size) {
   return H2_PAL_OK;
 }
 
+static int run_game(h2_gizclaw_e2e_api_t *api, lua_state_t *s) {
+  char run[256];
+  int n = snprintf(run, sizeof(run),
+                     "{\"app_id\":\"%s\",\"params\":{\"lang\":\"en-US\","
+                     "\"language\":\"en-US\"}}",
+                     s->fixture->config->lua_app_id);
+  if (n < 0 || (size_t)n >= sizeof(run))
+    return H2_PAL_ERR_NO_SPACE;
+  int rc = h2_gizclaw_e2e_tool_call(api, "lua.app.run", run, 200);
+  return rc == H2_PAL_OK ? run_prepared(s, true) : rc;
+}
+
+static int verify_retained(h2_gizclaw_e2e_api_t *api, lua_state_t *s) {
+  const h2_gizclaw_e2e_config_t *c = s->fixture->config;
+  h2_lua_app_info_t app;
+  int rc = h2_lua_apps_get(s->apps, c->lua_app_id, &app);
+  bool present = rc == H2_PAL_OK;
+  char hash[65];
+  size_t size = 0;
+  if (rc == H2_PAL_ERR_NOT_FOUND && !c->lua_expect_persisted)
+    rc = H2_PAL_OK;
+  else if (rc == H2_PAL_OK) {
+    rc = digest_file(s, app.entry, hash, &size);
+    if (rc == H2_PAL_OK && strcmp(hash, c->lua_entry_sha256))
+      rc = H2_PAL_ERR_FORMAT;
+  }
+  h2_gizclaw_e2e_emit(
+      "H2_GIZCLAW_E2E stage=lua-golden source=persisted expected=%d "
+      "present=%d entry_bytes=%zu sha256_match=%d rejected=%d rc=%d\n",
+      c->lua_expect_persisted, present, size, present && rc == H2_PAL_OK,
+      c->lua_expect_persisted && rc != H2_PAL_OK, rc);
+  if (rc == H2_PAL_OK && present)
+    rc = verify_catalog(api, c->lua_app_id, true);
+  if (rc == H2_PAL_OK && present)
+    rc = run_game(api, s);
+  return rc;
+}
+
 int h2_gizclaw_e2e_run_lua_apps(h2_gizclaw_e2e_fixture_t *fixture) {
   lua_state_t *s = fixture->lua_state;
   const h2_gizclaw_e2e_config_t *c = fixture->config;
@@ -488,6 +526,8 @@ int h2_gizclaw_e2e_run_lua_apps(h2_gizclaw_e2e_fixture_t *fixture) {
       service, h2_gizclaw_e2e_str("gizos-lua-golden"), false, 15000, &api.key);
   if (rc == H2_PAL_OK)
     rc = verify_catalog(&api, c->lua_app_id, false);
+  if (rc == H2_PAL_OK)
+    rc = verify_retained(&api, s);
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_e2e_tool_call(
         &api, "lua.app.run",
@@ -524,10 +564,11 @@ int h2_gizclaw_e2e_run_lua_apps(h2_gizclaw_e2e_fixture_t *fixture) {
   h2_pal_mem_free(fixture->allocator, archive);
   if (rc == H2_PAL_OK)
     rc = verify_catalog(&api, c->lua_app_id, true);
-  h2_gizclaw_e2e_emit(
-      "H2_GIZCLAW_E2E stage=lua-golden source=binary archive_bytes=%zu "
-      "multi_frame=%d rc=%d\n",
-      archive_size, archive_size > 65535u, rc);
+  if (archive_size)
+    h2_gizclaw_e2e_emit(
+        "H2_GIZCLAW_E2E stage=lua-golden source=binary archive_bytes=%zu "
+        "multi_frame=%d rc=%d\n",
+        archive_size, archive_size > 65535u, rc);
   const char *sources[] = {c->lua_app_http_url, c->lua_app_https_url,
                            c->lua_app_url};
   for (size_t i = 0; rc == H2_PAL_OK && i < 3; ++i) {
@@ -565,16 +606,8 @@ int h2_gizclaw_e2e_run_lua_apps(h2_gizclaw_e2e_fixture_t *fixture) {
                  : "data",
         strlen(sources[i]), size, rc == H2_PAL_OK, rc);
   }
-  if (rc == H2_PAL_OK) {
-    char run[256];
-    (void)snprintf(run, sizeof(run),
-                   "{\"app_id\":\"%s\",\"params\":{\"lang\":\"en-US\","
-                   "\"language\":\"en-US\"}}",
-                   c->lua_app_id);
-    rc = h2_gizclaw_e2e_tool_call(&api, "lua.app.run", run, 200);
-  }
   if (rc == H2_PAL_OK)
-    rc = run_prepared(s, true);
+    rc = run_game(&api, s);
   if (rc == H2_PAL_OK)
     rc = verify_catalog(&api, c->lua_app_id, true);
   int first = rc;

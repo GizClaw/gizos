@@ -20,8 +20,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <fstream>
 #include <filesystem>
+#include <fstream>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -83,6 +83,7 @@ bool should_stop(void *) {
 // failed stop is not permission to destruct the provider under its live task.
 struct DesktopSession {
   std::atomic<bool> ledger_failed{false};
+  std::atomic<bool> persistence_rejected{false};
   std::string endpoint;
   std::string token;
   std::string suite_name;
@@ -145,8 +146,58 @@ void validate_lua_record(void *user, const char *record, size_t size) {
   }
   if (rc != H2_PAL_OK)
     session->ledger_failed.store(true);
+  if (rc == H2_PAL_OK && ledger.size < sizeof(buffer)) {
+    buffer[ledger.size] = 0;
+    if (std::strstr(buffer, "source=persisted expected=1 ") &&
+        std::strstr(buffer, "rejected=1 "))
+      session->persistence_rejected.store(true);
+  }
   // Exercise the exact device record contract and keep host diagnostics visible.
   (void)std::fwrite(record, 1u, size, stdout);
+}
+
+// Deliberately change only this session's private files between completed
+// runs. The next runner must detect loss/corruption before sending an upload.
+int persistence_fault(DesktopSession *session, const char *fault) {
+  if (!session->storage_owned || !session->filesystem)
+    return H2_PAL_ERR_INVALID_STATE;
+  const std::string id = session->app_config.lua_app_id;
+  const auto root = std::filesystem::path(session->storage_root) /
+                    "gizclaw-e2e-lua" / "installed" / id;
+  unsigned changed = 0;
+  for (const char *slot : {"0", "1"}) {
+    const auto entry = root / slot / (id + ".lua");
+    std::error_code error;
+    const bool exists = std::filesystem::exists(entry, error);
+    if (error)
+      return H2_PAL_ERR_IO;
+    if (!exists)
+      continue;
+    if (!std::filesystem::is_regular_file(entry, error) || error)
+      return H2_PAL_ERR_FORMAT;
+    if (!std::strcmp(fault, "missing")) {
+      if (!std::filesystem::remove(entry, error) || error)
+        return H2_PAL_ERR_IO;
+    } else {
+      auto remaining = std::filesystem::file_size(entry, error);
+      if (error)
+        return H2_PAL_ERR_IO;
+      std::ofstream output(entry, std::ios::binary | std::ios::trunc);
+      char bytes[4096];
+      std::memset(bytes, ' ', sizeof(bytes));
+      while (remaining && output.good()) {
+        const auto take = std::min<uintmax_t>(remaining, sizeof(bytes));
+        output.write(bytes, static_cast<std::streamsize>(take));
+        remaining -= take;
+      }
+      output.flush();
+      output.close();
+      if (remaining || !output)
+        return H2_PAL_ERR_IO;
+    }
+    ++changed;
+  }
+  return changed ? H2_PAL_OK : H2_PAL_ERR_NOT_FOUND;
 }
 
 // Deliberately process-owned on failure: no static destructor, no later run.
@@ -429,6 +480,7 @@ int run_desktop(int argc, char **argv) {
       .lua_record_golden = std::getenv("H2_GIZCLAW_E2E_LUA_RECORD_GOLDEN") &&
           !std::strcmp(std::getenv("H2_GIZCLAW_E2E_LUA_RECORD_GOLDEN"), "1"),
       .lua_preserve_storage = false,
+      .lua_expect_persisted = false,
       .tls_root_ca_hex = h2_gizclaw_e2e_fixture_root_ca_hex(),
       .fence_workflow_name = session->fence_workflow_name.c_str(),
       .fence_first_id = session->fence_first_id.c_str(),
@@ -449,8 +501,47 @@ int run_desktop(int argc, char **argv) {
       .evidence_user = session.get(),
   };
   h2_gizclaw_e2e_result_t result = {};
-  const h2_gizclaw_e2e_exit_t exit_code =
+  const bool lua_lane = suites == H2_GIZCLAW_E2E_SUITE_LUA_APPS;
+  const char *fault = std::getenv("H2_GIZCLAW_E2E_LUA_PERSISTENCE_FAULT");
+  if (fault && (!lua_lane || (std::strcmp(fault, "missing") &&
+                              std::strcmp(fault, "digest"))))
+    return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
+  session->app_config.lua_preserve_storage = lua_lane;
+  h2_gizclaw_e2e_exit_t exit_code =
       h2_gizclaw_e2e_run(runtime, &session->app_config, &result);
+  if (lua_lane && exit_code == H2_GIZCLAW_E2E_EXIT_PASS) {
+    const bool first_pass = result.complete && result.selected == 1u &&
+        result.terminal == 1u && result.passed == 1u && !result.failed &&
+        !result.errors && !result.blocked && !result.cancelled &&
+        result.cleanup_rc == H2_PAL_OK && !result.retained_resources &&
+        !session->ledger_failed.load();
+    int fault_rc = !first_pass ? H2_PAL_ERR_INVALID_STATE
+                     : fault ? persistence_fault(session.get(), fault)
+                             : H2_PAL_OK;
+    if (fault_rc != H2_PAL_OK) {
+      result.complete = false;
+      exit_code = H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
+    } else {
+      session->app_config.lua_preserve_storage = false;
+      session->app_config.lua_expect_persisted = true;
+      session->persistence_rejected.store(false);
+      exit_code = h2_gizclaw_e2e_run(runtime, &session->app_config, &result);
+      if (fault) {
+        const int expected = !std::strcmp(fault, "missing")
+                                 ? H2_PAL_ERR_NOT_FOUND : H2_PAL_ERR_FORMAT;
+        const bool detected = exit_code == H2_GIZCLAW_E2E_EXIT_CASE_FAILURE &&
+            result.complete && result.failed == 1u &&
+            !std::strcmp(result.first_failure_case, "lua-apps") &&
+            result.first_failure_rc == expected &&
+            result.cleanup_rc == H2_PAL_OK && !result.retained_resources &&
+            session->persistence_rejected.load();
+        std::printf("H2_GIZCLAW_E2E stage=persistence-negative fault=%s "
+                    "detected=%d\n", fault, detected);
+        exit_code = detected ? H2_GIZCLAW_E2E_EXIT_PASS
+                             : H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
+      }
+    }
+  }
   const bool ledger_failed = session->ledger_failed.load();
   if (ledger_failed) {
     std::fprintf(stderr, "H2_GIZCLAW_E2E stage=ledger-contract status=ERROR\n");

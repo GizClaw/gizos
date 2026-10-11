@@ -280,6 +280,9 @@ static void run_e2e(void *raw) {
       .lua_entry_sha256 = h2_gizclaw_e2e_fixture_lua_entry_sha256(),
       .lua_frame_sha256 = h2_gizclaw_e2e_fixture_lua_frame_sha256(),
       .lua_preserve_storage = true,
+#if defined(H2_GIZCLAW_E2E_LUA_EXPECT_PERSISTED)
+      .lua_expect_persisted = true,
+#endif
       .tls_root_ca_hex = h2_gizclaw_e2e_fixture_root_ca_hex(),
       .device_api_url = h2_gizclaw_e2e_fixture_device_api_url(),
       .device_audio_url = h2_gizclaw_e2e_fixture_audio_url(),

@@ -20,7 +20,7 @@ bazel build --config=esp32s3 \
 `--define=H2_GIZCLAW_E2E_LUA_ONLY=1` 选择独立 `lua-apps` suite。调用方通过 `app_config_fixture` 的 string flags 提供 endpoint、RegistrationToken、期望 Profile、time_server、HTTPS device_api_url，以及 `lua_app_url`（Base64 zlib data URL）、`lua_app_http_url`、`lua_app_https_url`、`lua_app_id`、`lua_archive_sha256`、`lua_entry_sha256`、`lua_frame_sha256`。三个 URI 必须表示同一个 caller-owned 包，压缩大小必须大于 65535 字节且不超过 Binary 的 512 KiB 限制。私有游戏和本机地址只作为外部 build inputs，不复制进公共源码。可将这些输入放进工作树外的 Bazel rc 文件：
 
 ```sh
-bazel --bazelrc=/absolute/path/lua-fixture.bazelrc build --config=esp32s3 \
+bazel --bazelrc=/absolute/path/lua-fixture.bazelrc build --noannounce_rc --config=esp32s3 \
   --define=H2_GIZCLAW_E2E_LUA_ONLY=1 \
   --//tools/bazel:firmware_version=0.1.0-lua-e2e \
   //projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/amoled:package
@@ -32,7 +32,11 @@ bazel --bazelrc=/absolute/path/lua-fixture.bazelrc build --config=esp32s3 \
 
 用例创建一个预装 Lua fixture，验证 listing 与 params/KV；随后经过真实 Server/Edge 用多帧 Binary、HTTP、HTTPS、data URL 安装大包，验证错误压缩摘要被拒绝且旧 entry 保留、混合 listing、同 ID 去重、已写 entry 的完整 SHA-256，再经远程 run 启动实际 Lua Host，要求至少三个成功呈现的帧及首帧 golden 一致。软件单测另覆盖错误摘要、长度、TAR/zlib 结束、路径、取消、配额与原子发布失败。该 lane 只验收应用安装与启动，不宣称完成游戏全过程或旧八项语音业务资格。
 
-设备保留 `/data/gizclaw-e2e-lua` 下的安装目录和独立 KV，便于后续正常启动验证持久化；仅识别该 fixture 自己写入的 `.owner` 标记，不接管未知目录。结束时停止/join Lua 与安装 worker、销毁目录 handle、撤销临时 API key 并确认 Peer 删除，要求 `suite=lua-apps selected=1 terminal=1 pass=1 cleanup_rc=0 retained_resources=0 complete=true exit_code=0`。这里的 retained resources 指仍存活的句柄/任务与远端清理义务，预期保留的已安装文件不是泄漏。
+设备保留 `/data/gizclaw-e2e-lua` 下的安装目录和独立 KV，便于后续独立启动验证持久化；仅识别该 fixture 自己写入的 `.owner` 标记，不接管未知目录。结束时停止/join Lua 与安装 worker、销毁目录 handle、撤销临时 API key 并确认 Peer 删除，要求 `suite=lua-apps selected=1 terminal=1 pass=1 cleanup_rc=0 retained_resources=0 complete=true exit_code=0`。这里的 retained resources 指仍存活的句柄/任务与远端清理义务，预期保留的已安装文件不是泄漏。
+
+持久化验收在后续独立 boot 的构建中同时指定 `--define=H2_GIZCLAW_E2E_LUA_EXPECT_PERSISTED=1`。用例在任何 Binary/URL 安装之前要求旧目录含目标 app、完整 entry SHA 匹配，并通过远程 run 直接运行该 entry、核对 golden；旧文件或整个 index 丢失均失败，不能按冷启动重新安装后补判 PASS。默认冷启动模式只允许首次不存在目标 app，已经存在的 entry 也会先校验并运行。诊断镜像保持未确认，正常 App reboot 可返回 Loader；独立设备 boot 可以由 H2Loader 安装后续诊断镜像进入，保留原始执行 nonce 和 package/image identity。
+
+Host Lua live test 在同一私有 Filesystem 上运行两次，第二次重建目录与 Service 并启用相同的持久化要求。显式 `H2_GIZCLAW_E2E_LUA_PERSISTENCE_FAULT=missing` 或 `digest` 在两次运行之间删除 entry 或写入等长损坏内容；harness 只有看到持久化检查的预期失败、且清理成功时才将这个负例记为通过。该模式只修改当前 host session 自己的临时文件。
 
 所有子集保持诊断身份，只有既有完整 `all` suite 可以调用 H2Loader confirm；Lua 通过不能确认镜像。保留本轮版本、包/镜像 SHA、真实 execution nonce、原始串口记录和 coredump readback，再通过 H2Loader 返回 Loader。禁止用较早启动的 replay 补齐失败轮次。
 
