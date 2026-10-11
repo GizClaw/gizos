@@ -7,7 +7,8 @@
 #include "h2_esp_platform_safe_call.h"
 #include <assert.h>
 
-#if CONFIG_IDF_TARGET_ESP32S31 && CONFIG_BT_NIMBLE_ENABLED && \
+#if (CONFIG_IDF_TARGET_ESP32S31 || CONFIG_IDF_TARGET_ESP32S3) && \
+    CONFIG_BT_NIMBLE_ENABLED && \
     !CONFIG_ESP_HOSTED_ENABLE_BT_NIMBLE
 static int stops, calls;
 static h2_pal_result_t stop_result, safe_result;
@@ -43,7 +44,8 @@ int main(void) {
     assert(!h2_esp_power_boot_selection_is_current(loader, app, loader));
     assert(!h2_esp_power_boot_selection_is_current(app, app, loader));
     assert(!h2_esp_power_boot_selection_is_current(app, loader, loader));
-#if CONFIG_IDF_TARGET_ESP32S31 && CONFIG_BT_NIMBLE_ENABLED && \
+#if (CONFIG_IDF_TARGET_ESP32S31 || CONFIG_IDF_TARGET_ESP32S3) && \
+    CONFIG_BT_NIMBLE_ENABLED && \
     !CONFIG_ESP_HOSTED_ENABLE_BT_NIMBLE
     stop_result = safe_result = H2_PAL_OK;
     assert(h2_esp_power_reboot_prepare() == H2_PAL_OK);
