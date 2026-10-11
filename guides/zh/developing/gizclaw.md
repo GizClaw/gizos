@@ -195,7 +195,7 @@ Provider 在 `h2_gizclaw_client_poll()` 所在线程同步运行。上游 C SDK 
 
 产品创建共享 `h2_lua_apps_t`，配置预装 index、安装目录和存储预算，再放入 `h2_gizclaw_config_t.lua_apps`。该 handle 由产品持有，必须覆盖 Service 的完整生命周期，可供本地菜单和后续 Service 重连复用。LIST 在配置目录时启用，INSTALL 需要可写 Filesystem，RUN 还需要 `vtable.prepare_lua_app_run`；没有相应能力时按 SDK 的 unsupported 路径回答。
 
-`lua.app.list/install/run` 使用 SDK 的 tool/v0 编码；URL 安装支持 HTTP、HTTPS 和两种 Base64 data URL。独立 RPC 139 `client.lua.app.install` 由 SDK streaming provider 处理：小 metadata、同一请求中的 Binary 帧、请求 EOS、验证并发布后的最终响应。SDK 自动发送多帧，不需要调用方把一次安装拆成多次 RPC。C SDK 0.30.0 的直推限制为 512 KiB、单帧最多 65535 字节、总期限 120 秒；更大的 archive 使用 HTTP(S) URL。
+`lua.app.list/install/run` 使用 SDK 的 tool/v0 编码；URL 安装仅支持 HTTP、HTTPS；内存中的压缩包通过独立 Binary stream 直推，data URL 不作为安装入口。独立 RPC 139 `client.lua.app.install` 由 SDK streaming provider 处理：小 metadata、同一请求中的 Binary 帧、请求 EOS、验证并发布后的最终响应。SDK 自动发送多帧，不需要调用方把一次安装拆成多次 RPC。C SDK 0.30.0 的直推限制为 512 KiB、单帧最多 65535 字节、总期限 120 秒；更大的 archive 使用 HTTP(S) URL。
 
 `$gizclaw/lua/install` worker 使用一个固定大小的帧槽，write 回调复制 borrowed bytes 后返回；槽占用时返回 WOULD_BLOCK，SDK 保留原帧并暂停 backend polling，直到 worker 消费完成。 背压及等待 finish 时，poll owner 只在未消费输入的路径上执行有界 1 ms backoff，使共享 CPU 上的低优先级安装 worker 能继续运行，避免成功 poll 的忙重试饿死 worker。metadata、write、finish 和 close 不保留 response callback，也不在网络 owner 上同步解压或写文件。Service stop 先取消会话，再 join worker；join 失败保留句柄供 stop 重试，不能提前销毁目录或 allocator。URL 和 Binary 入口共用 [Lua App 安装器](./lua.md#lua-app-目录与流式安装)，不在 GizClaw 实现第二套解压、校验或文件发布流程。
 

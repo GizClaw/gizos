@@ -16,13 +16,13 @@ extern "C" {
 #define H2_LUA_APPS_MAX 32u
 #define H2_LUA_APP_PATH_MAX 192u
 #define H2_LUA_APP_FILES_MAX 64u
-#define H2_LUA_APP_DATA_URL_MAX (256u * 1024u)
+#define H2_LUA_APP_URL_MAX 1024u
 
 typedef struct h2_lua_apps h2_lua_apps_t;
 typedef struct h2_lua_app_install h2_lua_app_install_t;
 
-/** Borrowed URI bytes; no NUL termination is required. HTTP(S) addresses are
- * at most 1024 bytes. Base64 data URLs are at most DATA_URL_MAX bytes. */
+/** Borrowed HTTP(S) URL bytes; no NUL termination is required. Addresses are
+ * at most H2_LUA_APP_URL_MAX bytes. Other schemes are rejected. */
 typedef struct h2_lua_app_source {
   const char *data;
   size_t size;
@@ -108,10 +108,9 @@ void h2_lua_app_install_abort(h2_lua_app_install_t **install);
 
 /** Synchronously downloads, inflates and verifies a complete format-1 USTAR
  * package through bounded buffers. No compressed archive is retained. The
- * optional SHA-256 covers compressed bytes. Supports HTTP, HTTPS without
- * credentials/fragments, and data:application/zlib;base64, or
- * data:application/octet-stream;base64,. Base64 is decoded in small blocks
- * directly into the inflater. No automatic retry. timeout_ms bounds HTTP and
+ * optional SHA-256 covers compressed bytes. Supports only HTTP and HTTPS,
+ * without credentials/fragments. Direct archive delivery uses the incremental
+ * begin/write/finish API. No automatic retry. timeout_ms bounds HTTP and
  * must be 1..110000. Cancellation is also checked during extraction/commit.
  * Success means the new index was atomically published. Errors preserve the
  * previous app and all user data. Requires replacing atomic fs.rename.
