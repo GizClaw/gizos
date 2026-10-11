@@ -16,7 +16,7 @@ firmware_lib_component(
     deps = [
         "//libs/command",
         "//libs/iostreamikcp",
-        "//libs/sha256",
+        "//libs/crypto/sha256",
     ],
 )
 

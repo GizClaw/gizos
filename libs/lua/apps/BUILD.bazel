@@ -17,10 +17,10 @@ cc_library(
     includes = ["include"],
     deps = [
         "//libs/bundle",
+        "//libs/crypto/sha256",
         "//libs/encoding",
         "//libs/pal",
         "//libs/semver",
-        "//libs/sha256",
         "//tools/bazel:vendor_third_party_yyjson",
         "//tools/bazel:vendor_third_party_zlib",
     ],

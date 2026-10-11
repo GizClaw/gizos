@@ -599,7 +599,7 @@ MP4 播放器配置也支持同名选项。启动动画可以借用同一个 Dis
 
 预装和远程安装使用相同 format-1 Lua App manifest、`app_id` 和版本。`lua_app_index` 从 `LuaAppInfo.manifest` 生成 `format=1, apps=[{root,manifest}]`，不维护手写版本表。规则的 `installed_entry` output group 提供与包内完全相同的原始或 compact Lua 文本，`installed_files` 同时包含该 entry 与原有 data 文件；consumer 将 entry 映射为安装根下的 `<app_id>.lua`，data 保持同名子目录结构。原有 archive/manifest/metadata 默认发行输出不变。加载时缺少所需文件、文件大小不符或 entry 超限的预装项不会进入 listing；已安装的同 ID 项覆盖预装项，每个 ID 只列出一次。
 
-安装入口接受 HTTP、HTTPS，以及 `data:application/zlib;base64,` 和 `data:application/octet-stream;base64,`。HTTP 请求不自动重试；redirect 继续限制为 HTTP(S)，允许由 HTTP PAL 解析的相对地址。Data URL 含前缀最多 256 KiB，复用 `libs/encoding` 按块严格解码，直接送入同一个 zlib/USTAR 校验器。HTTP 流和增量 Binary 输入均只使用固定窗口，完整压缩包不落盘；`libs/sha256` 增量计算压缩包与各文件摘要，版本校验复用 `libs/semver`。
+安装入口接受 HTTP、HTTPS，以及 `data:application/zlib;base64,` 和 `data:application/octet-stream;base64,`。HTTP 请求不自动重试；redirect 继续限制为 HTTP(S)，允许由 HTTP PAL 解析的相对地址。Data URL 含前缀最多 256 KiB，复用 `libs/encoding` 按块严格解码，直接送入同一个 zlib/USTAR 校验器。HTTP 流和增量 Binary 输入均只使用固定窗口，完整压缩包不落盘；`libs/crypto/sha256` 增量计算压缩包与各文件摘要，版本校验复用 `libs/semver`。
 
 增量安装使用 begin/write/finish/abort，同一个会话的调用由一个 owner 串行执行。会话持有目录 reservation，其他 task 上的目录操作返回 BUSY；同一 owner 不重入目录操作。finish 只有在声明长度、可选压缩 SHA-256、manifest、全部文件长度与 SHA-256、完整 USTAR 结束块、zlib EOS 均通过后才发布。默认限制为 32 个应用身份、64 个 payload 文件、256 KiB entry、每包 2 MiB payload 和总计 8 MiB 已安装 payload；预装字节不计入安装字节配额。
 

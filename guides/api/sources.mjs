@@ -40,7 +40,7 @@ export const apiSources = [
   { id: "runtime", roots: ["libs/runtime/include"] },
   { id: "sdl3", roots: ["libs/pal/providers/sdl3/include"] },
   { id: "semver", roots: ["libs/semver/include"] },
-  { id: "sha256", roots: ["libs/sha256/include"] },
+  { id: "sha256", roots: ["libs/crypto/sha256/include"] },
   { id: "sqlite", roots: ["libs/pal/providers/sqlite/include"] },
   { id: "tinyh264", roots: ["libs/pal/providers/tinyh264/include"] },
   { id: "utils", roots: ["libs/utils/include"] },

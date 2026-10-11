@@ -991,11 +991,11 @@ cc_library(
         ":fixture",
         ":runner_core",
         "//libs/atomic",
+        "//libs/crypto/sha256",
         "//libs/encoding",
         "//libs/gizclaw",
         "//libs/lua:lua_runtime",
         "//libs/pal/providers/yyjson",
-        "//libs/sha256",
     ],
 )
 

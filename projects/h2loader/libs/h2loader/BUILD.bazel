@@ -63,7 +63,7 @@ cc_library(
         "//libs/bundle",
         "//libs/command",
         "//libs/pal",
-        "//libs/sha256",
+        "//libs/crypto/sha256",
         "//tools/bazel:vendor_third_party_zlib",
     ],
 )
