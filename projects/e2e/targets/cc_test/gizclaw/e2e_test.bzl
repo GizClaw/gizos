@@ -11,6 +11,7 @@ def gizclaw_e2e_desktop_deps(backend = "h2peer", app = "//projects/e2e/apps/gizc
         "//libs/pal/providers/corehttp",
         "//libs/pal",
         "//libs/runtime",
+        "//projects/e2e/libs/gizclaw-device:ledger",
         "//libs/pal/providers/desktop/app_support:app_support",
         "//libs/pal/providers/desktop/app_support:bundle_rpath",
         "//projects/e2e/targets/cc_test/gizclaw:desktop_options",

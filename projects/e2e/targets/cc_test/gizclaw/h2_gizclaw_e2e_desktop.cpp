@@ -7,12 +7,14 @@
 #include "h2_desktop_app_support.h"
 #include "h2_desktop_platform.h"
 #include "h2_gizclaw_e2e.h"
+#include "ledger.h"
 #include "h2_atomic.h"
 #ifdef H2_GIZCLAW_E2E_USE_PION
 #include "h2_pion.h"
 #endif
 
 #include <algorithm>
+#include <atomic>
 #include <csignal>
 #include <chrono>
 #include <cstdio>
@@ -80,6 +82,7 @@ bool should_stop(void *) {
 // Own every view the portable runner or a retained Service may borrow. A
 // failed stop is not permission to destruct the provider under its live task.
 struct DesktopSession {
+  std::atomic<bool> ledger_failed{false};
   std::string endpoint;
   std::string token;
   std::string suite_name;
@@ -130,6 +133,21 @@ struct DesktopSession {
     std::fill(pcm.begin(), pcm.end(), 0u);
   }
 };
+
+void validate_lua_record(void *user, const char *record, size_t size) {
+  auto *session = static_cast<DesktopSession *>(user);
+  char buffer[4096];
+  h2_gizclaw_e2e_ledger_t ledger = {};
+  int rc = h2_gizclaw_e2e_ledger_init(&ledger, buffer, sizeof(buffer));
+  if (rc == H2_PAL_OK) {
+    h2_gizclaw_e2e_ledger_append(&ledger, record, size);
+    rc = h2_gizclaw_e2e_ledger_freeze(&ledger);
+  }
+  if (rc != H2_PAL_OK)
+    session->ledger_failed.store(true);
+  // Exercise the exact device record contract and keep host diagnostics visible.
+  (void)std::fwrite(record, 1u, size, stdout);
+}
 
 // Deliberately process-owned on failure: no static destructor, no later run.
 DesktopSession *g_retained_session = nullptr;
@@ -425,12 +443,17 @@ int run_desktop(int argc, char **argv) {
       .should_stop_user = nullptr,
       .on_progress = emit_progress,
       .progress_user = nullptr,
-      .on_evidence = nullptr,
-      .evidence_user = nullptr,
+      .on_evidence = (suites & H2_GIZCLAW_E2E_SUITE_LUA_APPS) ? validate_lua_record : nullptr,
+      .evidence_user = session.get(),
   };
   h2_gizclaw_e2e_result_t result = {};
   const h2_gizclaw_e2e_exit_t exit_code =
       h2_gizclaw_e2e_run(runtime, &session->app_config, &result);
+  const bool ledger_failed = session->ledger_failed.load();
+  if (ledger_failed) {
+    std::fprintf(stderr, "H2_GIZCLAW_E2E stage=ledger-contract status=ERROR\n");
+    result.complete = false;
+  }
   if (result.retained_resources == 0u) {
     const int cleanup_rc = session->shutdown();
     if (cleanup_rc != H2_PAL_OK) {
@@ -446,7 +469,7 @@ int run_desktop(int argc, char **argv) {
     guard.retain = true;
     g_retained_session = session.release();
   }
-  const int final_exit = result.retained_resources != 0u
+  const int final_exit = result.retained_resources != 0u || ledger_failed
                              ? H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR
                              : static_cast<int>(exit_code);
   std::printf(

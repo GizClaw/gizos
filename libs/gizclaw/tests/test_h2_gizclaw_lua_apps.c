@@ -2,6 +2,7 @@
 #include "h2_gizclaw_lua_stream_internal.h"
 #include "h2_app_test_fs.h"
 #include "h2_desktop_platform.h"
+#include "h2_atomic.h"
 #include "libs/lua/apps/fixtures.h"
 #include "payload/lua_app.pb.h"
 #include "pb_decode.h"
@@ -27,6 +28,31 @@ static void release(void *user, void *ptr) {
 }
 static const h2_pal_mem_vtable_t mem_vtable = {allocate, resize, release};
 static const h2_pal_mem_api_t mem = {.vtable = &mem_vtable};
+static h2_atomic_bool_t gate_enabled, gate_entered, gate_released;
+static unsigned yields;
+static int (*base_write)(void *, h2_pal_fs_file_t *, const void *, size_t,
+                         size_t *);
+static int gated_write(void *user, h2_pal_fs_file_t *file, const void *bytes,
+                       size_t size, size_t *written) {
+  if (h2_atomic_load(&gate_enabled)) {
+    h2_atomic_store(&gate_entered, true);
+    while (!h2_atomic_load(&gate_released))
+      (void)h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u);
+  }
+  return base_write(user, file, bytes, size, written);
+}
+static int yield_to_worker(void *user, uint32_t ms) {
+  (void)user;
+  assert(ms == 1u);
+  ++yields;
+  h2_atomic_store(&gate_enabled, false);
+  h2_atomic_store(&gate_released, true);
+  return h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), ms);
+}
+static const h2_pal_time_vtable_t progress_time_vtable = {.sleep_ms =
+                                                              yield_to_worker};
+static const h2_pal_time_api_t progress_time = {.vtable =
+                                                    &progress_time_vtable};
 static void pause_worker(void) {
   assert(h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u) == 0);
 }
@@ -166,10 +192,14 @@ static h2_pal_result_t prepare(void *user, const h2_gizclaw_lua_app_run_t *run,
   return H2_PAL_OK;
 }
 int main(void) {
+  assert(h2_atomic_bool_init(&gate_enabled, false) == H2_ATOMIC_OK);
+  assert(h2_atomic_bool_init(&gate_entered, false) == H2_ATOMIC_OK);
+  assert(h2_atomic_bool_init(&gate_released, false) == H2_ATOMIC_OK);
   h2_app_test_fs_t fs;
   assert(h2_app_test_fs_init(&fs, &mem) == 0);
-  put(&fs.api, "/preinstalled/demo.lua", "assert(args.mode == \"single\")\n",
-      29);
+  static const char initial_source[] = "assert(args.mode == \"single\")\n";
+  put(&fs.api, "/preinstalled/demo.lua", initial_source,
+      sizeof(initial_source) - 1u);
   put(&fs.api, "/preinstalled/index.json", fixture_preinstalled_index,
       sizeof(fixture_preinstalled_index));
   h2_lua_apps_config_t directory = {.allocator = &mem,
@@ -180,6 +210,10 @@ int main(void) {
                                     .install_root = "/apps"};
   h2_lua_apps_t *apps = NULL;
   assert(h2_lua_apps_create(&directory, &apps) == 0);
+  h2_pal_fs_vtable_t fs_vtable = *fs.api.vtable;
+  base_write = fs_vtable.write;
+  fs_vtable.write = gated_write;
+  fs.api.vtable = &fs_vtable;
   const h2_pal_task_vtable_t task_vtable = {start, join};
   const h2_pal_task_api_t task = {.vtable = &task_vtable};
   const h2_gizclaw_vtable_t vtable = {.prepare_lua_app_run = prepare};
@@ -187,13 +221,28 @@ int main(void) {
   h2_gizclaw_config_t config = {
       .allocator = &mem, .lua_apps = apps, .vtable = &vtable, .user = &launch};
   h2_gizclaw_lua_stream_t *stream = NULL;
+  config.time = &progress_time;
   assert(h2_gizclaw_lua_stream_create_internal(&config, &task, directory.sync,
                                                &stream) == 0);
   assert(h2_gizclaw_lua_stream_start_internal(stream) == 0);
   const gzc_rpc_stream_provider_t *provider =
       h2_gizclaw_lua_stream_provider_internal(stream);
   assert(provider && sizeof(fixture_stream) > 65535u);
+  /* Progress requires the poll owner's WOULD_BLOCK path to yield. */
+  h2_atomic_store(&gate_enabled, true);
   void *session =
+      open_stream(provider, sizeof(fixture_stream), fixture_stream_sha256);
+  assert(provider->write(session, fixture_stream, 32768u) == GZC_OK);
+  for (unsigned retry = 0; retry < 5000 && !h2_atomic_load(&gate_entered);
+       ++retry)
+    pause_worker();
+  assert(h2_atomic_load(&gate_entered));
+  assert(provider->write(session, fixture_stream + 32768u, 1u) ==
+         GZC_ERR_WOULD_BLOCK);
+  assert(yields > 0 && h2_atomic_load(&gate_released));
+  provider->close(session, GZC_ERR_CLOSED);
+  wait_version(apps, "0.1.0");
+  session =
       open_stream(provider, sizeof(fixture_stream), fixture_stream_sha256);
   reply_t reply =
       upload(provider, session, fixture_stream, sizeof(fixture_stream));
@@ -241,5 +290,8 @@ int main(void) {
   h2_gizclaw_lua_stream_destroy_internal(stream);
   assert(h2_lua_apps_destroy(apps) == 0);
   assert(fs.active_handles == 0 && h2_app_test_fs_deinit(&fs) == 0);
+  h2_atomic_bool_destroy(&gate_released);
+  h2_atomic_bool_destroy(&gate_entered);
+  h2_atomic_bool_destroy(&gate_enabled);
   return 0;
 }

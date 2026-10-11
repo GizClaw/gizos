@@ -28,7 +28,7 @@ bazel --bazelrc=/absolute/path/lua-fixture.bazelrc build --config=esp32s3 \
 
 自签 HTTPS fixture 通过 `app_config_fixture_root_ca_hex` 注入 hex PEM；portable fixture 创建自己的 coreHTTP provider，保留 required TLS verification，退出时在所有请求和 Service join 后销毁它。Public control API 使用 Edge 入口，Server 私有 HTTP 入口不承载这些 API。Directed 本地测试的 Server/Edge ICE listen 应绑定实际 LAN 地址，避免把主机的其他接口 candidate 集合引入设备验收。
 
-先用 `//projects/e2e/targets/cc_test/gizclaw:gizclaw_h2peer_lua_apps_live_test` 和同一包在 368×448 headless display 上记录参考帧。只有显式 `H2_GIZCLAW_E2E_LUA_RECORD_GOLDEN=1` 的 host run 可以 record；随后把摘要固定到 fixture，再以默认严格模式运行。AMOLED 始终比较独立预期值。首帧摘要覆盖 renderer 的完整 RGB565 framebuffer，成功-present callback 发生在真实 Display PAL 完成后；这不替代面板的光学观察。
+先用 `//projects/e2e/targets/cc_test/gizclaw:gizclaw_h2peer_lua_apps_live_test` 和同一包在 368×448 headless display 上记录参考帧。只有显式 `H2_GIZCLAW_E2E_LUA_RECORD_GOLDEN=1` 的 host run 可以 record；随后把摘要固定到 fixture，再以默认严格模式运行。AMOLED 始终比较独立预期值。 Host 同时用设备的 ledger contract 校验每条 Lua 证据记录，统一使用 `H2_GIZCLAW_E2E stage=lua-golden` 前缀和单行格式，避免 host PASS 却无法冻结设备账本。首帧摘要覆盖 renderer 的完整 RGB565 framebuffer，成功-present callback 发生在真实 Display PAL 完成后；这不替代面板的光学观察。
 
 用例创建一个预装 Lua fixture，验证 listing 与 params/KV；随后经过真实 Server/Edge 用多帧 Binary、HTTP、HTTPS、data URL 安装大包，验证错误压缩摘要被拒绝且旧 entry 保留、混合 listing、同 ID 去重、已写 entry 的完整 SHA-256，再经远程 run 启动实际 Lua Host，要求至少三个成功呈现的帧及首帧 golden 一致。软件单测另覆盖错误摘要、长度、TAR/zlib 结束、路径、取消、配额与原子发布失败。该 lane 只验收应用安装与启动，不宣称完成游戏全过程或旧八项语音业务资格。
 

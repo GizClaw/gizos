@@ -197,7 +197,7 @@ Provider 在 `h2_gizclaw_client_poll()` 所在线程同步运行。上游 C SDK 
 
 `lua.app.list/install/run` 使用 SDK 的 tool/v0 编码；URL 安装支持 HTTP、HTTPS 和两种 Base64 data URL。独立 RPC 139 `client.lua.app.install` 由 SDK streaming provider 处理：小 metadata、同一请求中的 Binary 帧、请求 EOS、验证并发布后的最终响应。SDK 自动发送多帧，不需要调用方把一次安装拆成多次 RPC。C SDK 0.30.0 的直推限制为 512 KiB、单帧最多 65535 字节、总期限 120 秒；更大的 archive 使用 HTTP(S) URL。
 
-`$gizclaw/lua/install` worker 使用一个固定大小的帧槽，write 回调复制 borrowed bytes 后返回；槽占用时返回 WOULD_BLOCK，SDK 保留原帧并暂停 backend polling，直到 worker 消费完成。metadata、write、finish 和 close 不保留 response callback，也不在网络 owner 上同步解压或写文件。Service stop 先取消会话，再 join worker；join 失败保留句柄供 stop 重试，不能提前销毁目录或 allocator。URL 和 Binary 入口共用 [Lua App 安装器](./lua.md#lua-app-目录与流式安装)，不在 GizClaw 实现第二套解压、校验或文件发布流程。
+`$gizclaw/lua/install` worker 使用一个固定大小的帧槽，write 回调复制 borrowed bytes 后返回；槽占用时返回 WOULD_BLOCK，SDK 保留原帧并暂停 backend polling，直到 worker 消费完成。 背压及等待 finish 时，poll owner 只在未消费输入的路径上执行有界 1 ms backoff，使共享 CPU 上的低优先级安装 worker 能继续运行，避免成功 poll 的忙重试饿死 worker。metadata、write、finish 和 close 不保留 response callback，也不在网络 owner 上同步解压或写文件。Service stop 先取消会话，再 join worker；join 失败保留句柄供 stop 重试，不能提前销毁目录或 allocator。URL 和 Binary 入口共用 [Lua App 安装器](./lua.md#lua-app-目录与流式安装)，不在 GizClaw 实现第二套解压、校验或文件发布流程。
 
 RUN 的 prepare 回调在 ACK 前复制参数并预留产品 owner 的队列或状态；无法接纳时立即返回 BUSY。返回的 handoff 在响应 EOS 已交给本地 channel 且该 channel 关闭后只完成一次：成功时向产品 owner 发布运行请求，失败或取消时释放 reservation。产品 owner 通过目录快照将 entry、app_id 与 params 提交给 Lua Host，并负责停止旧界面及 Display 交接。回调不直接运行长时间 Lua 程序，accepted 也不等于程序已经执行完成。
 

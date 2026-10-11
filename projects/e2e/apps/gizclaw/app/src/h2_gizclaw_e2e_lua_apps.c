@@ -259,19 +259,27 @@ static int run_prepared(lua_state_t *s, bool game) {
       rc = H2_PAL_ERR_FORMAT;
   }
   if (game && h2_atomic_load_explicit(&s->frames, H2_ATOMIC_ACQUIRE)) {
-    h2_gizclaw_e2e_emit(
-        "H2_GIZCLAW_LUA_GOLDEN frame_sha256=%s width=%zu height=%zu frames=%u "
-        "vm_bytes=%zu state=%d record=%d\n",
-        s->first_frame_sha, s->width, s->height, h2_atomic_load(&s->frames),
-        status.memory_used, (int)status.state, c->lua_record_golden);
+    h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=lua-golden frame_sha256=%s "
+                        "width=%zu height=%zu frames=%u "
+                        "vm_bytes=%zu state=%d record=%d\n",
+                        s->first_frame_sha, s->width, s->height,
+                        h2_atomic_load(&s->frames), status.memory_used,
+                        (int)status.state, c->lua_record_golden);
     if (rc == H2_PAL_OK && !c->lua_record_golden &&
         strcmp(s->first_frame_sha, c->lua_frame_sha256))
       rc = H2_PAL_ERR_FORMAT;
   }
-  if (rc != H2_PAL_OK)
+  if (rc != H2_PAL_OK) {
+    char message[sizeof(status.message)];
+    memcpy(message, status.message, sizeof(message));
+    message[sizeof(message) - 1u] = 0;
+    for (char *p = message; *p; ++p)
+      if (*p == '\r' || *p == '\n')
+        *p = ' ';
     h2_gizclaw_e2e_emit(
-        "H2_GIZCLAW_LUA_GOLDEN stage=run rc=%d state=%d message=%s\n", rc,
-        (int)status.state, status.message);
+        "H2_GIZCLAW_E2E stage=lua-golden phase=run rc=%d state=%d message=%s\n",
+        rc, (int)status.state, message);
+  }
   int cleanup = stop_host(s);
   return rc == H2_PAL_OK ? cleanup : rc;
 }
@@ -293,9 +301,9 @@ static int dispose(h2_gizclaw_e2e_fixture_t *fixture) {
       return rc;
   }
   if (s->owns_root && fixture->config->lua_preserve_storage)
-    h2_gizclaw_e2e_emit(
-        "H2_GIZCLAW_LUA_GOLDEN stage=storage action=preserved root=%s\n",
-        s->root);
+    h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=lua-golden phase=storage "
+                        "action=preserved root=%s\n",
+                        s->root);
   if (s->pending_initialized)
     h2_atomic_int_destroy(&s->pending);
   if (s->frames_initialized)
@@ -509,16 +517,17 @@ int h2_gizclaw_e2e_run_lua_apps(h2_gizclaw_e2e_fixture_t *fixture) {
       rc = digest_file(s, retained.entry, hash, &size);
     if (rc == H2_PAL_OK && strcmp(hash, c->lua_entry_sha256))
       rc = H2_PAL_ERR_FORMAT;
-    h2_gizclaw_e2e_emit("H2_GIZCLAW_LUA_GOLDEN source=binary-bad-sha "
+    h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=lua-golden source=binary-bad-sha "
                         "previous_preserved=%d rc=%d\n",
                         rc == H2_PAL_OK, rc);
   }
   h2_pal_mem_free(fixture->allocator, archive);
   if (rc == H2_PAL_OK)
     rc = verify_catalog(&api, c->lua_app_id, true);
-  h2_gizclaw_e2e_emit("H2_GIZCLAW_LUA_GOLDEN source=binary archive_bytes=%zu "
-                      "multi_frame=%d rc=%d\n",
-                      archive_size, archive_size > 65535u, rc);
+  h2_gizclaw_e2e_emit(
+      "H2_GIZCLAW_E2E stage=lua-golden source=binary archive_bytes=%zu "
+      "multi_frame=%d rc=%d\n",
+      archive_size, archive_size > 65535u, rc);
   const char *sources[] = {c->lua_app_http_url, c->lua_app_https_url,
                            c->lua_app_url};
   for (size_t i = 0; rc == H2_PAL_OK && i < 3; ++i) {
@@ -548,12 +557,13 @@ int h2_gizclaw_e2e_run_lua_apps(h2_gizclaw_e2e_fixture_t *fixture) {
       rc = digest_file(s, app.entry, hash, &size);
     if (rc == H2_PAL_OK && strcmp(hash, c->lua_entry_sha256))
       rc = H2_PAL_ERR_FORMAT;
-    h2_gizclaw_e2e_emit("H2_GIZCLAW_LUA_GOLDEN source=%s uri_bytes=%zu "
-                        "entry_bytes=%zu sha256_match=%d rc=%d\n",
-                        i == 0   ? "http"
-                        : i == 1 ? "https"
-                                 : "data",
-                        strlen(sources[i]), size, rc == H2_PAL_OK, rc);
+    h2_gizclaw_e2e_emit(
+        "H2_GIZCLAW_E2E stage=lua-golden source=%s uri_bytes=%zu "
+        "entry_bytes=%zu sha256_match=%d rc=%d\n",
+        i == 0   ? "http"
+        : i == 1 ? "https"
+                 : "data",
+        strlen(sources[i]), size, rc == H2_PAL_OK, rc);
   }
   if (rc == H2_PAL_OK) {
     char run[256];

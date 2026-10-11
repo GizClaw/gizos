@@ -20,6 +20,7 @@ esp_target_task_policy(
         "$h2peer/udp              7        0  4096  psram",
         "$gizclaw/audio/download  default",
         "$gizclaw/device          default",
+        "$gizclaw/lua/install    default",
         "$gizclaw/data-up         default",
         "$gizclaw/data-down       default",
         "$gizclaw/net             default",

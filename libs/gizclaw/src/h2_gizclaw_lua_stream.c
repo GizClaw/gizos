@@ -57,6 +57,15 @@ static int sdk_result(int result) {
   return GZC_ERR_RPC;
 }
 
+static int backpressure(h2_gizclaw_lua_stream_t *s) {
+  /* The SDK may retry from event-stream reads as well as top-level poll.
+   * Yield only after consuming nothing: a high-priority poll owner must let
+   * the installation worker progress even when both share one CPU. */
+  return h2_pal_time_sleep_ms(s->config.time, 1u) == H2_PAL_OK
+             ? GZC_ERR_WOULD_BLOCK
+             : GZC_ERR_RPC;
+}
+
 static void worker(void *user) {
   h2_gizclaw_lua_stream_t *s = user;
   lock(s);
@@ -161,7 +170,7 @@ static int write_chunk(void *session, const uint8_t *bytes, size_t size) {
     wake(s);
   }
   unlock(s);
-  return result;
+  return result == GZC_ERR_WOULD_BLOCK ? backpressure(s) : result;
 }
 static int finish(void *session, gzc_rpc_provider_respond_fn respond,
                   void *user) {
@@ -178,7 +187,7 @@ static int finish(void *session, gzc_rpc_provider_respond_fn respond,
   wake(s);
   if (!s->ready) {
     unlock(s);
-    return GZC_ERR_WOULD_BLOCK;
+    return backpressure(s);
   }
   int result = s->result;
   h2_lua_app_info_t info = s->info;
@@ -231,6 +240,8 @@ int h2_gizclaw_lua_stream_create_internal(const h2_gizclaw_config_t *config,
   *out = NULL;
   if (!h2_lua_apps_can_install(config->lua_apps))
     return H2_PAL_OK;
+  if (!config->time || !config->time->vtable || !config->time->vtable->sleep_ms)
+    return H2_PAL_ERR_UNSUPPORTED;
   h2_gizclaw_lua_stream_t *s = h2_pal_mem_alloc(config->allocator, sizeof(*s));
   if (!s)
     return H2_PAL_ERR_NO_MEMORY;
