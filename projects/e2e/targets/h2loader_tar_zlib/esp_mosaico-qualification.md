@@ -22,7 +22,7 @@ of admission; it must not be silently removed from the registry.
 | pal-mqtt | `pal-mqtt/devkit` | [`pal-mqtt/esp_mosaico`](pal-mqtt/esp_mosaico/BUILD.bazel) | r21 36/36 on two independent boots; scoped native resources/provider release, delivery/confirmation and real broker/TLS witnesses PASS |
 | pal-net-tls | `pal-net-tls/devkit` | [`pal-net-tls/esp_mosaico`](pal-net-tls/esp_mosaico/BUILD.bazel) | r20 core profile: 37 mandatory / 38 total passes on two boots, one optional unsupported; real peer/cleanup/confirmation PASS; full-Net unqualified |
 | pal-wifi | `pal-wifi/devkit` | [`pal-wifi/esp_mosaico`](pal-wifi/esp_mosaico/BUILD.bazel) | NOT_RUN |
-| pal-webrtc | `pal-webrtc/devkit` | [`pal-webrtc/esp_mosaico`](pal-webrtc/esp_mosaico/BUILD.bazel) | NOT_RUN |
+| pal-webrtc | `pal-webrtc/devkit` | [`pal-webrtc/esp_mosaico`](pal-webrtc/esp_mosaico/BUILD.bazel) | r22 43/43 on two independent boots; real Pion encrypted transport, typed fingerprint rejection, cleanup/confirmation and preserved Loader/Stage/coredump PASS |
 | pal-audio | `pal-audio/amoled` | [`pal-audio/esp_mosaico`](pal-audio/esp_mosaico/BUILD.bazel) | r8 24/24 on two independent peer boots; capture/output/30s soak and managed install PASS; acoustic observation unavailable |
 | pal-audio-decoder | `pal-audio-decoder/devkit` | [`pal-audio-decoder/esp_mosaico`](pal-audio-decoder/esp_mosaico/BUILD.bazel) | r8 29/29 on two independent peer boots; cleanup/confirmation and managed install PASS |
 | pal-display | `pal-display/amoled` | [`pal-display/esp_mosaico`](pal-display/esp_mosaico/BUILD.bazel) | r8 24/24 on two independent boots; DMA/cleanup/confirmation PASS; user confirmed four quadrants and earlier dimming |
@@ -559,8 +559,50 @@ late progress/startup, replay and missing confirmation still fail admission.
 The operator-connected AMOLED is identified through the public protocol and has
 a full 16 MB pre-test backup (SHA-256
 `4bb1c08604e8d7c852afbbe0b4608d1800f74881832bd5e043594c4b3baac3cd`).
-Its existing Wi-Fi and Lua opposite-role artifacts can serve the peer. Their new
-6.2 builds do not yet count as actual peer device runs. Historical results now
-cover 13 of 16 portable suites; Wi-Fi, WebRTC, complete bilateral Lua, final
-peripherals/acoustic observations and Loader recovery/rollback/checksum gates
-remain open. Final-source package binding and regression remain required.
+Its public 6.2 Loader self-update and independent Loader reboot passed before
+the later Lua return failure. Both Mosaico r22 host and AMOLED r3 join completed
+five actual rounds (RTT, reliable bursts, datagrams and 64 KiB streams), confirmed
+their Apps and reached the final connected hold. The peer's public Loader reboot
+was accepted but management did not recover. Mosaico observed actual lost:-10
+4,100 ms after the last datagram, then reported extended-advertising removal
+rc=15 / Loader adv_restart=-9. These partial records do not admit complete Lua.
+Subsequent ROM probes received no serial response. After the user's reset/power
+attempts and host USB serial control-line release, actual SPI boot logs and public
+Loader management recovered without a Flash write. P1/P2 checksums remain valid,
+Stage is empty, the peer coredump is blank, and the DUT original dump is unchanged.
+The DUT public Loader return passed. This assisted peer recovery does not turn
+the earlier timed-out public reboot into a PASS.
+
+WebRTC r22 passes all 43 cases on two independent boots with distinct run IDs,
+ordered first-execution ledgers, zero retained allocations, cleanup and App
+confirmation. Actual Pion transport covers encrypted data and Opus; the wrong
+fingerprint returns typed TLS_VERIFY (-17) with authentication evidence. This
+does not establish physical microphone/speaker quality. The immutable receipt
+binds clean source `2268ed71`, the r22 package/image hashes and unchanged original
+20,640-byte coredump. Both boots retain Loader identity and empty Stage.
+
+Artifact-bound records now cover 14 of 16 portable suites. Historical receipts
+retain their original source and image identities. Wi-Fi, complete bilateral Lua,
+final peripherals/camera insertion/acoustic observations and Loader recovery,
+rollback and checksum gates remain open. Earlier receipts are not relabeled as
+final-source qualification. All nineteen r22 packages build against frozen
+inputs; subsequent source changes require separate binding and regression.
+
+## Wi-Fi version identity failure
+
+The first r22 seed ran 38 mandatory functions with zero failures/blocks and
+restored Settings/network, cleared the private backup and retained no resources.
+Persistence correctly remained PENDING (-9) and the App was not confirmed (-7).
+However, the 34-byte requested version was truncated by IDF to the 31-byte
+runtime descriptor, while the package retained the full version. The public
+status exposes both values and retained Stage; this image is not admitted.
+One independent fixture lease record was also lost during host monitor reconnect;
+no missing witness is reconstructed or treated as passed.
+
+The ESP native runner now rejects empty, NUL-containing, invalid UTF-8 or over
+31-byte application versions before SDK/environment/output work. The actual SDK
+CMake cuts PROJECT_VER to 31 bytes; rejecting truncation preserves package/runtime
+identity on S3/P4/C5/S31. All 36 runner regressions pass, including ASCII and
+multibyte byte boundaries and fail-before-build checks on all four targets.
+Other SDK version contracts are unchanged. The corrected short-version Wi-Fi
+image still requires real independent boots, fresh peer witnesses and restoration.

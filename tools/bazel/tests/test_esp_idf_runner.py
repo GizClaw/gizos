@@ -776,6 +776,23 @@ class EspIdfRunnerTest(unittest.TestCase):
                 self.assertIn("error:", result.stderr)
 
 
+class AppVersionContractTest(unittest.TestCase):
+    def test_descriptor_byte_boundary(self):
+        for version in ("v1", "a" * 31, "板" * 10 + "a"):
+            with self.subTest(version=version):
+                runner.validate_app_version(version)
+
+    def test_invalid_versions_fail_before_sdk_or_output_work(self):
+        for version in ("", "a" * 32, "板" * 11, "v1\0suffix", "\udcff"):
+            for target in ("esp32s3", "esp32p4", "esp32c5", "esp32s31"):
+                with self.subTest(version=version, target=target):
+                    arguments = runner.argparse.Namespace(
+                        version=version, target=target, project_name="fixture"
+                    )
+                    with self.assertRaises(runner.RunnerError):
+                        runner.run(arguments)
+
+
 class S31ToolContractTest(unittest.TestCase):
     def test_s31_contract_does_not_require_xtensa(self):
         with tempfile.TemporaryDirectory() as directory:

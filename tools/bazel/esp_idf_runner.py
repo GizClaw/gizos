@@ -62,6 +62,19 @@ class RunnerError(RuntimeError):
     """A violated external-build contract."""
 
 
+def validate_app_version(version: str) -> None:
+    # The SDK cuts PROJECT_VER to 31 bytes before writing esp_app_desc.version.
+    # Package identity must equal that runtime value; never accept truncation.
+    try:
+        encoded = version.encode("utf-8")
+    except UnicodeEncodeError as error:
+        raise RunnerError("ESP-IDF application version must be valid UTF-8") from error
+    if not encoded or len(encoded) > 31 or b"\0" in encoded:
+        raise RunnerError(
+            "ESP-IDF application version must be 1..31 UTF-8 bytes without NUL"
+        )
+
+
 def read_expected_commit(path: str, label: str) -> str:
     try:
         commit = Path(path).read_text(encoding="utf-8").strip()
@@ -709,6 +722,7 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
 
 
 def run(arguments: argparse.Namespace) -> None:
+    validate_app_version(arguments.version)
     if not SAFE_PROJECT_NAME.fullmatch(arguments.project_name):
         raise RunnerError(f"invalid ESP-IDF project name: {arguments.project_name}")
     cmake_variables: list[tuple[str, str]] = []
