@@ -1016,3 +1016,35 @@ cc_test(
     }),
     deps = ["//libs/pal"],
 )
+
+py_binary(
+    name = "ble_adv_completion_fixture_generator",
+    srcs = ["tests/ble_adv_completion_fixture.py"],
+    main = "tests/ble_adv_completion_fixture.py",
+    legacy_create_init = 0,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+genrule(
+    name = "ble_adv_completion_fixture_source",
+    srcs = ["src/h2_esp_platform_ble.c"],
+    outs = ["ble_adv_completion_fixture.c"],
+    cmd = "$(location :ble_adv_completion_fixture_generator) $(location src/h2_esp_platform_ble.c) $@",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    tools = [":ble_adv_completion_fixture_generator"],
+)
+
+[
+    cc_test(
+        name = "ble_adv_completion_" + profile + "_test",
+        srcs = [
+            ":ble_adv_completion_fixture_source",
+            "src/h2_esp_ble_connect_role.h",
+        ],
+        conlyopts = H2_C11_OPTS + ["-DCONFIG_BT_NIMBLE_EXT_ADV=" + extended],
+        copts = H2_WARNING_COPTS,
+        includes = ["src"],
+        target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    )
+    for profile, extended in [("legacy", "0"), ("extended", "1")]
+]
