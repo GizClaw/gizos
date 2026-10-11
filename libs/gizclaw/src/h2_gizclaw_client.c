@@ -162,8 +162,11 @@ typedef struct h2_gizclaw_provider_completion {
   h2_gizclaw_rpc_response_complete_fn callback;
   void *user;
   bool local_closed;
+  bool peer_closed;
+  bool close_deferred;
   bool failed;
   bool response_sent;
+  uint64_t deadline_ms;
   uint8_t frame_header[4];
   size_t header_used;
   size_t payload_remaining;
@@ -657,16 +660,25 @@ static void provider_completion_sent(h2_gizclaw_provider_completion_t *entry,
 }
 
 static void dispatch_provider_completions(h2_gizclaw_client_t *client, int result) {
+  uint64_t now = 0u;
+  (void)h2_pal_time_get_monotonic_ms(client->config.time, &now);
   for (size_t i = 0u; i < GZC_RPC_MAX_INBOUND_CHANNELS; ++i) {
     h2_gizclaw_provider_completion_t *entry = &client->provider_completions[i];
+    const bool expired = entry->deadline_ms != 0u && now >= entry->deadline_ms;
     if (entry->callback == NULL ||
-        (result != H2_PAL_ERR_CLOSED && !entry->local_closed && !entry->failed))
+        (result != H2_PAL_ERR_CLOSED && !entry->failed && !expired &&
+         !(entry->local_closed && entry->peer_closed && entry->response_sent)))
       continue;
     const h2_gizclaw_provider_completion_t done = *entry;
     memset(entry, 0, sizeof(*entry));
+    if (done.close_deferred)
+      h2_pal_webrtc_channel_close(client->config.webrtc,
+                                   (h2_pal_webrtc_channel_t *)done.channel);
     const int completion_result = result != H2_PAL_ERR_CLOSED &&
-        !done.failed && done.local_closed && done.response_sent
+        !done.failed && !expired && done.local_closed && done.peer_closed &&
+        done.response_sent
         ? H2_PAL_OK
+        : expired ? H2_PAL_ERR_TIMEOUT
         : result != H2_PAL_OK ? result : H2_PAL_ERR_CLOSED;
     done.callback(done.user, completion_result);
   }
@@ -712,6 +724,12 @@ static int h2_gizclaw_tool_bridge(void *userdata, gzc_str_t request_payload,
     *completion = (h2_gizclaw_provider_completion_t){
         .channel = client->provider_channel,
         .callback = response.on_complete, .user = response.complete_user};
+    uint64_t now = 0u;
+    if (h2_pal_time_get_monotonic_ms(client->config.time, &now) == H2_PAL_OK) {
+      const uint64_t budget = (uint64_t)(client->config.write_timeout_ms > 0
+          ? client->config.write_timeout_ms : client->config.connect_timeout_ms);
+      completion->deadline_ms = now > UINT64_MAX - budget ? UINT64_MAX : now + budget;
+    }
   }
   rc = respond(respond_userdata, &gzc_response);
   if (completion != NULL && rc != GZC_OK)
@@ -1450,8 +1468,14 @@ static void h2_gizclaw_dispatch_channel_state(
                          state == H2_PAL_WEBRTC_CHANNEL_ERROR)) {
     h2_gizclaw_provider_completion_t *completion =
         provider_completion_for_channel(client, (gzc_rtc_channel_t *)channel);
-    if (completion != NULL && !completion->local_closed)
-      completion->failed = true;
+    if (completion != NULL) {
+      completion->peer_closed = state == H2_PAL_WEBRTC_CHANNEL_CLOSED;
+      /* A terminal PAL event retires the handle; its pointer is now identity
+       * only and must not be closed after the event lease is released. */
+      completion->close_deferred = false;
+      if (state == H2_PAL_WEBRTC_CHANNEL_ERROR || !completion->response_sent)
+        completion->failed = true;
+    }
   }
   if (client != NULL && client->gzc_callbacks.on_channel_state != NULL) {
     gzc_rtc_channel_info_t gzc_info;
@@ -1912,8 +1936,18 @@ static void h2_gzc_channel_close(gzc_rtc_channel_t *channel) {
   if (client != NULL && client->config.webrtc != NULL) {
     h2_gizclaw_provider_completion_t *completion =
         provider_completion_for_channel(client, channel);
-    if (completion != NULL)
+    if (completion != NULL) {
       completion->local_closed = true;
+      /* Let the requester read EOS and close the channel before a product
+       * handoff can destroy the Peer. Accepted PAL bytes are still queued. */
+      if (!completion->failed && completion->response_sent &&
+          !completion->peer_closed) {
+        completion->close_deferred = true;
+        return;
+      }
+      completion->close_deferred = false;
+      if (!completion->response_sent) completion->failed = true;
+    }
     if (client->local_channel_state.channel ==
         (h2_pal_webrtc_channel_t *)channel) {
       h2_gizclaw_reset_local_channel_state(client);
@@ -1974,6 +2008,7 @@ void h2_gizclaw_test_provider_channel_close(h2_gizclaw_client_t *client,
 static void h2_gzc_peer_close(gzc_rtc_peer_t *peer) {
   h2_gizclaw_client_t *client = h2_gizclaw_client_for_peer(peer);
   if (client != NULL && client->config.webrtc != NULL) {
+    dispatch_provider_completions(client, H2_PAL_ERR_CLOSED);
     h2_gizclaw_reset_local_channel_state(client);
     client->opus_frame_callback = NULL;
     client->opus_frame_callback_user = NULL;

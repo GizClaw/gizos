@@ -337,7 +337,7 @@ snapshot 使用调用方 response storage。所有业务资源清理完成后才
 
 ### 设备控制回复后的本地动作
 
-产品 provider 可以在成功响应中设置 `on_complete` 与 `complete_user`。GizOS 将其关联到当前入站 RPC 通道，在 SDK 接受响应写入并正常关闭该通道后，从 poll owner 调用一次。普通 poll 返回成功不表示该通道已经完成；非终态的 WOULD_BLOCK、TIMEOUT 或其他 poll error 也不能取消尚未关闭的通道。成功必须同时具备该通道响应 EOS 已被 PAL 接受、SDK 本地关闭的证据；adapter 按通道跟踪已接受的帧，支持跨 send 分片与背压重试。同一次 poll 中其他通道超时或失败，不会撤销已成功关闭的响应。未发完 EOS 的通道即使本地关闭也只能报告失败。发送阻塞时继续保留动作，编码错误、发送失败、远端取消和客户端停止则以非 OK 结果撤销。关闭或销毁客户端时，在对应 owner 上释放未完成动作；注册失败可能在 provider 内同步返回失败通知。每个 client 最多保留四个完成回调；满容量、缺少当前入站通道或错误响应附带回调时，新回调同步收到 INVALID_STATE，响应不提交，已有槽位不受影响。
+产品 provider 可以在成功响应中设置 `on_complete` 与 `complete_user`。GizOS 将其关联到当前入站 RPC 通道，在响应 EOS 被 PAL 接受且请求端随后正常关闭通道后，从 poll owner 调用一次。SDK 本地 close 暂缓到请求端 terminal，避免产品立即销毁 Peer 丢掉仍在传输的响应。普通 poll 返回成功不表示该通道已经完成；非终态的 WOULD_BLOCK、TIMEOUT 或其他 poll error 也不能取消尚未关闭的通道。成功必须同时具备该通道响应 EOS 已被 PAL 接受、SDK 本地关闭请求和请求端正常关闭的证据；adapter 按通道跟踪已接受的帧，支持跨 send 分片与背压重试。同一次 poll 中其他通道超时或失败，不会撤销已成功关闭的响应。未发完 EOS 的通道即使本地关闭也只能报告失败。等待请求端关闭的总预算使用 Client `write_timeout_ms`，为零时使用 `connect_timeout_ms`；到期关闭仍保留的 PAL 通道并以 TIMEOUT 撤销动作。发送阻塞时继续保留动作，编码错误、发送失败、提前远端取消和客户端停止则以非 OK 结果撤销。关闭或销毁客户端时，在对应 owner 上释放未完成动作；注册失败可能在 provider 内同步返回失败通知。每个 client 最多保留四个完成回调；满容量、缺少当前入站通道或错误响应附带回调时，新回调同步收到 INVALID_STATE，响应不提交，已有槽位不受影响。
 
 这是本地发送生命周期，不是对端收到或处理回复的确认，不新增网络消息，也不更改 GizClaw 0.15.3 SDK。回调只能向产品 owner 发布待执行动作，不能阻塞或重入 client API。产品参数必须复制到自身状态，生命周期覆盖完成或取消；不能保留借用请求、栈上的响应或已释放的 user。H106 的重启和临时切网消费此路径，OTA 是否支持仍由产品决定。
 
