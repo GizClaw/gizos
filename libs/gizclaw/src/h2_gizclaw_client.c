@@ -661,12 +661,14 @@ static void provider_completion_sent(h2_gizclaw_provider_completion_t *entry,
 
 static void dispatch_provider_completions(h2_gizclaw_client_t *client, int result) {
   uint64_t now = 0u;
-  (void)h2_pal_time_get_monotonic_ms(client->config.time, &now);
+  const int clock_result = h2_pal_time_get_monotonic_ms(client->config.time, &now);
   for (size_t i = 0u; i < GZC_RPC_MAX_INBOUND_CHANNELS; ++i) {
     h2_gizclaw_provider_completion_t *entry = &client->provider_completions[i];
-    const bool expired = entry->deadline_ms != 0u && now >= entry->deadline_ms;
+    const bool expired = clock_result == H2_PAL_OK &&
+        entry->deadline_ms != 0u && now >= entry->deadline_ms;
     if (entry->callback == NULL ||
-        (result != H2_PAL_ERR_CLOSED && !entry->failed && !expired &&
+        (result != H2_PAL_ERR_CLOSED && clock_result == H2_PAL_OK &&
+         !entry->failed && !expired &&
          !(entry->local_closed && entry->peer_closed && entry->response_sent)))
       continue;
     const h2_gizclaw_provider_completion_t done = *entry;
@@ -675,9 +677,12 @@ static void dispatch_provider_completions(h2_gizclaw_client_t *client, int resul
       h2_pal_webrtc_channel_close(client->config.webrtc,
                                    (h2_pal_webrtc_channel_t *)done.channel);
     const int completion_result = result != H2_PAL_ERR_CLOSED &&
+        clock_result == H2_PAL_OK &&
         !done.failed && !expired && done.local_closed && done.peer_closed &&
         done.response_sent
         ? H2_PAL_OK
+        : result == H2_PAL_ERR_CLOSED ? result
+        : clock_result != H2_PAL_OK ? clock_result
         : expired ? H2_PAL_ERR_TIMEOUT
         : result != H2_PAL_OK ? result : H2_PAL_ERR_CLOSED;
     done.callback(done.user, completion_result);
@@ -725,11 +730,15 @@ static int h2_gizclaw_tool_bridge(void *userdata, gzc_str_t request_payload,
         .channel = client->provider_channel,
         .callback = response.on_complete, .user = response.complete_user};
     uint64_t now = 0u;
-    if (h2_pal_time_get_monotonic_ms(client->config.time, &now) == H2_PAL_OK) {
-      const uint64_t budget = (uint64_t)(client->config.write_timeout_ms > 0
-          ? client->config.write_timeout_ms : client->config.connect_timeout_ms);
-      completion->deadline_ms = now > UINT64_MAX - budget ? UINT64_MAX : now + budget;
+    const int clock_result = h2_pal_time_get_monotonic_ms(client->config.time, &now);
+    if (clock_result != H2_PAL_OK) {
+      memset(completion, 0, sizeof(*completion));
+      response.on_complete(response.complete_user, clock_result);
+      return h2_gizclaw_provider_result_to_gzc(clock_result);
     }
+    const uint64_t budget = (uint64_t)(client->config.write_timeout_ms > 0
+        ? client->config.write_timeout_ms : client->config.connect_timeout_ms);
+    completion->deadline_ms = now > UINT64_MAX - budget ? UINT64_MAX : now + budget;
   }
   rc = respond(respond_userdata, &gzc_response);
   if (completion != NULL && rc != GZC_OK)
