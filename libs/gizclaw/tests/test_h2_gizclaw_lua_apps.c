@@ -283,6 +283,25 @@ int main(void) {
              rpc, H2_GIZCLAW_TOOL_LUA_APP_RUN,
              (h2_gizclaw_rpc_bytes_t){invalid, sizeof(invalid)},
              &response) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_lua_apps_rpc_internal(
+             rpc, H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL,
+             (h2_gizclaw_rpc_bytes_t){invalid, sizeof(invalid)},
+             &response) == H2_PAL_ERR_INVALID_ARG);
+  const uint8_t nul_id[] = {0x0a, 5, 'd', 'e', 'm', 'o', 0};
+  assert(h2_gizclaw_lua_apps_rpc_internal(
+             rpc, H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL,
+             (h2_gizclaw_rpc_bytes_t){nul_id, sizeof(nul_id)},
+             &response) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_lua_apps_rpc_internal(
+             rpc, H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL,
+             (h2_gizclaw_rpc_bytes_t){run, sizeof(run)}, &response) == 0);
+  assert(h2_gizclaw_lua_apps_rpc_internal(
+             rpc, H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL,
+             (h2_gizclaw_rpc_bytes_t){run, sizeof(run)}, &response) == 0);
+  assert(h2_gizclaw_lua_apps_rpc_internal(
+             rpc, H2_GIZCLAW_TOOL_LUA_APP_RUN,
+             (h2_gizclaw_rpc_bytes_t){run, sizeof(run)},
+             &response) == H2_PAL_ERR_NOT_FOUND);
   h2_gizclaw_lua_apps_destroy_internal(rpc);
   fail_join = true;
   assert(h2_gizclaw_lua_stream_stop_internal(stream) == H2_PAL_ERR_IO);

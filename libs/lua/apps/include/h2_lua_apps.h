@@ -84,6 +84,17 @@ h2_pal_result_t h2_lua_apps_get(h2_lua_apps_t *apps, const char *app_id,
 bool h2_lua_apps_can_install(const h2_lua_apps_t *apps);
 bool h2_lua_app_id_valid(const char *app_id);
 
+/** Idempotently uninstall an identity, preserving independent user storage.
+ * Atomically remove it from discovery before reclaiming both writable slots.
+ * Preinstalled identities are persistently hidden; immutable firmware files
+ * remain intact. Installing the identity again enables it. Requires the same
+ * filesystem operations as installation; concurrent operations return BUSY.
+ * Index failure preserves the app. Cleanup failure can follow publication:
+ * the app remains unavailable; repeat uninstall to retry cleanup. Never retry
+ * an ambiguous close failure; keep dependencies alive as documented above.
+ * Product owners must coordinate running users of entry/data_dir snapshots. */
+h2_pal_result_t h2_lua_apps_uninstall(h2_lua_apps_t *apps, const char *app_id);
+
 /** Open an incremental zlib/USTAR installation. compressed_size is the exact
  * expected byte count, or zero when the transport does not declare it. SHA-256
  * is optional (NULL), otherwise exactly 64 hexadecimal characters. The handle

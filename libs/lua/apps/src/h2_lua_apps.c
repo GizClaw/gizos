@@ -367,8 +367,31 @@ static int load_index(h2_lua_apps_t *apps, const char *path, bool installed) {
       char id[33], name[40];
       yyjson_val *s = yyjson_obj_get(v, "slot");
       if (!text(yyjson_obj_get(v, "app_id"), id, sizeof(id), false) ||
-          !h2_lua_app_id_valid(id) || !yyjson_is_uint(s) ||
-          yyjson_get_uint(s) > 1) {
+          !h2_lua_app_id_valid(id)) {
+        rc = H2_PAL_ERR_FORMAT;
+        break;
+      }
+      yyjson_val *removed = yyjson_obj_get(v, "removed");
+      if (removed) {
+        int position = h2_lua_apps_find(apps, id);
+        if (!yyjson_is_true(removed) || s ||
+            (position >= 0 && apps->records[position].slot != -1)) {
+          rc = H2_PAL_ERR_FORMAT;
+          break;
+        }
+        if (position < 0) {
+          if (apps->count == apps->config.max_apps) {
+            rc = H2_PAL_ERR_NO_SPACE;
+            break;
+          }
+          position = (int)apps->count++;
+        }
+        app_record_t record = {.slot = -2, .preinstalled = true};
+        strcpy(record.info.app_id, id);
+        apps->records[position] = record;
+        continue;
+      }
+      if (!yyjson_is_uint(s) || yyjson_get_uint(s) > 1) {
         rc = H2_PAL_ERR_FORMAT;
         break;
       }
@@ -397,10 +420,12 @@ static int load_index(h2_lua_apps_t *apps, const char *path, bool installed) {
     if (rc != H2_PAL_OK)
       break;
     int position = h2_lua_apps_find(apps, manifest->info.app_id);
-    if (position >= 0 && (!installed || apps->records[position].slot >= 0)) {
+    if (position >= 0 && (!installed || apps->records[position].slot != -1)) {
       rc = H2_PAL_ERR_FORMAT;
       break;
     }
+    bool preinstalled =
+        !installed || (position >= 0 && apps->records[position].preinstalled);
     if (position < 0) {
       if (apps->count == apps->config.max_apps) {
         rc = H2_PAL_ERR_NO_SPACE;
@@ -408,8 +433,10 @@ static int load_index(h2_lua_apps_t *apps, const char *path, bool installed) {
       }
       position = (int)apps->count++;
     }
-    apps->records[position] = (app_record_t){
-        .info = manifest->info, .bytes = manifest->bytes, .slot = slot};
+    apps->records[position] = (app_record_t){.info = manifest->info,
+                                             .bytes = manifest->bytes,
+                                             .slot = slot,
+                                             .preinstalled = preinstalled};
   }
   h2_pal_mem_free(apps->config.allocator, manifest);
   yyjson_doc_free(doc);
@@ -507,12 +534,17 @@ h2_pal_result_t h2_lua_apps_list(h2_lua_apps_t *apps, h2_lua_app_info_t *out,
     h2_lua_apps_unlock(apps);
     return H2_PAL_ERR_INVALID_STATE;
   }
-  *count = apps->count;
-  if (out && capacity < apps->count)
+  for (size_t i = 0; i < apps->count; ++i)
+    if (apps->records[i].slot != -2)
+      ++*count;
+  if (out && capacity < *count)
     rc = H2_PAL_ERR_NO_SPACE;
-  else if (out)
+  else if (out) {
+    size_t at = 0;
     for (size_t i = 0; i < apps->count; ++i)
-      out[i] = apps->records[i].info;
+      if (apps->records[i].slot != -2)
+        out[at++] = apps->records[i].info;
+  }
   h2_lua_apps_unlock(apps);
   return rc;
 }
@@ -531,7 +563,7 @@ h2_pal_result_t h2_lua_apps_get(h2_lua_apps_t *apps, const char *id,
     return H2_PAL_ERR_INVALID_STATE;
   }
   int i = h2_lua_apps_find(apps, id);
-  if (i < 0)
+  if (i < 0 || apps->records[i].slot == -2)
     rc = H2_PAL_ERR_NOT_FOUND;
   else
     *out = apps->records[i].info;
@@ -561,12 +593,14 @@ int h2_lua_apps_publish(h2_lua_apps_t *apps, const app_record_t *record,
   size_t count = position == apps->count ? apps->count + 1u : apps->count;
   for (size_t i = 0; ok && i < count; ++i) {
     const app_record_t *r = i == position ? record : &apps->records[i];
-    if (r->slot < 0)
+    if (r == NULL || r->slot == -1)
       continue;
     yyjson_mut_val *value = yyjson_mut_obj(doc);
     ok = value &&
          yyjson_mut_obj_add_strcpy(doc, value, "app_id", r->info.app_id) &&
-         yyjson_mut_obj_add_uint(doc, value, "slot", (uint64_t)r->slot) &&
+         (r->slot == -2 ? yyjson_mut_obj_add_bool(doc, value, "removed", true)
+                        : yyjson_mut_obj_add_uint(doc, value, "slot",
+                                                  (uint64_t)r->slot)) &&
          yyjson_mut_arr_append(array, value);
   }
   size_t len = 0;
@@ -584,8 +618,14 @@ int h2_lua_apps_publish(h2_lua_apps_t *apps, const app_record_t *record,
   if (rc == H2_PAL_OK)
     rc = h2_pal_fs_rename(apps->config.fs, tmp, path);
   if (rc == H2_PAL_OK) {
-    apps->records[position] = *record;
-    apps->count = count;
+    if (record) {
+      apps->records[position] = *record;
+      apps->count = count;
+    } else {
+      memmove(&apps->records[position], &apps->records[position + 1u],
+              (apps->count - position - 1u) * sizeof(*apps->records));
+      --apps->count;
+    }
   }
   h2_pal_mem_free(apps->config.allocator, bytes);
   yyjson_mut_doc_free(doc);
@@ -641,4 +681,39 @@ int h2_lua_apps_check_slot(h2_lua_apps_t *apps, const char *root,
 int h2_lua_apps_remove_slot(h2_lua_apps_t *apps, const char *root,
                              const char *app_id) {
   return slot(apps, root, app_id, true);
+}
+
+h2_pal_result_t h2_lua_apps_uninstall(h2_lua_apps_t *apps, const char *id) {
+  if (!h2_lua_app_id_valid(id))
+    return H2_PAL_ERR_INVALID_ARG;
+  if (!h2_lua_apps_can_install(apps))
+    return H2_PAL_ERR_UNSUPPORTED;
+  int rc = h2_lua_apps_try_lock(apps);
+  if (rc != H2_PAL_OK)
+    return rc;
+  if (apps->close_error) {
+    rc = apps->close_error;
+    h2_lua_apps_unlock(apps);
+    return rc;
+  }
+  char paths[2][H2_LUA_APP_PATH_MAX];
+  for (unsigned i = 0; rc == H2_PAL_OK && i < 2u; ++i) {
+    char relative[40];
+    (void)snprintf(relative, sizeof(relative), "%s/%u", id, i);
+    rc = h2_lua_apps_join(paths[i], apps->root, relative);
+    if (rc == H2_PAL_OK)
+      rc = h2_lua_apps_check_slot(apps, paths[i], id);
+  }
+  int position = h2_lua_apps_find(apps, id);
+  if (rc == H2_PAL_OK && position >= 0 && apps->records[position].slot != -2) {
+    app_record_t removed = {.slot = -2, .preinstalled = true};
+    strcpy(removed.info.app_id, id);
+    rc = h2_lua_apps_publish(
+        apps, apps->records[position].preinstalled ? &removed : NULL,
+        (size_t)position);
+  }
+  for (unsigned i = 0; rc == H2_PAL_OK && i < 2u; ++i)
+    rc = h2_lua_apps_remove_slot(apps, paths[i], id);
+  h2_lua_apps_unlock(apps);
+  return rc;
 }

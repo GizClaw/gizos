@@ -32,7 +32,7 @@
 typedef struct audio_download audio_download_t;
 struct h2_gizclaw_device {
   h2_gizclaw_config_t config;
-  h2_gizclaw_tool_handler_t tools[H2_GIZCLAW_TOOL_LUA_APP_RUN];
+  h2_gizclaw_tool_handler_t tools[H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL];
   h2_gizclaw_lua_apps_t *lua_apps;
   h2_gizclaw_lua_stream_t *lua_stream;
   h2_gizclaw_mhs_device_t *mhs_devices;
@@ -577,6 +577,7 @@ static bool device_supports(const h2_gizclaw_device_t *d, int method) {
   case H2_GIZCLAW_TOOL_LUA_APP_LIST:
     return d->config.lua_apps != NULL;
   case H2_GIZCLAW_TOOL_LUA_APP_INSTALL:
+  case H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL:
     return h2_lua_apps_can_install(d->config.lua_apps);
   case H2_GIZCLAW_TOOL_LUA_APP_RUN:
     return d->config.lua_apps && v && v->prepare_lua_app_run;
@@ -619,8 +620,9 @@ static bool device_supports(const h2_gizclaw_device_t *d, int method) {
 static int device_tool(h2_gizclaw_device_t *d, int method,
                        h2_gizclaw_rpc_bytes_t bytes,
                        h2_gizclaw_rpc_provider_response_t *out) {
-  if (method >= H2_GIZCLAW_TOOL_LUA_APP_LIST &&
-      method <= H2_GIZCLAW_TOOL_LUA_APP_RUN) {
+  if ((method >= H2_GIZCLAW_TOOL_LUA_APP_LIST &&
+       method <= H2_GIZCLAW_TOOL_LUA_APP_RUN) ||
+      method == H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL) {
     lock(d);
     bool busy = d->pending != 0;
     unlock(d);
@@ -2030,8 +2032,8 @@ h2_pal_result_t h2_gizclaw_device_init_internal(h2_gizclaw_service_t *service) {
     memset(d->incoming, 0, sizeof(*d->incoming));
   }
   size_t tool_count = 0;
-  for (int tool = H2_GIZCLAW_TOOL_INFO_GET; tool <= H2_GIZCLAW_TOOL_LUA_APP_RUN;
-       ++tool)
+  for (int tool = H2_GIZCLAW_TOOL_INFO_GET;
+       tool <= H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL; ++tool)
     if (device_supports(d, tool))
       d->tools[tool_count++] = (h2_gizclaw_tool_handler_t){
           (h2_gizclaw_tool_t)tool, h2_gizclaw_device_tool_internal, d};

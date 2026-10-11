@@ -605,6 +605,8 @@ MP4 播放器配置也支持同名选项。启动动画可以借用同一个 Dis
 
 安装器先写 ordinal staging 文件，再将验证后的文件移到该 ID 的非活动 slot，最后通过 replacing atomic rename 发布总 index。清理前检查两个 slot 的 manifest identity；文件系统将不同 app_id 映射到同一目录时，拒绝该安装并保留已发布的应用。安装器观察到的取消、输入错误和发布失败保留旧版本与独立 KV。传输超时不能证明设备未安装，重新连接后应查询 listing，不能自动重试安装。成功发布后旧 slot 的清理不会把已完成的安装报告为失败。Filesystem 必须提供同步写入及替换式原子 rename；close 错误无法证明句柄是否已被消费时，目录进入终态存储错误并保留自身与借用依赖，禁止自动重试 close 或释放可能仍存活的 backend，需要结束该进程或设备生命周期后恢复。
 
+`h2_lua_apps_uninstall` 按稳定 `app_id` 幂等卸载并保留独立用户存储。它先原子发布目录移除，再按 manifest 清理两个可写版本 slot；目录发布失败保留旧应用，发布后的清理失败使应用保持不可用，重复卸载重试清理。预装文件不可变，目录用 `{"app_id":"demo","removed":true}` 持久隐藏预装身份及其覆盖版本，重启不会恢复；重新安装同 ID 后恢复正常 listing。远程独有身份移出索引并释放应用数与字节预算。只读目录不公布卸载能力；运行 owner 需要协调仍在使用 entry/data_dir 快照的任务。
+
 `h2_lua_apps_get` 返回 caller-owned entry/data_dir 快照，由产品 owner 在自己的运行流程中提交给 Lua Host。安装器不启动 VM，也不切换产品界面。运行中的 owner 应协调应用更新；快照中的安装路径不会在后续更新后永久保留。
 
 Host 可设置 `on_display_present`，在 Display worker 成功完成 PAL present 后观察完整 RGB565 framebuffer。像素与 callback context 均有明确借用生命周期，回调不能保留像素或重入 Host；它可用于摘要/golden 验证，只证明 renderer 与 PAL 接受了该帧，不证明面板光学输出。
@@ -737,3 +739,11 @@ Display 只持有两份全屏 RGB565 像素：Lua 绘制缓冲 A 与 worker 发�
 `deinit`、job release 和 Host join 在帧传输未完成时返回 busy，保留 VM 引用和所有权，调用方稍后重试。关闭请求通过同一 worker 执行；随后 PAL join 可等待退出或返回 busy，成功后才释放占用和缓冲区。`h2_lua_host_destroy_checked()` 只有成功才释放 Host；失败后不能销毁 Runtime 或恢复借用 Display 的 UI。兼容的 void destroy 也保留失败对象，但调用方必须使用 checked 入口判断释放是否完成。PAL 错误会锁存并停止新提交；唤醒或复制交接等待失败不能证明 worker 已停止读取 A，因此同时冻结绘制并保留两份缓冲。提交任务退出后可 join，但不会在不确定设备状态下自动 close/open 或重试。该原型没有解除故障隔离的 API：fault 后保留 Host/VM/device lease，消费端须维持依赖并走其外部恢复或进程重启流程。PAL 的无限等待可能令同步调用或任务无法退出；软件 busy 不意味着已取消硬件，不能强删任务后 free。
 
 帧率只用成功且像素变化的完成记录计算；submitted、无变化 submit 和失败都不能计为变化帧 FPS。时间是 PAL monotonic transport 完成时间，不是面板 scanout；Web 的传输完成也不证明浏览器已合成到屏幕。观察者不能并发读取 worker 正在更新的普通 64 位字段，应消费 `status/flush` 发布的完成记录。已提交的同源消费例位于 `libs/lua/tests/display_submit.lua`，由 native worker 和 `projects/example/targets/pkg_tar/lua-script-submit` 的浏览器测试共同运行。
+
+Host 回归可直接编译生产目录、GizClaw handler 和 Desktop PAL，运行包校验、卸载、持久化、故障恢复及 stream 测试：
+
+```sh
+python3 libs/lua/apps/tests/run_host_tests.py --yyjson-dir /path/to/yyjson/src --gizclaw-dir /path/to/gizclaw --sanitize
+```
+
+`gizclaw` checkout 应包含生成的 C contract 与已初始化的 pinned nanopb submodule。该验证使用 Host PAL；真机 Golden E2E 另行验证下载、显示与产品任务生命周期。

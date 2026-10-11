@@ -25,7 +25,8 @@ typedef struct app_manifest {
 typedef struct app_record {
   h2_lua_app_info_t info;
   uint64_t bytes;
-  int slot; /* -1 is preinstalled; writable slots alternate at commit. */
+  int slot; /* -2 is uninstalled; -1 is preinstalled; 0/1 are writable. */
+  bool preinstalled;
 } app_record_t;
 
 struct h2_lua_apps {

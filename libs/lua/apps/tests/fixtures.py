@@ -46,6 +46,7 @@ def main():
     fixtures = {}
     for name, options in {
         "valid": {}, "update": {"version": "2.0.0"},
+        "other": {"app_id": "other", "name": "other.lua"},
         "alias_id": {"app_id": "demo.", "name": "demo..lua"},
         "data": {"data": True}, "unicode": {"data": True, "unicode_name": True}, "hash": {"hash_bad": True},
         "extra": {"extra": True}, "duplicate": {"duplicate": True},

@@ -215,6 +215,11 @@ int main(void) {
   assert(h2_lua_apps_create(&config, &apps) == 0 &&
          h2_lua_apps_can_install(apps));
   check_version(apps, "0.1.0");
+  assert(h2_lua_apps_uninstall(apps, "demo") == 0);
+  assert(h2_lua_apps_destroy(apps) == 0);
+  assert(h2_lua_apps_create(&config, &apps) == 0);
+  h2_lua_app_info_t absent;
+  assert(h2_lua_apps_get(apps, "demo", &absent) == H2_PAL_ERR_NOT_FOUND);
   h2_lua_app_info_t info;
   http_t h = {
       .archive = fixture_valid, .size = sizeof(fixture_valid), .chunk = 1};
@@ -374,6 +379,69 @@ int main(void) {
                              1000, cancelled, &h,
                              &info) == H2_PAL_ERR_NO_SPACE);
   check_version(apps, "1.0.0");
+  assert(h2_lua_apps_destroy(apps) == 0);
+  config.installed_limit_bytes = 0;
+  assert(h2_lua_apps_create(&config, &apps) == 0);
+  assert(h2_lua_apps_uninstall(apps, "../demo") == H2_PAL_ERR_INVALID_ARG);
+  fs.rename = (h2_app_test_fault_t){.result = H2_PAL_ERR_IO, .remaining = 1};
+  assert(h2_lua_apps_uninstall(apps, "demo") == H2_PAL_ERR_IO);
+  check_version(apps, "1.0.0");
+  fs.rename = (h2_app_test_fault_t){0};
+  h2_lua_app_install_t *reservation = NULL;
+  assert(h2_lua_app_install_begin(apps, sizeof(fixture_valid), NULL, NULL, NULL,
+                                  &reservation) == 0);
+  assert(h2_lua_apps_uninstall(apps, "demo") == H2_PAL_ERR_BUSY);
+  h2_lua_app_install_abort(&reservation);
+  assert(h2_lua_apps_get(apps, "demo", &info) == 0);
+  char installed_entry[H2_LUA_APP_PATH_MAX];
+  strcpy(installed_entry, info.entry);
+  fs.remove = (h2_app_test_fault_t){.result = H2_PAL_ERR_IO, .remaining = 1};
+  assert(h2_lua_apps_uninstall(apps, "demo") == H2_PAL_ERR_IO);
+  assert(h2_lua_apps_get(apps, "demo", &info) == H2_PAL_ERR_NOT_FOUND);
+  assert(h2_lua_apps_destroy(apps) == 0);
+  assert(h2_lua_apps_create(&config, &apps) == 0);
+  assert(h2_lua_apps_get(apps, "demo", &info) == H2_PAL_ERR_NOT_FOUND);
+  fs.remove = (h2_app_test_fault_t){0};
+  assert(h2_lua_apps_uninstall(apps, "demo") == 0);
+  h2_pal_fs_stat_t removed = {0};
+  assert(h2_pal_fs_stat(&fs.api, installed_entry, &removed) ==
+         H2_PAL_ERR_NOT_FOUND);
+  assert(h2_lua_apps_uninstall(apps, "demo") == 0);
+  size_t available = 99;
+  assert(h2_lua_apps_list(apps, NULL, 0, &available) == 0 && available == 0);
+  expect_file(&fs.api, "/preinstalled/demo.lua", source, sizeof(source) - 1);
+  expect_file(&fs.api, "/user/demo/.kv", "save", 4);
+  assert(h2_lua_apps_install(apps, NULL, URI(fixture_data_zlib), NULL, 1000,
+                             NULL, NULL, &info) == 0);
+  check_version(apps, "1.0.0");
+  assert(h2_lua_apps_destroy(apps) == 0);
+  assert(h2_lua_apps_create(&config, &apps) == 0);
+  check_version(apps, "1.0.0");
+  assert(h2_lua_apps_uninstall(apps, "demo") == 0);
+  assert(h2_lua_apps_destroy(apps) == 0);
+  assert(h2_lua_apps_create(&config, &apps) == 0);
+  assert(h2_lua_apps_get(apps, "demo", &info) == H2_PAL_ERR_NOT_FOUND);
+  assert(h2_lua_apps_destroy(apps) == 0);
+  /* Remote-only identities release a catalog slot as well as their bytes. */
+  config.preinstalled_index = NULL;
+  config.install_root = "/remote";
+  config.max_apps = 1;
+  assert(h2_lua_apps_create(&config, &apps) == 0);
+  for (unsigned cycle = 0; cycle < 3u; ++cycle) {
+    assert(h2_lua_apps_install(apps, NULL, URI(fixture_data_zlib), NULL, 1000,
+                               NULL, NULL, &info) == 0);
+    assert(h2_lua_apps_uninstall(apps, "demo") == 0);
+    assert(h2_lua_apps_list(apps, NULL, 0, &available) == 0 && available == 0);
+  }
+  assert(h2_lua_apps_destroy(apps) == 0);
+  assert(h2_lua_apps_create(&config, &apps) == 0);
+  assert(h2_lua_apps_get(apps, "demo", &info) == H2_PAL_ERR_NOT_FOUND);
+  h = (http_t){
+      .archive = fixture_other, .size = sizeof(fixture_other), .chunk = 7};
+  assert(h2_lua_apps_install(apps, &http, URI("https://example.test/other"),
+                             NULL, 1000, NULL, NULL, &info) == 0);
+  assert(h2_lua_apps_get(apps, "other", &info) == 0);
+  assert(h2_lua_apps_uninstall(apps, "other") == 0);
   assert(h2_lua_apps_destroy(apps) == 0);
   assert(fs.active_handles == 0 && h2_app_test_fs_deinit(&fs) == 0);
   puts("Lua app streaming, preinstalled overlay, rollback and persistence "
