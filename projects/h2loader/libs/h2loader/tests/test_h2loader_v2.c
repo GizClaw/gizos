@@ -2279,6 +2279,37 @@ static void test_current_loader_identity_ignores_corrupt_metadata(void) {
   }
 }
 
+static void test_current_loader_identity_ignores_foreign_metadata(void) {
+  for (unsigned field = 0u; field < 4u; ++field) {
+    test_fixture_t fixture;
+    fixture_init(&fixture, 2u);
+    h2_loader_image_reader_vtable_t reader_ops = *fixture.reader.vtable;
+    reader_ops.get_capacity = larger_app_capacity;
+    fixture.reader.vtable = &reader_ops;
+    h2_loader_metadata_t stored = metadata(H2_LOADER_IMAGE_ROLE_H2LOADER, SHA_A);
+    switch (field) {
+    case 0u: (void)snprintf(stored.board, sizeof(stored.board), "foreign"); break;
+    case 1u: (void)snprintf(stored.target, sizeof(stored.target), "bk7258"); break;
+    case 2u: (void)snprintf(stored.version, sizeof(stored.version), "0.3.0"); break;
+    default: stored.role = H2_LOADER_IMAGE_ROLE_APP; break;
+    }
+    write_metadata(&fixture, H2_LOADER_METADATA_SLOT_PARTITION_2, &stored);
+    const unsigned commits = fixture.commits;
+    const pref_record_t original = fixture.records[2];
+    h2_loader_image_identity_t actual = {0};
+    assert(h2_loader_read_current_loader_identity(
+               &fixture.config, "0.2.0", &actual) == H2_PAL_OK);
+    assert(actual.image_size == 128u && fixture.digest_bytes == 128u);
+    assert(actual.format == 1u && actual.role == H2_LOADER_IMAGE_ROLE_H2LOADER);
+    assert(strcmp(actual.board, "devkit") == 0 &&
+           strcmp(actual.target, "esp32s3") == 0 &&
+           strcmp(actual.version, "0.2.0") == 0 &&
+           strcmp(actual.image_sha256, SHA_A) == 0);
+    assert(fixture.commits == commits &&
+           memcmp(&fixture.records[2], &original, sizeof(original)) == 0);
+  }
+}
+
 typedef struct checksum_fs_fixture {
   const char *value;
   size_t offset;
@@ -2350,6 +2381,7 @@ static void test_stats_observes_installed_checksum(void) {
 
 int main(void) {
   test_current_loader_identity_ignores_corrupt_metadata();
+  test_current_loader_identity_ignores_foreign_metadata();
   test_read_current_loader_identity();
   test_stats_observes_installed_checksum();
   test_plan_missing_destination();
