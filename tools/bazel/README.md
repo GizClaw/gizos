@@ -348,3 +348,9 @@ IDF 6.2 Python environment. S3/P4/C5 and S31 share the same pinned IDF 6.2 commi
 See the [board package](../../boards/esp_mosaico/README.md) for setup and optional
 camera integration. Native builds never flash hardware; an H2Loader artifact
 build does not qualify installation, recovery or rollback.
+
+ESP application versions must fit the SDK descriptor exactly: 1–31 UTF-8 bytes
+without NUL. The native runner rejects longer values before starting the SDK
+build, because IDF truncation would make runtime and package identities differ.
+This constraint applies to every ESP target; other native SDKs retain their own
+version contracts.
