@@ -16,6 +16,7 @@ firmware_lib_component(
     deps = [
         "//libs/command",
         "//libs/iostreamikcp",
+        "//libs/sha256",
     ],
 )
 
@@ -72,6 +73,7 @@ firmware_native_component(
     deps = [
         "//projects/h2loader/libs/h2loader:tasks",
         ":bundle_native",
+        ":reliable_transport",
         "//libs/command",
         "//libs/pal:pal_header_files",
     ],
