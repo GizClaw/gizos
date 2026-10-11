@@ -1060,18 +1060,13 @@ static int h2_esp_ble_gap_event(struct ble_gap_event *event, void *arg) {
             s_h2_esp_ble_connect_handle = H2_PAL_BLE_INVALID_CONN_HANDLE;
         }
         if (!central) {
-            /*
-             * An incoming link ends only the advertising that accepted it; a
-             * pending local connect() keeps waiting for its own event.
-             */
-#if CONFIG_BT_NIMBLE_EXT_ADV
-            if (arg != NULL) {
-                h2_esp_ble_complete_adv_set(arg, H2_PAL_OK);
-            } else
+            /* Extended advertising completes through ADV_COMPLETE. CONNECT
+             * can arrive after another operation has started, so completing
+             * again would clear that newer operation's active state. Legacy
+             * advertising has no separate completion event for this link. */
+#if !CONFIG_BT_NIMBLE_EXT_ADV
+            h2_esp_ble_complete_advertising();
 #endif
-            {
-                h2_esp_ble_complete_advertising();
-            }
             return 0;
         }
         s_h2_esp_ble_connect_pending = false;

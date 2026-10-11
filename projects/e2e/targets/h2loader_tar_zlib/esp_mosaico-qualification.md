@@ -21,7 +21,7 @@ of admission; it must not be silently removed from the registry.
 | pal-http | `pal-http/devkit` | [`pal-http/esp_mosaico`](pal-http/esp_mosaico/BUILD.bazel) | r9 45/45 on two independent boots; distinct nonces, real HTTP/TLS peer witnesses, cleanup/confirmation and managed install PASS |
 | pal-mqtt | `pal-mqtt/devkit` | [`pal-mqtt/esp_mosaico`](pal-mqtt/esp_mosaico/BUILD.bazel) | r21 36/36 on two independent boots; scoped native resources/provider release, delivery/confirmation and real broker/TLS witnesses PASS |
 | pal-net-tls | `pal-net-tls/devkit` | [`pal-net-tls/esp_mosaico`](pal-net-tls/esp_mosaico/BUILD.bazel) | r20 core profile: 37 mandatory / 38 total passes on two boots, one optional unsupported; real peer/cleanup/confirmation PASS; full-Net unqualified |
-| pal-wifi | `pal-wifi/devkit` | [`pal-wifi/esp_mosaico`](pal-wifi/esp_mosaico/BUILD.bazel) | NOT_RUN |
+| pal-wifi | `pal-wifi/devkit` | [`pal-wifi/esp_mosaico`](pal-wifi/esp_mosaico/BUILD.bazel) | r23 39/39 on public managed installation and independent normal reboot; six fresh peer leases per boot, persistence/restoration, confirmation and preserved Loader/coredump PASS |
 | pal-webrtc | `pal-webrtc/devkit` | [`pal-webrtc/esp_mosaico`](pal-webrtc/esp_mosaico/BUILD.bazel) | r22 43/43 on two independent boots; real Pion encrypted transport, typed fingerprint rejection, cleanup/confirmation and preserved Loader/Stage/coredump PASS |
 | pal-audio | `pal-audio/amoled` | [`pal-audio/esp_mosaico`](pal-audio/esp_mosaico/BUILD.bazel) | r8 24/24 on two independent peer boots; capture/output/30s soak and managed install PASS; acoustic observation unavailable |
 | pal-audio-decoder | `pal-audio-decoder/devkit` | [`pal-audio-decoder/esp_mosaico`](pal-audio-decoder/esp_mosaico/BUILD.bazel) | r8 29/29 on two independent peer boots; cleanup/confirmation and managed install PASS |
@@ -581,8 +581,8 @@ does not establish physical microphone/speaker quality. The immutable receipt
 binds clean source `2268ed71`, the r22 package/image hashes and unchanged original
 20,640-byte coredump. Both boots retain Loader identity and empty Stage.
 
-Artifact-bound records now cover 14 of 16 portable suites. Historical receipts
-retain their original source and image identities. Wi-Fi, complete bilateral Lua,
+Artifact-bound records now cover 15 of 16 portable suites. Historical receipts
+retain their original source and image identities. Complete bilateral Lua,
 final peripherals/camera insertion/acoustic observations and Loader recovery,
 rollback and checksum gates remain open. Earlier receipts are not relabeled as
 final-source qualification. All nineteen r22 packages build against frozen
@@ -606,3 +606,32 @@ identity on S3/P4/C5/S31. All 36 runner regressions pass, including ASCII and
 multibyte byte boundaries and fail-before-build checks on all four targets.
 Other SDK version contracts are unchanged. The corrected short-version Wi-Fi
 image still requires real independent boots, fresh peer witnesses and restoration.
+
+## Wi-Fi r23 and delayed BLE completion
+
+The short-version r23 package is bound to clean source `9c5867bf`. Public serial
+install E2E passes with all 1,238,051 bytes acknowledged, cleanup zero and complete
+true; it uses the existing configurable 1,000 reconnect attempts. The earlier
+CLI's fixed retry count ended before the four-minute App confirmation and stays
+recorded as a failed host operation. It is not substituted for the passing E2E.
+
+Managed boot 3 and independent normal boot 4 each pass all 39 ordered cases,
+covering all 21 operations. Nonces are distinct; both read the original canonical
+Settings across a real boot, restore Settings/network, remove the backup, retain
+no resources and confirm the App. Each fresh 600-second AMOLED fixture window
+records six ordered real DHCP client leases across WPA2/open/hidden modes, then
+restores its own Settings/network and confirms. Both receipts preserve Loader,
+empty Stage and the original 20,640-byte coredump; the peer coredump stays blank.
+The rejected truncated-version seed and its missing peer marker remain separate.
+
+The r22 Lua log reports default-set ADV_COMPLETE at 72,633 ms and CONNECT at
+72,738 ms, while the Loader restart grace is 100 ms. The native callback closed
+extended advertising at both events. An actual-callback host regression proves
+that a restart between them is cleared by the delayed CONNECT. The native fix
+leaves extended completion with ADV_COMPLETE and retains CONNECT completion for
+non-extended legacy advertising. Default and independent-set restart cases,
+ordinary completion, central-role/failure handling and legacy behavior pass;
+assertions remain active with explicit NDEBUG and optimized builds. This shared
+ESP provider change requires no public PAL API or per-board configuration change.
+Fresh S31/S3 builds and real bilateral loss/return are still required; host tests
+do not yet qualify the new callback artifact or resolve the assisted peer return.
