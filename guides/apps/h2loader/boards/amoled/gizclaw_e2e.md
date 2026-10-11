@@ -17,7 +17,7 @@ bazel build --config=esp32s3 \
 
 ## Lua App 大包与 golden
 
-`--define=H2_GIZCLAW_E2E_LUA_ONLY=1` 选择独立 `lua-apps` suite。调用方通过 `app_config_fixture` 的 string flags 提供 endpoint、RegistrationToken、期望 Profile、time_server、HTTPS device_api_url，以及 `lua_app_url`（Base64 zlib data URL）、`lua_app_http_url`、`lua_app_https_url`、`lua_app_id`、`lua_archive_sha256`、`lua_entry_sha256`、`lua_frame_sha256`。三个 URI 必须表示同一个 caller-owned 包，压缩大小必须大于 65535 字节且不超过 Binary 的 512 KiB 限制。私有游戏和本机地址只作为外部 build inputs，不复制进公共源码。可将这些输入放进工作树外的 Bazel rc 文件：
+`--define=H2_GIZCLAW_E2E_LUA_ONLY=1` 选择独立 `lua-apps` suite。调用方通过 `app_config_fixture` 的 string flags 提供 endpoint、RegistrationToken、期望 Profile、time_server、HTTPS device_api_url，以及 `lua_app_url`（仅在控制端本地解码的 Base64 archive fixture）、`lua_app_http_url`、`lua_app_https_url`、`lua_app_id`、`lua_archive_sha256`、`lua_entry_sha256`、`lua_frame_sha256`。两个 HTTP(S) 下载 URL 与本地 archive fixture 必须表示同一个 caller-owned 包，压缩大小必须大于 65535 字节且不超过 Binary 的 512 KiB 限制。私有游戏和本机地址只作为外部 build inputs，不复制进公共源码。可将这些输入放进工作树外的 Bazel rc 文件：
 
 ```sh
 bazel --bazelrc=/absolute/path/lua-fixture.bazelrc build --noannounce_rc --config=esp32s3 \
@@ -30,7 +30,7 @@ bazel --bazelrc=/absolute/path/lua-fixture.bazelrc build --noannounce_rc --confi
 
 先用 `//projects/e2e/targets/cc_test/gizclaw:gizclaw_h2peer_lua_apps_live_test` 和同一包在 368×448 headless display 上记录参考帧。只有显式 `H2_GIZCLAW_E2E_LUA_RECORD_GOLDEN=1` 的 host run 可以 record；随后把摘要固定到 fixture，再以默认严格模式运行。AMOLED 始终比较独立预期值。 Host 同时用设备的 ledger contract 校验每条 Lua 证据记录，统一使用 `H2_GIZCLAW_E2E stage=lua-golden` 前缀和单行格式，避免 host PASS 却无法冻结设备账本。首帧摘要覆盖 renderer 的完整 RGB565 framebuffer，成功-present callback 发生在真实 Display PAL 完成后；这不替代面板的光学观察。
 
-用例创建一个预装 Lua fixture，验证 listing 与 params/KV；随后经过真实 Server/Edge 用多帧 Binary、HTTP、HTTPS、data URL 安装大包，验证错误压缩摘要被拒绝且旧 entry 保留、混合 listing、同 ID 去重、已写 entry 的完整 SHA-256，再经远程 run 启动实际 Lua Host，要求至少三个成功呈现的帧及首帧 golden 一致。软件单测另覆盖错误摘要、长度、TAR/zlib 结束、路径、取消、配额与原子发布失败。该 lane 只验收应用安装与启动，不宣称完成游戏全过程或旧八项语音业务资格。
+用例创建一个预装 Lua fixture，验证 listing 与 params/KV；随后经过真实 Server/Edge 用多帧 Binary、HTTP、HTTPS 安装大包，验证错误压缩摘要被拒绝且旧 entry 保留、混合 listing、同 ID 去重、已写 entry 的完整 SHA-256，再经远程 run 启动实际 Lua Host，要求至少三个成功呈现的帧及首帧 golden 一致。软件单测另覆盖错误摘要、长度、TAR/zlib 结束、路径、取消、配额与原子发布失败。该 lane 只验收应用安装与启动，不宣称完成游戏全过程或旧八项语音业务资格。
 
 设备保留 `/data/gizclaw-e2e-lua` 下的安装目录和独立 KV，便于后续独立启动验证持久化；仅识别该 fixture 自己写入的 `.owner` 标记，不接管未知目录。结束时停止/join Lua 与安装 worker、销毁目录 handle、撤销临时 API key 并确认 Peer 删除，要求 `suite=lua-apps selected=1 terminal=1 pass=1 cleanup_rc=0 retained_resources=0 complete=true exit_code=0`。这里的 retained resources 指仍存活的句柄/任务与远端清理义务，预期保留的已安装文件不是泄漏。
 

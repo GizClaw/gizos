@@ -107,9 +107,13 @@ typedef struct h2_gizclaw_rpc_bytes {
   size_t len;
 } h2_gizclaw_rpc_bytes_t;
 
-/** Optional local response completion on the client poll owner.
- * OK means the response was accepted by the local transport and its RPC
- * channel closed normally, not that the remote application acknowledged it.
+/** Optional response-drain completion on the client poll owner.
+ * OK requires accepted response EOS and a subsequent normal requester channel
+ * close. Local SDK close initiates PAL draining; its terminal event must follow
+ * the transport close handshake before a product handoff destroys the Peer.
+ * This is transport completion,
+ * not an acknowledgement of the remote application's later work. Waiting is
+ * bounded by write_timeout_ms (or connect_timeout_ms when zero).
  * Failure/stop cancels the continuation. Called once; user must outlive it.
  * Shutdown calls it from the close/deinit owner; registration rejection may
  * call it inline on the provider owner.

@@ -18,7 +18,6 @@ cc_library(
     deps = [
         "//libs/bundle",
         "//libs/crypto/sha256",
-        "//libs/encoding",
         "//libs/pal",
         "//libs/semver",
         "//tools/bazel:vendor_third_party_yyjson",

@@ -1,6 +1,5 @@
 #include "h2_lua_apps_internal.h"
 #include "h2_bundle_tar.h"
-#include "h2_encoding.h"
 #include "zlib.h"
 
 #include <limits.h>
@@ -239,7 +238,7 @@ static bool url_valid(h2_lua_app_source_t uri) {
   size_t scheme = uri.size >= 8 && !memcmp(uri.data, "https://", 8)  ? 8u
                   : uri.size >= 7 && !memcmp(uri.data, "http://", 7) ? 7u
                                                                      : 0u;
-  if (!scheme || uri.size <= scheme || uri.size > 1024u)
+  if (!scheme || uri.size <= scheme || uri.size > H2_LUA_APP_URL_MAX)
     return false;
   size_t host_end = scheme;
   while (host_end < uri.size && uri.data[host_end] != '/' &&
@@ -254,44 +253,6 @@ static bool url_valid(h2_lua_app_source_t uri) {
       return false;
   }
   return true;
-}
-
-static size_t data_prefix(h2_lua_app_source_t uri) {
-  const char *prefixes[] = {"data:application/zlib;base64,",
-                            "data:application/octet-stream;base64,"};
-  for (size_t i = 0; i < sizeof(prefixes) / sizeof(prefixes[0]); ++i) {
-    size_t len = strlen(prefixes[i]);
-    if (uri.size > len && !memcmp(uri.data, prefixes[i], len))
-      return len;
-  }
-  return 0;
-}
-
-static int data_bytes(install_t *s, h2_lua_app_source_t uri, size_t prefix) {
-  const char *bytes = uri.data + prefix;
-  size_t size = uri.size - prefix;
-  if (!size || size % 4u)
-    return H2_PAL_ERR_INVALID_ARG;
-  for (size_t at = 0; at < size;) {
-    if (cancelled(s))
-      return H2_PAL_ERR_CLOSED;
-    size_t take = size - at;
-    const size_t capacity = (sizeof(s->input) / 3u) * 4u;
-    if (take > capacity)
-      take = capacity;
-    if (at + take < size && memchr(bytes + at, '=', take))
-      return H2_PAL_ERR_INVALID_ARG;
-    size_t decoded = 0;
-    if (h2_encoding_decode(&h2_encoding_base64_std, bytes + at, take, s->input,
-                           sizeof(s->input), &decoded) != H2_ENCODING_OK)
-      return H2_PAL_ERR_INVALID_ARG;
-    int rc =
-        receive(s, NULL, s->input, decoded, (size_t)s->received + decoded, 0);
-    if (rc != H2_PAL_OK)
-      return rc;
-    at += take;
-  }
-  return H2_PAL_OK;
 }
 
 static bool name_is(h2_pal_http_str_t name, const char *expected) {
@@ -611,13 +572,10 @@ h2_pal_result_t h2_lua_apps_install(h2_lua_apps_t *apps,
   if (out == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   memset(out, 0, sizeof(*out));
-  size_t prefix = source.data && source.size <= H2_LUA_APP_DATA_URL_MAX
-                      ? data_prefix(source)
-                      : 0;
-  if ((!prefix && (!source.data || !url_valid(source))) || !timeout_ms ||
+  if (!source.data || !url_valid(source) || !timeout_ms ||
       timeout_ms > 110000u || (sha256 && *sha256 && strlen(sha256) != 64u))
     return H2_PAL_ERR_INVALID_ARG;
-  if (!h2_lua_apps_can_install(apps) || (!prefix && http == NULL))
+  if (!h2_lua_apps_can_install(apps) || http == NULL)
     return H2_PAL_ERR_UNSUPPORTED;
   install_t *s = NULL;
   int rc = h2_lua_app_install_begin(apps, 0, sha256 && *sha256 ? sha256 : NULL,
@@ -639,13 +597,9 @@ h2_pal_result_t h2_lua_apps_install(h2_lua_apps_t *apps,
   h2_pal_http_response_t response = {0};
   if (rc == H2_PAL_OK && cancelled(s))
     rc = H2_PAL_ERR_CLOSED;
-  if (rc == H2_PAL_OK) {
-    if (prefix)
-      rc = data_bytes(s, source, prefix);
-    else
-      rc = h2_pal_http_request(http, &request, &response);
-  }
-  if (rc == H2_PAL_OK && !prefix &&
+  if (rc == H2_PAL_OK)
+    rc = h2_pal_http_request(http, &request, &response);
+  if (rc == H2_PAL_OK &&
       (response.status_code != 200 ||
        (response.content_length >= 0 &&
         (uint64_t)response.content_length != s->received)))

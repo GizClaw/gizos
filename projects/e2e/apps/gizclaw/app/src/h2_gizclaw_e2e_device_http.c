@@ -106,7 +106,7 @@ int h2_gizclaw_e2e_lua_upload(h2_gizclaw_e2e_api_t *test,
 int h2_gizclaw_e2e_tool_call(h2_gizclaw_e2e_api_t *test, const char *tool,
                              const char *args, int expected) {
   size_t capacity = strlen(tool) + (args ? strlen(args) : 2u) + 64u;
-  if (capacity > H2_LUA_APP_DATA_URL_MAX + 2048u)
+  if (capacity > 256u * 1024u + 2048u)
     return H2_PAL_ERR_NO_SPACE;
   char *body = h2_pal_mem_alloc(test->fixture->allocator, capacity);
   if (body == NULL)

@@ -447,15 +447,15 @@ static int verify_catalog(h2_gizclaw_e2e_api_t *api, const char *game,
              : rc;
 }
 
-/* This is the E2E controller's HTTP body. PAL HTTP borrows an upload buffer;
- * the device installer still receives bounded Binary frames on its worker. */
+/* The fixture config's Base64 carrier is decoded only by the controller.
+ * PAL HTTP borrows this upload buffer; the device receives Binary frames. */
 static int fixture_archive(lua_state_t *s, uint8_t **out, size_t *out_size) {
   *out = NULL;
   *out_size = 0;
   const char *uri = s->fixture->config->lua_app_url;
   static const char prefix[] = "data:application/zlib;base64,";
   if (strncmp(uri, prefix, sizeof(prefix) - 1u) ||
-      strlen(uri) > H2_LUA_APP_DATA_URL_MAX)
+      strlen(uri) > 256u * 1024u)
     return H2_PAL_ERR_INVALID_ARG;
   const char *text = uri + sizeof(prefix) - 1u;
   size_t length = strlen(text), capacity = 0;
@@ -569,9 +569,8 @@ int h2_gizclaw_e2e_run_lua_apps(h2_gizclaw_e2e_fixture_t *fixture) {
         "H2_GIZCLAW_E2E stage=lua-golden source=binary archive_bytes=%zu "
         "multi_frame=%d rc=%d\n",
         archive_size, archive_size > 65535u, rc);
-  const char *sources[] = {c->lua_app_http_url, c->lua_app_https_url,
-                           c->lua_app_url};
-  for (size_t i = 0; rc == H2_PAL_OK && i < 3; ++i) {
+  const char *sources[] = {c->lua_app_http_url, c->lua_app_https_url};
+  for (size_t i = 0; rc == H2_PAL_OK && i < 2; ++i) {
     size_t capacity = strlen(sources[i]) + 128u;
     char *args = h2_pal_mem_alloc(fixture->allocator, capacity);
     if (!args) {
@@ -601,9 +600,7 @@ int h2_gizclaw_e2e_run_lua_apps(h2_gizclaw_e2e_fixture_t *fixture) {
     h2_gizclaw_e2e_emit(
         "H2_GIZCLAW_E2E stage=lua-golden source=%s uri_bytes=%zu "
         "entry_bytes=%zu sha256_match=%d rc=%d\n",
-        i == 0   ? "http"
-        : i == 1 ? "https"
-                 : "data",
+        i == 0 ? "http" : "https",
         strlen(sources[i]), size, rc == H2_PAL_OK, rc);
   }
   if (rc == H2_PAL_OK)

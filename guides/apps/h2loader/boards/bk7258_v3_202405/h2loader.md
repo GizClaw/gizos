@@ -40,6 +40,8 @@ AP 的 UART PAL 持有 IO Stream iKCP session 和 Loader/App command owner。Loa
 
 Host 打开 managed serial 后、借出 stream 前明确 deassert DTR/RTS；不支持控制线的 endpoint 只有返回 canonical `UNSUPPORTED` 才可继续，其它错误立即终止连接。APP 与 Loader status 都从设备端同一个 BLE public/identity MAC 返回 12 位小写十六进制 `device_uid`，BLE 重启后以该 UID 验证设备，而不是信任 endpoint/address。
 
+普通 Loader 在读取 firmware version 后，使用公共 `h2_loader_read_current_loader_identity()` 构造完整 running identity，并持有已有 operation mutex；公版与私有 consumer 使用相同 metadata、容量回退与摘要校验。UID 由公共 `h2_bk_h2loader_get_device_uid()` 提供，与 App UART/BLE 使用同一 controller MAC 来源。
+
 APP 的 Loader client 必须显式传入 `app_entry_path=app/bk/app_ab_crc.rbl`，
 与 Loader 使用同一包入口。共享 client 的默认值仍为 ESP 包入口，遗漏此配置会在
 完整接收后以 `H2_LOADER_STAGE_ERROR step=validate code=-12` 拒绝 BK 包。

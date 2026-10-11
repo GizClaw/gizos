@@ -291,11 +291,16 @@ int main(void) {
   assert(snprintf(resource, sizeof(resource), "%s/资源.txt", info.data_dir) >
          0);
   expect_file(&fs.api, resource, "immutable resource", 18);
-  assert(h2_lua_apps_install(apps, NULL, URI(fixture_data_zlib),
+  const size_t downloaded_chunks = h.chunks;
+  /* Direct archives use Binary streams; even valid Base64 archives are not
+   * download URLs and must be rejected before touching the HTTP provider. */
+  assert(h2_lua_apps_install(apps, &http, URI(fixture_data_zlib),
                              fixture_valid_sha256, 1000, NULL, NULL,
-                             &info) == 0);
-  assert(h2_lua_apps_install(apps, NULL, URI(fixture_data_octet), NULL, 1000,
-                             NULL, NULL, &info) == 0);
+                             &info) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_lua_apps_install(apps, &http, URI(fixture_data_octet), NULL, 1000,
+                             NULL, NULL, &info) == H2_PAL_ERR_INVALID_ARG);
+  assert(h.chunks == downloaded_chunks && info.app_id[0] == 0);
+  expect_file(&fs.api, resource, "immutable resource", 18);
   assert(h2_lua_apps_install(
              apps, NULL, URI("data:application/zlib;base64,AB=="), NULL, 1000,
              NULL, NULL, &info) == H2_PAL_ERR_INVALID_ARG);

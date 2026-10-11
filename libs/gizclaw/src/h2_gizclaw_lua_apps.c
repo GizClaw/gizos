@@ -176,7 +176,7 @@ static bool install_request(h2_gizclaw_rpc_bytes_t bytes,
     if (tag == 1) {
       uint64_t size;
       if (url || wire != PB_WT_STRING || !pb_decode_varint(&stream, &size) ||
-          size > H2_LUA_APP_DATA_URL_MAX || size > stream.bytes_left)
+          size > H2_LUA_APP_URL_MAX || size > stream.bytes_left)
         return false;
       const char *data =
           (const char *)bytes.data + bytes.len - stream.bytes_left;
