@@ -109,8 +109,9 @@ typedef struct h2_gizclaw_rpc_bytes {
 
 /** Optional response-drain completion on the client poll owner.
  * OK requires accepted response EOS and a subsequent normal requester channel
- * close. The local SDK close is deferred so queued response bytes can drain
- * before a product handoff destroys the Peer. This is transport completion,
+ * close. Local SDK close initiates PAL draining; its terminal event must follow
+ * the transport close handshake before a product handoff destroys the Peer.
+ * This is transport completion,
  * not an acknowledgement of the remote application's later work. Waiting is
  * bounded by write_timeout_ms (or connect_timeout_ms when zero).
  * Failure/stop cancels the continuation. Called once; user must outlive it.

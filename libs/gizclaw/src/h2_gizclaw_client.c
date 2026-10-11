@@ -163,7 +163,6 @@ typedef struct h2_gizclaw_provider_completion {
   void *user;
   bool local_closed;
   bool peer_closed;
-  bool close_deferred;
   bool failed;
   bool response_sent;
   uint64_t deadline_ms;
@@ -673,9 +672,6 @@ static void dispatch_provider_completions(h2_gizclaw_client_t *client, int resul
       continue;
     const h2_gizclaw_provider_completion_t done = *entry;
     memset(entry, 0, sizeof(*entry));
-    if (done.close_deferred)
-      h2_pal_webrtc_channel_close(client->config.webrtc,
-                                   (h2_pal_webrtc_channel_t *)done.channel);
     const int completion_result = result != H2_PAL_ERR_CLOSED &&
         clock_result == H2_PAL_OK &&
         !done.failed && !expired && done.local_closed && done.peer_closed &&
@@ -1481,7 +1477,6 @@ static void h2_gizclaw_dispatch_channel_state(
       completion->peer_closed = state == H2_PAL_WEBRTC_CHANNEL_CLOSED;
       /* A terminal PAL event retires the handle; its pointer is now identity
        * only and must not be closed after the event lease is released. */
-      completion->close_deferred = false;
       if (state == H2_PAL_WEBRTC_CHANNEL_ERROR || !completion->response_sent)
         completion->failed = true;
     }
@@ -1947,14 +1942,6 @@ static void h2_gzc_channel_close(gzc_rtc_channel_t *channel) {
         provider_completion_for_channel(client, channel);
     if (completion != NULL) {
       completion->local_closed = true;
-      /* Let the requester read EOS and close the channel before a product
-       * handoff can destroy the Peer. Accepted PAL bytes are still queued. */
-      if (!completion->failed && completion->response_sent &&
-          !completion->peer_closed) {
-        completion->close_deferred = true;
-        return;
-      }
-      completion->close_deferred = false;
       if (!completion->response_sent) completion->failed = true;
     }
     if (client->local_channel_state.channel ==

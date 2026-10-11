@@ -1343,11 +1343,11 @@ static void test_provider_completions(h2_gizclaw_config_t config) {
       assert(h2_gizclaw_client_close(pending) == H2_PAL_OK);
       assert(fixture.calls == 1 && fixture.result == H2_PAL_ERR_CLOSED);
     }
-    assert(provider_channel_closes == closes + 1u);
+    assert(provider_channel_closes == closes);
     h2_gizclaw_test_set_client_poll(NULL, NULL);
     h2_gizclaw_client_deinit(pending);
     assert(fixture.calls == 1);
-    assert(provider_channel_closes == closes + 1u);
+    assert(provider_channel_closes == closes);
   }
   for (unsigned when = 0u; when < 2u; ++when) {
     h2_gizclaw_client_t *pending = NULL;
@@ -1370,7 +1370,7 @@ static void test_provider_completions(h2_gizclaw_config_t config) {
       test_monotonic_result = H2_PAL_ERR_IO;
       (void)h2_gizclaw_client_poll(pending, 0);
       assert(fixture.calls == 1 && fixture.result == H2_PAL_ERR_IO &&
-             provider_channel_closes == closes + 1u);
+             provider_channel_closes == closes);
       h2_gizclaw_test_set_client_poll(NULL, NULL);
     }
     test_monotonic_result = H2_PAL_OK;
