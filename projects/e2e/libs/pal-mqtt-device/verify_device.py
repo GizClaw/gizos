@@ -15,7 +15,7 @@ import signal
 import tarfile
 import zlib
 
-STARTUP_MARKER = r'H2_\w*(?:BOOT|STARTUP)(?:\b|_[A-Z_]+\b)|\bBooting\b|^ESP-ROM:|^rst:0x[0-9a-f]+'
+STARTUP_MARKER = r'H2_(?!LOADER_STARTUP_EVENT\b)\w*(?:BOOT|STARTUP)(?:\b|_[A-Z_]+\b)|\bBooting\b|^ESP-ROM:|^rst:0x[0-9a-f]+'
 
 def uart_text(path):
     # Keep the authoritative bytes for receipt hashes. SDK startup may emit
@@ -95,6 +95,9 @@ def boot_ledger(text, ids, version, previous=None):
         if 'H2_PAL_MQTT_' in line:
             record = line.split('H2_PAL_MQTT_', 1)[1]
             assert '\ufffd' not in record, 'corrupt MQTT protocol record'
+        if 'H2_LOADER_STARTUP_EVENT ' in line:
+            assert boot is None and run is None and accepted is None, 'later startup: Loader progress after App execution began'
+            continue
         startup = re.search(STARTUP_MARKER, line)
         if startup:
             execution_boot = 'H2_PAL_MQTT_BOOT ' in line

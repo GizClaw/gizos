@@ -18,6 +18,16 @@ class Verifier(unittest.TestCase):
         rows='\n'.join('H2_PAL_MQTT_CASE '+json.dumps(dict(id=case,status='PASS',detail=0)) for case in self.ids)
         summary=dict(selected=36,passed=36,failed=0,blocked=0,cleanup=0,rc=0,before=[0]*10,after=[0]*10)
         self.good='H2_PAL_MQTT_PLATFORM_BOOT board=bk7258\nH2_PAL_MQTT_BOOT '+self.boot+'\nH2_PAL_MQTT_RUN '+self.boot+'\n'+rows+'\nH2_PAL_MQTT_SUMMARY '+json.dumps(summary)+'\nH2_PAL_MQTT_READY board=bk7258 rc=0 confirm=pending\nH2_PAL_MQTT_CONFIRMED board=bk7258 rc=0\n'
+    def test_loader_progress_events_are_not_reboot_markers(self):
+        progress = ('H2_MOSAICO_LOADER_BOOT reset_reason=3\n'
+                    'H2_LOADER_STARTUP_EVENT event=write_partition_2 code=0\n'
+                    'H2_LOADER_STARTUP_EVENT event=boot_partition_2 code=0\n')
+        self.assertEqual(boot_ledger(progress + self.good, self.ids, 'v1')['boot']['id'], self.execution)
+        without_boot = self.good.split('H2_PAL_MQTT_RUN ', 1)[1]
+        with self.assertRaises(AssertionError):
+            after_accepted_reboot('H2_LOADER_REBOOT target=app result=accepted\n' +
+                progress.split('\n', 1)[1] + 'H2_PAL_MQTT_RUN ' + without_boot, 'app')
+
     def test_mosaico_package_identity_is_exact(self):
         image = b'mosaico-test-image'
         for target, accepted in [('esp32s31', True), ('esp32s3', False)]:

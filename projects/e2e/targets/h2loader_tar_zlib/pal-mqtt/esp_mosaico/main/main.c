@@ -8,7 +8,10 @@
 #include "h2_coremqtt.h"
 #include "device_runner.h"
 #include "ledger_console.h"
+#include "control_allocator.h"
+#include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "psa/crypto.h"
 #include <stdio.h>
@@ -21,6 +24,25 @@ static h2_mqtt_device_result_t result;
 static size_t owner_bytes;
 static h2_mqtt_esp_ledger_console_t console;
 static const h2_pal_log_api_t *board_log;
+static void fail(const char *stage, int rc);
+static StaticSemaphore_t control_mutex_storage;
+static SemaphoreHandle_t control_mutex;
+static h2_runtime_config_t command_runtime_config;
+static void control_lock(void *unused) {
+    (void)unused;
+    BaseType_t taken = xSemaphoreTake(control_mutex, portMAX_DELAY);
+    if (taken != pdTRUE) fail("control-lock", H2_PAL_ERR_INVALID_STATE);
+}
+static void control_unlock(void *unused) {
+    (void)unused;
+    BaseType_t given = xSemaphoreGive(control_mutex);
+    if (given != pdTRUE) fail("control-unlock", H2_PAL_ERR_INVALID_STATE);
+}
+static size_t control_size(void *p) { return heap_caps_get_allocated_size(p); }
+static h2_mqtt_control_allocator_t control = {
+    .lock = control_lock, .unlock = control_unlock, .usable_size = control_size,
+};
+
 
 static int ledger_log(void *user,h2_pal_log_level_t level,const char *scope,const char *message) {
     (void)user;
@@ -37,7 +59,9 @@ static void fail(const char *stage, int rc) {
     fflush(stdout);
     hold();
 }
-static int snapshot(size_t out[10]) {
+static int snapshot(const char *phase, size_t out[10]) {
+    memset(out, 0, 10u * sizeof(size_t));
+    control_lock(NULL);
     h2_esp_platform_resource_stats_t stats = {0};
     int rc = h2_esp_platform_get_resource_stats(&stats);
     if (rc == H2_PAL_OK) {
@@ -47,6 +71,14 @@ static int snapshot(size_t out[10]) {
             stats.allocations, stats.allocation_bytes};
         memcpy(out, values, sizeof(values));
     }
+    size_t raw_allocations = out[8], raw_bytes = out[9];
+    size_t command_allocations = control.allocations, command_bytes = control.bytes;
+    if (rc == H2_PAL_OK) rc = h2_mqtt_control_filter(&control, out);
+    control_unlock(NULL);
+    printf("H2_MQTT_RESOURCE_SCOPE phase=%s total_alloc=%zu total_bytes=%zu command_alloc=%zu command_bytes=%zu suite_alloc=%zu suite_bytes=%zu rc=%d\n",
+        phase, raw_allocations, raw_bytes, command_allocations, command_bytes,
+        out[8], out[9], rc);
+    fflush(stdout);
     return rc;
 }
 static int ca_digest(void *user, const uint8_t *bytes, size_t length, uint8_t digest[32]) {
@@ -69,10 +101,10 @@ static void run(void *user) {
         fflush(stdout);
         vTaskDelay(pdMS_TO_TICKS(3000u));
     }
-    rc = snapshot(result.before);
+    rc = snapshot("before", result.before);
     if (rc != H2_PAL_OK) fail("before", rc);
     rc = h2_mqtt_device_run(runtime, 8u, ca_digest, NULL, &result);
-    int after = snapshot(result.after);
+    int after = snapshot("after", result.after);
     result.cleanup = after == H2_PAL_OK &&
         memcmp(result.before, result.after, sizeof(result.before)) == 0 ? H2_PAL_OK : H2_PAL_ERR_IO;
 
@@ -88,7 +120,7 @@ static void run(void *user) {
     if (after == H2_PAL_OK && expected[8] >= 1u && expected[9] >= owner_bytes) {
         --expected[8];
         expected[9] -= owner_bytes;
-        if (snapshot(released) == H2_PAL_OK && memcmp(expected, released, sizeof(expected)) == 0)
+        if (snapshot("provider-released", released) == H2_PAL_OK && memcmp(expected, released, sizeof(expected)) == 0)
             provider_cleanup = H2_PAL_OK;
     }
     if (provider_cleanup != H2_PAL_OK) result.cleanup = provider_cleanup;
@@ -113,15 +145,20 @@ void app_main(void) {
     h2_runtime_config_t config = {0};
     rc = h2_esp_board_runtime_config(&config);
     if (rc != H2_PAL_OK) fail("board", rc);
+    control_mutex = xSemaphoreCreateMutexStatic(&control_mutex_storage);
+    if (control_mutex == NULL) fail("control-mutex", H2_PAL_ERR_NO_MEMORY);
+    control.backing = config.mem;
+    rc = h2_mqtt_control_init(&control);
+    if (rc != H2_PAL_OK) fail("control-allocator", rc);
     size_t before[10], after[10];
-    rc = snapshot(before);
+    rc = snapshot("provider-before", before);
     if (rc != H2_PAL_OK) fail("provider-before", rc);
     const h2_coremqtt_config_t mqtt_config = {.allocator = config.mem,
         .net = config.net, .time = config.time, .log = config.log,
         .outgoing_publish_records = 8u, .incoming_publish_records = 8u};
     rc = h2_coremqtt_create(&mqtt_config, &mqtt, &mqtt_api);
     if (rc != H2_PAL_OK) fail("mqtt-create", rc);
-    rc = snapshot(after);
+    rc = snapshot("provider-created", after);
     if (rc != H2_PAL_OK || memcmp(before, after, 8u * sizeof(size_t)) != 0 ||
         after[8] != before[8] + 1u || after[9] <= before[9]) {
         h2_coremqtt_destroy(mqtt);
@@ -133,7 +170,11 @@ void app_main(void) {
     const h2_esp_h2loader_app_commands_config_t commands = {.active_name = "pal-mqtt",
         .hardware_capabilities = H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_WIFI,
         .h2loader_partition_id = 1u, .coredump_partition_id = 3u};
-    rc = h2_esp_h2loader_app_commands_prepare_serial_with_config(&config, &commands);
+    /* Keep transport buffers out of App-owned MQTT accounting, while their
+     * native allocations remain in the independently reported raw totals. */
+    command_runtime_config = config;
+    command_runtime_config.mem = &control.api;
+    rc = h2_esp_h2loader_app_commands_prepare_serial_with_config(&command_runtime_config, &commands);
     if (rc == H2_PAL_OK) rc = h2_runtime_init(&config, &runtime);
     if (rc != H2_PAL_OK) {
         h2_coremqtt_destroy(mqtt);
