@@ -31,10 +31,10 @@ from tools.bazel.native_runtime import (
 H2LOADER_WIFI_CREDENTIALS = "H2LOADER_WIFI_CREDENTIALS"
 NATIVE_BUILD_JOBS = "H2_NATIVE_BUILD_JOBS"
 GIZOS_ROOT = Path(__file__).resolve().parents[2]
-EXPECTED_IDF_VERSION = "6.0"
+EXPECTED_IDF_VERSION = "6.2"
 
 def idf_version_for_target(target: str) -> str:
-    return "6.2" if target == "esp32s31" else EXPECTED_IDF_VERSION
+    return EXPECTED_IDF_VERSION
 
 TARGET_COMPILERS = {
     "esp32s31": "riscv32-esp-elf-gcc",
@@ -829,7 +829,7 @@ def run(arguments: argparse.Namespace) -> None:
         subprocess_environment["PATH"] = (
             f"{wrapper_directory}{os.pathsep}{environment['PATH']}"
         )
-        # ESP-IDF 6.0 constrains idf-component-manager to 3.0.x. Its
+        # The pinned ESP-IDF constrains idf-component-manager to 3.0.x. Its
         # ComponentManagerSettings uses the IDF_COMPONENT_ prefix with the
         # CACHE_PATH field, which maps to IDF_COMPONENT_CACHE_PATH.
         subprocess_environment["IDF_COMPONENT_CACHE_PATH"] = str(

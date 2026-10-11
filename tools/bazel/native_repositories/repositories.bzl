@@ -233,7 +233,7 @@ def _esp_tools_repository_impl(repository_ctx):
     missing = [key for key in required if not contract.get(key)]
     if missing:
         fail("ESP-IDF tool versions are incomplete: %s" % ", ".join(missing))
-    if contract["python"] != "esp-idf-v6.0-constraints":
+    if contract["python"] != "esp-idf-v6.2-constraints":
         fail("unsupported ESP-IDF Python identity: %s" % contract["python"])
     python_environment_root = tools_root.get_child("python_env")
     if not python_environment_root.exists or not python_environment_root.is_dir:
@@ -242,12 +242,12 @@ def _esp_tools_repository_impl(repository_ctx):
         candidate.basename
         for candidate in python_environment_root.readdir()
         if candidate.is_dir and
-           candidate.basename.startswith("idf6.0_py") and
+           candidate.basename.startswith("idf6.2_py") and
            candidate.basename.endswith("_env") and
            candidate.get_child("bin").get_child("python").exists
     ])
     if len(python_environment_names) != 1:
-        fail("expected exactly one ESP-IDF 6.0 Python environment under %s, found %s" % (
+        fail("expected exactly one ESP-IDF 6.2 Python environment under %s, found %s" % (
             python_environment_root,
             python_environment_names,
         ))

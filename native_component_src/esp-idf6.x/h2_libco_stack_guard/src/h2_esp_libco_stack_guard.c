@@ -5,7 +5,7 @@
 #include "h2_esp_libco_stack_guard_test_sdk.h"
 #else
 #include "sdkconfig.h"
-#if CONFIG_IDF_TARGET_ESP32S31
+#if CONFIG_IDF_TARGET_ARCH_RISCV
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/portmacro.h"
@@ -16,12 +16,12 @@
 #endif
 #endif
 
-/* Force this object into the native link so its S31 hooks override weak defaults. */
+/* Force this object into the native link on the SDK RISC-V targets. */
 void h2_esp_libco_stack_guard_link(void) {
     __asm__ volatile ("" ::: "memory");
 }
 
-#if CONFIG_IDF_TARGET_ESP32S31
+#if CONFIG_IDF_TARGET_ARCH_RISCV && SOC_CPU_COPROC_NUM > 0
 static portMUX_TYPE switch_lock = portMUX_INITIALIZER_UNLOCKED;
 
 /* The pinned FreeRTOS port locates task coprocessor bookkeeping below
@@ -40,6 +40,7 @@ static RvCoprocSaveArea *save_area(uint32_t top) {
 uint32_t h2_libco_riscv32_stack_prepare(uint32_t stack_min, uint32_t stack_max) {
     uint32_t sp = (stack_max - sizeof(RvCoprocSaveArea)) & ~15u;
     configASSERT(stack_min < sp);
+    (void)stack_min; /* SDK builds may disable runtime assertions. */
     memset(save_area(stack_max), 0, sizeof(RvCoprocSaveArea));
     return sp;
 }

@@ -1,3 +1,6 @@
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include "h2_esp_libco_stack_guard.h"
 #include "h2_esp_libco_stack_guard_test_sdk.h"
 #include <stdbool.h>

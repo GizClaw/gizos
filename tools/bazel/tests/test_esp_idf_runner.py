@@ -30,7 +30,7 @@ import sys
 
 if "H2_RUNNER_SECRET" in os.environ:
     raise SystemExit("unapproved environment variable escaped into idf.py")
-if os.environ.get("ESP_IDF_VERSION") != "6.0":
+if os.environ.get("ESP_IDF_VERSION") != "6.2":
     raise SystemExit("runner did not provide the pinned ESP-IDF version")
 if os.environ.get("H2_FIRMWARE_VERSION") != "test-version":
     raise SystemExit("runner did not provide the internal firmware version")
@@ -224,10 +224,10 @@ class EspIdfRunnerTest(unittest.TestCase):
         self.tool_bin.mkdir()
         compiler_versions = {
             "xtensa-esp-elf-gcc": (
-                "xtensa-esp-elf-gcc (crosstool-NG esp-15.2.0_20251204) 15.2.0"
+                "xtensa-esp-elf-gcc (crosstool-NG esp-16.1.0_20260609) 16.1.0"
             ),
             "riscv32-esp-elf-gcc": (
-                "riscv32-esp-elf-gcc (crosstool-NG esp-15.2.0_20251204) 15.2.0"
+                "riscv32-esp-elf-gcc (crosstool-NG esp-16.1.0_20260609) 16.1.0"
             ),
         }
         for compiler, version in compiler_versions.items():
@@ -290,15 +290,15 @@ class EspIdfRunnerTest(unittest.TestCase):
             tool_versions
             or (
                 "esp32c5=riscv32-esp-elf-gcc (crosstool-NG "
-                "esp-15.2.0_20251204) 15.2.0\n"
+                "esp-16.1.0_20260609) 16.1.0\n"
                 "esp32p4=riscv32-esp-elf-gcc (crosstool-NG "
-                "esp-15.2.0_20251204) 15.2.0\n"
+                "esp-16.1.0_20260609) 16.1.0\n"
                 "esp32s3=xtensa-esp-elf-gcc (crosstool-NG "
-                "esp-15.2.0_20251204) 15.2.0\n"
+                "esp-16.1.0_20260609) 16.1.0\n"
                 "esp32s3_archive_compiler=xtensa-esp-elf-gcc\n"
                 "esp32s3_dynconfig=xtensa_esp32s3.so\n"
                 "ninja=1.13.2\n"
-                "python=esp-idf-v6.0-constraints\n"
+                "python=esp-idf-v6.2-constraints\n"
             ),
             encoding="utf-8",
         )
@@ -712,12 +712,12 @@ class EspIdfRunnerTest(unittest.TestCase):
         result, _ = self._run(
             tool_versions=(
                 "esp32c5=riscv32-esp-elf-gcc (crosstool-NG "
-                "esp-15.2.0_20251204) 15.2.0\n"
+                "esp-16.1.0_20260609) 16.1.0\n"
                 "esp32p4=riscv32-esp-elf-gcc (crosstool-NG "
-                "esp-15.2.0_20251204) 15.2.0\n"
+                "esp-16.1.0_20260609) 16.1.0\n"
                 "esp32s3=unexpected\n"
                 "ninja=1.13.2\n"
-                "python=esp-idf-v6.0-constraints\n"
+                "python=esp-idf-v6.2-constraints\n"
             ),
         )
         self.assertIn("compiler version mismatch", result.stderr)
@@ -731,11 +731,11 @@ class EspIdfRunnerTest(unittest.TestCase):
     def test_ninja_missing_fails_closed(self):
         self.tool_bin.joinpath("ninja").unlink()
         result, _ = self._run(tool_versions=(
-            "esp32c5=riscv32-esp-elf-gcc (crosstool-NG esp-15.2.0_20251204) 15.2.0\n"
-            "esp32p4=riscv32-esp-elf-gcc (crosstool-NG esp-15.2.0_20251204) 15.2.0\n"
-            "esp32s3=xtensa-esp-elf-gcc (crosstool-NG esp-15.2.0_20251204) 15.2.0\n"
+            "esp32c5=riscv32-esp-elf-gcc (crosstool-NG esp-16.1.0_20260609) 16.1.0\n"
+            "esp32p4=riscv32-esp-elf-gcc (crosstool-NG esp-16.1.0_20260609) 16.1.0\n"
+            "esp32s3=xtensa-esp-elf-gcc (crosstool-NG esp-16.1.0_20260609) 16.1.0\n"
             "ninja=definitely-not-the-system-version\n"
-            "python=esp-idf-v6.0-constraints\n"
+            "python=esp-idf-v6.2-constraints\n"
         ))
         self.assertIn("Ninja version mismatch", result.stderr)
 
@@ -785,14 +785,14 @@ class S31ToolContractTest(unittest.TestCase):
             self.assertEqual(versions["esp32s31"], "compiler16")
             with self.assertRaises(runner.RunnerError):
                 runner.read_expected_tool_versions(str(path), "esp32s3")
-            path.write_text("esp32p4=compiler15\nninja=1.13.2\npython=esp-idf-v6.0-constraints\n")
+            path.write_text("esp32p4=compiler15\nninja=1.13.2\npython=esp-idf-v6.2-constraints\n")
             with self.assertRaises(runner.RunnerError):
                 runner.read_expected_tool_versions(str(path), "esp32s31")
 
     def test_sdk_versions_are_target_owned(self):
         self.assertEqual(runner.idf_version_for_target("esp32s31"), "6.2")
         for target in ("esp32s3", "esp32p4", "esp32c5"):
-            self.assertEqual(runner.idf_version_for_target(target), "6.0")
+            self.assertEqual(runner.idf_version_for_target(target), "6.2")
 
 
 if __name__ == "__main__":
