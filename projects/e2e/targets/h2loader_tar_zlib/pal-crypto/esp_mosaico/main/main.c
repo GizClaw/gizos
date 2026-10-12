@@ -1,3 +1,4 @@
+#include "h2_mosaico_e2e_screen.h"
 #include "h2_mosaico_loader_usb.h"
 #include "device_runner.h"
 #include "esp_app_desc.h"
@@ -13,6 +14,7 @@
 static h2_runtime_t *runtime;
 static esp_timer_handle_t watchdog;
 static void fail(const char *stage, int rc) {
+  (void)h2_mosaico_e2e_screen_result(rc, -1);
   printf("H2_CRYPTO_LAUNCHER_FAIL stage=%s rc=%d\n", stage, rc);
   fflush(stdout);
   for (;;)
@@ -26,16 +28,20 @@ static void deadline(void *unused) {
 static void run(void *unused) {
   (void)unused;
   vTaskDelay(pdMS_TO_TICKS(5000));
+  (void)h2_mosaico_e2e_screen_phase("RUNNING");
   int rc = h2_crypto_device_run(runtime, esp_app_get_description()->version);
   esp_timer_stop(watchdog);
   esp_timer_delete(watchdog);
   /* Preserve actual failed cases without confirming an unqualified image. */
   h2_crypto_device_replay(runtime);
   if (rc != H2_PAL_OK) {
+    (void)h2_mosaico_e2e_screen_result(rc, -1);
     printf("H2_CRYPTO_QUALIFICATION_FAIL rc=%d confirm=not-attempted\n", rc);
     fail("qualification", rc);
   }
+  (void)h2_mosaico_e2e_screen_phase("CONFIRMING");
   int confirm = h2_esp_h2loader_app_confirm(runtime);
+  (void)h2_mosaico_e2e_screen_result(rc, confirm);
   if (confirm != H2_PAL_OK)
     fail("confirm", confirm);
   printf("H2_CRYPTO_READY rc=%d confirm=%d\n", rc, confirm);
@@ -57,6 +63,8 @@ void app_main(void) {
   rc = h2_esp_board_runtime_config(&config);
   if (rc)
     fail("board", rc);
+  (void)h2_mosaico_e2e_screen_begin(config.display, "CRYPTO", 4u);
+
   config.system_event = h2_pal_unsupported_system_event_api();
   const h2_esp_h2loader_app_commands_config_t commands = {
       .active_name = "pal-crypto",

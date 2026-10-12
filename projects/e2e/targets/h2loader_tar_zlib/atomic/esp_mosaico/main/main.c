@@ -1,3 +1,4 @@
+#include "h2_mosaico_e2e_screen.h"
 #include "h2_mosaico_loader_usb.h"
 #include "device_runner.h"
 #include "esp_memory_utils.h"
@@ -30,6 +31,7 @@ static void hold(void) {
     vTaskDelay(pdMS_TO_TICKS(1000));
 }
 static void fail(const char *stage, int rc) {
+  (void)h2_mosaico_e2e_screen_result(rc, -1);
   printf("H2_ATOMIC_FAIL stage=%s rc=%d confirm=not-attempted\n", stage, rc);
   fflush(stdout);
   if (runtime && !commands_started)
@@ -54,6 +56,7 @@ static int placement(uintptr_t wrapper, uintptr_t storage, bool is_static,
 }
 static void run(void *unused) {
   (void)unused;
+  (void)h2_mosaico_e2e_screen_phase("RUNNING 56 CHECKS");
   h2_pal_time_sleep_ms(runtime->time, 1500);
   h2_esp_platform_resource_stats_t before = {0}, after = {0};
   int rc = h2_esp_platform_get_resource_stats(&before);
@@ -126,10 +129,12 @@ static void run(void *unused) {
   rc = start_commands();
   if (rc)
     fail("commands", rc);
+  (void)h2_mosaico_e2e_screen_phase("CONFIRMING");
   rc = h2_esp_h2loader_app_confirm(runtime);
   if (rc)
     fail("confirm", rc);
   h2_atomic_device_admit(cleanup, rc);
+  (void)h2_mosaico_e2e_screen_result(cleanup, rc);
   puts("H2_ATOMIC_READY rc=0 confirm=0");
   fflush(stdout);
   for (;;) {
@@ -149,6 +154,8 @@ void app_main(void) {
   rc = h2_esp_board_runtime_config(&runtime_config);
   if (rc)
     fail("board", rc);
+  (void)h2_mosaico_e2e_screen_begin(runtime_config.display, "ATOMIC", 7u);
+
   rc = h2_runtime_init(&runtime_config, &runtime);
   if (rc)
     fail("runtime", rc);

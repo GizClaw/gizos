@@ -1,3 +1,4 @@
+#include "h2_mosaico_e2e_screen.h"
 #include "h2_esp_board.h"
 #include "h2_mosaico_loader_usb.h"
 #include "h2_esp_h2loader_ble.h"
@@ -362,6 +363,7 @@ static int prepare_wall_fixture(int *out_prepared) {
 static void run(void *user) {
     (void)user;
     vTaskDelay(pdMS_TO_TICKS(5000u));
+    (void)h2_mosaico_e2e_screen_phase("RUNNING 41 CHECKS");
     int wall_prepared = 0;
     int fixture_rc = prepare_wall_fixture(&wall_prepared);
     if (fixture_rc != H2_PAL_OK) {
@@ -398,6 +400,7 @@ static void run(void *user) {
            "complete=%d qualified=%d cleanup=%d rc=%d\n", H2_PAL_CORE_E2E_CONTRACT_VERSION,
            result.passed, result.failed, result.blocked, result.not_run,
            result.complete, result.qualified, result.cleanup_result, rc);
+    (void)h2_mosaico_e2e_screen_phase("STACK AND TASK PROBE");
     int probe = H2_PAL_ERR_UNAVAILABLE;
     if (result.retained_cleanup == NULL && result.baseline.retained_cleanup == NULL)
         probe = task_probe();
@@ -408,8 +411,10 @@ static void run(void *user) {
     (void)esp_timer_delete(watchdog);
     const int eligible = rc == H2_PAL_OK && result.qualified &&
                          probe == H2_PAL_OK && wall_restore == H2_PAL_OK;
+    if (eligible) (void)h2_mosaico_e2e_screen_phase("CONFIRMING");
     int confirm = eligible ? h2_esp_h2loader_app_confirm(runtime)
                            : H2_PAL_ERR_INVALID_STATE;
+    (void)h2_mosaico_e2e_screen_result(eligible ? 0 : H2_PAL_ERR_INVALID_STATE, confirm);
     if (!eligible)
         printf("H2_PAL_CORE_QUALIFICATION_FAIL rc=%d task_probe=%d "
                "wall_restore=%d confirm=not-attempted\n", rc, probe, wall_restore);
@@ -474,6 +479,8 @@ void app_main(void) {
     fflush(stdout);
     rc = h2_esp_h2loader_app_commands_prepare_serial_with_config(&transport_config, &commands);
     if (rc != H2_PAL_OK) fail("command_prepare", rc);
+    rc = h2_mosaico_e2e_screen_begin(runtime_config.display, "CORE", 2u);
+    if (rc != 0) fail("screen-start", rc);
     puts("H2_PAL_CORE_E2E_START stage=runtime_init");
     fflush(stdout);
     rc = h2_runtime_init(&runtime_config, &runtime);

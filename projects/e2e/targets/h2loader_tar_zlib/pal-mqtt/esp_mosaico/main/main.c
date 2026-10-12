@@ -1,3 +1,4 @@
+#include "h2_mosaico_e2e_screen.h"
 #include "h2_mosaico_loader_usb.h"
 #include "h2_mosaico_usb_diagnostic.h"
 #include "h2_esp_board.h"
@@ -51,10 +52,14 @@ static int ledger_log(void *user,h2_pal_log_level_t level,const char *scope,cons
 }
 static const h2_pal_log_vtable_t ledger_log_vtable={.write=ledger_log};
 static const h2_pal_log_api_t ledger_log_api={.vtable=&ledger_log_vtable};
-static int confirm_app(void *user) { return h2_esp_h2loader_app_confirm(user); }
+static int confirm_app(void *user) {
+  (void)h2_mosaico_e2e_screen_phase("CONFIRMING");
+  return h2_esp_h2loader_app_confirm(user);
+}
 
 static void hold(void) { for (;;) vTaskDelay(pdMS_TO_TICKS(1000u)); }
 static void fail(const char *stage, int rc) {
+  (void)h2_mosaico_e2e_screen_result(rc, -1);
     printf("H2_PAL_MQTT_SETUP_FAIL stage=%s rc=%d\n", stage, rc);
     fflush(stdout);
     hold();
@@ -91,6 +96,7 @@ static int ca_digest(void *user, const uint8_t *bytes, size_t length, uint8_t di
 static void run(void *user) {
     (void)user;
     vTaskDelay(pdMS_TO_TICKS(5000u));
+    (void)h2_mosaico_e2e_screen_phase("WAITING FOR NETWORK");
     int rc;
     for (;;) {
         rc = h2_mqtt_device_prepare(runtime);
@@ -101,6 +107,7 @@ static void run(void *user) {
         fflush(stdout);
         vTaskDelay(pdMS_TO_TICKS(3000u));
     }
+    (void)h2_mosaico_e2e_screen_phase("RUNNING 36 CHECKS");
     rc = snapshot("before", result.before);
     if (rc != H2_PAL_OK) fail("before", rc);
     rc = h2_mqtt_device_run(runtime, 8u, ca_digest, NULL, &result);
@@ -129,6 +136,7 @@ static void run(void *user) {
     /* One immutable terminal ledger per boot. Later replay cannot replace an
      * incomplete first capture in the independent host admission. */
     int delivered=h2_mqtt_esp_console_complete(&console,runtime,&result,provider_cleanup,confirm_app,runtime);
+    (void)h2_mosaico_e2e_screen_result(rc, delivered);
     if(delivered!=H2_PAL_OK)fail("ledger-or-confirm",delivered);
     hold();
 }
@@ -145,6 +153,8 @@ void app_main(void) {
     h2_runtime_config_t config = {0};
     rc = h2_esp_board_runtime_config(&config);
     if (rc != H2_PAL_OK) fail("board", rc);
+  (void)h2_mosaico_e2e_screen_begin(config.display, "MQTT", 12u);
+
     control_mutex = xSemaphoreCreateMutexStatic(&control_mutex_storage);
     if (control_mutex == NULL) fail("control-mutex", H2_PAL_ERR_NO_MEMORY);
     control.backing = config.mem;

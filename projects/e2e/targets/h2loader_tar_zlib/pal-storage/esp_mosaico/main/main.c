@@ -1,3 +1,4 @@
+#include "h2_mosaico_e2e_screen.h"
 #include "h2_mosaico_loader_usb.h"
 #include "h2_esp_board.h"
 #include "h2_esp_h2loader_runtime.h"
@@ -12,13 +13,17 @@
 #include <stdio.h>
 static h2_runtime_t *runtime;
 static esp_timer_handle_t watchdog;
-static void fail(const char *stage,int rc) {printf("H2_STORAGE_LAUNCHER_FAIL stage=%s rc=%d\n",stage,rc);fflush(stdout);for(;;)vTaskDelay(pdMS_TO_TICKS(1000));}
+static void fail(const char *stage,int rc) {
+  (void)h2_mosaico_e2e_screen_result(rc, -1);printf("H2_STORAGE_LAUNCHER_FAIL stage=%s rc=%d\n",stage,rc);fflush(stdout);for(;;)vTaskDelay(pdMS_TO_TICKS(1000));}
 static void deadline(void *unused) {(void)unused;puts("H2_STORAGE_WATCHDOG timeout=120s");fflush(stdout);}
 static void run(void *unused) {
   (void)unused;vTaskDelay(pdMS_TO_TICKS(5000));
+  (void)h2_mosaico_e2e_screen_phase("RUNNING");
   int rc=h2_storage_device_run(runtime,"/data/pal-storage",esp_app_get_description()->version);
   esp_timer_stop(watchdog);esp_timer_delete(watchdog);
-  int confirm=h2_esp_h2loader_app_confirm(runtime);
+  if (rc == H2_PAL_OK) (void)h2_mosaico_e2e_screen_phase("CONFIRMING");
+  int confirm=rc==H2_PAL_OK ? h2_esp_h2loader_app_confirm(runtime) : H2_PAL_ERR_INVALID_STATE;
+  (void)h2_mosaico_e2e_screen_result(rc, confirm);
   printf("H2_STORAGE_READY rc=%d confirm=%d\n",rc,confirm);
   for(;;) {h2_storage_device_replay(runtime);vTaskDelay(pdMS_TO_TICKS(3000));}
 }
@@ -30,6 +35,8 @@ void app_main(void) {
   }
   int rc=h2_esp_target_task_policy_install();if(rc)fail("task-policy",rc);
   h2_runtime_config_t config={0};rc=h2_esp_board_runtime_config(&config);if(rc)fail("board",rc);
+  (void)h2_mosaico_e2e_screen_begin(config.display, "STORAGE", 5u);
+
   config.system_event=h2_pal_unsupported_system_event_api();
   const h2_esp_h2loader_app_commands_config_t commands={.active_name="pal-storage",.hardware_capabilities=H2_LOADER_CAPABILITY_UART,.h2loader_partition_id=1,.coredump_partition_id=3};
   rc=h2_esp_h2loader_app_commands_prepare_serial_with_config(&config,&commands);if(rc)fail("commands",rc);

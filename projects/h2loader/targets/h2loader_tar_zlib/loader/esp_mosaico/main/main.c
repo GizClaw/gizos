@@ -1,3 +1,4 @@
+#include "h2_mosaico_e2e_screen.h"
 #include "h2_mosaico_loader_usb.h"
 #include "h2_esp_board.h"
 #include "h2_esp_h2loader_runtime.h"
@@ -58,6 +59,7 @@ static void diagnostic_phase(const char *phase, int result) {
 
 static void installing(void *user) {
     (void)user;
+    (void)h2_mosaico_e2e_screen_phase("INSTALLING FIRMWARE");
     printf("H2_MOSAICO_LOADER_INSTALL stack_free=%u\n",
            (unsigned)uxTaskGetStackHighWaterMark(NULL));
     fflush(stdout);
@@ -65,6 +67,7 @@ static void installing(void *user) {
 
 static void launching(void *user) {
     (void)user;
+    (void)h2_mosaico_e2e_screen_phase("STARTING NEXT SUITE");
     printf("H2_MOSAICO_LOADER_LAUNCH stack_free=%u\n",
            (unsigned)uxTaskGetStackHighWaterMark(NULL));
     fflush(stdout);
@@ -80,6 +83,11 @@ static void entry(void *unused) {
     diagnostic_phase("board", rc);
     if (rc == H2_PAL_OK) rc = h2_runtime_init(&config, &runtime);
     diagnostic_phase("runtime", rc);
+    if (rc == H2_PAL_OK) {
+        int screen_rc = h2_mosaico_e2e_screen_begin(config.display, "LOADER", 0u);
+        if (screen_rc == 0) (void)h2_mosaico_e2e_screen_phase("WAITING FOR FIRMWARE");
+        printf("H2_MOSAICO_SCREEN role=loader rc=%d\n", screen_rc);
+    }
     if (rc == H2_PAL_OK) {
         const h2_esp_h2loader_config_t loader = {
             .board = "esp_mosaico", .show_installing = installing,

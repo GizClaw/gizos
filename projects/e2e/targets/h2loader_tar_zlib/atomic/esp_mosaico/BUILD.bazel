@@ -35,6 +35,7 @@ esp_target_task_policy(
 firmware_lib_component(
     name = "firmware_lib",
     deps = [
+        "//projects/e2e/libs/mosaico-screen:screen",
         "//libs/audio_mixer",
         "//libs/drivers/audio/es8311",
         "//libs/atomic",

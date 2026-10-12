@@ -1,3 +1,4 @@
+#include "h2_mosaico_e2e_screen.h"
 #include "h2_mosaico_loader_usb.h"
 #include "h2_esp_board.h"
 #include "h2_esp_h2loader_ble.h"
@@ -13,6 +14,7 @@ static h2_runtime_t *runtime;
 static h2_pal_http_e2e_result_t result;
 static void hold(void) { for (;;) vTaskDelay(pdMS_TO_TICKS(1000u)); }
 static void fail(const char *stage, int rc) {
+  (void)h2_mosaico_e2e_screen_result(rc, -1);
     printf("H2_PAL_HTTP_SETUP_FAIL stage=%s rc=%d\n", stage, rc);
     fflush(stdout);
     hold();
@@ -22,6 +24,7 @@ static void run(void *user) {
     vTaskDelay(pdMS_TO_TICKS(5000u));
     int rc;
     for (;;) {
+        (void)h2_mosaico_e2e_screen_phase("RUNNING");
         rc = h2_pal_http_device_run(runtime, &result);
         if (result.passed + result.failed + result.blocked != 0u) break;
         if (rc != H2_PAL_ERR_NOT_FOUND && rc != H2_PAL_ERR_UNAVAILABLE &&
@@ -32,7 +35,9 @@ static void run(void *user) {
     }
     if (result.passed + result.failed + result.blocked != H2_PAL_HTTP_E2E_CASE_COUNT)
         fail("fixture_or_network", rc);
+    if (rc == H2_PAL_OK) (void)h2_mosaico_e2e_screen_phase("CONFIRMING");
     int confirm = rc == H2_PAL_OK ? h2_esp_h2loader_app_confirm(runtime) : H2_PAL_ERR_INVALID_STATE;
+  (void)h2_mosaico_e2e_screen_result(rc, confirm);
     for (;;) {
         h2_pal_http_device_report(runtime, &result);
         printf("H2_PAL_HTTP_READY board=esp_mosaico rc=%d confirm=%d\n", rc, confirm);
@@ -53,6 +58,8 @@ void app_main(void) {
     h2_runtime_config_t config = {0};
     rc = h2_esp_board_runtime_config(&config);
     if (rc != H2_PAL_OK) fail("board", rc);
+  (void)h2_mosaico_e2e_screen_begin(config.display, "HTTP", 11u);
+
     rc = h2_esp_h2loader_app_commands_prepare_serial(&config, "pal-http", 1u, 3u);
     if (rc != H2_PAL_OK) fail("command_prepare", rc);
     rc = h2_runtime_init(&config, &runtime);

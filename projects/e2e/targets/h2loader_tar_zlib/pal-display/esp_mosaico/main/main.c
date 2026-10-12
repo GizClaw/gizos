@@ -1,3 +1,4 @@
+#include "h2_mosaico_e2e_screen.h"
 #include "h2_mosaico_loader_usb.h"
 #include "device_runner.h"
 #include "esp_app_desc.h"
@@ -43,6 +44,7 @@ static int observe(void *user, const uint16_t *pixels, int width, int height,
   return rc;
 }
 static void fail(const char *stage, int rc) {
+  (void)h2_mosaico_e2e_screen_result(rc, -1);
   printf("H2_DISPLAY_LAUNCHER_FAIL stage=%s rc=%d\n", stage, rc);
   fflush(stdout);
   for (;;)
@@ -70,7 +72,12 @@ static void run(void *unused) {
   printf("H2_DISPLAY_BOOT version=%s formats=%u clips=%d\n",
          esp_app_get_description()->version,
          (unsigned)profile.supported_formats, profile.clips_rectangles);
-  int rc = h2_pal_display_e2e_run(runtime, &profile, &display_result);
+  int rc = h2_mosaico_e2e_screen_phase("PATTERN AND DIMMING");
+  if (rc != 0) fail("screen-stage", rc);
+  vTaskDelay(pdMS_TO_TICKS(1500u));
+  rc = h2_mosaico_e2e_screen_release();
+  if (rc != 0) fail("screen-release", rc);
+  rc = h2_pal_display_e2e_run(runtime, &profile, &display_result);
   printf("H2_DISPLAY_PHASE run rc=%d\n", rc);
   h2_pal_display_e2e_print(&display_result, "board-driver", rc, 0);
   h2_mosaico_display_set_transfer_capture(NULL, NULL);
@@ -82,6 +89,7 @@ static void run(void *unused) {
     printf("H2_DISPLAY_QUALIFICATION_FAIL rc=%d confirm=not-attempted\n", rc);
     fail("qualification", rc);
   }
+  (void)h2_mosaico_e2e_screen_phase("CONFIRMING");
   int confirm = h2_esp_h2loader_app_confirm(runtime);
   if (confirm != H2_PAL_OK)
     fail("confirm", confirm);
@@ -93,6 +101,10 @@ static void run(void *unused) {
   if (visual)
     fail("stable-pattern", visual);
   printf("H2_DISPLAY_STABLE brightness=100 rc=%d optical_verified=0\n", visual);
+  vTaskDelay(pdMS_TO_TICKS(3000u));
+  int screen_rc = h2_mosaico_e2e_screen_result(rc, confirm);
+  printf("H2_MOSAICO_SCREEN suite=display phase=result rc=%d\n", screen_rc);
+  if (screen_rc != 0) fail("screen-result", screen_rc);
   for (;;) {
     printf("H2_DISPLAY_PHASE replay rc=%d\n", rc);
     printf("H2_DISPLAY_IDENTITY version=%s evidence=driver-transfer "
@@ -116,6 +128,8 @@ void app_main(void) {
   rc = h2_esp_board_runtime_config(&config);
   if (rc)
     fail("board", rc);
+  rc = h2_mosaico_e2e_screen_begin(config.display, "DISPLAY", 1u);
+  if (rc != 0) fail("screen-start", rc);
   config.system_event = h2_pal_unsupported_system_event_api();
   const h2_esp_h2loader_app_commands_config_t commands = {
       .active_name = "pal-display",

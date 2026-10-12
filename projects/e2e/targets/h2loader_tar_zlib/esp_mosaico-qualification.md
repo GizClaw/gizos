@@ -698,3 +698,54 @@ A real SQLite host regression verifies all four persisted boots, unrelated
 configuration preservation, migration from COMPLETE, invalid markers and ten
 failure paths with optimized NDEBUG assertions. The corrected image still needs
 real managed install, complete 31 operations and its independent empty recheck.
+
+## Visible E2E phases and fresh October 12 evidence
+
+The Mosaico Loader and all 16 suite launchers now compose the synchronous
+project-level `mosaico-screen` presenter; Mosaico Wi-Fi peer and Lua join artifacts
+also include it. Display runs first. As soon as board configuration supplies the
+existing display PAL, artifacts show STARTING, suite identity/number and current
+phase at 100% brightness. Loader callbacks show waiting/installing/launching;
+Pref distinguishes persistence reboot, Audio labels the real 30-second output,
+and Lua distinguishes five transfer rounds from its peer-power-cycle wait. Lua
+session completion is not an overall qualification PASS.
+
+One serialized artifact caller renders a static RGB565 stripe with the existing
+bitmap font. It adds no worker/task and initializes before suite resource
+baselines. Display releases presentation ownership while its original 24-case
+registry owns the pixels, then restores the result page. All presentation return
+codes have separate diagnostics. Host admission must check those codes together
+with actual case/cleanup/confirmation ledgers. Pixels and sound still need human
+observation. The green page requires both the actual suite gate and firmware
+confirmation; failed Storage runs now remain unconfirmed instead of taking the
+previous unconditional-confirm path. No shared PAL contract, portable case
+registry, board-owned application task or reference launcher changes.
+
+Optimized NDEBUG tests pass for rendered bounds/status pixels, input/geometry,
+draw/present/brightness errors, failed-close ownership retention and reopen after
+Display suspension. The existing production Audio failure/confirmation recovery
+oracle also passes for Mosaico, AMOLED and BK7258. Experimental r31 Loader public
+self-update/independent restart and Display 24/24 on two boots pass. The operator
+confirmed visible STARTING, PATTERN AND DIMMING and the green PASS page; its
+separate observation receipt is tied to the actual r31 source/package/image.
+r31 is an explicitly dirty source cut, not a clean-head or overall-pass claim.
+Reviewed r32 builds all 19 native targets successfully and has its own frozen
+inputs/configuration and immutable artifacts.
+
+The pre-presentation October 12 runs retain their original identities: r28
+Pref executes all 31 operations and a separate empty recheck, with new-image
+fixture reset and same-image persistence; r28 Display passes 24/24 on two boots
+with operator-confirmed pattern and dimming; r28 Audio passes 24/24 on two boots
+with actual microphone/output and at least 30 seconds of output. The operator
+was not watching that Audio run, so acoustic proof remains pending. Frozen r26
+HTTP 45/45 and MQTT 36/36, and r27 Net/TLS core profile (37 mandatory/38 total
+passes, one optional unsupported) and WebRTC 43/43 each pass two real boots with
+fresh server/TLS/Pion witnesses and actual resource/cleanup/confirmation gates.
+These receipts preserve the original Loader/Stage/coredump checks. Their source
+cuts are not relabelled after presentation changes.
+
+Overall status remains NOT QUALIFIED. The screen changes require fresh
+image-bound suite qualification, paired Wi-Fi and connected physical Lua loss,
+Loader recovery/checksum/crash matrices, final board/camera insertion and actual
+acoustic observation. Builds and historical or partial receipts do not close
+those gates; PR #709 stays draft.

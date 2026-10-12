@@ -1,3 +1,4 @@
+#include "h2_mosaico_e2e_screen.h"
 #include "h2_mosaico_loader_usb.h"
 #include "device_runner.h"
 #include "h2_esp_audio_decoder.h"
@@ -14,6 +15,7 @@
 static h2_runtime_t *runtime;
 static esp_timer_handle_t watchdog;
 static void fail(const char *stage, int rc) {
+  (void)h2_mosaico_e2e_screen_result(rc, -1);
   printf("H2_ADEC_LAUNCHER_FAIL stage=%s rc=%d\n", stage, rc);
   fflush(stdout);
   for (;;)
@@ -27,14 +29,18 @@ static void deadline(void *unused) {
 static void run(void *unused) {
   (void)unused;
   vTaskDelay(pdMS_TO_TICKS(5000));
+  (void)h2_mosaico_e2e_screen_phase("RUNNING");
   int rc = h2_adec_device_run(runtime, esp_app_get_description()->version);
   esp_timer_stop(watchdog);
   esp_timer_delete(watchdog);
   if (rc != H2_PAL_OK) {
+    (void)h2_mosaico_e2e_screen_result(rc, -1);
     printf("H2_ADEC_QUALIFICATION_FAIL rc=%d confirm=not-attempted\n", rc);
     fail("qualification", rc);
   }
+  (void)h2_mosaico_e2e_screen_phase("CONFIRMING");
   int confirm = h2_esp_h2loader_app_confirm(runtime);
+  (void)h2_mosaico_e2e_screen_result(rc, confirm);
   if (confirm != H2_PAL_OK)
     fail("confirm", confirm);
   puts("H2_ADEC_READY rc=0 confirm=0");
@@ -56,6 +62,8 @@ void app_main(void) {
   rc = h2_esp_board_runtime_config(&config);
   if (rc)
     fail("board", rc);
+  (void)h2_mosaico_e2e_screen_begin(config.display, "DECODER", 6u);
+
   config.audio_decoder = h2_esp_audio_decoder_api();
   config.system_event = h2_pal_unsupported_system_event_api();
   const h2_esp_h2loader_app_commands_config_t commands = {

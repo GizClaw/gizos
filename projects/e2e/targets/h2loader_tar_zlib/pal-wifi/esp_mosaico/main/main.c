@@ -1,3 +1,4 @@
+#include "h2_mosaico_e2e_screen.h"
 #include "h2_mosaico_loader_usb.h"
 #include "esp_app_desc.h"
 #include "freertos/FreeRTOS.h"
@@ -14,6 +15,7 @@ static void hold(void) {
         vTaskDelay(pdMS_TO_TICKS(1000u));
 }
 static void fail(const char *stage, int rc) {
+  (void)h2_mosaico_e2e_screen_result(rc, -1);
     printf("H2_WIFI_SETUP_FAIL stage=%s rc=%d\n", stage, rc);
     fflush(stdout);
     hold();
@@ -21,8 +23,11 @@ static void fail(const char *stage, int rc) {
 static void run(void *user) {
     (void)user;
     vTaskDelay(pdMS_TO_TICKS(3000u));
+    (void)h2_mosaico_e2e_screen_phase("RUNNING");
     int rc = h2_wifi_device_run(runtime, esp_app_get_description()->version, "esp_mosaico");
+    if (rc == H2_PAL_OK) (void)h2_mosaico_e2e_screen_phase("CONFIRMING");
     int confirm = rc == H2_PAL_OK ? h2_esp_h2loader_app_confirm(runtime) : H2_PAL_ERR_INVALID_STATE;
+  (void)h2_mosaico_e2e_screen_result(rc, confirm);
     printf("H2_WIFI_READY board=esp_mosaico rc=%d confirm=%d\n", rc, confirm);
     fflush(stdout);
     hold();
@@ -40,6 +45,8 @@ void app_main(void) {
     rc = h2_esp_board_runtime_config(&config);
     if (rc)
         fail("board", rc);
+  (void)h2_mosaico_e2e_screen_begin(config.display, "WIFI", 14u);
+
     config.event_queue_capacity = 64;
     rc = h2_esp_h2loader_app_commands_prepare_serial(&config, "pal-wifi", 1u, 3u);
     if (rc)
