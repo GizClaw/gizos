@@ -68,3 +68,13 @@ that run's actual endpoint/backend/profile/controller exit status. The current
 inventory requires all 228 APIs; historical 227-API receipts do not replace it.
 Other-board, incomplete and failed ledgers remain invalid. Missing private
 fixtures are configuration failures, not skipped or passing business cases.
+
+An explicit `app_config_fixture_root_ca_hex` may bind a private test CA. The
+Mosaico artifact owns a separate coreHTTP provider with REQUIRED verification;
+empty input retains the borrowed BSP certificate-bundle provider. The owner and
+API stay alive for the entire App/command recovery lifetime, including failed
+or retained-resource runs. A failed Runtime initialization destroys the unused
+owner. Certificate chain, hostname, dates and actual object hashes still require
+live verification. These settings change no production or reference-board trust
+policy. A locally created token/profile/AppConfig and HTTPS/NTP fixture does not
+supply ASR/TTS provider credentials or qualify the full eight-case business run.

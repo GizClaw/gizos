@@ -29,3 +29,22 @@ cc_test(
         "//libs/runtime",
     ],
 )
+
+# Compile the actual private callback implementation for contract regression.
+cc_library(
+    name = "audio_callback_test_implementation",
+    hdrs = ["include/h2_webrtc_performance.h"],
+    textual_hdrs = ["src/h2_webrtc_performance.c"],
+    includes = ["include"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = ["//libs/pal", "//libs/runtime"],
+)
+
+cc_test(
+    name = "audio_callback_test",
+    srcs = ["tests/test_h2_webrtc_performance_audio.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":audio_callback_test_implementation"],
+)

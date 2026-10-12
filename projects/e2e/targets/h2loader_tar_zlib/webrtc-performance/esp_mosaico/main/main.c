@@ -198,8 +198,13 @@ static void wait_for_wifi(h2_runtime_t *runtime,
   }
 }
 
+/* The shared runner owns 20-ms media pacing. Keep it above the priority-8
+ * command service while preserving the higher transport/lwIP worker order. */
+#define H2_WEBRTC_PERF_ENTRY_TASK_PRIORITY (tskIDLE_PRIORITY + 9u)
+
 static void image_entry(void *user) {
   (void)user;
+  vTaskPrioritySet(NULL, H2_WEBRTC_PERF_ENTRY_TASK_PRIORITY);
   h2_runtime_config_t runtime_config = {0};
   h2_runtime_t *runtime = NULL;
   memory_checkpoint("entry");
@@ -240,6 +245,9 @@ static void image_entry(void *user) {
   }
   (void)h2_mosaico_e2e_screen_phase("WAITING FOR WIFI");
   wait_for_wifi(runtime, &wifi);
+  printf("H2_WEBRTC_PERF_MOSAICO stage=entry_priority priority=%u\n",
+         (unsigned)uxTaskPriorityGet(NULL));
+  fflush(stdout);
   rc = apply_power_save(runtime);
   if (rc != H2_PAL_OK) {
     fail("power_save", rc, 1);

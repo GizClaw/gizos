@@ -1013,3 +1013,48 @@ The shared API auditor's Mosaico extension also passes its optimized Bazel test.
 Real GizClaw business remains blocked on the reference private fixture inputs;
 all eight cases and the current 228 APIs still require actual complete execution.
 Overall remains NOT QUALIFIED and PR #709 remains draft.
+
+## PAL loss-marker correction and self-created business fixture
+
+The exact r49 artifact completes two full real WebRTC smoke boots: loaded audio
+p99 is 137.895/110.597 ms, loaded/data-only ratios 1148/930 permille, and deadline
+and would-block counts are zero. Both full transfers, distinct request channels,
+resource/confirmation/screens, peer witnesses, preserved P1/dump and public
+Loader return pass. This receipt retains its original frozen source identity.
+Final diagnostic placement r50 passes its first boot but fails the independent
+second with a callback error; existing confirmation metadata cannot qualify that
+fresh failure. r52 identifies the exact branch: zero-length Opus envelope.
+
+The PAL event contract explicitly defines zero-length OPUS_FRAME as one loss
+marker, and the H2Peer RTP decoder emits NULL/0 for erasure. The shared performance
+App now handles that marker without inventing a received frame, sequence bit,
+timestamp or latency sample. Final missing-frame budgets (smoke five, benchmark
+zero), duplicates/reorder, audio gap/producer deadlines, throughput/fairness and
+cleanup remain unchanged. Actual callback regression runs with assertions enabled
+under optimization; valid markers leave receipt/timing unchanged, missing
+sequence bits stay absent, and malformed nonempty data/future timestamps fail.
+Both focused host targets and native Mosaico/AMOLED builds pass. The first r53
+hardware attempt still fails the unchanged 300-second data-only deadline: its
+10 MiB download takes 298.177 seconds and only 573,440 upload bytes complete.
+All failed source/package/ledger identities remain distinct. A complete final
+performance qualification is still pending.
+
+The operator authorized self-creation of business fixtures. An isolated official
+GizClaw 0.24.1 container is now running at the exact published image/source digest;
+new server/admin identities, RuntimeProfile, random registered token and known
+AppConfig are created and read back through the real Admin CLI. Private HTTPS
+objects pass actual chain/name/date and bytes/SHA checks, and the separate NTP
+fixture passes origin/system-clock checks. The initial opaque firmware-version
+resource is rejected; a newly built genuine `1.0.0-mosaico-e2e` Core package is
+then registered with its actual hash/size and readback, leaving the old object
+unchanged. Configs, keys, tokens, artifacts and logs remain outside Git.
+
+A project-owned optional CA provider consumes the existing explicit fixture flag,
+keeps REQUIRED verification, preserves the BSP provider for empty input and owns
+its borrowed API throughout the App's command-recovery lifetime. Allocation and
+provider failures preserve the old API and release temporary bytes; Runtime init
+failure destroys the unused owner. Its optimized ownership/failure tests and
+actual configured native GizClaw/Core builds pass. This is not a shared PAL API
+or other-board trust change. Real ASR/TTS/workflow resources and actual complete
+eight-case/228-API device business execution remain pending. Overall remains
+NOT QUALIFIED and PR stays draft.
