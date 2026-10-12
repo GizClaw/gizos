@@ -31,6 +31,10 @@ of admission; it must not be silently removed from the registry.
 | lua-link | `lua-link/devkit` | [`lua-link/esp_mosaico`](lua-link/esp_mosaico/BUILD.bazel) | r32 host/r6 AMOLED join: five full bilateral rounds, confirmed identities and connected hold; operator PWR cycle gives actual lost:-10 / 4100 ms / 1766 ticks, both exact public Loader returns and dump preservation PASS |
 | pal-pref | `pal-pref/devkit` | [`pal-pref/esp_mosaico`](pal-pref/esp_mosaico/BUILD.bazel) | r32 fresh 31 operations over three boots plus independent empty 1 recheck; image reset/persistence/confirmation/screens PASS after missing-ledger interruption; only private fixture prepared using distinct archived r28 image |
 
+| iperf | `iperf/amoled` | [`iperf/esp_mosaico`](iperf/esp_mosaico/BUILD.bazel) | r42 native package PASS; real configured TCP/UDP/SCTP matrix and independent device qualification pending |
+| webrtc-performance | `webrtc-performance/amoled` | [`webrtc-performance/esp_mosaico`](webrtc-performance/esp_mosaico/BUILD.bazel) | r42 native package PASS; real configured Pion smoke workload/metrics and device qualification pending |
+| gizclaw-e2e | `gizclaw-e2e/devkit` | [`gizclaw-e2e/esp_mosaico`](gizclaw-e2e/esp_mosaico/BUILD.bazel) | r42 native package PASS; controlled service/registration/profile/HTTPS/NTP fixture and real full business ledger pending; software voice only |
+
 PAL Core requires 41 cases covering 46 interface operations; the old board page's
 8 Core cases cannot close it. Display requires the portable 24-case registry with
 observations of completed DMA chunks; the observation is not panel readback or
@@ -815,3 +819,77 @@ crash/rollback and both checksum-format matrices are still running and are not
 qualified by those three passes. Original coredump bytes were verified and
 backed up externally before the intentional crash/erase cases; preservation
 of that external backup does not imply the device dump remains unchanged.
+
+## Expanded workload entries and portable logging correction
+
+The requested scope now includes Mosaico iperf, WebRTC performance and GizClaw
+business entries, in addition to the 16 portable suite profiles, board diagnostics
+and complete Loader recovery. Their native graphs reuse the existing portable
+Apps. Each artifact owns a PSRAM entry, dual CDC and serialized screen stages;
+the inventory is 19 positions. No shared PAL API or reference-board behavior
+changes. These new entries have no admitted device results yet.
+
+The current cross-target CI found newlib standard-stream ABI dependencies in
+the project stage presenter. It now receives a borrowed Log PAL explicitly from
+all Mosaico artifact callers and uses bounded formatted messages. Panel failures
+retain priority; absent/failed diagnostic sinks cannot return successful admission.
+Optimized host tests cover real records, sink failures, overflow, nineteen suite
+positions and display ownership. Existing device receipts retain their original
+source cuts; this presentation change requires separately bound regression.
+
+iperf retains the ordered TCP/UDP/SCTP client matrix and real server; client
+confirmation follows workload success and SCTP cleanup. Server mode is a serving
+fixture, not a matrix PASS. WebRTC performance runs one unchanged shared smoke
+workload with real offer/STUN peers and observed metrics; failed attempts remain
+unconfirmed. GizClaw retains the full shared business registry, exact execution
+ledger, runtime profile, zero retained resources, cleanup and confirmation. Its
+prerecorded PCM voice profile is software-only (physical_audio=0); requesting
+physical audio explicitly fails as unsupported. Microphone/speaker acceptance
+still belongs to the separate board/Audio gate. No AEC binary ABI is qualified.
+
+The GizClaw service/registration identity, profile, known AppConfig bytes, HTTPS
+objects and NTP are explicit private fixture inputs, matching the reference
+boards. Empty fixtures fail before business mutations while preserving the
+public recovery channel. No production identity or secret is provided by the
+source default. Real configured peer and backend evidence remains required;
+a build or unit test is not business, throughput or hardware qualification.
+Overall status remains NOT QUALIFIED and PR #709 remains draft.
+
+The first expanded r41 build correctly rejected GizClaw as incompatible: both
+its library and portable App dependency selectors lacked S31 and fell back to
+the desktop SDK. The selectors now route only S31 through the existing firmware
+SDK core and Opus headers, exactly as S3/P4 already do. Other platform branches
+are unchanged. The rejected build remains failed evidence; a fresh artifact cut
+is required. This is build composition, not a new public API or S31 business PASS.
+
+## Verified expanded build and public recovery
+
+The expanded r42 source cut builds all 22 native targets: 19 suite entries,
+Mosaico Lua join and Wi-Fi peer, and Loader. All source inputs and immutable
+package/native files were verified before any later document edit. The cut
+retains its explicit diff on 38a2c156. Five optimized host targets pass for screen
+logs/errors/rendering, iperf, WebRTC performance, GizClaw launcher state and the
+ABI guard; three shared GizClaw App/firmware-link/header regressions pass. The
+actual C5 GCC/nm firmware archive check also passes after the Log PAL correction.
+These results are build/host evidence; the first 16 rows retain their earlier
+22bc43f7 device bindings, and the new entries do not inherit those receipts.
+
+Separately, the unchanged public r39 recovery runner completes 51/51 cases on
+the directed Type-C CDC1 IO Stream iKCP channel. Its v2 JSON report SHA-256 is
+`89a05d9750d26ab8c6f1252cfa1a803fdc63fd04fa75dc40c67647370c7b1853`.
+Actual coverage includes Loader and App commands, Wi-Fi and URL staging, abort,
+Stage-preserving App/Loader restarts, Loader self-update, five within-format
+transitions for each format, all eight cross-format transitions, intentional
+pre-confirmation crash/rollback, and coredump read/dump/erase checks. The dump
+read is 20,928 bytes; subsequent erase is actually blank. The test-preserved
+crash Stage was then aborted through the public command with Loader/P2 image
+identity unchanged. The externally backed-up original 20,640-byte dump still
+has its recorded hash; the intentionally replaced/erased device dump is distinct.
+Optional non-frame UART log monitor and desktop BLE transport are not claimed
+by this selected CDC1 report. The r39 receipt remains bound to its original cut
+and the separate code-equivalence record for 38a2c156.
+
+Overall remains NOT QUALIFIED. Fresh Log PAL/presentation device regression,
+real performance and configured business runs, current acoustic observation and
+final board/camera insertion/physical peripheral gates still require evidence.
+PR #709 remains draft.

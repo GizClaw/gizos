@@ -50,7 +50,7 @@ static void entry(void *user) {
   rc = h2_esp_board_runtime_config(&config);
   if (rc != H2_PAL_OK)
     fail("board", rc);
-  (void)h2_mosaico_e2e_screen_begin(config.display, "WEBRTC", 15u);
+  (void)h2_mosaico_e2e_screen_begin(config.display, config.log, "WEBRTC", 15u);
 
   rc = h2_esp_h2loader_app_commands_prepare_serial(&config, "pal-webrtc", 1u,
                                                    3u);

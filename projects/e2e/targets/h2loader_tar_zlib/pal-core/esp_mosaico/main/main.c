@@ -479,7 +479,7 @@ void app_main(void) {
     fflush(stdout);
     rc = h2_esp_h2loader_app_commands_prepare_serial_with_config(&transport_config, &commands);
     if (rc != H2_PAL_OK) fail("command_prepare", rc);
-    rc = h2_mosaico_e2e_screen_begin(runtime_config.display, "CORE", 2u);
+    rc = h2_mosaico_e2e_screen_begin(runtime_config.display, runtime_config.log, "CORE", 2u);
     if (rc != 0) fail("screen-start", rc);
     puts("H2_PAL_CORE_E2E_START stage=runtime_init");
     fflush(stdout);

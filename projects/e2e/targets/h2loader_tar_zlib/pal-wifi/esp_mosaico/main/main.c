@@ -45,7 +45,7 @@ void app_main(void) {
     rc = h2_esp_board_runtime_config(&config);
     if (rc)
         fail("board", rc);
-  (void)h2_mosaico_e2e_screen_begin(config.display, "WIFI", 14u);
+  (void)h2_mosaico_e2e_screen_begin(config.display, config.log, "WIFI", 14u);
 
     config.event_queue_capacity = 64;
     rc = h2_esp_h2loader_app_commands_prepare_serial(&config, "pal-wifi", 1u, 3u);

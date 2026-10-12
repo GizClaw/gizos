@@ -63,7 +63,7 @@ void app_main(void) {
   rc = h2_esp_board_runtime_config(&config);
   if (rc)
     fail("board", rc);
-  (void)h2_mosaico_e2e_screen_begin(config.display, "CRYPTO", 4u);
+  (void)h2_mosaico_e2e_screen_begin(config.display, config.log, "CRYPTO", 4u);
 
   config.system_event = h2_pal_unsupported_system_event_api();
   const h2_esp_h2loader_app_commands_config_t commands = {

@@ -84,7 +84,7 @@ void app_main(void) {
   rc = h2_esp_board_runtime_config(&config);
   if (rc != H2_PAL_OK)
     fail("board", rc);
-  (void)h2_mosaico_e2e_screen_begin(config.display, "NET TLS", 13u);
+  (void)h2_mosaico_e2e_screen_begin(config.display, config.log, "NET TLS", 13u);
 
   rc = h2_esp_h2loader_app_commands_prepare_serial(&config, "pal-net-tls", 1u,
                                                    3u);

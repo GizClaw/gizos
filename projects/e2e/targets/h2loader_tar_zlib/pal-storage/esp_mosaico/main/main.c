@@ -35,7 +35,7 @@ void app_main(void) {
   }
   int rc=h2_esp_target_task_policy_install();if(rc)fail("task-policy",rc);
   h2_runtime_config_t config={0};rc=h2_esp_board_runtime_config(&config);if(rc)fail("board",rc);
-  (void)h2_mosaico_e2e_screen_begin(config.display, "STORAGE", 5u);
+  (void)h2_mosaico_e2e_screen_begin(config.display, config.log, "STORAGE", 5u);
 
   config.system_event=h2_pal_unsupported_system_event_api();
   const h2_esp_h2loader_app_commands_config_t commands={.active_name="pal-storage",.hardware_capabilities=H2_LOADER_CAPABILITY_UART,.h2loader_partition_id=1,.coredump_partition_id=3};

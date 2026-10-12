@@ -123,7 +123,7 @@ static void image_entry(void *user) {
   if (rc != H2_PAL_OK) {
     fail("runtime_config", rc, 0);
   }
-  (void)h2_mosaico_e2e_screen_begin(config.display, "LUA BLE LINK " H2_LUA_LINK_E2E_ROLE, 16u);
+  (void)h2_mosaico_e2e_screen_begin(config.display, config.log, "LUA BLE LINK " H2_LUA_LINK_E2E_ROLE, 16u);
 
   config.mem = h2_esp_platform_psram_allocator();
   board_log = config.log;
