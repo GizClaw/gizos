@@ -277,7 +277,7 @@ def main(argv=None):
     parser.add_argument("--endpoint", required=True)
     parser.add_argument("--backend", choices=("h2peer", "pion"), required=True)
     parser.add_argument("--profile", required=True)
-    parser.add_argument("--platform", choices=("macos", "linux", "windows", "wasm-chromium", "ios-simulator", "android-emulator", "devkit", "amoled", "bk7258"), required=True)
+    parser.add_argument("--platform", choices=("macos", "linux", "windows", "wasm-chromium", "ios-simulator", "android-emulator", "devkit", "amoled", "bk7258", "esp_mosaico"), required=True)
     parser.add_argument("--process-exit-code", type=int, required=True,
                         help="actual test process status, not the status printed in its log")
     args = parser.parse_args(argv)
