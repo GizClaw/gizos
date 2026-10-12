@@ -1,0 +1,4 @@
+# Artifact-only panic evidence in the reserved managed coredump partition.
+CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y
+CONFIG_ESP_COREDUMP_MAX_TASKS_NUM=16
+CONFIG_ESP_COREDUMP_STACK_SIZE=4096

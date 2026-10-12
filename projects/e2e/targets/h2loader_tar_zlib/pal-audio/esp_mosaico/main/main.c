@@ -1,5 +1,6 @@
 #ifndef H2_PAL_AUDIO_BOARD_HOST_TEST
 #include "h2_mosaico_e2e_screen.h"
+#include "audible.h"
 #include "h2_mosaico_loader_usb.h"
 #endif
 #ifdef H2_PAL_AUDIO_BOARD_HOST_TEST
@@ -45,7 +46,7 @@ static void report(void *user, const h2_pal_audio_e2e_case_result_t *item) {
 #ifndef H2_PAL_AUDIO_BOARD_HOST_TEST
   (void)h2_mosaico_e2e_screen_phase(
       strcmp(item->id, "resource-churn") == 0 && item->passed
-          ? "LISTEN - 30 SECOND OUTPUT" : "AUDIO CHECKS RUNNING");
+          ? "30 SECOND I/O SOAK" : "AUDIO CHECKS RUNNING");
 #endif
   printf("H2_PAL_AUDIO_CASE {\"id\":\"%s\",\"status\":\"%s\",\"detail\":%d,\"line\":%u}\n",
          item->id, item->passed ? "PASS" : item->blocked ? "BLOCKED" : "FAIL",
@@ -84,13 +85,40 @@ static void recover_failed_run(int rc, int confirm) {
   esp_restart();
 }
 
+#ifndef H2_PAL_AUDIO_BOARD_HOST_TEST
+static int last_boot_button;
+static void manual_cue_wait(void) {
+  for (unsigned poll = 0; poll < 50u; ++poll) {
+    h2_pal_single_button_reading_t button = {0};
+    int rc = h2_pal_button_read_single_button(runtime->button, 102u, &button);
+    if (rc == 0 && button.state == 1 && last_boot_button != 1) {
+      (void)h2_mosaico_e2e_screen_phase("LISTEN: 3 BEEPS AT 100 PERCENT");
+      h2_mosaico_audible_result_t cue;
+      rc = h2_mosaico_audible_cue(provider_audio, &cue);
+      printf("H2_PAL_AUDIO_CUE work=%d close=%d stop=%d restore=%d saved=%u applied=%u blocks=%u heard=UNCONFIRMED\n",
+             cue.work_rc, cue.close_rc, cue.stop_rc, cue.restore_rc,
+             (unsigned)cue.saved_volume, (unsigned)cue.applied_volume, cue.blocks_written);
+      fflush(stdout);
+      if (rc != 0) { recover_failed_run(rc, H2_PAL_ERR_INVALID_STATE); return; }
+      (void)h2_mosaico_e2e_screen_phase("API PASS - SOUND UNVERIFIED");
+    }
+    if (rc == 0) last_boot_button = button.state;
+    else {
+      printf("H2_PAL_AUDIO_CUE_BUTTON rc=%d\n", rc);
+      fflush(stdout);
+    }
+    vTaskDelay(pdMS_TO_TICKS(100u));
+  }
+}
+#endif
+
 static void run(void *user) {
   (void)user;
   const h2_pal_audio_e2e_config_t config = {
       .audio = provider_audio, .time = runtime->time,
       .stability_ms = 30000u, .report = report};
 #ifndef H2_PAL_AUDIO_BOARD_HOST_TEST
-  (void)h2_mosaico_e2e_screen_phase("RECORD AND PLAY 30 SECONDS");
+  (void)h2_mosaico_e2e_screen_phase("RECORD AND PLAY I/O SOAK");
 #endif
   const int rc = h2_pal_audio_e2e_run(&config, &result);
 #ifndef H2_PAL_AUDIO_BOARD_HOST_TEST
@@ -106,6 +134,9 @@ static void run(void *user) {
     recover_failed_run(rc, confirm);
     return;
   }
+#ifndef H2_PAL_AUDIO_BOARD_HOST_TEST
+  (void)h2_mosaico_e2e_screen_phase("API PASS - BOOT FOR 3 BEEPS");
+#endif
   for (;;) {
     /* H2Loader control and serial logs share a transport. Repeat the stored
      * terminal ledger so one interrupted UART line cannot hide a case. */
@@ -129,7 +160,11 @@ static void run(void *user) {
            (unsigned long long)result.stability_elapsed_ms,
            rc, confirm);
     fflush(stdout);
+#ifndef H2_PAL_AUDIO_BOARD_HOST_TEST
+    manual_cue_wait();
+#else
     vTaskDelay(pdMS_TO_TICKS(5000u));
+#endif
   }
 }
 

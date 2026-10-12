@@ -75,6 +75,7 @@ firmware_native_component(
 h2loader_esp_idf_firmware(
     name = "firmware",
     srcs = [
+        "sdkconfig.performance-e2e.defaults",
         "CMakeLists.txt",
         "main/CMakeLists.txt",
         "main/idf_component.yml",
