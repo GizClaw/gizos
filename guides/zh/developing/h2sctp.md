@@ -87,6 +87,10 @@ output。
 
 ## Time and failure semantics
 
+同一次未过期的握手收到有效参数相同的重复 INIT 时，provider 重发相同 cookie 的 INIT-ACK，保持原 expiry；不能使已发出的第一个 INIT-ACK 因乱序而失效。进入 COOKIE-ECHO 阶段后忽略迟到或重复的 INIT-ACK，不重新生成 ECHO 或改写对端参数。双端同时主动 open 时，收到有效 COOKIE-ECHO 也会停止本端的 T1-init/T1-cookie；建立后只保留 heartbeat、数据和 reset 所需的 timer，不能让遗留 setup timer 把正常连接判为失败。
+
+建立 association 后，provider 保留与本次 association 绑定的 cookie。收到完全匹配的重复 `COOKIE-ECHO` 时重发 `COOKIE-ACK`，恢复首个 ACK 丢失的握手；不重复投影 `CONNECTED`，也不重置既有 heartbeat 或 stream 状态。已建立且 cookie/tag 匹配时，初始 cookie deadline 不再拒绝该重传；仍在建立时继续检查 expiry，未知或不匹配的 cookie 不产生 ACK。该行为对应 [RFC 9260 5.2.4 case D](https://www.rfc-editor.org/rfc/rfc9260.html#section-5.2.4)。
+
 所有 `now_ms` 都是同一 association 上非递减的 absolute monotonic milliseconds；
 `UINT64_MAX` 保留为 no-deadline sentinel。`service` 只处理已到期工作，不 sleep 或 spin，
 deadline addition 饱和到 `UINT64_MAX - 1`。同一 association 的调用由 caller serialization；

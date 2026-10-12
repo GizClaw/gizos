@@ -416,7 +416,9 @@ int main(void) {
   assert(h2_lua_apps_list(apps, NULL, 0, &available) == 0 && available == 0);
   expect_file(&fs.api, "/preinstalled/demo.lua", source, sizeof(source) - 1);
   expect_file(&fs.api, "/user/demo/.kv", "save", 4);
-  assert(h2_lua_apps_install(apps, NULL, URI(fixture_data_zlib), NULL, 1000,
+  h = (http_t){
+      .archive = fixture_valid, .size = sizeof(fixture_valid), .chunk = 31};
+  assert(h2_lua_apps_install(apps, &http, URI("https://example.test/app"), NULL, 1000,
                              NULL, NULL, &info) == 0);
   check_version(apps, "1.0.0");
   assert(h2_lua_apps_destroy(apps) == 0);
@@ -433,7 +435,9 @@ int main(void) {
   config.max_apps = 1;
   assert(h2_lua_apps_create(&config, &apps) == 0);
   for (unsigned cycle = 0; cycle < 3u; ++cycle) {
-    assert(h2_lua_apps_install(apps, NULL, URI(fixture_data_zlib), NULL, 1000,
+    h = (http_t){
+        .archive = fixture_valid, .size = sizeof(fixture_valid), .chunk = 31};
+    assert(h2_lua_apps_install(apps, &http, URI("https://example.test/app"), NULL, 1000,
                                NULL, NULL, &info) == 0);
     assert(h2_lua_apps_uninstall(apps, "demo") == 0);
     assert(h2_lua_apps_list(apps, NULL, 0, &available) == 0 && available == 0);

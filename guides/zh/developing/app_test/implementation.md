@@ -83,6 +83,8 @@ Testing Time 的 sleep 仅推进虚拟时钟，不调度其他 task。生产 Run
 
 Audio decorator 借用 delegate、Time、Memory 和 PCM，mic lifecycle 委托给底层，采集 scratch 读取后清零，再按 monotonic time 返回 fixture PCM；EOF 后输出静音。物理采集错误单独观测，不覆盖 fixture 的业务输入。Evidence 支持并发读取，但多字段不是原子快照。Mic lifecycle/read 串行，speaker lifecycle 串行，每条 track 独立串行，销毁前所有调用者 quiescent。
 
+有限 PCM 也可以通过 borrowed reader fixture 提供。Decorator 复制 reader 配置，每次最多请求一帧的指定 offset 内容，保留原 pacing、一次性 READY barrier、暂停与 EOF 静音语义；不预读或保存整段录音。Reader 回调在 mic-read task 上持有 fixture lock 时执行，必须有界完成，不能重入本对象的 setter 或 mic lifecycle。Reader 错误返回零帧、不推进内容 offset，并由 `fixture_read_result` 保留首个错误，与真实 Mic 健康统计分开；mic start 或成功替换清零。替换与 PCM 使用同一锁和格式门禁，失败保留原 source，成功后调用方才可关闭或释放原 reader context；Decorator 不拥有 reader 的文件、连接或用户存储。
+
 Audio decorator 默认输出 fixture。后台麦克风泵持续读取的产品应在启动 Runtime 前暂停 fixture，再由公开 observation callback 发布实际 capture 状态；暂停期间继续采样真实麦克风健康，但 read 立即返回 WOULD_BLOCK 和零字节，不消耗 PCM。恢复保留样本位置与 EOF，从首次启用的 read 重新建立 pacing epoch，不补发暂停期间的帧；重复发布同一状态不重置时钟。暂停／恢复即使发生在两次 read 之间或 pacing sleep 内也会被检测。控制状态跨 mic stop/start 与 fixture 更换保留，mic start 仍回绕样本。调用方保持输出暂停后，可在后台 mic 持续运行时更换同格式 fixture；替换与在途帧复制互斥，成功后旧 PCM 可释放，进度与 EOF 清零，真实采集健康保留。替换需与 mic start/stop 串行，不在 observation callback 中执行。该控制只发布原子状态，不调用 PAL 或获取 fixture lock；已越过最终状态检查的在途 read 仍可能输出一帧，因此它不是停止上传的 completion barrier。产品采集状态、素材选择和业务断言由 consumer 拥有。
 
 `h2_app_test_audio_set_fixture_ready()` 是独立于 capture 的一次内容起播闸门，默认

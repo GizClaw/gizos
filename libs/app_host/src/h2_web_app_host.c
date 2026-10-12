@@ -503,6 +503,15 @@ static void h2_web_app_host_task(void *user) {
   if (atomic_load(&host->retained_error) == H2_PAL_OK) {
     if (host->runtime != NULL) h2_runtime_deinit(host->runtime);
     host->runtime = NULL;
+    const h2_web_app_host_hardware_t *hardware = config->hardware;
+    if (hardware != NULL && hardware->release_runtime != NULL) {
+      const h2_pal_result_t release_rc =
+          hardware->release_runtime(hardware->user);
+      if (release_rc != H2_PAL_OK) {
+        (void)h2_web_app_host_quarantine(host, hardware->user, release_rc);
+        result = release_rc;
+      }
+    }
   } else {
     result = (h2_pal_result_t)atomic_load(&host->retained_error);
   }

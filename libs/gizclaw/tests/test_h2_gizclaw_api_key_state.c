@@ -28,6 +28,11 @@ typedef struct test_env {
   int method;
   h2_pal_result_t revoke_result;
   h2_pal_result_t create_result;
+  h2_pal_result_t list_result;
+  gizclaw_rpc_v1_APIKey listed[16];
+  unsigned listed_count, list_offset;
+  bool bad_cursor;
+  bool save_created;
   bool create_rpc_error, revoke_rpc_error;
   int create_rpc_code, revoke_rpc_code;
   char result_name[27], result_secret[96];
@@ -108,6 +113,16 @@ static int fake_start(h2_gizclaw_client_t *client,
                      &message));
     assert(strcmp(message.display_name, "binding") == 0);
     assert(message.manage_api_keys);
+  } else if (method == 97) {
+    gizclaw_rpc_v1_APIKeyListRequest message = {0};
+    assert(pb_decode(&stream, gizclaw_rpc_v1_APIKeyListRequest_fields, &message));
+    assert(message.has_limit && message.limit == 8);
+    s_env->list_offset = 0u;
+    if (message.has_cursor) {
+      while (s_env->list_offset < s_env->listed_count &&
+             strcmp(s_env->listed[s_env->list_offset].name, message.cursor) <= 0)
+        ++s_env->list_offset;
+    }
   } else {
     assert(method == 98);
     gizclaw_rpc_v1_APIKeyRevokeRequest message = {0};
@@ -128,7 +143,8 @@ static int fake_result(h2_gizclaw_rpc_request_t *request,
   (void)request;
   if (!h2_atomic_load(&s_env->reply))
     return H2_PAL_ERR_WOULD_BLOCK;
-  int rc = s_env->method == 98 ? s_env->revoke_result : s_env->create_result;
+  int rc = s_env->method == 98 ? s_env->revoke_result
+      : s_env->method == 97 ? s_env->list_result : s_env->create_result;
   *out_response = (h2_gizclaw_rpc_response_t){
       .has_error = s_env->method == 98 ? s_env->revoke_rpc_error
                                        : s_env->create_rpc_error,
@@ -138,7 +154,7 @@ static int fake_result(h2_gizclaw_rpc_request_t *request,
     return rc;
   if (out_response->has_error)
     return H2_PAL_OK;
-  uint8_t bytes[256];
+  uint8_t bytes[4096];
   pb_ostream_t stream = pb_ostream_from_buffer(bytes, sizeof(bytes));
   if (s_env->method == 96) {
     gizclaw_rpc_v1_APIKeyCreateResponse message = {.has_value = true};
@@ -146,6 +162,30 @@ static int fake_result(h2_gizclaw_rpc_request_t *request,
     strcpy(message.api_key, s_env->result_secret);
     assert(pb_encode(&stream, gizclaw_rpc_v1_APIKeyCreateResponse_fields,
                      &message));
+    if (s_env->save_created) {
+      s_env->listed_count = 1u;
+      strcpy(s_env->listed[0].name, s_env->result_name);
+      strcpy(s_env->listed[0].api_key, s_env->result_secret);
+      strcpy(s_env->listed[0].display_name, "binding");
+      s_env->listed[0].manage_api_keys = true;
+    }
+  } else if (s_env->method == 97) {
+    gizclaw_rpc_v1_APIKeyListResponse *message = h2_pal_mem_alloc(
+        h2_desktop_platform_default_allocator(), sizeof(*message));
+    assert(message != NULL);
+    memset(message, 0, sizeof(*message));
+    unsigned end = s_env->list_offset + 8u;
+    if (end > s_env->listed_count) end = s_env->listed_count;
+    for (unsigned i = s_env->list_offset; i < end; ++i)
+      message->items[message->items_count++] = s_env->listed[i];
+    if (end < s_env->listed_count || s_env->bad_cursor) {
+      message->has_next_cursor = true;
+      strcpy(message->next_cursor, s_env->bad_cursor ? "bad"
+          : s_env->listed[end - 1u].name);
+    }
+    assert(pb_encode(&stream, gizclaw_rpc_v1_APIKeyListResponse_fields, message));
+    memset(message, 0, sizeof(*message));
+    h2_pal_mem_free(h2_desktop_platform_default_allocator(), message);
   } else {
     gizclaw_rpc_v1_APIKeyRevokeResponse message = {0};
     assert(pb_encode(&stream, gizclaw_rpc_v1_APIKeyRevokeResponse_fields,
@@ -827,7 +867,149 @@ static void test_quota_completion_and_orphan_isolation(void) {
   teardown(&env);
 }
 
+static void reuse_state(test_env_t *env) {
+  assert(h2_gizclaw_api_key_state_close(env->state) == H2_PAL_OK);
+  assert(h2_gizclaw_api_key_state_destroy(&env->state) == H2_PAL_OK);
+  const h2_gizclaw_api_key_state_config_t config = {
+      .service = env->service, .mem = h2_desktop_platform_default_allocator(),
+      .sync = h2_desktop_platform_sync_api(), .time = &env->time,
+      .display_name = {"binding", 7u}, .manage_api_keys = true,
+      .reuse_existing = true, .timeout_ms = 1000u};
+  assert(h2_gizclaw_api_key_state_create(&config, &env->state) == H2_PAL_OK);
+}
+
+static void test_reuse_server_binding_key(void) {
+  test_env_t env;
+  setup(&env, true);
+  reuse_state(&env);
+  env.save_created = true;
+  refresh(&env, false);
+  h2_gizclaw_api_key_snapshot_t first = snapshot(&env);
+  assert(first.valid && !first.stale);
+  assert(h2_atomic_load(&env.starts) == 2u);
+  assert(env.methods[0] == 97 && env.methods[1] == 96);
+  refresh(&env, false);
+  assert(env.methods[2] == 97 && h2_atomic_load(&env.starts) == 3u);
+  h2_gizclaw_api_key_snapshot_t next = snapshot(&env);
+  assert(next.valid && !next.stale &&
+      memcmp(&first.key, &next.key, sizeof(first.key)) == 0);
+  /* A new state (including one created after reconnect) recovers the server
+   * key rather than relying on the destroyed state's memory. */
+  reuse_state(&env);
+  refresh(&env, false);
+  next = snapshot(&env);
+  assert(next.valid && !next.stale &&
+      memcmp(&first.key, &next.key, sizeof(first.key)) == 0);
+  assert(h2_atomic_load(&env.starts) == 4u && env.methods[3] == 97);
+  teardown(&env);
+  /* Recreate the actual Service too, with only the server-side key retained. */
+  setup(&env, true);
+  reuse_state(&env);
+  env.listed_count = 1u;
+  strcpy(env.listed[0].name, first.key.name);
+  strcpy(env.listed[0].api_key, first.key.secret);
+  strcpy(env.listed[0].display_name, "binding");
+  env.listed[0].manage_api_keys = true;
+  refresh(&env, false);
+  next = snapshot(&env);
+  assert(next.valid && !next.stale &&
+      memcmp(&first.key, &next.key, sizeof(first.key)) == 0);
+  assert(h2_atomic_load(&env.starts) == 1u && env.methods[0] == 97);
+  assert(h2_gizclaw_service_stop(env.service) == H2_PAL_OK);
+  assert(h2_gizclaw_api_key_state_request_refresh(env.state, false) == H2_PAL_ERR_CLOSED);
+  next = snapshot(&env);
+  assert(next.valid && next.stale &&
+      memcmp(&first.key, &next.key, sizeof(first.key)) == 0);
+  teardown(&env);
+}
+
+static void test_reuse_pagination_and_lookup_failures(void) {
+  test_env_t env;
+  setup(&env, true);
+  reuse_state(&env);
+  env.listed_count = 10u;
+  for (unsigned i = 0u; i < env.listed_count; ++i) {
+    snprintf(env.listed[i].name, sizeof(env.listed[i].name), "key-%02u", i);
+    strcpy(env.listed[i].display_name, "other");
+    strcpy(env.listed[i].api_key, "existing-secret");
+    env.listed[i].manage_api_keys = true;
+  }
+  strcpy(env.listed[0].display_name, "binding");
+  env.listed[0].manage_api_keys = false; /* Same purpose, different permission. */
+  strcpy(env.listed[8].display_name, "binding");
+  strcpy(env.listed[9].display_name, "binding");
+  refresh(&env, false);
+  h2_gizclaw_api_key_snapshot_t value = snapshot(&env);
+  assert(value.valid && !value.stale && strcmp(value.key.name, "key-08") == 0);
+  assert(h2_atomic_load(&env.starts) == 2u &&
+      env.methods[0] == 97 && env.methods[1] == 97);
+  env.list_result = H2_PAL_ERR_IO;
+  refresh(&env, false);
+  value = snapshot(&env);
+  assert(value.valid && value.stale && value.last_error == H2_PAL_ERR_IO);
+  assert(h2_atomic_load(&env.starts) == 3u);
+  env.list_result = H2_PAL_OK;
+  env.bad_cursor = true;
+  refresh(&env, false);
+  value = snapshot(&env);
+  assert(value.stale && value.last_error == H2_PAL_ERR_FORMAT);
+  assert(h2_atomic_load(&env.starts) == 4u); /* Never create after a bad list. */
+  teardown(&env);
+}
+
+static void test_lookup_recovers_ambiguous_create(void) {
+  test_env_t env;
+  setup(&env, true);
+  reuse_state(&env);
+  env.create_result = H2_PAL_ERR_IO;
+  refresh(&env, false);
+  assert(!snapshot(&env).valid && snapshot(&env).last_error == H2_PAL_ERR_IO);
+  assert(h2_atomic_load(&env.starts) == 2u);
+  /* The server committed the create whose transport response was lost. */
+  env.listed_count = 1u;
+  strcpy(env.listed[0].name, "key-name");
+  strcpy(env.listed[0].display_name, "binding");
+  strcpy(env.listed[0].api_key, "recovered-secret");
+  env.listed[0].manage_api_keys = true;
+  refresh(&env, false);
+  h2_gizclaw_api_key_snapshot_t value = snapshot(&env);
+  assert(value.valid && !value.stale &&
+      strcmp(value.key.secret, "recovered-secret") == 0);
+  assert(h2_atomic_load(&env.starts) == 3u && env.methods[2] == 97);
+  teardown(&env);
+}
+
+static void test_late_lookup_does_not_mutate_server_key(bool close) {
+  test_env_t env;
+  setup(&env, true);
+  reuse_state(&env);
+  env.listed_count = 1u;
+  strcpy(env.listed[0].name, "key-name");
+  strcpy(env.listed[0].display_name, "binding");
+  strcpy(env.listed[0].api_key, "existing-secret");
+  env.listed[0].manage_api_keys = true;
+  h2_atomic_store(&env.reply, false);
+  assert(h2_gizclaw_api_key_state_request_refresh(env.state, false) == H2_PAL_OK);
+  wait_count(&env.starts, 1u);
+  if (close)
+    assert(h2_gizclaw_api_key_state_close(env.state) == H2_PAL_OK);
+  else {
+    h2_atomic_store(&env.now, 1100u);
+    assert(snapshot(&env).last_error == H2_PAL_ERR_TIMEOUT);
+  }
+  h2_atomic_store(&env.reply, true);
+  wait_count(&env.destroys, 1u);
+  for (unsigned i = 0u; i < 10u; ++i) poll_once(&env);
+  assert(!snapshot(&env).valid && h2_atomic_load(&env.starts) == 1u);
+  teardown(&env);
+}
+
 int main(void) {
+  test_reuse_server_binding_key();
+  test_reuse_pagination_and_lookup_failures();
+  test_lookup_recovers_ambiguous_create();
+  test_late_lookup_does_not_mutate_server_key(false);
+  test_late_lookup_does_not_mutate_server_key(true);
   test_quota_state_and_explicit_retry();
   test_quota_after_explicit_revoke_does_not_restore_key();
   test_scoped_rpc_error_projection();

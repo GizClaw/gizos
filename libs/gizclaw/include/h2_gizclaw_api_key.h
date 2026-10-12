@@ -54,6 +54,12 @@ typedef struct h2_gizclaw_api_key_state_config {
   const h2_pal_time_api_t *time;
   h2_gizclaw_str_t display_name; /**< Copied; same limits as API key create. */
   bool manage_api_keys;
+  /** Normal refresh lists this owner's server-persisted keys and reuses the
+   * smallest name matching display_name and manage_api_keys. Create only after
+   * a complete successful list proves absence. False keeps create semantics.
+   * Consumers must retain the key on ordinary page exit; revoke is explicit.
+   */
+  bool reuse_existing;
   /** Nonzero total refresh budget, including queue/connect. */
   uint32_t timeout_ms;
 } h2_gizclaw_api_key_state_config_t;
@@ -94,7 +100,10 @@ h2_gizclaw_api_key_state_create(const h2_gizclaw_api_key_state_config_t *config,
  * cannot be undone. No other keys are listed/deleted to make room; a caller may
  * retry after quota changes. Submission errors are returned and stored as
  * last_error. A refresh that has expired is detached as an orphan first, then
- * this call may start a new generation.
+ * this call may start a new generation. With reuse_existing and
+ * revoke_current=false, lookup precedes creation; lookup failures retain a
+ * stale existing key and never fall back to create. A rebuilt state recovers
+ * the same server-persisted credential for the same authenticated owner.
  */
 h2_pal_result_t
 h2_gizclaw_api_key_state_request_refresh(h2_gizclaw_api_key_state_t *state,
