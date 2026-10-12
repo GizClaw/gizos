@@ -933,3 +933,18 @@ before later document changes. This is not a device or reset-cause diagnosis.
 The loud comparison and actual diagnostic workload reruns remain pending, as
 do valid controlled GizClaw service inputs and remaining final hardware gates.
 Overall remains NOT QUALIFIED and PR #709 remains draft.
+
+## Current manual audible cue observation
+
+The operator pressed BOOT on the actual r44 Audio App and heard all three
+100-percent/unity-gain beeps. The executing cue records work/close/stop/restore
+all zero, saved and effective speaker volume 100, and 60 PCM blocks. A separate
+receipt binds that observation to the exact UID, package/image hashes and raw
+executing segment. The unchanged 24-case suite, at least 30-second I/O soak,
+cleanup, confirmation and screen stages pass on both r44 boots.
+
+This verifies basic bounded audible speaker output on this artifact. It does not
+relabel the earlier r42 low-gain no-sound observation, establish calibrated
+acoustic quality, microphone accuracy or AEC, or prove that the shared low-gain
+stability waveform was audible. Remaining source/performance/business/peripheral
+gates keep overall status NOT QUALIFIED.
