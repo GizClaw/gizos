@@ -3,6 +3,7 @@
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_h2loader_runtime.h"
 #include "h2_pal_e2e.h"
+#include "pref_fixture.h"
 #include "h2_esp_target_task_policy.h"
 
 #include "esp_system.h"
@@ -38,6 +39,17 @@ static void run_entry(void *user) {
   if (rc == H2_PAL_OK) rc = h2_runtime_init(&runtime_config, &runtime);
   if (rc != H2_PAL_OK) {
     printf("H2_PAL_PREF_E2E_FAIL stage=runtime rc=%d\n", rc);
+    fflush(stdout);
+    hold();
+  }
+  int fixture_reset = 0;
+  rc = h2_mosaico_pref_fixture_prepare(
+      runtime->pref, runtime->mem, esp_app_get_description()->app_elf_sha256,
+      &fixture_reset);
+  printf("H2_PAL_PREF_FIXTURE reset=%d rc=%d\n", fixture_reset, rc);
+  fflush(stdout);
+  if (rc != H2_PAL_OK) {
+    printf("H2_PAL_PREF_E2E_FAIL stage=fixture rc=%d\n", rc);
     fflush(stdout);
     hold();
   }
