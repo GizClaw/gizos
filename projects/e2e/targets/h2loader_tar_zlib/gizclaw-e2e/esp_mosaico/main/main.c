@@ -1,3 +1,4 @@
+#include "fixture_http.h"
 #include "esp_heap_caps.h"
 #include "freertos/idf_additions.h"
 #include "h2_esp_target_task_policy.h"
@@ -277,6 +278,9 @@ static bool event_has_ip(h2_runtime_event_kind_t kind, bool current) {
   return current;
 }
 
+/* Borrowed by Runtime and command recovery until this App ends. */
+static h2_mosaico_fixture_http_t s_fixture_http;
+
 static void image_entry(void *user) {
   (void)user;
   h2_runtime_config_t runtime_config = {0};
@@ -301,8 +305,14 @@ static void image_entry(void *user) {
   if (rc != H2_PAL_OK) {
     fail_launcher("command_prepare", rc, false);
   }
+  runtime_config.mem = h2_esp_platform_psram_allocator();
+  rc = h2_mosaico_fixture_http_prepare(
+      &s_fixture_http, &runtime_config, h2_gizclaw_e2e_fixture_root_ca_hex());
+  if (rc != H2_PAL_OK)
+    fail_launcher("fixture_http_trust", rc, false);
   rc = h2_runtime_init(&runtime_config, &runtime);
   if (rc != H2_PAL_OK) {
+    h2_mosaico_fixture_http_destroy(&s_fixture_http);
     fail_launcher("runtime_init", rc, false);
   }
   rc = h2_esp_h2loader_app_commands_start(runtime, "gizclaw-e2e", 1u, 3u);

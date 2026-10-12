@@ -64,11 +64,13 @@ firmware_lib_component(
 firmware_native_component(
     name = "gizclaw_e2e_esp_mosaico_launcher",
     srcs = [
+        "main/fixture_http.c",
         "main/h2_gizclaw_e2e_esp_mosaico_config.c",
         "main/h2_gizclaw_e2e_esp_mosaico_state.c",
         "main/main.c",
     ],
     hdrs = [
+        "main/fixture_http.h",
         "main/h2_gizclaw_e2e_esp_mosaico_config.h",
         "main/h2_gizclaw_e2e_esp_mosaico_state.h",
     ],
@@ -122,7 +124,9 @@ h2loader_esp_idf_firmware(
     srcs = [
         "CMakeLists.txt",
         "main/CMakeLists.txt",
+        "main/fixture_http.c",
         "main/h2_gizclaw_e2e_esp_mosaico_config.c",
+        "main/fixture_http.h",
         "main/h2_gizclaw_e2e_esp_mosaico_config.h",
         "main/h2_gizclaw_e2e_esp_mosaico_state.c",
         "main/h2_gizclaw_e2e_esp_mosaico_state.h",
@@ -149,4 +153,19 @@ h2loader_tar_zlib(
     image = "gizclaw-e2e",
     role = "app",
     target = "esp32s31",
+)
+
+cc_test(
+    name = "fixture_http_test",
+    srcs = ["main/fixture_http.c", "main/fixture_http.h", "tests/test_fixture_http.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["main"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal", "//libs/runtime", "//libs/pal/providers/corehttp"],
 )
