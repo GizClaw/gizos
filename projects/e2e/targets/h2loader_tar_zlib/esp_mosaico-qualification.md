@@ -661,3 +661,40 @@ admitted as physical loss. The AMOLED launcher now selects the same existing
 and assertions unchanged. New artifacts must pass a fresh operator reset, actual
 lost, post-loss advertising and both public Loader returns before Lua admission.
 Historical r24/r5 control receipts are not relabeled as final-source qualification.
+
+## Clean r25 continuation and Pref fixture identity
+
+Against frozen clean `d2646cf1` inputs, r25 passes public managed installation
+and independent startup qualification for Core 41/41, JSON 15/15, Crypto 22/22,
+Storage 36/36 over five boots (1/2/3/4/4), Decoder 29/29, Atomic 56/56 with all
+workers joined, and libco's six phases / 10,000 switches over ten boots. Every
+receipt retains Loader identity, cleared Stage and the original 20,640-byte dump.
+These seven receipts retain their source/artifact identities through later changes.
+Fresh r26 HTTP/MQTT and r27 Net/TLS/WebRTC fixtures and packages are prepared;
+building them does not establish device qualification.
+
+Both clean r25 host and r6 AMOLED join pass five real rounds and confirmation.
+A controlled public peer restart produces actual lost:-10 without advertising
+errors; both exact Loader returns and unchanged dumps pass. The separate hardware
+reset attempt is not admitted: USB reenumerated while the peer retained its old
+runtime tick count and no lost event occurred. The operator confirmed an attached
+battery and BOOT/PWR-only controls. PWR shutdown and later startup restored the
+correct Loader with a blank dump, but happened after the connected control ended.
+A fresh connected physical power-off/lost/power-on remains required for that gate.
+
+The r25 Pref install found the previous COMPLETE phase and ran only its single
+empty-state assertion, so it cannot close the 31-operation seed/verify/clean run.
+It did not confirm this newly installed image; the cancelled host wait and the
+one-case device ledger remain failed/incomplete evidence.
+
+The Mosaico Pref artifact now records its linked ELF identity in the portable
+suite's control namespace. A new image clears only h2e2eprefctl/h2e2eprefdata,
+commits the data cleanup before publishing the identity, and then runs the
+unchanged shared suite. Ordinary boots of the same image preserve all phases,
+including the final empty recheck. Malformed markers and I/O/close errors fail
+closed, release resources and prevent suite execution/confirmation. Device
+configuration, the native Pref provider and reference launchers are unchanged.
+A real SQLite host regression verifies all four persisted boots, unrelated
+configuration preservation, migration from COMPLETE, invalid markers and ten
+failure paths with optimized NDEBUG assertions. The corrected image still needs
+real managed install, complete 31 operations and its independent empty recheck.

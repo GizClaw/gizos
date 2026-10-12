@@ -1,3 +1,5 @@
+load("@rules_cc//cc:defs.bzl", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_esp_idf_firmware")
 load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
 load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
@@ -54,7 +56,7 @@ firmware_lib_component(
 firmware_native_component(
     name = "pal_pref_launcher",
     srcs = ["main/main.c"],
-    hdrs = [],
+    hdrs = ["main/pref_fixture.h"],
     component_directory = "projects/e2e/targets/h2loader_tar_zlib/pal-pref/esp_mosaico/main",
     component_name = "main",
     data = [
@@ -82,6 +84,7 @@ h2loader_esp_idf_firmware(
         "main/CMakeLists.txt",
         "main/idf_component.yml",
         "main/main.c",
+        "main/pref_fixture.h",
     ],
     board = "esp_mosaico",
     graph = [":pal_pref_launcher"],
@@ -98,4 +101,21 @@ h2loader_tar_zlib(
     image = "pal-pref",
     role = "app",
     target = "esp32s31",
+)
+
+cc_test(
+    name = "pref_fixture_test",
+    srcs = ["tests/test_pref_fixture.c", "main/pref_fixture.h"],
+    includes = ["main"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/pal/providers/sqlite",
+        "//projects/e2e/apps/pal/app:pal_e2e",
+    ],
 )
