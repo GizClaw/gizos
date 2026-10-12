@@ -62,7 +62,7 @@ void app_main(void) {
   rc = h2_esp_board_runtime_config(&config);
   if (rc)
     fail("board", rc);
-  (void)h2_mosaico_e2e_screen_begin(config.display, "DECODER", 6u);
+  (void)h2_mosaico_e2e_screen_begin(config.display, config.log, "DECODER", 6u);
 
   config.audio_decoder = h2_esp_audio_decoder_api();
   config.system_event = h2_pal_unsupported_system_event_api();

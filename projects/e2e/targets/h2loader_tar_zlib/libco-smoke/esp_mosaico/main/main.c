@@ -56,7 +56,7 @@ static void entry(void *unused) {
   if (result != H2_PAL_OK) {
     h2_libco_smoke_fail("runtime_config", result, false);
   }
-  (void)h2_mosaico_e2e_screen_begin(runtime_config.display, "LIBCO", 9u);
+  (void)h2_mosaico_e2e_screen_begin(runtime_config.display, runtime_config.log, "LIBCO", 9u);
 
   puts("H2_ESP_LIBCO_START stage=command_prepare");
   fflush(stdout);

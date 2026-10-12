@@ -8,6 +8,20 @@
 #include <string.h>
 static uint16_t pixels[480u * 480u];
 static int opens, closes, presents, draw_calls, fault, width = 480;
+static int log_fault, log_calls;
+static char last_log[H2_PAL_LOG_MESSAGE_MAX];
+static int log_write(void *user, h2_pal_log_level_t level, const char *scope,
+                     const char *message) {
+  (void)user;
+  assert(level == H2_PAL_LOG_INFO && strcmp(scope, "mosaico-screen") == 0);
+  assert(strlen(message) < sizeof(last_log));
+  strcpy(last_log, message);
+  ++log_calls;
+  return log_fault ? H2_PAL_ERR_IO : H2_PAL_OK;
+}
+static const h2_pal_log_vtable_t log_vtable = {.write = log_write};
+static const h2_pal_log_api_t log_api = {.vtable = &log_vtable};
+
 static int open_panel(void *u) {
   (void)u;
   ++opens;
@@ -82,21 +96,23 @@ static void snapshot(void) {
 int main(void) {
   assert(h2_mosaico_e2e_screen_phase("STARTING") ==
          H2_DISPLAY_ERR_INVALID_STATE);
-  assert(h2_mosaico_e2e_screen_begin(NULL, "DISPLAY", 1) ==
+  assert(h2_mosaico_e2e_screen_begin(NULL, &log_api, "DISPLAY", 1) ==
          H2_DISPLAY_ERR_INVALID_ARG);
-  assert(h2_mosaico_e2e_screen_begin(&panel, NULL, 1) ==
+  assert(h2_mosaico_e2e_screen_begin(&panel, &log_api, NULL, 1) ==
          H2_DISPLAY_ERR_INVALID_ARG);
-  assert(h2_mosaico_e2e_screen_begin(&panel, "DISPLAY", 17) ==
+  assert(h2_mosaico_e2e_screen_begin(&panel, &log_api, "DISPLAY", 20) ==
+         H2_DISPLAY_ERR_INVALID_ARG);
+  assert(h2_mosaico_e2e_screen_begin(&panel, NULL, "DISPLAY", 1) ==
          H2_DISPLAY_ERR_INVALID_ARG);
   fault = 1;
-  assert(h2_mosaico_e2e_screen_begin(&panel, "DISPLAY", 1) ==
+  assert(h2_mosaico_e2e_screen_begin(&panel, &log_api, "DISPLAY", 1) ==
          H2_DISPLAY_ERR_IO);
   fault = 0;
   width = 320;
-  assert(h2_mosaico_e2e_screen_begin(&panel, "DISPLAY", 1) ==
+  assert(h2_mosaico_e2e_screen_begin(&panel, &log_api, "DISPLAY", 1) ==
          H2_DISPLAY_ERR_UNSUPPORTED);
   width = 480;
-  assert(h2_mosaico_e2e_screen_begin(&panel, "DISPLAY", 1) == 0);
+  assert(h2_mosaico_e2e_screen_begin(&panel, &log_api, "DISPLAY", 1) == 0);
   assert(draw_calls == 20 && presents == 1 && colored(0xffffu) > 0u &&
          colored(0x7dffu) > 0u);
   int before = opens;
@@ -105,6 +121,16 @@ int main(void) {
   assert(h2_mosaico_e2e_screen_phase(NULL) == H2_DISPLAY_ERR_INVALID_ARG);
   assert(h2_mosaico_e2e_screen_result(0, 0) == 0 && colored(0x7fefu) > 0u &&
          colored(0xfaaau) == 0u);
+  assert(strcmp(last_log, "H2_MOSAICO_SCREEN suite=DISPLAY stage=PASS rc=0") ==
+         0);
+  assert(log_calls > 0);
+  log_fault = 1;
+  assert(h2_mosaico_e2e_screen_phase("LOG FAILURE") == H2_PAL_ERR_IO);
+  log_fault = 0;
+  char oversized[H2_PAL_LOG_MESSAGE_MAX + 1];
+  memset(oversized, 'X', sizeof(oversized) - 1u);
+  oversized[sizeof(oversized) - 1u] = '\0';
+  assert(h2_mosaico_e2e_screen_phase(oversized) == H2_PAL_ERR_INVALID_ARG);
   snapshot();
   assert(h2_mosaico_e2e_screen_result(0, -7) == 0 && colored(0xfaaau) > 0u &&
          colored(0x7fefu) == 0u);
@@ -123,7 +149,7 @@ int main(void) {
   fault = 5;
   width = 320;
   before = opens;
-  assert(h2_mosaico_e2e_screen_begin(&panel, "DISPLAY", 1) ==
+  assert(h2_mosaico_e2e_screen_begin(&panel, &log_api, "DISPLAY", 1) ==
          H2_DISPLAY_ERR_UNSUPPORTED);
   assert(h2_mosaico_e2e_screen_release() == H2_DISPLAY_ERR_IO);
   width = 480;
@@ -131,9 +157,11 @@ int main(void) {
   assert(h2_mosaico_e2e_screen_phase("RETRY") == 0 && opens == before + 1);
   assert(h2_mosaico_e2e_screen_release() == 0);
   fault = 6;
-  assert(h2_mosaico_e2e_screen_begin(&panel, "DISPLAY", 1) ==
+  assert(h2_mosaico_e2e_screen_begin(&panel, &log_api, "DISPLAY", 1) ==
          H2_DISPLAY_ERR_IO);
   fault = 0;
+  assert(h2_mosaico_e2e_screen_release() == 0);
+  assert(h2_mosaico_e2e_screen_begin(&panel, &log_api, "GIZCLAW", 19) == 0);
   assert(h2_mosaico_e2e_screen_release() == 0);
   puts("Screen bounds, actual rendered status, failures and ownership/reopen "
        "PASS");

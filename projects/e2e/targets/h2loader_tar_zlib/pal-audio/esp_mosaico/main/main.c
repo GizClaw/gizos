@@ -139,7 +139,7 @@ static void entry(void *user) {
   int rc = h2_esp_board_runtime_config(&config);
   if (rc != H2_PAL_OK) fail("board", rc);
 #ifndef H2_PAL_AUDIO_BOARD_HOST_TEST
-  rc = h2_mosaico_e2e_screen_begin(config.display, "AUDIO", 8u);
+  rc = h2_mosaico_e2e_screen_begin(config.display, config.log, "AUDIO", 8u);
   if (rc != 0) fail("screen-start", rc);
 #endif
   provider_audio = config.audio;

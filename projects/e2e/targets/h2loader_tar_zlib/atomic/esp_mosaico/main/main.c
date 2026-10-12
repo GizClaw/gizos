@@ -154,7 +154,7 @@ void app_main(void) {
   rc = h2_esp_board_runtime_config(&runtime_config);
   if (rc)
     fail("board", rc);
-  (void)h2_mosaico_e2e_screen_begin(runtime_config.display, "ATOMIC", 7u);
+  (void)h2_mosaico_e2e_screen_begin(runtime_config.display, runtime_config.log, "ATOMIC", 7u);
 
   rc = h2_runtime_init(&runtime_config, &runtime);
   if (rc)

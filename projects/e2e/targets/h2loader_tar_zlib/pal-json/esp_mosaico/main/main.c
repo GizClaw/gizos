@@ -61,7 +61,7 @@ void app_main(void) {
   rc = h2_esp_board_runtime_config(&config);
   if (rc)
     fail("board", rc);
-  (void)h2_mosaico_e2e_screen_begin(config.display, "JSON", 3u);
+  (void)h2_mosaico_e2e_screen_begin(config.display, config.log, "JSON", 3u);
 
   config.system_event = h2_pal_unsupported_system_event_api();
   const h2_esp_h2loader_app_commands_config_t commands = {

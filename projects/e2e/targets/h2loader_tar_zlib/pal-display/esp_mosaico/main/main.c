@@ -128,7 +128,7 @@ void app_main(void) {
   rc = h2_esp_board_runtime_config(&config);
   if (rc)
     fail("board", rc);
-  rc = h2_mosaico_e2e_screen_begin(config.display, "DISPLAY", 1u);
+  rc = h2_mosaico_e2e_screen_begin(config.display, config.log, "DISPLAY", 1u);
   if (rc != 0) fail("screen-start", rc);
   config.system_event = h2_pal_unsupported_system_event_api();
   const h2_esp_h2loader_app_commands_config_t commands = {

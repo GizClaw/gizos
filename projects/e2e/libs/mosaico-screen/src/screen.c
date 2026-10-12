@@ -33,6 +33,7 @@ _Static_assert(sizeof(glyphs) / sizeof(glyphs[0]) == sizeof(glyph_chars) - 1,
                "font mapping mismatch");
 
 static const h2_pal_display_api_t *panel;
+static const h2_pal_log_api_t *logger;
 static char suite_name[39];
 static unsigned suite_position;
 static int opened;
@@ -92,7 +93,7 @@ static int render(const char *phase, uint16_t color, int show_rc, int test_rc,
   if (suite_position == 0u)
     snprintf(order, sizeof(order), "FIRMWARE LOADER");
   else
-    snprintf(order, sizeof(order), "SUITE %02u / 16", suite_position);
+    snprintf(order, sizeof(order), "SUITE %02u / 19", suite_position);
   snprintf(result, sizeof(result), "TEST RC %d  CONFIRM RC %d", test_rc,
            confirm_rc);
   int rc = 0;
@@ -115,17 +116,28 @@ static int render(const char *phase, uint16_t color, int show_rc, int test_rc,
   return rc;
 }
 static int observed(const char *stage, int rc) {
-  printf("H2_MOSAICO_SCREEN suite=%s stage=%s rc=%d\n", suite_name, stage, rc);
-  fflush(stdout);
-  return rc;
+  char message[H2_PAL_LOG_MESSAGE_MAX];
+  int size = snprintf(message, sizeof(message),
+                      "H2_MOSAICO_SCREEN suite=%s stage=%s rc=%d", suite_name,
+                      stage, rc);
+  int log_rc = size < 0 || (size_t)size >= sizeof(message)
+                   ? H2_PAL_ERR_INVALID_ARG
+                   : h2_pal_log_write(logger, H2_PAL_LOG_INFO, "mosaico-screen",
+                                      message);
+  /* Preserve the panel failure; a missing/failed diagnostic sink must also
+   * prevent successful presentation admission. */
+  return rc != 0 ? rc : log_rc;
 }
 int h2_mosaico_e2e_screen_begin(const h2_pal_display_api_t *display,
-                                const char *suite, unsigned position) {
-  if (display == NULL || suite == NULL || position > 16u)
+                                const h2_pal_log_api_t *log, const char *suite,
+                                unsigned position) {
+  if (display == NULL || log == NULL || log->vtable == NULL ||
+      log->vtable->write == NULL || suite == NULL || position > 19u)
     return observed("STARTING", H2_DISPLAY_ERR_INVALID_ARG);
   if (opened && panel != display)
     return observed("STARTING", H2_DISPLAY_ERR_INVALID_STATE);
   panel = display;
+  logger = log;
   suite_position = position;
   snprintf(suite_name, sizeof(suite_name), "%s", suite);
   return observed("STARTING", render("STARTING", ACTIVE, 0, 0, 0));

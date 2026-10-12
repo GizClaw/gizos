@@ -84,7 +84,7 @@ static void entry(void *unused) {
     if (rc == H2_PAL_OK) rc = h2_runtime_init(&config, &runtime);
     diagnostic_phase("runtime", rc);
     if (rc == H2_PAL_OK) {
-        int screen_rc = h2_mosaico_e2e_screen_begin(config.display, "LOADER", 0u);
+        int screen_rc = h2_mosaico_e2e_screen_begin(config.display, config.log, "LOADER", 0u);
         if (screen_rc == 0) (void)h2_mosaico_e2e_screen_phase("WAITING FOR FIRMWARE");
         printf("H2_MOSAICO_SCREEN role=loader rc=%d\n", screen_rc);
     }

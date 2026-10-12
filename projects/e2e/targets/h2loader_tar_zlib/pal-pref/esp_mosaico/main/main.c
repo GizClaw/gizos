@@ -29,7 +29,7 @@ static void run_entry(void *user) {
   (void)user;
   rc = h2_esp_board_runtime_config(&runtime_config);
   if (rc == H2_PAL_OK)
-    (void)h2_mosaico_e2e_screen_begin(runtime_config.display, "PREF", 10u);
+    (void)h2_mosaico_e2e_screen_begin(runtime_config.display, runtime_config.log, "PREF", 10u);
   /* Preparing serial already starts the Type-C management channel. */
   const h2_esp_h2loader_app_commands_config_t commands = {
       .active_name = "pal-pref",

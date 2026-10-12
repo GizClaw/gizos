@@ -153,7 +153,7 @@ void app_main(void) {
     h2_runtime_config_t config = {0};
     rc = h2_esp_board_runtime_config(&config);
     if (rc != H2_PAL_OK) fail("board", rc);
-  (void)h2_mosaico_e2e_screen_begin(config.display, "MQTT", 12u);
+  (void)h2_mosaico_e2e_screen_begin(config.display, config.log, "MQTT", 12u);
 
     control_mutex = xSemaphoreCreateMutexStatic(&control_mutex_storage);
     if (control_mutex == NULL) fail("control-mutex", H2_PAL_ERR_NO_MEMORY);

@@ -1,0 +1,152 @@
+load("@rules_cc//cc:defs.bzl", "cc_test")
+load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_esp_idf_firmware")
+load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+load("//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
+
+package(default_visibility = ["//visibility:public"])
+
+esp_target_task_policy(
+    default_policy = "4 any 4096 psram",
+    graph = [":gizclaw_e2e_esp_mosaico_launcher"],
+    policies = [
+        "$gizclaw/net             5        0  65536 psram",
+        "h2loader/appcmd          8        0  4096  psram",
+        "h2loader/blecmd          8        0  4096  psram",
+        "$h2loader/return         8        0  4096  psram",
+        "$h2loader/blelink        6        0  4096  psram",
+        "$bleikcp/kcp             7        0  4096  psram",
+        "$bleikcp/server          5        0  4096  psram",
+        "$h2peer/net              7        0  4096  psram",
+        "$h2peer/udp              7        0  4096  psram",
+        "$gizclaw/audio/download  default",
+        "$gizclaw/device          4 any 131072 psram",
+        "$gizclaw/data-up         default",
+        "$gizclaw/data-down       default",
+        "$gizclaw/audio/uplink    default",
+        "$gizclaw/audio/downlink  default",
+        "$runtime/input           default",
+        "$runtime/nfc             default",
+        "gizclaw/e2e/runner       4 any 131072 psram",
+        "gizclaw/e2e/wifi         default",
+        "gizclaw/e2e/launcher     4 any 4096 psram",
+        "gizclaw/e2e/job          4 any 4096 psram",
+        "$h2loader/uartcmd        default",
+    ],
+)
+
+firmware_lib_component(
+    name = "firmware_lib",
+    deps = [
+        "//libs/audio_mixer",
+        "//libs/drivers/audio/es8311",
+        "//projects/e2e/libs/mosaico-screen:screen",
+        "//libs/bleikcp",
+        "//libs/bundle",
+        "//libs/command",
+        "//libs/gizclaw",
+        "//libs/iostreamikcp",
+        "//libs/pal:unsupported",
+        "//libs/wifi_sta",
+        "//libs/pal/providers/corehttp",
+        "//libs/pal/providers/h2peer",
+        "//libs/pal/providers/h2sctp",
+        "//libs/pal/providers/libco",
+        "//libs/pixa",
+        "//libs/runtime",
+        "//projects/e2e/apps/gizclaw/app:gizclaw_e2e",
+        "//projects/e2e/libs/gizclaw-device:ledger",
+    ],
+)
+
+firmware_native_component(
+    name = "gizclaw_e2e_esp_mosaico_launcher",
+    srcs = [
+        "main/h2_gizclaw_e2e_esp_mosaico_config.c",
+        "main/h2_gizclaw_e2e_esp_mosaico_state.c",
+        "main/main.c",
+    ],
+    hdrs = [
+        "main/h2_gizclaw_e2e_esp_mosaico_config.h",
+        "main/h2_gizclaw_e2e_esp_mosaico_state.h",
+    ],
+    component_directory = "projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/esp_mosaico/main",
+    component_name = "main",
+    data = [
+        "main/CMakeLists.txt",
+        "main/idf_component.yml",
+    ],
+    tags = ["manual"],
+    deps = [
+        ":firmware_lib",
+        "//boards/esp_mosaico/esp32s31",
+        "//boards/esp_mosaico/esp32s31:loader_usb",
+        "//libs/atomic",
+        "//libs/gizclaw",
+        "//libs/pal",
+        "//native_component_src/esp-idf6.x/h2_gizclaw",
+        "//native_component_src/esp-idf6.x/h2_pal_core",
+        "//native_component_src/esp-idf6.x/opus_port",
+        "//native_component_src/esp-idf6.x/zlib",
+        "//projects/e2e/apps/gizclaw/app:fixture",
+        "//projects/e2e/libs/gizclaw-device:ledger",
+        "//projects/h2loader/libs/h2loader",
+        "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_ble",
+        "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_runtime",
+    ],
+)
+
+cc_test(
+    name = "gizclaw_e2e_esp_mosaico_state_test",
+    srcs = [
+        "main/h2_gizclaw_e2e_esp_mosaico_state.c",
+        "main/h2_gizclaw_e2e_esp_mosaico_state.h",
+        "tests/test_h2_gizclaw_e2e_esp_mosaico_state.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["main"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)
+
+h2loader_esp_idf_firmware(
+    name = "firmware",
+    srcs = [
+        "CMakeLists.txt",
+        "main/CMakeLists.txt",
+        "main/h2_gizclaw_e2e_esp_mosaico_config.c",
+        "main/h2_gizclaw_e2e_esp_mosaico_config.h",
+        "main/h2_gizclaw_e2e_esp_mosaico_state.c",
+        "main/h2_gizclaw_e2e_esp_mosaico_state.h",
+        "main/idf_component.yml",
+        "main/main.c",
+    ],
+    board = "esp_mosaico",
+    cmake_variables = [
+        "H2_GIZCLAW_E2E_FIRMWARE_ONLY",
+        "H2_GIZCLAW_E2E_VOICE_ONLY",
+        "H2_GIZCLAW_E2E_CONCURRENCY_ONLY",
+    ],
+    graph = [":gizclaw_e2e_esp_mosaico_launcher"],
+    project = "CMakeLists.txt",
+    project_name = "h2_gizclaw_e2e_esp_mosaico",
+    target = "esp32s31",
+    task_policy = ":task_policy",
+)
+
+h2loader_tar_zlib(
+    name = "package",
+    board = "esp_mosaico",
+    firmware = ":firmware",
+    image = "gizclaw-e2e",
+    role = "app",
+    target = "esp32s31",
+)

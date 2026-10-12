@@ -58,7 +58,7 @@ void app_main(void) {
     h2_runtime_config_t config = {0};
     rc = h2_esp_board_runtime_config(&config);
     if (rc != H2_PAL_OK) fail("board", rc);
-  (void)h2_mosaico_e2e_screen_begin(config.display, "HTTP", 11u);
+  (void)h2_mosaico_e2e_screen_begin(config.display, config.log, "HTTP", 11u);
 
     rc = h2_esp_h2loader_app_commands_prepare_serial(&config, "pal-http", 1u, 3u);
     if (rc != H2_PAL_OK) fail("command_prepare", rc);
