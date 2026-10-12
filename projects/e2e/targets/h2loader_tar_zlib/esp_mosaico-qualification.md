@@ -790,3 +790,28 @@ the actual original dump verified and backed up before destructive crash tests.
 Current acoustic observation and final board/camera insertion/physical peripheral
 observations still block complete acceptance. A green software result does not
 close those gates or establish SOC/magnetic calibration or live camera removal.
+
+## Loader control App internal-memory correction
+
+The r34 public recovery sequence exposed three real failures in the Mosaico
+control App: Wi-Fi scan, Wi-Fi connect and URL staging returned -4. The Loader
+counterparts passed. Device logs show that Wi-Fi could not allocate its six
+internal static RX buffers after the control App had started BLE and reserved
+a 64 KiB internal entry stack. The controlled partial run is retained as
+NOT ADMITTED; passing individual checksum transitions do not admit the full run.
+
+Only the Mosaico H2Loader E2E control artifact now places its entry stack in
+PSRAM, matching the Loader and suite launchers. Existing internal safe-call
+stacks still own flash and OTA confirmation. Startup diagnostics record actual
+free/largest internal 8-bit heap before and after command/BLE startup. No shared
+PAL provider, portable registry or other board launcher changes are required.
+
+Frozen r39 inputs explicitly include this one-file diff on ec0b919a; all five
+normal/alternate/crash/Loader artifacts build and are archived with hashes.
+On the real device, entry internal free/largest are 228239/131072 bytes and
+after command startup 127647/63488 bytes. App Wi-Fi scan, connect and URL
+staging now each pass through the unchanged public runner. Full lifecycle,
+crash/rollback and both checksum-format matrices are still running and are not
+qualified by those three passes. Original coredump bytes were verified and
+backed up externally before the intentional crash/erase cases; preservation
+of that external backup does not imply the device dump remains unchanged.
