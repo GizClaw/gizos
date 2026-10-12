@@ -948,3 +948,68 @@ relabel the earlier r42 low-gain no-sound observation, establish calibrated
 acoustic quality, microphone accuracy or AEC, or prove that the shared low-gain
 stability waveform was audible. Remaining source/performance/business/peripheral
 gates keep overall status NOT QUALIFIED.
+
+## Actual performance comparison and reference business audit
+
+The complete r44 and r45 iperf runs each report six passes out of fourteen.
+All four UDP receive and all four SCTP cases time out with -6. Cleanup succeeds,
+confirmation is refused and the executing screen reports FAIL. Exact candidate,
+Stage/image identities and blank coredump status are retained. r45 enables the
+SDK Wi-Fi/LwIP PSRAM-first policy only in the two performance artifacts. Internal
+minimum free memory improves from zero to 31 KiB, but the complete matrix still
+fails; the allocation flag alone is not a verified functional fix.
+
+The same real repository server/client completes all fourteen cases on host
+loopback with the original five-second durations. This isolates a useful host
+control, not a Mosaico pass or a proof of root cause. Actual r45 WebRTC performance
+completes DTLS/SCTP connection but its data-only download stops at 49,152 bytes
+with a callback error; the full 10 MiB/scheduling workload is not admitted.
+The failure leaves an unconfirmed App and the public Loader return succeeds. The
+current dump remains blank. No panic cause is inferred.
+
+Frozen r46 builds and archives both performance artifacts with the additional
+reference small-malloc threshold zero. DMA capability requirements, radio
+advertising, workloads, time budgets, throughput/fairness gates and confirmation
+remain unchanged. Native builds pass; real device comparison is separate and
+pending. These settings change no shared board default or provider contract.
+
+AMOLED/BK business qualification uses the same shared GizClaw App and explicit
+private fixture flags; its historical controlled Dev endpoint/profile and eight
+case catalog are documented in the Mosaico entry. Local HTTP/Pion and fault
+injection do not replace actual registered business services. No compatible
+private registration/AppConfig/media/NTP fixture was found in the current test
+environment. Mosaico now has an explicit `esp_mosaico` choice in the shared API
+auditor. All eighteen auditor regressions pass, including matching complete
+Mosaico evidence and rejection of foreign-board, truncated and failed runs.
+Current full acceptance requires 228 APIs, not the historical 227-API receipts.
+Overall remains NOT QUALIFIED and PR #709 remains draft.
+
+## Latest complete failed workload records
+
+r46 WebRTC performance reaches 278,528 download bytes and times out at the
+unchanged 300-second transfer deadline. Its callback error flag is zero; that
+is still workload FAIL, with confirmation refused, blank dump and a successful
+public return to Loader. r47 adds eligible external static BSS placement: iperf
+completes 11/14, internal minimum is 59 KiB and DMA minimum 27 KiB. The remaining
+failures are `udp_rx_40m` and `udp_rx_20m_1200` (-6), and `sctp_tx_1400` (-4).
+Cleanup is zero and confirmation remains refused. r47 WebRTC receives 3,964,928
+bytes before the same 300-second deadline; it also remains FAIL and returns to
+Loader publicly. All original candidate, source/configuration and failed ledgers
+remain separately bound. These observations do not establish a driver or network
+root cause, or complete performance qualification.
+
+The real host WebRTC smoke completes its original transfers, three distinct
+request channels, loaded/data-only throughput ratio 1113 permille, audio gap
+limits and 200 echoed media frames, with actual process exit zero. This is a host
+control, not a Mosaico receipt. Frozen r48 builds and archives a Mosaico WebRTC
+artifact with transport worker priorities 20/21 and lwIP 22, matching the verified
+AMOLED business scheduler hierarchy. No shared provider, other board policy,
+workload, fairness/audio limit or confirmation gate changes; real device results
+are pending. The existing AMOLED iperf server role also builds against pinned
+IDF 6.2. Its package is publicly staged with exact P1/P2 and coredump preservation,
+but is not activated or counted as a client matrix PASS.
+
+The shared API auditor's Mosaico extension also passes its optimized Bazel test.
+Real GizClaw business remains blocked on the reference private fixture inputs;
+all eight cases and the current 228 APIs still require actual complete execution.
+Overall remains NOT QUALIFIED and PR #709 remains draft.
