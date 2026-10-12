@@ -102,3 +102,11 @@ hooks update FreeRTOS active stack accounting during coroutine switches while
 retaining hardware protection. This SDK-specific adapter is tied to the pinned
 SDK layout; shared ESP PAL task sources and reference-board composition remain
 unchanged. Build success is not proof of dual-board reconnection or recovery.
+
+E2E 从 Display 开始。Loader 和套件固件通过项目层的现有 display PAL
+显示 STARTING、套件编号、当前阶段及实际 PASS/FAIL；Display 图案与调光
+测试期间释放状态页的屏幕会话，最后恢复结果页。Pref 重启、Audio 持续输出、
+Wi-Fi 对端窗口和 Lua 传输/等待断连都有各自提示。屏幕提示不替代原有测试
+日志和真实对端证据，API 成功也不等于已完成光学或声音观察。状态页不新增
+共享 PAL 接口或板级应用任务；每套新固件的完整资格仍按上述 qualification
+文档验证。

@@ -1,3 +1,4 @@
+#include "h2_mosaico_e2e_screen.h"
 #include "h2_mosaico_loader_usb.h"
 #include "h2_esp_board.h"
 #include "h2_esp_h2loader_ble.h"
@@ -23,6 +24,7 @@ static void h2_libco_smoke_hold(void) {
 
 static void h2_libco_smoke_fail(const char *stage, int result,
                                 bool command_transport_started) {
+  (void)h2_mosaico_e2e_screen_result(result, -1);
   printf("H2_ESP_LIBCO_SMOKE_FAIL stage=%s rc=%d\n", stage, result);
   fflush(stdout);
   if (!command_transport_started) {
@@ -54,6 +56,8 @@ static void entry(void *unused) {
   if (result != H2_PAL_OK) {
     h2_libco_smoke_fail("runtime_config", result, false);
   }
+  (void)h2_mosaico_e2e_screen_begin(runtime_config.display, "LIBCO", 9u);
+
   puts("H2_ESP_LIBCO_START stage=command_prepare");
   fflush(stdout);
   /* Preparing serial already starts the Type-C management channel. */
@@ -75,6 +79,7 @@ static void entry(void *unused) {
   }
   puts("H2_ESP_LIBCO_START stage=portable");
   fflush(stdout);
+  (void)h2_mosaico_e2e_screen_phase("RUNNING");
   result = h2_libco_smoke_run(runtime, NULL);
   if (result != H2_PAL_OK) {
     h2_libco_smoke_fail("portable", result, true);
@@ -82,10 +87,12 @@ static void entry(void *unused) {
   if (xTaskGetCoreID(NULL) != task_core || xPortGetCoreID() != current_core) {
     h2_libco_smoke_fail("root_core_changed", H2_PAL_ERR_INVALID_STATE, true);
   }
+  (void)h2_mosaico_e2e_screen_phase("CONFIRMING");
   result = h2_esp_h2loader_app_confirm(runtime);
   if (result != H2_PAL_OK) {
     h2_libco_smoke_fail("confirm", result, true);
   }
+  (void)h2_mosaico_e2e_screen_result(0, result);
   printf("H2_ESP_LIBCO_SMOKE_READY rc=0\n");
   fflush(stdout);
   h2_libco_smoke_hold();

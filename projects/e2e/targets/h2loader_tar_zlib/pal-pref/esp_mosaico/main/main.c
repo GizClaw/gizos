@@ -1,3 +1,4 @@
+#include "h2_mosaico_e2e_screen.h"
 #include "h2_mosaico_loader_usb.h"
 #include "h2_esp_board.h"
 #include "h2_esp_h2loader_ble.h"
@@ -27,6 +28,8 @@ static void run_entry(void *user) {
   int rc;
   (void)user;
   rc = h2_esp_board_runtime_config(&runtime_config);
+  if (rc == H2_PAL_OK)
+    (void)h2_mosaico_e2e_screen_begin(runtime_config.display, "PREF", 10u);
   /* Preparing serial already starts the Type-C management channel. */
   const h2_esp_h2loader_app_commands_config_t commands = {
       .active_name = "pal-pref",
@@ -38,6 +41,7 @@ static void run_entry(void *user) {
         &runtime_config, &commands);
   if (rc == H2_PAL_OK) rc = h2_runtime_init(&runtime_config, &runtime);
   if (rc != H2_PAL_OK) {
+    (void)h2_mosaico_e2e_screen_result(rc, -1);
     printf("H2_PAL_PREF_E2E_FAIL stage=runtime rc=%d\n", rc);
     fflush(stdout);
     hold();
@@ -49,10 +53,12 @@ static void run_entry(void *user) {
   printf("H2_PAL_PREF_FIXTURE reset=%d rc=%d\n", fixture_reset, rc);
   fflush(stdout);
   if (rc != H2_PAL_OK) {
+    (void)h2_mosaico_e2e_screen_result(rc, -1);
     printf("H2_PAL_PREF_E2E_FAIL stage=fixture rc=%d\n", rc);
     fflush(stdout);
     hold();
   }
+  (void)h2_mosaico_e2e_screen_phase("RUNNING");
   rc = h2_pal_e2e_run(runtime, &config, &result);
   printf("H2_PAL_PREF_E2E phase=%d action=%d rc=%d selected=%u passed=%u "
          "failed=%u status=%s\n",
@@ -60,10 +66,15 @@ static void run_entry(void *user) {
          (unsigned)result.selected, (unsigned)result.passed,
          (unsigned)result.failed, rc == H2_PAL_OK ? "PASS" : "FAIL");
   fflush(stdout);
-  if (rc != H2_PAL_OK) hold();
+  if (rc != H2_PAL_OK) {
+    (void)h2_mosaico_e2e_screen_result(rc, -1);
+    hold();
+  }
   if (result.pref_phase == H2_PAL_E2E_PREF_PHASE_SEED) {
+    (void)h2_mosaico_e2e_screen_phase("CONFIRMING");
     rc = h2_esp_h2loader_app_confirm(runtime);
     if (rc != H2_PAL_OK) {
+      (void)h2_mosaico_e2e_screen_result(0, rc);
       printf("H2_PAL_PREF_E2E_FAIL stage=confirm rc=%d\n", rc);
       fflush(stdout);
       hold();
@@ -72,11 +83,13 @@ static void run_entry(void *user) {
     fflush(stdout);
   }
   if (result.action == H2_PAL_E2E_ACTION_REBOOT) {
+    (void)h2_mosaico_e2e_screen_phase("REBOOT FOR PERSISTENCE");
     printf("H2_PAL_PREF_E2E_REBOOT next=%d\n", (int)result.pref_phase + 1);
     fflush(stdout);
     vTaskDelay(pdMS_TO_TICKS(100u));
     esp_restart();
   }
+  (void)h2_mosaico_e2e_screen_result(rc, 0);
   printf("H2_PAL_PREF_E2E_READY status=PASS phase=%d\n",
          (int)result.pref_phase);
   fflush(stdout);

@@ -1,6 +1,10 @@
+#ifndef H2_PAL_AUDIO_BOARD_HOST_TEST
+#include "h2_mosaico_e2e_screen.h"
 #include "h2_mosaico_loader_usb.h"
+#endif
 #ifdef H2_PAL_AUDIO_BOARD_HOST_TEST
 #include "h2_pal_audio_board_test_sdk.h"
+#include "h2_mosaico_audio_test_sdk.h"
 #else
 #include "esp_system.h"
 #include "esp_app_desc.h"
@@ -17,6 +21,7 @@
 #endif
 
 #include <stdio.h>
+#include <string.h>
 
 static h2_runtime_t *runtime;
 static const h2_pal_audio_api_t *provider_audio;
@@ -27,6 +32,9 @@ static void hold(void) {
 }
 
 static void fail(const char *stage, int rc) {
+#ifndef H2_PAL_AUDIO_BOARD_HOST_TEST
+  (void)h2_mosaico_e2e_screen_result(rc, -1);
+#endif
   printf("H2_PAL_AUDIO_SETUP_FAIL board=esp_mosaico stage=%s rc=%d\n", stage, rc);
   fflush(stdout);
   hold();
@@ -34,6 +42,11 @@ static void fail(const char *stage, int rc) {
 
 static void report(void *user, const h2_pal_audio_e2e_case_result_t *item) {
   (void)user;
+#ifndef H2_PAL_AUDIO_BOARD_HOST_TEST
+  (void)h2_mosaico_e2e_screen_phase(
+      strcmp(item->id, "resource-churn") == 0 && item->passed
+          ? "LISTEN - 30 SECOND OUTPUT" : "AUDIO CHECKS RUNNING");
+#endif
   printf("H2_PAL_AUDIO_CASE {\"id\":\"%s\",\"status\":\"%s\",\"detail\":%d,\"line\":%u}\n",
          item->id, item->passed ? "PASS" : item->blocked ? "BLOCKED" : "FAIL",
          item->detail, item->line);
@@ -76,10 +89,19 @@ static void run(void *user) {
   const h2_pal_audio_e2e_config_t config = {
       .audio = provider_audio, .time = runtime->time,
       .stability_ms = 30000u, .report = report};
+#ifndef H2_PAL_AUDIO_BOARD_HOST_TEST
+  (void)h2_mosaico_e2e_screen_phase("RECORD AND PLAY 30 SECONDS");
+#endif
   const int rc = h2_pal_audio_e2e_run(&config, &result);
+#ifndef H2_PAL_AUDIO_BOARD_HOST_TEST
+  if (rc == H2_AUDIO_OK) (void)h2_mosaico_e2e_screen_phase("CONFIRMING");
+#endif
   const int confirm = rc == H2_AUDIO_OK
                           ? h2_esp_h2loader_app_confirm(runtime)
                           : H2_PAL_ERR_INVALID_STATE;
+#ifndef H2_PAL_AUDIO_BOARD_HOST_TEST
+  (void)h2_mosaico_e2e_screen_result(rc, confirm);
+#endif
   if (rc != H2_AUDIO_OK || confirm != H2_PAL_OK) {
     recover_failed_run(rc, confirm);
     return;
@@ -116,6 +138,10 @@ static void entry(void *user) {
   h2_runtime_config_t config = {0};
   int rc = h2_esp_board_runtime_config(&config);
   if (rc != H2_PAL_OK) fail("board", rc);
+#ifndef H2_PAL_AUDIO_BOARD_HOST_TEST
+  rc = h2_mosaico_e2e_screen_begin(config.display, "AUDIO", 8u);
+  if (rc != 0) fail("screen-start", rc);
+#endif
   provider_audio = config.audio;
   rc = h2_esp_h2loader_app_commands_prepare_serial(&config, "pal-audio", 1u, 3u);
   if (rc != H2_PAL_OK) fail("command_prepare", rc);

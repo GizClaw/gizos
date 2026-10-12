@@ -1,3 +1,4 @@
+#include "h2_mosaico_e2e_screen.h"
 #include "h2_mosaico_loader_usb.h"
 #include "esp_app_desc.h"
 #include "freertos/FreeRTOS.h"
@@ -20,6 +21,7 @@ static void hold(void) {
     vTaskDelay(pdMS_TO_TICKS(1000u));
 }
 static void fail(const char *stage, int rc) {
+  (void)h2_mosaico_e2e_screen_result(rc, -1);
   printf("H2_PAL_NET_TLS_SETUP_FAIL stage=%s rc=%d\n", stage, rc);
   fflush(stdout);
   hold();
@@ -32,6 +34,7 @@ static void run(void *user) {
   if (h2_pal_time_get_monotonic_ms(runtime->time, &setup_start) != H2_PAL_OK)
     fail("clock", H2_PAL_ERR_IO);
   for (;;) {
+    (void)h2_mosaico_e2e_screen_phase("RUNNING");
     rc = h2_pal_net_tls_device_run(runtime, &result);
     if (result.passed + result.failed + result.blocked + result.unsupported +
             result.not_assessed !=
@@ -54,8 +57,10 @@ static void run(void *user) {
           result.not_assessed !=
       H2_NET_TLS_CASE_COUNT)
     fail("fixture_or_network", rc);
+  if (rc == H2_PAL_OK) (void)h2_mosaico_e2e_screen_phase("CONFIRMING");
   int confirm = rc == H2_PAL_OK ? h2_esp_h2loader_app_confirm(runtime)
                                 : H2_PAL_ERR_INVALID_STATE;
+  (void)h2_mosaico_e2e_screen_result(rc, confirm);
   for (;;) {
     h2_pal_net_tls_device_report(runtime, &result);
     printf("H2_PAL_NET_TLS_READY board=%s rc=%d confirm=%d\n",
@@ -79,6 +84,8 @@ void app_main(void) {
   rc = h2_esp_board_runtime_config(&config);
   if (rc != H2_PAL_OK)
     fail("board", rc);
+  (void)h2_mosaico_e2e_screen_begin(config.display, "NET TLS", 13u);
+
   rc = h2_esp_h2loader_app_commands_prepare_serial(&config, "pal-net-tls", 1u,
                                                    3u);
   if (rc != H2_PAL_OK)

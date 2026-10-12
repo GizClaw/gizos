@@ -1,3 +1,4 @@
+#include "h2_mosaico_e2e_screen.h"
 #include "h2_mosaico_loader_usb.h"
 #include "h2_esp_board.h"
 #include "h2_esp_h2loader_ble.h"
@@ -105,6 +106,7 @@ static void hold(void) {
 }
 
 static void fail(const char *stage, int rc, int commands_started) {
+  (void)h2_mosaico_e2e_screen_result(rc, -1);
   printf("H2_LUA_LINK_E2E stage=%s status=ERROR rc=%d\n", stage, rc);
   fflush(stdout);
   if (!commands_started) {
@@ -121,6 +123,8 @@ static void image_entry(void *user) {
   if (rc != H2_PAL_OK) {
     fail("runtime_config", rc, 0);
   }
+  (void)h2_mosaico_e2e_screen_begin(config.display, "LUA BLE LINK " H2_LUA_LINK_E2E_ROLE, 16u);
+
   config.mem = h2_esp_platform_psram_allocator();
   board_log = config.log;
   config.log = &observed_log_api;
@@ -144,6 +148,9 @@ static void image_entry(void *user) {
    * retained GATT service is reattached on every host round. */
   unsigned passed = 0u;
   for (unsigned round = 1u; round <= H2_LUA_LINK_E2E_ROUNDS; ++round) {
+    char phase[39];
+    snprintf(phase, sizeof(phase), "TRANSFER ROUND %u / 5", round);
+    (void)h2_mosaico_e2e_screen_phase(phase);
     printf("H2_LUA_LINK_E2E stage=round board=%s role=%s round=%u\n",
            "esp_mosaico", H2_LUA_LINK_E2E_ROLE, round);
     fflush(stdout);
@@ -161,12 +168,14 @@ static void image_entry(void *user) {
   fflush(stdout);
   if (passed != H2_LUA_LINK_E2E_ROUNDS)
     fail("rounds", H2_PAL_ERR_INVALID_STATE, 1);
+  (void)h2_mosaico_e2e_screen_phase("CONFIRMING");
   rc = h2_esp_h2loader_app_confirm(runtime);
   if (rc != H2_PAL_OK)
     fail("confirm", rc, 1);
   printf("H2_LUA_LINK_E2E stage=confirmed role=%s rc=0\n",
          H2_LUA_LINK_E2E_ROLE);
   fflush(stdout);
+  (void)h2_mosaico_e2e_screen_phase("WAITING FOR PEER POWER CYCLE");
   /* Final session stays up until the link drops (e.g. the peer resets). */
   (void)h2_lua_link_e2e_run(runtime, &(h2_lua_link_e2e_config_t){
                                          .role = H2_LUA_LINK_E2E_ROLE,
@@ -175,6 +184,7 @@ static void image_entry(void *user) {
                                          .hold = 1,
                                          .hold_timeout_ms = 900000u,
                                      });
+  (void)h2_mosaico_e2e_screen_phase("LINK SESSION COMPLETE");
   hold();
 }
 
