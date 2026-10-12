@@ -87,6 +87,8 @@ output。
 
 ## Time and failure semantics
 
+建立 association 后，provider 保留与本次 association 绑定的 cookie。收到完全匹配的重复 `COOKIE-ECHO` 时重发 `COOKIE-ACK`，恢复首个 ACK 丢失的握手；不重复投影 `CONNECTED`，也不重置既有 heartbeat 或 stream 状态。已建立且 cookie/tag 匹配时，初始 cookie deadline 不再拒绝该重传；仍在建立时继续检查 expiry，未知或不匹配的 cookie 不产生 ACK。该行为对应 [RFC 9260 5.2.4 case D](https://www.rfc-editor.org/rfc/rfc9260.html#section-5.2.4)。
+
 所有 `now_ms` 都是同一 association 上非递减的 absolute monotonic milliseconds；
 `UINT64_MAX` 保留为 no-deadline sentinel。`service` 只处理已到期工作，不 sleep 或 spin，
 deadline addition 饱和到 `UINT64_MAX - 1`。同一 association 的调用由 caller serialization；

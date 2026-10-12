@@ -342,9 +342,11 @@ static h2_pal_result_t h2_sctp_association_handle_cookie_echo(
     h2_pal_sctp_association_t *association,
     const h2_sctp_chunk_view_t *chunk,
     uint64_t now_ms) {
-    if (association->state != H2_PAL_SCTP_STATE_CONNECTING ||
+    const bool established = association->state == H2_PAL_SCTP_STATE_CONNECTED;
+    if ((!established &&
+         association->state != H2_PAL_SCTP_STATE_CONNECTING) ||
         !association->cookie_valid || chunk->len != sizeof(association->cookie) ||
-        now_ms > association->cookie_expires_ms ||
+        (!established && now_ms > association->cookie_expires_ms) ||
         memcmp(chunk->data, association->cookie, sizeof(association->cookie)) !=
             0) {
         return H2_PAL_OK;
@@ -363,11 +365,15 @@ static h2_pal_result_t h2_sctp_association_handle_cookie_echo(
     if (result != H2_PAL_OK && result != H2_PAL_ERR_WOULD_BLOCK) {
         return result;
     }
-    association->cookie_valid = false;
-    association->heartbeat_deadline_ms = h2_sctp_deadline_add(
-        now_ms, H2_SCTP_HEARTBEAT_INTERVAL_MS);
-    h2_sctp_notify_state(
-        association, H2_PAL_SCTP_STATE_CONNECTED, H2_PAL_OK);
+    /* RFC 9260 5.2.4 case D: the peer can retransmit this exact cookie when
+     * our first ACK was lost. Keep its association-bound cookie and resend
+     * ACK without reopening the association or resetting its timers. */
+    if (!established) {
+        association->heartbeat_deadline_ms = h2_sctp_deadline_add(
+            now_ms, H2_SCTP_HEARTBEAT_INTERVAL_MS);
+        h2_sctp_notify_state(
+            association, H2_PAL_SCTP_STATE_CONNECTED, H2_PAL_OK);
+    }
     return H2_PAL_OK;
 }
 
