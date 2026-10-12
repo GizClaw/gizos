@@ -395,6 +395,8 @@ completion 后不延长文字订阅。应用无需新增下行音频处理流程
 
 扫码绑定等需要异步刷新和撤销的产品使用 `h2_gizclaw_api_key_state_t`：创建时注入借用的 Service、Mem、Sync、Time 和非零 `timeout_ms`，`display_name` 会复制。产品调用 `request_refresh` 登记请求，主循环继续调用 `service_poll` 驱动 completion，再读取 `snapshot` 展示有效 key。无需创建线程、join 或等待 RPC；原有同步 helper 和 request 接口行为不变。
 
+稳定绑定凭据使用可选的 `reuse_existing=true`。普通 `request_refresh(false)` 先经当前认证设备身份的 `server.api_key.list`（method 97）查找服务端持久化 key；同时精确匹配 `display_name` 与 `manage_api_keys`，复用名字排序最前的一项，不删除其它 key。只有完整列表成功且没有匹配项时才创建。每页最多八项、最多 64 页，要求严格前进且与页末名字一致的 cursor；逐项解码，避免 SDK 的百项固定数组进入 worker stack。全部分页与创建共享原有总预算，错误或不完整列表不降级为创建；已有 key 保留为 stale。新的 Service/state 使用同一设备身份即可找回同一个 key，无需本地 secret 数据库。页面关闭、普通刷新、重连和升级不应调用 revoke；明确解绑或轮换才请求撤销。超过截止时间或 close 后的迟到 list 不创建、不撤销既存 key；新 create 的 orphan 撤销规则保持不变。默认 false 与显式 `request_refresh(true)` 保持原有行为。
+
 `request_refresh(true)` 在当前 key 有效时先撤销再创建；撤销成功或 `NOT_FOUND` 后擦除旧 key 并提交 create，其它撤销错误保留 `valid && stale` 的旧 key，下一次 `request_refresh(true)` 可重试撤销。创建成功后 key 有效且不 stale，普通创建失败则失效；唯一的资源耗尽保留例外见下文。busy 期间重复刷新返回 OK，合并到当前链，不叠加请求、清除 revoke-after 标记、不延长截止时间。每次 refresh 的总时限包含排队、连接、撤销和创建；`snapshot` 或 `request_refresh` 检查到期后将当前请求分离为 orphan（不取消），清除 busy 并记录 `H2_PAL_ERR_TIMEOUT`，保留的旧 key 标为 stale。检查到期的 `request_refresh` 随后可开始新一代刷新。
 
 快照只在 mutex 内短读，不发 RPC；包含 key、valid、stale、busy、closed、last_error、原始 RPC error presence/code 和每次可见变化递增的 revision。last_error 在 busy 期间可以仍是上次 completion，调用方先判断 busy；原始 RPC error projection 则在新 generation、成功、timeout 或 close 时清除。`request_refresh`、`request_revoke`、`close` 与 `service_poll` 在同一个 owner task 上调用，`snapshot` 也可从其它线程读取并执行到期分离。completion 只在 owner task 串行执行，每个请求的 generation 隔离超时、close 后的迟到结果。初始状态 invalid、stale、idle；close 后保留的 key 仍可读但 stale，last_error 为 CLOSED，新 refresh 返回 CLOSED。
