@@ -97,6 +97,15 @@ typedef struct h2_web_app_host_hardware {
   h2_pal_result_t (*button)(void *user, h2_runtime_t *runtime,
                             h2_runtime_component_id_t component_id,
                             int pressed);
+  /**
+   * Releases resources borrowed by Runtime configuration, after App and
+   * Runtime users stop and before Filesystem/platform teardown. Runs once on
+   * the host task, including after failed configure_runtime or Runtime init.
+   * Not called if the dependency graph was already quarantined, or host setup
+   * failed before Runtime configuration. Failure quarantines the graph and
+   * retains user/dependencies; it is not retried. Keep user alive on RETAINED.
+   */
+  h2_pal_result_t (*release_runtime)(void *user);
 } h2_web_app_host_hardware_t;
 
 typedef struct h2_web_app_host_config {
