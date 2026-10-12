@@ -893,3 +893,43 @@ Overall remains NOT QUALIFIED. Fresh Log PAL/presentation device regression,
 real performance and configured business runs, current acoustic observation and
 final board/camera insertion/physical peripheral gates still require evidence.
 PR #709 remains draft.
+
+## Current physical sound failure and performance reset
+
+The latest r42 Loader self-update/independent boot, Display 24/24 on two boots
+and native Log PAL stages pass. The operator separately confirmed current
+stages, quadrants, dimming and green PASS on that exact Display artifact.
+Audio also passes 24/24 on both r42 boots, but the operator reports no sound
+during the second executing LISTEN window. This is physical audio FAIL; it is
+not replaced by API success or historical audible beeps.
+
+The unchanged shared suite sets speaker volume to 40 percent and creates the
+stability track at 300 milli. Its small PCM fixture may be quiet; the root cause
+is not established. The Mosaico artifact now labels the 30-second phase I/O soak
+and supplies an operator-controlled BOOT102 three-beep comparison after software
+completion. It uses 100 percent speaker/unity track gain and a bounded 4096-peak
+600/1000/1400 Hz fixture, verifies effective volume, then drains, closes, stops
+and restores volume. Cleanup failure enters existing recovery. Hearing remains
+explicitly unconfirmed on the screen and in records; no shared Audio provider,
+portable registry or reference launcher changed. Optimized cue waveform and
+eleven injected failure paths pass, together with all three actual board Audio
+failure/confirmation recovery regressions.
+
+The real configured r43 iperf candidate executes the first six TCP/UDP transmit
+cases twice, then returns to Loader while entering UDP receive. Remaining cases
+and the complete 14-case matrix are NOT ADMITTED. The actual candidate/Stage/P2
+identities are retained; current dump is blank and reset cause is unknown. The
+first managed installer was stopped after final-state waits; the separate public
+upgrade ACK was accepted while its short confirmation verification failed.
+These operations are not converted into passing managed installs. The private
+oracle now matches the shared wire contract's lowercase `result=pass`; no
+firmware assertion is relaxed.
+
+Frozen r44 builds the Audio cue and both performance diagnostic packages against
+exact source/configuration hashes. Performance-only defaults enable bounded
+panic evidence in the reserved managed coredump partition, matching the existing
+libco diagnostic pattern. All three native builds pass; artifacts are archived
+before later document changes. This is not a device or reset-cause diagnosis.
+The loud comparison and actual diagnostic workload reruns remain pending, as
+do valid controlled GizClaw service inputs and remaining final hardware gates.
+Overall remains NOT QUALIFIED and PR #709 remains draft.

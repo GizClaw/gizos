@@ -20,7 +20,7 @@ set(SDKCONFIG "${CMAKE_BINARY_DIR}/sdkconfig" CACHE FILEPATH "ESP-IDF sdkconfig"
 # boards/esp_mosaico/esp32s31/layouts/h2loader/ into the project directory before
 # the native build runs, so it is appended after the board defaults here.
 set(SDKCONFIG_DEFAULTS
-  "${H2_ESP_BOARD_DIR}/sdkconfig.defaults;${CMAKE_CURRENT_LIST_DIR}/sdkconfig.h2loader.defaults;${H2_ESP_BOARD_DIR}/loader_usb/sdkconfig.defaults"
+  "${H2_ESP_BOARD_DIR}/sdkconfig.defaults;${CMAKE_CURRENT_LIST_DIR}/sdkconfig.h2loader.defaults;${H2_ESP_BOARD_DIR}/loader_usb/sdkconfig.defaults;${CMAKE_CURRENT_LIST_DIR}/sdkconfig.performance-e2e.defaults"
   CACHE STRING "ESP-IDF sdkconfig defaults" FORCE)
 set(H2_ESP_PLATFORM_ENABLE_WEBRTC ON CACHE BOOL "Enable H2Peer for the benchmark" FORCE)
 

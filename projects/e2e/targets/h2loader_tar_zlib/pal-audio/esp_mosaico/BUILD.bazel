@@ -1,3 +1,6 @@
+load("@rules_cc//cc:defs.bzl", "cc_test")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_esp_idf_firmware")
 load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
 load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
@@ -49,7 +52,8 @@ firmware_lib_component(
 
 firmware_native_component(
     name = "launcher",
-    srcs = ["main/main.c"],
+    srcs = ["main/main.c", "main/audible.c"],
+    hdrs = ["main/audible.h"],
     component_directory = "projects/e2e/targets/h2loader_tar_zlib/pal-audio/esp_mosaico/main",
     component_name = "main",
     data = ["main/CMakeLists.txt", "main/idf_component.yml"],
@@ -70,7 +74,7 @@ firmware_native_component(
 h2loader_esp_idf_firmware(
     name = "firmware",
     srcs = ["CMakeLists.txt", "main/CMakeLists.txt", "main/idf_component.yml",
-            "main/main.c", "sdkconfig.pal-audio.defaults"],
+            "main/main.c", "main/audible.c", "main/audible.h", "sdkconfig.pal-audio.defaults"],
     board = "esp_mosaico",
     graph = [":launcher"],
     project = "CMakeLists.txt",
@@ -86,4 +90,14 @@ h2loader_tar_zlib(
     image = "pal-audio",
     role = "app",
     target = "esp32s31",
+)
+
+cc_test(
+    name = "audible_test",
+    srcs = ["main/audible.c", "main/audible.h", "tests/test_audible.c"],
+    includes = ["main"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = ["//libs/pal"],
 )
