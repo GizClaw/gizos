@@ -14,22 +14,22 @@ of admission; it must not be silently removed from the registry.
 
 | Suite | Reference launcher | Mosaico entry | Recorded device status (artifact-bound) |
 | --- | --- | --- | --- |
-| pal-core | `pal-core/devkit` | [`pal-core/esp_mosaico`](pal-core/esp_mosaico/BUILD.bazel) | r19 peer 41/41 on two independent boots; clock/probe restoration, confirmation, Loader/Stage/coredump preservation and managed install PASS (r8 DUT also retained) |
-| pal-storage | `pal-storage/devkit` | [`pal-storage/esp_mosaico`](pal-storage/esp_mosaico/BUILD.bazel) | r8 36/36 across five boots (1/2/3/4/4); persistence and managed install PASS |
-| pal-crypto | `pal-crypto/devkit` | [`pal-crypto/esp_mosaico`](pal-crypto/esp_mosaico/BUILD.bazel) | r8 22/22 on two independent peer boots; cleanup/confirmation and managed install PASS |
-| pal-json | `pal-json/devkit` | [`pal-json/esp_mosaico`](pal-json/esp_mosaico/BUILD.bazel) | r8 15/15 on two independent peer boots; cleanup/confirmation and managed install PASS |
-| pal-http | `pal-http/devkit` | [`pal-http/esp_mosaico`](pal-http/esp_mosaico/BUILD.bazel) | r9 45/45 on two independent boots; distinct nonces, real HTTP/TLS peer witnesses, cleanup/confirmation and managed install PASS |
-| pal-mqtt | `pal-mqtt/devkit` | [`pal-mqtt/esp_mosaico`](pal-mqtt/esp_mosaico/BUILD.bazel) | r21 36/36 on two independent boots; scoped native resources/provider release, delivery/confirmation and real broker/TLS witnesses PASS |
-| pal-net-tls | `pal-net-tls/devkit` | [`pal-net-tls/esp_mosaico`](pal-net-tls/esp_mosaico/BUILD.bazel) | r20 core profile: 37 mandatory / 38 total passes on two boots, one optional unsupported; real peer/cleanup/confirmation PASS; full-Net unqualified |
-| pal-wifi | `pal-wifi/devkit` | [`pal-wifi/esp_mosaico`](pal-wifi/esp_mosaico/BUILD.bazel) | r23 39/39 on public managed installation and independent normal reboot; six fresh peer leases per boot, persistence/restoration, confirmation and preserved Loader/coredump PASS |
-| pal-webrtc | `pal-webrtc/devkit` | [`pal-webrtc/esp_mosaico`](pal-webrtc/esp_mosaico/BUILD.bazel) | r22 43/43 on two independent boots; real Pion encrypted transport, typed fingerprint rejection, cleanup/confirmation and preserved Loader/Stage/coredump PASS |
-| pal-audio | `pal-audio/amoled` | [`pal-audio/esp_mosaico`](pal-audio/esp_mosaico/BUILD.bazel) | r8 24/24 on two independent peer boots; capture/output/30s soak and managed install PASS; acoustic observation unavailable |
-| pal-audio-decoder | `pal-audio-decoder/devkit` | [`pal-audio-decoder/esp_mosaico`](pal-audio-decoder/esp_mosaico/BUILD.bazel) | r8 29/29 on two independent peer boots; cleanup/confirmation and managed install PASS |
-| pal-display | `pal-display/amoled` | [`pal-display/esp_mosaico`](pal-display/esp_mosaico/BUILD.bazel) | r8 24/24 on two independent boots; DMA/cleanup/confirmation PASS; user confirmed four quadrants and earlier dimming |
-| atomic | `atomic/devkit` | [`atomic/esp_mosaico`](atomic/esp_mosaico/BUILD.bazel) | r8 56/56 on two independent executions, 20/20 workers joined; cleanup/confirmation and managed install PASS |
-| libco-smoke | `libco-smoke/devkit` | [`libco-smoke/esp_mosaico`](libco-smoke/esp_mosaico/BUILD.bazel) | r8 six phases / 10,000 switches on ten independent boots PASS; real coredump preserved |
-| lua-link | `lua-link/devkit` | [`lua-link/esp_mosaico`](lua-link/esp_mosaico/BUILD.bazel) | NOT QUALIFIED: historical bilateral rounds and r18 host loss retained; r20 BLE-command App warm returns pass three times, but final bilateral transfer/loss qualification is still required |
-| pal-pref | `pal-pref/devkit` | [`pal-pref/esp_mosaico`](pal-pref/esp_mosaico/BUILD.bazel) | r8 shared seed/verify/clean: 31 operations plus independent empty recheck PASS |
+| pal-core | `pal-core/devkit` | [`pal-core/esp_mosaico`](pal-core/esp_mosaico/BUILD.bazel) | r32 41/41 on two independent boots; clock restoration, task probe, cleanup/confirmation, screens and managed install PASS |
+| pal-storage | `pal-storage/devkit` | [`pal-storage/esp_mosaico`](pal-storage/esp_mosaico/BUILD.bazel) | r32 36/36 over five boots (1/2/3/4/4); real persistence, cleanup/confirmation, screens and managed install PASS |
+| pal-crypto | `pal-crypto/devkit` | [`pal-crypto/esp_mosaico`](pal-crypto/esp_mosaico/BUILD.bazel) | r32 22/22 on two independent boots; cleanup/confirmation, screens and managed install PASS |
+| pal-json | `pal-json/devkit` | [`pal-json/esp_mosaico`](pal-json/esp_mosaico/BUILD.bazel) | r32 15/15 on two independent boots; cleanup/confirmation, screens and managed install PASS |
+| pal-http | `pal-http/devkit` | [`pal-http/esp_mosaico`](pal-http/esp_mosaico/BUILD.bazel) | fresh r35 45/45 on two independent boots after host restart; real HTTP/TLS witnesses, cleanup/confirmation, screens and managed install PASS |
+| pal-mqtt | `pal-mqtt/devkit` | [`pal-mqtt/esp_mosaico`](pal-mqtt/esp_mosaico/BUILD.bazel) | fresh r35 36/36 on two independent boots; exact broker/TLS/first-ledger witnesses, provider release/resources, delivery/confirmation, screens and managed install PASS |
+| pal-net-tls | `pal-net-tls/devkit` | [`pal-net-tls/esp_mosaico`](pal-net-tls/esp_mosaico/BUILD.bazel) | fresh r35 core profile: 37 mandatory/38 total passes on two boots, one optional unsupported; exact peer/cleanup/confirmation/screens PASS; full-Net remains unqualified |
+| pal-wifi | `pal-wifi/devkit` | [`pal-wifi/esp_mosaico`](pal-wifi/esp_mosaico/BUILD.bazel) | r33 39/39 on complete public managed install and independent reboot; each fresh 600-second AMOLED window has six ordered real leases, restoration/confirmation and preserved Loader/dump PASS; first interrupted attempt NOT ADMITTED |
+| pal-webrtc | `pal-webrtc/devkit` | [`pal-webrtc/esp_mosaico`](pal-webrtc/esp_mosaico/BUILD.bazel) | fresh r36 43/43 on two independent boots; real Pion encrypted transport, typed fingerprint rejection, zero retained allocations, confirmation/screens and preserved Loader/dump PASS |
+| pal-audio | `pal-audio/amoled` | [`pal-audio/esp_mosaico`](pal-audio/esp_mosaico/BUILD.bazel) | r32 24/24 on two independent boots; actual capture/output and >=30-second soaks, cleanup/confirmation/screens PASS; current acoustic observation unanswered |
+| pal-audio-decoder | `pal-audio-decoder/devkit` | [`pal-audio-decoder/esp_mosaico`](pal-audio-decoder/esp_mosaico/BUILD.bazel) | r32 29/29 on two independent boots; cleanup/confirmation/screens and managed install PASS |
+| pal-display | `pal-display/amoled` | [`pal-display/esp_mosaico`](pal-display/esp_mosaico/BUILD.bazel) | r32 24/24 on two independent boots; original DMA/pattern/dimming plus STARTING/CONFIRMING/PASS rendering PASS; operator stage/pixels observations retain their separate r31/r28 bindings |
+| atomic | `atomic/devkit` | [`atomic/esp_mosaico`](atomic/esp_mosaico/BUILD.bazel) | r32 56/56 on two independent executions, all 20 workers joined; cleanup/confirmation/screens and managed install PASS |
+| libco-smoke | `libco-smoke/devkit` | [`libco-smoke/esp_mosaico`](libco-smoke/esp_mosaico/BUILD.bazel) | r32 six phases/10,000 switches on ten independent boots; confirmation/screens, managed install and actual original dump preservation PASS |
+| lua-link | `lua-link/devkit` | [`lua-link/esp_mosaico`](lua-link/esp_mosaico/BUILD.bazel) | r32 host/r6 AMOLED join: five full bilateral rounds, confirmed identities and connected hold; operator PWR cycle gives actual lost:-10 / 4100 ms / 1766 ticks, both exact public Loader returns and dump preservation PASS |
+| pal-pref | `pal-pref/devkit` | [`pal-pref/esp_mosaico`](pal-pref/esp_mosaico/BUILD.bazel) | r32 fresh 31 operations over three boots plus independent empty 1 recheck; image reset/persistence/confirmation/screens PASS after missing-ledger interruption; only private fixture prepared using distinct archived r28 image |
 
 PAL Core requires 41 cases covering 46 interface operations; the old board page's
 8 Core cases cannot close it. Display requires the portable 24-case registry with
@@ -749,3 +749,44 @@ image-bound suite qualification, paired Wi-Fi and connected physical Lua loss,
 Loader recovery/checksum/crash matrices, final board/camera insertion and actual
 acoustic observation. Builds and historical or partial receipts do not close
 those gates; PR #709 stays draft.
+
+## Current integrated-code portable qualification (October 12)
+
+All 16 portable suite profiles now have admitted fresh device receipts for the
+code committed as `22bc43f7`. The r32 frozen dirty input record retains its
+original identity and a separate committed-source equivalence record: every code
+file matches that commit, with only the two qualification documents differing.
+r33/r35/r36 use clean committed inputs and exact immutable artifact/configuration
+hashes. Source cuts and observations are never relabelled. The table above lists
+the current software-profile evidence; older investigations remain historical.
+Net/TLS qualification is its mandatory core profile, not optional full-Net.
+
+A host restart stopped Pref installation and destroyed temporary tooling/server
+keys. All archives and complete receipts survived. Persistent tooling and the
+exact SDK/submodules were restored. Missing first Pref execution was not invented:
+a distinct archived r28 image prepared only the two private Pref namespaces,
+then the exact r32 archive reran all 31 operations and the independent empty 1.
+New actual HTTP/MQTT/NetTLS/Pion fixtures required separately rebuilt r35/r36
+network artifacts, which pass their original two-boot and peer/resource gates.
+
+The first paired Wi-Fi controller incorrectly used upgrade monitor while the
+trial fixture retains Stage until its 600-second confirmation. The CLI's bounded
+verification exited -7 and the DUT installer was cancelled; the software 39 ledger
+and discontinuous peer capture remain NOT ADMITTED. After actual peer trial
+completion/confirmation, fresh ordinary-App monitor windows qualify managed and
+independent-normal r33 runs with six complete leases and final restoration each.
+No CLI verification, test assertion or confirmation gate was weakened.
+
+The r32/r6 Lua pair executes five actual rounds each, verifies both immutable App
+identities and confirms connected hold. The operator's PWR4s-off/5s-off/PWR2s-on
+cycle yields actual lost:-10 after 4100ms with 1766 received ticks. Both subsequent
+public Loader returns have exact P1 identities, empty Stage/result 0, unchanged
+original 20,640-byte DUT dump and blank peer dump. The earlier PWR recovery before
+hold is separately retained and does not stand in for this connected observation.
+
+Overall status remains NOT QUALIFIED and PR #709 remains draft. Public Loader
+lifecycle/recovery/checksum/crash/URL/Wi-Fi scenarios are now being executed, with
+the actual original dump verified and backed up before destructive crash tests.
+Current acoustic observation and final board/camera insertion/physical peripheral
+observations still block complete acceptance. A green software result does not
+close those gates or establish SOC/magnetic calibration or live camera removal.
