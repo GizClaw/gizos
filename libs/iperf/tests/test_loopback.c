@@ -38,12 +38,58 @@ typedef struct scenario {
     uint64_t bitrate_bps;
 } scenario_t;
 
-static void run_scenario(const scenario_t *scenario) {
+/* Model a shared receive pool occupied by early reverse-UDP data. The
+ * control transport remains unavailable until a real UDP packet is consumed.
+ * Both sockets and all server protocol work still use the desktop provider. */
+static const h2_pal_net_vtable_t *pool_net;
+static bool pool_waiting;
+static bool pool_freed;
+static bool pool_release;
+static unsigned pool_control_waits;
+static unsigned pool_data_reads;
+
+static int pool_tcp_recv(void *user, h2_pal_net_socket_t sock, uint8_t *data,
+                         size_t len, uint32_t timeout_ms) {
+    if (pool_waiting && !pool_freed) {
+        pool_control_waits++;
+        if (timeout_ms != 0u) h2_iperf_test_sleep_ms(timeout_ms);
+        return timeout_ms == 0u ? H2_PAL_ERR_WOULD_BLOCK : H2_PAL_ERR_TIMEOUT;
+    }
+    int got = pool_net->tcp_recv(user, sock, data, len, timeout_ms);
+    if (got == 1 && len == 1u && data[0] == 10u) pool_waiting = true;
+    return got;
+}
+
+static int pool_udp_recv(void *user, h2_pal_net_socket_t sock,
+                         h2_pal_net_addr_t *from, uint8_t *data, size_t len,
+                         uint32_t timeout_ms) {
+    int got = pool_net->udp_recvfrom(user, sock, from, data, len, timeout_ms);
+    if (pool_waiting && got >= 12) {
+        pool_data_reads++;
+        pool_freed = pool_release;
+    }
+    return got;
+}
+
+static void run_scenario(const scenario_t *scenario, bool shared_pool, bool release_pool) {
     bool with_sctp = scenario->protocol == H2_IPERF_PROTOCOL_SCTP;
     h2_iperf_test_env_t server_env;
     h2_iperf_test_env_t client_env;
     h2_iperf_test_env_init(&server_env, with_sctp);
     h2_iperf_test_env_init(&client_env, with_sctp);
+    h2_pal_net_api_t client_net = *client_env.config.net;
+    h2_pal_net_vtable_t client_vtable = *client_net.vtable;
+    if (shared_pool) {
+        pool_net = client_net.vtable;
+        pool_release = release_pool;
+        pool_waiting = pool_freed = false;
+        pool_control_waits = pool_data_reads = 0u;
+        client_vtable.tcp_recv = pool_tcp_recv;
+        client_vtable.udp_recvfrom = pool_udp_recv;
+        client_net.vtable = &client_vtable;
+        client_env.config.net = &client_net;
+    }
+
 
     const h2_iperf_server_params_t server_params = {
         .family = H2_PAL_NET_FAMILY_IPV4,
@@ -73,16 +119,31 @@ static void run_scenario(const scenario_t *scenario) {
     params.block_len = scenario->block_len;
     params.bitrate_bps = scenario->bitrate_bps;
     params.sctp_udp_port = h2_iperf_server_sctp_udp_port(thread.server);
-    params.control_timeout_ms = 10000u;
+    params.control_timeout_ms = shared_pool ? 1000u : 10000u;
     h2_iperf_result_t client_result;
+    uint64_t started_ms = 0u, completed_ms = 0u;
+    assert(h2_pal_time_get_monotonic_ms(client_env.config.time, &started_ms) == H2_PAL_OK);
     h2_pal_result_t status = h2_iperf_client_run(&client_env.config, &params, &client_result);
+    assert(h2_pal_time_get_monotonic_ms(client_env.config.time, &completed_ms) == H2_PAL_OK);
     assert(pthread_join(handle, NULL) == 0);
 
     printf("== %s\n", scenario->name);
     printf("client status %d, server status %d\n", (int)status, (int)thread.status);
     h2_iperf_test_print_result("client", &client_result);
     h2_iperf_test_print_result("server", &thread.result);
+    if (shared_pool && !release_pool) {
+        assert(status == H2_PAL_ERR_TIMEOUT);
+        assert(thread.status == H2_PAL_ERR_CLOSED);
+        assert(pool_control_waits > 0u && pool_data_reads > 0u && !pool_freed);
+        assert(completed_ms - started_ms >= params.control_timeout_ms);
+        assert(completed_ms - started_ms < params.control_timeout_ms + 1000u);
+        goto cleanup;
+    }
     assert(status == H2_PAL_OK);
+    if (shared_pool) {
+        assert(pool_control_waits > 0u);
+        assert(pool_data_reads > 0u && pool_freed);
+    }
     assert(thread.status == H2_PAL_OK);
     assert(memcmp(client_result.cookie, thread.result.cookie, H2_IPERF_COOKIE_SIZE) == 0);
     assert(client_result.protocol == scenario->protocol);
@@ -138,6 +199,7 @@ static void run_scenario(const scenario_t *scenario) {
         assert(receiver->packets <= sender->packets);
     }
 
+cleanup:
     h2_iperf_server_destroy(&thread.server);
     assert(thread.server == NULL);
     h2_iperf_test_env_deinit(&client_env);
@@ -161,6 +223,13 @@ static void test_udp_limit_below_header_rejected(void) {
 }
 
 int main(void) {
+    const scenario_t pool_scenario = {
+        "udp reverse shared RX pool", H2_IPERF_PROTOCOL_UDP, true,
+        1000u, 0u, 1200u, 2u * 1024u * 1024u,
+    };
+    run_scenario(&pool_scenario, true, true);
+    run_scenario(&pool_scenario, true, false);
+
     static const scenario_t scenarios[] = {
         {"tcp", H2_IPERF_PROTOCOL_TCP, false, 1000u, 0u, 0u, 0u},
         {"tcp bytes", H2_IPERF_PROTOCOL_TCP, false, 0u, 4u * 1024u * 1024u, 0u, 0u},
@@ -184,7 +253,7 @@ int main(void) {
         {"sctp paced", H2_IPERF_PROTOCOL_SCTP, false, 1000u, 0u, 1024u, 4u * 1024u * 1024u},
     };
     for (size_t i = 0u; i < sizeof(scenarios) / sizeof(scenarios[0]); ++i) {
-        run_scenario(&scenarios[i]);
+        run_scenario(&scenarios[i], false, true);
     }
     test_udp_limit_below_header_rejected();
     return 0;
