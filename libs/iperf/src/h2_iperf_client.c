@@ -281,12 +281,24 @@ static h2_pal_result_t client_recv_state(client_t *client, int8_t last_state,
                                          client->params.control_timeout_ms);
     }
     const h2_iperf_config_t *config = client->config;
-    uint64_t deadline = h2_iperf_now_ms(config) + client->params.control_timeout_ms;
+    uint64_t started_ms = h2_iperf_now_ms(config);
+    uint64_t deadline = started_ms + client->params.control_timeout_ms;
+    uint64_t early_packets = 0u, early_bytes = 0u;
+    unsigned control_polls = 0u;
     while (!h2_pal_time_deadline_expired(h2_iperf_now_ms(config), deadline)) {
         uint8_t byte = 0u;
+        ++control_polls;
         int got = h2_pal_net_tcp_recv(config->net, client->ctrl, &byte, 1u, 0u);
         if (got == 1) {
             *out_state = (int8_t)byte;
+            if (early_packets != 0u) {
+                h2_iperf_log(config, H2_PAL_LOG_INFO,
+                             "pre-start control state=%d polls=%u early_packets=%llu early_bytes=%llu elapsed_ms=%llu",
+                             (int)*out_state, control_polls,
+                             (unsigned long long)early_packets,
+                             (unsigned long long)early_bytes,
+                             (unsigned long long)(h2_iperf_now_ms(config) - started_ms));
+            }
             return H2_PAL_OK;
         }
         if (got == 0) return H2_PAL_ERR_CLOSED;
@@ -299,11 +311,19 @@ static h2_pal_result_t client_recv_state(client_t *client, int8_t last_state,
                                         client->buffer_len, 0u);
             if (got == H2_PAL_ERR_WOULD_BLOCK || got == H2_PAL_ERR_TIMEOUT) break;
             if (got < 0) return (h2_pal_result_t)got;
+            ++early_packets;
+            early_bytes += (uint64_t)got;
             if (h2_pal_time_deadline_expired(h2_iperf_now_ms(config), deadline))
-                return H2_PAL_ERR_TIMEOUT;
+                goto timed_out;
         }
         h2_iperf_sleep_ms(config, 1u);
     }
+timed_out:
+    h2_iperf_log(config, H2_PAL_LOG_ERROR,
+                 "pre-start control timeout state=%d polls=%u early_packets=%llu early_bytes=%llu elapsed_ms=%llu",
+                 (int)last_state, control_polls,
+                 (unsigned long long)early_packets, (unsigned long long)early_bytes,
+                 (unsigned long long)(h2_iperf_now_ms(config) - started_ms));
     return H2_PAL_ERR_TIMEOUT;
 }
 
