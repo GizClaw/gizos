@@ -56,7 +56,8 @@ static void memory_checkpoint(const char *name) {
   printf(
       "H2_WEBRTC_PERF_MEMORY checkpoint=%s internal_free_kib=%u "
       "internal_min_kib=%u dma_free_kib=%u dma_min_kib=%u "
-      "psram_free_kib=%u psram_min_kib=%u\n",
+      "psram_free_kib=%u psram_min_kib=%u "
+      "internal_largest_kib=%u dma_largest_kib=%u\n",
       name,
       (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL |
                                          MALLOC_CAP_8BIT) /
@@ -73,6 +74,12 @@ static void memory_checkpoint(const char *name) {
                  1024u),
       (unsigned)(heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM |
                                                  MALLOC_CAP_8BIT) /
+                 1024u),
+      (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL |
+                                                  MALLOC_CAP_8BIT) /
+                 1024u),
+      (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_DMA |
+                                                  MALLOC_CAP_8BIT) /
                  1024u));
   fflush(stdout);
 }
