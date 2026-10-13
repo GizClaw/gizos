@@ -1360,3 +1360,43 @@ client/default/source-bind and server accept paths, data defaults, descriptor
 reuse, distinct-owner rejection, failed-option cleanup and retry. Both host
 targets pass. No PAL ABI, capacity, workload or performance deadline changes.
 R65 / DevKit R15 native and actual device validation remain pending.
+
+
+## User pause checkpoint — 2026-10-13, R65 / DevKit R15
+
+Functional source is `e548de105499376530316c6f021a1a8f1897c90e`; the
+subsequent checkpoint commit changes documentation only. R65 and R15 native
+packages are frozen against that source and pinned IDF 6.2. R15 managed
+installation passes with cleanup=0; actual UID/image, preserved P1, cleared
+Stage and blank coredump are verified.
+
+**iperf qualified:** the unchanged fourteen-case matrix passes on two
+independent actual Mosaico boots. All 28 ordered R15 peer witnesses match
+protocol/direction and rc=0. Screen stages, cleanup, confirmation, source /
+configuration / package / image / UID, P1/Stage/coredump and ordinary public
+Loader return pass. Receipt: `perf65-20261013-1791883776197088000-iperf-qualification.json`.
+
+**WebRTC not qualified:** first actual boot passes both 10 MiB directions,
+three request channels and fairness 981 permille. Audio-only p99 is 184.652 ms
+and loaded audio p99 is 177.139 ms, within the unchanged 200 ms limit. The
+independent second boot is interrupted at the user's pause request; its last
+retained download progress is 6,291,456 bytes / 212,721 ms. It has no complete
+qualifying second ledger and is neither relabelled PASS nor a completed
+performance failure. The first-boot receipt/log remains source-bound.
+
+The owned controller, both serial readers and Pion server are stopped. Both
+boards are no longer enumerated at pause, so a new public Loader-return and
+coredump check cannot be completed after that disconnect. Reconnection must
+read actual active role/version/images/Stage/crash state before any install
+or restart; do not assume the App returned to Loader. Configuration, original
+Flash backups, coredump evidence and immutable packages remain preserved.
+
+Still pending: complete two-boot WebRTC qualification; current-source sixteen
+portable profiles, board/peripheral/camera and full Loader recovery gates;
+complete S3 graph; legitimate GizClaw eight-case/228-API execution; required
+CI and fresh review. S3's focused SZP RAM repair passes, but its full graph has
+no complete PASS. Historical P4/C5 full graphs and current protocol cross-builds
+retain their own identities and do not prove physical compatibility. The real
+isolated GizClaw 0.24.1 server currently lists zero models, voices and workflows.
+No service key or business PASS is fabricated. Overall **NOT QUALIFIED** and
+PR #709 remains draft. All original workloads and thresholds are retained.
