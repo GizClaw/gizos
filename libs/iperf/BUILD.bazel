@@ -164,3 +164,14 @@ cc_test(
     target_compatible_with = _HOST_TEST_COMPATIBILITY,
     deps = [":test_support"],
 )
+
+# Exercise the production emit callback under transient and permanent failures.
+cc_test(
+    name = "sctp_emit_test",
+    srcs = ["src/h2_iperf_internal.h", "tests/test_sctp_emit.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = _HOST_TEST_COMPATIBILITY,
+    deps = [":test_support"],
+)
