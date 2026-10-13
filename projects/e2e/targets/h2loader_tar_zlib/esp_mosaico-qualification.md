@@ -1201,3 +1201,23 @@ reports actual queued bytes, elapsed time, cwnd/rwnd, MTU and RTT. These bounded
 diagnostics change no wire protocol, time/throughput threshold, load, allocator,
 PAL API or worker policy. The new actual run is pending; no root cause or
 passing performance result is inferred from the diagnostics.
+
+
+### Reordered-message assembly lifetime regression
+
+An independent legal receive sequence begins a message in the in-order assembly
+buffer, receives its ending fragment out of order, then fills the middle gap.
+Completion uses the copy path; the original implementation leaves the assembly
+begin pointer referencing a fragment that delivery subsequently prunes. The
+original optimized regression fails on that retained owner. Successful delivery
+now releases the matching partial assembly metadata before pruning; WOULD_BLOCK
+retains ownership for the ordinary service retry. Sixteen DATA/I-DATA, TSN-wrap,
+blocked-callback and ordered/unordered combinations check exact payloads, owner
+release and the next message; all eighteen related host targets pass. This
+proven lifecycle defect is not asserted as an earlier board failure's root cause.
+Native and device qualification for this additional shared repair is pending.
+
+The separately frozen R60 WebRTC image completes its first full real smoke
+iteration with the original transfer/request/audio/fairness gates and
+cleanup/confirmation. Its independent second boot remains in progress; one boot
+does not complete the agreed qualification or qualify the newer provider fix.
