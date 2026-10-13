@@ -1058,3 +1058,108 @@ actual configured native GizClaw/Core builds pass. This is not a shared PAL API
 or other-board trust change. Real ASR/TTS/workflow resources and actual complete
 eight-case/228-API device business execution remain pending. Overall remains
 NOT QUALIFIED and PR stays draft.
+
+
+## DevKit peer replacement and shared SCTP regression fixes (2026-10-13)
+
+The replacement peer is an actual ESP32-S3 DevKit, MAC `30:ed:a0:a9:57:ec`,
+16 MiB Flash and 8 MiB embedded PSRAM. Its complete original factory Flash
+backup is retained outside Git with SHA-256
+`2d3887c6dd9a903401c8dc02ee91d43fe6b953ee9043755865ad0b2e53709148`.
+The DevKit-specific public Loader was rebuilt on pinned IDF 6.2, flashed and
+read back; its managed iperf server was installed through the public protocol.
+No AMOLED artifact or execution identity is attributed to this new board.
+Mosaico was independently backed up in full, then only its 8 KiB OTA selection
+was restored with verified readback; firmware, configuration and crash
+partitions were preserved.
+
+The source-bound `1.0.0-mosaico-e2e` Core package installs publicly and completes
+41/41 on both managed and independent boots. Task/stack probe, cleanup,
+confirmation, unchanged P1/coredump and public return to Loader pass. The first
+private observer used an incorrect summary prefix and timed out; that failed
+observer record remains separate from the subsequent complete actual-ledger
+verification. Replay is the firmware's immutable ledger, not reconstructed
+results. Other portable profiles still require final-source regression.
+
+With the actual DevKit peer, frozen r54 iperf completes 13/14: all UDP cases
+and `sctp_tx_1400` pass, but `sctp_tx_1200` fails. Diagnostic r55 completes
+12/14; both SCTP uploads fail. Its actual first send backpressure is -9
+(`WOULD_BLOCK`), followed by the harness's 1001-attempt limit being converted
+to -4. The 1200-byte case exhausts those retries in roughly 184 ms. The shared
+iperf emitter now preserves the PAL/SCTP transient-result contract, with the
+unchanged caller send/run/handshake deadlines providing the bounds; permanent
+errors and partial datagram writes fail immediately. One numeric diagnostic
+per association is retained. The production callback regression verifies
+2000 busy returns, recovery, saturated diagnostics and immediate fatal errors.
+
+Frozen r54 WebRTC performance receives more than 5 MiB before its unchanged
+300-second transfer timeout. A separate legal-input regression reproduces
+a shared SCTP zero-window deadlock: retained higher gap TSNs fill the receive
+buffer and prevent the lower retransmission from closing the gap. The provider
+now reclaims only a sufficient suffix of higher, undelivered, nonassembled
+gap fragments in linear passes, preserving cumulative acknowledgements and
+assembly. Dropped-gap SACK state and advertised space are updated, including
+a following allocation failure. A fresh SACK remains scheduled while older
+output is busy; the service retry then advertises the current gap/window state.
+Ordinary DATA, I-DATA, TSN wrap, rejection of still-higher data, allocation
+failure and busy output are covered in sixteen regression combinations. The original failing
+records and the successful 15-target host check remain outside Git.
+This portable provider change does not alter a PAL ABI, board task policy,
+workload, loss/latency/fairness threshold or confirmation gate. Final native
+Mosaico and DevKit build/device qualification is still pending.
+
+An unconfirmed rolled-back candidate is intentionally not automatically
+relaunched while Stage still describes the same image; the shared Loader
+regression explicitly protects that state. Earlier same-image installer waits
+are not proof of a board-driver failure or successful installation. Recovery
+uses a distinct verified package and retains the old failure evidence.
+Overall remains **NOT QUALIFIED** until the remaining final-source, physical,
+performance and real GizClaw business gates are actually completed.
+
+
+## Shared protocol and cancellation continuation (2026-10-13)
+
+Frozen R58/R12 native packages build on pinned IDF 6.2 and execute on the
+Mosaico DUT and independently identified ESP32-S3 DevKit. The actual unchanged
+iperf registry completes 12/14: all four SCTP send/receive cases now pass, while
+`udp_rx_40m` and `udp_rx_20m_1200` time out on the control connection. The peer
+records the corresponding closed sessions; no incomplete result is admitted.
+R58 WebRTC fails at connection setup with a DataChannel closed/error event,
+before a transfer ledger, and its ordinary public return to Loader succeeds.
+These failures do not qualify the performance workload or establish an
+unverified driver or network root cause. Failure-only client state/server phase
+witnesses are added without altering the protocol, load, deadlines or gates.
+R59/R13 native builds and immutable source/package/image archives pass;
+two-boot device execution is in progress.
+
+The host serial E2E CLI now uses its existing cooperative cancellation hook
+for SIGINT/SIGTERM, allowing ordinary protocol/session cleanup to run. Its
+optional handshake timeout is separate from the command timeout; defaults and
+the initial status bootstrap remain unchanged. Twenty optimized related host
+tests pass, including actual iperf3 interoperability, portable SCTP regressions,
+Loader App tests and real signal delivery. On the Mosaico, cancellation after
+393,216 acknowledged bytes returns a cancelled/failed operation with cleanup=0.
+The following public status and blank-coredump check succeed; P1 and P2 image
+checksums are unchanged. The partial Stage is invalidated, as required for an
+incomplete transfer. An earlier private observer incorrectly expected the old
+Stage to survive an interrupted overwrite; its failed assertion is retained
+separately from the corrected check of actual device state. Cancellation is
+not installation or candidate qualification.
+
+Complete compatible `//...` build graphs for ESP32-P4 and ESP32-C5 pass on the
+pinned SDK. The ESP32-S3 graph was interrupted to prioritize the requested
+physical E2E continuation; its full-graph result remains pending, while the
+DevKit-specific R13 build passes. Build results establish compile/link/ABI
+compatibility for the selected graph, not runtime GPIO, radio, audio or power
+qualification. Remote ESP CI results and physical P4/C5 regressions are not
+claimed. The original worktree and unrelated serial devices are untouched.
+
+The owned official GizClaw server and NTP fixture have been restored. Strict
+HTTPS verification exposed missing X.509 authority identifiers; regenerated
+certificates retain the existing keys/subjects and add the required extensions.
+Strict chain/name/date verification, object hashes and NTP pass. Previous
+private configuration/certificate snapshots are preserved outside Git; the new
+CA requires a separately bound business firmware build. Legitimate ASR/TTS and
+workflow catalog services, actual eight-case/228-API business execution and the
+remaining final-source peripheral/profile gates remain pending.
+Overall remains **NOT QUALIFIED**.

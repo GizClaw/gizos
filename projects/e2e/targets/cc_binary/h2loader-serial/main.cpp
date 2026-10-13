@@ -1,3 +1,4 @@
+#include "cancellation.h"
 #include "h2_desktop_app_support.h"
 #include "h2_desktop_platform.h"
 #include "h2_h2loader_serial_e2e.h"
@@ -23,6 +24,7 @@ struct Options {
   const char *sha256 = nullptr;
   h2_h2loader_host_command_t command = H2_H2LOADER_HOST_COMMAND_STATUS;
   std::uint32_t timeout_ms = 0;
+  std::uint32_t handshake_timeout_ms = 0;
   std::uint32_t reconnect_attempts = 0;
   std::filesystem::path firmware_index;
   std::filesystem::path resource_root;
@@ -87,6 +89,7 @@ bool parse_options(int argc, char **argv, Options *out) {
     kResourceRoot = 1u << 7,
     kTimeout = 1u << 8,
     kReconnectAttempts = 1u << 9,
+    kHandshakeTimeout = 1u << 10,
   };
   std::uint32_t seen = 0u;
   for (int index = 1; index < argc; ++index) {
@@ -121,6 +124,9 @@ bool parse_options(int argc, char **argv, Options *out) {
     } else if (std::strcmp(name, "--timeout-ms") == 0) {
       option = kTimeout;
       if (!parse_u32(value, 1u, 600000u, &out->timeout_ms)) return false;
+    } else if (std::strcmp(name, "--handshake-timeout-ms") == 0) {
+      option = kHandshakeTimeout;
+      if (!parse_u32(value, 1u, 600000u, &out->handshake_timeout_ms)) return false;
     } else if (std::strcmp(name, "--reconnect-attempts") == 0) {
       option = kReconnectAttempts;
       if (!parse_u32(value, 1u, 1000u, &out->reconnect_attempts)) return false;
@@ -253,11 +259,16 @@ int main(int argc, char **argv) {
                  "[--port-id ID] [--expected-board ID] "
                  "[--expected-target ID] "
                  "[--command help|status|stats|memory] "
-                 "[--timeout-ms MS] [--reconnect-attempts COUNT] "
+                 "[--timeout-ms MS] [--handshake-timeout-ms MS] "
+                 "[--reconnect-attempts COUNT] "
                  "[--asset-sha256 HEX --firmware-index ABS_FILE "
                  "--resource-root ABS_DIR]\n",
                  argv[0]);
     return 2;
+  }
+  if (!h2::e2e::loader_serial::Cancellation::install()) {
+    std::fprintf(stderr, "could not install cancellation signal handlers\n");
+    return 1;
   }
   h2_runtime_config_t runtime_config = h2::desktop::runtime_config(nullptr);
   h2_runtime_t *runtime = nullptr;
@@ -277,7 +288,9 @@ int main(int argc, char **argv) {
     config.asset_sha256 = options.sha256;
     config.read_resource = read_resource;
     config.resource_user = &options;
-    config.handshake_timeout_ms = options.timeout_ms;
+    config.handshake_timeout_ms = options.handshake_timeout_ms != 0u
+        ? options.handshake_timeout_ms : options.timeout_ms;
+    config.is_cancelled = h2::e2e::loader_serial::Cancellation::requested;
     config.command_timeout_ms = options.timeout_ms;
     config.reconnect_attempts = options.reconnect_attempts;
     result = h2_h2loader_serial_e2e_run(runtime, &config, &e2e);

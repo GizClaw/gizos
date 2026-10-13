@@ -1,11 +1,11 @@
-load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_test")
 load("//tools/bazel:cc_options.bzl", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
 
 package(default_visibility = ["//visibility:public"])
 
 cc_binary(
     name = "e2e-h2loader-serial",
-    srcs = ["main.cpp"],
+    srcs = ["main.cpp", "cancellation.h"],
     copts = H2_WARNING_COPTS,
     cxxopts = H2_CXX17_OPTS,
     deps = [
@@ -15,4 +15,17 @@ cc_binary(
         "//libs/runtime",
         "//projects/e2e/apps/h2loader-serial/app:h2loader_serial_e2e",
     ],
+)
+
+cc_test(
+    name = "cancellation_test",
+    srcs = ["cancellation.h", "test_cancellation.cpp"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
 )
