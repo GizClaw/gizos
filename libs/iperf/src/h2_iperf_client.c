@@ -417,6 +417,7 @@ h2_pal_result_t h2_iperf_client_run(
             client.params.control_timeout_ms);
     }
     bool done = false;
+    int8_t last_state = 0;
     while (result == H2_PAL_OK && !done) {
         int8_t state = 0;
         if (client.have_pending_state) {
@@ -426,10 +427,13 @@ h2_pal_result_t h2_iperf_client_run(
             result = h2_iperf_ctrl_recv_state(
                 config, client.ctrl, &state, client.params.control_timeout_ms);
             if (result != H2_PAL_OK) {
-                h2_iperf_log(config, H2_PAL_LOG_ERROR, "control read failed (%d)", (int)result);
+                h2_iperf_log(config, H2_PAL_LOG_ERROR,
+                             "control read failed rc=%d after_state=%d data_done=%d",
+                             (int)result, (int)last_state, client.data_done ? 1 : 0);
                 break;
             }
         }
+        last_state = state;
         result = client_handle_state(&client, state, &done);
         if (result != H2_PAL_OK) {
             h2_iperf_log(config, H2_PAL_LOG_ERROR, "state %d failed (%d)", (int)state, (int)result);

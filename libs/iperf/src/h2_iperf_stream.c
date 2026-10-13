@@ -11,7 +11,6 @@
 #define H2_IPERF_SCTP_MIN_WINDOW (256u * 1024u)
 /* RFC 9260 chunk type carried at the start of every SCTP packet payload. */
 #define H2_IPERF_SCTP_CHUNK_INIT 1u
-#define H2_IPERF_SCTP_EMIT_FAILURE_LIMIT 1000u
 #define H2_IPERF_SCTP_DRAIN_PACKETS 32u
 #define H2_IPERF_SEND_SLICE_MS 100u
 
@@ -42,16 +41,29 @@ static h2_pal_result_t sctp_emit(
     }
     int sent = h2_pal_net_udp_sendto(
         stream->config->net, stream->sock, &stream->peer, packet, packet_len);
-    if (sent >= 0) {
+    if (sent >= 0 && (size_t)sent == packet_len) {
         stream->emit_failures = 0u;
         return H2_PAL_OK;
     }
-    /* Transient datagram send failures (for example ENOBUFS on a flooded
-     * loopback) are retried by the association; persistent ones are fatal. */
-    if (++stream->emit_failures > H2_IPERF_SCTP_EMIT_FAILURE_LIMIT) {
-        return H2_PAL_ERR_IO;
+    if (sent >= 0) {
+        sent = H2_PAL_ERR_IO;
     }
-    return H2_PAL_ERR_WOULD_BLOCK;
+    /* One witness per association avoids flooding a congested link's logs. */
+    if (!stream->emit_failure_reported) {
+        stream->emit_failure_reported = true;
+        h2_iperf_log(stream->config, H2_PAL_LOG_WARN,
+                     "sctp emit failure rc=%d packet_bytes=%zu", sent, packet_len);
+    }
+    /* A transient busy result consumes no packet. SCTP retains it, while
+     * the caller's existing send slice, run and handshake deadlines bound
+     * the wait; retry frequency must not turn backpressure into I/O failure. */
+    if (sent == H2_PAL_ERR_WOULD_BLOCK) {
+        if (stream->emit_failures < UINT_MAX) {
+            ++stream->emit_failures;
+        }
+        return H2_PAL_ERR_WOULD_BLOCK;
+    }
+    return (h2_pal_result_t)sent;
 }
 
 static void sctp_on_state(
@@ -63,6 +75,11 @@ static void sctp_on_state(
     (void)association;
     stream->assoc_state = state;
     stream->assoc_reason = reason;
+    if (state == H2_PAL_SCTP_STATE_FAILED) {
+        h2_iperf_log(stream->config, H2_PAL_LOG_ERROR,
+                     "sctp association failed reason=%d emit_failures=%u", reason,
+                     stream->emit_failures);
+    }
 }
 
 static h2_pal_result_t sctp_on_message(
@@ -409,6 +426,7 @@ h2_pal_result_t h2_iperf_stream_sctp_create(
     stream->assoc_state = H2_PAL_SCTP_STATE_NEW;
     stream->assoc_reason = H2_PAL_OK;
     stream->emit_failures = 0u;
+    stream->emit_failure_reported = false;
     return h2_pal_sctp_association_create(config->sctp, &assoc_config, &stream->assoc);
 }
 
