@@ -8,12 +8,12 @@ firmware_native_component(
     srcs = ["src/h2_esp_application_host.c"],
     hdrs = ["include/h2_esp_application_host.h"],
     data = ["CMakeLists.txt"],
-    deps = ["//libs/pal/application/host"],
+    deps = ["//libs/pal"],
 )
 
 cc_library(
     name = "headers",
     hdrs = ["include/h2_esp_application_host.h"],
     includes = ["include"],
-    deps = ["//libs/pal/application/host"],
+    deps = ["//libs/pal"],
 )

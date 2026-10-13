@@ -8,38 +8,40 @@ static int startup_context(h2_bk_application_host_t *provider) {
            xTaskGetCurrentTaskHandle() != NULL &&
            (void *)xTaskGetCurrentTaskHandle() == provider->startup_task;
 }
-static h2_pal_result_t prepare(void *user, h2_runtime_config_t *out) {
+static h2_pal_result_t prepare(void *user, struct h2_runtime_config *out) {
     h2_bk_application_host_t *provider = user;
     if (!startup_context(provider))
         return H2_PAL_ERR_INVALID_STATE;
-    return provider->config.startup(provider->config.user, out);
+    return provider->platform.vtable->prepare(provider->platform.user, out);
 }
 static h2_pal_result_t poll(void *user, int *out_stop) {
     h2_bk_application_host_t *provider = user;
     if (!startup_context(provider))
         return H2_PAL_ERR_INVALID_STATE;
-    *out_stop = provider->config.should_stop != NULL &&
-                provider->config.should_stop(provider->config.user);
-    rtos_delay_milliseconds(1);
-    return H2_PAL_OK;
+    h2_pal_result_t rc =
+        provider->platform.vtable->poll(provider->platform.user, out_stop);
+    if (rc == H2_PAL_OK)
+        rtos_delay_milliseconds(1);
+    return rc;
 }
 static h2_pal_result_t release(void *user) {
     h2_bk_application_host_t *provider = user;
     if (!startup_context(provider))
         return H2_PAL_ERR_INVALID_STATE;
-    return provider->config.shutdown(provider->config.user);
+    return provider->platform.vtable->release(provider->platform.user);
 }
-static h2_pal_result_t activate(void *user, h2_runtime_t *runtime) {
-    return h2_application_host_sdk_activate(
-        &((h2_bk_application_host_t *)user)->config, runtime);
+static h2_pal_result_t activate(void *user, struct h2_runtime *runtime) {
+    h2_bk_application_host_t *provider = user;
+    return provider->platform.vtable->activate(provider->platform.user,
+                                               runtime);
 }
 static h2_pal_result_t deactivate(void *user) {
-    return h2_application_host_sdk_deactivate(
-        &((h2_bk_application_host_t *)user)->config);
+    h2_bk_application_host_t *provider = user;
+    return provider->platform.vtable->deactivate(provider->platform.user);
 }
 static void notify(void *user, h2_pal_application_host_event_t event) {
-    h2_application_host_sdk_notify(&((h2_bk_application_host_t *)user)->config,
-                                   event);
+    h2_bk_application_host_t *provider = user;
+    provider->platform.vtable->notify(provider->platform.user, event);
 }
 static const h2_pal_application_host_vtable_t vtable = {.prepare = prepare,
                                                         .activate = activate,
@@ -51,14 +53,17 @@ static const h2_pal_application_host_vtable_t vtable = {.prepare = prepare,
 
 h2_pal_result_t
 h2_bk_application_host_init(h2_bk_application_host_t *provider,
-                            const h2_application_host_sdk_config_t *config) {
-    if (provider == NULL || config == NULL || config->startup == NULL ||
-        config->shutdown == NULL)
+                            const h2_pal_application_host_api_t *platform) {
+    if (provider == NULL || platform == NULL || platform->vtable == NULL ||
+        platform->vtable->prepare == NULL ||
+        platform->vtable->activate == NULL || platform->vtable->poll == NULL ||
+        platform->vtable->deactivate == NULL ||
+        platform->vtable->release == NULL || platform->vtable->notify == NULL)
         return H2_PAL_ERR_INVALID_ARG;
     if (rtos_is_in_interrupt_context() || xTaskGetCurrentTaskHandle() == NULL)
         return H2_PAL_ERR_INVALID_STATE;
     *provider = (h2_bk_application_host_t){
-        .config = *config,
+        .platform = *platform,
         .api = {.user = provider, .vtable = &vtable},
         .startup_task = (void *)xTaskGetCurrentTaskHandle()};
     return H2_PAL_OK;

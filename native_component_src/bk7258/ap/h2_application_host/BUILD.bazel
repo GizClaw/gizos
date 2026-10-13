@@ -9,12 +9,12 @@ firmware_native_component(
     hdrs = ["include/h2_bk_application_host.h"],
     data = ["CMakeLists.txt"],
     execution_unit = "ap",
-    deps = ["//libs/pal/application/host"],
+    deps = ["//libs/pal"],
 )
 
 cc_library(
     name = "headers",
     hdrs = ["include/h2_bk_application_host.h"],
     includes = ["include"],
-    deps = ["//libs/pal/application/host"],
+    deps = ["//libs/pal"],
 )

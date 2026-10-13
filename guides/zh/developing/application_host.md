@@ -14,7 +14,7 @@ flowchart TD
     Host --> Atomic["//libs/atomic"]
     Web["web/application_host"] --> Host
     Desktop["desktop/application_host"] --> Host
-    SDK["native_component_src · ESP / BK AP"] --> Host
+    SDK["native_component_src · ESP / BK AP"] --> PAL
     Lua["application/host/lua · optional"] --> Host
     Lua --> VM["//libs/lua"]
     Bridge["web/application_host:gizclaw_apps_web · optional"] --> Catalog["//libs/gizclaw/lua_apps"]
@@ -71,14 +71,14 @@ h2_web_app(name = "demo", srcs = ["main.c"], app_name = "demo", deps = [])
 | --- | --- | --- |
 | Web | `//libs/pal/providers/web/application_host`；C main Worker，UI proxy | hardware、persistent/readonly roots、board/skin、App entry |
 | Desktop | `//libs/pal/providers/desktop/application_host`；进程主线程 run | 完整 Runtime config、SDL window config、event callback；其它 provider 与产品资源由调用方拥有 |
-| ESP | `//native_component_src/esp-idf6.x/h2_application_host`；已有 SDK/BSP task | startup/shutdown、input acquire/release、stop/notify；由目标配置 PAL task policy |
+| ESP | `//native_component_src/esp-idf6.x/h2_application_host`；已有 SDK/BSP task | 同一个 PAL `user + const vtable`，提供 prepare/activate/poll/deactivate/release/notify；由目标配置 PAL task policy |
 | BK | `//native_component_src/bk7258/ap/h2_application_host`；AP BSP entry task | 同上；CP 不链接 Host/Runtime，Armino yield 由 AP provider 执行 |
 
 Desktop 的 App/Runtime 在公共 control/App task 上运行，SDL 事件与实际 renderer 由主线程推进。Display open/reopen 经 provider 的同步请求代理回主线程；其它 SDL PAL 操作借用内存并由既有 provider 锁和 deferred rendering 处理。provider create、run、destroy 都检查进程主线程；不把第三方 SDK type 泄漏到基础 PAL。
 
-ESP/BK 在 provider init 时保存 SDK task identity，prepare/poll/release 必须回到同一已有 task，并拒绝 ISR。SDK startup 返回实际 BSP config，shutdown 必须容忍部分初始化；provider 不选择私有 board。`$application/control` 与 `$application/entry` 的 placement、priority、stack region 由最终 target task policy 提供，config 中可分别设置 control/App minimum stack。参考新增 `projects/e2e/targets/h2loader_tar_zlib/application-host/{devkit,bk7258_v3_202405}` 的实际 main 和构建接线。BSP wrapper 会在 entry 返回后释放 provider 时，retained 路径必须保留 owner task/context，不能返回触发自动清理。
+ESP/BK 直接接收 `h2_pal_application_host_api_t`，使用与 Web/Desktop 相同的 PAL vtable，不另设 SDK config 或另一套回调名称。所有 slot 必须提供；没有外部输入时 activate/deactivate 显式返回 OK，没有额外停止来源时 poll 写入 0 并返回 OK。provider 只包装 SDK task identity 检查与 scheduler yield，header 和 native component 仅依赖基础 PAL 合同，不依赖共享 Host 或 Runtime。prepare/poll/release 必须回到 init 时的已有 task，并拒绝 ISR；prepare 返回实际 BSP Runtime config，release 必须容忍部分初始化，activate/deactivate 负责外部输入接入与 drain。API descriptor 被复制，vtable 与 user context 保持借用直到成功清理，retained 时继续保持有效。provider 不选择私有 board。`$application/control` 与 `$application/entry` 的 placement、priority、stack region 由最终 target task policy 提供，config 中可分别设置 control/App minimum stack。参考新增 `projects/e2e/targets/h2loader_tar_zlib/application-host/{devkit,bk7258_v3_202405}` 的实际 main 和构建接线。BSP wrapper 会在 entry 返回后释放 provider 时，retained 路径必须保留 owner task/context，不能返回触发自动清理。
 
-通用接线是创建平台 provider，将其 API 填入 `h2_application_host_config_t.provider`，调用 create/run，再按 result.retained 决定能否 destroy descriptor 和调用方持有的 provider。configure/validate/release_runtime 只负责产品资源；平台 release 只释放平台拥有的资源。H2Loader confirm/return、网络恢复和产品目录由调用方配置。
+通用接线是创建平台 provider，将其 API 填入 `h2_application_host_config_t.provider`，调用 create/run，再按 result.retained 决定能否 destroy descriptor 和调用方持有的 provider。config 表达 App entry、allocator、运行时限和 task stack 等实例参数；其中 configure/validate/release_runtime 只负责产品资源，平台生命周期只使用 PAL vtable。平台 release 只释放平台拥有的资源。H2Loader confirm/return、网络恢复和产品目录由调用方配置。
 
 ## Lua 与 catalog
 

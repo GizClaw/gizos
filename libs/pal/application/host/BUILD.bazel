@@ -14,14 +14,8 @@ h2_tasks(
 
 cc_library(
     name = "host",
-    srcs = [
-        "src/h2_application_host.c",
-        "src/h2_application_host_sdk.c",
-    ],
-    hdrs = [
-        "include/h2_application_host.h",
-        "include/h2_application_host_sdk.h",
-    ],
+    srcs = ["src/h2_application_host.c"],
+    hdrs = ["include/h2_application_host.h"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = ["include"],

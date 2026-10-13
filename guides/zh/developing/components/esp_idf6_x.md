@@ -404,4 +404,4 @@ ESP Time PAL converts milliseconds to FreeRTOS ticks with ceiling division using
 
 ## Application Host
 
-新 `//native_component_src/esp-idf6.x/h2_application_host` 在 SDK/BSP 已有 task 上检查启动上下文，复用 PAL Task/Time，注入 startup/shutdown 与输入 acquire/release。不得从 ISR 启动，不能从另一个 SDK task 执行 prepare/release。共享 Runtime/App 生命周期统一由 [Application Host](../application_host) 执行。现有产品入口保持原接线。
+新 `//native_component_src/esp-idf6.x/h2_application_host` 直接接收 PAL Host 的 `user + const vtable`，在 SDK/BSP 已有 task 上检查启动上下文并提供 scheduler yield；native component 与 header 只依赖基础 PAL 合同。BSP 通过同一张 vtable 的 prepare/release 组装与释放平台资源，通过 activate/deactivate 接入并 drain 外部输入。不得从 ISR 启动，不能从另一个 SDK task 执行 prepare/poll/release。共享 Runtime/App 生命周期统一由 [Application Host](../application_host) 执行。现有产品入口保持原接线。
