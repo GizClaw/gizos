@@ -1299,3 +1299,33 @@ The S3 full graph at `837d6a60` retains frozen inputs but fails when the
 Espressif component registry cannot be reached for the AMOLED BLE speed
 client. No full S3 PASS is claimed. The focused SZP placement build and map
 validation remain valid; this registry failure does not overturn that result.
+
+
+### R63 independent-boot failures and network CPU fairness repair
+
+R63 actual iperf completes 14/14 on the first boot and 8/14 on the independent
+boot. The latter fails `udp_rx_20m` in pre-data control, followed by further
+UDP/SCTP failures. The first boot is retained without granting two-boot
+qualification. WebRTC first boot passes all original gates (audio-only p99
+177.134 ms, loaded p99 114.204 ms, missing zero and fairness 1975 permille).
+The independent boot completes baseline bidirectional 10 MiB but times out
+during the original 300-second loaded transfer. Both public Loader returns
+are verified, P1 remains unchanged and the final coredump is blank.
+
+The network worker's per-round packet/message bounds do not bound the number
+of consecutive busy rounds. A production-worker regression captures a public
+command, sustains its processing under a deterministic CPU clock, and shows
+no scheduling sleep across 80 ms in the original implementation. The repair
+allows a 1 ms scheduling sleep after each 10 ms CPU slice, covering command,
+receive and transmit continuations. Clock failure/backward movement also
+yields; a failed sleep is a real terminal transport error and still cleans up.
+Five control/event/channel/media/worker regressions pass, including all four
+scheduler boundary modes. Every supported ESP board currently uses 1000 Hz
+ticks, so the 1 ms delay blocks for a tick. This does not lower workload gates
+or establish the cause of every physical failure.
+
+The next iperf artifact adds at most one pre-start wait diagnostic per state:
+control polls, actual early datagram/byte counts and elapsed time. This retains
+the exact control deadline and loss accounting; it will distinguish remaining
+physical timeouts from the independently repaired shared-pool regression.
+Fresh R64 native/device qualification remains pending.
