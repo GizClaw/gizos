@@ -1,0 +1,36 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
+load("//tools/bazel/platforms:compatibility.bzl", "WEB_WASM32_ARTIFACT_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+h2_tasks(
+    name = "tasks",
+    tasks = ["$lua/apps/web"],
+)
+
+cc_library(
+    name = "headers",
+    hdrs = ["include/h2_web_lua_apps.h"],
+    includes = ["include"],
+    deps = [
+        "//libs/lua/apps",
+        "//libs/pal",
+    ],
+)
+
+cc_library(
+    name = "web",
+    srcs = ["src/h2_web_lua_apps.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":headers",
+        ":tasks",
+        "//libs/atomic",
+        "//libs/pal/providers/web/pal_core",
+    ],
+    alwayslink = True,
+)

@@ -611,6 +611,8 @@ URL 安装入口仅接受 HTTP、HTTPS，长度最多 1024 字节，不接受 da
 
 Host 可设置 `on_display_present`，在 Display worker 成功完成 PAL present 后观察完整 RGB565 framebuffer。像素与 callback context 均有明确借用生命周期，回调不能保留像素或重入 Host；它可用于摘要/golden 验证，只证明 renderer 与 PAL 接受了该帧，不证明面板光学输出。
 
+Web consumer 可以通过 `//libs/lua/apps/web` 将同一个目录绑定给浏览器的本地安装、卸载和列表 Promise API。该桥接复用本节的安装器与索引，不写第二份浏览器目录；持久性由借用的 Filesystem 决定。接口、生命周期及多次刷新回归见[浏览器本地 Lua 应用管理](/apps/web#浏览器本地-lua-应用管理)。
+
 ## 嵌入分层与源码包
 
 `//libs/lua:lua_runtime` 是 portable 下层：包含 Lua Core、Host、modules、`//libs/trie`、`//libs/runtime` 和 PAL headers/inline wrappers，以及 Bazel 固定版本的 Lua 5.5、yyjson。下层的平台访问只依赖 PAL interfaces，不能依赖具体 provider、board、SDK 或 `bleikcp`。`//libs/lua:lua_core` 继续只依赖 upstream Lua。`//libs/lua:lua` 保留现有入口；平台组装由现有 firmware、Desktop、Web launcher 或外部 embedder 完成。可选 `//libs/lua:lua_link` 在上层接入 `bleikcp`，不进入 portable 源码包；未启用时仍遵守既有 `link: unavailable` 合同。

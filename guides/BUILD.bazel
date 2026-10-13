@@ -57,6 +57,7 @@ api_reference(
         "//libs/iperf",
         "//libs/lua",
         "//libs/lua/apps",
+        "//libs/lua/apps/web:headers",
         "//libs/lvgl",
         "//libs/mem_arena",
         "//libs/mem_arena:census",

@@ -139,6 +139,12 @@ int h2_lua_apps_mkdirs(h2_lua_apps_t *apps, const char *file_path) {
     else if (rc == H2_PAL_OK && !stat.is_dir)
       rc = H2_PAL_ERR_FORMAT;
     *p = '/';
+    /* Root-scoped filesystems can hide ancestors above install_root. Their
+     * absence is harmless only before that root; all owned dirs must exist. */
+    const size_t prefix = (size_t)(p - path);
+    if (rc == H2_PAL_ERR_NOT_FOUND && prefix < strlen(apps->root) &&
+        apps->root[prefix] == '/' && memcmp(path, apps->root, prefix) == 0)
+      continue;
     if (rc != H2_PAL_OK)
       return rc;
   }
