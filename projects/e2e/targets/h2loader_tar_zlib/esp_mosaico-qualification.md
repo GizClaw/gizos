@@ -1329,3 +1329,34 @@ control polls, actual early datagram/byte counts and elapsed time. This retains
 the exact control deadline and loss accounting; it will distinguish remaining
 physical timeouts from the independently repaired shared-pool regression.
 Fresh R64 native/device qualification remains pending.
+
+
+### R64 evidence interruption and native control-socket comparison
+
+R64 actual iperf completes 12/14: `udp_rx_10m` times out before data and
+`sctp_tx_1400` reports IO. At the UDP timeout the client has serviced 1,528
+early datagrams / 2,230,880 bytes and polled control 29,545 times under the
+original 30,000 ms deadline. This does not support unread client UDP data
+as the sole explanation for that remaining control failure.
+
+The old chat/worktree was archived during R64 WebRTC observation, removing
+the checkout and its earlier diagnostic readers. The owned observer is
+cooperatively cancelled; its cleanup and ordinary public Loader return are
+retained. The run is incomplete, not a fabricated workload failure or PASS.
+The current chat restores clean commit `91667398` into its managed worktree,
+verifies all 5,400 frozen source hashes, and retains the original runtime,
+backups and evidence. The previous chat stays archived. DevKit R14 identity,
+Stage=0 and blank crash record are independently read back before restarting
+current-chat-owned readers.
+
+The pinned official iperf3 implementation enables TCP_NODELAY on its control
+connections in both `iperf_client_api.c` and `iperf_server_api.c`. A native
+POSIX/lwIP fixture view now does this only for the sequential control socket
+of Mosaico and DevKit iperf entries; data socket options and the global Runtime
+remain unchanged. Setting and actual nonzero readback must both succeed;
+otherwise the owned socket is closed and IO is returned. Closing the control
+session resets its identity for the next case. Real host sockets verify
+client/default/source-bind and server accept paths, data defaults, descriptor
+reuse, distinct-owner rejection, failed-option cleanup and retry. Both host
+targets pass. No PAL ABI, capacity, workload or performance deadline changes.
+R65 / DevKit R15 native and actual device validation remain pending.
