@@ -30,7 +30,7 @@ cc_library(
 ) for name, extra in [
     ("amoled_failure_recovery_test", []),
     ("bk_failure_recovery_test", ["H2_PAL_AUDIO_TEST_BK"]),
-    ("mosaico_failure_recovery_test", ["H2_PAL_AUDIO_TEST_MOSAICO"]),
+    ("mosaico_failure_recovery_test", ['H2_TEST_BOARD_SOURCE=\\\"projects/e2e/targets/h2loader_tar_zlib/pal-audio/esp_mosaico/main/main.c\\\"']),
 ]]
 
 filegroup(

@@ -91,7 +91,11 @@ H2_ANDROID_SERIAL=<booted-test-emulator> make bazel-test-android_pal_wifi_simula
 ```
 
 Firmware packages are under `targets/h2loader_tar_zlib/pal-wifi`: `devkit`,
-`bk7258_v3_202405` and `amoled-fixture`. The fixture window is ten minutes and
+`bk7258_v3_202405` and `amoled-fixture`. `devkit-fixture` provides the same
+portable fixture on a DevKit S3 with its own board graph and USB console;
+`esp_mosaico-fixture` provides the S31 counterpart. These freshly built tools
+require their own artifact and actual client-lease evidence; the historical
+AMOLED receipt does not qualify them. The fixture window is ten minutes and
 ends by stopping its AP, verifying saved credentials unchanged, and reconnecting
 the original network. Hardware receipts must bind UID, image version, source and
 package/image hashes, full case ledger, fixture MAC/IP corroboration, original

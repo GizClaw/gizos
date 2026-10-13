@@ -11,8 +11,6 @@
 #define main firmware_main
 #ifdef H2_TEST_BOARD_SOURCE
 #include H2_TEST_BOARD_SOURCE
-#elif defined(H2_PAL_AUDIO_TEST_MOSAICO)
-#include "projects/e2e/targets/h2loader_tar_zlib/pal-audio/esp_mosaico/main/main.c"
 #elif defined(H2_PAL_AUDIO_TEST_BK)
 #include "projects/e2e/targets/h2loader_tar_zlib/pal-audio/bk7258_v3_202405/ap/ap_main.c"
 #else

@@ -1400,3 +1400,208 @@ retain their own identities and do not prove physical compatibility. The real
 isolated GizClaw 0.24.1 server currently lists zero models, voices and workflows.
 No service key or business PASS is fabricated. Overall **NOT QUALIFIED** and
 PR #709 remains draft. All original workloads and thresholds are retained.
+
+## New-host continuation — 2026-10-13
+
+The continuation starts from `f03b7ed91b8d240e30d2299951be3d86308c2fa2` on a
+different macOS host. The operator explicitly defers GizClaw's complete eight
+business classes because legitimate ASR/TTS/workflow services and injected
+endpoint/registration configuration are unavailable. This is a scope exclusion,
+not a business PASS. Existing saved Wi-Fi remains available.
+
+Both actual devices have fresh, complete 16 MiB Flash backups on this host,
+including partition SHA-256 inventories. Both captured coredump partitions are
+blank. DevKit UID `30eda0a957ee` retains the R15 peer App and Loader
+`0.2.3-atomic-541`; its public return to Loader and subsequent identity check
+pass with empty Stage. Mosaico base MAC `1c2904d0a628` is read from the ROM;
+its backed-up App descriptor is `mosaico-perf-20261013-r65`. ROM identity and a
+Flash descriptor do not establish its current running role or confirmation.
+After operator reconnection, dual CDC enumerates again and public status
+confirms UID `1c2904d0a629`, the retained R65 App and R42 Loader. The public
+serial status E2E passes. Returning to Loader and rereading status succeeds;
+both original image checksums remain unchanged and Stage is empty.
+
+Current host validation passes 326 distinct targets across board, portable App,
+device-launcher, ESP native, network-worker, fixture/verifier and desktop E2E
+tests. The initial Audio qualification check detects that Mosaico changed the
+historically source-bound recovery test. Mosaico now selects the existing
+`H2_TEST_BOARD_SOURCE` injection point in its build rule; the common test bytes
+and original evidence hashes are restored. All three board recovery regressions
+and the unchanged qualification evidence check pass. No historical receipt is
+rewritten to claim a new device run.
+
+The new host's real Pion smoke completes bidirectional 10 MiB, three request
+channels and audio co-load: fairness 987 permille, loaded audio p99 27.748 ms,
+100/100 frames and no missing, duplicate or reordered frames. A separate real
+LAN run from this host to the retained DevKit R15 peer passes all fourteen
+TCP/UDP/SCTP cases, with matching board-side records. These are host and DevKit
+peer checks, not a fresh Mosaico qualification or a new two-boot receipt.
+
+Local raw logs, backup inventories and `host-validation.json` are under
+`/private/tmp/gizos-e2e-20261013/` on this host; Flash and credential-bearing
+material stays outside Git. Pinned IDF/toolchain setup and fresh native/device
+qualification are incomplete. GitHub DNS failures interrupted the toolchain
+download; the official Espressif mirror supplies the same pinned archives.
+After two automatic permission-review timeouts, the operator explicitly
+authorizes toolchain downloads. The resumed download completes both pinned
+GCC archives and verifies their official SHA-256 hashes. The SDK and recursive
+submodules now match the pinned commits with a clean tracked checkout; official
+tool and Python dependency checks pass. The BSP archive also matches the
+repository SHA-256. Component-registry DNS fails through the host's default
+resolver; a task-local Python fallback queries public DNS for the two official
+Espressif component hosts while retaining HTTPS certificate verification.
+Official `compote registry sync` processes prefetch the locked component
+versions into a task-local partial mirror, allowing subsequent firmware builds
+to reuse downloads. The Display, Core, Storage, Crypto, JSON, Atomic, libco,
+Audio, Audio Decoder and Pref native packages build successfully on this host.
+
+Fresh Display R66 (`mosaico-20261013-r66`) passes all 24 cases on two complete,
+captured boots, confirms the App and returns through the public Loader command.
+The operator confirms normal patterns, colors and dimming, ending with PASS.
+Package SHA-256 is
+`e4d516beb168db0f6cd574091cead505064b24ee2f49ed00a08eb4d52bbecc3a`;
+image SHA-256 is
+`427163d7b4ed6398596cd435abfcb36256dae1b4b385fe953d949f920956896e`.
+R42 P1 remains unchanged, Stage is empty and coredump is blank.
+Receipt: `display-r66-receipt.json` in the local evidence root.
+
+JSON passes 15/15 and Crypto passes 22/22 on two independent actual boots each,
+with successful managed installs, confirmation, empty coredumps, unchanged P1
+and public Loader returns. Their immutable packages and `receipt.json` files
+are in `json-r66/` and `crypto-r66/`. Remaining current-source device gates are
+still in progress. Overall status remains **NOT QUALIFIED**.
+
+Core R66 passes 41/41, Atomic R66 passes 56/56 and Audio Decoder R66 passes
+29/29 on two actual boots each. Core retains the 100-cycle task-resource
+probe; Atomic validates distinct execution identities and all worker joins;
+Audio Decoder uses the shared ordered-ledger verifier. Each managed install,
+App confirmation, unchanged Loader P1, empty Stage, blank coredump and public
+Loader return is checked. Receipts are `core-r66/receipt.json`,
+`atomic-r66/receipt.json` and `audio-decoder-r66/receipt.json` in the same local
+evidence root.
+
+Six R67 network packages build against the actual new-host LAN fixtures: HTTP,
+MQTT, Net/TLS, PAL WebRTC, iperf and WebRTC performance. Native build success
+does not yet qualify their device executions. The first Storage R66 managed
+install transfers the whole package but its post-install reconnect times out;
+subsequent authoritative status confirms the intended App, unchanged P1 and
+empty Stage. Its phase-one replay reports 31 passes, but the first executing
+capture is incomplete, so this attempt is not admitted. Its failure receipt
+and later observations remain in `storage-r66/`.
+
+The available DevKit now has an explicit `pal-wifi/devkit-fixture` target using
+its own board graph and USB console, plus `lua-link/devkit-join` reusing the
+DevKit launcher with a compile-time peer role. These provide the real second
+board roles required for bilateral tests without selecting another board's
+pin map. Their build and device results must be recorded independently.
+
+libco R66 completes all six ordered stages and 10,000 context switches on ten
+independent boots, with the expected CPU0 root and 8 KiB coroutine stack. Every
+boot has its own captured startup, App identity and blank-coredump check; the
+final public return reaches the unchanged Loader (`libco-smoke-r66/receipt.json`).
+Audio R66 passes 24/24 on two boots with real microphone/playback frames and
+30,007 ms / 30,018 ms stability intervals. Its API result is separate from the
+pending operator three-beep observation (`audio-r66/receipt.json`).
+
+Storage R68 (`mosaico-20261013-r68`) completes all 36 contract-2 cases over
+phases 1/2/3/4/4, with the same version-bound nonce, real persistence, two empty
+completion rechecks, unchanged P1, empty Stage and blank coredump. The managed
+install passes in 131,099 ms with a larger host reconnect budget. A local
+controller initially attempted to parse a still-incomplete JSON replay line;
+the original execution capture and controller failure are preserved. Without
+restarting the first boot, capture resumes at a fresh replay boundary and the
+unchanged shared verifier admits a complete ordered replay, followed by four
+independently commanded boots. The resumed receipt records that capture gap
+explicitly (`storage-r68/receipt.json`); no device case is rerun to hide failure.
+
+Pref R66 executes 17 seed operations, 11 persistence checks and 3 cleanup
+operations across three actual automatically captured boots, followed by an
+independent fourth boot with one empty-store recheck. The image-bound fixture
+resets only on the first boot; confirmation, exact App identity, unchanged P1,
+empty Stage, blank coredump and public Loader return pass
+(`pref-r66/receipt.json`). Audio acoustic confirmation remains deferred while
+the automated network suites run; its preserved package can be restored for
+the manual three-beep check.
+
+HTTP R67 passes 45/45 and MQTT R67 passes 36/36 on two independent boots each,
+with exact per-run fixture arrival/TLS witnesses. MQTT validates post-delivery
+confirmation and unchanged native resource counts. Net/TLS R67 passes its
+original core profile on both boots: 37 mandatory / 38 total passes and one
+optional unsupported case, zero retained sockets/resolvers/allocations. Each
+boot has 39 finished same-boot peer records, including certificate rejections,
+rejection-then-success recovery and twelve TLS churn sessions. The verifier CLI
+has a Mosaico entry calling the unchanged parser; its existing three fresh-boot
+rejection tests pass.
+PAL WebRTC R67 passes 43/43 twice, including precise fingerprint rejection and
+zero retained allocations, with separate Pion log slices. All four suites
+confirm their exact images and return to unchanged R42 P1 with empty Stage and
+blank coredump. Receipts are in `http-r67/`, `mqtt-r67/`, `net-tls-r67/` and
+`webrtc-r67/`. Optional full-Net and complete device acceptance remain open.
+
+iperf R67 fails its first actual boot: 13/14, with `sctp_tx_1400` returning
+`-4` and zero receiver bytes. The failed install/serial/DevKit peer evidence,
+unconfirmed App status and blank coredump are preserved in `iperf-r67/`.
+Public Wi-Fi scanning subsequently finds the same saved SSID at about -36 dBm
+on channel 11 while the connection used channel 1 at about -79 dBm. The saved
+configuration has neither a BSSID restriction nor a channel hint. The ESP
+provider previously left the SDK's first-match fast-scan default in place.
+It now requests all-channel, signal-sorted selection for unpinned SSIDs while
+preserving explicit BSSID restrictions and channel hints. A host regression
+compiles the actual mapper and checks four pin/channel combinations; the
+original mapper fails the regression. R70 network images and fresh device
+receipts are required before attributing a throughput recovery to this fix.
+
+The operator confirms Display R66 patterns, brightness changes and final PASS.
+Audio R66 is restored for a second two-boot 24/24 run and the operator confirms
+three clearly audible beeps (`audio-r66-audible/receipt.json`). That acoustic
+observation is recorded separately from the API ledger; the supplementary
+capture does not contain a `H2_PAL_AUDIO_CUE` line, so no cue return-code witness
+is invented. The previous unanswered Audio receipt is retained unchanged.
+
+At the operator's overnight handoff request, the non-GizClaw suite count is
+14/18 with fresh device passes. iperf has an actual 13/14 failure; Wi-Fi,
+Lua Link and WebRTC performance still need completed fresh acceptance. The
+full Loader lifecycle/checksum matrices and final interactive board diagnostics
+are additional gates outside those eighteen suites. Wi-Fi-related passes must
+be revalidated on the final selection-policy fix. The earlier full S3 build
+encountered component-registry failures, then was interrupted after the source
+changed; it is not a successful final-source graph validation.
+
+R70 WebRTC performance now passes the unchanged shared **smoke** contract on
+two actual boots. The fixed driver selects the strong same-SSID AP at about
+-35 dBm. Each boot transfers 10 MiB in each direction in both data-only and
+loaded phases, uses three distinct request channels, and receives all 100
+audio-only plus 100 loaded audio frames without loss, duplication or reorder.
+Loaded fairness is 971/1017 permille (minimum 800); loaded audio p99 gaps are
+92.275/88.669 ms (limit 200 ms). Upload is 637,644/640,975 B/s and download is
+578,057/594,480 B/s. Package SHA-256 is
+`779aba9c68eb1027413851c950b848522617f8920fa44615e0b3a762da510156`,
+image SHA-256 is
+`5a392c90e4565f8b8cbaf55ce2188351121499a90ce5595dac56d6c520d3a0a5`.
+Pion peer records, exact image confirmation, empty Stage, blank coredump and
+return to unchanged R42 Loader pass (`webrtc-performance-r70/receipt.json`).
+
+The local controller initially misapplied the benchmark-only zero-backpressure
+gate to this smoke run (first boot reports three WOULD_BLOCK observations).
+The shared App and firmware were not changed. The controller failure and its
+original source are preserved; the complete first execution is revalidated
+against the actual smoke predicate before the second independent reboot.
+This does not claim benchmark-profile acceptance.
+
+The handoff therefore has **15/18 non-GizClaw suites with fresh device passes**;
+iperf, Wi-Fi and Lua Link remain open, alongside the additional Loader/board
+gates and final-source regression. Local backups, immutable packages, logs,
+toolchain and `RESUME.json` are mirrored under the ignored directory
+`.cache/e2e/20261013/`; credential files and Flash backups are mode 0600 and
+must not be committed. A different LAN requires fresh fixture addresses,
+certificates and corresponding network packages before continuing.
+
+Final local checks pass: the three Wi-Fi mapper/settings/teardown tests and all
+ten selected qualification/failure-recovery tests. The Net/TLS historical hash
+test caught the temporary shared-CLI edit; that edit was reverted, and the
+existing `pal-net-tls/esp_mosaico:verify_device` entry successfully validates
+the real R67 first-boot ledger without changing historical source hashes.
+R70's two performance packages, R71's eleven selected Mosaico build targets
+and R17's four DevKit peer targets all build successfully against the pinned
+SDK. Both devices finish on their original Loader images with empty Stage and
+blank coredump; local LAN fixture services are stopped for the overnight handoff.

@@ -1029,6 +1029,32 @@ py_binary(
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
 )
 
+py_binary(
+    name = "wifi_sta_config_fixture_generator",
+    srcs = ["tests/wifi_sta_config_fixture.py"],
+    main = "tests/wifi_sta_config_fixture.py",
+    legacy_create_init = 0,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+genrule(
+    name = "wifi_sta_config_fixture_source",
+    srcs = ["src/h2_esp_platform_wifi.c"],
+    outs = ["wifi_sta_config_fixture.c"],
+    cmd = "$(location :wifi_sta_config_fixture_generator) $(location src/h2_esp_platform_wifi.c) $@",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    tools = [":wifi_sta_config_fixture_generator"],
+)
+
+cc_test(
+    name = "wifi_sta_config_test",
+    srcs = [":wifi_sta_config_fixture_source"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = ["//libs/pal"],
+)
+
 genrule(
     name = "ble_adv_completion_fixture_source",
     srcs = ["src/h2_esp_platform_ble.c"],
