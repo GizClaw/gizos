@@ -19,6 +19,7 @@ enum {
   H2_PEER_NETWORK_POLL_MS = 2,
   H2_PEER_NETWORK_IDLE_WAIT_MS = 1,
   H2_PEER_NETWORK_UDP_BURST_MAX = 16,
+  H2_PEER_NETWORK_CPU_SLICE_US = 10000,
   H2_PEER_NETWORK_STACK_SIZE = 32 * 1024,
 };
 
@@ -1675,7 +1676,26 @@ static void h2_peer_network_task(void *context) {
   h2_pal_webrtc_peer_t *peer = (h2_pal_webrtc_peer_t *)context;
   int transport_terminal = 0;
   uint32_t channel_snapshot = 0u;
+  uint64_t last_yield_us = 0u;
+  (void)h2_pal_time_get_monotonic_us(peer->owner->config.time, &last_yield_us);
   while (!h2_atomic_load_explicit(&peer->network_stop, H2_ATOMIC_ACQUIRE)) {
+    /* Round packet/message limits do not bound consecutive busy rounds.
+     * On a single-core priority scheduler, continuous progress can otherwise
+     * prevent the audio producer and event consumer from running at all. */
+    uint64_t now_us = 0u;
+    const h2_pal_result_t clock_result = h2_pal_time_get_monotonic_us(
+        peer->owner->config.time, &now_us);
+    if (clock_result != H2_PAL_OK || now_us < last_yield_us ||
+        now_us - last_yield_us >= H2_PEER_NETWORK_CPU_SLICE_US) {
+      const h2_pal_result_t yield_result =
+          h2_pal_time_sleep_ms(peer->owner->config.time, 1u);
+      if (yield_result != H2_PAL_OK) {
+        h2_peer_record_network_event_error(peer, yield_result);
+        h2_atomic_store_explicit(&peer->network_stop, 1, H2_ATOMIC_RELEASE);
+        break;
+      }
+      last_yield_us = now_us;
+    }
     h2_peer_network_command_t command;
     h2_pal_result_t command_result = (h2_pal_result_t)h2_pal_queue_recv(
         peer->owner->config.queue, peer->network_commands, &command,
