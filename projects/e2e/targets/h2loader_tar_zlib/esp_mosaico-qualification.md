@@ -1163,3 +1163,41 @@ CA requires a separately bound business firmware build. Legitimate ASR/TTS and
 workflow catalog services, actual eight-case/228-API business execution and the
 remaining final-source peripheral/profile gates remain pending.
 Overall remains **NOT QUALIFIED**.
+
+
+### R59 complete iperf qualification
+
+The frozen R59 Mosaico client and R13 DevKit server complete the unchanged
+fourteen-case matrix on both the managed and independent restart: 14/14 twice.
+All 28 actual peer records match the ordered protocol/direction cases. Screen
+STARTING/PASS, cleanup=0, confirmation=0, package/image identity, Loader P1,
+Stage cleanup, blank coredump and ordinary public return to Loader are checked.
+The actual report SHA-256 is `a01fa39d78a6d895e2cdefa8a6e717915a641aaba8dd650a2d07e447bcf8eefa` and its immutable source/configuration
+binding is retained outside Git. Functional input hashes match the committed
+protocol/cancellation implementation; only qualification documentation changed
+after the native archive was frozen.
+
+Earlier UDP/control failures remain retained. This completed run does not prove
+an unmeasured network root cause, a throughput level beyond the measured report,
+or completion of WebRTC performance and GizClaw business. Overall remains
+**NOT QUALIFIED** while those and the remaining physical/profile gates are open.
+
+
+### R59 WebRTC failure and R60 diagnostics
+
+R59 establishes the actual DTLS/SCTP connection and receives 622,592 bytes,
+then times out at the original 300-second transfer deadline. The old Pion peer
+records a 60-second backpressure timeout with 132,484 buffered bytes. Candidate
+qualification and confirmation fail; cooperative cancellation reports cleanup=0
+and the following public management status/return to Loader succeed. The
+source-bound executing and peer logs remain separate from the admitted iperf
+receipt. Connection success is not WebRTC performance qualification.
+
+R60 native build/archive and the updated Pion fixture build/protocol tests pass.
+The existing board memory checkpoints additionally report the largest contiguous
+internal/DMA blocks; total free space alone cannot establish whether a buffer
+allocation can succeed. The peer's original backpressure timeout additionally
+reports actual queued bytes, elapsed time, cwnd/rwnd, MTU and RTT. These bounded
+diagnostics change no wire protocol, time/throughput threshold, load, allocator,
+PAL API or worker policy. The new actual run is pending; no root cause or
+passing performance result is inferred from the diagnostics.

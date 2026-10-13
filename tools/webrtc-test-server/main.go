@@ -1156,9 +1156,14 @@ func (channel *performanceChannel) sendDownload(total uint32) {
 			for channel.dc.Transport().BufferedAmount() >
 				performanceBufferedAmountLow {
 				if time.Now().After(deadline) {
+					transport := channel.dc.Transport()
+					stats := transport.Stats()
 					log.Printf(
-						"H2_WEBRTC_TEST_SERVER_PERF download_backpressure_timeout buffered=%d",
-						channel.dc.Transport().BufferedAmount(),
+						"H2_WEBRTC_TEST_SERVER_PERF download_backpressure_timeout bytes_queued=%d total=%d elapsed_ms=%d buffered=%d cwnd=%d rwnd=%d mtu=%d srtt_ms=%.3f",
+						offset+payloadLen, total, time.Since(started).Milliseconds(),
+						transport.BufferedAmount(), stats.CongestionWindow,
+						stats.ReceiverWindow, stats.MTU,
+						stats.SmoothedRoundTripTime*1000,
 					)
 					return
 				}
