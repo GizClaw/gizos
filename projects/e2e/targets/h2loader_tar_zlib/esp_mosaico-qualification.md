@@ -1221,3 +1221,81 @@ The separately frozen R60 WebRTC image completes its first full real smoke
 iteration with the original transfer/request/audio/fairness gates and
 cleanup/confirmation. Its independent second boot remains in progress; one boot
 does not complete the agreed qualification or qualify the newer provider fix.
+
+
+### R60 independent failure and current-source native checks
+
+R60's independent second boot completes both 10 MiB directions, the request
+batch and fairness (1064 permille). Its audio-only p99 interval is 222.004 ms,
+exceeding the unchanged 200 ms gate; loaded p99 is 348.176 ms with five missing
+frames. The actual result is FAIL, so the two-boot candidate is NOT QUALIFIED.
+The ordinary public return to Loader succeeds. The accepted activation's
+180-second CLI observer timeout is retained separately from the actual executing
+first-PASS/second-FAIL ledgers; reattaching read existing capture bytes without
+constructing results.
+
+R61 Mosaico/R14 DevKit native packages containing the assembly-lifetime repair
+build and are archived against frozen inputs. The latest protocol libraries
+cross-build on both P4 and C5; their earlier complete compatible graph results
+retain their own source identity. Current full S3 graph validation is running.
+R14 package staging and upgrade acceptance are observed, but the upgrade
+observer and one independent management probe time out. Its running version,
+confirmation and crash state are not inferred. A normal DevKit hardware reset
+is requested before further device writes; Mosaico remains in Loader.
+
+
+## R61 failures, R62 receive-copy comparison and SZP link repair
+
+R61's actual iperf run completed 12/14: `udp_rx_10m` and `udp_rx_20m`
+failed with control timeout `rc=-6`, `after_state=10`, `data_done=0`; the
+real DevKit had entered its data phase. WebRTC completed transfer/request
+work but failed loaded audio scheduling (p99 485.791 ms, 95 frames and five
+missing). Audio-only p99 was 185.646 ms and fairness 1273 permille. Both
+Apps returned through the ordinary public Loader path. These are failures,
+not qualifying receipts.
+
+R62 immutable iperf/WebRTC packages build successfully against HEAD
+`60a06a99` plus the recorded artifact-only receive-copy configuration.
+`CONFIG_LWIP_L2_TO_L3_COPY=y` promptly releases fixed radio RX buffers;
+the comparison retains all original gates. Its actual first iperf boot
+has already reproduced UDP reverse failures, so this configuration cannot
+be credited with eliminating the control starvation. The complete run and
+WebRTC comparison remain pending; no R62 qualification is asserted.
+
+The current S3 full graph exposed a genuine SZP audio-system DRAM overflow
+of 64 bytes. The captured map places the 125,116-byte software Opus/PCM
+scene in internal BSS. A SZP-only linker fragment now places that exact
+scene in the board's enabled external PSRAM BSS. PAL microphone reads and
+track writes copy their software buffers; driver DMA storage is untouched.
+No buffer, stack or feature capacity is reduced. The focused SZP native
+package build passes and its map verifies the entire scene in external
+RAM. The original failure map is retained separately. The full S3 graph
+and physical SZP compatibility are not established by this focused build.
+
+
+### Completed R62 result and pre-start UDP regression
+
+R62 completes 8/14 iperf cases: all four reverse UDP cases fail, plus
+`sctp_tx_1200` and `sctp_rx_1200`. WebRTC completes both 10 MiB directions,
+three request channels and fairness 1219 permille; loaded audio fails at
+p99 300.364 ms with four deadline misses and fourteen WOULD_BLOCK results.
+Both Apps return through the public Loader path. The receive-copy selector
+is withdrawn; frozen R62 packages, failed observers and ledgers remain intact.
+
+A desktop regression uses real loopback client/server sockets with a shared
+receive-pool constraint: control cannot receive until an early reverse UDP
+packet is consumed. The original client reproduces `rc=-6`, `after_state=10`,
+`data_done=0` while the server reports closed in its data phase. A bounded
+pre-start drain in duration-based reverse UDP now polls control and services
+the existing peer-filtered stream without extending the control deadline.
+The first measured sequence retains early-packet losses in ordinary UDP
+accounting. Finite byte-budget runs retain their existing path so no finite
+payload is discarded; this fix does not qualify shared-pool starvation in
+that separate mode. The final regression/interoperability batch passes 5/5, and the additional
+continuous-data/blocked-control regression verifies the original deadline and
+cleanup. Fresh device qualification remains pending.
+
+The S3 full graph at `837d6a60` retains frozen inputs but fails when the
+Espressif component registry cannot be reached for the AMOLED BLE speed
+client. No full S3 PASS is claimed. The focused SZP placement build and map
+validation remain valid; this registry failure does not overturn that result.
