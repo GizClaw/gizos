@@ -14662,6 +14662,7 @@ typedef struct time_test {
   const char *first_body;
   h2_pal_result_t first_result;
   h2_pal_result_t set_result;
+  const char *expected_url;
 } time_test_t;
 
 static void time_test_init(time_test_t *test) {
@@ -14699,7 +14700,8 @@ static int time_test_http(void *user, const h2_pal_http_request_t *req,
                           h2_pal_http_response_t *response) {
   time_test_t *test = user;
   unsigned call = h2_atomic_fetch_add(&test->calls, 1);
-  assert(strcmp(req->url.data, "http://example.test:9821/server-info") == 0);
+  assert(strcmp(req->url.data, test->expected_url != NULL ? test->expected_url
+      : "http://example.test:9821/server-info") == 0);
   while (!h2_atomic_load(&test->http_gate)) {
     if (h2_pal_http_request_is_canceled(req))
       return H2_PAL_ERR_CLOSED;
@@ -14810,9 +14812,11 @@ static void test_preconnect_time_stop(void) {
 }
 
 /* A platform-owned clock cannot be set; one attempt ends calibration. */
-static void test_unsettable_time_sync(void) {
+static void test_unsettable_time_sync_endpoint(const char *endpoint,
+                                               const char *expected_url) {
   test_env_t env;
-  time_test_t test = {.set_result = H2_PAL_ERR_UNSUPPORTED};
+  time_test_t test = {.set_result = H2_PAL_ERR_UNSUPPORTED,
+      .expected_url = expected_url};
   time_test_init(&test);
   h2_atomic_store(&test.wall, 1700000000000ull);
   h2_atomic_store(&test.valid, true);
@@ -14827,7 +14831,8 @@ static void test_unsettable_time_sync(void) {
   service->config.on_event = NULL;
   service->client_config.time = &time;
   service->client_config.http = &http;
-  service->client_config.server_endpoint = (h2_gizclaw_str_t){"example.test:9821", 17};
+  service->client_config.server_endpoint =
+      (h2_gizclaw_str_t){endpoint, strlen(endpoint)};
   assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
   h2_gizclaw_time_sync_status_t status =
       time_test_wait(service, H2_GIZCLAW_TIME_SYNC_RETRY);
@@ -14845,6 +14850,17 @@ static void test_unsettable_time_sync(void) {
   assert(status.attempts == 1 && status.state == H2_GIZCLAW_TIME_SYNC_RETRY);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+}
+
+static void test_unsettable_time_sync(void) {
+  test_unsettable_time_sync_endpoint("example.test:9821",
+      "http://example.test:9821/server-info");
+  test_unsettable_time_sync_endpoint("http://example.test:9821/",
+      "http://example.test:9821/server-info");
+  test_unsettable_time_sync_endpoint("https://example.test",
+      "https://example.test/server-info");
+  test_unsettable_time_sync_endpoint("https://[2001:db8::1]:8443/base/",
+      "https://[2001:db8::1]:8443/base/server-info");
 }
 
 /* Without an HTTP API calibration is UNSUPPORTED and final: a valid clock
