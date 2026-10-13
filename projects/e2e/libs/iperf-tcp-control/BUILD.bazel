@@ -1,0 +1,41 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+exports_files(["control_net.c", "control_net.h"])
+
+_POSIX_HOST = select({
+    "//tools/bazel/platforms:host_linux_target_linux": [],
+    "//tools/bazel/platforms:host_macos_target_macos": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+cc_library(
+    name = "control_net",
+    srcs = ["control_net.c"],
+    hdrs = ["control_net.h"],
+    includes = ["."],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = _POSIX_HOST,
+    deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "control_net_test",
+    srcs = ["test_control_net.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = _POSIX_HOST,
+    deps = [":control_net", "//libs/iperf:test_support"],
+)
+
+cc_test(
+    name = "control_net_failure_test",
+    srcs = ["test_control_net.c"],
+    args = ["fault"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = _POSIX_HOST,
+    deps = [":control_net", "//libs/iperf:test_support"],
+)

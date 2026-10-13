@@ -4,6 +4,7 @@
 #include "h2_esp_platform_core.h"
 #include "h2_esp_target_task_policy.h"
 #include "h2_iperf_e2e.h"
+#include "control_net.h"
 #include "h2_sctp.h"
 #include "h2/pal/hal/h2_pal_wifi.h"
 #include "h2/pal/hal/h2_pal_wifi_settings.h"
@@ -265,11 +266,14 @@ static void image_entry(void *user) {
   if (rc != H2_PAL_OK) {
     fail("sctp_create", rc, 1);
   }
+  const h2_pal_net_api_t *control_net = h2_iperf_e2e_control_net(runtime->net);
+  if (control_net == NULL) fail("control_net", H2_PAL_ERR_INVALID_STATE, 1);
+  printf("H2_IPERF_E2E_CONTROL stage=policy tcp_nodelay=1 scope=control_only\n");
   const h2_iperf_e2e_config_t config = {
       .pal =
           {
               .mem = runtime->mem,
-              .net = runtime->net,
+              .net = control_net,
               .time = runtime->time,
               .crypto = runtime->crypto,
               .sctp = h2_sctp_api(sctp),
