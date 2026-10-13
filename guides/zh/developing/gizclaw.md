@@ -193,19 +193,37 @@ Provider 在 `h2_gizclaw_client_poll()` 所在线程同步运行。上游 C SDK 
 
 ### Lua App
 
-产品创建共享 `h2_lua_apps_t`，配置预装 index、安装目录和存储预算，再放入 `h2_gizclaw_config_t.lua_apps`。该 handle 由产品持有，必须覆盖 Service 的完整生命周期，可供本地菜单和后续 Service 重连复用。LIST 在配置目录时启用，INSTALL 和 UNINSTALL 需要可写 Filesystem，RUN 还需要 `vtable.prepare_lua_app_run`；没有相应能力时按 SDK 的 unsupported 路径回答。
+产品创建共享 `h2_gizclaw_lua_app_catalog_t`，配置预装 index、安装目录和存储预算，再放入 `h2_gizclaw_config_t.lua_apps`。该 handle 由产品持有，必须覆盖 Service 的完整生命周期，可供本地菜单和后续 Service 重连复用。LIST 在配置目录时启用，INSTALL 和 UNINSTALL 需要可写 Filesystem，RUN 还需要 `vtable.prepare_lua_app_run`；没有相应能力时按 SDK 的 unsupported 路径回答。
 
 C SDK 依赖使用 registry 的 `gizclaw_c_sdk` 0.30.0 及 `third_party/gizclaw_c_sdk_lua_app_uninstall.patch`，补丁直接来自 [GizClaw 的卸载 contract 提交](https://github.com/GizClaw/gizclaw/commit/155a9d512ca4669f02391a89bbc30be3bd128f15)，包含生成消息、Tool 27 和 C provider 输入校验。
 
-`H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL` 对齐 GizClaw ClientTool 27，解码有界 `app_id` 后使用共享 `h2_lua_apps_uninstall`。空身份、路径、重复 ID 字段、嵌入 NUL 和非 ASCII 字节在设备入口拒绝；成功返回空 tool payload。安装中的目录 reservation 或待完成的启动 handoff 返回 BUSY。卸载与预装持久隐藏、清理重试和用户数据保留的语义见 [Lua 应用目录](./lua.md#lua-app-目录与流式安装)。
+`H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL` 对齐 GizClaw ClientTool 27，解码有界 `app_id` 后使用共享 `h2_gizclaw_lua_app_catalog_uninstall`。空身份、路径、重复 ID 字段、嵌入 NUL 和非 ASCII 字节在设备入口拒绝；成功返回空 tool payload。安装中的目录 reservation 或待完成的启动 handoff 返回 BUSY。卸载与预装持久隐藏、清理重试和用户数据保留的语义见 [Lua 应用目录](#lua-app-包管理)。
 
 
 `lua.app.list/install/run` 使用 SDK 的 tool/v0 编码；URL 安装仅支持 HTTP、HTTPS；内存中的压缩包通过独立 Binary stream 直推，data URL 不作为安装入口。独立 RPC 139 `client.lua.app.install` 由 SDK streaming provider 处理：小 metadata、同一请求中的 Binary 帧、请求 EOS、验证并发布后的最终响应。SDK 自动发送多帧，不需要调用方把一次安装拆成多次 RPC。C SDK 0.30.0 的直推限制为 512 KiB、单帧最多 65535 字节、总期限 120 秒；更大的 archive 使用 HTTP(S) URL。
 
-`$gizclaw/lua/install` worker 使用一个固定大小的帧槽，write 回调复制 borrowed bytes 后返回；槽占用时返回 WOULD_BLOCK，SDK 保留原帧并暂停 backend polling，直到 worker 消费完成。 背压及等待 finish 时，poll owner 只在未消费输入的路径上执行有界 1 ms backoff，使共享 CPU 上的低优先级安装 worker 能继续运行，避免成功 poll 的忙重试饿死 worker。metadata、write、finish 和 close 不保留 response callback，也不在网络 owner 上同步解压或写文件。Service stop 先取消会话，再 join worker；join 失败保留句柄供 stop 重试，不能提前销毁目录或 allocator。URL 和 Binary 入口共用 [Lua App 安装器](./lua.md#lua-app-目录与流式安装)，不在 GizClaw 实现第二套解压、校验或文件发布流程。
+`$gizclaw/lua/install` worker 使用一个固定大小的帧槽，write 回调复制 borrowed bytes 后返回；槽占用时返回 WOULD_BLOCK，SDK 保留原帧并暂停 backend polling，直到 worker 消费完成。 背压及等待 finish 时，poll owner 只在未消费输入的路径上执行有界 1 ms backoff，使共享 CPU 上的低优先级安装 worker 能继续运行，避免成功 poll 的忙重试饿死 worker。metadata、write、finish 和 close 不保留 response callback，也不在网络 owner 上同步解压或写文件。Service stop 先取消会话，再 join worker；join 失败保留句柄供 stop 重试，不能提前销毁目录或 allocator。URL 和 Binary 入口共用 [Lua App 安装器](#lua-app-包管理)，所有入口复用本库的解压、校验和 PAL 文件发布流程。
 
 RUN 的 prepare 回调在 ACK 前复制参数并预留产品 owner 的队列或状态；无法接纳时立即返回 BUSY。返回的 handoff 在响应 EOS 已交给本地 channel 且该 channel 关闭后只完成一次：成功时向产品 owner 发布运行请求，失败或取消时释放 reservation。产品 owner 通过目录快照将 entry、app_id 与 params 提交给 Lua Host，并负责停止旧界面及 Display 交接。回调不直接运行长时间 Lua 程序，accepted 也不等于程序已经执行完成。
 
+
+## Lua App 包管理
+
+`//libs/gizclaw/lua_apps:lua_apps` 是 GizClaw 的平台无关 Lua 应用包管理库，拥有预装与已安装应用目录、包校验、安装和卸载；它通过注入的 PAL 进行文件读写，不依赖 Lua VM、GizClaw 连接或浏览器 API。[API Reference](/references/gizclaw-lua-apps) 直接来自生产 Public Header。调用方注入 Memory、Filesystem、Sync，并配置 `preinstalled_index` 与专用 `install_root`。用户 KV 必须使用安装目录以外的独立根路径，不能把用户数据放进安装器拥有的目录。应用目录可跨 Service 重连保留，销毁前先停止并释放借用它的 Service 和安装会话。
+
+预装和远程安装使用相同 format-1 Lua App manifest、`app_id` 和版本。`lua_app_index` 从 `LuaAppInfo.manifest` 生成 `format=1, apps=[{root,manifest}]`，不维护手写版本表。规则的 `installed_entry` output group 提供与包内完全相同的原始或 compact Lua 文本，`installed_files` 同时包含该 entry 与原有 data 文件；consumer 将 entry 映射为安装根下的 `<app_id>.lua`，data 保持同名子目录结构。原有 archive/manifest/metadata 默认发行输出不变。加载时缺少所需文件、文件大小不符或 entry 超限的预装项不会进入 listing；已安装的同 ID 项覆盖预装项，每个 ID 只列出一次。
+
+URL 安装入口仅接受 HTTP、HTTPS，长度最多 1024 字节，不接受 data URL；内存中的压缩包通过增量 Binary 输入安装。HTTP 请求不自动重试；redirect 继续限制为 HTTP(S)，允许由 HTTP PAL 解析的相对地址。HTTP 流和增量 Binary 输入均只使用固定窗口，完整压缩包不落盘；`libs/crypto/sha256` 增量计算压缩包与各文件摘要，版本校验复用 `libs/semver`。
+
+增量安装使用 begin/write/finish/abort，同一个会话的调用由一个 owner 串行执行。会话持有目录 reservation，其他 task 上的目录操作返回 BUSY；同一 owner 不重入目录操作。finish 只有在声明长度、可选压缩 SHA-256、manifest、全部文件长度与 SHA-256、完整 USTAR 结束块、zlib EOS 均通过后才发布。默认限制为 32 个应用身份、64 个 payload 文件、256 KiB entry、每包 2 MiB payload 和总计 8 MiB 已安装 payload；预装字节不计入安装字节配额。
+
+安装器先写 ordinal staging 文件，再将验证后的文件移到该 ID 的非活动 slot，最后通过 replacing atomic rename 发布总 index。清理前检查两个 slot 的 manifest identity；文件系统将不同 app_id 映射到同一目录时，拒绝该安装并保留已发布的应用。安装器观察到的取消、输入错误和发布失败保留旧版本与独立 KV。传输超时不能证明设备未安装，重新连接后应查询 listing，不能自动重试安装。成功发布后旧 slot 的清理不会把已完成的安装报告为失败。Filesystem 必须提供同步写入及替换式原子 rename；close 错误无法证明句柄是否已被消费时，目录进入终态存储错误并保留自身与借用依赖，禁止自动重试 close 或释放可能仍存活的 backend，需要结束该进程或设备生命周期后恢复。
+
+`h2_gizclaw_lua_app_catalog_uninstall` 按稳定 `app_id` 幂等卸载并保留独立用户存储。它先原子发布目录移除，再按 manifest 清理两个可写版本 slot；目录发布失败保留旧应用，发布后的清理失败使应用保持不可用，重复卸载重试清理。预装文件不可变，目录用 `{"app_id":"demo","removed":true}` 持久隐藏预装身份及其覆盖版本，重启不会恢复；重新安装同 ID 后恢复正常 listing。远程独有身份移出索引并释放应用数与字节预算。只读目录不公布卸载能力；运行 owner 需要协调仍在使用 entry/data_dir 快照的任务。
+
+`h2_gizclaw_lua_app_catalog_get` 返回 caller-owned entry/data_dir 快照，由产品 owner 在自己的运行流程中提交给 Lua Host。安装器不启动 VM，也不切换产品界面。运行中的 owner 应协调应用更新；快照中的安装路径不会在后续更新后永久保留。
+
+Web consumer 可以通过 `//libs/app_host:gizclaw_apps_web` 将同一个目录绑定给浏览器的本地安装、卸载和列表 Promise API。该桥接复用本节的安装器与索引，不写第二份浏览器目录；持久性由借用的 Filesystem 决定。接口、生命周期及多次刷新回归见[浏览器本地 Lua 应用管理](/apps/web#浏览器本地-lua-应用管理)。
 
 ## Workspace 参数补丁
 

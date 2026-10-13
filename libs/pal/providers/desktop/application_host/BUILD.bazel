@@ -1,0 +1,43 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+_HOST = select({
+    "@platforms//os:macos": [],
+    "@platforms//os:linux": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+cc_library(
+    name = "application_host",
+    srcs = ["src/h2_desktop_application_host.cpp"],
+    hdrs = ["include/h2_desktop_application_host.h"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = ["include"],
+    target_compatible_with = _HOST,
+    deps = [
+        "//libs/pal/application/host",
+        "//libs/pal/providers/sdl3",
+        "@h2_vendor_sdl3//:sdl3",
+    ],
+)
+
+cc_test(
+    name = "desktop_host_test",
+    srcs = ["tests/test_desktop_application_host.cpp"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    # CI has no display server; the macOS test still opens a native window.
+    env = select({
+        "@platforms//os:linux": {"SDL_VIDEODRIVER": "dummy"},
+        "//conditions:default": {},
+    }),
+    target_compatible_with = _HOST,
+    deps = [
+        ":application_host",
+        "//libs/atomic/providers/c11",
+        "//libs/pal/providers/desktop/app_support",
+    ],
+)

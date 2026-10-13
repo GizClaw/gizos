@@ -371,7 +371,7 @@ static void image_entry(void *user) {
         !h2_gizclaw_e2e_fixture_lua_app_url()[0] ||
         !h2_gizclaw_e2e_fixture_lua_app_http_url()[0] ||
         !h2_gizclaw_e2e_fixture_lua_app_https_url()[0] ||
-        !h2_lua_app_id_valid(h2_gizclaw_e2e_fixture_lua_app_id()) ||
+        !h2_gizclaw_lua_app_id_valid(h2_gizclaw_e2e_fixture_lua_app_id()) ||
         !h2_gizclaw_e2e_fixture_lua_archive_sha256()[0] ||
         !h2_gizclaw_e2e_fixture_lua_entry_sha256()[0] ||
         !h2_gizclaw_e2e_fixture_lua_frame_sha256()[0])))

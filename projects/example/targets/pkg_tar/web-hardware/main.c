@@ -3,7 +3,7 @@
  * component mapper (component 42 on peripheral 501), and the button hook
  * delivers the page's edges there. The App ends after one key press: both
  * its Down and Up edge must reach the hook and be accepted by the Runtime. */
-#include "h2_web_app_host.h"
+#include "h2_web_application_host.h"
 #include "h2_web_main_thread.h"
 
 #include <assert.h>
@@ -110,9 +110,21 @@ static const h2_runtime_component_mapper_t k_mapper = {
     .vtable = &k_mapper_vtable,
 };
 
+/* clang-format off */
+EM_JS(void, inject_ui_fault,
+    (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["i32"], null, (mode) => {
+    if (mode === 3) globalThis.h2WebApplicationHostBindButton = () => { throw new Error('bind fixture'); };
+    if (mode === 4) globalThis.h2WebApplicationHostUnbindButtons = () => { throw new Error('unbind fixture'); };
+  });
+});
+/* clang-format on */
+extern int h2_web_application_host_button(int index, int pressed);
+
 static h2_pal_result_t prepare(void *user, h2_web_platform_t *platform) {
   web_hardware_t *hardware = user;
   hardware->prepared = platform != NULL;
+  (void)h2_web_main_call(inject_ui_fault, (const void *[]){&hardware->mode});
   return H2_PAL_OK;
 }
 
@@ -133,7 +145,7 @@ static h2_pal_result_t configure_runtime(void *user,
 static h2_pal_result_t release_runtime(void *user) {
   web_hardware_t *hardware = user;
   assert(++hardware->releases == 1);
-  assert(hardware->entry_done == (hardware->mode != 1));
+  assert(hardware->entry_done == (hardware->mode != 1 && hardware->mode != 3));
   if (hardware->mode == 2)
     return H2_PAL_ERR_IO;
   const h2_pal_result_t rc =
@@ -158,19 +170,19 @@ static h2_pal_result_t button(void *user, h2_runtime_t *runtime,
   return result;
 }
 
-static h2_pal_result_t run(h2_web_app_host_t *host, h2_runtime_t *runtime,
+static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *runtime,
                            void *user) {
   web_hardware_t *hardware = user;
   printf("H2_WEB_HARDWARE prepared=%d configured=%d board=%s\n",
          hardware->prepared, hardware->configured, runtime->board);
-  h2_pal_result_t result = h2_web_app_host_ready(host);
-  if (hardware->mode == 2) {
+  h2_pal_result_t result = h2_application_host_ready(host);
+  if (hardware->mode == 2 || hardware->mode == 4) {
     hardware->entry_done = 1;
     return result;
   }
   /* One key press is one Down and one Up edge. */
   while (result == H2_PAL_OK && hardware->edges < 2 &&
-         !h2_web_app_host_should_stop(host))
+         !h2_application_host_should_stop(host))
     result = h2_pal_time_sleep_ms(runtime->time, 10u);
   printf("H2_WEB_HARDWARE edges=%d accepted=%d\n", hardware->edges,
          hardware->accepted);
@@ -183,31 +195,32 @@ static h2_pal_result_t run(h2_web_app_host_t *host, h2_runtime_t *runtime,
 int main(void) {
   static web_hardware_t hardware;
   hardware.mode = h2_web_main_call(fixture_mode, NULL).i32;
-  static const h2_web_app_host_hardware_t hooks = {
+  static const h2_web_application_host_hardware_t hooks = {
       .user = &hardware,
       .prepare = prepare,
       .configure_runtime = configure_runtime,
       .button = button,
       .release_runtime = release_runtime,
   };
-  static const h2_web_app_host_button_t buttons[] = {
+  static const h2_web_application_host_button_t buttons[] = {
       {WEB_HARDWARE_COMPONENT, "Enter", NULL},
   };
-  const h2_web_app_host_config_t config = {
+  const h2_web_application_host_config_t config = {
       .name = "web-hardware",
       .buttons = buttons,
       .button_count = 1u,
       .hardware = &hooks,
       .persistent_root = "/hardware",
   };
-  const int rc = h2_web_app_host_run(&config, run, &hardware);
-  assert(hardware.releases == 1);
-  if (hardware.mode == 2) {
-    assert(rc == H2_WEB_APP_HOST_RETAINED && hardware.file != NULL);
+  const int rc = h2_web_application_host_run(&config, run, &hardware);
+  assert(hardware.releases == (hardware.mode == 4 ? 0 : 1));
+  if (hardware.mode == 2 || hardware.mode == 4) {
+    assert(rc == H2_WEB_APPLICATION_HOST_RETAINED && hardware.file != NULL);
+    assert(h2_web_application_host_button(0, 1) == H2_PAL_ERR_BUSY);
     h2_pal_fs_stat_t info = {0};
     assert(h2_pal_fs_stat(hardware.fs, "/hardware/source", &info) == H2_PAL_OK);
   } else {
-    assert(rc == (hardware.mode == 1 ? 1 : 0) && hardware.file == NULL);
+    assert(rc == (hardware.mode == 1 || hardware.mode == 3 ? 1 : 0) && hardware.file == NULL);
   }
   puts("H2_WEB_HARDWARE checks=PASS");
   return 0;

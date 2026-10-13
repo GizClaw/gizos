@@ -234,7 +234,7 @@ def shared_catalog_sources(previous):
     # Other Apps may update their catalog entries without a new Display run.
     del sources[SHARED_CATALOG]
     del sources[SHARED_PAL_GUIDE]
-    return sources
+    return application_host_audit_sources(sources)
 
 
 def modem_guide_section(content):
@@ -274,6 +274,47 @@ def historical_modem_guide(content):
     return content[:start] + baseline + content[end:]
 
 
+APPLICATION_HOST_GUIDE_PATCH_SHA256 = "462d397168898d47ad4a2cba6c53624d45ff6a85bf6b19f201b66d42c1d2b188"
+APPLICATION_HOST_GUIDE_BASE_COMMIT = "07c20b733643056aea38f3467d13355eae2e6cec"
+APPLICATION_HOST_GUIDE_BASE_SHA256 = "7644a071816846ae00aa2ecb3e7436e321b68225d3d4aa5b85d8632f7d012983"
+
+
+def historical_application_host_guide(content):
+    """Undo only the independently audited Host documentation edits.
+
+    All remaining bytes still pass the original Modem/Pref/whole-guide checks.
+    No provider, App, Display operation or physical receipt is superseded.
+    """
+    path = ROOT / "application_host_guide_changes.json"
+    raw = path.read_bytes()
+    assert hashlib.sha256(raw).hexdigest() == APPLICATION_HOST_GUIDE_PATCH_SHA256
+    patch = json.JSONDecoder().decode(raw.decode("utf-8"))
+    assert patch["schema"] == 1 and patch["new_physical_run_claimed"] is False
+    assert patch["source_path"] == SHARED_PAL_GUIDE
+    assert patch["base_commit"] == APPLICATION_HOST_GUIDE_BASE_COMMIT
+    assert patch["base_sha256"] == APPLICATION_HOST_GUIDE_BASE_SHA256
+    replacements = patch["replacements"]
+    assert len(replacements) == 3
+    present = [content.count(row["current_utf8"].encode("utf-8")) for row in replacements]
+    assert all(value in (0, 1) for value in present)
+    if any(present):
+        assert all(present), "partial or changed Application Host documentation"
+        for row in replacements:
+            content = content.replace(row["current_utf8"].encode("utf-8"),
+                                      row["previous_utf8"].encode("utf-8"), 1)
+    return content
+
+
+def application_host_audit_sources(sources):
+    audit = json.JSONDecoder().decode((ROOT / "application_host_provenance.json").read_text())
+    assert audit["schema"] == 1 and audit["new_physical_run_claimed"] is False
+    assert audit["historical_qualification_sha256"] == hashlib.sha256((ROOT / "qualification.json").read_bytes()).hexdigest()
+    assert audit["historical_catalog_provenance_sha256"] == hashlib.sha256((ROOT / "shared_catalog_provenance.json").read_bytes()).hexdigest()
+    assert set(audit["current_source_sha256"]) == SHARED_CATALOG_AUDIT_SOURCES
+    assert audit["previous_source_sha256"] == {path: sources[path] for path in SHARED_CATALOG_AUDIT_SOURCES}
+    return {**sources, **audit["current_source_sha256"]}
+
+
 def shared_pal_guide(previous, extension):
     """Preserve the whole historical guide outside independent Modem docs."""
     assert extension["source_commit"] == SHARED_CATALOG_BASELINE_COMMIT
@@ -293,7 +334,7 @@ def shared_pal_guide(previous, extension):
     assert len(paragraphs) == 2
     assert paragraphs[0].startswith("BK7258 大值仍使用原 128 KiB physical FlashDB 分区：")
     assert paragraphs[1].startswith("Tail v1 manifest 为 96 字节：")
-    current = historical_modem_guide(Path(SHARED_PAL_GUIDE).read_bytes())
+    current = historical_modem_guide(historical_application_host_guide(Path(SHARED_PAL_GUIDE).read_bytes()))
     if hashlib.sha256(current).hexdigest() == previous[SHARED_PAL_GUIDE]:
         return
     offset = extension["insertion_offset"]

@@ -1,0 +1,75 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
+
+package(default_visibility = ["//visibility:public"])
+
+h2_tasks(
+    name = "tasks",
+    tasks = [
+        "$application/control",
+        "$application/entry",
+    ],
+)
+
+cc_library(
+    name = "host",
+    srcs = [
+        "src/h2_application_host.c",
+        "src/h2_application_host_sdk.c",
+    ],
+    hdrs = [
+        "include/h2_application_host.h",
+        "include/h2_application_host_sdk.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    deps = [
+        ":tasks",
+        "//libs/atomic",
+        "//libs/pal",
+        "//libs/runtime",
+    ],
+)
+
+[
+    cc_test(
+        name = "host_" + mode.replace("-", "_") + "_test",
+        srcs = ["tests/test_application_host.cpp"],
+        args = [mode],
+        copts = H2_WARNING_COPTS,
+        cxxopts = H2_CXX17_OPTS,
+        target_compatible_with = select({
+            "@platforms//os:macos": [],
+            "@platforms//os:linux": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        deps = [
+            ":host",
+            "//libs/atomic/providers/c11",
+            "//libs/pal/providers/desktop/app_support",
+        ],
+    )
+    for mode in [
+        "success",
+        "workers",
+        "external-stop",
+        "entry",
+        "prepare",
+        "configure",
+        "runtime",
+        "validate",
+        "activate",
+        "control-start",
+        "app-start",
+        "app-join",
+        "control-join",
+        "deactivate",
+        "runtime-busy",
+        "retain",
+        "product-release",
+        "release",
+        "poll",
+    ]
+]

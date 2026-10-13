@@ -1,4 +1,4 @@
-load("//libs/app_host:web_app.bzl", "h2_web_app")
+load("//libs/pal/providers/web/application_host:web_app.bzl", "h2_web_app")
 load("//tools/bazel:web_archive.bzl", "web_archive_browser_test")
 
 package(default_visibility = ["//visibility:public"])
@@ -26,10 +26,12 @@ h2_web_app(
 [web_archive_browser_test(
     name = name,
     archive = ":web-hardware",
-    query = "mode=%d" % mode,
     passes = ["H2_WEB_HARDWARE checks=PASS"],
+    query = "mode=%d" % mode,
     timeout_s = 30,
 ) for name, mode in [
     ("configure_failure_test", 1),
     ("release_failure_test", 2),
+    ("button_bind_failure_test", 3),
+    ("button_unbind_failure_test", 4),
 ]]

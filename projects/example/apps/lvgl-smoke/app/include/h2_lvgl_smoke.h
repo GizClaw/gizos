@@ -16,6 +16,9 @@ typedef struct h2_lvgl_smoke_config {
   void *ready_user;
   /** Called once after the first complete frame is presented. */
   h2_lvgl_smoke_ready_fn ready;
+  /** Optional cooperative exit; NULL keeps the screen running. */
+  int (*should_stop)(void *user);
+  void *stop_user;
 } h2_lvgl_smoke_config_t;
 
 /**
@@ -23,7 +26,7 @@ typedef struct h2_lvgl_smoke_config {
  *
  * The App uses one full-screen RGB565 render buffer with
  * `LV_DISPLAY_RENDER_MODE_FULL`. The call only returns on initialization,
- * rendering, callback, or Runtime capability failure.
+ * rendering, callback, Runtime capability failure or cooperative stop.
  */
 h2_pal_result_t h2_lvgl_smoke_run(h2_runtime_t *runtime,
                                   const h2_lvgl_smoke_config_t *config);

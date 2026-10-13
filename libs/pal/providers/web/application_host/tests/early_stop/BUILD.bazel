@@ -1,0 +1,18 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//libs/pal/providers/web/application_host:web_app.bzl", "h2_web_app")
+
+cc_library(
+    name = "entry_source",
+    textual_hdrs = ["//libs/pal/providers/web/application_host:src/h2_web_application_host.c"],
+)
+
+h2_web_app(
+    name = "early_stop",
+    srcs = ["main.c"],
+    app_name = "early-stop",
+    passes = [
+        "EARLY_STOP request_preserved=PASS",
+        "H2_WEB_APP name=early-stop result=PASS rc=0 fs=0 destroy=0",
+    ],
+    deps = [":entry_source"],
+)

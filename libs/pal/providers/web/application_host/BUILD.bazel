@@ -1,0 +1,84 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_python//python:defs.bzl", "py_binary")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY", "WEB_WASM32_ARTIFACT_COMPATIBILITY")
+load(":web_board.bzl", "h2_web_board")
+load(":web_board_test.bzl", "web_board_argument_test")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "default_layout.html",
+    "shell.html",
+])
+
+h2_web_board(
+    name = "default_board",
+    display_height = 240,
+    display_width = 240,
+)
+
+py_binary(
+    name = "inject_layout",
+    srcs = ["inject_layout.py"],
+    legacy_create_init = 0,
+    main = "inject_layout.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+cc_library(
+    name = "application_host",
+    srcs = ["src/h2_web_application_host.c"],
+    hdrs = ["include/h2_web_application_host.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
+    deps = [
+        "//libs/lvgl:platform_web",
+        "//libs/pal:unsupported",
+        "//libs/pal/application/host",
+        "//libs/pal/providers/web/pal_core",
+    ],
+)
+
+cc_library(
+    name = "gizclaw_apps_web",
+    srcs = ["src/h2_web_gizclaw_apps.c"],
+    hdrs = ["include/h2_web_gizclaw_apps.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":gizclaw_apps_tasks",
+        "//libs/atomic",
+        "//libs/gizclaw/lua_apps",
+        "//libs/pal/providers/web/pal_core",
+    ],
+)
+
+h2_tasks(
+    name = "gizclaw_apps_tasks",
+    tasks = ["$application/gizclaw_apps"],
+)
+
+cc_library(
+    name = "headers",
+    hdrs = [
+        "include/h2_web_application_host.h",
+        "include/h2_web_gizclaw_apps.h",
+    ],
+    includes = ["include"],
+    deps = [
+        "//libs/gizclaw/lua_apps",
+        "//libs/pal/application/host",
+        "//libs/pal/providers/web/pal_core:headers",
+    ],
+)
+
+web_board_argument_test(
+    name = "web_board_argument_test",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)

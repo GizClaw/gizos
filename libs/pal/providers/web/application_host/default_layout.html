@@ -1,0 +1,17 @@
+<!-- Default app_host layout: plain placement for pages without a board or
+     product layout. Real UI belongs to the layout the target passes. -->
+<style>
+  :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #080b12; color: #e5e7eb; }
+  body { display: grid; min-height: 100vh; margin: 0; place-items: center; }
+  .h2-default-layout { display: grid; gap: 12px; justify-items: center; }
+  .h2-default-layout #canvas { max-width: calc(100vw - 32px); background: #000; }
+  .h2-default-layout [data-h2-slot="controls"] { display: flex; gap: 8px; }
+  .h2-default-layout [data-h2-slot="controls"] button { padding: 10px 24px; border: 0; border-radius: 8px; background: #38bdf8; color: #082f49; font: inherit; font-weight: 700; cursor: pointer; }
+  .h2-default-layout [data-h2-slot="controls"] button:disabled { cursor: default; opacity: 0.65; }
+  .h2-default-layout #status { margin: 0; color: #94a3b8; font-size: 13px; }
+</style>
+<main class="h2-default-layout">
+  <div data-h2-slot="display"></div>
+  <div data-h2-slot="controls"></div>
+  <div data-h2-slot="status"></div>
+</main>

@@ -4,6 +4,7 @@
 
 ## `libs/`
 
+- [Application Host](./application-host.md)
 - [App Test](./app_test.md)
 - [Audio Mixer](./audio_mixer.md)
 - [BLE iKCP](./bleikcp.md)

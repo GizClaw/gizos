@@ -1,0 +1,20 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+firmware_native_component(
+    name = "h2_application_host",
+    srcs = ["src/h2_bk_application_host.c"],
+    hdrs = ["include/h2_bk_application_host.h"],
+    data = ["CMakeLists.txt"],
+    execution_unit = "ap",
+    deps = ["//libs/pal/application/host"],
+)
+
+cc_library(
+    name = "headers",
+    hdrs = ["include/h2_bk_application_host.h"],
+    includes = ["include"],
+    deps = ["//libs/pal/application/host"],
+)

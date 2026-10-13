@@ -301,3 +301,7 @@ Desktop PAL task 保留 OS thread stack。可选的 `h2_desktop_platform_configu
 `libs/mem_arena` 的普通 alloc/free/realloc 和轻量 stats 不含 tag、pattern、hash 或调用栈追踪。可选的 `h2_mem_arena_block_info()` 在常数时间内返回请求、实际 TLSF block 占用和 pool/fallback；`h2_mem_arena_inspect()` 只在显式调用时遍历两个池，报告 raw free total、largest free block 和已分配块 consumed。这些查询不扩大 arena instance，不改变布局或 ESP 分配路径。Fallback 的 consumed 是交给 fallback allocator 的大小下界，无法从 Memory PAL 推导 system allocator 自身开销。
 
 Desktop consumer 可以在标准 Memory PAL 外层维护 owner view 和 allocation generation，元数据放在 system heap，精确记录同时存活总量刷新时的 owner composition。Content sampling 必须同时与 allocation lifetime 和业务写入同步，短时复制后在锁外分析；allocator 锁只保护块的生命周期，不授权对并发写入的 payload 进行无锁读取。Pattern tail 是未写空间的启发式估计，hash 相同只是重复候选，二者不能直接判定泄漏或允许删减 buffer。Task placeholder 不代表实际业务数据，应排除这些内容分析。
+
+## Application Host
+
+新 `//libs/pal/providers/desktop/application_host` 在系统主线程创建、重开和销毁 SDL 窗口，并处理窗口事件；App task 的 Display open 经同步代理回该线程。Runtime config、产品 mapping 与其它 provider 由调用方注入。共享 Runtime/App 生命周期统一由 [Application Host](../application_host) 执行。现有产品入口保持原接线。

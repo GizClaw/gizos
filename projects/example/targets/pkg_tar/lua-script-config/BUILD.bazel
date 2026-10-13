@@ -1,5 +1,5 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
-load("//libs/lua/web:lua_web_app.bzl", "h2_lua_web_app")
+load("//libs/pal/providers/web/application_host/lua:lua_web_app.bzl", "h2_lua_web_app")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -15,7 +15,10 @@ h2_lua_web_app(
     name = "lua-script-config",
     board = "//projects/example/libs/web/demo_board",
     canvas_min = 1000,
-    clicks = [["H2_WEB_APP name=lua-script-config stage=ready", "#stop"]],
+    clicks = [[
+        "H2_WEB_APP name=lua-script-config stage=ready",
+        "#stop",
+    ]],
     exit_button = "back",
     passes = [
         "LUA_CONFIG args=PASS allocation=786432",

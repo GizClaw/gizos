@@ -232,7 +232,8 @@ h2_pal_result_t h2_lvgl_smoke_run(h2_runtime_t *runtime,
   }
 
   uint32_t progress = 0u;
-  while (rc == H2_PAL_OK) {
+  while (rc == H2_PAL_OK &&
+         (config->should_stop == NULL || !config->should_stop(config->stop_user))) {
     uint64_t now_ms = last_ms;
     rc = h2_pal_time_get_monotonic_ms(runtime->time, &now_ms);
     if (rc != H2_PAL_OK) {

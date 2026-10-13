@@ -1,5 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
-load("//libs/lua/web:lua_web_app.bzl", "h2_lua_web_app")
+load("//libs/pal/providers/web/application_host/lua:lua_web_app.bzl", "h2_lua_web_app")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 
 package(default_visibility = ["//visibility:public"])

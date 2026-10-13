@@ -134,7 +134,7 @@ typedef struct h2_gizclaw_config {
      * service_deinit; its caller-owned lifetime can span reconnects. LIST is
      * enabled with this handle, INSTALL needs writable storage (HTTP(S) also
      * needs HTTP), RUN additionally needs vtable.prepare_lua_app_run. */
-    h2_lua_apps_t *lua_apps;
+    h2_gizclaw_lua_app_catalog_t *lua_apps;
 } h2_gizclaw_config_t;
 
 #ifdef __cplusplus

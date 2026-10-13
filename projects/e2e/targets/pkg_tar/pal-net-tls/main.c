@@ -1,10 +1,10 @@
 #include "h2/pal/h2_pal_unsupported.h"
-#include "h2_web_app_host.h"
+#include "h2_web_application_host.h"
 #include <emscripten.h>
 #include <emscripten/threading.h>
 #include <stdio.h>
 
-const h2_web_board_t h2_web_board = {.display_width = 1, .display_height = 1};
+const h2_web_application_board_t h2_web_application_board = {.display_width = 1, .display_height = 1};
 /* clang-format off */
 EM_JS(int, worker, (), { return ENVIRONMENT_IS_PTHREAD && typeof window === 'undefined' ? 1 : 0; });
 /* clang-format on */
@@ -24,7 +24,7 @@ static void observed_void(const char *slot) {
          "\"owned_handle\":false}\n",
          slot);
 }
-static h2_pal_result_t boundary(h2_web_app_host_t *host, h2_runtime_t *runtime,
+static h2_pal_result_t boundary(h2_application_host_t *host, h2_runtime_t *runtime,
                                 void *user) {
   (void)host;
   (void)user;
@@ -80,7 +80,7 @@ static h2_pal_result_t boundary(h2_web_app_host_t *host, h2_runtime_t *runtime,
   return errors || calls != 21u ? H2_PAL_ERR_IO : H2_PAL_OK;
 }
 int main(void) {
-  const h2_web_app_host_config_t config = {
+  const h2_web_application_host_config_t config = {
       .name = "pal-net-tls-boundary", .display_width = 1, .display_height = 1};
-  return h2_web_app_host_run(&config, boundary, NULL);
+  return h2_web_application_host_run(&config, boundary, NULL);
 }

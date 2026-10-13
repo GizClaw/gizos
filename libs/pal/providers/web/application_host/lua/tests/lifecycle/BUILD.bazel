@@ -1,0 +1,45 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//libs/pal/providers/web/application_host:web_app.bzl", "h2_web_app")
+load("//tools/bazel:web_archive.bzl", "web_archive_browser_test")
+
+cc_library(
+    name = "entry_source",
+    hdrs = ["h2_web_lua_app_config.h"],
+    includes = ["."],
+    textual_hdrs = [
+        "//libs/pal/application/host/lua:src/h2_application_host_lua.c",
+        "//libs/pal/providers/web/application_host/lua:h2_web_lua_app.c",
+    ],
+    deps = [
+        "//libs/lua",
+        "//libs/pal/application/host/lua",
+    ],
+)
+
+h2_web_app(
+    name = "lifecycle",
+    srcs = ["lifecycle.c"],
+    app_name = "lifecycle-normal",
+    passes = ["LIFECYCLE checks=PASS"],
+    deps = [
+        ":entry_source",
+        "//libs/lua",
+    ],
+)
+
+[web_archive_browser_test(
+    name = name,
+    archive = ":lifecycle",
+    passes = ["LIFECYCLE checks=PASS"],
+    query = "mode=%d" % mode,
+    timeout_s = 60,
+) for name, mode in [
+    ("ordinary_error_test", 1),
+    ("transport_fault_test", 2),
+    ("display_join_fault_test", 3),
+    ("managed_stop_test", 4),
+    ("entry_join_fault_test", 5),
+    ("entry_exit_fault_test", 6),
+    ("filesystem_busy_test", 7),
+    ("unhandled_event_test", 8),
+]]

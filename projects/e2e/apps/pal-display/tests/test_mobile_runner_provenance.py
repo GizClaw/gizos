@@ -161,11 +161,36 @@ class MobileRunnerProvenanceTest(unittest.TestCase):
             with self.assertRaises(AssertionError):
                 self.verify(self.followup)
 
+    def test_application_host_doc_audit_does_not_admit_display_or_unknown_policy(self):
+        path = qualification.Path(qualification.SHARED_PAL_GUIDE)
+        current = path.read_bytes()
+        restored = qualification.historical_application_host_guide(current)
+        self.assertEqual(qualification.hashlib.sha256(restored).hexdigest(), qualification.APPLICATION_HOST_GUIDE_BASE_SHA256)
+        original = qualification.Path.read_bytes
+        audit = json.loads((qualification.ROOT / "shared_catalog_provenance.json").read_text())
+        previous = {qualification.SHARED_PAL_GUIDE: audit["pal_guide_extension"]["source_sha256"]}
+        for content in (current + b"\nunknown PAL policy\n", current.replace(b"Display", b"ChangedDisplay", 1)):
+            with patch.object(qualification.Path, "read_bytes", new=lambda source: content if source == path else original(source)):
+                with self.assertRaises(AssertionError):
+                    qualification.shared_pal_guide(previous, audit["pal_guide_extension"])
+
+    def test_application_host_audit_cannot_claim_hardware_or_supersede_a_provider(self):
+        path = qualification.ROOT / "application_host_provenance.json"
+        audit = json.loads(path.read_text())
+        original = qualification.Path.read_text
+        for mutate in (lambda value: value.update(new_physical_run_claimed=True),
+                       lambda value: value["current_source_sha256"].update({"libs/pal/providers/web/pal_core/src/h2_web_platform_display.c": "0" * 64})):
+            bad = copy.deepcopy(audit)
+            mutate(bad)
+            with patch.object(qualification.Path, "read_text", new=lambda source, *a, **k: json.dumps(bad) if source == path else original(source, *a, **k)):
+                with self.assertRaises(AssertionError):
+                    self.verify(self.followup)
+
     def test_shared_pal_guide_only_admits_exact_pref_extension(self):
         audit = json.loads((qualification.ROOT / "shared_catalog_provenance.json").read_text(encoding="utf-8"))
         extension = audit["pal_guide_extension"]
         path = qualification.Path(qualification.SHARED_PAL_GUIDE)
-        current = qualification.historical_modem_guide(path.read_bytes())
+        current = qualification.historical_modem_guide(qualification.historical_application_host_guide(path.read_bytes()))
         addition = json.loads((qualification.ROOT / "shared_pal_pref_addition.json").read_text(encoding="utf-8"))["addition_utf8"].encode("utf-8")
         offset = extension["insertion_offset"]
         baseline = current if qualification.hashlib.sha256(current).hexdigest() == extension["source_sha256"] else (
@@ -194,7 +219,7 @@ class MobileRunnerProvenanceTest(unittest.TestCase):
         fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
         addition = fixture["addition_utf8"].encode("utf-8")
         path = qualification.Path(qualification.SHARED_PAL_GUIDE)
-        current = qualification.historical_modem_guide(path.read_bytes())
+        current = qualification.historical_modem_guide(qualification.historical_application_host_guide(path.read_bytes()))
         offset = extension["insertion_offset"]
         baseline = current if qualification.hashlib.sha256(current).hexdigest() == extension["source_sha256"] else (
             current[:offset] + current[offset + len(addition):])
@@ -218,7 +243,7 @@ class MobileRunnerProvenanceTest(unittest.TestCase):
         extension = audit["pal_guide_extension"]
         addition = json.loads((qualification.ROOT / "shared_pal_pref_addition.json").read_text(encoding="utf-8"))["addition_utf8"].encode("utf-8")
         path = qualification.Path(qualification.SHARED_PAL_GUIDE)
-        current = qualification.historical_modem_guide(path.read_bytes())
+        current = qualification.historical_modem_guide(qualification.historical_application_host_guide(path.read_bytes()))
         offset = extension["insertion_offset"]
         baseline = current if qualification.hashlib.sha256(current).hexdigest() == extension["source_sha256"] else (
             current[:offset] + current[offset + len(addition):])

@@ -1,5 +1,5 @@
 #include "h2_touch_smoke.h"
-#include "h2_web_app_host.h"
+#include "h2_web_application_host.h"
 #include <stdio.h>
 
 static void touch_ready(void *user, h2_pal_result_t result) {
@@ -8,15 +8,15 @@ static void touch_ready(void *user, h2_pal_result_t result) {
 }
 
 // The action Button is component 1 on every touch-smoke target.
-static const h2_web_app_host_button_t k_buttons[] = {{1u, "Enter", NULL}};
+static const h2_web_application_host_button_t k_buttons[] = {{1u, "Enter", NULL}};
 
-static h2_pal_result_t run_touch(h2_web_app_host_t *host,
+static h2_pal_result_t run_touch(h2_application_host_t *host,
                                  h2_runtime_t *runtime, void *user) {
   (void)user;
   const h2_touch_smoke_config_t config = {
       .width = 800u,
       .height = 480u,
-      .should_stop = h2_web_app_host_should_stop,
+      .should_stop = h2_application_host_should_stop,
       .stop_user = host,
       .on_started = touch_ready,
   };
@@ -24,7 +24,7 @@ static h2_pal_result_t run_touch(h2_web_app_host_t *host,
 }
 
 int main(void) {
-  const h2_web_app_host_config_t config = {
+  const h2_web_application_host_config_t config = {
       .name = "touch",
       .display_width = 800,
       .display_height = 480,
@@ -32,5 +32,5 @@ int main(void) {
       .buttons = k_buttons,
       .button_count = 1u,
   };
-  return h2_web_app_host_run(&config, run_touch, NULL);
+  return h2_web_application_host_run(&config, run_touch, NULL);
 }

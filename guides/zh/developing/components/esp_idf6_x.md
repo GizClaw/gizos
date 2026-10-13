@@ -401,3 +401,7 @@ ON 时只对至少 100 ms 的操作输出 `H2_ESP_IO_PHASE` 数值记录。FS �
 ### Positive Time delays
 
 ESP Time PAL converts milliseconds to FreeRTOS ticks with ceiling division using 64-bit arithmetic. Every positive delay blocks for at least one tick; zero preserves the explicit yield. This keeps short capture/playback backoff from becoming a CPU spin at a 100 Hz tick rate. Unrepresentable tick counts return INVALID_ARG without delaying; wall-clock retention and calibration are unchanged. Host tests cover 100 Hz and 1000 Hz boundaries, including UINT32_MAX.
+
+## Application Host
+
+新 `//native_component_src/esp-idf6.x/h2_application_host` 在 SDK/BSP 已有 task 上检查启动上下文，复用 PAL Task/Time，注入 startup/shutdown 与输入 acquire/release。不得从 ISR 启动，不能从另一个 SDK task 执行 prepare/release。共享 Runtime/App 生命周期统一由 [Application Host](../application_host) 执行。现有产品入口保持原接线。

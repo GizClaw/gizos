@@ -13,6 +13,7 @@ filegroup(
 cc_library(
     name = "pal",
     hdrs = [
+        "include/h2/pal/application/h2_pal_application_host.h",
         "include/h2/pal/application/h2_pal_http.h",
         "include/h2/pal/application/h2_pal_mqtt.h",
         "include/h2/pal/application/h2_pal_webrtc.h",
@@ -439,5 +440,8 @@ cc_library(
     testonly = True,
     hdrs = ["tests/h2_test_allocator.h"],
     includes = ["tests"],
-    deps = [":pal", "//libs/atomic"],
+    deps = [
+        ":pal",
+        "//libs/atomic",
+    ],
 )

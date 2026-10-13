@@ -1,5 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
-load("//libs/lua/web:lua_web_app.bzl", "h2_lua_web_app")
+load("//libs/pal/providers/web/application_host/lua:lua_web_app.bzl", "h2_lua_web_app")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 
 package(default_visibility = ["//visibility:public"])
@@ -20,7 +20,10 @@ h2_lua_web_app(
     name = "lua-script-vector",
     board = "//projects/example/libs/web/demo_board",
     canvas_min = 1000,
-    clicks = [["LUA_VECTOR pixels=PASS", "#stop"]],
+    clicks = [[
+        "LUA_VECTOR pixels=PASS",
+        "#stop",
+    ]],
     evals = [[
         "H2_WEB_APP name=lua-script-vector stage=ready",
         """(() => {

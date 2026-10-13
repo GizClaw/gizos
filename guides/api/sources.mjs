@@ -1,4 +1,12 @@
 export const apiSources = [
+  { id: "application_host", roots: [
+    "libs/pal/application/host/include",
+    "libs/pal/application/host/lua/include",
+    "libs/pal/providers/web/application_host/include",
+    "libs/pal/providers/desktop/application_host/include",
+    "native_component_src/esp-idf6.x/h2_application_host/include",
+    "native_component_src/bk7258/ap/h2_application_host/include",
+  ] },
   { id: "app_test", roots: ["libs/app_test/include"] },
   { id: "audio_mixer", roots: ["libs/audio_mixer/include"] },
   { id: "ble_wifi_config", roots: ["libs/ble_wifi_config/include"] },
@@ -27,7 +35,13 @@ export const apiSources = [
   { id: "iperf", roots: ["libs/iperf/include"] },
   { id: "libco", roots: ["libs/pal/providers/libco/include"] },
   { id: "lua", headers: ["libs/lua/include/h2_lua_display.h", "libs/lua/include/h2_lua_numeric.h"] },
-  { id: "lua_apps", roots: ["libs/lua/apps/include"] },
+  {
+    id: "gizclaw_lua_apps",
+    headers: [
+      "libs/gizclaw/lua_apps/include/h2_gizclaw_lua_app_catalog.h",
+      "libs/pal/providers/web/application_host/include/h2_web_gizclaw_apps.h",
+    ],
+  },
   { id: "lvgl", roots: ["libs/lvgl/include"] },
   { id: "mem_arena", roots: ["libs/mem_arena/include"] },
   { id: "mp4_decoder", roots: ["libs/mp4_decoder/include"] },

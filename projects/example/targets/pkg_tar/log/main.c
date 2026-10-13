@@ -1,7 +1,7 @@
 #include "h2_log_example.h"
-#include "h2_web_app_host.h"
+#include "h2_web_application_host.h"
 
-static h2_pal_result_t run_log(h2_web_app_host_t *host, h2_runtime_t *runtime,
+static h2_pal_result_t run_log(h2_application_host_t *host, h2_runtime_t *runtime,
                                void *user) {
   (void)host;
   (void)user;
@@ -9,10 +9,10 @@ static h2_pal_result_t run_log(h2_web_app_host_t *host, h2_runtime_t *runtime,
 }
 
 int main(void) {
-  const h2_web_app_host_config_t config = {
+  const h2_web_application_host_config_t config = {
       .name = "log",
       .display_width = 1,
       .display_height = 1,
   };
-  return h2_web_app_host_run(&config, run_log, NULL);
+  return h2_web_application_host_run(&config, run_log, NULL);
 }

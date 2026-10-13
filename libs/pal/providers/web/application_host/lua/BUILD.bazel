@@ -1,0 +1,11 @@
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+load(":lua_web_app_test.bzl", "lua_web_app_argument_test")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["h2_web_lua_app.c"])
+
+lua_web_app_argument_test(
+    name = "lua_web_app_argument_test",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)

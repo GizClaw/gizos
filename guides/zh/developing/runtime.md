@@ -53,6 +53,8 @@ runtime deinit（例如 `h2_esp_board_runtime_deinit()` 或
 `h2_bk7258_board_runtime_deinit()`）。失败后立即 abort、reboot 到 Loader 或让 image
 永久停机的 launcher 不需要额外 teardown。
 
+新增 [Application Host](./application_host) 可以作为上述 launcher/composition owner。 它通过 `h2_runtime_destroy(&runtime)` 检查释放结果：Test Control 或未 join 的 input/NFC 任务令指针保持非 NULL，必须保留 provider；任务已结束但存在 latched worker fault 时， Runtime 被释放、指针置 NULL，同时返回该错误。原 `h2_runtime_deinit()` 保留为兼容 wrapper。 销毁前仍须停止外部 producer 并 join App 自建 worker，Runtime 不替调用方推断这些使用者。
+
 Board 可以在 `h2_runtime_config_t` 中按 image 的实际规模选择三项初始化期
 容量：`input_source_capacity`、`component_mapping_capacity` 和
 `event_payload_capacity`。前两项为 `0` 时分别使用 `32`，payload 为 `0` 时使用

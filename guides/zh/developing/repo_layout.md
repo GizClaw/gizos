@@ -165,7 +165,7 @@ libs/<library>/
 
 `libs/atomic/` 独立于 PAL，持有 typed atomic wrapper、操作符号与可复用 provider 模板；Runtime、H2Peer 和 App 直接依赖其 contract。最终 target 链入一个平台实现，不经过 PAL vtable 或 Memory PAL 注入。Desktop/Browser 使用 C11 provider，iOS/Android 使用 pthread provider；ESP provider 源码位于 `native_component_src/esp-idf6.x/h2_pal_core/`，其实际原子存储分配在内部 RAM。BK7258 AP 使用 `native_component_src/bk7258/ap/h2_pal_core` 中的 SRAM critical-section provider；wrapper 可位于 PSRAM，backing 保持 SRAM，其资格由独立 Atomic E2E 验证。JieLi 仍使用显式 unsupported provider。这里的 `h2_pal_core` 是现有 SDK component 名称，不改变 atomic contract 的 ownership。
 
-`libs/app_host/` 是上述"platform 无关"要求的唯一例外：它是 App 启动层，当前只有 Web 实现，其他平台以后在同一 library 中增加变体。它消费 PAL provider 组装 Runtime、运行调用方传入的 App entry 并负责 teardown，不实现 PAL capability、不选择 App。依赖边界：`libs/app_host` 只依赖 `libs/pal`、`libs/pal:unsupported`、`libs/pal/providers/web/pal_core`、`libs/lvgl:platform_web` 与 `libs/runtime`，不依赖任何 project、App 或 artifact entry；`targets/pkg_tar/<app>` 依赖它，反向不成立。`web_app.bzl` 的 `h2_web_app()` 在调用方 entry 的 package 内声明 wasm binary、archive、`:serve` 与 `:browser_test`，所以最终 archive、`main`、App entry 与配置、Button/key 映射和 preload 仍归该 entry；entry 也可以不经 `app_host` 自行组装。`libs/lua/web` 可以依赖 `libs/app_host`，同样不依赖 project。
+`libs/pal/application/host` 保存共享 Application Host 生命周期，依赖 Runtime、PAL 与 Atomic。 `libs/pal/providers/web/application_host` 和 `desktop/application_host` 保存各自事件循环与资源装配； ESP/BK 的 SDK task context 检查位于 `native_component_src/<sdk>/h2_application_host`。 基础 PAL contract 仍为 header-only，不反向依赖 Runtime 或任何平台 SDK。 Web 打包、页面与 Lua 生成入口由新 Web provider 目录提供，最终 artifact 仍归 project。 `libs/app_host/**` 与原 `libs/lua/web` 保留全部原有 API/helper 和实现，作为独立兼容路径； GizOS 内部使用 Host 的 WASM entry 使用新增层。新层不调用旧 Host 生命周期。 具体 ownership、最小 main 与迁移清单见 [Application Host](./application_host)。
 
 每个 library 都有独立的 `BUILD.bazel`。`BUILD.bazel` 通过显式 `srcs`、`hdrs`、`data` 和 `deps` 定义 library target 与 tests，测试目录统一使用 `tests/`。CI 直接分析所选平台的完整 compatible graph，不通过 tag 维护第二份 library 或 artifact inventory。平台差异只需要 toolchain 或 compatibility 即可表达时，不复制 source tree；只有接入 API、构建系统或 OS service 不同时，才在 `libs/pal/providers/` 下建立具名平台边界。
 
@@ -185,7 +185,7 @@ projects/pixa_games/libs/
 
 H106、Desktop 或其他 project 只引用需要的 game library，并在 host main loop 中把自己的 Runtime `component_id` 映射成 game button role。Host component 到 board `periph_id` 的 mapping 仍由对应 launcher 提供。具体 contract 见 [PIXA Games](/apps/pixa_games)。
 
-`libs/pal/include/` 是特殊边界，只保存 PAL contract：`h2_pal.h` 是根级全量 aggregate header，其他 public header 按 `h2/pal/core`、`os`、`net`、`application` 和 `hal` 分类，canonical unsupported accessor 位于 `h2/pal/h2_pal_unsupported.h`。这些目录仍属于同一个 `libs/pal` Bazel package 和 header-only `//libs/pal:pal` target，不引入子 package、分层 contract target 或新的 provider/runtime boundary。`libs/pal/src/unsupported/` 只保存所有平台共用的 canonical unsupported API object，并按 capability 保持一个 translation unit；直接使用 accessor 的 consumer 依赖 `//libs/pal:unsupported`，由静态链接器按 object 抽取。PAL 仍然必须遵守相同的 `tests/` 约定。真实 PAL backend、dummy backend、target-specific unavailable adapter 和 test fake 属于 `libs/pal/providers`、原生 SDK `components`、BSP 或 test adapter，不能放进 PAL contract package。
+`libs/pal/include/` 是特殊边界，只保存 PAL contract：`h2_pal.h` 是根级全量 aggregate header，其他 public header 按 `h2/pal/core`、`os`、`net`、`application` 和 `hal` 分类，canonical unsupported accessor 位于 `h2/pal/h2_pal_unsupported.h`。这些目录仍属于同一个 `libs/pal` Bazel package 和 header-only `//libs/pal:pal` target，不把分类目录拆为分层 contract target。独立的 Application Host 组装 package 位于 `libs/pal/application/host`，不进入该基础 target 或 aggregate header 的实现依赖。`libs/pal/src/unsupported/` 只保存所有平台共用的 canonical unsupported API object，并按 capability 保持一个 translation unit；直接使用 accessor 的 consumer 依赖 `//libs/pal:unsupported`，由静态链接器按 object 抽取。PAL 仍然必须遵守相同的 `tests/` 约定。真实 PAL backend、dummy backend、target-specific unavailable adapter 和 test fake 属于 `libs/pal/providers`、原生 SDK `components`、BSP 或 test adapter，不能放进 PAL contract package。
 
 `libs/drivers/` 可以继续按 modem、motion、NFC 等 portable driver family 拆分，但 driver 不能拥有具体 board 的 pin、bus instance 或 wiring。
 
@@ -287,11 +287,12 @@ Web 入口也归 portable App owner。最终交付物使用实际 Bazel packagin
 projects/example/libs/web/tap-reset/
 projects/example/targets/pkg_tar/tap-reset/
 libs/pal/providers/web/pal_core/
-libs/app_host/
-libs/lua/web/
+libs/pal/application/host/
+libs/pal/providers/web/application_host/
+libs/pal/providers/web/application_host/lua/
 ```
 
-Project-local Web component 保存 presentation、required capability 和 portable App contract conversion；`pkg_tar/<app>` 保存 Emscripten lifecycle、Runtime assembly、HTML shell 和最终 serve-ready Web archive，其中 Runtime assembly、shell 和 archive 规则可以委托给 `libs/app_host`，页面外观与按键来自所选 web board（`h2_web_board()`，产品 board 放在该 board 目录旁）及其一套外观（见 `libs` 一节的例外），archive target 仍在该 entry 的 package 内。内部编译步骤使用 `wasm_cc_binary`，最终 rule 使用 `pkg_tar`，归档根目录直接提供 `index.html` 及其 JS/WASM 依赖。Web wrapper 不能依赖 Mobile contract。跨 project 的 Canvas、pointer、Memory、Time 与 Queue backend 属于 `libs/pal/providers/web/pal_core`；`pkg_tar/<app>` 可以直接组装 Runtime，也可以复用 `libs/app_host` 的 App 启动层与 `h2_web_app()`；只运行一个 Lua 脚本的页面由 `libs/lua/web` 的 `h2_lua_web_app()` 生成。`libs/lua/web` 是 Lua library 的 Browser artifact helper，与 `libs/lvgl:platform_web` 同类：它只在 `libs/lua` 之上增加 wasm-only 的通用 entry 与宏，依赖 `app_host`，不依赖具体 project。
+Project-local Web component 保存 presentation、required capability 和 portable App contract conversion；`pkg_tar/<app>` 保存 Emscripten lifecycle、Runtime assembly、HTML shell 和最终 serve-ready Web archive，其中 Runtime assembly、shell 和 archive 规则可以委托给 `libs/pal/providers/web/application_host`，页面外观与按键来自所选 web board（`h2_web_board()`，产品 board 放在该 board 目录旁）及其一套外观，archive target 仍在该 entry 的 package 内。内部编译步骤使用 `wasm_cc_binary`，最终 rule 使用 `pkg_tar`，归档根目录直接提供 `index.html` 及其 JS/WASM 依赖。Web wrapper 不能依赖 Mobile contract。跨 project 的 Canvas、pointer、Memory、Time 与 Queue backend 属于 `libs/pal/providers/web/pal_core`；`pkg_tar/<app>` 可以直接组装 Runtime，也可以复用 `libs/pal/providers/web/application_host` 的 App 启动层与 `h2_web_app()`；只运行一个 Lua 脚本的页面由 `libs/pal/providers/web/application_host/lua` 的 `h2_lua_web_app()` 生成。新 Lua glue 只生成 board 参数与事件映射，运行交给 `//libs/pal/application/host/lua` 的共享 runner； 旧 `libs/lua/web` 与旧 Host 兼容路径继续独立可用。
 
 App 或 library 的 Bazel target 只在 source、defines、toolchain compatibility 或 dependency graph 存在实际差异时拆成 `_embed`、`_desktop`、`_mobile`、`_web` variant；没有差异时保留无后缀 target。Variant 按运行环境命名，不能按具体 App 复制公共 library。
 

@@ -46,10 +46,9 @@ libs/pal/src/unsupported/       # 每个 capability 一个 canonical unsupported
 └── <capability>.c
 ```
 
-这些目录只对同一个 `libs/pal` package 中的 public header 做职责分组，不拆分
-Bazel package、target、Runtime surface 或 provider ownership。
+这些目录只对同一个 `libs/pal` package 中的 public header 做职责分组，不拆分基础 contract 的 Bazel package、target、Runtime surface 或 provider ownership。Application Host 的共享实现是独立的 `//libs/pal/application/host` package；它和 provider 均不属于基础 `//libs/pal:pal` target，详见 [Application Host](./application_host)。
 
-`src/unsupported/` 是 `libs/pal` 中允许存在的唯一通用 backend source。真实平台实现、dummy backend 和 fake backend 不属于 PAL contract 包。
+`src/unsupported/` 是基础 PAL contract package 中唯一的通用 backend source。Application Host 的公共组装属于独立的 `libs/pal/application/host`；真实平台实现、dummy backend 和 fake backend 不属于基础 contract 包。
 
 `h2_pal_unsupported.h` 同时提供整项 capability 的 canonical accessor
 `h2_pal_unsupported_*_api()` 与逐项 vtable stub `h2_pal_unsupported_ble_*`。
@@ -91,7 +90,7 @@ flowchart TB
 
 PAL 不负责 app component 与 board periph 的映射。BSP 定义 board 的 `periph_id`，app 定义 `component_id`，两者的映射由 `boards/main` 提供。
 
-Browser 的 reusable provider 位于 `libs/pal/providers/web/pal_core`，暴露真实实现的 Memory、Log、Time、Timer、Task、Queue、Sync、Pref、Crypto、HTTP、Display、Audio playback/capture、Touch、WebRTC 与 Host Serial accessor。Time 默认读取 browser wall clock，不推断宿主时钟的同步来源；设置 wall clock 保存当前 platform 的本地偏移并标记 USER，不修改宿主系统时间。Firmware Info 由 launcher 在 Runtime 初始化前注入不可变构建版本。Audio `stop_speaker` 立即停止已排程的播放；与设备 mixer queue 一致，speaker 停止期间 track 仍接受写入并按 track 容量保留，下一次 `start_speaker` 时开始播放。Crypto 通过 browser cryptographic randomness 初始化唯一的 wolfCrypt integration。HTTP 使用 Fetch，因此直接请求仍受 CORS 约束；artifact 可以通过 `Module.h2WebHttpProxyUrl` 显式选择由受信宿主提供的同源代理，provider 不内建远端 allowlist 或通用绕过。Pref 使用当前 HTTPS origin 的 `localStorage` 保存 namespace-scoped typed entry；private mode、storage policy 或 quota 使存储不可用时，`open` 必须返回 `UNAVAILABLE`，不能伪装成可持久化内存。一个 live platform state 持有 pthread Core。C main 和 PAL Task 在 Worker 上运行，Task join 回收原生栈与线程对象，Queue/Sync/Timer 支持线程间并行。浏览器 DOM、JS 对象和 API 入口由 `h2_web_main_thread.h` 代理到 UI，异步完成唤醒 Worker 条件变量。Web artifact 全图编译、链接都使用 `-pthread`，C main 使用 `PROXY_TO_PTHREAD`，托管服务发送 COOP/COEP 响应头；Web provider 不再依赖 libco 或 Asyncify。Artifact entry 而不是 provider 负责构造完整 Runtime：真实 accessor 填入已实现字段，其余字段逐项绑定 matching canonical unsupported API object。Host Serial 不在 Runtime 中，由 launcher 单独注入 portable consumer。
+Browser 的 reusable provider 位于 `libs/pal/providers/web/pal_core`，暴露真实实现的 Memory、Log、Time、Timer、Task、Queue、Sync、Pref、Crypto、HTTP、Display、Audio playback/capture、Touch、WebRTC 与 Host Serial accessor。Time 默认读取 browser wall clock，不推断宿主时钟的同步来源；设置 wall clock 保存当前 platform 的本地偏移并标记 USER，不修改宿主系统时间。Firmware Info 由 launcher 在 Runtime 初始化前注入不可变构建版本。Audio `stop_speaker` 立即停止已排程的播放；与设备 mixer queue 一致，speaker 停止期间 track 仍接受写入并按 track 容量保留，下一次 `start_speaker` 时开始播放。Crypto 通过 browser cryptographic randomness 初始化唯一的 wolfCrypt integration。HTTP 使用 Fetch，因此直接请求仍受 CORS 约束；artifact 可以通过 `Module.h2WebHttpProxyUrl` 显式选择由受信宿主提供的同源代理，provider 不内建远端 allowlist 或通用绕过。Pref 使用当前 HTTPS origin 的 `localStorage` 保存 namespace-scoped typed entry；private mode、storage policy 或 quota 使存储不可用时，`open` 必须返回 `UNAVAILABLE`，不能伪装成可持久化内存。一个 live platform state 持有 pthread Core。C main 和 PAL Task 在 Worker 上运行，Task join 回收原生栈与线程对象，Queue/Sync/Timer 支持线程间并行。浏览器 DOM、JS 对象和 API 入口由 `h2_web_main_thread.h` 代理到 UI，异步完成唤醒 Worker 条件变量。Web artifact 全图编译、链接都使用 `-pthread`，C main 使用 `PROXY_TO_PTHREAD`，托管服务发送 COOP/COEP 响应头；Web provider 不再依赖 libco 或 Asyncify。Artifact entry 可以通过新的 Application Host 委托 Web provider 构造完整 Runtime：真实 accessor 填入已实现字段，其余字段逐项绑定 matching canonical unsupported API object。Host Serial 不在 Runtime 中，由 launcher 单独注入 portable consumer。
 
 ## Display lifecycle 和诊断
 

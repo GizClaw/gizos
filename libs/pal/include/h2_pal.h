@@ -7,6 +7,7 @@
 #include "h2/pal/net/h2_pal_dtls.h"
 #include "h2/pal/os/h2_pal_fs.h"
 #include "h2/pal/os/h2_pal_crypto.h"
+#include "h2/pal/application/h2_pal_application_host.h"
 #include "h2/pal/application/h2_pal_http.h"
 #include "h2/pal/os/h2_pal_json.h"
 #include "h2/pal/os/h2_pal_pref.h"
