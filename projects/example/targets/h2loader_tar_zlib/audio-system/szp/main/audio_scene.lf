@@ -1,0 +1,12 @@
+# The software Opus/PCM scene is copied through the PAL audio queues; it is
+# neither DMA storage nor used while the flash/PSRAM cache is disabled.
+# Preserve all scene capacities and reserve internal DRAM for the drivers.
+[scheme:szp_audio_scene_psram]
+entries:
+    bss -> extern_ram
+
+[mapping:szp_audio_scene]
+archive: libmain.a
+entries:
+    if SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
+        app:s_scene (szp_audio_scene_psram)
