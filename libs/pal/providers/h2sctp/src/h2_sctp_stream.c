@@ -399,7 +399,10 @@ static h2_pal_result_t h2_sctp_stream_deliver_one(
     if (delivery_result != H2_PAL_OK) {
         return delivery_result;
     }
-    if (assembled) {
+    /* Reordered fragments can complete through the copy path even though
+     * this message owns a partial in-order assembly. Release that owner
+     * before pruning its begin fragment; a blocked callback still retains it. */
+    if (association->rx_assembly_begin == begin) {
         association->rx_assembly_len = 0u;
         association->rx_assembly_count = 0u;
         association->rx_assembly_begin = NULL;
