@@ -1,0 +1,17 @@
+load("//libs/pal/providers/web/application_host/lua:lua_web_app.bzl", "h2_lua_web_app")
+load(":driver.bzl", "LUA_PROGRESS_FLOW")
+
+h2_lua_web_app(
+    name = "progress",
+    board = "//projects/example/libs/web/demo_board",
+    evals = [["LUA_PROGRESS ready", LUA_PROGRESS_FLOW]],
+    exit_button = "back",
+    fails = ["LUA_PROGRESS FAIL"],
+    passes = [
+        "LUA_PROGRESS PASS",
+        "H2_WEB_APP name=progress result=PASS rc=0 fs=0 destroy=0",
+    ],
+    script = "progress.lua",
+    test_timeout_s = 90,
+    vm_memory_limit_bytes = 2 * 1024 * 1024,
+)

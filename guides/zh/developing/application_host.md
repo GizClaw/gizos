@@ -124,6 +124,7 @@ ESP/BK 直接接收 `h2_pal_application_host_api_t`，使用与 Web/Desktop 相�
 - `projects/e2e/targets/pkg_tar/pal-net-tls`：手写 boundary entry 与独立 wasm binary dependency。
 - `projects/example/libs/web/demo_board`：使用新 board helper，保留旧 board descriptor identity。
 - 新 `web/application_host/lua/tests/lifecycle`：实际生成入口的慢 Display Stop、ordinary error、transport/display/App join failure、EXIT 和 filesystem BUSY。
+- 新 `web/application_host/lua/tests/progress`：持续渲染与 timer warmup 后，20 次按下/释放均须由 Lua 确认；每次释放后须继续输出至少三次周期进度，覆盖 retained 相同帧与最终 Stop 清理。
 - 新 `web/application_host/tests/gizclaw_apps`：同一 origin 的安装、卸载、刷新、无效包/hash、并发 BUSY、Stop 中断安装、独立用户 KV 与失败 close 重试。
 - 旧 `libs/app_host` 和 `libs/lua/web` 的兼容测试继续使用原实现；mobile、现有 Desktop/ESP/BK 产品 entry 不迁移。
 
