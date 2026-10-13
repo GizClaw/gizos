@@ -30,6 +30,32 @@ EM_JS(void, test_report,
 });
 });
 /* clang-format on */
+/* A real main-thread callback must be able to reject close while a Worker
+ * waits for a proxied filesystem syscall. Keeping the browser-state guard
+ * across that syscall deadlocks this callback against the waiting Worker. */
+EMSCRIPTEN_KEEPALIVE int test_fs_close_from_main(uintptr_t address) {
+  return h2_web_fs_close((h2_web_fs_t *)address);
+}
+
+/* clang-format off */
+EM_JS(void, test_fs_proxy_guard,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["pointer", "i32"], "i32",
+    (address, install) => {
+      if (!install) return Module.h2WebFsGuardProbed ? 0 : -7;
+      Module.h2WebFsGuardProbed = false;
+      const stat = FS.stat;
+      FS.stat = function(...args) {
+        FS.stat = stat;
+        const rc = Module._test_fs_close_from_main(address);
+        if (rc !== -18) throw new Error('in-flight filesystem close returned ' + rc);
+        Module.h2WebFsGuardProbed = true;
+        return stat.apply(this, args);
+      };
+      return 0;
+    });
+});
+/* clang-format on */
 
 /* clang-format off */
 EM_JS(void, test_scenario,
@@ -766,6 +792,16 @@ static int run_fs(test_context_t *context, const char *scenario) {
   char text[64];
 
   if (strcmp(scenario, "fs-write") == 0) {
+    const uintptr_t address = (uintptr_t)web_fs;
+    (void)h2_web_main_call(test_fs_proxy_guard,
+                         (const void *[]){&address, &(int){1}});
+    h2_pal_fs_stat_t root_stat = {0};
+    STEP_CHECK(scenario,
+               h2_pal_fs_stat(fs, "/persist", &root_stat) == H2_PAL_OK &&
+                   h2_web_main_call(test_fs_proxy_guard,
+                                    (const void *[]){&address, &(int){0}}).i32 ==
+                       H2_PAL_OK,
+               "proxied syscall permits callbacks and pins filesystem close");
     rc = fs_write_atomic(fs, "/persist/app/state.txt", "generation-1");
     STEP_CHECK(scenario, rc == H2_PAL_OK, "atomic write");
     h2_web_fs_status_t status;

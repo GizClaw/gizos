@@ -114,6 +114,8 @@ await h2WebLuaApps.uninstall(installed.app_id);
 
 `//libs/app_host/tests/gizclaw_apps:persistence_test` 使用真实 Chromium、实际 WASM 和 IndexedDB，在同一 origin 上多次重新加载，验证安装、预装覆盖、失败保留旧版本、卸载隐藏、重新安装、并发拒绝和停止时的安装中止。测试阻断 GizClaw 服务网络，验证本地管理不依赖在线服务；每轮结束要求 Runtime、Filesystem 和 platform 完整清理。
 
+Web Filesystem 的 POSIX 内存文件系统调用会由 Emscripten 代理到 UI。Provider 在这些调用期间保留活动调用计数并释放 browser-state guard，返回后恢复 guard，再更新 generation 和持久化屏障；UI 的 IndexedDB 完成回调因此可以继续运行，其他调用仍不能关闭正在使用的 Filesystem。
+
 ## Platform Boundary
 
 当前 Web component 实现 Memory、Log、Time、Timer、Task、Queue、Sync、Display、Touch、Host Serial，Fetch HTTP、browser-seeded Crypto、Web Audio playback 与 microphone capture、WebCodecs H264/AAC decoding、基于 `navigator.onLine` 的 Netif 与 System Event、IndexedDB 持久 Filesystem（`h2_web_fs.h`），以及基于浏览器 `RTCPeerConnection`/`RTCDataChannel` 的 WebRTC 信令、DataChannel 和 caller-owned audio track。能力矩阵、错误语义与接入方式见下文 [Browser Runtime 能力](#browser-runtime-能力)。Media 由调用方拥有：页面把 `{stream: MediaStream, audio: HTMLMediaElement}` 注册进 `Module.h2WebRtcTracks`（以非零 wasm32 整数 token 为 key 的 Map），再用 `native_handle` 等于该 token 的 `h2_pal_webrtc_track_t` 调用 `h2_pal_webrtc_peer_set_track()`；`stream` 和 `audio` 可以省略其中之一，但不能都省略。Provider 不执行 `getUserMedia`、不构造 `Audio`、也不调用 `MediaStreamTrack.stop`；浏览器仍完成 Opus/RTP 编解码。调用方必须让 JS 对象、registry entry 和 C Track 存活到 `h2_pal_webrtc_peer_unset_track()` 成功或 peer 关闭；unset 等待 `replaceTrack(null)` 完成并清理远端播放。页面必须从用户手势启动首次连接，以满足 microphone permission。
