@@ -13,7 +13,9 @@
 
 /* The devkit runs the host side; the other board runs the opposite role. */
 #define H2_LUA_LINK_E2E_ROUNDS 5u
+#ifndef H2_LUA_LINK_E2E_ROLE
 #define H2_LUA_LINK_E2E_ROLE "host"
+#endif
 
 static void hold(void) {
   for (;;) {

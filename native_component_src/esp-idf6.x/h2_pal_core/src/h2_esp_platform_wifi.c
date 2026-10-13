@@ -853,6 +853,12 @@ static void h2_esp_wifi_copy_sta_config(
     out_config->sta.bssid_set = config->bssid_set != 0u;
     memcpy(out_config->sta.bssid, config->bssid, sizeof(out_config->sta.bssid));
     out_config->sta.channel = config->channel;
+    /* An SSID may span several APs. Fast scan stops at the first match,
+     * even when a much stronger AP is available on a later channel.
+     * Keep the channel hint and explicit BSSID restriction intact. */
+    out_config->sta.scan_method = config->bssid_set != 0u
+        ? WIFI_FAST_SCAN : WIFI_ALL_CHANNEL_SCAN;
+    out_config->sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;
 }
 
 #if CONFIG_ESP_WIFI_SOFTAP_SUPPORT

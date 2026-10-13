@@ -1,6 +1,6 @@
 # ESP-Mosaico / ESP32-S31
 
-ESP-Mosaico 使用双核 RISC-V ESP32-S31；不能使用 ESP32-S3 Xtensa archive。GizOS 通过独立 `esp32s31` 平台选择 ESP-IDF 6.2 开发线的固定提交与 GCC 16.1.0，既有 S3/P4/C5 继续使用原来的 6.0.3 合同。
+ESP-Mosaico 使用双核 RISC-V ESP32-S31；不能使用 ESP32-S3 Xtensa archive。GizOS 通过独立 `esp32s31` 平台选择 ESP-IDF 6.2 开发线的固定提交与 GCC 16.1.0。当前 S3/P4/C5 也已固定到 6.2；其 SDK 和工具合同仍由 `esp_idf_commit.txt`、`esp_idf_tool_versions.txt` 独立声明，配置使用 `IDF_PATH` 与 `IDF_TOOLS_PATH`。
 
 ## SDK 与最小构建
 
