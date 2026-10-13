@@ -1,5 +1,5 @@
 #include "h2_gizclaw_e2e_device_http.h"
-#include "h2_lua_apps.h"
+#include "h2_gizclaw_lua_app_catalog.h"
 #include "h2_lua_job.h"
 #include "h2_sha256.h"
 #include "h2_encoding.h"
@@ -8,7 +8,7 @@
 
 typedef struct h2_gizclaw_e2e_lua_state {
   h2_gizclaw_e2e_fixture_t *fixture;
-  h2_lua_apps_t *apps;
+  h2_gizclaw_lua_app_catalog_t *apps;
   h2_lua_host_t *host;
   h2_lua_job_id_t job;
   h2_gizclaw_lua_app_run_t request;
@@ -223,7 +223,7 @@ static int run_prepared(lua_state_t *s, bool game) {
   for (size_t i = 0; i < s->request.param_count; ++i)
     args[i] =
         (h2_lua_arg_t){s->request.params[i].name, s->request.params[i].value};
-  char chunk[H2_LUA_APP_PATH_MAX + 1];
+  char chunk[H2_GIZCLAW_LUA_APP_PATH_MAX + 1];
   (void)snprintf(chunk, sizeof(chunk), "@%s", s->request.app.entry);
   if (rc == H2_PAL_OK)
     rc = h2_lua_job_submit_path(s->host, s->request.app.app_id, chunk,
@@ -290,7 +290,7 @@ static int dispose(h2_gizclaw_e2e_fixture_t *fixture) {
     return H2_PAL_OK;
   int rc = stop_host(s);
   if (rc == H2_PAL_OK)
-    rc = h2_lua_apps_destroy(s->apps);
+    rc = h2_gizclaw_lua_app_catalog_destroy(s->apps);
   if (rc != H2_PAL_OK)
     return rc;
   s->apps = NULL;
@@ -328,7 +328,7 @@ int h2_gizclaw_e2e_prepare_lua_apps(h2_gizclaw_e2e_fixture_t *fixture) {
     return H2_PAL_ERR_INVALID_ARG;
   if (!fixture->runtime->fs || !c->device_api_url || !c->lua_app_url ||
       !c->lua_app_http_url || !c->lua_app_https_url ||
-      !h2_lua_app_id_valid(c->lua_app_id) || !c->lua_archive_sha256 ||
+      !h2_gizclaw_lua_app_id_valid(c->lua_app_id) || !c->lua_archive_sha256 ||
       strlen(c->lua_archive_sha256) != 64 || !c->lua_entry_sha256 ||
       strlen(c->lua_entry_sha256) != 64 ||
       (!c->lua_record_golden &&
@@ -406,13 +406,14 @@ int h2_gizclaw_e2e_prepare_lua_apps(h2_gizclaw_e2e_fixture_t *fixture) {
     rc = path(index_path, sizeof(index_path), root, "preinstalled.json");
   if (rc == H2_PAL_OK)
     rc = path(installed, sizeof(installed), root, "installed");
-  h2_lua_apps_config_t config = {.allocator = fixture->allocator,
-                                 .fs = fixture->runtime->fs,
-                                 .sync = fixture->runtime->sync,
-                                 .preinstalled_index = index_path,
-                                 .install_root = installed};
+  h2_gizclaw_lua_app_catalog_config_t config = {.allocator = fixture->allocator,
+                                                .fs = fixture->runtime->fs,
+                                                .sync = fixture->runtime->sync,
+                                                .preinstalled_index =
+                                                    index_path,
+                                                .install_root = installed};
   if (rc == H2_PAL_OK)
-    rc = h2_lua_apps_create(&config, &s->apps);
+    rc = h2_gizclaw_lua_app_catalog_create(&config, &s->apps);
   fixture->device_lua_apps = s->apps;
   fixture->device_vtable = &lua_vtable;
   return rc;
@@ -489,8 +490,8 @@ static int run_game(h2_gizclaw_e2e_api_t *api, lua_state_t *s) {
 
 static int verify_retained(h2_gizclaw_e2e_api_t *api, lua_state_t *s) {
   const h2_gizclaw_e2e_config_t *c = s->fixture->config;
-  h2_lua_app_info_t app;
-  int rc = h2_lua_apps_get(s->apps, c->lua_app_id, &app);
+  h2_gizclaw_lua_app_info_t app;
+  int rc = h2_gizclaw_lua_app_catalog_get(s->apps, c->lua_app_id, &app);
   bool present = rc == H2_PAL_OK;
   char hash[65];
   size_t size = 0;
@@ -548,11 +549,11 @@ int h2_gizclaw_e2e_run_lua_apps(h2_gizclaw_e2e_fixture_t *fixture) {
     static const char wrong_sha[] =
         "0000000000000000000000000000000000000000000000000000000000000000";
     rc = h2_gizclaw_e2e_lua_upload(&api, archive, archive_size, wrong_sha, 400);
-    h2_lua_app_info_t retained;
+    h2_gizclaw_lua_app_info_t retained;
     char hash[65];
     size_t size = 0;
     if (rc == H2_PAL_OK)
-      rc = h2_lua_apps_get(s->apps, c->lua_app_id, &retained);
+      rc = h2_gizclaw_lua_app_catalog_get(s->apps, c->lua_app_id, &retained);
     if (rc == H2_PAL_OK)
       rc = digest_file(s, retained.entry, hash, &size);
     if (rc == H2_PAL_OK && strcmp(hash, c->lua_entry_sha256))
@@ -588,11 +589,11 @@ int h2_gizclaw_e2e_run_lua_apps(h2_gizclaw_e2e_fixture_t *fixture) {
     h2_pal_mem_free(fixture->allocator, args);
     if (rc == H2_PAL_OK)
       rc = verify_catalog(&api, c->lua_app_id, true);
-    h2_lua_app_info_t app;
+    h2_gizclaw_lua_app_info_t app;
     char hash[65];
     size_t size = 0;
     if (rc == H2_PAL_OK)
-      rc = h2_lua_apps_get(s->apps, c->lua_app_id, &app);
+      rc = h2_gizclaw_lua_app_catalog_get(s->apps, c->lua_app_id, &app);
     if (rc == H2_PAL_OK)
       rc = digest_file(s, app.entry, hash, &size);
     if (rc == H2_PAL_OK && strcmp(hash, c->lua_entry_sha256))
@@ -609,8 +610,8 @@ int h2_gizclaw_e2e_run_lua_apps(h2_gizclaw_e2e_fixture_t *fixture) {
     rc = verify_catalog(&api, c->lua_app_id, true);
   int first = rc;
   if (first == H2_PAL_OK) {
-    h2_lua_app_info_t prior;
-    first = h2_lua_apps_get(s->apps, c->lua_app_id, &prior);
+    h2_gizclaw_lua_app_info_t prior;
+    first = h2_gizclaw_lua_app_catalog_get(s->apps, c->lua_app_id, &prior);
     char args[64];
     int n = snprintf(args, sizeof(args), "{\"app_id\":\"%s\"}", c->lua_app_id);
     if (n < 0 || (size_t)n >= sizeof(args))

@@ -2,13 +2,13 @@
 
 load("@rules_python//python:defs.bzl", "py_test")
 
-_RUNNER = Label("//libs/lua/apps/web/tests:persistence_test.py")
+_RUNNER = Label("//libs/app_host/tests/gizclaw_apps:persistence_test.py")
 _HELPER = Label("//tools/bazel:web_archive_browser_test.py")
 _SERVER = Label("//tools/bazel:web_archive_server.py")
 _LINUX = Label("//tools/bazel/platforms:host_linux_target_linux")
 _MACOS = Label("//tools/bazel/platforms:host_macos_target_macos")
 
-def web_lua_apps_browser_test(
+def web_gizclaw_apps_browser_test(
         name,
         archive,
         app_package,

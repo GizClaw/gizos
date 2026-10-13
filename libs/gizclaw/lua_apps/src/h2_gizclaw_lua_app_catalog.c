@@ -1,4 +1,4 @@
-#include "h2_lua_apps_internal.h"
+#include "h2_gizclaw_lua_app_catalog_internal.h"
 #include "h2_semver.h"
 
 #include <stdio.h>
@@ -18,7 +18,7 @@ static void *json_realloc(void *ctx, void *ptr, size_t old_size, size_t size) {
 }
 static void json_free(void *ctx, void *ptr) { h2_pal_mem_free(ctx, ptr); }
 
-bool h2_lua_app_id_valid(const char *id) {
+bool h2_gizclaw_lua_app_id_valid(const char *id) {
   if (id == NULL || id[0] == '\0' || id[0] == '.' || strlen(id) > 32u)
     return false;
   for (; *id; ++id)
@@ -28,9 +28,9 @@ bool h2_lua_app_id_valid(const char *id) {
   return true;
 }
 
-bool h2_lua_apps_path_valid(const char *path) {
+bool h2_gizclaw_lua_app_catalog_path_valid(const char *path) {
   if (path == NULL || !*path || *path == '/' ||
-      strlen(path) >= H2_LUA_APP_PATH_MAX)
+      strlen(path) >= H2_GIZCLAW_LUA_APP_PATH_MAX)
     return false;
   bool start = true;
   for (const unsigned char *p = (const unsigned char *)path; *p; ++p) {
@@ -43,33 +43,37 @@ bool h2_lua_apps_path_valid(const char *path) {
 }
 
 static bool root_valid(const char *root) {
-  return root != NULL && *root && strlen(root) < H2_LUA_APP_PATH_MAX &&
-         h2_lua_apps_path_valid(root[0] == '/' ? root + 1 : root);
+  return root != NULL && *root && strlen(root) < H2_GIZCLAW_LUA_APP_PATH_MAX &&
+         h2_gizclaw_lua_app_catalog_path_valid(root[0] == '/' ? root + 1
+                                                              : root);
 }
 
-int h2_lua_apps_join(char out[H2_LUA_APP_PATH_MAX], const char *root,
-                     const char *name) {
-  int n = snprintf(out, H2_LUA_APP_PATH_MAX, "%s/%s", root, name);
-  return n >= 0 && (size_t)n < H2_LUA_APP_PATH_MAX ? H2_PAL_OK
-                                                   : H2_PAL_ERR_NO_SPACE;
+int h2_gizclaw_lua_app_catalog_join(char out[H2_GIZCLAW_LUA_APP_PATH_MAX],
+                                    const char *root, const char *name) {
+  int n = snprintf(out, H2_GIZCLAW_LUA_APP_PATH_MAX, "%s/%s", root, name);
+  return n >= 0 && (size_t)n < H2_GIZCLAW_LUA_APP_PATH_MAX
+             ? H2_PAL_OK
+             : H2_PAL_ERR_NO_SPACE;
 }
 
-int h2_lua_apps_try_lock(h2_lua_apps_t *apps) {
+int h2_gizclaw_lua_app_catalog_try_lock(h2_gizclaw_lua_app_catalog_t *apps) {
   if (apps == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   int rc = h2_pal_mutex_try_lock(apps->config.sync, apps->mutex);
   return rc == H2_PAL_ERR_WOULD_BLOCK ? H2_PAL_ERR_BUSY : rc;
 }
-void h2_lua_apps_unlock(h2_lua_apps_t *apps) {
+void h2_gizclaw_lua_app_catalog_unlock(h2_gizclaw_lua_app_catalog_t *apps) {
   (void)h2_pal_mutex_unlock(apps->config.sync, apps->mutex);
 }
-int h2_lua_apps_find(const h2_lua_apps_t *apps, const char *id) {
+int h2_gizclaw_lua_app_catalog_find(const h2_gizclaw_lua_app_catalog_t *apps,
+                                    const char *id) {
   for (size_t i = 0; i < apps->count; ++i)
     if (!strcmp(apps->records[i].info.app_id, id))
       return (int)i;
   return -1;
 }
-int h2_lua_apps_close(h2_lua_apps_t *apps, h2_pal_fs_file_t *file) {
+int h2_gizclaw_lua_app_catalog_close(h2_gizclaw_lua_app_catalog_t *apps,
+                                     h2_pal_fs_file_t *file) {
   int rc = h2_pal_fs_close(apps->config.fs, file);
   if (rc != H2_PAL_OK && !apps->close_error) {
     apps->close_error = rc;
@@ -78,8 +82,9 @@ int h2_lua_apps_close(h2_lua_apps_t *apps, h2_pal_fs_file_t *file) {
   return rc;
 }
 
-int h2_lua_apps_read(h2_lua_apps_t *apps, const char *path, size_t limit,
-                     uint8_t **out, size_t *out_size) {
+int h2_gizclaw_lua_app_catalog_read(h2_gizclaw_lua_app_catalog_t *apps,
+                                    const char *path, size_t limit,
+                                    uint8_t **out, size_t *out_size) {
   *out = NULL;
   *out_size = 0;
   if (apps->close_error)
@@ -109,7 +114,7 @@ int h2_lua_apps_read(h2_lua_apps_t *apps, const char *path, size_t limit,
       offset += count;
   }
   if (file != NULL) {
-    int close_rc = h2_lua_apps_close(apps, file);
+    int close_rc = h2_gizclaw_lua_app_catalog_close(apps, file);
     if (rc == H2_PAL_OK)
       rc = close_rc;
   }
@@ -123,10 +128,11 @@ int h2_lua_apps_read(h2_lua_apps_t *apps, const char *path, size_t limit,
   return H2_PAL_OK;
 }
 
-int h2_lua_apps_mkdirs(h2_lua_apps_t *apps, const char *file_path) {
-  if (strlen(file_path) >= H2_LUA_APP_PATH_MAX)
+int h2_gizclaw_lua_app_catalog_mkdirs(h2_gizclaw_lua_app_catalog_t *apps,
+                                      const char *file_path) {
+  if (strlen(file_path) >= H2_GIZCLAW_LUA_APP_PATH_MAX)
     return H2_PAL_ERR_NO_SPACE;
-  char path[H2_LUA_APP_PATH_MAX];
+  char path[H2_GIZCLAW_LUA_APP_PATH_MAX];
   strcpy(path, file_path);
   for (char *p = path + 1; *p; ++p) {
     if (*p != '/')
@@ -151,11 +157,12 @@ int h2_lua_apps_mkdirs(h2_lua_apps_t *apps, const char *file_path) {
   return H2_PAL_OK;
 }
 
-int h2_lua_apps_write(h2_lua_apps_t *apps, const char *path, const void *data,
-                      size_t size) {
+int h2_gizclaw_lua_app_catalog_write(h2_gizclaw_lua_app_catalog_t *apps,
+                                     const char *path, const void *data,
+                                     size_t size) {
   if (apps->close_error)
     return apps->close_error;
-  int rc = h2_lua_apps_mkdirs(apps, path);
+  int rc = h2_gizclaw_lua_app_catalog_mkdirs(apps, path);
   h2_pal_fs_file_t *file = NULL;
   if (rc == H2_PAL_OK)
     rc = h2_pal_fs_open(apps->config.fs, path, H2_PAL_FS_OPEN_WRITE_TRUNCATE,
@@ -176,7 +183,7 @@ int h2_lua_apps_write(h2_lua_apps_t *apps, const char *path, const void *data,
   if (rc == H2_PAL_OK)
     rc = h2_pal_fs_sync(apps->config.fs, file);
   if (file != NULL) {
-    int close_rc = h2_lua_apps_close(apps, file);
+    int close_rc = h2_gizclaw_lua_app_catalog_close(apps, file);
     if (rc == H2_PAL_OK)
       rc = close_rc;
   }
@@ -218,8 +225,8 @@ static bool unique_keys(yyjson_val *value) {
   return true;
 }
 
-int h2_lua_apps_manifest(h2_lua_apps_t *apps, yyjson_val *v,
-                         app_manifest_t *m) {
+int h2_gizclaw_lua_app_catalog_manifest(h2_gizclaw_lua_app_catalog_t *apps,
+                                        yyjson_val *v, app_manifest_t *m) {
   memset(m, 0, sizeof(*m));
   if (!unique_keys(v) ||
       !yyjson_equals_str(yyjson_obj_get(v, "type"), "lua-app") ||
@@ -227,7 +234,7 @@ int h2_lua_apps_manifest(h2_lua_apps_t *apps, yyjson_val *v,
       yyjson_get_uint(yyjson_obj_get(v, "format")) != 1 ||
       !text(yyjson_obj_get(v, "app_id"), m->info.app_id, sizeof(m->info.app_id),
             false) ||
-      !h2_lua_app_id_valid(m->info.app_id) ||
+      !h2_gizclaw_lua_app_id_valid(m->info.app_id) ||
       !text(yyjson_obj_get(v, "version"), m->info.version,
             sizeof(m->info.version), false) ||
       !h2_semver_is_valid(m->info.version) ||
@@ -257,7 +264,8 @@ int h2_lua_apps_manifest(h2_lua_apps_t *apps, yyjson_val *v,
     if (!unique_keys(f) ||
         !text(yyjson_obj_get(f, "path"), file->path, sizeof(file->path),
               false) ||
-        !h2_lua_apps_path_valid(file->path) || !yyjson_is_uint(size) ||
+        !h2_gizclaw_lua_app_catalog_path_valid(file->path) ||
+        !yyjson_is_uint(size) ||
         !text(yyjson_obj_get(f, "sha256"), file->sha256, sizeof(file->sha256),
               false) ||
         strlen(file->sha256) != 64)
@@ -301,15 +309,15 @@ int h2_lua_apps_manifest(h2_lua_apps_t *apps, yyjson_val *v,
                                                           : H2_PAL_ERR_FORMAT;
 }
 
-int h2_lua_apps_resolve(h2_lua_apps_t *apps, app_manifest_t *m,
-                        const char *root) {
-  int rc = h2_lua_apps_join(m->info.entry, root, m->entry);
+int h2_gizclaw_lua_app_catalog_resolve(h2_gizclaw_lua_app_catalog_t *apps,
+                                       app_manifest_t *m, const char *root) {
+  int rc = h2_gizclaw_lua_app_catalog_join(m->info.entry, root, m->entry);
   if (rc == H2_PAL_OK && *m->data_dir)
-    rc = h2_lua_apps_join(m->info.data_dir, root, m->data_dir);
+    rc = h2_gizclaw_lua_app_catalog_join(m->info.data_dir, root, m->data_dir);
   for (size_t i = 0; rc == H2_PAL_OK && i < m->count; ++i) {
-    char path[H2_LUA_APP_PATH_MAX];
+    char path[H2_GIZCLAW_LUA_APP_PATH_MAX];
     h2_pal_fs_stat_t stat = {0};
-    rc = h2_lua_apps_join(path, root, m->files[i].path);
+    rc = h2_gizclaw_lua_app_catalog_join(path, root, m->files[i].path);
     if (rc == H2_PAL_OK)
       rc = h2_pal_fs_stat(apps->config.fs, path, &stat);
     if (rc == H2_PAL_OK && (stat.is_dir || stat.size != m->files[i].size ||
@@ -320,30 +328,34 @@ int h2_lua_apps_resolve(h2_lua_apps_t *apps, app_manifest_t *m,
   return rc;
 }
 
-static int read_manifest(h2_lua_apps_t *apps, const char *root,
+static int read_manifest(h2_gizclaw_lua_app_catalog_t *apps, const char *root,
                          app_manifest_t *m) {
-  char path[H2_LUA_APP_PATH_MAX];
+  char path[H2_GIZCLAW_LUA_APP_PATH_MAX];
   uint8_t *bytes = NULL;
   size_t len = 0;
-  int rc = h2_lua_apps_join(path, root, "manifest.json");
+  int rc = h2_gizclaw_lua_app_catalog_join(path, root, "manifest.json");
   if (rc == H2_PAL_OK)
-    rc = h2_lua_apps_read(apps, path, H2_LUA_APP_MANIFEST_MAX, &bytes, &len);
+    rc = h2_gizclaw_lua_app_catalog_read(
+        apps, path, H2_GIZCLAW_LUA_APP_MANIFEST_MAX, &bytes, &len);
   yyjson_doc *doc =
       rc == H2_PAL_OK
           ? yyjson_read_opts((char *)bytes, len, 0, &apps->json_allocator, NULL)
           : NULL;
   if (rc == H2_PAL_OK)
-    rc = doc ? h2_lua_apps_manifest(apps, yyjson_doc_get_root(doc), m)
+    rc = doc ? h2_gizclaw_lua_app_catalog_manifest(apps,
+                                                   yyjson_doc_get_root(doc), m)
              : H2_PAL_ERR_FORMAT;
   yyjson_doc_free(doc);
   h2_pal_mem_free(apps->config.allocator, bytes);
   return rc;
 }
 
-static int load_index(h2_lua_apps_t *apps, const char *path, bool installed) {
+static int load_index(h2_gizclaw_lua_app_catalog_t *apps, const char *path,
+                      bool installed) {
   uint8_t *bytes = NULL;
   size_t len = 0;
-  int rc = h2_lua_apps_read(apps, path, H2_LUA_APPS_INDEX_MAX, &bytes, &len);
+  int rc = h2_gizclaw_lua_app_catalog_read(
+      apps, path, H2_GIZCLAW_LUA_APPS_INDEX_MAX, &bytes, &len);
   if (rc == H2_PAL_ERR_NOT_FOUND)
     return H2_PAL_OK;
   if (rc != H2_PAL_OK)
@@ -363,7 +375,7 @@ static int load_index(h2_lua_apps_t *apps, const char *path, bool installed) {
     rc = H2_PAL_ERR_NO_MEMORY;
   for (size_t i = 0; rc == H2_PAL_OK && i < yyjson_arr_size(array); ++i) {
     yyjson_val *v = yyjson_arr_get(array, i);
-    char base[H2_LUA_APP_PATH_MAX];
+    char base[H2_GIZCLAW_LUA_APP_PATH_MAX];
     int slot = -1;
     if (!unique_keys(v)) {
       rc = H2_PAL_ERR_FORMAT;
@@ -373,13 +385,13 @@ static int load_index(h2_lua_apps_t *apps, const char *path, bool installed) {
       char id[33], name[40];
       yyjson_val *s = yyjson_obj_get(v, "slot");
       if (!text(yyjson_obj_get(v, "app_id"), id, sizeof(id), false) ||
-          !h2_lua_app_id_valid(id)) {
+          !h2_gizclaw_lua_app_id_valid(id)) {
         rc = H2_PAL_ERR_FORMAT;
         break;
       }
       yyjson_val *removed = yyjson_obj_get(v, "removed");
       if (removed) {
-        int position = h2_lua_apps_find(apps, id);
+        int position = h2_gizclaw_lua_app_catalog_find(apps, id);
         if (!yyjson_is_true(removed) || s ||
             (position >= 0 && apps->records[position].slot != -1)) {
           rc = H2_PAL_ERR_FORMAT;
@@ -403,7 +415,7 @@ static int load_index(h2_lua_apps_t *apps, const char *path, bool installed) {
       }
       slot = (int)yyjson_get_uint(s);
       (void)snprintf(name, sizeof(name), "%s/%c", id, slot == 1 ? '1' : '0');
-      rc = h2_lua_apps_join(base, apps->root, name);
+      rc = h2_gizclaw_lua_app_catalog_join(base, apps->root, name);
       if (rc == H2_PAL_OK)
         rc = read_manifest(apps, base, manifest);
       if (rc == H2_PAL_OK && strcmp(id, manifest->info.app_id))
@@ -413,19 +425,19 @@ static int load_index(h2_lua_apps_t *apps, const char *path, bool installed) {
           !root_valid(base))
         rc = H2_PAL_ERR_FORMAT;
       else
-        rc =
-            h2_lua_apps_manifest(apps, yyjson_obj_get(v, "manifest"), manifest);
+        rc = h2_gizclaw_lua_app_catalog_manifest(
+            apps, yyjson_obj_get(v, "manifest"), manifest);
     }
     if (rc != H2_PAL_OK)
       break;
-    rc = h2_lua_apps_resolve(apps, manifest, base);
+    rc = h2_gizclaw_lua_app_catalog_resolve(apps, manifest, base);
     if (rc == H2_PAL_ERR_NOT_FOUND || rc == H2_PAL_ERR_FORMAT) {
       rc = H2_PAL_OK;
       continue;
     }
     if (rc != H2_PAL_OK)
       break;
-    int position = h2_lua_apps_find(apps, manifest->info.app_id);
+    int position = h2_gizclaw_lua_app_catalog_find(apps, manifest->info.app_id);
     if (position >= 0 && (!installed || apps->records[position].slot != -1)) {
       rc = H2_PAL_ERR_FORMAT;
       break;
@@ -450,8 +462,9 @@ static int load_index(h2_lua_apps_t *apps, const char *path, bool installed) {
   return rc;
 }
 
-h2_pal_result_t h2_lua_apps_create(const h2_lua_apps_config_t *c,
-                                   h2_lua_apps_t **out) {
+h2_pal_result_t
+h2_gizclaw_lua_app_catalog_create(const h2_gizclaw_lua_app_catalog_config_t *c,
+                                  h2_gizclaw_lua_app_catalog_t **out) {
   if (out == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   *out = NULL;
@@ -463,19 +476,22 @@ h2_pal_result_t h2_lua_apps_create(const h2_lua_apps_config_t *c,
       !c->sync->vtable->destroy_mutex ||
       (c->install_root && !root_valid(c->install_root)) ||
       (c->preinstalled_index && !root_valid(c->preinstalled_index)) ||
-      c->max_apps > H2_LUA_APPS_MAX || c->max_files > H2_LUA_APP_FILES_MAX ||
+      c->max_apps > H2_GIZCLAW_LUA_APPS_MAX ||
+      c->max_files > H2_GIZCLAW_LUA_APP_FILES_MAX ||
       c->app_limit_bytes > 64u * 1024u * 1024u ||
       c->installed_limit_bytes > 1024u * 1024u * 1024u)
     return H2_PAL_ERR_INVALID_ARG;
-  h2_lua_apps_t *apps = h2_pal_mem_alloc(c->allocator, sizeof(*apps));
+  h2_gizclaw_lua_app_catalog_t *apps =
+      h2_pal_mem_alloc(c->allocator, sizeof(*apps));
   if (apps == NULL)
     return H2_PAL_ERR_NO_MEMORY;
   memset(apps, 0, sizeof(*apps));
   apps->config = *c;
   apps->config.preinstalled_index = NULL;
   apps->config.install_root = NULL;
-  apps->config.max_apps = c->max_apps ? c->max_apps : H2_LUA_APPS_MAX;
-  apps->config.max_files = c->max_files ? c->max_files : H2_LUA_APP_FILES_MAX;
+  apps->config.max_apps = c->max_apps ? c->max_apps : H2_GIZCLAW_LUA_APPS_MAX;
+  apps->config.max_files =
+      c->max_files ? c->max_files : H2_GIZCLAW_LUA_APP_FILES_MAX;
   apps->config.source_limit_bytes =
       c->source_limit_bytes ? c->source_limit_bytes : 256u * 1024u;
   apps->config.app_limit_bytes =
@@ -492,8 +508,8 @@ h2_pal_result_t h2_lua_apps_create(const h2_lua_apps_config_t *c,
   if (rc == H2_PAL_OK && c->preinstalled_index)
     rc = load_index(apps, c->preinstalled_index, false);
   if (rc == H2_PAL_OK && *apps->root) {
-    char path[H2_LUA_APP_PATH_MAX];
-    rc = h2_lua_apps_join(path, apps->root, "index.json");
+    char path[H2_GIZCLAW_LUA_APP_PATH_MAX];
+    rc = h2_gizclaw_lua_app_catalog_join(path, apps->root, "index.json");
     if (rc == H2_PAL_OK)
       rc = load_index(apps, path, true);
   }
@@ -511,33 +527,36 @@ h2_pal_result_t h2_lua_apps_create(const h2_lua_apps_config_t *c,
   *out = apps;
   return H2_PAL_OK;
 }
-h2_pal_result_t h2_lua_apps_destroy(h2_lua_apps_t *apps) {
+h2_pal_result_t
+h2_gizclaw_lua_app_catalog_destroy(h2_gizclaw_lua_app_catalog_t *apps) {
   if (apps == NULL)
     return H2_PAL_OK;
-  int rc = h2_lua_apps_try_lock(apps);
+  int rc = h2_gizclaw_lua_app_catalog_try_lock(apps);
   if (rc != H2_PAL_OK)
     return rc;
   if (apps->close_error) {
     rc = apps->close_error;
-    h2_lua_apps_unlock(apps);
+    h2_gizclaw_lua_app_catalog_unlock(apps);
     return rc;
   }
-  h2_lua_apps_unlock(apps);
+  h2_gizclaw_lua_app_catalog_unlock(apps);
   rc = h2_pal_mutex_destroy(apps->config.sync, apps->mutex);
   if (rc == H2_PAL_OK)
     h2_pal_mem_free(apps->config.allocator, apps);
   return rc;
 }
-h2_pal_result_t h2_lua_apps_list(h2_lua_apps_t *apps, h2_lua_app_info_t *out,
-                                 size_t capacity, size_t *count) {
+h2_pal_result_t
+h2_gizclaw_lua_app_catalog_list(h2_gizclaw_lua_app_catalog_t *apps,
+                                h2_gizclaw_lua_app_info_t *out, size_t capacity,
+                                size_t *count) {
   if (count == NULL || (capacity && out == NULL))
     return H2_PAL_ERR_INVALID_ARG;
   *count = 0;
-  int rc = h2_lua_apps_try_lock(apps);
+  int rc = h2_gizclaw_lua_app_catalog_try_lock(apps);
   if (rc != H2_PAL_OK)
     return rc;
   if (!apps->ready) {
-    h2_lua_apps_unlock(apps);
+    h2_gizclaw_lua_app_catalog_unlock(apps);
     return H2_PAL_ERR_INVALID_STATE;
   }
   for (size_t i = 0; i < apps->count; ++i)
@@ -551,32 +570,34 @@ h2_pal_result_t h2_lua_apps_list(h2_lua_apps_t *apps, h2_lua_app_info_t *out,
       if (apps->records[i].slot != -2)
         out[at++] = apps->records[i].info;
   }
-  h2_lua_apps_unlock(apps);
+  h2_gizclaw_lua_app_catalog_unlock(apps);
   return rc;
 }
-h2_pal_result_t h2_lua_apps_get(h2_lua_apps_t *apps, const char *id,
-                                h2_lua_app_info_t *out) {
+h2_pal_result_t
+h2_gizclaw_lua_app_catalog_get(h2_gizclaw_lua_app_catalog_t *apps,
+                               const char *id, h2_gizclaw_lua_app_info_t *out) {
   if (out == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   memset(out, 0, sizeof(*out));
-  if (!h2_lua_app_id_valid(id))
+  if (!h2_gizclaw_lua_app_id_valid(id))
     return H2_PAL_ERR_INVALID_ARG;
-  int rc = h2_lua_apps_try_lock(apps);
+  int rc = h2_gizclaw_lua_app_catalog_try_lock(apps);
   if (rc != H2_PAL_OK)
     return rc;
   if (!apps->ready) {
-    h2_lua_apps_unlock(apps);
+    h2_gizclaw_lua_app_catalog_unlock(apps);
     return H2_PAL_ERR_INVALID_STATE;
   }
-  int i = h2_lua_apps_find(apps, id);
+  int i = h2_gizclaw_lua_app_catalog_find(apps, id);
   if (i < 0 || apps->records[i].slot == -2)
     rc = H2_PAL_ERR_NOT_FOUND;
   else
     *out = apps->records[i].info;
-  h2_lua_apps_unlock(apps);
+  h2_gizclaw_lua_app_catalog_unlock(apps);
   return rc;
 }
-bool h2_lua_apps_can_install(const h2_lua_apps_t *apps) {
+bool h2_gizclaw_lua_app_catalog_can_install(
+    const h2_gizclaw_lua_app_catalog_t *apps) {
   if (apps == NULL || !apps->ready || !*apps->root)
     return false;
   const h2_pal_fs_vtable_t *v = apps->config.fs->vtable;
@@ -584,8 +605,9 @@ bool h2_lua_apps_can_install(const h2_lua_apps_t *apps) {
          v->close && v->stat && v->remove && v->rename;
 }
 
-int h2_lua_apps_publish(h2_lua_apps_t *apps, const app_record_t *record,
-                        size_t position) {
+int h2_gizclaw_lua_app_catalog_publish(h2_gizclaw_lua_app_catalog_t *apps,
+                                       const app_record_t *record,
+                                       size_t position) {
   yyjson_mut_doc *doc = yyjson_mut_doc_new(&apps->json_allocator);
   if (doc == NULL)
     return H2_PAL_ERR_NO_MEMORY;
@@ -614,13 +636,13 @@ int h2_lua_apps_publish(h2_lua_apps_t *apps, const app_record_t *record,
       ok ? yyjson_mut_write_opts(doc, 0, &apps->json_allocator, &len, NULL)
          : NULL;
   int rc = bytes ? H2_PAL_OK : H2_PAL_ERR_NO_MEMORY;
-  char tmp[H2_LUA_APP_PATH_MAX], path[H2_LUA_APP_PATH_MAX];
+  char tmp[H2_GIZCLAW_LUA_APP_PATH_MAX], path[H2_GIZCLAW_LUA_APP_PATH_MAX];
   if (rc == H2_PAL_OK)
-    rc = h2_lua_apps_join(tmp, apps->root, "index.tmp");
+    rc = h2_gizclaw_lua_app_catalog_join(tmp, apps->root, "index.tmp");
   if (rc == H2_PAL_OK)
-    rc = h2_lua_apps_join(path, apps->root, "index.json");
+    rc = h2_gizclaw_lua_app_catalog_join(path, apps->root, "index.json");
   if (rc == H2_PAL_OK)
-    rc = h2_lua_apps_write(apps, tmp, bytes, len);
+    rc = h2_gizclaw_lua_app_catalog_write(apps, tmp, bytes, len);
   if (rc == H2_PAL_OK)
     rc = h2_pal_fs_rename(apps->config.fs, tmp, path);
   if (rc == H2_PAL_OK) {
@@ -638,8 +660,8 @@ int h2_lua_apps_publish(h2_lua_apps_t *apps, const app_record_t *record,
   return rc;
 }
 
-static int slot(h2_lua_apps_t *apps, const char *root, const char *app_id,
-                 bool remove) {
+static int slot(h2_gizclaw_lua_app_catalog_t *apps, const char *root,
+                const char *app_id, bool remove) {
   app_manifest_t *m = h2_pal_mem_alloc(apps->config.allocator, sizeof(*m));
   if (m == NULL)
     return H2_PAL_ERR_NO_MEMORY;
@@ -648,8 +670,8 @@ static int slot(h2_lua_apps_t *apps, const char *root, const char *app_id,
     rc = H2_PAL_ERR_FORMAT;
   if (rc == H2_PAL_OK && remove) {
     for (size_t i = 0; i < m->count; ++i) {
-      char path[H2_LUA_APP_PATH_MAX];
-      rc = h2_lua_apps_join(path, root, m->files[i].path);
+      char path[H2_GIZCLAW_LUA_APP_PATH_MAX];
+      rc = h2_gizclaw_lua_app_catalog_join(path, root, m->files[i].path);
       if (rc != H2_PAL_OK)
         break;
       rc = h2_pal_fs_remove(apps->config.fs, path);
@@ -664,15 +686,16 @@ static int slot(h2_lua_apps_t *apps, const char *root, const char *app_id,
         (void)h2_pal_fs_remove(apps->config.fs, path);
       }
     }
-    char path[H2_LUA_APP_PATH_MAX];
-    if (rc == H2_PAL_OK &&
-        h2_lua_apps_join(path, root, "manifest.json") == H2_PAL_OK)
+    char path[H2_GIZCLAW_LUA_APP_PATH_MAX];
+    if (rc == H2_PAL_OK && h2_gizclaw_lua_app_catalog_join(
+                               path, root, "manifest.json") == H2_PAL_OK)
       rc = h2_pal_fs_remove(apps->config.fs, path);
   } else if (rc == H2_PAL_ERR_NOT_FOUND)
     rc = H2_PAL_OK;
   if (rc == H2_PAL_OK && remove) {
-    char temporary[H2_LUA_APP_PATH_MAX];
-    if (h2_lua_apps_join(temporary, root, "manifest.tmp") == H2_PAL_OK)
+    char temporary[H2_GIZCLAW_LUA_APP_PATH_MAX];
+    if (h2_gizclaw_lua_app_catalog_join(temporary, root, "manifest.tmp") ==
+        H2_PAL_OK)
       (void)h2_pal_fs_remove(apps->config.fs, temporary);
     (void)h2_pal_fs_remove(apps->config.fs, root);
   }
@@ -680,46 +703,50 @@ static int slot(h2_lua_apps_t *apps, const char *root, const char *app_id,
   return rc;
 }
 
-int h2_lua_apps_check_slot(h2_lua_apps_t *apps, const char *root,
-                            const char *app_id) {
+int h2_gizclaw_lua_app_catalog_check_slot(h2_gizclaw_lua_app_catalog_t *apps,
+                                          const char *root,
+                                          const char *app_id) {
   return slot(apps, root, app_id, false);
 }
-int h2_lua_apps_remove_slot(h2_lua_apps_t *apps, const char *root,
-                             const char *app_id) {
+int h2_gizclaw_lua_app_catalog_remove_slot(h2_gizclaw_lua_app_catalog_t *apps,
+                                           const char *root,
+                                           const char *app_id) {
   return slot(apps, root, app_id, true);
 }
 
-h2_pal_result_t h2_lua_apps_uninstall(h2_lua_apps_t *apps, const char *id) {
-  if (!h2_lua_app_id_valid(id))
+h2_pal_result_t
+h2_gizclaw_lua_app_catalog_uninstall(h2_gizclaw_lua_app_catalog_t *apps,
+                                     const char *id) {
+  if (!h2_gizclaw_lua_app_id_valid(id))
     return H2_PAL_ERR_INVALID_ARG;
-  if (!h2_lua_apps_can_install(apps))
+  if (!h2_gizclaw_lua_app_catalog_can_install(apps))
     return H2_PAL_ERR_UNSUPPORTED;
-  int rc = h2_lua_apps_try_lock(apps);
+  int rc = h2_gizclaw_lua_app_catalog_try_lock(apps);
   if (rc != H2_PAL_OK)
     return rc;
   if (apps->close_error) {
     rc = apps->close_error;
-    h2_lua_apps_unlock(apps);
+    h2_gizclaw_lua_app_catalog_unlock(apps);
     return rc;
   }
-  char paths[2][H2_LUA_APP_PATH_MAX];
+  char paths[2][H2_GIZCLAW_LUA_APP_PATH_MAX];
   for (unsigned i = 0; rc == H2_PAL_OK && i < 2u; ++i) {
     char relative[40];
     (void)snprintf(relative, sizeof(relative), "%s/%u", id, i);
-    rc = h2_lua_apps_join(paths[i], apps->root, relative);
+    rc = h2_gizclaw_lua_app_catalog_join(paths[i], apps->root, relative);
     if (rc == H2_PAL_OK)
-      rc = h2_lua_apps_check_slot(apps, paths[i], id);
+      rc = h2_gizclaw_lua_app_catalog_check_slot(apps, paths[i], id);
   }
-  int position = h2_lua_apps_find(apps, id);
+  int position = h2_gizclaw_lua_app_catalog_find(apps, id);
   if (rc == H2_PAL_OK && position >= 0 && apps->records[position].slot != -2) {
     app_record_t removed = {.slot = -2, .preinstalled = true};
     strcpy(removed.info.app_id, id);
-    rc = h2_lua_apps_publish(
+    rc = h2_gizclaw_lua_app_catalog_publish(
         apps, apps->records[position].preinstalled ? &removed : NULL,
         (size_t)position);
   }
   for (unsigned i = 0; rc == H2_PAL_OK && i < 2u; ++i)
-    rc = h2_lua_apps_remove_slot(apps, paths[i], id);
-  h2_lua_apps_unlock(apps);
+    rc = h2_gizclaw_lua_app_catalog_remove_slot(apps, paths[i], id);
+  h2_gizclaw_lua_app_catalog_unlock(apps);
   return rc;
 }

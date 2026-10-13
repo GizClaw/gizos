@@ -1,6 +1,6 @@
+load("//libs/app_host:gizclaw_apps_test.bzl", "web_gizclaw_apps_browser_test")
 load("//libs/app_host:web_app.bzl", "h2_web_app")
 load("//libs/lua:lua_app.bzl", "lua_app", "lua_app_index")
-load("//libs/lua/apps/web:browser_test.bzl", "web_lua_apps_browser_test")
 load("//tools/bazel:firmware.bzl", "firmware_version")
 
 package(default_visibility = ["//visibility:public"])
@@ -53,10 +53,10 @@ h2_web_app(
         ":demo.lua": "/data/lua/demo.lua",
         ":preinstalled_index": "/data/lua/preinstalled.json",
     },
-    deps = ["//libs/lua/apps/web"],
+    deps = ["//libs/app_host:gizclaw_apps_web"],
 )
 
-web_lua_apps_browser_test(
+web_gizclaw_apps_browser_test(
     name = "persistence_test",
     app_id = "demo",
     app_package = ":update_archive",

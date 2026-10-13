@@ -21,8 +21,8 @@ INPUT                  = libs/app_test/include \
                          libs/iostreamikcp/include \
                          libs/lua/include/h2_lua_display.h \
                          libs/lua/include/h2_lua_numeric.h \
-                         libs/lua/apps/include \
-                         libs/lua/apps/web/include \
+                         libs/gizclaw/lua_apps/include \
+                         libs/app_host/include/h2_web_gizclaw_apps.h \
                          libs/lvgl/include \
                          libs/mem_arena/include \
                          libs/mp4_decoder/include \

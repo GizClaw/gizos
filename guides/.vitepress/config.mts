@@ -343,7 +343,7 @@ const referenceItems = [
       { text: "IO Stream iKCP", link: "/references/iostreamikcp" },
       { text: "libSRTP", link: "/references/libsrtp" },
       { text: "Lua Display", link: "/references/lua" },
-      { text: "Lua Apps", link: "/references/lua-apps" },
+      { text: "GizClaw Lua Apps", link: "/references/gizclaw-lua-apps" },
       { text: "LVGL", link: "/references/lvgl" },
       { text: "Memory Arena", link: "/references/mem_arena" },
       { text: "MP4 Decoder", link: "/references/mp4_decoder" },

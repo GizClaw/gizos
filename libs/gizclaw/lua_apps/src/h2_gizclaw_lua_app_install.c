@@ -1,4 +1,4 @@
-#include "h2_lua_apps_internal.h"
+#include "h2_gizclaw_lua_app_catalog_internal.h"
 #include "h2_bundle_tar.h"
 #include "zlib.h"
 
@@ -11,8 +11,8 @@ typedef struct received_file {
   bool invalid_text;
 } received_file_t;
 
-typedef struct h2_lua_app_install {
-  h2_lua_apps_t *apps;
+typedef struct h2_gizclaw_lua_app_install {
+  h2_gizclaw_lua_app_catalog_t *apps;
   h2_pal_http_cancel_fn cancel;
   void *cancel_user;
   z_stream z;
@@ -26,9 +26,9 @@ typedef struct h2_lua_app_install {
   uint8_t header[512];
   size_t header_size, zero_blocks, count;
   bool in_file, is_manifest, manifest_seen;
-  char manifest[H2_LUA_APP_MANIFEST_MAX];
+  char manifest[H2_GIZCLAW_LUA_APP_MANIFEST_MAX];
   size_t manifest_size;
-  received_file_t files[H2_LUA_APP_FILES_MAX];
+  received_file_t files[H2_GIZCLAW_LUA_APP_FILES_MAX];
   h2_pal_fs_file_t *file;
   uint8_t input[4096], output[4096];
   app_manifest_t parsed;
@@ -38,23 +38,24 @@ static bool cancelled(install_t *s) {
   return s->cancel && s->cancel(s->cancel_user);
 }
 static voidpf z_alloc(voidpf user, uInt items, uInt size) {
-  h2_lua_apps_t *apps = user;
+  h2_gizclaw_lua_app_catalog_t *apps = user;
   if (size && items > SIZE_MAX / size)
     return NULL;
   return h2_pal_mem_alloc(apps->config.allocator, (size_t)items * size);
 }
 static void z_free(voidpf user, voidpf value) {
-  h2_pal_mem_free(((h2_lua_apps_t *)user)->config.allocator, value);
+  h2_pal_mem_free(((h2_gizclaw_lua_app_catalog_t *)user)->config.allocator,
+                  value);
 }
 static int stage_path(install_t *s, size_t number,
-                      char out[H2_LUA_APP_PATH_MAX]) {
+                      char out[H2_GIZCLAW_LUA_APP_PATH_MAX]) {
   char name[32];
   (void)snprintf(name, sizeof(name), ".stage/%zu", number);
-  return h2_lua_apps_join(out, s->apps->root, name);
+  return h2_gizclaw_lua_app_catalog_join(out, s->apps->root, name);
 }
 static void clean_stage(install_t *s) {
-  for (size_t i = 0; i < H2_LUA_APP_FILES_MAX; ++i) {
-    char path[H2_LUA_APP_PATH_MAX];
+  for (size_t i = 0; i < H2_GIZCLAW_LUA_APP_FILES_MAX; ++i) {
+    char path[H2_GIZCLAW_LUA_APP_PATH_MAX];
     if (stage_path(s, i, path) == H2_PAL_OK)
       (void)h2_pal_fs_remove(s->apps->config.fs, path);
   }
@@ -64,7 +65,7 @@ static int finish_file(install_t *s) {
   int rc = H2_PAL_OK;
   if (!s->is_manifest) {
     rc = h2_pal_fs_sync(s->apps->config.fs, s->file);
-    int close_rc = h2_lua_apps_close(s->apps, s->file);
+    int close_rc = h2_gizclaw_lua_app_catalog_close(s->apps, s->file);
     s->file = NULL;
     if (rc == H2_PAL_OK)
       rc = close_rc;
@@ -91,7 +92,7 @@ static int begin_file(install_t *s) {
              "ustar\0"
              "00",
              8u) ||
-      !h2_lua_apps_path_valid(entry.path))
+      !h2_gizclaw_lua_app_catalog_path_valid(entry.path))
     return H2_PAL_ERR_FORMAT;
   s->remaining = entry.size;
   s->padding = h2_bundle_tar_padding(entry.size);
@@ -117,10 +118,10 @@ static int begin_file(install_t *s) {
     received_file_t *f = &s->files[s->count];
     strcpy(f->file.path, entry.path);
     f->file.size = entry.size;
-    char path[H2_LUA_APP_PATH_MAX];
+    char path[H2_GIZCLAW_LUA_APP_PATH_MAX];
     rc = stage_path(s, s->count++, path);
     if (rc == H2_PAL_OK)
-      rc = h2_lua_apps_mkdirs(s->apps, path);
+      rc = h2_gizclaw_lua_app_catalog_mkdirs(s->apps, path);
     if (rc == H2_PAL_OK)
       rc = h2_pal_fs_open(s->apps->config.fs, path,
                           H2_PAL_FS_OPEN_WRITE_TRUNCATE, &s->file);
@@ -234,11 +235,11 @@ static int receive(void *user, const h2_pal_http_request_t *request,
   return s->z.avail_in ? H2_PAL_ERR_FORMAT : H2_PAL_OK;
 }
 
-static bool url_valid(h2_lua_app_source_t uri) {
+static bool url_valid(h2_gizclaw_lua_app_source_t uri) {
   size_t scheme = uri.size >= 8 && !memcmp(uri.data, "https://", 8)  ? 8u
                   : uri.size >= 7 && !memcmp(uri.data, "http://", 7) ? 7u
                                                                      : 0u;
-  if (!scheme || uri.size <= scheme || uri.size > H2_LUA_APP_URL_MAX)
+  if (!scheme || uri.size <= scheme || uri.size > H2_GIZCLAW_LUA_APP_URL_MAX)
     return false;
   size_t host_end = scheme;
   while (host_end < uri.size && uri.data[host_end] != '/' &&
@@ -279,7 +280,7 @@ static int header(void *user, const h2_pal_http_request_t *request,
     memcpy(url, value.data, value.len);
     url[value.len] = 0;
     if (!strncmp(url, "http://", 7u) || !strncmp(url, "https://", 8u))
-      return url_valid((h2_lua_app_source_t){url, value.len})
+      return url_valid((h2_gizclaw_lua_app_source_t){url, value.len})
                  ? H2_PAL_OK
                  : H2_PAL_ERR_FORMAT;
     if (value.len > 1u && url[0] == '/' && url[1] == '/') {
@@ -292,7 +293,7 @@ static int header(void *user, const h2_pal_http_request_t *request,
         return H2_PAL_ERR_FORMAT;
       memmove(url + prefix, url, value.len + 1u);
       memcpy(url, scheme, prefix);
-      return url_valid((h2_lua_app_source_t){url, value.len + prefix})
+      return url_valid((h2_gizclaw_lua_app_source_t){url, value.len + prefix})
                  ? H2_PAL_OK
                  : H2_PAL_ERR_FORMAT;
     }
@@ -329,9 +330,9 @@ static int verify(install_t *s, const char *expected) {
   }
   yyjson_doc *doc = yyjson_read_opts(s->manifest, s->manifest_size, 0,
                                      &s->apps->json_allocator, NULL);
-  int rc =
-      doc ? h2_lua_apps_manifest(s->apps, yyjson_doc_get_root(doc), &s->parsed)
-          : H2_PAL_ERR_FORMAT;
+  int rc = doc ? h2_gizclaw_lua_app_catalog_manifest(
+                     s->apps, yyjson_doc_get_root(doc), &s->parsed)
+               : H2_PAL_ERR_FORMAT;
   yyjson_doc_free(doc);
   if (rc != H2_PAL_OK)
     return rc;
@@ -355,9 +356,9 @@ static int verify(install_t *s, const char *expected) {
   return H2_PAL_OK;
 }
 
-static int commit(install_t *s, h2_lua_app_info_t *out) {
-  h2_lua_apps_t *apps = s->apps;
-  int position = h2_lua_apps_find(apps, s->parsed.info.app_id);
+static int commit(install_t *s, h2_gizclaw_lua_app_info_t *out) {
+  h2_gizclaw_lua_app_catalog_t *apps = s->apps;
+  int position = h2_gizclaw_lua_app_catalog_find(apps, s->parsed.info.app_id);
   if (position < 0 && apps->count == apps->config.max_apps)
     return H2_PAL_ERR_NO_SPACE;
   uint64_t used = 0;
@@ -375,31 +376,34 @@ static int commit(install_t *s, h2_lua_app_info_t *out) {
   /* Directory names themselves may alias on the backend. Check both slots
    * before any cleanup so a new identity cannot erase another app's files. */
   for (unsigned candidate = 0; candidate < 2u; ++candidate) {
-    char relative[40], location[H2_LUA_APP_PATH_MAX];
-    (void)snprintf(relative, sizeof(relative), "%s/%u",
-                     s->parsed.info.app_id, candidate);
-    int rc = h2_lua_apps_join(location, apps->root, relative);
+    char relative[40], location[H2_GIZCLAW_LUA_APP_PATH_MAX];
+    (void)snprintf(relative, sizeof(relative), "%s/%u", s->parsed.info.app_id,
+                   candidate);
+    int rc = h2_gizclaw_lua_app_catalog_join(location, apps->root, relative);
     if (rc == H2_PAL_OK)
-      rc = h2_lua_apps_check_slot(apps, location, s->parsed.info.app_id);
+      rc = h2_gizclaw_lua_app_catalog_check_slot(apps, location,
+                                                 s->parsed.info.app_id);
     if (rc != H2_PAL_OK)
       return rc;
   }
-  char name[40], base[H2_LUA_APP_PATH_MAX] = {0},
-                 manifest_path[H2_LUA_APP_PATH_MAX],
-                 manifest_tmp[H2_LUA_APP_PATH_MAX];
+  char name[40], base[H2_GIZCLAW_LUA_APP_PATH_MAX] = {0},
+                 manifest_path[H2_GIZCLAW_LUA_APP_PATH_MAX],
+                 manifest_tmp[H2_GIZCLAW_LUA_APP_PATH_MAX];
   (void)snprintf(name, sizeof(name), "%s/%c", s->parsed.info.app_id,
                  slot == 1 ? '1' : '0');
-  int rc = h2_lua_apps_join(base, apps->root, name);
+  int rc = h2_gizclaw_lua_app_catalog_join(base, apps->root, name);
   if (rc == H2_PAL_OK)
-    rc = h2_lua_apps_remove_slot(apps, base, s->parsed.info.app_id);
+    rc = h2_gizclaw_lua_app_catalog_remove_slot(apps, base,
+                                                s->parsed.info.app_id);
   if (rc == H2_PAL_OK)
-    rc = h2_lua_apps_join(manifest_path, base, "manifest.json");
+    rc = h2_gizclaw_lua_app_catalog_join(manifest_path, base, "manifest.json");
   /* Persist the cleanup inventory before moving any staged payload. A power
    * loss can therefore be recovered without a filesystem enumeration API. */
   if (rc == H2_PAL_OK)
-    rc = h2_lua_apps_join(manifest_tmp, base, "manifest.tmp");
+    rc = h2_gizclaw_lua_app_catalog_join(manifest_tmp, base, "manifest.tmp");
   if (rc == H2_PAL_OK)
-    rc = h2_lua_apps_write(apps, manifest_tmp, s->manifest, s->manifest_size);
+    rc = h2_gizclaw_lua_app_catalog_write(apps, manifest_tmp, s->manifest,
+                                          s->manifest_size);
   if (rc == H2_PAL_OK)
     rc = h2_pal_fs_rename(apps->config.fs, manifest_tmp, manifest_path);
   for (size_t i = 0; rc == H2_PAL_OK && i < s->count; ++i) {
@@ -407,12 +411,12 @@ static int commit(install_t *s, h2_lua_app_info_t *out) {
       rc = H2_PAL_ERR_CLOSED;
       break;
     }
-    char from[H2_LUA_APP_PATH_MAX], to[H2_LUA_APP_PATH_MAX];
+    char from[H2_GIZCLAW_LUA_APP_PATH_MAX], to[H2_GIZCLAW_LUA_APP_PATH_MAX];
     rc = stage_path(s, i, from);
     if (rc == H2_PAL_OK)
-      rc = h2_lua_apps_join(to, base, s->files[i].file.path);
+      rc = h2_gizclaw_lua_app_catalog_join(to, base, s->files[i].file.path);
     if (rc == H2_PAL_OK)
-      rc = h2_lua_apps_mkdirs(apps, to);
+      rc = h2_gizclaw_lua_app_catalog_mkdirs(apps, to);
     if (rc == H2_PAL_OK) {
       h2_pal_fs_stat_t existing = {0};
       int stat_rc = h2_pal_fs_stat(apps->config.fs, to, &existing);
@@ -426,7 +430,7 @@ static int commit(install_t *s, h2_lua_app_info_t *out) {
       rc = h2_pal_fs_rename(apps->config.fs, from, to);
   }
   if (rc == H2_PAL_OK)
-    rc = h2_lua_apps_resolve(apps, &s->parsed, base);
+    rc = h2_gizclaw_lua_app_catalog_resolve(apps, &s->parsed, base);
   if (rc == H2_PAL_OK && cancelled(s))
     rc = H2_PAL_ERR_CLOSED;
   if (rc == H2_PAL_OK) {
@@ -435,12 +439,13 @@ static int commit(install_t *s, h2_lua_app_info_t *out) {
         .bytes = s->parsed.bytes,
         .slot = slot,
         .preinstalled = position >= 0 && apps->records[position].preinstalled};
-    rc = h2_lua_apps_publish(apps, &record,
-                             position < 0 ? apps->count : (size_t)position);
+    rc = h2_gizclaw_lua_app_catalog_publish(
+        apps, &record, position < 0 ? apps->count : (size_t)position);
   }
   if (rc != H2_PAL_OK) {
     if (*base)
-      (void)h2_lua_apps_remove_slot(apps, base, s->parsed.info.app_id);
+      (void)h2_gizclaw_lua_app_catalog_remove_slot(apps, base,
+                                                   s->parsed.info.app_id);
     return rc;
   }
   *out = s->parsed.info;
@@ -450,37 +455,36 @@ static int commit(install_t *s, h2_lua_app_info_t *out) {
   if (old_slot >= 0) {
     (void)snprintf(name, sizeof(name), "%s/%c", s->parsed.info.app_id,
                    old_slot == 1 ? '1' : '0');
-    if (h2_lua_apps_join(base, apps->root, name) == H2_PAL_OK)
-      (void)h2_lua_apps_remove_slot(apps, base, s->parsed.info.app_id);
+    if (h2_gizclaw_lua_app_catalog_join(base, apps->root, name) == H2_PAL_OK)
+      (void)h2_gizclaw_lua_app_catalog_remove_slot(apps, base,
+                                                   s->parsed.info.app_id);
   }
   return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_lua_app_install_begin(h2_lua_apps_t *apps,
-                                         uint64_t compressed_size,
-                                         const char *sha256,
-                                         h2_pal_http_cancel_fn cancel,
-                                         void *cancel_user,
-                                         h2_lua_app_install_t **out_install) {
+h2_pal_result_t h2_gizclaw_lua_app_install_begin(
+    h2_gizclaw_lua_app_catalog_t *apps, uint64_t compressed_size,
+    const char *sha256, h2_pal_http_cancel_fn cancel, void *cancel_user,
+    h2_gizclaw_lua_app_install_t **out_install) {
   if (out_install == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   *out_install = NULL;
   if (sha256 && (strlen(sha256) != 64u ||
                  strspn(sha256, "0123456789abcdefABCDEF") != 64u))
     return H2_PAL_ERR_INVALID_ARG;
-  if (!h2_lua_apps_can_install(apps))
+  if (!h2_gizclaw_lua_app_catalog_can_install(apps))
     return H2_PAL_ERR_UNSUPPORTED;
-  int rc = h2_lua_apps_try_lock(apps);
+  int rc = h2_gizclaw_lua_app_catalog_try_lock(apps);
   if (rc != H2_PAL_OK)
     return rc;
   if (apps->close_error) {
     rc = apps->close_error;
-    h2_lua_apps_unlock(apps);
+    h2_gizclaw_lua_app_catalog_unlock(apps);
     return rc;
   }
   install_t *s = h2_pal_mem_alloc(apps->config.allocator, sizeof(*s));
   if (!s) {
-    h2_lua_apps_unlock(apps);
+    h2_gizclaw_lua_app_catalog_unlock(apps);
     return H2_PAL_ERR_NO_MEMORY;
   }
   memset(s, 0, sizeof(*s));
@@ -490,11 +494,11 @@ h2_pal_result_t h2_lua_app_install_begin(h2_lua_apps_t *apps,
   s->expected_size = compressed_size;
   if (sha256)
     strcpy(s->expected_sha256, sha256);
-  s->limit = apps->config.app_limit_bytes + H2_LUA_APP_MANIFEST_MAX +
+  s->limit = apps->config.app_limit_bytes + H2_GIZCLAW_LUA_APP_MANIFEST_MAX +
              (apps->config.max_files + 2u) * 1024u + 16384u;
   if (compressed_size > s->limit) {
     h2_pal_mem_free(apps->config.allocator, s);
-    h2_lua_apps_unlock(apps);
+    h2_gizclaw_lua_app_catalog_unlock(apps);
     return H2_PAL_ERR_NO_SPACE;
   }
   clean_stage(s);
@@ -507,15 +511,16 @@ h2_pal_result_t h2_lua_app_install_begin(h2_lua_apps_t *apps,
   if (rc == H2_PAL_OK && cancelled(s))
     rc = H2_PAL_ERR_CLOSED;
   if (rc != H2_PAL_OK) {
-    h2_lua_app_install_abort(&s);
+    h2_gizclaw_lua_app_install_abort(&s);
     return rc;
   }
   *out_install = s;
   return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_lua_app_install_write(h2_lua_app_install_t *s,
-                                         const uint8_t *bytes, size_t size) {
+h2_pal_result_t
+h2_gizclaw_lua_app_install_write(h2_gizclaw_lua_app_install_t *s,
+                                 const uint8_t *bytes, size_t size) {
   if (!s || (!bytes && size))
     return H2_PAL_ERR_INVALID_ARG;
   if (s->error != H2_PAL_OK)
@@ -528,23 +533,24 @@ h2_pal_result_t h2_lua_app_install_write(h2_lua_app_install_t *s,
              receive(s, NULL, bytes, size, (size_t)s->received + size, 0);
 }
 
-void h2_lua_app_install_abort(h2_lua_app_install_t **install) {
+void h2_gizclaw_lua_app_install_abort(h2_gizclaw_lua_app_install_t **install) {
   if (!install || !*install)
     return;
   install_t *s = *install;
   *install = NULL;
-  h2_lua_apps_t *apps = s->apps;
+  h2_gizclaw_lua_app_catalog_t *apps = s->apps;
   if (s->file)
-    (void)h2_lua_apps_close(apps, s->file);
+    (void)h2_gizclaw_lua_app_catalog_close(apps, s->file);
   if (s->z_started)
     (void)inflateEnd(&s->z);
   clean_stage(s);
   h2_pal_mem_free(apps->config.allocator, s);
-  h2_lua_apps_unlock(apps);
+  h2_gizclaw_lua_app_catalog_unlock(apps);
 }
 
-h2_pal_result_t h2_lua_app_install_finish(h2_lua_app_install_t **install,
-                                          h2_lua_app_info_t *out) {
+h2_pal_result_t
+h2_gizclaw_lua_app_install_finish(h2_gizclaw_lua_app_install_t **install,
+                                  h2_gizclaw_lua_app_info_t *out) {
   if (!install || !*install)
     return H2_PAL_ERR_INVALID_ARG;
   if (out)
@@ -559,27 +565,26 @@ h2_pal_result_t h2_lua_app_install_finish(h2_lua_app_install_t **install,
     rc = verify(s, s->expected_sha256);
   if (rc == H2_PAL_OK)
     rc = commit(s, out);
-  h2_lua_app_install_abort(install);
+  h2_gizclaw_lua_app_install_abort(install);
   return rc;
 }
 
-h2_pal_result_t h2_lua_apps_install(h2_lua_apps_t *apps,
-                                    const h2_pal_http_api_t *http,
-                                    h2_lua_app_source_t source,
-                                    const char *sha256, uint32_t timeout_ms,
-                                    h2_pal_http_cancel_fn cancel,
-                                    void *cancel_user, h2_lua_app_info_t *out) {
+h2_pal_result_t h2_gizclaw_lua_app_catalog_install(
+    h2_gizclaw_lua_app_catalog_t *apps, const h2_pal_http_api_t *http,
+    h2_gizclaw_lua_app_source_t source, const char *sha256, uint32_t timeout_ms,
+    h2_pal_http_cancel_fn cancel, void *cancel_user,
+    h2_gizclaw_lua_app_info_t *out) {
   if (out == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   memset(out, 0, sizeof(*out));
   if (!source.data || !url_valid(source) || !timeout_ms ||
       timeout_ms > 110000u || (sha256 && *sha256 && strlen(sha256) != 64u))
     return H2_PAL_ERR_INVALID_ARG;
-  if (!h2_lua_apps_can_install(apps) || http == NULL)
+  if (!h2_gizclaw_lua_app_catalog_can_install(apps) || http == NULL)
     return H2_PAL_ERR_UNSUPPORTED;
   install_t *s = NULL;
-  int rc = h2_lua_app_install_begin(apps, 0, sha256 && *sha256 ? sha256 : NULL,
-                                    cancel, cancel_user, &s);
+  int rc = h2_gizclaw_lua_app_install_begin(
+      apps, 0, sha256 && *sha256 ? sha256 : NULL, cancel, cancel_user, &s);
   if (rc != H2_PAL_OK)
     return rc;
   h2_pal_http_request_t request = {.method = H2_PAL_HTTP_GET,
@@ -599,14 +604,13 @@ h2_pal_result_t h2_lua_apps_install(h2_lua_apps_t *apps,
     rc = H2_PAL_ERR_CLOSED;
   if (rc == H2_PAL_OK)
     rc = h2_pal_http_request(http, &request, &response);
-  if (rc == H2_PAL_OK &&
-      (response.status_code != 200 ||
-       (response.content_length >= 0 &&
-        (uint64_t)response.content_length != s->received)))
+  if (rc == H2_PAL_OK && (response.status_code != 200 ||
+                          (response.content_length >= 0 &&
+                           (uint64_t)response.content_length != s->received)))
     rc = H2_PAL_ERR_IO;
   h2_pal_http_response_free(http, &response);
   if (rc == H2_PAL_OK)
-    return h2_lua_app_install_finish(&s, out);
-  h2_lua_app_install_abort(&s);
+    return h2_gizclaw_lua_app_install_finish(&s, out);
+  h2_gizclaw_lua_app_install_abort(&s);
   return rc;
 }

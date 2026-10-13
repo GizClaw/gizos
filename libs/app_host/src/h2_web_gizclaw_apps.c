@@ -1,4 +1,4 @@
-#include "h2_web_lua_apps.h"
+#include "h2_web_gizclaw_apps.h"
 #include "h2_atomic.h"
 #include "h2_web_main_thread.h"
 
@@ -17,8 +17,8 @@ typedef struct command {
   uint32_t total;
 } command_t;
 
-struct h2_web_lua_apps {
-  h2_web_lua_apps_config_t config;
+struct h2_web_gizclaw_apps {
+  h2_web_gizclaw_apps_config_t config;
   h2_pal_queue_t *commands;
   h2_pal_task_t *worker;
   h2_atomic_bool_t stopping;
@@ -27,21 +27,22 @@ struct h2_web_lua_apps {
   bool inflight_ready;
   bool bound;
   uint8_t input[CHUNK_BYTES + 1u];
-  h2_lua_app_info_t items[H2_LUA_APPS_MAX];
+  h2_gizclaw_lua_app_info_t items[H2_GIZCLAW_LUA_APPS_MAX];
 };
 
 /* Only the browser UI thread reads/writes this ingress pointer. Bind/unbind
  * run on that same thread, and close awaits unbind before freeing anything. */
-static h2_web_lua_apps_t *s_current;
+static h2_web_gizclaw_apps_t *s_current;
 
-EMSCRIPTEN_KEEPALIVE void h2_web_lua_apps_set_current(uintptr_t address) {
-  s_current = (h2_web_lua_apps_t *)address;
+EMSCRIPTEN_KEEPALIVE void h2_web_gizclaw_apps_set_current(uintptr_t address) {
+  s_current = (h2_web_gizclaw_apps_t *)address;
 }
 
-EMSCRIPTEN_KEEPALIVE int h2_web_lua_apps_request(uint32_t id, unsigned command,
-                                                 uint32_t size,
-                                                 uint32_t total) {
-  h2_web_lua_apps_t *bridge = s_current;
+EMSCRIPTEN_KEEPALIVE int h2_web_gizclaw_apps_request(uint32_t id,
+                                                     unsigned command,
+                                                     uint32_t size,
+                                                     uint32_t total) {
+  h2_web_gizclaw_apps_t *bridge = s_current;
   if (bridge == NULL)
     return H2_PAL_ERR_CLOSED;
   if (id == 0u || command < LIST || command > UNINSTALL || size > CHUNK_BYTES)
@@ -93,7 +94,7 @@ EM_JS(void, bind_js,
             }
             try {
               HEAPU8.set(bytes, state.buffer);
-              const rc = Module._h2_web_lua_apps_request(id, command, bytes.length, total);
+              const rc = Module._h2_web_gizclaw_apps_request(id, command, bytes.length, total);
               if (rc === blockedCode && performance.now() < deadline) {
                 setTimeout(submit, 1);
                 return;
@@ -163,7 +164,7 @@ EM_JS(void, bind_js,
       });
       Module.h2WebLuaAppsState = state;
       globalThis.h2WebLuaApps = api;
-      Module._h2_web_lua_apps_set_current(address);
+      Module._h2_web_gizclaw_apps_set_current(address);
       return 0;
     });
 });
@@ -174,7 +175,7 @@ EM_JS(void, detach_js,
     (address, closedCode, release) => {
       const state = Module.h2WebLuaAppsState;
       if (state?.address !== address) return;
-      Module._h2_web_lua_apps_set_current(0);
+      Module._h2_web_gizclaw_apps_set_current(0);
       state.closed = true;
       state.wakeClose();
       for (const pending of state.pending.values())
@@ -217,18 +218,18 @@ EM_JS(void, complete_js,
 /* clang-format on */
 
 static int stopping(void *user) {
-  h2_web_lua_apps_t *bridge = user;
+  h2_web_gizclaw_apps_t *bridge = user;
   return h2_atomic_bool_load(&bridge->stopping, H2_ATOMIC_ACQUIRE);
 }
 
-static void complete(h2_web_lua_apps_t *bridge, uint32_t id, int rc,
+static void complete(h2_web_gizclaw_apps_t *bridge, uint32_t id, int rc,
                      size_t count) {
   const uint32_t n = (uint32_t)count;
-  const uint32_t stride = sizeof(h2_lua_app_info_t);
-  const uint32_t offsets[] = {offsetof(h2_lua_app_info_t, app_id),
-                              offsetof(h2_lua_app_info_t, version),
-                              offsetof(h2_lua_app_info_t, display_name),
-                              offsetof(h2_lua_app_info_t, description)};
+  const uint32_t stride = sizeof(h2_gizclaw_lua_app_info_t);
+  const uint32_t offsets[] = {offsetof(h2_gizclaw_lua_app_info_t, app_id),
+                              offsetof(h2_gizclaw_lua_app_info_t, version),
+                              offsetof(h2_gizclaw_lua_app_info_t, display_name),
+                              offsetof(h2_gizclaw_lua_app_info_t, description)};
   (void)h2_web_main_call(complete_js,
                          (const void *[]){&bridge, &id, &rc,
                                           &(const void *){bridge->items}, &n,
@@ -237,8 +238,8 @@ static void complete(h2_web_lua_apps_t *bridge, uint32_t id, int rc,
 }
 
 static void worker(void *user) {
-  h2_web_lua_apps_t *bridge = user;
-  h2_lua_app_install_t *install = NULL;
+  h2_web_gizclaw_apps_t *bridge = user;
+  h2_gizclaw_lua_app_install_t *install = NULL;
   for (;;) {
     command_t request = {0};
     int rc = h2_pal_queue_recv(bridge->config.queue, bridge->commands, &request,
@@ -252,33 +253,34 @@ static void worker(void *user) {
         command != ABORT)
       rc = H2_PAL_ERR_BUSY;
     else if (command == LIST) {
-      rc = h2_lua_apps_list(bridge->config.apps, bridge->items, H2_LUA_APPS_MAX,
-                            &count);
+      rc = h2_gizclaw_lua_app_catalog_list(bridge->config.apps, bridge->items,
+                                           H2_GIZCLAW_LUA_APPS_MAX, &count);
     } else if (command == BEGIN) {
       if ((size != 0u && size != 64u) || request.total == 0u)
         rc = H2_PAL_ERR_INVALID_ARG;
       else
-        rc = h2_lua_app_install_begin(bridge->config.apps, request.total,
-                                      size ? (const char *)bridge->input : NULL,
-                                      stopping, bridge, &install);
+        rc = h2_gizclaw_lua_app_install_begin(
+            bridge->config.apps, request.total,
+            size ? (const char *)bridge->input : NULL, stopping, bridge,
+            &install);
     } else if (command == WRITE) {
       rc = install != NULL && size != 0u
-               ? h2_lua_app_install_write(install, bridge->input, size)
+               ? h2_gizclaw_lua_app_install_write(install, bridge->input, size)
                : H2_PAL_ERR_INVALID_STATE;
       if (rc != H2_PAL_OK)
-        h2_lua_app_install_abort(&install);
+        h2_gizclaw_lua_app_install_abort(&install);
     } else if (command == FINISH) {
       rc = install != NULL
-               ? h2_lua_app_install_finish(&install, &bridge->items[0])
+               ? h2_gizclaw_lua_app_install_finish(&install, &bridge->items[0])
                : H2_PAL_ERR_INVALID_STATE;
       count = rc == H2_PAL_OK ? 1u : 0u;
     } else if (command == ABORT) {
-      h2_lua_app_install_abort(&install);
+      h2_gizclaw_lua_app_install_abort(&install);
     } else if (command == UNINSTALL) {
       rc = size > 0u && size <= 32u &&
                    strlen((const char *)bridge->input) == size
-               ? h2_lua_apps_uninstall(bridge->config.apps,
-                                       (const char *)bridge->input)
+               ? h2_gizclaw_lua_app_catalog_uninstall(
+                     bridge->config.apps, (const char *)bridge->input)
                : H2_PAL_ERR_INVALID_ARG;
     } else {
       rc = H2_PAL_ERR_INVALID_ARG;
@@ -287,14 +289,15 @@ static void worker(void *user) {
     complete(bridge, request.id, rc, count);
   }
   h2_atomic_bool_store(&bridge->stopping, true, H2_ATOMIC_RELEASE);
-  h2_lua_app_install_abort(&install);
+  h2_gizclaw_lua_app_install_abort(&install);
   const int closed = H2_PAL_ERR_CLOSED, release = 0;
   (void)h2_web_main_call(detach_js,
                          (const void *[]){&bridge, &closed, &release});
 }
 
-h2_pal_result_t h2_web_lua_apps_open(const h2_web_lua_apps_config_t *config,
-                                     h2_web_lua_apps_t **out) {
+h2_pal_result_t
+h2_web_gizclaw_apps_open(const h2_web_gizclaw_apps_config_t *config,
+                         h2_web_gizclaw_apps_t **out) {
   if (out == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   *out = NULL;
@@ -310,7 +313,7 @@ h2_pal_result_t h2_web_lua_apps_open(const h2_web_lua_apps_config_t *config,
       config->allocator->vtable->alloc == NULL ||
       config->allocator->vtable->free == NULL)
     return H2_PAL_ERR_INVALID_ARG;
-  h2_web_lua_apps_t *bridge =
+  h2_web_gizclaw_apps_t *bridge =
       h2_pal_mem_alloc(config->allocator, sizeof(*bridge));
   if (bridge == NULL)
     return H2_PAL_ERR_NO_MEMORY;
@@ -323,12 +326,12 @@ h2_pal_result_t h2_web_lua_apps_open(const h2_web_lua_apps_config_t *config,
   if (h2_atomic_bool_init(&bridge->inflight, false) != H2_ATOMIC_OK)
     goto fail;
   bridge->inflight_ready = true;
-  const h2_pal_queue_config_t queue = {.name = "lua/apps/web",
+  const h2_pal_queue_config_t queue = {.name = "app_host/gizclaw_apps",
                                        .allocator = config->allocator,
                                        .item_size = sizeof(command_t),
                                        .item_count = 1u};
   rc = h2_pal_queue_create(config->queue, &queue, &bridge->commands);
-  const h2_pal_task_options_t options = {.name = "$lua/apps/web",
+  const h2_pal_task_options_t options = {.name = "$app_host/gizclaw_apps",
                                          .min_stack_size = 65536u};
   if (rc == H2_PAL_OK)
     rc = h2_pal_task_start(config->task, &options, worker, bridge,
@@ -351,14 +354,14 @@ h2_pal_result_t h2_web_lua_apps_open(const h2_web_lua_apps_config_t *config,
   }
 fail:
   *out = bridge;
-  const int cleanup = h2_web_lua_apps_close(out);
+  const int cleanup = h2_web_gizclaw_apps_close(out);
   return cleanup == H2_PAL_OK ? rc : cleanup;
 }
 
-h2_pal_result_t h2_web_lua_apps_close(h2_web_lua_apps_t **out) {
+h2_pal_result_t h2_web_gizclaw_apps_close(h2_web_gizclaw_apps_t **out) {
   if (out == NULL)
     return H2_PAL_ERR_INVALID_ARG;
-  h2_web_lua_apps_t *bridge = *out;
+  h2_web_gizclaw_apps_t *bridge = *out;
   if (bridge == NULL)
     return H2_PAL_OK;
   if (bridge->atomics_ready)

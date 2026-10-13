@@ -88,7 +88,7 @@ Lua Flappy Bird archive 在 Canvas 上运行与 Desktop/AMOLED 相同的 portabl
 
 ## 浏览器本地 Lua 应用管理
 
-`//libs/lua/apps/web` 提供 Web 专用的应用目录桥接。产品在自己的目录创建后调用 `h2_web_lua_apps_open()`，传入与 GizClaw 共用的 `h2_lua_apps_t`、Memory、Queue 和 Task；目录销毁前必须成功关闭桥接并 join 安装 worker。浏览器只公开绑定目录的管理能力，不自行挂载第二个目录或直接修改 IndexedDB 索引。
+现有 `libs/app_host` Web 启动层通过可选 `:gizclaw_apps_web` target 提供 JS/WASM 应用管理入口。它只负责读取浏览器 `File/Blob`、分块传递字节和异步结果，不拥有文件系统或包管理逻辑；GizClaw 的 `libs/gizclaw/lua_apps` 统一通过 PAL Filesystem 完成解包、校验、索引更新及安装文件读写，IndexedDB 由现有 Web PAL provider 实现。产品在自己的目录创建后调用 `h2_web_gizclaw_apps_open()`，传入与 GizClaw 共用的 `h2_gizclaw_lua_app_catalog_t`、Memory、Queue 和 Task；目录销毁前必须成功关闭桥接并 join 安装 worker。浏览器只公开绑定目录的管理能力，不自行挂载第二个目录或直接修改 IndexedDB 索引。
 
 绑定成功后，同一页面中的 `globalThis.h2WebLuaApps` 提供版本 1 的 Promise API：
 
@@ -106,13 +106,13 @@ const apps = await h2WebLuaApps.list();
 await h2WebLuaApps.uninstall(installed.app_id);
 ```
 
-输入必须是现有 format-1 zlib/USTAR Lua App 包，不是裸 Lua 源码或 ZIP。桥接最多读取 32 KiB 的 Blob slice，专属 worker 串行执行同一安装会话的 begin/write/finish/abort；完整压缩包不落盘。安装、文件校验、配额、同 ID 覆盖、原子索引发布和卸载均由[公共 Lua App 安装器](/zh/developing/lua#lua-app-目录与流式安装)执行。列表字段与 GizClaw 的应用信息一致，不暴露内部 slot 路径。
+输入必须是现有 format-1 zlib/USTAR Lua App 包，不是裸 Lua 源码或 ZIP。桥接最多读取 32 KiB 的 Blob slice，专属 worker 串行执行同一安装会话的 begin/write/finish/abort；完整压缩包不落盘。安装、文件校验、配额、同 ID 覆盖、原子索引发布和卸载均由[公共 Lua App 安装器](/zh/developing/gizclaw#lua-app-包管理)执行。列表字段与 GizClaw 的应用信息一致，不暴露内部 slot 路径。
 
 安装及卸载的 Promise 只有在底层 Filesystem 提交屏障完成后才成功；使用 Web Filesystem 时，这意味着 IndexedDB 提交已经完成。刷新、关闭标签页及浏览器重启后会从同一 origin 的存储恢复；不同 origin 不共享目录。浏览器站点数据清理及存储淘汰仍按 Web Filesystem 合同处理。卸载预装身份会持久隐藏它，重新安装同 ID 后恢复；独立 Lua 用户 KV 不属于卸载范围。
 
 同一桥接的并发操作拒绝为 `LuaAppError`，`error.code` 是原始 signed PAL result，例如 BUSY `-18`；远程操作也会竞争同一个目录 reservation。产品需要协调仍在使用应用 entry/data 路径的运行任务。页面停止或目录 detach 后，新调用及未完成调用以 CLOSED `-10` 拒绝；未完成安装由其 owning worker 中止后才释放目录。持有安装 worker 的产品必须使用 app_host 的 cooperative managed shutdown，不能在两秒后强制取消仍在提交存储的任务。
 
-`//libs/lua/apps/web/tests:persistence_test` 使用真实 Chromium、实际 WASM 和 IndexedDB，在同一 origin 上多次重新加载，验证安装、预装覆盖、失败保留旧版本、卸载隐藏、重新安装、并发拒绝和停止时的安装中止。测试阻断 GizClaw 服务网络，验证本地管理不依赖在线服务；每轮结束要求 Runtime、Filesystem 和 platform 完整清理。
+`//libs/app_host/tests/gizclaw_apps:persistence_test` 使用真实 Chromium、实际 WASM 和 IndexedDB，在同一 origin 上多次重新加载，验证安装、预装覆盖、失败保留旧版本、卸载隐藏、重新安装、并发拒绝和停止时的安装中止。测试阻断 GizClaw 服务网络，验证本地管理不依赖在线服务；每轮结束要求 Runtime、Filesystem 和 platform 完整清理。
 
 ## Platform Boundary
 

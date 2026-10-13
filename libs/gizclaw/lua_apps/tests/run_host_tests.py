@@ -34,7 +34,7 @@ def main():
     includes = [repo / name for name in [
         'libs/app_test/include', 'libs/atomic/include', 'libs/bundle/include',
         'libs/crypto/sha256/include', 'libs/encoding/include',
-        'libs/gizclaw/include', 'libs/lua/apps/include', 'libs/pal/include',
+        'libs/gizclaw/include', 'libs/gizclaw/lua_apps/include', 'libs/pal/include',
         'libs/pal/providers/desktop/pal_core/include', 'libs/semver/include',
         'libs/lua/include', 'libs/command/include', 'libs/app_host/include',
         'libs/runtime/include', 'libs/wifi_sta/include',
@@ -43,8 +43,8 @@ def main():
     ]]
     includes += [repo / 'libs/gizclaw/src', sdk / 'include', sdk / 'generated', nanopb, yyjson]
     common = [
-        'libs/lua/apps/src/h2_lua_apps.c',
-        'libs/lua/apps/src/h2_lua_app_install.c',
+        'libs/gizclaw/lua_apps/src/h2_gizclaw_lua_app_catalog.c',
+        'libs/gizclaw/lua_apps/src/h2_gizclaw_lua_app_install.c',
         'libs/app_test/src/pal/h2_app_test_fs.c',
         'libs/atomic/providers/c11/src/h2_atomic_c11.c',
         'libs/crypto/sha256/src/h2_sha256.c',
@@ -66,15 +66,15 @@ def main():
         *[nanopb / f'pb_{name}.c' for name in ['common', 'decode', 'encode']],
     ]
     targets = {
-        'apps': (repo / 'libs/lua/apps/tests/test_apps.c', []),
-        'close_failure': (repo / 'libs/lua/apps/tests/test_close_failure.c', []),
+        'apps': (repo / 'libs/gizclaw/lua_apps/tests/test_apps.c', []),
+        'close_failure': (repo / 'libs/gizclaw/lua_apps/tests/test_close_failure.c', []),
         'device': (repo / 'libs/gizclaw/tests/test_h2_gizclaw_lua_apps.c', device),
     }
     with tempfile.TemporaryDirectory(prefix='gizos-lua-host-') as directory:
         output = Path(directory)
-        fixture = output / 'libs/lua/apps/fixtures.h'
+        fixture = output / 'libs/gizclaw/lua_apps/fixtures.h'
         fixture.parent.mkdir(parents=True)
-        subprocess.run([sys.executable, str(repo / 'libs/lua/apps/tests/fixtures.py'), '--output', str(fixture)], check=True)
+        subprocess.run([sys.executable, str(repo / 'libs/gizclaw/lua_apps/tests/fixtures.py'), '--output', str(fixture)], check=True)
         flags = ['-g', '-Wall', '-Wextra', '-Werror', '-pthread']
         if args.sanitize:
             flags += ['-fsanitize=address,undefined', '-fno-omit-frame-pointer']
