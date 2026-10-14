@@ -139,9 +139,9 @@
         "result": -3
       }
     ],
-    "artifact_sha256": "b814d61f47c723449b0353737b556117b08c57c55c8c9019a5df9ab8c2873467",
+    "artifact_sha256": "5817a6ebeeca8b5f05d565f2bbca7f7bf6b440187dd0775fe7cd2033949ee928",
     "browser_sha256": "d7402bcc74cbb7680dcbc4f08ce56af908c231cddf54b3e228fdda0469d1fb31",
-    "browser": "/Volumes/H002-R02T-APFS/Caches/bazel/pal-application-host-macos/sandbox/darwin-sandbox/476/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/projects/e2e/targets/pkg_tar/pal-net-tls/wasm_pal_net_tls_boundary_test.runfiles/+http_archive+h2_playwright_chromium_macos_arm64/chrome-mac/headless_shell",
+    "browser": "/Volumes/H002-R02T-APFS/Caches/bazel/pal-application-host-macos/sandbox/darwin-sandbox/23/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/projects/e2e/targets/pkg_tar/pal-net-tls/wasm_pal_net_tls_boundary_test.runfiles/+http_archive+h2_playwright_chromium_macos_arm64/chrome-mac/headless_shell",
     "cross_origin_isolated": true,
     "teardown": 0
   }

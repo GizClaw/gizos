@@ -95,7 +95,14 @@ EM_JS(void, h2_web_fs_mount_js,
   }
   entries.set(fs_address, entry);
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), lock_timeout_ms);
+  const lock_started_ms = performance.now();
+  let lock_deadline_expired = false;
+  // The budget includes browser service and grant callback scheduling.
+  // Aborting this request does not identify a competing storage owner.
+  const timer = setTimeout(() => {
+    lock_deadline_expired = true;
+    controller.abort();
+  }, lock_timeout_ms);
   const held = new Promise((resolve) => { entry.release = resolve; });
   locks.request(`h2-web-fs:${root}`, {signal: controller.signal}, () => {
     clearTimeout(timer);
@@ -124,8 +131,11 @@ EM_JS(void, h2_web_fs_mount_js,
   }).catch((error) => {
     clearTimeout(timer);
     if (error?.name === 'AbortError') {
-      finish(-18, `${root} is in use by another tab or window of this ` +
-                  'origin; close it or wait');
+      const elapsed_ms = Math.round(performance.now() - lock_started_ms);
+      finish(-18, `Web Lock ${root} ${lock_deadline_expired ?
+                  'acquire deadline expired' : 'request aborted'}: ` +
+                  `AbortError; budget=${lock_timeout_ms}ms ` +
+                  `elapsed=${elapsed_ms}ms; holder unknown`);
     } else {
       finish(-2, `Web Lock for ${root} failed: ${error?.name}: ` +
                  `${error?.message || error}`);

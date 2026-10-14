@@ -132,7 +132,7 @@ Audio PAL 的麦克风通过 `getUserMedia` 与 `AudioWorklet` 采集，显式�
 
 - 写入策略：`write()` 只改内存；`sync()`、写模式文件 `close()`、`rename()`、`remove()`、`mkdir()`、`clear()` 是提交屏障，返回前 IndexedDB 已提交此前全部修改。原子替换（写临时文件、sync、close、rename）返回 OK 后即可在刷新后读到。不依赖 `pagehide` 保存。
 - 错误：配额 `NO_SPACE`，存储被浏览器阻止（部分隐私模式）`UNAVAILABLE`，缺少 IndexedDB 或 Web Locks `UNSUPPORTED`，其它 `IO`，提交超过 30 秒 `TIMEOUT`。失败的修改仍在内存中，下一次屏障重试；`h2_web_fs_get_status()` 给出最后一次失败的浏览器错误名与消息，打开失败同时写入 Console 与 `Module.h2WebFsLastError`。
-- 刷新与多标签页：打开时持有 Web Lock `h2-web-fs:<root>` 直到 `h2_web_fs_close()` 或页面卸载。刷新会等待旧文档释放锁；另一个标签页在 `lock_timeout_ms`（默认 3 秒）后得到 `BUSY`，不会同时写同一份快照。Web Locks 需要安全上下文（HTTPS 或 localhost），否则 `UNSUPPORTED`。
+- 刷新与多标签页：打开时持有同一 origin 的 Web Lock `h2-web-fs:<root>` 直到 `h2_web_fs_close()` 或页面卸载，不会同时写同一份快照。刷新会等待旧文档释放锁；`lock_timeout_ms`（默认 3 秒）从 UI 发起锁申请计时，到 grant callback 进入时取消，不包含此前的 WASM/Worker 启动或之后的 IndexedDB restore。这个预算也包含浏览器锁服务与 callback 调度，超时沿用 `BUSY`，不能据此断言另一个标签页持锁。日志记录 `AbortError`、配置预算、实际 elapsed 与 `holder unknown`；高负载或后台节流同样可能使申请超时。Web Locks 需要安全上下文（HTTPS 或 localhost），否则 `UNSUPPORTED`。
 - 清理：`h2_web_fs_clear()` 或对根目录 `h2_pal_fs_clear()` 删除全部内容并提交；用户也可在浏览器站点设置中清除。
 - 限制：浏览器以 relaxed durability 提交 IndexedDB，已提交数据可跨刷新、关标签页和重启浏览器保留，但操作系统崩溃可能丢失最后一次提交；best-effort 站点存储可能在存储压力下被浏览器回收。Pref 仍使用 localStorage，跨标签页共享且无锁，后写者覆盖。
 
@@ -187,7 +187,7 @@ const h2_web_fs_config_t fs_config = {
 };
 h2_web_fs_t *fs = NULL;
 h2_pal_result_t rc = h2_web_fs_open(platform, &fs_config, &fs);
-// rc: BUSY (other tab), UNSUPPORTED/UNAVAILABLE (storage), NO_SPACE, IO.
+// rc: BUSY (lock wait budget), UNSUPPORTED/UNAVAILABLE (storage), NO_SPACE, IO.
 
 h2_runtime_config_t config = {0};
 config.fs = h2_web_fs_api(fs);

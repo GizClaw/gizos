@@ -32,9 +32,11 @@ extern "C" {
  * be evicted under storage pressure or cleared by the user.
  *
  * Exclusivity: opening takes the Web Lock "h2-web-fs:<root>" for the life of
- * the provider, so one tab or worker of an origin owns a root at a time. Other
- * tabs wait up to lock_timeout_ms and then get BUSY; a reload waits for the
- * previous document to release the lock. Web Locks need a secure context
+ * the provider, so one tab or worker of an origin owns a root at a time.
+ * Requests wait up to lock_timeout_ms for the grant callback and then get
+ * BUSY. This budget includes browser service and callback scheduling, so BUSY
+ * does not prove another owner exists. A reload waits for the previous
+ * document to release the lock. Web Locks need a secure context
  * (HTTPS or localhost); without them open returns UNSUPPORTED rather than risk
  * two tabs overwriting each other's snapshot.
  */
@@ -46,7 +48,7 @@ typedef struct h2_web_fs_config {
   /** Absolute directories already present in the Emscripten filesystem. */
   const char *const *readonly_roots;
   size_t readonly_root_count;
-  /** Wait for another tab to release the root; zero selects 3000 ms. */
+  /** Budget before the Web Lock grant callback; zero selects 3000 ms. */
   uint32_t lock_timeout_ms;
 } h2_web_fs_config_t;
 
@@ -68,7 +70,8 @@ typedef struct h2_web_fs_status {
  *
  * Call before the App starts so it sees the restored data. Errors: INVALID_ARG
  * for a relative, "/" or overlapping root or a missing read-only root; BUSY
- * when another tab holds the root; UNSUPPORTED without IndexedDB or Web Locks;
+ * when the lock grant callback misses its budget or the root is already
+ * mounted in this page; UNSUPPORTED without IndexedDB or Web Locks;
  * UNAVAILABLE when the browser blocks storage (e.g. some private modes);
  * NO_SPACE for quota; IO for other restore failures. Failures are logged with
  * the browser error.
