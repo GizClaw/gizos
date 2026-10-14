@@ -146,8 +146,12 @@ h2_pal_result_t h2_sctp_timer_service(
         return H2_PAL_OK;
     }
 
+    const bool receive_window_was_closed =
+        association->receive_used == association->config.receive_buffer_size;
     result = h2_sctp_stream_service(association);
-    if (result == H2_PAL_ERR_NO_MEMORY) {
+    /* Consumer backpressure must not suppress SACKs, retransmission or
+     * heartbeats for the association's other direction. */
+    if (result == H2_PAL_ERR_NO_MEMORY || result == H2_PAL_ERR_WOULD_BLOCK) {
         *out_next_deadline_ms = now_ms;
     } else if (result != H2_PAL_OK) {
         return result;
@@ -157,6 +161,14 @@ h2_pal_result_t h2_sctp_timer_service(
         return result;
     }
 
+    if (receive_window_was_closed &&
+        association->receive_used < association->config.receive_buffer_size) {
+        /* Delivery can reopen rwnd without a new incoming DATA packet. Keep
+         * the update pending through allocation or emit backpressure. */
+        if (association->sack_pending_packets == 0u)
+            association->sack_pending_packets = 1u;
+        association->sack_deadline_ms = now_ms;
+    }
     result = h2_sctp_reliability_service_sack(
         association, now_ms, out_next_deadline_ms);
     if (result != H2_PAL_OK && result != H2_PAL_ERR_WOULD_BLOCK) {

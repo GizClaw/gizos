@@ -21,6 +21,55 @@
 #include <stdio.h>
 #include <string.h>
 
+#ifndef H2_WEBRTC_PERF_MBOX_DIAGNOSTICS
+#define H2_WEBRTC_PERF_MBOX_DIAGNOSTICS 0
+#endif
+#if H2_WEBRTC_PERF_MBOX_DIAGNOSTICS
+#include "lwip/sys.h"
+#include <stdint.h>
+static uintptr_t diagnostic_udp_mbox;
+static unsigned int diagnostic_udp_created, diagnostic_udp_freed;
+static unsigned int diagnostic_udp_posts, diagnostic_udp_drops;
+extern err_t __real_sys_mbox_new(sys_mbox_t *mbox, int size);
+extern err_t __real_sys_mbox_trypost(sys_mbox_t *mbox, void *message);
+extern void __real_sys_mbox_free(sys_mbox_t *mbox);
+err_t __wrap_sys_mbox_new(sys_mbox_t *mbox, int size) {
+  const err_t result = __real_sys_mbox_new(mbox, size);
+  if (result == ERR_OK && size == CONFIG_LWIP_UDP_RECVMBOX_SIZE &&
+      strcmp(pcTaskGetName(NULL), "$h2peer/net") == 0) {
+    __atomic_store_n(&diagnostic_udp_mbox, (uintptr_t)*mbox, __ATOMIC_RELEASE);
+    __atomic_fetch_add(&diagnostic_udp_created, 1u, __ATOMIC_RELAXED);
+  }
+  return result;
+}
+err_t __wrap_sys_mbox_trypost(sys_mbox_t *mbox, void *message) {
+  const int target = (uintptr_t)*mbox ==
+      __atomic_load_n(&diagnostic_udp_mbox, __ATOMIC_ACQUIRE);
+  const err_t result = __real_sys_mbox_trypost(mbox, message);
+  if (target) {
+    __atomic_fetch_add(&diagnostic_udp_posts, 1u, __ATOMIC_RELAXED);
+    if (result != ERR_OK)
+      __atomic_fetch_add(&diagnostic_udp_drops, 1u, __ATOMIC_RELAXED);
+  }
+  return result;
+}
+void __wrap_sys_mbox_free(sys_mbox_t *mbox) {
+  if ((uintptr_t)*mbox == __atomic_load_n(&diagnostic_udp_mbox, __ATOMIC_ACQUIRE)) {
+    __atomic_store_n(&diagnostic_udp_mbox, 0u, __ATOMIC_RELEASE);
+    __atomic_fetch_add(&diagnostic_udp_freed, 1u, __ATOMIC_RELAXED);
+  }
+  __real_sys_mbox_free(mbox);
+}
+static void diagnostic_udp_snapshot(void) {
+  printf("H2_WEBRTC_PERF_UDP_MBOX created=%u freed=%u posts=%u drops=%u\n",
+      __atomic_load_n(&diagnostic_udp_created, __ATOMIC_RELAXED),
+      __atomic_load_n(&diagnostic_udp_freed, __ATOMIC_RELAXED),
+      __atomic_load_n(&diagnostic_udp_posts, __ATOMIC_RELAXED),
+      __atomic_load_n(&diagnostic_udp_drops, __ATOMIC_RELAXED));
+  fflush(stdout);
+}
+#endif
+
 /* Operator-selected LAN endpoints are injected by the Bazel firmware rule. */
 #ifndef H2_WEBRTC_PERF_ENDPOINT
 #define H2_WEBRTC_PERF_ENDPOINT "http://192.0.2.1:18080"
@@ -327,6 +376,9 @@ static void image_entry(void *user) {
   memory_checkpoint("benchmark_start");
   rc = h2_webrtc_performance_run(runtime, &config, &result);
   memory_checkpoint("benchmark_end");
+#if H2_WEBRTC_PERF_MBOX_DIAGNOSTICS
+  diagnostic_udp_snapshot();
+#endif
   if (rc == H2_PAL_OK)
     (void)h2_mosaico_e2e_screen_phase("CONFIRMING");
   int confirm = rc == H2_PAL_OK ? h2_esp_h2loader_app_confirm(runtime)

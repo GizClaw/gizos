@@ -57,3 +57,15 @@ if(DEFINED H2_WEBRTC_PERF_NETWORK_PREFLIGHT_MS)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE
     H2_WEBRTC_PERF_NETWORK_PREFLIGHT_MS=${H2_WEBRTC_PERF_NETWORK_PREFLIGHT_MS})
 endif()
+
+# Diagnostic wrappers preserve every SDK operation and queue capacity.
+if(DEFINED H2_WEBRTC_PERF_MBOX_DIAGNOSTICS)
+  if(NOT H2_WEBRTC_PERF_MBOX_DIAGNOSTICS MATCHES "^[01]$")
+    message(FATAL_ERROR "mailbox diagnostics must be 0 or 1")
+  endif()
+  if(H2_WEBRTC_PERF_MBOX_DIAGNOSTICS)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE H2_WEBRTC_PERF_MBOX_DIAGNOSTICS=1)
+    target_link_options(${COMPONENT_LIB} INTERFACE
+      "-Wl,--wrap=sys_mbox_new" "-Wl,--wrap=sys_mbox_trypost" "-Wl,--wrap=sys_mbox_free")
+  endif()
+endif()
