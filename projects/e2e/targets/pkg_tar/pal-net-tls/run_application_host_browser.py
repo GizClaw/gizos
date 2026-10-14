@@ -1,5 +1,6 @@
 """Preserve the Net/TLS browser assertions and add a separate Host receipt."""
 import hashlib
+import importlib
 import json
 import os
 from pathlib import Path
@@ -7,6 +8,11 @@ import runpy
 import sys
 
 archive, runner, *sources = sys.argv[1:]
+# The preserved runner prepends cwd/tools; preload its declared owner helpers
+# so external-module invocation also uses GizOS's browser harness and server.
+helper_root = Path(__file__).absolute().parents[5] / "tools/bazel"
+sys.path.insert(0, str(helper_root))
+importlib.import_module("web_archive_browser_test")
 saved = sys.argv
 sys.argv = [runner, archive]
 try:
