@@ -132,6 +132,9 @@ h2_pal_result_t h2_sctp_timer_service(
     if (result != H2_PAL_OK) {
         return result;
     }
+#if H2_SCTP_TX_DIAGNOSTICS
+    h2_sctp_diagnostic_sample(association, now_ms);
+#endif
     *out_next_deadline_ms = H2_PAL_SCTP_NO_DEADLINE;
     result = h2_sctp_retry_pending_emit(association);
     if (result == H2_PAL_ERR_WOULD_BLOCK) {

@@ -1790,3 +1790,50 @@ restoration remains pending, and GizClaw remains excluded.
 CI for `f5e8047a` reports 912/913 tests passing with `pal-core:browser_test`
 failing after 90.6 seconds. A fresh local real-Chromium execution passes in
 2.4 seconds; this does not erase the CI failure or establish its cause.
+
+### R103/R104 and ACK-driven retransmission restart (2026-10-14)
+
+R103 keeps all board diagnostics off and compares actual Pion media DSCP 46
+against data DSCP 0 on the same private AP fixture. Its first boot fails:
+unloaded/loaded audio p99 171.746/192.704 ms and 100/100 frames pass, but
+fairness **589 < 800** fails. Loaded upload is 57,176 B/s versus download
+174,735 B/s. Socket marking/readback and successful write counters are
+verified with zero write errors. This does not establish default-fixture
+acceptance, nor that the AP honors markings. An earlier controller attempt
+referenced the old R101 image: it was cancelled, returned to public Loader,
+and is preserved separately as an invalid partial attempt. Only the corrected
+source-bound R103 run supplies these metrics.
+
+R104 adds a default-off, bounded 1 Hz SCTP state recorder. It emits only when
+the association closes and records no payload. The actual diagnostic boot
+fails loaded p99 (260.737 ms; frames 100/99; fairness 931). All 494 samples fit
+without overflow. The association reports **274 timeout window reductions**
+and 19 fast-recovery entries. With more than 10 KiB queued, median cwnd is
+8099 bytes, peer receive window never falls below 1,036,864 bytes, and only
+3/328 samples show a pending local emit. These observations motivate examining
+timeout behavior rather than claiming that the peer receive window is full.
+Two short host test builds/runs overlap its initial data-only phase; the
+private overlap receipt explicitly excludes R104 from clean acceptance or
+unconfounded throughput comparison. Both runs return to the public R84 Loader.
+
+A deterministic regression reproduces an actual timer defect: after the SACK
+for the earliest outstanding TSN, another fragment retransmits at 1500 ms
+instead of honoring the restart through 1600 ms. That premature timeout
+shrinks cwnd and doubles RTO. The repair retains an ACK-triggered lower bound
+on retransmission deadlines using the RTO at restart, without changing any
+smoke limits. Duplicate ACKs and later gap ACKs cannot postpone a genuine
+loss; cumulative and earliest-gap ACKs work across TSN wrap. A fresh flight
+clears the old bound. The existing RTT/Karn test now waits until its correct
+restarted deadline (500 ms instead of 410 ms), retaining the same ambiguity
+assertions. All 36 H2Peer/SCTP tests pass with diagnostics both enabled and
+disabled. This fixes the reproduced premature timeout; it is not a claim of
+complete SCTP timer redesign or proven board performance recovery.
+
+R105 default-off two-boot hardware acceptance remains pending. The real peer
+will return to default DSCP 0; private AP selection and all original workload,
+radio, queue, frame and latency/fairness predicates stay unchanged. Loader R84
+remains 51/51 PASS, original full Flash restoration remains pending, and
+GizClaw remains outside acceptance. Private receipts:
+`rtc103-performance-result.json`, `rtc104-performance-diagnostic-result.json`,
+`rtc104-diagnostic-host-overlap.json`, and `rtc105-t3-restart-red.log` plus
+`rtc105-full-{enabled,default}-green.log`.

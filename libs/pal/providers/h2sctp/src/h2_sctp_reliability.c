@@ -189,6 +189,9 @@ static h2_pal_result_t h2_sctp_reliability_emit_fragment(
         association, packet, packet_len, H2_SCTP_CONTROL_NONE, now_ms);
     if (result == H2_PAL_OK || result == H2_PAL_ERR_WOULD_BLOCK) {
         if (!fragment->sent) {
+            if (association->flight_size == 0u) {
+                association->retransmit_not_before_ms = 0u;
+            }
             association->flight_size += fragment->data_len;
         }
         fragment->sent = true;
@@ -410,6 +413,9 @@ static h2_pal_result_t h2_sctp_reliability_fast_retransmit(
         return H2_PAL_OK;
     }
     if (!association->fast_recovery_active) {
+#if H2_SCTP_TX_DIAGNOSTICS
+        ++association->diagnostic_fast_recoveries;
+#endif
         association->ssthresh =
             h2_sctp_reliability_reduced_ssthresh(association);
         association->cwnd = association->ssthresh;
@@ -447,6 +453,19 @@ static h2_pal_result_t h2_sctp_reliability_fast_retransmit(
     return outcome;
 }
 
+static h2_sctp_tx_fragment_t *h2_sctp_reliability_first_outstanding(
+    h2_pal_sctp_association_t *association) {
+    h2_sctp_tx_fragment_t *first = NULL;
+    for (h2_sctp_tx_fragment_t *f = association->tx_fragments; f != NULL;
+         f = f->next) {
+        if (f->sent && !f->acknowledged && !f->abandoned &&
+            (first == NULL || h2_sctp_tsn_before(f->tsn, first->tsn))) {
+            first = f;
+        }
+    }
+    return first;
+}
+
 h2_pal_result_t h2_sctp_reliability_handle_sack(
     h2_pal_sctp_association_t *association,
     const h2_sctp_chunk_view_t *chunk,
@@ -472,6 +491,8 @@ h2_pal_result_t h2_sctp_reliability_handle_sack(
     }
     association->peer_receive_window = h2_sctp_wire_read_u32(
         chunk->data + 4u);
+    h2_sctp_tx_fragment_t *const earliest =
+        h2_sctp_reliability_first_outstanding(association);
     uint32_t highest_newly_acknowledged = cumulative;
     size_t acked_bytes = 0u;
     for (h2_sctp_tx_fragment_t *fragment = association->tx_fragments;
@@ -491,6 +512,16 @@ h2_pal_result_t h2_sctp_reliability_handle_sack(
           h2_sctp_reliability_mark_acknowledged(association, fragment,
                                                 &acked_bytes);
         }
+    }
+    /* RFC 9260 6.3.2 R2/R3: progress past the earliest outstanding DATA
+     * restarts T3 with the current RTO. Per-fragment send ages must not cause
+     * an earlier timeout. Later gap ACKs and duplicate SACKs do not restart it.
+     * Store the deadline, so a later RTT update cannot shorten this restart. */
+    if (h2_sctp_reliability_first_outstanding(association) == NULL) {
+        association->retransmit_not_before_ms = 0u;
+    } else if (earliest != NULL && earliest->acknowledged) {
+        association->retransmit_not_before_ms =
+            h2_sctp_deadline_add(now_ms, association->rto_ms);
     }
     /* RFC 9260 section 7.2.4: fast recovery ends once the cumulative point
      * passes every TSN that was outstanding when it began. */
@@ -700,8 +731,11 @@ h2_pal_result_t h2_sctp_reliability_service(
             deadline = now_ms;
             continue;
         }
-        const uint64_t retransmit_deadline = h2_sctp_deadline_add(
+        const uint64_t fragment_deadline = h2_sctp_deadline_add(
             fragment->sent_ms, rto_at_entry);
+        const uint64_t retransmit_deadline =
+            fragment_deadline < association->retransmit_not_before_ms
+                ? association->retransmit_not_before_ms : fragment_deadline;
         if (now_ms < retransmit_deadline) {
             if (deadline == H2_PAL_SCTP_NO_DEADLINE ||
                 retransmit_deadline < deadline) {
@@ -719,6 +753,9 @@ h2_pal_result_t h2_sctp_reliability_service(
             break;
         }
         if (!window_collapsed) {
+#if H2_SCTP_TX_DIAGNOSTICS
+            ++association->diagnostic_timeouts;
+#endif
             association->ssthresh =
                 h2_sctp_reliability_reduced_ssthresh(association);
             association->cwnd = h2_sctp_reliability_one_packet(association);

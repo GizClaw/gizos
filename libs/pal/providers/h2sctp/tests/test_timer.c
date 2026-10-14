@@ -95,7 +95,36 @@ static void resumed_delivery_reopens_receive_window(void) {
     h2_sctp_test_pair_deinit(&pair);
 }
 
+#if H2_SCTP_TX_DIAGNOSTICS
+static void bounded_diagnostic_sampling(void) {
+    h2_pal_sctp_association_t a = {0};
+    h2_sctp_diagnostic_sample(&a, 0u);
+    assert(a.diagnostic_count == 0u);
+    a.state = H2_PAL_SCTP_STATE_CONNECTED;
+    a.cwnd = 4096u;
+    a.peer_receive_window = 8192u;
+    a.send_used = 123u;
+    h2_sctp_diagnostic_sample(&a, 1000u);
+    h2_sctp_diagnostic_sample(&a, 999u);
+    h2_sctp_diagnostic_sample(&a, 1999u);
+    assert(a.diagnostic_count == 1u);
+    assert(a.diagnostics[0].cwnd == 4096u &&
+           a.diagnostics[0].peer_window == 8192u &&
+           a.diagnostics[0].queued == 123u);
+    for (size_t i = 1u; i <= H2_SCTP_TX_DIAGNOSTIC_CAPACITY; ++i)
+        h2_sctp_diagnostic_sample(&a, (i + 1u) * 1000u);
+    assert(a.diagnostic_count == H2_SCTP_TX_DIAGNOSTIC_CAPACITY);
+    assert(a.diagnostic_overflow == 1u);
+    h2_sctp_diagnostic_sample(&a, a.diagnostic_last_ms);
+    assert(a.diagnostic_overflow == 1u);
+    assert(a.send_used == 123u && a.cwnd == 4096u);
+}
+#endif
+
 int main(void) {
+#if H2_SCTP_TX_DIAGNOSTICS
+    bounded_diagnostic_sampling();
+#endif
     blocked_delivery_keeps_retransmission_alive();
     resumed_delivery_reopens_receive_window();
     h2_sctp_test_endpoint_t endpoint;
