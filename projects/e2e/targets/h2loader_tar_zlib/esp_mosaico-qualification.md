@@ -1605,3 +1605,50 @@ R70's two performance packages, R71's eleven selected Mosaico build targets
 and R17's four DevKit peer targets all build successfully against the pinned
 SDK. Both devices finish on their original Loader images with empty Stage and
 blank coredump; local LAN fixture services are stopped for the overnight handoff.
+
+
+## 2026-10-14 current-host recovery checkpoint
+
+The operator excludes GizClaw from acceptance. The original PR remains Draft.
+Historical results retain their original source and image bindings; the newer
+runs do not relabel them as current-head qualification.
+
+The complete original public Loader recovery matrix now passes **51/51** on
+`mosaico-recovery-20261014-r84`, bound to native source `a369658c` and the
+preserved guard-equipped host runner. The actual execution takes 2,033,925 ms.
+It covers Loader/App lifecycle and rollback, Wi-Fi and URL update/abort,
+both package formats, the complete checksum rejection/cross-format cases,
+crash-before-confirm recovery and coredump read/erase/blank verification.
+The actual induced dump is 20,928 bytes, SHA-256
+`adf6f3a153f81cb77e2d36f6349acf13e31c825a82d7db8a7d69e548f7e26a73`.
+Raw protocol evidence and the original dump are retained before erase. Private
+configuration, dumps, firmware and complete Flash backups stay outside Git.
+The original full 16 MiB Flash restore is pending again after this matrix;
+the earlier R77 restoration receipt does not describe the current device.
+
+WebRTC performance remains **NOT QUALIFIED**. The unchanged smoke contract is
+10 MiB each direction, three request channels, fairness at least 800 permille,
+audio p99 at most 200 ms, at most five missing frames per 100, and no duplicate
+or reordered frames. Zero backpressure/deadline observations are a benchmark
+requirement, not an extra smoke gate. R85 passes fairness but fails loaded
+p99; R86 and R87 also fail and their experimental RX/core settings are withdrawn.
+The original board UDP mailbox is 32. R86/R87 explicitly used 6; earlier
+notes mistaking the SDK default for the board baseline are corrected.
+
+On the operator's available Wi-Fi, R88's independent native-policy preflight
+receives 100/100 ICMP replies, p99 172.003 ms and maximum 188.702 ms. The actual
+WebRTC audio-only phase nevertheless fails with 84 received frames and an
+observed 2,556.87 ms sender gap; it never reaches the loaded phase. This is a
+real device-side stall that independent network latency alone does not explain.
+R89 is a normal host cancellation for missing diagnostic-code admission;
+R90 is a native configure failure and was never flashed. Neither is a new
+firmware performance failure. R91's corrected build admits the actual diagnostic
+marker before installation; its execution is pending.
+
+Opt-in worker diagnostics keep bounded operation wall-time aggregates and
+emit them only after worker exit. They compile out by default. Four ordinary
+host regressions and the explicitly enabled network-control test pass; the
+source-bound R91 native build passes. These checks are not board acceptance.
+The exact `a369658c` remote CI run `38508491577` finishes with a macOS arm64 UDP
+fixture startup failure; other platform jobs pass. The focused local fixture
+reproduction passes separately and does not relabel the remote failure.

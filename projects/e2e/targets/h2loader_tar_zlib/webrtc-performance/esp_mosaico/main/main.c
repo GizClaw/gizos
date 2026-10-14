@@ -1,4 +1,5 @@
 #include "esp_heap_caps.h"
+#include "sdkconfig.h"
 #include "freertos/idf_additions.h"
 #include "h2/pal/application/h2_pal_http.h"
 #include "h2/pal/hal/h2_pal_wifi.h"
@@ -41,10 +42,36 @@
 #define H2_WEBRTC_PERF_BLE_ADV 1
 #endif
 
+#ifndef H2_WEBRTC_PERF_NETWORK_PREFLIGHT_MS
+#define H2_WEBRTC_PERF_NETWORK_PREFLIGHT_MS 0
+#endif
+
+#if H2_WEBRTC_PERF_NETWORK_PREFLIGHT_MS < 0 || H2_WEBRTC_PERF_NETWORK_PREFLIGHT_MS > 60000
+#error "network preflight must be between 0 and 60000 ms"
+#endif
+
 typedef struct h2_webrtc_performance_esp_mosaico_context {
   h2_runtime_t *runtime;
   char offer_url[192];
 } h2_webrtc_performance_esp_mosaico_context_t;
+
+static void report_rx_policy(void) {
+#ifdef CONFIG_LWIP_L2_TO_L3_COPY
+  const int copy = 1;
+#else
+  const int copy = 0;
+#endif
+#ifdef CONFIG_ESP_COEX_SW_COEXIST_ENABLE
+  const int coexist = 1;
+#else
+  const int coexist = 0;
+#endif
+  printf("H2_WEBRTC_PERF_MOSAICO stage=sdk_rx copy=%d udp_mbox=%d coex_sw=%d\n",
+         copy, CONFIG_LWIP_UDP_RECVMBOX_SIZE, coexist);
+  printf("H2_WEBRTC_PERF_MOSAICO stage=cpu_layout cores=%d tcpip_core=%d\n",
+         configNUMBER_OF_CORES, CONFIG_LWIP_TCPIP_TASK_AFFINITY);
+  fflush(stdout);
+}
 
 static void hold(void) {
   for (;;) {
@@ -268,7 +295,17 @@ static void image_entry(void *user) {
   printf("H2_WEBRTC_PERF_MOSAICO stage=ble_adv keep=%d rc=%d\n",
          (int)H2_WEBRTC_PERF_BLE_ADV, rc);
   fflush(stdout);
+  report_rx_policy();
   memory_checkpoint("wifi_ready");
+#if H2_WEBRTC_PERF_NETWORK_PREFLIGHT_MS > 0
+  /* Independent host probes run before any measured WebRTC workload. */
+  printf("H2_WEBRTC_PERF_MOSAICO stage=network_preflight status=START duration_ms=%d\n",
+         H2_WEBRTC_PERF_NETWORK_PREFLIGHT_MS);
+  fflush(stdout);
+  vTaskDelay(pdMS_TO_TICKS(H2_WEBRTC_PERF_NETWORK_PREFLIGHT_MS));
+  printf("H2_WEBRTC_PERF_MOSAICO stage=network_preflight status=END\n");
+  fflush(stdout);
+#endif
   h2_webrtc_performance_esp_mosaico_context_t context = {.runtime = runtime};
   const int url_len = snprintf(context.offer_url, sizeof(context.offer_url),
                                "%s/offer", H2_WEBRTC_PERF_ENDPOINT);
