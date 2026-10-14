@@ -136,8 +136,13 @@ static void run(void *user) {
     /* One immutable terminal ledger per boot. Later replay cannot replace an
      * incomplete first capture in the independent host admission. */
     int delivered=h2_mqtt_esp_console_complete(&console,runtime,&result,provider_cleanup,confirm_app,runtime);
-    (void)h2_mosaico_e2e_screen_result(rc, delivered);
+    int screen=h2_mosaico_e2e_screen_result(rc, delivered);
+    /* The immutable MQTT ledger uses checked direct CDC writes. The final
+     * screen marker uses SDK stdio and must be drained before idle hold. */
+    int flushed=fflush(stdout)==0?H2_PAL_OK:H2_PAL_ERR_IO;
     if(delivered!=H2_PAL_OK)fail("ledger-or-confirm",delivered);
+    if(screen!=H2_PAL_OK)fail("screen-result",screen);
+    if(flushed!=H2_PAL_OK)fail("screen-log-flush",flushed);
     hold();
 }
 void app_main(void) {
