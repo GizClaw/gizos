@@ -55,6 +55,8 @@ its bytes. This is not a new cross-provider transaction or power-loss guarantee.
 The NOR model exercises failed programming, erased-header recovery and erase
 errors before/after a complete 4 KiB erase, not arbitrary partial-sector damage.
 
+Setting the same bytes with the same verified type performs no Flash write. The existing value and matching sidecar are still read and validated under the operation mutex; read failures remain errors. Unknown types and type-only changes still publish metadata, and legacy migration remains part of the normal read.
+
 Run the real engine test explicitly with an unchanged pinned SDK and native C
 compiler:
 
@@ -102,6 +104,8 @@ operation; begin/end, write/erase attempts, read errors and recovery invalidate
 it under the Flash mutex. Filling stops at the current FAL partition boundary,
 never skips CRC verification, and a failed fill still returns I/O. Initialization
 is explicitly scoped before the normal DB callbacks are registered.
+
+The SDK iterator does not call those callbacks. PAL snapshot and orphan collection therefore scope prefetch explicitly to each iterator step, under the existing operation mutex. Every record and CRC is still read and checked; the step ends its window before any deletion. The real SDK regression removes a small PIN-sized key with two resident 16 KiB values and preserves both values and namespaces. This fixture needs 363 hardware reads instead of 1614 without iterator prefetch; its 512-call gate does not assert board wall-clock time.
 
 A 16-entry volatile cache remembers only a complete logical key and its selected
 DB. It caches both large presence and absence, never a record address, payload or
