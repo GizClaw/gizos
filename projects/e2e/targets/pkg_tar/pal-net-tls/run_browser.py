@@ -10,7 +10,7 @@ import tempfile
 import threading
 import time
 from http.server import ThreadingHTTPServer
-sys.path.insert(0,str(Path('tools/bazel').resolve()))
+sys.path.insert(0,str(Path(__file__).absolute().parents[5] / "tools/bazel"))
 from web_archive_browser_test import Cdp, find_browser
 from web_archive_server import prepared_archive, make_handler, read_header_policy
 
