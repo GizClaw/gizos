@@ -25,10 +25,13 @@ typedef struct fixture {
   size_t allocations;
   size_t frees;
   uint64_t now_us;
+  uint64_t clock_step_us;
 } fixture_t;
 
 static h2_pal_result_t monotonic_us(void *user, uint64_t *out_us) {
-  *out_us = ((fixture_t *)user)->now_us;
+  fixture_t *f = user;
+  *out_us = f->now_us;
+  f->now_us += f->clock_step_us;
   return H2_PAL_OK;
 }
 
@@ -257,6 +260,24 @@ static void message_budget_bounds_a_round(void) {
   cleanup(&f);
 }
 
+/* Expensive sends must return to the network loop before the byte/message
+ * caps are filled. Preserve the untouched channel and its next turn. */
+static void elapsed_time_bounds_a_round(void) {
+  fixture_t f;
+  initialize(&f, CHANNEL_MAX);
+  for (size_t channel = 0u; channel < CHANNEL_MAX; ++channel)
+    assert(push(&f, channel, 100u) == H2_PAL_OK);
+  uint32_t snapshot = take_snapshot(&f);
+  f.clock_step_us = 6000u;
+  assert(h2_peer_network_service_channel(&f.peer, &snapshot) == 1);
+  assert(queued(&f, 0u) == 0u && queued(&f, 1u) == 0u);
+  assert(queued(&f, 2u) == 1u && snapshot == 4u);
+  assert(f.peer.channel_round_robin == 2u);
+  assert(h2_peer_network_service_channel(&f.peer, &snapshot) == 1);
+  assert(snapshot == 0u && queued(&f, 2u) == 0u);
+  cleanup(&f);
+}
+
 static void tx_uses_peer_allocator(void) {
   fixture_t f;
   initialize(&f, 1u);
@@ -273,6 +294,7 @@ static void tx_uses_peer_allocator(void) {
 }
 
 int main(void) {
+  elapsed_time_bounds_a_round();
   tx_uses_peer_allocator();
   ring_depth_fifo_and_reuse();
   byte_budget_bounds_a_round();
