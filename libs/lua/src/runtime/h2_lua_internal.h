@@ -45,8 +45,6 @@ typedef struct h2_lua_task {
   int resume_argument_count;
   uint64_t resume_started_ms;
   uint64_t wake_ms;
-  h2_pal_timer_t *timer;
-  h2_atomic_int_t timer_fired;
   uint32_t join_task_id;
   h2_lua_capability_request_id_t capability_request_id;
   int cancel_requested;
@@ -317,8 +315,6 @@ void h2_lua_cancel_job_capabilities(h2_lua_host_t *host, h2_lua_job_id_t job_id,
 void h2_lua_release_job_capabilities(h2_lua_host_t *host,
                                      h2_lua_job_id_t job_id,
                                      uint32_t job_generation);
-void h2_lua_task_timer_destroy(h2_lua_task_t *task);
-void h2_lua_task_atomics_destroy(h2_lua_job_t *job);
 void h2_lua_host_wake_job(h2_lua_job_t *job);
 h2_pal_result_t h2_lua_step_job(h2_lua_job_t *job);
 

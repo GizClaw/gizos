@@ -101,6 +101,8 @@ Button `ACTION` 的共享 Runtime payload 只有 `pressed_at_ms` 和 `released_a
 | `audio` | `new_output`（每条 Track 的 `write/info/close`）、`new_input`（`read/level/info/close`） | 直接使用 Runtime singleton Audio System；Track frame 大小取自设备 playback format，Input frame 大小取自设备 mic format；PAL 混合多条 Track，不接收 codec handle |
 | `link` | `available`、`host`、`join`、`send`、`send_unreliable`、`write`、`read`、`close`、`state`、`on`、`off` | Launcher 调用 `h2_lua_link_enable()` 后由 `//libs/lua:lua_link` 经 BLE Host PAL（不可靠消息）与 `libs/bleikcp`（可靠消息、字节流）提供；未启用或没有 BLE 时 `available()` 为 `false`，操作返回 `nil, "link: unavailable"` |
 
+毫秒 sleep 只保存 coroutine 的 monotonic deadline 并 yield。VM worker 在同一 wake queue 上等待各 job 的最早 deadline，最多等 10 ms，已到期的下一轮至少让出 1 ms；事件、取消与 Host stop 可提前唤醒 queue，协程仍需 deadline 到达才恢复。Sleep 不创建 PAL Timer、不依赖 Timer backend，也不在持有 job mutex 时启动、停止或 join timer thread。微秒等待的现有 monotonic-time 合同不变。
+
 `kv`、`link` 与 `runtime` 同属 GizOS 新增 module，不在 ESP-Claw 兼容库存内。
 
 `runtime.components.getByName()`、`board_manager`、SDK handle 和动态 C module

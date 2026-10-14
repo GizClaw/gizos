@@ -887,6 +887,50 @@ static void run_until_terminal(h2_lua_host_t *host, h2_lua_job_id_t id,
   assert(!"Lua job did not reach a terminal state");
 }
 
+static h2_pal_result_t reject_sleep_timer(void *user,
+    const h2_pal_timer_config_t *config, h2_pal_timer_t **out) {
+  (void)config;
+  ++*(unsigned *)user;
+  *out = NULL;
+  return H2_PAL_ERR_IO;
+}
+
+static void test_sleep_uses_scheduler_deadlines(void) {
+  h2_runtime_t *runtime = create_runtime();
+  h2_runtime_t borrowed = *runtime;
+  unsigned timer_calls = 0;
+  const h2_pal_timer_vtable_t timer_vtable = {.create = reject_sleep_timer};
+  const h2_pal_timer_api_t timers = {&timer_calls, &timer_vtable};
+  borrowed.timer = &timers;
+  h2_lua_host_t *host = create_host(&borrowed);
+  static const uint8_t script[] =
+      "local r,s=require('runtime'),require('system');local n=0;"
+      "local begin=s.millis();local child=r.spawn(function() "
+      "for i=1,20 do r.sleep(1);n=n+1 end end);"
+      "r.sleep(25);assert(s.millis()-begin>=25);"
+      "r.join(child);assert(n==20);return 'deadline'";
+  h2_lua_job_id_t job;
+  assert(h2_lua_job_submit_text(host, NULL, "@scheduler-deadline", script,
+      sizeof(script) - 1u, NULL, 0, &job) == H2_PAL_OK);
+  run_until_terminal(host, job, 1000u);
+  assert(status(host, job).state == H2_LUA_JOB_SUCCEEDED);
+  assert(h2_lua_job_release(host, job) == H2_PAL_OK);
+
+  static const uint8_t waiting[] = "require('runtime').sleep(10000)";
+  assert(h2_lua_job_submit_text(host, NULL, "@cancel-sleep", waiting,
+      sizeof(waiting) - 1u, NULL, 0, &job) == H2_PAL_OK);
+  for (unsigned n = 0; n < 1000u && status(host, job).state != H2_LUA_JOB_WAITING; ++n)
+    (void)h2_pal_time_sleep_ms(runtime->time, 1u);
+  assert(status(host, job).state == H2_LUA_JOB_WAITING);
+  assert(h2_lua_job_cancel(host, job) == H2_PAL_OK);
+  run_until_terminal(host, job, 1000u);
+  assert(status(host, job).state == H2_LUA_JOB_CANCELLED);
+  assert(h2_lua_job_release(host, job) == H2_PAL_OK);
+  assert(h2_lua_host_destroy_checked(host) == H2_PAL_OK);
+  assert(timer_calls == 0u);
+  h2_runtime_deinit(runtime);
+}
+
 typedef struct expected_pixel {
   int x;
   int y;
@@ -3848,6 +3892,7 @@ int main(int argc, char **argv) {
   assert(h2_atomic_int_init(&s_test_audio_mic_start_count, 0) == H2_ATOMIC_OK);
   assert(h2_atomic_int_init(&s_test_audio_mic_stop_count, 0) == H2_ATOMIC_OK);
   assert(h2_atomic_int_init(&s_test_audio_mic_block, 0) == H2_ATOMIC_OK);
+  test_sleep_uses_scheduler_deadlines();
   if (argc == 3 && strcmp(argv[1], "--display-fault") == 0) {
     test_display_submission_fault(atoi(argv[2]));
     return 0;

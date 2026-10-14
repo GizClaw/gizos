@@ -157,6 +157,8 @@ Audio PAL 的麦克风通过 `getUserMedia` 与 `AudioWorklet` 采集，显式�
 
 ### 生命周期
 
+Lua coroutine 的毫秒等待由 VM worker 自己管理：只记录 monotonic `wake_ms` 并 yield，worker 按其 job 中最早的 deadline 缩短同一 wake queue 的等待（1..10 ms），deadline 到达后恢复协程。事件、取消和 Stop 继续通过该 queue 唤醒 worker，不为每次 sleep 创建、停止或 join 一个 PAL Timer/pthread。PAL Timer provider 的实现保持原样。公共 progress 回归继续要求每次 release 后有三个新的 Lua tick，并执行检查清理。
+
 `h2_web_platform_destroy()` 返回 `BUSY` 并保留 platform，直到 task 全部 join、挂起在浏览器 Promise 上的 PAL 调用返回、扬声器 track 关闭；调用方继续 pump 后重试。正常关机顺序：请求 App 停止并 pump 到 task join，`h2_runtime_deinit()`，`h2_web_fs_close()`，`h2_web_platform_destroy()`。
 
 ### 服务端要求
@@ -199,6 +201,8 @@ config.webrtc = h2_web_platform_webrtc_api(platform);
 ```
 
 ### Example 与 E2E 的 Web target
+
+`h2_web_app()` 把 `index.html/js/wasm`、可选 `index.data` 与 `_headers` 显式映射到 tar 根目录；在 consumer 中直接请求 `@gizos//...` 自有 Web target 时也不会带入 `external/<repo>` 前缀。downstream consumer 检查会实际运行这样的外部自有 Web archive。
 
 `//libs/pal/providers/web/application_host` 是 PAL Application Host 的 Web provider：创建 platform、可选持久 Filesystem 与 LVGL platform，组装完整 Web Runtime（其余能力为 canonical unsupported），把 Runtime 初始化、App task、协作停止和检查清理委托给 `//libs/pal/application/host` 的共享流程，再关闭 Filesystem 并销毁 platform。可选 `buttons` 描述 Runtime Button：`{component_id, key, name}`。输入全部由 shell 的 JavaScript 处理：`key`（DOM `KeyboardEvent.key`）和页面中所有 `data-h2-button="<name>"` 元素（鼠标、触摸）共同按住同一个 Button，合并成一个按下状态后才写 `h2_runtime_button_push_edge()` edge；页面失焦、隐藏或 App 结束时全部释放，click/long-press 仍由 Runtime 判定。`run_ms` 让无终止条件的 App 在测试中停止：设置共享 Host 的 `should_stop`，持续 pump 直到 App 与它自建的 worker 协作退出；没有强制取消。控制台与 `#status` 输出 `H2_WEB_APP name=<app> stage=running|ready|stop-requested` 与 `H2_WEB_APP name=<app> result=PASS rc=0 fs=0 destroy=0`；PASS 要求 App 返回 OK 且 Filesystem 关闭、platform 销毁都成功。新 target 只需 `main.c` 与 `h2_web_app()`，宏生成 `.web.tar`、`:serve` 与 `:browser_test`。
 
