@@ -176,7 +176,10 @@ static void run_scenario(const scenario_t *scenario, bool shared_pool, bool rele
         assert(receiver->packets > 0u);
         assert(receiver->lost_packets >= 0);
         assert(receiver->lost_packets * 2 <= (int64_t)sender->packets);
-        assert(receiver->packets + (uint64_t)receiver->lost_packets <= sender->packets);
+        /* UDP receiver packets is the highest received sequence number,
+         * which already includes gaps counted by lost_packets. */
+        assert((uint64_t)receiver->lost_packets <= receiver->packets);
+        assert(receiver->packets <= sender->packets);
         if (scenario->bitrate_bps != 0u) {
             /* The pacer sends a datagram only while the bits already sent fit
              * the elapsed time, so at most one datagram runs ahead of the
