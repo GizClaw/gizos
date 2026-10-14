@@ -457,6 +457,33 @@ static int run_display_and_speaker(test_context_t *context,
       .format = {16000u, 320u, 1u, H2_AUDIO_SAMPLE_S16LE},
       .volume_factor_milli = 1000u,
   };
+  // Hold playback stopped while filling a separate track. Its accepted audio
+  // cannot drain between Worker-to-UI calls, so backpressure is deterministic
+  // even when a loaded test runner produces frames more slowly than playback.
+  h2_pal_audio_track_t *held_track = NULL;
+  STEP_CHECK("speaker",
+             h2_pal_audio_create_track(audio, &track_config, &held_track) ==
+                 H2_PAL_OK,
+             "create stopped track");
+  h2_audio_frame_t held_frame = {
+      .data = pcm, .capacity = 640u, .bytes = 640u,
+      .sample_rate_hz = 16000u, .samples_per_channel = 320u,
+      .channels = 1u, .sample_format = H2_AUDIO_SAMPLE_S16LE,
+  };
+  int would_block = 0;
+  unsigned held_frames = 0u;
+  for (; held_frames < 50u; ++held_frames) {
+    const int held_rc = h2_pal_audio_track_write(held_track, &held_frame, 0u);
+    if (held_rc == H2_AUDIO_ERR_WOULD_BLOCK) {
+      would_block = 1;
+      break;
+    }
+    STEP_CHECK("speaker", held_rc == H2_PAL_OK, "fill stopped track");
+  }
+  STEP_CHECK("speaker", held_frames > 0u && would_block,
+             "stopped playback reaches bounded backpressure");
+  STEP_CHECK("speaker", h2_pal_audio_track_close(held_track) == H2_PAL_OK,
+             "discard stopped-track probe");
   h2_pal_audio_track_t *track = NULL;
   STEP_CHECK("speaker",
              h2_pal_audio_start_speaker(audio) == H2_PAL_OK &&
@@ -464,7 +491,6 @@ static int run_display_and_speaker(test_context_t *context,
                      H2_PAL_OK,
              "start speaker");
   const double started = emscripten_get_now();
-  int would_block = 0;
   size_t written_samples = 0u;
   for (size_t offset = 0u; offset + 320u <= 16000u; offset += 320u) {
     h2_audio_frame_t frame = {
@@ -476,9 +502,6 @@ static int run_display_and_speaker(test_context_t *context,
         .channels = 1u,
         .sample_format = H2_AUDIO_SAMPLE_S16LE,
     };
-    if (offset == 3200u &&
-        h2_pal_audio_track_write(track, &frame, 0u) == H2_AUDIO_ERR_WOULD_BLOCK)
-      would_block = 1;
     // The writer stalls longer than the first 20 ms frame; the start lead
     // must still cover it.
     if (offset == 320u)
