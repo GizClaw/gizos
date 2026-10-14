@@ -23,6 +23,7 @@ armino_component_register(
     "${REPO_ROOT}/libs/pal/include"
     "${REPO_ROOT}/libs/runtime/include"
   REQUIRES
+    h2_pal_e2e_application_host
     psa_mbedtls
     h2_bk_target_task_policy
     h2_bk7258_board

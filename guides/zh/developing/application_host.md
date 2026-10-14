@@ -78,7 +78,7 @@ h2_web_app(name = "demo", srcs = ["main.c"], app_name = "demo", deps = [])
 
 Desktop 的 App/Runtime 在公共 control/App task 上运行，SDL 事件与实际 renderer 由主线程推进。Display open/reopen 经 provider 的同步请求代理回主线程；其它 SDL PAL 操作借用内存并由既有 provider 锁和 deferred rendering 处理。provider create、run、destroy 都检查进程主线程；不把第三方 SDK type 泄漏到基础 PAL。
 
-ESP/BK 直接接收 `h2_pal_application_host_api_t`，使用与 Web/Desktop 相同的 PAL vtable，不另设 SDK config 或另一套回调名称。所有 slot 必须提供；没有外部输入时 activate/deactivate 显式返回 OK，没有额外停止来源时 poll 写入 0 并返回 OK。provider 只包装 SDK task identity 检查与 scheduler yield，header 和 native component 仅依赖基础 PAL 合同，不依赖共享 Host 或 Runtime。prepare/poll/release 必须回到 init 时的已有 task，并拒绝 ISR；prepare 返回实际 BSP Runtime config，release 必须容忍部分初始化，activate/deactivate 负责外部输入接入与 drain。API descriptor 被复制，vtable 与 user context 保持借用直到成功清理，retained 时继续保持有效。provider 不选择私有 board。`$application/control` 与 `$application/entry` 的 placement、priority、stack region 由最终 target task policy 提供，config 中可分别设置 control/App minimum stack。参考新增 `projects/e2e/targets/h2loader_tar_zlib/application-host/{devkit,bk7258_v3_202405}` 的实际 main 和构建接线。BSP wrapper 会在 entry 返回后释放 provider 时，retained 路径必须保留 owner task/context，不能返回触发自动清理。
+ESP/BK 直接接收 `h2_pal_application_host_api_t`，使用与 Web/Desktop 相同的 PAL vtable，不另设 SDK config 或另一套回调名称。所有 slot 必须提供；没有外部输入时 activate/deactivate 显式返回 OK，没有额外停止来源时 poll 写入 0 并返回 OK。provider 只包装 SDK task identity 检查与 scheduler yield，header 和 native component 仅依赖基础 PAL 合同，不依赖共享 Host 或 Runtime。prepare/poll/release 必须回到 init 时的已有 task，并拒绝 ISR；prepare 返回实际 BSP Runtime config，release 必须容忍部分初始化，activate/deactivate 负责外部输入接入与 drain。API descriptor 被复制，vtable 与 user context 保持借用直到成功清理，retained 时继续保持有效。provider 不选择私有 board。`$application/control` 与 `$application/entry` 的 placement、priority、stack region 由最终 target task policy 提供，config 中可分别设置 control/App minimum stack。默认板级接线由 `boards/{devkit/esp32s3,amoled/esp32s3,bk7258_v3_202405/bk7258}:application_host` 提供，链接共用的完整 vtable；调用方不必重复实现空回调和 BSP prepare/release。native PAL E2E 通过 `projects/e2e/libs/application-host` 的公共 launcher 组装同一个 Host config，保留产品命令服务与测试 fixture 的 ownership。BSP wrapper 会在 entry 返回后释放 provider 时，retained 路径必须保留 owner task/context，不能返回触发自动清理。
 
 通用接线是创建平台 provider，将其 API 填入 `h2_application_host_config_t.provider`，调用 create/run，再按 result.retained 决定能否 destroy descriptor 和调用方持有的 provider。config 表达 App entry、allocator、运行时限和 task stack 等实例参数；其中 configure/validate/release_runtime 只负责产品资源，平台生命周期只使用 PAL vtable。平台 release 只释放平台拥有的资源。H2Loader confirm/return、网络恢复和产品目录由调用方配置。
 
@@ -130,11 +130,29 @@ ESP/BK 直接接收 `h2_pal_application_host_api_t`，使用与 Web/Desktop 相�
 - 新 `web/application_host/lua/tests/progress`：持续渲染与 timer warmup 后，20 次按下/释放均须由 Lua 确认；每次释放后须继续输出至少三次周期进度，覆盖 retained 相同帧与最终 Stop 清理。
 - 新 `web/application_host/tests/input_backpressure`：consumer 暂停握手后填满真实 16 项 Runtime raw-edge queue，观察到拒收才恢复消费；72 次 30 ms 正反向按键与图像复原、TIMEOUT/BUSY 拒收、release 保序、pointer/key 合并与 blur、异步解绑排空、部分 bind 回滚、永久故障 consumer、溢出/终止错误和 retained CLOSED；清理完成后不再有 native 输入调用。
 - 新 `web/application_host/tests/gizclaw_apps`：同一 origin 的安装、卸载、刷新、无效包/hash、并发 BUSY、Stop 中断安装、独立用户 KV 与失败 close 重试。
-- 旧 `libs/app_host` 和 `libs/lua/web` 的兼容测试继续使用原实现；mobile、现有 Desktop/ESP/BK 产品 entry 不迁移。
+- 旧 `libs/app_host` 和 `libs/lua/web` 的兼容测试继续使用原实现；mobile、现有 Desktop/ESP/BK 产品 entry 不迁移；项目自有 native PAL E2E 的迁移见下表。
+
+### Native PAL E2E
+
+26 个现有入口均使用公共板级 provider 与 E2E launcher，另两个 Application Host SDK 验证入口也使用同一路径。旧 `h2loader_zlib_tar` labels 继续指向相同实现，firmware/package label、设备 runner 和历史验收记录不变。每个 main 只提供测试 entry、必要的 configure/validate、原有 serial identity/capabilities；没有 Host vtable 或独立 Runtime/App task 启动流程。
+
+| Suite | ESP32-S3 | BK7258 AP |
+| --- | --- | --- |
+| Core / Storage / Crypto / HTTP / WebRTC / JSON / MQTT / Net-TLS | DevKit 各一项 | 各一项 |
+| Audio | AMOLED | 一项 |
+| Audio Decoder | DevKit | 一项 |
+| Display | AMOLED | 一项 |
+| Wi-Fi | DevKit、AMOLED fixture | 一项 |
+| Storage Backup | — | 一项 |
+
+Core 的 atomic prerequisite 和 backup 的只读原始分区 dump 保持在 BSP prepare 之前；Core 的 transport allocator 隔离、MQTT 的控制通道暂停/恢复与所有原有测试断言和结果协议继续由各 suite 拥有。Host control task 与 entry 使用明确的 target task policy，entry 保持旧 runner 的 placement/priority/stack budget。终端回放响应协作 Stop；失败 suite 或 Core 明确保留的 cleanup owner 不允许销毁其 Runtime 借用图。默认没有运行期限，保留原有驻留行为。
+
+公共 E2E lifecycle 先 stop/join serial command worker 并释放 operation mutex，再允许 Runtime/BSP 销毁。SDK 命令服务附带 BLE owner 时返回 BUSY，保留借用图；不会强制关闭未知 BLE owner。新增真实 Host/Runtime/task/sync 集成测试验证正常清理、部分启动失败、独立 transport allocator 和 retained owner；SDK package build 只证明编译、链接和打包，不证明实板运行。
 
 ## 验证入口
 
 ```sh
+bazel test --config=macos_arm64 //projects/e2e/libs/application-host/...
 bazel test --config=macos_arm64 //libs/pal/application/host/... //libs/pal/providers/desktop/application_host/...
 bazel test --config=macos_arm64 //libs/pal/providers/web/application_host/... //projects/example/targets/pkg_tar/...
 bazel test --config=macos_arm64 //libs/gizclaw/lua_apps/... //libs/gizclaw:h2_gizclaw_service_test

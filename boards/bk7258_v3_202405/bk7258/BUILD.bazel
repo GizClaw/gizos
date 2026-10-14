@@ -1,3 +1,4 @@
+load("//boards/shared/application_host:board_application_host.bzl", "board_application_host")
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
 
 package(default_visibility = ["//visibility:public"])
@@ -27,4 +28,10 @@ firmware_native_component(
         "//libs/pal",
         "//libs/runtime",
     ],
+)
+
+board_application_host(
+    name = "application_host",
+    board = ":bk7258",
+    sdk = "bk",
 )

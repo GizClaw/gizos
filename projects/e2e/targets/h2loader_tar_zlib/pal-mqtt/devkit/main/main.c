@@ -1,3 +1,4 @@
+#include "h2_pal_e2e_application_host.h"
 #include "h2_esp_board.h"
 #include "h2_esp_h2loader_runtime.h"
 #include "h2_esp_h2loader_ble.h"
@@ -54,7 +55,8 @@ static int ca_digest(void *user, const uint8_t *bytes, size_t length, uint8_t di
     return psa_hash_compute(PSA_ALG_SHA_256, bytes, length, digest, 32u, &written) == PSA_SUCCESS &&
         written == 32u ? H2_PAL_OK : H2_PAL_ERR_IO;
 }
-static void run(void *user) {
+static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *app_runtime, void *user) {
+    runtime = app_runtime;
     (void)user;
     vTaskDelay(pdMS_TO_TICKS(5000u));
     int rc;
@@ -96,55 +98,73 @@ static void run(void *user) {
      * incomplete first capture in the independent host admission. */
     int delivered=h2_mqtt_esp_console_complete(&console,runtime,&result,provider_cleanup,confirm_app,runtime);
     if(delivered!=H2_PAL_OK)fail("ledger-or-confirm",delivered);
-    hold();
+    h2_pal_result_t waited = h2_pal_e2e_application_host_wait(host, runtime);
+    return h2_pal_e2e_application_host_finish(host, runtime, rc == H2_PAL_OK ? waited : rc);
+}
+
+static h2_pal_result_t configure(void *user, h2_runtime_config_t *config) {
+  (void)user;
+  (void)config;
+  int rc = H2_PAL_OK;
+  size_t before[10], after[10];
+  rc = snapshot(before);
+  if (rc != H2_PAL_OK)
+    fail("provider-before", rc);
+  const h2_coremqtt_config_t mqtt_config = {.allocator = config->mem,
+                                            .net = config->net,
+                                            .time = config->time,
+                                            .log = config->log,
+                                            .outgoing_publish_records = 8u,
+                                            .incoming_publish_records = 8u};
+  rc = h2_coremqtt_create(&mqtt_config, &mqtt, &mqtt_api);
+  if (rc != H2_PAL_OK)
+    fail("mqtt-create", rc);
+  rc = snapshot(after);
+  if (rc != H2_PAL_OK || memcmp(before, after, 8u * sizeof(size_t)) != 0 ||
+      after[8] != before[8] + 1u || after[9] <= before[9]) {
+    h2_coremqtt_destroy(mqtt);
+    mqtt = NULL;
+    fail("provider-allocation", H2_PAL_ERR_IO);
+  }
+  owner_bytes = after[9] - before[9];
+  config->mqtt = &mqtt_api;
+  return H2_PAL_OK;
+}
+static h2_pal_result_t validate(void *user, h2_runtime_t *app_runtime) {
+  (void)user;
+  runtime = app_runtime;
+  board_log = runtime->log;
+  console.usb = h2_esp_platform_usb_jtag_io_stream_api();
+  console.timeout_ms = 5000u;
+  runtime->log = &ledger_log_api;
+  printf("H2_PAL_MQTT_PROVIDER policy=coremqtt allocator=psram incoming=8 "
+         "outgoing=8 owner_bytes=%zu\n",
+         owner_bytes);
+
+  return H2_PAL_OK;
+}
+static h2_pal_result_t release_runtime(void *user) {
+    (void)user;
+    if (mqtt != NULL) {
+        h2_coremqtt_destroy(mqtt);
+        mqtt = NULL;
+        memset(&mqtt_api, 0, sizeof(mqtt_api));
+    }
+    return H2_PAL_OK;
 }
 void app_main(void) {
-    puts("H2_PAL_MQTT_PLATFORM_BOOT board=devkit");
-    fflush(stdout);
-    int rc = h2_esp_target_task_policy_install();
-    if (rc != H2_PAL_OK) fail("task-policy", rc);
-    h2_runtime_config_t config = {0};
-    rc = h2_esp_board_runtime_config(&config);
-    if (rc != H2_PAL_OK) fail("board", rc);
-    size_t before[10], after[10];
-    rc = snapshot(before);
-    if (rc != H2_PAL_OK) fail("provider-before", rc);
-    const h2_coremqtt_config_t mqtt_config = {.allocator = config.mem,
-        .net = config.net, .time = config.time, .log = config.log,
-        .outgoing_publish_records = 8u, .incoming_publish_records = 8u};
-    rc = h2_coremqtt_create(&mqtt_config, &mqtt, &mqtt_api);
-    if (rc != H2_PAL_OK) fail("mqtt-create", rc);
-    rc = snapshot(after);
-    if (rc != H2_PAL_OK || memcmp(before, after, 8u * sizeof(size_t)) != 0 ||
-        after[8] != before[8] + 1u || after[9] <= before[9]) {
-        h2_coremqtt_destroy(mqtt);
-        mqtt = NULL;
-        fail("provider-allocation", H2_PAL_ERR_IO);
-    }
-    owner_bytes = after[9] - before[9];
-    config.mqtt = &mqtt_api;
-    const h2_esp_h2loader_app_commands_config_t commands = {.active_name = "pal-mqtt",
-        .hardware_capabilities = H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_WIFI,
-        .h2loader_partition_id = 1u, .coredump_partition_id = 3u};
-    rc = h2_esp_h2loader_app_commands_prepare_serial_with_config(&config, &commands);
-    if (rc == H2_PAL_OK) rc = h2_runtime_init(&config, &runtime);
-    if (rc != H2_PAL_OK) {
-        h2_coremqtt_destroy(mqtt);
-        mqtt = NULL;
-        fail("runtime-or-commands", rc);
-    }
-    board_log=runtime->log;
-    console.usb=h2_esp_platform_usb_jtag_io_stream_api();
-    console.timeout_ms=5000u;
-    runtime->log=&ledger_log_api;
-    printf("H2_PAL_MQTT_PROVIDER policy=coremqtt allocator=psram incoming=8 outgoing=8 owner_bytes=%zu\n", owner_bytes);
-    const h2_pal_task_options_t options = {.name = h2_pal_mqtt_device_runner_task_name, .min_stack_size = 65536u};
-    h2_pal_task_t *task = NULL;
-    rc = h2_pal_task_start(runtime->task, &options, run, NULL, &task);
-    if (rc != H2_PAL_OK) {
-        runtime->mqtt = h2_pal_unsupported_mqtt_api();
-        h2_coremqtt_destroy(mqtt);
-        mqtt = NULL;
-        fail("runner", rc);
-    }
+
+  puts("H2_PAL_MQTT_PLATFORM_BOOT board=devkit");
+  fflush(stdout);
+  int rc = h2_esp_target_task_policy_install();
+  if (rc != H2_PAL_OK)
+    fail("task-policy", rc);
+  const h2_application_host_config_t app = {
+      .entry = run, .configure = configure, .validate = validate,
+      .release_runtime = release_runtime};
+  int host_rc = h2_pal_e2e_application_host_run(
+      "pal-mqtt", H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_WIFI, &app,
+      NULL);
+  if (host_rc != H2_PAL_OK)
+    fail("application_host", host_rc);
 }

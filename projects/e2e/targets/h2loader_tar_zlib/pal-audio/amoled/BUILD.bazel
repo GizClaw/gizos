@@ -1,3 +1,4 @@
+load("//projects/e2e/libs/application-host:e2e_application_host.bzl", "pal_e2e_application_host")
 load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_esp_idf_firmware")
 load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
 load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
@@ -11,6 +12,8 @@ esp_target_task_policy(
     default_policy = "4 any 4096 psram",
     graph = [":launcher"],
     policies = [
+        "$application/control 4 0 32768 psram",
+        "$application/entry 4 0 32768 psram",
         "pal-audio/e2e/runner 4 0 32768 psram",
         "h2loader/appcmd 8 0 4096 psram",
         "h2loader/blecmd 8 0 4096 psram",
@@ -37,6 +40,7 @@ firmware_lib_component(
         "//libs/drivers/audio/es8311",
         "//libs/iostreamikcp",
         "//libs/pal:unsupported",
+        "//libs/pal/application/host",
         "//libs/pal/providers/corehttp",
         "//libs/pal/providers/libco",
         "//libs/pixa",
@@ -51,11 +55,16 @@ firmware_native_component(
     srcs = ["main/main.c"],
     component_directory = "projects/e2e/targets/h2loader_tar_zlib/pal-audio/amoled/main",
     component_name = "main",
-    data = ["main/CMakeLists.txt", "main/idf_component.yml"],
+    data = [
+        "main/CMakeLists.txt",
+        "main/idf_component.yml",
+    ],
     tags = ["manual"],
     deps = [
+        ":application_host",
         ":firmware_lib",
         "//boards/amoled/esp32s3",
+        "//libs/pal/application/host",
         "//libs/runtime",
         "//native_component_src/esp-idf6.x/h2_es8311_audio_system",
         "//native_component_src/esp-idf6.x/h2_pal_core",
@@ -67,8 +76,13 @@ firmware_native_component(
 
 h2loader_esp_idf_firmware(
     name = "firmware",
-    srcs = ["CMakeLists.txt", "main/CMakeLists.txt", "main/idf_component.yml",
-            "main/main.c", "sdkconfig.pal-audio.defaults"],
+    srcs = [
+        "CMakeLists.txt",
+        "main/CMakeLists.txt",
+        "main/idf_component.yml",
+        "main/main.c",
+        "sdkconfig.pal-audio.defaults",
+    ],
     board = "amoled",
     graph = [":launcher"],
     project = "CMakeLists.txt",
@@ -84,4 +98,10 @@ h2loader_tar_zlib(
     image = "pal-audio",
     role = "app",
     target = "esp32s3",
+)
+
+pal_e2e_application_host(
+    name = "application_host",
+    board = "//boards/amoled/esp32s3:application_host",
+    sdk = "esp",
 )

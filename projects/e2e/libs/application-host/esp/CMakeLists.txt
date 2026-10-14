@@ -1,0 +1,5 @@
+include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native_component.cmake")
+h2_bazel_native_component_sources(H2_COMPONENT_SOURCES h2_pal_e2e_application_host)
+idf_component_register(SRCS ${H2_COMPONENT_SOURCES} INCLUDE_DIRS "$ENV{H2_GIZOS_ROOT}/projects/e2e/libs/application-host/include" REQUIRES h2_board_application_host h2_pal_core h2_h2loader_ble h2_firmware_lib)
+target_compile_definitions(${COMPONENT_LIB} PRIVATE H2_PAL_E2E_ESP=1)
+target_compile_options(${COMPONENT_LIB} PRIVATE -Wall -Wextra -Werror)

@@ -1,3 +1,4 @@
+#include "h2_pal_e2e_application_host.h"
 #include "h2_bk7258_board.h"
 #include "h2_bk_h2loader.h"
 #include "h2_loader_app_client.h"
@@ -171,7 +172,8 @@ int __wrap_h2_loader_app_client_init(h2_loader_app_client_t *client,
     return __real_h2_loader_app_client_init(client,&isolated);
 }
 
-static void run(void *user) {
+static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *app_runtime, void *user) {
+    runtime = app_runtime;
     (void)user;
     rtos_delay_milliseconds(5000);
     int rc;
@@ -198,7 +200,7 @@ static void run(void *user) {
     finished=1;
     while(reported<H2_PAL_CORE_E2E_CASE_COUNT) report_case(reported++);
     int confirm=h2_bk_h2loader_confirm_current_app(&transport_runtime);
-    for (;;) {
+    while (!h2_application_host_should_stop(host)) {
         printf("H2_BK_CORE_REPORT contract=%u passed=%u failed=%u blocked=%u not_run=%u complete=%d qualified=%d cleanup=%d rc=%d confirm=%d\n",
             H2_PAL_CORE_E2E_CONTRACT_VERSION,(unsigned)result.passed,(unsigned)result.failed,
             (unsigned)result.blocked,(unsigned)result.not_run,result.complete,result.qualified,
@@ -209,7 +211,13 @@ static void run(void *user) {
         rtos_delay_milliseconds(5000);
         for(size_t i=0;i<H2_PAL_CORE_E2E_CASE_COUNT;++i) report_case(i);
     }
+
+    if (result.retained_cleanup != NULL || result.baseline.retained_cleanup != NULL) {
+        (void)h2_application_host_retain(host, &result, H2_PAL_ERR_BUSY);
+    }
+    return h2_pal_e2e_application_host_finish(host, runtime, rc);
 }
+
 /* Runtime depends on Atomic. Verify its real cross-core prerequisite before
  * entering the separate PAL Core contract; this is not a PAL case. */
 static h2_atomic_uint_t atomic_count, atomic_ready;
@@ -257,27 +265,40 @@ static void atomic_prerequisite(void) {
     h2_atomic_uint_destroy(&atomic_ready); h2_atomic_uint_destroy(&atomic_count);
     if(!passed) fail("atomic_parallel",H2_PAL_ERR_INVALID_STATE);
 }
+static h2_pal_result_t configure(void *user, h2_runtime_config_t *config) {
+  (void)user;
+  config->system_event = h2_pal_unsupported_system_event_api();
+
+  return H2_PAL_OK;
+}
+static h2_pal_result_t validate(void *user, h2_runtime_t *app_runtime) {
+  (void)user;
+  runtime = app_runtime;
+  int rc = H2_PAL_OK;
+  transport_runtime = *runtime;
+  transport_runtime.mem = &transport_memory;
+  rc = h2_bk_h2loader_start_app_iostreamikcp_with_capabilities(
+      &transport_runtime, "pal-core", H2_LOADER_CAPABILITY_UART);
+  if (rc != H2_PAL_OK)
+    fail("commands", rc);
+  commands_ready = 1;
+  beken_thread_t deadline;
+  if (rtos_core0_create_psram_thread(&deadline, 7, "core_watchdog", watchdog,
+                                     4096, NULL) != kNoErr)
+    fail("watchdog", H2_PAL_ERR_TASK);
+
+  return H2_PAL_OK;
+}
 static void entry(void *user) {
-    (void)user;
-    atomic_prerequisite();
-    h2_runtime_config_t config;
-    int rc=h2_bk7258_board_runtime_config(&config);
-    if(rc!=H2_PAL_OK) fail("board",rc);
-    config.system_event=h2_pal_unsupported_system_event_api();
-    rc=h2_runtime_init(&config,&runtime);
-    if(rc!=H2_PAL_OK) fail("runtime",rc);
-    transport_runtime=*runtime; transport_runtime.mem=&transport_memory;
-    rc=h2_bk_h2loader_start_app_iostreamikcp_with_capabilities(&transport_runtime,"pal-core",H2_LOADER_CAPABILITY_UART);
-    if(rc!=H2_PAL_OK) fail("commands",rc);
-    commands_ready=1;
-    beken_thread_t deadline;
-    if(rtos_core0_create_psram_thread(&deadline,7,"core_watchdog",watchdog,4096,NULL)!=kNoErr)
-        fail("watchdog",H2_PAL_ERR_TASK);
-    const h2_pal_task_options_t options={.name=h2_pal_core_e2e_runner_task_name};
-    h2_pal_task_t *runner;
-    rc=h2_pal_task_start(runtime->task,&options,run,NULL,&runner);
-    if(rc!=H2_PAL_OK) fail("runner",rc);
-    hold();
+  (void)user;
+
+  atomic_prerequisite();
+  const h2_application_host_config_t app = {
+      .entry = run, .configure = configure, .validate = validate};
+  int host_rc = h2_pal_e2e_application_host_run(
+      "pal-core", H2_LOADER_CAPABILITY_UART, &app, NULL);
+  if (host_rc != H2_PAL_OK)
+    fail("application_host", host_rc);
 }
 int main(void) {
     if(h2_bk_target_task_policy_install()!=H2_PAL_OK) return -1;

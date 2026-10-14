@@ -1,12 +1,12 @@
 #ifndef H2_BK_H2LOADER_H
 #define H2_BK_H2LOADER_H
 
+#include "h2/pal/hal/h2_pal_power.h"
+#include "h2/pal/os/h2_pal_fs.h"
+#include "h2/pal/os/h2_pal_pref.h"
 #include "h2_bundle_installer.h"
 #include "h2_loader_command.h"
 #include "h2_loader_package.h"
-#include "h2/pal/os/h2_pal_fs.h"
-#include "h2/pal/hal/h2_pal_power.h"
-#include "h2/pal/os/h2_pal_pref.h"
 #include "h2_runtime.h"
 
 #include "h2_loader_app_client.h"
@@ -51,10 +51,13 @@ const h2_pal_power_api_t *h2_bk_h2loader_power_api(void);
 int h2_bk_h2loader_start_app_iostreamikcp(h2_runtime_t *runtime,
                                           const char *active_name);
 int h2_bk_h2loader_start_app_iostreamikcp_with_capabilities(
-    h2_runtime_t *runtime,
-    const char *active_name,
+    h2_runtime_t *runtime, const char *active_name,
     uint32_t hardware_capabilities);
 int h2_bk_h2loader_stop_app_iostreamikcp(void);
+/** Serial E2E owner state; full shutdown also releases the App operation mutex.
+ * BUSY retains any attached BLE service. Call before Runtime destruction. */
+int h2_bk_h2loader_app_serial_is_started(void);
+int h2_bk_h2loader_stop_app_commands(void);
 int h2_bk_h2loader_start_loader_iostreamikcp(
     h2_runtime_t *runtime, h2_loader_command_t *command,
     const h2_loader_command_config_t *command_config);
@@ -62,14 +65,12 @@ int h2_bk_h2loader_stop_loader_iostreamikcp(void);
 int h2_bk_h2loader_start_app_ble(h2_runtime_t *runtime,
                                  const char *active_name);
 int h2_bk_h2loader_start_app_ble_with_capabilities(
-    h2_runtime_t *runtime,
-    const char *active_name,
+    h2_runtime_t *runtime, const char *active_name,
     uint32_t hardware_capabilities);
 int h2_bk_h2loader_start_app_ble_extended(h2_runtime_t *runtime,
                                           const char *active_name);
 int h2_bk_h2loader_start_app_ble_extended_with_capabilities(
-    h2_runtime_t *runtime,
-    const char *active_name,
+    h2_runtime_t *runtime, const char *active_name,
     uint32_t hardware_capabilities);
 int h2_bk_h2loader_pause_app_ble_advertising(void);
 int h2_bk_h2loader_resume_app_ble_advertising(void);
@@ -88,12 +89,14 @@ int h2_bk_h2loader_prepare_pending_app_restart(void);
 void h2_bk_h2loader_abort_for_crash_test(void);
 
 /** Copy the initialized App command configuration without starting a service.
- * Call after command-service startup, before publishing to other tasks. Pointers
- * remain borrowed for the service lifetime. The consumer must serialize ALL
- * Stage, digest and reboot operations with operation_sync/operation_mutex, and
- * release the mutex on the same task that acquired it. Clears output on error.
+ * Call after command-service startup, before publishing to other tasks.
+ * Pointers remain borrowed for the service lifetime. The consumer must
+ * serialize ALL Stage, digest and reboot operations with
+ * operation_sync/operation_mutex, and release the mutex on the same task that
+ * acquired it. Clears output on error.
  */
-int h2_bk_h2loader_app_commands_get_config(h2_loader_app_client_config_t *out_config);
+int h2_bk_h2loader_app_commands_get_config(
+    h2_loader_app_client_config_t *out_config);
 
 #ifdef __cplusplus
 }

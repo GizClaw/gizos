@@ -1,3 +1,4 @@
+#include "h2_pal_e2e_application_host.h"
 #include "bk_private/bk_init.h"
 #include "h2_bk7258_board.h"
 #include "h2_bk_h2loader.h"
@@ -123,7 +124,8 @@ static void fail(const char *stage, int rc) {
     fflush(stdout);
     hold();
 }
-static void run(void *user) {
+static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *app_runtime, void *user) {
+    runtime = app_runtime;
     (void)user;
     rtos_delay_milliseconds(3000u);
     h2_pal_firmware_info_t info = {0};
@@ -139,31 +141,36 @@ static void run(void *user) {
         rc == H2_PAL_OK ? h2_bk_h2loader_confirm_current_app(runtime) : H2_PAL_ERR_INVALID_STATE;
     printf("H2_WIFI_READY board=bk7258 rc=%d confirm=%d\n", rc, confirm);
     fflush(stdout);
-    hold();
+    h2_pal_result_t waited = h2_pal_e2e_application_host_wait(host, runtime);
+    return h2_pal_e2e_application_host_finish(host, runtime, rc == H2_PAL_OK ? waited : rc);
+}
+
+static h2_pal_result_t configure(void *user, h2_runtime_config_t *config) {
+  (void)user;
+  config->event_queue_capacity = 64;
+
+  return H2_PAL_OK;
+}
+static h2_pal_result_t validate(void *user, h2_runtime_t *app_runtime) {
+  (void)user;
+  runtime = app_runtime;
+  int rc = H2_PAL_OK;
+  rc = start_diag();
+  if (rc)
+    fail("dhcpdiag", rc);
+
+  return H2_PAL_OK;
 }
 static void entry(void *user) {
-    (void)user;
-    h2_runtime_config_t config = {0};
-    int rc = h2_bk7258_board_runtime_config(&config);
-    if (rc)
-        fail("board", rc);
-    config.event_queue_capacity = 64;
-    rc = h2_runtime_init(&config, &runtime);
-    if (rc)
-        fail("runtime", rc);
-    rc = h2_bk_h2loader_start_app_iostreamikcp_with_capabilities(
-        runtime, "pal-wifi", H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_WIFI);
-    if (rc)
-        fail("commands", rc);
-    rc = start_diag();
-    if (rc)
-        fail("dhcpdiag", rc);
-    const h2_pal_task_options_t options = {.name = h2_wifi_device_runner_task_name};
-    h2_pal_task_t *runner = NULL;
-    rc = h2_pal_task_start(runtime->task, &options, run, NULL, &runner);
-    if (rc)
-        fail("runner", rc);
-    hold();
+  (void)user;
+
+  const h2_application_host_config_t app = {
+      .entry = run, .configure = configure, .validate = validate};
+  int host_rc = h2_pal_e2e_application_host_run(
+      "pal-wifi", H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_WIFI, &app,
+      NULL);
+  if (host_rc != H2_PAL_OK)
+    fail("application_host", host_rc);
 }
 int main(void) {
     int rc = h2_bk_target_task_policy_install();

@@ -1,6 +1,6 @@
 # Application Host E2E
 
-该 headless App 使用同一个 Application Host entry contract 报告 ready 并响应协作停止。它不初始化 Runtime、不选择 BSP，也不拥有 H2Loader 或设备操作。retained 时 launcher 保持 owner task/context 存活，避免 BSP wrapper 在返回后释放仍被借用的 provider。调用方提供执行预算；两个 SDK launcher 使用 100 ms 的 run_ms，并检查 application、cleanup 与 retained 结果。接口见 [生产头文件](app/include/h2_application_host_e2e.h)。
+该 headless App 使用同一个 Application Host entry contract 报告 ready 并响应协作停止。它不初始化 Runtime、不选择 BSP，也不拥有 H2Loader 或设备操作。retained 时 launcher 保持 owner task/context 存活，避免 BSP wrapper 在返回后释放仍被借用的 provider。调用方提供执行预算；两个 SDK launcher 共用完整板级 provider 与 `projects/e2e/libs/application-host`，main 不重复声明 vtable，使用 100 ms 的 run_ms，并检查 application、cleanup 与 retained 结果。接口见 [生产头文件](app/include/h2_application_host_e2e.h)。
 
 ## 构建与验收
 

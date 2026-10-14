@@ -1,3 +1,4 @@
+#include "h2_pal_e2e_application_host.h"
 #include "h2_bk7258_board.h"
 #include "h2_bk_h2loader.h"
 #include "h2_bk_platform_core.h"
@@ -65,8 +66,9 @@ static int protocol_status(const char *stage,int rc){
     if(n<0 || (size_t)n>=sizeof(line))return H2_PAL_ERR_NO_SPACE;
     return h2_mqtt_bk_console_record(&console,line);
 }
-static void run(void *unused){
-    (void)unused;rtos_delay_milliseconds(5000u);
+static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *app_runtime, void *user) {
+    runtime = app_runtime;
+    (void)user;rtos_delay_milliseconds(5000u);
     int rc;
     for(;;){rc=h2_mqtt_device_prepare(runtime);if(rc==H2_PAL_OK)break;
         if(rc!=H2_PAL_ERR_NOT_FOUND && rc!=H2_PAL_ERR_UNAVAILABLE && rc!=H2_PAL_ERR_TIMEOUT && rc!=H2_PAL_ERR_BUSY)fail("network",rc);
@@ -121,17 +123,30 @@ restore_commands: ;
     }
     /* There is one first ledger/terminal. Later replay cannot repair a missing
      * record and cannot replace this boot's actual failed output evidence. */
-    hold();
+    h2_pal_result_t waited = h2_pal_e2e_application_host_wait(host, runtime);
+    return h2_pal_e2e_application_host_finish(host, runtime, rc == H2_PAL_OK ? waited : rc);
 }
-static void entry(void *unused){
-    (void)unused;puts("H2_PAL_MQTT_PLATFORM_BOOT board=bk7258");fflush(stdout);
-    h2_runtime_config_t config={0};int rc=h2_bk7258_board_runtime_config(&config);if(rc!=H2_PAL_OK)fail("board",rc);
-    board_log=config.log;config.log=&ledger_log_api;
-    rc=h2_runtime_init(&config,&runtime);if(rc!=H2_PAL_OK)fail("runtime",rc);
-    rc=h2_bk_h2loader_start_app_iostreamikcp_with_capabilities(runtime,"pal-mqtt",H2_LOADER_CAPABILITY_UART|H2_LOADER_CAPABILITY_WIFI);
-    if(rc!=H2_PAL_OK)fail("commands",rc);
-    const h2_pal_task_options_t options={.name=h2_pal_mqtt_device_runner_task_name,.min_stack_size=65536u};h2_pal_task_t *task=NULL;
-    rc=h2_pal_task_start(runtime->task,&options,run,NULL,&task);if(rc!=H2_PAL_OK)fail("runner",rc);hold();
+
+static h2_pal_result_t configure(void *user, h2_runtime_config_t *config) {
+  (void)user;
+  (void)config;
+  board_log = config->log;
+  config->log = &ledger_log_api;
+
+  return H2_PAL_OK;
+}
+static void entry(void *user) {
+  (void)user;
+
+  puts("H2_PAL_MQTT_PLATFORM_BOOT board=bk7258");
+  fflush(stdout);
+  const h2_application_host_config_t app = {.entry = run,
+                                            .configure = configure};
+  int host_rc = h2_pal_e2e_application_host_run(
+      "pal-mqtt", H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_WIFI, &app,
+      NULL);
+  if (host_rc != H2_PAL_OK)
+    fail("application_host", host_rc);
 }
 int main(void){int rc=h2_bk_target_task_policy_install();if(rc!=H2_PAL_OK)return -1;bk_init();
     rc=h2_bk7258_board_start_entry_task("bk/pal-mqtt",entry,NULL);if(rc!=H2_PAL_OK)fail("entry",rc);return 0;}

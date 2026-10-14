@@ -1,0 +1,16 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "CMakeLists.txt",
+    "src/h2_bk_board_application_host.c",
+    "include/h2_bk_board_application_host.h",
+])
+
+cc_library(
+    name = "headers",
+    hdrs = ["include/h2_bk_board_application_host.h"],
+    includes = ["include"],
+    deps = ["//native_component_src/bk7258/ap/h2_application_host:headers"],
+)

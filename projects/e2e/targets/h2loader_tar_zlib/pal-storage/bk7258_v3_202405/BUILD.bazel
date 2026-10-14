@@ -1,3 +1,4 @@
+load("//projects/e2e/libs/application-host:e2e_application_host.bzl", "pal_e2e_application_host")
 load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_bk7258_firmware")
 load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
 load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
@@ -10,6 +11,8 @@ bk7258_target_task_policy(
     ap_allocator = "psram",
     ap_default_policy = "7 0 4096 default",
     ap_policies = [
+        "$application/control 7 0 65536 psram",
+        "$application/entry 7 0 65536 psram",
         "pal-storage/e2e/runner 7 0 65536 psram",
         "h2loader/appcmd    5        0  8192  psram",
         "$h2loader/uartcmd  5        0  8192  psram",
@@ -35,6 +38,7 @@ firmware_lib_component(
         "//libs/command",
         "//libs/iostreamikcp",
         "//libs/pal:unsupported",
+        "//libs/pal/application/host",
         "//libs/pal/providers/corehttp",
         "//libs/pal/providers/coremqtt",
         "//libs/pal/providers/h2peer",
@@ -70,9 +74,11 @@ firmware_native_component(
     tags = ["manual"],
     deps = [
         ":ap_launcher_component",
+        ":application_host",
         ":firmware_lib",
         "//boards/bk7258_v3_202405/bk7258",
         "//libs/pal",
+        "//libs/pal/application/host",
         "//libs/pal/providers/libco",
         "//libs/runtime",
         "//native_component_src/bk7258/ap/h2_pal_core",
@@ -112,4 +118,10 @@ h2loader_tar_zlib(
     image = "pal-storage",
     role = "app",
     target = "bk7258",
+)
+
+pal_e2e_application_host(
+    name = "application_host",
+    board = "//boards/bk7258_v3_202405/bk7258:application_host",
+    sdk = "bk",
 )

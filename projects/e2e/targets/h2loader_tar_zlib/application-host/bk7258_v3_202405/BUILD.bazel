@@ -1,3 +1,4 @@
+load("//projects/e2e/libs/application-host:e2e_application_host.bzl", "pal_e2e_application_host")
 load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_bk7258_firmware")
 load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
 load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
@@ -70,6 +71,7 @@ firmware_native_component(
     tags = ["manual"],
     deps = [
         ":ap_launcher_component",
+        ":application_host",
         ":firmware_lib",
         "//boards/bk7258_v3_202405/bk7258",
         "//libs/pal",
@@ -111,4 +113,10 @@ h2loader_tar_zlib(
     image = "application-host-e2e",
     role = "app",
     target = "bk7258",
+)
+
+pal_e2e_application_host(
+    name = "application_host",
+    board = "//boards/bk7258_v3_202405/bk7258:application_host",
+    sdk = "bk",
 )

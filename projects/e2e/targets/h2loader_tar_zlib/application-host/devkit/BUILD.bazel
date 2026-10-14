@@ -1,3 +1,4 @@
+load("//projects/e2e/libs/application-host:e2e_application_host.bzl", "pal_e2e_application_host")
 load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_esp_idf_firmware")
 load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
 load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
@@ -59,6 +60,7 @@ firmware_native_component(
     ],
     tags = ["manual"],
     deps = [
+        ":application_host",
         ":firmware_lib",
         "//boards/devkit/esp32s3",
         "//libs/atomic",
@@ -95,4 +97,10 @@ h2loader_tar_zlib(
     image = "application-host-e2e",
     role = "app",
     target = "esp32s3",
+)
+
+pal_e2e_application_host(
+    name = "application_host",
+    board = "//boards/devkit/esp32s3:application_host",
+    sdk = "esp",
 )

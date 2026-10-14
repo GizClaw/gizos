@@ -1,4 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_test")
+load("//boards/shared/application_host:board_application_host.bzl", "board_application_host")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
 
@@ -94,4 +95,10 @@ cc_test(
         "//libs/pal",
         "//libs/runtime",
     ],
+)
+
+board_application_host(
+    name = "application_host",
+    board = ":esp32s3",
+    sdk = "esp",
 )

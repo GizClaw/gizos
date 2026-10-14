@@ -1,7 +1,7 @@
 #include "h2_bk_h2loader.h"
 #include "h2_bk_h2loader_internal.h"
-#include "h2loader_app_task_names.h"
 #include "h2_loader_task_names.h"
+#include "h2loader_app_task_names.h"
 
 #include "h2_bk_platform_core.h"
 #include "h2_command.h"
@@ -158,8 +158,8 @@ static h2_pal_result_t poll_physical(h2_bk_serial_transport_t *transport,
   }
   /* Resume complete buffered frames after a callback deadline, even when
    * the physical link supplies no new bytes. */
-  h2_pal_result_t rc = h2_iostreamikcp_filter_input(
-      &transport->filter, buffer, count, on_frame, transport);
+  h2_pal_result_t rc = h2_iostreamikcp_filter_input(&transport->filter, buffer,
+                                                    count, on_frame, transport);
   if (rc == H2_PAL_OK && transport->stream != NULL) {
     rc = h2_iostreamikcp_update(transport->stream, transport_now_ms(NULL));
   }
@@ -489,7 +489,7 @@ int h2_bk_h2loader_start_loader_iostreamikcp(
       h2_atomic_bool_init(&state->stop_requested, false);
   if (atomic_rc != H2_ATOMIC_OK) {
     return atomic_rc == H2_ATOMIC_UNSUPPORTED ? H2_PAL_ERR_UNSUPPORTED
-                                               : H2_PAL_ERR_NO_MEMORY;
+                                              : H2_PAL_ERR_NO_MEMORY;
   }
   int rc = transport_init(&state->transport, state->allocator,
                           &state->stop_requested);
@@ -503,7 +503,7 @@ int h2_bk_h2loader_start_loader_iostreamikcp(
       .min_stack_size = H2_BK_H2LOADER_LOADER_COMMAND_STACK_SIZE,
   };
   rc = h2_pal_task_start(runtime->task, &options, loader_serial_task, state,
-                        &state->task);
+                         &state->task);
   if (rc != H2_PAL_OK) {
     transport_deinit(&state->transport);
     h2_atomic_bool_destroy(&state->stop_requested);
@@ -519,7 +519,7 @@ int h2_bk_h2loader_stop_loader_iostreamikcp(void) {
     return H2_PAL_OK;
   }
   h2_atomic_bool_store(&s_loader_serial.stop_requested, true,
-                        H2_ATOMIC_RELEASE);
+                       H2_ATOMIC_RELEASE);
   int rc = h2_pal_task_join(s_loader_serial.task_api, s_loader_serial.task);
   if (rc != H2_PAL_OK) {
     return rc;
@@ -541,8 +541,7 @@ static int app_read_byte(void *user, uint32_t timeout_ms) {
     if (h2_atomic_bool_load(&state->stop_requested, H2_ATOMIC_ACQUIRE)) {
       return H2_LOADER_APP_CLIENT_SESSION_CLOSED;
     }
-    if (state->transport.close_pending &&
-        state->transport.pending_conv == 0u) {
+    if (state->transport.close_pending && state->transport.pending_conv == 0u) {
       deactivate_current(&state->transport);
       return EOF;
     }
@@ -597,12 +596,13 @@ static int app_write(void *user, const char *data, size_t len) {
    * the line terminator before its terminal flush, so both peers can wait
    * forever. Queue both writes and flush only at the line boundary. */
   return len != 0u && (data[len - 1u] == '\n' || data[len - 1u] == '\r')
-      ? state->io.vtable->flush(state->io.user)
-      : H2_PAL_OK;
+             ? state->io.vtable->flush(state->io.user)
+             : H2_PAL_OK;
 }
 
 static int arm_pending_app_rollback(const h2_pal_pref_api_t *pref) {
-  if (pref == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (pref == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
   return h2_bk_h2loader_prepare_pending_app_rollback();
 }
 
@@ -614,8 +614,7 @@ int h2_bk_h2loader_start_app_iostreamikcp(h2_runtime_t *runtime,
 }
 
 int h2_bk_h2loader_start_app_iostreamikcp_with_capabilities(
-    h2_runtime_t *runtime,
-    const char *active_name,
+    h2_runtime_t *runtime, const char *active_name,
     uint32_t hardware_capabilities) {
   if (runtime == NULL || runtime->task == NULL || runtime->mem == NULL ||
       runtime->pref == NULL || active_name == NULL || active_name[0] == '\0') {
@@ -630,12 +629,12 @@ int h2_bk_h2loader_start_app_iostreamikcp_with_capabilities(
       h2_atomic_bool_init(&state->stop_requested, false);
   if (atomic_rc != H2_ATOMIC_OK) {
     return atomic_rc == H2_ATOMIC_UNSUPPORTED ? H2_PAL_ERR_UNSUPPORTED
-                                               : H2_PAL_ERR_NO_MEMORY;
+                                              : H2_PAL_ERR_NO_MEMORY;
   }
   int rc = arm_pending_app_rollback(runtime->pref);
   if (rc == H2_PAL_OK) {
-    rc = h2_bk_h2loader_init_app_client(
-        runtime, active_name, hardware_capabilities, &state->client);
+    rc = h2_bk_h2loader_init_app_client(runtime, active_name,
+                                        hardware_capabilities, &state->client);
   }
   if (rc == H2_PAL_OK) {
     rc =
@@ -672,8 +671,7 @@ int h2_bk_h2loader_stop_app_iostreamikcp(void) {
   if (!s_app_serial_started) {
     return H2_PAL_OK;
   }
-  h2_atomic_bool_store(&s_app_serial.stop_requested, true,
-                        H2_ATOMIC_RELEASE);
+  h2_atomic_bool_store(&s_app_serial.stop_requested, true, H2_ATOMIC_RELEASE);
   int rc = h2_loader_app_client_stop_return_console(&s_app_serial.client);
   if (rc != H2_PAL_OK) {
     return rc;
@@ -684,3 +682,5 @@ int h2_bk_h2loader_stop_app_iostreamikcp(void) {
   s_app_serial_started = 0;
   return H2_PAL_OK;
 }
+
+int h2_bk_h2loader_app_serial_is_started(void) { return s_app_serial_started; }

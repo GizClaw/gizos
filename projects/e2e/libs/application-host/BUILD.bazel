@@ -1,0 +1,100 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("@rules_python//python:defs.bzl", "py_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "e2e_application_host.bzl",
+    "src/h2_pal_e2e_application_host.c",
+    "include/h2_pal_e2e_application_host.h",
+])
+
+cc_library(
+    name = "headers",
+    hdrs = ["include/h2_pal_e2e_application_host.h"],
+    includes = ["include"],
+    deps = [
+        "//libs/pal/application/host",
+        "//projects/h2loader/libs/h2loader",
+    ],
+)
+
+cc_library(
+    name = "test_sdk",
+    hdrs = glob(["tests/sdk/*.h"]) + [
+        "//boards/shared/application_host/bk:include/h2_bk_board_application_host.h",
+        "//boards/shared/application_host/esp:include/h2_esp_board_application_host.h",
+    ],
+    includes = ["tests/sdk"],
+    deps = [
+        ":headers",
+        "//boards/shared/application_host/bk:headers",
+        "//boards/shared/application_host/esp:headers",
+        "//native_component_src/bk7258/ap/h2_application_host:headers",
+        "//native_component_src/esp-idf6.x/h2_application_host:headers",
+    ],
+)
+
+[
+    cc_test(
+        name = sdk + "_" + mode.replace("-", "_") + "_test",
+        srcs = [
+            "src/h2_pal_e2e_application_host.c",
+            "tests/test_e2e_board_host.cpp",
+            "//boards/shared/application_host/" + sdk + ":src/h2_" + ("esp" if sdk == "esp" else "bk") + "_board_application_host.c",
+        ],
+        args = [mode],
+        conlyopts = H2_C11_OPTS,
+        copts = H2_WARNING_COPTS,
+        cxxopts = H2_CXX17_OPTS,
+        defines = ["H2_PAL_E2E_HOST_TEST=1"] + (["H2_PAL_E2E_ESP=1"] if sdk == "esp" else []),
+        target_compatible_with = HOST_TOOL_COMPATIBILITY,
+        deps = [
+            ":test_sdk",
+            "//libs/pal/providers/desktop/app_support",
+        ],
+    )
+    for sdk in [
+        "esp",
+        "bk",
+    ]
+    for mode in [
+        "normal",
+        "no-service",
+        "custom",
+        "prepare",
+        "configure",
+        "runtime",
+        "validate",
+        "entry",
+        "control-start",
+        "app-start",
+        "stop-fault",
+        "suite-error",
+        "release-fault",
+    ]
+]
+
+py_test(
+    name = "native_serial_shutdown_test",
+    srcs = ["tests/test_native_serial_shutdown.py"],
+    data = [
+        "//libs/atomic:include/h2_atomic.h",
+        "//libs/atomic:include/h2_atomic_static.h",
+        "//libs/atomic/providers/c11:h2_atomic_c11_impl.h",
+        "//libs/atomic/providers/c11:src/h2_atomic_c11.c",
+        "//libs/pal:pal_header_files",
+        "//projects/h2loader/native_component_src/bk7258/ap/h2loader_bk:src/h2_bk_h2loader_app_bleikcp.c",
+        "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_ble:src/h2_esp_h2loader_ble.c",
+        "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_runtime:src/h2_esp_h2loader_iostreamikcp.c",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_native_serial_shutdown.py",
+    target_compatible_with = select({
+        "@platforms//os:macos": [],
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)

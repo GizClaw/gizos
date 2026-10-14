@@ -1,3 +1,4 @@
+#include "h2_pal_e2e_application_host.h"
 #include "bk_private/bk_init.h"
 #include "device_runner.h"
 #include "h2_bk7258_board.h"
@@ -28,8 +29,9 @@ static void watchdog(void *unused) {
   }
   hold();
 }
-static void run(void *unused) {
-  (void)unused;
+static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *app_runtime, void *user) {
+    runtime = app_runtime;
+  (void)user;
   /* The CLI installs its native-log sink before serial SESSION_OPEN, but it
    * still needs a real startup reconnect/status window (20s wait + 15s read).
    * Keep rollback/control initialization while letting the subscriber settle.
@@ -41,7 +43,7 @@ static void run(void *unused) {
     printf("H2_STORAGE_READY rc=%d confirm=%d\n", rc, H2_PAL_ERR_INVALID_STATE);
     fflush(stdout);
     finished = 1;
-    return;
+    return rc;
   }
   puts("H2_STORAGE_CONTROL_QUIESCENT stop=0");
   fflush(stdout);
@@ -62,7 +64,7 @@ static void run(void *unused) {
            H2_PAL_ERR_INVALID_STATE);
     fflush(stdout);
     finished = 1;
-    return;
+    return rc;
   }
   puts("H2_STORAGE_CONTROL_RESTORED restart=0");
   fflush(stdout);
@@ -71,38 +73,41 @@ static void run(void *unused) {
   finished = 1;
   printf("H2_STORAGE_READY rc=%d confirm=%d\n", rc, confirm);
   fflush(stdout);
-  for (;;) {
+  while (!h2_application_host_should_stop(host)) {
     rtos_delay_milliseconds(3000u);
     h2_storage_device_replay(runtime);
     printf("H2_STORAGE_READY rc=%d confirm=%d\n", rc, confirm);
     fflush(stdout);
   }
+
+    return h2_pal_e2e_application_host_finish(host, runtime, rc);
 }
-static void entry(void *unused) {
-  (void)unused;
-  h2_runtime_config_t config;
-  int rc = h2_bk7258_board_runtime_config(&config);
-  if (rc)
-    fail("board", rc);
-  config.system_event = h2_pal_unsupported_system_event_api();
-  rc = h2_runtime_init(&config, &runtime);
-  if (rc)
-    fail("runtime", rc);
-  rc = h2_bk_h2loader_start_app_iostreamikcp_with_capabilities(
-      runtime, "pal-storage", H2_LOADER_CAPABILITY_UART);
-  if (rc)
-    fail("commands", rc);
+
+static h2_pal_result_t configure(void *user, h2_runtime_config_t *config) {
+  (void)user;
+  config->system_event = h2_pal_unsupported_system_event_api();
+
+  return H2_PAL_OK;
+}
+static h2_pal_result_t validate(void *user, h2_runtime_t *app_runtime) {
+  (void)user;
+  runtime = app_runtime;
   beken_thread_t timer;
   if (rtos_core0_create_psram_thread(&timer, 7, "store_deadline", watchdog,
                                      4096, NULL) != kNoErr)
     fail("watchdog", -12);
-  const h2_pal_task_options_t options = {.name = "pal-storage/e2e/runner",
-                                         .min_stack_size = 65536};
-  h2_pal_task_t *task = NULL;
-  rc = h2_pal_task_start(runtime->task, &options, run, NULL, &task);
-  if (rc)
-    fail("runner", rc);
-  hold();
+
+  return H2_PAL_OK;
+}
+static void entry(void *user) {
+  (void)user;
+
+  const h2_application_host_config_t app = {
+      .entry = run, .configure = configure, .validate = validate};
+  int host_rc = h2_pal_e2e_application_host_run(
+      "pal-storage", H2_LOADER_CAPABILITY_UART, &app, NULL);
+  if (host_rc != H2_PAL_OK)
+    fail("application_host", host_rc);
 }
 int main(void) {
   int rc = h2_bk_target_task_policy_install();

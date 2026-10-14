@@ -1,3 +1,4 @@
+#include "h2_pal_e2e_application_host.h"
 #include "h2_esp_board.h"
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_h2loader_runtime.h"
@@ -309,7 +310,8 @@ static int task_probe(void) {
     puts(task_report);
     return rc;
 }
-static void run(void *user) {
+static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *app_runtime, void *user) {
+    runtime = app_runtime;
     (void)user;
     vTaskDelay(pdMS_TO_TICKS(5000u));
     previous_log = vprintf;
@@ -351,7 +353,7 @@ static void run(void *user) {
     /* Plain console bytes during reboot handoff are not a reliable result
      * channel. Replay the immutable ledger slowly after installation settles;
      * this never reruns cases or changes their verdicts. */
-    for (;;) {
+    while (!h2_application_host_should_stop(host)) {
         vTaskDelay(pdMS_TO_TICKS(5000u));
         puts("H2_PAL_CORE_E2E_REPORT replay=1");
         for (size_t i = 0; i < H2_PAL_CORE_E2E_CASE_COUNT; ++i) {
@@ -375,34 +377,57 @@ static void run(void *user) {
                result.qualified, probe, confirm);
         fflush(stdout);
     }
+
+    if (result.retained_cleanup != NULL || result.baseline.retained_cleanup != NULL) {
+        (void)h2_application_host_retain(host, &result, H2_PAL_ERR_BUSY);
+    }
+    return h2_pal_e2e_application_host_finish(host, runtime, rc);
+}
+
+static h2_pal_result_t configure(void *user, h2_runtime_config_t *config) {
+  (void)user;
+  int rc = H2_PAL_OK;
+  /* The Core App owns an exclusive real event fixture. The serial command
+   * service uses board APIs directly and does not require a BLE event loop. */
+  config->system_event = h2_pal_unsupported_system_event_api();
+  const h2_esp_h2loader_app_commands_config_t commands = {
+      .active_name = "pal-core",
+      .hardware_capabilities = H2_LOADER_CAPABILITY_UART,
+      .h2loader_partition_id = 1u,
+      .coredump_partition_id = 3u};
+  h2_runtime_config_t transport_config = *config;
+  transport_config.mem = &transport_memory;
+  rc = h2_esp_h2loader_app_commands_prepare_serial_with_config(
+      &transport_config, &commands);
+  if (rc != H2_PAL_OK)
+    fail("command_prepare", rc);
+
+  return H2_PAL_OK;
+}
+static h2_pal_result_t validate(void *user, h2_runtime_t *app_runtime) {
+  (void)user;
+  runtime = app_runtime;
+  const esp_timer_create_args_t timer = {.callback = deadline,
+                                         .name = "pal-core-watchdog"};
+  if (esp_timer_create(&timer, &watchdog) != ESP_OK ||
+      esp_timer_start_once(watchdog, UINT64_C(120000000)) != ESP_OK)
+    fail("watchdog", H2_PAL_ERR_IO);
+  printf("H2_PAL_CORE_E2E_BOOT board=devkit version=%s cases=%u "
+         "resources=native\n",
+         esp_app_get_description()->version,
+         (unsigned)H2_PAL_CORE_E2E_CASE_COUNT);
+
+  return H2_PAL_OK;
 }
 void app_main(void) {
-    int rc = h2_esp_target_task_policy_install_with_configure(configure_tasks);
-    if (rc != H2_PAL_OK) fail("task_policy", rc);
-    h2_runtime_config_t runtime_config = {0};
-    rc = h2_esp_board_runtime_config(&runtime_config);
-    if (rc != H2_PAL_OK) fail("runtime_config", rc);
-    /* The Core App owns an exclusive real event fixture. The serial command
-     * service uses board APIs directly and does not require a BLE event loop. */
-    runtime_config.system_event = h2_pal_unsupported_system_event_api();
-    const h2_esp_h2loader_app_commands_config_t commands = {
-        .active_name = "pal-core", .hardware_capabilities = H2_LOADER_CAPABILITY_UART,
-        .h2loader_partition_id = 1u, .coredump_partition_id = 3u,
-    };
-    h2_runtime_config_t transport_config = runtime_config;
-    transport_config.mem = &transport_memory;
-    rc = h2_esp_h2loader_app_commands_prepare_serial_with_config(&transport_config, &commands);
-    if (rc != H2_PAL_OK) fail("command_prepare", rc);
-    rc = h2_runtime_init(&runtime_config, &runtime);
-    if (rc != H2_PAL_OK) fail("runtime_init", rc);
-    const esp_timer_create_args_t timer = {.callback = deadline, .name = "pal-core-watchdog"};
-    if (esp_timer_create(&timer, &watchdog) != ESP_OK ||
-        esp_timer_start_once(watchdog, UINT64_C(120000000)) != ESP_OK)
-        fail("watchdog", H2_PAL_ERR_IO);
-    printf("H2_PAL_CORE_E2E_BOOT board=devkit version=%s cases=%u resources=native\n",
-           esp_app_get_description()->version, (unsigned)H2_PAL_CORE_E2E_CASE_COUNT);
-    const h2_pal_task_options_t options = {.name = h2_pal_core_e2e_runner_task_name};
-    h2_pal_task_t *runner = NULL;
-    rc = h2_pal_task_start(runtime->task, &options, run, NULL, &runner);
-    if (rc != H2_PAL_OK) fail("runner", rc);
+
+  int rc = h2_esp_target_task_policy_install_with_configure(configure_tasks);
+  if (rc != H2_PAL_OK)
+    fail("task_policy", rc);
+  const h2_application_host_config_t app = {
+      .entry = run, .configure = configure, .validate = validate};
+  int host_rc = h2_pal_e2e_application_host_run(
+      "pal-core", H2_LOADER_CAPABILITY_UART, &app, NULL);
+  if (host_rc != H2_PAL_OK)
+    fail("application_host", host_rc);
 }
