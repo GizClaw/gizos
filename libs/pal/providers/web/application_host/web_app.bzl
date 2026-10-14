@@ -2,6 +2,7 @@
 
 load("@emsdk//emscripten_toolchain:wasm_rules.bzl", "wasm_cc_binary")
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//libs/pal/providers/web/application_host:web_board.bzl", "H2WebBoardInfo")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
@@ -201,13 +202,22 @@ def h2_web_app(
         outs = ["_headers"],
         cmd = "printf '/*\\n  Cross-Origin-Opener-Policy: same-origin\\n  Cross-Origin-Embedder-Policy: require-corp\\n' > $@",
     )
+    # These outputs are the web root even when this package is in an external
+    # repository. pkg_tar's package-relative stripping retains external/<repo>
+    # for raw Files; explicit package mappings are independent of that prefix.
+    pkg_files(
+        name = name + "_web_files",
+        srcs = [":" + name + "_wasm", ":" + name + "_isolation_headers"],
+        attributes = pkg_attributes(mode = "0644"),
+        strip_prefix = strip_prefix.files_only(),
+        target_compatible_with = _HOSTS,
+    )
     pkg_tar(
         name = name,
-        srcs = [":" + name + "_wasm", ":" + name + "_isolation_headers"],
+        srcs = [":" + name + "_web_files"],
         out = name + ".web.tar",
         mode = "0644",
         portable_mtime = True,
-        strip_prefix = ".",
         target_compatible_with = _HOSTS,
     )
     web_archive_serve(

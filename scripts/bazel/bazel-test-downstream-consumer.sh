@@ -83,12 +83,12 @@ case "$(uname -s)-$(uname -m)" in
         host_os=macos
         platform=macos_arm64
         # Resolves the consumer root's host C/C++ toolchain.
-        host_test_targets=(@gizos//tools/bazel/tests/host_cc_toolchain:xcode_sdk_builtin_test)
+        host_test_targets=(@gizos//tools/bazel/tests/host_cc_toolchain:xcode_sdk_builtin_test @gizos//libs/pal/providers/web/application_host/tests/early_stop:browser_test)
         ;;
     Linux-x86_64)
         host_os=linux
         platform=linux_x86_64
-        host_test_targets=()
+        host_test_targets=(@gizos//libs/pal/providers/web/application_host/tests/early_stop:browser_test)
         ;;
     Linux-aarch64 | Linux-arm64)
         host_os=linux
