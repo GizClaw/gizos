@@ -93,8 +93,8 @@ py_test(
     legacy_create_init = 0,
     main = "tests/test_native_serial_shutdown.py",
     target_compatible_with = select({
-        "@platforms//os:macos": [],
-        "@platforms//os:linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_linux_target_linux": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
 )
