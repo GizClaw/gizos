@@ -10,7 +10,7 @@
 #include <string.h>
 
 /* Capture a command through the public API, then sustain that same work on
- * the production worker. A deterministic clock models CPU time; no socket,
+ * the production worker. A deterministic clock models work and late resumption; no socket,
  * media output or performance result is invented by this scheduler test. */
 static const h2_pal_queue_api_t *real_queue;
 static h2_pal_queue_t *commands, *responses;
@@ -23,6 +23,7 @@ static bool flood, fail_clock, backward_clock, fail_sleep;
 static bool pending_response_exit, late_response;
 static unsigned rounds, responses_sent, sleeps, starts, joins;
 static uint64_t now_us;
+static uint64_t resume_delay_us;
 static int task_marker;
 
 static int create_queue(void *user, const h2_pal_queue_config_t *config,
@@ -116,12 +117,12 @@ static h2_pal_result_t monotonic(void *user, uint64_t *out) {
 static h2_pal_result_t sleep_ms(void *user, uint32_t ms) {
     (void)user;
     assert(ms > 0u && ms <= 1u);
-    now_us += (uint64_t)ms * 1000u;
+    now_us += (uint64_t)ms * 1000u + resume_delay_us;
     ++sleeps;
     return fail_sleep ? H2_PAL_ERR_UNSUPPORTED : H2_PAL_OK;
 }
 static void run_case(bool clock_failure, bool clock_backwards, bool sleep_failure,
-                     bool pending_call, bool final_reply) {
+                     bool pending_call, bool final_reply, bool late_resume) {
     commands = responses = NULL;
     captured_command = NULL;
     worker = NULL;
@@ -134,6 +135,7 @@ static void run_case(bool clock_failure, bool clock_backwards, bool sleep_failur
     backward_clock = clock_backwards;
     rounds = responses_sent = sleeps = starts = joins = 0u;
     now_us = 0u;
+    resume_delay_us = late_resume ? 25000u : 0u;
     real_queue = h2_desktop_platform_queue_api();
     h2_pal_queue_vtable_t qv = *real_queue->vtable;
     qv.create = create_queue;
@@ -194,11 +196,13 @@ static void run_case(bool clock_failure, bool clock_backwards, bool sleep_failur
     free(captured_command);
 }
 int main(void) {
-    run_case(false, false, false, false, false);
-    run_case(true, false, false, false, false);
-    run_case(false, true, false, false, false);
-    run_case(false, false, true, false, false);
-    run_case(true, false, true, true, false);
-    run_case(true, false, true, true, true);
+    run_case(false, false, false, false, false, false);
+    run_case(true, false, false, false, false, false);
+    run_case(false, true, false, false, false, false);
+    run_case(false, false, true, false, false, false);
+    run_case(true, false, true, true, false, false);
+    run_case(true, false, true, true, true, false);
+    /* A delayed scheduler wakeup is not work in the next CPU slice. */
+    run_case(false, false, false, false, false, true);
     return 0;
 }
