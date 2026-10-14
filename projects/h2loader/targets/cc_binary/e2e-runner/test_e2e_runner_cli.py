@@ -1,4 +1,5 @@
 import os
+import tempfile
 import subprocess
 import sys
 import unittest
@@ -50,6 +51,21 @@ class E2ERunnerCliTest(unittest.TestCase):
             result = self.run_cli("--uart", "fake", "--log-file", "same", flag, "./same", *extra)
             self.assertEqual(result.returncode, 2)
             self.assertIn("raw log overlaps", result.stderr)
+
+    def test_raw_log_cannot_truncate_a_firmware_hard_link(self):
+        with tempfile.TemporaryDirectory() as directory:
+            firmware = os.path.join(directory, "firmware")
+            raw_log = os.path.join(directory, "raw.log")
+            payload = b"immutable firmware input"
+            with open(firmware, "wb") as stream:
+                stream.write(payload)
+            os.link(firmware, raw_log)
+            result = self.run_cli("--uart", "fake", "--app-firmware", firmware,
+                                  "--log-file", raw_log)
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("raw log overlaps", result.stderr)
+            with open(firmware, "rb") as stream:
+                self.assertEqual(stream.read(), payload)
 
     def test_endpoint_is_required(self):
         result = self.run_cli()

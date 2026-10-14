@@ -548,7 +548,10 @@ int main(int argc, char **argv) {
     for (const auto &path : protected_paths) {
       if (path.empty()) continue;
       const auto other = std::filesystem::weakly_canonical(resolve_input_path(path), path_error);
-      if (path_error || other == log_path) {
+      std::error_code alias_error;
+      const bool aliases = std::filesystem::equivalent(options.log_file,
+          resolve_input_path(path), alias_error);
+      if (path_error || other == log_path || (!alias_error && aliases)) {
         std::fprintf(stderr, "h2loader-e2e: raw log overlaps report or firmware input\n");
         return 2;
       }
