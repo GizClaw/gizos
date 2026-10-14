@@ -9,6 +9,7 @@
 #include <condition_variable>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <mutex>
 #ifdef __APPLE__
 #include <pthread.h>
@@ -19,6 +20,7 @@
 #include <memory>
 #include <new>
 #include <thread>
+#include <type_traits>
 
 struct h2_desktop_application_host {
   h2_pal_application_host_api_t api{};
@@ -100,8 +102,20 @@ static int display_info(void *u, h2_display_info_t *info) {
 }
 static int display_draw(void *u, const h2_display_rect_t *r, const void *pixels,
                         size_t stride, h2_display_pixel_format_t format) {
+  // C accepts unknown integer formats. Validate their representation before
+  // loading a C++ enum, just as the native SDL provider does.
+  std::underlying_type_t<h2_display_pixel_format_t> code;
+  std::memcpy(&code, &format, sizeof(code));
+  if (code != H2_DISPLAY_PIXEL_RGB565 && code != H2_DISPLAY_PIXEL_RGB888 &&
+      code != H2_DISPLAY_PIXEL_RGB444) {
+    if (r == nullptr || pixels == nullptr)
+      return H2_DISPLAY_ERR_INVALID_ARG;
+    h2_display_info_t info{};
+    const int rc = h2_pal_display_get_info(native_display(u), &info);
+    return rc == H2_PAL_OK ? H2_DISPLAY_ERR_UNSUPPORTED : rc;
+  }
   return h2_pal_display_draw_bitmap(native_display(u), r, pixels, stride,
-                                    format);
+                                    static_cast<h2_display_pixel_format_t>(code));
 }
 static int display_present(void *u) {
   return h2_pal_display_present(native_display(u));
