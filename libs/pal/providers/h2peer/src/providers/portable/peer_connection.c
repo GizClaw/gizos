@@ -14,6 +14,10 @@
 #include "sctp.h"
 #include "sdp.h"
 
+#ifndef H2_PEER_RTP_RX_DIAGNOSTICS
+#define H2_PEER_RTP_RX_DIAGNOSTICS 0
+#endif
+
 #define STATE_CHANGED(pc, curr_state)                                 \
   if (pc->oniceconnectionstatechange && pc->state != curr_state) {    \
     pc->oniceconnectionstatechange(curr_state, pc->config.user_data); \
@@ -48,6 +52,14 @@ struct PeerConnection {
   RtpReorderBuffer artp_reorder;
   uint8_t pending_rtp[CONFIG_MTU + 128];
   size_t pending_rtp_len;
+#if H2_PEER_RTP_RX_DIAGNOSTICS
+  /* Bounded header-only evidence, printed after the connection is stopped. */
+  uint16_t rx_sequence[256];
+  uint32_t rx_ssrc[256];
+  uint8_t rx_authenticated[256];
+  size_t rx_record_count;
+  uint64_t rx_record_overflow;
+#endif
 
   uint32_t remote_assrc;
   uint32_t remote_vssrc;
@@ -250,7 +262,21 @@ static int peer_connection_process_completed_packet(
   }
   if (rtp_packet_validate(packet, packet_len)) {
     H2_PEER_LOGD(pc->config.log, "Got RTP packet");
+#if H2_PEER_RTP_RX_DIAGNOSTICS
+    const uint16_t rx_sequence = (uint16_t)(((uint16_t)packet[2] << 8) | packet[3]);
+    const uint32_t rx_ssrc = rtp_get_ssrc(packet);
+#endif
     dtls_srtp_decrypt_rtp_packet(&pc->dtls_srtp, packet, &packet_len);
+#if H2_PEER_RTP_RX_DIAGNOSTICS
+    if (pc->rx_record_count < 256u) {
+      const size_t index = pc->rx_record_count++;
+      pc->rx_sequence[index] = rx_sequence;
+      pc->rx_ssrc[index] = rx_ssrc;
+      pc->rx_authenticated[index] = packet_len > 0;
+    } else if (pc->rx_record_overflow != UINT64_MAX) {
+      ++pc->rx_record_overflow;
+    }
+#endif
     uint64_t now_ms = 0u;
     if (h2_pal_time_get_monotonic_ms(pc->config.time, &now_ms) != H2_PAL_OK) {
       return H2_PAL_ERR_IO;
@@ -390,6 +416,16 @@ PeerConnection* peer_connection_create(
 void peer_connection_destroy(
     PeerConnection* pc) {
   if (pc) {
+#if H2_PEER_RTP_RX_DIAGNOSTICS
+    for (size_t i = 0; i < pc->rx_record_count; ++i) {
+      H2_PEER_LOGI(pc->config.log,
+                   "H2_PEER_RTP_RX ordinal=%zu sequence=%u ssrc=%" PRIu32 " authenticated=%u",
+                   i + 1u, (unsigned int)pc->rx_sequence[i], pc->rx_ssrc[i],
+                   (unsigned int)pc->rx_authenticated[i]);
+    }
+    H2_PEER_LOGI(pc->config.log, "H2_PEER_RTP_RX_SUMMARY recorded=%zu overflow=%" PRIu64,
+                 pc->rx_record_count, pc->rx_record_overflow);
+#endif
     sctp_destroy_association(&pc->sctp);
     dtls_srtp_deinit(&pc->dtls_srtp);
     agent_destroy(&pc->agent);

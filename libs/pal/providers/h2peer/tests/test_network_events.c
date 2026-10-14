@@ -209,6 +209,55 @@ static void error_fallbacks(void) {
   cleanup(&f);
 }
 
+/* Byte pressure must retain reliable messages at delivery, while allowing
+ * an audio event and subsequent consumer progress without terminal overflow. */
+static void channel_byte_backpressure(void) {
+  fixture_t f;
+  initialize(&f);
+  h2_pal_webrtc_channel_t *channel = NULL;
+  const h2_pal_webrtc_channel_config_t config = {
+      .label = {"bytes", 5u}, .ordered = 1, .reliable = 1,
+  };
+  assert(h2_pal_webrtc_peer_create_data_channel(f.api, f.peer, &config,
+                                                &channel) == H2_PAL_OK);
+  uint8_t payload[8192];
+  memset(payload, 0x42, sizeof(payload));
+  for (unsigned i = 0; i < 2; ++i)
+    assert(h2_peer_webrtc_emit_channel_message(f.peer, channel, payload,
+               sizeof(payload), 0) == H2_PAL_OK);
+  const size_t allocations = h2_atomic_load(&f.allocations);
+  assert(h2_peer_webrtc_emit_channel_message(f.peer, channel, payload,
+             sizeof(payload), 0) == H2_PAL_ERR_WOULD_BLOCK);
+  assert(h2_atomic_load(&f.allocations) == allocations);
+  assert(h2_atomic_load(&f.peer->network_event_bytes) == 16384u);
+  const uint8_t audio = 0xF8;
+  h2_peer_webrtc_emit_opus_frame(f.peer, &audio, 1u);
+  assert(h2_atomic_load(&f.peer->network_transport_result) == H2_PAL_OK);
+  h2_pal_webrtc_event_t event = {0};
+  for (unsigned i = 0; i < 2; ++i) {
+    assert(h2_pal_webrtc_peer_poll(f.api, f.peer, 0, &event) == H2_PAL_OK);
+    assert(event.kind == H2_PAL_WEBRTC_EVENT_CHANNEL_MESSAGE &&
+           event.data_len == sizeof(payload) &&
+           memcmp(event.data, payload, sizeof(payload)) == 0);
+    h2_pal_webrtc_event_release(&event);
+    if (i == 0)
+      assert(h2_peer_webrtc_emit_channel_message(f.peer, channel, payload,
+                 sizeof(payload), 0) == H2_PAL_OK);
+  }
+  assert(h2_pal_webrtc_peer_poll(f.api, f.peer, 0, &event) == H2_PAL_OK);
+  assert(event.kind == H2_PAL_WEBRTC_EVENT_OPUS_FRAME &&
+         event.data_len == 1u && event.data[0] == audio);
+  h2_pal_webrtc_event_release(&event);
+  assert(h2_pal_webrtc_peer_poll(f.api, f.peer, 0, &event) == H2_PAL_OK);
+  assert(event.kind == H2_PAL_WEBRTC_EVENT_CHANNEL_MESSAGE &&
+         event.data_len == sizeof(payload) &&
+         memcmp(event.data, payload, sizeof(payload)) == 0);
+  h2_pal_webrtc_event_release(&event);
+  assert(h2_atomic_load(&f.peer->network_event_bytes) == 0u);
+  assert(h2_pal_webrtc_peer_poll(f.api, f.peer, 0, &event) == H2_PAL_ERR_WOULD_BLOCK);
+  cleanup(&f);
+}
+
 static void poll_waiter(void *user) {
   fixture_t *f = user;
   f->poll_result = h2_pal_webrtc_peer_poll(f->api, f->peer, 5000, &f->event);
@@ -335,6 +384,7 @@ static void peer_allocators(void) {
 int main(void) {
   peer_allocators();
   error_fallbacks();
+  channel_byte_backpressure();
   wake_and_unset();
   return 0;
 }

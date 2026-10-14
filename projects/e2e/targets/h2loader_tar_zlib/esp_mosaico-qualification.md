@@ -1685,3 +1685,37 @@ ends use HAIVIVI-MFG according to the operator. These results do not yet
 identify whether loss occurs on Wi-Fi, SDK receive queues or the decoder.
 The public R84 Loader returns successfully. No WebRTC PASS or final Flash
 restoration is claimed.
+
+R96/R97 add bounded, default-off receive diagnostics. R96 receives/authenticates
+188 RTP packets while the actual peer echoes 199: one fixture packet is absent
+on the uplink and eleven return RTP sequence numbers never reach H2Peer.
+No received packet fails authentication. R97 receives all 200 packets and
+passes both audio predicates (100/100 frames, p99 105.846/132.089 ms), but fails
+fairness at 733 permille. Link wrappers identify exactly one H2Peer UDP mailbox,
+with 29,293 actual posts and 105 failed posts. Wrappers preserve SDK calls,
+results and capacity; SDK sources remain pinned and unchanged. The original
+R94 SDK-source probe is rejected at build admission and withdrawn. R95 does
+not reach media because the host IP changed and its signal endpoint became
+stale; R96 and later use the newly verified endpoint. Neither admission/setup
+failure is presented as a performance measurement.
+
+The byte-pressure fix moves the existing 16 KiB threshold from the shared UDP
+receive pump to reliable message delivery. SCTP retains a blocked message for
+retry, while RTP and transport acknowledgements continue to be received.
+The 12-event pump limit, physical queue capacities, priorities and smoke gates
+remain unchanged. A real event-queue regression first fails on the old code,
+then verifies bounded reliable delivery, concurrent audio, exact payloads and
+recovery after the consumer resumes. R98's single diagnostic boot passes all
+original smoke predicates: audio 100/99 frames, p99 103.756/157.081 ms and
+fairness 942 permille. It still records 149 failed UDP mailbox posts, so the
+passing result does not establish that mailbox loss has been eliminated.
+R98 is one diagnostic boot; a legacy controller log saying "two boots" is an
+incorrect label and does not extend its evidence scope.
+
+Sustained-consumer regressions additionally reproduce SCTP retransmission
+being suppressed by blocked delivery, and a reopened zero receive window not
+being announced. Timer service now continues transport work during consumer
+backpressure and schedules a pending SACK when delivery reopens that window.
+Both regressions fail before their respective fixes, then all 36 H2Peer/SCTP
+recursive host tests pass. The final default-off image still requires two
+independent real-board boots. Full original Flash restoration remains pending.

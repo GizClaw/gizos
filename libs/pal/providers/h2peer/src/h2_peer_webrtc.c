@@ -585,6 +585,12 @@ void h2_peer_webrtc_emit_local_sdp(h2_pal_webrtc_peer_t *peer,
 h2_pal_result_t h2_peer_webrtc_emit_channel_message(
     h2_pal_webrtc_peer_t *peer, h2_pal_webrtc_channel_t *channel,
     const uint8_t *data, size_t len, int is_text) {
+  /* Reliable SCTP delivery retains a blocked message and retries after poll
+   * releases earlier events. Apply byte pressure here so it cannot stop the
+   * shared UDP socket from receiving RTP or transport acknowledgements. */
+  if (h2_atomic_load_explicit(&peer->network_event_bytes, H2_ATOMIC_RELAXED) >=
+      H2_PEER_NETWORK_EVENT_BYTES_HIGH_WATER)
+    return H2_PAL_ERR_WOULD_BLOCK;
   h2_peer_network_event_t event = {
       .type = H2_PEER_NETWORK_EVENT_CHANNEL_MESSAGE,
       .channel = channel,
@@ -1506,10 +1512,9 @@ static int h2_peer_network_pump_transport(h2_pal_webrtc_peer_t *peer,
   }
   const unsigned int event_count =
       h2_atomic_load_explicit(&peer->network_event_count, H2_ATOMIC_RELAXED);
-  const size_t event_bytes =
-      h2_atomic_load_explicit(&peer->network_event_bytes, H2_ATOMIC_RELAXED);
-  if (event_count >= H2_PEER_NETWORK_EVENT_HIGH_WATER ||
-      event_bytes >= H2_PEER_NETWORK_EVENT_BYTES_HIGH_WATER) {
+  /* Keep notification slots reserved for channel/lifecycle events. The
+   * reliable-message byte limit is enforced by its retryable callback. */
+  if (event_count >= H2_PEER_NETWORK_EVENT_HIGH_WATER) {
     return 0;
   }
   h2_pal_result_t result = H2_PAL_OK;
