@@ -1,7 +1,7 @@
 # ESP-Mosaico E2E qualification
 
 Current checkpoint (2026-10-14): **WebRTC performance R105 two-boot PASS;
-Loader recovery R84 51/51 PASS; final original Flash restoration pending**.
+Loader recovery R84 51/51 PASS; final original Flash restoration PASS**.
 PR #709 remains Draft. GizClaw is explicitly excluded from acceptance.
 Each receipt remains bound to its own source and immutable artifact; compile/CI
 success is not device qualification. Older investigations below retain their
@@ -1868,6 +1868,28 @@ Native image SHA-256:
 `e2e9fd6ee2e5b7f66b393d810064acc7b54a11e92aca73b4dd0b1bb8179e8a78`.
 Private source/configuration/package/peer binding and complete receipt:
 `rtc105-20261014-1791970094521214000-webrtc-performance-qualification.json`.
-Original 16 MiB backup size, SHA and mode have been reverified. The operator
-ROM-download step for final restoration is pending; do not confuse the older
-pre-R84 restoration receipt with the current device state.
+Original 16 MiB backup size, SHA and mode were reverified before the final
+restoration recorded below. The older pre-R84 restoration remains separately
+archived.
+
+### Final original Flash restoration after R105 (2026-10-14)
+
+After both R105 boots and the R84 51-case matrix passed, the operator entered
+ROM download mode. The tool verified ESP32-S31 and the expected device MAC,
+validated the original backup, wrote all 16,777,216 bytes, then independently
+read the entire Flash and verified exact byte equality. Restored SHA-256:
+`ff0af503fff49d23ce6c9fd016eb7e26975ba4ca8aaf3dd6dab2bf1c1bfed170`.
+
+After reset, the ordinary public Loader reports the expected Mosaico identity,
+original P1 version `mosaico-workload-20261012-r42` and matching package/image
+checksums, running/next partition 1, empty Stage and last result 0. Crash storage
+is blank with zero stored bytes. The final device is back on its original layout;
+the temporary R84 Loader and R105 test App are no longer installed. Test evidence
+remains bound to the tested artifacts rather than the restored firmware.
+
+Private receipts: `board77-restore-readback.json` and
+`board77-original-layout-restored.json`. The earlier pre-R84 restoration is
+retained separately under `board77-first-restore-before-loader84/`; it was not
+reused as proof of this final restoration. WebRTC performance and Loader recovery
+are complete for the recorded scope. GizClaw remains excluded and PR #709 stays
+Draft; remote CI and ownership approval are separate from board qualification.
