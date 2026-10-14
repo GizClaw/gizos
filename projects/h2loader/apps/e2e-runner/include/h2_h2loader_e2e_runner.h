@@ -176,7 +176,8 @@ typedef struct h2_h2loader_e2e_config {
    * serial byte from every runner connection; a non-OK sink result aborts the
    * current serial operation with that result. BLE forwards connect-failure
    * diagnostics from h2_h2loader_host_ble_connect; a sink error never replaces
-   * the connect error. */
+   * the connect error. Raw coredump protocol output is also forwarded before
+   * validation and erase; a sink error prevents the subsequent erase. */
   h2_h2loader_host_transport_log_fn on_log;
   void *log_user;
 
