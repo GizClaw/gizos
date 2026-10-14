@@ -1593,6 +1593,16 @@ h2_peer_find_channel_by_ready_slot(h2_pal_webrtc_peer_t *peer,
   return NULL;
 }
 
+/* Packet/message limits alone cannot bound slow crypto or protocol work.
+ * Revisit media and the outer cooperative yield between complete operations. */
+static int h2_peer_network_slice_spent(h2_pal_webrtc_peer_t *peer,
+                                      uint64_t started_us) {
+  uint64_t now_us = 0u;
+  return h2_pal_time_get_monotonic_us(peer->owner->config.time, &now_us) != H2_PAL_OK ||
+         now_us < started_us ||
+         now_us - started_us >= H2_PEER_NETWORK_CPU_SLICE_US;
+}
+
 /* Sends queued channel messages for one network round. Channels take turns
  * in ready-slot order, one message per turn, until the round budget
  * (H2_PEER_NETWORK_CHANNEL_ROUND_BYTES / _MESSAGES) is spent, SCTP pushes
@@ -1604,6 +1614,9 @@ int h2_peer_network_service_channel(h2_pal_webrtc_peer_t *peer,
   size_t round_bytes = 0u;
   size_t round_messages = 0u;
   const uint8_t start_slot = peer->channel_round_robin;
+  uint64_t started_us = 0u;
+  const int time_valid = h2_pal_time_get_monotonic_us(
+      peer->owner->config.time, &started_us) == H2_PAL_OK;
   for (;;) {
     int sent_this_pass = 0;
     for (size_t offset = 0u; offset < H2_PEER_READY_CHANNEL_COUNT; ++offset) {
@@ -1662,7 +1675,8 @@ int h2_peer_network_service_channel(h2_pal_webrtc_peer_t *peer,
       round_bytes += sent_len;
       ++round_messages;
       if (round_bytes >= H2_PEER_NETWORK_CHANNEL_ROUND_BYTES ||
-          round_messages >= H2_PEER_NETWORK_CHANNEL_ROUND_MESSAGES) {
+          round_messages >= H2_PEER_NETWORK_CHANNEL_ROUND_MESSAGES ||
+          !time_valid || h2_peer_network_slice_spent(peer, started_us)) {
         return made_progress;
       }
     }
@@ -1726,6 +1740,9 @@ static void h2_peer_network_task(void *context) {
         break;
       }
       transport_progress = 1;
+      if (h2_peer_network_slice_spent(peer, last_yield_us)) {
+        break;
+      }
     }
 
     // Merge newly readied channels every round so a channel still draining a
