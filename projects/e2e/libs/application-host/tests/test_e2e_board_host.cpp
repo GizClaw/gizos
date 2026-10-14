@@ -45,7 +45,7 @@ static void native_free(void *, void *memory) {
   h2_pal_mem_free(f.runtime.mem, memory);
 }
 static const h2_pal_mem_vtable_t native_memory = {
-    .alloc = native_alloc, .free = native_free};
+    .alloc = native_alloc, .realloc = nullptr, .free = native_free};
 static int start(void *, const h2_pal_task_options_t *options,
                  h2_pal_task_entry_t entry, void *user, h2_pal_task_t **out) {
   if (!std::strcmp(options->name, "$application/control") &&
