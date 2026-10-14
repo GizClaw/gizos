@@ -69,3 +69,13 @@ if(DEFINED H2_WEBRTC_PERF_MBOX_DIAGNOSTICS)
       "-Wl,--wrap=sys_mbox_new" "-Wl,--wrap=sys_mbox_trypost" "-Wl,--wrap=sys_mbox_free")
   endif()
 endif()
+
+# Optional AP selection belongs to the private fixture, never saved credentials.
+if(DEFINED H2_WEBRTC_PERF_WIFI_BSSID_HEX)
+  string(LENGTH "${H2_WEBRTC_PERF_WIFI_BSSID_HEX}" bssid_length)
+  if(NOT bssid_length EQUAL 12 OR NOT H2_WEBRTC_PERF_WIFI_BSSID_HEX MATCHES "^[0-9a-fA-F]+$")
+    message(FATAL_ERROR "Wi-Fi BSSID must contain exactly 12 hexadecimal digits")
+  endif()
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    H2_WEBRTC_PERF_WIFI_BSSID_HEX="${H2_WEBRTC_PERF_WIFI_BSSID_HEX}")
+endif()

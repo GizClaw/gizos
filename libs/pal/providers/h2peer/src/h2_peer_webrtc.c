@@ -1750,10 +1750,10 @@ static void h2_peer_network_task(void *context) {
 #if H2_PEER_NETWORK_TIMING
   uint64_t timing_started = 0u;
   int timing_connected = 0;
-  uint64_t timing_connected_max[5] = {0u};
-  uint64_t timing_connected_over[5] = {0u};
-  uint64_t timing_max[5] = {0u};
-  uint64_t timing_over[5] = {0u};
+  uint64_t timing_connected_max[6] = {0u};
+  uint64_t timing_connected_over[6] = {0u};
+  uint64_t timing_max[6] = {0u};
+  uint64_t timing_over[6] = {0u};
 #endif
   (void)h2_pal_time_get_monotonic_us(peer->owner->config.time, &last_yield_us);
   while (!h2_atomic_load_explicit(&peer->network_stop, H2_ATOMIC_ACQUIRE)) {
@@ -1765,8 +1765,10 @@ static void h2_peer_network_task(void *context) {
         peer->owner->config.time, &now_us);
     if (clock_result != H2_PAL_OK || now_us < last_yield_us ||
         now_us - last_yield_us >= H2_PEER_NETWORK_CPU_SLICE_US) {
+      H2_PEER_TIMING_BEGIN();
       const h2_pal_result_t yield_result =
           h2_pal_time_sleep_ms(peer->owner->config.time, 1u);
+      H2_PEER_TIMING_END(5);
       if (yield_result != H2_PAL_OK) {
         h2_peer_record_network_event_error(peer, yield_result);
         h2_atomic_store_explicit(&peer->network_stop, 1, H2_ATOMIC_RELEASE);
@@ -1877,8 +1879,8 @@ static void h2_peer_network_task(void *context) {
     }
   }
 #if H2_PEER_NETWORK_TIMING
-  static const char *const names[5] = {"command", "media", "pump", "rtp", "channel"};
-  for (size_t i = 0u; i < 5u; ++i) {
+  static const char *const names[6] = {"command", "media", "pump", "rtp", "channel", "yield"};
+  for (size_t i = 0u; i < 6u; ++i) {
     char message[256];
     (void)snprintf(message, sizeof(message),
                    "H2_PEER_NETWORK_TIMING stage=%s max_wall_us=%llu over_slice=%llu "

@@ -163,6 +163,7 @@ type server struct {
 	iceMode     iceMode
 	udpDrops    atomic.Uint64
 	turnStats   turnStats
+	udpQoS      *rtpDSCPPacketConn
 }
 
 type inboundDroppingPacketConn struct {
@@ -272,10 +273,15 @@ func main() {
 	iceModeValue := flag.String("ice-mode", string(iceModeUDP), "ICE transport mode: udp, tcp, mixed, or mixed-drop-udp")
 	dtlsKeyLog := flag.String("dtls-key-log", "", "optional DTLS key log path for local packet diagnostics")
 	dtlsCipherSuites := flag.String("dtls-cipher-suites", "", "optional comma-separated DTLS cipher suite preference (server order wins): gcm, ccm, ccm8, chacha")
+	rtpDSCP := flag.Int("rtp-dscp", 0, "optional direct ICE UDP RTP/RTCP DSCP (0..63); other packets remain best effort")
 	flag.Parse()
 	mode, err := parseICEMode(*iceModeValue)
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	if *rtpDSCP < 0 || *rtpDSCP > 63 || (*rtpDSCP != 0 && mode != iceModeUDP) {
+		log.Fatal("rtp-dscp requires a value in 0..63 and udp ICE mode when enabled")
 	}
 
 	s := &server{
@@ -339,6 +345,13 @@ func main() {
 		}
 		iceUDPAddr = iceUDPConn.LocalAddr().String()
 		muxConn := iceUDPConn
+		if *rtpDSCP != 0 {
+			s.udpQoS, err = newRTPDSCPPacketConn(iceUDPConn, *rtpDSCP)
+			if err != nil {
+				log.Fatalf("configure direct ICE UDP RTP DSCP: %v", err)
+			}
+			muxConn = s.udpQoS
+		}
 		if mode == iceModeMixedDropUDP {
 			muxConn = &inboundDroppingPacketConn{
 				PacketConn: iceUDPConn,
@@ -452,6 +465,10 @@ func (s *server) routes(shutdown func()) http.Handler {
 	mux.HandleFunc("/offer", s.handleOffer)
 	mux.HandleFunc("/session/", s.handleSession)
 	mux.HandleFunc("/turn-stats", s.handleTURNStats)
+	mux.HandleFunc("/qos-stats", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(s.udpQoS.snapshot())
+	})
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})

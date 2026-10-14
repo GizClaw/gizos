@@ -215,6 +215,10 @@ static void fail(const char *stage, int rc, int commands_started) {
   hold();
 }
 
+#ifndef H2_WEBRTC_PERF_WIFI_BSSID_HEX
+#define H2_WEBRTC_PERF_WIFI_BSSID_HEX ""
+#endif
+
 /* The image never carries credentials: the Loader's `wifi connect` stores the
  * STA configuration and the App reconnects with it. */
 static int load_wifi_config(h2_runtime_t *runtime,
@@ -228,8 +232,33 @@ static int load_wifi_config(h2_runtime_t *runtime,
   if (!has_config) {
     return H2_PAL_ERR_NOT_FOUND;
   }
-  return h2_pal_wifi_settings_get_saved_sta_config(runtime->wifi_settings,
-                                                   out_config);
+  rc = h2_pal_wifi_settings_get_saved_sta_config(runtime->wifi_settings,
+                                                 out_config);
+  if (rc != H2_PAL_OK)
+    return rc;
+  /* A private test fixture can select an AP without changing saved settings. */
+  const char *bssid = H2_WEBRTC_PERF_WIFI_BSSID_HEX;
+  if (bssid[0] == '\0')
+    return H2_PAL_OK;
+  if (strlen(bssid) != 12u)
+    return H2_PAL_ERR_INVALID_ARG;
+  unsigned int nonzero = 0u;
+  memset(out_config->bssid, 0, sizeof(out_config->bssid));
+  for (size_t i = 0u; i < 12u; ++i) {
+    const char c = bssid[i];
+    const int nibble = c >= '0' && c <= '9' ? c - '0'
+                     : c >= 'a' && c <= 'f' ? c - 'a' + 10
+                     : c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1;
+    if (nibble < 0)
+      return H2_PAL_ERR_INVALID_ARG;
+    out_config->bssid[i / 2u] |= (uint8_t)(nibble << (i % 2u == 0u ? 4u : 0u));
+    nonzero |= (unsigned int)nibble;
+  }
+  if (nonzero == 0u || (out_config->bssid[0] & 1u) != 0u)
+    return H2_PAL_ERR_INVALID_ARG;
+  out_config->bssid_set = 1u;
+  out_config->channel = 0u;
+  return H2_PAL_OK;
 }
 
 /* The selected policy must be in effect before any measurement, otherwise
@@ -257,6 +286,15 @@ static void wait_for_wifi(h2_runtime_t *runtime,
         if (status_rc == H2_PAL_OK &&
             status.state == H2_PAL_WIFI_STA_STATE_GOT_IP && status.ip_valid &&
             status.ip.ip4 != 0u) {
+          if (wifi->bssid_set &&
+              (!status.bssid_set || memcmp(wifi->bssid, status.bssid, 6u) != 0))
+            fail("wifi_bssid", H2_PAL_ERR_INVALID_STATE, 1);
+          printf("H2_WEBRTC_PERF_MOSAICO stage=wifi_link "
+                 "bssid=%02x%02x%02x%02x%02x%02x channel=%u rssi=%d pinned=%u\n",
+                 status.bssid[0], status.bssid[1], status.bssid[2],
+                 status.bssid[3], status.bssid[4], status.bssid[5],
+                 (unsigned int)status.channel, status.rssi,
+                 (unsigned int)wifi->bssid_set);
           uint8_t ip[4];
           h2_pal_wifi_ip4_to_bytes(status.ip.ip4, ip);
           printf("H2_WEBRTC_PERF_MOSAICO stage=wifi status=READY "

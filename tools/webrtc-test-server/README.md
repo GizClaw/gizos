@@ -99,3 +99,16 @@ these controls. Host stability regressions use them to prove that an isolated
 RTP loss is reported and can recover, while 10 seconds without successful media
 still fails qualification. Sequence tags in synthetic Opus distinguish unique
 end-to-end echoes from duplicates; this is protocol liveness, not audio output.
+
+For a controlled direct-UDP QoS comparison, `--rtp-dscp=46` marks outgoing
+RTP/RTCP with EF while STUN and DTLS/SCTP remain DSCP 0. This is optional and
+requires `--ice-mode=udp`; the default 0 leaves the socket unwrapped. The
+fixture checks the OS TOS setting at startup and serializes marking with each
+write so concurrent bulk data cannot inherit the media mark. `/qos-stats`
+reports the configured marks, successful media/other writes, and write errors.
+These counters confirm socket configuration and writes, not AP forwarding
+behavior: a network can remark or ignore DSCP. TURN relay sockets are not
+marked by this option. Record the setting with hardware results; a QoS-enabled
+comparison does not establish a pass for the default fixture. RFC 8837
+recommends EF for medium/high-priority audio; use a suitable mark for other
+media types rather than assuming EF is appropriate for video.
