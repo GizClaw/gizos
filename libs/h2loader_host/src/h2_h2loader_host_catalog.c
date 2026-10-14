@@ -1,6 +1,7 @@
 #include "h2_h2loader_host_catalog.h"
 
 #include "h2_h2loader_host_internal.h"
+#include "h2_sha256.h"
 
 #include <limits.h>
 #include <string.h>
@@ -562,13 +563,13 @@ static int json_u64(
 static h2_pal_result_t verify_resource(
     const h2_h2loader_host_catalog_config_t *config,
     const h2_h2loader_host_catalog_entry_t *entry) {
-    h2_h2loader_host_sha256_t sha;
+    h2_sha256_t sha;
     uint8_t buffer[8192];
     uint8_t digest[32];
     char actual[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
     uint64_t offset = 0u;
 
-    h2_h2loader_host_sha256_init(&sha);
+    h2_sha256_init(&sha);
     while (offset < entry->bytes) {
         size_t request = entry->bytes - offset > sizeof(buffer)
             ? sizeof(buffer)
@@ -587,7 +588,7 @@ static h2_pal_result_t verify_resource(
         if (read == 0u || read > request) {
             return H2_PAL_ERR_TRUNCATED;
         }
-        h2_h2loader_host_sha256_update(&sha, buffer, read);
+        h2_sha256_update(&sha, buffer, read);
         offset += read;
     }
     size_t trailing = 0u;
@@ -604,8 +605,8 @@ static h2_pal_result_t verify_resource(
     if (trailing != 0u) {
         return H2_PAL_ERR_FORMAT;
     }
-    h2_h2loader_host_sha256_finish(&sha, digest);
-    h2_h2loader_host_sha256_hex(digest, actual);
+    h2_sha256_finish(&sha, digest);
+    h2_sha256_hex(digest, actual);
     return strcmp(actual, entry->sha256) == 0
         ? H2_PAL_OK
         : H2_PAL_ERR_FORMAT;

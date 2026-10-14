@@ -16,8 +16,12 @@ extern "C" {
  *
  * Creates the Web platform, optionally the persistent Filesystem and the LVGL
  * platform, assembles a Runtime with every Web provider (Display, Touch,
- * Audio, decoders, HTTP, WebRTC, Netif, System Event, Pref, Crypto, Timer)
- * and the canonical unsupported APIs elsewhere, runs the App entry in a task,
+ * Audio, decoders, HTTP, WebRTC, Netif, System Event, Pref, Crypto, Timer,
+ * and LED output for board-owned Periph descriptors)
+ * and the canonical unsupported APIs elsewhere. Explicit Module.h2WebEnvironment
+ * configuration opts into fake Wi-Fi/settings/modem (see the Web guide).
+ * Missing configuration keeps radios unsupported; simulated radio state never
+ * fabricates a server connection. The host runs the App entry in a task,
  * pumps until it returns, and tears everything down. Progress and the result
  * go to the console and #status as
  *   H2_WEB_APP name=<name> stage=running
@@ -93,6 +97,15 @@ typedef struct h2_web_app_host_hardware {
   h2_pal_result_t (*button)(void *user, h2_runtime_t *runtime,
                             h2_runtime_component_id_t component_id,
                             int pressed);
+  /**
+   * Releases resources borrowed by Runtime configuration, after App and
+   * Runtime users stop and before Filesystem/platform teardown. Runs once on
+   * the host task, including after failed configure_runtime or Runtime init.
+   * Not called if the dependency graph was already quarantined, or host setup
+   * failed before Runtime configuration. Failure quarantines the graph and
+   * retains user/dependencies; it is not retried. Keep user alive on RETAINED.
+   */
+  h2_pal_result_t (*release_runtime)(void *user);
 } h2_web_app_host_hardware_t;
 
 typedef struct h2_web_app_host_config {

@@ -11,6 +11,8 @@
 
 #include "h2_loader_app_client.h"
 
+#include <stddef.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif

@@ -1,6 +1,6 @@
 # PAL Net/TLS E2E
 
-Independent `h2_pal_net.h` qualification App; existing mixed PAL/HTTP/WebRTC Apps remain separate.
+Independent `h2_pal_net.h` qualification App; HTTP and WebRTC Apps own their separate contracts. The mixed PAL App has been retired; replacement and platform coverage are recorded in [the Apps README](../README.md).
 
 ## Contract
 

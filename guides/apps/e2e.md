@@ -36,17 +36,17 @@ Platform artifact entry 持有 Runtime assembly、具体 provider、endpoint 与
 | PAL JSON | `//projects/e2e/apps/pal-json/app:pal_json_e2e` | 独立 JSON：24 个接口、15 个必过用例；macOS、Browser/WASM、iOS/Android 实际 SDK 包、DevKit 与 BK7258，记录完整运行与清理证据 |
 | PAL HTTP | `//projects/e2e/apps/pal-http/app:pal_http_e2e` | 独立 HTTP：45 个必跑 case；macOS、Browser、iOS/Android 实际 SDK 包消费 App 与 DevKit/BK7258 专用入口，逐平台保留真实运行证据 |
 | PAL Storage | `//projects/e2e/apps/pal-storage/app:pal_storage_e2e` | 独立 FS/Pref 契约 2：28 个操作、36 个必跑 case；三个独立启动阶段及完成后再次启动检查，逐平台保留实际资格记录 |
+| PAL Net/TLS | `//projects/e2e/apps/pal-net-tls/app:pal_net_tls_e2e` | 独立 raw Net/TLS：21 个操作、39 个 case；37 个 mandatory 与两个按实际能力评估的 optional case，Browser 单独验证 unsupported 边界 |
 | PAL MQTT | `//projects/e2e/apps/pal-mqtt/app:pal_mqtt_e2e` | 独立 MQTT：8 个操作、36 个必跑 case；真实 TCP/TLS broker、事件/ACK 与资源清理，按各平台实际执行记录验收 |
 | PAL WebRTC | `//projects/e2e/apps/pal-webrtc/app:pal_webrtc_e2e` | 独立 WebRTC：13 个操作、43 个 mandatory case；六端独立入口及真实 Pion 对端，按各端完整 ledger 授予资格 |
 | PAL Audio Decoder | `//projects/e2e/apps/pal-audio-decoder/app:pal_audio_decoder_e2e` | 独立 AAC-LC RAW 解码：8 个操作、29 个必过 case；六端入口已实现，实际资格以各端完整 PCM、生命周期与清理记录为准 |
 | PAL Audio | `//projects/e2e/apps/pal-audio/app:pal_audio_e2e` | 独立 Audio：11 个 provider 与 5 个 track 操作、24 个必过 case；macOS、真实 Chromium Worker、iOS/Android SDK 包消费 App、AMOLED ESP32-S3 与 BK7258，逐端验证 30 秒同时采播和完整清理 |
 | PAL Display | `//projects/e2e/apps/pal-display/app:pal_display_e2e` | 独立 Display：6 个操作、24 个必过 case；macOS SDL、Chromium Worker、iOS/Android 实际 SDK 包、AMOLED 与 BK7258，验证实际输出并单独记录物理屏幕观察 |
-| PAL | `//projects/e2e/apps/pal/app:pal_e2e` | Linux/macOS/Windows 共同 host OS/Filesystem/Net/TLS/CoreHTTP/CoreMQTT；Desktop core/MQTT/SQLite Preference；Browser core；DevKit 与 Tiga V4.2 H2Loader `pal-pref` |
 | H2Loader Serial | `//projects/e2e/apps/h2loader-serial/app:h2loader_serial_e2e` | macOS Desktop；desktop Chrome Browser |
 | WebRTC Performance | `//projects/e2e/apps/webrtc-performance/app:webrtc_performance` | Desktop H2Peer + local Pion；DevKit 与 AMOLED ESP32-S3 H2Peer + operator LAN Pion |
 | iperf | `//projects/e2e/apps/iperf/app:iperf_e2e` | Desktop host client + PAL server；AMOLED ESP32-S3 + operator LAN PAL server |
 
-独立 HTTP 与 MQTT 测试分别由 `pal-http` 和 `pal-mqtt` App 持有公共 case 和平台验收合同。PAL App 只验证 PAL API 的跨目标公共行为，不吸收 backend-local unit、fake 或 protocol tests。Provider 名属于 launcher target；不能为了 H2Peer、Pion 或另一 backend 复制 portable case registry。H106 production App、adapter、UI 与业务 policy 继续属于 `projects/h106`；H106 E2E 的 evidence boundary 和运行合同见 产品 E2E。
+各独立 PAL App 持有自己的公共 case 和平台验收合同，只验证 PAL API 的跨目标公共行为，不吸收 backend-local unit、fake 或 protocol tests。Provider 名属于 launcher target；不能为了 H2Peer、Pion 或另一 backend 复制 portable case registry。H106 production App、adapter、UI 与业务 policy 继续属于 `projects/h106`；H106 E2E 的 evidence boundary 和运行合同见 产品 E2E。
 
 ## Atomic
 
@@ -66,19 +66,18 @@ DevKit 与 BK7258 分别在内部 RAM 和 PSRAM wrapper placement 运行整套�
 
 ## PAL
 
-`h2_pal_e2e_run()` 要求 launcher 通过 `suite_mask` 显式选择 suite。`core` 与 MQTT 可以组合执行；Preference 必须单独选择，因为它会返回跨 boot action。Wi-Fi suite 必须单独选择：断开 STA，需要非 Wi-Fi 控制链路，不恢复连接，只验证断开后 STA/Netif 状态一致；`filesystem` suite 只运行 HOST_FILESYSTEM case。worker join 或 timer destroy 失败时资源保留在 `retained_cleanup`，后续 suite（含 MQTT）不再运行，直到 `h2_pal_e2e_cleanup()` 成功。MQTT suite 通过 Runtime 的 MQTT 与 monotonic Time API 执行 connect、subscribe、publish echo、disconnect 和 bounded cleanup。`host` suite 只通过注入的 Runtime/PAL API 运行相同 case ID 和结果 ledger；`//projects/e2e/targets/cc_binary/pal:pal_e2e_test` 以 OS-selected fixture 在 Linux、macOS 和 Windows 使用 ephemeral loopback port、临时 mount 与仓库内测试证书，不访问公网。Preference suite 只使用 `runtime->pref` 和 Memory PAL，在固定 control/data namespace 中执行 `seed -> verify -> clean -> complete`，覆盖全部类型、16 KiB blob、同值写、1,000 次替换、迭代、删除、清空和终态重放；跨 boot action 由结果返回，portable App 不直接重启平台。
+旧混合 PAL App 与各平台 launcher 已下线。Core、Storage、Net/TLS、HTTP、MQTT 和 Wi-Fi/Netif 由上表各独立 App 负责；各自的 README 定义 case registry、真实 provider、资格与清理合同。PAL E2E v2 当前已有入口的矩阵为 Desktop、WASM、ESP、BK、iOS、Android 六平台；待补平台覆盖为 Linux、Windows、JieLi 三类。JieLi 之前未进行 v2 验收，现纳入后续接入范围。迁移与缺口清单统一记录在 `projects/e2e/apps/README.md`；IPv6 接入由独立任务负责，raw Net/TLS 按手动测试运行，不在 CI 执行。
 
-Desktop launcher 位于 `projects/e2e/targets/cc_binary/pal`。MQTT public-broker target 从现有 `H2_MQTT_SMOKE_*` environment surface 读取 endpoint policy；loopback target 持有 POSIX broker fixture。`pref_test` 在 `TEST_TMPDIR` 下创建进程独占的 SQLite store，每阶段销毁并重新打开真实 provider，最后只删除自己的临时根。DevKit 与 Tiga adapter 分别位于 `projects/e2e/targets/h2loader_tar_zlib/pal-pref/devkit` 和 `projects/e2e/targets/h2loader_tar_zlib/pal-pref/tiga_esp_v4_2`；两者每次启动运行一个 Preference phase，只在 seed 成功后确认 App，并对两个 transition 使用真实重启；失败和终态都保持 H2Loader command-responsive。
-
-Public MQTT broker 是 PAL 中唯一个 manual Bazel test，通过独立入口运行：
+Desktop public MQTT smoke 使用独立 MQTT App，保留 `H2_MQTT_SMOKE_*` endpoint policy，直接指定 manual target：
 
 ```sh
-make bazel-test-mqtt_public_broker_smoke
+bazel test --config=macos_arm64 --cache_test_results=no \
+  //projects/e2e/targets/cc_binary/pal-mqtt:public_broker_test
 ```
 
-Browser launcher 位于 `projects/e2e/targets/pkg_tar/pal`，只选择不需要外部服务的 `core` suite。它在一个 Web task 中运行 portable registry，逐条输出 bounded ledger。Core 不再假设 Filesystem 必须返回 UNSUPPORTED；缺失能力不能算作平台成功实现。
+`Live E2E` 的 `pal` / `all` scope 使用该入口，public smoke 不能代替 36-case MQTT 资格。默认自动测试继续运行独立 HTTP/MQTT loopback fixture 和 Storage 生命周期测试。`scripts/test/test-web.sh` 显式运行独立 Core、Storage、HTTP 和 Wi-Fi/Netif；raw Net/TLS 及 Browser unsupported boundary 通过各自的 manual label 按需执行，Browser raw socket 不可用不计作功能 PASS。
 
-JieLi AC791N 的 `projects/e2e/targets/h2loader_tar_zlib/pal/jieli_ac791n_devkit` 复用公共 Core 与独立 Wi-Fi suite，通过共享 H2Loader layout 和 UART1 运行。Wi-Fi 当前覆盖断开后的 STA/Netif 状态一致性，不代表扫描、连接、AP 和 Runtime Event 已验收；测试 App 保持未确认，以便异常复位返回 Loader。
+旧 App 的历史 qualification/evidence 保留其原 source/artifact 身份；已移除的 launcher 不再作为当前平台能力或可运行入口。JieLi 的旧体系退役记录与后续 v2 接入分别登记。
 
 ## H2Loader Serial
 

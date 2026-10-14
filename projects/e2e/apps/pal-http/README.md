@@ -1,6 +1,6 @@
 # PAL HTTP E2E
 
-`//projects/e2e/apps/pal-http/app:pal_http_e2e` owns a mandatory 45-case registry for both public HTTP operations and all request fields. It borrows Runtime HTTP/Memory/Time APIs and fixture URLs. Concrete providers, CA trust, browser policy, Wi-Fi, packaging and boot lifecycle belong to launchers. The existing mixed PAL App and Atomic App are unchanged.
+`//projects/e2e/apps/pal-http/app:pal_http_e2e` owns a mandatory 45-case registry for both public HTTP operations and all request fields. It borrows Runtime HTTP/Memory/Time APIs and fixture URLs. Concrete providers, CA trust, browser policy, Wi-Fi, packaging and boot lifecycle belong to launchers. The HTTP and Atomic Apps own separate contracts.
 
 ## Contract
 

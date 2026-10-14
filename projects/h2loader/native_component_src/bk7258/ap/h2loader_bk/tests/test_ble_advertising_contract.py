@@ -187,12 +187,13 @@ class BleAdvertisingContractTest(unittest.TestCase):
         source = next(runfiles.rglob("h2_loader_ble.c")).read_text(encoding="utf-8")
         opening = source[source.index("int h2_loader_ble_service_open("):]
         self.assertIn(
-            "const size_t identity_capacity = config->advertising_mode ==\n"
+            "size_t identity_capacity = config->advertising_mode ==\n"
             "            H2_LOADER_BLE_ADVERTISING_LEGACY\n"
             "        ? H2_PAL_BLE_LEGACY_ADV_DATA_MAX_LEN - 2u\n"
-            "        : sizeof(service->service_data);",
+            "        : H2_LOADER_BLE_SERVICE_DATA_FIXED_LEN + H2_LOADER_BLE_BOARD_MAX;",
             opening,
         )
+        self.assertIn("identity_capacity -= name_len + 2u;", opening)
         self.assertIn("service->service_data, identity_capacity,", opening)
 
     def test_stream_diagnostics_use_borrowed_sink_and_split_records(self):

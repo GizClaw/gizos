@@ -389,6 +389,11 @@ static h2_runtime_config_t h2_web_app_host_runtime_config(
   config.wifi_settings = h2_pal_unsupported_wifi_settings_api();
   config.ble_host = h2_pal_unsupported_ble_host_api();
   config.modem = h2_pal_unsupported_modem_api();
+  if (h2_web_platform_fake_wifi_sta_api(platform) != NULL) {
+    config.wifi_sta = h2_web_platform_fake_wifi_sta_api(platform);
+    config.wifi_settings = h2_web_platform_fake_wifi_settings_api(platform);
+    config.modem = h2_web_platform_fake_modem_api(platform);
+  }
   config.power = h2_pal_unsupported_power_api();
   config.display = h2_web_platform_display_api(platform);
   config.audio = h2_web_platform_audio_api(platform);
@@ -420,9 +425,16 @@ static h2_pal_result_t
 h2_web_app_host_configure_runtime(const h2_web_app_host_t *host,
                                   h2_runtime_config_t *config) {
   const h2_web_app_host_hardware_t *hardware = host->config->hardware;
-  if (hardware == NULL || hardware->configure_runtime == NULL)
-    return H2_PAL_OK;
-  return hardware->configure_runtime(hardware->user, config);
+  if (hardware != NULL && hardware->configure_runtime != NULL) {
+    h2_pal_result_t rc = hardware->configure_runtime(hardware->user, config);
+    if (rc != H2_PAL_OK) return rc;
+  }
+  if (config->led == h2_pal_unsupported_led_api()) {
+    h2_pal_result_t rc = h2_web_platform_configure_leds(host->platform, config->periph);
+    if (rc != H2_PAL_OK) return rc;
+    config->led = h2_web_platform_led_api(host->platform);
+  }
+  return H2_PAL_OK;
 }
 
 static void h2_web_app_host_app_task(void *user) {
@@ -491,6 +503,15 @@ static void h2_web_app_host_task(void *user) {
   if (atomic_load(&host->retained_error) == H2_PAL_OK) {
     if (host->runtime != NULL) h2_runtime_deinit(host->runtime);
     host->runtime = NULL;
+    const h2_web_app_host_hardware_t *hardware = config->hardware;
+    if (hardware != NULL && hardware->release_runtime != NULL) {
+      const h2_pal_result_t release_rc =
+          hardware->release_runtime(hardware->user);
+      if (release_rc != H2_PAL_OK) {
+        (void)h2_web_app_host_quarantine(host, hardware->user, release_rc);
+        result = release_rc;
+      }
+    }
   } else {
     result = (h2_pal_result_t)atomic_load(&host->retained_error);
   }

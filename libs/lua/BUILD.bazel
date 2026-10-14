@@ -38,6 +38,7 @@ py_binary(
 py_test(
     name = "app_package_test",
     srcs = [
+        "app_index.py",
         "app_package.py",
         "embed_resource.py",
         "tests/test_app_package.py",
@@ -49,12 +50,20 @@ py_test(
         "$(location //libs/lua/tests/app_fixture:xyz_archive)",
         "$(location //libs/lua/tests/app_fixture:xyz_manifest)",
         "$(location //libs/lua/tests/app_fixture:xyz_metadata)",
+        "$(location //libs/lua/tests/app_fixture:preinstalled_index)",
+        "$(location //libs/lua/tests/app_fixture:abc_installed)",
+        "$(location //libs/lua/tests/app_fixture:xyz_installed_entry)",
+        "$(location //libs/lua/tests/app_fixture:xyz_installed_resource)",
     ],
     data = [
         "//libs/lua/tests/app_fixture:abc_archive",
+        "//libs/lua/tests/app_fixture:abc_installed",
         "//libs/lua/tests/app_fixture:abc_manifest",
         "//libs/lua/tests/app_fixture:abc_metadata",
+        "//libs/lua/tests/app_fixture:preinstalled_index",
         "//libs/lua/tests/app_fixture:xyz_archive",
+        "//libs/lua/tests/app_fixture:xyz_installed_entry",
+        "//libs/lua/tests/app_fixture:xyz_installed_resource",
         "//libs/lua/tests/app_fixture:xyz_manifest",
         "//libs/lua/tests/app_fixture:xyz_metadata",
     ],
@@ -596,6 +605,18 @@ cc_test(
     ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS + h2_gnu_only_copts(["-O3"]),
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_binary(
+    name = "app_index",
+    srcs = ["app_index.py"],
+    main = "app_index.py",
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],

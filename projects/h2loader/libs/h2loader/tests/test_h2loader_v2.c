@@ -1922,6 +1922,18 @@ static void test_ble_diagnostics_preserve_failure_and_cleanup(void) {
   int expected = h2_loader_ble_service_open(&config, &service);
   assert(expected != H2_PAL_OK && service == NULL);
   assert(fixture.allocations == 0u && fixture.writes == 0u);
+  config.local_name = "";
+  service = (h2_loader_ble_service_t *)&fixture;
+  assert(h2_loader_ble_service_open(&config, &service) == H2_PAL_ERR_INVALID_ARG);
+  assert(service == NULL && fixture.allocations == 0u);
+  const char oversized[] = "123456789012345678901234567890";
+  config.local_name = oversized;
+  assert(h2_loader_ble_service_open(&config, &service) == H2_PAL_ERR_INVALID_ARG);
+  assert(service == NULL && fixture.allocations == 0u);
+  config.local_name = "H200-38DE";
+  assert(h2_loader_ble_service_open(&config, &service) == expected);
+  assert(service == NULL && fixture.allocations == 0u);
+  config.local_name = NULL;
   config.log = &log;
   assert(h2_loader_ble_service_open(&config, &service) == expected);
   assert(service == NULL && fixture.allocations == 0u && fixture.writes == 1u);
@@ -2040,6 +2052,12 @@ static void test_ble_identity_capacity(void) {
   const char *board = "12345678901234567890";
   uint8_t data[64], compact[64];
   size_t length = 0u, compact_length = 0u;
+  /* A nine-byte product name uses eleven scan-response bytes. With both AD
+   * headers, 18 identity bytes fit exactly; a short private board stays inline. */
+  assert(h2_loader_ble_encode_identity(H2_LOADER_CAPABILITIES_ALL, "h200",
+                                      data, 18u, &length) == H2_PAL_OK);
+  assert(data[4] == H2_LOADER_BLE_PROTOCOL_VERSION && length == 15u);
+  assert(memcmp(data + 11u, "h200", 4u) == 0);
   assert(strlen(board) <= H2_LOADER_BLE_INLINE_BOARD_MAX);
   assert(h2_loader_ble_encode_identity(H2_LOADER_CAPABILITIES_ALL, board, data, 29u, &length) ==
          H2_PAL_OK);
@@ -2261,6 +2279,37 @@ static void test_current_loader_identity_ignores_corrupt_metadata(void) {
   }
 }
 
+static void test_current_loader_identity_ignores_foreign_metadata(void) {
+  for (unsigned field = 0u; field < 4u; ++field) {
+    test_fixture_t fixture;
+    fixture_init(&fixture, 2u);
+    h2_loader_image_reader_vtable_t reader_ops = *fixture.reader.vtable;
+    reader_ops.get_capacity = larger_app_capacity;
+    fixture.reader.vtable = &reader_ops;
+    h2_loader_metadata_t stored = metadata(H2_LOADER_IMAGE_ROLE_H2LOADER, SHA_A);
+    switch (field) {
+    case 0u: (void)snprintf(stored.board, sizeof(stored.board), "foreign"); break;
+    case 1u: (void)snprintf(stored.target, sizeof(stored.target), "bk7258"); break;
+    case 2u: (void)snprintf(stored.version, sizeof(stored.version), "0.3.0"); break;
+    default: stored.role = H2_LOADER_IMAGE_ROLE_APP; break;
+    }
+    write_metadata(&fixture, H2_LOADER_METADATA_SLOT_PARTITION_2, &stored);
+    const unsigned commits = fixture.commits;
+    const pref_record_t original = fixture.records[2];
+    h2_loader_image_identity_t actual = {0};
+    assert(h2_loader_read_current_loader_identity(
+               &fixture.config, "0.2.0", &actual) == H2_PAL_OK);
+    assert(actual.image_size == 128u && fixture.digest_bytes == 128u);
+    assert(actual.format == 1u && actual.role == H2_LOADER_IMAGE_ROLE_H2LOADER);
+    assert(strcmp(actual.board, "devkit") == 0 &&
+           strcmp(actual.target, "esp32s3") == 0 &&
+           strcmp(actual.version, "0.2.0") == 0 &&
+           strcmp(actual.image_sha256, SHA_A) == 0);
+    assert(fixture.commits == commits &&
+           memcmp(&fixture.records[2], &original, sizeof(original)) == 0);
+  }
+}
+
 typedef struct checksum_fs_fixture {
   const char *value;
   size_t offset;
@@ -2424,6 +2473,7 @@ static void test_app_console_survives_closed_response(void) {
 int main(void) {
   test_app_console_survives_closed_response();
   test_current_loader_identity_ignores_corrupt_metadata();
+  test_current_loader_identity_ignores_foreign_metadata();
   test_read_current_loader_identity();
   test_stats_observes_installed_checksum();
   test_plan_missing_destination();

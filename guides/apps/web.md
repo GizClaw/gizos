@@ -2,6 +2,30 @@
 
 Web 入口归 portable App 的 project owner。Web 不是 Mobile 子平台；它有独立的 lifecycle、toolchain 和 hosting contract。
 
+## Opt-in fake Wi-Fi and modem
+
+An embedding host can call `h2WebAppHostConfigureEnvironment()` on the app_host page before Start, then again to change the simulated network scenario. A session started without this opt-in rejects later environment injection; reinstall the page to enable fake radios. The version-1 object is copied to `Module.h2WebEnvironment`:
+
+```js
+{
+  version: 1,
+  wifi: { enabled: true, connected: true, ssid: 'Browser Wi-Fi', rssi: -48 },
+  modem: { enabled: true, simPresent: true, registered: true, rssi: -70 }
+}
+```
+
+Only opted-in platforms install the Web fake Wi-Fi STA/settings and modem PAL APIs; ordinary pages keep the canonical unsupported radios. Invalid objects reject platform creation. Radio snapshots are read on the browser main thread, and each platform owns mutex-protected volatile connection/settings/power state. Wi-Fi offers one open simulated AP, synthetic locally administered addresses and a documentation-range lease. Connect does not save; connect-and-save updates the simulation's saved credentials only after successful connection. A new platform starts with its configured simulated AP saved and connected. Settings are in-memory only. Modem supports open/close, SIM/registration/signal, data open/close and power policy; calls, GNSS and cell location remain unsupported. Identity explicitly names the simulation and exposes no fabricated IMEI/IMSI.
+
+Real Fetch/WebRTC transports remain responsible for server communication. The HOST Netif is usable only when the browser is online and at least one simulated data path is open. Environment updates and radio operations trigger the existing Netif event flow. Closing both paths removes the usable default route, rejects new HTTP requests, WebRTC offers and outgoing data/Opus; applications observe the Netif change and manage their established sessions normally. The fake radios do not scan, connect or control the computer's real Wi-Fi/modem. This simulation is separate from evidence of a successful server connection.
+
+`//libs/pal/providers/web/pal_core:fake_network_test` executes the real pthread WASM provider against deterministic browser network inputs, covering opt-in, invalid configuration, Wi-Fi saved-state semantics, modem data/power, no-SIM, offline HTTP rejection and teardown. The existing Netif test preserves the non-simulated browser contract.
+
+## Runtime 输出到嵌入宿主
+
+Web PAL 在主线程发布版本 1 的 `Module.h2WebOutputs`：`display.brightnessPercent` 是最后一次有效 Display PAL 背光设置，`speakerVolumePercent` 是扬声器主音量，`leds[id]` 包含板级 Periph 的 id/name、原始 RGBW `pixels` 和独立 `brightnessPercent`。这些都是实际 PAL 调用产生的输出，宿主只负责呈现，不据此改写固件状态。复制 canvas 到模型纹理不会复制 CSS brightness，因此嵌入宿主必须显式消费背光输出；100% 不应再被机身摄影棚曝光压暗。
+
+App host 在产品 hardware hook 完成后，将 Periph API 绑定到公共 Web LED provider；产品已经提供自己的 LED API 时保持其实现。板级 mapper/Periph 拥有 LED_STRIP id、名字和 RGB/RGBW 像素数量，Web provider 支持 1..256 像素，提供 get_info、set_frame、set_solid、clear 和 brightness，未知 id 返回 NOT_FOUND、尺寸错误无副作用。借用的 Periph user/vtable/payload 必须覆盖 platform 生命周期。灯效、闪烁和亮度策略仍完全由 App/Runtime 决定，provider 不生成演示动画。`//libs/pal/providers/web/pal_core:outputs_test` 验证真实 WASM PAL 的颜色、亮度、无效输入与背光输出。
+
 ## Structure
 
 ```text
@@ -88,13 +112,15 @@ Audio PAL 的麦克风通过 `getUserMedia` 与 `AudioWorklet` 采集，显式�
 | WebRTC | `h2_web_platform_webrtc_api()` | 已实现（浏览器媒体 Track 与 Opus Track） | `:webrtc_browser_test`、`:webrtc_opus_browser_test`（Pion 回环）、`:webrtc_track_test`、`:async_test` |
 | 麦克风 / 扬声器 | `h2_web_platform_audio_api()` | 已实现 | `:mic_test`、`:mic_browser_test`、`:browser_platform_test` speaker |
 | H.264 / AAC 解码 | `h2_web_platform_video_decoder_api()`、`h2_web_platform_audio_decoder_api()` | 已实现，依赖浏览器编解码器 | `:browser_platform_test` media（需 `H2_WEB_TEST_BROWSER` 指向 Google Chrome） |
-| Display | `h2_web_platform_display_api()` | 已实现 | `:browser_platform_test` display |
+| Display | `h2_web_platform_display_api()` | 已实现，背光同时发布宿主输出 | `:browser_platform_test` display |
+| LED | `h2_web_platform_led_api()` | 基于板级 Periph 的模拟光学输出 | `:outputs_test` |
 | Pref | `h2_web_platform_pref_api()`（localStorage） | 已实现 | `:pal_core_test` |
-| raw Net socket、MQTT、Wi-Fi、蜂窝、BLE、NFC、真实电池、板上 OTA | canonical unsupported | 不支持，返回 `UNSUPPORTED` | — |
+| Wi-Fi / 蜂窝 | 显式 opt-in 的 Web fake PAL | 模拟 radio 状态与数据链路；默认 unsupported | `:fake_network_test` |
+| raw Net socket、MQTT、BLE、NFC、真实电池、板上 OTA | canonical unsupported | 不支持，返回 `UNSUPPORTED` | — |
 
 ### 默认网络（Netif）
 
-浏览器只暴露一个默认路径：NAME `browser`、kind `H2_PAL_NETIF_KIND_HOST`。在线时状态为 `UP | LINK_UP | DEFAULT_ROUTE`；离线时 DEFAULT ref 返回 `NOT_FOUND`，`browser` ref 仍可查询但只有 `UP`。浏览器不暴露本机 IP、网关、DNS、MTU、MAC，provider 从不设置 `HAS_IPV4/HAS_IPV6`，也不填写这些字段。其它 kind、名称和 ID 返回 `NOT_FOUND`，不模拟 Wi-Fi 或蜂窝接口；对 `browser` 调用 `get_dns_servers` 或 `set_default` 返回 `UNSUPPORTED`，因为解析与路由归浏览器所有。没有布尔型 `navigator.onLine` 时所有调用返回 `UNSUPPORTED`。
+浏览器只暴露一个默认路径：NAME `browser`、kind `H2_PAL_NETIF_KIND_HOST`。在线时状态为 `UP | LINK_UP | DEFAULT_ROUTE`；离线时 DEFAULT ref 返回 `NOT_FOUND`，`browser` ref 仍可查询但只有 `UP`。浏览器不暴露本机 IP、网关、DNS、MTU、MAC，provider 从不设置 `HAS_IPV4/HAS_IPV6`，也不填写这些字段。其它 kind、名称和 ID 返回 `NOT_FOUND`，不额外暴露 Wi-Fi 或蜂窝 Netif；对 `browser` 调用 `get_dns_servers` 或 `set_default` 返回 `UNSUPPORTED`，因为解析与路由归浏览器所有。没有布尔型 `navigator.onLine` 时所有调用返回 `UNSUPPORTED`。启用 fake radio 后还要求至少一条模拟数据链路可用，具体见前文模拟网络约定。
 
 `online`/`offline` 事件在下一次 platform pump 中发布为 `H2_PAL_SYSTEM_EVENT_TYPE_NETIF_DEFAULT_CHANGED`，同一 pump 内相互抵消或重复的通知被去重。Consumer 必须用 `h2_pal_netif_status_is_usable()` 判断默认网络；`navigator.onLine == true` 只说明宿主有网络，目标服务是否可达（captive portal、防火墙、CORS、服务端故障）由实际 HTTP/WebRTC 结果决定。
 
@@ -176,7 +202,7 @@ config.webrtc = h2_web_platform_webrtc_api(platform);
 
 `//libs/app_host` 是通用 Web launcher：创建 platform、可选持久 Filesystem 与 LVGL platform，组装完整 Web Runtime（其余能力为 canonical unsupported），在 task 中初始化 Runtime、运行 App、deinit Runtime（Runtime 的 input task 只能从 task 中 join），再关闭 Filesystem 并销毁 platform。可选 `buttons` 描述 Runtime Button：`{component_id, key, name}`。输入全部由 shell 的 JavaScript 处理：`key`（DOM `KeyboardEvent.key`）和页面中所有 `data-h2-button="<name>"` 元素（鼠标、触摸）共同按住同一个 Button，合并成一个按下状态后才写 `h2_runtime_button_push_edge()` edge；页面失焦、隐藏或 App 结束时全部释放，click/long-press 仍由 Runtime 判定。`run_ms` 让无终止条件的 App 在测试中停止：先让 `should_stop` 为真，2 秒宽限后取消 App task，使其下一次 PAL 等待返回 `EXIT`。控制台与 `#status` 输出 `H2_WEB_APP name=<app> stage=running|ready|stop-requested|cancel` 与 `H2_WEB_APP name=<app> result=PASS rc=0 fs=0 destroy=0`；PASS 要求 App 返回 OK 且 Filesystem 关闭、platform 销毁都成功。新 target 只需 `main.c` 与 `h2_web_app()`，宏生成 `.web.tar`、`:serve` 与 `:browser_test`。
 
-需要模拟更多板级硬件的 App（电源与深睡、电池、振动、自己的 component id）用可选的 `hardware`（`h2_web_app_host_hardware_t`），三个 hook 都可省略：`prepare` 在打开 Filesystem 之前运行（例如把预加载资源解包到之后只读挂载的目录）；`configure_runtime` 在 host 填好 Web provider 之后修改 Runtime 配置（安装 power、periph、input、pwm_switch 和 component mapper，也可以改 `board` 名）；装了自己的 mapper 时 host 不再添加自己的 Button periph，由 `button` 把页面的每个 Button edge（按 `buttons` 里的 component id）送到目标自己的 periph，`button` 为 NULL 时仍推到 host 的 Button periph。`h2_web_app()` 的 `copts` 只追加到调用方 srcs 的编译选项，生成的 board 定义不受影响。
+需要模拟更多板级硬件的 App（电源与深睡、电池、振动、自己的 component id）用可选的 `hardware`（`h2_web_app_host_hardware_t`），所有 hook 都可省略：`prepare` 在打开 Filesystem 之前运行（例如把预加载资源解包到之后只读挂载的目录）；`configure_runtime` 在 host 填好 Web provider 之后修改 Runtime 配置（安装 power、periph、input、pwm_switch 和 component mapper，也可以改 `board` 名）；装了自己的 mapper 时 host 不再添加自己的 Button periph，由 `button` 把页面的每个 Button edge（按 `buttons` 里的 component id）送到目标自己的 periph，`button` 为 NULL 时仍推到 host 的 Button periph。`release_runtime` 在 host task 中等待 App 与 Runtime 使用者结束后、Filesystem/platform 卸载前释放 configuration 借用的资源；configuration 或 Runtime 初始化失败后同样调用一次。更早 setup 失败或依赖已经 quarantine 时不调用。释放失败保留完整依赖图并报告 RETAINED，不重复调用可能已部分消耗的 owner；opaque user 必须覆盖保留期。`h2_web_app()` 的 `copts` 只追加到调用方 srcs 的编译选项，生成的 board 定义不受影响。
 
 ### Web board
 
@@ -240,7 +266,7 @@ App Host 把配置、Button/hardware descriptor、名字和路径复制到一个
 | `lua-script` | `h2_lua_web_app()` + `demo_board` 默认 `device` 外观：canvas 与状态行进入外观的 slot；脚本校验 Button args 后 ready；点击外观的 `data-h2-button=ok` 元素触发脚本 OK 回调；点击页面 Stop（`#stop`）取消 job 并 PASS |
 | `lua-script-input` | `demo_board` 的 `plain` 外观，Button 输入合同：pointer 与 Enter 重叠按住时松开 pointer 仍按住（只有一次 Down/Up）；blur、页面隐藏和 App 结束都释放按住的 Button；脚本只统计每次按压的首个 Down sample |
 | `web-board-{amoled,bk7258,k4b,szp,p4-lcd43}` | 每块 web board：页面拿到板上的屏幕尺寸（`H2_WEB_BOARD_CHECK size=WxH`），`device` 外观放置 canvas，点击外观上的第一个 Button 到达脚本，点击 Stop 后 PASS |
-| `web-hardware` | `hardware` hook：`prepare` 与 `configure_runtime` 在 App 前运行、Runtime `board` 为 hook 设置的名字；Enter 的 Down 与 Up 两个 edge 都经 `button` hook 推到目标自己的 periph（component 42 → periph 501）且 Runtime 都接受，之后 PASS |
+| `web-hardware` | `prepare` 与 `configure_runtime` 在 App 前运行、Runtime `board` 为 hook 设置的名字；Enter 的 Down 与 Up 经 `button` 推到 component 42 / periph 501；`release_runtime` 关闭 configuration 持有的真实文件后 FS/platform 完整释放。额外 browser case 验证 configuration 失败后仍释放一次，以及 release 失败保留文件/backend、不重复释放 |
 | `lua-script-stop` | 不按键，`run_ms` 发出 Stop 请求（`stage=stop-requested`），取消 job 后 PASS |
 | `lua-script-extension` | extension 注册的 capability 可用；`exit_requested` 拒绝第一次 Escape、job 继续运行，第二次 Escape 取消并 PASS |
 | `lua-script-vector` | 共享 Lua 入口绘制多边形、椭圆、硬边/平滑笔画和保留命令；唯一 native extension 经公开 Display API 创建／更新几何并重放缓存；真实 Canvas 检查边界、裁剪、变换、颜色与错误更新后旧数据，验证背景恢复、透明快照、retained 提交量、GC 后绘制和页面 Stop 回收 |
@@ -248,7 +274,7 @@ App Host 把配置、Button/hardware descriptor、名字和路径复制到一个
 
 未提供 Web target 的 App：`gizclaw-ping-speed` 依赖必需的 Wi-Fi API；BLE、Wi-Fi CSI、modem、crash-before-confirm、partial-update 依赖浏览器不存在的硬件或板上能力；`lua-bloomspeaker` 依赖 BLE 配对；iperf 需要 raw socket。GizClaw 真实服务端注册与 H106 业务流程需要真实 token，不在自动测试范围内。
 
-`//projects/e2e/targets/pkg_tar/pal` 注入了 Netif 与 System Event。真实浏览器测试：
+独立 `pal-core` Browser suite 验证 Core 与 System Event；`pal-wifi` Browser suite 验证 Netif 和真实 offline/online Runtime event；`pal-net-tls` 的 boundary test 验证 raw socket 不可用。`scripts/test/test-web.sh` 显式运行这些入口。Web provider 另有真实浏览器测试：
 
 ```sh
 bazel test --config=macos_arm64 //libs/pal/providers/web/pal_core:browser_platform_test

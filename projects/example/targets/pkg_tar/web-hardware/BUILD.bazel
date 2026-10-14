@@ -1,4 +1,5 @@
 load("//libs/app_host:web_app.bzl", "h2_web_app")
+load("//tools/bazel:web_archive.bzl", "web_archive_browser_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -12,6 +13,7 @@ h2_web_app(
     passes = [
         "H2_WEB_HARDWARE prepared=1 configured=1 board=web-hardware",
         "H2_WEB_HARDWARE edges=2 accepted=2",
+        "H2_WEB_HARDWARE release=1 rc=0",
         "H2_WEB_APP name=web-hardware result=PASS rc=0 fs=0 destroy=0",
     ],
     presses = [[
@@ -20,3 +22,14 @@ h2_web_app(
     ]],
     deps = [],
 )
+
+[web_archive_browser_test(
+    name = name,
+    archive = ":web-hardware",
+    query = "mode=%d" % mode,
+    passes = ["H2_WEB_HARDWARE checks=PASS"],
+    timeout_s = 30,
+) for name, mode in [
+    ("configure_failure_test", 1),
+    ("release_failure_test", 2),
+]]

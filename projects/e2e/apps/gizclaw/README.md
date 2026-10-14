@@ -47,7 +47,7 @@ BK AP media TLS 使用 SDK PSRAM allocator；C emulated TLS 和两个 errno
 
 ## 历史资格快照（2026-10-02，保留原 source/SDK 身份）
 
-当前跟随 main 使用 GizClaw C SDK `0.23.2`，保留 MHS/HWD、tool-v0、catalog tags 和 safety-fence 协议。当前公开函数库存为 **228 项**，新增的初始输入 readiness 快照由 Service case 实际读取并断言无活动输入。原有 **227 项**执行记录仍保留其历史源码身份；新增库存和本地覆盖 wiring 不资格化那些旧运行。类型和协议语义的更新须重新执行实际业务。下面 source-bound `0.19.0` 记录仅是历史结果，不资格化当前 SDK。当前主线 SCTP #617 与 PAL Net/TLS #621 已合入。source `e228d55b` 的 macOS、iOS Simulator、Android Emulator 均真实 8/8 及 227/227 通过，cleanup=0、retained=0，移动端 teardown=0；早期 source42a/75aad/d214 的独立记录保留原身份。早期 226/default profile 记录保留原身份。六端整体资格仍未完成。
+当前跟随 main 使用 GizClaw C SDK `0.26.0`，保留 MHS/HWD、tool-v0、catalog tags 和 safety-fence 协议。当前公开函数库存为 **236 项**；初始输入 readiness 快照由 Service case 实际读取并断言无活动输入，新增的八个 BLE Binding API 则保持独立的调用与业务断言要求。原有 **227 项**执行记录仍保留其历史源码身份；新增库存和本地覆盖 wiring 不资格化那些旧运行。类型和协议语义的更新须重新执行实际业务。下面 source-bound `0.19.0` 记录仅是历史结果，不资格化当前 SDK。当前主线 SCTP #617 与 PAL Net/TLS #621 已合入。source `e228d55b` 的 macOS、iOS Simulator、Android Emulator 均真实 8/8 及 227/227 通过，cleanup=0、retained=0，移动端 teardown=0；早期 source42a/75aad/d214 的独立记录保留原身份。早期 226/default profile 记录保留原身份。六端整体资格仍未完成。
 
 | 平台 | 当前实际结果 | 尚缺条件 |
 | --- | --- | --- |
@@ -143,7 +143,7 @@ Workspace 响应校验 arena、数组边界/对齐、字符串与 profile/revisi
 
 测速日志的 `integrity` 区分校验范围：下载成功为 `pattern-verified`（逐字节核对固定上游 v0.13.2 的 0..255 循环模式）；上传成功仅为 `length-ack-only`（服务端 EOS 确认消费及长度，未校验上传内容）；失败为 `not-verified`。模式校验不是密码学摘要，不能据此声称完成上传端到端内容校验。
 
-`api_coverage.py` 的矩阵独立列出约定的 227 个函数，并与 `libs/gizclaw/tests/public_api.inc` 核对。每行指定用例、按序成功调用和显式业务断言；req_create / resp_parse 必须有直接 create → do → wait → parse 的记录，同步 RPC 的内部调用不算另一套 API 的覆盖。Profile / Workflow / Contact 已输出对应业务断言。其他尚未补齐的断言仍保留为要求，不降级成“调用返回成功”。Telemetry 是单向包，其 `telemetry_send-assert` 仅按公开 API 契约确认传输层接受，不表示服务端确认或落库；两套 API 使用不同 sequence、各自读取当前时间，测试值明确标为 `e2e-fixture`。
+`api_coverage.py` 的矩阵独立列出约定的 236 个函数，并与 `libs/gizclaw/tests/public_api.inc` 核对。每行指定用例、按序成功调用和显式业务断言；req_create / resp_parse 必须有直接 create → do → wait → parse 的记录，同步 RPC 的内部调用不算另一套 API 的覆盖。Profile / Workflow / Contact 已输出对应业务断言。其他尚未补齐的断言仍保留为要求，不降级成“调用返回成功”。Telemetry 是单向包，其 `telemetry_send-assert` 仅按公开 API 契约确认传输层接受，不表示服务端确认或落库；两套 API 使用不同 sequence、各自读取当前时间，测试值明确标为 `e2e-fixture`。
 
 Runner 在 actor 初始化前输出 `coverage-begin`，在清理后输出 `coverage-end`；RPC domain 使用 `rpc/<domain>` 嵌套范围。校验器拒绝缺失、重复、乱序、失败或未关闭的范围，父用例清理失败会使子范围失效。最终只接受指定平台、backend、endpoint 和 profile 的一次 `all` 完整运行，以及全部八个顶层用例和矩阵要求的全部 RPC domain。测试进程真实退出码和日志内 summary 都必须成功；不能把 summary 的 exit_code 当成真实进程退出码。
 
@@ -255,3 +255,9 @@ BK 的 GizClaw target 选择已存在的 board-owned `media` RAM layout（AP hea
 2026-10-02 main 同步保留新增独立 `workspace-fence` lane；它需要显式 Workflow 和两个不同 fence ID，不包含在八项 `all` admission 中。三类板卡共用的 admission 要求 complete、selected/terminal/passed 均为8、所有失败计数与 cleanup/retained 均为0；Voice-only、部分完成或清理残留不能确认镜像。SDK0.23.2 headless actors 注册 INFO_GET、IDENTIFIERS_GET、SOCIAL_PING 三个 tool handler；有 Device vtable 的 actor 只注册 SOCIAL_PING，避免和内置工具重复。真实 Service 初始化及44项 App/oracle/provenance/dispatch focused测试通过，当前SDK实际六端重测仍待完成。
 
 SDK0.23.2/source123565bf 的真实 macOS 全量执行为5/8，cleanup=-8、retained=4；live0.21.3对MHS/tool-v0返回404，Workspace create/Session select为-1000，social ping没有接收交付，属于支持协议失败而不是SKIP。Firmware本轮完整size/SHA通过。新iOS/Android包构建成功仅证明包集成；最新SDK全量实际重测仍需兼容服务。板端解析器扫描完整UART日志并只接受最新boot的完整账本；后续失败/未完成boot不得借用此前成功，同nonce/header/body的冻结账本重播不计为独立boot。
+
+## BLE Binding 覆盖边界
+
+BLE Binding 的八个公开 API 归属 `device-api` 的独立审计要求，全部要求按序成功调用和显式 `ble_binding_<method>-assert` 业务断言。`open`、`start`、`poll` 和 `stop` 还必须在变更后实际调用 `ble_binding_snapshot`，观察 idle/open、广播重启或 sealed window 状态；URL formatter、snapshot、exposure drain 与最终 close 则各自断言实际值、精确 key name/revision 或已释放 instance。READY、函数名出现在源码、普通返回 OK 或 fake-PAL 单测都不能替代这些证据。
+
+`h2_gizclaw_ble_binding_test` 验证真实异步 key state 与 fake RPC/BLE PAL 上的 wire、生命周期和失败边界；它不输出或提供 live E2E qualification。真实 Server/BLE/手机绑定 lane 尚无这八项调用与业务断言证据时，完整审计继续将它们报告为 missing。历史 228 或 227 函数的完整日志不会资格化 236 项库存；审计器回归测试明确要求旧 228 项的合成日志仍缺少全部八项 BLE 要求。产品页面与手机 adapter 的接入和物理 ESP32-S3/BK7258 验收分别记录，不能把本地 host graph 绿灯写成账号绑定或设备通过。

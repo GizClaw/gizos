@@ -5,6 +5,7 @@ exports_files([
     "coremqtt.BUILD.bazel",
     "esp_serial_flasher.BUILD.bazel",
     "ffmpeg.BUILD.bazel",
+    "gizclaw_c_sdk_lua_app_uninstall.patch",
     "ikcp.BUILD.bazel",
     "iperf.BUILD.bazel",
     "libco.BUILD.bazel",

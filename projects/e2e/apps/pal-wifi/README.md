@@ -1,15 +1,6 @@
 # PAL Wi-Fi / Netif qualification
 
-This independent App preserves the legacy mixed PAL App. Its 38 non-fail-fast
-cases cover all 21 operations: STA 7, AP 5, Settings 4 and Netif 5. Device runner
-adds `settings-restart-persistence`, qualified only on a later independent boot
-that reads the prior fixed v1 canonical Settings record. A seed boot returns
-WOULD_BLOCK and is not confirmed. ESP rolls back unconfirmed same-slot reboots;
-the verified seed may therefore precede a different managed App image. Reports
-retain the actual prior seed version. The final qualified image then passes a
-separate ordinary App reboot after confirmation.
-Only complete successful runs with Settings/network restoration and removed
-credential backup may confirm the managed App.
+This independent App owns Wi-Fi/Netif qualification. Its 38 non-fail-fast cases cover all 21 operations: STA 7, AP 5, Settings 4 and Netif 5. Device runner adds `settings-restart-persistence`, qualified only on a later independent boot that reads the prior fixed v1 canonical Settings record. A seed boot returns WOULD_BLOCK and is not confirmed. ESP rolls back unconfirmed same-slot reboots; the verified seed may therefore precede a different managed App image. Reports retain the actual prior seed version. The final qualified image then passes a separate ordinary App reboot after confirmation. Only complete successful runs with Settings/network restoration and removed credential backup may confirm the managed App.
 
 Without saved STA credentials, the portable suite accepts only a known
 disconnected starting state. An active or indeterminate connection is rejected

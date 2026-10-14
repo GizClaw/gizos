@@ -46,7 +46,7 @@ def digest(data: bytes) -> str:
 
 
 def build_package(
-    specification: dict, archive: Path, manifest: Path, metadata: Path
+    specification: dict, archive: Path, manifest: Path, metadata: Path, installed_entry: Path | None = None
 ) -> None:
     app_id, version, entry = (
         specification.get(key) for key in ("app_id", "version", "entry")
@@ -112,6 +112,14 @@ def build_package(
             for name, data in contents.items()
         ],
     }
+    for key, limit in (("display_name", 128), ("description", 1024)):
+        item = specification.get(key, "")
+        if not isinstance(item, str) or "\0" in item or len(item.encode("utf-8")) > limit:
+            raise ValueError(f"Invalid Lua app {key}")
+        if item:
+            value[key] = item
+    if installed_entry is not None:
+        installed_entry.write_bytes(contents[entry])
     manifest_bytes = json_bytes(value)
     contents["manifest.json"] = manifest_bytes
     # USTAR, zero timestamps and fixed ownership avoid machine/run provenance.
@@ -152,12 +160,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("specification", "archive", "manifest", "metadata"):
         parser.add_argument("--" + name, required=True, type=Path)
+    parser.add_argument("--installed-entry", type=Path)
     args = parser.parse_args()
     try:
         specification = json.loads(args.specification.read_text(encoding="utf-8"))
         if not isinstance(specification, dict):
             raise ValueError("Lua app specification must be an object")
-        build_package(specification, args.archive, args.manifest, args.metadata)
+        build_package(specification, args.archive, args.manifest, args.metadata, args.installed_entry)
     except (OSError, ValueError) as error:
         parser.exit(1, f"Lua app package: {error}\n")
     return 0

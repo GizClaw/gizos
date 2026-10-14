@@ -50,10 +50,26 @@
         print: text => console.log(text),
         printErr: text => console.error(text),
       };
+      let h2HostStarted = false;
+      // Host-owned opt-in simulation. Never infer fake radios for plain pages.
+      globalThis.h2WebAppHostConfigureEnvironment = environment => {
+        if (h2HostStarted && Module.h2WebEnvironment === undefined)
+          throw new Error('Configure the simulated environment before Start');
+        const w = environment?.wifi, m = environment?.modem;
+        if (environment?.version !== 1 || !w || !m ||
+            [w.enabled, w.connected, m.enabled, m.simPresent, m.registered].some(v => typeof v !== 'boolean') ||
+            typeof w.ssid !== 'string' || !w.ssid || w.ssid.includes('\0') || new TextEncoder().encode(w.ssid).length > 32 ||
+            [w.rssi, m.rssi].some(v => !Number.isInteger(v) || v < -127 || v > 0)) {
+          throw new TypeError('Invalid simulated radio environment');
+        }
+        Module.h2WebEnvironment = structuredClone(environment);
+        globalThis.dispatchEvent(new Event('h2-web-environment-change'));
+      };
       const start = document.getElementById('start');
       const stop = document.getElementById('stop');
       // Start is the user gesture that unlocks audio and the microphone.
       start.addEventListener('click', () => {
+        h2HostStarted = true;
         start.disabled = true;
         stop.disabled = false;
         const AudioContext = globalThis.AudioContext || globalThis.webkitAudioContext;

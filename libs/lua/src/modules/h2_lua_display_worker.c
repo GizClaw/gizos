@@ -90,6 +90,9 @@ static void execute(h2_lua_display_worker_t *worker) {
     }
     if (result == H2_PAL_OK)
       result = (h2_pal_result_t)h2_pal_display_present(display);
+    if (result == H2_PAL_OK && worker->on_present != NULL)
+      worker->on_present(worker->present_user, worker->job_id, worker->pixels,
+                         worker->info.width, worker->info.height);
     if (h2_pal_time_get_monotonic_us(worker->runtime->time,
           &worker->completed_us) != H2_PAL_OK ||
         worker->completed_us < worker->started_us) worker->clock_valid = 0;

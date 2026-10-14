@@ -75,3 +75,7 @@ Factory reset 与 run.workspace.set 作为 tool/v0 过程保留 typed 产品 hoo
 的 `firmware_version` 现在也会被服务端采用并投影到 `PeerStatus.firmware_version`。两者
 的字段约束和拒绝行为见 [GizClaw 开发指南](/zh/developing/gizclaw)。E2E app 还没有上报
 activity，服务端投影的验收随产品实现一起进行。
+
+## Lua app 卸载验收
+
+`lua-apps` suite 在安装和 Golden 运行后通过真实 HTTP tool/v0 调用 `lua.app.uninstall` 两次，验证目录移除、启动返回 404、原 entry 文件已回收，再使用同一包重新安装并运行。需要配套支持 ClientTool 27 的 GizClaw Server。Host 回归验证预装身份持久隐藏、用户数据保留、索引失败回滚、发布后清理失败重试、重新安装以及安装 reservation 的 BUSY 行为；Host/协议回归通过不能替代物理设备 Golden 验收。

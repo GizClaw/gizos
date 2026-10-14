@@ -31,6 +31,8 @@ static int run_voice(h2_gizclaw_e2e_fixture_t *fixture) {
 }
 
 const e2e_case_t h2_gizclaw_e2e_cases[] = {
+    {"lua-apps", H2_GIZCLAW_E2E_SUITE_LUA_APPS, 1u, false,
+     h2_gizclaw_e2e_run_lua_apps, h2_gizclaw_e2e_prepare_lua_apps},
     {"resource", H2_GIZCLAW_E2E_SUITE_RESOURCE, 1u, false,
      h2_gizclaw_e2e_run_resource, NULL},
     {"device-api", H2_GIZCLAW_E2E_SUITE_DEVICE, 1u, false,

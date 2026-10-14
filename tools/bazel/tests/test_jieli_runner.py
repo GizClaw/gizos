@@ -141,7 +141,7 @@ class JieliRunnerFixture:
         values = dict(
             source_root=str(self.root),
             target=self.target,
-            entry="projects/e2e/targets/jieli_firmware/pal/jieli_dev_board",
+            entry="projects/e2e/targets/jieli_firmware/reference-smoke/ac791n_reference",
             board="fixture_board",
             image="demo",
             project_makefile=str(self.project_makefile.relative_to(self.root)),

@@ -10,6 +10,7 @@ import unittest
 
 ROOT = Path(__file__).absolute().parents[3]
 PREFIX = "//projects/e2e/targets/cc_test/gizclaw:gizclaw_"
+PAL_TARGET = "//projects/e2e/targets/cc_binary/pal-mqtt:public_broker_test"
 
 
 class LiveCommandTest(unittest.TestCase):
@@ -175,7 +176,13 @@ class LiveCommandTest(unittest.TestCase):
         result = self.workflow()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(len(self.calls()), 1)
-        self.assertFalse(any(arg.startswith("--test_arg=") for arg in self.calls()[0]["argv"]))
+        args = self.calls()[0]["argv"]
+        self.assertEqual(args[0], "test")
+        self.assertEqual(args[-1], PAL_TARGET)
+        self.assertIn("--config=macos_arm64", args)
+        self.assertIn("--cache_test_results=no", args)
+        self.assertTrue(any(arg.startswith("--disk_cache=") for arg in args))
+        self.assertFalse(any(arg.startswith("--test_arg=") for arg in args))
 
     def test_workflow_missing_endpoint_and_unknown_scope(self):
         del self.env["H2_GIZCLAW_E2E_ENDPOINT"]
@@ -191,7 +198,7 @@ class LiveCommandTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         calls = self.calls()
         self.assertEqual(len(calls), 2)
-        self.assertIn("mqtt_public_broker_smoke", calls[0]["argv"][-1])
+        self.assertEqual(calls[0]["argv"][-1], PAL_TARGET)
         self.assert_live_call(calls[1], "h2peer")
         self.env.update(COMMAND_FAIL_LABEL=calls[0]["argv"][-1], COMMAND_FAIL_RC="7")
         self.assertNotEqual(self.workflow().returncode, 0)

@@ -4,7 +4,10 @@
  * delivers the page's edges there. The App ends after one key press: both
  * its Down and Up edge must reach the hook and be accepted by the Runtime. */
 #include "h2_web_app_host.h"
+#include "h2_web_main_thread.h"
 
+#include <assert.h>
+#include <emscripten.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -16,7 +19,16 @@ typedef struct web_hardware {
   int configured;
   volatile int edges;
   volatile int accepted;
+  int mode, releases, entry_done;
+  const h2_pal_fs_api_t *fs;
+  h2_pal_fs_file_t *file;
 } web_hardware_t;
+
+EM_JS(void, fixture_mode,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, [], "i32", () =>
+      Number(new URLSearchParams(location.search).get('mode') || 0));
+});
 
 static const h2_pal_periph_single_button_payload_t k_button_payload = {
     .delivery = H2_PAL_BUTTON_DELIVERY_PUSH_EDGE,
@@ -111,7 +123,25 @@ static h2_pal_result_t configure_runtime(void *user,
   config->periph = &k_periph;
   config->component_mapper = &k_mapper;
   hardware->configured = 1;
-  return H2_PAL_OK;
+  hardware->fs = config->fs;
+  const h2_pal_result_t rc = (h2_pal_result_t)h2_pal_fs_open(
+      config->fs, "/hardware/source", H2_PAL_FS_OPEN_WRITE_TRUNCATE,
+      &hardware->file);
+  return rc != H2_PAL_OK ? rc : hardware->mode == 1 ? H2_PAL_ERR_IO : H2_PAL_OK;
+}
+
+static h2_pal_result_t release_runtime(void *user) {
+  web_hardware_t *hardware = user;
+  assert(++hardware->releases == 1);
+  assert(hardware->entry_done == (hardware->mode != 1));
+  if (hardware->mode == 2)
+    return H2_PAL_ERR_IO;
+  const h2_pal_result_t rc =
+      (h2_pal_result_t)h2_pal_fs_close(hardware->fs, hardware->file);
+  if (rc == H2_PAL_OK)
+    hardware->file = NULL;
+  printf("H2_WEB_HARDWARE release=%d rc=%d\n", hardware->releases, (int)rc);
+  return rc;
 }
 
 static h2_pal_result_t button(void *user, h2_runtime_t *runtime,
@@ -134,6 +164,10 @@ static h2_pal_result_t run(h2_web_app_host_t *host, h2_runtime_t *runtime,
   printf("H2_WEB_HARDWARE prepared=%d configured=%d board=%s\n",
          hardware->prepared, hardware->configured, runtime->board);
   h2_pal_result_t result = h2_web_app_host_ready(host);
+  if (hardware->mode == 2) {
+    hardware->entry_done = 1;
+    return result;
+  }
   /* One key press is one Down and one Up edge. */
   while (result == H2_PAL_OK && hardware->edges < 2 &&
          !h2_web_app_host_should_stop(host))
@@ -142,16 +176,19 @@ static h2_pal_result_t run(h2_web_app_host_t *host, h2_runtime_t *runtime,
          hardware->accepted);
   if (result == H2_PAL_OK && hardware->accepted != hardware->edges)
     result = H2_PAL_ERR_UNAVAILABLE;
+  hardware->entry_done = 1;
   return result;
 }
 
 int main(void) {
   static web_hardware_t hardware;
+  hardware.mode = h2_web_main_call(fixture_mode, NULL).i32;
   static const h2_web_app_host_hardware_t hooks = {
       .user = &hardware,
       .prepare = prepare,
       .configure_runtime = configure_runtime,
       .button = button,
+      .release_runtime = release_runtime,
   };
   static const h2_web_app_host_button_t buttons[] = {
       {WEB_HARDWARE_COMPONENT, "Enter", NULL},
@@ -161,6 +198,17 @@ int main(void) {
       .buttons = buttons,
       .button_count = 1u,
       .hardware = &hooks,
+      .persistent_root = "/hardware",
   };
-  return h2_web_app_host_run(&config, run, &hardware);
+  const int rc = h2_web_app_host_run(&config, run, &hardware);
+  assert(hardware.releases == 1);
+  if (hardware.mode == 2) {
+    assert(rc == H2_WEB_APP_HOST_RETAINED && hardware.file != NULL);
+    h2_pal_fs_stat_t info = {0};
+    assert(h2_pal_fs_stat(hardware.fs, "/hardware/source", &info) == H2_PAL_OK);
+  } else {
+    assert(rc == (hardware.mode == 1 ? 1 : 0) && hardware.file == NULL);
+  }
+  puts("H2_WEB_HARDWARE checks=PASS");
+  return 0;
 }
