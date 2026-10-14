@@ -136,6 +136,8 @@ ESP/BK 直接接收 `h2_pal_application_host_api_t`，使用与 Web/Desktop 相�
 
 26 个现有入口均使用公共板级 provider 与 E2E launcher，另两个 Application Host SDK 验证入口也使用同一路径。旧 `h2loader_zlib_tar` labels 继续指向相同实现，firmware/package label、设备 runner 和历史验收记录不变。每个 main 只提供测试 entry、必要的 configure/validate、原有 serial identity/capabilities；没有 Host vtable 或独立 Runtime/App task 启动流程。
 
+本次迁移的功能验收使用 C/C++ 直接编译执行生产代码，并构建真实 ESP/BK SDK package。历史 qualification 文件保留其原始版本记录；不使用 Python 源码抽取、字符串或源码哈希匹配作为当前源码的验收。
+
 | Suite | ESP32-S3 | BK7258 AP |
 | --- | --- | --- |
 | Core / Storage / Crypto / HTTP / WebRTC / JSON / MQTT / Net-TLS | DevKit 各一项 | 各一项 |

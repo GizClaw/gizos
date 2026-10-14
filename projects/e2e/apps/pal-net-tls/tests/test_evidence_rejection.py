@@ -35,25 +35,6 @@ class Rejection(unittest.TestCase):
             bad=copy.deepcopy(followup);mutate(bad)
             with self.assertRaises(AssertionError):validation.check_sources(validation.ROOT,historical,bad)
 
-    def test_application_host_followup_requires_real_browser_and_exact_inputs(self):
-        record=json.loads((APP/'evidence/wasm/application_host_boundary.json').read_text())
-        validation.check_application_host_browser(validation.ROOT,record)
-        for mutate in [
-            lambda value:value.update(new_physical_run_claimed=True),
-            lambda value:value['boundary'].update(core_qualified=True),
-            lambda value:value['boundary'].update(teardown=1),
-            lambda value:value['source_sha256'].update({validation.WASM_HOST_ENTRY:'0'*64}),
-            lambda value:value['source_sha256'].update({'unrelated/provider.c':'0'*64}),
-        ]:
-            bad=copy.deepcopy(record);mutate(bad)
-            with self.assertRaises(AssertionError):validation.check_application_host_browser(validation.ROOT,bad)
-        content=(validation.ROOT/validation.WASM_HOST_ENTRY).read_bytes()
-        previous=json.loads((APP/'qualification.json').read_text())['source_sha256'][validation.WASM_HOST_ENTRY]
-        import hashlib
-        self.assertEqual(hashlib.sha256(validation.historical_wasm_host_entry(content)).hexdigest(),previous)
-        changed=content.replace(b'calls != 21u',b'calls != 22u')
-        self.assertNotEqual(hashlib.sha256(validation.historical_wasm_host_entry(changed)).hexdigest(),previous)
-
     def test_additive_mqtt_build_owner_does_not_rebind_net_tls_sources(self):
         import hashlib
         sources=json.loads((APP/'qualification.json').read_text())['source_sha256']

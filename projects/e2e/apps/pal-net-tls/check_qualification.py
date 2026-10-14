@@ -53,53 +53,6 @@ def net_tls_build_input(relative, content):
         text = text.replace('        "//libs/pal/providers/coremqtt",\n', '')
     return text.encode('utf-8')
 
-WASM_HOST_ENTRY = "projects/e2e/targets/pkg_tar/pal-net-tls/main.c"
-WASM_HOST_INPUTS = {
-    'libs/pal/application/host/BUILD.bazel',
-    'libs/pal/application/host/include/h2_application_host.h',
-    'libs/pal/application/host/src/h2_application_host.c',
-    'libs/pal/include/h2/pal/application/h2_pal_application_host.h',
-    'libs/pal/include/h2_pal.h',
-    'libs/pal/providers/web/application_host/BUILD.bazel',
-    'libs/pal/providers/web/application_host/include/h2_web_application_host.h',
-    'libs/pal/providers/web/application_host/src/h2_web_application_host.c',
-    'libs/runtime/include/h2_runtime.h',
-    'libs/runtime/src/h2_runtime.c',
-    'projects/e2e/targets/pkg_tar/pal-net-tls/BUILD.bazel',
-    'projects/e2e/targets/pkg_tar/pal-net-tls/main.c',
-    'projects/e2e/targets/pkg_tar/pal-net-tls/run_application_host_browser.py',
-    'projects/e2e/targets/pkg_tar/pal-net-tls/run_browser.py',
-    'projects/e2e/targets/pkg_tar/pal-net-tls/shell.html',
-}
-
-
-def historical_wasm_host_entry(content):
-    """Only rename Host/board types and calls; every boundary assertion remains."""
-    for current, previous in [
-        (b"h2_web_application_host", b"h2_web_app_host"),
-        (b"h2_web_application_board", b"h2_web_board"),
-        (b"h2_application_host_t", b"h2_web_app_host_t"),
-    ]:
-        content = content.replace(current, previous)
-    return content
-
-
-def check_application_host_browser(root, record=None):
-    app = root / "projects/e2e/apps/pal-net-tls"
-    if record is None:
-        record = json.loads((app / "evidence/wasm/application_host_boundary.json").read_text())
-    assert record["schema"] == 1 and record["new_physical_run_claimed"] is False
-    assert record["test_label"] == "//projects/e2e/targets/pkg_tar/pal-net-tls:wasm_pal_net_tls_boundary_test"
-    identities = record["source_sha256"]
-    assert set(identities) == WASM_HOST_INPUTS
-    for name, expected in identities.items():
-        assert hashlib.sha256((root / name).read_bytes()).hexdigest() == expected, name
-    encoded = json.dumps(identities, sort_keys=True, separators=(",", ":")).encode()
-    assert hashlib.sha256(encoded).hexdigest() == record["source_identity_sha256"]
-    slots = json.loads((app / "app/api_coverage.json").read_text())["slots"]
-    check_browser(record["boundary"], slots)
-
-
 def check_sources(root, sources, followup=None):
     assert REQUIRED_PROVIDER_SOURCES <= set(sources), 'missing qualified provider/config source receipt'
     effective = dict(sources)
@@ -121,13 +74,7 @@ def check_sources(root, sources, followup=None):
     for relative, expected in effective.items():
         content = (root / relative).read_bytes()
         if hashlib.sha256(content).hexdigest() != expected:
-            if relative == WASM_HOST_ENTRY:
-                projected = historical_wasm_host_entry(content)
-                assert hashlib.sha256(projected).hexdigest() == expected, relative
-                check_application_host_browser(root)
-                content = projected
-            else:
-                content = net_tls_build_input(relative, content)
+            content = net_tls_build_input(relative, content)
         assert hashlib.sha256(content).hexdigest() == expected, relative
 
 

@@ -73,50 +73,11 @@ pkg_tar(
     target_compatible_with = _HOST,
 )
 
-_HOST_RECEIPT_SOURCES = [
-    "libs/pal/include/h2/pal/application/h2_pal_application_host.h",
-    "libs/pal/include/h2_pal.h",
-    "libs/pal/application/host/BUILD.bazel",
-    "libs/pal/application/host/include/h2_application_host.h",
-    "libs/pal/application/host/src/h2_application_host.c",
-    "libs/pal/providers/web/application_host/BUILD.bazel",
-    "libs/pal/providers/web/application_host/include/h2_web_application_host.h",
-    "libs/pal/providers/web/application_host/src/h2_web_application_host.c",
-    "libs/runtime/include/h2_runtime.h",
-    "libs/runtime/src/h2_runtime.c",
-    "projects/e2e/targets/pkg_tar/pal-net-tls/BUILD.bazel",
-    "projects/e2e/targets/pkg_tar/pal-net-tls/main.c",
-    "projects/e2e/targets/pkg_tar/pal-net-tls/shell.html",
-    "projects/e2e/targets/pkg_tar/pal-net-tls/run_browser.py",
-    "projects/e2e/targets/pkg_tar/pal-net-tls/run_application_host_browser.py",
-]
-
-_HOST_RECEIPT_LABELS = {
-    "libs/pal/include/h2/pal/application/h2_pal_application_host.h": "//libs/pal:include/h2/pal/application/h2_pal_application_host.h",
-    "libs/pal/include/h2_pal.h": "//libs/pal:include/h2_pal.h",
-    "libs/pal/application/host/BUILD.bazel": "//libs/pal/application/host:BUILD.bazel",
-    "libs/pal/application/host/include/h2_application_host.h": "//libs/pal/application/host:include/h2_application_host.h",
-    "libs/pal/application/host/src/h2_application_host.c": "//libs/pal/application/host:src/h2_application_host.c",
-    "libs/pal/providers/web/application_host/BUILD.bazel": "//libs/pal/providers/web/application_host:BUILD.bazel",
-    "libs/pal/providers/web/application_host/include/h2_web_application_host.h": "//libs/pal/providers/web/application_host:include/h2_web_application_host.h",
-    "libs/pal/providers/web/application_host/src/h2_web_application_host.c": "//libs/pal/providers/web/application_host:src/h2_web_application_host.c",
-    "libs/runtime/include/h2_runtime.h": "//libs/runtime:include/h2_runtime.h",
-    "libs/runtime/src/h2_runtime.c": "//libs/runtime:src/h2_runtime.c",
-    "projects/e2e/targets/pkg_tar/pal-net-tls/BUILD.bazel": "//projects/e2e/targets/pkg_tar/pal-net-tls:BUILD.bazel",
-    "projects/e2e/targets/pkg_tar/pal-net-tls/main.c": "//projects/e2e/targets/pkg_tar/pal-net-tls:main.c",
-    "projects/e2e/targets/pkg_tar/pal-net-tls/shell.html": "//projects/e2e/targets/pkg_tar/pal-net-tls:shell.html",
-    "projects/e2e/targets/pkg_tar/pal-net-tls/run_browser.py": "//projects/e2e/targets/pkg_tar/pal-net-tls:run_browser.py",
-    "projects/e2e/targets/pkg_tar/pal-net-tls/run_application_host_browser.py": "//projects/e2e/targets/pkg_tar/pal-net-tls:run_application_host_browser.py",
-}
-
 py_test(
     name = "wasm_pal_net_tls_boundary_test",
-    srcs = ["run_application_host_browser.py"],
-    args = [
-        "$(rootpath :pal_net_tls)",
-        "$(rootpath run_browser.py)",
-    ] + [name + "=$(rootpath " + _HOST_RECEIPT_LABELS[name] + ")" for name in _HOST_RECEIPT_SOURCES],
-    data = list(_HOST_RECEIPT_LABELS.values()) + [
+    srcs = ["run_browser.py"],
+    args = ["$(rootpath :pal_net_tls)"],
+    data = [
         ":pal_net_tls",
         "//tools/bazel:web_archive_browser_test.py",
         "//tools/bazel:web_archive_server.py",
@@ -126,7 +87,7 @@ py_test(
         "//conditions:default": [],
     }),
     legacy_create_init = 0,
-    main = "run_application_host_browser.py",
+    main = "run_browser.py",
     tags = [
         "external",
         "manual",

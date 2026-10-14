@@ -1,5 +1,4 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
 
@@ -77,42 +76,84 @@ cc_library(
     ]
 ]
 
-py_test(
-    name = "native_serial_shutdown_test",
-    srcs = ["tests/test_native_serial_shutdown.py"],
-    data = [
-        "//libs/atomic:include/h2_atomic.h",
-        "//libs/atomic:include/h2_atomic_static.h",
-        "//libs/atomic/providers/c11:h2_atomic_c11_impl.h",
-        "//libs/atomic/providers/c11:src/h2_atomic_c11.c",
-        "//libs/pal:pal_header_files",
+cc_library(
+    name = "native_shutdown_test_headers",
+    hdrs = glob(["tests/native_sdk/**/*.h"]) + [
+        "//native_component_src/bk7258/ap/h2_pal_core:include/h2_bk_platform_core.h",
+        "//native_component_src/esp-idf6.x/h2_pal_core:include/h2_esp_platform_core.h",
+        "//native_component_src/esp-idf6.x/h2_pal_core:include/h2_esp_platform_wifi_activity.h",
+        "//projects/h2loader/apps/loader/app:h2loader_bleikcp_internal.h",
+        "//projects/h2loader/apps/loader/app:include/h2loader_app.h",
+        "//projects/h2loader/apps/loader/app:include/h2loader_app_task_names.h",
+        "//projects/h2loader/native_component_src/bk7258/ap/h2loader_bk:include/h2_bk_h2loader.h",
+        "//projects/h2loader/native_component_src/bk7258/ap/h2loader_bk:src/h2_bk_h2loader_internal.h",
+        "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_ble:include/h2_esp_h2loader_ble.h",
+        "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_runtime:include/h2_esp_h2loader_iostreamikcp.h",
+        "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_runtime:include/h2_esp_h2loader_runtime.h",
+        "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_runtime:src/h2_esp_h2loader_iostreamikcp_internal.h",
+    ],
+    includes = [
+        "../../../../native_component_src/bk7258/ap/h2_pal_core/include",
+        "../../../../native_component_src/esp-idf6.x/h2_pal_core/include",
+        "../../../h2loader/apps/loader/app",
+        "../../../h2loader/apps/loader/app/include",
+        "../../../h2loader/native_component_src/bk7258/ap/h2loader_bk/include",
+        "../../../h2loader/native_component_src/bk7258/ap/h2loader_bk/src",
+        "../../../h2loader/native_component_src/esp-idf6.x/h2_h2loader_ble/include",
+        "../../../h2loader/native_component_src/esp-idf6.x/h2_h2loader_runtime/include",
+        "../../../h2loader/native_component_src/esp-idf6.x/h2_h2loader_runtime/src",
+        "tests/native_sdk",
+    ],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    textual_hdrs = [
         "//projects/h2loader/native_component_src/bk7258/ap/h2loader_bk:src/h2_bk_h2loader_app_bleikcp.c",
         "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_ble:src/h2_esp_h2loader_ble.c",
         "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_runtime:src/h2_esp_h2loader_iostreamikcp.c",
     ],
-    legacy_create_init = 0,
-    main = "tests/test_native_serial_shutdown.py",
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
+    deps = [
+        "//libs/runtime",
+        "//projects/h2loader/libs/h2loader",
+        "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_ble:app_commands_preflight",
+    ],
 )
 
-py_library(
-    name = "native_entry_provenance",
-    srcs = ["native_entry_provenance.py"],
-    data = ["native_entry_provenance.json"],
-    imports = ["."],
-    target_compatible_with = HOST_TOOL_COMPATIBILITY,
-)
-
-py_test(
-    name = "native_entry_provenance_test",
-    srcs = ["tests/test_native_entry_provenance.py"],
-    data = ["//projects/e2e/targets/h2loader_tar_zlib/pal-audio/amoled:main/main.c"],
-    legacy_create_init = 0,
-    main = "tests/test_native_entry_provenance.py",
-    target_compatible_with = HOST_TOOL_COMPATIBILITY,
-    deps = [":native_entry_provenance"],
-)
+[
+    cc_test(
+        name = name,
+        srcs = [source],
+        conlyopts = H2_C11_OPTS,
+        copts = H2_WARNING_COPTS + [
+            "-ffunction-sections",
+            "-fdata-sections",
+        ],
+        defines = defines,
+        linkopts = select({
+            "@platforms//os:macos": ["-Wl,-dead_strip"],
+            "@platforms//os:linux": ["-Wl,--gc-sections"],
+            "//conditions:default": [],
+        }),
+        target_compatible_with = select({
+            "//tools/bazel/platforms:host_macos_target_macos": [],
+            "//tools/bazel/platforms:host_linux_target_linux": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        deps = [
+            ":native_shutdown_test_headers",
+            "//libs/atomic/providers/c11",
+            "//libs/iostreamikcp",
+        ],
+    )
+    for name, source, defines in [
+        (
+            "esp_serial_shutdown_test",
+            "tests/test_esp_serial_shutdown.c",
+            ["CONFIG_ESP_CONSOLE_UART=1"],
+        ),
+        (
+            "esp_command_shutdown_test",
+            "tests/test_native_command_shutdown.c",
+            ["H2_PAL_E2E_ESP=1"],
+        ),
+        ("bk_command_shutdown_test", "tests/test_native_command_shutdown.c", []),
+    ]
+]

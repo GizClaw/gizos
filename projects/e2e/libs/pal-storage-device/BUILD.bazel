@@ -1,4 +1,4 @@
-load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("@rules_python//python:defs.bzl", "py_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel:tasks.bzl", "h2_tasks")
@@ -37,24 +37,37 @@ py_test(
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
 )
 
-py_test(
-    name = "bk_console_lifecycle_test",
-    srcs = ["tests/test_bk_console_lifecycle.py"],
-    data = [
-        "//projects/e2e/targets/h2loader_tar_zlib/pal-storage/bk7258_v3_202405:ap/ap_main.c",
-        "//libs/h2loader_host:src/h2_h2loader_host_serial.c",
-        "//libs/h2loader_host:include/h2_h2loader_host.h",
-        "//libs/h2loader_host:include/h2_h2loader_host_catalog.h",
-        "//libs/iostreamikcp:src/h2_iostreamikcp_frame.c",
-        "//libs/iostreamikcp:include/h2_iostreamikcp.h",
-        "//libs/iostreamikcp:include/h2_iostreamikcp_types.h",
-        "//libs/pal:pal_header_files",
+cc_library(
+    name = "bk_console_test_sources",
+    hdrs = ["tests/h2_pal_storage_board_test_sdk.h"],
+    includes = ["tests"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    textual_hdrs = ["//projects/e2e/targets/h2loader_tar_zlib/pal-storage/bk7258_v3_202405:ap/ap_main.c"],
+    deps = [
+        ":runner",
+        "//libs/pal:unsupported",
+        "//projects/e2e/libs/application-host:headers",
     ],
-    legacy_create_init = False,
-    main = "tests/test_bk_console_lifecycle.py",
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
 )
+
+[
+    cc_test(
+        name = "bk_console_" + mode + "_test",
+        srcs = ["tests/test_bk_console_lifecycle.c"],
+        args = [str(scenario)],
+        conlyopts = H2_C11_OPTS,
+        copts = H2_WARNING_COPTS,
+        defines = [
+            "H2_PAL_STORAGE_BOARD_HOST_TEST=1",
+        ],
+        target_compatible_with = HOST_TOOL_COMPATIBILITY,
+        deps = [":bk_console_test_sources"],
+    )
+    for scenario, mode in enumerate([
+        "normal",
+        "suite_error",
+        "stop_error",
+        "restart_error",
+        "confirm_error",
+    ])
+]

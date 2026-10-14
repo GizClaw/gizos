@@ -1,4 +1,7 @@
 #include "h2_pal_e2e_application_host.h"
+#ifdef H2_PAL_STORAGE_BOARD_HOST_TEST
+#include "h2_pal_storage_board_test_sdk.h"
+#else
 #include "bk_private/bk_init.h"
 #include "device_runner.h"
 #include "h2_bk7258_board.h"
@@ -6,6 +9,7 @@
 #include "h2_bk_platform_core.h"
 #include "h2_bk_target_task_policy.h"
 #include <os/os.h>
+#endif
 #include <stdio.h>
 
 static h2_runtime_t *runtime;
@@ -30,7 +34,7 @@ static void watchdog(void *unused) {
   hold();
 }
 static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *app_runtime, void *user) {
-    runtime = app_runtime;
+  runtime = app_runtime;
   (void)user;
   /* The CLI installs its native-log sink before serial SESSION_OPEN, but it
    * still needs a real startup reconnect/status window (20s wait + 15s read).
@@ -43,7 +47,7 @@ static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *app_runtim
     printf("H2_STORAGE_READY rc=%d confirm=%d\n", rc, H2_PAL_ERR_INVALID_STATE);
     fflush(stdout);
     finished = 1;
-    return rc;
+    return h2_pal_e2e_application_host_finish(host, runtime, rc);
   }
   puts("H2_STORAGE_CONTROL_QUIESCENT stop=0");
   fflush(stdout);
@@ -64,7 +68,7 @@ static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *app_runtim
            H2_PAL_ERR_INVALID_STATE);
     fflush(stdout);
     finished = 1;
-    return rc;
+    return h2_pal_e2e_application_host_finish(host, runtime, commands);
   }
   puts("H2_STORAGE_CONTROL_RESTORED restart=0");
   fflush(stdout);
@@ -80,7 +84,8 @@ static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *app_runtim
     fflush(stdout);
   }
 
-    return h2_pal_e2e_application_host_finish(host, runtime, rc);
+  return h2_pal_e2e_application_host_finish(
+      host, runtime, rc != H2_PAL_OK ? rc : confirm);
 }
 
 static h2_pal_result_t configure(void *user, h2_runtime_config_t *config) {

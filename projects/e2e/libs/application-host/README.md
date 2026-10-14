@@ -10,4 +10,6 @@ E2E launcher 在 ESP configure 阶段接入 serial recovery，在 BK validate �
 
 `esp_*_test` / `bk_*_test` 使用真实共享 Host、Runtime 和 host PAL task/sync，SDK/BSP 接口替身只模拟 native 边界。覆盖成功、无服务、独立 allocator、prepare/configure/Runtime/validate/App 错误、task 启动失败、命令服务停止失败以及 BSP release 失败；检查原始 user context、真实 command worker join、mutex 释放、清理次序与 retained owner 驻留。真实 SDK build 验证实际 native 组件编译/链接/打包；不替代物理板验收。
 
-原始实板/模拟器 qualification 文件保持原始字节和来源。`native_entry_provenance.json` 单独记录六个 Audio/Decoder/Display 入口及其组装文件的前后 SHA，标明新 native qualification 为 NOT_RUN；校验器同时验证当前 assembly SHA 与历史 source SHA。main 的测试/fixture/report token 指纹必须与迁移前相同，数值预算或测试内容变化不能通过入口迁移例外。新增回归拒绝未知 scope、伪称设备 PASS、旧/新 SHA 不匹配以及改短 Audio stability budget。
+历史设备记录保留原始字节和来源，不作为当前源码的功能验收。使用 C/C++ 测试直接编译生产实现，在 SDK 边界注入故障并检查运行行为；不抽取源码函数、不以字符串或源码哈希匹配宣称通过。
+
+`esp_serial_shutdown_test`、`esp_command_shutdown_test`、`bk_command_shutdown_test` 直接编译完整生产 C 单元，只替换 SDK 或 transport join 边界，验证拒绝 join 时不释放借用资源、停止接收、mutex 释放失败与重试顺序。

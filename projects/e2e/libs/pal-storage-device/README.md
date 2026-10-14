@@ -49,8 +49,4 @@ continues to require an actually captured fresh marker and a full independent
 ordered immutable replay. R3's 259 replay markers, 31 PASS phase result and
 confirmed App demonstrate that phase's business result, not a five-boot receipt.
 
-`bk_console_lifecycle_test` compiles the actual launcher run function against
-scripted SDK/time boundaries to check ownership order and stop/suite/restart/
-confirm outcomes. It also compiles the real host session control and frame
-filter to check fragmented/delayed/missing ACK capture. These host regressions
-are not board receipts. Run it alongside `ledger_verifier_test`.
+`bk_console_*_test` directly compiles and executes the complete BK launcher with scripted SDK/time boundaries. It checks ownership order, a single suite execution, immutable replay, and stop/suite/restart/confirm failures, including the error returned to Application Host. `//libs/h2loader_host:serial_session_logs_test` executes the complete production serial transport with fragmented/delayed/missing ACK input and verifies the bytes delivered to the log sink. These C tests do not extract source text and are not board receipts.
