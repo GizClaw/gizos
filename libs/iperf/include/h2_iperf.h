@@ -75,7 +75,8 @@ typedef struct h2_iperf_config {
 typedef struct h2_iperf_stream_stats {
     /** Payload bytes sent or received by this endpoint in its role. */
     uint64_t bytes;
-    /** UDP datagrams or SCTP messages; zero for TCP. */
+    /** UDP sender datagrams or receiver sequence positions (including loss);
+     * SCTP messages; zero for TCP. */
     uint64_t packets;
     /** Receiver-side loss count for UDP; -1 when unknown. */
     int64_t lost_packets;
