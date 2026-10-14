@@ -38,6 +38,7 @@ struct Options {
   std::string wifi_ssid;
   std::string wifi_password_env;
   std::filesystem::path report;
+  std::filesystem::path log_file;
   std::uint64_t firmware_url_bytes = 0u;
   std::uint64_t coredump_bytes = 0u;
   std::uint32_t repeat = 1u;
@@ -86,6 +87,7 @@ void usage(const char *program, FILE *stream) {
       "  --baud RATE                  UART baud (default 460800)\n"
       "  --monitor-ms MS              test monitor and reboot --monitor on "
       "UART\n"
+      "  --log-file FILE              retain raw monitor/coredump output before erase\n"
       "  --report FILE                write a JSON report\n"
       "  --help                       show this help\n",
       program);
@@ -147,6 +149,7 @@ bool parse_options(int argc, char **argv, Options *out) {
     kCrashFirmware = 1ull << 17,
     kChecksumTarZlib = 1ull << 18,
     kChecksumZlibTar = 1ull << 19,
+    kLogFile = 1ull << 20,
   };
   std::uint64_t seen = 0u;
   for (int index = 1; index < argc; ++index) {
@@ -235,6 +238,9 @@ bool parse_options(int argc, char **argv, Options *out) {
       if (!parse_u64(value, 100u, 60000u, &parsed))
         return false;
       out->monitor_ms = static_cast<std::uint32_t>(parsed);
+    } else if (std::strcmp(name, "--log-file") == 0) {
+      bit = kLogFile;
+      out->log_file = value;
     } else if (std::strcmp(name, "--report") == 0) {
       bit = kReport;
       out->report = value;
@@ -333,6 +339,13 @@ std::string json_escape(const std::string &value) {
     }
   }
   return output.str();
+}
+
+h2_pal_result_t raw_log_event(void *user, const std::uint8_t *data, size_t len) {
+  auto *output = static_cast<std::ofstream *>(user);
+  output->write(reinterpret_cast<const char *>(data), static_cast<std::streamsize>(len));
+  output->flush();
+  return output->good() ? H2_PAL_OK : H2_PAL_ERR_IO;
 }
 
 void case_event(void *user, const h2_h2loader_e2e_case_result_t *result,
@@ -524,6 +537,37 @@ int main(int argc, char **argv) {
     return 0;
   }
 
+  std::ofstream raw_log;
+  if (!options.log_file.empty()) {
+    options.log_file = resolve_input_path(options.log_file);
+    std::error_code path_error;
+    const auto log_path = std::filesystem::weakly_canonical(options.log_file, path_error);
+    if (path_error) return 2;
+    const std::array<std::filesystem::path, 4> protected_paths = {
+        options.report, options.app_firmware, options.loader_firmware, options.crash_firmware};
+    for (const auto &path : protected_paths) {
+      if (path.empty()) continue;
+      const auto other = std::filesystem::weakly_canonical(resolve_input_path(path), path_error);
+      if (path_error || other == log_path) {
+        std::fprintf(stderr, "h2loader-e2e: raw log overlaps report or firmware input\n");
+        return 2;
+      }
+    }
+    for (const auto &directory : options.checksum_fixtures) {
+      if (directory.empty()) continue;
+      const auto other = std::filesystem::weakly_canonical(resolve_input_path(directory), path_error);
+      if (path_error || log_path.parent_path() == other) {
+        std::fprintf(stderr, "h2loader-e2e: raw log overlaps checksum fixture directory\n");
+        return 2;
+      }
+    }
+    raw_log.open(options.log_file, std::ios::binary | std::ios::trunc);
+    if (!raw_log.good()) {
+      std::fprintf(stderr, "h2loader-e2e: cannot open raw log file\n");
+      return 2;
+    }
+  }
+
   std::vector<std::uint8_t> app_firmware;
   std::vector<std::uint8_t> loader_firmware;
   std::vector<std::uint8_t> crash_firmware;
@@ -668,8 +712,8 @@ int main(int argc, char **argv) {
         .case_user = nullptr,
         .on_progress = progress_event,
         .progress_user = nullptr,
-        .on_log = nullptr,
-        .log_user = nullptr,
+        .on_log = options.log_file.empty() ? nullptr : raw_log_event,
+        .log_user = options.log_file.empty() ? nullptr : &raw_log,
         .execute_case = nullptr,
         .execute_user = nullptr,
     };

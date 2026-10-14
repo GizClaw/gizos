@@ -36,6 +36,21 @@ class E2ERunnerCliTest(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("usage:", result.stderr)
 
+    def test_raw_log_open_failure_precedes_device_access(self):
+        result = self.run_cli("--uart", "fake", "--log-file", "/nonexistent-parent/raw.log")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("cannot open raw log file", result.stderr)
+        result = self.run_cli("--uart", "fake", "--log-file", "first", "--log-file", "second")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("usage:", result.stderr)
+
+    def test_raw_log_cannot_overwrite_report_or_firmware(self):
+        for flag in ("--report", "--app-firmware", "--loader-firmware", "--crash-firmware"):
+            extra = ("--app-firmware", "different") if flag == "--loader-firmware" else ()
+            result = self.run_cli("--uart", "fake", "--log-file", "same", flag, "./same", *extra)
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("raw log overlaps", result.stderr)
+
     def test_endpoint_is_required(self):
         result = self.run_cli()
         self.assertEqual(result.returncode, 2)
