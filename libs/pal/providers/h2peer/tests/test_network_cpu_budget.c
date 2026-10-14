@@ -20,6 +20,7 @@ static h2_pal_task_entry_t worker;
 static void *worker_context;
 static h2_pal_webrtc_peer_t *peer;
 static bool flood, fail_clock, backward_clock, fail_sleep;
+static bool pending_response_exit, late_response;
 static unsigned rounds, responses_sent, sleeps, starts, joins;
 static uint64_t now_us;
 static int task_marker;
@@ -44,7 +45,9 @@ static int send_queue(void *user, h2_pal_queue_t *queue, const void *item,
         captured_command = malloc(command_size);
         assert(captured_command != NULL);
         memcpy(captured_command, item, command_size);
-        return H2_PAL_OK;
+        return pending_response_exit
+                   ? real_queue->vtable->send(user, queue, item, timeout_ms)
+                   : H2_PAL_OK;
     }
     if (queue == responses && flood) {
         ++responses_sent;
@@ -54,6 +57,26 @@ static int send_queue(void *user, h2_pal_queue_t *queue, const void *item,
 }
 static int receive_queue(void *user, h2_pal_queue_t *queue, void *item,
                          uint32_t timeout_ms) {
+    if (queue == responses && pending_response_exit) {
+        /* A synchronous command is already queued when the production worker
+         * fails its scheduling API before dequeuing it. */
+        assert(timeout_ms != H2_PAL_QUEUE_WAIT_FOREVER);
+        worker(worker_context);
+        pending_response_exit = false;
+        if (late_response) {
+            void *reply = calloc(1u, response_size);
+            assert(reply != NULL);
+            assert(real_queue->vtable->send(user, queue, reply,
+                                            H2_PAL_QUEUE_NO_WAIT) == H2_PAL_OK);
+            free(reply);
+        }
+        return H2_PAL_ERR_TIMEOUT;
+    }
+    if (queue == responses && !flood &&
+        h2_atomic_load(&peer->network_stopped)) {
+        assert(timeout_ms == H2_PAL_QUEUE_NO_WAIT);
+        return real_queue->vtable->recv(user, queue, item, timeout_ms);
+    }
     if (queue == responses && !flood) {
         memset(item, 0, response_size);
         return H2_PAL_OK;
@@ -97,12 +120,15 @@ static h2_pal_result_t sleep_ms(void *user, uint32_t ms) {
     ++sleeps;
     return fail_sleep ? H2_PAL_ERR_UNSUPPORTED : H2_PAL_OK;
 }
-static void run_case(bool clock_failure, bool clock_backwards, bool sleep_failure) {
+static void run_case(bool clock_failure, bool clock_backwards, bool sleep_failure,
+                     bool pending_call, bool final_reply) {
     commands = responses = NULL;
     captured_command = NULL;
     worker = NULL;
     peer = NULL;
     flood = false;
+    pending_response_exit = pending_call;
+    late_response = final_reply;
     fail_clock = clock_failure;
     fail_sleep = sleep_failure;
     backward_clock = clock_backwards;
@@ -139,13 +165,18 @@ static void run_case(bool clock_failure, bool clock_backwards, bool sleep_failur
     const h2_pal_webrtc_api_t *api = h2_peer_webrtc_api(owner);
     assert(h2_pal_webrtc_peer_create(api, &peer) == H2_PAL_OK);
     h2_pal_webrtc_track_t track = {0};
-    assert(h2_pal_webrtc_peer_unset_track(api, peer, &track) == H2_PAL_OK);
+    int call_rc = h2_pal_webrtc_peer_unset_track(api, peer, &track);
+    assert(call_rc ==
+           (pending_call && !final_reply ? H2_PAL_ERR_CLOSED : H2_PAL_OK));
     assert(captured_command != NULL && worker != NULL);
-    flood = true;
-    worker(worker_context);
+    if (!pending_call) {
+        flood = true;
+        worker(worker_context);
+    }
     assert(responses_sent == rounds);
     if (sleep_failure) {
-        assert(rounds > 0u && rounds < 40u && sleeps == 1u);
+        assert((pending_call ? rounds == 0u : rounds > 0u && rounds < 40u) &&
+               sleeps == 1u);
         h2_pal_webrtc_event_t event = {0};
         assert(h2_pal_webrtc_peer_poll(api, peer, 0, &event) == H2_PAL_OK);
         assert(event.kind == H2_PAL_WEBRTC_EVENT_ERROR &&
@@ -163,9 +194,11 @@ static void run_case(bool clock_failure, bool clock_backwards, bool sleep_failur
     free(captured_command);
 }
 int main(void) {
-    run_case(false, false, false);
-    run_case(true, false, false);
-    run_case(false, true, false);
-    run_case(false, false, true);
+    run_case(false, false, false, false, false);
+    run_case(true, false, false, false, false);
+    run_case(false, true, false, false, false);
+    run_case(false, false, true, false, false);
+    run_case(true, false, true, true, false);
+    run_case(true, false, true, true, true);
     return 0;
 }

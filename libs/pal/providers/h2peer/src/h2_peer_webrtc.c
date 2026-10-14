@@ -1804,9 +1804,27 @@ h2_peer_network_call(h2_pal_webrtc_peer_t *peer,
       .result = result,
   };
   if (result == H2_PAL_OK) {
-    result = (h2_pal_result_t)h2_pal_queue_recv(
-        peer->owner->config.queue, peer->network_responses, &response,
-        H2_PAL_QUEUE_WAIT_FOREVER);
+    /* The worker can exit before dequeuing this command if scheduling fails.
+     * Preserve an unbounded live-worker wait, but observe terminal exit so
+     * an already queued synchronous caller cannot wait forever for a reply. */
+    do {
+      result = (h2_pal_result_t)h2_pal_queue_recv(
+          peer->owner->config.queue, peer->network_responses, &response, 20u);
+      if (result != H2_PAL_ERR_TIMEOUT && result != H2_PAL_ERR_WOULD_BLOCK) {
+        break;
+      }
+      if (h2_atomic_load_explicit(&peer->network_stopped, H2_ATOMIC_ACQUIRE)) {
+        /* A final close reply may have arrived between the timed receive
+         * and the exit observation. Consume it before declaring closure. */
+        result = (h2_pal_result_t)h2_pal_queue_recv(
+            peer->owner->config.queue, peer->network_responses, &response,
+            H2_PAL_QUEUE_NO_WAIT);
+        if (result == H2_PAL_ERR_TIMEOUT || result == H2_PAL_ERR_WOULD_BLOCK) {
+          result = H2_PAL_ERR_CLOSED;
+        }
+        break;
+      }
+    } while (1);
   }
   h2_pal_result_t unlock_result = h2_pal_mutex_unlock(
       peer->owner->config.sync, peer->network_request_mutex);
