@@ -1,8 +1,12 @@
 # ESP-Mosaico E2E qualification
 
-Status: **NOT QUALIFIED**. PR #709 remains draft until all agreed mandatory device
-suites pass against the final source and immutable firmware artifacts. Historical
-bring-up receipts and green compile/host CI are not device qualification.
+Current checkpoint (2026-10-14): **WebRTC performance R105 two-boot PASS;
+Loader recovery R84 51/51 PASS; final original Flash restoration pending**.
+PR #709 remains Draft. GizClaw is explicitly excluded from acceptance.
+Each receipt remains bound to its own source and immutable artifact; compile/CI
+success is not device qualification. Older investigations below retain their
+then-current failures and pending statements; later dated receipts supersede
+those statuses without relabeling old artifacts.
 
 ## Comparison with existing boards
 
@@ -23,7 +27,7 @@ of admission; it must not be silently removed from the registry.
 | pal-net-tls | `pal-net-tls/devkit` | [`pal-net-tls/esp_mosaico`](pal-net-tls/esp_mosaico/BUILD.bazel) | fresh r35 core profile: 37 mandatory/38 total passes on two boots, one optional unsupported; exact peer/cleanup/confirmation/screens PASS; full-Net remains unqualified |
 | pal-wifi | `pal-wifi/devkit` | [`pal-wifi/esp_mosaico`](pal-wifi/esp_mosaico/BUILD.bazel) | r33 39/39 on complete public managed install and independent reboot; each fresh 600-second AMOLED window has six ordered real leases, restoration/confirmation and preserved Loader/dump PASS; first interrupted attempt NOT ADMITTED |
 | pal-webrtc | `pal-webrtc/devkit` | [`pal-webrtc/esp_mosaico`](pal-webrtc/esp_mosaico/BUILD.bazel) | fresh r36 43/43 on two independent boots; real Pion encrypted transport, typed fingerprint rejection, zero retained allocations, confirmation/screens and preserved Loader/dump PASS |
-| pal-audio | `pal-audio/amoled` | [`pal-audio/esp_mosaico`](pal-audio/esp_mosaico/BUILD.bazel) | r32 24/24 on two independent boots; actual capture/output and >=30-second soaks, cleanup/confirmation/screens PASS; current acoustic observation unanswered |
+| pal-audio | `pal-audio/amoled` | [`pal-audio/esp_mosaico`](pal-audio/esp_mosaico/BUILD.bazel) | r32 24/24 on two independent boots; actual capture/output and >=30-second soaks, cleanup/confirmation/screens PASS; later r77 three-tone operator confirmation is separately artifact-bound |
 | pal-audio-decoder | `pal-audio-decoder/devkit` | [`pal-audio-decoder/esp_mosaico`](pal-audio-decoder/esp_mosaico/BUILD.bazel) | r32 29/29 on two independent boots; cleanup/confirmation/screens and managed install PASS |
 | pal-display | `pal-display/amoled` | [`pal-display/esp_mosaico`](pal-display/esp_mosaico/BUILD.bazel) | r32 24/24 on two independent boots; original DMA/pattern/dimming plus STARTING/CONFIRMING/PASS rendering PASS; operator stage/pixels observations retain their separate r31/r28 bindings |
 | atomic | `atomic/devkit` | [`atomic/esp_mosaico`](atomic/esp_mosaico/BUILD.bazel) | r32 56/56 on two independent executions, all 20 workers joined; cleanup/confirmation/screens and managed install PASS |
@@ -31,9 +35,9 @@ of admission; it must not be silently removed from the registry.
 | lua-link | `lua-link/devkit` | [`lua-link/esp_mosaico`](lua-link/esp_mosaico/BUILD.bazel) | r32 host/r6 AMOLED join: five full bilateral rounds, confirmed identities and connected hold; operator PWR cycle gives actual lost:-10 / 4100 ms / 1766 ticks, both exact public Loader returns and dump preservation PASS |
 | pal-pref | `pal-pref/devkit` | [`pal-pref/esp_mosaico`](pal-pref/esp_mosaico/BUILD.bazel) | r32 fresh 31 operations over three boots plus independent empty 1 recheck; image reset/persistence/confirmation/screens PASS after missing-ledger interruption; only private fixture prepared using distinct archived r28 image |
 
-| iperf | `iperf/amoled` | [`iperf/esp_mosaico`](iperf/esp_mosaico/BUILD.bazel) | r42 native package PASS; real configured TCP/UDP/SCTP matrix and independent device qualification pending |
-| webrtc-performance | `webrtc-performance/amoled` | [`webrtc-performance/esp_mosaico`](webrtc-performance/esp_mosaico/BUILD.bazel) | r42 native package PASS; real configured Pion smoke workload/metrics and device qualification pending |
-| gizclaw-e2e | `gizclaw-e2e/devkit` | [`gizclaw-e2e/esp_mosaico`](gizclaw-e2e/esp_mosaico/BUILD.bazel) | r42 native package PASS; controlled service/registration/profile/HTTPS/NTP fixture and real full business ledger pending; software voice only |
+| iperf | `iperf/amoled` | [`iperf/esp_mosaico`](iperf/esp_mosaico/BUILD.bazel) | r75/r19 two independent 14-case matrices and 28 actual peer witnesses PASS; artifact-bound |
+| webrtc-performance | `webrtc-performance/amoled` | [`webrtc-performance/esp_mosaico`](webrtc-performance/esp_mosaico/BUILD.bazel) | r105 two independent original smoke boots PASS, diagnostics off, actual Pion default DSCP 0; fixed private board AP, source 6c0cb80f |
+| gizclaw-e2e | `gizclaw-e2e/devkit` | [`gizclaw-e2e/esp_mosaico`](gizclaw-e2e/esp_mosaico/BUILD.bazel) | EXCLUDED by operator; no business qualification claimed |
 
 PAL Core requires 41 cases covering 46 interface operations; the old board page's
 8 Core cases cannot close it. Display requires the portable 24-case registry with
@@ -1837,3 +1841,33 @@ GizClaw remains outside acceptance. Private receipts:
 `rtc103-performance-result.json`, `rtc104-performance-diagnostic-result.json`,
 `rtc104-diagnostic-host-overlap.json`, and `rtc105-t3-restart-red.log` plus
 `rtc105-full-{enabled,default}-green.log`.
+
+### R105 original smoke acceptance (2026-10-14)
+
+Two independent actual boots pass from committed repair source
+`6c0cb80fa267b7a3d60ccb849d0c7f141f132e0f`. All five optional diagnostics are
+absent from the native image. The real Pion peer uses its default unwrapped
+UDP socket with media/data DSCP 0. The board uses the recorded private channel-6
+AP selection in RAM; host network settings remain unchanged and same-AP identity
+is not asserted. All original frame, latency, fairness, transfer, priority,
+queue and radio-policy requirements remain intact.
+
+| Actual boot | Unloaded audio P99 | Loaded audio P99 | Frames received | Loaded/data throughput | Upload | Download |
+| --- | --- | --- | --- | --- | --- | --- |
+| 0 | 99.991 ms | 186.422 ms | 100 + 100 | 137.9% | 188,561 B/s | 217,801 B/s |
+| 1 | 99.821 ms | 176.737 ms | 100 + 100 | 99.8% | 144,282 B/s | 184,109 B/s |
+
+Both boots have zero missing, duplicate or reordered frames. Native admission,
+confirmation and screen completion pass; actual peer witnesses cover both full
+workloads. The pre-test R84 P1 is preserved, crash storage remains blank, and
+the device returns to its public Loader. The acceptance applies to the recorded
+fixture and artifacts, not every AP or acoustic playback. Previous failed and
+diagnostic runs remain failures; they are not averaged into this result.
+
+Native image SHA-256:
+`e2e9fd6ee2e5b7f66b393d810064acc7b54a11e92aca73b4dd0b1bb8179e8a78`.
+Private source/configuration/package/peer binding and complete receipt:
+`rtc105-20261014-1791970094521214000-webrtc-performance-qualification.json`.
+Original 16 MiB backup size, SHA and mode have been reverified. The operator
+ROM-download step for final restoration is pending; do not confuse the older
+pre-R84 restoration receipt with the current device state.
