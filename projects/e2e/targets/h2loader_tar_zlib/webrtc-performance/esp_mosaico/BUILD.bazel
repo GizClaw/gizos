@@ -85,6 +85,7 @@ h2loader_esp_idf_firmware(
         "H2_WEBRTC_PERF_BLE_ADV",
         "H2_WEBRTC_PERF_ENDPOINT",
         "H2_WEBRTC_PERF_POWER_SAVE",
+        "H2_WEBRTC_PERF_NETWORK_PREFLIGHT_MS",
         "H2_WEBRTC_PERF_STUN_URL",
     ],
     graph = [":webrtc_performance_launcher"],

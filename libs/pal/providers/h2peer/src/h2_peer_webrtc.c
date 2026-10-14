@@ -8,6 +8,10 @@
 #include <stdio.h>
 #include <string.h>
 
+#ifndef H2_PEER_NETWORK_TIMING
+#define H2_PEER_NETWORK_TIMING 0
+#endif
+
 #define H2_PEER_TX_RESERVED ((h2_peer_tx_item_t *)(uintptr_t)1u)
 
 enum {
@@ -1686,11 +1690,48 @@ int h2_peer_network_service_channel(h2_pal_webrtc_peer_t *peer,
   }
 }
 
+#if H2_PEER_NETWORK_TIMING
+/* Diagnostic builds retain only bounded aggregate wall times. Logging happens
+ * after the worker stops, never while media or channel traffic is measured. */
+static uint64_t h2_peer_network_timing_start(h2_pal_webrtc_peer_t *peer) {
+  uint64_t now = 0u;
+  return h2_pal_time_get_monotonic_us(peer->owner->config.time, &now) == H2_PAL_OK
+             ? now : UINT64_MAX;
+}
+
+static void h2_peer_network_timing_finish(h2_pal_webrtc_peer_t *peer,
+                                         uint64_t started,
+                                         uint64_t *maximum,
+                                         uint64_t *over_slice) {
+  const uint64_t now = h2_peer_network_timing_start(peer);
+  if (started == UINT64_MAX || now == UINT64_MAX || now < started)
+    return;
+  const uint64_t elapsed = now - started;
+  if (elapsed > *maximum)
+    *maximum = elapsed;
+  if (elapsed >= H2_PEER_NETWORK_CPU_SLICE_US && *over_slice != UINT64_MAX)
+    ++*over_slice;
+}
+#define H2_PEER_TIMING_BEGIN() \
+  (timing_started = h2_peer_network_timing_start(peer))
+#define H2_PEER_TIMING_END(index) \
+  h2_peer_network_timing_finish(peer, timing_started, &timing_max[index], \
+                               &timing_over[index])
+#else
+#define H2_PEER_TIMING_BEGIN() ((void)0)
+#define H2_PEER_TIMING_END(index) ((void)0)
+#endif
+
 static void h2_peer_network_task(void *context) {
   h2_pal_webrtc_peer_t *peer = (h2_pal_webrtc_peer_t *)context;
   int transport_terminal = 0;
   uint32_t channel_snapshot = 0u;
   uint64_t last_yield_us = 0u;
+#if H2_PEER_NETWORK_TIMING
+  uint64_t timing_started = 0u;
+  uint64_t timing_max[5] = {0u};
+  uint64_t timing_over[5] = {0u};
+#endif
   (void)h2_pal_time_get_monotonic_us(peer->owner->config.time, &last_yield_us);
   while (!h2_atomic_load_explicit(&peer->network_stop, H2_ATOMIC_ACQUIRE)) {
     /* Round packet/message limits do not bound consecutive busy rounds.
@@ -1716,14 +1757,18 @@ static void h2_peer_network_task(void *context) {
         H2_PAL_QUEUE_NO_WAIT);
     if (command_result == H2_PAL_OK) {
       h2_peer_network_response_t response;
+      H2_PEER_TIMING_BEGIN();
       (void)h2_peer_network_process_command(peer, &command, &response);
+      H2_PEER_TIMING_END(0);
       h2_peer_network_send_response(peer, &response);
 
       continue;
     }
 
     if (!transport_terminal) {
+      H2_PEER_TIMING_BEGIN();
       const h2_pal_result_t media_result = h2_peer_webrtc_service_media(peer);
+      H2_PEER_TIMING_END(1);
       if (media_result != H2_PAL_OK) {
         h2_peer_record_network_event_error(peer, media_result);
         transport_terminal = 1;
@@ -1734,8 +1779,10 @@ static void h2_peer_network_task(void *context) {
     for (size_t packet_count = 0u; packet_count < H2_PEER_NETWORK_UDP_BURST_MAX;
          ++packet_count) {
       int receive_waited = 0;
+      H2_PEER_TIMING_BEGIN();
       const int receive_progress = h2_peer_network_pump_transport(
           peer, 0, &transport_terminal, &receive_waited);
+      H2_PEER_TIMING_END(2);
       if (!receive_progress) {
         break;
       }
@@ -1765,12 +1812,16 @@ static void h2_peer_network_task(void *context) {
       }
     }
 
+    H2_PEER_TIMING_BEGIN();
     const int rtp_progress =
         rtp_pending != NULL && rtp_pending != H2_PEER_TX_RESERVED
             ? h2_peer_network_service_rtp(peer)
             : 0;
+    H2_PEER_TIMING_END(3);
+    H2_PEER_TIMING_BEGIN();
     const int channel_progress =
         writable ? h2_peer_network_service_channel(peer, &channel_snapshot) : 0;
+    H2_PEER_TIMING_END(4);
     if (rtp_progress || channel_progress) {
       continue;
     }
@@ -1783,9 +1834,12 @@ static void h2_peer_network_task(void *context) {
     // producer; waiting here would delay that producer's next frame even when
     // queued.
     int transport_waited = 0;
-    if (h2_peer_network_pump_transport(peer, H2_PEER_NETWORK_IDLE_WAIT_MS,
-                                       &transport_terminal,
-                                       &transport_waited)) {
+    H2_PEER_TIMING_BEGIN();
+    const int idle_progress = h2_peer_network_pump_transport(
+        peer, H2_PEER_NETWORK_IDLE_WAIT_MS, &transport_terminal,
+        &transport_waited);
+    H2_PEER_TIMING_END(2);
+    if (idle_progress) {
       continue;
     }
     if (!transport_waited) {
@@ -1793,6 +1847,17 @@ static void h2_peer_network_task(void *context) {
                                  H2_PEER_NETWORK_IDLE_WAIT_MS);
     }
   }
+#if H2_PEER_NETWORK_TIMING
+  static const char *const names[5] = {"command", "media", "pump", "rtp", "channel"};
+  for (size_t i = 0u; i < 5u; ++i) {
+    char message[160];
+    (void)snprintf(message, sizeof(message),
+                   "H2_PEER_NETWORK_TIMING stage=%s max_wall_us=%llu over_slice=%llu",
+                   names[i], (unsigned long long)timing_max[i],
+                   (unsigned long long)timing_over[i]);
+    h2_peer_media_log(peer, H2_PAL_LOG_INFO, "h2peer", message);
+  }
+#endif
   h2_atomic_store_explicit(&peer->network_stopped, 1, H2_ATOMIC_RELEASE);
 }
 
