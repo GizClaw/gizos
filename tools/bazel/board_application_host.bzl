@@ -3,8 +3,10 @@
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
 
 def board_application_host(name, board, sdk):
+    if sdk not in ["esp", "bk"]:
+        fail("board_application_host: unsupported SDK " + sdk)
     prefix = "esp" if sdk == "esp" else "bk"
-    directory = "boards/shared/application_host/" + sdk
+    directory = "native_component_src/" + ("esp-idf6.x" if sdk == "esp" else "bk7258/ap") + "/h2_board_application_host"
     firmware_native_component(
         name = name,
         srcs = ["//" + directory + ":src/h2_" + prefix + "_board_application_host.c"],

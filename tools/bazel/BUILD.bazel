@@ -79,6 +79,7 @@ exports_files(["cc_options.bzl", "mobile_e2e.bzl"])
 exports_files([
     "bk7258.bzl",
     "bk3633.bzl",
+    "board_application_host.bzl",
     "bk7258_requirements.txt",
     "esp_idf.bzl",
     "firmware.bzl",

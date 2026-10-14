@@ -23,16 +23,16 @@ cc_library(
 cc_library(
     name = "test_sdk",
     hdrs = glob(["tests/sdk/*.h"]) + [
-        "//boards/shared/application_host/bk:include/h2_bk_board_application_host.h",
-        "//boards/shared/application_host/esp:include/h2_esp_board_application_host.h",
+        "//native_component_src/bk7258/ap/h2_board_application_host:include/h2_bk_board_application_host.h",
+        "//native_component_src/esp-idf6.x/h2_board_application_host:include/h2_esp_board_application_host.h",
     ],
     includes = ["tests/sdk"],
     deps = [
         ":headers",
-        "//boards/shared/application_host/bk:headers",
-        "//boards/shared/application_host/esp:headers",
         "//native_component_src/bk7258/ap/h2_application_host:headers",
+        "//native_component_src/bk7258/ap/h2_board_application_host:headers",
         "//native_component_src/esp-idf6.x/h2_application_host:headers",
+        "//native_component_src/esp-idf6.x/h2_board_application_host:headers",
     ],
 )
 
@@ -42,7 +42,7 @@ cc_library(
         srcs = [
             "src/h2_pal_e2e_application_host.c",
             "tests/test_e2e_board_host.cpp",
-            "//boards/shared/application_host/" + sdk + ":src/h2_" + ("esp" if sdk == "esp" else "bk") + "_board_application_host.c",
+            "//native_component_src/" + ("esp-idf6.x" if sdk == "esp" else "bk7258/ap") + "/h2_board_application_host:src/h2_" + ("esp" if sdk == "esp" else "bk") + "_board_application_host.c",
         ],
         args = [mode],
         conlyopts = H2_C11_OPTS,

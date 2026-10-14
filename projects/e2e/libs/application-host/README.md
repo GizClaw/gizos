@@ -2,7 +2,7 @@
 
 ESP/BK 的 E2E 使用同一个 `h2_pal_e2e_application_host_run(name, capabilities, &config, &result)`。`config` 是现有 `h2_application_host_config_t`；没有第二份 SDK config。`provider` 留空，allocator 默认采用 SDK 的 native allocator。`result` 可留空。基础 PAL 合同与 SDK provider 仍只依赖 `//libs/pal`。
 
-选定 BSP 的 `:application_host` target 链接 `boards/shared/application_host/{esp,bk}` 的完整默认 vtable。prepare 从该 BSP 获取 Runtime config，release 在 Runtime 检查销毁后释放板级 provider；SDK provider 保留启动 task/ISR 校验与 yield。所有入口共用此实现，不在 main 声明 Host vtable。
+选定 BSP 的 `:application_host` target 链接 `native_component_src/esp-idf6.x/h2_board_application_host` 或 `native_component_src/bk7258/ap/h2_board_application_host` 的完整默认 vtable。prepare 从该 BSP 获取 Runtime config，release 在 Runtime 检查销毁后释放板级 provider；SDK provider 保留启动 task/ISR 校验与 yield。所有入口共用此实现，不在 main 声明 Host vtable。
 
 E2E launcher 在 ESP configure 阶段接入 serial recovery，在 BK validate 阶段接入 serial recovery。测试仍提供必要的 configure/validate 钩子；Core 的独立 transport allocator 由专用钩子先建立，launcher 检查实际 serial owner 状态，避免重复启动。名字和 capabilities 保持各目标的原有协议。普通 App 退出、App 启动失败和初始化失败均先 stop/join command worker 并释放 operation mutex，再销毁 Runtime 和 BSP；清理不能证明成功时保留整个依赖图和 owner task。
 
@@ -13,3 +13,5 @@ E2E launcher 在 ESP configure 阶段接入 serial recovery，在 BK validate �
 历史设备记录保留原始字节和来源，不作为当前源码的功能验收。使用 C/C++ 测试直接编译生产实现，在 SDK 边界注入故障并检查运行行为；不抽取源码函数、不以字符串或源码哈希匹配宣称通过。
 
 `esp_serial_shutdown_test`、`esp_command_shutdown_test`、`bk_command_shutdown_test` 直接编译完整生产 C 单元，只替换 SDK 或 transport join 边界，验证拒绝 join 时不释放借用资源、停止接收、mutex 释放失败与重试顺序。
+
+SDK/BSP 公共接线代码由 `native_component_src` 拥有；`boards` 仅声明选定 BSP 的 `:application_host` 组件。`tools/bazel/board_application_host.bzl` 只封装已有 native component 构建声明。
