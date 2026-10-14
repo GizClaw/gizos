@@ -104,6 +104,7 @@ py_library(
     srcs = ["native_entry_provenance.py"],
     data = ["native_entry_provenance.json"],
     imports = ["."],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
 )
 
 py_test(
