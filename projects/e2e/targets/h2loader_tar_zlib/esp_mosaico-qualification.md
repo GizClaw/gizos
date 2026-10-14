@@ -1643,7 +1643,15 @@ real device-side stall that independent network latency alone does not explain.
 R89 is a normal host cancellation for missing diagnostic-code admission;
 R90 is a native configure failure and was never flashed. Neither is a new
 firmware performance failure. R91's corrected build admits the actual diagnostic
-marker before installation; its execution is pending.
+marker before installation. It completes the original workload but fails
+p99 at 202.574/255.745 ms, with 100/96 frames and fairness 1173 permille.
+R92 separates setup from connected operations: connected processing maxima
+are command 1,912 us, media 508 us, packet pump 10,211 us, RTP send 978 us
+and channel send 3,141 us. It still fails loaded p99 932.352 ms and receives
+91 frames (nine missing), while fairness 853 passes. Its independent
+native-policy ICMP p99 is 681.616 ms. Timings include preemption and exclude
+time asleep/between operations; they do not prove all delay is external.
+Both actual peers receive/echo all 200 frames; public Loader returns pass.
 
 Opt-in worker diagnostics keep bounded operation wall-time aggregates and
 emit them only after worker exit. They compile out by default. Four ordinary
@@ -1652,3 +1660,28 @@ source-bound R91 native build passes. These checks are not board acceptance.
 The exact `a369658c` remote CI run `38508491577` finishes with a macOS arm64 UDP
 fixture startup failure; other platform jobs pass. The focused local fixture
 reproduction passes separately and does not relabel the remote failure.
+
+
+A further scheduler defect is reproduced independently: the worker previously
+started its next work budget from the timestamp taken before sleeping.
+Late resumption therefore consumed the following budget and caused premature
+repeated yields. The fix reads the resumed monotonic timestamp; failed clock
+reads retain the prior fallback policy. A deterministic 25 ms rescheduling
+case fails before the fix and passes afterward, alongside clock failure,
+backward time, sleep failure and queued-response exit cases. The full 22
+H2Peer tests and four focused regressions pass on this source. These are
+host scheduling checks, not synthetic board performance measurements.
+
+The functional R93 native image builds and passes admission with worker
+profiling and preflight both compiled out. It retains the original 10 ms
+work slice, packet/message limits, queue capacities, priorities, core/radio
+policies, transfer sizes and all smoke predicates. Actual independent board
+acceptance completes with FAIL: unloaded audio receives 100/100 frames with
+p99 194.923 ms; loaded audio receives 93/100 with p99 319.993 ms. Fairness
+1270 passes, sender gaps remain at most 30.460 ms, and deadline/backpressure
+counters are zero. The independent peer receives and echoes all 200 frames;
+board loss markers identify consecutive gaps of six and one frames. Both
+ends use HAIVIVI-MFG according to the operator. These results do not yet
+identify whether loss occurs on Wi-Fi, SDK receive queues or the decoder.
+The public R84 Loader returns successfully. No WebRTC PASS or final Flash
+restoration is claimed.

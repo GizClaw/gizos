@@ -1702,7 +1702,10 @@ static uint64_t h2_peer_network_timing_start(h2_pal_webrtc_peer_t *peer) {
 static void h2_peer_network_timing_finish(h2_pal_webrtc_peer_t *peer,
                                          uint64_t started,
                                          uint64_t *maximum,
-                                         uint64_t *over_slice) {
+                                         uint64_t *over_slice,
+                                         int connected_at_start,
+                                         uint64_t *connected_maximum,
+                                         uint64_t *connected_over_slice) {
   const uint64_t now = h2_peer_network_timing_start(peer);
   if (started == UINT64_MAX || now == UINT64_MAX || now < started)
     return;
@@ -1711,12 +1714,24 @@ static void h2_peer_network_timing_finish(h2_pal_webrtc_peer_t *peer,
     *maximum = elapsed;
   if (elapsed >= H2_PEER_NETWORK_CPU_SLICE_US && *over_slice != UINT64_MAX)
     ++*over_slice;
+  if (connected_at_start) {
+    if (elapsed > *connected_maximum)
+      *connected_maximum = elapsed;
+    if (elapsed >= H2_PEER_NETWORK_CPU_SLICE_US &&
+        *connected_over_slice != UINT64_MAX)
+      ++*connected_over_slice;
+  }
 }
-#define H2_PEER_TIMING_BEGIN() \
-  (timing_started = h2_peer_network_timing_start(peer))
+#define H2_PEER_TIMING_BEGIN() do { \
+  timing_connected = h2_atomic_load_explicit(&peer->state, H2_ATOMIC_RELAXED) == \
+                     H2_PAL_WEBRTC_PEER_CONNECTED; \
+  timing_started = h2_peer_network_timing_start(peer); \
+} while (0)
 #define H2_PEER_TIMING_END(index) \
   h2_peer_network_timing_finish(peer, timing_started, &timing_max[index], \
-                               &timing_over[index])
+                               &timing_over[index], timing_connected, \
+                               &timing_connected_max[index], \
+                               &timing_connected_over[index])
 #else
 #define H2_PEER_TIMING_BEGIN() ((void)0)
 #define H2_PEER_TIMING_END(index) ((void)0)
@@ -1729,6 +1744,9 @@ static void h2_peer_network_task(void *context) {
   uint64_t last_yield_us = 0u;
 #if H2_PEER_NETWORK_TIMING
   uint64_t timing_started = 0u;
+  int timing_connected = 0;
+  uint64_t timing_connected_max[5] = {0u};
+  uint64_t timing_connected_over[5] = {0u};
   uint64_t timing_max[5] = {0u};
   uint64_t timing_over[5] = {0u};
 #endif
@@ -1749,7 +1767,13 @@ static void h2_peer_network_task(void *context) {
         h2_atomic_store_explicit(&peer->network_stop, 1, H2_ATOMIC_RELEASE);
         break;
       }
-      last_yield_us = now_us;
+      /* A sleep can resume late under higher-priority driver activity. Start
+       * the next work slice after resuming, rather than charge the blocked
+       * interval again and yield early on every subsequent round. */
+      uint64_t resumed_us = 0u;
+      last_yield_us = h2_pal_time_get_monotonic_us(
+                          peer->owner->config.time, &resumed_us) == H2_PAL_OK
+                          ? resumed_us : now_us;
     }
     h2_peer_network_command_t command;
     h2_pal_result_t command_result = (h2_pal_result_t)h2_pal_queue_recv(
@@ -1850,11 +1874,14 @@ static void h2_peer_network_task(void *context) {
 #if H2_PEER_NETWORK_TIMING
   static const char *const names[5] = {"command", "media", "pump", "rtp", "channel"};
   for (size_t i = 0u; i < 5u; ++i) {
-    char message[160];
+    char message[256];
     (void)snprintf(message, sizeof(message),
-                   "H2_PEER_NETWORK_TIMING stage=%s max_wall_us=%llu over_slice=%llu",
+                   "H2_PEER_NETWORK_TIMING stage=%s max_wall_us=%llu over_slice=%llu "
+                   "connected_max_wall_us=%llu connected_over_slice=%llu",
                    names[i], (unsigned long long)timing_max[i],
-                   (unsigned long long)timing_over[i]);
+                   (unsigned long long)timing_over[i],
+                   (unsigned long long)timing_connected_max[i],
+                   (unsigned long long)timing_connected_over[i]);
     h2_peer_media_log(peer, H2_PAL_LOG_INFO, "h2peer", message);
   }
 #endif
