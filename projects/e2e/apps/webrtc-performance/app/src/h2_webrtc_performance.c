@@ -69,6 +69,8 @@ typedef struct h2_webrtc_performance_state {
   unsigned audio_duplicates;
   unsigned audio_reordered;
   uint64_t audio_last_arrival_ns;
+  uint64_t audio_last_sent_ns;
+  uint64_t audio_max_sender_gap_ns;
   uint64_t audio_gap_ns[H2_WEBRTC_PERF_AUDIO_FRAMES];
   uint64_t audio_max_gap_ns;
   uint16_t audio_max_gap_sequence;
@@ -406,6 +408,15 @@ static void h2_webrtc_perf_on_opus(void *user, h2_pal_webrtc_peer_t *peer,
     state->callback_error = 1;
     return;
   }
+  if (state->audio_last_arrival_ns == 0u) {
+    state->audio_max_sender_gap_ns = 0u;
+  } else if (sequence == state->audio_next_sequence &&
+             sent_ns >= state->audio_last_sent_ns) {
+    const uint64_t sender_gap_ns = sent_ns - state->audio_last_sent_ns;
+    if (sender_gap_ns > state->audio_max_sender_gap_ns)
+      state->audio_max_sender_gap_ns = sender_gap_ns;
+  }
+  state->audio_last_sent_ns = sent_ns;
   const uint64_t rtt_ns = now_ns - sent_ns;
   if (rtt_ns > state->audio_max_rtt_ns) {
     state->audio_max_rtt_ns = rtt_ns;
@@ -1052,6 +1063,9 @@ int h2_webrtc_performance_run(h2_runtime_t *runtime,
              state.audio_deadline_misses, state.callback_error);
       goto cleanup;
     }
+    printf("H2_WEBRTC_PERF_AUDIO_DIAGNOSTIC phase=audio-only max_sender_gap_ns=%" PRIu64
+           " max_arrival_gap_sequence=%u max_rtt_ns=%" PRIu64 "\n",
+           state.audio_max_sender_gap_ns, state.audio_max_gap_sequence, state.audio_max_rtt_ns);
     const uint64_t audio_only_p99_gap_ns = h2_webrtc_perf_audio_gap_p99(&state);
     const uint64_t audio_only_max_gap_ns = state.audio_max_gap_ns;
     const uint64_t audio_only_max_rtt_ns = state.audio_max_rtt_ns;
@@ -1077,6 +1091,9 @@ int h2_webrtc_performance_run(h2_runtime_t *runtime,
              state.audio_max_gap_sequence, state.callback_error);
       goto cleanup;
     }
+    printf("H2_WEBRTC_PERF_AUDIO_DIAGNOSTIC phase=loaded max_sender_gap_ns=%" PRIu64
+           " max_arrival_gap_sequence=%u max_rtt_ns=%" PRIu64 "\n",
+           state.audio_max_sender_gap_ns, state.audio_max_gap_sequence, state.audio_max_rtt_ns);
     const uint64_t loaded_batch_ns = state.request_batch_elapsed_ns;
     const uint64_t loaded_max_rtt_ns = h2_webrtc_perf_request_max_rtt(&state);
     const uint64_t data_only_throughput_bps =

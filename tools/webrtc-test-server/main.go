@@ -922,7 +922,38 @@ func (s *server) createAnswer(
 	return local.SDP, item, nil
 }
 
+// Keep timing writes out of the measured path. Samples contain only this
+// fixture's sequence/timestamp envelope, never general Opus payload bytes.
+type audioTimingSample struct {
+	ordinal         uint64
+	fixtureSequence uint16
+	sentNS          uint64
+	readNS          int64
+	echoNS          int64
+}
+
+func audioTimingEnvelope(payload []byte) (uint16, uint64, bool) {
+	if len(payload) != 10 {
+		return 0, 0, false
+	}
+	sequence := binary.BigEndian.Uint16(payload[:2])
+	if sequence >= 100 {
+		return 0, 0, false
+	}
+	return sequence, binary.BigEndian.Uint64(payload[2:]), true
+}
+
 func echoOpus(remote *webrtc.TrackRemote, local *webrtc.TrackLocalStaticRTP, witness *mediaWitness) {
+	var samples [200]audioTimingSample
+	var sampleCount int
+	started := time.Now()
+	defer func() {
+		sessionID, _ := witness.sessionID.Load().(string)
+		for _, sample := range samples[:sampleCount] {
+			log.Printf("H2_WEBRTC_TEST_SERVER_AUDIO_TIMING session=%s ordinal=%d fixture_sequence=%d sent_ns=%d read_ns=%d echo_ns=%d",
+				sessionID, sample.ordinal, sample.fixtureSequence, sample.sentNS, sample.readNS, sample.echoNS)
+		}
+	}()
 	defer witness.log("stopped")
 	var sequence uint16
 	for {
@@ -931,6 +962,7 @@ func echoOpus(remote *webrtc.TrackRemote, local *webrtc.TrackLocalStaticRTP, wit
 			witness.readErrors.Add(1)
 			return
 		}
+		readNS := time.Since(started).Nanoseconds()
 		ordinal := witness.noteInput(packet.SequenceNumber)
 		if witness.shouldDrop(ordinal) {
 			// Consume the egress sequence as a packet dropped on the wire would.
@@ -953,6 +985,11 @@ func echoOpus(remote *webrtc.TrackRemote, local *webrtc.TrackLocalStaticRTP, wit
 		if err := local.WriteRTP(echo); err != nil {
 			witness.writeErrors.Add(1)
 			return
+		}
+		if fixtureSequence, sentNS, ok := audioTimingEnvelope(packet.Payload); ok && sampleCount < len(samples) {
+			samples[sampleCount] = audioTimingSample{ordinal: ordinal, fixtureSequence: fixtureSequence, sentNS: sentNS,
+				readNS: readNS, echoNS: time.Since(started).Nanoseconds()}
+			sampleCount++
 		}
 		witness.echoed.Add(1)
 		if ordinal == 1 || ordinal%50 == 0 {
