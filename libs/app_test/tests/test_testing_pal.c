@@ -59,6 +59,30 @@ static void test_wifi_persistent_operation(void) {
   assert(h2_pal_wifi_sta_connect_and_save(&w.api, &target, 100) == H2_PAL_ERR_IO);
 }
 
+static void test_modem_lifecycle(void) {
+  h2_app_test_modem_t m;
+  h2_app_test_modem_init(&m);
+  assert(h2_pal_modem_open(&m.api, 25u) == H2_PAL_ERR_UNSUPPORTED);
+  assert(h2_pal_modem_close(&m.api, 25u) == H2_PAL_ERR_UNSUPPORTED);
+  m.lifecycle_supported = true;
+  m.status.capabilities = 0u;
+  OK(h2_pal_modem_close(&m.api, 10u));
+  OK(h2_pal_modem_close(&m.api, 10u));
+  assert(!m.opened && m.last_close_timeout_ms == 10u);
+  FAIL_ONCE(m.open);
+  assert(h2_pal_modem_open(&m.api, 50u) == H2_PAL_ERR_IO && !m.opened);
+  OK(h2_pal_modem_open(&m.api, 60u));
+  assert(m.opened && m.last_open_timeout_ms == 60u);
+  OK(h2_pal_modem_open(&m.api, 70u));
+  FAIL_ONCE(m.close);
+  assert(h2_pal_modem_close(&m.api, 80u) == H2_PAL_ERR_IO && m.opened);
+  OK(h2_pal_modem_close(&m.api, 90u));
+  assert(!m.opened && m.last_close_timeout_ms == 90u);
+  uint32_t capabilities = UINT32_MAX;
+  OK(h2_pal_modem_get_capabilities(&m.api, &capabilities));
+  assert(capabilities == 0u);
+}
+
 static void test_wifi_modem(void) {
   h2_app_test_wifi_t w;
   h2_app_test_wifi_init(&w);
@@ -453,6 +477,7 @@ int main(void) {
   test_time();
   test_wifi_persistent_operation();
   test_wifi_modem();
+  test_modem_lifecycle();
   test_devices();
   test_pref(&mem);
   test_fs(&mem);
