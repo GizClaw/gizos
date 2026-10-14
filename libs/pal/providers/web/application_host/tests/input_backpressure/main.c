@@ -13,6 +13,8 @@ static _Atomic int fault_requested;
 static _Atomic unsigned pace_faults;
 static _Atomic int health_gate, health_active, health_seen;
 static _Atomic unsigned accepted, timeouts, busy;
+static _Atomic int consumer_paused;
+static _Atomic unsigned paused_accepts, saturation_rejections;
 static const h2_pal_queue_api_t *base_queue;
 static h2_pal_queue_api_t queue_api;
 static h2_pal_queue_vtable_t queue_vtable;
@@ -23,7 +25,19 @@ static h2_pal_time_vtable_t time_vtable;
 static _Thread_local int input_worker;
 
 EMSCRIPTEN_KEEPALIVE void input_test_pause(int pause) {
+    if (pause) {
+        atomic_store(&consumer_paused, 0);
+        atomic_store(&paused_accepts, 0u);
+        atomic_store(&saturation_rejections, 0u);
+    }
     atomic_store(&pause_edges, pause);
+}
+EMSCRIPTEN_KEEPALIVE int input_test_paused(void) {
+    return atomic_load(&consumer_paused);
+}
+EMSCRIPTEN_KEEPALIVE int input_test_saturated(void) {
+    return atomic_load(&paused_accepts) == 16u &&
+           atomic_load(&saturation_rejections) > 0u;
 }
 EMSCRIPTEN_KEEPALIVE void input_test_block(int kind) {
     atomic_store(&blocked, kind == 1 ? H2_PAL_ERR_TIMEOUT
@@ -54,9 +68,21 @@ static int queue_create(void *user, const h2_pal_queue_config_t *config,
 static int queue_recv(void *user, h2_pal_queue_t *queue, void *item,
                        uint32_t timeout) {
     if (queue == push_queue) input_worker = 1;
-    if (queue == push_queue && atomic_load(&pause_edges))
+    if (queue == push_queue && atomic_load(&pause_edges)) {
+        atomic_store(&consumer_paused, 1);
         return H2_PAL_ERR_TIMEOUT;
+    }
     return base_queue->vtable->recv(user, queue, item, timeout);
+}
+static int queue_send(void *user, h2_pal_queue_t *queue, const void *item,
+                       uint32_t timeout) {
+    const int rc = base_queue->vtable->send(user, queue, item, timeout);
+    if (queue == push_queue && atomic_load(&pause_edges)) {
+        if (rc == H2_PAL_OK) atomic_fetch_add(&paused_accepts, 1u);
+        if (rc == H2_PAL_ERR_TIMEOUT && atomic_load(&paused_accepts) == 16u)
+            atomic_fetch_add(&saturation_rejections, 1u);
+    }
+    return rc;
 }
 static h2_pal_result_t sleep_ms(void *user, uint32_t ms) {
     if (input_worker && atomic_exchange(&fault_requested, 0)) {
@@ -71,6 +97,7 @@ static h2_pal_result_t configure(void *user, h2_runtime_config_t *config) {
     queue_vtable = *base_queue->vtable;
     queue_vtable.create = queue_create;
     queue_vtable.recv = queue_recv;
+    queue_vtable.send = queue_send;
     queue_api = (h2_pal_queue_api_t){base_queue->user, &queue_vtable};
     config->queue = &queue_api;
     base_time = config->time;
@@ -222,6 +249,8 @@ int main(void) {
     assert(rc == (mode == 3 || mode == 4 || mode == 7 || mode == 8 ? 1 : mode == 5 ? 2 : 0));
     if (mode == 0) {
         assert(atomic_load(&timeouts) > 0u);
+        assert(atomic_load(&paused_accepts) == 16u);
+        assert(atomic_load(&saturation_rejections) > 0u);
         assert(atomic_load(&accepted) == 146u);
         assert(downs == 73 && ups == 73 && position == 1);
     } else if (mode == 1) {

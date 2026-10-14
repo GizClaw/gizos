@@ -46,13 +46,20 @@ INPUT_FLOW = r"""
         const pixels = () => document.querySelector('#canvas').toDataURL();
         const initial = pixels();
         Module._input_test_pause(1);
-        setTimeout(() => Module._input_test_pause(0), 1200);
+        await wait(() => Module._input_test_paused() === 1, 'raw consumer did not pause');
+        let resumed = false;
         for (let sweep = 0; sweep < 12; sweep++) {
           for (const key of [']', ']', ']', '[', '[', '[']) {
             edge(key, true); await sleep(30);
             edge(key, false); await sleep(30);
+            if (!resumed && Module._input_test_saturated() === 1) {
+              console.log('INPUT_SATURATION PASS accepted=16');
+              Module._input_test_pause(0);
+              resumed = true;
+            }
           }
         }
+        if (!resumed) throw new Error('raw queue never rejected an edge while all 16 slots were held');
         await wait(() => state?.down === 73 && state?.up === 73, 'lost ordered raw edges');
         if (actual.join(',') !== expected.join(',')) throw new Error('cross-button FIFO order changed');
         await sleep(700);

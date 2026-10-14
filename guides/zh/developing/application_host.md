@@ -127,7 +127,7 @@ ESP/BK 直接接收 `h2_pal_application_host_api_t`，使用与 Web/Desktop 相�
 - `projects/example/libs/web/demo_board`：使用新 board helper，保留旧 board descriptor identity。
 - 新 `web/application_host/lua/tests/lifecycle`：实际生成入口的慢 Display Stop、ordinary error、transport/display/App join failure、EXIT 和 filesystem BUSY。
 - 新 `web/application_host/lua/tests/progress`：持续渲染与 timer warmup 后，20 次按下/释放均须由 Lua 确认；每次释放后须继续输出至少三次周期进度，覆盖 retained 相同帧与最终 Stop 清理。
-- 新 `web/application_host/tests/input_backpressure`：真实 16 项 Runtime raw-edge queue 饱和、72 次 30 ms 正反向按键与图像复原、TIMEOUT/BUSY 拒收、release 保序、pointer/key 合并与 blur、异步解绑排空、部分 bind 回滚、永久故障 consumer、溢出/终止错误和 retained CLOSED；清理完成后不再有 native 输入调用。
+- 新 `web/application_host/tests/input_backpressure`：consumer 暂停握手后填满真实 16 项 Runtime raw-edge queue，观察到拒收才恢复消费；72 次 30 ms 正反向按键与图像复原、TIMEOUT/BUSY 拒收、release 保序、pointer/key 合并与 blur、异步解绑排空、部分 bind 回滚、永久故障 consumer、溢出/终止错误和 retained CLOSED；清理完成后不再有 native 输入调用。
 - 新 `web/application_host/tests/gizclaw_apps`：同一 origin 的安装、卸载、刷新、无效包/hash、并发 BUSY、Stop 中断安装、独立用户 KV 与失败 close 重试。
 - 旧 `libs/app_host` 和 `libs/lua/web` 的兼容测试继续使用原实现；mobile、现有 Desktop/ESP/BK 产品 entry 不迁移。
 
