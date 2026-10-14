@@ -20,3 +20,11 @@ available. One complete shared smoke workload records real upload/download,
 loaded transport, request timing and audio gap metrics. Failure remains visible
 and unconfirmed; a later retry must have a fresh independent receipt. Confirmation
 follows actual workload success. Audio metrics are not acoustic qualification.
+
+An optional private `--define=H2_WEBRTC_PERF_WIFI_BSSID_HEX=<12 hex digits>`
+selects a unicast AP for a controlled comparison. It modifies only the runtime
+STA configuration; saved credentials/settings remain unchanged. The app checks
+the connected BSSID before admitting the workload and logs the actual channel
+and RSSI. Omitting the define uses saved settings. Matching channels do not prove
+that the host and board use the same AP. Keep actual AP identifiers in private
+fixture configuration and record this condition with the result.

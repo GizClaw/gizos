@@ -1746,8 +1746,9 @@ independent real-board boots. Full original Flash restoration remains pending.
   the idle comparison receives 100/100 with p99 49.004 ms. This supports
   investigating load-related network queuing; ICMP priority differs from
   media traffic and does not by itself assign the entire failure to Wi-Fi.
-  A same-access-point comparison is pending the host BSSID. Host network
-  settings have not been changed.
+  The host BSSID is unavailable; the operator requests autonomous
+  investigation. A private, RAM-only board AP selection enables a channel-6
+  comparison without claiming the same AP. Host network settings are unchanged.
 - Receipts: `rtc99-performance-result.json`,
   `rtc100-performance-diagnostic-result.json`,
   `rtc100-host-radio-observation.json`, and both
@@ -1757,3 +1758,35 @@ independent real-board boots. Full original Flash restoration remains pending.
   `board77-first-restore-before-loader84/`. Final original Flash restoration
   remains pending. Loader R84 recovery remains source-bound **51/51 PASS**;
   GizClaw remains excluded and PR #709 remains Draft.
+
+### R101 AP comparison and R102 yield timing (2026-10-14)
+
+The board connects to an observed channel-6 AP selected from the public Loader
+scan. The host remains on its original network; its AP identity is unknown.
+R101 has all four diagnostics disabled and fails its first boot with loaded
+p99 **203.927 ms > 200 ms**. Unloaded p99 is 99.474 ms, both phases receive
+100/100 unique ordered frames, and fairness is 1047 per mille. This is still
+not two-boot acceptance. The private AP selector checks the actual association
+and never writes the Loader's saved configuration.
+
+R102 adds actual cooperative-yield duration to existing default-off worker
+timing. Two focused enabled host tests pass. Its one diagnostic boot passes
+all original smoke predicates: unloaded/loaded p99 117.881/180.004 ms,
+100/100 frames in both phases, fairness 984. Yield takes at most 1.423 ms;
+connected pump/media/RTP/channel operations take at most 7.907/0.437/0.905/
+1.425 ms. The SDK mailbox records 29,589 posts and zero failed posts. This
+single instrumented pass does not replace the failed default-off result.
+Both R101 and R102 return to the public R84 Loader with blank crash storage.
+
+A default-off Pion `--rtp-dscp` option now supports a controlled direct-UDP
+media-priority comparison. It keeps DTLS/SCTP at DSCP 0, serializes socket
+marking with concurrent writes, checks OS TOS readback at startup, and exposes
+actual write counters. Boundary/concurrency/error/real-socket tests pass in
+Bazel and Go race mode; the new write path is fully covered. Marking does not
+prove the AP honors QoS. R103 board evidence is pending; no new performance
+qualification is claimed. Loader R84 remains 51/51 PASS, final original Flash
+restoration remains pending, and GizClaw remains excluded.
+
+CI for `f5e8047a` reports 912/913 tests passing with `pal-core:browser_test`
+failing after 90.6 seconds. A fresh local real-Chromium execution passes in
+2.4 seconds; this does not erase the CI failure or establish its cause.

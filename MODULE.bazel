@@ -254,6 +254,7 @@ use_repo(
     "com_github_pion_stun_v3",
     "com_github_pion_turn_v4",
     "com_github_pion_webrtc_v4",
+    "org_golang_x_net",
 )
 
 toolchains = use_extension(
