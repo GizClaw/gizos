@@ -218,7 +218,7 @@ int main(void) {
          * cleanup. */
         if (mode == 5 || mode == 6)
             assert(h2_pal_task_join(base_tasks, entry_task) == H2_PAL_OK);
-        assert(h2_web_application_host_button(0, 1) == H2_PAL_ERR_BUSY);
+        assert(h2_web_application_host_button(0, 1) == H2_PAL_ERR_CLOSED);
         assert(h2_application_host_ready(app_host) == H2_PAL_ERR_INVALID_STATE);
         h2_web_platform_resource_stats_t stats;
         assert(h2_web_platform_get_resource_stats(platform, &stats) ==

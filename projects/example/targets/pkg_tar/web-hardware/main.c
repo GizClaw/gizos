@@ -216,7 +216,7 @@ int main(void) {
   assert(hardware.releases == (hardware.mode == 4 ? 0 : 1));
   if (hardware.mode == 2 || hardware.mode == 4) {
     assert(rc == H2_WEB_APPLICATION_HOST_RETAINED && hardware.file != NULL);
-    assert(h2_web_application_host_button(0, 1) == H2_PAL_ERR_BUSY);
+    assert(h2_web_application_host_button(0, 1) == H2_PAL_ERR_CLOSED);
     h2_pal_fs_stat_t info = {0};
     assert(h2_pal_fs_stat(hardware.fs, "/hardware/source", &info) == H2_PAL_OK);
   } else {

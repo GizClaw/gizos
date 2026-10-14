@@ -58,7 +58,15 @@ extern const h2_web_application_board_t h2_web_application_board;
  * JavaScript owns the input: it binds the key (the board key unless `key`
  * overrides it; NULL keeps the board key) and every skin element marked
  * `data-h2-button="APP_NAME"` (pointer and touch), merges them into one pressed
- * state and pushes Down/Up edges.
+ * state and queues ordered Down/Up edges. The UI retains rejected edges and
+ * retries TIMEOUT/BUSY/WOULD_BLOCK/FULL without letting a later edge overtake
+ * them. The shared UI outbox holds at most 256 edges. Overflow or a terminal
+ * delivery error closes admission and requests cooperative stop; even safe
+ * cleanup reports FAIL. Runtime continues to own admission timestamps.
+ * Blur, hide and unbind queue the final release. Unbind cancels producers and
+ * waits asynchronously for the outbox before Runtime can be destroyed.
+ * Rejections trigger Worker-side input health checks; a permanently failed
+ * consumer closes UI admission. Teardown also drains those Runtime readers.
  */
 typedef struct h2_web_application_host_button {
     h2_runtime_component_id_t component_id;
@@ -93,8 +101,11 @@ typedef struct h2_web_application_host_hardware {
      * context. */
     h2_pal_result_t (*release_prepare)(void *user);
     /**
-     * Delivers one Button edge for the mapped component (1 down, 0 up); NULL
-     * pushes it on the host's own Button peripheral.
+     * Delivers one Button edge on the browser UI thread for the mapped
+     * component (1 down, 0 up); NULL pushes to the Host Button periph. Must
+     * return promptly. OK accepts the edge; TIMEOUT/BUSY/WOULD_BLOCK/FULL mean
+     * it was not accepted and the same edge may be retried. Other errors
+     * terminate input admission and fail the Host result.
      */
     h2_pal_result_t (*button)(void *user, h2_runtime_t *runtime,
                               h2_runtime_component_id_t component_id,
@@ -130,9 +141,9 @@ typedef struct h2_web_application_host_config {
     /**
      * Optional push-edge Buttons. The host exposes them as single-button
      * peripherals with a component mapper, starts Runtime input and hands the
-     * table to the page, whose keyboard and layout elements push
-     * h2_runtime_button_push_edge() edges; click and long-press remain Runtime
-     * decisions.
+     * table to the page. Runtime input starts before DOM producers bind.
+     * The shell merges sources and retries ordered push edges under
+     * backpressure; click and long-press remain Runtime decisions.
      */
     const h2_web_application_host_button_t *buttons;
     size_t button_count;
@@ -155,7 +166,8 @@ typedef struct h2_web_application_host_config {
  * callback contexts are not valid for resources that can outlive this call.
  * A retained Host keeps its descriptors and dependencies that have not safely
  * finished cleanup; already released resources are not usable.
- * new runs and UI input are rejected. Ordinary entry errors still tear down.
+ * new runs and UI input are rejected (input returns CLOSED, not retryable
+ * BUSY). Ordinary entry/input errors still perform checked teardown.
  * A retained result never claims transport cancellation or successful join. */
 int h2_web_application_host_run(const h2_web_application_host_config_t *config,
                                 h2_web_application_host_entry_fn entry,

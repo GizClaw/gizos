@@ -93,22 +93,82 @@
 
       // Button input. app_host passes each Button's index, keyboard key and
       // name; the key and every [data-h2-button="<name>"] element hold it.
-      // Sources merge into one pressed state, so only real Down/Up changes
-      // reach the Runtime. Blur, hide and teardown release everything.
+      // Sources describe physical intent. An ordered outbox retains every
+      // aggregate edge until Runtime accepts it; transient backpressure must
+      // not discard a release or let the next press overtake it.
       const h2Buttons = [];
+      const h2InputPending = [];
+      const h2InputWaiters = [];
+      const h2InputCapacity = 256;
+      let h2InputTimer = null, h2InputDraining = false, h2InputClosing = false;
+      let h2InputFault = 0;
+      function h2InputSettled() {
+        if (h2InputDraining || h2InputPending.length) return;
+        if (h2InputTimer !== null) clearTimeout(h2InputTimer);
+        h2InputTimer = null;
+        for (const resolve of h2InputWaiters.splice(0)) resolve();
+      }
+      function h2InputFail(rc) {
+        if (h2InputFault) return;
+        h2InputFault = rc;
+        if (h2InputTimer !== null) clearTimeout(h2InputTimer);
+        h2InputTimer = null;
+        h2InputPending.length = 0;
+        globalThis.removeEventListener('keydown', h2KeyDown);
+        globalThis.removeEventListener('keyup', h2KeyUp);
+        for (const entry of h2Buttons) {
+          entry.active = false;
+          entry.abort.abort();
+          entry.sources.clear();
+          for (const element of entry.elements) element.dataset.pressed = 'false';
+        }
+        console.error(`H2_WEB_APP input=FAIL rc=${rc}`);
+        Module._h2_web_application_host_input_failed(rc);
+      }
+      function h2RetryInput() {
+        if (h2InputTimer === null)
+          h2InputTimer = setTimeout(() => { h2InputTimer = null; h2DrainInput(); }, 4);
+      }
+      function h2DrainInput() {
+        if (h2InputDraining) return;
+        h2InputDraining = true;
+        try {
+          for (let work = 0; !h2InputFault && h2InputPending.length && work < 32; work++) {
+            const {entry, pressed} = h2InputPending[0];
+            const rc = Module._h2_web_application_host_button(entry.index, pressed ? 1 : 0);
+            if (rc === 0) h2InputPending.shift();
+            else if (entry.retryable.has(rc)) { h2RetryInput(); break; }
+            else h2InputFail(Number.isInteger(rc) && rc < 0 ? rc : entry.ioError);
+          }
+          if (!h2InputFault && h2InputPending.length) h2RetryInput();
+        } catch (_) {
+          h2InputFail(h2InputPending[0]?.entry.ioError || h2Buttons[0].ioError);
+        } finally {
+          h2InputDraining = false;
+          h2InputSettled();
+        }
+      }
+      function h2QueueEdge(entry, pressed) {
+        if (h2InputFault) return;
+        if (h2InputPending.length === h2InputCapacity) h2InputFail(entry.fullError);
+        else { h2InputPending.push({entry, pressed}); h2DrainInput(); }
+      }
       function h2SetSource(entry, source, pressed) {
+        if (!entry.active || h2InputClosing || h2InputFault) return;
         const was = entry.sources.size > 0;
         if (pressed) entry.sources.add(source);
         else entry.sources.delete(source);
         const is = entry.sources.size > 0;
         for (const element of entry.elements) element.dataset.pressed = String(is);
-        if (was === is) return;
-        const rc = Module._h2_web_application_host_button?.(entry.index, is ? 1 : 0);
-        if (rc) console.warn(`H2_WEB_APP button=${entry.name || entry.key} ${is ? 'down' : 'up'} rc=${rc}`);
+        if (was !== is) h2QueueEdge(entry, is);
       }
       function h2ReleaseAll() {
-        for (const entry of h2Buttons)
-          for (const source of [...entry.sources]) h2SetSource(entry, source, false);
+        for (const entry of h2Buttons) {
+          const pressed = entry.sources.size > 0;
+          entry.sources.clear();
+          for (const element of entry.elements) element.dataset.pressed = 'false';
+          if (pressed) h2QueueEdge(entry, false);
+        }
       }
       function h2OnKey(event, down) {
         if (event.repeat) return;
@@ -120,9 +180,21 @@
       }
       const h2KeyDown = (event) => h2OnKey(event, true);
       const h2KeyUp = (event) => h2OnKey(event, false);
-      globalThis.h2WebApplicationHostBindButton = (index, key, name) => {
+      globalThis.h2WebApplicationHostBindButton =
+          (index, key, name, ioError, timeoutError, busyError, wouldBlockError, fullError) => {
+        if (typeof Module._h2_web_application_host_button !== 'function' ||
+            typeof Module._h2_web_application_host_input_failed !== 'function')
+          throw new Error('Missing Web Host input exports');
+        if (h2Buttons.length === 0) {
+          if (h2InputDraining || h2InputPending.length || h2InputWaiters.length)
+            throw new Error('Previous Web Host input has not drained');
+          h2InputClosing = false;
+          h2InputFault = 0;
+        }
         const selector = name ? `[data-h2-button="${CSS.escape(name)}"]` : null;
-        const entry = {index, key, name, sources: new Set(), abort: new AbortController(),
+        const entry = {index, key, name, ioError, fullError, active: true,
+                       retryable: new Set([timeoutError, busyError, wouldBlockError, fullError]),
+                       sources: new Set(), abort: new AbortController(),
                        elements: selector ? [...document.querySelectorAll(selector)] : []};
         const signal = entry.abort.signal;
         for (const element of entry.elements) {
@@ -142,11 +214,18 @@
         h2Buttons.push(entry);
       };
       globalThis.h2WebApplicationHostUnbindButtons = () => {
-        h2ReleaseAll();
+        h2InputClosing = true;
         for (const entry of h2Buttons) entry.abort.abort();
         globalThis.removeEventListener('keydown', h2KeyDown);
         globalThis.removeEventListener('keyup', h2KeyUp);
-        h2Buttons.length = 0;
+        h2ReleaseAll();
+        for (const entry of h2Buttons) entry.active = false;
+        // The C control task awaits this Promise before destroying Runtime.
+        // The browser stays responsive while a full queue or busy lock clears.
+        return new Promise(resolve => {
+          h2InputWaiters.push(() => { h2Buttons.length = 0; resolve(); });
+          h2DrainInput();
+        });
       };
       globalThis.addEventListener('blur', h2ReleaseAll);
       document.addEventListener('visibilitychange', () => {

@@ -17,6 +17,9 @@ typedef struct h2_web_application_host {
     _Atomic(h2_runtime_t *) runtime;
     _Atomic(h2_application_host_t *) common;
     _Atomic int stop_requested;
+    _Atomic int input_error;
+    _Atomic int input_closed, input_backpressure;
+    _Atomic unsigned input_readers;
     h2_web_application_host_entry_fn entry;
     void *user;
     const h2_pal_fs_api_t *fs;
@@ -77,6 +80,10 @@ host_create(const h2_web_application_host_config_t *config,
     atomic_init(&host->runtime, NULL);
     atomic_init(&host->common, NULL);
     atomic_init(&host->stop_requested, 0);
+    atomic_init(&host->input_error, H2_PAL_OK);
+    atomic_init(&host->input_closed, 0);
+    atomic_init(&host->input_backpressure, 0);
+    atomic_init(&host->input_readers, 0u);
     host->allocation_bytes = bytes;
     host->owned_config = *config;
     host->config = &host->owned_config;
@@ -231,21 +238,32 @@ static const h2_pal_periph_api_t s_periph = {
 /* Called by the shell with the button index and 1 down / 0 up. */
 EMSCRIPTEN_KEEPALIVE int h2_web_application_host_button(int index,
                                                         int pressed) {
-    if (s_host != NULL && h2_application_host_is_retained(s_host->common))
-        return H2_PAL_ERR_BUSY;
-    if (s_host == NULL || s_host->runtime == NULL || index < 0 ||
-        (size_t)index >= s_host->config->button_count)
+    h2_web_application_host_t *host = atomic_load(&s_host);
+    // Retention permanently closes admission; BUSY is reserved for retries.
+    if (host != NULL && (atomic_load(&host->input_closed) ||
+        h2_application_host_is_retained(atomic_load(&host->common))))
+        return H2_PAL_ERR_CLOSED;
+    h2_runtime_t *runtime = host != NULL ? atomic_load(&host->runtime) : NULL;
+    if (host == NULL || runtime == NULL || index < 0 ||
+        (size_t)index >= host->config->button_count)
         return H2_PAL_ERR_UNAVAILABLE;
     const h2_web_application_host_hardware_t *hardware =
-        s_host->config->hardware;
+        host->config->hardware;
+    h2_pal_result_t rc;
     if (hardware != NULL && hardware->button != NULL)
-        return hardware->button(hardware->user, s_host->runtime,
-                                s_host->config->buttons[index].component_id,
+        rc = hardware->button(hardware->user, runtime,
+                                host->config->buttons[index].component_id,
                                 pressed);
-    // Edges are addressed by peripheral id; the mapper resolves the component.
-    return h2_runtime_button_push_edge(
-        s_host->runtime, (h2_pal_periph_id_t)(index + 1),
-        pressed ? H2_RUNTIME_BUTTON_EDGE_DOWN : H2_RUNTIME_BUTTON_EDGE_UP);
+    else
+        // Edges use peripheral ids; the mapper resolves the component.
+        rc = h2_runtime_button_push_edge(
+            runtime, (h2_pal_periph_id_t)(index + 1),
+            pressed ? H2_RUNTIME_BUTTON_EDGE_DOWN : H2_RUNTIME_BUTTON_EDGE_UP);
+    if (rc == H2_PAL_ERR_TIMEOUT || rc == H2_PAL_ERR_BUSY ||
+        rc == H2_PAL_ERR_WOULD_BLOCK || rc == H2_PAL_ERR_FULL)
+        // Health takes a PAL mutex and must run on the pump Worker, not UI.
+        atomic_store(&host->input_backpressure, 1);
+    return rc;
 }
 
 /* The shell's JavaScript owns keyboard and layout input for each Button. */
@@ -253,12 +271,14 @@ EMSCRIPTEN_KEEPALIVE int h2_web_application_host_button(int index,
 /* clang-format off */
 EM_JS(void, h2_web_application_host_bind_button,
       (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
-  h2WebMain(context, result, completion, ["i32", "pointer", "pointer", "i32"], "i32",
-    (index, key, name, ioError) => {
+  h2WebMain(context, result, completion,
+    ["i32", "pointer", "pointer", "i32", "i32", "i32", "i32", "i32"], "i32",
+    (index, key, name, ioError, timeoutError, busyError, wouldBlockError, fullError) => {
       try {
         const bind = globalThis.h2WebApplicationHostBindButton;
         if (typeof bind !== 'function') return ioError;
-        bind(index, key ? UTF8ToString(key) : "", name ? UTF8ToString(name) : "");
+        bind(index, key ? UTF8ToString(key) : "", name ? UTF8ToString(name) : "",
+             ioError, timeoutError, busyError, wouldBlockError, fullError);
         return 0;
       } catch (_) { return ioError; }
     });
@@ -273,8 +293,7 @@ EM_JS(void, h2_web_application_host_unbind_buttons,
       try {
         const unbind = globalThis.h2WebApplicationHostUnbindButtons;
         if (count && typeof unbind !== 'function') return ioError;
-        unbind?.();
-        return 0;
+        return Promise.resolve(unbind?.()).then(() => 0, () => ioError);
       } catch (_) { return ioError; }
     });
 });
@@ -314,6 +333,18 @@ EMSCRIPTEN_KEEPALIVE void h2_web_application_host_request_stop(void) {
         atomic_store(&host->stop_requested, 1);
         h2_application_host_request_stop(atomic_load(&host->common));
     }
+}
+
+/* Called only after the UI outbox has closed admission and canceled retries. */
+EMSCRIPTEN_KEEPALIVE void h2_web_application_host_input_failed(int reason) {
+    h2_web_application_host_t *host = atomic_load(&s_host);
+    if (host == NULL)
+        return;
+    atomic_store(&host->input_closed, 1);
+    int expected = H2_PAL_OK;
+    (void)atomic_compare_exchange_strong(
+        &host->input_error, &expected, reason < 0 ? reason : H2_PAL_ERR_IO);
+    h2_web_application_host_request_stop();
 }
 
 static void h2_web_application_host_mark(const h2_web_application_host_t *host,
@@ -489,7 +520,10 @@ static h2_pal_result_t web_release_runtime(void *user) {
 static h2_pal_result_t web_activate(void *user, h2_runtime_t *runtime) {
     h2_web_application_host_t *host = user;
     host->runtime = runtime;
-    h2_pal_result_t rc = H2_PAL_OK;
+    // Start the consumer before publishing any DOM producer. Partial bind
+    // rollback can then drain its outbox while Runtime input is still live.
+    h2_pal_result_t rc = host->config->button_count != 0
+        ? h2_runtime_input_start(runtime, NULL) : H2_PAL_OK;
     for (size_t i = 0; rc == H2_PAL_OK && i < host->config->button_count; ++i) {
         h2_web_main_result_t bound = h2_web_main_call(
             h2_web_application_host_bind_button,
@@ -497,11 +531,13 @@ static h2_pal_result_t web_activate(void *user, h2_runtime_t *runtime) {
                              &(const char *){h2_web_application_host_button_key(
                                  &host->config->buttons[i])},
                              &(const char *){host->config->buttons[i].name},
-                             &(int){H2_PAL_ERR_IO}});
+                             &(int){H2_PAL_ERR_IO},
+                             &(int){H2_PAL_ERR_TIMEOUT},
+                             &(int){H2_PAL_ERR_BUSY},
+                             &(int){H2_PAL_ERR_WOULD_BLOCK},
+                             &(int){H2_PAL_ERR_FULL}});
         rc = bound.i32;
     }
-    if (rc == H2_PAL_OK && host->config->button_count != 0)
-        rc = h2_runtime_input_start(runtime, NULL);
     return rc;
 }
 
@@ -511,15 +547,44 @@ static h2_pal_result_t web_deactivate(void *user) {
         h2_web_application_host_unbind_buttons,
         (const void *[]){&(uint32_t){(uint32_t)host->config->button_count},
                          &(int){H2_PAL_ERR_IO}});
-    if (unbound.i32 == H2_PAL_OK)
+    if (unbound.i32 == H2_PAL_OK) {
         host->runtime = NULL;
+        // The driver may have borrowed Runtime for a Worker-side health read.
+        // Clear admission first, then wait before common destroys Runtime.
+        while (atomic_load(&host->input_readers) != 0u) {
+            h2_pal_result_t rc = h2_pal_time_sleep_ms(
+                h2_web_platform_time_api(host->platform), 1u);
+            if (rc != H2_PAL_OK)
+                return rc;
+        }
+    }
     return unbound.i32;
 }
 
 static h2_pal_result_t web_poll(void *user, int *out_stop) {
+    h2_web_application_host_t *host = user;
     *out_stop = 0;
-    return h2_web_platform_pump(((h2_web_application_host_t *)user)->platform,
-                                64u, NULL);
+    h2_pal_result_t rc = h2_web_platform_pump(host->platform, 64u, NULL);
+    if (rc != H2_PAL_OK || !atomic_exchange(&host->input_backpressure, 0))
+        return rc;
+    atomic_fetch_add(&host->input_readers, 1u);
+    h2_runtime_t *runtime = atomic_load(&host->runtime);
+    if (runtime != NULL) {
+        h2_runtime_input_status_t status;
+        rc = h2_runtime_input_status(runtime, &status);
+        h2_pal_result_t fault = rc != H2_PAL_OK ? rc : status.worker_result;
+        if (fault != H2_PAL_OK) {
+            // A failed consumer cannot drain its otherwise-live raw queue.
+            // Close UI retries, latch the cause and cooperatively stop App.
+            int expected = H2_PAL_OK;
+            atomic_store(&host->input_closed, 1);
+            (void)atomic_compare_exchange_strong(&host->input_error, &expected,
+                fault < 0 ? fault : H2_PAL_ERR_IO);
+            *out_stop = 1;
+        }
+    }
+    atomic_fetch_sub(&host->input_readers, 1u);
+    return rc;
 }
 
 static h2_pal_result_t web_release(void *user) {
@@ -615,6 +680,8 @@ int h2_web_application_host_run(const h2_web_application_host_config_t *config,
             h2_application_host_request_stop(common);
         rc = h2_application_host_run(common, &result);
     }
+    if (rc == H2_PAL_OK)
+        rc = atomic_load(&host->input_error);
     printf("H2_WEB_APP name=%s owner_bytes=%zu host=pal-application\n",
            host->config->name, host->allocation_bytes);
     char line[224];

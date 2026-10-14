@@ -33,6 +33,8 @@ flowchart TD
 5. 公共流程成功 join App，deactivate 并 drain 外部 callback，然后调用 `h2_runtime_destroy(&runtime)`。Runtime 指针仍非 NULL 时保留依赖图；指针为 NULL 的 latched worker fault 仍报告失败，但允许继续安全释放。
 6. 产品 release_runtime 后，调用线程成功 join control task，最后释放平台资源。Web 在 UI 上撤下 singleton 并 drain 同步 UI callback 后，才释放公共 Host descriptor。
 
+Web 先启动 Runtime input consumer，再绑定 DOM producer。shell 的 physical sources 与待投递 edge 队列分离：TIMEOUT/BUSY/WOULD_BLOCK/FULL 表示该 edge 未接纳，最多 256 个待投递 edge 按全局 FIFO 重试，release 和后续 press 不互相越过。UI 每批最多处理 32 个 edge，以 timer 让出浏览器事件循环；Runtime 仍在接纳时赋予 timestamp。blur/隐藏/解绑将最后的 release 入队，解绑立即关闭 DOM admission，并返回 Promise 等待队列排空和 retry timer 取消，公共 control task 成功等待后才能销毁 Runtime。拒收会触发 pump Worker 上的 input health 检查，永久故障的 consumer 用 CLOSED 关闭 UI 重试并请求停止；健康检查不能在 UI 上取得阻塞 PAL mutex，其 Runtime borrow 也必须在销毁前排空。终止错误或 outbox 溢出关闭 admission、取消重试并请求协作停止，Host 最终报告 FAIL；retained Host 的 UI 注入返回 CLOSED，不能作为 BUSY 永久重试。旧 `libs/app_host` 保持原实现。
+
 App 普通错误与清理失败是不同结果。结果的 application/cleanup 保存实际错误，retained 表示无法证明释放安全。任何 uncertain join、输入解绑、Runtime destroy 或 provider release 失败都禁止报告成功；retained Host 不提供自动恢复或重新运行。可以在 App 内重试 contract 明确允许的 bridge close；最终仍失败时调用 retain，保留 persistent owner 和全部依赖。重复 run 也保留原 retention 证据。
 
 协作停止没有强制取消或退出 deadline；不响应停止的 App 可以继续占用资源，同时平台事件循环仍推进。无法 join 的 task、失败的 Lua display transport、打开的 filesystem handle 都不能靠取消外层 entry 证明安全。allocator 必须独立于 provider release，并覆盖 Host destroy；上下文不能使用在 retained 返回后失效的栈对象。
@@ -125,6 +127,7 @@ ESP/BK 直接接收 `h2_pal_application_host_api_t`，使用与 Web/Desktop 相�
 - `projects/example/libs/web/demo_board`：使用新 board helper，保留旧 board descriptor identity。
 - 新 `web/application_host/lua/tests/lifecycle`：实际生成入口的慢 Display Stop、ordinary error、transport/display/App join failure、EXIT 和 filesystem BUSY。
 - 新 `web/application_host/lua/tests/progress`：持续渲染与 timer warmup 后，20 次按下/释放均须由 Lua 确认；每次释放后须继续输出至少三次周期进度，覆盖 retained 相同帧与最终 Stop 清理。
+- 新 `web/application_host/tests/input_backpressure`：真实 16 项 Runtime raw-edge queue 饱和、72 次 30 ms 正反向按键与图像复原、TIMEOUT/BUSY 拒收、release 保序、pointer/key 合并与 blur、异步解绑排空、部分 bind 回滚、永久故障 consumer、溢出/终止错误和 retained CLOSED；清理完成后不再有 native 输入调用。
 - 新 `web/application_host/tests/gizclaw_apps`：同一 origin 的安装、卸载、刷新、无效包/hash、并发 BUSY、Stop 中断安装、独立用户 KV 与失败 close 重试。
 - 旧 `libs/app_host` 和 `libs/lua/web` 的兼容测试继续使用原实现；mobile、现有 Desktop/ESP/BK 产品 entry 不迁移。
 

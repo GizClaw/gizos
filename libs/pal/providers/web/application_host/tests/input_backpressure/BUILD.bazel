@@ -1,0 +1,61 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//libs/pal/providers/web/application_host:web_app.bzl", "h2_web_app")
+load("//libs/pal/providers/web/application_host:web_board.bzl", "h2_web_board")
+load("//tools/bazel:web_archive.bzl", "web_archive_browser_test")
+load(":driver.bzl", "INPUT_FLOW")
+
+cc_library(
+    name = "entry_source",
+    textual_hdrs = ["//libs/pal/providers/web/application_host:src/h2_web_application_host.c"],
+)
+
+h2_web_board(
+    name = "board",
+    buttons = {"forward": "]", "reverse": "["},
+    display_height = 64,
+    display_width = 64,
+    skins = {"test": "layout.html"},
+    default_skin = "test",
+)
+
+h2_web_app(
+    name = "input",
+    srcs = ["main.c"],
+    app_name = "input-backpressure",
+    board = ":board",
+    evals = [["INPUT_READY", INPUT_FLOW]],
+    fails = ["INPUT_FLOW FAIL"],
+    passes = ["INPUT_TEST mode=0 PASS", "INPUT_FLOW PASS", "INPUT_LATE_CALLBACK PASS"],
+    deps = [":entry_source"],
+)
+
+[web_archive_browser_test(
+    name = name,
+    archive = ":input",
+    evals = [["INPUT_READY", INPUT_FLOW]],
+    query = "mode=%d" % mode,
+    passes = ["INPUT_TEST mode=%d PASS" % mode, "INPUT_FLOW PASS", "INPUT_LATE_CALLBACK PASS"] + {
+        3: ["H2_WEB_APP name=input-backpressure result=FAIL rc=-11 fs=0 destroy=0"],
+        4: ["H2_WEB_APP name=input-backpressure result=FAIL rc=-4 fs=0 destroy=0"],
+        5: ["H2_WEB_APP name=input-backpressure result=FAIL rc=-12 retained=1"],
+        8: ["H2_WEB_APP name=input-backpressure result=FAIL rc=-4 fs=0 destroy=0"],
+    }.get(mode, []),
+    fails = ["INPUT_FLOW FAIL"],
+) for name, mode in [
+    ("transient_release_test", 1),
+    ("unbind_drain_test", 2),
+    ("overflow_test", 3),
+    ("terminal_error_test", 4),
+    ("retained_close_test", 5),
+    ("merged_blur_test", 6),
+    ("faulted_consumer_test", 8),
+    ("health_reader_drain_test", 9),
+]]
+
+web_archive_browser_test(
+    name = "partial_bind_rollback_test",
+    archive = ":input",
+    query = "mode=7",
+    passes = ["INPUT_TEST mode=7 PASS", "INPUT_LATE_CALLBACK PASS"],
+    fails = ["INPUT_FLOW FAIL"],
+)
