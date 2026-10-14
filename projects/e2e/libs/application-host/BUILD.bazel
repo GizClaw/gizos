@@ -1,5 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
-load("@rules_python//python:defs.bzl", "py_test")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
 
@@ -97,4 +97,21 @@ py_test(
         "@platforms//os:linux": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+)
+
+py_library(
+    name = "native_entry_provenance",
+    srcs = ["native_entry_provenance.py"],
+    data = ["native_entry_provenance.json"],
+    imports = ["."],
+)
+
+py_test(
+    name = "native_entry_provenance_test",
+    srcs = ["tests/test_native_entry_provenance.py"],
+    data = ["//projects/e2e/targets/h2loader_tar_zlib/pal-audio/amoled:main/main.c"],
+    legacy_create_init = 0,
+    main = "tests/test_native_entry_provenance.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":native_entry_provenance"],
 )

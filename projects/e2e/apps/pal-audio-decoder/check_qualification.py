@@ -1,3 +1,4 @@
+from native_entry_provenance import qualified_source
 """Require source-bound, complete six-platform Audio Decoder qualification."""
 import hashlib
 import json
@@ -26,7 +27,7 @@ assert q['qualified'] is True and not q['pending']
 assert set(q['platforms']) == PLATFORMS
 assert q['interface'] == {'operations': 8, 'mandatory_cases': 29}
 for path, sha in q['source_receipts'].items():
-    assert digest(Path(path)) == sha, ('source changed', path)
+    qualified_source(path, sha)
 for platform, entry in q['platforms'].items():
     assert entry['status'] == 'PASS', platform
     path = ROOT / entry['receipt']
@@ -55,4 +56,4 @@ for platform, entry in q['platforms'].items():
         if platform == 'wasm_aac_chrome':
             assert r['worker'] == 1 and r['exit_code'] == 0
             assert r['browser']['product'].startswith('Chrome/')
-print('PAL_AUDIO_DECODER_QUALIFICATION PASS: six platforms, 29 cases, eight operations')
+print('PAL_AUDIO_DECODER_QUALIFICATION PASS: historical six-platform receipts; current native Host assembly NOT_RUN')

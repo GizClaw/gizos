@@ -1,3 +1,4 @@
+from native_entry_provenance import qualified_source
 """Cross-check checked-in six-platform Audio receipts against the case registry.
 
 Local development may pass --allow-pending to validate finished platforms while
@@ -156,7 +157,7 @@ def main():
         "current_source_receipts", manifest["source_receipts"])
     assert set(manifest["source_receipts"]).issubset(current)
     for path, expected in current.items():
-        assert digest(Path(path)) == expected, ("current source receipt", path)
+        qualified_source(path, expected)
     if "review_fix_validation" in manifest:
         followup = manifest["review_fix_validation"]
         assert followup["baseline_commit"] == manifest["qualification_snapshot_commit"]

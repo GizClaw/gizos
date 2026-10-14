@@ -1,3 +1,4 @@
+from native_entry_provenance import qualified_source
 """Reject incomplete, stale or driver-only six-platform Display qualification."""
 from pathlib import Path
 import hashlib
@@ -377,7 +378,7 @@ def runner_refactor(historical):
         assert historical[path] == expected and not Path(path).exists(), path
     for path, expected in shared_catalog_sources({**previous, **replacements}).items():
         if path not in REMOVED_RUNNERS:
-            assert hashlib.sha256(Path(path).read_bytes()).hexdigest() == expected, path
+            qualified_source(path, expected)
     # These exact Python sources and consumer declarations executed the stored runs.
     executed = followup["executed_runner_sha256"]
     assert set(executed) == {

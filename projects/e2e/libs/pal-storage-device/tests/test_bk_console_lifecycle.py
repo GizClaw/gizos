@@ -31,7 +31,7 @@ def compile_run(source, includes=(), args=()):
 class BKConsoleLifecycle(unittest.TestCase):
     def test_run_control_ownership_and_outcomes(self):
         launcher = (ROOT / "projects/e2e/targets/h2loader_tar_zlib/pal-storage/bk7258_v3_202405/ap/ap_main.c").read_text()
-        run = section(launcher, "static void run(", "static void entry(")
+        run = section(launcher, "static h2_pal_result_t run(", "static h2_pal_result_t configure(")
         fixture = r'''
 #include <assert.h>
 #include <setjmp.h>
@@ -43,6 +43,8 @@ class BKConsoleLifecycle(unittest.TestCase):
 #define H2_LOADER_CAPABILITY_UART 1
 #define H2_STORAGE_VERSION "console-test"
 typedef struct { int unused; } h2_runtime_t;
+typedef struct { int unused; } h2_application_host_t;
+typedef int h2_pal_result_t;
 static h2_runtime_t actual;
 static h2_runtime_t *runtime=&actual;
 static volatile int finished;
@@ -72,6 +74,8 @@ static int h2_bk_h2loader_start_app_iostreamikcp_with_capabilities(h2_runtime_t 
 static int h2_bk_h2loader_confirm_current_app(h2_runtime_t *r) {
     assert(r==runtime && active && starts==1 && suite_rc==0);confirms++;return confirm_rc;
 }
+static int h2_application_host_should_stop(void *host) {(void)host;return 0;}
+static int h2_pal_e2e_application_host_finish(h2_application_host_t *host,h2_runtime_t *r,int rc){(void)host;(void)r;return rc;}
 /* RUN */
 int main(int argc,char **argv){
     assert(argc==2);int scenario=atoi(argv[1]);
@@ -79,7 +83,7 @@ int main(int argc,char **argv){
     if(scenario==2)stop_rc=-4;
     if(scenario==3)restart_rc=-4;
     if(scenario==4)confirm_rc=-4;
-    if(!setjmp(done))run(NULL);
+    if(!setjmp(done))run(NULL, &actual, NULL);
     assert(finished && settle==1 && stops==1);
     if(scenario==2){assert(!runs && !replays && !starts && !confirms);}
     else if(scenario==3){assert(runs==1 && replays==1 && starts==1 && !confirms);}
