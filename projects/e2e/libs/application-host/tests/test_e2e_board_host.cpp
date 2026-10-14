@@ -21,10 +21,31 @@ struct Fixture {
   std::atomic<int> configured{0}, validated{0}, entry{0}, product_released{0};
   int prepared = 0, released = 0, starts = 0, service_starts = 0,
       service_stops = 0;
+  int before_prepared = 0;
+  int policy_installed = 0, sdk_initialized = 0, native_starts = 0,
+      native_allocations = 0;
+  h2_pal_mem_api_t native_allocator{};
+  void (*native_entry)(void *) = nullptr;
+  void *native_user = nullptr;
   std::thread::id owner;
 };
 static Fixture f;
 static bool mode(const char *m) { return !std::strcmp(f.mode, m); }
+static void *native_alloc(void *, size_t size) {
+  if (mode("native-alloc-fault"))
+    return nullptr;
+  void *memory = h2_pal_mem_alloc(f.runtime.mem, size);
+  if (memory)
+    ++f.native_allocations;
+  return memory;
+}
+static void native_free(void *, void *memory) {
+  if (memory)
+    --f.native_allocations;
+  h2_pal_mem_free(f.runtime.mem, memory);
+}
+static const h2_pal_mem_vtable_t native_memory = {
+    .alloc = native_alloc, .free = native_free};
 static int start(void *, const h2_pal_task_options_t *options,
                  h2_pal_task_entry_t entry, void *user, h2_pal_task_t **out) {
   if (!std::strcmp(options->name, "$application/control") &&
@@ -89,6 +110,7 @@ int h2_bk_application_host_init(h2_bk_application_host_t *p,
 }
 int h2_esp_board_runtime_config(h2_runtime_config_t *out) {
   assert(f.owner == std::this_thread::get_id());
+  if (mode("native-start")) assert(f.before_prepared == 1);
   ++f.prepared;
   *out = f.runtime;
   out->task = &f.task;
@@ -108,10 +130,43 @@ int h2_bk7258_board_runtime_deinit(void) {
   return h2_esp_board_runtime_deinit();
 }
 const h2_pal_mem_api_t *h2_esp_platform_default_allocator(void) {
-  return f.runtime.mem;
+  return &f.native_allocator;
 }
 const h2_pal_mem_api_t *h2_bk_platform_default_allocator(void) {
-  return f.runtime.mem;
+  return &f.native_allocator;
+}
+int h2_esp_target_task_policy_install(void) {
+  ++f.policy_installed;
+  assert(!f.sdk_initialized && !f.native_starts && !f.prepared);
+  return mode("native-policy-fault") ? H2_PAL_ERR_INVALID_STATE : H2_PAL_OK;
+}
+int h2_bk_target_task_policy_install(void) {
+  return h2_esp_target_task_policy_install();
+}
+void bk_init(void) {
+  assert(f.policy_installed == 1 && !f.native_starts && !f.prepared);
+  ++f.sdk_initialized;
+}
+int h2_bk7258_board_start_entry_task(
+    const char *name, h2_bk7258_board_entry_task_fn entry, void *user) {
+  assert(f.sdk_initialized == 1 && !std::strcmp(name, "fixture"));
+  ++f.native_starts;
+  if (mode("native-start-fault"))
+    return H2_PAL_ERR_TASK;
+  f.native_entry = entry;
+  f.native_user = user;
+  return H2_PAL_OK;
+}
+int h2_esp_board_start_entry_task(
+    const char *name, h2_esp_board_entry_task_fn entry, void *user) {
+  assert(f.policy_installed == 1 && !f.sdk_initialized &&
+         !std::strcmp(name, "fixture"));
+  ++f.native_starts;
+  if (mode("native-start-fault"))
+    return H2_PAL_ERR_TASK;
+  f.native_entry = entry;
+  f.native_user = user;
+  return H2_PAL_OK;
 }
 int h2_esp_h2loader_app_commands_prepare_serial_with_config(
     const h2_runtime_config_t *config,
@@ -136,13 +191,23 @@ int h2_bk_h2loader_app_serial_is_started(void) { return f.service != nullptr; }
 }
 static int quarantined_sleep(void *, uint32_t) {
   assert(!f.entry_live);
+  if (mode("native-policy-fault")) {
+    assert(f.policy_installed == 1 && !f.prepared && !f.sdk_initialized &&
+           !f.native_allocations);
+    std::exit(0);
+  }
+  if (mode("native-before-fault")) {
+    assert(f.before_prepared == 1 && !f.prepared && !f.configured &&
+           !f.released && !f.product_released && !f.native_allocations);
+    std::exit(0);
+  }
   if (mode("stop-fault")) {
     assert(f.live && f.released == 0 && f.product_released == 0);
     uint64_t alive_clock = 0;
     assert(f.borrowed && h2_pal_time_get_monotonic_ms(
                              f.borrowed->time, &alive_clock) == H2_PAL_OK);
   } else {
-    if (mode("suite-error")) {
+    if (mode("suite-error") || mode("entry")) {
       assert(!f.live && f.released == 0 && f.product_released == 0);
       uint64_t clock = 0;
       assert(f.borrowed && h2_pal_time_get_monotonic_ms(f.borrowed->time,
@@ -183,6 +248,12 @@ static int configure(void *user, h2_runtime_config_t *config) {
 #endif
   return mode("configure") ? H2_PAL_ERR_IO : H2_PAL_OK;
 }
+static int before_prepare(void *user) {
+  assert(user == &f && f.owner == std::this_thread::get_id());
+  assert(!f.prepared && !f.configured && !f.validated && !f.service);
+  ++f.before_prepared;
+  return mode("native-before-fault") ? H2_PAL_ERR_IO : H2_PAL_OK;
+}
 static int validate(void *user, h2_runtime_t *runtime) {
   assert(user == &f && f.owner != std::this_thread::get_id());
   ++f.validated;
@@ -220,6 +291,7 @@ int main(int argc, char **argv) {
   f.mode = argv[1];
   f.owner = std::this_thread::get_id();
   f.runtime = h2::desktop::runtime_config(nullptr);
+  f.native_allocator.vtable = &native_memory;
   f.alternate = *f.runtime.mem;
   f.task = {nullptr, &tasks};
   h2_application_host_config_t config{};
@@ -230,14 +302,52 @@ int main(int argc, char **argv) {
   config.release_runtime = product_release;
   config.run_ms = 25;
   h2_application_host_result_t result{};
-  int rc = h2_pal_e2e_application_host_run(
-      mode("no-service") ? nullptr : "fixture", H2_LOADER_CAPABILITY_UART,
-      &config, &result);
-  assert(!mode("stop-fault") && !mode("release-fault") && !mode("suite-error"));
-  bool pass = mode("normal") || mode("custom") || mode("no-service");
+  int rc;
+  if (!std::strncmp(f.mode, "native-", 7)) {
+    char name[] = "fixture";
+    config.before_prepare = before_prepare;
+    rc = h2_pal_e2e_application_host_start(
+        name, H2_LOADER_CAPABILITY_UART, &config);
+    assert(f.policy_installed == 1);
+    if (mode("native-policy-fault")) {
+      assert(rc == H2_PAL_ERR_INVALID_STATE && !f.sdk_initialized &&
+             !f.prepared && !f.native_allocations);
+      return 0;
+    }
+#if !defined(H2_PAL_E2E_ESP)
+    assert(f.sdk_initialized == 1);
+#else
+    assert(!f.sdk_initialized);
+#endif
+    if (mode("native-start-fault") || mode("native-alloc-fault")) {
+      assert(rc == (mode("native-start-fault") ? H2_PAL_ERR_TASK
+                                               : H2_PAL_ERR_NO_MEMORY));
+      assert(!f.prepared && !f.native_allocations);
+      return 0;
+    }
+    assert(rc == H2_PAL_OK && f.native_entry && f.native_allocations == 1);
+    // The asynchronous BSP owner must not borrow the main() stack descriptor.
+    name[0] = 'X';
+    config.entry = nullptr;
+    config.user = nullptr;
+    std::thread owner([] {
+      f.owner = std::this_thread::get_id();
+      f.native_entry(f.native_user);
+    });
+    owner.join();
+  } else {
+    rc = h2_pal_e2e_application_host_run(
+        mode("no-service") ? nullptr : "fixture", H2_LOADER_CAPABILITY_UART,
+        &config, &result);
+  }
+  assert(!mode("stop-fault") && !mode("release-fault") && !mode("suite-error") &&
+         !mode("entry"));
+  bool pass = mode("normal") || mode("custom") || mode("no-service") ||
+              mode("native-start");
   assert((rc == H2_PAL_OK) == pass && result.retained == 0);
   assert(f.prepared == 1 && f.released == 1 && !f.live && !f.entry_live);
   assert(f.service_starts == f.service_stops);
+  assert(f.native_allocations == 0);
   assert(f.entry == (pass || mode("entry") ? 1 : 0));
   assert(f.product_released ==
          (mode("prepare") || mode("control-start") ? 0 : 1));

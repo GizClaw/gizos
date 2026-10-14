@@ -27,12 +27,13 @@ cc_library(
     copts = H2_WARNING_COPTS,
     cxxopts = H2_CXX17_OPTS,
     deps = [
+        "//libs/atomic/providers/c11",
         "//libs/pal",
         "//libs/pal/providers/desktop/app_support",
+        "//libs/pal/providers/desktop/application_host",
         "//libs/pal/providers/desktop/pal_core",
         "//libs/pal/providers/ffmpeg",
         "//libs/pal/providers/portaudio",
-        "//libs/atomic/providers/c11",
         "//libs/runtime",
         "//projects/example/apps/mp4-player/app:mp4_player",
     ],
@@ -51,5 +52,6 @@ cc_binary(
         ":layout_config",
         ":player",
         "//libs/pal/providers/desktop/app_support:bundle_rpath",
+        "//libs/pal/providers/desktop/application_host",
     ],
 )

@@ -2,15 +2,14 @@
 
 #include "h2_ffmpeg.h"
 
-#include "h2_desktop_app_support.h"
+#include "h2_desktop_application_host.hpp"
 #include "h2_smoke_mp4_player.h"
 
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
-#include <fstream>
-#include <iterator>
 #include <vector>
+#include <memory>
 
 namespace {
 
@@ -32,66 +31,43 @@ h2_pal_result_t read_at(void *user, std::uint64_t offset, void *buffer,
   return H2_PAL_OK;
 }
 
-int should_stop(void *user) {
-  return h2::desktop::poll_events(
-      static_cast<h2::desktop::OwnedDisplay *>(user));
-}
-
 } // namespace
 
-int h2_desktop_mp4_player_main(const h2::desktop::Layout &layout,
-                               const char *media_resource) {
-  h2::desktop::OwnedAudio audio;
-  h2::desktop::OwnedDisplay display;
-  if (h2::desktop::configure_layout(layout) != H2_PAL_OK ||
-      h2::desktop::open_audio(false, &audio) != H2_AUDIO_OK ||
-      h2::desktop::open_display(layout, &display) != H2_DISPLAY_OK) {
-    std::fprintf(stderr, "desktop %s: platform configuration failed\n",
-                 layout.app_name);
-    return 1;
-  }
-  const std::string media_path = h2::desktop::resource_path(media_resource);
-  std::ifstream stream(media_path, std::ios::binary);
-  std::vector<std::uint8_t> media{
-      std::istreambuf_iterator<char>(stream),
-      std::istreambuf_iterator<char>()};
-  if (!stream.eof() || media.empty()) {
-    std::fprintf(stderr, "desktop %s: cannot load media %s\n",
-                 layout.app_name, media_path.c_str());
-    return 1;
-  }
-
-  h2_runtime_config_t config = h2::desktop::runtime_config(nullptr);
-  config.display = display.display();
-  config.audio = audio.api();
-  config.audio_decoder = h2_ffmpeg_audio_decoder_api();
-  h2_runtime_t *runtime = nullptr;
-  const int runtime_result = h2_runtime_init(&config, &runtime);
-  if (runtime_result != H2_PAL_OK || runtime == nullptr) {
-    std::fprintf(stderr, "desktop %s: runtime init failed (%d)\n",
-                 layout.app_name, runtime_result);
-    return 1;
-  }
+static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *runtime, void *user) {
+  auto *media = static_cast<std::vector<std::uint8_t> *>(user);
   const h2_smoke_mp4_player_config_t player_config = {
-      {&media, media.size(), read_at},
+      {media, media->size(), read_at},
       nullptr,
       1000u,
       0u,
       1,
       H2_SMOKE_MP4_PLAYER_DISPLAY_EXACT,
       1,
-      should_stop,
-      &display,
+      h2_desktop_application_host_should_stop,
+      host,
       nullptr,
       nullptr,
       false,
   };
   const int app_result =
       h2_smoke_mp4_player_run(runtime, &player_config);
-  if (app_result != H2_PAL_OK) {
-    std::fprintf(stderr, "desktop %s: app failed (%d)\n",
-                 layout.app_name, app_result);
+  return app_result;
+}
+int h2_desktop_mp4_player_main(const h2::desktop::Layout &layout, const char *media_resource) {
+  const std::string media_path = h2::desktop::resource_path(media_resource);
+  auto media = std::make_unique<std::vector<std::uint8_t>>();
+  if (!h2::desktop::load_resource(media_resource, media.get()) || media->empty()) {
+    std::fprintf(stderr, "desktop %s: cannot load media %s\n",
+                 layout.app_name, media_path.c_str());
+    return 1;
   }
-  h2_runtime_deinit(runtime);
-  return app_result == H2_PAL_OK ? 0 : 1;
+
+  auto platform = h2::desktop::application_host_config(layout, H2_DESKTOP_HOST_AUDIO);
+  h2_application_host_config_t app{};
+  app.entry = run;
+  app.user = media.get();
+  h2_application_host_result_t result{};
+  int rc = h2_desktop_application_host_run(&platform, &app, &result);
+  if (result.retained) (void)media.release();
+  return rc == H2_PAL_OK ? 0 : 1;
 }

@@ -1,4 +1,4 @@
-#include "h2_desktop_platform.h"
+#include "h2_desktop_application_host.h"
 #include "h2_pal_audio_e2e.h"
 #include "h2_portaudio.h"
 #include "h2_atomic.h"
@@ -41,39 +41,14 @@ static void report(void *user, const h2_pal_audio_e2e_case_result_t *item) {
          item->detail, item->line);
   fflush(stdout);
 }
-int main(void) {
-  const h2_portaudio_config_t provider_config = {
-      .allocator = h2_desktop_platform_default_allocator(),
-      .queue = h2_desktop_platform_queue_api(),
-      .sync = h2_desktop_platform_sync_api(),
-      .require_real_devices = 1};
-  h2_portaudio_t *provider = NULL;
-  const int create_rc = h2_portaudio_create(&provider_config, &provider);
-  if (create_rc != H2_AUDIO_OK || provider == NULL) {
-    printf("H2_PAL_AUDIO_SETUP_FAIL stage=provider rc=%d\n", create_rc);
-    return 1;
-  }
-  audio_witness_t witness = {0};
-  if (h2_atomic_init(&witness.mic_frames, 0u) != H2_ATOMIC_OK ||
-      h2_atomic_init(&witness.speaker_frames, 0u) != H2_ATOMIC_OK ||
-      h2_atomic_init(&witness.mic_peak, 0u) != H2_ATOMIC_OK ||
-      h2_atomic_init(&witness.speaker_peak, 0u) != H2_ATOMIC_OK) {
-    h2_portaudio_destroy(provider);
-    return 1;
-  }
-  const h2_portaudio_capture_hooks_t hooks = {
-      .user = &witness, .on_mic = on_mic, .on_speaker = on_speaker};
-  const int hook_rc = h2_portaudio_set_capture_hooks(provider, &hooks);
-  h2_pal_audio_e2e_result_t result;
+static h2_pal_audio_e2e_result_t result;
+static audio_witness_t witness;
+static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *runtime, void *user) {
+  (void)host; (void)user;
   const h2_pal_audio_e2e_config_t config = {
-      .audio = h2_portaudio_audio(provider),
-      .time = h2_desktop_platform_time_api(),
-      .stability_ms = 30000u,
-      .report = report};
-  const int rc = hook_rc == H2_AUDIO_OK
-                     ? h2_pal_audio_e2e_run(&config, &result)
-                     : H2_AUDIO_ERR_INVALID_STATE;
-  if (hook_rc == H2_AUDIO_OK) {
+      .audio = runtime->audio, .time = runtime->time, .stability_ms = 30000u, .report = report};
+  int rc = h2_pal_audio_e2e_run(&config, &result);
+  {
     printf("H2_PAL_AUDIO_SUMMARY {\"passed\":%u,\"failed\":%u,\"blocked\":%u,"
            "\"mic_frames\":%u,\"mic_peak\":%u,\"mic_energy\":%llu,"
            "\"speaker_frames\":%u,\"output_peak\":%u,"
@@ -90,8 +65,22 @@ int main(void) {
            h2_atomic_load(&witness.speaker_peak),
            (unsigned long long)result.stability_elapsed_ms);
   }
-  (void)h2_portaudio_set_capture_hooks(provider, NULL);
-  h2_portaudio_destroy(provider);
+  return rc;
+}
+int main(void) {
+  if (h2_atomic_init(&witness.mic_frames, 0u) != H2_ATOMIC_OK ||
+      h2_atomic_init(&witness.speaker_frames, 0u) != H2_ATOMIC_OK ||
+      h2_atomic_init(&witness.mic_peak, 0u) != H2_ATOMIC_OK ||
+      h2_atomic_init(&witness.speaker_peak, 0u) != H2_ATOMIC_OK) {
+    return 1;
+  }
+  const h2_desktop_application_host_config_t platform = {
+      .services = H2_DESKTOP_HOST_AUDIO, .require_real_audio = 1,
+      .audio_capture = {.user = &witness, .on_mic = on_mic, .on_speaker = on_speaker}};
+  const h2_application_host_config_t app = {.entry = run};
+  h2_application_host_result_t lifecycle = {0};
+  int rc = h2_desktop_application_host_run(&platform, &app, &lifecycle);
+  if (lifecycle.retained) return 1;
   const int witnessed = h2_atomic_load(&witness.mic_frames) > 0u &&
                         h2_atomic_load(&witness.speaker_frames) > 0u &&
                         h2_atomic_load(&witness.speaker_peak) > 0u;
@@ -99,6 +88,6 @@ int main(void) {
   h2_atomic_destroy(&witness.speaker_frames);
   h2_atomic_destroy(&witness.mic_peak);
   h2_atomic_destroy(&witness.speaker_peak);
-  return rc == H2_AUDIO_OK && witnessed &&
+  return rc == H2_AUDIO_OK && lifecycle.cleanup == H2_PAL_OK && witnessed &&
                  result.stability_elapsed_ms >= 30000u ? 0 : 1;
 }

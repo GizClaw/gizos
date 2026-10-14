@@ -1,0 +1,9 @@
+load("//libs/pal/providers/web/application_host:web_app.bzl", "h2_web_app")
+
+h2_web_app(
+    name = "app_hooks",
+    srcs = ["main.c"],
+    app_name = "app-hooks",
+    passes = ["WEB_APP_HOOKS PASS"],
+    deps = [],
+)

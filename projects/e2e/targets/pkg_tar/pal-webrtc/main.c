@@ -1,6 +1,6 @@
 #include "h2_pal_webrtc_e2e.h"
 #include "h2_web_main_thread.h"
-#include "h2_web_platform.h"
+#include "h2_web_application_host.h"
 #include <emscripten.h>
 #include <emscripten/threading.h>
 #include <stdio.h>
@@ -70,7 +70,6 @@ static int close_remote(void *user) {
   (void)user;
   return h2_web_main_call(close_js, NULL).i32;
 }
-static void pump(void *user) { (void)h2_web_platform_pump(user, 16u, NULL); }
 static void report(void *user, const h2_pal_webrtc_e2e_case_result_t *r) {
   (void)user;
   printf("H2_PAL_WEBRTC_CASE "
@@ -83,31 +82,29 @@ static void report(void *user, const h2_pal_webrtc_e2e_case_result_t *r) {
          r->detail, r->line, (unsigned long long)r->elapsed_ms,
          r->observed_error, r->authentication_evidence);
 }
+static h2_pal_webrtc_e2e_config_t tests;
+static h2_pal_webrtc_e2e_result_t result;
+static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *runtime, void *user) {
+  (void)user;
+  tests.runtime = runtime;
+  int rc = h2_pal_webrtc_e2e_run(&tests, &result);
+  if (result.retained_allocations) h2_application_host_retain(host, NULL, H2_PAL_ERR_BUSY);
+  return rc;
+}
 int main(int argc, char **argv) {
-  if (argc != 2 || emscripten_is_main_runtime_thread())
-    return 2;
-  const h2_web_platform_config_t pc = {.display_width = 1, .display_height = 1};
-  h2_web_platform_t *platform = h2_web_platform_create(&pc);
-  if (!platform)
-    return 2;
-  h2_runtime_t runtime = {.webrtc = h2_web_platform_webrtc_api(platform),
-                          .mem = h2_web_platform_mem_api(),
-                          .time = h2_web_platform_time_api(platform)};
-  const h2_pal_webrtc_e2e_config_t config = {.runtime = &runtime,
-                                             .stun_url = argv[1],
-                                             .exchange_offer = exchange,
-                                             .authentication_witness = authentication_witness,
-                                             .close_remote = close_remote,
-                                             .pump = pump,
-                                             .pump_user = platform,
-                                             .report = report};
-  h2_pal_webrtc_e2e_result_t result;
-  int rc = h2_pal_webrtc_e2e_run(&config, &result);
-  int cleanup = h2_web_platform_destroy(platform);
+  if (argc != 2 || emscripten_is_main_runtime_thread()) return 2;
+  tests = (h2_pal_webrtc_e2e_config_t){.stun_url = argv[1], .exchange_offer = exchange,
+      .authentication_witness = authentication_witness, .close_remote = close_remote, .report = report};
+  const h2_web_application_host_config_t config = {
+      .name = "pal-webrtc", .display_width = 1, .display_height = 1};
+  const h2_application_host_config_t app = {.entry = run};
+  h2_application_host_result_t lifecycle = {0};
+  int rc = h2_web_application_host_run_app(&config, &app, &lifecycle);
+  int cleanup = lifecycle.cleanup;
   printf("H2_PAL_WEBRTC_SUMMARY "
          "{\"passed\":%u,\"failed\":%u,\"blocked\":%u,\"retained_allocations\":"
          "%zu,\"cleanup\":%d}\n",
          result.passed, result.failed, result.blocked,
          result.retained_allocations, cleanup);
-  return rc == H2_PAL_OK && cleanup == H2_PAL_OK ? 0 : 1;
+  return rc == H2_PAL_OK && cleanup == H2_PAL_OK && !lifecycle.retained ? 0 : 1;
 }

@@ -1,7 +1,6 @@
 #include "h2_pal_wifi_e2e.h"
-#include "h2_smoke_host_runtime.h"
 #include "h2_web_main_thread.h"
-#include "h2_web_platform.h"
+#include "h2_web_application_host.h"
 #include <emscripten/threading.h>
 #include <stdio.h>
 
@@ -36,25 +35,13 @@ static int transition(h2_runtime_t *rt, h2_web_platform_t *platform, int online)
     } while (now - start < 10000);
     return H2_PAL_ERR_TIMEOUT;
 }
-int main(void) {
-    if (emscripten_is_main_runtime_thread())
-        return 2;
-    const h2_web_platform_config_t pc = {.display_width = 1, .display_height = 1};
-    h2_web_platform_t *platform = h2_web_platform_create(&pc);
-    if (!platform)
-        return 3;
-    h2_runtime_config_t cfg = h2_smoke_host_runtime_config(
-        "pal-wifi", "web", "wasm32", h2_web_platform_mem_api(), h2_web_platform_time_api(platform),
-        h2_web_platform_queue_api(platform), h2_pal_unsupported_display_api());
-    cfg.netif = h2_web_platform_netif_api(platform);
-    cfg.system_event = h2_web_platform_system_event_api(platform);
-    h2_runtime_t *rt = NULL;
-    unsigned count = 0;
-    int rc = h2_runtime_init(&cfg, &rt);
-    if (!rc)
-        rc = h2_wifi_host_contract(rt->wifi_sta, rt->wifi_ap, rt->wifi_settings, rt->netif,
+static unsigned count;
+static int offline, online;
+static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *rt, void *user) {
+    (void)user;
+    h2_web_platform_t *platform = h2_web_application_host_platform(host);
+    int rc = h2_wifi_host_contract(rt->wifi_sta, rt->wifi_ap, rt->wifi_settings, rt->netif,
                                    H2_PAL_NETIF_KIND_HOST, &count);
-    int offline = 0, online = 0;
     if (!rc) {
         puts("H2_WIFI_WAIT_OFFLINE");
         fflush(stdout);
@@ -67,9 +54,15 @@ int main(void) {
         rc = transition(rt, platform, 1);
         online = !rc;
     }
-    if (rt)
-        h2_runtime_deinit(rt);
-    int teardown = h2_web_platform_destroy(platform);
+    return rc;
+}
+int main(void) {
+    const h2_web_application_host_config_t config = {
+        .name = "pal-wifi", .display_width = 1, .display_height = 1};
+    const h2_application_host_config_t app = {.entry = run};
+    h2_application_host_result_t lifecycle = {0};
+    int rc = h2_web_application_host_run_app(&config, &app, &lifecycle);
+    int teardown = lifecycle.cleanup;
     printf(
         "H2_WIFI_HOST_REPORT "
         "{\"platform\":\"wasm\",\"contract\":1,\"operations\":21,\"capability_contract_pass\":%d,"
@@ -78,5 +71,5 @@ int main(void) {
         "\"netif\":\"HOST\",\"netif_count\":%u,\"worker\":1,\"offline_event\":%d,\"online_event\":%"
         "d,\"rc\":%d,\"teardown\":%d}\n",
         !rc, count, offline, online, rc, teardown);
-    return rc || teardown ? 1 : 0;
+    return rc || teardown || lifecycle.retained ? 1 : 0;
 }

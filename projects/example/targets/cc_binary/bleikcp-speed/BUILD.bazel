@@ -16,6 +16,7 @@ cc_library(
         "//libs/pal",
         "//libs/pal:unsupported",
         "//libs/pal/providers/desktop/app_support",
+        "//libs/pal/providers/desktop/application_host",
         "//libs/pal/providers/desktop/pal_core",
         "//libs/runtime",
         "//projects/example/apps/bleikcp-speed/app:bleikcp_speed",
@@ -48,6 +49,7 @@ cc_binary(
         ":bleikcp_speed_native",
         ":client_layout_config",
         "//libs/pal/providers/desktop/app_support:bundle_rpath",
+        "//libs/pal/providers/desktop/application_host",
     ],
 )
 
@@ -77,6 +79,7 @@ cc_binary(
         ":bleikcp_speed_native",
         ":server_layout_config",
         "//libs/pal/providers/desktop/app_support:bundle_rpath",
+        "//libs/pal/providers/desktop/application_host",
     ],
 )
 

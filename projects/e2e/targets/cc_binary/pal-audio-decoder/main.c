@@ -1,10 +1,9 @@
-#include "h2_desktop_platform.h"
+#include "h2_desktop_application_host.h"
 #include "h2_ffmpeg.h"
 #if defined(H2_ADEC_AUDIOCONVERTER_PROBE)
 #include "h2_ios_platform.h"
 #endif
 #include "h2_pal_audio_decoder_e2e.h"
-#include "h2_smoke_host_runtime.h"
 #include <inttypes.h>
 #include <stdio.h>
 
@@ -15,26 +14,33 @@ static void report(void *user, const h2_pal_adec_case_result_t *item) {
            item->id, names[item->status], item->detail, item->line);
 }
 
-int main(void) {
-    h2_runtime_config_t config = h2_smoke_host_runtime_config(
-        "pal-audio-decoder", "desktop", "host", h2_desktop_platform_default_allocator(),
-        h2_desktop_platform_time_api(), h2_desktop_platform_queue_api(),
-        h2_pal_unsupported_display_api());
+static h2_pal_adec_result_t result;
+static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *runtime, void *user) {
+    (void)user;
+    const h2_pal_adec_config_t test = {
+        .decoder = runtime->audio_decoder, .mem = runtime->mem,
+        .time = runtime->time, .sync = runtime->sync, .report = report};
+    int rc = h2_pal_audio_decoder_e2e_run(&test, &result);
+    if (result.retained) h2_application_host_retain(host, NULL, H2_PAL_ERR_BUSY);
+    return rc;
+}
 #if defined(H2_ADEC_AUDIOCONVERTER_PROBE)
-    config.audio_decoder = h2_ios_platform_audio_decoder_api();
-#else
-    config.audio_decoder = h2_ffmpeg_audio_decoder_api();
+static h2_pal_result_t configure(void *user, h2_runtime_config_t *config) {
+    (void)user;
+    config->audio_decoder = h2_ios_platform_audio_decoder_api();
+    return H2_PAL_OK;
+}
 #endif
-    config.sync = h2_desktop_platform_sync_api();
-    h2_runtime_t *runtime = NULL;
-    int rc = h2_runtime_init(&config, &runtime);
-    h2_pal_adec_result_t result = {0};
-    if (!rc) {
-        const h2_pal_adec_config_t test = {
-            .decoder = runtime->audio_decoder, .mem = runtime->mem,
-            .time = runtime->time, .sync = runtime->sync, .report = report};
-        rc = h2_pal_audio_decoder_e2e_run(&test, &result);
-    }
+int main(void) {
+    const h2_desktop_application_host_config_t config = {0};
+    const h2_application_host_config_t app = {
+        .entry = run,
+#if defined(H2_ADEC_AUDIOCONVERTER_PROBE)
+        .configure = configure,
+#endif
+    };
+    h2_application_host_result_t lifecycle = {0};
+    int rc = h2_desktop_application_host_run(&config, &app, &lifecycle);
     const char *platform =
 #if defined(H2_ADEC_AUDIOCONVERTER_PROBE)
         "darwin-audioconverter-probe";
@@ -48,6 +54,5 @@ int main(void) {
            "\"frames\":%" PRIu64 ",\"pcm_bytes\":%" PRIu64 ",\"qualified\":%d,\"rc\":%d}\n",
            platform, (unsigned)H2_PAL_ADEC_CASE_COUNT, result.passed, result.failed, result.blocked,
            result.retained, result.frames, result.pcm_bytes, result.qualified, rc);
-    if (runtime && result.retained == 0u) h2_runtime_deinit(runtime);
-    return rc || !result.qualified ? 1 : 0;
+    return rc || lifecycle.retained || !result.qualified ? 1 : 0;
 }

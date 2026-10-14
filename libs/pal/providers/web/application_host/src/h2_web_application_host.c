@@ -5,6 +5,7 @@
 #include "h2/pal/h2_pal_unsupported.h"
 #include "h2_lvgl_platform.h"
 #include "h2_web_fs.h"
+#include "h2_yyjson_json.h"
 
 #include <emscripten.h>
 #include <stdio.h>
@@ -22,6 +23,8 @@ typedef struct h2_web_application_host {
     _Atomic unsigned input_readers;
     h2_web_application_host_entry_fn entry;
     void *user;
+    h2_application_host_config_t app;
+    h2_yyjson_json_t *json;
     const h2_pal_fs_api_t *fs;
     size_t allocation_bytes;
     h2_web_fs_t *owned_fs;
@@ -34,6 +37,13 @@ typedef struct h2_web_application_host {
 } h2_web_application_host_t;
 
 static _Atomic(h2_web_application_host_t *) s_host;
+/* Keep admission closed while UI publication is detached for destruction. */
+static _Atomic int s_admission_closed;
+
+/* Raw PAL Web targets can use the default canvas without a generated board.
+ * h2_web_app's generated board definition overrides this weak default. */
+__attribute__((weak)) const h2_web_application_board_t h2_web_application_board = {
+    .display_width = 240, .display_height = 240};
 
 /* Copy structural configuration and strings. Opaque callback contexts remain
  * borrowed: their owner must retain them when run returns RETAINED. */
@@ -65,7 +75,8 @@ host_create(const h2_web_application_host_config_t *config,
         return NULL;
     bytes += config->readonly_root_count * sizeof(char *);
     if (!host_string_bytes(&bytes, config->name) ||
-        !host_string_bytes(&bytes, config->persistent_root))
+        !host_string_bytes(&bytes, config->persistent_root) ||
+        !host_string_bytes(&bytes, config->firmware_version))
         return NULL;
     for (size_t i = 0; i < config->readonly_root_count; ++i)
         if (!host_string_bytes(&bytes, config->readonly_roots[i]))
@@ -94,6 +105,8 @@ host_create(const h2_web_application_host_config_t *config,
     host->owned_config.name = host_copy_string(&cursor, config->name);
     host->owned_config.persistent_root =
         host_copy_string(&cursor, config->persistent_root);
+    host->owned_config.firmware_version =
+        host_copy_string(&cursor, config->firmware_version);
     host->owned_config.readonly_roots = roots;
     for (size_t i = 0; i < config->readonly_root_count; ++i)
         roots[i] = host_copy_string(&cursor, config->readonly_roots[i]);
@@ -276,6 +289,7 @@ EM_JS(void, h2_web_application_host_bind_button,
     (index, key, name, ioError, timeoutError, busyError, wouldBlockError, fullError) => {
       try {
         const bind = globalThis.h2WebApplicationHostBindButton;
+        if (!globalThis.document) return 0;
         if (typeof bind !== 'function') return ioError;
         bind(index, key ? UTF8ToString(key) : "", name ? UTF8ToString(name) : "",
              ioError, timeoutError, busyError, wouldBlockError, fullError);
@@ -292,7 +306,7 @@ EM_JS(void, h2_web_application_host_unbind_buttons,
     (count, ioError) => {
       try {
         const unbind = globalThis.h2WebApplicationHostUnbindButtons;
-        if (count && typeof unbind !== 'function') return ioError;
+        if (globalThis.document && count && typeof unbind !== 'function') return ioError;
         return Promise.resolve(unbind?.()).then(() => 0, () => ioError);
       } catch (_) { return ioError; }
     });
@@ -365,6 +379,12 @@ h2_web_application_host_platform(h2_application_host_t *host) {
     return web != NULL ? web->platform : NULL;
 }
 
+const h2_pal_json_api_t *h2_web_application_host_json(h2_application_host_t *host) {
+    const h2_pal_application_host_api_t *api = h2_application_host_provider(host);
+    h2_web_application_host_t *web = api != NULL ? api->user : NULL;
+    return web != NULL ? h2_yyjson_json_api(web->json) : NULL;
+}
+
 static h2_runtime_config_t
 h2_web_application_host_runtime_config(h2_web_application_host_t *host,
                                        const h2_pal_fs_api_t *fs) {
@@ -373,7 +393,9 @@ h2_web_application_host_runtime_config(h2_web_application_host_t *host,
     config.board = "browser";
     config.target = "webassembly";
     config.chip = "wasm32";
-    config.firmware_info = h2_pal_unsupported_firmware_info_api();
+    config.firmware_info = host->config->firmware_version != NULL
+        ? h2_web_platform_firmware_info_api(platform)
+        : h2_pal_unsupported_firmware_info_api();
     config.mem = h2_web_platform_mem_api();
     config.log = h2_web_platform_log_api();
     config.time = h2_web_platform_time_api(platform);
@@ -438,6 +460,10 @@ h2_web_application_host_configure_runtime(const h2_web_application_host_t *host,
         if (rc != H2_PAL_OK)
             return rc;
     }
+    if (host->app.configure != NULL) {
+        h2_pal_result_t rc = host->app.configure(host->app.user, config);
+        if (rc != H2_PAL_OK) return rc;
+    }
     if (config->led == h2_pal_unsupported_led_api()) {
         h2_pal_result_t rc =
             h2_web_platform_configure_leds(host->platform, config->periph);
@@ -466,12 +492,18 @@ static h2_pal_result_t web_prepare(void *user, h2_runtime_config_t *out) {
         return sized.i32;
     const h2_web_platform_config_t pc = {.display_width = width,
                                          .display_height = height};
-    host->platform = h2_web_platform_create(&pc);
+    host->platform = config->task_allocator != NULL
+        ? h2_web_platform_create_with_task_allocator(&pc, config->task_allocator)
+        : h2_web_platform_create(&pc);
     if (host->platform == NULL)
         return H2_PAL_ERR_NO_MEMORY;
     h2_pal_result_t rc = H2_PAL_OK;
+    if (config->firmware_version != NULL)
+        rc = h2_web_platform_configure_firmware_info(host->platform, config->firmware_version);
+    if (rc == H2_PAL_OK && config->json)
+        rc = h2_yyjson_json_create(h2_web_platform_mem_api(), &host->json);
     const h2_web_application_host_hardware_t *hw = config->hardware;
-    if (hw != NULL && hw->prepare != NULL)
+    if (rc == H2_PAL_OK && hw != NULL && hw->prepare != NULL)
         rc = hw->prepare(hw->user, host->platform);
     if (rc == H2_PAL_OK && config->persistent_root != NULL) {
         const h2_web_fs_config_t fc = {
@@ -504,14 +536,20 @@ static h2_pal_result_t web_configure(void *user, h2_runtime_config_t *config) {
 static h2_pal_result_t web_validate(void *user, h2_runtime_t *runtime) {
     h2_web_application_host_t *host = user;
     const h2_web_application_host_hardware_t *hw = host->config->hardware;
-    return hw != NULL && hw->validate_runtime != NULL
+    h2_pal_result_t rc = hw != NULL && hw->validate_runtime != NULL
                ? hw->validate_runtime(hw->user, runtime)
                : H2_PAL_OK;
+    return rc == H2_PAL_OK && host->app.validate != NULL
+        ? host->app.validate(host->app.user, runtime) : rc;
 }
 
 static h2_pal_result_t web_release_runtime(void *user) {
     h2_web_application_host_t *host = user;
     const h2_web_application_host_hardware_t *hw = host->config->hardware;
+    if (host->app.release_runtime != NULL) {
+        h2_pal_result_t rc = host->app.release_runtime(host->app.user);
+        if (rc != H2_PAL_OK) return rc;
+    }
     return hw != NULL && hw->release_runtime != NULL
                ? hw->release_runtime(hw->user)
                : H2_PAL_OK;
@@ -590,6 +628,8 @@ static h2_pal_result_t web_poll(void *user, int *out_stop) {
 static h2_pal_result_t web_release(void *user) {
     h2_web_application_host_t *host = user;
     const h2_web_application_host_hardware_t *hw = host->config->hardware;
+    h2_pal_result_t json_rc = h2_yyjson_json_destroy(&host->json);
+    if (json_rc != H2_PAL_OK) return json_rc;
     if (host->platform != NULL && hw != NULL && hw->release_prepare != NULL) {
         h2_pal_result_t rc = hw->release_prepare(hw->user);
         if (rc != H2_PAL_OK)
@@ -646,7 +686,24 @@ static void web_detach_ui(void *context, h2_web_main_result_t *result,
 int h2_web_application_host_run(const h2_web_application_host_config_t *config,
                                 h2_web_application_host_entry_fn entry,
                                 void *user) {
+    const h2_application_host_config_t app = {.entry = entry, .user = user};
+    return h2_web_application_host_run_app(config, &app, NULL);
+}
+
+static h2_pal_result_t web_before(void *user) {
+    h2_web_application_host_t *host = user;
+    return host->app.before_prepare != NULL
+        ? host->app.before_prepare(host->app.user) : H2_PAL_OK;
+}
+
+int h2_web_application_host_run_app(const h2_web_application_host_config_t *config,
+                                  const h2_application_host_config_t *app,
+                                  h2_application_host_result_t *out_result) {
+    if (out_result != NULL) *out_result = (h2_application_host_result_t){0};
+    h2_web_application_host_entry_fn entry = app != NULL ? app->entry : NULL;
+    void *user = app != NULL ? app->user : NULL;
     if (config == NULL || config->name == NULL || entry == NULL ||
+        app->provider != NULL ||
         config->button_count > H2_WEB_APPLICATION_HOST_MAX_BUTTONS ||
         (config->button_count && config->buttons == NULL) ||
         (config->readonly_root_count && config->readonly_roots == NULL))
@@ -654,23 +711,32 @@ int h2_web_application_host_run(const h2_web_application_host_config_t *config,
     h2_web_application_host_t *host = host_create(config, entry, user);
     if (host == NULL)
         return 1;
-    h2_web_application_host_t *expected = NULL;
-    if (!atomic_compare_exchange_strong(&s_host, &expected, host)) {
+    host->app = *app;
+    int expected = 0;
+    if (!atomic_compare_exchange_strong(&s_admission_closed, &expected, 1)) {
         free(host);
+        if (out_result != NULL) {
+            out_result->application = H2_PAL_ERR_BUSY;
+            out_result->cleanup = H2_PAL_ERR_BUSY;
+            out_result->retained = 1;
+        }
         return H2_WEB_APPLICATION_HOST_RETAINED;
     }
+    atomic_store(&s_host, host);
     const h2_pal_application_host_api_t provider = {.user = host,
                                                     .vtable = &web_vtable};
     const h2_application_host_config_t hc = {
-        .allocator = h2_web_platform_mem_api(),
+        .allocator = app->allocator != NULL ? app->allocator : h2_web_platform_mem_api(),
         .provider = &provider,
         .entry = web_entry,
         .user = host,
         .configure = web_configure,
         .release_runtime = web_release_runtime,
         .validate = web_validate,
-        .run_ms = config->run_ms,
-        .stack_size = config->stack_size};
+        .run_ms = app->run_ms != 0u ? app->run_ms : config->run_ms,
+        .stack_size = app->stack_size != 0u ? app->stack_size : config->stack_size,
+        .control_stack_size = app->control_stack_size,
+        .before_prepare = web_before};
     h2_application_host_result_t result = {0};
     h2_application_host_t *common = NULL;
     h2_pal_result_t rc = h2_application_host_create(&hc, &common);
@@ -679,9 +745,28 @@ int h2_web_application_host_run(const h2_web_application_host_config_t *config,
         if (atomic_load(&host->stop_requested))
             h2_application_host_request_stop(common);
         rc = h2_application_host_run(common, &result);
-    }
+    } else result.application = rc;
     if (rc == H2_PAL_OK)
         rc = atomic_load(&host->input_error);
+    if (result.application == H2_PAL_OK && result.cleanup == H2_PAL_OK &&
+        rc != H2_PAL_OK)
+        result.application = rc;
+    if (!result.retained) {
+        /* Detach on UI to drain callbacks that already borrowed common. The
+         * separate admission latch prevents a new run entering this gap. */
+        (void)h2_web_main_call(web_detach_ui, NULL);
+        h2_pal_result_t destroyed = h2_application_host_destroy(&common);
+        if (destroyed != H2_PAL_OK) {
+            (void)h2_application_host_retain(common, host, destroyed);
+            atomic_store(&s_host, host);
+            result.cleanup = destroyed;
+            result.retained = 1;
+            rc = destroyed;
+        } else {
+            atomic_store(&host->common, NULL);
+        }
+    }
+    if (out_result != NULL) *out_result = result;
     printf("H2_WEB_APP name=%s owner_bytes=%zu host=pal-application\n",
            host->config->name, host->allocation_bytes);
     char line[224];
@@ -701,9 +786,7 @@ int h2_web_application_host_run(const h2_web_application_host_config_t *config,
                            (const void *[]){&(const char *){line}});
     if (result.retained)
         return H2_WEB_APPLICATION_HOST_RETAINED;
-    (void)h2_web_main_call(web_detach_ui, NULL);
-    (void)h2_application_host_destroy(&common);
-    atomic_store(&host->common, NULL);
     free(host);
+    atomic_store(&s_admission_closed, 0);
     return rc == H2_PAL_OK ? 0 : 1;
 }

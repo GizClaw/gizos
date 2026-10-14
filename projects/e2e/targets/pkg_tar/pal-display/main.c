@@ -1,7 +1,6 @@
 #include "h2_pal_display_e2e.h"
-#include "h2_smoke_host_runtime.h"
 #include "h2_web_main_thread.h"
-#include "h2_web_platform.h"
+#include "h2_web_application_host.h"
 #include <emscripten/threading.h>
 #include <stdio.h>
 /* Browser verifier captures the composited page, including the CSS filter.
@@ -29,28 +28,20 @@ static int observe(void *user, const uint16_t *pixels, int width, int height,
              (const void *[]){&pixels, &width, &height, &brightness, &id})
       .i32;
 }
-int main(void) {
-  if (emscripten_is_main_runtime_thread())
-    return 2;
-  const h2_web_platform_config_t config = {.display_width = 96,
-                                           .display_height = 80};
-  h2_web_platform_t *platform = h2_web_platform_create(&config);
-  if (!platform)
-    return 3;
-  h2_runtime_config_t cfg = h2_smoke_host_runtime_config(
-      "pal-display", "web", "wasm32", h2_web_platform_mem_api(),
-      h2_web_platform_time_api(platform), h2_web_platform_queue_api(platform),
-      h2_web_platform_display_api(platform));
-  h2_runtime_t *runtime = NULL;
-  int rc = h2_runtime_init(&cfg, &runtime);
-  h2_pal_display_e2e_result_t result = {0};
+static h2_pal_display_e2e_result_t result;
+static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *runtime, void *user) {
+  (void)host; (void)user;
   const h2_pal_display_e2e_config_t test = {
       .supported_formats = 1, .clips_rectangles = 0, .observe = observe};
-  if (!rc)
-    rc = h2_pal_display_e2e_run(runtime, &test, &result);
-  if (runtime)
-    h2_runtime_deinit(runtime);
-  int teardown = h2_web_platform_destroy(platform);
+  return h2_pal_display_e2e_run(runtime, &test, &result);
+}
+int main(void) {
+  const h2_web_application_host_config_t config = {
+      .name = "pal-display", .display_width = 96, .display_height = 80};
+  const h2_application_host_config_t app = {.entry = run};
+  h2_application_host_result_t lifecycle = {0};
+  int rc = h2_web_application_host_run_app(&config, &app, &lifecycle);
+  int teardown = lifecycle.cleanup;
   h2_pal_display_e2e_print(&result, "wasm-chromium", rc, teardown);
-  return rc || teardown || !result.qualified ? 1 : 0;
+  return rc || teardown || lifecycle.retained || !result.qualified ? 1 : 0;
 }

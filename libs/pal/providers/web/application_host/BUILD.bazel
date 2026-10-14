@@ -36,10 +36,12 @@ cc_library(
     includes = ["include"],
     target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
     deps = [
+        "//libs/atomic/providers/c11",
         "//libs/lvgl:platform_web",
         "//libs/pal:unsupported",
         "//libs/pal/application/host",
         "//libs/pal/providers/web/pal_core",
+        "//libs/pal/providers/yyjson",
     ],
 )
 
@@ -73,6 +75,7 @@ cc_library(
     includes = ["include"],
     deps = [
         "//libs/gizclaw/lua_apps",
+        "//libs/pal",
         "//libs/pal/application/host",
         "//libs/pal/providers/web/pal_core:headers",
     ],

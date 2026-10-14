@@ -1,4 +1,4 @@
-#include "h2_desktop_app_support.h"
+#include "h2_desktop_application_host.hpp"
 #include "h2_desktop_recording.h"
 #include "h2_lvgl_platform.h"
 #include "lvgl.h"
@@ -33,58 +33,25 @@ void capture_mic(void *user, const h2_portaudio_capture_frame_t *frame) {
 } // namespace
 
 // Real Desktop display, mic and speaker hooks; no service or fake backend.
-int main(int argc, char **argv) {
-  if (argc != 2) {
-    std::fprintf(stderr, "usage: recording-smoke <new-absolute-output.mp4>\n");
-    return 2;
-  }
-  const auto *time = h2_desktop_platform_time_api();
-  const h2_lvgl_platform_config_t platform = {
-      h2_desktop_platform_default_allocator(),
-      h2_desktop_platform_task_api(),
-      h2_desktop_platform_sync_api(),
-      h2_desktop_platform_queue_api(),
-      time,
-      0u,
-      0u};
-  if (h2_lvgl_platform_init(&platform) != H2_PAL_OK) {
-    return 1;
-  }
-  lv_init();
+static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *runtime, void *user) {
+  const char *output = static_cast<const char *>(user);
+  const auto *time = runtime->time;
   int result = H2_PAL_OK;
-  {
-    const h2::desktop::Layout layout = {"recording-smoke",
-                                        "GizOS AV recording",
-                                        320,
-                                        240,
-                                        nullptr,
-                                        0u,
-                                        nullptr,
-                                        0u,
-                                        "{}"};
-    h2::desktop::OwnedDisplay display;
-    h2::desktop::OwnedAudio audio;
-    h2::desktop::OwnedLvgl lvgl;
-    if (h2::desktop::open_display(layout, &display) != H2_PAL_OK ||
-        h2::desktop::open_audio(true, &audio) != H2_PAL_OK ||
-        h2::desktop::open_lvgl(&display, &lvgl) != H2_PAL_OK) {
-      return 1;
-    }
     h2_desktop_recording_t *recording = nullptr;
-    result = h2_desktop_recording_create(argv[1], 320u, 240u, &recording);
+    result = h2_desktop_recording_create(output, 320u, 240u, &recording);
     if (result != H2_PAL_OK) {
-      return 1;
+      return H2_PAL_ERR_IO;
     }
     SmokeCapture sink = {*h2_desktop_recording_hooks(recording), 0u};
     const h2_desktop_capture_config_t capture_config = {
-        display.handle,
-        audio.handle,
+        h2_desktop_application_host_sdl(host),
+        h2_desktop_application_host_portaudio(host),
         {&sink, capture_display, capture_mic, capture_speaker}};
     h2_desktop_capture_t *capture = nullptr;
     result = h2_desktop_capture_create(&capture_config, &capture);
     if (result != H2_PAL_OK) {
       h2_desktop_recording_destroy(recording);
-      return 1;
+      return H2_PAL_ERR_IO;
     }
     lv_obj_t *screen = lv_screen_active();
     lv_obj_set_style_bg_color(screen, lv_color_hex(0x122236), 0);
@@ -103,17 +70,17 @@ int main(int argc, char **argv) {
     lv_label_set_text(beat, "440 Hz");
     h2_audio_info_t info = {};
     h2_pal_audio_track_t *track = nullptr;
-    result = h2_pal_audio_get_info(audio.api(), &info);
+    result = h2_pal_audio_get_info(runtime->audio, &info);
     const h2_audio_track_config_t track_config = {
         "recording-tone", info.playback_format, 1000u, 4u, nullptr};
     if (result == H2_PAL_OK) {
-      result = h2_pal_audio_start_mic(audio.api());
+      result = h2_pal_audio_start_mic(runtime->audio);
     }
     if (result == H2_PAL_OK) {
-      result = h2_pal_audio_start_speaker(audio.api());
+      result = h2_pal_audio_start_speaker(runtime->audio);
     }
     if (result == H2_PAL_OK) {
-      result = h2_pal_audio_create_track(audio.api(), &track_config, &track);
+      result = h2_pal_audio_create_track(runtime->audio, &track_config, &track);
     }
     (void)std::signal(SIGINT, request_stop);
     (void)std::signal(SIGTERM, request_stop);
@@ -123,7 +90,7 @@ int main(int argc, char **argv) {
     std::array<int16_t, 320u> samples = {};
     for (unsigned tick = 0u; result == H2_PAL_OK && tick < 300u; ++tick) {
       if (stop_requested != 0 ||
-          h2::desktop::poll_events(&display, &lvgl) != 0) {
+          h2_desktop_application_host_should_stop(host) != 0) {
         break;
       }
       const bool high = (tick / 50u) % 2u != 0u;
@@ -134,8 +101,8 @@ int main(int argc, char **argv) {
       lv_obj_set_x(panel, 60 + static_cast<int>(15.0 * std::sin(tick * 0.06)));
       lv_tick_inc(20u);
       lv_timer_handler();
-      lv_refr_now(static_cast<lv_display_t *>(lvgl.display()));
-      (void)h2::desktop::poll_events(&display, &lvgl);
+      lv_refr_now(static_cast<lv_display_t *>(h2_desktop_application_host_lvgl_display(host)));
+      (void)h2_desktop_application_host_should_stop(host);
       for (int16_t &value : samples) {
         value = static_cast<int16_t>(
             5000.0 *
@@ -163,9 +130,9 @@ int main(int argc, char **argv) {
         result = drain == H2_PAL_OK ? closed : drain;
       }
     }
-    const int mic_stop = h2_pal_audio_stop_mic(audio.api());
-    const int speaker_stop = h2_pal_audio_stop_speaker(audio.api());
-    (void)h2::desktop::poll_events(&display, &lvgl);
+    const int mic_stop = h2_pal_audio_stop_mic(runtime->audio);
+    const int speaker_stop = h2_pal_audio_stop_speaker(runtime->audio);
+    (void)h2_desktop_application_host_should_stop(host);
     h2_desktop_recording_stats_t stats = {};
     h2_desktop_capture_destroy(capture);
     const int recorded = h2_desktop_recording_stop(recording, &stats);
@@ -179,7 +146,7 @@ int main(int argc, char **argv) {
                 static_cast<unsigned long long>(stats.captured_video_frames),
                 static_cast<unsigned long long>(stats.captured_audio_frames),
                 static_cast<unsigned long long>(stats.late_audio_frames),
-                stats.buffer_bytes, stop_requested != 0, argv[1]);
+                stats.buffer_bytes, stop_requested != 0, output);
     std::printf("H2_CAPTURE mic_samples=%llu mic_stop=%d\n",
                 static_cast<unsigned long long>(sink.mic_samples), mic_stop);
     if (recorded != H2_PAL_OK || speaker_stop != H2_PAL_OK ||
@@ -188,8 +155,21 @@ int main(int argc, char **argv) {
         stats.captured_audio_frames == 0u) {
       result = H2_PAL_ERR_IO;
     }
+  return result;
+}
+int main(int argc, char **argv) {
+  if (argc != 2) {
+    std::fprintf(stderr, "usage: recording-smoke <new-absolute-output.mp4>\n");
+    return 2;
   }
-  lv_deinit();
-  h2_lvgl_platform_deinit();
-  return result == H2_PAL_OK ? 0 : 1;
+  h2_desktop_application_host_config_t platform{};
+  platform.window = {"GizOS AV recording", 320, 240};
+  platform.services = H2_DESKTOP_HOST_AUDIO | H2_DESKTOP_HOST_LVGL;
+  platform.require_real_audio = 1;
+  platform.entry_on_main = 1;
+  h2_application_host_config_t app{};
+  app.entry = run;
+  app.user = argv[1];
+  h2_application_host_result_t result{};
+  return h2_desktop_application_host_run(&platform, &app, &result) == H2_PAL_OK ? 0 : 1;
 }

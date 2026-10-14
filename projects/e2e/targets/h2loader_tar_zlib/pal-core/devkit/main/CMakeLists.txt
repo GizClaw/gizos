@@ -30,3 +30,4 @@ idf_component_register(
     h2_pal_core)
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu11 -Wall -Wextra -Werror)
+target_link_libraries(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=h2_esp_platform_task_configure")

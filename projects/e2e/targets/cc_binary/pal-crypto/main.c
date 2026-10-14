@@ -1,35 +1,22 @@
-#include "h2_desktop_platform.h"
+#include "h2_desktop_application_host.h"
 #include "h2_pal_crypto_e2e.h"
-#include "h2_smoke_host_runtime.h"
-#include "h2_wolfssl.h"
-#if defined(__APPLE__)
-#include "h2_darwin_platform.h"
-#define host_entropy h2_darwin_entropy
-#else
-#include "h2_linux_platform.h"
-#define host_entropy h2_linux_entropy
-#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+static h2_pal_crypto_e2e_result_t result;
+static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *runtime, void *user) {
+  (void)user;
+  (void)host;
+  return h2_pal_crypto_e2e_run(runtime, &result);
+}
 int main(void) {
-  const h2_wolfssl_config_t crypto = {
-      .mem = *h2_desktop_platform_default_allocator(), .entropy = host_entropy};
-  if (h2_wolfssl_init(&crypto) != H2_PAL_OK)
-    return 2;
-  h2_runtime_config_t config = h2_smoke_host_runtime_config(
-      "pal-crypto", "desktop", "host", h2_desktop_platform_default_allocator(),
-      h2_desktop_platform_time_api(), h2_desktop_platform_queue_api(),
-      h2_pal_unsupported_display_api());
-  config.crypto = h2_wolfssl_crypto_api();
-  h2_runtime_t *runtime = NULL;
-  if (h2_runtime_init(&config, &runtime) != H2_PAL_OK) {
-    (void)h2_wolfssl_deinit();
-    return 3;
-  }
-  h2_pal_crypto_e2e_result_t result;
-  int rc = h2_pal_crypto_e2e_run(runtime, &result);
+  const h2_desktop_application_host_config_t config = {.services = H2_DESKTOP_HOST_CRYPTO};
+  const h2_application_host_config_t app = {.entry = run};
+  h2_application_host_result_t lifecycle = {0};
+  int rc = h2_desktop_application_host_run(&config, &app, &lifecycle);
+  int teardown = lifecycle.cleanup;
+  if (teardown != H2_PAL_OK || lifecycle.retained) return 1;
   FILE *evidence = NULL;
   const char *directory = getenv("TEST_UNDECLARED_OUTPUTS_DIR");
   if (directory) {
@@ -50,6 +37,7 @@ int main(void) {
   const char *names[] = {"NOT_RUN", "PASS", "FAIL", "BLOCKED"};
   for (size_t i = 0; i < H2_PAL_CRYPTO_E2E_CASE_COUNT; ++i) {
     const h2_pal_crypto_e2e_case_t *c = &result.cases[i];
+    if (!c->id) continue;
     printf("PAL_CRYPTO_CASE id=%s status=%s rc=%d\n", c->id, names[c->status],
            c->result);
     if (evidence)
@@ -64,7 +52,5 @@ int main(void) {
   printf("PAL_CRYPTO_REPORT operations=15 passed=%zu failed=%zu blocked=%zu "
          "qualified=%d\n",
          result.passed, result.failed, result.blocked, result.qualified);
-  h2_runtime_deinit(runtime);
-  (void)h2_wolfssl_deinit();
-  return rc == 0 && result.qualified ? 0 : 1;
+  return rc == 0 && !lifecycle.retained && result.qualified ? 0 : 1;
 }

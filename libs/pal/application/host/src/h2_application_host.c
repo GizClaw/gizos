@@ -215,7 +215,12 @@ h2_application_host_run(h2_application_host_t *host,
     }
     host->started = 1;
     const h2_pal_application_host_api_t *p = &host->provider;
-    h2_pal_result_t rc = p->vtable->prepare(p->user, &host->runtime_config);
+    h2_pal_result_t rc = host->config.before_prepare
+                             ? host->config.before_prepare(host->config.user)
+                             : H2_PAL_OK;
+    int prepared = rc == H2_PAL_OK;
+    if (prepared)
+        rc = p->vtable->prepare(p->user, &host->runtime_config);
     host->driver_task = host->runtime_config.task;
     host->driver_time = host->runtime_config.time;
     uint64_t start_ms = 0;
@@ -267,7 +272,7 @@ h2_application_host_run(h2_application_host_t *host,
     } else
         host->application = rc;
     int retained = h2_atomic_int_load(&host->retained, H2_ATOMIC_ACQUIRE);
-    if (retained == H2_PAL_OK) {
+    if (retained == H2_PAL_OK && prepared) {
         rc = p->vtable->release(p->user);
         record_cleanup(host, rc);
         if (rc != H2_PAL_OK) {

@@ -1,4 +1,4 @@
-#include "h2_desktop_platform.h"
+#include "h2_desktop_application_host.h"
 #include "h2_pal_webrtc_e2e.h"
 #include "h2_webrtc_compat_factory.h"
 #include "h2_webrtc_pion_fixture.h"
@@ -49,23 +49,32 @@ static void report(void *user, const h2_pal_webrtc_e2e_case_result_t *r) {
          r->observed_error, r->authentication_evidence);
   fflush(stdout);
 }
-int main(int argc, char **argv) {
-  if (argc != 2 && argc != 3)
-    return 2;
-  test_mode = argc == 3 ? argv[2] : NULL;
-  h2_webrtc_pion_fixture_t fixture = {0};
-  h2_webrtc_compat_backend_t backend = {0};
-  int rc = 1;
-  if (h2_webrtc_pion_fixture_start(&fixture, argv[1], "udp") != 0 ||
-      h2_webrtc_compat_backend_create(&backend) != H2_PAL_OK)
-    goto cleanup;
+static struct {
+  const char *server;
   char stun[96];
-  (void)snprintf(stun, sizeof(stun), "stun:127.0.0.1:%d", fixture.stun_port);
-  h2_runtime_t runtime = {.webrtc = backend.api,
-                          .mem = h2_desktop_platform_default_allocator(),
-                          .time = h2_desktop_platform_time_api()};
-  const h2_pal_webrtc_e2e_config_t config = {.runtime = &runtime,
-                                             .stun_url = stun,
+  h2_webrtc_pion_fixture_t fixture;
+  h2_webrtc_compat_backend_t backend;
+} context;
+static h2_pal_result_t configure(void *user, h2_runtime_config_t *config) {
+  (void)user;
+  if (h2_webrtc_pion_fixture_start(&context.fixture, context.server, "udp") != 0) return H2_PAL_ERR_IO;
+  int rc = h2_webrtc_compat_backend_create(&context.backend);
+  if (rc != H2_PAL_OK) return rc;
+  snprintf(context.stun, sizeof(context.stun), "stun:127.0.0.1:%d", context.fixture.stun_port);
+  config->webrtc = context.backend.api;
+  return H2_PAL_OK;
+}
+static h2_pal_result_t release_runtime(void *user) {
+  (void)user;
+  if (context.fixture.pid > 0) (void)h2_webrtc_pion_fixture_close_session(&context.fixture);
+  if (context.backend.destroy) context.backend.destroy(context.backend.state);
+  h2_webrtc_pion_fixture_stop(&context.fixture);
+  return H2_PAL_OK;
+}
+static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *runtime, void *user) {
+  (void)user;
+  const h2_pal_webrtc_e2e_config_t config = {.runtime = runtime,
+                                             .stun_url = context.stun,
                                              .connection_timeout_ms = test_mode ? 1500u : 20000u,
                                              .soak_duration_ms = !test_mode ? 0u :
                                                  !strcmp(test_mode, "soak-short") ? 2100u :
@@ -73,10 +82,10 @@ int main(int argc, char **argv) {
                                                  !strcmp(test_mode, "soak-permanent-loss") ? 12000u : 0u,
                                              .exchange_offer = exchange,
                                              .close_remote = close_remote,
-                                             .fixture_user = &fixture,
+                                             .fixture_user = &context.fixture,
                                              .report = report};
   h2_pal_webrtc_e2e_result_t result;
-  rc = h2_pal_webrtc_e2e_run(&config, &result);
+  int rc = h2_pal_webrtc_e2e_run(&config, &result);
   printf("H2_PAL_WEBRTC_SUMMARY "
          "{\"passed\":%u,\"failed\":%u,\"blocked\":%u,\"retained_allocations\":"
          "%zu}\n",
@@ -123,11 +132,16 @@ int main(int argc, char **argv) {
         result.soak.data_roundtrips < 2u || result.soak.opus_roundtrips != result.soak.data_roundtrips)
       rc = H2_PAL_ERR_INVALID_STATE;
   }
-cleanup:
-  if (fixture.pid > 0)
-    (void)h2_webrtc_pion_fixture_close_session(&fixture);
-  if (backend.destroy)
-    backend.destroy(backend.state);
-  h2_webrtc_pion_fixture_stop(&fixture);
-  return rc == H2_PAL_OK ? 0 : 1;
+  if (result.retained_allocations) h2_application_host_retain(host, NULL, H2_PAL_ERR_BUSY);
+  return rc;
+}
+int main(int argc, char **argv) {
+  if (argc != 2 && argc != 3) return 2;
+  context.server = argv[1];
+  test_mode = argc == 3 ? argv[2] : NULL;
+  const h2_desktop_application_host_config_t platform = {0};
+  const h2_application_host_config_t app = {
+      .entry = run, .configure = configure, .release_runtime = release_runtime};
+  h2_application_host_result_t result = {0};
+  return h2_desktop_application_host_run(&platform, &app, &result) == H2_PAL_OK ? 0 : 1;
 }

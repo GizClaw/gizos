@@ -1,8 +1,5 @@
-#include "bk_private/bk_init.h"
-#include "h2_bk7258_board.h"
 #include "h2_bk_h2loader.h"
 #include "h2_bk_platform_core.h"
-#include "h2_bk_target_task_policy.h"
 #include "h2_pal_e2e_application_host.h"
 #include <driver/flash.h>
 #include <driver/flash_partition.h>
@@ -11,15 +8,10 @@
 #include <stdint.h>
 #include <stdio.h>
 
-static h2_runtime_t *runtime;
-static void hold(void) {
-  for (;;)
-    rtos_delay_milliseconds(1000u);
-}
 static void fail(const char *stage, int rc) {
   printf("H2_PREF_BACKUP_FAIL stage=%s rc=%d\r\n", stage, rc);
   fflush(stdout);
-  hold();
+  h2_pal_e2e_application_host_park();
 }
 
 /* Read before opening Preferences: this captures the old DB and the untouched
@@ -78,38 +70,28 @@ static void dump_region(void) {
   fflush(stdout);
 }
 
-static h2_pal_result_t run(h2_application_host_t *host,
-                           h2_runtime_t *app_runtime, void *user) {
+static h2_pal_result_t before_prepare(void *user) {
   (void)user;
-  runtime = app_runtime;
+  puts("H2_PREF_BACKUP_PLATFORM_BOOT board=bk7258");
+  fflush(stdout);
+  dump_region();
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t run(h2_application_host_t *host,
+                           h2_runtime_t *runtime, void *user) {
+  (void)user;
   int rc = H2_PAL_OK;
   rc = h2_bk_h2loader_confirm_current_app(runtime);
   printf("H2_PREF_BACKUP_READY confirm=%d\r\n", rc);
   fflush(stdout);
   h2_pal_result_t waited = h2_pal_e2e_application_host_wait(host, runtime);
-    return h2_pal_e2e_application_host_finish(host, runtime, rc == H2_PAL_OK ? waited : rc);
-}
-static void entry(void *user) {
-  (void)user;
-
-  puts("H2_PREF_BACKUP_PLATFORM_BOOT board=bk7258");
-  fflush(stdout);
-  dump_region();
-  const h2_application_host_config_t app = {.entry = run};
-  int host_rc = h2_pal_e2e_application_host_run(
-      "pref-backup", H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_WIFI,
-      &app, NULL);
-  if (host_rc != H2_PAL_OK)
-    fail("application_host", host_rc);
+  return rc == H2_PAL_OK ? waited : rc;
 }
 
 int main(void) {
-  int rc = h2_bk_target_task_policy_install();
-  if (rc != H2_PAL_OK)
-    return -1;
-  bk_init();
-  rc = h2_bk7258_board_start_entry_task("bk/pref-backup", entry, NULL);
-  if (rc != H2_PAL_OK)
-    fail("entry", rc);
-  return 0;
+    const h2_application_host_config_t app = {
+        .entry = run, .before_prepare = before_prepare};
+    return h2_pal_e2e_application_host_start(
+        "pref-backup", H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_WIFI, &app);
 }

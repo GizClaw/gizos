@@ -267,13 +267,22 @@ int open_display(const Layout &layout, OwnedDisplay *display) {
 
 int open_network_services(bool with_mqtt, bool with_webrtc,
                           OwnedNetworkServices *services) {
-  if (services == nullptr || services->wolfssl_owner ||
+  return open_network_services(with_mqtt, with_webrtc,
+                               h2_desktop_platform_default_allocator(), 8u,
+                               services);
+}
+
+int open_network_services(bool with_mqtt, bool with_webrtc,
+                          const h2_pal_mem_api_t *allocator,
+                          std::size_t mqtt_records,
+                          OwnedNetworkServices *services) {
+  if (services == nullptr || allocator == nullptr || services->wolfssl_owner ||
       services->mqtt_handle != nullptr || services->sctp_handle != nullptr ||
       services->peer_handle != nullptr) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   const h2_wolfssl_config_t wolfssl = {
-      *h2_desktop_platform_default_allocator(),
+      *allocator,
       nullptr,
 #if defined(__APPLE__)
       h2_darwin_entropy,
@@ -288,12 +297,12 @@ int open_network_services(bool with_mqtt, bool with_webrtc,
   services->wolfssl_owner = true;
   if (with_mqtt) {
     const h2_coremqtt_config_t mqtt = {
-        h2_desktop_platform_default_allocator(),
+        allocator,
         host_net_api(),
         h2_desktop_platform_time_api(),
         h2_desktop_platform_log_api(),
-        8u,
-        8u,
+        mqtt_records,
+        mqtt_records,
     };
     h2_coremqtt_t *provider = nullptr;
     result = h2_coremqtt_create(&mqtt, &provider, &services->mqtt_view);
@@ -301,7 +310,7 @@ int open_network_services(bool with_mqtt, bool with_webrtc,
   }
   if (result == H2_PAL_OK && with_webrtc) {
     const h2_sctp_config_t sctp = {
-        h2_desktop_platform_default_allocator(), services->crypto(),
+        allocator, services->crypto(),
         /* packet_mem: pooled packets use the default allocator. */ nullptr,
         /* packet_pool_size: H2_SCTP_DEFAULT_PACKET_POOL_SIZE. */ 0u};
     h2_sctp_t *provider = nullptr;
@@ -309,7 +318,7 @@ int open_network_services(bool with_mqtt, bool with_webrtc,
     services->sctp_handle = provider;
     if (result == H2_PAL_OK) {
       const h2_peer_config_t peer = {
-          h2_desktop_platform_default_allocator(),
+          allocator,
           h2_desktop_platform_log_api(),
           host_net_api(),
           h2_desktop_platform_queue_api(),
@@ -435,10 +444,7 @@ int poll_events(OwnedDisplay *display, OwnedLvgl *lvgl) {
   }
   h2_sdl3_event_t event = {};
   while (h2_sdl3_poll_event(display->handle, &event) == H2_PAL_OK) {
-    if (lvgl != nullptr && lvgl->input_bridge != nullptr) {
-      h2_desktop_lvgl_input_handle(
-          static_cast<H2DesktopLvglInput *>(lvgl->input_bridge), event);
-    }
+    handle_lvgl_event(lvgl, event);
     switch (event.kind) {
     case H2_SDL3_EVENT_CLOSE:
       return 1;
@@ -459,6 +465,12 @@ int poll_events(OwnedDisplay *display, OwnedLvgl *lvgl) {
     }
   }
   return 0;
+}
+
+void handle_lvgl_event(OwnedLvgl *lvgl, const h2_sdl3_event_t &event) {
+  if (lvgl != nullptr && lvgl->input_bridge != nullptr)
+    h2_desktop_lvgl_input_handle(
+        static_cast<H2DesktopLvglInput *>(lvgl->input_bridge), event);
 }
 
 int read_pointer(OwnedDisplay *display, h2_sdl3_pointer_state_t *out_state) {

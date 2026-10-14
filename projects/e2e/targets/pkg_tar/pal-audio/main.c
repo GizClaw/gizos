@@ -1,5 +1,5 @@
 #include "h2_pal_audio_e2e.h"
-#include "h2_web_platform.h"
+#include "h2_web_application_host.h"
 
 #include <emscripten/threading.h>
 #include <stdio.h>
@@ -12,18 +12,14 @@ static void report(void *user, const h2_pal_audio_e2e_case_result_t *item) {
   fflush(stdout);
 }
 
-int main(void) {
-  if (emscripten_is_main_runtime_thread()) return 2;
-  const h2_web_platform_config_t config = {.display_width = 1u,
-                                           .display_height = 1u};
-  h2_web_platform_t *platform = h2_web_platform_create(&config);
-  if (platform == NULL) return 3;
+static h2_pal_audio_e2e_result_t result;
+static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *runtime, void *user) {
+  (void)host; (void)user;
   const h2_pal_audio_e2e_config_t test_config = {
-      .audio = h2_web_platform_audio_api(platform),
-      .time = h2_web_platform_time_api(platform),
+      .audio = runtime->audio,
+      .time = runtime->time,
       .stability_ms = 30000u,
       .report = report};
-  h2_pal_audio_e2e_result_t result;
   const int rc = h2_pal_audio_e2e_run(&test_config, &result);
   printf("H2_PAL_AUDIO_SUMMARY {\"platform\":\"wasm-chromium\",\"worker\":1,"
          "\"passed\":%u,\"failed\":%u,\"blocked\":%u,"
@@ -34,7 +30,14 @@ int main(void) {
          result.mic_peak, (unsigned long long)result.mic_energy,
          result.speaker_frames, result.output_peak,
          (unsigned long long)result.stability_elapsed_ms, rc);
-  const int teardown = h2_web_platform_destroy(platform);
-  printf("H2_PAL_AUDIO_TEARDOWN rc=%d\n", teardown);
-  return rc == H2_AUDIO_OK && teardown == H2_PAL_OK ? 0 : 1;
+  return rc;
+}
+int main(void) {
+  const h2_web_application_host_config_t config = {
+      .name = "pal-audio", .display_width = 1, .display_height = 1};
+  const h2_application_host_config_t app = {.entry = run};
+  h2_application_host_result_t lifecycle = {0};
+  int rc = h2_web_application_host_run_app(&config, &app, &lifecycle);
+  printf("H2_PAL_AUDIO_TEARDOWN rc=%d\n", lifecycle.cleanup);
+  return rc == 0 && lifecycle.cleanup == H2_PAL_OK && !lifecycle.retained ? 0 : 1;
 }

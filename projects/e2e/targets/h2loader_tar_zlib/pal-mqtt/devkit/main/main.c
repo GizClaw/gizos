@@ -1,9 +1,7 @@
 #include "h2_pal_e2e_application_host.h"
-#include "h2_esp_board.h"
 #include "h2_esp_h2loader_runtime.h"
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_platform_core.h"
-#include "h2_esp_target_task_policy.h"
 #include "h2_coremqtt.h"
 #include "device_runner.h"
 #include "ledger_console.h"
@@ -13,7 +11,6 @@
 #include <stdio.h>
 #include <string.h>
 
-static h2_runtime_t *runtime;
 static h2_coremqtt_t *mqtt;
 static h2_pal_mqtt_api_t mqtt_api;
 static h2_mqtt_device_result_t result;
@@ -30,12 +27,6 @@ static const h2_pal_log_vtable_t ledger_log_vtable={.write=ledger_log};
 static const h2_pal_log_api_t ledger_log_api={.vtable=&ledger_log_vtable};
 static int confirm_app(void *user) { return h2_esp_h2loader_app_confirm(user); }
 
-static void hold(void) { for (;;) vTaskDelay(pdMS_TO_TICKS(1000u)); }
-static void fail(const char *stage, int rc) {
-    printf("H2_PAL_MQTT_SETUP_FAIL stage=%s rc=%d\n", stage, rc);
-    fflush(stdout);
-    hold();
-}
 static int snapshot(size_t out[10]) {
     h2_esp_platform_resource_stats_t stats = {0};
     int rc = h2_esp_platform_get_resource_stats(&stats);
@@ -46,7 +37,7 @@ static int snapshot(size_t out[10]) {
             stats.allocations, stats.allocation_bytes};
         memcpy(out, values, sizeof(values));
     }
-    return rc;
+  return rc;
 }
 static int ca_digest(void *user, const uint8_t *bytes, size_t length, uint8_t digest[32]) {
     (void)user;
@@ -55,8 +46,7 @@ static int ca_digest(void *user, const uint8_t *bytes, size_t length, uint8_t di
     return psa_hash_compute(PSA_ALG_SHA_256, bytes, length, digest, 32u, &written) == PSA_SUCCESS &&
         written == 32u ? H2_PAL_OK : H2_PAL_ERR_IO;
 }
-static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *app_runtime, void *user) {
-    runtime = app_runtime;
+static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *runtime, void *user) {
     (void)user;
     vTaskDelay(pdMS_TO_TICKS(5000u));
     int rc;
@@ -64,13 +54,13 @@ static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *app_runtim
         rc = h2_mqtt_device_prepare(runtime);
         if (rc == H2_PAL_OK) break;
         if (rc != H2_PAL_ERR_NOT_FOUND && rc != H2_PAL_ERR_UNAVAILABLE &&
-            rc != H2_PAL_ERR_TIMEOUT && rc != H2_PAL_ERR_BUSY) fail("network", rc);
+            rc != H2_PAL_ERR_TIMEOUT && rc != H2_PAL_ERR_BUSY) h2_pal_e2e_application_host_fail("network", rc);
         printf("H2_PAL_MQTT_SETUP_WAIT network=not_ready rc=%d cases_started=0\n", rc);
         fflush(stdout);
         vTaskDelay(pdMS_TO_TICKS(3000u));
     }
     rc = snapshot(result.before);
-    if (rc != H2_PAL_OK) fail("before", rc);
+    if (rc != H2_PAL_OK) h2_pal_e2e_application_host_fail("before", rc);
     rc = h2_mqtt_device_run(runtime, 8u, ca_digest, NULL, &result);
     int after = snapshot(result.after);
     result.cleanup = after == H2_PAL_OK &&
@@ -97,9 +87,9 @@ static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *app_runtim
     /* One immutable terminal ledger per boot. Later replay cannot replace an
      * incomplete first capture in the independent host admission. */
     int delivered=h2_mqtt_esp_console_complete(&console,runtime,&result,provider_cleanup,confirm_app,runtime);
-    if(delivered!=H2_PAL_OK)fail("ledger-or-confirm",delivered);
+    if(delivered!=H2_PAL_OK)h2_pal_e2e_application_host_fail("ledger-or-confirm",delivered);
     h2_pal_result_t waited = h2_pal_e2e_application_host_wait(host, runtime);
-    return h2_pal_e2e_application_host_finish(host, runtime, rc == H2_PAL_OK ? waited : rc);
+  return rc == H2_PAL_OK ? waited : rc;
 }
 
 static h2_pal_result_t configure(void *user, h2_runtime_config_t *config) {
@@ -109,7 +99,7 @@ static h2_pal_result_t configure(void *user, h2_runtime_config_t *config) {
   size_t before[10], after[10];
   rc = snapshot(before);
   if (rc != H2_PAL_OK)
-    fail("provider-before", rc);
+    h2_pal_e2e_application_host_fail("provider-before", rc);
   const h2_coremqtt_config_t mqtt_config = {.allocator = config->mem,
                                             .net = config->net,
                                             .time = config->time,
@@ -118,21 +108,21 @@ static h2_pal_result_t configure(void *user, h2_runtime_config_t *config) {
                                             .incoming_publish_records = 8u};
   rc = h2_coremqtt_create(&mqtt_config, &mqtt, &mqtt_api);
   if (rc != H2_PAL_OK)
-    fail("mqtt-create", rc);
+    h2_pal_e2e_application_host_fail("mqtt-create", rc);
   rc = snapshot(after);
   if (rc != H2_PAL_OK || memcmp(before, after, 8u * sizeof(size_t)) != 0 ||
       after[8] != before[8] + 1u || after[9] <= before[9]) {
     h2_coremqtt_destroy(mqtt);
     mqtt = NULL;
-    fail("provider-allocation", H2_PAL_ERR_IO);
+    h2_pal_e2e_application_host_fail("provider-allocation", H2_PAL_ERR_IO);
   }
   owner_bytes = after[9] - before[9];
   config->mqtt = &mqtt_api;
   return H2_PAL_OK;
 }
-static h2_pal_result_t validate(void *user, h2_runtime_t *app_runtime) {
+static h2_pal_result_t validate(void *user, h2_runtime_t *runtime) {
   (void)user;
-  runtime = app_runtime;
+  (void)runtime;
   board_log = runtime->log;
   console.usb = h2_esp_platform_usb_jtag_io_stream_api();
   console.timeout_ms = 5000u;
@@ -153,18 +143,11 @@ static h2_pal_result_t release_runtime(void *user) {
     return H2_PAL_OK;
 }
 void app_main(void) {
-
-  puts("H2_PAL_MQTT_PLATFORM_BOOT board=devkit");
-  fflush(stdout);
-  int rc = h2_esp_target_task_policy_install();
-  if (rc != H2_PAL_OK)
-    fail("task-policy", rc);
-  const h2_application_host_config_t app = {
-      .entry = run, .configure = configure, .validate = validate,
-      .release_runtime = release_runtime};
-  int host_rc = h2_pal_e2e_application_host_run(
-      "pal-mqtt", H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_WIFI, &app,
-      NULL);
-  if (host_rc != H2_PAL_OK)
-    fail("application_host", host_rc);
+    puts("H2_PAL_MQTT_PLATFORM_BOOT board=devkit");
+    fflush(stdout);
+    const h2_application_host_config_t app = {
+        .entry = run, .configure = configure, .validate = validate,
+        .release_runtime = release_runtime};
+    (void)h2_pal_e2e_application_host_start(
+        "pal-mqtt", H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_WIFI, &app);
 }

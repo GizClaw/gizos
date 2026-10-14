@@ -13,6 +13,7 @@ struct Fixture {
     h2_pal_task_api_t task{};
     h2_pal_task_t *control = nullptr, *app = nullptr;
     std::atomic<int> starts{0}, prepared{0}, configured{0}, validated{0};
+    int before_prepared = 0;
     std::atomic<int> activated{0}, deactivated{0}, released{0},
         product_released{0};
     std::atomic<int> workers{0}, ready{0}, stopping{0}, polls{0};
@@ -45,9 +46,16 @@ static int join(void *user, h2_pal_task_t *task) {
     return h2_pal_task_join(f->runtime.task, task);
 }
 static const h2_pal_task_vtable_t tasks = {start, join};
+static h2_pal_result_t before_prepare(void *user) {
+    auto *f = static_cast<Fixture *>(user);
+    assert(!f->prepared && !f->configured && !f->starts && !f->released);
+    ++f->before_prepared;
+    return mode(f, "before-prepare-fault") ? H2_PAL_ERR_IO : H2_PAL_OK;
+}
 static h2_pal_result_t prepare(void *user, h2_runtime_config_t *out) {
     auto *f = static_cast<Fixture *>(user);
     ++f->prepared;
+    if (mode(f, "before-prepare")) assert(f->before_prepared == 1);
     *out = f->runtime;
     out->task = &f->task;
     return mode(f, "prepare") ? H2_PAL_ERR_IO : H2_PAL_OK;
@@ -148,6 +156,8 @@ int main(int argc, char **argv) {
     config.validate = validate;
     config.release_runtime = product_release;
     config.run_ms = 20;
+    if (mode(&f, "before-prepare") || mode(&f, "before-prepare-fault"))
+        config.before_prepare = before_prepare;
     h2_application_host_t *host = nullptr;
     assert(h2_application_host_create(&config, &host) == H2_PAL_OK);
     assert(h2_application_host_ready(host) == H2_PAL_ERR_INVALID_STATE);
@@ -160,7 +170,8 @@ int main(int argc, char **argv) {
                           mode(&f, "release");
     assert(result.retained == retained);
     const bool pass =
-        mode(&f, "success") || mode(&f, "workers") || mode(&f, "external-stop");
+        mode(&f, "success") || mode(&f, "workers") || mode(&f, "external-stop") ||
+        mode(&f, "before-prepare");
     assert((rc == H2_PAL_OK) == pass);
     h2_application_host_result_t repeated{};
     assert(h2_application_host_run(host, &repeated) ==
@@ -173,10 +184,13 @@ int main(int argc, char **argv) {
         if (mode(&f, "runtime-busy"))
             assert(f.borrowed->board != nullptr && f.test_control != nullptr);
     } else {
-        assert(f.released == 1);
+        assert(f.released == (mode(&f, "before-prepare-fault") ? 0 : 1));
         assert(h2_application_host_destroy(&host) == H2_PAL_OK &&
                host == nullptr);
     }
+    if (mode(&f, "before-prepare-fault"))
+        assert(f.before_prepared == 1 && !f.prepared && !f.configured &&
+               !f.starts && !f.activated && !f.product_released);
     if (mode(&f, "configure") || mode(&f, "runtime") || mode(&f, "validate") ||
         mode(&f, "activate"))
         assert(f.product_released == 1);

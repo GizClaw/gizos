@@ -13,7 +13,7 @@
 static h2_runtime_t actual;
 static int suite_rc, stop_rc, restart_rc, confirm_rc;
 static int active = 1, stops, starts, runs, replays, confirms, replay_after,
-           settle, drain, repeats, finish_calls, finish_rc;
+           settle, drain, repeats;
 void rtos_delay_milliseconds(uint32_t ms) {
   if (ms == 60000u) {
     assert(!stops && !runs);
@@ -68,15 +68,6 @@ int h2_application_host_should_stop(void *host) {
   (void)host;
   return repeats == 2;
 }
-h2_pal_result_t h2_pal_e2e_application_host_finish(h2_application_host_t *host,
-                                                   h2_runtime_t *r,
-                                                   h2_pal_result_t rc) {
-  (void)host;
-  assert(r == &actual);
-  ++finish_calls;
-  finish_rc = rc;
-  return rc;
-}
 /* SDK entry boundaries are compiled but not invoked by the runner test. */
 void bk_init(void) {}
 int rtos_core0_create_psram_thread(beken_thread_t *t, int priority,
@@ -99,15 +90,19 @@ int h2_bk7258_board_start_entry_task(const char *name, void (*entry)(void *),
   return 0;
 }
 h2_pal_result_t
-h2_pal_e2e_application_host_run(const char *name, uint32_t capabilities,
-                                const h2_application_host_config_t *config,
-                                h2_application_host_result_t *result) {
+h2_pal_e2e_application_host_start(const char *name, uint32_t capabilities,
+                                  const h2_application_host_config_t *config) {
   (void)name;
   (void)capabilities;
   (void)config;
-  (void)result;
   assert(0);
   return H2_PAL_ERR_INVALID_STATE;
+}
+void h2_pal_e2e_application_host_park(void) { assert(0); }
+void h2_pal_e2e_application_host_fail(const char *stage, h2_pal_result_t rc) {
+  (void)stage;
+  (void)rc;
+  assert(0);
 }
 int main(int argc, char **argv) {
   assert(argc == 2);
@@ -122,8 +117,9 @@ int main(int argc, char **argv) {
   if (scenario == 4)
     confirm_rc = H2_PAL_ERR_IO;
   int rc = run(NULL, &actual, NULL);
-  assert(finished && settle == 1 && stops == 1 && finish_calls == 1 &&
-         rc == finish_rc);
+  /* The runner returns its original suite/transport/confirmation result.
+   * Shared Host integration tests cover automatic retention and teardown. */
+  assert(finished && settle == 1 && stops == 1);
   assert(rc == (scenario == 0   ? H2_PAL_OK
                 : scenario == 2 ? H2_PAL_ERR_TIMEOUT
                                 : H2_PAL_ERR_IO));

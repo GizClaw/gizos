@@ -12,6 +12,11 @@ extern "C" {
 
 typedef struct h2_desktop_network_services h2_desktop_network_services_t;
 
+typedef struct h2_desktop_filesystem_mount {
+    const char *source;
+    const char *target;
+} h2_desktop_filesystem_mount_t;
+
 h2_pal_result_t h2_desktop_network_services_create(
     int with_mqtt, int with_webrtc,
     h2_desktop_network_services_t **out_services);

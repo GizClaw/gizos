@@ -1,7 +1,6 @@
+#include "h2_desktop_application_host.h"
 #include "h2_pal_mqtt_e2e.h"
-#include "h2_coremqtt.h"
 #include "h2_desktop_platform.h"
-#include "h2_wolfssl.h"
 #if defined(__APPLE__)
 #include "h2_darwin_platform.h"
 #define host_net h2_darwin_net_api
@@ -104,15 +103,26 @@ static int parse_bool(const char *text, int *out) {
 #endif
 
 
+static h2_pal_mqtt_e2e_config_t tests;
+static h2_pal_mqtt_e2e_result_t result;
+static h2_runtime_t test_runtime;
+static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *runtime, void *user) {
+    (void)host;
+    test_runtime = *runtime;
+    test_runtime.mem = user;
+    tests.runtime = &test_runtime;
+    return h2_pal_mqtt_e2e_run(&tests, &result);
+}
 int main(int argc, char **argv) {
-    allocations_t tracker = {.backing = h2_desktop_platform_default_allocator()};
-    h2_pal_mem_api_t memory = {.user = &tracker, .vtable = &tracked_vtable};
-    h2_runtime_t runtime = {.mem = &memory, .net = host_net(), .time = h2_desktop_platform_time_api()};
-    uint8_t ca[8192], wrong_ca[8192];
+    static allocations_t tracker;
+    tracker.backing = h2_desktop_platform_default_allocator();
+    static h2_pal_mem_api_t memory = {.user = &tracker, .vtable = &tracked_vtable};
+    static uint8_t ca[8192], wrong_ca[8192];
     size_t ca_len = 0u, wrong_ca_len = 0u;
-    h2_pal_net_tls_config_t trusted = {.server_name = "localhost", .verify = H2_PAL_NET_TLS_VERIFY_REQUIRED};
-    h2_pal_net_tls_config_t untrusted = trusted, wrong_name = trusted;
-    h2_pal_mqtt_e2e_config_t config = {.runtime = &runtime, .timeout_ms = 3000u,
+    static h2_pal_net_tls_config_t trusted = {.server_name = "localhost", .verify = H2_PAL_NET_TLS_VERIFY_REQUIRED};
+    static h2_pal_net_tls_config_t untrusted, wrong_name;
+    untrusted = trusted; wrong_name = trusted;
+    h2_pal_mqtt_e2e_config_t config = { .timeout_ms = 3000u,
         .qos_publish_capacity = 4u,
         .trusted_tls = &trusted, .untrusted_tls = &untrusted, .wrong_name_tls = &wrong_name,
         .report = report, .report_user = &tracker};
@@ -138,7 +148,7 @@ int main(int argc, char **argv) {
     trusted.server_name = config.host;
     const char *ca_file = getenv("H2_MQTT_SMOKE_CA_FILE");
     if (ca_file != NULL && ca_file[0] != '\0' && !read_pem(ca_file, ca, sizeof(ca), &ca_len)) return 2;
-    char session[64];
+    static char session[64];
     uint8_t nonce[16];
     if (host_entropy(NULL, nonce, sizeof(nonce)) != H2_PAL_OK) return 2;
     for (size_t index = 0u; index < sizeof(nonce); ++index) (void)snprintf(session + index * 2u, 3u, "%02x", nonce[index]);
@@ -155,21 +165,14 @@ int main(int argc, char **argv) {
     trusted.root_ca_pem = ca_len == 0u ? NULL : ca; trusted.root_ca_pem_len = ca_len;
     untrusted.root_ca_pem = wrong_ca; untrusted.root_ca_pem_len = wrong_ca_len;
     wrong_name.root_ca_pem = trusted.root_ca_pem; wrong_name.root_ca_pem_len = ca_len;
-    h2_wolfssl_config_t tls = {.mem = memory, .entropy = host_entropy};
-    if (h2_wolfssl_init(&tls) != H2_PAL_OK) return 2;
-    h2_coremqtt_t *provider = NULL;
-    h2_pal_mqtt_api_t api;
-    h2_coremqtt_config_t provider_config = {.allocator = &memory, .net = runtime.net, .time = runtime.time,
-        .outgoing_publish_records = 4u, .incoming_publish_records = 4u};
-    if (h2_coremqtt_create(&provider_config, &provider, &api) != H2_PAL_OK) {
-        (void)h2_wolfssl_deinit(); return 2;
-    }
-    runtime.mqtt = &api;
-    h2_pal_mqtt_e2e_result_t result;
-    int rc = h2_pal_mqtt_e2e_run(&config, &result);
-    h2_coremqtt_destroy(provider);
-    int cleanup = h2_wolfssl_deinit();
+    tests = config;
+    const h2_desktop_application_host_config_t platform = {
+        .services = H2_DESKTOP_HOST_MQTT, .service_allocator = &memory, .mqtt_records = 4u};
+    const h2_application_host_config_t app = {.entry = run, .user = &memory};
+    h2_application_host_result_t lifecycle = {0};
+    int rc = h2_desktop_application_host_run(&platform, &app, &lifecycle);
+    int cleanup = lifecycle.cleanup;
     printf("H2_PAL_MQTT_SUMMARY {\"selected\":%u,\"passed\":%u,\"failed\":%u,\"blocked\":%u,\"retained_allocations\":%u,\"invalid_frees\":%u,\"cleanup\":%d}\n",
         result.selected, result.passed, result.failed, result.blocked, tracker.live, tracker.invalid, cleanup);
-    return rc == H2_PAL_OK && cleanup == H2_PAL_OK && tracker.live == 0u && tracker.invalid == 0u ? 0 : 1;
+    return rc == H2_PAL_OK && cleanup == H2_PAL_OK && !lifecycle.retained && tracker.live == 0u && tracker.invalid == 0u ? 0 : 1;
 }

@@ -4,27 +4,18 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "h2_esp_board.h"
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_h2loader_runtime.h"
 #include "h2_esp_platform_core.h"
-#include "h2_esp_target_task_policy.h"
 #include <stdio.h>
-static h2_runtime_t *runtime;
 static esp_timer_handle_t watchdog;
-static void fail(const char *stage, int rc) {
-  printf("H2_JSON_LAUNCHER_FAIL stage=%s rc=%d\n", stage, rc);
-  fflush(stdout);
-  for (;;)
-    vTaskDelay(pdMS_TO_TICKS(1000));
-}
+
 static void deadline(void *unused) {
   (void)unused;
   puts("H2_JSON_WATCHDOG timeout=120s");
   fflush(stdout);
 }
-static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *app_runtime, void *user) {
-    runtime = app_runtime;
+static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *runtime, void *user) {
   (void)user;
   vTaskDelay(pdMS_TO_TICKS(5000));
   int rc = h2_json_device_run(runtime, esp_app_get_description()->version);
@@ -32,18 +23,18 @@ static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *app_runtim
   esp_timer_delete(watchdog);
   if (rc != H2_PAL_OK) {
     printf("H2_JSON_QUALIFICATION_FAIL rc=%d confirm=not-attempted\n", rc);
-    fail("qualification", rc);
+    h2_pal_e2e_application_host_fail("qualification", rc);
   }
   int confirm = h2_esp_h2loader_app_confirm(runtime);
   if (confirm != H2_PAL_OK)
-    fail("confirm", confirm);
+    h2_pal_e2e_application_host_fail("confirm", confirm);
   puts("H2_JSON_READY rc=0 confirm=0");
   while (!h2_application_host_should_stop(host)) {
     h2_json_device_replay(runtime);
     vTaskDelay(pdMS_TO_TICKS(3000));
   }
 
-    return h2_pal_e2e_application_host_finish(host, runtime, rc);
+  return rc;
 }
 
 static h2_pal_result_t configure(void *user, h2_runtime_config_t *config) {
@@ -52,26 +43,20 @@ static h2_pal_result_t configure(void *user, h2_runtime_config_t *config) {
 
   return H2_PAL_OK;
 }
-static h2_pal_result_t validate(void *user, h2_runtime_t *app_runtime) {
+static h2_pal_result_t validate(void *user, h2_runtime_t *runtime) {
   (void)user;
-  runtime = app_runtime;
+  (void)runtime;
   const esp_timer_create_args_t timer = {.callback = deadline,
                                          .name = "json-watchdog"};
   if (esp_timer_create(&timer, &watchdog) != ESP_OK ||
       esp_timer_start_once(watchdog, 120000000u) != ESP_OK)
-    fail("watchdog", -4);
+    h2_pal_e2e_application_host_fail("watchdog", -4);
 
   return H2_PAL_OK;
 }
 void app_main(void) {
-
-  int rc = h2_esp_target_task_policy_install();
-  if (rc)
-    fail("task-policy", rc);
-  const h2_application_host_config_t app = {
-      .entry = run, .configure = configure, .validate = validate};
-  int host_rc = h2_pal_e2e_application_host_run(
-      "pal-json", H2_LOADER_CAPABILITY_UART, &app, NULL);
-  if (host_rc != H2_PAL_OK)
-    fail("application_host", host_rc);
+    const h2_application_host_config_t app = {
+        .entry = run, .configure = configure, .validate = validate};
+    (void)h2_pal_e2e_application_host_start(
+        "pal-json", H2_LOADER_CAPABILITY_UART, &app);
 }

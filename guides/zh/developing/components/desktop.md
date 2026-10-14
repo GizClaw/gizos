@@ -304,4 +304,6 @@ Desktop consumer 可以在标准 Memory PAL 外层维护 owner view 和 allocati
 
 ## Application Host
 
-新 `//libs/pal/providers/desktop/application_host` 在系统主线程创建、重开和销毁 SDL 窗口，并处理窗口事件；App task 的 Display open 经同步代理回该线程。Runtime config、产品 mapping 与其它 provider 由调用方注入。共享 Runtime/App 生命周期统一由 [Application Host](../application_host) 执行。现有产品入口保持原接线。
+`//libs/pal/providers/desktop/application_host` 统一创建和清理 Runtime、窗口、输入以及按需选择的网络、JSON、音频、Preference、LVGL 和 BLE iKCP 服务。`app_support` 提供已有的 provider factory 与 OS 选择，Host 负责资源归属、部分初始化回滚和 checked teardown；entry 只声明所需服务、layout、mapping 与业务回调。PAL E2E、Desktop examples、Pixa 六个 game 的共享 runner 和 showcase 使用这一入口；H106 与其它未迁移的产品入口仍保留自己的接线。
+
+SDL 窗口创建、重开、销毁与事件泵留在系统主线程。默认业务 entry 在共享 App task 上执行；直接调用 SDL/LVGL 的 GUI entry 选择 `entry_on_main` 并在帧边界调用 Host 的 should_stop/wait，兼顾事件泵和协作退出。Lua runner 保持 worker entry，已经打开的 Display 直接返回，避免主线程等待 Lua job 时与 worker 的 Display open 相互等待。输入与观察回调在 Runtime 清理前关闭 admission 并排空；无法证明清理完成时，Host 保留依赖图以及仍被借用的 callback context。完整契约见 [Application Host](../application_host)。

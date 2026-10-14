@@ -2,6 +2,7 @@
 #define H2_WEB_APPLICATION_HOST_H
 
 #include "h2_application_host.h"
+#include "h2/pal/os/h2_pal_json.h"
 #include "h2_web_platform.h"
 
 #include <stddef.h>
@@ -151,6 +152,12 @@ typedef struct h2_web_application_host_config {
     size_t stack_size;
     /** Optional board hardware hooks; NULL keeps the host defaults. */
     const h2_web_application_host_hardware_t *hardware;
+    /** Optional task allocator for native worker allocation fault probes. */
+    const h2_pal_mem_api_t *task_allocator;
+    /** Optional version supplied by FirmwareInfo PAL. Copied by run. */
+    const char *firmware_version;
+    /** Nonzero creates a Host-owned YYJSON provider. */
+    int json;
 } h2_web_application_host_config_t;
 
 /** run result: the lifetime root and any still-live dependencies are retained.
@@ -172,6 +179,16 @@ typedef struct h2_web_application_host_config {
 int h2_web_application_host_run(const h2_web_application_host_config_t *config,
                                 h2_web_application_host_entry_fn entry,
                                 void *user);
+
+/** Run with the ordinary shared Host hooks, copied before startup. Platform,
+ * FS, Runtime and task cleanup remain owned here. app.provider must be NULL;
+ * app allocator is optional and follows the shared Host lifetime contract.
+ * Returns the same 0/1/RETAINED status as run; result carries the PAL causes.
+ */
+int h2_web_application_host_run_app(const h2_web_application_host_config_t *config,
+                                  const h2_application_host_config_t *app,
+                                  h2_application_host_result_t *result);
+const h2_pal_json_api_t *h2_web_application_host_json(h2_application_host_t *host);
 
 /** Borrow the Web platform from a Host created by this provider. */
 h2_web_platform_t *

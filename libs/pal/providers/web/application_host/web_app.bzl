@@ -107,7 +107,8 @@ def h2_web_app(
         board = None,
         skin = None,
         copts = [],
-        linkopts = []):
+        linkopts = [],
+        test_start = True):
     """Declares `<name>` (web tar), `serve` and `browser_test` targets.
 
     Args:
@@ -119,6 +120,7 @@ def h2_web_app(
       passes: Console regexes required for a pass; defaults to the host PASS.
       fails: Extra console regexes that fail the browser test.
       test_timeout_s: Seconds allowed for the browser test.
+      test_start: Whether the browser driver clicks Start; false for an autostart layout.
       test_query: Query string for the browser test page.
       test_offline: Optional [down, up] regexes toggling the page offline.
       test_webrtc_server: Start the WebRTC fixture for the browser test.
@@ -202,6 +204,7 @@ def h2_web_app(
         outs = ["_headers"],
         cmd = "printf '/*\\n  Cross-Origin-Opener-Policy: same-origin\\n  Cross-Origin-Embedder-Policy: require-corp\\n' > $@",
     )
+
     # These outputs are the web root even when this package is in an external
     # repository. pkg_tar's package-relative stripping retains external/<repo>
     # for raw Files; explicit package mappings are independent of that prefix.
@@ -235,6 +238,7 @@ def h2_web_app(
         ] + fails,
         query = test_query,
         timeout_s = test_timeout_s,
+        start = test_start,
         offline = test_offline,
         webrtc_server = test_webrtc_server,
         canvas_min = canvas_min,

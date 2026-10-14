@@ -1,6 +1,5 @@
 #include "h2_pal_storage_e2e.h"
-#include "h2_smoke_host_runtime.h"
-#include "h2_web_fs.h"
+#include "h2_web_application_host.h"
 #include "h2_web_main_thread.h"
 #include <emscripten.h>
 #include <emscripten/threading.h>
@@ -20,31 +19,10 @@ static void report(void *user, const char *id, h2_pal_storage_status_t status,
       "{\"id\":\"%s\",\"status\":\"%s\",\"rc\":%d,\"phase\":%u,\"nonce\":%u}\n",
       id, names[status], rc, r->phase, r->nonce);
 }
-int main(int argc, char **argv) {
-  if (argc != 3 || emscripten_is_main_runtime_thread())
-    return 2;
-  reporter_t r = {(unsigned)strtoul(argv[1], NULL, 10),
-                  (uint32_t)strtoul(argv[2], NULL, 10)};
-  const h2_web_platform_config_t config = {.display_width = 1,
-                                           .display_height = 1};
-  h2_web_platform_t *platform = h2_web_platform_create(&config);
-  if (!platform)
-    return 3;
-  h2_web_fs_t *fs = NULL;
-  const h2_web_fs_config_t fs_config = {.persistent_root = "/storage"};
-  if (h2_web_fs_open(platform, &fs_config, &fs) != H2_PAL_OK)
-    return 4;
-  h2_runtime_config_t runtime_config = h2_smoke_host_runtime_config(
-      "pal-storage", "web", "wasm32", h2_web_platform_mem_api(),
-      h2_web_platform_time_api(platform), h2_web_platform_queue_api(platform),
-      h2_pal_unsupported_display_api());
-  runtime_config.task = h2_web_platform_task_api(platform);
-  runtime_config.sync = h2_web_platform_sync_api(platform);
-  runtime_config.fs = h2_web_fs_api(fs);
-  runtime_config.pref = h2_web_platform_pref_api(platform);
-  h2_runtime_t *runtime = NULL;
-  if (h2_runtime_init(&runtime_config, &runtime) != H2_PAL_OK)
-    return 5;
+static reporter_t r;
+static h2_pal_storage_result_t result;
+static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *runtime, void *user) {
+  (void)user;
   const h2_pal_storage_config_t tests = {.root = "/storage/run",
                                          .namespace_a = "h2storea",
                                          .namespace_b = "h2storeb",
@@ -53,13 +31,21 @@ int main(int argc, char **argv) {
                                              (h2_pal_storage_phase_t)r.phase,
                                          .case_result = report,
                                          .user = &r};
-  h2_pal_storage_result_t result;
   int rc = h2_pal_storage_e2e_run(runtime, &tests, &result);
-  if (result.retained_cleanup)
-    return 6;
-  h2_runtime_deinit(runtime);
-  int close_rc = h2_web_fs_close(fs);
-  int destroy_rc = h2_web_platform_destroy(platform);
+  if (result.retained_cleanup) h2_application_host_retain(host, result.retained_cleanup, H2_PAL_ERR_BUSY);
+  return rc;
+}
+int main(int argc, char **argv) {
+  if (argc != 3 || emscripten_is_main_runtime_thread()) return 2;
+  r = (reporter_t){(unsigned)strtoul(argv[1], NULL, 10), (uint32_t)strtoul(argv[2], NULL, 10)};
+  const h2_web_application_host_config_t config = {
+      .name = "pal-storage", .display_width = 1, .display_height = 1, .persistent_root = "/storage"};
+  const h2_application_host_config_t app = {.entry = run};
+  h2_application_host_result_t lifecycle = {0};
+  int rc = h2_web_application_host_run_app(&config, &app, &lifecycle);
+  if (lifecycle.retained) return 6;
+  /* Successful Host cleanup includes both IndexedDB flush and platform destroy. */
+  int close_rc = lifecycle.cleanup, destroy_rc = lifecycle.cleanup;
   printf("H2_STORAGE_PHASE "
          "{\"contract\":%u,\"phase\":%u,\"nonce\":%u,\"passed\":%zu,\"failed\":%zu,\"blocked\":"
          "%zu,\"cleanup\":%d,\"fs_close\":%d,\"platform_destroy\":%d}\n",

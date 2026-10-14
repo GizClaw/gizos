@@ -1,4 +1,6 @@
 #pragma once
+#include "h2_bk7258_board.h"
+#include "h2_esp_board.h"
 #include "h2_bk_board_application_host.h"
 #include "h2_esp_board_application_host.h"
 #include "h2_runtime.h"
@@ -26,6 +28,9 @@ int h2_esp_h2loader_app_commands_stop_serial(void);
 int h2_bk_h2loader_stop_app_commands(void);
 int h2_esp_h2loader_app_serial_is_started(void);
 int h2_bk_h2loader_app_serial_is_started(void);
+int h2_esp_target_task_policy_install(void);
+int h2_bk_target_task_policy_install(void);
+void bk_init(void);
 #ifdef __cplusplus
 }
 #endif

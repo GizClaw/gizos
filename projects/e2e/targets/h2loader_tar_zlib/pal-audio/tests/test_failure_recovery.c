@@ -185,6 +185,14 @@ int h2_pal_e2e_application_host_run(const char *name, uint32_t capabilities,
   (void)out;
   return H2_PAL_ERR_UNAVAILABLE;
 }
+int h2_pal_e2e_application_host_start(
+    const char *name, uint32_t capabilities,
+    const h2_application_host_config_t *config) {
+  (void)name;
+  (void)capabilities;
+  (void)config;
+  return H2_PAL_ERR_UNAVAILABLE;
+}
 static const test_app_description_t description = {.version = "test"};
 const test_app_description_t *esp_app_get_description(void) {
   return &description;
@@ -195,7 +203,6 @@ uint32_t bk_misc_get_reset_reason(void) { return 0u; }
 static void check(int run_rc, int confirm_rc, int cfg_rc, int init_rc,
                   int reboot_rc) {
   static h2_runtime_t borrowed_runtime;
-  runtime = &borrowed_runtime;
   provider_audio = NULL;
   run_result = run_rc;
   confirm_result = confirm_rc;

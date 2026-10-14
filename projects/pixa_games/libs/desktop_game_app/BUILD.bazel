@@ -14,6 +14,7 @@ cc_library(
         "//libs/game_runtime",
         "//libs/pal",
         "//libs/pal/providers/desktop/app_support",
+        "//libs/pal/providers/desktop/application_host",
         "//libs/pal/providers/desktop/pal_core",
         "//libs/pal/providers/portaudio",
         "//libs/pixa",

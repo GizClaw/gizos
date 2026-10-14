@@ -29,6 +29,7 @@ cc_binary(
     deps = [
         "//libs/atomic/providers/c11",
         "//libs/pal:unsupported",
+        "//libs/pal/providers/web/application_host",
         "//libs/pal/providers/web/pal_core",
         "//libs/runtime",
         "//projects/e2e/apps/lua-runtime/app:lua_runtime_e2e",

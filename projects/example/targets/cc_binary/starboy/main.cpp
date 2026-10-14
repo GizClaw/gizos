@@ -1,4 +1,4 @@
-#include "h2_desktop_app_support.h"
+#include "h2_desktop_application_host.hpp"
 #include "h2_starboy.h"
 #include "layout_config.h"
 #include "mouse_touch_adapter.h"
@@ -22,7 +22,7 @@ constexpr h2::desktop::Layout kLayout = {
 };
 
 struct AppContext {
-  h2::desktop::OwnedDisplay *display = nullptr;
+  h2_application_host_t *host = nullptr;
   h2::starboy::MouseTouchAdapter *mouse_touch = nullptr;
   h2_sdl3_pointer_state_t pointer = {};
   bool global_mouse_checked = false;
@@ -31,9 +31,9 @@ struct AppContext {
 
 int should_stop(void *user) {
   auto *context = static_cast<AppContext *>(user);
-  if (context == nullptr || context->display == nullptr ||
+  if (context == nullptr || context->host == nullptr ||
       context->mouse_touch == nullptr ||
-      h2::desktop::poll_events(context->display) != 0) {
+      h2_desktop_application_host_should_stop(context->host) != 0) {
     return 1;
   }
   if (!context->global_mouse_checked) {
@@ -44,8 +44,8 @@ int should_stop(void *user) {
   if (context->global_mouse_available &&
       context->mouse_touch->sample_global_mouse()) {
     // Global desktop coordinates keep gaze active outside the app window.
-  } else if (h2::desktop::read_pointer(
-                 context->display, &context->pointer) == H2_PAL_OK) {
+  } else if (h2_desktop_application_host_pointer(
+                 context->host, &context->pointer) == H2_PAL_OK) {
     // The native pressed bit is deliberately ignored: hover drives gaze.
     context->mouse_touch->update(
         true, context->pointer.x, context->pointer.y);
@@ -57,55 +57,34 @@ int should_stop(void *user) {
 
 }  // namespace
 
-int main() {
-  h2::desktop::OwnedDisplay display;
-  h2::desktop::OwnedAudio audio;
-  if (h2::desktop::configure_layout(kLayout) != H2_PAL_OK ||
-      h2::desktop::open_display(kLayout, &display) != H2_DISPLAY_OK ||
-      h2::desktop::open_audio(true, &audio) != H2_AUDIO_OK) {
-    std::fprintf(stderr,
-                 "desktop %s: SDL display or real microphone unavailable\n",
-                 kLayout.app_name);
-    return 1;
-  }
-
-  h2::starboy::MouseTouchAdapter mouse_touch(
-      static_cast<std::uint32_t>(kLayout.width),
-      static_cast<std::uint32_t>(kLayout.height));
-
-  h2_runtime_config_t runtime_config = h2::desktop::runtime_config(nullptr);
-  runtime_config.display = display.display();
-  runtime_config.touch = mouse_touch.api();
-  runtime_config.audio = audio.api();
-  h2_runtime_t *runtime = nullptr;
-  const h2_pal_result_t runtime_result =
-      h2_runtime_init(&runtime_config, &runtime);
-  if (runtime_result != H2_PAL_OK || runtime == nullptr) {
-    std::fprintf(stderr, "desktop %s: Runtime init failed (%d)\n",
-                 kLayout.app_name, runtime_result);
-    return 1;
-  }
-
-  AppContext context;
-  context.display = &display;
-  context.mouse_touch = &mouse_touch;
+static h2_pal_result_t configure(void *user, h2_runtime_config_t *config) {
+  config->touch = static_cast<AppContext *>(user)->mouse_touch->api();
+  return H2_PAL_OK;
+}
+static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *runtime, void *user) {
+  auto *context = static_cast<AppContext *>(user);
+  context->host = host;
   h2_starboy_config_t config = {};
   config.frame_interval_ms = 16u;
   config.random_seed = static_cast<std::uint32_t>(
       std::chrono::steady_clock::now().time_since_epoch().count());
   config.initial_pupil_style = H2_STARBOY_PUPIL_STYLE_ACORN;
   config.should_stop = should_stop;
-  config.should_stop_user = &context;
+  config.should_stop_user = context;
   const int result = h2_starboy_run(runtime, &config);
-  mouse_touch.update(false, context.pointer.x, context.pointer.y);
-  // The App owns the single Display open/close pair. Pump once more on the
-  // same thread so the SDL provider applies its deferred native teardown.
-  (void)h2::desktop::poll_events(&display);
-  h2_runtime_deinit(runtime);
-  if (result != H2_PAL_OK) {
-    std::fprintf(stderr, "desktop %s: App exited with result %d\n",
-                 kLayout.app_name, result);
-    return 1;
-  }
-  return 0;
+  context->mouse_touch->update(false, context->pointer.x, context->pointer.y);
+  return result;
+}
+int main() {
+  static h2::starboy::MouseTouchAdapter mouse_touch(kLayout.width, kLayout.height);
+  static AppContext context;
+  context.mouse_touch = &mouse_touch;
+  auto platform = h2::desktop::application_host_config(kLayout, H2_DESKTOP_HOST_AUDIO);
+  platform.require_real_audio = 1;
+  h2_application_host_config_t app{};
+  app.entry = run;
+  app.user = &context;
+  app.configure = configure;
+  h2_application_host_result_t result{};
+  return h2_desktop_application_host_run(&platform, &app, &result) == H2_PAL_OK ? 0 : 1;
 }

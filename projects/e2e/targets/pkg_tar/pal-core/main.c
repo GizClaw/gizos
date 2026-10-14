@@ -1,6 +1,7 @@
 #include "h2_pal_core_e2e.h"
 #include "h2_pal_core_e2e_task_names.h"
-#include "h2_smoke_host_runtime.h"
+#include "h2_web_application_host.h"
+#include "h2/pal/h2_pal_unsupported.h"
 #include "h2_web_main_thread.h"
 #include "h2_web_platform.h"
 #include <emscripten.h>
@@ -24,6 +25,7 @@ typedef struct app {
   h2_pal_core_e2e_config_t config;
   h2_pal_core_e2e_result_t result;
   h2_pal_result_t run_result;
+  h2_application_host_t *host;
   worker_t workers[8];
   h2_pal_task_t *tasks[8];
   h2_pal_semaphore_t *entered, *release, *unsub_started, *unsub_done;
@@ -522,8 +524,10 @@ static void run(void *user) {
          H2_PAL_CORE_E2E_CONTRACT_VERSION, app.result.passed, app.result.failed,
          app.result.blocked, app.result.not_run, app.result.complete,
          app.result.qualified, (int)app.result.cleanup_result);
-  if (app.result.retained_cleanup || app.result.baseline.retained_cleanup)
+  if (app.result.retained_cleanup || app.result.baseline.retained_cleanup) {
+    h2_application_host_retain(app.host, NULL, H2_PAL_ERR_BUSY);
     return;
+  }
   h2_pal_result_t task_rc = parallel_probe();
   if (task_rc == H2_PAL_OK)
     task_rc = task_probe();
@@ -533,9 +537,37 @@ static void run(void *user) {
   if (task_rc != H2_PAL_OK || event_rc != H2_PAL_OK || cleanup != H2_PAL_OK) {
     printf("H2_WEB_CORE_RUNNER_ERROR task=%d event=%d cleanup=%d\n",
            (int)task_rc, (int)event_rc, (int)cleanup);
+    app.run_result = task_rc != H2_PAL_OK ? task_rc : event_rc != H2_PAL_OK ? event_rc : cleanup;
+    if (cleanup != H2_PAL_OK) h2_application_host_retain(app.host, NULL, cleanup);
     return;
   }
   app.probes_complete = 1;
+}
+static h2_pal_result_t configure(void *user, h2_runtime_config_t *config) {
+  (void)user;
+  /* The Core suite owns an independent, exclusive event fixture. */
+  config->system_event = h2_pal_unsupported_system_event_api();
+  return H2_PAL_OK;
+}
+static h2_pal_result_t entry(h2_application_host_t *host, h2_runtime_t *runtime, void *user) {
+  (void)user;
+  app.host = host;
+  app.runtime = runtime;
+  app.platform = h2_web_application_host_platform(host);
+  app.config = (h2_pal_core_e2e_config_t){
+      .timeout_ms = 3000u,
+      .firmware_version = "pal-core-web-v2",
+      .observe_resources = resources,
+      .observe_task_stack = stack_observer,
+      .task_allocation_fault = allocation_fault,
+      .queue_latest = H2_PAL_CORE_QUEUE_LATEST_REPLACE,
+      .observe_monotonic_us = clock_us,
+      .observe_log = log_observer,
+      .case_begin = case_begin,
+      .allow_wall_set = 1,
+      .event_fixture = h2_web_platform_system_event_api(app.platform)};
+  run(NULL);
+  return app.probes_complete ? app.run_result : H2_PAL_ERR_IO;
 }
 int main(void) {
   int worker_main = !emscripten_is_main_runtime_thread();
@@ -547,84 +579,24 @@ int main(void) {
   if (!worker_main || !isolated || !shared)
     return 2;
   const size_t before = heap_bytes();
-  const h2_web_platform_config_t pcfg = {.display_width = 1,
-                                         .display_height = 1};
-  const h2_pal_mem_vtable_t alloc_vtable = {.alloc = task_alloc,
-                                            .free = task_free};
-  const h2_pal_mem_api_t allocator = {.vtable = &alloc_vtable};
-  app.platform = h2_web_platform_create_with_task_allocator(&pcfg, &allocator);
-  if (app.platform == NULL)
-    return 2;
-  const char *version = "pal-core-web-v2";
-  if (h2_web_platform_configure_firmware_info(app.platform, version) !=
-      H2_PAL_OK)
-    return 2;
-  h2_runtime_config_t rcfg = h2_smoke_host_runtime_config(
-      "browser", "wasm32", "web", h2_web_platform_mem_api(),
-      h2_web_platform_time_api(app.platform),
-      h2_web_platform_queue_api(app.platform),
-      h2_web_platform_display_api(app.platform));
-  rcfg.firmware_info = h2_web_platform_firmware_info_api(app.platform);
-  rcfg.log = h2_web_platform_log_api();
-  rcfg.timer = h2_web_platform_timer_api(app.platform);
-  rcfg.task = h2_web_platform_task_api(app.platform);
-  rcfg.sync = h2_web_platform_sync_api(app.platform);
-  if (h2_runtime_init(&rcfg, &app.runtime) != H2_PAL_OK)
-    return 2;
-  app.config = (h2_pal_core_e2e_config_t){
-      .timeout_ms = 3000u,
-      .firmware_version = version,
-      .observe_resources = resources,
-      .observe_task_stack = stack_observer,
-      .task_allocation_fault = allocation_fault,
-      .queue_latest = H2_PAL_CORE_QUEUE_LATEST_REPLACE,
-      .observe_monotonic_us = clock_us,
-      .observe_log = log_observer,
-      .case_begin = case_begin,
-      .allow_wall_set = 1,
-      .event_fixture = h2_web_platform_system_event_api(app.platform)};
-  h2_pal_task_t *runner = NULL;
-  const h2_pal_task_options_t options = {.name =
-                                             h2_pal_core_e2e_runner_task_name};
-  h2_pal_result_t rc =
-      h2_pal_task_start(rcfg.task, &options, run, NULL, &runner);
-  const double deadline =
-      ((double)h2_web_main_call(browser_now, NULL).f64) + 60000.0;
-  while (rc == H2_PAL_OK && runner != NULL &&
-         ((double)h2_web_main_call(browser_now, NULL).f64) < deadline) {
-    rc = h2_web_platform_pump(app.platform, 64u, NULL);
-    if (rc != H2_PAL_OK)
-      break;
-    h2_pal_result_t joined = h2_pal_task_join(rcfg.task, runner);
-    if (joined == H2_PAL_OK)
-      runner = NULL;
-    else if (joined != H2_PAL_ERR_BUSY) {
-      rc = joined;
-      break;
-    }
-    if (runner != NULL)
-      h2_pal_time_sleep_ms(rcfg.time, 1u);
-  }
-  if (rc != H2_PAL_OK || runner != NULL || !app.probes_complete) {
-    printf("H2_WEB_CORE_RUNNER_ERROR pump=%d joined=%d probes=%d\n", (int)rc,
-           runner == NULL, app.probes_complete);
-    return 2;
-  }
+  static const h2_pal_mem_vtable_t alloc_vtable = {.alloc = task_alloc, .free = task_free};
+  static const h2_pal_mem_api_t allocator = {.vtable = &alloc_vtable};
+  const h2_web_application_host_config_t config = {
+      .name = "pal-core", .display_width = 1, .display_height = 1,
+      .task_allocator = &allocator, .firmware_version = "pal-core-web-v2"};
+  const h2_application_host_config_t application = {.entry = entry, .configure = configure};
+  h2_application_host_result_t lifecycle = {0};
+  int rc = h2_web_application_host_run_app(&config, &application, &lifecycle);
+  if (rc || lifecycle.retained || !app.probes_complete) return 2;
   (void)h2_web_main_call(show_result,
                          (const void *[]){&(int){(int)app.result.passed},
                                           &(int){(int)app.result.failed},
                                           &(int){(int)app.result.blocked},
                                           &(int){app.result.qualified},
                                           &(int){app.diagnostic_failures}});
-  const size_t live = heap_bytes();
-  h2_runtime_deinit(app.runtime);
-  h2_pal_result_t destroy = h2_web_platform_destroy(app.platform);
-  printf("H2_WEB_CORE_TEARDOWN destroy=%d heap_before_platform=%zu "
-         "heap_live=%zu heap_after_destroy=%zu\n",
-         (int)destroy, before, live, heap_bytes());
-  if (destroy != H2_PAL_OK)
-    return 2;
+  printf("H2_WEB_CORE_TEARDOWN destroy=%d heap_before_platform=%zu heap_after_destroy=%zu\n",
+         lifecycle.cleanup, before, heap_bytes());
   printf("H2_WEB_CORE_PROBE_COMPLETE qualified=%d diagnostic_failures=%d\n",
          app.result.qualified, app.diagnostic_failures);
-  return app.result.qualified && app.diagnostic_failures == 0 ? 0 : 1;
+  return app.result.qualified && app.diagnostic_failures == 0 && lifecycle.cleanup == H2_PAL_OK ? 0 : 1;
 }

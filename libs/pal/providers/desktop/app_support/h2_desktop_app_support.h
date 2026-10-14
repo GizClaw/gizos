@@ -2,6 +2,7 @@
 #define H2_DESKTOP_APP_SUPPORT_H
 
 #include "h2_desktop_platform.h"
+#include "h2_desktop_app_support_c.h"
 #include "h2_portaudio.h"
 #include "h2_sdl3.h"
 #include "h2_sqlite.h"
@@ -24,10 +25,7 @@ enum class ProcessState {
 
 struct StatusSurface;
 
-struct FilesystemMount {
-  const char *source;
-  const char *target;
-};
+using FilesystemMount = h2_desktop_filesystem_mount_t;
 
 struct Layout {
   const char *app_name;
@@ -142,6 +140,10 @@ int open_audio(bool require_real_devices, OwnedAudio *audio);
 int open_display(const Layout &layout, OwnedDisplay *display);
 int open_network_services(bool with_mqtt, bool with_webrtc,
                           OwnedNetworkServices *services);
+int open_network_services(bool with_mqtt, bool with_webrtc,
+                          const h2_pal_mem_api_t *allocator,
+                          std::size_t mqtt_records,
+                          OwnedNetworkServices *services);
 int open_lvgl(OwnedDisplay *display, OwnedLvgl *lvgl);
 int open_status_surface(OwnedDisplay *display, const char *app_name,
                         OwnedStatusSurface *surface);
@@ -152,6 +154,7 @@ bool load_resource(const char *relative,
 bool load_file(const h2_pal_fs_api_t *fs, const char *path,
                std::vector<std::uint8_t> *output);
 int poll_events(OwnedDisplay *display, OwnedLvgl *lvgl = nullptr);
+void handle_lvgl_event(OwnedLvgl *lvgl, const h2_sdl3_event_t &event);
 int read_pointer(OwnedDisplay *display, h2_sdl3_pointer_state_t *out_state);
 void wait_for_close(OwnedDisplay *display, std::uint32_t interval_ms = 16u);
 const h2_pal_netif_api_t *netif_api();

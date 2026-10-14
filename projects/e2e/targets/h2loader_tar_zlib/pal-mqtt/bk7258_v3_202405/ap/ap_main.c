@@ -1,12 +1,9 @@
 #include "h2_pal_e2e_application_host.h"
-#include "h2_bk7258_board.h"
 #include "h2_bk_h2loader.h"
 #include "h2_bk_platform_core.h"
-#include "h2_bk_target_task_policy.h"
 #include "device_runner.h"
 #include "ledger_console.h"
 #include <common/sys_config.h>
-#include "bk_private/bk_init.h"
 #include <os/os.h>
 #include <driver/uart.h>
 #include <stdio.h>
@@ -34,13 +31,12 @@ static int ledger_log(void *user,h2_pal_log_level_t level,const char *scope,cons
 }
 static const h2_pal_log_vtable_t ledger_log_vtable={.write=ledger_log};
 static const h2_pal_log_api_t ledger_log_api={.vtable=&ledger_log_vtable};
-static void hold(void){for(;;)rtos_delay_milliseconds(1000u);}
-static void fail(const char *stage,int rc){printf("H2_PAL_MQTT_SETUP_FAIL stage=%s rc=%d\n",stage,rc);fflush(stdout);hold();}
+
 static int snapshot(size_t out[10]){
     h2_bk_platform_resource_stats_t s={0};int rc=h2_bk_platform_get_resource_stats(&s);
     if(rc==H2_PAL_OK){size_t values[]={s.live_tasks,s.task_stack_bytes,s.live_queues,s.live_mutexes,s.live_semaphores,
         s.live_conditions,s.live_timers,s.live_firmware_infos,s.allocations,s.allocation_bytes};memcpy(out,values,sizeof(values));}
-    return rc;
+  return rc;
 }
 static int ca_digest(void *user,const uint8_t *bytes,size_t length,uint8_t digest[32]){
     (void)user;return mbedtls_sha256(bytes,length,digest,0)==0?H2_PAL_OK:H2_PAL_ERR_IO;
@@ -71,7 +67,7 @@ static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *app_runtim
     (void)user;rtos_delay_milliseconds(5000u);
     int rc;
     for(;;){rc=h2_mqtt_device_prepare(runtime);if(rc==H2_PAL_OK)break;
-        if(rc!=H2_PAL_ERR_NOT_FOUND && rc!=H2_PAL_ERR_UNAVAILABLE && rc!=H2_PAL_ERR_TIMEOUT && rc!=H2_PAL_ERR_BUSY)fail("network",rc);
+        if(rc!=H2_PAL_ERR_NOT_FOUND && rc!=H2_PAL_ERR_UNAVAILABLE && rc!=H2_PAL_ERR_TIMEOUT && rc!=H2_PAL_ERR_BUSY)h2_pal_e2e_application_host_fail("network",rc);
         printf("H2_PAL_MQTT_SETUP_WAIT network=not_ready rc=%d cases_started=0\n",rc);fflush(stdout);rtos_delay_milliseconds(3000u);}
     console.uart=h2_bk_platform_uart_io_stream_api();
     console.timeout_ms=5000u;
@@ -124,7 +120,7 @@ restore_commands: ;
     /* There is one first ledger/terminal. Later replay cannot repair a missing
      * record and cannot replace this boot's actual failed output evidence. */
     h2_pal_result_t waited = h2_pal_e2e_application_host_wait(host, runtime);
-    return h2_pal_e2e_application_host_finish(host, runtime, rc == H2_PAL_OK ? waited : rc);
+  return rc == H2_PAL_OK ? waited : rc;
 }
 
 static h2_pal_result_t configure(void *user, h2_runtime_config_t *config) {
@@ -135,18 +131,16 @@ static h2_pal_result_t configure(void *user, h2_runtime_config_t *config) {
 
   return H2_PAL_OK;
 }
-static void entry(void *user) {
+static h2_pal_result_t before_prepare(void *user) {
   (void)user;
-
   puts("H2_PAL_MQTT_PLATFORM_BOOT board=bk7258");
   fflush(stdout);
-  const h2_application_host_config_t app = {.entry = run,
-                                            .configure = configure};
-  int host_rc = h2_pal_e2e_application_host_run(
-      "pal-mqtt", H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_WIFI, &app,
-      NULL);
-  if (host_rc != H2_PAL_OK)
-    fail("application_host", host_rc);
+  return H2_PAL_OK;
 }
-int main(void){int rc=h2_bk_target_task_policy_install();if(rc!=H2_PAL_OK)return -1;bk_init();
-    rc=h2_bk7258_board_start_entry_task("bk/pal-mqtt",entry,NULL);if(rc!=H2_PAL_OK)fail("entry",rc);return 0;}
+
+int main(void) {
+    const h2_application_host_config_t app = {.entry = run,
+        .configure = configure, .before_prepare = before_prepare};
+    return h2_pal_e2e_application_host_start(
+        "pal-mqtt", H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_WIFI, &app);
+}

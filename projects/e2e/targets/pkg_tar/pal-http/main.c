@@ -1,5 +1,5 @@
 #include "h2_pal_http_e2e.h"
-#include "h2_web_platform.h"
+#include "h2_web_application_host.h"
 #include "h2_web_main_thread.h"
 #include <emscripten/threading.h>
 #include <stdio.h>
@@ -50,28 +50,31 @@ static void report(void *user, const h2_pal_http_e2e_case_result_t *result) {
         result->detail, result->line, (unsigned long long)result->elapsed_ms, result->request_result);
 }
 
+static h2_pal_http_e2e_config_t tests;
+static h2_pal_http_e2e_result_t result;
+static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *runtime, void *user) {
+  (void)user;
+  tests.runtime = runtime;
+  int rc = h2_pal_http_e2e_run(&tests, &result);
+  if (result.retained_allocations) h2_application_host_retain(host, NULL, H2_PAL_ERR_BUSY);
+  return rc;
+}
 int main(int argc, char **argv) {
     if ((argc != 4 && argc != 5) || emscripten_is_main_runtime_thread() || !calling_js_is_worker()) return 2;
-    const h2_web_platform_config_t platform_config = {.display_width = 1, .display_height = 1};
-    h2_web_platform_t *platform = h2_web_platform_create(&platform_config);
-    if (platform == NULL) return 2;
-    h2_runtime_t runtime = {0};
-    runtime.http = h2_web_platform_http_api(platform);
-    runtime.mem = h2_web_platform_mem_api();
-    runtime.time = h2_web_platform_time_api(platform);
-    h2_pal_http_e2e_config_t config = {
-        .runtime = &runtime, .http_base = argv[1], .https_base = argv[2],
-        .untrusted_https_base = argv[3], .untrusted_tls_error = H2_PAL_ERR_IO, .report = report,
-    };
-    h2_pal_http_e2e_result_t result;
-    int rc = h2_pal_http_e2e_run(&config, &result);
+    tests = (h2_pal_http_e2e_config_t){.http_base = argv[1], .https_base = argv[2],
+        .untrusted_https_base = argv[3], .untrusted_tls_error = H2_PAL_ERR_IO, .report = report};
+  const h2_web_application_host_config_t config = {
+      .name = "pal-http", .display_width = 1, .display_height = 1};
+  const h2_application_host_config_t app = {.entry = run};
+  h2_application_host_result_t lifecycle = {0};
+  int rc = h2_web_application_host_run_app(&config, &app, &lifecycle);
+  int cleanup = lifecycle.cleanup;
     int fault = 0;
     if (argc == 5) {
         if (strcmp(argv[4], "missing") == 0) fault = 1;
         else if (strcmp(argv[4], "invalid-count") == 0) fault = 2;
         else if (strcmp(argv[4], "retained") == 0) fault = 3;
     }
-    int cleanup = h2_web_platform_destroy(platform);
     int observation[4] = {-1, -1, -1, -1};
     (void)h2_web_main_call(observe_http_registry, (const void *[]){&(int *){observation}, &fault});
     printf("H2_PAL_HTTP_WORKER_STATE {\"schema\":1,\"caller_is_pthread\":%d,\"caller_is_main_runtime\":%d,\"registry_present\":%d,\"registry_valid\":%d,\"pending_requests\":%d,\"registry_owner_is_pthread\":%d}\n",
@@ -79,5 +82,5 @@ int main(int argc, char **argv) {
     int observed_clean = observation[0] == 1 && observation[1] == 1 && observation[2] == 0;
     printf("H2_PAL_HTTP_SUMMARY {\"passed\":%u,\"failed\":%u,\"blocked\":%u,\"retained_allocations\":%zu,\"cleanup\":%d}\n",
         result.passed, result.failed, result.blocked, result.retained_allocations, cleanup);
-    return rc == H2_PAL_OK && cleanup == H2_PAL_OK && observed_clean ? 0 : 1;
+    return rc == H2_PAL_OK && cleanup == H2_PAL_OK && !lifecycle.retained && observed_clean ? 0 : 1;
 }

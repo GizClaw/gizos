@@ -1,0 +1,17 @@
+<style>
+  :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #07111f; color: #e2e8f0; }
+  body { display: grid; min-height: 100vh; margin: 0; place-items: center; }
+  main { display: grid; gap: 12px; justify-items: center; }
+  #canvas { width: min(368px, calc(100vw - 32px)); border: 1px solid #334155; border-radius: 20px; image-rendering: pixelated; touch-action: none; }
+  #status { margin: 0; color: #94a3b8; font-size: 13px; }
+  [data-h2-slot="controls"] { display: none; }
+</style>
+<main>
+  <div data-h2-slot="display"></div>
+  <p data-h2-slot="status"></p>
+</main>
+<div data-h2-slot="controls" hidden></div>
+<script>
+  document.title = 'Lua Flappy Bird';
+  document.addEventListener('DOMContentLoaded', () => document.getElementById('start').click(), {once: true});
+</script>

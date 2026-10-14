@@ -1,21 +1,7 @@
-#include "h2_desktop_platform.h"
+#include "h2_desktop_application_host.h"
 #include "h2_pal_storage_e2e.h"
 #include "device_runner.h"
 #include "host_config.h"
-#include "h2_sqlite.h"
-#if defined(__APPLE__)
-#include "h2_darwin_platform.h"
-#define host_fs_t h2_darwin_host_fs_t
-#define host_fs_create h2_darwin_host_fs_create
-#define host_fs_api h2_darwin_host_fs_api
-#define host_fs_destroy h2_darwin_host_fs_destroy
-#else
-#include "h2_linux_platform.h"
-#define host_fs_t h2_linux_host_fs_t
-#define host_fs_create h2_linux_host_fs_create
-#define host_fs_api h2_linux_host_fs_api
-#define host_fs_destroy h2_linux_host_fs_destroy
-#endif
 #include <atomic>
 #include <cstddef>
 #include <cstdio>
@@ -82,48 +68,23 @@ void report(void *user, const char *id, h2_pal_storage_status_t status,
   std::fflush(stdout);
 }
 } // namespace
-int main(int argc, char **argv) {
-  if (argc != 4 && argc != 5)
-    return 2;
-  unsigned phase = static_cast<unsigned>(std::strtoul(argv[1], nullptr, 10));
-  uint32_t nonce = static_cast<uint32_t>(std::strtoul(argv[3], nullptr, 10));
-  std::filesystem::path root = argv[2];
-  const std::string fs_path = (root / "files").string(),
-                    db_path = (root / "preferences.sqlite").string();
-  const char *sources[] = {fs_path.c_str()}, *targets[] = {"/storage"};
-  host_fs_t *fs = nullptr;
-  h2_sqlite_t *pref = nullptr;
-  h2_runtime_t *runtime = nullptr;
-  if (host_fs_create(sources, targets, 1, &fs) != H2_PAL_OK)
-    return 3;
-  const h2_sqlite_config_t database = {db_path.c_str()};
-  if (h2_sqlite_create(&database, &pref) != H2_PAL_OK) {
-    host_fs_destroy(fs);
-    return 4;
-  }
-  auto config = h2_storage_host_config(&memory);
-  config.fs = host_fs_api(fs);
-  config.pref = h2_sqlite_pref_api(pref);
-  if (h2_runtime_init(&config, &runtime) != H2_PAL_OK) {
-    h2_sqlite_destroy(pref);
-    host_fs_destroy(fs);
-    return 5;
-  }
+static Reporter reporter{};
+static bool device_control;
+static const char *version;
+static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *runtime, void *) {
   const size_t before_allocations = allocations.load(),
                before_bytes = bytes.load();
-  Reporter reporter{phase, nonce};
   h2_pal_storage_config_t tests{};
   tests.root = "/storage/run";
   tests.namespace_a = "h2storea";
   tests.namespace_b = "h2storeb";
-  tests.nonce = nonce;
-  tests.phase = static_cast<h2_pal_storage_phase_t>(phase);
+  tests.nonce = reporter.nonce;
+  tests.phase = static_cast<h2_pal_storage_phase_t>(reporter.phase);
   tests.case_result = report;
   tests.user = &reporter;
   h2_pal_storage_result_t result{};
-  const bool device_control = argc == 5;
   const int rc = device_control
-                     ? h2_storage_device_run(runtime, tests.root, argv[4])
+                     ? h2_storage_device_run(runtime, tests.root, version)
                      : h2_pal_storage_e2e_run(runtime, &tests, &result);
   if (device_control)
     h2_storage_device_replay(runtime);
@@ -137,15 +98,38 @@ int main(int argc, char **argv) {
                 "{\"contract\":%u,\"phase\":%u,\"nonce\":%u,\"pid\":%ld,"
                 "\"passed\":%zu,\"failed\":%zu,"
                 "\"blocked\":%zu,\"cleanup\":%d,\"balanced\":%s}\n",
-                H2_PAL_STORAGE_CONTRACT_VERSION, phase, nonce,
+                H2_PAL_STORAGE_CONTRACT_VERSION, reporter.phase, reporter.nonce,
                 static_cast<long>(getpid()), result.passed, result.failed,
                 result.blocked, result.cleanup_result,
                 balanced ? "true" : "false");
   }
   if (result.retained_cleanup || (device_control && !balanced))
-    return 6;
-  h2_runtime_deinit(runtime);
-  h2_sqlite_destroy(pref);
-  host_fs_destroy(fs);
-  return rc == 0 && balanced && allocations == 0 && bytes == 0 ? 0 : 1;
+    h2_application_host_retain(host, result.retained_cleanup, H2_PAL_ERR_BUSY);
+  return rc == 0 && balanced ? H2_PAL_OK : H2_PAL_ERR_IO;
+
+}
+int main(int argc, char **argv) {
+  if (argc != 4 && argc != 5)
+    return 2;
+  unsigned phase = static_cast<unsigned>(std::strtoul(argv[1], nullptr, 10));
+  uint32_t nonce = static_cast<uint32_t>(std::strtoul(argv[3], nullptr, 10));
+  std::filesystem::path root = argv[2];
+  const std::string fs_path = (root / "files").string(),
+                    db_path = (root / "preferences.sqlite").string();
+  const h2_desktop_filesystem_mount_t mount = {fs_path.c_str(), "/storage"};
+  h2_desktop_application_host_config_t platform{};
+  platform.runtime = h2_storage_host_config(&memory);
+  platform.mounts = &mount;
+  platform.mount_count = 1u;
+  platform.services = H2_DESKTOP_HOST_PREFERENCE;
+  platform.preference_path = db_path.c_str();
+  reporter = {phase, nonce};
+  device_control = argc == 5;
+  version = device_control ? argv[4] : nullptr;
+  h2_application_host_config_t app{};
+  app.entry = run;
+  h2_application_host_result_t lifecycle{};
+  int rc = h2_desktop_application_host_run(&platform, &app, &lifecycle);
+  if (lifecycle.retained) return 6;
+  return rc == 0 && lifecycle.cleanup == H2_PAL_OK && allocations == 0 && bytes == 0 ? 0 : 1;
 }

@@ -34,6 +34,11 @@ typedef struct h2_application_host_config {
     size_t stack_size;
     /** Control task minimum bytes; zero selects 64 KiB. */
     size_t control_stack_size;
+    /** Optional product observation on the startup owner before platform
+     * prepare. A failure skips platform prepare/release and Runtime startup;
+     * this hook must leave its own resources safe before returning an error.
+     * Opaque user storage follows the ordinary config borrowing contract. */
+    h2_pal_result_t (*before_prepare)(void *user);
 } h2_application_host_config_t;
 
 typedef struct h2_application_host_result {

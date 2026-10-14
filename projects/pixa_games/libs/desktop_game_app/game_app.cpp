@@ -1,6 +1,8 @@
 #include "game_app.h"
+#include "h2_desktop_application_host.hpp"
 
 #include <array>
+#include <memory>
 #include <chrono>
 #include <cstdio>
 #include <thread>
@@ -11,46 +13,6 @@ namespace {
 
 const GameAdapter *active_adapter = nullptr;
 void *active_game = nullptr;
-
-h2_pal_result_t mapper_list(
-    void *user, h2_runtime_component_t filter,
-    h2_runtime_component_mapping_cb_t callback, void *callback_user) {
-  const auto *adapter = static_cast<const GameAdapter *>(user);
-  if (adapter == nullptr || callback == nullptr) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  if (filter != H2_RUNTIME_COMPONENT_NONE &&
-      filter != H2_RUNTIME_COMPONENT_BUTTON) {
-    return H2_PAL_OK;
-  }
-  for (std::size_t index = 0; index < adapter->mapping_count; ++index) {
-    if (callback(callback_user, &adapter->mappings[index]) != H2_PAL_OK) {
-      return H2_PAL_ERR_IO;
-    }
-  }
-  return H2_PAL_OK;
-}
-
-h2_pal_result_t mapper_get(
-    void *user, h2_runtime_component_id_t component_id,
-    h2_pal_periph_id_t *out_periph_id) {
-  const auto *adapter = static_cast<const GameAdapter *>(user);
-  if (adapter == nullptr || out_periph_id == nullptr) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  for (std::size_t index = 0; index < adapter->mapping_count; ++index) {
-    if (adapter->mappings[index].component_id == component_id) {
-      *out_periph_id = adapter->mappings[index].periph_id;
-      return H2_PAL_OK;
-    }
-  }
-  return H2_PAL_ERR_NOT_FOUND;
-}
-
-const h2_runtime_component_mapper_vtable_t mapper_vtable = {
-    mapper_list,
-    mapper_get,
-};
 
 void game_input(h2_game_scene_t *, const h2_game_input_event_t *event) {
   if (active_adapter != nullptr && active_game != nullptr &&
@@ -81,33 +43,15 @@ bool send_game_button(h2_game_runtime_t *runtime,
   return true;
 }
 
-int run_game(const Layout &layout, const GameAdapter &adapter) {
-  OwnedAudio provider_audio;
-  OwnedDisplay provider_display;
-  if (configure_layout(layout) != H2_PAL_OK ||
-      open_audio(false, &provider_audio) != H2_AUDIO_OK ||
-      open_display(layout, &provider_display) != H2_DISPLAY_OK) {
-    std::fprintf(stderr,
-                 "desktop %s: display/input/audio provider initialization "
-                 "failed\n",
-                 layout.app_name);
-    return 1;
-  }
-  OwnedFilesystem filesystem;
-  if (open_filesystem(layout, &filesystem) != H2_PAL_FS_OK ||
-      filesystem.handle == nullptr) {
-    return 1;
-  }
-  const h2_pal_fs_api_t *fs = filesystem.api();
-  const h2_runtime_component_mapper_t mapper = {
-      const_cast<GameAdapter *>(&adapter),
-      &mapper_vtable,
-  };
-  h2_runtime_config_t runtime_options = runtime_config(fs);
-  runtime_options.display = provider_display.display();
-  runtime_options.audio = provider_audio.api();
-  runtime_options.component_mapper = &mapper;
-  h2_runtime_t *runtime = nullptr;
+struct GameContext {
+  const Layout *layout;
+  const GameAdapter *adapter;
+};
+static h2_pal_result_t game_entry(h2_application_host_t *host, h2_runtime_t *runtime, void *user) {
+  auto *context = static_cast<GameContext *>(user);
+  const auto &layout = *context->layout;
+  const auto &adapter = *context->adapter;
+  const auto *fs = runtime->fs;
   bool speaker_started = false;
   h2_game_audio_t *audio = nullptr;
   void *game = nullptr;
@@ -115,22 +59,6 @@ int run_game(const Layout &layout, const GameAdapter &adapter) {
   int exit_code = 1;
 
   do {
-    const int runtime_result =
-        h2_runtime_init(&runtime_options, &runtime);
-    if (runtime_result != H2_PAL_OK || runtime == nullptr) {
-      std::fprintf(stderr, "%s: runtime initialization failed: %d\n",
-                   adapter.name, runtime_result);
-      break;
-    }
-    const h2_pal_result_t input_result =
-        h2_runtime_input_start(runtime, nullptr);
-    if (input_result != H2_PAL_OK) {
-      std::fprintf(stderr, "%s: runtime input start failed: %d\n",
-                   adapter.name, input_result);
-      h2_runtime_deinit(runtime);
-      runtime = nullptr;
-      break;
-    }
     std::vector<std::uint8_t> player_data;
     pixa_asset_t player = {};
     const pixa_asset_t *player_pointer = nullptr;
@@ -191,7 +119,7 @@ int run_game(const Layout &layout, const GameAdapter &adapter) {
         std::chrono::nanoseconds(1'000'000'000 / 60);
     auto next_frame = std::chrono::steady_clock::now();
     bool loop_failed = false;
-    while (poll_events(&provider_display) == 0) {
+    while (!h2_desktop_application_host_should_stop(host)) {
       const auto before_frame = std::chrono::steady_clock::now();
       if (before_frame >= next_frame) {
         std::uint64_t now_ms = 0u;
@@ -265,15 +193,32 @@ int run_game(const Layout &layout, const GameAdapter &adapter) {
     adapter.destroy(game);
   }
   if (audio != nullptr) {
-    (void)h2_game_audio_destroy(audio);
+    int closed = h2_game_audio_destroy(audio);
+    if (closed != H2_GAME_AUDIO_OK) {
+      h2_application_host_retain(host, audio, H2_PAL_ERR_BUSY);
+      return H2_PAL_ERR_BUSY;
+    }
   }
   if (speaker_started) {
     (void)h2_pal_audio_stop_speaker(runtime->audio);
   }
-  if (runtime != nullptr) {
-    h2_runtime_deinit(runtime);
-  }
-  return exit_code;
+  return exit_code == 0 ? H2_PAL_OK : H2_PAL_ERR_IO;
+}
+int run_game(const Layout &layout, const GameAdapter &adapter) {
+  auto context = std::make_unique<GameContext>();
+  context->layout = &layout;
+  context->adapter = &adapter;
+  auto platform = application_host_config(layout, H2_DESKTOP_HOST_AUDIO);
+  platform.input = 1;
+  platform.mappings = adapter.mappings;
+  platform.mapping_count = adapter.mapping_count;
+  h2_application_host_config_t app{};
+  app.entry = game_entry;
+  app.user = context.get();
+  h2_application_host_result_t result{};
+  int rc = h2_desktop_application_host_run(&platform, &app, &result);
+  if (result.retained) (void)context.release();
+  return rc == H2_PAL_OK ? 0 : 1;
 }
 
 } // namespace h2::desktop

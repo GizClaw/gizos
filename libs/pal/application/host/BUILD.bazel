@@ -51,6 +51,8 @@ cc_library(
         "external-stop",
         "entry",
         "prepare",
+        "before-prepare",
+        "before-prepare-fault",
         "configure",
         "runtime",
         "validate",

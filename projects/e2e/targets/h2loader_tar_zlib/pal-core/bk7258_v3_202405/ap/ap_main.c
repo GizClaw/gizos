@@ -1,12 +1,9 @@
 #include "h2_pal_e2e_application_host.h"
-#include "h2_bk7258_board.h"
 #include "h2_bk_h2loader.h"
 #include "h2_loader_app_client.h"
 #include "h2_bk_platform_core.h"
-#include "h2_bk_target_task_policy.h"
 #include "h2_pal_core_e2e.h"
 #include "h2_pal_core_e2e_task_names.h"
-#include "bk_private/bk_init.h"
 #include <driver/aon_rtc.h>
 #include <os/os.h>
 #include <os/mem.h>
@@ -19,7 +16,6 @@
 #include <stdio.h>
 #include <string.h>
 
-static h2_runtime_t *runtime;
 static h2_runtime_t transport_runtime;
 static h2_pal_core_e2e_result_t result;
 static int fail_after = -1, finished, commands_ready;
@@ -30,7 +26,7 @@ static int last_level;
 static char atomic_report[192];
 static struct { const char *id; h2_pal_core_resources_t value; } resource_samples[16];
 static size_t resource_sample_count;
-static void hold(void) { for (;;) rtos_delay_milliseconds(1000); }
+
 static void fail(const char *stage, int rc) {
     printf("H2_BK_CORE_LAUNCHER_FAIL stage=%s rc=%d\n", stage, rc);
     if (!commands_ready) {
@@ -39,7 +35,7 @@ static void fail(const char *stage, int rc) {
          * selecting P1 clears rollback evidence and can retry the same Stage. */
         (void)h2_pal_power_reboot(h2_bk_h2loader_power_api(), 0u);
     }
-    hold();
+    h2_pal_e2e_application_host_park();
 }
 static void *stack_alloc(void *user, size_t size) {
     (void)user;
@@ -149,7 +145,7 @@ static void watchdog(void *user) {
     (void)user;
     rtos_delay_milliseconds(120000);
     if (!finished) printf("H2_BK_CORE_WATCHDOG case=%s\n",current_case);
-    hold();
+    h2_pal_e2e_application_host_park();
 }
 /* Management traffic uses its own SDK allocator; Core's actual PAL heap
  * accounting cannot be perturbed by asynchronous UART packet buffers. */
@@ -172,8 +168,7 @@ int __wrap_h2_loader_app_client_init(h2_loader_app_client_t *client,
     return __real_h2_loader_app_client_init(client,&isolated);
 }
 
-static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *app_runtime, void *user) {
-    runtime = app_runtime;
+static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *runtime, void *user) {
     (void)user;
     rtos_delay_milliseconds(5000);
     int rc;
@@ -215,7 +210,7 @@ static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *app_runtim
     if (result.retained_cleanup != NULL || result.baseline.retained_cleanup != NULL) {
         (void)h2_application_host_retain(host, &result, H2_PAL_ERR_BUSY);
     }
-    return h2_pal_e2e_application_host_finish(host, runtime, rc);
+  return rc;
 }
 
 /* Runtime depends on Atomic. Verify its real cross-core prerequisite before
@@ -238,7 +233,8 @@ static void atomic_worker(void *user) {
     xSemaphoreGive(atomic_done);
     for (;;) vTaskSuspend(NULL);
 }
-static void atomic_prerequisite(void) {
+static h2_pal_result_t atomic_prerequisite(void *user) {
+    (void)user;
     if (h2_atomic_uint_init(&atomic_count,0)!=H2_ATOMIC_OK ||
         h2_atomic_uint_init(&atomic_ready,0)!=H2_ATOMIC_OK) fail("atomic_init",H2_PAL_ERR_UNSUPPORTED);
     StaticSemaphore_t storage = {0};
@@ -264,6 +260,7 @@ static void atomic_prerequisite(void) {
     vSemaphoreDelete(atomic_done);
     h2_atomic_uint_destroy(&atomic_ready); h2_atomic_uint_destroy(&atomic_count);
     if(!passed) fail("atomic_parallel",H2_PAL_ERR_INVALID_STATE);
+    return H2_PAL_OK;
 }
 static h2_pal_result_t configure(void *user, h2_runtime_config_t *config) {
   (void)user;
@@ -271,9 +268,9 @@ static h2_pal_result_t configure(void *user, h2_runtime_config_t *config) {
 
   return H2_PAL_OK;
 }
-static h2_pal_result_t validate(void *user, h2_runtime_t *app_runtime) {
+static h2_pal_result_t validate(void *user, h2_runtime_t *runtime) {
   (void)user;
-  runtime = app_runtime;
+  (void)runtime;
   int rc = H2_PAL_OK;
   transport_runtime = *runtime;
   transport_runtime.mem = &transport_memory;
@@ -289,21 +286,11 @@ static h2_pal_result_t validate(void *user, h2_runtime_t *app_runtime) {
 
   return H2_PAL_OK;
 }
-static void entry(void *user) {
-  (void)user;
 
-  atomic_prerequisite();
-  const h2_application_host_config_t app = {
-      .entry = run, .configure = configure, .validate = validate};
-  int host_rc = h2_pal_e2e_application_host_run(
-      "pal-core", H2_LOADER_CAPABILITY_UART, &app, NULL);
-  if (host_rc != H2_PAL_OK)
-    fail("application_host", host_rc);
-}
 int main(void) {
-    if(h2_bk_target_task_policy_install()!=H2_PAL_OK) return -1;
-    bk_init();
-    int rc=h2_bk7258_board_start_entry_task("bk/pal-core",entry,NULL);
-    if(rc!=H2_PAL_OK) fail("entry",rc);
-    return 0;
+    const h2_application_host_config_t app = {
+        .entry = run, .configure = configure, .validate = validate,
+        .before_prepare = atomic_prerequisite};
+    return h2_pal_e2e_application_host_start(
+        "pal-core", H2_LOADER_CAPABILITY_UART, &app);
 }

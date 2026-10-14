@@ -1,9 +1,6 @@
 #include "h2_pal_e2e_application_host.h"
-#include "bk_private/bk_init.h"
-#include "h2_bk7258_board.h"
 #include "h2_bk_h2loader.h"
 #include "h2_bk_platform_core.h"
-#include "h2_bk_target_task_policy.h"
 #include "h2_pal_wifi_device.h"
 #include "h2_bk_dhcp_ring.h"
 #include <os/mem.h>
@@ -100,7 +97,7 @@ static int start_diag(void) {
         __atomic_store_n(&diag_running, 0u, __ATOMIC_RELEASE);
         os_free(snapshot);
     }
-    return rc;
+  return rc;
 }
 static int stop_diag(void) {
     __atomic_store_n(&diag_stop_requested, 1u, __ATOMIC_RELEASE);
@@ -115,15 +112,7 @@ static int stop_diag(void) {
     return __atomic_load_n(&diag_observed, __ATOMIC_RELAXED) == 3u
                ? H2_PAL_OK : H2_PAL_ERR_IO;
 }
-static void hold(void) {
-    for (;;)
-        rtos_delay_milliseconds(1000u);
-}
-static void fail(const char *stage, int rc) {
-    printf("H2_WIFI_SETUP_FAIL stage=%s rc=%d\n", stage, rc);
-    fflush(stdout);
-    hold();
-}
+
 static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *app_runtime, void *user) {
     runtime = app_runtime;
     (void)user;
@@ -131,7 +120,7 @@ static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *app_runtim
     h2_pal_firmware_info_t info = {0};
     int rc = h2_pal_firmware_info_get_current(runtime->firmware_info, &info);
     if (rc)
-        fail("firmware-info", rc);
+        h2_pal_e2e_application_host_fail("firmware-info", rc);
     rc = h2_wifi_device_run(runtime, info.version, "bk7258");
     int diag_rc = stop_diag();
     printf("H2_BK_DHCP_DIAG_DONE rc=%d observed=%u\n", diag_rc,
@@ -142,7 +131,7 @@ static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *app_runtim
     printf("H2_WIFI_READY board=bk7258 rc=%d confirm=%d\n", rc, confirm);
     fflush(stdout);
     h2_pal_result_t waited = h2_pal_e2e_application_host_wait(host, runtime);
-    return h2_pal_e2e_application_host_finish(host, runtime, rc == H2_PAL_OK ? waited : rc);
+  return rc == H2_PAL_OK ? waited : rc;
 }
 
 static h2_pal_result_t configure(void *user, h2_runtime_config_t *config) {
@@ -157,28 +146,14 @@ static h2_pal_result_t validate(void *user, h2_runtime_t *app_runtime) {
   int rc = H2_PAL_OK;
   rc = start_diag();
   if (rc)
-    fail("dhcpdiag", rc);
+    h2_pal_e2e_application_host_fail("dhcpdiag", rc);
 
   return H2_PAL_OK;
 }
-static void entry(void *user) {
-  (void)user;
 
-  const h2_application_host_config_t app = {
-      .entry = run, .configure = configure, .validate = validate};
-  int host_rc = h2_pal_e2e_application_host_run(
-      "pal-wifi", H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_WIFI, &app,
-      NULL);
-  if (host_rc != H2_PAL_OK)
-    fail("application_host", host_rc);
-}
 int main(void) {
-    int rc = h2_bk_target_task_policy_install();
-    if (rc)
-        return -1;
-    bk_init();
-    rc = h2_bk7258_board_start_entry_task("bk/pal-wifi", entry, NULL);
-    if (rc)
-        fail("entry", rc);
-    return 0;
+    const h2_application_host_config_t app = {
+        .entry = run, .configure = configure, .validate = validate};
+    return h2_pal_e2e_application_host_start(
+        "pal-wifi", H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_WIFI, &app);
 }

@@ -34,8 +34,9 @@ cc_binary(
     deps = [
         "//libs/atomic/providers/c11",
         "//libs/pal:unsupported",
+        "//libs/pal/providers/web/application_host",
         "//libs/pal/providers/web/pal_core",
-        "//libs/pal/providers/yyjson:yyjson",
+        "//libs/pal/providers/yyjson",
         "//libs/runtime",
         "//projects/e2e/apps/pal-json/app:pal_json_e2e",
         "//projects/e2e/libs/pal-json-provider-probe:probe",

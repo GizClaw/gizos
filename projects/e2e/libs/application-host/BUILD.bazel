@@ -73,6 +73,11 @@ cc_library(
         "stop-fault",
         "suite-error",
         "release-fault",
+        "native-start",
+        "native-policy-fault",
+        "native-before-fault",
+        "native-start-fault",
+        "native-alloc-fault",
     ]
 ]
 

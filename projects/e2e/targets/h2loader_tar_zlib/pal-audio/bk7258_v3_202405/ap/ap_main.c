@@ -2,11 +2,8 @@
 #ifdef H2_PAL_AUDIO_BOARD_HOST_TEST
 #include "h2_pal_audio_board_test_sdk.h"
 #else
-#include "bk_private/bk_init.h"
-#include "h2_bk7258_board.h"
 #include "h2_bk_h2loader.h"
 #include "h2_bk_platform_core.h"
-#include "h2_bk_target_task_policy.h"
 #include "h2_pal_audio_e2e.h"
 
 #include <components/system.h>
@@ -15,19 +12,8 @@
 
 #include <stdio.h>
 
-static h2_runtime_t *runtime;
 static const h2_pal_audio_api_t *provider_audio;
 static h2_pal_audio_e2e_result_t result;
-
-static void hold(void) {
-  for (;;) rtos_delay_milliseconds(1000u);
-}
-
-static void fail(const char *stage, int rc) {
-  printf("H2_PAL_AUDIO_SETUP_FAIL board=bk7258 stage=%s rc=%d\n", stage, rc);
-  fflush(stdout);
-  hold();
-}
 
 static void report(void *user, const h2_pal_audio_e2e_case_result_t *item) {
   (void)user;
@@ -68,8 +54,7 @@ static void recover_failed_run(int rc, int confirm) {
   (void)h2_pal_power_reboot(h2_bk_h2loader_power_api(), 0u);
 }
 
-static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *app_runtime, void *user) {
-    runtime = app_runtime;
+static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *runtime, void *user) {
   (void)user;
   rtos_delay_milliseconds(5000u);
   const h2_pal_audio_e2e_config_t config = {
@@ -116,9 +101,8 @@ static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *app_runtim
     rtos_delay_milliseconds(5000u);
   }
 
-    return h2_pal_e2e_application_host_finish(host, runtime, rc);
+  return rc;
 }
-
 
 static h2_pal_result_t configure(void *user, h2_runtime_config_t *config) {
   (void)user;
@@ -127,31 +111,19 @@ static h2_pal_result_t configure(void *user, h2_runtime_config_t *config) {
 
   return H2_PAL_OK;
 }
-static h2_pal_result_t validate(void *user, h2_runtime_t *app_runtime) {
+static h2_pal_result_t validate(void *user, h2_runtime_t *runtime) {
   (void)user;
-  runtime = app_runtime;
+  (void)runtime;
   printf("H2_PAL_AUDIO_BOOT board=bk7258 reset_reason=%u\n",
          (unsigned)bk_misc_get_reset_reason());
   fflush(stdout);
 
   return H2_PAL_OK;
 }
-static void entry(void *user) {
-  (void)user;
-
-  const h2_application_host_config_t app = {
-      .entry = run, .configure = configure, .validate = validate};
-  int host_rc = h2_pal_e2e_application_host_run(
-      "pal-audio", H2_LOADER_CAPABILITY_UART, &app, NULL);
-  if (host_rc != H2_PAL_OK)
-    fail("application_host", host_rc);
-}
 
 int main(void) {
-  const int rc = h2_bk_target_task_policy_install();
-  if (rc != H2_PAL_OK) return -1;
-  bk_init();
-  const int entry_rc = h2_bk7258_board_start_entry_task("bk/pal-audio", entry, NULL);
-  if (entry_rc != H2_PAL_OK) fail("entry", entry_rc);
-  return 0;
+    const h2_application_host_config_t app = {
+        .entry = run, .configure = configure, .validate = validate};
+    return h2_pal_e2e_application_host_start(
+        "pal-audio", H2_LOADER_CAPABILITY_UART, &app);
 }

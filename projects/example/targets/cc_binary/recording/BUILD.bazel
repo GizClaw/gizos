@@ -12,5 +12,6 @@ cc_binary(
         "//libs/desktop_recording",
         "//libs/lvgl:platform",
         "//libs/pal/providers/desktop/app_support",
+        "//libs/pal/providers/desktop/application_host",
     ],
 )

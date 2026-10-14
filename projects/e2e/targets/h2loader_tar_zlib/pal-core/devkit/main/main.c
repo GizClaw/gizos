@@ -1,9 +1,7 @@
 #include "h2_pal_e2e_application_host.h"
-#include "h2_esp_board.h"
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_h2loader_runtime.h"
 #include "h2_esp_platform_core.h"
-#include "h2_esp_target_task_policy.h"
 #include "h2_pal_core_e2e.h"
 #include "h2_pal_core_e2e_task_names.h"
 #include "h2_runtime.h"
@@ -40,14 +38,6 @@ static struct { void *address; size_t size; } stacks[STACK_RECORDS];
 static int fail_after = -1;
 static size_t stack_count, stack_bytes;
 
-static void hold(void) {
-    for (;;) vTaskDelay(pdMS_TO_TICKS(1000u));
-}
-static void fail(const char *stage, int rc) {
-    printf("H2_PAL_CORE_E2E_LAUNCHER_FAIL stage=%s rc=%d\n", stage, rc);
-    fflush(stdout);
-    hold();
-}
 static void *stack_allocate(void *user, size_t size) {
     (void)user;
     portENTER_CRITICAL(&observation_lock);
@@ -93,10 +83,13 @@ static const h2_pal_mem_vtable_t stack_vtable = {
 };
 static const h2_pal_mem_api_t stack_allocator = {.vtable = &stack_vtable};
 
-static h2_pal_result_t configure_tasks(const h2_esp_task_policy_config_t *policy) {
+extern h2_pal_result_t __real_h2_esp_platform_task_configure(
+    const h2_esp_task_policy_config_t *policy);
+h2_pal_result_t __wrap_h2_esp_platform_task_configure(
+    const h2_esp_task_policy_config_t *policy) {
     h2_esp_task_policy_config_t observed = *policy;
     observed.psram_stack_allocator = &stack_allocator;
-    return h2_esp_platform_task_configure(&observed);
+    return __real_h2_esp_platform_task_configure(&observed);
 }
 static h2_pal_result_t task_fault(void *user, int after) {
     (void)user;
@@ -254,7 +247,7 @@ static int probe_task(size_t minimum, worker_probe_t *probe) {
     if (rc == H2_PAL_OK &&
         (probe->calls != 1 || probe->rc != H2_PAL_OK || probe->stack < minimum))
         rc = H2_PAL_ERR_INVALID_STATE;
-    return rc;
+  return rc;
 }
 static int task_probe(void) {
     worker_probe_t probe;
@@ -308,7 +301,7 @@ static int task_probe(void) {
            (long long)after.total_allocated_bytes - (long long)before.total_allocated_bytes,
            (long long)after.allocated_blocks - (long long)before.allocated_blocks, rc);
     puts(task_report);
-    return rc;
+  return rc;
 }
 static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *app_runtime, void *user) {
     runtime = app_runtime;
@@ -381,7 +374,7 @@ static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *app_runtim
     if (result.retained_cleanup != NULL || result.baseline.retained_cleanup != NULL) {
         (void)h2_application_host_retain(host, &result, H2_PAL_ERR_BUSY);
     }
-    return h2_pal_e2e_application_host_finish(host, runtime, rc);
+  return rc;
 }
 
 static h2_pal_result_t configure(void *user, h2_runtime_config_t *config) {
@@ -400,7 +393,7 @@ static h2_pal_result_t configure(void *user, h2_runtime_config_t *config) {
   rc = h2_esp_h2loader_app_commands_prepare_serial_with_config(
       &transport_config, &commands);
   if (rc != H2_PAL_OK)
-    fail("command_prepare", rc);
+    h2_pal_e2e_application_host_fail("command_prepare", rc);
 
   return H2_PAL_OK;
 }
@@ -411,7 +404,7 @@ static h2_pal_result_t validate(void *user, h2_runtime_t *app_runtime) {
                                          .name = "pal-core-watchdog"};
   if (esp_timer_create(&timer, &watchdog) != ESP_OK ||
       esp_timer_start_once(watchdog, UINT64_C(120000000)) != ESP_OK)
-    fail("watchdog", H2_PAL_ERR_IO);
+    h2_pal_e2e_application_host_fail("watchdog", H2_PAL_ERR_IO);
   printf("H2_PAL_CORE_E2E_BOOT board=devkit version=%s cases=%u "
          "resources=native\n",
          esp_app_get_description()->version,
@@ -420,14 +413,8 @@ static h2_pal_result_t validate(void *user, h2_runtime_t *app_runtime) {
   return H2_PAL_OK;
 }
 void app_main(void) {
-
-  int rc = h2_esp_target_task_policy_install_with_configure(configure_tasks);
-  if (rc != H2_PAL_OK)
-    fail("task_policy", rc);
-  const h2_application_host_config_t app = {
-      .entry = run, .configure = configure, .validate = validate};
-  int host_rc = h2_pal_e2e_application_host_run(
-      "pal-core", H2_LOADER_CAPABILITY_UART, &app, NULL);
-  if (host_rc != H2_PAL_OK)
-    fail("application_host", host_rc);
+    const h2_application_host_config_t app = {
+        .entry = run, .configure = configure, .validate = validate};
+    (void)h2_pal_e2e_application_host_start(
+        "pal-core", H2_LOADER_CAPABILITY_UART, &app);
 }

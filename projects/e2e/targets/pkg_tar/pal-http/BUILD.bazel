@@ -31,6 +31,7 @@ cc_binary(
     ],
     target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
     deps = [
+        "//libs/pal/providers/web/application_host",
         "//libs/pal/providers/web/pal_core",
         "//projects/e2e/apps/pal-http/app:pal_http_e2e",
     ],

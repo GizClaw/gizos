@@ -1,7 +1,6 @@
-#include "h2_smoke_host_runtime.h"
+#include "h2_web_application_host.h"
 #include "h2_smoke_mp4_player.h"
 #include "h2_web_main_thread.h"
-#include "h2_web_platform.h"
 
 #include <emscripten.h>
 #include <stdio.h>
@@ -13,13 +12,6 @@ typedef struct web_media {
   size_t size;
 } web_media_t;
 
-typedef struct web_player {
-  h2_runtime_t *runtime;
-  h2_smoke_mp4_player_config_t config;
-  h2_pal_result_t result;
-  int done;
-} web_player_t;
-
 // The large-media archive overrides the display to the video's size.
 #ifndef H2_WEB_MP4_WIDTH
 #define H2_WEB_MP4_WIDTH 240
@@ -27,20 +19,6 @@ typedef struct web_player {
 #ifndef H2_WEB_MP4_HEIGHT
 #define H2_WEB_MP4_HEIGHT 240
 #endif
-
-/* clang-format off */
-EM_JS(void, web_size_canvas,
-      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
-  h2WebMain(context, result, completion, ["i32", "i32"], null,
-    (width, height) => {
-  const canvas = Module['canvas'];
-  if (canvas) {
-    canvas.width = width;
-    canvas.height = height;
-  }
-});
-});
-/* clang-format on */
 
 /* clang-format off */
 EM_JS(void, web_set_status,
@@ -93,27 +71,8 @@ static int web_load_media(const char *path, web_media_t *media) {
   return 1;
 }
 
-static void web_player_task(void *context) {
-  web_player_t *player = context;
-  player->result = h2_smoke_mp4_player_run(player->runtime, &player->config);
-  player->done = 1;
-}
-
-int main(void) {
-  const h2_web_platform_config_t platform_config = {
-      .display_width = H2_WEB_MP4_WIDTH,
-      .display_height = H2_WEB_MP4_HEIGHT,
-  };
-  (void)h2_web_main_call(
-      web_size_canvas,
-      (const void *[]){&(int){H2_WEB_MP4_WIDTH}, &(int){H2_WEB_MP4_HEIGHT}});
-  h2_web_platform_t *platform = h2_web_platform_create(&platform_config);
-  if (platform == NULL) {
-    (void)h2_web_main_call(
-        web_set_status,
-        (const void *[]){&(const char *){"Web PAL initialization failed"}});
-    return 1;
-  }
+static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *runtime, void *user) {
+  (void)user;
   (void)h2_web_main_call(web_set_status, (const void *[]){&(const char *){
                                              "Loading embedded MP4"}});
 
@@ -122,67 +81,21 @@ int main(void) {
     (void)h2_web_main_call(
         web_set_status,
         (const void *[]){&(const char *){"Embedded MP4 could not be loaded"}});
-    h2_web_platform_destroy(platform);
-    return 1;
+    return H2_PAL_ERR_IO;
   }
-  h2_runtime_config_t runtime_config = h2_smoke_host_runtime_config(
-      "browser", "webassembly", "wasm32", h2_web_platform_mem_api(),
-      h2_web_platform_time_api(platform), h2_web_platform_queue_api(platform),
-      h2_web_platform_display_api(platform));
-  runtime_config.log = h2_web_platform_log_api();
-  runtime_config.task = h2_web_platform_task_api(platform);
-  runtime_config.sync = h2_web_platform_sync_api(platform);
-  runtime_config.audio = h2_web_platform_audio_api(platform);
-  runtime_config.audio_decoder = h2_web_platform_audio_decoder_api(platform);
-  runtime_config.video_decoder = h2_web_platform_video_decoder_api(platform);
-
-  h2_runtime_t *runtime = NULL;
-  h2_pal_result_t result = h2_runtime_init(&runtime_config, &runtime);
-  if (result == H2_PAL_OK) {
-    web_player_t player = {
-        .runtime = runtime,
-        .config =
-            {
-                .source = {.user = &media,
-                           .size = media.size,
-                           .read_at = web_media_read_at},
-                .acquire_timeout_ms = 1000u,
-                .display_mode = H2_SMOKE_MP4_PLAYER_DISPLAY_EXACT,
-                .require_audio = 1,
-            },
-        .result = H2_PAL_ERR_TASK,
-    };
-    (void)h2_web_main_call(
-        web_set_status,
-        (const void *[]){&(const char *){"Decoding with browser WebCodecs"}});
-    h2_pal_task_t *task = NULL;
-    const h2_pal_task_options_t task_options = {
-        .name = "web-mp4-player",
-        .min_stack_size = 65536u,
-    };
-    result = h2_pal_task_start(runtime->task, &task_options, web_player_task,
-                               &player, &task);
-    while (result == H2_PAL_OK && !player.done) {
-      result = h2_web_platform_pump(platform, 32u, NULL);
-      if (result == H2_PAL_OK && !player.done)
-        h2_web_worker_sleep(1u);
-    }
-    if (result == H2_PAL_OK)
-      result = player.result;
-    if (task != NULL) {
-      const h2_pal_result_t joined = h2_pal_task_join(runtime->task, task);
-      if (result == H2_PAL_OK)
-        result = joined;
-    }
-  }
-  if (runtime != NULL)
-    h2_runtime_deinit(runtime);
+  const h2_smoke_mp4_player_config_t config = {
+      .source = {.user = &media, .size = media.size, .read_at = web_media_read_at},
+      .acquire_timeout_ms = 1000u, .display_mode = H2_SMOKE_MP4_PLAYER_DISPLAY_EXACT,
+      .require_audio = 1, .should_stop = h2_application_host_should_stop, .stop_user = host};
+  (void)h2_web_main_call(web_set_status, (const void *[]){&(const char *){"Decoding with browser WebCodecs"}});
+  h2_application_host_ready(host);
+  int rc = h2_smoke_mp4_player_run(runtime, &config);
   free(media.data);
-  h2_web_platform_destroy(platform);
-  (void)h2_web_main_call(
-      web_set_status,
-      (const void *[]){&(const char *){result == H2_PAL_OK
-                                           ? "Playback complete"
-                                           : "Playback failed — see console"}});
-  return result == H2_PAL_OK ? 0 : 1;
+  (void)h2_web_main_call(web_set_status, (const void *[]){&(const char *){rc == H2_PAL_OK ? "Playback complete" : "Playback failed - see console"}});
+  return rc;
+}
+int main(void) {
+  const h2_web_application_host_config_t config = {
+      .name = "mp4-player", .display_width = H2_WEB_MP4_WIDTH, .display_height = H2_WEB_MP4_HEIGHT};
+  return h2_web_application_host_run(&config, run, NULL);
 }

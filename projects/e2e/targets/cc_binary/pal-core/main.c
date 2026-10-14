@@ -1,3 +1,4 @@
+#include "h2_desktop_application_host.h"
 #if !defined(_POSIX_C_SOURCE)
 #define _POSIX_C_SOURCE 200809L
 #endif
@@ -15,7 +16,6 @@
 
 /* Runtime borrows canonical unsupported events. Its independent, exclusive
  * real host event fixture is owned by this process and the App's lifecycle. */
-static h2_runtime_t *runtime;
 static h2_pal_core_e2e_config_t config;
 static h2_pal_core_e2e_result_t result;
 
@@ -59,14 +59,8 @@ static h2_pal_result_t observed_log(void *user, h2_pal_log_level_t level,
   return strcmp(actual, expected) == 0 ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE;
 }
 
-int main(void) {
-  /* Independent OS watchdog also bounds a broken blocking PAL lock/join. */
-  alarm(120u);
-  if (h2_pal_core_host_observer_start() != H2_PAL_OK)
-    return 2;
-  h2_runtime_config_t runtime_config = h2_pal_core_host_config();
-  if (h2_runtime_init(&runtime_config, &runtime) != H2_PAL_OK)
-    return 2;
+static h2_pal_result_t run(h2_application_host_t *host, h2_runtime_t *runtime, void *user) {
+  (void)user;
   config.timeout_ms = 2000u;
   config.observe_monotonic_us = monotonic;
   config.observe_log = observed_log;
@@ -82,7 +76,7 @@ int main(void) {
   config.event_fixture = h2_darwin_system_event_api();
   observer.sink = tmpfile();
   if (observer.sink == NULL)
-    return 2;
+    return H2_PAL_ERR_IO;
   int saved_stderr = dup(STDERR_FILENO);
   if (saved_stderr < 0 || dup2(fileno(observer.sink), STDERR_FILENO) < 0)
     return 2;
@@ -92,6 +86,22 @@ int main(void) {
     return 2;
   close(saved_stderr);
   fclose(observer.sink);
+  if (result.retained_cleanup || result.baseline.retained_cleanup)
+    h2_application_host_retain(host, NULL, H2_PAL_ERR_BUSY);
+  return rc;
+}
+static h2_pal_result_t before(void *user) {
+  (void)user;
+  return h2_pal_core_host_observer_start();
+}
+int main(void) {
+  /* Independent OS watchdog also bounds a broken blocking PAL lock/join. */
+  alarm(120u);
+  const h2_desktop_application_host_config_t platform = {.runtime = h2_pal_core_host_config()};
+  const h2_application_host_config_t app = {
+      .entry = run, .before_prepare = before};
+  h2_application_host_result_t lifecycle = {0};
+  h2_pal_result_t rc = h2_desktop_application_host_run(&platform, &app, &lifecycle);
   for (size_t i = 0; i < H2_PAL_CORE_E2E_CASE_COUNT; ++i) {
     printf("H2_PAL_CORE_E2E case=%s status=%s result=%d\n", result.cases[i].id,
            h2_pal_core_e2e_status_name(result.cases[i].status),
@@ -102,15 +112,9 @@ int main(void) {
          H2_PAL_CORE_E2E_CONTRACT_VERSION, result.passed, result.failed,
          result.blocked, result.not_run, result.complete, result.qualified,
          (int)result.cleanup_result);
-  if (result.retained_cleanup != NULL ||
-      result.baseline.retained_cleanup != NULL) {
-    /* Process exit, rather than freeing any still-borrowed callback contexts.
-     */
-    fflush(stdout);
-    _Exit(2);
-  }
-  h2_runtime_deinit(runtime);
-  if (h2_pal_core_host_observer_stop() != H2_PAL_OK)
-    return 2;
-  return rc == H2_PAL_OK && result.qualified ? 0 : 1;
+  if (lifecycle.retained) { fflush(stdout); _Exit(2); }
+  /* The stack-fault fixture covers Host workers too; restore policy only
+   * after their native stacks have been joined and released. */
+  if (h2_pal_core_host_observer_stop() != H2_PAL_OK) return 2;
+  return rc == H2_PAL_OK && lifecycle.cleanup == H2_PAL_OK && result.qualified ? 0 : 1;
 }

@@ -2,15 +2,21 @@
 #if defined(H2_PAL_E2E_HOST_TEST)
 #include "h2_pal_e2e_host_test_sdk.h"
 #elif defined(H2_PAL_E2E_ESP)
+#include "h2_esp_board.h"
 #include "h2_esp_board_application_host.h"
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_platform_core.h"
+#include "h2_esp_target_task_policy.h"
 #else
+#include "bk_private/bk_init.h"
+#include "h2_bk7258_board.h"
 #include "h2_bk_board_application_host.h"
 #include "h2_bk_h2loader.h"
 #include "h2_bk_platform_core.h"
+#include "h2_bk_target_task_policy.h"
 #endif
 #include <stdio.h>
+#include <string.h>
 
 #if defined(H2_PAL_E2E_ESP)
 #define BOARD_PROVIDER h2_esp_application_host_t
@@ -19,6 +25,7 @@
 #define PLATFORM_TIME h2_esp_platform_time_api
 #define STOP_SERVICES h2_esp_h2loader_app_commands_stop_serial
 #define SERIAL_STARTED h2_esp_h2loader_app_serial_is_started
+#define START_ENTRY h2_esp_board_start_entry_task
 #else
 #define BOARD_PROVIDER h2_bk_application_host_t
 #define BOARD_INIT h2_bk_board_application_host_init
@@ -26,7 +33,19 @@
 #define PLATFORM_TIME h2_bk_platform_time_api
 #define STOP_SERVICES h2_bk_h2loader_stop_app_commands
 #define SERIAL_STARTED h2_bk_h2loader_app_serial_is_started
+#define START_ENTRY h2_bk7258_board_start_entry_task
 #endif
+
+void h2_pal_e2e_application_host_park(void) {
+  for (;;)
+    (void)h2_pal_time_sleep_ms(PLATFORM_TIME(), 1000u);
+}
+
+void h2_pal_e2e_application_host_fail(const char *stage, h2_pal_result_t result) {
+  printf("H2_PAL_E2E_HOST stage=%s application=%d\n", stage, result);
+  fflush(stdout);
+  h2_pal_e2e_application_host_park();
+}
 
 typedef struct launcher {
   BOARD_PROVIDER board;
@@ -35,6 +54,11 @@ typedef struct launcher {
   h2_application_host_config_t config;
   h2_application_host_t *host;
 } launcher_t;
+
+static h2_pal_result_t before_prepare(void *user) {
+  launcher_t *l = user;
+  return l->config.before_prepare(l->config.user);
+}
 
 static h2_pal_result_t prepare(void *user, struct h2_runtime_config *out) {
   launcher_t *l = user;
@@ -121,7 +145,18 @@ static h2_pal_result_t entry(h2_application_host_t *host, h2_runtime_t *runtime,
                              void *user) {
   launcher_t *l = user;
   h2_pal_result_t rc = h2_application_host_ready(host);
-  return rc == H2_PAL_OK ? l->config.entry(host, runtime, l->config.user) : rc;
+  if (rc != H2_PAL_OK)
+    return rc;
+  rc = l->config.entry(host, runtime, l->config.user);
+  if (rc != H2_PAL_OK) {
+    printf("H2_PAL_E2E_HOST name=%s application=%d waiting_for_stop=1\n",
+           l->name ? l->name : "-", rc);
+    fflush(stdout);
+    /* Failed fixtures may still borrow Runtime. Keep serial recovery alive
+     * until Stop, then retain the graph before the App task returns. */
+    (void)h2_pal_e2e_application_host_wait(host, runtime);
+  }
+  return h2_pal_e2e_application_host_finish(host, runtime, rc);
 }
 h2_pal_result_t h2_pal_e2e_application_host_wait(h2_application_host_t *host,
                                                  h2_runtime_t *runtime) {
@@ -165,6 +200,7 @@ h2_pal_e2e_application_host_run(const char *name, uint32_t capabilities,
       config->allocator ? config->allocator : DEFAULT_ALLOCATOR();
   actual.provider = &provider;
   actual.user = &l;
+  actual.before_prepare = config->before_prepare ? before_prepare : NULL;
   actual.configure = configure;
   actual.validate = validate;
   actual.release_runtime = release_runtime;
@@ -177,9 +213,71 @@ h2_pal_e2e_application_host_run(const char *name, uint32_t capabilities,
            result->application, result->cleanup);
     fflush(stdout);
     /* BSP entry wrappers may release providers when their owner returns. */
-    for (;;)
-      (void)h2_pal_time_sleep_ms(PLATFORM_TIME(), 1000u);
+    h2_pal_e2e_application_host_park();
   }
   h2_pal_result_t destroyed = h2_application_host_destroy(&l.host);
   return rc == H2_PAL_OK ? destroyed : rc;
+}
+
+typedef struct native_start {
+  h2_pal_mem_api_t allocator;
+  h2_application_host_config_t config;
+  uint32_t capabilities;
+  char name[];
+} native_start_t;
+
+static void native_entry(void *user) {
+  native_start_t *start = user;
+  h2_pal_mem_api_t allocator = start->allocator;
+  h2_pal_result_t rc = h2_pal_e2e_application_host_run(
+      start->name, start->capabilities, &start->config, NULL);
+  if (rc != H2_PAL_OK) {
+    printf("H2_PAL_E2E_HOST name=%s startup=%d\n", start->name, rc);
+    fflush(stdout);
+  }
+  h2_pal_mem_free(&allocator, start);
+  if (rc != H2_PAL_OK)
+    h2_pal_e2e_application_host_park();
+}
+
+h2_pal_result_t h2_pal_e2e_application_host_start(
+    const char *name, uint32_t capabilities,
+    const h2_application_host_config_t *config) {
+  if (!name || !name[0] || !config || !config->entry || config->provider ||
+      !(capabilities & H2_LOADER_CAPABILITY_UART) ||
+      (capabilities & ~H2_LOADER_CAPABILITIES_ALL))
+    return H2_PAL_ERR_INVALID_ARG;
+#if defined(H2_PAL_E2E_ESP)
+  h2_pal_result_t rc = h2_esp_target_task_policy_install();
+  if (rc != H2_PAL_OK)
+    h2_pal_e2e_application_host_fail(name, rc);
+#else
+  h2_pal_result_t rc = h2_bk_target_task_policy_install();
+  if (rc != H2_PAL_OK)
+    return rc;
+  bk_init();
+#endif
+  const h2_pal_mem_api_t *allocator = DEFAULT_ALLOCATOR();
+  size_t name_size = strlen(name);
+  if (name_size >= SIZE_MAX - sizeof(native_start_t))
+    return H2_PAL_ERR_INVALID_ARG;
+  ++name_size;
+  native_start_t *start =
+      h2_pal_mem_alloc(allocator, sizeof(*start) + name_size);
+  if (!start) {
+    printf("H2_PAL_E2E_HOST name=%s startup=%d\n", name, H2_PAL_ERR_NO_MEMORY);
+    fflush(stdout);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  start->allocator = *allocator;
+  start->config = *config;
+  start->capabilities = capabilities;
+  memcpy(start->name, name, name_size);
+  rc = START_ENTRY(start->name, native_entry, start);
+  if (rc != H2_PAL_OK) {
+    h2_pal_mem_free(allocator, start);
+    printf("H2_PAL_E2E_HOST name=%s startup=%d\n", name, rc);
+    fflush(stdout);
+  }
+  return rc;
 }
