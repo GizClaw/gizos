@@ -23,4 +23,4 @@ The original six-platform runs and compiler coverage remain bound to their `qual
 
 Board launchers leave the success replay loop only for a qualified, confirmed run. Qualification or confirmation failure requests the existing serialized H2Loader return-to-P1 flow; if it returns, a full device reset releases any unrecovered audio resources. Host tests execute both actual board runners through failed recovery/configuration/confirmation paths and require reset instead of replay; native package builds validate SDK wiring. These tests do not claim physical fault injection.
 
-历史 qualification/receipt 只记录其原始版本的执行结果。当前源码通过直接编译执行的 C/C++ 行为测试和平台 SDK 构建验证；不使用 Python 字符串或源码哈希校验授予资格。本次 Host 迁移未重新执行实板验收。
+历史 qualification/receipt 只记录其原始版本的执行结果。当前源码通过直接编译执行的 C/C++ 行为测试和平台 SDK 构建验证；不使用 Python 字符串或源码哈希校验授予资格。实板验收须针对实际构建产物独立执行，不能继承历史记录。

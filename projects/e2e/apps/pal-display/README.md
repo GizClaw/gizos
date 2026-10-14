@@ -71,4 +71,4 @@ The Web backlight setter additionally exposes its existing percentage to the hos
 ## Application Host 文档审计
 
 
-历史 qualification/receipt 只记录其原始版本的执行结果。当前源码通过直接编译执行的 C/C++ 行为测试和平台 SDK 构建验证；不使用 Python 字符串或源码哈希校验授予资格。本次 Host 迁移未重新执行实板验收。
+历史 qualification/receipt 只记录其原始版本的执行结果。当前源码通过直接编译执行的 C/C++ 行为测试和平台 SDK 构建验证；不使用 Python 字符串或源码哈希校验授予资格。实板验收须针对实际构建产物独立执行，不能继承历史记录。

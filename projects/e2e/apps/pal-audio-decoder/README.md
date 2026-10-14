@@ -43,4 +43,4 @@ macOS 上真实 FFmpeg 与原生 AudioConverter 的 LLVM covmap 验证：portabl
 
 BK R3/R4 首轮分别 25/29、28/29，失败 App 均未确认。R5 单精度 oracle 和独立的帧进展/整体期限解决验证计算累计耗时误判；PCM 内容阈值、严格 PTS、完整 EOS、借用输入与资源所有权检查保持。最后版本按六端当前源码重新实测。iOS 新 Decoder getter 导致既有 Audio SDK header 摘要变化，原 Audio App 已消费该真实新 SDK 完成 24/24、30 秒同时采播和 allocator failure/reclaim 复验，单独更新它的真实 iOS receipt，不改写旧 Audio 板端来源。
 
-历史 qualification/receipt 只记录其原始版本的执行结果。当前源码通过直接编译执行的 C/C++ 行为测试和平台 SDK 构建验证；不使用 Python 字符串或源码哈希校验授予资格。本次 Host 迁移未重新执行实板验收。
+历史 qualification/receipt 只记录其原始版本的执行结果。当前源码通过直接编译执行的 C/C++ 行为测试和平台 SDK 构建验证；不使用 Python 字符串或源码哈希校验授予资格。实板验收须针对实际构建产物独立执行，不能继承历史记录。
