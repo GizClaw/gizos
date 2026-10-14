@@ -57,6 +57,8 @@ struct PeerConnection {
   uint16_t rx_sequence[256];
   uint32_t rx_ssrc[256];
   uint8_t rx_authenticated[256];
+  uint64_t rx_arrival_us[256];
+  uint64_t rx_decode_us[256];
   size_t rx_record_count;
   uint64_t rx_record_overflow;
 #endif
@@ -265,6 +267,9 @@ static int peer_connection_process_completed_packet(
 #if H2_PEER_RTP_RX_DIAGNOSTICS
     const uint16_t rx_sequence = (uint16_t)(((uint16_t)packet[2] << 8) | packet[3]);
     const uint32_t rx_ssrc = rtp_get_ssrc(packet);
+    uint64_t rx_arrival_us = UINT64_MAX;
+    (void)h2_pal_time_get_monotonic_us(pc->config.time, &rx_arrival_us);
+    const size_t rx_index = pc->rx_record_count;
 #endif
     dtls_srtp_decrypt_rtp_packet(&pc->dtls_srtp, packet, &packet_len);
 #if H2_PEER_RTP_RX_DIAGNOSTICS
@@ -273,6 +278,8 @@ static int peer_connection_process_completed_packet(
       pc->rx_sequence[index] = rx_sequence;
       pc->rx_ssrc[index] = rx_ssrc;
       pc->rx_authenticated[index] = packet_len > 0;
+      pc->rx_arrival_us[index] = rx_arrival_us;
+      pc->rx_decode_us[index] = UINT64_MAX;
     } else if (pc->rx_record_overflow != UINT64_MAX) {
       ++pc->rx_record_overflow;
     }
@@ -285,6 +292,11 @@ static int peer_connection_process_completed_packet(
         &pc->artp_decoder, &pc->vrtp_decoder, packet, (size_t)packet_len,
         now_ms);
     peer_connection_log_audio_rtp_event(pc);
+#if H2_PEER_RTP_RX_DIAGNOSTICS
+    if (rx_index < 256u)
+      (void)h2_pal_time_get_monotonic_us(pc->config.time,
+                                      &pc->rx_decode_us[rx_index]);
+#endif
     return packet_len;
   }
   H2_PEER_LOGW(pc->config.log, "Unknown data");
@@ -419,9 +431,10 @@ void peer_connection_destroy(
 #if H2_PEER_RTP_RX_DIAGNOSTICS
     for (size_t i = 0; i < pc->rx_record_count; ++i) {
       H2_PEER_LOGI(pc->config.log,
-                   "H2_PEER_RTP_RX ordinal=%zu sequence=%u ssrc=%" PRIu32 " authenticated=%u",
+                   "H2_PEER_RTP_RX ordinal=%zu sequence=%u ssrc=%" PRIu32 " authenticated=%u arrival_us=%" PRIu64 " decode_us=%" PRIu64,
                    i + 1u, (unsigned int)pc->rx_sequence[i], pc->rx_ssrc[i],
-                   (unsigned int)pc->rx_authenticated[i]);
+                   (unsigned int)pc->rx_authenticated[i],
+                   pc->rx_arrival_us[i], pc->rx_decode_us[i]);
     }
     H2_PEER_LOGI(pc->config.log, "H2_PEER_RTP_RX_SUMMARY recorded=%zu overflow=%" PRIu64,
                  pc->rx_record_count, pc->rx_record_overflow);

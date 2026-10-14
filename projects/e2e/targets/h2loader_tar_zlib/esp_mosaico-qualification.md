@@ -1719,3 +1719,41 @@ backpressure and schedules a pending SACK when delivery reopens that window.
 Both regressions fail before their respective fixes, then all 36 H2Peer/SCTP
 recursive host tests pass. The final default-off image still requires two
 independent real-board boots. Full original Flash restoration remains pending.
+
+### R99 default-off failure and R100 receive timing (2026-10-14)
+
+- Pushed functional repair head `eeecac6fe1fba376a937c64d5b07603ce1ec5f42`;
+  all 36 H2Peer/SCTP host regressions pass. R99 is source-bound to this head,
+  with all four optional diagnostics disabled and original smoke gates intact.
+  Its first boot fails loaded audio p99: **206.243 ms > 200 ms**. Unloaded p99
+  is 148.016 ms; both phases receive 100/100 frames with no duplication or
+  reordering; fairness is 1315 per mille. The real peer receives/echoes all
+  200 frames, with echo processing at most 0.108125 ms. No second-boot or
+  final WebRTC qualification is claimed. Public R84 Loader return is verified.
+- R100 adds bounded, default-off receive-arrival and post-decode timestamps.
+  Three focused host tests and the native diagnostic build pass. One actual
+  diagnostic boot fails: p99 97.548/573.422 ms, frames 100/88, fairness 890.
+  All 188 recorded RTP packets authenticate; the longest loaded arrival gap
+  is already 568.203 ms before decoding, while per-packet decode takes at most
+  1.578 ms. Connected packet-pump operations are at most 9.502 ms. The actual
+  peer receives/echoes 200 frames; SDK UDP mailbox statistics are 28,562 posts
+  and 171 failed posts. These counters do not identify which packet types
+  were dropped. R100 is diagnostic evidence, not acceptance.
+- Both endpoints use HAIVIVI-MFG, as confirmed by the operator, but the host
+  currently uses 2.4 GHz channel 6 and the DUT uses channel 11. Independent
+  host-to-gateway ICMP during load receives 97/100 responses with p99
+  1038.437 ms; after WebRTC traffic stops and public Loader return is verified,
+  the idle comparison receives 100/100 with p99 49.004 ms. This supports
+  investigating load-related network queuing; ICMP priority differs from
+  media traffic and does not by itself assign the entire failure to Wi-Fi.
+  A same-access-point comparison is pending the host BSSID. Host network
+  settings have not been changed.
+- Receipts: `rtc99-performance-result.json`,
+  `rtc100-performance-diagnostic-result.json`,
+  `rtc100-host-radio-observation.json`, and both
+  `rtc100-host-gateway[-idle]-ping.json` files in the private 20261014 ledger.
+  The original 16 MiB backup SHA and mode were reverified; historical first
+  restoration receipts are preserved under
+  `board77-first-restore-before-loader84/`. Final original Flash restoration
+  remains pending. Loader R84 recovery remains source-bound **51/51 PASS**;
+  GizClaw remains excluded and PR #709 remains Draft.
