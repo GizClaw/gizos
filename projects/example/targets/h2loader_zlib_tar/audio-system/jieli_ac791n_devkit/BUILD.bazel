@@ -1,0 +1,13 @@
+load("//projects/h2loader/tools/bazel:h2loader_zlib_tar.bzl", "h2loader_zlib_tar")
+
+package(default_visibility = ["//visibility:public"])
+
+h2loader_zlib_tar(
+    name = "audio_stop_restart_package",
+    source = "//projects/example/targets/h2loader_tar_zlib/audio-system/jieli_ac791n_devkit:audio_stop_restart_package",
+)
+
+h2loader_zlib_tar(
+    name = "audio_system_package",
+    source = "//projects/example/targets/h2loader_tar_zlib/audio-system/jieli_ac791n_devkit:audio_system_package",
+)

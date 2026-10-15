@@ -1,3 +1,11 @@
+local vmath = require("vmath")
+local geometry = require("geometry")
+local points, output, mask = vmath.buffer(3), vmath.buffer(2), vmath.buffer(1)
+local camera = vmath.buffer(5)
+points:load({2, 4, 2}); camera:load({10, -10, 20, 30, 0.1})
+geometry.project_points(output, mask, points, camera, 1)
+assert(output:get(1) == 30 and output:get(2) == 10 and mask:get(1) == 1)
+
 -- Smoke script for h2_lua_web_app(): checks its Button args, reports the OK
 -- Button callback, and animates until the exit Button or Stop ends the job.
 local runtime = require("runtime")

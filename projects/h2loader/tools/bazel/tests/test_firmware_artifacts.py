@@ -6,14 +6,63 @@ import os
 import struct
 import tempfile
 import unittest
+import io
+import tarfile
+import zlib
 
 from projects.h2loader.tools.bazel.firmware_artifacts import BundleEntry, write_factory_bundle, write_package
 
 
 class FirmwareArtifactsTest(unittest.TestCase):
-    def test_canonical_h2loader_package_digest(self) -> None:
+    def test_independent_format2_members(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "update.tar"
+            options = dict(role="app", board="fixture", target="host", version="0")
+            entries = [BundleEntry("data/z.bin", b"zed"), BundleEntry("data/a.txt", b"alpha")]
+            write_package(output, "app/esp/app.bin", b"firmware", entries, **options)
+            original = output.read_bytes()
+            write_package(output, "app/esp/app.bin", b"firmware", list(reversed(entries)), **options)
+            self.assertEqual(original, output.read_bytes())
+            with tarfile.open(fileobj=io.BytesIO(original), mode="r:") as outer:
+                self.assertEqual(outer.getnames(), ["manifest", "data.tar.zlib", "app.bin.zlib"])
+                manifest = dict(line.split("=", 1) for line in outer.extractfile("manifest").read().decode().splitlines())
+                app = outer.extractfile("app.bin.zlib").read()
+                data = outer.extractfile("data.tar.zlib").read()
+                self.assertEqual(manifest["format"], "2")
+                self.assertEqual(hashlib.sha256(app).hexdigest(), manifest["app_zlib_sha256"])
+                self.assertEqual(hashlib.sha256(data).hexdigest(), manifest["data_zlib_sha256"])
+                self.assertEqual(zlib.decompress(app), b"firmware")
+                decoded = zlib.decompress(data)
+                self.assertEqual(len(decoded), int(manifest["data_tar_size"]))
+                with tarfile.open(fileobj=io.BytesIO(decoded), mode="r:") as inner:
+                    self.assertEqual(inner.getnames(), ["data/a.txt", "data/z.bin"])
+                    self.assertEqual(inner.extractfile("data/a.txt").read(), b"alpha")
+
+    def test_legacy_producer_preserves_frozen_bytes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "update.tar.zlib"
+            write_package(output, "app/esp/app.bin", bytes((0xE9, 1, 2, 3, 4, 5)),
+                [BundleEntry("data/a.txt", b"alpha"), BundleEntry("data/z.bin", bytes((0, 1, 2)))],
+                role="app", board="fixture", target="host", version="0", package_format=1)
+            root = Path(os.environ["TEST_SRCDIR"]) / os.environ["TEST_WORKSPACE"] / "projects/h2loader/tools/bazel/tests/fixtures"
+            self.assertEqual(output.read_bytes(), (root / "h2loader_format1.tar.zlib").read_bytes())
+
+    def test_invalid_package_formats_are_rejected(self) -> None:
+        for value in (True, 1.0, 0, 3):
+            with self.subTest(value=value), tempfile.TemporaryDirectory() as directory, self.assertRaises(ValueError):
+                write_package(Path(directory) / "update", "app/esp/app.bin", b"app", [],
+                    role="app", board="fixture", target="host", version="0", package_format=value)
+
+    def test_frozen_legacy_archive_remains_readable(self) -> None:
+        root = Path(os.environ["TEST_SRCDIR"]) / os.environ["TEST_WORKSPACE"] / "projects/h2loader/tools/bazel/tests/fixtures"
+        data = (root / "h2loader_format1.tar.zlib").read_bytes()
+        self.assertEqual(hashlib.sha256(data).hexdigest(), (root / "h2loader_format1.sha256").read_text().strip())
+        with tarfile.open(fileobj=io.BytesIO(zlib.decompress(data))) as old:
+            self.assertEqual(old.extractfile("app/esp/app.bin").read(), bytes((0xE9, 1, 2, 3, 4, 5)))
+
+    def test_canonical_h2loader_package_digest(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "update.tar"
             write_package(
                 output,
                 "app/esp/app.bin",
@@ -27,7 +76,7 @@ class FirmwareArtifactsTest(unittest.TestCase):
             fixture = (
                 Path(os.environ["TEST_SRCDIR"])
                 / os.environ["TEST_WORKSPACE"]
-                / "projects/h2loader/tools/bazel/tests/fixtures/h2loader_format1.sha256"
+                / "projects/h2loader/tools/bazel/tests/fixtures/h2loader_format2.sha256"
             ).read_text(encoding="ascii").strip()
             self.assertEqual(hashlib.sha256(output.read_bytes()).hexdigest(), fixture)
 

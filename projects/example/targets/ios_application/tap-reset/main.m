@@ -6,12 +6,12 @@
 #import <UIKit/UIKit.h>
 
 #include <pthread.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
 
 typedef struct h2_mobile_ios_app_context {
   h2_ios_platform_t *host;
   h2_runtime_t *runtime;
-  atomic_bool stop;
+  h2_atomic_bool_t stop;
   pthread_t thread;
   int thread_started;
 } h2_mobile_ios_app_context_t;
@@ -19,7 +19,7 @@ typedef struct h2_mobile_ios_app_context {
 static int h2_mobile_ios_should_stop(void *user) {
   h2_mobile_ios_app_context_t *context = user;
   return context == NULL ||
-         atomic_load_explicit(&context->stop, memory_order_acquire);
+         h2_atomic_load_explicit(&context->stop, H2_ATOMIC_ACQUIRE);
 }
 
 static h2_pal_result_t
@@ -94,7 +94,11 @@ static void *h2_mobile_ios_app_thread(void *user) {
     _context.host = NULL;
     return;
   }
-  atomic_init(&_context.stop, false);
+  if (h2_atomic_init(&_context.stop, false) != H2_ATOMIC_OK) {
+    NSLog(@"Firmwares atomic initialization failed");
+    [self stopPortableApp];
+    return;
+  }
   const int thread_result = pthread_create(&_context.thread, NULL,
                                            h2_mobile_ios_app_thread, &_context);
   if (thread_result == 0) {
@@ -108,7 +112,7 @@ static void *h2_mobile_ios_app_thread(void *user) {
 
 - (void)stopPortableApp {
   if (_context.thread_started) {
-    atomic_store_explicit(&_context.stop, true, memory_order_release);
+    h2_atomic_store_explicit(&_context.stop, true, H2_ATOMIC_RELEASE);
     (void)pthread_join(_context.thread, NULL);
     _context.thread_started = 0;
   }
@@ -120,6 +124,7 @@ static void *h2_mobile_ios_app_thread(void *user) {
     h2_ios_platform_destroy(_context.host);
     _context.host = NULL;
   }
+  h2_atomic_destroy(&_context.stop);
 }
 
 - (void)dealloc {

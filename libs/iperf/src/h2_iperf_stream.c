@@ -142,8 +142,12 @@ h2_pal_result_t h2_iperf_stream_tcp_connect(
     uint64_t deadline = h2_iperf_now_ms(config) + timeout_ms;
     h2_pal_result_t result;
     for (;;) {
+        if (h2_iperf_should_stop(config)) {
+            h2_pal_net_close(config->net, sock);
+            return H2_PAL_ERR_CLOSED;
+        }
         uint32_t left = remaining_ms(h2_iperf_now_ms(config), deadline);
-        result = h2_pal_net_tcp_connect(config->net, sock, addr, left);
+        result = h2_pal_net_tcp_connect(config->net, sock, addr, h2_iperf_io_slice(config, left));
         if (result == H2_PAL_OK) {
             break;
         }
@@ -208,6 +212,9 @@ h2_pal_result_t h2_iperf_stream_udp_connect(
     size_t scratch_len,
     uint32_t timeout_ms) {
     const h2_iperf_config_t *config = stream->config;
+    if (h2_iperf_should_stop(config)) {
+        return H2_PAL_ERR_CLOSED;
+    }
     uint8_t hello[4];
     if (scratch_len < 4u || !stream->peer_known) {
         return H2_PAL_ERR_INVALID_ARG;
@@ -221,20 +228,24 @@ h2_pal_result_t h2_iperf_stream_udp_connect(
     uint64_t deadline = h2_iperf_now_ms(config) + timeout_ms;
     /* In reverse mode data may already be flowing; iperf3 tolerates a few
      * datagrams before the reply. */
-    for (unsigned attempt = 0u; attempt < 8u; ++attempt) {
+    for (unsigned attempt = 0u; attempt < 8u;) {
+        if (h2_iperf_should_stop(config)) {
+            return H2_PAL_ERR_CLOSED;
+        }
         uint32_t left = remaining_ms(h2_iperf_now_ms(config), deadline);
         if (left == 0u) {
             return H2_PAL_ERR_TIMEOUT;
         }
         h2_pal_net_addr_t from;
         int got = h2_pal_net_udp_recvfrom(
-            config->net, stream->sock, &from, scratch, scratch_len, left);
-        if (got == H2_PAL_ERR_WOULD_BLOCK) {
+            config->net, stream->sock, &from, scratch, scratch_len, h2_iperf_io_slice(config, left));
+        if (got == H2_PAL_ERR_WOULD_BLOCK || got == H2_PAL_ERR_TIMEOUT) {
             continue;
         }
         if (got < 0) {
             return (h2_pal_result_t)got;
         }
+        ++attempt;
         if (got >= 4) {
             uint32_t word = h2_iperf_read_u32_le(scratch);
             if (word == H2_IPERF_UDP_CONNECT_REPLY ||
@@ -252,16 +263,22 @@ h2_pal_result_t h2_iperf_stream_udp_accept(
     size_t scratch_len,
     uint32_t timeout_ms) {
     const h2_iperf_config_t *config = stream->config;
+    if (h2_iperf_should_stop(config)) {
+        return H2_PAL_ERR_CLOSED;
+    }
     uint64_t deadline = h2_iperf_now_ms(config) + timeout_ms;
     for (;;) {
+        if (h2_iperf_should_stop(config)) {
+            return H2_PAL_ERR_CLOSED;
+        }
         uint32_t left = remaining_ms(h2_iperf_now_ms(config), deadline);
         if (left == 0u) {
             return H2_PAL_ERR_TIMEOUT;
         }
         h2_pal_net_addr_t from;
         int got = h2_pal_net_udp_recvfrom(
-            config->net, stream->sock, &from, scratch, scratch_len, left);
-        if (got == H2_PAL_ERR_WOULD_BLOCK) {
+            config->net, stream->sock, &from, scratch, scratch_len, h2_iperf_io_slice(config, left));
+        if (got == H2_PAL_ERR_WOULD_BLOCK || got == H2_PAL_ERR_TIMEOUT) {
             continue;
         }
         if (got < 0) {
@@ -423,6 +440,9 @@ h2_pal_result_t h2_iperf_stream_sctp_pump(
     h2_iperf_stream_t *stream,
     uint32_t timeout_ms) {
     const h2_iperf_config_t *config = stream->config;
+    if (h2_iperf_should_stop(config)) {
+        return H2_PAL_ERR_CLOSED;
+    }
     if (stream->assoc == NULL) {
         return H2_PAL_ERR_INVALID_STATE;
     }
@@ -436,7 +456,7 @@ h2_pal_result_t h2_iperf_stream_sctp_pump(
     if (result != H2_PAL_OK) {
         return result;
     }
-    uint32_t wait = timeout_ms;
+    uint32_t wait = h2_iperf_io_slice(config, timeout_ms);
     if (stream->next_deadline_ms != H2_PAL_SCTP_NO_DEADLINE) {
         uint32_t until_deadline = remaining_ms(now, stream->next_deadline_ms);
         if (until_deadline < wait) {
@@ -505,6 +525,9 @@ h2_pal_result_t h2_iperf_stream_sctp_accept(
     size_t max_message_size,
     uint32_t timeout_ms) {
     const h2_iperf_config_t *config = stream->config;
+    if (h2_iperf_should_stop(config)) {
+        return H2_PAL_ERR_CLOSED;
+    }
     if (config->sctp == NULL) {
         return H2_PAL_ERR_UNSUPPORTED;
     }
@@ -518,6 +541,9 @@ h2_pal_result_t h2_iperf_stream_sctp_accept(
     }
     uint64_t deadline = h2_iperf_now_ms(config) + timeout_ms;
     for (;;) {
+        if (h2_iperf_should_stop(config)) {
+            return H2_PAL_ERR_CLOSED;
+        }
         uint32_t left = remaining_ms(h2_iperf_now_ms(config), deadline);
         if (left == 0u) {
             return H2_PAL_ERR_TIMEOUT;
@@ -525,7 +551,7 @@ h2_pal_result_t h2_iperf_stream_sctp_accept(
         h2_pal_net_addr_t from;
         int got = h2_pal_net_udp_recvfrom(
             config->net, stream->sock, &from, stream->packet_buf,
-            stream->packet_cap, left);
+            stream->packet_cap, h2_iperf_io_slice(config, left));
         if (got == H2_PAL_ERR_TIMEOUT || got == H2_PAL_ERR_WOULD_BLOCK) {
             continue;
         }
@@ -624,12 +650,15 @@ int h2_iperf_stream_send(
     size_t len,
     uint32_t timeout_ms) {
     const h2_iperf_config_t *config = stream->config;
+    if (h2_iperf_should_stop(config)) {
+        return H2_PAL_ERR_CLOSED;
+    }
     if (len == 0u || len > (size_t)INT_MAX) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     switch (stream->protocol) {
     case H2_IPERF_PROTOCOL_TCP: {
-        int sent = h2_pal_net_tcp_send_timeout(config->net, stream->sock, data, len, timeout_ms);
+        int sent = h2_pal_net_tcp_send_timeout(config->net, stream->sock, data, len, h2_iperf_io_slice(config, timeout_ms));
         if (sent == H2_PAL_ERR_UNSUPPORTED) {
             sent = h2_pal_net_tcp_send(config->net, stream->sock, data, len);
         }
@@ -638,6 +667,9 @@ int h2_iperf_stream_send(
     case H2_IPERF_PROTOCOL_UDP: {
         uint64_t deadline = h2_iperf_now_ms(config) + timeout_ms;
         for (;;) {
+            if (h2_iperf_should_stop(config)) {
+                return H2_PAL_ERR_CLOSED;
+            }
             int sent = h2_pal_net_udp_sendto(config->net, stream->sock, &stream->peer, data, len);
             if (sent >= 0) {
                 return sent;
@@ -663,6 +695,9 @@ int h2_iperf_stream_send(
             .reliability_value = 0u,
         };
         for (;;) {
+            if (h2_iperf_should_stop(config)) {
+                return H2_PAL_ERR_CLOSED;
+            }
             h2_pal_result_t status = sctp_status(stream);
             if (status != H2_PAL_OK) {
                 return status;
@@ -701,10 +736,13 @@ int h2_iperf_stream_recv(
     size_t cap,
     uint32_t timeout_ms) {
     const h2_iperf_config_t *config = stream->config;
+    if (h2_iperf_should_stop(config)) {
+        return H2_PAL_ERR_CLOSED;
+    }
     switch (stream->protocol) {
     case H2_IPERF_PROTOCOL_TCP: {
-        int got = h2_pal_net_tcp_recv(config->net, stream->sock, buf, cap, timeout_ms);
-        if (got == H2_PAL_ERR_WOULD_BLOCK) {
+        int got = h2_pal_net_tcp_recv(config->net, stream->sock, buf, cap, h2_iperf_io_slice(config, timeout_ms));
+        if (got == H2_PAL_ERR_WOULD_BLOCK || got == H2_PAL_ERR_TIMEOUT) {
             return H2_PAL_ERR_TIMEOUT;
         }
         return got == 0 ? H2_PAL_ERR_CLOSED : got;
@@ -712,10 +750,13 @@ int h2_iperf_stream_recv(
     case H2_IPERF_PROTOCOL_UDP: {
         uint64_t deadline = h2_iperf_now_ms(config) + timeout_ms;
         for (;;) {
+            if (h2_iperf_should_stop(config)) {
+                return H2_PAL_ERR_CLOSED;
+            }
             uint32_t left = remaining_ms(h2_iperf_now_ms(config), deadline);
             h2_pal_net_addr_t from;
-            int got = h2_pal_net_udp_recvfrom(config->net, stream->sock, &from, buf, cap, left);
-            if (got == H2_PAL_ERR_WOULD_BLOCK) {
+            int got = h2_pal_net_udp_recvfrom(config->net, stream->sock, &from, buf, cap, h2_iperf_io_slice(config, left));
+            if (got == H2_PAL_ERR_WOULD_BLOCK || got == H2_PAL_ERR_TIMEOUT) {
                 if (left == 0u) {
                     return H2_PAL_ERR_TIMEOUT;
                 }
@@ -739,6 +780,9 @@ int h2_iperf_stream_recv(
     case H2_IPERF_PROTOCOL_SCTP: {
         uint64_t deadline = h2_iperf_now_ms(config) + timeout_ms;
         for (;;) {
+            if (h2_iperf_should_stop(config)) {
+                return H2_PAL_ERR_CLOSED;
+            }
             if (stream->sctp_pending_bytes > 0u) {
                 uint64_t pending = stream->sctp_pending_bytes;
                 if (pending > (uint64_t)INT_MAX) {
@@ -791,6 +835,25 @@ static bool run_limits_reached(const h2_iperf_run_t *run, uint64_t now_us) {
     return run->byte_limit != 0u && run->bytes >= run->byte_limit;
 }
 
+static void run_report(h2_iperf_run_t *run, bool sending, uint64_t now_us,
+                       uint64_t *last_report_us, bool force) {
+    const h2_iperf_config_t *config = run->stream->config;
+    if (config->on_progress == NULL ||
+        (!force && now_us - *last_report_us < 100000u)) {
+        return;
+    }
+    *last_report_us = now_us;
+    uint64_t elapsed_ms = (now_us - run->start_us) / 1000u;
+    const h2_iperf_progress_t progress = {
+        .protocol = run->stream->protocol,
+        .sending = sending,
+        .bytes = run->bytes,
+        .packets = run->packets,
+        .duration_ms = elapsed_ms > UINT32_MAX ? UINT32_MAX : (uint32_t)elapsed_ms,
+    };
+    config->on_progress(config->callback_user, &progress);
+}
+
 h2_pal_result_t h2_iperf_run_sender(h2_iperf_run_t *run) {
     h2_iperf_stream_t *stream = run->stream;
     const h2_iperf_config_t *config = stream->config;
@@ -807,10 +870,17 @@ h2_pal_result_t h2_iperf_run_sender(h2_iperf_run_t *run) {
     run->ctrl_state = 0;
     run->ctrl_closed = false;
     uint64_t last_poll = run->start_us;
+    uint64_t last_report = run->start_us;
+    run_report(run, true, run->start_us, &last_report, true);
     size_t offset = 0u;
     h2_pal_result_t result = H2_PAL_OK;
     for (;;) {
         uint64_t now = h2_iperf_now_us(config);
+        run_report(run, true, now, &last_report, false);
+        if (h2_iperf_should_stop(config)) {
+            result = H2_PAL_ERR_CLOSED;
+            break;
+        }
         if (run_limits_reached(run, now) || run_poll_ctrl(run, now, &last_poll)) {
             break;
         }
@@ -895,6 +965,7 @@ h2_pal_result_t h2_iperf_run_sender(h2_iperf_run_t *run) {
         run->bytes += (uint64_t)sent;
     }
     run->end_us = h2_iperf_now_us(config);
+    run_report(run, true, run->end_us, &last_report, true);
     return result;
 }
 
@@ -907,10 +978,17 @@ h2_pal_result_t h2_iperf_run_receiver(h2_iperf_run_t *run) {
     run->ctrl_state = 0;
     run->ctrl_closed = false;
     uint64_t last_poll = run->start_us;
+    uint64_t last_report = run->start_us;
+    run_report(run, false, run->start_us, &last_report, true);
     uint64_t sctp_messages_before = stream->sctp_rx_messages;
     h2_pal_result_t result = H2_PAL_OK;
     for (;;) {
         uint64_t now = h2_iperf_now_us(config);
+        run_report(run, false, now, &last_report, false);
+        if (h2_iperf_should_stop(config)) {
+            result = H2_PAL_ERR_CLOSED;
+            break;
+        }
         if (run_limits_reached(run, now) || run_poll_ctrl(run, now, &last_poll)) {
             break;
         }
@@ -927,6 +1005,9 @@ h2_pal_result_t h2_iperf_run_receiver(h2_iperf_run_t *run) {
             continue;
         }
         if (got == H2_PAL_ERR_CLOSED) {
+            if (h2_iperf_should_stop(config)) {
+                result = H2_PAL_ERR_CLOSED;
+            }
             break;
         }
         if (got < 0) {
@@ -936,11 +1017,14 @@ h2_pal_result_t h2_iperf_run_receiver(h2_iperf_run_t *run) {
         run->bytes += (uint64_t)got;
         if (stream->protocol == H2_IPERF_PROTOCOL_UDP) {
             run->packets++;
+        } else if (stream->protocol == H2_IPERF_PROTOCOL_SCTP) {
+            run->packets = stream->sctp_rx_messages - sctp_messages_before;
         }
     }
     if (stream->protocol == H2_IPERF_PROTOCOL_SCTP) {
         run->packets = stream->sctp_rx_messages - sctp_messages_before;
     }
     run->end_us = h2_iperf_now_us(config);
+    run_report(run, false, run->end_us, &last_report, true);
     return result;
 }

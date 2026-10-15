@@ -1,0 +1,29 @@
+{
+  "restored": true,
+  "uid": "9888e0115c52",
+  "active_version": "gizclaw-fwdiag-r35-adbbc722",
+  "active_image_sha256": "c6d08c6500d1c76548f9368253a1f8f64d30f6f7ce467fbc76e9543dadb9e2f2",
+  "stage_valid": 1,
+  "stage_version": "gizclaw-fwdiag-r35-adbbc722",
+  "stage_package_sha256": "c692f382849746682c5d3e4c77a212ce2bd3dad9d434e8bdb8940ba8a0572cb8",
+  "stage_image_sha256": "c6d08c6500d1c76548f9368253a1f8f64d30f6f7ce467fbc76e9543dadb9e2f2",
+  "p1_unchanged": true,
+  "coredump_unchanged": true,
+  "wifi_setting_and_state_unchanged": true,
+  "wifi_changed_observational_keys": [
+    "rssi"
+  ],
+  "qualification_snapshot": "qualified-before-restore.json",
+  "qualification_stage_valid": 0,
+  "restore_stage_valid": 1,
+  "recorded_at_utc": "2026-10-04T11:08:07.354856+00:00",
+  "snapshot_sha256": {
+    "before-status.log": "e2ac164e30f4c8a81a625eb8cb00388ed5ca67d5c8005897a5cdfd4948961e82",
+    "after-status.log": "629d867134fcbdb0436ca74936ac58c509b9025b00a1376a18a4bcc79dd9af52",
+    "restored-final-status.log": "e2ac164e30f4c8a81a625eb8cb00388ed5ca67d5c8005897a5cdfd4948961e82",
+    "before-wifi.log": "f0997fefdfd584199070d000b2bde981ec6ec9e1d55b041feff12c1ca25b72e6",
+    "restored-final-wifi.log": "0f5c7d88d31d31eab7ff225a317c4f1f2803b529cebdef1d87316d58e3024627",
+    "before-coredump-status.log": "5bdf63243c04b65d6759ad5a1cbd04f6b4cfdf8a5b1824698fd2ec92ac7d0cec",
+    "restored-final-coredump-status.log": "5bdf63243c04b65d6759ad5a1cbd04f6b4cfdf8a5b1824698fd2ec92ac7d0cec"
+  }
+}

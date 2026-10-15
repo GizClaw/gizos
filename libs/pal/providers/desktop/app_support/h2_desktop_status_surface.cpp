@@ -87,6 +87,7 @@ int open_status_surface(OwnedDisplay *display, const char *app_name,
       h2_desktop_platform_default_allocator(), h2_desktop_platform_task_api(),
       h2_desktop_platform_sync_api(),          h2_desktop_platform_queue_api(),
       h2_desktop_platform_time_api(),
+      0u, 0u,
   };
   if (h2_lvgl_platform_init(&platform) != 0) {
     destroy(state);

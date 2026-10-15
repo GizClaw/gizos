@@ -2,6 +2,7 @@
 #define H2_PAL_AUDIO_H
 
 #include "h2/pal/core/h2_pal_errors.h"
+#include "h2/pal/os/h2_pal_mem.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -47,11 +48,51 @@ typedef struct h2_audio_track_config {
     h2_audio_pcm_format_t format;
     uint32_t volume_factor_milli;
     size_t buffer_frames;
+    /* Optional per-track storage; NULL uses the audio provider default.
+     * Must remain valid until track close completes. */
+    const h2_pal_mem_api_t *allocator;
 } h2_audio_track_config_t;
 
 typedef struct h2_pal_audio_api h2_pal_audio_api_t;
 typedef h2_pal_audio_api_t h2_pal_audio_t;
 typedef struct h2_pal_audio_track h2_pal_audio_track_t;
+
+/** One complete, time-aligned AEC processing frame. PCM is borrowed only for
+ * on_capture; do not retain it. raw contains interleaved ADC samples before
+ * AEC; microphone_lane and reference_lane identify actual packed lanes, not
+ * codec input numbers. reference_input is the mono reference after provider
+ * scaling, exactly as passed to AEC; processed is the resulting mono output.
+ * All formats have equal sample rates and sample counts. sequence increases
+ * for every processed frame within a microphone session. */
+typedef struct h2_audio_aec_frame {
+    uint64_t sequence;
+    const h2_audio_frame_t *raw;
+    const h2_audio_frame_t *reference_input;
+    const h2_audio_frame_t *processed;
+    uint8_t microphone_lane;
+    uint8_t reference_lane;
+    uint8_t microphone_mask; /**< All raw ADC lanes used as AEC microphones. */
+} h2_audio_aec_frame_t;
+
+/** Optional diagnostics for a real AEC path. The descriptor is copied during
+ * registration, but user is borrowed until successful unregister. Callbacks
+ * run synchronously on provider workers, cannot block, allocate or reenter
+ * Audio, and cannot change PCM. on_capture and on_playback can run concurrently
+ * with each other; each callback is serialized with itself. on_playback sees
+ * only complete PCM actually accepted by the DAC transport, after mixing and
+ * digital gain. Capture sequence and playback timing are independent; the
+ * hardware reference in on_capture supplies AEC alignment. No callback is
+ * delivered after the corresponding successful stop operation has joined. */
+typedef struct h2_audio_aec_observer {
+    void *user;
+    void (*on_capture)(void *user, const h2_audio_aec_frame_t *frame);
+    void (*on_playback)(void *user, const h2_audio_frame_t *frame);
+    /** Nonzero capture selects the mic worker; zero selects playback. Reports
+     * actual processing/transport errors, including incomplete DAC writes.
+     * Ordinary empty capture queues are not errors. Same borrowing and
+     * per-worker serialization as the corresponding PCM callback. */
+    void (*on_error)(void *user, int capture, int result);
+} h2_audio_aec_observer_t;
 
 typedef struct h2_pal_audio_vtable {
     int (*get_info)(void *user, h2_audio_info_t *info);
@@ -66,6 +107,9 @@ typedef struct h2_pal_audio_vtable {
         h2_pal_audio_track_t **out_track);
     int (*get_speaker_volume_percent)(void *user, uint32_t *out_percent);
     int (*set_speaker_volume_percent)(void *user, uint32_t percent);
+    int (*get_mic_gain_percent)(void *user, uint32_t *out_percent);
+    int (*set_mic_gain_percent)(void *user, uint32_t percent);
+    int (*set_aec_observer)(void *user, const h2_audio_aec_observer_t *observer);
 } h2_pal_audio_vtable_t;
 
 typedef int (*h2_pal_audio_track_write_fn)(
@@ -193,6 +237,65 @@ static inline int h2_pal_audio_set_speaker_volume_percent(const h2_pal_audio_api
         return H2_AUDIO_ERR_INVALID_ARG;
     }
     return audio->vtable->set_speaker_volume_percent(audio->user, percent);
+}
+
+/**
+ * @brief Read the current microphone gain on the provider's 0..100 scale.
+ *
+ * The board or provider owns the mapping to codec gain or PCM scaling. The
+ * result is zeroed on failure. An audio device without adjustable microphone
+ * gain returns H2_AUDIO_ERR_UNSUPPORTED. Hardware may quantize the setting,
+ * so the returned percentage can differ from the last request.
+ */
+static inline int h2_pal_audio_get_mic_gain_percent(
+    const h2_pal_audio_api_t *audio, uint32_t *out_percent) {
+    if (out_percent == NULL) return H2_AUDIO_ERR_INVALID_ARG;
+    *out_percent = 0u;
+    if (audio == NULL || audio->vtable == NULL) return H2_AUDIO_ERR_INVALID_ARG;
+    if (audio->vtable->get_mic_gain_percent == NULL) return H2_AUDIO_ERR_UNSUPPORTED;
+    uint32_t current = 0u;
+    const int rc = audio->vtable->get_mic_gain_percent(audio->user, &current);
+    if (rc != H2_AUDIO_OK) return rc;
+    if (current > 100u) return H2_AUDIO_ERR_IO;
+    *out_percent = current;
+    return H2_AUDIO_OK;
+}
+
+/**
+ * @brief Set microphone gain on the provider's 0..100 scale.
+ *
+ * The mapping and default percentage are board or provider owned. This call
+ * may block for device control I/O; call it from task context and serialize
+ * gain control with other Audio PAL control and lifecycle calls. Success
+ * applies to subsequent captured frames without
+ * restarting the microphone. Unsupported devices return UNSUPPORTED. A device
+ * I/O failure keeps the last reported value; a multi-input codec may require
+ * recovery if a rollback write also fails.
+ */
+static inline int h2_pal_audio_set_mic_gain_percent(
+    const h2_pal_audio_api_t *audio, uint32_t percent) {
+    if (audio == NULL || audio->vtable == NULL || percent > 100u)
+        return H2_AUDIO_ERR_INVALID_ARG;
+    if (audio->vtable->set_mic_gain_percent == NULL) return H2_AUDIO_ERR_UNSUPPORTED;
+    return audio->vtable->set_mic_gain_percent(audio->user, percent);
+}
+
+/** Register/replace diagnostics, or unregister with NULL. Serialized task
+ * context only, with microphone and speaker stopped and their workers joined.
+ * A non-NULL descriptor requires all three callbacks. A provider with no actual AEC
+ * or no pre/post-AEC observation returns UNSUPPORTED, including unregister.
+ * Registration while running returns INVALID_STATE. Failure preserves the old
+ * registration and its borrowed user; retain it and retry cleanup. An Audio
+ * decorator which replaces capture cannot claim real acoustic diagnostics. */
+static inline int h2_pal_audio_set_aec_observer(
+    const h2_pal_audio_api_t *audio, const h2_audio_aec_observer_t *observer) {
+    if (audio == NULL || audio->vtable == NULL ||
+        (observer != NULL && (observer->on_capture == NULL ||
+                              observer->on_playback == NULL || observer->on_error == NULL)))
+        return H2_AUDIO_ERR_INVALID_ARG;
+    if (audio->vtable->set_aec_observer == NULL)
+        return H2_AUDIO_ERR_UNSUPPORTED;
+    return audio->vtable->set_aec_observer(audio->user, observer);
 }
 
 static inline int h2_pal_audio_track_write(

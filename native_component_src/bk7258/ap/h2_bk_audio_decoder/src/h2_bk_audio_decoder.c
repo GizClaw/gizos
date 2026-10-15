@@ -234,6 +234,9 @@ static h2_pal_result_t decoder_acquire(
     (void)user;
     (void)timeout_ms;
     h2_bk_audio_decoder_state_t *state = &session->state;
+    if (!state->configured) {
+        return H2_PAL_ERR_INVALID_STATE;
+    }
     if (state->acquired) {
         return H2_PAL_ERR_WOULD_BLOCK;
     }

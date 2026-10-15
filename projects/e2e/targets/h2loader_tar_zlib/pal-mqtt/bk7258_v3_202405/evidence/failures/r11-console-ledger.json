@@ -1,0 +1,21 @@
+{
+  "status": "capture_failed",
+  "qualified": false,
+  "source_commit": "7ff2a42794bf8509416e8de62581fd717712178d",
+  "version": "mqtt-bk-paced-r11",
+  "package_sha256": "63a5cad31c310e2937c653400ff1bf561e617eea58fcee40a978f6ff31d459db",
+  "image_sha256": "8df43546d886a891a18c33b11825d24cca0ae49ca637bc9c346ccb489db1d7b3",
+  "reason": "First READY ledger missing four mandatory rows; 90 ms pacing did not produce complete qualification. No later green selection.",
+  "initial_case_rows": 32,
+  "missing_case_ids": [
+    "invalid-qos",
+    "invalid-publish",
+    "invalid-subscribe",
+    "invalid-unsubscribe"
+  ],
+  "sdk_protocol_echo_count": 133,
+  "actual_exit": 130,
+  "controlled_stop": false,
+  "raw_log_sha256": "b9ee7206fbd645a535222d2c025bb64d2bb1ab6449670d09977d34721ddb3752",
+  "collector_receipt_sha256": "ffdc18deb93af46699e8227eb849d3068519e7eb7131d47dd25137497474b173"
+}

@@ -1,0 +1,79 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+_HOST_COMPATIBILITY = select({
+    "//tools/bazel/platforms:host_macos_target_macos": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+_HOST_DEPS = [
+    "//libs/pal/providers/darwin/pal_core:netif_system_event",
+    "//libs/pal/providers/desktop/pal_core:core",
+    "//libs/pal:unsupported",
+    "//libs/atomic/providers/c11",
+    "//projects/e2e/apps/pal-core/app:pal_core_e2e",
+    ":observer",
+]
+
+cc_binary(
+    name = "pal_core_e2e",
+    srcs = [
+        "host_config.c",
+        "host_config.h",
+        "main.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = _HOST_COMPATIBILITY,
+    deps = _HOST_DEPS,
+)
+
+cc_test(
+    name = "host_regression_test",
+    srcs = [
+        "host_config.c",
+        "host_config.h",
+        "main.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = _HOST_COMPATIBILITY,
+    deps = _HOST_DEPS,
+)
+
+cc_test(
+    name = "app_failure_test",
+    srcs = [
+        "host_config.c",
+        "host_config.h",
+        "test_app_failures.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = _HOST_COMPATIBILITY,
+    deps = _HOST_DEPS,
+)
+
+cc_library(
+    name = "observer",
+    srcs = ["host_observer.cpp"],
+    hdrs = ["host_observer.h"],
+    copts = H2_WARNING_COPTS,
+    local_defines = ['H2_PAL_CORE_IMAGE_VERSION="pal-core-contract-v2"'],
+    target_compatible_with = _HOST_COMPATIBILITY,
+    deps = [
+        "//libs/pal/providers/desktop/pal_core:core",
+        "//projects/e2e/apps/pal-core/app:pal_core_e2e",
+    ],
+)
+
+cc_test(
+    name = "async_event_test",
+    srcs = ["host_config.c", "host_config.h", "test_async_events.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = _HOST_COMPATIBILITY,
+    deps = _HOST_DEPS,
+)

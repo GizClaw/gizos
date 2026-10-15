@@ -10,15 +10,22 @@ H2Loader 是 GizOS 的固件管理产品。它由工厂 Batch Loader、repositor
 | --- | --- |
 | [项目结构](./project_structure) | H2Loader 各源码目录、代码 ownership 与依赖边界 |
 | [Portable Host Core](/zh/developing/h2loader_host) | 可分发 Launcher 的扫描、catalog、managed operation 与 recovery 边界 |
+| [npm Release](./npm_release) | Browser SDK tarball、snapshot Release slice 与下游 npm index 合同 |
 | [固件结构分区与类型](./firmware_types) | Loader 固件、App 固件、指令与分区布局 |
 | [更新、启动与回退](./update/) | 更新包总览，以及彼此独立的 App 更新和 Loader self-upgrade |
 | [Boards](./boards/) | 各 board 的 Loader/App image、平台配置、运行表现与恢复边界 |
 | [BLE iKCP Baseline](./apps/bleikcp_speed/) | 两台设备之间的 BLE iKCP 吞吐和断线恢复基准 |
 | [Wi-Fi CSI Smoke](./apps/wifi_csi/) | 在屏幕上显示 Wi-Fi CSI、链路元数据和诊断错误 |
 
+## 产品广播名称
+
+H2Loader Loader 与 App 管理 adapter 消费 Runtime 的可选 `ble_local_name`；portable BLE service 在 open 时校验并复制名称，pause／resume 与断线重开继续使用同一个值。产品／board 在自己的仓库决定型号前缀和稳定设备后缀，公共 H2Loader 不维护私有机型列表。
+
+具名 legacy 广播保留管理 service UUID，完整名称由 provider 放入 scan response；为保证较长名称不会使两个 31-byte PDU 溢出，且不依赖各 backend 重排 AD record，名称与 compact identity 无法同时装入 scan response 时省略 manufacturer identity，短名称仍保留 identity。Host 已支持仅凭管理 UUID 接纳候选，再连接并通过 command `status` 获得真实 board 和 capabilities；名称不参与 package identity 校验。未提供名称的 legacy 广播以及 extended 广播保留原来的 identity payload，extended 广播额外携带名称。
+
 ## App Board Matrix
 
-矩阵以 `projects/<owner>/targets/h2loader_tar_zlib/<image>/<board>/` 中当前具备 `:package` 构建入口的 image 为准，不把“存在 entry”误写成“已经完成实机验收”。
+原始固件矩阵以 `projects/<owner>/targets/h2loader_tar_zlib/<image>/<board>/` 中当前具备 `:package` 构建入口的 image 为准，不把“存在 entry”误写成“已经完成实机验收”。
 
 - `✓`：当前存在可构建的 Loader 或 App image 入口。
 - `△`：入口已完成构建验证，但对应真机验收尚未完成。
@@ -43,6 +50,7 @@ H2Loader 是 GizOS 的固件管理产品。它由工厂 Batch Loader、repositor
 | Partial Update | — | — | — | — | — | — | ✓ | — | — | — | — |
 | GizClaw Ping Speed | ✓ | — | — | — | — | — | — | — | — | — | — |
 | iperf | ✓ | — | — | — | — | — | — | — | — | — | — |
+| iperf Server | [✓](./boards/amoled/iperf_server) | — | — | — | — | — | — | — | — | — | — |
 | WebRTC Performance | ✓ | — | — | ✓ | — | — | — | — | — | — | — |
 | GizClaw E2E | [✓](./boards/amoled/gizclaw_ota_e2e) | — | — | ✓ | — | — | — | — | — | — | — |
 | H106 E2E | — | — | △ | — | — | — | — | △ | — | — | — |
@@ -89,17 +97,52 @@ App image 是由 H2Loader 安装和启动的目标固件。Launcher 初始化 BS
 
 ## Firmware Release
 
-推送 `v<version>` tag 时，`.github/workflows/release.yml` 执行 closed DAG：`catalog → ESP32-S3/ESP32-P4 与 BK7258 slices → firmware-bundle → release-bundle → publish`。这里的 tag version 是 immutable release batch identity，不是每个 firmware 的产品版本。每一步只接收上一步声明并校验过的 artifact，最后一个 assembly job 验证完整 firmware index、逐项版本、asset SHA-256 与无额外输入。通过 `workflow_dispatch` 手动运行时，调用方提供 batch version 并选择目标 branch；workflow 执行相同 DAG，但只上传完整 `release-bundle-<version>` Actions artifact，不创建 GitHub Release。新增、删除或移动 launcher 后，Bazel provider catalog、CI matrix 与 release coverage 同源，不能由脚本维护另一份 expected entry 列表。
+`.github/workflows/release.yml` 只由 `workflow_dispatch` 触发，且必须从仓库默认分支运行，不接收 version 输入。`catalog` 在 checkout 前拒绝非默认分支，checkout 后校验触发提交；所有 GizOS job 都固定 checkout 到该 `github.sha`。从 UTC 时钟生成 `RELEASE_BATCH=YYYYMMDD-HHMMSS` 和 `v<batch>` tag；batch 是发布批次，不是产品版本。DAG 为 `catalog → ESP32-S3/ESP32-P4/BK7258 → firmware-bundle → package → release-bundle → publish`，并行的 `npm-packages` producer 直接汇入最终 `release-bundle`。每一步保留 producer 子目录，拒绝重复 basename、symlink、缺失或额外文件。 Catalog 还构建供 LiteLink 使用的 Lua Runtime 源码包，由 LiteLink 在 Flutter App 原生层实现 PAL。
 
-每个 firmware 在同一个 GitHub Release 中提供：
+发布选择为 opt-in：Bazel 查询 `//projects/...` 中带精确 `firmware-release` tag 的 `h2loader_zlib_tar` rule，并要求它是 Loader 目录中的 canonical `:package`，identity 为 `image=loader`、`role=h2loader`。`projects/e2e`、`projects/example`、H2Loader `e2e-app` 以及 alternate package 均为诊断目标，即使误加发布 tag 也会被校验拒绝。现存 `no-release` 仅保留为诊断标记，发布选择不再读取它。
 
-- `<board>-<image>-<target>.update.tar.zlib`：deploy 与 H2Loader stage 使用的正式安装包。
-- `<board>-h2loader-<target>.recovery.h2fb`：Loader entry 的确定性 factory bundle，含 board/target、driver、flash offset 和每个成员 SHA-256。
-- `<board>-h2loader-<target>.combined_factory.bin`：ESP Loader entry 从 `0x0` 直接烧录的 ESP-IDF combined image；metadata 使用 `factory-flash`、`.combined_factory.bin` release suffix 与 offset `0` 描述它。
+发布集合已确定为以下三块板，每个现有平台 slice 各一块；三块板的首个正式发布版本均已确认为 `0.1.0`。只有这些 target 标记 `firmware-release`；catalog 必须覆盖全部三项，不能悄悄漏掉不兼容配置。
 
-每个最终 firmware 可以通过 `firmware_version(name, value)` 声明自己或一个明确 lockstep 产品组的 SemVer，并把该 label 传给 ESP、BK7258、BK3633 或 JieLi firmware rule 的 `version`。没有显式声明的旧 target 继续使用 `//tools/bazel:firmware_version` compatibility flag。同一 release batch 可以包含多个 firmware version；每个 `:package` target 使用 `<board>-<image>-<target>.firmware.json` 传递 entry、role、board、target、version、release suffix、操作类型与各 release asset SHA-256，package manifest 与 native firmware version 必须相同。`//tools/bazel:firmware_release_bundle` 校验完整 catalog 后聚合为 `firmware-index.json`，其顶层 `version` 是 batch identity，每个 firmware item 的 `version` 是该固件自己的版本；metadata 不再单独发布。`firmware-index.json` 必须完整覆盖全部维护中的 ESP/BK7258 entry；`SHA256SUMS` 覆盖索引和全部 firmware 发布文件。设备安装消费 `update.tar.zlib`，raw recovery 只消费匹配的 `.h2fb`，直接工厂烧录只消费匹配的 `.combined_factory.bin` 并从 offset `0` 开始。Release 不发布 ELF、map 或 diagnostic archive；内部 `:firmware` 的 `DefaultInfo` 仍包含其余直接烧录与调试文件，供对应提交的本地调试、烧录与 coredump/backtrace 分析。任一 firmware、package、version 或 catalog validation 失败时，publish job 不创建部分 Release。
+| `//projects/h2loader/targets/h2loader_zlib_tar/loader/<board>:package` 的 board | Slice | 固件版本 |
+| --- | --- | --- |
+| `bk7258_v3_202405` | `bk7258` | `0.1.0` |
+| `devkit` | `esp32s3` | `0.1.0` |
+| `waveshare_esp32p4_wifi6_touch_lcd_4_3` | `esp32p4` | `0.1.0` |
 
-BK3633 的 `:firmware` target 仍由 Bazel/CI 构建和验证，但没有 `FirmwareReleaseInfo`，因此不得出现在 catalog、任何 release slice、`firmware-index.json` 或 GitHub Release。这个 exclusion 由 catalog/release tests 和 final input allowlist 同时 fail closed；不能因为 BK3633 target 可以成功构建就把 graph success 当作可发布证据。
+每个 BUILD 声明 `firmware_version(name = "version", value = "0.1.0")`，native firmware 的 `version = ":version"` 经 `FirmwareVersionInfo` 传递到 package。Release 不再注入全局 `//tools/bazel:firmware_version`；该 compatibility flag 仍供没有独立版本的诊断 target 使用。每项固件版本必须是 31 字节以内的 ASCII SemVer，catalog、native metadata 和 package manifest 必须一致，允许同一批次包含不同固件版本。
+
+GitHub Release 包含以下资产：
+
+- `firmware-release-v<batch>.zip`
+- `gizclaw-h2loader-<package version>.tgz`
+- `npm-index.json`
+- `gizos-lua-runtime-src-<content_id>.tar.gz` 和同名 `.sha256`
+- `gizos-release.json`：记录 batch、tag、提交与包身份。
+- `SHA256SUMS`：覆盖前述全部资产，不包含自身。
+- `index.json`：记录 repository、release tag、触发提交及前述资产（含 `SHA256SUMS`）的文件名、字节数和 SHA-256；不自引用。
+
+ZIP 内只有 `firmware-release-v<batch>/` 前缀下的文件：
+
+- `loader-<board>.update.tar`：三个 Loader 的 managed install 包。
+- `loader-<board>.recovery.h2fb`：两个 ESP Loader 和 BK7258 Loader 的 recovery bundle。
+- `loader-<board>.combined_factory.bin`：两个 ESP Loader 从 offset `0` 直接烧录的 combined image。
+- `firmware-index.json`：顶层 `batch` 是 UTC 批次，各 firmware 的 `version` 是独立 SemVer；`release_name` 必须等于 `<image>-<board>`，每个 asset name 必须等于 `release_name + release_suffix`。
+- `SHA256SUMS`：覆盖 ZIP 内全部固件资产及 `firmware-index.json`，不包含自身。
+
+原生 package 输出仍采用 `<board>-<image>-<target>` 文件名；`firmware-bundle` 校验原始 metadata、操作类型、SHA-256、size 和完整集合后，按上述发布名复制资产并生成索引。`.firmware.json`、ELF、map 和诊断 archive 不进入 ZIP。AC791N 与 BK3633 不在发布集合中；AC791N 保留普通构建与 CI 路径。
+
+`package` slice 校验固件索引、资产及校验和后，按文件名排序生成 ZIP，使用 `ZIP_DEFLATED`、compression level `9`、batch 时间戳、`create_system = 3` 和 `external_attr = 0o100644 << 16`；输入文件的 mtime、权限、目录和枚举顺序不影响输出。ZIP 时间字段精度为两秒，batch 的奇数秒向下取整为偶数秒，batch 本身保持不变；最终组装逐项校验 ZIP member 时间戳必须与该取整值一致。batch 年份限制为 ZIP 支持的 1980–2107。相同 batch 和相同文件字节产生相同 ZIP。
+
+```sh
+make bazel-release RELEASE_SLICE=catalog RELEASE_BATCH=20260920-120000
+# 各平台使用同一 catalog 分别构建，并保留 artifact 子目录后组装。
+make bazel-release RELEASE_SLICE=firmware-bundle RELEASE_BATCH=20260920-120000 RELEASE_INPUT_DIR=build/release/input
+make bazel-release RELEASE_SLICE=package RELEASE_BATCH=20260920-120000 RELEASE_INPUT_DIR=build/release/firmware-bundle
+```
+
+最终组装重新验证 ZIP 内部 identity、checksum coverage 和每项资产的 SHA-256/size，同时验证 npm index、全部 tarball、Lua 源码包及其 sidecar 和完整顶层集合，再生成顶层 `SHA256SUMS`。工作流先验证校验和，再生成 `index.json`。生成的 tag 和 Release 必须均不存在；publish 在触发提交创建 tag 与 draft Release，上传资产，重新下载并逐文件 `cmp`、复核下载的 `SHA256SUMS` 与 `index.json` 后公开。公开前失败时删除 draft（`gh release delete --cleanup-tag`）并清理残留 tag ref，确认两者均已删除；已公开的 Release 不做破坏性回滚。
+
+npm 的资产格式、索引兼容合同与本地组装命令见 [npm Release](./npm_release)。GitHub Packages 的 `h2loader-npm-publish.yml` 保持独立。
 
 ## 依赖与 Ownership
 
@@ -141,7 +184,7 @@ Runtime 不是 Common 的直接依赖：portable App 消费 Runtime；H2Loader a
 
 Loader 与支持管理命令的 App image 复用同一 command registry、Stage 实现与 operation mutex。ESP 和 BK7258 的 managed UART transport 固定为 `460800` baud；ESP sdkconfig 和 BK AP/CP defaults 在固件启动时直接应用该值，Host 未显式传入 `--baud` 时也使用同一默认值。Host 在 open 后、借出 stream 前 deassert DTR/RTS，只有 canonical `UNSUPPORTED` 可继续。两者都通过 IO Stream iKCP 承载完整 command、Stage bytes 与 response。Host 不提供 legacy raw H2Loader command transport，可靠握手失败不得自动 fallback。Native USB Serial/JTAG 不使用 baud；独立的 BootROM recovery driver 和外围设备 UART 也不属于 command transport。
 
-支持 BLE 的 board 由具体 launcher 显式注册 H2Loader GATT service，不使用全局 build option。H2Loader 使用 connectable Extended Advertising，不携带 local name；固定 Service UUID 和 Service Data 是唯一的发现与连接 identity。Service Data 提供 protocol version、active role 和静态实现 capabilities；v1 在 board 名不超过 32 bytes 时内联 UTF-8 board，较长名称使用 v2 FNV-1a 64-bit board fingerprint，Host 必须从本地 board registry 唯一解析，hash 缺失或碰撞时不得连接。Host 根据解析出的 board 合成 `h2l.<board>` 显示名。广播 identity 只用于发现和初筛，连接后的 `stats` 必须交叉校验完整 board、role 和当前动态 capabilities，才是 authoritative identity。Loader 与 App 的 BLE task stack 必须分配在 PSRAM，不能静默退回 internal RAM。 ESP image 在 Wi-Fi 执行 scan、connect 或 disconnect 这类会独占 radio 的操作期间自动暂停 App command service 广播，操作结束后恢复；暂停与恢复请求只发布最新的目标状态并唤醒 BLE link task，由该 task 串行应用；发布路径不获取任何 mutex，调用方不阻塞，重叠的 Wi-Fi operation 全部结束后才恢复广播，且不改变 Service Data identity 或已建立的连接。自动共存暂停与调用方显式的 pause/resume 是两个独立的 pause 原因：只要还有任一原因成立，广播保持停止，自动恢复不会覆盖 launcher 通过显式 API 设置的整段 workload 暂停；原因变更与其对应的 stop/start 串行执行，因此并发的显式暂停不会被在途的自动恢复重新打开。
+支持 BLE 的 board 由具体 launcher 显式注册 H2Loader GATT service，不使用全局 build option。H2Loader 由 launcher 选择 connectable Extended 或 Legacy Advertising，默认不携带 local name。公共 BLE service 的可选 `local_name` 在 open 时复制，ESP App adapter 优先使用 Runtime 的产品名称，Runtime 未提供时使用 command config 的 `ble_local_name`。名字只用于人可读的显示；固定 Service UUID 和 versioned identity payload 才用于发现与连接。Legacy mode 将名字与 manufacturer identity 放在 scan response，编码 identity 时先预留名字及 AD header 的容量，必要时使用 compact board fingerprint；较长名称无法与 compact identity 同时容纳时，只广播 UUID 与完整名称，并通过连接后的 `status` 获得真实 board／capabilities；名称不作为身份。Pause/resume、断开重广播与 additional-service 更新都保留同一个名字。Service Data 提供 protocol version、active role 和静态实现 capabilities；v1 在 board 名不超过 32 bytes 时内联 UTF-8 board，较长名称使用 v2 FNV-1a 64-bit board fingerprint，Host 必须从本地 board registry 唯一解析，hash 缺失或碰撞时不得连接。Host 根据解析出的 board 合成 `h2l.<board>` 显示名。广播 identity 只用于发现和初筛，连接后的 `stats` 必须交叉校验完整 board、role 和当前动态 capabilities，才是 authoritative identity。Loader 与 App 的 BLE task stack 必须分配在 PSRAM，不能静默退回 internal RAM。 ESP image 在 Wi-Fi 执行 scan、connect 或 disconnect 这类会独占 radio 的操作期间自动暂停 App command service 广播，操作结束后恢复；暂停与恢复请求只发布最新的目标状态并唤醒 BLE link task，由该 task 串行应用；发布路径不获取任何 mutex，调用方不阻塞，重叠的 Wi-Fi operation 全部结束后才恢复广播，且不改变 Service Data identity 或已建立的连接。自动共存暂停与调用方显式的 pause/resume 是两个独立的 pause 原因：只要还有任一原因成立，广播保持停止，自动恢复不会覆盖 launcher 通过显式 API 设置的整段 workload 暂停；原因变更与其对应的 stop/start 串行执行，因此并发的显式暂停不会被在途的自动恢复重新打开。
 
 当前 status 固定包含 `device_uid`：由固件读取设备端 BLE public/identity MAC，并编码为 12 位小写十六进制字符串。Service Data、CoreBluetooth/Bleak `backend_id`、主机侧可见的 BLE address、display name 和 board 都只用于发现候选，不能提升为物理身份。Host 首次连接后锁定 status 中的 `device_uid`；每次重启后重新发现、连接并读取 status，只有 UID 完全一致才继续验收终态。
 
@@ -149,8 +192,17 @@ Repository CLI 提供 H2Loader management BLE provider，并与 serial 复用同
 
 串口和 BLE 可以同时等待输入，但共享 operation mutex 串行执行命令。Command line、stage bytes 和 response 始终绑定发起它的 transport；断开的 operation 失败，不转移到另一 transport，也不自动 replay。
 
+App return-console 区分 peer 会话结束和设备管理服务结束。ESP/BK 的 UART peer 在响应期间断开或被新 session 替换时，旧 command 的 I/O 可以返回 `CLOSED`；完成旧 command 清理后重置 parser，管理 task 继续接受新的 session，不重放失败 command。只有 read callback 明确返回 `SESSION_CLOSED` 或 launcher 显式停止 task 才结束该服务。回归在首个 status 的响应正文或行尾 flush 中注入 `CLOSED`，覆盖有无后续 `SESSION_RESET` 的路径，验证同一 console 只处理新 session 的 status，最后以永久关闭 marker 正常退出。
+
+BLE command service 的诊断由 composition root 显式借用 Log PAL，与 command response 分离，不直接写 `stdout` 或 `stderr`。日志接口和其 `user` 必须覆盖 service 生命周期，支持并发 task 调用，且不得从日志回调重入 service。诊断为 optional：缺少可用接口时不输出，写入失败不覆盖通信操作的原始返回值。每条记录遵守 PAL message 容量；会话统计拆成带 connection handle 的多条记录，保留所有计数与 high-water 信息，底层日志 provider 决定实际 UART、USB 或其它输出位置。
+
 ## Image 生命周期
 
 H2Loader 的完成条件不是“传输成功”或“reboot accepted”。App 更新必须经过 package 校验、Partition 2 写入和新 App 启动；新 App 以自身固件 identity 提交 Partition 2 metadata，并清理匹配的 Stage。Loader self-update 必须经过 Partition 1 → Partition 2 → Partition 1 回写；最终验收重新连接设备，确认预期 role/version/board/target、active image checksum/size、running/next partition、`boot_intent`、Stage 与 Partition 1/2 metadata。App 终态要求运行 Partition 2 且 Stage invalid；Loader 终态要求运行 Partition 1、`boot_intent=AUTO`、Partition 1/2 valid 且 image checksum 相同、Stage invalid，随后再做 power-cycle 复查。
 
+普通 Loader 初始化前必须取得完整的 `active_identity`，仅填版本不能通过初始化。公共 `h2_loader_read_current_loader_identity` 在真实 Image Reader 上计算镜像字节的 checksum：只有 running-slot 的记录存在、valid、role 为 H2LOADER，且 board、target、version 都与输入一致时，才使用记录的 image size 和预期 checksum。缺失、格式损坏或不匹配的记录使用 primary Loader capacity，避免候选借用较大的 App window 时把 App capacity 当作 Loader image size。长度必须非零且不超过 running-slot capacity，实际 SHA 必须匹配被采用的记录，否则返回 FORMAT；错误的 running partition 返回 INVALID_STATE，缺失依赖或非法输入返回 INVALID_ARG，分配失败返回 NO_MEMORY，Preference、Image Reader 和 digest 的真实错误继续返回。Metadata read 将损坏 blob 与非法调用参数区分为 FORMAT，关闭 namespace 的错误优先于损坏记录，防止回退隐藏 I/O 故障。输出使用调用方 storage，成功后包含独立的 identity 和字符串副本，失败时清零；临时 4 KiB buffer 在所有路径释放，digest 失败执行 abort。该操作在 task context 阻塞读取，必须与其它 package/digest 操作串行，不写 preferences、不迁移 MFG 记录，也不代替升级后的最终状态核对。BK 的 Loader/App UART 与 BLE 使用同一个 `h2_bk_h2loader_get_device_uid` 读取 controller identity MAC；版本、board 名或 endpoint 不能代替 UID。
+
 设备仍能通过 H2Loader command transport 通信时，安装、更新、回退和恢复必须继续使用 H2Loader。只有 H2Loader 已验证无法通信或无法自我恢复时，才能进入对应 board 使用文档定义的底层 recovery。
+
+
+安装包双轨并行：原 `h2loader_tar_zlib` entry 保留 native 源码与 format-1 `.update.tar.zlib`；对应 `h2loader_zlib_tar` entry 只借用其原始 native/data 输入生成 format-2 `.update.tar`。两种 package 都可独立构建和被新 Loader 读取。Canonical release 使用新轨道的发布标签，旧轨道继续用于过渡与对照测试，不重复发布同一 image identity。C Writer/CLI 默认使用新格式。

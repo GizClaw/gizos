@@ -75,6 +75,8 @@ static h2_pal_audio_t *resolve_audio(void *user) {
             .set_pa = NULL,
             .codec_volume_default = H2_WAVESHARE_AUDIO_CODEC_VOLUME_DEFAULT,
             .mic_gain_db = H2_WAVESHARE_AUDIO_MIC_GAIN_DEFAULT_DB,
+            .mic_gain_min_db = 0u,
+            .mic_gain_max_db = 38u,
             .max_tracks = H2_WAVESHARE_AUDIO_MAX_TRACKS,
             .track_queue_frames = H2_WAVESHARE_AUDIO_TRACK_QUEUE_FRAMES,
             .mic_queue_frames = H2_WAVESHARE_AUDIO_MIC_QUEUE_FRAMES,

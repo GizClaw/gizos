@@ -1,0 +1,21 @@
+{
+  "source_commit": "da7704d9495c9da568cb0ed878395e5b7496ef01",
+  "source_dirty": false,
+  "platform": "android-emulator",
+  "serial": "emulator-5566",
+  "artifact_sha256": "f2c85ae87a3e82f163f97a3561b4642697d0533c52e04bfae46343f67b5a078a",
+  "sdk_sha256": "4fd298a58d5bbe7d7af51540845b4acab229324752607055ba26b3b3f5afbdae",
+  "fixture_inputs": {
+    "session": "6c00decee8b446608d3b2d37c3db37be",
+    "host": "10.0.2.2",
+    "tcp_port": 53139,
+    "tls_port": 53140,
+    "json_sha256": "d3d594fc228630f7e73a0d8b3c5c9ac1a0faa5267407c8a5bfc52d3d3a4316fc",
+    "ca_sha256": "0f03d90a4b868588be4a7ed098add52504da63595410a1b8f0fb7a934c96ce91",
+    "wrong_ca_sha256": "5b3574401dbc6b92683ea4d768f489c93fd9ab2816fa264ce3bf42b88610a96e",
+    "registry_sha256": "f3f5798bb6f8793eeede6f3464c847be1b6ad807d6059bc17b759fad6995837f"
+  },
+  "qualified": true,
+  "prior_source_receipt_preserved": "afc4b2367a3a10210c32f9d75bfc04eae766061b",
+  "build_failure_preserved": "test.log: Maven infrastructure timeout; no App execution"
+}

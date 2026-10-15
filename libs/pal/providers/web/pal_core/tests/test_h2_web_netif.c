@@ -1,8 +1,10 @@
 #include "h2/pal/h2_pal_unsupported.h"
 #include "h2_runtime.h"
+#include "h2_web_main_thread.h"
 #include "h2_web_platform.h"
 
 #include <emscripten.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -15,15 +17,32 @@
     }                                                                          \
   } while (0)
 
-EM_JS(void, test_set_online, (int online, int notify),
-      { globalThis.h2TestNetif.set(!!online, !!notify); });
-EM_JS(void, test_set_present, (int present),
-      { globalThis.h2TestNetif.present(!!present); });
-EM_JS(int, test_listener_count, (),
-      { return globalThis.h2TestNetif.listeners(); });
+/* clang-format off */
+EM_JS(void, test_set_online,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["i32", "i32"], null,
+    (online, notify) => { globalThis.h2TestNetif.set(!!online, !!notify); });
+});
+/* clang-format on */
+
+/* clang-format off */
+EM_JS(void, test_set_present,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["i32"], null,
+    (present) => { globalThis.h2TestNetif.present(!!present); });
+});
+/* clang-format on */
+
+/* clang-format off */
+EM_JS(void, test_listener_count,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, [], "i32",
+    () => { return globalThis.h2TestNetif.listeners(); });
+});
+/* clang-format on */
 
 typedef struct test_events {
-  int count;
+  _Atomic int count;
   h2_pal_netif_default_changed_t last;
 } test_events_t;
 
@@ -58,7 +77,8 @@ static void test_status_contract(h2_web_platform_t *platform) {
   const h2_pal_netif_api_t *netif = h2_web_platform_netif_api(platform);
   const h2_pal_netif_ref_t default_ref = h2_pal_netif_default_ref();
   h2_pal_netif_status_t status;
-  test_set_online(1, 0);
+  (void)h2_web_main_call(test_set_online,
+                         (const void *[]){&(int){1}, &(int){0}});
   CHECK(h2_pal_netif_get_status(netif, &default_ref, &status) == H2_PAL_OK);
   CHECK(test_is_browser(&status.ref));
   CHECK(status.kind == H2_PAL_NETIF_KIND_HOST);
@@ -112,13 +132,15 @@ static void test_status_contract(h2_web_platform_t *platform) {
         H2_PAL_ERR_NOT_FOUND);
 
   // Offline: no default route, the host path stays enumerable but unusable.
-  test_set_online(0, 0);
+  (void)h2_web_main_call(test_set_online,
+                         (const void *[]){&(int){0}, &(int){0}});
   CHECK(h2_pal_netif_get_status(netif, &default_ref, &status) ==
         H2_PAL_ERR_NOT_FOUND);
   CHECK(h2_pal_netif_get_status(netif, &browser, &status) == H2_PAL_OK);
   CHECK(status.flags == H2_PAL_NETIF_FLAG_UP);
   CHECK(!h2_pal_netif_status_is_usable(&status));
-  test_set_online(1, 0);
+  (void)h2_web_main_call(test_set_online,
+                         (const void *[]){&(int){1}, &(int){0}});
 }
 
 static void test_events(h2_web_platform_t *platform) {
@@ -133,34 +155,43 @@ static void test_events(h2_web_platform_t *platform) {
   test_pump(platform);
   CHECK(events.count == 0);
 
-  test_set_online(0, 1);
+  (void)h2_web_main_call(test_set_online,
+                         (const void *[]){&(int){0}, &(int){1}});
   test_pump(platform);
   CHECK(events.count == 1);
   CHECK(events.last.previous_valid == 1u && events.last.current_valid == 0u);
   CHECK(test_is_browser(&events.last.previous));
 
   // A repeated browser notification without a state change is deduplicated.
-  test_set_online(0, 1);
+  (void)h2_web_main_call(test_set_online,
+                         (const void *[]){&(int){0}, &(int){1}});
   test_pump(platform);
   CHECK(events.count == 1);
 
-  test_set_online(1, 1);
+  (void)h2_web_main_call(test_set_online,
+                         (const void *[]){&(int){1}, &(int){1}});
   test_pump(platform);
   CHECK(events.count == 2);
   CHECK(events.last.previous_valid == 0u && events.last.current_valid == 1u);
   CHECK(test_is_browser(&events.last.current));
 
   // Offline then online inside one browser turn cancels out.
-  test_set_online(0, 1);
-  test_set_online(1, 1);
+  /* clang-format off */
+MAIN_THREAD_EM_ASM({
+    globalThis.h2TestNetif.set(false, true);
+    globalThis.h2TestNetif.set(true, true);
+  });
+/* clang-format on */
   test_pump(platform);
   CHECK(events.count == 2);
 
   h2_pal_system_event_unsubscribe(events_api, subscription);
-  test_set_online(0, 1);
+  (void)h2_web_main_call(test_set_online,
+                         (const void *[]){&(int){0}, &(int){1}});
   test_pump(platform);
   CHECK(events.count == 2);
-  test_set_online(1, 1);
+  (void)h2_web_main_call(test_set_online,
+                         (const void *[]){&(int){1}, &(int){1}});
   test_pump(platform);
   h2_pal_system_event_deinit(events_api);
 }
@@ -228,7 +259,9 @@ static void test_runtime_delivery(h2_web_platform_t *platform) {
       (const h2_runtime_system_event_netif_default_changed_t *)payload;
   const int expected_online[] = {0, 1};
   for (size_t index = 0u; index < 2u; ++index) {
-    test_set_online(expected_online[index], 1);
+    (void)h2_web_main_call(
+        test_set_online,
+        (const void *[]){&(int){expected_online[index]}, &(int){1}});
     test_pump(platform);
     CHECK(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
     CHECK(event.component == H2_RUNTIME_COMPONENT_SYSTEM_NETIF);
@@ -252,7 +285,7 @@ static void test_runtime_delivery(h2_web_platform_t *platform) {
 }
 
 static void test_unsupported_environment(void) {
-  test_set_present(0);
+  (void)h2_web_main_call(test_set_present, (const void *[]){&(int){0}});
   const h2_web_platform_config_t config = {.display_width = 1,
                                            .display_height = 1};
   h2_web_platform_t *platform = h2_web_platform_create(&config);
@@ -268,9 +301,9 @@ static void test_unsupported_environment(void) {
   CHECK(h2_pal_netif_find(netif, &any, &ref) == H2_PAL_ERR_UNSUPPORTED);
   CHECK(h2_pal_netif_list(netif, NULL, test_count_netif, &count) ==
         H2_PAL_ERR_UNSUPPORTED);
-  CHECK(test_listener_count() == 0);
+  CHECK(((int)h2_web_main_call(test_listener_count, NULL).i32) == 0);
   h2_web_platform_destroy(platform);
-  test_set_present(1);
+  (void)h2_web_main_call(test_set_present, (const void *[]){&(int){1}});
 }
 
 int main(void) {
@@ -278,15 +311,19 @@ int main(void) {
                                            .display_height = 1};
   h2_web_platform_t *platform = h2_web_platform_create(&config);
   CHECK(platform != NULL);
-  CHECK(test_listener_count() == 2);
+  CHECK(((int)h2_web_main_call(test_listener_count, NULL).i32) == 2);
   test_status_contract(platform);
   test_events(platform);
   test_runtime_delivery(platform);
   h2_web_platform_destroy(platform);
   // Destroy removes the browser listeners; late notifications are ignored.
-  CHECK(test_listener_count() == 0);
-  test_set_online(0, 1);
-  test_set_online(1, 1);
+  CHECK(((int)h2_web_main_call(test_listener_count, NULL).i32) == 0);
+  /* clang-format off */
+MAIN_THREAD_EM_ASM({
+    globalThis.h2TestNetif.set(false, true);
+    globalThis.h2TestNetif.set(true, true);
+  });
+/* clang-format on */
   test_unsupported_environment();
   printf("WEB_NETIF PASS\n");
   return 0;

@@ -1,0 +1,14 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
+package(default_visibility = ["//projects/e2e:__subpackages__"])
+h2_tasks(name = "tasks", tasks = ["pal-crypto/e2e/runner"])
+cc_library(
+    name = "runner",
+    srcs = ["src/device_runner.c"],
+    hdrs = ["include/device_runner.h"],
+    includes = ["include"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    deps = [":tasks", "//projects/e2e/apps/pal-crypto/app:pal_crypto_e2e"],
+)

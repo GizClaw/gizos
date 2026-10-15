@@ -62,6 +62,83 @@ H2_PAL_DECLARE_UNSUPPORTED_API(wifi_csi, h2_pal_wifi_csi_api_t);
 H2_PAL_DECLARE_UNSUPPORTED_API(wifi_settings, h2_pal_wifi_settings_api_t);
 H2_PAL_DECLARE_UNSUPPORTED_API(wifi_sta, h2_pal_wifi_sta_api_t);
 
+/* Reusable BLE vtable entries for partial providers. As with the canonical
+ * unsupported API, PAL inline wrappers validate arguments before dispatch;
+ * these entries return UNSUPPORTED without touching the provider state. */
+h2_pal_result_t h2_pal_unsupported_ble_adv_set_set_encoded_data(
+    void *user,
+    h2_pal_ble_adv_set_t *set,
+    const uint8_t *encoded_data,
+    size_t encoded_data_len);
+h2_pal_result_t h2_pal_unsupported_ble_adv_set_set_scan_response_data(
+    void *user,
+    h2_pal_ble_adv_set_t *set,
+    const h2_pal_ble_adv_data_t *data);
+h2_pal_result_t h2_pal_unsupported_ble_start_scan(
+    void *user,
+    const h2_pal_ble_scan_params_t *params,
+    h2_pal_ble_scan_result_fn on_result,
+    void *scan_user);
+h2_pal_result_t h2_pal_unsupported_ble_stop_scan(
+    void *user);
+h2_pal_result_t h2_pal_unsupported_ble_unregister_gatt_service(
+    void *user,
+    const h2_pal_ble_uuid_t *service_uuid);
+h2_pal_result_t h2_pal_unsupported_ble_indicate(
+    void *user,
+    uint16_t conn_handle,
+    uint16_t attr_handle,
+    const uint8_t *data,
+    size_t len,
+    uint32_t timeout_ms);
+h2_pal_result_t h2_pal_unsupported_ble_connect(
+    void *user,
+    const h2_pal_ble_addr_t *addr,
+    const h2_pal_ble_connect_params_t *params,
+    uint16_t *out_conn_handle);
+h2_pal_result_t h2_pal_unsupported_ble_configure_pairing(
+    void *user,
+    const h2_pal_ble_pairing_config_t *config);
+h2_pal_result_t h2_pal_unsupported_ble_pair(
+    void *user,
+    uint16_t conn_handle,
+    uint32_t timeout_ms);
+h2_pal_result_t h2_pal_unsupported_ble_read_phy(
+    void *user,
+    uint16_t conn_handle,
+    h2_pal_ble_phy_info_t *out_phy,
+    uint32_t timeout_ms);
+h2_pal_result_t h2_pal_unsupported_ble_gatt_discover(
+    void *user,
+    uint16_t conn_handle,
+    const h2_pal_ble_gatt_discovery_request_t *request,
+    h2_pal_ble_gatt_discovery_entry_t *entries,
+    size_t max_entries,
+    size_t *out_count,
+    uint32_t timeout_ms);
+h2_pal_result_t h2_pal_unsupported_ble_gatt_read(
+    void *user,
+    uint16_t conn_handle,
+    uint16_t attr_handle,
+    uint16_t offset,
+    uint8_t *out,
+    size_t out_size,
+    size_t *out_len,
+    uint32_t timeout_ms);
+h2_pal_result_t h2_pal_unsupported_ble_gatt_write(
+    void *user,
+    uint16_t conn_handle,
+    uint16_t attr_handle,
+    const uint8_t *data,
+    size_t len,
+    bool with_response,
+    uint32_t timeout_ms);
+h2_pal_result_t h2_pal_unsupported_ble_gatt_subscribe(
+    void *user,
+    uint16_t conn_handle,
+    const h2_pal_ble_gatt_subscribe_t *subscribe,
+    uint32_t timeout_ms);
+
 #undef H2_PAL_DECLARE_UNSUPPORTED_API
 
 #ifdef __cplusplus

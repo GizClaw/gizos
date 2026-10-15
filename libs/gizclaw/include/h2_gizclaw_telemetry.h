@@ -19,7 +19,15 @@ extern "C" {
 #define H2_GIZCLAW_TELEMETRY_IMEI_LEN 15u
 #define H2_GIZCLAW_TELEMETRY_IMSI_MIN_LEN 6u
 #define H2_GIZCLAW_TELEMETRY_IMSI_MAX_LEN 15u
+#define H2_GIZCLAW_TELEMETRY_ACTIVITY_ID_MAX 32u
+#define H2_GIZCLAW_TELEMETRY_ACTIVITY_DETAIL_MAX 128u
 
+/*
+ * Observation kinds are library-owned numbers, not SDK observation kinds: OTA
+ * has no SDK observation counterpart because an OTA frame goes through the
+ * SDK's dedicated frame API, and the SDK reuses 6 for ACTIVITY. The two spaces
+ * are bridged by an explicit mapping in h2_gizclaw_telemetry.c, never a cast.
+ */
 typedef enum h2_gizclaw_telemetry_kind {
   H2_GIZCLAW_TELEMETRY_BATTERY = 1,
   H2_GIZCLAW_TELEMETRY_GNSS,
@@ -27,6 +35,7 @@ typedef enum h2_gizclaw_telemetry_kind {
   H2_GIZCLAW_TELEMETRY_SYSTEM,
   H2_GIZCLAW_TELEMETRY_AUDIOPLAYER,
   H2_GIZCLAW_TELEMETRY_OTA,
+  H2_GIZCLAW_TELEMETRY_ACTIVITY,
 } h2_gizclaw_telemetry_kind_t;
 
 typedef struct h2_gizclaw_telemetry_battery {
@@ -125,6 +134,26 @@ typedef struct {
   h2_gizclaw_str_t error_message;
 } h2_gizclaw_telemetry_ota_t;
 
+/*
+ * Feature the device is using right now, borrowed for the duration of
+ * h2_gizclaw_req_create_telemetry_send() and copied into the request.
+ * activity is a stable machine-readable id of 1 to
+ * H2_GIZCLAW_TELEMETRY_ACTIVITY_ID_MAX bytes whose first byte is [a-z0-9] and
+ * whose remaining bytes are [a-z0-9_.-], such as "idle", "chat",
+ * "audioplayer" or "ota". detail is optional display text of at most
+ * H2_GIZCLAW_TELEMETRY_ACTIVITY_DETAIL_MAX bytes and must not carry secrets;
+ * an empty span is equivalent to leaving has_detail false. The activity and
+ * its detail merge as one unit, so an observation without a detail clears the
+ * detail left over from the previous activity. An id or detail outside these
+ * bounds is rejected with H2_PAL_ERR_INVALID_ARG without a network request;
+ * neither value is logged or traced.
+ */
+typedef struct h2_gizclaw_telemetry_activity {
+  h2_gizclaw_str_t activity;
+  bool has_detail;
+  h2_gizclaw_str_t detail;
+} h2_gizclaw_telemetry_activity_t;
+
 typedef struct h2_gizclaw_telemetry_observation {
   int32_t observed_at_delta_ms;
   h2_gizclaw_telemetry_kind_t kind;
@@ -135,6 +164,7 @@ typedef struct h2_gizclaw_telemetry_observation {
     h2_gizclaw_telemetry_system_t system;
     h2_gizclaw_telemetry_audioplayer_t audioplayer;
     h2_gizclaw_telemetry_ota_t ota;
+    h2_gizclaw_telemetry_activity_t activity;
   } value;
 } h2_gizclaw_telemetry_observation_t;
 

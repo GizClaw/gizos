@@ -1,0 +1,36 @@
+{
+  "artifact_source_commit": "955dcfcef0f5050b4a5a97d7e5e53be71cf0e22c",
+  "artifact_version": "mqtt-esp-abi-r3",
+  "host_oracle_source_commit": "b569cf92a1fabbdc028d3edff20b663bcb3e7ae6",
+  "fixture_source_commit": "ad04417f1b80455ca50963b9acf2f77b486e4ae6",
+  "raw_evidence_directory": "/Users/idy/.codex/task-evidence/pal-pref-mqtt-platforms-20261004/mqtt-esp-source-955dcf",
+  "qualified": true,
+  "qualified_boots": [
+    "15c6d3d5db02469395e9b3bc5e3f67ca-5336779e2330f67a",
+    "15c6d3d5db02469395e9b3bc5e3f67ca-2663bde25b7ce216"
+  ],
+  "case_count_per_boot": 36,
+  "restored": true,
+  "uart_released": true,
+  "host_tests": [
+    "//projects/e2e/libs/pal-mqtt-device:verifier_test",
+    "//projects/e2e/targets/h2loader_tar_zlib/pal-mqtt/devkit:device_test"
+  ],
+  "host_tests_result": "PASS, both actually executed with external installed-package input",
+  "preserved_unqualified": {
+    "first_compile_source": "9cb20b500bf17418e12821bca809d73d1ef85610",
+    "second_compile_source": "119469a1c707ab4f2ea363caec7a1d069ed60e67",
+    "uart_captures": [
+      "normal-interleaved-ack-rejected",
+      "normal-preboot-tail-rejected"
+    ],
+    "bazel_scope_failures": [
+      "device-test.log",
+      "device-test-host-toolchain.log",
+      "device-test-transition.log",
+      "device-test-platform-only.log",
+      "device-test-native-cfg.log"
+    ]
+  },
+  "note": "Artifact source inputs were frozen before build. Host oracle and fixture source are separate scopes; later host-only fixes do not rebind the observed artifact."
+}

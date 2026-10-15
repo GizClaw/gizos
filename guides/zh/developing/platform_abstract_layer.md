@@ -4,13 +4,33 @@ Modem provider 的接收分帧、命令串行与 URC 并发合同见 [Modem URC]
 
 Platform Abstraction Layer（PAL）定义 GizOS 使用的平台抽象能力。PAL 把芯片 SDK、操作系统和具体硬件实现隔离在跨平台代码之外，使 `libs`、runtime 和 app 可以使用稳定的 C contract。
 
+`h2_pal_webrtc_peer_create_with_config()` 接收可选的 `h2_pal_webrtc_peer_config_t.allocator`，NULL 或旧 `peer_create()` 保持原行为；H2Peer 把它用于 peer 私有存储并传给 SCTP/SRTP，H2Peer 的 package allocation 和 atomic provider storage 各按自己的 contract 管理，不再注入 `control_mem`，未实现扩展的旧 provider 只在 NULL/default config 时回退到原创建入口；收到非 NULL allocator 时返回 `H2_PAL_ERR_UNSUPPORTED`，不能静默忽略分配要求。`h2_audio_track_config_t.allocator` 同样可选，Runtime wrapper 和 mixer 的音轨队列、scratch 跟随它，NULL 保持各层原有默认分配器。
+
+iOS AudioQueue 和 Android AAudio provider 使用 `h2_audio_track_config_t.allocator` 分配并释放自身持有的音轨对象；Android 的临时与待写 PCM buffer 使用同一个 allocator。平台框架内部 AudioQueue/AAudio buffer 由平台管理。非 NULL allocator 必须提供 alloc/free，分配失败返回 NO_MEMORY 并关闭已获得的 native resource。Android 在启动 output stream 前通过 nonblocking write 填入静音，满足 AAudio 的 buffer priming 要求；随后单个完整 PAL PCM frame 的 write/drain 不依赖调用方继续填充 native startup buffer。
+
+iOS AudioQueue 的 mic_read、track write 和 drain 为每次公开调用建立一个单调时钟 deadline。共享 condition 的输入、输出 callback 唤醒只触发条件重查，每轮等待使用原 deadline 的剩余预算，不能因为无关 callback 或 spurious wakeup 延长有限 timeout。UINT32_MAX 保持无限等待，零 timeout 保持立即 would-block。
+
+## 独立 Atomic Contract
+
+并发原子值由 `libs/atomic/include/h2_atomic.h` 定义，不属于 PAL API、PAL vtable 或 Memory PAL capability。调用方持有 typed wrapper 并直接调用 `h2_atomic_*` 符号；最终 target 必须链接一个平台实现，缺失实现会在链接时报错。动态 wrapper（包括 flag）先零初始化、调用 `init` 并检查结果，停止并发访问后销毁；初始化后不得复制。只有确实定义静态 backing 的 C11 翻译单元额外 include `h2_atomic_static.h`，使用统一的 `H2_ATOMIC_DEFINE_STATIC(kind, name, initial)` 定义每对象独立的普通 static backing 与 wrapper；普通 `h2_atomic.h` consumer 不被强制解析 C11 `_Atomic`。静态值定义后可直接使用，不经动态分配，也不在宏中指定平台属性；对它调用 `init` 返回 `INVALID_STATE`，`destroy` 不释放且不废弃 wrapper。C++ 动态实例仍使用 opaque wrapper 和显式 init/destroy，不把 `std::atomic` 布局当作 C11 ABI。Desktop/Browser 的 provider 基于 C11，iOS/Android 使用 pthread；ESP 的动态实际存储由 provider 分配在内部 RAM，普通文件级 static backing 则由链接布局放在内部 DRAM，即使 wrapper 所在的动态结构位于 PSRAM，也不会在 PSRAM 直接执行 C11 atomic。flag 的 `test_and_set`/`clear` 对每对象的 word-sized 存储直接执行原子交换/写入，没有 provider 全局 flag 锁。BK/JieLi 的动态初始化返回 `H2_ATOMIC_UNSUPPORTED`，静态对象的操作仍 trap；当前只要求这些 target 编译，不能把静态宏当成可运行的 provider。
+
+```c
+#include "h2_atomic_static.h"
+H2_ATOMIC_DEFINE_STATIC(int, s_count, 0);
+H2_ATOMIC_DEFINE_STATIC(bool, s_ready, false);
+H2_ATOMIC_DEFINE_STATIC(ptr, s_owner, NULL);
+H2_ATOMIC_DEFINE_STATIC(flag, s_claim, 0u);
+```
+
+C++ 若需要文件级 static backing，在共用头文件用类型通用的 `H2_ATOMIC_DECLARE_STATIC(kind, accessor)` 声明 C ABI typed accessor，在同 package 的 C11 翻译单元用 `H2_ATOMIC_DEFINE_STATIC_ACCESSOR(kind, accessor, initial)` 定义编译/链接期 backing 和 accessor。例如共用头文件写 `H2_ATOMIC_DECLARE_STATIC(flag, desktop_running);`，对应 C 文件写 `H2_ATOMIC_DEFINE_STATIC_ACCESSOR(flag, desktop_running, 0u);`。C++ 通过 `desktop_running()` 取得 typed wrapper 指针，按普通 `h2_atomic_*` API 使用；不转换 `std::atomic` 对象、不分配运行时存储，也不手写模块 global init。宏对同样适用于 int/bool/ptr 等 kind。GizClaw Desktop 的 run guard 和 stop bool 使用这一方式；C++ 动态实例继续显式 init/destroy。
+
 ## API Reference
 
 [API Reference](/references/pal)
 
 `libs/pal/include` 中实际参与项目构建的头文件是 PAL 的生产 Public API contract。
 
-PAL 包定义 contract，并提供一组可选的 canonical unsupported API object：
+PAL 包定义 contract，并提供可选的 canonical unsupported API object 与可复用的逐项 unsupported stub：
 
 ```text
 libs/pal/include/
@@ -21,7 +41,7 @@ libs/pal/include/
     ├── net/                    # 网络与传输能力
     ├── application/            # 应用协议能力
     ├── hal/                    # 硬件抽象能力
-    └── h2_pal_unsupported.h    # canonical unsupported API accessor
+    └── h2_pal_unsupported.h    # canonical unsupported API accessor 与逐项 stub
 libs/pal/src/unsupported/       # 每个 capability 一个 canonical unsupported translation unit
 └── <capability>.c
 ```
@@ -31,9 +51,15 @@ Bazel package、target、Runtime surface 或 provider ownership。
 
 `src/unsupported/` 是 `libs/pal` 中允许存在的唯一通用 backend source。真实平台实现、dummy backend 和 fake backend 不属于 PAL contract 包。
 
+`h2_pal_unsupported.h` 同时提供整项 capability 的 canonical accessor
+`h2_pal_unsupported_*_api()` 与逐项 vtable stub `h2_pal_unsupported_ble_*`。
+只实现部分 capability 的 provider 必须用对应 unsupported stub 填满其余 vtable
+member，不能留 `NULL`，使未实现的 operation 返回 `H2_PAL_ERR_UNSUPPORTED`，
+避免与 inline wrapper 对空 slot 返回的 `H2_PAL_ERR_INVALID_ARG` 混淆。
+
 `//libs/pal:pal` 是 header-only contract target；只消费 PAL 类型、vtable 或真实
-provider 的 target 只依赖它。直接调用 `h2_pal_unsupported_*_api()` 的 target 显式
-依赖 `//libs/pal:unsupported`。后者按 capability 拆成独立 translation unit，使静态
+provider 的 target 只依赖它。直接调用 `src/unsupported/` 中 accessor 或逐项 stub
+的 target 显式依赖 `//libs/pal:unsupported`。后者按 capability 拆成独立 translation unit，使静态
 链接器只抽取真正引用的 unsupported API object，不使用 `alwayslink` 或 whole-archive。
 
 ESP-IDF、BK7258 和 BK3633 由 Bazel 使用对应 firmware toolchain 将
@@ -65,7 +91,15 @@ flowchart TB
 
 PAL 不负责 app component 与 board periph 的映射。BSP 定义 board 的 `periph_id`，app 定义 `component_id`，两者的映射由 `boards/main` 提供。
 
-Browser 的 reusable provider 位于 `libs/pal/providers/web/pal_core`，暴露真实实现的 Memory、Log、Time、Timer、Task、Queue、Sync、Pref、Crypto、HTTP、Display、Audio playback/capture、Touch、WebRTC 与 Host Serial accessor。Time 读取 browser wall clock，不推断宿主时钟的同步来源；设置 wall clock 返回 unsupported。Audio `stop_speaker` 立即停止已排程的播放；与设备 mixer queue 一致，speaker 停止期间 track 仍接受写入并按 track 容量保留，下一次 `start_speaker` 时开始播放。Crypto 通过 browser cryptographic randomness 初始化唯一的 wolfCrypt integration。HTTP 使用 Fetch，因此直接请求仍受 CORS 约束；artifact 可以通过 `Module.h2WebHttpProxyUrl` 显式选择由受信宿主提供的同源代理，provider 不内建远端 allowlist 或通用绕过。Pref 使用当前 HTTPS origin 的 `localStorage` 保存 namespace-scoped typed entry；private mode、storage policy 或 quota 使存储不可用时，`open` 必须返回 `UNAVAILABLE`，不能伪装成可持久化内存。一个 live platform state 持有单线程 libco executor；Browser event、Promise 与 timeout callback 只记录完成，后续 bounded pump 才能恢复 task，不能 callback 内重入 scheduler。Artifact entry 而不是 provider 负责构造完整 Runtime：真实 accessor 填入已实现字段，其余字段逐项绑定 matching canonical unsupported API object。Host Serial 不在 Runtime 中，由 launcher 单独注入 portable consumer。
+Browser 的 reusable provider 位于 `libs/pal/providers/web/pal_core`，暴露真实实现的 Memory、Log、Time、Timer、Task、Queue、Sync、Pref、Crypto、HTTP、Display、Audio playback/capture、Touch、WebRTC 与 Host Serial accessor。Time 默认读取 browser wall clock，不推断宿主时钟的同步来源；设置 wall clock 保存当前 platform 的本地偏移并标记 USER，不修改宿主系统时间。Firmware Info 由 launcher 在 Runtime 初始化前注入不可变构建版本。Audio `stop_speaker` 立即停止已排程的播放；与设备 mixer queue 一致，speaker 停止期间 track 仍接受写入并按 track 容量保留，下一次 `start_speaker` 时开始播放。Crypto 通过 browser cryptographic randomness 初始化唯一的 wolfCrypt integration。HTTP 使用 Fetch，因此直接请求仍受 CORS 约束；artifact 可以通过 `Module.h2WebHttpProxyUrl` 显式选择由受信宿主提供的同源代理，provider 不内建远端 allowlist 或通用绕过。Pref 使用当前 HTTPS origin 的 `localStorage` 保存 namespace-scoped typed entry；private mode、storage policy 或 quota 使存储不可用时，`open` 必须返回 `UNAVAILABLE`，不能伪装成可持久化内存。一个 live platform state 持有 pthread Core。C main 和 PAL Task 在 Worker 上运行，Task join 回收原生栈与线程对象，Queue/Sync/Timer 支持线程间并行。浏览器 DOM、JS 对象和 API 入口由 `h2_web_main_thread.h` 代理到 UI，异步完成唤醒 Worker 条件变量。Web artifact 全图编译、链接都使用 `-pthread`，C main 使用 `PROXY_TO_PTHREAD`，托管服务发送 COOP/COEP 响应头；Web provider 不再依赖 libco 或 Asyncify。Artifact entry 而不是 provider 负责构造完整 Runtime：真实 accessor 填入已实现字段，其余字段逐项绑定 matching canonical unsupported API object。Host Serial 不在 Runtime 中，由 launcher 单独注入 portable consumer。
+
+## Display lifecycle 和诊断
+
+Display 的 `open` 幂等；`get_info`、`draw_bitmap`、`present` 和亮度操作必须在成功 open 后调用。重复 open 不增加关闭所需的引用数，close 后调用返回 `INVALID_STATE`。Bitmap 输入只在 draw 调用期间借用，provider 不可把输入指针留给随后 present；stride、source span 和矩形端点必须先做有界计算，再访问像素。native format 必须实现，额外格式和矩形裁剪仍由各 provider 明确支持范围。亮度参数为 0..100，超过范围返回 `INVALID_ARG`，不会静默改变亮度。
+
+Desktop 的 composition frame callback 提供未调亮度的组合 framebuffer；独立、可选的 renderer capture callback 在真正 SDL texture/render/亮度处理后读取 RGBA 像素。未注册时不会执行昂贵 GPU readback，两个 callback 的输入都只在回调期间借用，禁止重入 SDL provider。iOS/Android 的 Display E2E launcher 创建真实 UIKit/Android View 并注入自己的 Runtime；移动端 E2E 的默认 Runtime 配置继续使用 unsupported Display。
+
+独立的 [PAL Display E2E](https://github.com/GizClaw/gizos/tree/main/projects/e2e/apps/pal-display) 通过相同 24 个 case 验证六个公开操作。桌面、浏览器和模拟器观察实际 renderer/页面/View 的像素；AMOLED SPI DMA 完成证据、BK LCD 活跃 DMA/refresh 证据与屏幕光学像素、实测亮度是不同验收层。没有物理 readback/相机或人工确认时，不可仅凭 framebuffer hash 或 draw 返回 OK 宣称物理屏幕通过。
 
 ## PAL 分类
 
@@ -79,6 +113,12 @@ PAL 按能力职责分为以下几类。
 h2/pal/core/h2_pal_types.h
 h2/pal/core/h2_pal_errors.h
 ```
+
+`h2_pal_result_t` 是 signed 32-bit C int scalar，public header 在 C 和 C++ 中检查 `int` 的宽度与完整 signed 32-bit 范围；默认 MSVC C 模式不需要启用 C11。命名 PAL 错误常量保持既有数值，provider 和 library 的扩展负错误也完整保留，包括 `-1000` 和 `INT32_MIN`，不受 `-fshort-enums` 等 enum ABI 选项影响。函数与 vtable 使用这一 typedef，保留 C int 回调类型兼容；`enum h2_pal_result` 只提供命名常量，不作为返回值或存储类型。
+
+升级该 contract 时，所有交换 PAL result 的 archive、provider 和 consumer 必须一起重新编译。使用 small-enum ABI 的旧 struct field 可能从一字节扩大到四字节，并改变 alignment、padding 和固定内存预算；下游 owner 必须重新验证自己的 layout 和 memory gate，不能混用旧二进制或降低预算检查。本地 C ABI 不定义 wire 或 persistent format；协议仍逐字段使用既有明确宽度和 byte order 编解码。
+
+`//libs/pal:pal_result_representation_test` 在 GNU-style compiler 的 `-fshort-enums` 下检查表示、signed 32-bit 边界和双向 C int callback 类型，在 Windows 上使用默认 MSVC C 模式；`//libs/pal:pal_result_representation_cpp_test` 检查相同的 C++ public contract 与 callback 类型。
 
 ### OS 操作系统抽象
 
@@ -135,6 +175,10 @@ boundary。裁剪 variant 完整实现 Crypto PAL；完整 variant 额外实现 
 ESP-IDF 与 BK7258 provider 使用 public PSA/MbedTLS surface 实现同一完整 vtable，
 不能通过 private header 或本地复制算法补洞。
 
+iOS 与 Android 的 Crypto owner 位于各自 `pal_core/src/h2_*_crypto.c`，通过唯一的完整 `wolfssl` integration 提供完整 15 项接口，并与同进程 HTTP owner 共享引用计数保护的 TLS/加密生命周期。iOS 使用 `SecRandomCopyBytes`，Android 从系统 `/dev/urandom` 读取熵并处理短读和 EINTR；随机源失败返回错误，不退回伪随机。移动端 E2E 配置默认绑定该 process-wide provider，首次 getter 在互斥保护下初始化；返回的 API 由平台持有。调用方必须先停止全部 Crypto 调用并销毁 Runtime，再调用 `h2_*_platform_crypto_shutdown()` 或成功的 `platform_core_shutdown()`；shutdown 幂等，后续 getter 可开启新生命周期。Swift Package 的 module map 和 packaged importer 同时声明 Security framework，Android AAR 包含真实 provider。
+
+独立 `projects/e2e/apps/pal-crypto` 以 22 个必选 case 验证全部 Crypto 操作，包括标准向量、无效参数、认证拒绝、重叠/容量边界和重复调用。六端入口使用相同 portable App，缺失接口保持 BLOCKED，不能算通过；随机差异检查不是随机质量或侧信道安全认证。
+
 `h2_pal_dtls.h` 以 whole datagram 为 I/O 边界。Session copy config，生成
 临时 ECDSA identity，并用 peer certificate DER 的 raw SHA-256 fingerprint
 认证远端；只协商 `SRTP_AES128_CM_SHA1_80`，exporter 固定为
@@ -147,7 +191,7 @@ task、timer 或 thread。
 
 BK3633 的 Preference provider 使用 BSP 提供的 declarative mapping，把 portable namespace/key 映射到 application-owned NVDS tag。Provider 初始化会拒绝重复 namespace/key、重复 tag、空名称、未知类型、非法最大长度以及 application range 外的 tag；未知 key 不会动态取得 tag。`BLOB` 保存原始 bytes，`STRING` 保存不含 NUL terminator 的 UTF-8 bytes，读取时使用调用方的 Memory PAL 分配并追加 terminator；`U32` 和 `I32` 使用四字节 little-endian，`BOOL` 使用单字节 `0` 或 `1`。NVDS 写入立即持久化，因此 `commit` 是成功 no-op，不承诺 multi-key transaction atomicity。
 
-ESP Preference 使用私有的 256 KiB `pref` LittleFS，不使用系统 NVS 保存新值。每个 key 是独立的 CRC record；set 通过同目录临时文件、sync、close 和 atomic rename 立即持久化，remove 立即 unlink，`commit` 因此是成功 no-op。这个合同只保证单 key replacement，不承诺多 key transaction atomicity。Provider 对 committed record bytes 施加 128 KiB logical budget；删除和替换产生的 LittleFS block 由 filesystem 正常回收，`NO_SPACE` 不触发 format 或清空 live data。
+ESP Preference 使用私有的 256 KiB `pref` LittleFS，不使用系统 NVS 保存新值。每个 key 是独立的 CRC record；set 通过同目录临时文件、sync、close 和 atomic rename 立即持久化，remove 立即 unlink，`commit` 因此是成功 no-op。这个合同只保证单 key replacement，不承诺多 key transaction atomicity。Provider 对 committed record bytes 施加 128 KiB logical budget；总量在缓存无效时由下一次需要写入的 set 遍历计算，之后由成功的 set 和 remove 增量维护；prepare、clear、原子写入失败或 unlink 失败会使缓存失效。safe-call 适配器将总量及其有效位传入 worker，并在返回时写回持久 store，使缓存有效时的 set 不再逐个打开全部已存 record；删除和替换产生的 LittleFS block 由 filesystem 正常回收，`NO_SPACE` 不触发 format 或清空 live data。
 
 BK3633 的 Disk provider 只暴露 BSP 声明的 raw Flash partition，portable caller 使用 partition-relative offset，不能传入 absolute address。Provider 对 partition ID、权限、整数 overflow、边界、erase alignment、write alignment、zero-length operation 和 buffer 做完整校验；firmware、Stack、factory identity、calibration、NVDS 和未声明区域不进入可见 partition inventory。
 
@@ -221,6 +265,8 @@ Net PAL 的 `tcp_connect` 是可跨 poll 继续的 bounded connect operation：`
 
 Net PAL 的 `tcp_listen` 与 `tcp_accept` 是 raw TCP 的 server-side contract：`tcp_listen` 绑定并监听（`port == 0` 选择 ephemeral port，`out_bind_addr` 报告实际绑定地址），`tcp_accept` 在 `timeout_ms` 内接受一个连接并返回新的 opaque socket；`H2_PAL_ERR_TIMEOUT` 与 `H2_PAL_ERR_WOULD_BLOCK` 保留 listener 可继续使用。这两项是可选能力，没有实现的 backend 由 checked wrapper 返回 `H2_PAL_ERR_UNSUPPORTED`；Desktop（POSIX）backend 提供实现，`libs/iperf` 的 server 依赖它。
 
+iOS 与 Android 提供独立 `h2_*_net_create/api/destroy` owner，通过真实 SDK package 导出；owner 持有完整 WolfSSL 生命周期引用，借出的 Net API 只在 owner 存活期有效。销毁前 caller 必须停止调用并释放所有 socket/resolver，移动端 E2E Runtime 配置与实际 Net owner 保持独立。独立 PAL Net/TLS E2E 使用实际 packaged provider 验证 raw socket 和 TLS，不通过 HTTP 推断 TLS 能力。六平台 assessment 对支持能力要求真实 PASS，对实际缺失能力明确 SKIP；浏览器仍保持本地语义，21 项 canonical unsupported Net 操作不构成 raw Net/TLS 功能通过。
+
 SCTP PAL 以 association 为 opaque handle，通过同步 `emit_packet` callback 交付完整
 SCTP packet，并由调用方把收到的完整 packet 送回 provider。所有 timer 都由调用方提供的
 absolute monotonic milliseconds 驱动；provider 不创建 socket、线程或 task。Consumer 可以用 `association_is_writable` 查询 association 是否同时具备发送缓存、peer receive window、congestion window 和 packet emit 能力；false 表示应先推进输入、ACK 或 timer，不能把它当成某个 stream 的 open 状态。`libs/pal/providers/h2sctp`
@@ -235,6 +281,10 @@ WebRTC DataChannel handle 由 backend 拥有。`h2_pal_webrtc_channel_close()` �
 WebRTC media 使用 caller-owned `h2_pal_webrtc_track_t`。调用方填充 read/write vtable（browser provider 也可以使用 provider 认可的 `native_handle`），在 offer 前通过 `h2_pal_webrtc_peer_set_track()` 绑定，并在释放 Track 前调用 `h2_pal_webrtc_peer_unset_track()`。Provider 只在绑定期间借用 Track，不负责创建或销毁它；采集、播放、codec 和 RTP progression 由 Track 与 provider 协作完成。
 
 `h2_pal_webrtc_peer_send_opus()` 只接收长度在 `1..H2_PAL_WEBRTC_OPUS_MAX_PACKET_SIZE` 内的真实 packet，并负责交给底层 audio RTP track；调用方不组装 RTP，也不能退回 DataChannel。成功返回表示 backend 已同步消费输入；`H2_PAL_ERR_WOULD_BLOCK` 表示整帧未消费，调用方必须保留同一帧重试。Unsupported backend 仍提供显式 `H2_PAL_ERR_UNSUPPORTED` 实现，不能静默丢帧。
+
+DataChannel config 的 `negotiated` 默认为 0，保留原有带内 DCEP 行为。设置为非零时，必须同时设置 `has_stream_id`，并由应用信令在双方创建相同 stream ID 的通道后发送；保留值 65535 无效。该模式不发送 DCEP OPEN/ACK，OPEN event 的 `channel_info.negotiated` 会保留模式。H2Peer 与 Browser 都支持显式协商，独立 `explicit-stream-id` mandatory case 用真实 Pion 对端验证同 ID 双向数据。Browser 按 WebRTC 标准在带内模式忽略浏览器的 `id` 参数，因此 PAL 对 `has_stream_id=true, negotiated=0` 显式返回 `H2_PAL_ERR_UNSUPPORTED`，不静默换 ID；原生 H2Peer 原有带内固定 ID 能力继续保留。
+
+Browser WebRTC 的 per-peer allocator 用于 peer、channel、event 和 payload 存储；owned event 自带 allocator view，peer close 后仍可合法释放。原始 Opus transport 在 offer 前配置，`peer_send_opus` 复制输入并在有界发送队列满时返回 WOULD_BLOCK；下一次可写通过 owned WRITABLE event 通知。Track 的 write 返回 WOULD_BLOCK 时保留原包重试；unset 等待正在执行的 callback 结束，后续接收转为 owned OPUS_FRAME，原始发送仍可使用。浏览器编码器的静音源仅提供 packet clock，没有待发送 PAL packet 时不会向网络注入静音载荷。
 
 WebRTC receive 只有一种模式：`h2_pal_webrtc_peer_poll()` 每次返回一个 owned event。DataChannel message、Opus packet、local SDP、状态变化和 writable/error 都走同一队列；payload 与 `channel_info` 保持有效到 `h2_pal_webrtc_event_release()`。零长度 `OPUS_FRAME` 表示一个 loss marker。Timeout 不消费 event；调用方必须释放每一个成功取得的 event，不能并发 poll/close 同一 peer。
 
@@ -276,9 +326,31 @@ h2/pal/hal/h2_pal_wifi_csi.h
 h2/pal/hal/h2_pal_wifi_settings.h
 ```
 
+`h2_pal_power.h` 的 `h2_pal_power_set_deep_sleep_wake_timer()` 为下一次 `deep_sleep()` 设置定时唤醒，单位毫秒，从进入 deep sleep 时开始计时；传 0 恢复 provider 的默认唤醒策略。设置值在被改写或设备离开 deep sleep 前一直有效。定时唤醒后 boot info 的 source 为 `H2_PAL_POWER_BOOT_SOURCE_TIMER`。支持该能力的 provider 声明 `H2_PAL_POWER_CAPABILITY_DEEP_SLEEP_WAKE_TIMER`，其余返回 `H2_PAL_ERR_UNSUPPORTED`。释放 power hold 的物理关机不保留定时器。精度取决于 deep sleep 期间的 RTC 时钟源，片内 RC 慢时钟在长时间睡眠下可能有分钟级偏差，需要准点的调用方应自行对时。
+
 `h2_pal_periph.h` 描述 board 实际存在的硬件及其 `periph_id`。具体 GPIO、bus、address、channel 和 wiring 由 BSP 配置。
 
 Single-button periph payload 同时声明输入交付模式。`POLL_STATE` 表示 Runtime 通过 Button PAL 读取稳定的 pressed/released 状态；`PUSH_EDGE` 表示拥有该 periph 的 adapter 主动向 Runtime 推送 raw down/up edge，Runtime 不再调用 Button PAL read。未提供 payload 的既有 single-button periph 按 `POLL_STATE` 处理。交付模式是 periph 能力，不是 App component 类型；launcher 仍通过 component mapping 把相同的 App Button component 映射到不同来源。
+
+### Audio AEC 观察
+
+Audio PAL 的可选 `set_aec_observer` 操作提供实际 AEC 的同帧 raw ADC、reference input、processed PCM，以及实际交给 DAC 的播放数据和处理错误。注册时复制 descriptor，callback 中的 PCM 只在调用期间借用；caller 的 user 必须保留到成功撤销。注册、替换和撤销要求 mic、speaker 均停止且 worker 已 join，失败保留旧注册；callback 不等待、不分配、不重入 Audio。
+
+具备完整诊断的 ES8311+ES7210 provider 实现该操作，其余 provider 明确返回 `UNSUPPORTED`，普通 Audio 能力保持各自合同。Runtime 和 lazy Audio proxy 透明转发；替换采集 PCM 的 Testing Audio decorator 不提供声学校准诊断。完整约束见 [Audio AEC Calibration PAL contract](./audio_aec_calibration)，测试与设备声学资格分别由实际执行和独立近端声源夹具证明。
+
+### Modem 通话扬声器音量
+
+`h2_pal_modem` 通过 `H2_PAL_MODEM_CAPABILITY_CALL_VOLUME` 声明通话扬声器音量能力，`h2_pal_modem_set_call_volume()` / `h2_pal_modem_get_call_volume()` 统一使用 `0..100` percent，模块原生档位由 provider 映射。Quectel 使用 `AT+CLVL`，每次 open 后首次使用时探测并缓存范围；SIMCom 暂不实现，未提供该能力的 provider 返回 `H2_PAL_ERR_UNSUPPORTED`。该接口不控制麦克风、铃声、音频路由或功放，也不要求已有通话，可在拨号前设置。
+
+两个调用都是 task context 下的阻塞操作，与其它 AT 操作串行，应由处理拨号、接听和挂断的 modem task 调用，不能放在 UI/main loop 或 ISR 中。支持 LOW_POWER 的 Quectel 实例要求 modem 已 open，并在命令前完成唤醒准备；音量操作不改变通话持有的唤醒状态。Provider 不隐式跨 close/open 保存或恢复音量，调用方应在需要时重新设置；模块可能自行保存设置，例如 EC800M 的 CLVL，PAL 不承诺模块设置易失。
+
+### Modem 紧急号码和固件升级
+
+`h2_pal_modem_get_emergency_numbers()` 与 `H2_PAL_MODEM_CAPABILITY_EMERGENCY_NUMBERS` 提供只读号码发现，结果保存字符串、SIM 适用范围、来源和可选类别；未知字段保持 UNKNOWN，不能用手册示例填补。调用要求 modem 已 open，但不以 SIM READY 或网络注册为门槛。列表必须完整，截断、容量不足或格式错误均失败并清空输出；临时电话本选择在成功前恢复。号码不由 provider 跨调用缓存，应用自己的缓存必须随 SIM、模块重启及相关网络变化失效。该查询不拨号，也不承诺网络可以接通。
+
+`h2_pal_modem_ota_start()`／`h2_pal_modem_ota_get_status()` 与 `H2_PAL_MODEM_CAPABILITY_OTA` 提供模组自身固件的 URL 升级。请求包含一个 URL、目标版本及可选源版本约束；当前版本由 `get_identity().revision` 读取。版本是厂商标识，按完整字符串比较，由应用选择升级包及升级时机。OK 只表示请求被接受；Quectel 后端在完成通知、重启及实际目标版本确认后报告 SUCCEEDED。超时可能保留 UNKNOWN；升级期间禁止再次启动、普通 AT 操作、关闭和销毁，保留实例、供电及 URC 接收，不自动重试或断电。状态仅保留在当前 provider 实例，跨主控重启的意图及恢复策略由应用负责。所有阻塞命令及状态确认都在 modem task 中执行，不能进入 ISR、通知回调或 UI loop。
+
+未实现的方法返回 UNSUPPORTED。Quectel 的 EC25／EC800M 查询及升级协议、MiniFOTA 单 URL 和内部 PDP 的接入条件见 [Drivers](./drivers.md#model-families)；该 capability 不代表任意型号／固件／网络都能完成操作。
 
 ### Touch
 
@@ -311,6 +383,13 @@ PAL 保证返回 allocator-backed、CPU 可读的 linear plane，使 portable co
 `h2_pal_audio_decoder.h` 使用相同生命周期解码 raw AAC-LC access unit，并返回 allocator-backed、interleaved S16LE PCM。Audio Decoder PAL 与 Audio PAL 分离：前者只解码压缩数据，后者负责设备播放、track 和 volume。
 
 Native audio backend 创建的 microphone 与 mixer worker 使用 `h2_pal_audio_task_names.h` 中 header-only 的 `H2_PAL_AUDIO_MIC_TASK_NAME_VALUE`（`$audio/mic`）和 `H2_PAL_AUDIO_MIX_TASK_NAME_VALUE`（`$audio/mix`）。这些宏只统一跨 ESP-IDF 与 BK7258 的 diagnostic name，不增加 PAL storage、backend 或 link dependency；`//libs/pal:pal` 继续保持 header-only。
+
+Audio PAL 的 `get_mic_gain_percent` / `set_mic_gain_percent` 使用 0–100 的
+provider 相对刻度。百分比到模拟 PGA、ADC 原生 gain 或 PCM 缩放的映射由 board
+或 provider 配置，PAL 不规定统一 dB 比例。上电默认百分比必须对应既有录音增益；
+set 成功后影响后续采集帧，不要求重启 microphone。硬件增益档位可离散化，get 返回
+生效后的百分比。没有麦克风的平台明确返回 `UNSUPPORTED`，不能假装设置成功。
+Runtime Audio proxy、ESP lazy audio 和 app-test decorator 都转发这两个接口。
 
 不具备视频解码能力的 Runtime owner 仍绑定完整的 canonical unsupported API。当前 BK7258 和 ESP target 都不因编码能力或 display 能力推导出 H.264 decoder；只有经过 provider 实现和验证的 target 才绑定真实 decoder。
 
@@ -369,11 +448,23 @@ Scan timing 有两个互斥形式。`interval_units_625us/window_units_625us` �
 
 Host Serial PAL 不解析 H2Loader response、不推断 board、不合并 BLE identity，也不决定 managed install 或 raw recovery policy。Linux provider 归 `libs/pal/providers/linux/serial_host`，Darwin provider 归 `libs/pal/providers/darwin/pal_core`；两者只通过 private `libs/pal/providers/posix/serial_host` 共享 termios/session lifecycle。Windows provider 归 `libs/pal/providers/windows/serial_host`。各 provider 都实现同一 contract，不向 public header 泄漏 file descriptor、termios、IOKit、udev 或 Win32 handle。
 
+## Wi-Fi IPv6 就绪
+
+Wi-Fi STA 的关联与 IP 就绪是不同状态。启用 IPv6 的 ESP/BK provider 在关联流程中初始化 link-local 与 SLAAC，产品和 E2E entry 不调用 SDK IPv6 初始化。`GOT_IP` 表示 IPv4 或 preferred 非 link-local IPv6 至少一种可用，原 `ip_valid` 始终只代表 IPv4；IPv6 地址与就绪从同一 IP snapshot/event 传播。`h2_pal_wifi_sta_status_has_ip()` 是配网和共享 consumer 的地址就绪判定，link-local、unspecified、loopback、multicast 和 IPv4-mapped 地址不会完成配网。就绪不承诺 default router、DNS 或 Internet 服务可达。
+
+Provider 对当前关联读取实际 preferred 地址，IPv4 失租但 IPv6 仍可用时保留 `GOT_IP`；最后一种可用地址消失才发布 `LOST_IP`。断开和重新关联清除旧 IPv6，过期或 deprecated 地址不继续报告 ready。ESP/BK 原生配置必须同时开启其 SDK IPv6/SLAAC；显式关闭的平台仍只提供其实际启用的族，不由测试入口补齐。
+
 ## Wi-Fi 连接与持久化
 
-Wi-Fi STA 的 `connect` 与 `connect_and_save` 是两个独立 operation。前者对所有 timeout 都只改变当前连接；后者必须重新验证目标凭据，取得目标 SSID（指定 BSSID 时也匹配 BSSID）的有效非零 IPv4 后才调用 Wi-Fi Settings 保存。后者要求非零关联/DHCP 总预算，零值无副作用地返回 INVALID_ARG。连接、IP 或保存失败均不得伪装为配网成功；旧凭据在连接失败时保留，保存失败由 Settings 原子替换合同保护。get/set/clear/has_saved_sta_config 仍是显式的独立存储能力。
+Wi-Fi Settings 始终只保存**一条** STA 凭据，表示“最近一次连上的网络”（由成功的 `connect_and_save` 更新）。`set_saved_sta_config` 原子替换该条，写失败保留旧值；`get_saved_sta_config` 返回该条，空时返回 NOT_FOUND；`clear_saved_sta_config` 清除该条。显式 get/set/clear 不改变当前连接；临时 `connect` 不更新保存值。PAL 不提供网络集合、list/remove 或多网络排序能力，provider 和原有单条格式保持不变。
 
-ESP-IDF、BK7258、Desktop simulator 和 testing PAL 共用 `libs/wifi_sta` 的事务算法。Runtime 只转发同一 PAL API；不可在 Runtime、BLE、RPC 或 Loader 中再实现一份等待 IP 与保存的算法。Desktop 与 testing PAL 的 Settings 是进程内模拟，不能据此声称设备断电持久化通过。无 Wi-Fi 的 canonical unsupported 与 ESP32-P4 unsupported provider 对新 operation 明确返回 UNSUPPORTED。
+最多 8 条的网络集合归 Runtime，保存在其专属 pref namespace `h2runtime_wifi` 的 `saved_v1` key 中，与 PAL Wi-Fi Settings 分离。Runtime 使用固定 920 字节小端 blob，整块原子替换；存储位置表示最近连接顺序，UTC 时间戳未校准时为 0。集合 API、格式、淘汰和重连排序详见 [Runtime 的 Wi-Fi 凭据与恢复](./runtime.md#wi-fi-凭据与恢复)。不将已有 PAL 凭据迁移到集合。
+
+Runtime 配网入口先调用 PAL `connect_and_save`，成功后才记录到自己的集合；best-saved 则按扫描 RSSI 和集合顺序尝试 PAL `connect`，成功后只更新 Runtime 集合，不写 PAL 凭据、不等待 IP。原有 `h2_runtime_wifi_connect_saved` 继续只恢复 PAL 单条凭据。
+
+Wi-Fi STA 的 `connect` 与 `connect_and_save` 是两个独立 operation。前者对所有 timeout 都只改变当前连接；后者必须重新验证目标凭据，取得目标 SSID（指定 BSSID 时也匹配 BSSID）的有效非零 IPv4 或 preferred 非 link-local IPv6 后才调用 Wi-Fi Settings 保存。后者要求非零关联/地址配置总预算，零值无副作用地返回 INVALID_ARG。连接、IP 或保存失败均不得伪装为配网成功；旧凭据在连接失败时保留，保存失败由 Settings 原子替换合同保护。get/set/clear/has_saved_sta_config 仍是显式的独立存储能力。
+
+ESP-IDF、BK7258、Desktop simulator 和 testing PAL 共用 `libs/wifi_sta` 的事务算法。Runtime 的配网入口复用同一 PAL 事务，成功后独立更新自己的集合；不可在 Runtime、BLE、RPC 或 Loader 中重复实现 PAL 的等待 IP 与单条凭据保存算法。Desktop 与 testing PAL 的 Settings 是进程内模拟，不能据此声称设备断电持久化通过。无 Wi-Fi 的 canonical unsupported 与 ESP32-P4 unsupported provider 对新 operation 明确返回 UNSUPPORTED。
 
 ## Contract 形态
 
@@ -557,3 +648,32 @@ Target-specific unavailable adapter、dummy 和 fake backend 放在 `libs/pal` �
 6. 由 BSP 提供 board-specific 配置，并将真实、target-specific unavailable、dummy、fake 或 unsupported component capability 放入 runtime init config。
 7. 如果 app 需要使用该能力，将它接入 runtime public surface。
 8. 验证正常路径、unsupported、初始化失败和生命周期边界。
+
+### 移动端 Core provider
+
+iOS 和 Android 的 Core（Memory、Log、Time、Timer、Task、Queue、Sync、SystemEvent、 FirmwareInfo）使用原生 pthread/系统时钟实现。公共线程核心位于 `libs/pal/providers/posix/pal_core`，由 iOS、Android 和 Web pthread provider 复用； UIKit、Android UI/媒体适配仍留在各自 provider 下。PAL 的 `set_wall_ms` 在移动端维护 进程内时钟偏移，不要求修改系统时钟的权限。
+
+移动端 provider 的本地发布边界为 iOS `:swift_package` 和 Android `:aar`， 打包规则位于 `tools/bazel/mobile_package.bzl`。这些包不包含 Runtime 或 Atomic。 移动端入口通过 `projects/e2e/libs/mobile-platform-config` 获取完整配置并自行组装 Runtime；独立 PAL Core E2E App 消费实际包的二进制， 验证完整 Core v2 合约。测试入口和证据见 `projects/e2e/libs/pal-core-mobile/README.md`。
+
+### 原生移动端 Storage
+
+iOS/Android provider 的 storage owner 接收宿主 sandbox 内的绝对目录和 portable mount root，公开真实 POSIX FS 与 SQLite Preferences API；目录创建只使用明确给出的路径，不清空已存在数据。宿主关闭所有 file、namespace 和 cursor 后再销毁 owner。Storage 与 Core 都进入对应 Swift Package/XCFramework 或 AAR，Runtime 仍由 App host 单独组装。
+
+BK7258 Preferences 保留已有原始 value 字节，确保已安装旧 Loader 可继续读取 boot/版本等 key。`$h2t` namespace 及其子 namespace 保留给内部类型记录，public open 在读写和只读模式均拒绝，普通 caller 不能枚举或 clear 元数据。Reader 兼容旧 `H2TYPE1`；新 `H2TYPE2` 先以一次 FlashDB 写入暂存新旧两版类型描述，再写原始 value。描述包含原 key、类型、长度、内容摘要及一个差异字节的位置/值，读取时选择与实际 bytes 匹配的一版；差异字节避免等长摘要碰撞产生歧义。字节完全相同的 type-only 更新只提交元数据。元数据或 value 写入失败不需要额外 Flash 写入回滚，后续读取和枚举仍对应实际留下的值；底层在提交之后才报错时，允许观察到完整的新值/类型，不能把错误返回解释为必然未写入。旧固件写入与两版描述都不匹配的值时恢复 UNKNOWN，保持既有读取兼容。FlashDB 迭代采用 namespace-scoped snapshot，返回稳定 key/type/value-size，cursor 必须显式关闭；clear 仅删除该 namespace 的 FlashDB key 及其类型记录，并回收新 key 写入失败留下的孤立暂存元数据，不清空整个数据库；这些暂存记录不会出现在 public iteration 中。旧 EasyFlash key 继续通过既有按 key 读取路径迁移，未迁移 key 不具有枚举类型信息。这不额外承诺断电或 FlashDB 本身损坏时的恢复能力。
+
+BK7258 大值仍使用原 128 KiB physical FlashDB 分区：前 24 KiB/4 KiB-sector legacy KVDB 不变，后 104 KiB 单独作为 owned tail KVDB。只有逐字节确认 tail 全为擦除态才在 legacy DB 发布 `$h2_large_backing_v1` ownership；未取得 ownership 的非空 tail 和不能安全恢复的损坏 header 返回错误，不擦除未知内容。3968 字节以内的新 key 保持 legacy raw value；更大的值进入 tail，存储长度上限 32768 字节（string 包括 NUL），超过上限返回 NO_SPACE。已具有 tail manifest 的 key 即使缩小也继续在 tail；tail 优先于 EasyFlash/legacy，旧 Loader 仍可读取未改写的 legacy 字节，不能因此宣称旧 Loader 可解析大值。
+
+Tail v1 manifest 为 96 字节：8 字节 `H2LGKV1` magic、64 字节带 NUL 的完整 namespace/key、三个 little-endian uint64（非零 generation、1..32768 length、FNV-1a-64 内容摘要）。每个 chunk 为 88 字节 header（`H2LGCH1`、完整 key、generation、index）加最多 3000 字节 payload；内部 key 由完整 key 摘要、generation、index 派生。读取验证 manifest 尺寸/key/范围、每个 chunk 尺寸/key/generation/index 及完整内容摘要，损坏不能回退旧值或暴露半份数据。写入先回收不被旧 manifest 引用的 owned chunks，再写新 generation 的全部 immutable chunks，最后提交唯一 manifest，成功后才回收旧 generation。Manifest 提交报错时保留两代，交由 pinned SDK fresh-init recovery 判定完整旧值或新值；API error 不保证未提交。Remove 先删除 legacy/EasyFlash value，再删除 tail manifest，最后清理 owned orphan chunks；clear 是 namespace-scoped 逐 key 操作，失败允许已完成的删除可见，不承诺跨 key 事务。GC copy/delete/recovery 出错时不能擦除 source sector。Flash I/O error 锁存状态，后续操作先重新初始化两 DB，恢复失败则返回 IO 并拒绝继续修改；读缓存和路由缓存在写、擦、恢复时失效。既有类型匹配与 namespace snapshot 语义适用于最终可见 value，内部 manifest/chunk/ownership 不进入 public iteration。真实 NOR 故障测试与正常 board reboot 证据仍分别记录，不增加任意断电原子性的承诺。
+
+
+ESP LittleFS 的目录级 clear 在既有 internal-stack safe-call 路径执行，保留目录本身、递归移除子项，并拒绝遍历路径；目录层数过深返回错误。DevKit 原有整 `/data` 格式化接口保持明确的 board policy，Storage E2E 仅调用测试子目录 clear。BK FATFS 提供真实 seek 和目录级 clear，测试不格式化 SD 卡。
+
+移动端 HTTP owner 复用 CoreHTTP + POSIX Net + 完整 WolfSSL，公开独立 create/API/destroy 生命周期并复制可选 root CA；没有提供 root CA 时使用系统 trust。每个 HTTP owner 独立持有完整 WolfSSL 引用，Crypto getter/shutdown 只取得或释放 Crypto 自己的引用，不会提前销毁仍被 HTTP 持有的实现。请求和 response 全部结束后先销毁 HTTP owner，再进行 Core teardown。HTTP SDK API 与已有 Core/Crypto/Storage 一起进入真实 XCFramework/Swift Package、AAR，HTTP App 不直接链接另一份 provider。六端资格以独立 `pal-http` App 的同一 registry 为准；移动端通过真实模拟器运行，使用受控 HTTP/HTTPS fixture，保留 package/hash 和案例结果。
+
+iOS 和 Android 的 WebRTC owner 位于各自 `pal_core/src/h2_*_webrtc.c`，组合 H2Peer、H2SCTP、原生 POSIX Net 和与 Crypto/HTTP 共用的完整 WolfSSL。每个 owner 独立持有 TLS lifecycle 引用，公开 create/API/destroy；API 借用至 destroy，销毁必须先停止使用并释放事件，busy 时保留 owner 供重试。该 owner 不打开物理音频设备，Track 由 caller 提供。真实 SDK archive 包含此实现，独立 `pal-webrtc` qualification App 直接消费 package binary。
+
+## IPv6 地址与 DNS
+
+POSIX、ESP 与 BK 的 resolver 在本地处理保留名称：`localhost` 及其子域返回真实 loopback 地址，`.invalid` 及其子域直接返回 `NOT_FOUND`，不依赖当前网络的 DNS 服务器。名称比较不区分大小写并接受末尾的点，遵循 [RFC 6761](https://www.rfc-editor.org/rfc/rfc6761.html#section-6.4)。独立的 nonce AAAA wire fixture 仍通过真实 IPv6 UDP 验证报文，不由这些本地规则替代。
+
+Net 地址新增 `scope_id`，表示本机 IPv6 接口索引；link-local 目标必须携带作用域， IPv4 地址必须为零。作用域不能作为 IP 地址的一部分发送到 STUN 或 SDP。 新 DNS 列表接口支持 ANY、IPv4、IPv6 筛选、有界去重列表与截断标志；异步操作沿用 复制 hostname、有限容量、poll 总预算和取消后 backend 自行回收的合同。 旧单地址接口保留 IPv4 优先，并在没有 IPv4 时接受 IPv6。HTTP/MQTT 根据每个结果的 地址族创建 socket，失败后关闭并在原始连接预算内回退。pending TCP 连接的 `TIMEOUT`/`WOULD_BLOCK` 沿用原始总预算并继续同一 socket；只有终态连接失败才回退，不为候选地址设置独立的 250 ms 上限。TLS 验证失败不会触发降级。 `pal-ipv6` 提供独立 E2E；浏览器原始 Net 的 UNSUPPORTED 与 Fetch/WebRTC 的 IPv6 实际执行分开记录。新 provider 代码不改变历史实板记录的执行身份。

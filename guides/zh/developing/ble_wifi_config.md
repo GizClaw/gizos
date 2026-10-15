@@ -2,7 +2,7 @@
 
 `libs/ble_wifi_config` 提供设备尚未联网时使用的 BLE 配网服务：手机 App 通过 BLE 扫描周边 AP，并把 Wi-Fi 凭据下发给设备。Library 依赖 PAL 与 `libs/runtime`，不依赖 `libs/bleikcp`，也不依赖 GizClaw RPC —— 配网发生在联网之前，这条路径必须尽量薄。
 
-内建配网路径显式调用 PAL `connect_and_save`，由 provider 完成认证、目标网络 IP 验证与持久化。Runtime 提供同一 API 与状态快照，library 不维护第二套 DHCP 等待或保存逻辑。
+配网路径调用 `h2_runtime_wifi_connect_and_save(api.runtime, ...)`：PAL `connect_and_save` 完成认证、目标网络 IP 验证与单条凭据持久化，成功后 Runtime 再把这个网络记进它最多 8 条的已保存集合，手机配的网因此和设备自己配的网落在同一份列表里。`api.runtime` 是必填项，须覆盖 service 生命周期。Library 不维护第二套 DHCP 等待或保存逻辑，也没有可替换的配网步骤：AP 校验、连接和记账只有这一条路径，避免出现两套“已保存网络”的答案。集合写入失败不改变配网结果——设备已经连上、PAL 凭据已保存，Runtime 只记 WARN 日志并仍然报告成功。
 
 ## API Reference
 
@@ -23,7 +23,7 @@ BLE Wi-Fi Config 负责：
 
 - 启动 BLE Host 和 Wi-Fi station backend。
 - 决定何时打开配网窗口（未配网，或按键触发），以及何时关闭。
-- 保存配网成功后的凭据，或通过 `connect` callback 自行接管连接与保存。
+- 提供已初始化的 `h2_runtime_t`；凭据的保存由 library 经 Runtime 完成，调用方不需要也无法替换这一步。
 
 **配网窗口本身就是授权**：本 library 不做鉴权、不做加密，凭据以明文写入 PROV characteristic。因此调用方必须只在需要配网时开广播，并在配网结束后立即 `h2_ble_wifi_config_close()`。
 
@@ -107,7 +107,7 @@ packet-beta
 
 `disconnect_reason` 是 backend 透传值，编号不同的平台通过 `map_reason` callback 提供自己的映射，不要修改默认表。
 
-`connect` callback 非 NULL 时完全接管上述流程。它在 worker task 上同步执行，一次只有一个调用，返回即代表本次尝试结束；library 不做取消也不施加超时，`connect_timeout_ms` 与 `skip_ap_verification_before_connect` 都不适用，callback 必须自己限定耗时（`close()` 会等待进行中的尝试返回）。凭据只在调用期间借出，保存由 callback 负责。`out_reason` 预置为 `H2_BLE_WIFI_CONFIG_REASON_NONE`，失败时由 callback 写入要上报的 reason，未写入则上报 `0xff`；返回值本身不发给对端，只有 `out_reason` 会。
+配网步骤没有可替换的 callback。`map_reason` 仍然可以替换 reason 映射，但 AP 校验、连接和保存始终由 library 按上述流程执行。
 
 ## 任务模型与并发
 

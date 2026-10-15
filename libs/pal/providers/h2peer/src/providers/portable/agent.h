@@ -5,7 +5,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "base64.h"
 #include "h2/pal/net/h2_pal_net.h"
 #include "h2/pal/os/h2_pal_crypto.h"
 #include "h2/pal/os/h2_pal_log.h"
@@ -64,6 +63,7 @@ struct Agent {
   int remote_candidates_count;
 
   UdpSocket udp_sockets[2];
+  unsigned udp_receive_next;
 
   h2_pal_net_addr_t host_addr;
   int b_host_addr;

@@ -1,0 +1,28 @@
+{
+  "source_commit": "20a23ce18783657ae00b2be568a30cf762be7ff3",
+  "source_dirty": false,
+  "manifest": {
+    "format": "1",
+    "role": "app",
+    "board": "bk7258_v3_202405",
+    "target": "bk7258",
+    "version": "mqtt-bk-uart-r12",
+    "image_size": "5222400",
+    "image_sha256": "94ea138a86d7aa72e0d5e105b0cec53c1b6a3688e8d480cc0248b28ced2151c0"
+  },
+  "package_sha256": "d267780072d167b4db54c747a45f64b1526af1757b3a0bcffd7ea62bb341f717",
+  "package_file": "bk7258_v3_202405-pal-mqtt-bk7258.update.tar.zlib",
+  "fixture_inputs": {
+    "bind": "192.168.31.151",
+    "advertised": "192.168.31.151",
+    "tcp_port": 51281,
+    "tls_port": 51282,
+    "session_prefix": "4e75a5e79b1549dc80fc33618c370586",
+    "epoch_ms": 1791132879574,
+    "ca_sha256": "66175a5195c6553c8a9a773b797f4eac355623ded379883a0fbc32b2553f7dfd",
+    "wrong_ca_sha256": "e542699bd57ee95558454852fc2b224593fe1312a302986e38c206a376b7e9b7",
+    "bazelrc_sha256": "87d2c79bc54cf821c3345d612e4b67087a5092fed5b2a9b9f1deb1e72eb834df",
+    "tls_handshake_timeout_seconds": 15.0
+  },
+  "fixture_source_commit": "ac2ebebc0775c0e650b66c6b6fb6f36ec6221c81"
+}

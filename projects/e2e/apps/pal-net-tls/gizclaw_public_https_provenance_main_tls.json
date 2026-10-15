@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "new_physical_run_claimed": false,
+  "historical_qualification_sha256": "368ef333c5f4c9ff7d4ca1f55d13927cba76327afc12aedd194d48b36f945104",
+  "previous_source_sha256": {
+    "native_component_src/esp-idf6.x/h2_pal_core/src/h2_esp_platform_net.c": "293127699233754600f34df3b31f202fbe5c56f380f5ad29d3686caf5533b012",
+    "tools/bazel/mobile_e2e.py": "a00c485f3ef20445b3c60a927d2620d12fe27110bfbec5bbe89d2d9fa89f23c0"
+  },
+  "current_source_sha256": {
+    "native_component_src/esp-idf6.x/h2_pal_core/src/h2_esp_platform_net.c": "69f1d36ef9ba604c999ad6921c18f7c683c4ebf34f2652ab2351fffc34326a25",
+    "tools/bazel/mobile_e2e.py": "0b87c9c683d707d69dfd22a96e4ed1762b3915fdaf812071664ddeebaac7d080"
+  },
+  "validation": {
+    "certificate_bundle_callback_regression": "PASS",
+    "untrusted_and_date_failures": "PASS",
+    "label": "//projects/e2e/libs/pal-net-tls-device:board_tls_certificate_time_test",
+    "shared_mobile_contract": "PASS",
+    "default_certificate_date_regressions": "PASS",
+    "certificate_bundle_helper_label": "//native_component_src/esp-idf6.x/h2_pal_core:net_tls_verify_test"
+  },
+  "scope": "Bind bounded optional ESP I/O diagnostics and the shared mobile preflight to main #638 qualification index without rebinding its physical receipts. The SDK bundle-verifier delegate/date callback and helper match main. Historical provenance manifest remains byte-for-byte unchanged. This maintenance record does not claim a new physical Net/TLS-suite run.",
+  "supersedes": {
+    "file": "gizclaw_public_https_provenance.json",
+    "sha256": "4712657fe205da781e52dd5985bb862d06229809f748b368cc431a53827b9a92",
+    "source_commit": "c29d6958658b89ab7af7ce4fcaac755383bc4d44"
+  },
+  "qualification_base_commit": "5e63ccb8b035c94dd8a07cea9cc6bd37b65f41fb"
+}

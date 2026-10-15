@@ -59,6 +59,11 @@ int h2_portaudio_set_require_real_devices_for_test(h2_portaudio_t *provider,
 int h2_portaudio_set_echo_test_ops(h2_portaudio_t *provider,
                                    const h2_portaudio_echo_test_ops_t *ops);
 
+/* Test the same post-AEC hook delivery without opening a host microphone. */
+void h2_portaudio_publish_mic_for_test(h2_portaudio_t *provider,
+                                      const int16_t *samples, size_t frames,
+                                      uint64_t timestamp_us, int real_device);
+
 #ifdef __cplusplus
 }
 #endif

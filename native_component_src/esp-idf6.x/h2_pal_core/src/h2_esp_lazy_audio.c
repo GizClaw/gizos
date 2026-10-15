@@ -22,6 +22,18 @@ static int lazy_stop_mic(void *user) {
     return resolved == NULL ? H2_AUDIO_ERR_UNAVAILABLE : h2_pal_audio_stop_mic(resolved);
 }
 
+static int lazy_get_mic_gain_percent(void *user, uint32_t *out_percent) {
+    h2_pal_audio_t *resolved = resolve_audio(user);
+    return resolved == NULL ? H2_AUDIO_ERR_UNAVAILABLE :
+                              h2_pal_audio_get_mic_gain_percent(resolved, out_percent);
+}
+
+static int lazy_set_mic_gain_percent(void *user, uint32_t percent) {
+    h2_pal_audio_t *resolved = resolve_audio(user);
+    return resolved == NULL ? H2_AUDIO_ERR_UNAVAILABLE :
+                              h2_pal_audio_set_mic_gain_percent(resolved, percent);
+}
+
 static int lazy_start_speaker(void *user) {
     h2_pal_audio_t *resolved = resolve_audio(user);
     return resolved == NULL ? H2_AUDIO_ERR_UNAVAILABLE : h2_pal_audio_start_speaker(resolved);
@@ -66,6 +78,12 @@ static int lazy_set_speaker_volume_percent(
                               h2_pal_audio_set_speaker_volume_percent(resolved, percent);
 }
 
+static int lazy_set_aec_observer(void *user, const h2_audio_aec_observer_t *observer) {
+    h2_pal_audio_t *resolved = resolve_audio(user);
+    return resolved == NULL ? H2_AUDIO_ERR_INVALID_STATE :
+        h2_pal_audio_set_aec_observer(resolved, observer);
+}
+
 int h2_esp_lazy_audio_init(
     h2_esp_lazy_audio_t *lazy_audio,
     void *user,
@@ -86,6 +104,9 @@ int h2_esp_lazy_audio_init(
         .create_track = lazy_create_track,
         .get_speaker_volume_percent = lazy_get_speaker_volume_percent,
         .set_speaker_volume_percent = lazy_set_speaker_volume_percent,
+        .get_mic_gain_percent = lazy_get_mic_gain_percent,
+        .set_mic_gain_percent = lazy_set_mic_gain_percent,
+        .set_aec_observer = lazy_set_aec_observer,
     };
     lazy_audio->api = (h2_pal_audio_t){
         .user = lazy_audio,

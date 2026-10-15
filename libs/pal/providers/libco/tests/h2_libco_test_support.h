@@ -5,28 +5,48 @@
 
 #include <assert.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdlib.h>
 
 typedef struct h2_libco_test_env {
     uint64_t now_ms;
     size_t allocations;
+    size_t allocated_bytes;
 } h2_libco_test_env_t;
+
+typedef union h2_libco_test_allocation {
+#if defined(_MSC_VER) && !defined(__clang__)
+    /* MSVC C11 omits max_align_t; these cover its fundamental C types. */
+    long double floating_alignment;
+    long long integer_alignment;
+    void *pointer_alignment;
+#else
+    max_align_t alignment;
+#endif
+    size_t bytes;
+} h2_libco_test_allocation_t;
 
 static inline void *h2_libco_test_alloc(void *user, size_t size) {
     h2_libco_test_env_t *env = user;
-    void *memory = malloc(size);
-    if (memory != NULL) {
-        ++env->allocations;
-    }
-    return memory;
+    if (size > SIZE_MAX - sizeof(h2_libco_test_allocation_t)) return NULL;
+    h2_libco_test_allocation_t *allocation = malloc(sizeof(*allocation) + size);
+    if (allocation == NULL) return NULL;
+    allocation->bytes = size;
+    ++env->allocations;
+    env->allocated_bytes += size;
+    return allocation + 1;
 }
 
 static inline void h2_libco_test_free(void *user, void *memory) {
     h2_libco_test_env_t *env = user;
     assert(memory != NULL);
     assert(env->allocations != 0u);
+    h2_libco_test_allocation_t *allocation =
+        (h2_libco_test_allocation_t *)memory - 1;
+    assert(env->allocated_bytes >= allocation->bytes);
+    env->allocated_bytes -= allocation->bytes;
     --env->allocations;
-    free(memory);
+    free(allocation);
 }
 
 static inline uint64_t h2_libco_test_now(void *user) {

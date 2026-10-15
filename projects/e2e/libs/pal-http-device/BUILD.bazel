@@ -1,0 +1,49 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+load(":fixture_config.bzl", "http_fixture_config")
+
+package(default_visibility = ["//visibility:public"])
+
+h2_tasks(
+    name = "tasks",
+    tasks = ["pal-http/e2e/runner"],
+)
+
+http_fixture_config(name = "fixture_config")
+
+cc_library(
+    name = "runner",
+    srcs = [
+        "src/h2_pal_http_device.c",
+        "src/h2_pal_http_network.c",
+        "src/h2_pal_http_network.h",
+    ],
+    hdrs = [
+        "include/h2_pal_http_device.h",
+        ":fixture_config",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    deps = [
+        ":tasks",
+        "//libs/pal/providers/corehttp",
+        "//projects/e2e/apps/pal-http/app:pal_http_e2e",
+    ],
+)
+
+cc_test(
+    name = "network_setup_test",
+    srcs = [
+        "src/h2_pal_http_network.c",
+        "src/h2_pal_http_network.h",
+        "tests/test_network_setup.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = ["//libs/runtime"],
+)

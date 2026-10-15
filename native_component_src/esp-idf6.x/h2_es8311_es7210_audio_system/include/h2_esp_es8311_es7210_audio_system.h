@@ -15,6 +15,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "h2_esp_es8311_es7210_aec_stats.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -66,6 +67,9 @@ typedef struct h2_esp_es8311_es7210_audio_system_config {
     /** DAC 0x32 at 100%, 1..255; board maximum gain (0xBF = 0 dB). */
     uint8_t codec_volume_default;
     uint32_t mic_gain_db;
+    /** Board-owned linear PAL percent range in ES7210 PGA dB; max=0 uses 38. */
+    uint8_t mic_gain_min_db;
+    uint8_t mic_gain_max_db;
     uint8_t es7210_input_gain_mask;
     uint8_t es7210_input_gain_db[H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_ES7210_INPUT_COUNT];
     uint8_t max_tracks;
@@ -81,6 +85,11 @@ typedef struct h2_esp_es8311_es7210_audio_system_config {
     const h2_pal_queue_api_t *queue_api;
     const h2_pal_sync_api_t *sync_api;
     int enable_aec;
+    /** Zero preserves normal FD nonlinear processing. */
+    h2_esp_es8311_es7210_aec_nlp_level_t aec_nlp_level;
+    h2_esp_es8311_es7210_aec_observe_fn aec_observe;
+    h2_esp_es8311_es7210_aec_observe_enabled_fn aec_observe_enabled;
+    void *aec_observer_user;
     /** Optional board curve; zero initialization preserves legacy mapping. */
     h2_es8311_volume_config_t speaker_volume;
 } h2_esp_es8311_es7210_audio_system_config_t;
@@ -100,13 +109,20 @@ typedef struct h2_esp_es8311_es7210_sr_state {
     int16_t *ref_frame;
     int16_t *out_frame;
     uint32_t processed_frame_count;
+    h2_esp_es8311_es7210_aec_observe_fn observe;
+    h2_esp_es8311_es7210_aec_observe_enabled_fn observe_enabled;
+    void *observer_user;
 } h2_esp_es8311_es7210_sr_state_t;
 
 typedef struct h2_esp_es8311_es7210_audio_system {
     h2_esp_es8311_es7210_audio_system_config_t config;
     h2_esp_es8311_es7210_sr_state_t sr;
+    h2_audio_aec_observer_t aec_observer;
+    uint64_t aec_sequence;
     int pa_initialized;
     int opened;
+    /* 0: normal operation, 1: suspend requested, 2: suspend writes completed. */
+    int codec_shutdown_pending;
     int sr_initialized;
     volatile int mic_started;
     int mic_task_started;
@@ -117,6 +133,11 @@ typedef struct h2_esp_es8311_es7210_audio_system {
     int playback_task_started;
     int playback_task_with_caps;
     uint32_t speaker_volume_percent;
+    uint32_t mic_gain_percent;
+    uint32_t mic_gain_db_current;
+    /* A failed rollback may leave inputs at different gains. Getter reports
+     * IO until a complete setter retry reprograms every active input. */
+    int mic_gain_uncertain;
     i2c_master_bus_handle_t i2c_bus;
     i2c_master_dev_handle_t es8311;
     i2c_master_dev_handle_t es7210;
@@ -140,14 +161,29 @@ int h2_esp_es8311_es7210_audio_system_init(
     const h2_esp_es8311_es7210_audio_system_config_t *config);
 
 /**
- * Stop all workers and release every resource owned by an initialized system.
- *
- * The caller owns `system` storage and must ensure that no consumer uses the
- * returned Audio PAL after this call. The operation is idempotent. If a worker
- * cannot stop within its bounded deadline, the function returns an Audio error
- * and preserves the remaining resources so the caller can retry safely.
+ * Stop/join workers and release owned resources without requesting suspend.
+ * Serialized task-context call; stop consumers first. Idempotent. Worker or PA
+ * errors retain remaining resources for retry. An already requested power-down
+ * is completed before releasing codec handles.
  */
 int h2_esp_es8311_es7210_audio_system_deinit(
+    h2_esp_es8311_es7210_audio_system_t *system);
+
+/**
+ * @brief Stop/join workers, disable PA, suspend both codecs, and release resources.
+ * @param system Caller-owned, initialized or zero-initialized storage.
+ * @return H2_AUDIO_OK on success; H2_AUDIO_ERR_INVALID_ARG for NULL; otherwise
+ * the first worker, PA or I2C error. Remaining resources are retained for retry.
+ *
+ * Blocking task-context call. Serialize against all Audio PAL/lifecycle calls;
+ * stop consumers first and retain I2C/PA providers until success. Worker waits
+ * use their existing bounded deadlines; each suspend write has a 100 ms timeout.
+ * Success invalidates PAL/tracks. Repeated calls and never-opened storage do no
+ * I/O. Call init then prepare/start to restore audio after success. After an
+ * error, retry shutdown before re-init or sleep; start is rejected meanwhile.
+ * Ordinary deinit does not request suspend. No physical supply switching.
+ */
+int h2_esp_es8311_es7210_audio_system_power_down(
     h2_esp_es8311_es7210_audio_system_t *system);
 
 h2_pal_audio_t *h2_esp_es8311_es7210_audio_system_audio(h2_esp_es8311_es7210_audio_system_t *system);

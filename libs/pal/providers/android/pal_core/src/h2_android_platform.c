@@ -11,25 +11,6 @@
 #include <string.h>
 #include <time.h>
 
-struct h2_pal_queue {
-  pthread_mutex_t mutex;
-  pthread_cond_t not_empty;
-  pthread_cond_t not_full;
-  const h2_pal_mem_api_t *allocator;
-  size_t item_size;
-  size_t item_count;
-  size_t head;
-  size_t count;
-  int closed;
-  uint8_t *items;
-};
-
-struct h2_pal_task {
-  pthread_t thread;
-  h2_pal_task_entry_t entry;
-  void *context;
-};
-
 typedef struct h2_android_audio_track {
   h2_pal_audio_track_t base;
   struct h2_android_platform *host;
@@ -39,7 +20,19 @@ typedef struct h2_android_audio_track {
   int16_t *pending_samples;
   uint32_t pending_frame_count;
   uint32_t pending_frame_offset;
+  h2_pal_mem_api_t allocator;
 } h2_android_audio_track_t;
+
+static void *android_track_alloc(h2_android_audio_track_t *track, size_t bytes) {
+  return track->allocator.vtable != NULL
+      ? h2_pal_mem_alloc(&track->allocator, bytes) : malloc(bytes);
+}
+
+static void android_track_free(h2_android_audio_track_t *track, void *ptr) {
+  if (track->allocator.vtable != NULL)
+    h2_pal_mem_free(&track->allocator, ptr);
+  else free(ptr);
+}
 
 struct h2_android_platform {
   pthread_mutex_t mutex;
@@ -54,374 +47,13 @@ struct h2_android_platform {
   int pointer_pressed;
   h2_pal_audio_api_t audio;
   h2_android_audio_track_t *audio_track;
+  AAudioStream *mic_stream;
+  uint32_t mic_gain_percent;
   uint32_t speaker_volume_percent;
   int speaker_started;
   h2_pal_display_api_t display;
   int opened;
-};
-
-static void *android_alloc(void *user, size_t len) {
-  (void)user;
-  return malloc(len);
-}
-
-static void *android_realloc(void *user, void *pointer, size_t len) {
-  (void)user;
-  return realloc(pointer, len);
-}
-
-static void android_free(void *user, void *pointer) {
-  (void)user;
-  free(pointer);
-}
-
-static const h2_pal_mem_vtable_t s_android_mem_vtable = {
-    .alloc = android_alloc,
-    .realloc = android_realloc,
-    .free = android_free,
-};
-static const h2_pal_mem_api_t s_android_mem = {
-    .user = NULL,
-    .vtable = &s_android_mem_vtable,
-};
-
-static h2_pal_result_t android_time_get_monotonic_ms(void *user,
-                                                     uint64_t *out_ms) {
-  (void)user;
-  struct timespec value = {0};
-  if (clock_gettime(CLOCK_MONOTONIC, &value) != 0) {
-    return H2_PAL_ERR_IO;
-  }
-  *out_ms = (uint64_t)value.tv_sec * 1000u + (uint64_t)value.tv_nsec / 1000000u;
-  return H2_PAL_OK;
-}
-
-static h2_pal_result_t android_time_get_monotonic_us(void *user,
-                                                     uint64_t *out_us) {
-  (void)user;
-  struct timespec value = {0};
-  if (clock_gettime(CLOCK_MONOTONIC, &value) != 0) {
-    return H2_PAL_ERR_IO;
-  }
-  *out_us = (uint64_t)value.tv_sec * 1000000u +
-            (uint64_t)value.tv_nsec / 1000u;
-  return H2_PAL_OK;
-}
-
-static h2_pal_result_t android_time_sleep_ms(void *user, uint32_t ms) {
-  (void)user;
-  struct timespec remaining = {
-      .tv_sec = (time_t)(ms / 1000u),
-      .tv_nsec = (long)(ms % 1000u) * 1000000l,
-  };
-  while (nanosleep(&remaining, &remaining) != 0) {
-    if (errno != EINTR) {
-      return H2_PAL_ERR_IO;
-    }
-  }
-  return H2_PAL_OK;
-}
-
-static const h2_pal_time_vtable_t s_android_time_vtable = {
-    .get_monotonic_ms = android_time_get_monotonic_ms,
-    .get_monotonic_us = android_time_get_monotonic_us,
-    .sleep_ms = android_time_sleep_ms,
-};
-static const h2_pal_time_api_t s_android_time = {
-    .user = NULL,
-    .vtable = &s_android_time_vtable,
-};
-
-static int android_log_write(void *user, h2_pal_log_level_t level,
-                             const char *scope, const char *message) {
-  (void)user;
-  static const int priorities[] = {
-      ANDROID_LOG_DEBUG,
-      ANDROID_LOG_INFO,
-      ANDROID_LOG_WARN,
-      ANDROID_LOG_ERROR,
-  };
-  if (level < H2_PAL_LOG_DEBUG || level > H2_PAL_LOG_ERROR ||
-      message == NULL) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  (void)__android_log_print(priorities[level], "H2Firmwares", "%s: %s",
-                            scope == NULL ? "app" : scope, message);
-  return H2_PAL_OK;
-}
-
-static const h2_pal_log_vtable_t s_android_log_vtable = {
-    .write = android_log_write,
-};
-static const h2_pal_log_api_t s_android_log = {
-    .user = NULL,
-    .vtable = &s_android_log_vtable,
-};
-
-static void *android_task_entry(void *user) {
-  h2_pal_task_t *task = user;
-  task->entry(task->context);
-  return NULL;
-}
-
-static int android_task_start(void *user,
-                              const h2_pal_task_options_t *options,
-                              h2_pal_task_entry_t entry, void *context,
-                              h2_pal_task_t **out_task) {
-  (void)user;
-  if (entry == NULL || out_task == NULL) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  *out_task = NULL;
-  h2_pal_task_t *task = calloc(1u, sizeof(*task));
-  if (task == NULL) {
-    return H2_PAL_ERR_NO_MEMORY;
-  }
-  task->entry = entry;
-  task->context = context;
-  pthread_attr_t attributes;
-  if (pthread_attr_init(&attributes) != 0) {
-    free(task);
-    return H2_PAL_ERR_UNAVAILABLE;
-  }
-  size_t stack_size = 0u;
-  if (options != NULL && options->min_stack_size != 0u &&
-      (pthread_attr_getstacksize(&attributes, &stack_size) != 0 ||
-       (options->min_stack_size > stack_size &&
-        pthread_attr_setstacksize(&attributes, options->min_stack_size) !=
-            0))) {
-    (void)pthread_attr_destroy(&attributes);
-    free(task);
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  const int create_result =
-      pthread_create(&task->thread, &attributes, android_task_entry, task);
-  (void)pthread_attr_destroy(&attributes);
-  if (create_result != 0) {
-    free(task);
-    return H2_PAL_ERR_UNAVAILABLE;
-  }
-  *out_task = task;
-  return H2_PAL_OK;
-}
-
-static int android_task_join(void *user, h2_pal_task_t *task) {
-  (void)user;
-  if (task == NULL) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  if (pthread_join(task->thread, NULL) != 0) {
-    return H2_PAL_ERR_UNAVAILABLE;
-  }
-  free(task);
-  return H2_PAL_OK;
-}
-
-static const h2_pal_task_vtable_t s_android_task_vtable = {
-    .start = android_task_start,
-    .join = android_task_join,
-};
-static const h2_pal_task_api_t s_android_task = {
-    .user = NULL,
-    .vtable = &s_android_task_vtable,
-};
-
-static void queue_deadline(uint32_t timeout_ms, struct timespec *deadline) {
-  (void)clock_gettime(CLOCK_REALTIME, deadline);
-  deadline->tv_sec += (time_t)(timeout_ms / 1000u);
-  deadline->tv_nsec += (long)(timeout_ms % 1000u) * 1000000l;
-  if (deadline->tv_nsec >= 1000000000l) {
-    ++deadline->tv_sec;
-    deadline->tv_nsec -= 1000000000l;
-  }
-}
-
-static int android_queue_create(void *user, const h2_pal_queue_config_t *config,
-                                h2_pal_queue_t **out_queue) {
-  (void)user;
-  if (config == NULL || config->allocator == NULL || out_queue == NULL ||
-      config->item_size == 0u || config->item_count == 0u ||
-      config->item_size > SIZE_MAX / config->item_count) {
-    return H2_PAL_QUEUE_ERR_INVALID_ARG;
-  }
-  *out_queue = NULL;
-  h2_pal_queue_t *queue = h2_pal_mem_alloc(config->allocator, sizeof(*queue));
-  if (queue == NULL) {
-    return H2_PAL_QUEUE_ERR_NO_MEMORY;
-  }
-  memset(queue, 0, sizeof(*queue));
-  queue->items = h2_pal_mem_alloc(config->allocator,
-                                  config->item_size * config->item_count);
-  if (queue->items == NULL || pthread_mutex_init(&queue->mutex, NULL) != 0) {
-    h2_pal_mem_free(config->allocator, queue->items);
-    h2_pal_mem_free(config->allocator, queue);
-    return H2_PAL_QUEUE_ERR_NO_MEMORY;
-  }
-  if (pthread_cond_init(&queue->not_empty, NULL) != 0) {
-    (void)pthread_mutex_destroy(&queue->mutex);
-    h2_pal_mem_free(config->allocator, queue->items);
-    h2_pal_mem_free(config->allocator, queue);
-    return H2_PAL_QUEUE_ERR_NO_MEMORY;
-  }
-  if (pthread_cond_init(&queue->not_full, NULL) != 0) {
-    (void)pthread_cond_destroy(&queue->not_empty);
-    (void)pthread_mutex_destroy(&queue->mutex);
-    h2_pal_mem_free(config->allocator, queue->items);
-    h2_pal_mem_free(config->allocator, queue);
-    return H2_PAL_QUEUE_ERR_NO_MEMORY;
-  }
-  queue->allocator = config->allocator;
-  queue->item_size = config->item_size;
-  queue->item_count = config->item_count;
-  *out_queue = queue;
-  return H2_PAL_QUEUE_OK;
-}
-
-static void android_queue_destroy(void *user, h2_pal_queue_t *queue) {
-  (void)user;
-  if (queue == NULL) {
-    return;
-  }
-  (void)pthread_cond_destroy(&queue->not_empty);
-  (void)pthread_cond_destroy(&queue->not_full);
-  (void)pthread_mutex_destroy(&queue->mutex);
-  h2_pal_mem_free(queue->allocator, queue->items);
-  h2_pal_mem_free(queue->allocator, queue);
-}
-
-static int android_queue_send(void *user, h2_pal_queue_t *queue,
-                              const void *item, uint32_t timeout_ms) {
-  (void)user;
-  if (queue == NULL || item == NULL) {
-    return H2_PAL_QUEUE_ERR_INVALID_ARG;
-  }
-  pthread_mutex_lock(&queue->mutex);
-  if (timeout_ms == UINT32_MAX) {
-    while (queue->count == queue->item_count && !queue->closed) {
-      (void)pthread_cond_wait(&queue->not_full, &queue->mutex);
-    }
-  } else if (timeout_ms != 0u && queue->count == queue->item_count &&
-             !queue->closed) {
-    struct timespec deadline = {0};
-    queue_deadline(timeout_ms, &deadline);
-    while (queue->count == queue->item_count && !queue->closed &&
-           pthread_cond_timedwait(&queue->not_full, &queue->mutex, &deadline) ==
-               0) {
-    }
-  }
-  if (queue->closed || queue->count == queue->item_count) {
-    const int result =
-        queue->closed
-            ? H2_PAL_QUEUE_ERR_CLOSED
-            : (timeout_ms == 0u ? H2_PAL_ERR_FULL : H2_PAL_QUEUE_ERR_TIMEOUT);
-    pthread_mutex_unlock(&queue->mutex);
-    return result;
-  }
-  const size_t tail = (queue->head + queue->count) % queue->item_count;
-  memcpy(queue->items + tail * queue->item_size, item, queue->item_size);
-  ++queue->count;
-  pthread_cond_signal(&queue->not_empty);
-  pthread_mutex_unlock(&queue->mutex);
-  return H2_PAL_QUEUE_OK;
-}
-
-static int android_queue_send_latest(void *user, h2_pal_queue_t *queue,
-                                     const void *item) {
-  (void)user;
-  if (queue == NULL || item == NULL) {
-    return H2_PAL_QUEUE_ERR_INVALID_ARG;
-  }
-  pthread_mutex_lock(&queue->mutex);
-  if (queue->closed) {
-    pthread_mutex_unlock(&queue->mutex);
-    return H2_PAL_QUEUE_ERR_CLOSED;
-  }
-  if (queue->count == queue->item_count) {
-    queue->head = (queue->head + 1u) % queue->item_count;
-    --queue->count;
-  }
-  const size_t tail = (queue->head + queue->count) % queue->item_count;
-  memcpy(queue->items + tail * queue->item_size, item, queue->item_size);
-  ++queue->count;
-  pthread_cond_signal(&queue->not_empty);
-  pthread_mutex_unlock(&queue->mutex);
-  return H2_PAL_QUEUE_OK;
-}
-
-static int android_queue_recv(void *user, h2_pal_queue_t *queue, void *out_item,
-                              uint32_t timeout_ms) {
-  (void)user;
-  if (queue == NULL || out_item == NULL) {
-    return H2_PAL_QUEUE_ERR_INVALID_ARG;
-  }
-  pthread_mutex_lock(&queue->mutex);
-  if (timeout_ms == UINT32_MAX) {
-    while (queue->count == 0u && !queue->closed) {
-      (void)pthread_cond_wait(&queue->not_empty, &queue->mutex);
-    }
-  } else if (timeout_ms != 0u && queue->count == 0u && !queue->closed) {
-    struct timespec deadline = {0};
-    queue_deadline(timeout_ms, &deadline);
-    while (queue->count == 0u && !queue->closed &&
-           pthread_cond_timedwait(&queue->not_empty, &queue->mutex,
-                                  &deadline) == 0) {
-    }
-  }
-  if (queue->count == 0u) {
-    const int result = queue->closed
-                           ? H2_PAL_QUEUE_ERR_CLOSED
-                           : (timeout_ms == 0u ? H2_PAL_ERR_WOULD_BLOCK
-                                               : H2_PAL_QUEUE_ERR_TIMEOUT);
-    pthread_mutex_unlock(&queue->mutex);
-    return result;
-  }
-  memcpy(out_item, queue->items + queue->head * queue->item_size,
-         queue->item_size);
-  queue->head = (queue->head + 1u) % queue->item_count;
-  --queue->count;
-  pthread_cond_signal(&queue->not_full);
-  pthread_mutex_unlock(&queue->mutex);
-  return H2_PAL_QUEUE_OK;
-}
-
-static int android_queue_reset(void *user, h2_pal_queue_t *queue) {
-  (void)user;
-  if (queue == NULL) {
-    return H2_PAL_QUEUE_ERR_INVALID_ARG;
-  }
-  pthread_mutex_lock(&queue->mutex);
-  queue->head = 0u;
-  queue->count = 0u;
-  pthread_cond_broadcast(&queue->not_full);
-  pthread_mutex_unlock(&queue->mutex);
-  return H2_PAL_QUEUE_OK;
-}
-
-static int android_queue_close(void *user, h2_pal_queue_t *queue) {
-  (void)user;
-  if (queue == NULL) {
-    return H2_PAL_QUEUE_ERR_INVALID_ARG;
-  }
-  pthread_mutex_lock(&queue->mutex);
-  queue->closed = 1;
-  pthread_cond_broadcast(&queue->not_empty);
-  pthread_cond_broadcast(&queue->not_full);
-  pthread_mutex_unlock(&queue->mutex);
-  return H2_PAL_QUEUE_OK;
-}
-
-static const h2_pal_queue_vtable_t s_android_queue_vtable = {
-    .create = android_queue_create,
-    .destroy = android_queue_destroy,
-    .send = android_queue_send,
-    .send_latest = android_queue_send_latest,
-    .recv = android_queue_recv,
-    .reset = android_queue_reset,
-    .close = android_queue_close,
-};
-static const h2_pal_queue_api_t s_android_queue = {
-    .user = NULL,
-    .vtable = &s_android_queue_vtable,
+  uint32_t brightness_percent;
 };
 
 static int android_audio_get_info(void *user, h2_audio_info_t *out_info) {
@@ -430,7 +62,9 @@ static int android_audio_get_info(void *user, h2_audio_info_t *out_info) {
   }
   *out_info = (h2_audio_info_t){
       .available = 1,
-      .mic_supported = 0,
+      .mic_supported = 1,
+      .mic_format = {16000u, 320u, 1u, H2_AUDIO_SAMPLE_S16LE},
+      .mic_queue_frames = 1u,
       .playback_supported = 1,
       .playback_format =
           {
@@ -445,15 +79,97 @@ static int android_audio_get_info(void *user, h2_audio_info_t *out_info) {
   return H2_PAL_OK;
 }
 
-static int android_audio_unsupported(void *user) {
-  return user == NULL ? H2_AUDIO_ERR_INVALID_ARG : H2_AUDIO_ERR_UNSUPPORTED;
+static int android_audio_start_mic(void *user) {
+  h2_android_platform_t *host = user;
+  if (host == NULL) return H2_AUDIO_ERR_INVALID_ARG;
+  pthread_mutex_lock(&host->mutex);
+  if (host->mic_stream != NULL) {
+    pthread_mutex_unlock(&host->mutex);
+    return H2_AUDIO_ERR_INVALID_STATE;
+  }
+  AAudioStreamBuilder *builder = NULL;
+  aaudio_result_t result = AAudio_createStreamBuilder(&builder);
+  if (result != AAUDIO_OK || builder == NULL) {
+    pthread_mutex_unlock(&host->mutex);
+    return H2_AUDIO_ERR_IO;
+  }
+  AAudioStreamBuilder_setDirection(builder, AAUDIO_DIRECTION_INPUT);
+  AAudioStreamBuilder_setSharingMode(builder, AAUDIO_SHARING_MODE_SHARED);
+  AAudioStreamBuilder_setSampleRate(builder, 16000);
+  AAudioStreamBuilder_setChannelCount(builder, 1);
+  AAudioStreamBuilder_setFormat(builder, AAUDIO_FORMAT_PCM_I16);
+  AAudioStreamBuilder_setPerformanceMode(builder, AAUDIO_PERFORMANCE_MODE_NONE);
+  AAudioStream *stream = NULL;
+  result = AAudioStreamBuilder_openStream(builder, &stream);
+  (void)AAudioStreamBuilder_delete(builder);
+  if (result != AAUDIO_OK || stream == NULL) {
+    pthread_mutex_unlock(&host->mutex);
+    return H2_AUDIO_ERR_UNAVAILABLE;
+  }
+  if (AAudioStream_getSampleRate(stream) != 16000 ||
+      AAudioStream_getChannelCount(stream) != 1 ||
+      AAudioStream_getFormat(stream) != AAUDIO_FORMAT_PCM_I16) {
+    (void)AAudioStream_close(stream);
+    pthread_mutex_unlock(&host->mutex);
+    return H2_AUDIO_ERR_UNSUPPORTED;
+  }
+  result = AAudioStream_requestStart(stream);
+  if (result != AAUDIO_OK) {
+    (void)AAudioStream_close(stream);
+    pthread_mutex_unlock(&host->mutex);
+    return H2_AUDIO_ERR_UNAVAILABLE;
+  }
+  host->mic_stream = stream;
+  pthread_mutex_unlock(&host->mutex);
+  return H2_AUDIO_OK;
+}
+
+static int android_audio_stop_mic(void *user) {
+  h2_android_platform_t *host = user;
+  if (host == NULL) return H2_AUDIO_ERR_INVALID_ARG;
+  pthread_mutex_lock(&host->mutex);
+  AAudioStream *stream = host->mic_stream;
+  host->mic_stream = NULL;
+  int rc = H2_AUDIO_OK;
+  if (stream != NULL) {
+    const aaudio_result_t stop = AAudioStream_requestStop(stream);
+    const aaudio_result_t close = AAudioStream_close(stream);
+    if (stop != AAUDIO_OK || close != AAUDIO_OK) rc = H2_AUDIO_ERR_IO;
+  }
+  pthread_mutex_unlock(&host->mutex);
+  return rc;
 }
 
 static int android_audio_mic_read(void *user, h2_audio_frame_t *out_frame,
                                   uint32_t timeout_ms) {
-  (void)out_frame;
-  (void)timeout_ms;
-  return user == NULL ? H2_AUDIO_ERR_INVALID_ARG : H2_AUDIO_ERR_UNSUPPORTED;
+  h2_android_platform_t *host = user;
+  if (host == NULL || out_frame == NULL || out_frame->data == NULL ||
+      out_frame->capacity < 320u * sizeof(int16_t) ||
+      out_frame->sample_rate_hz != 16000u || out_frame->channels != 1u ||
+      out_frame->sample_format != H2_AUDIO_SAMPLE_S16LE)
+    return H2_AUDIO_ERR_INVALID_ARG;
+  pthread_mutex_lock(&host->mutex);
+  if (host->mic_stream == NULL) {
+    pthread_mutex_unlock(&host->mutex);
+    return H2_AUDIO_ERR_INVALID_STATE;
+  }
+  const int64_t timeout_ns = (int64_t)timeout_ms * 1000000;
+  const aaudio_result_t read = AAudioStream_read(
+      host->mic_stream, out_frame->data, 320, timeout_ns);
+  if (read <= 0) {
+    pthread_mutex_unlock(&host->mutex);
+    return read == 0 ? H2_AUDIO_ERR_WOULD_BLOCK : H2_AUDIO_ERR_IO;
+  }
+  const uint32_t gain = host->mic_gain_percent;
+  int16_t *samples = out_frame->data;
+  for (aaudio_result_t i = 0; i < read; ++i) {
+    const int32_t scaled = (int32_t)samples[i] * (int32_t)gain / 100;
+    samples[i] = (int16_t)scaled;
+  }
+  out_frame->bytes = (size_t)read * sizeof(int16_t);
+  out_frame->samples_per_channel = (uint16_t)read;
+  pthread_mutex_unlock(&host->mutex);
+  return H2_AUDIO_OK;
 }
 
 static int android_audio_start_speaker(void *user) {
@@ -508,7 +224,7 @@ static int android_audio_track_flush_pending(h2_android_audio_track_t *track,
     }
     track->pending_frame_offset += (uint32_t)result;
   }
-  free(track->pending_samples);
+  android_track_free(track, track->pending_samples);
   track->pending_samples = NULL;
   track->pending_frame_count = 0u;
   track->pending_frame_offset = 0u;
@@ -536,7 +252,7 @@ static int android_audio_track_write(h2_pal_audio_track_t *base,
     return pending_result;
   }
 
-  int16_t *samples = malloc(frame->bytes);
+  int16_t *samples = android_track_alloc(track, frame->bytes);
   if (samples == NULL) {
     return H2_AUDIO_ERR_NO_MEMORY;
   }
@@ -567,19 +283,19 @@ static int android_audio_track_write(h2_pal_audio_track_t *base,
         track->pending_frame_offset = written;
         return H2_PAL_OK;
       }
-      free(samples);
+      android_track_free(track, samples);
       return result == 0
                  ? H2_AUDIO_ERR_WOULD_BLOCK
                  : h2_android_audio_map_aaudio_write_result(
                        result, AAUDIO_ERROR_TIMEOUT);
     }
     if ((uint32_t)result > frame->samples_per_channel - written) {
-      free(samples);
+      android_track_free(track, samples);
       return H2_AUDIO_ERR_IO;
     }
     written += (uint32_t)result;
   }
-  free(samples);
+  android_track_free(track, samples);
   return H2_PAL_OK;
 }
 
@@ -640,13 +356,13 @@ static int android_audio_track_close(h2_pal_audio_track_t *base) {
   h2_android_platform_t *host = track->host;
   (void)AAudioStream_requestStop(track->stream);
   const aaudio_result_t close_result = AAudioStream_close(track->stream);
-  free(track->pending_samples);
+  android_track_free(track, track->pending_samples);
   pthread_mutex_lock(&host->mutex);
   if (host->audio_track == track) {
     host->audio_track = NULL;
   }
   pthread_mutex_unlock(&host->mutex);
-  free(track);
+  android_track_free(track, track);
   return h2_android_audio_map_aaudio_io_result(close_result);
 }
 
@@ -655,7 +371,11 @@ static int android_audio_create_track(void *user,
                                       h2_pal_audio_track_t **out_track) {
   h2_android_platform_t *host = user;
   if (host == NULL || out_track == NULL ||
-      h2_android_audio_validate_track_config(config) != H2_PAL_OK) {
+      h2_android_audio_validate_track_config(config) != H2_PAL_OK ||
+      (config->allocator != NULL &&
+       (config->allocator->vtable == NULL ||
+        config->allocator->vtable->alloc == NULL ||
+        config->allocator->vtable->free == NULL))) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
   pthread_mutex_lock(&host->mutex);
@@ -702,11 +422,15 @@ static int android_audio_create_track(void *user,
     return mapped_open_result != H2_PAL_OK ? mapped_open_result
                                            : H2_AUDIO_ERR_UNSUPPORTED;
   }
-  h2_android_audio_track_t *track = calloc(1u, sizeof(*track));
+  h2_android_audio_track_t *track = config->allocator != NULL
+      ? h2_pal_mem_alloc(config->allocator, sizeof(*track))
+      : malloc(sizeof(*track));
   if (track == NULL) {
     (void)AAudioStream_close(stream);
     return H2_AUDIO_ERR_NO_MEMORY;
   }
+  memset(track, 0, sizeof(*track));
+  if (config->allocator != NULL) track->allocator = *config->allocator;
   track->base = (h2_pal_audio_track_t){
       .user = track,
       .audio = &host->audio,
@@ -720,11 +444,50 @@ static int android_audio_create_track(void *user,
   track->stream = stream;
   track->format = config->format;
   track->volume_factor_milli = config->volume_factor_milli;
+  /* AAudio requires its output buffer to be primed before starting. Fill it
+   * with silence, so a single caller PCM frame can play and drain without
+   * another caller write. Preserve the requested native buffer capacity. */
+  const int32_t prime_frames = AAudioStream_getBufferSizeInFrames(stream);
+  if (prime_frames <= 0 || (size_t)prime_frames >
+      SIZE_MAX / (sizeof(int16_t) * config->format.channels)) {
+    (void)AAudioStream_close(stream);
+    android_track_free(track, track);
+    return H2_AUDIO_ERR_IO;
+  }
+  const size_t prime_bytes = (size_t)prime_frames *
+      config->format.channels * sizeof(int16_t);
+  int16_t *silence = android_track_alloc(track, prime_bytes);
+  if (silence == NULL) {
+    (void)AAudioStream_close(stream);
+    android_track_free(track, track);
+    return H2_AUDIO_ERR_NO_MEMORY;
+  }
+  memset(silence, 0, prime_bytes);
+  int32_t primed = 0;
+  int prime_result = H2_PAL_OK;
+  while (primed < prime_frames) {
+    const aaudio_result_t written = AAudioStream_write(
+        stream, silence + (size_t)primed * config->format.channels,
+        prime_frames - primed, 0);
+    if (written <= 0 || written > prime_frames - primed) {
+      prime_result = written == 0 ? H2_AUDIO_ERR_WOULD_BLOCK :
+          written < 0 ? h2_android_audio_map_aaudio_write_result(
+              written, AAUDIO_ERROR_TIMEOUT) : H2_AUDIO_ERR_IO;
+      break;
+    }
+    primed += written;
+  }
+  android_track_free(track, silence);
+  if (prime_result != H2_PAL_OK) {
+    (void)AAudioStream_close(stream);
+    android_track_free(track, track);
+    return prime_result;
+  }
   const int start_result = h2_android_audio_map_aaudio_io_result(
       AAudioStream_requestStart(stream));
   if (start_result != H2_PAL_OK) {
     (void)AAudioStream_close(stream);
-    free(track);
+    android_track_free(track, track);
     return start_result;
   }
   pthread_mutex_lock(&host->mutex);
@@ -757,16 +520,44 @@ static int android_audio_set_speaker_volume(void *user, uint32_t percent) {
   return H2_PAL_OK;
 }
 
+static int android_audio_get_mic_gain(void *user, uint32_t *out_percent) {
+  h2_android_platform_t *host = user;
+  if (host == NULL || out_percent == NULL) return H2_AUDIO_ERR_INVALID_ARG;
+  pthread_mutex_lock(&host->mutex);
+  *out_percent = host->mic_gain_percent;
+  pthread_mutex_unlock(&host->mutex);
+  return H2_AUDIO_OK;
+}
+
+static int android_audio_set_mic_gain(void *user, uint32_t percent) {
+  h2_android_platform_t *host = user;
+  if (host == NULL || percent > 100u) return H2_AUDIO_ERR_INVALID_ARG;
+  pthread_mutex_lock(&host->mutex);
+  host->mic_gain_percent = percent;
+  pthread_mutex_unlock(&host->mutex);
+  return H2_AUDIO_OK;
+}
+
+static int audio_aec_diagnostics_unsupported(void *user,
+    const h2_audio_aec_observer_t *observer) {
+    (void)user;
+    (void)observer;
+    return H2_AUDIO_ERR_UNSUPPORTED;
+}
+
 static const h2_pal_audio_vtable_t s_android_audio_vtable = {
     .get_info = android_audio_get_info,
-    .start_mic = android_audio_unsupported,
-    .stop_mic = android_audio_unsupported,
+    .start_mic = android_audio_start_mic,
+    .stop_mic = android_audio_stop_mic,
     .start_speaker = android_audio_start_speaker,
     .stop_speaker = android_audio_stop_speaker,
     .mic_read = android_audio_mic_read,
     .create_track = android_audio_create_track,
     .get_speaker_volume_percent = android_audio_get_speaker_volume,
     .set_speaker_volume_percent = android_audio_set_speaker_volume,
+    .get_mic_gain_percent = android_audio_get_mic_gain,
+    .set_mic_gain_percent = android_audio_set_mic_gain,
+    .set_aec_observer = audio_aec_diagnostics_unsupported,
 };
 
 static int android_display_open(void *user) {
@@ -778,6 +569,7 @@ static int android_display_open(void *user) {
   if (host->rgba == NULL) {
     host->rgba = calloc((size_t)host->width * host->height, sizeof(uint32_t));
   }
+  if (!host->opened) host->brightness_percent = 100u;
   host->opened = host->rgba != NULL;
   pthread_mutex_unlock(&host->mutex);
   return host->opened ? H2_DISPLAY_OK : H2_DISPLAY_ERR_NO_MEMORY;
@@ -787,6 +579,7 @@ static int android_display_get_info(void *user, h2_display_info_t *out_info) {
   if (user == NULL || out_info == NULL) {
     return H2_DISPLAY_ERR_INVALID_ARG;
   }
+  if (!((h2_android_platform_t *)user)->opened) return H2_DISPLAY_ERR_INVALID_STATE;
   *out_info = (h2_display_info_t){
       .width = ((h2_android_platform_t *)user)->width,
       .height = ((h2_android_platform_t *)user)->height,
@@ -800,22 +593,25 @@ static int android_display_draw_bitmap(void *user,
                                        const void *pixels, size_t stride_bytes,
                                        h2_display_pixel_format_t format) {
   h2_android_platform_t *host = user;
-  if (host == NULL || rect == NULL || pixels == NULL || host->rgba == NULL ||
-      format != H2_DISPLAY_PIXEL_RGB565 || rect->x < 0 || rect->y < 0 ||
+  if (host && !host->opened) return H2_DISPLAY_ERR_INVALID_STATE;
+  if (format != H2_DISPLAY_PIXEL_RGB565) return H2_DISPLAY_ERR_UNSUPPORTED;
+  if (host == NULL || rect == NULL || pixels == NULL || rect->x < 0 || rect->y < 0 ||
       rect->width <= 0 || rect->height <= 0 ||
-      rect->x + rect->width > host->width ||
-      rect->y + rect->height > host->height ||
-      stride_bytes < (size_t)rect->width * sizeof(uint16_t)) {
+      (int64_t)rect->x + rect->width > host->width ||
+      (int64_t)rect->y + rect->height > host->height ||
+      stride_bytes < (size_t)rect->width * sizeof(uint16_t) ||
+      ((size_t)rect->height - 1u) > (SIZE_MAX - (size_t)rect->width*2u) / stride_bytes) {
     return H2_DISPLAY_ERR_INVALID_ARG;
   }
   pthread_mutex_lock(&host->mutex);
   for (int y = 0; y < rect->height; ++y) {
-    const uint16_t *source =
-        (const uint16_t *)((const uint8_t *)pixels + (size_t)y * stride_bytes);
+    const uint8_t *source =
+        (const uint8_t *)pixels + (size_t)y * stride_bytes;
     uint32_t *destination =
         host->rgba + (size_t)(rect->y + y) * host->width + rect->x;
     for (int x = 0; x < rect->width; ++x) {
-      const uint16_t pixel = source[x];
+      uint16_t pixel;
+      memcpy(&pixel, source + (size_t)x*2u, 2u);
       const uint32_t red = ((pixel >> 11u) & 0x1fu) * 255u / 31u;
       const uint32_t green = ((pixel >> 5u) & 0x3fu) * 255u / 63u;
       const uint32_t blue = (pixel & 0x1fu) * 255u / 31u;
@@ -831,6 +627,7 @@ static int android_display_present(void *user) {
   if (host == NULL || host->view == NULL) {
     return H2_DISPLAY_ERR_INVALID_ARG;
   }
+  if (!host->opened) return H2_DISPLAY_ERR_INVALID_STATE;
   JNIEnv *env = NULL;
   int attached = 0;
   if ((*host->vm)->GetEnv(host->vm, (void **)&env, JNI_VERSION_1_6) != JNI_OK) {
@@ -851,8 +648,14 @@ static int android_display_present(void *user) {
 }
 
 static int android_display_set_brightness(void *user, uint32_t percent) {
-  return user != NULL && percent <= 100u ? H2_DISPLAY_OK
-                                         : H2_DISPLAY_ERR_INVALID_ARG;
+  h2_android_platform_t *host = user;
+  if (!host) return H2_DISPLAY_ERR_INVALID_ARG;
+  pthread_mutex_lock(&host->mutex);
+  int rc = !host->opened ? H2_DISPLAY_ERR_INVALID_STATE :
+      percent > 100u ? H2_DISPLAY_ERR_INVALID_ARG : H2_DISPLAY_OK;
+  if (!rc) host->brightness_percent = percent;
+  pthread_mutex_unlock(&host->mutex);
+  return rc ? rc : android_display_present(host);
 }
 
 static int android_display_close(void *user) {
@@ -916,6 +719,7 @@ h2_android_platform_create(JNIEnv *env, jobject view,
   host->audio.user = host;
   host->audio.vtable = &s_android_audio_vtable;
   host->speaker_volume_percent = 100u;
+  host->mic_gain_percent = 100u;
   host->width = config->display_width;
   host->height = config->display_height;
   return host;
@@ -928,6 +732,7 @@ void h2_android_platform_destroy(h2_android_platform_t *host) {
   if (host->audio_track != NULL) {
     (void)android_audio_track_close(&host->audio_track->base);
   }
+  (void)android_audio_stop_mic(host);
   (void)android_display_close(host);
   JNIEnv *env = NULL;
   int attached = 0;
@@ -989,34 +794,18 @@ int h2_android_platform_copy_frame(h2_android_platform_t *host, JNIEnv *env,
   pthread_mutex_lock(&host->mutex);
   if (host->rgba != NULL) {
     for (uint32_t y = 0; y < info.height; ++y) {
-      memcpy((uint8_t *)pixels + (size_t)y * info.stride,
-             host->rgba + (size_t)y * host->width,
-             (size_t)host->width * sizeof(uint32_t));
+      uint8_t *row = (uint8_t *)pixels + (size_t)y * info.stride;
+      const uint8_t *source = (const uint8_t *)(host->rgba + (size_t)y*host->width);
+      for (uint32_t x=0; x<info.width; ++x) {
+        for (unsigned c=0; c<3; ++c)
+          row[x*4u+c] = (uint8_t)((uint32_t)source[x*4u+c] * host->brightness_percent / 100u);
+        row[x*4u+3u] = 255u;
+      }
     }
   }
   pthread_mutex_unlock(&host->mutex);
   (void)AndroidBitmap_unlockPixels(env, bitmap);
   return host->rgba != NULL;
-}
-
-const h2_pal_mem_api_t *h2_android_platform_mem_api(void) {
-  return &s_android_mem;
-}
-
-const h2_pal_time_api_t *h2_android_platform_time_api(void) {
-  return &s_android_time;
-}
-
-const h2_pal_task_api_t *h2_android_platform_task_api(void) {
-  return &s_android_task;
-}
-
-const h2_pal_queue_api_t *h2_android_platform_queue_api(void) {
-  return &s_android_queue;
-}
-
-const h2_pal_log_api_t *h2_android_platform_log_api(void) {
-  return &s_android_log;
 }
 
 const h2_pal_audio_api_t *

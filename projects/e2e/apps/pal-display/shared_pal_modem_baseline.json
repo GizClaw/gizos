@@ -1,0 +1,5 @@
+{
+  "source_commit": "06f9c0cfa633646984d72f210ba18f889bbec528",
+  "source_path": "guides/zh/developing/platform_abstract_layer.md",
+  "section_utf8": "### Modem 通话扬声器音量\n\n`h2_pal_modem` 通过 `H2_PAL_MODEM_CAPABILITY_CALL_VOLUME` 声明通话扬声器音量能力，`h2_pal_modem_set_call_volume()` / `h2_pal_modem_get_call_volume()` 统一使用 `0..100` percent，模块原生档位由 provider 映射。Quectel 使用 `AT+CLVL`，每次 open 后首次使用时探测并缓存范围；SIMCom 暂不实现，未提供该能力的 provider 返回 `H2_PAL_ERR_UNSUPPORTED`。该接口不控制麦克风、铃声、音频路由或功放，也不要求已有通话，可在拨号前设置。\n\n两个调用都是 task context 下的阻塞操作，与其它 AT 操作串行，应由处理拨号、接听和挂断的 modem task 调用，不能放在 UI/main loop 或 ISR 中。支持 LOW_POWER 的 Quectel 实例要求 modem 已 open，并在命令前完成唤醒准备；音量操作不改变通话持有的唤醒状态。音量是模块的易失状态，不隐式跨 close/open 保存或恢复，调用方应在需要时重新设置。\n\n"
+}

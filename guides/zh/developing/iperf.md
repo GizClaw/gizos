@@ -24,6 +24,8 @@ listener（以及 SCTP 封装 UDP socket），`h2_iperf_server_run_once()` 服�
 零值字段选择 iperf3 默认：port 5201、10 s、TCP 128 KiB / UDP 1460 B / SCTP 64 KiB block、
 UDP 1 Mbit/s、SCTP 封装端口 9899（Linux kernel `net.sctp.udp_port` 的默认值）。
 
+`h2_iperf_config_t` 可借用 `should_stop` 与 `on_progress` callback：测试线程在分段 I/O 和 data loop 中检查停止请求，以 `CLOSED` 结束并执行普通清理；进度为累计本端字节、packet 与时间，最多每 100 ms 发布一次，加上首次和末次 snapshot。Callback 不得重入测试，所有跨线程存储由调用方同步。`max_json_len` 限制接收的控制 JSON，server 的 `max_block_len` 限制协商数据 block；零值保持原有上限，UDP 仍为完整 datagram 保留 64 KiB 接收缓冲。
+
 ## 依赖和边界
 
 - 库本身不包含任何 POSIX 调用；socket、时钟、随机数全部来自 PAL。
@@ -41,7 +43,20 @@ bazel test //libs/iperf:all
 
 - `loopback_test`：PAL client ↔ PAL server，TCP/UDP/SCTP 正向、反向、按字节数结束和限速。
 - `official_server_test`：PAL client ↔ 官方 `iperf3 -s`（`@h2_vendor_iperf//:iperf3`，
-  从 esnet/iperf 3.21 源码用 Bazel 构建），TCP 与 UDP。
+  从 esnet/iperf 3.21 源码用 Bazel 构建），TCP 与 UDP。探测端口要求 TCP 和 UDP 都空闲
+  （iperf3 的 UDP stream listener 绑定同一个端口）。每个 `iperf3 -s` 只绑定 `127.0.0.1`，
+  client 等到 iperf3 输出 `Server listening on` 才连接。探测端口释放后被占用时换新端口
+  重试：`unable to start listener` 重启 iperf3，`unable to start stream listener`
+  重跑整个场景，两者合计最多 5 次。另有先占住 TCP 端口和只占住 UDP 端口的两个场景，
+  分别覆盖这两条重试路径。
+  断言按 iperf3 3.21 的计数方式放宽：
+  - reverse 模式下，iperf3 server 在主线程处理 `TEST_END` 时不停止发送线程，而且
+    `write()` 返回后才累加 `bytes_sent`。所以它报告的 sender 字节数最多比 PAL
+    receiver 少一个 block。
+  - iperf3 server 在 `TEST_END` 时停止计数，并丢弃 socket buffer 中还没读取的数据。
+    按字节数结束的 TCP 场景因此不检查 receiver 下限。官方 `iperf3 -c` 要等下一个
+    报告间隔 timer 才发现字节数已发完，这段延迟碰巧让 server 读完了数据。PAL client
+    在最后一次 `write()` 之后立即发送 `TEST_END`，协议本身允许这样做。
 - `official_client_test`：官方 `iperf3 -c` ↔ PAL server，TCP 与 UDP，含 64-bit UDP
   counter 和被拒绝的多流请求。
 - `official_server_sctp_test`（manual）：PAL SCTP client ↔ 外部 Linux kernel SCTP
@@ -59,3 +74,5 @@ server 在同一个封装 UDP socket 上顺序服务多条 SCTP association，�
 建立新的 passive association，前一条 association 的迟到 SACK/HEARTBEAT/SHUTDOWN 不会
 把下一条带偏。见 [E2E 测试 App](/apps/e2e#iperf) 与
 [AMOLED iperf](/apps/h2loader/boards/amoled/iperf)。
+
+触屏测试台 `projects/e2e/apps/iperf-server/app` 复用同一个 server，AMOLED launcher 提供 IPv4、IPv6 与双栈 AP 网络并将数据缓冲分配到 PSRAM。详见 [AMOLED iperf Server](/apps/h2loader/boards/amoled/iperf_server)。

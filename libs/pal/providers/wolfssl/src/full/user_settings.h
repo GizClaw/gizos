@@ -15,6 +15,7 @@
 #define HAVE_KEYING_MATERIAL
 #define WOLFSSL_CERT_GEN
 #define KEEP_PEER_CERT
+#define WOLFSSL_IP_ALT_NAME
 #define NO_OLD_TLS
 #define NO_WRITEV
 #define HAVE_TLS_EXTENSIONS
@@ -46,6 +47,8 @@
 #define HAVE_COMP_KEY
 #define ECC_USER_CURVES
 #undef NO_ECC256
+/* Public CA intermediates can sign a P-256 leaf with a P-384 key. */
+#define HAVE_ECC384
 #define ECC_TIMING_RESISTANT
 #define ECC_SHAMIR
 #define HAVE_CURVE25519
@@ -56,6 +59,8 @@
 #define WOLFSSL_ASN_TEMPLATE
 
 #define WOLFSSL_SP_MATH_ALL
+/* System trust stores include RSA-4096 roots (for example ISRG Root X1). */
+#define SP_INT_BITS 4096
 #if defined(_MSC_VER)
 #define WOLFSSL_HAVE_MAX
 #define WOLFSSL_HAVE_MIN

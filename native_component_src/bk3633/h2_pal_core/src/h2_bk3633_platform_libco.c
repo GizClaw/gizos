@@ -2,8 +2,11 @@
 
 #include "h2_libco.h"
 
-#include <stdatomic.h>
 #include <string.h>
+
+/* Completion slots are synchronized by the platform critical section. Keep
+ * the slot contents ordered before publishing or reading its state. */
+#define H2_BK3633_COMPILER_BARRIER() __asm__ __volatile__("" ::: "memory")
 
 #if defined(BK3633)
 #include "arch.h"
@@ -149,7 +152,7 @@ h2_bk3633_platform_libco_record_completion(uintptr_t wait_key) {
                 &s_completion_slots[free_index];
             slot->wait_key = wait_key;
             slot->order = ++s_completion_order;
-            atomic_signal_fence(memory_order_release);
+            H2_BK3633_COMPILER_BARRIER();
             slot->state = H2_BK3633_COMPLETION_PENDING;
         }
     }
@@ -189,7 +192,7 @@ h2_bk3633_platform_libco_dispatch_wakes(size_t work_budget,
             completion_critical_exit(critical_state);
             break;
         }
-        atomic_signal_fence(memory_order_acquire);
+        H2_BK3633_COMPILER_BARRIER();
         uintptr_t wait_key = s_completion_slots[selected].wait_key;
         completion_critical_exit(critical_state);
         size_t woken = 0u;

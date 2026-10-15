@@ -5,6 +5,14 @@
 
 /* ---- time, random, log --------------------------------------------------- */
 
+bool h2_iperf_should_stop(const h2_iperf_config_t *config) {
+    return config->should_stop != NULL && config->should_stop(config->callback_user);
+}
+
+uint32_t h2_iperf_io_slice(const h2_iperf_config_t *config, uint32_t ms) {
+    return config->should_stop != NULL && ms > 100u ? 100u : ms;
+}
+
 uint64_t h2_iperf_now_us(const h2_iperf_config_t *config) {
     uint64_t us = 0u;
     if (h2_pal_time_get_monotonic_us(config->time, &us) == H2_PAL_OK) {
@@ -160,16 +168,19 @@ h2_pal_result_t h2_iperf_ctrl_send_all(
     uint64_t deadline = h2_iperf_now_ms(config) + timeout_ms;
     size_t offset = 0u;
     while (offset < len) {
+        if (h2_iperf_should_stop(config)) {
+            return H2_PAL_ERR_CLOSED;
+        }
         uint32_t left = remaining_ms(config, deadline);
         if (left == 0u) {
             return H2_PAL_ERR_TIMEOUT;
         }
         int sent = h2_pal_net_tcp_send_timeout(
-            config->net, sock, data + offset, len - offset, left);
+            config->net, sock, data + offset, len - offset, h2_iperf_io_slice(config, left));
         if (sent == H2_PAL_ERR_UNSUPPORTED) {
             sent = h2_pal_net_tcp_send(config->net, sock, data + offset, len - offset);
         }
-        if (sent == H2_PAL_ERR_WOULD_BLOCK) {
+        if (sent == H2_PAL_ERR_WOULD_BLOCK || sent == H2_PAL_ERR_TIMEOUT) {
             h2_iperf_sleep_ms(config, 1u);
             continue;
         }
@@ -193,12 +204,16 @@ h2_pal_result_t h2_iperf_ctrl_recv_all(
     uint64_t deadline = h2_iperf_now_ms(config) + timeout_ms;
     size_t offset = 0u;
     while (offset < len) {
+        if (h2_iperf_should_stop(config)) {
+            return H2_PAL_ERR_CLOSED;
+        }
         uint32_t left = remaining_ms(config, deadline);
         if (left == 0u) {
             return H2_PAL_ERR_TIMEOUT;
         }
-        int got = h2_pal_net_tcp_recv(config->net, sock, data + offset, len - offset, left);
-        if (got == H2_PAL_ERR_WOULD_BLOCK) {
+        int got = h2_pal_net_tcp_recv(config->net, sock, data + offset, len - offset,
+                                    h2_iperf_io_slice(config, left));
+        if (got == H2_PAL_ERR_WOULD_BLOCK || got == H2_PAL_ERR_TIMEOUT) {
             continue;
         }
         if (got < 0) {
@@ -226,19 +241,30 @@ h2_pal_result_t h2_iperf_ctrl_recv_state(
     h2_pal_net_socket_t sock,
     int8_t *out_state,
     uint32_t timeout_ms) {
-    uint8_t byte = 0u;
-    int got = h2_pal_net_tcp_recv(config->net, sock, &byte, 1u, timeout_ms);
-    if (got == 1) {
-        *out_state = (int8_t)byte;
-        return H2_PAL_OK;
+    uint64_t deadline = h2_iperf_now_ms(config) + timeout_ms;
+    for (;;) {
+        if (h2_iperf_should_stop(config)) {
+            return H2_PAL_ERR_CLOSED;
+        }
+        uint8_t byte = 0u;
+        uint32_t left = remaining_ms(config, deadline);
+        int got = h2_pal_net_tcp_recv(config->net, sock, &byte, 1u,
+                                     h2_iperf_io_slice(config, left));
+        if (got == 1) {
+            *out_state = (int8_t)byte;
+            return H2_PAL_OK;
+        }
+        if (got == 0) {
+            return H2_PAL_ERR_CLOSED;
+        }
+        if (got != H2_PAL_ERR_WOULD_BLOCK && got != H2_PAL_ERR_TIMEOUT) {
+            return (h2_pal_result_t)got;
+        }
+        if (config->should_stop == NULL || timeout_ms == 0u ||
+            remaining_ms(config, deadline) == 0u) {
+            return H2_PAL_ERR_TIMEOUT;
+        }
     }
-    if (got == 0) {
-        return H2_PAL_ERR_CLOSED;
-    }
-    if (got == H2_PAL_ERR_WOULD_BLOCK) {
-        return H2_PAL_ERR_TIMEOUT;
-    }
-    return (h2_pal_result_t)got;
 }
 
 h2_pal_result_t h2_iperf_ctrl_send_json(
@@ -275,7 +301,9 @@ h2_pal_result_t h2_iperf_ctrl_recv_json(
         return result;
     }
     uint32_t len = h2_iperf_read_u32_be(header);
-    if (len == 0u || len > H2_IPERF_MAX_JSON_LEN) {
+    uint32_t limit = config->max_json_len != 0u && config->max_json_len < H2_IPERF_MAX_JSON_LEN
+        ? config->max_json_len : H2_IPERF_MAX_JSON_LEN;
+    if (len == 0u || len > limit) {
         return H2_PAL_ERR_FORMAT;
     }
     char *json = h2_pal_mem_alloc(config->mem, (size_t)len + 1u);

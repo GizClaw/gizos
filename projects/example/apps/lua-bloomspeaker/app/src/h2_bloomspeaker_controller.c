@@ -37,10 +37,19 @@ static uint64_t entered_ms_from_word(uint64_t word) {
   return word >> H2_BLOOMSPEAKER_STATE_BITS;
 }
 
+static void controller_lock(h2_bloomspeaker_controller_t *controller) {
+  while (h2_atomic_flag_test_and_set(&controller->lock, H2_ATOMIC_ACQUIRE)) {
+  }
+}
+
+static void controller_unlock(h2_bloomspeaker_controller_t *controller) {
+  h2_atomic_flag_clear(&controller->lock, H2_ATOMIC_RELEASE);
+}
+
 static void set_metadata(h2_bloomspeaker_controller_t *controller,
                          uint64_t peer_tag, int error) {
-  atomic_store_explicit(&controller->peer_tag, peer_tag, memory_order_relaxed);
-  atomic_store_explicit(&controller->last_error, error, memory_order_relaxed);
+  controller->peer_tag = peer_tag;
+  controller->last_error = error;
 }
 
 bool h2_bloomspeaker_hold_tracker_update(
@@ -66,20 +75,23 @@ bool h2_bloomspeaker_hold_tracker_update(
   return true;
 }
 
-void h2_bloomspeaker_controller_init(h2_bloomspeaker_controller_t *controller,
+bool h2_bloomspeaker_controller_init(h2_bloomspeaker_controller_t *controller,
                                      uint64_t now_ms) {
   if (controller == NULL) {
-    return;
+    return false;
   }
-  atomic_init(&controller->state_word,
-              make_state_word(H2_BLOOMSPEAKER_STATE_IDLE, now_ms));
-  atomic_init(&controller->peer_tag, 0u);
-  atomic_init(&controller->local_level, 0u);
-  atomic_init(&controller->local_peak, 0u);
-  atomic_init(&controller->remote_level, 0u);
-  atomic_init(&controller->remote_peak, 0u);
-  atomic_init(&controller->native_audio, false);
-  atomic_init(&controller->last_error, 0);
+  *controller = (h2_bloomspeaker_controller_t){0};
+  if (h2_atomic_flag_init(&controller->lock) != H2_ATOMIC_OK) {
+    return false;
+  }
+  controller->state_word = make_state_word(H2_BLOOMSPEAKER_STATE_IDLE, now_ms);
+  return true;
+}
+
+void h2_bloomspeaker_controller_destroy(h2_bloomspeaker_controller_t *controller) {
+  if (controller != NULL) {
+    h2_atomic_flag_destroy(&controller->lock);
+  }
 }
 
 void h2_bloomspeaker_controller_long_press(
@@ -87,35 +99,24 @@ void h2_bloomspeaker_controller_long_press(
   if (controller == NULL) {
     return;
   }
-  uint64_t observed = atomic_load_explicit(&controller->state_word,
-                                           memory_order_acquire);
-  for (;;) {
-    h2_bloomspeaker_state_t state = state_from_word(observed);
-    h2_bloomspeaker_state_t next = state;
-    switch (state) {
-    case H2_BLOOMSPEAKER_STATE_IDLE:
-    case H2_BLOOMSPEAKER_STATE_ERROR:
-      next = H2_BLOOMSPEAKER_STATE_PAIRING;
-      break;
-    case H2_BLOOMSPEAKER_STATE_PAIRING:
-    case H2_BLOOMSPEAKER_STATE_CLAIMING:
-    case H2_BLOOMSPEAKER_STATE_CONNECTING:
-    case H2_BLOOMSPEAKER_STATE_SECURING:
-      return;
-    case H2_BLOOMSPEAKER_STATE_TALKING:
-      next = H2_BLOOMSPEAKER_STATE_DISCONNECTING;
-      break;
-    case H2_BLOOMSPEAKER_STATE_DISCONNECTING:
-      return;
-    }
-    uint64_t desired = make_state_word(next, now_ms);
-    if (atomic_compare_exchange_weak_explicit(
-            &controller->state_word, &observed, desired, memory_order_acq_rel,
-            memory_order_acquire)) {
-      set_metadata(controller, 0u, 0);
-      return;
-    }
+  controller_lock(controller);
+  h2_bloomspeaker_state_t state = state_from_word(controller->state_word);
+  h2_bloomspeaker_state_t next = state;
+  switch (state) {
+  case H2_BLOOMSPEAKER_STATE_IDLE:
+  case H2_BLOOMSPEAKER_STATE_ERROR:
+    next = H2_BLOOMSPEAKER_STATE_PAIRING;
+    break;
+  case H2_BLOOMSPEAKER_STATE_TALKING:
+    next = H2_BLOOMSPEAKER_STATE_DISCONNECTING;
+    break;
+  default:
+    controller_unlock(controller);
+    return;
   }
+  controller->state_word = make_state_word(next, now_ms);
+  set_metadata(controller, 0u, 0);
+  controller_unlock(controller);
 }
 
 void h2_bloomspeaker_controller_hold_release(
@@ -145,9 +146,10 @@ void h2_bloomspeaker_controller_set_state(
   if (controller == NULL || !state_is_valid(state)) {
     return;
   }
+  controller_lock(controller);
   set_metadata(controller, peer_tag, error);
-  atomic_store_explicit(&controller->state_word, make_state_word(state, now_ms),
-                        memory_order_release);
+  controller->state_word = make_state_word(state, now_ms);
+  controller_unlock(controller);
 }
 
 bool h2_bloomspeaker_controller_transition(
@@ -158,20 +160,14 @@ bool h2_bloomspeaker_controller_transition(
       !state_is_valid(next)) {
     return false;
   }
-  uint64_t observed = atomic_load_explicit(&controller->state_word,
-                                           memory_order_acquire);
-  for (;;) {
-    if (state_from_word(observed) != expected) {
-      return false;
-    }
-    uint64_t desired = make_state_word(next, now_ms);
-    if (atomic_compare_exchange_weak_explicit(
-            &controller->state_word, &observed, desired, memory_order_acq_rel,
-            memory_order_acquire)) {
-      set_metadata(controller, peer_tag, error);
-      return true;
-    }
+  controller_lock(controller);
+  const bool matches = state_from_word(controller->state_word) == expected;
+  if (matches) {
+    controller->state_word = make_state_word(next, now_ms);
+    set_metadata(controller, peer_tag, error);
   }
+  controller_unlock(controller);
+  return matches;
 }
 
 void h2_bloomspeaker_controller_set_levels(
@@ -191,10 +187,10 @@ void h2_bloomspeaker_controller_set_local_levels(
   if (controller == NULL) {
     return;
   }
-  atomic_store_explicit(&controller->local_level, level_to_fixed(level),
-                        memory_order_release);
-  atomic_store_explicit(&controller->local_peak, level_to_fixed(peak),
-                        memory_order_release);
+  controller_lock(controller);
+  controller->local_level = level_to_fixed(level);
+  controller->local_peak = level_to_fixed(peak);
+  controller_unlock(controller);
 }
 
 void h2_bloomspeaker_controller_set_remote_levels(
@@ -202,17 +198,18 @@ void h2_bloomspeaker_controller_set_remote_levels(
   if (controller == NULL) {
     return;
   }
-  atomic_store_explicit(&controller->remote_level, level_to_fixed(level),
-                        memory_order_release);
-  atomic_store_explicit(&controller->remote_peak, level_to_fixed(peak),
-                        memory_order_release);
+  controller_lock(controller);
+  controller->remote_level = level_to_fixed(level);
+  controller->remote_peak = level_to_fixed(peak);
+  controller_unlock(controller);
 }
 
 void h2_bloomspeaker_controller_set_native_audio(
     h2_bloomspeaker_controller_t *controller, bool enabled) {
   if (controller != NULL) {
-    atomic_store_explicit(&controller->native_audio, enabled,
-                          memory_order_release);
+    controller_lock(controller);
+    controller->native_audio = enabled;
+    controller_unlock(controller);
   }
 }
 
@@ -222,24 +219,18 @@ void h2_bloomspeaker_controller_snapshot(
   if (controller == NULL || out_snapshot == NULL) {
     return;
   }
-  uint64_t state_word = atomic_load_explicit(&controller->state_word,
-                                             memory_order_acquire);
+  controller_lock(controller);
+  const uint64_t state_word = controller->state_word;
   out_snapshot->state = state_from_word(state_word);
   out_snapshot->state_entered_ms = entered_ms_from_word(state_word);
-  out_snapshot->peer_tag =
-      atomic_load_explicit(&controller->peer_tag, memory_order_relaxed);
-  out_snapshot->last_error =
-      atomic_load_explicit(&controller->last_error, memory_order_relaxed);
-  out_snapshot->local_level = fixed_to_level(
-      atomic_load_explicit(&controller->local_level, memory_order_acquire));
-  out_snapshot->local_peak = fixed_to_level(
-      atomic_load_explicit(&controller->local_peak, memory_order_acquire));
-  out_snapshot->remote_level = fixed_to_level(
-      atomic_load_explicit(&controller->remote_level, memory_order_acquire));
-  out_snapshot->remote_peak = fixed_to_level(
-      atomic_load_explicit(&controller->remote_peak, memory_order_acquire));
-  out_snapshot->native_audio = atomic_load_explicit(
-      &controller->native_audio, memory_order_acquire);
+  out_snapshot->peer_tag = controller->peer_tag;
+  out_snapshot->last_error = controller->last_error;
+  out_snapshot->local_level = fixed_to_level(controller->local_level);
+  out_snapshot->local_peak = fixed_to_level(controller->local_peak);
+  out_snapshot->remote_level = fixed_to_level(controller->remote_level);
+  out_snapshot->remote_peak = fixed_to_level(controller->remote_peak);
+  out_snapshot->native_audio = controller->native_audio;
+  controller_unlock(controller);
 }
 
 const char *h2_bloomspeaker_state_name(h2_bloomspeaker_state_t state) {

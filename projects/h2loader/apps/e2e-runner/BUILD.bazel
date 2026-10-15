@@ -12,6 +12,7 @@ cc_library(
     includes = ["include"],
     deps = [
         "//libs/h2loader_host",
+        "//libs/bundle",
         "//libs/pal",
         "//libs/runtime",
     ],
@@ -29,5 +30,29 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    data = [":checksum_fixtures"],
     deps = [":h2loader_e2e_runner"],
+)
+
+genrule(
+    name = "checksum_fixtures",
+    srcs = ["tests/fixtures/app-a.txt", "tests/fixtures/app-b.txt"],
+    outs = [
+        "tests/checksum-fixtures/tar_zlib/baseline.update.tar.zlib",
+        "tests/checksum-fixtures/tar_zlib/unchanged.update.tar.zlib",
+        "tests/checksum-fixtures/tar_zlib/app-only.update.tar.zlib",
+        "tests/checksum-fixtures/tar_zlib/data-only.update.tar.zlib",
+        "tests/checksum-fixtures/tar_zlib/both-changed.update.tar.zlib",
+        "tests/checksum-fixtures/zlib_tar/baseline.update.tar",
+        "tests/checksum-fixtures/zlib_tar/unchanged.update.tar",
+        "tests/checksum-fixtures/zlib_tar/app-only.update.tar",
+        "tests/checksum-fixtures/zlib_tar/data-only.update.tar",
+        "tests/checksum-fixtures/zlib_tar/both-changed.update.tar",
+        "tests/checksum-fixtures/fixtures.json",
+    ],
+    tools = ["//projects/h2loader/tools/bazel:checksum_fixture_writer"],
+    cmd = "$(location //projects/h2loader/tools/bazel:checksum_fixture_writer) " +
+          "--app-a $(location tests/fixtures/app-a.txt) --app-b $(location tests/fixtures/app-b.txt) " +
+          "--app-path app/esp/app.bin --board fixture --target esp32s3 " +
+          "--version-a 1.0.0-a --version-b 1.0.0-b --output $(@D)/tests/checksum-fixtures",
 )

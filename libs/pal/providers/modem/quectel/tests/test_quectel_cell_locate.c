@@ -31,6 +31,13 @@ static h2_pal_result_t transport_command(
     size_t response_size,
     uint32_t timeout_ms) {
     transport_state_t *state = (transport_state_t *)user;
+    /* This suite counts location transactions; family discovery is separate. */
+    if (strcmp(cmd, "AT+CGMM") == 0) {
+        const char *model = "EC25\r\nOK\r\n";
+        assert(response_size > strlen(model));
+        strcpy(response, model);
+        return H2_PAL_OK;
+    }
     assert(state->count < MAX_RECORDS);
     assert(strlen(cmd) < H2_QUECTEL_LINE_MAX);
     strcpy(state->records[state->count].cmd, cmd);

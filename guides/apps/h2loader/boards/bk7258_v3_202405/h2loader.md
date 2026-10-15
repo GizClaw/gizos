@@ -1,5 +1,7 @@
 # BK7258 V3 202405 H2Loader
 
+SD 的 FatFs 实例和 sector window 使用 64-byte 对齐的固定 `.psram.bss`，生命周期覆盖本次启动。SDK 的 SDIO FIFO read 向调用方 buffer 写入，FatFs mount/read/write 继续在 task context 执行；UART ISR buffer 和所有通信 deadline 保持原有存储和行为。Native consumer 的 post-link contract 应验证该 symbol 的大小、对齐和 PSRAM 地址，当前源码布局不代表新版 package 的 SD 真机资格已通过。
+
 ## 构建
 
 ```sh
@@ -34,11 +36,15 @@ Loader 与 App 使用各自的分区表，分别链接到最终地址。上表�
 
 ## 平台配置
 
+公共 BK Preference provider 为每个 namespace handle 分配独立状态，在关闭后释放；并发数量由实际 allocator 余量决定。不要继续使用关闭后的 handle 或 cursor。并发读写仍使用公共 FlashDB 的数据库与事务锁，格式和持久化语义不变。2026-10-02 的 H106 E2E 诊断发现，旧四槽池在多个启动任务同时打开设置、使用限额和身份 namespace 时返回 `H2_PAL_ERR_NO_MEMORY`，当时内部堆空闲 136344 bytes、PSRAM 空闲 4814344 bytes；因此不能将该失败归因于堆耗尽。
+
 Loader 和 H2Loader APP layout 使用 AP 直驱的 UART1 承载 managed UART 与 AP 日志，固定为 460800 8N1。板级 AP defaults 选择 UART1，GPIO 表同时声明 P0=`UART1_TXD`、P1=`UART1_RXD`；SDK 会拒绝映射未出现在该表中的引脚，因此只修改串口号不足以启用 UART1。USB 转串口的 RXD 接 P0/TX，TXD 接 P1/RX，并与开发板共地。UART0 保留 ROM 下载与 CP 日志，UART0 转串口的 RTS 可以接 CEN 控制复位；两路串口可同时连接，均不启用硬件流控。
 
 AP 的 UART PAL 持有 IO Stream iKCP session 和 Loader/App command owner。Loader 只有在 firmware identity 与共享 Loader state 初始化成功后才确认 UART session；随后在 storage mount、publish recovery 和 startup retry 之前启动 UART command task。startup 与 UART/BLE lifecycle/package operation 继续由共享 mutex 串行化，因此 mount 或启动恢复失败时仍保留串口诊断与管理入口。
 
 Host 打开 managed serial 后、借出 stream 前明确 deassert DTR/RTS；不支持控制线的 endpoint 只有返回 canonical `UNSUPPORTED` 才可继续，其它错误立即终止连接。APP 与 Loader status 都从设备端同一个 BLE public/identity MAC 返回 12 位小写十六进制 `device_uid`，BLE 重启后以该 UID 验证设备，而不是信任 endpoint/address。
+
+普通 Loader 在读取 firmware version 后，使用公共 `h2_loader_read_current_loader_identity()` 构造完整 running identity，并持有已有 operation mutex；公版与私有 consumer 使用相同 metadata、容量回退与摘要校验。UID 由公共 `h2_bk_h2loader_get_device_uid()` 提供，与 App UART/BLE 使用同一 controller MAC 来源。
 
 APP 的 Loader client 必须显式传入 `app_entry_path=app/bk/app_ab_crc.rbl`，
 与 Loader 使用同一包入口。共享 client 的默认值仍为 ESP 包入口，遗漏此配置会在

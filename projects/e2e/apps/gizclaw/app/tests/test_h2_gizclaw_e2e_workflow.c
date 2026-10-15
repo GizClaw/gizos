@@ -47,6 +47,17 @@ static char *save(h2_gizclaw_resp_storage_t *storage, const char *s) {
   return out;
 }
 
+static void save_tag(h2_gizclaw_resp_storage_t *storage,
+                     h2_gizclaw_workflow_t *workflow, const char *tag) {
+  const size_t alignment = _Alignof(char *);
+  storage->used = (storage->used + alignment - 1u) & ~(alignment - 1u);
+  assert(storage->used + sizeof(char *) <= storage->capacity);
+  workflow->tags = (char **)((char *)storage->data + storage->used);
+  storage->used += sizeof(char *);
+  workflow->tag_count = 1u;
+  workflow->tags[0] = save(storage, tag);
+}
+
 static unsigned begin_reply(h2_gizclaw_resp_storage_t *storage) {
   assert(storage != NULL && storage->used == 0u && storage->capacity >= 1024u);
   // Invalidate prior list strings. The following get must own its alias copy.
@@ -64,10 +75,20 @@ static void list_reply(h2_gizclaw_resp_storage_t *storage,
   out->count = 2u;
   out->items[0].name = save(storage, "zeta-model");
   out->items[1].name = save(storage, "alpha-model");
-  out->items[0].collection = save(storage, "assistants");
-  out->items[1].collection = out->items[0].collection;
+  save_tag(storage, &out->items[0], "assistants");
+  save_tag(storage, &out->items[1], "assistants");
   out->runtime_profile_name = save(storage, "default");
   out->runtime_profile_revision = save(storage, "revision");
+  const size_t alignment = _Alignof(h2_gizclaw_safety_fence_option_t);
+  storage->used = (storage->used + alignment - 1u) & ~(alignment - 1u);
+  assert(storage->used + sizeof(*out->safety_fences) <= storage->capacity);
+  out->safety_fences = (void *)(storage->data + storage->used);
+  storage->used += sizeof(*out->safety_fences);
+  memset(out->safety_fences, 0, sizeof(*out->safety_fences));
+  out->safety_fence_count = 1u;
+  strcpy(out->safety_fences[0].name, "safe");
+  out->safety_fences[0].has_display_name = true;
+  strcpy(out->safety_fences[0].display_name, "Safe");
   if (state.paginated) {
     out->has_next = true;
     out->next_cursor = save(storage, "next-page");
@@ -101,10 +122,10 @@ static void list_reply(h2_gizclaw_resp_storage_t *storage,
     out->items[0].name = save(storage, "");
     break;
   case 10:
-    out->items[0].collection = NULL;
+    out->items[0].tags = NULL;
     break;
   case 11:
-    out->items[0].collection = save(storage, "other");
+    out->items[0].tags[0] = save(storage, "other");
     break;
   case 12:
     out->has_next = true;
@@ -121,7 +142,7 @@ static void get_reply(h2_gizclaw_resp_storage_t *storage,
   const unsigned fault = begin_reply(storage);
   memset(out, 0, sizeof(*out));
   out->workflow.name = save(storage, "alpha-model");
-  out->workflow.collection = save(storage, "assistants");
+  save_tag(storage, &out->workflow, "assistants");
   out->runtime_profile_name = save(storage, "default");
   out->runtime_profile_revision = save(storage, "revision");
   switch (fault) {
@@ -144,18 +165,22 @@ static void get_reply(h2_gizclaw_resp_storage_t *storage,
     out->workflow.name = save(storage, "wrong-model");
     break;
   case 7:
-    out->workflow.collection = NULL;
+    out->workflow.tags = NULL;
+    break;
+  case 9:
+    out->workflow.tags = NULL;
+    out->workflow.tag_count = 0;
     break;
   case 8:
-    out->workflow.collection = save(storage, "other");
+    out->workflow.tags[0] = save(storage, "");
     break;
   }
 }
 
-static void check_list(h2_gizclaw_str_t collection, h2_gizclaw_str_t cursor,
-                       size_t limit) {
-  assert(collection.len == strlen("assistants") &&
-         memcmp(collection.data, "assistants", collection.len) == 0);
+static void check_list(const h2_gizclaw_str_t *tags, size_t tag_count,
+                       h2_gizclaw_str_t cursor, size_t limit) {
+  assert(tag_count == 1u && tags && tags[0].len == strlen("assistants") &&
+         memcmp(tags[0].data, "assistants", tags[0].len) == 0);
   assert(cursor.len == 0u && limit == 32u);
 }
 static void check_name(h2_gizclaw_str_t name) {
@@ -163,14 +188,12 @@ static void check_name(h2_gizclaw_str_t name) {
          memcmp(name.data, "alpha-model", name.len) == 0);
 }
 
-h2_pal_result_t h2_gizclaw_rpc_workflow_list(h2_gizclaw_service_t *service,
-                                             h2_gizclaw_str_t collection,
-                                             h2_gizclaw_str_t cursor,
-                                             size_t limit, uint32_t ms,
-                                             h2_gizclaw_resp_storage_t *storage,
-                                             h2_gizclaw_workflow_page_t *out) {
+h2_pal_result_t h2_gizclaw_rpc_workflow_list(
+    h2_gizclaw_service_t *service, const h2_gizclaw_str_t *tags,
+    size_t tag_count, h2_gizclaw_str_t cursor, size_t limit, uint32_t ms,
+    h2_gizclaw_resp_storage_t *storage, h2_gizclaw_workflow_page_t *out) {
   assert(service != NULL && ms == 30000u && !state.alive);
-  check_list(collection, cursor, limit);
+  check_list(tags, tag_count, cursor, limit);
   ++state.calls[0];
   int rc = step();
   if (rc == H2_PAL_OK)
@@ -205,12 +228,11 @@ static int create(h2_gizclaw_service_t *service, uint64_t id, bool get,
   *out = &state.req;
   return rc;
 }
-h2_pal_result_t
-h2_gizclaw_req_create_workflow_list(h2_gizclaw_service_t *service, uint64_t id,
-                                    h2_gizclaw_str_t collection,
-                                    h2_gizclaw_str_t cursor, size_t limit,
-                                    uint32_t ms, h2_gizclaw_req_t **out) {
-  check_list(collection, cursor, limit);
+h2_pal_result_t h2_gizclaw_req_create_workflow_list(
+    h2_gizclaw_service_t *service, uint64_t id, const h2_gizclaw_str_t *tags,
+    size_t tag_count, h2_gizclaw_str_t cursor, size_t limit, uint32_t ms,
+    h2_gizclaw_req_t **out) {
+  check_list(tags, tag_count, cursor, limit);
   return create(service, id, false, ms, out);
 }
 h2_pal_result_t
@@ -296,6 +318,7 @@ int main(void) {
   h2_gizclaw_resp_storage_t storage = {buffer.bytes, sizeof(buffer.bytes), 0u};
   assert(h2_gizclaw_e2e_run_workflow(&fixture, &storage) == H2_PAL_OK);
   assert(strcmp(fixture.workflow_name, "alpha-model") == 0);
+  assert(strcmp(fixture.safety_fence_level, "safe") == 0);
   assert(state.replies == 4u && state.step == 10u && state.deadlines == 4u);
   assert(state.creates == 2u && state.releases == 2u && state.cancels == 0u);
   for (unsigned i = 0u; i < 6u; ++i)
@@ -323,6 +346,13 @@ int main(void) {
              state.creates == state.releases);
       assert(storage.used == 0u && fixture.workflow_name[0] == '\0');
     }
+  }
+  /* A Workflow remains addressable by name after its tags change. */
+  for (unsigned reply = 2u; reply <= 4u; reply += 2u) {
+    memset(&state, 0, sizeof(state));
+    state.fault_at = reply;
+    state.fault = 9u;
+    assert(h2_gizclaw_e2e_run_workflow(&fixture, &storage) == H2_PAL_OK);
   }
   for (unsigned i = 1u; i <= 4u; ++i) {
     memset(&state, 0, sizeof(state));

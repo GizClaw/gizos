@@ -22,6 +22,7 @@
 #include "h2/pal/os/h2_pal_system_event.h"
 #include "h2/pal/os/h2_pal_task.h"
 #include "h2/pal/os/h2_pal_time.h"
+#include "h2/pal/os/h2_pal_timer.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -50,7 +51,20 @@ typedef struct h2_bk_task_policy_config {
   h2_bk_task_policy_resolver_t resolver;
   void *resolver_user;
   const h2_pal_mem_api_t *task_allocator;
+  /** Optional actual PSRAM stack allocator. Borrowed until every task joins. */
+  const h2_pal_mem_api_t *psram_stack_allocator;
 } h2_bk_task_policy_config_t;
+
+typedef struct h2_bk_platform_resource_stats {
+  size_t live_tasks, task_stack_bytes;
+  size_t live_queues, live_mutexes, live_semaphores, live_conditions;
+  size_t live_timers, live_firmware_infos;
+  size_t allocations, allocation_bytes;
+} h2_bk_platform_resource_stats_t;
+/** Actual live native PAL objects and allocator usable bytes. Task stack
+ * reservations remain owned until join. Compare snapshots at quiescence. */
+h2_pal_result_t h2_bk_platform_get_resource_stats(h2_bk_platform_resource_stats_t *out);
+const h2_pal_timer_api_t *h2_bk_platform_timer_api(void);
 
 h2_pal_mem_api_t *h2_bk_platform_default_allocator(void);
 h2_pal_mem_api_t *h2_bk_platform_sram_allocator(void);

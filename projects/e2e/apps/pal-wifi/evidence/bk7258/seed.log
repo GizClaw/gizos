@@ -1,0 +1,73 @@
+ap0:pal-wifi:I(37017):H2_WIFI_PERSISTENCE_PRIOR prior=none current=pal-wifi-20260930-r31 matched=0 contract=v1
+ap0:pal-wifi:I(38122):H2_WIFI_RECOVERY recovered=1 rc=0
+ap0:pal-wifi:I(38163):H2_WIFI_BOOT {"board":"bk7258","version":"pal-wifi-20260930-r31","boot":20,"nonce":1834914557660508909,"persistence":0}
+ap0:pal-wifi:I(38203):H2_WIFI_CASE {"id":"settings-restart-persistence","status":"PENDING","rc":-9,"elapsed_ms":0,"line":0,"boot":20,"nonce":1834914557660508909}
+ap0:pal-wifi:I(38267):H2_WIFI_CASE {"id":"arguments","status":"PASS","rc":0,"elapsed_ms":0,"line":0,"boot":20,"nonce":1834914557660508909}
+ap0:pal-wifi:I(38307):H2_WIFI_CASE {"id":"station-mac","status":"PASS","rc":0,"elapsed_ms":1,"line":0,"boot":20,"nonce":1834914557660508909}
+ap0:pal-wifi:I(38348):H2_WIFI_CASE {"id":"access-point-mac","status":"PASS","rc":0,"elapsed_ms":1,"line":0,"boot":20,"nonce":1834914557660508909}
+ap0:pal-wifi:I(38638):H2_WIFI_CASE {"id":"settings-clear","status":"PASS","rc":0,"elapsed_ms":249,"line":0,"boot":20,"nonce":1834914557660508909}
+ap0:pal-wifi:I(38791):H2_WIFI_CASE {"id":"settings-length-boundaries","status":"PASS","rc":0,"elapsed_ms":112,"line":0,"boot":20,"nonce":1834914557660508909}
+ap0:pal-wifi:I(38854):H2_WIFI_CASE {"id":"settings-reject-invalid","status":"PASS","rc":0,"elapsed_ms":23,"line":0,"boot":20,"nonce":1834914557660508909}
+ap0:pal-wifi:I(40762):H2_WIFI_CASE {"id":"scan-all","status":"PASS","rc":0,"elapsed_ms":1867,"line":0,"boot":20,"nonce":1834914557660508909}
+ap0:pal-wifi:I(40953):H2_WIFI_CASE {"id":"scan-directed","status":"PASS","rc":0,"elapsed_ms":151,"line":0,"boot":20,"nonce":1834914557660508909}
+ap0:pal-wifi:I(42840):H2_WIFI_CASE {"id":"scan-early-stop","status":"PASS","rc":0,"elapsed_ms":1848,"line":0,"boot":20,"nonce":1834914557660508909}
+ap0:pal-wifi:I(45034):H2_WIFI_CASE {"id":"connect-without-save","status":"PASS","rc":0,"elapsed_ms":2153,"line":0,"boot":20,"nonce":1834914557660508909}
+ap0:pal-wifi:I(45375):H2_WIFI_CASE {"id":"station-events","status":"PASS","rc":0,"elapsed_ms":300,"line":0,"boot":20,"nonce":1834914557660508909}
+ap0:pal-wifi:I(45415):H2_WIFI_CASE {"id":"netif-enumerate-find","status":"PASS","rc":0,"elapsed_ms":1,"line":0,"boot":20,"nonce":1834914557660508909}
+ap0:pal-wifi:I(45456):H2_WIFI_CASE {"id":"netif-station-status","status":"PASS","rc":0,"elapsed_ms":0,"line":0,"boot":20,"nonce":1834914557660508909}
+ap0:pal-wifi:I(45497):H2_WIFI_CASE {"id":"netif-dns-bounds","status":"PASS","rc":0,"elapsed_ms":0,"line":0,"boot":20,"nonce":1834914557660508909}
+ap0:pal-wifi:I(45538):H2_WIFI_CASE {"id":"netif-missing-interface","status":"PASS","rc":0,"elapsed_ms":1,"line":0,"boot":20,"nonce":1834914557660508909}
+ap0:pal-wifi:I(45743):H2_WIFI_CASE {"id":"scan-while-connected","status":"PASS","rc":0,"elapsed_ms":165,"line":0,"boot":20,"nonce":1834914557660508909}
+ap0:pal-wifi:I(45786):H2_WIFI_CASE {"id":"power-save-none","status":"PASS","rc":0,"elapsed_ms":2,"line":0,"boot":20,"nonce":1834914557660508909}
+ap0:h2_wifi:I(45829):H2_WIFI_POWER_SAVE_READBACK mode=1 before=1 requested=1 actual=1
+ap0:h2_wifi:I(45830):H2_WIFI_POWER_SAVE mode=1 listen_interval=1 verified=1
+ap0:pal-wifi:I(45831):H2_WIFI_CASE {"id":"power-save-min","status":"PASS","rc":0,"elapsed_ms":5,"line":0,"boot":20,"nonce":1834914557660508909}
+ap0:h2_wifi:I(45877):H2_WIFI_POWER_SAVE_READBACK mode=2 before=1 requested=10 actual=10
+ap0:h2_wifi:I(45878):H2_WIFI_POWER_SAVE mode=2 listen_interval=10 verified=1
+ap0:h2_wifi:I(45884):H2_WIFI_POWER_SAVE_READBACK mode=1 before=10 requested=1 actual=1
+ap0:h2_wifi:I(45885):H2_WIFI_POWER_SAVE mode=1 listen_interval=1 verified=1
+ap0:h2_wifi:I(45891):H2_WIFI_POWER_SAVE_READBACK mode=2 before=1 requested=10 actual=10
+ap0:h2_wifi:I(45892):H2_WIFI_POWER_SAVE mode=2 listen_interval=10 verified=1
+ap0:pal-wifi:I(45893):H2_WIFI_CASE {"id":"power-save-max","status":"PASS","rc":0,"elapsed_ms":22,"line":0,"boot":20,"nonce":1834914557660508909}
+ap0:pal-wifi:I(45957):H2_WIFI_CASE {"id":"connect-and-save-zero","status":"PASS","rc":0,"elapsed_ms":24,"line":0,"boot":20,"nonce":1834914557660508909}
+ap1:h2_wifi:I(57082):H2_WIFI_POWER_SAVE_READBACK mode=2 before=10 requested=10 actual=10
+ap1:h2_wifi:I(57082):H2_WIFI_POWER_SAVE mode=2 listen_interval=10 verified=1
+ap0:pal-wifi:I(57129):H2_WIFI_CASE {"id":"wrong-password-preserves-saved","status":"PASS","rc":0,"elapsed_ms":11132,"line":0,"boot":20,"nonce":1834914557660508909}
+ap1:h2_wifi:I(57260):H2_WIFI_POWER_SAVE_READBACK mode=2 before=10 requested=10 actual=10
+ap1:h2_wifi:I(57261):H2_WIFI_POWER_SAVE mode=2 listen_interval=10 verified=1
+ap0:pal-wifi:I(57349):H2_WIFI_CASE {"id":"connect-and-save","status":"PASS","rc":0,"elapsed_ms":181,"line":0,"boot":20,"nonce":1834914557660508909}
+ap0:pal-wifi:I(57934):H2_WIFI_CASE {"id":"disconnect-status","status":"PASS","rc":0,"elapsed_ms":544,"line":0,"boot":20,"nonce":1834914557660508909}
+ap0:h2_wifi:I(58531):H2_WIFI_POWER_SAVE_READBACK mode=2 before=10 requested=10 actual=10
+ap1:h2_wifi:I(58532):H2_WIFI_POWER_SAVE mode=2 listen_interval=10 verified=1
+ap0:pal-wifi:I(58699):H2_WIFI_CASE {"id":"connect-zero-borrowed-input","status":"PASS","rc":0,"elapsed_ms":725,"line":0,"boot":20,"nonce":1834914557660508909}
+ap0:pal-wifi:I(60663):H2_WIFI_CASE {"id":"access-point-wpa2-start","status":"PASS","rc":0,"elapsed_ms":1923,"line":0,"boot":20,"nonce":1834914557660508909}
+ap0:pal-wifi:I(60705):H2_WIFI_CASE {"id":"access-point-status","status":"PASS","rc":0,"elapsed_ms":1,"line":0,"boot":20,"nonce":1834914557660508909}
+ap0:pal-wifi:I(60746):H2_WIFI_CASE {"id":"access-point-netif","status":"PASS","rc":0,"elapsed_ms":0,"line":0,"boot":20,"nonce":1834914557660508909}
+ap0:pal-wifi:I(61294):H2_WIFI_ADDRESS lease=3232283748 ap=3232283649 mask=4294967040
+ap0:pal-wifi:I(61294):H2_WIFI_CASE {"id":"access-point-real-client","status":"PASS","rc":0,"elapsed_ms":507,"line":0,"boot":20,"nonce":1834914557660508909}
+ap0:pal-wifi:I(61335):H2_WIFI_CASE {"id":"access-point-client-bounds","status":"PASS","rc":0,"elapsed_ms":1,"line":0,"boot":20,"nonce":1834914557660508909}
+ap0:pal-wifi:I(72365):H2_WIFI_CASE {"id":"access-point-client-left","status":"PASS","rc":0,"elapsed_ms":10990,"line":0,"boot":20,"nonce":1834914557660508909}
+ap0:h2_wifi:I(72708):H2_WIFI_BK_CP_AP_BEFORE ip=3232283649 rc=0
+ap1:h2_wifi:I(74852):H2_WIFI_POWER_SAVE_READBACK mode=2 before=10 requested=10 actual=10
+ap1:h2_wifi:I(74852):H2_WIFI_POWER_SAVE mode=2 listen_interval=10 verified=1
+ap1:h2_wifi:I(74853):H2_WIFI_BK_CP_AP ip=3232283649 rc=0
+ap0:pal-wifi:I(75749):H2_WIFI_CASE {"id":"netif-select-default","status":"PASS","rc":0,"elapsed_ms":3344,"line":0,"boot":20,"nonce":1834914557660508909}
+ap0:pal-wifi:I(76091):H2_WIFI_CASE {"id":"access-point-repeat-start","status":"PASS","rc":0,"elapsed_ms":301,"line":0,"boot":20,"nonce":1834914557660508909}
+ap0:pal-wifi:I(76666):H2_WIFI_CASE {"id":"access-point-stop","status":"PASS","rc":0,"elapsed_ms":534,"line":0,"boot":20,"nonce":1834914557660508909}
+ap0:pal-wifi:I(103266):H2_WIFI_ADDRESS lease=3232283748 ap=3232283649 mask=4294967040
+ap0:pal-wifi:I(114895):H2_WIFI_CASE {"id":"access-point-open","status":"PASS","rc":0,"elapsed_ms":38188,"line":0,"boot":20,"nonce":1834914557660508909}
+ap0:pal-wifi:I(145326):H2_WIFI_ADDRESS lease=3232283748 ap=3232283649 mask=4294967040
+ap0:pal-wifi:I(157050):H2_WIFI_CASE {"id":"access-point-hidden","status":"PASS","rc":0,"elapsed_ms":42114,"line":0,"boot":20,"nonce":1834914557660508909}
+ap1:h2_wifi:I(159176):H2_WIFI_POWER_SAVE_READBACK mode=2 before=10 requested=10 actual=10
+ap1:h2_wifi:I(159177):H2_WIFI_POWER_SAVE mode=2 listen_interval=10 verified=1
+ap1:h2_wifi:I(162040):H2_WIFI_POWER_SAVE_READBACK mode=2 before=10 requested=10 actual=10
+ap1:h2_wifi:I(162041):H2_WIFI_POWER_SAVE mode=2 listen_interval=10 verified=1
+ap0:pal-wifi:I(164574):H2_WIFI_CASE {"id":"station-ap-churn","status":"PASS","rc":0,"elapsed_ms":7483,"line":0,"boot":20,"nonce":1834914557660508909}
+ap0:pal-wifi:I(164615):H2_WIFI_CASE {"id":"event-integrity","status":"PASS","rc":0,"elapsed_ms":0,"line":0,"boot":20,"nonce":1834914557660508909}
+ap0:pal-wifi:I(166829):H2_WIFI_CASE {"id":"restore-original-settings-network","status":"PASS","rc":0,"elapsed_ms":2174,"line":0,"boot":20,"nonce":1834914557660508909}
+ap0:pal-wifi:I(170191):H2_WIFI_REPORT {"board":"bk7258","version":"pal-wifi-20260930-r31","boot":20,"nonce":1834914557660508909,"operations":21,"passed":38,"failed":0,"blocked":0,"persistence":0,"qualified":0,"rc":-9}
+ap0:pal-wifi:I(170232):H2_WIFI_RESTORE {"boot":20,"nonce":1834914557660508909,"cleanup":0,"saved_restored":1,"network_restored":1,"backup_cleared":1,"retained":0}
+ap0:pal-wifi:I(170272):H2_WIFI_STA_EVENTS {"boot":20,"nonce":1834914557660508909,"connecting":9,"connected":8,"got_ip":8,"lost_ip":7,"disconnected":23,"route_changed":16,"invalid":0}
+ap0:pal-wifi:I(170312):H2_WIFI_AP_EVENTS {"boot":20,"nonce":1834914557660508909,"started":5,"stopped":5,"joined":3,"left":3,"lease_granted":3,"lease_released":3}
+ap0:pal-wifi:I(170352):H2_WIFI_CLIENT {"boot":20,"nonce":1834914557660508909,"mac":"30eda0ae0f84","ip4":3232283748}
+H2_WIFI_READY board=bk7258 rc=-9 confirm=-7

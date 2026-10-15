@@ -54,6 +54,57 @@ static int recursive_mutex_task(void *user) {
     return 0;
 }
 
+typedef struct try_context {
+    h2_libco_t *core;
+    const h2_pal_sync_api_t *api;
+    h2_pal_mutex_t *mutex;
+    h2_pal_result_t result;
+    h2_pal_result_t handoff_result;
+} try_context_t;
+
+static int try_owner_task(void *user) {
+    try_context_t *state = user;
+    assert(h2_pal_mutex_lock(state->api, state->mutex) == H2_PAL_OK);
+    /* Non-recursive self-lock remains a misuse/BUSY, not foreign contention. */
+    assert(h2_pal_mutex_try_lock(state->api, state->mutex) == H2_PAL_ERR_BUSY);
+    assert(h2_libco_wait(state->core, (uintptr_t)state, H2_LIBCO_WAIT_FOREVER) == H2_LIBCO_WOKEN);
+    assert(h2_pal_mutex_unlock(state->api, state->mutex) == H2_PAL_OK);
+    state->handoff_result = h2_pal_mutex_try_lock(state->api, state->mutex);
+    return 0;
+}
+
+static int try_probe_task(void *user) {
+    try_context_t *state = user;
+    state->result = h2_pal_mutex_try_lock(state->api, state->mutex);
+    return 0;
+}
+
+static int try_waiter_task(void *user) {
+    try_context_t *state = user;
+    assert(h2_pal_mutex_lock(state->api, state->mutex) == H2_PAL_OK);
+    assert(h2_pal_mutex_unlock(state->api, state->mutex) == H2_PAL_OK);
+    return 0;
+}
+
+static void test_try_lock_foreign_owner_and_handoff(
+    h2_libco_t *core, const h2_pal_sync_api_t *api, h2_pal_mutex_t *mutex) {
+    try_context_t state = {.core = core, .api = api, .mutex = mutex};
+    h2_libco_task_t *owner = NULL, *waiter = NULL, *probe = NULL;
+    assert(h2_libco_task_start(core, NULL, try_owner_task, &state, &owner) == H2_LIBCO_OK);
+    h2_libco_test_schedule(core, 1u);
+    assert(h2_libco_task_start(core, NULL, try_probe_task, &state, &probe) == H2_LIBCO_OK);
+    assert(h2_libco_task_start(core, NULL, try_waiter_task, &state, &waiter) == H2_LIBCO_OK);
+    h2_libco_test_schedule(core, 2u);
+    assert(state.result == H2_PAL_ERR_WOULD_BLOCK);
+    assert(h2_libco_wake(core, (uintptr_t)&state, 1u, NULL) == H2_LIBCO_OK);
+    h2_libco_test_schedule(core, 1u);
+    assert(state.handoff_result == H2_PAL_ERR_WOULD_BLOCK);
+    h2_libco_test_schedule(core, 1u);
+    assert(h2_libco_task_join(core, owner, NULL) == H2_LIBCO_OK);
+    assert(h2_libco_task_join(core, waiter, NULL) == H2_LIBCO_OK);
+    assert(h2_libco_task_join(core, probe, NULL) == H2_LIBCO_OK);
+}
+
 int main(void) {
     h2_libco_test_env_t env = {0};
     h2_libco_t *core = h2_libco_test_create(&env);
@@ -73,7 +124,11 @@ int main(void) {
     assert(h2_pal_cond_create(
                api, &(h2_pal_cond_config_t){.allocator = mem}, &cond) ==
            H2_PAL_OK);
+    h2_libco_resource_stats_t stats;
+    assert(h2_libco_get_resource_stats(core, &stats) == H2_LIBCO_OK);
+    assert(stats.live_mutexes == 1u && stats.live_semaphores == 1u && stats.live_conditions == 1u);
     assert(h2_pal_mutex_lock(api, mutex) == H2_PAL_ERR_INVALID_STATE);
+    test_try_lock_foreign_owner_and_handoff(core, api, mutex);
 
     sync_context_t semaphore_context = {
         .api = api, .semaphore = semaphore,
@@ -296,7 +351,10 @@ int main(void) {
     assert(h2_pal_cond_destroy(api, cond) == H2_PAL_OK);
     assert(h2_pal_semaphore_destroy(api, semaphore) == H2_PAL_OK);
     assert(h2_pal_mutex_destroy(api, mutex) == H2_PAL_OK);
+    assert(h2_libco_get_resource_stats(core, &stats) == H2_LIBCO_OK);
+    assert(stats.live_tasks == 0u && stats.live_mutexes == 0u &&
+           stats.live_semaphores == 0u && stats.live_conditions == 0u && stats.task_stack_bytes == 0u);
     assert(h2_libco_destroy(&core) == H2_LIBCO_OK);
-    assert(env.allocations == 0u);
+    assert(env.allocations == 0u && env.allocated_bytes == 0u);
     return 0;
 }

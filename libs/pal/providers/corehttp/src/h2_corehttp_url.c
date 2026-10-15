@@ -228,6 +228,44 @@ h2_pal_result_t h2_corehttp_parse_url(
     return H2_PAL_OK;
 }
 
+/* RFC 3986 section 5.2.4; normalize literal dot segments, not escaped bytes. */
+static size_t remove_dot_segments(char *path, size_t len) {
+    size_t input = 0u;
+    size_t output = 0u;
+    size_t end = 0u;
+    while (end < len && path[end] != '?' && path[end] != '#') ++end;
+    while (input < end) {
+        size_t remaining = end - input;
+        if (remaining >= 3u && memcmp(path + input, "../", 3u) == 0) {
+            input += 3u;
+        } else if (remaining >= 2u && memcmp(path + input, "./", 2u) == 0) {
+            input += 2u;
+        } else if (remaining >= 3u && memcmp(path + input, "/./", 3u) == 0) {
+            input += 2u;
+        } else if (remaining == 2u && memcmp(path + input, "/.", 2u) == 0) {
+            input += 2u;
+            path[output++] = '/';
+        } else if ((remaining >= 4u && memcmp(path + input, "/../", 4u) == 0) ||
+                   (remaining == 3u && memcmp(path + input, "/..", 3u) == 0)) {
+            input += 3u;
+            while (output > 0u && path[output - 1u] != '/') --output;
+            if (output > 0u) --output;
+            if (input == end) path[output++] = '/';
+        } else if ((remaining == 1u && path[input] == '.') ||
+                   (remaining == 2u && memcmp(path + input, "..", 2u) == 0)) {
+            input = end;
+        } else {
+            size_t next = input + 1u;
+            while (next < end && path[next] != '/') ++next;
+            memmove(path + output, path + input, next - input);
+            output += next - input;
+            input = next;
+        }
+    }
+    memmove(path + output, path + end, len - end);
+    return output + len - end;
+}
+
 static h2_pal_result_t allocate_redirect(
     h2_corehttp_t *provider,
     const char *scheme,
@@ -249,6 +287,8 @@ static h2_pal_result_t allocate_redirect(
     memcpy(url, scheme, scheme_len);
     memcpy(url + scheme_len, base->authority, base->authority_len);
     memcpy(url + scheme_len + base->authority_len, path, path_len);
+    size_t prefix_len = scheme_len + base->authority_len;
+    len = prefix_len + remove_dot_segments(url + prefix_len, path_len);
     url[len] = '\0';
     *out_url = url;
     *out_url_len = len;

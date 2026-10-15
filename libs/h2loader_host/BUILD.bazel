@@ -28,7 +28,6 @@ cc_library(
         "src/h2_h2loader_host_package_writer.c",
         "src/h2_h2loader_host_scheduler.c",
         "src/h2_h2loader_host_serial.c",
-        "src/h2_h2loader_host_sha256.c",
         "src/h2_h2loader_host_status.c",
         "src/h2_h2loader_host_task_names.c",
     ],
@@ -48,16 +47,18 @@ cc_library(
         "include",
     ],
     target_compatible_with = select({
-        "//tools/bazel/platforms:is_bk3633": ["@platforms//:incompatible"],
-        "//tools/bazel/platforms:is_bk7258": ["@platforms//:incompatible"],
-        "//tools/bazel/platforms:is_esp32p4": ["@platforms//:incompatible"],
-        "//tools/bazel/platforms:is_esp32s3": ["@platforms//:incompatible"],
+        "//tools/bazel/platforms:target_bk3633": ["@platforms//:incompatible"],
+        "//tools/bazel/platforms:target_bk7258": ["@platforms//:incompatible"],
+        "//tools/bazel/platforms:target_esp32p4": ["@platforms//:incompatible"],
+        "//tools/bazel/platforms:target_esp32s3": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     deps = [
         ":tasks",
+        "//libs/atomic/providers/c11",
         "//libs/bleikcp",
         "//libs/bundle",
+        "//libs/crypto/sha256",
         "//libs/iostreamikcp",
         "//libs/pal",
         "//tools/bazel:vendor_third_party_esp_serial_flasher",
@@ -80,7 +81,10 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":h2loader_host"],
+    deps = [
+        ":h2loader_host",
+        "//libs/crypto/sha256",
+    ],
 )
 
 cc_test(
@@ -104,6 +108,7 @@ cc_test(
     }),
     deps = [
         ":h2loader_host",
+        "//libs/crypto/sha256",
         "//tools/bazel:vendor_third_party_zlib",
     ],
 )
@@ -150,6 +155,26 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [":h2loader_host"],
+)
+
+cc_test(
+    name = "h2loader_host_ble_diagnostics_test",
+    srcs = ["tests/test_h2loader_host_ble_diagnostics.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # The test defines the BLE-iKCP client functions used by the Host; link
+    # statically so its definitions win over the unreferenced archive members.
+    linkstatic = True,
+    deps = [
+        ":h2loader_host",
+        "//libs/bleikcp",
+    ],
 )
 
 cc_test(

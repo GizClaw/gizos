@@ -1,0 +1,103 @@
+{
+  "schema": 1,
+  "qualified": true,
+  "platform": "ios-simulator",
+  "source_head": "e228d55be5bb96c0be8be4823cfd8fb69679e43f",
+  "sdk_version": "0.19.0",
+  "api_count": 227,
+  "result": {
+    "platform": "ios-simulator",
+    "rc": 0,
+    "teardown": 0,
+    "selected": 8,
+    "passed": 8,
+    "failed": 0,
+    "cleanup_rc": 0,
+    "retained_resources": 0,
+    "complete": true,
+    "cases": [
+      {
+        "id": "resource",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "device-api",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "connectivity",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "rpc",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "firmware",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "voice",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "concurrency",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "service",
+        "status": "PASS",
+        "rc": 0
+      }
+    ]
+  },
+  "environment": {
+    "platform": "ios",
+    "package": "com.haivivi.gizos.e2e.gizclaw",
+    "observation_started_at_utc": "2026-10-01T12:55:25.396130+00:00",
+    "app_sha256": "98d8f35df1e7838477a72045f278d7e38444f35235980743e3adc8336dc9f8a2",
+    "sdk_sha256": "6b7b64b667fcde78462658f114be32df8add6befbae07de956d886487fee7867",
+    "simulator_udid": "F497732E-3F63-4EE1-BDDC-E65996D0EDA1",
+    "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-5",
+    "device": {
+      "dataPath": "/Users/idy/Library/Developer/CoreSimulator/Devices/F497732E-3F63-4EE1-BDDC-E65996D0EDA1/data",
+      "dataPathSize": 2136338432,
+      "logPath": "/Users/idy/Library/Logs/CoreSimulator/F497732E-3F63-4EE1-BDDC-E65996D0EDA1",
+      "udid": "F497732E-3F63-4EE1-BDDC-E65996D0EDA1",
+      "lastUsedAt": "2026-10-01T10:44:58Z",
+      "isAvailable": true,
+      "logPathSize": 331776,
+      "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro",
+      "state": "Booted",
+      "name": "GizOS GizClaw E2E"
+    },
+    "suite_sha256": "b20d7a74c5685f1fb23e1e848ddb06f496f8912e5a921196643423aa105bd9b9",
+    "runtime_profile": "h106-tiga",
+    "app_config_key": "media.songs.en-us",
+    "app_config_value_sha256": "d74740796f20765bd12d5ae41401da6b142ac5268f788c05dd0cc700dde35603",
+    "fixture_contract_sha256": "d3a6de96710d1dd52c8ce312218eb75c6cf6cbb34d432cf1fbf6b079b81bd376",
+    "pcm_sha256": "9451f89df86cc66d053801f38fbfa661b83a0174d222af976e55b94f34336f0b",
+    "api_covered": 227,
+    "redaction_required": false,
+    "observation_finished_at_utc": "2026-10-01T12:57:23.864850+00:00",
+    "evidence_timezone": "UTC",
+    "launches": 1,
+    "runner_status": "completed"
+  },
+  "api_audit": {
+    "valid": true,
+    "covered": 227,
+    "required": 227,
+    "missing": 0,
+    "log_sha256": "63294c51d8b7bc5ae3eb27aaf4116d04e612942b11dacf29df3ab26f067e14ab"
+  },
+  "raw_log_local": "build/validation/gizclaw-227/ios-dns-r34/results/test.log",
+  "audio_scope": "Real service traffic and software PCM/speaker delegate; simulator/emulator business qualification only."
+}

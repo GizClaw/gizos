@@ -14,11 +14,15 @@ Component 的 display size 必须通过 public config 传入，不能依赖具�
 
 这些目录只为已经实现的 capability 负责，不因目录存在而成为完整平台 backend。iOS 实现 example 所需的 Memory、Time、Queue、Display 与 native pointer bridge；Web 实现 Memory、Log、Time、Timer、Task、Queue、Sync、Pref、Display、Touch 与 Host Serial；Android 额外实现 Task、固定 16 kHz mono playback、raw AAC-LC decode 和 CPU-readable H.264 decode。Web Pref 仅承诺同一 origin 下的 typed key/value 持久化，不提供跨 origin、跨浏览器同步或物理串口身份。未列出的 network、BLE 等 PAL 保持 canonical unsupported。任何新 App 接入前都必须先枚举 required capability，不能从目录存在或 smoke App 成功启动推导出平台已完成。
 
+iOS/Android SDK 导出显式 MQTT owner，Public Header 分别为 `h2_ios_mqtt.h` 与 `h2_android_mqtt.h`。Owner 持有真实 native POSIX Net/WolfSSL 的独立引用、四个 incoming/outgoing QoS1 records 和可选 borrowed allocator，负责失败初始化回滚及忙状态保留；调用方关闭全部 client、停止调用后再 destroy，并将借用 API 显式注入自己的 Runtime。默认 AppHost MQTT 仍为 canonical unsupported；不能把新增 owner 的能力反记到旧 SDK 包或旧 consumer evidence。独立 PAL MQTT E2E 消费当次 XCFramework/AAR，核对 exported factory/header、APK/AAR binary identity、真实 TCP/TLS 对端、36 个用例和 provider/native resource cleanup。
+
 Darwin host provider 与 iOS mobile provider 是独立 ownership root。macOS Netif、SystemEvent、Host Serial 与 CoreBluetooth 归 `libs/pal/providers/darwin`；iOS UI、mobile lifecycle 与 iOS PAL 归 `libs/pal/providers/ios`。两端不能通过互相依赖来共享 App、UIKit、CoreBluetooth delegate 或 Runtime assembly。
 
 iOS CoreBluetooth provider 不提供独立 legacy scan-response 配置；`h2_pal_ble_adv_set_set_scan_response_data()` 由完整 vtable entry 显式返回 `H2_PAL_ERR_UNSUPPORTED`，不能依赖零初始化 slot，也不能把 scan-response 内容合并进 primary advertising data。
 
 iOS CoreBluetooth 同样不能表示逐字节 primary advertising sequence 或 controller-unit scan interval/window。`h2_pal_ble_adv_set_set_encoded_data()` 与 exact `interval_units_625us/window_units_625us` 必须在保存数据、callback 或改变 activity state 前返回 `H2_PAL_ERR_UNSUPPORTED`；不能把 dictionary-based advertising、系统选择的扫描调度、rounding 或 legacy fallback 描述成 exact capability。
+
+`h2_pal_ble_connect()` 等待失败（timeout 等）时，provider 在 backend queue 上对该 peripheral 调用 `cancelPeripheralConnection:`，取消仍在进行的 connect request；若它已成为当前 connected peripheral，则一并清除 connected state 与 GATT client handle mapping，让下一次 connect 从干净状态开始。只有当前 connecting peripheral 的 connect 成功或失败回调可以推进连接；迟到的成功回调会再次取消该 peripheral，非当前 connected peripheral 的断开回调也会被忽略，不改变当前状态或完成其他操作。CoreBluetooth 回调不携带 attempt identity，因此同一 peripheral 重试期间收到旧 attempt 的迟到失败时，重试会返回 `H2_PAL_ERR_IO`，并由自身的 failed-wait cleanup 再次取消该 peripheral、清空状态与 pending operation，调用方仍可继续重试。Hardware-free test hook 覆盖等待失败与迟到回调路径，不等同于真实外设验收。
 
 Android Audio 与 AAC Decoder provider 共用的参数校验、PCM layout/copy、allocator failure 和 platform error mapping 必须保持 platform-independent，并由 `//libs/pal/providers/android/pal_core:audio_contract_test` 在 host 覆盖；真实 MediaCodec、AAudio、AudioFlinger 和 Activity lifecycle 继续由 Android Emulator acceptance 覆盖。成功播放不能替代 invalid codec/bitstream、malformed PCM、allocation failure 或 platform error 的 PAL result 验证。AAudio 已接受部分 frame 后，track 必须持有并在下一次 write 或 drain 前继续提交剩余 PCM；不能返回会让调用方重放整个 frame 的 retryable result。
 

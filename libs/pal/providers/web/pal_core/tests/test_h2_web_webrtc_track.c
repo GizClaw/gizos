@@ -22,13 +22,14 @@ static int observed;
 EMSCRIPTEN_KEEPALIVE void web_test_destroy_while_waiting(void) {
   h2_web_platform_destroy(platform);
   observed =
-      EM_ASM_INT({ return Module.h2WebRtcPeers.has($0); }, (uintptr_t)peer);
+      MAIN_THREAD_EM_ASM_INT({ return Module.h2WebRtcPeers.has($0); }, (uintptr_t)peer);
 }
 
 EMSCRIPTEN_KEEPALIVE void web_test_close_while_waiting(void) {
-  h2_pal_webrtc_peer_close(api, peer);
+  h2_pal_webrtc_peer_t *closing = peer;
   peer = NULL;
   observed++;
+  h2_pal_webrtc_peer_close(api, closing);
 }
 
 EMSCRIPTEN_KEEPALIVE void web_test_poll_while_waiting(void) {
@@ -55,7 +56,7 @@ static h2_pal_webrtc_channel_t *create_open_channel(void) {
   h2_pal_webrtc_channel_t *channel = NULL;
   assert(h2_pal_webrtc_peer_create_data_channel(api, peer, &config, &channel) ==
          H2_PAL_OK);
-  EM_ASM({ Module.h2WebRtcChannels.get($0).dc.open(); }, (uintptr_t)channel);
+  MAIN_THREAD_EM_ASM({ Module.h2WebRtcChannels.get($0).dc.open(); }, (uintptr_t)channel);
   drain();
   return channel;
 }
@@ -66,7 +67,7 @@ static void test_events(void) {
   assert(h2_pal_webrtc_peer_poll(api, peer, -1, &event) ==
          H2_PAL_ERR_INVALID_ARG);
   assert(h2_pal_webrtc_peer_poll(api, peer, 1, &event) == H2_PAL_ERR_TIMEOUT);
-  EM_ASM(
+  MAIN_THREAD_EM_ASM(
       {
         setTimeout(() =>
                         {
@@ -85,13 +86,13 @@ static void test_events(void) {
   h2_pal_webrtc_event_release(&event);
 
   // Temporary send pressure is retryable and notified without driving poll.
-  EM_ASM(
+  MAIN_THREAD_EM_ASM(
       { Module.h2WebRtcChannels.get($0).dc.bufferedAmount = 1024 * 1024; },
       (uintptr_t)channel);
   const uint8_t data[] = {1, 2};
   assert(h2_pal_webrtc_channel_send(api, channel, data, sizeof(data), 0) ==
          H2_PAL_ERR_WOULD_BLOCK);
-  EM_ASM(
+  MAIN_THREAD_EM_ASM(
       {
         const dc = Module.h2WebRtcChannels.get($0).dc;
         dc.bufferedAmount = 0;
@@ -108,14 +109,14 @@ static void test_events(void) {
   assert(event.data_len == sizeof(data) &&
          memcmp(event.data, data, sizeof(data)) == 0);
   h2_pal_webrtc_event_release(&event);
-  EM_ASM(
+  MAIN_THREAD_EM_ASM(
       { Module.h2WebRtcPeers.get($0).pc.sctp = {maxMessageSize : 1}; },
       (uintptr_t)peer);
   assert(h2_pal_webrtc_channel_send(api, channel, data, sizeof(data), 0) ==
          H2_PAL_ERR_NO_SPACE);
 
   // Preserve the accepted FIFO prefix, then report overflow explicitly.
-  EM_ASM(
+  MAIN_THREAD_EM_ASM(
       {
         const dc = Module.h2WebRtcChannels.get($0).dc;
         for (let i = 0; i < 257; ++i)
@@ -146,7 +147,7 @@ static void test_events(void) {
   h2_pal_webrtc_event_release(&leased);
 
   channel = create_open_channel();
-  EM_ASM(
+  MAIN_THREAD_EM_ASM(
       {
         const dc = Module.h2WebRtcChannels.get($0).dc;
         const bytes = new Uint8Array(1024 * 1024 - 1);
@@ -169,7 +170,7 @@ static void test_events(void) {
   h2_pal_webrtc_peer_close(api, peer);
 
   channel = create_open_channel();
-  EM_ASM(
+  MAIN_THREAD_EM_ASM(
       {
         const dc = Module.h2WebRtcChannels.get($0).dc;
         globalThis.h2SavedOnMessage = dc.onmessage;
@@ -183,10 +184,10 @@ static void test_events(void) {
   assert(h2_pal_webrtc_channel_send(api, channel, data, sizeof(data), 0) ==
          H2_PAL_ERR_CLOSED);
   h2_pal_webrtc_peer_close(api, peer);
-  EM_ASM({ globalThis.h2SavedOnMessage({data : 'late'}); });
+  MAIN_THREAD_EM_ASM({ globalThis.h2SavedOnMessage({data : 'late'}); });
 
   create_peer();
-  EM_ASM({
+  MAIN_THREAD_EM_ASM({
     const dc = new RTCPeerConnection().createDataChannel('allocation-failure');
     const allocate = _malloc;
     try {
@@ -202,7 +203,7 @@ static void test_events(void) {
 
   create_peer();
   observed = 0;
-  EM_ASM({ setTimeout(() => Module._web_test_close_while_waiting(), 2); });
+  MAIN_THREAD_EM_ASM({ setTimeout(() => Module._web_test_close_while_waiting(), 2); });
   start = emscripten_get_now();
   assert(h2_pal_webrtc_peer_poll(api, peer, 1000, &event) == H2_PAL_ERR_CLOSED);
   assert(peer == NULL && observed == 1 && emscripten_get_now() - start < 750);
@@ -214,7 +215,7 @@ int main(void) {
   platform = h2_web_platform_create(&config);
   assert(platform != NULL);
   api = h2_web_platform_webrtc_api(platform);
-  EM_ASM({ globalThis.h2FakeCreateMedia(7); });
+  MAIN_THREAD_EM_ASM({ globalThis.h2FakeCreateMedia(7); });
   h2_pal_webrtc_track_t *track = calloc(1, sizeof(*track));
   assert(track != NULL);
   track->native_handle = (void *)(uintptr_t)7;
@@ -245,41 +246,46 @@ int main(void) {
   assert(h2_pal_webrtc_peer_set_remote_sdp(api, peer, H2_PAL_WEBRTC_SDP_ANSWER,
                                            answer) == H2_PAL_OK);
   // Browser media delivery is independent of consuming C events.
-  assert(EM_ASM_INT({ return globalThis.h2FakeAudioPlayCount || 0; }) == 1);
-  assert(EM_ASM_INT({ return globalThis.h2FakeGetUserMediaCount || 0; }) == 0);
+  assert(MAIN_THREAD_EM_ASM_INT({ return globalThis.h2FakeAudioPlayCount || 0; }) == 1);
+  assert(MAIN_THREAD_EM_ASM_INT({ return globalThis.h2FakeGetUserMediaCount || 0; }) == 0);
   drain();
 
   // A rejected detach does not release the borrowed Track or its ownership.
-  EM_ASM({ globalThis.h2FakeDetachReject = true; });
+  MAIN_THREAD_EM_ASM({ globalThis.h2FakeDetachReject = true; });
   assert(h2_pal_webrtc_peer_unset_track(api, peer, track) == H2_PAL_ERR_IO);
-  assert(EM_ASM_INT({ return Module.h2WebRtcTrackOwners.has(7); }));
+  assert(MAIN_THREAD_EM_ASM_INT({ return Module.h2WebRtcTrackOwners.has(7); }));
   observed = 0;
-  EM_ASM(
+  MAIN_THREAD_EM_ASM(
       {
         const pc = Module.h2WebRtcPeers.get($0).pc;
         globalThis.h2SavedOnTrack = pc.ontrack;
-        setTimeout(() =>
-                        {
-                          pc.ontrack({track : {kind : 'audio'}, streams : []});
-                          Module._web_test_destroy_while_waiting();
-                        },
-                   1);
+        const sender = pc.audioSender;
+        const original = sender.replaceTrack.bind(sender);
+        sender.replaceTrack = value => {
+          sender.replaceTrack = original;
+          const completion = original(value);
+          // Exercise the pending-detach state, not an assumed delay before
+          // the Worker has entered unset_track.
+          pc.ontrack({track: {kind: 'audio'}, streams: []});
+          Module._web_test_destroy_while_waiting();
+          return completion;
+        };
       },
       (uintptr_t)peer);
   assert(h2_pal_webrtc_peer_unset_track(api, peer, track) == H2_PAL_OK);
   assert(observed == 1);
-  assert(EM_ASM_INT({ return globalThis.h2FakeDetachResolved; }));
+  assert(MAIN_THREAD_EM_ASM_INT({ return globalThis.h2FakeDetachResolved; }));
   free(track);
   track = NULL;
-  assert(EM_ASM_INT({
+  assert(MAIN_THREAD_EM_ASM_INT({
     const media = Module.h2WebRtcTracks.get(7);
     return !Module.h2WebRtcTrackOwners.has(7) && media.audio.paused &&
                media.audio.srcObject === null &&
                                           !media.stream.getTracks()[0].stopped;
   }));
-  EM_ASM(
+  MAIN_THREAD_EM_ASM(
       { globalThis.h2SavedOnTrack({track : {kind : 'audio'}, streams : []}); });
-  assert(EM_ASM_INT({ return globalThis.h2FakeAudioPlayCount; }) == 1);
+  assert(MAIN_THREAD_EM_ASM_INT({ return globalThis.h2FakeAudioPlayCount; }) == 1);
   // The peer remains usable after unbinding; a new Track cannot be negotiated
   // through set_track after the initial offer.
   assert(h2_pal_webrtc_peer_set_track(api, peer, &stale) ==
@@ -291,51 +297,77 @@ int main(void) {
          H2_PAL_OK);
   h2_pal_webrtc_channel_close(api, channel);
   h2_pal_webrtc_peer_close(api, peer);
-  EM_ASM(
+  MAIN_THREAD_EM_ASM(
       { globalThis.h2SavedOnTrack({track : {kind : 'audio'}, streams : []}); });
-  assert(EM_ASM_INT({ return globalThis.h2FakeAudioPlayCount; }) == 1);
+  assert(MAIN_THREAD_EM_ASM_INT({ return globalThis.h2FakeAudioPlayCount; }) == 1);
 
   // Ownership can be reused by a different caller-owned C Track/Peer.
   create_peer();
   assert(h2_pal_webrtc_peer_set_track(api, peer, &stale) == H2_PAL_OK);
   observed = 0;
-  EM_ASM({ setTimeout(() => Module._web_test_close_while_waiting(), 1); });
+  MAIN_THREAD_EM_ASM({
+    const sender = Module.h2WebRtcPeers.get($0).pc.audioSender;
+    const original = sender.replaceTrack.bind(sender);
+    sender.replaceTrack = track => {
+      const completion = original(track);
+      if (track === null) queueMicrotask(() => Module._web_test_close_while_waiting());
+      return completion;
+    };
+  }, (uintptr_t)peer);
   assert(h2_pal_webrtc_peer_unset_track(api, peer, &stale) ==
          H2_PAL_ERR_CLOSED);
   assert(peer == NULL && observed == 1);
-  assert(EM_ASM_INT({ return !Module.h2WebRtcTrackOwners.has(7); }));
+  assert(MAIN_THREAD_EM_ASM_INT({ return !Module.h2WebRtcTrackOwners.has(7); }));
 
   // Close must release an outstanding ICE gather wait, not defer pc.close
   // until a promise that can no longer complete has returned.
-  EM_ASM({ globalThis.h2FakeWaitIce = true; });
+  MAIN_THREAD_EM_ASM({ globalThis.h2FakeWaitIce = true; });
   create_peer();
   observed = 0;
-  EM_ASM({ setTimeout(() => Module._web_test_close_while_waiting(), 1); });
+  MAIN_THREAD_EM_ASM({
+    const pc = Module.h2WebRtcPeers.get($0).pc;
+    const original = pc.createOffer.bind(pc);
+    pc.createOffer = (...args) => {
+      const completion = original(...args);
+      queueMicrotask(() => Module._web_test_close_while_waiting());
+      return completion;
+    };
+  }, (uintptr_t)peer);
   assert(h2_pal_webrtc_peer_start_offer(api, peer) == H2_PAL_ERR_CLOSED);
   assert(peer == NULL && observed == 1);
-  EM_ASM({
+  MAIN_THREAD_EM_ASM({
     globalThis.h2FakeWaitIce = false;
     globalThis.h2FakeRemoteDelay = true;
   });
   create_peer();
   observed = 0;
-  EM_ASM({ setTimeout(() => Module._web_test_close_while_waiting(), 1); });
+  MAIN_THREAD_EM_ASM({
+    const pc = Module.h2WebRtcPeers.get($0).pc;
+    const original = pc.setRemoteDescription.bind(pc);
+    pc.setRemoteDescription = description => {
+      const completion = original(description);
+      // Close after C admitted this asynchronous call. A timer armed before
+      // the call can close the peer before the Worker even enters the API.
+      queueMicrotask(() => Module._web_test_close_while_waiting());
+      return completion;
+    };
+  }, (uintptr_t)peer);
   assert(h2_pal_webrtc_peer_set_remote_sdp(api, peer, H2_PAL_WEBRTC_SDP_ANSWER,
                                            answer) == H2_PAL_ERR_CLOSED);
   assert(peer == NULL && observed == 1);
-  EM_ASM({ globalThis.h2FakeRemoteDelay = false; });
+  MAIN_THREAD_EM_ASM({ globalThis.h2FakeRemoteDelay = false; });
 
   // A playback-only application supplies its own audio element too.
-  EM_ASM({ Module.h2WebRtcTracks.set(8, {audio : new Audio()}); });
+  MAIN_THREAD_EM_ASM({ Module.h2WebRtcTracks.set(8, {audio : new Audio()}); });
   h2_pal_webrtc_track_t playback = {.native_handle = (void *)(uintptr_t)8};
   create_peer();
   assert(h2_pal_webrtc_peer_set_track(api, peer, &playback) == H2_PAL_OK);
-  assert(EM_ASM_INT({ return globalThis.h2FakeRecvOnly; }));
+  assert(MAIN_THREAD_EM_ASM_INT({ return globalThis.h2FakeRecvOnly; }));
   assert(h2_pal_webrtc_peer_unset_track(api, peer, &playback) == H2_PAL_OK);
   h2_pal_webrtc_peer_close(api, peer);
 
   // One failed sender must not return while another detach is still running.
-  EM_ASM({
+  MAIN_THREAD_EM_ASM({
     const media = globalThis.h2FakeCreateMedia(9);
     media.stream.tracks.push({kind: 'audio', stop() { throw new Error('borrowed'); }
 });
@@ -345,14 +377,14 @@ h2_pal_webrtc_track_t multiple = {.native_handle = (void *)(uintptr_t)9};
 create_peer();
 assert(h2_pal_webrtc_peer_set_track(api, peer, &multiple) == H2_PAL_OK);
 assert(h2_pal_webrtc_peer_unset_track(api, peer, &multiple) == H2_PAL_ERR_IO);
-assert(EM_ASM_INT({
+assert(MAIN_THREAD_EM_ASM_INT({
   return globalThis.h2FakeDetachResolved && Module.h2WebRtcTrackOwners.has(9);
 }));
 assert(h2_pal_webrtc_peer_unset_track(api, peer, &multiple) == H2_PAL_OK);
 h2_pal_webrtc_peer_close(api, peer);
 test_events();
 h2_web_platform_destroy(platform);
-assert(EM_ASM_INT({
+assert(MAIN_THREAD_EM_ASM_INT({
   return Module.h2WebRtcPeers.size === 0 &&
                                         Module.h2WebRtcTrackOwners.size === 0;
 }));

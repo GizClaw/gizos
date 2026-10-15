@@ -1,0 +1,103 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_test")
+load("@rules_python//python:defs.bzl", "py_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+_HOST = select({
+    "//tools/bazel/platforms:host_linux_target_linux": [],
+    "//tools/bazel/platforms:host_macos_target_macos": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+_DEPS = [
+    "//libs/pal/providers/coremqtt",
+    "//libs/pal/providers/desktop/pal_core",
+    "//libs/pal/providers/wolfssl",
+    "//projects/e2e/apps/pal-mqtt/app:pal_mqtt_e2e",
+] + select({
+    "@platforms//os:macos": ["//libs/pal/providers/darwin/pal_core:host_os"],
+    "//conditions:default": ["//libs/pal/providers/linux/pal_core"],
+})
+
+cc_binary(
+    name = "pal_mqtt",
+    srcs = ["main.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = _HOST,
+    deps = _DEPS,
+)
+
+cc_test(
+    name = "public_broker_test",
+    srcs = ["main.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    local_defines = ["H2_MQTT_PUBLIC_BROKER=1"],
+    tags = [
+        "external",
+        "manual",
+    ],
+    target_compatible_with = _HOST,
+    deps = _DEPS,
+)
+
+py_test(
+    name = "desktop_test",
+    srcs = ["run_desktop.py"],
+    args = [
+        "--binary",
+        "$(location :pal_mqtt)",
+        "--cases",
+        "$(location //projects/e2e/apps/pal-mqtt/app:include/h2_pal_mqtt_cases.inc)",
+    ],
+    data = [
+        ":pal_mqtt",
+        "//projects/e2e/apps/pal-mqtt/app:include/h2_pal_mqtt_cases.inc",
+    ],
+    legacy_create_init = 0,
+    main = "run_desktop.py",
+    target_compatible_with = _HOST,
+    deps = ["//projects/e2e/libs/pal-mqtt-fixture:fixture"],
+)
+
+py_test(
+    name = "tls_rejection_evidence_test",
+    srcs = ["run_desktop.py"],
+    args = [
+        "--binary",
+        "$(location :pal_mqtt)",
+        "--cases",
+        "$(location //projects/e2e/apps/pal-mqtt/app:include/h2_pal_mqtt_cases.inc)",
+        "--negative-tls",
+    ],
+    data = [
+        ":pal_mqtt",
+        "//projects/e2e/apps/pal-mqtt/app:include/h2_pal_mqtt_cases.inc",
+    ],
+    legacy_create_init = 0,
+    main = "run_desktop.py",
+    target_compatible_with = _HOST,
+    deps = ["//projects/e2e/libs/pal-mqtt-fixture:fixture"],
+)
+
+py_test(
+    name = "public_entry_test",
+    srcs = ["run_desktop.py"],
+    args = [
+        "--binary",
+        "$(location :public_broker_test)",
+        "--cases",
+        "$(location //projects/e2e/apps/pal-mqtt/app:include/h2_pal_mqtt_cases.inc)",
+        "--public-entry",
+    ],
+    data = [
+        ":public_broker_test",
+        "//projects/e2e/apps/pal-mqtt/app:include/h2_pal_mqtt_cases.inc",
+    ],
+    legacy_create_init = 0,
+    main = "run_desktop.py",
+    target_compatible_with = _HOST,
+    deps = ["//projects/e2e/libs/pal-mqtt-fixture:fixture"],
+)

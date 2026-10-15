@@ -1,0 +1,399 @@
+{
+  "schema": 1,
+  "sdk_version": "0.23.2",
+  "pal_result_contract": "signed32-bit C int; provider/archive/consumer rebuilt together",
+  "environment": "controlled Dev",
+  "runtime_profile": "gizos-e2e-626",
+  "endpoint": "edge-bj-01.dev.gizclaw.com:9821",
+  "platforms": {
+    "macos": {
+      "qualified": true,
+      "source_commit": "f0245f78b5e8fc11bc183de8f75378f0d0076441",
+      "local_receipt_sha256": "b1bc99318a9e6726f8022080178dee0e4dc8e5dd32470590c532d81fdb867116",
+      "log_sha256": "cd65a33444c9eea73c1dab3bfc9589233322c13a1fbb7c226ffb878d3c0d1b28",
+      "selected": 8,
+      "passed": 8,
+      "cleanup_rc": 0,
+      "retained_resources": 0,
+      "api_coverage": {
+        "valid": true,
+        "required": 227,
+        "covered": 227,
+        "missing": 0
+      },
+      "artifact_sha256": "2f9d56a2a228cc9ea2778229db90edb3f0cb5a69c31c1956e112d7fc2bf744b3",
+      "sdk_version": "0.23.2",
+      "audio_scope": "deterministic PCM and software capture/speaker delegates; no microphone/acoustic qualification",
+      "process_exit_code": 0
+    },
+    "ios": {
+      "qualified": true,
+      "source_commit": "a8e67dfb8929fb76ce095e1eebc7af1785985bd8",
+      "local_receipt_sha256": "263109339c75c04c91a52ad9af515058c84c342250e20f694be6a4e83c3097cc",
+      "log_sha256": "67fa8674dc521e840bdbe6441d6fbb4087acaa8550caa52c2dc175fe192e4297",
+      "selected": 8,
+      "passed": 8,
+      "cleanup_rc": 0,
+      "retained_resources": 0,
+      "api_coverage": {
+        "valid": true,
+        "required": 227,
+        "covered": 227,
+        "missing": 0
+      },
+      "artifact_sha256": {
+        "sdk.archive": "4368eae8d5d4649dc72bd5df3fbd44ab23ddbe887ee287e55caeed4265912871",
+        "app.ipa": "4dc86c59d47822b887e836741091f9374ef83b2a7ceead74b055fdc5bd9b3be1"
+      },
+      "sdk_version": "0.23.2",
+      "audio_scope": "deterministic PCM and software capture/speaker delegates; no microphone/acoustic qualification",
+      "report": {
+        "platform": "ios-simulator",
+        "rc": 0,
+        "teardown": 0,
+        "selected": 8,
+        "passed": 8,
+        "failed": 0,
+        "cleanup_rc": 0,
+        "retained_resources": 0,
+        "complete": true,
+        "cases": [
+          {
+            "id": "resource",
+            "status": "PASS",
+            "rc": 0
+          },
+          {
+            "id": "device-api",
+            "status": "PASS",
+            "rc": 0
+          },
+          {
+            "id": "connectivity",
+            "status": "PASS",
+            "rc": 0
+          },
+          {
+            "id": "rpc",
+            "status": "PASS",
+            "rc": 0
+          },
+          {
+            "id": "firmware",
+            "status": "PASS",
+            "rc": 0
+          },
+          {
+            "id": "voice",
+            "status": "PASS",
+            "rc": 0
+          },
+          {
+            "id": "concurrency",
+            "status": "PASS",
+            "rc": 0
+          },
+          {
+            "id": "service",
+            "status": "PASS",
+            "rc": 0
+          }
+        ]
+      },
+      "sdk_sha256": "4368eae8d5d4649dc72bd5df3fbd44ab23ddbe887ee287e55caeed4265912871",
+      "execution_identity": {
+        "observation_started_at_utc": "2026-10-03T07:34:52.453674+00:00",
+        "observation_finished_at_utc": "2026-10-03T07:36:50.999351+00:00",
+        "suite_sha256": "3942a47f19a8c835920ed4565ae2c2148c58854246c201273eb48e501b45a8d2",
+        "pcm_sha256": "9451f89df86cc66d053801f38fbfa661b83a0174d222af976e55b94f34336f0b",
+        "fixture_contract_sha256": "bb2e39c6d9d4108f2f7df69c9cf3d9383ff05817abb72a430a1697c41cbad88f",
+        "runner_status": "completed",
+        "simulator_udid": "8B1D17DB-2EE8-4B44-AAEA-914449042FEF",
+        "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-2"
+      }
+    },
+    "android": {
+      "qualified": true,
+      "source_commit": "a8e67dfb8929fb76ce095e1eebc7af1785985bd8",
+      "local_receipt_sha256": "273d08fd52c2d449df800da8214a153f3f4936c2cbd910d1bb7de260ea322bee",
+      "log_sha256": "bc1a74d9635347b4c2b8387684e9de799d3a4e83476dd6b50f897d91439e2b9c",
+      "selected": 8,
+      "passed": 8,
+      "cleanup_rc": 0,
+      "retained_resources": 0,
+      "api_coverage": {
+        "valid": true,
+        "required": 227,
+        "covered": 227,
+        "missing": 0
+      },
+      "artifact_sha256": {
+        "app.apk": "44c32d0b5d14b0f77d4c41474b017ff243764efa01ba23e2cf76337ce735f656",
+        "sdk.archive": "7e4b40da1791ebd7c581a951a747e382ea271784c5a71d8905816faa5495fefc"
+      },
+      "sdk_version": "0.23.2",
+      "audio_scope": "deterministic PCM and software capture/speaker delegates; no microphone/acoustic qualification",
+      "report": {
+        "platform": "android-emulator",
+        "rc": 0,
+        "teardown": 0,
+        "selected": 8,
+        "passed": 8,
+        "failed": 0,
+        "cleanup_rc": 0,
+        "retained_resources": 0,
+        "complete": true,
+        "cases": [
+          {
+            "id": "resource",
+            "status": "PASS",
+            "rc": 0
+          },
+          {
+            "id": "device-api",
+            "status": "PASS",
+            "rc": 0
+          },
+          {
+            "id": "connectivity",
+            "status": "PASS",
+            "rc": 0
+          },
+          {
+            "id": "rpc",
+            "status": "PASS",
+            "rc": 0
+          },
+          {
+            "id": "firmware",
+            "status": "PASS",
+            "rc": 0
+          },
+          {
+            "id": "voice",
+            "status": "PASS",
+            "rc": 0
+          },
+          {
+            "id": "concurrency",
+            "status": "PASS",
+            "rc": 0
+          },
+          {
+            "id": "service",
+            "status": "PASS",
+            "rc": 0
+          }
+        ]
+      },
+      "sdk_sha256": "7e4b40da1791ebd7c581a951a747e382ea271784c5a71d8905816faa5495fefc",
+      "execution_identity": {
+        "observation_started_at_utc": "2026-10-03T07:42:00.851911+00:00",
+        "observation_finished_at_utc": "2026-10-03T07:44:36.950359+00:00",
+        "suite_sha256": "3942a47f19a8c835920ed4565ae2c2148c58854246c201273eb48e501b45a8d2",
+        "pcm_sha256": "9451f89df86cc66d053801f38fbfa661b83a0174d222af976e55b94f34336f0b",
+        "fixture_contract_sha256": "bb2e39c6d9d4108f2f7df69c9cf3d9383ff05817abb72a430a1697c41cbad88f",
+        "runner_status": "completed",
+        "serial": "emulator-5566",
+        "api": "36",
+        "fingerprint": "Android/sdk_slim_arm64/emu64a:16/BE2A.250530.027/13847098:userdebug/test-keys",
+        "apk_aar_binary_identical": true,
+        "aar_binary_sha256": "f7c1d6e32f9cd30218fdf2ec6f81bc7fafa3d27db6e75581bfecae8e2ba6aecb",
+        "apk_binary_sha256": "f7c1d6e32f9cd30218fdf2ec6f81bc7fafa3d27db6e75581bfecae8e2ba6aecb"
+      }
+    },
+    "wasm": {
+      "qualified": true,
+      "source_commit": "a8e67dfb8929fb76ce095e1eebc7af1785985bd8",
+      "local_receipt_sha256": "5b01cb0f1480fb4ec456e09fe9e95dcd9a761914a81ab3a3de9e6a52b05d3236",
+      "log_sha256": "ee70a2f5073aecb20d79cce58eeb8838558bfddcd16845c2eb9e37e8b6bf15d9",
+      "selected": 8,
+      "passed": 8,
+      "cleanup_rc": 0,
+      "retained_resources": 0,
+      "api_coverage": {
+        "valid": true,
+        "required": 227,
+        "covered": 227,
+        "missing": 0
+      },
+      "artifact_sha256": {
+        "app.web.tar": "220dbff7ba4449e472c2d691b512cbf8c638a6fb4af08a2308431f2c25a0c7ce"
+      },
+      "sdk_version": "0.23.2",
+      "audio_scope": "deterministic PCM and software capture/speaker delegates; no microphone/acoustic qualification",
+      "platform_final": "H2_GIZCLAW_PLATFORM_FINAL rc=0 teardown=0 retained=0 worker=1",
+      "process_exit_code": 0,
+      "state": {
+        "isolated": true
+      },
+      "browser": {
+        "protocolVersion": "1.3",
+        "product": "HeadlessChrome/136.0.7103.25",
+        "revision": "@97d495678dc307bfe6d6475901104e262ec7a487",
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/136.0.7103.25 Safari/537.36",
+        "jsVersion": "13.6.233.4"
+      },
+      "archive_sha256": "220dbff7ba4449e472c2d691b512cbf8c638a6fb4af08a2308431f2c25a0c7ce",
+      "pcm_sha256": "9451f89df86cc66d053801f38fbfa661b83a0174d222af976e55b94f34336f0b"
+    },
+    "amoled": {
+      "qualified": true,
+      "sdk_version": "0.23.2",
+      "pal_result_contract": "signed32-bit C int; allconsumers rebuilt",
+      "platform": "amoled",
+      "source_head": "a8e67dfb8929fb76ce095e1eebc7af1785985bd8",
+      "version": "gizclaw-dev-amp-r45-pal32",
+      "device_uid": "30eda0ae0f86",
+      "package_sha256": "48f4c42540d599b31018e69acd5e2e80171d7156a5568bf8d4b1eaf88da7caca",
+      "image_sha256": "342500a003e27d9508f499c89a83ffe919d16af6cf743292fef160aa80f1ab2a",
+      "p1_preserved": true,
+      "stage_final": 0,
+      "coredump_status_unchanged": true,
+      "raw_log_sha256": {
+        "managed-late.private.log": "2908a1a6613c63f21cdb1494d8ffacddbc1f5b43cf389c194ebe5e6efa27cfaa",
+        "normal-late.private.log": "4475bcd64106a56603a8e5d0909f0a180336626b910809e0f5e438defd383336",
+        "final-status.private.log": "e73976c933e744089208748b79561d04a71f6682d6ff0c562f85c0d97d7cea96",
+        "final-crash.private.log": "5bdf63243c04b65d6759ad5a1cbd04f6b4cfdf8a5b1824698fd2ec92ac7d0cec"
+      },
+      "audio_scope": "RealI2S/ES8311 path and PCM/cadence assertions; notacoustic measurement",
+      "local_receipt_sha256": "6aef3ae33b43c7450b760cd42c0dc80619b7d66a48d13d1be89f8b6abced94be",
+      "managed": {
+        "version": "gizclaw-dev-amp-r45-pal32",
+        "execution": "37f070067606609c70ca55e264cc7d17",
+        "physical_audio": true,
+        "confirm_rc": 0,
+        "records": 2062,
+        "record_bytes": 188789,
+        "transport_crc32": "d5253bf5",
+        "ledger_sha256": "2b655578bf0983c2b688e9ecf24eddb0638451fb8fa56b12ad7f277e9b7131bf",
+        "discarded_frames": 0,
+        "qualified": true,
+        "api_coverage": {
+          "valid": true,
+          "required": 227,
+          "covered": 227,
+          "missing": 0
+        }
+      },
+      "normal": {
+        "version": "gizclaw-dev-amp-r45-pal32",
+        "execution": "a41ee5a97cc8f7365c5fe760990cd8c7",
+        "physical_audio": true,
+        "confirm_rc": 0,
+        "records": 2044,
+        "record_bytes": 187190,
+        "transport_crc32": "9af16493",
+        "ledger_sha256": "034b29f03def315d46fddf63f29e5530ffed38095f16ebf963cc7783de6704f2",
+        "discarded_frames": 0,
+        "qualified": true,
+        "api_coverage": {
+          "valid": true,
+          "required": 227,
+          "covered": 227,
+          "missing": 0
+        }
+      }
+    },
+    "bk7258": {
+      "qualified": true,
+      "sdk_version": "0.23.2",
+      "platform": "bk7258",
+      "selected": 8,
+      "passed": 8,
+      "cleanup_rc": 0,
+      "retained_resources": 0,
+      "device_uid": "c8478ca2a87c",
+      "version": "gizclaw-dev-r58-socketerrno",
+      "executed_source_context": {
+        "base": "273092db1b6605f680a2f98b143e210e280dbc1b",
+        "version": "gizclaw-dev-r58-socketerrno",
+        "tracked_patch_sha256": "9d02951ac153d95a997107229071c67ba9be3f1cb08e45faaad207e6b3645d90",
+        "new_source_sha256": {
+          "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_socket_errno_reader.h": "163cf5ed445930b56d7d94846f6c60507356199964f0701638d7762c7f29820f",
+          "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_socket_errno_writer.h": "d70c2028ea0fe52588861e3bf34c8603d0e8080db42a057533ba79eb5830332e",
+          "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_task_tls.c": "8a0b965879b87b89ae7b93d56831e5c401849b3ba68bac02e9f7c4291b7431f0",
+          "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_task_tls.h": "4fc93ae96df6303d9ceaf078fd1f39b6e4d72c6a8d59e93c7489ada8021e1992",
+          "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_task_tls_hooks.h": "4c934e3645ce8303c4e95b596d2c016e0588ec6596b682f833808c1dde0817e9",
+          "native_component_src/bk7258/ap/h2_pal_core/tests/task_tls_sdk/FreeRTOS.h": "2ef40f75308be25ca697b1503307515e67c7a40d9199be11fe6479a7db055ea7",
+          "native_component_src/bk7258/ap/h2_pal_core/tests/task_tls_sdk/lwip/errno.h": "55a72ecdd21de19e2772d846e0aa0d8b884334c6c9a60073f3f1576e0f3c53f8",
+          "native_component_src/bk7258/ap/h2_pal_core/tests/task_tls_sdk/lwip/opt.h": "08d989630d359145f432e0870c886140ffa184f7586660a0f9b97ca9ffbab5e8",
+          "native_component_src/bk7258/ap/h2_pal_core/tests/task_tls_sdk/os/mem.h": "5ce99f4a85207eff46b46d8522c91e231fa7d02f676ca0c47da8b67121a3cca0",
+          "native_component_src/bk7258/ap/h2_pal_core/tests/task_tls_sdk/os/os.h": "860d5d51bff104b3eed3accf5c4ec04760748fb9027b7a23ddcfb657fad0f55e",
+          "native_component_src/bk7258/ap/h2_pal_core/tests/task_tls_sdk/task.h": "c69d07800b70d4560c7c14a9a66a05d5011104773ef910e9e019dd8977e9532c",
+          "native_component_src/bk7258/ap/h2_pal_core/tests/test_h2_bk_socket_errno_writer.c": "2e21d30daf7be4e0d7358e683f67076c6e1d503ec9ffee8ffbfb2642c5eed5a4",
+          "native_component_src/bk7258/ap/h2_pal_core/tests/test_h2_bk_task_tls.cpp": "e7fc1a0c9532a86193772e91c546382382a56d9c6e72a95a1a82510b13824ed4"
+        },
+        "committed_input_verification": {
+          "commit": "8fa618c885d365039e5db3c97906d38556bc25e4",
+          "new_file_bytes_match_actual_build": true,
+          "note": "Original executed base+patch/build identity retained; this verifies the same functional inputs were committed."
+        }
+      },
+      "package_sha256": "2ed0045977458bc21788e8c222a0b697cbef4ca9b3388ed42f65ae0905ad74df",
+      "package_size": 2271777,
+      "image_sha256": "434a71a57dc9bd986b4083f772e5f58dcf5f5b4daebabb98decea44346f071bc",
+      "managed": {
+        "version": "gizclaw-dev-r58-socketerrno",
+        "execution": "277d322758fd933e2a03acfe290b9501",
+        "physical_audio": true,
+        "confirm_rc": 0,
+        "records": 2057,
+        "record_bytes": 188227,
+        "transport_crc32": "c2144417",
+        "ledger_sha256": "8a5143d6c38c6f6afd039a0643f97cf79f9c35be9e0b29054e3b95aa5cb89420",
+        "discarded_frames": 0,
+        "qualified": true,
+        "api_coverage": {
+          "valid": true,
+          "required": 227,
+          "covered": 227,
+          "missing": 0
+        }
+      },
+      "normal": {
+        "version": "gizclaw-dev-r58-socketerrno",
+        "execution": "4c04536c220f26826e6591076b41b7b2",
+        "physical_audio": true,
+        "confirm_rc": 0,
+        "records": 2043,
+        "record_bytes": 187084,
+        "transport_crc32": "1e458190",
+        "ledger_sha256": "ee3f855bffeb73830f44fceae67351bba0001f33602f899db89dac6441d2ec9a",
+        "discarded_frames": 1,
+        "qualified": true,
+        "api_coverage": {
+          "valid": true,
+          "required": 227,
+          "covered": 227,
+          "missing": 0
+        }
+      },
+      "p1_preserved": true,
+      "stage_final": 0,
+      "coredump_status_unchanged": true,
+      "stored_crash_bytes": 32,
+      "stored_crash_sha256": "f59f522edd1cc5bd0aab008b938dc7cdfac8a4333c34fdf763404923210a3829",
+      "raw_log_sha256": {
+        "managed-passive.private.log": "3da290e7a70cb15ae049588b5197437025f26ca3f66472a7310283b88ed9d4e9",
+        "normal-ledger-late.private.log": "c4157a62f3513510054155770b2cc510428c0e6287fab22cea696bd162a52ab4"
+      },
+      "normal_execution_observer_log_sha256": "4957f8948c43b4d88584464d63d2cd6d6f28627737257b52abc854d75e6992e2",
+      "audio_scope": "actual BSP audio chain and deterministic PCM input; no microphone/acoustic quality claim"
+    }
+  },
+  "six_platforms_complete": true,
+  "source_identity": "Every execution retains its actual source/artifact/environment; subsequent BK-only runtime and documentation changes do not rebind earlier packages.",
+  "unchanged_execution_input_trees": {
+    "libs/gizclaw": "ef24908e1b1cf48d417ae52cdf75348b18dd11dd",
+    "libs/pal": "ce3276921ef8ace139d02c9612846c2f9c27dadb",
+    "libs/runtime": "88cd29b5fdda69720a2689643083ed486240966b",
+    "projects/e2e/apps/gizclaw/app": "f70c6d822ea8353120e07ed6893192b45e43eb9e",
+    "native_component_src/esp-idf6.x": "fb07d2048a6b8403bde0bc7c8fa7e2f1c6e8fea7",
+    "projects/e2e/targets/cc_test/gizclaw": "42196f48cf9ce1ae6175cb57f4fb5fdaea8cf8f1",
+    "projects/e2e/targets/pkg_tar/gizclaw": "60a074725a29b5607418201909e011d5ebe3848b",
+    "projects/e2e/targets/ios_application/gizclaw": "eef8496cdca02b6da4fe2e8f728627de185ed523",
+    "projects/e2e/targets/android_binary/gizclaw": "56fc066c9e18bc59f4cba81f9f6788ebbabcad55",
+    "projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/amoled": "9bb5f4220ae337a67df1a0dd94dec8142a2cb727"
+  }
+}

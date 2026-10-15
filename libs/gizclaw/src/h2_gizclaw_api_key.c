@@ -4,7 +4,12 @@
 #include "pb_decode.h"
 #include "pb_encode.h"
 #include <string.h>
-static const char create_tag, revoke_tag;
+static const char create_tag, revoke_tag, list_tag;
+static h2_pal_result_t create_error_result(int error_code) {
+  return error_code == H2_GIZCLAW_RPC_ERROR_RESOURCE_EXHAUSTED
+             ? H2_GIZCLAW_API_KEY_ERR_EXHAUSTED
+             : h2_gizclaw_rpc_error_result_internal(error_code);
+}
 static bool copy_text(char *out, size_t size, h2_gizclaw_str_t text) {
   if (!text.data || !text.len || text.len >= size ||
       memchr(text.data, 0, text.len))
@@ -36,9 +41,18 @@ h2_pal_result_t h2_gizclaw_req_create_api_key_create(
   if (!copy_text(message.display_name, sizeof(message.display_name),
                  display_name))
     return H2_PAL_ERR_INVALID_ARG;
-  return create_request(service, identity, 96, &create_tag,
-                        gizclaw_rpc_v1_APIKeyCreateRequest_fields, &message,
-                        timeout_ms, out_request);
+  h2_pal_result_t rc = create_request(service, identity, 96, &create_tag,
+                                      gizclaw_rpc_v1_APIKeyCreateRequest_fields,
+                                      &message, timeout_ms, out_request);
+  if (rc == H2_PAL_OK) {
+    rc = h2_gizclaw_req_set_rpc_error_normalizer_internal(
+        *out_request, &create_tag, create_error_result);
+    if (rc != H2_PAL_OK) {
+      h2_gizclaw_req_release(*out_request);
+      *out_request = NULL;
+    }
+  }
+  return rc;
 }
 h2_pal_result_t
 h2_gizclaw_resp_parse_api_key_create(const h2_gizclaw_req_t *request,
@@ -124,4 +138,534 @@ h2_pal_result_t h2_gizclaw_rpc_api_key_revoke(h2_gizclaw_service_t *service,
     rc = h2_gizclaw_resp_parse_api_key_revoke(request);
   h2_gizclaw_req_release(request);
   return rc;
+}
+
+/* The owner submits and dispatches; readers may expire a generation under the
+ * same mutex. Each accepted request owns its context until its hook returns. */
+typedef struct api_key_pending {
+  h2_gizclaw_api_key_state_t *state;
+  h2_gizclaw_req_t *request;
+  uint64_t generation;
+  bool revoke;
+  bool list;
+  bool orphan;
+  /* Revoked key name, used to reconcile a detached revoke with the snapshot. */
+  char name[sizeof(((h2_gizclaw_api_key_t *)0)->name)];
+} api_key_pending_t;
+
+struct h2_gizclaw_api_key_state {
+  h2_gizclaw_api_key_state_config_t config;
+  h2_pal_mutex_t *mutex;
+  h2_gizclaw_api_key_snapshot_t snapshot;
+  char display_name[sizeof(
+      ((gizclaw_rpc_v1_APIKeyCreateRequest *)0)->display_name)];
+  uint64_t generation;
+  uint64_t started_ms;
+  size_t pending_count;
+  bool revoke_after;
+  bool refresh;
+  bool listing;
+  unsigned list_pages;
+  char cursor[27];
+  h2_gizclaw_api_key_t candidate;
+  api_key_pending_t *current;
+};
+
+static void api_key_erase(void *data, size_t size) {
+  volatile unsigned char *bytes = data;
+  while (size-- != 0u)
+    *bytes++ = 0;
+}
+
+static void api_key_finish(h2_gizclaw_api_key_state_t *state,
+                           h2_pal_result_t result) {
+  state->snapshot.busy = false;
+  state->listing = false;
+  api_key_erase(&state->candidate, sizeof(state->candidate));
+  state->snapshot.last_error = result;
+  if (result == H2_PAL_OK || result == H2_PAL_ERR_TIMEOUT ||
+      result == H2_PAL_ERR_CLOSED) {
+    state->snapshot.has_rpc_error = false;
+    state->snapshot.rpc_error_code = 0;
+  }
+  ++state->snapshot.revision;
+}
+
+/* Detach without cancelling; successful late creates must be revoked. */
+static h2_pal_result_t api_key_expire(h2_gizclaw_api_key_state_t *state) {
+  if (!state->snapshot.busy)
+    return H2_PAL_OK;
+  uint64_t now = 0u;
+  h2_pal_result_t rc = h2_pal_time_get_monotonic_ms(state->config.time, &now);
+  if (rc != H2_PAL_OK)
+    return rc;
+  if (now - state->started_ms < state->config.timeout_ms)
+    return H2_PAL_OK;
+  ++state->generation;
+  state->current->orphan = true;
+  state->current = NULL;
+  api_key_finish(state, H2_PAL_ERR_TIMEOUT);
+  return rc;
+}
+
+static void api_key_complete(void *user, h2_gizclaw_req_t *request,
+                             const h2_gizclaw_operation_result_t *result);
+
+/* Decode one key at a time rather than the SDK's 100-key stack array. */
+typedef struct api_key_item_wire {
+  pb_callback_t name, display_name, secret;
+  bool manage_api_keys;
+} api_key_item_wire;
+#define api_key_item_wire_FIELDLIST(X, a)                                      \
+  X(a, CALLBACK, SINGULAR, STRING, name, 1)                                   \
+  X(a, CALLBACK, SINGULAR, STRING, display_name, 2)                           \
+  X(a, STATIC, SINGULAR, BOOL, manage_api_keys, 4)                            \
+  X(a, CALLBACK, SINGULAR, STRING, secret, 6)
+#define api_key_item_wire_CALLBACK pb_default_field_callback
+#define api_key_item_wire_DEFAULT NULL
+PB_BIND(api_key_item_wire, api_key_item_wire, AUTO)
+typedef struct api_key_list_wire {
+  pb_callback_t items, next_cursor;
+} api_key_list_wire;
+#define api_key_list_wire_FIELDLIST(X, a)                                      \
+  X(a, CALLBACK, REPEATED, MESSAGE, items, 1)                                 \
+  X(a, CALLBACK, OPTIONAL, STRING, next_cursor, 2)
+#define api_key_list_wire_CALLBACK pb_default_field_callback
+#define api_key_list_wire_DEFAULT NULL
+#define api_key_list_wire_items_MSGTYPE api_key_item_wire
+PB_BIND(api_key_list_wire, api_key_list_wire, AUTO)
+
+typedef struct api_key_text {
+  char *data;
+  size_t capacity;
+} api_key_text;
+static bool api_key_decode_text(pb_istream_t *stream, const pb_field_t *field,
+                                 void **arg) {
+  (void)field;
+  api_key_text *text = *arg;
+  const size_t len = stream->bytes_left;
+  if (len >= text->capacity || !pb_read(stream, (pb_byte_t *)text->data, len) ||
+      memchr(text->data, 0, len) != NULL)
+    return false;
+  text->data[len] = 0;
+  return true;
+}
+static pb_callback_t api_key_text_callback(api_key_text *text) {
+  return (pb_callback_t){.funcs.decode = api_key_decode_text, .arg = text};
+}
+typedef struct api_key_page {
+  h2_gizclaw_api_key_state_t *state;
+  unsigned count;
+  char last_name[27];
+} api_key_page;
+static bool api_key_decode_item(pb_istream_t *stream, const pb_field_t *field,
+                                 void **arg) {
+  (void)field;
+  api_key_page *page = *arg;
+  h2_gizclaw_api_key_state_t *state = page->state;
+  h2_gizclaw_api_key_t key = {0};
+  char display_name[81] = {0};
+  api_key_text name = {key.name, sizeof(key.name)};
+  api_key_text display = {display_name, sizeof(display_name)};
+  api_key_text secret = {key.secret, sizeof(key.secret)};
+  api_key_item_wire item = {.name = api_key_text_callback(&name),
+                             .display_name = api_key_text_callback(&display),
+                             .secret = api_key_text_callback(&secret)};
+  bool ok = pb_decode(stream, &api_key_item_wire_msg, &item) &&
+      ++page->count <= 8u && key.name[0] && key.secret[0] &&
+      strcmp(key.name, state->cursor) > 0 &&
+      strcmp(key.name, page->last_name) > 0;
+  if (ok) {
+    memcpy(page->last_name, key.name, sizeof(page->last_name));
+    if (strcmp(display_name, state->display_name) == 0 &&
+        item.manage_api_keys == state->config.manage_api_keys &&
+        (!state->candidate.name[0] ||
+         strcmp(key.name, state->candidate.name) < 0))
+      state->candidate = key;
+  }
+  api_key_erase(&key, sizeof(key));
+  return ok;
+}
+static h2_pal_result_t api_key_parse_list(h2_gizclaw_api_key_state_t *state,
+    h2_gizclaw_req_t *request, bool *more) {
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_response_internal(
+      request, &list_tag, &response);
+  if (rc != H2_PAL_OK) return rc;
+  char cursor[27] = {0};
+  api_key_text next = {cursor, sizeof(cursor)};
+  api_key_page page = {.state = state};
+  api_key_list_wire wire = {
+      .items = {.funcs.decode = api_key_decode_item, .arg = &page},
+      .next_cursor = api_key_text_callback(&next)};
+  pb_istream_t stream = pb_istream_from_buffer(response->result_payload,
+                                               response->result_payload_len);
+  if (!pb_decode(&stream, &api_key_list_wire_msg, &wire) ||
+      ++state->list_pages > 64u ||
+      (state->list_pages == 64u && cursor[0]) ||
+      (cursor[0] && (strcmp(cursor, state->cursor) <= 0 ||
+                     strcmp(cursor, page.last_name) != 0)))
+    return H2_PAL_ERR_FORMAT;
+  *more = cursor[0] != 0;
+  memcpy(state->cursor, cursor, sizeof(state->cursor));
+  return H2_PAL_OK;
+}
+
+/* Caller holds the state mutex. Failed submission never owns a completion. */
+static h2_pal_result_t api_key_submit(h2_gizclaw_api_key_state_t *state,
+                                      bool revoke, const char *revoke_name,
+                                      bool orphan) {
+  api_key_pending_t *pending =
+      h2_pal_mem_alloc(state->config.mem, sizeof(*pending));
+  if (pending == NULL)
+    return H2_PAL_ERR_NO_MEMORY;
+  *pending = (api_key_pending_t){.state = state,
+                                 .generation = state->generation,
+                                 .revoke = revoke,
+                                 .list = !revoke && !orphan && state->listing,
+                                 .orphan = orphan};
+  h2_pal_result_t rc;
+  uint32_t timeout_ms = state->config.timeout_ms;
+  if (!orphan) {
+    uint64_t now = 0u;
+    rc = h2_pal_time_get_monotonic_ms(state->config.time, &now);
+    if (rc == H2_PAL_OK && (now < state->started_ms ||
+        now - state->started_ms >= timeout_ms))
+      rc = H2_PAL_ERR_TIMEOUT;
+    if (rc != H2_PAL_OK) {
+      h2_pal_mem_free(state->config.mem, pending);
+      return rc;
+    }
+    timeout_ms -= (uint32_t)(now - state->started_ms);
+  }
+  if (revoke) {
+    h2_gizclaw_str_t name = {revoke_name, strlen(revoke_name)};
+    if (name.len < sizeof(pending->name))
+      memcpy(pending->name, revoke_name, name.len + 1u);
+    rc = h2_gizclaw_req_create_api_key_revoke(
+        state->config.service, state->generation, name,
+        timeout_ms, &pending->request);
+  } else if (pending->list) {
+    gizclaw_rpc_v1_APIKeyListRequest message = {
+        .has_cursor = state->cursor[0] != 0, .has_limit = true, .limit = 8};
+    memcpy(message.cursor, state->cursor, sizeof(message.cursor));
+    rc = create_request(state->config.service, state->generation, 97, &list_tag,
+        gizclaw_rpc_v1_APIKeyListRequest_fields, &message,
+        timeout_ms, &pending->request);
+  } else {
+    rc = h2_gizclaw_req_create_api_key_create(
+        state->config.service, state->generation, state->config.display_name,
+        state->config.manage_api_keys, timeout_ms,
+        &pending->request);
+  }
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(pending->request, pending, NULL, NULL,
+                           api_key_complete);
+  if (rc != H2_PAL_OK) {
+    h2_gizclaw_req_release(pending->request);
+    h2_pal_mem_free(state->config.mem, pending);
+    return rc;
+  }
+  if (!orphan)
+    state->current = pending;
+  ++state->pending_count;
+  return H2_PAL_OK;
+}
+
+static void api_key_complete(void *user, h2_gizclaw_req_t *request,
+                             const h2_gizclaw_operation_result_t *result) {
+  api_key_pending_t *pending = user;
+  h2_gizclaw_api_key_state_t *state = pending->state;
+  (void)h2_pal_mutex_lock(state->config.sync, state->mutex);
+  if (!pending->orphan && pending->generation == state->generation &&
+      !state->snapshot.closed) {
+    state->current = NULL;
+    h2_pal_result_t rc = result->result;
+    (void)h2_gizclaw_req_rpc_status_internal(
+        request, pending->revoke ? &revoke_tag
+                                : pending->list ? &list_tag : &create_tag,
+        &state->snapshot.has_rpc_error, &state->snapshot.rpc_error_code);
+    if (pending->list) {
+      bool more = false;
+      uint64_t now = 0u;
+      if (rc == H2_PAL_OK)
+        rc = h2_pal_time_get_monotonic_ms(state->config.time, &now);
+      if (rc == H2_PAL_OK && (now < state->started_ms ||
+          now - state->started_ms >= state->config.timeout_ms))
+        rc = H2_PAL_ERR_TIMEOUT;
+      if (rc == H2_PAL_OK) rc = api_key_parse_list(state, request, &more);
+      if (rc == H2_PAL_OK && more) {
+        rc = api_key_submit(state, false, NULL, false);
+        if (rc == H2_PAL_OK) goto drained;
+      } else if (rc == H2_PAL_OK) {
+        state->listing = false;
+        if (state->candidate.name[0]) {
+          state->snapshot.key = state->candidate;
+          state->snapshot.valid = true;
+          state->snapshot.stale = state->revoke_after;
+          if (state->revoke_after) {
+            state->refresh = false;
+            rc = api_key_submit(state, true, state->snapshot.key.name, false);
+            if (rc == H2_PAL_OK) goto drained;
+          }
+        } else {
+          api_key_erase(&state->snapshot.key, sizeof(state->snapshot.key));
+          state->snapshot.valid = false;
+          if (!state->revoke_after) {
+            rc = api_key_submit(state, false, NULL, false);
+            if (rc == H2_PAL_OK) goto drained;
+          } else state->snapshot.stale = false;
+        }
+      }
+      api_key_finish(state, rc);
+    } else if (pending->revoke) {
+      if (rc == H2_PAL_OK)
+        rc = h2_gizclaw_resp_parse_api_key_revoke(request);
+      if (rc == H2_PAL_OK || rc == H2_PAL_ERR_NOT_FOUND) {
+        api_key_erase(&state->snapshot.key, sizeof(state->snapshot.key));
+        state->snapshot.valid = false;
+        ++state->snapshot.revision;
+        if (!state->refresh) {
+          state->snapshot.stale = false;
+          api_key_finish(state, H2_PAL_OK);
+          goto drained;
+        }
+        rc = api_key_submit(state, false, NULL, false);
+        if (rc != H2_PAL_OK)
+          api_key_finish(state, rc);
+      } else {
+        api_key_finish(state, rc);
+      }
+    } else {
+      h2_gizclaw_api_key_t key = {0};
+      if (rc == H2_PAL_OK)
+        rc = h2_gizclaw_resp_parse_api_key_create(request, &key);
+      const bool retain_existing = rc == H2_GIZCLAW_API_KEY_ERR_EXHAUSTED &&
+                                   state->snapshot.valid &&
+                                   state->snapshot.has_rpc_error &&
+                                   state->snapshot.rpc_error_code ==
+                                       H2_GIZCLAW_RPC_ERROR_RESOURCE_EXHAUSTED;
+      if (!retain_existing)
+        api_key_erase(&state->snapshot.key, sizeof(state->snapshot.key));
+      if (rc == H2_PAL_OK && state->revoke_after) {
+        state->snapshot.valid = false;
+        ++state->snapshot.revision;
+        api_key_erase(key.secret, sizeof(key.secret));
+        state->refresh = false;
+        rc = api_key_submit(state, true, key.name, false);
+        api_key_erase(&key, sizeof(key));
+        if (rc != H2_PAL_OK)
+          api_key_finish(state, rc);
+        goto drained;
+      }
+      if (rc == H2_PAL_OK)
+        state->snapshot.key = key;
+      api_key_erase(&key, sizeof(key));
+      state->snapshot.valid = rc == H2_PAL_OK || retain_existing;
+      state->snapshot.stale = rc != H2_PAL_OK;
+      api_key_finish(state, rc);
+    }
+  } else if (pending->revoke) {
+    /* A detached revoke still settles the snapshot key it targeted. */
+    h2_pal_result_t rc = result->result;
+    if (rc == H2_PAL_OK)
+      rc = h2_gizclaw_resp_parse_api_key_revoke(request);
+    if ((rc == H2_PAL_OK || rc == H2_PAL_ERR_NOT_FOUND) &&
+        state->snapshot.valid && pending->name[0] != '\0' &&
+        strcmp(state->snapshot.key.name, pending->name) == 0) {
+      api_key_erase(&state->snapshot.key, sizeof(state->snapshot.key));
+      state->snapshot.valid = false;
+      ++state->snapshot.revision;
+    }
+  } else if (!pending->list && result->result == H2_PAL_OK) {
+    h2_gizclaw_api_key_t key = {0};
+    h2_pal_result_t rc = h2_gizclaw_resp_parse_api_key_create(request, &key);
+    api_key_erase(key.secret, sizeof(key.secret));
+    if (rc == H2_PAL_OK)
+      (void)api_key_submit(state, true, key.name, true);
+    api_key_erase(&key, sizeof(key));
+  }
+drained:
+  if (pending->list) {
+    const h2_gizclaw_rpc_response_t *response = NULL;
+    if (h2_gizclaw_req_response_internal(request, &list_tag, &response) ==
+        H2_PAL_OK && response->result_payload != NULL)
+      api_key_erase((void *)response->result_payload, response->result_payload_len);
+  }
+  h2_gizclaw_req_release(request);
+  h2_pal_mem_free(state->config.mem, pending);
+  --state->pending_count;
+  (void)h2_pal_mutex_unlock(state->config.sync, state->mutex);
+}
+
+h2_pal_result_t
+h2_gizclaw_api_key_state_create(const h2_gizclaw_api_key_state_config_t *config,
+                                h2_gizclaw_api_key_state_t **out_state) {
+  if (out_state == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  *out_state = NULL;
+  if (config == NULL || config->service == NULL || config->mem == NULL ||
+      config->sync == NULL || config->time == NULL ||
+      config->timeout_ms == 0u || config->display_name.data == NULL ||
+      config->display_name.len == 0u ||
+      config->display_name.len >=
+          sizeof(((h2_gizclaw_api_key_state_t *)0)->display_name) ||
+      memchr(config->display_name.data, 0, config->display_name.len) != NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_api_key_state_t *state =
+      h2_pal_mem_alloc(config->mem, sizeof(*state));
+  if (state == NULL)
+    return H2_PAL_ERR_NO_MEMORY;
+  memset(state, 0, sizeof(*state));
+  state->config = *config;
+  memcpy(state->display_name, config->display_name.data,
+         config->display_name.len);
+  state->config.display_name.data = state->display_name;
+  state->snapshot.stale = true;
+  h2_pal_mutex_config_t mutex_config = {.name = "gizclaw-api-key",
+                                        .allocator = config->mem};
+  h2_pal_result_t rc =
+      h2_pal_mutex_create(config->sync, &mutex_config, &state->mutex);
+  if (rc != H2_PAL_OK) {
+    h2_pal_mem_free(config->mem, state);
+    return rc;
+  }
+  *out_state = state;
+  return H2_PAL_OK;
+}
+
+h2_pal_result_t
+h2_gizclaw_api_key_state_request_refresh(h2_gizclaw_api_key_state_t *state,
+                                         bool revoke_current) {
+  if (state == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_pal_result_t rc = h2_pal_mutex_lock(state->config.sync, state->mutex);
+  if (rc != H2_PAL_OK)
+    return rc;
+  rc = api_key_expire(state);
+  if (state->snapshot.closed)
+    rc = H2_PAL_ERR_CLOSED;
+  if (rc == H2_PAL_OK)
+    state->revoke_after = false;
+  if (rc == H2_PAL_OK && !state->snapshot.busy) {
+    rc = h2_pal_time_get_monotonic_ms(state->config.time, &state->started_ms);
+    if (rc == H2_PAL_OK) {
+      ++state->generation;
+      state->snapshot.busy = true;
+      state->snapshot.stale = true;
+      state->snapshot.has_rpc_error = false;
+      state->snapshot.rpc_error_code = 0;
+      ++state->snapshot.revision;
+      state->refresh = true;
+      state->listing = state->config.reuse_existing && !revoke_current;
+      state->list_pages = 0u;
+      memset(state->cursor, 0, sizeof(state->cursor));
+      api_key_erase(&state->candidate, sizeof(state->candidate));
+      bool revoke = revoke_current && state->snapshot.valid;
+      rc = api_key_submit(state, revoke, state->snapshot.key.name, false);
+      if (rc != H2_PAL_OK) {
+        if (!revoke && !state->listing) {
+          api_key_erase(&state->snapshot.key, sizeof(state->snapshot.key));
+          state->snapshot.valid = false;
+        }
+        api_key_finish(state, rc);
+      }
+    }
+  }
+  (void)h2_pal_mutex_unlock(state->config.sync, state->mutex);
+  return rc;
+}
+
+h2_pal_result_t
+h2_gizclaw_api_key_state_request_revoke(h2_gizclaw_api_key_state_t *state) {
+  if (state == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_pal_result_t rc = h2_pal_mutex_lock(state->config.sync, state->mutex);
+  if (rc != H2_PAL_OK)
+    return rc;
+  if (state->snapshot.closed) {
+    rc = H2_PAL_ERR_CLOSED;
+  } else if (state->snapshot.busy) {
+    if (state->refresh)
+      state->revoke_after = true;
+  } else if (state->snapshot.valid) {
+    rc = h2_pal_time_get_monotonic_ms(state->config.time, &state->started_ms);
+    if (rc == H2_PAL_OK) {
+      ++state->generation;
+      state->refresh = false;
+      state->revoke_after = false;
+      state->snapshot.busy = true;
+      state->snapshot.stale = true;
+      state->snapshot.has_rpc_error = false;
+      state->snapshot.rpc_error_code = 0;
+      ++state->snapshot.revision;
+      rc = api_key_submit(state, true, state->snapshot.key.name, false);
+      if (rc != H2_PAL_OK)
+        api_key_finish(state, rc);
+    }
+  }
+  (void)h2_pal_mutex_unlock(state->config.sync, state->mutex);
+  return rc;
+}
+
+h2_pal_result_t
+h2_gizclaw_api_key_state_snapshot(h2_gizclaw_api_key_state_t *state,
+                                  h2_gizclaw_api_key_snapshot_t *out_snapshot) {
+  if (out_snapshot == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_snapshot, 0, sizeof(*out_snapshot));
+  if (state == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_pal_result_t rc = h2_pal_mutex_lock(state->config.sync, state->mutex);
+  if (rc != H2_PAL_OK)
+    return rc;
+  rc = api_key_expire(state);
+  if (rc == H2_PAL_OK)
+    *out_snapshot = state->snapshot;
+  (void)h2_pal_mutex_unlock(state->config.sync, state->mutex);
+  return rc;
+}
+
+h2_pal_result_t
+h2_gizclaw_api_key_state_close(h2_gizclaw_api_key_state_t *state) {
+  if (state == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_pal_result_t rc = h2_pal_mutex_lock(state->config.sync, state->mutex);
+  if (rc != H2_PAL_OK)
+    return rc;
+  if (!state->snapshot.closed) {
+    ++state->generation;
+    if (state->current != NULL)
+      state->current->orphan = true;
+    state->current = NULL;
+    state->snapshot.closed = true;
+    state->snapshot.stale = true;
+    api_key_finish(state, H2_PAL_ERR_CLOSED);
+  }
+  (void)h2_pal_mutex_unlock(state->config.sync, state->mutex);
+  return rc;
+}
+
+h2_pal_result_t
+h2_gizclaw_api_key_state_destroy(h2_gizclaw_api_key_state_t **ptr) {
+  if (ptr == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_api_key_state_t *state = *ptr;
+  if (state == NULL)
+    return H2_PAL_OK;
+  h2_pal_result_t rc = h2_pal_mutex_lock(state->config.sync, state->mutex);
+  if (rc != H2_PAL_OK)
+    return rc;
+  bool busy = state->pending_count != 0u;
+  (void)h2_pal_mutex_unlock(state->config.sync, state->mutex);
+  if (busy)
+    return H2_PAL_ERR_BUSY;
+  rc = h2_pal_mutex_destroy(state->config.sync, state->mutex);
+  if (rc != H2_PAL_OK)
+    return rc;
+  const h2_pal_mem_api_t *mem = state->config.mem;
+  api_key_erase(state, sizeof(*state));
+  h2_pal_mem_free(mem, state);
+  *ptr = NULL;
+  return H2_PAL_OK;
 }

@@ -59,7 +59,7 @@ h2_pal_result_t h2_quectel_power_wake(h2_quectel_modem_t *modem) {
 h2_pal_result_t h2_quectel_power_reconcile(h2_quectel_modem_t *modem, h2_pal_result_t result) {
     if (modem->opened != 0u && modem->power_configured != 0u && modem->power_fault == 0u &&
         modem->power_policy == H2_PAL_MODEM_POWER_POLICY_AUTO_SLEEP && modem->gnss_hold == 0u &&
-        modem->call_hold == 0u && modem->data_hold == 0u && modem->sleep_allowed == 0u) {
+        modem->call_hold == 0u && modem->data_hold == 0u && modem->ota_hold == 0u && modem->sleep_allowed == 0u) {
         h2_pal_result_t rc = modem->config.sleep_gate(modem->config.transport_user, 1);
         if (rc == H2_PAL_OK) {
             modem->sleep_allowed = 1u;
@@ -97,18 +97,12 @@ h2_pal_result_t h2_quectel_power_prepare(h2_quectel_modem_t *modem) {
     if (!low_power && modem->config.sim_hotplug == 0u) {
         return H2_PAL_OK;
     }
-    if (modem->model_checked == 0u) {
-        h2_quectel_response_t response;
-        h2_pal_result_t rc = h2_quectel_at_exchange(modem, "AT+CGMM", &response, 0);
-        if (rc != H2_PAL_OK) {
-            return rc;
-        }
-        if (response.count == 0u || (strcmp(response.lines[0], "EC25") != 0 &&
-                                     strncmp(response.lines[0], "EC25-", 5u) != 0)) {
+    h2_pal_result_t model_result = h2_quectel_resolve_model(modem);
+    if (model_result != H2_PAL_OK) {
+        if (model_result == H2_PAL_ERR_UNSUPPORTED) {
             modem->capabilities &= ~(uint32_t)H2_PAL_MODEM_CAPABILITY_LOW_POWER;
-            return H2_PAL_ERR_UNSUPPORTED;
         }
-        modem->model_checked = 1u;
+        return model_result;
     }
     if (modem->sim_restart_required != 0u) {
         return H2_PAL_ERR_INVALID_STATE;
@@ -126,6 +120,10 @@ h2_pal_result_t h2_quectel_power_prepare(h2_quectel_modem_t *modem) {
             return H2_PAL_ERR_FORMAT;
         }
         if (enabled != 1 || level != modem->config.sim_insert_level) {
+            if (modem->sim_restart_attempted != 0u) {
+                modem->sim_restart_required = 1u;
+                return H2_PAL_ERR_INVALID_STATE;
+            }
             char cmd[32];
             (void)snprintf(cmd, sizeof(cmd), "AT+QSIMDET=1,%u", modem->config.sim_insert_level);
             rc = h2_quectel_at_exchange(modem, cmd, NULL, 0);

@@ -1,0 +1,410 @@
+{
+  "platform": "ios-simulator",
+  "version": "2.0.0",
+  "pid": 14012,
+  "contract": 1,
+  "operations": 13,
+  "passed": 43,
+  "failed": 0,
+  "blocked": 0,
+  "retained_allocations": 0,
+  "rc": 0,
+  "teardown": 0,
+  "cases": [
+    {
+      "id": "wrapper-arguments",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 0,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "malformed-sdp",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 2,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "default-lifetime",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 0,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "legacy-create-fallback",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 0,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "allocator-failure",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 0,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "allocator-ownership",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 0,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "poll-nonblocking",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 0,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "poll-timeout",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 25,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "poll-negative",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 0,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "ice-arguments",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 0,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "ice-borrowed-input",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 1,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "track-arguments",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 0,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "track-bind",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 3,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "channel-arguments",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 0,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "channel-configurations",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 11,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "send-before-connected",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 0,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "offer-owned-sdp",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 16,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "remote-sdp-arguments",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 0,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "pion-negotiation",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 3,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "channel-metadata",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 9,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "binary-roundtrip",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 1,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "text-roundtrip",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 0,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "empty-binary",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 0,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "empty-text",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 0,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "unordered-roundtrip",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 0,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "ordered-unreliable",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 0,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "unordered-reliable",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 1,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "message-boundaries",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 0,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "send-borrowed-input",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 0,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "opus-arguments",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 0,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "opus-direct-roundtrip",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 47,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "opus-backpressure",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 25,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "track-read-roundtrip",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 21,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "track-write-retry",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 32,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "track-unset-quiescent",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 122,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "detached-opus-event",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 1,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "channel-close-event",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 1,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "remote-close",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 1,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "owned-event-after-close",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 1,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "event-release-idempotent",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 0,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "resource-churn",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 1,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "fingerprint-rejected",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 25,
+      "observed_error": -17,
+      "authentication_evidence": 1
+    },
+    {
+      "id": "explicit-stream-id",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 29,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    }
+  ],
+  "source_commit": "93eec8640563f57139f2219af5fbef8cbae83309",
+  "source_sha256": {
+    "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_e2e.h": "24bd887884a51a9cb55cdcaf2b136e74d72826db7f1156bddbd39c3b405a9cf0",
+    "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_cases.inc": "725f4d2ca360da9066a855696a30553f49959c6a9ec26dcb168ef4912587528b",
+    "projects/e2e/apps/pal-webrtc/app/src/h2_pal_webrtc_e2e.c": "a4b05391de4360162d4c2e6c81b77977b1aaa1093d414b3b97312fcb1d158e33",
+    "projects/e2e/apps/pal-webrtc/app/api_coverage.json": "658ec12889c79438c11992e61a89c6ecd061905d11e6da1c6e8aaf36515f949e",
+    "libs/pal/include/h2/pal/application/h2_pal_webrtc.h": "a2b7e90b18a063250a590eb5a982843c7c8303a0e4d61d3edabcaa834c0cc793"
+  }
+}

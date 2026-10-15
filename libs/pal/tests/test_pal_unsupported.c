@@ -197,6 +197,23 @@ int main(void) {
     CHECK_UNSUPPORTED_API(log);
     CHECK_UNSUPPORTED_API(mem);
     CHECK_UNSUPPORTED_API(modem);
+    const h2_pal_modem_ota_request_t ota_request = {.url = "https://example.com/fw", .target_revision = "R02"};
+    h2_pal_modem_ota_status_t ota_status;
+    memset(&ota_status, 0xff, sizeof(ota_status));
+    assert(h2_pal_modem_ota_start(h2_pal_unsupported_modem_api(), &ota_request) == H2_PAL_ERR_UNSUPPORTED);
+    assert(h2_pal_modem_ota_get_status(h2_pal_unsupported_modem_api(), 0u, &ota_status) == H2_PAL_ERR_UNSUPPORTED);
+    assert(ota_status.state == H2_PAL_MODEM_OTA_IDLE && ota_status.attempt_id == 0u);
+    h2_pal_modem_emergency_number_t emergency_numbers[2];
+    size_t emergency_count = 99u;
+    memset(emergency_numbers, 0xff, sizeof(emergency_numbers));
+    assert(h2_pal_modem_get_emergency_numbers(h2_pal_unsupported_modem_api(), 0u,
+        emergency_numbers, 2u, &emergency_count) == H2_PAL_ERR_UNSUPPORTED);
+    assert(emergency_count == 0u && emergency_numbers[0].number[0] == '\0');
+    h2_pal_modem_signal_t signal;
+    memset(&signal, 0xff, sizeof(signal));
+    assert(h2_pal_modem_get_signal(h2_pal_unsupported_modem_api(), &signal) == H2_PAL_ERR_UNSUPPORTED);
+    assert(signal.rssi_dbm == 0 && signal.rssi_valid == 0u);
+    assert(signal.rsrp_dbm == 0 && signal.rsrp_valid == 0u);
     CHECK_UNSUPPORTED_API(mqtt);
     CHECK_UNSUPPORTED_API(net);
     CHECK_UNSUPPORTED_API(netif);
@@ -277,6 +294,16 @@ int main(void) {
                NULL) == H2_PAL_ERR_UNSUPPORTED);
     assert(h2_pal_wifi_csi_stop(h2_pal_unsupported_wifi_csi_api()) == H2_PAL_OK);
     assert(h2_pal_power_reboot(h2_pal_unsupported_power_api(), 0u) == H2_PAL_ERR_UNSUPPORTED);
+    assert(h2_pal_power_set_deep_sleep_wake_timer(h2_pal_unsupported_power_api(), 1000u) ==
+           H2_PAL_ERR_UNSUPPORTED);
+    assert(h2_pal_power_set_deep_sleep_wake_timer(NULL, 1000u) == H2_PAL_ERR_UNSUPPORTED);
+    const h2_pal_power_vtable_t empty_power_vtable = {0};
+    const h2_pal_power_api_t no_vtable_power = {NULL, NULL};
+    const h2_pal_power_api_t empty_slot_power = {NULL, &empty_power_vtable};
+    assert(h2_pal_power_set_deep_sleep_wake_timer(&no_vtable_power, 1000u) ==
+           H2_PAL_ERR_UNSUPPORTED);
+    assert(h2_pal_power_set_deep_sleep_wake_timer(&empty_slot_power, 1000u) ==
+           H2_PAL_ERR_UNSUPPORTED);
     const h2_pal_net_api_t *unsupported_net = h2_pal_unsupported_net_api();
     assert(unsupported_net->vtable->tcp_send_timeout != NULL);
     const uint8_t tcp_byte = 0u;

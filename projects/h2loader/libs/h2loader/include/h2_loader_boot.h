@@ -1,6 +1,7 @@
 #ifndef H2_LOADER_BOOT_H
 #define H2_LOADER_BOOT_H
 
+#include "h2_atomic.h"
 #include "h2_loader_metadata.h"
 #include "h2_loader_package.h"
 #include "h2/pal/hal/h2_pal_power.h"
@@ -40,6 +41,7 @@ typedef enum h2_loader_command_availability {
     H2_LOADER_COMMAND_AVAILABLE_WIFI_CONNECT = UINT32_C(1) << 17,
     H2_LOADER_COMMAND_AVAILABLE_WIFI_DISCONNECT = UINT32_C(1) << 18,
     H2_LOADER_COMMAND_AVAILABLE_REBOOT_UPGRADE = UINT32_C(1) << 19,
+    H2_LOADER_COMMAND_AVAILABLE_WIFI_STATUS = UINT32_C(1) << 20,
 } h2_loader_command_availability_t;
 
 #define H2_LOADER_COMMAND_AVAILABILITY_ALL \
@@ -58,7 +60,8 @@ typedef enum h2_loader_command_availability {
      H2_LOADER_COMMAND_AVAILABLE_STAGE_URL | \
      H2_LOADER_COMMAND_AVAILABLE_WIFI_SCAN | \
      H2_LOADER_COMMAND_AVAILABLE_WIFI_CONNECT | \
-     H2_LOADER_COMMAND_AVAILABLE_WIFI_DISCONNECT)
+     H2_LOADER_COMMAND_AVAILABLE_WIFI_DISCONNECT | \
+     H2_LOADER_COMMAND_AVAILABLE_WIFI_STATUS)
 
 typedef enum h2_loader_active_role {
     H2_LOADER_ACTIVE_ROLE_UNKNOWN = 0,
@@ -131,11 +134,7 @@ typedef struct h2_loader_mfg_summary {
     uint8_t step_status[H2_LOADER_MFG_STEP_MAX];
 } h2_loader_mfg_summary_t;
 
-#if defined(_MSC_VER)
-typedef volatile long h2_loader_atomic_flag_t;
-#else
-typedef volatile int h2_loader_atomic_flag_t;
-#endif
+typedef h2_atomic_int_t h2_loader_atomic_flag_t;
 
 typedef int (*h2_loader_reboot_transition_fn)(void *user);
 
@@ -245,6 +244,8 @@ int h2_loader_mfg_ensure_acceptance_revision(
     uint32_t required_revision);
 
 int h2_loader_init(h2_loader_t *loader, const h2_loader_config_t *config);
+/* Call after concurrent command users stop, before reinitializing or releasing loader. */
+void h2_loader_deinit(h2_loader_t *loader);
 int h2_loader_startup(h2_loader_t *loader, h2_loader_startup_action_t *out_action);
 int h2_loader_begin_stage(
     h2_loader_t *loader,
@@ -293,6 +294,24 @@ int h2_loader_read_pref_status(
     const h2_pal_pref_api_t *pref,
     const h2_pal_mem_api_t *allocator,
     h2_loader_status_t *out_status);
+/** Read the running Loader's Image Reader bytes and construct the complete identity
+ * required by h2_loader_init(). config borrows power, pref, package allocator,
+ * image_reader and digest callbacks; board/target/version are NUL-terminated.
+ * Call before init, serialized with other package/digest operations in task
+ * context. This blocks for the image read and never writes preferences.
+ * Only a present, valid record from the running slot with H2LOADER role and
+ * matching board, target and version provides the image length and expected SHA.
+ * Missing, malformed or nonmatching metadata uses the primary Loader capacity,
+ * including when the candidate is running from a larger App slot. Reader capacity and stored
+ * checksum are checked. A 4 KiB allocator buffer is freed on every path;
+ * digest failures abort. Missing callbacks/invalid arguments return INVALID_ARG,
+ * bad slot/size/checksum return INVALID_STATE or FORMAT; backend errors propagate.
+ * out_identity is required caller-owned storage and is zero on failure. On
+ * success it owns the copied identity and strings; no dependencies are retained.
+ */
+int h2_loader_read_current_loader_identity(
+    const h2_loader_config_t *config, const char *version,
+    h2_loader_image_identity_t *out_identity);
 int h2_loader_read_status(h2_loader_t *loader, h2_loader_status_t *out_status);
 
 #ifdef __cplusplus

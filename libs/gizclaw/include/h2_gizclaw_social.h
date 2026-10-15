@@ -539,8 +539,8 @@ typedef struct h2_gizclaw_social_ping {
 } h2_gizclaw_social_ping_t;
 
 /** server.friend.ping (123) pings the caller's Friend by relationship ID
- * (h2_gizclaw_friend_t.id); the Server pushes client.social.ping to that
- * device. Create copies friend_id and performs no network I/O. */
+ * (h2_gizclaw_friend_t.id); the Server pushes social.ping through tool/v0 to
+ * that device. Create copies friend_id and performs no network I/O. */
 h2_pal_result_t h2_gizclaw_req_create_friend_ping(
     h2_gizclaw_service_t *service, uint64_t identity,
     h2_gizclaw_str_t friend_id, uint32_t timeout_ms,

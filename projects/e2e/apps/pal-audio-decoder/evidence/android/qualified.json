@@ -1,0 +1,192 @@
+{
+  "platform": "android-emulator",
+  "version": "2.0.0",
+  "pid": 4743,
+  "contract": 1,
+  "operations": 8,
+  "passed": 29,
+  "failed": 0,
+  "blocked": 0,
+  "retained": 0,
+  "qualified": 1,
+  "rc": 0,
+  "teardown": 0,
+  "frames": 169,
+  "pcm_bytes": 505856,
+  "cases": [
+    {
+      "id": "wrapper-arguments",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "open-close",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "preferred-format",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "unconfigured-state",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "configure-arguments",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "unsupported-codec",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "invalid-asc",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "configure-repeat",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "empty-nonblocking",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "finite-acquire",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "packet-arguments",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "mono-pcm",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "stereo-pcm",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "mono-signal",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "stereo-signal",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "frame-timing",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "borrowed-asc",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "borrowed-packet",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "held-frame-acquire",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "held-frame-reset",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "held-frame-close",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "foreign-frame",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "reset-reconfigure",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "format-change",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "end-of-stream",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "post-eos-state",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "pcm-allocator-use",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "pcm-allocator-failure",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "session-churn",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    }
+  ]
+}

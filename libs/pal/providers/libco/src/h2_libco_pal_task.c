@@ -84,6 +84,7 @@ static int h2_libco_pal_task_join(void *user, h2_pal_task_t *opaque_task) {
     if (entry_result == H2_LIBCO_ERR_CANCELLED) {
         entry_result = H2_PAL_EXIT;
     }
+    h2_libco_internal_release_joined_task(core, task->native_task);
     --core->live_pal_objects;
     core->config.free(core->config.user, task);
     return entry_result;

@@ -1,0 +1,57 @@
+diff --git a/apps/common/usb/device/cdc.c b/apps/common/usb/device/cdc.c
+--- a/apps/common/usb/device/cdc.c
++++ b/apps/common/usb/device/cdc.c
+@@ -391,34 +391,29 @@
+
+ u32 cdc_write_data(const usb_dev usb_id, u8 *buf, u32 len)
+ {
+-    u32 txlen, offset;
+-    if (cdc_hdl[usb_id] == NULL) {
++    if (usb_id >= USB_MAX_HW_NUM || cdc_hdl[usb_id] == NULL ||
++        buf == NULL || len == 0) {
+         return 0;
+     }
+-    if ((cdc_hdl[usb_id]->bmTransceiver & (BIT(1) | BIT(4))) != (BIT(1) | BIT(4))) {
++    struct usb_cdc_gadget *cdc = cdc_hdl[usb_id];
++    if (os_mutex_accept(&cdc->mutex_data) != OS_NO_ERR) {
+         return 0;
+     }
+-    offset = 0;
+-    if (os_mutex_pend(&cdc_hdl[usb_id]->mutex_data, 1) != OS_NO_ERR) {
+-        return 0;
+-    }
+-    while (offset < len) {
+-        txlen = len - offset > MAXP_SIZE_CDC_BULKIN ?
+-                MAXP_SIZE_CDC_BULKIN : len - offset;
+-        txlen = usb_g_bulk_write(usb_id, CDC_DATA_EP_IN, buf + offset, txlen);
+-        if (txlen == 0) {
+-            break;
+-        }
+-        if ((cdc_hdl[usb_id]->bmTransceiver & (BIT(1) | BIT(4))) != (BIT(1) | BIT(4))) {
+-            break;
+-        }
+-        offset += txlen;
+-    }
+-    if (offset && !(offset % MAXP_SIZE_CDC_BULKIN)) {
+-        usb_g_bulk_write(usb_id, CDC_DATA_EP_IN, NULL, 0);
+-    }
+-    os_mutex_post(&cdc_hdl[usb_id]->mutex_data);
+-    return offset;
++    u32 written = 0;
++    /* This layout registers CDC once and does not link task_pc teardown.
++     * Reset reuses the same DMA allocation. The CDC data mutex excludes
++     * every task writer; endpoint reset clears TX-ready instead of setting
++     * it. A ready, single short packet cannot enter usb_g_ep_write's wait
++     * loop and requires no subsequent blocking zero-length packet. */
++    if ((cdc->bmTransceiver & (BIT(1) | BIT(4))) == (BIT(1) | BIT(4)) &&
++        usb_get_dma_taddr(usb_id, CDC_DATA_EP_IN) != NULL &&
++        usb_get_dma_size(usb_id, CDC_DATA_EP_IN) >= MAXP_SIZE_CDC_BULKIN &&
++        !(usb_read_txcsr(usb_id, CDC_DATA_EP_IN) & BIT(0))) {
++        u32 take = len < MAXP_SIZE_CDC_BULKIN ? len : MAXP_SIZE_CDC_BULKIN - 1;
++        written = usb_g_bulk_write(usb_id, CDC_DATA_EP_IN, buf, take);
++    }
++    os_mutex_post(&cdc->mutex_data);
++    return written;
+ }
+
+ u32 cdc_write_inir(const usb_dev usb_id, u8 *buf, u32 len)

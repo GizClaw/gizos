@@ -1,0 +1,36 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:mobile_e2e.bzl", "mobile_e2e_suite")
+package(default_visibility = ["//projects/e2e:__subpackages__"])
+cc_library(
+    name = "runner",
+    srcs = ["mobile_runner.c"],
+    hdrs = ["mobile_runner.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["."],
+    deps = ["//projects/e2e/apps/gizclaw:app_config_fixture", "//libs/runtime", "//projects/e2e/apps/gizclaw/app:gizclaw_e2e"],
+)
+
+mobile_e2e_suite(
+    name = "mobile_e2e",
+    package = "com.haivivi.gizos.e2e.gizclaw",
+    report = "gizclaw-result.json",
+    registry = "//projects/e2e/apps/gizclaw/app:src/h2_gizclaw_e2e_catalog_all.c",
+    # FENCE is an opt-in suite outside SUITE_ALL, which this lane executes.
+    registry_pattern = '[{]"([^"]+)", H2_GIZCLAW_E2E_SUITE_(?!FENCE,)',
+    case_count = 8,
+    expected = {
+        "rc": 0, "teardown": 0, "selected": 8, "failed": 0,
+        "cleanup_rc": 0, "retained_resources": 0, "complete": True,
+    },
+    timeout_seconds = 1800,
+    hook = "suite.py",
+    fixtures = {
+        "pcm": "//projects/e2e/apps/gizclaw:voice_prompt",
+        "app_config": "//projects/e2e/apps/gizclaw:app_config_fixture_contract",
+    },
+    deps = ["//projects/e2e/apps/gizclaw:coverage_library"],
+)
+
+exports_files(["suite.py"])

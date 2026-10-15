@@ -9,6 +9,9 @@ struct H2GizclawDesktopOptions {
   const char *endpoint = nullptr;
   const char *token = nullptr;
   const char *suite_name = nullptr;
+  const char *fence_workflow_name = nullptr;
+  const char *fence_first_id = nullptr;
+  const char *fence_second_id = nullptr;
   uint32_t suites = 0;
 };
 

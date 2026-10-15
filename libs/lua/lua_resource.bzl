@@ -11,6 +11,8 @@ def _lua_resource_impl(ctx):
     args.add("--header", header)
     args.add("--implementation", implementation)
     args.add("--symbol", ctx.attr.symbol)
+    if ctx.attr.compact:
+        args.add("--compact")
     ctx.actions.run(
         executable = ctx.executable._tool,
         arguments = [args],
@@ -26,6 +28,7 @@ _lua_resource = rule(
     attrs = {
         "src": attr.label(allow_single_file = [".lua"], mandatory = True),
         "symbol": attr.string(mandatory = True),
+        "compact": attr.bool(default = False),
         "_tool": attr.label(
             default = Label("//libs/lua:embed_resource"),
             executable = True,
@@ -38,13 +41,14 @@ _lua_resource = rule(
     },
 )
 
-def h2_lua_resource(name, src, symbol, visibility = None):
-    """Creates a C library exposing `<symbol>` and `<symbol>_size`."""
+def h2_lua_resource(name, src, symbol, visibility = None, compact = False):
+    """Embeds Lua text; optional compaction preserves literals and line numbers."""
     generated_name = name + "_generated"
     _lua_resource(
         name = generated_name,
         src = src,
         symbol = symbol,
+        compact = compact,
     )
     cc_library(
         name = name,

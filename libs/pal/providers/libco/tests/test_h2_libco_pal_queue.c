@@ -32,7 +32,11 @@ static h2_pal_queue_t *create_queue(
         .allocator = mem,
     };
     h2_pal_queue_t *queue = NULL;
+    h2_libco_resource_stats_t before, after;
+    assert(h2_libco_get_resource_stats(api->user, &before) == H2_LIBCO_OK);
     assert(h2_pal_queue_create(api, &config, &queue) == H2_PAL_OK);
+    assert(h2_libco_get_resource_stats(api->user, &after) == H2_LIBCO_OK);
+    assert(after.live_queues == before.live_queues + 1u);
     return queue;
 }
 
@@ -196,6 +200,100 @@ static void test_timeout_cancel_close_reset_and_teardown(
     h2_pal_queue_destroy(api, queue);
 }
 
+static void test_close_drains_buffered_fifo(
+    const h2_pal_queue_api_t *api, const h2_pal_mem_api_t *mem) {
+    h2_pal_queue_t *queue = create_queue(api, mem, 3u);
+    for (int value = 1; value <= 3; ++value)
+        assert(h2_pal_queue_send(api, queue, &value, 0u) == H2_PAL_OK);
+    assert(h2_pal_queue_close(api, queue) == H2_PAL_OK);
+    assert(h2_pal_queue_close(api, queue) == H2_PAL_OK);
+    int value = 99, out = 0;
+    assert(h2_pal_queue_send(api, queue, &value, 0u) == H2_PAL_ERR_CLOSED);
+    assert(h2_pal_queue_send_latest(api, queue, &value) == H2_PAL_ERR_CLOSED);
+    for (int expected = 1; expected <= 3; ++expected) {
+        assert(h2_pal_queue_recv(api, queue, &out, 0u) == H2_PAL_OK);
+        assert(out == expected);
+    }
+    assert(h2_pal_queue_recv(api, queue, &out, 0u) == H2_PAL_ERR_CLOSED);
+    h2_pal_queue_destroy(api, queue);
+}
+
+static void test_waiting_receivers_drain_after_send_and_close(
+    h2_libco_t *core, const h2_pal_queue_api_t *api,
+    const h2_pal_mem_api_t *mem) {
+    h2_pal_queue_t *queue = create_queue(api, mem, 2u);
+    queue_call_t calls[3] = {
+        {.api = api, .queue = queue, .timeout_ms = H2_PAL_QUEUE_WAIT_FOREVER},
+        {.api = api, .queue = queue, .timeout_ms = H2_PAL_QUEUE_WAIT_FOREVER},
+        {.api = api, .queue = queue, .timeout_ms = H2_PAL_QUEUE_WAIT_FOREVER},
+    };
+    h2_libco_task_t *tasks[3];
+    for (size_t i = 0; i < 3u; ++i) tasks[i] = start_call(core, receive_task, &calls[i]);
+    h2_libco_test_schedule(core, 3u);
+    int value = 71;
+    assert(h2_pal_queue_send(api, queue, &value, 0u) == H2_PAL_OK);
+    value = 72;
+    assert(h2_pal_queue_send(api, queue, &value, 0u) == H2_PAL_OK);
+    /* All receivers are suspended/ready; none has returned from recv yet. */
+    assert(h2_pal_queue_close(api, queue) == H2_PAL_OK);
+    h2_libco_test_schedule(core, 3u);
+    assert(calls[0].result == H2_PAL_OK && calls[0].value == 71);
+    assert(calls[1].result == H2_PAL_OK && calls[1].value == 72);
+    assert(calls[2].result == H2_PAL_ERR_CLOSED);
+    for (size_t i = 0; i < 3u; ++i) join_call(core, tasks[i]);
+    h2_pal_queue_destroy(api, queue);
+}
+
+static void test_reset_generation_fences_old_receivers(
+    h2_libco_t *core, const h2_pal_queue_api_t *api,
+    const h2_pal_mem_api_t *mem) {
+    for (unsigned close_first = 0u; close_first < 2u; ++close_first) {
+        for (unsigned send_first = 0u; send_first < 2u; ++send_first) {
+            h2_pal_queue_t *queue = create_queue(api, mem, 1u);
+            queue_call_t old = {.api = api, .queue = queue,
+                               .timeout_ms = H2_PAL_QUEUE_WAIT_FOREVER};
+            h2_libco_task_t *task = start_call(core, receive_task, &old);
+            h2_libco_test_schedule(core, 1u);
+            int value = 11, out = 0;
+            if (send_first) assert(h2_pal_queue_send(api, queue, &value, 0u) == H2_PAL_OK);
+            if (close_first) assert(h2_pal_queue_close(api, queue) == H2_PAL_OK);
+            assert(h2_pal_queue_reset(api, queue) == H2_PAL_OK);
+            value = 22;
+            assert(h2_pal_queue_send(api, queue, &value, 0u) == H2_PAL_OK);
+            h2_libco_test_schedule(core, 1u);
+            assert(old.result == H2_PAL_ERR_CLOSED);
+            join_call(core, task);
+            assert(h2_pal_queue_recv(api, queue, &out, 0u) == H2_PAL_OK && out == 22);
+            h2_pal_queue_destroy(api, queue);
+        }
+    }
+}
+
+static void test_reset_wakes_sender_but_does_not_revive_closed_sender(
+    h2_libco_t *core, const h2_pal_queue_api_t *api,
+    const h2_pal_mem_api_t *mem) {
+    for (unsigned close_first = 0u; close_first < 2u; ++close_first) {
+        h2_pal_queue_t *queue = create_queue(api, mem, 1u);
+        int value = 1, out = 0;
+        assert(h2_pal_queue_send(api, queue, &value, 0u) == H2_PAL_OK);
+        queue_call_t sender = {.api = api, .queue = queue, .value = 2,
+                               .timeout_ms = H2_PAL_QUEUE_WAIT_FOREVER};
+        h2_libco_task_t *task = start_call(core, send_task, &sender);
+        h2_libco_test_schedule(core, 1u);
+        if (close_first) assert(h2_pal_queue_close(api, queue) == H2_PAL_OK);
+        assert(h2_pal_queue_reset(api, queue) == H2_PAL_OK);
+        h2_libco_test_schedule(core, 1u);
+        assert(sender.result == (close_first ? H2_PAL_ERR_CLOSED : H2_PAL_OK));
+        join_call(core, task);
+        if (close_first) {
+            assert(h2_pal_queue_recv(api, queue, &out, 0u) == H2_PAL_ERR_TIMEOUT);
+        } else {
+            assert(h2_pal_queue_recv(api, queue, &out, 0u) == H2_PAL_OK && out == 2);
+        }
+        h2_pal_queue_destroy(api, queue);
+    }
+}
+
 int main(void) {
     h2_libco_test_env_t env = {0};
     h2_libco_t *core = h2_libco_test_create(&env);
@@ -203,10 +301,17 @@ int main(void) {
     const h2_pal_mem_api_t *mem = h2_libco_test_mem(&env);
 
     test_fifo_latest_and_capacity(api, mem);
+    test_close_drains_buffered_fifo(api, mem);
+    test_waiting_receivers_drain_after_send_and_close(core, api, mem);
+    test_reset_generation_fences_old_receivers(core, api, mem);
+    test_reset_wakes_sender_but_does_not_revive_closed_sender(core, api, mem);
     test_waiter_order_and_blocked_sender(core, api, mem);
     test_timeout_cancel_close_reset_and_teardown(&env, core, api, mem);
 
+    h2_libco_resource_stats_t stats;
+    assert(h2_libco_get_resource_stats(core, &stats) == H2_LIBCO_OK);
+    assert(stats.live_tasks == 0u && stats.task_stack_bytes == 0u && stats.live_queues == 0u);
     assert(h2_libco_destroy(&core) == H2_LIBCO_OK);
-    assert(env.allocations == 0u);
+    assert(env.allocations == 0u && env.allocated_bytes == 0u);
     return 0;
 }

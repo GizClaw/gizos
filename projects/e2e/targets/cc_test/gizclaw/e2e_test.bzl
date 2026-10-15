@@ -3,13 +3,19 @@ load("//tools/bazel:cc_options.bzl", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
 
 def gizclaw_e2e_desktop_deps(backend = "h2peer", app = "//projects/e2e/apps/gizclaw/app:gizclaw_e2e"):
     deps = [
+        "//projects/e2e/apps/gizclaw:app_config_fixture",
+        "//libs/atomic",
+        "//libs/atomic/providers/c11",
+        "//libs/app_test:testing_pal",
         "//libs/pal/providers/desktop/pal_core",
         "//libs/pal/providers/corehttp",
         "//libs/pal",
         "//libs/runtime",
+        "//projects/e2e/libs/gizclaw-device:ledger",
         "//libs/pal/providers/desktop/app_support:app_support",
         "//libs/pal/providers/desktop/app_support:bundle_rpath",
         "//projects/e2e/targets/cc_test/gizclaw:desktop_options",
+        "//projects/e2e/targets/cc_test/gizclaw:desktop_static_guard",
         app,
     ]
     if backend == "pion":
@@ -39,6 +45,8 @@ def gizclaw_e2e_desktop_live_test(name, suite, backend = "h2peer", app = "//proj
             "H2_GIZCLAW_E2E_SUITE",
             "H2_GIZCLAW_E2E_DEVICE_API_URL",
             "H2_GIZCLAW_E2E_AUDIO_URL",
+            "H2_GIZCLAW_E2E_LUA_RECORD_GOLDEN",
+            "H2_GIZCLAW_E2E_LUA_PERSISTENCE_FAULT",
         ],
         local_defines = ["H2_GIZCLAW_E2E_USE_PION=1"] if backend == "pion" else [],
         size = "enormous",

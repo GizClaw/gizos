@@ -4,16 +4,43 @@ set -euo pipefail
 
 repository_root=$(git rev-parse --show-toplevel)
 fixture_root="$repository_root/tools/bazel/tests/downstream_consumer"
+
+# The fixture root ignores every rc file, so Bazel would otherwise fall back to
+# its built-in output root and repository cache. Reuse the locations the
+# caller's own configuration selects for this checkout instead.
+caller_bazel_info() {
+    (cd "$repository_root" && "${BAZEL_BIN:-bazel}" info "$1")
+}
+output_user_root=${BAZEL_OUTPUT_USER_ROOT:-}
+if [ -z "$output_user_root" ]; then
+    caller_output_base=$(caller_bazel_info output_base)
+    output_user_root=${caller_output_base%/*}
+fi
+repository_cache=${BAZEL_REPOSITORY_CACHE:-}
+if [ -z "$repository_cache" ]; then
+    repository_cache=$(caller_bazel_info repository_cache)
+fi
+if [ -z "$output_user_root" ] || [ -z "$repository_cache" ]; then
+    printf 'cannot resolve the Bazel output root and repository cache\n' >&2
+    exit 2
+fi
+mkdir -p "$repository_cache"
+
 consumer_root=$(mktemp -d "${TMPDIR:-/tmp}/gizos-downstream-consumer.XXXXXX")
 
 cleanup() {
-    "${BAZEL_BIN:-bazel}" --output_base="$consumer_root/output-base" shutdown >/dev/null 2>&1 || true
+    "${BAZEL_BIN:-bazel}" --output_user_root="$output_user_root" --output_base="$consumer_root/output-base" shutdown >/dev/null 2>&1 || true
     chmod -R u+w "$consumer_root" 2>/dev/null || true
     rm -rf "$consumer_root"
 }
 trap cleanup EXIT
-repository_cache=${BAZEL_REPOSITORY_CACHE:-"$HOME/.cache/bazel/repository"}
-mkdir -p "$repository_cache"
+
+# The fixture root ignores every rc file, so it must declare the same registry
+# list a real downstream consumer configures for GizClaw-owned Bzlmod modules.
+registry_options=(
+    --registry=https://bcr.bazel.build
+    --registry=https://static-volc.gizclaw.com/bazel/
+)
 
 cp "$fixture_root/MODULE.bazel.fixture" "$consumer_root/MODULE.bazel"
 cp "$fixture_root/BUILD.bazel.fixture" "$consumer_root/BUILD.bazel"
@@ -29,6 +56,15 @@ cp "$fixture_root/embedded_ttf_consumer.cc" "$consumer_root/embedded_ttf_consume
 cp "$fixture_root/font_consumer.c" "$consumer_root/font_consumer.c"
 cp "$fixture_root/font_consumer_test.c" "$consumer_root/font_consumer_test.c"
 cp "$fixture_root/font_symbols.txt" "$consumer_root/font_symbols.txt"
+cp "$fixture_root/test_lua_app.py" "$consumer_root/test_lua_app.py"
+cp "$repository_root/libs/lua/tests/app_fixture/abc.lua" "$consumer_root/abc.lua"
+cp "$repository_root/libs/lua/tests/app_fixture/xyz.lua" "$consumer_root/xyz.lua"
+mkdir "$consumer_root/xyz"
+cp "$repository_root/libs/lua/tests/app_fixture/xyz/tone.pcm" "$consumer_root/xyz/tone.pcm"
+# cquery fills these declared test inputs before the downstream test runs.
+touch "$consumer_root/lua_app_catalog.jsonl" \
+    "$consumer_root/lua_app_release_files.jsonl" \
+    "$consumer_root/lua_app_default_files.txt"
 cp "$repository_root/projects/showcase/assets/fonts/NotoSansSC-Bold.ttf" \
     "$consumer_root/font.ttf"
 cp "$fixture_root/layout.txt" "$consumer_root/layout.txt"
@@ -39,18 +75,25 @@ cp "$fixture_root/sdkconfig.h2loader.defaults" "$consumer_root/sdkconfig.h2loade
 test ! -e "$consumer_root/private_esp_task_policy"
 test ! -e "$consumer_root/private_bk_task_policy"
 
+# Native metadata must keep the external owner's execroot path; a public BSP
+# must not be resolved as a private consumer's local boards directory.
+
 case "$(uname -s)-$(uname -m)" in
     Darwin-arm64)
         host_os=macos
         platform=macos_arm64
+        # Resolves the consumer root's host C/C++ toolchain.
+        host_test_targets=(@gizos//tools/bazel/tests/host_cc_toolchain:xcode_sdk_builtin_test)
         ;;
     Linux-x86_64)
         host_os=linux
         platform=linux_x86_64
+        host_test_targets=()
         ;;
     Linux-aarch64 | Linux-arm64)
         host_os=linux
         platform=linux_arm64
+        host_test_targets=()
         ;;
     *)
         printf 'unsupported downstream-consumer host: %s-%s\n' "$(uname -s)" "$(uname -m)" >&2
@@ -60,25 +103,57 @@ esac
 
 cd "$consumer_root"
 
+# Exercise the public formatters against real downstream providers, rather than
+# parsing BUILD attributes or simulating cquery's provider API in Python.
+for formatter in lua_app_catalog lua_app_release_files default_files; do
+    query_output=(--output=files)
+    receipt=lua_app_default_files.txt
+    if [ "$formatter" != default_files ]; then
+        query_output=(
+            --output=starlark
+            "--starlark:file=$repository_root/libs/lua/${formatter}.cquery"
+        )
+        receipt=${formatter}.jsonl
+    fi
+    "${BAZEL_BIN:-bazel}" \
+        --ignore_all_rc_files \
+        --output_user_root="$output_user_root" \
+        --output_base="$consumer_root/output-base" \
+        cquery \
+        --enable_bzlmod \
+        --noenable_workspace \
+        "${registry_options[@]}" \
+        --repository_cache="$repository_cache" \
+        --override_module="gizos=$repository_root" \
+        --define="h2_host_os=$host_os" \
+        --platforms="@gizos//tools/bazel/platforms:$platform" \
+        "${query_output[@]}" \
+        'set(//:abc_lua_app //:xyz_lua_app)' >"$receipt"
+done
+
 "${BAZEL_BIN:-bazel}" \
     --ignore_all_rc_files \
+    --output_user_root="$output_user_root" \
     --output_base="$consumer_root/output-base" \
     cquery \
     --enable_bzlmod \
     --noenable_workspace \
+    "${registry_options[@]}" \
     --repository_cache="$repository_cache" \
     --override_module="gizos=$repository_root" \
     --define="h2_ci_graph=true" \
     --define="h2_host_os=$host_os" \
     --platforms="@gizos//tools/bazel/platforms:$platform" \
-    'set(//:generic_private_bk_firmware //:generic_private_esp_firmware //:private_bk_firmware //:private_esp_firmware //:private_bk_ap_task_policy_test //:private_bk_cp_task_policy_test //:private_esp_task_policy_test)'
+    'set(//:native_component_paths //:generic_private_bk_firmware //:generic_private_esp_firmware //:private_bk_firmware //:private_esp_firmware //:private_bk_ap_task_policy_test //:private_bk_cp_task_policy_test //:private_esp_task_policy_test)'
 
 "${BAZEL_BIN:-bazel}" \
     --ignore_all_rc_files \
+    --output_user_root="$output_user_root" \
     --output_base="$consumer_root/output-base" \
     aquery \
     --enable_bzlmod \
     --noenable_workspace \
+    "${registry_options[@]}" \
     --repository_cache="$repository_cache" \
     --override_module="gizos=$repository_root" \
     --define="h2_ci_graph=true" \
@@ -97,10 +172,12 @@ grep -E 'h2_esp_target_task_policy=bazel-out/.*/private_esp_task_policy' font-na
 
 "${BAZEL_BIN:-bazel}" \
     --ignore_all_rc_files \
+    --output_user_root="$output_user_root" \
     --output_base="$consumer_root/output-base" \
     aquery \
     --enable_bzlmod \
     --noenable_workspace \
+    "${registry_options[@]}" \
     --repository_cache="$repository_cache" \
     --override_module="gizos=$repository_root" \
     --define="h2_ci_graph=true" \
@@ -122,10 +199,12 @@ expect_missing_policy_failure() {
     sed -i.bak "/^[[:space:]]*${field} =/d" BUILD.bazel
     if "${BAZEL_BIN:-bazel}" \
         --ignore_all_rc_files \
+        --output_user_root="$output_user_root" \
         --output_base="$consumer_root/output-base" \
         cquery \
         --enable_bzlmod \
         --noenable_workspace \
+        "${registry_options[@]}" \
         --repository_cache="$repository_cache" \
         --override_module="gizos=$repository_root" \
         --define="h2_ci_graph=true" \
@@ -149,10 +228,12 @@ sed -i.bak 's/tasks = \["private\/consumer"\]/tasks = ["private\/consumer", "pri
 for target in private_esp_firmware private_bk_firmware; do
     if "${BAZEL_BIN:-bazel}" \
         --ignore_all_rc_files \
+        --output_user_root="$output_user_root" \
         --output_base="$consumer_root/output-base" \
         cquery \
         --enable_bzlmod \
         --noenable_workspace \
+        "${registry_options[@]}" \
         --repository_cache="$repository_cache" \
         --override_module="gizos=$repository_root" \
         --define="h2_ci_graph=true" \
@@ -169,10 +250,12 @@ cp BUILD.bazel.complete BUILD.bazel
 sed -i.bak 's/font_name = "downstream_font_16"/font_name = "9invalid"/' BUILD.bazel
 if "${BAZEL_BIN:-bazel}" \
     --ignore_all_rc_files \
+    --output_user_root="$output_user_root" \
     --output_base="$consumer_root/output-base" \
     cquery \
     --enable_bzlmod \
     --noenable_workspace \
+    "${registry_options[@]}" \
     --repository_cache="$repository_cache" \
     --override_module="gizos=$repository_root" \
     --define="h2_host_os=$host_os" \
@@ -187,10 +270,12 @@ cp BUILD.bazel.complete BUILD.bazel
 sed -i.bak 's/symbol = "embedded_menu_font"/symbol = "9invalid"/' BUILD.bazel
 if "${BAZEL_BIN:-bazel}" \
     --ignore_all_rc_files \
+    --output_user_root="$output_user_root" \
     --output_base="$consumer_root/output-base" \
     cquery \
     --enable_bzlmod \
     --noenable_workspace \
+    "${registry_options[@]}" \
     --repository_cache="$repository_cache" \
     --override_module="gizos=$repository_root" \
     --define="h2_host_os=$host_os" \
@@ -204,10 +289,12 @@ cp BUILD.bazel.complete BUILD.bazel
 
 "${BAZEL_BIN:-bazel}" \
     --ignore_all_rc_files \
+    --output_user_root="$output_user_root" \
     --output_base="$consumer_root/output-base" \
     build \
     --enable_bzlmod \
     --noenable_workspace \
+    "${registry_options[@]}" \
     --repository_cache="$repository_cache" \
     --override_module="gizos=$repository_root" \
     --define="h2_host_os=$host_os" \
@@ -237,10 +324,12 @@ test ! -e "$consumer_root/private_bk_task_policy"
 
 "${BAZEL_BIN:-bazel}" \
     --ignore_all_rc_files \
+    --output_user_root="$output_user_root" \
     --output_base="$consumer_root/output-base" \
     test \
     --enable_bzlmod \
     --noenable_workspace \
+    "${registry_options[@]}" \
     --repository_cache="$repository_cache" \
     --override_module="gizos=$repository_root" \
     --define="h2_host_os=$host_os" \
@@ -248,19 +337,24 @@ test ! -e "$consumer_root/private_bk_task_policy"
     --extra_toolchains="@gizos//tools/bazel/platforms:${platform}_test_toolchain" \
     //:embedded_menu_font_test \
     //:font_consumer_test \
+    //:lua_app_release_test \
     //:private_esp_task_policy_test \
     //:private_bk_ap_task_policy_test \
-    //:private_bk_cp_task_policy_test
+    //:private_bk_cp_task_policy_test \
+    ${host_test_targets[@]+"${host_test_targets[@]}"}
 
 "${BAZEL_BIN:-bazel}" \
     --ignore_all_rc_files \
+    --output_user_root="$output_user_root" \
     --output_base="$consumer_root/output-base" \
     build \
     --enable_bzlmod \
     --noenable_workspace \
+    "${registry_options[@]}" \
     --repository_cache="$repository_cache" \
     --override_module="gizos=$repository_root" \
     --define="h2_firmware_target=bk3633" \
     --define="h2_host_os=$host_os" \
     --platforms="@gizos//tools/bazel/platforms:bk3633" \
-    //:bk3633_wolfcrypt_consumer
+    //:bk3633_wolfcrypt_consumer \
+    @gizos//tools/bazel/tests/embedded_include_paths:local_embedded_cc

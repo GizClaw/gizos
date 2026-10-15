@@ -4,7 +4,7 @@
 #include "h2_gizclaw_pcm_track.h"
 
 #include <stdbool.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <string.h>
 
 typedef struct fake_pcm_ring {
@@ -12,19 +12,19 @@ typedef struct fake_pcm_ring {
   size_t capacity;
   size_t read;
   size_t write;
-  atomic_size_t used;
+  h2_atomic_size_t used;
 } fake_pcm_ring_t;
 
 struct h2_gizclaw_track {
   const h2_pal_mem_api_t *allocator;
   fake_pcm_ring_t uplink;
   fake_pcm_ring_t downlink;
-  atomic_bool bound;
+  h2_atomic_bool_t bound;
 };
 
 static h2_pal_result_t fake_pcm_ring_write(fake_pcm_ring_t *ring,
                                            const uint8_t *data, size_t len) {
-  const size_t used = atomic_load_explicit(&ring->used, memory_order_acquire);
+  const size_t used = h2_atomic_load_explicit(&ring->used, H2_ATOMIC_ACQUIRE);
   if (len > ring->capacity - used)
     return H2_PAL_ERR_WOULD_BLOCK;
   const size_t first = len < ring->capacity - ring->write
@@ -33,13 +33,13 @@ static h2_pal_result_t fake_pcm_ring_write(fake_pcm_ring_t *ring,
   memcpy(ring->data + ring->write, data, first);
   memcpy(ring->data, data + first, len - first);
   ring->write = (ring->write + len) % ring->capacity;
-  atomic_fetch_add_explicit(&ring->used, len, memory_order_release);
+  h2_atomic_fetch_add_explicit(&ring->used, len, H2_ATOMIC_RELEASE);
   return H2_PAL_OK;
 }
 
 static h2_pal_result_t fake_pcm_ring_read(fake_pcm_ring_t *ring, uint8_t *data,
                                           size_t len) {
-  const size_t used = atomic_load_explicit(&ring->used, memory_order_acquire);
+  const size_t used = h2_atomic_load_explicit(&ring->used, H2_ATOMIC_ACQUIRE);
   if (len > used)
     return H2_PAL_ERR_WOULD_BLOCK;
   const size_t first = len < ring->capacity - ring->read
@@ -48,7 +48,7 @@ static h2_pal_result_t fake_pcm_ring_read(fake_pcm_ring_t *ring, uint8_t *data,
   memcpy(data, ring->data + ring->read, first);
   memcpy(data + first, ring->data, len - first);
   ring->read = (ring->read + len) % ring->capacity;
-  atomic_fetch_sub_explicit(&ring->used, len, memory_order_release);
+  h2_atomic_fetch_sub_explicit(&ring->used, len, H2_ATOMIC_RELEASE);
   return H2_PAL_OK;
 }
 
@@ -70,14 +70,23 @@ h2_gizclaw_pcm_track_create(const h2_gizclaw_pcm_track_config_t *config,
     return H2_PAL_ERR_NO_MEMORY;
   memset(track, 0, sizeof(*track));
   track->allocator = config->allocator;
-  atomic_init(&track->bound, false);
-  atomic_init(&track->uplink.used, 0u);
-  atomic_init(&track->downlink.used, 0u);
+  if (h2_atomic_init(&track->bound, false) != H2_ATOMIC_OK ||
+      h2_atomic_init(&track->uplink.used, 0u) != H2_ATOMIC_OK ||
+      h2_atomic_init(&track->downlink.used, 0u) != H2_ATOMIC_OK) {
+    h2_atomic_destroy(&track->bound);
+    h2_atomic_destroy(&track->uplink.used);
+    h2_atomic_destroy(&track->downlink.used);
+    h2_pal_mem_free(config->allocator, track);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
   track->uplink.data = h2_pal_mem_alloc(config->allocator, uplink);
   track->downlink.data = h2_pal_mem_alloc(config->allocator, downlink);
   if (track->uplink.data == NULL || track->downlink.data == NULL) {
     h2_pal_mem_free(config->allocator, track->downlink.data);
     h2_pal_mem_free(config->allocator, track->uplink.data);
+    h2_atomic_destroy(&track->bound);
+    h2_atomic_destroy(&track->uplink.used);
+    h2_atomic_destroy(&track->downlink.used);
     h2_pal_mem_free(config->allocator, track);
     return H2_PAL_ERR_NO_MEMORY;
   }
@@ -92,11 +101,14 @@ h2_pal_result_t h2_gizclaw_pcm_track_destroy(h2_gizclaw_track_t **track) {
     return H2_PAL_ERR_INVALID_ARG;
   if (*track == NULL)
     return H2_PAL_OK;
-  if (atomic_load_explicit(&(*track)->bound, memory_order_acquire))
+  if (h2_atomic_load_explicit(&(*track)->bound, H2_ATOMIC_ACQUIRE))
     return H2_PAL_ERR_BUSY;
   const h2_pal_mem_api_t *allocator = (*track)->allocator;
   h2_pal_mem_free(allocator, (*track)->downlink.data);
   h2_pal_mem_free(allocator, (*track)->uplink.data);
+  h2_atomic_destroy(&(*track)->bound);
+  h2_atomic_destroy(&(*track)->uplink.used);
+  h2_atomic_destroy(&(*track)->downlink.used);
   h2_pal_mem_free(allocator, *track);
   *track = NULL;
   return H2_PAL_OK;
@@ -122,15 +134,15 @@ static inline h2_pal_result_t fake_pcm_track_bind(h2_gizclaw_track_t *track) {
   if (track == NULL)
     return H2_PAL_ERR_BUSY;
   bool expected = false;
-  if (!atomic_compare_exchange_strong_explicit(
-          &track->bound, &expected, true, memory_order_acq_rel,
-          memory_order_acquire))
+  if (!h2_atomic_compare_exchange_strong_explicit(
+          &track->bound, &expected, true, H2_ATOMIC_ACQ_REL,
+          H2_ATOMIC_ACQUIRE))
     return H2_PAL_ERR_BUSY;
   return H2_PAL_OK;
 }
 
 static inline void fake_pcm_track_unbind(h2_gizclaw_track_t *track) {
-  atomic_store_explicit(&track->bound, false, memory_order_release);
+  h2_atomic_store_explicit(&track->bound, false, H2_ATOMIC_RELEASE);
 }
 
 static inline h2_pal_result_t
@@ -147,7 +159,7 @@ fake_pcm_track_service_write(h2_gizclaw_track_t *track, const uint8_t *pcm,
 
 static inline size_t
 fake_pcm_track_uplink_pending(const h2_gizclaw_track_t *track) {
-  return atomic_load_explicit(&track->uplink.used, memory_order_acquire);
+  return h2_atomic_load_explicit(&track->uplink.used, H2_ATOMIC_ACQUIRE);
 }
 
 #endif

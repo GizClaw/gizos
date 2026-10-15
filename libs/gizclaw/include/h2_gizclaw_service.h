@@ -35,13 +35,19 @@ typedef struct h2_gizclaw_time_sync_status {
 } h2_gizclaw_time_sync_status_t;
 
 /** Copy calibration status into required caller storage; thread safe.
- * An uncalibrated clock requires GET /server-info before signaling connects.
- * This cancellable startup retries every 30 monotonic seconds. A valid clock
- * permits immediate connection and refresh on a separate task after connect.
- * Failure retries after 30 monotonic seconds without terminating the service
- * or invalidating an existing clock. Each new service connection calibrates
- * again. Use Time PAL get_wall_ms for UTC validity, independently of
- * this attempt status. Returns INVALID_ARG for NULL inputs, or mutex errors.
+ * With an HTTP API and server endpoint configured, every connection makes one
+ * GET /server-info before signaling connects, since a valid clock can still
+ * be stale. An uncalibrated clock blocks the connect on this cancellable
+ * attempt, retrying every 30 monotonic seconds. A valid clock connects after
+ * one failed attempt with its existing value, and a separate task retries 30
+ * monotonic seconds later without terminating the service. Without an HTTP
+ * API no request is made: the result is UNSUPPORTED, a valid clock connects
+ * and an uncalibrated one ends the connection with
+ * H2_PAL_TIME_ERR_UNCALIBRATED. UNSUPPORTED (no HTTP API, or an unsettable
+ * clock) is final for the service. Each new service connection calibrates
+ * again. Use Time PAL
+ * get_wall_ms for UTC validity, independently of this attempt status.
+ * Returns INVALID_ARG for NULL inputs, or mutex errors.
  */
 h2_pal_result_t h2_gizclaw_service_get_time_sync_status(
     h2_gizclaw_service_t *service, h2_gizclaw_time_sync_status_t *out_status);
@@ -49,7 +55,9 @@ h2_pal_result_t h2_gizclaw_service_get_time_sync_status(
 /** A valid RPC error response, distinct from PAL transport/format failures.
  * A canonical NOT_FOUND status instead returns H2_PAL_ERR_NOT_FOUND from
  * req_wait, response parsers and synchronous RPCs. UNIMPLEMENTED and all other
- * status codes remain H2_GIZCLAW_ERR_REMOTE. */
+ * status codes remain H2_GIZCLAW_ERR_REMOTE for generic/Social requests.
+ * API-key create documents its scoped RESOURCE_EXHAUSTED projection in
+ * h2_gizclaw_api_key.h; it does not change this generic mapping. */
 #define H2_GIZCLAW_ERR_REMOTE ((h2_pal_result_t) - 1000)
 
 /** Fill at most capacity bytes for one data-up request. `OK` with zero bytes
@@ -176,6 +184,41 @@ h2_pal_result_t h2_gizclaw_service_audio_start(h2_gizclaw_service_t *service);
  * Repeated end is harmless; calling before audio_start returns INVALID_STATE.
  */
 h2_pal_result_t h2_gizclaw_service_audio_end(h2_gizclaw_service_t *service);
+
+typedef enum h2_gizclaw_audio_input_route {
+  H2_GIZCLAW_AUDIO_INPUT_NONE = 0,
+  H2_GIZCLAW_AUDIO_INPUT_CONVERSATION,
+  H2_GIZCLAW_AUDIO_INPUT_SPEECH,
+} h2_gizclaw_audio_input_route_t;
+
+/** Copied readiness of the currently started input, without RPC or PCM reads.
+ * generation advances on each successful audio_start within this Service's
+ * lifetime; it is independent of Conversation/request identity and never wraps.
+ * Pair it with the caller's Service lifetime when retaining observations.
+ * active/ready are false after end, cancellation, terminal result or route
+ * replacement. Conversation ready means this input's AUDIO_INPUT_READY was
+ * received; Speech ready means its opened stream has admitted a first nonempty
+ * PCM frame to the local SDK queue after the request envelope was cleared.
+ * This one-shot local admission is not transport/server receipt or ongoing
+ * queue credit; later backpressure does not clear it. Lead-in PCM may progress
+ * while the stream is open but this public initial readiness is still false.
+ * This is an initial protocol barrier, not per-frame queue credit or a promise
+ * that later realtime PCM writes cannot overrun. No pointer or payload escapes.
+ */
+typedef struct h2_gizclaw_audio_input_state {
+  uint64_t generation;
+  h2_gizclaw_audio_input_route_t route;
+  bool active;
+  bool ready;
+} h2_gizclaw_audio_input_state_t;
+
+/** Thread-safe copied read into caller storage; borrows the live Service for
+ * the call. Takes existing owner mutexes, so use task context, not an ISR or an
+ * internal callback holding those mutexes. Does not start or retry an input.
+ * Returns INVALID_ARG for NULL, otherwise propagates PAL locking errors.
+ * On failure, a non-NULL output is cleared. Deinit requires callers quiescent. */
+h2_pal_result_t h2_gizclaw_service_audio_input_snapshot(
+    h2_gizclaw_service_t *service, h2_gizclaw_audio_input_state_t *out_state);
 
 /** Unified request lifecycle.
  *

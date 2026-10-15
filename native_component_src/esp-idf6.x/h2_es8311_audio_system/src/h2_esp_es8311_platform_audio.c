@@ -1,4 +1,5 @@
 #include "h2_audio_mixer.h"
+#include "h2_es8311_power.h"
 #include "h2_esp_es8311_audio_system.h"
 #include "h2_esp_es8311_gain.h"
 #include "h2/pal/hal/h2_pal_audio_task_names.h"
@@ -54,6 +55,7 @@
 #define H2_ESP_ES8311_IO_TIMEOUT_MS 100u
 #define H2_ESP_ES8311_STOP_TIMEOUT_MS 200u
 #define H2_ESP_ES8311_RETRY_DELAY_MS 20u
+#define H2_ESP_ES8311_CONTROL_READY_TIMEOUT_MS 2000u
 
 static const char *TAG = "h2_es8311_audio";
 
@@ -164,11 +166,11 @@ static int es8311_audio_set_pa(h2_esp_es8311_audio_system_t *state, int enabled)
 
 static esp_err_t es8311_write_reg(h2_esp_es8311_audio_system_t *state, uint8_t reg, uint8_t value) {
     const uint8_t data[2] = { reg, value };
-    return i2c_master_transmit(state->codec, data, sizeof(data), pdMS_TO_TICKS(100));
+    return i2c_master_transmit(state->codec, data, sizeof(data), H2_ESP_ES8311_CONTROL_TIMEOUT_MS);
 }
 
 static esp_err_t es8311_read_reg(h2_esp_es8311_audio_system_t *state, uint8_t reg, uint8_t *value) {
-    return i2c_master_transmit_receive(state->codec, &reg, sizeof(reg), value, sizeof(*value), pdMS_TO_TICKS(100));
+    return i2c_master_transmit_receive(state->codec, &reg, sizeof(reg), value, sizeof(*value), H2_ESP_ES8311_CONTROL_TIMEOUT_MS);
 }
 
 static esp_err_t es8311_update_reg(h2_esp_es8311_audio_system_t *state, uint8_t reg, uint8_t mask, uint8_t value) {
@@ -212,12 +214,56 @@ static esp_err_t es8311_set_sample_rate_16k(h2_esp_es8311_audio_system_t *state)
     return ESP_OK;
 }
 
-static esp_err_t es8311_open(h2_esp_es8311_audio_system_t *state) {
-    esp_err_t err = es8311_write_reg(state, ES8311_REG_GPIO_44, 0x08);
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "initial gpio44 write failed (%s), retrying", esp_err_to_name(err));
+static esp_err_t es8311_wait_control_ready(h2_esp_es8311_audio_system_t *state) {
+    const uint8_t data[2] = { ES8311_REG_GPIO_44, 0x08 };
+    const TickType_t started_at = xTaskGetTickCount();
+    const TickType_t budget = pdMS_TO_TICKS(H2_ESP_ES8311_CONTROL_READY_TIMEOUT_MS);
+    esp_err_t err = ESP_OK;
+    unsigned attempts = 0u;
+    for (;;) {
+        const TickType_t elapsed = xTaskGetTickCount() - started_at;
+        if (elapsed >= budget) {
+            ESP_LOGE(TAG, "codec control readiness timeout attempts=%u last_err=0x%x",
+                attempts, (unsigned)err);
+            /* A missing codec is a real I/O failure after the startup budget;
+             * do not leave callers in an endless WOULD_BLOCK state. */
+            return ESP_FAIL;
+        }
+        const uint32_t remaining_ms = pdTICKS_TO_MS(budget - elapsed);
+        const uint32_t timeout_ms = remaining_ms < H2_ESP_ES8311_CONTROL_TIMEOUT_MS
+            ? remaining_ms : H2_ESP_ES8311_CONTROL_TIMEOUT_MS;
+        err = i2c_master_transmit(state->codec, data, sizeof(data), timeout_ms);
+        ++attempts;
+        if (err == ESP_OK) {
+            /* Preserve ES8311's two initial noise-immunity writes on a ready
+             * codec. Cold hardware can NACK more than those two writes. */
+            if (attempts == 1u) {
+                continue;
+            }
+            if (attempts > 2u) {
+                ESP_LOGI(TAG, "codec control ready attempts=%u elapsed_ms=%u",
+                    attempts, (unsigned)pdTICKS_TO_MS(xTaskGetTickCount() - started_at));
+            }
+            return ESP_OK;
+        }
+        if (err != ESP_ERR_INVALID_RESPONSE && err != ESP_ERR_TIMEOUT) {
+            return err;
+        }
+        if (attempts == 1u) {
+            ESP_LOGW(TAG, "codec control not ready err=0x%x; waiting up to %u ms",
+                (unsigned)err, H2_ESP_ES8311_CONTROL_READY_TIMEOUT_MS);
+        }
+        const TickType_t waited = xTaskGetTickCount() - started_at;
+        if (waited < budget) {
+            const TickType_t remaining = budget - waited;
+            const TickType_t retry_delay = pdMS_TO_TICKS(H2_ESP_ES8311_RETRY_DELAY_MS);
+            vTaskDelay(remaining < retry_delay ? remaining : retry_delay);
+        }
     }
-    ESP_RETURN_ON_ERROR(es8311_write_reg(state, ES8311_REG_GPIO_44, 0x08), TAG, "gpio44");
+}
+
+static esp_err_t es8311_open(h2_esp_es8311_audio_system_t *state) {
+    ESP_RETURN_ON_ERROR(es8311_wait_control_ready(state), TAG, "codec control readiness");
     ESP_RETURN_ON_ERROR(es8311_write_reg(state, ES8311_REG_CLK_MANAGER_01, 0x30), TAG, "clk1");
     ESP_RETURN_ON_ERROR(es8311_write_reg(state, ES8311_REG_CLK_MANAGER_02, 0x00), TAG, "clk2");
     ESP_RETURN_ON_ERROR(es8311_write_reg(state, ES8311_REG_CLK_MANAGER_03, 0x10), TAG, "clk3");
@@ -743,6 +789,9 @@ static int es8311_audio_get_info(void *user, h2_audio_info_t *info) {
 
 static int es8311_audio_open(void *user) {
     h2_esp_es8311_audio_system_t *state = (h2_esp_es8311_audio_system_t *)user;
+    if (state->codec_shutdown_pending) {
+        return H2_AUDIO_ERR_INVALID_STATE;
+    }
     if (state->opened) {
         return H2_AUDIO_OK;
     }
@@ -970,6 +1019,10 @@ static int es8311_audio_stop_speaker(void *user) {
     return first_rc;
 }
 
+static int suspend_write_reg(void *user, uint8_t reg, uint8_t value) {
+    return map_esp_err(es8311_write_reg(user, reg, value));
+}
+
 int h2_esp_es8311_audio_system_deinit(
     h2_esp_es8311_audio_system_t *system) {
     if (system == NULL) {
@@ -996,6 +1049,19 @@ int h2_esp_es8311_audio_system_deinit(
     }
     if (system->playback_task != NULL) {
         return H2_AUDIO_ERR_WOULD_BLOCK;
+    }
+
+    if (system->codec_shutdown_pending) {
+        rc = system->pa_initialized ? es8311_audio_set_pa(system, 0) : H2_AUDIO_OK;
+        if (rc != H2_AUDIO_OK) {
+            return rc;
+        }
+        if (system->codec != NULL) {
+            rc = h2_es8311_suspend(system, suspend_write_reg);
+            if (rc != H2_AUDIO_OK) {
+                return rc;
+            }
+        }
     }
 
     if (system->mic_queue != NULL) {
@@ -1037,6 +1103,17 @@ int h2_esp_es8311_audio_system_deinit(
     return H2_AUDIO_OK;
 }
 
+int h2_esp_es8311_audio_system_power_down(
+    h2_esp_es8311_audio_system_t *system) {
+    if (system == NULL) {
+        return H2_AUDIO_ERR_INVALID_ARG;
+    }
+    if (system->config.queue_api != NULL) {
+        system->codec_shutdown_pending = 1;
+    }
+    return h2_esp_es8311_audio_system_deinit(system);
+}
+
 static int es8311_audio_create_track(
     void *user,
     const h2_audio_track_config_t *config,
@@ -1063,11 +1140,8 @@ static int es8311_audio_get_speaker_volume_percent(void *user, uint32_t *out_per
 
 static int es8311_audio_set_speaker_volume_percent(void *user, uint32_t percent) {
     h2_esp_es8311_audio_system_t *state = (h2_esp_es8311_audio_system_t *)user;
-    if (state->config.speaker_volume.point_count != 0u && percent > 100u) {
+    if (percent > 100u) {
         return H2_AUDIO_ERR_INVALID_ARG;
-    }
-    if (state->config.speaker_volume.point_count == 0u) {
-        state->speaker_volume_percent = percent;
     }
     if (state->codec != NULL) {
         int rc = map_esp_err(apply_speaker_volume(state, percent));
@@ -1077,6 +1151,47 @@ static int es8311_audio_set_speaker_volume_percent(void *user, uint32_t percent)
     }
     state->speaker_volume_percent = percent;
     return H2_AUDIO_OK;
+}
+
+static int es8311_audio_get_mic_gain_percent(void *user, uint32_t *out_percent) {
+    h2_esp_es8311_audio_system_t *state = (h2_esp_es8311_audio_system_t *)user;
+    *out_percent = state->mic_gain_percent;
+    return H2_AUDIO_OK;
+}
+
+static int es8311_audio_set_mic_gain_percent(void *user, uint32_t percent) {
+    h2_esp_es8311_audio_system_t *state = (h2_esp_es8311_audio_system_t *)user;
+    if (percent > 100u)
+        return H2_AUDIO_ERR_INVALID_ARG;
+    if (state->codec_shutdown_pending)
+        return H2_AUDIO_ERR_INVALID_STATE;
+    const uint32_t min_db = state->config.mic_gain_min_db;
+    const uint32_t max_db = state->config.mic_gain_max_db == 0u
+                                ? 30u : state->config.mic_gain_max_db;
+    const uint32_t requested_db = min_db +
+        (percent * (max_db - min_db) + 50u) / 100u;
+    const uint8_t gain_reg = h2_esp_es8311_mic_gain_register(requested_db);
+    const uint32_t applied_db = (uint32_t)gain_reg * 3u;
+    if (state->codec != NULL) {
+        const int rc = map_esp_err(es8311_update_reg(
+            state, ES8311_REG_SYSTEM_14, 0x0fu, gain_reg));
+        if (rc != H2_AUDIO_OK)
+            return rc;
+    }
+    state->config.mic_gain_db = applied_db;
+    state->mic_gain_percent =
+        (applied_db <= min_db ? 0u :
+         (applied_db - min_db) * 100u / (max_db - min_db));
+    if (state->mic_gain_percent > 100u)
+        state->mic_gain_percent = 100u;
+    return H2_AUDIO_OK;
+}
+
+static int audio_aec_diagnostics_unsupported(void *user,
+    const h2_audio_aec_observer_t *observer) {
+    (void)user;
+    (void)observer;
+    return H2_AUDIO_ERR_UNSUPPORTED;
 }
 
 h2_pal_audio_t *h2_esp_es8311_audio_system_audio(h2_esp_es8311_audio_system_t *system) {
@@ -1093,6 +1208,9 @@ h2_pal_audio_t *h2_esp_es8311_audio_system_audio(h2_esp_es8311_audio_system_t *s
         .create_track = es8311_audio_create_track,
         .get_speaker_volume_percent = es8311_audio_get_speaker_volume_percent,
         .set_speaker_volume_percent = es8311_audio_set_speaker_volume_percent,
+        .get_mic_gain_percent = es8311_audio_get_mic_gain_percent,
+        .set_mic_gain_percent = es8311_audio_set_mic_gain_percent,
+        .set_aec_observer = audio_aec_diagnostics_unsupported,
     };
     system->audio.user = system;
     system->audio.vtable = &vtable;

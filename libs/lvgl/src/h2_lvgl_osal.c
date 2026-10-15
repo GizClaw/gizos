@@ -1,7 +1,9 @@
 #include "h2_lvgl_platform.h"
+#include "h2_lvgl_memory.h"
 #include "h2_lvgl_task_names.h"
 
 #include "lvgl.h"
+#include "core/lv_global.h"
 #include "osal/lv_os_private.h"
 
 #include <stddef.h>
@@ -46,20 +48,30 @@ static void *lvgl_alloc(size_t len) {
     if (!platform_ready()) {
         return NULL;
     }
-    return h2_pal_mem_alloc(s_h2_lvgl_platform.allocator, len);
+    return h2_lvgl_memory_alloc(len);
 }
 
 static void lvgl_free(void *ptr) {
     if (!platform_ready() || ptr == NULL) {
         return;
     }
-    h2_pal_mem_free(s_h2_lvgl_platform.allocator, ptr);
+    h2_lvgl_memory_free(ptr);
 }
 
 void lv_mem_init(void) {
+    (void)h2_lvgl_memory_prepare();
 }
 
 void lv_mem_deinit(void) {
+#if LV_USE_OS != LV_OS_NONE
+    /* This LVGL revision creates the general mutex in lv_os_init but does not
+     * destroy it in lv_deinit. Release it at the final memory hook, while the
+     * borrowed allocator and Sync PAL are still valid. */
+    lv_mutex_t *mutex = &LV_GLOBAL_DEFAULT()->lv_general_mutex;
+    if (*mutex != NULL)
+        (void)lv_mutex_delete(mutex);
+#endif
+    h2_lvgl_memory_release();
 }
 
 lv_mem_pool_t lv_mem_add_pool(void *mem, size_t bytes) {
@@ -83,7 +95,7 @@ void *lv_realloc_core(void *ptr, size_t new_size) {
     if (ptr == NULL) {
         return lvgl_alloc(new_size);
     }
-    return h2_pal_mem_realloc(s_h2_lvgl_platform.allocator, ptr, new_size);
+    return h2_lvgl_memory_realloc(ptr, new_size);
 }
 
 void lv_free_core(void *ptr) {
@@ -131,6 +143,9 @@ int h2_lvgl_platform_init(const h2_lvgl_platform_config_t *config) {
         return -1;
     }
 
+    int rc = h2_lvgl_memory_init(config, LV_USE_OS != LV_OS_NONE);
+    if (rc != H2_PAL_OK) return rc;
+
     s_h2_lvgl_platform.allocator = config->allocator;
     s_h2_lvgl_platform.task_api = config->task_api;
     s_h2_lvgl_platform.sync_api = config->sync_api;
@@ -141,6 +156,7 @@ int h2_lvgl_platform_init(const h2_lvgl_platform_config_t *config) {
 }
 
 void h2_lvgl_platform_deinit(void) {
+    h2_lvgl_memory_deinit();
     memset(&s_h2_lvgl_platform, 0, sizeof(s_h2_lvgl_platform));
 }
 

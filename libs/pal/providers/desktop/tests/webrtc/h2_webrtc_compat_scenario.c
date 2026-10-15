@@ -6,7 +6,7 @@
 #include <pthread.h>
 #include <signal.h>
 #include <stdarg.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -57,15 +57,15 @@ typedef struct h2_webrtc_compat_state {
     const h2_pal_webrtc_api_t *api;
     int callback_error;
     int remote_close_requested;
-    atomic_int opus_echoed;
-    atomic_int track_write_attempts;
-    atomic_int track_read_ready;
-    atomic_int track_block_mode;
-    atomic_int track_block_entered;
-    atomic_int track_block_release;
-    atomic_int track_active;
-    atomic_int track_detached;
-    atomic_int track_late_access;
+    h2_atomic_int_t opus_echoed;
+    h2_atomic_int_t track_write_attempts;
+    h2_atomic_int_t track_read_ready;
+    h2_atomic_int_t track_block_mode;
+    h2_atomic_int_t track_block_entered;
+    h2_atomic_int_t track_block_release;
+    h2_atomic_int_t track_active;
+    h2_atomic_int_t track_detached;
+    h2_atomic_int_t track_late_access;
     size_t detached_opus_events;
     size_t recycle_opened;
     size_t recycle_closed;
@@ -358,7 +358,7 @@ static h2_pal_result_t h2_webrtc_compat_poll(const h2_pal_webrtc_api_t *api,
                                         event.data_len, event.is_text);
     break;
   case H2_PAL_WEBRTC_EVENT_OPUS_FRAME:
-    if (atomic_load_explicit(&state->track_detached, memory_order_acquire) &&
+    if (h2_atomic_load_explicit(&state->track_detached, H2_ATOMIC_ACQUIRE) &&
         event.data_len == 2u && event.data != NULL && event.data[0] == 0xf8u &&
         event.data[1] == 0x55u) {
       ++state->detached_opus_events;
@@ -379,15 +379,15 @@ static h2_pal_result_t h2_webrtc_compat_poll(const h2_pal_webrtc_api_t *api,
 
 static void h2_webrtc_compat_track_enter(h2_webrtc_compat_state_t *state,
                                          int mode) {
-  atomic_fetch_add_explicit(&state->track_active, 1, memory_order_acq_rel);
-  if (atomic_load_explicit(&state->track_detached, memory_order_acquire))
-    atomic_fetch_add_explicit(&state->track_late_access, 1,
-                              memory_order_relaxed);
-  if (atomic_load_explicit(&state->track_block_mode, memory_order_acquire) ==
+  h2_atomic_fetch_add_explicit(&state->track_active, 1, H2_ATOMIC_ACQ_REL);
+  if (h2_atomic_load_explicit(&state->track_detached, H2_ATOMIC_ACQUIRE))
+    h2_atomic_fetch_add_explicit(&state->track_late_access, 1,
+                              H2_ATOMIC_RELAXED);
+  if (h2_atomic_load_explicit(&state->track_block_mode, H2_ATOMIC_ACQUIRE) ==
       mode) {
-    atomic_store_explicit(&state->track_block_entered, 1, memory_order_release);
-    while (!atomic_load_explicit(&state->track_block_release,
-                                 memory_order_acquire)) {
+    h2_atomic_store_explicit(&state->track_block_entered, 1, H2_ATOMIC_RELEASE);
+    while (!h2_atomic_load_explicit(&state->track_block_release,
+                                 H2_ATOMIC_ACQUIRE)) {
       const struct timespec delay = {.tv_nsec = 1000000L};
       (void)nanosleep(&delay, NULL);
     }
@@ -397,7 +397,7 @@ static void h2_webrtc_compat_track_enter(h2_webrtc_compat_state_t *state,
 static h2_pal_result_t
 h2_webrtc_compat_track_leave(h2_webrtc_compat_state_t *state,
                              h2_pal_result_t result) {
-  atomic_fetch_sub_explicit(&state->track_active, 1, memory_order_release);
+  h2_atomic_fetch_sub_explicit(&state->track_active, 1, H2_ATOMIC_RELEASE);
   return result;
 }
 
@@ -406,8 +406,8 @@ static h2_pal_result_t h2_webrtc_compat_track_read(void *user, uint8_t *opus,
                                                    size_t *out_len) {
     h2_webrtc_compat_state_t *state = user;
     h2_webrtc_compat_track_enter(state, 1);
-    if (!atomic_exchange_explicit(&state->track_read_ready, 0,
-                                  memory_order_acq_rel)) {
+    if (!h2_atomic_exchange_explicit(&state->track_read_ready, 0,
+                                  H2_ATOMIC_ACQ_REL)) {
       return h2_webrtc_compat_track_leave(state, H2_PAL_ERR_WOULD_BLOCK);
     }
     static const uint8_t packet[] = {0xf8u, 0x55u};
@@ -427,10 +427,10 @@ h2_webrtc_compat_track_write(void *user, const uint8_t *opus, size_t opus_len) {
         memcmp(opus, expected, sizeof(expected)) != 0) {
       return h2_webrtc_compat_track_leave(state, H2_PAL_ERR_FORMAT);
     }
-    if (atomic_fetch_add_explicit(&state->track_write_attempts, 1,
-                                  memory_order_acq_rel) < 2)
+    if (h2_atomic_fetch_add_explicit(&state->track_write_attempts, 1,
+                                  H2_ATOMIC_ACQ_REL) < 2)
       return h2_webrtc_compat_track_leave(state, H2_PAL_ERR_WOULD_BLOCK);
-    atomic_store_explicit(&state->opus_echoed, 1, memory_order_release);
+    h2_atomic_store_explicit(&state->opus_echoed, 1, H2_ATOMIC_RELEASE);
     return h2_webrtc_compat_track_leave(state, H2_PAL_OK);
 }
 
@@ -474,7 +474,7 @@ static int h2_webrtc_compat_echoed(const h2_webrtc_compat_state_t *state) {
 }
 
 static int h2_webrtc_compat_opus_echoed(const h2_webrtc_compat_state_t *state) {
-    return atomic_load_explicit(&state->opus_echoed, memory_order_acquire);
+    return h2_atomic_load_explicit(&state->opus_echoed, H2_ATOMIC_ACQUIRE);
 }
 
 static int
@@ -711,7 +711,7 @@ static int h2_webrtc_compat_run_reuse_cycles(
                             10000u) != 0) {
         return -1;
     }
-    atomic_store_explicit(&state->opus_echoed, 0, memory_order_release);
+    h2_atomic_store_explicit(&state->opus_echoed, 0, H2_ATOMIC_RELEASE);
     static const uint8_t opus[] = {0xf8u, 0x55u};
     if (h2_pal_webrtc_peer_send_opus(backend->api, peer, opus, sizeof(opus)) !=
             H2_PAL_OK ||
@@ -734,27 +734,27 @@ typedef struct h2_webrtc_unset_call {
   h2_pal_webrtc_peer_t *peer;
   h2_pal_webrtc_track_t *track;
   h2_webrtc_compat_state_t *state;
-  atomic_int started;
-  atomic_int done;
+  h2_atomic_int_t started;
+  h2_atomic_int_t done;
   int result;
   int returned_while_active;
 } h2_webrtc_unset_call_t;
 
 static void *h2_webrtc_compat_unset_task(void *user) {
   h2_webrtc_unset_call_t *call = user;
-  atomic_store_explicit(&call->started, 1, memory_order_release);
+  h2_atomic_store_explicit(&call->started, 1, H2_ATOMIC_RELEASE);
   call->result =
       h2_pal_webrtc_peer_unset_track(call->api, call->peer, call->track);
-  call->returned_while_active = atomic_load_explicit(&call->state->track_active,
-                                                     memory_order_acquire) != 0;
-  atomic_store_explicit(&call->done, 1, memory_order_release);
+  call->returned_while_active = h2_atomic_load_explicit(&call->state->track_active,
+                                                     H2_ATOMIC_ACQUIRE) != 0;
+  h2_atomic_store_explicit(&call->done, 1, H2_ATOMIC_RELEASE);
   return NULL;
 }
 
-static int h2_webrtc_compat_wait_atomic(atomic_int *value,
+static int h2_webrtc_compat_wait_atomic(h2_atomic_int_t *value,
                                         uint32_t timeout_ms) {
   const uint64_t deadline = h2_webrtc_compat_now_ms() + timeout_ms;
-  while (!atomic_load_explicit(value, memory_order_acquire)) {
+  while (!h2_atomic_load_explicit(value, H2_ATOMIC_ACQUIRE)) {
     if (h2_webrtc_compat_now_ms() >= deadline)
       return -1;
     const struct timespec delay = {.tv_nsec = 1000000L};
@@ -774,11 +774,11 @@ static int h2_webrtc_compat_unset_in_flight(
     h2_pal_webrtc_channel_t *channel, int mode) {
   // Block the production protocol task inside either read or write. Do not
   // call app poll while waiting: media transport must advance independently.
-  atomic_store_explicit(&state->track_block_mode, mode, memory_order_release);
+  h2_atomic_store_explicit(&state->track_block_mode, mode, H2_ATOMIC_RELEASE);
   if (mode == 2)
-    atomic_store_explicit(&state->track_read_ready, 1, memory_order_release);
+    h2_atomic_store_explicit(&state->track_read_ready, 1, H2_ATOMIC_RELEASE);
   if (h2_webrtc_compat_wait_atomic(&state->track_block_entered, 5000u) != 0) {
-    atomic_store_explicit(&state->track_block_release, 1, memory_order_release);
+    h2_atomic_store_explicit(&state->track_block_release, 1, H2_ATOMIC_RELEASE);
     fprintf(stderr, "%s: Track %s did not enter\n", backend->name,
             mode == 1 ? "read" : "write");
     return -1;
@@ -790,9 +790,17 @@ static int h2_webrtc_compat_unset_in_flight(
       .track = *track,
       .state = state,
   };
+  if (h2_atomic_int_init(&call.started, 0) != H2_ATOMIC_OK ||
+      h2_atomic_int_init(&call.done, 0) != H2_ATOMIC_OK) {
+    h2_atomic_destroy(&call.started);
+    h2_atomic_destroy(&call.done);
+    return -1;
+  }
   pthread_t thread;
   if (pthread_create(&thread, NULL, h2_webrtc_compat_unset_task, &call) != 0) {
-    atomic_store_explicit(&state->track_block_release, 1, memory_order_release);
+    h2_atomic_store_explicit(&state->track_block_release, 1, H2_ATOMIC_RELEASE);
+    h2_atomic_destroy(&call.started);
+    h2_atomic_destroy(&call.done);
     return -1;
   }
   const int start_rc = h2_webrtc_compat_wait_atomic(&call.started, 5000u);
@@ -800,7 +808,7 @@ static int h2_webrtc_compat_unset_in_flight(
   // callback remains held. The worker also checks active count at return.
   const int returned_early =
       start_rc == 0 && h2_webrtc_compat_wait_atomic(&call.done, 100u) == 0;
-  atomic_store_explicit(&state->track_block_release, 1, memory_order_release);
+  h2_atomic_store_explicit(&state->track_block_release, 1, H2_ATOMIC_RELEASE);
   if (h2_webrtc_compat_wait_atomic(&call.done, 5000u) != 0) {
     fprintf(stderr, "%s: Track unset did not finish after callback release\n",
             backend->name);
@@ -810,6 +818,8 @@ static int h2_webrtc_compat_unset_in_flight(
   }
   if (pthread_join(thread, NULL) != 0)
     h2_webrtc_compat_watchdog(0);
+  h2_atomic_destroy(&call.started);
+  h2_atomic_destroy(&call.done);
   if (start_rc != 0 || returned_early || call.returned_while_active ||
       call.result != H2_PAL_OK) {
     fprintf(stderr, "%s: invalid Track unset rc=%d early=%d active=%d\n",
@@ -817,7 +827,7 @@ static int h2_webrtc_compat_unset_in_flight(
             call.returned_while_active);
     return -1;
   }
-  atomic_store_explicit(&state->track_detached, 1, memory_order_release);
+  h2_atomic_store_explicit(&state->track_detached, 1, H2_ATOMIC_RELEASE);
   free(*track);
   *track = NULL;
 
@@ -837,7 +847,7 @@ static int h2_webrtc_compat_unset_in_flight(
   if (rc != H2_PAL_OK ||
       h2_webrtc_compat_wait(backend->api, peer, state, h2_webrtc_compat_echoed,
                             5000u) != 0 ||
-      atomic_load_explicit(&state->track_late_access, memory_order_acquire) !=
+      h2_atomic_load_explicit(&state->track_late_access, H2_ATOMIC_ACQUIRE) !=
           0)
     return -1;
   fprintf(stderr,
@@ -863,18 +873,27 @@ static int h2_webrtc_compat_run_session(
         .phase = "peer-create",
         .api = backend->api,
     };
+    h2_pal_webrtc_track_t *track = NULL;
+    if (h2_atomic_int_init(&state.opus_echoed, 0) != H2_ATOMIC_OK) goto cleanup;
+    if (h2_atomic_int_init(&state.track_write_attempts, 0) != H2_ATOMIC_OK) goto cleanup;
+    if (h2_atomic_int_init(&state.track_read_ready, 0) != H2_ATOMIC_OK) goto cleanup;
+    if (h2_atomic_int_init(&state.track_block_mode, 0) != H2_ATOMIC_OK) goto cleanup;
+    if (h2_atomic_int_init(&state.track_block_entered, 0) != H2_ATOMIC_OK) goto cleanup;
+    if (h2_atomic_int_init(&state.track_block_release, 0) != H2_ATOMIC_OK) goto cleanup;
+    if (h2_atomic_int_init(&state.track_active, 0) != H2_ATOMIC_OK) goto cleanup;
+    if (h2_atomic_int_init(&state.track_detached, 0) != H2_ATOMIC_OK) goto cleanup;
+    if (h2_atomic_int_init(&state.track_late_access, 0) != H2_ATOMIC_OK) goto cleanup;
     h2_webrtc_compat_record(&state, "phase=peer-create");
-    h2_pal_webrtc_track_t *track = malloc(sizeof(*track));
+    track = malloc(sizeof(*track));
     if (track == NULL)
-      return 1;
+      goto cleanup;
     *track = (h2_pal_webrtc_track_t){.user = &state, .vtable = &track_vtable};
     h2_pal_result_t result = h2_pal_webrtc_peer_create(backend->api, &peer);
     if (result != H2_PAL_OK) {
         fprintf(stderr, "%s: peer create failed %d\n", backend->name, result);
         h2_webrtc_compat_record(&state, "peer_create result=%d", result);
         h2_webrtc_compat_dump_failure(&state);
-        free(track);
-        return 1;
+        goto cleanup;
     }
     if (h2_pal_webrtc_peer_set_track(backend->api, peer, track) != H2_PAL_OK) {
       fprintf(stderr, "%s: media Track setup failed\n", backend->name);
@@ -1066,8 +1085,8 @@ static int h2_webrtc_compat_run_session(
         goto cleanup;
     }
     h2_webrtc_compat_set_phase(&state, "opus");
-    atomic_store_explicit(&state.opus_echoed, 0, memory_order_release);
-    atomic_store_explicit(&state.track_read_ready, 1, memory_order_release);
+    h2_atomic_store_explicit(&state.opus_echoed, 0, H2_ATOMIC_RELEASE);
+    h2_atomic_store_explicit(&state.track_read_ready, 1, H2_ATOMIC_RELEASE);
     const uint64_t opus_deadline = h2_webrtc_compat_now_ms() + 10000u;
     while (!h2_webrtc_compat_opus_echoed(&state) &&
            h2_webrtc_compat_now_ms() < opus_deadline) {
@@ -1075,8 +1094,8 @@ static int h2_webrtc_compat_run_session(
         (void)nanosleep(&delay, NULL);
     }
     if (!h2_webrtc_compat_opus_echoed(&state) ||
-        atomic_load_explicit(&state.track_write_attempts,
-                             memory_order_acquire) != 3) {
+        h2_atomic_load_explicit(&state.track_write_attempts,
+                             H2_ATOMIC_ACQUIRE) != 3) {
       fprintf(stderr, "%s: protocol task did not service media Track\n",
               backend->name);
       goto cleanup;
@@ -1120,16 +1139,26 @@ cleanup:
         h2_webrtc_compat_dump_failure(&state);
     }
     if (peer != NULL) {
-      atomic_store_explicit(&state.track_block_release, 1,
-                            memory_order_release);
+      h2_atomic_store_explicit(&state.track_block_release, 1,
+                            H2_ATOMIC_RELEASE);
       if (track != NULL)
         (void)h2_pal_webrtc_peer_unset_track(backend->api, peer, track);
       h2_pal_webrtc_peer_close(backend->api, peer);
     }
     free(track);
-    if (atomic_load_explicit(&state.track_late_access, memory_order_acquire) !=
+    if (state.track_late_access.storage != NULL &&
+        h2_atomic_load_explicit(&state.track_late_access, H2_ATOMIC_ACQUIRE) !=
         0)
       failed = 1;
+    h2_atomic_destroy(&state.opus_echoed);
+    h2_atomic_destroy(&state.track_write_attempts);
+    h2_atomic_destroy(&state.track_read_ready);
+    h2_atomic_destroy(&state.track_block_mode);
+    h2_atomic_destroy(&state.track_block_entered);
+    h2_atomic_destroy(&state.track_block_release);
+    h2_atomic_destroy(&state.track_active);
+    h2_atomic_destroy(&state.track_detached);
+    h2_atomic_destroy(&state.track_late_access);
     return failed;
 }
 

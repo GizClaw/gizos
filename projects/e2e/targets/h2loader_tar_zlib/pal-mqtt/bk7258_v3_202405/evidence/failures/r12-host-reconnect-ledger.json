@@ -1,0 +1,20 @@
+{
+  "qualified": false,
+  "device_source_commit": "20a23ce18783657ae00b2be568a30cf762be7ff3",
+  "version": "mqtt-bk-uart-r12",
+  "package_sha256": "d267780072d167b4db54c747a45f64b1526af1757b3a0bcffd7ea62bb341f717",
+  "host_binary_sha256": "81d5ee2be1c03d31c742bcea08f9dfb6bf1a5b3e28663eed4f38fe9eda60e5ce",
+  "failure": "old host closed/restored baud during reconnect; second first ledger missing 13 consecutive case records; no qualification",
+  "managed_case_count": 36,
+  "normal_case_count": 23,
+  "normal_summary_passed": 36,
+  "native_resources_balanced": true,
+  "collector_error": "RuntimeError(('complete READY rejected by strict ledger', 'missing/duplicate/unordered mandatory ledger', '/Users/idy/.codex/task-evidence/pal-pref-mqtt-platforms-20261004/mqtt-bk-r12/normal.log'))",
+  "collector_receipt_sha256": "7e87004cb3bcafd49efae68f299640129f0a6a6c926b2cb26b4d15b224da0742",
+  "log_sha256": {
+    "managed.log": "9ef6868c2dccb3ea84aab24cc6f160bfa78b0b84acafb4511ceadce505e7b4f3",
+    "normal.log": "88591feee5d82495d720820b10c918947534a7439e3d26009d7051b7ac69b9e6"
+  },
+  "raw_evidence_directory": "/Users/idy/.codex/task-evidence/pal-pref-mqtt-platforms-20261004/mqtt-bk-r12",
+  "historical_record_unchanged": true
+}

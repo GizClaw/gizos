@@ -14,6 +14,9 @@ typedef struct h2_touch_smoke_config {
     uint32_t height;
     int (*should_stop)(void *user);
     void *stop_user;
+    /** Optional startup handshake, invoked once after UI/touch initialization. */
+    void (*on_started)(void *user, h2_pal_result_t result);
+    void *started_user;
 } h2_touch_smoke_config_t;
 
 /** Run the LVGL Touch PAL and Runtime Button smoke flow. */

@@ -23,6 +23,7 @@
 #include "h2/pal/os/h2_pal_system_event.h"
 #include "h2/pal/os/h2_pal_task.h"
 #include "h2/pal/os/h2_pal_time.h"
+#include "h2/pal/os/h2_pal_timer.h"
 #if defined(CONFIG_ESP_CONSOLE_UART) && CONFIG_ESP_CONSOLE_UART
 #include "h2/pal/hal/h2_pal_uart_io_stream.h"
 #endif
@@ -76,7 +77,25 @@ typedef h2_pal_result_t (*h2_esp_task_policy_resolver_t)(
 typedef struct h2_esp_task_policy_config {
   h2_esp_task_policy_resolver_t resolver;
   void *resolver_user;
+  /** Borrowed PSRAM stack allocator with alloc/free; NULL keeps WithCaps.
+   * Used only when the resolved policy selects PSRAM. Must provide 8-bit
+   * PSRAM storage aligned for StackType_t and live until all tasks join.
+   * TCB storage remains internal RAM; internal-policy stacks ignore this. */
+  const h2_pal_mem_api_t *psram_stack_allocator;
 } h2_esp_task_policy_config_t;
+
+typedef struct h2_esp_platform_resource_stats {
+  size_t live_tasks, task_stack_bytes;
+  size_t live_queues, live_mutexes, live_semaphores, live_conditions;
+  size_t live_timers, live_firmware_infos;
+  size_t allocations, allocation_bytes;
+} h2_esp_platform_resource_stats_t;
+/** Actual live PAL objects and allocator-reported usable bytes. Stack bytes
+ * account native reservations owned by unjoined PAL Task handles. Completed
+ * internal-policy workers may let IDF reclaim their stack before join; PSRAM
+ * workers retain it until join. Snapshot comparisons require quiescence. */
+h2_pal_result_t h2_esp_platform_get_resource_stats(h2_esp_platform_resource_stats_t *out);
+const h2_pal_timer_api_t *h2_esp_platform_timer_api(void);
 
 h2_pal_mem_api_t *h2_esp_platform_default_allocator(void);
 h2_pal_mem_api_t *h2_esp_platform_psram_allocator(void);
@@ -104,6 +123,25 @@ void h2_esp_platform_netif_unregister(void *netif_handle);
 h2_pal_result_t h2_esp_platform_netif_monitor_init(void);
 void h2_esp_platform_netif_monitor_deinit(void);
 h2_pal_result_t h2_esp_platform_netif_reconcile_default(void);
+/**
+ * Stops a borrowed ESP-NETIF PPP interface and confirms PPP_PHASE_DEAD.
+ *
+ * The caller must serialize PPP start/stop and keep the interface, transport,
+ * callbacks and their storage alive until this function succeeds. On failure
+ * they must remain alive for a later retry; this function destroys nothing.
+ * Call only from an ordinary task, never from a TCPIP/event-loop callback.
+ * Phase reads and close requests execute in TCPIP context, independently of
+ * queued PPP status events or the modem SDK's PPP_STARTED bookkeeping.
+ *
+ * @param netif_handle Required borrowed ESP-NETIF PPP interface.
+ * @param timeout_ms PPP termination wait budget in milliseconds; zero performs
+ *                   one close/check without sleeping. SDK TCPIP dispatch is
+ *                   synchronous and follows ESP-NETIF's execution contract.
+ * @return H2_PAL_OK only after PPP is dead; TIMEOUT, INVALID_ARG, INVALID_STATE,
+ *         IO, or UNSUPPORTED when PPP support is disabled.
+ */
+h2_pal_result_t h2_esp_platform_ppp_quiesce(void *netif_handle,
+                                          uint32_t timeout_ms);
 const h2_pal_task_api_t *h2_esp_platform_task_api(void);
 h2_pal_result_t
 h2_esp_platform_task_configure(const h2_esp_task_policy_config_t *config);

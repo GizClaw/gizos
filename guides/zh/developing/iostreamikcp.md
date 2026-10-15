@@ -81,9 +81,9 @@ Header 的 bit range 从 frame 起始位置计算。Flags 只允许以下三个�
 
 Control flag 不能组合。Control payload 固定为 4-byte little-endian conversation ID mirror，并必须等于 header 中的 conversation ID；未知 flag、错误长度或 mirror 不匹配的 frame 都不能建立 session。18-byte header 后的 payload 最大为 `1024` bytes，CRC32 继续只校验 payload。
 
-Filter 可以跨多次输入保留不完整 frame；遇到普通日志、错误版本、非法长度或 CRC 错误时丢弃非法 candidate 并继续寻找下一个 magic，不要求底层 read 与 frame 边界对齐。已识别但校验失败的二进制 frame 不作为平台日志输出，也不能重新分类为普通日志。
+Filter 可以跨多次输入保留不完整 frame；遇到普通日志、错误版本、非法长度或 CRC 错误时把非法 candidate 的 byte 转发给 `on_log` 并继续寻找下一个 magic，不要求底层 read 与 frame 边界对齐。校验失败的 candidate 不作为有效 frame 交付、也不注入 KCP，但它的原始 byte 作为普通日志转发，避免吞掉夹在 frame 之间的设备控制台文本。
 
-可选 `on_log` sink 只接收已确认不属于 frame candidate 的原始 byte slice。Slice 借用 filter 的输入 buffer，只在同步 callback 返回前有效；library 不跨 callback 保存 sink 或 slice 的所有权。每个交付给 sink 的 byte 只计入 `log_bytes` 一次，frame header、payload 和 malformed candidate 的 byte 都不计入日志。Callback 返回的错误（包括调用方用来表示取消的 `H2_PAL_EXIT`）由当前 `input()` 或 `poll()` 原样返回，不继续交付后续日志，也不把剩余输入重新解释为 frame 或日志。
+可选 `on_log` sink 接收从 frame 路径丢弃的原始 byte slice。Slice 借用 filter 的输入 buffer，只在同步 callback 返回前有效；library 不跨 callback 保存 sink 或 slice 的所有权。前导 non-magic byte、失效 candidate（错误 version/flags、超长 length、CRC mismatch、无效 control）的 byte、重同步时到下一个 magic prefix 之前丢弃的 byte，以及 buffer-full eviction 的 byte，都会恰好转发给 `on_log` 一次并计入 `log_bytes`。只有成功交付的有效 frame（header 和 payload）不进入日志。重同步扫描仍在下一个 `H2IKCP` magic prefix 停止，因此真实 frame 不会被转发到日志。Callback 返回的错误（包括调用方用来表示取消的 `H2_PAL_EXIT`）由当前 `input()` 或 `poll()` 原样返回，不继续交付后续日志，也不把剩余输入重新解释为 frame 或日志。
 
 Standalone filter callback 中的 frame 和 payload 借用 filter 内部 buffer，只在 callback 返回前有效。由外层 session owner 解码物理 stream 时，使用 `h2_iostreamikcp_input_frame()` 把匹配 conversation ID 的 data frame 注入 KCP；control frame 不能进入该 API。
 
@@ -104,7 +104,7 @@ Host 每次 probe、connect 或 reconnect 都生成新的非零 conversation ID�
 - `mtu`：KCP payload MTU；`0` 使用 `352`，有效范围为 `64` 到 `1024` bytes。
 - `receive_window`：本端可接收的 KCP segment 数；`0` 使用 `64`。UART backend 应按驱动 RX buffer 容量缩小窗口，避免可靠层突发量超过物理层缓存。
 
-H2Loader 的 ESP32-S3 与 BK7258 UART adapter 使用 20-segment receive window。Physical poll 每次最多读取 `512` bytes，并把阻塞等待限制为 `10` ms；每次 poll 后调用 KCP update。KCP 自身 interval 同样为 `10` ms，CWND 保持开启；Host 写入按 KCP MSS 分块，使每个 message 对应一个 KCP segment。
+H2Loader 的 ESP32-S3 与 BK7258 UART adapter 使用 20-segment receive window。Physical poll 每次最多读取 `512` bytes，并把阻塞等待限制为 `10` ms；每次 poll 后调用 KCP update。Frame callback 返回错误（例如 ACK 写入 deadline 耗尽）时，filter 中可能还缓存着完整 frame；因此即使 physical read 以 `TIMEOUT`/`WOULD_BLOCK` 返回 0 bytes，poll 仍以空输入调用 frame filter，恢复交付已缓存的完整 frame，不完整 frame 继续保留。Physical read 的其它错误先原样返回，不解析缓存。KCP 自身 interval 同样为 `10` ms，CWND 保持开启；Host 写入按 KCP MSS 分块，使每个 message 对应一个 KCP segment。
 
 BK7258 上 AP 直接拥有 UART1，日志和 IO Stream iKCP 共享物理串口。AP UART PAL 接管 RX，并在完整协议帧写入期间暂停 shell TX；CP 不转发串口数据，不再有 mailbox 分片或 completion ACK。
 - `rx_buffer_size`：内部 byte-stream RX ring 大小；`0` 使用 `4096`，且不能小于 MTU。
@@ -143,4 +143,4 @@ Adapter 只把对应 PAL API 转换为 library 的 `h2_iostreamikcp_io_t`，不�
 bazel test //libs/iostreamikcp:all
 ```
 
-`tests/` 需要覆盖日志前缀和日志夹杂、同步 log sink 的 borrowed lifetime、callback 错误/取消与精确 byte accounting、跨 read 的不完整 frame、伪 magic、malformed candidate 不进入日志、连续 frame、CRC 错误后的重同步、conversation ID 过滤、双端 round trip、RX backpressure、底层 write/flush timeout，以及 poll 的 timeout 和 would-block 语义。
+`tests/` 需要覆盖日志前缀和日志夹杂、同步 log sink 的 borrowed lifetime、callback 错误/取消与精确 byte accounting、跨 read 的不完整 frame、伪 magic、重同步及失效 candidate 的 byte 到达 log sink、连续 frame、CRC 错误后的重同步、conversation ID 过滤、双端 round trip、RX backpressure、底层 write/flush timeout，以及 poll 的 timeout 和 would-block 语义。

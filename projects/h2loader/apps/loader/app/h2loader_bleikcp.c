@@ -36,7 +36,9 @@ static int handle_session(
     h2loader_ble_session_t session;
     h2_pal_task_t *task = NULL;
     const h2_pal_task_options_t options = {
-        .name = h2loader_app_command_task_name,
+        /* Separate from the persistent UART command task: name-addressed
+         * backends must not delete that task when a BLE session is joined. */
+        .name = h2loader_ble_command_task_name,
         .min_stack_size = 49152u,
     };
     (void)conn_handle;
@@ -71,12 +73,15 @@ static int open_command_service(
         return H2_PAL_ERR_INVALID_ARG;
     }
     *out_service = NULL;
+    int init_rc = h2_bleikcp_global_init();
+    if (init_rc != H2_PAL_OK) return init_rc;
     static h2loader_ble_session_t base;
     base = (h2loader_ble_session_t){
         .task_api = runtime->task,
         .command_config = *command_config,
     };
     const h2_loader_ble_service_config_t service_config = {
+        .log = runtime->log,
         .api = {
             .ble = runtime->ble_host,
             .task = runtime->task,
@@ -86,6 +91,7 @@ static int open_command_service(
             .allocator = runtime->mem,
         },
         .board = board,
+        .local_name = runtime->ble_local_name,
         .capabilities = capabilities,
         .advertising_mode = H2_LOADER_BLE_ADVERTISING_LEGACY,
         .handler = handle_session,
@@ -95,6 +101,8 @@ static int open_command_service(
     int rc = h2_loader_ble_service_open(&service_config, &service);
     if (rc == H2_PAL_OK) {
         *out_service = service;
+    } else {
+        (void)h2_bleikcp_global_shutdown();
     }
     return rc;
 }
@@ -104,7 +112,9 @@ static int close_command_service(void *user, void *service) {
     if (service == NULL) {
         return H2_PAL_OK;
     }
-    return h2_loader_ble_service_close(service);
+    int rc = h2_loader_ble_service_close(service);
+    if (rc == H2_PAL_OK) (void)h2_bleikcp_global_shutdown();
+    return rc;
 }
 
 const h2loader_app_command_service_api_t *

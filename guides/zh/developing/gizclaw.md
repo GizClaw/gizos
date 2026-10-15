@@ -2,11 +2,13 @@
 
 `libs/gizclaw` 将 GizClaw C SDK 集成为跨平台 client，提供连接、RegistrationToken 注册、轮询、generic RPC、Server 反向 RPC provider、ping 和 speed test 能力，并提供可由多个产品复用的单 client request service。
 
+`h2_gizclaw_config_t.allocator` 继续传给 HTTP 请求，并贯穿 WebRTC peer 和设备播放器音轨。WebRTC provider 未实现 allocator 扩展并返回 `UNSUPPORTED` 时，client 记录 `peer_allocator_unsupported`，再用 provider 默认分配器创建 peer。产品可以让 GizClaw 与 Lua Host 共用一个 arena，但必须等子任务 join、音轨关闭和 owned WebRTC event 全部释放后再销毁 arena。Service、时间同步、设备 worker 和音频下载任务的栈由平台 task provider 配置；ESP internal 栈策略与 provider 的独立 internal/control/packet 存储不受 client allocator 覆盖。
+
 ## API Reference
 
 [API Reference](/references/gizclaw)
 
-`libs/gizclaw/include` 中实际参与项目构建的头文件是 GizClaw 的生产 Public API contract。Config 提供 server endpoint、private key、cipher mode、timeout 和可选 RPC provider，并注入 PAL mem、HTTP、WebRTC、crypto、time 和 log API。
+`libs/gizclaw/include` 中实际参与项目构建的头文件是 GizClaw 的生产 Public API contract。Config 提供 server endpoint、private key、cipher mode、timeout 和静态 Tool handler 与 MHS HWD 设备表，并注入 PAL mem、HTTP、WebRTC、crypto、time 和 log API。
 
 ## 依赖和边界
 
@@ -14,9 +16,9 @@ GizClaw library 负责 SDK 集成和 client protocol，不创建具体 HTTP、We
 
 Runtime Profile 负责选择 Workflow driver，`libs/gizclaw` 不在 public Workflow projection 中复制 driver enum，也不要求调用方根据 driver 构造 Workspace 参数。Workspace 更新统一使用 `h2_gizclaw_*workspace_set_parameters`，对应 SDK 0.15.5 的 `server.workspace.parameters.set`（110）；旧的 `workspace_set_input` 入口已删除。
 
-依赖的 GizClaw C SDK 当前固定为 0.18.7。自 0.17.0 起，`h2_gizclaw_*workspace_activate` 保留 SET-only 语义，`h2_gizclaw_*workspace_reload` 保留重载当前选择的行为。新增 `h2_gizclaw_*workspace_reload_with_options`（RPC 120），在一次调用中可选地选择 Workspace、应用参数补丁，然后重载。传入零长度 `name` 保持当前选择，`parameters == NULL` 不修改参数；非空补丁复用 `h2_gizclaw_workspace_parameters_patch_t` 的字段 presence 语义。请求创建时复制参数，响应仍为 `h2_gizclaw_workspace_activation_t`。
+依赖的 GizClaw C SDK 固定为 0.30.0。自 0.17.0 起，`h2_gizclaw_*workspace_activate` 保留 SET-only 语义，`h2_gizclaw_*workspace_reload` 保留重载当前选择的行为。新增 `h2_gizclaw_*workspace_reload_with_options`（RPC 120），在一次调用中可选地选择 Workspace、应用参数补丁，然后重载。传入零长度 `name` 保持当前选择，`parameters == NULL` 不修改参数；非空补丁复用 `h2_gizclaw_workspace_parameters_patch_t` 的字段 presence 语义。请求创建时复制参数，响应仍为 `h2_gizclaw_workspace_activation_t`。
 
-`h2_gizclaw_workspace_parameters_patch_t` 通过独立 `has_*` 标记选择 input（PTT/Realtime）、conversation initiative（peer/agent）和 agent initiative policy（once_when_empty/on_reload）。`workspace_set_parameters` 至少指定一个字段；显式的无效枚举值、空 patch、非法名称在发送前返回 INVALID_ARG。create 编码并持有 patch 数据，调用方随后可释放或修改原对象；同步入口沿用同一 request/parse 流程。
+`h2_gizclaw_workspace_parameters_patch_t` 通过独立 `has_*` 标记选择 input（PTT/Realtime）、conversation initiative（peer/agent）、agent initiative policy（once_when_empty/on_reload）、TTS 语速和安全围栏档位（见 [Workspace 参数补丁](#workspace-参数补丁)）。`workspace_set_parameters` 至少指定一个字段；显式的无效枚举值、空 patch、非法名称在发送前返回 INVALID_ARG。create 编码并持有 patch 数据，调用方随后可释放或修改原对象；同步入口沿用同一 request/parse 流程。
 
 客户端只发送指定字段，不先 GET typed `WorkspaceParameters`，不解析或重写其 agent_type，也不再依据未知、额外、缺失或重复的服务端 typed 参数字段拒绝更新。服务端根据绑定的 Workflow driver 校验 patch、合并指定字段并保留其他参数；不支持的 driver/字段通过原有远端错误路径返回。公开 patch 是固定的可写字段集合，不是对服务端 metadata 的封闭枚举。SFU input 支持由上游实现，E2E 保留真实配置请求，不能通过跳过它声称完整验收通过。
 
@@ -28,6 +30,8 @@ Runtime Profile 负责选择 Workflow driver，`libs/gizclaw` 不在 public Work
 
 0.18.7 相对 0.18.5 只有增量：`FriendGroupMemberObject` 增加仅由 `server.friend_group.members.list` 填写的 `online` / `last_seen_at`；control API 的变化 GizOS 不使用。`h2_gizclaw_friend_group_member_t` 因此在成员列表中带出 `has_online` / `online` / `last_seen_at`：`online` 表示成员设备是否连接到回答请求的 Server，未报告在线状态（包括 presence 读取失败或旧服务端未提供字段）时 `has_online` 为 false；`last_seen_at` 是 UTC RFC 3339 文本，最多 64 字节，Server 从未观察到该成员时为 NULL。超长、含 NUL 或非法 UTF-8 的时间文本使整页返回 `H2_PAL_ERR_FORMAT` 并回滚 storage。member add/put/delete 仍不带 presence（`has_online` 为 false，`last_seen_at` 为 NULL），即使响应携带这些字段也忽略；公开 API 函数数量不变。
 
+设备协议使用 `mhs/v0` HWD 单设备读写和 `tool/v0` 预定义操作；GizOS 的公共 enum 在编译期与 SDK registry 校验。Workspace 参数补丁仍提供 input、conversation 与 tts_speech_rate_percent，默认不发送新增的可选 wire 字段。Workflow 返回不可变 name 与普通字符串 tags；Workspace 只通过 workflow_name 关联 Workflow。
+
 设备间社交提醒使用三组 typed wrapper，沿用 Social 的 create/parse/sync 生命周期：
 
 - `h2_gizclaw_*friend_ping`（`server.friend.ping`，123）按 Friend relationship ID（`h2_gizclaw_friend_t.id`）提醒好友设备；`h2_gizclaw_*friend_group_ping`（`server.friend_group.ping`，124）按 FriendGroup name 召集组内其他成员设备。名称校验与 `friend_info_get` / `friend_group_get` 相同，create 复制名称、不发网络请求。结果写入调用方持有的 `h2_gizclaw_social_ping_t`，不需要 response storage：`DELIVERED` 带 `delivered_count`（好友 ping 恰好 1，召集至少 1）；`NOT_ONLINE` 表示目标都不在线，服务端既没有发送也没有开启限流窗口；`RATE_LIMITED` 只在此时带 `retry_after_seconds`（≥1）。未知 result 或违反上述组合的回复按 `H2_PAL_ERR_FORMAT` 失败，不猜测含义；限流是正常结果，不是 RPC 错误。
@@ -37,7 +41,11 @@ FriendGroup 成员管理按 Social 的 create/parse/sync 生命周期覆盖 `ser
 
 谁能加、能加多少由 Server 判定：ADMIN 只能由 owner 添加，MEMBER 可由 owner 或 admin 添加；一个 FriendGroup 连同 owner 最多 10 人，一个 Peer 最多加入 10 个 FriendGroup；Server 不要求双方已是 Friend。重复添加同一成员且 `member_name` 不变时按改角色处理，owner 不能被重复添加。错误码沿用所有 Social wrapper 的统一映射：调用方不在该组（组对其不可见）返回 `H2_PAL_ERR_NOT_FOUND`；组已满（`RESOURCE_EXHAUSTED` / `FRIEND_GROUP_FULL`）、对方组数已满（`FRIEND_GROUP_LIMIT_REACHED`）、权限不足、`member_name` 冲突和并发修改都返回 `H2_GIZCLAW_ERR_REMOTE`，库不按单个 RPC 细分这些远端原因。
 
-Server 向设备推送的 `client.device.find`（126）与 `client.social.ping`（127）由产品实现，见下文 RPC provider。
+`device.find` 与 `social.ping` 是由产品注册的 tool/v0 handler，见下文设备 provider。
+
+### 播放下载缓冲的生命周期
+
+同一次播放的探测、Range 和 plain fallback 复用最初分配的固定容量编码 ring 与下载 descriptor。替换前先 cancel 并 join 旧 HTTP producer；join 失败保留旧 task、数据与 cancel=true，禁止重置或启动新 producer。join 成功后清除请求、range 校验、缓冲索引/计数和结果状态，只重置已初始化的 cancel 值，不覆盖 opaque atomic。容量与预缓冲合同不变；reader 在播放 worker 上同步跟随当前下载。成功的播放清理、停止与销毁仍释放 ring/descriptor，不跨曲目保留缓冲，不修改 arena 或 PAL Track 大小。
 
 ## Request service
 
@@ -47,82 +55,91 @@ Capacity 覆盖 request-queued、running、progress-pending、completion-pending
 
 正常 domain error 只结束当前 operation。Initial connect、fatal poll 或 transport closed 会关闭 service generation；受影响 operation 以 `SERVICE_CLOSED` 完成，terminal callback 在 operation callback 之后由 `dispatch` 恰好调用一次。Client close 前，optional worker cleanup 先释放仍由 worker 独占的 conversation 等 caller-owned client resource；产品 Audio 和状态仍由 dispatch callback 清理。Teardown 顺序是拒绝新 submit、stop 并 join worker、dispatch drain、release caller handle、deinit；`stop` 不内联执行产品 callback。
 
+`h2_gizclaw_service_deinit()` 在尚未停止或仍有持有者等拒绝条件成立时返回 `H2_PAL_ERR_INVALID_STATE`，并以 WARN `stage=service_deinit_blocked` 列出全部拒绝状态。`stopped`、`dispatch`、`active` 分别表示已停止、正在 dispatch 和 active operation 数；`refs=caller/request/track/downlink` 按固定顺序给出四类引用数；`unset` 表示 Track 正在解绑，`queued` 和 `items` 分别是排队事件数和 dispatch 项数；`terminal=pending/dispatched` 与 `attached=audio_conversation/session` 分别按固定顺序给出两个布尔状态。该紧凑格式在七个计数均为 64 位 `SIZE_MAX` 时仍不超过 `H2_PAL_LOG_MESSAGE_MAX`（含 NUL 共 256 字节），保留完整计数值和末尾字段。状态在 service lock 内格式化，在解锁后记录；拒绝状态的签名与上次相同时不重复记录，签名变化才再记录。拒绝条件、返回值和成功 teardown 流程保持不变。
+
 Encrypted mode 通过显式 X25519 key/public/shared types、HKDF-SHA256 和对应
 AEAD enum 调用 Crypto PAL。GizClaw 的 plaintext mode 在 library 内做经过长度和
 capacity 校验的 bounded copy，不把 plaintext 注册成 Crypto PAL algorithm。
+
+## Workflow tags 与 Workspace identity
+
+Workflow list 接受最多 32 个 `h2_gizclaw_str_t` tag，每个 1–128 UTF-8 字节且不含 NUL。多个 tag 使用精确 AND 匹配，零 tag 返回全部；重复 selector 保留在请求中并沿用服务端的幂等匹配语义。Library 不 trim、不折叠大小写、不解析年龄或类别，也不把 tags 当作授权条件。请求创建时复制编码后的 bytes；返回的 tags 字符串数组随 response storage 存活，空数组是有效 Workflow。
+
+Workspace list 没有 collection 参数，返回当前 Peer 可访问的 Workspace；create 只需要 workflow_name 和 Workspace name。Workflow 的 tags 改变不会改变其 name，也不会重绑定已有 Workspace。Session 的 tags 只控制 catalog 查询；按 workflow_name 选择时，完整 catalog 的未命中项会通过 Workflow get 验证，流式模式也通过 get 验证，然后继续 Workspace get/create/reload。现有 Workspace 可省略 workflow_name 按名字打开。内容分级策略、显示顺序、权限与筛选条件由产品拥有。
+
+## Session catalog 流式合同
+
+配置 `catalog_sink` 时，Session 对配置的 `tags` 做一次 AND 查询，用 cursor 和每页最多 8 条分页读取 Workflow，使小型 response storage 也能容纳含多语言 metadata 的页面。`catalog_bytes` 只容纳一页响应或一次 Workspace RPC，和条目总数无关；每页的结构与字符串只在 `H2_GIZCLAW_CATALOG_PAGE` 回调返回前有效。回调在调用 register/refresh 的任务上同步执行，不得重入同一个 Session。首次有效页后发 BEGIN，随后发送 PAGE；全部页和 Profile 名称、revision 一致且未取消时发 COMMIT。RPC、格式、超时、取消或 sink 失败后发 ABORT，调用方须丢弃临时文件并保留旧发布文件。sink 应验证自身文件大小、索引、重复条目和持久化结果；Session 的 `workflow_count` 只在 COMMIT 成功后更新。连续超过 16 个空的续页视为异常。注册仍自动刷新；Catalog 失败不撤销已完成的注册。
+
+流式模式不保存完整 catalog，`catalog_copy` 返回 `UNSUPPORTED`。按 `(workflow_name, workspace_name[, parameters])` 选择时，Session 用 Workflow get 验证返回的 name 与 Profile revision，再按原有 Workspace get/create/reload 合同执行；现有 Workspace 也可只按名称选择。产品应从自己的文件读取显示窗口，Session 不负责产品文件路径或持久化。`max_workflows` 在流式模式不用，`retain_catalog_buffer` 必须为 false。
+
+### 兼容的完整 catalog 模式
+
+Session 的 `catalog_bytes` 是完整 catalog 解码和单次 Workspace RPC response storage 各自的容量。刷新成功后，catalog 的条目和字符串仍引用该 storage；Workspace preparation 必须使用另一块 scratch，不能覆盖已发布的 catalog。
+
+`h2_gizclaw_session_config_t.retain_catalog_buffer` 默认为 false，保持按操作分配的行为：刷新分配新 catalog storage，成功后释放旧 catalog，失败时释放新 storage；Workspace preparation 的 scratch 在操作结束时释放。设置为 true 时，create 从 `retained_allocator` 分别预分配两块 `catalog_bytes`（该字段为 NULL 时回退到 `mem`），每块只分配一次；任一分配失败即返回 `H2_PAL_ERR_NO_MEMORY`，释放已取得的资源并保持输出 Session 为 NULL。该模式在 Session 生命周期内保留 `2 × catalog_bytes`（例如容量为 256 KiB 时保留 512 KiB），让长期运行后的堆碎片不再影响这两块大缓冲的取得；其他 RPC、transport 和音频分配仍可能失败。
+
+可选的 `const h2_pal_mem_api_t *retained_allocator` 仅用于保留模式的 catalog 和 scratch，调用方可将这两块长期存活的大缓冲放在独立于碎片敏感 arena 的内存中。Session 本体、同步对象及其他 Session 分配仍使用 `mem`；`retain_catalog_buffer` 为 false 时忽略 `retained_allocator`。两个 allocator 及其上下文由调用方持有，生命周期须覆盖成功的 Session destroy；创建回滚和 destroy 都通过分配时的同一 allocator 释放缓冲。
+
+保留模式下，刷新只写 scratch，成功后在 Session mutex 内交换 catalog 和 scratch；失败不发布部分结果，并沿用 catalog FAILED、不可复制为有效数据的语义。Workspace select、自动刷新和版本不匹配后的重试复用 scratch，每次 response storage 从 used = 0 开始。现有 busy、等待和 deadline 规则继续保证独占使用：register/refresh 遇到 preparation 返回 BUSY，select/conversation 在期限内等待，复制 catalog 仍由 mutex 保护。操作失败、取消或 close 不释放保留缓冲；调用方完成 join、释放 Conversation 并成功 destroy 后，两块缓冲才返回原 allocator。其他缓冲区的容量和生命周期不受此开关影响。
 
 ## Connection transport 生命周期
 
 `h2_gizclaw_client_connect()` 在返回成功前必须注册 Opus 上下行 media，并建立 connection-scoped Direct Packet 和 Peer Event channel。`libs/gizclaw` 在 connect 前注册 PAL WebRTC media extension；调用方不能把 media 当作可选能力，也不能在连接已建立后替换 extension。RPC 和 HTTP service channel 按调用动态创建，不属于这组固定 transport。
 
-Peer Event 的物理 service channel 由 SDK connection 持有，唯一 access handle 由 `h2_gizclaw_client` 从 connect 成功一直保留到连接关闭。Conversation 只取得该 handle 的逻辑 lease；同一 client 同时只能有一个 conversation。每次 lease 使用 connection 内单调递增且唯一的 input stream ID，只用于我们自己的输入（BOS、READY、EOS 与服务端对它的拒绝）。服务端下发的 stream ID、BOS、EOS 设备不看：下行音频由 Service 级下行通道收到即解码写入绑定的 Track，不属于任何一轮输入，也不经 event 复制；下行流结束（包括 `STREAM_INTERRUPTED` 等错误码）都不是 conversation 错误。conversation event 只有输入活跃期间转发的文本和服务端拒绝本轮输入的 `ERROR`；push-to-talk 一轮在输入结束发出后完成，realtime 持续到挂断。Conversation deinit 只释放逻辑 lease，不释放 client access handle，也不关闭物理 channel；所有 conversation handle 必须先于 client deinit 释放。Direct Packet、Peer Event 或 Opus transport 意外关闭时，`h2_gizclaw_client_poll()` 返回 `H2_PAL_ERR_CLOSED`，调用方必须 close、deinit 并重建完整 client，不能只重开单条 transport。
+本地 DataChannel 的 owner 登记与 outbound 实际并发量一起增长，不使用 SDK 的 inbound RPC 数量限制。适配层在调用 PAL 创建 channel 前预留登记空间；分配失败时返回错误，不创建无法发送或关闭的孤立 handle。每项保留 channel identity、发送背压和本地关闭状态：显式 close 立即撤销 send/close 权限，但保留来源身份直到 owned terminal event 被派发，已排队的 OPEN 因而不会把关闭中的本地 channel 误认成 Server 反向 RPC。登记节点地址固定，通过原子链表头和 live handle 发布供其它 client 的 owner 查询；协议状态仍只由该 client 的 owner 访问。空节点复用，peer close 清空身份，client deinit 在停止自身协议工作后释放节点和原子存储。
+
+`//libs/gizclaw:h2_gizclaw_channel_lifecycle_test` 经过真实 GizClaw WebRTC 适配层、H2Peer、H2SCTP 与本地 Pion，由两个独立 owner 同时驱动两个 client，各自在同一 Peer 上保留六条 channel，再交替执行 180 次收发关闭与 OPEN 派发前取消，验证 SID 实际复用、关闭后远端 channel 数回到基线、没有误报 remote channel，以及登记分配失败和最终 allocator 清理。该 Host 互通回归不替代 ESP 设备长时业务测试。
+
+Peer Event 的物理 service channel 由 SDK connection 持有，唯一 access handle 由 `h2_gizclaw_client` 从 connect 成功一直保留到连接关闭。Conversation 只取得该 handle 的逻辑 lease；同一 client 同时只能有一个 conversation。每次 lease 使用 connection 内单调递增且唯一的 input stream ID，只用于我们自己的输入（BOS、READY、EOS 与服务端对它的拒绝）。服务端下发的 stream ID、BOS、EOS 设备不看：下行音频由 Service 级下行通道收到即解码写入绑定的 Track，不属于任何一轮输入，也不经 event 复制；下行流结束（包括 `STREAM_INTERRUPTED` 等错误码）都不是 conversation 错误。conversation event 只有输入活跃期间转发的文本和服务端拒绝本轮输入的 `ERROR`；push-to-talk 一轮在输入结束发出后完成，realtime 持续到挂断。Conversation deinit 只释放逻辑 lease，不释放 client access handle，也不关闭物理 channel；所有 conversation handle 必须先于 client deinit 释放。Direct Packet、Peer Event 或 Opus transport 意外关闭时，`h2_gizclaw_client_poll()` 返回 `H2_PAL_ERR_CLOSED`，调用方必须 close、deinit 并重建完整 client，不能只重开单条 transport。Peer 仍显示 connected 但已不送达任何内容时同样按关闭处理：一个 RPC 以超时结束且期间没有收到任何 DataChannel message 或 Opus frame，下一次 poll 记录 WARN `stage=peer_unresponsive` 并返回 `H2_PAL_ERR_CLOSED`，恢复方式相同（判定规则见 [GizClaw transport](/apps/gizclaw/transport#peer-无响应判定)）。
 
 Conversation 上行先发送 BOS，再等待当前 input stream 的 `AUDIO_INPUT_READY`；发送成功不代表服务端已完成授权。确认前不采集或编码 PCM、不发送 Opus，但事件队列和下行处理继续推进，避免业务事件占住队列后阻塞 READY。READY 前只有显式关联当前 input stream 的事件能够绑定回复 route，允许服务端提前拒绝当前输入；取消的旧输入或独立旧 reply 的迟到事件不得污染新会话。READY 后允许服务端生成的独立 response ID。等待沿用有界超时，取消仍清理已发送的 BOS；错误 stream、已取消或已提交输入的确认不能重新放行。READY 不参与下行 response-local route 绑定。
 
-当前 `MODULE.bazel` 固定的 C SDK 0.18.7 已包含此协议：`generated/events/peer_event.pb.h` 定义 event type 9、payload tag 18 和 `AudioInputReady.stream_id[129]`。
+当前固定的 C SDK 已包含此协议：`generated/events/peer_event.pb.h` 定义 event type 9、payload tag 18 和 `AudioInputReady.stream_id[129]`。
 
 PAL WebRTC 的 `CLOSED` 和 `ERROR` callback 只提供 callback 期间有效的 borrowed DataChannel handle，backend 可以在 callback 返回后释放它。GizClaw C SDK 必须在 callback 返回前清空 matching service、active RPC、Direct Packet 和 inbound alias；Peer Event 继续保留 SDK-owned service state 供普通 client cleanup 使用，但不再保留 DataChannel alias。后续 request completion、cancellation、client close 或 deinit 只能释放 SDK state，不能再次把已消费的 handle 传给 PAL `channel_close`。显式 close 先于终态 callback 时仍只向 PAL 发起一次 close。
 
-## RPC provider
+## 设备 provider
 
-GizClaw C SDK 的 WebRTC/RPC transport 允许 Server 为 `client.*` method 反向创建 request-scoped Peer RPC channel。SDK 负责接收 request、按 method dispatch、发送 response/error，以及关闭 channel；`libs/gizclaw` 把该入口适配为 GizOS 的 `h2_gizclaw_rpc_provider_fn`，产品 integration 负责提供设备信息、稳定 identifiers、本地 Tool 以及设备控制实现。
+SDK 拥有 request-scoped Peer RPC channel、`client.tool.v0.invoke`（135）的封装与内层回复包装、`client.tool.v0.list`（136）的工具发现，以及 `client.rpc.methods.list`（137）的数字协议列表。GizOS 向 SDK 注册有实际 handler 的 `ClientTool`，不维护另一份方法名称表。MHS read/write（133/134）始终安装；未知设备 ID 返回 `NOT_FOUND`。旧的独立设备方法不再是 RPC registry 的成员，不提供别名或版本探测。
 
-SDK 0.15.5 的标准设备控制由 Service 内置 provider 实现。在现有
-`h2_gizclaw_config_t` 中分别传入 `audio`、`wifi`、`wifi_settings`、`power`；
-HTTP、Time、Crypto、allocator 复用已有字段，Task、Queue、Sync 复用 Service 配置。
-不需要第二份 device config、device 实例或额外 start/stop 调用。
+`h2_gizclaw_config_t` 借用 `tool_handlers` 到 Client/Service deinit。每项声明 numeric `h2_gizclaw_tool_t`、同步 invoke callback 与 user。Handler 接收该工具的内层 Protobuf，返回同一工具的内层结果；SDK 负责外层 tool/v0 envelope。空 callback、重复或未知 tool、超过 registry 容量的表使初始化失败。有任一设备能力（PAL、产品 vtable 或设备信息）的 Service 按配置安装内置工具，产品只能再注册 `DEVICE_FIND` 和 `SOCIAL_PING`，不能覆盖 Service 拥有的工具。没有任何设备能力的 headless Service 不安装内置工具，调用方与直接使用 standalone Client 一样可以注册任一有效 ClientTool，例如 E2E fixture actor 自己回答 `INFO_GET` 和 `IDENTIFIERS_GET`。表和 user 必须在整个借用期保持有效，运行中不增删。
 
-厂商、型号、硬件版本和序列号通过 `manufacturer`、`model`、
-`hardware_revision`、`serial` 提供。标准 RPC 的 protobuf 编解码、校验、响应由库处理；
-`rpc_provider` 保留为产品自定义方法的 fallback。没有配置的标准能力返回
-`UNIMPLEMENTED`，不会返回虚假的成功 ACK。
+| 操作 | Library owner | 配置来源 |
+| --- | --- | --- |
+| `info.get`、`identifiers.get`、`device.status.get` | 身份与状态编码、字段校验 | manufacturer/model/hardware_revision/serial、get_facts、Audio |
+| `sound.play`、七个 `audioplayer.*` | 下载、Ogg/Opus、MP3 与 WAV 解码与播放器 | Audio、resolve_sound_url、HTTP |
+| `wifi.scan/connect/saved.list/saved.forget` | 参数解码、PAL 操作与凭据清理 | Wi-Fi 与 Wi-Fi Settings |
+| `firmware.update` | 元数据、下载与 OTA Stage | HTTP 与 ota vtable |
+| `device.reboot/factory_reset`、`run.workspace.set` | 参数校验、回复完成后的交接 | Power 或对应 request hook |
+| `device.find`、`social.ping` | 产品 handler | tool_handlers |
 
-- Service 配置 Runtime 且 Audio 来自该 Runtime 时，音量与静音直接读写 Runtime audio state，GizClaw 不保留私有缓存。静音保留设定音量，本地 percent 调整取消静音并更新同一 state。只注入原始 PAL、没有 Runtime 的 library caller 仅能报告有效音量，静音时为零；需要逻辑静音恢复的产品必须提供 Runtime。
-- Wi-Fi 状态/扫描/连接使用 PAL Wi-Fi，保存网络使用 PAL Wi-Fi Settings。用户配网显式调用 PAL `connect_and_save`，由 provider 验证目标 GOT_IP 并持久化凭据；注入 Runtime API 或原始 provider 具有相同语义，GizClaw 不维护另一份网络记录。RPC list 如实返回现有 PAL Settings 的 0 或 1 条。RPC response 是动作接受结果，后续连接或保存失败通过设备日志记录，不把接受 ACK 当作连接成功。
-- 普通重启直接使用 PAL Power。重启、切网、OTA 在本地 RPC response 发送完成后
-  才交给 `$gizclaw/device` task；回复发送失败或 Service 停止会取消待执行动作。
-- 传入 `audio` PAL 即启用 Ogg/Opus 播放器。`audio_buffer_bytes` 设置压缩数据环形缓冲容量（默认 64 KiB），`audio_prebuffer_bytes` 设置起播和缺数据后的预缓冲量（默认 min(16 KiB, 缓冲容量)）。HTTP task 和播放 task 并行，缓冲满时通过背压暂停读取，边下载边解析 Ogg page、解码 Opus，不限制整首音频长度。短音频在下载结束后使用已有数据起播；持续缺数据超时会取消下载并上报错误。解码器保留一个最大 65,307 字节 Ogg page，跨页 packet 上限 64 KiB，独立于环形缓冲。超过 64 KiB 的 OpusTags（例如内嵌大封面）只校验开头的 `OpusTags` 魔数，其余字节随读随弃，不占额外内存；音频包仍受 64 KiB 上限约束。以 16 kHz mono PCM16LE 写入 PAL Audio track，按 PAL 报告的帧大小拼帧，末帧补零不计入播放进度。不支持 Vorbis、AAC 或 MP3。库只关闭自己的 track，不关闭共享 speaker。
-- 与其他音频共用 speaker/PA 的产品必须在 `h2_gizclaw_vtable_t` 同时提供
-  `speaker_acquire` / `speaker_release`（只设一个时 Service init 返回 INVALID_ARG）。
-  设置后，播放器和 `client.device.sound.play` 每次播放都在创建 PCM track 前 acquire
-  一次，并在 track 关闭后于所有退出路径（正常结束、失败、stop、取消）release 恰好一次；
-  库不再直接调用 audio PAL 的 `start_speaker` / `stop_speaker`，产品的占用计数因此能
-  覆盖库的播放，别的用户 release 不会掐断它，最后一个用户 release 才关 PA。acquire
-  失败时不创建 track、不 release，播放以错误结束。release 失败只记日志、不改变播放结果。
-  未设置 hook 时保持原行为：播放前调用 `start_speaker`，之后不关闭。
-- `client.device.sound.play` 的 `duration_ms` 按 16 kHz mono PCM16 精确截断
-  （`duration_ms × 32` 字节，末帧补零），剩余量按饱和减法计算，不会因无符号回绕而失效；
-  声音比 `duration_ms` 短时完整播放一次。
-- `client.device.find`（126）与 `client.social.ping`（127）没有库内置处理：设备层原样
-  把 payload 转给产品 `rpc_provider`，未配置 provider 时回复 `UNIMPLEMENTED`。
-  服务端只把成功回复计为已送达，因此产品 provider 应在接受提醒后立即成功回复，
-  响铃、UI 等动作投递到产品自己的执行上下文，不在 provider 内阻塞。
-- 本地 `playlist_set` 条目可带 `duration_ms`（0 为未知），只用于 `h2_gizclaw_player_play_index_at` 定位，不作为状态里的时长上报；RPC 推送与 `player_play` 的条目时长为 0。时长已知且起点非零时，下载 task 先发不限长度的 `Range: bytes=0-` 解析文件头，解码器读完两个头包后取消该请求，因此文件头大小不受限，再按头之后的字节率从起点前 5 秒发 `Range: bytes=<offset>-`。响应头里的 `Content-Range` 在第一个 body 字节处核对：探测请求允许缺失（表示服务器忽略 Range，直接在该 200 响应上跳到起点），续传请求必须精确命名所请求的起始字节和文件末尾，且总长度等于探测时的总长度（中途被替换的文件不会接到旧的文件头上）；结束时 partial 响应必须是 206，字节数等于 `Content-Range` 与 `Content-Length` 声明的长度。解码器从任意字节开始扫描 `OggS`，只接受 CRC 正确、同一 serial、非 BOS 的完整 page；被拒候选里已读的字节原地重扫，超过两个最大 page 仍无可用 page 返回 FORMAT。第一个非 EOS、带 granule 且有 packet 在其上开始的 page 作为锚点，其起点为 granule 减去该 page 上完整 packet 的时长（由 TOC 得出，不解码）；之后预滚 80 ms。结束于起点前 80 ms 之外的 packet 只校验不解码，第一个解码的 packet 前重置 Opus 状态，起点之前的样本丢弃。首个样本的位置与从头播放的计数口径相同，因此 `position_ms` 是 granule 推出的精确值；首个样本前的任何失败（非停止）改用一次普通 GET 顺序跳到起点，文件在起点前结束则该条目在结尾处正常结束。
+重启、切网、OTA、恢复出厂和 Workspace 切换仍在本地 RPC 回复发送完成后交给 `$gizclaw/device` task。回复失败或 Service 停止会取消尚未执行的动作。`request_reboot`、`request_factory_reset`、`request_run_workspace_set` 只能复制参数、投递到产品 owner 并立即返回，不得阻塞或停止/销毁 Service。Workspace 的 Session、Conversation 和已确认参数属于 App；App 可把 kickoff 映射为 initiative AGENT 与 ON_RELOAD。成功回复仅表示请求被接受。
+
+传入 `audio` PAL 即启用 Ogg/Opus、MP3 与 WAV 播放器，格式只按文件开头的字节识别（见 [GizClaw 音频](/apps/gizclaw/audio#音频格式)）。`audio_buffer_bytes` 设置压缩数据环形缓冲容量（默认 64 KiB），`audio_prebuffer_bytes` 设置起播和缺数据后的预缓冲量（默认 min(16 KiB, 缓冲容量)）。HTTP task 和播放 task 并行，缓冲满时通过背压暂停读取，边下载边解析 Ogg page / MP3 帧 / WAV 采样并解码，不限制整首音频长度。短音频在下载结束后使用已有数据起播；持续缺数据超时会取消下载并上报错误。解码器保留一个最大 65,307 字节 Ogg page，跨页 packet 上限 64 KiB，独立于环形缓冲。超过 64 KiB 的 OpusTags（例如内嵌大封面）只校验开头的 `OpusTags` 魔数，其余字节随读随弃，不占额外内存；音频包仍受 64 KiB 上限约束。MP3 解码器（dr_mp3 帧解码器加库内分帧）约 41 KiB，WAV 约 15 KiB，都远小于 Ogg 的 page 缓冲；MP3 与 WAV 混成单声道后重采样到 16 kHz。以 16 kHz mono PCM16LE 写入 PAL Audio track，按 PAL 报告的帧大小拼帧，末帧补零不计入播放进度。不支持 Vorbis、AAC、FLAC、Layer I/II 与 free-format MP3，其它内容以 `UNSUPPORTED` 失败。库只关闭自己的 track，不关闭共享 speaker。
+
+
+Wi-Fi provisioning 明确调用 PAL `connect_and_save`；Library 不维护第二份网络配置。音频与本地控制使用同一 Runtime proxy。`speaker_acquire`/`speaker_release` 必须成对提供；播放前 acquire，Track 关闭后在每条退出路径 release，失败、取消和停止也遵守此配对。没有 hook 时播放前 start_speaker，结束不主动 stop_speaker。`sound.play` 以 16 kHz mono PCM16 按 duration_ms 截断，短声音只完整播放一次。
+
+### MHS v0 HWD 设备表
+
+GizClaw 0.23.2 的 `client.mhs.v0.read/write`（133/134）以一个设备实例的 `id` 和 `hwd` 为请求入口；write 的 payload 是该 HWD 专属的 protobuf WriteRequest，read 和 write 的 payload 分别是对应的 ReadResponse 与 WriteResponse。字段是否存在由 protobuf `optional` 表达，0 和 false 是有效读数。SDK 发布的 `payload/mhs_v0.pb.h` 是字段形状的唯一来源。
+
+`h2_gizclaw_config_t.mhs_devices` 是借用到 deinit 的 `const h2_gizclaw_mhs_device_t[]`。每项包含唯一实例 ID、官方 ClientHwd、必需的 read、可选的 write 与 user。实例 ID 最多 64 字节，匹配 `^[a-z][a-z0-9]*([.-][a-z0-9]+)*$`；初始化拒绝重复或非法 ID、未知 HWD、只读 HWD 的 write。每次 RPC 只操作一个实例；不存在的实例返回 NOT_FOUND，HWD 不匹配或无效 protobuf 字段返回 INVALID_ARGUMENT，不支持写入的设备返回 UNIMPLEMENTED。产品 callback 运行于 RPC owner，不应在其中停止或销毁 Service。写入不保证事务回滚，超时后需重新读取硬件。
+
+Library 在 PAL 能力存在时自动安装 `speaker.main`（speaker HWD）和 `wifi.main`（只读 wifi HWD）；配置了 `modem` 时安装只读的 `modem.main`，配置了非零 `battery_component` 时安装只读的 `battery.main`，两者都需要 Service 的 Runtime。modem 从 `h2_runtime_system_state_modem()` 快照投影 sim_present、registered、rat（小写，如 `lte`）、rssi_dbm 与 0–4 档 signal_level（有 LTE RSRP 时按 RSRP 分档，否则按 RSSI），RPC owner 不查询 modem、不等 AT；一个字段都还没上报时回 `UNAVAILABLE`。battery 从该组件的 `h2_runtime_component_state_battery()` 快照投影 percent、charging 与 voltage_mv；电池不在或读数失败时同样不报数值。speaker 的 `volume_percent` 与 `muted` 在同一次 HWD write 中应用，回复包含真正回读的 applied 快照；wifi 按 PAL 状态投影 connected、SSID、BSSID、RSSI 和 IP，其中 RSSI 只在已关联时出现，未连接时省略该字段而不是报 0 dBm。回调尚未发布状态（`H2_PAL_ERR_UNAVAILABLE`）或 client 正在关闭时回 `UNAVAILABLE`，调用方可以稍后重试。产品可以注册其它物理实例，例如 display/led。RuntimeProfile 的 `spec.mhs.v0.devices` **只**声明 `id` 和 `hwd`；字段功能和读写 schema 已在 protobuf 定义，Profile 不再复制 states、range、access 或枚举。设备表与 Profile 的实例清单分别管理，Profile 声明不证明物理设备在线。没有 Runtime、只注入 Audio PAL 时静音就是写入 0，库不保存静音前的音量；这时只要求 `muted=false` 而结果音量仍为 0 的写入返回 `FAILED_PRECONDITION`，调用方需同时给出非零 `volume_percent`，需要逻辑静音恢复的产品必须提供 Runtime。
+
+### 播放与产品交接
+
+- 本地 `playlist_set` 条目可带 `duration_ms`（0 为未知），只用于 `h2_gizclaw_player_play_index_at` 定位，不作为状态里的时长上报；RPC 推送与 `player_play` 的条目时长为 0。时长已知且起点非零时，下载 task 先发不限长度的 `Range: bytes=0-` 解析文件头，解码器读完文件头（Ogg 两个头包、MP3 的 ID3v2 与首帧、WAV 的 `data` 之前）后取消该请求，因此文件头大小不受限，再发 `Range: bytes=<offset>-`：Ogg 按头之后的字节率从起点前 5 秒，WAV 精确到起点前 64 个采样帧，带 LAME “Info” 标签的 CBR MP3 精确到填满 bit reservoir 所需帧数再加 2 帧之前，落点到起点的每一帧都须符合声明的码率和字节网格；VBR 或无标签 MP3 不发 Range，直接在探测请求上逐帧跳过。以下 page、granule 与 packet 的描述针对 Ogg/Opus。响应头里的 `Content-Range` 在第一个 body 字节处核对：探测请求允许缺失（表示服务器忽略 Range，直接在该 200 响应上跳到起点），续传请求必须精确命名所请求的起始字节和文件末尾，且总长度等于探测时的总长度（中途被替换的文件不会接到旧的文件头上）；结束时 partial 响应必须是 206，字节数等于 `Content-Range` 与 `Content-Length` 声明的长度。解码器从任意字节开始扫描 `OggS`，只接受 CRC 正确、同一 serial、非 BOS 的完整 page；被拒候选里已读的字节原地重扫，超过两个最大 page 仍无可用 page 返回 FORMAT。第一个非 EOS、带 granule 且有 packet 在其上开始的 page 作为锚点，其起点为 granule 减去该 page 上完整 packet 的时长（由 TOC 得出，不解码）；之后预滚 80 ms。结束于起点前 80 ms 之外的 packet 只校验不解码，第一个解码的 packet 前重置 Opus 状态，起点之前的样本丢弃。首个样本的位置与从头播放的计数口径相同，因此 `position_ms` 是 granule 推出的精确值；首个样本前的任何失败（非停止）改用一次普通 GET 顺序跳到起点，文件在起点前结束则该条目在结尾处正常结束。
+- `h2_gizclaw_player_rate_set` 的速率存在设备对象的原子变量里，worker 每个变速步长读取一次；只对 music 播放生效，命名音效固定原速。解码后的 PCM 在拼 PAL 帧之前经过 `h2_gizclaw_time_stretch.c`（定点 SOLA，工作缓冲在条目内首次离开 1000 时才分配）。位置按两套计数：拼帧输出字节与其代表的源字节；每写入一帧记录该帧承载的源字节，扣除队列时按最近若干帧各自的源字节扣（队列里可能混有切换前后不同速率产生的帧），因此切换速率时位置不会超前或回退，1000 时与原先的“已提交减队列”相同；结束时位置为 origin 加全部源字节，即真实时长。切回 1000 或条目结束时 flush 先输出携带的重叠段，再原样接续其后的源样本。
 - 播放列表支持最多 32 项、读取/替换/追加、从指定索引播放、停止和 off/one/all
   循环模式。失败的列表校验保留旧列表和播放；停止或替换取消在途下载/播放。
   播放中进度按已写入 PCM 扣除队列容量及一个在途帧保守估算，结束时 drain 后
   校准到全部源采样；不逐帧 drain，避免插入静音。状态变化及约每秒进度通过 telemetry
   异步提交，不阻塞播放等待网络上报。
-- `h2_gizclaw_vtable_t` 只补 PAL 缺少的产品事实、命名提示音到 HTTPS Ogg/Opus URL
-  的解析，以及 H2Loader Stage begin/write/finish/abort/activate。`get_facts` 在
-  RPC owner 上运行，必须快速返回；提示音解析和 Stage 操作在设备 task 上运行。
-  回调不得直接销毁或停止 Service；activate 应向产品 owner 投递升级动作。
-  `request_reboot` 是 `client.device.reboot` 的可选非阻塞交接：响应发出后在设备
-  task 上调用一次，带上请求的 delay_ms；回调只能复制请求并投递给产品自己的
-  执行上下文（如 Runtime custom event）后立即返回，不能 sleep、阻塞或在回调内
-  停止/销毁 Service。延时、有序关机和重启由产品 owner 执行；库不会回退到
-  power PAL。未设置时库在设备 task 上等待 delay_ms 后直接调用 power PAL。
-- `get_facts` 的 `imei_count` / `imeis` 上报设备 modem IMEI，最多
-  `H2_GIZCLAW_DEVICE_IMEI_MAX` 个。产品必须返回已缓存的号码，不得在回调里发 AT
-  命令读取 modem；还没读到时返回 `imei_count = 0`。每项 `digits` 必须是 15 位
-  ASCII 十进制数字加 NUL，`name` 是可选的槽位标签，为内联缓冲区，必须在
-  `H2_GIZCLAW_DEVICE_IMEI_NAME_MAX` 内以 NUL 结尾，空串表示不命名；facts 整体
-  按值复制，回调返回后库不持有任何指向产品内存的指针。库在
-  `client.identifiers.get` 里按
-  `tac = 前 8 位`、`serial = 后 7 位` 拆分编码，与 Server 的 by-imei 索引一致。
-  任一项不合法整个回复失败，不发送部分列表；`get_facts` 失败或没有配置 vtable 时
-  回复退化为仅 `sn`，不报错。IMEI 属于个人数据，只出现在 RPC 回复里，不进入
-  `h2_pal_log` 输出与 trace 字符串。
+- `h2_gizclaw_vtable_t` 只补 PAL 缺少的产品事实、命名提示音到 HTTPS 音频（Ogg/Opus、MP3 或 WAV）URL 的解析、H2Loader Stage begin/write/finish/abort/activate 与产品动作交接。get_facts 在 RPC owner 上快速返回，提示音和 Stage 操作在设备 task 上执行。request_reboot 未设置时使用 Power PAL，设置后由产品 owner 完成延时、有序关机和重启。Factory reset 与 Workspace set 不提供库内回退路径。
+- `get_facts` 的 `imei_count` / `imeis` 上报设备 modem IMEI，最多 `H2_GIZCLAW_DEVICE_IMEI_MAX` 个。产品必须返回已缓存的号码，不得在回调里发 AT 命令读取 modem；还没读到时返回 `imei_count = 0`。每项 `digits` 必须是 15 位 ASCII 十进制数字加 NUL，`name` 是可选的槽位标签，为内联缓冲区，必须在 `H2_GIZCLAW_DEVICE_IMEI_NAME_MAX` 内以 NUL 结尾，空串表示不命名；facts 整体 按值复制，回调返回后库不持有任何指向产品内存的指针。库在 `identifiers.get` 工具 里按 `tac = 前 8 位`、`serial = 后 7 位` 拆分编码，与 Server 的 by-imei 索引一致。 任一项不合法整个回复失败，不发送部分列表；`get_facts` 失败或没有配置 vtable 时 回复退化为仅 `sn`，不报错。IMEI 属于个人数据，只出现在 RPC 回复里，不进入 `h2_pal_log` 输出与 trace 字符串。
 - OTA 使用明确的 `firmware_channel`，允许 RPC 覆盖 channel 并附带期望 SHA-256。
   库获取元数据并通过 PAL HTTP 下载；Stage backend 必须验证 package 的长度、
   SHA-256、board/target 和 manifest，验证通过才能发布 Stage。库上报 started、
@@ -132,9 +149,29 @@ C SDK 的 provider 合同仍是同步回复，所以 Wi-Fi scan 在 RPC owner �
 扫描（默认 5 秒、最多 30 秒）。下载、音频解码/播放和 OTA 均在独立设备 task 上执行。
 长扫描期间会占用 RPC owner；不能用一个提前 ACK 冒充扫描结果。
 
-应用主动上报时，`h2_gizclaw_telemetry_observation_t` 增加 `AUDIOPLAYER` 和 `OTA`。
-OTA frame 必须只包含一条 OTA observation，以映射 SDK 独立的 OTA frame API；
-其余 observation 继续使用原有批量 frame。上报成功仅表示本地 transport 接受。
+应用主动上报时，`h2_gizclaw_telemetry_observation_t` 增加 `AUDIOPLAYER`、`OTA` 和
+`ACTIVITY`。OTA frame 必须只包含一条 OTA observation，以映射 SDK 独立的 OTA frame
+API；其余 observation 继续使用原有批量 frame。上报成功仅表示本地 transport 接受。
+
+`h2_gizclaw_telemetry_kind_t` 的编号是库自有的，不是 SDK 的 observation kind：`OTA`
+在 SDK 侧没有对应的 observation（走独立 frame API），而 SDK 把 6 用于 `ACTIVITY`，
+所以 `h2_gizclaw_telemetry.c` 用一个显式 switch 在两套编号之间转换，不做强制转换。
+往 `h2_gizclaw_telemetry_kind_t` 追加新 kind 时必须同时补这个映射。
+
+`ACTIVITY` observation 上报设备当前在用的功能：`activity` 是 1 到
+`H2_GIZCLAW_TELEMETRY_ACTIVITY_ID_MAX`（32）字节、首字节 `[a-z0-9]`、其余
+`[a-z0-9_.-]` 的机器可读 id（如 `idle`、`chat`、`audioplayer`、`ota`），`detail` 是
+可选的展示文本，最多 `H2_GIZCLAW_TELEMETRY_ACTIVITY_DETAIL_MAX`（128）字节且不得携带
+敏感信息。activity 与 detail 作为一个整体合并，因此不带 detail 的观测会清掉上一个
+activity 留下的 detail；空 span 与 `has_detail` 为 false 等价，不写入字段也不发送空
+串。长度或字符集不合法时 `h2_gizclaw_req_create_telemetry_send()` 返回
+`H2_PAL_ERR_INVALID_ARG` 并且不产生网络请求，同时向 `h2_pal_log` 写一条 WARN，内容只
+有字段名和长度——`detail` 由产品决定内容，库不替它判断可以打印，因此 id 和 detail 都
+不进日志与 trace。两个字符串只在创建请求期间借用，创建时复制进请求自有存储。
+
+`h2_gizclaw_telemetry_system_t` 的 `firmware_version` 现在会被服务端采用并投影到
+`PeerStatus.firmware_version`（此前被校验后丢弃），产品据此上报固件版本号；字段本身
+没有变化，仍受 `H2_GIZCLAW_TELEMETRY_VERSION_MAX` 约束。
 
 `h2_gizclaw_telemetry_network_t` 的 network observation 还可携带蜂窝身份
 `has_imei` / `imei` 与 `has_imsi` / `imsi`，编码为 `NetworkObservation` 的
@@ -148,13 +185,62 @@ optional string（tag 6 / 7），服务端据此把观测归到 by-imei 索引�
 请求自有存储。IMEI / IMSI 属于个人数据，只出现在编码后的 telemetry payload 里，
 不进入 `h2_pal_log` 输出与 trace 字符串。
 
-设备身份可用 `h2_gizclaw_rpc_api_key_create()` 创建 HTTP API key，用
-`h2_gizclaw_rpc_api_key_revoke()` 撤销；也提供相应 create/do/wait/parse/release 接口。
-返回的 secret 由调用者管理，不应写入日志。
+设备身份可用 `h2_gizclaw_rpc_api_key_create()` 创建 HTTP API key，用 `h2_gizclaw_rpc_api_key_revoke()` 撤销；也提供相应 create/do/wait/parse/release 接口。返回的 secret 由调用者管理，不应写入日志。
 
 Provider 在 `h2_gizclaw_client_poll()` 所在线程同步运行。上游 C SDK 要求 provider 在返回成功前恰好提交一次 response；GizOS adapter 将这个 responder 细节封装为同步 `out_response`，并在 provider 返回后立即把结果交回上游 responder。Request payload、response payload 和 error message 都是 protobuf byte view：输入只在 callback 期间有效，输出必须在 callback 返回后保持有效，直到 adapter 消费返回的响应；不能返回栈上 buffer。
 
 设备主动调用 Server 的 unary 或 server-streaming RPC 与 Server 反向调用 Client provider 是两个方向的 contract。前者由 generic RPC call API 发起；后者只能从 poll 驱动的 provider 入口处理，不能由 UI callback 直接执行，也不能跨线程保留 borrowed payload。产品侧的 state、effect command 和 main-loop 投影规则见 [GizClaw 状态与请求](/apps/gizclaw/state)。
+
+### Lua App
+
+产品创建共享 `h2_lua_apps_t`，配置预装 index、安装目录和存储预算，再放入 `h2_gizclaw_config_t.lua_apps`。该 handle 由产品持有，必须覆盖 Service 的完整生命周期，可供本地菜单和后续 Service 重连复用。LIST 在配置目录时启用，INSTALL 和 UNINSTALL 需要可写 Filesystem，RUN 还需要 `vtable.prepare_lua_app_run`；没有相应能力时按 SDK 的 unsupported 路径回答。
+
+C SDK 依赖使用 registry 的 `gizclaw_c_sdk` 0.30.0 及 `third_party/gizclaw_c_sdk_lua_app_uninstall.patch`，补丁直接来自 [GizClaw 的卸载 contract 提交](https://github.com/GizClaw/gizclaw/commit/155a9d512ca4669f02391a89bbc30be3bd128f15)，包含生成消息、Tool 27 和 C provider 输入校验。
+
+`H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL` 对齐 GizClaw ClientTool 27，解码有界 `app_id` 后使用共享 `h2_lua_apps_uninstall`。空身份、路径、重复 ID 字段、嵌入 NUL 和非 ASCII 字节在设备入口拒绝；成功返回空 tool payload。安装中的目录 reservation 或待完成的启动 handoff 返回 BUSY。卸载与预装持久隐藏、清理重试和用户数据保留的语义见 [Lua 应用目录](./lua.md#lua-app-目录与流式安装)。
+
+
+`lua.app.list/install/run` 使用 SDK 的 tool/v0 编码；URL 安装仅支持 HTTP、HTTPS；内存中的压缩包通过独立 Binary stream 直推，data URL 不作为安装入口。独立 RPC 139 `client.lua.app.install` 由 SDK streaming provider 处理：小 metadata、同一请求中的 Binary 帧、请求 EOS、验证并发布后的最终响应。SDK 自动发送多帧，不需要调用方把一次安装拆成多次 RPC。C SDK 0.30.0 的直推限制为 512 KiB、单帧最多 65535 字节、总期限 120 秒；更大的 archive 使用 HTTP(S) URL。
+
+`$gizclaw/lua/install` worker 使用一个固定大小的帧槽，write 回调复制 borrowed bytes 后返回；槽占用时返回 WOULD_BLOCK，SDK 保留原帧并暂停 backend polling，直到 worker 消费完成。 背压及等待 finish 时，poll owner 只在未消费输入的路径上执行有界 1 ms backoff，使共享 CPU 上的低优先级安装 worker 能继续运行，避免成功 poll 的忙重试饿死 worker。metadata、write、finish 和 close 不保留 response callback，也不在网络 owner 上同步解压或写文件。Service stop 先取消会话，再 join worker；join 失败保留句柄供 stop 重试，不能提前销毁目录或 allocator。URL 和 Binary 入口共用 [Lua App 安装器](./lua.md#lua-app-目录与流式安装)，不在 GizClaw 实现第二套解压、校验或文件发布流程。
+
+RUN 的 prepare 回调在 ACK 前复制参数并预留产品 owner 的队列或状态；无法接纳时立即返回 BUSY。返回的 handoff 在响应 EOS 已交给本地 channel 且该 channel 关闭后只完成一次：成功时向产品 owner 发布运行请求，失败或取消时释放 reservation。产品 owner 通过目录快照将 entry、app_id 与 params 提交给 Lua Host，并负责停止旧界面及 Display 交接。回调不直接运行长时间 Lua 程序，accepted 也不等于程序已经执行完成。
+
+
+## Workspace 参数补丁
+
+`h2_gizclaw_workspace_parameters_patch_t` 是 `workspace.parameters.set`（110）和
+`server.run.workspace.reload-with-options`（120）共用的补丁：缺席的成员保留服务端已存
+的值，值在创建请求时复制，不借用调用方的补丁存储。
+
+`tts_speech_rate_percent` 缩放服务端为 agent 回复合成的语音，取
+`H2_GIZCLAW_WORKSPACE_TTS_SPEECH_RATE_MIN_PERCENT` 到
+`H2_GIZCLAW_WORKSPACE_TTS_SPEECH_RATE_MAX_PERCENT`（50 到 200，100 为正常），缺席表示
+沿用 Workflow 配置，下一次 reload 生效。语速必须在合成侧生效：下行音频是实时到达的，
+在设备侧放慢播放只会让缓冲和延迟持续增长。越界值在创建请求时就返回
+`H2_PAL_ERR_INVALID_ARG`、不产生网络请求，与服务端的 `INVALID_ARGUMENT` 一致；system
+（SFU）Workspace 接受合法值但不做任何事，所以一份补丁可以发给任何 Workspace。设备只需
+在每次 `reload-with-options` 里把语速和 `input` 一起带上，不需要额外调用。
+
+只改语速的补丁是完整的补丁：`h2_gizclaw_session_select()` 会因为已确认参数不同而重新
+reload，不会被当成“参数没变”跳过，成功后语速出现在
+`h2_gizclaw_session_snapshot().parameters` 里。
+
+### 安全围栏
+
+可选 `has_safety_fence_level` / `safety_fence_level` 保存 RuntimeProfile 自定义的档位标识符。设备先从 `server.workflow.list` 响应的 `safety_fences` 发现当前 Profile 支持的 name 与展示名；列表不下发 prompt。标识符匹配 `^[a-z][a-z0-9_-]{0,63}$`，写入时由 Server 保存，reload 时验证它属于当前 Profile。两个写入 RPC 均使用 SDK 0.23.2 的字符串字段（Workspace patch tag 5）；旧 enum wire tag 已保留，不能再发送。显式空值或格式错误在创建请求前返回 `H2_PAL_ERR_INVALID_ARG`，不产生 RPC。absent 忽略数组存储值并保留服务端已有档位；只包含围栏的 patch 也有效。请求复制 patch，调用方不需要保留原始存储。
+
+`parameters.set` 保存档位，下一次 reload 才应用。`reload-with-options` 的保存和 reload 不是同一事务：缺少 Profile 文案等错误可以发生在档位已经保存之后，失败不回滚服务端存储。Session 只在目标 Workspace 的 RUNNING 激活确认后合并 present 档位；失败、错误名称、非 RUNNING、格式错误、超时或关闭后的迟到响应均不能把请求档位发布为 confirmed。FAILED 状态保留此前确认值用于显示，不表示服务端仍存该值。
+
+同一 Workspace 上的普通省略保留 confirmed 档位；成功切换到另一 Workspace 时，旧 Workspace 的 confirmed 档位失效。同步 `parameters.set` 与 Session 的选择、reload 共享串行请求槽，但不停止当前对话，也不提前改变已确认档位。一次可能已发送的围栏 set 或失败的围栏 reload 后，后续省略档位的成功 reload 只能把 Session 的已应用围栏标为 unknown，不能从旧快照推断最新保存值。`h2_gizclaw_rpc_workspace_get` 的结果另行公开服务端已保存的 `has_safety_fence_level` / `safety_fence_level` 与 Profile revision，供产品页面回读；这个存储回读本身不证明当前 run 使用了相应提示词。再次显式设置档位且 reload 成功才恢复 Session 的应用确认；Session 不会因为请求恰好等于旧 confirmed 值而跳过必要的 reload。
+
+实际围栏文案属于 RuntimeProfile 的 `spec.safety_fences.<id>.prompt`，每档为独立完整的 1–4096 字符提示词，不继承其他档位。GizClaw 0.26.0 已退役 Flowcraft；Eino 必须绑定 `input.safety_fence`，Realtime Workflow 必须在 instructions 中引用 `${input.safety_fence}`。缺少所选 Profile 条目时，支持注入的 driver reload 明确失败；没有引用变量的 Workflow 不会注入围栏。ASTTranslate 保存合法值但不注入，SFU 接受合法值但 no-op。RPC 成功和 Session confirmed patch 都不是内容审核效果或产品档位回读的证明，设备不执行替代性的本地关键词过滤。
+
+公共协议不固定档位数量、顺序或文案，也不定义产品年龄过滤。H106 的四档必须在产品 RuntimeProfile 中逐档配置完整文案，并只展示 `safety_fences` 中真正可用的选项；年龄选择另行保存，不映射成围栏 ID。
+
+真实服务端的隔离 Profile、执行命令、模型输入和逐条证据见 [Workspace 安全围栏 E2E](/apps/gizclaw/workspace-fence-e2e)。其中 RPC/存储用例与模型效果验收分别记录，不能互相替代。
+
+围栏测试覆盖两种 RPC 的非空 patch 组合、字符串 wire tag、复制 ownership、非法标识符零 RPC，以及生产 Session → request → nanopb → response parse → snapshot 的参数流和错误路径。Workflow list 解出当前 Profile 的可选档位并拒绝重复或非法 ID。真实服务器验收需使用已配置的隔离测试 Profile，验证档位发现、保存、遗漏保留、移除已选档位后的 reload 失败且保存未回滚、修复后恢复和 Workflow 注入，记录 endpoint、Profile revision、服务端版本与清理结果。
 
 ## 设备 Debug 访问模式
 
@@ -184,9 +270,18 @@ Service stop 会取消并丢弃在途请求，快照保留最后确认的模式�
 
 ## 上游 API 同步
 
-`@h2_gizclaw_c_sdk//:gizclaw_core` 中的 RPC registry 与 protobuf payload 是 wire contract 的生成结果。RPC schema 更新时，先把 `MODULE.bazel` 中 `h2_gizclaw_c_sdk` 的 Release archive URL、SRI integrity 与 `strip_prefix` 原子更新到同一个规范版本，再同步已有 `libs/gizclaw` stable wrapper；不能只修改手写 method number、复制旧 protobuf struct，或只更新产品文档。没有 GizOS-owned domain/lifecycle 语义的 RPC（例如 Firmware metadata）直接使用 generic RPC API 与 pinned generated schema，不为相同字段再增加一层 typed wrapper。GizOS 中公开的 RPC method 常量通过 compile-time assertion 与上游 registry 对齐，registry 再次漂移时必须使 build 失败。
+GizClaw 0.26.0 的 quota 错误仍复用已有字段：Workspace EOS 的 `EventError.code`
+传递 `QUOTA_EXHAUSTED`（`retryable=false`）或 `QUOTA_UNAVAILABLE`
+（`retryable=true`）；speech RPC 使用已有的 `PERMISSION_DENIED`（7）或
+`UNAVAILABLE`（14），并在 `ErrorInfo.reason` 中携带同名原因。0.23.2 的
+C SDK 已能解码这些字符串，不会因为名称陌生而崩溃或自动转成 `UNKNOWN`。
+GizOS 的 generic RPC 仍把这两种状态归为 `H2_GIZCLAW_ERR_REMOTE`；
+Conversation 只把自身输入 Stream 的拒绝投影为错误事件，回复 Stream 的
+EOS 不产生该错误通知。因此 SDK 升级本身不会增加 quota 的产品提示。
 
-Archive 自带 Bazel targets、生成代码和精确的 nanopb runtime；GizOS 通过 `use_repo_rule(http_archive)` 声明可传递给下游 Bzlmod consumer 的 immutable repository，不再注入 BUILD overlay、单独解析 nanopb 或维护 SDK source patch。该 archive 尚未发布到 Bazel Central Registry，因此不能使用只在根 module 生效的 `archive_override` 作为传递依赖。具体版本和完整性校验以 `MODULE.bazel` 中的 `h2_gizclaw_c_sdk` 声明为准。
+`@gizclaw_c_sdk//:gizclaw_core` 中的 RPC registry 与 protobuf payload 是 wire contract 的生成结果。RPC schema 更新时，先把 `MODULE.bazel` 中 `gizclaw_c_sdk` 的 `bazel_dep` 版本更新到同一个规范版本，再同步已有 `libs/gizclaw` stable wrapper；不能只修改手写 method number、复制旧 protobuf struct，或只更新产品文档。没有 GizOS-owned domain/lifecycle 语义的 RPC（例如 Firmware metadata）直接使用 generic RPC API 与 pinned generated schema，不为相同字段再增加一层 typed wrapper。GizOS 中公开的 RPC method 常量通过 compile-time assertion 与上游 registry 对齐，registry 再次漂移时必须使 build 失败。
+
+Module 自带 Bazel targets、生成代码和精确的 nanopb runtime，不再注入 BUILD overlay、单独解析 nanopb 或维护 SDK source patch。`gizclaw_c_sdk` 发布在 GizClaw 自有的 Bazel registry（`https://static-volc.gizclaw.com/bazel/`）上，`.bazelrc` 通过 `--registry` 把它排在 `https://bcr.bazel.build` 之后，只有 BCR 不提供的 module 才落到它；因为它是正常的 Bzlmod module，下游 consumer 直接 `bazel_dep` 即可，不需要 `archive_override` 或手写 integrity。具体版本以 `MODULE.bazel` 中的 `bazel_dep(name = "gizclaw_c_sdk", ...)` 声明为准，archive 的 SRI 校验由 registry 的 `source.json` 提供。
 
 Wire message 使用 `name` / `*_name`。GizOS wrapper 将 Peer-addressable resource 继续公开为 name；将 occurrence、relationship、history 和 ledger 的 wire name 逐字节映射到既有 public `id` / `*_id`，不做 trim、派生、翻译或 storage-ID 替换。技术性 transport request ID、idempotency key 和 `gear_id` 不属于这层业务 identity 映射：
 
@@ -197,12 +292,7 @@ Wire message 使用 `name` / `*_name`。GizOS wrapper 将 Peer-addressable resou
 | Contact | immutable caller-local `name`、mutable `display_name` |
 | Friend / FriendGroup | Friend/member/history public ID 映射 wire name；FriendGroup `name` / `friend_group_name` 与独立 display name 保持 name 语义 |
 
-Runtime Profile alias（包括 Workflow `name` 与 Workspace `workflow_name`）最长
-63 字节，由 `.` 分隔的 lowercase kebab-case segment 组成；完整 alias 是不拆分、
-不归一化的 opaque key。`libs/gizclaw` 在 catalog decode、Workflow get 和
-Workspace create 边界使用该 grammar。Collection、Workspace `name`、history
-public ID 和其它非 Runtime Profile identifier 继续使用各自 contract，不能因为
-alias 支持 `.` 而一并放宽。
+Runtime Profile alias（包括 Workflow `name` 与 Workspace `workflow_name`）最长 63 字节，由 `.` 分隔的 lowercase kebab-case segment 组成；完整 alias 是不拆分、 不归一化的 opaque key。`libs/gizclaw` 在 catalog decode、Workflow get 和 Workspace create 边界使用该 grammar。Workspace `name`、history public ID 和其它非 Runtime Profile identifier 继续使用各自 contract，不能因为 alias 支持 `.` 而一并放宽。
 
 Firmware channel 是原子 breaking update，不保留旧 `firmware_name` alias 或探测
 服务端版本；上述 record/relationship public ID 则是兼容 contract。method 64 不再是
@@ -223,6 +313,8 @@ snapshot；client 不消费或缓存 token。单测必须覆盖同一 token 的�
 bazel test //libs/gizclaw:all
 ```
 
+外部设备控制 E2E 使用 `/device/tool/v0/invoke` 与 `POST /device/mhs/v0/read`、`POST /device/mhs/v0/write`；RuntimeProfile 需预先声明 `{id: speaker.main, hwd: speaker}`。本地模拟测试验证协议与生命周期，真实 Server/设备互通单独记录。
+
 外部 E2E 验收位于 `projects/e2e/targets/cc_test/gizclaw`，使用三个新注册的
 `h106-tiga` Peer，经系统 DNS 连接 E2E 自然入口 `e2e.gizclaw.com:9821`，或在国内
 显式选择北京入口 `edge-bj-01.e2e.gizclaw.com:9821`。测试通过
@@ -238,11 +330,7 @@ Firmware 与 Voice 还由独立的 Pion `manual` test 将完全相同的 public 
 `peer_poll()` 线程分发，C ABI 只交换整数 handle 和同步 borrowed buffer。它是归因工具，
 不是 `libs/gizclaw` dependency，也不替换 Desktop production H2Peer accessor。
 
-live suite 还必须验证 pinned GizClaw C SDK 的 single-client 并发能力。当前
-`v0.3.1` 提供 request-owned unary handle；concurrency suite 必须在一个 active client
-上依次启动三个 Ping handle，由唯一 serialized poll owner 推进，记录三个不同 stream ID
-的 request DataChannel、三个 terminal result、零残留 channel 和恢复
-Ping。不得用三个线程调用共享 client，也不得用三个 client/Peer 或三个串行请求伪造支持。
+live suite 还必须验证 pinned GizClaw C SDK 的 single-client 并发与长期 channel 回收。concurrency suite 在同一个 active client 上执行 32 批请求，每批先启动六个 Ping handle，再等待各自终态；唯一 serialized poll owner 推进协议。每批记录六个不同 stream ID、六个成功 result、零残留 channel 和恢复 Ping，并等待恢复 Ping 的关闭事件后再开始下一批。最终必须完成 192 个批内请求及 32 个恢复 Ping，不通过重建 client 或 Peer 规避复用；应用线程不直接并发调用共享 client 的协议 poll。
 社交 fixture 的 helper Peer 只用于 Friend/FriendGroup 建模。除此之外，测试还必须验证两个 Peer 可各自使用相同 Workspace、Contact 和 FriendGroup
 name 且互不可见，同一 Peer reconnect 后可恢复原 Workspace/history，并覆盖 method
 95 的 metadata、stream byte count 与清理失败路径。Linux x86_64 与 macOS arm64 都是
@@ -254,6 +342,73 @@ snapshot 使用调用方 response storage。所有业务资源清理完成后才
 
 ### 设备控制回复后的本地动作
 
-产品 provider 可以在成功响应中设置 `on_complete` 与 `complete_user`。GizOS 将其关联到当前入站 RPC 通道，在 SDK 接受响应写入并正常关闭该通道后，从 poll owner 调用一次。普通 poll 返回成功不表示该通道已经完成；非终态的 WOULD_BLOCK、TIMEOUT 或其他 poll error 也不能取消尚未关闭的通道。成功必须同时具备该通道响应 EOS 已被 PAL 接受、SDK 本地关闭的证据；adapter 按通道跟踪已接受的帧，支持跨 send 分片与背压重试。同一次 poll 中其他通道超时或失败，不会撤销已成功关闭的响应。未发完 EOS 的通道即使本地关闭也只能报告失败。发送阻塞时继续保留动作，编码错误、发送失败、远端取消和客户端停止则以非 OK 结果撤销。关闭或销毁客户端时，在对应 owner 上释放未完成动作；注册失败可能在 provider 内同步返回失败通知。每个 client 最多保留四个完成回调；满容量、缺少当前入站通道或错误响应附带回调时，新回调同步收到 INVALID_STATE，响应不提交，已有槽位不受影响。
+产品 provider 可以在成功响应中设置 `on_complete` 与 `complete_user`。GizOS 将其关联到当前入站 RPC 通道，在响应 EOS 被 PAL 接受且请求端随后正常关闭通道后，从 poll owner 调用一次。SDK 本地 close 正常发起 PAL 关闭；adapter 等待 PAL terminal。H2Peer 的正常 CLOSED 在双向 SCTP reset 完成后发布，避免产品立即销毁 Peer 丢掉仍在传输的响应，也不阻塞 Edge tunnel bridge 等待设备 EOF。普通 poll 返回成功不表示该通道已经完成；非终态的 WOULD_BLOCK、TIMEOUT 或其他 poll error 也不能取消尚未关闭的通道。成功必须同时具备该通道响应 EOS 已被 PAL 接受、SDK 本地关闭请求和请求端正常关闭的证据；adapter 按通道跟踪已接受的帧，支持跨 send 分片与背压重试。同一次 poll 中其他通道超时或失败，不会撤销已成功关闭的响应。未发完 EOS 的通道即使本地关闭也只能报告失败。等待请求端关闭的总预算使用 Client `write_timeout_ms`，为零时使用 `connect_timeout_ms`；到期以 TIMEOUT 撤销动作；已消费的 PAL handle 不再次 close，provider 继续持有关闭流程直到 terminal 或 Peer shutdown。发送阻塞时继续保留动作，编码错误、发送失败、提前远端取消和客户端停止则以非 OK 结果撤销。关闭或销毁客户端时，在对应 owner 上释放未完成动作；注册失败可能在 provider 内同步返回失败通知。每个 client 最多保留四个完成回调；满容量、缺少当前入站通道或错误响应附带回调时，新回调同步收到 INVALID_STATE，响应不提交，已有槽位不受影响。
 
 这是本地发送生命周期，不是对端收到或处理回复的确认，不新增网络消息，也不更改 GizClaw 0.15.3 SDK。回调只能向产品 owner 发布待执行动作，不能阻塞或重入 client API。产品参数必须复制到自身状态，生命周期覆盖完成或取消；不能保留借用请求、栈上的响应或已释放的 user。H106 的重启和临时切网消费此路径，OTA 是否支持仍由产品决定。
+
+## Conversation 文字输入
+
+Session 选好目标 Workspace 并创建 Conversation 路由后，调用
+`h2_gizclaw_session_send_text(session, text)` 可把一整段文字作为用户输入交给 Agent，
+例如主动请求继续内容。文字输入与 audio_start/audio_end 一样是 Session 操作：使用
+Session 的应用只能通过它发送文字，Session 据此维护会话状态。该 API 不切换 Workspace；
+Peer Event 路由到连接上当前激活的 Workspace。文本按 UTF-8 字节计长，接受 1–4096 字节，
+不要求调用方补 NUL，拒绝嵌入 NUL 和非法 UTF-8；成功 admission 前复制文本，返回后可
+立即复用原缓冲区。
+
+发送沿用音频输入的纯控制 `BOS(kind=UNSPECIFIED, mime_type="")`，随后只发一条
+`TEXT_DONE`。两条事件使用同一连接内新分配的 `demo-<sequence>` stream ID，label 沿用
+现有输入的 `demo-home`，事件 sequence 分别为 0、1，timestamp_unix_ms 均为 0。
+这些标识仅关联输入，不选择 Workspace，也不决定角色。服务端
+`pkgs/gizclaw/peer_stream_event.go` 的 `peerStreamEventToChunk` 把 `TEXT_DONE` 转为
+`RoleUser` 文本并设置 `EndOfStream=true`；因此不再发额外 EOS，也不发音频 BOS、
+不等 AUDIO_INPUT_READY、不生成 Opus。协议依据为 `api/proto/events/peer_event.proto`
+及服务端 Events Reference 的 Logical stream lifecycle。
+
+空/超长/非法文本返回 `INVALID_ARG`。Session 已关闭或正在准备、Workspace 未 READY、
+尚无 Conversation 路由或 Service 未 start 时返回 `INVALID_STATE`；Service 停止中返回
+`CLOSED`。录音/通话输入打开，或上一输入（音频或文字）尚未 completion 时返回 `BUSY`，
+不打断当前输入。队列满返回 `WOULD_BLOCK`；分配失败返回 `NO_MEMORY`。Service 已 start
+但仍连接中时，与音频 start 一样允许排队，连接或发送失败通过 completion 报告。
+
+受理后 Session 的 conversation 状态进入 `WAITING`（PTT 与 Realtime Workspace 相同），
+`conversation_input_open` 保持 false；下行音频到达、`H2_GIZCLAW_SESSION_WAIT_MS` 内
+没有声音或输入失败时回到 `IDLE`，失败写入 `last_error` 与 `error_stage`。completion
+之前 Session 仍占用路由：`h2_gizclaw_session_conversation_release()` 不释放；
+`h2_gizclaw_session_audio_start()`、切换 Workspace 或删除当前 Workspace 会先取消
+待发文字并等待取消分发，与取消上一段音频输入相同。Realtime Workspace 中文字
+completion 不会自动开始通话。
+
+调用方不执行网络 I/O。Service 网络任务按序发送并在背压时重试，deadline 沿用
+connect_timeout_ms（未设置时 30 秒）。每个已接受的输入通过原有 `service_poll()`
+completion 恰好报告一次发送成功、失败或取消；同步 admission 错误不产生 completion。
+成功仅表示输入已发出，不保证服务端接受或 Agent 已回复。
+
+文字输入不需要可读 PCM Track。服务端音频仍通过连接级下行通道播放，即使文字输入
+已经 completion；服务器文字事件仍遵循原有“输入活跃期间观察”的 callback 合同，
+completion 后不延长文字订阅。应用无需新增下行音频处理流程。
+
+
+## API key 异步状态
+
+授权绑定窗口可以把同一状态注入 [GizClaw BLE 绑定](./gizclaw_ble_binding.md)，通过公共 HTTPS URL formatter 与二维码保持一致。广播只提供发现；BLE 暴露记录保留实际 key name/revision，产品离页时与二维码已展示记录合并后处理 revoke。
+
+扫码绑定等需要异步刷新和撤销的产品使用 `h2_gizclaw_api_key_state_t`：创建时注入借用的 Service、Mem、Sync、Time 和非零 `timeout_ms`，`display_name` 会复制。产品调用 `request_refresh` 登记请求，主循环继续调用 `service_poll` 驱动 completion，再读取 `snapshot` 展示有效 key。无需创建线程、join 或等待 RPC；原有同步 helper 和 request 接口行为不变。
+
+稳定绑定凭据使用可选的 `reuse_existing=true`。普通 `request_refresh(false)` 先经当前认证设备身份的 `server.api_key.list`（method 97）查找服务端持久化 key；同时精确匹配 `display_name` 与 `manage_api_keys`，复用名字排序最前的一项，不删除其它 key。只有完整列表成功且没有匹配项时才创建。每页最多八项、最多 64 页，要求严格前进且与页末名字一致的 cursor；逐项解码，避免 SDK 的百项固定数组进入 worker stack。全部分页与创建共享原有总预算，错误或不完整列表不降级为创建；已有 key 保留为 stale。新的 Service/state 使用同一设备身份即可找回同一个 key，无需本地 secret 数据库。页面关闭、普通刷新、重连和升级不应调用 revoke；明确解绑或轮换才请求撤销。超过截止时间或 close 后的迟到 list 不创建、不撤销既存 key；新 create 的 orphan 撤销规则保持不变。默认 false 与显式 `request_refresh(true)` 保持原有行为。
+
+`request_refresh(true)` 在当前 key 有效时先撤销再创建；撤销成功或 `NOT_FOUND` 后擦除旧 key 并提交 create，其它撤销错误保留 `valid && stale` 的旧 key，下一次 `request_refresh(true)` 可重试撤销。创建成功后 key 有效且不 stale，普通创建失败则失效；唯一的资源耗尽保留例外见下文。busy 期间重复刷新返回 OK，合并到当前链，不叠加请求、清除 revoke-after 标记、不延长截止时间。每次 refresh 的总时限包含排队、连接、撤销和创建；`snapshot` 或 `request_refresh` 检查到期后将当前请求分离为 orphan（不取消），清除 busy 并记录 `H2_PAL_ERR_TIMEOUT`，保留的旧 key 标为 stale。检查到期的 `request_refresh` 随后可开始新一代刷新。
+
+快照只在 mutex 内短读，不发 RPC；包含 key、valid、stale、busy、closed、last_error、原始 RPC error presence/code 和每次可见变化递增的 revision。last_error 在 busy 期间可以仍是上次 completion，调用方先判断 busy；原始 RPC error projection 则在新 generation、成功、timeout 或 close 时清除。`request_refresh`、`request_revoke`、`close` 与 `service_poll` 在同一个 owner task 上调用，`snapshot` 也可从其它线程读取并执行到期分离。completion 只在 owner task 串行执行，每个请求的 generation 隔离超时、close 后的迟到结果。初始状态 invalid、stale、idle；close 后保留的 key 仍可读但 stale，last_error 为 CLOSED，新 refresh 返回 CLOSED。
+
+生命周期顺序必须是 `close` → Service stop → `service_poll` drain → `destroy` → Service deinit。close 可在 Service stop 之前调用，立即停止接收刷新和撤销请求，并将在途请求分离为 orphan；destroy 在任何 completion（包括 orphan revoke）尚未分发时返回 BUSY，调用方继续 drain 后重试，不等待 RPC。destroy 需要排除并发读者，会擦除持有的 secret；快照中的 secret 副本由调用方擦除，不能写日志。超时或 close 后迟到的 create 成功响应会立即触发内部 best-effort revoke：解析 name 后立即擦除 secret，不进入快照；迟到的 revoke 或失败 create 无需后续操作。Service stop 后提交 revoke 可能返回 CLOSED，忽略该错误。无法撤销的情况是 Service 已停止或传输先失败导致 create 响应未到设备，设备从未获知 key 的 name；服务端 owner 的 list API 可返回明文 secret，因此未展示不代表凭证无效。状态对象不做持久化、二维码或 URL 格式化，也不属于 resource store 的 kind。
+
+`h2_gizclaw_api_key_state_request_revoke` 非阻塞：idle 且有有效 key 时提交撤销，期间 busy；OK/NOT_FOUND 后擦除 key 并置 valid=false，失败保留 valid+stale 及 last_error。无 key 返回 OK。刷新 busy 时设置 revoke-after，create 成功后直接撤销新 key 而不展示，最终 valid=false，撤销成功 last_error=OK，失败记录错误且不暴露 secret。busy 期间再次 request_refresh 会清除该标记，表示调用方重新需要刷新结果。closed 返回 CLOSED。
+
+## API key 资源耗尽
+
+API-key create 的 canonical `RESOURCE_EXHAUSTED`（8）在该 typed request 的创建阶段安装私有、tag-checked error projection；`req_wait`、typed parse、同步 create 和状态 completion 一致返回 `H2_GIZCLAW_API_KEY_ERR_EXHAUSTED`（-1001）。原始 code 仍为 8，由 snapshot 的 `has_rpc_error` / `rpc_error_code` 保留；quota/resource 判断同时核对三项，不能从本地相同负值或任意 server message 推断。Revoke、generic 和 Social RPC 的映射不变，其它失败保留原始 canonical code 与原有 PAL/domain result。Transport、clock、queue 或 orphan 结果不伪装成服务端 quota。
+
+`request_refresh(false)` 的 create 被真实 canonical 8 拒绝时，已有有效 key 的 name/secret 保留为 valid+stale，busy 结束并发布资源耗尽错误；QR/BLE 不使用 stale key，也不把旧 key 重新标记为 ready。没有旧 key 时保持 invalid+stale。若调用方明确请求了 revoke_current 且 revoke 已完成，旧 key 已无效，资源耗尽不会把它复活。Library 不自动 list/delete 其它 key 腾额度，也不硬编码限额；调用方在外部配额/资源恢复后显式重试，busy 重复刷新仍只合并一次请求。已披露 key 的远端有效性不会因一次失败的新 create 而改变。
+
+此合同消费标准 RPC status，与服务端实际执行的 key-count/resource budget 分离；本地 fake RPC regression 是兼容性验证，真实限额触发与恢复必须由拥有该策略的 Server 和 consumer lane 单独资格化。

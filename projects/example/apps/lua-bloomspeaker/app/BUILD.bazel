@@ -18,6 +18,7 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = ["include"],
+    deps = ["//libs/atomic"],
 )
 
 cc_library(
@@ -61,6 +62,7 @@ cc_library(
         ":controller",
         ":pairing",
         ":protocol",
+        "//libs/atomic",
         "//libs/bleikcp",
         "//libs/pal",
         "//libs/runtime",
@@ -89,6 +91,7 @@ cc_library(
     includes = ["include"],
     tags = ["h2-ci-native-package"],
     deps = [
+        "//libs/atomic",
         "//libs/lua",
         "//libs/runtime",
         ":controller",
@@ -109,7 +112,10 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":controller"],
+    deps = [
+        ":controller",
+        "//libs/atomic/providers/c11",
+    ],
 )
 
 cc_test(
@@ -156,6 +162,7 @@ cc_test(
     }),
     deps = [
         ":lua_bloomspeaker",
+        "//libs/atomic/providers/c11",
         "//libs/pal:unsupported",
         "//libs/pal/providers/desktop/pal_core",
         "//libs/runtime",

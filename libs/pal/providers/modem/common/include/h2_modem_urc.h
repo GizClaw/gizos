@@ -3,6 +3,7 @@
 
 #include "h2/pal/os/h2_pal_queue.h"
 #include "h2/pal/os/h2_pal_task.h"
+#include "h2_atomic.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -31,10 +32,16 @@ typedef struct h2_modem_urc_worker {
     h2_pal_task_t *task;
     h2_pal_queue_t *queue;
     h2_modem_urc_handler_t handler;
+    void (*idle)(void *user);
+    uint32_t idle_timeout_ms;
     void *user;
     h2_pal_result_t result;
     int stopping;
     h2_modem_urc_stats_t stats;
+    h2_atomic_u32_t accepted_atomic;
+    h2_atomic_u32_t handled_atomic;
+    h2_atomic_u32_t full_atomic;
+    h2_atomic_u32_t truncated_atomic;
 } h2_modem_urc_worker_t;
 
 /* Zero-initialize before first start. Lifecycle calls are externally
@@ -46,6 +53,18 @@ h2_pal_result_t h2_modem_urc_start(
     const h2_pal_mem_api_t *allocator,
     h2_modem_urc_handler_t handler,
     void *user);
+
+/* Optional bounded maintenance on queue idle, on the existing worker task.
+ * Installed before task start; NULL preserves infinite-wait behavior. */
+h2_pal_result_t h2_modem_urc_start_idle(
+    h2_modem_urc_worker_t *worker,
+    const h2_pal_task_api_t *task_api,
+    const h2_pal_queue_api_t *queue_api,
+    const h2_pal_mem_api_t *allocator,
+    h2_modem_urc_handler_t handler,
+    void *user,
+    void (*idle)(void *user),
+    uint32_t idle_timeout_ms);
 
 /* Copy a complete, NUL-terminated line from task context. Never waits for
  * queue space or handler completion. FULL/TRUNCATED must be handled by the

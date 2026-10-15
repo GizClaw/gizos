@@ -1,0 +1,71 @@
+{
+  "assets": [
+    {
+      "name": "devkit-pal-storage-esp32s3.update.tar.zlib",
+      "operation": "managed-install",
+      "release_suffix": ".update.tar.zlib",
+      "sha256": "f6e5c5de4fef9c4319a6825cada294780e65141124b06247491959008a4cc392",
+      "size": 976660
+    }
+  ],
+  "board": "devkit",
+  "entry": "projects/e2e/targets/h2loader_tar_zlib/pal-storage/devkit",
+  "image": "pal-storage",
+  "native_artifacts": [
+    {
+      "name": "firmware.elf",
+      "operation": "native-debug-or-flash",
+      "sha256": "60fcbbbf1357c85fe083d7f2f0f0764bdea2eb96187b63869af996a154c6645b",
+      "size": 14064760
+    },
+    {
+      "name": "firmware.map",
+      "operation": "native-debug-or-flash",
+      "sha256": "2896611416db5cf1186c181caa824e9ca1a5837af80969bbc26021c6598bb483",
+      "size": 13188719
+    },
+    {
+      "name": "app.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "8d9fba8f4cb34712f1368b1afc48079658422fb05c454a2055220db81de6a531",
+      "size": 1517056
+    },
+    {
+      "name": "bootloader.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "c6f02be649f360250c13e44dcda3170587f7ecb39eb34284d891c14f047e883f",
+      "size": 21328
+    },
+    {
+      "name": "combined_factory.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "1a85a8be6e8c748cb066f6143474d8dc00fc743e9ab2b211a7d13bd7b7a29cd3",
+      "size": 1648128
+    },
+    {
+      "name": "partition-table.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "96f93c5cdeacf9f53990c7d9fb3570220e33c6feedcc73cea05948160cf14d48",
+      "size": 3072
+    },
+    {
+      "name": "flasher_args.json",
+      "operation": "native-debug-or-flash",
+      "sha256": "31480373a62a11b563bcc130f9631cad9d3c4b3444bfacb2fce51dcb608e9176",
+      "size": 1000
+    }
+  ],
+  "package_manifest": {
+    "board": "devkit",
+    "format": 1,
+    "image_sha256": "8d9fba8f4cb34712f1368b1afc48079658422fb05c454a2055220db81de6a531",
+    "image_size": 1517056,
+    "role": "app",
+    "target": "esp32s3",
+    "version": "pal-storage-esp-20260928-r1"
+  },
+  "platform": "esp",
+  "role": "app",
+  "target": "esp32s3",
+  "version": "pal-storage-esp-20260928-r1"
+}

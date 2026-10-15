@@ -1,0 +1,11 @@
+<!doctype html><meta charset="utf-8"><title>PAL Net/TLS capability boundary</title>
+<pre id="status">PAL Net/TLS capability boundary</pre><canvas id="canvas" width="1" height="1"></canvas>
+<script>
+var Module = {
+  canvas: document.getElementById('canvas'),
+  print: text => { console.log(text); document.getElementById('status').textContent += '\n' + text; },
+  printErr: text => console.error(text),
+  onExit: code => console.log('H2_NET_TLS_EXIT ' + code)
+};
+</script>
+{{{ SCRIPT }}}

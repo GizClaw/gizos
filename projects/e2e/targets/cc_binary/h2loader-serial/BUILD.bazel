@@ -9,6 +9,7 @@ cc_binary(
     copts = H2_WARNING_COPTS,
     cxxopts = H2_CXX17_OPTS,
     deps = [
+        "//libs/atomic/providers/c11",
         "//libs/pal/providers/desktop/app_support",
         "//libs/pal/providers/desktop/pal_core",
         "//libs/runtime",

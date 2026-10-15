@@ -3,7 +3,7 @@
 #include "h2_pion_bridge.h"
 #include "libs/pal/providers/pion/pion_archive.h"
 
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -44,11 +44,11 @@ struct h2_pal_webrtc_peer {
   h2_pal_mutex_t *mutex;
   h2_pal_semaphore_t *ready;
   h2_pal_task_t *worker;
-  atomic_int stop;
-  atomic_int worker_error;
+  h2_atomic_int_t stop;
+  h2_atomic_int_t worker_error;
   /* One caller at a time may sit in peer_poll; close waits for it to leave
    * before destroying the semaphore, mutex and peer it is still using. */
-  atomic_int poll_active;
+  h2_atomic_int_t poll_active;
   struct h2_pal_webrtc_channel *channels;
   uint64_t go_handle;
   uint64_t next_channel_key;
@@ -324,9 +324,15 @@ static h2_pal_result_t h2_pion_peer_create(void *user,
     return H2_PAL_ERR_NO_MEMORY;
   }
   peer->owner = provider;
-  atomic_init(&peer->stop, 0);
-  atomic_init(&peer->poll_active, 0);
-  atomic_init(&peer->worker_error, H2_PAL_OK);
+  if (h2_atomic_int_init(&peer->stop, 0) != H2_ATOMIC_OK ||
+      h2_atomic_int_init(&peer->poll_active, 0) != H2_ATOMIC_OK ||
+      h2_atomic_int_init(&peer->worker_error, H2_PAL_OK) != H2_ATOMIC_OK) {
+    h2_atomic_int_destroy(&peer->stop);
+    h2_atomic_int_destroy(&peer->poll_active);
+    h2_atomic_int_destroy(&peer->worker_error);
+    h2_pal_mem_free(&provider->mem, peer);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
   const h2_pal_mutex_config_t mutex_config = {.name = "pion/peer",
                                               .allocator = &provider->mem};
   const h2_pal_semaphore_config_t ready_config = {
@@ -338,6 +344,9 @@ static h2_pal_result_t h2_pion_peer_create(void *user,
   if (rc != H2_PAL_OK) {
     if (peer->mutex != NULL)
       (void)h2_pal_mutex_destroy(&provider->sync, peer->mutex);
+    h2_atomic_int_destroy(&peer->stop);
+    h2_atomic_int_destroy(&peer->poll_active);
+    h2_atomic_int_destroy(&peer->worker_error);
     h2_pal_mem_free(&provider->mem, peer);
     return rc;
   }
@@ -355,6 +364,9 @@ static h2_pal_result_t h2_pion_peer_create(void *user,
       h2PionGoPeerDestroy(peer->go_handle);
     (void)h2_pal_semaphore_destroy(&provider->sync, peer->ready);
     (void)h2_pal_mutex_destroy(&provider->sync, peer->mutex);
+    h2_atomic_int_destroy(&peer->stop);
+    h2_atomic_int_destroy(&peer->poll_active);
+    h2_atomic_int_destroy(&peer->worker_error);
     h2_pal_mem_free(&provider->mem, peer);
     return rc;
   }
@@ -473,10 +485,10 @@ static void h2_pion_worker(void *context) {
   h2_pal_webrtc_peer_t *peer = context;
   h2_pion_t *owner = peer->owner;
   s_worker_peer = peer;
-  while (!atomic_load(&peer->stop)) {
+  while (!h2_atomic_int_load(&peer->stop, H2_ATOMIC_SEQ_CST)) {
     h2_pal_result_t worker_rc = h2_pal_mutex_lock(&owner->sync, peer->mutex);
     if (worker_rc != H2_PAL_OK) {
-      atomic_store(&peer->worker_error, worker_rc);
+      h2_atomic_int_store(&peer->worker_error, worker_rc, H2_ATOMIC_SEQ_CST);
       break;
     }
     if (!peer->closed && peer->media_result == H2_PAL_OK) {
@@ -494,7 +506,7 @@ static void h2_pion_worker(void *context) {
     if (worker_rc == H2_PAL_OK)
       worker_rc = h2_pal_time_sleep_ms(&owner->time, 1u);
     if (worker_rc != H2_PAL_OK) {
-      atomic_store(&peer->worker_error, worker_rc);
+      h2_atomic_int_store(&peer->worker_error, worker_rc, H2_ATOMIC_SEQ_CST);
       break;
     }
   }
@@ -524,7 +536,7 @@ static h2_pal_result_t h2_pion_peer_poll_locked(h2_pal_webrtc_peer_t *peer,
     const h2_pal_result_t failure =
         peer->media_result != H2_PAL_OK
             ? peer->media_result
-            : (h2_pal_result_t)atomic_load(&peer->worker_error);
+            : (h2_pal_result_t)h2_atomic_int_load(&peer->worker_error, H2_ATOMIC_SEQ_CST);
     if (rc == H2_PAL_ERR_WOULD_BLOCK && failure != H2_PAL_OK) {
       rc = failure;
       if (!peer->error_reported) {
@@ -562,11 +574,11 @@ static h2_pal_result_t h2_pion_peer_poll(h2_pal_webrtc_peer_t *peer,
     return H2_PAL_ERR_INVALID_ARG;
   memset(out_event, 0, sizeof(*out_event));
   int idle = 0;
-  if (!atomic_compare_exchange_strong(&peer->poll_active, &idle, 1))
+  if (!h2_atomic_int_compare_exchange(&peer->poll_active, &idle, 1, H2_ATOMIC_SEQ_CST, H2_ATOMIC_SEQ_CST))
     return H2_PAL_ERR_BUSY;
   const h2_pal_result_t rc =
       h2_pion_peer_poll_locked(peer, timeout_ms, out_event);
-  atomic_store(&peer->poll_active, 0);
+  h2_atomic_int_store(&peer->poll_active, 0, H2_ATOMIC_SEQ_CST);
   return rc;
 }
 
@@ -640,7 +652,7 @@ static h2_pal_result_t h2_pion_peer_close_now(h2_pal_webrtc_peer_t *peer) {
   h2_pion_t *provider = peer->owner;
   if (s_worker_peer == peer)
     return H2_PAL_ERR_INVALID_STATE;
-  atomic_store(&peer->stop, 1);
+  h2_atomic_int_store(&peer->stop, 1, H2_ATOMIC_SEQ_CST);
   // Even a failed join must not leave the caller's Track borrowed. Acquiring
   // the same mutex drains in-flight read/write before detaching it.
   h2_pal_result_t lock_rc = h2_pion_lock(peer);
@@ -660,7 +672,7 @@ static h2_pal_result_t h2_pion_peer_close_now(h2_pal_webrtc_peer_t *peer) {
   }
   /* peer->closed is already published, so a waiting poll observes it within
    * one slice. Wait for it to leave before freeing what it still touches. */
-  while (atomic_load(&peer->poll_active))
+  while (h2_atomic_int_load(&peer->poll_active, H2_ATOMIC_SEQ_CST))
     (void)h2_pal_time_sleep_ms(&provider->time, H2_PION_POLL_WAIT_SLICE_MS);
   h2PionGoPeerDestroy(peer->go_handle);
   peer->go_handle = 0u;
@@ -679,6 +691,9 @@ static h2_pal_result_t h2_pion_peer_close_now(h2_pal_webrtc_peer_t *peer) {
     *cursor = peer->next;
   (void)h2_pal_semaphore_destroy(&provider->sync, peer->ready);
   (void)h2_pal_mutex_destroy(&provider->sync, peer->mutex);
+  h2_atomic_int_destroy(&peer->stop);
+  h2_atomic_int_destroy(&peer->poll_active);
+  h2_atomic_int_destroy(&peer->worker_error);
   h2_pal_mem_free(&provider->mem, peer);
   return H2_PAL_OK;
 }
@@ -695,7 +710,7 @@ h2_pion_peer_add_ice_server(h2_pal_webrtc_peer_t *peer,
   h2_pal_result_t rc = h2_pion_lock(target);
   if (rc != H2_PAL_OK)
     return rc;
-  rc = atomic_load(&target->stop)
+  rc = h2_atomic_int_load(&target->stop, H2_ATOMIC_SEQ_CST)
            ? H2_PAL_ERR_CLOSED
            : h2_pion_peer_add_ice_server_locked(peer, server);
   return h2_pion_unlock(target, rc);
@@ -706,7 +721,7 @@ static h2_pal_result_t h2_pion_peer_start_offer(h2_pal_webrtc_peer_t *peer) {
   h2_pal_result_t rc = h2_pion_lock(target);
   if (rc != H2_PAL_OK)
     return rc;
-  rc = atomic_load(&target->stop) ? H2_PAL_ERR_CLOSED
+  rc = h2_atomic_int_load(&target->stop, H2_ATOMIC_SEQ_CST) ? H2_PAL_ERR_CLOSED
                                   : h2_pion_peer_start_offer_locked(peer);
   return h2_pion_unlock(target, rc);
 }
@@ -719,7 +734,7 @@ h2_pion_peer_set_remote_sdp(h2_pal_webrtc_peer_t *peer,
   h2_pal_result_t rc = h2_pion_lock(target);
   if (rc != H2_PAL_OK)
     return rc;
-  rc = atomic_load(&target->stop)
+  rc = h2_atomic_int_load(&target->stop, H2_ATOMIC_SEQ_CST)
            ? H2_PAL_ERR_CLOSED
            : h2_pion_peer_set_remote_sdp_locked(peer, type, sdp);
   return h2_pion_unlock(target, rc);
@@ -733,7 +748,7 @@ h2_pion_peer_create_data_channel(h2_pal_webrtc_peer_t *peer,
   h2_pal_result_t rc = h2_pion_lock(target);
   if (rc != H2_PAL_OK)
     return rc;
-  rc = atomic_load(&target->stop)
+  rc = h2_atomic_int_load(&target->stop, H2_ATOMIC_SEQ_CST)
            ? H2_PAL_ERR_CLOSED
            : h2_pion_peer_create_data_channel_locked(peer, config, out_channel);
   return h2_pion_unlock(target, rc);
@@ -745,7 +760,7 @@ static h2_pal_result_t h2_pion_peer_set_track(h2_pal_webrtc_peer_t *peer,
   h2_pal_result_t rc = h2_pion_lock(target);
   if (rc != H2_PAL_OK)
     return rc;
-  rc = atomic_load(&target->stop) ? H2_PAL_ERR_CLOSED
+  rc = h2_atomic_int_load(&target->stop, H2_ATOMIC_SEQ_CST) ? H2_PAL_ERR_CLOSED
                                   : h2_pion_peer_set_track_locked(peer, track);
   return h2_pion_unlock(target, rc);
 }
@@ -756,7 +771,7 @@ static h2_pal_result_t h2_pion_peer_unset_track(h2_pal_webrtc_peer_t *peer,
   h2_pal_result_t rc = h2_pion_lock(target);
   if (rc != H2_PAL_OK)
     return rc;
-  rc = atomic_load(&target->stop)
+  rc = h2_atomic_int_load(&target->stop, H2_ATOMIC_SEQ_CST)
            ? H2_PAL_ERR_CLOSED
            : h2_pion_peer_unset_track_locked(peer, track);
   return h2_pion_unlock(target, rc);
@@ -769,7 +784,7 @@ static h2_pal_result_t h2_pion_peer_send_opus(h2_pal_webrtc_peer_t *peer,
   h2_pal_result_t rc = h2_pion_lock(target);
   if (rc != H2_PAL_OK)
     return rc;
-  rc = atomic_load(&target->stop)
+  rc = h2_atomic_int_load(&target->stop, H2_ATOMIC_SEQ_CST)
            ? H2_PAL_ERR_CLOSED
            : h2_pion_peer_send_opus_locked(peer, opus, opus_len);
   return h2_pion_unlock(target, rc);
@@ -782,7 +797,7 @@ static h2_pal_result_t h2_pion_channel_send(h2_pal_webrtc_channel_t *channel,
   h2_pal_result_t rc = h2_pion_lock(target);
   if (rc != H2_PAL_OK)
     return rc;
-  rc = atomic_load(&target->stop)
+  rc = h2_atomic_int_load(&target->stop, H2_ATOMIC_SEQ_CST)
            ? H2_PAL_ERR_CLOSED
            : h2_pion_channel_send_locked(channel, data, len, is_text);
   return h2_pion_unlock(target, rc);

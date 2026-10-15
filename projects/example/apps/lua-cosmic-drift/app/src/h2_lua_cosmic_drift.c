@@ -56,7 +56,8 @@ h2_lua_cosmic_drift_run(h2_runtime_t *runtime,
           .max_jobs = 1u,
           .event_delivery_capacity = 8u,
           .callback_capacity_per_job = 8u,
-          .vm_memory_limit_bytes = 512u * 1024u,
+          /* AMOLED 368x448: VM send frame needs 329728 bytes plus app state. */
+          .vm_memory_limit_bytes = 1024u * 1024u,
           .source_limit_bytes = 128u * 1024u,
           .output_limit_bytes = 1024u,
           .instruction_quantum = 10000u,
@@ -132,11 +133,12 @@ h2_lua_cosmic_drift_run(h2_runtime_t *runtime,
       (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "lua-cosmic-drift",
                              diagnostic);
     }
-    if (status.state == H2_LUA_JOB_FAILED ||
-        status.state == H2_LUA_JOB_TIMED_OUT) {
+    /* Cancellation may complete asynchronously after an entrypoint callback
+     * failed. Cleanup status must not replace that original failure. */
+    if (result == H2_PAL_OK &&
+        (status.state == H2_LUA_JOB_FAILED ||
+         status.state == H2_LUA_JOB_TIMED_OUT)) {
       result = H2_PAL_ERR_INVALID_STATE;
-    } else if (status.state == H2_LUA_JOB_CANCELLED) {
-      result = H2_PAL_OK;
     }
     if (terminal(status.state)) {
       (void)h2_lua_job_release(host, job_id);

@@ -1,5 +1,7 @@
+#include "h2_test_allocator.h"
 #include "h2_libsrtp.h"
 
+#include "h2_desktop_platform.h"
 #include "h2_wolfcrypt_crypto.h"
 
 #include <assert.h>
@@ -361,6 +363,47 @@ static void test_allocation_failures(
     }
 }
 
+static void destroy_on_worker(void *user) {
+    h2_libsrtp_session_destroy(user);
+}
+
+static void test_session_allocators(const h2_libsrtp_config_t *init,
+                                    const uint8_t *salt) {
+    h2_test_allocator_t arenas[2];
+    h2_libsrtp_session_t *sessions[2] = {0};
+    for (size_t i = 0u; i < 2u; ++i) {
+        h2_test_allocator_init(&arenas[i]);
+        h2_libsrtp_config_t owner = *init;
+        owner.mem = arenas[i].api;
+        assert(h2_libsrtp_init(&owner) == H2_PAL_OK);
+        h2_libsrtp_session_config_t config = {
+            .allocator = &arenas[i].api,
+            .profile = H2_LIBSRTP_PROFILE_AES128_CM_SHA1_80,
+            .direction = i == 0u ? H2_LIBSRTP_DIRECTION_OUTBOUND : H2_LIBSRTP_DIRECTION_INBOUND,
+            .ssrc_policy = H2_LIBSRTP_SSRC_ANY,
+            .master_key = test_default_key, .master_key_len = sizeof(test_default_key),
+            .master_salt = salt, .master_salt_len = H2_LIBSRTP_AES_CM_SALT_SIZE,
+        };
+        assert(h2_libsrtp_session_create(&config, &sessions[i]) == H2_PAL_OK);
+        assert(h2_atomic_load(&arenas[i].live) > 3u);
+    }
+    uint8_t packet[128] = {0x80, 0x60, 0, 1, 0, 0, 0, 1, 0x11, 0x22, 0x33, 0x44, 42};
+    size_t len = 13u;
+    assert(h2_libsrtp_protect_rtp(sessions[0], packet, sizeof(packet), &len) == H2_PAL_OK);
+    assert(h2_libsrtp_unprotect_rtp(sessions[1], packet, sizeof(packet), &len) == H2_PAL_OK);
+    assert(len == 13u && packet[12] == 42u);
+    for (size_t i = 0u; i < 2u; ++i) {
+        h2_pal_task_t *worker = NULL;
+        const h2_pal_task_options_t options = {.name = "srtp-free"};
+        assert(h2_pal_task_start(h2_desktop_platform_task_api(), &options,
+            destroy_on_worker, &sessions[i], &worker) == H2_PAL_OK);
+        assert(h2_pal_task_join(h2_desktop_platform_task_api(), worker) == H2_PAL_OK);
+        assert(sessions[i] == NULL && h2_atomic_load(&arenas[i].live) == 0u);
+        assert(h2_libsrtp_deinit() == H2_PAL_OK);
+        h2_test_allocator_destroy(&arenas[i]);
+    }
+}
+
 int main(void) {
     static const h2_pal_mem_vtable_t mem_vtable = {
         .alloc = test_alloc,
@@ -393,6 +436,7 @@ int main(void) {
     ++config.max_packet_size;
     assert(h2_libsrtp_init(&config) == H2_PAL_ERR_INVALID_STATE);
     --config.max_packet_size;
+    test_session_allocators(&config, aes_cm_salt);
     test_allocation_failures(aes_cm_salt, &memory);
     test_official_vectors(aes_cm_salt, gcm_salt, &memory);
 

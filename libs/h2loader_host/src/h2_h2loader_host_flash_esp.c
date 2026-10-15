@@ -4,8 +4,9 @@
 #include "esp_loader_io.h"
 #include "h2_h2loader_host_factory.h"
 #include "h2_h2loader_host_internal.h"
+#include "h2_sha256.h"
 
-#include <stdatomic.h>
+#include "h2_atomic_static.h"
 #include <string.h>
 
 #define H2_ESP_FLASH_BAUD 115200u
@@ -26,7 +27,7 @@ typedef struct h2_esp_flash_context {
 } h2_esp_flash_context_t;
 
 static h2_esp_flash_context_t *active_context;
-static atomic_flag active_context_claim = ATOMIC_FLAG_INIT;
+H2_ATOMIC_DEFINE_STATIC(flag, active_context_claim, 0u);
 
 static esp_loader_error_t esp_error(h2_pal_result_t rc) {
     if (rc == H2_PAL_OK) {
@@ -346,10 +347,10 @@ static h2_pal_result_t esp_flash_verify(
     for (size_t i = 0u; i < context->manifest.file_count; ++i) {
         const h2_h2loader_host_factory_file_t *file =
             &context->manifest.files[i];
-        h2_h2loader_host_sha256_t sha;
+        h2_sha256_t sha;
         uint8_t digest[32];
         char actual[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
-        h2_h2loader_host_sha256_init(&sha);
+        h2_sha256_init(&sha);
         for (uint64_t offset = 0u; offset < file->bytes;) {
             if (is_cancelled != NULL && is_cancelled(cancel_user)) {
                 return H2_PAL_EXIT;
@@ -369,11 +370,11 @@ static h2_pal_result_t esp_flash_verify(
             if (rc != H2_PAL_OK) {
                 return rc;
             }
-            h2_h2loader_host_sha256_update(&sha, buffer, request);
+            h2_sha256_update(&sha, buffer, request);
             offset += request;
         }
-        h2_h2loader_host_sha256_finish(&sha, digest);
-        h2_h2loader_host_sha256_hex(digest, actual);
+        h2_sha256_finish(&sha, digest);
+        h2_sha256_hex(digest, actual);
         if (strcmp(actual, file->sha256) != 0) {
             return H2_PAL_ERR_FORMAT;
         }
@@ -398,8 +399,8 @@ static h2_pal_result_t esp_flash_close(void *user) {
     h2_pal_result_t rc = h2_pal_serial_host_close(
         context->serial, &context->session);
     h2_pal_mem_free(context->allocator, context);
-    atomic_flag_clear_explicit(
-        &active_context_claim, memory_order_release);
+    h2_atomic_flag_clear(
+        &active_context_claim, H2_ATOMIC_RELEASE);
     return rc;
 }
 
@@ -429,15 +430,15 @@ h2_pal_result_t h2_h2loader_host_esp_flash_open(
     if (chip == ESP_UNKNOWN_CHIP) {
         return H2_PAL_ERR_UNSUPPORTED;
     }
-    if (atomic_flag_test_and_set_explicit(
-            &active_context_claim, memory_order_acquire)) {
+    if (h2_atomic_flag_test_and_set(
+            &active_context_claim, H2_ATOMIC_ACQUIRE)) {
         return H2_PAL_ERR_UNAVAILABLE;
     }
     h2_esp_flash_context_t *context = h2_pal_mem_alloc(
         config->allocator, sizeof(*context));
     if (context == NULL) {
-        atomic_flag_clear_explicit(
-            &active_context_claim, memory_order_release);
+        h2_atomic_flag_clear(
+            &active_context_claim, H2_ATOMIC_RELEASE);
         return H2_PAL_ERR_NO_MEMORY;
     }
     memset(context, 0, sizeof(*context));
@@ -468,8 +469,8 @@ h2_pal_result_t h2_h2loader_host_esp_flash_open(
         (void)h2_pal_serial_host_close(
             config->serial, &context->session);
         h2_pal_mem_free(config->allocator, context);
-        atomic_flag_clear_explicit(
-            &active_context_claim, memory_order_release);
+        h2_atomic_flag_clear(
+            &active_context_claim, H2_ATOMIC_RELEASE);
         return rc;
     }
     active_context = context;

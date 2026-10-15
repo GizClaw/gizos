@@ -1,0 +1,1034 @@
+{
+  "platform": "ios",
+  "package": "com.haivivi.gizos.e2e.palmqtt",
+  "observation_started_at_utc": "2026-10-04T12:34:37.042957+00:00",
+  "app_sha256": "2dc94a0a0560a814307c8bde070df7b7d81decf35c8bedd95d89452653fe2f04",
+  "sdk_sha256": "e1dee804423ad16730583229f4e2895886813075efa799c957c70586fcdd8661",
+  "simulator_udid": "8B1D17DB-2EE8-4B44-AAEA-914449042FEF",
+  "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-2",
+  "device": {
+    "dataPath": "/Users/idy/Library/Developer/CoreSimulator/Devices/8B1D17DB-2EE8-4B44-AAEA-914449042FEF/data",
+    "dataPathSize": 1765482496,
+    "logPath": "/Users/idy/Library/Logs/CoreSimulator/8B1D17DB-2EE8-4B44-AAEA-914449042FEF",
+    "udid": "8B1D17DB-2EE8-4B44-AAEA-914449042FEF",
+    "lastUsedAt": "2026-10-03T07:32:20Z",
+    "isAvailable": true,
+    "logPathSize": 602112,
+    "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro",
+    "state": "Booted",
+    "name": "GizOS E2E 626 PAL32 6d30"
+  },
+  "suite_sha256": "8ad60a84c42909c5a7e70e43645528b20591a6f53e4d28baee742e6debfe162f",
+  "sdk_binary_member": "H2PALCore.xcframework/ios-arm64-simulator/H2PALCore.framework/H2PALCore",
+  "sdk_binary_sha256": "1dc1f402698ff1c8a8951ccd134305c78423f2790d36d4db4e5bcde1b75ef997",
+  "ipa_executable_sha256": "1273ca5d93971f1e294d5f400bed6bf51acaad250f1eccc3756f6f96d24f3e9b",
+  "provider_symbols_in_sdk_and_ipa": [
+    "_h2_ios_mqtt_create",
+    "_h2_ios_mqtt_api",
+    "_h2_ios_mqtt_destroy"
+  ],
+  "fixture_inputs": {
+    "session": "2c7407e774cf46c2b0b1cd686ab048a9",
+    "host": "127.0.0.1",
+    "tcp_port": 51036,
+    "tls_port": 51037,
+    "json_sha256": "82517c26df76d354944afec380ccb20b3572ff654fc6ec16841d13aae557f765",
+    "ca_sha256": "f5b3b592a40045e11b7e390a8bf34f663b1065c76e33980f911a2402f353a532",
+    "wrong_ca_sha256": "15467046ad661186568c781921f9b0f55f7bfa75deb6125dd607c590de02cc5a",
+    "registry_sha256": "f3f5798bb6f8793eeede6f3464c847be1b6ad807d6059bc17b759fad6995837f"
+  },
+  "fixture": {
+    "session": "2c7407e774cf46c2b0b1cd686ab048a9",
+    "tcp_arrivals": {
+      "2c7407e774cf46c2b0b1cd686ab048a9-connect-events": {
+        "connect": 1,
+        "disconnect": 1
+      },
+      "2c7407e774cf46c2b0b1cd686ab048a9-repeated-connect": {
+        "connect": 1,
+        "disconnect": 1
+      },
+      "2c7407e774cf46c2b0b1cd686ab048a9-subscribe-qos0": {
+        "connect": 1,
+        "subscribe": 1,
+        "disconnect": 1
+      },
+      "2c7407e774cf46c2b0b1cd686ab048a9-subscribe-qos1": {
+        "connect": 1,
+        "subscribe": 1,
+        "disconnect": 1
+      },
+      "2c7407e774cf46c2b0b1cd686ab048a9-subscribe-multi": {
+        "connect": 1,
+        "subscribe": 1,
+        "publish": 2,
+        "disconnect": 1
+      },
+      "2c7407e774cf46c2b0b1cd686ab048a9-publish-qos0": {
+        "connect": 1,
+        "subscribe": 1,
+        "publish": 1,
+        "disconnect": 1
+      },
+      "2c7407e774cf46c2b0b1cd686ab048a9-publish-qos1": {
+        "connect": 1,
+        "subscribe": 1,
+        "publish": 1,
+        "incoming-puback": 1,
+        "disconnect": 1
+      },
+      "2c7407e774cf46c2b0b1cd686ab048a9-publish-binary": {
+        "connect": 1,
+        "subscribe": 1,
+        "publish": 1,
+        "disconnect": 1
+      },
+      "2c7407e774cf46c2b0b1cd686ab048a9-publish-empty": {
+        "connect": 1,
+        "subscribe": 1,
+        "publish": 1,
+        "disconnect": 1
+      },
+      "2c7407e774cf46c2b0b1cd686ab048a9-publish-large": {
+        "connect": 1,
+        "subscribe": 1,
+        "publish": 1,
+        "disconnect": 1
+      },
+      "2c7407e774cf46c2b0b1cd686ab048a9-input-lifetime": {
+        "connect": 1,
+        "subscribe": 1,
+        "publish": 1,
+        "disconnect": 1
+      },
+      "2c7407e774cf46c2b0b1cd686ab048a9-unsubscribe-ack": {
+        "connect": 1,
+        "subscribe": 1,
+        "unsubscribe": 1,
+        "publish": 1,
+        "disconnect": 1
+      },
+      "2c7407e774cf46c2b0b1cd686ab048a9-retained-delivery": {
+        "connect": 1,
+        "publish": 2,
+        "subscribe": 1,
+        "disconnect": 1
+      },
+      "2c7407e774cf46c2b0b1cd686ab048a9-idle-process": {
+        "connect": 1,
+        "ping": 1,
+        "disconnect": 1
+      },
+      "2c7407e774cf46c2b0b1cd686ab048a9-invalid-qos": {
+        "connect": 1,
+        "disconnect": 1
+      },
+      "2c7407e774cf46c2b0b1cd686ab048a9-invalid-publish": {
+        "connect": 1,
+        "disconnect": 1
+      },
+      "2c7407e774cf46c2b0b1cd686ab048a9-invalid-subscribe": {
+        "connect": 1,
+        "disconnect": 1
+      },
+      "2c7407e774cf46c2b0b1cd686ab048a9-invalid-unsubscribe": {
+        "connect": 1,
+        "disconnect": 1
+      },
+      "2c7407e774cf46c2b0b1cd686ab048a9-local-disconnect": {
+        "connect": 1,
+        "disconnect": 1
+      },
+      "2c7407e774cf46c2b0b1cd686ab048a9-reconnect": {
+        "connect": 2,
+        "disconnect": 2,
+        "subscribe": 1,
+        "publish": 1
+      },
+      "2c7407e774cf46c2b0b1cd686ab048a9-authenticated": {
+        "connect": 1,
+        "disconnect": 1
+      },
+      "2c7407e774cf46c2b0b1cd686ab048a9-auth-refused": {
+        "connect": 1,
+        "auth-refused": 1
+      },
+      "2c7407e774cf46c2b0b1cd686ab048a9-connect-timeout": {
+        "connect": 1
+      },
+      "2c7407e774cf46c2b0b1cd686ab048a9-remote-disconnect": {
+        "connect": 1
+      },
+      "2c7407e774cf46c2b0b1cd686ab048a9-qos-capacity": {
+        "connect": 1,
+        "publish": 5,
+        "disconnect": 1
+      },
+      "2c7407e774cf46c2b0b1cd686ab048a9-callback-close": {
+        "connect": 1,
+        "subscribe": 1,
+        "publish": 1
+      },
+      "2c7407e774cf46c2b0b1cd686ab048a9-repeated-lifecycle": {
+        "connect": 21,
+        "subscribe": 20,
+        "publish": 20,
+        "disconnect": 21
+      },
+      "2c7407e774cf46c2b0b1cd686ab048a9-keepalive-timeout": {
+        "connect": 1,
+        "ping": 1
+      }
+    },
+    "tls_arrivals": {
+      "2c7407e774cf46c2b0b1cd686ab048a9-tls-trusted": {
+        "connect": 1,
+        "subscribe": 1,
+        "publish": 1,
+        "disconnect": 1
+      }
+    },
+    "tls_handshakes": [
+      {
+        "client_hello": true,
+        "certificate_presented": true,
+        "succeeded": true,
+        "finished": true,
+        "peer_ip": "127.0.0.1",
+        "peer_port": 51061,
+        "run": "2c7407e774cf46c2b0b1cd686ab048a9",
+        "timeout_seconds": 2,
+        "messages": [
+          {
+            "direction": "read",
+            "version": 771,
+            "content_type": 256,
+            "message_type": 22,
+            "elapsed_ms": 5,
+            "data_length": 5,
+            "record_length": 205
+          },
+          {
+            "direction": "read",
+            "version": 772,
+            "content_type": 22,
+            "message_type": 1,
+            "elapsed_ms": 5,
+            "data_length": 205
+          },
+          {
+            "direction": "write",
+            "version": 771,
+            "content_type": 256,
+            "message_type": 22,
+            "elapsed_ms": 6,
+            "data_length": 5,
+            "record_length": 90
+          },
+          {
+            "direction": "write",
+            "version": 772,
+            "content_type": 22,
+            "message_type": 2,
+            "elapsed_ms": 6,
+            "data_length": 90
+          },
+          {
+            "direction": "write",
+            "version": 771,
+            "content_type": 256,
+            "message_type": 20,
+            "elapsed_ms": 6,
+            "data_length": 5,
+            "record_length": 1
+          },
+          {
+            "direction": "write",
+            "version": 772,
+            "content_type": 20,
+            "message_type": 257,
+            "elapsed_ms": 6,
+            "data_length": 1
+          },
+          {
+            "direction": "write",
+            "version": 771,
+            "content_type": 256,
+            "message_type": 23,
+            "elapsed_ms": 6,
+            "data_length": 5,
+            "record_length": 45
+          },
+          {
+            "direction": "write",
+            "version": 771,
+            "content_type": 257,
+            "message_type": 22,
+            "elapsed_ms": 6,
+            "data_length": 1
+          },
+          {
+            "direction": "write",
+            "version": 772,
+            "content_type": 22,
+            "message_type": 8,
+            "elapsed_ms": 6,
+            "data_length": 28
+          },
+          {
+            "direction": "write",
+            "version": 771,
+            "content_type": 256,
+            "message_type": 23,
+            "elapsed_ms": 6,
+            "data_length": 5,
+            "record_length": 886
+          },
+          {
+            "direction": "write",
+            "version": 771,
+            "content_type": 257,
+            "message_type": 22,
+            "elapsed_ms": 6,
+            "data_length": 1
+          },
+          {
+            "direction": "write",
+            "version": 772,
+            "content_type": 22,
+            "message_type": 11,
+            "elapsed_ms": 6,
+            "data_length": 869
+          },
+          {
+            "direction": "write",
+            "version": 771,
+            "content_type": 256,
+            "message_type": 23,
+            "elapsed_ms": 6,
+            "data_length": 5,
+            "record_length": 281
+          },
+          {
+            "direction": "write",
+            "version": 771,
+            "content_type": 257,
+            "message_type": 22,
+            "elapsed_ms": 6,
+            "data_length": 1
+          },
+          {
+            "direction": "write",
+            "version": 772,
+            "content_type": 22,
+            "message_type": 15,
+            "elapsed_ms": 6,
+            "data_length": 264
+          },
+          {
+            "direction": "write",
+            "version": 771,
+            "content_type": 256,
+            "message_type": 23,
+            "elapsed_ms": 6,
+            "data_length": 5,
+            "record_length": 69
+          },
+          {
+            "direction": "write",
+            "version": 771,
+            "content_type": 257,
+            "message_type": 22,
+            "elapsed_ms": 6,
+            "data_length": 1
+          },
+          {
+            "direction": "write",
+            "version": 772,
+            "content_type": 22,
+            "message_type": 20,
+            "elapsed_ms": 6,
+            "data_length": 52
+          },
+          {
+            "direction": "read",
+            "version": 771,
+            "content_type": 256,
+            "message_type": 23,
+            "elapsed_ms": 9,
+            "data_length": 5,
+            "record_length": 69
+          },
+          {
+            "direction": "read",
+            "version": 772,
+            "content_type": 257,
+            "message_type": 22,
+            "elapsed_ms": 9,
+            "data_length": 1
+          },
+          {
+            "direction": "read",
+            "version": 772,
+            "content_type": 22,
+            "message_type": 20,
+            "elapsed_ms": 9,
+            "data_length": 52
+          },
+          {
+            "direction": "read",
+            "version": 771,
+            "content_type": 256,
+            "message_type": 23,
+            "elapsed_ms": 9,
+            "data_length": 5,
+            "record_length": 29
+          },
+          {
+            "direction": "read",
+            "version": 772,
+            "content_type": 257,
+            "message_type": 23,
+            "elapsed_ms": 9,
+            "data_length": 1
+          },
+          {
+            "direction": "read",
+            "version": 771,
+            "content_type": 256,
+            "message_type": 23,
+            "elapsed_ms": 9,
+            "data_length": 5,
+            "record_length": 19
+          },
+          {
+            "direction": "read",
+            "version": 772,
+            "content_type": 257,
+            "message_type": 23,
+            "elapsed_ms": 9,
+            "data_length": 1
+          },
+          {
+            "direction": "read",
+            "version": 771,
+            "content_type": 256,
+            "message_type": 23,
+            "elapsed_ms": 9,
+            "data_length": 5,
+            "record_length": 61
+          },
+          {
+            "direction": "read",
+            "version": 772,
+            "content_type": 257,
+            "message_type": 23,
+            "elapsed_ms": 9,
+            "data_length": 1
+          },
+          {
+            "direction": "write",
+            "version": 771,
+            "content_type": 256,
+            "message_type": 23,
+            "elapsed_ms": 10,
+            "data_length": 5,
+            "record_length": 21
+          },
+          {
+            "direction": "write",
+            "version": 771,
+            "content_type": 257,
+            "message_type": 23,
+            "elapsed_ms": 10,
+            "data_length": 1
+          },
+          {
+            "direction": "read",
+            "version": 771,
+            "content_type": 256,
+            "message_type": 23,
+            "elapsed_ms": 10,
+            "data_length": 5,
+            "record_length": 21
+          },
+          {
+            "direction": "read",
+            "version": 772,
+            "content_type": 257,
+            "message_type": 23,
+            "elapsed_ms": 10,
+            "data_length": 1
+          },
+          {
+            "direction": "read",
+            "version": 771,
+            "content_type": 256,
+            "message_type": 23,
+            "elapsed_ms": 10,
+            "data_length": 5,
+            "record_length": 19
+          },
+          {
+            "direction": "read",
+            "version": 772,
+            "content_type": 257,
+            "message_type": 23,
+            "elapsed_ms": 10,
+            "data_length": 1
+          },
+          {
+            "direction": "read",
+            "version": 771,
+            "content_type": 256,
+            "message_type": 23,
+            "elapsed_ms": 10,
+            "data_length": 5,
+            "record_length": 73
+          },
+          {
+            "direction": "read",
+            "version": 772,
+            "content_type": 257,
+            "message_type": 23,
+            "elapsed_ms": 10,
+            "data_length": 1
+          },
+          {
+            "direction": "read",
+            "version": 771,
+            "content_type": 256,
+            "message_type": 23,
+            "elapsed_ms": 10,
+            "data_length": 5,
+            "record_length": 18
+          },
+          {
+            "direction": "read",
+            "version": 772,
+            "content_type": 257,
+            "message_type": 23,
+            "elapsed_ms": 10,
+            "data_length": 1
+          },
+          {
+            "direction": "write",
+            "version": 771,
+            "content_type": 256,
+            "message_type": 23,
+            "elapsed_ms": 10,
+            "data_length": 5,
+            "record_length": 22
+          },
+          {
+            "direction": "write",
+            "version": 771,
+            "content_type": 257,
+            "message_type": 23,
+            "elapsed_ms": 10,
+            "data_length": 1
+          },
+          {
+            "direction": "read",
+            "version": 771,
+            "content_type": 256,
+            "message_type": 23,
+            "elapsed_ms": 10,
+            "data_length": 5,
+            "record_length": 21
+          },
+          {
+            "direction": "read",
+            "version": 772,
+            "content_type": 257,
+            "message_type": 23,
+            "elapsed_ms": 10,
+            "data_length": 1
+          },
+          {
+            "direction": "read",
+            "version": 771,
+            "content_type": 256,
+            "message_type": 23,
+            "elapsed_ms": 10,
+            "data_length": 5,
+            "record_length": 73
+          },
+          {
+            "direction": "read",
+            "version": 772,
+            "content_type": 257,
+            "message_type": 23,
+            "elapsed_ms": 10,
+            "data_length": 1
+          },
+          {
+            "direction": "read",
+            "version": 771,
+            "content_type": 256,
+            "message_type": 23,
+            "elapsed_ms": 10,
+            "data_length": 5,
+            "record_length": 34
+          },
+          {
+            "direction": "read",
+            "version": 772,
+            "content_type": 257,
+            "message_type": 23,
+            "elapsed_ms": 10,
+            "data_length": 1
+          },
+          {
+            "direction": "write",
+            "version": 771,
+            "content_type": 256,
+            "message_type": 23,
+            "elapsed_ms": 10,
+            "data_length": 5,
+            "record_length": 94
+          },
+          {
+            "direction": "write",
+            "version": 771,
+            "content_type": 257,
+            "message_type": 23,
+            "elapsed_ms": 10,
+            "data_length": 1
+          },
+          {
+            "direction": "read",
+            "version": 771,
+            "content_type": 256,
+            "message_type": 23,
+            "elapsed_ms": 10,
+            "data_length": 5,
+            "record_length": 19
+          },
+          {
+            "direction": "read",
+            "version": 772,
+            "content_type": 257,
+            "message_type": 23,
+            "elapsed_ms": 10,
+            "data_length": 1
+          }
+        ],
+        "started_at_utc": "2026-10-04T12:34:43.870546+00:00",
+        "tls_version": "TLSv1.3",
+        "cipher": [
+          "TLS_AES_256_GCM_SHA384",
+          "TLSv1.3",
+          256
+        ],
+        "elapsed_ms": 9
+      },
+      {
+        "client_hello": true,
+        "certificate_presented": true,
+        "succeeded": false,
+        "finished": true,
+        "peer_ip": "127.0.0.1",
+        "peer_port": 51062,
+        "run": "2c7407e774cf46c2b0b1cd686ab048a9",
+        "timeout_seconds": 2,
+        "messages": [
+          {
+            "direction": "read",
+            "version": 771,
+            "content_type": 256,
+            "message_type": 22,
+            "elapsed_ms": 0,
+            "data_length": 5,
+            "record_length": 205
+          },
+          {
+            "direction": "read",
+            "version": 772,
+            "content_type": 22,
+            "message_type": 1,
+            "elapsed_ms": 0,
+            "data_length": 205
+          },
+          {
+            "direction": "write",
+            "version": 771,
+            "content_type": 256,
+            "message_type": 22,
+            "elapsed_ms": 0,
+            "data_length": 5,
+            "record_length": 90
+          },
+          {
+            "direction": "write",
+            "version": 772,
+            "content_type": 22,
+            "message_type": 2,
+            "elapsed_ms": 0,
+            "data_length": 90
+          },
+          {
+            "direction": "write",
+            "version": 771,
+            "content_type": 256,
+            "message_type": 20,
+            "elapsed_ms": 0,
+            "data_length": 5,
+            "record_length": 1
+          },
+          {
+            "direction": "write",
+            "version": 772,
+            "content_type": 20,
+            "message_type": 257,
+            "elapsed_ms": 0,
+            "data_length": 1
+          },
+          {
+            "direction": "write",
+            "version": 771,
+            "content_type": 256,
+            "message_type": 23,
+            "elapsed_ms": 0,
+            "data_length": 5,
+            "record_length": 45
+          },
+          {
+            "direction": "write",
+            "version": 771,
+            "content_type": 257,
+            "message_type": 22,
+            "elapsed_ms": 0,
+            "data_length": 1
+          },
+          {
+            "direction": "write",
+            "version": 772,
+            "content_type": 22,
+            "message_type": 8,
+            "elapsed_ms": 0,
+            "data_length": 28
+          },
+          {
+            "direction": "write",
+            "version": 771,
+            "content_type": 256,
+            "message_type": 23,
+            "elapsed_ms": 0,
+            "data_length": 5,
+            "record_length": 886
+          },
+          {
+            "direction": "write",
+            "version": 771,
+            "content_type": 257,
+            "message_type": 22,
+            "elapsed_ms": 0,
+            "data_length": 1
+          },
+          {
+            "direction": "write",
+            "version": 772,
+            "content_type": 22,
+            "message_type": 11,
+            "elapsed_ms": 0,
+            "data_length": 869
+          },
+          {
+            "direction": "write",
+            "version": 771,
+            "content_type": 256,
+            "message_type": 23,
+            "elapsed_ms": 0,
+            "data_length": 5,
+            "record_length": 281
+          },
+          {
+            "direction": "write",
+            "version": 771,
+            "content_type": 257,
+            "message_type": 22,
+            "elapsed_ms": 0,
+            "data_length": 1
+          },
+          {
+            "direction": "write",
+            "version": 772,
+            "content_type": 22,
+            "message_type": 15,
+            "elapsed_ms": 0,
+            "data_length": 264
+          },
+          {
+            "direction": "write",
+            "version": 771,
+            "content_type": 256,
+            "message_type": 23,
+            "elapsed_ms": 0,
+            "data_length": 5,
+            "record_length": 69
+          },
+          {
+            "direction": "write",
+            "version": 771,
+            "content_type": 257,
+            "message_type": 22,
+            "elapsed_ms": 0,
+            "data_length": 1
+          },
+          {
+            "direction": "write",
+            "version": 772,
+            "content_type": 22,
+            "message_type": 20,
+            "elapsed_ms": 0,
+            "data_length": 52
+          },
+          {
+            "direction": "read",
+            "version": 771,
+            "content_type": 256,
+            "message_type": 23,
+            "elapsed_ms": 1,
+            "data_length": 5,
+            "record_length": 19
+          },
+          {
+            "direction": "read",
+            "version": 772,
+            "content_type": 257,
+            "message_type": 21,
+            "elapsed_ms": 1,
+            "data_length": 1
+          },
+          {
+            "direction": "read",
+            "version": 772,
+            "content_type": 21,
+            "message_type": 48,
+            "elapsed_ms": 1,
+            "data_length": 2,
+            "alert_level": 2,
+            "alert_description": 48
+          }
+        ],
+        "started_at_utc": "2026-10-04T12:34:43.881394+00:00",
+        "error": {
+          "type": "SSLError",
+          "message": "[SSL: TLSV1_ALERT_UNKNOWN_CA] tlsv1 alert unknown ca (_ssl.c:1016)",
+          "errno": 1,
+          "library": "SSL",
+          "reason": "TLSV1_ALERT_UNKNOWN_CA"
+        },
+        "elapsed_ms": 1
+      },
+      {
+        "client_hello": true,
+        "certificate_presented": true,
+        "succeeded": false,
+        "finished": true,
+        "peer_ip": "127.0.0.1",
+        "peer_port": 51063,
+        "run": "2c7407e774cf46c2b0b1cd686ab048a9",
+        "timeout_seconds": 2,
+        "messages": [
+          {
+            "direction": "read",
+            "version": 771,
+            "content_type": 256,
+            "message_type": 22,
+            "elapsed_ms": 0,
+            "data_length": 5,
+            "record_length": 214
+          },
+          {
+            "direction": "read",
+            "version": 772,
+            "content_type": 22,
+            "message_type": 1,
+            "elapsed_ms": 0,
+            "data_length": 214
+          },
+          {
+            "direction": "write",
+            "version": 771,
+            "content_type": 256,
+            "message_type": 22,
+            "elapsed_ms": 0,
+            "data_length": 5,
+            "record_length": 90
+          },
+          {
+            "direction": "write",
+            "version": 772,
+            "content_type": 22,
+            "message_type": 2,
+            "elapsed_ms": 0,
+            "data_length": 90
+          },
+          {
+            "direction": "write",
+            "version": 771,
+            "content_type": 256,
+            "message_type": 20,
+            "elapsed_ms": 0,
+            "data_length": 5,
+            "record_length": 1
+          },
+          {
+            "direction": "write",
+            "version": 772,
+            "content_type": 20,
+            "message_type": 257,
+            "elapsed_ms": 0,
+            "data_length": 1
+          },
+          {
+            "direction": "write",
+            "version": 771,
+            "content_type": 256,
+            "message_type": 23,
+            "elapsed_ms": 0,
+            "data_length": 5,
+            "record_length": 45
+          },
+          {
+            "direction": "write",
+            "version": 771,
+            "content_type": 257,
+            "message_type": 22,
+            "elapsed_ms": 0,
+            "data_length": 1
+          },
+          {
+            "direction": "write",
+            "version": 772,
+            "content_type": 22,
+            "message_type": 8,
+            "elapsed_ms": 0,
+            "data_length": 28
+          },
+          {
+            "direction": "write",
+            "version": 771,
+            "content_type": 256,
+            "message_type": 23,
+            "elapsed_ms": 0,
+            "data_length": 5,
+            "record_length": 886
+          },
+          {
+            "direction": "write",
+            "version": 771,
+            "content_type": 257,
+            "message_type": 22,
+            "elapsed_ms": 0,
+            "data_length": 1
+          },
+          {
+            "direction": "write",
+            "version": 772,
+            "content_type": 22,
+            "message_type": 11,
+            "elapsed_ms": 0,
+            "data_length": 869
+          },
+          {
+            "direction": "write",
+            "version": 771,
+            "content_type": 256,
+            "message_type": 23,
+            "elapsed_ms": 0,
+            "data_length": 5,
+            "record_length": 281
+          },
+          {
+            "direction": "write",
+            "version": 771,
+            "content_type": 257,
+            "message_type": 22,
+            "elapsed_ms": 0,
+            "data_length": 1
+          },
+          {
+            "direction": "write",
+            "version": 772,
+            "content_type": 22,
+            "message_type": 15,
+            "elapsed_ms": 0,
+            "data_length": 264
+          },
+          {
+            "direction": "write",
+            "version": 771,
+            "content_type": 256,
+            "message_type": 23,
+            "elapsed_ms": 0,
+            "data_length": 5,
+            "record_length": 69
+          },
+          {
+            "direction": "write",
+            "version": 771,
+            "content_type": 257,
+            "message_type": 22,
+            "elapsed_ms": 0,
+            "data_length": 1
+          },
+          {
+            "direction": "write",
+            "version": 772,
+            "content_type": 22,
+            "message_type": 20,
+            "elapsed_ms": 0,
+            "data_length": 52
+          },
+          {
+            "direction": "read",
+            "version": 771,
+            "content_type": 256,
+            "message_type": 23,
+            "elapsed_ms": 1,
+            "data_length": 5,
+            "record_length": 19
+          },
+          {
+            "direction": "read",
+            "version": 772,
+            "content_type": 257,
+            "message_type": 21,
+            "elapsed_ms": 1,
+            "data_length": 1
+          },
+          {
+            "direction": "read",
+            "version": 772,
+            "content_type": 21,
+            "message_type": 42,
+            "elapsed_ms": 1,
+            "data_length": 2,
+            "alert_level": 2,
+            "alert_description": 42
+          }
+        ],
+        "started_at_utc": "2026-10-04T12:34:43.883115+00:00",
+        "error": {
+          "type": "SSLError",
+          "message": "[SSL: SSLV3_ALERT_BAD_CERTIFICATE] ssl/tls alert bad certificate (_ssl.c:1016)",
+          "errno": 1,
+          "library": "SSL",
+          "reason": "SSLV3_ALERT_BAD_CERTIFICATE"
+        },
+        "elapsed_ms": 1
+      }
+    ],
+    "active_clients": 0,
+    "retained_messages": 0
+  },
+  "fixture_session": "2c7407e774cf46c2b0b1cd686ab048a9",
+  "tls_verification": "explicit isolated CA; default/required verified TLS; two real rejecting certificate handshakes",
+  "observation_finished_at_utc": "2026-10-04T12:34:47.772675+00:00",
+  "evidence_timezone": "UTC",
+  "launches": 1,
+  "runner_status": "completed"
+}

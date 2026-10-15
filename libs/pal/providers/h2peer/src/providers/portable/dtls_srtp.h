@@ -24,6 +24,7 @@ typedef enum DtlsSrtpState {
 
 typedef struct DtlsSrtp {
   const h2_pal_log_api_t *log;
+  const h2_pal_mem_api_t *allocator;
   const h2_pal_dtls_api_t *dtls;
   const h2_pal_time_api_t *time;
   h2_pal_dtls_session_t *session;

@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "h2_esp_es8311_es7210_aec_stats.h"
 #include "h2_es8311_volume.h"
 
 #define H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_MAX_FRAME_SAMPLES 512u
@@ -56,6 +57,9 @@ typedef struct h2_esp_es8311_es7210_audio_system_config {
   int pa_gpio;
   h2_esp_es8311_es7210_set_pa_fn set_pa;
   uint8_t codec_volume_default;
+  uint32_t mic_gain_db;
+  uint8_t mic_gain_min_db;
+  uint8_t mic_gain_max_db;
   uint8_t es7210_input_gain_mask;
   uint8_t max_tracks;
   uint8_t track_queue_frames;
@@ -65,6 +69,7 @@ typedef struct h2_esp_es8311_es7210_audio_system_config {
   const h2_pal_queue_api_t *queue_api;
   const h2_pal_sync_api_t *sync_api;
   int enable_aec;
+  h2_esp_es8311_es7210_aec_nlp_level_t aec_nlp_level;
     /** Optional board curve; zero initialization preserves legacy mapping. */
     h2_es8311_volume_config_t speaker_volume;
 } h2_esp_es8311_es7210_audio_system_config_t;
@@ -78,6 +83,9 @@ typedef struct h2_esp_es8311_es7210_audio_system {
   h2_esp_es8311_es7210_sr_state_t sr;
   int sr_initialized;
   uint32_t speaker_volume_percent;
+  uint32_t mic_gain_percent;
+  uint32_t mic_gain_db_current;
+  int mic_gain_uncertain;
 } h2_esp_es8311_es7210_audio_system_t;
 
 int h2_esp_es8311_es7210_audio_system_init(

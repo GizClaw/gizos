@@ -1,0 +1,40 @@
+{
+  "contract": 2,
+  "platform": "bk7258",
+  "status": "failed",
+  "qualified": false,
+  "source_revision": "de68d16a6b2e3f298eadbdf5b5a4dda0bd0b69a9",
+  "version": "pref-strength-20261004-bk",
+  "artifact": {
+    "sha256": "4f943c00e4eb3b1684f029a92b4d5c2fe61821e1cdbe9d871214f83bc9846568",
+    "image_sha256": "29aefb149404cce317af03a6d49dcacfb44c93a99ab3fdd0cb6106ef42c21248"
+  },
+  "observed_failures": [
+    {
+      "id": "pal.storage.pref.overwrite-type",
+      "status": "FAIL",
+      "rc": -13,
+      "phase": 1,
+      "nonce": 523931790
+    }
+  ],
+  "observed_case_rows": 26,
+  "nonce": 523931790,
+  "raw_log_sha256": "6de10f67e15d1746342286a2487638a65876bb30255c91be0c0a0cdd9761a6ee",
+  "recorded_at": "2026-10-04T10:51:13.911938+00:00",
+  "capacity_gap": {
+    "sdk_revision": "aa5df964b0f64924ee6d0d2ffd6c3ca6ed59f9ca",
+    "logical_sector_bytes": 4096,
+    "database_bytes": 24576,
+    "sector_header_bytes": 20,
+    "kv_header_bytes": 28,
+    "key": "h2storea.blob",
+    "key_bytes": 13,
+    "mandatory_blob_bytes": 16384,
+    "kv_record_bytes": 16425,
+    "sector_usable_bytes": 4076,
+    "max_payload_for_empty_sector_and_key": 4034,
+    "evidence": "bk7258-capacity-gap.md"
+  },
+  "evidence_boundary": "The valid FAIL is retained. Missing live UART rows are not invented or classified as business failures. Later same-boot replay cannot turn this valid FAIL into qualification. No provider/SDK/format/partition change or test-strength reduction was made."
+}

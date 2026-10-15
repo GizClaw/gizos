@@ -10,11 +10,17 @@ CLI 由 Bazel 直接编译为当前 host 的 native executable，不使用 Pytho
 bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- -h
 ```
 
+Windows 文件参数接受本机 DOS absolute path（含 `\\?\C:\...`）、调用目录下的 relative path，以及既有 `/c/...` portable path。CLI 用 wide-character entrypoint 将 Windows UTF-16 参数转换为 UTF-8；relative path 优先使用 `BUILD_WORKING_DIRECTORY`，否则使用本机 cwd，不改变进程目录。Native path adapter 只做 lexical normalization，reparse component 继续由 Windows PAL filesystem 拒绝；UNC、device 和 `C:file` drive-relative path 不转换为其他 mount。
+
+平台、KCP 或参数初始化失败时，CLI 在 stderr 写明失败阶段并保留 runtime exit code `3`。`--help` 和 `check` 可通过重定向 stdout/stderr 的父进程运行，不需要串口设备；成功启动不等于设备握手或刷写验收。
+
+`//projects/h2loader/targets/cc_binary/cli:native_cli_test` 直接运行当前构建的 CLI：重定向 stdio 的 help、实际中文文件的 absolute/relative path、`BUILD_WORKING_DIRECTORY`、Windows extended/portable DOS path 和受控平台初始化失败日志。它检查生成 archive 中的 image bytes，使用临时文件且不访问设备。
+
 也可以让 Make 先编译再返回当前 host 的二进制路径，直接在自己的 shell 里调用（cwd 保持不变，相对路径按当前目录解析）：
 
 ```sh
 $(make h2loader-bin) -h
-$(make h2loader-bin) --port <serial-port> send --file bazel-bin/<...>/x.update.tar.zlib
+$(make h2loader-bin) --port <serial-port> send --file bazel-bin/<...>/x.update.tar
 ```
 
 `make h2loader-bin` 只把路径写到 stdout，编译日志走 stderr；host config 按 `uname` 选择 `macos`/`linux`，可用 `BAZEL_CONFIG` 覆盖。
@@ -115,7 +121,7 @@ Loader 与 app image 都返回结构化 `H2_LOADER_STATUS`。状态包括 device
 
 ## 连接 Wi-Fi
 
-设备运行 Loader image 时，可以先通过 reliable command session 扫描附近的 Wi-Fi AP：
+当前 image 具有 Wi-Fi capability 时，可以先通过 reliable command session 扫描附近的 Wi-Fi AP：
 
 ```sh
 bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- \
@@ -127,7 +133,7 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
 
 结果包含 one-based `index`、`ssid_hex`、12 位十六进制 BSSID、channel、RSSI 和 security enum。SSID 使用十六进制编码，确保隐藏网络、包含空白或非 UTF-8 字节的名称不会破坏逐行协议；operator 可以把 `ssid_hex` 解码为原始 SSID 字节。这里的 `wifi scan` 扫描 Wi-Fi AP，不同于顶层 `h2loader scan` 对 H2Loader 串口/BLE management endpoint 的发现。
 
-Wi-Fi typed command 不按 transport 复制两套协议：serial IO Stream iKCP 的 `h2_h2loader_host_serial_execute_command()` 与 BLE-iKCP 的 `h2_h2loader_host_ble_execute_command()` 都发送同一个 `h2loader wifi scan/connect/disconnect` wire command，并在命令尚未结束时逐块交付输出。native CLI 通过全局 `--transport` 对同一个 `wifi` 子命令选择 adapter；BLE 形式只需把 scan 返回的 BLE endpoint 传给 `--port`。
+Wi-Fi typed command 不按 transport 复制两套协议：serial IO Stream iKCP 的 `h2_h2loader_host_serial_execute_command()` 与 BLE-iKCP 的 `h2_h2loader_host_ble_execute_command()` 都发送同一个 `h2loader wifi status/scan/connect/disconnect` wire command，并在命令尚未结束时逐块交付输出。native CLI 通过全局 `--transport` 对同一个 `wifi` 子命令选择 adapter；BLE 形式只需把 scan 返回的 BLE endpoint 传给 `--port`。
 
 选择 SSID 后连接 Wi-Fi：
 
@@ -137,7 +143,7 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
   wifi connect <ssid> <password>
 ```
 
-`ssid` 和 `password` 都是必填的单个参数，当前 contract 不接受空值或 ASCII 空白字符。命令只有在设备取得 IP 并返回 `H2_LOADER_WIFI result=connected` 后才成功；如果该 Loader 提供 Wi-Fi settings storage，设备会在连接成功后保存这份 STA 配置，后续 App 可以通过 Runtime `wifi_settings` 读取并重新连接。认证失败、关联超时、没有取得 IP、配置保存失败、PAL 不支持或 transport 失败都会让 CLI 返回非零状态，不能记为已连接。
+`ssid` 和 `password` 都是必填的单个参数，当前 contract 不接受空值或 ASCII 空白字符。命令只有在设备取得 IP 并返回 `H2_LOADER_WIFI result=connected ssid=<ssid>` 后才成功；如果该 Loader 提供 Wi-Fi settings storage，设备会在连接成功后保存这份 STA 配置，后续 App 可以读取并重新连接；AC791N DevKit 共享 App launcher 在启动命令传输前直接通过 PAL 恢复保存的网络，不依赖 Runtime。认证失败、关联超时、没有取得 IP、配置保存失败、PAL 不支持或 transport 失败都会让 CLI 返回非零状态，不能记为已连接。
 
 该命令是否可用只由当前连接的 `command_availability` 决定；APP 与 Loader 使用相同命令和响应，不由 Host 根据 role 另设限制。CLI 不提供任意 raw command 旁路。主动断开当前连接：
 
@@ -147,7 +153,21 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
   wifi disconnect
 ```
 
-`wifi disconnect` 不删除已经保存的 STA 配置。仓库和 operation environment wrapper 都不补默认 SSID 或 password；依赖 Runtime `wifi_settings` 的 App 必须先在 Loader 中成功执行 `wifi connect`。SSID 和 password 会作为当前进程的命令行参数，可能被本机进程查看工具或 shell history 记录；CLI 的 help、usage 和错误输出不会主动回显 password。不要把真实 credential 写入仓库文档、脚本或提交记录。
+只读查询当前站点与保存的网络：
+
+```sh
+h2loader --port <serial-port> wifi status
+```
+
+成功时输出一行：
+
+```text
+H2_LOADER_WIFI_STATUS result=OK state=<int> ip_valid=<0|1> ip=<a.b.c.d> ssid_hex=<hex|-> rssi=<int> disconnect_reason=<int> saved=<0|1|error> saved_code=<int> saved_ssid_hex=<hex|->
+```
+
+`state` 为 PAL STA 状态（5 表示取得 IP），无有效 IP 时 `ip=0.0.0.0`；两个 SSID 均使用十六进制编码，空值为 `-`。`saved` 表示是否保存配置，settings 读取失败时为 `error`，`saved_code` 给出错误码，站点快照仍为 `result=OK`。站点读取失败则输出 `H2_LOADER_WIFI_STATUS result=error code=<rc>`；站点或已保存 SSID 的长度超过 32 字节时，分别按站点错误或 settings 错误报告 `FORMAT`（-15）。输出不包含密码。
+
+`wifi disconnect` 不删除已经保存的 STA 配置。仓库和 operation environment wrapper 都不补默认 SSID 或 password；App 使用保存的配置前，须在具备 Wi-Fi capability 的 image 中成功执行 `wifi connect`；AC791N DevKit Loader 不具备 Wi-Fi capability。SSID 和 password 会作为当前进程的命令行参数，可能被本机进程查看工具或 shell history 记录；CLI 的 help、usage 和错误输出不会主动回显 password。不要把真实 credential 写入仓库文档、脚本或提交记录。
 
 ## 构建 Package
 
@@ -163,7 +183,7 @@ create-exclusive contract。CLI 直接 truncate/write/sync 目标文件，写入
 
 ```sh
 bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- package \
-  --out /tmp/update.tar.zlib \
+  --out /tmp/update.tar \
   --app-bin /absolute/path/to/app.bin \
   --role app \
   --board amoled \
@@ -171,10 +191,12 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
   --version dev
 ```
 
+`package` 与 `golden` 统一生成 format 2 的未压缩 tar，内含独立的 `data.tar.zlib` 和 `app.bin.zlib`；默认输出为 `/tmp/update.tar`，没有格式选择参数，也不生成旧 tar.zlib。新 Loader 继续接受 format 1。仍可管理的旧 Loader 先用保留的 Bazel `h2loader_tar_zlib` target 产出的双格式 reader Loader package 升级，再接收新 tar；新 `h2loader_zlib_tar` target 与旧轨道并行。格式和 checksum 合同见 [更新与恢复](/apps/h2loader/update)。
+
 当前 PAL FS contract 没有目录枚举，因此 native CLI 暂不支持 `--data-dir`；带该参数会明确返回 unsupported，不会绕过 PAL。`golden` 只生成 parser 和 desktop test 使用的确定性 fixture，不用于真实固件发布：
 
 ```sh
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- golden --out /tmp/golden.tar.zlib
+bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- golden --out /tmp/golden.tar
 ```
 
 Loader image 使用 `--role h2loader`，且不能包含 `--data-dir`。将 package Stage 到设备后，显式执行 `bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> reboot upgrade`；仅 Stage 不会安装固件。
@@ -191,7 +213,7 @@ APP 与 Loader 都直接支持 `send`、`send-url` 和 `stage abort`。Host 不�
 bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- \
   --port <serial-port> \
   send \
-  --file /tmp/update.tar.zlib
+  --file /tmp/update.tar
 ```
 
 同一 `send` 流程也可以显式选择 BLE management endpoint；package bytes 通过当前 BLE-iKCP session stage。无响应 BLE write 遇到 controller queue backpressure 时最多重试 40 次、每次间隔 2 ms；如果 package 已完整确认但同连接暂时读不到 durable staged metadata，CLI 只在旧 connection 成功 disconnect 后执行 bounded reconnect，再核对 exact staged bytes/SHA-256；teardown 失败不会打开并发替代 session。它不会改写命令、另建 BLE 指令表或跨 scan 猜测物理设备：
@@ -201,10 +223,10 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
   --transport bleikcp \
   --port <ble-endpoint> \
   send \
-  --file /tmp/update.tar.zlib
+  --file /tmp/update.tar
 ```
 
-`--file`、`--out`、`--app-bin`、`--data-dir` 接受主机路径：相对路径按调用 shell 的目录解析（`bazel run` 会把 cwd 切到 runfiles，CLI 会改用它导出的 `BUILD_WORKING_DIRECTORY`），符号链接会被解析，因此可以直接传 `bazel-bin/<...>/x.update.tar.zlib`。解析后的真实路径必须落在 PAL filesystem 的挂载内（macOS 为 `/tmp`、`/Users`；Linux 为 `/tmp`、`/home`），否则 `send` 会在 `stat` 阶段失败并报 `h2loader: send failed step=stat file=<path> code=<rc>`，退出码 3——此时把 package 复制到 `/tmp` 再发送。
+`--file`、`--out`、`--app-bin`、`--data-dir` 接受主机路径：相对路径按调用 shell 的目录解析（`bazel run` 会把 cwd 切到 runfiles，CLI 会改用它导出的 `BUILD_WORKING_DIRECTORY`），符号链接会被解析，因此可以直接传 `bazel-bin/<...>/x.update.tar`。解析后的真实路径必须落在 PAL filesystem 的挂载内（macOS 为 `/tmp`、`/Users`；Linux 为 `/tmp`、`/home`），否则 `send` 会在 `stat` 阶段失败并报 `h2loader: send failed step=stat file=<path> code=<rc>`，退出码 3——此时把 package 复制到 `/tmp` 再发送。
 
 通过已经部署的 HTTP server 让设备下载 package：
 
@@ -214,7 +236,7 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
   send-url \
   --ssid <ssid> \
   --password <password> \
-  --url https://example.test/update.tar.zlib \
+  --url https://example.test/update.tar \
   --bytes <package-bytes> \
   --sha256 <package-sha256>
 ```
@@ -228,7 +250,7 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
   send-url \
   --ssid <ssid> \
   --password <password> \
-  --url https://example.test/update.tar.zlib \
+  --url https://example.test/update.tar \
   --bytes <package-bytes> \
   --sha256 <package-sha256>
 ```
@@ -246,7 +268,7 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
 bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- \
   --port <serial-port> \
   send \
-  --file /tmp/update.tar.zlib
+  --file /tmp/update.tar
 ```
 
 不要为了绕过 transport 故障改变 package 内容、降低验收条件或直接进入底层烧录。UART `send` 成功必须收到 `H2_LOADER_STAGE_RECEIVE result=OK` 和 `H2_LOADER_STAGE result=OK`；URL staging 成功仍必须收到 `H2_LOADER_DOWNLOAD state=done` 和 `H2_LOADER_STAGE result=OK`。

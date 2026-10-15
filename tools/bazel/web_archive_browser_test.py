@@ -255,6 +255,9 @@ def main() -> int:
             process = subprocess.Popen([
                 str(browser), "--headless", "--no-sandbox",
                 "--remote-debugging-pipe",
+                # Bazel runs tests with its own HOME; macOS Chrome then
+                # stalls the first navigation on the login keychain.
+                "--use-mock-keychain",
                 "--autoplay-policy=no-user-gesture-required",
                 "--use-fake-ui-for-media-stream",
                 "--use-fake-device-for-media-stream",

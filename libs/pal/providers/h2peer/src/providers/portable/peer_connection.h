@@ -80,6 +80,7 @@ typedef struct IceServer {
 typedef struct PeerConfiguration {
   const h2_pal_log_api_t *log;
   const h2_pal_mem_api_t *mem;
+  const h2_pal_mem_api_t *allocator;
   const h2_pal_net_api_t *net;
   const h2_pal_time_api_t *time;
   const h2_pal_crypto_api_t* crypto;
@@ -109,6 +110,10 @@ typedef int (*PeerConnectionRtpSendFn)(void* user, const uint8_t* packet,
 const char* peer_connection_state_to_string(PeerConnectionState state);
 
 PeerConnectionState peer_connection_get_state(PeerConnection* pc);
+
+/* Internal fixture telemetry; read on the protocol owner thread. */
+h2_pal_result_t peer_connection_selected_pair(PeerConnection* pc,
+    h2_pal_net_addr_t* local, h2_pal_net_addr_t* remote);
 
 h2_pal_result_t peer_connection_classify_dtls_handshake_result(
     int handshake_result, PeerConnectionState* out_terminal_state);
@@ -156,6 +161,9 @@ int peer_connection_create_datachannel(PeerConnection* pc,
 int peer_connection_create_datachannel_sid(
     PeerConnection* pc, DecpChannelType channel_type, uint16_t priority,
     uint32_t reliability_parameter, char* label, char* protocol, uint16_t sid);
+int peer_connection_register_negotiated_channel(
+    PeerConnection* pc, DecpChannelType channel_type,
+    uint32_t reliability_parameter, const char* label, uint16_t sid);
 
 /**
  * @brief send message to data channel

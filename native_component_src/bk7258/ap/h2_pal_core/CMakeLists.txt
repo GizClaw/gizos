@@ -14,6 +14,7 @@ set(H2_BK_PLATFORM_CORE_PRIV_REQUIRES
   easy_flash
   bk_netif
   bk_rtos
+  bk_pm
   driver
   h2_firmware_lib
   lwip_intf_v2_1
@@ -22,7 +23,11 @@ set(H2_BK_PLATFORM_CORE_PRIV_INCLUDE_DIRS
   "${CMAKE_CURRENT_LIST_DIR}/src/flashdb"
   "${BK_FLASHDB_DIR}/inc"
   "${BK_FLASHDB_DIR}/port"
-  "${BK_FLASHDB_DIR}/port/fal/inc")
+  "${BK_FLASHDB_DIR}/port/fal/inc"
+  "${BK_ARMINO_PATH}/components/bk_wifi/include"
+  "${BK_WIFI_DRIVER_DIR}"
+  "${BK_ARMINO_PATH}/components/bk_wifi_driver"
+  "${REPO_ROOT}/native_component_src/bk7258/shared")
 set(H2_BK_PLATFORM_CORE_COMPILE_DEFINITIONS
   H2_BK_PLATFORM_CORE_ENABLE_MQTT=0
   H2_BK_PLATFORM_WIFI_CSI_SAFE_DISPATCH=0)
@@ -88,17 +93,23 @@ endif()
 
 set(H2_BK_PLATFORM_CORE_SRCS
   "src/h2_bk_platform_atomic.c"
+  "src/h2_bk_atomic.c"
   "src/h2_bk_platform_mem.c"
+  "src/h2_bk_resource_stats.c"
+  "src/h2_bk_platform_timer.c"
   "src/h2_bk_platform_log.c"
   "src/h2_bk_platform_firmware_info.c"
   "src/h2_bk_platform_sync.c"
   "src/h2_bk_platform_net.c"
+  "src/h2_bk_net_addr.c"
   "src/h2_bk_platform_netif.c"
   "src/h2_bk_platform_task.c"
   "src/h2_bk_platform_queue.c"
   "src/h2_bk_platform_time.c"
   "src/h2_bk_platform_uart_io_stream.c"
   "src/h2_bk_platform_crypto.c"
+  "src/h2_bk_psa_serialized.c"
+  "src/h2_bk_task_tls.c"
   "src/h2_bk_platform_dtls.c"
   "src/h2_bk_platform_pref_flashdb.c"
   "src/h2_bk_platform_pref_flashdb_port.c"
@@ -107,6 +118,7 @@ set(H2_BK_PLATFORM_CORE_SRCS
   "src/h2_bk_platform_system_event.c"
   "src/h2_bk_platform_modem_unsupported.c"
   "src/h2_bk_platform_wifi.c"
+  "src/h2_bk_wifi_ipv6_sync.c"
   "src/h2_bk_platform_wifi_csi.c"
   ${H2_BK_PLATFORM_WIFI_EVENT_DISPATCH_SOURCE}
   "src/h2_bk_platform_wifi_settings.c"
@@ -120,10 +132,12 @@ h2_bazel_native_component_select_sources(
   ap
   ${H2_BK_PLATFORM_CORE_SRCS})
 
+include("${CMAKE_CURRENT_LIST_DIR}/src/flashdb/h2_fdb_gc_overlay.cmake")
+
 armino_component_register(
   SRCS ${H2_COMPONENT_SOURCES}
     "${BK_FLASHDB_DIR}/src/fdb.c"
-    "${BK_FLASHDB_DIR}/src/fdb_kvdb.c"
+    "${H2_BK_FLASHDB_KV_SOURCE}"
     "${BK_FLASHDB_DIR}/src/fdb_utils.c"
     "${BK_FLASHDB_DIR}/port/fal/src/fal.c"
     "${BK_FLASHDB_DIR}/port/fal/src/fal_flash.c"
@@ -131,6 +145,8 @@ armino_component_register(
   INCLUDE_DIRS
     "include"
     "${REPO_ROOT}/libs/pal/include"
+    "${REPO_ROOT}/libs/atomic/include"
+    "${REPO_ROOT}/libs/atomic/providers/locked"
     "${REPO_ROOT}/libs/wifi_sta/include"
     "${REPO_ROOT}/libs/pal/providers/corehttp/include"
     "${REPO_ROOT}/libs/pal/providers/h2peer/include"
@@ -147,6 +163,8 @@ target_compile_definitions(${COMPONENT_LIB} PRIVATE
   MBEDTLS_POLY1305_C
   MBEDTLS_CHACHAPOLY_C
   MBEDTLS_SSL_DTLS_SRTP
+  MBEDTLS_SSL_DTLS_HELLO_VERIFY
+  MBEDTLS_SSL_COOKIE_C
   MBEDTLS_SSL_SRV_C
   MBEDTLS_X509_CREATE_C
   MBEDTLS_X509_CRT_WRITE_C)
@@ -155,6 +173,41 @@ target_compile_definitions(${COMPONENT_LIB} PRIVATE
 # requires an explicit http/1.1 offer. Enable the existing public Mbed TLS
 # implementation for both the SDK library and its consumers.
 target_compile_definitions(__armino_psa_mbedtls PUBLIC MBEDTLS_SSL_ALPN)
+
+# Bare-metal libgcc emutls and newlib errno otherwise share one global value.
+# Install task-scoped storage without modifying the SDK or its TCB layout.
+armino_build_set_property(LINK_OPTIONS "-Wl,--wrap=__emutls_get_address" APPEND)
+armino_build_set_property(LINK_OPTIONS "-Wl,--wrap=__errno" APPEND)
+set_property(SOURCE "${REPO_ROOT}/native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_task_tls.c"
+  TARGET_DIRECTORY ${COMPONENT_LIB} APPEND PROPERTY COMPILE_OPTIONS "-fno-lto")
+set_property(SOURCE "${BK_ARMINO_PATH}/components/os_source/freertos_smp_v2p0/FreeRTOS-Kernel/tasks.c"
+  TARGET_DIRECTORY __armino_os_source APPEND PROPERTY COMPILE_OPTIONS
+  "-include" "${CMAKE_CURRENT_LIST_DIR}/src/h2_bk_task_tls_hooks.h")
+# lwIP's vendor fork writes its own global int errno, bypassing newlib.
+# Bind socket error writes and PAL reads to the same task-local value.
+target_compile_options(__armino_lwip_intf_v2_1 PRIVATE
+  "-include" "${CMAKE_CURRENT_LIST_DIR}/src/h2_bk_socket_errno_writer.h")
+set_property(SOURCE "${REPO_ROOT}/native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_net.c"
+  TARGET_DIRECTORY ${COMPONENT_LIB} APPEND PROPERTY COMPILE_OPTIONS
+  "-include" "${CMAKE_CURRENT_LIST_DIR}/src/h2_bk_socket_errno_reader.h")
+
+# PSA's SDK key-slot registry is shared by PAL crypto and SDK TLS/DTLS.
+# Keep the implementation outside LTO so every external public call reaches
+# the same blocking recursive mutex; internal PSA calls keep the outer guard.
+set_property(SOURCE "${BK_ARMINO_PATH}/components/psa_mbedtls/mbedtls/library/psa_crypto.c"
+  TARGET_DIRECTORY __armino_psa_mbedtls
+  APPEND PROPERTY COMPILE_OPTIONS "-fno-lto")
+set_property(SOURCE "src/h2_bk_psa_serialized.c"
+  TARGET_DIRECTORY ${COMPONENT_LIB}
+  APPEND PROPERTY COMPILE_OPTIONS "-fno-lto")
+file(STRINGS "${CMAKE_CURRENT_LIST_DIR}/src/h2_bk_psa_calls.h"
+  H2_BK_PSA_CALLS REGEX "^H2_BK_PSA_CALL\\(")
+foreach(H2_BK_PSA_CALL IN LISTS H2_BK_PSA_CALLS)
+  string(REGEX REPLACE "^H2_BK_PSA_CALL\\(([^,]+),.*" "\\1"
+    H2_BK_PSA_SYMBOL "${H2_BK_PSA_CALL}")
+  armino_build_set_property(
+    LINK_OPTIONS "-Wl,--wrap=${H2_BK_PSA_SYMBOL}" APPEND)
+endforeach()
 
 if(H2_BK_PLATFORM_ENABLE_WEBRTC)
   # Keep the SDK's wrapped libc entry points and its mismatched timer ABI out
@@ -191,8 +244,12 @@ endif()
 armino_component_get_property(
   H2_BK_MBEDTLS_COMPONENT_LIB psa_mbedtls COMPONENT_LIB)
 target_compile_definitions(
+  # DTLS feature flags change public context layouts; all SDK consumers must
+  # see the same definitions as the implementation, including cookie support.
   ${H2_BK_MBEDTLS_COMPONENT_LIB} PUBLIC
     MBEDTLS_SSL_DTLS_SRTP
+    MBEDTLS_SSL_DTLS_HELLO_VERIFY
+    MBEDTLS_SSL_COOKIE_C
     MBEDTLS_SSL_SRV_C
     MBEDTLS_X509_CREATE_C
     MBEDTLS_X509_CRT_WRITE_C)
@@ -204,9 +261,8 @@ target_compile_definitions(
 # copying SDK crypto sources into Firmwares.
 armino_component_get_property(
   H2_BK_PSA_MBEDTLS_LIB psa_mbedtls COMPONENT_LIB)
-# These options also control public structure layouts. In particular,
-# MBEDTLS_PSA_CRYPTO_C adds a field to mbedtls_pk_context embedded in
-# mbedtls_x509_crt. Consumers must allocate the same layout as the library.
+# PSA operation structs depend on these macros. Consumers must see the same
+# layout as the SDK implementation (not a smaller client-only placeholder).
 target_compile_definitions(${H2_BK_PSA_MBEDTLS_LIB} PUBLIC
   MBEDTLS_PSA_CRYPTO_C
   # Production certificate chains (including ISRG Root X2) use SHA-384.
@@ -215,6 +271,23 @@ target_compile_definitions(${H2_BK_PSA_MBEDTLS_LIB} PUBLIC
   MBEDTLS_CHACHA20_C
   MBEDTLS_POLY1305_C
   MBEDTLS_CHACHAPOLY_C)
+
+if(CONFIG_SW_CRYPTO)
+  target_include_directories(${H2_BK_PSA_MBEDTLS_LIB} PUBLIC
+    "${CMAKE_CURRENT_LIST_DIR}/include")
+  target_compile_definitions(${H2_BK_PSA_MBEDTLS_LIB} PUBLIC
+    MBEDTLS_USER_CONFIG_FILE="h2_bk_mbedtls_config.h")
+  # The SDK software hook reads libc rand(). Supply the documented entropy
+  # hook in h2_bk_platform_crypto.c so PSA's internal DRBG uses the real TRNG.
+  get_target_property(H2_BK_PSA_SOURCES ${H2_BK_PSA_MBEDTLS_LIB} SOURCES)
+  list(FILTER H2_BK_PSA_SOURCES EXCLUDE REGEX "(^|/)mbedtls_port/src/tls_hardware\\.c$")
+  set_property(TARGET ${H2_BK_PSA_MBEDTLS_LIB} PROPERTY SOURCES ${H2_BK_PSA_SOURCES})
+  # The SDK software-only myrand branch calls bk_rand without its public header.
+  set_source_files_properties(
+    "${BK_ARMINO_PATH}/components/psa_mbedtls/mbedtls_port/mbedtls/library/platform.c"
+    TARGET_DIRECTORY ${H2_BK_PSA_MBEDTLS_LIB}
+    PROPERTIES COMPILE_OPTIONS "-include;driver/trng.h")
+endif()
 
 if(CONFIG_BT AND H2_BK_PLATFORM_BT_ALLOCATOR_PSRAM)
   target_link_options(${COMPONENT_LIB} INTERFACE
@@ -230,3 +303,65 @@ if(H2_BK_PLATFORM_WIFI_CSI_SAFE_DISPATCH)
 endif()
 
 target_include_directories(${COMPONENT_LIB} PRIVATE "${BK_ARMINO_PATH}/components/bk_cli")
+
+# The pinned AP SDK erroneously forwards STA address synchronization through
+# AP_NETIF_IP4_CONFIG, overwriting the CP AP/DHCP address in AP+STA mode.
+# Build a guarded corrected copy inside the build tree; leave the sealed SDK
+# pristine, and cover both its own event callback and external Wi-Fi callers.
+armino_component_get_property(H2_BK_NETIF_LIB bk_netif COMPONENT_LIB)
+set(H2_BK_SDK_NETIF_SOURCE "${BK_ARMINO_PATH}/components/bk_netif/bk_netif.c")
+file(READ "${H2_BK_SDK_NETIF_SOURCE}" H2_BK_SDK_NETIF_CONTENT)
+set(H2_BK_STA_SYNC_SIGNATURE "bk_err_t bk_netif_set_ip4_config(netif_if_t ifx, const netif_ip4_config_t *ip4_config)\n{")
+string(FIND "${H2_BK_SDK_NETIF_CONTENT}" "${H2_BK_STA_SYNC_SIGNATURE}" H2_BK_STA_SYNC_OFFSET)
+if(H2_BK_STA_SYNC_OFFSET EQUAL -1)
+  message(FATAL_ERROR "Pinned BK Netif STA sync signature changed; revalidate the SDK correction")
+endif()
+set(H2_BK_STA_SYNC_REPLACEMENT "${H2_BK_STA_SYNC_SIGNATURE}
+    if (ifx == NETIF_IF_STA) {
+        if (ip4_config == NULL) return BK_ERR_NULL_PARAM;
+        netif_ip4_config_t sta_ip = *ip4_config;
+        ip_address_set(1, 0, sta_ip.ip, sta_ip.mask, sta_ip.gateway, sta_ip.dns);
+        return BK_OK;
+    }")
+string(REPLACE "${H2_BK_STA_SYNC_SIGNATURE}" "${H2_BK_STA_SYNC_REPLACEMENT}"
+  H2_BK_SDK_NETIF_CORRECTED "${H2_BK_SDK_NETIF_CONTENT}")
+# PAL queries the current CP snapshot and applies it on AP TCP/IP. Remove
+# the pinned unversioned, event-thread address write before it can race PAL.
+set(H2_BK_IP6_START "\tcase EVENT_WIFI_STA_GOT_IPV6:")
+set(H2_BK_IP6_END "\tcase EVENT_WIFI_STA_DISCONNECTED:")
+string(FIND "${H2_BK_SDK_NETIF_CORRECTED}" "${H2_BK_IP6_START}" ip6_start)
+string(FIND "${H2_BK_SDK_NETIF_CORRECTED}" "${H2_BK_IP6_END}" ip6_end)
+if(ip6_start EQUAL -1 OR ip6_end LESS_EQUAL ip6_start)
+  message(FATAL_ERROR "Pinned BK AP IPv6 callback changed")
+endif()
+math(EXPR ip6_length "${ip6_end} - ${ip6_start}")
+string(SUBSTRING "${H2_BK_SDK_NETIF_CORRECTED}" ${ip6_start} ${ip6_length} ip6_case)
+string(REPLACE "${ip6_case}" "\tcase EVENT_WIFI_STA_GOT_IPV6: break;\n"
+  H2_BK_SDK_NETIF_CORRECTED "${H2_BK_SDK_NETIF_CORRECTED}")
+set(H2_BK_NETIF_CORRECTED_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/h2_bk_sdk_netif.c")
+file(WRITE "${H2_BK_NETIF_CORRECTED_SOURCE}" "${H2_BK_SDK_NETIF_CORRECTED}")
+get_target_property(H2_BK_NETIF_SOURCES ${H2_BK_NETIF_LIB} SOURCES)
+list(FILTER H2_BK_NETIF_SOURCES EXCLUDE REGEX "(^|/)bk_netif\\.c$")
+list(APPEND H2_BK_NETIF_SOURCES "${H2_BK_NETIF_CORRECTED_SOURCE}")
+set_property(TARGET ${H2_BK_NETIF_LIB} PROPERTY SOURCES ${H2_BK_NETIF_SOURCES})
+
+# The pinned AP SDK swallows a failed CP AP_STOP confirmation, tears down only
+# its local adapter and returns BK_OK. Keep both sides active on failure and
+# let the PAL report it; never claim that the CP/DHCP resources were stopped.
+armino_component_get_property(H2_BK_WIFI_LIB bk_wifi COMPONENT_LIB)
+set(H2_BK_SDK_WIFI_SOURCE "${BK_ARMINO_PATH}/components/bk_wifi/src/wifi_api.c")
+file(READ "${H2_BK_SDK_WIFI_SOURCE}" H2_BK_SDK_WIFI_CONTENT)
+set(H2_BK_AP_STOP_SIGNATURE "    ret = wifi_send_com_api_cmd(AP_STOP, 0);\n    if (ret != BK_OK) {\n        WDRV_LOGW(\"ap stop fail ret %d\\n\", ret);\n    }\n\n    WDRV_LOGI(\"ap stopped\\n\");")
+string(FIND "${H2_BK_SDK_WIFI_CONTENT}" "${H2_BK_AP_STOP_SIGNATURE}" H2_BK_AP_STOP_OFFSET)
+if(H2_BK_AP_STOP_OFFSET EQUAL -1)
+  message(FATAL_ERROR "Pinned BK AP stop RPC signature changed; revalidate the SDK correction")
+endif()
+set(H2_BK_AP_STOP_REPLACEMENT "    ret = wifi_send_com_api_cmd(AP_STOP, 0);\n    if (ret != BK_OK) {\n        WDRV_LOGW(\"ap stop fail ret %d\\n\", ret);\n        return ret;\n    }\n\n    WDRV_LOGI(\"ap stopped\\n\");")
+string(REPLACE "${H2_BK_AP_STOP_SIGNATURE}" "${H2_BK_AP_STOP_REPLACEMENT}"
+  H2_BK_SDK_WIFI_CORRECTED "${H2_BK_SDK_WIFI_CONTENT}")
+set(H2_BK_WIFI_CORRECTED_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/h2_bk_sdk_wifi_api.c")
+file(WRITE "${H2_BK_WIFI_CORRECTED_SOURCE}" "${H2_BK_SDK_WIFI_CORRECTED}")
+get_target_property(H2_BK_WIFI_SOURCES ${H2_BK_WIFI_LIB} SOURCES)
+list(FILTER H2_BK_WIFI_SOURCES EXCLUDE REGEX "(^|/)wifi_api\\.c$")
+list(APPEND H2_BK_WIFI_SOURCES "${H2_BK_WIFI_CORRECTED_SOURCE}")
+set_property(TARGET ${H2_BK_WIFI_LIB} PROPERTY SOURCES ${H2_BK_WIFI_SOURCES})

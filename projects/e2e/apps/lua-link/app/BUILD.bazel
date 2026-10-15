@@ -29,6 +29,7 @@ cc_test(
     }),
     deps = [
         ":lua_link_e2e",
+        "//libs/atomic/providers/c11",
         "//libs/lua:link_fake_ble",
         "//libs/pal:unsupported",
     ],

@@ -5,13 +5,29 @@ load("@rules_cc//cc:cc_toolchain_config_lib.bzl", "feature", "flag_group", "flag
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 load("@rules_cc//cc/toolchains:cc_toolchain_config_info.bzl", "CcToolchainConfigInfo")
 
-_COMPILE_ACTIONS = [
+_C_COMPILE_ACTIONS = [
     ACTION_NAMES.assemble,
     ACTION_NAMES.c_compile,
-    ACTION_NAMES.cpp_compile,
-    ACTION_NAMES.linkstamp_compile,
     ACTION_NAMES.preprocess_assemble,
 ]
+
+_CXX_COMPILE_ACTIONS = [
+    ACTION_NAMES.cpp_compile,
+    ACTION_NAMES.linkstamp_compile,
+]
+
+_COMPILE_ACTIONS = _C_COMPILE_ACTIONS + _CXX_COMPILE_ACTIONS
+
+def _system_include_flags(ctx, directories):
+    # Every compiler search directory is mirrored inside this repository.
+    # Naming the mirrors by execroot-relative path keeps dependency files free
+    # of the output base, and -idirafter keeps them after every -I/-isystem,
+    # where the compiler searched its own directories.
+    flags = ["-nostdinc"]
+    for directory in directories:
+        path = "/".join([part for part in [ctx.label.workspace_root, ctx.label.package, directory] if part])
+        flags.extend(["-idirafter", path])
+    return flags
 
 def _config_impl(ctx):
     compile_flags = feature(
@@ -22,7 +38,21 @@ def _config_impl(ctx):
             flag_groups = [flag_group(flags = ctx.attr.compile_flags)],
         )],
     )
-    features = [compile_flags]
+    system_includes = feature(
+        name = "h2_embedded_system_includes",
+        enabled = True,
+        flag_sets = [
+            flag_set(
+                actions = _C_COMPILE_ACTIONS,
+                flag_groups = [flag_group(flags = _system_include_flags(ctx, ctx.attr.c_include_directories))],
+            ),
+            flag_set(
+                actions = _CXX_COMPILE_ACTIONS,
+                flag_groups = [flag_group(flags = _system_include_flags(ctx, ctx.attr.cxx_include_directories))],
+            ),
+        ],
+    )
+    features = [compile_flags, system_includes]
     if ctx.attr.unfiltered_compile_flags:
         # Bazel emits features in declaration order and only appends the legacy
         # `user_compile_flags`/`unfiltered_compile_flags` features when the
@@ -54,7 +84,10 @@ def _config_impl(ctx):
         abi_libc_version = "newlib",
         abi_version = "elf",
         compiler = ctx.attr.compiler,
-        cxx_builtin_include_directories = ctx.attr.builtin_include_directories,
+        cxx_builtin_include_directories = [
+            "%crosstool_top%/" + directory
+            for directory in ctx.attr.builtin_include_directories
+        ],
         features = features,
         host_system_name = "local",
         target_cpu = ctx.attr.target_cpu,
@@ -80,9 +113,17 @@ def _config_impl(ctx):
 local_embedded_cc_toolchain_config = rule(
     implementation = _config_impl,
     attrs = {
-        "builtin_include_directories": attr.string_list(),
+        "builtin_include_directories": attr.string_list(
+            doc = "Mirrored search directories, relative to the cc_toolchain package.",
+        ),
+        "c_include_directories": attr.string_list(
+            doc = "Ordered C search directories, relative to the cc_toolchain package.",
+        ),
         "compile_flags": attr.string_list(),
         "compiler": attr.string(mandatory = True),
+        "cxx_include_directories": attr.string_list(
+            doc = "Ordered C++ search directories, relative to the cc_toolchain package.",
+        ),
         "target_cpu": attr.string(mandatory = True),
         "target_system_name": attr.string(mandatory = True),
         "toolchain_identifier": attr.string(mandatory = True),

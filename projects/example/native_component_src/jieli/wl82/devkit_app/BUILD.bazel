@@ -1,0 +1,40 @@
+load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
+
+package(default_visibility = ["//visibility:public"])
+
+firmware_lib_component(
+    name = "ui_libs",
+    component_name = "jieli_ac791n_devkit_touch_libs",
+    deps = [
+        "//libs/lvgl",
+        "//libs/runtime",
+    ],
+)
+
+h2_tasks(
+    name = "tasks",
+    tasks = ["h2color/runtime"],
+)
+
+# Shared example startup; application targets supply the hook and task policy.
+firmware_native_component(
+    name = "launcher",
+    srcs = ["src/color_bar_pal.c"],
+    component_name = "jieli_ac791n_devkit_color_bar_launcher",
+    tags = ["manual"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:ci_graph": [],
+        "//tools/bazel/platforms:is_ac791n": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":tasks",
+        "//projects/h2loader/native_component_src/jieli/wl82/h2loader_app:app_ble",
+        "//projects/h2loader/native_component_src/jieli/wl82/h2loader_app:app_transport",
+        "//projects/h2loader/native_component_src/jieli/wl82/h2loader_app:h2loader_app_client",
+        "//boards/ac791n_chip/ac791n",
+        "//boards/jieli_ac791n_devkit/ac791n",
+    ],
+)

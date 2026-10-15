@@ -1,0 +1,175 @@
+{
+  "schema": 1,
+  "contract": 1,
+  "operations": 24,
+  "cases": 15,
+  "qualified": true,
+  "observed_at_utc": "2026-09-28T22:13:50.348601+00:00",
+  "base_main_commit": "9ecc46619fa04a5afddb9557edd11912fa32ca07",
+  "source_sha256": {
+    "libs/pal/include/h2/pal/os/h2_pal_json.h": "ca25ab951380d3bfeac9c9e3831370eafba1514e761f2f24fb6aa74f0f6e88fb",
+    "libs/pal/providers/yyjson/src/h2_yyjson_json.c": "4417d2a0e6925281c57b71688e15c8b55e41b3128ffc10d17d33cae8fe91a372",
+    "libs/pal/providers/ios/pal_core/BUILD.bazel": "91ceeb248e7d03c38797f66d333569063400217740c065eb9f4592a192c0dd52",
+    "libs/pal/providers/android/pal_core/BUILD.bazel": "9d0912da389bc6252e7048639e11689816eda248d73630bd19383ac41f247bbf",
+    "libs/pal/providers/android/pal_core/src/h2_android_json.c": "18b42553c0649437eaef4642bcf504620096a23648fd6a064f4f2fe453887fb1",
+    "projects/e2e/apps/pal-json/app/include/h2_pal_json_cases.inc": "d5a2efa70a7ea3be835e58b60db7d243009ee59542d34a469d0ef6856a9d0e6e",
+    "projects/e2e/apps/pal-json/app/include/h2_pal_json_e2e.h": "5465dcccd45300041bfef34c3c4df34b9e80bd891e91afb7414d246c58b3dee9",
+    "projects/e2e/apps/pal-json/app/src/h2_pal_json_e2e.c": "6b2e7d116f912f31b0840dac29493723f6371463e475995e22da58951f07e51d",
+    "projects/e2e/libs/pal-json-provider-probe/probe.c": "a4c2bb9d5541b98cd14969b0de39f9b01b4ff185e86a181f46feef4c05ab9d48",
+    "projects/e2e/libs/pal-json-mobile/mobile_runner.c": "b537936f9129ef0f155f1dd07aa1e45f4b168f01c50fcdc7dc6e1a286cb76a59",
+    "projects/e2e/libs/pal-json-mobile/run_mobile.py": "a4b38eedbf8943797e0840851b3d2e75c592786b8bb989ca73cfc6138b7e948b",
+    "projects/e2e/libs/pal-json-device/src/device_runner.c": "2ed41172d692ba835eb24e4931fb5be15ba82f59f6bb6a8709b1328896761694",
+    "projects/e2e/targets/cc_binary/pal-json/main.c": "de86b9e54c2e21ddc6d0953a9f7399c7739f99dbc41f7dd8255d52abb979e015",
+    "projects/e2e/targets/pkg_tar/pal-json/main.c": "135018014837e0fa9b5765e6bd10bdaa06a3b872d5fcffa96da1c58fc587db77",
+    "projects/e2e/targets/ios_application/pal-json/main.m": "a6d69a515699195cb6ee16064bddb4773f000863cd23a7a7cf4f837f21b591fd",
+    "projects/e2e/targets/android_binary/pal-json/main.c": "329e81b4562f2b890ea0f2c87b7bd0694b6ac4089084576b7505de33cf925df0",
+    "projects/e2e/targets/h2loader_tar_zlib/pal-json/devkit/main/main.c": "4d6a16162656f248697b54e00a415b104f355a0396302fa973b3882fdd8f7ef5",
+    "projects/e2e/targets/h2loader_tar_zlib/pal-json/bk7258_v3_202405/ap/ap_main.c": "c14dfefa7dba17875d00b352f9b08213e7fb497b7633229d8fb9ae35ede26535"
+  },
+  "platforms": [
+    {
+      "platform": "macos",
+      "status": "PASS",
+      "evidence": "projects/e2e/targets/cc_binary/pal-json/evidence/qualified.json",
+      "evidence_sha256": "38c577343abbb4f381d87655825d181f31d09f33e5368225d63d9a988632ea52",
+      "source_matches_current": true,
+      "bazel_test_log_sha256": "948c50a09fb56d45e72628e85601c8c960f8ccaef136f4fe35af307c382f6462",
+      "artifact": "bazel-out/darwin_arm64-fastbuild/bin/projects/e2e/targets/cc_binary/pal-json/desktop_test",
+      "artifact_sha256": "ee7d500217d04b6b9bcce1f35e239e9c407004c10e3f4343830fbf332d5070ac",
+      "validation_basis": "Fresh execution on current raw sources."
+    },
+    {
+      "platform": "wasm",
+      "status": "PASS",
+      "evidence": "projects/e2e/targets/pkg_tar/pal-json/evidence/qualified.json",
+      "evidence_sha256": "c09b1dcad8071f185c9995e83efe1b8269a6a56a4be96ef779ab1a9c6b7de061",
+      "source_matches_current": true,
+      "bazel_test_log_sha256": "71a22d669169614f727f2007b1357730a150a834152b812103ff303d8716d297",
+      "artifact": "bazel-out/darwin_arm64-fastbuild/bin/projects/e2e/targets/pkg_tar/pal-json/pal-json.web.tar",
+      "artifact_sha256": "50e4a1ba9c03a3f87cf2eb35d7621fe524189759a2b307178b071403cfd032cd",
+      "validation_basis": "Fresh execution on current raw sources."
+    },
+    {
+      "platform": "ios-simulator",
+      "status": "PASS",
+      "evidence": "projects/e2e/targets/ios_application/pal-json/evidence/qualified.json",
+      "evidence_sha256": "cf9322268fb74a613e7cd9896599b440769b005ef259d12f6e31b417afedc575",
+      "source_matches_current": true,
+      "bazel_test_log_sha256": "22e944a74d60a649c4c53abad06b74dabf7e4cc6818ff59540400b4c35af7589",
+      "environment": "projects/e2e/targets/ios_application/pal-json/evidence/environment.json",
+      "environment_sha256": "7b7fa65293c566610d1ec99533689410e419451806fb3c99e57212ff19923ca1",
+      "app_sha256": "a20529ff297474b65c238852f1849b7368e6aa7f48c06ff51695a1ed6cef1660",
+      "sdk_sha256": "97242af49b14e484758ac4bcc92e36ca5c32a68db0c4da9f1ab61766628370db",
+      "sdk_binary_sha256": "6dcb8a2a644c4b3fe49eca1677894ced8b6ee44b28d85b27505ce99c05dac0bc",
+      "ipa_executable_sha256": "d569dce6c5b530097f836704f4282ce1af5aa9e532dd9f3353b8152598c87335",
+      "validation_basis": "Fresh execution on current raw sources."
+    },
+    {
+      "platform": "android-emulator",
+      "status": "PASS",
+      "evidence": "projects/e2e/targets/android_binary/pal-json/evidence/qualified.json",
+      "evidence_sha256": "8facd71aa15cb6a7b09a07f081ca8a31a29a1a6a52f4e71aedec59af511d26bd",
+      "source_matches_current": true,
+      "bazel_test_log_sha256": "69e8be018f134edf4d432259acaeb376aee15699a283b994aa4d57eca057048c",
+      "environment": "projects/e2e/targets/android_binary/pal-json/evidence/environment.json",
+      "environment_sha256": "14cb7904e5382a15987e9fdfbce970bc95b1e36e2b7137c762e632a0551b2eaa",
+      "app_sha256": "e550fd1cae26a83909bd904a4bbb319ea2694ce5d8ca18b364c646e72dce8a36",
+      "sdk_sha256": "28d430311029f7bacb05b6d3de72b17d834e61a98cd1dad935007b9a093e1936",
+      "sdk_binary_sha256": "7f8a2e3ac80ac8a43ce44b132f9171728931ba7088f4c46005aa642ace3b3347",
+      "apk_binary_sha256": "7f8a2e3ac80ac8a43ce44b132f9171728931ba7088f4c46005aa642ace3b3347",
+      "validation_basis": "Fresh execution on current raw sources."
+    },
+    {
+      "platform": "devkit",
+      "status": "PASS",
+      "evidence": "projects/e2e/targets/h2loader_tar_zlib/pal-json/devkit/evidence/qualified.json",
+      "evidence_sha256": "3ae32eae18e64cc3948262177cec7f2ac1ad0e14ea8a3ac251ac99cab81c9049",
+      "source_matches_current": false,
+      "package_sha256": "190b5708397f26088cdb13a3d23c0a2e714fb8602e92142201a2bcc155e3b4e3",
+      "image_sha256": "761171c993ddcffc320bc859bb02230eb0a56cc286ca2211f88c2df6e002d975",
+      "build_receipt": "projects/e2e/targets/h2loader_tar_zlib/pal-json/devkit/evidence/build.json",
+      "build_receipt_sha256": "d66bb3d3c9a92c6dac5c6b7212ef358252718ce441753b6b5452304ea3e621ab",
+      "boot_ids": [
+        "devkit-r4-boot1-63eef74cff8f",
+        "devkit-r4-boot2-de83a7ad0d70"
+      ],
+      "device_uid": "9888e0115c52",
+      "effective_source_matches_current": true,
+      "source_snapshot_commit": "544f1c214868c92b8c1d4fec47929450bf362b74",
+      "validation_basis": "Original r4 installed-image/boot receipt plus source_equivalence; no new board build or boot is claimed."
+    },
+    {
+      "platform": "bk7258",
+      "status": "PASS",
+      "evidence": "projects/e2e/targets/h2loader_tar_zlib/pal-json/bk7258_v3_202405/evidence/qualified.json",
+      "evidence_sha256": "ca55eeb53e452225a3bd5361f1fcfe3b35ee4842dd6da081ac7aeb950b6bb69f",
+      "source_matches_current": false,
+      "package_sha256": "48c5ed776e4acae0f0e784773c7d8b4228d2deb3828f04bd27479141dbd4d139",
+      "image_sha256": "d04f606e7c55327400c002cf26558491187af7c3cb96478f06666b3704a4d0ee",
+      "build_receipt": "projects/e2e/targets/h2loader_tar_zlib/pal-json/bk7258_v3_202405/evidence/build.json",
+      "build_receipt_sha256": "4ee6d21536f885c5c921559fe42d1e020a62a5950d6e0284b4de71771aff7c03",
+      "boot_ids": [
+        "bk7258-r4-install-53c901737c54",
+        "bk7258-r4-reboot1-3a16152d26ac",
+        "bk7258-r4-reboot2-bfdc3be3b620"
+      ],
+      "device_uid": "c8478ca2a87c",
+      "effective_source_matches_current": true,
+      "source_snapshot_commit": "544f1c214868c92b8c1d4fec47929450bf362b74",
+      "validation_basis": "Original r4 installed-image/boot receipt plus source_equivalence; no new board build or boot is claimed."
+    }
+  ],
+  "remaining": [],
+  "scope": "JSON PAL functional qualification: fresh current-source macOS/WASM/iOS/Android executions and equivalent board execution paths proven from retained r4 receipts. Simulator results do not qualify physical phones; source equivalence does not claim new board artifacts or boots.",
+  "source_equivalence": {
+    "prior_six_platform_snapshot_commit": "544f1c214868c92b8c1d4fec47929450bf362b74",
+    "changed_source_snapshot_sha256": {
+      "projects/e2e/apps/pal-json/app/include/h2_pal_json_cases.inc": "6565bdfd451b55bd618202f1d35b89c4af6e8fbee5c37e1dbb0d55dc90469877",
+      "projects/e2e/apps/pal-json/app/src/h2_pal_json_e2e.c": "e664abcef8a2d186f37b884252128cb4e0374ecbee5e4c502c3eeee61f42fc05",
+      "projects/e2e/libs/pal-json-provider-probe/probe.c": "b080f8047ddda04bf3611f91067a51567d9db5e8046b3954a61caa8ed0aa9bae"
+    },
+    "boundary": "Four host/mobile targets were freshly executed on current raw sources. Board r4 receipts retain their actual prior source hashes and artifacts; equivalence validates only the unchanged functional execution path, not a newly installed board image.",
+    "changes": [
+      "Native MSVC-only allocation-header fallback under defined(_MSC_VER) && !defined(__clang__); all six qualified toolchains use the unchanged max_align_t branch.",
+      "Cleanup-block local api renamed to cleanup_api to avoid MSVC shadow warning; calls, lifetime, allocation and teardown stay identical.",
+      "The same static const 15-entry registry and typedef move from function scope to file scope; IDs, callbacks, order, runner control flow and result calculations stay identical. Removed the ineffective EOF-padding comment."
+    ],
+    "non_msvc_probe": {
+      "compiler": "Apple clang 21.0.0 (clang-2100.3.34.2), arm64-apple-darwin25.6.0",
+      "preprocessor_flags": "-E -P -std=c11 with repository JSON/App/PAL/Runtime include paths",
+      "before_preprocessed_sha256": "f8b924369226e0829460b68e1edbf778e45f64ada22ba282d2839794c7cdc882",
+      "after_preprocessed_sha256": "b31636315f2593dd8af32a0a23a2553ae77bb731b20ad631825bd02744586af6",
+      "normalization": "Only replace the renamed local cleanup_api token with api.",
+      "after_normalized_preprocessed_sha256": "f8b924369226e0829460b68e1edbf778e45f64ada22ba282d2839794c7cdc882",
+      "unoptimized_text_flags": "-std=c11 -O0 -g0 -c",
+      "before_text_sha256": "6e10dd5fde99a4ed7165ade56e16c8f8d22adb7b57aa9e163bfcb1cc82c5f5ea",
+      "after_text_sha256": "6e10dd5fde99a4ed7165ade56e16c8f8d22adb7b57aa9e163bfcb1cc82c5f5ea"
+    },
+    "app_text": {
+      "flags": "-std=c11 -O0 -g0 -c",
+      "clang": "Apple clang 21.0.0; function order changes, so whole-section bytes are not claimed identical.",
+      "clang_c_functions_compared": 41,
+      "clang_each_function_bytes_identical": true,
+      "clang_function_hash_manifest_sha256": "256c497b8cfff1660d2c416b6f59f938191c5d36b31a5070931e5a66a534b6b8",
+      "clang_runner_bytes": 636,
+      "clang_runner_text_sha256": "a0bb00bae54f989cafb7973e62244d2023c5df83ae5ff3a4a074a0cc184495f3",
+      "gcc": "aarch64-linux-musl-gcc 14.2.0",
+      "gcc_before_full_text_sha256": "e08782972a63b65eb3c0286c2becde624c03a637c68878e19938f285b6d0e4e7",
+      "gcc_after_full_text_sha256": "e08782972a63b65eb3c0286c2becde624c03a637c68878e19938f285b6d0e4e7"
+    },
+    "coverage_mapping": {
+      "scope": "A synthetic runner with unavailable APIs exercises the coverage source mapping only; its coverage percentages are not functional or code-coverage qualification.",
+      "ci_toolchain": "test_coverage LLVM covmap with experimental_generate_llvm_lcov",
+      "local_toolchain": "Apple clang/llvm-cov 21.0.0; genhtml 2.0 in an isolated Ubuntu 24.04 container",
+      "llvm_flags": "-std=c11 -O0 -g0 -fprofile-instr-generate -fcoverage-mapping",
+      "before_lcov_sha256": "0aea4ad6c9cff28012c06917ee2e70abf3dbd1083567a93ccb7b06c104c5f721",
+      "before_registry_out_of_range_line": 17,
+      "before_genhtml_exit": 1,
+      "after_lcov_sha256": "92325e1ff84133c94c2278383168b4140cec6dc74d72e6529334774acbcba833",
+      "after_executable_registry_records": 0,
+      "after_genhtml_exit": 0,
+      "genhtml_ignored_errors": [],
+      "gcc_execution": "Both static GCC 14.2.0 ARM64 Linux binaries ran in Alpine 3.23; gcov JSON parsed successfully with no executable registry record in either version."
+    }
+  }
+}

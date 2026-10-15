@@ -1,0 +1,461 @@
+{
+  "platform": "android",
+  "contract": 1,
+  "operations": 28,
+  "qualified": true,
+  "passed": 30,
+  "failed": 0,
+  "blocked": 0,
+  "cases": [
+    {
+      "id": "pal.storage.fs.directory",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2195921133
+    },
+    {
+      "id": "pal.storage.fs.binary",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2195921133
+    },
+    {
+      "id": "pal.storage.fs.empty-eof",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2195921133
+    },
+    {
+      "id": "pal.storage.fs.seek",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2195921133
+    },
+    {
+      "id": "pal.storage.fs.truncate",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2195921133
+    },
+    {
+      "id": "pal.storage.fs.rename",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2195921133
+    },
+    {
+      "id": "pal.storage.fs.remove",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2195921133
+    },
+    {
+      "id": "pal.storage.fs.clear",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2195921133
+    },
+    {
+      "id": "pal.storage.fs.path-isolation",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2195921133
+    },
+    {
+      "id": "pal.storage.fs.arguments",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2195921133
+    },
+    {
+      "id": "pal.storage.fs.churn",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2195921133
+    },
+    {
+      "id": "pal.storage.pref.namespace",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2195921133
+    },
+    {
+      "id": "pal.storage.pref.blob",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2195921133
+    },
+    {
+      "id": "pal.storage.pref.string",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2195921133
+    },
+    {
+      "id": "pal.storage.pref.u32",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2195921133
+    },
+    {
+      "id": "pal.storage.pref.i32",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2195921133
+    },
+    {
+      "id": "pal.storage.pref.bool",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2195921133
+    },
+    {
+      "id": "pal.storage.pref.overwrite-type",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2195921133
+    },
+    {
+      "id": "pal.storage.pref.namespace-isolation",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2195921133
+    },
+    {
+      "id": "pal.storage.pref.read-only",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2195921133
+    },
+    {
+      "id": "pal.storage.pref.iteration",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2195921133
+    },
+    {
+      "id": "pal.storage.pref.cursor-close",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2195921133
+    },
+    {
+      "id": "pal.storage.pref.allocation-failure",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2195921133
+    },
+    {
+      "id": "pal.storage.pref.remove",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2195921133
+    },
+    {
+      "id": "pal.storage.pref.clear",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2195921133
+    },
+    {
+      "id": "pal.storage.pref.churn",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2195921133
+    },
+    {
+      "id": "pal.storage.persist.seed",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2195921133
+    },
+    {
+      "id": "pal.storage.persist.fs",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 2,
+      "nonce": 2195921133
+    },
+    {
+      "id": "pal.storage.persist.pref",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 2,
+      "nonce": 2195921133
+    },
+    {
+      "id": "pal.storage.cleanup.storage",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 2,
+      "nonce": 2195921133
+    }
+  ],
+  "phases": [
+    {
+      "contract": 1,
+      "phase": 1,
+      "nonce": 2195921133,
+      "pid": 1817,
+      "cases": [
+        {
+          "id": "pal.storage.fs.directory",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2195921133
+        },
+        {
+          "id": "pal.storage.fs.binary",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2195921133
+        },
+        {
+          "id": "pal.storage.fs.empty-eof",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2195921133
+        },
+        {
+          "id": "pal.storage.fs.seek",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2195921133
+        },
+        {
+          "id": "pal.storage.fs.truncate",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2195921133
+        },
+        {
+          "id": "pal.storage.fs.rename",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2195921133
+        },
+        {
+          "id": "pal.storage.fs.remove",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2195921133
+        },
+        {
+          "id": "pal.storage.fs.clear",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2195921133
+        },
+        {
+          "id": "pal.storage.fs.path-isolation",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2195921133
+        },
+        {
+          "id": "pal.storage.fs.arguments",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2195921133
+        },
+        {
+          "id": "pal.storage.fs.churn",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2195921133
+        },
+        {
+          "id": "pal.storage.pref.namespace",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2195921133
+        },
+        {
+          "id": "pal.storage.pref.blob",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2195921133
+        },
+        {
+          "id": "pal.storage.pref.string",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2195921133
+        },
+        {
+          "id": "pal.storage.pref.u32",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2195921133
+        },
+        {
+          "id": "pal.storage.pref.i32",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2195921133
+        },
+        {
+          "id": "pal.storage.pref.bool",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2195921133
+        },
+        {
+          "id": "pal.storage.pref.overwrite-type",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2195921133
+        },
+        {
+          "id": "pal.storage.pref.namespace-isolation",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2195921133
+        },
+        {
+          "id": "pal.storage.pref.read-only",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2195921133
+        },
+        {
+          "id": "pal.storage.pref.iteration",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2195921133
+        },
+        {
+          "id": "pal.storage.pref.cursor-close",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2195921133
+        },
+        {
+          "id": "pal.storage.pref.allocation-failure",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2195921133
+        },
+        {
+          "id": "pal.storage.pref.remove",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2195921133
+        },
+        {
+          "id": "pal.storage.pref.clear",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2195921133
+        },
+        {
+          "id": "pal.storage.pref.churn",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2195921133
+        },
+        {
+          "id": "pal.storage.persist.seed",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2195921133
+        }
+      ],
+      "passed": 27,
+      "failed": 0,
+      "blocked": 0,
+      "cleanup": 0,
+      "teardown": 0,
+      "rc": 0
+    },
+    {
+      "contract": 1,
+      "phase": 2,
+      "nonce": 2195921133,
+      "pid": 1865,
+      "cases": [
+        {
+          "id": "pal.storage.persist.fs",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 2,
+          "nonce": 2195921133
+        },
+        {
+          "id": "pal.storage.persist.pref",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 2,
+          "nonce": 2195921133
+        },
+        {
+          "id": "pal.storage.cleanup.storage",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 2,
+          "nonce": 2195921133
+        }
+      ],
+      "passed": 3,
+      "failed": 0,
+      "blocked": 0,
+      "cleanup": 0,
+      "teardown": 0,
+      "rc": 0
+    }
+  ]
+}

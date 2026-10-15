@@ -59,8 +59,10 @@ filegroup(
 local_embedded_cc_toolchain_config(
     name = "config",
     builtin_include_directories = {BUILTIN_INCLUDE_DIRECTORIES},
+    c_include_directories = {C_INCLUDE_DIRECTORIES},
     compile_flags = {COMPILE_FLAGS},
     compiler = "{COMPILER}",
+    cxx_include_directories = {CXX_INCLUDE_DIRECTORIES},
     target_cpu = "{TARGET_CPU}",
     target_system_name = "{TARGET_SYSTEM_NAME}",
     toolchain_identifier = "{TOOLCHAIN_IDENTIFIER}",

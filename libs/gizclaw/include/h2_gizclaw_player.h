@@ -19,7 +19,14 @@ typedef struct h2_gizclaw_player_status {
   uint32_t current_index;
   uint32_t playlist_length;
   uint32_t playlist_revision;
+  /* Appended: the playback rate in permille, H2_GIZCLAW_PLAYER_RATE_NORMAL
+   * when unchanged. Positions and durations above stay in media time. */
+  uint32_t rate_permille;
 } h2_gizclaw_player_status_t;
+/** Playback rate bounds in permille; NORMAL is the recorded speed. */
+#define H2_GIZCLAW_PLAYER_RATE_MIN 500u
+#define H2_GIZCLAW_PLAYER_RATE_NORMAL 1000u
+#define H2_GIZCLAW_PLAYER_RATE_MAX 2000u
 /** The library's playlist ceiling, same bound the audio player RPCs enforce. */
 #define H2_GIZCLAW_PLAYER_PLAYLIST_MAX_ITEMS 32u
 /** One queued item as a UI needs it. The URL is deliberately absent: it is up
@@ -44,9 +51,16 @@ typedef struct h2_gizclaw_player_playlist {
   char repeat[5];
 } h2_gizclaw_player_playlist_t;
 /** One item a product queues locally. The URL is required and takes the same
- * HTTPS Ogg/Opus form the RPC accepts; title and source_ref are optional and
- * absent when len is zero. Spans rather than buffers: a 32-item array of the
- * wire item would put 40 KB on the caller's stack. */
+ * HTTPS form the RPC accepts; title and source_ref are optional and absent
+ * when len is zero. Spans rather than buffers: a 32-item array of the wire
+ * item would put 40 KB on the caller's stack.
+ *
+ * The file's first bytes pick the decoder, never the URL or Content-Type:
+ * Ogg/Opus; MP3 (MPEG-1/2/2.5 Layer III, optionally behind ID3v2 tags); or
+ * WAV (integer PCM of 8 to 32 bits or 32-bit float, 1 to 8 channels,
+ * 8 to 48 kHz). MP3 and WAV are mixed down to mono and resampled to the
+ * player's 16 kHz. Anything else fails the item with UNSUPPORTED before
+ * any audio plays. */
 typedef struct h2_gizclaw_player_playlist_entry {
   h2_gizclaw_str_t url;
   h2_gizclaw_str_t title;
@@ -56,13 +70,13 @@ typedef struct h2_gizclaw_player_playlist_entry {
    * duration. */
   uint64_t duration_ms;
 } h2_gizclaw_player_playlist_entry_t;
-/** Replace the playlist with one HTTPS Ogg/Opus URL and begin asynchronously.
+/** Replace the playlist with one HTTPS audio URL and begin asynchronously.
  * Copies the URL before returning. OK means accepted, not playback completed.
  * Uses the same player, cancellation and telemetry as remote audio RPCs. */
 h2_pal_result_t h2_gizclaw_player_play(h2_gizclaw_service_t *service,
                                        h2_gizclaw_str_t url);
 /** Start the already-queued item the user picked, the same way the remote
- * client.device.audioplayer.play RPC selects one. An index at or past the
+ * audioplayer.play RPC selects one. An index at or past the
  * playlist length is INVALID_ARG and leaves playback untouched. Same as
  * play_index_at(service, index, 0). */
 h2_pal_result_t h2_gizclaw_player_play_index(h2_gizclaw_service_t *service,
@@ -70,20 +84,26 @@ h2_pal_result_t h2_gizclaw_player_play_index(h2_gizclaw_service_t *service,
 /** Start queued item `index` start_ms into the track; 0 is play_index.
  * Needs the item's duration_ms from playlist_set: without it the item plays
  * from 0 and reports 0. With it the player fetches the headers with a
- * Range request, then a Range from about the start, lands on the next valid
- * Ogg page and continues to the exact start; a server that ignores Range, or
- * any failure before the first sample, falls back to one plain download that
- * skips to the start without decoding. status.position_ms shows start_ms
- * while buffering and then the position derived from the stream's granule
- * positions; a start beyond the real end completes the item there. Repeat
- * and end-of-track advance start the next item at 0. INVALID_ARG for a bad
- * index or start_ms at or past a known duration_ms, before anything is
- * touched; otherwise the same results as play_index. */
+ * Range request, then a Range from the decoder's offset, and continues to
+ * the start: Ogg/Opus aims 5 s early by byte rate and lands on the next
+ * valid page; WAV ranges to the exact frame; MP3 ranges only when a LAME
+ * "Info" tag declares CBR, and every frame from the landing to the start
+ * must then have the declared bitrate on the CBR byte grid. Any other MP3
+ * (VBR, untagged) is not ranged: the probe itself is read on and skipped
+ * through frame by frame. A server that ignores Range, or any failure
+ * before the first sample, falls back to one plain download that skips to
+ * the start without decoding. status.position_ms shows start_ms while
+ * buffering and then the exact position the stream itself gives: the Ogg
+ * granule, the WAV frame, or the MP3 frame count. A start beyond the real
+ * end completes the item there. Repeat and end-of-track advance start the
+ * next item at 0. INVALID_ARG for a bad index or start_ms at or past a
+ * known duration_ms, before anything is touched; otherwise the same results
+ * as play_index. */
 h2_pal_result_t h2_gizclaw_player_play_index_at(h2_gizclaw_service_t *service,
                                                 uint32_t index,
                                                 uint64_t start_ms);
 /** Replace the playlist with a caller-owned array, the same way the remote
- * client.device.audioplayer.playlist.set RPC does: everything is validated
+ * audioplayer.playlist.set RPC does: everything is validated
  * before the queue is touched, so a rejection preserves both the previous
  * playlist and playback, and the revision moves only on success. A count of
  * zero clears the playlist; a count above the ceiling is INVALID_ARG, since
@@ -93,12 +113,25 @@ h2_pal_result_t h2_gizclaw_player_play_index_at(h2_gizclaw_service_t *service,
 h2_pal_result_t h2_gizclaw_player_playlist_set(
     h2_gizclaw_service_t *service,
     const h2_gizclaw_player_playlist_entry_t *items, uint32_t count);
-/** Select off, one or all, the values client.device.audioplayer.mode.set
+/** Select off, one or all, the values audioplayer.mode.set
  * accepts; anything else is INVALID_ARG and leaves the mode as it was. The
  * library owns end-of-track advance and looping, so a product picks the mode
  * here instead of re-implementing "next track, wrap at the end". */
 h2_pal_result_t h2_gizclaw_player_repeat_set(h2_gizclaw_service_t *service,
                                              h2_gizclaw_str_t repeat);
+/** Play at rate_permille of the recorded speed, keeping pitch (speech tempo
+ * change, not resampling). A property of the player, not of one play: it
+ * applies within one 32 ms step to the item already playing, without a
+ * restart or re-seek, and to every later item, auto-advance, repeat and
+ * remotely started play, until changed. Named sound playback always runs at
+ * the recorded speed. position_ms, duration_ms, play_index_at start_ms and
+ * playlist duration_ms all stay on the media's own timeline. NORMAL is a
+ * passthrough with no extra buffer or work; any other rate uses one fixed
+ * ~5.5 KiB work buffer while an item plays, and if that cannot be allocated
+ * the item plays at NORMAL instead of failing. Outside MIN..MAX is
+ * INVALID_ARG and leaves the rate unchanged. */
+h2_pal_result_t h2_gizclaw_player_rate_set(h2_gizclaw_service_t *service,
+                                           uint32_t rate_permille);
 h2_pal_result_t h2_gizclaw_player_stop(h2_gizclaw_service_t *service);
 h2_pal_result_t h2_gizclaw_player_get_status(h2_gizclaw_service_t *service,
                                              h2_gizclaw_player_status_t *out);

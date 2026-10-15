@@ -1,0 +1,32 @@
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+firmware_native_component(
+    name = "h2_pixa",
+    srcs = ["//libs/pixa:src/h2_pixa_platform.c"],
+    hdrs = [
+        "//libs/pixa:include/h2_pixa_platform.h",
+        "@h2_vendor_pixa//:src/pkgs/c/include/pixa.h",
+        "@h2_vendor_pixa//:src/pkgs/c/include/pixa_blit.h",
+        "@h2_vendor_pixa//:src/pkgs/c/include/pixa_decode.h",
+        "@h2_vendor_pixa//:src/pkgs/c/include/pixa_dir.h",
+        "@h2_vendor_pixa//:src/pkgs/c/include/pixa_extract.h",
+        "@h2_vendor_pixa//:src/pkgs/c/include/pixa_osal.h",
+        "@h2_vendor_pixa//:src/pkgs/c/include/pixa_pack.h",
+        "@h2_vendor_pixa//:src/pkgs/c/include/pixa_reader.h",
+        "@h2_vendor_pixa//:src/pkgs/c/include/pixa_types.h",
+    ],
+    native_srcs = [
+        "@h2_vendor_pixa//:src/pkgs/c/src/pixa_blit.c",
+        "@h2_vendor_pixa//:src/pkgs/c/src/pixa_decode.c",
+        "@h2_vendor_pixa//:src/pkgs/c/src/pixa_dir.c",
+        "@h2_vendor_pixa//:src/pkgs/c/src/pixa_extract.c",
+        "@h2_vendor_pixa//:src/pkgs/c/src/pixa_pack.c",
+        "@h2_vendor_pixa//:src/pkgs/c/src/pixa_reader.c",
+        "@h2_vendor_pixa//:src/pkgs/c/src/pixa_types.c",
+    ],
+    include_roots = ["libs/pixa/include"],
+    component_name = "h2_jieli_wl82_pixa",
+    deps = ["//libs/pal:pal_header_files"],
+)

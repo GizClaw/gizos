@@ -1,9 +1,9 @@
 #include "h2_game_audio.h"
 #include "h2_game_runtime_task_names.h"
+#include "h2_atomic.h"
 
 #include "audio/DefaultAudioScheduler.h"
 
-#include <atomic>
 #include <new>
 
 namespace {
@@ -44,6 +44,11 @@ bool valid_recipe(const h2_game_audio_recipe_t *recipe) {
 struct h2_game_audio {
     explicit h2_game_audio(const h2_game_audio_config_t &value)
         : config(value) {}
+    ~h2_game_audio() {
+        h2_atomic_ptr_destroy(&priority_recipe);
+        h2_atomic_bool_destroy(&stopping);
+        h2_atomic_int_destroy(&worker_status);
+    }
 
     h2_game_audio_config_t config;
     pixelroot32::audio::DefaultAudioScheduler scheduler;
@@ -52,9 +57,9 @@ struct h2_game_audio {
     h2_pal_audio_track_t *track = nullptr;
     h2_pal_queue_t *commands = nullptr;
     h2_pal_task_t *worker = nullptr;
-    std::atomic<const h2_game_audio_recipe_t *> priority_recipe{nullptr};
-    std::atomic<bool> stopping{false};
-    std::atomic<int> worker_status{H2_GAME_AUDIO_OK};
+    h2_atomic_ptr_t priority_recipe{};
+    h2_atomic_bool_t stopping{};
+    h2_atomic_int_t worker_status{};
 };
 
 namespace {
@@ -135,10 +140,11 @@ void audio_worker(void *ctx) {
     bool frame_pending = false;
     bool priority_active = false;
 
-    while (!audio->stopping.load()) {
+    while (!h2_atomic_bool_load(&audio->stopping, H2_ATOMIC_SEQ_CST)) {
         if (!frame_pending) {
             AudioCommand command{};
-            command.recipe = audio->priority_recipe.exchange(nullptr);
+            command.recipe = static_cast<const h2_game_audio_recipe_t *>(
+                h2_atomic_ptr_exchange(&audio->priority_recipe, nullptr, H2_ATOMIC_SEQ_CST));
             if (command.recipe != nullptr) {
                 stop_active_voices(audio);
                 recipe = command.recipe;
@@ -172,8 +178,8 @@ void audio_worker(void *ctx) {
         const int rc = h2_pal_audio_track_write(audio->track, &frame, kWriteTimeoutMs);
         if (rc == H2_AUDIO_ERR_WOULD_BLOCK) continue;
         if (rc != H2_AUDIO_OK) {
-            audio->worker_status.store(H2_GAME_AUDIO_ERR_AUDIO);
-            audio->stopping.store(true);
+            h2_atomic_int_store(&audio->worker_status, H2_GAME_AUDIO_ERR_AUDIO, H2_ATOMIC_SEQ_CST);
+            h2_atomic_bool_store(&audio->stopping, true, H2_ATOMIC_SEQ_CST);
             continue;
         }
         frame_pending = false;
@@ -204,6 +210,13 @@ int h2_game_audio_create(const h2_game_audio_config_t *config, h2_game_audio_t *
     void *memory = h2_pal_mem_alloc(config->mem, sizeof(h2_game_audio_t));
     if (memory == nullptr) return H2_GAME_AUDIO_ERR_NO_MEMORY;
     auto *audio = new (memory) h2_game_audio_t(*config);
+    if (h2_atomic_ptr_init(&audio->priority_recipe, nullptr) != H2_ATOMIC_OK ||
+        h2_atomic_bool_init(&audio->stopping, false) != H2_ATOMIC_OK ||
+        h2_atomic_int_init(&audio->worker_status, H2_GAME_AUDIO_OK) != H2_ATOMIC_OK) {
+        audio->~h2_game_audio();
+        h2_pal_mem_free(config->mem, memory);
+        return H2_GAME_AUDIO_ERR_NO_MEMORY;
+    }
     audio->playback_format = info.playback_format;
     audio->samples = static_cast<int16_t *>(h2_pal_mem_alloc(
         config->mem,
@@ -217,6 +230,7 @@ int h2_game_audio_create(const h2_game_audio_config_t *config, h2_game_audio_t *
         audio->playback_format,
         1000,
         4,
+        nullptr,
     };
     if (h2_pal_audio_create_track(config->audio, &track_config, &audio->track) != H2_AUDIO_OK) {
         h2_pal_mem_free(config->mem, audio->samples);
@@ -256,19 +270,19 @@ int h2_game_audio_play_latest(h2_game_audio_t *audio, const h2_game_audio_recipe
     if (audio == nullptr || !valid_recipe(recipe)) {
         return H2_GAME_AUDIO_ERR_INVALID_ARG;
     }
-    audio->priority_recipe.store(recipe);
+    h2_atomic_ptr_store(&audio->priority_recipe, const_cast<h2_game_audio_recipe_t *>(recipe), H2_ATOMIC_SEQ_CST);
     return H2_GAME_AUDIO_OK;
 }
 
 int h2_game_audio_stop(h2_game_audio_t *audio) {
     if (audio == nullptr) return H2_GAME_AUDIO_ERR_INVALID_ARG;
-    audio->stopping.store(true);
+    h2_atomic_bool_store(&audio->stopping, true, H2_ATOMIC_SEQ_CST);
     if (audio->worker != nullptr) {
         if (h2_pal_task_join(audio->config.task, audio->worker) != H2_PAL_OK) return H2_GAME_AUDIO_ERR_TASK;
         audio->worker = nullptr;
     }
     audio->scheduler.stop();
-    return audio->worker_status.load();
+    return h2_atomic_int_load(&audio->worker_status, H2_ATOMIC_SEQ_CST);
 }
 
 int h2_game_audio_destroy(h2_game_audio_t *audio) {

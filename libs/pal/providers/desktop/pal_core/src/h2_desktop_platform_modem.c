@@ -199,6 +199,9 @@ h2_desktop_modem_get_signal(void *user, h2_pal_modem_signal_t *out_signal) {
   }
   *out_signal = (h2_pal_modem_signal_t){
       .rssi_dbm = s_config.rssi_dbm,
+      .rssi_valid = 1u,
+      .rsrp_dbm = 0,
+      .rsrp_valid = 0u,
       .ber = 0,
       .rat = s_config.rat,
   };

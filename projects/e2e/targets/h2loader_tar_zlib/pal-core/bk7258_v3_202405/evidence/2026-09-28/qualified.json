@@ -1,0 +1,836 @@
+{
+  "device_uid": "c8478ca2a87c",
+  "board": "bk7258_v3_202405",
+  "target": "bk7258",
+  "execution_unit": "AP",
+  "uart1": "/dev/cu.usbserial-20131240",
+  "uart0": "/dev/cu.usbserial-20131230",
+  "uart0_rts_connected_to_cen": true,
+  "baud": 460800,
+  "version": "pal-core-bk-20260928-r7",
+  "contract": 2,
+  "operation_count": 46,
+  "core_vtable_count": 9,
+  "qualified": true,
+  "runs": [
+    {
+      "passed": 41,
+      "failed": 0,
+      "blocked": 0,
+      "not_run": 0,
+      "qualified": true,
+      "cleanup": 0,
+      "confirm": 0,
+      "cases": [
+        {
+          "id": "pal.core.memory.lifecycle",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.log.output",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.time.monotonic",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.time.wall-read",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.time.wall-set",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.timer.oneshot",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.timer.lifecycle",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.task.lifecycle",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.queue.transfer",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.queue.boundaries",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.mutex.lifecycle",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.semaphore.boundaries",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.condition.signal",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.condition.bounded-wait",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.concurrency.mpmc",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.system-event.lifecycle",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.firmware-info.current",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.queue.close-wake",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.semaphore.wake",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.api.arguments",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.memory.churn-alignment",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.task.once-context",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.task.join-running",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.task.join-completed",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.task.churn",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.task.batch-churn",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.task.stack-bounds",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.task.start-failure",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.task.partial-start",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.queue.copy-buffered-close",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.queue.sender-close",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.queue.reset-wake",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.mutex.contention",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.semaphore.waiters",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.condition.broadcast",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.condition.generations",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.system-event.external-unsubscribe",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.system-event.self-unsubscribe",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.timer.isolation",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.timer.churn",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.resources.recovered",
+          "status": "PASS",
+          "rc": 0
+        }
+      ],
+      "resources": {
+        "startup": {
+          "tasks": 2,
+          "stacks": 98304,
+          "queues": 4,
+          "mutexes": 2,
+          "semaphores": 0,
+          "conditions": 0,
+          "timers": 0,
+          "infos": 1,
+          "allocations": 20,
+          "bytes": 139326
+        },
+        "pal.core.timer.churn": {
+          "tasks": 2,
+          "stacks": 98304,
+          "queues": 5,
+          "mutexes": 2,
+          "semaphores": 0,
+          "conditions": 0,
+          "timers": 0,
+          "infos": 1,
+          "allocations": 25,
+          "bytes": 140526
+        },
+        "pal.core.resources.recovered": {
+          "tasks": 2,
+          "stacks": 98304,
+          "queues": 4,
+          "mutexes": 2,
+          "semaphores": 0,
+          "conditions": 0,
+          "timers": 0,
+          "infos": 1,
+          "allocations": 20,
+          "bytes": 139326
+        }
+      },
+      "atomic_prerequisite": {
+        "physical_cores": [
+          1,
+          2
+        ],
+        "expected": 100000,
+        "observed": 100000,
+        "no_yield": true,
+        "passed": true
+      },
+      "capture": "managed-install; current-version boot marker and full case ledger captured",
+      "monitor": {
+        "reason": "test-report",
+        "monitor_exit": 130,
+        "uart0_exit": 0,
+        "elapsed_seconds": 250.34
+      },
+      "observed_task_stack_bytes": [
+        4096,
+        16384,
+        65536
+      ],
+      "loader_status": {
+        "board": "bk7258_v3_202405",
+        "target": "bk7258",
+        "chip": "bk7258",
+        "device_uid": "c8478ca2a87c",
+        "capabilities": "0x00000001",
+        "command_availability": "0x00081f1f",
+        "active_role": "app",
+        "active_version": "pal-core-bk-20260928-r7",
+        "active_checksum": "374b046ddaaa3aa1e508c08d24d98407b0daa2e04cb1e79995dc7d25f32727bc",
+        "active_image_size": "5222400",
+        "running_partition": "2",
+        "next_partition": "2",
+        "boot_intent": "auto",
+        "stage_valid": "0",
+        "stage_package_checksum": "-",
+        "stage_package_size": "0",
+        "stage_image_checksum": "-",
+        "stage_image_size": "0",
+        "stage_role": "unknown",
+        "stage_version": "-",
+        "stage_board": "-",
+        "stage_target": "-",
+        "partition_1_valid": "1",
+        "partition_1_package_checksum": "3a3c664340f0d1b45561816e197ffbd25f2d3c447ee248082a3c5ce261cba9bd",
+        "partition_1_package_size": "1573290",
+        "partition_1_image_checksum": "47b7cd2e34fcebb805bb28d1c1901eabd1cff9d4be9a172ba8d012ccb83809bb",
+        "partition_1_image_size": "2437120",
+        "partition_1_role": "loader",
+        "partition_1_version": "0.1.65-lu-c",
+        "partition_1_board": "bk7258_v3_202405",
+        "partition_1_target": "bk7258",
+        "partition_2_valid": "1",
+        "partition_2_package_checksum": "35b6e07a5d555cadb259b3e718d51974066080f26e637269eb6d08d29a547cdd",
+        "partition_2_package_size": "1728914",
+        "partition_2_image_checksum": "374b046ddaaa3aa1e508c08d24d98407b0daa2e04cb1e79995dc7d25f32727bc",
+        "partition_2_image_size": "5222400",
+        "partition_2_role": "app",
+        "partition_2_version": "pal-core-bk-20260928-r7",
+        "partition_2_board": "bk7258_v3_202405",
+        "partition_2_target": "bk7258",
+        "last_result": "0",
+        "mfg_mode": "1",
+        "mfg_steps": "0000000000000000000000"
+      }
+    },
+    {
+      "passed": 41,
+      "failed": 0,
+      "blocked": 0,
+      "not_run": 0,
+      "qualified": true,
+      "cleanup": 0,
+      "confirm": 0,
+      "cases": [
+        {
+          "id": "pal.core.memory.lifecycle",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.log.output",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.time.monotonic",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.time.wall-read",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.time.wall-set",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.timer.oneshot",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.timer.lifecycle",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.task.lifecycle",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.queue.transfer",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.queue.boundaries",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.mutex.lifecycle",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.semaphore.boundaries",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.condition.signal",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.condition.bounded-wait",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.concurrency.mpmc",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.system-event.lifecycle",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.firmware-info.current",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.queue.close-wake",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.semaphore.wake",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.api.arguments",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.memory.churn-alignment",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.task.once-context",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.task.join-running",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.task.join-completed",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.task.churn",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.task.batch-churn",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.task.stack-bounds",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.task.start-failure",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.task.partial-start",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.queue.copy-buffered-close",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.queue.sender-close",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.queue.reset-wake",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.mutex.contention",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.semaphore.waiters",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.condition.broadcast",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.condition.generations",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.system-event.external-unsubscribe",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.system-event.self-unsubscribe",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.timer.isolation",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.timer.churn",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "id": "pal.core.resources.recovered",
+          "status": "PASS",
+          "rc": 0
+        }
+      ],
+      "resources": {
+        "startup": {
+          "tasks": 2,
+          "stacks": 98304,
+          "queues": 4,
+          "mutexes": 2,
+          "semaphores": 0,
+          "conditions": 0,
+          "timers": 0,
+          "infos": 1,
+          "allocations": 20,
+          "bytes": 139326
+        },
+        "pal.core.timer.churn": {
+          "tasks": 2,
+          "stacks": 98304,
+          "queues": 5,
+          "mutexes": 2,
+          "semaphores": 0,
+          "conditions": 0,
+          "timers": 0,
+          "infos": 1,
+          "allocations": 25,
+          "bytes": 140526
+        },
+        "pal.core.resources.recovered": {
+          "tasks": 2,
+          "stacks": 98304,
+          "queues": 4,
+          "mutexes": 2,
+          "semaphores": 0,
+          "conditions": 0,
+          "timers": 0,
+          "infos": 1,
+          "allocations": 20,
+          "bytes": 139326
+        }
+      },
+      "atomic_prerequisite": {
+        "physical_cores": [
+          1,
+          2
+        ],
+        "expected": 100000,
+        "observed": 100000,
+        "no_yield": true,
+        "passed": true
+      },
+      "capture": "normal App reboot observed on CP/AP UARTs; CLI monitor exited early; subsequent live status and the new boot volatile result replay supplied all 41 cases",
+      "core_boot_marker_captured": false,
+      "monitor": {
+        "reason": "timeout",
+        "monitor_exit": 3,
+        "uart0_exit": 0,
+        "elapsed_seconds": 13.02
+      },
+      "loader_status": {
+        "board": "bk7258_v3_202405",
+        "target": "bk7258",
+        "chip": "bk7258",
+        "device_uid": "c8478ca2a87c",
+        "capabilities": "0x00000001",
+        "command_availability": "0x00081f1f",
+        "active_role": "app",
+        "active_version": "pal-core-bk-20260928-r7",
+        "active_checksum": "374b046ddaaa3aa1e508c08d24d98407b0daa2e04cb1e79995dc7d25f32727bc",
+        "active_image_size": "5222400",
+        "running_partition": "2",
+        "next_partition": "2",
+        "boot_intent": "auto",
+        "stage_valid": "0",
+        "stage_package_checksum": "-",
+        "stage_package_size": "0",
+        "stage_image_checksum": "-",
+        "stage_image_size": "0",
+        "stage_role": "unknown",
+        "stage_version": "-",
+        "stage_board": "-",
+        "stage_target": "-",
+        "partition_1_valid": "1",
+        "partition_1_package_checksum": "3a3c664340f0d1b45561816e197ffbd25f2d3c447ee248082a3c5ce261cba9bd",
+        "partition_1_package_size": "1573290",
+        "partition_1_image_checksum": "47b7cd2e34fcebb805bb28d1c1901eabd1cff9d4be9a172ba8d012ccb83809bb",
+        "partition_1_image_size": "2437120",
+        "partition_1_role": "loader",
+        "partition_1_version": "0.1.65-lu-c",
+        "partition_1_board": "bk7258_v3_202405",
+        "partition_1_target": "bk7258",
+        "partition_2_valid": "1",
+        "partition_2_package_checksum": "35b6e07a5d555cadb259b3e718d51974066080f26e637269eb6d08d29a547cdd",
+        "partition_2_package_size": "1728914",
+        "partition_2_image_checksum": "374b046ddaaa3aa1e508c08d24d98407b0daa2e04cb1e79995dc7d25f32727bc",
+        "partition_2_image_size": "5222400",
+        "partition_2_role": "app",
+        "partition_2_version": "pal-core-bk-20260928-r7",
+        "partition_2_board": "bk7258_v3_202405",
+        "partition_2_target": "bk7258",
+        "last_result": "0",
+        "mfg_mode": "1",
+        "mfg_steps": "0000000000000000000000"
+      }
+    }
+  ],
+  "build": {
+    "assets": [
+      {
+        "name": "bk7258_v3_202405-pal-core-bk7258.update.tar.zlib",
+        "operation": "managed-install",
+        "release_suffix": ".update.tar.zlib",
+        "sha256": "35b6e07a5d555cadb259b3e718d51974066080f26e637269eb6d08d29a547cdd",
+        "size": 1728914
+      }
+    ],
+    "board": "bk7258_v3_202405",
+    "entry": "projects/e2e/targets/h2loader_tar_zlib/pal-core/bk7258_v3_202405",
+    "image": "pal-core",
+    "native_artifacts": [
+      {
+        "name": "ap/firmware.elf",
+        "operation": "native-debug-or-flash",
+        "sha256": "ea9871cf47ad4d45b4492aa63faf35c3bd88809ccd9fd5792c1c48bb946351d2",
+        "size": 13427188
+      },
+      {
+        "name": "ap/firmware.map",
+        "operation": "native-debug-or-flash",
+        "sha256": "266a19aed177fd5b52aed4bb14f9392ba3a3d1ab395c269c774da8d04d64512c",
+        "size": 8015848
+      },
+      {
+        "name": "ap/app.bin",
+        "operation": "native-debug-or-flash",
+        "sha256": "d93a67a20e16399e6e57b7c615fa4e2ac1f8696a0e3fda11de4d6e6a0a910edd",
+        "size": 1326416
+      },
+      {
+        "name": "cp/firmware.elf",
+        "operation": "native-debug-or-flash",
+        "sha256": "3fbbba70ccefdaab7d02ae62f60d51c4651c914d654702709a1ce270188e9ed6",
+        "size": 14369836
+      },
+      {
+        "name": "cp/firmware.map",
+        "operation": "native-debug-or-flash",
+        "sha256": "33fa71a08e5c203fcbd56212d37962033eb28d4c285e1375d4ca61bd4c9f1b0a",
+        "size": 6809112
+      },
+      {
+        "name": "cp/app.bin",
+        "operation": "native-debug-or-flash",
+        "sha256": "ebb8177a6782006f60e1411a29e81d46b669901cb7b3bd486da2bda454e56a3e",
+        "size": 1056252
+      },
+      {
+        "name": "app_ab_crc.rbl",
+        "operation": "native-debug-or-flash",
+        "sha256": "374b046ddaaa3aa1e508c08d24d98407b0daa2e04cb1e79995dc7d25f32727bc",
+        "size": 5222400
+      },
+      {
+        "name": "all-app.bin",
+        "operation": "native-debug-or-flash",
+        "sha256": "37d2deb5d779864d528aeddcde57ad6a2cb8d324d7c5fa8e6f5bcde1a2b538f3",
+        "size": 5292032
+      }
+    ],
+    "package_manifest": {
+      "board": "bk7258_v3_202405",
+      "format": 1,
+      "image_sha256": "374b046ddaaa3aa1e508c08d24d98407b0daa2e04cb1e79995dc7d25f32727bc",
+      "image_size": 5222400,
+      "role": "app",
+      "target": "bk7258",
+      "version": "pal-core-bk-20260928-r7"
+    },
+    "platform": "bk7258",
+    "role": "app",
+    "target": "bk7258",
+    "version": "pal-core-bk-20260928-r7"
+  },
+  "final_status": {
+    "board": "bk7258_v3_202405",
+    "target": "bk7258",
+    "chip": "bk7258",
+    "device_uid": "c8478ca2a87c",
+    "capabilities": "0x00000001",
+    "command_availability": "0x00081f1f",
+    "active_role": "app",
+    "active_version": "pal-core-bk-20260928-r7",
+    "active_checksum": "374b046ddaaa3aa1e508c08d24d98407b0daa2e04cb1e79995dc7d25f32727bc",
+    "active_image_size": "5222400",
+    "running_partition": "2",
+    "next_partition": "2",
+    "boot_intent": "auto",
+    "stage_valid": "0",
+    "stage_package_checksum": "-",
+    "stage_package_size": "0",
+    "stage_image_checksum": "-",
+    "stage_image_size": "0",
+    "stage_role": "unknown",
+    "stage_version": "-",
+    "stage_board": "-",
+    "stage_target": "-",
+    "partition_1_valid": "1",
+    "partition_1_package_checksum": "3a3c664340f0d1b45561816e197ffbd25f2d3c447ee248082a3c5ce261cba9bd",
+    "partition_1_package_size": "1573290",
+    "partition_1_image_checksum": "47b7cd2e34fcebb805bb28d1c1901eabd1cff9d4be9a172ba8d012ccb83809bb",
+    "partition_1_image_size": "2437120",
+    "partition_1_role": "loader",
+    "partition_1_version": "0.1.65-lu-c",
+    "partition_1_board": "bk7258_v3_202405",
+    "partition_1_target": "bk7258",
+    "partition_2_valid": "1",
+    "partition_2_package_checksum": "35b6e07a5d555cadb259b3e718d51974066080f26e637269eb6d08d29a547cdd",
+    "partition_2_package_size": "1728914",
+    "partition_2_image_checksum": "374b046ddaaa3aa1e508c08d24d98407b0daa2e04cb1e79995dc7d25f32727bc",
+    "partition_2_image_size": "5222400",
+    "partition_2_role": "app",
+    "partition_2_version": "pal-core-bk-20260928-r7",
+    "partition_2_board": "bk7258_v3_202405",
+    "partition_2_target": "bk7258",
+    "last_result": "0",
+    "mfg_mode": "1",
+    "mfg_steps": "0000000000000000000000"
+  },
+  "coredump": {
+    "baseline_bytes": 32,
+    "final_bytes": 32,
+    "unchanged": true,
+    "sha256": "f59f522edd1cc5bd0aab008b938dc7cdfac8a4333c34fdf763404923210a3829"
+  },
+  "source_base_commit": "b79cc2a7791c91708ad7750071c246d2a0e8956c",
+  "source_state": "uncommitted worktree",
+  "source_sha256": {
+    "boards/bk7258_v3_202405/bk7258/ap/src/h2_bk7258_board_runtime.c": "4529ecfcc6b9eae7ad79d9e58b07bff89c020dc2770134654d04fde8b9e74c90",
+    "native_component_src/bk7258/ap/h2_pal_core/include/h2_bk_platform_core.h": "2aadc6e342603857d2dfcc59b8b3206dc0264d5ad9892bb3fd6f4435e545ef13",
+    "native_component_src/bk7258/ap/h2_pal_core/src/flashdb/fal_cfg.h": "3721680d897f3a60d8f9115677166d33aa9ccdc0b457708a309552d312b4a52b",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_atomic.c": "11de00250d70192865b60b6e5ebf52c045ac8c89c2121abc0c47814d694f0b34",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_ble_exact_adapter.c": "1c73fc7b10a1298ea3f4499270516ab095f23af3978d8847429cc156a69f76b5",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_ble_exact_adapter.h": "876946cfe38195404f2b127c620c5d1d890994dd979537830c90ab96c58ae225",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_ble_gatt_schema.h": "5f62487ed9cbb975f0f2c2c35dace5498347e3c860a49f56698fdc3e804a5396",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_ble_gatts_tx_tracker.h": "d6c58cca605d3d63322410810f78cab913b6f14cc62b83f1b6989510b5247b0b",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_atomic.c": "ba6d097496de79e28c0c406d97fac127564d872bd598990d3febdc7b927a0f0e",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_ble.c": "4481f11d99fade9f7394c8378a65d8d9c796758037e1251bd4533db65007eb1d",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_ble_heap.c": "4858da7eeea3a5b47878057d9c89ba8e6de7418d438bee96b057d467a0272077",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_crypto.c": "618ebcadd79be03524011a3ace66cc63a1144f47b25e830b0b49d32a7256944a",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_dtls.c": "916a17e4b8ee4ebd7a1014d57b43233a4ad5a663b9f8e80c4bab4d1830420552",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_firmware_info.c": "091838dd90171bda76e7d6ebcafa5fae37fc58225e4bece9dd875f514d7f2acf",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_log.c": "619c831986f9f7f6f46028d9be65015cfc70cb809d4b63cfd3bf6b71bb802c9c",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_mem.c": "309a5895a5b95bde5d8e5b55a9475086862de0debd18e9d9320abce13fe59449",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_modem_unsupported.c": "b394bf05bbed58f5eadfae37245cbbbf4a7420ea6225784dca77873d1ec81c96",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_mqtt.c": "353b7b5328169a36867e270a88055550fa6f55b33a3e134127ac3f641a3eace4",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_net.c": "8ded08dc780c762b79a7c4690035fc7eba344b951a48bbef791534eca3ccef0a",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_netif.c": "3eea3ddf23c18a73c3db1a1d45188611ae7f3376c7b4155ef8c690ebb71865e9",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_pref_flashdb.c": "71c2d6d9ba62acb451a73c4c3230a2fcd63ebc4f6994d47892d8f06960ef1153",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_pref_flashdb_port.c": "49150ae4c31b460f7027da633d1bb29a678378778c7114613ba4ef2ba6ed55c5",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_queue.c": "860da9c583a1f0c0f78aa3d3b5aa7beda5e04deb525e08dbc272c84dd0434873",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_sync.c": "02dfcc63476e1b7fc6f96632813fe5e34b34d8d1a7a8d7a24547abde90f29c20",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_system_event.c": "34d570a88b757f3a097ca88118fc0cae63d6174761f965ca79494441a86bdb02",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_task.c": "660949e6af2c1ede9ad8fbc31a5122ab40502439d11a2a587f2491c3fedf7fa8",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_time.c": "8d429cfdbcca27d8745c6773c7e896dc8f9260922cad3f9ba903854f9faa2532",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_timer.c": "57f1d288c3b2e7a9e3cc1bded8ac195466a4ddb17a1b788ec265f0ab4a3ab2e0",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_uart_io_stream.c": "95e50b10600c9c0a0d8fc292743cd0f5dd70e29c61d586c0bb8b82c310c2d4f1",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_webrtc.c": "80b27516d4982abb35d4ec9b6b187ac75408654e4bfb6c9f9efe9ae435fb389e",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_webrtc_unsupported.c": "ef4cfd62c8a73236f5a2f466f6279867408d5a41eb4451474a77217d33d791d2",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_wifi.c": "db01d99fa3eceb1b1929c907e22690ab449aea46d8d0ed8d4da6cca878c953dc",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_wifi_csi.c": "2d804932d94d51e984ff9395a81a3e06257e72d14e2a061b69ddce9fc0dd913a",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_wifi_event_dispatch.c": "5d34630e1dafa9c562a1ff2a07ed83fc9c4d276f23ee7d0ff1e6408134d33268",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_wifi_settings.c": "d7ea6bc9bc866fd1bd892e9f2315aaacdd800b13326bf107e4057dc1b8842f92",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_resource_stats.c": "a49ba7ae8e8a34a26770395407c6cf5f549a3d7b7b82158d2600cbaac9606627",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_resource_stats_internal.h": "5ee0f01e1e44335d9c125e2870ccc4e19630fc362203c87b4145fe5a5280ef94",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_task_lifetime_internal.h": "01e6c078d7ab3a5e0df7de055832bd616985b612dc944b475e9e1435d80829c6",
+    "projects/e2e/apps/pal-core/app/include/h2_pal_core_baseline.h": "c7a4f7cffcbc221e5d3613108c0619868756dc8f5b713e6b0ff237ec36836811",
+    "projects/e2e/apps/pal-core/app/include/h2_pal_core_cases.inc": "2946ab65a727b53af74373dfffc2d6307fbca42b30458b646349a8ea99708eef",
+    "projects/e2e/apps/pal-core/app/include/h2_pal_core_e2e.h": "4f98cc64d2ab49759cbfe9f6b44f89934254d241cb96234e34c8d41ef7a4ebf6",
+    "projects/e2e/apps/pal-core/app/include/h2_pal_core_e2e_task_names.h": "1b5a3bf8bef3bc86f7f68e5bc1d7be4bb892ba0c84f91b70c8f4a34476e94f19",
+    "projects/e2e/apps/pal-core/app/src/h2_pal_core_baseline.c": "a99a1a289924963537ee35edddd5830c0b672f5fda2c81dd63ad87b162f9d969",
+    "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c": "da33bbc43af2dd0a22244b034398a6f62f48e443d49ff77c1cd0476ab0469222",
+    "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e_task_names.c": "fa100497fee9dc9e94b4846c53899e5c4c33dc64db1ec31fc5cc5599dbe7b190",
+    "projects/e2e/apps/pal-core/app/src/h2_pal_core_extended.c": "30fa3d6a0122baaa39f32ad4f51dcb63c7d4b82f2411d8c69d6b375803b9f660",
+    "projects/e2e/apps/pal-core/app/src/h2_pal_core_extended.h": "08099b66248e3b8cf447faae1429c8c7ce46c46adf64cd7a1f2eefc36bd81dda",
+    "projects/e2e/targets/h2loader_tar_zlib/pal-core/bk7258_v3_202405/ap/ap_main.c": "f00d960b5a5b5baef5774d5b93322f35c35f87c09fc55bcecb659605b9ecb90a"
+  },
+  "sdk_commit": "aa5df964b0f64924ee6d0d2ffd6c3ca6ed59f9ca"
+}

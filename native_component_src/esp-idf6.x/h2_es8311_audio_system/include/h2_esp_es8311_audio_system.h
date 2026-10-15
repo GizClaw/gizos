@@ -67,6 +67,9 @@ typedef struct h2_esp_es8311_audio_system_config {
     uint8_t codec_volume_default;
     uint8_t adc_digital_volume;
     uint32_t mic_gain_db;
+    /** Board-owned linear PAL percent range in analog PGA dB; max=0 uses 30. */
+    uint8_t mic_gain_min_db;
+    uint8_t mic_gain_max_db;
     uint8_t max_tracks;
     uint8_t track_queue_frames;
     uint8_t mic_queue_frames;
@@ -103,6 +106,7 @@ typedef struct h2_esp_es8311_audio_system {
     h2_esp_es8311_audio_system_config_t config;
     h2_esp_es8311_sr_state_t sr;
     int pa_initialized;
+    int codec_shutdown_pending;
     int opened;
     int sr_initialized;
     volatile int mic_started;
@@ -113,6 +117,7 @@ typedef struct h2_esp_es8311_audio_system {
     int mixer_initialized;
     int playback_task_started;
     uint32_t speaker_volume_percent;
+    uint32_t mic_gain_percent;
     i2c_master_bus_handle_t i2c_bus;
     i2c_master_dev_handle_t codec;
     int owns_i2c_bus;
@@ -148,8 +153,32 @@ int h2_esp_es8311_audio_system_deinit(
 /**
  * Initialize the codec and reserve both I2S DMA rings without starting the
  * microphone or speaker worker tasks.
+ *
+ * Blocking task-context call, serialized with all Audio PAL/lifecycle calls.
+ * Lazy prepare/start keeps PA and workers off while the initial ES8311 control
+ * write returns NACK/timeout, retrying within a 2 s control-readiness deadline.
+ * Ready hardware has no mandatory delay. Persistent non-response returns
+ * H2_AUDIO_ERR_IO; other SDK failures retain their mapped Audio result.
  */
 int h2_esp_es8311_audio_system_prepare(
+    h2_esp_es8311_audio_system_t *system);
+
+/**
+ * @brief Stop/join workers, disable PA, suspend the codec, and release resources.
+ * @param system Caller-owned, initialized or zero-initialized storage.
+ * @return H2_AUDIO_OK on success; H2_AUDIO_ERR_INVALID_ARG for NULL; otherwise
+ * the first worker, PA or I2C error. Remaining resources are retained for retry.
+ *
+ * Blocking task-context call. Serialize against all Audio PAL/lifecycle calls;
+ * stop consumers first and retain I2C/PA providers until success. Worker waits
+ * use their existing bounded deadlines; each suspend write has a 100 ms timeout.
+ * Success invalidates PAL/tracks. Repeated calls and never-opened storage do no
+ * I/O. Call init then prepare/start to restore audio after success. After an
+ * error, retry shutdown before re-init or sleep; start is rejected meanwhile.
+ * Ordinary deinit does not request suspend, but finishes a pending power-down.
+ * No physical supply switching.
+ */
+int h2_esp_es8311_audio_system_power_down(
     h2_esp_es8311_audio_system_t *system);
 
 h2_pal_audio_t *h2_esp_es8311_audio_system_audio(h2_esp_es8311_audio_system_t *system);

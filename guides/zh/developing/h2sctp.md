@@ -5,6 +5,8 @@ H2SCTP 是 GizOS 自有的 portable SCTP provider。它实现
 DTLS record transport 上组装；它不打开 socket，不启动线程或 task，也不拥有 DTLS、
 DCEP、WebRTC PPID 映射或 target selector。
 
+`h2_pal_sctp_association_config_t.allocator` 可选地指定 association、rx_assembly、stream、TX/RX fragment 及重组缓冲的分配器，NULL 保持 provider mem。显式 `packet_mem` 仍独立管理 packet pool，否则 pool 跟随 association allocator；allocator 必须活到 association close 完成。
+
 ## API Reference
 
 [H2SCTP API Reference](/references/h2sctp)
@@ -56,6 +58,8 @@ validation target 都不得依赖、include、link、load 或执行 vendor usrsc
 `WOULD_BLOCK` 时 provider 保留 exact packet、停止继续发送，并把 next deadline 设为
 当前 `now_ms`；fatal callback error 只触发一次 `FAILED` transition。
 
+Reset request 只有在 provider 已拥有其 wire packet 和重传状态后才返回 `OK`；完成通过 `on_stream_reset` 报告。已有 retained output 时返回 `WOULD_BLOCK`，已有 control request 时返回 `BUSY`，两者都不消费 request、不推进 reset sequence，也不设置新 stream 的 pending 状态，调用方在 service 后重试。Reset 自己的 emit callback 返回 `WOULD_BLOCK` 时，provider 已保存该 packet，因此 request 仍被接受并由 service 重发；后续 reset 不能覆盖它的 packet 或 timer。
+
 stream reset callback 是 RFC 6525 request/response transition 的 exactly-once 投影，
 不是每个 wire packet 的投影。重复或延迟的 outgoing-reset request 只重发既有 response，
 不会再次投影 `INCOMING_RESET`；重复或延迟的 response 在对应 request 已完成后不会再次
@@ -64,7 +68,28 @@ reset 产生迟到 callback；consumer 才可以复用同一个 numeric stream I
 必须在 SID reopen 后重放旧 request 和 response，并证明 callback count 与新 stream
 sequence state 都不改变。
 
+收到 outgoing-reset request 时，provider 按 RFC 6525 5.2.2 比较 request 里的 sender's
+last assigned TSN 与本端 cumulative TSN：last TSN 仍在 cumulative 之后，说明该 stream
+还有数据没收齐，此时只回 `In progress`、保存这条 request，不重置 stream、不释放任何
+rx fragment，也不投影 `INCOMING_RESET`。cumulative 已到达 last TSN 时，先把已就绪的消息
+交付完再 reset；consumer 暂时收不下（message callback 返回 `WOULD_BLOCK`）同样按
+`In progress` 推迟，重发的 request 也不例外，不能丢掉还在等交付的 fragment。推迟的
+reset 在 DATA 或 FORWARD-TSN 推进 cumulative 后、以及每次 service 里重试：交付完成后
+执行 reset、主动回 `Performed` 并投影一次 `INCOMING_RESET`；reset 只和它的 `Performed`
+一起生效：已有 retained output（例如补上空洞那个 chunk 的 SACK）占着时 response 排不进去，
+要等 service 把它发走再完成。拿不到保存 request 的内存时不保存，由对端重发的 request 完成。reset 只丢弃 TSN 不超过 last TSN 的 fragment，之后的
+fragment 属于该 stream 的下一轮，reset 把 sequence counter 归零后要立即重新调度它们的
+交付。立即 reset 会丢掉空洞之后、已用 gap block 确认过的 fragment：对端认为它们已确认
+不再重发，本端 cumulative 就永远停在空洞后面。`stream_test` 必须覆盖三种顺序：丢一个
+chunk、收到后续 chunk、收到 reset request、再收到补发 chunk；下一轮的消息先于 reset 完成
+到达；交付被 consumer 挡住期间收到重发的 request；以及空洞补上时 SACK 占住 retained
+output。
+
 ## Time and failure semantics
+
+同一次未过期的握手收到有效参数相同的重复 INIT 时，provider 重发相同 cookie 的 INIT-ACK，保持原 expiry；不能使已发出的第一个 INIT-ACK 因乱序而失效。进入 COOKIE-ECHO 阶段后忽略迟到或重复的 INIT-ACK，不重新生成 ECHO 或改写对端参数。双端同时主动 open 时，收到有效 COOKIE-ECHO 也会停止本端的 T1-init/T1-cookie；建立后只保留 heartbeat、数据和 reset 所需的 timer，不能让遗留 setup timer 把正常连接判为失败。
+
+建立 association 后，provider 保留与本次 association 绑定的 cookie。收到完全匹配的重复 `COOKIE-ECHO` 时重发 `COOKIE-ACK`，恢复首个 ACK 丢失的握手；不重复投影 `CONNECTED`，也不重置既有 heartbeat 或 stream 状态。已建立且 cookie/tag 匹配时，初始 cookie deadline 不再拒绝该重传；仍在建立时继续检查 expiry，未知或不匹配的 cookie 不产生 ACK。该行为对应 [RFC 9260 5.2.4 case D](https://www.rfc-editor.org/rfc/rfc9260.html#section-5.2.4)。
 
 所有 `now_ms` 都是同一 association 上非递减的 absolute monotonic milliseconds；
 `UINT64_MAX` 保留为 no-deadline sentinel。`service` 只处理已到期工作，不 sleep 或 spin，

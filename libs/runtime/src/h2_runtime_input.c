@@ -1,6 +1,8 @@
 #include "h2_runtime_internal.h"
 #include "h2_runtime_task_names.h"
 
+#include <stdarg.h>
+#include <stdio.h>
 #include <string.h>
 
 _Static_assert(
@@ -144,18 +146,168 @@ static void source_set_event_time(
     source->timestamp_ms = now_ms;
 }
 
+/*
+ * Button edge retention.
+ *
+ * Held repeats (BUTTON_DOWN/BUTTON_ACTION while still pressed) are samples and
+ * stay lossy. The press edge (BUTTON_DOWN that starts a press) and the release
+ * edge (BUTTON_UP plus the final BUTTON_ACTION) are what a consumer needs to
+ * track the held state, so when the event queue cannot take them they are
+ * kept on their source and re-emitted, oldest first, at the start of the next
+ * input poll. Rules:
+ *
+ * - A source never has pending and retained events at once. While it holds
+ *   retained edges, its new edges go straight to the retained list and its
+ *   repeats are dropped, so nothing of that source overtakes an older edge.
+ * - A source keeps at most H2_RUNTIME_BUTTON_RETAINED_EDGE_MAX edges. Edges of
+ *   one source alternate, so when another one arrives the two oldest are a
+ *   press/release (or release/press) pair; they are discarded and counted as
+ *   dropped, and the level the consumer ends up seeing stays correct.
+ * - Re-emitted events keep their payload and their original timestamp but
+ *   take a fresh sequence, which goes through the normal pending path: the
+ *   snapshot is published before the events become dequeueable.
+ */
+static void record_input_drop(
+    h2_runtime_t *runtime,
+    const h2_runtime_input_source_t *source,
+    h2_runtime_event_kind_t kind) {
+    h2_runtime_record_dropped_event(
+        runtime, kind, source->component, source->component_id);
+}
+
+static void evict_retained_edges(
+    h2_runtime_t *runtime,
+    h2_runtime_input_source_t *source) {
+    h2_runtime_button_recognizer_t *button = &source->button;
+    for (size_t i = 0u; i < button->retained_count; ++i) {
+        const h2_runtime_button_retained_edge_t *edge = &button->retained[i];
+        if (edge->edge_owed != 0u) {
+            record_input_drop(
+                runtime,
+                source,
+                edge->release != 0u ? H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP
+                                    : H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+        }
+        if (edge->action_owed != 0u) {
+            record_input_drop(
+                runtime, source, H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION);
+        }
+    }
+    button->retained_count = 0u;
+}
+
+static void retain_button_event(
+    h2_runtime_t *runtime,
+    h2_runtime_input_source_t *source,
+    h2_runtime_event_kind_t kind,
+    const void *payload) {
+    h2_runtime_button_recognizer_t *button = &source->button;
+    h2_runtime_button_retained_edge_t edge;
+    memset(&edge, 0, sizeof(edge));
+    if (kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN) {
+        h2_runtime_button_down_event_t down;
+        memcpy(&down, payload, sizeof(down));
+        edge.pressed_at_ms = down.pressed_at_ms;
+        edge.edge_owed = 1u;
+    } else if (kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP) {
+        h2_runtime_button_up_event_t up;
+        memcpy(&up, payload, sizeof(up));
+        edge.pressed_at_ms = up.pressed_at_ms;
+        edge.released_at_ms = up.released_at_ms;
+        edge.release = 1u;
+        edge.edge_owed = 1u;
+    } else {
+        h2_runtime_button_action_event_t action;
+        memcpy(&action, payload, sizeof(action));
+        if (button->retained_count != 0u) {
+            /* The final action joins the BUTTON_UP retained right before it. */
+            h2_runtime_button_retained_edge_t *last =
+                &button->retained[button->retained_count - 1u];
+            if (last->release != 0u && last->action_owed == 0u &&
+                last->pressed_at_ms == action.pressed_at_ms &&
+                last->released_at_ms == action.released_at_ms) {
+                last->action_owed = 1u;
+                return;
+            }
+        }
+        /* BUTTON_UP was delivered; only the final action is still owed. */
+        edge.pressed_at_ms = action.pressed_at_ms;
+        edge.released_at_ms = action.released_at_ms;
+        edge.release = 1u;
+        edge.action_owed = 1u;
+    }
+    if (button->retained_count >= H2_RUNTIME_BUTTON_RETAINED_EDGE_MAX) {
+        evict_retained_edges(runtime, source);
+    }
+    button->retained[button->retained_count++] = edge;
+}
+
+/* Keeps a retained-class event on its source; drops (and counts) the rest. */
+static void keep_or_drop_input_event(
+    h2_runtime_t *runtime,
+    h2_runtime_input_source_t *source,
+    h2_runtime_event_kind_t kind,
+    const void *payload,
+    int retain) {
+    if (retain != 0 && source->component == H2_RUNTIME_COMPONENT_BUTTON) {
+        retain_button_event(runtime, source, kind, payload);
+        return;
+    }
+    record_input_drop(runtime, source, kind);
+}
+
+/* Moves one source's pending events out of the pending list, in order. */
+static void spill_source_pending_events(
+    h2_runtime_t *runtime,
+    h2_runtime_input_source_t *source) {
+    h2_runtime_private_t *private_state = runtime->private_state;
+    size_t kept = 0u;
+    for (size_t i = 0u; i < private_state->input_pending_event_count; ++i) {
+        const h2_runtime_input_pending_event_t *pending =
+            &private_state->input_pending_events[i];
+        if (pending->component == source->component &&
+            pending->component_id == source->component_id) {
+            keep_or_drop_input_event(
+                runtime, source, pending->kind, &pending->payload,
+                pending->retain);
+            continue;
+        }
+        if (kept != i) {
+            private_state->input_pending_events[kept] = *pending;
+        }
+        kept += 1u;
+    }
+    private_state->input_pending_event_count = kept;
+}
+
 static h2_pal_result_t append_input_event(
     h2_runtime_t *runtime,
     h2_runtime_input_source_t *source,
     h2_runtime_event_kind_t kind,
     h2_runtime_timestamp_ms_t now_ms,
     const void *payload,
-    size_t payload_size) {
-    if (runtime->private_state->input_pending_event_count >=
-            runtime->private_state->input_pending_event_capacity ||
-        payload == NULL ||
+    size_t payload_size,
+    int retain) {
+    if (payload == NULL ||
         payload_size > sizeof(h2_runtime_input_event_payload_t)) {
         return H2_PAL_ERR_NO_SPACE;
+    }
+    if (source->button.retained_count != 0u) {
+        keep_or_drop_input_event(runtime, source, kind, payload, retain);
+        return H2_PAL_OK;
+    }
+    if (runtime->private_state->input_pending_event_count >=
+        runtime->private_state->input_pending_event_capacity) {
+        /*
+         * The pending list only outlives a poll while every retired snapshot
+         * slot is pinned. Exhausting it drops a sample or retains an edge; it
+         * never faults the input worker.
+         */
+        if (retain != 0) {
+            spill_source_pending_events(runtime, source);
+        }
+        keep_or_drop_input_event(runtime, source, kind, payload, retain);
+        return H2_PAL_OK;
     }
 
     h2_runtime_sequence_t sequence = h2_runtime_next_sequence(runtime);
@@ -164,6 +316,7 @@ static h2_pal_result_t append_input_event(
             runtime->private_state->input_pending_event_count++];
     memset(pending, 0, sizeof(*pending));
     pending->kind = kind;
+    pending->retain = retain;
     pending->component = source->component;
     pending->component_id = source->component_id;
     pending->sequence = sequence;
@@ -180,29 +333,132 @@ static h2_pal_result_t append_input_event(
     return H2_PAL_OK;
 }
 
+static h2_pal_result_t send_input_event(
+    h2_runtime_t *runtime,
+    const h2_runtime_input_pending_event_t *pending) {
+    h2_runtime_queued_event_t queued;
+    memset(&queued, 0, sizeof(queued));
+    queued.kind = pending->kind;
+    queued.component = pending->component;
+    queued.component_id = pending->component_id;
+    queued.sequence = pending->sequence;
+    queued.timestamp_ms = pending->timestamp_ms;
+    queued.payload_size = pending->payload_size;
+    memcpy(queued.payload.bytes, &pending->payload, pending->payload_size);
+    return h2_runtime_enqueue_event_strict(
+        runtime, &queued, H2_PAL_QUEUE_NO_WAIT);
+}
+
+/*
+ * Sends pending events in order. The first FULL stops sending for the rest of
+ * the pass, so a later event can never overtake a retained edge; every event
+ * after it is kept (edges) or dropped and counted (everything else).
+ */
 static h2_pal_result_t enqueue_pending_events(h2_runtime_t *runtime) {
+    h2_runtime_private_t *private_state = runtime->private_state;
     h2_pal_result_t first_error = H2_PAL_OK;
-    for (size_t i = 0u;
-         i < runtime->private_state->input_pending_event_count;
-         ++i) {
+    int full = 0;
+    for (size_t i = 0u; i < private_state->input_pending_event_count; ++i) {
         const h2_runtime_input_pending_event_t *pending =
-            &runtime->private_state->input_pending_events[i];
-        h2_pal_result_t rc = h2_runtime_emit_event(
-            runtime,
-            pending->kind,
-            pending->component,
-            pending->component_id,
-            pending->sequence,
-            pending->timestamp_ms,
-            &pending->payload,
-            pending->payload_size);
-        if (rc != H2_PAL_OK) {
-            first_error = rc;
-            break;
+            &private_state->input_pending_events[i];
+        if (full == 0) {
+            const h2_pal_result_t rc = send_input_event(runtime, pending);
+            if (rc == H2_PAL_OK) {
+                continue;
+            }
+            if (rc != H2_PAL_ERR_FULL) {
+                first_error = rc;
+                break;
+            }
+            full = 1;
+        }
+        h2_runtime_input_source_t *source = h2_runtime_find_input_source(
+            runtime, pending->component, pending->component_id);
+        if (source == NULL) {
+            h2_runtime_record_dropped_event(
+                runtime, pending->kind, pending->component,
+                pending->component_id);
+            continue;
+        }
+        keep_or_drop_input_event(
+            runtime, source, pending->kind, &pending->payload,
+            pending->retain);
+    }
+    private_state->input_pending_event_count = 0u;
+    return first_error;
+}
+
+static size_t retained_event_count(
+    const h2_runtime_button_recognizer_t *button) {
+    size_t count = 0u;
+    for (size_t i = 0u; i < button->retained_count; ++i) {
+        count += button->retained[i].edge_owed;
+        count += button->retained[i].action_owed;
+    }
+    return count;
+}
+
+/*
+ * Moves every retained edge that fits back into the pending list, one whole
+ * source at a time; a source that does not fit keeps its edges for the next
+ * poll. The events then take the normal publish path.
+ */
+static h2_pal_result_t requeue_retained_edges(
+    h2_runtime_t *runtime,
+    int *out_requeued) {
+    h2_runtime_private_t *private_state = runtime->private_state;
+    *out_requeued = 0;
+    for (size_t index = 0u; index < private_state->input_source_count;
+         ++index) {
+        h2_runtime_input_source_t *source =
+            &private_state->input_sources[index];
+        h2_runtime_button_recognizer_t *button = &source->button;
+        if (button->retained_count == 0u ||
+            retained_event_count(button) >
+                private_state->input_pending_event_capacity -
+                    private_state->input_pending_event_count) {
+            continue;
+        }
+        h2_runtime_button_retained_edge_t
+            edges[H2_RUNTIME_BUTTON_RETAINED_EDGE_MAX];
+        const size_t edge_count = button->retained_count;
+        memcpy(edges, button->retained, edge_count * sizeof(edges[0]));
+        button->retained_count = 0u;
+        *out_requeued = 1;
+        for (size_t i = 0u; i < edge_count; ++i) {
+            const h2_runtime_button_retained_edge_t *edge = &edges[i];
+            h2_pal_result_t rc = H2_PAL_OK;
+            if (edge->edge_owed != 0u && edge->release == 0u) {
+                const h2_runtime_button_down_event_t event = {
+                    .pressed_at_ms = edge->pressed_at_ms,
+                };
+                rc = append_input_event(
+                    runtime, source, H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN,
+                    edge->pressed_at_ms, &event, sizeof(event), 1);
+            } else if (edge->edge_owed != 0u) {
+                const h2_runtime_button_up_event_t event = {
+                    .pressed_at_ms = edge->pressed_at_ms,
+                    .released_at_ms = edge->released_at_ms,
+                };
+                rc = append_input_event(
+                    runtime, source, H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP,
+                    edge->released_at_ms, &event, sizeof(event), 1);
+            }
+            if (rc == H2_PAL_OK && edge->action_owed != 0u) {
+                const h2_runtime_button_action_event_t event = {
+                    .pressed_at_ms = edge->pressed_at_ms,
+                    .released_at_ms = edge->released_at_ms,
+                };
+                rc = append_input_event(
+                    runtime, source, H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION,
+                    edge->released_at_ms, &event, sizeof(event), 1);
+            }
+            if (rc != H2_PAL_OK) {
+                return rc;
+            }
         }
     }
-    runtime->private_state->input_pending_event_count = 0u;
-    return first_error;
+    return H2_PAL_OK;
 }
 
 static h2_pal_result_t publish_pending_events(h2_runtime_t *runtime) {
@@ -261,7 +517,8 @@ static h2_pal_result_t publish_error(
         H2_RUNTIME_COMPONENT_EVENT_ERROR,
         now_ms,
         &result,
-        sizeof(result));
+        sizeof(result),
+        0);
 }
 
 static int source_periph_duplicate(
@@ -473,6 +730,7 @@ static h2_pal_result_t update_button_pressed(
     int emit_down = 0;
     int emit_up = 0;
     int emit_action = 0;
+    int press_edge = 0;
     int state_changed = 0;
     if (button->initialized == 0) {
         button->initialized = 1;
@@ -484,6 +742,7 @@ static h2_pal_result_t update_button_pressed(
             source->button_state.pressed_at_ms = now_ms;
             emit_down = 1;
             emit_action = 1;
+            press_edge = 1;
         } else {
             source->button_state.pressed = false;
             source->button_state.pressed_at_ms = 0u;
@@ -495,6 +754,7 @@ static h2_pal_result_t update_button_pressed(
         source->button_state.pressed_at_ms = now_ms;
         emit_down = 1;
         emit_action = 1;
+        press_edge = 1;
         state_changed = 1;
     } else if (is_pressed != 0 && button->is_pressed != 0) {
         emit_down = 1;
@@ -529,7 +789,8 @@ static h2_pal_result_t update_button_pressed(
             H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN,
             now_ms,
             &event,
-            sizeof(event));
+            sizeof(event),
+            press_edge);
         if (rc != H2_PAL_OK) {
             return rc;
         }
@@ -545,7 +806,8 @@ static h2_pal_result_t update_button_pressed(
             H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP,
             now_ms,
             &event,
-            sizeof(event));
+            sizeof(event),
+            1);
         if (rc != H2_PAL_OK) {
             return rc;
         }
@@ -561,7 +823,8 @@ static h2_pal_result_t update_button_pressed(
             H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION,
             now_ms,
             &event,
-            sizeof(event));
+            sizeof(event),
+            emit_up);
     }
     return H2_PAL_OK;
 }
@@ -718,7 +981,8 @@ static h2_pal_result_t apply_nfc_scan(
         H2_RUNTIME_COMPONENT_EVENT_NFC_STATE,
         now_ms,
         &payload,
-        sizeof(payload));
+        sizeof(payload),
+        0);
 }
 
 static h2_runtime_input_source_t *find_nfc_source(
@@ -797,7 +1061,8 @@ static h2_pal_result_t emit_imu_gesture(
         H2_RUNTIME_COMPONENT_EVENT_IMU_GESTURE,
         now_ms,
         event,
-        sizeof(*event));
+        sizeof(*event),
+        0);
 }
 
 static h2_pal_result_t poll_imu(
@@ -936,6 +1201,37 @@ static h2_pal_result_t poll_temperature(
     return H2_PAL_OK;
 }
 
+static h2_runtime_input_stage_t source_stage(
+    h2_runtime_input_source_kind_t kind) {
+    switch (kind) {
+    case H2_RUNTIME_INPUT_SOURCE_SINGLE_BUTTON:
+        return H2_RUNTIME_INPUT_STAGE_BUTTON;
+    case H2_RUNTIME_INPUT_SOURCE_RADIO_BUTTON:
+        return H2_RUNTIME_INPUT_STAGE_RADIO_BUTTON;
+    case H2_RUNTIME_INPUT_SOURCE_IMU:
+        return H2_RUNTIME_INPUT_STAGE_IMU;
+    case H2_RUNTIME_INPUT_SOURCE_BATTERY:
+        return H2_RUNTIME_INPUT_STAGE_BATTERY;
+    case H2_RUNTIME_INPUT_SOURCE_TEMPERATURE:
+        return H2_RUNTIME_INPUT_STAGE_TEMPERATURE;
+    default:
+        return H2_RUNTIME_INPUT_STAGE_SOURCES;
+    }
+}
+
+/* Keeps the first failed step of a poll; later steps still run. */
+static void poll_note_error(
+    h2_runtime_t *runtime,
+    h2_pal_result_t *first_rc,
+    h2_runtime_input_stage_t stage,
+    h2_pal_result_t rc) {
+    if (rc == H2_PAL_OK || *first_rc != H2_PAL_OK) {
+        return;
+    }
+    *first_rc = rc;
+    runtime->private_state->input_error_stage = stage;
+}
+
 static h2_pal_result_t input_poll_once_unlocked(
     h2_runtime_t *runtime,
     int force_due,
@@ -943,11 +1239,15 @@ static h2_pal_result_t input_poll_once_unlocked(
     if (!h2_runtime_ready(runtime)) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    h2_pal_result_t first_rc = H2_PAL_OK;
+    runtime->private_state->input_error_stage = H2_RUNTIME_INPUT_STAGE_NONE;
     h2_runtime_timestamp_ms_t now_ms = 0u;
     h2_pal_result_t rc = input_now(runtime, &now_ms);
     if (rc != H2_PAL_OK) {
+        poll_note_error(runtime, &first_rc, H2_RUNTIME_INPUT_STAGE_TIME, rc);
         return rc;
     }
+    runtime->private_state->input_poll_now_ms = now_ms;
 
     /*
      * While a test-control session owns the input, its source table is
@@ -957,21 +1257,33 @@ static h2_pal_result_t input_poll_once_unlocked(
     if (runtime->private_state->test_control == NULL) {
         rc = ensure_input_sources(runtime, now_ms);
         if (rc != H2_PAL_OK) {
+            poll_note_error(
+                runtime, &first_rc, H2_RUNTIME_INPUT_STAGE_SOURCES, rc);
             return rc;
         }
     }
 
     /* Pending events left by a deferred snapshot publication are kept and
-     * published together with the snapshot below. */
+     * published together with the snapshot below. Button edges the event
+     * queue refused on an earlier poll are retried first, before any new
+     * sample of their source. */
+    int requeued = 0;
+    rc = requeue_retained_edges(runtime, &requeued);
+    if (rc == H2_PAL_OK && requeued != 0) {
+        rc = publish_pending_events(runtime);
+    }
+    poll_note_error(
+        runtime, &first_rc, H2_RUNTIME_INPUT_STAGE_EVENT_PUBLISH, rc);
 
+    /*
+     * A failed step is noted and the poll goes on: one source that cannot be
+     * read, or an event that does not fit, must not starve every other
+     * source, and events already produced must still be published.
+     */
     rc = consume_push_button_edges(runtime);
-    if (rc != H2_PAL_OK) {
-        return rc;
-    }
+    poll_note_error(runtime, &first_rc, H2_RUNTIME_INPUT_STAGE_PUSH_EDGE, rc);
     rc = consume_nfc_results(runtime, now_ms);
-    if (rc != H2_PAL_OK) {
-        return rc;
-    }
+    poll_note_error(runtime, &first_rc, H2_RUNTIME_INPUT_STAGE_NFC_RESULT, rc);
 
     for (size_t i = 0u; i < runtime->private_state->input_source_count; ++i) {
         h2_runtime_input_source_t *source =
@@ -1029,19 +1341,20 @@ static h2_pal_result_t input_poll_once_unlocked(
         } else {
             rc = H2_PAL_ERR_INVALID_STATE;
         }
-        if (rc != H2_PAL_OK) {
-            runtime->private_state->input_pending_event_count = 0u;
-            return rc;
-        }
+        poll_note_error(runtime, &first_rc, source_stage(source->kind), rc);
         if (runtime->private_state->input_pending_event_count != 0u) {
             rc = publish_pending_events(runtime);
-            if (rc != H2_PAL_OK) {
-                return rc;
-            }
+            poll_note_error(
+                runtime, &first_rc, H2_RUNTIME_INPUT_STAGE_EVENT_PUBLISH, rc);
         }
     }
 
-    return publish_snapshot_if_due(runtime, now_ms, force_due);
+    rc = publish_snapshot_if_due(runtime, now_ms, force_due);
+    /* Reports drops whose WARN a busy rate-limit window held back. */
+    h2_runtime_report_dropped_events(runtime);
+    poll_note_error(
+        runtime, &first_rc, H2_RUNTIME_INPUT_STAGE_SNAPSHOT_PUBLISH, rc);
+    return first_rc;
 }
 
 /*
@@ -1082,6 +1395,28 @@ static void input_writer_mutex_destroy(h2_runtime_t *runtime) {
             runtime->sync, runtime->private_state->input_writer_mutex);
         runtime->private_state->input_writer_mutex = NULL;
     }
+    if (runtime->private_state->input_health_mutex != NULL) {
+        (void)h2_pal_mutex_destroy(
+            runtime->sync, runtime->private_state->input_health_mutex);
+        runtime->private_state->input_health_mutex = NULL;
+    }
+}
+
+/* Health is only written by the input workers, which exist only after the
+ * mutexes were created; without a mutex nothing writes it. */
+static h2_pal_result_t input_health_lock(h2_runtime_t *runtime) {
+    if (runtime->private_state->input_health_mutex == NULL) {
+        return H2_PAL_OK;
+    }
+    return h2_pal_mutex_lock(
+        runtime->sync, runtime->private_state->input_health_mutex);
+}
+
+static void input_health_unlock(h2_runtime_t *runtime) {
+    if (runtime->private_state->input_health_mutex != NULL) {
+        (void)h2_pal_mutex_unlock(
+            runtime->sync, runtime->private_state->input_health_mutex);
+    }
 }
 
 static h2_pal_result_t input_poll_once_locked(
@@ -1109,26 +1444,340 @@ h2_pal_result_t h2_runtime_input_poll_sensors_once(h2_runtime_t *runtime) {
     return input_poll_once_locked(runtime, 1, 1);
 }
 
+/* Longest pause between worker polls while a step keeps failing. */
+#define H2_RUNTIME_INPUT_ERROR_BACKOFF_MAX_MS 500u
+/* A persistent error is logged again every this many failed polls. */
+#define H2_RUNTIME_INPUT_ERROR_LOG_EVERY 100u
+
+const char *h2_runtime_input_stage_name(h2_runtime_input_stage_t stage) {
+    switch (stage) {
+    case H2_RUNTIME_INPUT_STAGE_NONE: return "none";
+    case H2_RUNTIME_INPUT_STAGE_LOCK: return "lock";
+    case H2_RUNTIME_INPUT_STAGE_TIME: return "time";
+    case H2_RUNTIME_INPUT_STAGE_SOURCES: return "sources";
+    case H2_RUNTIME_INPUT_STAGE_PUSH_EDGE: return "push_edge";
+    case H2_RUNTIME_INPUT_STAGE_NFC_RESULT: return "nfc_result";
+    case H2_RUNTIME_INPUT_STAGE_BUTTON: return "button";
+    case H2_RUNTIME_INPUT_STAGE_RADIO_BUTTON: return "radio_button";
+    case H2_RUNTIME_INPUT_STAGE_IMU: return "imu";
+    case H2_RUNTIME_INPUT_STAGE_BATTERY: return "battery";
+    case H2_RUNTIME_INPUT_STAGE_TEMPERATURE: return "temperature";
+    case H2_RUNTIME_INPUT_STAGE_EVENT_PUBLISH: return "event_publish";
+    case H2_RUNTIME_INPUT_STAGE_SNAPSHOT_PUBLISH: return "snapshot_publish";
+    case H2_RUNTIME_INPUT_STAGE_SLEEP: return "sleep";
+    case H2_RUNTIME_INPUT_STAGE_NFC_SCAN: return "nfc_scan";
+    }
+    return "unknown";
+}
+
+/*
+ * Input worker diagnostics. A size-constrained image that ships without logs
+ * builds with H2_RUNTIME_INPUT_LOG_ENABLED=0; the health counters and
+ * h2_runtime_input_status() are unaffected.
+ */
+#ifndef H2_RUNTIME_INPUT_LOG_ENABLED
+#define H2_RUNTIME_INPUT_LOG_ENABLED 1
+#endif
+
+#if H2_RUNTIME_INPUT_LOG_ENABLED
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((format(printf, 3, 4)))
+#endif
+static void input_logf(
+    h2_runtime_t *runtime,
+    h2_pal_log_level_t level,
+    const char *format,
+    ...) {
+    char line[H2_PAL_LOG_MESSAGE_MAX];
+    va_list args;
+    va_start(args, format);
+    (void)vsnprintf(line, sizeof(line), format, args);
+    va_end(args);
+    (void)h2_pal_log_write(runtime->log, level, "runtime/input", line);
+}
+#else
+static inline void input_logf(
+    h2_runtime_t *runtime,
+    h2_pal_log_level_t level,
+    const char *format,
+    ...) {
+    (void)runtime;
+    (void)level;
+    (void)format;
+}
+#endif
+
+/*
+ * Records one worker poll in the health counters under the health mutex.
+ * Returns whether the outcome is worth a log line, which the caller writes
+ * after unlocking; out_consecutive is the consecutive failure count after
+ * this poll.
+ */
+static int input_record_poll(
+    h2_runtime_t *runtime,
+    h2_pal_result_t rc,
+    h2_runtime_input_stage_t stage,
+    h2_runtime_timestamp_ms_t now_ms,
+    uint32_t snapshot_deferred_count,
+    uint32_t *out_consecutive,
+    uint32_t *out_total) {
+    h2_runtime_private_t *state = runtime->private_state;
+    *out_consecutive = 0u;
+    *out_total = 0u;
+    if (input_health_lock(runtime) != H2_PAL_OK) {
+        return rc != H2_PAL_OK;
+    }
+    int log_it;
+    /* The publication counter is writer-owned: UINT32_MAX keeps the last
+     * copy when the caller could not read it under the writer mutex. */
+    if (snapshot_deferred_count != UINT32_MAX) {
+        state->input_snapshot_deferred_count = snapshot_deferred_count;
+    }
+    if (rc == H2_PAL_OK) {
+        const uint32_t recovered_after = state->input_consecutive_error_count;
+        state->input_poll_count += 1u;
+        state->input_last_poll_ok_at_ms = now_ms;
+        state->input_consecutive_error_count = 0u;
+        *out_consecutive = recovered_after;
+        log_it = recovered_after != 0u;
+    } else {
+        const int changed = state->input_last_error != rc ||
+                            state->input_last_error_stage != stage;
+        state->input_last_error = rc;
+        state->input_last_error_stage = stage;
+        state->input_last_error_at_ms = now_ms;
+        state->input_error_count += 1u;
+        state->input_consecutive_error_count += 1u;
+        *out_consecutive = state->input_consecutive_error_count;
+        log_it = changed || *out_consecutive == 1u ||
+                 *out_consecutive % H2_RUNTIME_INPUT_ERROR_LOG_EVERY == 0u;
+    }
+    *out_total = state->input_error_count;
+    input_health_unlock(runtime);
+    return log_it;
+}
+
+/*
+ * The worker's poll: one frame under the writer mutex, then its health
+ * record. out_consecutive receives the consecutive failure count.
+ */
+static h2_pal_result_t input_worker_poll(
+    h2_runtime_t *runtime,
+    uint32_t *out_consecutive) {
+    h2_runtime_input_stage_t stage = H2_RUNTIME_INPUT_STAGE_LOCK;
+    h2_runtime_timestamp_ms_t now_ms = 0u;
+    uint32_t deferred = UINT32_MAX;
+    h2_pal_result_t rc = input_writer_lock(runtime);
+    if (rc == H2_PAL_OK) {
+        rc = input_poll_once_unlocked(runtime, 0, 0);
+        stage = rc == H2_PAL_OK ? H2_RUNTIME_INPUT_STAGE_NONE
+                                : runtime->private_state->input_error_stage;
+        now_ms = runtime->private_state->input_poll_now_ms;
+        deferred = (uint32_t)runtime->private_state->state_publication
+                       .deferred_count;
+        const h2_pal_result_t unlock_rc = input_writer_unlock(runtime);
+        if (rc == H2_PAL_OK && unlock_rc != H2_PAL_OK) {
+            rc = unlock_rc;
+            stage = H2_RUNTIME_INPUT_STAGE_LOCK;
+        }
+    } else if (input_now(runtime, &now_ms) != H2_PAL_OK) {
+        now_ms = 0u;
+    }
+    uint32_t total = 0u;
+    const int log_it = input_record_poll(
+        runtime, rc, stage, now_ms, deferred, out_consecutive, &total);
+    if (log_it != 0) {
+        if (rc == H2_PAL_OK) {
+            input_logf(runtime, H2_PAL_LOG_WARN,
+                       "H2_RUNTIME_INPUT_RECOVERED after=%u total=%u",
+                       (unsigned)*out_consecutive, (unsigned)total);
+        } else {
+            input_logf(runtime, H2_PAL_LOG_ERROR,
+                       "H2_RUNTIME_INPUT_ERROR stage=%s rc=%d "
+                       "consecutive=%u total=%u",
+                       h2_runtime_input_stage_name(stage), (int)rc,
+                       (unsigned)*out_consecutive, (unsigned)total);
+        }
+    }
+    if (rc == H2_PAL_OK) {
+        *out_consecutive = 0u;
+    }
+    return rc;
+}
+
+/*
+ * A stopped worker must not leave a Button frozen in the pressed state: every
+ * consumer would keep acting on a hold nobody is making (a push-to-talk
+ * recording that never ends). Release each held Button through the normal
+ * release path, publish the snapshot so its state reads released, and queue
+ * the pending events ahead of the close under the normal producer rule: a
+ * full event queue drops them and counts the drop, and so does a snapshot
+ * that readers keep pinned. Returns the number of released Buttons.
+ */
+static uint32_t release_held_buttons_locked(h2_runtime_t *runtime) {
+    if (runtime->private_state->test_control != NULL) {
+        return 0u;
+    }
+    uint32_t released = 0u;
+    for (size_t i = 0u; i < runtime->private_state->input_source_count; ++i) {
+        h2_runtime_input_source_t *source =
+            &runtime->private_state->input_sources[i];
+        if (source->component == H2_RUNTIME_COMPONENT_BUTTON &&
+            source->button.initialized != 0 &&
+            source->button.is_pressed != 0) {
+            /* A release that no longer fits the buffer still clears state. */
+            (void)update_button_pressed(
+                runtime, source, 0, runtime->private_state->input_poll_now_ms);
+            released += 1u;
+        }
+    }
+    /* Fault is terminal: try owed edges once before the queue closes. */
+    int requeued = 0;
+    (void)requeue_retained_edges(runtime, &requeued);
+    /*
+     * Events never become dequeueable before their snapshot. Readers pin
+     * slots only briefly, so retry a few times; if the snapshot still cannot
+     * be published the events are dropped and counted instead.
+     */
+    h2_pal_result_t rc = H2_PAL_ERR_WOULD_BLOCK;
+    for (uint32_t attempt = 0u;
+         attempt < 3u && rc == H2_PAL_ERR_WOULD_BLOCK;
+         ++attempt) {
+        rc = publish_snapshot(runtime, 0);
+        if (rc == H2_PAL_ERR_WOULD_BLOCK) {
+            (void)h2_pal_time_sleep_ms(runtime->time, 10u);
+        }
+    }
+    if (rc == H2_PAL_OK) {
+        (void)enqueue_pending_events(runtime);
+    } else {
+        for (size_t i = 0u;
+             i < runtime->private_state->input_pending_event_count; ++i) {
+            const h2_runtime_input_pending_event_t *pending =
+                &runtime->private_state->input_pending_events[i];
+            h2_runtime_record_dropped_event(
+                runtime, pending->kind, pending->component,
+                pending->component_id);
+        }
+        runtime->private_state->input_pending_event_count = 0u;
+    }
+    /* No retry is possible after close: count every still-owed edge. */
+    for (size_t i = 0u; i < runtime->private_state->input_source_count; ++i) {
+        h2_runtime_input_source_t *source =
+            &runtime->private_state->input_sources[i];
+        if (source->component == H2_RUNTIME_COMPONENT_BUTTON) {
+            evict_retained_edges(runtime, source);
+        }
+    }
+    return released;
+}
+
+static void input_worker_fault(
+    h2_runtime_t *runtime,
+    h2_pal_result_t rc,
+    h2_runtime_input_stage_t stage) {
+    uint32_t released = 0u;
+    const h2_pal_result_t lock_rc = input_writer_lock(runtime);
+    if (lock_rc == H2_PAL_OK) {
+        released = release_held_buttons_locked(runtime);
+        (void)input_writer_unlock(runtime);
+    }
+    h2_runtime_timestamp_ms_t now_ms = 0u;
+    (void)input_now(runtime, &now_ms);
+    uint32_t consecutive = 0u;
+    uint32_t total = 0u;
+    (void)input_record_poll(
+        runtime, rc, stage, now_ms, UINT32_MAX, &consecutive, &total);
+    if (lock_rc == H2_PAL_OK) {
+        input_logf(runtime, H2_PAL_LOG_ERROR,
+                   "H2_RUNTIME_INPUT_FAULT stage=%s rc=%d released=%u; "
+                   "input stopped",
+                   h2_runtime_input_stage_name(stage), (int)rc,
+                   (unsigned)released);
+    } else {
+        /* The source table cannot be touched without the writer mutex. */
+        input_logf(runtime, H2_PAL_LOG_ERROR,
+                   "H2_RUNTIME_INPUT_FAULT stage=%s rc=%d release=skipped "
+                   "lock_rc=%d; input stopped",
+                   h2_runtime_input_stage_name(stage), (int)rc, (int)lock_rc);
+    }
+    h2_atomic_store(&runtime->private_state->input_worker_result, rc);
+    h2_atomic_store(&runtime->private_state->input_stop_requested, 1);
+    h2_atomic_store(
+        &runtime->private_state->input_phase,
+        H2_RUNTIME_INPUT_PHASE_FAULTED);
+    (void)h2_pal_queue_close(
+        runtime->queue, runtime->private_state->event_queue);
+}
+
+static uint32_t input_backoff_ms(
+    const h2_runtime_t *runtime,
+    uint32_t failures) {
+    const uint32_t tick = runtime->private_state->input_tick_ms;
+    if (tick >= H2_RUNTIME_INPUT_ERROR_BACKOFF_MAX_MS || failures <= 1u) {
+        return tick;
+    }
+    return failures > H2_RUNTIME_INPUT_ERROR_BACKOFF_MAX_MS / tick
+               ? H2_RUNTIME_INPUT_ERROR_BACKOFF_MAX_MS
+               : tick * failures;
+}
+
 static void input_task_entry(void *ctx) {
     h2_runtime_t *runtime = (h2_runtime_t *)ctx;
-    while (atomic_load(&runtime->private_state->input_stop_requested) == 0) {
-        h2_pal_result_t rc = input_poll_once_locked(runtime, 0, 0);
-        if (rc == H2_PAL_OK &&
-            atomic_load(&runtime->private_state->input_stop_requested) == 0) {
-            rc = h2_pal_time_sleep_ms(
-                runtime->time, runtime->private_state->input_tick_ms);
+    while (h2_atomic_load(&runtime->private_state->input_stop_requested) == 0) {
+        /*
+         * A failed poll is recorded, logged and retried after a back-off:
+         * hardware reads, a full buffer or a busy reader are transient, and
+         * stopping here would freeze every Button and sensor for good.
+         */
+        uint32_t failures = 0u;
+        const h2_pal_result_t poll_rc = input_worker_poll(runtime, &failures);
+        if (poll_rc == H2_PAL_ERR_INVALID_ARG &&
+            !h2_runtime_ready(runtime)) {
+            input_worker_fault(
+                runtime, poll_rc, H2_RUNTIME_INPUT_STAGE_SOURCES);
+            return;
         }
-        if (rc != H2_PAL_OK) {
-            atomic_store(&runtime->private_state->input_worker_result, rc);
-            atomic_store(&runtime->private_state->input_stop_requested, 1);
-            atomic_store(
-                &runtime->private_state->input_phase,
-                H2_RUNTIME_INPUT_PHASE_FAULTED);
-            (void)h2_pal_queue_close(
-                runtime->queue, runtime->private_state->event_queue);
+        if (h2_atomic_load(&runtime->private_state->input_stop_requested) != 0) {
+            break;
+        }
+        /* Without a working sleep the worker cannot pace itself. */
+        const h2_pal_result_t sleep_rc = h2_pal_time_sleep_ms(
+            runtime->time,
+            poll_rc == H2_PAL_OK ? runtime->private_state->input_tick_ms
+                                 : input_backoff_ms(runtime, failures));
+        if (sleep_rc != H2_PAL_OK) {
+            input_worker_fault(runtime, sleep_rc, H2_RUNTIME_INPUT_STAGE_SLEEP);
             return;
         }
     }
+}
+
+h2_pal_result_t h2_runtime_input_status(
+    h2_runtime_t *runtime,
+    h2_runtime_input_status_t *out_status) {
+    if (!h2_runtime_ready(runtime) || out_status == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    h2_runtime_private_t *state = runtime->private_state;
+    const h2_pal_result_t rc = input_health_lock(runtime);
+    if (rc != H2_PAL_OK) {
+        return rc;
+    }
+    *out_status = (h2_runtime_input_status_t){
+        .phase = (h2_runtime_input_phase_t)h2_atomic_load(&state->input_phase),
+        .worker_result = h2_atomic_load(&state->input_worker_result),
+        .last_error = state->input_last_error,
+        .last_error_stage = state->input_last_error_stage,
+        .last_error_at_ms = state->input_last_error_at_ms,
+        .error_count = state->input_error_count,
+        .consecutive_error_count = state->input_consecutive_error_count,
+        .poll_count = state->input_poll_count,
+        .last_poll_ok_at_ms = state->input_last_poll_ok_at_ms,
+        .snapshot_deferred_count = state->input_snapshot_deferred_count,
+    };
+    input_health_unlock(runtime);
+    return H2_PAL_OK;
 }
 
 static int has_nfc_source(const h2_runtime_t *runtime) {
@@ -1145,10 +1794,11 @@ static int has_nfc_source(const h2_runtime_t *runtime) {
 
 static void input_nfc_task_entry(void *ctx) {
     h2_runtime_t *runtime = (h2_runtime_t *)ctx;
-    while (atomic_load(&runtime->private_state->input_stop_requested) == 0) {
+    int nfc_send_failed = 0;
+    while (h2_atomic_load(&runtime->private_state->input_stop_requested) == 0) {
         for (size_t index = 0u;
              index < runtime->private_state->component_mapping_count &&
-             atomic_load(&runtime->private_state->input_stop_requested) == 0;
+             h2_atomic_load(&runtime->private_state->input_stop_requested) == 0;
              ++index) {
             const h2_runtime_component_mapping_t *mapping =
                 &runtime->private_state->component_mappings[index];
@@ -1186,26 +1836,23 @@ static void input_nfc_task_entry(void *ctx) {
                     H2_PAL_QUEUE_NO_WAIT);
             }
             if (rc != H2_PAL_OK) {
-                atomic_store(&runtime->private_state->input_worker_result, rc);
-                atomic_store(&runtime->private_state->input_stop_requested, 1);
-                atomic_store(&runtime->private_state->input_phase,
-                             H2_RUNTIME_INPUT_PHASE_FAULTED);
-                (void)h2_pal_queue_close(
-                    runtime->queue, runtime->private_state->event_queue);
-                return;
+                /* The scan is lost, not the reader: the next cycle rescans. */
+                if (nfc_send_failed == 0) {
+                    input_logf(runtime, H2_PAL_LOG_ERROR,
+                               "H2_RUNTIME_INPUT_ERROR stage=nfc_scan rc=%d",
+                               (int)rc);
+                }
+                nfc_send_failed = 1;
+            } else {
+                nfc_send_failed = 0;
             }
         }
-        if (atomic_load(&runtime->private_state->input_stop_requested) == 0) {
+        if (h2_atomic_load(&runtime->private_state->input_stop_requested) == 0) {
             h2_pal_result_t rc = h2_pal_time_sleep_ms(
                 runtime->time,
                 runtime->private_state->input_nfc_poll_interval_ms);
             if (rc != H2_PAL_OK) {
-                atomic_store(&runtime->private_state->input_worker_result, rc);
-                atomic_store(&runtime->private_state->input_stop_requested, 1);
-                atomic_store(&runtime->private_state->input_phase,
-                             H2_RUNTIME_INPUT_PHASE_FAULTED);
-                (void)h2_pal_queue_close(
-                    runtime->queue, runtime->private_state->event_queue);
+                input_worker_fault(runtime, rc, H2_RUNTIME_INPUT_STAGE_SLEEP);
                 return;
             }
         }
@@ -1242,6 +1889,20 @@ h2_pal_result_t h2_runtime_input_prepare(h2_runtime_t *runtime) {
         &runtime->private_state->input_writer_mutex);
     if (rc != H2_PAL_OK) {
         runtime->private_state->input_writer_mutex = NULL;
+        return rc;
+    }
+    const h2_pal_mutex_config_t health_mutex_config = {
+        .name = "h2-runtime-input-health",
+        .allocator = runtime->mem,
+        .flags = H2_PAL_MUTEX_FLAG_NONE,
+    };
+    rc = h2_pal_mutex_create(
+        runtime->sync,
+        &health_mutex_config,
+        &runtime->private_state->input_health_mutex);
+    if (rc != H2_PAL_OK) {
+        runtime->private_state->input_health_mutex = NULL;
+        input_writer_mutex_destroy(runtime);
         return rc;
     }
     rc = h2_runtime_state_publication_init(runtime);
@@ -1297,15 +1958,15 @@ h2_pal_result_t h2_runtime_input_start(
      * is terminal: only deinit plus a fresh init recovers. The latched worker
      * result is the fault record and is never cleared by a start.
      */
-    if (atomic_load(&runtime->private_state->input_worker_result) !=
+    if (h2_atomic_load(&runtime->private_state->input_worker_result) !=
         H2_PAL_OK) {
         return H2_PAL_ERR_INVALID_STATE;
     }
-    if (atomic_load(&runtime->private_state->input_phase) !=
+    if (h2_atomic_load(&runtime->private_state->input_phase) !=
         H2_RUNTIME_INPUT_PHASE_STOPPED) {
         return H2_PAL_ERR_INVALID_STATE;
     }
-    atomic_store(
+    h2_atomic_store(
         &runtime->private_state->input_phase,
         H2_RUNTIME_INPUT_PHASE_STARTING);
 
@@ -1331,7 +1992,7 @@ h2_pal_result_t h2_runtime_input_start(
     runtime->private_state->input_temperature_poll_interval_ms = select_interval(
         selected.temperature_poll_interval_ms,
         H2_RUNTIME_TEMPERATURE_POLL_INTERVAL_MS);
-    atomic_store(&runtime->private_state->input_stop_requested, 0);
+    h2_atomic_store(&runtime->private_state->input_stop_requested, 0);
 
     /*
      * Take one immediate frame so the first publication after a start reflects
@@ -1346,19 +2007,19 @@ h2_pal_result_t h2_runtime_input_start(
      */
     h2_pal_result_t rc = input_poll_once_locked(runtime, 1, 0);
     if (rc != H2_PAL_OK) {
-        atomic_store(
+        h2_atomic_store(
             &runtime->private_state->input_phase,
             H2_RUNTIME_INPUT_PHASE_STOPPED);
         return rc;
     }
     if (runtime->private_state->input_source_count == 0u) {
-        atomic_store(
+        h2_atomic_store(
             &runtime->private_state->input_phase,
             H2_RUNTIME_INPUT_PHASE_STOPPED);
         return H2_PAL_OK;
     }
 
-    atomic_store(
+    h2_atomic_store(
         &runtime->private_state->input_phase,
         H2_RUNTIME_INPUT_PHASE_TASK_RUNNING);
     rc = h2_pal_task_start(
@@ -1369,7 +2030,7 @@ h2_pal_result_t h2_runtime_input_start(
         &runtime->private_state->input_task);
     if (rc != H2_PAL_OK || runtime->private_state->input_task == NULL) {
         runtime->private_state->input_task = NULL;
-        atomic_store(
+        h2_atomic_store(
             &runtime->private_state->input_phase,
             H2_RUNTIME_INPUT_PHASE_STOPPED);
         return rc != H2_PAL_OK ? rc : H2_PAL_ERR_TASK;
@@ -1385,12 +2046,12 @@ h2_pal_result_t h2_runtime_input_start(
             &runtime->private_state->input_nfc_task);
         if (rc != H2_PAL_OK || runtime->private_state->input_nfc_task == NULL) {
             runtime->private_state->input_nfc_task = NULL;
-            atomic_store(&runtime->private_state->input_stop_requested, 1);
+            h2_atomic_store(&runtime->private_state->input_stop_requested, 1);
             (void)h2_pal_task_join(
                 runtime->task, runtime->private_state->input_task);
             runtime->private_state->input_task = NULL;
-            atomic_store(&runtime->private_state->input_stop_requested, 0);
-            atomic_store(&runtime->private_state->input_phase,
+            h2_atomic_store(&runtime->private_state->input_stop_requested, 0);
+            h2_atomic_store(&runtime->private_state->input_phase,
                          H2_RUNTIME_INPUT_PHASE_STOPPED);
             return rc != H2_PAL_OK ? rc : H2_PAL_ERR_TASK;
         }
@@ -1402,7 +2063,7 @@ h2_pal_result_t h2_runtime_input_stop(h2_runtime_t *runtime) {
     if (!h2_runtime_ready(runtime)) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    int phase = atomic_load(&runtime->private_state->input_phase);
+    int phase = h2_atomic_load(&runtime->private_state->input_phase);
     if (phase == H2_RUNTIME_INPUT_PHASE_STOPPED) {
         return H2_PAL_OK;
     }
@@ -1410,15 +2071,15 @@ h2_pal_result_t h2_runtime_input_stop(h2_runtime_t *runtime) {
         phase != H2_RUNTIME_INPUT_PHASE_FAULTED) {
         return H2_PAL_ERR_INVALID_STATE;
     }
-    atomic_store(
+    h2_atomic_store(
         &runtime->private_state->input_phase,
         H2_RUNTIME_INPUT_PHASE_STOPPING);
-    atomic_store(&runtime->private_state->input_stop_requested, 1);
+    h2_atomic_store(&runtime->private_state->input_stop_requested, 1);
     if (runtime->private_state->input_nfc_task != NULL) {
         h2_pal_result_t rc = h2_pal_task_join(
             runtime->task, runtime->private_state->input_nfc_task);
         if (rc != H2_PAL_OK) {
-            atomic_store(&runtime->private_state->input_phase, phase);
+            h2_atomic_store(&runtime->private_state->input_phase, phase);
             return rc;
         }
         runtime->private_state->input_nfc_task = NULL;
@@ -1427,7 +2088,7 @@ h2_pal_result_t h2_runtime_input_stop(h2_runtime_t *runtime) {
         h2_pal_result_t rc = h2_pal_task_join(
             runtime->task, runtime->private_state->input_task);
         if (rc != H2_PAL_OK) {
-            atomic_store(&runtime->private_state->input_phase, phase);
+            h2_atomic_store(&runtime->private_state->input_phase, phase);
             return rc;
         }
         runtime->private_state->input_task = NULL;
@@ -1437,11 +2098,11 @@ h2_pal_result_t h2_runtime_input_stop(h2_runtime_t *runtime) {
      * snapshot stays readable with its own updated_at_ms, because it is still
      * the most recent observation the Runtime actually made.
      */
-    atomic_store(&runtime->private_state->input_stop_requested, 0);
-    atomic_store(
+    h2_atomic_store(&runtime->private_state->input_stop_requested, 0);
+    h2_atomic_store(
         &runtime->private_state->input_phase,
         H2_RUNTIME_INPUT_PHASE_STOPPED);
-    return atomic_load(&runtime->private_state->input_worker_result);
+    return h2_atomic_load(&runtime->private_state->input_worker_result);
 }
 
 static h2_pal_result_t button_push_edge_enqueue(

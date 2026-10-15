@@ -1,10 +1,14 @@
 #include "h2_gizclaw_e2e_desktop.h"
+#include "h2_gizclaw_e2e_desktop_static.h"
 #include "h2_gizclaw_e2e_desktop_options.h"
 
 #include "h2_corehttp.h"
+#include "h2_app_test_display.h"
 #include "h2_desktop_app_support.h"
 #include "h2_desktop_platform.h"
 #include "h2_gizclaw_e2e.h"
+#include "ledger.h"
+#include "h2_atomic.h"
 #ifdef H2_GIZCLAW_E2E_USE_PION
 #include "h2_pion.h"
 #endif
@@ -12,37 +16,86 @@
 #include <algorithm>
 #include <atomic>
 #include <csignal>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
+#ifndef _WIN32
+#include <cerrno>
+#include <fcntl.h>
+#include <unistd.h>
+#else
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
 
 namespace {
 
-// Read by runner tasks and written by a signal handler. Volatile sig_atomic_t
-// alone does not make those cross-thread accesses race-free.
-static_assert(std::atomic<bool>::is_always_lock_free);
-std::atomic<bool> g_stop_requested{false};
-std::atomic_flag g_running = ATOMIC_FLAG_INIT;
+#ifndef _WIN32
+std::mutex g_signal_read_mutex;
+int g_signal_read_fd = -1;
+volatile std::sig_atomic_t g_signal_write_fd = -1;
+#else
+volatile LONG g_signal_seen = 0;
+#endif
 
 void request_stop(int) {
-  g_stop_requested.store(true, std::memory_order_relaxed);
+#ifndef _WIN32
+  const int saved_errno = errno;
+  const int fd = g_signal_write_fd;
+  if (fd >= 0) {
+    const char byte = 1;
+    (void)write(fd, &byte, 1);
+  }
+  errno = saved_errno;
+#else
+  (void)InterlockedExchange(&g_signal_seen, 1);
+#endif
 }
 
 bool should_stop(void *) {
-  return g_stop_requested.load(std::memory_order_relaxed);
+#ifndef _WIN32
+  {
+    std::lock_guard<std::mutex> lock(g_signal_read_mutex);
+    if (g_signal_read_fd >= 0) {
+      char byte;
+      if (read(g_signal_read_fd, &byte, 1) == 1)
+        h2_atomic_bool_store(h2_gizclaw_e2e_desktop_stop_requested(), true,
+                             H2_ATOMIC_RELAXED);
+    }
+  }
+#else
+  if (InterlockedCompareExchange(&g_signal_seen, 0, 0) != 0)
+    h2_atomic_bool_store(h2_gizclaw_e2e_desktop_stop_requested(), true,
+                         H2_ATOMIC_RELAXED);
+#endif
+  return h2_atomic_bool_load(h2_gizclaw_e2e_desktop_stop_requested(),
+                             H2_ATOMIC_RELAXED);
 }
 
 // Own every view the portable runner or a retained Service may borrow. A
 // failed stop is not permission to destruct the provider under its live task.
 struct DesktopSession {
+  std::atomic<bool> ledger_failed{false};
+  std::atomic<bool> persistence_rejected{false};
   std::string endpoint;
   std::string token;
   std::string suite_name;
+  std::string fence_workflow_name;
+  std::string fence_first_id;
+  std::string fence_second_id;
   std::vector<uint8_t> pcm;
+  std::vector<uint8_t> root_ca;
+  std::string storage_root;
+  bool storage_owned = false;
+  std::unique_ptr<h2::desktop::OwnedFilesystem> filesystem;
+  h2_app_test_display_t display = {};
   h2::desktop::OwnedNetworkServices network;
   h2_corehttp_t *http_provider = nullptr;
   h2_pal_http_api_t http_api = {};
@@ -64,7 +117,15 @@ struct DesktopSession {
 #endif
     h2_corehttp_destroy(http_provider);
     http_provider = nullptr;
-    return network.reset();
+    int rc = network.reset();
+    if (rc == H2_PAL_OK && storage_owned) {
+      filesystem.reset();
+      std::error_code error;
+      std::filesystem::remove_all(storage_root, error);
+      if (error) rc = H2_PAL_ERR_IO;
+      else { storage_root.clear(); storage_owned = false; }
+    }
+    return rc;
   }
 
   ~DesktopSession() {
@@ -74,26 +135,131 @@ struct DesktopSession {
   }
 };
 
+void validate_lua_record(void *user, const char *record, size_t size) {
+  auto *session = static_cast<DesktopSession *>(user);
+  char buffer[4096];
+  h2_gizclaw_e2e_ledger_t ledger = {};
+  int rc = h2_gizclaw_e2e_ledger_init(&ledger, buffer, sizeof(buffer));
+  if (rc == H2_PAL_OK) {
+    h2_gizclaw_e2e_ledger_append(&ledger, record, size);
+    rc = h2_gizclaw_e2e_ledger_freeze(&ledger);
+  }
+  if (rc != H2_PAL_OK)
+    session->ledger_failed.store(true);
+  if (rc == H2_PAL_OK && ledger.size < sizeof(buffer)) {
+    buffer[ledger.size] = 0;
+    if (std::strstr(buffer, "source=persisted expected=1 ") &&
+        std::strstr(buffer, "rejected=1 "))
+      session->persistence_rejected.store(true);
+  }
+  // Exercise the exact device record contract and keep host diagnostics visible.
+  (void)std::fwrite(record, 1u, size, stdout);
+}
+
+// Deliberately change only this session's private files between completed
+// runs. The next runner must detect loss/corruption before sending an upload.
+int persistence_fault(DesktopSession *session, const char *fault) {
+  if (!session->storage_owned || !session->filesystem)
+    return H2_PAL_ERR_INVALID_STATE;
+  const std::string id = session->app_config.lua_app_id;
+  const auto root = std::filesystem::path(session->storage_root) /
+                    "gizclaw-e2e-lua" / "installed" / id;
+  unsigned changed = 0;
+  for (const char *slot : {"0", "1"}) {
+    const auto entry = root / slot / (id + ".lua");
+    std::error_code error;
+    const bool exists = std::filesystem::exists(entry, error);
+    if (error)
+      return H2_PAL_ERR_IO;
+    if (!exists)
+      continue;
+    if (!std::filesystem::is_regular_file(entry, error) || error)
+      return H2_PAL_ERR_FORMAT;
+    if (!std::strcmp(fault, "missing")) {
+      if (!std::filesystem::remove(entry, error) || error)
+        return H2_PAL_ERR_IO;
+    } else {
+      auto remaining = std::filesystem::file_size(entry, error);
+      if (error)
+        return H2_PAL_ERR_IO;
+      std::ofstream output(entry, std::ios::binary | std::ios::trunc);
+      char bytes[4096];
+      std::memset(bytes, ' ', sizeof(bytes));
+      while (remaining && output.good()) {
+        const auto take = std::min<uintmax_t>(remaining, sizeof(bytes));
+        output.write(bytes, static_cast<std::streamsize>(take));
+        remaining -= take;
+      }
+      output.flush();
+      output.close();
+      if (remaining || !output)
+        return H2_PAL_ERR_IO;
+    }
+    ++changed;
+  }
+  return changed ? H2_PAL_OK : H2_PAL_ERR_NOT_FOUND;
+}
+
 // Deliberately process-owned on failure: no static destructor, no later run.
 DesktopSession *g_retained_session = nullptr;
 
 struct RunGuard {
   bool retain = false;
   ~RunGuard() {
-    if (!retain)
-      g_running.clear(std::memory_order_release);
+    if (!retain) {
+      h2_atomic_flag_clear(h2_gizclaw_e2e_desktop_running_flag(),
+                           H2_ATOMIC_RELEASE);
+    }
   }
 };
 
 struct SignalGuard {
   using Handler = void (*)(int);
-  Handler interrupt = std::signal(SIGINT, request_stop);
-  Handler terminate = std::signal(SIGTERM, request_stop);
+  Handler interrupt = SIG_ERR;
+  Handler terminate = SIG_ERR;
+  bool ready = false;
+#ifndef _WIN32
+  int read_fd = -1;
+  int write_fd = -1;
+#endif
+  SignalGuard() {
+#ifndef _WIN32
+    int fds[2];
+    if (pipe(fds) != 0)
+      return;
+    read_fd = fds[0];
+    write_fd = fds[1];
+    if (fcntl(read_fd, F_SETFL, O_NONBLOCK) == -1 ||
+        fcntl(write_fd, F_SETFL, O_NONBLOCK) == -1)
+      return;
+    {
+      std::lock_guard<std::mutex> lock(g_signal_read_mutex);
+      g_signal_read_fd = read_fd;
+    }
+    g_signal_write_fd = write_fd;
+#else
+    (void)InterlockedExchange(&g_signal_seen, 0);
+#endif
+    interrupt = std::signal(SIGINT, request_stop);
+    terminate = std::signal(SIGTERM, request_stop);
+    ready = interrupt != SIG_ERR && terminate != SIG_ERR;
+  }
   ~SignalGuard() {
     if (interrupt != SIG_ERR)
       (void)std::signal(SIGINT, interrupt);
     if (terminate != SIG_ERR)
       (void)std::signal(SIGTERM, terminate);
+#ifndef _WIN32
+    g_signal_write_fd = -1;
+    {
+      std::lock_guard<std::mutex> lock(g_signal_read_mutex);
+      g_signal_read_fd = -1;
+      if (read_fd >= 0)
+        (void)close(read_fd);
+    }
+    if (write_fd >= 0)
+      (void)close(write_fd);
+#endif
   }
 };
 
@@ -152,23 +318,47 @@ int run_desktop(int argc, char **argv) {
       false,
 #endif
       &options);
+  if (reason == nullptr && (options.suites & H2_GIZCLAW_E2E_SUITE_RPC) != 0u &&
+      (h2_gizclaw_e2e_fixture_key()[0] == '\0' ||
+       h2_gizclaw_e2e_fixture_profile()[0] == '\0' ||
+       h2_gizclaw_e2e_fixture_value()[0] == '\0'))
+    reason = "missing-app-config-fixture";
   if (reason != nullptr) {
     std::fprintf(stderr,
                  "H2_GIZCLAW_E2E stage=preflight status=ERROR reason=%s\n",
                  reason);
     return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
   }
-  if (g_running.test_and_set(std::memory_order_acquire)) {
+  if (h2_atomic_flag_test_and_set(h2_gizclaw_e2e_desktop_running_flag(),
+                                  H2_ATOMIC_ACQUIRE)) {
     std::fprintf(stderr, "H2_GIZCLAW_E2E stage=preflight status=ERROR "
                          "reason=active-or-retained-session\n");
     return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
   }
+  h2_atomic_bool_store(h2_gizclaw_e2e_desktop_stop_requested(), false,
+                       H2_ATOMIC_RELAXED);
   RunGuard guard;
   auto session = std::make_unique<DesktopSession>();
   session->endpoint = options.endpoint;
   session->token = options.token;
   session->suite_name = options.suite_name;
+  if (options.suites == H2_GIZCLAW_E2E_SUITE_FENCE) {
+    session->fence_workflow_name = options.fence_workflow_name;
+    session->fence_first_id = options.fence_first_id;
+    session->fence_second_id = options.fence_second_id;
+  }
   const uint32_t suites = options.suites;
+  const char *ca_hex = h2_gizclaw_e2e_fixture_root_ca_hex();
+  const size_t ca_size = std::strlen(ca_hex);
+  if (ca_size % 2u) return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
+  session->root_ca.resize(ca_size / 2u);
+  for (size_t i = 0; i < ca_size; i += 2u) {
+    const char *digits = "0123456789abcdef";
+    const char *high = std::strchr(digits, ca_hex[i]);
+    const char *low = std::strchr(digits, ca_hex[i + 1u]);
+    if (!high || !low) return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
+    session->root_ca[i / 2u] = static_cast<uint8_t>((high - digits) * 16 + (low - digits));
+  }
   auto &pcm = session->pcm;
   if ((suites & (H2_GIZCLAW_E2E_SUITE_RPC | H2_GIZCLAW_E2E_SUITE_VOICE)) !=
           0u &&
@@ -192,8 +382,8 @@ int run_desktop(int argc, char **argv) {
       .time = h2_desktop_platform_time_api(),
       .log = h2_desktop_platform_log_api(),
       .tls_verify = H2_PAL_NET_TLS_VERIFY_DEFAULT,
-      .root_ca_pem = nullptr,
-      .root_ca_pem_len = 0u,
+      .root_ca_pem = session->root_ca.empty() ? nullptr : session->root_ca.data(),
+      .root_ca_pem_len = session->root_ca.size(),
       .max_header_bytes = 0u,
       .max_redirects = 0u,
       .default_timeout_ms = 0u,
@@ -231,8 +421,25 @@ int run_desktop(int argc, char **argv) {
 #endif
 
   auto &runtime = session->runtime;
+  if (rc == H2_PAL_OK && (suites & H2_GIZCLAW_E2E_SUITE_LUA_APPS) != 0u) {
+    const auto nonce = std::chrono::steady_clock::now().time_since_epoch().count();
+    session->storage_root = (std::filesystem::temp_directory_path() /
+        ("gizos-lua-e2e-" + std::to_string(nonce))).string();
+    if (!std::filesystem::create_directory(session->storage_root)) rc = H2_PAL_ERR_IO;
+    else session->storage_owned = true;
+    if (rc == H2_PAL_OK) {
+      session->filesystem = std::make_unique<h2::desktop::OwnedFilesystem>();
+      const h2::desktop::FilesystemMount mount = {session->storage_root.c_str(), "/data"};
+      const h2::desktop::Layout layout = {"gizclaw-lua-e2e", "Lua E2E", 368, 448, &mount, 1, nullptr, 0, nullptr};
+      rc = h2::desktop::open_filesystem(layout, session->filesystem.get());
+      h2_app_test_display_init(&session->display);
+      session->display.accept_bitmaps = true;
+      session->display.info = {368, 448, H2_DISPLAY_PIXEL_RGB565};
+    }
+  }
   if (rc == H2_PAL_OK) {
-    h2_runtime_config_t runtime_config = h2::desktop::runtime_config(nullptr);
+    h2_runtime_config_t runtime_config = h2::desktop::runtime_config(session->filesystem ? session->filesystem->api() : nullptr);
+    if (session->filesystem) runtime_config.display = &session->display.api;
     runtime_config.crypto = network.crypto();
     runtime_config.http = &http_api;
     runtime_config.net = h2::desktop::host_net_api();
@@ -245,13 +452,39 @@ int run_desktop(int argc, char **argv) {
     return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
   }
 
-  g_stop_requested.store(false, std::memory_order_relaxed);
   SignalGuard signals;
+  if (!signals.ready) {
+    std::fprintf(stderr, "H2_GIZCLAW_E2E stage=preflight status=ERROR "
+                         "reason=signal-handler-unavailable\n");
+    return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
+  }
   session->app_config = {
       .server_endpoint = {session->endpoint.data(), session->endpoint.size()},
       .registration_token = {session->token.data(), session->token.size()},
-      .device_api_url = std::getenv("H2_GIZCLAW_E2E_DEVICE_API_URL"),
+      .app_config_key = h2_gizclaw_e2e_fixture_key(),
+      .expected_runtime_profile = h2_gizclaw_e2e_fixture_profile()[0] ?
+          h2_gizclaw_e2e_fixture_profile() : nullptr,
+      .app_config_expected_value = {h2_gizclaw_e2e_fixture_value(),
+                                   strlen(h2_gizclaw_e2e_fixture_value())},
+      .device_api_url = std::getenv("H2_GIZCLAW_E2E_DEVICE_API_URL") ?
+          std::getenv("H2_GIZCLAW_E2E_DEVICE_API_URL") : h2_gizclaw_e2e_fixture_device_api_url(),
       .device_audio_url = std::getenv("H2_GIZCLAW_E2E_AUDIO_URL"),
+      .lua_app_url = h2_gizclaw_e2e_fixture_lua_app_url(),
+      .lua_app_http_url = h2_gizclaw_e2e_fixture_lua_app_http_url(),
+      .lua_app_https_url = h2_gizclaw_e2e_fixture_lua_app_https_url(),
+      .lua_app_id = h2_gizclaw_e2e_fixture_lua_app_id(),
+      .lua_archive_sha256 = h2_gizclaw_e2e_fixture_lua_archive_sha256(),
+      .lua_entry_sha256 = h2_gizclaw_e2e_fixture_lua_entry_sha256(),
+      .lua_frame_sha256 = h2_gizclaw_e2e_fixture_lua_frame_sha256(),
+      .lua_storage_root = nullptr,
+      .lua_record_golden = std::getenv("H2_GIZCLAW_E2E_LUA_RECORD_GOLDEN") &&
+          !std::strcmp(std::getenv("H2_GIZCLAW_E2E_LUA_RECORD_GOLDEN"), "1"),
+      .lua_preserve_storage = false,
+      .lua_expect_persisted = false,
+      .tls_root_ca_hex = h2_gizclaw_e2e_fixture_root_ca_hex(),
+      .fence_workflow_name = session->fence_workflow_name.c_str(),
+      .fence_first_id = session->fence_first_id.c_str(),
+      .fence_second_id = session->fence_second_id.c_str(),
       .device_real_audio = false,
       .voice_audio = nullptr,
       .voice_pcm_s16le_16khz_mono = pcm.empty() ? nullptr : pcm.data(),
@@ -264,10 +497,56 @@ int run_desktop(int argc, char **argv) {
       .should_stop_user = nullptr,
       .on_progress = emit_progress,
       .progress_user = nullptr,
+      .on_evidence = (suites & H2_GIZCLAW_E2E_SUITE_LUA_APPS) ? validate_lua_record : nullptr,
+      .evidence_user = session.get(),
   };
   h2_gizclaw_e2e_result_t result = {};
-  const h2_gizclaw_e2e_exit_t exit_code =
+  const bool lua_lane = suites == H2_GIZCLAW_E2E_SUITE_LUA_APPS;
+  const char *fault = std::getenv("H2_GIZCLAW_E2E_LUA_PERSISTENCE_FAULT");
+  if (fault && (!lua_lane || (std::strcmp(fault, "missing") &&
+                              std::strcmp(fault, "digest"))))
+    return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
+  session->app_config.lua_preserve_storage = lua_lane;
+  h2_gizclaw_e2e_exit_t exit_code =
       h2_gizclaw_e2e_run(runtime, &session->app_config, &result);
+  if (lua_lane && exit_code == H2_GIZCLAW_E2E_EXIT_PASS) {
+    const bool first_pass = result.complete && result.selected == 1u &&
+        result.terminal == 1u && result.passed == 1u && !result.failed &&
+        !result.errors && !result.blocked && !result.cancelled &&
+        result.cleanup_rc == H2_PAL_OK && !result.retained_resources &&
+        !session->ledger_failed.load();
+    int fault_rc = !first_pass ? H2_PAL_ERR_INVALID_STATE
+                     : fault ? persistence_fault(session.get(), fault)
+                             : H2_PAL_OK;
+    if (fault_rc != H2_PAL_OK) {
+      result.complete = false;
+      exit_code = H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
+    } else {
+      session->app_config.lua_preserve_storage = false;
+      session->app_config.lua_expect_persisted = true;
+      session->persistence_rejected.store(false);
+      exit_code = h2_gizclaw_e2e_run(runtime, &session->app_config, &result);
+      if (fault) {
+        const int expected = !std::strcmp(fault, "missing")
+                                 ? H2_PAL_ERR_NOT_FOUND : H2_PAL_ERR_FORMAT;
+        const bool detected = exit_code == H2_GIZCLAW_E2E_EXIT_CASE_FAILURE &&
+            result.complete && result.failed == 1u &&
+            !std::strcmp(result.first_failure_case, "lua-apps") &&
+            result.first_failure_rc == expected &&
+            result.cleanup_rc == H2_PAL_OK && !result.retained_resources &&
+            session->persistence_rejected.load();
+        std::printf("H2_GIZCLAW_E2E stage=persistence-negative fault=%s "
+                    "detected=%d\n", fault, detected);
+        exit_code = detected ? H2_GIZCLAW_E2E_EXIT_PASS
+                             : H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
+      }
+    }
+  }
+  const bool ledger_failed = session->ledger_failed.load();
+  if (ledger_failed) {
+    std::fprintf(stderr, "H2_GIZCLAW_E2E stage=ledger-contract status=ERROR\n");
+    result.complete = false;
+  }
   if (result.retained_resources == 0u) {
     const int cleanup_rc = session->shutdown();
     if (cleanup_rc != H2_PAL_OK) {
@@ -283,7 +562,7 @@ int run_desktop(int argc, char **argv) {
     guard.retain = true;
     g_retained_session = session.release();
   }
-  const int final_exit = result.retained_resources != 0u
+  const int final_exit = result.retained_resources != 0u || ledger_failed
                              ? H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR
                              : static_cast<int>(exit_code);
   std::printf(

@@ -1,0 +1,555 @@
+{
+  "run_id": "2ac0ed90324a5ad5",
+  "version": "pal-webrtc-bk-20260928-r16",
+  "board": "bk7258_v3_202405",
+  "uid": "c8478ca2a87c",
+  "cases": [
+    {
+      "id": "wrapper-arguments",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 0,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "malformed-sdp",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 86,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "default-lifetime",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 56,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "legacy-create-fallback",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 58,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "allocator-failure",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 21,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "allocator-ownership",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 43,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "poll-nonblocking",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 0,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "poll-timeout",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 25,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "poll-negative",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 0,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "ice-arguments",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 0,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "ice-borrowed-input",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 0,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "track-arguments",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 0,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "track-bind",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 1,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "channel-arguments",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 0,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "channel-configurations",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 3,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "send-before-connected",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 0,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "offer-owned-sdp",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 9704,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "remote-sdp-arguments",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 4,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "pion-negotiation",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 154,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "channel-metadata",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 17402,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "binary-roundtrip",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 259,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "text-roundtrip",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 160,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "empty-binary",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 369,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "empty-text",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 353,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "unordered-roundtrip",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 138,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "ordered-unreliable",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 256,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "unordered-reliable",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 163,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "message-boundaries",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 1097,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "send-borrowed-input",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 131,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "opus-arguments",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 0,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "opus-direct-roundtrip",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 154,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "opus-backpressure",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 50,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "track-read-roundtrip",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 354,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "track-write-retry",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 156,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "track-unset-quiescent",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 143,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "detached-opus-event",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 212,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "channel-close-event",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 99,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "remote-close",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 520,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "owned-event-after-close",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 213,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "event-release-idempotent",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 30,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "resource-churn",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 826,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    },
+    {
+      "id": "fingerprint-rejected",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 27979,
+      "observed_error": -17,
+      "authentication_evidence": 1
+    },
+    {
+      "id": "explicit-stream-id",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 30821,
+      "observed_error": 0,
+      "authentication_evidence": 0
+    }
+  ],
+  "summary": {
+    "passed": 43,
+    "failed": 0,
+    "blocked": 0,
+    "retained_allocations": 0,
+    "cleanup": 0
+  },
+  "rc": -7,
+  "confirm": -7,
+  "soak": {
+    "run_id": "2ac0ed90324a5ad5",
+    "requested_ms": 600000,
+    "elapsed_ms": 174296,
+    "data_roundtrips": 162,
+    "opus_roundtrips": 161,
+    "completed": 0,
+    "detail": -6,
+    "uptime_ms": 344189
+  },
+  "final_status": {
+    "board": "bk7258_v3_202405",
+    "target": "bk7258",
+    "chip": "bk7258",
+    "device_uid": "c8478ca2a87c",
+    "capabilities": "0x00000003",
+    "command_availability": "0x001f3f1f",
+    "active_role": "app",
+    "active_version": "pal-webrtc-bk-20260928-r16",
+    "active_checksum": "6569c052c9908c181e43ed9249544784c135ba8a4a49ec04947606f3107b5f9b",
+    "active_image_size": "5222400",
+    "running_partition": "2",
+    "next_partition": "1",
+    "boot_intent": "auto",
+    "stage_valid": "1",
+    "stage_package_checksum": "053b034a7c57590c2674a2a94a64f97fff51be0b0762880e5c657247a1e52315",
+    "stage_package_size": "1792920",
+    "stage_image_checksum": "6569c052c9908c181e43ed9249544784c135ba8a4a49ec04947606f3107b5f9b",
+    "stage_image_size": "5222400",
+    "stage_role": "app",
+    "stage_version": "pal-webrtc-bk-20260928-r16",
+    "stage_board": "bk7258_v3_202405",
+    "stage_target": "bk7258",
+    "partition_1_valid": "1",
+    "partition_1_package_checksum": "3a3c664340f0d1b45561816e197ffbd25f2d3c447ee248082a3c5ce261cba9bd",
+    "partition_1_package_size": "1573290",
+    "partition_1_image_checksum": "47b7cd2e34fcebb805bb28d1c1901eabd1cff9d4be9a172ba8d012ccb83809bb",
+    "partition_1_image_size": "2437120",
+    "partition_1_role": "loader",
+    "partition_1_version": "0.1.65-lu-c",
+    "partition_1_board": "bk7258_v3_202405",
+    "partition_1_target": "bk7258",
+    "partition_2_valid": "1",
+    "partition_2_package_checksum": "053b034a7c57590c2674a2a94a64f97fff51be0b0762880e5c657247a1e52315",
+    "partition_2_package_size": "1792920",
+    "partition_2_image_checksum": "6569c052c9908c181e43ed9249544784c135ba8a4a49ec04947606f3107b5f9b",
+    "partition_2_image_size": "5222400",
+    "partition_2_role": "app",
+    "partition_2_version": "pal-webrtc-bk-20260928-r16",
+    "partition_2_board": "bk7258_v3_202405",
+    "partition_2_target": "bk7258",
+    "last_result": "0",
+    "mfg_mode": "1",
+    "mfg_steps": "0000000000000000000000"
+  },
+  "build": {
+    "assets": [
+      {
+        "name": "bk7258_v3_202405-pal-webrtc-bk7258.update.tar.zlib",
+        "operation": "managed-install",
+        "release_suffix": ".update.tar.zlib",
+        "sha256": "053b034a7c57590c2674a2a94a64f97fff51be0b0762880e5c657247a1e52315",
+        "size": 1792920
+      }
+    ],
+    "board": "bk7258_v3_202405",
+    "entry": "projects/e2e/targets/h2loader_tar_zlib/pal-webrtc/bk7258_v3_202405",
+    "image": "pal-webrtc",
+    "native_artifacts": [
+      {
+        "name": "ap/firmware.elf",
+        "operation": "native-debug-or-flash",
+        "sha256": "481280778d878880af04c284ec14fba1f70ba7e8f62758399b7e3fd0afd388a8",
+        "size": 13243268
+      },
+      {
+        "name": "ap/firmware.map",
+        "operation": "native-debug-or-flash",
+        "sha256": "5a61c401e2791d9e8ceda674f79eae924093752eb920a97b18c989f73b45c9b2",
+        "size": 8707424
+      },
+      {
+        "name": "ap/app.bin",
+        "operation": "native-debug-or-flash",
+        "sha256": "5460c95c4a7d42746eafaaec58dd18747be208e6674a67418fd8d6552df0144a",
+        "size": 1395324
+      },
+      {
+        "name": "cp/firmware.elf",
+        "operation": "native-debug-or-flash",
+        "sha256": "974331632ae41415c793020da37cf191b582d5e443463697d24ee755584965a2",
+        "size": 14369960
+      },
+      {
+        "name": "cp/firmware.map",
+        "operation": "native-debug-or-flash",
+        "sha256": "928134d516d697e5bec57238b627cbd53cace8cd5afc5627aae771d9329b9da0",
+        "size": 6809159
+      },
+      {
+        "name": "cp/app.bin",
+        "operation": "native-debug-or-flash",
+        "sha256": "64e6e215c4de022df5f14fa1cfafb8565a162aaf56db433a9c1fa1016f98d490",
+        "size": 1056268
+      },
+      {
+        "name": "app_ab_crc.rbl",
+        "operation": "native-debug-or-flash",
+        "sha256": "6569c052c9908c181e43ed9249544784c135ba8a4a49ec04947606f3107b5f9b",
+        "size": 5222400
+      },
+      {
+        "name": "all-app.bin",
+        "operation": "native-debug-or-flash",
+        "sha256": "d7f823f254dfccf2739530d7bbd666267afbe3bb3beca933144f35185efaa4b1",
+        "size": 5292032
+      }
+    ],
+    "package_manifest": {
+      "board": "bk7258_v3_202405",
+      "format": 1,
+      "image_sha256": "6569c052c9908c181e43ed9249544784c135ba8a4a49ec04947606f3107b5f9b",
+      "image_size": 5222400,
+      "role": "app",
+      "target": "bk7258",
+      "version": "pal-webrtc-bk-20260928-r16"
+    },
+    "platform": "bk7258",
+    "role": "app",
+    "target": "bk7258",
+    "version": "pal-webrtc-bk-20260928-r16"
+  },
+  "reset_reason": 0,
+  "qualified": false,
+  "source_commit": "5a313379",
+  "source_sha256": {
+    "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_e2e.h": "994641807e46f774ba512021db868b1c927d4ad44ddaa81d161fa23135c7edc9",
+    "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_cases.inc": "725f4d2ca360da9066a855696a30553f49959c6a9ec26dcb168ef4912587528b",
+    "projects/e2e/apps/pal-webrtc/app/src/h2_pal_webrtc_e2e.c": "3cbca78fa668ae6be2ae8cd74b769fb42ad47b965a5c560ac75429a814e09a17",
+    "projects/e2e/apps/pal-webrtc/app/api_coverage.json": "658ec12889c79438c11992e61a89c6ecd061905d11e6da1c6e8aaf36515f949e",
+    "libs/pal/include/h2/pal/application/h2_pal_webrtc.h": "a2b7e90b18a063250a590eb5a982843c7c8303a0e4d61d3edabcaa834c0cc793"
+  },
+  "failure": "Active stability: one Opus echo did not arrive within 10 seconds; cause not yet established. All 43 conformance cases passed; App was not confirmed.",
+  "coredump_sha256": "f59f522edd1cc5bd0aab008b938dc7cdfac8a4333c34fdf763404923210a3829",
+  "raw_evidence": {
+    "/tmp/pal-webrtc-bk-r16-soak-failure.uart1.log": "b768df8c82fd7aba77c60f1a7d00dc24eb36c1b71cde161979497644cd2ec700",
+    "/tmp/pal-webrtc-bk-r16-soak-failure.pion.log": "e6a5d07da194c4dc344da7fca74699962202ead5d224e00741914f2362a7989e"
+  },
+  "observed_at_utc": "2026-09-28T10:46:23.342833+00:00",
+  "historical": true,
+  "current_qualification": "qualified.json"
+}

@@ -87,6 +87,8 @@ h2_pal_result_t h2_h2loader_cli_transport_connect(
             .advertised_board = advertised_board,
             .connect_timeout_ms = transport->options->wait_timeout_ms,
             .command_timeout_ms = transport->command_timeout_ms,
+            .on_log = h2_h2loader_cli_transport_diagnostic,
+            .log_user = transport->context,
         };
         rc = h2_h2loader_host_ble_connect(
             &connect, &transport->ble_connection, out_status);
@@ -122,6 +124,7 @@ h2_pal_result_t h2_h2loader_cli_transport_connect(
         .post_command_delay_ms = transport->options->post_delay_ms,
         .on_log = transport->on_log,
         .log_user = transport->log_user,
+        .preserve_control_lines = 1,
     };
     rc = h2_h2loader_host_serial_connect(
         &connect, &transport->serial_connection);

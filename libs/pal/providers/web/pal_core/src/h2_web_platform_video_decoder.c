@@ -1,3 +1,4 @@
+#include "h2_web_main_thread.h"
 #include "h2_web_platform_internal.h"
 
 #include <emscripten.h>
@@ -38,9 +39,11 @@ struct h2_pal_video_decoder_session {
   int failed;
 };
 
-EM_JS(int, h2_web_video_configure_js,
-      (uintptr_t platform_address, uintptr_t address, uint32_t op_id,
-       const char *codec, uint32_t width, uint32_t height), {
+/* clang-format off */
+EM_JS(void, h2_web_video_configure_js,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["u32", "u32", "u32", "pointer", "u32", "u32"], "i32",
+    (platform_address, address, op_id, codec, width, height) => {
   if (typeof VideoDecoder === 'undefined')
     return -3;
   const config = {
@@ -132,17 +135,25 @@ catch(error) {
 });
 return 0;
 });
+});
+/* clang-format on */
 
-EM_JS(int, h2_web_video_load_js, (uintptr_t address), {
+/* clang-format off */
+EM_JS(void, h2_web_video_load_js,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["u32"], "i32",
+    (address) => {
   const entry = Module['h2WebVideoDecoders']?.get(address);
   return entry && entry.alive ? entry.decoder.decodeQueueSize : -1;
 });
+});
+/* clang-format on */
 
-EM_JS(int, h2_web_video_submit_js,
-      (uintptr_t address, const void *data, size_t size,
-       const void *config_data, size_t config_size, int is_key, double pts_us,
-       double duration_us),
-      {
+/* clang-format off */
+EM_JS(void, h2_web_video_submit_js,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["u32", "pointer", "u32", "pointer", "u32", "i32", "double", "double"], "i32",
+    (address, data, size, config_data, config_size, is_key, pts_us, duration_us) => {
         const entry = Module['h2WebVideoDecoders']?.get(address);
         if (!entry || !entry.alive)
           return -7;
@@ -165,9 +176,14 @@ EM_JS(int, h2_web_video_submit_js,
           return error && error.name === 'DataError' ? -15 : -4;
         }
       });
+});
+/* clang-format on */
 
-EM_JS(int, h2_web_video_flush_js,
-      (uintptr_t platform_address, uintptr_t address, uint32_t op_id), {
+/* clang-format off */
+EM_JS(void, h2_web_video_flush_js,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["u32", "u32", "u32"], "i32",
+    (platform_address, address, op_id) => {
   const entry = Module['h2WebVideoDecoders']?.get(address);
   if (!entry || !entry.alive)
     return -7;
@@ -186,8 +202,14 @@ EM_JS(int, h2_web_video_flush_js,
       platform_address, op_id, result));
   return 0;
 });
+});
+/* clang-format on */
 
-EM_JS(void, h2_web_video_drop_js, (uintptr_t address), {
+/* clang-format off */
+EM_JS(void, h2_web_video_drop_js,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["u32"], null,
+    (address) => {
   const entries = Module['h2WebVideoDecoders'];
   const entry = entries?.get(address);
   if (!entry)
@@ -197,8 +219,11 @@ EM_JS(void, h2_web_video_drop_js, (uintptr_t address), {
   catch(error) {}
   entries.delete(address);
 });
+});
+/* clang-format on */
 
 static void h2_web_video_free_frames(h2_pal_video_decoder_session_t *session) {
+  H2_WEB_STATE_GUARD();
   h2_pal_video_decoder_frame_t *frame = session->head;
   while (frame != NULL) {
     h2_pal_video_decoder_frame_t *next = frame->next;
@@ -212,19 +237,23 @@ static void h2_web_video_free_frames(h2_pal_video_decoder_session_t *session) {
 }
 
 EMSCRIPTEN_KEEPALIVE uintptr_t h2_web_video_temp_alloc(size_t size) {
+  H2_WEB_STATE_GUARD();
   return (uintptr_t)malloc(size);
 }
 
 EMSCRIPTEN_KEEPALIVE void h2_web_video_temp_free(uintptr_t address) {
+  H2_WEB_STATE_GUARD();
   free((void *)address);
 }
 
 static void h2_web_video_wake(h2_pal_video_decoder_session_t *session) {
+  H2_WEB_STATE_GUARD();
   if (session->acquire_op != NULL)
     h2_web_async_signal(session->platform, session->acquire_op, H2_PAL_OK);
 }
 
 EMSCRIPTEN_KEEPALIVE void h2_web_video_error(uintptr_t address) {
+  H2_WEB_STATE_GUARD();
   h2_pal_video_decoder_session_t *session =
       (h2_pal_video_decoder_session_t *)address;
   if (session != NULL) {
@@ -237,6 +266,7 @@ EMSCRIPTEN_KEEPALIVE void
 h2_web_video_output(uintptr_t address, const uint8_t *rgba, size_t rgba_size,
                     uint32_t width, uint32_t height, size_t offset,
                     size_t stride, double pts_us, double duration_us) {
+  H2_WEB_STATE_GUARD();
   h2_pal_video_decoder_session_t *session =
       (h2_pal_video_decoder_session_t *)address;
   if (session == NULL || !session->configured || session->failed ||
@@ -298,6 +328,7 @@ h2_web_video_output(uintptr_t address, const uint8_t *rgba, size_t rgba_size,
 }
 
 static int h2_web_h264_is_key(const uint8_t *data, size_t size) {
+  H2_WEB_STATE_GUARD();
   for (size_t index = 0u; index + 4u < size; ++index) {
     size_t nal = 0u;
     if (data[index] == 0u && data[index + 1u] == 0u && data[index + 2u] == 1u)
@@ -313,6 +344,7 @@ static int h2_web_h264_is_key(const uint8_t *data, size_t size) {
 
 static void h2_web_h264_codec(const uint8_t *data, size_t size,
                               char codec[12]) {
+  H2_WEB_STATE_GUARD();
   (void)strcpy(codec, "avc1.42E01E");
   for (size_t index = 0u; index + 7u < size; ++index) {
     size_t nal = 0u;
@@ -338,6 +370,7 @@ static void h2_web_h264_codec(const uint8_t *data, size_t size,
 static h2_pal_result_t
 h2_web_video_open(void *user, const h2_video_decoder_config_t *config,
                   h2_pal_video_decoder_session_t **out_session) {
+  H2_WEB_STATE_GUARD();
   if (config->preferred_format != H2_VIDEO_PIXEL_FORMAT_UNSPECIFIED &&
       config->preferred_format != H2_VIDEO_PIXEL_FORMAT_RGB565)
     return H2_PAL_ERR_UNSUPPORTED;
@@ -355,6 +388,7 @@ h2_web_video_open(void *user, const h2_video_decoder_config_t *config,
 static h2_pal_result_t
 h2_web_video_configure(void *user, h2_pal_video_decoder_session_t *session,
                        const h2_video_decoder_stream_config_t *config) {
+  H2_WEB_STATE_GUARD();
   (void)user;
   if (session->configured || session->acquired != NULL)
     return H2_PAL_ERR_INVALID_STATE;
@@ -370,9 +404,14 @@ h2_web_video_configure(void *user, h2_pal_video_decoder_session_t *session,
   h2_web_h264_codec(codec_config, config->codec_config_size, codec);
   h2_web_async_t op;
   h2_web_async_begin(session->platform, &op);
-  int result = h2_web_video_configure_js(
-      (uintptr_t)session->platform, (uintptr_t)session, op.id, codec,
-      config->coded_width, config->coded_height);
+  int result = ((int)h2_web_main_call(
+                    h2_web_video_configure_js,
+                    (const void *[]){&(uintptr_t){(uintptr_t)session->platform},
+                                     &(uintptr_t){(uintptr_t)session},
+                                     &(uint32_t){op.id}, &(const char *){codec},
+                                     &(uint32_t){config->coded_width},
+                                     &(uint32_t){config->coded_height}})
+                    .i32);
   result = h2_web_async_finish(session->platform, &op, result);
   if (result != H2_PAL_OK) {
     h2_pal_mem_free(&session->allocator, codec_config);
@@ -389,6 +428,7 @@ h2_web_video_configure(void *user, h2_pal_video_decoder_session_t *session,
 static h2_pal_result_t
 h2_web_video_submit(void *user, h2_pal_video_decoder_session_t *session,
                     const h2_video_decoder_packet_t *packet) {
+  H2_WEB_STATE_GUARD();
   (void)user;
   if (!session->configured || session->eos_submitted)
     return H2_PAL_ERR_INVALID_STATE;
@@ -398,8 +438,12 @@ h2_web_video_submit(void *user, h2_pal_video_decoder_session_t *session,
     session->eos_submitted = 1;
     h2_web_async_t op;
     h2_web_async_begin(session->platform, &op);
-    int result = h2_web_video_flush_js((uintptr_t)session->platform,
-                                       (uintptr_t)session, op.id);
+    int result = ((int)h2_web_main_call(
+                      h2_web_video_flush_js,
+                      (const void *[]){
+                          &(uintptr_t){(uintptr_t)session->platform},
+                          &(uintptr_t){(uintptr_t)session}, &(uint32_t){op.id}})
+                      .i32);
     result = h2_web_async_finish(session->platform, &op, result);
     if (result == H2_PAL_OK)
       session->eos_reached = 1;
@@ -407,16 +451,25 @@ h2_web_video_submit(void *user, h2_pal_video_decoder_session_t *session,
       session->failed = 1;
     return (h2_pal_result_t)result;
   }
-  const int load = h2_web_video_load_js((uintptr_t)session);
+  const int load =
+      ((int)h2_web_main_call(h2_web_video_load_js,
+                             (const void *[]){&(uintptr_t){(uintptr_t)session}})
+           .i32);
   if (load < 0)
     return H2_PAL_ERR_INVALID_STATE;
   if (session->queued + (size_t)load >= H2_WEB_VIDEO_MAX_PENDING)
     return H2_PAL_ERR_WOULD_BLOCK;
   const int is_key = h2_web_h264_is_key(packet->data, packet->size);
-  const int result = h2_web_video_submit_js(
-      (uintptr_t)session, packet->data, packet->size, session->codec_config,
-      session->codec_config_size, is_key, (double)packet->pts_us,
-      (double)packet->duration_us);
+  const int result =
+      ((int)h2_web_main_call(
+           h2_web_video_submit_js,
+           (const void *[]){
+               &(uintptr_t){(uintptr_t)session}, &(const void *){packet->data},
+               &(size_t){packet->size}, &(const void *){session->codec_config},
+               &(size_t){session->codec_config_size}, &(int){is_key},
+               &(double){(double)packet->pts_us},
+               &(double){(double)packet->duration_us}})
+           .i32);
   return (h2_pal_result_t)result;
 }
 
@@ -424,6 +477,7 @@ static h2_pal_result_t
 h2_web_video_acquire(void *user, h2_pal_video_decoder_session_t *session,
                      uint32_t timeout_ms,
                      h2_pal_video_decoder_frame_t **out_frame) {
+  H2_WEB_STATE_GUARD();
   (void)user;
   if (!session->configured || session->acquired != NULL)
     return H2_PAL_ERR_INVALID_STATE;
@@ -462,6 +516,7 @@ static h2_pal_result_t
 h2_web_video_info(void *user, h2_pal_video_decoder_session_t *session,
                   h2_pal_video_decoder_frame_t *frame,
                   h2_video_frame_info_t *out_info) {
+  H2_WEB_STATE_GUARD();
   (void)user;
   if (session->acquired != frame)
     return H2_PAL_ERR_INVALID_ARG;
@@ -481,6 +536,7 @@ h2_web_video_info(void *user, h2_pal_video_decoder_session_t *session,
 static h2_pal_result_t
 h2_web_video_release(void *user, h2_pal_video_decoder_session_t *session,
                      h2_pal_video_decoder_frame_t *frame) {
+  H2_WEB_STATE_GUARD();
   (void)user;
   if (session->acquired != frame)
     return H2_PAL_ERR_INVALID_ARG;
@@ -492,10 +548,12 @@ h2_web_video_release(void *user, h2_pal_video_decoder_session_t *session,
 
 static h2_pal_result_t
 h2_web_video_reset(void *user, h2_pal_video_decoder_session_t *session) {
+  H2_WEB_STATE_GUARD();
   (void)user;
   if (session->acquired != NULL)
     return H2_PAL_ERR_INVALID_STATE;
-  h2_web_video_drop_js((uintptr_t)session);
+  (void)h2_web_main_call(h2_web_video_drop_js,
+                         (const void *[]){&(uintptr_t){(uintptr_t)session}});
   h2_web_video_free_frames(session);
   h2_pal_mem_free(&session->allocator, session->codec_config);
   session->codec_config = NULL;
@@ -509,6 +567,7 @@ h2_web_video_reset(void *user, h2_pal_video_decoder_session_t *session) {
 
 static h2_pal_result_t
 h2_web_video_close(void *user, h2_pal_video_decoder_session_t *session) {
+  H2_WEB_STATE_GUARD();
   (void)user;
   if (session->acquired != NULL)
     return H2_PAL_ERR_INVALID_STATE;
@@ -529,6 +588,7 @@ static const h2_pal_video_decoder_vtable_t h2_web_video_vtable = {
 };
 
 void h2_web_platform_video_decoder_init(h2_web_platform_t *platform) {
+  H2_WEB_STATE_GUARD();
   platform->video_decoder_api = (h2_pal_video_decoder_api_t){
       .user = platform,
       .vtable = &h2_web_video_vtable,

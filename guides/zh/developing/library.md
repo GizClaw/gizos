@@ -4,6 +4,8 @@
 
 `libs/pal/providers/<platform-or-sdk>/` 是明确例外：它保存由 Bazel 直接编译的平台实现，或把 Bazel archive 接入 ESP-IDF、BK7258 等原生 build system 的薄 adapter。它仍属于 Bazel library graph，不是原生 SDK source component；需要 SDK config、SDK lifecycle 或 SDK-owned source selection 的源码继续属于 `native_component_src/<sdk-family>/`。
 
+`libs/desktop_recording` 是 Desktop 专用的 native library，显式限定为 Linux/macOS target，提供直接 C lifecycle 和 Desktop hooks consumer，并通过 FFmpeg 编码。它不声明跨平台 PAL capability 或 vtable；Desktop source registration 属于 `app_support:capture`，由 launcher 持有。
+
 ## 标准结构
 
 ```text
@@ -16,6 +18,8 @@
 
 Public header 只暴露稳定类型和函数，不暴露 board header、SDK object、内部 task、private state 或 target-specific implementation。
 
+RGB565 矩形批量重放、调色板插值与最小 span 填充由 `libs/raster2d` 拥有，普通 C/C++ App 可直接使用。Lua 的程序绘图适配、其他图元算法、VM 生命周期、缓存与损伤管理仍由 `libs/lua` 的 Display module 拥有。内部 span header 通过仅对 Lua adapter 可见的 Bazel target 共享，不作为应用 API 或公共 include 路径。私有 native producer 可以使用其公共 `h2_lua_display.h` 批量更新 VM 所有的顶点／primitive 数据，再由 Lua Display 绘制；不能把 runtime 私有头、job 或 framebuffer 当作应用扩展 API。场景几何、变形、投影和配色策略留在应用自己的 portable library，公共层只处理明确输入的通用光栅、缓存和生命周期。
+
 每个 library 都必须提供自己的 `BUILD.bazel`。其中的主要 `cc_library` target 名与目录名一致；测试目录统一使用 `tests/`，不再使用单数形式的 `test/`。Library 是否进入某个平台 graph 只由 toolchain 和 compatibility 决定，不声明自定义 CI tag。
 
 PAL 是其中的 contract-only 特例：只需要类型和 provider vtable 的 library 依赖
@@ -23,7 +27,7 @@ header-only `//libs/pal:pal`；直接调用 canonical unsupported accessor 的 t
 `//libs/pal:unsupported`。Unsupported source 按 capability 拆成独立 object，最终静态
 链接只抽取真实引用的 capability，不能用 `alwayslink` 或 whole-archive 保留全集。
 
-Library family 可以增加一层只用于分类的 container。例如 `projects/pixa_games/libs` 本身不是 library，不能直接放 `include/`、`src/` 或 shared implementation；其中每个 `projects/pixa_games/libs/<game>/` 才是遵守上述标准结构的独立 reusable library。Family 可以在具名的 `libs/cmake/` package 中提供跨 target build system 复用的 CMake API；该 build library 只拥有 family source inventory、include 和 portable compile contract，不能包含 board wiring、image policy、target SDK glue 或 platform implementation。PIXA Games 的 Host 只注入 shared Player PIXA，game-owned legacy UI 贴图转换成 `src/` 中的 ARGB4444 代码数据；具体边界见 [PIXA Games](/apps/pixa_games)。
+Library family 可以增加一层只用于分类的 container。例如 `libs/crypto/` 按算法组织密码学能力，`libs/crypto/sha256/` 是独立 library；`projects/pixa_games/libs` 按 game 组织 reusable library。分类 container 本身不是 library，不能直接放 `include/`、`src/` 或 shared implementation；每个子 library 遵守上述标准结构。Family 可以在具名的 `libs/cmake/` package 中提供跨 target build system 复用的 CMake API；该 build library 只拥有 family source inventory、include 和 portable compile contract，不能包含 board wiring、image policy、target SDK glue 或 platform implementation。PIXA Games 的 Host 只注入 shared Player PIXA，game-owned legacy UI 贴图转换成 `src/` 中的 ARGB4444 代码数据；具体边界见 [PIXA Games](/apps/pixa_games)。
 
 ## 依赖边界
 
@@ -128,24 +132,29 @@ App 必须在调用 third-party API 之前完成对应 integration 初始化，�
 - [`coremqtt`](./coremqtt.md)：CoreMQTT 的 GizOS integration。
 - [`corehttp`](./corehttp.md)：通过 Net PAL 提供 HTTP/1.1 的 portable coreHTTP provider。
 - [`dns`](./dns.md)：跨平台 DNS client。
+- [`encoding`](./encoding.md)：参照 Go `encoding` 的 hex、base32、base64 与 base85 编解码，按算法族加 alphabet 描述，无堆分配；Lua Display 的 base85 区域读取器也使用它。
 - [`drivers`](./drivers.md)：modem、motion、NFC 等 portable driver family。
   NFC 子目录中的 `type2` protocol engine 与 `fm17660k` controller driver 分别拥有协议和设备状态机；board wiring 仍由 component/BSP 注入。
 - [`game_runtime`](./game_runtime.md)：跨平台 game runtime。
 - [`pixa_games`](/apps/pixa_games)：可以被多个 project 引用的 PIXA game library family。
-- [`gizclaw`](./gizclaw.md)：GizClaw client、config 和公共类型。
+- [`gizclaw`](./gizclaw.md)：GizClaw client、config、公共类型和复用异步 API-key state 的 [BLE 绑定窗口](./gizclaw_ble_binding.md)。
+- [`lua/apps`](./lua.md#lua-app-目录与流式安装)：预装与安装应用的统一目录、增量包校验和原子安装；不依赖 GizClaw 或产品 UI。
 - [`h2peer`](./h2peer.md)：由 GizOS 维护、通过 PAL 注入平台能力的 portable WebRTC core。
 - [`h2sctp`](./h2sctp.md)：由 GizOS 维护、在调用方 DTLS packet transport 上运行的 portable SCTP PAL provider。
 - [`iperf`](./iperf.md)：只依赖 PAL 的 iperf3 兼容吞吐测试 client 与 server，覆盖 TCP、UDP 和 SCTP。
 - [`lvgl`](./lvgl.md)：LVGL platform 与 OSAL contract。
+- [`mem_arena`](./mem_arena.md)：把调用方的一块内存分成独立 small/large TLSF pool，借出 Memory PAL，支持 fallback、按 owner 释放、逐池统计和按需碎片诊断。调用方提供成对 lock/unlock；core 不依赖 SDK，也不分配外部控制对象。ESP reservation 与 mutex adapter 由 [ESP-IDF 6.x](./components/esp_idf6_x.md#psram-arena) 拥有，桌面占位栈统计见 [Desktop](./components/desktop.md)。
 - [`mp4_decoder`](./mp4_decoder.md)：从 random-access MP4 source 产生同步、可写的音视频 presentation frame。
 - [`ntp`](./ntp.md)：跨平台 NTP client。
 - [`pal`](./platform_abstract_layer.md)：Platform Abstraction Layer contract。
 - [`pixa`](./pixa.md)：PIXA image、pack、decode、reader 和 blit。
+- [`raster2d`](./raster2d.md)：无 VM、无分配的 RGB565 矩形重放和 palette 插值。
 - [`qrcode`](./qrcode.md)：QR Code Model 2 编码与 RGB565 band 栅格化，全部缓冲区由调用方提供。
 - [`tinyh264`](./tinyh264.md)：TinyH264 的 portable Video Decoder PAL provider。
 - [`runtime`](./runtime.md)：提供给 app 使用的跨平台 Runtime。
 - [`semver`](./semver.md)：无堆分配的 SemVer 校验和排序，非法版本统一低于合法版本。
-- [`utils`](./utils.md)：APN 等小型 portable helper。
+- [`crypto/sha256`](./sha256.md)：无堆分配的增量摘要，由 Lua App 安装器、H2Loader 和 portable Host Core 共用。
+- [`utils`](./utils.md)：APN 和单份 binary32 reciprocal/FMA 除法等小型 portable helper；数值编译假设与异常语义由生产公共头定义，不在 Lua 或应用中复制实现。
 - [`wolfssl`](./wolfssl.md)：同一 upstream 下的裁剪 Crypto PAL variant 与
   完整 Crypto/DTLS provider；不公开 WolfSSL private type。
 
@@ -184,3 +193,11 @@ API Reference 只从参与生产构建的 Public Header 生成，不能从手写
 [Lua Runtime](./lua)。`//libs/lua:lua_core` 不得依赖 Runtime/PAL；
 `//libs/lua:lua_runtime` 是唯一可以借用 `h2_runtime_t` 的 adapter，
 `//libs/lua:lua` 是符合 library ownership 规则的 semantic target。
+
+Lua prepared execution 的公共边界是有独立数学合同的计算机制：补偿约束循环、预计算系数、有序 bulk integration/damping、带适用域的旋转 reduction、显式几何变换以及既有 raster 的批量执行。某段代码原来用 C 写成，或者把所有常量改成参数，不代表应用方程就属于 library。游戏状态机、校准受力模型、形状/权重生成、材质选择、相机 recipe、layer 意义与调度留在可分发 Lua 包中。数值 kernel 的编译选项限制在专属 translation units，由现有 source-package aspect 原样导出；不得为此修改整个 Lua library、Runtime、PAL 或 board 的行为。
+
+数值状态可由可分发 Lua app 使用标准 numeric buffer 创建，再由 prepared workspace 显式绑定并保活；这仍是 `libs/lua` 内部的 VM 生命周期契约，不要求 launcher 分配裸指针或注册私有 C 扩展。绑定只改变公共状态的所有权与访问路径，材料元数据和原子阶段暂存仍由 library 持有；应用负责阶段顺序、拓扑更新和必要的状态读取。
+
+位移导出、显式修正求长和直接读取坐标 buffer 的描边属于公共数值与绘制机制。它们保留源实现的算术/光栅路径，不在库内判断环境、生成拖曳系数、构造竿形或决定阶段调度。显式精度入口不改变既有通用 API 的默认精度合同；packed 描边复用既有缓存与 Display 生命周期。
+
+公共 mesh 的最终坐标比较、保守 float 变换和网格取整属于 Display；pose、grid 选择和更新调度仍由 Lua app 决定。既有 Display 实现在 `h2_lua_display.c` 中独立编译，与 `h2_lua_vmath.c`、`h2_lua_geometry.c` 和 prepared units 使用 `-O3 -fno-fast-math`，通过现有源码包导出逐单元合同。此边界不改变 Lua core、Runtime、其他 module 或独立 raster library 的编译选项，也不建立第二份绘制实现。

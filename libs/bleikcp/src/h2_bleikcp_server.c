@@ -137,7 +137,9 @@ static h2_pal_result_t h2_bleikcp_server_rx_write(
                  ? h2_bleikcp_stream_input(stream, data, len)
                  : H2_PAL_ERR_WOULD_BLOCK;
     (void)h2_pal_mutex_unlock(server->api.sync, server->mutex);
-    return rc;
+    /* The ATT write itself was served; a datagram dropped above ATT is
+     * recovered by the peer's KCP retransmit, not reported as a write error. */
+    return rc == H2_PAL_ERR_FULL ? H2_PAL_OK : rc;
 }
 
 static void h2_bleikcp_server_dispatch(void *ctx) {
@@ -263,6 +265,7 @@ int h2_bleikcp_server_open(
     h2_bleikcp_server_t **out_server) {
     if (api == NULL || out_server == NULL || handler == NULL) return H2_PAL_ERR_INVALID_ARG;
     *out_server = NULL;
+    if (!h2_bleikcp_global_ready()) return H2_PAL_ERR_INVALID_STATE;
     if (api->ble == NULL) {
         return H2_PAL_ERR_UNSUPPORTED;
     }

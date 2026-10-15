@@ -1,0 +1,31 @@
+load("@rules_cc//cc:defs.bzl", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+[cc_test(
+    name = name,
+    size = "medium",
+    srcs = ["main.c"],
+    args = ["$(rootpath //tools/webrtc-test-server:webrtc_test_server)"] + mode,
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    data = ["//tools/webrtc-test-server:webrtc_test_server"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/pal/providers/desktop/pal_core",
+        "//libs/pal/providers/desktop:webrtc_h2peer_test_support",
+        "//projects/e2e/apps/pal-webrtc/app:pal_webrtc_e2e",
+    ],
+) for name, mode in [
+    ("desktop_test", []),
+    ("reject_malformed_auth_test", ["reject-malformed-auth"]),
+    ("reject_timeout_auth_test", ["reject-timeout-auth"]),
+    ("soak_test", ["soak-short"]),
+    ("soak_single_loss_test", ["soak-single-loss"]),
+    ("soak_permanent_loss_test", ["soak-permanent-loss"]),
+]]

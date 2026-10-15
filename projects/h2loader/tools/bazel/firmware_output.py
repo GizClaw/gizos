@@ -26,7 +26,29 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def package_entries(source_root: Path, data_root: str, files: list[str]) -> list[BundleEntry]:
+def package_entries(
+    source_root: Path,
+    data_root: str,
+    files: list[str],
+    sources: list[str] | None = None,
+) -> list[BundleEntry]:
+    """Bundles package data under `data_root`.
+
+    `files` holds each entry's repository-relative name. `sources` holds where
+    its bytes are, one per file and in the same order; a generated file is read
+    from its output location while it keeps its repository-relative name, so a
+    rule may produce package data instead of requiring a checked-in copy under
+    the declared root. Omitting `sources` reads each file from its own name.
+    """
+    if sources is None:
+        sources = list(files)
+    # Check the pairing before the empty shortcut: sources without files means
+    # the caller lost the correspondence, and silently packaging nothing would
+    # hide it.
+    if len(sources) != len(files):
+        raise ValueError(
+            f"package data needs one source per file: {len(files)} files, {len(sources)} sources"
+        )
     if not files:
         return []
     root = Path(data_root)
@@ -34,9 +56,9 @@ def package_entries(source_root: Path, data_root: str, files: list[str]) -> list
         raise ValueError(f"package data root must be repository-relative: {data_root}")
     entries: list[BundleEntry] = []
     names: set[str] = set()
-    for value in files:
+    for value, read_value in zip(files, sources):
         logical_source = Path(value)
-        if logical_source.is_absolute():
+        if logical_source.is_absolute() or not read_value:
             raise ValueError(f"package data escapes declared root {data_root}: {value}")
         try:
             relative_path = logical_source.relative_to(root)
@@ -44,7 +66,7 @@ def package_entries(source_root: Path, data_root: str, files: list[str]) -> list
             raise ValueError(f"package data escapes declared root {data_root}: {value}") from error
         if not relative_path.parts or ".." in relative_path.parts:
             raise ValueError(f"package data escapes declared root {data_root}: {value}")
-        source = source_root / logical_source
+        source = source_root / Path(read_value)
         if not source.is_file():
             raise ValueError(f"package data file is missing: {value}")
         data = source.read_bytes()
@@ -68,13 +90,15 @@ def publish_managed_package(
     app_path: str,
     data_root: str,
     data_files: list[str],
+    data_sources: list[str],
     output: Path,
     board: str,
     role: str,
     target: str,
     version: str,
+    package_format: int = 2,
 ) -> None:
-    entries = package_entries(source_root, data_root, data_files)
+    entries = package_entries(source_root, data_root, data_files, data_sources)
     write_package(
         output,
         app_path,
@@ -84,6 +108,7 @@ def publish_managed_package(
         board=board,
         target=target,
         version=version,
+        package_format=package_format,
     )
 
 
@@ -161,6 +186,7 @@ def publish_metadata(
     factory: Path | None,
     recovery: Path | None,
     native: list[tuple[str, Path]],
+    package_format: int = 2,
 ) -> None:
     def asset(
         path: Path,
@@ -185,7 +211,10 @@ def publish_metadata(
             result["flash_offset"] = flash_offset
         return result
 
-    release_assets = [asset(package, "managed-install", ".update.tar.zlib")]
+    if type(package_format) is not int or package_format not in (1, 2):
+        raise ValueError(f"unsupported package format: {package_format}")
+    suffix = ".update.tar" if package_format == 2 else ".update.tar.zlib"
+    release_assets = [asset(package, "managed-install", suffix)]
     if recovery is not None:
         release_assets.append(asset(recovery, "recovery", ".recovery.h2fb"))
     if factory is not None:
@@ -205,12 +234,14 @@ def publish_metadata(
         "role": role,
         "target": target,
         "version": version,
+        "package_format": package_format,
         "package_manifest": package_manifest(
             app_image.read_bytes(),
             role=role,
             board=board,
             target=target,
             version=version,
+            package_format=package_format,
         ),
         "assets": release_assets,
         "native_artifacts": [

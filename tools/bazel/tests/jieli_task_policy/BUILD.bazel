@@ -1,0 +1,89 @@
+load("@rules_python//python:defs.bzl", "py_test")
+load("//tools/bazel:jieli_task_policy.bzl", "jieli_target_task_policy")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
+load(":analysis_tests.bzl", "policy_failure_test")
+
+# Source-only fixtures need no host or vendor C++ toolchain.
+h2_tasks(
+    name = "tasks",
+    tasks = ["fixture/worker"],
+)
+
+filegroup(
+    name = "graph",
+    srcs = [":tasks"],
+)
+
+jieli_target_task_policy(
+    name = "policy",
+    default_policy = "3 256 0",
+    graph = [":graph"],
+    policies = ["#C1fixture/worker 7 1024 16"],
+    sdk_policies = ["sdk_worker 5 512 8"],
+)
+
+py_test(
+    name = "generated_policy_test",
+    srcs = ["test_generated_policy.py"],
+    args = [
+        "$(location :policy_source)",
+        "$(location :policy_audit)",
+    ],
+    data = [
+        ":policy",
+        ":policy_audit",
+        ":policy_source",
+    ],
+    legacy_create_init = 0,
+    main = "test_generated_policy.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+jieli_target_task_policy(
+    name = "missing_policy",
+    default_policy = "3 256 0",
+    graph = [":graph"],
+    policies = [],
+    sdk_policies = [],
+    tags = ["manual"],
+)
+
+jieli_target_task_policy(
+    name = "undeclared_policy",
+    default_policy = "3 256 0",
+    graph = [":graph"],
+    policies = [
+        "#C1fixture/worker 7 1024 16",
+        "fixture/undeclared 4 512 0",
+    ],
+    sdk_policies = [],
+    tags = ["manual"],
+)
+
+policy_failure_test(
+    name = "missing_policy_test",
+    expected_message = "1 task name(s) reachable from this target have no policy.",
+    expected_task = "fixture/worker",
+    target_under_test = ":missing_policy",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+policy_failure_test(
+    name = "undeclared_policy_test",
+    expected_message = "the policy table has a row for fixture/undeclared, which nothing in the image declares",
+    expected_task = "fixture/undeclared",
+    target_under_test = ":undeclared_policy",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)

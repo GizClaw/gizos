@@ -1,6 +1,7 @@
 #include "h2_h2loader_host_package.h"
 
 #include "h2_h2loader_host_internal.h"
+#include "h2_sha256.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -51,13 +52,13 @@ static void sha_hex(
     const uint8_t *data,
     size_t len,
     char out[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u]) {
-    h2_h2loader_host_sha256_t sha;
+    h2_sha256_t sha;
     uint8_t digest[32];
 
-    h2_h2loader_host_sha256_init(&sha);
-    h2_h2loader_host_sha256_update(&sha, data, len);
-    h2_h2loader_host_sha256_finish(&sha, digest);
-    h2_h2loader_host_sha256_hex(digest, out);
+    h2_sha256_init(&sha);
+    h2_sha256_update(&sha, data, len);
+    h2_sha256_finish(&sha, digest);
+    h2_sha256_hex(digest, out);
 }
 
 static size_t append_tar_file(
@@ -101,16 +102,16 @@ static size_t append_tar_file(
 }
 
 static void update_data_digest(
-    h2_h2loader_host_sha256_t *sha,
+    h2_sha256_t *sha,
     const char *path,
     const uint8_t *data,
     size_t len) {
     static const uint8_t separator = 0u;
-    h2_h2loader_host_sha256_update(
+    h2_sha256_update(
         sha, (const uint8_t *)path, strlen(path));
-    h2_h2loader_host_sha256_update(sha, &separator, sizeof(separator));
-    h2_h2loader_host_sha256_update(sha, data, len);
-    h2_h2loader_host_sha256_update(sha, &separator, sizeof(separator));
+    h2_sha256_update(sha, &separator, sizeof(separator));
+    h2_sha256_update(sha, data, len);
+    h2_sha256_update(sha, &separator, sizeof(separator));
 }
 
 static test_buffer_t build_package(const package_options_t *options) {
@@ -123,7 +124,7 @@ static test_buffer_t build_package(const package_options_t *options) {
     char data_sha[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
     char checksum[H2_H2LOADER_HOST_SHA256_HEX_LEN + 2u];
     char image_size[32];
-    h2_h2loader_host_sha256_t data_digest;
+    h2_sha256_t data_digest;
     uint8_t digest[32];
     size_t tar_len = 0u;
     test_buffer_t package = {0};
@@ -140,7 +141,7 @@ static test_buffer_t build_package(const package_options_t *options) {
         (unsigned long long)(sizeof(app) - 1u));
 
     sha_hex(app, sizeof(app) - 1u, image_sha);
-    h2_h2loader_host_sha256_init(&data_digest);
+    h2_sha256_init(&data_digest);
     if (options->first_data_path != NULL) {
         update_data_digest(
             &data_digest,
@@ -155,8 +156,8 @@ static test_buffer_t build_package(const package_options_t *options) {
             second_data,
             sizeof(second_data) - 1u);
     }
-    h2_h2loader_host_sha256_finish(&data_digest, digest);
-    h2_h2loader_host_sha256_hex(digest, data_sha);
+    h2_sha256_finish(&data_digest, digest);
+    h2_sha256_hex(digest, data_sha);
     (void)snprintf(
         checksum,
         sizeof(checksum),

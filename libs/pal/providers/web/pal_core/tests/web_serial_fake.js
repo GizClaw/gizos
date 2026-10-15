@@ -60,9 +60,12 @@ const h2FakeReader = {
       globalThis.h2FakePendingReadResolve = null;
     }
     if (globalThis.h2FakeSerialMode === 'close-needs-cancel-turn') {
-      return Promise.resolve().then(() => {
+      // Force-close calls port.close() in the same JS turn. Settle cancel on
+      // the next turn so the rejection/recovery path is deterministic.
+      return new Promise(resolve => setTimeout(() => {
         globalThis.h2FakeCancelSettled = true;
-      });
+        resolve();
+      }, 0));
     }
     return Promise.resolve();
   },

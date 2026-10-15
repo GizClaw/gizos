@@ -1,0 +1,6 @@
+#ifndef H2_TEST_PPP_SDKCONFIG_H
+#define H2_TEST_PPP_SDKCONFIG_H
+#ifndef CONFIG_PPP_SUPPORT
+#define CONFIG_PPP_SUPPORT 0
+#endif
+#endif

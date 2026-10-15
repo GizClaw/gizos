@@ -1,0 +1,302 @@
+{
+  "device_uid": "9888e0115c52",
+  "board": "devkit",
+  "target": "esp32s3",
+  "port": "/dev/cu.usbmodem201313231",
+  "transport": "USB Serial/JTAG + iostreamikcp",
+  "version": "pal-core-devkit-20260928-r6",
+  "contract": 2,
+  "package_sha256": "11ea559c25ad54303ff62f7ba0b9769682fdab852142077cf848d950d136ee2f",
+  "image_sha256": "2595a4ceed5689bab4fcda586a21fe311c5d9364437bf620ad6443bce7fa9b09",
+  "source_base_commit": "b79cc2a7791c91708ad7750071c246d2a0e8956c",
+  "source_state": "Uncommitted worktree; image identity is bound by the recorded build manifest. A later launcher indentation-only correction does not change C tokens.",
+  "sdk_commit": "76f5dedd9950a3012fee8fb7d5586df21fc67802",
+  "passed": 41,
+  "failed": 0,
+  "blocked": 0,
+  "not_run": 0,
+  "complete": true,
+  "qualified": true,
+  "cleanup": 0,
+  "cases": [
+    {
+      "id": "pal.core.memory.lifecycle",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.log.output",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.time.monotonic",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.time.wall-read",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.time.wall-set",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.timer.oneshot",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.timer.lifecycle",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.task.lifecycle",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.queue.transfer",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.queue.boundaries",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.mutex.lifecycle",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.semaphore.boundaries",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.condition.signal",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.condition.bounded-wait",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.concurrency.mpmc",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.system-event.lifecycle",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.firmware-info.current",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.queue.close-wake",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.semaphore.wake",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.api.arguments",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.memory.churn-alignment",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.task.once-context",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.task.join-running",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.task.join-completed",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.task.churn",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.task.batch-churn",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.task.stack-bounds",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.task.start-failure",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.task.partial-start",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.queue.copy-buffered-close",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.queue.sender-close",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.queue.reset-wake",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.mutex.contention",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.semaphore.waiters",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.condition.broadcast",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.condition.generations",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.system-event.external-unsubscribe",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.system-event.self-unsubscribe",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.timer.isolation",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.timer.churn",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.resources.recovered",
+      "status": "PASS",
+      "result": 0
+    }
+  ],
+  "task_probe": {
+    "cycles": 100,
+    "stacks_before": 2,
+    "stacks_after": 2,
+    "stack_bytes_before": 98304,
+    "stack_bytes_after": 98304,
+    "kernel_tasks_before": 12,
+    "kernel_tasks_after": 12,
+    "heap_bytes_delta": -7828,
+    "heap_blocks_delta": -8,
+    "rc": 0
+  },
+  "observed_stack_bytes": {
+    "4096": 4096,
+    "16384": 16384,
+    "65536": 65536
+  },
+  "allocation_fault": {
+    "injected": -5,
+    "recovery": 0
+  },
+  "sdk_heap_note": "Whole SDK heap includes asynchronous transport buffers. This run freed 7828 bytes / 8 blocks; this is not a zero-delta heap claim. The PAL Core resource baseline comparison passed exactly.",
+  "loader": {
+    "board": "devkit",
+    "target": "esp32s3",
+    "chip": "esp32s3",
+    "device_uid": "9888e0115c52",
+    "capabilities": "0x00000001",
+    "command_availability": "0x00081d3f",
+    "active_role": "app",
+    "active_version": "pal-core-devkit-20260928-r6",
+    "active_checksum": "2595a4ceed5689bab4fcda586a21fe311c5d9364437bf620ad6443bce7fa9b09",
+    "active_image_size": "1530000",
+    "running_partition": "2",
+    "next_partition": "2",
+    "boot_intent": "auto",
+    "stage_valid": "0",
+    "stage_package_checksum": "-",
+    "stage_package_size": "0",
+    "stage_image_checksum": "-",
+    "stage_image_size": "0",
+    "stage_role": "unknown",
+    "stage_version": "-",
+    "stage_board": "-",
+    "stage_target": "-",
+    "partition_1_valid": "1",
+    "partition_1_package_checksum": "f4fd26deba579fb6b8955e9ea7a83122b25cf6e4c433b3d652090d6958197568",
+    "partition_1_package_size": "975428",
+    "partition_1_image_checksum": "9479960ee19af062cb1a599c4d4b52f948d476efc842aabdfa6ca2ec812befd5",
+    "partition_1_image_size": "1496656",
+    "partition_1_role": "loader",
+    "partition_1_version": "0.2.3-atomic-541",
+    "partition_1_board": "devkit",
+    "partition_1_target": "esp32s3",
+    "partition_2_valid": "1",
+    "partition_2_package_checksum": "11ea559c25ad54303ff62f7ba0b9769682fdab852142077cf848d950d136ee2f",
+    "partition_2_package_size": "984923",
+    "partition_2_image_checksum": "2595a4ceed5689bab4fcda586a21fe311c5d9364437bf620ad6443bce7fa9b09",
+    "partition_2_image_size": "1530000",
+    "partition_2_role": "app",
+    "partition_2_version": "pal-core-devkit-20260928-r6",
+    "partition_2_board": "devkit",
+    "partition_2_target": "esp32s3",
+    "last_result": "0",
+    "mfg_mode": "1",
+    "mfg_steps": "0000000000000000000000"
+  },
+  "coredump_blank": true,
+  "monitor": {
+    "reason": "test-report",
+    "elapsed_seconds": 39.67,
+    "monitor_exit": 130,
+    "log": "/tmp/pal-core-devkit-r6-boot.log"
+  }
+}

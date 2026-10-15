@@ -1,26 +1,34 @@
 #include "h2_lua_runtime_e2e.h"
 #include "h2_lua_runtime_e2e_task_names.h"
 #include "h2_smoke_host_runtime.h"
+#include "h2_web_main_thread.h"
 #include "h2_web_platform.h"
 
 #include <emscripten.h>
+#include <stdatomic.h>
 #include <stdio.h>
 
-EM_JS(void, web_set_result, (int passed, size_t count), {
+/* clang-format off */
+EM_JS(void, web_set_result,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["i32", "u32"], null,
+    (passed, count) => {
   const element = globalThis.document && document.getElementById('result');
   if (element) {
     element.textContent =
-        passed == count ? `PASS ${passed} / ${count} scheduler = cooperative`
-                          : `FAIL ${passed} / ${count} scheduler = cooperative`;
+        passed == count ? `PASS ${passed} / ${count} scheduler = multi-worker`
+                          : `FAIL ${passed} / ${count} scheduler = multi-worker`;
     element.dataset.terminal = passed == count ? 'pass' : 'fail';
   }
 });
+});
+/* clang-format on */
 
 typedef struct web_e2e_context {
   h2_runtime_t *runtime;
   h2_lua_runtime_e2e_report_t report;
   h2_pal_result_t result;
-  volatile int done;
+  _Atomic int done;
 } web_e2e_context_t;
 
 static void run_e2e(void *user) {
@@ -28,8 +36,8 @@ static void run_e2e(void *user) {
   context->result = h2_lua_runtime_e2e_run(
       context->runtime,
       &(h2_lua_runtime_e2e_config_t){
-          .scheduler = "cooperative",
-          .worker_count = 1u,
+          .scheduler = "multi-worker",
+                                               .worker_count = 2u,
       },
       &context->report);
   context->done = 1;
@@ -71,7 +79,7 @@ int main(void) {
   while (result == H2_PAL_OK && !context.done) {
     result = h2_web_platform_pump(platform, 64u, NULL);
     if (result == H2_PAL_OK)
-      emscripten_sleep(1u);
+      h2_web_worker_sleep(1u);
   }
   if (result == H2_PAL_OK) {
     result = h2_pal_task_join(h2_web_platform_task_api(platform), app_task);
@@ -90,7 +98,9 @@ int main(void) {
          context.report.scheduler == NULL ? "unknown"
                                           : context.report.scheduler,
          context.report.passed, context.report.case_count);
-  web_set_result((int)context.report.passed, context.report.case_count);
+  (void)h2_web_main_call(
+      web_set_result, (const void *[]){&(int){(int)context.report.passed},
+                                       &(size_t){context.report.case_count}});
   if (runtime != NULL)
     h2_runtime_deinit(runtime);
   h2_web_platform_destroy(platform);

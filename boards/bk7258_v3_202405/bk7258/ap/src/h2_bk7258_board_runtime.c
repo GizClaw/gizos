@@ -27,7 +27,10 @@ struct h2_pal_fs_file {
     FIL file;
 };
 
-static FATFS s_sd_fs;
+/* The task-context FatFs work area includes its 4 KiB sector window. The
+ * pinned SDIO driver reads through FIFO into the caller buffer; no ISR owns
+ * this object. Keep it in fixed PSRAM with the board's other working sets. */
+static FATFS s_sd_fs __attribute__((section(".psram.bss"), aligned(64)));
 static int s_sd_mounted;
 static h2_pal_fs_api_t s_runtime_fs;
 static h2_runtime_config_t s_runtime_config;
@@ -253,6 +256,15 @@ static int fs_write(void *user, h2_pal_fs_file_t *file, const void *data, size_t
     return H2_PAL_OK;
 }
 
+static int fs_seek(void *user, h2_pal_fs_file_t *file, uint64_t offset) {
+    (void)user;
+    if (file == NULL || (uint64_t)(FSIZE_t)offset != offset)
+        return H2_PAL_ERR_INVALID_ARG;
+    FRESULT fr = f_lseek(&file->file, (FSIZE_t)offset);
+    if (fr != FR_OK) return map_fresult(fr);
+    return (uint64_t)f_tell(&file->file) == offset ? H2_PAL_OK : H2_PAL_ERR_IO;
+}
+
 static int fs_sync(void *user, h2_pal_fs_file_t *file) {
     (void)user;
     if (file == NULL) {
@@ -386,17 +398,23 @@ static int clear_dir_children(const char *dir_path) {
 }
 
 static int runtime_fs_clear(void *user, const char *path) {
-    int rc;
+    if (path == NULL || path[0] != '/') return H2_PAL_ERR_INVALID_ARG;
+    for (const char *part = path + 1; *part != '\0';) {
+        const char *end = strchr(part, '/');
+        size_t len = end ? (size_t)(end - part) : strlen(part);
+        if (len == 0 || (len == 1 && part[0] == '.') ||
+            (len == 2 && part[0] == '.' && part[1] == '.'))
+            return H2_PAL_ERR_INVALID_ARG;
+        if (!end) break;
+        part = end + 1;
+    }
 
     (void)user;
-    if (path == NULL || strcmp(path, H2_BK7258_DATA_MOUNT_PATH) != 0) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    rc = board_mount_file_point(H2_BK7258_DATA_MOUNT_PATH);
-    if (rc != H2_PAL_OK) {
-        return rc;
-    }
-    return clear_dir_children(H2_BK7258_SD_DATA_ROOT);
+    char mapped[H2_BK7258_FS_PATH_MAX];
+    if (path == NULL) return H2_PAL_ERR_INVALID_ARG;
+    int rc = translate_path(path, mapped, sizeof(mapped));
+    if (rc != H2_PAL_OK) return rc;
+    return clear_dir_children(mapped);
 }
 
 int h2_bk7258_board_fs_init(h2_pal_fs_api_t *fs) {
@@ -404,6 +422,7 @@ int h2_bk7258_board_fs_init(h2_pal_fs_api_t *fs) {
         .mkdir = fs_mkdir,
         .open = fs_open,
         .read = fs_read,
+        .seek = fs_seek,
         .write = fs_write,
         .sync = fs_sync,
         .close = fs_close,
@@ -464,7 +483,7 @@ h2_pal_result_t h2_bk7258_board_runtime_config(h2_runtime_config_t *out_config) 
         .mem = h2_bk7258_board_default_allocator(),
         .log = h2_bk7258_board_log_api(),
         .time = h2_bk7258_board_time_api(),
-        .timer = h2_pal_unsupported_timer_api(),
+        .timer = h2_bk_platform_timer_api(),
         .task = h2_bk7258_board_task_api(),
         .queue = h2_bk7258_board_queue_api(),
         .sync = h2_bk7258_board_sync_api(),

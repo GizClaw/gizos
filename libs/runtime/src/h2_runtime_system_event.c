@@ -200,6 +200,8 @@ static void copy_wifi_ip(
     out->ip4 = in->ip4;
     out->netmask4 = in->netmask4;
     out->gateway4 = in->gateway4;
+    memcpy(out->ip6, in->ip6, sizeof(out->ip6));
+    out->ip6_valid = in->ip6_valid;
 }
 
 static void copy_char_array_as_string(
@@ -262,6 +264,42 @@ static void publish_system_state(
         state.ip_valid = e->ip_valid;
         state.disconnect_reason = e->disconnect_reason;
         h2_runtime_system_state_publish_wifi_sta(runtime, &state);
+        break;
+    }
+    case H2_RUNTIME_SYSTEM_EVENT_MODEM_SIM_CHANGED: {
+        const h2_runtime_system_modem_state_t reported = {
+            .sim = payload->modem_sim.state,
+            .rat = payload->modem_sim.rat,
+        };
+        h2_runtime_system_state_publish_modem(runtime, kind, &reported);
+        break;
+    }
+    case H2_RUNTIME_SYSTEM_EVENT_MODEM_REGISTRATION_CHANGED: {
+        const h2_runtime_system_modem_state_t reported = {
+            .registration = payload->modem_registration.state,
+            .rat = payload->modem_registration.rat,
+        };
+        h2_runtime_system_state_publish_modem(runtime, kind, &reported);
+        break;
+    }
+    case H2_RUNTIME_SYSTEM_EVENT_MODEM_PACKET_CHANGED: {
+        const h2_runtime_system_modem_state_t reported = {
+            .packet = payload->modem_packet.state,
+            .rat = payload->modem_packet.rat,
+        };
+        h2_runtime_system_state_publish_modem(runtime, kind, &reported);
+        break;
+    }
+    case H2_RUNTIME_SYSTEM_EVENT_MODEM_SIGNAL_CHANGED: {
+        const h2_runtime_system_event_modem_signal_t *e = &payload->modem_signal;
+        const h2_runtime_system_modem_state_t reported = {
+            .rat = e->rat,
+            .rssi_dbm = e->rssi_dbm,
+            .rssi_valid = e->rssi_valid,
+            .rsrp_dbm = e->rsrp_dbm,
+            .rsrp_valid = e->rsrp_valid,
+        };
+        h2_runtime_system_state_publish_modem(runtime, kind, &reported);
         break;
     }
     default:
@@ -552,6 +590,9 @@ static h2_pal_result_t map_modem_event(
         h2_runtime_system_event_modem_signal_t *runtime =
             &out_payload->modem_signal;
         runtime->rssi_dbm = pal->rssi_dbm;
+        runtime->rssi_valid = pal->rssi_valid;
+        runtime->rsrp_dbm = pal->rsrp_dbm;
+        runtime->rsrp_valid = pal->rsrp_valid;
         runtime->ber = pal->ber;
         runtime->rat = (h2_runtime_system_modem_rat_t)pal->rat;
         *out_payload_size = sizeof(*runtime);
@@ -731,9 +772,9 @@ static int h2_runtime_system_event_handler(void *user, const h2_pal_system_event
     if (!h2_runtime_ready(runtime) || event == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    if (atomic_load_explicit(
+    if (h2_atomic_load_explicit(
             &runtime->private_state->system_event_active,
-            memory_order_acquire) == 0) {
+            H2_ATOMIC_ACQUIRE) == 0) {
         return H2_PAL_ERR_CLOSED;
     }
 
@@ -778,9 +819,9 @@ h2_pal_result_t h2_runtime_start_system_events(h2_runtime_t *runtime) {
     if (rc != H2_PAL_OK) {
         return rc;
     }
-    atomic_store_explicit(
+    h2_atomic_store_explicit(
         &runtime->private_state->system_event_active, 1,
-        memory_order_release);
+        H2_ATOMIC_RELEASE);
 
     const size_t count = sizeof(s_system_event_types) / sizeof(s_system_event_types[0]);
     for (size_t i = 0u; i < count; ++i) {
@@ -812,9 +853,9 @@ void h2_runtime_stop_system_events(h2_runtime_t *runtime) {
         return;
     }
     const h2_pal_system_event_api_t *api = runtime->system_event;
-    int was_active = atomic_exchange_explicit(
+    int was_active = h2_atomic_exchange_explicit(
         &runtime->private_state->system_event_active, 0,
-        memory_order_acq_rel);
+        H2_ATOMIC_ACQ_REL);
     if (api == NULL) {
         return;
     }

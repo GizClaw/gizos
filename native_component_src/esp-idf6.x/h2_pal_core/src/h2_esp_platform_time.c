@@ -93,7 +93,12 @@ static h2_pal_result_t esp_time_get_wall_status(void *user, h2_pal_time_wall_sta
 
 static h2_pal_result_t esp_time_sleep_ms(void *user, uint32_t ms) {
     (void)user;
-    vTaskDelay(pdMS_TO_TICKS(ms));
+    /* A positive delay must block, even below one RTOS tick. Rounding down
+     * turns polling backoff into a same-priority yield and can starve idle. */
+    const uint64_t ticks = ((uint64_t)ms * configTICK_RATE_HZ + 999u) / 1000u;
+    if (ticks > (uint64_t)portMAX_DELAY)
+        return H2_PAL_ERR_INVALID_ARG;
+    vTaskDelay((TickType_t)ticks);
     return H2_PAL_OK;
 }
 

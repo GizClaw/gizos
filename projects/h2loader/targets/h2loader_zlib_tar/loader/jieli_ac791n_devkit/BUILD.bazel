@@ -1,0 +1,48 @@
+load("//projects/h2loader/tools/bazel:h2loader_zlib_tar.bzl", "h2loader_zlib_tar")
+
+package(default_visibility = ["//visibility:public"])
+
+h2loader_zlib_tar(
+    name = "app_watchdog_package",
+    source = "//projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit:app_watchdog_package",
+)
+
+h2loader_zlib_tar(
+    name = "loader_copy_powercut_package",
+    source = "//projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit:loader_copy_powercut_package",
+)
+
+h2loader_zlib_tar(
+    name = "loader_partial_header32_package",
+    source = "//projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit:loader_partial_header32_package",
+)
+
+h2loader_zlib_tar(
+    name = "loader_partial_header_package",
+    source = "//projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit:loader_partial_header_package",
+)
+
+h2loader_zlib_tar(
+    name = "loader_partial_p1_header_package",
+    source = "//projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit:loader_partial_p1_header_package",
+)
+
+h2loader_zlib_tar(
+    name = "loader_pref_powercut_package",
+    source = "//projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit:loader_pref_powercut_package",
+)
+
+h2loader_zlib_tar(
+    name = "loader_trial_crash_package",
+    source = "//projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit:loader_trial_crash_package",
+)
+
+h2loader_zlib_tar(
+    name = "loader_watchdog_package",
+    source = "//projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit:loader_watchdog_package",
+)
+
+h2loader_zlib_tar(
+    name = "package",
+    source = "//projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit:package",
+)

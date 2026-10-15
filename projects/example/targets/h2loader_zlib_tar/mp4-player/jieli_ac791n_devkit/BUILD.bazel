@@ -1,0 +1,13 @@
+load("//projects/h2loader/tools/bazel:h2loader_zlib_tar.bzl", "h2loader_zlib_tar")
+
+package(default_visibility = ["//visibility:public"])
+
+h2loader_zlib_tar(
+    name = "mp4_player_large_package",
+    source = "//projects/example/targets/h2loader_tar_zlib/mp4-player/jieli_ac791n_devkit:mp4_player_large_package",
+)
+
+h2loader_zlib_tar(
+    name = "mp4_player_small_package",
+    source = "//projects/example/targets/h2loader_tar_zlib/mp4-player/jieli_ac791n_devkit:mp4_player_small_package",
+)

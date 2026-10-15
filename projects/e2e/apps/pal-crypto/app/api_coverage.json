@@ -1,0 +1,82 @@
+{
+  "contract": 1,
+  "operation_count": 15,
+  "case_count": 22,
+  "operations": [
+    {
+      "name": "random",
+      "signature": "void *user, uint8_t *out, size_t len",
+      "wrapper": "h2_pal_crypto_random"
+    },
+    {
+      "name": "x25519_keypair_generate",
+      "signature": "void *user, h2_pal_x25519_keypair_t *out_keypair",
+      "wrapper": "h2_pal_crypto_x25519_keypair_generate"
+    },
+    {
+      "name": "x25519_public_key_from_private",
+      "signature": "void *user, const h2_pal_x25519_private_key_t *private_key, h2_pal_x25519_public_key_t *out_public_key",
+      "wrapper": "h2_pal_crypto_x25519_public_key_from_private"
+    },
+    {
+      "name": "x25519_shared_secret",
+      "signature": "void *user, const h2_pal_x25519_private_key_t *local_private_key, const h2_pal_x25519_public_key_t *remote_public_key, h2_pal_x25519_shared_secret_t *out_shared_secret",
+      "wrapper": "h2_pal_crypto_x25519_shared_secret"
+    },
+    {
+      "name": "hkdf_sha256",
+      "signature": "void *user, const uint8_t *secret, size_t secret_len, const uint8_t *salt, size_t salt_len, const uint8_t *info, size_t info_len, uint8_t *out, size_t out_len",
+      "wrapper": "h2_pal_crypto_hkdf_sha256"
+    },
+    {
+      "name": "aead_seal",
+      "signature": "void *user, h2_pal_crypto_aead_algorithm_t algorithm, const uint8_t *key, size_t key_len, const uint8_t *nonce, size_t nonce_len, const uint8_t *plaintext, size_t plaintext_len, const uint8_t *aad, size_t aad_len, h2_pal_crypto_buf_t *out_ciphertext",
+      "wrapper": "h2_pal_crypto_aead_seal"
+    },
+    {
+      "name": "aead_open",
+      "signature": "void *user, h2_pal_crypto_aead_algorithm_t algorithm, const uint8_t *key, size_t key_len, const uint8_t *nonce, size_t nonce_len, const uint8_t *ciphertext, size_t ciphertext_len, const uint8_t *aad, size_t aad_len, h2_pal_crypto_buf_t *out_plaintext",
+      "wrapper": "h2_pal_crypto_aead_open"
+    },
+    {
+      "name": "aes_ctr_xor",
+      "signature": "void *user, const uint8_t *key, size_t key_len, const uint8_t initial_counter[H2_PAL_CRYPTO_AES_BLOCK_SIZE], const uint8_t *input, size_t input_len, h2_pal_crypto_buf_t *out",
+      "wrapper": "h2_pal_crypto_aes_ctr_xor"
+    },
+    {
+      "name": "md5",
+      "signature": "void *user, const uint8_t *input, size_t input_len, uint8_t out_digest[H2_PAL_CRYPTO_MD5_SIZE]",
+      "wrapper": "h2_pal_crypto_md5"
+    },
+    {
+      "name": "hmac_sha1",
+      "signature": "void *user, const uint8_t *key, size_t key_len, const uint8_t *input, size_t input_len, uint8_t out_digest[H2_PAL_CRYPTO_SHA1_SIZE]",
+      "wrapper": "h2_pal_crypto_hmac_sha1"
+    },
+    {
+      "name": "p256_keypair_from_private",
+      "signature": "void *user, const h2_pal_p256_private_key_t *private_key, h2_pal_p256_keypair_t *out_keypair",
+      "wrapper": "h2_pal_crypto_p256_keypair_from_private"
+    },
+    {
+      "name": "p256_keypair_generate",
+      "signature": "void *user, h2_pal_p256_keypair_t *out_keypair",
+      "wrapper": "h2_pal_crypto_p256_keypair_generate"
+    },
+    {
+      "name": "p256_public_key_validate",
+      "signature": "void *user, const h2_pal_p256_public_key_t *public_key",
+      "wrapper": "h2_pal_crypto_p256_public_key_validate"
+    },
+    {
+      "name": "ecdsa_p256_sha256_sign",
+      "signature": "void *user, const h2_pal_p256_private_key_t *private_key, const uint8_t *message, size_t message_len, h2_pal_p256_signature_t *out_signature",
+      "wrapper": "h2_pal_crypto_ecdsa_p256_sha256_sign"
+    },
+    {
+      "name": "ecdsa_p256_sha256_verify",
+      "signature": "void *user, const h2_pal_p256_public_key_t *public_key, const uint8_t *message, size_t message_len, const h2_pal_p256_signature_t *signature",
+      "wrapper": "h2_pal_crypto_ecdsa_p256_sha256_verify"
+    }
+  ]
+}

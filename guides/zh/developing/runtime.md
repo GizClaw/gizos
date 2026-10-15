@@ -69,13 +69,23 @@ contract，`poll/wait` 仍要求 caller 提供至少 640 B 的 buffer，并在 b
 `get()`，不复制完整 Board periph inventory；只有实际接受的 mapping 或 mapped
 input source 超出所选容量时才返回 `H2_PAL_ERR_NO_SPACE`。
 
+## 产品蓝牙名称
+
+Board 或 launcher 可以用 Runtime config 的 `ble_local_name` 提供可选的稳定产品广播名称；Runtime 原样借用该字符串直到 deinit，不生成型号或设备后缀。H2Loader 管理与产品 App 通过同一个 Runtime 字段使用名称，产品自己的 spelling、factory address 选择和生命周期留在 consumer。名称必须是非空、最多 29 bytes 的 printable ASCII；无效名称使初始化返回 INVALID_ARG。它只包含公开显示元数据，不含凭据，也不能代替 board／target／capabilities 的协议校验。
+
 ## Wi-Fi 凭据与恢复
 
-`runtime->wifi_sta` 1:1 暴露注入的 PAL provider，不替换 vtable，也不按 timeout 推断持久化策略。`connect` 只连接，不写入、清除或覆盖保存凭据；`connect_and_save` 显式执行目标网络认证、有效 IP 验证与持久化。菜单、BLE、GizClaw RPC 和 Loader 用户配网调用后者；产测临时连接与读取已存配置后的重连调用前者。
+Runtime 拥有最多 `H2_RUNTIME_WIFI_SAVED_MAX`（8）条网络的集合。`h2_runtime_wifi_saved_list` 按最近连接优先复制，容量不足时截断，`out_count` 返回实际复制数量，零容量允许空缓冲区。`h2_runtime_wifi_saved_save` 按 SSID 长度及大小写敏感字节值去重，更新凭据并置顶；满额插入新 SSID 时淘汰末尾。`h2_runtime_wifi_saved_remove` 只删除指定 SSID，保留其余顺序，不存在返回 NOT_FOUND；`h2_runtime_wifi_saved_clear` 写入空集合。这些操作不改变 PAL 单条凭据，也不改变当前连接。
 
-`connect_and_save` 在调用任务中执行，非零 timeout 是关联与 DHCP 的总预算；零值返回 INVALID_ARG，不改变连接或存储。Provider 串行接纳 connect、connect_and_save 和 disconnect，重叠调用返回 BUSY。连接失败保留旧凭据，保存失败返回真实错误；即使连接同一 SSID 也重新认证，避免旧关联掩盖错误密码。等待与存储算法由 `libs/wifi_sta` 复用，原子替换由 Wi-Fi Settings provider 保证。调用方等待操作结束后才能销毁 provider 或 Runtime。
+集合使用 Runtime 专属 Preference namespace `h2runtime_wifi`、key `saved_v1`。V1 blob 固定 **920 字节**（8 字节头 + 8 × 114 字节记录，不含存储后端元数据），小于 1 KiB。头为 little-endian u32 magic `0x4e573248`（`H2WN`）、u16 version=1、u8 count、u8 reserved=0；每条记录为 u8 SSID 长度、u8 password 长度、6 字节 BSSID、u8 bssid_set、u8 channel、32 字节 SSID、64 字节 password、little-endian u64 `last_connected_at_ms`。未使用空间写零，不保存 C struct padding 或终止符。每次修改整块替换同一 key，依赖 pref 的单 key 原子替换，写失败保留旧集合；不做多 key 事务。解码校验尺寸、头、数量、长度、BSSID 标记和重复 SSID，损坏或未知 version 返回 FORMAT，不暴露部分列表，也不做静默迁移；namespace 或 key 不存在读作空集合，平台没有 Preference provider，或注入的是 canonical unsupported provider（vtable 存在但 open 返回 UNSUPPORTED）时，读取一律视为空集合，`_save` 与 `_clear` 返回 UNSUPPORTED，`_remove` 因集合为空先返回 NOT_FOUND。
 
-开机网络 worker 调用 `h2_runtime_wifi_connect_saved()` 恢复同一持久配置，该显式 API 的零 timeout 使用 15 秒默认关联预算；没有配置返回 NOT_FOUND。恢复调用不重写凭据，返回成功表示 provider 已完成关联，IP 可随后通过 station event/state 到达。Runtime init 不阻塞等待网络，也不自行打开无线连接。调用方负责启动时机和失败重试，不能把公共恢复算法重新写进产品页面。
+存储位置定义最近连接顺序。时间戳来自 `h2_pal_time_get_wall_ms`，是 UTC Unix 毫秒；时钟未校准或不可用时写 0，仅作显示信息，不能用它重排列表。对同一持久 pref store 重新初始化 Runtime 后，列表和顺序仍然保留。不迁移 PAL 原有单条凭据，升级后通过成功配网逐步建立集合。
+
+`h2_runtime_wifi_connect_and_save(runtime, config, timeout_ms)` 是配网入口：先调用 PAL `h2_pal_wifi_sta_connect_and_save`，仅当成功后才把网络写入 Runtime 集合并置顶。BLE 配网使用此入口。PAL 失败不添加记录。PAL 成功但 Runtime 集合写入失败时返回 OK 并记 WARN 日志：设备已经连上、PAL 单条凭据已更新，集合只是记账，不能把可用的连接报成配网失败；此时可观察状态是已连接、PAL 凭据已更新、集合未变。Runtime 不增加等待 IP 的逻辑；PAL 原有非零关联/DHCP 总预算、有效 IP 验证和保存语义不变，零 timeout 仍返回 INVALID_ARG。
+
+`h2_runtime_wifi_connect_best_saved(runtime, timeout_ms)` 读取 Runtime 集合后扫描，回调仅为每个保存 SSID 保留最强 AP，不在栈上保存完整扫描表。候选按 RSSI 降序，同强度按存储顺序排列，并钉上实际扫描到的 BSSID/channel；不可见网络不参与。依次调用 `h2_pal_wifi_sta_connect`，首个关联成功后将它置顶并刷新时间戳——回写的是集合里原本存的凭据，不是钉了 BSSID 的候选，避免下次同一 SSID 换了 AP 连不上；全部失败返回最后一个连接错误，空集合或全部不可见返回 NOT_FOUND。列表读取、扫描和各次连接共用总预算，零值默认 15 秒，每次连接使用剩余预算，下一次尝试前耗尽返回 TIMEOUT；存储、扫描和单调时钟错误直接传播。此恢复流程不写 PAL 凭据、不等待 IP；置顶写入失败同样只记 WARN 日志并返回 OK，集合保持不变。
+
+`runtime->wifi_sta` 仍 1:1 暴露注入的 PAL provider。PAL Settings 始终只保存一条凭据，含义是最近一次通过持久化连接成功保存的网络；临时 connect（包括 best-saved）不会覆盖它。`h2_runtime_wifi_connect_saved()` 保持原样：读取 PAL 单条凭据，调用 connect，不重写任何存储；零 timeout 默认 15 秒，无凭据返回 NOT_FOUND。两种恢复调用成功均只保证关联完成，IP 可随后到达。应用负责调用时机、重试策略和所有列表/连接操作的串行化，须在 Runtime deinit 前完成操作；Runtime init 不自动联网。
 
 音量和静音由 Runtime 的 audio state 共同持有。UI 与 GizClaw 使用 `h2_runtime_system_state_audio()` 读取同一 snapshot，用 `h2_runtime_audio_set_volume()` 同时提交设定音量和静音。静音保留设定音量，PAL 实际输出为零；解除静音可直接使用 snapshot 中的设定值。现有 `runtime->audio` percent setter 同样更新这份 state 并取消静音，percent getter 仍返回实际输出音量。失败的 PAL 写入不改变 state，重叠操作返回 BUSY。Getter 对比 backend 实际值以识别绕过 proxy 的外部调整；GizClaw 和产品不得另存音量真值。
 
@@ -87,7 +97,7 @@ Runtime 只发布原始的“最近一帧峰值”，**不做衰减**。Runtime 
 
 这些电平只用于观测。UI 可以据此画 level meter，但任何音频路径都不得由它决定：不得用来开关 mic/speaker、判定 VAD、门控发送或改变对话状态。
 
-发布电平不加锁，写入在音频热路径上只有原子 store。level 和 timestamp 是两个独立的 32 位原子（64 位原子在 ARMv5 target 上会退化成 SDK 没有提供的 libatomic 调用），因此与某一帧竞争的读者可能把新的 level 和上一帧的 timestamp 配在一起；两帧相差一个 frame period，level meter 看不出来，消费者也不得依赖这对值的严格配对。
+发布电平使用独立的 `libs/atomic` typed wrapper：每个方向各有一个 level 和一个 monotonic 毫秒低 32 位字段。Runtime 初始化这些 provider-owned 字段并在并发访问结束后销毁；初始化失败向创建调用方返回错误。Atomic 不通过 PAL 注入，ESP 的实际存储由平台实现置于内部 RAM，wrapper 可以位于 PSRAM。发布电平不加锁，写入在音频热路径上只有原子 store。level 和 timestamp 是两个独立的 32 位原子（64 位原子在 ARMv5 target 上会退化成 SDK 没有提供的 libatomic 调用），因此与某一帧竞争的读者可能把新的 level 和上一帧的 timestamp 配在一起；两帧相差一个 frame period，level meter 看不出来，消费者也不得依赖这对值的严格配对。
 
 存储的 timestamp 只保留 monotonic 毫秒的低 32 位，读取时用当前时钟补回高位，因此跨 `UINT32_MAX` 毫秒（约 49.7 天）回绕的帧仍然落在正确的 epoch 上，回绕边界上低位为 0 的帧也不会被当成“从未测量”。这个补位对任何比约 24 天更新的帧都成立。
 
@@ -165,6 +175,8 @@ App 不直接调用 `runtime->xxx_api->vtable->operation(...)`，也不自己传
 `runtime->video_decoder` 和 `runtime->audio_decoder` 是透明 PAL proxy。Runtime 复制 API object，不取得 decoder session 或 acquired frame 的 ownership，也不改变 frame 的 acquire/release contract。没有对应 decoder 的 board 必须在 config 中绑定 canonical unsupported API，不能传入 `NULL` 或省略 vtable operation。
 
 `runtime->audio` 的 `create_track` 不是透明转发：Runtime 返回自己持有的 wrapper track，用于测量播放帧的电平（见[音频电平](#音频电平)）。wrapper 把 `write`、`close`、`get_volume_factor`、`set_volume_factor`、`drain` 原样转发给 backend track，backend 没有提供的 operation 在 wrapper 上同样是 `NULL`，PAL wrapper 的报错行为不变。`close` 关闭 backend track 并释放 wrapper，调用方仍然只 close 一次。
+
+`runtime->audio` 的可选 `set_aec_observer` 透明转发到底层 Audio provider，不从 Runtime 的内容电平推导 raw ADC／AEC 资格。注册与撤销仍要求停止并 join mic／speaker；observer user 的借用和失败保留合同由 Audio PAL 定义。独立校准应在没有生产 Audio borrower 的窗口运行，保存并恢复同一 provider 的控制值；恢复后的 Runtime 音量 snapshot 会按已有逻辑与实际值对齐。
 
 `runtime->buzzer` 同样是透明 PAL proxy。Runtime 把 `h2_runtime_config_t.buzzer` 的 API object 按值复制到 private storage，再暴露稳定的 App-facing pointer；它不取得物理 provider、tone 或 PWM channel 的 ownership，也不实现 melody sequencing。Buzzer 是 complete capability surface 的必选 binding：真实支持它的 Board 绑定 provider，其余 Runtime owner 显式绑定 `h2_pal_unsupported_buzzer_api()`，传入 `NULL` 会使 Runtime 初始化失败。
 
@@ -271,7 +283,7 @@ while (h2_runtime_poll_event(runtime, &event) == H2_PAL_OK) {
 drain_library_dispatch_queues();
 ```
 
-`h2_runtime_poll_event()` 不等待。每次 wait 之后必须把 queue 完全拉空再 wait：wake 按入队给出并合并，只拉了一半的 queue 里剩下的 event 没有对应的 pending wake。被一个没有对应 event 的 wake 叫醒（Library 的 `notify`，或者更早的 poll 已经拉空 queue）是正常情况，App 照常走 drain 路径。Event queue 满时丢弃新事件并增加 internal dropped-event counter，不阻塞 producer，也不给出 wake；该 counter 是 Runtime private state，不属于 Public API。
+`h2_runtime_poll_event()` 不等待。每次 wait 之后必须把 queue 完全拉空再 wait：wake 按入队给出并合并，只拉了一半的 queue 里剩下的 event 没有对应的 pending wake。被一个没有对应 event 的 wake 叫醒（Library 的 `notify`，或者更早的 poll 已经拉空 queue）是正常情况，App 照常走 drain 路径。Event queue 满时 Runtime 自己的 producer（input、system event、time adjusted、Test Control）丢弃新事件并计数，不阻塞 producer，也不给出 wake；Button 边沿例外，见 [Button 边沿保留](#button-边沿保留)。`h2_runtime_dropped_event_count()` 返回自 `h2_runtime_init()` 以来的累计丢弃数（32 位，回绕后按无符号差值比较，任何 task 可读）；custom event 满队列时直接把 `H2_PAL_ERR_FULL` 返回投递方，不计入。丢弃还会经 Runtime 的 PAL log 输出 scope 为 `runtime/event` 的 WARN，内容包括本次报告新增数、累计总数和最后一个被丢事件的 kind/component/component_id；两行 WARN 至少间隔 `H2_RUNTIME_DROPPED_EVENT_WARN_INTERVAL_MS`（1000 ms），第一次丢弃立即输出，窗口内的后续丢弃只计数，由窗口过后的下一次丢弃或下一个 input tick 补报。
 
 ## Event Type
 
@@ -326,6 +338,21 @@ byte storage 后再转换为 struct，也不能为同一事件额外创建第二
 对象；这样既保证 union member 的类型、对齐和 strict-aliasing contract，也避免在
 callback 栈上重复保留最大 payload storage。Public emit API 及 App 读取 contract
 不受该 private enqueue path 影响。
+
+`H2_RUNTIME_SYSTEM_EVENT_MODEM_SIGNAL_CHANGED` 的
+`h2_runtime_system_event_modem_signal_t` 逐字段复制 PAL 的 `rssi_dbm`、`ber`、
+`rat`、`rssi_valid`、`rsrp_dbm`、`rsrp_valid`。App 必须先检查有效位：
+`rssi_valid=0` 时忽略值为 0 的 RSSI；仅 `rsrp_valid=1` 时使用 LTE RSRP
+（dBm）。未知测量不能当作强信号；CSQ URC 没有 RSRP 测量。
+具体查询与范围见 [Modem 信号合同](modem_urc.md#信号有效性与-lte-rsrp)。
+
+Runtime 同时把 modem 事件合并成一份快照，`h2_runtime_system_state_modem()`
+在锁内复制给调用方，读取不碰 modem，可在不能等 AT 的 task（如 GizClaw RPC
+owner）上调用。SIM、注册、packet 事件只更新各自的状态；signal 事件整体替换
+测量值，其中无效的 RSSI 或 RSRP 清零并置无效位，不保留上一次的值；任何带
+接入制式的事件更新 `rat`。字段仍是 UNKNOWN 或 `*_valid=0` 表示还没有上报。
+Sync provider 不能创建 mutex 时快照不可用，读取返回 UNSUPPORTED，与 Wi-Fi
+station 快照一致。
 
 System component family 包括：
 
@@ -459,7 +486,9 @@ Lifecycle 的合法调用如下，其余情况一律 fail closed：
 source table 与 publication。`start` 则必须拒绝，否则 poller 会和 test source table
 竞争。两者刻意不对称。
 
-后台采集失败会保存 worker result、把 input phase 置为 faulted，并关闭 Runtime event queue，使阻塞的 App consumer 被唤醒。Queue close 是终态：PAL queue contract 没有 reopen，重启采集只会得到一个仍在采样却无法投递事件的 Runtime。因此 worker result 同时作为 fault latch，fault 之后 `stop` 返回该 result 并报告失败原因，随后的 `start` 返回 `H2_PAL_ERR_INVALID_STATE`；唯一的恢复路径是 `h2_runtime_deinit()` 后重新 `h2_runtime_init()`。
+单步采集失败不会停掉 input worker：读 PAL 出错、事件放不进 pending 缓冲、时间读取失败等都只记入健康状态，按 stage 打日志（`H2_RUNTIME_INPUT_ERROR stage=... rc=...`，同一错误连续出现时每 100 次再打一行，恢复时打 `H2_RUNTIME_INPUT_RECOVERED`），退避后继续下一轮（最长 500 ms 一次）。其余 source 在同一轮照常采集，已产生的事件照常发布。`h2_runtime_input_status()` 返回 phase、latch 的 worker result、最近一次错误及其 stage 和时间、累计与连续错误数、成功轮数与最近成功时间，以及 snapshot 延迟发布计数，任何 phase 都可以调用。健康字段由独立的 health mutex 保护（不是 input writer mutex），因此拿不到 writer mutex 本身也会以 stage `lock` 记录；`h2_runtime_input_status()` 拿不到 health mutex 时返回该 Sync 结果、不读字段。bk3633 以 `H2_RUNTIME_INPUT_LOG_ENABLED=0` 构建（OAD 镜像预算），不输出以上 input 日志，健康字段、status 与 `h2_runtime_input_stage_name()` 不受影响（没有日志引用时，不调用该函数的镜像不链接这些字符串）。
+
+只有 worker 无法再自我节拍（sleep 失败）或 Runtime 已不可用才是致命的。致命时 worker 在 writer mutex 下把每个仍按住的 Button 走正常松开路径（state 读作松开），发布 snapshot，并按普通 producer 规则把 `BUTTON_UP` 与 released `BUTTON_ACTION` 排在关闭之前（fault 是终态，已有保留边沿与此次释放先尝试投递一次，队列满时未投递事件全部丢弃并计数；事件不会先于其 snapshot 可取，读者持续占住所有退役槽位、三次短重试仍发布不了时同样丢弃并计数），日志为 `H2_RUNTIME_INPUT_FAULT ... released=<n>`。拿不到 writer mutex 时不改 source table，日志写 `release=skipped lock_rc=<rc>`。随后保存 worker result、把 input phase 置为 faulted 并关闭 Runtime event queue，使阻塞的 App consumer 被唤醒；consumer 先拉到已入队的释放事件，再看到 `H2_PAL_ERR_CLOSED`。Queue close 是终态：PAL queue contract 没有 reopen，重启采集只会得到一个仍在采样却无法投递事件的 Runtime。因此 worker result 同时作为 fault latch，fault 之后 `stop` 返回该 result 并报告失败原因，随后的 `start` 返回 `H2_PAL_ERR_INVALID_STATE`；唯一的恢复路径是 `h2_runtime_deinit()` 后重新 `h2_runtime_init()`。NFC task 投递扫描结果失败只丢这一轮结果，不 fault。
 
 Test Control session 在打开期间独占 source table。它在 open 时作废 production source table，并在 close 之后留待下一次采集惰性重新发现，因此 close 之后的第一次 `start` 或 poll 会重建 production source。这是 init 之外唯一一次重新发现的路径。
 
@@ -477,7 +506,25 @@ App 读取的 component state 来自 `h2_runtime_state.c` 拥有的 state public
 
 Input task 的一次 tick 按各 source deadline 处理到期的 mapped input。相同 radio group 只执行一次 PAL read，再把结果投影到各 child。没有 public state update 时不 copy、不 switch；该路径在 source discovery 完成后不做 per-tick allocation。
 
-Event payload 表达发生时的历史事实，snapshot 表达最近一次完成的 publication。Queue full 或 timeout 继续使用 drop-newest policy；已经更新的 working state 与后续 publication 不回滚。
+Event payload 表达发生时的历史事实，snapshot 表达最近一次完成的 publication。Queue full 或 timeout 继续使用 drop-newest policy（Button 边沿按下节保留）；已经更新的 working state 与后续 publication 不回滚。
+
+### Button 边沿保留
+
+按住期间每个 poll 的 `BUTTON_DOWN`/`BUTTON_ACTION` 是 sample，consumer 停顿时会迅速填满 event queue。Sample 仍然可以丢弃，但 consumer 靠 DOWN/UP 跟踪按住状态，丢掉 `BUTTON_UP` 会让它永远停在按下。因此 input 路径区分两类事件：
+
+- **边沿**：开始一次按下的 `BUTTON_DOWN`（从松开到按下的那次，包括首帧就是按下），以及松开时的 `BUTTON_UP` 和最后一个 `BUTTON_ACTION`（`released_at_ms != 0`）。
+- **Sample**：仍在按住时重复的 `BUTTON_DOWN`/`BUTTON_ACTION`（包括按下那一帧的 action），以及 NFC、IMU 和 error 事件。
+
+规则：
+
+1. Input writer 按顺序投递一次 poll 的事件。第一次遇到 `H2_PAL_ERR_FULL`（provider 报告的 no-wait timeout/would-block 也按 FULL 处理）后，本轮不再尝试入队：之后的边沿保留在所属 Button source 上，sample 丢弃并计数。Queue closed 等其它错误仍交给现有 input health/error 和退避重试路径；只有 sleep 失败或 Runtime 不可用才触发终态 fault。
+2. 保留的边沿在下一次 input poll 开始时（默认每 20 ms，先于该 poll 的任何新采样）按原顺序重新入队。重新入队的事件保留原 payload 和原 `timestamp_ms`（按下边沿仍满足 `timestamp_ms == pressed_at_ms`），但领取新的 sequence，并照常先发布 snapshot 再入队。
+3. Source 持有保留边沿期间，它的新边沿直接排在保留边沿之后，它的新 sample 丢弃并计数，保证同一 source 的事件不会越过更早的边沿。不同 source 之间不保证相对顺序。
+4. 每个 source 最多保留 2 个边沿（`H2_RUNTIME_BUTTON_RETAINED_EDGE_MAX`）。同一 source 的边沿必然按下/松开交替，第 3 个到来时最早的两个一定是一对互补边沿，丢弃这一对并计入丢弃数，consumer 最终看到的按下/松开状态仍然正确，只少了一次完整点击。
+5. 保留边沿只存在 source 上，不占 pending event list；重新入队时一个 source 的全部保留事件放不进 pending list 就整体等下一次 poll。Pending list 本身只在全部 retired snapshot slot 都被 pin 住时跨 poll 存活，此时再耗尽也不会让 input worker fault：sample 丢弃计数，边沿把该 source 已在 pending list 里的事件按顺序挪到保留区后保留。
+6. Test Control 打开或关闭时 source table 被替换，未投递的保留边沿丢弃，不计数。Open 清空 event queue，close 保留已排队的注入事件。`h2_runtime_input_stop()` 不清除它们，下一次 start 的首帧重新入队。
+
+Test Control 直接注入的事件、custom event 和 system event 不参与保留。
 
 State getter 返回 caller-owned copy，不承诺反映仍在进行的 input tick。Slow PAL operation 期间 reader 得到 previous completed publication；`updated_at_ms` 表达对应 source 最近完成的更新时间。每次 start 的 successful first pass 发布完整 snapshot；state 保留到下一次发布、Test Control 切换或 Runtime deinit，`h2_runtime_input_stop()` 不清除它。已经排队的 event 独立于当前 snapshot，consumer 使用 event payload 解释历史事件。
 
@@ -530,3 +577,7 @@ Runtime Event queue 的唯一消费者，并把允许脚本观察的复制事件
 `runtime->time` 是 Runtime 包装后的 Time PAL。调用 `h2_pal_time_set_wall_ms(runtime->time, utc_ms)` 成功后自动发布 `H2_RUNTIME_SYSTEM_EVENT_TIME_ADJUSTED`，组件为 `H2_RUNTIME_COMPONENT_SYSTEM_TIME`，payload 为 `h2_runtime_system_event_time_adjusted_t`，其中 `wall_ms` 是本次请求设置的 UTC Unix 毫秒时间戳。事件 envelope 的 `timestamp_ms` 仍使用单调时钟（读取失败时为零），设置失败以及时间读取、sleep 不发布调整事件。GizClaw 等服务应使用此接口，直接调用原始 provider 不经过 Runtime。
 
 事件通过普通有界事件队列投递并唤醒应用；队列满时沿用丢弃计数规则，不能把已经成功的设置改报失败。它是刷新提示，消费者应重新读取 `h2_pal_time_get_wall_ms()`，不要把可能过时的事件 payload 当作当前时间；保留周期刷新以恢复溢出丢失的通知。并发调用时不承诺事件排序等于实际写入顺序。Runtime 生命周期结束前必须停止所有使用其 Time PAL 的任务。UTC 存储和显示时区相互独立。
+
+## Wi-Fi IPv6 状态
+
+Runtime 的 Wi-Fi system event 与只读 state 保留同一个 PAL IPv4/IPv6 地址快照。`GOT_IP` 可以由 IPv6-only 网络产生，`ip_valid` 仍只描述 IPv4；产品使用 IPv6 readiness 字段或统一的 PAL 就绪判定，不能继续把 IPv4 空值当成整条网络断开。Provider 负责 SDK SLAAC/DAD、实际地址变化和断开清理，Runtime 不调用芯片 IPv6 API。`connect_and_save` 使用共享 `wifi_sta` 事务等待任一可用族，只有 link-local 时不保存目标凭据。

@@ -4,6 +4,8 @@
 只负责文本 chunk、Lua stack、GC、coroutine 与受限标准库；Host 负责 allocator、
 worker、Timer、Filesystem、事件投递、原生 module 和每个 Skill 的隔离生命周期。
 
+Host 归一化后的 `allocator` 同时用于 Lua Link 对象、mutex/cond、BLE-KCP 和 Lua 音轨；worker 与 Link 任务的栈由平台 task provider 配置。Host allocator 为 NULL 时仍回退 Runtime mem，共享平台和驱动内部资源保留各自的分配器。
+
 ## Ownership
 
 ```text
@@ -39,16 +41,34 @@ provider 可以让不同 VM 在多个 worker 上并行。
 
 ## Host 和 job
 
-`h2_lua_host_config_t` 的容量均有界：`worker_count`、`worker_stack_size`、`max_jobs`、`max_coroutines_per_vm`、`ready_queue_capacity`、`waiter_capacity`、`event_delivery_capacity`、`callback_capacity_per_job`、`audio_track_capacity_per_job`、`pending_capability_capacity`、`instruction_quantum`、`resume_time_budget_ms`、`source_limit_bytes`、`output_limit_bytes` 和 `vm_memory_limit_bytes`。零使用声明的默认值；ready/waiter 容量不得小于 VM 的 coroutine 上限。`storage` 配置每个 App 的持久化存储，见 [App 存储](#app-存储)；全零表示未配置。
+`h2_lua_host_config_t` 的容量均有界：`worker_count`、`worker_stack_size`、`max_jobs`、`max_coroutines_per_vm`、`ready_queue_capacity`、`waiter_capacity`、`event_delivery_capacity`、`callback_capacity_per_job`、`audio_track_capacity_per_job`、`pending_capability_capacity`、`capability_capacity`、`instruction_quantum`、`resume_time_budget_ms`、`source_limit_bytes`、`output_limit_bytes`、`vm_memory_limit_bytes` 和 `vm_heap_bytes`。零使用声明的默认值；ready/waiter 容量不得小于 VM 的 coroutine 上限。`storage` 配置每个 App 的持久化存储，见 [App 存储](#app-存储)；全零表示未配置。
+
+`allocator` 可选地指定 Host 自身的所有分配（Host/job 状态、队列、缓冲、音频 track、Lua Link、VM 堆预留，以及未预留时的每个 VM 块）使用的 `h2_pal_mem_api_t`，为 NULL 时使用 Runtime mem。Host 只借用这个指针、不复制它，因此它和它的 `user` 上下文必须保持有效，直到 `h2_lua_host_destroy()` 返回；调用方可以借此把 Host 自身的存储放进自己的 arena。下文统称为“Host allocator”。
+
+`vm_heap_bytes` 可选地在 `h2_lua_host_create()` 时从 Host allocator 预留一段 VM 专用堆，供同一 Host 的所有 job/worker 通过带 PAL mutex 保护的 TLSF 共享。默认 `0` 保持 VM 逐块向 Host allocator 申请，Web 入口也保持此默认值。适合设备系统堆碎片化、大字符串或全屏 `display.capture_region` userdata 等大块分配会与其他模块争抢连续空间的场景。VM 本体、Lua 状态、userdata、字符串和表都使用预留堆；callbacks、events、tasks 和 framebuffer 等直接使用 Host allocator。
+
+Host allocator 有足够大的连续块时预留为一整块；否则 Host 每次被拒后把申请大小缩小 1/8、贴近实际最大空闲块，最多取 16 块、每块至少 64 KiB（只有最后的余量可以更小），全部加入同一个 TLSF。因为总是先取最大的块，能服务大块单次分配的池排在前面，下限只决定尾部还能用掉多少：一个还剩 512+384+256+256+192 KiB 和五个 64 KiB 块的堆共有 1.9 MiB 可给，而 256 KiB 的下限只能凑出 1.4 MiB。单次 VM 分配仍必须能放进其中一块。在这些限制内凑不够时返回 `H2_PAL_ERR_NO_MEMORY`，不创建 Host，也不泄漏已取得的块；destroy 在所有 job/VM 释放后归还全部块。
+
+`vm_memory_limit_bytes` 仍是独立的每 VM 配额，预留大小不会改变配额检查。预留堆需
+覆盖所有同时存活的 VM（包括尚未 release 的已完成 job）以及 TLSF 元数据和每块分配
+头；按实际负载测量设定，不要直接等同配额。预留小于配额也允许，此时预留堆先耗尽；
+Lua 仍会先尝试 emergency GC，无法满足分配时再报内存错误。非零值的最小值为
+`tlsf_size() + tlsf_pool_overhead() + 8 * (tlsf_block_size_min() + tlsf_alloc_overhead())`，
+可用池也不得超过 `tlsf_block_size_max()`；越界返回 `H2_PAL_ERR_INVALID_ARG`。
 
 Host 的正常生命周期是：
 
 1. `h2_lua_host_create()` 借用 Runtime 并分配固定容量；
 2. 在 start 前注册 native module 和 capability；
 3. `h2_lua_host_start()` 冻结 registry 并创建 worker；
-4. 通过 text、compiled resource 或 Runtime Filesystem 提交 job，同时给出决定 `storage` 作用域的 app id（可为 `NULL`）；
+4. 通过 text、compiled resource 或 Runtime Filesystem 提交 job，同时给出决定 `storage` 作用域的 app id（可为 `NULL`）；`h2_lua_job_submit_path()` 接收调用方给的路径与 chunk 名，`h2_lua_job_submit_file()` 接收受限相对路径并自动生成 `@<path>` chunk 名，两者都由 Host 用自己的 4 KiB 窗口把源码分片喂给编译器，调用方和 Host 都不持有整份源码：在碎片化的堆上，一个 200 KiB 的 app 不再需要一块同样大的连续内存。超出 `source_limit_bytes` 返回 `NO_SPACE`、内嵌 NUL 返回 `INVALID_ARG`、预编译 chunk 返回 `FORMAT`，与 text 提交一致，只是改为随字节到达时判定；reader 在读完最后一个字节时关闭文件，空文件在首次读取时关闭；若编译错误使读取提前结束，也在发布 `FAILED` job 前关闭。只有关闭成功后才发布 job 并唤醒 worker；文件系统失败（包括关闭失败）或读到一半截断中止提交、释放 job 槽位并原样返回该结果，`*out_job_id` 保持 `H2_LUA_JOB_ID_NONE`，不会产生或运行 job。提前拒绝提交也会关闭已打开的文件，已有提交或读取错误优先于清理时的关闭错误；
 5. App 消费 Runtime Event queue，并通过 `h2_lua_dispatch_runtime_event()` 定向
-   投递给一个 live `job_id`；
+   投递给一个 live `job_id`；事件入队返回 `H2_PAL_OK`，事件格式错误或 component
+   kind 与 Runtime component 不符返回 `H2_PAL_ERR_INVALID_ARG`，未知或已 release 的
+   job 返回 `H2_PAL_ERR_NOT_FOUND`，job 已进入终态返回 `H2_PAL_ERR_CLOSED`，job 内
+   未投递事件已达 `event_delivery_capacity` 返回 `H2_PAL_ERR_FULL`，失败时事件不
+   入队。job 可能在同一批 Runtime event 之间进入终态，所以同一 job 上 `CLOSED`
+   可以紧跟在 `OK` 之后出现；
 6. `stop()` 拒绝新 job、取消等待，`join()` 等待 worker 退出，最后 `destroy()`。
 
 `h2_lua_host_step()` 只用于提示 worker 有新工作，不会让调用线程进入 VM。
@@ -73,14 +93,15 @@ Button `ACTION` 的共享 Runtime payload 只有 `pressed_at_ms` 和 `released_a
 | `capability` | `call(name, payload, options)` | 冻结的 C registry；支持 immediate/pending/cancel/late completion |
 | `delay` | `delay_ms`、`delay_us` | ESP-Claw profile；毫秒等待 yield，微秒等待使用 Runtime monotonic time |
 | `system` | `time`、`date`、`millis`、`uptime` | Runtime Time；固定 UTC offset |
-| `display` | `clear`、`fill_rect`、`draw_line`、`fill_circle`、`draw_circle`、AA circle、圆角矩形、三角形、framebuffer fade、frame、text、`present` 和 `deinit` | 直接使用 Runtime singleton Display API；dirty region 始终裁剪到 framebuffer |
+| `display` | `clear`、矩形、线、圆、AA circle、圆角矩形、三角形、多边形、椭圆、保留命令、framebuffer fade、frame、text、`present` 和 `deinit` | 直接使用 Runtime singleton Display API；dirty region 始终裁剪到 framebuffer |
 | `lcd_touch` | `read`、`poll`、`sync` 及 upstream touch result fields | 直接使用 Runtime singleton Touch API，不接收 SDK handle |
 | Button proxy | `get_key_level` | Runtime normalized Button snapshot，不创建 GPIO button |
 | `storage` | `get_root_dir`、`join_path`、`exists`、`stat`、`read_file`、`write_file`、`listdir`、`remove`、`rename`、`get_free_space` | Host 配置的 PAL Filesystem；每个 app id 一个扁平目录，受配额和文件数限制，写入原子替换 |
+| `kv` | `get/set/remove/exists/keys` | 与 storage 共享 App namespace、配额和 Host mutex 的持久化标量 KV |
 | `audio` | `new_output`（每条 Track 的 `write/info/close`）、`new_input`（`read/level/info/close`） | 直接使用 Runtime singleton Audio System；Track frame 大小取自设备 playback format，Input frame 大小取自设备 mic format；PAL 混合多条 Track，不接收 codec handle |
 | `link` | `available`、`host`、`join`、`send`、`send_unreliable`、`write`、`read`、`close`、`state`、`on`、`off` | Launcher 调用 `h2_lua_link_enable()` 后由 `//libs/lua:lua_link` 经 BLE Host PAL（不可靠消息）与 `libs/bleikcp`（可靠消息、字节流）提供；未启用或没有 BLE 时 `available()` 为 `false`，操作返回 `nil, "link: unavailable"` |
 
-`link` 与 `runtime` 同属 GizOS 新增 module，不在 ESP-Claw 兼容库存内。
+`kv`、`link` 与 `runtime` 同属 GizOS 新增 module，不在 ESP-Claw 兼容库存内。
 
 `runtime.components.getByName()`、`board_manager`、SDK handle 和动态 C module
 不属于首期合同。Display、Touch 和 Audio 保持 ESP-Claw 的 module acquisition，内部
@@ -99,7 +120,117 @@ job。
 
 `display.fill_circle_aa(cx, cy, radius, color)` 使用有界 supersample coverage 混合 RGB565 framebuffer，`radius` 限制为 `0..64`。`display.fade_to_black(amount)` 对完整 framebuffer 衰减，`display.fade_rect_to_black(x, y, width, height, amount)` 只衰减完全位于 framebuffer 内的正尺寸矩形；`amount` 均为 `0..255`。三者只标记实际 clipping 后的 dirty region，不隐式 `present`。小于一个 RGB565 channel step 的 fade 使用固定、有界的 spatial phase，避免高 FPS 下暗色 trail 永远不消失。
 
-`display.draw_circle(cx, cy, radius, color)` 绘制裁剪到 framebuffer 的一像素圆周。圆心允许处于 Display 宽高的一倍负边界到两倍正边界内，半径必须位于 `0..min(display.width, display.height)`；超出范围、Display 未打开或颜色无效时保持现有 Lua argument/error 合同并确定性失败。`clear`、矩形、圆和圆角矩形可以批量写 framebuffer，但 `present` 仍只提交所有待绘制图元的 dirty bounding union，不改变像素结果或 Lua 调用合同。
+`display.draw_circle(cx, cy, radius, color)` 绘制裁剪到 framebuffer 的一像素圆周。圆心允许处于 Display 宽高的一倍负边界到两倍正边界内，半径必须位于 `0..min(display.width, display.height)`；超出范围、Display 未打开或颜色无效时保持现有 Lua argument/error 合同并确定性失败。`clear`、矩形、圆和圆角矩形可以批量写 framebuffer；默认 `present` 提交所有待绘制图元的 dirty bounding union，可显式启用下述 retained 比较模式。
+
+### Display 多边形、椭圆与保留命令
+
+`display.fill_polygon(points, color, offset_x=0, top=0, bottom=height, scale=1)` 接收 3..128 个 `{x,y}` 点。坐标和横向偏移必须有限且位于 ±100000，缩放为 `0<scale<=16`。先缩放顶点，再在整数行使用 even-odd 扫描转换；边的纵向范围下闭上开，每对交点覆盖 `ceil(left)..floor(right)`，包含水平区间的两个端点。交点取整后才将横向偏移按 `floor(value+0.5)` 加入，不等于在顶点变换阶段平移。支持凹多边形、自交、重复点和退化边；后两者不产生除零。
+
+`display.fill_ellipse(cx, cy, rx, ry, color, offset_x=0, top=0, bottom=height)` 使用相同坐标范围，要求 `rx>=0`、`0<ry<=2048`。局部 y 从 `-ry` 开始以 1 递增到 `+ry`；目标行是 `floor(cy+y+0.5)`，半宽是 `rx*sqrt(max(0,1-y*y/(ry*ry)))`。左端是 `floor(cx-half_width+offset_x+0.5)`，宽度是 `floor(2*half_width+1.5)`；小数半径保留这一像素采样规则，不隐式缩放 framebuffer。
+
+`display.compile_commands(commands)` 把最多 16384 条六字段命令复制为 VM 所有的不可变 userdata。`{0,x,y,width,height,color}` 表示矩形，`{1,x,y,x2,y2,color}` 表示线段。kind 必须是整数；四个数值字段必须有限、位于 ±100000，向零截断为像素整数；矩形尺寸不能为负。空列表合法。编译后修改或释放原表不影响命令；保留 userdata 使它跨 GC 存活，释放最后一个引用后可回收。复制体计入该 job 的 VM 内存预算，不创建系统堆缓存，也不自动扩容。
+
+`display.draw_commands(handle, top=0, bottom=height, offset_x=0, offset_y=0, scale_x=1, scale_y=scale_x, color_override=nil)` 按原顺序重放。偏移必须有限且位于 ±100000，两个缩放均为 `0<scale<=1000`；端点按 `floor(offset+coordinate*scale+0.5)` 计算。矩形使用半开区间，线在 Bresenham 迭代前裁剪；因此远在屏幕外的端点不造成按距离增长的光栅循环。颜色覆盖不修改原命令。颜色沿用 Display 字符串或 `{r,g,b}` 合同；`green` 为 RGB(0,128,0)，满亮度绿色须显式传入 RGB(0,255,0)。
+
+以上绘制使用 `[top,bottom)` 行裁剪和 framebuffer 列裁剪，要求整数 `0<=top<=bottom<=height`，在转换为 native int 前检查；空裁剪和零面积矩形不修改像素。参数解码完成后才开始绘制，非法参数或 Display 已关闭时抛 Lua 错误；RGB 表的 getter 仍遵循 Lua 元方法语义，其自身的副作用不属于绘制的原子性保证。编译失败不会返回部分句柄，OOM 后释放临时数据即可再次尝试较小批次。绘制只标记 dirty union，不隐式 present；Display deinit 后保留命令不持有 framebuffer，也不允许继续绘制。重复调用缓存的 `require('display')` 不代表重新打开设备。
+
+### Display indexed rectangles and palettes
+
+`display.compile_rects(records)` 复制具名 `{x,y,width,height,color_index}` 记录为不可变 userdata，`display.compile_palette(colors)` 将既有颜色字符串或具名 `{r=...,g=...,b=...}` 转为固定长度 RGB565 userdata。两者最多 16384 项，空列表合法，数据计入 VM；不改变已有 commands/mesh 接口。Lua 颜色索引从 1 开始，绘制时验证实际 palette 长度。
+
+`display.blend_palette(output,a,b,progress)` 要求三套 palette 长度一致，进度是 `0..256` 的整数，输出可与输入相同。`display.draw_rects(batch,palette[,left,top,right,bottom])` 使用已打开的 Display，四个半开 clip 整数要么全部提供，要么全部省略。成功返回零个值；调用不隐式 present，不增长容量、不分配内存。完整参数与像素合同见 [Lua API](../../references/lua.md) 和 [Raster2D](./raster2d.md)。
+
+C core 完整校验后绘制，adapter 再逐矩形标记已有 dirty/background damage。没有新缓存或损伤对象。构造和 palette blend 不自行打开 Display；`require('display')` 仍沿用既有 acquisition，关闭后的 proxy 不可绘制。参数 getter 自身可以有副作用；构造过程不写 framebuffer，后续 draw 必须重新检查 Display 状态。GC、取消、job release 与 Host teardown 继续走已有回收流程。
+
+### Display 四边形条带批次
+
+`display.compile_quad_batch` 保存调用方定义的归一化条带、可选横向 patch 和 painter order；`display.draw_quad_batch` 每次接收四角、颜色及可选行裁剪，复用既有 polygon 光栅、dirty/background damage 和 retained present。接口与精确插值顺序见 [Display API](../../references/lua.md)。颜色可使用既有 `compile_palette`，或复用普通 Lua 颜色数组以逐帧更新 RGB888 配方；批次本身不生成渐变或光晕颜色，不选择视角、拓扑或可见性。
+
+绘制参数末尾可选 `clip_top/clip_bottom` 指定 framebuffer 的半开整数行区间，省略或 `nil` 分别使用 `0/height`，要求 `0<=clip_top<=clip_bottom<=height`。它们只限制光栅扫描行，不移动四角、不重新插值，与批次记录内的归一化 patch `top/bottom` 无关。空裁剪仍完整验证颜色、角点、区间及 Display acquisition；多个不相交区间按每行相同的 painter order 绘制，可合成全幅结果。每次调用仍解码颜色并展开几何，应用自行选择脏行区间；此接口不新增扫描跨度缓存。
+
+拓扑上限为 256 项，初始化复制到 VM 计费 userdata，GC/VM teardown 回收；逐帧不创建 mesh、中间顶点 buffer 或光栅缓存。显式横向 patch 先插值，再沿其两边展开条带，保持与逐条 Lua `fill_polygon` 相同的浮点运算顺序和绘制顺序。成功 draw 自身不分配存储，所有颜色与角点在首次写像素前验证。空批次、退化条带、重叠及屏幕裁剪沿用 polygon 行为；颜色 getter 的 Lua 副作用不属于失败原子性保证。
+
+### Display 双轨材质实验批次
+
+`display.material_strip` 接收调用方提供的两条屏幕 XY 轨道，复用 f64 buffer、已编译 material 和 palette；公共合同见 [Display API](../../references/lua.md)。同一站点数的几何更新保留绑定，站点数变化释放旧绑定。逐面保持 material → iso-line 顺序，沿用原 Q24、完整 fallback 与整数线条相位。此候选不决定投影、拓扑、可见性、颜色配方或提交时机；接入前应对照 scalar 和 Lua 共享端点基线测量真实几何上传、绑定、调色板更新及冷/热绘制成本，并由消费端实机决定是否保留。
+
+同一批次中不同面的动态颜色必须使用独立 mutable palette；复用一个调色板后再批量绘制会让所有引用读取同一个最终颜色。成功 load/bind/draw 在预留 Lua stack 后无分配，不创建 mesh 或光栅缓存，存储和绑定引用均由 VM 计费和回收。构造、OOM、finalizer 重入与首个像素写入前的完整验证遵循 public header 合同。
+
+### Display 笔画与有界缓存
+
+`display.stroke_path(points,widths,color,offset_x=0,top=0,bottom=height,cache=false,fast=false,smooth=false,scale=1,tolerance=0)` 接受 `2..256` 个有限 ±100000 的点对、恰好 `n-1` 个 `0..1000` 宽度，以及单色或 `n-1` 个颜色。cache/fast/smooth 必须为 boolean；scale 为 `0<scale<=16`，先作用于坐标和宽度；offset 有限且位于 ±100000。top/bottom 沿用屏内整数半开行裁剪。所有参数、颜色 getter 和分配在绘制前完成并重新检查 Display。返回 `(cache_hit,fast_segment_count)`，不是帧率。
+
+首参数也可为 `{buffer=xy,count=n}`，其中 xy 是容量至少 `2*n` 的 f64 packed xy buffer，n 为 `2..256` 整数，坐标沿用有限 ±100000 限制；descriptor 不得混入数字键点数组。字段使用 raw 读取，每次复制并验证当前坐标后再绘制。稳定 descriptor 表持有原 normals cache，widths 表持有原 span cache；坐标值、数量和样式变化会失效，不能只比较 buffer 身份。其他参数、返回值、像素算法与显式 present 行为不变。buffer 在本次调用期间保活，颜色 getter/GC 后仍检查 Display 生命周期，不跨调用保存裸指针。
+
+默认 hard 模式为每段宽度居中的四边形与中心线，长度小于 `.01` 时绘制取整方块；非退化零宽度段保留中心线。fast 使用带整数边界误差检查的 float/FMA 四边形，不满足条件时回退双精度几何。width-independent 双精度法线缓存随点表存活，并比较全部坐标。cache 随宽度表保留最多 2048 条有序扫描段/中心线记录；键包含缩放后坐标、宽度、颜色、偏移、裁剪、viewport 和模式。容量不足时继续绘制完整结果但使缓存失效，不能截断画面。两类缓存都计入 VM，释放点/宽度表后可以 GC 回收，不持有 framebuffer。
+
+smooth 显式启用圆端点连续覆盖，每像素只混合最大 alpha 一次，相同 alpha 保留先前段颜色，零宽度跳过。像素中心为 `(x+.5,y+.5)`；覆盖为 `clamp(radius+.5-distance,0,1)`，取整到 `0..255` 后使用现有 RGB565 blend。端点范围不超过 4096 时保留 screen-local float 快速覆盖，极端坐标使用双精度回退；它不承诺与 hard 模式相同像素。颜色/覆盖 scratch 按裁剪区域分配、在同一 job 内复用，并在 Display/job/Host 关闭时释放引用。tolerance 是默认关闭的 `0..0.25` 屏幕像素弦误差，仅用于 smooth；保留样式边界、拒绝回折并检查所有省略点，不改变世界物理节点或时间步。
+
+smooth 的 `cache=true` 对单色且 `tolerance=0` 的笔画启用覆盖率缓存。稳定 widths 表持有一项最多 16 KiB payload 的 VM userdata，键包含点数、缩放后坐标/宽度、scale、精确 offset、行裁剪和 viewport；颜色与背景不在键中，命中时使用当前颜色在当前 framebuffer 上混合，保持逐笔画 glow/fill 顺序。只保存量化 alpha，不保存 RGB565 背景。多色、简化、空范围或超限输入保留原路径与已有缓存；热命中零分配并返回 `(true,0)`，冷绘制/回退返回 `(false,0)`。释放 widths 后可 GC 回收；冷建的 staging 与 job scratch 均计入 VM 配额，分配失败不发布不完整缓存或本次像素。详细生命周期、失效与内存合同见 [Lua Display API](../../references/lua.md)。
+
+通用多边形使用 float edge-slope/integer-boundary 检查，不能确定相同 floor/ceil 时回退原双精度交点表达式。参考像素测试覆盖边界与确定性随机输入，不把有限样本当作数学证明。笔画通过 Utils 公共 `h2_f32_math.h` 消费单份数值辅助；编译器和浮点环境约束见 [Utils](./utils.md)，不要对绘制或物理库启用 fast-math。
+
+### Display 快照、背景恢复与 retained 提交
+
+`display.region_from_string(width,height,data,encoding="rgb565be")` 直接从 Lua 字符串创建不透明 region，宽高必须为 `1..4096` 的整数。构造函数本身不获取 Display，在已取得的 proxy 上调用 `deinit` 后仍可创建资源，不绘制也不隐式 present。首次 `require('display')` 仍遵循既有 acquisition 契约，获取失败抛错；缓存的 require 不重新打开设备，关闭后的绘制仍然失败。有效绘制会话中的结果可传给 `draw_region`，同屏尺寸的结果还可传给 `restore_background`。像素数据和调用时机由应用拥有，不读取文件或提前加载资源。
+
+默认 `rgb565be` 接受恰好 `width*height*2` 个按行排列的二进制字节，每个 RGB565 像素高字节在前。`rgb565be-lz4-b85` 接受 8 位 ASCII 十六进制压缩长度与 Python `base64.b85encode(block,pad=True)` 文本，block 为标准 raw LZ4，不含 frame 或额外输出尺寸；输出必须恰好匹配宽高。Base85 字符、文本长度、32-bit group 溢出、零 padding、LZ4 截断、offset、输出边界及末尾序列条件均校验，不接受额外尾部数据。完整编码契约与示例见 [Lua Display API](../../references/lua.md#regions-from-strings)。
+
+同步解码在所属 VM worker 中直接写入 region userdata，不构造像素 Lua 表或完整中间解压缓冲区；Base85 分组由 [`libs/encoding`](./encoding.md) 的 `h2_encoding_decode_base85_group()` 按 `h2_encoding_base85_rfc1924` 的只读解码表逐组解码，长度头、完整分组、零 padding 与 LZ4 规则仍由 Display 校验。像素、行元数据与 damage tiles 计入 VM 配额，输入字符串存活时也占自身配额，但 region 不保留输入引用。非法输入抛 Lua error，配额耗尽使用正常 Lua memory error；失败不发布半成品 region，不改变 framebuffer，临时 userdata 可由 GC 回收，释放其他数据后可以重试。普通 region 在最后引用释放后回收，背景持有的 region 沿用 `release_background` 和 teardown 的释放规则。
+
+`display.capture_region(x,y,width,height,key=nil,reuse=nil)` 捕获 framebuffer 中的正尺寸区域，宽高各不超过 4096，位置和尺寸必须为整数且完整位于屏内。它只保存已绘制的 RGB565 像素，不加载贴图或文件。省略 key 保存不透明区域；指定 key 时压缩每行两侧透明边距，并预编译非透明连续段。透明捕获先计数，再直接分配最终 VM userdata；分配可能运行 finalizer，因此随后重新验证 Display 与区域边界，使用当前 framebuffer 和 stride，在无分配的扫描中检查容量并复制像素。每行首尾之间的 key 像素仍保留，普通及不同 key 回放语义不变。若 finalizer 改变了所需像素数或连续段数，丢弃未发布结果，回退一次到完整 VM 快照再压缩；不保留跨分配的 framebuffer 指针，不无限重试。finalizer 自身绘制和重开 Display 的副作用保留，关闭或缩小到无法容纳区域时抛错；捕获本身不绘制，OOM 不发布半成品，所有临时与最终存储均计入 VM 配额。reuse 要求尺寸和透明模式一致；透明快照还要求 RGB565 色键一致，否则抛错。不透明复用，或已有像素和连续段容量足够的透明复用，会在无分配、无 finalizer 回调的扫描中原地更新并返回同一 userdata；所有别名都观察到新内容，容量不会因内容缩小而减少。透明容量不足时走上述普通分配路径并返回新快照，旧快照保持不变，OOM 也不会破坏旧内容（用户 finalizer 显式修改旧对象的副作用除外）。调用者必须接住返回值；公共层不自动创建缓存池或预留额外容量。`display.masked_region_reuse == true` 表示支持此合同，旧模块不提供该字段；它与 width/height 一样是信息字段，修改 Lua 表字段不会开关原生能力。重新捕获当前不透明背景会使恢复基线失效，下次完整恢复。
+
+`display.draw_region(region,x=0,y=0,top=0,bottom=height,key=nil,left=0,right=width)` 按原生像素尺寸重放，不缩放。整数 x/y 范围为 ±100000；整数裁剪边界构成屏内半开矩形。省略 key 表示不透明重放，包括还原压缩时省略的边距颜色；不同的重放 key 同样正确还原捕获内容。重放 key 等于捕获 key 时直接复制预编译连续段。空裁剪不写像素。颜色 getter 完成后检查设备状态，错误参数不造成绘制写入，但 getter 自身副作用仍属于 Lua 行为。
+
+`display.restore_background(region)` 仅接受完整屏幕、不透明快照，并保留 VM 引用。首次绑定或恢复基线失效时完整复制；之后把所有绘制操作标记的 16×16 脏 tile 合并成相邻行段，仅恢复这些区域，然后清空背景损伤标记。背景恢复与上一帧提交是独立状态，不能用“已提交”代替“已恢复”。`display.release_background()` 幂等解除引用；快照本身仍可重放，最后一个引用释放后由 GC 回收。
+
+`display.present(options=nil)` 和 `end_frame(options=nil)` 返回实际提交的 `(pixel_count, rectangle_count)`。options 是普通表，字段用 raw lookup 读取：`retained` 为 boolean，显式启用或禁用上一成功帧比较，省略则沿用当前模式；`bounds` 为 boolean，当前调用合并为一个包围矩形；`merge_gap` 为 `0..8` 整数，限制 span/tile 局部合并之间可跨过的未变化 tile 数（仍按 16 像素网格衡量）；这是局部合并上限，不保证一定合并，自动包围矩形/整屏候选不受该上限限制。retained 首帧或失效后完整提交，之后先完成 dirty 范围内的像素比较和区域规划，再提交变化区域，完全静止时返回 `(0,0)`。`tiles=true` 显式跳过精细 span 规划，直接精确比较 16×16 tile，再使用原有 `merge_gap` 与 guard 合并；省略或 false 保持默认。该选项仅影响当前调用的 retained 规划，用可能增加的提交像素换取更少规划 CPU，不保证总完成时间更短。`bounds=true` 保留原来的 tile 对齐包围矩形；默认规划可返回更紧的像素边界，调用方不能依赖固定 tile 大小或固定矩形数量。即使没有像素变化，也调用 PAL present 并传播其错误。任何 draw/present 失败都使提交基线失效，并按 worker 合同停止新提交、保留故障资源；部分成功的矩形不能作为完整成功帧。切换 retained 模式完整提交一次，再使用相应的比较或 dirty union 规划；发送缓冲 B 保留到 Display 成功释放。这些统计是软件提交量，不是实机 FPS。
+
+快照、背景损伤标记、retained 比较图、矩形规划暂存区和基线像素都计入 VM 内存，原工作 framebuffer 保留 PAL ownership。Lua deinit、job release 和 Host teardown 在释放 framebuffer 或执行 VM finalizer 前断开全部显示缓存引用。teardown 期间不能重新打开 Display；正常 deinit 后旧 proxy 的绘制调用失败。OOM 不返回部分快照，释放其他 VM 数据后可重试；已有快照不因另一次捕获失败而失效。
+
+默认 retained 规划先提取每行连续变化 span，按至多 16 个额外像素的增长限制连接相邻行，每 16 行对已有矩形做一次有界合并。span 生成沿用 `面积 + 256 × 矩形数 + 32 × sum(ceil(矩形高度 / 16))` 的内部启发式：最多 128 个矩形、4096 个原始 span、65536 次矩形合并检查；纵向连接逐 span 检查至多 128 个已有矩形。达到上限或 8×8 采样至少 56 点变化时，完整回退原有 tile 比较与合并。采样不能省略需要提交的变化像素。
+
+完成原计划后，仅遍历其矩形一次累计提交面积、估算分块数和包围框。自动 guard 使用每分块 `222..286` 像素等价的经验成本范围：令 `ΔP` 为包围框面积减原计划累计面积，`ΔB` 为包围框的 `ceil(height/16)` 减原计划累计分块数，仅当 `ΔP + k × ΔB < 0` 对整个范围成立时，才替换为包围框；同成本保留原计划。实现只检查最坏端点，不用浮点，也不把减少 PAL 调用数计作收益。该范围由约 `160..200 µs/块` 与 `0.70..0.72 µs/像素` 的经验区间比值向外取整，属于候选敏感性范围，不能当作统计置信区间或 PAL 保证。不同后端的像素转换、窗口设置、分块高度和等待策略可能超出此范围；保守比较不保证所有后端更快，也不保证实际总 present 时间下降。
+
+保留原 span 或完整 tile 计划作为基准，不因为另一个候选耗尽工作预算而丢弃它。guard 不再次比较 framebuffer、不改变原计划的像素覆盖或失败语义。tile fallback 没有 128 个矩形的提交上限：若超出暂存容量且 guard 拒绝包围框，则从已有 tile 字节图重放完整原计划，不提交部分前缀、不强制扩大面积。只有原 span 规划失败才进行原有 tile 像素比较；容量溢出后的重放只遍历标记，额外成本仍应在目标设备测量。`bounds=true` 直接沿用原 tile 对齐包围框。
+
+矩形存储和计数占 1028 字节，随 VM 计费的 worker mailbox 一次分配；发送缓冲 B 的尾部保存每 tile 一个比较/遍历字节。原有每 tile 一个比较字节保留 damage 位与遍历位；guard 的面积、分块和包围框汇总只使用固定大小栈变量，不增加常驻缓存或每帧分配。热 present 不分配，不在 native heap 保存额外缓存；Display 成功释放后沿用 VM GC 生命周期。规划完成后由 Display worker 复制并调用 PAL；发送缓冲同时作为 tentative baseline，只有整次 PAL present 成功才有效，失败后遵循提交任务的故障隔离合同。
+
+#### 提交规划的验证
+
+从仓库根目录运行 `bazel test --config=macos_arm64 //libs/lua:all`（Linux 使用对应 config）。`display_plan_test` 对照 PR627 的原始 tile 合并规则，生成空心菱形移动、平移矩形、稀疏噪点、稠密帧、无变化和交替棋盘格，并从旧 framebuffer 按提交矩形回放，逐像素检查最终结果；另覆盖随机 dirty box、奇数尺寸、4096 轴边界、容量耗尽、256 矩形完整 fallback、显式 bounds、guard 拒绝/同成本原样保留及 64 位面积累计，并检查经验成本范围的两个端点均不劣于同帧完整原计划。`lua_test` 通过真实 Lua present/PAL fake 检查首帧、清除旧位置、guard 成功、完整 fallback、热路径无分配和单份发送缓冲的 VM 计费/释放；独立 fault suite 检查部分 draw、present、静止帧及超过容量的 fallback 中途失败后的资源隔离。源包测试验证该规划器随 portable runtime 导出。
+
+可直接运行 `bazel-bin/libs/lua/display_plan_test` 输出通用合成对比；可选 `--frames <path> [first last]` 读取本地 240×240、无 header、RGB565 big-endian 连续全帧，帧号从 1 开始，前序帧仍用于建立 baseline。该入口只用于离线验证，不是 Lua/PAL API；私有轨迹不得提交到公共仓库。时间以同一帧规划 10 次的均值采样，再统计 p50/p95/max，仅包括差分和规划（含回退），不包括绘制、baseline copy、PAL 提交或真实总线等待。对比统一采用全屏 dirty 候选和 `merge_gap=1`，与消费端每次实际传入的 dirty/options 可能不同。静止合成场景仍比较全屏；实际没有 dirty 的 present 会直接跳过规划。
+
+合成输出对比原始 `tiles`、默认 `selected` 和显式 `direct-tiles` 三种计划，`fallback` 统计原 span 规划失败后走完整 tile 路径的帧数。像素回放和成本约束则对照同帧、同 dirty/options 下 guard 前的完整 span/tile 基准。`direct-tiles` 逐像素回放验证最终帧，并以同帧完整原始 tile 计划检查 guard 成本，不要求优于默认精细 span 计划。后处理 guard 可以跨过局部 `merge_gap`，但必须通过整个经验范围的严格获益判断；保留的原计划仍可能不是模型中的全局最优解。
+
+像素减少可能伴随更多窗口和较高规划成本，不能把 host 时间或提交面积直接换算成 MCU FPS。消费端应测量目标设备的 planner、每窗口/分块固定成本、baseline copy 和实际传输时间，再判断是否值得保留当前成本权重；未经设备验证不承诺帧率。算法参考 [fbcp-ili9341 的 exact scanline diff 与 span merge](https://github.com/juj/fbcp-ili9341/blob/master/diff.cpp) 及 [LVGL 的 lv_refr_join_area](https://github.com/lvgl/lvgl/blob/v9.2.2/src/core/lv_refr.c)，两者均声明 MIT 许可（[fbcp](https://github.com/juj/fbcp-ili9341/blob/master/LICENSE.txt)、[LVGL](https://github.com/lvgl/lvgl/blob/v9.2.2/LICENCE.txt)）；此处独立实现有界规划，没有引入它们的平台代码或依赖。
+
+### Display 保留几何与 native 更新
+
+`display.compile_mesh(vertices, primitives, vertex_capacity=#vertices, primitive_capacity=#primitives)` 创建 VM 所有的保留几何；`display.update_mesh(handle, vertices, primitives)` 在固定容量内替换所有活动数据。顶点是 `{x,y}`，primitive 是 `{kind,first,count,color}`；kind 0 为 3..128 顶点多边形，kind 1 为两顶点线段。Lua 的 first 从 1 开始，允许重叠的连续顶点范围。最多 65536 顶点、4096 primitives；坐标必须有限且在 ±1000000 内。空数据和零容量合法。Lua 更新先在 VM 临时存储中完整解码，任何后续参数错误都不会让本次更新只写入一部分；成功后替换活动长度、拓扑、颜色并使派生坐标失效。调用方颜色 getter 自身的副作用仍按 Lua 语义执行。
+
+`display.draw_mesh(handle, options=nil)` 按原顺序绘制。options 的字段使用 raw lookup，缺省值不从元表获取：
+
+| 字段 | 合同 |
+| --- | --- |
+| `matrix` | `{a,b,c,d,tx,ty}`，默认单位矩阵；计算 `x'=(a*x+c*y)+tx`、`y'=(b*x+d*y)+ty`，字段有限且在 ±1000000 内 |
+| `transform` | 可选 `{x=...,y=...,scale=...,angle=...}`，四项均必填且 raw 读取；与显式 matrix 互斥。x/y/angle 有限且在 ±100000 内，`0<scale<=100`，必须显式提供 1..16 的 grid |
+| `grid` | matrix 路径为整数 0..16，默认 0，不吸附；非零时用 `floor(value/grid+0.5)*grid` 吸附变换后的顶点。transform 路径为必填整数 1..16；选择策略由应用提供 |
+| `offset_x` | 有限且在 ±100000 内，默认 0；多边形在交点取整后横移，线段在连续裁剪前横移，不与 matrix 平移合并 |
+| `left,top,right,bottom` | 默认整个 framebuffer 的整数半开裁剪矩形，范围必须完全位于 framebuffer 内；空矩形合法 |
+| `color` | 可选 Display 颜色覆盖，不修改保留颜色 |
+| `cache` | boolean，默认 false；按需保留有序扫描段/线记录，最多 8192 条；初始 16..512 条，按需增长，重放后收缩到实际条数 |
+
+所有派生顶点在光栅化前验证为有限且在 ±16000000 内。多边形沿用上述 even-odd 扫描和交点取整规则；线先连续裁剪再按 `floor(endpoint+0.5)` 取整并执行 Bresenham。绘制不隐式 present，关闭 Display 后拒绝绘制。派生顶点缓存以内容更新、matrix／transform 和 grid 为失效条件；裁剪、颜色、offset 每次绘制应用，不能因坐标缓存命中而跳过。可选 span 缓存还比较裁剪、viewport、offset 和 recolor，命中时按原顺序重放并标记 dirty/background damage；容量溢出仍完整绘制，但不发布部分缓存。成功的 native/Lua 更新要求重新验证派生坐标，但保留上一次成功绘制的 span 候选。完整验证后，只有活动顶点／primitive 数量、primitive 类型／范围／颜色、最终坐标和上述绘制参数全部相同时才能复用；不能只比较地址或包围盒。连续更新、失败调用和不保留缓存的绘制不会覆盖候选快照，相同输入的热调用复用已验证的比较结果。首次启用缓存且使用恒等变换时，按每个多边形裁剪后的整数行数乘以 `floor(边数/2)`、每条线一条记录求保守上界，初始容量限制在 16..512 条；最多检查 128 个多边形顶点，达到预算或上界时保留 512 条，其他变换也保持 512 条。同时按声明容量分配一份顶点／primitive 快照及对齐／固定元数据。估算只影响分配提示；分配期间 finalizer 改变 mesh 或 viewport 后仍执行原验证与溢出处理。一次光栅化超出容量时本帧仍完整绘制但不发布缓存，下一次绘制在入口把缓存换成 4 倍容量（最多 8192 条）。缓存至少被重放一次后，若剩余空位不少于 256 条，下一次绘制在入口把它换成恰好容纳现有记录的缓存，复制记录与快照；收缩后的缓存若再次溢出，直接恢复为 8192 条并不再收缩，动画网格不会反复分配。增长、收缩或恢复都只在入口分配；分配引起的 finalizer 重入若改变了缓存，则放弃替换并沿用重入留下的缓存。此后热绘制不分配。数据和缓存计入 VM；引用释放后由 GC 或 VM teardown 回收。
+
+显式 transform 保留 `(x+(vx*cos(angle)-vy*sin(angle))*scale)/grid` 及 y 对应式的运算顺序，不预乘为 affine matrix。三角函数在参数不变时复用。每轴使用原版 float 表达式和 `64*FLT_EPSILON` 误差界：远离半格点且误差小于 0.25 时走 float 取整，否则使用原版 double 表达式；源顶点超出 ±100000 时也回退。应用决定 grid、pose、布局和复用时机；库内没有尺寸阈值或额外输出缩放。
+
+精确单位矩阵且 `grid=0` 时，绘制直接读取 mesh 自有、已在创建／更新阶段验证的顶点，不再复制到派生坐标缓存或逐点重复计算单位变换，也不借用调用方缓冲区。既有派生坐标存储仍为一般变换保留，不增加容量或分配。此快路径不使用近似比较；非单位矩阵或非零 grid 仍在修改坐标缓存和像素前完整验证变换结果，错误、像素和缓存失效合同不变。
+
+非 identity 变换在活动顶点不超过 1024 时，可使用独立的 Display 共享暂存区一次计算、完整验证后提交。暂存区按 `min(vertex_capacity,1024)*16` 字节 payload 加 userdata 开销计入 VM，多个 mesh 复用容量；首次使用或增长容量可能分配，增长期间旧、新分配可能同时存活。Display release 或 VM teardown 释放共享引用。活动顶点超过 1024 时仍使用原来的验证／变换两遍路径，公开 65536 顶点上限不变。暂存区不借用源顶点、已提交位置或完整 span 候选；所有可能重入的分配之后重新读取 mesh 与 Display 状态，完整验证到发布之间不分配、不回调。失败不撤销用户 finalizer 自身的合法修改，也不得用外层旧状态覆盖它们。
+
+私有 native 计算模块通过生产公共头 `h2_lua_display.h` 创建／更新同一种 userdata，再交给 `display.draw_mesh`。C API 的完整参数、错误和 ownership 合同见从该头 Doxygen 生成的 [Lua Display API Reference](/references/lua)；native indices 从 0 开始，不同于 Lua 表。native 更新不分配、不增长 Lua stack，调用方预留两个空栈槽；创建通过受保护的 Lua 调用处理 OOM，失败恢复栈。它们不打开 Display、不绘制、不暴露内部存储地址，模块不得获取 job/framebuffer 或 include runtime 私有头。鱼身变形、场景投影、分色、网格选择等策略由应用先计算。
 
 ### Audio Track 的帧契约
 
@@ -258,7 +389,7 @@ interval、2000 ms supervision timeout 连接；掉电或离开范围在一个 s
 内报告 `"lost"`。Host 可以重新协商连接参数：运行 H2Loader BLE 命令服务的 App image
 会把每个 peripheral 连接改为 15 ms interval、4000 ms supervision timeout，此时
 `"lost"` 约 4 s 后到达。bleikcp 使用 244-byte datagram、16-segment
-window、32 帧输入队列和 4096-byte TX/RX buffer，关闭 congestion window。KCP 上的帧
+window、32 帧输入队列和 4096-byte TX/RX buffer，关闭 congestion window。输入队列在 bleikcp worker 一个 slice 内被一个 window 加其重传塞满时只丢帧、由对端 KCP 重传，不会结束 session。KCP 上的帧
 为 `[type u8][len u16 big-endian][payload]`：`HELLO`（双方先发，5000 ms 内校验）、
 `BYE`（close、job 结束或 Host stop 时发送并最多 flush 400 ms，对端立即报告
 `"peer_closed"`；BYE 是有界的尽力而为，预算内未送达时对端报告 `"lost"`）、`MESSAGE`（一条可靠消息）和 `STREAM`（最多 512 字节流数据）。
@@ -275,7 +406,42 @@ task 随后发送 `BYE`，停止广播/扫描，关闭 server 或 stream 并断�
 
 ## ESP-Claw profile
 
-兼容库存固定到 ESP-Claw commit `fb7b248114bb1b12ba0fe8e03d4b59bdbec292c1` 的 36 个 module ID。`json` 和 `capability` 为 `full`；`delay`、`system`、`display`、`lcd_touch`、`audio` 和 `storage` 为 `profile`；`button` 为 `component-adapted`，表示物理 constructor 被 Runtime component acquisition 取代、获取后的必需操作保持兼容；其余 module 为 `unavailable`，`require()` 必须确定性失败。`runtime` 是本 Feature 唯一新增的 GizOS Lua module。
+兼容库存固定到 ESP-Claw commit `fb7b248114bb1b12ba0fe8e03d4b59bdbec292c1` 的 36 个 module ID。`json` 和 `capability` 为 `full`；`delay`、`system`、`display`、`lcd_touch`、`audio` 和 `storage` 为 `profile`；`button` 为 `component-adapted`，表示物理 constructor 被 Runtime component acquisition 取代、获取后的必需操作保持兼容；其余 module 为 `unavailable`，`require()` 必须确定性失败。`runtime`、`link`、`kv` 等 GizOS 模块不进入该固定兼容库存。
+
+## Lua App 发布包
+
+`libs/lua/lua_app.bzl` 的公共 `lua_app` rule 声明一个可分发应用：必选的 `<app_id>.lua` 文本入口，以及可选的同名 `<app_id>/` data 目录中的显式文件列表。没有 data 文件时不需要创建目录。入口文件名决定稳定 app id，沿用 Host 的小写字母、数字、`_`、`-`、`.` 和 1..32 字节限制；更改入口 basename 会改变应用与存档身份。源码目录布局和现有单文件 label 可以保持不变。
+
+每个 app 必须消费自己声明的 `firmware_version` target，使用与其他声明式 artifact 相同的 31-byte SemVer 合同。没有默认版本，也不读取 firmware image 版本或 release batch；不同 app 默认独立升级。
+
+```bzl
+load("@gizos//libs/lua:lua_app.bzl", "lua_app")
+load("@gizos//tools/bazel:firmware.bzl", "firmware_version")
+
+firmware_version(name = "abc_version", value = "0.1.0")
+
+lua_app(
+    name = "abc_app",
+    entry = "abc.lua",
+    data = ["abc/tone.pcm"],  # Optional; omit for a single-file app.
+    version = ":abc_version",
+)
+```
+
+Rule 输出 `<app_id>-<version>.lua-app.tar.zlib`、同 stem 的 `.manifest.json` 和 `.json` release metadata，并通过 `LuaAppInfo` 暴露 identity 与三个 File。Archive 是 zlib 格式压缩的 USTAR（RFC 1950 包装的 DEFLATE），含 `manifest.json`、入口和 data 文件，可使用现有 zlib inflate 模式解压；文件排序、mtime、mode、uid/gid 和压缩参数固定，不包含机器路径或发布批次。Manifest `format=1`、`type=lua-app`，记录 app id、version、entry、可空的 data_dir，以及每个 payload 文件的 path、size 和 SHA-256。Release metadata 保留 manifest，并记录压缩包 basename、size 和 SHA-256；下载校验值与包内文件校验值分别使用。
+
+可选的 `compact=True` 复用同一公共 `embed_resource.py` 源码精简器，保留 literal bytes 和源码行数，manifest 与 release metadata 的 `compact` 字段记录该选择；默认保持原始文本。Data 文件必须来自入口旁的同名目录，不能包含绝对路径、路径穿越、隐藏文件或保留的 `.kv`/`.index` 存档。所有 archive entry 都是普通文件；入口拒绝 bytecode 和 NUL。Package 可以声明多层 data 路径，但这不改变下文现有 `storage` 的扁平目录合同；消费宿主必须按自身资源访问能力和配额验证兼容性。打包不创建 Runtime、不运行脚本、不安装设备，也不改变已有存档。
+
+Release consumer 使用公共 `lua_app_catalog.cquery` 从 Provider 读取 app id、version、entry 和 data_dir，使用 `lua_app_release_files.cquery` 读取结构化输出路径，不能从 Bazel package 路径猜测 identity 或维护第二份版本表。发布准入 tag 由产品仓库声明；GizOS 的 runtime C 源码包 release 与 Lua app 包是不同的 artifact。
+
+验证公共 rule 与真实 Bazel 输出：
+
+```sh
+bazel test --config=macos_arm64 //libs/lua:app_package_test
+make bazel-test-downstream-consumer
+```
+
+Host package test 同时校验 archive、manifest 和 metadata 三个 output group。Downstream consumer 用真实 `@gizos` rule 声明无 data 与有 data 的应用，执行两个公共 cquery formatter，再通过 `bazel test` 把 Provider identity、formatter 路径和 `DefaultInfo` 文件集合与全部生成文件逐一核对；同一测试也校验包内 manifest、payload 和发布下载校验值。
 
 ## App 存储
 
@@ -294,9 +460,75 @@ task 随后发送 `BYE`，停止广播/扫描，关闭 server 或 stream 并断�
 
 `write_file(name, data)` 先检查文件数和配额（替换已有文件只计算新大小），再把内容写入 App 目录中的临时文件，经 `sync`、`close` 后用 `rename` 覆盖目标。任一步失败时目标保持旧内容或不存在，临时文件被删除。
 
-PAL Filesystem 无法列目录，因此每个 App 目录有一个同样原子替换的 `.index` 名字列表：新名字先进入 index 再创建文件，删除时先删文件再更新 index。中断的操作最多留下没有文件的 index 项，下次读取 index 时被清理；未被 index 记录的文件不会出现在 `listdir()` 中，也不计入配额。存储操作在 owning worker 上同步执行，单次数据量受配额约束，`read_file` 的缓冲区计入 VM 内存上限。
+PAL Filesystem 无法列目录，因此每个 App 目录有一个同样原子替换的 `.index` 名字列表：新名字先进入 index 再创建文件，删除时先删文件再更新 index。中断的操作最多留下没有文件的 index 项，下次读取 index 时被清理；未被 index 记录的普通文件不会出现在 `listdir()` 中，也不计入配额；保留的 `.kv` 文件单独统计，共享 App 配额但不展示。存储操作在 owning worker 上同步执行，单次数据量受配额约束，`read_file` 的缓冲区计入 VM 内存上限。
+
+## App KV 存储
+
+`require("kv")` 是 `libs/lua` 的 C 模块，复用 `h2_lua_host_config_t.storage`、job app id 和同一把 Host storage mutex。相同 app id 的 job 共享数据，不同 app id 隔离；没有跨 App 或自定义 namespace 参数。原生 PAL 调用不受此 Lua 层隔离保护。模块名称保留，不能注册同名自定义模块；不改变 ESP-Claw 兼容库存。
+
+| Lua 调用 | 成功或缺失 | 失败 |
+| --- | --- | --- |
+| `kv.get(key)` | 存在返回 value；缺失返回单个 nil | `nil, err` |
+| `kv.set(key, value)` | true | `nil, err` |
+| `kv.remove(key)` | 已删除 true；缺失 false | `nil, err` |
+| `kv.exists(key)` | true / false | `nil, err` |
+| `kv.keys()` | 按 key 字节序升序排列的数组 | `nil, err` |
+
+Key 必须是 string，1..32 字节，仅允许 `a-z`、`0-9`、`_`、`-`、`.`，不能以 `.` 开头，不能包含 NUL，也不把数字隐式转成字符串。最多 `H2_LUA_KV_MAX_KEYS`（128）个 key，更新已有 key 不占新名额。Value 支持 string、boolean、有限 number；保留 integer/float 类型、整数精度与浮点负零。字符串允许空串、UTF-8 和任意二进制字节。Nil、table、function、userdata、thread 不支持；`set(key, nil)` 不表示删除，NaN 和 Infinity 被拒绝。
+
+```lua
+local kv = require("kv")
+local volume, err = kv.get("volume")
+if err then
+    print(err)
+elseif volume == nil then
+    volume = 80
+end
+local ok, write_err = kv.set("volume", 60)
+if not ok then print(write_err) end
+```
+
+参数类型错误抛 Lua 参数异常，OOM 沿用 Lua 内存错误。其他错误返回 `nil, "kv: <reason>"`，reason 为 `unavailable`、`invalid key`、`invalid value`（非有限数）、`quota exceeded`、`too many files`、`too many keys`、`no space`、`busy`、`io error`、`corrupt data` 或 `unsupported version`。未配置 storage fs 或 job 无 app id 时，所有有效调用（包括 exists/keys）都报告 unavailable，不把不可用当成 key 缺失；原有 `storage.exists` 行为不变。
+
+### 文件与配额
+
+每 App 保存 `<root>/<app_id>/.kv` 快照，`.kv.tmp` 用于原子替换。公开 storage API 拒绝点开头的文件名，不能直接操作 KV 文件，`storage.listdir()` 也不展示它。`.index` 格式不变，KV 文件通过单独 stat 纳入共享统计：完整编码字节计入 App 配额，存在的快照占一个文件名额，`storage.get_free_space()` 包含 KV 占用。删除最后一个 key 移除快照，释放字节和文件名额。缺失快照是空存储；读取和删除缺失 key 不创建文件。
+
+KV 和普通 storage 写入在同一 mutex 下检查配额和提交。临时文件不计入逻辑配额，但写入需要额外的实际磁盘空间。沿用 storage 的 temp-write、sync、close、rename 保证，掉电持久性取决于 PAL provider。旧固件兼容、降级和历史数据迁移不在 KV 范围内；未知版本仍确定性拒绝，不自动清空或修复数据。
+
+### 执行、锁与内存
+
+操作在 owning worker 同步执行。一个 Host 的所有 App 共用 `storage_mutex`；内部 `_locked` helper 要求调用者持锁，不递归加锁。KV mutation 在一个临界区内读取最新快照、校验、修改、编码、检查共享配额并提交；不同 key 的并发更新不会丢失，同 key 后提交者覆盖。连续 get/set 不组成事务或原子自增。没有跨调用缓存、TTL、批量事务或 clear API。
+
+先短暂持锁查询大小，解锁后分配 Lua userdata 缓冲区，再持锁复查大小并读取最新内容。读操作使用一份快照；mutation 使用旧、新两份缓冲区，顺序扫描记录，不建立 C 对象树。并发增长超过缓冲容量时解锁并重新分配，最多四次尝试，耗尽返回 busy。同尺寸变更仍会重新读取。锁内不调用 Lua、不动态分配；返回值在解锁后构造，OOM 不遗留锁。
+
+快照 userdata 全部计入当前 VM 内存预算，解除引用后由 GC 回收，并非立即释放。重试垃圾、返回字符串/数组和脚本输入也占内存，两份有效快照不是严格峰值上限。不强制全局 GC，也不绕过 VM allocator；磁盘配额足够仍可能 OOM。
+
+### 快照 v1 格式
+
+所有多字节字段为小端序，逐字段编码，不直接落盘 C struct。文件固定开销 20 字节：16 字节 header、记录区、4 字节 checksum。
+
+| Header 字段 | 编码 |
+| --- | --- |
+| magic | ASCII `GZKV`，4 字节 |
+| version | uint16，1 |
+| flags | uint16，0 |
+| entry_count | uint32，最多 128 |
+| payload_length | uint32，记录区总字节数 |
+
+记录按 key 字节序严格升序排列，每条包含 uint8 key_length、uint8 value_type、uint32 value_length、key 原始字节、value 原始字节。类型 1 为字符串原始字节；2 为单字节 boolean（0/1）；3 为 8 字节有符号二进制补码整数；4 为 8 字节 IEEE 754 binary64，保留负零，拒绝非有限数。整数和浮点表示在编译时检查；不允许静默精度截断。
+
+末尾 uint32 为 CRC-32/ISO-HDLC，覆盖 header 和记录区，以小端序保存。多项式 0x04C11DB7（反射形式 0xEDB88320），init/xorout 均为 0xFFFFFFFF，输入/输出反射，`123456789` 的校验值为 0xCBF43926。编码总长为 20 加上每条的 `6 + key_length + value_length`。
+
+截断、溢出、长度不符、非法 key/type/value、重复或乱序 key、非零 flags、尾随字节和 CRC 不符返回 corrupt data；可识别 header 的未知版本返回 unsupported version。损坏和未知版本不得被普通 mutation 覆盖。CRC 检测数据损坏，不代替原子提交或访问控制。
 
 ## Source loading and failure
+
+`h2_lua_resource` 默认将 `.lua` 源文件逐字节嵌入 C resource；需要减少固件只读存储占用的 consumer 可以显式设置 `compact = True`。精简发生在构建期，仅删除注释、行首/行尾空白和多余横向空白，不重命名标识符、不改写表达式、不生成 bytecode，也不增加运行时解压或 buffer。短字符串（包括转义）、任意等号层级的长字符串保持原始字节；token 间仍保留必要分隔，字符串之外的换行按 Lua 的 CR/LF 配对规则归一化以保留原源码行号。含 NUL 的输入（包括注释内）、短字符串内未经转义的换行，以及未终止的字符串或长注释在生成阶段报错；完整语法仍由现有 Lua 文本加载器验证。默认生成行为、C symbol 与 Host lifecycle 不变，`source_size` 和 source limit 以实际嵌入文本计。
+
+生成器的 Python 回归覆盖 token 分隔、字符串/注释边界、换行和默认兼容性；`//libs/lua:compact_resource_test` 在实际 VM 中对比原始与精简后的同一 fixture，验证结果和错误行号。业务 consumer 仍需对自己的精简资源执行功能回归和 exact firmware build，不能把构建期节省直接写成 VM 内存或运行时性能收益。
+
+嵌入资源走 `luaL_loadbufferx` 文本加载，不提供 `luaL_loadfilex` 的 shebang 首行跳过行为；精简不会把 `#!` 首行当注释删除，也不会把 `1..2` 等非法数字改写为合法表达式。空源文件或精简后为空的资源使用一个零字节作为 C backing array，逻辑 size 仍为零；非空资源的默认生成内容不变。
 
 所有入口只加载 Lua 文本。绝对路径、空段、`.`/`..`、反斜线、非受限 root、
 bytecode、超限或 malformed chunk 都失败关闭。`package.cpath` 为空，
@@ -345,9 +577,43 @@ MP4 播放器配置也支持同名选项。启动动画可以借用同一个 Dis
 返回后交还 UI；失败和协作取消同样只清理播放器自己的资源。
 借用选项不会自动暂停 LVGL，也不提供多个写屏者之间的调度。
 
+## 内置 vmath 与 geometry
+
+所有 Host（Desktop、设备、Wasm/browser）默认提供 `require('vmath')` 和 `require('geometry')`，不需要 App 注册 native module。`vmath` 不覆盖标准 `math`；两者都不依赖 Display 设备。API 的完整参数和边界契约见生产头文件 `libs/lua/include/h2_lua_numeric.h` 和 [Lua 数值 API](../../references/lua-numeric.md)。
+
+`vmath.buffer(count[,kind])` 创建固定容量 userdata，最多 65536 个数值。kind 为 `"f64"`（默认，nil 也使用默认值）或 `"f32"`，分别存储 binary64 或 binary32。存储及等长事务 scratch 都通过 VM allocator 计费，分别为 `16 * count` 或 `8 * count` 字节，加固定 metadata/userdata 开销。索引从 1 开始；点布局为连续 `x,y` 或 `x,y,z`，没有嵌套表。在初始化时分配缓冲区、mesh writer 和 mesh，帧内复用。成功的批量调用不分配；错误消息可以分配。所有数值及结果必须有限且绝对值不超过 1e6，越界、错误类型、无效拓扑或容量不足都会抛出 Lua error，已发布的缓冲区和 mesh 不变。
+
+除下文明确规定的 prepared 位移/系数入口外，同一次调用的所有缓冲区必须使用相同 kind，包括系数、权重、相机、mask、索引、tag 和 mesh topology；混用会在发布结果前抛出 `mixed numeric buffer kinds (f32/f64)`，空前缀也不例外，不做隐式转换。全 f32 调用使用 float 运算和单精度数学函数；Lua 标量先验证有限性及 ±1e6 范围，再在调用入口转换为 float（load 对每个导入元素转换一次）。参数区间按所选精度检查；存储和运算按该精度舍入，极小值可能下溢为零。get/dot 返回普通 Lua number，纯标量 clamp/lerp/smoothstep/spring 及标准 math 保持 double 语义。
+
+数学模块提供标量插值/夹取/弹簧步进，缓冲区线性组合、逐元素乘除、多项式、点积、三维长度/归一化和通道 gather/scatter，以及批量 Verlet、XPBD 距离约束和位移阻尼。物理输入显式传入加速度、逆质量、约束边与 compliance；零逆质量固定节点，时间步范围是 `[1e-6,.1]` 秒。`relax` 每次将 lambda 清零，可选择双向距离或仅张力约束，最多 256 点、512 边和 32 次交替迭代；它不包含碰撞、材质或游戏规则。
+
+`relax_sweep` 用每边的两个权重执行一次正向或反向约束扫描，保留 lambda，允许调用方在扫描间组合额外约束；`damp_edges` 按边顺序更新上一帧位置以衰减分离方向的轴向位移。`map` 提供 abs/sqrt/sin/cos/floor，`select_le` 做逐分量条件选择，`take` 按一基行索引重排固定宽度数据。参数、容量、别名和失败原子性遵守生产公共头。
+
+几何模块提供二维/三维仿射、按权重位移和旋转、位移前缀和、折线展开、轴平面切分与近裁面裁剪投影。相机是 `{fx,fy,cx,cy,near}`，在相机空间沿 +Z 看，投影为 `(cx+fx*x/z, cy+fy*y/z)`，`near >= .001`；可用负 `fy` 翻转屏幕 Y。切分输出 `{side,source_index}`，投影输出源 segment 索引，Lua 可据此决定颜色。游戏公式、镜头参数、材质、颜色和时间步策略仍由 Lua 组合。
+
+`geometry.mesh(vc,pc)` 返回 writer 和现有公共 Display mesh。 `geometry.update_mesh(writer,xy,topology,nv,np)` 将结果直接复制到 mesh，返回同一 mesh；topology 每行是 `{kind,first,count,rgb565}`，kind 0 为 3..128 点多边形， kind 1 为两点线段。xy 和 topology 可以同时使用 f32；writer 和公共 Display mesh 不绑定数值精度。该操作不绘制、不 present；使用现有 Display 批次绘制接口。f64 保留更小的位移，f32 将数据及 scratch 空间减半并使用单精度运算，批量调用消除逐点 Lua/C 边界开销；尚不承诺 S3 帧率或不同平台结果逐位一致，设备侧应按实际点数和迭代数测量。
+
+## Lua App 目录与流式安装
+
+`//libs/lua/apps:apps` 拥有独立于 Lua Host 和 GizClaw 的应用目录与安装器；[API Reference](/references/lua-apps) 直接来自生产 Public Header。调用方注入 Memory、Filesystem、Sync，并配置 `preinstalled_index` 与专用 `install_root`。用户 KV 必须使用安装目录以外的独立根路径，不能把用户数据放进安装器拥有的目录。应用目录可跨 Service 重连保留，销毁前先停止并释放借用它的 Service 和安装会话。
+
+预装和远程安装使用相同 format-1 Lua App manifest、`app_id` 和版本。`lua_app_index` 从 `LuaAppInfo.manifest` 生成 `format=1, apps=[{root,manifest}]`，不维护手写版本表。规则的 `installed_entry` output group 提供与包内完全相同的原始或 compact Lua 文本，`installed_files` 同时包含该 entry 与原有 data 文件；consumer 将 entry 映射为安装根下的 `<app_id>.lua`，data 保持同名子目录结构。原有 archive/manifest/metadata 默认发行输出不变。加载时缺少所需文件、文件大小不符或 entry 超限的预装项不会进入 listing；已安装的同 ID 项覆盖预装项，每个 ID 只列出一次。
+
+URL 安装入口仅接受 HTTP、HTTPS，长度最多 1024 字节，不接受 data URL；内存中的压缩包通过增量 Binary 输入安装。HTTP 请求不自动重试；redirect 继续限制为 HTTP(S)，允许由 HTTP PAL 解析的相对地址。HTTP 流和增量 Binary 输入均只使用固定窗口，完整压缩包不落盘；`libs/crypto/sha256` 增量计算压缩包与各文件摘要，版本校验复用 `libs/semver`。
+
+增量安装使用 begin/write/finish/abort，同一个会话的调用由一个 owner 串行执行。会话持有目录 reservation，其他 task 上的目录操作返回 BUSY；同一 owner 不重入目录操作。finish 只有在声明长度、可选压缩 SHA-256、manifest、全部文件长度与 SHA-256、完整 USTAR 结束块、zlib EOS 均通过后才发布。默认限制为 32 个应用身份、64 个 payload 文件、256 KiB entry、每包 2 MiB payload 和总计 8 MiB 已安装 payload；预装字节不计入安装字节配额。
+
+安装器先写 ordinal staging 文件，再将验证后的文件移到该 ID 的非活动 slot，最后通过 replacing atomic rename 发布总 index。清理前检查两个 slot 的 manifest identity；文件系统将不同 app_id 映射到同一目录时，拒绝该安装并保留已发布的应用。安装器观察到的取消、输入错误和发布失败保留旧版本与独立 KV。传输超时不能证明设备未安装，重新连接后应查询 listing，不能自动重试安装。成功发布后旧 slot 的清理不会把已完成的安装报告为失败。Filesystem 必须提供同步写入及替换式原子 rename；close 错误无法证明句柄是否已被消费时，目录进入终态存储错误并保留自身与借用依赖，禁止自动重试 close 或释放可能仍存活的 backend，需要结束该进程或设备生命周期后恢复。
+
+`h2_lua_apps_uninstall` 按稳定 `app_id` 幂等卸载并保留独立用户存储。它先原子发布目录移除，再按 manifest 清理两个可写版本 slot；目录发布失败保留旧应用，发布后的清理失败使应用保持不可用，重复卸载重试清理。预装文件不可变，目录用 `{"app_id":"demo","removed":true}` 持久隐藏预装身份及其覆盖版本，重启不会恢复；重新安装同 ID 后恢复正常 listing。远程独有身份移出索引并释放应用数与字节预算。只读目录不公布卸载能力；运行 owner 需要协调仍在使用 entry/data_dir 快照的任务。
+
+`h2_lua_apps_get` 返回 caller-owned entry/data_dir 快照，由产品 owner 在自己的运行流程中提交给 Lua Host。安装器不启动 VM，也不切换产品界面。运行中的 owner 应协调应用更新；快照中的安装路径不会在后续更新后永久保留。
+
+Host 可设置 `on_display_present`，在 Display worker 成功完成 PAL present 后观察完整 RGB565 framebuffer。像素与 callback context 均有明确借用生命周期，回调不能保留像素或重入 Host；它可用于摘要/golden 验证，只证明 renderer 与 PAL 接受了该帧，不证明面板光学输出。
+
 ## 嵌入分层与源码包
 
-`//libs/lua:lua_runtime` 是 portable 下层：包含 Lua Core、Host、modules、`//libs/runtime` 和 PAL headers/inline wrappers，以及 Bazel 固定版本的 Lua 5.5、yyjson。下层的平台访问只依赖 PAL interfaces，不能依赖具体 provider、board、SDK 或 `bleikcp`。`//libs/lua:lua_core` 继续只依赖 upstream Lua。`//libs/lua:lua` 保留现有入口；平台组装由现有 firmware、Desktop、Web launcher 或外部 embedder 完成。可选 `//libs/lua:lua_link` 在上层接入 `bleikcp`，不进入 portable 源码包；未启用时仍遵守既有 `link: unavailable` 合同。
+`//libs/lua:lua_runtime` 是 portable 下层：包含 Lua Core、Host、modules、`//libs/trie`、`//libs/runtime` 和 PAL headers/inline wrappers，以及 Bazel 固定版本的 Lua 5.5、yyjson。下层的平台访问只依赖 PAL interfaces，不能依赖具体 provider、board、SDK 或 `bleikcp`。`//libs/lua:lua_core` 继续只依赖 upstream Lua。`//libs/lua:lua` 保留现有入口；平台组装由现有 firmware、Desktop、Web launcher 或外部 embedder 完成。可选 `//libs/lua:lua_link` 在上层接入 `bleikcp`，不进入 portable 源码包；未启用时仍遵守既有 `link: unavailable` 合同。
 
 **PAL vtables 就是 embedding hooks。** Embedder 构造既有 `h2_pal_*_api_t` 的 `user + vtable`，填入 Runtime config；不需要另一套 callback ABI。Runtime 初始化要求完整 API surface，不支持的能力使用 canonical unsupported API object。源码包因此同时带上 `//libs/pal:unsupported` 的 portable 实现，供 embedder 填充默认值；这不会为 `lua_runtime` 增加 provider 依赖。Display、Button、Touch、Audio 可以来自宿主 UI，Memory、Task、Queue、Sync、Time、Timer、Filesystem 可以来自已有 provider 或宿主自己的 C 实现。
 
@@ -357,7 +623,31 @@ Vtable 函数可能从 Runtime input task、Lua worker 或 PAL 自己的线程�
 
 对于只允许异步通知的 UI bridge，C vtable 应复制像素、rect、音频或其他仅在当前调用期间有效的 buffer 到宿主拥有的有界队列，然后按 PAL 合同及时返回。容量不足时返回对应的错误或 backpressure，不能保留借用指针、等待 UI 回调，或虚报实际未接收的数据。需要同步结果的 Memory、Sync、Queue 等服务必须在 native 层实现；单纯的异步 UI callback 不能满足这些 vtable。原有 PAL 的返回值、timeout、partial-write 和生命周期语义保持不变。
 
-Capability 在 `h2_lua_host_start()` 前注册，start 后 registry 冻结。异步 call callback 复制 input/options 和 request ID 后返回 `H2_PAL_ERR_WOULD_BLOCK`；宿主完成工作时调用 `h2_lua_capability_complete()`，由 owning worker 恢复 Lua。Lua 收到既有的 `ok, output, error` 三元组。宿主必须处理 cancel callback，及时释放其排队工作，并在销毁 Host 前停止所有 completion producer；晚到或重复 completion 会被拒绝。`h2_lua_capability_name_at()` 按注册顺序枚举名字，越界返回 `NULL`；名字借用到 Host 销毁，注册/start/destruction 与枚举之间由调用方串行化。
+Capability 在 `h2_lua_host_start()` 前注册，start 后 registry 冻结。异步 call callback 复制 input/options 和 request ID 后返回 `H2_PAL_ERR_WOULD_BLOCK`；宿主完成工作时调用 `h2_lua_capability_complete()`，由 owning worker 恢复 Lua。Lua 收到既有的 `ok, output, error` 三元组。宿主必须处理 cancel callback，及时释放其排队工作，并在销毁 Host 前停止所有 completion producer；晚到或重复 completion 会被拒绝。
+
+Registry 的 `capability_capacity` 由 exact 与 prefix 共用，0 默认 16，上限
+`H2_LUA_CAPABILITY_CAPACITY_MAX` 为 256，超过上限 create 返回
+`H2_PAL_ERR_INVALID_ARG`，注册满时返回 `H2_PAL_ERR_FULL`。Entry 和 route storage
+在 create 时通过 Runtime Memory 分配。名称和 prefix 都复制保存，长度为 1..47
+字节（小于内部 `H2_LUA_NAME_MAX=48`）。256 条最长名称最多需要 12,033 个
+trie node（含 root，约 118 KiB），既支持数百个宿主能力，又限制内存并保持在
+`h2_trie` 的 16 位索引范围内；默认容量不会预留此最大节点空间。
+
+`h2_lua_host_start()` 按 `1 + sum(strlen(name))` 分配 node storage 并用
+`//libs/trie` 的 `h2_trie_build()` 建立 immutable lookup，再启动 worker。
+节点分配失败返回 `H2_PAL_ERR_NO_MEMORY`，Host 仍可 destroy 或重试 start。
+`capability.call()` 通过 `h2_trie_handle()` 选择 entry，不扫描全部注册名称；
+trie 按字节遍历，每层 sibling 搜索由字节字符集限制，不随注册数线性增长。
+
+`h2_lua_register_capability_prefix()` 可以一次注册 `litelink.` 命名空间。
+沿用 trie 原生语义：完整 exact 优先，否则最长 prefix 优先，与注册顺序无关；
+prefix 后必须有非空 remainder，因此 `litelink.` 本身不会命中同名 prefix。
+同一 exact 或同一 prefix 重复注册返回 `H2_PAL_ERR_INVALID_STATE`，相同文本可以
+各注册一次 exact 和 prefix，两者分别占容量。Start 后拒绝注册；调用方须串行化
+registration/start/destruction。Prefix callback 额外收到完整请求名称，借用期仅为
+本次 call；异步工作须复制名称。它复用 exact 的 request、completion、cancel 和
+Lua tuple 路径，unknown name 仍返回 `false, nil, "unknown capability: <name>"`。
+Registry 不提供名称枚举，因为 namespace 注册不是全部可调用名称的清单。
 
 ### 构建与 manifest
 
@@ -371,14 +661,13 @@ bazel query 'deps(//libs/lua:lua_runtime) union deps(//libs/lua:lua_core)'
 bazel query 'filter("//libs/pal/providers/|//libs/bleikcp|//boards/|//native_component_src/", deps(//libs/lua:lua_runtime))'
 ```
 
-`gizos-lua-runtime-src.tar.gz` 根目录包含 `manifest.json` 和 GizOS `LICENSE`，其余 C/H 文件保持 package-relative 路径；external repository 文件放在 `external/<repository>/` 下。文件清单、include dirs、defines 和各 translation unit 的编译参数由 Bazel aspect 从已配置的依赖图生成，不手工复制维护。包使用与 GizOS native build 相同的 Lua source selection 和受限标准库；固件专用 stdio/newlib shim 仍由原 embedded build 配置选择，不把 ESP libc 兼容代码加入 native host。它不包含预编译库、Bazel toolchain、PAL provider 或 board code。
+`gizos-lua-runtime-src.tar.gz` 根目录包含 `manifest.json` 和 GizOS `LICENSE`，其余 C/H 文件保持 package-relative 路径；Lua、TLSF 与 yyjson 的 external repository 文件分别放在稳定的 `third_party/lua/`、`third_party/tlsf/`、`third_party/yyjson/` 下，所有 manifest 路径同步重写。文件清单、include dirs、defines 和各 translation unit 的编译参数由 Bazel aspect 从已配置的依赖图生成，不手工复制维护。包使用与 GizOS native build 相同的 Lua source selection 和受限标准库；固件专用 stdio/newlib shim 仍由原 embedded build 配置选择，不把 ESP libc 兼容代码加入 native host。它包含可移植的 C11 atomic provider，不包含预编译库、Bazel toolchain、PAL provider 或 board code。 新增的 trie C 源码和头文件也随依赖图自动收录。
 
 Manifest schema version 1：
 
 | 字段 | 合同 |
 | --- | --- |
 | `schema_version` | 整数 `1`；consumer 拒绝未知版本 |
-| `gizos_commit` | 源码 revision；开发包为 `@GIZOS_COMMIT@`，发布方必须替换为实际打包源码的 commit |
 | `runtime_profile_id` | 固定为 `runtime.lua.gizos` |
 | `sources` | 所有需编译一次的 `.c`，相对解包根目录 |
 | `include_dirs` | 相对解包根目录的 include search paths |
@@ -387,14 +676,74 @@ Manifest schema version 1：
 | `compilation_units` | 分组的 `sources`、附加 `cflags`、附加 `defines`；各 source 恰好属于一个分组 |
 | `per_os` | OS 名到附加 `link_flags` 的映射；`linux`、`darwin`、`android`、`ios` 的数学库为 `-lm` |
 
-Consumer 对每个 source 应用公共参数及所属分组参数，按自身目标工具链追加 architecture、sysroot、PIC、visibility 和 deployment target，再链接所有 object 与该 OS 的 extras。参数必须逐项传给 compiler，不通过 shell 拼接解析。当前包表达 GCC/Clang C11 编译合同；Windows/MSVC 和 WebAssembly 工具链需单独适配，不由该 manifest 声明支持。Profile ID 标识 Lua surface，不替代 commit pin；不同 revision 的源码、header 和 binding 不应混用。
+Consumer 对每个 source 应用公共参数及所属分组参数，按自身目标工具链追加 architecture、sysroot、PIC、visibility 和 deployment target，再链接所有 object 与该 OS 的 extras。参数必须逐项传给 compiler，不通过 shell 拼接解析。当前包表达 GCC/Clang C11 编译合同；Windows/MSVC 和 WebAssembly 工具链需单独适配，不由该 manifest 声明支持。Profile ID 标识 Lua surface，不替代 content id pin；不同内容的源码、header 和 binding 不应混用。Manifest 不包含 commit、发布版本或 timestamp；`schema_version` 只标识 manifest 格式。
 
-独立测试只依赖 Python 3.11.8+（支持 tar extraction filter）、`cc`/Clang 和 pthread。它在临时目录解包，根据 manifest 编译全部 C sources，链接测试自己填写的 OS、240×240 Display、Touch、`ok`/`back` Button vtables。测试验证 async echo、显示 dirty rect 与全部像素、Runtime push edge 到 Lua callback、pending job cancellation、start 后拒绝注册和 capability 名称枚举。Python runner 不调用 Bazel，也不从 checkout 查找 runtime source；`CC` 可指定兼容 compiler。Bazel test 只是把源码包和 harness 作为测试输入交给同一个 runner。
+独立测试只依赖 Python 3.11.8+（支持 tar extraction filter）、`cc`/Clang 和 pthread。它在临时目录解包，根据 manifest 编译全部 C sources，链接测试自己填写的 OS、240×240 Display、Touch、`ok`/`back` Button vtables。测试验证 async echo、显示 dirty rect 与全部像素、Runtime push edge 到 Lua callback、pending job cancellation、默认/配置容量、exact/prefix 优先级、完整名称传递、重复和 start 后注册拒绝、节点分配失败及重试。Python runner 不调用 Bazel，也不从 checkout 查找 runtime source；`CC` 可指定兼容 compiler。Bazel test 只是把源码包和 harness 作为测试输入交给同一个 runner。
 
 Embedder 执行 App method 时，让主 chunk `return app[method](...)`，等待 job 成功后查询长度、分配宿主 buffer、调用 `h2_lua_job_get_result()` 复制结果，最后 release。Flutter/cgo 都通过同一公开 accessor 读取，不需要私有 native module 转存返回值；复杂值应由 App 显式编码为 JSON 等稳定格式。
 
+### 内容标识与发布下载
+
+Bazel action 为源码包生成 `bazel-bin/libs/lua/runtime_sources.content_id`，内容为完整小写十六进制 SHA-256 加一个 LF。可单独构建 `//libs/lua:runtime_sources_content_id`；构建 `//libs/lua:runtime_sources` 也会生成它。
+
+算法精确定义：枚举包内全部普通文件（包含 `LICENSE` 和 `manifest.json`，不包含目录 entry、tar header、content id sidecar）；路径为相对 archive root 的 POSIX 路径，无 `./` 前缀。按路径的 UTF-8 字节字典序排序，每个文件拼接 `UTF8(path) + 0x00 + ASCII(lowercase_hex(SHA256(file_bytes))) + 0x0a`，再对全部拼接字节计算 SHA-256。路径来自受控 C source graph，不能包含换行、NUL 或绝对路径。哈希输入只包含路径和文件 bytes，故不依赖 mtime、机器、绝对路径、Bazel canonical repository name、commit、timestamp 或 gzip/zlib/rules_pkg 版本；任一文件内容、路径或清单变化都会改变 id。Manifest 自身也是内容，编译参数变化同样改变 id。
+
+本地 archive 名保持 `gizos-lua-runtime-src.tar.gz`，发布 slice 将它复制为 `gizos-lua-runtime-src-<content_id>.tar.gz`，不改写包内任何 bytes，并生成 `.sha256`。这里的 `.sha256` 是压缩 tar 的下载校验值，与未压缩内容的 `content_id` 含义不同；换压缩器可以保持 content id 不变但改变下载 SHA-256/size。
+
+LiteLink 从 [手动 Release 的 metadata](./bazel.md#lua-源码包进入手动-release) 读取 `packages.lua_runtime`，固定 `{url, sha256, size}` 和 `content_id`。URL 使用 `https://github.com/GizClaw/gizos/releases/download/v<release_id>/<file>`，不使用 latest。先检查下载长度和压缩文件 SHA-256，再安全解包并重算 content id；binding 必须匹配包内 headers。Release metadata 的 commit 只用于追溯，不能注入 Lua manifest。LiteLink 在 Flutter App 的原生层提供自己的 PAL 实现。
+
+独立测试可显式传入 sidecar，重算内容标识后继续编译：
+
+```sh
+python3 libs/lua/tests/test_source_package.py bazel-bin/libs/lua/gizos-lua-runtime-src.tar.gz libs/lua/tests/test_embedder.c bazel-bin/libs/lua/runtime_sources.content_id
+```
+
+Bazel test 不递归启动 Bazel。本地发布 slice 的验证命令见 [Lua 源码包进入手动 Release](./bazel.md#lua-源码包进入手动-release)。
+
 ### Flutter 与 cgo
 
-Flutter package 将解包后的源码和 manifest 随包分发，由 native assets build hook 读取 manifest，用 Flutter 选择的每个目标 C toolchain 编译各 translation unit 并链接 native asset；不能依赖 GizOS 的 Bazel archive 或预编译 library。通过 `dart:ffi` 调用现有 Host/Runtime API，native bridge 拥有 PAL objects 和所需的同步 OS 服务；UI 操作通过复制后的消息交给 Dart，再由 Dart 渲染。FFI binding 必须匹配随包 header 的 struct layout 与 callback signatures。
+LiteLink 需要新增原生宿主库和 Dart 桥接。构建环节读取解包后的 manifest，分别用 iOS device/simulator 的 Apple Clang 和 Android 各 ABI 的 NDK Clang 编译每个 translation unit，再与 LiteLink 的原生代码链接；manifest 的公共及分组参数必须逐项传给编译器，目标 SDK、架构、PIC、可见性、deployment target 和系统库由 LiteLink 的目标构建配置提供。不能依赖 GizOS 的 Bazel archive 或预编译 library。
+
+LiteLink 的原生宿主库创建并持有 PAL 对象及其生命周期，负责实现 Runtime 所需的 allocator、任务/同步、时间、文件系统、显示与输入等接口，并把平台能力接到 iOS/Android；发布包自带的 C11 atomic provider 不代替 PAL。Dart 侧通过 `dart:ffi` 调用稳定的 Host/Runtime C API，原生桥接负责线程边界、callback 生命周期和消息复制，UI 操作再交给 Dart 渲染。FFI binding 必须匹配随包 header 的 struct layout 与 callback signatures。LiteLink 当前还没有这套原生构建和桥接，macOS/Linux 的源码包编译测试只验证可移植源码与 manifest，**不证明 iOS/Android 目标已编译或 App 已集成**；移动端验收需由 LiteLink 在真实目标工具链、各 ABI 和 App 启动/调用链上完成。
 
 Go/cgo consumer 同样在自己的构建步骤中读取 manifest，用目标 C compiler 编译包内 sources 与自有 PAL bridge，再把 object/archive 接入 cgo linker。cgo 不会递归编译这些子目录中的 C 文件，也不能忽略不同 source group 的 flags。Go 层通过 C bridge 发起 job、推送输入与完成 capability；PAL `user` 可由 C 分配的 context 或受管理的 opaque handle 表示，不能把生命周期不受控的 Go 指针留给 worker。宿主的 pthread、UI framework 等依赖由上层 bridge 自己声明，不属于 portable runtime manifest。
+
+### Prepared 数值阶段与共享几何
+
+workspace 默认通过 `load` 复制状态；可分发 Lua app 也可以创建标准 f64 numeric buffer，通过 `bind` 明确保留当前与历史位置。绑定后，公共 buffer 写入与 `node` 更新相互可见，绘制直接消费当前位置，无需每子步完整导出。每个 buffer 只能被一个活 workspace 绑定；workspace 强引用保活 buffer，弱 owner 记录不阻止 workspace 回收。重新绑定重置活动拓扑、lambda、span 与 sweep；成功 `load` 安全复制后退出绑定，失败保留旧状态。各阶段继续使用私有暂存区和原子提交；绑定状态不能同时作为阶段系数、bounds、mobility 或 `copy` 输出。`multipliers` 只返回选定边与 span 的数学结果，张力、出线与游戏规则仍由 Lua 解释。
+
+`vmath.constraints` 提供固定容量、VM 计费的阶段 workspace。`load/begin` 明确重置 lambda 与交替 sweep 次序；`integrate` 执行调用方提供的两级 gain 和增量，`node/edge/span` 只读取或更新明确的状态，`solve` 每轮依次执行边、span、位置 bounds，`damp` 执行邻居位移和有序轴向阻尼。Lua 在 integration 之后执行依赖端点的应用规则。每个阶段独立原子提交，失败不撤销上一成功阶段，也不清空已有 lambda。完整参数、范围、两浮点补偿与 float 位移规则以 [numeric production header 生成的 API](../../references/lua.md) 为准。
+
+`geometry.rotations` 只保存调用方给出的段、权重和旋转轴；端点 reduction 在明确误差域内使用 18 moments/17 次多项式，域外执行完整循环。它不生成形状、权重函数或受力模型。`geometry.batch` 保存不可变二维顶点、拓扑和两个可选位移权重通道；`geometry.pose` 保存按原顺序计算的变形、旋转、缩放、平移和可选参数化平面透视结果。缓存键含全部 evaluate 输入与不可变 geometry，位于 layer/color 之前，应用自行决定共享时机。
+
+`display.draw_pose` 直接消费 pose，通过既有 polygon/line raster 绘制。`display.polyline` / `compile_line_style` / `draw_polyline` 保留源段身份、方向、共享端点投影、严格异号切分及近裁剪。颜色在原始端点求值，先 RGB888 插值和 floor，再转 RGB565；触平面及共面段用调用方显式提供的 boundary style。点、camera、plane、order 或 style 改动会重新准备 transient fragments，不保留可过期的跨 draw 投影缓存。各 draw 的 clip、layer、颜色只影响本次重绘，不使已发布的 pre-layer pose 失效。完整绘制参数与相机布局见 [Display API](../../references/lua.md)。
+
+这些对象及 scratch 均由 VM userdata 持有，成功暖调用不分配或逐元素回调 Lua；构造失败与 GC/VM teardown 回收所有引用。绘制在参数解析后重新检查 Display acquisition，完整验证最终坐标和样式后才写像素，并沿用 dirty/background bookkeeping；不会隐式 present。游戏状态、标量受力方程、材质转换、形状通道生成、相机 recipe、层语义和采样时钟仍属于可分发 Lua app。公共功能只做原始算法拆分；实机逐阶段帧率对齐属于下游成对验证，Host/Web 测试不能代替。
+
+Prepared workspace 的 `displacements` 将指定范围的 double 位置差在相减后转成 f32，写入可复用的 packed xyz 输出前缀。`displacement-f32` 积分的 before/gain0/gain1 可分别使用 f32 或 f64，mobility/after/bounds 保持 f64；环境分支及系数公式仍由 Lua 决定。显式 `vmath.length3_refined` 使用原版 float 开方种子与一次 double 修正，适用范围、误差与 fallback 见 numeric Public Header；不改变原有 `length3` 或 `normalize3`。
+
+库内绘制回归使用通用生成输入和独立参考算法：`material_strip.lua` 覆盖 strip 与空面，`quad_material_projective.lua` 覆盖透视映射和 Q24 边界，`raster_workload.lua` 覆盖多边形与直线。完整应用姿态、玩法和整帧序列由消费仓库验证；公共测试不保存第二份游戏回放数据。默认测试保留正确性所需的完整回调次数，计时通过 `lua_test --strip-benchmark`、`--projective-benchmark`、`--primitive-benchmark` 等显式入口执行；脚本和 VM 的既有限额不因测试合并而放宽。
+
+## 单在途 Display 提交原型
+
+所有 target（含 Web）的 Display 都使用公共显示 worker，没有同步后端模式或启用开关。首次 `require("display")` 获取 Display 时创建 `$lua/display` 任务，未使用 Display 的 Job 不创建显示任务。`present/end_frame` 仍等待当前帧完成；`submit/flush/status` 提供单在途异步提交，完整合同以 `h2_lua_display.h` 为准。
+
+默认 `//libs/lua` / `:lua_runtime` 的任务清单包含 `$lua/worker` 和 `$lua/display`，下层 Runtime 的既有任务清单不变。消费目标必须为 `$lua/display` 配置核、优先级、栈和内存区域，或审查预算后显式填写 `default`；缺失策略仍由原有 task-policy audit 拒绝。源码包包含同一实现，非 Bazel embedder 提供 PAL Task、Sync semaphore、Time 和 Display，并负责自己的任务预算。Host 零初始化配置即可使用 worker，`display_worker_stack_size` 只调整栈预算。
+
+Host 支持多个 Job，但同时只允许一个 Job 获取 Display，竞争获取返回 busy；成功 `deinit` 或 checked release 后其他 Job 可重新获取。这个占用保护不能协调其他 Host、Runtime 和直接 PAL/UI writer，调用方必须先排空并暂停这些外部访问。后端必须允许串行移交到一个任务，且成功的 draw/present 必须完成传输。open/info/draw/present/close 在同一提交任务执行；`borrow_display` 保留不调用 PAL open/close 的合同。
+
+Display 只持有两份全屏 RGB565 像素：Lua 绘制缓冲 A 与 worker 发送缓冲 B。规划在发布前比较 A 与上次成功的 B；worker 先按最终计划把 A 复制到 B，保持原始行 stride，然后发布复制交接完成并通过 PAL 发送 B。`submit` 等待复制交接，随后 Lua 可以继续绘制 A，与 B 的传输并行；它不等待传输完成。首次发送缓冲分配期间的 finalizer 重入提交返回 busy，避免再分配另一份全屏 B；OOM 会先清除这个准备保护再抛出错误，释放其他内存后可正常重试。B 完整传输成功后直接兼任 retained baseline，回执不再复制整帧或清除下一帧 dirty 状态。首帧或基线失效仍全帧复制，无变化帧不复制像素；没有第三份全屏快照。完整 tile 位图在复制、传输阶段分别遍历，超过矩形容量也不截断。
+
+提交最多有一个未完成帧，包括复制与传输阶段；busy 由 Lua 调用方通过 `runtime.sleep()` 后重试，没有额外排队帧。发送缓冲 B、mailbox 和有界计划使用 VM userdata，受 `vm_memory_limit_bytes` 与共享 VM 堆约束。240×240 RGB565 两份像素合计 230400 字节：获取时由 Host allocator 分配 A，首次提交（包括 `present`）只增加一份 115200 字节的 VM 计费 B 加元数据。这里不包含应用主动创建的背景/区域缓存或驱动自己的 DMA 缓冲。PAL Task/Atomic/Sync 的内部资源属于平台预算，不冒充 VM charge。`display_worker_stack_size` 默认请求 8192 字节，实际栈还受 target policy 下限影响。新增 `$lua/display` 任务必须在消费目标的 task policy 声明核、优先级、栈与内存区域，并实测总峰值及连续空闲块；库不修改驱动、SDK 或编译参数。
+
+`deinit`、job release 和 Host join 在帧传输未完成时返回 busy，保留 VM 引用和所有权，调用方稍后重试。关闭请求通过同一 worker 执行；随后 PAL join 可等待退出或返回 busy，成功后才释放占用和缓冲区。`h2_lua_host_destroy_checked()` 只有成功才释放 Host；失败后不能销毁 Runtime 或恢复借用 Display 的 UI。兼容的 void destroy 也保留失败对象，但调用方必须使用 checked 入口判断释放是否完成。PAL 错误会锁存并停止新提交；唤醒或复制交接等待失败不能证明 worker 已停止读取 A，因此同时冻结绘制并保留两份缓冲。提交任务退出后可 join，但不会在不确定设备状态下自动 close/open 或重试。该原型没有解除故障隔离的 API：fault 后保留 Host/VM/device lease，消费端须维持依赖并走其外部恢复或进程重启流程。PAL 的无限等待可能令同步调用或任务无法退出；软件 busy 不意味着已取消硬件，不能强删任务后 free。
+
+帧率只用成功且像素变化的完成记录计算；submitted、无变化 submit 和失败都不能计为变化帧 FPS。时间是 PAL monotonic transport 完成时间，不是面板 scanout；Web 的传输完成也不证明浏览器已合成到屏幕。观察者不能并发读取 worker 正在更新的普通 64 位字段，应消费 `status/flush` 发布的完成记录。已提交的同源消费例位于 `libs/lua/tests/display_submit.lua`，由 native worker 和 `projects/example/targets/pkg_tar/lua-script-submit` 的浏览器测试共同运行。
+
+Host 回归可直接编译生产目录、GizClaw handler 和 Desktop PAL，运行包校验、卸载、持久化、故障恢复及 stream 测试：
+
+```sh
+python3 libs/lua/apps/tests/run_host_tests.py --yyjson-dir /path/to/yyjson/src --gizclaw-dir /path/to/gizclaw --sanitize
+```
+
+`gizclaw` checkout 应包含生成的 C contract 与已初始化的 pinned nanopb submodule。该验证使用 Host PAL；真机 Golden E2E 另行验证下载、显示与产品任务生命周期。

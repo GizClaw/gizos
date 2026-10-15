@@ -1,0 +1,483 @@
+{
+  "platform": "bk7258_v3_202405",
+  "target": "bk7258",
+  "status": "FAIL",
+  "qualified": false,
+  "artifact": {
+    "source_commit": "decc30e11d2863081cb78e8789a51bbc81e3b6a0",
+    "source_dirty": false,
+    "manifest": {
+      "format": "1",
+      "role": "app",
+      "board": "bk7258_v3_202405",
+      "target": "bk7258",
+      "version": "mqtt-bk-decc30e1-r5",
+      "image_size": "5222400",
+      "image_sha256": "61904d866c146b6d6ff4efa6cd8110182156cb2061174e24a0117ad7000298d3"
+    },
+    "package_sha256": "69b313789d6031cf9ac386f659d9b3b314a4e259884887c088bf655f53cba8e4",
+    "fixture_inputs": {
+      "bind": "192.168.31.151",
+      "advertised": "192.168.31.151",
+      "tcp_port": 60706,
+      "tls_port": 60707,
+      "session_prefix": "d80f4d5456944c82b95899aa6514ab3e",
+      "epoch_ms": 1791113114684,
+      "ca_sha256": "303a5fe5e4a49d6f1d78295718d37609e33f761110ef528088dc1c62d3f597a1",
+      "wrong_ca_sha256": "0c20478b0a0d9ac72669f064493e0db9e7aab2dcf5550c7793a2324f6236cbf0",
+      "bazelrc_sha256": "c69df09b1a36f43666a7a4ade07c10f4198cc56b28344e8889b03db4c26b2c17",
+      "tls_handshake_timeout_seconds": 15.0
+    },
+    "build_label": "//projects/e2e/targets/h2loader_tar_zlib/pal-mqtt/bk7258_v3_202405:package"
+  },
+  "execution": {
+    "id": "d80f4d5456944c82b95899aa6514ab3e-6f2cfc6582633845",
+    "version": "mqtt-bk-decc30e1-r5",
+    "epoch_ms": "1791113114684",
+    "ca_sha256": "303a5fe5e4a49d6f1d78295718d37609e33f761110ef528088dc1c62d3f597a1"
+  },
+  "cases": [
+    {
+      "id": "open-close",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 61,
+      "connected": 0,
+      "received": 0,
+      "disconnected": 0
+    },
+    {
+      "id": "invalid-open-host",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 6,
+      "connected": 0,
+      "received": 0,
+      "disconnected": 0
+    },
+    {
+      "id": "invalid-open-buffer",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 19,
+      "connected": 0,
+      "received": 0,
+      "disconnected": 0
+    },
+    {
+      "id": "invalid-open-tls",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 52,
+      "connected": 0,
+      "received": 0,
+      "disconnected": 0
+    },
+    {
+      "id": "disconnected-operations",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 31,
+      "connected": 0,
+      "received": 0,
+      "disconnected": 0
+    },
+    {
+      "id": "connect-events",
+      "status": "FAIL",
+      "detail": -4,
+      "line": 239,
+      "elapsed_ms": 200,
+      "connected": 0,
+      "received": 0,
+      "disconnected": 0
+    },
+    {
+      "id": "repeated-connect",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 50,
+      "connected": 1,
+      "received": 0,
+      "disconnected": 1
+    },
+    {
+      "id": "subscribe-qos0",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 77,
+      "connected": 1,
+      "received": 0,
+      "disconnected": 1
+    },
+    {
+      "id": "subscribe-qos1",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 82,
+      "connected": 1,
+      "received": 0,
+      "disconnected": 1
+    },
+    {
+      "id": "subscribe-multi",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 151,
+      "connected": 1,
+      "received": 2,
+      "disconnected": 1
+    },
+    {
+      "id": "publish-qos0",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 151,
+      "connected": 1,
+      "received": 1,
+      "disconnected": 1
+    },
+    {
+      "id": "publish-qos1",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 186,
+      "connected": 1,
+      "received": 1,
+      "disconnected": 1
+    },
+    {
+      "id": "publish-binary",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 83,
+      "connected": 1,
+      "received": 1,
+      "disconnected": 1
+    },
+    {
+      "id": "publish-empty",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 76,
+      "connected": 1,
+      "received": 1,
+      "disconnected": 1
+    },
+    {
+      "id": "publish-large",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 76,
+      "connected": 1,
+      "received": 1,
+      "disconnected": 1
+    },
+    {
+      "id": "input-lifetime",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 94,
+      "connected": 1,
+      "received": 1,
+      "disconnected": 1
+    },
+    {
+      "id": "unsubscribe-ack",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 230,
+      "connected": 1,
+      "received": 0,
+      "disconnected": 1
+    },
+    {
+      "id": "retained-delivery",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 60,
+      "connected": 1,
+      "received": 1,
+      "disconnected": 1
+    },
+    {
+      "id": "idle-process",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 108,
+      "connected": 1,
+      "received": 0,
+      "disconnected": 1
+    },
+    {
+      "id": "invalid-qos",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 58,
+      "connected": 1,
+      "received": 0,
+      "disconnected": 1
+    },
+    {
+      "id": "invalid-publish",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 48,
+      "connected": 1,
+      "received": 0,
+      "disconnected": 1
+    },
+    {
+      "id": "invalid-subscribe",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 58,
+      "connected": 1,
+      "received": 0,
+      "disconnected": 1
+    },
+    {
+      "id": "invalid-unsubscribe",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 51,
+      "connected": 1,
+      "received": 0,
+      "disconnected": 1
+    },
+    {
+      "id": "local-disconnect",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 48,
+      "connected": 1,
+      "received": 0,
+      "disconnected": 1
+    },
+    {
+      "id": "reconnect",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 157,
+      "connected": 2,
+      "received": 1,
+      "disconnected": 2
+    },
+    {
+      "id": "authenticated",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 44,
+      "connected": 1,
+      "received": 0,
+      "disconnected": 1
+    },
+    {
+      "id": "auth-refused",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 39,
+      "connected": 0,
+      "received": 0,
+      "disconnected": 0
+    },
+    {
+      "id": "tls-trusted",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 13744,
+      "connected": 1,
+      "received": 1,
+      "disconnected": 1
+    },
+    {
+      "id": "tls-untrusted",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 47,
+      "connected": 0,
+      "received": 0,
+      "disconnected": 0
+    },
+    {
+      "id": "tls-wrong-name",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 53,
+      "connected": 0,
+      "received": 0,
+      "disconnected": 0
+    },
+    {
+      "id": "connect-timeout",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 2085,
+      "connected": 0,
+      "received": 0,
+      "disconnected": 0
+    },
+    {
+      "id": "remote-disconnect",
+      "status": "FAIL",
+      "detail": -4,
+      "line": 239,
+      "elapsed_ms": 47,
+      "connected": 0,
+      "received": 0,
+      "disconnected": 0
+    },
+    {
+      "id": "qos-capacity",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 279,
+      "connected": 1,
+      "received": 0,
+      "disconnected": 1
+    },
+    {
+      "id": "callback-close",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 137,
+      "connected": 1,
+      "received": 1,
+      "disconnected": 0
+    },
+    {
+      "id": "repeated-lifecycle",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 2743,
+      "connected": 21,
+      "received": 20,
+      "disconnected": 21
+    },
+    {
+      "id": "keepalive-timeout",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0,
+      "elapsed_ms": 1159,
+      "connected": 1,
+      "received": 0,
+      "disconnected": 1
+    }
+  ],
+  "summary": {
+    "selected": 36,
+    "passed": 34,
+    "failed": 2,
+    "blocked": 0,
+    "cleanup": -4,
+    "rc": -4,
+    "before": [
+      2,
+      98304,
+      4,
+      2,
+      0,
+      0,
+      0,
+      1,
+      25,
+      51916
+    ],
+    "after": [
+      2,
+      98304,
+      4,
+      2,
+      0,
+      0,
+      0,
+      1,
+      24,
+      51460
+    ]
+  },
+  "failed_cases": [
+    {
+      "id": "connect-events",
+      "status": "FAIL",
+      "detail": -4,
+      "line": 239,
+      "elapsed_ms": 200,
+      "connected": 0,
+      "received": 0,
+      "disconnected": 0
+    },
+    {
+      "id": "remote-disconnect",
+      "status": "FAIL",
+      "detail": -4,
+      "line": 239,
+      "elapsed_ms": 47,
+      "connected": 0,
+      "received": 0,
+      "disconnected": 0
+    }
+  ],
+  "fixture_inputs": {
+    "bind": "192.168.31.151",
+    "advertised": "192.168.31.151",
+    "tcp_port": 60706,
+    "tls_port": 60707,
+    "session_prefix": "d80f4d5456944c82b95899aa6514ab3e",
+    "epoch_ms": 1791113114684,
+    "ca_sha256": "303a5fe5e4a49d6f1d78295718d37609e33f761110ef528088dc1c62d3f597a1",
+    "wrong_ca_sha256": "0c20478b0a0d9ac72669f064493e0db9e7aab2dcf5550c7793a2324f6236cbf0",
+    "bazelrc_sha256": "c69df09b1a36f43666a7a4ade07c10f4198cc56b28344e8889b03db4c26b2c17",
+    "tls_handshake_timeout_seconds": 15.0
+  },
+  "peer_full_witness_verified": false,
+  "tls_trusted_round_trip": {
+    "connect": 1,
+    "subscribe": 1,
+    "ping": 1,
+    "publish": 1,
+    "disconnect": 1
+  },
+  "raw_log_sha256": "9846f16d4692c367be4b3b9f2510de62d6a426797374c18af8a1dc951e5a121d",
+  "raw_evidence_directory": "/Users/idy/.codex/task-evidence/pal-pref-mqtt-platforms-20261004/mqtt-bk-r5",
+  "host_verifier_sha256": "00ff59aa9a89b02c57c93de4d2afa80002ec383cb5c4f77872f94d95a1d10d94",
+  "limitations": [
+    "A successful broker round trip alone cannot qualify mandatory ledger or preservation gates.",
+    "Resource counters decreased by one allocation/456 bytes; this is an unbalanced baseline, not demonstrated leakage.",
+    "Earlier r2/r3 trusted TLS IO failures and r4 missing live BOOT capture are preserved separately; root cause is not established."
+  ]
+}

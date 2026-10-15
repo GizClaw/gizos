@@ -10,6 +10,7 @@ cc_library(
         "src/h2_bundle_installer.c",
         "src/h2_bundle_manifest.c",
         "src/h2_bundle_path.c",
+        "src/h2_bundle_segmented.c",
         "src/h2_bundle_tar.c",
         "src/h2_bundle_types.c",
     ],
@@ -19,6 +20,7 @@ cc_library(
         "include/h2_bundle_installer.h",
         "include/h2_bundle_manifest.h",
         "include/h2_bundle_path.h",
+        "include/h2_bundle_segmented.h",
         "include/h2_bundle_tar.h",
         "include/h2_bundle_types.h",
     ],
@@ -68,6 +70,20 @@ cc_test(
         "src",
         "tests",
     ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":bundle"],
+)
+
+cc_test(
+    name = "bundle_segmented_test",
+    srcs = ["tests/test_bundle_segmented.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],

@@ -38,10 +38,15 @@ typedef struct h2_ntp_client_config {
 } h2_ntp_client_config_t;
 
 typedef struct h2_ntp_sync_result {
+    /** Server transmit time in the era resolved by the request reference. */
     uint64_t server_unix_ms;
     uint64_t local_receive_monotonic_ms;
+    /** Applied receive-time estimate, or zero when no clock was set. */
     uint64_t applied_wall_ms;
+    /** Local monotonic elapsed time minus server processing time, clamped at zero. */
     uint32_t round_trip_ms;
+    /** Correction from the local receive reference. On an uncalibrated clock
+     * this is relative to the synthetic monotonic reference, not UTC clock error. */
     int64_t offset_ms;
     uint8_t wall_clock_set;
 } h2_ntp_sync_result_t;
@@ -55,6 +60,19 @@ int h2_ntp_parse_response(
     uint64_t local_receive_wall_ms,
     uint64_t local_receive_monotonic_ms,
     h2_ntp_sync_result_t *out_result);
+/**
+ * Synchronize against the configured UDP server, with bounded per-attempt
+ * receive waits. On an uncalibrated clock, monotonic milliseconds supply the
+ * synthetic Unix-valued request/receive reference; they are never set as UTC.
+ * The existing packet decoder selects the nearest nonnegative Unix candidate
+ * among adjacent NTP eras, choosing the earlier candidate on a tie. Ordinary
+ * boot uptimes select the first post-1970 occurrence (including the 2036
+ * rollover); indistinguishable later-era replies are folded by this policy.
+ * An already calibrated clock provides the date reference for later eras.
+ * Other clock-provider errors do not start network traffic.
+ * If set_wall_clock is nonzero, success requires setting the caller's clock;
+ * an unsupported setter returns H2_NTP_OK_TIME_SET_UNSUPPORTED instead.
+ */
 int h2_ntp_sync(const h2_ntp_client_config_t *config, h2_ntp_sync_result_t *out_result);
 
 #ifdef __cplusplus

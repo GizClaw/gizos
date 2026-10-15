@@ -11,10 +11,21 @@
 /* Run the production firmware case with API/HTTP boundary doubles, not a
  * server. The real SHA-256 implementation must verify the downloaded bytes. */
 static unsigned mode, releases, cancels, http_calls, response_frees;
-static unsigned budgets, creates, rpcs, assertions;
+static unsigned budgets, creates, rpcs, assertions, jobs;
+static bool in_job;
 static int request_token, service_token;
 static h2_app_test_mem_t allocator;
 static h2_app_test_time_t clock;
+int h2_gizclaw_e2e_fixture_call_sync(h2_gizclaw_e2e_fixture_t *f,
+                                    h2_gizclaw_service_t *service,
+                                    int (*fn)(void *), void *ctx) {
+  assert(f != NULL && service == (h2_gizclaw_service_t *)&service_token && fn != NULL);
+  ++jobs;
+  in_job = true;
+  int rc = fn(ctx);
+  in_job = false;
+  return mode == 21 ? H2_PAL_ERR_IO : rc;
+}
 bool h2_gizclaw_e2e_fixture_has_time(const h2_gizclaw_e2e_fixture_t *f,
                                      uint32_t ms) {
   assert(f != NULL && ms == 15000);
@@ -96,7 +107,9 @@ static int http_request(void *user, const h2_pal_http_request_t *req,
                         h2_pal_http_response_t *response) {
   (void)user;
   ++http_calls;
+  assert(in_job);
   assert(req->method == H2_PAL_HTTP_GET && req->retry_count == 0);
+  assert(req->timeout_ms == (mode == 24 ? 300000u : 99900u));
   assert(strcmp(req->url.data, "https://example.invalid/firmware") == 0);
   if (h2_pal_http_request_is_canceled(req))
     return H2_PAL_ERR_CLOSED;
@@ -107,6 +120,8 @@ static int http_request(void *user, const h2_pal_http_request_t *req,
   const uint8_t *body = (const uint8_t *)(mode == 5 ? "abd" : "abcd");
   const size_t len = mode == 6 ? 2 : mode == 7 ? 4 : 3;
   int rc = req->read_cb(req->user, req, body, 1, 1, len - 1);
+  if (mode == 20 || mode == 22)
+    assert(h2_app_test_time_advance(&clock, mode == 20 ? 41000u : 100000u) == H2_PAL_OK);
   return rc == H2_PAL_OK
              ? req->read_cb(req->user, req, body + 1, len - 1, len, 0)
              : rc;
@@ -120,28 +135,37 @@ static const h2_pal_http_vtable_t http_vt = {.request = http_request,
                                              .response_free = http_free};
 static const h2_pal_http_api_t http = {.vtable = &http_vt};
 int main(void) {
-  for (mode = 0; mode < 20; ++mode) {
+  for (mode = 0; mode < 25; ++mode) {
     h2_app_test_mem_init(&allocator, NULL);
     allocator.fail_at = mode == 9 ? 1u : 0u;
     h2_app_test_time_init(&clock, 100u);
     allocator.live_blocks = releases = cancels = http_calls = response_frees = 0;
-    budgets = creates = rpcs = assertions = 0;
+    budgets = creates = rpcs = assertions = jobs = 0;
     h2_gizclaw_e2e_config_t config = {0};
     h2_gizclaw_e2e_fixture_t fixture = {.config = &config,
                                         .allocator = &allocator.api,
                                         .http = &http,
                                         .time = &clock.api,
-                                        .deadline_ms = 100000,
+                                        .deadline_ms = mode == 23 ? 100u :
+                                                       mode == 24 ? 1000000u : 100000u,
                                         .cancel_requested = mode == 8};
     fixture.actors[H2_GIZCLAW_E2E_OWNER].service =
         (h2_gizclaw_service_t *)&service_token;
     int rc = h2_gizclaw_e2e_run_firmware(&fixture);
-    assert((rc == H2_PAL_OK) == (mode == 0));
+    assert((rc == H2_PAL_OK) == (mode == 0 || mode == 20 || mode == 24));
     assert(allocator.live_blocks == 0 && response_frees == http_calls);
     assert(releases == (mode == 10 || mode == 12 ? 0u : 1u));
     assert(cancels == (mode >= 13 && mode <= 15 ? 1u : 0u));
-    if (mode == 0)
+    if (mode == 0 || mode == 20 || mode == 24) {
       assert(creates == 1 && rpcs == 1 && assertions == 2 && http_calls == 1);
+      assert(jobs == 1u);
+    }
+    if (mode == 21)
+      assert(rc == H2_PAL_ERR_IO && jobs == 1u);
+    if (mode == 22)
+      assert(rc == H2_PAL_ERR_CLOSED && jobs == 1u);
+    if (mode == 23)
+      assert(rc == H2_PAL_ERR_TIMEOUT && http_calls == 0u && jobs == 1u);
     if (mode <= 3 && mode != 0)
       assert(http_calls == 0);
   }

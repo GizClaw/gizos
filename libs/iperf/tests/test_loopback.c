@@ -117,8 +117,19 @@ static void run_scenario(const scenario_t *scenario) {
         assert(receiver->lost_packets * 2 <= (int64_t)sender->packets);
         assert(receiver->packets + (uint64_t)receiver->lost_packets <= sender->packets);
         if (scenario->bitrate_bps != 0u) {
-            uint64_t bps = h2_iperf_stats_bits_per_second(sender);
-            assert(bps <= scenario->bitrate_bps + scenario->bitrate_bps / 5u);
+            /* The pacer sends a datagram only while the bits already sent fit
+             * the elapsed time, so at most one datagram runs ahead of the
+             * rate. duration_ms truncates the elapsed time, which is shorter
+             * than duration_ms + 1: a 3005-byte budget that ends at 2.9 ms
+             * reports 2 ms and a 12 Mbit/s rate against 8 Mbit/s. Bound the
+             * bytes by that contract instead of dividing by the truncated
+             * duration. */
+            uint64_t datagram = scenario->block_len != 0u
+                ? scenario->block_len
+                : H2_IPERF_DEFAULT_UDP_BLOCK_LEN;
+            uint64_t allowed_bits =
+                scenario->bitrate_bps * ((uint64_t)sender->duration_ms + 1u) / 1000u;
+            assert(sender->bytes * 8u <= allowed_bits + datagram * 8u);
         }
     }
     if (scenario->protocol == H2_IPERF_PROTOCOL_SCTP) {

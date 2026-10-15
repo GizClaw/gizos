@@ -7,12 +7,12 @@ APP 和 Loader 使用同一个 Stage 实现。当前运行 APP 时，Host 可以
 1. Host 发布 `role=app` 的 Stage。
 2. Host 执行 `h2loader reboot upgrade`。
 3. Partition 1 Loader 在 `boot_intent=AUTO` 下重新验证 DL 文件、package SHA-256、manifest 与 Stage metadata。
-4. 在写 Partition 2 之前提交 `partition_2.valid=false`。
-5. 完整写入并校验 APP image。
+4. 分别比较目标 APP 实际 SHA-256 和已安装 data checksum。需要重写 APP 时，在写 Partition 2 之前提交 `partition_2.valid=false`；data-only 更新不使未变化的 APP invalid。
+5. 只写入并校验变化的 APP/data。Format 2 直接跳过未变化的独立压缩段；变化段边解压边写入，并验证 raw/canonical checksum。Data 失败不保存新 `.checksum`。Format 1 保持流式解码与写入跳过逻辑；两部分都未变化时省略安装遍历。
 6. 将 Stage identity 复制到 Partition 2 metadata，最后提交 `partition_2.valid=true`。
 7. 选择 Partition 2 并重启。选择只让新 APP 试运行一次；确认前复位或崩溃即回到 Loader。
 
-写入失败时 Partition 2 保持 invalid，Loader 留在 Partition 1，并记录 `last_result`；下次 AUTO 从头重写，不做字节级续写。
+APP 写入失败时 Partition 2 保持 invalid，Loader 留在 Partition 1，并记录 `last_result`；下次 AUTO 按当前 checksum 从头重写变化部分，不做字节级续写。Data-only 安装失败保留未变化 APP 的有效 identity，但 Stage 保留，AUTO 留在 Loader 供重试；旧 data checksum 已移除。
 
 ## APP 启动后的 Stage 收尾
 

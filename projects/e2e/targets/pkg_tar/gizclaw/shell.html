@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>GizClaw qualification</title>
+<h1>GizClaw qualification</h1><canvas id="canvas" width="1" height="1" hidden></canvas>
+<pre id="ledger"></pre>
+<script>
+const append = text => {
+  document.getElementById('ledger').textContent += text + '\n';
+  console.log(text);
+};
+var Module = {
+  canvas: document.getElementById('canvas'),
+  print: append, printErr: append, arguments: [],
+  preRun: [() => {
+    addRunDependency('fixture');
+    Promise.all([fetch('/fixture.json').then(r => r.json()),
+      fetch('/voice.pcm').then(r => r.arrayBuffer())]).then(([fixture, pcm]) => {
+        Module.arguments.push(fixture.endpoint, fixture.token, fixture.api_url, fixture.audio_url);
+        FS.writeFile('/voice.pcm', new Uint8Array(pcm));
+        removeRunDependency('fixture');
+      }).catch(() => append('H2_GIZCLAW_FIXTURE_LOAD_FAILED'));
+  }],
+  onExit: status => append('H2_GIZCLAW_PROCESS_EXIT ' + status),
+};
+</script>
+{{{ SCRIPT }}}
+</html>

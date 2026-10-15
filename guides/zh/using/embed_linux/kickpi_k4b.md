@@ -123,7 +123,7 @@ touch_bin=$PWD/bazel-bin/projects/example/targets/cc_binary/touch/kickpi_k4b/tou
   'chmod 0755 /tmp/h2-touch/touch; exec /tmp/h2-touch/touch'
 ```
 
-看到 ready marker 后，先触摸 viewport 四角和中心。Provider 把 driver 报告的 X/Y minimum 映射为 `(0, 0)`，maximum 映射为 `(1023, 599)`，中点映射为 `(floor((raw_x-min_x)*1023/(max_x-min_x)), floor((raw_y-min_y)*599/(max_y-min_y)))`；超出 source range 的值分别 clamp 到对应边界。K4B 不交换或反转 axis，因此左上、右上、左下、右下和中心实际触点必须分别落在 `(0,0)`、`(1023,0)`、`(0,599)`、`(1023,599)` 和约 `(511,299)`，允许手指接触面积造成的小范围偏差，但不能出现翻转、旋转或非线性缩放。确认红色 marker、屏幕坐标与 stderr 中的 `Touch down/up x=... y=...` 一致后，再在屏幕中央蓝色按钮上完成一次短按和一次按住超过 1 秒的长按。两次按压都必须按序记录 `event=down`、`event=up`、`event=action`，按住期间不能出现任何 event；Runtime 不定义长按阈值，长按只体现为 action 的 `pressed_at_ms`/`released_at_ms` 间隔。屏幕计数与 stderr log 必须一致。缺少任一 ABS axis 或 source range 退化时，Touch open 必须以 `H2_PAL_ERR_UNSUPPORTED` 失败，不能假设 source range 等于 viewport。
+看到 ready marker 后，先触摸 viewport 四角和中心。Provider 把 driver 报告的 X/Y minimum 映射为 `(0, 0)`，maximum 映射为 `(1023, 599)`，中点映射为 `(floor((raw_x-min_x)*1023/(max_x-min_x)), floor((raw_y-min_y)*599/(max_y-min_y)))`；超出 source range 的值分别 clamp 到对应边界。K4B 不交换或反转 axis，因此左上、右上、左下、右下和中心实际触点必须分别落在 `(0,0)`、`(1023,0)`、`(0,599)`、`(1023,599)` 和约 `(511,299)`，允许手指接触面积造成的小范围偏差，但不能出现翻转、旋转或非线性缩放。确认红色 marker、屏幕坐标与 stderr 中的 `Touch down/up x=... y=...` 一致后，再在屏幕底部蓝色按钮上完成一次短按和一次按住超过 1 秒的长按。两次按压都必须按序记录 `event=down`、`event=up`、`event=action`，按住期间不能出现任何 event；Runtime 不定义长按阈值，长按只体现为 action 的 `pressed_at_ms`/`released_at_ms` 间隔。屏幕计数与 stderr log 必须一致。缺少任一 ABS axis 或 source range 退化时，Touch open 必须以 `H2_PAL_ERR_UNSUPPORTED` 失败，不能假设 source range 等于 viewport。
 
 用 `SIGTERM` 正常停止并确认 stopped marker，再删除临时目录。恢复 service 时只能恢复操作前实际 active 的 owner，不能默认启动某个 App。
 

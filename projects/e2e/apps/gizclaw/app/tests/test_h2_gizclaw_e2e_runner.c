@@ -37,8 +37,8 @@ int h2_gizclaw_e2e_fixture_connect_actors(h2_gizclaw_e2e_fixture_t *fixture,
                                           size_t count) {
   /* The full catalog selects Connectivity then Service; the dedicated
    * catalog runs Connectivity again during the failed-teardown probe. */
-  const size_t expected = h2_gizclaw_e2e_case_count == 8u && s_connected == 1u
-                              ? 1u : 2u;
+  const size_t expected =
+      h2_gizclaw_e2e_case_count == 10u && s_connected == 1u ? 1u : 2u;
   assert(fixture != NULL && count == expected);
   ++s_connected;
   return H2_PAL_OK;
@@ -80,18 +80,52 @@ CASE(run_connectivity)
 CASE(run_rpc)
 CASE(run_resource)
 CASE(run_device)
+CASE(run_fence)
 CASE(prepare_device)
+CASE(prepare_lua_apps)
+CASE(run_lua_apps)
 CASE(run_firmware)
 CASE(prepare_voice)
-CASE(run_voice)
+CASE(run_session_cancel)
 CASE(run_concurrency)
 CASE(run_service)
 #undef CASE
 
+static unsigned s_voice_runs, s_voice_reconnects;
+static bool s_voice_failure, s_reconnect_failure;
+int h2_gizclaw_e2e_run_voice(h2_gizclaw_e2e_fixture_t *fixture) {
+  ++s_voice_runs;
+  assert(fixture->use_session == (s_voice_runs == 1u));
+  return s_voice_failure ? H2_PAL_ERR_IO : H2_PAL_OK;
+}
+int h2_gizclaw_e2e_fixture_reconnect_actor(h2_gizclaw_e2e_fixture_t *fixture,
+                                           h2_gizclaw_e2e_actor_role_t role) {
+  assert(fixture && !fixture->use_session && role == H2_GIZCLAW_E2E_OWNER);
+  ++s_voice_reconnects;
+  return s_reconnect_failure ? H2_PAL_ERR_TIMEOUT : H2_PAL_OK;
+}
+
 int main(int argc, char **argv) {
   const bool connectivity_only = argc == 2 && !strcmp(argv[1], "connectivity");
   const size_t selected = connectivity_only ? 1u : 2u;
-  assert(h2_gizclaw_e2e_case_count == (connectivity_only ? 1u : 8u));
+  assert(h2_gizclaw_e2e_case_count == (connectivity_only ? 1u : 10u));
+  if (!connectivity_only) {
+    for (unsigned mode = 0u; mode < 3u; ++mode) {
+      h2_gizclaw_e2e_fixture_t fixture = {0};
+      s_voice_runs = s_voice_reconnects = 0u;
+      s_voice_failure = mode == 1u;
+      s_reconnect_failure = mode == 2u;
+      const e2e_case_t *voice = NULL;
+      for (size_t i = 0u; i < h2_gizclaw_e2e_case_count; ++i)
+        if (!strcmp(h2_gizclaw_e2e_cases[i].id, "voice")) voice = &h2_gizclaw_e2e_cases[i];
+      assert(voice && voice->prepare(&fixture) == H2_PAL_OK);
+      assert(voice->run(&fixture) == (mode == 0u ? H2_PAL_OK :
+          mode == 1u ? H2_PAL_ERR_IO : H2_PAL_ERR_TIMEOUT));
+      assert(s_voice_runs == (mode == 0u ? 2u : 1u));
+      assert(s_voice_reconnects == (mode == 1u ? 0u : 1u));
+    }
+    s_ran = 0u;
+  }
   h2_app_test_mem_init(&allocator, NULL);
   h2_app_test_time_init(&clock, 0u);
   clock.advance_per_read_ms = 1u;
@@ -120,6 +154,34 @@ int main(int argc, char **argv) {
       .case_timeout_ms = 1000,
       .cleanup_timeout_ms = 1000};
   h2_gizclaw_e2e_result_t result;
+  if (!connectivity_only) {
+    const uint32_t original_suites = config.suites;
+    const uint8_t pcm[] = {1u, 0u};
+    config.suites = H2_GIZCLAW_E2E_SUITE_RPC;
+    config.voice_pcm_s16le_16khz_mono = pcm;
+    config.voice_pcm_len = sizeof(pcm);
+    const char *missing_keys[] = {NULL, ""};
+    for (size_t i = 0u; i < sizeof(missing_keys) / sizeof(*missing_keys); ++i) {
+      config.app_config_key = missing_keys[i];
+      assert(h2_gizclaw_e2e_run(&runtime, &config, &result) ==
+             H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR);
+      assert(allocator.live_blocks == 0 && s_connected == 0 && s_ran == 0);
+    }
+    config.app_config_key = "fixture";
+    config.expected_runtime_profile = "mock-runtime-profile";
+    config.app_config_expected_value = (h2_gizclaw_str_t){NULL, 0u};
+    assert(h2_gizclaw_e2e_run(&runtime, &config, &result) ==
+           H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR);
+    assert(allocator.live_blocks == 0 && s_connected == 0 && s_ran == 0);
+    config.expected_runtime_profile = NULL;
+    config.app_config_expected_value = (h2_gizclaw_str_t){"known", 5u};
+    assert(h2_gizclaw_e2e_run(&runtime, &config, &result) ==
+           H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR);
+    assert(allocator.live_blocks == 0 && s_connected == 0 && s_ran == 0);
+    config.suites = original_suites;
+    config.voice_pcm_s16le_16khz_mono = NULL;
+    config.voice_pcm_len = 0u;
+  }
   if (connectivity_only) {
     const uint32_t unsupported[] = {
         H2_GIZCLAW_E2E_SUITE_ALL, H2_GIZCLAW_E2E_SUITE_SERVICE,

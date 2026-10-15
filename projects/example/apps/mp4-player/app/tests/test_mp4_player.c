@@ -12,6 +12,55 @@
 
 typedef struct test_state test_state_t;
 
+static uint16_t s_audio_block_samples = 256u;
+static int s_inject_release_lock_failure;
+static _Thread_local int s_fail_next_lock;
+static int s_release_lock_error_logged;
+
+struct h2_pal_mutex {
+    pthread_mutex_t native;
+};
+
+static h2_pal_result_t create_mutex(void *user,
+    const h2_pal_mutex_config_t *config, h2_pal_mutex_t **out) {
+    (void)user;
+    (void)config;
+    *out = calloc(1, sizeof(**out));
+    assert(*out != NULL);
+    assert(pthread_mutex_init(&(*out)->native, NULL) == 0);
+    return H2_PAL_OK;
+}
+
+static h2_pal_result_t destroy_mutex(void *user, h2_pal_mutex_t *mutex) {
+    (void)user;
+    assert(pthread_mutex_destroy(&mutex->native) == 0);
+    free(mutex);
+    return H2_PAL_OK;
+}
+
+static h2_pal_result_t lock_mutex(void *user, h2_pal_mutex_t *mutex) {
+    (void)user;
+    if (s_fail_next_lock) {
+        s_fail_next_lock = 0;
+        return H2_PAL_ERR_IO;
+    }
+    assert(pthread_mutex_lock(&mutex->native) == 0);
+    return H2_PAL_OK;
+}
+
+static h2_pal_result_t unlock_mutex(void *user, h2_pal_mutex_t *mutex) {
+    (void)user;
+    assert(pthread_mutex_unlock(&mutex->native) == 0);
+    return H2_PAL_OK;
+}
+
+static const h2_pal_sync_vtable_t s_sync_vtable = {
+    .create_mutex = create_mutex,
+    .destroy_mutex = destroy_mutex,
+    .lock_mutex = lock_mutex,
+    .unlock_mutex = unlock_mutex,
+};
+
 struct h2_pal_video_decoder_frame {
     struct h2_pal_video_decoder_session *owner;
 };
@@ -698,6 +747,7 @@ static int display_draw(
 
 static int display_present(void *user) {
     ++((test_state_t *)user)->present_calls;
+    if (s_inject_release_lock_failure) s_fail_next_lock = 1;
     return H2_PAL_OK;
 }
 
@@ -721,8 +771,8 @@ static int track_write(
     (void)timeout_ms;
     test_state_t *state = track->user;
     assert(frame->sample_rate_hz == 16000u);
-    assert(frame->samples_per_channel == 256u && frame->channels == 1u);
-    assert(frame->bytes == 256u * sizeof(int16_t));
+    assert(frame->samples_per_channel == s_audio_block_samples && frame->channels == 1u);
+    assert(frame->bytes == s_audio_block_samples * sizeof(int16_t));
     const int16_t *samples = frame->data;
     int nonzero = 0;
     for (size_t i = 0u; i < frame->samples_per_channel; ++i) {
@@ -752,7 +802,9 @@ static int audio_get_info(void *user, h2_audio_info_t *info) {
         .playback_supported = 1,
         .playback_format = {
             .sample_rate_hz = 16000u,
-            .frame_samples_per_channel = 256u,
+            /* More than one video frame of PCM: the decoder must not wait
+             * for the first audio write before producing its next frame. */
+            .frame_samples_per_channel = s_audio_block_samples,
             .channels = 1u,
             .sample_format = H2_AUDIO_SAMPLE_S16LE,
         },
@@ -771,9 +823,9 @@ static int audio_create_track(
     h2_pal_audio_track_t **out_track) {
     test_state_t *state = user;
     assert(config->format.sample_rate_hz == 16000u);
-    assert(config->format.frame_samples_per_channel == 256u);
+    assert(config->format.frame_samples_per_channel == s_audio_block_samples);
     assert(config->format.channels == 1u);
-    assert(config->buffer_frames == 32u);
+    assert(config->buffer_frames == (s_audio_block_samples == 256u ? 32u : 4u));
     state->track = (h2_pal_audio_track_t){
         .user = state,
         .write = track_write,
@@ -818,10 +870,18 @@ static int log_write(
     (void)level;
     (void)scope;
     test_state_t *state = user;
-    state->audio_ready_logs +=
-        strcmp(message, "H2_MP4_PLAYER_AUDIO_READY") == 0;
-    state->ready_logs += strcmp(message, "H2_MP4_PLAYER_READY") == 0;
-    state->loop_logs += strcmp(message, "H2_MP4_PLAYER_LOOP") == 0;
+    /* Each marker has one producer. Do not write the other producers'
+     * counters even with += 0: that is still a racing read-modify-write. */
+    if (strstr(message, "buffer-release-lock") != NULL) {
+        s_release_lock_error_logged = 1;
+    }
+    if (strcmp(message, "H2_MP4_PLAYER_AUDIO_READY") == 0) {
+        ++state->audio_ready_logs;
+    } else if (strcmp(message, "H2_MP4_PLAYER_READY") == 0) {
+        ++state->ready_logs;
+    } else if (strcmp(message, "H2_MP4_PLAYER_LOOP") == 0) {
+        ++state->loop_logs;
+    }
     return H2_PAL_OK;
 }
 
@@ -913,7 +973,11 @@ int main(int argc, char **argv) {
                   "$mp4-player/audio") == 0);
     assert(strcmp(h2_smoke_mp4_player_decoder_task_name,
                   "$mp4-player/decoder") == 0);
-    assert(argc == 2);
+    assert(argc == 2 || argc == 3);
+    if (argc == 3) {
+        assert(strcmp(argv[2], "large-audio-block") == 0);
+        s_audio_block_samples = 2048u;
+    }
     const char *fixture_path = argv[1];
     assert(h2_smoke_mp4_player_run(NULL, NULL) == H2_PAL_ERR_INVALID_ARG);
 
@@ -967,7 +1031,9 @@ int main(int argc, char **argv) {
         .user = &state,
         .vtable = &s_task_vtable,
     };
+    const h2_pal_sync_api_t sync = {.vtable = &s_sync_vtable};
     h2_runtime_t runtime = {
+        .sync = &sync,
         .mem = &mem,
         .fs = &fs,
         .log = &log,
@@ -1108,6 +1174,13 @@ int main(int argc, char **argv) {
     assert(h2_smoke_mp4_player_run(&runtime, &borrowed_config) == H2_PAL_OK);
     assert(state.display_open_calls == opens_before_borrow);
     assert(state.display_close_calls == closes_before_borrow);
+    assert(state.allocations == 0u);
+    /* The presentation thread's next mutex operation releases its buffer.
+     * An injected failure must stop and clean up instead of stranding it. */
+    s_inject_release_lock_failure = 1;
+    assert(h2_smoke_mp4_player_run(&runtime, &video_only_config) == H2_PAL_ERR_IO);
+    s_inject_release_lock_failure = 0;
+    assert(s_release_lock_error_logged);
     assert(state.allocations == 0u);
     return 0;
 }

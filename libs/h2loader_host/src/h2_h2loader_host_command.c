@@ -36,6 +36,7 @@ h2_pal_result_t h2_h2loader_host_command_validate(
             availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_STATUS;
             break;
         case H2_H2LOADER_HOST_COMMAND_STATS:
+        case H2_H2LOADER_HOST_COMMAND_DATA_CHECKSUM:
             availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_STATS;
             break;
         case H2_H2LOADER_HOST_COMMAND_MEMORY:
@@ -67,6 +68,9 @@ h2_pal_result_t h2_h2loader_host_command_validate(
             break;
         case H2_H2LOADER_HOST_COMMAND_STAGE_URL:
             availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_STAGE_URL;
+            break;
+        case H2_H2LOADER_HOST_COMMAND_WIFI_STATUS:
+            availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_STATUS;
             break;
         case H2_H2LOADER_HOST_COMMAND_WIFI_SCAN:
             availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_SCAN;
@@ -126,6 +130,11 @@ h2_pal_result_t h2_h2loader_host_command_contract(
             out_contract->marker = "H2_LOADER_STATUS ";
             out_contract->marker_is_success = 1u;
             break;
+        case H2_H2LOADER_HOST_COMMAND_DATA_CHECKSUM:
+            SET_LINE("h2loader stats\n");
+            out_contract->marker = "H2_LOADER_DATA_CHECKSUM checksum=";
+            out_contract->marker_is_success = 1u;
+            break;
         case H2_H2LOADER_HOST_COMMAND_MEMORY:
             SET_LINE("h2loader memory\n");
             out_contract->marker = "H2_LOADER_MEMORY ";
@@ -170,6 +179,11 @@ h2_pal_result_t h2_h2loader_host_command_contract(
             out_contract->marker = "H2_LOADER_STAGE_ABORT ";
             out_contract->success_token = "result=OK";
             break;
+        case H2_H2LOADER_HOST_COMMAND_WIFI_STATUS:
+            SET_LINE("h2loader wifi status\n");
+            out_contract->marker = "H2_LOADER_WIFI_STATUS ";
+            out_contract->success_token = "result=OK";
+            break;
         case H2_H2LOADER_HOST_COMMAND_WIFI_SCAN: {
             uint32_t limit = request->wifi_scan_limit == 0u
                 ? H2_H2LOADER_HOST_WIFI_SCAN_DEFAULT_LIMIT
@@ -201,7 +215,7 @@ h2_pal_result_t h2_h2loader_host_command_contract(
                 return H2_PAL_ERR_INVALID_ARG;
             }
             out_contract->marker = "H2_LOADER_WIFI ";
-            out_contract->success_token = "result=connecting";
+            out_contract->success_token = "result=connected";
             break;
         case H2_H2LOADER_HOST_COMMAND_WIFI_DISCONNECT:
             SET_LINE("h2loader wifi disconnect\n");

@@ -180,30 +180,44 @@ static h2_pal_result_t remaining_ms(
 static h2_pal_result_t open_transport(
     h2_corehttp_exchange_t *exchange,
     const h2_corehttp_url_t *url) {
-    exchange->stage = "bind";
-    h2_pal_net_bind_t bind;
-    h2_pal_net_bind_t *bind_ptr = NULL;
-    memset(&bind, 0, sizeof(bind));
-    if (exchange->request->interface_name != NULL &&
-        exchange->request->interface_name[0] != '\0') {
-        bind.type = H2_PAL_NET_BIND_SOURCE_ADDR;
-        h2_pal_result_t bind_rc = h2_pal_net_get_host_addr(
-            exchange->provider->config.net,
-            exchange->request->interface_name,
-            &bind.source_addr);
-        if (bind_rc != H2_PAL_OK) {
-            return bind_rc;
+    const h2_pal_net_api_t *net = exchange->provider->config.net;
+    h2_pal_net_addr_t sources[2] = {{0}, {0}};
+    h2_pal_result_t source_results[2] = {H2_PAL_ERR_UNAVAILABLE, H2_PAL_ERR_UNAVAILABLE};
+    bool explicit_interface = exchange->request->interface_name != NULL &&
+        exchange->request->interface_name[0] != '\0';
+    if (explicit_interface) {
+        exchange->stage = "bind";
+        if (net->vtable != NULL && net->vtable->get_host_addr_family != NULL) {
+            const h2_pal_net_family_t families[2] = {H2_PAL_NET_FAMILY_IPV4, H2_PAL_NET_FAMILY_IPV6};
+            for (size_t index = 0u; index < 2u; ++index) {
+                source_results[index] = h2_pal_net_get_host_addr_family(net,
+                    exchange->request->interface_name, families[index], &sources[index]);
+                if (source_results[index] == H2_PAL_OK && sources[index].family != families[index])
+                    source_results[index] = H2_PAL_ERR_FORMAT;
+            }
+        } else {
+            h2_pal_net_addr_t source = {0};
+            h2_pal_result_t found = h2_pal_net_get_host_addr(net, exchange->request->interface_name, &source);
+            if (found != H2_PAL_OK)
+                return found;
+            if (source.family != H2_PAL_NET_FAMILY_IPV4 && source.family != H2_PAL_NET_FAMILY_IPV6)
+                return H2_PAL_ERR_FORMAT;
+            size_t index = source.family == H2_PAL_NET_FAMILY_IPV6 ? 1u : 0u;
+            sources[index] = source;
+            source_results[index] = H2_PAL_OK;
         }
-        bind.source_addr.port = 0u;
-        bind_ptr = &bind;
+        if (source_results[0] != H2_PAL_OK && source_results[1] != H2_PAL_OK)
+            return source_results[0];
     }
-
-    h2_pal_net_addr_t remote;
-    memset(&remote, 0, sizeof(remote));
+    h2_pal_net_addr_list_t addresses = {0};
     exchange->stage = "dns";
     h2_pal_net_resolver_t *resolver = NULL;
-    h2_pal_result_t rc = h2_pal_net_resolve_start(
-        exchange->provider->config.net, url->host, &resolver);
+    h2_pal_result_t rc = h2_pal_net_resolve_start_family(
+        net, url->host, H2_PAL_NET_FAMILY_ANY, &resolver);
+    bool multiple = rc != H2_PAL_ERR_UNSUPPORTED;
+    if (!multiple) {
+        rc = h2_pal_net_resolve_start(net, url->host, &resolver);
+    }
     if (rc != H2_PAL_OK) {
         return rc;
     }
@@ -213,46 +227,86 @@ static h2_pal_result_t open_transport(
         if (rc != H2_PAL_OK) {
             break;
         }
-        rc = h2_pal_net_resolve_poll(
-            exchange->provider->config.net, resolver, &remote, timeout_ms);
+        if (multiple) {
+            rc = h2_pal_net_resolve_poll_all(net, resolver, &addresses, timeout_ms);
+        } else {
+            rc = h2_pal_net_resolve_poll(net, resolver, &addresses.addrs[0], timeout_ms);
+            addresses.count = rc == H2_PAL_OK ? 1u : 0u;
+        }
         if (rc != H2_PAL_ERR_TIMEOUT && rc != H2_PAL_ERR_WOULD_BLOCK) {
             break;
         }
     }
-    h2_pal_net_resolve_close(exchange->provider->config.net, resolver);
+    h2_pal_net_resolve_close(net, resolver);
     if (rc != H2_PAL_OK) {
         return rc;
     }
-    remote.port = url->port;
-
-    if (bind_ptr != NULL) {
-        exchange->stage = "bind";
-        if (bind.source_addr.family != remote.family) {
-            return H2_PAL_ERR_UNAVAILABLE;
+    if (addresses.count == 0u || addresses.count > H2_PAL_NET_ADDR_MAX) {
+        return H2_PAL_ERR_FORMAT;
+    }
+    for (size_t candidate = 0u; candidate < addresses.count; ++candidate) {
+        h2_pal_net_addr_t remote = addresses.addrs[candidate];
+        remote.port = url->port;
+        h2_pal_net_bind_t bind = {0};
+        h2_pal_net_bind_t *bind_ptr = NULL;
+        if (explicit_interface) {
+            exchange->stage = "bind";
+            size_t index = remote.family == H2_PAL_NET_FAMILY_IPV6 ? 1u : 0u;
+            bind.type = H2_PAL_NET_BIND_SOURCE_ADDR;
+            rc = source_results[index];
+            if (rc != H2_PAL_OK) {
+                continue;
+            }
+            bind.source_addr = sources[index];
+            bind.source_addr.port = 0u;
+            bind_ptr = &bind;
         }
-    }
-    exchange->stage = "tcp_open";
-    rc = h2_pal_net_tcp_open_bound(
-        exchange->provider->config.net, remote.family, bind_ptr,
-        &exchange->socket);
-    if (rc != H2_PAL_OK) {
-        return rc;
-    }
-
-    exchange->stage = "tcp_connect";
-    for (;;) {
-        uint32_t timeout_ms = 0u;
-        rc = remaining_ms(exchange, true, &timeout_ms);
+        uint64_t started = 0u;
+        rc = h2_pal_time_get_monotonic_ms(exchange->provider->config.time, &started);
         if (rc != H2_PAL_OK) {
             return rc;
         }
-        rc = h2_pal_net_tcp_connect(
-            exchange->provider->config.net, exchange->socket, &remote,
-            timeout_ms);
-        if (rc == H2_PAL_ERR_TIMEOUT || rc == H2_PAL_ERR_WOULD_BLOCK) {
+        /* Poll a pending address under the original request deadline. Only a
+         * terminal failure permits fallback; TIMEOUT/WOULD_BLOCK keep this
+         * socket alive rather than imposing an arbitrary candidate budget. */
+        if (started >= exchange->deadline_ms) {
+            return H2_PAL_ERR_TIMEOUT;
+        }
+        uint64_t candidate_deadline = exchange->deadline_ms;
+        exchange->stage = "tcp_open";
+        rc = h2_pal_net_tcp_open_bound(net, remote.family, bind_ptr, &exchange->socket);
+        if (rc != H2_PAL_OK) {
             continue;
         }
-        break;
+        exchange->stage = "tcp_connect";
+        for (;;) {
+            uint32_t timeout_ms = 0u;
+            rc = remaining_ms(exchange, true, &timeout_ms);
+            if (rc != H2_PAL_OK) {
+                break;
+            }
+            uint64_t now = 0u;
+            rc = h2_pal_time_get_monotonic_ms(exchange->provider->config.time, &now);
+            if (rc != H2_PAL_OK || now >= candidate_deadline) {
+                rc = rc != H2_PAL_OK ? rc : H2_PAL_ERR_TIMEOUT;
+                break;
+            }
+            if (timeout_ms > candidate_deadline - now) {
+                timeout_ms = (uint32_t)(candidate_deadline - now);
+            }
+            rc = h2_pal_net_tcp_connect(net, exchange->socket, &remote, timeout_ms);
+            if (rc != H2_PAL_ERR_TIMEOUT && rc != H2_PAL_ERR_WOULD_BLOCK) {
+                break;
+            }
+        }
+        if (rc == H2_PAL_OK) {
+            break;
+        }
+        h2_pal_net_close(net, exchange->socket);
+        exchange->socket = -1;
+        if (h2_pal_http_request_is_canceled(exchange->request)) {
+            return H2_PAL_ERR_CLOSED;
+        }
     }
     if (rc != H2_PAL_OK || !url->secure) {
         return rc;
@@ -428,12 +482,12 @@ static h2_pal_result_t perform_attempt(
     size_t *out_redirect_len,
     bool *out_cross_origin,
     bool *out_downgrade,
-    bool *out_body_delivered) {
+    bool *out_retry_forbidden) {
     *out_redirect = NULL;
     *out_redirect_len = 0u;
     *out_cross_origin = false;
     *out_downgrade = false;
-    *out_body_delivered = false;
+    *out_retry_forbidden = false;
     if (h2_pal_http_request_is_canceled(request)) {
         return H2_PAL_ERR_CLOSED;
     }
@@ -512,7 +566,7 @@ static h2_pal_result_t perform_attempt(
         (void)h2_pal_log_write(provider->config.log, H2_PAL_LOG_ERROR,
                                "corehttp", message);
     }
-    *out_body_delivered = exchange.body_delivered;
+    *out_retry_forbidden = exchange.body_delivered || exchange.callback_failed;
     h2_pal_mem_free(provider->config.allocator, exchange.header_name);
     h2_pal_mem_free(provider->config.allocator, exchange.header_value);
     h2_pal_mem_free(provider->config.allocator, exchange.location);
@@ -531,6 +585,13 @@ static int corehttp_request(
                    ? H2_PAL_ERR_INVALID_ARG
                    : rc;
     }
+    /* Keep scratch ownership local to this request, including redirects and
+     * retries; concurrent requests must not change the shared provider. */
+    h2_corehttp_t request_provider = *provider;
+    if (request->allocator != NULL) {
+        request_provider.config.allocator = request->allocator;
+    }
+    provider = &request_provider;
     h2_pal_http_response_reset(out_response);
     uint64_t start_ms = 0u;
     rc = h2_pal_time_get_monotonic_ms(provider->config.time, &start_ms);
@@ -559,16 +620,16 @@ static int corehttp_request(
         size_t redirect_len = 0u;
         bool cross_origin = false;
         bool downgrade = false;
-        bool body_delivered = false;
+        bool retry_forbidden = false;
         rc = perform_attempt(
             provider, request, out_response, url_data, url_len, method, body,
             body_len, deadline_ms, retries_left > 0u,
             redirects < provider->config.max_redirects,
             forward_authorization, &redirect, &redirect_len, &cross_origin,
-            &downgrade, &body_delivered);
+            &downgrade, &retry_forbidden);
         if (rc != H2_PAL_OK) {
             h2_pal_mem_free(provider->config.allocator, redirect);
-            if (retries_left > 0u && !body_delivered &&
+            if (retries_left > 0u && !retry_forbidden &&
                 !h2_pal_http_request_is_canceled(request) &&
                 retryable_result(rc)) {
                 retries_left -= 1u;
@@ -608,7 +669,7 @@ static int corehttp_request(
         }
 
         if (retryable_status(out_response->status_code) &&
-            retries_left > 0u && !body_delivered) {
+            retries_left > 0u && !retry_forbidden) {
             retries_left -= 1u;
             free_response_body(out_response);
             continue;

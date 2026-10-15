@@ -1,0 +1,77 @@
+{
+  "assets": [
+    {
+      "name": "bk7258_v3_202405-pal-audio-decoder-bk7258.update.tar.zlib",
+      "operation": "managed-install",
+      "release_suffix": ".update.tar.zlib",
+      "sha256": "7bc5409905ec68dba7b2368b00ffb1dd7152a91b918a50e710e0e5277666a067",
+      "size": 1766501
+    }
+  ],
+  "board": "bk7258_v3_202405",
+  "entry": "projects/e2e/targets/h2loader_tar_zlib/pal-audio-decoder/bk7258_v3_202405",
+  "image": "pal-audio-decoder",
+  "native_artifacts": [
+    {
+      "name": "ap/firmware.elf",
+      "operation": "native-debug-or-flash",
+      "sha256": "3a3f2f5ce9a7d3d8fd61f0ee561aa2814964c82a2d83356a7b3cdd1a2fa1f18f",
+      "size": 13178992
+    },
+    {
+      "name": "ap/firmware.map",
+      "operation": "native-debug-or-flash",
+      "sha256": "b4eca662fed553d87f8f1182ff544f134f3a7711d74ecf94987f342a236cf15b",
+      "size": 8110054
+    },
+    {
+      "name": "ap/app.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "706d646b83efaa3ee86b7d29ad236961f68c779a9e1c1ed4b40afb0a69295885",
+      "size": 1356120
+    },
+    {
+      "name": "cp/firmware.elf",
+      "operation": "native-debug-or-flash",
+      "sha256": "a0fd0b23cd72644462ac16eff346d3d8093e0c8390c902a8c9b3ff9347f4bb26",
+      "size": 14381940
+    },
+    {
+      "name": "cp/firmware.map",
+      "operation": "native-debug-or-flash",
+      "sha256": "551a674d4a8333463cdcf5c2f7847a0c3d8870496abe59046a6befe6f6db8116",
+      "size": 6893266
+    },
+    {
+      "name": "cp/app.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "9cdcd34479a7c7e7a5b8630afe0fbd144531ddde272d947810d26932010cb76f",
+      "size": 1056284
+    },
+    {
+      "name": "app_ab_crc.rbl",
+      "operation": "native-debug-or-flash",
+      "sha256": "1a87e6d37f950f02183e00d385bd59413579a4a861f072aeb78bd0d46f20d7a6",
+      "size": 5222400
+    },
+    {
+      "name": "all-app.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "538593ea526fbfdb89ba7df55bcabcef12634d1aeb6795c341dc47293673d8fd",
+      "size": 5292032
+    }
+  ],
+  "package_manifest": {
+    "board": "bk7258_v3_202405",
+    "format": 1,
+    "image_sha256": "1a87e6d37f950f02183e00d385bd59413579a4a861f072aeb78bd0d46f20d7a6",
+    "image_size": 5222400,
+    "role": "app",
+    "target": "bk7258",
+    "version": "pal-adec-bk-20260929-r5"
+  },
+  "platform": "bk7258",
+  "role": "app",
+  "target": "bk7258",
+  "version": "pal-adec-bk-20260929-r5"
+}

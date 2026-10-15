@@ -1,7 +1,13 @@
 #include "h2_h2loader_cli_target.h"
+#include "h2_h2loader_cli_host_path.h"
 
 #include "h2_windows_platform.h"
 #include "h2_windows_serial_host.h"
+
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+
+#include <stdlib.h>
 
 static h2_windows_platform_t *platform;
 
@@ -59,9 +65,56 @@ const h2_pal_net_api_t *h2_h2loader_cli_target_net(void) {
     return h2_windows_net_api(platform);
 }
 
+static char *windows_working_directory(void) {
+    DWORD capacity = GetEnvironmentVariableW(L"BUILD_WORKING_DIRECTORY", NULL, 0u);
+    int from_environment = capacity != 0u;
+    if (!from_environment) capacity = GetCurrentDirectoryW(0u, NULL);
+    if (capacity == 0u) return NULL;
+    wchar_t *wide = malloc((size_t)capacity * sizeof(*wide));
+    if (wide == NULL) return NULL;
+    DWORD copied = from_environment
+                       ? GetEnvironmentVariableW(L"BUILD_WORKING_DIRECTORY", wide,
+                                                 capacity)
+                       : GetCurrentDirectoryW(capacity, wide);
+    char *utf8 = NULL;
+    if (copied != 0u && copied < capacity) {
+        int bytes = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide,
+                                       -1, NULL, 0, NULL, NULL);
+        if (bytes > 0) {
+            utf8 = malloc((size_t)bytes);
+            if (utf8 != NULL &&
+                WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide, -1,
+                                    utf8, bytes, NULL, NULL) != bytes) {
+                free(utf8);
+                utf8 = NULL;
+            }
+        }
+    }
+    free(wide);
+    return utf8;
+}
+
 int h2_h2loader_cli_target_resolve_path(const char *path, char *out, size_t out_size) {
-    (void)path;
-    (void)out;
-    (void)out_size;
-    return 0;
+    char source_storage[26][4];
+    char target_storage[26][3];
+    const char *sources[26];
+    const char *targets[26];
+    for (size_t i = 0u; i < 26u; ++i) {
+        source_storage[i][0] = (char)('A' + (int)i);
+        source_storage[i][1] = ':';
+        source_storage[i][2] = '\\';
+        source_storage[i][3] = '\0';
+        target_storage[i][0] = '/';
+        target_storage[i][1] = (char)('a' + (int)i);
+        target_storage[i][2] = '\0';
+        sources[i] = source_storage[i];
+        targets[i] = target_storage[i];
+    }
+    /* The provider owns the accessible-drive inventory. A rewritten path
+     * for an unmounted drive still fails through the PAL namespace. */
+    char *base = windows_working_directory();
+    int result = h2_h2loader_cli_host_path_resolve(
+        base, sources, targets, 26u, path, out, out_size);
+    free(base);
+    return result;
 }

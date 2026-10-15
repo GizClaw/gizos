@@ -1,0 +1,71 @@
+{
+  "assets": [
+    {
+      "name": "amoled-pal-display-esp32s3.update.tar.zlib",
+      "operation": "managed-install",
+      "release_suffix": ".update.tar.zlib",
+      "sha256": "109f9c93aef8f857f53aace1946a9b2a3d8ebbc8308dc7a3e225ad02b77ce58f",
+      "size": 1042283
+    }
+  ],
+  "board": "amoled",
+  "entry": "projects/e2e/targets/h2loader_tar_zlib/pal-display/amoled",
+  "image": "pal-display",
+  "native_artifacts": [
+    {
+      "name": "firmware.elf",
+      "operation": "native-debug-or-flash",
+      "sha256": "3667e8903d1b7bdf0890fb35df618c00c60c522db08b74f3d84a1dc0fdd4d0aa",
+      "size": 15596452
+    },
+    {
+      "name": "firmware.map",
+      "operation": "native-debug-or-flash",
+      "sha256": "e25ea76720520ec00af164af63c7fb52f20f2c270de6b9829194c5dcf961005b",
+      "size": 14463969
+    },
+    {
+      "name": "app.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "a585a34c11bb34e5221c823dd4c6c4d95d539ff1a3205e348c3741f38ac585ff",
+      "size": 1556928
+    },
+    {
+      "name": "bootloader.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "909eaf23e1a06afdc7b6144743d942676373253743d21b133583103c317fb3d9",
+      "size": 21328
+    },
+    {
+      "name": "combined_factory.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "e8641e52b9acdae2a551cbdd5c087ea387e7ae1181a8c70c0031e217fc4435c3",
+      "size": 1688000
+    },
+    {
+      "name": "partition-table.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "d6464ffdf628c827ede1d0ecbf8a5cfa1ab2483710b6e848069dbf904a467433",
+      "size": 3072
+    },
+    {
+      "name": "flasher_args.json",
+      "operation": "native-debug-or-flash",
+      "sha256": "35269e7b5f11482f963af6286ebb0f0b176431efa2cff04ec6dacd53a901aca7",
+      "size": 1000
+    }
+  ],
+  "package_manifest": {
+    "board": "amoled",
+    "format": 1,
+    "image_sha256": "a585a34c11bb34e5221c823dd4c6c4d95d539ff1a3205e348c3741f38ac585ff",
+    "image_size": 1556928,
+    "role": "app",
+    "target": "esp32s3",
+    "version": "pal-display-e2e-20260929-r13"
+  },
+  "platform": "esp",
+  "role": "app",
+  "target": "esp32s3",
+  "version": "pal-display-e2e-20260929-r13"
+}

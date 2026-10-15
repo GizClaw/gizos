@@ -64,7 +64,9 @@ static h2_pal_result_t unsupported_modem_get_data_status(void *p0, h2_pal_modem_
 
 static h2_pal_result_t unsupported_modem_get_signal(void *p0, h2_pal_modem_signal_t *p1) {
     (void)p0;
-    (void)p1;
+    if (p1 != NULL) {
+        memset(p1, 0, sizeof(*p1));
+    }
     return H2_PAL_ERR_UNSUPPORTED;
 }
 
@@ -89,6 +91,18 @@ static h2_pal_result_t unsupported_modem_call_hangup(void *p0, uint32_t p1) {
 static h2_pal_result_t unsupported_modem_get_call_status(void *p0, h2_pal_modem_call_status_t *p1) {
     (void)p0;
     (void)p1;
+    return H2_PAL_ERR_UNSUPPORTED;
+}
+
+static h2_pal_result_t unsupported_modem_set_call_volume(void *user, uint32_t percent) {
+    (void)user;
+    (void)percent;
+    return H2_PAL_ERR_UNSUPPORTED;
+}
+
+static h2_pal_result_t unsupported_modem_get_call_volume(void *user, uint32_t *out_percent) {
+    (void)user;
+    (void)out_percent;
     return H2_PAL_ERR_UNSUPPORTED;
 }
 
@@ -129,7 +143,37 @@ static h2_pal_result_t unsupported_modem_get_power_status(void *user, h2_pal_mod
     return H2_PAL_ERR_UNSUPPORTED;
 }
 
+static h2_pal_result_t unsupported_modem_get_emergency_numbers(
+    void *user, uint32_t timeout_ms,
+    h2_pal_modem_emergency_number_t *out_numbers, size_t capacity,
+    size_t *out_count) {
+    (void)user;
+    (void)timeout_ms;
+    (void)out_numbers;
+    (void)capacity;
+    *out_count = 0u;
+    return H2_PAL_ERR_UNSUPPORTED;
+}
+
+static h2_pal_result_t unsupported_modem_ota_start(void *user,
+    const h2_pal_modem_ota_request_t *request) {
+    (void)user;
+    (void)request;
+    return H2_PAL_ERR_UNSUPPORTED;
+}
+
+static h2_pal_result_t unsupported_modem_ota_get_status(void *user, uint32_t timeout_ms,
+    h2_pal_modem_ota_status_t *out_status) {
+    (void)user;
+    (void)timeout_ms;
+    memset(out_status, 0, sizeof(*out_status));
+    return H2_PAL_ERR_UNSUPPORTED;
+}
+
 static const h2_pal_modem_vtable_t unsupported_modem_vtable = {
+    .ota_start = unsupported_modem_ota_start,
+    .ota_get_status = unsupported_modem_ota_get_status,
+    .get_emergency_numbers = unsupported_modem_get_emergency_numbers,
     .set_power_policy = unsupported_modem_set_power_policy,
     .get_power_status = unsupported_modem_get_power_status,
     .open = unsupported_modem_open,
@@ -147,6 +191,8 @@ static const h2_pal_modem_vtable_t unsupported_modem_vtable = {
     .call_answer = unsupported_modem_call_answer,
     .call_hangup = unsupported_modem_call_hangup,
     .get_call_status = unsupported_modem_get_call_status,
+    .set_call_volume = unsupported_modem_set_call_volume,
+    .get_call_volume = unsupported_modem_get_call_volume,
     .gnss_start = unsupported_modem_gnss_start,
     .gnss_stop = unsupported_modem_gnss_stop,
     .get_gnss_state = unsupported_modem_get_gnss_state,

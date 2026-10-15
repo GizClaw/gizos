@@ -281,6 +281,9 @@ static h2_pal_result_t decoder_acquire(
     (void)user;
     (void)timeout_ms;
     h2_esp_audio_decoder_session_t *session = &opaque->state;
+    if (!session->configured) {
+        return H2_PAL_ERR_INVALID_STATE;
+    }
     if (session->acquired) {
         return H2_PAL_ERR_WOULD_BLOCK;
     }

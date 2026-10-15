@@ -24,7 +24,8 @@ cc_binary(
     linkopts = [
         "-sALLOW_MEMORY_GROWTH=1",
         "-sASSERTIONS=1",
-        "-sASYNCIFY=1",
+        "-sPROXY_TO_PTHREAD=1",
+        "-sPTHREAD_POOL_SIZE=16",
         "-sEXIT_RUNTIME=0",
         "-sEXPORTED_RUNTIME_METHODS=['ccall']",
         "--pre-js",
@@ -37,8 +38,8 @@ cc_binary(
     ],
     target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
     deps = [
-        "//libs/pal/providers/web/pal_core",
         "//libs/pal:unsupported",
+        "//libs/pal/providers/web/pal_core",
         "//libs/runtime",
         "//projects/e2e/apps/h2loader-serial/app:h2loader_serial_e2e",
         "//projects/example/libs/host_runtime",
@@ -59,6 +60,7 @@ wasm_cc_binary(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    threads = "emscripten",
 )
 
 cc_binary(
@@ -71,14 +73,15 @@ cc_binary(
     linkopts = [
         "-sALLOW_MEMORY_GROWTH=1",
         "-sASSERTIONS=1",
-        "-sASYNCIFY=1",
+        "-sPROXY_TO_PTHREAD=1",
+        "-sPTHREAD_POOL_SIZE=16",
         "--pre-js",
         "$(location //libs/pal/providers/web/pal_core:tests/web_serial_fake.js)",
     ],
     target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
     deps = [
-        "//libs/pal/providers/web/pal_core",
         "//libs/pal:unsupported",
+        "//libs/pal/providers/web/pal_core",
         "//libs/runtime",
         "//projects/e2e/apps/h2loader-serial/app:h2loader_serial_e2e",
         "//projects/example/libs/host_runtime",
@@ -99,6 +102,7 @@ wasm_cc_binary(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    threads = "emscripten",
 )
 
 js_test(
@@ -154,7 +158,10 @@ js_test(
 
 pkg_tar(
     name = "h2loader-serial",
-    srcs = [":h2loader_serial_wasm"],
+    srcs = [
+        "_headers",
+        ":h2loader_serial_wasm",
+    ],
     out = "h2loader-serial.web.tar",
     mode = "0644",
     portable_mtime = True,

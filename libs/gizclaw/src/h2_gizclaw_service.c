@@ -106,12 +106,14 @@ static void log_operation_trace(const h2_gizclaw_service_t *service,
 }
 
 static h2_pal_result_t client_init(const h2_gizclaw_config_t *config,
+                                   const gzc_rpc_stream_provider_t *provider,
                                    h2_gizclaw_client_t **out_client) {
 #ifdef H2_GIZCLAW_TESTING
   if (s_client_ops != NULL && s_client_ops->init != NULL)
     return s_client_ops->init(config, out_client);
 #endif
-  return (h2_pal_result_t)h2_gizclaw_client_init(config, out_client);
+  return (h2_pal_result_t)h2_gizclaw_client_init_with_lua_stream_internal(
+      config, provider, out_client);
 }
 
 static h2_pal_result_t client_connect(h2_gizclaw_client_t *client) {
@@ -146,17 +148,21 @@ client_set_event_handler(h2_gizclaw_client_t *client,
                                                               event_user);
 }
 
-static void service_downlink_bos(void *user) {
-  h2_gizclaw_conversation_downlink_bos_internal(user);
+static void service_downlink_stream(void *user, bool begin,
+                                    const char *stream_id) {
+  if (begin)
+    h2_gizclaw_conversation_downlink_bos_internal(user, stream_id);
+  else
+    h2_gizclaw_conversation_downlink_eos_internal(user, stream_id);
 }
 
-static void client_set_downlink_bos(h2_gizclaw_service_t *service) {
+static void client_set_downlink_stream(h2_gizclaw_service_t *service) {
 #ifdef H2_GIZCLAW_TESTING
   if (s_client_ops != NULL && s_client_ops->init != NULL)
     return;
 #endif
-  h2_gizclaw_client_set_downlink_bos_internal(service->client,
-                                              service_downlink_bos, service);
+  h2_gizclaw_client_set_downlink_stream_internal(
+      service->client, service_downlink_stream, service);
 }
 
 static h2_pal_result_t client_dispatch_event(h2_gizclaw_client_t *client) {
@@ -271,6 +277,7 @@ static bool original_cancel_requested(h2_gizclaw_service_t *service) {
 
 static void free_operation_if_unreferenced(h2_gizclaw_operation_t *operation) {
   if (!operation->caller_reference && !operation->internal_reference) {
+    h2_atomic_bool_destroy(&operation->terminal);
     h2_pal_mem_free(operation->service->config.client_config->allocator,
                     operation);
   }
@@ -290,7 +297,7 @@ static h2_pal_result_t enqueue_completion_locked(
     if (operation->settle != NULL)
       operation->settle(operation->user, operation, &operation->result);
     operation->state = H2_GIZCLAW_OPERATION_TERMINAL;
-    atomic_store_explicit(&operation->terminal, true, memory_order_release);
+    h2_atomic_store_explicit(&operation->terminal, true, H2_ATOMIC_RELEASE);
     return H2_PAL_OK;
   }
   if (operation->dispatch_queued)
@@ -321,7 +328,7 @@ static h2_pal_result_t enqueue_completion_locked(
   if (operation->settle != NULL)
     operation->settle(operation->user, operation, &operation->result);
   operation->state = H2_GIZCLAW_OPERATION_TERMINAL;
-  atomic_store_explicit(&operation->terminal, true, memory_order_release);
+  h2_atomic_store_explicit(&operation->terminal, true, H2_ATOMIC_RELEASE);
   h2_gizclaw_service_log_request(
       service, H2_PAL_LOG_WARN, "completion", "queue_full",
       operation->result.identity, overflow,
@@ -586,8 +593,8 @@ static void uplink_worker(void *ctx) {
       return;
     uint64_t started = previous;
     while (!service->stopping) {
-      if (atomic_load(&service->speech_request) == NULL &&
-          atomic_load(&service->media_request) == NULL) {
+      if (h2_atomic_load(&service->speech_request) == NULL &&
+          h2_atomic_load(&service->media_request) == NULL) {
         pacing = false;
         (void)h2_pal_cond_wait(service->config.sync, service->progress_cond,
                                service->mutex, H2_GIZCLAW_AUDIO_PERIOD_MS);
@@ -708,9 +715,13 @@ static void net_worker(void *ctx) {
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_time_prepare_connect_internal(service);
   if (rc == H2_PAL_OK)
-    rc = client_init(&service->client_config, &service->client);
+    rc = h2_gizclaw_device_start_lua_stream_internal(service->device);
+  if (rc == H2_PAL_OK)
+    rc = client_init(&service->client_config,
+                     h2_gizclaw_device_lua_stream_internal(service->device),
+                     &service->client);
   if (rc == H2_PAL_OK) {
-    client_set_downlink_bos(service);
+    client_set_downlink_stream(service);
     rc = client_connect(service->client);
   }
   if (rc == H2_PAL_OK && service->config.on_event != NULL) {
@@ -841,7 +852,7 @@ static void dispatch_operation(h2_gizclaw_service_t *service,
   operation->dispatch_queued = false;
   operation->state = H2_GIZCLAW_OPERATION_TERMINAL;
   unlock_service(service);
-  atomic_store_explicit(&operation->terminal, true, memory_order_release);
+  h2_atomic_store_explicit(&operation->terminal, true, H2_ATOMIC_RELEASE);
   log_operation_trace(service, H2_PAL_LOG_INFO, "dispatch_begin", operation,
                       operation->result.result,
                       (int)operation->result.terminal_kind, 0u);
@@ -981,16 +992,17 @@ h2_gizclaw_service_init(const h2_gizclaw_service_config_t *config,
   };
   service->client_config.webrtc_media_track = &service->webrtc_track;
   service->config.client_config = &service->client_config;
-  atomic_init(&service->media_request, NULL);
-  atomic_init(&service->speech_request, NULL);
-  atomic_init(&service->pcm_track, NULL);
-  atomic_init(&service->media_callback_refs, 0u);
-  atomic_init(&service->media_holder_tag, 0);
+  h2_pal_result_t rc = H2_PAL_ERR_NO_MEMORY;
+  if (h2_atomic_ptr_init(&service->media_request, NULL) != H2_ATOMIC_OK ||
+      h2_atomic_ptr_init(&service->speech_request, NULL) != H2_ATOMIC_OK ||
+      h2_atomic_ptr_init(&service->pcm_track, NULL) != H2_ATOMIC_OK ||
+      h2_atomic_uint_init(&service->media_callback_refs, 0u) != H2_ATOMIC_OK ||
+      h2_atomic_int_init(&service->media_holder_tag, 0) != H2_ATOMIC_OK)
+    goto fail;
 
   const h2_pal_mutex_config_t mutex_config = {
       .name = "gizclaw-service", .allocator = config->client_config->allocator};
-  h2_pal_result_t rc =
-      h2_pal_mutex_create(config->sync, &mutex_config, &service->mutex);
+  rc = h2_pal_mutex_create(config->sync, &mutex_config, &service->mutex);
   if (rc != H2_PAL_OK)
     goto fail;
   rc = h2_pal_mutex_create(config->sync, &mutex_config, &service->audio_mutex);
@@ -1040,6 +1052,11 @@ fail:
     (void)h2_pal_cond_destroy(config->sync, service->progress_cond);
   if (service->mutex != NULL)
     (void)h2_pal_mutex_destroy(config->sync, service->mutex);
+  h2_atomic_ptr_destroy(&service->media_request);
+  h2_atomic_ptr_destroy(&service->speech_request);
+  h2_atomic_ptr_destroy(&service->pcm_track);
+  h2_atomic_uint_destroy(&service->media_callback_refs);
+  h2_atomic_int_destroy(&service->media_holder_tag);
   h2_pal_mem_free(config->client_config->allocator, service);
   return rc;
 }
@@ -1103,15 +1120,15 @@ h2_pal_result_t h2_gizclaw_service_set_track(h2_gizclaw_service_t *service,
   if (rc != H2_PAL_OK)
     return rc;
   if (service->pcm_track_unsetting ||
-      atomic_load(&service->pcm_track) != NULL ||
-      atomic_load(&service->speech_request) != NULL ||
+      h2_atomic_load(&service->pcm_track) != NULL ||
+      h2_atomic_load(&service->speech_request) != NULL ||
       service->audio_play != NULL ||
-      atomic_load(&service->media_request) != NULL)
+      h2_atomic_load(&service->media_request) != NULL)
     rc = H2_PAL_ERR_INVALID_STATE;
   else {
     rc = h2_gizclaw_pcm_track_attach_internal(track);
     if (rc == H2_PAL_OK)
-      atomic_store(&service->pcm_track, track);
+      h2_atomic_store(&service->pcm_track, track);
   }
   unlock_service(service);
   return rc;
@@ -1125,7 +1142,7 @@ h2_pal_result_t h2_gizclaw_service_unset_track(h2_gizclaw_service_t *service,
   if (rc != H2_PAL_OK)
     return rc;
   if (service->pcm_track_unsetting ||
-      atomic_load(&service->pcm_track) != track) {
+      h2_atomic_load(&service->pcm_track) != track) {
     unlock_service(service);
     return H2_PAL_ERR_INVALID_STATE;
   }
@@ -1134,7 +1151,7 @@ h2_pal_result_t h2_gizclaw_service_unset_track(h2_gizclaw_service_t *service,
     rc = h2_pal_cond_wait(service->config.sync, service->progress_cond,
                           service->mutex, H2_PAL_SYNC_WAIT_FOREVER);
   if (rc == H2_PAL_OK) {
-    atomic_store(&service->pcm_track, NULL);
+    h2_atomic_store(&service->pcm_track, NULL);
     h2_gizclaw_pcm_track_detach_internal(track);
   }
   service->pcm_track_unsetting = false;
@@ -1146,7 +1163,7 @@ static h2_gizclaw_track_t *pcm_track_acquire(h2_gizclaw_service_t *service) {
   if (service == NULL || lock_service(service) != H2_PAL_OK)
     return NULL;
   h2_gizclaw_track_t *track =
-      service->pcm_track_unsetting ? NULL : atomic_load(&service->pcm_track);
+      service->pcm_track_unsetting ? NULL : h2_atomic_load(&service->pcm_track);
   if (track != NULL)
     ++service->pcm_track_refs;
   unlock_service(service);
@@ -1279,6 +1296,11 @@ static h2_pal_result_t submit_operation(
     return H2_PAL_ERR_NO_MEMORY;
   }
   memset(operation, 0, sizeof(*operation));
+  if (h2_atomic_bool_init(&operation->terminal, false) != H2_ATOMIC_OK) {
+    h2_pal_mem_free(service->config.client_config->allocator, operation);
+    unlock_service(service);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
   operation->service = service;
   operation->run = run;
   operation->poll = poll;
@@ -1303,6 +1325,7 @@ static h2_pal_result_t submit_operation(
   if (rc != H2_PAL_OK) {
     --service->active_count;
     --service->caller_reference_count;
+    h2_atomic_bool_destroy(&operation->terminal);
     h2_pal_mem_free(service->config.client_config->allocator, operation);
     unlock_service(service);
     return rc == H2_PAL_ERR_FULL ? H2_PAL_ERR_WOULD_BLOCK : rc;
@@ -1457,10 +1480,40 @@ h2_pal_result_t h2_gizclaw_service_deinit(h2_gizclaw_service_t *service) {
       service->pcm_track_unsetting || service->queued_event_count != 0u ||
       service->dispatch_item_count != 0u ||
       (service->terminal_pending && !service->terminal_dispatched)) {
+    /* The owner can only retry; name what still holds the Service so a leak
+     * is traceable from one field log. Formatted under the lock, written
+     * after it. */
+    /* Grouped fields keep even seven 64-bit SIZE_MAX counters within the PAL
+     * limit: refs=caller/request/track/downlink, terminal=pending/dispatched,
+     * attached=audio_conversation/session. */
+    char message[H2_PAL_LOG_MESSAGE_MAX];
+    (void)snprintf(
+        message, sizeof(message),
+        "stage=service_deinit_blocked stopped=%d dispatch=%d active=%zu "
+        "refs=%zu/%zu/%zu/%zu unset=%d queued=%zu items=%zu "
+        "terminal=%d/%d attached=%d/%d",
+        service->stopped ? 1 : 0, service->dispatching ? 1 : 0,
+        service->active_count, service->caller_reference_count,
+        service->request_reference_count,
+        service->pcm_track_refs, service->downlink_refs,
+        service->pcm_track_unsetting ? 1 : 0,
+        service->queued_event_count, service->dispatch_item_count,
+        service->terminal_pending ? 1 : 0, service->terminal_dispatched ? 1 : 0,
+        service->audio_conversation != NULL ? 1 : 0,
+        service->session != NULL ? 1 : 0);
+    /* Owners retry every loop; log a refusal only when its state changes. */
+    uint32_t signature = 2166136261u;
+    for (const char *c = message; *c != '\0'; ++c)
+      signature = (signature ^ (uint8_t)*c) * 16777619u;
+    const bool changed = signature != service->deinit_blocked_signature;
+    service->deinit_blocked_signature = signature;
     unlock_service(service);
+    if (changed)
+      (void)h2_pal_log_write(service->config.client_config->log,
+                            H2_PAL_LOG_WARN, "gizclaw", message);
     return H2_PAL_ERR_INVALID_STATE;
   }
-  h2_gizclaw_track_t *track = atomic_exchange(&service->pcm_track, NULL);
+  h2_gizclaw_track_t *track = h2_atomic_exchange(&service->pcm_track, NULL);
   h2_gizclaw_pcm_track_detach_internal(track);
   unlock_service(service);
   h2_gizclaw_conversation_downlink_destroy_internal(service);
@@ -1470,6 +1523,11 @@ h2_pal_result_t h2_gizclaw_service_deinit(h2_gizclaw_service_t *service) {
   (void)h2_pal_cond_destroy(service->config.sync, service->progress_cond);
   (void)h2_pal_mutex_destroy(service->config.sync, service->mutex);
   (void)h2_pal_mutex_destroy(service->config.sync, service->audio_mutex);
+  h2_atomic_ptr_destroy(&service->media_request);
+  h2_atomic_ptr_destroy(&service->speech_request);
+  h2_atomic_ptr_destroy(&service->pcm_track);
+  h2_atomic_uint_destroy(&service->media_callback_refs);
+  h2_atomic_int_destroy(&service->media_holder_tag);
   h2_pal_mem_free(service->config.client_config->allocator, service);
   return H2_PAL_OK;
 }

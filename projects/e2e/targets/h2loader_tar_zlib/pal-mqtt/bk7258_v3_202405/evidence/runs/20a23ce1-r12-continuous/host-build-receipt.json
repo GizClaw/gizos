@@ -1,0 +1,14 @@
+{
+  "argv": [
+    "bazel",
+    "build",
+    "--config=macos_arm64",
+    "//projects/h2loader/targets/cc_binary/cli:h2loader"
+  ],
+  "actual_exit": 0,
+  "source_commit": "930d7563d453879ab52b86adaf436fb48ecc2bfc",
+  "source_dirty": false,
+  "started_at_utc": "2026-10-04T18:39:15.903165+00:00",
+  "finished_at_utc": "2026-10-04T18:39:19.619690+00:00",
+  "binary_sha256": "0831c388ebb4e65c616a0ed76555a60c0a97ae51459f4f52255e1c1028d7dbcd"
+}

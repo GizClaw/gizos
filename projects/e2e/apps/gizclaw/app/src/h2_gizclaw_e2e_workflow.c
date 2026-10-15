@@ -41,6 +41,26 @@ static bool metadata_matches(const h2_gizclaw_e2e_fixture_t *fixture,
          revision != NULL && revision[0] != '\0';
 }
 
+static bool workflow_tags_valid(const h2_gizclaw_workflow_t *workflow) {
+  if (workflow->tag_count > H2_GIZCLAW_WORKFLOW_TAG_MAX_ITEMS ||
+      (workflow->tag_count && !workflow->tags))
+    return false;
+  for (size_t i = 0; i < workflow->tag_count; ++i)
+    if (!workflow->tags[i] || !workflow->tags[i][0] ||
+        strlen(workflow->tags[i]) > H2_GIZCLAW_WORKFLOW_TAG_MAX_BYTES)
+      return false;
+  return true;
+}
+static bool workflow_has_tag(const h2_gizclaw_workflow_t *workflow,
+                             const char *tag) {
+  if (!workflow_tags_valid(workflow))
+    return false;
+  for (size_t i = 0; i < workflow->tag_count; ++i)
+    if (!strcmp(workflow->tags[i], tag))
+      return true;
+  return false;
+}
+
 static int validate_list(h2_gizclaw_e2e_fixture_t *fixture,
                          const h2_gizclaw_workflow_page_t *page, char *selected,
                          size_t capacity) {
@@ -54,8 +74,7 @@ static int validate_list(h2_gizclaw_e2e_fixture_t *fixture,
   for (size_t i = 0u; i < page->count; ++i) {
     const h2_gizclaw_workflow_t *workflow = &page->items[i];
     if (workflow->name == NULL || workflow->name[0] == '\0' ||
-        workflow->collection == NULL ||
-        strcmp(workflow->collection, "assistants") != 0)
+        !workflow_has_tag(workflow, "assistants"))
       return H2_PAL_ERR_INVALID_STATE;
   }
   return h2_gizclaw_e2e_select_workflow_name(page, selected, capacity);
@@ -87,6 +106,7 @@ int h2_gizclaw_e2e_run_workflow(h2_gizclaw_e2e_fixture_t *fixture,
              sizeof(fixture->runtime_profile_name)) == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   fixture->workflow_name[0] = '\0';
+  fixture->safety_fence_level[0] = '\0';
   h2_gizclaw_service_t *service = fixture->actors[H2_GIZCLAW_E2E_OWNER].service;
   char selected[H2_GIZCLAW_E2E_NAME_CAPACITY] = {0};
   int rc = H2_PAL_OK;
@@ -102,8 +122,9 @@ int h2_gizclaw_e2e_run_workflow(h2_gizclaw_e2e_fixture_t *fixture,
     if (req_api) {
       rc = checked("h2_gizclaw_req_create_workflow_list", "workflow-req",
                    h2_gizclaw_req_create_workflow_list(
-                       service, 21u, h2_gizclaw_e2e_str("assistants"),
-                       (h2_gizclaw_str_t){0}, WORKFLOW_LIMIT,
+                       service, 21u,
+                       (h2_gizclaw_str_t[]){h2_gizclaw_e2e_str("assistants")},
+                       1u, (h2_gizclaw_str_t){0}, WORKFLOW_LIMIT,
                        WORKFLOW_TIMEOUT_MS, &request));
       if (rc == H2_PAL_OK)
         rc = submit_wait(request);
@@ -114,14 +135,30 @@ int h2_gizclaw_e2e_run_workflow(h2_gizclaw_e2e_fixture_t *fixture,
     } else {
       rc = checked(list_symbol, "workflow-rpc",
                    h2_gizclaw_rpc_workflow_list(
-                       service, h2_gizclaw_e2e_str("assistants"),
-                       (h2_gizclaw_str_t){0}, WORKFLOW_LIMIT,
+                       service,
+                       (h2_gizclaw_str_t[]){h2_gizclaw_e2e_str("assistants")},
+                       1u, (h2_gizclaw_str_t){0}, WORKFLOW_LIMIT,
                        WORKFLOW_TIMEOUT_MS, storage, &page));
     }
     release_request(request, rc);
     if (rc == H2_PAL_OK)
       rc = checked(list_symbol, "workflow-assert",
                    validate_list(fixture, &page, selected, sizeof(selected)));
+    if (rc == H2_PAL_OK) {
+      const char *option = page.safety_fence_count != 0u &&
+                                   page.safety_fences != NULL
+                               ? page.safety_fences[0].name
+                               : "";
+      if (page.safety_fence_count != 0u &&
+          (page.safety_fences == NULL || option[0] == '\0' ||
+           memchr(option, '\0', sizeof(fixture->safety_fence_level)) == NULL))
+        rc = H2_PAL_ERR_INVALID_STATE;
+      else if (req_api == 0u)
+        strcpy(fixture->safety_fence_level, option);
+      else if (strcmp(fixture->safety_fence_level, option) != 0)
+        rc = H2_PAL_ERR_INVALID_STATE;
+      rc = checked(list_symbol, "fence-discovery", rc);
+    }
     storage->used = 0u;
     if (rc != H2_PAL_OK)
       break;
@@ -155,8 +192,7 @@ int h2_gizclaw_e2e_run_workflow(h2_gizclaw_e2e_fixture_t *fixture,
                            result.runtime_profile_revision) &&
           result.workflow.name != NULL &&
           strcmp(result.workflow.name, selected) == 0 &&
-          result.workflow.collection != NULL &&
-          strcmp(result.workflow.collection, "assistants") == 0;
+          workflow_tags_valid(&result.workflow);
       rc = checked(get_symbol, "workflow-assert",
                    matches ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE);
     }

@@ -57,6 +57,20 @@ enum {
   H2_PEER_COMPLETED_RECEIVE_TIMEOUT_MS = 2,
 };
 
+h2_pal_result_t peer_connection_selected_pair(PeerConnection* pc,
+    h2_pal_net_addr_t* local, h2_pal_net_addr_t* remote) {
+  if (local != NULL) memset(local, 0, sizeof(*local));
+  if (remote != NULL) memset(remote, 0, sizeof(*remote));
+  if (pc == NULL || local == NULL || remote == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  IceCandidatePair* pair = pc->agent.selected_pair;
+  if (pair == NULL || pair->local == NULL || pair->remote == NULL)
+    return H2_PAL_ERR_WOULD_BLOCK;
+  *local = pair->local->addr;
+  *remote = pair->remote->addr;
+  return H2_PAL_OK;
+}
+
 int peer_connection_rtp_send_or_queue(
     uint8_t* pending_packet, size_t pending_capacity, size_t* pending_len,
     uint8_t* packet, size_t packet_len, PeerConnectionRtpProtectFn protect,
@@ -285,7 +299,7 @@ h2_pal_result_t peer_connection_classify_dtls_handshake_result(
   }
   if (handshake_result < 0) {
     *out_terminal_state = PEER_CONNECTION_FAILED;
-    return H2_PAL_ERR_IO;
+    return (h2_pal_result_t)handshake_result;
   }
   return H2_PAL_OK;
 }
@@ -347,6 +361,8 @@ PeerConnection* peer_connection_create(
   memset(&pc->sctp, 0, sizeof(pc->sctp));
   pc->sctp.log = config->log;
   pc->sctp.mem = config->mem;
+  pc->sctp.allocator = config->allocator;
+  pc->dtls_srtp.allocator = config->allocator;
   pc->sctp.api = config->sctp;
   pc->sctp.time = config->time;
   pc->sctp.userdata = config->user_data;
@@ -483,6 +499,13 @@ int peer_connection_encode_datachannel_open(
   return 0;
 }
 
+int peer_connection_register_negotiated_channel(
+    PeerConnection* pc, DecpChannelType channel_type,
+    uint32_t reliability_parameter, const char* label, uint16_t sid) {
+  return pc == NULL ? -1 : sctp_register_negotiated_channel(
+      &pc->sctp, label, sid, (uint8_t)channel_type, reliability_parameter);
+}
+
 int peer_connection_create_datachannel_sid(
     PeerConnection* pc, DecpChannelType channel_type, uint16_t priority,
     uint32_t reliability_parameter, char* label, char* protocol, uint16_t sid) {
@@ -608,6 +631,16 @@ static h2_pal_result_t peer_connection_loop_internal(
       }
       if (handshake_result == 0) {
         H2_PEER_LOGD(pc->config.log, "DTLS-SRTP handshake done");
+
+        /* A verified handshake is fresh peer activity. Local certificate
+         * operations may take longer than the idle interval on embedded
+         * software crypto; do not immediately expire the new association
+         * against the timestamp captured before those operations. */
+        if (h2_pal_time_get_monotonic_ms(
+                pc->agent.time, &pc->agent.ice_activity_time_ms) != H2_PAL_OK) {
+          STATE_CHANGED(pc, PEER_CONNECTION_FAILED);
+          return H2_PAL_ERR_IO;
+        }
 
         if (pc->config.datachannel) {
           H2_PEER_LOGI(pc->config.log, "SCTP create association");
@@ -741,6 +774,8 @@ int peer_connection_set_remote_description(
     line = strstr(start, "\r\n");
     size_t line_len = (size_t)(line - start);
     if (line_len >= sizeof(buf)) {
+      h2_pal_log_write(pc->config.log, H2_PAL_LOG_ERROR, "h2peer",
+                       "SDP rejected: line exceeds parser capacity");
       return -1;
     }
     memcpy(buf, start, line_len);
@@ -752,6 +787,8 @@ int peer_connection_set_remote_description(
 
     if (strstr(buf, "a=fingerprint") &&
         dtls_srtp_set_remote_fingerprint(&pc->dtls_srtp, buf + 22) != 0) {
+      h2_pal_log_write(pc->config.log, H2_PAL_LOG_ERROR, "h2peer",
+                       "SDP rejected: fingerprint");
       return -1;
     }
 
@@ -780,6 +817,8 @@ int peer_connection_set_remote_description(
   }
 
   if (agent_set_remote_description(&pc->agent, (char*)sdp) != 0) {
+    h2_pal_log_write(pc->config.log, H2_PAL_LOG_ERROR, "h2peer",
+                     "SDP rejected: ICE description");
     return -1;
   }
   if (type == SDP_TYPE_ANSWER) {

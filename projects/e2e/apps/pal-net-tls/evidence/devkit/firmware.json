@@ -1,0 +1,71 @@
+{
+  "assets": [
+    {
+      "name": "devkit-pal-net-tls-esp32s3.update.tar.zlib",
+      "operation": "managed-install",
+      "release_suffix": ".update.tar.zlib",
+      "sha256": "cfd3dd55865f18aff3e2a1bdeaae46344b7d7b54d74fde767989654d5e4bb2d9",
+      "size": 987771
+    }
+  ],
+  "board": "devkit",
+  "entry": "projects/e2e/targets/h2loader_tar_zlib/pal-net-tls/devkit",
+  "image": "pal-net-tls",
+  "native_artifacts": [
+    {
+      "name": "firmware.elf",
+      "operation": "native-debug-or-flash",
+      "sha256": "55feb3f17452ed33936d28ddac111a589edd037f136cb35ee45dc4d5412ebadd",
+      "size": 14131492
+    },
+    {
+      "name": "firmware.map",
+      "operation": "native-debug-or-flash",
+      "sha256": "d54c380d7ca2ce38b37e2d1ad584826637b428991c5235c6439f6c0a8b4c88ae",
+      "size": 13206542
+    },
+    {
+      "name": "app.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "4858379bc7b917d61c0df707c7af86fc72198d1d80203643214c3abd658d28b1",
+      "size": 1532944
+    },
+    {
+      "name": "bootloader.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "263370d8b54cd83379915f730a1d950ee1ffd4db60e981df9f63c80b8a73f8b4",
+      "size": 21328
+    },
+    {
+      "name": "combined_factory.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "8a46707bd0cd1e26376ec1feca1c35cfaef526b3601b89534e4e4989aa4b3b4e",
+      "size": 1664016
+    },
+    {
+      "name": "partition-table.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "96f93c5cdeacf9f53990c7d9fb3570220e33c6feedcc73cea05948160cf14d48",
+      "size": 3072
+    },
+    {
+      "name": "flasher_args.json",
+      "operation": "native-debug-or-flash",
+      "sha256": "448e80c12af7163fd169762b621f6f90af3a607acd591260f91e65f2387baa4d",
+      "size": 1000
+    }
+  ],
+  "package_manifest": {
+    "board": "devkit",
+    "format": 1,
+    "image_sha256": "4858379bc7b917d61c0df707c7af86fc72198d1d80203643214c3abd658d28b1",
+    "image_size": 1532944,
+    "role": "app",
+    "target": "esp32s3",
+    "version": "pal-net-tls-esp-20261001-r12"
+  },
+  "platform": "esp",
+  "role": "app",
+  "target": "esp32s3",
+  "version": "pal-net-tls-esp-20261001-r12"
+}

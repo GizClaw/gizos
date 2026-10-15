@@ -1,4 +1,5 @@
 #include "h2_bk_platform_core.h"
+#include "h2_bk_resource_stats_internal.h"
 
 #include <os/mem.h>
 #include <os/os.h>
@@ -83,6 +84,7 @@ static h2_pal_result_t bk_mutex_create(
         return H2_PAL_ERR_NO_MEMORY;
     }
 
+    h2_bk_resource_acquire(H2_BK_RESOURCE_MUTEX, 0u);
     *out_mutex = mutex;
     return H2_PAL_OK;
 }
@@ -101,6 +103,7 @@ static h2_pal_result_t bk_mutex_destroy(void *user, h2_pal_mutex_t *mutex) {
     }
     const h2_pal_mem_api_t *allocator = mutex->allocator;
     sync_free(allocator, mutex);
+    h2_bk_resource_release(H2_BK_RESOURCE_MUTEX, 0u);
     return H2_PAL_OK;
 }
 
@@ -167,6 +170,7 @@ static h2_pal_result_t bk_semaphore_create(
         return H2_PAL_ERR_NO_MEMORY;
     }
 
+    h2_bk_resource_acquire(H2_BK_RESOURCE_SEMAPHORE, 0u);
     *out_semaphore = semaphore;
     return H2_PAL_OK;
 }
@@ -181,6 +185,7 @@ static h2_pal_result_t bk_semaphore_destroy(void *user, h2_pal_semaphore_t *sema
     }
     const h2_pal_mem_api_t *allocator = semaphore->allocator;
     sync_free(allocator, semaphore);
+    h2_bk_resource_release(H2_BK_RESOURCE_SEMAPHORE, 0u);
     return H2_PAL_OK;
 }
 
@@ -226,6 +231,7 @@ static h2_pal_result_t bk_cond_create(
         sync_free(config->allocator, cond);
         return H2_PAL_ERR_NO_MEMORY;
     }
+    h2_bk_resource_acquire(H2_BK_RESOURCE_CONDITION, 0u);
     *out_cond = cond;
     return H2_PAL_OK;
 }
@@ -246,6 +252,7 @@ static h2_pal_result_t bk_cond_destroy(void *user, h2_pal_cond_t *cond) {
     (void)rtos_deinit_mutex(&cond->lock);
     const h2_pal_mem_api_t *allocator = cond->allocator;
     sync_free(allocator, cond);
+    h2_bk_resource_release(H2_BK_RESOURCE_CONDITION, 0u);
     return H2_PAL_OK;
 }
 

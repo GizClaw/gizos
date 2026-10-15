@@ -7,8 +7,9 @@
  *
  * - Relative paths are joined to base_dir (the invoking shell's directory;
  *   `bazel run` changes cwd to runfiles and exports BUILD_WORKING_DIRECTORY).
- * - Symlinks are resolved (realpath); for a not-yet-existing final component
- *   (output files) the parent directory is resolved instead.
+ * - POSIX resolves symlinks (realpath); for a not-yet-existing final component
+ *   (output files) the parent directory is resolved instead. Windows normalizes
+ *   DOS paths lexically and preserves reparse components for the PAL guard.
  * - The resolved host path is mapped back from a mount source prefix to its
  *   PAL target prefix (macOS: /private/tmp -> /tmp).
  *

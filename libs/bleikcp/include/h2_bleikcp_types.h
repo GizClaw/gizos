@@ -44,6 +44,8 @@ typedef struct h2_bleikcp_stats {
     uint64_t tx_frames;
     uint64_t rx_frames;
     uint64_t input_errors;
+    /** Datagrams dropped because the input frame queue was full when they
+     * arrived. The stream stays open and the peer's KCP retransmits them. */
     uint64_t dropped_input;
     uint64_t output_blocked;
     uint64_t output_retries;

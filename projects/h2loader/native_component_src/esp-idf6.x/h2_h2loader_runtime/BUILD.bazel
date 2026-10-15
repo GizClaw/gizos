@@ -2,6 +2,8 @@ load("//tools/bazel:native_component.bzl", "firmware_native_component")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files(["src/h2_esp_h2loader_iostreamikcp.c"])
+
 firmware_native_component(
     name = "h2_h2loader_runtime",
     srcs = glob(

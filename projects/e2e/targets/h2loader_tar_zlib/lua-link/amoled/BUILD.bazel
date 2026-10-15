@@ -11,6 +11,7 @@ esp_target_task_policy(
     graph = [":lua_link_launcher"],
     policies = [
         "h2loader/appcmd         8        0  4096  psram",
+        "h2loader/blecmd         8        0  4096  psram",
         "$h2loader/return        8        0  4096  psram",
         "$h2loader/blelink       6        0  4096  psram",
         "$bleikcp/kcp            7        0  4096  psram",
@@ -20,6 +21,7 @@ esp_target_task_policy(
         "$runtime/input          default",
         "$runtime/nfc            default",
         "$lua/worker             default",
+        "$lua/display            default",
         "$lua/link               default",
         "$h2loader/uartcmd       default",
     ],

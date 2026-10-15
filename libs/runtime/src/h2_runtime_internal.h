@@ -3,7 +3,7 @@
 
 #include "h2_runtime.h"
 
-#include <stdatomic.h>
+#include "h2_atomic.h"
 
 #include "h2_runtime_system_state.h"
 
@@ -18,6 +18,14 @@ extern "C" {
 
 #define H2_RUNTIME_RADIO_BUTTON_TRANSITION_EVENT_MAX 4u
 #define H2_RUNTIME_BUTTON_PUSH_EDGE_QUEUE_CAPACITY 16u
+/*
+ * Undelivered Button edges one source may hold while the event queue is full.
+ * Two edges keep one complete press/release (or release/re-press) pair; a
+ * third edge discards the two oldest, which are always complementary.
+ */
+#define H2_RUNTIME_BUTTON_RETAINED_EDGE_MAX 2u
+/* Minimum spacing between two dropped-event WARN lines. */
+#define H2_RUNTIME_DROPPED_EVENT_WARN_INTERVAL_MS 1000u
 
 typedef enum h2_runtime_input_source_kind {
     H2_RUNTIME_INPUT_SOURCE_NONE = 0,
@@ -107,10 +115,31 @@ _Static_assert(offsetof(h2_runtime_queued_event_t, payload) %
                    0u,
                "queued payload offset must satisfy union alignment");
 
+/*
+ * One Button edge the event queue could not take. A press edge re-emits
+ * BUTTON_DOWN; a release edge re-emits BUTTON_UP and the final BUTTON_ACTION.
+ * The owed flags track which of those events still have to be delivered.
+ */
+typedef struct h2_runtime_button_retained_edge {
+    h2_runtime_timestamp_ms_t pressed_at_ms;
+    h2_runtime_timestamp_ms_t released_at_ms;
+    uint8_t release;
+    uint8_t edge_owed;
+    uint8_t action_owed;
+} h2_runtime_button_retained_edge_t;
+
 typedef struct h2_runtime_button_recognizer {
     int initialized;
     int is_pressed;
     h2_runtime_timestamp_ms_t pressed_at_ms;
+    /*
+     * Oldest first. While non-empty, every new event of this source is routed
+     * here (edges) or dropped (held repeats) instead of entering the pending
+     * list, so a source never has pending and retained events at once.
+     */
+    size_t retained_count;
+    h2_runtime_button_retained_edge_t
+        retained[H2_RUNTIME_BUTTON_RETAINED_EDGE_MAX];
 } h2_runtime_button_recognizer_t;
 
 typedef struct h2_runtime_button_push_edge {
@@ -151,13 +180,6 @@ typedef struct h2_runtime_input_source {
     h2_runtime_imu_recognizer_t imu;
 } h2_runtime_input_source_t;
 
-typedef enum h2_runtime_input_phase {
-    H2_RUNTIME_INPUT_PHASE_STOPPED = 0,
-    H2_RUNTIME_INPUT_PHASE_STARTING,
-    H2_RUNTIME_INPUT_PHASE_TASK_RUNNING,
-    H2_RUNTIME_INPUT_PHASE_STOPPING,
-    H2_RUNTIME_INPUT_PHASE_FAULTED,
-} h2_runtime_input_phase_t;
 
 typedef union h2_runtime_input_event_payload {
     h2_runtime_button_down_event_t button_down;
@@ -170,6 +192,8 @@ typedef union h2_runtime_input_event_payload {
 
 typedef struct h2_runtime_input_pending_event {
     h2_runtime_event_kind_t kind;
+    /* Button press edge, release edge or final action: kept when FULL. */
+    int retain;
     h2_runtime_component_t component;
     h2_runtime_component_id_t component_id;
     h2_runtime_sequence_t sequence;
@@ -213,15 +237,15 @@ typedef struct h2_runtime_state_bank {
 #define H2_RUNTIME_STATE_SLOT_COUNT 3u
 
 typedef struct h2_runtime_state_publication {
-    atomic_int ready;
-    atomic_uint active_index;
+    h2_atomic_int_t ready;
+    h2_atomic_uint_t active_index;
     /*
      * Guards reader_count updates where atomic add is not lock-free (ARMv5):
      * the counters then use load/store under this test-and-set lock, taken
      * Unused where fetch_add is lock-free.
      */
-    atomic_flag reader_lock;
-    atomic_uint reader_count[H2_RUNTIME_STATE_SLOT_COUNT];
+    h2_atomic_flag_t reader_lock;
+    h2_atomic_uint_t reader_count[H2_RUNTIME_STATE_SLOT_COUNT];
     h2_runtime_state_bank_t banks[H2_RUNTIME_STATE_SLOT_COUNT];
     uint64_t copy_count;
     uint64_t switch_count;
@@ -249,6 +273,7 @@ typedef struct h2_runtime_system_state_publication {
      */
     h2_pal_mutex_t *mutex;
     h2_runtime_system_wifi_sta_state_t wifi_sta;
+    h2_runtime_system_modem_state_t modem;
 } h2_runtime_system_state_publication_t;
 
 /* Creates and releases the system state lock; see h2_runtime_system_state.c. */
@@ -259,6 +284,18 @@ void h2_runtime_system_state_release(h2_runtime_t *runtime);
 void h2_runtime_system_state_publish_wifi_sta(
     h2_runtime_t *runtime,
     const h2_runtime_system_wifi_sta_state_t *state);
+
+/* Merges one modem event into the modem snapshot; see
+ * h2_runtime_system_state.c. `kind` selects the fields the event reports. */
+void h2_runtime_system_state_publish_modem(
+    h2_runtime_t *runtime,
+    h2_runtime_event_kind_t kind,
+    const h2_runtime_system_modem_state_t *reported);
+
+/* Replaces the whole modem snapshot; for the test control. */
+void h2_runtime_system_state_replace_modem(
+    h2_runtime_t *runtime,
+    const h2_runtime_system_modem_state_t *state);
 
 typedef struct h2_runtime_component_mapping {
     h2_runtime_component_t component;
@@ -310,7 +347,7 @@ struct h2_runtime_private {
     h2_pal_display_api_t display_proxy;
     /* All Audio proxy volume operations share this Runtime-owned state. */
     h2_pal_audio_api_t audio_backend;
-    atomic_flag audio_state_busy;
+    h2_atomic_flag_t audio_state_busy;
     bool audio_state_valid;
     h2_runtime_system_audio_state_t audio_state;
     /*
@@ -332,10 +369,10 @@ struct h2_runtime_private {
      * zero distinct from "no audio yet".
      */
 #if !defined(H2_RUNTIME_AUDIO_LEVELS) || H2_RUNTIME_AUDIO_LEVELS
-    atomic_uint audio_capture_level;
-    atomic_uint audio_capture_level_ms;
-    atomic_uint audio_playback_level;
-    atomic_uint audio_playback_level_ms;
+    h2_atomic_uint_t audio_capture_level;
+    h2_atomic_uint_t audio_capture_level_ms;
+    h2_atomic_uint_t audio_playback_level;
+    h2_atomic_uint_t audio_playback_level_ms;
 #endif
     h2_pal_audio_api_t audio_proxy;
     h2_pal_audio_decoder_api_t audio_decoder_proxy;
@@ -361,25 +398,43 @@ struct h2_runtime_private {
      * counter is a plain fetch_add; otherwise (ARMv5) updates run under
      * custom_event_lock.
      */
-    atomic_flag custom_event_lock;
-    atomic_uint custom_event_in_flight;
-    atomic_int custom_event_closed;
+    h2_atomic_flag_t custom_event_lock;
+    h2_atomic_uint_t custom_event_in_flight;
+    h2_atomic_int_t custom_event_closed;
 
     /*
      * Same split: fetch_add where it is lock-free, sequence_lock where not.
      */
-    atomic_flag sequence_lock;
-    atomic_uint next_sequence;
-    uint32_t dropped_event_count;
+    h2_atomic_flag_t sequence_lock;
+    h2_atomic_uint_t next_sequence;
+    /*
+     * Events a full queue refused. Written by every producer task, read by
+     * h2_runtime_dropped_event_count(). The linked atomic provider supplies
+     * fetch_add. The last_dropped_* fields only feed
+     * the WARN line, so a reader pairing fields of two drops is harmless.
+     */
+    h2_atomic_uint_t dropped_event_count;
+    h2_atomic_int_t last_dropped_kind;
+    h2_atomic_int_t last_dropped_component;
+    h2_atomic_uint_t last_dropped_component_id;
+    /*
+     * Rate limit for the WARN line. drop_report_lock is only ever tried,
+     * never spun on: a producer that loses the race skips reporting and the
+     * winner (or the next input tick) reports the newer total.
+     */
+    h2_atomic_flag_t drop_report_lock;
+    int drop_reported_once;
+    uint32_t drop_reported_count;
+    h2_runtime_timestamp_ms_t drop_reported_at_ms;
 
-    atomic_int system_event_active;
+    h2_atomic_int_t system_event_active;
     h2_pal_system_event_subscription_t *
         system_event_subscriptions[H2_RUNTIME_SYSTEM_EVENT_SUBSCRIPTION_MAX];
     size_t system_event_subscription_count;
 
-    atomic_int input_phase;
-    atomic_int input_stop_requested;
-    atomic_int input_worker_result;
+    h2_atomic_int_t input_phase;
+    h2_atomic_int_t input_stop_requested;
+    h2_atomic_int_t input_worker_result;
     uint32_t input_tick_ms;
     uint32_t input_button_poll_interval_ms;
     uint32_t input_nfc_poll_interval_ms;
@@ -403,6 +458,26 @@ struct h2_runtime_private {
     size_t input_pending_event_count;
     size_t event_payload_capacity;
     h2_runtime_sequence_t input_event_sequence_ceiling;
+    /*
+     * The stage of the poll in progress that failed, and that poll's clock;
+     * both belong to the poll and live under the writer mutex.
+     */
+    h2_runtime_input_stage_t input_error_stage;
+    h2_runtime_timestamp_ms_t input_poll_now_ms;
+    /*
+     * Input worker health reported by h2_runtime_input_status(). Its own
+     * mutex guards it, so a worker that cannot take the writer mutex can
+     * still record that, and status never reads it unlocked.
+     */
+    h2_pal_mutex_t *input_health_mutex;
+    h2_pal_result_t input_last_error;
+    h2_runtime_input_stage_t input_last_error_stage;
+    h2_runtime_timestamp_ms_t input_last_error_at_ms;
+    uint32_t input_error_count;
+    uint32_t input_consecutive_error_count;
+    uint32_t input_poll_count;
+    h2_runtime_timestamp_ms_t input_last_poll_ok_at_ms;
+    uint32_t input_snapshot_deferred_count;
     /* State publication (owned by h2_runtime_state.c). */
     h2_runtime_state_publication_t state_publication;
     int state_dirty;
@@ -432,26 +507,23 @@ h2_runtime_sequence_t h2_runtime_next_sequence(h2_runtime_t *runtime);
  * fetch_add to a library call the SDK does not provide, so those targets keep
  * a short test-and-set critical section instead.
  *
- * A bare spin on an atomic_flag is only safe without preemption: on a
+ * A bare spin on an h2_atomic_flag_t is only safe without preemption: on a
  * preemptive RTOS a waiter that outranks the holder on the holder's core pins
  * that core forever (ESP-IDF sys_evt vs. $runtime/input on core 0, which is
  * why the lock-free path exists). The remaining ARMv5 target schedules its
  * tasks cooperatively on libco coroutines, so a holder is never switched out
  * inside the critical section and the flag is never contended.
  */
-#if defined(ATOMIC_INT_LOCK_FREE) && ATOMIC_INT_LOCK_FREE == 2
-#define H2_RUNTIME_ATOMIC_ADD_LOCK_FREE 1
-#else
-#define H2_RUNTIME_ATOMIC_ADD_LOCK_FREE 0
-#endif
+/* The linked platform implementation provides fetch_add semantics. */
+#define H2_RUNTIME_ATOMIC_FETCH_ADD 1
 
-static inline void h2_runtime_flag_lock(atomic_flag *flag) {
-    while (atomic_flag_test_and_set_explicit(flag, memory_order_acquire)) {
+static inline void h2_runtime_flag_lock(h2_atomic_flag_t *flag) {
+    while (h2_atomic_flag_test_and_set(flag, H2_ATOMIC_ACQUIRE)) {
     }
 }
 
-static inline void h2_runtime_flag_unlock(atomic_flag *flag) {
-    atomic_flag_clear_explicit(flag, memory_order_release);
+static inline void h2_runtime_flag_unlock(h2_atomic_flag_t *flag) {
+    h2_atomic_flag_clear(flag, H2_ATOMIC_RELEASE);
 }
 
 h2_pal_result_t h2_runtime_emit_event(
@@ -467,6 +539,23 @@ h2_pal_result_t h2_runtime_emit_event(
 h2_pal_result_t h2_runtime_enqueue_event(
     h2_runtime_t *runtime,
     const h2_runtime_queued_event_t *queued);
+
+/*
+ * Counts one event a full queue refused and reports it through the rate
+ * limited WARN below. Safe from any producer task.
+ */
+void h2_runtime_record_dropped_event(
+    h2_runtime_t *runtime,
+    h2_runtime_event_kind_t kind,
+    h2_runtime_component_t component,
+    h2_runtime_component_id_t component_id);
+
+/*
+ * Logs one WARN when the dropped total moved since the last report and at
+ * least H2_RUNTIME_DROPPED_EVENT_WARN_INTERVAL_MS passed (the first drop is
+ * reported at once). Never blocks on another reporter.
+ */
+void h2_runtime_report_dropped_events(h2_runtime_t *runtime);
 
 /* Gives the coalescing wake token; never blocks, never fails. */
 void h2_runtime_notify_internal(h2_runtime_t *runtime);

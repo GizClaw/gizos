@@ -1,9 +1,15 @@
 #include "h2_bk_platform_core.h"
 
+/* lwIP exports POSIX-name macros; parse the complete PAL before them. */
+#include "h2_bk_net_addr.h"
+#include "h2_bk_net_result.h"
+#include "h2_bk_netif_internal.h"
+
 #include <errno.h>
 #include <limits.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include <sys/time.h>
 
 #include <components/netif.h>
@@ -13,6 +19,7 @@
 #include <mbedtls/ssl.h>
 #include <mbedtls/x509_crt.h>
 #include <os/os.h>
+#include "h2_bk_udp_receive.h"
 
 #define H2_BK_NET_TLS_SOCKET_MAX 8u
 #define H2_BK_NET_TLS_ALPN_MAX 2u
@@ -42,7 +49,8 @@ typedef struct bk_net_resolver {
     int completed;
     int closed;
     h2_pal_result_t result;
-    h2_pal_net_addr_t addr;
+    h2_pal_net_addr_list_t addrs;
+    h2_pal_net_family_t family;
     char host[];
 } bk_net_resolver_t;
 
@@ -284,15 +292,72 @@ static h2_pal_result_t bk_net_tls_load_ca(
     return H2_PAL_OK;
 }
 
+/* Some SDK mbedTLS builds omit MBEDTLS_HAVE_TIME_DATE, which otherwise
+ * accepts expired certificates even with VERIFY_REQUIRED. Compare the peer
+ * chain against calibrated PAL wall time on every verified handshake. */
+/* Certificate retention and built-in date checks are optional in board SDKs.
+ * Verify calibrated validity while the peer chain is still available during
+ * the handshake; never accept an expired or future peer because those SDK
+ * options were disabled to save RAM. */
+static int bk_net_tls_verify_dates(
+    void *user, mbedtls_x509_crt *cert, int depth, uint32_t *flags) {
+    (void)user;
+    (void)depth;
+    uint64_t wall_ms = 0u;
+    if (h2_pal_time_get_wall_ms(h2_bk_platform_time_api(), &wall_ms) != H2_PAL_OK) {
+        *flags |= MBEDTLS_X509_BADCERT_OTHER;
+        (void)h2_pal_log_write(h2_bk_platform_log_api(), H2_PAL_LOG_ERROR,
+            "pal/net", "tls_cert_time clock_unavailable");
+        return 0;
+    }
+    time_t seconds = (time_t)(wall_ms / 1000u);
+    struct tm utc;
+    if (seconds < 0 || (uint64_t)seconds != wall_ms / 1000u ||
+        gmtime_r(&seconds, &utc) == NULL) {
+        *flags |= MBEDTLS_X509_BADCERT_OTHER;
+        (void)h2_pal_log_write(h2_bk_platform_log_api(), H2_PAL_LOG_ERROR,
+            "pal/net", "tls_cert_time clock_unavailable");
+        return 0;
+    }
+    mbedtls_x509_time now = {
+        .year = utc.tm_year + 1900, .mon = utc.tm_mon + 1,
+        .day = utc.tm_mday, .hour = utc.tm_hour,
+        .min = utc.tm_min, .sec = utc.tm_sec,
+    };
+    if (mbedtls_x509_time_cmp(&cert->valid_from, &now) > 0) {
+        *flags |= MBEDTLS_X509_BADCERT_FUTURE;
+    }
+    if (mbedtls_x509_time_cmp(&cert->valid_to, &now) < 0) {
+        *flags |= MBEDTLS_X509_BADCERT_EXPIRED;
+    }
+    if ((*flags & (MBEDTLS_X509_BADCERT_FUTURE |
+                   MBEDTLS_X509_BADCERT_EXPIRED)) != 0u) {
+        char diagnostic[180];
+        (void)snprintf(diagnostic, sizeof(diagnostic),
+            "tls_cert_time from=%d-%02d-%02d to=%d-%02d-%02d now=%d-%02d-%02d flags=0x%x",
+            cert->valid_from.year, cert->valid_from.mon, cert->valid_from.day,
+            cert->valid_to.year, cert->valid_to.mon, cert->valid_to.day,
+            now.year, now.mon, now.day, (unsigned)*flags);
+        (void)h2_pal_log_write(h2_bk_platform_log_api(), H2_PAL_LOG_ERROR,
+            "pal/net", diagnostic);
+    }
+    return 0;
+}
+
 static h2_pal_result_t bk_net_tls_handshake(
-    bk_net_tls_socket_t *socket, uint32_t timeout_ms) {
+    bk_net_tls_socket_t *socket, uint32_t timeout_ms,
+    h2_pal_net_tls_verify_t verify_mode) {
     uint64_t deadline = bk_net_now_ms() + timeout_ms;
     for (;;) {
         int result = mbedtls_ssl_handshake(&socket->ssl);
         if (result == 0) {
-            return mbedtls_ssl_get_verify_result(&socket->ssl) == 0u
-                ? H2_PAL_OK
-                : H2_PAL_ERR_TLS_VERIFY;
+            if (verify_mode == H2_PAL_NET_TLS_VERIFY_INSECURE_TEST_ONLY) {
+                return H2_PAL_OK;
+            }
+            if (mbedtls_ssl_get_verify_result(&socket->ssl) != 0u) {
+                return H2_PAL_ERR_TLS_VERIFY;
+            }
+            return H2_PAL_OK;
         }
         if (result != MBEDTLS_ERR_SSL_WANT_READ &&
             result != MBEDTLS_ERR_SSL_WANT_WRITE) {
@@ -311,44 +376,6 @@ static h2_pal_result_t bk_net_tls_handshake(
             return wait_result;
         }
     }
-}
-
-static int family_to_lwip(h2_pal_net_family_t family) {
-    return family == H2_PAL_NET_FAMILY_IPV6 ? -1 : AF_INET;
-}
-
-static int addr_to_sockaddr(
-    const h2_pal_net_addr_t *addr,
-    struct sockaddr_storage *storage,
-    socklen_t *out_len) {
-    if (addr == NULL || storage == NULL || out_len == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    memset(storage, 0, sizeof(*storage));
-    if (addr->family == H2_PAL_NET_FAMILY_IPV6) {
-        return H2_PAL_ERR_UNSUPPORTED;
-    }
-    struct sockaddr_in *sin = (struct sockaddr_in *)storage;
-    sin->sin_family = AF_INET;
-    sin->sin_port = htons(addr->port);
-    memcpy(&sin->sin_addr, addr->ip, 4u);
-    *out_len = sizeof(*sin);
-    return H2_PAL_OK;
-}
-
-static int sockaddr_to_addr(const struct sockaddr *sockaddr, h2_pal_net_addr_t *out_addr) {
-    if (sockaddr == NULL || out_addr == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    memset(out_addr, 0, sizeof(*out_addr));
-    if (sockaddr->sa_family != AF_INET) {
-        return H2_PAL_ERR_UNSUPPORTED;
-    }
-    const struct sockaddr_in *sin = (const struct sockaddr_in *)sockaddr;
-    out_addr->family = H2_PAL_NET_FAMILY_IPV4;
-    out_addr->port = ntohs(sin->sin_port);
-    memcpy(out_addr->ip, &sin->sin_addr, 4u);
-    return H2_PAL_OK;
 }
 
 static void set_recv_timeout(int fd, uint32_t timeout_ms) {
@@ -395,32 +422,19 @@ static uint32_t bk_net_timeout_remaining_ms(uint64_t deadline_ms) {
         : (uint32_t)(deadline_ms - now_ms);
 }
 
-static int bk_net_resolve_host(
-    const char *host,
-    h2_pal_net_addr_t *out_addr) {
-    if (host == NULL || out_addr == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    struct addrinfo hints;
-    memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET;
-    hints.ai_socktype = SOCK_DGRAM;
-    struct addrinfo *res = NULL;
-    int rc = getaddrinfo(host, NULL, &hints, &res);
-    if (rc != 0 || res == NULL) {
-        return H2_PAL_ERR_NOT_FOUND;
-    }
-    int out_rc = sockaddr_to_addr(res->ai_addr, out_addr);
-    freeaddrinfo(res);
-    return out_rc;
-}
-
-static int bk_net_resolve_addr(
-    void *user,
-    const char *host,
-    h2_pal_net_addr_t *out_addr) {
-    (void)user;
-    return bk_net_resolve_host(host, out_addr);
+static int bk_net_resolve_addr(void *user, const char *host,
+                               h2_pal_net_addr_t *out_addr) {
+  if (out_addr == NULL) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  memset(out_addr, 0, sizeof(*out_addr));
+  h2_pal_net_addr_list_t addrs;
+  h2_pal_result_t result =
+      h2_bk_net_resolve_all(user, host, H2_PAL_NET_FAMILY_ANY, &addrs);
+  if (result == H2_PAL_OK) {
+    *out_addr = h2_bk_net_first_addr(&addrs);
+  }
+  return result;
 }
 
 static h2_pal_result_t bk_net_resolver_reserve(void) {
@@ -465,12 +479,13 @@ static void bk_net_resolver_destroy(bk_net_resolver_t *resolver) {
 
 static void bk_net_resolver_worker(void *raw) {
     bk_net_resolver_t *resolver = (bk_net_resolver_t *)raw;
-    h2_pal_net_addr_t addr;
-    h2_pal_result_t result = bk_net_resolve_host(resolver->host, &addr);
+    h2_pal_net_addr_list_t addrs;
+    h2_pal_result_t result =
+        h2_bk_net_resolve_all(NULL, resolver->host, resolver->family, &addrs);
     (void)rtos_lock_mutex(&resolver->lock);
     resolver->result = result;
     if (result == H2_PAL_OK) {
-        resolver->addr = addr;
+      resolver->addrs = addrs;
     }
     resolver->completed = 1;
     int closed = resolver->closed;
@@ -484,91 +499,117 @@ static void bk_net_resolver_worker(void *raw) {
     rtos_delete_thread(NULL);
 }
 
-static h2_pal_result_t bk_net_resolve_start(
-    void *user,
-    const char *host,
-    h2_pal_net_resolver_t **out_resolver) {
-    (void)user;
-    if (host == NULL || host[0] == '\0' || out_resolver == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    *out_resolver = NULL;
-    h2_pal_result_t reserve_result = bk_net_resolver_reserve();
-    if (reserve_result != H2_PAL_OK) {
-        return reserve_result;
-    }
-    size_t host_len = strlen(host);
-    if (host_len >= SIZE_MAX - sizeof(bk_net_resolver_t)) {
-        bk_net_resolver_release();
-        return H2_PAL_ERR_NO_MEMORY;
-    }
-    bk_net_resolver_t *resolver = (bk_net_resolver_t *)h2_pal_mem_alloc(
-        h2_bk_platform_default_allocator(),
-        sizeof(*resolver) + host_len + 1u);
-    if (resolver == NULL) {
-        bk_net_resolver_release();
-        return H2_PAL_ERR_NO_MEMORY;
-    }
-    memset(resolver, 0, sizeof(*resolver));
-    memcpy(resolver->host, host, host_len + 1u);
-    if (rtos_init_mutex(&resolver->lock) != kNoErr) {
-        bk_net_resolver_destroy(resolver);
-        return H2_PAL_ERR_NO_MEMORY;
-    }
-    if (rtos_init_semaphore(&resolver->done, 1) != kNoErr) {
-        bk_net_resolver_destroy(resolver);
-        return H2_PAL_ERR_NO_MEMORY;
-    }
-    if (rtos_create_thread(
-            NULL, BEKEN_APPLICATION_PRIORITY, "h2_dns",
-            bk_net_resolver_worker, 4096u, resolver) != kNoErr) {
-        bk_net_resolver_destroy(resolver);
-        return H2_PAL_ERR_NO_MEMORY;
-    }
-    *out_resolver = (h2_pal_net_resolver_t *)resolver;
-    return H2_PAL_OK;
+static h2_pal_result_t
+bk_net_resolve_start_family(void *user, const char *host,
+                            h2_pal_net_family_t family,
+                            h2_pal_net_resolver_t **out_resolver) {
+  (void)user;
+  if (host == NULL || host[0] == '\0' || out_resolver == NULL ||
+      (family != H2_PAL_NET_FAMILY_ANY && family != H2_PAL_NET_FAMILY_IPV4 &&
+         family != H2_PAL_NET_FAMILY_IPV6)) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  *out_resolver = NULL;
+#if !LWIP_IPV6
+  if (family == H2_PAL_NET_FAMILY_IPV6) return H2_PAL_ERR_UNSUPPORTED;
+#endif
+  h2_pal_result_t reserve_result = bk_net_resolver_reserve();
+  if (reserve_result != H2_PAL_OK) {
+    return reserve_result;
+  }
+  size_t host_len = strlen(host);
+  if (host_len >= SIZE_MAX - sizeof(bk_net_resolver_t)) {
+    bk_net_resolver_release();
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  bk_net_resolver_t *resolver = (bk_net_resolver_t *)h2_pal_mem_alloc(
+      h2_bk_platform_default_allocator(), sizeof(*resolver) + host_len + 1u);
+  if (resolver == NULL) {
+    bk_net_resolver_release();
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  memset(resolver, 0, sizeof(*resolver));
+  resolver->family = family;
+  memcpy(resolver->host, host, host_len + 1u);
+  if (rtos_init_mutex(&resolver->lock) != kNoErr) {
+    bk_net_resolver_destroy(resolver);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  if (rtos_init_semaphore(&resolver->done, 1) != kNoErr) {
+    bk_net_resolver_destroy(resolver);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  if (rtos_create_thread(NULL, BEKEN_APPLICATION_PRIORITY, "h2_dns",
+                         bk_net_resolver_worker, 4096u, resolver) != kNoErr) {
+    bk_net_resolver_destroy(resolver);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  *out_resolver = (h2_pal_net_resolver_t *)resolver;
+  return H2_PAL_OK;
 }
 
-static h2_pal_result_t bk_net_resolve_poll(
-    void *user,
-    h2_pal_net_resolver_t *resolver_handle,
-    h2_pal_net_addr_t *out_addr,
-    uint32_t timeout_ms) {
-    (void)user;
-    bk_net_resolver_t *resolver = (bk_net_resolver_t *)resolver_handle;
-    if (resolver == NULL || out_addr == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    (void)rtos_lock_mutex(&resolver->lock);
-    if (resolver->closed) {
-        (void)rtos_unlock_mutex(&resolver->lock);
-        return H2_PAL_ERR_INVALID_STATE;
-    }
-    if (resolver->completed) {
-        h2_pal_result_t result = resolver->result;
-        if (result == H2_PAL_OK) {
-            *out_addr = resolver->addr;
-        }
-        (void)rtos_unlock_mutex(&resolver->lock);
-        return result;
-    }
+static h2_pal_result_t
+bk_net_resolve_poll_all(void *user, h2_pal_net_resolver_t *resolver_handle,
+                        h2_pal_net_addr_list_t *out_addrs,
+                        uint32_t timeout_ms) {
+  (void)user;
+  bk_net_resolver_t *resolver = (bk_net_resolver_t *)resolver_handle;
+  if (resolver == NULL || out_addrs == NULL) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  memset(out_addrs, 0, sizeof(*out_addrs));
+  (void)rtos_lock_mutex(&resolver->lock);
+  if (resolver->closed) {
     (void)rtos_unlock_mutex(&resolver->lock);
-
-    bk_err_t wait_result =
-        rtos_get_semaphore(&resolver->done, timeout_ms);
-    (void)rtos_lock_mutex(&resolver->lock);
-    if (!resolver->completed) {
-        (void)rtos_unlock_mutex(&resolver->lock);
-        return timeout_ms == 0u || wait_result == kNoErr
-            ? H2_PAL_ERR_WOULD_BLOCK
-            : H2_PAL_ERR_TIMEOUT;
-    }
+    return H2_PAL_ERR_INVALID_STATE;
+  }
+  if (resolver->completed) {
     h2_pal_result_t result = resolver->result;
     if (result == H2_PAL_OK) {
-        *out_addr = resolver->addr;
+      *out_addrs = resolver->addrs;
     }
     (void)rtos_unlock_mutex(&resolver->lock);
     return result;
+  }
+  (void)rtos_unlock_mutex(&resolver->lock);
+
+  bk_err_t wait_result = rtos_get_semaphore(&resolver->done, timeout_ms);
+  (void)rtos_lock_mutex(&resolver->lock);
+  if (!resolver->completed) {
+    (void)rtos_unlock_mutex(&resolver->lock);
+    return timeout_ms == 0u || wait_result == kNoErr ? H2_PAL_ERR_WOULD_BLOCK
+                                                     : H2_PAL_ERR_TIMEOUT;
+  }
+  h2_pal_result_t result = resolver->result;
+  if (result == H2_PAL_OK) {
+    *out_addrs = resolver->addrs;
+  }
+  (void)rtos_unlock_mutex(&resolver->lock);
+  return result;
+}
+
+static h2_pal_result_t
+bk_net_resolve_start(void *user, const char *host,
+                     h2_pal_net_resolver_t **out_resolver) {
+  return bk_net_resolve_start_family(user, host, H2_PAL_NET_FAMILY_ANY,
+                                     out_resolver);
+}
+
+static h2_pal_result_t bk_net_resolve_poll(void *user,
+                                           h2_pal_net_resolver_t *resolver,
+                                           h2_pal_net_addr_t *out_addr,
+                                           uint32_t timeout_ms) {
+  if (out_addr == NULL) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  memset(out_addr, 0, sizeof(*out_addr));
+  h2_pal_net_addr_list_t addrs;
+  h2_pal_result_t result =
+      bk_net_resolve_poll_all(user, resolver, &addrs, timeout_ms);
+  if (result == H2_PAL_OK) {
+    *out_addr = h2_bk_net_first_addr(&addrs);
+  }
+  return result;
 }
 
 static void bk_net_resolve_close(
@@ -588,25 +629,53 @@ static void bk_net_resolve_close(
     }
 }
 
-static int bk_net_get_host_addr(void *user, const char *iface_prefix, h2_pal_net_addr_t *out_addr) {
-    (void)user;
-    (void)iface_prefix;
-    if (out_addr == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
+static int bk_net_get_host_addr_family(void *user, const char *prefix,
+                                       h2_pal_net_family_t family,
+                                       h2_pal_net_addr_t *out_addr) {
+  (void)user;
+  return h2_bk_netif_address_for_prefix(prefix, family, out_addr);
+}
 
-    netif_ip4_config_t sta_ip;
-    memset(&sta_ip, 0, sizeof(sta_ip));
-    if (bk_netif_get_ip4_config(NETIF_IF_STA, &sta_ip) == BK_OK && strcmp(sta_ip.ip, "0.0.0.0") != 0) {
-        struct in_addr parsed;
-        if (inet_aton(sta_ip.ip, &parsed) != 0) {
-            out_addr->family = H2_PAL_NET_FAMILY_IPV4;
-            memcpy(out_addr->ip, &parsed, 4u);
-            return H2_PAL_OK;
-        }
-    }
+static int bk_net_get_host_addr(void *user, const char *prefix,
+                                h2_pal_net_addr_t *out_addr) {
+  int rc = bk_net_get_host_addr_family(user, prefix, H2_PAL_NET_FAMILY_IPV4,
+                                       out_addr);
+  return rc == H2_PAL_OK ? rc
+                         : bk_net_get_host_addr_family(
+                               user, prefix, H2_PAL_NET_FAMILY_IPV6, out_addr);
+}
 
-    return H2_PAL_ERR_UNAVAILABLE;
+static int bk_net_open_socket(int family, int type) {
+  int fd = socket(family, type, 0);
+  if (fd >= 0 && family == AF_INET6) {
+    int only = 1;
+    if (setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &only, sizeof(only)) < 0) {
+      closesocket(fd);
+      return -1;
+    }
+  }
+  return fd;
+}
+
+static int bk_net_bind_interface(int fd, const h2_pal_netif_ref_t *ref) {
+  if (ref == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_pal_netif_status_t status = {0};
+  int rc = h2_pal_netif_get_status(h2_bk_platform_netif_api(), ref, &status);
+  if (rc != H2_PAL_OK)
+    return rc;
+  char name[H2_PAL_NETIF_NAME_MAX] = {0};
+  rc = h2_bk_netif_native_name(status.ref.id, name, sizeof(name));
+  if (rc != H2_PAL_OK)
+    return rc;
+  struct ifreq request = {0};
+  if (strlen(name) >= sizeof(request.ifr_name))
+    return H2_PAL_ERR_INVALID_ARG;
+  memcpy(request.ifr_name, name, strlen(name) + 1u);
+  return setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, &request,
+                    sizeof(request)) == 0
+             ? H2_PAL_OK
+             : H2_PAL_ERR_IO;
 }
 
 static int bk_net_udp_open(
@@ -620,11 +689,11 @@ static int bk_net_udp_open(
         return H2_PAL_ERR_INVALID_ARG;
     }
     *out_socket = -1;
-    int lwip_family = family_to_lwip(family);
+    int lwip_family = h2_bk_net_family(family);
     if (lwip_family < 0) {
         return H2_PAL_ERR_UNSUPPORTED;
     }
-    int fd = socket(lwip_family, SOCK_DGRAM, 0);
+    int fd = bk_net_open_socket(lwip_family, SOCK_DGRAM);
     if (fd < 0) {
         return H2_PAL_ERR_IO;
     }
@@ -638,7 +707,7 @@ static int bk_net_udp_open(
     bind_addr.port = port;
     struct sockaddr_storage storage;
     socklen_t sock_len = 0;
-    int rc = addr_to_sockaddr(&bind_addr, &storage, &sock_len);
+    int rc = h2_bk_net_to_sockaddr(&bind_addr, &storage, &sock_len);
     if (rc != H2_PAL_OK || bind(fd, (struct sockaddr *)&storage, sock_len) < 0) {
         closesocket(fd);
         return H2_PAL_ERR_IO;
@@ -647,7 +716,73 @@ static int bk_net_udp_open(
         closesocket(fd);
         return H2_PAL_ERR_IO;
     }
-    (void)sockaddr_to_addr((const struct sockaddr *)&storage, out_bind_addr);
+    (void)h2_bk_net_from_sockaddr((const struct sockaddr *)&storage,
+                                  out_bind_addr);
+    *out_socket = fd;
+    return H2_PAL_OK;
+}
+
+static int bk_net_udp_open_bound(
+    void *user,
+    h2_pal_net_family_t family,
+    uint16_t port,
+    const h2_pal_net_bind_t *bind_config,
+    h2_pal_net_socket_t *out_socket,
+    h2_pal_net_addr_t *out_bind_addr) {
+    if (out_socket == NULL || out_bind_addr == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    *out_socket = -1;
+    memset(out_bind_addr, 0, sizeof(*out_bind_addr));
+    if (bind_config == NULL || bind_config->type == H2_PAL_NET_BIND_DEFAULT) {
+        return bk_net_udp_open(user, family, port, out_socket, out_bind_addr);
+    }
+    if (bind_config->type == H2_PAL_NET_BIND_NETIF) {
+      int rc = bk_net_udp_open(user, family, port, out_socket, out_bind_addr);
+      if (rc == H2_PAL_OK)
+        rc = bk_net_bind_interface(*out_socket, bind_config->netif);
+      if (rc != H2_PAL_OK && *out_socket >= 0) {
+        closesocket(*out_socket);
+        *out_socket = -1;
+        memset(out_bind_addr, 0, sizeof(*out_bind_addr));
+      }
+      return rc;
+    }
+    if (bind_config->type != H2_PAL_NET_BIND_SOURCE_ADDR) {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
+    if (bind_config->source_addr.family != family) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    int native_family = h2_bk_net_family(family);
+    if (native_family < 0) {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
+    int fd = bk_net_open_socket(native_family, SOCK_DGRAM);
+    if (fd < 0) {
+        return H2_PAL_ERR_IO;
+    }
+    int reuse = 1;
+    (void)setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    h2_pal_net_addr_t source = bind_config->source_addr;
+    source.port = port;
+    struct sockaddr_storage storage;
+    socklen_t size = 0;
+    int rc = h2_bk_net_to_sockaddr(&source, &storage, &size);
+    if (rc != H2_PAL_OK || bind(fd, (struct sockaddr *)&storage, size) < 0) {
+        closesocket(fd);
+        return rc == H2_PAL_OK ? H2_PAL_ERR_IO : rc;
+    }
+    if (getsockname(fd, (struct sockaddr *)&storage, &size) < 0) {
+        closesocket(fd);
+        return H2_PAL_ERR_IO;
+    }
+    rc = h2_bk_net_from_sockaddr((const struct sockaddr *)&storage,
+                                 out_bind_addr);
+    if (rc != H2_PAL_OK) {
+        closesocket(fd);
+        return rc;
+    }
     *out_socket = fd;
     return H2_PAL_OK;
 }
@@ -664,12 +799,23 @@ static int bk_net_udp_sendto(
     }
     struct sockaddr_storage storage;
     socklen_t sock_len = 0;
-    int rc = addr_to_sockaddr(addr, &storage, &sock_len);
+    int rc = h2_bk_net_to_sockaddr(addr, &storage, &sock_len);
     if (rc != H2_PAL_OK) {
         return rc;
     }
     int sent = sendto(socket_fd, data, (int)len, 0, (struct sockaddr *)&storage, sock_len);
-    return sent < 0 ? H2_PAL_ERR_IO : sent;
+    if (sent < 0) {
+        int send_error = errno;
+        int result = h2_bk_net_udp_send_result(sent, send_error);
+        if (result == H2_PAL_ERR_WOULD_BLOCK) return result;
+        char message[96];
+        (void)snprintf(message, sizeof(message),
+            "UDP send failed fd=%d bytes=%zu errno=%d", socket_fd, len, send_error);
+        (void)h2_pal_log_write(h2_bk_platform_log_api(), H2_PAL_LOG_ERROR,
+            "pal/net", message);
+        return result;
+    }
+    return sent;
 }
 
 static int bk_net_udp_recvfrom(
@@ -683,24 +829,41 @@ static int bk_net_udp_recvfrom(
     if (socket_fd < 0 || data == NULL || len == 0u) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    set_recv_timeout(socket_fd, timeout_ms);
     struct sockaddr_storage storage;
     socklen_t sock_len = sizeof(storage);
-    int got = recvfrom(socket_fd, data, (int)len, 0, (struct sockaddr *)&storage, &sock_len);
+    int got = h2_bk_udp_receive(socket_fd, data, len,
+        (struct sockaddr *)&storage, &sock_len, timeout_ms);
     if (got < 0) {
-        return errno == EAGAIN || errno == EWOULDBLOCK ? H2_PAL_ERR_WOULD_BLOCK : H2_PAL_ERR_IO;
+        return got;
     }
     if (out_addr != NULL) {
-        (void)sockaddr_to_addr((const struct sockaddr *)&storage, out_addr);
+      (void)h2_bk_net_from_sockaddr((const struct sockaddr *)&storage,
+                                    out_addr);
     }
     return got;
 }
 
 static int bk_net_udp_join_multicast(void *user, h2_pal_net_socket_t socket_fd, const h2_pal_net_addr_t *addr) {
     (void)user;
-    if (socket_fd < 0 || addr == NULL || addr->family != H2_PAL_NET_FAMILY_IPV4) {
-        return H2_PAL_ERR_UNSUPPORTED;
+    if (socket_fd < 0 || addr == NULL) {
+      return H2_PAL_ERR_UNSUPPORTED;
     }
+#if LWIP_IPV6
+    if (addr->family == H2_PAL_NET_FAMILY_IPV6) {
+      if (addr->ip[0] != 0xffu || addr->scope_id == 0u ||
+          addr->scope_id > UINT8_MAX)
+        return H2_PAL_ERR_INVALID_ARG;
+      struct ipv6_mreq request = {0};
+      memcpy(&request.ipv6mr_multiaddr, addr->ip, 16u);
+      request.ipv6mr_interface = addr->scope_id;
+      return setsockopt(socket_fd, IPPROTO_IPV6, IPV6_JOIN_GROUP, &request,
+                        sizeof(request)) == 0
+                 ? H2_PAL_OK
+                 : H2_PAL_ERR_IO;
+    }
+#endif
+    if (addr->family != H2_PAL_NET_FAMILY_IPV4)
+      return H2_PAL_ERR_UNSUPPORTED;
     struct ip_mreq imreq;
     struct in_addr iaddr;
     memset(&imreq, 0, sizeof(imreq));
@@ -720,11 +883,11 @@ static int bk_net_tcp_open(void *user, h2_pal_net_family_t family, h2_pal_net_so
     if (out_socket == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    int lwip_family = family_to_lwip(family);
+    int lwip_family = h2_bk_net_family(family);
     if (lwip_family < 0) {
         return H2_PAL_ERR_UNSUPPORTED;
     }
-    int fd = socket(lwip_family, SOCK_STREAM, 0);
+    int fd = bk_net_open_socket(lwip_family, SOCK_STREAM);
     if (fd < 0) {
         return H2_PAL_ERR_IO;
     }
@@ -740,6 +903,16 @@ static int bk_net_tcp_open_bound(
     if (bind_config == NULL || bind_config->type == H2_PAL_NET_BIND_DEFAULT) {
         return bk_net_tcp_open(user, family, out_socket);
     }
+    if (bind_config->type == H2_PAL_NET_BIND_NETIF) {
+      int rc = bk_net_tcp_open(user, family, out_socket);
+      if (rc == H2_PAL_OK)
+        rc = bk_net_bind_interface(*out_socket, bind_config->netif);
+      if (rc != H2_PAL_OK && *out_socket >= 0) {
+        closesocket(*out_socket);
+        *out_socket = -1;
+      }
+      return rc;
+    }
     if (bind_config->type != H2_PAL_NET_BIND_SOURCE_ADDR ||
         bind_config->source_addr.family != family) {
         return H2_PAL_ERR_UNSUPPORTED;
@@ -752,7 +925,7 @@ static int bk_net_tcp_open_bound(
     bind_addr.port = 0u;
     struct sockaddr_storage storage;
     socklen_t sock_len = 0;
-    result = addr_to_sockaddr(&bind_addr, &storage, &sock_len);
+    result = h2_bk_net_to_sockaddr(&bind_addr, &storage, &sock_len);
     if (result != H2_PAL_OK ||
         bind(*out_socket, (struct sockaddr *)&storage, sock_len) < 0) {
         closesocket(*out_socket);
@@ -773,7 +946,7 @@ static h2_pal_result_t bk_net_tcp_connect(
     }
     struct sockaddr_storage storage;
     socklen_t sock_len = 0;
-    int rc = addr_to_sockaddr(addr, &storage, &sock_len);
+    int rc = h2_bk_net_to_sockaddr(addr, &storage, &sock_len);
     if (rc != H2_PAL_OK) {
         return rc;
     }
@@ -824,28 +997,38 @@ static int bk_net_tcp_listen(
     memset(&bind_addr, 0, sizeof(bind_addr));
     bind_addr.family = family;
     if (bind_config != NULL && bind_config->type != H2_PAL_NET_BIND_DEFAULT) {
-        if (bind_config->type != H2_PAL_NET_BIND_SOURCE_ADDR) {
-            return H2_PAL_ERR_UNSUPPORTED;
-        }
-        if (bind_config->source_addr.family != family) {
-            return H2_PAL_ERR_INVALID_ARG;
-        }
+      if (bind_config->type != H2_PAL_NET_BIND_SOURCE_ADDR &&
+          bind_config->type != H2_PAL_NET_BIND_NETIF) {
+        return H2_PAL_ERR_UNSUPPORTED;
+      }
+      if (bind_config->type == H2_PAL_NET_BIND_SOURCE_ADDR &&
+          bind_config->source_addr.family != family) {
+        return H2_PAL_ERR_INVALID_ARG;
+      }
+      if (bind_config->type == H2_PAL_NET_BIND_SOURCE_ADDR)
         bind_addr = bind_config->source_addr;
     }
     bind_addr.port = port;
-    int lwip_family = family_to_lwip(family);
+    int lwip_family = h2_bk_net_family(family);
     if (lwip_family < 0) {
         return H2_PAL_ERR_UNSUPPORTED;
     }
-    int fd = socket(lwip_family, SOCK_STREAM, 0);
+    int fd = bk_net_open_socket(lwip_family, SOCK_STREAM);
     if (fd < 0) {
         return H2_PAL_ERR_IO;
+    }
+    if (bind_config != NULL && bind_config->type == H2_PAL_NET_BIND_NETIF) {
+      int rc = bk_net_bind_interface(fd, bind_config->netif);
+      if (rc != H2_PAL_OK) {
+        closesocket(fd);
+        return rc;
+      }
     }
     int reuse = 1;
     (void)setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
     struct sockaddr_storage storage;
     socklen_t sock_len = 0;
-    int rc = addr_to_sockaddr(&bind_addr, &storage, &sock_len);
+    int rc = h2_bk_net_to_sockaddr(&bind_addr, &storage, &sock_len);
     if (rc != H2_PAL_OK) {
         close(fd);
         return rc;
@@ -859,7 +1042,8 @@ static int bk_net_tcp_listen(
         close(fd);
         return H2_PAL_ERR_IO;
     }
-    (void)sockaddr_to_addr((const struct sockaddr *)&storage, out_bind_addr);
+    (void)h2_bk_net_from_sockaddr((const struct sockaddr *)&storage,
+                                  out_bind_addr);
     *out_socket = fd;
     return H2_PAL_OK;
 }
@@ -889,7 +1073,8 @@ static h2_pal_result_t bk_net_tcp_accept(
         return H2_PAL_ERR_IO;
     }
     if (out_peer_addr != NULL) {
-        (void)sockaddr_to_addr((const struct sockaddr *)&storage, out_peer_addr);
+      (void)h2_bk_net_from_sockaddr((const struct sockaddr *)&storage,
+                                    out_peer_addr);
     }
     *out_socket = fd;
     return H2_PAL_OK;
@@ -1070,12 +1255,22 @@ static int bk_net_tcp_recv(
             }
         }
     }
-    set_recv_timeout(socket_fd, timeout_ms);
-    int got = recv(socket_fd, data, (int)len, 0);
-    if (got < 0) {
-        return errno == EAGAIN || errno == EWOULDBLOCK ? H2_PAL_ERR_WOULD_BLOCK : H2_PAL_ERR_IO;
+    /* SO_RCVTIMEO=0 means block forever on lwIP. Poll the plain socket
+     * explicitly, then wait only within the caller's positive budget. */
+    for (;;) {
+        int got = recv(socket_fd, data, (int)len, MSG_DONTWAIT);
+        if (got > 0) return got;
+        if (got == 0) return H2_PAL_ERR_CLOSED;
+        if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
+            return bk_net_socket_error();
+        }
+        if (timeout_ms == 0u) return H2_PAL_ERR_WOULD_BLOCK;
+        uint32_t remaining = bk_net_timeout_remaining_ms(deadline_ms);
+        if (remaining == 0u) return H2_PAL_ERR_TIMEOUT;
+        int ready = wait_fd(socket_fd, 0, remaining);
+        if (ready == H2_PAL_ERR_TIMEOUT) return H2_PAL_ERR_TIMEOUT;
+        if (ready != H2_PAL_OK && ready != H2_PAL_ERR_WOULD_BLOCK) return ready;
     }
-    return got == 0 ? H2_PAL_ERR_CLOSED : got;
 }
 
 static void bk_net_close(void *user, h2_pal_net_socket_t socket_fd) {
@@ -1124,6 +1319,11 @@ static h2_pal_result_t bk_net_tls_wrap(
         return H2_PAL_ERR_INVALID_ARG;
     }
     *out_socket = -1;
+    if (config->verify != H2_PAL_NET_TLS_VERIFY_DEFAULT &&
+        config->verify != H2_PAL_NET_TLS_VERIFY_REQUIRED &&
+        config->verify != H2_PAL_NET_TLS_VERIFY_INSECURE_TEST_ONLY) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
     bk_net_tls_init();
     uint64_t deadline_ms = bk_net_now_ms() + timeout_ms;
     int lock_result = bk_net_tls_take_mutex(
@@ -1163,6 +1363,11 @@ static h2_pal_result_t bk_net_tls_wrap(
     if (result == 0) {
         mbedtls_ssl_conf_rng(&slot->config, bk_net_tls_random, slot);
         rc = bk_net_tls_load_ca(slot, config);
+        if (rc == H2_PAL_OK &&
+            config->verify != H2_PAL_NET_TLS_VERIFY_INSECURE_TEST_ONLY) {
+            mbedtls_ssl_conf_verify(&slot->config,
+                bk_net_tls_verify_dates, NULL);
+        }
     } else if (rc == H2_PAL_OK) {
         printf("H2_BK_TLS stage=config_defaults mbedtls_rc=%d\n", result);
         rc = H2_PAL_ERR_IO;
@@ -1187,7 +1392,7 @@ static h2_pal_result_t bk_net_tls_wrap(
         uint32_t remaining_ms = bk_net_timeout_remaining_ms(deadline_ms);
         rc = remaining_ms == 0u
             ? H2_PAL_ERR_TIMEOUT
-            : bk_net_tls_handshake(slot, remaining_ms);
+            : bk_net_tls_handshake(slot, remaining_ms, config->verify);
     }
     if (rtos_lock_mutex(&s_bk_tls_mutex) == kNoErr) {
         if (slot->state == BK_NET_TLS_SOCKET_CONFIGURING &&
@@ -1215,11 +1420,16 @@ const h2_pal_net_api_t *h2_bk_platform_net_api(void) {
     bk_net_tls_init();
     static const h2_pal_net_vtable_t vtable = {
         .resolve_addr = bk_net_resolve_addr,
+        .resolve_all = h2_bk_net_resolve_all,
+        .resolve_start_family = bk_net_resolve_start_family,
+        .resolve_poll_all = bk_net_resolve_poll_all,
+        .get_host_addr_family = bk_net_get_host_addr_family,
         .resolve_start = bk_net_resolve_start,
         .resolve_poll = bk_net_resolve_poll,
         .resolve_close = bk_net_resolve_close,
         .get_host_addr = bk_net_get_host_addr,
         .udp_open = bk_net_udp_open,
+        .udp_open_bound = bk_net_udp_open_bound,
         .udp_sendto = bk_net_udp_sendto,
         .udp_recvfrom = bk_net_udp_recvfrom,
         .udp_join_multicast = bk_net_udp_join_multicast,

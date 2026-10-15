@@ -1,0 +1,157 @@
+diff --git a/apps/common/system/init.c b/apps/common/system/init.c
+index 1c4985d..c1b10b0 100644
+--- a/apps/common/system/init.c
++++ b/apps/common/system/init.c
+@@ -122,8 +122,40 @@ void cpu1_main(void)
+ #endif
+ }
+ 
++extern void h2_jieli_wl82_assert_reset_hook(void *caller) __attribute__((weak));
++
++struct h2_jieli_wl82_boot_marker {
++    unsigned int magic0;
++    unsigned int magic1;
++    unsigned int stage;
++    int result;
++};
++
++volatile struct h2_jieli_wl82_boot_marker h2_jieli_wl82_ram_marker
++    sec(.h2_retained);
++
++extern void h2_jieli_wl82_boot_probe(unsigned int stage)
++    __attribute__((weak));
++
++static void h2_jieli_wl82_probe(unsigned int stage)
++{
++    /* C startup does not clear this section. ROM DL uploads its helper at
++     * 0x1c02000, away from this linker-owned symbol, so memread can recover
++     * the last completed stage without USB, UART, scheduler, or flash I/O. */
++    h2_jieli_wl82_ram_marker.magic0 = 0x504d3248; /* H2MP */
++    h2_jieli_wl82_ram_marker.magic1 = 0x47424434; /* 4DBG */
++    h2_jieli_wl82_ram_marker.result = 0;
++    h2_jieli_wl82_ram_marker.stage = stage;
++    if (stage >= 100 && h2_jieli_wl82_boot_probe) {
++        h2_jieli_wl82_boot_probe(stage);
++    }
++}
++
+ void cpu_assert_debug()
+ {
++    if (h2_jieli_wl82_assert_reset_hook) {
++        h2_jieli_wl82_assert_reset_hook(__builtin_return_address(0));
++    }
+ #ifdef CONFIG_DEBUG_ENABLE
+     log_flush();
+     local_irq_disable();
+@@ -192,12 +224,17 @@ static void app_task_handler(void *p)
+ #endif
+ 
+     board_early_init();
++    h2_jieli_wl82_probe(100);
+     __do_initcall(early_initcall);
++    h2_jieli_wl82_probe(101);
+ #ifdef CONFIG_SDFILE_EXT_ENABLE
+     sdfile_ext_mount_init();
+ #endif
++    h2_jieli_wl82_probe(102);
+     __do_initcall(platform_initcall);
++    h2_jieli_wl82_probe(103);
+     board_init();
++    h2_jieli_wl82_probe(104);
+ 
+ #ifdef RF_FCC_TEST_ENABLE
+     u8 rf_fcc_test_init(void);
+@@ -211,9 +248,14 @@ static void app_task_handler(void *p)
+ #endif
+ 
+     __do_initcall(initcall);
++    h2_jieli_wl82_probe(105);
+     __do_initcall(module_initcall);
++    h2_jieli_wl82_probe(106);
+     app_core_init();
++    h2_jieli_wl82_probe(107);
+     __do_initcall(late_initcall);
++    h2_jieli_wl82_probe(108);
++    h2_jieli_wl82_probe(109);
+     app_main();
+ 
+ #ifdef CONFIG_FINSH_ENABLE
+@@ -265,23 +307,29 @@ int main()
+ {
++    h2_jieli_wl82_probe(80);
+     //init_for_stack_info();
+ 
+     /* early_puts("WL8X SDK RUN !!!\r\n"); */
+ 
+     __local_irq_disable();
+ 
+     setup_arch();
++    h2_jieli_wl82_probe(81);
+ 
+ #if CPU_CORE_NUM == 1
+     EnableOtherCpu();
++    h2_jieli_wl82_probe(82);
+     //cpu1_run_flag = 0; //如果运行在SFC模式下,不希望写FLASH的时候会挂起CPU1,则打开这句话,但是需要保证cpu1_main调用到的所有函数全部放到内部ram或者sdram,防止写flash过程中引起死机
+ #endif
+ 
+     os_init();
++    h2_jieli_wl82_probe(90);
+ 
+     task_create(app_task_handler, NULL, "app_core");
++    h2_jieli_wl82_probe(91);
+ 
+ #if CPU_CORE_NUM == 1 //本来改 prvIdleTask
+     __local_irq_enable();
++    h2_jieli_wl82_probe(92);
+ #endif
+ 
+     os_start();
+diff --git a/cpu/wl82/debug.c b/cpu/wl82/debug.c
+index 386a13e..4181088 100644
+--- a/cpu/wl82/debug.c
++++ b/cpu/wl82/debug.c
+@@ -113,6 +113,7 @@ static const char *const emu_msg[32] = {
+ 
+ static u32 exception_log_flash_addr sec(.volatile_ram);
+ static char exception_log_buf[640];
++static u8 exception_log_pending;
+ 
+ #define LOG_PATH "mnt/sdfile/EXT_RESERVED/log"
+ 
+@@ -130,14 +131,35 @@ static int get_exception_log_flash_addr(void)
+     exception_log_buf[0] = -1;
+     sdfile_reserve_zone_read(exception_log_buf, exception_log_flash_addr, sizeof(exception_log_buf), 0);
+     if (exception_log_buf[0] != -1) {
++        exception_log_pending = 1;
+         printf("last exception log : \n%s\n", exception_log_buf);
+-        sdfile_reserve_zone_erase(exception_log_flash_addr, SDFILE_SECTOR_SIZE, 0);
++        /* H2 keeps this record until app_main has brought up its public USB
++         * logging transport. The USB drain retries short/zero writes and then
++         * erases this sector only after the complete batch was accepted, so
++         * diagnostics do not depend on a separate debug-UART connection. */
+     }
+     memset(exception_log_buf, 0, sizeof(exception_log_buf));
+     return 0;
+ }
+ platform_initcall(get_exception_log_flash_addr);
+ 
++int h2_jieli_wl82_exception_log_clear(void)
++{
++    u8 erased = 0;
++    if (!exception_log_pending || !exception_log_flash_addr) {
++        return 0;
++    }
++    sdfile_reserve_zone_erase(
++        exception_log_flash_addr, SDFILE_SECTOR_SIZE, 0);
++    if (sdfile_reserve_zone_read(
++            &erased, exception_log_flash_addr, sizeof(erased), 0) !=
++            sizeof(erased) || erased != 0xff) {
++        return -1;
++    }
++    exception_log_pending = 0;
++    return 0;
++}
++
+ static void write_exception_log_to_flash(void *data, u32 len)
+ {
+     extern void set_os_init_flag(u8 value);

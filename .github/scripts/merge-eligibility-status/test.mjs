@@ -11,6 +11,8 @@ import {
   EligibilityStatusError,
   OPENAI_ELIGIBILITY_CONTEXT,
   OWNERSHIP_ELIGIBILITY_CONTEXT,
+  REQUIRED_MERGE_CHECKS,
+  assertMergeGateRules,
   openAiFinalStatus,
   statusPayload,
 } from "./common.mjs";
@@ -117,6 +119,10 @@ async function runPublisher({
   eventName = "issue_comment",
   headRepository = "GizClaw/gizos",
   ownershipDescription = "Ownership approved fork checks for this exact head",
+  branchRules = [{
+    type: "required_status_checks",
+    parameters: {required_status_checks: REQUIRED_MERGE_CHECKS},
+  }],
 }) {
   const requests = [];
   const server = createServer(async (request, response) => {
@@ -135,6 +141,11 @@ async function runPublisher({
     if (request.url === "/repos/GizClaw/gizos/actions/runs/1/attempts/1") {
       response.writeHead(200, {"Content-Type": "application/json"});
       response.end(JSON.stringify({run_attempt: 1, referenced_workflows: referencedWorkflows}));
+      return;
+    }
+    if (request.url === "/repos/GizClaw/gizos/rules/branches/main") {
+      response.writeHead(200, {"Content-Type": "application/json"});
+      response.end(JSON.stringify(branchRules));
       return;
     }
     if (request.url === "/repos/GizClaw/gizos/pulls/1") {
@@ -257,6 +268,76 @@ async function runPublisher({
     await rm(temporaryDirectory, {recursive: true, force: true});
   }
 }
+
+test("merge gates require stable eligibility contexts and the trusted app", () => {
+  const rules = (checks) => [{
+    type: "required_status_checks",
+    parameters: {required_status_checks: checks},
+  }];
+  assert.doesNotThrow(() => assertMergeGateRules(rules(REQUIRED_MERGE_CHECKS)));
+  assert.doesNotThrow(() => assertMergeGateRules(rules([
+    ...REQUIRED_MERGE_CHECKS,
+    {context: "Additional scanner", integration_id: 123},
+  ])));
+  for (const stage of [
+    "OpenAI PR Review", "OpenAI Issue Review", "OpenAI Code Review",
+  ]) {
+    assert.throws(() => assertMergeGateRules(rules([
+      ...REQUIRED_MERGE_CHECKS,
+      {context: stage, integration_id: 15368},
+    ])), /is diagnostic/);
+  }
+  for (const required of REQUIRED_MERGE_CHECKS) {
+    assert.throws(() => assertMergeGateRules(rules(
+      REQUIRED_MERGE_CHECKS.filter((check) => check.context !== required.context),
+    )), /main must require/);
+    assert.throws(() => assertMergeGateRules(rules(
+      REQUIRED_MERGE_CHECKS.map((check) => check.context === required.context
+        ? {...check, integration_id: null} : check),
+    )), /from GitHub Actions/);
+  }
+  assert.throws(() => assertMergeGateRules(null), EligibilityStatusError);
+  assert.throws(() => assertMergeGateRules([
+    {type: "required_status_checks", parameters: {}},
+  ]), EligibilityStatusError);
+});
+
+test("ruleset drift publishes failure instead of leaving an expected review gate", async () => {
+  for (const mode of ["start", "finish"]) {
+    const result = await runPublisher({
+      mode,
+      branchRules: [{
+        type: "required_status_checks",
+        parameters: {required_status_checks: [
+          ...REQUIRED_MERGE_CHECKS.filter(
+            (check) => check.context !== OWNERSHIP_ELIGIBILITY_CONTEXT,
+          ),
+          {context: "OpenAI Code Review", integration_id: 15368},
+        ]},
+      }],
+    });
+    assert.equal(result.exitCode, 1);
+    const posts = result.requests.filter((request) => request.method === "POST");
+    assert.equal(posts.at(-1).body.state, "failure");
+    assert.equal(posts.at(-1).body.context, OPENAI_ELIGIBILITY_CONTEXT);
+    assert.ok(posts.every((request) =>
+      request.body.context === OPENAI_ELIGIBILITY_CONTEXT));
+    assert.match(result.stderr, /is diagnostic/);
+  }
+});
+
+test("ruleset drift cannot overwrite a newer eligibility generation", async () => {
+  const result = await runPublisher({
+    mode: "start",
+    branchRules: [],
+    latestTargetUrl: "https://github.example/actions/runs/2",
+  });
+  assert.equal(result.exitCode, 1);
+  const posts = result.requests.filter((request) => request.method === "POST");
+  assert.equal(posts.length, 1);
+  assert.equal(posts[0].body.state, "pending");
+  assert.match(result.stderr, /newer/);
+});
 
 test("status payload accepts only the two isolated eligibility contexts", () => {
   for (const context of [

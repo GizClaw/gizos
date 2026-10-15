@@ -1,0 +1,760 @@
+{
+  "contract": 2,
+  "version": "pref-strength-20261004-esp",
+  "nonce": 2173812831,
+  "passed": 36,
+  "failed": 0,
+  "blocked": 0,
+  "ledger_complete": true,
+  "phases": [
+    {
+      "phase": 1,
+      "nonce": 2173812831,
+      "passed": 31,
+      "cases": [
+        {
+          "id": "pal.storage.fs.directory",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2173812831
+        },
+        {
+          "id": "pal.storage.fs.binary",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2173812831
+        },
+        {
+          "id": "pal.storage.fs.empty-eof",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2173812831
+        },
+        {
+          "id": "pal.storage.fs.seek",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2173812831
+        },
+        {
+          "id": "pal.storage.fs.truncate",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2173812831
+        },
+        {
+          "id": "pal.storage.fs.rename",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2173812831
+        },
+        {
+          "id": "pal.storage.fs.remove",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2173812831
+        },
+        {
+          "id": "pal.storage.fs.clear",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2173812831
+        },
+        {
+          "id": "pal.storage.fs.path-isolation",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2173812831
+        },
+        {
+          "id": "pal.storage.fs.arguments",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2173812831
+        },
+        {
+          "id": "pal.storage.fs.churn",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2173812831
+        },
+        {
+          "id": "pal.storage.pref.namespace",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2173812831
+        },
+        {
+          "id": "pal.storage.pref.blob",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2173812831
+        },
+        {
+          "id": "pal.storage.pref.string",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2173812831
+        },
+        {
+          "id": "pal.storage.pref.u32",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2173812831
+        },
+        {
+          "id": "pal.storage.pref.i32",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2173812831
+        },
+        {
+          "id": "pal.storage.pref.bool",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2173812831
+        },
+        {
+          "id": "pal.storage.pref.overwrite-type",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2173812831
+        },
+        {
+          "id": "pal.storage.pref.namespace-isolation",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2173812831
+        },
+        {
+          "id": "pal.storage.pref.read-only",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2173812831
+        },
+        {
+          "id": "pal.storage.pref.iteration",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2173812831
+        },
+        {
+          "id": "pal.storage.pref.cursor-close",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2173812831
+        },
+        {
+          "id": "pal.storage.pref.allocation-failure",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2173812831
+        },
+        {
+          "id": "pal.storage.pref.remove",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2173812831
+        },
+        {
+          "id": "pal.storage.pref.clear",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2173812831
+        },
+        {
+          "id": "pal.storage.pref.churn",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2173812831
+        },
+        {
+          "id": "pal.storage.persist.seed",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2173812831
+        },
+        {
+          "id": "pal.storage.pref.blob-boundaries",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2173812831
+        },
+        {
+          "id": "pal.storage.pref.string-boundaries",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2173812831
+        },
+        {
+          "id": "pal.storage.pref.integer-boundaries",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2173812831
+        },
+        {
+          "id": "pal.storage.pref.overwrite-stress",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2173812831
+        }
+      ],
+      "report": {
+        "contract": 2,
+        "version": "pref-strength-20261004-esp",
+        "phase": 1,
+        "nonce": 2173812831,
+        "passed": 31,
+        "failed": 0,
+        "blocked": 0,
+        "cleanup": 0,
+        "rc": 0,
+        "control": 0
+      },
+      "duplicate_replay_rows": 31,
+      "observed_initial_cases": 31,
+      "complete_replay_blocks": 1
+    },
+    {
+      "phase": 2,
+      "nonce": 2173812831,
+      "passed": 3,
+      "cases": [
+        {
+          "id": "pal.storage.persist.fs",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 2,
+          "nonce": 2173812831
+        },
+        {
+          "id": "pal.storage.persist.pref",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 2,
+          "nonce": 2173812831
+        },
+        {
+          "id": "pal.storage.cleanup.storage",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 2,
+          "nonce": 2173812831
+        }
+      ],
+      "report": {
+        "contract": 2,
+        "version": "pref-strength-20261004-esp",
+        "phase": 2,
+        "nonce": 2173812831,
+        "passed": 3,
+        "failed": 0,
+        "blocked": 0,
+        "cleanup": 0,
+        "rc": 0,
+        "control": 0
+      },
+      "duplicate_replay_rows": 3,
+      "observed_initial_cases": 3,
+      "complete_replay_blocks": 1
+    },
+    {
+      "phase": 3,
+      "nonce": 2173812831,
+      "passed": 2,
+      "cases": [
+        {
+          "id": "pal.storage.cleanup.persist.fs",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 3,
+          "nonce": 2173812831
+        },
+        {
+          "id": "pal.storage.cleanup.persist.pref",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 3,
+          "nonce": 2173812831
+        }
+      ],
+      "report": {
+        "contract": 2,
+        "version": "pref-strength-20261004-esp",
+        "phase": 3,
+        "nonce": 2173812831,
+        "passed": 2,
+        "failed": 0,
+        "blocked": 0,
+        "cleanup": 0,
+        "rc": 0,
+        "control": 0
+      },
+      "duplicate_replay_rows": 2,
+      "observed_initial_cases": 2,
+      "complete_replay_blocks": 1
+    },
+    {
+      "phase": 4,
+      "nonce": 2173812831,
+      "passed": 0,
+      "completion_rechecked": true,
+      "cases": []
+    },
+    {
+      "phase": 4,
+      "nonce": 2173812831,
+      "passed": 0,
+      "completion_rechecked": true,
+      "cases": []
+    }
+  ],
+  "cases": [
+    {
+      "id": "pal.storage.fs.directory",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2173812831
+    },
+    {
+      "id": "pal.storage.fs.binary",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2173812831
+    },
+    {
+      "id": "pal.storage.fs.empty-eof",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2173812831
+    },
+    {
+      "id": "pal.storage.fs.seek",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2173812831
+    },
+    {
+      "id": "pal.storage.fs.truncate",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2173812831
+    },
+    {
+      "id": "pal.storage.fs.rename",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2173812831
+    },
+    {
+      "id": "pal.storage.fs.remove",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2173812831
+    },
+    {
+      "id": "pal.storage.fs.clear",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2173812831
+    },
+    {
+      "id": "pal.storage.fs.path-isolation",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2173812831
+    },
+    {
+      "id": "pal.storage.fs.arguments",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2173812831
+    },
+    {
+      "id": "pal.storage.fs.churn",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2173812831
+    },
+    {
+      "id": "pal.storage.pref.namespace",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2173812831
+    },
+    {
+      "id": "pal.storage.pref.blob",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2173812831
+    },
+    {
+      "id": "pal.storage.pref.string",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2173812831
+    },
+    {
+      "id": "pal.storage.pref.u32",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2173812831
+    },
+    {
+      "id": "pal.storage.pref.i32",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2173812831
+    },
+    {
+      "id": "pal.storage.pref.bool",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2173812831
+    },
+    {
+      "id": "pal.storage.pref.overwrite-type",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2173812831
+    },
+    {
+      "id": "pal.storage.pref.namespace-isolation",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2173812831
+    },
+    {
+      "id": "pal.storage.pref.read-only",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2173812831
+    },
+    {
+      "id": "pal.storage.pref.iteration",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2173812831
+    },
+    {
+      "id": "pal.storage.pref.cursor-close",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2173812831
+    },
+    {
+      "id": "pal.storage.pref.allocation-failure",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2173812831
+    },
+    {
+      "id": "pal.storage.pref.remove",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2173812831
+    },
+    {
+      "id": "pal.storage.pref.clear",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2173812831
+    },
+    {
+      "id": "pal.storage.pref.churn",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2173812831
+    },
+    {
+      "id": "pal.storage.persist.seed",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2173812831
+    },
+    {
+      "id": "pal.storage.pref.blob-boundaries",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2173812831
+    },
+    {
+      "id": "pal.storage.pref.string-boundaries",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2173812831
+    },
+    {
+      "id": "pal.storage.pref.integer-boundaries",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2173812831
+    },
+    {
+      "id": "pal.storage.pref.overwrite-stress",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2173812831
+    },
+    {
+      "id": "pal.storage.persist.fs",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 2,
+      "nonce": 2173812831
+    },
+    {
+      "id": "pal.storage.persist.pref",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 2,
+      "nonce": 2173812831
+    },
+    {
+      "id": "pal.storage.cleanup.storage",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 2,
+      "nonce": 2173812831
+    },
+    {
+      "id": "pal.storage.cleanup.persist.fs",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 3,
+      "nonce": 2173812831
+    },
+    {
+      "id": "pal.storage.cleanup.persist.pref",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 3,
+      "nonce": 2173812831
+    }
+  ],
+  "log_sha256": [
+    "b6b4fcba557220518a99f12c17531e99a41f9fff81433a74278741b01fa259d2",
+    "4541adc6273e0771acf432ac118cf15b79d7e26251999d8738f367b2f462d107",
+    "53f03d61f2158bb0bbc3b288e880a2051d9c57d1359929d0229ab10b6ae4d09b",
+    "b2e70addfc092a320f27e088fcc7ef0bc7219ac639ce4ece8a73e792b6ee1232",
+    "b74887c91455efd221efcb35e8505d75de8a99cd2483717539c1c31e7e191f42"
+  ],
+  "evidence_boundary": "36-case qualification and Stage-empty snapshot precede restoration. The final device has the original R35 App and its original nonempty Stage. WiFi queries in the Pref image returned code=-7; original persistent WiFi settings/state were verified after restoring R35 (RSSI is observational). Source/artifact identities are retained, and real boot command receipts distinguish the five captures.",
+  "platform": "esp32s3-devkit",
+  "source_revision": "de68d16a6b2e3f298eadbdf5b5a4dda0bd0b69a9",
+  "host_verifier_revision": "c93c02dc62fcc745953e03042688967e2777ba61",
+  "artifact": {
+    "sha256": "d551ef08ba2e9b91db88c9283323df6f0cc0c3744a0261df60c0cfcbc27c4f86",
+    "image_sha256": "b96c1b45dc478a33a73bdadcd91a772bcd31b5285deeff5c29ef7dd08fb8dfa9",
+    "version": "pref-strength-20261004-esp"
+  },
+  "coredump": {
+    "result": "OK",
+    "code": "0",
+    "partition": "coredump",
+    "bytes": "65536",
+    "stored_bytes": "0",
+    "blank": "1"
+  },
+  "wifi_at_qualification": {
+    "verified": false,
+    "query_result": "code=-7 terminal=0",
+    "baseline_raw_sha256": "1aeba81b8d981069a41abc1af48353882907007a398ec00f6df9200286bf9c82",
+    "query_log_sha256": [
+      "a3d0475d7a36f8ca4161d6668e113463d7916774ed5f4869fc1d37e1f1ff121e",
+      "a3d0475d7a36f8ca4161d6668e113463d7916774ed5f4869fc1d37e1f1ff121e"
+    ]
+  },
+  "case_qualification": true,
+  "qualified": true,
+  "status_at_qualification": {
+    "board": "devkit",
+    "target": "esp32s3",
+    "chip": "esp32s3",
+    "device_uid": "9888e0115c52",
+    "capabilities": "0x00000001",
+    "command_availability": "0x00081d3f",
+    "active_role": "app",
+    "active_version": "pref-strength-20261004-esp",
+    "active_checksum": "b96c1b45dc478a33a73bdadcd91a772bcd31b5285deeff5c29ef7dd08fb8dfa9",
+    "active_image_size": "1522480",
+    "running_partition": "2",
+    "next_partition": "2",
+    "boot_intent": "auto",
+    "stage_valid": "0",
+    "stage_package_checksum": "-",
+    "stage_package_size": "0",
+    "stage_image_checksum": "-",
+    "stage_image_size": "0",
+    "stage_role": "unknown",
+    "stage_version": "-",
+    "stage_board": "-",
+    "stage_target": "-",
+    "partition_1_valid": "1",
+    "partition_1_package_checksum": "f4fd26deba579fb6b8955e9ea7a83122b25cf6e4c433b3d652090d6958197568",
+    "partition_1_package_size": "975428",
+    "partition_1_image_checksum": "9479960ee19af062cb1a599c4d4b52f948d476efc842aabdfa6ca2ec812befd5",
+    "partition_1_image_size": "1496656",
+    "partition_1_role": "loader",
+    "partition_1_version": "0.2.3-atomic-541",
+    "partition_1_board": "devkit",
+    "partition_1_target": "esp32s3",
+    "partition_2_valid": "1",
+    "partition_2_package_checksum": "d551ef08ba2e9b91db88c9283323df6f0cc0c3744a0261df60c0cfcbc27c4f86",
+    "partition_2_package_size": "980289",
+    "partition_2_image_checksum": "b96c1b45dc478a33a73bdadcd91a772bcd31b5285deeff5c29ef7dd08fb8dfa9",
+    "partition_2_image_size": "1522480",
+    "partition_2_role": "app",
+    "partition_2_version": "pref-strength-20261004-esp",
+    "partition_2_board": "devkit",
+    "partition_2_target": "esp32s3",
+    "last_result": "0",
+    "mfg_mode": "1",
+    "mfg_steps": "0000000000000000000000"
+  },
+  "recorded_at": "2026-10-04T10:53:39.770166+00:00",
+  "raw_log_sha256": [
+    "79ae571a55fcd61387821c5e6b6a7e1e1791f1ab17eca72e9385a0e9ce91a74f",
+    "8a97eb9d494a13ad4b4e3b62a4d86441685391c72492a1cadb4636fd8281c793",
+    "8f60f91289d8605e1397d9d21a00ecf9a6a47aff07b19425985b8acc5a9e5651",
+    "63d78d1572a6d3c19aa5372f0cf2988a9c60227dbaa23ee696f6b79115897add",
+    "bf5afe64e005013812a0224dc4ef293280d4fa406e7620d22e8e850c631f4b81"
+  ],
+  "independent_boot_receipts": [
+    {
+      "action": "upgrade",
+      "phase": 1,
+      "started_at_utc": "2026-10-04T10:36:46.734459+00:00",
+      "finished_at_utc": "2026-10-04T10:38:28.839194+00:00",
+      "host_pid": 88973,
+      "host_returncode": 130,
+      "stop_reason": "complete_validated_boot"
+    },
+    {
+      "action": "app",
+      "phase": 2,
+      "started_at_utc": "2026-10-04T10:39:07.044521+00:00",
+      "finished_at_utc": "2026-10-04T10:39:14.728870+00:00",
+      "host_pid": 92825,
+      "host_returncode": 130,
+      "stop_reason": "complete_validated_boot"
+    },
+    {
+      "action": "app",
+      "phase": 3,
+      "started_at_utc": "2026-10-04T10:39:47.513695+00:00",
+      "finished_at_utc": "2026-10-04T10:39:54.718561+00:00",
+      "host_pid": 96484,
+      "host_returncode": 130,
+      "stop_reason": "complete_validated_boot"
+    },
+    {
+      "action": "app",
+      "phase": 4,
+      "started_at_utc": "2026-10-04T10:40:48.707385+00:00",
+      "finished_at_utc": "2026-10-04T10:40:55.878595+00:00",
+      "host_pid": 1563,
+      "host_returncode": 130,
+      "stop_reason": "complete_validated_boot"
+    },
+    {
+      "action": "app",
+      "phase": 4,
+      "started_at_utc": "2026-10-04T10:41:20.437264+00:00",
+      "finished_at_utc": "2026-10-04T10:41:27.601084+00:00",
+      "host_pid": 2634,
+      "host_returncode": 130,
+      "stop_reason": "complete_validated_boot"
+    }
+  ],
+  "restoration": {
+    "recorded_at": "2026-10-04T10:51:53.073013+00:00",
+    "uid": "9888e0115c52",
+    "restored": true,
+    "active_version": "gizclaw-fwdiag-r35-adbbc722",
+    "active_image_sha256": "c6d08c6500d1c76548f9368253a1f8f64d30f6f7ce467fbc76e9543dadb9e2f2",
+    "stage_valid": 1,
+    "stage_version": "gizclaw-fwdiag-r35-adbbc722",
+    "stage_package_sha256": "c692f382849746682c5d3e4c77a212ce2bd3dad9d434e8bdb8940ba8a0572cb8",
+    "stage_image_sha256": "c6d08c6500d1c76548f9368253a1f8f64d30f6f7ce467fbc76e9543dadb9e2f2",
+    "p1_unchanged": true,
+    "coredump_unchanged": true,
+    "wifi_setting_and_state_unchanged": true,
+    "wifi_changed_observational_keys": [
+      "rssi"
+    ],
+    "qualification_stage_valid": 0,
+    "restore_stage_valid": 1,
+    "snapshot_sha256": {
+      "status-before.txt": "e2ac164e30f4c8a81a625eb8cb00388ed5ca67d5c8005897a5cdfd4948961e82",
+      "status-qualified.txt": "809b2c38cc72092fb454457f8302222c0cdfbf1fa39f19decad3ca52954d39c4",
+      "status-restored-final.txt": "e2ac164e30f4c8a81a625eb8cb00388ed5ca67d5c8005897a5cdfd4948961e82",
+      "wifi-before.txt": "1aeba81b8d981069a41abc1af48353882907007a398ec00f6df9200286bf9c82",
+      "wifi-restored-final.txt": "220c693495447b6030c3d570d3be59df25dc6693d1e4b8c41e6c4f3766659955",
+      "coredump-before.txt": "5bdf63243c04b65d6759ad5a1cbd04f6b4cfdf8a5b1824698fd2ec92ac7d0cec",
+      "coredump-restored-final.txt": "5bdf63243c04b65d6759ad5a1cbd04f6b4cfdf8a5b1824698fd2ec92ac7d0cec"
+    }
+  }
+}

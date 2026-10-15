@@ -1,0 +1,39 @@
+{
+  "schema": "pal-mqtt-unqualified-observation/v1",
+  "qualified": false,
+  "source_commit": "05f2ac2219dbb8687e616b5a568b50c0ce68447b",
+  "version": "mqtt-bk-cache-r9",
+  "package_sha256": "5482bd5a239bd4e9861344136adca9d665ae468968da0e8098cebfdf85124601",
+  "image_sha256": "eabe0cac22b9eaa051d789025e58aeb155fc37aa09afd65ba5e2f08f8b26433b",
+  "device_uid": "c8478ca2a87c",
+  "port": "/dev/cu.usbserial-1240",
+  "reason": "Second fresh boot device ledger passed, but exact retained-delivery wire lifecycle lacked MQTT DISCONNECT. This observation does not grant qualification.",
+  "retained_wire_arrivals": {
+    "61854d37e8644bb6992958e0fad60906-80cac02ffdc66206-retained-delivery": {
+      "connect": 1,
+      "publish": 1,
+      "subscribe": 1,
+      "ping": 1
+    }
+  },
+  "fixture_inputs": {
+    "bind": "192.168.31.151",
+    "advertised": "192.168.31.151",
+    "tcp_port": 54488,
+    "tls_port": 54489,
+    "session_prefix": "61854d37e8644bb6992958e0fad60906",
+    "epoch_ms": 1791118627224,
+    "ca_sha256": "3603834de33a67f5954a01671244ccc1e0650b9011030441d2a6e75eea1cad23",
+    "wrong_ca_sha256": "bc9974ba72e8e84b91c583a9d06f0be86d13821262ced005f2f7a28d3fc32d85",
+    "bazelrc_sha256": "9c34b10165617d5b878843ffbad361751ff6fe26a602adb6638b111f1b74af60",
+    "tls_handshake_timeout_seconds": 15.0
+  },
+  "original_evidence_directory": "/Users/idy/.codex/task-evidence/pal-pref-mqtt-platforms-20261004/mqtt-bk-r9",
+  "raw_coredump_data_copied": false,
+  "log_sha256": {
+    "managed.log": "723fef33423cb3f6a0f6ca1c7dcd6a766c7857977a550dff5393e2cd19cbf7b6",
+    "normal.log": "32b4cdc7132122945b6241694f7706355100e91f2e9cd0bff27a80eeac6b25a7",
+    "strict-verifier.log": "50a558a4824139200a86c0311529564de79cb4bd3b608db82d062f8918327cbf"
+  },
+  "original_collector_receipt_sha256": "a08487ce5bf2c77c211ef71c4d54ce94819143022eb93f7b7b47e664d8414032"
+}

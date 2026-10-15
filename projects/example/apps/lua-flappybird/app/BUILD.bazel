@@ -55,6 +55,7 @@ cc_test(
     }),
     deps = [
         ":lua_flappybird",
+        "//libs/atomic/providers/c11",
         "//libs/pal:unsupported",
         "//libs/pal/providers/desktop/pal_core",
         "//libs/runtime",

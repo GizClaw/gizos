@@ -1,4 +1,4 @@
-load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel:tasks.bzl", "h2_tasks")
 
@@ -40,4 +40,18 @@ cc_library(
         "//libs/pal",
         "//libs/pal/providers/modem/common:urc",
     ],
+)
+
+cc_test(
+    name = "simcom_signal_test",
+    srcs = ["tests/test_simcom_signal.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":simcom_modem", "//libs/atomic/providers/c11"],
 )

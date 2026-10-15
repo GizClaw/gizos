@@ -716,6 +716,22 @@ static void test_config(h2_runtime_t *runtime) {
   h2_lua_host_destroy(host);
 }
 
+static void test_kv_accounting(h2_runtime_t *runtime) {
+  fake_reset();
+  h2_lua_host_t *host = create_host(runtime, &s_fake_fs_api);
+  expect_ok(host, "game",
+            "local s=require('storage');local k=require('kv');"
+            "assert(k.set('x',true));assert(s.get_free_space().used==28);"
+            "assert(s.write_file('a',string.rep('a',36)));"
+            "assert(s.get_free_space().free==0);"
+            "local ok,e=s.write_file('b','x');assert(ok==nil and e=='storage: quota exceeded');"
+            "assert(s.rename('a','b'));assert(s.get_free_space().used==64);"
+            "assert(#s.listdir()==1 and s.listdir()[1].name=='b');"
+            "assert(s.remove('b'));assert(s.get_free_space().used==28);"
+            "assert(k.remove('x'));assert(s.get_free_space().used==0);return 'ok'");
+  h2_lua_host_destroy(host);
+}
+
 int main(void) {
   h2_runtime_t *runtime = create_runtime();
   test_unconfigured(runtime);
@@ -726,6 +742,7 @@ int main(void) {
   test_atomic_write(runtime);
   test_recovery(runtime);
   test_config(runtime);
+  test_kv_accounting(runtime);
   h2_runtime_deinit(runtime);
   return 0;
 }

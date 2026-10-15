@@ -33,6 +33,8 @@ App 不保存用户数据、不修改 H2Loader package lifecycle，也不负责 
 
 ## 运行流程
 
+Portable speed App 在 `h2_bleikcp_speed_run()` 的完整生命周期持有一份 BLEIKCP 进程级 ikcp allocator hooks 引用，退出时释放；H2Loader BLE command service 可以独立持有另一份。这个 hooks 生命周期与 atomic flag 初始化无关：registry flag 本身使用每对象普通 static backing，speed App 不要求 launcher 为 atomic 值新增 global init。
+
 ### Server
 
 ```mermaid

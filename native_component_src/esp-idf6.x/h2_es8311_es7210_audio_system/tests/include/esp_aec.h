@@ -5,6 +5,7 @@
 
 #define AEC_MODE_FD_LOW_COST 1
 #define AEC_NLP_LEVEL_NORMAL 2
+#define AEC_NLP_LEVEL_AGGR 3
 
 typedef struct aec_config {
     int mic_num;

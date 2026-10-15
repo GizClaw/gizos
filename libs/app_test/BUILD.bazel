@@ -43,7 +43,7 @@ cc_library(
     copts = H2_WARNING_COPTS,
     cxxopts = H2_CXX17_OPTS,
     includes = ["include"],
-    deps = ["//libs/pal", "//libs/wifi_sta"],
+    deps = ["//libs/atomic", "//libs/pal", "//libs/wifi_sta"],
 )
 
 cc_test(
@@ -63,6 +63,7 @@ cc_test(
     deps = [
         ":testing_audio",
         ":testing_pal",
+        "//libs/atomic/providers/c11",
     ],
 )
 
@@ -83,6 +84,7 @@ cc_test(
     deps = [
         ":testing_audio",
         ":testing_pal",
+        "//libs/atomic/providers/c11",
     ],
 )
 
@@ -101,6 +103,7 @@ cc_test(
     }),
     deps = [
         ":testing_pal",
+        "//libs/atomic/providers/c11",
         "//libs/pal:unsupported",
         "//libs/pal/providers/libco",
         "//libs/runtime",
@@ -115,7 +118,7 @@ cc_library(
     copts = H2_WARNING_COPTS,
     cxxopts = H2_CXX17_OPTS,
     includes = ["include"],
-    deps = ["//libs/pal"],
+    deps = ["//libs/atomic", "//libs/pal"],
 )
 
 cc_library(
@@ -134,7 +137,7 @@ cc_library(
         "src/pal",
     ],
     local_defines = ["H2_APP_TEST_AUDIO_TESTING"],
-    deps = ["//libs/pal"],
+    deps = ["//libs/atomic", "//libs/pal"],
 )
 
 cc_test(
@@ -149,7 +152,7 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":testing_audio_testing"],
+    deps = [":testing_audio_testing", "//libs/atomic/providers/c11"],
 )
 
 cc_library(
@@ -196,6 +199,7 @@ cc_test(
     }),
     deps = [
         ":app_test",
+        "//libs/atomic/providers/c11",
         "//libs/pal:unsupported",
     ],
 )
@@ -215,6 +219,7 @@ cc_library(
     target_compatible_with = LINUX_X86_64_ARTIFACT_COMPATIBILITY,
     deps = [
         ":app_test",
+        "//libs/atomic/providers/c11",
         "//libs/pal:unsupported",
     ],
 )

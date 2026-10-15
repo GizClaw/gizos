@@ -1,0 +1,6 @@
+local display = require("display")
+assert(next(args) == nil)
+assert(display.width == 240 and display.height == 240)
+display.clear("red")
+local pixels, rects = display.present()
+assert(pixels == 240 * 240 and rects > 0)

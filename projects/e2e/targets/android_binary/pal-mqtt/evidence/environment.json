@@ -1,0 +1,216 @@
+{
+  "platform": "android",
+  "package": "com.haivivi.gizos.e2e.palmqtt",
+  "observation_started_at_utc": "2026-10-04T08:41:43.584799+00:00",
+  "app_sha256": "f8d03f9dd657c1d6c48af572418e684906bd08675864debd35b3f05fd2a623fc",
+  "sdk_sha256": "78e99c8a98916e80afee9898e7798ed7e592793ae9d4db92bafe5a5e6cd0bf2a",
+  "serial": "emulator-5566",
+  "aar_binary_sha256": "bff096a68bcbc8c6681dd41d98dc6f0b23c6640eedbf36235c4462299cc0628b",
+  "apk_binary_sha256": "bff096a68bcbc8c6681dd41d98dc6f0b23c6640eedbf36235c4462299cc0628b",
+  "apk_aar_binary_identical": true,
+  "api": "36",
+  "fingerprint": "Android/sdk_slim_arm64/emu64a:16/BE2A.250530.027/13847098:userdebug/test-keys",
+  "suite_sha256": "8ad60a84c42909c5a7e70e43645528b20591a6f53e4d28baee742e6debfe162f",
+  "public_provider_symbols": [
+    "h2_android_mqtt_create",
+    "h2_android_mqtt_api",
+    "h2_android_mqtt_destroy"
+  ],
+  "fixture_inputs": {
+    "session": "b9d57f0900444d1fb03d4b9d6528841b",
+    "host": "10.0.2.2",
+    "tcp_port": 56050,
+    "tls_port": 56051,
+    "json_sha256": "8a88a8abb845cc4d9ddba13ba62a85895de769735aeaea115ea29fb851a71a31",
+    "ca_sha256": "8df5d0849ddc5c79b37db4ccd00bd6770d44d198fe0ade8de59ede0a12457d58",
+    "wrong_ca_sha256": "78ce295ae5cfb06621629493b0dd4ed11abc2f55465042f86b596849a55c4e26",
+    "registry_sha256": "f3f5798bb6f8793eeede6f3464c847be1b6ad807d6059bc17b759fad6995837f"
+  },
+  "fixture": {
+    "session": "b9d57f0900444d1fb03d4b9d6528841b",
+    "tcp_arrivals": {
+      "b9d57f0900444d1fb03d4b9d6528841b-connect-events": {
+        "connect": 1,
+        "disconnect": 1
+      },
+      "b9d57f0900444d1fb03d4b9d6528841b-repeated-connect": {
+        "connect": 1,
+        "disconnect": 1
+      },
+      "b9d57f0900444d1fb03d4b9d6528841b-subscribe-qos0": {
+        "connect": 1,
+        "subscribe": 1,
+        "disconnect": 1
+      },
+      "b9d57f0900444d1fb03d4b9d6528841b-subscribe-qos1": {
+        "connect": 1,
+        "subscribe": 1,
+        "disconnect": 1
+      },
+      "b9d57f0900444d1fb03d4b9d6528841b-subscribe-multi": {
+        "connect": 1,
+        "subscribe": 1,
+        "publish": 2,
+        "disconnect": 1
+      },
+      "b9d57f0900444d1fb03d4b9d6528841b-publish-qos0": {
+        "connect": 1,
+        "subscribe": 1,
+        "publish": 1,
+        "disconnect": 1
+      },
+      "b9d57f0900444d1fb03d4b9d6528841b-publish-qos1": {
+        "connect": 1,
+        "subscribe": 1,
+        "publish": 1,
+        "incoming-puback": 1,
+        "disconnect": 1
+      },
+      "b9d57f0900444d1fb03d4b9d6528841b-publish-binary": {
+        "connect": 1,
+        "subscribe": 1,
+        "publish": 1,
+        "disconnect": 1
+      },
+      "b9d57f0900444d1fb03d4b9d6528841b-publish-empty": {
+        "connect": 1,
+        "subscribe": 1,
+        "publish": 1,
+        "disconnect": 1
+      },
+      "b9d57f0900444d1fb03d4b9d6528841b-publish-large": {
+        "connect": 1,
+        "subscribe": 1,
+        "publish": 1,
+        "disconnect": 1
+      },
+      "b9d57f0900444d1fb03d4b9d6528841b-input-lifetime": {
+        "connect": 1,
+        "subscribe": 1,
+        "publish": 1,
+        "disconnect": 1
+      },
+      "b9d57f0900444d1fb03d4b9d6528841b-unsubscribe-ack": {
+        "connect": 1,
+        "subscribe": 1,
+        "unsubscribe": 1,
+        "publish": 1,
+        "disconnect": 1
+      },
+      "b9d57f0900444d1fb03d4b9d6528841b-retained-delivery": {
+        "connect": 1,
+        "publish": 2,
+        "subscribe": 1,
+        "disconnect": 1
+      },
+      "b9d57f0900444d1fb03d4b9d6528841b-idle-process": {
+        "connect": 1,
+        "ping": 1,
+        "disconnect": 1
+      },
+      "b9d57f0900444d1fb03d4b9d6528841b-invalid-qos": {
+        "connect": 1,
+        "disconnect": 1
+      },
+      "b9d57f0900444d1fb03d4b9d6528841b-invalid-publish": {
+        "connect": 1,
+        "disconnect": 1
+      },
+      "b9d57f0900444d1fb03d4b9d6528841b-invalid-subscribe": {
+        "connect": 1,
+        "disconnect": 1
+      },
+      "b9d57f0900444d1fb03d4b9d6528841b-invalid-unsubscribe": {
+        "connect": 1,
+        "disconnect": 1
+      },
+      "b9d57f0900444d1fb03d4b9d6528841b-local-disconnect": {
+        "connect": 1,
+        "disconnect": 1
+      },
+      "b9d57f0900444d1fb03d4b9d6528841b-reconnect": {
+        "connect": 2,
+        "disconnect": 2,
+        "subscribe": 1,
+        "publish": 1
+      },
+      "b9d57f0900444d1fb03d4b9d6528841b-authenticated": {
+        "connect": 1,
+        "disconnect": 1
+      },
+      "b9d57f0900444d1fb03d4b9d6528841b-auth-refused": {
+        "connect": 1,
+        "auth-refused": 1
+      },
+      "b9d57f0900444d1fb03d4b9d6528841b-connect-timeout": {
+        "connect": 1
+      },
+      "b9d57f0900444d1fb03d4b9d6528841b-remote-disconnect": {
+        "connect": 1
+      },
+      "b9d57f0900444d1fb03d4b9d6528841b-qos-capacity": {
+        "connect": 1,
+        "publish": 5,
+        "disconnect": 1
+      },
+      "b9d57f0900444d1fb03d4b9d6528841b-callback-close": {
+        "connect": 1,
+        "subscribe": 1,
+        "publish": 1
+      },
+      "b9d57f0900444d1fb03d4b9d6528841b-repeated-lifecycle": {
+        "connect": 21,
+        "subscribe": 20,
+        "publish": 20,
+        "disconnect": 21
+      },
+      "b9d57f0900444d1fb03d4b9d6528841b-keepalive-timeout": {
+        "connect": 1,
+        "ping": 1
+      }
+    },
+    "tls_arrivals": {
+      "b9d57f0900444d1fb03d4b9d6528841b-tls-trusted": {
+        "connect": 1,
+        "subscribe": 1,
+        "ping": 1,
+        "publish": 1,
+        "disconnect": 1
+      }
+    },
+    "tls_handshakes": [
+      {
+        "client_hello": true,
+        "certificate_presented": true,
+        "succeeded": true,
+        "finished": true,
+        "peer_ip": "127.0.0.1",
+        "run": "b9d57f0900444d1fb03d4b9d6528841b"
+      },
+      {
+        "client_hello": true,
+        "certificate_presented": true,
+        "succeeded": false,
+        "finished": true,
+        "peer_ip": "127.0.0.1",
+        "run": "b9d57f0900444d1fb03d4b9d6528841b"
+      },
+      {
+        "client_hello": true,
+        "certificate_presented": true,
+        "succeeded": false,
+        "finished": true,
+        "peer_ip": "127.0.0.1",
+        "run": "b9d57f0900444d1fb03d4b9d6528841b"
+      }
+    ],
+    "active_clients": 0,
+    "retained_messages": 0
+  },
+  "fixture_session": "b9d57f0900444d1fb03d4b9d6528841b",
+  "tls_verification": "explicit isolated CA; default/required verified TLS; two real rejecting certificate handshakes",
+  "observation_finished_at_utc": "2026-10-04T08:42:51.570017+00:00",
+  "evidence_timezone": "UTC",
+  "launches": 1,
+  "runner_status": "completed"
+}

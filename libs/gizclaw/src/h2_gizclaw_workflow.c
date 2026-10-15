@@ -1,4 +1,5 @@
 #include "h2_gizclaw_workflow.h"
+#include "h2_gizclaw_workflow_internal.h"
 
 #include "h2_gizclaw_internal.h"
 #include "h2_gizclaw_response_internal.h"
@@ -37,18 +38,16 @@ typedef struct workflow_page_decode {
   size_t capacity;
 } workflow_page_decode_t;
 
-static bool valid_kebab(h2_gizclaw_str_t value, size_t max_len) {
-  if (value.data == NULL || value.len == 0u || value.len > max_len)
+static bool safety_fence_name_valid(const char *name) {
+  size_t length = strlen(name);
+  if (length == 0u || length > H2_GIZCLAW_SAFETY_FENCE_NAME_MAX_BYTES ||
+      name[0] < 'a' || name[0] > 'z')
     return false;
-  if (value.data[0] == '-' || value.data[value.len - 1u] == '-')
-    return false;
-  for (size_t i = 0u; i < value.len; ++i) {
-    const char ch = value.data[i];
-    if (!((ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') ||
-          (ch == '-' && i > 0u && value.data[i - 1u] != '-'))) {
+  for (size_t i = 1u; i < length; ++i)
+    if (!((name[i] >= 'a' && name[i] <= 'z') ||
+          (name[i] >= '0' && name[i] <= '9') || name[i] == '_' ||
+          name[i] == '-'))
       return false;
-    }
-  }
   return true;
 }
 
@@ -127,7 +126,9 @@ static void workflow_clear(const h2_pal_mem_api_t *allocator,
                            h2_gizclaw_workflow_t *workflow) {
   if (workflow == NULL)
     return;
-  h2_pal_mem_free(allocator, workflow->collection);
+  for (size_t i = 0; i < workflow->tag_count; ++i)
+    h2_pal_mem_free(allocator, workflow->tags[i]);
+  h2_pal_mem_free(allocator, workflow->tags);
   h2_pal_mem_free(allocator, workflow->name);
   h2_pal_mem_free(allocator, workflow->workspace_lang_pair);
   for (size_t i = 0u; i < workflow->i18n_count; ++i) {
@@ -185,6 +186,42 @@ static bool decode_i18n(pb_istream_t *stream, const pb_field_t *field,
   return true;
 }
 
+static bool decode_tag(pb_istream_t *stream, const pb_field_t *field,
+                       void **arg) {
+  (void)field;
+  workflow_decode_t *context = *arg;
+  h2_gizclaw_workflow_t *workflow = context->out;
+  size_t count = workflow->tag_count, length = stream->bytes_left;
+  if (count >= H2_GIZCLAW_WORKFLOW_TAG_MAX_ITEMS || !length ||
+      length > H2_GIZCLAW_WORKFLOW_TAG_MAX_BYTES)
+    return false;
+  char *tag = h2_pal_mem_alloc(context->allocator, length + 1u);
+  if (!tag)
+    return false;
+  if (!pb_read(stream, (pb_byte_t *)tag, length) ||
+      !h2_gizclaw_workflow_tag_valid_internal(
+          (h2_gizclaw_str_t){tag, length})) {
+    h2_pal_mem_free(context->allocator, tag);
+    return false;
+  }
+  tag[length] = 0;
+  for (size_t i = 0; i < count; ++i)
+    if (!strcmp(workflow->tags[i], tag)) {
+      h2_pal_mem_free(context->allocator, tag);
+      return false;
+    }
+  char **tags = h2_pal_mem_realloc(context->allocator, workflow->tags,
+                                   (count + 1u) * sizeof(*tags));
+  if (!tags) {
+    h2_pal_mem_free(context->allocator, tag);
+    return false;
+  }
+  workflow->tags = tags;
+  workflow->tags[count] = tag;
+  workflow->tag_count = count + 1u;
+  return true;
+}
+
 static bool decode_workflow_object(pb_istream_t *stream,
                                    h2_gizclaw_workflow_t *out,
                                    const h2_pal_mem_api_t *allocator) {
@@ -193,28 +230,22 @@ static bool decode_workflow_object(pb_istream_t *stream,
       .allocator = allocator,
       .out = out,
   };
-  text_decode_t text[3];
+  text_decode_t text[2];
   set_text_decoder(&decoded.name, &text[0], allocator, &out->name,
                    H2_GIZCLAW_WORKFLOW_NAME_MAX_BYTES);
-  set_text_decoder(&decoded.collection, &text[1], allocator, &out->collection,
-                   H2_GIZCLAW_WORKFLOW_COLLECTION_MAX_BYTES);
-  set_text_decoder(&decoded.workspace_lang_pair, &text[2], allocator,
+  decoded.tags.funcs.decode = decode_tag;
+  decoded.tags.arg = &workflow_context;
+  set_text_decoder(&decoded.workspace_lang_pair, &text[1], allocator,
                    &out->workspace_lang_pair,
                    H2_GIZCLAW_WORKFLOW_LANG_PAIR_MAX_BYTES);
   decoded.i18n.funcs.decode = decode_i18n;
   decoded.i18n.arg = &workflow_context;
   if (!pb_decode(stream, gizclaw_rpc_v1_Workflow_fields, &decoded) ||
-      out->name == NULL || out->collection == NULL ||
+      out->name == NULL ||
       !h2_gizclaw_runtime_alias_valid_internal((h2_gizclaw_str_t){
           .data = out->name,
           .len = text[0].decoded_len,
-      }) ||
-      !valid_kebab(
-          (h2_gizclaw_str_t){
-              .data = out->collection,
-              .len = text[1].decoded_len,
-          },
-          H2_GIZCLAW_WORKFLOW_COLLECTION_MAX_BYTES)) {
+      })) {
     workflow_clear(allocator, out);
     return false;
   }
@@ -251,6 +282,39 @@ static bool decode_workflow(pb_istream_t *stream, const pb_field_t *field,
   return true;
 }
 
+static bool decode_safety_fence(pb_istream_t *stream, const pb_field_t *field,
+                                void **arg) {
+  (void)field;
+  workflow_page_decode_t *context = *arg;
+  if (context == NULL || context->allocator == NULL || context->page == NULL)
+    return false;
+  gizclaw_rpc_v1_SafetyFenceOption decoded =
+      gizclaw_rpc_v1_SafetyFenceOption_init_zero;
+  if (!pb_decode(stream, gizclaw_rpc_v1_SafetyFenceOption_fields, &decoded) ||
+      !safety_fence_name_valid(decoded.name) ||
+      (decoded.has_display_name && decoded.display_name[0] == '\0'))
+    return false;
+  h2_gizclaw_workflow_page_t *page = context->page;
+  const size_t count = page->safety_fence_count;
+  if (count >= SIZE_MAX / sizeof(*page->safety_fences))
+    return false;
+  for (size_t i = 0u; i < count; ++i)
+    if (strcmp(page->safety_fences[i].name, decoded.name) == 0)
+      return false;
+  h2_gizclaw_safety_fence_option_t *options = h2_pal_mem_realloc(
+      context->allocator, page->safety_fences, (count + 1u) * sizeof(*options));
+  if (options == NULL)
+    return false;
+  page->safety_fences = options;
+  h2_gizclaw_safety_fence_option_t *option = &options[count];
+  memset(option, 0, sizeof(*option));
+  strcpy(option->name, decoded.name);
+  option->has_display_name = decoded.has_display_name;
+  strcpy(option->display_name, decoded.display_name);
+  page->safety_fence_count = count + 1u;
+  return true;
+}
+
 static int decode_list(const h2_pal_mem_api_t *allocator, const uint8_t *data,
                        size_t len, size_t max_count,
                        h2_gizclaw_workflow_page_t *out_page) {
@@ -264,6 +328,8 @@ static int decode_list(const h2_pal_mem_api_t *allocator, const uint8_t *data,
   text_decode_t text[3];
   decoded.items.funcs.decode = decode_workflow;
   decoded.items.arg = &items;
+  decoded.safety_fences.funcs.decode = decode_safety_fence;
+  decoded.safety_fences.arg = &items;
   set_text_decoder(&decoded.next_cursor, &text[0], allocator,
                    &out_page->next_cursor, 255u);
   set_text_decoder(&decoded.runtime_profile_name, &text[1], allocator,
@@ -333,27 +399,42 @@ static int decode_get(const h2_pal_mem_api_t *allocator, const uint8_t *data,
   return rc;
 }
 
+typedef struct tags_encode {
+  const h2_gizclaw_str_t *tags;
+  size_t count;
+} tags_encode_t;
+static bool encode_tags(pb_ostream_t *stream, const pb_field_t *field,
+                        void *const *arg) {
+  const tags_encode_t *context = *arg;
+  for (size_t i = 0; i < context->count; ++i)
+    if (!pb_encode_tag_for_field(stream, field) ||
+        !pb_encode_string(stream, (const pb_byte_t *)context->tags[i].data,
+                          context->tags[i].len))
+      return false;
+  return true;
+}
+
 static const char workflow_list_tag;
 static const char workflow_get_tag;
 
 h2_pal_result_t h2_gizclaw_req_create_workflow_list(
     h2_gizclaw_service_t *service, uint64_t identity,
-    h2_gizclaw_str_t collection, h2_gizclaw_str_t cursor, size_t limit,
-    uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
+    const h2_gizclaw_str_t *tags, size_t tag_count, h2_gizclaw_str_t cursor,
+    size_t limit, uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
   if (out_request != NULL)
     *out_request = NULL;
   if (service == NULL || out_request == NULL ||
-      !valid_kebab(collection, H2_GIZCLAW_WORKFLOW_COLLECTION_MAX_BYTES) ||
+      !h2_gizclaw_workflow_tags_valid_internal(tags, tag_count) ||
       !valid_optional_text(cursor, 255u) || limit == 0u ||
       limit > H2_GIZCLAW_WORKFLOW_PAGE_MAX_ITEMS)
     return H2_PAL_ERR_INVALID_ARG;
   const h2_pal_mem_api_t *allocator = service->client_config.allocator;
   gizclaw_rpc_v1_WorkflowListRequest message =
       gizclaw_rpc_v1_WorkflowListRequest_init_zero;
-  text_encode_t collection_text = {collection.data, collection.len};
+  tags_encode_t tags_text = {tags, tag_count};
   text_encode_t cursor_text = {cursor.data, cursor.len};
-  message.collection.funcs.encode = encode_text;
-  message.collection.arg = &collection_text;
+  message.tags.funcs.encode = encode_tags;
+  message.tags.arg = &tags_text;
   if (cursor.len > 0u) {
     message.cursor.funcs.encode = encode_text;
     message.cursor.arg = &cursor_text;
@@ -475,15 +556,16 @@ h2_pal_result_t h2_gizclaw_resp_parse_workflow_get(
 }
 
 h2_pal_result_t h2_gizclaw_rpc_workflow_list(
-    h2_gizclaw_service_t *service, h2_gizclaw_str_t collection,
-    h2_gizclaw_str_t cursor, size_t limit, uint32_t timeout_ms,
-    h2_gizclaw_resp_storage_t *storage, h2_gizclaw_workflow_page_t *out_page) {
+    h2_gizclaw_service_t *service, const h2_gizclaw_str_t *tags,
+    size_t tag_count, h2_gizclaw_str_t cursor, size_t limit,
+    uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_workflow_page_t *out_page) {
   if (out_page == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   memset(out_page, 0, sizeof(*out_page));
   h2_gizclaw_req_t *request = NULL;
   h2_pal_result_t rc = h2_gizclaw_req_create_workflow_list(
-      service, 0u, collection, cursor, limit, timeout_ms, &request);
+      service, 0u, tags, tag_count, cursor, limit, timeout_ms, &request);
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
   if (rc == H2_PAL_OK)

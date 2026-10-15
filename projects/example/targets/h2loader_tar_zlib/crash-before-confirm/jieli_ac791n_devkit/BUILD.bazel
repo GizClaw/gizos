@@ -1,0 +1,60 @@
+load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_jieli_firmware")
+load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+AC791N_COMPATIBILITY = select({
+    "//tools/bazel/platforms:ci_graph": [],
+    "//tools/bazel/platforms:is_ac791n": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+DISPLAY = "//projects/example/targets/h2loader_tar_zlib/display/jieli_ac791n_devkit"
+
+firmware_lib_component(
+    name = "crash_libs",
+    component_name = "jieli_ac791n_devkit_crash_before_confirm_libs",
+    deps = ["//libs/runtime"],
+)
+
+firmware_native_component(
+    name = "crash_before_confirm_target",
+    srcs = ["src/crash_before_confirm_target.c"],
+    hdrs = ["//projects/example/apps/crash-before-confirm/app:include/h2_crash_before_confirm.h"],
+    include_roots = ["projects/example/apps/crash-before-confirm/app/include"],
+    native_srcs = ["//projects/example/apps/crash-before-confirm/app:app.c"],
+    component_name = "jieli_ac791n_devkit_crash_before_confirm_target",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+    deps = [
+        ":crash_libs",
+        "//boards/jieli_ac791n_devkit/ac791n",
+        "//libs/pal:pal_header_files",
+    ],
+)
+
+# The shared color-bar launcher owns trial boot, the UART/BLE App command
+# services and confirmation; this target crashes between the two.
+h2loader_jieli_firmware(
+    name = "firmware",
+    board = "jieli_ac791n_devkit",
+    graph = [
+        ":crash_before_confirm_target",
+        DISPLAY + ":color_bar_launcher",
+        "//boards/jieli_ac791n_devkit/ac791n",
+    ],
+    image = "crash-before-confirm",
+    target = "wl82",
+    task_policy = DISPLAY + ":color_bar_task_policy",
+)
+
+h2loader_tar_zlib(
+    name = "package",
+    board = "jieli_ac791n_devkit",
+    firmware = ":firmware",
+    image = "crash-before-confirm",
+    role = "app",
+    target = "wl82",
+)

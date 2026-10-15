@@ -4,17 +4,28 @@
 #include <string.h>
 
 static void *fake_alloc(void *user, size_t len) {
-    (void)user;
-    return calloc(1u, len);
+    fake_mqtt_platform_t *fake = user;
+    void *memory = calloc(1u, len);
+    if (memory != NULL) ++fake->live_allocations;
+    return memory;
 }
 
 static void *fake_realloc(void *user, void *ptr, size_t len) {
-    (void)user;
-    return realloc(ptr, len);
+    fake_mqtt_platform_t *fake = user;
+    if (len == 0u) {
+        if (ptr != NULL) --fake->live_allocations;
+        free(ptr);
+        return NULL;
+    }
+    int new_allocation = ptr == NULL;
+    void *memory = realloc(ptr, len);
+    if (new_allocation && memory != NULL) ++fake->live_allocations;
+    return memory;
 }
 
 static void fake_free(void *user, void *ptr) {
-    (void)user;
+    fake_mqtt_platform_t *fake = user;
+    if (ptr != NULL) --fake->live_allocations;
     free(ptr);
 }
 
@@ -42,9 +53,38 @@ static int fake_resolve(void *user, const char *host, h2_pal_net_addr_t *out_add
     return H2_PAL_OK;
 }
 
+static h2_pal_result_t fake_resolve_start_family(void *user, const char *host,
+    h2_pal_net_family_t family, h2_pal_net_resolver_t **out) {
+    fake_mqtt_platform_t *fake = user;
+    *out = NULL;
+    if (!fake->resolver_answers)
+        return H2_PAL_ERR_UNSUPPORTED;
+    if (!host || family != H2_PAL_NET_FAMILY_ANY || fake->resolver_active)
+        return H2_PAL_ERR_INVALID_ARG;
+    fake->resolver_active = 1;
+    *out = (h2_pal_net_resolver_t *)fake;
+    return H2_PAL_OK;
+}
+static h2_pal_result_t fake_resolve_poll_all(void *user, h2_pal_net_resolver_t *resolver,
+    h2_pal_net_addr_list_t *out, uint32_t timeout) {
+    fake_mqtt_platform_t *fake = user;
+    if (resolver != (h2_pal_net_resolver_t *)fake || !fake->resolver_active || !timeout)
+        return H2_PAL_ERR_INVALID_ARG;
+    memset(out, 0, sizeof(*out));
+    out->count = 2u;
+    out->addrs[0].family = H2_PAL_NET_FAMILY_IPV6;
+    out->addrs[0].ip[15] = 1u;
+    return fake_resolve(user, "fake", &out->addrs[1]);
+}
+static void fake_resolve_close(void *user, h2_pal_net_resolver_t *resolver) {
+    fake_mqtt_platform_t *fake = user;
+    if (resolver == (h2_pal_net_resolver_t *)fake)
+        fake->resolver_active = 0;
+}
+
 static int fake_tcp_open(void *user, h2_pal_net_family_t family, h2_pal_net_socket_t *out_socket) {
     fake_mqtt_platform_t *fake = (fake_mqtt_platform_t *)user;
-    if (family != H2_PAL_NET_FAMILY_IPV4 || out_socket == NULL) {
+    if ((family != H2_PAL_NET_FAMILY_IPV4 && family != H2_PAL_NET_FAMILY_IPV6) || out_socket == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     fake->socket_open = 1;
@@ -62,6 +102,18 @@ static h2_pal_result_t fake_tcp_connect(
     if (socket < 0 || addr == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    if (addr->family == H2_PAL_NET_FAMILY_IPV6) {
+        if (fake->fail_ipv6_connect)
+            return H2_PAL_ERR_IO;
+        uint32_t delay = fake->ipv6_connect_remaining_ms;
+        if (delay > timeout_ms)
+            delay = timeout_ms;
+        fake->now_ms += delay;
+        fake->ipv6_connect_remaining_ms -= delay;
+        if (fake->ipv6_connect_remaining_ms)
+            return H2_PAL_ERR_TIMEOUT;
+    }
+    fake->connected_family = addr->family;
     if (fake->timeout_connect) {
         return H2_PAL_ERR_TIMEOUT;
     }
@@ -147,8 +199,16 @@ static void maybe_auto_respond(fake_mqtt_platform_t *fake) {
     }
 }
 
-static int fake_tcp_send(void *user, h2_pal_net_socket_t socket, const uint8_t *data, size_t len) {
+static int fake_send_bytes(void *user, h2_pal_net_socket_t socket, const uint8_t *data, size_t len) {
     fake_mqtt_platform_t *fake = (fake_mqtt_platform_t *)user;
+    fake->now_ms += fake->send_delay_ms;
+    ++fake->send_calls;
+    if (fake->send_error != 0 && fake->send_calls > fake->send_error_after) {
+        int rc = fake->send_error;
+        if (fake->send_error_once) fake->send_error = 0;
+        return rc;
+    }
+    if (fake->send_limit != 0u && len > fake->send_limit) len = fake->send_limit;
     if (socket < 0 || (data == NULL && len != 0u) || fake->tx_len + len > sizeof(fake->tx)) {
         return H2_PAL_ERR_INVALID_ARG;
     }
@@ -158,9 +218,25 @@ static int fake_tcp_send(void *user, h2_pal_net_socket_t socket, const uint8_t *
     return (int)len;
 }
 
+static int fake_tcp_send(void *user, h2_pal_net_socket_t socket, const uint8_t *data, size_t len) {
+    fake_mqtt_platform_t *fake = user;
+    ++fake->legacy_send_calls;
+    return fake_send_bytes(user, socket, data, len);
+}
+
+static int fake_tcp_send_timeout(void *user, h2_pal_net_socket_t socket, const uint8_t *data, size_t len, uint32_t timeout_ms) {
+    fake_mqtt_platform_t *fake = user;
+    if (fake->send_timeout_calls < 128u) fake->send_timeouts[fake->send_timeout_calls++] = timeout_ms;
+    if (fake->send_delay_ms > timeout_ms) {
+        fake->now_ms += timeout_ms;
+        return H2_PAL_ERR_TIMEOUT;
+    }
+    return fake_send_bytes(user, socket, data, len);
+}
+
 static int fake_tcp_recv(void *user, h2_pal_net_socket_t socket, uint8_t *data, size_t len, uint32_t timeout_ms) {
     fake_mqtt_platform_t *fake = (fake_mqtt_platform_t *)user;
-    (void)timeout_ms;
+    fake->recv_timeout_ms = timeout_ms;
     if (socket < 0 || data == NULL || len == 0u) {
         return H2_PAL_ERR_INVALID_ARG;
     }
@@ -233,13 +309,18 @@ void fake_mqtt_platform_init(fake_mqtt_platform_t *fake) {
         .sleep_ms = fake_sleep,
     };
     fake->allocator.vtable = &allocator_vtable;
+    fake->allocator.user = fake;
     fake->time.user = fake;
     fake->time.vtable = &time_vtable;
     static const h2_pal_net_vtable_t net_vtable = {
         .resolve_addr = fake_resolve,
+        .resolve_start_family = fake_resolve_start_family,
+        .resolve_poll_all = fake_resolve_poll_all,
+        .resolve_close = fake_resolve_close,
         .tcp_open = fake_tcp_open,
         .tcp_connect = fake_tcp_connect,
         .tcp_send = fake_tcp_send,
+        .tcp_send_timeout = fake_tcp_send_timeout,
         .tcp_recv = fake_tcp_recv,
         .tls_wrap = fake_tls_wrap,
         .close = fake_close,

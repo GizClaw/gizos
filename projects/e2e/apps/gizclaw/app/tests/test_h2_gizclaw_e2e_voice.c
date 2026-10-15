@@ -51,7 +51,7 @@ size_t h2_gizclaw_conversation_downlink_writes_internal(
   (void)service;
   return s_downlink_writes;
 }
-void h2_gizclaw_conversation_downlink_flush_internal(
+void h2_gizclaw_conversation_downlink_interrupt_internal(
     h2_gizclaw_service_t *service) {
   (void)service;
 }
@@ -126,11 +126,13 @@ enum {
   HANGUP_IGNORED,
   HANGUP_BAD_RESULT,
   HANGUP_BAD_KIND,
-  HANGUP_CLOSES_PEER
+  HANGUP_CLOSES_PEER,
+  TEXT_ERROR,
+  TEXT_SILENT_REPLY
 };
 static unsigned s_mode;
 static unsigned s_begins, s_replies, s_cancels, s_reconnects, s_play_creates;
-static unsigned s_hangups, s_post_hangup_pings;
+static unsigned s_hangups, s_post_hangup_pings, s_texts;
 static uint64_t s_last_capture, s_ended_at;
 static bool s_board_frames;
 static bool s_realtime, s_reconnected;
@@ -280,6 +282,24 @@ h2_pal_result_t h2_gizclaw_service_audio_control_internal(
     *out_empty = s_conversation != NULL && s_conversation->input_bytes == 0u;
   return rc;
 }
+/* The Session's text input: a complete input that is already ended, so the
+ * poll below completes it and the reply follows as downstream audio. */
+h2_pal_result_t h2_gizclaw_conversation_send_text_internal(
+    h2_gizclaw_conversation_t *value, h2_gizclaw_str_t text,
+    h2_gizclaw_audio_log_t *log) {
+  (void)log;
+  assert(s_session && value == s_conversation && !value->active && !s_realtime);
+  assert(text.data != NULL && text.len > 0u &&
+         memchr(text.data, '\0', text.len) == NULL);
+  if (s_mode == TEXT_ERROR)
+    return H2_PAL_ERR_IO;
+  value->active = value->ended = true;
+  value->cancelled = false;
+  value->input_bytes = value->replies = 0u;
+  ++value->generation;
+  ++s_texts;
+  return H2_PAL_OK;
+}
 h2_pal_result_t
 h2_gizclaw_conversation_cancel(h2_gizclaw_conversation_t *value) {
   assert(value == s_conversation);
@@ -346,7 +366,7 @@ static void emit_reply_audio(void) {
   if (s_mode == EMPTY_REPLY)
     return;
   uint8_t pcm[64] = {0};
-  if (s_mode != SILENT_REPLY)
+  if (s_mode != SILENT_REPLY && !(s_mode == TEXT_SILENT_REPLY && s_texts != 0u))
     pcm[0] = 1u;
   assert(fake_pcm_track_service_write(s_track, pcm, sizeof(pcm)) == H2_PAL_OK);
   ++s_downlink_writes;
@@ -711,14 +731,32 @@ h2_pal_result_t h2_gizclaw_rpc_register(h2_gizclaw_service_t *service,
   strcpy(out->runtime_profile_name, "profile");
   return H2_PAL_OK;
 }
-h2_pal_result_t h2_gizclaw_rpc_workflow_list(h2_gizclaw_service_t *service,
-    h2_gizclaw_str_t collection, h2_gizclaw_str_t cursor, size_t limit,
-    uint32_t timeout, h2_gizclaw_resp_storage_t *storage,
-    h2_gizclaw_workflow_page_t *out) {
-  (void)service; (void)collection; (void)cursor; (void)limit; (void)timeout; (void)storage;
-  static h2_gizclaw_workflow_t workflow = {.collection="assistants", .name="assistant"};
+h2_pal_result_t h2_gizclaw_rpc_workflow_list(
+    h2_gizclaw_service_t *service, const h2_gizclaw_str_t *tags,
+    size_t tag_count, h2_gizclaw_str_t cursor, size_t limit, uint32_t timeout,
+    h2_gizclaw_resp_storage_t *storage, h2_gizclaw_workflow_page_t *out) {
+  (void)service;
+  (void)tags;
+  (void)tag_count;
+  (void)cursor;
+  (void)limit;
+  (void)timeout;
+  (void)storage;
+  static char *workflow_tags[] = {"assistants"};
+  static h2_gizclaw_workflow_t workflow = {
+      .tags = workflow_tags, .tag_count = 1u, .name = "assistant"};
   *out = (h2_gizclaw_workflow_page_t){.items=&workflow, .count=1u,
       .runtime_profile_name="profile", .runtime_profile_revision="v1"};
+  return H2_PAL_OK;
+}
+h2_pal_result_t h2_gizclaw_rpc_workflow_get(
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t name, uint32_t timeout,
+    h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_workflow_get_result_t *out) {
+  (void)service; (void)name; (void)timeout; (void)storage;
+  *out = (h2_gizclaw_workflow_get_result_t){.workflow = {.name = "assistant"},
+                                            .runtime_profile_name = "profile",
+                                            .runtime_profile_revision = "v1"};
   return H2_PAL_OK;
 }
 h2_pal_result_t h2_gizclaw_rpc_workspace_get(h2_gizclaw_service_t *service,
@@ -730,10 +768,16 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_get(h2_gizclaw_service_t *service,
       .runtime_profile_name="profile", .runtime_profile_revision="v1"};
   return H2_PAL_OK;
 }
-h2_pal_result_t h2_gizclaw_rpc_workspace_create(h2_gizclaw_service_t *service,
-    h2_gizclaw_str_t collection, h2_gizclaw_str_t workflow, h2_gizclaw_str_t name,
-    uint32_t timeout, h2_gizclaw_resp_storage_t *storage, h2_gizclaw_workspace_t *out) {
-  (void)service; (void)collection; (void)workflow; (void)name; (void)timeout; (void)storage; (void)out;
+h2_pal_result_t h2_gizclaw_rpc_workspace_create(
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t workflow,
+    h2_gizclaw_str_t name, uint32_t timeout, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_workspace_t *out) {
+  (void)service;
+  (void)workflow;
+  (void)name;
+  (void)timeout;
+  (void)storage;
+  (void)out;
   assert(false && "existing Session workspace must not be recreated");
   return H2_PAL_ERR_INVALID_STATE;
 }
@@ -758,7 +802,7 @@ static unsigned run_case(unsigned mode, int expected, unsigned fail_alloc) {
   test_time.monotonic_ms = 0u;
   s_realtime = s_reconnected = false;
   s_sets = 0u;
-  s_hangups = s_post_hangup_pings = 0u;
+  s_hangups = s_post_hangup_pings = s_texts = 0u;
   s_detached_track = NULL;
   s_begins = s_replies = s_cancels = s_reconnects = s_play_creates = test_mem.calls =
       0u;
@@ -786,14 +830,22 @@ static unsigned run_case(unsigned mode, int expected, unsigned fail_alloc) {
   strcpy(fixture->friend_group_workspace_name, "group-workspace");
   fixture->actors[0].service = (h2_gizclaw_service_t *)&s_service;
   if (s_session) {
-    static const char *const collections[] = {"assistants"};
-    h2_gizclaw_session_config_t config = {.service=fixture->actors[0].service,
-        .mem=&test_mem.api, .sync=h2_desktop_platform_sync_api(), .time=&test_time.api,
-        .collections=collections, .collection_count=1u, .max_workflows=4u, .catalog_bytes=4096u};
+    static const h2_gizclaw_str_t tags[] = {{"assistants", 10u}};
+    h2_gizclaw_session_config_t config = {.service = fixture->actors[0].service,
+                                          .mem = &test_mem.api,
+                                          .sync =
+                                              h2_desktop_platform_sync_api(),
+                                          .time = &test_time.api,
+                                          .tags = tags,
+                                          .tag_count = 1u,
+                                          .max_workflows = 4u,
+                                          .catalog_bytes = 4096u};
     assert(h2_gizclaw_session_create(&config, &fixture->actors[0].session) == H2_PAL_OK);
     assert(h2_gizclaw_session_register(fixture->actors[0].session, "token", 30000u) == H2_PAL_OK);
     strcpy(fixture->workflow_name, "assistant");
-    h2_gizclaw_session_selection_t selection={.collection="assistants", .workflow_name="assistant", .workspace_name=fixture->workspace_name};
+    h2_gizclaw_session_selection_t selection = {.workflow_name = "assistant",
+                                                .workspace_name =
+                                                    fixture->workspace_name};
     assert(h2_gizclaw_session_select(fixture->actors[0].session, &selection, 30000u) == H2_PAL_OK);
   }
   if (s_emit)
@@ -805,8 +857,11 @@ static unsigned run_case(unsigned mode, int expected, unsigned fail_alloc) {
   assert(fixture->workspace_created && fixture->friend_group_created);
   const unsigned allocations = test_mem.calls;
   if (mode == NORMAL && fail_alloc == 0u) {
+    /* The Session scenario adds one text input answered by one reply. */
     assert(s_begins == (s_group ? 1u : 3u) &&
-           s_replies == (s_group ? 0u : 3u) && s_cancels == (s_group ? 0u : 2u));
+           s_replies == (s_group ? 0u : s_session ? 4u : 3u) &&
+           s_cancels == (s_group ? 0u : 2u));
+    assert(s_texts == (s_session ? 1u : 0u));
     assert(s_hangups == (s_group ? 0u : 1u) &&
            s_post_hangup_pings == (s_group ? 0u : 1u));
     assert(s_play_creates == (s_group ? 0u : 3u) &&
@@ -852,18 +907,25 @@ static void run_empty_ptt_session(void) {
   assert(test_mem.live_blocks == 0u && s_conversation == NULL);
   s_mode = NORMAL;
   s_empty_ptt = true;
-  static const char *const collections[] = {"assistants"};
-  h2_gizclaw_session_config_t config = {.service=(h2_gizclaw_service_t *)&s_service,
-      .mem=&test_mem.api, .sync=h2_desktop_platform_sync_api(), .time=&test_time.api,
-      .collections=collections, .collection_count=1u, .max_workflows=4u, .catalog_bytes=4096u};
+  static const h2_gizclaw_str_t tags[] = {{"assistants", 10u}};
+  h2_gizclaw_session_config_t config = {.service =
+                                            (h2_gizclaw_service_t *)&s_service,
+                                        .mem = &test_mem.api,
+                                        .sync = h2_desktop_platform_sync_api(),
+                                        .time = &test_time.api,
+                                        .tags = tags,
+                                        .tag_count = 1u,
+                                        .max_workflows = 4u,
+                                        .catalog_bytes = 4096u};
   h2_gizclaw_session_t *session = NULL;
   assert(h2_gizclaw_session_create(&config, &session) == H2_PAL_OK);
   assert(h2_gizclaw_session_register(session, "token", 30000u) == H2_PAL_OK);
   const h2_gizclaw_workspace_parameters_patch_t parameters = {
       .has_input = true, .input = H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK};
-  const h2_gizclaw_session_selection_t selection = {.collection="assistants",
-      .workflow_name="assistant", .workspace_name="test-workspace",
-      .parameters=&parameters};
+  const h2_gizclaw_session_selection_t selection = {
+      .workflow_name = "assistant",
+      .workspace_name = "test-workspace",
+      .parameters = &parameters};
   h2_gizclaw_conversation_t *conversation = NULL;
   assert(h2_gizclaw_session_conversation_create(session, &selection, 30000u,
              empty_ptt_event, empty_ptt_complete, NULL, &conversation) == H2_PAL_OK);
@@ -939,6 +1001,9 @@ int main(int argc, char **argv) {
   s_board_frames = false;
   s_session = true;
   run_case(NORMAL, H2_PAL_OK, 0u);
+  /* Text input faults: a refused admission and a silent answer. */
+  run_case(TEXT_ERROR, H2_PAL_ERR_IO, 0u);
+  run_case(TEXT_SILENT_REPLY, H2_PAL_ERR_TIMEOUT, 0u);
   s_session = false;
   run_empty_ptt_session();
   unsigned allocations = run_case(NORMAL, H2_PAL_OK, 0u);

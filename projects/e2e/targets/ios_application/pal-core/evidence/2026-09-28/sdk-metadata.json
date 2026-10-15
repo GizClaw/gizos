@@ -1,0 +1,26 @@
+{
+  "slices": [
+    {
+      "LibraryIdentifier": "ios-arm64",
+      "LibraryPath": "H2PALCore.framework",
+      "SupportedArchitectures": [
+        "arm64"
+      ],
+      "SupportedPlatform": "ios"
+    },
+    {
+      "LibraryIdentifier": "ios-arm64-simulator",
+      "LibraryPath": "H2PALCore.framework",
+      "SupportedArchitectures": [
+        "arm64"
+      ],
+      "SupportedPlatform": "ios",
+      "SupportedPlatformVariant": "simulator"
+    }
+  ],
+  "name": "H2PALCore",
+  "version": "2.0.0",
+  "sha256": "7ca7558b22e0f8967f1871aaf554b936a5f75a8e717537e5145bb37bcb79b9f6",
+  "artifact": "swift_package.xcframework.zip",
+  "header_count": 51
+}

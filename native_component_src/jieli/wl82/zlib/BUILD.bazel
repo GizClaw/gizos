@@ -1,0 +1,22 @@
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+firmware_native_component(
+    name = "zlib",
+    srcs = ["@h2_vendor_zlib//:firmware_sources"],
+    hdrs = [
+        "@h2_vendor_zlib//:src/crc32.h",
+        "@h2_vendor_zlib//:src/deflate.h",
+        "@h2_vendor_zlib//:src/gzguts.h",
+        "@h2_vendor_zlib//:src/inffast.h",
+        "@h2_vendor_zlib//:src/inffixed.h",
+        "@h2_vendor_zlib//:src/inflate.h",
+        "@h2_vendor_zlib//:src/inftrees.h",
+        "@h2_vendor_zlib//:src/trees.h",
+        "@h2_vendor_zlib//:src/zconf.h",
+        "@h2_vendor_zlib//:src/zlib.h",
+        "@h2_vendor_zlib//:src/zutil.h",
+    ],
+    component_name = "h2_jieli_wl82_zlib",
+)

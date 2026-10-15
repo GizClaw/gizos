@@ -1,0 +1,38 @@
+diff --git a/libSYS/src/genericStds.cpp b/libSYS/src/genericStds.cpp
+index d1cc1e1..ab36f40 100644
+--- a/libSYS/src/genericStds.cpp
++++ b/libSYS/src/genericStds.cpp
+@@ -134,6 +134,24 @@
+ #include <stdlib.h>
+ #include <stdio.h>
+ 
++#ifdef H2_FDK_EMBEDDED_NO_STDIO
++void FDKprintf(const char *szFmt, ...) { (void)szFmt; }
++void FDKprintfErr(const char *szFmt, ...) { (void)szFmt; }
++int FDKgetchar(void) { return -1; }
++INT FDKfprintf(FDKFILE *stream, const char *format, ...) {
++  (void)stream;
++  (void)format;
++  return 0;
++}
++INT FDKsprintf(char *str, const char *format, ...) {
++  (void)format;
++  if (str != NULL) {
++    str[0] = '\0';
++  }
++  return 0;
++}
++#else
++
+ void FDKprintf(const char *szFmt, ...) {
+   va_list ap;
+   va_start(ap, szFmt);
+@@ -170,6 +188,8 @@ INT FDKsprintf(char *str, const char *format, ...) {
+   return chars;
+ }
+ 
++#endif
++
+ /************************************************************************************************/
+ 
+ /************************************************************************************************/
