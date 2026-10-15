@@ -301,6 +301,17 @@ int main(void) {
                h2_wolfssl_dtls_api(), client) == H2_PAL_OK);
     h2_pal_dtls_session_destroy(h2_wolfssl_dtls_api(), &client);
     h2_pal_dtls_session_destroy(h2_wolfssl_dtls_api(), &server);
+    client = create_session(H2_PAL_DTLS_ROLE_CLIENT, &client_endpoint);
+    assert(h2_pal_dtls_session_set_remote_fingerprint(
+               h2_wolfssl_dtls_api(), client, server_fingerprint) == H2_PAL_OK);
+    int complete = 0;
+    h2_pal_result_t started = h2_pal_dtls_session_handshake(
+        h2_wolfssl_dtls_api(), client, NULL, 0u, 1u, 10u, &complete);
+    assert(started == H2_PAL_OK || started == H2_PAL_ERR_WOULD_BLOCK);
+    assert(h2_pal_dtls_session_handshake(
+               h2_wolfssl_dtls_api(), client, NULL, 0u, 11u, 10u, &complete) == H2_PAL_ERR_TIMEOUT);
+    assert(complete == 0);
+    h2_pal_dtls_session_destroy(h2_wolfssl_dtls_api(), &client);
     assert(h2_wolfssl_deinit() == H2_PAL_OK);
     return 0;
 }

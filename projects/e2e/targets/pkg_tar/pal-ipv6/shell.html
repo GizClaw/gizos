@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>PAL IPv6 qualification</title>
+<h1>PAL IPv6 qualification</h1>
+<canvas id="canvas" width="1" height="1" hidden></canvas>
+<pre id="ledger"></pre>
+<script>
+  const query = new URLSearchParams(location.search);
+  const append = text => {
+    document.getElementById('ledger').textContent += text + '\n';
+    console.log(text);
+  };
+  var Module = {
+    canvas: document.getElementById('canvas'),
+    arguments: ['stun', 'http', 'session'].map(key => query.get(key) || ''),
+    print: append,
+    printErr: append,
+  };
+</script>
+{{{ SCRIPT }}}
+</html>

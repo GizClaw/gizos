@@ -69,6 +69,7 @@ class Fixture:
     """Only explicit binding may expose the peer to physical device Wi-Fi."""
     def __init__(self, bind="127.0.0.1", advertise=None, callback_bridge=None, callback_cleanup=None):
         self.bind = bind
+        self.family = socket.AF_INET6 if ":" in bind else socket.AF_INET
         self.callback_bridge = callback_bridge
         self.callback_cleanup = callback_cleanup
         self.advertise = advertise or bind
@@ -94,6 +95,7 @@ class Fixture:
             self.contexts[mode] = ctx
         owner = self
         class Server(socketserver.ThreadingTCPServer):
+            address_family = self.family
             daemon_threads = True
             allow_reuse_address = True
         class Control(socketserver.StreamRequestHandler):
@@ -110,7 +112,10 @@ class Fixture:
                     if not case or len(case) > 50 or any(c not in "abcdefghijklmnopqrstuvwxyz0123456789-" for c in case):
                         raise ValueError("case")
                     if action == "ARM" and len(args) == 2:
-                        port = owner.arm(case, int(args[0]), int(args[1]), self.client_address[0], run_id=run_id)
+                        peer = self.client_address[0]
+                        if owner.family == socket.AF_INET6 and self.client_address[3]:
+                            peer += '%' + str(self.client_address[3])
+                        port = owner.arm(case, int(args[0]), int(args[1]), peer, run_id=run_id)
                         reply = f"OK {port}\n"
                     elif action == "PROOF" and len(args) == 1:
                         owner.proof(case, int(args[0]), timeout=2, run_id=run_id)
@@ -131,7 +136,7 @@ class Fixture:
         return thread
 
     def owned(self, udp=False):
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM if udp else socket.SOCK_STREAM)
+        sock = socket.socket(self.family, socket.SOCK_DGRAM if udp else socket.SOCK_STREAM)
         sock.settimeout(5)
         sock.bind((self.bind, 0))
         with self.lock:
@@ -155,6 +160,9 @@ class Fixture:
             self.records[key] = record
         if mode == 6:
             target = self.callback_bridge(callback) if self.callback_bridge else callback
+            if isinstance(target, tuple):
+                record['bridge_host'], target = target
+                record['bridge_transport'] = 'adb-control-to-device-local-listener'
             record['bridge_port'] = target
             self.spawn(self.callback, record, target)
             return callback
@@ -255,7 +263,7 @@ class Fixture:
 
     def callback(self, record, port):
         try:
-            with socket.create_connection((record['peer'], port), timeout=3) as connection:
+            with socket.create_connection((record.get('bridge_host', record['peer']), port), timeout=3) as connection:
                 record['accepted'] = True
                 self.echo(connection, record)
         except (OSError, RuntimeError) as error:

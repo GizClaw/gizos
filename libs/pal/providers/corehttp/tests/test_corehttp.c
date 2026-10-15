@@ -1037,7 +1037,58 @@ static int test_request_allocator(void) {
     return 0;
 }
 
+static const h2_pal_net_vtable_t *candidate_base;
+static h2_pal_result_t candidate_start(void *user, const char *host,
+    h2_pal_net_family_t family, h2_pal_net_resolver_t **out) {
+    if (family != H2_PAL_NET_FAMILY_ANY)
+        return H2_PAL_ERR_INVALID_ARG;
+    return candidate_base->resolve_start(user, host, out);
+}
+static h2_pal_result_t candidate_poll(void *user, h2_pal_net_resolver_t *resolver,
+    h2_pal_net_addr_list_t *out, uint32_t timeout) {
+    memset(out, 0, sizeof(*out));
+    int rc = candidate_base->resolve_poll(user, resolver, &out->addrs[1], timeout);
+    if (rc)
+        return rc;
+    out->count = 2u;
+    out->addrs[0].family = H2_PAL_NET_FAMILY_IPV6;
+    out->addrs[0].ip[15] = 1u;
+    return H2_PAL_OK;
+}
+static int test_multi_address_connect_budget(void) {
+    for (unsigned rejected = 0u; rejected < 2u; ++rejected) {
+        fake_http_platform_t platform;
+        fake_http_platform_init(&platform);
+        candidate_base = platform.net.vtable;
+        h2_pal_net_vtable_t vtable = *candidate_base;
+        vtable.resolve_start_family = candidate_start;
+        vtable.resolve_poll_all = candidate_poll;
+        platform.net.vtable = &vtable;
+        platform.ipv6_connect_remaining_ms = 300u;
+        platform.fail_ipv6_connect = (int)rejected;
+        for (unsigned i = 0; i < 2; ++i)
+            fake_http_platform_add_response(&platform,
+                "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok");
+        h2_pal_http_api_t api;
+        h2_corehttp_t *provider = create_provider(&platform, &api, NULL, 0u);
+        CHECK(provider != NULL);
+        h2_pal_http_request_t request = {.method = H2_PAL_HTTP_GET,
+            .url = {.data = "http://example.test/", .len = 20u}, .timeout_ms = 1000};
+        h2_pal_http_response_t response;
+        CHECK(h2_pal_http_request(&api, &request, &response) == H2_PAL_OK);
+        CHECK(platform.connected_family == (rejected ? H2_PAL_NET_FAMILY_IPV4 : H2_PAL_NET_FAMILY_IPV6));
+        CHECK(platform.open_count == (rejected ? 2 : 1));
+        CHECK(platform.close_count == platform.open_count);
+        CHECK(platform.resolver_close_count == 1);
+        CHECK(platform.now_ms < 1000u);
+        h2_pal_http_response_free(&api, &response);
+        h2_corehttp_destroy(provider);
+    }
+    return 0;
+}
+
 int main(void) {
+    if (test_multi_address_connect_budget() != 0) return 1;
     if (test_request_allocator() != 0) return 1;
     if (test_failure_diagnostics() != 0) return 1;
     int rc = test_create_failure_resets_outputs();

@@ -165,6 +165,22 @@ static h2_pal_result_t netif_status(esp_netif_t *netif,
     set_ipv4(&out_status->gateway4, ip.gw.addr);
     out_status->flags |= H2_PAL_NETIF_FLAG_HAS_IPV4;
   }
+#if LWIP_IPV6
+  esp_ip6_addr_t addresses[CONFIG_LWIP_IPV6_NUM_ADDRESSES];
+  int address_count = esp_netif_get_all_preferred_ip6(netif, addresses);
+  for (int i = 0; i < address_count; ++i) {
+    out_status->ipv6.family = H2_PAL_NET_FAMILY_IPV6;
+    memcpy(out_status->ipv6.ip, addresses[i].addr, 16u);
+    out_status->ipv6.scope_id = 0u;
+    if (out_status->ipv6.ip[0] == 0xfeu && (out_status->ipv6.ip[1] & 0xc0u) == 0x80u) {
+      out_status->ipv6.scope_id = (uint32_t)esp_netif_get_netif_impl_index(netif);
+    }
+    out_status->flags |= H2_PAL_NETIF_FLAG_HAS_IPV6;
+    if (out_status->ipv6.scope_id == 0u) {
+      break;
+    }
+  }
+#endif
   if (esp_netif_get_mac(netif, out_status->mac) == ESP_OK) {
     out_status->mac_valid = 1u;
   }
@@ -178,12 +194,23 @@ static h2_pal_result_t netif_status(esp_netif_t *netif,
        ++i) {
     esp_netif_dns_info_t dns;
     memset(&dns, 0, sizeof(dns));
-    if (esp_netif_get_dns_info(netif, dns_types[i], &dns) == ESP_OK &&
-        IP_IS_V4(&dns.ip) && ip_2_ip4(&dns.ip)->addr != 0u) {
+    if (esp_netif_get_dns_info(netif, dns_types[i], &dns) != ESP_OK)
+      continue;
+    if (IP_IS_V4(&dns.ip) && ip_2_ip4(&dns.ip)->addr != 0u) {
       set_ipv4(&out_status->dns[out_status->dns_count].addr,
                ip_2_ip4(&dns.ip)->addr);
       ++out_status->dns_count;
     }
+#if LWIP_IPV6
+    else if (IP_IS_V6(&dns.ip) && !ip6_addr_isany(ip_2_ip6(&dns.ip))) {
+      h2_pal_net_addr_t *address = &out_status->dns[out_status->dns_count].addr;
+      address->family = H2_PAL_NET_FAMILY_IPV6;
+      memcpy(address->ip, ip_2_ip6(&dns.ip)->addr, 16u);
+      if (address->ip[0] == 0xfeu && (address->ip[1] & 0xc0u) == 0x80u)
+        address->scope_id = (uint32_t)esp_netif_get_netif_impl_index(netif);
+      ++out_status->dns_count;
+    }
+#endif
   }
   return H2_PAL_OK;
 }

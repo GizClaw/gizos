@@ -5,4 +5,6 @@ exports_files([
     "loader_usb.defaults",
     "partition.csv",
     "sdkconfig.h2loader.defaults",
+    "sdkconfig.iperf-client.defaults",
+    "sdkconfig.ipv6-client.defaults",
 ])

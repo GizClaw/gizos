@@ -111,6 +111,10 @@ const char* peer_connection_state_to_string(PeerConnectionState state);
 
 PeerConnectionState peer_connection_get_state(PeerConnection* pc);
 
+/* Internal fixture telemetry; read on the protocol owner thread. */
+h2_pal_result_t peer_connection_selected_pair(PeerConnection* pc,
+    h2_pal_net_addr_t* local, h2_pal_net_addr_t* remote);
+
 h2_pal_result_t peer_connection_classify_dtls_handshake_result(
     int handshake_result, PeerConnectionState* out_terminal_state);
 

@@ -1,4 +1,5 @@
 #include "h2_posix_pal_core.h"
+#include "h2/pal/net/h2_pal_netif.h"
 
 #include <arpa/inet.h>
 #include <errno.h>
@@ -47,7 +48,8 @@ typedef struct desktop_net_resolver {
     int completed;
     int closed;
     h2_pal_result_t result;
-    h2_pal_net_addr_t addr;
+    h2_pal_net_addr_list_t addrs;
+    h2_pal_net_family_t family;
     char host[];
 } desktop_net_resolver_t;
 
@@ -91,14 +93,19 @@ static void sigpipe_guard_end(desktop_sigpipe_guard_t *guard) {
 }
 
 static int family_to_posix(h2_pal_net_family_t family) {
-    return family == H2_PAL_NET_FAMILY_IPV6 ? AF_INET6 : AF_INET;
+    return family == H2_PAL_NET_FAMILY_IPV6 ? AF_INET6 :
+        family == H2_PAL_NET_FAMILY_IPV4 ? AF_INET : -1;
 }
 
 static int addr_to_sockaddr(
     const h2_pal_net_addr_t *addr,
     struct sockaddr_storage *storage,
     socklen_t *out_len) {
-    if (addr == NULL || storage == NULL || out_len == NULL) {
+    if (addr == NULL || storage == NULL || out_len == NULL ||
+        family_to_posix(addr->family) < 0 ||
+        (addr->family == H2_PAL_NET_FAMILY_IPV4 && addr->scope_id != 0u) ||
+        (addr->family == H2_PAL_NET_FAMILY_IPV6 && addr->ip[0] == 0xfeu &&
+         (addr->ip[1] & 0xc0u) == 0x80u && addr->scope_id == 0u)) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     memset(storage, 0, sizeof(*storage));
@@ -106,6 +113,7 @@ static int addr_to_sockaddr(
         struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)storage;
         sin6->sin6_family = AF_INET6;
         sin6->sin6_port = htons(addr->port);
+        sin6->sin6_scope_id = addr->scope_id;
         memcpy(&sin6->sin6_addr, addr->ip, 16u);
         *out_len = sizeof(*sin6);
     } else {
@@ -129,6 +137,7 @@ static int sockaddr_to_addr(
         const struct sockaddr_in6 *sin6 = (const struct sockaddr_in6 *)sockaddr;
         out_addr->family = H2_PAL_NET_FAMILY_IPV6;
         out_addr->port = ntohs(sin6->sin6_port);
+        out_addr->scope_id = sin6->sin6_scope_id;
         memcpy(out_addr->ip, &sin6->sin6_addr, 16u);
     } else {
         const struct sockaddr_in *sin = (const struct sockaddr_in *)sockaddr;
@@ -363,32 +372,130 @@ static h2_pal_result_t tls_wait_handshake(
     }
 }
 
-static int desktop_net_resolve_host(
-    const char *host,
-    h2_pal_net_addr_t *out_addr) {
-    if (host == NULL || out_addr == NULL) {
+static int net_has_reserved_suffix(const char *host, const char *name) {
+    size_t length = strlen(host);
+    if (length != 0u && host[length - 1u] == '.')
+        --length;
+    const size_t local_length = strlen(name);
+    if (length < local_length)
+        return 0;
+    size_t start = length - local_length;
+    if (start != 0u && host[start - 1u] != '.')
+        return 0;
+    for (size_t i = 0u; i < local_length; ++i) {
+        char c = host[start + i];
+        if (c >= 'A' && c <= 'Z')
+            c = (char)(c + ('a' - 'A'));
+        if (c != name[i])
+            return 0;
+    }
+    return 1;
+}
+
+static h2_pal_result_t desktop_net_resolve_all(
+    void *user, const char *host, h2_pal_net_family_t family,
+    h2_pal_net_addr_list_t *out_addrs) {
+    (void)user;
+    if (host == NULL || host[0] == '\0' || out_addrs == NULL ||
+        (family != H2_PAL_NET_FAMILY_ANY && family_to_posix(family) < 0)) {
         return H2_PAL_ERR_INVALID_ARG;
+    }
+    memset(out_addrs, 0, sizeof(*out_addrs));
+    if (net_has_reserved_suffix(host, "invalid"))
+        return H2_PAL_ERR_NOT_FOUND;
+    if (net_has_reserved_suffix(host, "localhost")) {
+        if (family != H2_PAL_NET_FAMILY_IPV4) {
+            h2_pal_net_addr_t *loopback = &out_addrs->addrs[out_addrs->count++];
+            loopback->family = H2_PAL_NET_FAMILY_IPV6;
+            loopback->ip[15] = 1u;
+        }
+        if (family != H2_PAL_NET_FAMILY_IPV6) {
+            h2_pal_net_addr_t *loopback = &out_addrs->addrs[out_addrs->count++];
+            loopback->family = H2_PAL_NET_FAMILY_IPV4;
+            loopback->ip[0] = 127u;
+            loopback->ip[3] = 1u;
+        }
+        return H2_PAL_OK;
     }
     struct addrinfo hints;
     memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET;
-    hints.ai_socktype = SOCK_DGRAM;
+    hints.ai_family = family == H2_PAL_NET_FAMILY_ANY ? AF_UNSPEC : family_to_posix(family);
+    hints.ai_socktype = SOCK_STREAM;
     struct addrinfo *res = NULL;
     int rc = getaddrinfo(host, NULL, &hints, &res);
-    if (rc != 0 || res == NULL) {
-        return H2_PAL_ERR_NOT_FOUND;
+    if (rc != 0) {
+        if (rc == EAI_NONAME)
+            return H2_PAL_ERR_NOT_FOUND;
+#ifdef EAI_NODATA
+        if (rc == EAI_NODATA)
+            return H2_PAL_ERR_NOT_FOUND;
+#endif
+#ifdef EAI_ADDRFAMILY
+        if (rc == EAI_ADDRFAMILY)
+            return H2_PAL_ERR_NOT_FOUND;
+#endif
+        return rc == EAI_MEMORY ? H2_PAL_ERR_NO_MEMORY : H2_PAL_ERR_IO;
     }
-    int out_rc = sockaddr_to_addr(res->ai_addr, out_addr);
+    for (const struct addrinfo *it = res; it != NULL; it = it->ai_next) {
+        if (it->ai_family != AF_INET && it->ai_family != AF_INET6) {
+            continue;
+        }
+        h2_pal_net_addr_t addr;
+        if (sockaddr_to_addr(it->ai_addr, &addr) != H2_PAL_OK) {
+            continue;
+        }
+        if (family != H2_PAL_NET_FAMILY_ANY && addr.family != family)
+            continue;
+        size_t i = 0u;
+        for (; i < out_addrs->count; ++i) {
+            const h2_pal_net_addr_t *previous = &out_addrs->addrs[i];
+            if (previous->family == addr.family && previous->scope_id == addr.scope_id &&
+                memcmp(previous->ip, addr.ip, addr.family == H2_PAL_NET_FAMILY_IPV4 ? 4u : 16u) == 0) {
+                break;
+            }
+        }
+        if (i != out_addrs->count) {
+            continue;
+        }
+        if (out_addrs->count == H2_PAL_NET_ADDR_MAX) {
+            out_addrs->truncated = 1u;
+            int family_present = 0;
+            for (size_t kept = 0u; kept < out_addrs->count; ++kept)
+                family_present |= out_addrs->addrs[kept].family == addr.family;
+            /* Keep one answer of each family even when one DNS RRset fills
+             * the bounded list. Relative resolver order of retained answers
+             * is preserved, and truncation remains explicit. */
+            if (!family_present && family == H2_PAL_NET_FAMILY_ANY)
+                out_addrs->addrs[H2_PAL_NET_ADDR_MAX - 1u] = addr;
+            continue;
+        }
+        out_addrs->addrs[out_addrs->count++] = addr;
+    }
     freeaddrinfo(res);
-    return out_rc;
+    return out_addrs->count != 0u ? H2_PAL_OK : H2_PAL_ERR_NOT_FOUND;
 }
 
-static int desktop_net_resolve_addr(
-    void *user,
-    const char *host,
-    h2_pal_net_addr_t *out_addr) {
-    (void)user;
-    return desktop_net_resolve_host(host, out_addr);
+/* Preserve the legacy IPv4 preference while accepting AAAA-only hosts. */
+static h2_pal_net_addr_t desktop_net_first_addr(const h2_pal_net_addr_list_t *addrs) {
+    for (size_t i = 0u; i < addrs->count; ++i) {
+        if (addrs->addrs[i].family == H2_PAL_NET_FAMILY_IPV4) {
+            return addrs->addrs[i];
+        }
+    }
+    return addrs->addrs[0];
+}
+
+static int desktop_net_resolve_addr(void *user, const char *host, h2_pal_net_addr_t *out_addr) {
+    if (out_addr == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    memset(out_addr, 0, sizeof(*out_addr));
+    h2_pal_net_addr_list_t addrs;
+    h2_pal_result_t result = desktop_net_resolve_all(user, host, H2_PAL_NET_FAMILY_ANY, &addrs);
+    if (result == H2_PAL_OK) {
+        *out_addr = desktop_net_first_addr(&addrs);
+    }
+    return result;
 }
 
 static h2_pal_result_t desktop_net_resolver_reserve(void) {
@@ -423,13 +530,13 @@ static void desktop_net_resolver_destroy(desktop_net_resolver_t *resolver) {
 
 static void *desktop_net_resolver_worker(void *raw) {
     desktop_net_resolver_t *resolver = (desktop_net_resolver_t *)raw;
-    h2_pal_net_addr_t addr;
-    h2_pal_result_t result =
-        desktop_net_resolve_host(resolver->host, &addr);
+    h2_pal_net_addr_list_t addrs;
+    h2_pal_result_t result = desktop_net_resolve_all(
+        NULL, resolver->host, resolver->family, &addrs);
     (void)pthread_mutex_lock(&resolver->lock);
     resolver->result = result;
     if (result == H2_PAL_OK) {
-        resolver->addr = addr;
+        resolver->addrs = addrs;
     }
     resolver->completed = 1;
     int closed = resolver->closed;
@@ -443,12 +550,14 @@ static void *desktop_net_resolver_worker(void *raw) {
     return NULL;
 }
 
-static h2_pal_result_t desktop_net_resolve_start(
+static h2_pal_result_t desktop_net_resolve_start_family(
     void *user,
     const char *host,
+    h2_pal_net_family_t family,
     h2_pal_net_resolver_t **out_resolver) {
     (void)user;
-    if (host == NULL || host[0] == '\0' || out_resolver == NULL) {
+    if (host == NULL || host[0] == '\0' || out_resolver == NULL ||
+        (family != H2_PAL_NET_FAMILY_ANY && family_to_posix(family) < 0)) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     *out_resolver = NULL;
@@ -468,6 +577,7 @@ static h2_pal_result_t desktop_net_resolve_start(
         desktop_net_resolver_release();
         return H2_PAL_ERR_NO_MEMORY;
     }
+    resolver->family = family;
     memcpy(resolver->host, host, host_len + 1u);
     if (pthread_mutex_init(&resolver->lock, NULL) != 0) {
         free(resolver);
@@ -503,17 +613,18 @@ static h2_pal_result_t desktop_net_resolve_start(
     return H2_PAL_OK;
 }
 
-static h2_pal_result_t desktop_net_resolve_poll(
+static h2_pal_result_t desktop_net_resolve_poll_all(
     void *user,
     h2_pal_net_resolver_t *resolver_handle,
-    h2_pal_net_addr_t *out_addr,
+    h2_pal_net_addr_list_t *out_addrs,
     uint32_t timeout_ms) {
     (void)user;
     desktop_net_resolver_t *resolver =
         (desktop_net_resolver_t *)resolver_handle;
-    if (resolver == NULL || out_addr == NULL) {
+    if (resolver == NULL || out_addrs == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    memset(out_addrs, 0, sizeof(*out_addrs));
     (void)pthread_mutex_lock(&resolver->lock);
     if (resolver->closed) {
         (void)pthread_mutex_unlock(&resolver->lock);
@@ -542,9 +653,28 @@ static h2_pal_result_t desktop_net_resolve_poll(
     }
     h2_pal_result_t result = resolver->result;
     if (result == H2_PAL_OK) {
-        *out_addr = resolver->addr;
+        *out_addrs = resolver->addrs;
     }
     (void)pthread_mutex_unlock(&resolver->lock);
+    return result;
+}
+
+static h2_pal_result_t desktop_net_resolve_start(void *user, const char *host,
+    h2_pal_net_resolver_t **out_resolver) {
+    return desktop_net_resolve_start_family(user, host, H2_PAL_NET_FAMILY_ANY, out_resolver);
+}
+
+static h2_pal_result_t desktop_net_resolve_poll(void *user, h2_pal_net_resolver_t *resolver,
+    h2_pal_net_addr_t *out_addr, uint32_t timeout_ms) {
+    if (out_addr == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    memset(out_addr, 0, sizeof(*out_addr));
+    h2_pal_net_addr_list_t addrs;
+    h2_pal_result_t result = desktop_net_resolve_poll_all(user, resolver, &addrs, timeout_ms);
+    if (result == H2_PAL_OK) {
+        *out_addr = desktop_net_first_addr(&addrs);
+    }
     return result;
 }
 
@@ -566,41 +696,84 @@ static void desktop_net_resolve_close(
     }
 }
 
-static int desktop_net_get_host_addr(void *user, const char *iface_prefix, h2_pal_net_addr_t *out_addr) {
+static int desktop_net_get_host_addr_family(void *user, const char *iface_prefix,
+    h2_pal_net_family_t family, h2_pal_net_addr_t *out_addr) {
     (void)user;
-    if (out_addr == NULL) {
+    if (out_addr == NULL || family_to_posix(family) < 0) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    memset(out_addr, 0, sizeof(*out_addr));
     struct ifaddrs *ifaddr = NULL;
-    if (getifaddrs(&ifaddr) == 0) {
-        for (struct ifaddrs *ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
-            if (ifa->ifa_addr == NULL || ifa->ifa_addr->sa_family != AF_INET) {
-                continue;
-            }
-            if ((ifa->ifa_flags & IFF_UP) == 0 || (ifa->ifa_flags & IFF_LOOPBACK) != 0) {
-                continue;
-            }
-            if (iface_prefix != NULL && iface_prefix[0] != '\0' &&
-                strncmp(ifa->ifa_name, iface_prefix, strlen(iface_prefix)) != 0) {
-                continue;
-            }
-            int rc = sockaddr_to_addr(ifa->ifa_addr, out_addr);
-            freeifaddrs(ifaddr);
-            return rc;
+    if (getifaddrs(&ifaddr) != 0) {
+        return H2_PAL_ERR_IO;
+    }
+    int result = H2_PAL_ERR_NOT_FOUND;
+    h2_pal_net_addr_t loopback = {0};
+    h2_pal_net_addr_t link_local = {0};
+    for (struct ifaddrs *ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
+        if (ifa->ifa_addr == NULL || ifa->ifa_addr->sa_family != family_to_posix(family) ||
+            (ifa->ifa_flags & IFF_UP) == 0 ||
+            (iface_prefix != NULL && iface_prefix[0] != '\0' &&
+             strncmp(ifa->ifa_name, iface_prefix, strlen(iface_prefix)) != 0)) {
+            continue;
         }
-        freeifaddrs(ifaddr);
+        if ((ifa->ifa_flags & IFF_LOOPBACK) != 0) {
+            (void)sockaddr_to_addr(ifa->ifa_addr, &loopback);
+            continue;
+        }
+        result = sockaddr_to_addr(ifa->ifa_addr, out_addr);
+        if (family == H2_PAL_NET_FAMILY_IPV6 && out_addr->ip[0] == 0xfeu &&
+            (out_addr->ip[1] & 0xc0u) == 0x80u) {
+            out_addr->scope_id = if_nametoindex(ifa->ifa_name);
+            if (link_local.family == 0)
+                link_local = *out_addr;
+            memset(out_addr, 0, sizeof(*out_addr));
+            result = H2_PAL_ERR_NOT_FOUND;
+            continue;
+        }
+        break;
     }
-    /* A requested route must never silently fall back to another interface. */
-    if (iface_prefix != NULL && iface_prefix[0] != '\0') {
-        memset(out_addr, 0, sizeof(*out_addr));
-        return H2_PAL_ERR_NOT_FOUND;
+    freeifaddrs(ifaddr);
+    if (result == H2_PAL_ERR_NOT_FOUND && link_local.family == family) {
+        *out_addr = link_local;
+        result = H2_PAL_OK;
     }
-    out_addr->family = H2_PAL_NET_FAMILY_IPV4;
-    out_addr->ip[0] = 127u;
-    out_addr->ip[1] = 0u;
-    out_addr->ip[2] = 0u;
-    out_addr->ip[3] = 1u;
-    return H2_PAL_OK;
+    if (result == H2_PAL_ERR_NOT_FOUND && loopback.family == family) {
+        *out_addr = loopback;
+        result = H2_PAL_OK;
+    }
+    return result;
+}
+
+static int desktop_net_get_host_addr(void *user, const char *iface_prefix, h2_pal_net_addr_t *out_addr) {
+    int result = desktop_net_get_host_addr_family(user, iface_prefix, H2_PAL_NET_FAMILY_IPV4, out_addr);
+    if (result == H2_PAL_ERR_NOT_FOUND && (iface_prefix == NULL || iface_prefix[0] == '\0')) {
+        out_addr->family = H2_PAL_NET_FAMILY_IPV4;
+        out_addr->ip[0] = 127u;
+        out_addr->ip[3] = 1u;
+        return H2_PAL_OK;
+    }
+    return result;
+}
+
+/* An IPv6 socket owns IPv6 traffic only; dual-stack fallback opens a separate
+ * IPv4 socket, avoiding platform-dependent mapped-address/source semantics. */
+static int desktop_net_open_socket(h2_pal_net_family_t family, int type) {
+    if (family_to_posix(family) < 0) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    int fd = socket(family_to_posix(family), type, 0);
+    if (fd < 0) {
+        return errno == EAFNOSUPPORT ? H2_PAL_ERR_UNSUPPORTED : H2_PAL_ERR_IO;
+    }
+    if (family == H2_PAL_NET_FAMILY_IPV6) {
+        int only = 1;
+        if (setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &only, sizeof(only)) != 0) {
+            close(fd);
+            return H2_PAL_ERR_IO;
+        }
+    }
+    return fd;
 }
 
 /* Datagram sockets default to a small send buffer on some hosts (macOS caps
@@ -624,9 +797,9 @@ static int desktop_net_udp_open(
         return H2_PAL_ERR_INVALID_ARG;
     }
     *out_socket = -1;
-    int fd = socket(family_to_posix(family), SOCK_DGRAM, 0);
+    int fd = desktop_net_open_socket(family, SOCK_DGRAM);
     if (fd < 0) {
-        return H2_PAL_ERR_IO;
+        return fd;
     }
     int reuse = 1;
     (void)setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
@@ -652,6 +825,46 @@ static int desktop_net_udp_open(
     return H2_PAL_OK;
 }
 
+static int desktop_net_bind_interface(int fd, h2_pal_net_family_t family,
+    const h2_pal_netif_ref_t *ref) {
+    if (ref == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    unsigned index = 0u;
+    char name[IF_NAMESIZE] = {0};
+    if (ref->type == H2_PAL_NETIF_REF_NAME) {
+        size_t length = strnlen(ref->name, sizeof(ref->name));
+        if (length == 0u || length == sizeof(ref->name) || length >= sizeof(name)) {
+            return H2_PAL_ERR_INVALID_ARG;
+        }
+        memcpy(name, ref->name, length + 1u);
+        index = if_nametoindex(name);
+    } else if (ref->type == H2_PAL_NETIF_REF_ID) {
+        index = ref->id;
+        if (index != 0u && if_indextoname(index, name) == NULL) {
+            index = 0u;
+        }
+    } else {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
+    if (index == 0u) {
+        return H2_PAL_ERR_NOT_FOUND;
+    }
+#if defined(__APPLE__)
+    int level = family == H2_PAL_NET_FAMILY_IPV6 ? IPPROTO_IPV6 : IPPROTO_IP;
+    int option = family == H2_PAL_NET_FAMILY_IPV6 ? IPV6_BOUND_IF : IP_BOUND_IF;
+    return setsockopt(fd, level, option, &index, sizeof(index)) == 0 ? H2_PAL_OK : H2_PAL_ERR_IO;
+#elif defined(SO_BINDTODEVICE)
+    (void)family;
+    return setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, name, strlen(name) + 1u) == 0
+        ? H2_PAL_OK : H2_PAL_ERR_IO;
+#else
+    (void)fd;
+    (void)family;
+    return H2_PAL_ERR_UNSUPPORTED;
+#endif
+}
+
 static int desktop_net_udp_open_bound(
     void *user,
     h2_pal_net_family_t family,
@@ -662,6 +875,20 @@ static int desktop_net_udp_open_bound(
     if (bind_config == NULL || bind_config->type == H2_PAL_NET_BIND_DEFAULT) {
         return desktop_net_udp_open(user, family, port, out_socket, out_bind_addr);
     }
+    if (bind_config->type == H2_PAL_NET_BIND_NETIF) {
+        if (bind_config->netif == NULL)
+            return H2_PAL_ERR_INVALID_ARG;
+        int result = desktop_net_udp_open(user, family, port, out_socket, out_bind_addr);
+        if (result == H2_PAL_OK) {
+            result = desktop_net_bind_interface(*out_socket, family, bind_config->netif);
+            if (result != H2_PAL_OK) {
+                close(*out_socket);
+                *out_socket = -1;
+                memset(out_bind_addr, 0, sizeof(*out_bind_addr));
+            }
+        }
+        return result;
+    }
     if (bind_config->type != H2_PAL_NET_BIND_SOURCE_ADDR) {
         return H2_PAL_ERR_UNSUPPORTED;
     }
@@ -669,9 +896,9 @@ static int desktop_net_udp_open_bound(
         return H2_PAL_ERR_INVALID_ARG;
     }
     *out_socket = -1;
-    int fd = socket(family_to_posix(family), SOCK_DGRAM, 0);
+    int fd = desktop_net_open_socket(family, SOCK_DGRAM);
     if (fd < 0) {
-        return H2_PAL_ERR_IO;
+        return fd;
     }
     int reuse = 1;
     (void)setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
@@ -755,7 +982,21 @@ static int desktop_net_udp_join_multicast(
     h2_pal_net_socket_t socket_fd,
     const h2_pal_net_addr_t *addr) {
     (void)user;
-    if (socket_fd < 0 || addr == NULL || addr->family != H2_PAL_NET_FAMILY_IPV4) {
+    if (socket_fd < 0 || addr == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    if (addr->family == H2_PAL_NET_FAMILY_IPV6) {
+        if (addr->ip[0] != 0xffu || addr->scope_id == 0u) {
+            return H2_PAL_ERR_INVALID_ARG;
+        }
+        struct ipv6_mreq membership;
+        memset(&membership, 0, sizeof(membership));
+        memcpy(&membership.ipv6mr_multiaddr, addr->ip, 16u);
+        membership.ipv6mr_interface = addr->scope_id;
+        return setsockopt(socket_fd, IPPROTO_IPV6, IPV6_JOIN_GROUP, &membership, sizeof(membership)) == 0
+            ? H2_PAL_OK : H2_PAL_ERR_IO;
+    }
+    if (addr->family != H2_PAL_NET_FAMILY_IPV4) {
         return H2_PAL_ERR_UNSUPPORTED;
     }
     struct ip_mreq imreq;
@@ -772,9 +1013,10 @@ static int desktop_net_tcp_open(void *user, h2_pal_net_family_t family, h2_pal_n
     if (out_socket == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    int fd = socket(family_to_posix(family), SOCK_STREAM, 0);
+    *out_socket = -1;
+    int fd = desktop_net_open_socket(family, SOCK_STREAM);
     if (fd < 0) {
-        return H2_PAL_ERR_IO;
+        return fd;
     }
     *out_socket = fd;
     return H2_PAL_OK;
@@ -787,6 +1029,22 @@ static int desktop_net_tcp_open_bound(
     h2_pal_net_socket_t *out_socket) {
     if (bind_config == NULL || bind_config->type == H2_PAL_NET_BIND_DEFAULT) {
         return desktop_net_tcp_open(user, family, out_socket);
+    }
+    if (bind_config->type == H2_PAL_NET_BIND_NETIF) {
+        if (bind_config->netif == NULL)
+            return H2_PAL_ERR_INVALID_ARG;
+        int result = desktop_net_tcp_open(user, family, out_socket);
+        if (result == H2_PAL_OK) {
+            result = desktop_net_bind_interface(*out_socket, family, bind_config->netif);
+            if (result != H2_PAL_OK) {
+                close(*out_socket);
+                *out_socket = -1;
+            }
+        }
+        return result;
+    }
+    if (bind_config->source_addr.family != family) {
+        return H2_PAL_ERR_INVALID_ARG;
     }
     if (bind_config->type != H2_PAL_NET_BIND_SOURCE_ADDR) {
         return H2_PAL_ERR_UNSUPPORTED;
@@ -1326,18 +1584,27 @@ static int desktop_net_tcp_listen(
     memset(&bind_addr, 0, sizeof(bind_addr));
     bind_addr.family = family;
     if (bind_config != NULL && bind_config->type != H2_PAL_NET_BIND_DEFAULT) {
-        if (bind_config->type != H2_PAL_NET_BIND_SOURCE_ADDR) {
+        if (bind_config->type != H2_PAL_NET_BIND_SOURCE_ADDR && bind_config->type != H2_PAL_NET_BIND_NETIF) {
             return H2_PAL_ERR_UNSUPPORTED;
         }
-        if (bind_config->source_addr.family != family) {
+        if (bind_config->type == H2_PAL_NET_BIND_SOURCE_ADDR && bind_config->source_addr.family != family) {
             return H2_PAL_ERR_INVALID_ARG;
         }
-        bind_addr = bind_config->source_addr;
+        if (bind_config->type == H2_PAL_NET_BIND_SOURCE_ADDR) {
+            bind_addr = bind_config->source_addr;
+        }
     }
     bind_addr.port = port;
-    int fd = socket(family_to_posix(family), SOCK_STREAM, 0);
+    int fd = desktop_net_open_socket(family, SOCK_STREAM);
     if (fd < 0) {
-        return H2_PAL_ERR_IO;
+        return fd;
+    }
+    if (bind_config != NULL && bind_config->type == H2_PAL_NET_BIND_NETIF) {
+        int result = desktop_net_bind_interface(fd, family, bind_config->netif);
+        if (result != H2_PAL_OK) {
+            close(fd);
+            return result;
+        }
     }
     int reuse = 1;
     (void)setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
@@ -1395,6 +1662,10 @@ static h2_pal_result_t desktop_net_tcp_accept(
 
 const h2_pal_net_api_t *h2_posix_net_api(void) {
     static const h2_pal_net_vtable_t vtable = {
+        .resolve_all = desktop_net_resolve_all,
+        .resolve_start_family = desktop_net_resolve_start_family,
+        .resolve_poll_all = desktop_net_resolve_poll_all,
+        .get_host_addr_family = desktop_net_get_host_addr_family,
         .resolve_addr = desktop_net_resolve_addr,
         .resolve_start = desktop_net_resolve_start,
         .resolve_poll = desktop_net_resolve_poll,

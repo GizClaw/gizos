@@ -50,6 +50,28 @@ esp_err_t esp_netif_get_ip_info(esp_netif_t *netif, esp_netif_ip_info_t *ip) {
   memset(ip, 0, sizeof(*ip));
   return ESP_OK;
 }
+#if LWIP_IPV6
+int esp_netif_get_all_ip6(esp_netif_t *netif, esp_ip6_addr_t *addresses) {
+  assert(s_tcpip);
+  assert(netif->ipv6_count >= 0 &&
+         netif->ipv6_count <= CONFIG_LWIP_IPV6_NUM_ADDRESSES);
+  memcpy(addresses, netif->ipv6,
+         (size_t)netif->ipv6_count * sizeof(*addresses));
+  return netif->ipv6_count;
+}
+int esp_netif_get_all_preferred_ip6(esp_netif_t *netif,
+                                    esp_ip6_addr_t *addresses) {
+  assert(s_tcpip);
+  assert(netif->ipv6_count >= 0 &&
+         netif->ipv6_count <= CONFIG_LWIP_IPV6_NUM_ADDRESSES);
+  int count = 0;
+  for (int i = 0; i < netif->ipv6_count; ++i) {
+    if (netif->ipv6_preferred[i] != 0u)
+      addresses[count++] = netif->ipv6[i];
+  }
+  return count;
+}
+#endif
 esp_err_t esp_netif_get_mac(esp_netif_t *netif, uint8_t *mac) {
   (void)netif;
   memset(mac, 0, 6u);
@@ -147,6 +169,11 @@ static void begin_monitor(void) {
   memset(s_wifi.dns, 0, sizeof(s_wifi.dns));
   memset(s_wifi.dns_result, 0, sizeof(s_wifi.dns_result));
   memset(s_servers, 0, sizeof(s_servers));
+#if LWIP_IPV6
+  memset(s_wifi.ipv6, 0, sizeof(s_wifi.ipv6));
+  memset(s_wifi.ipv6_preferred, 0, sizeof(s_wifi.ipv6_preferred));
+  s_wifi.ipv6_count = 0;
+#endif
   s_default = &s_wifi;
   sdk_set_dns(&s_wifi, 0u, 0x01010101u);
   s_cache_clears = 0u;
@@ -322,6 +349,51 @@ static void test_incomplete_and_invalid_reads(void) {
 #endif
 
 #if LWIP_IPV4 && LWIP_IPV6
+static void test_ipv6_netif_and_dns_scope(void) {
+  begin_monitor();
+  const uint8_t link_local[16] = {0xfeu, 0x80u, 0, 0, 0, 0, 0, 0,
+                                0, 0, 0, 0, 0, 0, 0, 1u};
+  const uint8_t global[16] = {0xfdu, 0x53u, 0, 0, 0, 0, 0, 0,
+                            0, 0, 0, 0, 0, 0, 0, 2u};
+  memcpy(s_wifi.ipv6[0].addr, link_local, sizeof(link_local));
+  s_wifi.ipv6_preferred[0] = 1u;
+  s_wifi.ipv6_count = 1;
+  s_wifi.dns[1].ip.type = ESP_IPADDR_TYPE_V6;
+  memcpy(s_wifi.dns[1].ip.u_addr.ip6.addr, link_local, sizeof(link_local));
+  h2_pal_netif_status_t status;
+  const h2_pal_netif_api_t *api = h2_esp_platform_netif_api();
+  assert(h2_pal_netif_get_status(api, NULL, &status) == H2_PAL_OK);
+  assert((status.flags & H2_PAL_NETIF_FLAG_HAS_IPV6) != 0u);
+  assert(status.ipv6.family == H2_PAL_NET_FAMILY_IPV6);
+  assert(status.ipv6.scope_id == (uint32_t)s_wifi.index);
+  assert(memcmp(status.ipv6.ip, link_local, sizeof(link_local)) == 0);
+  assert(status.dns_count == 2u);
+  assert(status.dns[1].addr.family == H2_PAL_NET_FAMILY_IPV6);
+  assert(status.dns[1].addr.scope_id == (uint32_t)s_wifi.index);
+  assert(memcmp(status.dns[1].addr.ip, link_local, sizeof(link_local)) == 0);
+  memcpy(s_wifi.ipv6[1].addr, global, sizeof(global));
+  s_wifi.ipv6_preferred[1] = 1u;
+  s_wifi.ipv6_count = 2;
+  memcpy(s_wifi.dns[1].ip.u_addr.ip6.addr, global, sizeof(global));
+  assert(h2_pal_netif_get_status(api, NULL, &status) == H2_PAL_OK);
+  assert(status.ipv6.scope_id == 0u);
+  assert(memcmp(status.ipv6.ip, global, sizeof(global)) == 0);
+  assert(status.dns[1].addr.scope_id == 0u);
+  /* Deprecated global addresses no longer hide a usable scoped link-local. */
+  s_wifi.ipv6_preferred[1] = 0u;
+  assert(h2_pal_netif_get_status(api, NULL, &status) == H2_PAL_OK);
+  assert((status.flags & H2_PAL_NETIF_FLAG_HAS_IPV6) != 0u);
+  assert(status.ipv6.scope_id == (uint32_t)s_wifi.index);
+  assert(memcmp(status.ipv6.ip, link_local, sizeof(link_local)) == 0);
+  s_wifi.ipv6_preferred[0] = 0u;
+  assert(h2_pal_netif_get_status(api, NULL, &status) == H2_PAL_OK);
+  assert((status.flags & H2_PAL_NETIF_FLAG_HAS_IPV6) == 0u);
+  assert(status.ipv6.family == H2_PAL_NET_FAMILY_ANY);
+  s_wifi.dns_result[1] = ESP_FAIL;
+  assert(h2_pal_netif_get_status(api, NULL, &status) == H2_PAL_OK);
+  assert(status.dns_count == 1u);
+}
+
 static void test_address_family_and_ipv6(void) {
   begin_monitor();
   expect_reconcile(1u, 0u);
@@ -352,6 +424,7 @@ int main(void) {
   test_incomplete_and_invalid_reads();
 #endif
 #if LWIP_IPV4 && LWIP_IPV6
+  test_ipv6_netif_and_dns_scope();
   test_address_family_and_ipv6();
 #endif
   h2_esp_platform_netif_monitor_deinit();

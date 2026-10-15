@@ -1,5 +1,7 @@
 # PAL Display E2E
 
+Current behavior is validated by executed C/C++ tests, actual SDK/platform builds and typed runtime reports. Main #733 retired the Python source/snapshot admission gates; source-audit descriptions and sidecars below retain historical context and original identities, and do not grant current behavior or physical qualification.
+
 Portable App `//projects/e2e/apps/pal-display/app:pal_display_e2e` receives a borrowed Runtime and a launcher-owned observation callback. It calls every Display vtable operation: `open`, `get_info`, `draw_bitmap`, `present`, `set_brightness_percent`, `close`. The file-scope registry contains 24 mandatory cases. A missing interface, failed observation, failed cleanup or unrun case fails qualification; managed launchers confirm only after complete success.
 
 ## Cases and capability profiles
@@ -77,3 +79,7 @@ The RGB provider now retains its canonical shadow and two immutable scanout buff
 `bk_rgb_buffer_requalification.json` binds only the changed BK framebuffer sources to two fresh 24/24 executions of commit `75d83ca4a9c9297cc7018ce3d2d0cdb0be87fe84`, the exact package/image identity, unchanged Loader/P1, empty stage and the user's stable RGBW pattern confirmation. The independent reboot excludes result replay received before the new BOOT. The original six-platform qualification and mobile receipts are unchanged; the new record cannot exempt another provider or a failed/incomplete case. Coredump invariance was not sampled for this focused framebuffer follow-up, and physical luminance was not measured. H106 page-transition performance is a separate consumer result.
 
 `bk_display_guide_format_provenance.json` retains the original guide snapshot and its recorded digest as historical context. Current guide wording and formatting are not constrained by that snapshot; framebuffer, package and hardware records keep their original identities and describe only the recorded physical executions.
+
+## AMOLED DMA ceiling
+
+The AMOLED driver accepts an opt-in DMA row ceiling of 8, 16, 32 or 64; zero keeps the existing 64-row default. The production driver calls the same ceiling function exercised by `//boards/amoled/esp32s3:display_config_host_test`. The iperf launcher selects 8 rows and FT3168 adds read-error diagnostics. Current-source behavior is verified by executable C tests and actual native builds. Historical DMA/device receipts keep their original source/artifact identities; the new row choice has no current physical or finger/optical acceptance.

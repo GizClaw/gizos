@@ -62,12 +62,19 @@ set(H2_BK_CP_DISASSOC_CASE "        case H2_BK_WIFI_RPC_STA_DISASSOCIATE:
             }
             break;
         }
+        case H2_BK_WIFI_RPC_IPV6_SNAPSHOT:
+        {
+            ret = arg_info->argc == 1 && arg_info->args[0] != 0
+                ? h2_bk_wifi_ipv6_snapshot((h2_bk_wifi_ipv6_snapshot_t *)(uintptr_t)arg_info->args[0])
+                : BK_ERR_PARAM;
+            break;
+        }
 ${H2_BK_CP_DISASSOC_ANCHOR}")
 string(REPLACE "${H2_BK_CP_DISASSOC_ANCHOR}" "${H2_BK_CP_DISASSOC_CASE}"
   H2_BK_CP_CONTROLLER_CORRECTED "${H2_BK_CP_CONTROLLER_CONTENT}")
 set(H2_BK_CP_CONTROLLER_CORRECTED_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/h2_bk_cp_wifi_api.c")
 file(WRITE "${H2_BK_CP_CONTROLLER_CORRECTED_SOURCE}"
-  "#include \"h2_bk_wifi_rpc.h\"\n#include \"h2_bk_dhcp_ring.h\"\n#include \"h2_bk_wifi_lease.h\"\n${H2_BK_CP_CONTROLLER_CORRECTED}")
+  "#include \"h2_bk_wifi_rpc.h\"\n#include \"h2_bk_wifi_ipv6.h\"\n#include \"h2_bk_dhcp_ring.h\"\n#include \"h2_bk_wifi_lease.h\"\n${H2_BK_CP_CONTROLLER_CORRECTED}")
 get_target_property(H2_BK_CP_CONTROLLER_SOURCES ${H2_BK_CP_CONTROLLER_LIB} SOURCES)
 list(FILTER H2_BK_CP_CONTROLLER_SOURCES EXCLUDE REGEX "(^|/)cif_wifi_api\\.c$")
 list(APPEND H2_BK_CP_CONTROLLER_SOURCES "${H2_BK_CP_CONTROLLER_CORRECTED_SOURCE}")
@@ -78,3 +85,5 @@ target_include_directories(${H2_BK_CP_CONTROLLER_LIB} PRIVATE
 include("${REPO_ROOT}/native_component_src/bk7258/shared/h2_bk_dhcp_trace.cmake")
 include("${REPO_ROOT}/native_component_src/bk7258/shared/h2_bk_cp_psram.cmake")
 include("${REPO_ROOT}/native_component_src/bk7258/shared/h2_bk_cp_lease.cmake")
+
+include("${REPO_ROOT}/native_component_src/bk7258/shared/h2_bk_wifi_ipv6.cmake")

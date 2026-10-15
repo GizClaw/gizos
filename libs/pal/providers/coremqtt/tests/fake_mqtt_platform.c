@@ -53,9 +53,38 @@ static int fake_resolve(void *user, const char *host, h2_pal_net_addr_t *out_add
     return H2_PAL_OK;
 }
 
+static h2_pal_result_t fake_resolve_start_family(void *user, const char *host,
+    h2_pal_net_family_t family, h2_pal_net_resolver_t **out) {
+    fake_mqtt_platform_t *fake = user;
+    *out = NULL;
+    if (!fake->resolver_answers)
+        return H2_PAL_ERR_UNSUPPORTED;
+    if (!host || family != H2_PAL_NET_FAMILY_ANY || fake->resolver_active)
+        return H2_PAL_ERR_INVALID_ARG;
+    fake->resolver_active = 1;
+    *out = (h2_pal_net_resolver_t *)fake;
+    return H2_PAL_OK;
+}
+static h2_pal_result_t fake_resolve_poll_all(void *user, h2_pal_net_resolver_t *resolver,
+    h2_pal_net_addr_list_t *out, uint32_t timeout) {
+    fake_mqtt_platform_t *fake = user;
+    if (resolver != (h2_pal_net_resolver_t *)fake || !fake->resolver_active || !timeout)
+        return H2_PAL_ERR_INVALID_ARG;
+    memset(out, 0, sizeof(*out));
+    out->count = 2u;
+    out->addrs[0].family = H2_PAL_NET_FAMILY_IPV6;
+    out->addrs[0].ip[15] = 1u;
+    return fake_resolve(user, "fake", &out->addrs[1]);
+}
+static void fake_resolve_close(void *user, h2_pal_net_resolver_t *resolver) {
+    fake_mqtt_platform_t *fake = user;
+    if (resolver == (h2_pal_net_resolver_t *)fake)
+        fake->resolver_active = 0;
+}
+
 static int fake_tcp_open(void *user, h2_pal_net_family_t family, h2_pal_net_socket_t *out_socket) {
     fake_mqtt_platform_t *fake = (fake_mqtt_platform_t *)user;
-    if (family != H2_PAL_NET_FAMILY_IPV4 || out_socket == NULL) {
+    if ((family != H2_PAL_NET_FAMILY_IPV4 && family != H2_PAL_NET_FAMILY_IPV6) || out_socket == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     fake->socket_open = 1;
@@ -73,6 +102,18 @@ static h2_pal_result_t fake_tcp_connect(
     if (socket < 0 || addr == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    if (addr->family == H2_PAL_NET_FAMILY_IPV6) {
+        if (fake->fail_ipv6_connect)
+            return H2_PAL_ERR_IO;
+        uint32_t delay = fake->ipv6_connect_remaining_ms;
+        if (delay > timeout_ms)
+            delay = timeout_ms;
+        fake->now_ms += delay;
+        fake->ipv6_connect_remaining_ms -= delay;
+        if (fake->ipv6_connect_remaining_ms)
+            return H2_PAL_ERR_TIMEOUT;
+    }
+    fake->connected_family = addr->family;
     if (fake->timeout_connect) {
         return H2_PAL_ERR_TIMEOUT;
     }
@@ -273,6 +314,9 @@ void fake_mqtt_platform_init(fake_mqtt_platform_t *fake) {
     fake->time.vtable = &time_vtable;
     static const h2_pal_net_vtable_t net_vtable = {
         .resolve_addr = fake_resolve,
+        .resolve_start_family = fake_resolve_start_family,
+        .resolve_poll_all = fake_resolve_poll_all,
+        .resolve_close = fake_resolve_close,
         .tcp_open = fake_tcp_open,
         .tcp_connect = fake_tcp_connect,
         .tcp_send = fake_tcp_send,

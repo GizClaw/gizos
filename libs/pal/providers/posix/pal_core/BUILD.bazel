@@ -302,3 +302,32 @@ cc_library(
         "//libs/pal",
     ],
 )
+
+# Controlled OS resolver answers exercise the actual production implementation.
+cc_test(
+    name = "resolver_list_test",
+    srcs = [
+        "include/h2_posix_pal_core.h",
+        "src/h2_posix_net.c",
+        "tests/test_posix_resolver.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + [
+        "-Dgetaddrinfo=h2_test_getaddrinfo",
+        "-Dfreeaddrinfo=h2_test_freeaddrinfo",
+    ] + select({
+        "@platforms//os:linux": ["-D_DEFAULT_SOURCE"],
+        "//conditions:default": [],
+    }),
+    includes = ["include"],
+    linkopts = ["-lpthread"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/pal",
+        "//libs/pal/providers/wolfssl",
+    ],
+)

@@ -50,6 +50,7 @@ H2Loader Loader 与 App 管理 adapter 消费 Runtime 的可选 `ble_local_name`
 | Partial Update | — | — | — | — | — | — | ✓ | — | — | — | — |
 | GizClaw Ping Speed | ✓ | — | — | — | — | — | — | — | — | — | — |
 | iperf | ✓ | — | — | — | — | — | — | — | — | — | — |
+| iperf Server | [✓](./boards/amoled/iperf_server) | — | — | — | — | — | — | — | — | — | — |
 | WebRTC Performance | ✓ | — | — | ✓ | — | — | — | — | — | — | — |
 | GizClaw E2E | [✓](./boards/amoled/gizclaw_ota_e2e) | — | — | ✓ | — | — | — | — | — | — | — |
 | H106 E2E | — | — | △ | — | — | — | — | △ | — | — | — |

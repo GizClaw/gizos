@@ -57,6 +57,20 @@ enum {
   H2_PEER_COMPLETED_RECEIVE_TIMEOUT_MS = 2,
 };
 
+h2_pal_result_t peer_connection_selected_pair(PeerConnection* pc,
+    h2_pal_net_addr_t* local, h2_pal_net_addr_t* remote) {
+  if (local != NULL) memset(local, 0, sizeof(*local));
+  if (remote != NULL) memset(remote, 0, sizeof(*remote));
+  if (pc == NULL || local == NULL || remote == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  IceCandidatePair* pair = pc->agent.selected_pair;
+  if (pair == NULL || pair->local == NULL || pair->remote == NULL)
+    return H2_PAL_ERR_WOULD_BLOCK;
+  *local = pair->local->addr;
+  *remote = pair->remote->addr;
+  return H2_PAL_OK;
+}
+
 int peer_connection_rtp_send_or_queue(
     uint8_t* pending_packet, size_t pending_capacity, size_t* pending_len,
     uint8_t* packet, size_t packet_len, PeerConnectionRtpProtectFn protect,
@@ -760,6 +774,8 @@ int peer_connection_set_remote_description(
     line = strstr(start, "\r\n");
     size_t line_len = (size_t)(line - start);
     if (line_len >= sizeof(buf)) {
+      h2_pal_log_write(pc->config.log, H2_PAL_LOG_ERROR, "h2peer",
+                       "SDP rejected: line exceeds parser capacity");
       return -1;
     }
     memcpy(buf, start, line_len);
@@ -771,6 +787,8 @@ int peer_connection_set_remote_description(
 
     if (strstr(buf, "a=fingerprint") &&
         dtls_srtp_set_remote_fingerprint(&pc->dtls_srtp, buf + 22) != 0) {
+      h2_pal_log_write(pc->config.log, H2_PAL_LOG_ERROR, "h2peer",
+                       "SDP rejected: fingerprint");
       return -1;
     }
 
@@ -799,6 +817,8 @@ int peer_connection_set_remote_description(
   }
 
   if (agent_set_remote_description(&pc->agent, (char*)sdp) != 0) {
+    h2_pal_log_write(pc->config.log, H2_PAL_LOG_ERROR, "h2peer",
+                     "SDP rejected: ICE description");
     return -1;
   }
   if (type == SDP_TYPE_ANSWER) {
