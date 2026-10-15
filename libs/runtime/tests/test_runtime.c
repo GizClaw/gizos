@@ -3458,7 +3458,8 @@ static void test_input_fault_releases_held_buttons(void) {
     assert(status.last_error_stage == H2_RUNTIME_INPUT_STAGE_SLEEP);
 
     env.time_state.sleep_rc = H2_PAL_OK;
-    h2_runtime_deinit(runtime);
+    assert(h2_runtime_destroy(&runtime) == H2_PAL_ERR_IO);
+    assert(runtime == NULL);
     assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
 }
 
@@ -3496,12 +3497,14 @@ static void test_input_join_failure_is_retryable(void) {
     add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
     h2_runtime_t *runtime = test_runtime_create(&env);
     env.task_state.join_rc = H2_PAL_ERR_IO;
-    h2_runtime_deinit(runtime);
+    assert(h2_runtime_destroy(&runtime) == H2_PAL_ERR_IO);
+    assert(runtime != NULL);
     assert(runtime->private_state->input_task != NULL);
     assert(h2_atomic_load(&runtime->private_state->input_stop_requested) != 0);
     assert(env.task_state.joins == 0u);
     env.task_state.join_rc = H2_PAL_OK;
-    h2_runtime_deinit(runtime);
+    assert(h2_runtime_destroy(&runtime) == H2_PAL_OK);
+    assert(runtime == NULL);
     assert(env.task_state.joins == 1u);
     assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
 }

@@ -273,15 +273,6 @@ static int open_runtime(lua_State *state) {
   return 1;
 }
 
-static void h2_lua_sleep_timer_callback(void *user, h2_pal_timer_t *timer) {
-  h2_lua_task_t *task = user;
-  (void)timer;
-  if (task != NULL) {
-    h2_atomic_store(&task->timer_fired, 1);
-    h2_lua_host_wake_job(task->job);
-  }
-}
-
 static int lua_delay_ms(lua_State *state) {
   h2_lua_task_t *task = h2_lua_current_task(state);
   lua_Integer delay_ms = luaL_checkinteger(state, 1);
@@ -291,27 +282,10 @@ static int lua_delay_ms(lua_State *state) {
   if (delay_ms < 0 || delay_ms > UINT32_MAX) {
     return luaL_error(state, "delay_ms is out of range");
   }
-  h2_lua_task_timer_destroy(task);
+  // The scheduler owns coroutine sleep deadlines. A PAL timer here creates
+  // a second waiter and can block the VM during native timer start/stop/join.
   task->wake_ms = h2_lua_now_ms(task->job->host) + (uint64_t)delay_ms;
   task->state = H2_LUA_TASK_SLEEPING;
-  h2_atomic_store(&task->timer_fired, 0);
-  if (delay_ms > 0) {
-    h2_pal_result_t timer_result;
-    timer_result =
-        h2_pal_timer_create(task->job->host->config.runtime->timer,
-                            &(h2_pal_timer_config_t){
-                                .name = "h2-lua-sleep",
-                                .period_ms = (uint32_t)delay_ms,
-                                .flags = H2_PAL_TIMER_FLAG_AUTO_START,
-                                .cb = h2_lua_sleep_timer_callback,
-                                .cb_user = task,
-                            },
-                            &task->timer);
-    if (timer_result != H2_PAL_OK && timer_result != H2_PAL_ERR_UNSUPPORTED) {
-      task->state = H2_LUA_TASK_READY;
-      return luaL_error(state, "sleep timer failed: %d", timer_result);
-    }
-  }
   return lua_yield(state, 0);
 }
 

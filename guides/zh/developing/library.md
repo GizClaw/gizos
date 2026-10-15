@@ -138,7 +138,7 @@ App 必须在调用 third-party API 之前完成对应 integration 初始化，�
 - [`game_runtime`](./game_runtime.md)：跨平台 game runtime。
 - [`pixa_games`](/apps/pixa_games)：可以被多个 project 引用的 PIXA game library family。
 - [`gizclaw`](./gizclaw.md)：GizClaw client、config、公共类型和复用异步 API-key state 的 [BLE 绑定窗口](./gizclaw_ble_binding.md)。
-- [`lua/apps`](./lua.md#lua-app-目录与流式安装)：预装与安装应用的统一目录、增量包校验和原子安装；不依赖 GizClaw 或产品 UI。
+- [`gizclaw/lua_apps`](./lua.md#lua-app-目录与流式安装)：预装与安装应用的唯一目录、增量校验、原子安装和运行 lease；只借用 PAL，不依赖网络 Service、Lua Host 或产品 UI。`libs/lua/apps` 仅保留 aliases/forwarding。`libs/gizclaw/web` 提供浏览器适配，借用外部 catalog，不拥有 FS、Runtime 或产品生命周期。
 - [`h2peer`](./h2peer.md)：由 GizOS 维护、通过 PAL 注入平台能力的 portable WebRTC core。
 - [`h2sctp`](./h2sctp.md)：由 GizOS 维护、在调用方 DTLS packet transport 上运行的 portable SCTP PAL provider。
 - [`iperf`](./iperf.md)：只依赖 PAL 的 iperf3 兼容吞吐测试 client 与 server，覆盖 TCP、UDP 和 SCTP。

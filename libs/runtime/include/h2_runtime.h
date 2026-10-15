@@ -178,6 +178,15 @@ struct h2_runtime {
 };
 
 h2_pal_result_t h2_runtime_init(const h2_runtime_config_t *config, h2_runtime_t **out_runtime);
+/** Checked destruction, serial with all Runtime users. Stop external producers
+ * and join App workers first. NULL *runtime succeeds. On BUSY (Test Control)
+ * or an unjoined input/NFC task, *runtime stays live; keep all borrowed providers
+ * alive. Once tasks are joined destruction sets *runtime to NULL, including
+ * when returning a latched input-worker fault. A non-OK result never claims
+ * success; a NULL output proves the Runtime no longer borrows its providers.
+ */
+h2_pal_result_t h2_runtime_destroy(h2_runtime_t **runtime);
+/** Compatibility wrapper; callers needing cleanup evidence use destroy. */
 void h2_runtime_deinit(h2_runtime_t *runtime);
 /**
  * Read saved credentials and call PAL connect without saving them again.

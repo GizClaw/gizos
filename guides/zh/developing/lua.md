@@ -71,13 +71,7 @@ Host 的正常生命周期是：
    可以紧跟在 `OK` 之后出现；
 6. `stop()` 拒绝新 job、取消等待，`join()` 等待 worker 退出，最后 `destroy()`。
 
-`h2_lua_host_step()` 只用于提示 worker 有新工作，不会让调用线程进入 VM。
-Timer callback 和异步 capability completion 只记录完成并唤醒 worker；真正的 Lua
-resume、callback 和资源释放都在 owning worker 或 stop/join 后执行。每次 resume
-记录独立开始时间；instruction hook 按 `instruction_quantum` 检查取消和 job 总超时，
-并在达到 `resume_time_budget_ms` 后 yield，使 CPU-bound Lua 归还 owning worker。
-每个 Runtime event callback 也作为同一 VM 内的短生命周期 scheduler task 执行，
-因此可以 yield，并受相同的 quantum、取消和超时约束。
+`h2_lua_host_step()` 只用于提示 worker 有新工作，不会让调用线程进入 VM。 Coroutine sleep 记录 monotonic wake deadline，现有 worker 的 queue wait 取最近 deadline 与常规轮询预算的较小值；每次 sleep 不创建、停止或 join PAL Timer。异步 capability completion 只记录完成并唤醒 worker；真正的 Lua resume、callback 和资源释放都在 owning worker 或 stop/join 后执行。每次 resume 记录独立开始时间；instruction hook 按 `instruction_quantum` 检查取消和 job 总超时， 并在达到 `resume_time_budget_ms` 后 yield，使 CPU-bound Lua 归还 owning worker。 每个 Runtime event callback 也作为同一 VM 内的短生命周期 scheduler task 执行， 因此可以 yield，并受相同的 quantum、取消和超时约束。
 
 Button `ACTION` 的共享 Runtime payload 只有 `pressed_at_ms` 和 `released_at_ms`。Lua Runtime 在投影到 VM 时自行计算 `duration_ms`，并保持 PR #82 的 Button `gesture_kind` 接口：普通按压为 1、短按为 2、长按为 3，兼容阈值为 500 ms。这个分类只属于 Lua adapter，不进入共享的 `libs/runtime` Button payload；Lua App 无需因底层 Runtime 删除 gesture policy 而更改接口。
 
@@ -595,7 +589,7 @@ MP4 播放器配置也支持同名选项。启动动画可以借用同一个 Dis
 
 ## Lua App 目录与流式安装
 
-`//libs/lua/apps:apps` 拥有独立于 Lua Host 和 GizClaw 的应用目录与安装器；[API Reference](/references/lua-apps) 直接来自生产 Public Header。调用方注入 Memory、Filesystem、Sync，并配置 `preinstalled_index` 与专用 `install_root`。用户 KV 必须使用安装目录以外的独立根路径，不能把用户数据放进安装器拥有的目录。应用目录可跨 Service 重连保留，销毁前先停止并释放借用它的 Service 和安装会话。
+`//libs/gizclaw/lua_apps:lua_apps` 拥有独立于 Lua Host 和网络连接的唯一应用目录与安装器；[API Reference](/references/lua-apps) 直接来自生产 Public Header。调用方注入 Memory、Filesystem、Sync，并配置 `preinstalled_index` 与专用 `install_root`。用户 KV 必须使用安装目录以外的独立根路径，不能把用户数据放进安装器拥有的目录。应用目录可跨 Service 重连保留，销毁前先停止并释放借用它的 Service 和安装会话。
 
 预装和远程安装使用相同 format-1 Lua App manifest、`app_id` 和版本。`lua_app_index` 从 `LuaAppInfo.manifest` 生成 `format=1, apps=[{root,manifest}]`，不维护手写版本表。规则的 `installed_entry` output group 提供与包内完全相同的原始或 compact Lua 文本，`installed_files` 同时包含该 entry 与原有 data 文件；consumer 将 entry 映射为安装根下的 `<app_id>.lua`，data 保持同名子目录结构。原有 archive/manifest/metadata 默认发行输出不变。加载时缺少所需文件、文件大小不符或 entry 超限的预装项不会进入 listing；已安装的同 ID 项覆盖预装项，每个 ID 只列出一次。
 
@@ -605,9 +599,9 @@ URL 安装入口仅接受 HTTP、HTTPS，长度最多 1024 字节，不接受 da
 
 安装器先写 ordinal staging 文件，再将验证后的文件移到该 ID 的非活动 slot，最后通过 replacing atomic rename 发布总 index。清理前检查两个 slot 的 manifest identity；文件系统将不同 app_id 映射到同一目录时，拒绝该安装并保留已发布的应用。安装器观察到的取消、输入错误和发布失败保留旧版本与独立 KV。传输超时不能证明设备未安装，重新连接后应查询 listing，不能自动重试安装。成功发布后旧 slot 的清理不会把已完成的安装报告为失败。Filesystem 必须提供同步写入及替换式原子 rename；close 错误无法证明句柄是否已被消费时，目录进入终态存储错误并保留自身与借用依赖，禁止自动重试 close 或释放可能仍存活的 backend，需要结束该进程或设备生命周期后恢复。
 
-`h2_lua_apps_uninstall` 按稳定 `app_id` 幂等卸载并保留独立用户存储。它先原子发布目录移除，再按 manifest 清理两个可写版本 slot；目录发布失败保留旧应用，发布后的清理失败使应用保持不可用，重复卸载重试清理。预装文件不可变，目录用 `{"app_id":"demo","removed":true}` 持久隐藏预装身份及其覆盖版本，重启不会恢复；重新安装同 ID 后恢复正常 listing。远程独有身份移出索引并释放应用数与字节预算。只读目录不公布卸载能力；运行 owner 需要协调仍在使用 entry/data_dir 快照的任务。
+`h2_gizclaw_lua_app_catalog_uninstall` 按稳定 `app_id` 幂等卸载并保留独立用户存储。它先原子发布目录移除，再按 manifest 清理两个可写版本 slot；目录发布失败保留旧应用，发布后的清理失败使应用保持不可用，重复卸载重试清理。预装文件不可变，目录用 `{"app_id":"demo","removed":true}` 持久隐藏预装身份及其覆盖版本，重启不会恢复；重新安装同 ID 后恢复正常 listing。远程独有身份移出索引并释放应用数与字节预算。只读目录不公布卸载能力；运行 owner 需要协调仍在使用 entry/data_dir 快照的任务。
 
-`h2_lua_apps_get` 返回 caller-owned entry/data_dir 快照，由产品 owner 在自己的运行流程中提交给 Lua Host。安装器不启动 VM，也不切换产品界面。运行中的 owner 应协调应用更新；快照中的安装路径不会在后续更新后永久保留。
+`h2_gizclaw_lua_app_catalog_get` 只返回 caller-owned 快照，不证明路径的长期生命周期。运行 owner 使用 `acquire` 在同一 reservation 内解析身份并取得 owned lease，然后提交 entry、app_id 与参数给 Lua Host。Lease 可以 retain，多份引用都 release 后才解除 pin；release 不阻塞、不访问 FS，可与另一个身份的安装并发。所有新 API 与 `libs/lua/apps` compatibility forwarding 的更新、卸载都会在公共 catalog 内检查 pin，活动身份返回 BUSY，路径和旧数据保持有效；其他身份仍可安装。任何 live lease 都使 catalog destroy 返回 BUSY。Browser bridge 和 device 等长期消费者还显式 retain catalog；即使当前没有活动 App，消费者的 failed join 也阻止 catalog 被销毁，成功 close 后才 release 该引用。失败的 Lua stop/join/destroy 必须保留 lease，只有 Host 实际销毁后才 release。Catalog 不启动 VM、不切换产品 UI，用户 KV 与安装根仍独立。
 
 Host 可设置 `on_display_present`，在 Display worker 成功完成 PAL present 后观察完整 RGB565 framebuffer。像素与 callback context 均有明确借用生命周期，回调不能保留像素或重入 Host；它可用于摘要/golden 验证，只证明 renderer 与 PAL 接受了该帧，不证明面板光学输出。
 

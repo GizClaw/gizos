@@ -69,6 +69,10 @@ contract，`poll/wait` 仍要求 caller 提供至少 640 B 的 buffer，并在 b
 `get()`，不复制完整 Board periph inventory；只有实际接受的 mapping 或 mapped
 input source 超出所选容量时才返回 `H2_PAL_ERR_NO_SPACE`。
 
+## Checked destruction
+
+最终 entry 先关闭外部 producer、join App worker，再调用 `h2_runtime_destroy(&runtime)`。Test Control 活跃、input/NFC join 失败时返回真实错误并保留 pointer 与全部 borrowed provider；owner 保留这些依赖，完成阻塞条件后重试。Input worker 的 latched fault 可以在资源已安全释放后返回，此时 pointer 已清空，不能按非零结果盲目重复使用旧 handle。System Event 的同步 unsubscribe 合同保证所有在途 callback 返回后才完成。Legacy `h2_runtime_deinit()` 只转发 checked destroy；需要证明释放的 entry 使用 pointer API。
+
 ## 产品蓝牙名称
 
 Board 或 launcher 可以用 Runtime config 的 `ble_local_name` 提供可选的稳定产品广播名称；Runtime 原样借用该字符串直到 deinit，不生成型号或设备后缀。H2Loader 管理与产品 App 通过同一个 Runtime 字段使用名称，产品自己的 spelling、factory address 选择和生命周期留在 consumer。名称必须是非空、最多 29 bytes 的 printable ASCII；无效名称使初始化返回 INVALID_ARG。它只包含公开显示元数据，不含凭据，也不能代替 board／target／capabilities 的协议校验。

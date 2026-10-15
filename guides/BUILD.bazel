@@ -29,6 +29,7 @@ api_reference(
     name = "api_reference",
     doxyfile = "api/Doxyfile",
     generator = ":api_generator",
+    headers = ["//libs/gizclaw/web:public_headers"],
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],
@@ -53,6 +54,7 @@ api_reference(
         "//libs/encoding",
         "//libs/game_runtime",
         "//libs/gizclaw",
+        "//libs/gizclaw/lua_apps",
         "//libs/iostreamikcp",
         "//libs/iperf",
         "//libs/lua",

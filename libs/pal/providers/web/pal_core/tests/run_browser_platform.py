@@ -296,6 +296,10 @@ var Module = {print: t => console.log(t), printErr: t => console.error(t),
             cdp.send("Target.closeTarget", {"targetId": target})
 
             # Filesystem: commit barriers survive a reload without shutdown.
+            delayed, _ = open_tab("fs-grant-deadline")
+            expect("fs-grant-deadline")
+            expect("destroy")
+            cdp.send("Target.closeTarget", {"targetId": delayed})
             target, session = open_tab("fs-write")
             expect("fs-write")
             reload(session, "fs-verify")

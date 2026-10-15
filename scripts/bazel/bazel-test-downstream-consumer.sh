@@ -124,6 +124,7 @@ for formatter in lua_app_catalog lua_app_release_files default_files; do
         --noenable_workspace \
         "${registry_options[@]}" \
         --repository_cache="$repository_cache" \
+        --disk_cache="${BAZEL_DISK_CACHE:-$HOME/.cache/bazel/disk}" \
         --override_module="gizos=$repository_root" \
         --define="h2_host_os=$host_os" \
         --platforms="@gizos//tools/bazel/platforms:$platform" \
@@ -140,6 +141,7 @@ done
     --noenable_workspace \
     "${registry_options[@]}" \
     --repository_cache="$repository_cache" \
+        --disk_cache="${BAZEL_DISK_CACHE:-$HOME/.cache/bazel/disk}" \
     --override_module="gizos=$repository_root" \
     --define="h2_ci_graph=true" \
     --define="h2_host_os=$host_os" \
@@ -155,6 +157,7 @@ done
     --noenable_workspace \
     "${registry_options[@]}" \
     --repository_cache="$repository_cache" \
+        --disk_cache="${BAZEL_DISK_CACHE:-$HOME/.cache/bazel/disk}" \
     --override_module="gizos=$repository_root" \
     --define="h2_ci_graph=true" \
     --define="h2_host_os=$host_os" \
@@ -179,6 +182,7 @@ grep -E 'h2_esp_target_task_policy=bazel-out/.*/private_esp_task_policy' font-na
     --noenable_workspace \
     "${registry_options[@]}" \
     --repository_cache="$repository_cache" \
+        --disk_cache="${BAZEL_DISK_CACHE:-$HOME/.cache/bazel/disk}" \
     --override_module="gizos=$repository_root" \
     --define="h2_ci_graph=true" \
     --define="h2_host_os=$host_os" \
@@ -206,6 +210,7 @@ expect_missing_policy_failure() {
         --noenable_workspace \
         "${registry_options[@]}" \
         --repository_cache="$repository_cache" \
+        --disk_cache="${BAZEL_DISK_CACHE:-$HOME/.cache/bazel/disk}" \
         --override_module="gizos=$repository_root" \
         --define="h2_ci_graph=true" \
         --define="h2_host_os=$host_os" \
@@ -235,6 +240,7 @@ for target in private_esp_firmware private_bk_firmware; do
         --noenable_workspace \
         "${registry_options[@]}" \
         --repository_cache="$repository_cache" \
+        --disk_cache="${BAZEL_DISK_CACHE:-$HOME/.cache/bazel/disk}" \
         --override_module="gizos=$repository_root" \
         --define="h2_ci_graph=true" \
         --define="h2_host_os=$host_os" \
@@ -257,6 +263,7 @@ if "${BAZEL_BIN:-bazel}" \
     --noenable_workspace \
     "${registry_options[@]}" \
     --repository_cache="$repository_cache" \
+        --disk_cache="${BAZEL_DISK_CACHE:-$HOME/.cache/bazel/disk}" \
     --override_module="gizos=$repository_root" \
     --define="h2_host_os=$host_os" \
     --platforms="@gizos//tools/bazel/platforms:$platform" \
@@ -277,6 +284,7 @@ if "${BAZEL_BIN:-bazel}" \
     --noenable_workspace \
     "${registry_options[@]}" \
     --repository_cache="$repository_cache" \
+        --disk_cache="${BAZEL_DISK_CACHE:-$HOME/.cache/bazel/disk}" \
     --override_module="gizos=$repository_root" \
     --define="h2_host_os=$host_os" \
     --platforms="@gizos//tools/bazel/platforms:$platform" \
@@ -296,6 +304,7 @@ cp BUILD.bazel.complete BUILD.bazel
     --noenable_workspace \
     "${registry_options[@]}" \
     --repository_cache="$repository_cache" \
+        --disk_cache="${BAZEL_DISK_CACHE:-$HOME/.cache/bazel/disk}" \
     --override_module="gizos=$repository_root" \
     --define="h2_host_os=$host_os" \
     --platforms="@gizos//tools/bazel/platforms:$platform" \
@@ -327,10 +336,15 @@ test ! -e "$consumer_root/private_bk_task_policy"
     --output_user_root="$output_user_root" \
     --output_base="$consumer_root/output-base" \
     test \
+    --cache_test_results=no \
+    --strategy=TestRunner=local \
+    --test_env=HOME \
+    --test_env=H2_WEB_TEST_BROWSER \
     --enable_bzlmod \
     --noenable_workspace \
     "${registry_options[@]}" \
     --repository_cache="$repository_cache" \
+        --disk_cache="${BAZEL_DISK_CACHE:-$HOME/.cache/bazel/disk}" \
     --override_module="gizos=$repository_root" \
     --define="h2_host_os=$host_os" \
     --platforms="@gizos//tools/bazel/platforms:$platform" \
@@ -338,6 +352,7 @@ test ! -e "$consumer_root/private_bk_task_policy"
     //:embedded_menu_font_test \
     //:font_consumer_test \
     //:lua_app_release_test \
+    //:gizclaw_apps_persistence_test \
     //:private_esp_task_policy_test \
     //:private_bk_ap_task_policy_test \
     //:private_bk_cp_task_policy_test \
@@ -352,6 +367,7 @@ test ! -e "$consumer_root/private_bk_task_policy"
     --noenable_workspace \
     "${registry_options[@]}" \
     --repository_cache="$repository_cache" \
+        --disk_cache="${BAZEL_DISK_CACHE:-$HOME/.cache/bazel/disk}" \
     --override_module="gizos=$repository_root" \
     --define="h2_firmware_target=bk3633" \
     --define="h2_host_os=$host_os" \

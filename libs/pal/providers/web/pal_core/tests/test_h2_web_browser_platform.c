@@ -104,6 +104,51 @@ typedef struct test_context {
 } test_context_t;
 
 static test_context_t s_test;
+EMSCRIPTEN_KEEPALIVE int h2_web_test_ticker(void) {
+  return atomic_load(&s_test.ticks);
+}
+
+/* Delay real WebCodecs output until the independent C ticker progresses.
+ * Fast decoding alone need not cross a 10 ms tick, so an elapsed tick check
+ * without pending output does not prove whether decoder waits yield. */
+/* clang-format off */
+EM_JS(void, test_decoder_wait_gate,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ['i32'], null, baseline => {
+    if (baseline >= 0) { Module.h2TestDecoderTickerGate = {}; return; }
+    const gated = Base => class extends Base {
+      constructor(init) {
+        const pending = {tail: Promise.resolve()};
+        super({...init, output: frame => {
+          // Preserve native output order, including outputs arriving after
+          // the ticker gate opened while earlier output is still queued.
+          pending.tail = pending.tail.then(() => new Promise(resolve => {
+            const deliver = () => {
+              const gate = Module.h2TestDecoderTickerGate;
+              if (gate && gate.baseline === undefined)
+                gate.baseline = Module._h2_web_test_ticker();
+              if (gate && Module._h2_web_test_ticker() <= gate.baseline) {
+                setTimeout(deliver, 0);
+                return;
+              }
+              init.output(frame);
+              resolve();
+            };
+            deliver();
+          }));
+        }});
+        this.h2PendingOutput = pending;
+      }
+      async flush() {
+        await super.flush();
+        await this.h2PendingOutput.tail;
+      }
+    };
+    if (globalThis.VideoDecoder) globalThis.VideoDecoder = gated(VideoDecoder);
+    if (globalThis.AudioDecoder) globalThis.AudioDecoder = gated(AudioDecoder);
+  });
+});
+/* clang-format on */
 
 #define STEP_CHECK(step, condition, detail)                                    \
   do {                                                                         \
@@ -319,6 +364,7 @@ static int run_media(test_context_t *context) {
       .require_audio = 1,
   };
   h2_mp4_decoder_t *decoder = NULL;
+  (void)h2_web_main_call(test_decoder_wait_gate, (const void *[]){&(int){-1}});
   rc = h2_mp4_decoder_open(&config, &decoder);
   char detail[160];
   static int16_t pcm[16000 * 3];
@@ -346,6 +392,7 @@ static int run_media(test_context_t *context) {
   STEP_CHECK("media-decode", rc == H2_PAL_OK, detail);
   media_pass_t first;
   const int ticks_before = context->ticks;
+  (void)h2_web_main_call(test_decoder_wait_gate, (const void *[]){&ticks_before});
   rc = media_decode(decoder, &first, pcm, sizeof(pcm) / sizeof(pcm[0]));
   (void)snprintf(detail, sizeof(detail),
                  "pass1 rc=%d frames=%zu pcm=%zu ticks=%d", rc, first.frames,
@@ -772,8 +819,55 @@ static int fs_read_text(const h2_pal_fs_api_t *fs, const char *path,
   return rc == H2_PAL_OK;
 }
 
+typedef struct fs_concurrent {
+  const h2_pal_fs_api_t *fs;
+  _Atomic int done;
+  int result;
+} fs_concurrent_t;
+static void fs_concurrent_write(void *user) {
+  fs_concurrent_t *state = user;
+  state->result = H2_PAL_OK;
+  for (unsigned i = 0; i < 12 && state->result == H2_PAL_OK; ++i)
+    state->result = fs_write_atomic(state->fs, "/persist/app/parallel.txt",
+                                     "parallel");
+  atomic_store(&state->done, 1);
+}
+/* clang-format off */
+EM_JS(void, test_delay_lock_grant,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, [], null, () => {
+    const request = navigator.locks.request.bind(navigator.locks);
+    navigator.locks.request = (name, options, callback) => request(name, options, lock => {
+      // An actual grant delayed by UI work, with no competing tab.
+      const began = performance.now();
+      while (performance.now() - began < 3100) {}
+      return callback(lock);
+    });
+  });
+});
+EM_JS(void, test_lock_diagnostic,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, [], "i32", () => {
+    const message = JSON.stringify(Module.h2WebFsLastError);
+    return message.includes('grant deadline expired') && message.includes('budget=3000ms') &&
+           message.includes('elapsed=') && message.includes('holder unknown') ? 1 : 0;
+  });
+});
+/* clang-format on */
+
 static int run_fs(test_context_t *context, const char *scenario) {
   h2_web_fs_t *web_fs = NULL;
+  if (strcmp(scenario, "fs-grant-deadline") == 0) {
+    (void)h2_web_main_call(test_delay_lock_grant, NULL);
+    int rc = fs_open(context, 0u, &web_fs);
+    STEP_CHECK(scenario, rc == H2_PAL_ERR_BUSY && web_fs == NULL,
+               "delayed grant must respect the unchanged 3000 ms budget");
+    STEP_CHECK(scenario, h2_web_main_call(test_lock_diagnostic, NULL).i32 == 1,
+               "diagnostic must name elapsed budget and unknown holder");
+    (void)h2_web_main_call(test_report, (const void *[]){&(const char *){scenario},
+                           &(int){0}, &(const char *){"late grant rejected"}});
+    return 0;
+  }
   if (strcmp(scenario, "fs-busy") == 0) {
     const h2_pal_result_t rc = fs_open(context, 500u, &web_fs);
     char detail[64];
@@ -794,6 +888,22 @@ static int run_fs(test_context_t *context, const char *scenario) {
   if (strcmp(scenario, "fs-write") == 0) {
     rc = fs_write_atomic(fs, "/persist/app/state.txt", "generation-1");
     STEP_CHECK(scenario, rc == H2_PAL_OK, "atomic write");
+    fs_concurrent_t concurrent = {.fs = fs};
+    h2_pal_task_t *writer = NULL;
+    const h2_pal_task_options_t options = {.name = "fs-concurrent", .min_stack_size = 32768};
+    STEP_CHECK(scenario, h2_pal_task_start(h2_web_platform_task_api(context->platform),
+                   &options, fs_concurrent_write, &concurrent, &writer) == H2_PAL_OK,
+               "start parallel filesystem writer");
+    while (!atomic_load(&concurrent.done)) {
+      h2_pal_fs_stat_t info;
+      STEP_CHECK(scenario, h2_pal_fs_stat(fs, "/persist/app/state.txt", &info) == H2_PAL_OK,
+                 "concurrent POSIX proxy must keep progressing");
+      STEP_CHECK(scenario, h2_pal_time_sleep_ms(h2_web_platform_time_api(context->platform), 1u) == H2_PAL_OK,
+                 "yield while callbacks and another filesystem call run");
+    }
+    STEP_CHECK(scenario, h2_pal_task_join(h2_web_platform_task_api(context->platform), writer) == H2_PAL_OK &&
+                   concurrent.result == H2_PAL_OK,
+               "parallel filesystem calls must finish and join");
     h2_web_fs_status_t status;
     STEP_CHECK(scenario,
                h2_web_fs_get_status(web_fs, &status) == H2_PAL_OK &&

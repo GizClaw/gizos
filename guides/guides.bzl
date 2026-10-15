@@ -6,6 +6,8 @@ def _api_reference_impl(ctx):
     output = ctx.actions.declare_directory(".generated")
     generator = ctx.attr.generator[DefaultInfo].files_to_run
     headers = []
+    for dep in ctx.attr.headers:
+        headers.extend(dep[DefaultInfo].files.to_list())
     for dep in ctx.attr.deps:
         headers.extend(dep[CcInfo].compilation_context.headers.to_list())
 
@@ -35,6 +37,7 @@ api_reference = rule(
     implementation = _api_reference_impl,
     attrs = {
         "deps": attr.label_list(providers = [CcInfo]),
+        "headers": attr.label_list(allow_files = True),
         "doxyfile": attr.label(allow_single_file = True, mandatory = True),
         "generator": attr.label(executable = True, cfg = "exec", mandatory = True),
     },

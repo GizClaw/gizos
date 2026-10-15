@@ -26,7 +26,7 @@ struct h2_gizclaw_lua_stream {
   size_t pending;
   uint8_t bytes[LUA_STREAM_CHUNK_MAX];
   int result;
-  h2_lua_app_info_t info;
+  h2_gizclaw_lua_app_info_t info;
   gzc_rpc_stream_provider_t provider;
 };
 
@@ -74,10 +74,10 @@ static void worker(void *user) {
       (void)h2_pal_cond_wait(s->sync, s->cond, s->mutex, 100u);
     if (!s->active)
       break;
-    h2_lua_app_install_t *install = NULL;
+    h2_gizclaw_lua_app_install_t *install = NULL;
     unlock(s);
-    int result = h2_lua_app_install_begin(s->config.lua_apps, s->length,
-                                          s->sha256, canceled, s, &install);
+    int result = h2_gizclaw_lua_app_install_begin(
+        s->config.lua_apps, s->length, s->sha256, canceled, s, &install);
     lock(s);
     if (result != H2_PAL_OK) {
       s->result = result;
@@ -87,9 +87,9 @@ static void worker(void *user) {
       if (!s->ready && s->pending) {
         size_t size = s->pending;
         unlock(s);
-        result = h2_lua_app_install_write(install, s->bytes, size);
+        result = h2_gizclaw_lua_app_install_write(install, s->bytes, size);
         if (result != H2_PAL_OK)
-          h2_lua_app_install_abort(&install);
+          h2_gizclaw_lua_app_install_abort(&install);
         lock(s);
         s->pending = 0;
         if (result != H2_PAL_OK) {
@@ -97,9 +97,9 @@ static void worker(void *user) {
           s->ready = true;
         }
       } else if (!s->ready && s->eos) {
-        h2_lua_app_info_t info;
+        h2_gizclaw_lua_app_info_t info;
         unlock(s);
-        result = h2_lua_app_install_finish(&install, &info);
+        result = h2_gizclaw_lua_app_install_finish(&install, &info);
         lock(s);
         s->result = result;
         if (result == H2_PAL_OK)
@@ -110,7 +110,7 @@ static void worker(void *user) {
       }
     }
     unlock(s);
-    h2_lua_app_install_abort(&install);
+    h2_gizclaw_lua_app_install_abort(&install);
     lock(s);
     s->pending = 0;
     s->active = false;
@@ -190,7 +190,7 @@ static int finish(void *session, gzc_rpc_provider_respond_fn respond,
     return backpressure(s);
   }
   int result = s->result;
-  h2_lua_app_info_t info = s->info;
+  h2_gizclaw_lua_app_info_t info = s->info;
   unlock(s);
   gzc_rpc_provider_response_t response = {0};
   uint8_t bytes[gizclaw_rpc_v1_ClientLuaAppInstallResponse_size];
@@ -238,7 +238,7 @@ int h2_gizclaw_lua_stream_create_internal(const h2_gizclaw_config_t *config,
                                           const h2_pal_sync_api_t *sync,
                                           h2_gizclaw_lua_stream_t **out) {
   *out = NULL;
-  if (!h2_lua_apps_can_install(config->lua_apps))
+  if (!h2_gizclaw_lua_app_catalog_can_install(config->lua_apps))
     return H2_PAL_OK;
   if (!config->time || !config->time->vtable || !config->time->vtable->sleep_ms)
     return H2_PAL_ERR_UNSUPPORTED;

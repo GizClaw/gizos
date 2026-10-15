@@ -95,11 +95,25 @@ EM_JS(void, h2_web_fs_mount_js,
   }
   entries.set(fs_address, entry);
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), lock_timeout_ms);
+  const lock_started_ms = performance.now();
+  let lock_deadline_expired = false;
+  // The budget includes browser service and grant callback scheduling.
+  // Aborting this request does not identify a competing storage owner.
+  const timer = setTimeout(() => {
+    lock_deadline_expired = true;
+    controller.abort();
+  }, lock_timeout_ms);
   const held = new Promise((resolve) => { entry.release = resolve; });
   locks.request(`h2-web-fs:${root}`, {signal: controller.signal}, () => {
     clearTimeout(timer);
     if (settled || entries.get(fs_address) !== entry) return;
+    const elapsed_ms = performance.now() - lock_started_ms;
+    if (elapsed_ms >= lock_timeout_ms) {
+      finish(-18, `Web Lock ${root} grant deadline expired: ` +
+                  `budget=${lock_timeout_ms}ms elapsed=${Math.round(elapsed_ms)}ms; ` +
+                  'holder unknown');
+      return;
+    }
     try {
       try { FS.mkdirTree(root); } catch (_) {}
       const node = FS.lookupPath(root).node;
@@ -124,8 +138,11 @@ EM_JS(void, h2_web_fs_mount_js,
   }).catch((error) => {
     clearTimeout(timer);
     if (error?.name === 'AbortError') {
-      finish(-18, `${root} is in use by another tab or window of this ` +
-                  'origin; close it or wait');
+      const elapsed_ms = Math.round(performance.now() - lock_started_ms);
+      finish(-18, `Web Lock ${root} ${lock_deadline_expired ?
+                  'acquire deadline expired' : 'request aborted'}: ` +
+                  `AbortError; budget=${lock_timeout_ms}ms ` +
+                  `elapsed=${elapsed_ms}ms; holder unknown`);
     } else {
       finish(-2, `Web Lock for ${root} failed: ${error?.name}: ` +
                  `${error?.message || error}`);
@@ -191,8 +208,8 @@ EM_JS(void, h2_web_fs_unmount_js,
 /* clang-format on */
 static void h2_web_fs_log(const char *message) {
   H2_WEB_STATE_GUARD();
-  (void)h2_pal_log_write(h2_web_platform_log_api(), H2_PAL_LOG_ERROR,
-                         "web_fs", message);
+  (void)h2_pal_log_write(h2_web_platform_log_api(), H2_PAL_LOG_ERROR, "web_fs",
+                         message);
 }
 
 static void h2_web_fs_wake_waiters(h2_web_fs_t *fs) {
@@ -302,8 +319,7 @@ static bool h2_web_fs_persistent(const h2_web_fs_t *fs, const char *path) {
 static bool h2_web_fs_readonly(const h2_web_fs_t *fs, const char *path) {
   H2_WEB_STATE_GUARD();
   for (size_t index = 0u; index < fs->readonly_count; ++index)
-    if (h2_web_fs_under(fs->readonly[index], strlen(fs->readonly[index]),
-                        path))
+    if (h2_web_fs_under(fs->readonly[index], strlen(fs->readonly[index]), path))
       return true;
   return false;
 }
@@ -323,14 +339,30 @@ static int h2_web_fs_mutated(h2_web_fs_t *fs, const char *path, int result) {
   return h2_web_fs_commit(fs);
 }
 
+/* Emscripten proxies POSIX filesystem syscalls to the UI. A UI completion
+ * can enter this provider before that syscall is serviced: holding the state
+ * guard would deadlock both threads. Pin the filesystem while all guard levels
+ * are released, then restore serialization before touching provider state. */
+static unsigned h2_web_fs_inner_pause(h2_web_fs_t *fs) {
+  ++fs->calls;
+  return h2_web_state_pause();
+}
+
+static void h2_web_fs_inner_resume(h2_web_fs_t *fs, unsigned depth) {
+  h2_web_state_resume(depth);
+  --fs->calls;
+}
+
 static int h2_web_fs_mkdir(void *user, const char *path) {
   H2_WEB_STATE_GUARD();
   h2_web_fs_t *fs = user;
   if (h2_web_fs_readonly(fs, path))
     return H2_PAL_ERR_UNSUPPORTED;
   ++fs->calls;
-  const int result =
-      h2_web_fs_mutated(fs, path, h2_pal_fs_mkdir(fs->inner, path));
+  const unsigned depth = h2_web_fs_inner_pause(fs);
+  const int mutation = h2_pal_fs_mkdir(fs->inner, path);
+  h2_web_fs_inner_resume(fs, depth);
+  const int result = h2_web_fs_mutated(fs, path, mutation);
   --fs->calls;
   return result;
 }
@@ -347,7 +379,9 @@ static int h2_web_fs_open_file(void *user, const char *path,
   h2_web_fs_file_t *file = calloc(1u, sizeof(*file));
   if (file == NULL)
     return H2_PAL_ERR_NO_MEMORY;
+  const unsigned depth = h2_web_fs_inner_pause(fs);
   const int result = h2_pal_fs_open(fs->inner, path, mode, &file->inner);
+  h2_web_fs_inner_resume(fs, depth);
   if (result != H2_PAL_OK) {
     free(file);
     return result;
@@ -365,7 +399,11 @@ static int h2_web_fs_read(void *user, h2_pal_fs_file_t *raw, void *data,
   H2_WEB_STATE_GUARD();
   h2_web_fs_t *fs = user;
   h2_web_fs_file_t *file = (h2_web_fs_file_t *)raw;
-  return h2_pal_fs_read(fs->inner, file->inner, data, len, out_read);
+  const unsigned depth = h2_web_fs_inner_pause(fs);
+  const int result =
+      h2_pal_fs_read(fs->inner, file->inner, data, len, out_read);
+  h2_web_fs_inner_resume(fs, depth);
+  return result;
 }
 
 static int h2_web_fs_seek(void *user, h2_pal_fs_file_t *raw,
@@ -373,7 +411,10 @@ static int h2_web_fs_seek(void *user, h2_pal_fs_file_t *raw,
   H2_WEB_STATE_GUARD();
   h2_web_fs_t *fs = user;
   h2_web_fs_file_t *file = (h2_web_fs_file_t *)raw;
-  return h2_pal_fs_seek(fs->inner, file->inner, position);
+  const unsigned depth = h2_web_fs_inner_pause(fs);
+  const int result = h2_pal_fs_seek(fs->inner, file->inner, position);
+  h2_web_fs_inner_resume(fs, depth);
+  return result;
 }
 
 static int h2_web_fs_write(void *user, h2_pal_fs_file_t *raw, const void *data,
@@ -381,8 +422,10 @@ static int h2_web_fs_write(void *user, h2_pal_fs_file_t *raw, const void *data,
   H2_WEB_STATE_GUARD();
   h2_web_fs_t *fs = user;
   h2_web_fs_file_t *file = (h2_web_fs_file_t *)raw;
+  const unsigned depth = h2_web_fs_inner_pause(fs);
   const int result =
       h2_pal_fs_write(fs->inner, file->inner, data, len, out_written);
+  h2_web_fs_inner_resume(fs, depth);
   if (file->persistent_write && *out_written != 0u)
     ++fs->changed;
   return result;
@@ -392,7 +435,9 @@ static int h2_web_fs_sync(void *user, h2_pal_fs_file_t *raw) {
   H2_WEB_STATE_GUARD();
   h2_web_fs_t *fs = user;
   h2_web_fs_file_t *file = (h2_web_fs_file_t *)raw;
+  const unsigned depth = h2_web_fs_inner_pause(fs);
   int result = h2_pal_fs_sync(fs->inner, file->inner);
+  h2_web_fs_inner_resume(fs, depth);
   if (result == H2_PAL_OK && file->persistent_write) {
     ++fs->calls;
     result = h2_web_fs_commit(fs);
@@ -405,7 +450,9 @@ static int h2_web_fs_close_file(void *user, h2_pal_fs_file_t *raw) {
   H2_WEB_STATE_GUARD();
   h2_web_fs_t *fs = user;
   h2_web_fs_file_t *file = (h2_web_fs_file_t *)raw;
+  const unsigned depth = h2_web_fs_inner_pause(fs);
   int result = h2_pal_fs_close(fs->inner, file->inner);
+  h2_web_fs_inner_resume(fs, depth);
   const bool commit = file->persistent_write;
   free(file);
   --fs->open_files;
@@ -424,7 +471,10 @@ static int h2_web_fs_stat(void *user, const char *path,
                           h2_pal_fs_stat_t *out_stat) {
   H2_WEB_STATE_GUARD();
   h2_web_fs_t *fs = user;
-  return h2_pal_fs_stat(fs->inner, path, out_stat);
+  const unsigned depth = h2_web_fs_inner_pause(fs);
+  const int result = h2_pal_fs_stat(fs->inner, path, out_stat);
+  h2_web_fs_inner_resume(fs, depth);
+  return result;
 }
 
 static int h2_web_fs_clear_path(void *user, const char *path) {
@@ -433,8 +483,10 @@ static int h2_web_fs_clear_path(void *user, const char *path) {
   if (h2_web_fs_readonly(fs, path))
     return H2_PAL_ERR_UNSUPPORTED;
   ++fs->calls;
-  const int result =
-      h2_web_fs_mutated(fs, path, h2_pal_fs_clear(fs->inner, path));
+  const unsigned depth = h2_web_fs_inner_pause(fs);
+  const int mutation = h2_pal_fs_clear(fs->inner, path);
+  h2_web_fs_inner_resume(fs, depth);
+  const int result = h2_web_fs_mutated(fs, path, mutation);
   --fs->calls;
   return result;
 }
@@ -445,8 +497,10 @@ static int h2_web_fs_remove(void *user, const char *path) {
   if (h2_web_fs_readonly(fs, path))
     return H2_PAL_ERR_UNSUPPORTED;
   ++fs->calls;
-  const int result =
-      h2_web_fs_mutated(fs, path, h2_pal_fs_remove(fs->inner, path));
+  const unsigned depth = h2_web_fs_inner_pause(fs);
+  const int mutation = h2_pal_fs_remove(fs->inner, path);
+  h2_web_fs_inner_resume(fs, depth);
+  const int result = h2_web_fs_mutated(fs, path, mutation);
   --fs->calls;
   return result;
 }
@@ -458,8 +512,10 @@ static int h2_web_fs_rename(void *user, const char *old_path,
   if (h2_web_fs_readonly(fs, old_path) || h2_web_fs_readonly(fs, new_path))
     return H2_PAL_ERR_UNSUPPORTED;
   ++fs->calls;
-  const int result = h2_web_fs_mutated(
-      fs, new_path, h2_pal_fs_rename(fs->inner, old_path, new_path));
+  const unsigned depth = h2_web_fs_inner_pause(fs);
+  const int mutation = h2_pal_fs_rename(fs->inner, old_path, new_path);
+  h2_web_fs_inner_resume(fs, depth);
+  const int result = h2_web_fs_mutated(fs, new_path, mutation);
   --fs->calls;
   return result;
 }
@@ -516,7 +572,8 @@ h2_pal_result_t h2_web_fs_open(h2_web_platform_t *platform,
   if (out_fs != NULL)
     *out_fs = NULL;
   if (platform == NULL || config == NULL || out_fs == NULL ||
-      platform->shutting_down || !h2_web_fs_root_valid(config->persistent_root) ||
+      platform->shutting_down ||
+      !h2_web_fs_root_valid(config->persistent_root) ||
       (config->readonly_root_count != 0u && config->readonly_roots == NULL))
     return H2_PAL_ERR_INVALID_ARG;
   for (size_t index = 0u; index < config->readonly_root_count; ++index) {
@@ -550,6 +607,8 @@ h2_pal_result_t h2_web_fs_open(h2_web_platform_t *platform,
     return H2_PAL_ERR_NO_MEMORY;
   }
   fs->root_len = strlen(fs->root);
+  // Keep the platform alive across mount, POSIX setup and failure cleanup.
+  ++platform->open_filesystems;
 
   h2_web_async_t op;
   h2_web_async_begin(platform, &op);
@@ -575,6 +634,7 @@ h2_pal_result_t h2_web_fs_open(h2_web_platform_t *platform,
     h2_web_fs_log(line);
     (void)h2_web_main_call(h2_web_fs_unmount_js,
                            (const void *[]){&(uintptr_t){(uintptr_t)fs}});
+    --platform->open_filesystems;
     h2_web_fs_free(fs);
     return (h2_pal_result_t)result;
   }
@@ -585,24 +645,27 @@ h2_pal_result_t h2_web_fs_open(h2_web_platform_t *platform,
   if (roots == NULL) {
     (void)h2_web_main_call(h2_web_fs_unmount_js,
                            (const void *[]){&(uintptr_t){(uintptr_t)fs}});
+    --platform->open_filesystems;
     h2_web_fs_free(fs);
     return H2_PAL_ERR_NO_MEMORY;
   }
   roots[0] = fs->root;
   for (size_t index = 0u; index < fs->readonly_count; ++index)
     roots[index + 1u] = fs->readonly[index];
+  const unsigned depth = h2_web_fs_inner_pause(fs);
   result = h2_posix_host_fs_create(roots, roots, mount_count, &fs->host);
+  h2_web_fs_inner_resume(fs, depth);
   free(roots);
   if (result != H2_PAL_OK) {
     h2_web_fs_log("open failed: a read-only root is missing from the "
                   "Emscripten filesystem");
     (void)h2_web_main_call(h2_web_fs_unmount_js,
                            (const void *[]){&(uintptr_t){(uintptr_t)fs}});
+    --platform->open_filesystems;
     h2_web_fs_free(fs);
     return (h2_pal_result_t)result;
   }
   fs->inner = h2_posix_host_fs_api(fs->host);
-  ++platform->open_filesystems;
   *out_fs = fs;
   return H2_PAL_OK;
 }

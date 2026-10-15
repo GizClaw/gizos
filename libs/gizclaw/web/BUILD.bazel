@@ -1,0 +1,32 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
+load("//tools/bazel/platforms:compatibility.bzl", "WEB_WASM32_ARTIFACT_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "public_headers",
+    srcs = ["include/h2_web_gizclaw_apps.h"],
+)
+
+cc_library(
+    name = "web",
+    srcs = ["src/h2_web_gizclaw_apps.c"],
+    hdrs = [":public_headers"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":tasks",
+        "//libs/atomic",
+        "//libs/gizclaw/lua_apps",
+        "//libs/pal/providers/web/pal_core",
+    ],
+)
+
+h2_tasks(
+    name = "tasks",
+    tasks = ["$gizclaw/web/apps"],
+)

@@ -1,6 +1,6 @@
 #ifndef H2_GIZCLAW_LUA_APPS_H
 #define H2_GIZCLAW_LUA_APPS_H
-#include "h2_lua_apps.h"
+#include "h2_gizclaw_lua_app_catalog.h"
 #include "h2_gizclaw_rpc.h"
 
 #ifdef __cplusplus
@@ -20,7 +20,13 @@ typedef struct h2_gizclaw_lua_app_param {
  * parameter string before returning. The product reserves its bounded owner
  * queue before the library acknowledges launch acceptance. */
 typedef struct h2_gizclaw_lua_app_run {
-  h2_lua_app_info_t app;
+  h2_gizclaw_lua_app_info_t app;
+  /** Successful prepare reserves one owned reference for the product.
+   * Store it with the reserved job. Required completion makes it runnable on
+   * OK; on error the product releases it. After success release only after
+   * the Lua Host is actually destroyed, retaining it through failed cleanup.
+   * Prepare error transfers no reference; the library releases it. */
+  h2_gizclaw_lua_app_lease_t *lease;
   size_t param_count;
   h2_gizclaw_lua_app_param_t params[H2_GIZCLAW_LUA_APP_PARAMS_MAX];
 } h2_gizclaw_lua_app_run_t;

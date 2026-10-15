@@ -578,7 +578,7 @@ static bool device_supports(const h2_gizclaw_device_t *d, int method) {
     return d->config.lua_apps != NULL;
   case H2_GIZCLAW_TOOL_LUA_APP_INSTALL:
   case H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL:
-    return h2_lua_apps_can_install(d->config.lua_apps);
+    return h2_gizclaw_lua_app_catalog_can_install(d->config.lua_apps);
   case H2_GIZCLAW_TOOL_LUA_APP_RUN:
     return d->config.lua_apps && v && v->prepare_lua_app_run;
   case H2_GIZCLAW_TOOL_SOUND_PLAY:
