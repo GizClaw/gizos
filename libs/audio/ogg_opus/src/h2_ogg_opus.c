@@ -1,4 +1,4 @@
-#include "h2_gizclaw_ogg_opus_internal.h"
+#include "h2_ogg_opus.h"
 
 #include "opus.h"
 
@@ -9,11 +9,11 @@
 /* Container checks follow RFC 3533; header placement, sample positions and
  * trimming follow RFC 7845. No recovery/concealment for corrupt stored audio.
  */
-struct h2_gizclaw_ogg_opus {
+struct h2_ogg_opus {
   const h2_pal_mem_api_t *allocator;
   const uint8_t *data;
   size_t len, offset;
-  h2_gizclaw_ogg_opus_read_fn read;
+  h2_ogg_opus_read_fn read;
   void *read_user;
   uint8_t *page;
   const uint8_t *laces, *body;
@@ -41,6 +41,12 @@ struct h2_gizclaw_ogg_opus {
   OpusDecoder *opus;
   opus_int16 samples[1920];
   h2_pal_result_t error;
+  size_t page_capacity, max_packet;
+  uint64_t read_offset;
+  bool packets_only;
+  uint8_t channels;
+  int16_t gain_q8;
+  h2_ogg_opus_packet_t view;
 };
 
 static uint32_t le32(const uint8_t *p) {
@@ -62,7 +68,7 @@ static uint32_t page_crc(const uint8_t *p, size_t len) {
   return crc;
 }
 
-static h2_pal_result_t read_exact(h2_gizclaw_ogg_opus_t *d, uint8_t *out,
+static h2_pal_result_t read_exact(h2_ogg_opus_t *d, uint8_t *out,
                                   size_t length, bool allow_eof) {
   size_t offset = 0;
   while (offset < length) {
@@ -72,17 +78,20 @@ static h2_pal_result_t read_exact(h2_gizclaw_ogg_opus_t *d, uint8_t *out,
       return offset == 0 && allow_eof ? H2_PAL_EXIT : H2_PAL_ERR_FORMAT;
     if (rc != H2_PAL_OK)
       return rc;
-    if (!count || count > length - offset)
+    if (!count || count > length - offset || d->read_offset > UINT64_MAX - count)
       return H2_PAL_ERR_FORMAT;
     offset += count;
+    d->read_offset += count;
   }
   return H2_PAL_OK;
 }
 
 /* The page buffer doubles as the reader's lookahead: fill() only ever reads
  * the bytes still missing, so a normal page read never overshoots. */
-static h2_pal_result_t fill(h2_gizclaw_ogg_opus_t *d, size_t *have,
+static h2_pal_result_t fill(h2_ogg_opus_t *d, size_t *have,
                             size_t need, bool allow_eof) {
+  if (need > d->page_capacity)
+    return H2_PAL_ERR_NO_SPACE;
   if (*have >= need)
     return H2_PAL_OK;
   int rc = read_exact(d, d->page + *have, need - *have, allow_eof && !*have);
@@ -91,7 +100,7 @@ static h2_pal_result_t fill(h2_gizclaw_ogg_opus_t *d, size_t *have,
   return rc;
 }
 
-static size_t take_pending(h2_gizclaw_ogg_opus_t *d) {
+static size_t take_pending(h2_ogg_opus_t *d) {
   size_t have = d->pend_len;
   if (have)
     memmove(d->page, d->page + d->pend_off, have);
@@ -99,7 +108,7 @@ static size_t take_pending(h2_gizclaw_ogg_opus_t *d) {
   return have;
 }
 
-static void finish_page(h2_gizclaw_ogg_opus_t *d, size_t have, size_t len) {
+static void finish_page(h2_ogg_opus_t *d, size_t have, size_t len) {
   d->data = d->page;
   d->offset = 0;
   d->len = len;
@@ -107,7 +116,7 @@ static void finish_page(h2_gizclaw_ogg_opus_t *d, size_t have, size_t len) {
   d->pend_len = have - len;
 }
 
-static h2_pal_result_t read_page(h2_gizclaw_ogg_opus_t *d) {
+static h2_pal_result_t read_page(h2_ogg_opus_t *d) {
   size_t have = take_pending(d);
   int rc = fill(d, &have, 27, true);
   if (rc != H2_PAL_OK)
@@ -143,7 +152,7 @@ static size_t capture_at(const uint8_t *p, size_t have) {
  * already read as part of a rejected candidate; that remainder is rescanned
  * in place and whatever follows the accepted page stays pending. */
 #define SCAN_LIMIT (2u * (27u + 255u + 255u * 255u))
-static h2_pal_result_t scan_page(h2_gizclaw_ogg_opus_t *d) {
+static h2_pal_result_t scan_page(h2_ogg_opus_t *d) {
   size_t have = take_pending(d), dropped = 0;
   bool eof = false;
   for (;;) {
@@ -166,8 +175,9 @@ static h2_pal_result_t scan_page(h2_gizclaw_ogg_opus_t *d) {
       }
       if (rc != H2_PAL_OK)
         return rc;
-      if (!count || count > 4 - have)
+      if (!count || count > 4 - have || d->read_offset > UINT64_MAX - count)
         return H2_PAL_ERR_FORMAT;
+      d->read_offset += count;
       have += count;
       continue;
     }
@@ -213,7 +223,7 @@ static h2_pal_result_t scan_page(h2_gizclaw_ogg_opus_t *d) {
  * no packet that both starts and ends here. The start of the first packet
  * that begins on the page is its granule minus the durations of the packets
  * completed on it, which the TOC bytes give without decoding. */
-static bool land(h2_gizclaw_ogg_opus_t *d) {
+static bool land(h2_ogg_opus_t *d) {
   size_t first = 0, offset = 0;
   if (d->flags & 1u) {
     while (first < d->lace_count && d->laces[first] == 255)
@@ -256,7 +266,7 @@ static bool land(h2_gizclaw_ogg_opus_t *d) {
   return true;
 }
 
-static h2_pal_result_t load_page(h2_gizclaw_ogg_opus_t *d) {
+static h2_pal_result_t load_page(h2_ogg_opus_t *d) {
   if (d->page_loaded) {
     if (d->last_complete == SIZE_MAX && d->granule != UINT64_MAX)
       return H2_PAL_ERR_FORMAT;
@@ -342,11 +352,11 @@ static h2_pal_result_t load_page(h2_gizclaw_ogg_opus_t *d) {
   }
 }
 
-static h2_pal_result_t append(h2_gizclaw_ogg_opus_t *d, size_t len) {
+static h2_pal_result_t append(h2_ogg_opus_t *d, size_t len) {
   if (len > SIZE_MAX - d->packet_len)
     return H2_PAL_ERR_NO_SPACE;
   size_t needed = d->packet_len + len;
-  if (d->read && needed > 65536u) {
+  if (d->read && needed > d->max_packet) {
     /* The comment header is validated, never used: past the ceiling its
      * bytes are dropped as they arrive, so memory stays one page plus
      * 64 KiB however large the tags are. Audio packets keep the limit. */
@@ -365,6 +375,8 @@ static h2_pal_result_t append(h2_gizclaw_ogg_opus_t *d, size_t len) {
       }
       capacity *= 2;
     }
+    if (d->read && capacity > d->max_packet)
+      capacity = d->max_packet;
     /* Allocate/copy rather than require optional PAL realloc support. */
     uint8_t *packet = h2_pal_mem_alloc(d->allocator, capacity);
     if (packet == NULL)
@@ -405,7 +417,7 @@ static bool valid_tags(const uint8_t *p, size_t len) {
   return true; /* RFC 7845 permits trailing padding/extension data. */
 }
 
-static h2_pal_result_t decode_packet(h2_gizclaw_ogg_opus_t *d, uint8_t *pcm,
+static h2_pal_result_t decode_packet(h2_ogg_opus_t *d, uint8_t *pcm,
                                      size_t *out_len) {
   const uint8_t *p = d->packet;
   const size_t len = d->packet_len;
@@ -423,8 +435,14 @@ static h2_pal_result_t decode_packet(h2_gizclaw_ogg_opus_t *d, uint8_t *pcm,
       int gain = (int)p[16] | ((int)p[17] << 8);
       if (gain >= 32768)
         gain -= 65536;
-      if (opus_decoder_init(d->opus, 16000, 1) != OPUS_OK ||
-          opus_decoder_ctl(d->opus, OPUS_SET_GAIN(gain)) != OPUS_OK)
+      d->channels = p[9];
+      d->view.stream_start = d->packets_only;
+      d->gain_q8 = (int16_t)gain;
+      d->view.channels = d->channels;
+      d->view.gain_q8 = d->gain_q8;
+      if (!d->packets_only &&
+          (opus_decoder_init(d->opus, 16000, 1) != OPUS_OK ||
+           opus_decoder_ctl(d->opus, OPUS_SET_GAIN(gain)) != OPUS_OK))
         return H2_PAL_ERR_IO;
     } else if (d->tags_truncated ? memcmp(p, "OpusTags", 8) != 0
                                  : !valid_tags(p, len))
@@ -472,6 +490,15 @@ static h2_pal_result_t decode_packet(h2_gizclaw_ogg_opus_t *d, uint8_t *pcm,
   d->skip = d->skip > (uint64_t)samples48 ? d->skip - (uint64_t)samples48 : 0;
   const size_t end = (size_t)(keep / 3);
   const uint64_t emitted = end > trim ? end - trim : 0;
+  if (d->packets_only) {
+    d->view = (h2_ogg_opus_packet_t){
+        .data = p, .bytes = len, .frame_samples = (uint16_t)count,
+        .skip_samples = (uint16_t)trim,
+        .samples = (uint16_t)emitted, .channels = d->channels,
+        .gain_q8 = d->gain_q8};
+    d->out16 += emitted;
+    return H2_PAL_OK;
+  }
   /* Seeking: a packet that ends before the pre-roll window is validated and
    * counted but never decoded; the decoder state is reset before the first
    * packet that is, and samples before the target are discarded. */
@@ -508,12 +535,12 @@ static h2_pal_result_t decode_packet(h2_gizclaw_ogg_opus_t *d, uint8_t *pcm,
   return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_gizclaw_ogg_opus_next(h2_gizclaw_ogg_opus_t *d, uint8_t *pcm,
+static h2_pal_result_t next_internal(h2_ogg_opus_t *d, uint8_t *pcm,
                                          size_t capacity, size_t *out_len) {
   if (out_len != NULL)
     *out_len = 0;
-  if (d == NULL || pcm == NULL || out_len == NULL ||
-      capacity < H2_GIZCLAW_OGG_OPUS_PCM_BYTES)
+  if (d == NULL || out_len == NULL ||
+      (!d->packets_only && (pcm == NULL || capacity < H2_OGG_OPUS_PCM_BYTES)))
     return H2_PAL_ERR_INVALID_ARG;
   if (d->error != H2_PAL_OK)
     return d->error;
@@ -546,17 +573,17 @@ h2_pal_result_t h2_gizclaw_ogg_opus_next(h2_gizclaw_ogg_opus_t *d, uint8_t *pcm,
   }
 }
 
-bool h2_gizclaw_ogg_opus_headers_done(const h2_gizclaw_ogg_opus_t *d) {
+bool h2_ogg_opus_headers_done(const h2_ogg_opus_t *d) {
   return d != NULL && d->error == H2_PAL_OK && d->headers == 2 &&
          !d->have_audio_page && !d->stream_ended;
 }
 
-h2_pal_result_t h2_gizclaw_ogg_opus_seek(h2_gizclaw_ogg_opus_t *d,
+h2_pal_result_t h2_ogg_opus_seek(h2_ogg_opus_t *d,
                                          uint64_t target_ms, bool resync) {
   if (d == NULL || (resync && d->read == NULL) ||
       target_ms > (UINT64_MAX - 65535u - PRE_ROLL) / 48u)
     return H2_PAL_ERR_INVALID_ARG;
-  if (!h2_gizclaw_ogg_opus_headers_done(d) || d->seeking)
+  if (d->packets_only || !h2_ogg_opus_headers_done(d) || d->seeking)
     return H2_PAL_ERR_INVALID_STATE;
   d->target_g = target_ms * 48u + d->pre_skip;
   d->seeking = true;
@@ -565,34 +592,36 @@ h2_pal_result_t h2_gizclaw_ogg_opus_seek(h2_gizclaw_ogg_opus_t *d,
   return H2_PAL_OK;
 }
 
-bool h2_gizclaw_ogg_opus_origin(const h2_gizclaw_ogg_opus_t *d,
+bool h2_ogg_opus_origin(const h2_ogg_opus_t *d,
                                 uint64_t *samples) {
+  if (samples) *samples = 0;
   if (d == NULL || samples == NULL || d->seeking)
     return false;
   *samples = d->origin16;
   return true;
 }
 
-h2_pal_result_t h2_gizclaw_ogg_opus_create(const h2_pal_mem_api_t *allocator,
+h2_pal_result_t h2_ogg_opus_create(const h2_pal_mem_api_t *allocator,
                                            const uint8_t *data, size_t len,
-                                           h2_gizclaw_ogg_opus_t **out) {
+                                           h2_ogg_opus_t **out) {
   if (out != NULL)
     *out = NULL;
   if (out == NULL || data == NULL || len == 0 || allocator == NULL ||
       allocator->vtable == NULL || allocator->vtable->alloc == NULL ||
       allocator->vtable->free == NULL)
     return H2_PAL_ERR_INVALID_ARG;
-  h2_gizclaw_ogg_opus_t *d = h2_pal_mem_alloc(allocator, sizeof(*d));
+  h2_ogg_opus_t *d = h2_pal_mem_alloc(allocator, sizeof(*d));
   if (d == NULL)
     return H2_PAL_ERR_NO_MEMORY;
   memset(d, 0, sizeof(*d));
+  d->max_packet = 65536u;
   d->allocator = allocator;
   d->data = data;
   d->len = len;
   int size = opus_decoder_get_size(1);
   d->opus = size > 0 ? h2_pal_mem_alloc(allocator, (size_t)size) : NULL;
   if (d->opus == NULL) {
-    h2_gizclaw_ogg_opus_destroy(d);
+    h2_ogg_opus_destroy(d);
     return H2_PAL_ERR_NO_MEMORY;
   }
   *out = d;
@@ -600,34 +629,161 @@ h2_pal_result_t h2_gizclaw_ogg_opus_create(const h2_pal_mem_api_t *allocator,
 }
 
 h2_pal_result_t
-h2_gizclaw_ogg_opus_create_reader(const h2_pal_mem_api_t *allocator,
-                                  h2_gizclaw_ogg_opus_read_fn read, void *user,
-                                  h2_gizclaw_ogg_opus_t **out) {
+h2_ogg_opus_create_reader(const h2_pal_mem_api_t *allocator,
+                                  h2_ogg_opus_read_fn read, void *user,
+                                  h2_ogg_opus_t **out) {
   if (out)
     *out = NULL;
   if (!read)
     return H2_PAL_ERR_INVALID_ARG;
   static const uint8_t empty = 0;
-  int rc = h2_gizclaw_ogg_opus_create(allocator, &empty, 1, out);
+  int rc = h2_ogg_opus_create(allocator, &empty, 1, out);
   if (rc != H2_PAL_OK)
     return rc;
-  h2_gizclaw_ogg_opus_t *d = *out;
+  h2_ogg_opus_t *d = *out;
   d->read = read;
   d->read_user = user;
-  d->page = h2_pal_mem_alloc(allocator, 27u + 255u + 255u * 255u);
+  d->page_capacity = 27u + 255u + 255u * 255u;
+  d->page = h2_pal_mem_alloc(allocator, d->page_capacity);
   if (!d->page) {
-    h2_gizclaw_ogg_opus_destroy(d);
+    h2_ogg_opus_destroy(d);
     *out = NULL;
     return H2_PAL_ERR_NO_MEMORY;
   }
+  memset(d->page, 0, d->page_capacity);
   return H2_PAL_OK;
 }
 
-void h2_gizclaw_ogg_opus_destroy(h2_gizclaw_ogg_opus_t *d) {
+void h2_ogg_opus_destroy(h2_ogg_opus_t *d) {
   if (d == NULL)
     return;
   h2_pal_mem_free(d->allocator, d->opus);
   h2_pal_mem_free(d->allocator, d->packet);
   h2_pal_mem_free(d->allocator, d->page);
   h2_pal_mem_free(d->allocator, d);
+}
+
+h2_pal_result_t h2_ogg_opus_next(h2_ogg_opus_t *d, uint8_t *pcm,
+                                 size_t capacity, size_t *out_len) {
+  if (out_len)
+    *out_len = 0;
+  if (d && d->packets_only)
+    return H2_PAL_ERR_INVALID_ARG;
+  return next_internal(d, pcm, capacity, out_len);
+}
+
+h2_pal_result_t h2_ogg_opus_create_packet_reader(
+    const h2_pal_mem_api_t *allocator, h2_ogg_opus_read_fn read, void *user,
+    size_t page_bytes, size_t packet_bytes, h2_ogg_opus_t **out) {
+  if (out)
+    *out = NULL;
+  if (!out || !allocator || !allocator->vtable ||
+      !allocator->vtable->alloc || !allocator->vtable->free || !read ||
+      page_bytes < 282u || page_bytes > 65307u ||
+      packet_bytes < 512u || packet_bytes > 65536u)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_ogg_opus_t *d = h2_pal_mem_alloc(allocator, sizeof(*d));
+  if (!d)
+    return H2_PAL_ERR_NO_MEMORY;
+  memset(d, 0, sizeof(*d));
+  d->allocator = allocator;
+  d->read = read;
+  d->read_user = user;
+  d->packets_only = true;
+  d->page_capacity = page_bytes;
+  d->max_packet = packet_bytes;
+  d->page = h2_pal_mem_alloc(allocator, page_bytes);
+  if (!d->page) {
+    h2_ogg_opus_destroy(d);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  memset(d->page, 0, page_bytes);
+  *out = d;
+  return H2_PAL_OK;
+}
+
+h2_pal_result_t h2_ogg_opus_next_packet(h2_ogg_opus_t *d,
+                                        h2_ogg_opus_packet_t *out) {
+  if (out)
+    memset(out, 0, sizeof(*out));
+  if (!d || !out || !d->packets_only)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(&d->view, 0, sizeof(d->view));
+  size_t ignored = 0;
+  h2_pal_result_t rc = next_internal(d, NULL, 0, &ignored);
+  if (rc == H2_PAL_OK)
+    *out = d->view;
+  return rc;
+}
+
+h2_pal_result_t h2_ogg_opus_reset_packets(h2_ogg_opus_t *d) {
+  if (!d || !d->packets_only)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_ogg_opus_t fresh = {0};
+  fresh.allocator = d->allocator;
+  fresh.read = d->read;
+  fresh.read_user = d->read_user;
+  fresh.packets_only = true;
+  fresh.page = d->page;
+  fresh.page_capacity = d->page_capacity;
+  fresh.packet = d->packet;
+  fresh.packet_capacity = d->packet_capacity;
+  fresh.max_packet = d->max_packet;
+  *d = fresh;
+  return H2_PAL_OK;
+}
+
+typedef struct ogg_checkpoint {
+  const h2_ogg_opus_t *owner;
+  h2_ogg_opus_t state;
+} ogg_checkpoint_t;
+
+size_t h2_ogg_opus_checkpoint_size(const h2_ogg_opus_t *d) {
+  return d && d->packets_only
+      ? sizeof(ogg_checkpoint_t) + d->page_capacity + d->max_packet : 0u;
+}
+
+h2_pal_result_t h2_ogg_opus_checkpoint_save(
+    const h2_ogg_opus_t *d, void *buffer, size_t bytes, uint64_t *position) {
+  if (position)
+    *position = 0;
+  if (!buffer || !position || !h2_ogg_opus_checkpoint_size(d) ||
+      bytes != h2_ogg_opus_checkpoint_size(d))
+    return H2_PAL_ERR_INVALID_ARG;
+  const ogg_checkpoint_t snapshot = {.owner = d, .state = *d};
+  uint8_t *output = buffer;
+  memcpy(output, &snapshot, sizeof(snapshot));
+  memcpy(output + sizeof(snapshot), d->page, d->page_capacity);
+  memset(output + sizeof(snapshot) + d->page_capacity, 0, d->max_packet);
+  if (d->packet_len)
+    memcpy(output + sizeof(snapshot) + d->page_capacity, d->packet,
+           d->packet_len);
+  *position = d->read_offset;
+  return H2_PAL_OK;
+}
+
+h2_pal_result_t h2_ogg_opus_checkpoint_restore(
+    h2_ogg_opus_t *d, const void *buffer, size_t bytes) {
+  if (!buffer || !h2_ogg_opus_checkpoint_size(d) ||
+      bytes != h2_ogg_opus_checkpoint_size(d))
+    return H2_PAL_ERR_INVALID_ARG;
+  ogg_checkpoint_t snapshot;
+  memcpy(&snapshot, buffer, sizeof(snapshot));
+  if (snapshot.owner != d || snapshot.state.page != d->page ||
+      snapshot.state.page_capacity != d->page_capacity ||
+      snapshot.state.max_packet != d->max_packet ||
+      snapshot.state.packet_len > d->packet_capacity)
+    return H2_PAL_ERR_INVALID_ARG;
+  uint8_t *packet = d->packet;
+  const size_t capacity = d->packet_capacity;
+  const uint8_t *input = buffer;
+  memcpy(d->page, input + sizeof(snapshot), d->page_capacity);
+  if (snapshot.state.packet_len)
+    memcpy(packet, input + sizeof(snapshot) + d->page_capacity,
+           snapshot.state.packet_len);
+  *d = snapshot.state;
+  d->packet = packet;
+  d->packet_capacity = capacity;
+  memset(&d->view, 0, sizeof(d->view));
+  return H2_PAL_OK;
 }

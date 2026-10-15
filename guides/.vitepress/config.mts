@@ -52,6 +52,7 @@ const zhDevelopmentItems = [
         ],
       },
       { text: "Audio Mixer", link: "/zh/developing/audio_mixer" },
+      { text: "Ogg Opus", link: "/zh/developing/ogg_opus" },
       { text: "BLE iKCP", link: "/zh/developing/bleikcp" },
       { text: "BLE Wi-Fi Config", link: "/zh/developing/ble_wifi_config" },
       { text: "Command", link: "/zh/developing/command" },
@@ -329,6 +330,7 @@ const referenceItems = [
     items: [
       { text: "App Test", link: "/references/app_test" },
       { text: "Audio Mixer", link: "/references/audio_mixer" },
+      { text: "Ogg Opus", link: "/references/ogg_opus" },
       { text: "BLE iKCP", link: "/references/bleikcp" },
       { text: "BLE Wi-Fi Config", link: "/references/ble_wifi_config" },
       { text: "Command", link: "/references/command" },

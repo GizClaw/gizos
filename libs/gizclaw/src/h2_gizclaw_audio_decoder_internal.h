@@ -1,7 +1,7 @@
 #ifndef H2_GIZCLAW_AUDIO_DECODER_INTERNAL_H
 #define H2_GIZCLAW_AUDIO_DECODER_INTERNAL_H
 
-#include "h2_gizclaw_ogg_opus_internal.h"
+#include "h2_ogg_opus.h"
 
 #include "h2/pal/core/h2_pal_errors.h"
 #include "h2/pal/os/h2_pal_mem.h"
@@ -17,10 +17,10 @@
  * MP3 and WAV are mixed down to mono and resampled to 16 kHz. OK with zero
  * bytes is normal (headers, skipped data). EXIT is the end of the track.
  * Owned memory comes from the PAL allocator; there are no callbacks. */
-#define H2_GIZCLAW_AUDIO_PCM_BYTES H2_GIZCLAW_OGG_OPUS_PCM_BYTES
+#define H2_GIZCLAW_AUDIO_PCM_BYTES H2_OGG_OPUS_PCM_BYTES
 
 /* Blocking sequential reader: OK supplies 1..capacity bytes, EXIT is EOF. */
-typedef h2_gizclaw_ogg_opus_read_fn h2_gizclaw_audio_read_fn;
+typedef h2_ogg_opus_read_fn h2_gizclaw_audio_read_fn;
 
 typedef struct h2_gizclaw_audio_decoder h2_gizclaw_audio_decoder_t;
 

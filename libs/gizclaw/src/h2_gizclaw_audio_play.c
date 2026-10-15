@@ -1,5 +1,5 @@
 #include "h2_gizclaw_download_internal.h"
-#include "h2_gizclaw_ogg_opus_internal.h"
+#include "h2_ogg_opus.h"
 #include "h2_gizclaw_workspace.h"
 #include "payload/workspace.pb.h"
 #include "pb_decode.h"
@@ -18,8 +18,8 @@ struct h2_gizclaw_audio_play {
   h2_atomic_int_t result;
   h2_gizclaw_req_t *request; /* Published by ready; pinned until play_stop. */
   size_t refs; /* Service mutex, pins downlink accesses during stop. */
-  h2_gizclaw_ogg_opus_t *decoder;
-  uint8_t pcm[H2_GIZCLAW_OGG_OPUS_PCM_BYTES];
+  h2_ogg_opus_t *decoder;
+  uint8_t pcm[H2_OGG_OPUS_PCM_BYTES];
   size_t pcm_len, pcm_offset;
 };
 typedef struct h2_gizclaw_audio_play audio_play_t;
@@ -145,7 +145,7 @@ static void play_destroy(void *user) {
   audio_play_t *play = user;
   h2_atomic_bool_destroy(&play->ready);
   h2_atomic_int_destroy(&play->result);
-  h2_gizclaw_ogg_opus_destroy(play->decoder);
+  h2_ogg_opus_destroy(play->decoder);
   h2_pal_mem_free(play->allocator, play->compressed);
   h2_pal_mem_free(play->allocator, play);
 }
@@ -155,14 +155,14 @@ static h2_pal_result_t play_step(audio_play_t *play) {
     return H2_PAL_ERR_WOULD_BLOCK;
   h2_pal_result_t rc;
   if (play->decoder == NULL) {
-    rc = h2_gizclaw_ogg_opus_create(play->allocator, play->compressed,
+    rc = h2_ogg_opus_create(play->allocator, play->compressed,
                                     play->size, &play->decoder);
     if (rc != H2_PAL_OK)
       return rc;
   }
   if (play->pcm_offset == play->pcm_len) {
     play->pcm_offset = 0;
-    rc = h2_gizclaw_ogg_opus_next(play->decoder, play->pcm, sizeof(play->pcm),
+    rc = h2_ogg_opus_next(play->decoder, play->pcm, sizeof(play->pcm),
                                   &play->pcm_len);
     if (rc == H2_PAL_EXIT)
       return H2_PAL_OK;
