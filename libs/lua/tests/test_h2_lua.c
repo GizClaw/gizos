@@ -892,42 +892,6 @@ typedef struct expected_pixel {
   int y;
 } expected_pixel_t;
 
-static unsigned sleep_timer_calls;
-static h2_pal_result_t sleep_timer_create(void *user,
-                                         const h2_pal_timer_config_t *config,
-                                         h2_pal_timer_t **out) {
-  (void)user;
-  (void)config;
-  ++sleep_timer_calls;
-  *out = NULL;
-  return H2_PAL_ERR_IO;
-}
-
-static void test_sleep_deadlines(void) {
-  h2_runtime_t *runtime = create_runtime();
-  const h2_pal_timer_vtable_t vtable = {.create = sleep_timer_create};
-  const h2_pal_timer_api_t timer = {.vtable = &vtable};
-  runtime->timer = &timer;
-  h2_lua_host_t *host = create_host(runtime);
-  static const uint8_t source[] =
-      "local r,s=require('runtime'),require('system');"
-      "local began=s.millis();"
-      "local child=r.spawn(function() for i=1,20 do r.sleep(2) end return 'child' end);"
-      "for i=1,20 do r.sleep(1);r.sleep(0) end;"
-      "local ok,value=r.join(child);assert(ok and value=='child');"
-      "assert(s.millis()-began>=40);return 'deadlines'";
-  h2_lua_job_id_t job;
-  assert(h2_lua_job_submit_text(host, NULL, "@deadlines.lua", source,
-                                sizeof(source) - 1u, NULL, 0u, &job) == H2_PAL_OK);
-  run_until_terminal(host, job, 5000u);
-  assert(status(host, job).state == H2_LUA_JOB_SUCCEEDED);
-  assert(strcmp(status(host, job).message, "deadlines") == 0);
-  assert(h2_lua_job_release(host, job) == H2_PAL_OK);
-  assert(h2_lua_host_destroy_checked(host) == H2_PAL_OK);
-  assert(sleep_timer_calls == 0u);
-  assert(h2_runtime_destroy(&runtime) == H2_PAL_OK && runtime == NULL);
-}
-
 static h2_lua_job_status_t run_display_script_size(h2_lua_host_t *host,
                                               const char *name,
                                               const uint8_t *script,
@@ -3936,7 +3900,6 @@ int main(int argc, char **argv) {
   h2_atomic_int_destroy(&s_test_audio_mic_block);
     return 0;
   }
-  test_sleep_deadlines();
   test_streamed_close_failure();
   test_checked_destroy();
   test_host_allocator();

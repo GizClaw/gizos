@@ -1,6 +1,6 @@
 #ifndef H2_GIZCLAW_LUA_APPS_H
 #define H2_GIZCLAW_LUA_APPS_H
-#include "h2_gizclaw_lua_app_catalog.h"
+#include "h2_lua_apps.h"
 #include "h2_gizclaw_rpc.h"
 
 #ifdef __cplusplus
@@ -20,13 +20,7 @@ typedef struct h2_gizclaw_lua_app_param {
  * parameter string before returning. The product reserves its bounded owner
  * queue before the library acknowledges launch acceptance. */
 typedef struct h2_gizclaw_lua_app_run {
-  h2_gizclaw_lua_app_info_t app;
-  /** Successful prepare reserves one owned reference for the product.
-   * Store it with the reserved job. Required completion makes it runnable on
-   * OK; on error the product releases it. After success release only after
-   * the Lua Host is actually destroyed, retaining it through failed cleanup.
-   * Prepare error transfers no reference; the library releases it. */
-  h2_gizclaw_lua_app_lease_t *lease;
+  h2_lua_app_info_t app;
   size_t param_count;
   h2_gizclaw_lua_app_param_t params[H2_GIZCLAW_LUA_APP_PARAMS_MAX];
 } h2_gizclaw_lua_app_run_t;
@@ -35,8 +29,7 @@ typedef struct h2_gizclaw_lua_app_run {
  * the response-completion result: OK makes the reserved request runnable;
  * any error releases it without launching. Both callbacks return promptly,
  * never stop/destroy the Service inline, and retain no borrowed request views.
- * The completion user must outlive Service deinit, or the standalone device
- * stop/destroy that settles its local call. */
+ * The completion user must outlive Service deinit. */
 typedef struct h2_gizclaw_lua_app_handoff {
   h2_gizclaw_rpc_response_complete_fn complete;
   void *user;

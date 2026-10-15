@@ -1,10 +1,10 @@
 #ifndef H2_LUA_APPS_H
 #define H2_LUA_APPS_H
 
+#include "h2/pal/application/h2_pal_http.h"
 #include "h2/pal/os/h2_pal_fs.h"
 #include "h2/pal/os/h2_pal_mem.h"
 #include "h2/pal/os/h2_pal_sync.h"
-#include "h2_gizclaw_lua_app_catalog.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -13,23 +13,31 @@
 extern "C" {
 #endif
 
-/* Compatibility API only. The single catalog/installer implementation and
- * all mutation/lease policy are owned by libs/gizclaw/lua_apps. */
-#define H2_LUA_APPS_MAX H2_GIZCLAW_LUA_APPS_MAX
-#define H2_LUA_APP_PATH_MAX H2_GIZCLAW_LUA_APP_PATH_MAX
-#define H2_LUA_APP_FILES_MAX H2_GIZCLAW_LUA_APP_FILES_MAX
-#define H2_LUA_APP_URL_MAX H2_GIZCLAW_LUA_APP_URL_MAX
+#define H2_LUA_APPS_MAX 32u
+#define H2_LUA_APP_PATH_MAX 192u
+#define H2_LUA_APP_FILES_MAX 64u
+#define H2_LUA_APP_URL_MAX 1024u
 
-typedef h2_gizclaw_lua_app_catalog_t h2_lua_apps_t;
-typedef h2_gizclaw_lua_app_install_t h2_lua_app_install_t;
+typedef struct h2_lua_apps h2_lua_apps_t;
+typedef struct h2_lua_app_install h2_lua_app_install_t;
 
 /** Borrowed HTTP(S) URL bytes; no NUL termination is required. Addresses are
  * at most H2_LUA_APP_URL_MAX bytes. Other schemes are rejected. */
-typedef h2_gizclaw_lua_app_source_t h2_lua_app_source_t;
+typedef struct h2_lua_app_source {
+  const char *data;
+  size_t size;
+} h2_lua_app_source_t;
 
 /** Caller-owned snapshot. entry and data_dir are resolved filesystem paths;
  * user storage is independent of both. All strings are NUL terminated. */
-typedef h2_gizclaw_lua_app_info_t h2_lua_app_info_t;
+typedef struct h2_lua_app_info {
+  char app_id[33];
+  char version[32];
+  char display_name[129];
+  char description[1025];
+  char entry[H2_LUA_APP_PATH_MAX];
+  char data_dir[H2_LUA_APP_PATH_MAX];
+} h2_lua_app_info_t;
 
 /** Dependencies are borrowed until destroy. Paths are copied at create.
  * preinstalled_index is optional: format=1, apps=[{root,manifest}], where each
@@ -37,7 +45,21 @@ typedef h2_gizclaw_lua_app_info_t h2_lua_app_info_t;
  * preinstalled apps. Missing/oversized entries are omitted from discovery.
  * install_root is optional for read-only discovery. Never place mutable app
  * storage under it: installation and cleanup own its complete contents. */
-typedef h2_gizclaw_lua_app_catalog_config_t h2_lua_apps_config_t;
+typedef struct h2_lua_apps_config {
+  const h2_pal_mem_api_t *allocator;
+  const h2_pal_fs_api_t *fs;
+  const h2_pal_sync_api_t *sync;
+  const char *preinstalled_index;
+  const char *install_root;
+  /** Zero selects 256 KiB Lua text, 2 MiB per package, 8 MiB installed total,
+   * 32 apps and 64 payload files. Limits include preinstalled identities;
+   * installed byte accounting excludes the immutable preinstalled files. */
+  size_t source_limit_bytes;
+  uint64_t app_limit_bytes;
+  uint64_t installed_limit_bytes;
+  size_t max_apps;
+  size_t max_files;
+} h2_lua_apps_config_t;
 
 /** Loads both indexes without networking or starting tasks. An installed
  * app shadows its preinstalled identity. Corrupt indexes fail closed. Failure
@@ -70,7 +92,7 @@ bool h2_lua_app_id_valid(const char *app_id);
  * Index failure preserves the app. Cleanup failure can follow publication:
  * the app remains unavailable; repeat uninstall to retry cleanup. Never retry
  * an ambiguous close failure; keep dependencies alive as documented above.
- * Running users acquire a lease through the canonical catalog API; this forwarding API enforces the same pin checks. */
+ * Product owners must coordinate running users of entry/data_dir snapshots. */
 h2_pal_result_t h2_lua_apps_uninstall(h2_lua_apps_t *apps, const char *app_id);
 
 /** Open an incremental zlib/USTAR installation. compressed_size is the exact
@@ -92,8 +114,7 @@ h2_pal_result_t h2_lua_app_install_finish(h2_lua_app_install_t **install,
                                           h2_lua_app_info_t *out);
 /** Idempotently consume an unfinished handle, attempt staging cleanup and
  * release its reservation. Never removes the previously published app. An
- * ambiguous close error retains the manager/dependencies as documented above.
- */
+ * ambiguous close error retains the manager/dependencies as documented above. */
 void h2_lua_app_install_abort(h2_lua_app_install_t **install);
 
 /** Synchronously downloads, inflates and verifies a complete format-1 USTAR

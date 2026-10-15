@@ -1,0 +1,42 @@
+load("//libs/lua:lua_app.bzl", "lua_app")
+load("//tools/bazel:firmware.bzl", "firmware_version")
+load("//tools/bazel/web:web_app.bzl", "h2_web_app")
+
+package(default_visibility = ["//visibility:public"])
+
+firmware_version(
+    name = "version",
+    value = "0.2.0",
+)
+
+lua_app(
+    name = "package",
+    entry = "demo.lua",
+    version = ":version",
+)
+
+filegroup(
+    name = "archive",
+    srcs = [":package"],
+    output_group = "archive",
+)
+
+h2_web_app(
+    name = "local",
+    srcs = [
+        "assertions.c",
+        "main.c",
+    ],
+    app_name = "gizclaw-local",
+    passes = [
+        "LOCAL tools_mhs=PASS",
+        "LOCAL existing_lua_tools=PASS",
+        "LOCAL close_retry=PASS",
+        "H2_WEB_APP name=gizclaw-local result=PASS rc=0 destroy=0",
+    ],
+    preload = {":archive": "/fixtures/demo.tar.zlib"},
+    deps = [
+        "//libs/app_test:testing_pal",
+        "//libs/gizclaw/web",
+    ],
+)

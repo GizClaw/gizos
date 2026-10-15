@@ -13,15 +13,20 @@ filegroup(
     name = "public_headers",
     srcs = [
         "include/h2_web_gizclaw.h",
-        "include/h2_web_gizclaw_apps.h",
     ],
+)
+
+cc_library(
+    name = "headers",
+    hdrs = [":public_headers"],
+    includes = ["include"],
+    deps = ["//libs/gizclaw:local"],
 )
 
 cc_library(
     name = "web",
     srcs = [
         "src/h2_web_gizclaw.c",
-        "src/h2_web_gizclaw_apps.c",
         "src/h2_web_gizclaw_internal.h",
         ":sdk_source",
     ],
@@ -33,8 +38,7 @@ cc_library(
     deps = [
         ":tasks",
         "//libs/atomic",
-        "//libs/gizclaw:device",
-        "//libs/gizclaw/lua_apps",
+        "//libs/gizclaw:local",
         "//libs/pal/providers/web/pal_core",
     ],
 )
@@ -42,7 +46,6 @@ cc_library(
 h2_tasks(
     name = "tasks",
     tasks = [
-        "$gizclaw/web/apps",
         "$gizclaw/web/device",
     ],
 )

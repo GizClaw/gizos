@@ -17,7 +17,6 @@ extern "C" {
 #endif
 
 typedef struct h2_gizclaw_service h2_gizclaw_service_t;
-typedef struct h2_gizclaw_device h2_gizclaw_device_t;
 typedef struct h2_gizclaw_req h2_gizclaw_req_t;
 typedef struct h2_gizclaw_track h2_gizclaw_track_t;
 
@@ -128,12 +127,6 @@ typedef struct h2_gizclaw_service_config {
    * h2_runtime_notify() whenever caller-thread work becomes available; the
    * Runtime coalesces those wakes. The Runtime must outlive the Service. */
   h2_runtime_t *runtime;
-  /** Optional already-started standalone device, borrowed through successful
-   * deinit. Use the same Task/Sync/Runtime, Memory/Time and product registrations
-   * as its creation. Service only stops network and streamed-install owners;
-   * stop/deinit Service before stopping or destroying device. NULL preserves
-   * the existing Service-owned mode without allocating a local RPC context. */
-  h2_gizclaw_device_t *device;
   /** Stack requirements for the system-owned `$gizclaw/net` task. */
   h2_pal_task_options_t net_task_options;
   /** Maximum admitted operations across all lifecycle states. */
@@ -157,9 +150,7 @@ typedef struct h2_gizclaw_service_config {
  * Allocate queues and synchronization state without starting a task.
  *
  * The returned service is caller-owned until successful deinit. Init, start,
- * stop, poll and deinit belong to one lifecycle task. Failure normally leaves
- * out_service NULL. Failed rollback can retain a non-NULL stopped service;
- * only retry deinit on it and keep all dependencies alive until success.
+ * stop, poll and deinit belong to one lifecycle task.
  */
 h2_pal_result_t
 h2_gizclaw_service_init(const h2_gizclaw_service_config_t *config,
@@ -290,6 +281,10 @@ h2_pal_result_t h2_gizclaw_service_poll(h2_gizclaw_service_t *service,
  * Accepted callbacks remain pending for caller-thread dispatch.
  * If a task join fails, its handle is retained; retry stop before deinit.
  * Tasks already joined successfully are not joined again.
+ * With optional local ingress enabled, also closes admission, cancels and
+ * joins local dispatch. Local provider completions settle on their owner;
+ * caller-thread operation callbacks still require poll. Retained local result
+ * handles return BUSY; release and retry.
  */
 h2_pal_result_t h2_gizclaw_service_stop(h2_gizclaw_service_t *service);
 
@@ -297,9 +292,7 @@ h2_pal_result_t h2_gizclaw_service_stop(h2_gizclaw_service_t *service);
  * Release a stopped, fully dispatched service with no caller-owned handles.
  *
  * This lifecycle-task API must not race submit, cancel, release or dispatch.
- * Primitive cleanup failure retains the service and its remaining dependencies.
- * Once cleanup has begun, only deinit retry is valid; keep all borrowed PALs
- * alive until success. Successfully released handles are not released again.
+ * Local request handles and adapter borrows prevent release with BUSY.
  */
 h2_pal_result_t h2_gizclaw_service_deinit(h2_gizclaw_service_t *service);
 

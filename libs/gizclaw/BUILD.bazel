@@ -22,7 +22,7 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
-        ":device",
+        ":local",
         "//libs/atomic/providers/c11",
     ],
 )
@@ -51,9 +51,9 @@ _FIRMWARE_COMPATIBLE_SRCS = [
     "src/h2_gizclaw_app_config.c",
     "src/h2_gizclaw_debug.c",
     "src/h2_gizclaw_device.c",
-    "src/h2_gizclaw_device_rpc.c",
-    "src/h2_gizclaw_device_rpc_internal.h",
-    "include/h2_gizclaw_device.h",
+    "src/h2_gizclaw_local.c",
+    "src/h2_gizclaw_local_internal.h",
+    "include/h2_gizclaw_local.h",
     "src/h2_gizclaw_lua_apps.c",
     "src/h2_gizclaw_lua_apps_internal.h",
     "src/h2_gizclaw_lua_stream.c",
@@ -172,7 +172,7 @@ cc_library(
         ":dr_mp3",
         ":tasks",
         "//libs/atomic",
-        "//libs/gizclaw/lua_apps",
+        "//libs/lua/apps",
         "//libs/pal",
         "//libs/runtime",
         "//tools/bazel:vendor_third_party_opus",
@@ -191,7 +191,7 @@ cc_library(
     name = "gizclaw_test_support",
     testonly = True,
     srcs = [
-        "include/h2_gizclaw_device.h",
+        "include/h2_gizclaw_local.h",
         "src/h2_gizclaw_api_key.c",
         "src/h2_gizclaw_app_config.c",
         "src/h2_gizclaw_async_rpc.c",
@@ -205,13 +205,13 @@ cc_library(
         "src/h2_gizclaw_debug.c",
         "src/h2_gizclaw_device.c",
         "src/h2_gizclaw_device_internal.h",
-        "src/h2_gizclaw_device_rpc.c",
-        "src/h2_gizclaw_device_rpc_internal.h",
         "src/h2_gizclaw_diagnostics.c",
         "src/h2_gizclaw_download.c",
         "src/h2_gizclaw_download_internal.h",
         "src/h2_gizclaw_firmware.c",
         "src/h2_gizclaw_internal.h",
+        "src/h2_gizclaw_local.c",
+        "src/h2_gizclaw_local_internal.h",
         "src/h2_gizclaw_lua_apps.c",
         "src/h2_gizclaw_lua_apps_internal.h",
         "src/h2_gizclaw_lua_stream.c",
@@ -263,6 +263,7 @@ cc_library(
         "include/h2_gizclaw_conversation.h",
         "include/h2_gizclaw_debug.h",
         "include/h2_gizclaw_firmware.h",
+        "include/h2_gizclaw_local.h",
         "include/h2_gizclaw_lua_apps.h",
         "include/h2_gizclaw_mhs.h",
         "include/h2_gizclaw_ota.h",
@@ -295,7 +296,7 @@ cc_library(
     deps = [
         ":dr_mp3",
         "//libs/atomic",
-        "//libs/gizclaw/lua_apps",
+        "//libs/lua/apps",
         "//libs/pal",
         "//libs/runtime",
         "//tools/bazel:vendor_third_party_gizclaw",
@@ -482,7 +483,7 @@ cc_test(
         "src/h2_gizclaw_lua_apps_internal.h",
         "src/h2_gizclaw_lua_stream_internal.h",
         "tests/test_h2_gizclaw_lua_apps.c",
-        "//libs/gizclaw/lua_apps:test_fixtures",
+        "//libs/lua/apps:test_fixtures",
     ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
@@ -513,8 +514,8 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
-        ":device_tasks",
         ":gizclaw_test_support",
+        ":local_tasks",
         "//libs/atomic/providers/c11",
         "//libs/pal/providers/desktop/pal_core",
     ],
@@ -732,25 +733,23 @@ cc_test(
     ],
 )
 
-# Standalone consumers select this capability to declare its additional owner.
-# Ordinary Service consumers keep :gizclaw and its existing task/memory graph.
 h2_tasks(
-    name = "device_tasks",
-    tasks = ["$gizclaw/device/rpc"],
+    name = "local_tasks",
+    tasks = ["$gizclaw/local"],
 )
 
 cc_library(
-    name = "device",
-    hdrs = ["include/h2_gizclaw_device.h"],
+    name = "local",
+    hdrs = ["include/h2_gizclaw_local.h"],
     deps = [
-        ":device_tasks",
         ":gizclaw",
+        ":local_tasks",
     ],
 )
 
 cc_test(
-    name = "h2_gizclaw_device_local_test",
-    srcs = ["tests/test_h2_gizclaw_device_local.c"],
+    name = "h2_gizclaw_local_test",
+    srcs = ["tests/test_h2_gizclaw_local.c"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     target_compatible_with = select({
@@ -759,7 +758,7 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
-        ":device",
+        ":local",
         "//libs/atomic/providers/c11",
         "//libs/pal/providers/desktop/pal_core",
     ],

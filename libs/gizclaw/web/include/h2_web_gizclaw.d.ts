@@ -43,19 +43,6 @@ export interface GizClawWebSDK {
       options?: GizClawCallOptions): Promise<ClientToolMap[ToolNumber<K>]['response']>;
   };
 }
-export interface GizClawLuaAppSummary {
-  app_id: string;
-  version: string;
-  display_name: string;
-  description: string;
-}
-export interface GizClawWebLuaApps {
-  readonly version: 1;
-  list(): Promise<GizClawLuaAppSummary[]>;
-  install(source: Blob | Uint8Array | ArrayBuffer, options?: {sha256?: string}): Promise<GizClawLuaAppSummary>;
-  uninstall(appId: string): Promise<void>;
-}
 declare global {
   var h2WebGizClaw: GizClawWebSDK | undefined;
-  var h2WebLuaApps: GizClawWebLuaApps | undefined;
 }

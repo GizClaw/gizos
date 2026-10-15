@@ -59,22 +59,9 @@ static h2_pal_result_t sync_time(h2_gizclaw_service_t *service) {
   const h2_gizclaw_str_t endpoint = config->server_endpoint;
   if (endpoint.data == NULL || endpoint.len == 0u || endpoint.len > INT_MAX)
     return H2_PAL_ERR_INVALID_ARG;
-  /* Keep the SDK's absolute HTTP(S) endpoint, including a base path. Bare
-   * authorities retain the historical HTTP lane. */
-  size_t scheme_len = 0u;
-  if (endpoint.len >= 8u && memcmp(endpoint.data, "https://", 8u) == 0)
-    scheme_len = 8u;
-  else if (endpoint.len >= 7u && memcmp(endpoint.data, "http://", 7u) == 0)
-    scheme_len = 7u;
-  size_t base_len = endpoint.len;
-  while (base_len > scheme_len && endpoint.data[base_len - 1u] == '/')
-    --base_len;
-  if (base_len == scheme_len)
-    return H2_PAL_ERR_INVALID_ARG;
   char url[512];
-  int length = snprintf(url, sizeof(url), "%s%.*s/server-info",
-                        scheme_len == 0u ? "http://" : "",
-                        (int)base_len, endpoint.data);
+  int length = snprintf(url, sizeof(url), "http://%.*s/server-info",
+                        (int)endpoint.len, endpoint.data);
   if (length <= 0 || (size_t)length >= sizeof(url))
     return H2_PAL_ERR_INVALID_ARG;
   uint8_t *body = h2_pal_mem_alloc(config->allocator, 16384u);

@@ -99,23 +99,21 @@ Conversation 上行先发送 BOS，再等待当前 input stream 的 `AUDIO_INPUT
 
 PAL WebRTC 的 `CLOSED` 和 `ERROR` callback 只提供 callback 期间有效的 borrowed DataChannel handle，backend 可以在 callback 返回后释放它。GizClaw C SDK 必须在 callback 返回前清空 matching service、active RPC、Direct Packet 和 inbound alias；Peer Event 继续保留 SDK-owned service state 供普通 client cleanup 使用，但不再保留 DataChannel alias。后续 request completion、cancellation、client close 或 deinit 只能释放 SDK state，不能再次把已消费的 handle 传给 PAL `channel_close`。显式 close 先于终态 callback 时仍只向 PAL 发起一次 close。
 
-## 当前设备本地调用
+## 本地 invoke 与 MHS
 
-`//libs/gizclaw:device` 导出 `h2_gizclaw_device.h`。产品用已有的 `h2_gizclaw_config_t`、Task、Sync 和 Runtime 创建并 start 一个 standalone device，再把同一 handle 放入 `h2_gizclaw_service_config_t.device`。本地调用只需要 Memory、Time、Task、Sync；没有 endpoint、key、网络连接或远端 Ready 也能执行 MHS 与已安装工具。HTTP、网络或未提供的硬件能力仍返回实际错误。普通原生产品继续使用 `//libs/gizclaw` 和默认 `device = NULL`，由 Service 持有原有设备上下文，不额外创建 standalone dispatcher。选择本地 capability 的固件 task policy 必须覆盖 `$gizclaw/device/rpc`。
+产品在已有 Service init 后、network start 前调用 `h2_gizclaw_local_start()`，开启同一 Service 的本地请求入口。`//libs/gizclaw:local` 导出 `h2_gizclaw_local.h`，task policy 需要 `$gizclaw/local`。本地请求不等待 WebRTC 连接或远端 Ready，使用已有的工具注册表、MHS 实例表、device/player 和产品 hook。WebRTC 的 tool/MHS 请求在开启此能力后与本地请求进入同一个串行 owner；没有开启的 Service 保持原有网络路径和资源生命周期。
 
-Standalone device 只创建一个 registry-only canonical C SDK dispatcher，共享原有 player、Runtime proxy、MHS 表和工具 callback，不调用 connect，也不创建第二个 Peer 或播放器。网络 Service 借用该 device 时，MHS、工具执行与 delivery completion 同样进入 `$gizclaw/device/rpc` owner。Service stop/deinit 只关闭网络 admission、取消网络调用并等待网络与安装 worker；本地调用可在 Service 重建期间继续。产品注册表、user、PAL、catalog 和 Runtime 必须存活到 device checked destroy 成功；重建 Service 不替换这些 borrowed 对象。
+本地入口只增加请求来源。`lua.app.list/install/run/uninstall` 继续调用已有 `h2_gizclaw_lua_apps_rpc_internal()` 和 `libs/lua/apps`；Lua VM、catalog、安装格式、Filesystem、Runtime、校时与产品交接均沿用现有实现。C 请求使用 canonical method 和 protobuf，工具 invoke 仍使用原来的外层 envelope；校验、工具发现和路由复用同一 pinned C SDK dispatcher。默认最多四个未释放调用，每次 64 KiB；请求和每个回复分别复制，超时、取消和 delivery completion 具有明确 ownership，具体以生产 header 的 API reference 为准。
 
-`device_submit()` 接收 canonical 数字 method 和 protobuf，工具 invoke 使用外层 envelope；请求在接纳时复制，每个 call 有独立回复存储。默认最多四个 call，每次 64 KiB，配置上限为 32 个和 1 MiB；满时返回 BUSY，拒绝不执行操作。调用方依次 wait、读取/复制结果、complete 并 release；consume 可提前释放 byte view，但仍保留 completion token。PAL result 与 wire error 分开保存，不把 canonical status 当成 PAL code。Wait 超时不释放句柄，也不证明硬件写入没有发生；cancel 成功表示 completion 选择前接纳取消，CLOSED 表示 completion 已开始或结束。每个 call 的 wait/consume/complete/release 由一个 caller 串行操作；保留 caller reference 时才可并发 cancel。Callback 不得重入阻塞 lifecycle 或 wait。
+调用方 wait 后先复制/解码结果，再 complete 并 release。Callback 和 completion 在同一 owner 返回，不能在其中阻塞等待或停止/销毁 Service；既有产品动作仍由产品 owner 接管。关闭时先 close Web adapter，再按原有方式 Service stop、poll drain 和 deinit。Stop/deinit 遇到未释放的 call、adapter borrow 或 failed join 会保留依赖供重试；取消不能撤销已经发生的写入。重连仍新建 Service，不引入独立 device 生命周期或新的 App host。
 
-交给 Lua 前，产品 owner 按顺序 close MHS/tools Web bridge、stop/deinit Service、stop device，确认 RPC、下载、stream、播放与 Speaker consumer 都已 join 后才创建 Lua Host。任何失败都保留相关 handle、borrowed 依赖和 lease；重试清理成功前不能复用 Runtime。Catalog installer bridge 可以在 Lua 期间继续工作，活动 App 的 install/uninstall 在 catalog 原子 reservation 内真实返回 BUSY。自然退出或 Stop 后先成功销毁 Host，再 release lease，随后 start 原 device 并新建 Service/bridge，或完整重建设备上下文。
-
-生产 API 与 ownership 合同以 [GizClaw API](/references/gizclaw) 的 `h2_gizclaw_device.h`、`h2_gizclaw_service.h` 为准；可执行组装示例是 `libs/gizclaw/web/tests/local_device/main.c`。该 fixture 在真实 Chrome 验证无连接本地控制、catalog 互斥、Lua KV 保留、两个 failed-join 重试和重新绑定，网络共享另由编译的 protocol test 验证。
+浏览器对象 API、类型包和现有 Lua 安装工具示例见 [Web GizClaw SDK](/apps/web#本地-gizclaw-sdk)。可执行 fixture `libs/gizclaw/web/tests/local/` 使用同一个 Service，直接通过工具 invoke 执行既有安装/list/uninstall，另有实际编译的 native protocol fixture 验证原 WebRTC 路径。
 
 ## 设备 provider
 
 SDK 拥有 request-scoped Peer RPC channel、`client.tool.v0.invoke`（135）的封装与内层回复包装、`client.tool.v0.list`（136）的工具发现，以及 `client.rpc.methods.list`（137）的数字协议列表。GizOS 向 SDK 注册有实际 handler 的 `ClientTool`，不维护另一份方法名称表。MHS read/write（133/134）始终安装；未知设备 ID 返回 `NOT_FOUND`。旧的独立设备方法不再是 RPC registry 的成员，不提供别名或版本探测。
 
-`h2_gizclaw_config_t` 借用 `tool_handlers` 到 Client/Service deinit，standalone 模式则到 device destroy。每项声明 numeric `h2_gizclaw_tool_t`、同步 invoke callback 与 user。Handler 接收该工具的内层 Protobuf，返回同一工具的内层结果；SDK 负责外层 tool/v0 envelope。空 callback、重复或未知 tool、超过 registry 容量的表使初始化失败。有任一设备能力（PAL、产品 vtable 或设备信息）的 Service 按配置安装内置工具，产品只能再注册 `DEVICE_FIND` 和 `SOCIAL_PING`，不能覆盖 Service 拥有的工具。没有任何设备能力的 headless Service 不安装内置工具，调用方与直接使用 standalone Client 一样可以注册任一有效 ClientTool，例如 E2E fixture actor 自己回答 `INFO_GET` 和 `IDENTIFIERS_GET`。表和 user 必须在整个借用期保持有效，运行中不增删。
+`h2_gizclaw_config_t` 借用 `tool_handlers` 到 Client/Service deinit。每项声明 numeric `h2_gizclaw_tool_t`、同步 invoke callback 与 user。Handler 接收该工具的内层 Protobuf，返回同一工具的内层结果；SDK 负责外层 tool/v0 envelope。空 callback、重复或未知 tool、超过 registry 容量的表使初始化失败。有任一设备能力（PAL、产品 vtable 或设备信息）的 Service 按配置安装内置工具，产品只能再注册 `DEVICE_FIND` 和 `SOCIAL_PING`，不能覆盖 Service 拥有的工具。没有任何设备能力的 headless Service 不安装内置工具，调用方与直接使用 standalone Client 一样可以注册任一有效 ClientTool，例如 E2E fixture actor 自己回答 `INFO_GET` 和 `IDENTIFIERS_GET`。表和 user 必须在整个借用期保持有效，运行中不增删。
 
 | 操作 | Library owner | 配置来源 |
 | --- | --- | --- |
@@ -137,9 +135,9 @@ Wi-Fi provisioning 明确调用 PAL `connect_and_save`；Library 不维护第二
 
 GizClaw 0.23.2 的 `client.mhs.v0.read/write`（133/134）以一个设备实例的 `id` 和 `hwd` 为请求入口；write 的 payload 是该 HWD 专属的 protobuf WriteRequest，read 和 write 的 payload 分别是对应的 ReadResponse 与 WriteResponse。字段是否存在由 protobuf `optional` 表达，0 和 false 是有效读数。SDK 发布的 `payload/mhs_v0.pb.h` 是字段形状的唯一来源。
 
-`h2_gizclaw_config_t.mhs_devices` 是借用到 deinit 的 `const h2_gizclaw_mhs_device_t[]`；standalone 模式的借用期延长到 device destroy。每项包含唯一实例 ID、官方 ClientHwd、必需的 read、可选的 write 与 user。实例 ID 最多 64 字节，匹配 `^[a-z][a-z0-9]*([.-][a-z0-9]+)*$`；初始化拒绝重复或非法 ID、未知 HWD、只读 HWD 的 write。每次 RPC 只操作一个实例；不存在的实例返回 NOT_FOUND，HWD 不匹配或无效 protobuf 字段返回 INVALID_ARGUMENT，不支持写入的设备返回 UNIMPLEMENTED。产品 callback 运行于 RPC owner，不应在其中停止或销毁 Service。写入不保证事务回滚，超时后需重新读取硬件。
+`h2_gizclaw_config_t.mhs_devices` 是借用到 deinit 的 `const h2_gizclaw_mhs_device_t[]`。每项包含唯一实例 ID、官方 ClientHwd、必需的 read、可选的 write 与 user。实例 ID 最多 64 字节，匹配 `^[a-z][a-z0-9]*([.-][a-z0-9]+)*$`；初始化拒绝重复或非法 ID、未知 HWD、只读 HWD 的 write。每次 RPC 只操作一个实例；不存在的实例返回 NOT_FOUND，HWD 不匹配或无效 protobuf 字段返回 INVALID_ARGUMENT，不支持写入的设备返回 UNIMPLEMENTED。产品 callback 运行于 RPC owner，不应在其中停止或销毁 Service。写入不保证事务回滚，超时后需重新读取硬件。
 
-Library 在 PAL 能力存在时自动安装 `speaker.main`（speaker HWD）和 `wifi.main`（只读 wifi HWD）；配置了 `modem` 时安装只读的 `modem.main`，配置了非零 `battery_component` 时安装只读的 `battery.main`，两者都需要 owning device 的 Runtime。modem 从 `h2_runtime_system_state_modem()` 快照投影 sim_present、registered、rat（小写，如 `lte`）、rssi_dbm 与 0–4 档 signal_level（有 LTE RSRP 时按 RSRP 分档，否则按 RSSI），RPC owner 不查询 modem、不等 AT；一个字段都还没上报时回 `UNAVAILABLE`。battery 从该组件的 `h2_runtime_component_state_battery()` 快照投影 percent、charging 与 voltage_mv；电池不在或读数失败时同样不报数值。speaker 的 `volume_percent` 与 `muted` 在同一次 HWD write 中应用，回复包含真正回读的 applied 快照；wifi 按 PAL 状态投影 connected、SSID、BSSID、RSSI 和 IP，其中 RSSI 只在已关联时出现，未连接时省略该字段而不是报 0 dBm。回调尚未发布状态（`H2_PAL_ERR_UNAVAILABLE`）或 client 正在关闭时回 `UNAVAILABLE`，调用方可以稍后重试。产品可以注册其它物理实例，例如 display/led。RuntimeProfile 的 `spec.mhs.v0.devices` **只**声明 `id` 和 `hwd`；字段功能和读写 schema 已在 protobuf 定义，Profile 不再复制 states、range、access 或枚举。设备表与 Profile 的实例清单分别管理，Profile 声明不证明物理设备在线。没有 Runtime、只注入 Audio PAL 时静音就是写入 0，库不保存静音前的音量；这时只要求 `muted=false` 而结果音量仍为 0 的写入返回 `FAILED_PRECONDITION`，调用方需同时给出非零 `volume_percent`，需要逻辑静音恢复的产品必须提供 Runtime。
+Library 在 PAL 能力存在时自动安装 `speaker.main`（speaker HWD）和 `wifi.main`（只读 wifi HWD）；配置了 `modem` 时安装只读的 `modem.main`，配置了非零 `battery_component` 时安装只读的 `battery.main`，两者都需要 Service 的 Runtime。modem 从 `h2_runtime_system_state_modem()` 快照投影 sim_present、registered、rat（小写，如 `lte`）、rssi_dbm 与 0–4 档 signal_level（有 LTE RSRP 时按 RSRP 分档，否则按 RSSI），RPC owner 不查询 modem、不等 AT；一个字段都还没上报时回 `UNAVAILABLE`。battery 从该组件的 `h2_runtime_component_state_battery()` 快照投影 percent、charging 与 voltage_mv；电池不在或读数失败时同样不报数值。speaker 的 `volume_percent` 与 `muted` 在同一次 HWD write 中应用，回复包含真正回读的 applied 快照；wifi 按 PAL 状态投影 connected、SSID、BSSID、RSSI 和 IP，其中 RSSI 只在已关联时出现，未连接时省略该字段而不是报 0 dBm。回调尚未发布状态（`H2_PAL_ERR_UNAVAILABLE`）或 client 正在关闭时回 `UNAVAILABLE`，调用方可以稍后重试。产品可以注册其它物理实例，例如 display/led。RuntimeProfile 的 `spec.mhs.v0.devices` **只**声明 `id` 和 `hwd`；字段功能和读写 schema 已在 protobuf 定义，Profile 不再复制 states、range、access 或枚举。设备表与 Profile 的实例清单分别管理，Profile 声明不证明物理设备在线。没有 Runtime、只注入 Audio PAL 时静音就是写入 0，库不保存静音前的音量；这时只要求 `muted=false` 而结果音量仍为 0 的写入返回 `FAILED_PRECONDITION`，调用方需同时给出非零 `volume_percent`，需要逻辑静音恢复的产品必须提供 Runtime。
 
 ### 播放与产品交接
 
@@ -205,18 +203,18 @@ Provider 在 `h2_gizclaw_client_poll()` 所在线程同步运行。上游 C SDK 
 
 ### Lua App
 
-产品创建共享 `h2_gizclaw_lua_app_catalog_t`，配置预装 index、安装目录和存储预算，再放入 `h2_gizclaw_config_t.lua_apps`。该 handle 由产品持有，必须覆盖 Service 或 standalone device 的完整生命周期，可供本地菜单和后续 Service 重连复用。LIST 在配置目录时启用，INSTALL 和 UNINSTALL 需要可写 Filesystem，RUN 还需要 `vtable.prepare_lua_app_run`；没有相应能力时按 SDK 的 unsupported 路径回答。
+产品创建共享 `h2_lua_apps_t`，配置预装 index、安装目录和存储预算，再放入 `h2_gizclaw_config_t.lua_apps`。该 handle 由产品持有，必须覆盖 Service 的完整生命周期，可供本地菜单和后续 Service 重连复用。LIST 在配置目录时启用，INSTALL 和 UNINSTALL 需要可写 Filesystem，RUN 还需要 `vtable.prepare_lua_app_run`；没有相应能力时按 SDK 的 unsupported 路径回答。
 
-C SDK 依赖使用 GizOS 声明并校验 integrity 的已发布 `gizclaw_c_sdk` 0.30.0 归档及 `third_party/gizclaw_c_sdk_lua_app_uninstall.patch`，补丁直接来自 [GizClaw 的卸载 contract 提交](https://github.com/GizClaw/gizclaw/commit/155a9d512ca4669f02391a89bbc30be3bd128f15)，包含生成消息、Tool 27 和 C provider 输入校验。
+C SDK 依赖使用 registry 的 `gizclaw_c_sdk` 0.30.0 及 `third_party/gizclaw_c_sdk_lua_app_uninstall.patch`，补丁直接来自 [GizClaw 的卸载 contract 提交](https://github.com/GizClaw/gizclaw/commit/155a9d512ca4669f02391a89bbc30be3bd128f15)，包含生成消息、Tool 27 和 C provider 输入校验。
 
-`H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL` 对齐 GizClaw ClientTool 27，解码有界 `app_id` 后使用共享 `h2_gizclaw_lua_app_catalog_uninstall`。空身份、路径、重复 ID 字段、嵌入 NUL 和非 ASCII 字节在设备入口拒绝；成功返回空 tool payload。安装中的目录 reservation 或待完成的启动 handoff 返回 BUSY。卸载与预装持久隐藏、清理重试和用户数据保留的语义见 [Lua 应用目录](./lua.md#lua-app-目录与流式安装)。
+`H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL` 对齐 GizClaw ClientTool 27，解码有界 `app_id` 后使用共享 `h2_lua_apps_uninstall`。空身份、路径、重复 ID 字段、嵌入 NUL 和非 ASCII 字节在设备入口拒绝；成功返回空 tool payload。安装中的目录 reservation 或待完成的启动 handoff 返回 BUSY。卸载与预装持久隐藏、清理重试和用户数据保留的语义见 [Lua 应用目录](./lua.md#lua-app-目录与流式安装)。
 
 
 `lua.app.list/install/run` 使用 SDK 的 tool/v0 编码；URL 安装仅支持 HTTP、HTTPS；内存中的压缩包通过独立 Binary stream 直推，data URL 不作为安装入口。独立 RPC 139 `client.lua.app.install` 由 SDK streaming provider 处理：小 metadata、同一请求中的 Binary 帧、请求 EOS、验证并发布后的最终响应。SDK 自动发送多帧，不需要调用方把一次安装拆成多次 RPC。C SDK 0.30.0 的直推限制为 512 KiB、单帧最多 65535 字节、总期限 120 秒；更大的 archive 使用 HTTP(S) URL。
 
 `$gizclaw/lua/install` worker 使用一个固定大小的帧槽，write 回调复制 borrowed bytes 后返回；槽占用时返回 WOULD_BLOCK，SDK 保留原帧并暂停 backend polling，直到 worker 消费完成。 背压及等待 finish 时，poll owner 只在未消费输入的路径上执行有界 1 ms backoff，使共享 CPU 上的低优先级安装 worker 能继续运行，避免成功 poll 的忙重试饿死 worker。metadata、write、finish 和 close 不保留 response callback，也不在网络 owner 上同步解压或写文件。Service stop 先取消会话，再 join worker；join 失败保留句柄供 stop 重试，不能提前销毁目录或 allocator。URL 和 Binary 入口共用 [Lua App 安装器](./lua.md#lua-app-目录与流式安装)，不在 GizClaw 实现第二套解压、校验或文件发布流程。
 
-RUN 在公共 catalog 中原子 acquire 路径与 lease，再由 prepare 回调在 ACK 前复制参数并预留产品 owner 的队列或状态；无法接纳时立即返回 BUSY。Prepare 成功时产品保存预留的一个 owned lease reference，required completion 失败时产品 release，成功时与实际 Lua Host 一起保留到 Host 真正销毁。Prepare 失败不转移 ownership，由库释放所有预留引用。库还持有自己的 reference 到 completion callback 返回，防止失败回调释放产品 reference 后路径提前回收。返回的 handoff 在响应 EOS 已交给本地 channel 且该 channel 关闭后只完成一次：成功时向产品 owner 发布运行请求，失败或取消时释放 reservation。产品 owner 通过目录快照将 entry、app_id 与 params 提交给 Lua Host，并负责停止旧界面及 Display 交接。回调不直接运行长时间 Lua 程序，accepted 也不等于程序已经执行完成。
+RUN 的 prepare 回调在 ACK 前复制参数并预留产品 owner 的队列或状态；无法接纳时立即返回 BUSY。返回的 handoff 在响应 EOS 已交给本地 channel 且该 channel 关闭后只完成一次：成功时向产品 owner 发布运行请求，失败或取消时释放 reservation。产品 owner 通过目录快照将 entry、app_id 与 params 提交给 Lua Host，并负责停止旧界面及 Display 交接。回调不直接运行长时间 Lua 程序，accepted 也不等于程序已经执行完成。
 
 
 ## Workspace 参数补丁
@@ -291,9 +289,9 @@ GizOS 的 generic RPC 仍把这两种状态归为 `H2_GIZCLAW_ERR_REMOTE`；
 Conversation 只把自身输入 Stream 的拒绝投影为错误事件，回复 Stream 的
 EOS 不产生该错误通知。因此 SDK 升级本身不会增加 quota 的产品提示。
 
-`@gizclaw_c_sdk//:gizclaw_core` 中的 RPC registry 与 protobuf payload 是 wire contract 的生成结果。RPC schema 更新时，先把 `MODULE.bazel` 中 `gizclaw_c_sdk` 的归档版本、完整性校验和对应上游补丁同步到同一个规范版本，再同步已有 `libs/gizclaw` stable wrapper；不能只修改手写 method number、复制旧 protobuf struct，或只更新产品文档。没有 GizOS-owned domain/lifecycle 语义的 RPC（例如 Firmware metadata）直接使用 generic RPC API 与 pinned generated schema，不为相同字段再增加一层 typed wrapper。GizOS 中公开的 RPC method 常量通过 compile-time assertion 与上游 registry 对齐，registry 再次漂移时必须使 build 失败。
+`@gizclaw_c_sdk//:gizclaw_core` 中的 RPC registry 与 protobuf payload 是 wire contract 的生成结果。RPC schema 更新时，先把 `MODULE.bazel` 中 C SDK 归档版本、完整性校验及对应上游 delta 同步到同一个规范版本，再同步已有 `libs/gizclaw` stable wrapper；不能只修改手写 method number、复制旧 protobuf struct，或只更新产品文档。没有 GizOS-owned domain/lifecycle 语义的 RPC（例如 Firmware metadata）直接使用 generic RPC API 与 pinned generated schema，不为相同字段再增加一层 typed wrapper。GizOS 中公开的 RPC method 常量通过 compile-time assertion 与上游 registry 对齐，registry 再次漂移时必须使 build 失败。
 
-SDK 归档自带 Bazel targets、生成代码和精确的 nanopb runtime，GizOS 不注入 BUILD overlay 或重新解析 nanopb。`MODULE.bazel` 使用 `use_repo_rule(http_archive)` 声明同一已发布 0.30.0 归档、registry `source.json` 的 SRI 和直接来自上游的卸载 delta。依赖模块中的 `single_version_override` 不会被下游继承，所以此处不用 root-only override；独立 Bzlmod consumer 不需要复制 SDK 补丁配置。需要直接使用 canonical C SDK 的 consumer 通过 `@gizos//tools/bazel:vendor_third_party_gizclaw_firmware`（core）或 `:vendor_third_party_gizclaw`（host）消费同一份依赖。JS codec/map 独立锁定到相同卸载 contract 的 upstream commit，类型包由锁定的官方 TypeScript compiler 生成。
+C SDK 自带 Bazel targets、生成代码和精确的 nanopb runtime，GizOS 不注入另一份 BUILD overlay 或 nanopb。`MODULE.bazel` 声明完整性锁定的 0.30.0 发布归档及直接来自上游的既有 Lua uninstall delta，使独立 Bzlmod consumer 继承与 GizOS 相同的依赖；dependency MODULE 中的 root-only override 不会传播。JS codec/map 锁定到对应上游 commit，类型声明由锁定的官方 TypeScript compiler 生成。具体版本与校验以 `MODULE.bazel` 为准。
 
 Wire message 使用 `name` / `*_name`。GizOS wrapper 将 Peer-addressable resource 继续公开为 name；将 occurrence、relationship、history 和 ledger 的 wire name 逐字节映射到既有 public `id` / `*_id`，不做 trim、派生、翻译或 storage-ID 替换。技术性 transport request ID、idempotency key 和 `gear_id` 不属于这层业务 identity 映射：
 

@@ -1,3 +1,4 @@
+#include "h2_gizclaw_local_internal.h"
 #include "h2_gizclaw_audio_pacer.h"
 #include "h2_gizclaw_device_internal.h"
 #include "h2_gizclaw_internal.h"
@@ -721,8 +722,7 @@ static void net_worker(void *ctx) {
                      h2_gizclaw_device_lua_stream_internal(service->device),
                      &service->client);
   if (rc == H2_PAL_OK) {
-    if (!service->owns_device)
-      h2_gizclaw_client_set_device_internal(service->client, service->device);
+    if (service->local) h2_gizclaw_client_set_local_internal(service->client, service);
     client_set_downlink_stream(service);
     rc = client_connect(service->client);
   }
@@ -965,47 +965,6 @@ static h2_pal_result_t service_track_write_opus(void *user, const uint8_t *opus,
                                              opus_len);
 }
 
-/* No workers, operations or external callbacks may remain. Each successful
- * release clears its handle, so a failed primitive destroy can be retried. */
-static h2_pal_result_t release_service(h2_gizclaw_service_t *service) {
-  int rc = h2_gizclaw_device_detach_internal(service);
-  if (rc != H2_PAL_OK) return rc;
-  if (service->owns_device) {
-    rc = h2_gizclaw_device_destroy_internal(&service->device);
-    if (rc != H2_PAL_OK) return rc;
-  }
-  if (service->dispatch_queue) {
-    h2_pal_queue_destroy(service->config.queue, service->dispatch_queue);
-    service->dispatch_queue = NULL;
-  }
-  if (service->request_queue) {
-    h2_pal_queue_destroy(service->config.queue, service->request_queue);
-    service->request_queue = NULL;
-  }
-  if (service->progress_cond) {
-    rc = h2_pal_cond_destroy(service->config.sync, service->progress_cond);
-    if (rc != H2_PAL_OK) return rc;
-    service->progress_cond = NULL;
-  }
-  if (service->audio_mutex) {
-    rc = h2_pal_mutex_destroy(service->config.sync, service->audio_mutex);
-    if (rc != H2_PAL_OK) return rc;
-    service->audio_mutex = NULL;
-  }
-  if (service->mutex) {
-    rc = h2_pal_mutex_destroy(service->config.sync, service->mutex);
-    if (rc != H2_PAL_OK) return rc;
-    service->mutex = NULL;
-  }
-  h2_atomic_ptr_destroy(&service->media_request);
-  h2_atomic_ptr_destroy(&service->speech_request);
-  h2_atomic_ptr_destroy(&service->pcm_track);
-  h2_atomic_uint_destroy(&service->media_callback_refs);
-  h2_atomic_int_destroy(&service->media_holder_tag);
-  h2_pal_mem_free(service->client_config.allocator, service);
-  return H2_PAL_OK;
-}
-
 h2_pal_result_t
 h2_gizclaw_service_init(const h2_gizclaw_service_config_t *config,
                         h2_gizclaw_service_t **out_service) {
@@ -1085,12 +1044,22 @@ h2_gizclaw_service_init(const h2_gizclaw_service_config_t *config,
   return H2_PAL_OK;
 
 fail:
-  service->stopped = true;
-  service->deinitializing = true;
-  {
-    int cleanup = release_service(service);
-    if (cleanup != H2_PAL_OK) { *out_service = service; return cleanup; }
-  }
+  if (service->audio_mutex != NULL)
+    (void)h2_pal_mutex_destroy(config->sync, service->audio_mutex);
+  if (service->dispatch_queue != NULL)
+    h2_pal_queue_destroy(config->queue, service->dispatch_queue);
+  if (service->request_queue != NULL)
+    h2_pal_queue_destroy(config->queue, service->request_queue);
+  if (service->progress_cond != NULL)
+    (void)h2_pal_cond_destroy(config->sync, service->progress_cond);
+  if (service->mutex != NULL)
+    (void)h2_pal_mutex_destroy(config->sync, service->mutex);
+  h2_atomic_ptr_destroy(&service->media_request);
+  h2_atomic_ptr_destroy(&service->speech_request);
+  h2_atomic_ptr_destroy(&service->pcm_track);
+  h2_atomic_uint_destroy(&service->media_callback_refs);
+  h2_atomic_int_destroy(&service->media_holder_tag);
+  h2_pal_mem_free(config->client_config->allocator, service);
   return rc;
 }
 
@@ -1137,7 +1106,7 @@ h2_pal_result_t h2_gizclaw_service_start(h2_gizclaw_service_t *service) {
     rc = h2_pal_task_start(service->config.task, &options, data_downlink_worker,
                            service, &service->data_downlink_task);
   }
-  if (rc == H2_PAL_OK && service->owns_device)
+  if (rc == H2_PAL_OK)
     rc = h2_gizclaw_device_start_internal(service->device);
   if (rc != H2_PAL_OK)
     (void)h2_gizclaw_service_stop(service);
@@ -1439,14 +1408,24 @@ h2_pal_result_t h2_gizclaw_service_stop(h2_gizclaw_service_t *service) {
     return H2_PAL_OK;
   }
   if (!service->started) {
-    h2_gizclaw_device_network_cancel_internal(service->device);
+    if (service->local) {
+      service->stopping = true;
+      unlock_service(service);
+      h2_gizclaw_device_cancel_internal(service->device);
+      h2_gizclaw_local_cancel_internal(service->local);
+      rc = h2_gizclaw_local_stop_internal(service->local);
+      if (rc == H2_PAL_OK) rc = h2_gizclaw_device_stop_internal(service->device);
+      if (rc != H2_PAL_OK) return rc;
+      rc = lock_service(service);
+      if (rc != H2_PAL_OK) return rc;
+    }
     service->stopped = true;
     unlock_service(service);
     return H2_PAL_OK;
   }
   service->stopping = true;
-  h2_gizclaw_device_network_cancel_internal(service->device);
-  if (service->owns_device) h2_gizclaw_device_cancel_internal(service->device);
+  h2_gizclaw_device_cancel_internal(service->device);
+  h2_gizclaw_local_cancel_internal(service->local);
   (void)h2_pal_cond_broadcast(service->config.sync, service->progress_cond);
   unlock_service(service);
   h2_gizclaw_debug_stop_internal(service);
@@ -1492,8 +1471,9 @@ h2_pal_result_t h2_gizclaw_service_stop(h2_gizclaw_service_t *service) {
       return rc;
     service->data_downlink_task = NULL;
   }
-  rc = service->owns_device ? h2_gizclaw_device_stop_internal(service->device)
-      : h2_gizclaw_device_stop_network_internal(service->device);
+  rc = h2_gizclaw_local_stop_internal(service->local);
+  if (rc != H2_PAL_OK) return rc;
+  rc = h2_gizclaw_device_stop_internal(service->device);
   if (rc != H2_PAL_OK)
     return rc;
   if (lock_service(service) != H2_PAL_OK)
@@ -1506,8 +1486,6 @@ h2_pal_result_t h2_gizclaw_service_stop(h2_gizclaw_service_t *service) {
 h2_pal_result_t h2_gizclaw_service_deinit(h2_gizclaw_service_t *service) {
   if (service == NULL)
     return H2_PAL_ERR_INVALID_ARG;
-  if (service->deinitializing)
-    return release_service(service);
   h2_pal_result_t rc = lock_service(service);
   if (rc != H2_PAL_OK)
     return rc;
@@ -1555,8 +1533,22 @@ h2_pal_result_t h2_gizclaw_service_deinit(h2_gizclaw_service_t *service) {
   h2_gizclaw_pcm_track_detach_internal(track);
   unlock_service(service);
   h2_gizclaw_conversation_downlink_destroy_internal(service);
-  service->deinitializing = true;
-  return release_service(service);
+  if (!h2_gizclaw_local_quiescent_internal(service->local)) return H2_PAL_ERR_BUSY;
+  rc = h2_gizclaw_local_destroy_internal(&service->local);
+  if (rc != H2_PAL_OK) return rc;
+  h2_gizclaw_device_destroy_internal(service->device);
+  h2_pal_queue_destroy(service->config.queue, service->dispatch_queue);
+  h2_pal_queue_destroy(service->config.queue, service->request_queue);
+  (void)h2_pal_cond_destroy(service->config.sync, service->progress_cond);
+  (void)h2_pal_mutex_destroy(service->config.sync, service->mutex);
+  (void)h2_pal_mutex_destroy(service->config.sync, service->audio_mutex);
+  h2_atomic_ptr_destroy(&service->media_request);
+  h2_atomic_ptr_destroy(&service->speech_request);
+  h2_atomic_ptr_destroy(&service->pcm_track);
+  h2_atomic_uint_destroy(&service->media_callback_refs);
+  h2_atomic_int_destroy(&service->media_holder_tag);
+  h2_pal_mem_free(service->config.client_config->allocator, service);
+  return H2_PAL_OK;
 }
 
 h2_pal_result_t

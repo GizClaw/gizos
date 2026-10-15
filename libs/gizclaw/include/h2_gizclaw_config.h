@@ -76,14 +76,14 @@ typedef struct h2_gizclaw_config {
     const h2_pal_crypto_api_t *crypto;
     const h2_pal_time_api_t *time;
     const h2_pal_log_api_t *log;
-    /** Optional built-in device RPC capabilities, owned by the device context.
-     * PAL APIs, vtable and strings are borrowed through service_deinit, or standalone device destroy.
+    /** Optional built-in device RPC capabilities, owned by the Service.
+     * PAL APIs, vtable and strings are borrowed through service_deinit.
      * Set any device field to enable the standard provider. Inject the same
      * Runtime Audio/Wi-Fi proxies used by local controls: volume is read from
      * Audio, and Wi-Fi user provisioning explicitly calls connect_and_save. */
     const h2_pal_audio_api_t *audio;
     const h2_pal_wifi_sta_api_t *wifi;
-    /** Modem behind the owning Runtime's modem snapshot. Setting it adds the
+    /** Modem behind the Service Runtime's modem snapshot. Setting it adds the
      * read-only modem.main HWD, answered from h2_runtime_system_state_modem;
      * the RPC owner never queries the modem itself. Needs the Runtime. */
     const h2_pal_modem_api_t *modem;
@@ -113,7 +113,7 @@ typedef struct h2_gizclaw_config {
     size_t audio_prebuffer_bytes;
     /** Default firmware channel when the caller omits one. */
     int32_t firmware_channel;
-    /** Immutable product tool registrations, borrowed until deinit, or standalone device destroy. The SDK
+    /** Immutable product tool registrations, borrowed until deinit. The SDK
      * advertises exactly the installed handlers. Unknown IDs, duplicates or
      * NULL callbacks are invalid. A Service with any device capability adds
      * its built-in tools and accepts only DEVICE_FIND and SOCIAL_PING from
@@ -122,7 +122,7 @@ typedef struct h2_gizclaw_config {
      * ClientTool. */
     const h2_gizclaw_tool_handler_t *tool_handlers;
     size_t tool_handler_count;
-    /** Immutable typed HWD instance table borrowed until deinit, or standalone device destroy. IDs must
+    /** Immutable typed HWD instance table borrowed until deinit. IDs must
      * be unique. The Service adds speaker.main, wifi.main, modem.main and
      * battery.main when the corresponding capabilities are configured. A separate RuntimeProfile
      * manifest controls which instances the Server exposes remotely. */
@@ -131,11 +131,10 @@ typedef struct h2_gizclaw_config {
     h2_gizclaw_cancel_fn cancel_requested;
     void *cancel_user;
     /** Optional shared Lua application directory/installer. Borrowed through
-     * service_deinit (standalone device destroy when shared); its caller-owned
-     * lifetime can span reconnects. LIST is
+     * service_deinit; its caller-owned lifetime can span reconnects. LIST is
      * enabled with this handle, INSTALL needs writable storage (HTTP(S) also
      * needs HTTP), RUN additionally needs vtable.prepare_lua_app_run. */
-    h2_gizclaw_lua_app_catalog_t *lua_apps;
+    h2_lua_apps_t *lua_apps;
 } h2_gizclaw_config_t;
 
 #ifdef __cplusplus

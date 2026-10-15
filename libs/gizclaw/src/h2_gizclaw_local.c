@@ -1,6 +1,8 @@
 #include "gzc.h"
 #include "h2_atomic.h"
-#include "h2_gizclaw_device_rpc_internal.h"
+#include "h2_gizclaw_local_internal.h"
+#include "h2_gizclaw_service_internal.h"
+#include "h2_gizclaw_device_internal.h"
 #include "h2_gizclaw_internal.h"
 #include "h2_gizclaw_mhs_internal.h"
 #include "payload/tool.pb.h"
@@ -15,32 +17,32 @@ int gzc_client_dispatch_rpc_internal(gzc_client_t *, int, gzc_str_t,
                                      gzc_rpc_provider_respond_fn, void *);
 
 typedef struct tool_binding {
-  struct h2_gizclaw_device_rpc *rpc;
+  struct h2_gizclaw_local *rpc;
   const h2_gizclaw_tool_handler_t *handler;
 } tool_binding_t;
-struct h2_gizclaw_device_call {
-  struct h2_gizclaw_device_rpc *rpc;
-  struct h2_gizclaw_device_call *next;
+struct h2_gizclaw_local_call {
+  struct h2_gizclaw_local *rpc;
+  struct h2_gizclaw_local_call *next;
   h2_gizclaw_rpc_method_t method;
   h2_gizclaw_tool_t inner_tool;
   uint8_t *request, *storage;
   size_t request_size;
   uint64_t deadline_ms;
-  h2_gizclaw_device_result_t view;
+  h2_gizclaw_local_result_t view;
   h2_gizclaw_rpc_response_complete_fn on_complete;
   void *complete_user;
   bool executing, terminal, responded, canceled, consumed;
-  bool caller_reference, completion_requested, completion_running, completed,
-      network;
+  bool caller_reference, completion_requested, completion_running, completed;
   h2_pal_result_t delivery_result;
 };
-struct h2_gizclaw_device_rpc {
-  h2_gizclaw_device_config_t platform;
-  const h2_gizclaw_config_t *config;
+struct h2_gizclaw_local {
+  h2_gizclaw_local_config_t platform;
+  h2_gizclaw_config_t config;
+  size_t borrowers;
   h2_pal_mutex_t *mutex;
   h2_pal_cond_t *changed;
   h2_pal_task_t *task;
-  h2_gizclaw_device_call_t *calls, *tail, *executing;
+  h2_gizclaw_local_call_t *calls, *tail, *executing;
   size_t count, capacity, limit;
   bool accepting, stopping, failure_ready, task_joined;
   h2_atomic_int_t failure;
@@ -50,36 +52,36 @@ struct h2_gizclaw_device_rpc {
   h2_gizclaw_tool_handler_t network_tools[H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL];
   tool_binding_t bindings[H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL];
 };
-static int rpc_lock(h2_gizclaw_device_rpc_t *rpc) {
+static int rpc_lock(h2_gizclaw_local_t *rpc) {
   return h2_pal_mutex_lock(rpc->platform.sync, rpc->mutex);
 }
-static bool owner_lock(h2_gizclaw_device_rpc_t *rpc) {
+static bool owner_lock(h2_gizclaw_local_t *rpc) {
   int rc = rpc_lock(rpc);
   if (rc != H2_PAL_OK)
     h2_atomic_store(&rpc->failure, rc);
   return rc == H2_PAL_OK;
 }
-static void rpc_unlock(h2_gizclaw_device_rpc_t *rpc) {
+static void rpc_unlock(h2_gizclaw_local_t *rpc) {
   (void)h2_pal_mutex_unlock(rpc->platform.sync, rpc->mutex);
 }
-static void rpc_wake(h2_gizclaw_device_rpc_t *rpc) {
+static void rpc_wake(h2_gizclaw_local_t *rpc) {
   (void)h2_pal_cond_broadcast(rpc->platform.sync, rpc->changed);
 }
 static void *sdk_alloc(void *user, size_t size) {
-  return h2_pal_mem_alloc(((h2_gizclaw_device_rpc_t *)user)->config->allocator,
+  return h2_pal_mem_alloc(((h2_gizclaw_local_t *)user)->config.allocator,
                           size);
 }
 static void *sdk_resize(void *user, void *ptr, size_t size) {
   return h2_pal_mem_realloc(
-      ((h2_gizclaw_device_rpc_t *)user)->config->allocator, ptr, size);
+      ((h2_gizclaw_local_t *)user)->config.allocator, ptr, size);
 }
 static void sdk_free(void *user, void *ptr) {
-  h2_pal_mem_free(((h2_gizclaw_device_rpc_t *)user)->config->allocator, ptr);
+  h2_pal_mem_free(((h2_gizclaw_local_t *)user)->config.allocator, ptr);
 }
 static int64_t sdk_now(void *user) {
   uint64_t value = 0;
   (void)h2_pal_time_get_monotonic_ms(
-      ((h2_gizclaw_device_rpc_t *)user)->config->time, &value);
+      ((h2_gizclaw_local_t *)user)->config.time, &value);
   return value > INT64_MAX ? INT64_MAX : (int64_t)value;
 }
 /* The registry-only SDK instance never connects or allocates media. These
@@ -155,7 +157,7 @@ static bool encode_bytes(pb_ostream_t *stream, const pb_field_t *field,
 }
 static int copy_response(void *user,
                          const gzc_rpc_provider_response_t *response) {
-  h2_gizclaw_device_call_t *call = user;
+  h2_gizclaw_local_call_t *call = user;
   if (call->responded || response == NULL ||
       (!response->payload && response->payload_len) ||
       (!response->error_message.data && response->error_message.len))
@@ -203,7 +205,7 @@ static int invoke_tool(void *user, gzc_str_t bytes,
                        gzc_rpc_provider_respond_fn respond,
                        void *respond_user) {
   tool_binding_t *binding = user;
-  h2_gizclaw_device_call_t *call = binding->rpc->executing;
+  h2_gizclaw_local_call_t *call = binding->rpc->executing;
   h2_gizclaw_rpc_provider_response_t response = {0};
   int rc = binding->handler->invoke(
       binding->handler->user, binding->handler->tool,
@@ -225,12 +227,12 @@ static int invoke_tool(void *user, gzc_str_t bytes,
 }
 static int invoke_mhs(void *user, int method, gzc_str_t bytes,
                       gzc_rpc_provider_respond_fn respond, void *respond_user) {
-  h2_gizclaw_device_rpc_t *rpc = user;
+  h2_gizclaw_local_t *rpc = user;
   uint8_t *storage = NULL;
   h2_gizclaw_rpc_provider_response_t response = {0};
   int rc = h2_gizclaw_mhs_request_internal(
-      rpc->config->mhs_devices, rpc->config->mhs_device_count,
-      method == H2_GIZCLAW_RPC_CLIENT_MHS_V0_WRITE, rpc->config->allocator,
+      rpc->config.mhs_devices, rpc->config.mhs_device_count,
+      method == H2_GIZCLAW_RPC_CLIENT_MHS_V0_WRITE, rpc->config.allocator,
       (h2_gizclaw_rpc_bytes_t){(const uint8_t *)bytes.data, bytes.len},
       &response, &storage);
   rpc->executing->view.result = rc;
@@ -243,16 +245,16 @@ static int invoke_mhs(void *user, int method, gzc_str_t bytes,
   sdk_free(rpc, storage);
   return sent;
 }
-static void destroy_call(h2_gizclaw_device_call_t *call) {
+static void destroy_call(h2_gizclaw_local_call_t *call) {
   sdk_free(call->rpc, call->request);
   sdk_free(call->rpc, call->storage);
   sdk_free(call->rpc, call);
 }
 /* Mutex held; no callback or PAL I/O is performed by this helper. */
-static void unlink_call(h2_gizclaw_device_rpc_t *rpc,
-                        h2_gizclaw_device_call_t *call) {
-  h2_gizclaw_device_call_t **position = &rpc->calls;
-  h2_gizclaw_device_call_t *previous = NULL;
+static void unlink_call(h2_gizclaw_local_t *rpc,
+                        h2_gizclaw_local_call_t *call) {
+  h2_gizclaw_local_call_t **position = &rpc->calls;
+  h2_gizclaw_local_call_t *previous = NULL;
   while (*position != call) {
     previous = *position;
     position = &(*position)->next;
@@ -262,13 +264,13 @@ static void unlink_call(h2_gizclaw_device_rpc_t *rpc,
     rpc->tail = previous;
   --rpc->count;
 }
-static void execute(h2_gizclaw_device_call_t *call) {
-  h2_gizclaw_device_rpc_t *rpc = call->rpc;
+static void execute(h2_gizclaw_local_call_t *call) {
+  h2_gizclaw_local_t *rpc = call->rpc;
   rpc->executing = call;
   gzc_str_t request = {(const char *)call->request, call->request_size};
   int rc = GZC_ERR_UNSUPPORTED;
   if (call->inner_tool) {
-    for (size_t i = 0; i < rpc->config->tool_handler_count; ++i)
+    for (size_t i = 0; i < rpc->config.tool_handler_count; ++i)
       if ((int)rpc->tools[i].tool == (int)call->inner_tool) {
         rc = invoke_tool(&rpc->bindings[i], request, copy_response, call);
         break;
@@ -289,14 +291,14 @@ static void execute(h2_gizclaw_device_call_t *call) {
   rpc->executing = NULL;
 }
 static void owner(void *user) {
-  h2_gizclaw_device_rpc_t *rpc = user;
+  h2_gizclaw_local_t *rpc = user;
   for (;;) {
     if (!owner_lock(rpc))
       return;
-    h2_gizclaw_device_call_t *work = NULL, *completion = NULL, *garbage = NULL;
+    h2_gizclaw_local_call_t *work = NULL, *completion = NULL, *garbage = NULL;
     uint64_t now = 0;
-    int clock = h2_pal_time_get_monotonic_ms(rpc->config->time, &now);
-    for (h2_gizclaw_device_call_t *call = rpc->calls; call; call = call->next) {
+    int clock = h2_pal_time_get_monotonic_ms(rpc->config.time, &now);
+    for (h2_gizclaw_local_call_t *call = rpc->calls; call; call = call->next) {
       if (call->terminal && !call->completion_running && !call->completed &&
           (call->completion_requested || call->canceled || rpc->stopping)) {
         completion = call;
@@ -371,10 +373,10 @@ static void owner(void *user) {
       return;
     work->terminal = true;
     work->executing = false;
-    if (h2_pal_time_get_monotonic_ms(rpc->config->time, &now) != H2_PAL_OK ||
-        now >= work->deadline_ms) {
+    int finished_clock = h2_pal_time_get_monotonic_ms(rpc->config.time, &now);
+    if (finished_clock != H2_PAL_OK || now >= work->deadline_ms) {
       work->canceled = true;
-      work->view.result = H2_PAL_ERR_TIMEOUT;
+      work->view.result = finished_clock != H2_PAL_OK ? finished_clock : H2_PAL_ERR_TIMEOUT;
     }
     if (work->canceled || rpc->stopping) {
       work->completion_requested = true;
@@ -385,18 +387,17 @@ static void owner(void *user) {
   }
 }
 
-h2_pal_result_t h2_gizclaw_device_rpc_create_internal(
-    const h2_gizclaw_device_config_t *platform,
-    const h2_gizclaw_config_t *config, h2_gizclaw_device_rpc_t **out) {
+h2_pal_result_t h2_gizclaw_local_create_internal(
+    const h2_gizclaw_local_config_t *platform,
+    const h2_gizclaw_config_t *config, h2_gizclaw_local_t **out) {
   *out = NULL;
-  h2_gizclaw_device_rpc_t *rpc =
+  h2_gizclaw_local_t *rpc =
       h2_pal_mem_alloc(config->allocator, sizeof(*rpc));
   if (!rpc)
     return H2_PAL_ERR_NO_MEMORY;
   memset(rpc, 0, sizeof(*rpc));
   rpc->platform = *platform;
-  rpc->platform.client_config = NULL;
-  rpc->config = config;
+  rpc->config = *config;
   rpc->capacity = platform->request_capacity ? platform->request_capacity : 4u;
   rpc->limit =
       platform->request_limit_bytes ? platform->request_limit_bytes : 65536u;
@@ -404,11 +405,11 @@ h2_pal_result_t h2_gizclaw_device_rpc_create_internal(
   if (h2_atomic_int_init(&rpc->failure, H2_PAL_OK) != H2_ATOMIC_OK)
     return H2_PAL_ERR_NO_MEMORY;
   rpc->failure_ready = true;
-  const h2_pal_mutex_config_t mutex = {.name = "gizclaw-device-rpc",
+  const h2_pal_mutex_config_t mutex = {.name = "gizclaw-local",
                                        .allocator = config->allocator};
   int rc = h2_pal_mutex_create(platform->sync, &mutex, &rpc->mutex);
   if (rc == H2_PAL_OK) {
-    const h2_pal_cond_config_t cond = {.name = "gizclaw-device-rpc",
+    const h2_pal_cond_config_t cond = {.name = "gizclaw-local",
                                        .allocator = config->allocator};
     rc = h2_pal_cond_create(platform->sync, &cond, &rpc->changed);
   }
@@ -442,7 +443,7 @@ h2_pal_result_t h2_gizclaw_device_rpc_create_internal(
   return rc;
 }
 h2_pal_result_t
-h2_gizclaw_device_rpc_start_internal(h2_gizclaw_device_rpc_t *rpc) {
+h2_gizclaw_local_start_internal(h2_gizclaw_local_t *rpc) {
   if (!rpc)
     return H2_PAL_OK;
   int rc = h2_atomic_load(&rpc->failure);
@@ -458,7 +459,7 @@ h2_gizclaw_device_rpc_start_internal(h2_gizclaw_device_rpc_t *rpc) {
   rpc->stopping = false;
   rpc->accepting = false;
   rpc_unlock(rpc);
-  const h2_pal_task_options_t task = {.name = "$gizclaw/device/rpc",
+  const h2_pal_task_options_t task = {.name = "$gizclaw/local",
                                       .min_stack_size = 65536u};
   rc = h2_pal_task_start(rpc->platform.task, &task, owner, rpc, &rpc->task);
   int locked = rpc_lock(rpc);
@@ -469,7 +470,7 @@ h2_gizclaw_device_rpc_start_internal(h2_gizclaw_device_rpc_t *rpc) {
   return rc;
 }
 h2_pal_result_t
-h2_gizclaw_device_rpc_stop_internal(h2_gizclaw_device_rpc_t *rpc) {
+h2_gizclaw_local_stop_internal(h2_gizclaw_local_t *rpc) {
   if (!rpc)
     return H2_PAL_OK;
   int rc = rpc_lock(rpc);
@@ -502,11 +503,11 @@ h2_gizclaw_device_rpc_stop_internal(h2_gizclaw_device_rpc_t *rpc) {
   return failure != H2_PAL_OK ? failure : busy ? H2_PAL_ERR_BUSY : H2_PAL_OK;
 }
 h2_pal_result_t
-h2_gizclaw_device_rpc_destroy_internal(h2_gizclaw_device_rpc_t **pointer) {
+h2_gizclaw_local_destroy_internal(h2_gizclaw_local_t **pointer) {
   if (!pointer || !*pointer)
     return H2_PAL_OK;
-  h2_gizclaw_device_rpc_t *rpc = *pointer;
-  if (rpc->task || rpc->count)
+  h2_gizclaw_local_t *rpc = *pointer;
+  if (rpc->task || rpc->count || rpc->borrowers)
     return H2_PAL_ERR_BUSY;
   if (rpc->changed) {
     int rc = h2_pal_cond_destroy(rpc->platform.sync, rpc->changed);
@@ -527,10 +528,10 @@ h2_gizclaw_device_rpc_destroy_internal(h2_gizclaw_device_rpc_t **pointer) {
   *pointer = NULL;
   return H2_PAL_OK;
 }
-static int submit(h2_gizclaw_device_rpc_t *rpc, int method,
-                  h2_gizclaw_tool_t inner, bool network,
+static int submit(h2_gizclaw_local_t *rpc, int method,
+                  h2_gizclaw_tool_t inner,
                   h2_gizclaw_rpc_bytes_t request, uint32_t timeout_ms,
-                  h2_gizclaw_device_call_t **out) {
+                  h2_gizclaw_local_call_t **out) {
   if (!out)
     return H2_PAL_ERR_INVALID_ARG;
   *out = NULL;
@@ -543,7 +544,7 @@ static int submit(h2_gizclaw_device_rpc_t *rpc, int method,
   if (failure != H2_PAL_OK)
     return failure;
   uint64_t now = 0;
-  int rc = h2_pal_time_get_monotonic_ms(rpc->config->time, &now);
+  int rc = h2_pal_time_get_monotonic_ms(rpc->config.time, &now);
   if (rc != H2_PAL_OK)
     return rc;
   rc = rpc_lock(rpc);
@@ -557,14 +558,13 @@ static int submit(h2_gizclaw_device_rpc_t *rpc, int method,
     rpc_unlock(rpc);
     return H2_PAL_ERR_BUSY;
   }
-  h2_gizclaw_device_call_t *call = sdk_alloc(rpc, sizeof(*call));
+  h2_gizclaw_local_call_t *call = sdk_alloc(rpc, sizeof(*call));
   if (!call) {
     rpc_unlock(rpc);
     return H2_PAL_ERR_NO_MEMORY;
   }
   memset(call, 0, sizeof(*call));
   call->rpc = rpc;
-  call->network = network;
   if (request.len) {
     call->request = sdk_alloc(rpc, request.len);
     if (!call->request) {
@@ -591,25 +591,25 @@ static int submit(h2_gizclaw_device_rpc_t *rpc, int method,
   rpc_unlock(rpc);
   return H2_PAL_OK;
 }
-h2_pal_result_t h2_gizclaw_device_submit(h2_gizclaw_device_t *device,
+h2_pal_result_t h2_gizclaw_local_submit(h2_gizclaw_service_t *device,
                                          h2_gizclaw_rpc_method_t method,
                                          h2_gizclaw_rpc_bytes_t request,
                                          uint32_t timeout_ms,
-                                         h2_gizclaw_device_call_t **out) {
-  return submit(h2_gizclaw_device_rpc_internal(device), method, 0, false,
+                                         h2_gizclaw_local_call_t **out) {
+  return submit(h2_gizclaw_local_internal(device), method, 0,
                 request, timeout_ms, out);
 }
-h2_pal_result_t h2_gizclaw_device_call_wait(h2_gizclaw_device_call_t *call,
+h2_pal_result_t h2_gizclaw_local_call_wait(h2_gizclaw_local_call_t *call,
                                             uint32_t timeout_ms,
-                                            h2_gizclaw_device_result_t *out) {
+                                            h2_gizclaw_local_result_t *out) {
   if (!out)
     return H2_PAL_ERR_INVALID_ARG;
   memset(out, 0, sizeof(*out));
   if (!call)
     return H2_PAL_ERR_INVALID_ARG;
-  h2_gizclaw_device_rpc_t *rpc = call->rpc;
+  h2_gizclaw_local_t *rpc = call->rpc;
   uint64_t began = 0;
-  int rc = h2_pal_time_get_monotonic_ms(rpc->config->time, &began);
+  int rc = h2_pal_time_get_monotonic_ms(rpc->config.time, &began);
   if (rc != H2_PAL_OK)
     return rc;
   rc = rpc_lock(rpc);
@@ -624,7 +624,7 @@ h2_pal_result_t h2_gizclaw_device_call_wait(h2_gizclaw_device_call_t *call,
     if (rc != H2_PAL_OK)
       break;
     uint64_t now = 0;
-    rc = h2_pal_time_get_monotonic_ms(rpc->config->time, &now);
+    rc = h2_pal_time_get_monotonic_ms(rpc->config.time, &now);
     if (rc != H2_PAL_OK)
       break;
     uint64_t elapsed = now >= began ? now - began : 0;
@@ -645,7 +645,7 @@ h2_pal_result_t h2_gizclaw_device_call_wait(h2_gizclaw_device_call_t *call,
   rpc_unlock(rpc);
   return rc;
 }
-h2_pal_result_t h2_gizclaw_device_call_cancel(h2_gizclaw_device_call_t *call) {
+h2_pal_result_t h2_gizclaw_local_call_cancel(h2_gizclaw_local_call_t *call) {
   if (!call)
     return H2_PAL_ERR_INVALID_ARG;
   int rc = rpc_lock(call->rpc);
@@ -660,7 +660,7 @@ h2_pal_result_t h2_gizclaw_device_call_cancel(h2_gizclaw_device_call_t *call) {
   rpc_unlock(call->rpc);
   return rc;
 }
-h2_pal_result_t h2_gizclaw_device_call_consume(h2_gizclaw_device_call_t *call) {
+h2_pal_result_t h2_gizclaw_local_call_consume(h2_gizclaw_local_call_t *call) {
   if (!call)
     return H2_PAL_ERR_INVALID_ARG;
   int rc = rpc_lock(call->rpc);
@@ -679,7 +679,7 @@ h2_pal_result_t h2_gizclaw_device_call_consume(h2_gizclaw_device_call_t *call) {
   return rc;
 }
 h2_pal_result_t
-h2_gizclaw_device_call_complete(h2_gizclaw_device_call_t *call,
+h2_gizclaw_local_call_complete(h2_gizclaw_local_call_t *call,
                                 h2_pal_result_t delivery_result) {
   if (!call)
     return H2_PAL_ERR_INVALID_ARG;
@@ -699,13 +699,13 @@ h2_gizclaw_device_call_complete(h2_gizclaw_device_call_t *call,
   return rc;
 }
 h2_pal_result_t
-h2_gizclaw_device_call_release(h2_gizclaw_device_call_t **pointer) {
+h2_gizclaw_local_call_release(h2_gizclaw_local_call_t **pointer) {
   if (!pointer)
     return H2_PAL_ERR_INVALID_ARG;
-  h2_gizclaw_device_call_t *call = *pointer;
+  h2_gizclaw_local_call_t *call = *pointer;
   if (!call)
     return H2_PAL_OK;
-  h2_gizclaw_device_rpc_t *rpc = call->rpc;
+  h2_gizclaw_local_t *rpc = call->rpc;
   int rc = rpc_lock(rpc);
   if (rc != H2_PAL_OK)
     return rc;
@@ -724,24 +724,22 @@ h2_gizclaw_device_call_release(h2_gizclaw_device_call_t **pointer) {
   return H2_PAL_OK;
 }
 static void network_complete(void *user, int result) {
-  h2_gizclaw_device_call_t *call = user;
-  (void)h2_gizclaw_device_call_complete(call, result);
-  (void)h2_gizclaw_device_call_release(&call);
+  h2_gizclaw_local_call_t *call = user;
+  (void)h2_gizclaw_local_call_complete(call, result);
+  (void)h2_gizclaw_local_call_release(&call);
 }
-static int network_call(h2_gizclaw_device_t *device, int method,
+static int network_call(h2_gizclaw_service_t *device, int method,
                         h2_gizclaw_tool_t inner, h2_gizclaw_rpc_bytes_t request,
                         h2_gizclaw_rpc_provider_response_t *out) {
-  h2_gizclaw_device_rpc_t *rpc = h2_gizclaw_device_rpc_internal(device);
-  h2_gizclaw_device_call_t *call = NULL;
-  int rc = submit(rpc, method, inner, true, request, 110000u, &call);
-  h2_gizclaw_device_result_t result = {0};
+  h2_gizclaw_local_t *rpc = h2_gizclaw_local_internal(device);
+  h2_gizclaw_local_call_t *call = NULL;
+  int rc = submit(rpc, method, inner, request, 110000u, &call);
+  h2_gizclaw_local_result_t result = {0};
   if (rc == H2_PAL_OK) {
-    if (!h2_gizclaw_device_network_admitting_internal(device))
-      (void)h2_gizclaw_device_call_cancel(call);
-    rc = h2_gizclaw_device_call_wait(call, 110000u, &result);
+    rc = h2_gizclaw_local_call_wait(call, 110000u, &result);
   }
   if (rc != H2_PAL_OK) {
-    (void)h2_gizclaw_device_call_release(&call);
+    (void)h2_gizclaw_local_call_release(&call);
     return rc;
   }
   *out = (h2_gizclaw_rpc_provider_response_t){.payload = result.payload,
@@ -753,59 +751,110 @@ static int network_call(h2_gizclaw_device_t *device, int method,
                                               .complete_user = call};
   return H2_PAL_OK;
 }
-int h2_gizclaw_device_network_tool_internal(
+int h2_gizclaw_local_network_tool_internal(
     void *user, h2_gizclaw_tool_t tool, h2_gizclaw_rpc_bytes_t request,
     h2_gizclaw_rpc_provider_response_t *out) {
   return network_call(user, H2_GIZCLAW_RPC_CLIENT_TOOL_V0_INVOKE, tool, request,
                       out);
 }
-int h2_gizclaw_device_network_mhs_internal(
-    h2_gizclaw_device_t *device, h2_gizclaw_rpc_method_t method,
+int h2_gizclaw_local_network_mhs_internal(
+    h2_gizclaw_service_t *device, h2_gizclaw_rpc_method_t method,
     h2_gizclaw_rpc_bytes_t request, h2_gizclaw_rpc_provider_response_t *out) {
   return network_call(device, method, 0, request, out);
 }
 
-void h2_gizclaw_device_rpc_cancel_network_internal(
-    h2_gizclaw_device_rpc_t *rpc) {
-  if (!rpc || rpc_lock(rpc) != H2_PAL_OK)
-    return;
-  for (h2_gizclaw_device_call_t *call = rpc->calls; call; call = call->next)
-    if (call->network && !call->completion_running && !call->completed)
-      call->canceled = true;
-  rpc_wake(rpc);
-  rpc_unlock(rpc);
-}
 const h2_gizclaw_tool_handler_t *
-h2_gizclaw_device_rpc_network_tools_internal(h2_gizclaw_device_rpc_t *rpc,
-                                             h2_gizclaw_device_t *device) {
-  for (size_t i = 0; i < rpc->config->tool_handler_count; ++i)
+h2_gizclaw_local_network_tools_internal(h2_gizclaw_local_t *rpc,
+                                             h2_gizclaw_service_t *device) {
+  for (size_t i = 0; i < rpc->config.tool_handler_count; ++i)
     rpc->network_tools[i] = (h2_gizclaw_tool_handler_t){
-        rpc->config->tool_handlers[i].tool,
-        h2_gizclaw_device_network_tool_internal, device};
-  return rpc->config->tool_handler_count ? rpc->network_tools : NULL;
+        rpc->config.tool_handlers[i].tool,
+        h2_gizclaw_local_network_tool_internal, device};
+  return rpc->config.tool_handler_count ? rpc->network_tools : NULL;
 }
-void h2_gizclaw_device_network_response_copied_internal(
+void h2_gizclaw_local_network_response_copied_internal(
     h2_gizclaw_rpc_provider_response_t *response) {
   if (response->on_complete == network_complete)
-    (void)h2_gizclaw_device_call_consume(response->complete_user);
+    (void)h2_gizclaw_local_call_consume(response->complete_user);
 }
 
-bool h2_gizclaw_device_rpc_quiescent_internal(h2_gizclaw_device_rpc_t *rpc) {
+bool h2_gizclaw_local_quiescent_internal(h2_gizclaw_local_t *rpc) {
   if (!rpc)
     return true;
   if (!rpc->mutex)
-    return !rpc->task && !rpc->count;
+    return !rpc->task && !rpc->count && !rpc->borrowers;
   if (rpc_lock(rpc) != H2_PAL_OK)
     return false;
-  bool quiet = !rpc->task && !rpc->count;
+  bool quiet = !rpc->task && !rpc->count && !rpc->borrowers;
   rpc_unlock(rpc);
   return quiet;
 }
 
-bool h2_gizclaw_device_network_response_needs_drain_internal(
+bool h2_gizclaw_local_network_response_needs_drain_internal(
     const h2_gizclaw_rpc_provider_response_t *response) {
   if (response->on_complete != network_complete)
     return response->on_complete != NULL;
-  const h2_gizclaw_device_call_t *call = response->complete_user;
+  const h2_gizclaw_local_call_t *call = response->complete_user;
   return !response->has_error && call->on_complete != NULL;
+}
+
+h2_gizclaw_local_t *h2_gizclaw_local_internal(h2_gizclaw_service_t *service) {
+  return service ? service->local : NULL;
+}
+h2_pal_result_t h2_gizclaw_local_start(h2_gizclaw_service_t *service) {
+  if (!service) return H2_PAL_ERR_INVALID_ARG;
+  if (service->started || service->stopping || service->stopped || service->local)
+    return H2_PAL_ERR_INVALID_STATE;
+  const h2_gizclaw_local_config_t platform = {.task = service->config.task,
+      .sync = service->config.sync, .request_capacity = 4u,
+      .request_limit_bytes = 65536u};
+  int rc = h2_gizclaw_local_create_internal(&platform, &service->client_config,
+                                           &service->local);
+  if (rc != H2_PAL_OK) {
+    int cleanup = h2_gizclaw_local_destroy_internal(&service->local);
+    return cleanup == H2_PAL_OK ? rc : cleanup;
+  }
+  rc = h2_gizclaw_device_start_internal(service->device);
+  if (rc == H2_PAL_OK) rc = h2_gizclaw_local_start_internal(service->local);
+  if (rc != H2_PAL_OK) {
+    h2_gizclaw_device_cancel_internal(service->device);
+    (void)h2_gizclaw_local_stop_internal(service->local);
+    (void)h2_gizclaw_device_stop_internal(service->device);
+    return rc;
+  }
+  service->client_config.tool_handlers =
+      h2_gizclaw_local_network_tools_internal(service->local, service);
+  return H2_PAL_OK;
+}
+void h2_gizclaw_local_cancel_internal(h2_gizclaw_local_t *rpc) {
+  if (!rpc || !rpc->mutex || rpc_lock(rpc) != H2_PAL_OK) return;
+  rpc->accepting = false;
+  rpc->stopping = true;
+  for (h2_gizclaw_local_call_t *call = rpc->calls; call; call = call->next)
+    if (!call->completion_running && !call->completed) call->canceled = true;
+  rpc_wake(rpc);
+  rpc_unlock(rpc);
+}
+h2_pal_result_t h2_gizclaw_local_retain(h2_gizclaw_service_t *service) {
+  h2_gizclaw_local_t *rpc = h2_gizclaw_local_internal(service);
+  if (!rpc) return H2_PAL_ERR_INVALID_ARG;
+  int rc = rpc_lock(rpc);
+  if (rc != H2_PAL_OK) return rc;
+  if (!rpc->accepting) rc = H2_PAL_ERR_CLOSED;
+  else if (rpc->borrowers == SIZE_MAX) rc = H2_PAL_ERR_NO_SPACE;
+  else ++rpc->borrowers;
+  rpc_unlock(rpc);
+  return rc;
+}
+h2_pal_result_t h2_gizclaw_local_release(h2_gizclaw_service_t **pointer) {
+  if (!pointer) return H2_PAL_ERR_INVALID_ARG;
+  if (!*pointer) return H2_PAL_OK;
+  h2_gizclaw_local_t *rpc = h2_gizclaw_local_internal(*pointer);
+  if (!rpc) return H2_PAL_ERR_INVALID_ARG;
+  int rc = rpc_lock(rpc);
+  if (rc != H2_PAL_OK) return rc;
+  if (!rpc->borrowers) rc = H2_PAL_ERR_INVALID_STATE;
+  else { --rpc->borrowers; *pointer = NULL; }
+  rpc_unlock(rpc);
+  return rc;
 }

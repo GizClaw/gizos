@@ -14,7 +14,7 @@ int h2_gizclaw_lua_stream_create_internal(const h2_gizclaw_config_t *config,
 int h2_gizclaw_lua_stream_start_internal(h2_gizclaw_lua_stream_t *stream);
 void h2_gizclaw_lua_stream_cancel_internal(h2_gizclaw_lua_stream_t *stream);
 int h2_gizclaw_lua_stream_stop_internal(h2_gizclaw_lua_stream_t *stream);
-h2_pal_result_t h2_gizclaw_lua_stream_destroy_internal(h2_gizclaw_lua_stream_t *stream);
+void h2_gizclaw_lua_stream_destroy_internal(h2_gizclaw_lua_stream_t *stream);
 const gzc_rpc_stream_provider_t *
 h2_gizclaw_lua_stream_provider_internal(h2_gizclaw_lua_stream_t *stream);
 #endif

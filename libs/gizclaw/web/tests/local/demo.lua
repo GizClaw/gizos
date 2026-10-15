@@ -1,0 +1,1 @@
+return 'existing installer fixture'

@@ -75,8 +75,8 @@ EMSCRIPTEN_KEEPALIVE int h2_web_gizclaw_request(uint32_t id, int32_t method,
              : rc;
 }
 static int finish(h2_web_gizclaw_t *bridge, web_call_t *call,
-                  const h2_gizclaw_device_result_t *view) {
-  h2_gizclaw_device_result_t result = *view;
+                  const h2_gizclaw_local_result_t *view) {
+  h2_gizclaw_local_result_t result = *view;
   gizclaw_rpc_v1_ClientToolV0ListResponse tools = {0};
   uint32_t ids[sizeof(tools.tools) / sizeof(tools.tools[0])];
   int native_count = -1;
@@ -119,25 +119,25 @@ static void web_worker(void *user) {
         return;
       continue;
     }
-    h2_gizclaw_device_call_t *call = NULL;
-    h2_gizclaw_device_result_t view = {0};
+    h2_gizclaw_local_call_t *call = NULL;
+    h2_gizclaw_local_result_t view = {0};
     if (h2_atomic_bool_load(&bridge->stopping, H2_ATOMIC_ACQUIRE) ||
         h2_atomic_bool_load(&request->canceled, H2_ATOMIC_ACQUIRE))
       view.result = H2_PAL_ERR_CLOSED;
     else
-      view.result = h2_gizclaw_device_submit(
-          bridge->config.device, request->method,
+      view.result = h2_gizclaw_local_submit(
+          bridge->config.service, request->method,
           (h2_gizclaw_rpc_bytes_t){request->input, request->size},
           request->timeout_ms, &call);
     if (view.result == H2_PAL_OK) {
       for (;;) {
         if (h2_atomic_bool_load(&bridge->stopping, H2_ATOMIC_ACQUIRE) ||
             h2_atomic_bool_load(&request->canceled, H2_ATOMIC_ACQUIRE)) {
-          (void)h2_gizclaw_device_call_cancel(call);
+          (void)h2_gizclaw_local_call_cancel(call);
           view.result = H2_PAL_ERR_CLOSED;
           break;
         }
-        int rc = h2_gizclaw_device_call_wait(call, 10u, &view);
+        int rc = h2_gizclaw_local_call_wait(call, 10u, &view);
         if (rc == H2_PAL_ERR_TIMEOUT)
           continue;
         if (rc != H2_PAL_OK)
@@ -147,8 +147,8 @@ static void web_worker(void *user) {
     }
     int delivery = finish(bridge, request, &view);
     if (call) {
-      (void)h2_gizclaw_device_call_complete(call, delivery);
-      (void)h2_gizclaw_device_call_release(&call);
+      (void)h2_gizclaw_local_call_complete(call, delivery);
+      (void)h2_gizclaw_local_call_release(&call);
     }
     h2_atomic_bool_store(&request->claimed, false, H2_ATOMIC_RELEASE);
   }
@@ -158,7 +158,7 @@ h2_pal_result_t h2_web_gizclaw_open(const h2_web_gizclaw_config_t *config,
   if (!out)
     return H2_PAL_ERR_INVALID_ARG;
   *out = NULL;
-  if (!config || !config->device || !config->allocator ||
+  if (!config || !config->service || !config->allocator ||
       !config->allocator->vtable || !config->allocator->vtable->alloc ||
       !config->allocator->vtable->free || !config->task ||
       !config->task->vtable || !config->task->vtable->start ||
@@ -181,7 +181,7 @@ h2_pal_result_t h2_web_gizclaw_open(const h2_web_gizclaw_config_t *config,
     bridge->config.request_limit_bytes = 65536u;
   if (!bridge->config.timeout_ms)
     bridge->config.timeout_ms = 30000u;
-  int rc = h2_gizclaw_device_retain(config->device);
+  int rc = h2_gizclaw_local_retain(config->service);
   if (rc != H2_PAL_OK)
     goto fail;
   bridge->retained = true;
@@ -269,7 +269,7 @@ h2_pal_result_t h2_web_gizclaw_close(h2_web_gizclaw_t **pointer) {
     bridge->commands = NULL;
   }
   if (bridge->retained) {
-    int rc = h2_gizclaw_device_release(&bridge->config.device);
+    int rc = h2_gizclaw_local_release(&bridge->config.service);
     if (rc != H2_PAL_OK)
       return rc;
     bridge->retained = false;

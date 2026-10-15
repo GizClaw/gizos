@@ -132,7 +132,7 @@ Audio PAL 的麦克风通过 `getUserMedia` 与 `AudioWorklet` 采集，显式�
 
 - 写入策略：`write()` 只改内存；`sync()`、写模式文件 `close()`、`rename()`、`remove()`、`mkdir()`、`clear()` 是提交屏障，返回前 IndexedDB 已提交此前全部修改。原子替换（写临时文件、sync、close、rename）返回 OK 后即可在刷新后读到。不依赖 `pagehide` 保存。
 - 错误：配额 `NO_SPACE`，存储被浏览器阻止（部分隐私模式）`UNAVAILABLE`，缺少 IndexedDB 或 Web Locks `UNSUPPORTED`，其它 `IO`，提交超过 30 秒 `TIMEOUT`。失败的修改仍在内存中，下一次屏障重试；`h2_web_fs_get_status()` 给出最后一次失败的浏览器错误名与消息，打开失败同时写入 Console 与 `Module.h2WebFsLastError`。
-- 刷新与多标签页：打开时持有 Web Lock `h2-web-fs:<root>` 直到 `h2_web_fs_close()` 或页面卸载。刷新会等待旧文档释放锁；`lock_timeout_ms` 默认 3000 ms，包括浏览器服务和 grant callback 调度，grant callback 自身也核对 elapsed budget。过期返回 `BUSY` 并报告 budget、elapsed 和 holder unknown；BUSY 本身不能证明另一个 tab 持锁。不同页面不会同时写同一快照。Web Locks 需要安全上下文（HTTPS 或 localhost），否则 `UNSUPPORTED`。
+- 刷新与多标签页：打开时持有 Web Lock `h2-web-fs:<root>` 直到 `h2_web_fs_close()` 或页面卸载。刷新会等待旧文档释放锁；另一个标签页在 `lock_timeout_ms`（默认 3 秒）后得到 `BUSY`，不会同时写同一份快照。Web Locks 需要安全上下文（HTTPS 或 localhost），否则 `UNSUPPORTED`。
 - 清理：`h2_web_fs_clear()` 或对根目录 `h2_pal_fs_clear()` 删除全部内容并提交；用户也可在浏览器站点设置中清除。
 - 限制：浏览器以 relaxed durability 提交 IndexedDB，已提交数据可跨刷新、关标签页和重启浏览器保留，但操作系统崩溃可能丢失最后一次提交；best-effort 站点存储可能在存储压力下被浏览器回收。Pref 仍使用 localStorage，跨标签页共享且无锁，后写者覆盖。
 
@@ -187,7 +187,7 @@ const h2_web_fs_config_t fs_config = {
 };
 h2_web_fs_t *fs = NULL;
 h2_pal_result_t rc = h2_web_fs_open(platform, &fs_config, &fs);
-// rc: BUSY (lock grant budget expired; holder unknown), UNSUPPORTED/UNAVAILABLE (storage), NO_SPACE, IO.
+// rc: BUSY (other tab), UNSUPPORTED/UNAVAILABLE (storage), NO_SPACE, IO.
 
 h2_runtime_config_t config = {0};
 config.fs = h2_web_fs_api(fs);
@@ -212,7 +212,7 @@ config.webrtc = h2_web_platform_webrtc_api(platform);
 - `buttons`：有序的 Button 名到键盘键（DOM `KeyboardEvent.key`，可为空）的映射，最多 8 个，第 i 个是 periph id i + 1；
 - `skins`：外观名到 HTML 文件（可带 `<style>`）的映射，一块板可以有多套外观，`default_skin` 指定默认那套。
 
-页面 shell 把组件创建进外观的插槽：`data-h2-slot="display"` 放 Canvas（`#canvas`），`data-h2-slot="controls"` 放 Start/Stop，`data-h2-slot="status"` 放状态行；缺少的插槽使用普通容器。入口按需要调用 `h2WebBindButton(index, key, name)` 绑定键盘键和 `data-h2-button="<name>"` 元素。JavaScript 合并键盘和指针来源，只有按下状态变化才进入 128 项 FIFO；失焦或隐藏释放所有来源。入口 Worker 用 `h2WebTakeButtonEdge()` 取边沿，再调用 `h2_runtime_button_push_edge()`；0 表示空、-1 表示溢出，正值编码为 `(index + 1) * 2 + pressed`。`h2WebUnbindButtons()` 先关闭 DOM ingress 并生成最后 release，保留已接受的 FIFO 边沿供 entry drain。Lua entry 对 Runtime 暂时拒收的边沿保序重试，成功前不消费后一个边沿；退出时在有限预算内 drain，失败则报告并保留依赖。Stop 只设置 `Module.h2WebStopRequested`，由入口决定停止策略。页面根据 `H2_WEB_APP` 控制台标记更新状态，不拥有 Runtime/provider。
+页面 shell 把组件创建进外观的插槽：`data-h2-slot="display"` 放 Canvas（`#canvas`），`data-h2-slot="controls"` 放 Start/Stop，`data-h2-slot="status"` 放状态行；缺少的插槽使用普通容器。入口按需要调用 `h2WebBindButton(index, key, name)` 绑定键盘键和 `data-h2-button="<name>"` 元素。JavaScript 合并键盘和指针来源，只有按下状态变化才进入 128 项 FIFO；失焦或隐藏释放所有来源。入口 Worker 用 `h2WebTakeButtonEdge()` 取边沿，再调用 `h2_runtime_button_push_edge()`；0 表示空、-1 表示溢出，正值编码为 `(index + 1) * 2 + pressed`。`h2WebUnbindButtons()` 释放监听器并清空 FIFO。Stop 只设置 `Module.h2WebStopRequested`，由入口决定停止策略。页面根据 `H2_WEB_APP` 控制台标记更新状态，不拥有 Runtime/provider。
 
 组装可运行 target 时选 board 和其中一套外观：`h2_web_app(board = "...", skin = "...")`，`skin` 省略时用该板的 `default_skin`，板上没有 `default_skin`（包括没有外观）时用朴素的 `default_layout.html`；显式给出的 `skin` 必须是板上的外观，否则 analysis 阶段失败并列出该板的外观。`h2_web_app()` 生成 `h2_web_board_config.h`，包含 `H2_WEB_BOARD_WIDTH/HEIGHT`、Button 数量以及名字/键表；入口自行选择是否使用这些常量以及如何映射到 Runtime。不指定 board 时用 `//tools/bazel/web:default_board`（240×240、无 Button、朴素布局 `default_layout.html`），所以现有 example 页面不变。board 与外观放在该 board 自己的目录旁 `boards/<board>/web/`（下游产品 board 同理），同一块板上的所有 App 复用。GizOS 为有屏幕的五块 board 提供了 web board：`amoled`（368×448，`boot`、`power`）、`bk7258_v3_202405`（800×480，`prev`、`next`、`menu`，对应实体板的三个 ADC 键）、`kickpi_k4b`（1024×600，`action_button`）、`szp`（320×240，`boot`）、`waveshare_esp32p4_wifi6_touch_lcd_4_3`（480×800，`boot`），尺寸与 Button 名取自各自 BSP。`amoled` 的 `device` 外观按 Waveshare 官方尺寸图用 CSS 画出实物（黑色表壳 37.60 × 45.20 mm、屏幕 28.70 × 34.94 mm、右侧从上到下 BOOT、USB-C、PWR）；其余四块的 `device` 外观目前是按 BSP 参数画的示意图（屏幕尺寸与方向准确），之后按实物资料替换。外观只用 CSS 绘制，不嵌入厂商图片。无屏幕的 `devkit`、`esp32p4_func_ev_board_v1_4`、`waveshare_esp32s3_a7670e_4g` 暂不提供。
 
@@ -291,39 +291,25 @@ bazel test --config=macos_arm64 --strategy=TestRunner=local --test_env=HOME \
 
 Web 的同步 SystemEvent PAL API 只借给 C Worker，浏览器主线程 accessor 返回 `NULL`。浏览器发起退订时使用 `h2_web_platform_system_event_unsubscribe_async`：成功后立即停止新回调并将 subscription 所有权交给 platform Worker；完成回调仅在所有在途 handler 返回后执行，调用方此前必须保留 handler context。主线程入队使用 try-lock，竞争返回 BUSY 并交还所有权，不能同步阻塞浏览器等待 Worker。回调自身不能等待自己的异步退订完成。
 
-## 当前设备 GizClaw SDK
+## 本地 GizClaw SDK
 
-`//libs/gizclaw/web` 的 `h2_web_gizclaw_open()` 从 Worker 绑定 `globalThis.h2WebGizClaw`，借用产品已 start 的 standalone device。它与网络 Service 共用设备 provider、Runtime proxy、工具/MHS 注册和播放器，浏览器不依赖网络 Ready。MHS 使用普通对象，工具名称和消息类型来自同一 pinned canonical SDK；没有手写 method/schema registry。工具发现的 packed numeric IDs 由该 SDK 的 nanopb descriptor 解码，名称仍来自官方 JS map。
+`//libs/gizclaw/web` 从 Worker 调用 `h2_web_gizclaw_open()`，绑定 `globalThis.h2WebGizClaw`；它借用已经开启本地入口的现有 Service。对象方法使用 pinned GizClaw codec/map，MHS 读写和所有工具均调用既有 handler，不依赖远端 Ready。Lua 安装仍是普通 tool invoke：
 
 ```js
-const sdk = globalThis.h2WebGizClaw;
-const controller = new AbortController();
-const options = {signal: controller.signal, timeout_ms: 30000};
-const speaker = await sdk.mhs.read({id: 'speaker.main', hwd: 'speaker'}, options);
-const applied = await sdk.mhs.write({
+const api = globalThis.h2WebGizClaw;
+const tools = await api.tools.list();
+const state = await api.mhs.read({id: 'speaker.main', hwd: 'speaker'});
+const applied = await api.mhs.write({
   id: 'speaker.main', hwd: 'speaker',
   payload: {volume_percent: 0, muted: false},
-}, options);
-const tools = await sdk.tools.list(options);
-const info = await sdk.tools.invoke('info.get', {}, options);
-// rawPayload is the canonical request message, including any outer envelope.
-const rawReply = await sdk.call(136, new Uint8Array(), options);
+});
+const installed = await api.tools.invoke('lua.app.install', {url: archiveUrl});
+const apps = await api.tools.invoke('lua.app.list', {});
+await api.tools.invoke('lua.app.uninstall', {app_id: appId});
 ```
 
-实际实例与工具以产品注册表和 list 结果为准；0/false 保留 protobuf optional presence。只读 HWD、非法字段、未知 ID/method、缺少硬件或网络都拒绝，`GizClawError.code` 保留实际 signed PAL result；只有 wire rejection 时为 -1000，并携带实际 `rpcCode`/`rpcMessage`。参数在 admission 时复制，回复在 Promise resolve 前复制/解码；每个 call 有独立存储。队列满返回 BUSY。超时或 Abort 不能撤销已执行的硬件写入，取消后应按需要重新读取。
+实例与可用工具取自产品已有注册表；`lua.app.run` 是否可用仍取决于已有产品 prepare hook。安装格式、URL/Binary 支持和 Lua 交接语义均遵守 [GizClaw Lua App](/zh/developing/gizclaw#lua-app)，SDK 不额外实现 catalog、上传安装器或 Lua 生命周期。`call(method, Uint8Array, options?)` 为需要 canonical payload 的调用方保留字节接口。
 
-`//libs/gizclaw/web:sdk_types` 产出根目录包含 `h2_web_gizclaw.d.ts`、官方 codec/map declarations 和 LICENSE 的 tar。消费方直接 import `GizClawWebSDK` 或使用其 global declaration；声明来自同一 canonical 源的真实 TypeScript 编译。`sdk_types_test` 对实际 tar 做 strict 编译，并检查 readonly write、错误字段类型与未知工具在编译时拒绝。
+所有方法返回 Promise，支持 `{signal?, timeout_ms?}`。0/false 保留 optional presence；`error.code` 为实际 signed PAL result，仅 wire rejection 时为 -1000，并保留实际 `rpcCode`/`rpcMessage`。容量满返回 BUSY。取消/超时不会撤销已经发生的写入；请求接纳时复制，回复在 resolve 前复制/解码，随后触发既有 delivery completion。
 
-Bridge 持有 device consumer reference。产品 owner 在 Worker close bridge：先关闭 JS ingress、拒绝 pending Promise、取消请求，再 join adapter；失败保留 bridge 与 device reference，必须重试。随后 stop/deinit 网络 Service，stop device，确认 RPC/media/download/stream/Speaker consumer 全部结束后再将 Runtime 交给 Lua。Lua Host 销毁成功前保留 App lease；join 失败时继续保留。Catalog installer bridge 可独立留在 Lua 期间，pin 使更新/卸载返回真实 BUSY。返回 Main 后可 restart 同一 device 并重新 open bridge，旧 JS 对象始终 CLOSED。
-
-产品注册的 MHS callback 与 userdata 必须使用持续有效的 Runtime proxy；不能指向某次已 deinit Service 的临时内存。借用 raw PAL 时同样必须覆盖所有 consumer 的生命周期，Runtime proxy 也必须覆盖实际 Host、call 与 bridge 清理。完整可执行入口和断言在 `libs/gizclaw/web/tests/local_device/`；它还通过独立 Bzlmod root 构建、打包并运行，验证外部 owner 的 tar root、工具和 runfiles。
-
-## GizClaw Lua catalog bridge
-
-`//libs/gizclaw/web:web` 的 `h2_web_gizclaw_apps_open()` 借用 entry 已有的 catalog、Memory、Task 和 Queue，提供 `globalThis.h2WebLuaApps`。`list()`、`install(Blob|Uint8Array|ArrayBuffer, {sha256?})` 和 `uninstall(appId)` 返回 Promise，失败在 `error.code` 中保留 signed PAL code。安装按 32 KiB chunk 在同一 worker 调用公共 begin/write/finish，所有文件访问使用注入的 PAL FS；Web FS 才负责 IndexedDB。Main、网络 Service 与浏览器使用同一 catalog，安装格式、目录、预装 overlay 和独立用户 KV 保持一致。活动 Lua owner 持有公共 lease，JS 更新或卸载活动身份返回 BUSY。
-
-Bridge 可以在 Lua 期间继续存在。最终 entry 先 close bridge：关闭 JS ingress、拒绝 waiters、在 owner worker abort 未完成安装并 join，成功后才销毁 catalog/FS。Join 失败保留 bridge 与依赖，close 可重试。实际接口和生命周期以 [GizClaw API](/references/gizclaw) 与 [catalog API](/references/lua-apps) 的生产 header 为准。
-
-`//libs/gizclaw/web/tests/gizclaw_apps:persistence_test` 驱动真实 WASM 安装、回读、刷新、卸载和再次刷新。`web_gizclaw_apps_browser_test()` 可由外部 Bzlmod consumer 直接 load；工具和 runner 通过显式 data/runfiles 引入。Web tar 的 index.html、JS、WASM 与 _headers 在根目录，外部 owner 与本仓库相同；`tools/bazel/web` 只负责纯编译和打包。
-
-`//libs/lua/web/tests/lifecycle:input_backpressure_test` 在实际入口注入前三次边沿拒收，并验证 DOWN/UP/DOWN/最终 UP 的顺序；`:sleep_render_progress_test` 在真实 Canvas 连续 present 500 次并 sleep 后点击 Stop，检查重复启动和完整释放。`browser_platform_test` 在真实系统 Chrome 覆盖并发 FS 调用，以及没有竞争 tab 时 grant 调度超过默认 3000 ms 的真实 BUSY 和诊断。
+`h2_web_gizclaw_close()` 在 Worker 关闭 ingress、拒绝 pending Promise、取消调用并 join adapter，成功后释放 Service borrow；失败保留 handle 与依赖供重试。产品先 close adapter，再走现有 Service stop/poll/deinit。`//libs/gizclaw/web:sdk_types` 导出 `h2_web_gizclaw.d.ts` 及同一 canonical codec/map 的声明。`libs/gizclaw/web/tests/local/` 的实际 Chrome fixture 验证现有 tool/MHS、Lua 安装工具透传、错误、取消/背压和 close retry；它使用测试 HTTP/Filesystem PAL，不代表实机或真实服务器验收。

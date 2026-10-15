@@ -21,8 +21,7 @@ static h2_web_platform_t *owned_platform;
 static h2_runtime_t *owned_runtime;
 static h2_lua_host_t *owned_lua;
 static int retained_error, input_error, stop_reported;
-static double stop_at, input_close_deadline;
-static int pending_edge, input_closing;
+static double stop_at;
 
 static const h2_pal_periph_single_button_payload_t button_payload = {
     .delivery = H2_PAL_BUTTON_DELIVERY_PUSH_EDGE};
@@ -98,7 +97,7 @@ EM_JS(void, page_input,
       (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
   h2WebMain(context, result, completion, ["i32", "i32", "pointer", "pointer"], "i32",
     (action, index, key, name) => {
-      if (action === 1) return globalThis.h2WebBindButton?.(index, UTF8ToString(key), UTF8ToString(name)) ? 1 : 0;
+      if (action === 1) { globalThis.h2WebBindButton?.(index, UTF8ToString(key), UTF8ToString(name)); return 0; }
       if (action === 2) { globalThis.h2WebUnbindButtons?.(); return 0; }
       if (action === 3) return Module.h2WebStopRequested ? 1 : 0;
       return globalThis.h2WebTakeButtonEdge?.() || 0;
@@ -111,98 +110,24 @@ static int page_action(int action, int index, const char *key,
                           (const void *[]){&action, &index, &key, &name})
       .i32;
 }
-static void close_page_input(void) {
-  if (input_closing)
-    return;
-  input_closing = 1;
-  input_close_deadline = emscripten_get_now() + 3000.0;
-  int rc = page_action(2, 0, NULL, NULL);
-  if (rc != H2_PAL_OK && input_error == H2_PAL_OK)
-    input_error = rc;
-  if (!stop_reported) {
+static int should_stop(void) {
+  int edge;
+  while ((edge = page_action(0, 0, NULL, NULL)) != 0) {
+    input_error = edge < 0 ? H2_PAL_ERR_NO_SPACE
+                           : h2_runtime_button_push_edge(
+                                 owned_runtime, (h2_pal_periph_id_t)(edge >> 1),
+                                 (edge & 1) ? H2_RUNTIME_BUTTON_EDGE_DOWN
+                                            : H2_RUNTIME_BUTTON_EDGE_UP);
+    if (input_error != H2_PAL_OK)
+      return 1;
+  }
+  int stop = page_action(3, 0, NULL, NULL) ||
+             (stop_at > 0.0 && emscripten_get_now() >= stop_at);
+  if (stop && !stop_reported) {
     stop_reported = 1;
     puts("H2_WEB_APP name=" H2_WEB_LUA_APP_NAME " stage=stop-requested");
   }
-}
-
-// Do not pop a later page edge until Runtime accepted this one.
-static int pump_page_input(void) {
-  for (unsigned i = 0; i < 16u; ++i) {
-    if (pending_edge == 0)
-      pending_edge = page_action(0, 0, NULL, NULL);
-    if (pending_edge == 0)
-      return 1;
-    if (pending_edge < 0) {
-      pending_edge = 0;
-      if (input_error == H2_PAL_OK)
-        input_error = H2_PAL_ERR_NO_SPACE;
-      return 0;
-    }
-    const int rc = h2_runtime_button_push_edge(
-        owned_runtime, (h2_pal_periph_id_t)(pending_edge >> 1),
-        (pending_edge & 1) ? H2_RUNTIME_BUTTON_EDGE_DOWN
-                           : H2_RUNTIME_BUTTON_EDGE_UP);
-    if (rc == H2_PAL_ERR_WOULD_BLOCK || rc == H2_PAL_ERR_TIMEOUT ||
-        rc == H2_PAL_ERR_BUSY)
-      return 0;
-    if (rc != H2_PAL_OK) {
-      if (input_error == H2_PAL_OK)
-        input_error = rc;
-      return 0;
-    }
-    pending_edge = 0;
-  }
-  return 0;
-}
-
-static int should_stop(void) {
-  if (page_action(3, 0, NULL, NULL) ||
-      (stop_at > 0.0 && emscripten_get_now() >= stop_at))
-    close_page_input();
-  const int drained = pump_page_input();
-  if (input_error != H2_PAL_OK) {
-    close_page_input();
-    return 1;
-  }
-  if (!input_closing)
-    return 0;
-  if (drained)
-    return 1;
-  if (emscripten_get_now() >= input_close_deadline) {
-    input_error = H2_PAL_ERR_TIMEOUT;
-    return 1;
-  }
-  return 0;
-}
-
-static void drain_closed_input(void) {
-  close_page_input();
-  while (owned_runtime != NULL && !pump_page_input()) {
-    // The Lua consumer has ended; make room for Runtime's final release events.
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = {.payload = payload,
-                                .payload_capacity = sizeof(payload)};
-    int polled;
-    while ((polled = h2_runtime_poll_event(owned_runtime, &event)) ==
-           H2_PAL_OK) {
-    }
-    if (polled != H2_PAL_ERR_WOULD_BLOCK && polled != H2_PAL_ERR_TIMEOUT) {
-      if (input_error == H2_PAL_OK)
-        input_error = polled;
-      break;
-    }
-    if (emscripten_get_now() >= input_close_deadline) {
-      if (input_error == H2_PAL_OK)
-        input_error = H2_PAL_ERR_TIMEOUT;
-      break;
-    }
-    const int rc = h2_pal_time_sleep_ms(owned_runtime->time, 1u);
-    if (rc != H2_PAL_OK) {
-      if (input_error == H2_PAL_OK)
-        input_error = rc;
-      break;
-    }
-  }
+  return stop;
 }
 
 /* Component id of the exit Button (its board index + 1), or 0 for none. */
@@ -296,7 +221,8 @@ static h2_pal_result_t run_script(h2_runtime_t *runtime) {
       } else if (exit_id != H2_RUNTIME_COMPONENT_ID_NONE &&
                  event.component_id == exit_id) {
         if (exit_requested(&event)) {
-          close_page_input();
+          rc = h2_lua_job_cancel(host, job);
+          cancelling = rc == H2_PAL_OK;
         }
       } else {
         rc = h2_lua_dispatch_runtime_event(host, job, &event);
@@ -351,7 +277,7 @@ int main(void) {
   if (owned_platform != NULL || owned_runtime != NULL || owned_lua != NULL)
     return 2;
   retained_error = input_error = H2_PAL_OK;
-  stop_reported = input_closing = pending_edge = 0;
+  stop_reported = 0;
   const h2_web_platform_config_t platform_config = {H2_WEB_BOARD_WIDTH,
                                                     H2_WEB_BOARD_HEIGHT};
   owned_platform = h2_web_platform_create(&platform_config);
@@ -415,33 +341,27 @@ int main(void) {
   if (rc == H2_PAL_OK)
     rc = h2_runtime_input_start(owned_runtime, NULL);
   if (rc == H2_PAL_OK) {
-    for (size_t i = 0; rc == H2_PAL_OK && i < H2_WEB_BOARD_BUTTON_COUNT; ++i)
-      if (!page_action(1, (int)i, h2_web_board_buttons[i].key,
-                       h2_web_board_buttons[i].name))
-        rc = H2_PAL_ERR_BUSY;
+    for (size_t i = 0; i < H2_WEB_BOARD_BUTTON_COUNT; ++i)
+      (void)page_action(1, (int)i, h2_web_board_buttons[i].key,
+                        h2_web_board_buttons[i].name);
     stop_at = H2_WEB_LUA_APP_RUN_MS != 0u
                   ? emscripten_get_now() + H2_WEB_LUA_APP_RUN_MS
                   : 0.0;
     puts("H2_WEB_APP name=" H2_WEB_LUA_APP_NAME " stage=running");
-    if (rc == H2_PAL_OK)
-      rc = run_script(owned_runtime);
-    drain_closed_input();
+    rc = run_script(owned_runtime);
+    (void)page_action(2, 0, NULL, NULL);
     if (rc == H2_PAL_OK)
       rc = input_error;
   }
-  if (retained_error == H2_PAL_OK) {
-    const int released = h2_runtime_destroy(&owned_runtime);
-    if (owned_runtime != NULL)
-      retained_error = released;
-    else if (rc == H2_PAL_OK)
-      rc = released;
-  }
+  if (retained_error == H2_PAL_OK && owned_runtime != NULL)
+    retained_error = h2_runtime_input_stop(owned_runtime);
   if (retained_error != H2_PAL_OK) {
     printf("H2_WEB_APP name=%s result=FAIL rc=%d retained=1\n",
            H2_WEB_LUA_APP_NAME, retained_error);
     return 2;
   }
-
+  h2_runtime_deinit(owned_runtime);
+  owned_runtime = NULL;
   int destroyed = h2_web_platform_destroy(owned_platform);
   if (destroyed != H2_PAL_OK) {
     printf("H2_WEB_APP name=%s result=FAIL rc=%d retained=1\n",

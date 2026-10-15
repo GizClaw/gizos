@@ -46,40 +46,6 @@ h2_web_app(
     ("filesystem_busy_test", 7),
 ]]
 
-web_archive_browser_test(
-    name = "input_backpressure_test",
-    archive = ":lifecycle",
-    evals = [[
-        "H2_WEB_APP name=lifecycle stage=ready",
-        "dispatchEvent(new KeyboardEvent('keydown',{key:'x'}));" +
-        "dispatchEvent(new KeyboardEvent('keyup',{key:'x'}));" +
-        "dispatchEvent(new KeyboardEvent('keydown',{key:'x'}));" +
-        "document.querySelector('#stop').click()",
-    ]],
-    passes = [
-        "LIFECYCLE input_retry_order=PASS final_release=PASS",
-        "LIFECYCLE checks=PASS",
-    ],
-    query = "mode=8",
-    timeout_s = 60,
-)
-
-web_archive_browser_test(
-    name = "sleep_render_progress_test",
-    archive = ":lifecycle",
-    clicks = [[
-        "LUA_PROGRESS frames=500",
-        "#stop",
-    ]],
-    passes = [
-        "LUA_PROGRESS frames=100",
-        "LUA_PROGRESS frames=500",
-        "LIFECYCLE checks=PASS",
-    ],
-    query = "mode=9",
-    timeout_s = 60,
-)
-
 # Historical labels now cover the remaining Runtime input worker.
 alias(
     name = "entry_join_fault_test",

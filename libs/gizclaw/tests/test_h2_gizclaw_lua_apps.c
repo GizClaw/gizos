@@ -1,9 +1,9 @@
-#include "h2_app_test_fs.h"
-#include "h2_atomic.h"
-#include "h2_desktop_platform.h"
 #include "h2_gizclaw_lua_apps_internal.h"
 #include "h2_gizclaw_lua_stream_internal.h"
-#include "libs/gizclaw/lua_apps/fixtures.h"
+#include "h2_app_test_fs.h"
+#include "h2_desktop_platform.h"
+#include "h2_atomic.h"
+#include "libs/lua/apps/fixtures.h"
 #include "payload/lua_app.pb.h"
 #include "pb_decode.h"
 #include "pb_encode.h"
@@ -65,11 +65,10 @@ static void put(const h2_pal_fs_api_t *fs, const char *path, const void *data,
          written == size);
   assert(h2_pal_fs_close(fs, file) == 0);
 }
-static void wait_version(h2_gizclaw_lua_app_catalog_t *apps,
-                         const char *version) {
-  h2_gizclaw_lua_app_info_t info;
+static void wait_version(h2_lua_apps_t *apps, const char *version) {
+  h2_lua_app_info_t info;
   for (unsigned i = 0; i < 5000; ++i) {
-    int rc = h2_gizclaw_lua_app_catalog_get(apps, "demo", &info);
+    int rc = h2_lua_apps_get(apps, "demo", &info);
     if (rc == H2_PAL_OK) {
       assert(!strcmp(info.version, version));
       return;
@@ -174,15 +173,12 @@ static int join(void *user, h2_pal_task_t *task) {
 }
 typedef struct launch {
   bool reserved, launched;
-  h2_gizclaw_lua_app_lease_t *lease;
 } launch_t;
 static void completed(void *user, int result) {
   launch_t *launch = user;
   assert(launch->reserved);
   launch->reserved = false;
   launch->launched = result == H2_PAL_OK;
-  // This test does not start a Lua user; completion is its final use.
-  h2_gizclaw_lua_app_lease_release(&launch->lease);
 }
 static h2_pal_result_t prepare(void *user, const h2_gizclaw_lua_app_run_t *run,
                                h2_gizclaw_lua_app_handoff_t *out) {
@@ -192,7 +188,6 @@ static h2_pal_result_t prepare(void *user, const h2_gizclaw_lua_app_run_t *run,
   assert(!strcmp(run->app.app_id, "demo") &&
          !strcmp(run->app.version, "1.0.0"));
   launch->reserved = true;
-  launch->lease = run->lease;
   *out = (h2_gizclaw_lua_app_handoff_t){completed, launch};
   return H2_PAL_OK;
 }
@@ -207,14 +202,14 @@ int main(void) {
       sizeof(initial_source) - 1u);
   put(&fs.api, "/preinstalled/index.json", fixture_preinstalled_index,
       sizeof(fixture_preinstalled_index));
-  h2_gizclaw_lua_app_catalog_config_t directory = {
-      .allocator = &mem,
-      .fs = &fs.api,
-      .sync = h2_desktop_platform_sync_api(),
-      .preinstalled_index = "/preinstalled/index.json",
-      .install_root = "/apps"};
-  h2_gizclaw_lua_app_catalog_t *apps = NULL;
-  assert(h2_gizclaw_lua_app_catalog_create(&directory, &apps) == 0);
+  h2_lua_apps_config_t directory = {.allocator = &mem,
+                                    .fs = &fs.api,
+                                    .sync = h2_desktop_platform_sync_api(),
+                                    .preinstalled_index =
+                                        "/preinstalled/index.json",
+                                    .install_root = "/apps"};
+  h2_lua_apps_t *apps = NULL;
+  assert(h2_lua_apps_create(&directory, &apps) == 0);
   h2_pal_fs_vtable_t fs_vtable = *fs.api.vtable;
   base_write = fs_vtable.write;
   fs_vtable.write = gated_write;
@@ -312,7 +307,7 @@ int main(void) {
   assert(h2_gizclaw_lua_stream_stop_internal(stream) == H2_PAL_ERR_IO);
   assert(h2_gizclaw_lua_stream_stop_internal(stream) == 0);
   h2_gizclaw_lua_stream_destroy_internal(stream);
-  assert(h2_gizclaw_lua_app_catalog_destroy(apps) == 0);
+  assert(h2_lua_apps_destroy(apps) == 0);
   assert(fs.active_handles == 0 && h2_app_test_fs_deinit(&fs) == 0);
   h2_atomic_bool_destroy(&gate_released);
   h2_atomic_bool_destroy(&gate_entered);

@@ -102,28 +102,21 @@
       // reach the Runtime. Blur, hide and teardown release everything.
       const h2Buttons = [];
       const h2Edges = [];
-      const h2FinalReleases = [];
-      let h2EdgeOverflow = false, h2InputClosed = false;
+      let h2EdgeOverflow = false;
       // A bounded page FIFO keeps Runtime calls on the entry Worker.
-      globalThis.h2WebTakeButtonEdge = () => {
-        if (h2Edges.length) return h2Edges.shift();
-        if (h2FinalReleases.length) return h2FinalReleases.shift();
-        if (h2EdgeOverflow) { h2EdgeOverflow = false; return -1; }
-        return 0;
-      };
+      globalThis.h2WebTakeButtonEdge = () => h2EdgeOverflow ? -1 : (h2Edges.shift() || 0);
       function h2SetSource(entry, source, pressed) {
-        if (h2InputClosed || !h2Buttons.includes(entry)) return;
+        const was = entry.sources.size > 0;
         if (pressed) entry.sources.add(source);
         else entry.sources.delete(source);
         const is = entry.sources.size > 0;
         for (const element of entry.elements) element.dataset.pressed = String(is);
-        if (entry.queuedDown === is) return;
+        if (was === is) return;
         if (h2Edges.length >= 128) {
           h2EdgeOverflow = true;
           console.error('H2_WEB_INPUT overflow');
         } else {
           h2Edges.push((entry.index + 1) * 2 + (is ? 1 : 0));
-          entry.queuedDown = is;
         }
       }
       function h2ReleaseAll() {
@@ -141,11 +134,8 @@
       const h2KeyDown = (event) => h2OnKey(event, true);
       const h2KeyUp = (event) => h2OnKey(event, false);
       globalThis.h2WebBindButton = (index, key, name) => {
-        if (!Number.isInteger(index) || index < 0 || h2Buttons.some(b => b.index === index)) return false;
-        if (h2InputClosed && (h2Edges.length || h2FinalReleases.length || h2EdgeOverflow)) return false;
-        h2InputClosed = false;
         const selector = name ? `[data-h2-button="${CSS.escape(name)}"]` : null;
-        const entry = {index, key, name, queuedDown: false, sources: new Set(), abort: new AbortController(),
+        const entry = {index, key, name, sources: new Set(), abort: new AbortController(),
                        elements: selector ? [...document.querySelectorAll(selector)] : []};
         const signal = entry.abort.signal;
         for (const element of entry.elements) {
@@ -163,21 +153,15 @@
           globalThis.addEventListener('keyup', h2KeyUp);
         }
         h2Buttons.push(entry);
-        return true;
       };
       globalThis.h2WebUnbindButtons = () => {
-        h2InputClosed = true;
-        for (const entry of h2Buttons) {
-          entry.abort.abort();
-          entry.sources.clear();
-          for (const element of entry.elements) element.dataset.pressed = 'false';
-          if (entry.queuedDown) h2FinalReleases.push((entry.index + 1) * 2);
-          entry.queuedDown = false;
-        }
+        h2ReleaseAll();
+        for (const entry of h2Buttons) entry.abort.abort();
         globalThis.removeEventListener('keydown', h2KeyDown);
         globalThis.removeEventListener('keyup', h2KeyUp);
         h2Buttons.length = 0;
-        // Accepted edges and final releases belong to the entry until drained.
+        h2Edges.length = 0;
+        h2EdgeOverflow = false;
       };
       globalThis.addEventListener('blur', h2ReleaseAll);
       document.addEventListener('visibilitychange', () => {

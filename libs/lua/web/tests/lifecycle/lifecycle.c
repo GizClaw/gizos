@@ -3,7 +3,6 @@
 #include "h2_lua.h"
 #include "h2_lua_job.h"
 #include "h2_lua_task_names.h"
-#include "h2_runtime_input_button.h"
 #include "h2_web_fs.h"
 #include "h2_web_main_thread.h"
 #include "h2_web_platform.h"
@@ -28,22 +27,6 @@ static h2_pal_display_api_t display;
 static h2_pal_task_api_t tasks;
 static h2_pal_task_t *display_task, *input_task;
 static _Atomic unsigned closes, presents, failed_joins;
-static unsigned edge_retries, edge_count;
-static h2_runtime_button_edge_t edges[4];
-static h2_pal_result_t push_edge(h2_runtime_t *value,
-                                 h2_pal_periph_id_t peripheral,
-                                 h2_runtime_button_edge_t edge) {
-  if (mode == 8 && edge_retries < 3u) {
-    ++edge_retries;
-    return H2_PAL_ERR_WOULD_BLOCK;
-  }
-  int rc = h2_runtime_button_push_edge(value, peripheral, edge);
-  if (mode == 8 && rc == H2_PAL_OK) {
-    assert(peripheral == 1 && edge_count < 4u);
-    edges[edge_count++] = edge;
-  }
-  return rc;
-}
 static int display_open(void *user) {
   assert(user == &display);
   return h2_pal_display_open(base_display);
@@ -152,7 +135,6 @@ static h2_pal_result_t destroy_platform(h2_web_platform_t *value) {
 #define h2_runtime_init create_runtime
 #define h2_lua_host_create create_lua
 #define h2_web_platform_destroy destroy_platform
-#define h2_runtime_button_push_edge push_edge
 #define main lua_app_main
 #include "libs/lua/web/src/h2_web_lua_app.c"
 #undef main
@@ -160,7 +142,6 @@ static h2_pal_result_t destroy_platform(h2_web_platform_t *value) {
 #undef h2_runtime_init
 #undef h2_lua_host_create
 #undef h2_web_platform_destroy
-#undef h2_runtime_button_push_edge
 static const char normal_script[] =
     "local d,r=require('display'),require('runtime');d.clear('red');"
     "assert(d.submit());local s,e=d.flush();while not s do "
@@ -169,11 +150,6 @@ static const char normal_script[] =
 static const char stop_script[] =
     "local d,r=require('display'),require('runtime');d.clear('blue');"
     "assert(d.submit());while true do r.sleep(1) end";
-static const char progress_script[] =
-    "local d,r=require('display'),require('runtime');"
-    "for i=1,500 do d.clear({r=i%255,g=80,b=120});d.present();r.sleep(2);"
-    "if i%100==0 then print('LUA_PROGRESS frames='..i) end end;"
-    "while true do r.sleep(2) end";
 
 /* clang-format off */
 EM_JS(void, read_mode,
@@ -181,32 +157,16 @@ EM_JS(void, read_mode,
   h2WebMain(context, result, completion, [], "i32", () =>
       Number(new URLSearchParams(location.search).get('mode') || 0));
 });
-EM_JS(void, reset_stop,
-      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
-  h2WebMain(context, result, completion, [], null, () => {
-    Module.h2WebStopRequested = false;
-  });
-});
 /* clang-format on */
 
 int main(void) {
   mode = h2_web_main_call(read_mode, NULL).i32;
   test_source = (const uint8_t *)(mode == 1   ? "error('ordinary script error')"
-                                  : mode == 4 || mode == 8 ? stop_script
-                                  : mode == 9 ? progress_script
+                                  : mode == 4 ? stop_script
                                               : normal_script);
   test_source_size = strlen((const char *)test_source);
   double began = emscripten_get_now();
   int rc = lua_app_main();
-  if (mode == 8) {
-    assert(edge_retries == 3u && edge_count == 4u);
-    for (unsigned i = 0; i < edge_count; ++i)
-      assert(edges[i] == (i % 2u ? H2_RUNTIME_BUTTON_EDGE_UP
-                                 : H2_RUNTIME_BUTTON_EDGE_DOWN));
-    puts("LIFECYCLE input_retry_order=PASS final_release=PASS");
-  }
-  if (mode == 9)
-    assert(atomic_load(&presents) == 500u);
   if (mode == 7) {
     assert(rc == 2 && owned_platform == platform && owned_runtime == NULL);
     h2_pal_fs_stat_t info;
@@ -249,8 +209,6 @@ int main(void) {
     assert(mode != 4 || (atomic_load(&presents) == 1 &&
                          emscripten_get_now() - began >= 2400.0));
     mode = 0;
-    // A second entry run receives the same reset as a new page Start action.
-    (void)h2_web_main_call(reset_stop, NULL);
     test_source = (const uint8_t *)normal_script;
     test_source_size = strlen(normal_script);
     assert(lua_app_main() == 0);

@@ -614,20 +614,19 @@ h2_pal_result_t h2_runtime_periph_id(
     return H2_PAL_ERR_NOT_FOUND;
 }
 
-h2_pal_result_t h2_runtime_destroy(h2_runtime_t **pointer) {
-    if (pointer == NULL) return H2_PAL_ERR_INVALID_ARG;
-    h2_runtime_t *runtime = *pointer;
-    if (runtime == NULL) return H2_PAL_OK;
+void h2_runtime_deinit(h2_runtime_t *runtime) {
+    if (runtime == NULL) {
+        return;
+    }
 
     if (runtime->private_state->test_control != NULL) {
-        return H2_PAL_ERR_BUSY;
+        return;
     }
 
     h2_pal_result_t input_stop_rc = h2_runtime_input_stop(runtime);
     if (input_stop_rc != H2_PAL_OK &&
-        (runtime->private_state->input_task != NULL ||
-         runtime->private_state->input_nfc_task != NULL)) {
-        return input_stop_rc;
+        runtime->private_state->input_task != NULL) {
+        return;
     }
     h2_runtime_input_release(runtime);
     h2_runtime_stop_system_events(runtime);
@@ -664,10 +663,4 @@ h2_pal_result_t h2_runtime_destroy(h2_runtime_t **pointer) {
     h2_pal_mem_free(&mem, private_state);
     memset(runtime, 0, sizeof(*runtime));
     h2_pal_mem_free(&mem, runtime);
-    *pointer = NULL;
-    return input_stop_rc;
-}
-
-void h2_runtime_deinit(h2_runtime_t *runtime) {
-    (void)h2_runtime_destroy(&runtime);
 }

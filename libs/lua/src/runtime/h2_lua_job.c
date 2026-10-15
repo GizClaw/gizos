@@ -125,6 +125,26 @@ static int is_terminal(h2_lua_job_state_t state) {
          state == H2_LUA_JOB_STOPPED;
 }
 
+void h2_lua_task_timer_destroy(h2_lua_task_t *task) {
+  if (task == NULL || task->timer == NULL || task->job == NULL) {
+    return;
+  }
+  (void)h2_pal_timer_stop(task->job->host->config.runtime->timer, task->timer);
+  (void)h2_pal_timer_destroy(task->job->host->config.runtime->timer,
+                             task->timer);
+  task->timer = NULL;
+  h2_atomic_store(&task->timer_fired, 0);
+}
+
+void h2_lua_task_atomics_destroy(h2_lua_job_t *job) {
+  if (job == NULL || job->tasks == NULL) {
+    return;
+  }
+  for (size_t i = 0u; i < job->host->config.max_coroutines_per_vm; ++i) {
+    h2_atomic_destroy(&job->tasks[i].timer_fired);
+  }
+}
+
 h2_lua_job_t *h2_lua_find_job(h2_lua_host_t *host, h2_lua_job_id_t id) {
   size_t i;
   if (host == NULL || id == H2_LUA_JOB_ID_NONE) {
@@ -260,6 +280,7 @@ h2_pal_result_t h2_lua_spawn_task(h2_lua_job_t *job, lua_State *source_state,
     return H2_PAL_ERR_FULL;
   }
   root = job->vm->state;
+  h2_atomic_destroy(&task->timer_fired);
   memset(task, 0, sizeof(*task));
   task->context.job = job;
   task->context.task = task;
@@ -270,6 +291,10 @@ h2_pal_result_t h2_lua_spawn_task(h2_lua_job_t *job, lua_State *source_state,
   }
   task->state = H2_LUA_TASK_READY;
   task->thread_ref = LUA_NOREF;
+  if (h2_atomic_init(&task->timer_fired, 0) != H2_ATOMIC_OK) {
+    memset(task, 0, sizeof(*task));
+    return H2_PAL_ERR_NO_MEMORY;
+  }
   task->thread = lua_newthread(root);
   task->thread_ref = luaL_ref(root, LUA_REGISTRYINDEX);
   *(h2_lua_execution_context_t **)lua_getextraspace(task->thread) =
@@ -482,6 +507,7 @@ submit_chunk(h2_lua_host_t *host, const char *app_id, const char *chunk_name,
   if (h2_lua_vm_create(&vm_config, &job->vm) != H2_LUA_VM_OK) {
     h2_pal_mem_free(host->config.allocator, job->callbacks);
     h2_pal_mem_free(host->config.allocator, job->events);
+      h2_lua_task_atomics_destroy(job);
       h2_pal_mem_free(host->config.allocator, job->tasks);
     h2_pal_mem_free(host->config.allocator, job->audio_tracks);
     memset(job, 0, sizeof(*job));
@@ -496,6 +522,7 @@ submit_chunk(h2_lua_host_t *host, const char *app_id, const char *chunk_name,
     h2_lua_vm_close(job->vm);
     h2_pal_mem_free(host->config.allocator, job->callbacks);
     h2_pal_mem_free(host->config.allocator, job->events);
+      h2_lua_task_atomics_destroy(job);
       h2_pal_mem_free(host->config.allocator, job->tasks);
     h2_pal_mem_free(host->config.allocator, job->audio_tracks);
     memset(job, 0, sizeof(*job));
@@ -510,6 +537,7 @@ submit_chunk(h2_lua_host_t *host, const char *app_id, const char *chunk_name,
       h2_lua_vm_close(job->vm);
       h2_pal_mem_free(host->config.allocator, job->callbacks);
       h2_pal_mem_free(host->config.allocator, job->events);
+      h2_lua_task_atomics_destroy(job);
       h2_pal_mem_free(host->config.allocator, job->tasks);
       h2_pal_mem_free(host->config.allocator, job->audio_tracks);
       memset(job, 0, sizeof(*job));
@@ -527,6 +555,18 @@ submit_chunk(h2_lua_host_t *host, const char *app_id, const char *chunk_name,
   job->tasks[0].id = job->next_task_id++;
   job->tasks[0].state = H2_LUA_TASK_READY;
   job->tasks[0].thread_ref = LUA_NOREF;
+  if (h2_atomic_init(&job->tasks[0].timer_fired, 0) != H2_ATOMIC_OK) {
+    h2_lua_vm_close(job->vm);
+    h2_pal_mem_free(host->config.allocator, job->callbacks);
+    h2_pal_mem_free(host->config.allocator, job->events);
+      h2_lua_task_atomics_destroy(job);
+      h2_pal_mem_free(host->config.allocator, job->tasks);
+    h2_pal_mem_free(host->config.allocator, job->audio_tracks);
+    memset(job, 0, sizeof(*job));
+    (void)h2_pal_mutex_unlock(host->config.runtime->sync, job_mutex);
+    (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
   job->tasks[0].thread = lua_newthread(root);
   job->tasks[0].thread_ref = luaL_ref(root, LUA_REGISTRYINDEX);
   *(h2_lua_execution_context_t **)lua_getextraspace(job->tasks[0].thread) =
@@ -548,6 +588,7 @@ submit_chunk(h2_lua_host_t *host, const char *app_id, const char *chunk_name,
       h2_lua_vm_close(job->vm);
       h2_pal_mem_free(host->config.allocator, job->callbacks);
       h2_pal_mem_free(host->config.allocator, job->events);
+      h2_lua_task_atomics_destroy(job);
       h2_pal_mem_free(host->config.allocator, job->tasks);
       h2_pal_mem_free(host->config.allocator, job->audio_tracks);
       memset(job, 0, sizeof(*job));
@@ -784,6 +825,12 @@ static void update_waiters(h2_lua_job_t *job, uint64_t now) {
   for (i = 0u; i < job->host->config.max_coroutines_per_vm; ++i) {
     h2_lua_task_t *task = &job->tasks[i];
     if (task->state == H2_LUA_TASK_SLEEPING && now >= task->wake_ms) {
+      h2_lua_task_timer_destroy(task);
+      task->wake_ms = 0u;
+      task->state = H2_LUA_TASK_READY;
+    } else if (task->state == H2_LUA_TASK_SLEEPING &&
+               h2_atomic_load(&task->timer_fired) != 0) {
+      h2_lua_task_timer_destroy(task);
       task->wake_ms = 0u;
       task->state = H2_LUA_TASK_READY;
     } else if (task->state == H2_LUA_TASK_JOINING) {
@@ -851,6 +898,7 @@ static void resume_task(h2_lua_job_t *job, h2_lua_task_t *task) {
     return;
   }
   if (task->cancel_requested) {
+    h2_lua_task_timer_destroy(task);
     task->state = H2_LUA_TASK_CANCELLED;
     (void)snprintf(task->message, sizeof(task->message), "%s",
                    "task cancelled");
@@ -909,6 +957,7 @@ static void resume_task(h2_lua_job_t *job, h2_lua_task_t *task) {
       h2_lua_job_finish(job, H2_LUA_JOB_SUCCEEDED, task->message);
     } else if (task->release_when_done) {
       luaL_unref(job->vm->state, LUA_REGISTRYINDEX, task->thread_ref);
+      h2_atomic_destroy(&task->timer_fired);
       memset(task, 0, sizeof(*task));
       job->task_count--;
     }
@@ -929,6 +978,7 @@ static void resume_task(h2_lua_job_t *job, h2_lua_task_t *task) {
     }
   } else if (task->release_when_done) {
     luaL_unref(job->vm->state, LUA_REGISTRYINDEX, task->thread_ref);
+    h2_atomic_destroy(&task->timer_fired);
     memset(task, 0, sizeof(*task));
     job->task_count--;
   }
@@ -936,6 +986,7 @@ static void resume_task(h2_lua_job_t *job, h2_lua_task_t *task) {
 
 h2_pal_result_t h2_lua_step_job(h2_lua_job_t *job) {
   uint64_t now;
+  size_t i;
   if (job == NULL || job->host == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -946,6 +997,9 @@ h2_pal_result_t h2_lua_step_job(h2_lua_job_t *job) {
     h2_lua_job_finish(job, H2_LUA_JOB_TIMED_OUT, "job timed out");
   }
   if (is_terminal(job->state)) {
+    for (i = 0u; i < job->host->config.max_coroutines_per_vm; ++i) {
+      h2_lua_task_timer_destroy(&job->tasks[i]);
+    }
     return H2_PAL_OK;
   }
   h2_lua_deliver_events(job);
@@ -1102,11 +1156,15 @@ h2_pal_result_t h2_lua_job_release(h2_lua_host_t *host,
   job_generation = job->generation;
   /* Stop link posts and wakes for this slot before it is cleared. */
   h2_lua_link_job_ended(host, job_id, job_generation);
+  for (size_t i = 0u; i < host->config.max_coroutines_per_vm; ++i) {
+    h2_lua_task_timer_destroy(&job->tasks[i]);
+  }
   h2_lua_job_close_display(job);
   if (job->touch_open) {
     (void)h2_pal_touch_close(host->config.runtime->touch);
   }
   h2_lua_job_close_audio_tracks(job);
+  h2_lua_task_atomics_destroy(job);
   h2_pal_mem_free(mem, job->tasks);
   h2_pal_mem_free(mem, job->callbacks);
   h2_pal_mem_free(mem, job->events);

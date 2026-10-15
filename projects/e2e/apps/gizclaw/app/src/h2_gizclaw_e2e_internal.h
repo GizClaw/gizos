@@ -67,7 +67,7 @@ typedef struct h2_gizclaw_e2e_fixture {
   h2_app_test_audio_fake_t device_audio_fake;
   int (*device_cleanup)(struct h2_gizclaw_e2e_fixture *fixture);
   const h2_gizclaw_vtable_t *device_vtable;
-  h2_gizclaw_lua_app_catalog_t *device_lua_apps;
+  h2_lua_apps_t *device_lua_apps;
   struct h2_gizclaw_e2e_lua_state *lua_state;
   const h2_gizclaw_e2e_config_t *config;
   const h2_pal_mem_api_t *allocator;

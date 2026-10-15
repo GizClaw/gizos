@@ -169,10 +169,6 @@ h2_gizclaw_runtime_alias_valid_internal(h2_gizclaw_str_t value) {
 }
 
 int h2_gizclaw_provider_result_to_gzc(int result);
-h2_pal_result_t h2_gizclaw_result_from_gzc(int result);
-struct h2_gizclaw_device;
-void h2_gizclaw_client_set_device_internal(h2_gizclaw_client_t *client,
-                                            struct h2_gizclaw_device *device);
 
 const h2_pal_mem_api_t *
 h2_gizclaw_client_allocator_internal(h2_gizclaw_client_t *client);
@@ -255,6 +251,10 @@ int h2_gizclaw_event_stream_read_internal(gzc_event_stream_t *stream,
 int h2_gizclaw_client_read_packet_internal(gzc_client_t *client, int timeout_ms,
                                            uint8_t *out_protocol,
                                            gzc_buf_t *out_payload);
+void h2_gizclaw_client_set_local_internal(h2_gizclaw_client_t *client,
+    h2_gizclaw_service_t *service);
+h2_pal_result_t h2_gizclaw_result_from_gzc(int result);
+
 #if defined(H2_GIZCLAW_TESTING)
 #include "gzc_telemetry.h"
 #include "platform/gzc_platform_webrtc.h"
@@ -343,5 +343,6 @@ void h2_gizclaw_test_media_emit_opus(h2_gizclaw_client_t *client,
                                      size_t opus_len);
 void h2_gizclaw_test_media_close_peer(h2_gizclaw_client_t *client,
                                       gzc_rtc_peer_t *peer);
+
 #endif
 #endif

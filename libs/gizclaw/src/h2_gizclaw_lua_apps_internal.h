@@ -5,7 +5,6 @@ typedef struct h2_gizclaw_lua_apps h2_gizclaw_lua_apps_t;
 h2_pal_result_t
 h2_gizclaw_lua_apps_create_internal(const h2_gizclaw_config_t *config,
                                     h2_gizclaw_lua_apps_t **out);
-h2_pal_result_t h2_gizclaw_lua_apps_restart_internal(h2_gizclaw_lua_apps_t *apps);
 void h2_gizclaw_lua_apps_cancel_internal(h2_gizclaw_lua_apps_t *apps);
 void h2_gizclaw_lua_apps_destroy_internal(h2_gizclaw_lua_apps_t *apps);
 int h2_gizclaw_lua_apps_rpc_internal(h2_gizclaw_lua_apps_t *apps,

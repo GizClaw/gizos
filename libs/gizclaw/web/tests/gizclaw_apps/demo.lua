@@ -1,1 +1,0 @@
-return "browser catalog fixture"
