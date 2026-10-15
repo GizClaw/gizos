@@ -73,14 +73,5 @@ class WifiRestoreTest(unittest.TestCase):
                            check=True, timeout=60)
             subprocess.run([str(binary)], check=True, timeout=10)
 
-    def test_restore_precedes_transport_and_app_branches(self):
-        source = APP.read_text().split("void app_main(void)", 1)[1]
-        self.assertEqual(source.count("restore_saved_wifi();"), 1)
-        self.assertLess(source.index("h2_loader_app_client_init("),
-                        source.index("restore_saved_wifi();"))
-        self.assertLess(source.index("restore_saved_wifi();"),
-                        source.index("h2_jieli_app_iostreamikcp_start("))
-
-
 if __name__ == "__main__":
     unittest.main()

@@ -6,6 +6,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* Borrowed storage. The caller serializes append/freeze and keeps frozen bytes
  * immutable until process teardown; this helper does not allocate or print. */
 typedef struct h2_gizclaw_e2e_ledger {
@@ -21,5 +25,9 @@ int h2_gizclaw_e2e_ledger_init(h2_gizclaw_e2e_ledger_t *ledger, char *buffer,
 void h2_gizclaw_e2e_ledger_append(h2_gizclaw_e2e_ledger_t *ledger,
                                  const char *record, size_t size);
 int h2_gizclaw_e2e_ledger_freeze(h2_gizclaw_e2e_ledger_t *ledger);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

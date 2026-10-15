@@ -1,10 +1,10 @@
 #include "h2/pal/h2_pal_unsupported.h"
-#include "h2_web_app_host.h"
+#include "h2_smoke_host_runtime.h"
+#include "h2_web_platform.h"
 #include <emscripten.h>
 #include <emscripten/threading.h>
 #include <stdio.h>
 
-const h2_web_board_t h2_web_board = {.display_width = 1, .display_height = 1};
 /* clang-format off */
 EM_JS(int, worker, (), { return ENVIRONMENT_IS_PTHREAD && typeof window === 'undefined' ? 1 : 0; });
 /* clang-format on */
@@ -24,10 +24,7 @@ static void observed_void(const char *slot) {
          "\"owned_handle\":false}\n",
          slot);
 }
-static h2_pal_result_t boundary(h2_web_app_host_t *host, h2_runtime_t *runtime,
-                                void *user) {
-  (void)host;
-  (void)user;
+static h2_pal_result_t boundary(h2_runtime_t *runtime) {
   if (!worker() || emscripten_is_main_runtime_thread() || !runtime->net ||
       !runtime->net->vtable)
     return H2_PAL_ERR_INVALID_STATE;
@@ -74,13 +71,32 @@ static h2_pal_result_t boundary(h2_web_app_host_t *host, h2_runtime_t *runtime,
   printf("H2_PAL_NET_TLS_WEB_BOUNDARY "
          "{\"platform\":\"wasm\",\"worker\":%d,\"main_runtime_thread\":%d,"
          "\"operations\":%u,\"unexpected_results\":%u,\"core_qualified\":false,"
-         "\"full_net_qualified\":false,\"reason\":\"AppHost raw Net uses "
+         "\"full_net_qualified\":false,\"reason\":\"Web raw Net uses "
          "canonical unsupported API; browser HOST exposes Fetch/WebRTC\"}\n",
          worker(), emscripten_is_main_runtime_thread(), calls, errors);
   return errors || calls != 21u ? H2_PAL_ERR_IO : H2_PAL_OK;
 }
 int main(void) {
-  const h2_web_app_host_config_t config = {
-      .name = "pal-net-tls-boundary", .display_width = 1, .display_height = 1};
-  return h2_web_app_host_run(&config, boundary, NULL);
+  const h2_web_platform_config_t config = {1, 1};
+  h2_web_platform_t *platform = h2_web_platform_create(&config);
+  if (platform == NULL)
+    return 1;
+  h2_runtime_config_t rcfg = h2_smoke_host_runtime_config(
+      "browser", "webassembly", "wasm32", h2_web_platform_mem_api(),
+      h2_web_platform_time_api(platform), h2_web_platform_queue_api(platform),
+      h2_web_platform_display_api(platform));
+  rcfg.task = h2_web_platform_task_api(platform);
+  rcfg.sync = h2_web_platform_sync_api(platform);
+  h2_runtime_t *runtime = NULL;
+  int rc = h2_runtime_init(&rcfg, &runtime);
+  if (rc == H2_PAL_OK)
+    rc = boundary(runtime);
+  h2_runtime_deinit(runtime);
+  int destroyed = h2_web_platform_destroy(platform);
+  if (rc == H2_PAL_OK)
+    rc = destroyed;
+  printf(
+      "H2_WEB_APP name=pal-net-tls-boundary result=%s rc=%d fs=0 destroy=%d\n",
+      rc == H2_PAL_OK ? "PASS" : "FAIL", rc, destroyed);
+  return rc == H2_PAL_OK ? 0 : 1;
 }

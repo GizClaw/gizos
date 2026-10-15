@@ -593,11 +593,12 @@ static void test_unsupported_and_restart(void) {
     h2_quectel_modem_config_t config = f.modem.config;
     h2_quectel_modem_deinit(&f.modem);
     config.sleep_gate = NULL;
-    config.capabilities = H2_PAL_MODEM_CAPABILITY_LOW_POWER;
+    config.capabilities = H2_PAL_MODEM_CAPABILITY_LOW_POWER | H2_PAL_MODEM_CAPABILITY_OTA;
     assert(h2_quectel_modem_init(&f.modem, &config) == H2_PAL_OK);
     uint32_t capabilities = 0u;
     assert(h2_pal_modem_get_capabilities(&f.modem.platform, &capabilities) == H2_PAL_OK);
     assert(!(capabilities & H2_PAL_MODEM_CAPABILITY_LOW_POWER));
+    assert(capabilities & H2_PAL_MODEM_CAPABILITY_OTA);
     assert(h2_pal_modem_set_power_policy(&f.modem.platform, H2_PAL_MODEM_POWER_POLICY_AUTO_SLEEP) ==
            H2_PAL_ERR_UNSUPPORTED);
     h2_quectel_modem_deinit(&f.modem);

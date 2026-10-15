@@ -15,6 +15,8 @@ Host Core 拥有：
 - destructive recovery authorization、factory bundle parser 和 raw driver contract。
 - frozen factory batch、bounded claim、per-slot result/retry/cancel，以及 JSON/CSV export。
 
+Catalog、package、factory bundle 与 recovery 资源的 SHA-256 校验直接复用 [`libs/crypto/sha256`](./sha256.md) 的 caller-owned 增量 context；Host Core 不维护另一份摘要算法实现，也不通过设备 Crypto PAL 计算这些 host-owned 数据。
+
 Raw ESP serial-flasher port callback 使用 process-global context，`active_context_claim` 是独立的文件级 static atomic backing，防止两个 raw driver 同时占用该 callback；它不需要单独的模块级 init/shutdown。BLE-iKCP 的 ikcp allocator hooks 是真正进程级资源，CLI 或其他 process owner 在连接前串行调用 `h2_bleikcp_global_init()`，在全部 connection 断开后调用对应 shutdown；该 hooks 生命周期不能与 open/close 交错。
 
 Linux Host Serial 归 `libs/pal/providers/linux/serial_host`，Darwin Host Serial 与 CoreBluetooth 归 `libs/pal/providers/darwin/pal_core`，共同的 termios/session lifecycle 只在 private `libs/pal/providers/posix/serial_host` 中共享。工厂 Batch Loader 通过 Web PAL/Web Serial 消费 Host Core；native CLI 通过 project-owned macOS/Linux target 消费相同 contract。Batch Loader、CLI 和后续 Web SDK 不能依赖彼此的 App、adapter 或 entry source。

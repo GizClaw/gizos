@@ -3,6 +3,7 @@
 #include "h2_gizclaw_e2e_debug.h"
 #include "h2_gizclaw_telemetry.h"
 #include "h2_yyjson_json.h"
+#include "h2_gizclaw_e2e_device_http.h"
 #include "h2_atomic.h"
 #include <stdio.h>
 #include <string.h>
@@ -66,115 +67,12 @@ static const h2_gizclaw_vtable_t device_vtable = {.ota_begin = stage_begin,
                                                   .ota_activate =
                                                       stage_activate};
 
-typedef struct api_test {
-  h2_gizclaw_e2e_fixture_t *fixture;
-  h2_gizclaw_api_key_t key;
-  h2_yyjson_json_t *provider;
-  const h2_pal_json_api_t *json;
-  h2_pal_json_document_t *document;
-  h2_pal_json_value_t *root;
-} api_test_t;
-
-typedef struct api_http_job {
-  api_test_t *test;
-  const h2_pal_http_request_t *request;
-  h2_pal_http_response_t *response;
-} api_http_job_t;
-
-static int api_http_job_run(void *user) {
-  api_http_job_t *job = user;
-  return h2_pal_http_request(job->test->fixture->http, job->request, job->response);
-}
-
-static int api_call(api_test_t *test, int method, const char *path,
-                    const char *body, int expected) {
-  (void)h2_pal_json_document_destroy(test->json, &test->document);
-  test->root = NULL;
-  char url[2048], authorization[112];
-  int count = snprintf(url, sizeof(url), "%s/gizclaw/v1%s",
-                       test->fixture->config->device_api_url, path);
-  if (count < 0 || (size_t)count >= sizeof(url))
-    return H2_PAL_ERR_INVALID_ARG;
-  (void)snprintf(authorization, sizeof(authorization), "Bearer %s",
-                 test->key.secret);
-  const h2_pal_http_header_t headers[] = {
-      {{"Authorization", 13}, {authorization, strlen(authorization)}},
-      {{"Content-Type", 12}, {"application/json", 16}},
-  };
-  uint8_t bytes[16384];
-  h2_pal_http_request_t request = {.method = method,
-                                   .url = {url, strlen(url)},
-                                   .headers = headers,
-                                   .header_count = 2,
-                                   .timeout_ms = 15000,
-                                   .body = (const uint8_t *)body,
-                                   .body_len = body ? strlen(body) : 0,
-                                   .response_buf = bytes,
-                                   .response_buf_cap = sizeof(bytes),
-                                   .allocator = test->fixture->allocator};
-  h2_pal_http_response_t response = {0};
-  api_http_job_t job = {.test = test, .request = &request, .response = &response};
-  int rc = h2_gizclaw_e2e_fixture_call_sync(
-      test->fixture, test->fixture->actors[H2_GIZCLAW_E2E_OWNER].service,
-      api_http_job_run, &job);
-  h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=device-api path=%s http=%d expected=%d rc=%d\n",
-         path, response.status_code, expected, rc);
-  if (rc == H2_PAL_OK && response.status_code != expected)
-    rc = H2_PAL_ERR_INVALID_STATE;
-  if (rc == H2_PAL_OK && response.body_len) {
-    rc = h2_pal_json_document_parse(test->json, response.body,
-                                    response.body_len, NULL, &test->document);
-    if (rc == H2_PAL_OK)
-      rc = h2_pal_json_document_root(test->json, test->document, &test->root);
-  }
-  h2_pal_http_response_free(test->fixture->http, &response);
-  memset(authorization, 0, sizeof(authorization));
-  return rc;
-}
-static int tool_call(api_test_t *test, const char *tool, const char *args,
-                     int expected) {
-  char body[2048];
-  int n = snprintf(body, sizeof(body), "{\"tool\":\"%s\",\"args\":%s}", tool,
-                   args ? args : "{}");
-  if (n < 0 || (size_t)n >= sizeof(body))
-    return H2_PAL_ERR_INVALID_ARG;
-  return api_call(test, H2_PAL_HTTP_POST, "/device/tool/v0/invoke", body,
-                  expected);
-}
-static h2_pal_json_value_t *field(api_test_t *test, const char *path) {
-  h2_pal_json_value_t *value = test->root;
-  while (value && *path) {
-    size_t len = strcspn(path, ".");
-    h2_pal_json_value_t *child = NULL;
-    if (h2_pal_json_object_get(test->json, value, path, len, &child) !=
-        H2_PAL_OK)
-      return NULL;
-    value = child;
-    path += len;
-    if (*path == '.')
-      ++path;
-  }
-  return value;
-}
-static bool text_is(api_test_t *test, const char *path, const char *expected) {
-  h2_pal_json_string_view_t value = {0};
-  return h2_pal_json_value_get_string(test->json, field(test, path), &value) ==
-             H2_PAL_OK &&
-         value.len == strlen(expected) &&
-         !memcmp(value.data, expected, value.len);
-}
-static bool number_is(api_test_t *test, const char *path, double expected) {
-  double value = 0;
-  return h2_pal_json_value_get_number(test->json, field(test, path), &value) ==
-             H2_PAL_OK &&
-         value == expected;
-}
 int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
   if (!fixture->config->device_api_url || !fixture->config->device_audio_url ||
       strncmp(fixture->config->device_api_url, "https://", 8) ||
       strncmp(fixture->config->device_audio_url, "https://", 8))
     return H2_PAL_ERR_INVALID_ARG;
-  api_test_t test = {.fixture = fixture};
+  h2_gizclaw_e2e_api_t test = {.fixture = fixture};
   int rc = h2_yyjson_json_create(fixture->allocator, &test.provider);
   if (rc != H2_PAL_OK)
     return rc;
@@ -225,8 +123,9 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
         local.position_ms >=
             (fixture->config->device_real_audio ? 20000u : 20u) &&
         device_evidence(fixture).playback_bytes) {
-      CHECK(api_call(&test, H2_PAL_HTTP_GET, "/device/status", NULL, 200));
-      if (text_is(&test, "audioplayer.state", "playing")) {
+      CHECK(h2_gizclaw_e2e_api_call(&test, H2_PAL_HTTP_GET, "/device/status",
+                                    NULL, 200));
+      if (h2_gizclaw_e2e_api_text_is(&test, "audioplayer.state", "playing")) {
         local_played = true;
         h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=player-cadence position_ms=%llu "
                "elapsed_ms=%llu\n",
@@ -394,14 +293,16 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
   char local_update_id[65] = {0};
   for (unsigned i = 0; rc == H2_PAL_OK && i < 60; ++i) {
     CHECK(h2_pal_time_sleep_ms(fixture->time, 500));
-    CHECK(api_call(&test, H2_PAL_HTTP_GET, "/device/status", NULL, 200));
+    CHECK(h2_gizclaw_e2e_api_call(&test, H2_PAL_HTTP_GET, "/device/status",
+                                  NULL, 200));
     CHECK(h2_gizclaw_ota_get_status(service, &ota_status));
     h2_gizclaw_e2e_evidence("h2_gizclaw_ota_get_status", "local-ota", rc);
-    if (text_is(&test, "ota.state", "failed") &&
+    if (h2_gizclaw_e2e_api_text_is(&test, "ota.state", "failed") &&
         ota_status.phase == H2_GIZCLAW_OTA_FAILED) {
       h2_pal_json_string_view_t id = {0};
-      if (h2_pal_json_value_get_string(test.json, field(&test, "ota.update_id"),
-                                       &id) == H2_PAL_OK &&
+      if (h2_pal_json_value_get_string(
+              test.json, h2_gizclaw_e2e_api_field(&test, "ota.update_id"),
+              &id) == H2_PAL_OK &&
           id.len > 0 && id.len < sizeof(local_update_id)) {
         memcpy(local_update_id, id.data, id.len);
         local_failed = true;
@@ -418,17 +319,18 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
    * keep the first failure so partial success cannot make this lane green. */
   if (test.key.name[0])
     rc = H2_PAL_OK;
-  CHECK(api_call(
+  CHECK(h2_gizclaw_e2e_api_call(
       &test, H2_PAL_HTTP_POST, "/device/mhs/v0/write",
       "{\"id\":\"speaker.main\",\"hwd\":\"speaker\","
       "\"value\":{\"volume_percent\":37,\"muted\":false}}",
       200));
-  ASSERT(text_is(&test, "id", "speaker.main") &&
-         text_is(&test, "hwd", "speaker") &&
-         number_is(&test, "value.volume_percent", 37));
-  CHECK(api_call(&test, H2_PAL_HTTP_POST, "/device/mhs/v0/read",
-                 "{\"id\":\"speaker.main\",\"hwd\":\"speaker\"}", 200));
-  ASSERT(number_is(&test, "value.volume_percent", 37));
+  ASSERT(h2_gizclaw_e2e_api_text_is(&test, "id", "speaker.main") &&
+         h2_gizclaw_e2e_api_text_is(&test, "hwd", "speaker") &&
+         h2_gizclaw_e2e_api_number_is(&test, "value.volume_percent", 37));
+  CHECK(h2_gizclaw_e2e_api_call(&test, H2_PAL_HTTP_POST, "/device/mhs/v0/read",
+                                "{\"id\":\"speaker.main\",\"hwd\":\"speaker\"}",
+                                200));
+  ASSERT(h2_gizclaw_e2e_api_number_is(&test, "value.volume_percent", 37));
   uint32_t volume = 0u;
   CHECK(h2_pal_audio_get_speaker_volume_percent(fixture->device_audio, &volume));
   ASSERT(volume == 37u);
@@ -436,46 +338,52 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
     first_failure = rc;
   if (test.key.name[0])
     rc = H2_PAL_OK;
-  CHECK(tool_call(&test, "audioplayer.playlist.set",
-                  "{\"items\":[{\"url\":\"http://invalid.test/music.ogg\"}]}",
-                  400));
+  CHECK(h2_gizclaw_e2e_tool_call(
+      &test, "audioplayer.playlist.set",
+      "{\"items\":[{\"url\":\"http://invalid.test/music.ogg\"}]}", 400));
   char playlist[1400];
   int n = snprintf(playlist, sizeof(playlist), "{\"items\":[{\"url\":\"%s\"}]}",
                    fixture->config->device_audio_url);
   ASSERT(n > 0 && (size_t)n < sizeof(playlist) &&
          !strchr(fixture->config->device_audio_url, '"'));
-  CHECK(tool_call(&test, "audioplayer.playlist.set", playlist, 200));
-  ASSERT(number_is(&test, "result.playlist_length", 1));
-  CHECK(tool_call(&test, "audioplayer.mode.set", "{\"repeat\":\"one\"}", 200));
-  CHECK(tool_call(&test, "audioplayer.play", "{\"index\":0}", 200));
+  CHECK(h2_gizclaw_e2e_tool_call(&test, "audioplayer.playlist.set", playlist,
+                                 200));
+  ASSERT(h2_gizclaw_e2e_api_number_is(&test, "result.playlist_length", 1));
+  CHECK(h2_gizclaw_e2e_tool_call(&test, "audioplayer.mode.set",
+                                 "{\"repeat\":\"one\"}", 200));
+  CHECK(h2_gizclaw_e2e_tool_call(&test, "audioplayer.play", "{\"index\":0}",
+                                 200));
   bool played = false;
   for (unsigned i = 0; rc == H2_PAL_OK && i < 30; ++i) {
     CHECK(h2_pal_time_sleep_ms(fixture->time, 500));
-    CHECK(api_call(&test, H2_PAL_HTTP_GET, "/device/status", NULL, 200));
-    if (text_is(&test, "audioplayer.state", "playing") &&
+    CHECK(h2_gizclaw_e2e_api_call(&test, H2_PAL_HTTP_GET, "/device/status",
+                                  NULL, 200));
+    if (h2_gizclaw_e2e_api_text_is(&test, "audioplayer.state", "playing") &&
         device_evidence(fixture).playback_bytes > 0) {
       played = true;
       break;
     }
-    if (text_is(&test, "audioplayer.state", "error")) {
+    if (h2_gizclaw_e2e_api_text_is(&test, "audioplayer.state", "error")) {
       rc = H2_PAL_ERR_IO;
       break;
     }
   }
   ASSERT(played);
-  CHECK(tool_call(&test, "audioplayer.stop", NULL, 200));
-  ASSERT(text_is(&test, "result.state", "stopped"));
+  CHECK(h2_gizclaw_e2e_tool_call(&test, "audioplayer.stop", NULL, 200));
+  ASSERT(h2_gizclaw_e2e_api_text_is(&test, "result.state", "stopped"));
   if (first_failure == H2_PAL_OK)
     first_failure = rc;
   if (test.key.name[0])
     rc = H2_PAL_OK;
-  CHECK(tool_call(&test, "firmware.update", "{\"channel\":\"develop\"}", 200));
+  CHECK(h2_gizclaw_e2e_tool_call(&test, "firmware.update",
+                                 "{\"channel\":\"develop\"}", 200));
   bool failed = false;
   for (unsigned i = 0; rc == H2_PAL_OK && i < 60; ++i) {
     CHECK(h2_pal_time_sleep_ms(fixture->time, 500));
-    CHECK(api_call(&test, H2_PAL_HTTP_GET, "/device/status", NULL, 200));
-    if (text_is(&test, "ota.state", "failed") &&
-        !text_is(&test, "ota.update_id", local_update_id)) {
+    CHECK(h2_gizclaw_e2e_api_call(&test, H2_PAL_HTTP_GET, "/device/status",
+                                  NULL, 200));
+    if (h2_gizclaw_e2e_api_text_is(&test, "ota.state", "failed") &&
+        !h2_gizclaw_e2e_api_text_is(&test, "ota.update_id", local_update_id)) {
       failed = true;
       break;
     }
@@ -483,7 +391,7 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
   char expected_error[32];
   (void)snprintf(expected_error, sizeof(expected_error), "pal:%d", H2_PAL_ERR_FORMAT);
   ASSERT(failed && h2_atomic_load(&stage_bytes) > 0 &&
-         text_is(&test, "ota.error_code", expected_error));
+         h2_gizclaw_e2e_api_text_is(&test, "ota.error_code", expected_error));
   if (first_failure == H2_PAL_OK)
     first_failure = rc;
   rc = first_failure;

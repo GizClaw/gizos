@@ -35,8 +35,6 @@ typedef struct {
  const char *media_path; unsigned acquire_timeout_ms; int looping, display_mode, require_audio;
  int (*should_stop)(void *); int (*on_ready)(void *); void *ready_user;
 } h2_smoke_mp4_player_config_t;
-typedef struct { uint32_t suite_mask; } h2_pal_e2e_config_t;
-typedef struct { size_t case_count, passed, failed; struct { unsigned case_id; int result; } cases[1]; void *retained_cleanup; } h2_pal_e2e_result_t;
 static h2_runtime_t instance;
 static h2_atomic_int_t live, finishes;
 static h2_atomic_int_t sleep_calls;
@@ -101,14 +99,6 @@ int h2_pal_fs_stat(const void *fs, const char *path, h2_pal_fs_stat_t *st) { (vo
 int mp4_watchdog_poll(void *u) { (void)u; return 0; }
 int confirm_ready(void *u) { (void)u; return 0; }
 int h2_smoke_mp4_player_run(h2_runtime_t *r, const h2_smoke_mp4_player_config_t *c) { (void)c; assert(r == &instance && h2_atomic_load(&live)); return fault == 5 ? -15 : 0; }
-int h2_pal_e2e_run(h2_runtime_t *r, const h2_pal_e2e_config_t *c, h2_pal_e2e_result_t *report) {
- (void)c; assert(r == &instance && h2_atomic_load(&live));
- if (fault == 5) { report->retained_cleanup = report; retained = 2; return -15; }
- return 0;
-}
-int h2_pal_e2e_cleanup(h2_runtime_t *r, h2_pal_e2e_result_t *report) {
- assert(r == &instance && h2_atomic_load(&live) && retained); if (--retained == 0) report->retained_cleanup = NULL; return retained ? -6 : 0;
-}
 #if WORKER_TARGET
 static void *run_worker(void *arg) { (void)arg; worker_fn(worker_arg); h2_atomic_store(&finishes, 1); return NULL; }
 int h2_pal_task_start(const void *api, const h2_pal_task_options_t *options, void (*fn)(void *), void *arg, h2_pal_task_t **out) {

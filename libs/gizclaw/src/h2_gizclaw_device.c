@@ -1,4 +1,6 @@
 #include "h2_gizclaw_device_internal.h"
+#include "h2_gizclaw_lua_apps_internal.h"
+#include "h2_gizclaw_lua_stream_internal.h"
 #include "h2_gizclaw_firmware.h"
 #include "h2_gizclaw_internal.h"
 #include "h2_gizclaw_mhs_internal.h"
@@ -30,7 +32,9 @@
 typedef struct audio_download audio_download_t;
 struct h2_gizclaw_device {
   h2_gizclaw_config_t config;
-  h2_gizclaw_tool_handler_t tools[H2_GIZCLAW_TOOL_SOCIAL_PING];
+  h2_gizclaw_tool_handler_t tools[H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL];
+  h2_gizclaw_lua_apps_t *lua_apps;
+  h2_gizclaw_lua_stream_t *lua_stream;
   h2_gizclaw_mhs_device_t *mhs_devices;
   h2_gizclaw_mhs_builtin_t mhs_builtin;
   h2_gizclaw_service_t *service;
@@ -570,6 +574,13 @@ static bool device_supports(const h2_gizclaw_device_t *d, int method) {
   case H2_GIZCLAW_TOOL_IDENTIFIERS_GET:
   case H2_GIZCLAW_TOOL_DEVICE_STATUS_GET:
     return true;
+  case H2_GIZCLAW_TOOL_LUA_APP_LIST:
+    return d->config.lua_apps != NULL;
+  case H2_GIZCLAW_TOOL_LUA_APP_INSTALL:
+  case H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL:
+    return h2_lua_apps_can_install(d->config.lua_apps);
+  case H2_GIZCLAW_TOOL_LUA_APP_RUN:
+    return d->config.lua_apps && v && v->prepare_lua_app_run;
   case H2_GIZCLAW_TOOL_SOUND_PLAY:
     return d->config.audio && v && v->resolve_sound_url;
   case H2_GIZCLAW_TOOL_DEVICE_REBOOT:
@@ -609,6 +620,17 @@ static bool device_supports(const h2_gizclaw_device_t *d, int method) {
 static int device_tool(h2_gizclaw_device_t *d, int method,
                        h2_gizclaw_rpc_bytes_t bytes,
                        h2_gizclaw_rpc_provider_response_t *out) {
+  if ((method >= H2_GIZCLAW_TOOL_LUA_APP_LIST &&
+       method <= H2_GIZCLAW_TOOL_LUA_APP_RUN) ||
+      method == H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL) {
+    lock(d);
+    bool busy = d->pending != 0;
+    unlock(d);
+    if (busy && method != H2_GIZCLAW_TOOL_LUA_APP_LIST)
+      return H2_PAL_ERR_BUSY;
+    return h2_gizclaw_lua_apps_rpc_internal(
+        d->lua_apps, (h2_gizclaw_tool_t)method, bytes, out);
+  }
   if (method >= H2_GIZCLAW_TOOL_AUDIOPLAYER_GET &&
       method <= H2_GIZCLAW_TOOL_AUDIOPLAYER_PLAYLIST_APPEND)
     return player_rpc(d, method, bytes, out);
@@ -773,7 +795,8 @@ int h2_gizclaw_device_tool_internal(
   else if (rc == H2_PAL_ERR_BUSY || rc == H2_PAL_ERR_NO_MEMORY)
     code = H2_GIZCLAW_RPC_ERROR_RESOURCE_EXHAUSTED;
   else if (rc == H2_PAL_ERR_NOT_FOUND &&
-           method == H2_GIZCLAW_TOOL_WIFI_SAVED_FORGET)
+           (method == H2_GIZCLAW_TOOL_WIFI_SAVED_FORGET ||
+            method == H2_GIZCLAW_TOOL_LUA_APP_RUN))
     code = H2_GIZCLAW_RPC_ERROR_NOT_FOUND;
   else if (rc == H2_PAL_ERR_UNSUPPORTED || rc == H2_PAL_ERR_NOT_FOUND)
     code = H2_GIZCLAW_RPC_ERROR_UNIMPLEMENTED;
@@ -1942,8 +1965,9 @@ h2_pal_result_t h2_gizclaw_device_init_internal(h2_gizclaw_service_t *service) {
    * serves the caller's table like a standalone Client. */
   if (!config->audio && !config->wifi && !config->modem &&
       config->battery_component == H2_RUNTIME_COMPONENT_ID_NONE &&
-      !config->wifi_settings && !config->power && !config->vtable && !config->manufacturer &&
-      !config->model && !config->serial && !config->hardware_revision)
+      !config->wifi_settings && !config->power && !config->vtable &&
+      !config->manufacturer && !config->model && !config->serial &&
+      !config->hardware_revision && !config->lua_apps)
     return H2_PAL_OK;
   if (!speaker_hooks_paired(config->vtable))
     return H2_PAL_ERR_INVALID_ARG;
@@ -1987,6 +2011,16 @@ h2_pal_result_t h2_gizclaw_device_init_internal(h2_gizclaw_service_t *service) {
     h2_pal_mem_free(config->allocator, d);
     return rc;
   }
+  if (config->lua_apps) {
+    rc = h2_gizclaw_lua_apps_create_internal(config, &d->lua_apps);
+    if (rc == H2_PAL_OK)
+      rc = h2_gizclaw_lua_stream_create_internal(
+          config, service->config.task, service->config.sync, &d->lua_stream);
+    if (rc != H2_PAL_OK) {
+      h2_gizclaw_device_destroy_internal(d);
+      return rc;
+    }
+  }
   if (config->audio) {
     d->playlist = h2_pal_mem_alloc(config->allocator, sizeof(*d->playlist));
     d->incoming = h2_pal_mem_alloc(config->allocator, sizeof(*d->incoming));
@@ -1998,8 +2032,8 @@ h2_pal_result_t h2_gizclaw_device_init_internal(h2_gizclaw_service_t *service) {
     memset(d->incoming, 0, sizeof(*d->incoming));
   }
   size_t tool_count = 0;
-  for (int tool = H2_GIZCLAW_TOOL_INFO_GET; tool <= H2_GIZCLAW_TOOL_SOCIAL_PING;
-       ++tool)
+  for (int tool = H2_GIZCLAW_TOOL_INFO_GET;
+       tool <= H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL; ++tool)
     if (device_supports(d, tool))
       d->tools[tool_count++] = (h2_gizclaw_tool_handler_t){
           (h2_gizclaw_tool_t)tool, h2_gizclaw_device_tool_internal, d};
@@ -2036,6 +2070,13 @@ h2_pal_result_t h2_gizclaw_device_init_internal(h2_gizclaw_service_t *service) {
   service->client_config.mhs_device_count = state_count;
   return H2_PAL_OK;
 }
+int h2_gizclaw_device_start_lua_stream_internal(h2_gizclaw_device_t *d) {
+  return d ? h2_gizclaw_lua_stream_start_internal(d->lua_stream) : H2_PAL_OK;
+}
+const gzc_rpc_stream_provider_t *
+h2_gizclaw_device_lua_stream_internal(h2_gizclaw_device_t *d) {
+  return d ? h2_gizclaw_lua_stream_provider_internal(d->lua_stream) : NULL;
+}
 h2_pal_result_t h2_gizclaw_device_start_internal(h2_gizclaw_device_t *d) {
   if (!d)
     return H2_PAL_OK;
@@ -2045,13 +2086,19 @@ h2_pal_result_t h2_gizclaw_device_start_internal(h2_gizclaw_device_t *d) {
                            &d->task);
 }
 void h2_gizclaw_device_cancel_internal(h2_gizclaw_device_t *d) {
-  if (d)
+  if (d) {
     h2_atomic_store(&d->stopping, true);
+    h2_gizclaw_lua_apps_cancel_internal(d->lua_apps);
+    h2_gizclaw_lua_stream_cancel_internal(d->lua_stream);
+  }
 }
 h2_pal_result_t h2_gizclaw_device_stop_internal(h2_gizclaw_device_t *d) {
   if (!d)
     return H2_PAL_OK;
   h2_gizclaw_device_cancel_internal(d);
+  int stream_rc = h2_gizclaw_lua_stream_stop_internal(d->lua_stream);
+  if (stream_rc != H2_PAL_OK)
+    return stream_rc;
   if (!d->task)
     return finish_audio_download(d);
   int rc = h2_pal_task_join(d->service->config.task, d->task);
@@ -2065,6 +2112,8 @@ void h2_gizclaw_device_destroy_internal(h2_gizclaw_device_t *d) {
   if (!d || d->task || d->download)
     return;
   (void)h2_pal_mutex_destroy(d->service->config.sync, d->mutex);
+  h2_gizclaw_lua_apps_destroy_internal(d->lua_apps);
+  h2_gizclaw_lua_stream_destroy_internal(d->lua_stream);
   h2_pal_mem_free(d->config.allocator, d->response);
   h2_pal_mem_free(d->config.allocator, d->mhs_devices);
   h2_pal_mem_free(d->config.allocator, d->incoming);

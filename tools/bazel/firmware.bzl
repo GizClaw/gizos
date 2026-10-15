@@ -37,7 +37,8 @@ def _validate_identifiers(value, field, reject_numeric_leading_zero):
         if reject_numeric_leading_zero and numeric and len(identifier) > 1 and identifier.startswith("0"):
             fail("numeric firmware version %s identifiers must not contain a leading zero" % field)
 
-def _validate_semver(value):
+def validate_declared_version(value):
+    """Validates the shared 31-byte SemVer contract for declared artifacts."""
     if not value or len(value) > 31:
         fail("declared firmware version must contain 1..31 ASCII characters")
     parts = value.split("+")
@@ -58,7 +59,7 @@ def _validate_semver(value):
 
 def _firmware_version_impl(ctx):
     value = ctx.attr.value
-    _validate_semver(value)
+    validate_declared_version(value)
     return [FirmwareVersionInfo(value = value)]
 
 def _firmware_version_flag_impl(ctx):

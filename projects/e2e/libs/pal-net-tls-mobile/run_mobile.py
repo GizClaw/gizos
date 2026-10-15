@@ -4,7 +4,7 @@ import socket
 from datetime import datetime, timezone
 
 from fixture import Fixture
-from check_qualification import check_cases, check_peer
+from report_validation import check_cases, check_peer
 
 
 def run_suite(app, args):

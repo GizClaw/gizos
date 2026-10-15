@@ -2,6 +2,8 @@
 
 const char h2_gizclaw_device_task_name[] = H2_GIZCLAW_DEVICE_TASK_NAME_VALUE;
 const char h2_gizclaw_net_task_name[] = H2_GIZCLAW_NET_TASK_NAME_VALUE;
+const char h2_gizclaw_lua_install_task_name[] =
+    H2_GIZCLAW_LUA_INSTALL_TASK_NAME_VALUE;
 const char h2_gizclaw_audio_uplink_task_name[] =
     H2_GIZCLAW_AUDIO_UPLINK_TASK_NAME_VALUE;
 const char h2_gizclaw_audio_downlink_task_name[] =

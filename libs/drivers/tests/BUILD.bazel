@@ -15,6 +15,7 @@ cc_test(
     deps = [
         "//libs/atomic/providers/c11",
         "//libs/drivers/motion/qmi8658",
+        "//libs/drivers/motion/sc7a20h",
         "//libs/drivers/nfc/fm175xx",
         "//libs/pal/providers/modem/quectel:quectel_modem",
         "//libs/pal/providers/modem/simcom:simcom_modem",

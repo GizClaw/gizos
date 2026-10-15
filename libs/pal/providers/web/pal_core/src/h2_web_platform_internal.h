@@ -71,6 +71,8 @@ struct h2_web_platform {
   h2_pal_video_decoder_api_t video_decoder_api;
   h2_pal_display_api_t display_api;
   h2_pal_touch_api_t touch_api;
+  h2_pal_led_api_t led_api;
+  h2_pal_periph_api_t led_periph;
   h2_pal_serial_host_api_t serial_api;
   h2_pal_webrtc_api_t webrtc_api;
   h2_pal_netif_api_t netif_api;
@@ -91,6 +93,7 @@ struct h2_web_platform {
   bool netif_online;
   _Atomic bool netif_dirty;
   void *serial_state;
+  void *fake_network;
   h2_pal_webrtc_peer_t *webrtc_peers;
   h2_web_webrtc_zombie_t *webrtc_zombies;
   bool pointer_installed;
@@ -148,6 +151,9 @@ void h2_web_async_signal(h2_web_platform_t *platform, h2_web_async_t *op,
 h2_pal_result_t h2_web_platform_sleep_ms(h2_web_platform_t *platform,
                                          uint32_t duration_ms);
 void h2_web_platform_netif_init(h2_web_platform_t *platform);
+h2_pal_result_t h2_web_platform_fake_network_init(h2_web_platform_t *platform);
+void h2_web_platform_fake_network_deinit(h2_web_platform_t *platform);
+bool h2_web_platform_fake_network_available(h2_web_platform_t *platform);
 void h2_web_platform_netif_deinit(h2_web_platform_t *platform);
 void h2_web_platform_netif_poll(h2_web_platform_t *platform);
 void h2_web_platform_event_retire(h2_web_platform_t *platform);

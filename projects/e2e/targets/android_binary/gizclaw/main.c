@@ -1,5 +1,5 @@
 #include "h2_android_platform.h"
-#include "h2_mobile_app_host.h"
+#include "h2_mobile_e2e_runtime_config.h"
 #include "mobile_runner.h"
 #include <jni.h>
 #include <stdio.h>
@@ -34,7 +34,7 @@ Java_com_haivivi_gizos_e2e_gizclaw_MainActivity_nativeRun(JNIEnv *env, jclass ty
   if (!rc) rc = h2_android_http_create(NULL,0u,&http);
   if (!rc) rc = h2_android_webrtc_create(&webrtc);
   if (!rc) {
-    h2_runtime_config_t config = h2_android_app_host_config();
+    h2_runtime_config_t config = h2_mobile_e2e_runtime_config();
     config.http = h2_android_http_api(http);
     config.webrtc = h2_android_webrtc_api(webrtc);
     rc = h2_gizclaw_mobile_run(config,"android-emulator",values[2],values[3],

@@ -55,7 +55,9 @@ h2_pal_result_t h2_gizclaw_service_get_time_sync_status(
 /** A valid RPC error response, distinct from PAL transport/format failures.
  * A canonical NOT_FOUND status instead returns H2_PAL_ERR_NOT_FOUND from
  * req_wait, response parsers and synchronous RPCs. UNIMPLEMENTED and all other
- * status codes remain H2_GIZCLAW_ERR_REMOTE. */
+ * status codes remain H2_GIZCLAW_ERR_REMOTE for generic/Social requests.
+ * API-key create documents its scoped RESOURCE_EXHAUSTED projection in
+ * h2_gizclaw_api_key.h; it does not change this generic mapping. */
 #define H2_GIZCLAW_ERR_REMOTE ((h2_pal_result_t) - 1000)
 
 /** Fill at most capacity bytes for one data-up request. `OK` with zero bytes

@@ -1,8 +1,37 @@
 #include "h2_esp_ble_gatt_schema.h"
 
 #include <assert.h>
+#include <string.h>
+
+static void test_retained_slot_rebinding(void) {
+    /* Different pages still retain their own layout on the shared Host. */
+    const size_t counts[] = { 2u, 3u, 3u, 2u, 2u, 3u };
+    uint8_t indices[H2_ESP_BLE_MAX_GATT_CHARACTERISTICS];
+    memset(indices, 0xff, sizeof(indices));
+    for (size_t service = 0u; service < 6u; ++service) {
+        h2_esp_ble_gatt_schema_bind_indices(indices, service, counts[service]);
+    }
+    for (size_t service = 0u; service < 6u; ++service) {
+        for (size_t ch = 0u; ch < 3u; ++ch) {
+            size_t slot = h2_esp_ble_gatt_schema_slot(service, ch);
+            assert(indices[slot] == (ch < counts[service] ? (uint8_t)slot : 0xffu));
+        }
+    }
+
+    uint8_t retained[sizeof(indices)];
+    memcpy(retained, indices, sizeof(retained));
+    /* Reopening any retained schema cannot remap another owner's slots. */
+    for (size_t iteration = 0u; iteration < 16u; ++iteration) {
+        for (size_t service = 0u; service < 6u; ++service) {
+            h2_esp_ble_gatt_schema_bind_indices(indices, service, counts[service]);
+            assert(memcmp(indices, retained, sizeof(indices)) == 0);
+        }
+    }
+}
 
 int main(void) {
+    /* A shared Host retains all six consumer schemas over its lifetime. */
+    assert(h2_esp_ble_gatt_schema_accepts(6u, 3u));
     /* One service with the three provisioning characteristics is accepted. */
     assert(h2_esp_ble_gatt_schema_accepts(1u, 3u));
     assert(h2_esp_ble_gatt_schema_accepts(1u, 1u));
@@ -69,9 +98,15 @@ int main(void) {
     assert(h2_esp_ble_gatt_schema_slot(0u, 2u) == 2u);
     assert(h2_esp_ble_gatt_schema_slot(1u, 0u) == 3u);
     assert(h2_esp_ble_gatt_schema_slot(1u, 2u) == 5u);
-    assert(H2_ESP_BLE_MAX_GATT_SERVICES == 4u);
+    assert(H2_ESP_BLE_MAX_GATT_SERVICES == 6u);
     assert(h2_esp_ble_gatt_schema_slot(3u, 0u) == 9u);
     assert(h2_esp_ble_gatt_schema_slot(3u, 2u) == 11u);
     assert(indices[11] == 11u);
+    assert(h2_esp_ble_gatt_schema_slot(5u, 0u) == 15u);
+    assert(h2_esp_ble_gatt_schema_slot(5u, 2u) == 17u);
+    assert(H2_ESP_BLE_MAX_GATT_CHARACTERISTICS == 18u);
+    assert(indices[17] == 17u);
+    assert(!h2_esp_ble_gatt_schema_accepts(7u, 3u));
+    test_retained_slot_rebinding();
     return 0;
 }

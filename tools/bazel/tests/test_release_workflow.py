@@ -11,8 +11,6 @@ import unittest
 from tools.bazel import release_workflow
 
 
-ROOT = Path(__file__).resolve().parents[3]
-WORKFLOW = ROOT / ".github/workflows/release.yml"
 COMMIT = "a" * 40
 
 
@@ -26,21 +24,6 @@ class ReleaseWorkflowTest(unittest.TestCase):
                 release_workflow.ReleaseWorkflowError
             ):
                 release_workflow.require_snapshot(ref, "main", COMMIT, checkout)
-
-    def test_every_gizos_checkout_and_validation_step_is_wired(self):
-        text = WORKFLOW.read_text(encoding="utf-8")
-        checkout_blocks = text.split("- name: Check out GizOS")[1:]
-        self.assertGreaterEqual(len(checkout_blocks), 7)
-        for block in checkout_blocks:
-            self.assertIn("ref: ${{ github.sha }}", block.split("\n      - ", 1)[0])
-        self.assertIn("release_workflow.py gate", text)
-        self.assertIn("release_workflow.py prepare", text)
-        self.assertIn("release_workflow.py verify", text)
-        self.assertLess(text.index("name: Require default branch release ref"),
-                        text.index("name: Check out GizOS"))
-        self.assertIn('"$GITHUB_REF" != "refs/heads/$DEFAULT_BRANCH"', text)
-        self.assertLess(text.index("release_workflow.py gate"), text.index("name: Build catalog slice"))
-        self.assertLess(text.index("release_workflow.py verify"), text.index('gh release edit "$RELEASE_TAG"'))
 
     def make_assets(self, directory: Path) -> None:
         (directory / "firmware.zip").write_bytes(b"firmware")

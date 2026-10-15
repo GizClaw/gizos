@@ -17,8 +17,8 @@ objc_library(
     ],
     target_compatible_with = IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY,
     deps = [
-        "//libs/app_host:ios_packaged",
         "//projects/e2e/libs/atomic-mobile:runner",
+        "//projects/e2e/libs/mobile-platform-config:runtime_config",
     ],
 )
 
@@ -39,10 +39,10 @@ ios_application(
 mobile_e2e_test(
     name = "ios_atomic_simulator_test",
     app = ":atomic_e2e.ipa",
+    external = True,
     platform = "ios",
     sdk = ":app_sdk",
     suite = "//projects/e2e/libs/atomic-mobile:mobile_e2e",
-    external = True,
 )
 
 mobile_app_sdk(

@@ -1,12 +1,12 @@
-"""Run one embedded Lua script as an app_host Web App on a web board."""
+"""Run one embedded Lua script as an entry-owned Web App on a web board."""
 
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@rules_cc//cc:defs.bzl", "cc_library")
-load("//libs/app_host:web_app.bzl", "h2_web_app")
-load("//libs/app_host:web_board.bzl", "H2WebBoardInfo")
 load("//libs/lua:lua_resource.bzl", "h2_lua_resource")
+load("//tools/bazel/web:web_app.bzl", "h2_web_app")
+load("//tools/bazel/web:web_board.bzl", "H2WebBoardInfo")
 
-_MAX_RUN_MS = 4294967295  # h2_web_app_host_config_t.run_ms is uint32_t
+_MAX_RUN_MS = 4294967295  # H2_WEB_LUA_APP_RUN_MS is uint32_t
 _DEFAULT_VM_BYTES = 512 * 1024
 _DEFAULT_SOURCE_BYTES = 128 * 1024
 _ARG_NAME_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789_"
@@ -83,7 +83,7 @@ def h2_lua_web_app(
     """Declares `<name>` (web tar), `serve` and `browser_test` for one script.
 
     The script is embedded with h2_lua_resource() and run by a generic App
-    entry on app_host, on the given web board. Every board Button reaches the
+    entry owning its providers and Runtime, on the given web board. Every board Button reaches the
     script as `args.<name>` (its Runtime component id, 1..N in board order)
     and its Runtime events are dispatched to the job. The exit Button ends
     the job instead; so does the page's Stop button. Use one h2_lua_web_app

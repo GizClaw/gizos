@@ -1,4 +1,4 @@
-load("//libs/app_host:web_app.bzl", "h2_web_app")
+load("//tools/bazel/web:web_app.bzl", "h2_web_app")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -18,5 +18,8 @@ h2_web_app(
     preload = {
         "//projects/example/apps/audio-system:data/audio/music_loop.ogg": "/assets/audio/music_loop.ogg",
     },
-    deps = ["//projects/example/apps/audio-system/app:audio_system"],
+    deps = [
+        "//projects/example/apps/audio-system/app:audio_system",
+        "//projects/example/libs/host_runtime",
+    ],
 )

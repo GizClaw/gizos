@@ -1,6 +1,6 @@
 #include "h2_android_net.h"
 #include "h2_android_platform.h"
-#include "h2_mobile_app_host.h"
+#include "h2_mobile_e2e_runtime_config.h"
 #include "mobile_runner.h"
 #include <jni.h>
 #include <pthread.h>
@@ -87,7 +87,7 @@ Java_com_haivivi_gizos_e2e_palipv6_MainActivity_nativeRun(
     if (rc == H2_PAL_OK)
       rc = h2_android_webrtc_create(&owner->webrtc);
     if (rc == H2_PAL_OK) {
-      h2_runtime_config_t config = h2_android_app_host_config();
+      h2_runtime_config_t config = h2_mobile_e2e_runtime_config();
       config.net = h2_android_net_api(owner->net);
       config.webrtc = h2_android_webrtc_api(owner->webrtc);
       rc = h2_ipv6_mobile_run(config, values[2], (uint16_t)port, values[3],

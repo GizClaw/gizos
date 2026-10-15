@@ -6,12 +6,16 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-/** Headless Display PAL for lifecycle and brightness assertions, not rendering.
- * draw_bitmap/present are explicitly unsupported. */
+/** Headless Display PAL for lifecycle and brightness assertions. Drawing is
+ * unsupported by default. accept_bitmaps validates RGB565 rectangle/stride
+ * inputs and counts submissions without retaining pixels or opening a window;
+ * consumers may observe their own renderer's frames for golden comparison. */
 typedef struct h2_app_test_display {
   h2_pal_display_api_t api;
   h2_display_info_t info;
   bool opened;
+  bool accept_bitmaps;
+  size_t draw_count, present_count;
   uint32_t brightness_percent, last_brightness_percent;
   h2_app_test_fault_t open, close, brightness;
 } h2_app_test_display_t;

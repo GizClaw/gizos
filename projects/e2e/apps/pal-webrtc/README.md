@@ -1,6 +1,6 @@
 # PAL WebRTC E2E
 
-This portable qualification App consumes the public WebRTC PAL and a launcher-owned Pion fixture. It is separate from the mixed PAL App and the WebRTC throughput benchmark. The production header, independent inventory and stable case registry define coverage: all 13 peer/channel operations, the read/write Track callbacks, owned event release, custom allocator lifecycle and every DataChannel configuration field.
+This portable qualification App consumes the public WebRTC PAL and a launcher-owned Pion fixture. It is separate from the WebRTC throughput benchmark. The production header, independent inventory and stable case registry define coverage: all 13 peer/channel operations, the read/write Track callbacks, owned event release, custom allocator lifecycle and every DataChannel configuration field.
 
 The current registry has 43 mandatory cases. It checks default and legacy creation, allocator rejection at the first four allocation cuts and ownership, nonblocking/positive/negative polling, borrowed ICE/SDP/channel-label/message inputs, malformed SDP, all four ordered/reliable channel combinations, an explicitly requested stream ID, binary/UTF-8/empty/bounded messages, Opus direct send through the 1275-byte packet limit and Track delivery, WOULD_BLOCK retry with WRITABLE, quiescent Track detach, owned Opus events, channel/remote close, event retention through peer close, idempotent release, resource churn and rejection of a deliberately incorrect DTLS fingerprint. A missing operation blocks qualification; a failed case blocks dependent cases. No SKIP/BLOCKED result is counted as PASS.
 
@@ -11,7 +11,7 @@ Host tests use a separately implemented Pion peer with real ICE/DTLS/SRTP/SCTP. 
 Run host qualification:
 
 ```sh
-bazel test //projects/e2e/apps/pal-webrtc/app:interface_coverage_test //projects/e2e/apps/pal-webrtc/app:reject_missing_test //projects/e2e/targets/cc_binary/pal-webrtc:desktop_test //projects/e2e/targets/pkg_tar/pal-webrtc:browser_test
+bazel test //projects/e2e/apps/pal-webrtc/app:reject_missing_test //projects/e2e/targets/cc_binary/pal-webrtc:desktop_test //projects/e2e/targets/pkg_tar/pal-webrtc:browser_test
 ```
 
 Use the exact manual mobile test targets after selecting dedicated simulators:

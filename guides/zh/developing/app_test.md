@@ -466,11 +466,11 @@ Testing PAL 目前有两个独立 target，均不依赖 LVGL 或 Memory driver�
 | Task / Sync | `h2_app_test_task.h`、`h2_app_test_sync.h` | 串行生命周期测试：显式执行 entry、start/join 故障、mutex ownership；不模拟并发 |
 | WebRTC decorator | `h2_app_test_webrtc.h` | 委托真实／fake provider，包装 peer/channel 与 owned event，同步观察事件 |
 | Preference | `h2_app_test_pref.h` | namespace/key 隔离，bool/i32/u32/string/blob，事务 commit，按 namespace 和修改 key 筛选 commit 故障 |
-| FS | `h2_app_test_fs.h` | 内存文件读写、seek/stat/remove/rename、短读、close/sync 故障 |
+| FS | `h2_app_test_fs.h` | 内存文件与目录、seek/stat/remove/rename、短读、close/sync 故障 |
 | Wi-Fi / Settings | `h2_app_test_wifi.h` | scan 列表与过滤、连接请求、显式状态、保存／忘记网络 |
-| Modem | `h2_app_test_modem.h` | 状态输入、dial/answer/hangup 请求与失败 |
+| Modem | `h2_app_test_modem.h` | 状态／版本输入、dial/answer/hangup 请求与失败、scenario 紧急号码表、URL OTA 请求记录与状态／失败输入 |
 | Power | `h2_app_test_power.h` | capabilities/boot info、hold、reboot/sleep/shutdown 意图、深睡定时唤醒时长 |
-| Display | `h2_app_test_display.h` | open/close、亮度值及失败；不绘制像素 |
+| Display | `h2_app_test_display.h` | open/close、亮度值及失败；可选校验并计数 RGB565 提交，不保留像素 |
 | Periph / Button / Input / PWM | `h2_app_test_periph.h` | 可配置 ID registry、按键状态、电量／温度、振动 duty |
 | Audio fake | `h2_app_test_audio_fake.h` | 无硬件 mic/speaker/track、音量、静音输入、输出字节、失败与 ownership |
 | Crypto fixture | `h2_app_test_crypto.h` | 显式随机字节序列和已知 X25519 keypair，供 identity 存取测试 |
@@ -489,7 +489,7 @@ H106 Host 对 Timer、HTTP、WebRTC、NFC 等未实现能力继续选择 canonic
 
 Wi-Fi connect 和 Modem call 成功只表示操作被接受，不自动生成 GOT_IP 或通话完成； scenario 明确配置后续 PAL status，并通过 Runtime test control 注入相应 event。 Power fake 记录 transition 意图，不重启 Host，不自动增加 boot_count。这样不会把一个成功的 API 返回值当成完整异步产品结果。
 
-Preference writer 的修改在 commit 前只对该 writer 可见，reader 读取已提交数据。 commit 失败保留待提交修改供重试，close 放弃未提交修改。FS 仅模拟 exact-path regular file，目录操作不支持；所有容量和借用关系由 public header 定义。
+Preference writer 的修改在 commit 前只对该 writer 可见，reader 读取已提交数据。 commit 失败保留待提交修改供重试，close 放弃未提交修改。FS 模拟 exact-path 文件与目录，mkdir 对已有目录幂等，stat 区分目录，非空目录不能 remove；directory clear 与 rename 仍 unsupported。Display 默认不支持 draw/present；显式 `accept_bitmaps` 只校验 RGB565 范围与 stride 并计数，golden 像素来自 renderer 自己的成功-present observer。所有容量和借用关系由 public header 定义。
 
 ### Audio decorator 接线
 
@@ -507,6 +507,8 @@ Preference writer 的修改在 commit 前只对该 writer 可见，reader 读取
   workers、关闭 mic/speaker/track、销毁 Runtime，再销毁 decorator 和底层 provider。
 
 Audio decorator 要求 Time PAL 提供会让出当前任务的 `sleep_ms`，缺少时 create 返回 `INVALID_ARG`；它既用于 fixture 节拍，也用于 fixture lock 忙时的退避，避免高优先级 mic 读取在同核自旋饿死持锁方。Audio decorator 默认输出 fixture。后台麦克风泵持续读取的产品应在启动 Runtime 前暂停 fixture，再由公开 observation callback 发布实际 capture 状态；暂停期间继续采样真实麦克风健康，但 read 立即返回 WOULD_BLOCK 和零字节，不消耗 PCM。恢复保留样本位置与 EOF，从首次启用的 read 重新建立 pacing epoch，不补发暂停期间的帧；重复发布同一状态不重置时钟。暂停／恢复即使发生在两次 read 之间或 pacing sleep 内也会被检测。控制状态跨 mic stop/start 与 fixture 更换保留，mic start 仍回绕样本。调用方保持输出暂停后，可在后台 mic 持续运行时更换同格式 fixture；替换与在途帧复制互斥，成功后旧 PCM 可释放，进度与 EOF 清零，真实采集健康保留。替换需与 mic start/stop 串行，不在 observation callback 中执行。该控制只发布原子状态，不调用 PAL 或获取 fixture lock；已越过最终状态检查的在途 read 仍可能输出一帧，因此它不是停止上传的 completion barrier。产品采集状态、素材选择和业务断言由 consumer 拥有。
+
+大录音可提供有限长度的 reader fixture，由调用方按 offset 读取原始 PCM；Decorator 每次最多读取一帧，无需常驻连续大缓冲。Reader 配置复制、context 借用，替换门禁和 pacing 与 PCM 相同，成功替换之后才可结束旧 source 的生命周期。Reader 的首个读取错误通过 `fixture_read_result` 单独报告，不推进 offset、EOF 或成功帧计数，也不混入物理 Mic 健康。文件路径、打开／校验／关闭和产品语音素材仍由 consumer 拥有。完整阻塞、并发和错误合同见 Public Header。
 
 测试方通过 `h2_app_test_audio_copy_evidence()` 读取独立的 PAL 证据；App/UI 的 paired snapshot 仍由 App adapter 提供。Evidence 支持并发读取，但多字段不是原子快照，一致性断言应放在测试的 completion barrier 后。公共头文件定义具体并发与容量边界。
 
@@ -564,5 +566,7 @@ rendered pixel、perceived audio、真实网络或产品验收。
 - 主机边界测试复用 Memory、Time、Task、Sync 和 Crypto fixture。Request/Session/Resource 替身、远端响应脚本和资源清理断言仍在 GizClaw 测试中。串行 Task/Sync fake 不能用于真实 Service worker；并发测试继续使用真实／libco provider。
 
 这些接入不需要第二个 Runtime。真实 E2E 保留真实网络、加密、存储和调度；Testing PAL 证据补充业务断言，不替代服务器结果和真机验收。
+
+Lua App live lane 在同一私有 Filesystem 上重建目录与 Service 执行第二轮；任何安装请求之前必须验证 retained entry 的 SHA，并通过远程 run 核对其 frame golden。Host 的显式 `missing`/`digest` fault modes 在两轮之间删除或等长损坏 entry，要求该持久化检查失败且资源清理成功。设备通过 `H2_GIZCLAW_E2E_LUA_EXPECT_PERSISTED` 选择必须已有安装的独立启动验收，不能用随后重装掩盖丢失。
 
 Wi-Fi fake 的 `connect_status` 可脚本化下一次成功连接的状态；UNKNOWN 不改变当前状态。`connect_and_save` 使用同一 `libs/wifi_sta` 事务和内嵌虚拟 Time，只有目标 GOT_IP 且非零有效 IPv4 才写模拟 Settings。测试可注入连接、状态、时钟与保存错误；该 fake 仍由调用方串行使用。

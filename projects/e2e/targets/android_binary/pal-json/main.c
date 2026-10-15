@@ -1,5 +1,5 @@
 #include "h2_android_platform.h"
-#include "h2_mobile_app_host.h"
+#include "h2_mobile_e2e_runtime_config.h"
 #include "mobile_runner.h"
 #include <jni.h>
 JNIEXPORT jint JNICALL
@@ -21,7 +21,7 @@ Java_com_haivivi_gizos_e2e_paljson_MainActivity_nativeRun(JNIEnv *env,
       .create = h2_android_json_provider_create,
       .destroy = h2_android_json_provider_destroy};
   if (!rc)
-    rc = h2_json_mobile_run(h2_android_app_host_config(), "android-emulator",
+    rc = h2_json_mobile_run(h2_mobile_e2e_runtime_config(), "android-emulator",
                               image, path, &factory, h2_android_platform_core_shutdown);
   (*env)->ReleaseStringUTFChars(env, version, image);
   (*env)->ReleaseStringUTFChars(env, report, path);

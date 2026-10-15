@@ -24,6 +24,7 @@ firmware_native_component(
         "manual",
     ],
     deps = [
+        "//libs/atomic",
         "//libs/pal",
         "//libs/runtime",
     ],

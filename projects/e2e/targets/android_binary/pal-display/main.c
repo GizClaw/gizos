@@ -1,5 +1,5 @@
 #include "h2_android_platform.h"
-#include "h2_mobile_app_host.h"
+#include "h2_mobile_e2e_runtime_config.h"
 #include "h2_pal_display_e2e.h"
 #include <jni.h>
 #include <stdio.h>
@@ -77,7 +77,7 @@ Java_com_haivivi_gizos_e2e_paldisplay_MainActivity_nativeRun(
       .capture =
           (*env)->GetMethodID(env, cls, "capture", "([IILjava/lang/String;)I")};
   (*env)->DeleteLocalRef(env, cls);
-  h2_runtime_config_t cfg = h2_android_app_host_config();
+  h2_runtime_config_t cfg = h2_mobile_e2e_runtime_config();
   cfg.display = h2_android_platform_display_api(platform);
   h2_runtime_t *runtime = NULL;
   int rc = h2_runtime_init(&cfg, &runtime);
