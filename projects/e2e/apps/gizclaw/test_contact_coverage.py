@@ -18,7 +18,6 @@ class ContactCoverageTest(unittest.TestCase):
                              capture_output=True, text=True, timeout=30, check=False)
         self.assertEqual(run.returncode, 0, "Contact boundary fixture failed")
         rules = api_coverage.requirements()
-        api_coverage.validate_inventory(rules, (root / "libs/gizclaw/tests/public_api.inc").read_text())
         result = api_coverage.audit(run.stdout.splitlines(keepends=True), rules,
                                     endpoint="example.invalid:9821", backend="h2peer",
                                     profile="default", platform="macos", process_exit_code=run.returncode)

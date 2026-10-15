@@ -63,10 +63,6 @@ class LiveCommandTest(unittest.TestCase):
     def workflow(self):
         text = (ROOT / ".github/workflows/e2e.yml").read_text()
         step = text.split("      - name: Run selected live E2E\n", 1)[1]
-        self.assertIn("H2_GIZCLAW_E2E_ENDPOINT: ${{ inputs.endpoint }}", step)
-        self.assertIn("E2E_BACKEND: ${{ inputs.backend }}", step)
-        self.assertNotIn("inputs.entry", text)
-        self.assertNotIn("H2_GIZCLAW_E2E_ENTRY", text)
         body = step.split("        run: |\n", 1)[1]
         lines = []
         for line in body.splitlines():
@@ -74,7 +70,6 @@ class LiveCommandTest(unittest.TestCase):
                 break
             lines.append(line[10:])
         script = "\n".join(lines)
-        self.assertNotIn("${{", script, "inputs must pass through quoted env")
         return self.run_command(["bash", "-c", script])
 
     def assert_live_call(self, call, backend):

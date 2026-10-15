@@ -7,7 +7,7 @@ import unittest
 import tempfile
 
 APP=Path(__file__).resolve().parents[1]
-spec=importlib.util.spec_from_file_location('qualification',APP/'check_qualification.py')
+spec=importlib.util.spec_from_file_location('qualification',APP/'report_validation.py')
 validation=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(validation)
 REGISTRY=re.findall(r'H2_NET_TLS_CASE\(\w+, "([^"]+)", ([01])\)',(APP/'app/include/h2_pal_net_tls_cases.inc').read_text())
@@ -22,50 +22,6 @@ def receipt():
 
 
 class Rejection(unittest.TestCase):
-    def test_followup_cannot_replace_other_provider_or_claim_fresh_hardware(self):
-        followup=json.loads((APP/'gizclaw_public_https_provenance_main_tls.json').read_text())
-        historical=json.loads((APP/'qualification.json').read_text())['source_sha256']
-        validation.check_sources(validation.ROOT,historical,followup)
-        for mutate in [
-            lambda value:value.update(new_physical_run_claimed=True),
-            lambda value:value['current_source_sha256'].update({'libs/pal/providers/ios/pal_core/src/h2_ios_net.c':'0'*64}),
-            lambda value:value['previous_source_sha256'].update({'tools/bazel/mobile_e2e.py':'0'*64}),
-            lambda value:value['current_source_sha256'].update({'tools/bazel/mobile_e2e.py':'0'*64}),
-        ]:
-            bad=copy.deepcopy(followup);mutate(bad)
-            with self.assertRaises(AssertionError):validation.check_sources(validation.ROOT,historical,bad)
-
-    def test_additive_mqtt_build_owner_does_not_rebind_net_tls_sources(self):
-        import hashlib
-        sources=json.loads((APP/'qualification.json').read_text())['source_sha256']
-        for platform in ['ios','android']:
-            path='libs/pal/providers/'+platform+'/pal_core/BUILD.bazel'
-            current=(validation.ROOT/path).read_bytes()
-            projected=validation.net_tls_build_input(path,current)
-            self.assertEqual(hashlib.sha256(projected).hexdigest(),sources[path])
-            for bad in [current.replace(b'h2_'+platform.encode()+b'_net.c',b'h2_'+platform.encode()+b'_net_changed.c'),
-                        current.replace(b'//libs/pal/providers/wolfssl',b'//libs/pal/providers/untrusted_tls'),
-                        current+b'\n# unknown shared build mutation\n']:
-                self.assertNotEqual(hashlib.sha256(validation.net_tls_build_input(path,bad)).hexdigest(),sources[path])
-        provider='libs/pal/providers/ios/pal_core/src/h2_ios_net.c'
-        current=(validation.ROOT/provider).read_bytes()
-        self.assertEqual(validation.net_tls_build_input(provider,current),current)
-
-    def test_every_native_provider_source_is_mandatory(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root=Path(directory)
-            import hashlib
-            sources={}
-            for relative in validation.REQUIRED_PROVIDER_SOURCES:
-                path=root/relative;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(b'provider')
-                sources[relative]=hashlib.sha256(path.read_bytes()).hexdigest()
-            validation.check_sources(root,sources)
-            for relative in sources:
-                bad=dict(sources);bad.pop(relative)
-                with self.assertRaises(AssertionError):validation.check_sources(root,bad)
-            next(iter(root.rglob('h2_ios_net.c'))).write_bytes(b'changed provider')
-            with self.assertRaises(AssertionError):validation.check_sources(root,sources)
-
     def test_structured_board_observations_reject_state_or_dump_corruption(self):
         board=json.loads((APP/'evidence/bk7258/qualified.json').read_text())
         validation.check_board_observation(board)

@@ -341,3 +341,7 @@ make bazel-release RELEASE_SLICE=lua-runtime RELEASE_BATCH=20260925-120000 RELEA
 ```
 
 真实 GitHub Release 的 tag 创建、上传和下载核验需要在完整的 Release workflow 中验证。
+
+## 测试执行与源码检查
+
+行为测试必须执行被测实现，或检查构建工具实际生成的产物。Python 运行器可以保留用于真实编译、C/C++ 断言、浏览器、网络 fixture、设备和工具输入输出；不使用源码子串、正则匹配函数体、固定源码哈希或精确文档字节作为验收。编译器、类型检查和有语义的数据校验继续承担各自的静态检查职责。

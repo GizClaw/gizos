@@ -33,7 +33,6 @@ class BleVtableTest(unittest.TestCase):
         header = (ROOT / 'libs/pal/include/h2/pal/hal/h2_pal_ble.h').read_text()
         body = header.split('typedef struct h2_pal_ble_vtable {')[1].split('}')[0]
         operations = dict(re.findall(r'h2_pal_result_t \(\*(\w+)\)\((.*?)\);', body, re.S))
-        self.assertEqual(set(operations), set(IMPLEMENTED) | set(CALLS))
         source = (ROOT / BOARD).read_text()
         start = source.index('const h2_pal_ble_host_api_t *h2_jieli_ac791n_devkit_ble_host_api(')
         factory = source[start:source.index('\n#else', start)]

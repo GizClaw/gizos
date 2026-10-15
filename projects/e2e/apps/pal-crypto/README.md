@@ -7,7 +7,7 @@
 标准 fixture 来源：[RFC 7748 §6.1](https://www.rfc-editor.org/rfc/rfc7748#section-6.1)、[RFC 5869 Appendix A.1](https://www.rfc-editor.org/rfc/rfc5869#appendix-A.1)、[RFC 8439 §2.8.2](https://www.rfc-editor.org/rfc/rfc8439#section-2.8.2)、AES-CTR SP800-38A、AES-GCM empty-message vectors、RFC 1321/RFC 2202。字节值与仓库已有 provider 单测 fixture 一致，但独立 App 不链接或调用那些单测；P-256 固定签名 fixture 也保持原来的固定消息和 raw r||s 编码。MD5/HMAC-SHA1 只按已有协议兼容接口验收。
 
 ```sh
-bazel test //projects/e2e/apps/pal-crypto/app:interface_coverage_test \
+bazel test \
   //projects/e2e/apps/pal-crypto/app:rejection_test \
   //projects/e2e/targets/cc_binary/pal-crypto:desktop_test \
   //projects/e2e/targets/pkg_tar/pal-crypto:browser_test

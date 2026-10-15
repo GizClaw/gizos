@@ -81,7 +81,7 @@ mandatory client inspection and fixture evidence require a real DHCP lease.
 ## Entrypoints
 
 ```sh
-bazel test //projects/e2e/apps/pal-wifi/app:interface_coverage_test \
+bazel test \
   //projects/e2e/apps/pal-wifi/app:event_contract_test \
   //projects/e2e/apps/pal-wifi/app:restoration_test \
   //projects/e2e/targets/cc_binary/pal-wifi:desktop_contract_test \

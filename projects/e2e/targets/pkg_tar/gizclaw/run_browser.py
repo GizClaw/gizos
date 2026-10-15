@@ -33,8 +33,6 @@ def main():
     parser.add_argument("--fixture", type=Path, required=True)
     parser.add_argument("--timeout", type=int, default=1800)
     args = parser.parse_args()
-    api_coverage.validate_inventory(api_coverage.requirements(),
-        (api_coverage.repository_root() / "libs/gizclaw/tests/public_api.inc").read_text())
     if args.output is None:
         parser.error("--output is required outside Bazel tests")
     args.fixtures = {"app_config": args.fixture, "pcm": args.pcm}
