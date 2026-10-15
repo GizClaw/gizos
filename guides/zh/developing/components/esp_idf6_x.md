@@ -407,10 +407,6 @@ ON 时只对至少 100 ms 的操作输出 `H2_ESP_IO_PHASE` 数值记录。FS �
 
 ESP Time PAL converts milliseconds to FreeRTOS ticks with ceiling division using 64-bit arithmetic. Every positive delay blocks for at least one tick; zero preserves the explicit yield. This keeps short capture/playback backoff from becoming a CPU spin at a 100 Hz tick rate. Unrepresentable tick counts return INVALID_ARG without delaying; wall-clock retention and calibration are unchanged. Host tests cover 100 Hz and 1000 Hz boundaries, including UINT32_MAX.
 
-### Wi-Fi IPv6 生命周期
-
-STA id-specific observer 位于 ESP-NETIF 默认 connected handler 之后，在 TCP/IP 上初始化本次关联的 IPv6；测试/产品 entry 只调用公共 Wi-Fi PAL。事件 loop 拥有关联和 IP 状态，GOT_IP4/GOT_IP6 对 netif 与当前 peer 重新核对，周期地址事件补齐 preferred 地址过期/IPv4 失租。旧关联 IPv6 与 ND cache 在断开和新关联开始时清理；地址只从实际 preferred 列表选择，ULA 与其他非 link-local 单播都可完成就绪。公共 station status、system event 和 Runtime state 的 IPv4/IPv6 内容一致，IPv4 `ip_valid` 保持原含义。原生 board defaults 开启 IPv6 与 AUTOCONFIG；ESP32-P4 的 unsupported Wi-Fi 路径不因此获得 radio capability。
-
 ## AEC Calibration PAL observation
 
 `h2_es8311_es7210_audio_system` 在 Audio PAL 提供 `set_aec_observer`：只在实际 AEC 可用且 mic／speaker worker 都已停止并 join 时复制或撤销 descriptor；运行中或 shutdown pending 时拒绝。Capture callback 在完整 AEC 处理之后同步借用同帧 raw packed ADC、AEC 实际使用的 gain-scaled mono reference 和 processed mono output；sequence 每次 mic session 重置，mic mask 包含所有实际 AEC microphone lanes。Playback callback 仅在完整 I2S DAC write 成功后观察混音后的 PCM，partial/error write 不交付 PCM，但通过 per-worker error callback 显式报告失败。两个 worker 的 callback 可互相并发，停止对应 worker 后才允许 caller 读取其测量；native SDK 类型不进入公共校准 App。
@@ -418,3 +414,7 @@ STA id-specific observer 位于 ESP-NETIF 默认 connected handler 之后，在 
 Mic gain setter 调整 active microphone PGA 并保留 board trim；AEC 的独立 reference ADC input 不参与 mic gain 上调，实际增益回读与失败 rollback 合同保持有效。校准只搜索 board 定义的百分比范围，不更改 codec 模拟上限、raw lane mapping 或 reference gain。原非内容 ES7210 energy observer、正常／aggressive NLP 与按需统计仍可独立使用；新 PAL observer 不替代这些已有接口，也不把处理 metadata 当作物理验收。
 
 公共 `projects/e2e/apps/aec-calibration` App 和验证器只消费 PAL。生产 target 必须另提供独立真实近端声源与同设备原始日志、package/image、摆位和输入电平证据；缺失时 `UNSUPPORTED`。默认分频、两幅度探针的推荐仅适用于本次实测条件，真实重叠语音、满幅压力、长期运行和 provider 的硬件 ADC drop 资格仍需独立证据。
+
+### Wi-Fi IPv6 生命周期
+
+STA id-specific observer 位于 ESP-NETIF 默认 connected handler 之后，在 TCP/IP 上初始化本次关联的 IPv6；测试/产品 entry 只调用公共 Wi-Fi PAL。事件 loop 拥有关联和 IP 状态，GOT_IP4/GOT_IP6 对 netif 与当前 peer 重新核对，周期地址事件补齐 preferred 地址过期/IPv4 失租。旧关联 IPv6 与 ND cache 在断开和新关联开始时清理；地址只从实际 preferred 列表选择，ULA 与其他非 link-local 单播都可完成就绪。公共 station status、system event 和 Runtime state 的 IPv4/IPv6 内容一致，IPv4 `ip_valid` 保持原含义。原生 board defaults 开启 IPv6 与 AUTOCONFIG；ESP32-P4 的 unsupported Wi-Fi 路径不因此获得 radio capability。
