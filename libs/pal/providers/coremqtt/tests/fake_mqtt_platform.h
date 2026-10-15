@@ -23,6 +23,11 @@ typedef struct fake_mqtt_platform {
     int close_count;
     int fail_connect;
     int timeout_connect;
+    int resolver_answers;
+    int resolver_active;
+    uint32_t ipv6_connect_remaining_ms;
+    int fail_ipv6_connect;
+    h2_pal_net_family_t connected_family;
     int tls_supported;
     int tls_verify_fail;
     int tls_called;

@@ -2,6 +2,8 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([".github/workflows/release.yml"])
 
+exports_files(["MODULE.bazel"], visibility = ["//projects/e2e:__subpackages__"])
+
 filegroup(
     name = "live_e2e_command_files",
     srcs = ["Makefile", ".github/workflows/e2e.yml", ":make_command_files"],

@@ -56,6 +56,19 @@ static void cleanup(state_t *s) {
   while (s->sockets_owned)
     h2_pal_net_close(s->config->runtime->net, s->sockets[--s->sockets_owned]);
 }
+static h2_pal_net_family_t family(const state_t *s) {
+  return s->config->family == H2_PAL_NET_FAMILY_IPV6 ? H2_PAL_NET_FAMILY_IPV6 : H2_PAL_NET_FAMILY_IPV4;
+}
+static int host_address(state_t *s, const char *prefix, h2_pal_net_addr_t *out) {
+  if (family(s) == H2_PAL_NET_FAMILY_IPV4)
+    return h2_pal_net_get_host_addr(s->config->runtime->net, prefix, out);
+  return h2_pal_net_get_host_addr_family(s->config->runtime->net, prefix, family(s), out);
+}
+static int loopback(const h2_pal_net_addr_t *addr) {
+  static const uint8_t loop6[16] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1};
+  return (addr->family == H2_PAL_NET_FAMILY_IPV4 && addr->ip[0] == 127u) ||
+      (addr->family == H2_PAL_NET_FAMILY_IPV6 && memcmp(addr->ip, loop6, 16u) == 0);
+}
 static int address(state_t *s, uint16_t port, h2_pal_net_addr_t *out) {
   int rc =
       h2_pal_net_resolve_addr(s->config->runtime->net, s->config->host, out);
@@ -81,14 +94,16 @@ static int connect_socket(state_t *s, const h2_pal_net_addr_t *addr, int bound,
   h2_pal_net_bind_t bind = {.type = H2_PAL_NET_BIND_SOURCE_ADDR};
   int rc;
   if (bound) {
-    rc = h2_pal_net_get_host_addr(net, NULL, &bind.source_addr);
+    rc = loopback(addr) ? H2_PAL_OK : host_address(s, NULL, &bind.source_addr);
     if (rc != H2_PAL_OK)
       return rc;
     bind.source_addr.port = 0u;
     /* An isolated loopback fixture must bind a local loopback source;
      * get_host_addr(NULL) can legitimately return the physical LAN IP. */
-    if (addr->family == H2_PAL_NET_FAMILY_IPV4 && addr->ip[0] == 127u)
-      memcpy(bind.source_addr.ip, addr->ip, sizeof(addr->ip));
+    if (loopback(addr)) {
+      bind.source_addr = *addr;
+      bind.source_addr.port = 0u;
+    }
     rc = h2_pal_net_tcp_open_bound(net, addr->family, &bind, out);
   } else
     rc = net->vtable->tcp_open(net->user, addr->family, out);
@@ -229,7 +244,7 @@ static void run_case(state_t *s, h2_net_tls_case_t kind) {
   }
   case H2_NET_TLS_DNS_SYNC:
     OK(address(s, 0u, &addr));
-    CHECK(addr.family == H2_PAL_NET_FAMILY_IPV4, H2_PAL_ERR_FORMAT);
+    CHECK(addr.family == family(s), H2_PAL_ERR_FORMAT);
     break;
   case H2_NET_TLS_DNS_ASYNC_COPY: {
     char host[64];
@@ -288,10 +303,10 @@ static void run_case(state_t *s, h2_net_tls_case_t kind) {
           H2_PAL_ERR_NO_SPACE);
     break;
   case H2_NET_TLS_HOST_ADDRESS:
-    OK(h2_pal_net_get_host_addr(net, NULL, &addr));
-    CHECK(addr.family == H2_PAL_NET_FAMILY_IPV4, H2_PAL_ERR_FORMAT);
+    OK(host_address(s, NULL, &addr));
+    CHECK(addr.family == family(s), H2_PAL_ERR_FORMAT);
     rc =
-        h2_pal_net_get_host_addr(net, "h2-definitely-missing-interface", &peer);
+        host_address(s, "h2-definitely-missing-interface", &peer);
     CHECK(rc == H2_PAL_ERR_NOT_FOUND || rc == H2_PAL_ERR_UNSUPPORTED ||
               rc == H2_PAL_ERR_UNAVAILABLE,
           rc);
@@ -303,6 +318,11 @@ static void run_case(state_t *s, h2_net_tls_case_t kind) {
   case H2_NET_TLS_UDP_NONBLOCKING:
   case H2_NET_TLS_UDP_TRUNCATION:
   case H2_NET_TLS_MULTICAST: {
+    if (kind == H2_NET_TLS_MULTICAST && family(s) == H2_PAL_NET_FAMILY_IPV6) {
+      s->item->unsupported = 1;
+      s->item->detail = H2_PAL_ERR_UNSUPPORTED;
+      goto done;
+    }
     if (kind == H2_NET_TLS_MULTICAST && !s->config->multicast_supported) {
       if (net->vtable->udp_join_multicast)
         s->item->not_assessed = 1;
@@ -313,26 +333,27 @@ static void run_case(state_t *s, h2_net_tls_case_t kind) {
     }
     h2_pal_net_bind_t bind = {.type = H2_PAL_NET_BIND_SOURCE_ADDR};
     if (kind == H2_NET_TLS_UDP_SOURCE_BIND) {
-      OK(h2_pal_net_get_host_addr(net, NULL, &bind.source_addr));
-      bind.source_addr.port = 0u;
       OK(address(s, 0u, &addr));
-      if (addr.family == H2_PAL_NET_FAMILY_IPV4 && addr.ip[0] == 127u)
-        memcpy(bind.source_addr.ip, addr.ip, sizeof(addr.ip));
-      OK(h2_pal_net_udp_open_bound(net, H2_PAL_NET_FAMILY_IPV4, 0u, &bind,
+      if (loopback(&addr))
+        bind.source_addr = addr;
+      else
+        OK(host_address(s, NULL, &bind.source_addr));
+      bind.source_addr.port = 0u;
+      OK(h2_pal_net_udp_open_bound(net, family(s), 0u, &bind,
                                    &socket, &bound_addr));
     } else
-      OK(net->vtable->udp_open(net->user, H2_PAL_NET_FAMILY_IPV4, 0u, &socket,
+      OK(net->vtable->udp_open(net->user, family(s), 0u, &socket,
                                &bound_addr));
     OK(own_socket(s, socket));
     CHECK(bound_addr.port != 0u, H2_PAL_ERR_FORMAT);
     if (kind == H2_NET_TLS_UDP_SOURCE_BIND) {
-      CHECK(bound_addr.family == bind.source_addr.family &&
+      CHECK(bound_addr.family == bind.source_addr.family && bound_addr.scope_id == bind.source_addr.scope_id &&
                 memcmp(bound_addr.ip, bind.source_addr.ip,
                        sizeof(bound_addr.ip)) == 0,
             H2_PAL_ERR_FORMAT);
       bind.type = (h2_pal_net_bind_type_t)99;
       int invalid_socket = -1;
-      rc = h2_pal_net_udp_open_bound(net, H2_PAL_NET_FAMILY_IPV4, 0u, &bind,
+      rc = h2_pal_net_udp_open_bound(net, family(s), 0u, &bind,
                                      &invalid_socket, &peer);
       if (invalid_socket >= 0)
         OK(own_socket(s, invalid_socket));
@@ -369,8 +390,8 @@ static void run_case(state_t *s, h2_net_tls_case_t kind) {
       rc = h2_pal_net_udp_recvfrom(net, socket, &peer, s->scratch, receive_len,
                                    slice);
     } while (rc == H2_PAL_ERR_TIMEOUT || rc == H2_PAL_ERR_WOULD_BLOCK);
-    CHECK(rc == (int)receive_len && peer.port == addr.port &&
-              memcmp(peer.ip, addr.ip, 16u) == 0,
+    CHECK(rc == (int)receive_len && peer.family == addr.family && peer.port == addr.port &&
+              peer.scope_id == addr.scope_id && memcmp(peer.ip, addr.ip, 16u) == 0,
           rc);
     for (size_t i = 0u; i < receive_len; ++i)
       CHECK(s->scratch[i] == (uint8_t)(payload(i) ^ 0xa5u), H2_PAL_ERR_FORMAT);
@@ -380,7 +401,7 @@ static void run_case(state_t *s, h2_net_tls_case_t kind) {
   }
   case H2_NET_TLS_TCP_LISTEN_ACCEPT:
   case H2_NET_TLS_TCP_ACCEPT_TIMEOUT: {
-    OK(h2_pal_net_tcp_listen(net, H2_PAL_NET_FAMILY_IPV4, 0u, NULL, &socket,
+    OK(h2_pal_net_tcp_listen(net, family(s), 0u, NULL, &socket,
                              &bound_addr));
     OK(own_socket(s, socket));
     CHECK(bound_addr.port != 0u, H2_PAL_ERR_FORMAT);
@@ -397,7 +418,7 @@ static void run_case(state_t *s, h2_net_tls_case_t kind) {
     } while (rc == H2_PAL_ERR_TIMEOUT || rc == H2_PAL_ERR_WOULD_BLOCK);
     CHECK(rc == H2_PAL_OK, rc);
     OK(own_socket(s, tls_socket));
-    CHECK(peer.family == H2_PAL_NET_FAMILY_IPV4, H2_PAL_ERR_FORMAT);
+    CHECK(peer.family == family(s), H2_PAL_ERR_FORMAT);
     OK(exchange(s, tls_socket, 0));
     OK(proof(s, H2_NET_TLS_PROOF_PAYLOAD));
     break;
@@ -455,18 +476,27 @@ static void run_case(state_t *s, h2_net_tls_case_t kind) {
     break;
   }
   case H2_NET_TLS_DNS_HOSTNAME: {
-    OK(h2_pal_net_resolve_addr(net, s->config->dns_host, &addr));
+    if (family(s) == H2_PAL_NET_FAMILY_IPV6) {
+      h2_pal_net_addr_list_t list;
+      OK(h2_pal_net_resolve_all(net, s->config->dns_host, family(s), &list));
+      CHECK(list.count > 0u, H2_PAL_ERR_FORMAT);
+      addr = list.addrs[0];
+    } else {
+      OK(h2_pal_net_resolve_addr(net, s->config->dns_host, &addr));
+    }
     memcpy(s->item->observed_ipv4, addr.ip, sizeof(s->item->observed_ipv4));
-    CHECK(addr.family == H2_PAL_NET_FAMILY_IPV4 &&
-              s->config->dns_expected.family == H2_PAL_NET_FAMILY_IPV4 &&
+    CHECK(addr.family == family(s) &&
+              s->config->dns_expected.family == family(s) &&
               memcmp(addr.ip, s->config->dns_expected.ip,
-                     sizeof(s->item->observed_ipv4)) == 0,
+                     family(s) == H2_PAL_NET_FAMILY_IPV6 ? 16u : 4u) == 0,
           H2_PAL_ERR_FORMAT);
     char host[64];
     CHECK(strlen(s->config->dns_host) < sizeof(host), H2_PAL_ERR_INVALID_ARG);
     strcpy(host, s->config->dns_host);
     h2_pal_net_resolver_t *resolver = NULL;
-    OK(h2_pal_net_resolve_start(net, host, &resolver));
+    OK(family(s) == H2_PAL_NET_FAMILY_IPV6 ?
+        h2_pal_net_resolve_start_family(net, host, family(s), &resolver) :
+        h2_pal_net_resolve_start(net, host, &resolver));
     CHECK(resolver != NULL, H2_PAL_ERR_INVALID_STATE);
     s->resolvers[s->resolvers_owned++] = resolver;
     memset(host, 'x', strlen(host));
@@ -475,14 +505,16 @@ static void run_case(state_t *s, h2_net_tls_case_t kind) {
       CHECK(slice, H2_PAL_ERR_TIMEOUT);
       rc = h2_pal_net_resolve_poll(net, resolver, &addr, slice);
     } while (rc == H2_PAL_ERR_TIMEOUT || rc == H2_PAL_ERR_WOULD_BLOCK);
-    CHECK(rc == H2_PAL_OK && addr.family == H2_PAL_NET_FAMILY_IPV4 &&
-              memcmp(addr.ip, s->item->observed_ipv4,
-                     sizeof(s->item->observed_ipv4)) == 0,
+    CHECK(rc == H2_PAL_OK && addr.family == family(s) &&
+              memcmp(addr.ip, s->config->dns_expected.ip,
+                     family(s) == H2_PAL_NET_FAMILY_IPV6 ? 16u : 4u) == 0,
           rc == H2_PAL_OK ? H2_PAL_ERR_FORMAT : rc);
     h2_pal_net_resolve_close(net, s->resolvers[--s->resolvers_owned]);
     memcpy(host, s->config->session, 32u);
     strcpy(host + 32u, ".invalid");
-    OK(h2_pal_net_resolve_start(net, host, &resolver));
+    OK(family(s) == H2_PAL_NET_FAMILY_IPV6 ?
+        h2_pal_net_resolve_start_family(net, host, family(s), &resolver) :
+        h2_pal_net_resolve_start(net, host, &resolver));
     CHECK(resolver != NULL, H2_PAL_ERR_INVALID_STATE);
     s->resolvers[s->resolvers_owned++] = resolver;
     do {
@@ -663,7 +695,7 @@ int h2_pal_net_tls_e2e_run(const h2_net_tls_config_t *config,
               config->runtime->time->vtable->sleep_ms &&
               required_slots(config->runtime->net) && config->host &&
               config->dns_host && config->dns_host[0] &&
-              config->dns_expected.family == H2_PAL_NET_FAMILY_IPV4 &&
+              config->dns_expected.family == (config->family == H2_PAL_NET_FAMILY_IPV6 ? H2_PAL_NET_FAMILY_IPV6 : H2_PAL_NET_FAMILY_IPV4) &&
               config->session && strlen(config->session) == 32u &&
               config->server_name && config->root_ca && config->root_ca_len &&
               config->wrong_ca && config->wrong_ca_len && config->prepare &&

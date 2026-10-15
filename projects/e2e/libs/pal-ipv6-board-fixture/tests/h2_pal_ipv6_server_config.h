@@ -1,0 +1,3 @@
+#define H2_PAL_IPV6_EXPIRED_HEX ""
+#define H2_PAL_IPV6_LEAF_HEX ""
+#define H2_PAL_IPV6_KEY_HEX ""

@@ -1,5 +1,7 @@
 # PAL Display E2E
 
+Current behavior is validated by executed C/C++ tests, actual SDK/platform builds and typed runtime reports. Main #733 retired the Python source/snapshot admission gates; source-audit descriptions and sidecars below retain historical context and original identities, and do not grant current behavior or physical qualification.
+
 Portable App `//projects/e2e/apps/pal-display/app:pal_display_e2e` receives a borrowed Runtime and a launcher-owned observation callback. It calls every Display vtable operation: `open`, `get_info`, `draw_bitmap`, `present`, `set_brightness_percent`, `close`. The file-scope registry contains 24 mandatory cases. A missing interface, failed observation, failed cleanup or unrun case fails qualification; managed launchers confirm only after complete success.
 
 ## Cases and capability profiles

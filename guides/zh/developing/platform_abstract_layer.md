@@ -265,7 +265,7 @@ Net PAL 的 `tcp_connect` 是可跨 poll 继续的 bounded connect operation：`
 
 Net PAL 的 `tcp_listen` 与 `tcp_accept` 是 raw TCP 的 server-side contract：`tcp_listen` 绑定并监听（`port == 0` 选择 ephemeral port，`out_bind_addr` 报告实际绑定地址），`tcp_accept` 在 `timeout_ms` 内接受一个连接并返回新的 opaque socket；`H2_PAL_ERR_TIMEOUT` 与 `H2_PAL_ERR_WOULD_BLOCK` 保留 listener 可继续使用。这两项是可选能力，没有实现的 backend 由 checked wrapper 返回 `H2_PAL_ERR_UNSUPPORTED`；Desktop（POSIX）backend 提供实现，`libs/iperf` 的 server 依赖它。
 
-iOS 与 Android 提供独立 `h2_*_net_create/api/destroy` owner，通过真实 SDK package 导出；owner 持有完整 WolfSSL 生命周期引用，借出的 Net API 只在 owner 存活期有效。销毁前 caller 必须停止调用并释放所有 socket/resolver，AppHost 默认组装保持独立。独立 PAL Net/TLS E2E 使用实际 packaged provider 验证 raw socket 和 TLS，不通过 HTTP 推断 TLS 能力。六平台 assessment 对支持能力要求真实 PASS，对实际缺失能力明确 SKIP；浏览器仍保持本地语义，21 项 canonical unsupported Net 操作不构成 raw Net/TLS 功能通过。
+iOS 与 Android 提供独立 `h2_*_net_create/api/destroy` owner，通过真实 SDK package 导出；owner 持有完整 WolfSSL 生命周期引用，借出的 Net API 只在 owner 存活期有效。销毁前 caller 必须停止调用并释放所有 socket/resolver，移动端 E2E Runtime 配置与实际 Net owner 保持独立。独立 PAL Net/TLS E2E 使用实际 packaged provider 验证 raw socket 和 TLS，不通过 HTTP 推断 TLS 能力。六平台 assessment 对支持能力要求真实 PASS，对实际缺失能力明确 SKIP；浏览器仍保持本地语义，21 项 canonical unsupported Net 操作不构成 raw Net/TLS 功能通过。
 
 SCTP PAL 以 association 为 opaque handle，通过同步 `emit_packet` callback 交付完整
 SCTP packet，并由调用方把收到的完整 packet 送回 provider。所有 timer 都由调用方提供的
@@ -665,3 +665,9 @@ ESP LittleFS 的目录级 clear 在既有 internal-stack safe-call 路径执行�
 移动端 HTTP owner 复用 CoreHTTP + POSIX Net + 完整 WolfSSL，公开独立 create/API/destroy 生命周期并复制可选 root CA；没有提供 root CA 时使用系统 trust。每个 HTTP owner 独立持有完整 WolfSSL 引用，Crypto getter/shutdown 只取得或释放 Crypto 自己的引用，不会提前销毁仍被 HTTP 持有的实现。请求和 response 全部结束后先销毁 HTTP owner，再进行 Core teardown。HTTP SDK API 与已有 Core/Crypto/Storage 一起进入真实 XCFramework/Swift Package、AAR，HTTP App 不直接链接另一份 provider。六端资格以独立 `pal-http` App 的同一 registry 为准；移动端通过真实模拟器运行，使用受控 HTTP/HTTPS fixture，保留 package/hash 和案例结果。
 
 iOS 和 Android 的 WebRTC owner 位于各自 `pal_core/src/h2_*_webrtc.c`，组合 H2Peer、H2SCTP、原生 POSIX Net 和与 Crypto/HTTP 共用的完整 WolfSSL。每个 owner 独立持有 TLS lifecycle 引用，公开 create/API/destroy；API 借用至 destroy，销毁必须先停止使用并释放事件，busy 时保留 owner 供重试。该 owner 不打开物理音频设备，Track 由 caller 提供。真实 SDK archive 包含此实现，独立 `pal-webrtc` qualification App 直接消费 package binary。
+
+## IPv6 地址与 DNS
+
+POSIX 与 ESP 的 resolver 在本地处理保留名称：`localhost` 及其子域返回真实 loopback 地址，`.invalid` 及其子域直接返回 `NOT_FOUND`，不依赖当前网络的 DNS 服务器。名称比较不区分大小写并接受末尾的点，遵循 [RFC 6761](https://www.rfc-editor.org/rfc/rfc6761.html#section-6.4)。独立的 nonce AAAA wire fixture 仍通过真实 IPv6 UDP 验证报文，不由这些本地规则替代。
+
+Net 地址新增 `scope_id`，表示本机 IPv6 接口索引；link-local 目标必须携带作用域， IPv4 地址必须为零。作用域不能作为 IP 地址的一部分发送到 STUN 或 SDP。 新 DNS 列表接口支持 ANY、IPv4、IPv6 筛选、有界去重列表与截断标志；异步操作沿用 复制 hostname、有限容量、poll 总预算和取消后 backend 自行回收的合同。 旧单地址接口保留 IPv4 优先，并在没有 IPv4 时接受 IPv6。HTTP/MQTT 根据每个结果的 地址族创建 socket，失败后关闭并在原始连接预算内回退。pending TCP 连接的 `TIMEOUT`/`WOULD_BLOCK` 沿用原始总预算并继续同一 socket；只有终态连接失败才回退，不为候选地址设置独立的 250 ms 上限。TLS 验证失败不会触发降级。 `pal-ipv6` 提供独立 E2E；浏览器原始 Net 的 UNSUPPORTED 与 Fetch/WebRTC 的 IPv6 实际执行分开记录。新 provider 代码不改变历史实板记录的执行身份。
