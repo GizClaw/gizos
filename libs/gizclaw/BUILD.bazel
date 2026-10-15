@@ -82,7 +82,6 @@ _FIRMWARE_COMPATIBLE_SRCS = [
     "src/h2_gizclaw_download_internal.h",
     "src/h2_gizclaw_internal.h",
     "src/h2_gizclaw_mp3.c",
-    "src/h2_gizclaw_ogg_opus_internal.h",
     "src/h2_gizclaw_peer_async.c",
     "src/h2_gizclaw_pcm_ring.c",
     "src/h2_gizclaw_pcm_ring.h",
@@ -228,7 +227,6 @@ cc_library(
         "src/h2_gizclaw_mhs.c",
         "src/h2_gizclaw_mhs_internal.h",
         "src/h2_gizclaw_mp3.c",
-        "src/h2_gizclaw_ogg_opus_internal.h",
         "src/h2_gizclaw_pcm_ring.c",
         "src/h2_gizclaw_pcm_ring.h",
         "src/h2_gizclaw_pcm_track.c",
@@ -346,7 +344,6 @@ cc_test(
 cc_test(
     name = "h2_gizclaw_ogg_opus_test",
     srcs = [
-        "src/h2_gizclaw_ogg_opus_internal.h",
         "tests/ogg_opus_fixture.h",
         "tests/test_h2_gizclaw_ogg_opus.c",
     ],
@@ -372,7 +369,6 @@ cc_test(
         "src/h2_gizclaw_audio_decoder.c",
         "src/h2_gizclaw_audio_decoder_internal.h",
         "src/h2_gizclaw_mp3.c",
-        "src/h2_gizclaw_ogg_opus_internal.h",
         "src/h2_gizclaw_resample.c",
         "src/h2_gizclaw_resample_internal.h",
         "src/h2_gizclaw_wav.c",

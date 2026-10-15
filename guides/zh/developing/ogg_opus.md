@@ -1,6 +1,6 @@
 # Ogg Opus
 
-`libs/ogg_opus` 拥有原 GizClaw 流式播放器使用的 Ogg/Opus parser 和 decoder。GizClaw 通过内部名称 adapter 消费同一份实现；其它 consumer 使用公共 `h2_ogg_opus.h`，不得复制私有 header 或解析源码。它只依赖 C11、Opus 和调用方提供的 PAL allocator／读取 callback，不拥有文件、网络、Task 或 Audio Track。
+`libs/ogg_opus` 拥有原 GizClaw 流式播放器使用的 Ogg/Opus parser 和 decoder。GizClaw 与其它 consumer 均直接使用公共 `h2_ogg_opus.h` 和 `h2_ogg_opus_*` 方法，不保留旧内部名称的转接层，不得复制解析源码。它只依赖 C11、Opus 和调用方提供的 PAL allocator／读取 callback，不拥有文件、网络、Task 或 Audio Track。
 
 ## 解码与有界读取
 

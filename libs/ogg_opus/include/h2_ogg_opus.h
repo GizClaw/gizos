@@ -24,8 +24,8 @@ typedef struct h2_ogg_opus h2_ogg_opus_t;
  * No user callbacks or I/O; all owned memory uses the supplied PAL allocator.
  */
 h2_pal_result_t h2_ogg_opus_create(const h2_pal_mem_api_t *allocator,
-                                           const uint8_t *data, size_t len,
-                                           h2_ogg_opus_t **out);
+                                      const uint8_t *data, size_t len,
+                                      h2_ogg_opus_t **out);
 /** @brief Blocking sequential reader: OK must supply 1..capacity bytes, EXIT means EOF.
  * Streaming retains one Ogg page and at most 64 KiB of a continued packet;
  * total track length is unrestricted. An OpusTags packet above 64 KiB (large
@@ -33,17 +33,16 @@ h2_pal_result_t h2_ogg_opus_create(const h2_pal_mem_api_t *allocator,
  * discarded as it streams in; an audio packet above 64 KiB is NO_SPACE. Reader and user
  * live until destroy. */
 typedef h2_pal_result_t (*h2_ogg_opus_read_fn)(void *user, uint8_t *out,
-                                                       size_t capacity,
-                                                       size_t *out_len);
+                                                size_t capacity,
+                                                size_t *out_len);
 /** @brief Create a sequential PCM decoder over a borrowed blocking reader.
  * All owned allocations use allocator; read/user must live until destroy.
  * Sets *out=NULL on failure, performs no reader I/O during creation, and
  * returns INVALID_ARG, NO_MEMORY, or OK. Other callbacks run inside next().
  */
-h2_pal_result_t
-h2_ogg_opus_create_reader(const h2_pal_mem_api_t *allocator,
-                                  h2_ogg_opus_read_fn read, void *user,
-                                  h2_ogg_opus_t **out);
+h2_pal_result_t h2_ogg_opus_create_reader(
+    const h2_pal_mem_api_t *allocator, h2_ogg_opus_read_fn read, void *user,
+    h2_ogg_opus_t **out);
 /** @brief Decode at most one packet/page into caller-owned PCM storage.
  * Requires capacity >= H2_OGG_OPUS_PCM_BYTES. Clears *out_len on failure;
  * OK may emit zero bytes for headers/preroll. Errors latch until destroy.
@@ -51,8 +50,8 @@ h2_ogg_opus_create_reader(const h2_pal_mem_api_t *allocator,
  * concurrent-safe. EXIT means the entire validated input has ended.
  */
 h2_pal_result_t h2_ogg_opus_next(h2_ogg_opus_t *decoder,
-                                         uint8_t *pcm, size_t capacity,
-                                         size_t *out_len);
+                                    uint8_t *pcm, size_t capacity,
+                                    size_t *out_len);
 /** @brief True once OpusHead and OpusTags are parsed and no audio page has been
  * read: the only moment seek() is accepted. A reader has then consumed
  * exactly the header pages, nothing more. */
@@ -70,14 +69,14 @@ bool h2_ogg_opus_headers_done(const h2_ogg_opus_t *decoder);
  * end, or more than two maximum pages of unusable bytes, is FORMAT.
  * INVALID_STATE unless headers_done(); resync needs a reader decoder. */
 h2_pal_result_t h2_ogg_opus_seek(h2_ogg_opus_t *decoder,
-                                         uint64_t target_ms, bool resync);
+                                    uint64_t target_ms, bool resync);
 /** @brief Output-timeline index (16 kHz samples) of the first sample next() emits,
  * counted exactly as a playback from the start would count it. Always 0 and
  * true without a seek; false while a seek has not produced its first sample.
  * A stream that ends (or reaches a chained stream) before the target
  * reports that boundary. */
 bool h2_ogg_opus_origin(const h2_ogg_opus_t *decoder,
-                                uint64_t *samples);
+                        uint64_t *samples);
 /** @brief Release decoder-owned memory; NULL is accepted.
  * Does not close borrowed input or allocator. All reader calls must have
  * returned before destroy; the instance cannot be used afterwards.
@@ -114,7 +113,7 @@ h2_pal_result_t h2_ogg_opus_create_packet_reader(
  * EXIT requires validated EOS/EOF. Other errors latch until restore/reset.
  */
 h2_pal_result_t h2_ogg_opus_next_packet(h2_ogg_opus_t *reader,
-                                         h2_ogg_opus_packet_t *out);
+                                           h2_ogg_opus_packet_t *out);
 /** @brief Reset a packet reader after its caller rewinds the input to byte 0.
  * Retains bounded buffers, owns no file and performs no I/O. Packet mode only.
  */
