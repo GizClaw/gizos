@@ -18,6 +18,10 @@
 #define H2_PEER_RTP_RX_DIAGNOSTICS 0
 #endif
 
+#ifndef H2_PEER_RTP_TX_DIAGNOSTICS
+#define H2_PEER_RTP_TX_DIAGNOSTICS 0
+#endif
+
 #define STATE_CHANGED(pc, curr_state)                                 \
   if (pc->oniceconnectionstatechange && pc->state != curr_state) {    \
     pc->oniceconnectionstatechange(curr_state, pc->config.user_data); \
@@ -61,6 +65,19 @@ struct PeerConnection {
   uint64_t rx_decode_us[256];
   size_t rx_record_count;
   uint64_t rx_record_overflow;
+#endif
+
+#if H2_PEER_RTP_TX_DIAGNOSTICS
+  /* Header and transport-call timing only; no payload or hot-path logging. */
+  struct {
+    uint16_t sequence;
+    uint32_t ssrc;
+    int result;
+    uint64_t start_us;
+    uint64_t end_us;
+  } tx_records[256];
+  size_t tx_record_count;
+  uint64_t tx_record_overflow;
 #endif
 
   uint32_t remote_assrc;
@@ -140,7 +157,33 @@ static int peer_connection_rtp_protect(
 
 static int peer_connection_rtp_send(
     void* user, const uint8_t* packet, int packet_len) {
-  return agent_send((Agent*)user, packet, packet_len);
+  PeerConnection* pc = (PeerConnection*)user;
+#if H2_PEER_RTP_TX_DIAGNOSTICS
+  const size_t index = pc->tx_record_count;
+  if (index < 256u) {
+    ++pc->tx_record_count;
+    pc->tx_records[index].sequence = packet_len >= 12
+        ? (uint16_t)(((uint16_t)packet[2] << 8) | packet[3]) : 0u;
+    pc->tx_records[index].ssrc = packet_len >= 12
+        ? ((uint32_t)packet[8] << 24) | ((uint32_t)packet[9] << 16) |
+          ((uint32_t)packet[10] << 8) | packet[11] : 0u;
+    pc->tx_records[index].start_us = UINT64_MAX;
+    pc->tx_records[index].end_us = UINT64_MAX;
+    (void)h2_pal_time_get_monotonic_us(pc->config.time,
+                                    &pc->tx_records[index].start_us);
+  } else if (pc->tx_record_overflow != UINT64_MAX) {
+    ++pc->tx_record_overflow;
+  }
+#endif
+  const int result = agent_send(&pc->agent, packet, packet_len);
+#if H2_PEER_RTP_TX_DIAGNOSTICS
+  if (index < 256u) {
+    (void)h2_pal_time_get_monotonic_us(pc->config.time,
+                                    &pc->tx_records[index].end_us);
+    pc->tx_records[index].result = result;
+  }
+#endif
+  return result;
 }
 
 static int peer_connection_outgoing_rtp_packet(
@@ -149,13 +192,13 @@ static int peer_connection_outgoing_rtp_packet(
   return peer_connection_rtp_send_or_queue(
       pc->pending_rtp, sizeof(pc->pending_rtp), &pc->pending_rtp_len, data,
       size, peer_connection_rtp_protect, &pc->dtls_srtp,
-      peer_connection_rtp_send, &pc->agent);
+      peer_connection_rtp_send, pc);
 }
 
 static h2_pal_result_t peer_connection_flush_pending_rtp(
     PeerConnection* pc) {
   return peer_connection_rtp_flush(pc->pending_rtp, &pc->pending_rtp_len,
-                                   peer_connection_rtp_send, &pc->agent);
+                                   peer_connection_rtp_send, pc);
 }
 
 static int peer_connection_dtls_srtp_send(
@@ -438,6 +481,19 @@ void peer_connection_destroy(
     }
     H2_PEER_LOGI(pc->config.log, "H2_PEER_RTP_RX_SUMMARY recorded=%zu overflow=%" PRIu64,
                  pc->rx_record_count, pc->rx_record_overflow);
+#endif
+#if H2_PEER_RTP_TX_DIAGNOSTICS
+    for (size_t i = 0; i < pc->tx_record_count; ++i) {
+      H2_PEER_LOGI(pc->config.log,
+                   "H2_PEER_RTP_TX ordinal=%zu sequence=%u ssrc=%" PRIu32
+                   " result=%d start_us=%" PRIu64 " end_us=%" PRIu64,
+                   i + 1u, (unsigned int)pc->tx_records[i].sequence,
+                   pc->tx_records[i].ssrc, pc->tx_records[i].result,
+                   pc->tx_records[i].start_us, pc->tx_records[i].end_us);
+    }
+    H2_PEER_LOGI(pc->config.log,
+                 "H2_PEER_RTP_TX_SUMMARY recorded=%zu overflow=%" PRIu64,
+                 pc->tx_record_count, pc->tx_record_overflow);
 #endif
     sctp_destroy_association(&pc->sctp);
     dtls_srtp_deinit(&pc->dtls_srtp);

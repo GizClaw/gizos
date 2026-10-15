@@ -28,3 +28,5 @@ the connected BSSID before admitting the workload and logs the actual channel
 and RSSI. Omitting the define uses saved settings. Matching channels do not prove
 that the host and board use the same AP. Keep actual AP identifiers in private
 fixture configuration and record this condition with the result.
+
+For delay attribution, `--copt=-DH2_PEER_RTP_TX_DIAGNOSTICS=1` records at most 256 RTP transport-send attempts per connection, including retries, with sequence/SSRC, return code and monotonic timestamps immediately before and after the transport call. It retains no payload and prints only at connection destruction. The overflow count makes truncation explicit; an unavailable timestamp remains `UINT64_MAX`. Pair it with `--copt=-DH2_PEER_RTP_RX_DIAGNOSTICS=1` and the actual peer timing receipts to distinguish submission, transport-call and receive gaps. These are software call timestamps, not over-the-air transmit timestamps. Both flags default off, and diagnostic runs do not qualify the default firmware.
