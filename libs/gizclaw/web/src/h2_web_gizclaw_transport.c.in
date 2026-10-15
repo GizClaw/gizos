@@ -9,124 +9,101 @@ EM_JS(void, h2_web_gizclaw_bind_impl,
     (address, buffer, limit, defaultTimeout, capacity) => {
       if (Module.h2WebGizClawState?.attached) return -18;
       /* FIRMWARE_PROTOCOL */
-      const state = {address, attached: true, closed: false, serial: 0,
-        session: null, pending: new Map()};
-      const send = (session, value, transfers = []) => {
-        try { session.port.postMessage(value, transfers); return true; }
-        catch (_) { return false; }
-      };
+      const signed32 = value => Number.isInteger(value) && value >= -2147483648 && value <= 2147483647;
+      const bytes = value => ArrayBuffer.isView(value) &&
+        Object.prototype.toString.call(value) === '[object Uint8Array]';
+      const state = {address, attached: true, closed: false, serial: 0, pending: new Map()};
       const remove = request => {
         clearTimeout(request.timer);
         clearTimeout(request.retry);
-        state.pending.delete(request.internal);
-        request.session.requests.delete(request.id);
+        state.pending.delete(request.id);
       };
-      const cancel = (request, code, notify = false) => {
+      const deliver = (request, response) => {
+        if (request.delivered) return -10;
+        request.delivered = true;
+        try {
+          const result = request.callback(response);
+          return signed32(result) ? result : -15;
+        } catch (_) { return -15; }
+      };
+      const failure = code => ({code, hasError: false, rpcCode: 0,
+        rpcMessage: "", payload: new Uint8Array(), nativeTools: null});
+      const cancel = (request, code) => {
         if (request.canceled) return;
         request.canceled = true;
         clearTimeout(request.timer);
         clearTimeout(request.retry);
         request.bytes = null;
-        request.session.requests.delete(request.id);
-        if (request.admitted) Module._h2_web_gizclaw_cancel(request.internal);
-        if (notify) send(request.session, {type: 'response', id: request.id,
-          code, hasError: false, rpcCode: 0, rpcMessage: "", payload: new Uint8Array(), nativeTools: null});
-        if (request.ack) { const ack = request.ack; remove(request); ack(code); }
-        else if (!request.admitted) remove(request);
+        if (request.admitted) Module._h2_web_gizclaw_cancel(request.id);
+        else remove(request);
+        deliver(request, failure(code));
       };
-      state.closeSession = (code = -10) => {
-        const session = state.session;
-        if (!session) return;
-        state.session = null;
-        send(session, {type: 'closed', code});
-        for (const request of [...session.requests.values()]) cancel(request, code);
-        session.port.onmessage = null;
-        session.port.onmessageerror = null;
-        session.port.close();
-      };
-      const respond = (session, id, code) => send(session, {type: 'response', id,
-        code, hasError: false, rpcCode: 0, rpcMessage: "", payload: new Uint8Array(), nativeTools: null});
-      const onPort = (session, message) => {
-        if (state.closed || state.session !== session || !message || typeof message !== 'object') return;
-        if (message.type === 'disconnect') { state.closeSession(); return; }
-        const id = message.id;
-        if (!Number.isInteger(id) || id < 1 || id > 0x7fffffff) { state.closeSession(-15); return; }
-        const request = session.requests.get(id);
-        if (message.type === 'cancel') { if (request) cancel(request, -10); return; }
-        if (message.type === 'complete') {
-          if (request?.ack) {
-            const rc = Number.isInteger(message.result) && message.result >= -2147483648 &&
-              message.result <= 2147483647 ? message.result : -15;
-            const ack = request.ack; remove(request); ack(rc);
-          }
-          return;
-        }
-        if (message.type !== 'request' || request ||
-            !Number.isInteger(message.method) || message.method < -2147483648 || message.method > 2147483647 ||
-            !(message.payload instanceof Uint8Array) ||
-            !Number.isInteger(message.timeout_ms) || message.timeout_ms < 1 || message.timeout_ms > 120000) {
-          respond(session, id, -1); return;
-        }
-        if (message.payload.byteLength > limit) { respond(session, id, -13); return; }
-        if (session.requests.size >= capacity) { respond(session, id, -18); return; }
-        do { state.serial = state.serial % 0x7fffffff + 1; } while (state.pending.has(state.serial));
-        const item = {id, internal: state.serial, session, admitted: false, canceled: false,
-          method: message.method, bytes: new Uint8Array(message.payload), timeout: message.timeout_ms};
-        state.pending.set(item.internal, item);
-        session.requests.set(id, item);
-        item.timer = setTimeout(() => cancel(item, -6, true), item.timeout);
-        const submit = () => {
-          if (item.canceled || state.closed || state.session !== session) return;
-          HEAPU8.set(item.bytes, buffer);
-          const rc = Module._h2_web_gizclaw_request(item.internal, item.method, item.bytes.length, item.timeout);
-          if (rc === -9 || rc === -18) { item.retry = setTimeout(submit, 1); return; }
-          if (rc !== 0) { respond(session, id, rc); remove(item); return; }
-          item.admitted = true;
-          item.bytes = null;
-        };
-        submit();
-      };
-      state.listener = event => {
-        const message = event.data;
-        if (state.closed || event.source !== window.parent || event.origin === 'null' ||
-            !message || message.channel !== protocol.channel ||
-            typeof message.key !== 'string' || message.key.length > 64) return;
-        if (message.type === 'probe') {
-          event.source.postMessage({channel: protocol.channel, type: 'available',
-            version: protocol.version, key: message.key}, event.origin);
-          return;
-        }
-        if (message.type !== 'connect' || message.version !== protocol.version ||
-            event.ports.length !== 1) return;
-        state.closeSession();
-        const session = {port: event.ports[0], requests: new Map()};
-        state.session = session;
-        session.port.onmessage = event => onPort(session, event.data);
-        session.port.onmessageerror = () => { if (state.session === session) state.closeSession(-15); };
-        session.port.start();
-        send(session, {type: 'ready', key: message.key, version: protocol.version,
-          request_limit_bytes: limit, request_capacity: capacity, timeout_ms: defaultTimeout});
-      };
+      const api = Object.freeze({
+        version: protocol.version,
+        request_capacity: capacity,
+        request_limit_bytes: limit,
+        timeout_ms: defaultTimeout,
+        get closed() { return state.closed; },
+        request(method, payload, callback, options = {}) {
+          if (state.closed) return -10;
+          if (!signed32(method) || !bytes(payload) || typeof callback !== 'function' ||
+              !options || typeof options !== 'object') return -1;
+          const timeout = options.timeout_ms ?? defaultTimeout;
+          if (!Number.isInteger(timeout) || timeout < 1 || timeout > 120000) return -1;
+          if (payload.byteLength > limit) return -13;
+          if (state.pending.size >= capacity) return -18;
+          do { state.serial = state.serial % 0x7fffffff + 1; } while (state.pending.has(state.serial));
+          const request = {id: state.serial, method, callback, timeout,
+            bytes: new Uint8Array(payload), admitted: false, canceled: false, delivered: false};
+          state.pending.set(request.id, request);
+          request.timer = setTimeout(() => cancel(request, -6), timeout);
+          const submit = () => {
+            if (state.closed || request.canceled) return;
+            HEAPU8.set(request.bytes, buffer);
+            const rc = Module._h2_web_gizclaw_request(request.id, method, request.bytes.length, timeout);
+            if (rc === -9 || rc === -18) { request.retry = setTimeout(submit, 1); return; }
+            if (rc !== 0) { remove(request); deliver(request, failure(rc)); return; }
+            request.admitted = true;
+            request.bytes = null;
+          };
+          // Accepted calls always complete asynchronously, after request returns its ID.
+          request.retry = setTimeout(submit, 0);
+          return request.id;
+        },
+        cancel(id) {
+          if (state.closed) return -10;
+          if (!Number.isInteger(id) || id < 1 || id > 0x7fffffff) return -1;
+          const request = state.pending.get(id);
+          if (!request || request.delivered) return -8;
+          cancel(request, -10);
+          return 0;
+        },
+      });
       state.finish = (id, code, hasError, rpcCode, payload, length, message, messageLength, toolIds, nativeCount) => {
         const request = state.pending.get(id);
         if (!request) return -10;
-        if (state.closed || request.canceled || state.session !== request.session) { remove(request); return -10; }
-        const bytes = HEAPU8.slice(payload, payload + length);
-        const rpcMessage = new TextDecoder().decode(HEAPU8.slice(message, message + messageLength));
-        const nativeTools = nativeCount < 0 ? null :
-          Array.from(HEAPU32.subarray(toolIds >>> 2, (toolIds >>> 2) + nativeCount));
-        return new Promise(resolve => {
-          request.ack = resolve;
-          if (!send(request.session, {type: 'response', id: request.id, code,
-              hasError: !!hasError, rpcCode, rpcMessage, payload: bytes, nativeTools}, [bytes.buffer]))
-            cancel(request, -10);
-        });
+        remove(request);
+        if (state.closed || request.canceled) return -10;
+        return deliver(request, {code, hasError: !!hasError, rpcCode,
+          rpcMessage: new TextDecoder().decode(HEAPU8.slice(message, message + messageLength)),
+          payload: HEAPU8.slice(payload, payload + length),
+          nativeTools: nativeCount < 0 ? null :
+            Array.from(HEAPU32.subarray(toolIds >>> 2, (toolIds >>> 2) + nativeCount))});
       };
-      state.pagehide = () => state.closeSession();
+      state.detach = () => {
+        if (state.closed) return;
+        state.closed = true;
+        state.attached = false;
+        for (const request of [...state.pending.values()]) cancel(request, -10);
+        state.pending.clear();
+        Module.h2GizClaw = null;
+        window.removeEventListener('pagehide', state.detach);
+        Module._h2_web_gizclaw_set_current(0);
+      };
       Module.h2WebGizClawState = state;
+      Module.h2GizClaw = api;
       Module._h2_web_gizclaw_set_current(address);
-      window.addEventListener('message', state.listener);
-      window.addEventListener('pagehide', state.pagehide);
+      window.addEventListener('pagehide', state.detach);
       return 0;
     });
 });
@@ -145,14 +122,8 @@ EM_JS(void, h2_web_gizclaw_detach_impl,
   h2WebMain(context, result, completion, ['pointer'], 'i32', address => {
     const state = Module.h2WebGizClawState;
     if (state?.address !== address) return 0;
-    state.closed = true;
-    state.attached = false;
-    state.closeSession();
-    state.pending.clear();
+    state.detach();
     Module.h2WebGizClawState = null;
-    window.removeEventListener('message', state.listener);
-    window.removeEventListener('pagehide', state.pagehide);
-    Module._h2_web_gizclaw_set_current(0);
     return 0;
   });
 });

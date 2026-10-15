@@ -1,7 +1,7 @@
 {
   "name": "@gizclaw/firmware",
   "version": "0.1.0",
-  "description": "Optional browser controller for embedded GizClaw firmware HTML pages",
+  "description": "Optional object and Promise SDK for a running GizClaw firmware WASM module",
   "license": "Apache-2.0",
   "type": "module",
   "sideEffects": false,

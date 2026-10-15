@@ -9,7 +9,7 @@ parser.add_argument("--template", type=Path, required=True)
 parser.add_argument("--output", type=Path, required=True)
 args = parser.parse_args()
 protocol = json.loads(args.protocol.read_text())
-if set(protocol) != {"channel", "version"} or not isinstance(protocol["channel"], str) or type(protocol["version"]) is not int:
+if set(protocol) != {"version"} or type(protocol["version"]) is not int or protocol["version"] < 1:
     raise ValueError("invalid firmware transport identity")
 source = args.template.read_text()
 marker = "/* FIRMWARE_PROTOCOL */"

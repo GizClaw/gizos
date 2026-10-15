@@ -467,11 +467,11 @@ projects/h2loader/
 
 ```text
 projects/gizclaw/
-├── libs/web/                       # Optional host controller, canonical codec and TypeScript contract
+├── libs/web/                       # Optional runtime SDK, canonical codec and TypeScript contract
 └── targets/npm_package/firmware/    # @gizclaw/firmware package identity, tarball and consumer tests
 ```
 
-projects/gizclaw/libs/web 只拥有控制固件 iframe 的宿主 npm SDK；最终可发布 artifact 由 targets/npm_package/firmware 组装。固件页面不依赖该 npm 包，产品入口只通过 C 使用 libs/gizclaw/web 的统一 transport 和已有 Service。共享 transport identity/version 位于 libs/gizclaw/web/protocol.json；对象 codec/map 与类型只进入控制端包。SDK 不包含产品固件，不取得 H106、Runtime、Service 或页面 lifecycle ownership；它只对宿主自己的 iframe 建立与关闭控制连接。
+`projects/gizclaw/libs/web` 拥有绑定明确 WASM Module 的可选 npm SDK；最终 artifact 由 `targets/npm_package/firmware` 组装。固件不依赖 npm 包，产品通过 C 使用 `libs/gizclaw/web` 和已有 Service，由固件提供独立的 `Module.h2GizClaw` 字节/回调接口。共享 ABI version 位于 `libs/gizclaw/web/protocol.json`，对象 codec/map 和类型只进入 npm 包。SDK 不包含产品固件，不取得 H106、Runtime、Service 或页面 lifecycle ownership；它只封装传入的 runtime。同一实例可有多个 client，`close()` 只取消所属 client 的调用。
 
 ## `tools`
 

@@ -13,7 +13,7 @@ make bazel-release RELEASE_SLICE=npm-packages RELEASE_BATCH=20260920-120000 RELE
 bazel test //tools/bazel:npm_release_test //tools/bazel:release_test //tools/bazel:release_bundle_test //projects/h2loader/targets/npm_package/h2loader:release_tarball_test
 ```
 
-`npm-packages` 是不接受 `RELEASE_INPUT_DIR` 的 source producer。`//tools/bazel:npm_release_bundle` 构建当前声明的 package 列表，staging 目录只包含每个 package 的 `.tgz` 和一个 `npm-index.json`，不生成 `SHA256SUMS`。当前 package manifests 分别声明 H2Loader 0.4.1 与可选固件 iframe 控制 SDK 0.1.0，对应 gizclaw-h2loader-0.4.1.tgz、gizclaw-firmware-0.1.0.tgz 与 npm-index.json。后者只由控制固件 HTML 的宿主网页引入，固件页面独立运行不需要它，见 [Web 固件控制 SDK](/apps/web#可选的-gizclaw-固件控制-sdk)。0.4.1 的 Web runtime 使用 pthread Worker 和共享 WASM 内存，使用方必须由 HTTPS 或 localhost 提供页面，并实际发送 `Cross-Origin-Opener-Policy: same-origin` 与 `Cross-Origin-Embedder-Policy: require-corp` 响应头。
+`npm-packages` 是不接受 `RELEASE_INPUT_DIR` 的 source producer。`//tools/bazel:npm_release_bundle` 构建当前声明的 package 列表，staging 目录只包含每个 package 的 `.tgz` 和一个 `npm-index.json`，不生成 `SHA256SUMS`。当前 package manifests 分别声明 H2Loader 0.4.1 与可选固件 WASM runtime SDK 0.1.0，对应 gizclaw-h2loader-0.4.1.tgz、gizclaw-firmware-0.1.0.tgz 与 npm-index.json。后者只由需要对象/Promise API 的调用代码引入并绑定已有 WASM Module；固件和底层回调调用不需要它，见 [Web 固件控制 SDK](/apps/web#可选的-gizclaw-固件控制-sdk)。0.4.1 的 Web runtime 使用 pthread Worker 和共享 WASM 内存，使用方必须由 HTTPS 或 localhost 提供页面，并实际发送 `Cross-Origin-Opener-Policy: same-origin` 与 `Cross-Origin-Embedder-Policy: require-corp` 响应头。
 
 合并已下载的两个 bundle 时，保留各自子目录即可；最终输入扫描拒绝 symlink 和重复 basename：
 

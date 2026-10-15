@@ -1,4 +1,4 @@
-"""Build a test-only host with an actual npm tarball and separate firmware."""
+"""Build a runtime fixture with an actual npm tarball and firmware module."""
 import argparse
 import io
 import json
@@ -6,7 +6,7 @@ from pathlib import Path, PurePosixPath
 import tarfile
 
 parser = argparse.ArgumentParser()
-for name in ("firmware", "package", "host", "assertions", "protocol", "output"):
+for name in ("firmware", "package", "host", "assertions", "output"):
     parser.add_argument("--" + name, type=Path, required=True)
 args = parser.parse_args()
 files = {}
@@ -16,10 +16,12 @@ with tarfile.open(args.firmware) as archive:
         assert not name.startswith("/") and ".." not in PurePosixPath(name).parts
         assert item.isfile() or item.isdir()
         if item.isfile():
-            files["firmware/" + name] = archive.extractfile(item).read()
-# Only this test host auto-starts its fixtures; the SDK never starts a product.
+            files[name] = archive.extractfile(item).read()
+# Only these test pages auto-start fixtures; the SDK never starts a product.
 auto = b"<script>addEventListener('load',()=>document.getElementById('start').click(),{once:true});</script>"
-files["firmware/index.html"] = files["firmware/index.html"].replace(b"</body>", auto + b"</body>")
+original = files["index.html"]
+files["secondary.html"] = original.replace(b"</body>", auto + b"</body>")
+files["index.html"] = original.replace(b"</body>", args.host.read_bytes() + auto + b"</body>")
 with tarfile.open(next(args.package.glob("*.tgz"))) as archive:
     manifest = json.load(archive.extractfile("package/package.json"))
     assert manifest["exports"]["."]["import"] == "./firmware.js"
@@ -29,10 +31,7 @@ with tarfile.open(next(args.package.glob("*.tgz"))) as archive:
             name = item.name.removeprefix("package/")
             assert ".." not in PurePosixPath(name).parts
             files["sdk/" + name] = archive.extractfile(item).read()
-files["index.html"] = args.host.read_bytes()
 files["assertions.mjs"] = args.assertions.read_bytes()
-files["protocol.json"] = args.protocol.read_bytes()
-files["_headers"] = files["firmware/_headers"] + b"  Cross-Origin-Resource-Policy: cross-origin\n"
 with tarfile.open(args.output, "w", format=tarfile.PAX_FORMAT) as archive:
     for name, data in sorted(files.items()):
         item = tarfile.TarInfo(name)

@@ -1,4 +1,4 @@
-"""Build the optional npm controller; the firmware never depends on this target."""
+"""Build the optional npm runtime SDK; the firmware never depends on this target."""
 
 load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
 
@@ -70,7 +70,7 @@ _sdk = rule(
 )
 
 def firmware_sdk(name):
-    """Compile canonical types and JS only for host-controlled iframe clients."""
+    """Compile canonical types and JS only for explicit WASM runtime clients."""
     _node(name = name + "_node", target_compatible_with = HOST_TOOL_COMPATIBILITY)
     _sdk(
         name = name,

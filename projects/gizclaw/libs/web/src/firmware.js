@@ -60,161 +60,105 @@ function createGizClawSDK(codec, transport) {
   return Object.freeze(api);
 }
 
-/** Connect an optional controller to an existing firmware iframe. */
-export async function connectFirmware(iframe, options = {}) {
+/** Bind the optional object/Promise facade to one already running WASM module. */
+export function createFirmwareClient(runtime) {
   const error = (code, details = {}) => Object.assign(
     new Error(details.rpcMessage || 'GizClaw firmware request failed (' + code + ')',
       details.cause ? {cause: details.cause} : undefined),
     {name: 'GizClawError', code, ...details});
   const signed32 = value => Number.isInteger(value) && value >= -2147483648 && value <= 2147483647;
-  const browser = globalThis.window;
-  if (!browser || !iframe || iframe.tagName !== 'IFRAME' ||
-      !iframe.contentWindow || typeof iframe.addEventListener !== 'function' ||
-      !options || typeof options !== 'object') throw error(-1);
-  const timeout = options.timeout_ms ?? 30000;
-  if (!Number.isInteger(timeout) || timeout < 1 || timeout > 120000) throw error(-1);
-  let origin;
-  try {
-    origin = options.origin ?? new URL(iframe.src, browser.document.baseURI).origin;
-    if (typeof origin !== 'string' || origin === 'null' || new URL(origin).origin !== origin)
-      throw new TypeError('exact non-opaque origin required');
-  } catch (cause) { throw error(-1, {cause}); }
-  const target = iframe.contentWindow;
-  const key = crypto.randomUUID();
-  return new Promise((resolve, reject) => {
-    let port, retry, timer, connected = false, closed = false, serial = 0;
-    const pending = new Map();
-    const post = message => { if (port) port.postMessage(message); };
-    const cleanHandshake = () => {
-      clearTimeout(retry); clearTimeout(timer);
-      browser.removeEventListener('message', available);
-    };
-    const close = (code = -10) => {
-      if (closed) return;
-      closed = true;
-      cleanHandshake();
-      iframe.removeEventListener('load', navigated);
-      browser.removeEventListener('pagehide', pagehide);
-      try { post({type: 'disconnect'}); } catch (_) {}
-      if (port) { port.onmessage = null; port.onmessageerror = null; port.close(); }
-      for (const request of pending.values()) { request.cleanup(); request.reject(error(code)); }
-      pending.clear();
-      if (!connected) reject(error(code));
-    };
-    const pagehide = () => close();
-    const navigated = () => { if (connected) close(); };
-    const assertOpen = () => { if (closed) throw error(-10); };
-    const call = (method, bytes, opts = {}, decode = value => value) => {
-      try {
-        assertOpen();
-        if (!Number.isInteger(method) || method < -2147483648 || method > 2147483647 ||
-            !(bytes instanceof Uint8Array) || !opts || typeof opts !== 'object') throw error(-1);
-        if (bytes.byteLength > limits.request_limit_bytes) throw error(-13);
-        const deadline = opts.timeout_ms ?? limits.timeout_ms;
-        if (!Number.isInteger(deadline) || deadline < 1 || deadline > 120000) throw error(-1);
-        const signal = opts.signal;
-        if (signal && (typeof signal.addEventListener !== 'function' ||
-                       typeof signal.removeEventListener !== 'function')) throw error(-1);
-        if (signal?.aborted) throw error(-10);
-        if (pending.size >= limits.request_capacity) throw error(-18);
-        bytes = new Uint8Array(bytes);
-        do { serial = serial % 0x7fffffff + 1; } while (pending.has(serial));
-        const id = serial;
-        return new Promise((done, fail) => {
-          let abort, expiry;
-          const cleanup = () => {
-            clearTimeout(expiry);
-            if (signal) signal.removeEventListener('abort', abort);
-          };
-          const cancel = code => {
-            if (!pending.has(id)) return;
-            pending.delete(id); cleanup();
-            try { post({type: 'cancel', id}); } catch (_) {}
-            fail(error(code));
-          };
-          abort = () => cancel(-10);
-          pending.set(id, {resolve: done, reject: fail, decode, cleanup, method});
+  const bytes = value => ArrayBuffer.isView(value) &&
+    Object.prototype.toString.call(value) === '[object Uint8Array]';
+  if (!runtime || typeof runtime !== 'object') throw error(-1);
+  const abi = runtime.h2GizClaw;
+  if (!abi || abi.closed) throw error(-10);
+  if (abi.version !== protocol.version) throw error(-3);
+  if (typeof abi.closed !== 'boolean') throw error(-15);
+  if (typeof abi.request !== 'function' || typeof abi.cancel !== 'function') throw error(-1);
+  for (const [name, maximum] of [['request_capacity', 32], ['request_limit_bytes', 1048576], ['timeout_ms', 120000]])
+    if (!Number.isInteger(abi[name]) || abi[name] < 1 || abi[name] > maximum) throw error(-15);
+  let closed = false;
+  const pending = new Set();
+  const assertOpen = () => {
+    if (closed || abi.closed || runtime.h2GizClaw !== abi) throw error(-10);
+  };
+  const cancel = (request, code = -10) => {
+    if (request.done) return;
+    try { abi.cancel(request.id); } catch (_) {}
+    if (!request.done) { request.cleanup(); request.reject(error(code)); }
+  };
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    for (const request of [...pending]) cancel(request);
+  };
+  const call = (method, payload, opts = {}, decode = value => value) => {
+    try {
+      assertOpen();
+      if (!signed32(method) || !bytes(payload) || !opts || typeof opts !== 'object') throw error(-1);
+      if (payload.byteLength > abi.request_limit_bytes) throw error(-13);
+      const timeout_ms = opts.timeout_ms ?? abi.timeout_ms;
+      if (!Number.isInteger(timeout_ms) || timeout_ms < 1 || timeout_ms > 120000) throw error(-1);
+      const signal = opts.signal;
+      if (signal && (typeof signal.addEventListener !== 'function' ||
+                     typeof signal.removeEventListener !== 'function')) throw error(-1);
+      if (signal?.aborted) throw error(-10);
+      payload = new Uint8Array(payload);
+      return new Promise((resolve, reject) => {
+        const request = {id: 0, done: false, reject};
+        const abort = () => cancel(request);
+        request.cleanup = () => {
+          request.done = true; pending.delete(request);
+          if (signal) signal.removeEventListener('abort', abort);
+        };
+        const response = message => {
+          if (request.done) return -10;
+          request.cleanup();
+          let delivery = -10, value, failure;
           try {
-            if (signal) signal.addEventListener('abort', abort, {once: true});
-            expiry = setTimeout(() => cancel(-6), deadline);
-            port.postMessage({type: 'request', id, method, payload: bytes, timeout_ms: deadline}, [bytes.buffer]);
+            assertOpen();
+            if (!message || !signed32(message.code) || typeof message.hasError !== 'boolean' ||
+                typeof message.rpcMessage !== 'string' || !bytes(message.payload) ||
+                (message.hasError && !signed32(message.rpcCode))) throw new TypeError('invalid firmware response');
+            if (message.code !== 0 || message.hasError) {
+              failure = error(message.code || -1000, {
+                rpcCode: message.hasError ? message.rpcCode : undefined, rpcMessage: message.rpcMessage});
+            } else {
+              let native;
+              if (message.nativeTools != null) {
+                if (method !== codec.RPC_METHOD_IDS['client.tool.v0.list'] ||
+                    !Array.isArray(message.nativeTools) ||
+                    !message.nativeTools.every(id => Number.isInteger(id) && id >= 0 && id <= 0xffffffff))
+                  throw new TypeError('invalid firmware discovery result');
+                native = {tools: [...message.nativeTools]};
+              }
+              value = decode(new Uint8Array(message.payload), native);
+              delivery = 0;
+            }
           } catch (cause) {
-            pending.delete(id); cleanup(); fail(error(-4, {cause}));
+            failure = cause?.code === -10 ? cause : error(-15, {cause});
+            delivery = failure.code;
           }
-        });
-      } catch (cause) {
-        return Promise.reject(cause?.code === undefined ? error(-1, {cause}) : cause);
-      }
-    };
-    let limits;
-    const response = message => {
-      if (!message || typeof message !== 'object') { close(-15); return; }
-      if (message.type === 'closed') { close(signed32(message.code) ? message.code : -15); return; }
-      if (message.type !== 'response' || !Number.isInteger(message.id) || message.id < 1 || message.id > 0x7fffffff) { close(-15); return; }
-      const request = pending.get(message.id);
-      if (!request) { try { post({type: 'complete', id: message.id, result: -10}); } catch (_) {} return; }
-      pending.delete(message.id); request.cleanup();
-      let delivery = -10, value, failure;
-      try {
-        if (!signed32(message.code) || typeof message.hasError !== 'boolean' ||
-            typeof message.rpcMessage !== 'string' || !(message.payload instanceof Uint8Array) ||
-            (message.hasError && !signed32(message.rpcCode))) throw new TypeError('invalid firmware response');
-        if (message.code !== 0 || message.hasError) {
-          failure = error(message.code || -1000, {
-            rpcCode: message.hasError ? message.rpcCode : undefined, rpcMessage: message.rpcMessage});
-        } else {
-          let native;
-          if (message.nativeTools !== null) {
-            if (request.method !== codec.RPC_METHOD_IDS['client.tool.v0.list'] ||
-                !Array.isArray(message.nativeTools) ||
-                !message.nativeTools.every(id => Number.isInteger(id) && id >= 0 && id <= 0xffffffff))
-              throw new TypeError('invalid firmware discovery result');
-            native = {tools: message.nativeTools};
+          if (failure) reject(failure);
+          else resolve(value);
+          return delivery;
+        };
+        pending.add(request);
+        try {
+          request.id = abi.request(method, payload, response, {timeout_ms});
+          if (!Number.isInteger(request.id) || request.id === 0 || request.id > 0x7fffffff || request.id < -2147483648)
+            throw error(-15);
+          if (request.id < 0) { request.cleanup(); reject(error(request.id)); return; }
+          if (signal) {
+            signal.addEventListener('abort', abort, {once: true});
+            if (signal.aborted) abort();
           }
-          value = request.decode(new Uint8Array(message.payload), native);
-          delivery = 0;
+        } catch (cause) {
+          if (request.id > 0) { try { abi.cancel(request.id); } catch (_) {} }
+          if (!request.done) { request.cleanup(); reject(cause?.code === undefined ? error(-4, {cause}) : cause); }
         }
-      } catch (cause) { delivery = -15; failure = error(-15, {cause}); }
-      try { post({type: 'complete', id: message.id, result: delivery}); }
-      catch (cause) { failure = error(-10, {cause}); close(); }
-      if (failure) request.reject(failure);
-      else request.resolve(value);
-    };
-    const ready = message => {
-      if (!message || message.type !== 'ready' || message.key !== key ||
-          message.version !== protocol.version) { close(-3); return; }
-      for (const [name, maximum] of [['request_capacity', 32], ['request_limit_bytes', 1048576], ['timeout_ms', 120000]])
-        if (!Number.isInteger(message[name]) || message[name] < 1 || message[name] > maximum) { close(-15); return; }
-      limits = message;
-      connected = true; cleanHandshake();
-      port.onmessage = event => response(event.data);
-      resolve(createGizClawSDK(codec, {call, error, assertOpen, close: () => close()}));
-    };
-    const available = event => {
-      const message = event.data;
-      if (closed || port || event.source !== target || event.origin !== origin ||
-          !message || message.channel !== protocol.channel || message.key !== key ||
-          message.type !== 'available') return;
-      if (message.version !== protocol.version) { close(-3); return; }
-      const channel = new MessageChannel();
-      port = channel.port1;
-      port.onmessage = event => ready(event.data);
-      port.onmessageerror = () => close(-15);
-      port.start();
-      try { target.postMessage({channel: protocol.channel, version: protocol.version,
-        type: 'connect', key}, origin, [channel.port2]); }
-      catch (_) { channel.port2.close(); close(-4); }
-    };
-    const probe = () => {
-      if (closed || port) return;
-      try { target.postMessage({channel: protocol.channel, version: protocol.version, type: 'probe', key}, origin); }
-      catch (_) { close(-4); return; }
-      retry = setTimeout(probe, 50);
-    };
-    browser.addEventListener('message', available);
-    browser.addEventListener('pagehide', pagehide);
-    iframe.addEventListener('load', navigated);
-    timer = setTimeout(() => close(-6), timeout);
-    probe();
-  });
+      });
+    } catch (cause) { return Promise.reject(cause?.code === undefined ? error(-1, {cause}) : cause); }
+  };
+  return createGizClawSDK(codec, {call, error, assertOpen, close});
 }

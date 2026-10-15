@@ -17,7 +17,6 @@ genrule(
     srcs = [
         "index.html",
         "assertions.mjs",
-        "//libs/gizclaw/web:protocol.json",
         "//libs/gizclaw/web/tests/local",
         "//projects/gizclaw/targets/npm_package/firmware:release_tarball",
     ],
@@ -27,7 +26,6 @@ genrule(
         --package $(location //projects/gizclaw/targets/npm_package/firmware:release_tarball) \\
         --host $(location index.html) \\
         --assertions $(location assertions.mjs) \\
-        --protocol $(location //libs/gizclaw/web:protocol.json) \\
         --output $@""",
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
     tools = [":package"],
@@ -38,14 +36,13 @@ web_archive_browser_test(
     archive = ":archive",
     fails = ["SDK failure"],
     passes = [
-        "SDK iframe_tools_mhs=PASS",
+        "SDK runtime_tools_mhs=PASS",
         "SDK existing_lua_tools=PASS",
-        "SDK cross_origin_isolation=PASS",
-        "SDK reconnect_cancel=PASS",
+        "SDK runtime_isolation=PASS",
+        "SDK client_close_cancel=PASS",
         "SDK decode_ack=PASS",
-        "SDK version_source_checks=PASS",
-        "SDK view_only_without_sdk=PASS",
-        "SDK all_frames_closed=PASS",
+        "SDK raw_callback_api=PASS",
+        "SDK all_runtimes_closed=PASS",
     ],
     timeout_s = 90,
 )

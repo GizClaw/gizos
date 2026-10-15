@@ -1,4 +1,4 @@
-"""Generate the firmware-only iframe endpoint from its shared ABI identity."""
+"""Generate the firmware runtime byte interface from its shared ABI identity."""
 
 def _source_impl(ctx):
     ctx.actions.run(

@@ -8,7 +8,7 @@ import tarfile
 import tempfile
 
 parser = argparse.ArgumentParser()
-for name in ("directory", "manifest", "node", "compiler", "consumer"):
+for name in ("directory", "manifest", "node", "compiler", "consumer", "runtime_consumer"):
     parser.add_argument("--" + name, type=Path, required=True)
 args = parser.parse_args()
 manifest = json.loads(args.manifest.read_text())
@@ -36,10 +36,12 @@ with tempfile.TemporaryDirectory() as directory:
     (root / "package.json").write_text(json.dumps({"private": True, "type": "module"}))
     subprocess.run([
         str(args.node.resolve()), "--input-type=module", "--eval",
-        "import {connectFirmware} from '@gizclaw/firmware'; "
-        "if (typeof connectFirmware !== 'function' || globalThis.h2WebGizClaw !== undefined) process.exit(1); "
+        "import {createFirmwareClient} from '@gizclaw/firmware'; "
+        "if (typeof createFirmwareClient !== 'function' || globalThis.h2WebGizClaw !== undefined) process.exit(1); "
         "console.log('GIZCLAW_FIRMWARE_NPM import=PASS');",
     ], cwd=root, check=True)
+    shutil.copyfile(args.runtime_consumer, root / "runtime_consumer.mjs")
+    subprocess.run([str(args.node.resolve()), str(root / "runtime_consumer.mjs")], cwd=root, check=True)
     shutil.copyfile(args.consumer, root / "consumer.ts")
     (root / "tsconfig.json").write_text(json.dumps({
         "compilerOptions": {"strict": True, "noEmit": True, "target": "ES2022",

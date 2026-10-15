@@ -107,9 +107,9 @@ PAL WebRTC 的 `CLOSED` 和 `ERROR` callback 只提供 callback 期间有效的 
 
 调用方 wait 后先复制/解码结果，再 complete 并 release。Callback 和 completion 在同一 owner 返回，不能在其中阻塞等待或停止/销毁 Service；既有产品动作仍由产品 owner 接管。关闭时先 close Web adapter，再按原有方式 Service stop、poll drain 和 deinit。Stop/deinit 遇到未释放的 call、adapter borrow 或 failed join 会保留依赖供重试；取消不能撤销已经发生的写入。重连仍新建 Service，不引入独立 device 生命周期或新的 App host。
 
-//libs/gizclaw/web 只提供固件侧的统一 iframe 通信桥，产品入口通过 C 注册已有 Service，不引用或装配对象 SDK 的 JS 文件。固件页面与只展示页面的嵌入不需要 npm SDK。只有控制嵌入固件 HTML 的宿主网页才 import @gizclaw/firmware，并用 connectFirmware(iframe) 连接已注册端点；ABI/window/origin 握手与独立 MessageChannel 隔离各 frame。对象 codec、类型与 Promise API 由 projects/gizclaw/libs/web 拥有，npm artifact 位于 projects/gizclaw/targets/npm_package/firmware。宿主先复制/解码响应再 ACK，固件收到 ACK 后才选择成功的 delivery completion；取消、断连和解码失败会取消 continuation。SDK client.close() 只断开控制端，不停止固件 Service。
+`//libs/gizclaw/web` 在当前 WASM Module 上提供独立的 `Module.h2GizClaw` 字节接口，产品通过 C 注册已有 Service，不引用对象 SDK 的 JS 文件。没有 npm 包也能 request canonical method/protobuf 并接收 callback；接受的请求恰好异步回调一次，回调复制/消费结果后同步返回 delivery result。可选 `@gizclaw/firmware` 的 `createFirmwareClient(Module)` 在同一接口上提供对象、类型与 Promise API，不要求 iframe。对象 codec 和类型属于 `projects/gizclaw/libs/web`，npm artifact 属于 `projects/gizclaw/targets/npm_package/firmware`，固件不链接它们。SDK 解码失败会失败 delivery，避免提交准备好的 continuation；取消不能撤销已执行写入。
 
-接入和既有 Lua 工具调用示例见 [可选固件控制 SDK](/apps/web#可选的-gizclaw-固件控制-sdk)。libs/gizclaw/web/tests/local/ 验证没有 SDK 的独立固件运行；npm 的 tests/embed/ 使用实际 tarball 和不同 origin 的真实 WASM iframe 验证现有 handler 与交付确认，native protocol fixture 继续验证原 WebRTC 路径。
+同一 Module 可绑定多个 client，共享该实例的容量；`client.close()` 只取消自己的调用，不停止 Service 或影响其它 client。Native detach 后 pending 调用收到 CLOSED，旧字节接口引用保持 closed，failed join 继续保留依赖供重试。接入和既有 Lua 工具示例见 [可选固件控制 SDK](/apps/web#可选的-gizclaw-固件控制-sdk)。`libs/gizclaw/web/tests/local/` 不加载 SDK，直接验证真实 WASM callback API；npm `tests/runtime/` 从实际 tarball 验证当前页面的真实 WASM 及第二个实例，native protocol fixture 继续验证原 WebRTC 路径。
 
 ## 设备 provider
 
