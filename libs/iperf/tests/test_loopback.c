@@ -38,13 +38,14 @@ typedef struct scenario {
     uint64_t bitrate_bps;
 } scenario_t;
 
-/* Model a shared receive pool occupied by early reverse-UDP data. The
+/* Model a shared receive pool occupied by early reverse UDP/SCTP data. The
  * control transport remains unavailable until a real UDP packet is consumed.
  * Both sockets and all server protocol work still use the desktop provider. */
 static const h2_pal_net_vtable_t *pool_net;
 static bool pool_waiting;
 static bool pool_freed;
 static bool pool_release;
+static uint8_t pool_start_state;
 static unsigned pool_control_waits;
 static unsigned pool_data_reads;
 
@@ -56,7 +57,7 @@ static int pool_tcp_recv(void *user, h2_pal_net_socket_t sock, uint8_t *data,
         return timeout_ms == 0u ? H2_PAL_ERR_WOULD_BLOCK : H2_PAL_ERR_TIMEOUT;
     }
     int got = pool_net->tcp_recv(user, sock, data, len, timeout_ms);
-    if (got == 1 && len == 1u && data[0] == 10u) pool_waiting = true;
+    if (got == 1 && len == 1u && data[0] == pool_start_state) pool_waiting = true;
     return got;
 }
 
@@ -66,7 +67,17 @@ static int pool_udp_recv(void *user, h2_pal_net_socket_t sock,
     int got = pool_net->udp_recvfrom(user, sock, from, data, len, timeout_ms);
     if (pool_waiting && got >= 12) {
         pool_data_reads++;
-        pool_freed = pool_release;
+        bool complete_message = pool_start_state != 1u;
+        /* Hold SCTP control until a complete DATA/I-DATA message is pumped. This
+         * also exercises accounting for messages queued before TEST_RUNNING. */
+        for (size_t offset = 12u; !complete_message && offset + 4u <= (size_t)got;) {
+            size_t chunk_len = ((size_t)data[offset + 2u] << 8u) | data[offset + 3u];
+            if (chunk_len < 4u || chunk_len > (size_t)got - offset) break;
+            complete_message = (data[offset] == 0u || data[offset] == 64u) &&
+                               (data[offset + 1u] & 1u) != 0u;
+            offset += (chunk_len + 3u) & ~(size_t)3u;
+        }
+        pool_freed = pool_freed || (pool_release && complete_message);
     }
     return got;
 }
@@ -82,6 +93,7 @@ static void run_scenario(const scenario_t *scenario, bool shared_pool, bool rele
     if (shared_pool) {
         pool_net = client_net.vtable;
         pool_release = release_pool;
+        pool_start_state = with_sctp ? 1u : 10u;
         pool_waiting = pool_freed = false;
         pool_control_waits = pool_data_reads = 0u;
         client_vtable.tcp_recv = pool_tcp_recv;
@@ -159,14 +171,21 @@ static void run_scenario(const scenario_t *scenario, bool shared_pool, bool rele
      * loaded CI host can drop a large share, so only a coarse bound applies. */
     if (scenario->protocol == H2_IPERF_PROTOCOL_UDP) {
         assert(receiver->bytes * 2u >= sender->bytes);
-    } else {
+    } else if (!(scenario->reverse && scenario->bytes != 0u)) {
         assert(receiver->bytes * 10u >= sender->bytes * 9u);
     }
     /* The peer's report is exactly what the other side measured locally. */
     assert(client_result.remote.bytes == thread.result.local.bytes);
     assert(thread.result.remote.bytes == client_result.local.bytes);
     if (scenario->bytes != 0u) {
-        assert(sender->bytes == scenario->bytes);
+        if (scenario->reverse) {
+            /* The receiver ends a reverse byte-budget run. The server can
+             * send ahead until its control poll observes TEST_END. */
+            assert(receiver->bytes == scenario->bytes);
+            assert(sender->bytes >= scenario->bytes);
+        } else {
+            assert(sender->bytes == scenario->bytes);
+        }
     } else {
         assert(sender->duration_ms >= scenario->duration_ms);
         assert(sender->duration_ms < scenario->duration_ms + 1000u);
@@ -232,6 +251,18 @@ int main(void) {
     };
     run_scenario(&pool_scenario, true, true);
     run_scenario(&pool_scenario, true, false);
+
+    const scenario_t sctp_pool_scenario = {
+        "sctp reverse shared RX pool", H2_IPERF_PROTOCOL_SCTP, true,
+        1000u, 0u, 8192u, 0u,
+    };
+    run_scenario(&sctp_pool_scenario, true, true);
+    run_scenario(&sctp_pool_scenario, true, false);
+    const scenario_t sctp_pool_bytes = {
+        "sctp reverse shared RX pool byte budget", H2_IPERF_PROTOCOL_SCTP, true,
+        0u, 8192u, 8192u, 0u,
+    };
+    run_scenario(&sctp_pool_bytes, true, true);
 
     static const scenario_t scenarios[] = {
         {"tcp", H2_IPERF_PROTOCOL_TCP, false, 1000u, 0u, 0u, 0u},

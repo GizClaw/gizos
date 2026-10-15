@@ -209,11 +209,16 @@ static h2_pal_result_t client_run_data(client_t *client) {
         .duration_ms = params->bytes != 0u ? 0u : params->duration_ms,
         .byte_limit = params->bytes,
     };
+    /* SCTP messages pumped before TEST_RUNNING remain queued for this run. */
+    uint64_t early_sctp_messages = client->stream.sctp_rx_messages;
     client->stream.udp_account = params->reverse;
     h2_pal_result_t result = params->reverse
         ? h2_iperf_run_receiver(&run)
         : h2_iperf_run_sender(&run);
     stats_from_run(&run, &client->stream, params->reverse, &client->result->local);
+    if (params->reverse && params->protocol == H2_IPERF_PROTOCOL_SCTP) {
+        client->result->local.packets += early_sctp_messages;
+    }
     client->data_done = true;
     if (params->reverse && params->protocol == H2_IPERF_PROTOCOL_UDP) {
         /* Nobody reads the data socket once the run ends, but the server may
@@ -263,18 +268,20 @@ static h2_pal_result_t client_exchange_results(client_t *client) {
     return parsed ? H2_PAL_OK : H2_PAL_ERR_FORMAT;
 }
 
-/* A reverse UDP server can start sending immediately after the handshake.
+/* A reverse UDP or SCTP server can start sending immediately after the handshake.
  * Keep that mailbox flowing while waiting for TEST_START/TEST_RUNNING, so
  * queued pre-start packets cannot monopolize a shared receive-buffer pool.
  * Duration-based runs tolerate packets before TEST_RUNNING; byte-budget runs
- * retain their existing path so no part of a finite payload is discarded.
- * Early packets are outside the measured interval; the first measured sequence still
- * exposes their loss through the existing UDP sequence accounting. */
+ * retain their existing UDP path so no finite payload is discarded. SCTP
+ * pumping retains complete messages and services acknowledgements/timers.
+ * Discarded early UDP packets remain visible through sequence loss accounting.
+ * SCTP data is retained and counted when the measured receive run begins. */
 static h2_pal_result_t client_recv_state(client_t *client, int8_t last_state,
                                          int8_t *out_state) {
     if (!client->stream_ready || client->data_done || !client->params.reverse ||
-        client->params.bytes != 0u ||
-        client->params.protocol != H2_IPERF_PROTOCOL_UDP ||
+        (client->params.protocol != H2_IPERF_PROTOCOL_SCTP &&
+         (client->params.protocol != H2_IPERF_PROTOCOL_UDP ||
+          client->params.bytes != 0u)) ||
         (last_state != H2_IPERF_STATE_CREATE_STREAMS &&
          last_state != H2_IPERF_STATE_TEST_START)) {
         return h2_iperf_ctrl_recv_state(client->config, client->ctrl, out_state,
@@ -304,6 +311,12 @@ static h2_pal_result_t client_recv_state(client_t *client, int8_t last_state,
         if (got == 0) return H2_PAL_ERR_CLOSED;
         if (got != H2_PAL_ERR_WOULD_BLOCK && got != H2_PAL_ERR_TIMEOUT)
             return (h2_pal_result_t)got;
+        if (client->params.protocol == H2_IPERF_PROTOCOL_SCTP) {
+            h2_pal_result_t result = h2_iperf_stream_sctp_pump(&client->stream, 0u);
+            if (result != H2_PAL_OK) return result;
+            h2_iperf_sleep_ms(config, 1u);
+            continue;
+        }
         /* Bound each drain round so a continuous sender cannot hide control
          * readiness or extend the original control deadline. */
         for (unsigned i = 0u; i < 16u; ++i) {
