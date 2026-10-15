@@ -195,7 +195,10 @@ cc_test(
         "src/h2_esp_platform_time.c",
         "tests/test_h2_esp_platform_time.c",
     ] + glob(["tests/sdk/**/*.h"]),
-    conlyopts = H2_C11_OPTS + ["-DH2_ESP_TIME_TEST=1", "-DconfigTICK_RATE_HZ=100u"],
+    conlyopts = H2_C11_OPTS + [
+        "-DH2_ESP_TIME_TEST=1",
+        "-DconfigTICK_RATE_HZ=100u",
+    ],
     copts = H2_WARNING_COPTS,
     includes = [
         "include",
@@ -217,7 +220,10 @@ cc_test(
         "src/h2_esp_platform_time.c",
         "tests/test_h2_esp_platform_time.c",
     ] + glob(["tests/sdk/**/*.h"]),
-    conlyopts = H2_C11_OPTS + ["-DH2_ESP_TIME_TEST=1", "-DportMAX_DELAY=65535u"],
+    conlyopts = H2_C11_OPTS + [
+        "-DH2_ESP_TIME_TEST=1",
+        "-DportMAX_DELAY=65535u",
+    ],
     copts = H2_WARNING_COPTS,
     includes = [
         "include",
