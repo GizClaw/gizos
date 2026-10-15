@@ -6,21 +6,46 @@ The mainline retirement of the mixed PAL App also retires Mosaico's legacy `pal-
 
 ## Rebased baseline checkpoint (2026-10-15)
 
-The new baseline is `68e867d0`. Fresh immutable artifacts are R106 (suite/Loader/recovery), R107 (WebRTC performance), DevKit R21 (Lua peer), and R108 (board diagnostic). Source manifests include the exact pre-commit diff; subsequent host-test and diagnostic-only edits do not relabel the earlier artifacts.
+The new baseline is `68e867d0`. Fresh immutable artifacts are R106 (suite/Loader/recovery), R107/R109 (default-off WebRTC performance), R110 (instrumented WebRTC diagnosis), DevKit R21 (Lua peer), and R108 (board diagnostic). Source manifests include the exact pre-commit diff; subsequent host-test and diagnostic-only edits do not relabel the earlier artifacts.
 
 | Validation | Current-baseline evidence |
 | --- | --- |
 | Focused host contracts | 104/104 PASS |
 | Complete macOS host test selection | 923 PASS, 23 incompatible-platform skips; the original LVGL allocator-accounting race is fixed and the actual display test passes 100 consecutive runs |
-| Native builds | R106 17 roots, R107 performance, DevKit R21 peer and R108 diagnostic built and archived with verified hashes |
+| Native builds | R106 17 roots, R107/R109/R110 performance, DevKit R21 peer and R108 diagnostic built and archived with verified hashes |
 | Display | R106 two independent boots, 24/24 each; driver-transfer and lifecycle evidence, no new optical claim |
 | Core | R106 two independent boots, 41/41 each, task-resource probe, cleanup, confirmation and wall-clock restoration PASS |
 | Storage | R106 36/36 across phases 1/2/3/4/4, independent reboots, empty completion rechecks and unchanged Loader/crash storage PASS |
 | Lua Link | R106/R21 bilateral five rounds, real DevKit USB cycle (`lost:-10`, 4101 ms), both exact public Loader returns and unchanged crash storage PASS |
-| Loader recovery / WebRTC performance | Fresh full matrix and two-boot performance qualification pending |
-| Board diagnostic / original Flash | R108 native build PASS; hardware regression and final original 16 MiB restoration pending |
+| Audio / Decoder | R106 Audio 24/24 and Decoder 29/29 on two independent boots each; actual PCM/I/O, 30-second audio soaks, cleanup/confirmation and public Loader returns PASS |
+| Loader recovery | R106 original full 51/51 matrix PASS, including real HTTP peer witness and 20,960-byte induced-crash dump read/erase |
+| WebRTC performance | NOT QUALIFIED. R107 second boot fails unloaded P99 288.856 ms; R109 controlled AP/channel comparison fails loaded P99 359.198 ms. Both exceed the unchanged 200 ms gate. R110 diagnostic boot passes but does not qualify default-off firmware. Actual public Loader returns verified |
+| Board diagnostic / original Flash | R108 automatic Core baseline 8, Audio 24, Camera 17/40 frames, sensor and local radio checks PASS; operator RGBW/touch/49-frame preview/BOOT tones PASS. Valid left-slot insertion and final original 16 MiB restoration pending |
 
-The first Display controller attempt timed out because it parsed an incomplete trailing replay JSON line. Its raw evidence is retained; the local controller now consumes complete lines and the new two-boot run passes the unchanged 24-case assertions. A full CI build also found the separate board diagnostic still depended on the retired mixed PAL App. That launcher now calls the independent Core App's existing eight baseline probes and uses its task namespace, retains the halt-on-live-cleanup behavior, and explicitly labels the dashboard as baseline coverage. It does not copy retired implementations or claim these eight probes satisfy the full 41-case contract. The complete macOS build now passes all 3,872 targets after also aligning the three newly reachable Lua task declarations with the mainline DevKit policy. This is build compatibility only; GizClaw business acceptance remains excluded. CI revalidation is in progress.
+The first Display controller attempt timed out because it parsed an incomplete trailing replay JSON line. Its raw evidence is retained; the local controller now consumes complete lines and the new two-boot run passes the unchanged 24-case assertions. A full CI build also found the separate board diagnostic still depended on the retired mixed PAL App. That launcher now calls the independent Core App's existing eight baseline probes and uses its task namespace, retains the halt-on-live-cleanup behavior, and explicitly labels the dashboard as baseline coverage. It does not copy retired implementations or claim these eight probes satisfy the full 41-case contract. The complete macOS build now passes all 3,872 targets after also aligning the three newly reachable Lua task declarations with the mainline DevKit policy. This is build compatibility only; GizClaw business acceptance remains excluded. All build, test and coverage checks for code head `a237ec4c` pass; exact-head owner approval is still required.
+
+### Current-baseline WebRTC investigation
+
+R107 uses the original private AP fixture. Its first boot passes; its second boot has unloaded P99 288.856 ms with 97/100 frames, loaded P99 145.111 ms and fairness 1180. The Pion peer receives and echoes all 200 packets; one unloaded arrival gap at the peer is 230.148 ms, before echo processing. This locates part of the delay before the peer echo but does not distinguish device scheduling, SDK queues or the radio path.
+
+A subsequent read-only observation finds the host on channel 11 and the R107 board pinned to channel 6. R109 uses a privately configured stronger channel-11 AP and waits for 30 seconds of low host build load. The host AP identity remains unknown; matching channels do not prove a shared AP. The complete measured R109 window has zero sampled build CPU, but unloaded P99 is 194.164 ms and loaded P99 is 359.198 ms, with 100/99 frames and fairness 1215. Thus neither the controlled fixture nor the absence of competing builds resolves the qualification failure. No thresholds, QoS markings, worker policies or shared workload assertions were changed.
+
+R110 enables only the existing bounded worker, RTP-receive and UDP-mailbox diagnostics. Its one diagnostic boot has unloaded/loaded P99 105.574/155.928 ms, 200 authenticated received packets, no missing frames and fairness 1103. It also records 142 mailbox drops. Maximum per-packet decode time is 1.174 ms; maximum peer echo processing is 0.146 ms. The 174.618 ms connected-command aggregate is consistent with close-time printing of the 200 diagnostic records over 171 ms, after performance statistics; it is not evidence of a media-time command stall. Per-command opcode timing is absent, so exact attribution is not asserted. The diagnostic PASS cannot erase R107/R109 failures or qualify the non-instrumented image. Current evidence does not justify another speculative production tuning change or a claim that Wi-Fi is the sole cause.
+
+### Upstream change and regression coverage
+
+The rebase validation targets the integration boundaries changed by the 13 upstream commits. Unchanged historical suite receipts remain artifact-bound; they are not presented as fresh R106 passes.
+
+| Upstream change | Mosaico validation |
+| --- | --- |
+| Mixed PAL App retirement | Remove the legacy Preference launcher; existing Storage 36-case, five-boot contract PASS. Board diagnostic reuses the independent Core baseline API and explicitly distinguishes its eight probes from the full 41-case qualification. |
+| Positive ESP Time delay rounding | Host tick-boundary checks and fresh Core 41/41 on two boots PASS; fresh Audio 24/24 and Decoder 29/29 on two independent boots each PASS. |
+| Runtime BLE name and retained GATT schemas | Runtime/provider host checks and fresh bilateral Lua five-round business plus real USB loss PASS. Optional product naming does not replace protocol board/target identity checks. |
+| Loader SHA-256 reuse and boot metadata | Host tests and unchanged full 51-case hardware recovery/checksum/HTTP/crash matrix PASS. |
+| H2Peer close and SCTP handshake semantics | Host lifecycle and association regressions PASS; R107 and R109 fail the existing audio-gap smoke threshold; R110 diagnostic observations are recorded separately without transferring qualification. |
+| ESP archive rescan composition | Native firmware builds, host contract checks, complete macOS build and all 3,872 S31 analysis targets PASS. |
+
+The source manifests for R106/R107/DevKit R21/R108 were reconciled against `a237ec4c`: differences are documentation, the LVGL host test, the separate standalone diagnostic, or the excluded GizClaw launcher. None changes the corresponding built image's inputs. The original manifests and pre-commit diffs remain the artifact identity; this comparison does not rename their source revision.
 
 ## Comparison with existing boards
 
