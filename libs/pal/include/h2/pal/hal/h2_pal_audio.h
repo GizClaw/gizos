@@ -57,6 +57,43 @@ typedef struct h2_pal_audio_api h2_pal_audio_api_t;
 typedef h2_pal_audio_api_t h2_pal_audio_t;
 typedef struct h2_pal_audio_track h2_pal_audio_track_t;
 
+/** One complete, time-aligned AEC processing frame. PCM is borrowed only for
+ * on_capture; do not retain it. raw contains interleaved ADC samples before
+ * AEC; microphone_lane and reference_lane identify actual packed lanes, not
+ * codec input numbers. reference_input is the mono reference after provider
+ * scaling, exactly as passed to AEC; processed is the resulting mono output.
+ * All formats have equal sample rates and sample counts. sequence increases
+ * for every processed frame within a microphone session. */
+typedef struct h2_audio_aec_frame {
+    uint64_t sequence;
+    const h2_audio_frame_t *raw;
+    const h2_audio_frame_t *reference_input;
+    const h2_audio_frame_t *processed;
+    uint8_t microphone_lane;
+    uint8_t reference_lane;
+    uint8_t microphone_mask; /**< All raw ADC lanes used as AEC microphones. */
+} h2_audio_aec_frame_t;
+
+/** Optional diagnostics for a real AEC path. The descriptor is copied during
+ * registration, but user is borrowed until successful unregister. Callbacks
+ * run synchronously on provider workers, cannot block, allocate or reenter
+ * Audio, and cannot change PCM. on_capture and on_playback can run concurrently
+ * with each other; each callback is serialized with itself. on_playback sees
+ * only complete PCM actually accepted by the DAC transport, after mixing and
+ * digital gain. Capture sequence and playback timing are independent; the
+ * hardware reference in on_capture supplies AEC alignment. No callback is
+ * delivered after the corresponding successful stop operation has joined. */
+typedef struct h2_audio_aec_observer {
+    void *user;
+    void (*on_capture)(void *user, const h2_audio_aec_frame_t *frame);
+    void (*on_playback)(void *user, const h2_audio_frame_t *frame);
+    /** Nonzero capture selects the mic worker; zero selects playback. Reports
+     * actual processing/transport errors, including incomplete DAC writes.
+     * Ordinary empty capture queues are not errors. Same borrowing and
+     * per-worker serialization as the corresponding PCM callback. */
+    void (*on_error)(void *user, int capture, int result);
+} h2_audio_aec_observer_t;
+
 typedef struct h2_pal_audio_vtable {
     int (*get_info)(void *user, h2_audio_info_t *info);
     int (*start_mic)(void *user);
@@ -72,6 +109,7 @@ typedef struct h2_pal_audio_vtable {
     int (*set_speaker_volume_percent)(void *user, uint32_t percent);
     int (*get_mic_gain_percent)(void *user, uint32_t *out_percent);
     int (*set_mic_gain_percent)(void *user, uint32_t percent);
+    int (*set_aec_observer)(void *user, const h2_audio_aec_observer_t *observer);
 } h2_pal_audio_vtable_t;
 
 typedef int (*h2_pal_audio_track_write_fn)(
@@ -240,6 +278,24 @@ static inline int h2_pal_audio_set_mic_gain_percent(
         return H2_AUDIO_ERR_INVALID_ARG;
     if (audio->vtable->set_mic_gain_percent == NULL) return H2_AUDIO_ERR_UNSUPPORTED;
     return audio->vtable->set_mic_gain_percent(audio->user, percent);
+}
+
+/** Register/replace diagnostics, or unregister with NULL. Serialized task
+ * context only, with microphone and speaker stopped and their workers joined.
+ * A non-NULL descriptor requires all three callbacks. A provider with no actual AEC
+ * or no pre/post-AEC observation returns UNSUPPORTED, including unregister.
+ * Registration while running returns INVALID_STATE. Failure preserves the old
+ * registration and its borrowed user; retain it and retry cleanup. An Audio
+ * decorator which replaces capture cannot claim real acoustic diagnostics. */
+static inline int h2_pal_audio_set_aec_observer(
+    const h2_pal_audio_api_t *audio, const h2_audio_aec_observer_t *observer) {
+    if (audio == NULL || audio->vtable == NULL ||
+        (observer != NULL && (observer->on_capture == NULL ||
+                              observer->on_playback == NULL || observer->on_error == NULL)))
+        return H2_AUDIO_ERR_INVALID_ARG;
+    if (audio->vtable->set_aec_observer == NULL)
+        return H2_AUDIO_ERR_UNSUPPORTED;
+    return audio->vtable->set_aec_observer(audio->user, observer);
 }
 
 static inline int h2_pal_audio_track_write(

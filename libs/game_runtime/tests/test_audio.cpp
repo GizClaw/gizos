@@ -192,7 +192,7 @@ void run_audio_case(uint16_t frame_samples, bool test_join_retry) {
     const h2_pal_task_api_t task = {&task_state, &task_vtable};
     static const h2_pal_audio_vtable_t audio_vtable = {
         get_info, nullptr, nullptr, start_speaker, stop_speaker, nullptr,
-        create_track, nullptr, nullptr, nullptr, nullptr,
+        create_track, nullptr, nullptr, nullptr, nullptr, nullptr,
     };
     TestAudio output;
     output.format.frame_samples_per_channel = frame_samples;
@@ -263,7 +263,7 @@ std::vector<std::vector<int16_t>> capture_priority_frames(bool queue_regular_rec
     const h2_pal_task_api_t task = {&task_state, &task_vtable};
     static const h2_pal_audio_vtable_t audio_vtable = {
         get_info, nullptr, nullptr, start_speaker, stop_speaker, nullptr,
-        create_track, nullptr, nullptr, nullptr, nullptr,
+        create_track, nullptr, nullptr, nullptr, nullptr, nullptr,
     };
     TestAudio output;
     h2_atomic_bool_store(&output.hold_writes, true, H2_ATOMIC_SEQ_CST);
@@ -339,7 +339,7 @@ void test_priority_recipe_stops_active_effects() {
     const h2_pal_task_api_t task = {&task_state, &task_vtable};
     static const h2_pal_audio_vtable_t audio_vtable = {
         get_info, nullptr, nullptr, start_speaker, stop_speaker, nullptr,
-        create_track, nullptr, nullptr, nullptr, nullptr,
+        create_track, nullptr, nullptr, nullptr, nullptr, nullptr,
     };
     TestAudio output;
     h2_atomic_bool_store(&output.hold_writes, true, H2_ATOMIC_SEQ_CST);

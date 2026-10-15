@@ -997,11 +997,18 @@ int audio_set_mic_gain(void *user, uint32_t percent) {
   return H2_AUDIO_OK;
 }
 
+static int audio_aec_diagnostics_unsupported(void *user,
+    const h2_audio_aec_observer_t *observer) {
+  (void)user;
+  (void)observer;
+  return H2_AUDIO_ERR_UNSUPPORTED;
+}
+
 const h2_pal_audio_vtable_t audio_vtable = {
     audio_get_info,      audio_start_mic,    audio_stop_mic,
     audio_start_speaker, audio_stop_speaker, audio_mic_read,
     audio_create_track,  audio_get_volume,   audio_set_volume,
-    audio_get_mic_gain, audio_set_mic_gain,
+    audio_get_mic_gain, audio_set_mic_gain, audio_aec_diagnostics_unsupported,
 };
 static bool init_state_atomics(AudioState *state) {
   return h2_atomic_bool_init(&state->mic_running, false) == H2_ATOMIC_OK &&
