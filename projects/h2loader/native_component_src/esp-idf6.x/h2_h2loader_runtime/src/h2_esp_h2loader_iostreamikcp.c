@@ -7,6 +7,7 @@
 #include "driver/usb_serial_jtag.h"
 #include "driver/usb_serial_jtag_vfs.h"
 #endif
+#include "esp_attr.h"
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -30,7 +31,8 @@ typedef struct h2_esp_h2loader_app_iostreamikcp {
     h2_command_io_api_t io;
 } h2_esp_h2loader_app_iostreamikcp_t;
 
-static h2_esp_h2loader_app_iostreamikcp_t s_app_transport;
+/* The command task owns framing; the UART driver owns its Internal ISR ring. */
+static EXT_RAM_BSS_ATTR h2_esp_h2loader_app_iostreamikcp_t s_app_transport;
 static int s_app_transport_started;
 static int s_console_initialized;
 

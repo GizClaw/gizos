@@ -351,6 +351,8 @@ bazel test //libs/drivers/audio/es8311:volume_test \
 `--config=esp32p4`。ESP32-C5 的 ES8311 消费路径目前没有可构建的板级 target，
 因此该 codec 路径标记为 SKIP；C5 通用 CI 通过也不证明其 codec 集成或硬件行为。
 
+NimBLE 的 extended-advertising 编码缓存与扫描 UUID 列表，以及 H2Loader App 的 serial client／iKCP framing state 只由任务访问，使用 `EXT_RAM_BSS_ATTR`；允许 external BSS 的 target 将它们放在 PSRAM，其余 target 保持 SDK 的普通 BSS 布局。UART/BLE driver 的 ISR storage、DMA ring、atomic backing、safe-call worker 与 safe I/O scratch 继续保留其 Internal allocation contract。最终 firmware 的 ELF/map 必须核对这些对象的实际地址；host fixture 只验证行为，不证明设备上的内存区域。
+
 ## PSRAM arena
 
 `h2_pal_core` 的 `h2_esp_platform_arena.h` 为公共 `libs/mem_arena` core 提供 PSRAM reservation、fallback 与 FreeRTOS lock adapter。Core 将调用方提供的一块内存按 `small_pool_bytes` 分成独立的 small/large TLSF；请求大小不超过 `small_request_max` 时使用 small，否则使用 large。某池无法满足请求时先尝试另一池，只有两池都无法服务时才考虑可选 system spill；`small_pool_bytes=0` 保留单一 large pool。Board 在 Wi-Fi、UI、音频等 consumer 初始化之前指定预留字节数和诊断名称，持有 opaque instance，向需要降低碎片的 consumer 借出标准 Memory PAL；Runtime 默认 allocator 不被全局替换。`spill_to_system` 默认 `false`：不设置 fallback，耗尽返回 NULL，由提供 result code 的 consumer 传播 NO_MEMORY，避免污染 Wi-Fi/lwIP/IDF 共享的系统 PSRAM heap；只有显式设为 `true` 才允许 system spill。Reservation 与启用后的 spill 都从 `MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT` 分配，控制对象和 FreeRTOS 静态 mutex storage 位于 Internal RAM。Mutex 具有优先级继承，所有操作只允许普通 task context，不使用 spin lock。

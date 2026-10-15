@@ -9,6 +9,7 @@
 #include "h2_loader_ble.h"
 #include "h2_loader_boot.h"
 
+#include "esp_attr.h"
 #include "esp_mac.h"
 
 #include <stdio.h>
@@ -35,7 +36,8 @@ typedef struct h2_esp_h2loader_app_ble {
     char device_uid[13];
 } h2_esp_h2loader_app_ble_t;
 
-static h2_loader_app_client_t s_serial_client;
+/* Task-owned command state; UART/BLE ISR storage belongs to their drivers. */
+static EXT_RAM_BSS_ATTR h2_loader_app_client_t s_serial_client;
 static h2_esp_h2loader_app_ble_t s_ble;
 static int s_serial_started;
 
