@@ -1,6 +1,6 @@
 # Ogg Opus
 
-`libs/ogg_opus` 拥有原 GizClaw 流式播放器使用的 Ogg/Opus parser 和 decoder。GizClaw 与其它 consumer 均直接使用公共 `h2_ogg_opus.h` 和 `h2_ogg_opus_*` 方法，不保留旧内部名称的转接层，不得复制解析源码。它只依赖 C11、Opus 和调用方提供的 PAL allocator／读取 callback，不拥有文件、网络、Task 或 Audio Track。
+`libs/audio/ogg_opus` 拥有原 GizClaw 流式播放器使用的 Ogg/Opus parser 和 decoder。GizClaw 与其它 consumer 均直接使用公共 `h2_ogg_opus.h` 和 `h2_ogg_opus_*` 方法，不保留旧内部名称的转接层，不得复制解析源码。它只依赖 C11、Opus 和调用方提供的 PAL allocator／读取 callback，不拥有文件、网络、Task 或 Audio Track。
 
 ## 解码与有界读取
 
@@ -18,4 +18,4 @@ Reset 在调用方将输入移回 byte 0 后清除 parser 状态，复用既有�
 
 ## 验证
 
-`//libs/ogg_opus:packet_reader_test` 覆盖短读、packet timing、正常 EOS、CRC、checkpoint 输入位置、I/O 失败恢复和重播的固定内存边界。原有 `//libs/gizclaw:h2_gizclaw_ogg_opus_test` 与 `//libs/gizclaw:h2_gizclaw_audio_decoder_test` 继续运行同一 decoder，覆盖 pre-skip、gain、end trimming、continued／chained pages、seek 与 resync。Consumer 还需验证自身的文件生命周期、工作线程、背压和音频策略；library host test 不替代真机播放验收。
+`//libs/audio/ogg_opus:packet_reader_test` 覆盖短读、packet timing、正常 EOS、CRC、checkpoint 输入位置、I/O 失败恢复和重播的固定内存边界。原有 `//libs/gizclaw:h2_gizclaw_ogg_opus_test` 与 `//libs/gizclaw:h2_gizclaw_audio_decoder_test` 继续运行同一 decoder，覆盖 pre-skip、gain、end trimming、continued／chained pages、seek 与 resync。Consumer 还需验证自身的文件生命周期、工作线程、背压和音频策略；library host test 不替代真机播放验收。

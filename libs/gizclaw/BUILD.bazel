@@ -182,8 +182,8 @@ cc_library(
         ":dr_mp3",
         ":tasks",
         "//libs/atomic",
+        "//libs/audio/ogg_opus",
         "//libs/lua/apps",
-        "//libs/ogg_opus",
         "//libs/pal",
         "//libs/runtime",
         "//tools/bazel:vendor_third_party_opus",
@@ -301,8 +301,8 @@ cc_library(
     deps = [
         ":dr_mp3",
         "//libs/atomic",
+        "//libs/audio/ogg_opus",
         "//libs/lua/apps",
-        "//libs/ogg_opus",
         "//libs/pal",
         "//libs/runtime",
         "//tools/bazel:vendor_third_party_gizclaw",
@@ -357,7 +357,7 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
-        "//libs/ogg_opus",
+        "//libs/audio/ogg_opus",
         "//libs/pal",
         "//tools/bazel:vendor_third_party_opus",
     ],
@@ -402,7 +402,7 @@ cc_test(
     }),
     deps = [
         ":dr_mp3",
-        "//libs/ogg_opus",
+        "//libs/audio/ogg_opus",
         "//libs/pal",
         "//tools/bazel:vendor_third_party_opus",
     ],
