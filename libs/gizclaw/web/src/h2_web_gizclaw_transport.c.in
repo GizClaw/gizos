@@ -52,9 +52,14 @@ EM_JS(void, h2_web_gizclaw_bind_impl,
           if (!Number.isInteger(timeout) || timeout < 1 || timeout > 120000) return -1;
           if (payload.byteLength > limit) return -13;
           if (state.pending.size >= capacity) return -18;
+          let copy;
+          try { copy = new Uint8Array(payload); }
+          catch (cause) { return cause instanceof RangeError ? -5 : -1; }
+          // Validate the actual snapshot before writing the fixed native input.
+          if (copy.byteLength > limit) return -13;
           do { state.serial = state.serial % 0x7fffffff + 1; } while (state.pending.has(state.serial));
           const request = {id: state.serial, method, callback, timeout,
-            bytes: new Uint8Array(payload), admitted: false, canceled: false, delivered: false};
+            bytes: copy, admitted: false, canceled: false, delivered: false};
           state.pending.set(request.id, request);
           request.timer = setTimeout(() => cancel(request, -6), timeout);
           const submit = () => {

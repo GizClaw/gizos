@@ -23,6 +23,12 @@ async function contractChecks(runtime, observer, tools) {
   await rejects(() => createFirmwareClient({h2GizClaw: {...abi, request_capacity:0}}), -15);
   check(abi.request(136, new Uint8Array(), null) === -1, 'raw admission validates callback');
   check(abi.request(136, new Uint8Array(abi.request_limit_bytes + 1), () => 0) === -13, 'raw request bound');
+  const detached = new Uint8Array(1);
+  structuredClone(detached, {transfer: [detached.buffer]});
+  check(abi.request(136, detached, () => 0) === -1, 'detached caller buffer rejects with an admission error');
+  const disguised = new Uint8Array(abi.request_limit_bytes + 1);
+  Object.defineProperty(disguised, 'byteLength', {value: 0});
+  check(abi.request(136, disguised, () => 0) === -13, 'actual copied bytes obey native input capacity');
   let calls = 0, returned = false, retained;
   await new Promise((resolve, reject) => {
     const id = abi.request(136, new Uint8Array(), response => {
