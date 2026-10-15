@@ -12,7 +12,9 @@
 #define H2_H2LOADER_HOST_SERIAL_RESPONSE_ACK_GRACE_MS 100u
 #define H2_H2LOADER_HOST_SERIAL_RECEIVE_WINDOW 64u
 #define H2_H2LOADER_HOST_SERIAL_RX_SIZE (64u * 1024u)
-#define H2_H2LOADER_HOST_SERIAL_WRITE_BATCH (64u * 1024u)
+/* Drain acknowledgements between bounded bursts so a small-window UART
+ * peer can make progress while Flash writes and logging are active. */
+#define H2_H2LOADER_HOST_SERIAL_WRITE_BATCH (6u * 1024u)
 #define H2_H2LOADER_HOST_SERIAL_RESPONSE_SIZE 8192u
 
 struct h2_h2loader_host_serial_connection {

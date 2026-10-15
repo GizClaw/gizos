@@ -389,7 +389,90 @@ static void test_wifi_status_snapshot(void) {
     assert(h2_loader_command_execute(&command, 3, args) == H2_PAL_ERR_INVALID_STATE);
 }
 
+typedef struct busy_wifi_fixture {
+    unsigned attempts, unlocks;
+    h2_pal_result_t result;
+} busy_wifi_fixture_t;
+
+static h2_pal_result_t busy_wifi_lock(void *user, h2_pal_mutex_t *mutex) {
+    (void)user;
+    (void)mutex;
+    assert(!"command must not block on a product-owned Wi-Fi mutex");
+    return H2_PAL_ERR_IO;
+}
+
+static h2_pal_result_t busy_wifi_try_lock(void *user, h2_pal_mutex_t *mutex) {
+    busy_wifi_fixture_t *f = user;
+    assert((void *)mutex == user);
+    ++f->attempts;
+    return f->result;
+}
+
+static h2_pal_result_t busy_wifi_unlock(void *user, h2_pal_mutex_t *mutex) {
+    busy_wifi_fixture_t *f = user;
+    assert((void *)mutex == user);
+    ++f->unlocks;
+    return H2_PAL_OK;
+}
+
+static void test_wifi_owner_does_not_block_command_service(void) {
+    command_io_fixture_t io = {0};
+    h2_loader_t loader = {0};
+    loader.status.capabilities = H2_LOADER_CAPABILITY_WIFI;
+    h2_loader_command_t command;
+    assert(command_init(&command, &loader, &io) == H2_PAL_OK);
+    busy_wifi_fixture_t owner = {.result = H2_PAL_ERR_WOULD_BLOCK};
+    const h2_pal_sync_vtable_t sync_vtable = {
+        .lock_mutex = busy_wifi_lock,
+        .try_lock_mutex = busy_wifi_try_lock,
+        .unlock_mutex = busy_wifi_unlock};
+    const h2_pal_sync_api_t sync = {.user = &owner, .vtable = &sync_vtable};
+    command.config.wifi_operation_sync = &sync;
+    command.config.wifi_operation_mutex = (h2_pal_mutex_t *)&owner;
+    const char *requests[][6] = {
+        {"h2loader", "stage", "url", "http://example.test/update", "1",
+         "0000000000000000000000000000000000000000000000000000000000000000"},
+        {"h2loader", "wifi", "scan"},
+        {"h2loader", "wifi", "connect", "fixture", "placeholder"},
+        {"h2loader", "wifi", "disconnect"},
+    };
+    const size_t counts[] = {6u, 3u, 5u, 3u};
+    const char *markers[] = {"H2_LOADER_STAGE result=fail",
+        "H2_LOADER_WIFI_SCAN_DONE result=error", "H2_LOADER_WIFI result=error",
+        "H2_LOADER_WIFI result=error"};
+    loader.status.stage.valid = 1;
+    loader.status.stage.package_size = 47u;
+    unsigned char saved_stage[sizeof(loader.status.stage)];
+    memcpy(saved_stage, &loader.status.stage, sizeof(saved_stage));
+    for (size_t i = 0; i < sizeof(counts) / sizeof(counts[0]); ++i) {
+        memset(&io, 0, sizeof(io));
+        assert(h2_loader_command_execute(&command, counts[i], requests[i]) ==
+               H2_PAL_ERR_BUSY);
+        assert(strstr(io.output, markers[i]) != NULL);
+        assert(owner.attempts == i + 1u && owner.unlocks == 0u);
+        assert(memcmp(saved_stage, &loader.status.stage, sizeof(saved_stage)) == 0);
+    }
+    wifi_fixture_t wifi = {0};
+    const h2_pal_wifi_sta_vtable_t wifi_vtable = {.get_status = wifi_status};
+    const h2_pal_wifi_sta_api_t wifi_api = {&wifi, &wifi_vtable};
+    command.config.wifi = &wifi_api;
+    memset(&io, 0, sizeof(io));
+    const char *status[] = {"h2loader", "wifi", "status"};
+    assert(h2_loader_command_execute(&command, 3u, status) == H2_PAL_OK);
+    assert(strstr(io.output, "H2_LOADER_WIFI_STATUS result=OK") != NULL);
+    assert(owner.attempts == 4u && owner.unlocks == 0u);
+    owner.result = H2_PAL_ERR_IO;
+    assert(h2_loader_command_execute(&command, 3u, requests[1]) == H2_PAL_ERR_IO);
+    assert(owner.unlocks == 0u);
+    owner.result = H2_PAL_OK;
+    /* Missing scan provider fails normally, after releasing acquired ownership. */
+    assert(h2_loader_command_execute(&command, 3u, requests[1]) ==
+           H2_PAL_ERR_UNSUPPORTED);
+    assert(owner.unlocks == 1u);
+}
+
 int main(void) {
+  test_wifi_owner_does_not_block_command_service();
   test_wifi_status_snapshot();
   test_wifi_saves_only_after_connection();
   test_exact_v2_routes_and_help();

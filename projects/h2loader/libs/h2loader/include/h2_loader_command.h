@@ -34,6 +34,9 @@ typedef struct h2_loader_command_config {
     const h2_pal_sync_api_t *operation_sync;
     h2_pal_mutex_t *operation_mutex;
     const h2_pal_sync_api_t *wifi_operation_sync;
+    /** Borrowed Wi-Fi ownership mutex. Commands try-lock it and report BUSY
+     * if a product owns it; the provider must implement try_lock_mutex.
+     * Wi-Fi status is read-only and does not acquire this mutex. */
     h2_pal_mutex_t *wifi_operation_mutex;
     /** Leaves requested App installation to the Loader lifecycle task. */
     int defer_app_install;

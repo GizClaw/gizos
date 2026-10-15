@@ -1291,10 +1291,28 @@ static h2_pal_result_t h2loader_invoke_locked(
         return H2_PAL_ERR_INVALID_ARG;
     }
     if (lock_wifi && self->config.wifi_operation_mutex != NULL) {
-        result = h2_pal_mutex_lock(
+        /* A product worker can own Wi-Fi for its entire session. Waiting
+         * here would also prevent this command service from accepting the
+         * reboot that asks that worker to stop and release ownership. */
+        result = h2_pal_mutex_try_lock(
             self->config.wifi_operation_sync,
             self->config.wifi_operation_mutex);
         if (result != H2_PAL_OK) {
+            if (result == H2_PAL_ERR_WOULD_BLOCK) {
+                result = H2_PAL_ERR_BUSY;
+            }
+            switch (h2loader_command_bit(argc, argv)) {
+            case H2_LOADER_COMMAND_AVAILABLE_STAGE_URL:
+                printf("H2_LOADER_STAGE result=fail code=%d\n", result);
+                break;
+            case H2_LOADER_COMMAND_AVAILABLE_WIFI_SCAN:
+                printf("H2_LOADER_WIFI_SCAN_DONE result=error code=%d count=0\n",
+                    result);
+                break;
+            default:
+                printf("H2_LOADER_WIFI result=error code=%d\n", result);
+                break;
+            }
             return result;
         }
         wifi_locked = 1;

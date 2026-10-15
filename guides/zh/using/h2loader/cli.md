@@ -2,6 +2,10 @@
 
 H2Loader CLI 是 repository-only 的短生命周期 native C11 设备和 package App。支持的入口是 `bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- <args>`，命令应从仓库根目录执行。CLI 不启动 persistent Web server、tray、actor 或 Desktop process。
 
+## Wi-Fi 操作竞争
+
+产品流程可能在整个 session 内持有 Wi-Fi operation mutex。Loader 的 Wi-Fi scan/connect/disconnect 和 URL Stage 对该锁只执行 try-lock；占用时立即返回 BUSY 和对应命令的失败终态，不改变 Wi-Fi、Stage 或已有安装状态。Wi-Fi status 不获取此锁，后续诊断与软件重启请求仍可由管理线程处理。应先按产品支持的退出或交接流程释放 ownership，不能通过无限等待该锁阻塞负责交接的命令线程。
+
 ## 环境
 
 CLI 由 Bazel 直接编译为当前 host 的 native executable，不使用 Python、uv、venv、pyserial 或 Bleak。`<host>` 使用 `macos_arm64`、`linux_x86_64`、`linux_arm64` 或 `windows_x86_64`。Windows 使用 Win32 Host Serial PAL 枚举和打开 `COM<n>` endpoint，并把当前可访问的本地 fixed/removable DOS drive root 挂载到对应的小写 portable filesystem path，例如 `C:\` 挂载为 `/c`。查看完整命令：
