@@ -18,7 +18,7 @@ filegroup(
 
 cc_library(
     name = "headers",
-    hdrs = [":public_headers"],
+    hdrs = ["include/h2_web_gizclaw.h"],
     includes = ["include"],
     deps = ["//libs/gizclaw:local"],
 )
@@ -30,7 +30,7 @@ cc_library(
         "src/h2_web_gizclaw_internal.h",
         ":sdk_source",
     ],
-    hdrs = [":public_headers"],
+    hdrs = ["include/h2_web_gizclaw.h"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = ["include"],
