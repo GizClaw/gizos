@@ -4,6 +4,7 @@
 
 #include <assert.h>
 #include <limits.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 
 typedef struct test_state {
@@ -17,11 +18,12 @@ typedef struct test_state {
     h2_display_rect_t last_rect;
 } test_state_t;
 
+/* The main thread and LVGL draw worker share these allocator counters. */
 typedef struct allocator_state {
-    size_t calls;
-    size_t fail_call;
-    size_t frees;
-    size_t live_blocks;
+    atomic_size_t calls;
+    atomic_size_t fail_call;
+    atomic_size_t frees;
+    atomic_size_t live_blocks;
 } allocator_state_t;
 
 static void *test_alloc(void *user, size_t len) {
