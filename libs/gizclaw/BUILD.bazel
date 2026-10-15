@@ -22,7 +22,7 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
-        ":gizclaw",
+        ":device",
         "//libs/atomic/providers/c11",
     ],
 )
@@ -51,6 +51,9 @@ _FIRMWARE_COMPATIBLE_SRCS = [
     "src/h2_gizclaw_app_config.c",
     "src/h2_gizclaw_debug.c",
     "src/h2_gizclaw_device.c",
+    "src/h2_gizclaw_device_rpc.c",
+    "src/h2_gizclaw_device_rpc_internal.h",
+    "include/h2_gizclaw_device.h",
     "src/h2_gizclaw_lua_apps.c",
     "src/h2_gizclaw_lua_apps_internal.h",
     "src/h2_gizclaw_lua_stream.c",
@@ -188,6 +191,7 @@ cc_library(
     name = "gizclaw_test_support",
     testonly = True,
     srcs = [
+        "include/h2_gizclaw_device.h",
         "src/h2_gizclaw_api_key.c",
         "src/h2_gizclaw_app_config.c",
         "src/h2_gizclaw_async_rpc.c",
@@ -201,6 +205,8 @@ cc_library(
         "src/h2_gizclaw_debug.c",
         "src/h2_gizclaw_device.c",
         "src/h2_gizclaw_device_internal.h",
+        "src/h2_gizclaw_device_rpc.c",
+        "src/h2_gizclaw_device_rpc_internal.h",
         "src/h2_gizclaw_diagnostics.c",
         "src/h2_gizclaw_download.c",
         "src/h2_gizclaw_download_internal.h",
@@ -507,6 +513,7 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        ":device_tasks",
         ":gizclaw_test_support",
         "//libs/atomic/providers/c11",
         "//libs/pal/providers/desktop/pal_core",
@@ -722,5 +729,38 @@ cc_test(
         "//libs/atomic/providers/c11",
         "//libs/pal/providers/desktop/pal_core",
         "//tools/bazel:vendor_third_party_yyjson",
+    ],
+)
+
+# Standalone consumers select this capability to declare its additional owner.
+# Ordinary Service consumers keep :gizclaw and its existing task/memory graph.
+h2_tasks(
+    name = "device_tasks",
+    tasks = ["$gizclaw/device/rpc"],
+)
+
+cc_library(
+    name = "device",
+    hdrs = ["include/h2_gizclaw_device.h"],
+    deps = [
+        ":device_tasks",
+        ":gizclaw",
+    ],
+)
+
+cc_test(
+    name = "h2_gizclaw_device_local_test",
+    srcs = ["tests/test_h2_gizclaw_device_local.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":device",
+        "//libs/atomic/providers/c11",
+        "//libs/pal/providers/desktop/pal_core",
     ],
 )

@@ -395,3 +395,10 @@ int h2_gizclaw_lua_apps_rpc_internal(h2_gizclaw_lua_apps_t *apps,
   }
   return H2_PAL_ERR_UNSUPPORTED;
 }
+
+h2_pal_result_t h2_gizclaw_lua_apps_restart_internal(h2_gizclaw_lua_apps_t *apps) {
+  if (!apps) return H2_PAL_OK;
+  if (apps->handoff.complete || apps->run_lease) return H2_PAL_ERR_BUSY;
+  h2_atomic_store(&apps->stopping, false);
+  return H2_PAL_OK;
+}

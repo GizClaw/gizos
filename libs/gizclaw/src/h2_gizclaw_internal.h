@@ -169,6 +169,10 @@ h2_gizclaw_runtime_alias_valid_internal(h2_gizclaw_str_t value) {
 }
 
 int h2_gizclaw_provider_result_to_gzc(int result);
+h2_pal_result_t h2_gizclaw_result_from_gzc(int result);
+struct h2_gizclaw_device;
+void h2_gizclaw_client_set_device_internal(h2_gizclaw_client_t *client,
+                                            struct h2_gizclaw_device *device);
 
 const h2_pal_mem_api_t *
 h2_gizclaw_client_allocator_internal(h2_gizclaw_client_t *client);

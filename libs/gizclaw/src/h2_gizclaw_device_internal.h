@@ -1,8 +1,8 @@
 #ifndef H2_GIZCLAW_DEVICE_INTERNAL_H
 #define H2_GIZCLAW_DEVICE_INTERNAL_H
 #include "h2_gizclaw_service.h"
+#include "h2_gizclaw_device.h"
 #include "gzc_client.h"
-typedef struct h2_gizclaw_device h2_gizclaw_device_t;
 h2_pal_result_t h2_gizclaw_device_init_internal(h2_gizclaw_service_t *service);
 h2_pal_result_t h2_gizclaw_device_start_internal(h2_gizclaw_device_t *device);
 int h2_gizclaw_device_start_lua_stream_internal(h2_gizclaw_device_t *device);
@@ -20,7 +20,10 @@ h2_pal_result_t h2_gizclaw_device_set_product_internal(
 bool h2_gizclaw_device_action_pending_internal(h2_gizclaw_service_t *service);
 void h2_gizclaw_device_cancel_internal(h2_gizclaw_device_t *device);
 h2_pal_result_t h2_gizclaw_device_stop_internal(h2_gizclaw_device_t *device);
-void h2_gizclaw_device_destroy_internal(h2_gizclaw_device_t *device);
+h2_pal_result_t h2_gizclaw_device_destroy_internal(h2_gizclaw_device_t **device);
+void h2_gizclaw_device_network_cancel_internal(h2_gizclaw_device_t *device);
+h2_pal_result_t h2_gizclaw_device_stop_network_internal(h2_gizclaw_device_t *device);
+h2_pal_result_t h2_gizclaw_device_detach_internal(h2_gizclaw_service_t *service);
 int h2_gizclaw_device_tool_internal(
     void *user, h2_gizclaw_tool_t method, h2_gizclaw_rpc_bytes_t request,
     h2_gizclaw_rpc_provider_response_t *response);

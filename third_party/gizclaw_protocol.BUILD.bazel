@@ -1,0 +1,13 @@
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "payload_codec",
+    srcs = ["sdk/js/gizclaw/generated/rpc/payload-codec.ts"],
+)
+
+filegroup(
+    name = "method_map",
+    srcs = ["sdk/js/gizclaw/generated/rpc/method-map.ts"],
+)
+
+exports_files(["LICENSE"])

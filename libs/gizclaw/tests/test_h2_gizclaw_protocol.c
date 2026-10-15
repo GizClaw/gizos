@@ -1,5 +1,6 @@
 #include "gzc.h"
 #include "h2_desktop_platform.h"
+#include "h2_gizclaw_device.h"
 #include "h2_gizclaw_internal.h"
 #include "h2_gizclaw_service_internal.h"
 #include "payload/workspace.pb.h"
@@ -381,6 +382,8 @@ create_channel(h2_pal_webrtc_peer_t *peer,
 int main(void) {
   test_retired_workspace_parameters();
   test_quota_rpc_errors();
+  for (int shared = 0; shared < 2; ++shared) {
+  memset(&fixture, 0, sizeof(fixture));
   fixture.value = 7;
   const h2_pal_webrtc_vtable_t webrtc_vtable = {
       .peer_create_with_config = create_peer,
@@ -416,22 +419,36 @@ int main(void) {
                                       .tool_handler_count = 1,
                                       .mhs_devices = &device,
                                       .mhs_device_count = 1};
-  const h2_gizclaw_service_config_t service_config = {
+  h2_gizclaw_service_config_t service_config = {
       .client_config = &config,
       .task = h2_desktop_platform_task_api(),
       .queue = h2_desktop_platform_queue_api(),
       .sync = h2_desktop_platform_sync_api(),
       .operation_capacity = 4,
       .client_poll_timeout_ms = 1};
+  h2_gizclaw_device_t *local_device = NULL;
+  if (shared) {
+    const h2_gizclaw_device_config_t local_config = {.client_config = &config,
+        .task = service_config.task, .sync = service_config.sync};
+    assert(h2_gizclaw_device_create(&local_config, &local_device) == H2_PAL_OK);
+    assert(h2_gizclaw_device_start(local_device) == H2_PAL_OK);
+    service_config.device = local_device;
+  }
   h2_gizclaw_service_t *service = NULL;
   assert(h2_gizclaw_service_init(&service_config, &service) == H2_PAL_OK);
   assert(h2_gizclaw_client_init(&service->client_config, &fixture.client) ==
          H2_PAL_OK);
+  if (shared) h2_gizclaw_client_set_device_internal(fixture.client, local_device);
   assert(gzc_client_connect(h2_gizclaw_client_gzc_internal(fixture.client)) !=
          GZC_OK);
   assert(fixture.exercised);
   h2_gizclaw_client_deinit(fixture.client);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  if (shared) {
+    assert(h2_gizclaw_device_stop(local_device) == H2_PAL_OK);
+    assert(h2_gizclaw_device_destroy(&local_device) == H2_PAL_OK);
+  }
+  }
   return 0;
 }

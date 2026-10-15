@@ -117,6 +117,9 @@ typedef struct h2_gizclaw_rpc_bytes {
  * Failure/stop cancels the continuation. Called once; user must outlive it.
  * Shutdown calls it from the close/deinit owner; registration rejection may
  * call it inline on the provider owner.
+ * A standalone device adapter delivers this on its shared RPC owner. Local
+ * completion succeeds only after the caller has copied/decoded the result and
+ * selected OK; rejection, cancellation and close cancel the continuation.
  * Only enqueue owner-thread work here; do not block or reenter client APIs.
  */
 typedef void (*h2_gizclaw_rpc_response_complete_fn)(void *user, int result);

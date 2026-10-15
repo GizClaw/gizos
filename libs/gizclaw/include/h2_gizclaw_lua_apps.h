@@ -35,7 +35,8 @@ typedef struct h2_gizclaw_lua_app_run {
  * the response-completion result: OK makes the reserved request runnable;
  * any error releases it without launching. Both callbacks return promptly,
  * never stop/destroy the Service inline, and retain no borrowed request views.
- * The completion user must outlive Service deinit. */
+ * The completion user must outlive Service deinit, or the standalone device
+ * stop/destroy that settles its local call. */
 typedef struct h2_gizclaw_lua_app_handoff {
   h2_gizclaw_rpc_response_complete_fn complete;
   void *user;

@@ -125,6 +125,7 @@ for formatter in lua_app_catalog lua_app_release_files default_files; do
         "${registry_options[@]}" \
         --repository_cache="$repository_cache" \
         --disk_cache="${BAZEL_DISK_CACHE:-$HOME/.cache/bazel/disk}" \
+        --experimental_remote_cache_eviction_retries=0 \
         --override_module="gizos=$repository_root" \
         --define="h2_host_os=$host_os" \
         --platforms="@gizos//tools/bazel/platforms:$platform" \
@@ -142,6 +143,7 @@ done
     "${registry_options[@]}" \
     --repository_cache="$repository_cache" \
         --disk_cache="${BAZEL_DISK_CACHE:-$HOME/.cache/bazel/disk}" \
+        --experimental_remote_cache_eviction_retries=0 \
     --override_module="gizos=$repository_root" \
     --define="h2_ci_graph=true" \
     --define="h2_host_os=$host_os" \
@@ -158,6 +160,7 @@ done
     "${registry_options[@]}" \
     --repository_cache="$repository_cache" \
         --disk_cache="${BAZEL_DISK_CACHE:-$HOME/.cache/bazel/disk}" \
+        --experimental_remote_cache_eviction_retries=0 \
     --override_module="gizos=$repository_root" \
     --define="h2_ci_graph=true" \
     --define="h2_host_os=$host_os" \
@@ -183,6 +186,7 @@ grep -E 'h2_esp_target_task_policy=bazel-out/.*/private_esp_task_policy' font-na
     "${registry_options[@]}" \
     --repository_cache="$repository_cache" \
         --disk_cache="${BAZEL_DISK_CACHE:-$HOME/.cache/bazel/disk}" \
+        --experimental_remote_cache_eviction_retries=0 \
     --override_module="gizos=$repository_root" \
     --define="h2_ci_graph=true" \
     --define="h2_host_os=$host_os" \
@@ -211,6 +215,7 @@ expect_missing_policy_failure() {
         "${registry_options[@]}" \
         --repository_cache="$repository_cache" \
         --disk_cache="${BAZEL_DISK_CACHE:-$HOME/.cache/bazel/disk}" \
+        --experimental_remote_cache_eviction_retries=0 \
         --override_module="gizos=$repository_root" \
         --define="h2_ci_graph=true" \
         --define="h2_host_os=$host_os" \
@@ -241,6 +246,7 @@ for target in private_esp_firmware private_bk_firmware; do
         "${registry_options[@]}" \
         --repository_cache="$repository_cache" \
         --disk_cache="${BAZEL_DISK_CACHE:-$HOME/.cache/bazel/disk}" \
+        --experimental_remote_cache_eviction_retries=0 \
         --override_module="gizos=$repository_root" \
         --define="h2_ci_graph=true" \
         --define="h2_host_os=$host_os" \
@@ -264,6 +270,7 @@ if "${BAZEL_BIN:-bazel}" \
     "${registry_options[@]}" \
     --repository_cache="$repository_cache" \
         --disk_cache="${BAZEL_DISK_CACHE:-$HOME/.cache/bazel/disk}" \
+        --experimental_remote_cache_eviction_retries=0 \
     --override_module="gizos=$repository_root" \
     --define="h2_host_os=$host_os" \
     --platforms="@gizos//tools/bazel/platforms:$platform" \
@@ -285,6 +292,7 @@ if "${BAZEL_BIN:-bazel}" \
     "${registry_options[@]}" \
     --repository_cache="$repository_cache" \
         --disk_cache="${BAZEL_DISK_CACHE:-$HOME/.cache/bazel/disk}" \
+        --experimental_remote_cache_eviction_retries=0 \
     --override_module="gizos=$repository_root" \
     --define="h2_host_os=$host_os" \
     --platforms="@gizos//tools/bazel/platforms:$platform" \
@@ -305,6 +313,7 @@ cp BUILD.bazel.complete BUILD.bazel
     "${registry_options[@]}" \
     --repository_cache="$repository_cache" \
         --disk_cache="${BAZEL_DISK_CACHE:-$HOME/.cache/bazel/disk}" \
+        --experimental_remote_cache_eviction_retries=0 \
     --override_module="gizos=$repository_root" \
     --define="h2_host_os=$host_os" \
     --platforms="@gizos//tools/bazel/platforms:$platform" \
@@ -345,6 +354,7 @@ test ! -e "$consumer_root/private_bk_task_policy"
     "${registry_options[@]}" \
     --repository_cache="$repository_cache" \
         --disk_cache="${BAZEL_DISK_CACHE:-$HOME/.cache/bazel/disk}" \
+        --experimental_remote_cache_eviction_retries=0 \
     --override_module="gizos=$repository_root" \
     --define="h2_host_os=$host_os" \
     --platforms="@gizos//tools/bazel/platforms:$platform" \
@@ -353,6 +363,8 @@ test ! -e "$consumer_root/private_bk_task_policy"
     //:font_consumer_test \
     //:lua_app_release_test \
     //:gizclaw_apps_persistence_test \
+    @gizos//libs/gizclaw/web/tests/local_device:browser_test \
+    @gizos//libs/gizclaw/web:sdk_types_test \
     //:private_esp_task_policy_test \
     //:private_bk_ap_task_policy_test \
     //:private_bk_cp_task_policy_test \
@@ -368,6 +380,7 @@ test ! -e "$consumer_root/private_bk_task_policy"
     "${registry_options[@]}" \
     --repository_cache="$repository_cache" \
         --disk_cache="${BAZEL_DISK_CACHE:-$HOME/.cache/bazel/disk}" \
+        --experimental_remote_cache_eviction_retries=0 \
     --override_module="gizos=$repository_root" \
     --define="h2_firmware_target=bk3633" \
     --define="h2_host_os=$host_os" \

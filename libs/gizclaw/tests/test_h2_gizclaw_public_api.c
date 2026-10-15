@@ -1,4 +1,5 @@
 #include "h2_gizclaw.h"
+#include "h2_gizclaw_device.h"
 
 #include <stddef.h>
 
@@ -10,7 +11,7 @@ static void (*volatile public_api[])(void) = {
 #undef H2_GIZCLAW_API
 };
 
-_Static_assert(sizeof(public_api) / sizeof(public_api[0]) == 253u,
+_Static_assert(sizeof(public_api) / sizeof(public_api[0]) == 265u,
                "The approved public function catalog changed");
 
 int main(void) {

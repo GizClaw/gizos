@@ -1,0 +1,16 @@
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "lib/typescript.js",
+    "lib/tsc.js",
+])
+
+filegroup(
+    name = "runtime",
+    srcs = glob([
+        "lib/typescript.js",
+        "lib/tsc.js",
+        "lib/_tsc.js",
+        "lib/lib.*.d.ts",
+    ]),
+)

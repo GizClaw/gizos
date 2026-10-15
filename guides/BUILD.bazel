@@ -54,6 +54,7 @@ api_reference(
         "//libs/encoding",
         "//libs/game_runtime",
         "//libs/gizclaw",
+        "//libs/gizclaw:device",
         "//libs/gizclaw/lua_apps",
         "//libs/iostreamikcp",
         "//libs/iperf",

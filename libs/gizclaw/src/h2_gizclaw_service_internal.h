@@ -230,6 +230,7 @@ typedef struct h2_gizclaw_dispatch_item {
 
 struct h2_gizclaw_service {
   struct h2_gizclaw_device *device;
+  bool owns_device, deinitializing;
   /* The mutex protects attachment and RPC admission references together. */
   struct h2_gizclaw_session *session;
   size_t session_references;

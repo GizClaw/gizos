@@ -238,7 +238,7 @@ Repository cache 只保存由 Bazel 按 digest 索引的下载内容，不保存
 
 ## GizClaw Bzlmod registry
 
-GizClaw 自有的 Bzlmod module（当前为 `gizclaw_c_sdk`）发布在 `https://static-volc.gizclaw.com/bazel/`，而不是 Bazel Central Registry。`.bazelrc` 用两条 `common --registry` 依次声明 `https://bcr.bazel.build` 和该 registry：`--registry` 会整体替换默认 registry 列表，因此 BCR 必须显式列出并排在前面，只有 BCR 不提供的 module 才落到 GizClaw registry。
+GizClaw 的 SDK 发布归档来自 `https://static-volc.gizclaw.com/bazel/`。GizOS 在 `MODULE.bazel` 用 `use_repo_rule(http_archive)` 声明完整性锁定的 C SDK 归档及直接来自上游的卸载补丁，使外部 Bzlmod root 自动消费同一 contract；依赖模块中的 root-only override 不会传播，不能依赖它提供公共能力。SDK 自带 Bazel targets 与 nanopb，GizOS 不维护另一套 BUILD overlay。`.bazelrc` 仍显式声明 BCR 与 GizClaw registry 列表，因为 `--registry` 会整体替换默认列表；其它需要私有 registry 的 consumer 保持两者顺序。
 
 这些依赖只通过 `MODULE.bazel` 的 `bazel_dep` 固定版本；archive URL、SRI integrity 和 extracted root 由 registry 的 `modules/<module>/<version>/source.json` 提供，仓库内不再为它们声明 `http_archive`、手写 integrity，也不使用只对 root module 生效的 `archive_override`，因此它们对下游 Bzlmod consumer 仍是正常的传递依赖。两个 registry 的解析结果（包含 not found）由 `MODULE.bazel.lock` 固定，registry 列表或 module 版本变化时必须提交更新后的 lockfile。
 

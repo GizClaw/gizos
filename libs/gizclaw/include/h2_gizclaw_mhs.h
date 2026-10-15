@@ -31,7 +31,8 @@ typedef union h2_gizclaw_mhs_write {
   gizclaw_rpc_v1_SpeakerHwdWriteRequest speaker;
 } h2_gizclaw_mhs_write_t;
 
-/** Device instance borrowed until Client/Service deinit.
+/** Device registration and userdata borrowed through Client/Service deinit, or
+ * through standalone device destruction when shared with local calls.
  * The ID identifies a physical instance; hwd selects its protobuf shape.
  * read returns the current hardware snapshot. write applies only present
  * fields, then returns a fresh snapshot of what actually took effect.

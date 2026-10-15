@@ -1,18 +1,30 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "strip_prefix")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_python//python:defs.bzl", "py_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel:tasks.bzl", "h2_tasks")
 load("//tools/bazel/platforms:compatibility.bzl", "WEB_WASM32_ARTIFACT_COMPATIBILITY")
+load(":codec.bzl", "web_gizclaw_sdk_source")
 
 package(default_visibility = ["//visibility:public"])
 
 filegroup(
     name = "public_headers",
-    srcs = ["include/h2_web_gizclaw_apps.h"],
+    srcs = [
+        "include/h2_web_gizclaw.h",
+        "include/h2_web_gizclaw_apps.h",
+    ],
 )
 
 cc_library(
     name = "web",
-    srcs = ["src/h2_web_gizclaw_apps.c"],
+    srcs = [
+        "src/h2_web_gizclaw.c",
+        "src/h2_web_gizclaw_apps.c",
+        "src/h2_web_gizclaw_internal.h",
+        ":sdk_source",
+    ],
     hdrs = [":public_headers"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
@@ -21,6 +33,7 @@ cc_library(
     deps = [
         ":tasks",
         "//libs/atomic",
+        "//libs/gizclaw:device",
         "//libs/gizclaw/lua_apps",
         "//libs/pal/providers/web/pal_core",
     ],
@@ -28,5 +41,65 @@ cc_library(
 
 h2_tasks(
     name = "tasks",
-    tasks = ["$gizclaw/web/apps"],
+    tasks = [
+        "$gizclaw/web/apps",
+        "$gizclaw/web/device",
+    ],
+)
+
+web_gizclaw_sdk_source(
+    name = "sdk_source",
+    out = "h2_web_gizclaw_sdk.c",
+)
+
+filegroup(
+    name = "sdk_type_source",
+    srcs = [":sdk_source"],
+    output_group = "types",
+)
+
+pkg_files(
+    name = "sdk_type_files",
+    srcs = [
+        ":sdk_type_source",
+        "@h2_gizclaw_protocol//:LICENSE",
+    ],
+    attributes = pkg_attributes(mode = "0644"),
+    strip_prefix = strip_prefix.files_only(),
+)
+
+pkg_tar(
+    name = "sdk_types",
+    srcs = [":sdk_type_files"],
+    out = "gizclaw_web_sdk_types.tar",
+    portable_mtime = True,
+)
+
+py_test(
+    name = "sdk_types_test",
+    srcs = ["tests/test_types.py"],
+    args = [
+        "--archive",
+        "$(location :sdk_types)",
+        "--node",
+        "$(location :sdk_source_node)",
+        "--compiler",
+        "$(location @h2_typescript//:lib/tsc.js)",
+        "--consumer",
+        "$(location tests/type_consumer.ts)",
+    ],
+    data = [
+        "tests/type_consumer.ts",
+        ":sdk_source_node",
+        ":sdk_types",
+        "@h2_typescript//:lib/tsc.js",
+        "@h2_typescript//:runtime",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_types.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
 )

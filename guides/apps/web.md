@@ -291,6 +291,33 @@ bazel test --config=macos_arm64 --strategy=TestRunner=local --test_env=HOME \
 
 Web 的同步 SystemEvent PAL API 只借给 C Worker，浏览器主线程 accessor 返回 `NULL`。浏览器发起退订时使用 `h2_web_platform_system_event_unsubscribe_async`：成功后立即停止新回调并将 subscription 所有权交给 platform Worker；完成回调仅在所有在途 handler 返回后执行，调用方此前必须保留 handler context。主线程入队使用 try-lock，竞争返回 BUSY 并交还所有权，不能同步阻塞浏览器等待 Worker。回调自身不能等待自己的异步退订完成。
 
+## 当前设备 GizClaw SDK
+
+`//libs/gizclaw/web` 的 `h2_web_gizclaw_open()` 从 Worker 绑定 `globalThis.h2WebGizClaw`，借用产品已 start 的 standalone device。它与网络 Service 共用设备 provider、Runtime proxy、工具/MHS 注册和播放器，浏览器不依赖网络 Ready。MHS 使用普通对象，工具名称和消息类型来自同一 pinned canonical SDK；没有手写 method/schema registry。工具发现的 packed numeric IDs 由该 SDK 的 nanopb descriptor 解码，名称仍来自官方 JS map。
+
+```js
+const sdk = globalThis.h2WebGizClaw;
+const controller = new AbortController();
+const options = {signal: controller.signal, timeout_ms: 30000};
+const speaker = await sdk.mhs.read({id: 'speaker.main', hwd: 'speaker'}, options);
+const applied = await sdk.mhs.write({
+  id: 'speaker.main', hwd: 'speaker',
+  payload: {volume_percent: 0, muted: false},
+}, options);
+const tools = await sdk.tools.list(options);
+const info = await sdk.tools.invoke('info.get', {}, options);
+// rawPayload is the canonical request message, including any outer envelope.
+const rawReply = await sdk.call(136, new Uint8Array(), options);
+```
+
+实际实例与工具以产品注册表和 list 结果为准；0/false 保留 protobuf optional presence。只读 HWD、非法字段、未知 ID/method、缺少硬件或网络都拒绝，`GizClawError.code` 保留实际 signed PAL result；只有 wire rejection 时为 -1000，并携带实际 `rpcCode`/`rpcMessage`。参数在 admission 时复制，回复在 Promise resolve 前复制/解码；每个 call 有独立存储。队列满返回 BUSY。超时或 Abort 不能撤销已执行的硬件写入，取消后应按需要重新读取。
+
+`//libs/gizclaw/web:sdk_types` 产出根目录包含 `h2_web_gizclaw.d.ts`、官方 codec/map declarations 和 LICENSE 的 tar。消费方直接 import `GizClawWebSDK` 或使用其 global declaration；声明来自同一 canonical 源的真实 TypeScript 编译。`sdk_types_test` 对实际 tar 做 strict 编译，并检查 readonly write、错误字段类型与未知工具在编译时拒绝。
+
+Bridge 持有 device consumer reference。产品 owner 在 Worker close bridge：先关闭 JS ingress、拒绝 pending Promise、取消请求，再 join adapter；失败保留 bridge 与 device reference，必须重试。随后 stop/deinit 网络 Service，stop device，确认 RPC/media/download/stream/Speaker consumer 全部结束后再将 Runtime 交给 Lua。Lua Host 销毁成功前保留 App lease；join 失败时继续保留。Catalog installer bridge 可独立留在 Lua 期间，pin 使更新/卸载返回真实 BUSY。返回 Main 后可 restart 同一 device 并重新 open bridge，旧 JS 对象始终 CLOSED。
+
+产品注册的 MHS callback 与 userdata 必须使用持续有效的 Runtime proxy；不能指向某次已 deinit Service 的临时内存。借用 raw PAL 时同样必须覆盖所有 consumer 的生命周期，Runtime proxy 也必须覆盖实际 Host、call 与 bridge 清理。完整可执行入口和断言在 `libs/gizclaw/web/tests/local_device/`；它还通过独立 Bzlmod root 构建、打包并运行，验证外部 owner 的 tar root、工具和 runfiles。
+
 ## GizClaw Lua catalog bridge
 
 `//libs/gizclaw/web:web` 的 `h2_web_gizclaw_apps_open()` 借用 entry 已有的 catalog、Memory、Task 和 Queue，提供 `globalThis.h2WebLuaApps`。`list()`、`install(Blob|Uint8Array|ArrayBuffer, {sha256?})` 和 `uninstall(appId)` 返回 Promise，失败在 `error.code` 中保留 signed PAL code。安装按 32 KiB chunk 在同一 worker 调用公共 begin/write/finish，所有文件访问使用注入的 PAL FS；Web FS 才负责 IndexedDB。Main、网络 Service 与浏览器使用同一 catalog，安装格式、目录、预装 overlay 和独立用户 KV 保持一致。活动 Lua owner 持有公共 lease，JS 更新或卸载活动身份返回 BUSY。

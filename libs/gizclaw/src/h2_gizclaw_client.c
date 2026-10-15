@@ -2,6 +2,7 @@
 #include "h2_atomic.h"
 #include "h2_gizclaw_internal.h"
 #include "h2_gizclaw_mhs_internal.h"
+#include "h2_gizclaw_device_rpc_internal.h"
 
 #include "gzc.h"
 #include "gzc_rpc_frame.h"
@@ -186,6 +187,7 @@ typedef struct h2_gizclaw_tool_binding {
 } h2_gizclaw_tool_binding_t;
 
 struct h2_gizclaw_client {
+  h2_gizclaw_device_t *local_device;
   struct h2_gizclaw_client *next_client;
   h2_gizclaw_config_t config;
   gzc_tool_handler_t tools[H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL];
@@ -252,7 +254,7 @@ static h2_gizclaw_client_t *s_clients;
 static h2_gizclaw_client_t *s_test_webrtc_client;
 #endif
 
-static h2_pal_result_t h2_gizclaw_result_from_gzc(int result);
+h2_pal_result_t h2_gizclaw_result_from_gzc(int result);
 static int rpc_record_sdk_result(h2_gizclaw_rpc_request_t *request, int rc);
 
 static void h2_gizclaw_rpc_complete(void *user, gzc_rpc_request_t *gzc,
@@ -594,7 +596,7 @@ static gzc_str_t gzc_str_from_h2(h2_gizclaw_str_t str) {
   return gzc_str_from_parts(str.data, str.len);
 }
 
-static h2_pal_result_t h2_gizclaw_result_from_gzc(int result) {
+h2_pal_result_t h2_gizclaw_result_from_gzc(int result) {
   switch (result) {
   case GZC_OK:
     return H2_PAL_OK;
@@ -712,7 +714,8 @@ static int h2_gizclaw_tool_bridge(void *userdata, gzc_str_t request_payload,
                              response.error_message.len),
   };
   h2_gizclaw_provider_completion_t *completion = NULL;
-  if (response.on_complete != NULL) {
+  const bool drain = h2_gizclaw_device_network_response_needs_drain_internal(&response);
+  if (response.on_complete != NULL && drain) {
     for (size_t i = 0u; i < GZC_RPC_MAX_INBOUND_CHANNELS; ++i) {
       if (client->provider_completions[i].callback == NULL) {
         completion = &client->provider_completions[i];
@@ -738,6 +741,10 @@ static int h2_gizclaw_tool_bridge(void *userdata, gzc_str_t request_payload,
     completion->deadline_ms = now > UINT64_MAX - budget ? UINT64_MAX : now + budget;
   }
   rc = respond(respond_userdata, &gzc_response);
+  h2_gizclaw_device_network_response_copied_internal(&response);
+  if (!drain && response.on_complete != NULL)
+    response.on_complete(response.complete_user, response.has_error
+        ? H2_PAL_ERR_INVALID_STATE : h2_gizclaw_result_from_gzc(rc));
   if (completion != NULL && rc != GZC_OK)
     completion->failed = true;
   return rc;
@@ -751,6 +758,9 @@ static int h2_gizclaw_mhs_bridge(void *userdata, int method, gzc_str_t payload,
   uint8_t *storage = NULL;
   int rc = h2_gizclaw_is_canceled(client)
                ? H2_PAL_ERR_CLOSED
+               : client->local_device
+               ? h2_gizclaw_device_network_mhs_internal(client->local_device, method,
+                     (h2_gizclaw_rpc_bytes_t){(const uint8_t *)payload.data, payload.len}, &response)
                : h2_gizclaw_mhs_request_internal(
                      client->config.mhs_devices, client->config.mhs_device_count,
                      method == H2_GIZCLAW_RPC_CLIENT_MHS_V0_WRITE,
@@ -759,12 +769,16 @@ static int h2_gizclaw_mhs_bridge(void *userdata, int method, gzc_str_t payload,
                                               payload.len},
                      &response, &storage);
   gzc_rpc_provider_response_t result = {.payload = response.payload.data,
-                                        .payload_len = response.payload.len};
+      .payload_len = response.payload.len, .has_error = response.has_error,
+      .error_code = response.error_code,
+      .error_message = {(const char *)response.error_message.data, response.error_message.len}};
   if (rc != H2_PAL_OK) {
     result.has_error = true;
     result.error_code = h2_gizclaw_mhs_error_internal(rc);
   }
   int result_rc = respond(respond_userdata, &result);
+  h2_gizclaw_device_network_response_copied_internal(&response);
+  if (response.on_complete) response.on_complete(response.complete_user, h2_gizclaw_result_from_gzc(result_rc));
   h2_pal_mem_free(client->config.allocator, storage);
   return result_rc;
 }
@@ -2689,3 +2703,8 @@ int h2_gizclaw_test_try_write_bytes(h2_gizclaw_client_t *client,
   return rc;
 }
 #endif
+
+void h2_gizclaw_client_set_device_internal(h2_gizclaw_client_t *client,
+                                            h2_gizclaw_device_t *device) {
+  client->local_device = device;
+}

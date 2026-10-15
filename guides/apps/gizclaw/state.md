@@ -2,6 +2,10 @@
 
 `libs/gizclaw` 的 Session 持有连接作用域内的 Runtime Profile 身份、Workflow catalog、 Workspace 准备状态和 Conversation 状态。产品读取公共快照并投影到页面，不再维护另一份 可用于业务决策的 Profile/catalog/Workspace 状态。低层 Service/RPC 仍可独立使用； 选择 Session 的同一 Service 通过 Session 执行注册、catalog 和 Conversation 操作。现有同步 Workspace activate/reload/reload-with-options RPC，以及删除 Session 当前 Workspace 的同步 delete RPC，自动进入 Session 的收尾与状态发布逻辑；低层异步 request 接口仍只处理协议，不能用于绕过 Session 的受管 Workspace 修改。
 
+## 当前设备与远端状态
+
+Standalone `h2_gizclaw_device_t` 的本地 admission 与 Session/Workspace/远端 Ready 独立。产品 start device 后即可从同一 provider 调用 MHS 与本地工具；网络 Service 只是可选借用者，stop/deinit 或重建不会替换本地 Runtime、player、catalog 或 MHS/tool userdata。注册表和 PAL 借用期持续到 device checked destroy；Lua 交接先关闭 Web ingress、stop/deinit Service、stop device，全部 consumer join 成功后才转移 Runtime。具体调用与 failure retry 合同见 [当前设备本地调用](/zh/developing/gizclaw#当前设备本地调用)。
+
 ## 数据与职责
 
 | Session 持有 | 产品持有 |

@@ -271,14 +271,21 @@ int h2_gizclaw_lua_stream_create_internal(const h2_gizclaw_config_t *config,
   *out = s;
   return H2_PAL_OK;
 fail:
-  h2_gizclaw_lua_stream_destroy_internal(s);
+  *out = s;
+  {
+    int cleanup = h2_gizclaw_lua_stream_destroy_internal(s);
+    if (cleanup != H2_PAL_OK) return cleanup;
+  }
+  *out = NULL;
   return rc;
 }
 int h2_gizclaw_lua_stream_start_internal(h2_gizclaw_lua_stream_t *s) {
   if (!s)
     return H2_PAL_OK;
-  if (s->task || h2_atomic_load(&s->stopping))
+  if (s->task || s->active)
     return H2_PAL_ERR_INVALID_STATE;
+  h2_atomic_store(&s->stopping, false);
+  h2_atomic_store(&s->canceled, false);
   const h2_pal_task_options_t options = {
       .name = H2_GIZCLAW_LUA_INSTALL_TASK_NAME_VALUE, .min_stack_size = 8192u};
   return h2_pal_task_start(s->task_api, &options, worker, s, &s->task);
@@ -303,18 +310,25 @@ int h2_gizclaw_lua_stream_stop_internal(h2_gizclaw_lua_stream_t *s) {
     s->task = NULL;
   return rc;
 }
-void h2_gizclaw_lua_stream_destroy_internal(h2_gizclaw_lua_stream_t *s) {
-  if (!s || s->task)
-    return;
-  if (s->cond)
-    (void)h2_pal_cond_destroy(s->sync, s->cond);
-  if (s->mutex)
-    (void)h2_pal_mutex_destroy(s->sync, s->mutex);
+h2_pal_result_t h2_gizclaw_lua_stream_destroy_internal(h2_gizclaw_lua_stream_t *s) {
+  if (!s) return H2_PAL_OK;
+  if (s->task) return H2_PAL_ERR_BUSY;
+  if (s->cond) {
+    int rc = h2_pal_cond_destroy(s->sync, s->cond);
+    if (rc != H2_PAL_OK) return rc;
+    s->cond = NULL;
+  }
+  if (s->mutex) {
+    int rc = h2_pal_mutex_destroy(s->sync, s->mutex);
+    if (rc != H2_PAL_OK) return rc;
+    s->mutex = NULL;
+  }
   if (s->atomics_ready) {
     h2_atomic_bool_destroy(&s->canceled);
     h2_atomic_bool_destroy(&s->stopping);
   }
   h2_pal_mem_free(s->config.allocator, s);
+  return H2_PAL_OK;
 }
 const gzc_rpc_stream_provider_t *
 h2_gizclaw_lua_stream_provider_internal(h2_gizclaw_lua_stream_t *s) {

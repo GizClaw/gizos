@@ -14,14 +14,6 @@ bazel_dep(name = "rules_android_ndk", version = "0.1.5")
 bazel_dep(name = "rules_cc", version = "0.2.17")
 bazel_dep(name = "rules_foreign_cc", version = "0.15.1")
 bazel_dep(name = "gazelle", version = "0.51.3")
-bazel_dep(name = "gizclaw_c_sdk", version = "0.30.0")
-single_version_override(
-    module_name = "gizclaw_c_sdk",
-    patch_strip = 1,
-    patches = ["//third_party:gizclaw_c_sdk_lua_app_uninstall.patch"],
-    version = "0.30.0",
-)
-
 bazel_dep(name = "hermetic_cc_toolchain", version = "4.2.0")
 bazel_dep(name = "toolchains_llvm", version = "1.8.0")
 bazel_dep(name = "rules_go", version = "0.61.1", repo_name = "io_bazel_rules_go")
@@ -67,6 +59,39 @@ register_toolchains(
 http_archive = use_repo_rule(
     "@bazel_tools//tools/build_defs/repo:http.bzl",
     "http_archive",
+)
+
+# Overrides in a dependency MODULE are ignored by Bzlmod. Declare the exact
+# published SDK archive and upstream delta here so every GizOS consumer gets
+# the same canonical protocol, without copying root-only overrides.
+http_archive(
+    name = "gizclaw_c_sdk",
+    integrity = "sha256-snnzVUK0oZ+YvHTrIXdxZlRaHMijkcDvRitwVL2N1e4=",
+    patch_args = ["-p1"],
+    patches = ["//third_party:gizclaw_c_sdk_lua_app_uninstall.patch"],
+    strip_prefix = "gizclaw-c-sdk-0.30.0",
+    urls = ["https://static-volc.gizclaw.com/bazel/archives/gizclaw_c_sdk/gizclaw-c-sdk-0.30.0.tar.gz"],
+)
+
+# Canonical object codecs and numeric/name registries matching the C SDK's
+# public uninstall contract. The overlay exposes only upstream source files.
+http_archive(
+    name = "h2_gizclaw_protocol",
+    build_file = "//third_party:gizclaw_protocol.BUILD.bazel",
+    sha256 = "62b02f078c39fa401644b95b7933335632323cfa325ad5a4ec695f07201c9529",
+    strip_prefix = "gizclaw-155a9d512ca4669f02391a89bbc30be3bd128f15",
+    type = "tar.gz",
+    urls = ["https://codeload.github.com/GizClaw/gizclaw/tar.gz/155a9d512ca4669f02391a89bbc30be3bd128f15"],
+)
+
+# The declaration emitter is a pinned host tool, independent of runtime code.
+http_archive(
+    name = "h2_typescript",
+    build_file = "//third_party:typescript.BUILD.bazel",
+    sha256 = "10e108c9cf7d5f2879053dff18515fb405abf2ccef63eaaf017d9c571687a1d3",
+    strip_prefix = "package",
+    type = "tgz",
+    urls = ["https://registry.npmjs.org/typescript/-/typescript-5.9.3.tgz"],
 )
 
 # Playwright 1.52.0 uses Chromium headless shell revision 1169. Keep the two
