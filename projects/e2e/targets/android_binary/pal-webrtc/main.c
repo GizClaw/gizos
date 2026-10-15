@@ -1,5 +1,5 @@
 #include "h2_android_platform.h"
-#include "h2_mobile_app_host.h"
+#include "h2_mobile_e2e_runtime_config.h"
 #include "mobile_runner.h"
 #include <jni.h>
 #include <string.h>
@@ -29,7 +29,7 @@ Java_com_haivivi_gizos_e2e_palwebrtc_MainActivity_nativeRun(
     if (rc == H2_PAL_OK)
       rc = h2_android_webrtc_create(&owner);
     if (rc == H2_PAL_OK) {
-      h2_runtime_config_t config = h2_android_app_host_config();
+      h2_runtime_config_t config = h2_mobile_e2e_runtime_config();
       config.http = h2_android_http_api(http);
       config.webrtc = h2_android_webrtc_api(owner);
       rc = h2_webrtc_mobile_run(config, values[2], values[3], &result);

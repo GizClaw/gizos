@@ -35,6 +35,12 @@ projects/h2loader/apps/cli/app/            # Portable CLI command 与 output pol
 projects/h2loader/targets/cc_binary/cli/   # Native CLI executable target
 ```
 
+## 当前 Loader 身份
+
+普通 Loader 在初始化共享状态前，通过 `h2_loader_read_current_loader_identity()` 读取实际 running partition，验证匹配的 H2Loader metadata，并用有界 buffer 重新计算 Image Reader 字节的摘要。接口只读 partition metadata，不读取或迁移 MFG 记录；metadata 缺失、损坏或身份不匹配时使用 primary Loader 容量，candidate 运行在较大的 App slot 时也不扩大 Loader 镜像长度。真实 Preference、reader、digest 错误继续返回，digest/size 不符不能发布身份。依赖在调用期间借用，调用方在 task context 中串行化 package/digest 操作。
+
+BK Loader 与 App 的 UART/BLE composition 使用同一 `h2_bk_h2loader_get_device_uid()` 读取 controller Bluetooth identity MAC，输出 12 位小写十六进制。私有 consumer 通过固定 GizOS revision 调用这些公共接口，不复制 SDK MAC 格式化或运行镜像 metadata/hash 实现。
+
 ## App 入口
 
 目录位置：`projects/h2loader/apps/`

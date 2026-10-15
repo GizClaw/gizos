@@ -4,6 +4,7 @@
 #define H2_GIZCLAW_AUDIO_DOWNLOAD_TASK_NAME_VALUE "$gizclaw/audio/download"
 #define H2_GIZCLAW_DEVICE_TASK_NAME_VALUE "$gizclaw/device"
 #define H2_GIZCLAW_NET_TASK_NAME_VALUE "$gizclaw/net"
+#define H2_GIZCLAW_LUA_INSTALL_TASK_NAME_VALUE "$gizclaw/lua/install"
 #define H2_GIZCLAW_AUDIO_UPLINK_TASK_NAME_VALUE "$gizclaw/audio/uplink"
 #define H2_GIZCLAW_AUDIO_DOWNLINK_TASK_NAME_VALUE "$gizclaw/audio/downlink"
 
@@ -16,6 +17,8 @@ extern const char
     h2_gizclaw_device_task_name[sizeof(H2_GIZCLAW_DEVICE_TASK_NAME_VALUE)];
 extern const char
     h2_gizclaw_net_task_name[sizeof(H2_GIZCLAW_NET_TASK_NAME_VALUE)];
+extern const char h2_gizclaw_lua_install_task_name[sizeof(
+    H2_GIZCLAW_LUA_INSTALL_TASK_NAME_VALUE)];
 extern const char h2_gizclaw_audio_uplink_task_name[sizeof(
     H2_GIZCLAW_AUDIO_UPLINK_TASK_NAME_VALUE)];
 extern const char h2_gizclaw_audio_downlink_task_name[sizeof(

@@ -17,7 +17,7 @@ Portable App 只借用 Runtime 中的 FS、Preferences 和 Memory，以及宿主
 ## 运行入口
 
 ```sh
-bazel test //projects/e2e/apps/pal-storage/app:interface_coverage_test \
+bazel test \
   //projects/e2e/targets/cc_binary/pal-storage:desktop_test \
   //projects/e2e/targets/cc_binary/pal-storage:cleanup_persistence_test \
   //projects/e2e/targets/cc_binary/pal-storage:device_lifecycle_test \

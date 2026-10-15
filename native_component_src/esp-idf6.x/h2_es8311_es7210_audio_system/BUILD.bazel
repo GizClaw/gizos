@@ -53,12 +53,13 @@ firmware_native_component(
 cc_test(
     name = "config_test",
     srcs = glob(["tests/system_include/*.h"]) + [
+        "include/h2_esp_es8311_es7210_aec_stats.h",
         "src/h2_esp_es8311_es7210_audio_system.c",
         "tests/test_h2_esp_es8311_es7210_audio_system_config.c",
     ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
-    includes = ["tests/system_include"],
+    includes = ["tests/system_include", "include"],
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
     deps = ["//libs/drivers/audio/es8311"],
 )
@@ -66,12 +67,13 @@ cc_test(
 cc_test(
     name = "sr_test",
     srcs = glob(["tests/include/*.h"]) + [
+        "include/h2_esp_es8311_es7210_aec_stats.h",
         "src/h2_esp_es8311_es7210_sr.c",
         "tests/fake_esp_aec.c",
         "tests/test_h2_esp_es8311_es7210_sr.c",
     ],
     copts = H2_C11_OPTS + H2_WARNING_COPTS,
-    includes = ["tests/include"],
+    includes = ["tests/include", "include"],
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
 )
 
@@ -86,6 +88,7 @@ cc_test(
     name = "power_down_test",
     srcs = [
         "include/h2_esp_es8311_es7210_audio_system.h",
+        "include/h2_esp_es8311_es7210_aec_stats.h",
         "src/h2_esp_es8311_es7210_audio_system.c",
         "src/h2_esp_es8311_es7210_gain.c",
         "src/h2_esp_es8311_es7210_gain.h",

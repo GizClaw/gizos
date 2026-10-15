@@ -248,6 +248,8 @@ int h2_esp_h2loader_app_commands_start_with_config(
     if (init_rc != H2_PAL_OK) return init_rc;
     s_ble.runtime = runtime;
     const h2_loader_ble_service_config_t service = {
+        .local_name = runtime->ble_local_name != NULL
+            ? runtime->ble_local_name : config->ble_local_name,
         .log = runtime->log,
         .api = {
             .ble = runtime->ble_host,

@@ -1,8 +1,8 @@
-load("//tools/bazel:mobile_e2e.bzl", "mobile_e2e_test")
 load("@rules_apple//apple:ios.bzl", "ios_application")
 load("@rules_cc//cc:objc_library.bzl", "objc_library")
 load("//tools/bazel:cc_options.bzl", "H2_WARNING_COPTS")
 load("//tools/bazel:mobile_app_sdk.bzl", "mobile_app_sdk")
+load("//tools/bazel:mobile_e2e.bzl", "mobile_e2e_test")
 load("//tools/bazel/platforms:compatibility.bzl", "IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY")
 
 package(default_visibility = ["//visibility:public"])
@@ -17,8 +17,8 @@ objc_library(
     ],
     target_compatible_with = IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY,
     deps = [
-        "//libs/app_host:ios_packaged",
         "//projects/e2e/libs/gizclaw-mobile:runner",
+        "//projects/e2e/libs/mobile-platform-config:runtime_config",
     ],
 )
 
@@ -43,14 +43,16 @@ mobile_app_sdk(
 
 mobile_e2e_test(
     name = "ios_gizclaw_simulator_test",
-    platform = "ios",
-    suite = "//projects/e2e/libs/gizclaw-mobile:mobile_e2e",
-    app = ":gizclaw_e2e.ipa",
-    sdk = ":app_sdk",
-    env_inherit = [
-        "H2_GIZCLAW_E2E_ENDPOINT", "H2_GIZCLAW_E2E_REGISTRATION_TOKEN",
-        "H2_GIZCLAW_E2E_DEVICE_API_URL", "H2_GIZCLAW_E2E_AUDIO_URL",
-    ],
     timeout = "eternal",
+    app = ":gizclaw_e2e.ipa",
+    env_inherit = [
+        "H2_GIZCLAW_E2E_ENDPOINT",
+        "H2_GIZCLAW_E2E_REGISTRATION_TOKEN",
+        "H2_GIZCLAW_E2E_DEVICE_API_URL",
+        "H2_GIZCLAW_E2E_AUDIO_URL",
+    ],
     external = True,
+    platform = "ios",
+    sdk = ":app_sdk",
+    suite = "//projects/e2e/libs/gizclaw-mobile:mobile_e2e",
 )

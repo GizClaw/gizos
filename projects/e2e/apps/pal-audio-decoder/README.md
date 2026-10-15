@@ -10,7 +10,6 @@
 
 ```sh
 bazel test --lockfile_mode=off \
-  //projects/e2e/apps/pal-audio-decoder/app:interface_coverage_test \
   //projects/e2e/apps/pal-audio-decoder/app:reject_missing_test \
   //projects/e2e/targets/cc_binary/pal-audio-decoder:desktop_test
 

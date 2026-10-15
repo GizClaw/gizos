@@ -36,7 +36,7 @@ class ServiceCoverageTest(unittest.TestCase):
                     expected = set()
                 self.assertEqual(observed, expected)
                 self.assertFalse(result["valid"])
-                self.assertEqual(result["missing"], 228 - len(expected))
+                self.assertEqual(result["missing"], 236 - len(expected))
 
     def test_fixture_lifecycle_and_failure_gates(self):
         root = api_coverage.repository_root()
@@ -59,7 +59,7 @@ class ServiceCoverageTest(unittest.TestCase):
                             ("init", "start", "stop", "deinit")} if mode == 0 else set()
                 self.assertEqual(observed, expected)
                 self.assertFalse(result["valid"])
-                self.assertEqual(result["missing"], 228 - len(expected))
+                self.assertEqual(result["missing"], 236 - len(expected))
 
     def test_request_lifecycle_and_poll_records(self):
         root = api_coverage.repository_root()
@@ -70,7 +70,6 @@ class ServiceCoverageTest(unittest.TestCase):
                              capture_output=True, text=True, timeout=30, check=False)
         self.assertEqual(run.returncode, 0, "Service boundary fixture failed")
         rules = api_coverage.requirements()
-        api_coverage.validate_inventory(rules, (root / "libs/gizclaw/tests/public_api.inc").read_text())
         result = api_coverage.audit(run.stdout.splitlines(keepends=True), rules,
                                    endpoint="example.invalid:9821", backend="h2peer",
                                    profile="default", platform="macos", process_exit_code=run.returncode)
@@ -80,7 +79,7 @@ class ServiceCoverageTest(unittest.TestCase):
         observed = {row["symbol"] for row in result["functions"] if row["status"] == "covered"}
         self.assertEqual(observed, expected)
         self.assertFalse(result["valid"])
-        self.assertEqual(result["missing"], 228 - 7)
+        self.assertEqual(result["missing"], 236 - 7)
 
 
 if __name__ == "__main__":

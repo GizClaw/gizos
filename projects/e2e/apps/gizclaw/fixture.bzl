@@ -3,6 +3,8 @@
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo", "bool_flag", "string_flag")
 load("@rules_cc//cc:defs.bzl", "cc_library")
 
+_LUA_FIELDS = ["lua_app_url", "lua_app_http_url", "lua_app_https_url", "lua_app_id", "lua_archive_sha256", "lua_entry_sha256", "lua_frame_sha256"]
+
 def _fixture_impl(ctx):
     key = ctx.attr.key[BuildSettingInfo].value
     profile = ctx.attr.profile[BuildSettingInfo].value
@@ -30,6 +32,12 @@ def _fixture_impl(ctx):
         fail("Time fixture must be an explicit DNS hostname or IPv4 address")
     if len(root_ca_hex) > 32768 or len(root_ca_hex) % 2 or any([c not in "0123456789abcdef" for c in root_ca_hex.elems()]):
         fail("HTTP root CA fixture must be bounded lowercase hex PEM bytes")
+    lua = {key: getattr(ctx.attr, key)[BuildSettingInfo].value for key in _LUA_FIELDS}
+    for key in ["lua_archive_sha256", "lua_entry_sha256", "lua_frame_sha256"]:
+        if lua[key] and (len(lua[key]) != 64 or any([c not in "0123456789abcdef" for c in lua[key].elems()])):
+            fail("Lua golden digests must be 64 lowercase hex bytes")
+    if len(lua["lua_app_url"]) > 262144 or len(lua["lua_app_http_url"]) > 1024 or len(lua["lua_app_https_url"]) > 1024:
+        fail("Lua package URI exceeds its transport limit")
     source = ctx.actions.declare_file(ctx.label.name + ".c")
     contract = ctx.actions.declare_file(ctx.label.name + ".json")
     ctx.actions.write(source, "\n".join([
@@ -43,7 +51,7 @@ def _fixture_impl(ctx):
         "const char *h2_gizclaw_e2e_fixture_device_api_url(void) { return %s; }" % json.encode(device_api_url),
         "const char *h2_gizclaw_e2e_fixture_audio_url(void) { return %s; }" % json.encode(audio_url),
         "const char *h2_gizclaw_e2e_fixture_root_ca_hex(void) { return %s; }" % json.encode(root_ca_hex),
-    ]) + "\n")
+    ] + ["const char *h2_gizclaw_e2e_fixture_%s(void) { return %s; }" % (key, json.encode(lua[key])) for key in _LUA_FIELDS]) + "\n")
     ctx.actions.write(contract, json.encode({"app_config_key": key, "runtime_profile": profile, "app_config_value": value, "time_server": time_server, "physical_audio": physical_audio}) + "\n")
     return [
         DefaultInfo(files = depset([source, contract])),
@@ -63,10 +71,13 @@ _fixture = rule(
         "device_api_url": attr.label(mandatory = True, providers = [BuildSettingInfo]),
         "audio_url": attr.label(mandatory = True, providers = [BuildSettingInfo]),
         "root_ca_hex": attr.label(mandatory = True, providers = [BuildSettingInfo]),
+    } | {
+        key: attr.label(mandatory = True, providers = [BuildSettingInfo])
+        for key in _LUA_FIELDS
     },
 )
 
-def gizclaw_e2e_fixture(name, app_config_key = "", runtime_profile = "", app_config_value = "", server_endpoint = "", registration_token = "", time_server = "", physical_audio = False, device_api_url = "", audio_url = "", root_ca_hex = ""):
+def gizclaw_e2e_fixture(name, app_config_key = "", runtime_profile = "", app_config_value = "", server_endpoint = "", registration_token = "", time_server = "", physical_audio = False, device_api_url = "", audio_url = "", root_ca_hex = "", lua_app_url = "", lua_app_http_url = "", lua_app_https_url = "", lua_app_id = "", lua_archive_sha256 = "", lua_entry_sha256 = "", lua_frame_sha256 = ""):
     """Empty is buildable but RPC/all launchers reject it before networking.
 
     Supply the public profile key via the macro argument or the generated
@@ -75,6 +86,7 @@ def gizclaw_e2e_fixture(name, app_config_key = "", runtime_profile = "", app_con
     string_flag(name = name + "_key", build_setting_default = app_config_key)
     string_flag(name = name + "_profile", build_setting_default = runtime_profile)
     string_flag(name = name + "_value", build_setting_default = app_config_value)
+
     # Board launchers have no process environment. These explicit build inputs
     # are omitted from the JSON/audit contract and are never committed defaults.
     string_flag(name = name + "_endpoint", build_setting_default = server_endpoint)
@@ -84,7 +96,10 @@ def gizclaw_e2e_fixture(name, app_config_key = "", runtime_profile = "", app_con
     string_flag(name = name + "_device_api_url", build_setting_default = device_api_url)
     string_flag(name = name + "_audio_url", build_setting_default = audio_url)
     string_flag(name = name + "_root_ca_hex", build_setting_default = root_ca_hex)
-    _fixture(name = name + "_generated", key = ":" + name + "_key", profile = ":" + name + "_profile", value = ":" + name + "_value", endpoint = ":" + name + "_endpoint", token = ":" + name + "_token", time_server = ":" + name + "_time_server", physical_audio = ":" + name + "_physical_audio", device_api_url = ":" + name + "_device_api_url", audio_url = ":" + name + "_audio_url", root_ca_hex = ":" + name + "_root_ca_hex")
+    lua = {"lua_app_url": lua_app_url, "lua_app_http_url": lua_app_http_url, "lua_app_https_url": lua_app_https_url, "lua_app_id": lua_app_id, "lua_archive_sha256": lua_archive_sha256, "lua_entry_sha256": lua_entry_sha256, "lua_frame_sha256": lua_frame_sha256}
+    for key in _LUA_FIELDS:
+        string_flag(name = name + "_" + key, build_setting_default = lua[key])
+    _fixture(name = name + "_generated", key = ":" + name + "_key", profile = ":" + name + "_profile", value = ":" + name + "_value", endpoint = ":" + name + "_endpoint", token = ":" + name + "_token", time_server = ":" + name + "_time_server", physical_audio = ":" + name + "_physical_audio", device_api_url = ":" + name + "_device_api_url", audio_url = ":" + name + "_audio_url", root_ca_hex = ":" + name + "_root_ca_hex", **{key: ":" + name + "_" + key for key in _LUA_FIELDS})
     native.filegroup(name = name + "_contract", srcs = [":" + name + "_generated"], output_group = "contract")
     native.filegroup(name = name + "_source", srcs = [":" + name + "_generated"], output_group = "source")
     cc_library(

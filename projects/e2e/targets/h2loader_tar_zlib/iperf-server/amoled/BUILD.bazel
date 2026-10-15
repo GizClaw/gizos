@@ -29,6 +29,31 @@ cc_test(
     deps = ["//projects/e2e/apps/iperf-server/app:controller"],
 )
 
+# Run the same adapter lifecycle against the actual ESP provider stop entry.
+cc_test(
+    name = "ap_provider_stop_retry_test",
+    srcs = [
+        "main/iperf_ap.c",
+        "main/iperf_ap.h",
+        "tests/test_ap_cleanup.c",
+    ] + glob(["tests/sdk/**/*.h"]),
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + ["-DH2_IPERF_TEST_REAL_AP_STOP"],
+    includes = [
+        "main",
+        "tests/sdk",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//native_component_src/esp-idf6.x/h2_pal_core:wifi_ap_stop_test_header",
+        "//projects/e2e/apps/iperf-server/app:controller",
+    ],
+)
+
 esp_target_task_policy(
     name = "task_policy",
     default_policy = "4 any 4096 psram",
@@ -118,6 +143,8 @@ h2loader_esp_idf_firmware(
         "main/main.c",
     ],
     board = "amoled",
+    cmake_variables = ["H2_IPERF_SERVER_AUTOSTART_MODE"],
+    graph = [":launcher"],
     layout_files = {
         "partition": "//boards/amoled/esp32s3/layouts/h2loader:partition.csv",
         "project_support_files": [
@@ -125,8 +152,6 @@ h2loader_esp_idf_firmware(
             "//boards/amoled/esp32s3/layouts/h2loader:sdkconfig.iperf-server.defaults",
         ],
     },
-    cmake_variables = ["H2_IPERF_SERVER_AUTOSTART_MODE"],
-    graph = [":launcher"],
     project = "CMakeLists.txt",
     project_name = "h2_iperf_server",
     target = "esp32s3",

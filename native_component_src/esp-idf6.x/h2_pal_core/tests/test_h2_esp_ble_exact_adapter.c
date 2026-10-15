@@ -92,6 +92,42 @@ int main(void) {
                expected_scan_response,
                sizeof(expected_scan_response)) == 0);
 
+    /* H2Loader compact identity plus a product name fills the legacy scan
+     * response exactly, while its service UUID remains in primary advertising. */
+    const uint8_t identity[18] = {'H', '2', 'L', 'D', 2u};
+    const uint8_t uuid_bytes[16] = {1u};
+    const h2_pal_ble_uuid_t uuid = {.data = uuid_bytes, .len = sizeof(uuid_bytes)};
+    const h2_pal_ble_adv_data_t named_loader = {
+        .local_name = "H200-38DE", .service_uuids = &uuid, .service_uuid_count = 1u,
+        .manufacturer_data = {.data = identity, .len = sizeof(identity)},
+    };
+    assert(h2_esp_ble_prepare_legacy_structured_data(
+        &named_loader, &primary, scan_response, sizeof(scan_response),
+        &scan_response_len) == H2_PAL_OK);
+    assert(primary.service_uuids == &uuid && primary.service_uuid_count == 1u);
+    assert(primary.local_name == NULL && primary.manufacturer_data.len == 0u);
+    assert(scan_response_len == 31u && scan_response[0] == 19u && scan_response[1] == 0xffu);
+    assert(memcmp(scan_response + 2u, identity, sizeof(identity)) == 0);
+    assert(scan_response[20] == 10u && scan_response[21] == 0x09u);
+    assert(memcmp(scan_response + 22u, "H200-38DE", 9u) == 0);
+    h2_pal_ble_adv_data_t too_long = named_loader;
+    too_long.local_name = "H200-038DE";
+    assert(h2_esp_ble_prepare_legacy_structured_data(
+        &too_long, &primary, scan_response, sizeof(scan_response),
+        &scan_response_len) == H2_PAL_ERR_INVALID_ARG);
+
+    const h2_pal_ble_adv_data_t named_product = {
+        .local_name = "h106-tiga-A1B2C3", .service_uuids = &uuid,
+        .service_uuid_count = 1u,
+    };
+    assert(h2_esp_ble_prepare_legacy_structured_data(
+               &named_product, &primary, scan_response, sizeof(scan_response),
+               &scan_response_len) == H2_PAL_OK);
+    assert(primary.service_uuids == &uuid && primary.service_uuid_count == 1u);
+    assert(primary.local_name == NULL && primary.manufacturer_data.len == 0u);
+    assert(scan_response_len == 18u && scan_response[0] == 17u && scan_response[1] == 0x09u);
+    assert(memcmp(scan_response + 2u, "h106-tiga-A1B2C3", 16u) == 0);
+
     h2_pal_ble_scan_params_t params = {
         .interval_units_625us = 4u,
         .window_units_625us = 4u,

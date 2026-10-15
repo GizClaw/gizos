@@ -126,7 +126,10 @@ static void emit_progress(void *user,
   fflush(stdout);
 }
 
-#if defined(H2_GIZCLAW_E2E_FIRMWARE_ONLY)
+#if defined(H2_GIZCLAW_E2E_LUA_ONLY)
+#define AMOLED_E2E_SUITES H2_GIZCLAW_E2E_SUITE_LUA_APPS
+#define AMOLED_E2E_SUITE_NAME "lua-apps"
+#elif defined(H2_GIZCLAW_E2E_FIRMWARE_ONLY)
 #define AMOLED_E2E_SUITES H2_GIZCLAW_E2E_SUITE_FIRMWARE
 #define AMOLED_E2E_SUITE_NAME "firmware"
 #elif defined(H2_GIZCLAW_E2E_RESOURCE_ONLY)
@@ -261,13 +264,26 @@ static void run_e2e(void *raw) {
       .app_config_key = h2_gizclaw_e2e_fixture_key(),
       .expected_runtime_profile = h2_gizclaw_e2e_fixture_profile(),
       .app_config_expected_value = {h2_gizclaw_e2e_fixture_value(),
-                                   strlen(h2_gizclaw_e2e_fixture_value())},
+                                    strlen(h2_gizclaw_e2e_fixture_value())},
       .voice_audio = h2_gizclaw_e2e_fixture_physical_audio()
-                         ? runner->runtime->audio : NULL,
+                         ? runner->runtime->audio
+                         : NULL,
       .voice_pcm_s16le_16khz_mono = h2_gizclaw_e2e_voice_prompt_start,
       .voice_pcm_len = (size_t)(h2_gizclaw_e2e_voice_prompt_end -
-                               h2_gizclaw_e2e_voice_prompt_start),
+                                h2_gizclaw_e2e_voice_prompt_start),
       .suites = AMOLED_E2E_SUITES,
+      .lua_app_url = h2_gizclaw_e2e_fixture_lua_app_url(),
+      .lua_app_http_url = h2_gizclaw_e2e_fixture_lua_app_http_url(),
+      .lua_app_https_url = h2_gizclaw_e2e_fixture_lua_app_https_url(),
+      .lua_app_id = h2_gizclaw_e2e_fixture_lua_app_id(),
+      .lua_archive_sha256 = h2_gizclaw_e2e_fixture_lua_archive_sha256(),
+      .lua_entry_sha256 = h2_gizclaw_e2e_fixture_lua_entry_sha256(),
+      .lua_frame_sha256 = h2_gizclaw_e2e_fixture_lua_frame_sha256(),
+      .lua_preserve_storage = true,
+#if defined(H2_GIZCLAW_E2E_LUA_EXPECT_PERSISTED)
+      .lua_expect_persisted = true,
+#endif
+      .tls_root_ca_hex = h2_gizclaw_e2e_fixture_root_ca_hex(),
       .device_api_url = h2_gizclaw_e2e_fixture_device_api_url(),
       .device_audio_url = h2_gizclaw_e2e_fixture_audio_url(),
       .device_real_audio = h2_gizclaw_e2e_fixture_physical_audio() != 0,
@@ -340,12 +356,25 @@ static void image_entry(void *user) {
   const h2_gizclaw_e2e_amoled_config_t *config =
       h2_gizclaw_e2e_amoled_config();
 
-  if (!h2_gizclaw_e2e_fixture_endpoint()[0] || !h2_gizclaw_e2e_fixture_token()[0] ||
-      !h2_gizclaw_e2e_fixture_profile()[0] || !h2_gizclaw_e2e_fixture_time_server()[0] ||
+  if (!h2_gizclaw_e2e_fixture_endpoint()[0] ||
+      !h2_gizclaw_e2e_fixture_token()[0] ||
+      !h2_gizclaw_e2e_fixture_profile()[0] ||
+      !h2_gizclaw_e2e_fixture_time_server()[0] ||
       ((AMOLED_E2E_SUITES & H2_GIZCLAW_E2E_SUITE_DEVICE) != 0u &&
-       (!h2_gizclaw_e2e_fixture_device_api_url()[0] || !h2_gizclaw_e2e_fixture_audio_url()[0])) ||
+       (!h2_gizclaw_e2e_fixture_device_api_url()[0] ||
+        !h2_gizclaw_e2e_fixture_audio_url()[0])) ||
       ((AMOLED_E2E_SUITES & H2_GIZCLAW_E2E_SUITE_RPC) != 0u &&
-       (!h2_gizclaw_e2e_fixture_key()[0] || !h2_gizclaw_e2e_fixture_value()[0])))
+       (!h2_gizclaw_e2e_fixture_key()[0] ||
+        !h2_gizclaw_e2e_fixture_value()[0])) ||
+      ((AMOLED_E2E_SUITES & H2_GIZCLAW_E2E_SUITE_LUA_APPS) != 0u &&
+       (!h2_gizclaw_e2e_fixture_device_api_url()[0] ||
+        !h2_gizclaw_e2e_fixture_lua_app_url()[0] ||
+        !h2_gizclaw_e2e_fixture_lua_app_http_url()[0] ||
+        !h2_gizclaw_e2e_fixture_lua_app_https_url()[0] ||
+        !h2_lua_app_id_valid(h2_gizclaw_e2e_fixture_lua_app_id()) ||
+        !h2_gizclaw_e2e_fixture_lua_archive_sha256()[0] ||
+        !h2_gizclaw_e2e_fixture_lua_entry_sha256()[0] ||
+        !h2_gizclaw_e2e_fixture_lua_frame_sha256()[0])))
     fail_launcher("missing_service_fixture", H2_PAL_ERR_INVALID_ARG, false);
 
   int rc = h2_esp_board_runtime_config(&runtime_config);
@@ -567,8 +596,10 @@ static void image_entry(void *user) {
           capture_evidence(&s_runner, summary, (size_t)size);
         else
           h2_atomic_store_explicit(&s_runner.capture_failed, true, H2_ATOMIC_RELEASE);
-        if (!h2_atomic_load_explicit(&s_runner.capture_failed, H2_ATOMIC_ACQUIRE) &&
+        if (!h2_atomic_load_explicit(&s_runner.capture_failed,
+                                     H2_ATOMIC_ACQUIRE) &&
             h2_gizclaw_e2e_ledger_freeze(&s_runner.ledger) == H2_PAL_OK &&
+            s_runner.app_config.suites == H2_GIZCLAW_E2E_SUITE_ALL &&
             s_runner.exit_code == H2_GIZCLAW_E2E_EXIT_PASS &&
             h2_gizclaw_e2e_result_all_passed(&s_runner.result)) {
           int confirm = h2_esp_h2loader_app_confirm(runtime);
@@ -579,7 +610,8 @@ static void image_entry(void *user) {
             s_runner.exit_code = H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
         }
       }
-      if (!s_runner.admitted && s_runner.exit_code == H2_GIZCLAW_E2E_EXIT_PASS)
+      if (s_runner.app_config.suites == H2_GIZCLAW_E2E_SUITE_ALL &&
+          !s_runner.admitted && s_runner.exit_code == H2_GIZCLAW_E2E_EXIT_PASS)
         s_runner.exit_code = H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
       if (h2_pal_time_get_monotonic_ms(runtime->time, &now_ms) != H2_PAL_OK) {
         fail_launcher("summary_clock", H2_PAL_ERR_UNAVAILABLE, s_commands_started);

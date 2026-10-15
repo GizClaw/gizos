@@ -1,5 +1,5 @@
 #include "h2_ios_platform.h"
-#include "h2_mobile_app_host.h"
+#include "h2_mobile_e2e_runtime_config.h"
 #include "mobile_runner.h"
 #import <UIKit/UIKit.h>
 #include <stdio.h>
@@ -32,7 +32,7 @@
                 h2_gizclaw_e2e_fixture_profile()[0] && h2_gizclaw_e2e_fixture_value()[0] ? h2_ios_http_create(NULL, 0u, &http) : H2_PAL_ERR_INVALID_ARG;
             if (rc == H2_PAL_OK) rc = h2_ios_webrtc_create(&owner);
             if (rc == H2_PAL_OK) {
-                h2_runtime_config_t config = h2_ios_app_host_config();
+                h2_runtime_config_t config = h2_mobile_e2e_runtime_config();
                 config.http = h2_ios_http_api(http);
                 config.webrtc = h2_ios_webrtc_api(owner);
                 rc = h2_gizclaw_mobile_run(config, "ios-simulator", [fixture[@"endpoint"] UTF8String],

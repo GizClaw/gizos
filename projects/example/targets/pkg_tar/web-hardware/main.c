@@ -1,10 +1,12 @@
-/* Board hardware hooks on app_host: prepare runs before
- * the Filesystem, configure_runtime installs its own Button peripheral and
- * component mapper (component 42 on peripheral 501), and the button hook
- * delivers the page's edges there. The App ends after one key press: both
- * its Down and Up edge must reach the hook and be accepted by the Runtime. */
-#include "h2_web_app_host.h"
+/* This entry owns its fixture providers and validates explicit acquisition,
+ * Button routing and failure cleanup without a Host hook table. */
+#include "h2_smoke_host_runtime.h"
+#include "h2_web_fs.h"
+#include "h2_web_main_thread.h"
+#include "h2_web_platform.h"
 
+#include <assert.h>
+#include <emscripten.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -16,7 +18,18 @@ typedef struct web_hardware {
   int configured;
   volatile int edges;
   volatile int accepted;
+  int mode, releases, entry_done;
+  const h2_pal_fs_api_t *fs;
+  h2_pal_fs_file_t *file;
 } web_hardware_t;
+
+/* clang-format off */
+EM_JS(void, fixture_mode,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, [], "i32", () =>
+      Number(new URLSearchParams(location.search).get('mode') || 0));
+});
+/* clang-format on */
 
 static const h2_pal_periph_single_button_payload_t k_button_payload = {
     .delivery = H2_PAL_BUTTON_DELIVERY_PUSH_EDGE,
@@ -98,12 +111,6 @@ static const h2_runtime_component_mapper_t k_mapper = {
     .vtable = &k_mapper_vtable,
 };
 
-static h2_pal_result_t prepare(void *user, h2_web_platform_t *platform) {
-  web_hardware_t *hardware = user;
-  hardware->prepared = platform != NULL;
-  return H2_PAL_OK;
-}
-
 static h2_pal_result_t configure_runtime(void *user,
                                          h2_runtime_config_t *config) {
   web_hardware_t *hardware = user;
@@ -111,7 +118,25 @@ static h2_pal_result_t configure_runtime(void *user,
   config->periph = &k_periph;
   config->component_mapper = &k_mapper;
   hardware->configured = 1;
-  return H2_PAL_OK;
+  hardware->fs = config->fs;
+  const h2_pal_result_t rc = (h2_pal_result_t)h2_pal_fs_open(
+      config->fs, "/hardware/source", H2_PAL_FS_OPEN_WRITE_TRUNCATE,
+      &hardware->file);
+  return rc != H2_PAL_OK ? rc : hardware->mode == 1 ? H2_PAL_ERR_IO : H2_PAL_OK;
+}
+
+static h2_pal_result_t release_runtime(void *user) {
+  web_hardware_t *hardware = user;
+  assert(++hardware->releases == 1);
+  assert(hardware->entry_done == (hardware->mode != 1));
+  if (hardware->mode == 2)
+    return H2_PAL_ERR_IO;
+  const h2_pal_result_t rc =
+      (h2_pal_result_t)h2_pal_fs_close(hardware->fs, hardware->file);
+  if (rc == H2_PAL_OK)
+    hardware->file = NULL;
+  printf("H2_WEB_HARDWARE release=%d rc=%d\n", hardware->releases, (int)rc);
+  return rc;
 }
 
 static h2_pal_result_t button(void *user, h2_runtime_t *runtime,
@@ -128,39 +153,90 @@ static h2_pal_result_t button(void *user, h2_runtime_t *runtime,
   return result;
 }
 
-static h2_pal_result_t run(h2_web_app_host_t *host, h2_runtime_t *runtime,
-                           void *user) {
-  web_hardware_t *hardware = user;
-  printf("H2_WEB_HARDWARE prepared=%d configured=%d board=%s\n",
-         hardware->prepared, hardware->configured, runtime->board);
-  h2_pal_result_t result = h2_web_app_host_ready(host);
-  /* One key press is one Down and one Up edge. */
-  while (result == H2_PAL_OK && hardware->edges < 2 &&
-         !h2_web_app_host_should_stop(host))
-    result = h2_pal_time_sleep_ms(runtime->time, 10u);
-  printf("H2_WEB_HARDWARE edges=%d accepted=%d\n", hardware->edges,
-         hardware->accepted);
-  if (result == H2_PAL_OK && hardware->accepted != hardware->edges)
-    result = H2_PAL_ERR_UNAVAILABLE;
-  return result;
+/* clang-format off */
+EM_JS(void, page_input,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["i32"], "i32", action => {
+    if (action === 1) { globalThis.h2WebBindButton?.(0, "Enter", "action"); return 0; }
+    if (action === 2) { globalThis.h2WebUnbindButtons?.(); return 0; }
+    if (action === 3) return Module.h2WebStopRequested ? 1 : 0;
+    return globalThis.h2WebTakeButtonEdge?.() || 0;
+  });
+});
+/* clang-format on */
+static int page_action(int action) {
+  return h2_web_main_call(page_input, (const void *[]){&action}).i32;
 }
-
 int main(void) {
   static web_hardware_t hardware;
-  static const h2_web_app_host_hardware_t hooks = {
-      .user = &hardware,
-      .prepare = prepare,
-      .configure_runtime = configure_runtime,
-      .button = button,
-  };
-  static const h2_web_app_host_button_t buttons[] = {
-      {WEB_HARDWARE_COMPONENT, "Enter", NULL},
-  };
-  const h2_web_app_host_config_t config = {
-      .name = "web-hardware",
-      .buttons = buttons,
-      .button_count = 1u,
-      .hardware = &hooks,
-  };
-  return h2_web_app_host_run(&config, run, &hardware);
+  hardware.mode = h2_web_main_call(fixture_mode, NULL).i32;
+  const h2_web_platform_config_t platform_config = {240, 240};
+  h2_web_platform_t *platform = h2_web_platform_create(&platform_config);
+  if (platform == NULL)
+    return 1;
+  hardware.prepared = 1;
+  const h2_web_fs_config_t fs_config = {.persistent_root = "/hardware"};
+  h2_web_fs_t *fs = NULL;
+  int rc = h2_web_fs_open(platform, &fs_config, &fs);
+  h2_runtime_t *runtime = NULL;
+  h2_runtime_config_t config = h2_smoke_host_runtime_config(
+      "web-hardware", "webassembly", "wasm32", h2_web_platform_mem_api(),
+      h2_web_platform_time_api(platform), h2_web_platform_queue_api(platform),
+      h2_web_platform_display_api(platform));
+  config.task = h2_web_platform_task_api(platform);
+  config.sync = h2_web_platform_sync_api(platform);
+  config.fs = h2_web_fs_api(fs);
+  if (rc == H2_PAL_OK)
+    rc = configure_runtime(&hardware, &config);
+  if (rc == H2_PAL_OK)
+    rc = h2_runtime_init(&config, &runtime);
+  if (rc == H2_PAL_OK)
+    rc = h2_runtime_input_start(runtime, NULL);
+  if (rc == H2_PAL_OK) {
+    printf("H2_WEB_HARDWARE prepared=%d configured=%d board=%s\n",
+           hardware.prepared, hardware.configured, runtime->board);
+    (void)page_action(1);
+    puts("H2_WEB_APP name=web-hardware stage=ready");
+    while (hardware.mode == 0 && rc == H2_PAL_OK && hardware.edges < 2 &&
+           !page_action(3)) {
+      int edge = page_action(0);
+      if (edge < 0)
+        rc = H2_PAL_ERR_NO_SPACE;
+      else if (edge != 0)
+        rc = button(&hardware, runtime, WEB_HARDWARE_COMPONENT, edge & 1);
+      else
+        rc = h2_pal_time_sleep_ms(runtime->time, 10u);
+    }
+    (void)page_action(2);
+    if (hardware.mode == 0) {
+      printf("H2_WEB_HARDWARE edges=%d accepted=%d\n", hardware.edges,
+             hardware.accepted);
+      if (rc == H2_PAL_OK && hardware.accepted != 2)
+        rc = H2_PAL_ERR_UNAVAILABLE;
+    }
+    hardware.entry_done = 1;
+  }
+  int released = release_runtime(&hardware);
+  assert(hardware.releases == 1);
+  if (hardware.mode == 2) {
+    assert(released == H2_PAL_ERR_IO && hardware.file != NULL);
+    h2_pal_fs_stat_t info = {0};
+    assert(h2_pal_fs_stat(hardware.fs, "/hardware/source", &info) == H2_PAL_OK);
+    printf("H2_WEB_APP name=web-hardware result=FAIL rc=%d retained=1\n",
+           released);
+  } else {
+    assert(released == H2_PAL_OK && hardware.file == NULL);
+    int stopped = runtime != NULL ? h2_runtime_input_stop(runtime) : H2_PAL_OK;
+    assert(stopped == H2_PAL_OK);
+    h2_runtime_deinit(runtime);
+    int fs_result = h2_web_fs_close(fs);
+    assert(fs_result == H2_PAL_OK);
+    int destroyed = h2_web_platform_destroy(platform);
+    assert(destroyed == H2_PAL_OK);
+    assert(rc == (hardware.mode == 1 ? H2_PAL_ERR_IO : H2_PAL_OK));
+    printf("H2_WEB_APP name=web-hardware result=%s rc=%d fs=%d destroy=%d\n",
+           rc == H2_PAL_OK ? "PASS" : "FAIL", rc, fs_result, destroyed);
+  }
+  puts("H2_WEB_HARDWARE checks=PASS");
+  return 0;
 }

@@ -100,6 +100,8 @@ Opus RTP 固定使用 RTP v2 和 payload type 111，因此无 marker 的前两�
 
 性能 workload 属于 portable `projects/e2e/apps/webrtc-performance/app`，不属于 package test；DevKit 与 AMOLED 的 H2Loader launcher 位于 `projects/e2e/targets/h2loader_tar_zlib/webrtc-performance/<board>`，AMOLED launcher 还通过 Wi-Fi PAL 的 `set_power_save` 选择 modem sleep 策略，用于对比省电模式对 RTP 抖动的影响。它在同一个 UDP PeerConnection 上保持 Packet 和 Event 两条长期 DataChannel，创建三条 request-scoped service DataChannel，先下载 10 MiB、再上传 10 MiB，并并发 Packet telemetry、Event echo 与 100 个 20 ms Opus RTP frame。`smoke` 执行一轮，`benchmark` 执行 10 轮并输出逐轮 JSON 和 median。满载与纯数据 throughput 的 median 比值必须不低于 80%。Desktop `benchmark` 要求每组 100 个 RTP frame 零丢包、零 duplicate、零 reorder、零 deadline miss、零发送侧 `WOULD_BLOCK`，并以 40 ms 业务预算加 2 ms host 调度容差检查到达间隔 p99。设备 `smoke` 允许最多 5 个网络丢包和 200 ms p99，发送侧 deadline miss 与 `WOULD_BLOCK` 只作为诊断指标，duplicate 和 reorder 仍必须为零。两种 profile 在发送最后一帧后都保留 1 秒 playout grace，再按实际收到的唯一 sequence 计算 missing。
 
+本地 DataChannel close 消费调用方 handle，但正常 `CHANNEL_CLOSED` 只在已接受消息 flush 且双向 SCTP reset 完成后发布。关闭中的 SID 继续 quarantine，ready slot 在发送队列耗尽后释放；Peer shutdown 仍能回收所有关闭中的对象。对端在本地关闭尚有排队数据时提前 reset，terminal 为 ERROR，不能把丢失的应答当作成功。产品破坏性 continuation 必须等待该 terminal，不能以本地 send/close 或一个普通 poll 代替。
+
 ## Build And Test
 
 从仓库根目录运行 package build 和 host test：

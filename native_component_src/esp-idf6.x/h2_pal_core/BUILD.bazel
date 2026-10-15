@@ -1,9 +1,81 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
-load("@rules_python//python:defs.bzl", "py_test")
+load("@rules_python//python:defs.bzl", "py_binary", "py_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS", "h2_gnu_only_copts")
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
 
 package(default_visibility = ["//visibility:public"])
+
+py_binary(
+    name = "wifi_ap_stop_test_source_generator",
+    testonly = True,
+    srcs = ["tests/extract_wifi_ap_stop.py"],
+    legacy_create_init = False,
+    main = "tests/extract_wifi_ap_stop.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+genrule(
+    name = "wifi_ap_stop_test_source",
+    testonly = True,
+    srcs = ["src/h2_esp_platform_wifi.c"],
+    outs = ["tests/h2_esp_wifi_ap_stop_for_test.inc"],
+    cmd = "$(execpath :wifi_ap_stop_test_source_generator) $(location src/h2_esp_platform_wifi.c) $@",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    tools = [":wifi_ap_stop_test_source_generator"],
+)
+
+cc_library(
+    name = "wifi_ap_stop_test_header",
+    testonly = True,
+    hdrs = [":wifi_ap_stop_test_source"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+[
+    cc_test(
+        name = "ppp_quiesce" + suffix + "_test",
+        srcs = [
+            "include/h2_esp_platform_core.h",
+            "src/h2_esp_platform_ppp.c",
+            "tests/test_h2_esp_platform_ppp.c",
+        ] + glob([
+            "tests/ppp_sdk/**/*.h",
+            "tests/sdk/**/*.h",
+        ]),
+        conlyopts = H2_C11_OPTS + ["-DCONFIG_PPP_SUPPORT=" + support],
+        copts = H2_WARNING_COPTS,
+        includes = [
+            "include",
+            "tests/ppp_sdk",
+            "tests/sdk",
+        ],
+        target_compatible_with = select({
+            "//tools/bazel/platforms:host_linux_target_linux": [],
+            "//tools/bazel/platforms:host_macos_target_macos": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        deps = ["//libs/pal"],
+    )
+    for suffix, support in [
+        ("", "1"),
+        ("_unsupported", "0"),
+    ]
+]
 
 py_test(
     name = "net_host_address_test",
@@ -149,6 +221,55 @@ cc_test(
         "tests/sdk",
     ],
     # The provider builds on <sys/time.h>, which MSVC does not ship.
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "time_100hz_test",
+    srcs = [
+        "include/h2_esp_platform_core.h",
+        "src/h2_esp_platform_time.c",
+        "tests/test_h2_esp_platform_time.c",
+    ] + glob(["tests/sdk/**/*.h"]),
+    conlyopts = H2_C11_OPTS + [
+        "-DH2_ESP_TIME_TEST=1",
+        "-DconfigTICK_RATE_HZ=100u",
+    ],
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "tests/sdk",
+    ],
+    # The provider builds on <sys/time.h>, which MSVC does not ship.
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "time_tick_limit_test",
+    srcs = [
+        "include/h2_esp_platform_core.h",
+        "src/h2_esp_platform_time.c",
+        "tests/test_h2_esp_platform_time.c",
+    ] + glob(["tests/sdk/**/*.h"]),
+    conlyopts = H2_C11_OPTS + [
+        "-DH2_ESP_TIME_TEST=1",
+        "-DportMAX_DELAY=65535u",
+    ],
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "tests/sdk",
+    ],
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],

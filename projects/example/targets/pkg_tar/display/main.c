@@ -1,18 +1,39 @@
 #include "h2_smoke_display.h"
-#include "h2_web_app_host.h"
-
-static h2_pal_result_t run_display(h2_web_app_host_t *host,
-                                   h2_runtime_t *runtime, void *user) {
-  (void)host;
-  (void)user;
-  return (h2_pal_result_t)h2_smoke_display_run(runtime);
-}
+#include "h2_smoke_host_runtime.h"
+#include "h2_web_platform.h"
+#include <stdio.h>
 
 int main(void) {
-  const h2_web_app_host_config_t config = {
-      .name = "display",
-      .display_width = 240,
-      .display_height = 240,
-  };
-  return h2_web_app_host_run(&config, run_display, NULL);
+  const h2_web_platform_config_t config = {240, 240};
+  h2_web_platform_t *platform = h2_web_platform_create(&config);
+  if (platform == NULL)
+    return 1;
+  h2_runtime_config_t rcfg = h2_smoke_host_runtime_config(
+      "browser", "webassembly", "wasm32", h2_web_platform_mem_api(),
+      h2_web_platform_time_api(platform), h2_web_platform_queue_api(platform),
+      h2_web_platform_display_api(platform));
+  rcfg.log = h2_web_platform_log_api();
+  rcfg.task = h2_web_platform_task_api(platform);
+  rcfg.sync = h2_web_platform_sync_api(platform);
+  rcfg.timer = h2_web_platform_timer_api(platform);
+  rcfg.touch = h2_web_platform_touch_api(platform);
+  rcfg.audio = h2_web_platform_audio_api(platform);
+  h2_runtime_t *runtime = NULL;
+  int rc = h2_runtime_init(&rcfg, &runtime);
+  if (rc == H2_PAL_OK) {
+    puts("H2_WEB_APP name=display stage=running");
+    rc = h2_smoke_display_run(runtime);
+  }
+  int cleanup = runtime != NULL ? h2_runtime_input_stop(runtime) : H2_PAL_OK;
+  if (cleanup != H2_PAL_OK) {
+    printf("H2_WEB_APP name=display result=FAIL rc=%d retained=1\n", cleanup);
+    return 1;
+  }
+  h2_runtime_deinit(runtime);
+  int destroyed = h2_web_platform_destroy(platform);
+  if (rc == H2_PAL_OK)
+    rc = cleanup != H2_PAL_OK ? cleanup : destroyed;
+  printf("H2_WEB_APP name=display result=%s rc=%d fs=0 destroy=%d\n",
+         rc == H2_PAL_OK ? "PASS" : "FAIL", rc, destroyed);
+  return rc == H2_PAL_OK ? 0 : 1;
 }

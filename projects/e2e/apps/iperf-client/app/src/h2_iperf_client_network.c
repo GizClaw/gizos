@@ -58,7 +58,9 @@ static void report_network(h2_runtime_t *runtime, const char *target,
                  "bssid=%02x%02x%02x%02x%02x%02x power_save=0 ble_service=0",
                  target, phase, (unsigned)network->mode, (unsigned)wifi->state,
                  wifi->ip_valid, (unsigned long)wifi->ip.ip4,
-                 wifi->ip.ip6_valid, network->runtime_ready, ip[0], ip[1],
+                 (unsigned)(wifi->ip.ip6_valid &&
+                     h2_pal_net_ipv6_is_non_link_local_unicast(ip)),
+                 network->runtime_ready, ip[0], ip[1],
                  ip[2], ip[3], ip[4], ip[5], ip[6], ip[7], ip[8], ip[9], ip[10],
                  ip[11], ip[12], ip[13], ip[14], ip[15], wifi->rssi,
                  wifi->channel, wifi->bssid[0], wifi->bssid[1], wifi->bssid[2],
@@ -251,6 +253,9 @@ h2_iperf_client_app_connect(h2_runtime_t *runtime,
       rc = H2_PAL_ERR_TIMEOUT;
       goto failed;
     }
+    const int ipv4_ready = wifi.ip_valid && wifi.ip.ip4 != 0u;
+    const int ipv6_ready = wifi.ip.ip6_valid &&
+        h2_pal_net_ipv6_is_non_link_local_unicast(wifi.ip.ip6);
     if (now - started >= 15000u && h2_pal_wifi_sta_status_has_ip(&wifi) &&
         wifi.ssid_len == config->ssid_len &&
         memcmp(wifi.ssid, config->ssid, config->ssid_len) == 0) {
@@ -266,7 +271,7 @@ h2_iperf_client_app_connect(h2_runtime_t *runtime,
           rc = H2_PAL_ERR_INVALID_STATE;
           goto failed;
         }
-        if (wifi.ip_valid) {
+        if (ipv4_ready) {
           uint8_t expected[4];
           h2_pal_wifi_ip4_to_bytes(wifi.ip.ip4, expected);
           if (!(local.flags & H2_PAL_NETIF_FLAG_HAS_IPV4) ||
@@ -276,7 +281,7 @@ h2_iperf_client_app_connect(h2_runtime_t *runtime,
             goto failed;
           }
         }
-        if (wifi.ip.ip6_valid) {
+        if (ipv6_ready) {
           if (!(local.flags & H2_PAL_NETIF_FLAG_HAS_IPV6) ||
               local.ipv6.family != H2_PAL_NET_FAMILY_IPV6 ||
               memcmp(local.ipv6.ip, wifi.ip.ip6, 16u)) {
@@ -284,9 +289,9 @@ h2_iperf_client_app_connect(h2_runtime_t *runtime,
             goto failed;
           }
         }
-        out_network->mode = wifi.ip_valid && wifi.ip.ip6_valid
+        out_network->mode = ipv4_ready && ipv6_ready
                                 ? H2_IPERF_CLIENT_APP_DUAL
-                            : wifi.ip_valid ? H2_IPERF_CLIENT_APP_IPV4
+                            : ipv4_ready ? H2_IPERF_CLIENT_APP_IPV4
                                             : H2_IPERF_CLIENT_APP_IPV6;
         out_network->wifi = wifi;
         out_network->runtime_ready = 1u;

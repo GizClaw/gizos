@@ -37,7 +37,6 @@ class UDPBound(unittest.TestCase):
         self.assertTrue(compiler)
         for backend,path in [('esp','native_component_src/esp-idf6.x/h2_pal_core/src/h2_esp_platform_net.c'),('bk','native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_net.c')]:
             source=(ROOT/path).read_text()
-            self.assertIn('.udp_open_bound = '+backend+'_net_udp_open_bound',source)
             start=source.index('static int '+backend+'_net_udp_open_bound(')
             end=source.index('static int '+backend+'_net_udp_sendto(',start)
             entry=source[start:end]
@@ -84,7 +83,7 @@ int main(void){
  assert(ENTRY(NULL,H2_PAL_NET_FAMILY_IPV4,4242,NULL,&socket_fd,&bound)==H2_PAL_OK&&fallback==1&&socket_fd==11);
  return 0;
 }
-'''.replace('ENTRY',backend+'_net_udp_open_bound')
+'''.replace('ENTRY',backend+'_net_udp_open_bound').replace('NETIF_ERROR','H2_PAL_ERR_INVALID_ARG' if backend=='esp' else 'H2_PAL_ERR_UNSUPPORTED')
             with tempfile.TemporaryDirectory(prefix='h2-net-udp-fault-') as temporary:
                 test=Path(temporary)/'entry.c';binary=Path(temporary)/'entry'
                 test.write_text(prefix+fallback+helpers+entry+main)

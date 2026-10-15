@@ -1,5 +1,5 @@
 #include "h2_ios_platform.h"
-#include "h2_mobile_app_host.h"
+#include "h2_mobile_e2e_runtime_config.h"
 #include "h2_pal_display_e2e.h"
 #import <UIKit/UIKit.h>
 #include <stdio.h>
@@ -82,7 +82,7 @@ static int observe(void *user, const uint16_t *expected, int width, int height,
           [directory stringByAppendingPathComponent:@"pal-display-result.log"];
       if (!freopen(report.fileSystemRepresentation, "w", stdout))
         return;
-      h2_runtime_config_t cfg = h2_ios_app_host_config();
+      h2_runtime_config_t cfg = h2_mobile_e2e_runtime_config();
       cfg.display = h2_ios_platform_display_api(platform);
       h2_runtime_t *runtime = NULL;
       int rc = h2_runtime_init(&cfg, &runtime);

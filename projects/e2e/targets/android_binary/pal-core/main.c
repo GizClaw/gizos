@@ -1,5 +1,5 @@
 #include "h2_android_platform.h"
-#include "h2_mobile_app_host.h"
+#include "h2_mobile_e2e_runtime_config.h"
 #include "mobile_runner.h"
 #include <android/log.h>
 #include <dlfcn.h>
@@ -86,7 +86,7 @@ Java_com_haivivi_gizos_e2e_palcore_MainActivity_nativeRun(
     const h2_mobile_core_fixture_t fixture = {
         .platform = "android-emulator",
         .image_version = version,
-        .runtime_config = h2_android_app_host_config(),
+        .runtime_config = h2_mobile_e2e_runtime_config(),
         .tests = {.event_fixture = h2_android_system_event_api(),
                   .observe_log = log_seen,
                   .observe_resources = resources,

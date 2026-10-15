@@ -13,6 +13,9 @@
     "get_mic_gain_percent": ["mic-gain-bounds", "mic-gain-roundtrip", "mic-gain-live"],
     "set_mic_gain_percent": ["mic-gain-bounds", "mic-gain-roundtrip", "mic-gain-live"]
   },
+  "optional_provider_operations": {
+    "set_aec_observer": "projects/e2e/apps/aec-calibration/app/tests/test_calibration.c"
+  },
   "track_operations": {
     "write": ["track-write-bounds", "track-write", "stability"],
     "close": ["track-close", "resource-churn", "stability"],

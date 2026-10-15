@@ -56,6 +56,15 @@ cp "$fixture_root/embedded_ttf_consumer.cc" "$consumer_root/embedded_ttf_consume
 cp "$fixture_root/font_consumer.c" "$consumer_root/font_consumer.c"
 cp "$fixture_root/font_consumer_test.c" "$consumer_root/font_consumer_test.c"
 cp "$fixture_root/font_symbols.txt" "$consumer_root/font_symbols.txt"
+cp "$fixture_root/test_lua_app.py" "$consumer_root/test_lua_app.py"
+cp "$repository_root/libs/lua/tests/app_fixture/abc.lua" "$consumer_root/abc.lua"
+cp "$repository_root/libs/lua/tests/app_fixture/xyz.lua" "$consumer_root/xyz.lua"
+mkdir "$consumer_root/xyz"
+cp "$repository_root/libs/lua/tests/app_fixture/xyz/tone.pcm" "$consumer_root/xyz/tone.pcm"
+# cquery fills these declared test inputs before the downstream test runs.
+touch "$consumer_root/lua_app_catalog.jsonl" \
+    "$consumer_root/lua_app_release_files.jsonl" \
+    "$consumer_root/lua_app_default_files.txt"
 cp "$repository_root/projects/showcase/assets/fonts/NotoSansSC-Bold.ttf" \
     "$consumer_root/font.ttf"
 cp "$fixture_root/layout.txt" "$consumer_root/layout.txt"
@@ -93,6 +102,34 @@ case "$(uname -s)-$(uname -m)" in
 esac
 
 cd "$consumer_root"
+
+# Exercise the public formatters against real downstream providers, rather than
+# parsing BUILD attributes or simulating cquery's provider API in Python.
+for formatter in lua_app_catalog lua_app_release_files default_files; do
+    query_output=(--output=files)
+    receipt=lua_app_default_files.txt
+    if [ "$formatter" != default_files ]; then
+        query_output=(
+            --output=starlark
+            "--starlark:file=$repository_root/libs/lua/${formatter}.cquery"
+        )
+        receipt=${formatter}.jsonl
+    fi
+    "${BAZEL_BIN:-bazel}" \
+        --ignore_all_rc_files \
+        --output_user_root="$output_user_root" \
+        --output_base="$consumer_root/output-base" \
+        cquery \
+        --enable_bzlmod \
+        --noenable_workspace \
+        "${registry_options[@]}" \
+        --repository_cache="$repository_cache" \
+        --override_module="gizos=$repository_root" \
+        --define="h2_host_os=$host_os" \
+        --platforms="@gizos//tools/bazel/platforms:$platform" \
+        "${query_output[@]}" \
+        'set(//:abc_lua_app //:xyz_lua_app)' >"$receipt"
+done
 
 "${BAZEL_BIN:-bazel}" \
     --ignore_all_rc_files \
@@ -300,6 +337,7 @@ test ! -e "$consumer_root/private_bk_task_policy"
     --extra_toolchains="@gizos//tools/bazel/platforms:${platform}_test_toolchain" \
     //:embedded_menu_font_test \
     //:font_consumer_test \
+    //:lua_app_release_test \
     //:private_esp_task_policy_test \
     //:private_bk_ap_task_policy_test \
     //:private_bk_cp_task_policy_test \

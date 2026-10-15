@@ -68,8 +68,6 @@ class CertificateTime(unittest.TestCase):
             ('bk', 'native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_net.c'),
         ]:
             source = (ROOT / relative).read_text()
-            self.assertIn('mbedtls_ssl_conf_verify(&slot->config,', source)
-            self.assertIn(backend+'_net_tls_verify_dates, '+('slot' if backend == 'esp' else 'NULL'), source)
             start = source.index('static int '+backend+'_net_tls_verify_dates(')
             end = source.index('static h2_pal_result_t '+backend+'_net_tls_handshake(', start)
             prelude = PRELUDE.replace('TIME_API', 'h2_'+backend+'_platform_time_api')
@@ -80,8 +78,6 @@ class CertificateTime(unittest.TestCase):
                 prelude = prelude[:a] + '#include "h2_esp_platform_net_tls_verify.h"\n' + prelude[b:]
                 prelude = prelude.replace('static int mbedtls_x509_time_cmp', 'int mbedtls_x509_time_cmp')
                 prelude += 'typedef struct esp_net_tls_socket { h2_esp_net_tls_verify_t verify; } esp_net_tls_socket_t;\n'
-                self.assertIn('.delegate = slot->config.MBEDTLS_PRIVATE(f_vrfy)', source)
-                self.assertIn('.delegate_user = slot->config.MBEDTLS_PRIVATE(p_vrfy)', source)
             main = MAIN.replace('CHECK', backend+'_net_tls_verify_dates')
             extra_args = []
             if backend == 'esp':

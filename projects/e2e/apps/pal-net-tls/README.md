@@ -1,6 +1,6 @@
 # PAL Net/TLS E2E
 
-Independent `h2_pal_net.h` qualification App; existing mixed PAL/HTTP/WebRTC Apps remain separate.
+Independent `h2_pal_net.h` qualification App; HTTP and WebRTC Apps own their separate contracts. The mixed PAL App has been retired; replacement and platform coverage are recorded in [the Apps README](../README.md).
 
 ## Contract
 
@@ -28,7 +28,6 @@ Deterministic App/fault and fixture checks (no real PAL-provider E2E):
 
 ```sh
 bazel test --lockfile_mode=off \
-  //projects/e2e/apps/pal-net-tls/app:interface_coverage_test \
   //projects/e2e/apps/pal-net-tls/app:rejection_test \
   //projects/e2e/libs/pal-net-tls-fixture:fixture_evidence_test
 ```
@@ -68,22 +67,16 @@ The current ESP32-S3 receipt executes on `tiga_esp_v4_2` (UID `1cdbd44dddba`) wi
 
 GizOS owns this provider assessment and the default-bundle HTTPS regression. Complete H106 product acceptance belongs to [Firmwares #1503](https://github.com/h2vivi/firmwares/issues/1503), including both private ESP boards and both products on macOS/WASM. The public provider first passes its own current-source assessment and PR gates; the consumer then pins the immutable merged revision and verifies its exact product source. Provider qualification does not complete a consumer's media lane or waive its device/restoration gates.
 
-The default `check_qualification.py` and Bazel evidence target require the entire six-platform assessment to be complete and no supported case to remain unassessed. `--allow-pending` is diagnostic only while a live run is unavailable; it still verifies every claimed pass and skip. `--require-all-core` additionally rejects the browser capability skip, so assessment completion never implies six raw Net/TLS implementations. The mobile declarations use the shared Python runner; only named optional cases may skip on typed `UNSUPPORTED`, and cleanup failures remain fatal.
+Current acceptance executes the portable C suite on each supported provider. The mobile/device runners use report_validation.py for ordered case results, typed errors, peer observations and cleanup; browser raw sockets remain a typed capability skip rather than core qualification. Historical assessment files describe their recorded revisions and do not pin the current checkout.
 
-`gizclaw_public_https_provenance_main_tls.json` binds the optional ESP I/O diagnostics and shared mobile preflight to the current certificate-verifier assessment index. Its predecessor `gizclaw_public_https_provenance.json` retains its original bytes and index/source hashes. The checker allows only those two source paths to be superseded, still verifies all other provider/helper hashes, and rejects a maintenance record that claims fresh physical Net/TLS execution. Each hardware receipt remains tied to its own actual provider and fixture inputs.
+The gizclaw_public_https_provenance*.json files retain their original historical identities and claims. They do not provide an allowlist for replacing current source hashes or establish a new hardware run.
 
-Receipt verification compares the ordered registry, source and artifact hashes, typed errors, complete peer payloads, and the exact current-peer run. Board markers replay an immutable boot ledger and do not execute again. Replaying a previous boot does not satisfy independent boot qualification. `projects/e2e/libs/pal-net-tls-device/assemble_board.py` performs the full source-log/status/metadata/coredump assembly and rejects missing or stale fields.
+Runtime receipt verification compares the ordered registry, actual artifact identity, typed errors, complete peer payloads, and the exact current-peer run. Board markers replay an immutable boot ledger and do not execute again. Replaying a previous boot does not satisfy independent boot qualification. `projects/e2e/libs/pal-net-tls-device/assemble_board.py` performs the full source-log/status/metadata/coredump assembly and rejects missing or stale fields.
 
 ### Browser raw Net/TLS capability boundary
 
-The real webpage probe runs on a C pthread Worker in a cross-origin-isolated page. It checks all 21 actual AppHost Net vtable slots: 19 return `H2_PAL_ERR_UNSUPPORTED`, and the two void release operations are canonical no-ops with no owned handles. Its receipt records the actual archive and browser hashes, execution identity and teardown result. The checker rejects missing/duplicate/unknown slots, generic errors, retained ownership, main-thread execution, false core PASS, or unsuccessful teardown.
+The real webpage probe runs on a C pthread Worker in a cross-origin-isolated page. It checks all 21 actual Web provider Net vtable slots: 19 return `H2_PAL_ERR_UNSUPPORTED`, and the two void release operations are canonical no-ops with no owned handles. Its receipt records the actual archive and browser hashes, execution identity and teardown result. The checker rejects missing/duplicate/unknown slots, generic errors, retained ownership, main-thread execution, false core PASS, or unsuccessful teardown.
 
 The 39 skipped case IDs in the platform assessment are dispositions derived from this unavailable provider, not claims that the portable functional cases executed. The functional registry stays unchanged. A future implementation with raw browser-local capabilities must execute their applicable cases and cannot reuse this blanket skip while returning supported operations. No WSS relay, relay-host addresses or production relay deployment is part of this change.
 
-Shared mobile SDK `BUILD.bazel` is audited against the original Net/TLS source hash after projecting only the additive MQTT owner/header/dependency rules. Every remaining build byte, each Net/TLS implementation and the existing configured follow-up hash remain exact. Net dependencies, provider source edits and unknown build changes still fail the oracle. This host provenance maintenance preserves original SDK/App/board receipts; it does not claim historical artifacts included MQTT or grant a new current-SDK physical qualification.
-
-`ipv6_source_maintenance.json` records the current shared App/header/fixture and POSIX/ESP Net source identities, the four additive IPv6 operation mappings and fresh host regressions. It preserves the historical qualification and public-HTTPS records byte-for-byte; the old device and mobile image receipts do not qualify current provider sources. `record_ipv6_maintenance.py --validation-dir <captured-test-log-directory>` reproduces this record and the separate Display host-audit record from their fixed baseline and actual host summaries.
-
-The current host execution binds 18 maintained source inputs, including the IPv6 peer fixture, local peer implementation/header and IPv6 result ownership header. The eight earlier capture pins retain their original 15-input subsets and identities. These are a subset of the complete declared test/compiler inputs. The validation directory also supplies `host_source_manifest.full.json`, `selected-action-closure.json`, `action-input-manifest.before.json` and `action-input-verification.json` from the actual three-target execution. The generator verifies their matching execution identity, full source hashes and unchanged before/after inputs, then records their four digests and counts in `complete_input_capture`. Previous execution receipts retain their original source, input and artifact identities.
-
-`ipv6_host_input_pins.json` independently pins reviewed actual execution identities, maintained source/artifact hashes and exact full-capture counts/digests. Both checker and generator compare every claimed field with that table. Editing the mutable maintenance JSON cannot authorize a different capture; a new execution requires a separately reviewed pin update derived from its independently saved original capture files.
+Shared mobile SDK provenance files describe their recorded source revisions. Current SDK/App behavior is checked by real builds and executions; no source projection, frozen source hash or exact build-file bytes gate current changes. Historical receipts keep their original claims and do not establish a new physical qualification.

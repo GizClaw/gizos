@@ -10,6 +10,7 @@
 
 #include "gzc_buffer.h"
 #include "gzc_event.h"
+#include "gzc_client.h"
 #include "pb.h"
 
 /* Normalize only a canonical NOT_FOUND status. UNIMPLEMENTED, any other
@@ -128,6 +129,10 @@ int h2_gizclaw_tools_validate_internal(
     const h2_gizclaw_tool_handler_t *handlers, size_t count);
 int h2_gizclaw_client_init(const h2_gizclaw_config_t *config,
                            h2_gizclaw_client_t **out_client);
+int h2_gizclaw_client_init_with_lua_stream_internal(
+    const h2_gizclaw_config_t *config,
+    const gzc_rpc_stream_provider_t *provider,
+    h2_gizclaw_client_t **out_client);
 int h2_gizclaw_client_connect(h2_gizclaw_client_t *client);
 int h2_gizclaw_client_poll(h2_gizclaw_client_t *client, int timeout_ms);
 int h2_gizclaw_client_dispatch_event(h2_gizclaw_client_t *client,
