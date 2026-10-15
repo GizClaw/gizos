@@ -1,4 +1,4 @@
-"""Writes an app_host shell with one page layout (HTML/CSS) injected."""
+"""Writes a Web page shell with one page layout (HTML/CSS) injected."""
 
 import argparse
 import pathlib

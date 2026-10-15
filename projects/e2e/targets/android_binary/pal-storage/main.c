@@ -1,5 +1,5 @@
 #include "h2_android_platform.h"
-#include "h2_mobile_app_host.h"
+#include "h2_mobile_e2e_runtime_config.h"
 #include "runner.h"
 #include <jni.h>
 
@@ -21,7 +21,7 @@ Java_com_haivivi_gizos_e2e_palstorage_MainActivity_nativeRun(JNIEnv *env,jclass 
   int rc=h2_android_platform_set_image_version(image);
   if (!rc) rc=h2_android_storage_create(dir,"/storage",&storage);
   if (!rc) {
-    h2_runtime_config_t config=h2_android_app_host_config();
+    h2_runtime_config_t config=h2_mobile_e2e_runtime_config();
     config.fs=h2_android_storage_fs_api(storage);config.pref=h2_android_storage_pref_api(storage);
     rc=h2_storage_mobile_phase(config,(unsigned)phase,(uint32_t)nonce,path,teardown,storage);
   }

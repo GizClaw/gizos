@@ -1,5 +1,5 @@
 #include "h2_ios_platform.h"
-#include "h2_mobile_app_host.h"
+#include "h2_mobile_e2e_runtime_config.h"
 #include "mobile_runner.h"
 #import <UIKit/UIKit.h>
 #include <fcntl.h>
@@ -87,7 +87,7 @@ static h2_pal_result_t fault(void *user, int after) {
       const h2_mobile_core_fixture_t fixture = {
           .platform = "ios-simulator",
           .image_version = version.UTF8String,
-          .runtime_config = h2_ios_app_host_config(),
+          .runtime_config = h2_mobile_e2e_runtime_config(),
           .tests = {.event_fixture = h2_ios_system_event_api(),
                     .observe_log = log_seen,
                     .observe_resources = resources,

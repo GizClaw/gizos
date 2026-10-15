@@ -14,8 +14,8 @@ cc_library(
     copts = H2_WARNING_COPTS,
     target_compatible_with = ANDROID_ARM64_ARTIFACT_COMPATIBILITY,
     deps = [
-        "//libs/app_host:android_packaged",
         "//projects/e2e/libs/atomic-mobile:runner",
+        "//projects/e2e/libs/mobile-platform-config:runtime_config",
     ],
 )
 
@@ -38,10 +38,10 @@ android_binary(
 mobile_e2e_test(
     name = "android_atomic_simulator_test",
     app = ":atomic_e2e.apk",
+    external = True,
     platform = "android",
     sdk = ":app_sdk",
     suite = "//projects/e2e/libs/atomic-mobile:mobile_e2e",
-    external = True,
 )
 
 mobile_app_sdk(

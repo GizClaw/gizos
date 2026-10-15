@@ -14,9 +14,7 @@
     <!-- H2_WEB_APP_LAYOUT -->
     <template id="program">{{{ SCRIPT }}}</template>
     <script>
-      // Page components. app_host ships no UI: the layout (usually a board's
-      // reusable HTML/CSS) places each component with a slot element, and
-      // app_host creates the component inside it:
+      // The selected layout places page components with slot elements:
       //   [data-h2-slot="display"]  the display canvas (#canvas)
       //   [data-h2-slot="controls"] Start/Stop buttons (#start, #stop)
       //   [data-h2-slot="status"]   the status line (#status)
@@ -47,13 +45,19 @@
       h2Slot('status').append(h2Status);
       var Module = {
         canvas: document.getElementById('canvas'),
-        print: text => console.log(text),
+        print: text => {
+          console.log(text);
+          if (text.startsWith('H2_WEB_APP ')) {
+            h2Status.textContent = text;
+            if (text.includes('result=')) document.getElementById('stop').disabled = true;
+          }
+        },
         printErr: text => console.error(text),
       };
-      let h2HostStarted = false;
-      // Host-owned opt-in simulation. Never infer fake radios for plain pages.
-      globalThis.h2WebAppHostConfigureEnvironment = environment => {
-        if (h2HostStarted && Module.h2WebEnvironment === undefined)
+      let h2PageStarted = false;
+      // Page-owned opt-in simulation. Never infer fake radios for plain pages.
+      globalThis.h2WebConfigureEnvironment = environment => {
+        if (h2PageStarted && Module.h2WebEnvironment === undefined)
           throw new Error('Configure the simulated environment before Start');
         const w = environment?.wifi, m = environment?.modem;
         if (environment?.version !== 1 || !w || !m ||
@@ -69,7 +73,8 @@
       const stop = document.getElementById('stop');
       // Start is the user gesture that unlocks audio and the microphone.
       start.addEventListener('click', () => {
-        h2HostStarted = true;
+        h2PageStarted = true;
+        Module.h2WebStopRequested = false;
         start.disabled = true;
         stop.disabled = false;
         const AudioContext = globalThis.AudioContext || globalThis.webkitAudioContext;
@@ -88,14 +93,18 @@
       }, {once: true});
       stop.addEventListener('click', () => {
         stop.disabled = true;
-        Module._h2_web_app_host_request_stop?.();
+        Module.h2WebStopRequested = true;
       });
 
-      // Button input. app_host passes each Button's index, keyboard key and
+      // Button input. The entry passes each Button's index, keyboard key and
       // name; the key and every [data-h2-button="<name>"] element hold it.
       // Sources merge into one pressed state, so only real Down/Up changes
       // reach the Runtime. Blur, hide and teardown release everything.
       const h2Buttons = [];
+      const h2Edges = [];
+      let h2EdgeOverflow = false;
+      // A bounded page FIFO keeps Runtime calls on the entry Worker.
+      globalThis.h2WebTakeButtonEdge = () => h2EdgeOverflow ? -1 : (h2Edges.shift() || 0);
       function h2SetSource(entry, source, pressed) {
         const was = entry.sources.size > 0;
         if (pressed) entry.sources.add(source);
@@ -103,8 +112,12 @@
         const is = entry.sources.size > 0;
         for (const element of entry.elements) element.dataset.pressed = String(is);
         if (was === is) return;
-        const rc = Module._h2_web_app_host_button?.(entry.index, is ? 1 : 0);
-        if (rc) console.warn(`H2_WEB_APP button=${entry.name || entry.key} ${is ? 'down' : 'up'} rc=${rc}`);
+        if (h2Edges.length >= 128) {
+          h2EdgeOverflow = true;
+          console.error('H2_WEB_INPUT overflow');
+        } else {
+          h2Edges.push((entry.index + 1) * 2 + (is ? 1 : 0));
+        }
       }
       function h2ReleaseAll() {
         for (const entry of h2Buttons)
@@ -120,7 +133,7 @@
       }
       const h2KeyDown = (event) => h2OnKey(event, true);
       const h2KeyUp = (event) => h2OnKey(event, false);
-      globalThis.h2WebAppHostBindButton = (index, key, name) => {
+      globalThis.h2WebBindButton = (index, key, name) => {
         const selector = name ? `[data-h2-button="${CSS.escape(name)}"]` : null;
         const entry = {index, key, name, sources: new Set(), abort: new AbortController(),
                        elements: selector ? [...document.querySelectorAll(selector)] : []};
@@ -141,12 +154,14 @@
         }
         h2Buttons.push(entry);
       };
-      globalThis.h2WebAppHostUnbindButtons = () => {
+      globalThis.h2WebUnbindButtons = () => {
         h2ReleaseAll();
         for (const entry of h2Buttons) entry.abort.abort();
         globalThis.removeEventListener('keydown', h2KeyDown);
         globalThis.removeEventListener('keyup', h2KeyUp);
         h2Buttons.length = 0;
+        h2Edges.length = 0;
+        h2EdgeOverflow = false;
       };
       globalThis.addEventListener('blur', h2ReleaseAll);
       document.addEventListener('visibilitychange', () => {

@@ -1,5 +1,5 @@
 #include "h2_android_platform.h"
-#include "h2_mobile_app_host.h"
+#include "h2_mobile_e2e_runtime_config.h"
 #include "mobile_runner.h"
 #include <jni.h>
 JNIEXPORT jint JNICALL Java_com_haivivi_gizos_e2e_palwifi_MainActivity_nativeRun(JNIEnv *env,
@@ -17,7 +17,7 @@ JNIEXPORT jint JNICALL Java_com_haivivi_gizos_e2e_palwifi_MainActivity_nativeRun
     }
     int rc = h2_android_platform_set_image_version(image);
     if (!rc)
-        rc = h2_wifi_mobile_run(h2_android_app_host_config(), "android-emulator", image, path,
+        rc = h2_wifi_mobile_run(h2_mobile_e2e_runtime_config(), "android-emulator", image, path,
                                 h2_android_platform_core_shutdown);
     (*env)->ReleaseStringUTFChars(env, version, image);
     (*env)->ReleaseStringUTFChars(env, report, path);

@@ -17,7 +17,7 @@ H2_ANDROID_SERIAL=emulator-5580 make bazel-test-android_pal_crypto_simulator_tes
 
 Desktop 注入真实 Darwin/Linux 系统 entropy。Provider 只在 launcher 初始化和销毁，不在 case 之间替换；结果 JSON 由测试输出目录保存。每个平台 launcher 必须提供独立进程/设备 watchdog，避免 provider 阻塞导致无限运行。
 
-WASM 在真实 Chromium 的 Worker 中执行；iOS、Android 从实际打包的 Swift Package/AAR 消费平台 provider，App Host 默认绑定使用系统熵的 wolfCrypt 实现。移动端每次安装后删除旧 report 并启动 App，由宿主核对实际版本、完整 registry、退出和 teardown；模拟器结果不能代表手机实机验收。
+WASM 在真实 Chromium 的 Worker 中执行；iOS、Android 从实际打包的 Swift Package/AAR 消费平台 provider，移动端 E2E 配置默认绑定使用系统熵的 wolfCrypt 实现。移动端每次安装后删除旧 report 并启动 App，由宿主核对实际版本、完整 registry、退出和 teardown；模拟器结果不能代表手机实机验收。
 
 DevKit、BK7258 使用板级 Runtime 与 H2Loader managed serial 安装。设备每次 boot 只运行一次，随后 replay 不可变 case ledger；重连获取 replay 不算重新执行。安装前后核对 UID、镜像和 package 摘要、Loader/P1、Stage、App/P2 与 coredump。构建、接线和安装约束见对应 `targets/h2loader_tar_zlib/pal-crypto` README。
 

@@ -1,6 +1,6 @@
 #import <UIKit/UIKit.h>
 #include "h2_ios_platform.h"
-#include "h2_mobile_app_host.h"
+#include "h2_mobile_e2e_runtime_config.h"
 #include "runner.h"
 
 static int teardown(void *owner) {
@@ -27,7 +27,7 @@ static int teardown(void *owner) {
       h2_ios_storage_t *storage=NULL;
       int rc=h2_ios_storage_create(directory.fileSystemRepresentation,"/storage",&storage);
       if (rc==H2_PAL_OK) {
-        h2_runtime_config_t config=h2_ios_app_host_config();
+        h2_runtime_config_t config=h2_mobile_e2e_runtime_config();
         config.fs=h2_ios_storage_fs_api(storage);config.pref=h2_ios_storage_pref_api(storage);
         rc=h2_storage_mobile_phase(config,phase,nonce,report.fileSystemRepresentation,teardown,storage);
       }

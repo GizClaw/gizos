@@ -1,0 +1,31 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//projects/e2e:__subpackages__"])
+
+cc_library(
+    name = "runtime_config",
+    srcs = select({
+        "@platforms//os:ios": ["src/h2_ios_runtime_config.c"],
+        "@platforms//os:android": ["src/h2_android_runtime_config.c"],
+        "//conditions:default": [],
+    }),
+    hdrs = ["include/h2_mobile_e2e_runtime_config.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    target_compatible_with = select({
+        "@platforms//os:ios": [],
+        "@platforms//os:android": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/atomic/providers/pthread",
+        "//libs/pal:unsupported",
+        "//libs/runtime",
+    ] + select({
+        "@platforms//os:ios": ["//libs/pal/providers/ios/pal_core:packaged"],
+        "@platforms//os:android": ["//libs/pal/providers/android/pal_core:packaged"],
+        "//conditions:default": [],
+    }),
+)
