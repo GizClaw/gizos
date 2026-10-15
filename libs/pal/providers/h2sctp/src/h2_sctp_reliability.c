@@ -709,6 +709,7 @@ h2_pal_result_t h2_sctp_reliability_service(
     /* Every fragment is timed against the RTO in force when the pass began,
      * so the backoff applied to the first expiry cannot hide the others. */
     const uint64_t rto_at_entry = association->rto_ms;
+    uint64_t next_retransmit = H2_PAL_SCTP_NO_DEADLINE;
     /* A fast retransmit that could not be emitted yet is retried here. Its
      * loss event has already been answered, so it must never fall through to
      * the timer response. */
@@ -737,9 +738,9 @@ h2_pal_result_t h2_sctp_reliability_service(
             fragment_deadline < association->retransmit_not_before_ms
                 ? association->retransmit_not_before_ms : fragment_deadline;
         if (now_ms < retransmit_deadline) {
-            if (deadline == H2_PAL_SCTP_NO_DEADLINE ||
-                retransmit_deadline < deadline) {
-                deadline = retransmit_deadline;
+            if (next_retransmit == H2_PAL_SCTP_NO_DEADLINE ||
+                retransmit_deadline < next_retransmit) {
+                next_retransmit = retransmit_deadline;
             }
             continue;
         }
@@ -780,6 +781,19 @@ h2_pal_result_t h2_sctp_reliability_service(
             deadline = now_ms;
             break;
         }
+    }
+    if (rto_backed_off) {
+        /* RFC 9260 6.3.3 E2/E4: the expiry starts a new interval with the
+         * backed-off RTO. Older send timestamps on other fragments must not
+         * trigger another window collapse inside that interval. Publish the
+         * bound after this pass so all fragments already due share one event. */
+        association->retransmit_not_before_ms =
+            h2_sctp_deadline_add(now_ms, association->rto_ms);
+        next_retransmit = association->retransmit_not_before_ms;
+    }
+    if (next_retransmit != H2_PAL_SCTP_NO_DEADLINE &&
+        (deadline == H2_PAL_SCTP_NO_DEADLINE || next_retransmit < deadline)) {
+        deadline = next_retransmit;
     }
     h2_pal_result_t result = h2_sctp_reliability_advance_abandoned(
         association, now_ms);
