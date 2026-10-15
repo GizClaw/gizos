@@ -158,6 +158,45 @@ static void test_oldest_ack_restarts_retransmission_deadline(bool wrap_tsn,
   h2_sctp_test_pair_deinit(&pair);
 }
 
+/* RFC 9260 6.3.3 E2/E4: one expiry starts a new backed-off interval.
+ * A staggered, still-unacknowledged fragment must not collapse cwnd again
+ * based on its old send age before that interval ends. */
+static void test_timeout_restarts_backed_off_interval(bool blocked_emit) {
+  h2_sctp_test_pair_t pair;
+  assert(h2_sctp_test_pair_init(&pair, 256u, 1024u) == H2_PAL_OK);
+  assert(h2_sctp_test_connect(&pair));
+  h2_pal_sctp_association_t *a = pair.active.association;
+  (void)send_sample(&pair, 1000u);
+  h2_sctp_tx_fragment_t *const first = a->tx_fragments_tail;
+  (void)send_sample(&pair, 1100u);
+  h2_sctp_tx_fragment_t *const second = a->tx_fragments_tail;
+  a->cwnd = 8192u;
+  if (blocked_emit) pair.active.emit_would_block_count = 1u;
+  assert(h2_sctp_reliability_service(a, 2000u, NULL) == H2_PAL_OK);
+  assert(first->retransmits == 1u && second->retransmits == 0u);
+  assert(a->rto_ms == 2000u && a->cwnd == 256u);
+  if (blocked_emit) {
+    assert(a->pending_emit != NULL);
+    assert(h2_sctp_retry_pending_emit(a) == H2_PAL_OK);
+    assert(a->pending_emit == NULL);
+  }
+  uint64_t deadline = 3200u; /* An unrelated earlier service deadline. */
+  assert(h2_sctp_reliability_service(a, 3100u, &deadline) == H2_PAL_OK);
+  assert(first->retransmits == 1u && second->retransmits == 0u);
+  assert(a->rto_ms == 2000u && a->cwnd == 256u);
+  assert(deadline == 3200u);
+  deadline = H2_PAL_SCTP_NO_DEADLINE;
+  assert(h2_sctp_reliability_service(a, 3101u, &deadline) == H2_PAL_OK);
+  assert(deadline == 4000u);
+  assert(h2_sctp_reliability_service(a, 3999u, NULL) == H2_PAL_OK);
+  assert(first->retransmits == 1u && second->retransmits == 0u);
+  /* Real loss must still be retried at the new deadline. */
+  assert(h2_sctp_reliability_service(a, 4000u, NULL) == H2_PAL_OK);
+  assert(first->retransmits == 2u && second->retransmits == 1u);
+  assert(a->rto_ms == 4000u);
+  h2_sctp_test_pair_deinit(&pair);
+}
+
 static void test_later_gap_ack_does_not_restart_retransmission(void) {
   h2_sctp_test_pair_t pair;
   assert(h2_sctp_test_pair_init(&pair, 256u, 1024u) == H2_PAL_OK);
@@ -675,6 +714,8 @@ int main(void) {
   test_oldest_ack_restarts_retransmission_deadline(true, false);
   test_oldest_ack_restarts_retransmission_deadline(false, true);
   test_oldest_ack_restarts_retransmission_deadline(true, true);
+  test_timeout_restarts_backed_off_interval(false);
+  test_timeout_restarts_backed_off_interval(true);
   test_later_gap_ack_does_not_restart_retransmission();
   test_sack_counts_only_new_ack_evidence(false);
   test_sack_counts_only_new_ack_evidence(true);
