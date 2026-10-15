@@ -1,5 +1,7 @@
 """Compile the pinned upstream object codec into the GizClaw Web adapter."""
 
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+
 def _codec_node_impl(ctx):
     node = ctx.toolchains["@rules_nodejs//nodejs:runtime_toolchain_type"].nodeinfo.node
     output = ctx.actions.declare_file(ctx.label.name + ".exe")
@@ -44,7 +46,7 @@ _codec_source = rule(
 
 def web_gizclaw_sdk_source(name, out):
     """Generate the actual C/JS adapter with an exec-configured Node runtime."""
-    _codec_node(name = name + "_node")
+    _codec_node(name = name + "_node", target_compatible_with = HOST_TOOL_COMPATIBILITY)
     _codec_source(
         name = name,
         node = ":" + name + "_node",
