@@ -642,6 +642,7 @@ static int bk_net_get_host_addr(void *user, const char *prefix,
 
 static int bk_net_open_socket(int family, int type) {
   int fd = socket(family, type, 0);
+#if LWIP_IPV6
   if (fd >= 0 && family == AF_INET6) {
     int only = 1;
     if (setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &only, sizeof(only)) < 0) {
@@ -649,6 +650,7 @@ static int bk_net_open_socket(int family, int type) {
       return -1;
     }
   }
+#endif
   return fd;
 }
 
