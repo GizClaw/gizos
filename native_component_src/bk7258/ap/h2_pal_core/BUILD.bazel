@@ -480,6 +480,26 @@ cc_test(
     deps = ["//libs/pal"],
 )
 
+py_test(
+    name = "wifi_request_lock_test",
+    srcs = ["tests/test_h2_bk_wifi_request_lock.py"],
+    data = [
+        "src/h2_bk_platform_wifi.c",
+        "src/h2_bk_wifi_ipv6_internal.h",
+        "tests/h2_bk_wifi_request_lock_probe.c",
+        "//libs/pal:pal_header_files",
+        "//native_component_src/bk7258/shared:h2_bk_wifi_ipv6.h",
+        "//native_component_src/bk7258/shared:h2_bk_wifi_rpc.h",
+    ],
+    legacy_create_init = False,
+    main = "tests/test_h2_bk_wifi_request_lock.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
 cc_test(
     name = "net_addr_test",
     srcs = [

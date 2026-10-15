@@ -993,7 +993,9 @@ static void h2_bk_wifi_copy_scan_entry(
     out_entry->security = h2_bk_wifi_security(ap->security);
 }
 
-static int h2_bk_wifi_sta_get_status(
+/* Request-locked callers must not acquire the IPv6 refresh mutex or recurse
+ * into the request mutex. Read the current cached/radio state directly. */
+static int h2_bk_wifi_sta_read_status(
     h2_pal_wifi_sta_t *sta,
     h2_pal_wifi_sta_status_t *out_status) {
     (void)sta;
@@ -1001,7 +1003,6 @@ static int h2_bk_wifi_sta_get_status(
         return H2_PAL_ERR_INVALID_ARG;
     }
     memset(out_status, 0, sizeof(*out_status));
-    (void)h2_bk_wifi_ipv6_refresh();
     int power_rc = __atomic_load_n(&s_h2_bk_wifi_power_save_error, __ATOMIC_ACQUIRE);
     if (power_rc != H2_PAL_OK) return power_rc;
     if (__atomic_load_n(
@@ -1045,6 +1046,16 @@ static int h2_bk_wifi_sta_get_status(
       out_status->state = h2_bk_wifi_state(link_status.state);
     h2_bk_wifi_store_sta_status(out_status);
     return H2_PAL_OK;
+}
+
+static int h2_bk_wifi_sta_get_status(
+    h2_pal_wifi_sta_t *sta,
+    h2_pal_wifi_sta_status_t *out_status) {
+    if (out_status == NULL)
+        return H2_PAL_ERR_INVALID_ARG;
+    memset(out_status, 0, sizeof(*out_status));
+    (void)h2_bk_wifi_ipv6_refresh();
+    return h2_bk_wifi_sta_read_status(sta, out_status);
 }
 
 static int h2_bk_wifi_sta_scan(
@@ -1313,7 +1324,7 @@ static int h2_bk_wifi_sta_connect(
             s_h2_bk_wifi_last_config.ssid,
             config->ssid,
             config->ssid_len) == 0) {
-      if (h2_bk_wifi_sta_get_status(NULL, &cached_status) == H2_PAL_OK &&
+      if (h2_bk_wifi_sta_read_status(NULL, &cached_status) == H2_PAL_OK &&
           cached_status.state == H2_PAL_WIFI_STA_STATE_GOT_IP &&
           h2_pal_wifi_sta_status_has_ip(&cached_status) &&
           cached_status.ssid_len == config->ssid_len &&
