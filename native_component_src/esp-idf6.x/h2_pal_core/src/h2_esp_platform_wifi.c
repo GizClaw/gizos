@@ -1353,6 +1353,12 @@ static int h2_esp_wifi_ap_stop(h2_pal_wifi_ap_t *ap, uint32_t timeout_ms) {
         return H2_PAL_OK;
     }
 
+    /* A failed SDK transition still owns the AP and its netif. Leave the
+     * public status/client snapshot active so a later Stop can retry. */
+    esp_err_t err = esp_wifi_set_mode(WIFI_MODE_STA);
+    if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_INIT && err != ESP_ERR_WIFI_NOT_STARTED) {
+        return h2_esp_wifi_map_error(err);
+    }
     h2_pal_wifi_ap_status_t status;
     portENTER_CRITICAL(&s_h2_esp_wifi_ap_lock);
     s_h2_esp_wifi_ap_active = 0;
@@ -1362,10 +1368,6 @@ static int h2_esp_wifi_ap_stop(h2_pal_wifi_ap_t *ap, uint32_t timeout_ms) {
     s_h2_esp_wifi_ap_status.client_count = 0u;
     status = s_h2_esp_wifi_ap_status;
     portEXIT_CRITICAL(&s_h2_esp_wifi_ap_lock);
-    esp_err_t err = esp_wifi_set_mode(WIFI_MODE_STA);
-    if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_INIT && err != ESP_ERR_WIFI_NOT_STARTED) {
-        return h2_esp_wifi_map_error(err);
-    }
     if (s_h2_esp_wifi_ap_netif != NULL) {
         esp_netif_destroy_default_wifi(s_h2_esp_wifi_ap_netif);
         s_h2_esp_wifi_ap_netif = NULL;
