@@ -15,8 +15,14 @@ cc_library(
         "include/h2_tinyh264_allocator_bridge.h",
     ],
     conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS,
+    copts = H2_WARNING_COPTS + select({
+        "//tools/bazel/platforms:is_bk7258": ["-O3"],
+        "//conditions:default": [],
+    }),
     cxxopts = H2_CXX17_OPTS,
+    includes = [
+        "include",
+    ],
     local_defines = select({
         "//tools/bazel/platforms:is_pi32v2": [
             "H2_TINYH264_SCOPE_TASK=h2_jieli_sdk_task_current",
@@ -24,9 +30,6 @@ cc_library(
         ],
         "//conditions:default": [],
     }),
-    includes = [
-        "include",
-    ],
     deps = [
         "//libs/atomic",
         "//libs/pal",
@@ -58,7 +61,10 @@ cc_test(
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = ["//libs/atomic/providers/c11", "//libs/pal"],
+    deps = [
+        "//libs/atomic/providers/c11",
+        "//libs/pal",
+    ],
 )
 
 cc_test(
@@ -81,7 +87,10 @@ cc_test(
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = ["//libs/atomic/providers/c11", "//libs/pal"],
+    deps = [
+        "//libs/atomic/providers/c11",
+        "//libs/pal",
+    ],
 )
 
 cc_test(
