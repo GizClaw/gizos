@@ -6,11 +6,12 @@ package(default_visibility = ["//visibility:public"])
 
 cc_library(
     name = "board_sources",
-    hdrs = ["h2_pal_audio_board_test_sdk.h"],
+    hdrs = ["h2_pal_audio_board_test_sdk.h", "h2_mosaico_audio_test_sdk.h"],
     textual_hdrs = [
         "//projects/e2e/apps/pal-audio/app:include/h2_pal_audio_e2e.h",
         "//projects/e2e/apps/pal-audio/app:include/h2_pal_audio_cases.inc",
         "//projects/e2e/targets/h2loader_tar_zlib/pal-audio/amoled:main/main.c",
+        "//projects/e2e/targets/h2loader_tar_zlib/pal-audio/esp_mosaico:main/main.c",
         "//projects/e2e/targets/h2loader_tar_zlib/pal-audio/bk7258_v3_202405:ap/ap_main.c",
     ],
     includes = ["."],
@@ -29,6 +30,7 @@ cc_library(
 ) for name, extra in [
     ("amoled_failure_recovery_test", []),
     ("bk_failure_recovery_test", ["H2_PAL_AUDIO_TEST_BK"]),
+    ("mosaico_failure_recovery_test", ['H2_TEST_BOARD_SOURCE=\\\"projects/e2e/targets/h2loader_tar_zlib/pal-audio/esp_mosaico/main/main.c\\\"']),
 ]]
 
 filegroup(

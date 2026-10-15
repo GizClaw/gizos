@@ -9,7 +9,7 @@ load("@rules_python//python:defs.bzl", "py_test")
 load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
 
 def mqtt_device_test(name, package, target = "bk7258"):
-    if target not in ["bk7258", "esp32s3"]:
+    if target not in ["bk7258", "esp32s3", "esp32s31"]:
         fail("unsupported MQTT device firmware target")
     py_test(
         name = name,

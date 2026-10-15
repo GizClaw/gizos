@@ -1,3 +1,7 @@
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
+
 #include "h2_esp_ble_adv_stop.h"
 
 #include <assert.h>

@@ -9,6 +9,7 @@ h2_bazel_native_component_sources(H2_MAIN_SOURCES main)
 
 idf_component_register(
   SRCS ${H2_MAIN_SOURCES}
+  LDFRAGMENTS "audio_scene.lf"
   INCLUDE_DIRS
     "${H2_REPO_ROOT}/projects/h2loader/libs/h2loader/include"
     "${H2_REPO_ROOT}/libs/pal/include"

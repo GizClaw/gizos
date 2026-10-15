@@ -48,6 +48,7 @@ typedef struct session {
     uint8_t *block;
     size_t block_len;
     h2_iperf_result_t *result;
+    const char *phase;
 } session_t;
 
 h2_pal_result_t h2_iperf_server_create(
@@ -390,12 +391,14 @@ static h2_pal_result_t session_run(session_t *session) {
     const h2_iperf_config_t *config = session->config;
     h2_iperf_server_t *server = session->server;
     uint32_t timeout = server->control_timeout_ms;
+    session->phase = "cookie";
     h2_pal_result_t result = h2_iperf_ctrl_recv_all(
         config, session->ctrl, (uint8_t *)session->cookie, H2_IPERF_COOKIE_SIZE, timeout);
     if (result != H2_PAL_OK) {
         return result;
     }
     memcpy(session->result->cookie, session->cookie, H2_IPERF_COOKIE_SIZE);
+    session->phase = "parameters";
     result = h2_iperf_ctrl_send_state(config, session->ctrl, H2_IPERF_STATE_PARAM_EXCHANGE, timeout);
     if (result != H2_PAL_OK) {
         return result;
@@ -441,28 +444,34 @@ static h2_pal_result_t session_run(session_t *session) {
     }
     h2_iperf_random_fill(config, &server->random_state, session->block, session->block_len);
 
+    session->phase = "stream_open";
     result = session_open_stream(session);
     if (result != H2_PAL_OK) {
         (void)h2_iperf_ctrl_send_server_error(config, session->ctrl, H2_IPERF_IE_PROTOCOL, timeout);
         return result;
     }
+    session->phase = "create_streams";
     result = h2_iperf_ctrl_send_state(config, session->ctrl, H2_IPERF_STATE_CREATE_STREAMS, timeout);
     if (result != H2_PAL_OK) {
         return result;
     }
+    session->phase = "stream_accept";
     result = session_accept_stream(session);
     if (result != H2_PAL_OK) {
         h2_iperf_log(config, H2_PAL_LOG_ERROR, "stream accept failed (%d)", (int)result);
         return result;
     }
+    session->phase = "test_start";
     result = h2_iperf_ctrl_send_state(config, session->ctrl, H2_IPERF_STATE_TEST_START, timeout);
     if (result == H2_PAL_OK) {
+        session->phase = "test_running";
         result = h2_iperf_ctrl_send_state(config, session->ctrl, H2_IPERF_STATE_TEST_RUNNING, timeout);
     }
     if (result != H2_PAL_OK) {
         return result;
     }
     int8_t ctrl_state = 0;
+    session->phase = "data";
     result = session_run_data(session, &ctrl_state);
     session_close_stream(session);
     if (result != H2_PAL_OK) {
@@ -475,6 +484,7 @@ static h2_pal_result_t session_run(session_t *session) {
         h2_iperf_log(config, H2_PAL_LOG_ERROR, "unexpected control state %d", (int)ctrl_state);
         return H2_PAL_ERR_FORMAT;
     }
+    session->phase = "results";
     return session_exchange_results(session);
 }
 
@@ -509,6 +519,12 @@ h2_pal_result_t h2_iperf_server_run_once(
     session.ctrl = ctrl;
     session.result = out_result;
     result = session_run(&session);
+    if (result != H2_PAL_OK) {
+        h2_iperf_log(config, H2_PAL_LOG_ERROR,
+                     "server session failed rc=%d phase=%s protocol=%d reverse=%d",
+                     (int)result, session.phase != NULL ? session.phase : "unknown",
+                     (int)session.params.protocol, session.params.reverse ? 1 : 0);
+    }
     session_close_stream(&session);
     if (session.block != NULL) {
         h2_pal_mem_free(config->mem, session.block);

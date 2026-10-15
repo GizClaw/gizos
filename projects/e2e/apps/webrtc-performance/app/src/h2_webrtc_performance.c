@@ -69,6 +69,8 @@ typedef struct h2_webrtc_performance_state {
   unsigned audio_duplicates;
   unsigned audio_reordered;
   uint64_t audio_last_arrival_ns;
+  uint64_t audio_last_sent_ns;
+  uint64_t audio_max_sender_gap_ns;
   uint64_t audio_gap_ns[H2_WEBRTC_PERF_AUDIO_FRAMES];
   uint64_t audio_max_gap_ns;
   uint16_t audio_max_gap_sequence;
@@ -251,6 +253,9 @@ h2_webrtc_perf_on_channel_state(void *user, h2_pal_webrtc_peer_t *peer,
     state->request_close_mask |= 1u << index;
     state->requests[index] = NULL;
   } else if (channel_state == H2_PAL_WEBRTC_CHANNEL_ERROR) {
+    printf("H2_WEBRTC_PERF callback_error kind=request_channel index=%d\n",
+           index);
+    state->callback_error_reason = 14;
     state->callback_error = 1;
   }
 }
@@ -264,6 +269,9 @@ static void h2_webrtc_perf_on_channel_message(
   h2_webrtc_performance_state_t *state = user;
   if (is_text || data == NULL || len < H2_WEBRTC_PERF_HEADER_SIZE ||
       memcmp(data, h2_webrtc_perf_magic, sizeof(h2_webrtc_perf_magic)) != 0) {
+    printf("H2_WEBRTC_PERF callback_error kind=message_envelope text=%d "
+           "length=%zu\n", is_text, len);
+    state->callback_error_reason = 8;
     state->callback_error = 1;
     return;
   }
@@ -301,6 +309,9 @@ static void h2_webrtc_perf_on_channel_message(
     for (size_t index = H2_WEBRTC_PERF_HEADER_SIZE; index < len; ++index) {
       if (data[index] !=
           (uint8_t)(offset + index - H2_WEBRTC_PERF_HEADER_SIZE)) {
+        printf("H2_WEBRTC_PERF callback_error kind=download_pattern "
+               "offset=%" PRIu32 " index=%zu length=%zu\n", offset, index, len);
+        state->callback_error_reason = 9;
         state->callback_error = 1;
         return;
       }
@@ -338,6 +349,12 @@ static void h2_webrtc_perf_on_channel_message(
     }
     return;
   }
+  printf("H2_WEBRTC_PERF callback_error kind=unexpected_message "
+         "request_index=%d op=%u flags=%u sequence=%u total=%" PRIu32 " "
+         "offset=%" PRIu32 " expected_offset=%zu length=%zu\n",
+         request_index, (unsigned)op, (unsigned)flags, (unsigned)sequence,
+         total, offset, state->download_bytes, len);
+  state->callback_error_reason = 10;
   state->callback_error = 1;
 }
 
@@ -345,12 +362,25 @@ static void h2_webrtc_perf_on_opus(void *user, h2_pal_webrtc_peer_t *peer,
                                    const uint8_t *opus, size_t opus_len) {
   (void)peer;
   h2_webrtc_performance_state_t *state = user;
+  /* PAL zero-length OPUS_FRAME is an erasure, not a received fixture frame.
+   * Final missing-frame budgets still use only real, uniquely observed frames. */
+  if (opus_len == 0u) {
+    printf("H2_WEBRTC_PERF packet_loss_marker received_frames=%u\n",
+           state->audio_received);
+    return;
+  }
   if (opus == NULL || opus_len != 10u) {
+    printf("H2_WEBRTC_PERF callback_error kind=opus_envelope length=%zu\n",
+           opus_len);
+    state->callback_error_reason = 11;
     state->callback_error = 1;
     return;
   }
   const uint16_t sequence = h2_webrtc_perf_read_u16(opus);
   if (sequence >= H2_WEBRTC_PERF_AUDIO_FRAMES) {
+    printf("H2_WEBRTC_PERF callback_error kind=audio_sequence sequence=%u\n",
+           (unsigned)sequence);
+    state->callback_error_reason = 12;
     state->callback_error = 1;
     return;
   }
@@ -372,9 +402,21 @@ static void h2_webrtc_perf_on_opus(void *user, h2_pal_webrtc_peer_t *peer,
   const uint64_t now_ns = h2_webrtc_perf_now_ns(state);
   const uint64_t sent_ns = h2_webrtc_perf_read_u64(opus + 2u);
   if (sent_ns > now_ns) {
+    printf("H2_WEBRTC_PERF callback_error kind=audio_timestamp "
+           "sent_ns=%" PRIu64 " now_ns=%" PRIu64 "\n", sent_ns, now_ns);
+    state->callback_error_reason = 13;
     state->callback_error = 1;
     return;
   }
+  if (state->audio_last_arrival_ns == 0u) {
+    state->audio_max_sender_gap_ns = 0u;
+  } else if (sequence == state->audio_next_sequence &&
+             sent_ns >= state->audio_last_sent_ns) {
+    const uint64_t sender_gap_ns = sent_ns - state->audio_last_sent_ns;
+    if (sender_gap_ns > state->audio_max_sender_gap_ns)
+      state->audio_max_sender_gap_ns = sender_gap_ns;
+  }
+  state->audio_last_sent_ns = sent_ns;
   const uint64_t rtt_ns = now_ns - sent_ns;
   if (rtt_ns > state->audio_max_rtt_ns) {
     state->audio_max_rtt_ns = rtt_ns;
@@ -1021,6 +1063,9 @@ int h2_webrtc_performance_run(h2_runtime_t *runtime,
              state.audio_deadline_misses, state.callback_error);
       goto cleanup;
     }
+    printf("H2_WEBRTC_PERF_AUDIO_DIAGNOSTIC phase=audio-only max_sender_gap_ns=%" PRIu64
+           " max_arrival_gap_sequence=%u max_rtt_ns=%" PRIu64 "\n",
+           state.audio_max_sender_gap_ns, state.audio_max_gap_sequence, state.audio_max_rtt_ns);
     const uint64_t audio_only_p99_gap_ns = h2_webrtc_perf_audio_gap_p99(&state);
     const uint64_t audio_only_max_gap_ns = state.audio_max_gap_ns;
     const uint64_t audio_only_max_rtt_ns = state.audio_max_rtt_ns;
@@ -1046,6 +1091,9 @@ int h2_webrtc_performance_run(h2_runtime_t *runtime,
              state.audio_max_gap_sequence, state.callback_error);
       goto cleanup;
     }
+    printf("H2_WEBRTC_PERF_AUDIO_DIAGNOSTIC phase=loaded max_sender_gap_ns=%" PRIu64
+           " max_arrival_gap_sequence=%u max_rtt_ns=%" PRIu64 "\n",
+           state.audio_max_sender_gap_ns, state.audio_max_gap_sequence, state.audio_max_rtt_ns);
     const uint64_t loaded_batch_ns = state.request_batch_elapsed_ns;
     const uint64_t loaded_max_rtt_ns = h2_webrtc_perf_request_max_rtt(&state);
     const uint64_t data_only_throughput_bps =

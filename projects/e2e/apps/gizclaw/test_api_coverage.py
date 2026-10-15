@@ -1,5 +1,10 @@
 """Auditor tests only: synthetic logs never establish real E2E acceptance."""
 
+import contextlib
+import io
+import json
+from pathlib import Path
+import tempfile
 import unittest
 
 import api_coverage as coverage
@@ -48,6 +53,27 @@ class CoverageTest(unittest.TestCase):
     def audit(self, lines, rules=None, **kwargs):
         return coverage.audit(lines, self.rules if rules is None else rules,
                               **{**IDENTITY, "process_exit_code": 0, **kwargs})
+
+    def test_mosaico_cli_requires_own_complete_successful_ledger(self):
+        args = ["--endpoint", IDENTITY["endpoint"], "--backend", "h2peer",
+                "--profile", IDENTITY["profile"], "--platform", "esp_mosaico"]
+        own = [line.replace("platform=macos", "platform=esp_mosaico")
+               for line in self.lines]
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "executing.log"
+            for lines, exit_code, expected in (
+                    (own, 0, 0), (self.lines, 0, 1),
+                    (own[:-1], 0, 1), (own, 7, 1)):
+                with self.subTest(exit_code=exit_code, expected=expected):
+                    log.write_text("".join(lines), encoding="utf-8")
+                    output = io.StringIO()
+                    with contextlib.redirect_stdout(output):
+                        result = coverage.main(args + ["--log", str(log),
+                            "--process-exit-code", str(exit_code)])
+                    self.assertEqual(result, expected)
+                    report = json.loads(output.getvalue())
+                    self.assertEqual(report["valid"], expected == 0)
+                    self.assertEqual(report["required"], 236)
 
     def test_independent_matrix_matches_all_236_approved_functions(self):
         inventory = (coverage.repository_root() / "libs/gizclaw/tests/public_api.inc").read_text()

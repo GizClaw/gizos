@@ -17,7 +17,7 @@ filegroup(
 
 go_library(
     name = "server_lib",
-    srcs = ["main.go", "conformance.go"],
+    srcs = ["main.go", "conformance.go", "qos.go"],
     importpath = "h2vivi/firmwares/tools/webrtc-test-server",
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
@@ -36,6 +36,7 @@ go_library(
         "@com_github_pion_stun_v3//:stun",
         "@com_github_pion_turn_v4//:turn",
         "@com_github_pion_webrtc_v4//:webrtc",
+        "@org_golang_x_net//ipv4",
     ],
 )
 
@@ -53,10 +54,11 @@ go_binary(
 
 go_test(
     name = "webrtc_test_server_test",
-    srcs = ["main_test.go", "conformance_test.go"],
+    srcs = ["main_test.go", "conformance_test.go", "qos_test.go"],
     embed = [":server_lib"],
     deps = [
         "@com_github_pion_dtls_v3//pkg/protocol/alert",
+        "@org_golang_x_net//ipv4",
     ],
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],

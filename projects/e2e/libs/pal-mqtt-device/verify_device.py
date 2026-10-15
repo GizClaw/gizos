@@ -15,7 +15,7 @@ import signal
 import tarfile
 import zlib
 
-STARTUP_MARKER = r'H2_\w*(?:BOOT|STARTUP)(?:\b|_[A-Z_]+\b)|\bBooting\b|^ESP-ROM:|^rst:0x[0-9a-f]+'
+STARTUP_MARKER = r'H2_(?!LOADER_STARTUP_EVENT\b)\w*(?:BOOT|STARTUP)(?:\b|_[A-Z_]+\b)|\bBooting\b|^ESP-ROM:|^rst:0x[0-9a-f]+'
 
 def uart_text(path):
     # Keep the authoritative bytes for receipt hashes. SDK startup may emit
@@ -95,6 +95,9 @@ def boot_ledger(text, ids, version, previous=None):
         if 'H2_PAL_MQTT_' in line:
             record = line.split('H2_PAL_MQTT_', 1)[1]
             assert '\ufffd' not in record, 'corrupt MQTT protocol record'
+        if 'H2_LOADER_STARTUP_EVENT ' in line:
+            assert boot is None and run is None and accepted is None, 'later startup: Loader progress after App execution began'
+            continue
         startup = re.search(STARTUP_MARKER, line)
         if startup:
             execution_boot = 'H2_PAL_MQTT_BOOT ' in line
@@ -129,7 +132,7 @@ def boot_ledger(text, ids, version, previous=None):
         elif 'H2_PAL_MQTT_READY ' in line:
             ready = fields(line.split('H2_PAL_MQTT_READY ', 1)[1])
             assert ready.get('rc') == '0' and ready.get('confirm') == 'pending', 'current admission requires post-delivery confirmation'
-            if ready.get('board') == 'devkit':
+            if ready.get('board') in ('devkit', 'esp_mosaico'):
                 assert ready.get('provider_cleanup') == '0', 'ESP portable provider not released'
             assert summary is not None, 'ready without latest complete ledger'
             assert accepted is None, 'duplicate terminal ledger'
@@ -138,7 +141,7 @@ def boot_ledger(text, ids, version, previous=None):
             assert accepted is not None and 'confirmation' not in accepted, 'duplicate or premature confirmation'
             confirmation = fields(line.split('H2_PAL_MQTT_CONFIRMED ', 1)[1])
             assert accepted is not None and accepted['ready'].get('confirm') == 'pending', 'confirmation without delivered READY'
-            assert accepted['ready'].get('board') in ('bk7258','devkit') and \
+            assert accepted['ready'].get('board') in ('bk7258','devkit','esp_mosaico') and \
                 accepted['ready'].get('board') == confirmation.get('board') and confirmation.get('rc') == '0', 'app confirmation failed'
             accepted['confirmation'] = confirmation
         if re.search(r'panic|hard fault|assert failed|H2_PAL_MQTT_SETUP_FAIL', line, re.I):
@@ -153,7 +156,7 @@ def package_manifest(package):
         manifest = dict(line.split('=', 1) for line in archive.extractfile('manifest').read().decode().splitlines() if line)
         members = [member for member in archive.getmembers() if member.name.startswith('app/') and member.isfile()]
         assert len(members) == 1 and manifest['role'] == 'app'
-        assert (manifest['board'], manifest['target']) in (('bk7258_v3_202405', 'bk7258'), ('devkit', 'esp32s3')), 'unsupported device package'
+        assert (manifest['board'], manifest['target']) in (('bk7258_v3_202405', 'bk7258'), ('devkit', 'esp32s3'), ('esp_mosaico', 'esp32s31')), 'unsupported device package'
         image = archive.extractfile(members[0]).read()
         assert len(image) == int(manifest['image_size']) and hashlib.sha256(image).hexdigest() == manifest['image_sha256']
     return manifest, hashlib.sha256(original).hexdigest()
@@ -226,7 +229,7 @@ def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--package', type=Path, default=os.environ.get('H2_MQTT_DEVICE_PACKAGE'))
     parser.add_argument('--registry', required=True, type=Path)
-    parser.add_argument('--expected-target', choices=('bk7258','esp32s3'))
+    parser.add_argument('--expected-target', choices=('bk7258','esp32s3','esp32s31'))
     parser.add_argument('--build-label')
     args=parser.parse_args()
     if args.package is None:parser.error('explicit actually installed immutable --package or H2_MQTT_DEVICE_PACKAGE required')
@@ -243,7 +246,7 @@ def main():
     }
     first=boot_ledger(after_accepted_reboot(uart_text(directory/'managed.log'),'upgrade'),ids,manifest['version'])
     second=boot_ledger(after_accepted_reboot(uart_text(directory/'normal.log'),'app'),ids,manifest['version'],first['boot']['id'])
-    expected_board = 'devkit' if manifest['target'] == 'esp32s3' else 'bk7258'
+    expected_board = {'esp32s3': 'devkit', 'esp32s31': 'esp_mosaico', 'bk7258': 'bk7258'}[manifest['target']]
     assert first['ready'].get('board') == second['ready'].get('board') == expected_board, 'ledger belongs to another board'
     for name,command in [('before-status',['status']),('after-status',['status']),
                          ('before-coredump-status',['coredump','status']),('after-coredump-status',['coredump','status'])]:

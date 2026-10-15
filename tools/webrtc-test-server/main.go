@@ -163,6 +163,7 @@ type server struct {
 	iceMode     iceMode
 	udpDrops    atomic.Uint64
 	turnStats   turnStats
+	udpQoS      *rtpDSCPPacketConn
 }
 
 type inboundDroppingPacketConn struct {
@@ -272,10 +273,15 @@ func main() {
 	iceModeValue := flag.String("ice-mode", string(iceModeUDP), "ICE transport mode: udp, tcp, mixed, or mixed-drop-udp")
 	dtlsKeyLog := flag.String("dtls-key-log", "", "optional DTLS key log path for local packet diagnostics")
 	dtlsCipherSuites := flag.String("dtls-cipher-suites", "", "optional comma-separated DTLS cipher suite preference (server order wins): gcm, ccm, ccm8, chacha")
+	rtpDSCP := flag.Int("rtp-dscp", 0, "optional direct ICE UDP RTP/RTCP DSCP (0..63); other packets remain best effort")
 	flag.Parse()
 	mode, err := parseICEMode(*iceModeValue)
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	if *rtpDSCP < 0 || *rtpDSCP > 63 || (*rtpDSCP != 0 && mode != iceModeUDP) {
+		log.Fatal("rtp-dscp requires a value in 0..63 and udp ICE mode when enabled")
 	}
 
 	s := &server{
@@ -339,6 +345,13 @@ func main() {
 		}
 		iceUDPAddr = iceUDPConn.LocalAddr().String()
 		muxConn := iceUDPConn
+		if *rtpDSCP != 0 {
+			s.udpQoS, err = newRTPDSCPPacketConn(iceUDPConn, *rtpDSCP)
+			if err != nil {
+				log.Fatalf("configure direct ICE UDP RTP DSCP: %v", err)
+			}
+			muxConn = s.udpQoS
+		}
 		if mode == iceModeMixedDropUDP {
 			muxConn = &inboundDroppingPacketConn{
 				PacketConn: iceUDPConn,
@@ -452,6 +465,10 @@ func (s *server) routes(shutdown func()) http.Handler {
 	mux.HandleFunc("/offer", s.handleOffer)
 	mux.HandleFunc("/session/", s.handleSession)
 	mux.HandleFunc("/turn-stats", s.handleTURNStats)
+	mux.HandleFunc("/qos-stats", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(s.udpQoS.snapshot())
+	})
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})
@@ -922,7 +939,38 @@ func (s *server) createAnswer(
 	return local.SDP, item, nil
 }
 
+// Keep timing writes out of the measured path. Samples contain only this
+// fixture's sequence/timestamp envelope, never general Opus payload bytes.
+type audioTimingSample struct {
+	ordinal         uint64
+	fixtureSequence uint16
+	sentNS          uint64
+	readNS          int64
+	echoNS          int64
+}
+
+func audioTimingEnvelope(payload []byte) (uint16, uint64, bool) {
+	if len(payload) != 10 {
+		return 0, 0, false
+	}
+	sequence := binary.BigEndian.Uint16(payload[:2])
+	if sequence >= 100 {
+		return 0, 0, false
+	}
+	return sequence, binary.BigEndian.Uint64(payload[2:]), true
+}
+
 func echoOpus(remote *webrtc.TrackRemote, local *webrtc.TrackLocalStaticRTP, witness *mediaWitness) {
+	var samples [200]audioTimingSample
+	var sampleCount int
+	started := time.Now()
+	defer func() {
+		sessionID, _ := witness.sessionID.Load().(string)
+		for _, sample := range samples[:sampleCount] {
+			log.Printf("H2_WEBRTC_TEST_SERVER_AUDIO_TIMING session=%s ordinal=%d fixture_sequence=%d sent_ns=%d read_ns=%d echo_ns=%d",
+				sessionID, sample.ordinal, sample.fixtureSequence, sample.sentNS, sample.readNS, sample.echoNS)
+		}
+	}()
 	defer witness.log("stopped")
 	var sequence uint16
 	for {
@@ -931,6 +979,7 @@ func echoOpus(remote *webrtc.TrackRemote, local *webrtc.TrackLocalStaticRTP, wit
 			witness.readErrors.Add(1)
 			return
 		}
+		readNS := time.Since(started).Nanoseconds()
 		ordinal := witness.noteInput(packet.SequenceNumber)
 		if witness.shouldDrop(ordinal) {
 			// Consume the egress sequence as a packet dropped on the wire would.
@@ -953,6 +1002,11 @@ func echoOpus(remote *webrtc.TrackRemote, local *webrtc.TrackLocalStaticRTP, wit
 		if err := local.WriteRTP(echo); err != nil {
 			witness.writeErrors.Add(1)
 			return
+		}
+		if fixtureSequence, sentNS, ok := audioTimingEnvelope(packet.Payload); ok && sampleCount < len(samples) {
+			samples[sampleCount] = audioTimingSample{ordinal: ordinal, fixtureSequence: fixtureSequence, sentNS: sentNS,
+				readNS: readNS, echoNS: time.Since(started).Nanoseconds()}
+			sampleCount++
 		}
 		witness.echoed.Add(1)
 		if ordinal == 1 || ordinal%50 == 0 {
@@ -1156,9 +1210,14 @@ func (channel *performanceChannel) sendDownload(total uint32) {
 			for channel.dc.Transport().BufferedAmount() >
 				performanceBufferedAmountLow {
 				if time.Now().After(deadline) {
+					transport := channel.dc.Transport()
+					stats := transport.Stats()
 					log.Printf(
-						"H2_WEBRTC_TEST_SERVER_PERF download_backpressure_timeout buffered=%d",
-						channel.dc.Transport().BufferedAmount(),
+						"H2_WEBRTC_TEST_SERVER_PERF download_backpressure_timeout bytes_queued=%d total=%d elapsed_ms=%d buffered=%d cwnd=%d rwnd=%d mtu=%d srtt_ms=%.3f",
+						offset+payloadLen, total, time.Since(started).Milliseconds(),
+						transport.BufferedAmount(), stats.CongestionWindow,
+						stats.ReceiverWindow, stats.MTU,
+						stats.SmoothedRoundTripTime*1000,
 					)
 					return
 				}

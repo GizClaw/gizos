@@ -1,4 +1,6 @@
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("@rules_python//python:defs.bzl", "py_binary")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS", "h2_gnu_only_copts")
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
 
@@ -32,6 +34,44 @@ package(default_visibility = ["//visibility:public"])
     for suffix, support in [
         ("", "1"),
         ("_unsupported", "0"),
+    ]
+]
+
+[
+    cc_test(
+        name = "power_reboot_prepare_" + profile + "_test",
+        srcs = [
+            "include/h2_esp_platform_core.h",
+            "include/h2_esp_platform_safe_call.h",
+            "src/h2_esp_power_reboot_prepare.c",
+            "src/h2_esp_power_reboot_prepare.h",
+            "tests/sdk/sdkconfig.h",
+            "tests/test_h2_esp_power_reboot_prepare.c",
+        ],
+        conlyopts = H2_C11_OPTS + [
+            "-DCONFIG_IDF_TARGET_ESP32S31=" + s31,
+            "-DCONFIG_IDF_TARGET_ESP32S3=" + s3,
+            "-DCONFIG_BT_NIMBLE_ENABLED=" + nimble,
+            "-DCONFIG_ESP_HOSTED_ENABLE_BT_NIMBLE=" + hosted,
+        ],
+        copts = H2_WARNING_COPTS,
+        includes = ["include", "src", "tests/sdk"],
+        target_compatible_with = select({
+            "//tools/bazel/platforms:host_linux_target_linux": [],
+            "//tools/bazel/platforms:host_macos_target_macos": [],
+            "//tools/bazel/platforms:host_windows_target_windows": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        deps = ["//libs/pal"],
+    )
+    for profile, s31, s3, nimble, hosted in [
+        ("s31", "1", "0", "1", "0"),
+        ("s3", "0", "1", "1", "0"),
+        ("other_target", "0", "0", "1", "0"),
+        ("no_ble", "1", "0", "0", "0"),
+        ("s3_no_ble", "0", "1", "0", "0"),
+        ("hosted", "1", "0", "1", "1"),
+        ("s3_hosted", "0", "1", "1", "1"),
     ]
 ]
 
@@ -76,6 +116,7 @@ firmware_native_component(
     ],
     deps = [
         "//libs/atomic/providers/c11:c11_template",
+        "//native_component_src/esp-idf6.x/h2_libco_stack_guard",
         "//libs/mem_arena",
         "//libs/pal:unsupported",
         "//libs/pal/providers/corehttp",
@@ -103,6 +144,19 @@ cc_test(
     deps = ["//libs/atomic/providers/c11:c11_template"],
 )
 
+# Compile the actual provider with a missing optional Kconfig symbol. The
+# normal task-policy test also builds this archive as a regression prerequisite.
+cc_library(
+    name = "task_no_external_stack_flag_compile",
+    srcs = ["src/h2_esp_platform_task.c", "src/h2_esp_resource_stats_internal.h", "include/h2_esp_platform_core.h"] + glob(["tests/sdk/**/*.h"]),
+    includes = ["include", "tests/sdk"],
+    conlyopts = H2_C11_OPTS + ["-DH2_TEST_NO_EXTERNAL_STACK_FLAG=1"],
+    copts = H2_WARNING_COPTS,
+    linkstatic = True,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = ["//libs/pal"],
+)
+
 cc_test(
     name = "task_policy_test",
     srcs = [
@@ -124,6 +178,7 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    data = [":task_no_external_stack_flag_compile"],
     deps = [
         "//libs/atomic/providers/c11",
         "//libs/pal",
@@ -791,3 +846,61 @@ cc_test(
     }),
     deps = ["//libs/pal"],
 )
+
+py_binary(
+    name = "ble_adv_completion_fixture_generator",
+    srcs = ["tests/ble_adv_completion_fixture.py"],
+    main = "tests/ble_adv_completion_fixture.py",
+    legacy_create_init = 0,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+py_binary(
+    name = "wifi_sta_config_fixture_generator",
+    srcs = ["tests/wifi_sta_config_fixture.py"],
+    main = "tests/wifi_sta_config_fixture.py",
+    legacy_create_init = 0,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+genrule(
+    name = "wifi_sta_config_fixture_source",
+    srcs = ["src/h2_esp_platform_wifi.c"],
+    outs = ["wifi_sta_config_fixture.c"],
+    cmd = "$(location :wifi_sta_config_fixture_generator) $(location src/h2_esp_platform_wifi.c) $@",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    tools = [":wifi_sta_config_fixture_generator"],
+)
+
+cc_test(
+    name = "wifi_sta_config_test",
+    srcs = [":wifi_sta_config_fixture_source"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = ["//libs/pal"],
+)
+
+genrule(
+    name = "ble_adv_completion_fixture_source",
+    srcs = ["src/h2_esp_platform_ble.c"],
+    outs = ["ble_adv_completion_fixture.c"],
+    cmd = "$(location :ble_adv_completion_fixture_generator) $(location src/h2_esp_platform_ble.c) $@",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    tools = [":ble_adv_completion_fixture_generator"],
+)
+
+[
+    cc_test(
+        name = "ble_adv_completion_" + profile + "_test",
+        srcs = [
+            ":ble_adv_completion_fixture_source",
+            "src/h2_esp_ble_connect_role.h",
+        ],
+        conlyopts = H2_C11_OPTS + ["-DCONFIG_BT_NIMBLE_EXT_ADV=" + extended],
+        copts = H2_WARNING_COPTS,
+        includes = ["src"],
+        target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    )
+    for profile, extended in [("legacy", "0"), ("extended", "1")]
+]

@@ -7,6 +7,20 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifndef H2_SCTP_TX_DIAGNOSTICS
+#define H2_SCTP_TX_DIAGNOSTICS 0
+#endif
+#if H2_SCTP_TX_DIAGNOSTICS
+#define H2_SCTP_TX_DIAGNOSTIC_CAPACITY 512u
+typedef struct h2_sctp_tx_diagnostic {
+    uint64_t now_ms, srtt_ms, rto_ms;
+    uint32_t cwnd, peer_window;
+    size_t flight, queued;
+    uint32_t timeouts, fast_recoveries;
+    bool pending_emit, delivery_pending;
+} h2_sctp_tx_diagnostic_t;
+#endif
+
 #define H2_SCTP_CHUNK_DATA 0u
 #define H2_SCTP_CHUNK_INIT 1u
 #define H2_SCTP_CHUNK_INIT_ACK 2u
@@ -184,6 +198,8 @@ struct h2_pal_sctp_association {
     uint64_t control_deadline_ms;
 
     uint64_t rto_ms;
+    /* Earliest-TSN ACK restarts T3; no fragment may time out before it. */
+    uint64_t retransmit_not_before_ms;
     uint64_t srtt_ms;
     uint64_t rttvar_ms;
     uint64_t rtt_sample_sent_ms;
@@ -218,7 +234,17 @@ struct h2_pal_sctp_association {
     h2_sctp_rx_fragment_t *rx_fragments_tail;
     struct h2_pal_sctp_association *next;
     uint64_t sack_deadline_ms;
+#if H2_SCTP_TX_DIAGNOSTICS
+    uint64_t diagnostic_last_ms;
+    uint32_t diagnostic_timeouts, diagnostic_fast_recoveries;
+    size_t diagnostic_count, diagnostic_overflow;
+    h2_sctp_tx_diagnostic_t diagnostics[H2_SCTP_TX_DIAGNOSTIC_CAPACITY];
+#endif
 };
+#if H2_SCTP_TX_DIAGNOSTICS
+void h2_sctp_diagnostic_sample(h2_pal_sctp_association_t *association,
+                               uint64_t now_ms);
+#endif
 
 void *h2_sctp_alloc(const h2_pal_mem_api_t *mem, size_t size);
 void h2_sctp_free(const h2_pal_mem_api_t *mem, void *pointer);

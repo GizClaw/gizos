@@ -263,6 +263,70 @@ static h2_pal_result_t client_exchange_results(client_t *client) {
     return parsed ? H2_PAL_OK : H2_PAL_ERR_FORMAT;
 }
 
+/* A reverse UDP server can start sending immediately after the handshake.
+ * Keep that mailbox flowing while waiting for TEST_START/TEST_RUNNING, so
+ * queued pre-start packets cannot monopolize a shared receive-buffer pool.
+ * Duration-based runs tolerate packets before TEST_RUNNING; byte-budget runs
+ * retain their existing path so no part of a finite payload is discarded.
+ * Early packets are outside the measured interval; the first measured sequence still
+ * exposes their loss through the existing UDP sequence accounting. */
+static h2_pal_result_t client_recv_state(client_t *client, int8_t last_state,
+                                         int8_t *out_state) {
+    if (!client->stream_ready || client->data_done || !client->params.reverse ||
+        client->params.bytes != 0u ||
+        client->params.protocol != H2_IPERF_PROTOCOL_UDP ||
+        (last_state != H2_IPERF_STATE_CREATE_STREAMS &&
+         last_state != H2_IPERF_STATE_TEST_START)) {
+        return h2_iperf_ctrl_recv_state(client->config, client->ctrl, out_state,
+                                         client->params.control_timeout_ms);
+    }
+    const h2_iperf_config_t *config = client->config;
+    uint64_t started_ms = h2_iperf_now_ms(config);
+    uint64_t deadline = started_ms + client->params.control_timeout_ms;
+    uint64_t early_packets = 0u, early_bytes = 0u;
+    unsigned control_polls = 0u;
+    while (!h2_pal_time_deadline_expired(h2_iperf_now_ms(config), deadline)) {
+        uint8_t byte = 0u;
+        ++control_polls;
+        int got = h2_pal_net_tcp_recv(config->net, client->ctrl, &byte, 1u, 0u);
+        if (got == 1) {
+            *out_state = (int8_t)byte;
+            if (early_packets != 0u) {
+                h2_iperf_log(config, H2_PAL_LOG_INFO,
+                             "pre-start control state=%d polls=%u early_packets=%llu early_bytes=%llu elapsed_ms=%llu",
+                             (int)*out_state, control_polls,
+                             (unsigned long long)early_packets,
+                             (unsigned long long)early_bytes,
+                             (unsigned long long)(h2_iperf_now_ms(config) - started_ms));
+            }
+            return H2_PAL_OK;
+        }
+        if (got == 0) return H2_PAL_ERR_CLOSED;
+        if (got != H2_PAL_ERR_WOULD_BLOCK && got != H2_PAL_ERR_TIMEOUT)
+            return (h2_pal_result_t)got;
+        /* Bound each drain round so a continuous sender cannot hide control
+         * readiness or extend the original control deadline. */
+        for (unsigned i = 0u; i < 16u; ++i) {
+            got = h2_iperf_stream_recv(&client->stream, client->block,
+                                        client->buffer_len, 0u);
+            if (got == H2_PAL_ERR_WOULD_BLOCK || got == H2_PAL_ERR_TIMEOUT) break;
+            if (got < 0) return (h2_pal_result_t)got;
+            ++early_packets;
+            early_bytes += (uint64_t)got;
+            if (h2_pal_time_deadline_expired(h2_iperf_now_ms(config), deadline))
+                goto timed_out;
+        }
+        h2_iperf_sleep_ms(config, 1u);
+    }
+timed_out:
+    h2_iperf_log(config, H2_PAL_LOG_ERROR,
+                 "pre-start control timeout state=%d polls=%u early_packets=%llu early_bytes=%llu elapsed_ms=%llu",
+                 (int)last_state, control_polls,
+                 (unsigned long long)early_packets, (unsigned long long)early_bytes,
+                 (unsigned long long)(h2_iperf_now_ms(config) - started_ms));
+    return H2_PAL_ERR_TIMEOUT;
+}
+
 static h2_pal_result_t client_handle_state(client_t *client, int8_t state, bool *done) {
     const h2_iperf_config_t *config = client->config;
     switch (state) {
@@ -417,19 +481,22 @@ h2_pal_result_t h2_iperf_client_run(
             client.params.control_timeout_ms);
     }
     bool done = false;
+    int8_t last_state = 0;
     while (result == H2_PAL_OK && !done) {
         int8_t state = 0;
         if (client.have_pending_state) {
             state = client.pending_state;
             client.have_pending_state = false;
         } else {
-            result = h2_iperf_ctrl_recv_state(
-                config, client.ctrl, &state, client.params.control_timeout_ms);
+            result = client_recv_state(&client, last_state, &state);
             if (result != H2_PAL_OK) {
-                h2_iperf_log(config, H2_PAL_LOG_ERROR, "control read failed (%d)", (int)result);
+                h2_iperf_log(config, H2_PAL_LOG_ERROR,
+                             "control read failed rc=%d after_state=%d data_done=%d",
+                             (int)result, (int)last_state, client.data_done ? 1 : 0);
                 break;
             }
         }
+        last_state = state;
         result = client_handle_state(&client, state, &done);
         if (result != H2_PAL_OK) {
             h2_iperf_log(config, H2_PAL_LOG_ERROR, "state %d failed (%d)", (int)state, (int)result);

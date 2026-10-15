@@ -38,7 +38,27 @@ h2_libco_riscv32_swap:
     fsw fs11, H2_LIBCO_RISCV32_FP_S0 + 44(a1)
 #endif
 
+    /* Preserve both context pointers across the platform C hook. Its critical
+     * section spans the SP change; old bounds are captured after lazy FPU init. */
+    addi sp, sp, -16
+    sw a0, 0(sp)
+    sw a1, 4(sp)
+    addi a2, a1, H2_LIBCO_RISCV32_STACK_MIN
+    addi a3, a1, H2_LIBCO_RISCV32_STACK_MAX
+    lw a1, H2_LIBCO_RISCV32_STACK_MAX(a0)
+    lw a0, H2_LIBCO_RISCV32_STACK_MIN(a0)
+    call h2_libco_riscv32_stack_switch_enter
+    lw a1, 0(sp)
+    sw a0, H2_LIBCO_RISCV32_SWITCH_TOKEN(a1)
+    mv a0, a1
+    /* Previous SP was saved before this scratch frame, so restoration skips it. */
     lw sp, H2_LIBCO_RISCV32_SP(a0)
+    addi sp, sp, -16
+    sw a0, 0(sp)
+    lw a0, H2_LIBCO_RISCV32_SWITCH_TOKEN(a0)
+    call h2_libco_riscv32_stack_switch_exit
+    lw a0, 0(sp)
+    addi sp, sp, 16
     lw ra, H2_LIBCO_RISCV32_RA(a0)
     lw s0, H2_LIBCO_RISCV32_S0 + 0(a0)
     lw s1, H2_LIBCO_RISCV32_S0 + 4(a0)

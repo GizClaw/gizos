@@ -2,10 +2,19 @@
 #define H2_ESP_H2LOADER_IOSTREAMIKCP_H
 
 #include "h2_loader_app_client.h"
+#include "h2_iostreamikcp_types.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/** Configure a board-owned physical command channel before console/transport
+ * startup. The callbacks and user state must outlive the firmware. Call once,
+ * from single-threaded startup, after initializing the physical device. When
+ * omitted, the existing UART or USB Serial/JTAG selection remains in effect.
+ * Diagnostic stdio must not write into this channel concurrently. */
+h2_pal_result_t h2_esp_h2loader_configure_physical_io(
+    const h2_iostreamikcp_io_t *io);
 
 /**
  * @brief Starts an app-side synchronous H2Loader command server task.

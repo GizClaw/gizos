@@ -42,7 +42,8 @@ crash-before-confirm APP once, requires
 the platform rollback to return to Loader without changing the Stage,
 Partition 2 metadata, package, boot intent, or last result, and with a non-empty
 coredump, then verifies that coredump over every selected transport before
-erasing it.
+erasing it. Use `--log-file FILE` to retain raw coredump and monitor output;
+a log write failure stops the matrix before its subsequent erase.
 `--coredump-bytes` retains the lower-level mode for an already
 preloaded coredump. Both coredump modes consume the dump and are limited to one
 iteration. Wi-Fi passwords are read only from the

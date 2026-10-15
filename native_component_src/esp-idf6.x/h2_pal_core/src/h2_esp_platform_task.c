@@ -7,6 +7,10 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 
+#if CONFIG_IDF_TARGET_ARCH_RISCV
+#include "h2_esp_libco_stack_guard.h"
+#endif
+
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,6 +19,13 @@
 #define H2_ESP_HAS_PSRAM 1
 #else
 #define H2_ESP_HAS_PSRAM 0
+#endif
+
+#if defined(CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM) && \
+    CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM
+#define H2_ESP_ALLOW_PSRAM_STACK 1
+#else
+#define H2_ESP_ALLOW_PSRAM_STACK 0
 #endif
 
 #if H2_ESP_HAS_PSRAM &&                                                        \
@@ -96,7 +107,7 @@ static h2_pal_result_t esp_policy_validate(const char *name,
     return H2_PAL_ERR_TASK;
   }
   if (policy->stack_region == H2_ESP_TASK_STACK_PSRAM &&
-      (!H2_ESP_HAS_PSRAM || !CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM)) {
+      (!H2_ESP_HAS_PSRAM || !H2_ESP_ALLOW_PSRAM_STACK)) {
     esp_task_fail(name, "validate", "psram-unavailable");
     return H2_PAL_ERR_TASK;
   }
@@ -288,6 +299,10 @@ h2_esp_platform_task_configure(const h2_esp_task_policy_config_t *config) {
 }
 
 const h2_pal_task_api_t *h2_esp_platform_task_api(void) {
+#if CONFIG_IDF_TARGET_ARCH_RISCV
+  /* Keep the SDK adapter linked when libco's archive has weak defaults. */
+  h2_esp_libco_stack_guard_link();
+#endif
   static const h2_pal_task_vtable_t vtable = {
       .start = esp_task_start,
       .join = esp_task_join,

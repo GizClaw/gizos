@@ -55,6 +55,7 @@ firmware_native_component(
     component_name = "main",
     data = [
         "main/CMakeLists.txt",
+        "main/audio_scene.lf",
         "main/idf_component.yml",
     ],
     native_srcs = [
@@ -84,6 +85,7 @@ h2loader_esp_idf_firmware(
     srcs = [
         "CMakeLists.txt",
         "main/CMakeLists.txt",
+        "main/audio_scene.lf",
         "main/idf_component.yml",
         "main/main.c",
     ],

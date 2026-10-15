@@ -8,6 +8,9 @@
 
 typedef struct fake_executor {
   size_t count;
+  int fail_read;
+  h2_h2loader_e2e_case_t fail_case;
+  h2_h2loader_e2e_transport_t fail_transport;
   h2_h2loader_e2e_case_t cases[H2_H2LOADER_E2E_MAX_CASES];
   h2_h2loader_e2e_transport_t transports[H2_H2LOADER_E2E_MAX_CASES];
 } fake_executor_t;
@@ -20,6 +23,8 @@ static h2_pal_result_t execute_case(void *user,
   fake->cases[fake->count] = test_case;
   fake->transports[fake->count] = transport;
   ++fake->count;
+  if (fake->fail_read && test_case == fake->fail_case && transport == fake->fail_transport)
+    return H2_PAL_ERR_IO;
   out_result->terminal = H2_H2LOADER_HOST_COMMAND_TERMINAL_OK;
   if (test_case == H2_H2LOADER_E2E_CASE_STATUS ||
       test_case == H2_H2LOADER_E2E_CASE_APP_STATUS) {
@@ -311,6 +316,29 @@ static void test_crash_app_runs_once_before_cross_transport_coredump(void) {
   assert(fake.cases[18] == H2_H2LOADER_E2E_CASE_COREDUMP_STATUS_AFTER_ERASE);
 }
 
+static void test_failed_coredump_read_preserves_dump(void) {
+  for (unsigned transport = 0u; transport < 2u; ++transport) {
+    for (unsigned dump = 0u; dump < 2u; ++dump) {
+      fake_executor_t fake = {.fail_read = 1,
+          .fail_case = dump ? H2_H2LOADER_E2E_CASE_COREDUMP_DUMP : H2_H2LOADER_E2E_CASE_COREDUMP_STATUS,
+          .fail_transport = transport ? H2_H2LOADER_E2E_TRANSPORT_BLE : H2_H2LOADER_E2E_TRANSPORT_UART};
+      static h2_h2loader_e2e_result_t result;
+      const h2_h2loader_e2e_config_t config = {
+          .uart_endpoint = "/dev/test", .ble_endpoint = "4:001122334455",
+          .repeat_count = 1u, .include_coredump = 1u, .expected_coredump_bytes = 16384u,
+          .execute_case = execute_case, .execute_user = &fake};
+      assert(h2_h2loader_e2e_run(&config, &result) == H2_PAL_ERR_IO);
+      assert(result.case_count == 18u && fake.count == 14u);
+      for (size_t i = 0u; i < fake.count; ++i) {
+        assert(fake.cases[i] != H2_H2LOADER_E2E_CASE_COREDUMP_ERASE);
+        assert(fake.cases[i] != H2_H2LOADER_E2E_CASE_COREDUMP_STATUS_AFTER_ERASE);
+      }
+      for (size_t i = 14u; i < result.case_count; ++i)
+        assert(result.cases[i].result == H2_PAL_ERR_INVALID_STATE);
+    }
+  }
+}
+
 static int cancel_after_first_case(void *user) {
   return ((fake_executor_t *)user)->count != 0u;
 }
@@ -520,6 +548,7 @@ int main(void) {
   test_monitor_cases_are_uart_only_and_bounded();
   test_monitor_runs_each_reboot_with_a_bootable_target();
   test_crash_app_runs_once_before_cross_transport_coredump();
+  test_failed_coredump_read_preserves_dump();
   test_names();
   test_cancel_does_not_execute_later_cases();
   return 0;

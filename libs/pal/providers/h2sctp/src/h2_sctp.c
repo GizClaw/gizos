@@ -9,6 +9,53 @@
 
 #include <limits.h>
 #include <string.h>
+#if H2_SCTP_TX_DIAGNOSTICS
+#include <stdio.h>
+#endif
+
+#if H2_SCTP_TX_DIAGNOSTICS
+/* Retain at most one sample per second; emit only after the workload closes. */
+void h2_sctp_diagnostic_sample(h2_pal_sctp_association_t *a, uint64_t now_ms) {
+    if (a->state != H2_PAL_SCTP_STATE_CONNECTED ||
+        (a->diagnostic_count != 0u &&
+         (now_ms < a->diagnostic_last_ms ||
+          now_ms - a->diagnostic_last_ms < 1000u))) {
+        return;
+    }
+    a->diagnostic_last_ms = now_ms;
+    if (a->diagnostic_count == H2_SCTP_TX_DIAGNOSTIC_CAPACITY) {
+        ++a->diagnostic_overflow;
+        return;
+    }
+    a->diagnostics[a->diagnostic_count++] = (h2_sctp_tx_diagnostic_t){
+        .now_ms = now_ms, .srtt_ms = a->srtt_ms, .rto_ms = a->rto_ms,
+        .cwnd = a->cwnd, .peer_window = a->peer_receive_window,
+        .flight = a->flight_size, .queued = a->send_used,
+        .timeouts = a->diagnostic_timeouts,
+        .fast_recoveries = a->diagnostic_fast_recoveries,
+        .pending_emit = a->pending_emit != NULL,
+        .delivery_pending = a->delivery_pending,
+    };
+}
+
+static void h2_sctp_diagnostic_dump(const h2_pal_sctp_association_t *a) {
+    if (a->diagnostic_count == 0u) return;
+    for (size_t i = 0u; i < a->diagnostic_count; ++i) {
+        const h2_sctp_tx_diagnostic_t *s = &a->diagnostics[i];
+        printf("H2_SCTP_TX ordinal=%zu elapsed_ms=%llu cwnd=%u rwnd=%u "
+               "flight=%zu queued=%zu srtt_ms=%llu rto_ms=%llu "
+               "timeouts=%u fast_recoveries=%u pending_emit=%u delivery=%u\n",
+               i, (unsigned long long)(s->now_ms - a->diagnostics[0].now_ms),
+               (unsigned)s->cwnd, (unsigned)s->peer_window, s->flight, s->queued,
+               (unsigned long long)s->srtt_ms, (unsigned long long)s->rto_ms,
+               (unsigned)s->timeouts, (unsigned)s->fast_recoveries,
+               (unsigned)s->pending_emit, (unsigned)s->delivery_pending);
+    }
+    printf("H2_SCTP_TX_SUMMARY recorded=%zu overflow=%zu timeouts=%u fast_recoveries=%u\n",
+           a->diagnostic_count, a->diagnostic_overflow,
+           (unsigned)a->diagnostic_timeouts, (unsigned)a->diagnostic_fast_recoveries);
+}
+#endif
 
 void *h2_sctp_alloc(const h2_pal_mem_api_t *mem, size_t size) {
     if (mem == NULL || size == 0u) {
@@ -501,6 +548,9 @@ static h2_pal_result_t h2_sctp_vtable_association_close(
     if (*cursor == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+#if H2_SCTP_TX_DIAGNOSTICS
+    h2_sctp_diagnostic_dump(association);
+#endif
     *cursor = association->next;
     provider->association_count--;
     h2_sctp_clear_control(association);

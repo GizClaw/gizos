@@ -399,7 +399,10 @@ static h2_pal_result_t h2_sctp_stream_deliver_one(
     if (delivery_result != H2_PAL_OK) {
         return delivery_result;
     }
-    if (assembled) {
+    /* Reordered fragments can complete through the copy path even though
+     * this message owns a partial in-order assembly. Release that owner
+     * before pruning its begin fragment; a blocked callback still retains it. */
+    if (association->rx_assembly_begin == begin) {
         association->rx_assembly_len = 0u;
         association->rx_assembly_count = 0u;
         association->rx_assembly_begin = NULL;
@@ -501,6 +504,77 @@ static void h2_sctp_stream_undo_rx(
     h2_sctp_free(association->mem, fragment);
 }
 
+/* RFC 9260 6.2: when gaps fill rwnd, a lower retransmission may replace
+ * the highest retained gap TSNs. Never renege on cumulative acknowledgements,
+ * delivered data or the in-order assembly. Select the smallest sufficient
+ * eligible suffix in linear passes, including across the TSN wrap boundary. */
+static bool h2_sctp_stream_reorder_space(
+    h2_pal_sctp_association_t *association, uint32_t tsn, size_t payload_len,
+    bool *out_reneged) {
+    *out_reneged = false;
+    const size_t available = association->config.receive_buffer_size -
+                             association->receive_used;
+    if (payload_len <= available)
+        return true;
+    if (payload_len > association->config.receive_buffer_size)
+        return false;
+    const size_t needed = payload_len - available;
+    size_t reclaimable = 0u;
+    for (h2_sctp_rx_fragment_t *f = association->rx_fragments; f != NULL;
+         f = f->next) {
+        if (!f->assembled && !f->delivered &&
+            h2_sctp_tsn_after(f->tsn, association->cumulative_received_tsn) &&
+            h2_sctp_tsn_after(f->tsn, tsn))
+            reclaimable += f->data_len;
+    }
+    if (reclaimable < needed)
+        return false;
+    h2_sctp_rx_fragment_t *cutoff = NULL;
+    for (h2_sctp_rx_fragment_t *f = association->rx_fragments; f != NULL;
+         f = f->next) {
+        if (!f->assembled && !f->delivered &&
+            h2_sctp_tsn_after(f->tsn, association->cumulative_received_tsn) &&
+            h2_sctp_tsn_after(f->tsn, tsn)) {
+            if (reclaimable - f->data_len < needed) {
+                cutoff = f;
+                break;
+            }
+            reclaimable -= f->data_len;
+        }
+    }
+    bool suffix = false;
+    h2_sctp_rx_fragment_t *previous = NULL;
+    h2_sctp_rx_fragment_t **cursor = &association->rx_fragments;
+    while (*cursor != NULL) {
+        h2_sctp_rx_fragment_t *f = *cursor;
+        suffix = suffix || f == cutoff;
+        if (suffix && !f->assembled && !f->delivered &&
+            h2_sctp_tsn_after(f->tsn, association->cumulative_received_tsn) &&
+            h2_sctp_tsn_after(f->tsn, tsn)) {
+            *cursor = f->next;
+            association->receive_used -= f->data_len;
+            h2_sctp_free(association->mem, f);
+            *out_reneged = true;
+        } else {
+            previous = f;
+            cursor = &f->next;
+        }
+    }
+    association->rx_fragments_tail = previous;
+    return true;
+}
+
+static h2_pal_result_t h2_sctp_stream_sack_dropped_data(
+    h2_pal_sctp_association_t *association, uint64_t now_ms) {
+    /* A retained output packet can describe the old gap set. Keep a fresh
+     * SACK scheduled after it drains, also when packet allocation is busy. */
+    const h2_pal_result_t result =
+        h2_sctp_reliability_note_data(association, now_ms, true);
+    return result == H2_PAL_OK || result == H2_PAL_ERR_WOULD_BLOCK ||
+                   result == H2_PAL_ERR_NO_MEMORY
+               ? H2_PAL_ERR_WOULD_BLOCK : result;
+}
+
 h2_pal_result_t h2_sctp_stream_handle_data(
     h2_pal_sctp_association_t *association,
     const h2_sctp_chunk_view_t *chunk,
@@ -532,11 +606,6 @@ h2_pal_result_t h2_sctp_stream_handle_data(
     }
 
     const size_t payload_len = chunk->len - header_size;
-    if (payload_len > association->config.receive_buffer_size ||
-        association->receive_used > association->config.receive_buffer_size -
-                                        payload_len) {
-        return H2_PAL_ERR_WOULD_BLOCK;
-    }
     h2_sctp_rx_fragment_t header;
     memset(&header, 0, sizeof(header));
     header.tsn = tsn;
@@ -560,6 +629,12 @@ h2_pal_result_t h2_sctp_stream_handle_data(
         header.message_identifier = h2_sctp_wire_read_u16(chunk->data + 6u);
         header.ppid = h2_sctp_wire_read_u32(chunk->data + 8u);
     }
+
+    if (payload_len > association->config.max_message_size)
+        return H2_PAL_ERR_FORMAT;
+    bool reneged;
+    if (!h2_sctp_stream_reorder_space(association, tsn, payload_len, &reneged))
+        return h2_sctp_stream_sack_dropped_data(association, now_ms);
 
     /* Assemble in place when this is the next fragment of the message being
      * assembled, or a fresh message while nothing is being assembled. */
@@ -588,7 +663,8 @@ h2_pal_result_t h2_sctp_stream_handle_data(
         association->mem,
         sizeof(*fragment) + (assemble ? 0u : payload_len));
     if (fragment == NULL) {
-        return H2_PAL_ERR_WOULD_BLOCK;
+        return reneged ? h2_sctp_stream_sack_dropped_data(association, now_ms)
+                       : H2_PAL_ERR_WOULD_BLOCK;
     }
     *fragment = header;
     fragment->assembled = assemble;
@@ -655,7 +731,8 @@ h2_pal_result_t h2_sctp_stream_handle_data(
                                       association->mem, delivery_size);
             if (delivery_data == NULL) {
                 h2_sctp_stream_undo_rx(association, fragment);
-                return H2_PAL_ERR_WOULD_BLOCK;
+                return reneged ? h2_sctp_stream_sack_dropped_data(association, now_ms)
+                               : H2_PAL_ERR_WOULD_BLOCK;
             }
             if (!unordered && delivery_stream == NULL) {
                 delivery_stream = h2_sctp_stream_get_or_create(
@@ -665,7 +742,8 @@ h2_pal_result_t h2_sctp_stream_handle_data(
                         h2_sctp_free(association->mem, delivery_data);
                     }
                     h2_sctp_stream_undo_rx(association, fragment);
-                    return H2_PAL_ERR_WOULD_BLOCK;
+                    return reneged ? h2_sctp_stream_sack_dropped_data(association, now_ms)
+                                   : H2_PAL_ERR_WOULD_BLOCK;
                 }
             }
         }
@@ -701,7 +779,7 @@ h2_pal_result_t h2_sctp_stream_handle_data(
         }
     }
     const bool immediate_sack =
-        !in_order ||
+        reneged || !in_order ||
         (chunk->flags & (H2_SCTP_DATA_FLAG_IMMEDIATE |
                          H2_SCTP_DATA_FLAG_END)) != 0u;
     h2_pal_result_t result = h2_sctp_reliability_note_data(

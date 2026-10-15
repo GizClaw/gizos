@@ -16,6 +16,7 @@ H2_PAL_DECLARE_UNSUPPORTED_API(audio, h2_pal_audio_api_t);
 H2_PAL_DECLARE_UNSUPPORTED_API(audio_decoder, h2_pal_audio_decoder_api_t);
 H2_PAL_DECLARE_UNSUPPORTED_API(ble_host, h2_pal_ble_host_api_t);
 H2_PAL_DECLARE_UNSUPPORTED_API(button, h2_pal_button_api_t);
+H2_PAL_DECLARE_UNSUPPORTED_API(camera, h2_pal_camera_api_t);
 H2_PAL_DECLARE_UNSUPPORTED_API(touch, h2_pal_touch_api_t);
 H2_PAL_DECLARE_UNSUPPORTED_API(buzzer, h2_pal_buzzer_api_t);
 H2_PAL_DECLARE_UNSUPPORTED_API(crypto, h2_pal_crypto_api_t);

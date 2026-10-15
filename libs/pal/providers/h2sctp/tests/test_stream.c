@@ -1,4 +1,5 @@
 #include "h2_sctp_internal.h"
+#include "h2_sctp_reliability.h"
 #include "h2_sctp_stream.h"
 #include "h2_sctp_test_peer.h"
 #include "h2_sctp_wire.h"
@@ -466,7 +467,214 @@ static void test_incoming_reset_waits_for_output(void) {
   h2_sctp_test_pair_deinit(&pair);
 }
 
+/* A lost first message must remain receivable after later ordered messages
+ * fill the reordering buffer. RFC 9260 6.2 permits reneging on higher gap TSNs
+ * to accept the lower retransmission; retaining all gaps deadlocks rwnd=0. */
+static h2_pal_result_t feed_window_message(
+    h2_pal_sctp_association_t *association, uint32_t tsn, uint32_t sequence,
+    uint64_t now_ms) {
+  uint8_t data[80] = {0};
+  const bool interleaved = association->peer_interleaving;
+  const size_t header = interleaved ? 16u : 12u;
+  h2_sctp_wire_write_u32(data, tsn);
+  h2_sctp_wire_write_u16(data + 4u, 1u);
+  if (interleaved) {
+    h2_sctp_wire_write_u32(data + 8u, sequence);
+    h2_sctp_wire_write_u32(data + 12u, 53u);
+  } else {
+    h2_sctp_wire_write_u16(data + 6u, (uint16_t)sequence);
+    h2_sctp_wire_write_u32(data + 8u, 53u);
+  }
+  memset(data + header, (int)(sequence + 1u), 64u);
+  const h2_sctp_chunk_view_t chunk = {
+      .type = interleaved ? H2_SCTP_CHUNK_I_DATA : H2_SCTP_CHUNK_DATA,
+      .flags = H2_SCTP_DATA_FLAG_BEGIN | H2_SCTP_DATA_FLAG_END,
+      .data = data,
+      .len = header + 64u,
+  };
+  return h2_sctp_stream_handle_data(association, &chunk, now_ms);
+}
+
+static void test_full_receive_window_accepts_lower_tsn(
+    bool interleaved, bool wrap, bool fail_allocation, bool busy_output) {
+  h2_sctp_test_pair_t pair;
+  assert(h2_sctp_test_pair_init(&pair, 256u, 320u) == H2_PAL_OK);
+  assert(h2_sctp_test_connect(&pair));
+  h2_pal_sctp_association_t *association = pair.passive.association;
+  association->peer_interleaving = interleaved;
+  if (wrap)
+    association->cumulative_received_tsn = UINT32_MAX - 4u;
+  const uint32_t base = association->cumulative_received_tsn;
+  const size_t count = association->config.receive_buffer_size / 64u;
+  assert(count == 24u);
+  for (size_t i = 1u; i <= count; ++i) {
+    assert(feed_window_message(association, base + (uint32_t)i + 1u,
+                               (uint32_t)i, ++pair.now_ms) == H2_PAL_OK);
+  }
+  assert(association->receive_used == association->config.receive_buffer_size);
+  assert(association->cumulative_received_tsn == base);
+  assert(pair.passive.message_count == 0u);
+  if (busy_output) {
+    pair.passive.emit_failure = H2_PAL_ERR_WOULD_BLOCK;
+    assert(h2_sctp_reliability_send_sack(association, ++pair.now_ms) ==
+           H2_PAL_ERR_WOULD_BLOCK);
+    assert(association->pending_emit != NULL);
+  }
+  /* A still higher TSN cannot displace accepted data at a zero window. */
+  assert(feed_window_message(association, base + (uint32_t)count + 2u,
+                             (uint32_t)count + 1u, ++pair.now_ms) ==
+         H2_PAL_ERR_WOULD_BLOCK);
+  assert(association->receive_used == association->config.receive_buffer_size);
+  assert(has_rx_tsn(association, base + (uint32_t)count + 1u));
+  assert(!has_rx_tsn(association, base + (uint32_t)count + 2u));
+  if (busy_output) {
+    assert(association->sack_deadline_ms == pair.now_ms);
+    pair.passive.emit_failure = H2_PAL_OK;
+    uint64_t deadline = H2_PAL_SCTP_NO_DEADLINE;
+    assert(h2_pal_sctp_association_service(pair.passive.api, association,
+                                          ++pair.now_ms, &deadline) == H2_PAL_OK);
+  }
+  if (fail_allocation) {
+    if (busy_output) {
+      pair.passive.emit_failure = H2_PAL_ERR_WOULD_BLOCK;
+      assert(h2_sctp_reliability_send_sack(association, ++pair.now_ms) ==
+             H2_PAL_ERR_WOULD_BLOCK);
+    }
+    pair.passive.fail_allocation_at = pair.passive.allocation_count + 1u;
+    assert(feed_window_message(association, base + 1u, 0u, ++pair.now_ms) ==
+           H2_PAL_ERR_WOULD_BLOCK);
+    assert(!has_rx_tsn(association, base + (uint32_t)count + 1u));
+    assert(association->receive_used == association->config.receive_buffer_size - 64u);
+    if (busy_output) {
+      assert(association->sack_deadline_ms == pair.now_ms);
+      pair.passive.emit_failure = H2_PAL_OK;
+      uint64_t deadline = H2_PAL_SCTP_NO_DEADLINE;
+      assert(h2_pal_sctp_association_service(pair.passive.api, association,
+                                            ++pair.now_ms, &deadline) == H2_PAL_OK);
+    }
+    const h2_sctp_test_packet_t *sack = pair.passive.packet_tail;
+    assert(sack != NULL && sack->len >= 32u && sack->data[12] == H2_SCTP_CHUNK_SACK);
+    assert(h2_sctp_wire_read_u32(sack->data + 16u) == base);
+    assert(h2_sctp_wire_read_u32(sack->data + 20u) == 64u);
+    assert(h2_sctp_wire_read_u16(sack->data + 24u) == 1u);
+    assert(h2_sctp_wire_read_u16(sack->data + 30u) == (uint16_t)count);
+  }
+  assert(feed_window_message(association, base + 1u, 0u, ++pair.now_ms) ==
+         H2_PAL_OK);
+  assert(association->cumulative_received_tsn == base + (uint32_t)count);
+  assert(!has_rx_tsn(association, base + (uint32_t)count + 1u));
+  /* The new SACK must not continue gap-acknowledging the reneged tail. */
+  const h2_sctp_test_packet_t *sack = pair.passive.packet_tail;
+  assert(sack != NULL && sack->len >= 28u && sack->data[12] == H2_SCTP_CHUNK_SACK);
+  assert(h2_sctp_wire_read_u32(sack->data + 16u) == base + (uint32_t)count);
+  assert(h2_sctp_wire_read_u16(sack->data + 24u) == 0u);
+  assert(h2_sctp_stream_service(association) == H2_PAL_OK);
+  assert(feed_window_message(association, base + (uint32_t)count + 1u,
+                             (uint32_t)count, ++pair.now_ms) == H2_PAL_OK);
+  assert(pair.passive.message_count == count + 1u);
+  for (size_t i = 0u; i <= count; ++i) {
+    assert(pair.passive.messages[i].len == 64u);
+    for (size_t j = 0u; j < 64u; ++j)
+      assert(pair.passive.messages[i].data[j] == (uint8_t)(i + 1u));
+  }
+  assert(association->receive_used == 0u);
+  h2_sctp_test_pair_deinit(&pair);
+}
+
+
+/* A message can begin in the assembly buffer but finish through the gap-list
+ * copy path after reordered fragments. Successful delivery must release that
+ * assembly owner before its begin fragment is pruned. */
+static void feed_reordered_fragment(h2_pal_sctp_association_t *association,
+                                    uint32_t tsn, uint32_t identifier,
+                                    uint32_t fragment_sequence, uint8_t flags,
+                                    uint8_t seed, uint64_t now_ms) {
+  uint8_t data[20] = {0};
+  const bool interleaved = association->peer_interleaving;
+  const size_t header = interleaved ? 16u : 12u;
+  h2_sctp_wire_write_u32(data, tsn);
+  h2_sctp_wire_write_u16(data + 4u, 1u);
+  if (interleaved) {
+    h2_sctp_wire_write_u32(data + 8u, identifier);
+    h2_sctp_wire_write_u32(data + 12u,
+        (flags & H2_SCTP_DATA_FLAG_BEGIN) != 0u ? 53u : fragment_sequence);
+  } else {
+    h2_sctp_wire_write_u16(data + 6u, (uint16_t)identifier);
+    h2_sctp_wire_write_u32(data + 8u, 53u);
+  }
+  memset(data + header, seed, 4u);
+  const h2_sctp_chunk_view_t chunk = {
+      .type = interleaved ? H2_SCTP_CHUNK_I_DATA : H2_SCTP_CHUNK_DATA,
+      .flags = flags,
+      .data = data,
+      .len = header + 4u,
+  };
+  assert(h2_sctp_stream_handle_data(association, &chunk, now_ms) == H2_PAL_OK);
+}
+
+static void test_reordered_delivery_releases_assembly(bool interleaved,
+                                                      bool wrap,
+                                                      bool blocked,
+                                                      bool unordered) {
+  h2_sctp_test_pair_t pair;
+  assert(h2_sctp_test_pair_init(&pair, 256u, 4096u) == H2_PAL_OK);
+  assert(h2_sctp_test_connect(&pair));
+  h2_pal_sctp_association_t *association = pair.passive.association;
+  association->peer_interleaving = interleaved;
+  if (wrap)
+    association->cumulative_received_tsn = UINT32_MAX - 1u;
+  const uint32_t first = association->cumulative_received_tsn + 1u;
+  const uint8_t order_flag = unordered ? H2_SCTP_DATA_FLAG_UNORDERED : 0u;
+  feed_reordered_fragment(association, first, 0u, 0u,
+                          H2_SCTP_DATA_FLAG_BEGIN | order_flag, 0x11u,
+                          ++pair.now_ms);
+  feed_reordered_fragment(association, first + 2u, 0u, 2u,
+                          H2_SCTP_DATA_FLAG_END | order_flag, 0x33u,
+                          ++pair.now_ms);
+  assert(association->rx_assembly_begin != NULL);
+  pair.passive.message_would_block_count = blocked ? 1u : 0u;
+  feed_reordered_fragment(association, first + 1u, 0u, 1u, order_flag,
+                          0x22u, ++pair.now_ms);
+  if (blocked) {
+    assert(pair.passive.message_count == 0u);
+    assert(association->rx_assembly_begin != NULL);
+    uint64_t deadline;
+    assert(h2_pal_sctp_association_service(pair.passive.api, association,
+        ++pair.now_ms, &deadline) == H2_PAL_OK);
+  }
+  assert(pair.passive.message_count == 1u);
+  assert(pair.passive.messages[0].len == 12u);
+  for (size_t i = 0u; i < 12u; ++i)
+    assert(pair.passive.messages[0].data[i] ==
+           (i < 4u ? 0x11u : i < 8u ? 0x22u : 0x33u));
+  assert(association->rx_assembly_begin == NULL);
+  assert(association->rx_assembly_len == 0u &&
+         association->rx_assembly_count == 0u);
+  assert(association->receive_used == 0u && association->rx_fragments == NULL);
+  feed_reordered_fragment(association, first + 3u, 1u, 0u,
+                          H2_SCTP_DATA_FLAG_BEGIN | order_flag, 0x44u,
+                          ++pair.now_ms);
+  feed_reordered_fragment(association, first + 4u, 1u, 1u,
+                          H2_SCTP_DATA_FLAG_END | order_flag, 0x55u,
+                          ++pair.now_ms);
+  assert(pair.passive.message_count == 2u &&
+         pair.passive.messages[1].len == 8u);
+  for (size_t i = 0u; i < 8u; ++i)
+    assert(pair.passive.messages[1].data[i] == (i < 4u ? 0x44u : 0x55u));
+  assert(association->rx_assembly_begin == NULL &&
+         association->receive_used == 0u);
+  h2_sctp_test_pair_deinit(&pair);
+}
+
 int main(void) {
+  for (unsigned mode = 0u; mode < 16u; ++mode)
+    test_reordered_delivery_releases_assembly((mode & 1u) != 0u,
+        (mode & 2u) != 0u, (mode & 4u) != 0u, (mode & 8u) != 0u);
+  for (unsigned mode = 0u; mode < 16u; ++mode)
+    test_full_receive_window_accepts_lower_tsn((mode & 1u) != 0u,
+                                              (mode & 2u) != 0u,
+                                              (mode & 4u) != 0u,
+                                              (mode & 8u) != 0u);
   test_incoming_reset_waits_for_last_tsn();
   test_incoming_reset_waits_for_output();
   test_incoming_reset_delivers_next_generation();

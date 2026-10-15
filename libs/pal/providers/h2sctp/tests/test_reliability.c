@@ -112,6 +112,75 @@ static uint32_t send_sample(h2_sctp_test_pair_t *pair, uint64_t now_ms) {
   return pair->active.association->tx_fragments_tail->tsn;
 }
 
+/* A SACK acknowledging the earliest outstanding TSN restarts the RTO.
+ * A later fragment must not expire on its original send-time deadline while
+ * cumulative acknowledgements are still making progress (RFC 9260 6.3.2 R3). */
+static void test_oldest_ack_restarts_retransmission_deadline(bool wrap_tsn,
+                                                             bool gap_ack) {
+  h2_sctp_test_pair_t pair;
+  assert(h2_sctp_test_pair_init(&pair, 256u, 1024u) == H2_PAL_OK);
+  assert(h2_sctp_test_connect(&pair));
+  h2_pal_sctp_association_t *a = pair.active.association;
+  if (wrap_tsn) {
+    a->next_tsn = UINT32_MAX;
+    a->peer_cumulative_tsn = UINT32_MAX - 1u;
+    a->advanced_peer_ack = UINT32_MAX - 1u;
+  }
+  const uint32_t first = send_sample(&pair, 1000u);
+  const uint32_t second = send_sample(&pair, 1050u);
+  h2_sctp_tx_fragment_t *const pending = a->tx_fragments_tail;
+  if (gap_ack) {
+    uint8_t data[16] = {0};
+    h2_sctp_wire_write_u32(data, first - 1u);
+    h2_sctp_wire_write_u32(data + 4u, 65536u);
+    h2_sctp_wire_write_u16(data + 8u, 1u);
+    h2_sctp_wire_write_u16(data + 12u, 1u);
+    h2_sctp_wire_write_u16(data + 14u, 1u);
+    const h2_sctp_chunk_view_t sack = {
+        .type = H2_SCTP_CHUNK_SACK, .data = data, .len = sizeof(data),
+    };
+    assert(h2_sctp_reliability_handle_sack(a, &sack, 1150u) == H2_PAL_OK);
+  } else {
+    acknowledge_at(a, first, 1150u);
+  }
+  assert(a->rto_ms == 450u);
+  assert(pending != NULL && pending->tsn == second);
+  const uint32_t cwnd = a->cwnd;
+  uint64_t deadline = H2_PAL_SCTP_NO_DEADLINE;
+  assert(h2_sctp_reliability_service(a, 1500u, &deadline) == H2_PAL_OK);
+  assert(pending->retransmits == 0u);
+  assert(a->cwnd == cwnd && a->rto_ms == 450u);
+  assert(deadline == 1600u);
+  // Duplicate acknowledgements cannot keep lost data alive indefinitely.
+  acknowledge_at(a, first, 1599u);
+  assert(h2_sctp_reliability_service(a, 1600u, NULL) == H2_PAL_OK);
+  assert(pending->retransmits == 1u && a->rto_ms == 900u);
+  h2_sctp_test_pair_deinit(&pair);
+}
+
+static void test_later_gap_ack_does_not_restart_retransmission(void) {
+  h2_sctp_test_pair_t pair;
+  assert(h2_sctp_test_pair_init(&pair, 256u, 1024u) == H2_PAL_OK);
+  assert(h2_sctp_test_connect(&pair));
+  h2_pal_sctp_association_t *a = pair.active.association;
+  const uint32_t first = send_sample(&pair, 1000u);
+  (void)send_sample(&pair, 1050u);
+  uint8_t body[16] = {0};
+  h2_sctp_wire_write_u32(body, first - 1u);
+  h2_sctp_wire_write_u32(body + 4u, 65536u);
+  h2_sctp_wire_write_u16(body + 8u, 1u);
+  h2_sctp_wire_write_u16(body + 12u, 2u);
+  h2_sctp_wire_write_u16(body + 14u, 2u);
+  const h2_sctp_chunk_view_t sack = {
+      .type = H2_SCTP_CHUNK_SACK, .data = body, .len = sizeof(body),
+  };
+  assert(h2_sctp_reliability_handle_sack(a, &sack, 1900u) == H2_PAL_OK);
+  assert(a->rto_ms == H2_SCTP_RTO_INITIAL_MS);
+  assert(h2_sctp_reliability_service(a, 2000u, NULL) == H2_PAL_OK);
+  assert(a->tx_fragments->tsn == first && a->tx_fragments->retransmits == 1u);
+  h2_sctp_test_pair_deinit(&pair);
+}
+
 static void test_rto_recovers_after_loss(void) {
   h2_sctp_test_pair_t pair;
   assert(h2_sctp_test_pair_init(&pair, 256u, 1024u) == H2_PAL_OK);
@@ -160,8 +229,9 @@ static void test_rtt_sample_lifetime(bool wrap_tsn) {
   assert(!association->rtt_sample_pending);
   const uint32_t third = send_sample(&pair, 250u);
   assert(association->rtt_sample_tsn == third);
-  /* An earlier TSN is retransmitted while the third TSN is sampled. */
-  assert(h2_sctp_reliability_service(association, 410u, NULL) == H2_PAL_OK);
+  /* The earliest ACK at 200 restarts T3: 200 + 300, not 110 + 300.
+   * An earlier TSN is retransmitted while the third TSN is sampled. */
+  assert(h2_sctp_reliability_service(association, 500u, NULL) == H2_PAL_OK);
   assert(association->tx_fragments->retransmits == 1u);
   assert(!association->rtt_sample_pending);
   acknowledge_at(association, third, 500u);
@@ -601,6 +671,11 @@ static void test_sack_htna_with_interleaved_streams(void) {
 }
 
 int main(void) {
+  test_oldest_ack_restarts_retransmission_deadline(false, false);
+  test_oldest_ack_restarts_retransmission_deadline(true, false);
+  test_oldest_ack_restarts_retransmission_deadline(false, true);
+  test_oldest_ack_restarts_retransmission_deadline(true, true);
+  test_later_gap_ack_does_not_restart_retransmission();
   test_sack_counts_only_new_ack_evidence(false);
   test_sack_counts_only_new_ack_evidence(true);
   test_repeated_gap_ack_does_not_reuse_acked_tsn_as_htna();

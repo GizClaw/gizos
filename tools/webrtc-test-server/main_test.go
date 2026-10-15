@@ -541,3 +541,20 @@ func TestCleanupClosesOnlyExpiredSessions(t *testing.T) {
 		t.Fatal("current session was removed")
 	}
 }
+
+func TestAudioTimingEnvelope(t *testing.T) {
+	for _, size := range []int{0, 9, 11} {
+		if _, _, ok := audioTimingEnvelope(make([]byte, size)); ok {
+			t.Fatalf("accepted non-fixture payload length %d", size)
+		}
+	}
+	payload := []byte{0, 99, 0, 0, 0, 0, 0, 0, 1, 2}
+	sequence, sentNS, ok := audioTimingEnvelope(payload)
+	if !ok || sequence != 99 || sentNS != 258 {
+		t.Fatalf("invalid timing envelope: %d %d %t", sequence, sentNS, ok)
+	}
+	payload[1] = 100
+	if _, _, ok := audioTimingEnvelope(payload); ok {
+		t.Fatal("accepted out-of-range fixture sequence")
+	}
+}

@@ -39,6 +39,7 @@ typedef struct h2_e2e_transport_context {
   uint64_t coredump_decoded_bytes;
   uint64_t coredump_terminal_bytes;
   uint8_t coredump_terminal_seen;
+  uint8_t coredump_read_failed;
   uint64_t expected_coredump_bytes;
   uint64_t monitor_deadline_ms;
   size_t monitor_output_bytes;
@@ -327,6 +328,12 @@ static h2_pal_result_t coredump_output(void *user, const uint8_t *data,
   if (context == NULL || (data == NULL && len != 0u))
     return H2_PAL_ERR_INVALID_ARG;
   context->case_result->output_bytes += len;
+  /* Retain the actual dump before the matrix's deliberate erase. Sink errors
+   * abort qualification, so a failed evidence write cannot precede erase. */
+  if (context->config->on_log != NULL) {
+    h2_pal_result_t saved = context->config->on_log(context->config->log_user, data, len);
+    if (saved != H2_PAL_OK) return saved;
+  }
   for (size_t i = 0u; i < len; ++i) {
     if (data[i] == '\n') {
       size_t line_len = context->coredump_line_size;
@@ -1757,7 +1764,11 @@ static void append_case(const h2_h2loader_e2e_config_t *config,
   int matrix_case = checksum_case_index(test_case, &format, &index);
   size_t source_format = 0u;
   int cross_case = cross_case_index(test_case, &source_format, &format, &index);
+  const int blocked_coredump_cleanup = context->coredump_read_failed &&
+      (test_case == H2_H2LOADER_E2E_CASE_COREDUMP_ERASE ||
+       test_case == H2_H2LOADER_E2E_CASE_COREDUMP_STATUS_AFTER_ERASE);
   entry->result = cancelled(config) ? H2_PAL_EXIT :
+      blocked_coredump_cleanup ? H2_PAL_ERR_INVALID_STATE :
       matrix_case && (context->checksum_failed[format] ||
           (cross_case && context->checksum_failed[source_format])) ? H2_PAL_ERR_INVALID_STATE : config->execute_case != NULL
                       ? config->execute_case(config->execute_user, transport,
@@ -1784,6 +1795,11 @@ static void append_case(const h2_h2loader_e2e_config_t *config,
       entry->data_checksum_valid = 0u;
       context->checksum_failed[checksum_format] = 1u;
     }
+  }
+  if (entry->result != H2_PAL_OK &&
+      (test_case == H2_H2LOADER_E2E_CASE_COREDUMP_STATUS ||
+       test_case == H2_H2LOADER_E2E_CASE_COREDUMP_DUMP)) {
+    context->coredump_read_failed = 1u;
   }
   if (entry->result == H2_PAL_OK) {
     ++result->passed;
