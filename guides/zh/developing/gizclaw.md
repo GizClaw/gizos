@@ -99,6 +99,16 @@ Conversation 上行先发送 BOS，再等待当前 input stream 的 `AUDIO_INPUT
 
 PAL WebRTC 的 `CLOSED` 和 `ERROR` callback 只提供 callback 期间有效的 borrowed DataChannel handle，backend 可以在 callback 返回后释放它。GizClaw C SDK 必须在 callback 返回前清空 matching service、active RPC、Direct Packet 和 inbound alias；Peer Event 继续保留 SDK-owned service state 供普通 client cleanup 使用，但不再保留 DataChannel alias。后续 request completion、cancellation、client close 或 deinit 只能释放 SDK state，不能再次把已消费的 handle 传给 PAL `channel_close`。显式 close 先于终态 callback 时仍只向 PAL 发起一次 close。
 
+## 本地 invoke 与 MHS
+
+产品在已有 Service init 后、network start 前调用 `h2_gizclaw_local_start()`，开启同一 Service 的本地请求入口。`//libs/gizclaw:local` 导出 `h2_gizclaw_local.h`，task policy 需要 `$gizclaw/local`。本地请求不等待 WebRTC 连接或远端 Ready，使用已有的工具注册表、MHS 实例表、device/player 和产品 hook。WebRTC 的 tool/MHS 请求在开启此能力后与本地请求进入同一个串行 owner；没有开启的 Service 保持原有网络路径和资源生命周期。
+
+本地入口只增加请求来源。`lua.app.list/install/run/uninstall` 继续调用已有 `h2_gizclaw_lua_apps_rpc_internal()` 和 `libs/lua/apps`；Lua VM、catalog、安装格式、Filesystem、Runtime、校时与产品交接均沿用现有实现。C 请求使用 canonical method 和 protobuf，工具 invoke 仍使用原来的外层 envelope；校验、工具发现和路由复用同一 pinned C SDK dispatcher。默认最多四个未释放调用，每次 64 KiB；请求和每个回复分别复制，超时、取消和 delivery completion 具有明确 ownership，具体以生产 header 的 API reference 为准。
+
+调用方 wait 后先复制/解码结果，再 complete 并 release。Callback 和 completion 在同一 owner 返回，不能在其中阻塞等待或停止/销毁 Service；既有产品动作仍由产品 owner 接管。关闭时先 close Web adapter，再按原有方式 Service stop、poll drain 和 deinit。Stop/deinit 遇到未释放的 call、adapter borrow 或 failed join 会保留依赖供重试；取消不能撤销已经发生的写入。重连仍新建 Service，不引入独立 device 生命周期或新的 App host。
+
+浏览器对象 API、类型包和现有 Lua 安装工具示例见 [Web GizClaw SDK](/apps/web#本地-gizclaw-sdk)。可执行 fixture `libs/gizclaw/web/tests/local/` 使用同一个 Service，直接通过工具 invoke 执行既有安装/list/uninstall，另有实际编译的 native protocol fixture 验证原 WebRTC 路径。
+
 ## 设备 provider
 
 SDK 拥有 request-scoped Peer RPC channel、`client.tool.v0.invoke`（135）的封装与内层回复包装、`client.tool.v0.list`（136）的工具发现，以及 `client.rpc.methods.list`（137）的数字协议列表。GizOS 向 SDK 注册有实际 handler 的 `ClientTool`，不维护另一份方法名称表。MHS read/write（133/134）始终安装；未知设备 ID 返回 `NOT_FOUND`。旧的独立设备方法不再是 RPC registry 的成员，不提供别名或版本探测。
@@ -279,9 +289,9 @@ GizOS 的 generic RPC 仍把这两种状态归为 `H2_GIZCLAW_ERR_REMOTE`；
 Conversation 只把自身输入 Stream 的拒绝投影为错误事件，回复 Stream 的
 EOS 不产生该错误通知。因此 SDK 升级本身不会增加 quota 的产品提示。
 
-`@gizclaw_c_sdk//:gizclaw_core` 中的 RPC registry 与 protobuf payload 是 wire contract 的生成结果。RPC schema 更新时，先把 `MODULE.bazel` 中 `gizclaw_c_sdk` 的 `bazel_dep` 版本更新到同一个规范版本，再同步已有 `libs/gizclaw` stable wrapper；不能只修改手写 method number、复制旧 protobuf struct，或只更新产品文档。没有 GizOS-owned domain/lifecycle 语义的 RPC（例如 Firmware metadata）直接使用 generic RPC API 与 pinned generated schema，不为相同字段再增加一层 typed wrapper。GizOS 中公开的 RPC method 常量通过 compile-time assertion 与上游 registry 对齐，registry 再次漂移时必须使 build 失败。
+`@gizclaw_c_sdk//:gizclaw_core` 中的 RPC registry 与 protobuf payload 是 wire contract 的生成结果。RPC schema 更新时，先把 `MODULE.bazel` 中 C SDK 归档版本、完整性校验及对应上游 delta 同步到同一个规范版本，再同步已有 `libs/gizclaw` stable wrapper；不能只修改手写 method number、复制旧 protobuf struct，或只更新产品文档。没有 GizOS-owned domain/lifecycle 语义的 RPC（例如 Firmware metadata）直接使用 generic RPC API 与 pinned generated schema，不为相同字段再增加一层 typed wrapper。GizOS 中公开的 RPC method 常量通过 compile-time assertion 与上游 registry 对齐，registry 再次漂移时必须使 build 失败。
 
-Module 自带 Bazel targets、生成代码和精确的 nanopb runtime，不再注入 BUILD overlay、单独解析 nanopb 或维护 SDK source patch。`gizclaw_c_sdk` 发布在 GizClaw 自有的 Bazel registry（`https://static-volc.gizclaw.com/bazel/`）上，`.bazelrc` 通过 `--registry` 把它排在 `https://bcr.bazel.build` 之后，只有 BCR 不提供的 module 才落到它；因为它是正常的 Bzlmod module，下游 consumer 直接 `bazel_dep` 即可，不需要 `archive_override` 或手写 integrity。具体版本以 `MODULE.bazel` 中的 `bazel_dep(name = "gizclaw_c_sdk", ...)` 声明为准，archive 的 SRI 校验由 registry 的 `source.json` 提供。
+C SDK 自带 Bazel targets、生成代码和精确的 nanopb runtime，GizOS 不注入另一份 BUILD overlay 或 nanopb。`MODULE.bazel` 声明完整性锁定的 0.30.0 发布归档及直接来自上游的既有 Lua uninstall delta，使独立 Bzlmod consumer 继承与 GizOS 相同的依赖；dependency MODULE 中的 root-only override 不会传播。JS codec/map 锁定到对应上游 commit，类型声明由锁定的官方 TypeScript compiler 生成。具体版本与校验以 `MODULE.bazel` 为准。
 
 Wire message 使用 `name` / `*_name`。GizOS wrapper 将 Peer-addressable resource 继续公开为 name；将 occurrence、relationship、history 和 ledger 的 wire name 逐字节映射到既有 public `id` / `*_id`，不做 trim、派生、翻译或 storage-ID 替换。技术性 transport request ID、idempotency key 和 `gear_id` 不属于这层业务 identity 映射：
 

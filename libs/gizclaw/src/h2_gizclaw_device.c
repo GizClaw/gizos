@@ -2080,6 +2080,7 @@ h2_gizclaw_device_lua_stream_internal(h2_gizclaw_device_t *d) {
 h2_pal_result_t h2_gizclaw_device_start_internal(h2_gizclaw_device_t *d) {
   if (!d)
     return H2_PAL_OK;
+  if (d->task) return H2_PAL_OK;
   const h2_pal_task_options_t options = {
       .name = H2_GIZCLAW_DEVICE_TASK_NAME_VALUE, .min_stack_size = 32768};
   return h2_pal_task_start(d->service->config.task, &options, device_worker, d,

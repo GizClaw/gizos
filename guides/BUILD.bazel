@@ -53,6 +53,8 @@ api_reference(
         "//libs/encoding",
         "//libs/game_runtime",
         "//libs/gizclaw",
+        "//libs/gizclaw:local",
+        "//libs/gizclaw/web:headers",
         "//libs/iostreamikcp",
         "//libs/iperf",
         "//libs/lua",

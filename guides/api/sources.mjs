@@ -19,7 +19,7 @@ export const apiSources = [
     ],
   },
   { id: "game_runtime", roots: ["libs/game_runtime/include"] },
-  { id: "gizclaw", roots: ["libs/gizclaw/include"] },
+  { id: "gizclaw", roots: ["libs/gizclaw/include", "libs/gizclaw/web/include"] },
   { id: "h2loader", roots: ["projects/h2loader/libs/h2loader/include"] },
   { id: "h2peer", roots: ["libs/pal/providers/h2peer/include"] },
   { id: "h2sctp", roots: ["libs/pal/providers/h2sctp/include"] },

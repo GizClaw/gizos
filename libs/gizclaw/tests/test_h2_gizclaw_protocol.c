@@ -2,6 +2,7 @@
 #include "h2_desktop_platform.h"
 #include "h2_gizclaw_internal.h"
 #include "h2_gizclaw_service_internal.h"
+#include "h2_gizclaw_local.h"
 #include "payload/workspace.pb.h"
 #include "pb_decode.h"
 #include "pb_encode.h"
@@ -378,9 +379,8 @@ create_channel(h2_pal_webrtc_peer_t *peer,
   *out = NULL;
   return H2_PAL_ERR_IO;
 }
-int main(void) {
-  test_retired_workspace_parameters();
-  test_quota_rpc_errors();
+static void exercise_protocol(bool local) {
+  memset(&fixture, 0, sizeof(fixture));
   fixture.value = 7;
   const h2_pal_webrtc_vtable_t webrtc_vtable = {
       .peer_create_with_config = create_peer,
@@ -425,13 +425,21 @@ int main(void) {
       .client_poll_timeout_ms = 1};
   h2_gizclaw_service_t *service = NULL;
   assert(h2_gizclaw_service_init(&service_config, &service) == H2_PAL_OK);
+  if (local) assert(h2_gizclaw_local_start(service) == H2_PAL_OK);
   assert(h2_gizclaw_client_init(&service->client_config, &fixture.client) ==
          H2_PAL_OK);
+  if (local) h2_gizclaw_client_set_local_internal(fixture.client, service);
   assert(gzc_client_connect(h2_gizclaw_client_gzc_internal(fixture.client)) !=
          GZC_OK);
   assert(fixture.exercised);
   h2_gizclaw_client_deinit(fixture.client);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+}
+int main(void) {
+  test_retired_workspace_parameters();
+  test_quota_rpc_errors();
+  exercise_protocol(false);
+  exercise_protocol(true);
   return 0;
 }

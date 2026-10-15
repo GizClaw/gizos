@@ -290,3 +290,26 @@ bazel test --config=macos_arm64 --strategy=TestRunner=local --test_env=HOME \
 `//projects/example/targets/pkg_tar/raster2d:serve` 运行唯一无 Lua 的 C/WASM 示例，展示 RGB565 颜色端点、中间值、裁剪和覆盖。`:browser_test` 检查完整 240×240 Canvas。它直接运行 portable App，并复用 Web PAL Canvas backend。现有 `//projects/example/targets/pkg_tar/lua-script-vector:browser_test` 继续承担 Lua/C/WASM 显示回归；新增 binding 合同由 `//libs/lua:lua_test` 的真实 Host 测试覆盖。
 
 Web 的同步 SystemEvent PAL API 只借给 C Worker，浏览器主线程 accessor 返回 `NULL`。浏览器发起退订时使用 `h2_web_platform_system_event_unsubscribe_async`：成功后立即停止新回调并将 subscription 所有权交给 platform Worker；完成回调仅在所有在途 handler 返回后执行，调用方此前必须保留 handler context。主线程入队使用 try-lock，竞争返回 BUSY 并交还所有权，不能同步阻塞浏览器等待 Worker。回调自身不能等待自己的异步退订完成。
+
+## 本地 GizClaw SDK
+
+`//libs/gizclaw/web` 从 Worker 调用 `h2_web_gizclaw_open()`，绑定 `globalThis.h2WebGizClaw`；它借用已经开启本地入口的现有 Service。对象方法使用 pinned GizClaw codec/map，MHS 读写和所有工具均调用既有 handler，不依赖远端 Ready。Lua 安装仍是普通 tool invoke：
+
+```js
+const api = globalThis.h2WebGizClaw;
+const tools = await api.tools.list();
+const state = await api.mhs.read({id: 'speaker.main', hwd: 'speaker'});
+const applied = await api.mhs.write({
+  id: 'speaker.main', hwd: 'speaker',
+  payload: {volume_percent: 0, muted: false},
+});
+const installed = await api.tools.invoke('lua.app.install', {url: archiveUrl});
+const apps = await api.tools.invoke('lua.app.list', {});
+await api.tools.invoke('lua.app.uninstall', {app_id: appId});
+```
+
+实例与可用工具取自产品已有注册表；`lua.app.run` 是否可用仍取决于已有产品 prepare hook。安装格式、URL/Binary 支持和 Lua 交接语义均遵守 [GizClaw Lua App](/zh/developing/gizclaw#lua-app)，SDK 不额外实现 catalog、上传安装器或 Lua 生命周期。`call(method, Uint8Array, options?)` 为需要 canonical payload 的调用方保留字节接口。
+
+所有方法返回 Promise，支持 `{signal?, timeout_ms?}`。0/false 保留 optional presence；`error.code` 为实际 signed PAL result，仅 wire rejection 时为 -1000，并保留实际 `rpcCode`/`rpcMessage`。容量满返回 BUSY。取消/超时不会撤销已经发生的写入；请求接纳时复制，回复在 resolve 前复制/解码，随后触发既有 delivery completion。
+
+`h2_web_gizclaw_close()` 在 Worker 关闭 ingress、拒绝 pending Promise、取消调用并 join adapter，成功后释放 Service borrow；失败保留 handle 与依赖供重试。产品先 close adapter，再走现有 Service stop/poll/deinit。`//libs/gizclaw/web:sdk_types` 导出 `h2_web_gizclaw.d.ts` 及同一 canonical codec/map 的声明。`libs/gizclaw/web/tests/local/` 的实际 Chrome fixture 验证现有 tool/MHS、Lua 安装工具透传、错误、取消/背压和 close retry；它使用测试 HTTP/Filesystem PAL，不代表实机或真实服务器验收。

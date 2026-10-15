@@ -117,6 +117,8 @@ typedef struct h2_gizclaw_rpc_bytes {
  * Failure/stop cancels the continuation. Called once; user must outlive it.
  * Shutdown calls it from the close/deinit owner; registration rejection may
  * call it inline on the provider owner.
+ * The optional local ingress delivers completion on its shared dispatch
+ * owner after the local caller copies/decodes and selects a delivery result.
  * Only enqueue owner-thread work here; do not block or reenter client APIs.
  */
 typedef void (*h2_gizclaw_rpc_response_complete_fn)(void *user, int result);

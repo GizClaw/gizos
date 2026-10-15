@@ -281,6 +281,10 @@ h2_pal_result_t h2_gizclaw_service_poll(h2_gizclaw_service_t *service,
  * Accepted callbacks remain pending for caller-thread dispatch.
  * If a task join fails, its handle is retained; retry stop before deinit.
  * Tasks already joined successfully are not joined again.
+ * With optional local ingress enabled, also closes admission, cancels and
+ * joins local dispatch. Local provider completions settle on their owner;
+ * caller-thread operation callbacks still require poll. Retained local result
+ * handles return BUSY; release and retry.
  */
 h2_pal_result_t h2_gizclaw_service_stop(h2_gizclaw_service_t *service);
 
@@ -288,6 +292,7 @@ h2_pal_result_t h2_gizclaw_service_stop(h2_gizclaw_service_t *service);
  * Release a stopped, fully dispatched service with no caller-owned handles.
  *
  * This lifecycle-task API must not race submit, cancel, release or dispatch.
+ * Local request handles and adapter borrows prevent release with BUSY.
  */
 h2_pal_result_t h2_gizclaw_service_deinit(h2_gizclaw_service_t *service);
 
