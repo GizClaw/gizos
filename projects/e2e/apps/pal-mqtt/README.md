@@ -23,7 +23,7 @@ TLS 使用当次运行生成的两天有效 test-only CA/certificate。验收同
 ## 直接入口
 
 ```sh
-bazel test --config=macos_arm64 //projects/e2e/apps/pal-mqtt/app:interface_coverage_test //projects/e2e/apps/pal-mqtt/app:reject_missing_test //projects/e2e/targets/cc_binary/pal-mqtt:desktop_test //projects/e2e/targets/cc_binary/pal-mqtt:public_entry_test //projects/e2e/targets/cc_binary/pal-mqtt:tls_rejection_evidence_test
+bazel test --config=macos_arm64 //projects/e2e/apps/pal-mqtt/app:reject_missing_test //projects/e2e/targets/cc_binary/pal-mqtt:desktop_test //projects/e2e/targets/cc_binary/pal-mqtt:public_entry_test //projects/e2e/targets/cc_binary/pal-mqtt:tls_rejection_evidence_test
 ```
 
 Linux 使用 `--config=linux_x86_64`。本地 fixture 测试没有外部服务依赖和 tag；Bazel 持有构建、测试和缓存策略，没有额外 Make alias 或 Python Bazel 调度器。Python launcher 只管理真实 peer、进程和 evidence。

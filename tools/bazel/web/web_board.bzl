@@ -12,7 +12,7 @@ H2WebBoardInfo = provider(
     fields = {
         "display_width": "Display width in pixels.",
         "display_height": "Display height in pixels.",
-        "button_names": "Ordered Button names; Button i has periph id i + 1.",
+        "button_names": "Ordered Button names; entries choose peripheral/component ids.",
         "button_keys": "KeyboardEvent.key for each Button, \"\" for none.",
         "skins": "Dict of skin name to its HTML File.",
         "default_skin": "Skin used when a target selects none, or \"\".",
@@ -20,7 +20,7 @@ H2WebBoardInfo = provider(
 )
 
 _NAME_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789_"
-_MAX_BUTTONS = 8  # H2_WEB_APP_HOST_MAX_BUTTONS
+_MAX_BUTTONS = 8  # Board metadata and page input limit.
 
 def web_board_argument_error(display_width, display_height, buttons, skins, default_skin):
     """Returns why h2_web_board() arguments are invalid, or "" when valid."""
@@ -77,14 +77,15 @@ def h2_web_board(
       display_height: Display (canvas) height in pixels.
       buttons: Ordered dict of Button name ([a-z0-9_]) to the keyboard key
         (KeyboardEvent.key, "" for none) that drives it; at most 8. Button i
-        is periph id i + 1. Skin elements marked data-h2-button="<name>"
+        has page input index i. The Lua entry maps index i to peripheral and
+        component id i + 1. Skin elements marked data-h2-button="<name>"
         drive the same Button.
       skins: Dict of skin name ([a-z0-9_]) to an HTML file (markup plus
-        <style>) that looks like the device. app_host places the canvas,
+        <style>) that looks like the device. the Web page places the canvas,
         Start/Stop controls and status line in its data-h2-slot="display" |
         "controls" | "status" elements.
       default_skin: Skin used when a target selects none. Without skins the
-        page uses //libs/app_host:default_layout.html.
+        page uses //tools/bazel/web:default_layout.html.
       visibility: Target visibility.
     """
     error = web_board_argument_error(

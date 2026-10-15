@@ -7,7 +7,7 @@ import re
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'apps/pal-net-tls'))
-from check_qualification import check_cases, check_peer
+from report_validation import check_cases, check_peer
 from verify_device import parse
 
 ROOT = Path(__file__).resolve().parents[4]

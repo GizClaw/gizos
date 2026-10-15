@@ -1,0 +1,10 @@
+load("//libs/lua/web:lua_web_app.bzl", "h2_lua_web_app")
+
+# Compile the actual generic entry with zero Buttons, including its generated
+# metadata header. The Lua assertions execute through the real C/WASM job.
+h2_lua_web_app(
+    name = "no-buttons",
+    board = "//tools/bazel/web:default_board",
+    canvas_min = 1000,
+    script = "smoke.lua",
+)

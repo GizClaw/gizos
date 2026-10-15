@@ -1,4 +1,4 @@
-load("//libs/app_host:web_app.bzl", "h2_web_app")
+load("//tools/bazel/web:web_app.bzl", "h2_web_app")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -7,7 +7,6 @@ h2_web_app(
     srcs = ["main.c"],
     app_name = "raster2d",
     canvas_min = 1000,
-    deps = ["//projects/example/apps/raster2d/app:raster2d"],
     evals = [[
         "H2_WEB_APP name=raster2d result=PASS",
         """(() => {
@@ -25,5 +24,12 @@ h2_web_app(
           console.log('RASTER2D pixels=PASS');
         })()""",
     ]],
-    passes = ["RASTER2D pixels=PASS", "H2_WEB_APP name=raster2d result=PASS rc=0"],
+    passes = [
+        "RASTER2D pixels=PASS",
+        "H2_WEB_APP name=raster2d result=PASS rc=0",
+    ],
+    deps = [
+        "//projects/example/apps/raster2d/app:raster2d",
+        "//projects/example/libs/host_runtime",
+    ],
 )

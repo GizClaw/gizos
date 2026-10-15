@@ -1,5 +1,5 @@
 #include "h2_ios_platform.h"
-#include "h2_mobile_app_host.h"
+#include "h2_mobile_e2e_runtime_config.h"
 #include "mobile_runner.h"
 #import <UIKit/UIKit.h>
 
@@ -24,7 +24,7 @@
             NSString *ca = fixture[@"ca"], *wrong = fixture[@"wrong_ca"];
             NSData *pem = [ca dataUsingEncoding:NSUTF8StringEncoding];
             NSData *wrong_pem = [wrong dataUsingEncoding:NSUTF8StringEncoding];
-            h2_runtime_config_t config = h2_ios_app_host_config();
+            h2_runtime_config_t config = h2_mobile_e2e_runtime_config();
             int rc = fixture ? h2_mqtt_mobile_run(config, [fixture[@"host"] UTF8String],
                 [fixture[@"tcp_port"] unsignedShortValue], [fixture[@"tls_port"] unsignedShortValue],
                 [fixture[@"session"] UTF8String], pem.bytes, pem.length, wrong_pem.bytes, wrong_pem.length, &result)

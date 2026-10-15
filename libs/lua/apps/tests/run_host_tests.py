@@ -36,7 +36,7 @@ def main():
         'libs/crypto/sha256/include', 'libs/encoding/include',
         'libs/gizclaw/include', 'libs/lua/apps/include', 'libs/pal/include',
         'libs/pal/providers/desktop/pal_core/include', 'libs/semver/include',
-        'libs/lua/include', 'libs/command/include', 'libs/app_host/include',
+        'libs/lua/include', 'libs/command/include',
         'libs/runtime/include', 'libs/wifi_sta/include',
         'libs/pal/providers/yyjson/include',
         'projects/e2e/apps/gizclaw/app/include',

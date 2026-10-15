@@ -1,7 +1,7 @@
 #include "h2/pal/h2_pal_unsupported.h"
 #include "h2_android_platform.h"
-#include "h2_mobile_app_host.h"
-h2_runtime_config_t h2_android_app_host_config(void) {
+#include "h2_mobile_e2e_runtime_config.h"
+h2_runtime_config_t h2_mobile_e2e_runtime_config(void) {
   h2_runtime_config_t config = {0};
   config.board = "android";
   config.target = "android";
@@ -49,11 +49,4 @@ h2_runtime_config_t h2_android_app_host_config(void) {
   config.video_decoder = h2_pal_unsupported_video_decoder_api();
   config.event_queue_capacity = H2_RUNTIME_DEFAULT_EVENT_QUEUE_CAPACITY;
   return config;
-}
-h2_pal_result_t h2_android_app_host_create(h2_runtime_t **out) {
-  h2_runtime_config_t config = h2_android_app_host_config();
-  return h2_runtime_init(&config, out);
-}
-void h2_android_app_host_destroy(h2_runtime_t *runtime) {
-  h2_runtime_deinit(runtime);
 }

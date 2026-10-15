@@ -1,5 +1,5 @@
 #include "h2_ios_net.h"
-#include "h2_mobile_app_host.h"
+#include "h2_mobile_e2e_runtime_config.h"
 #include "mobile_runner.h"
 #import <UIKit/UIKit.h>
 
@@ -37,7 +37,7 @@
       int rc =
           pem && wrong ? h2_ios_net_create(&owner) : H2_PAL_ERR_INVALID_ARG;
       if (rc == H2_PAL_OK) {
-        h2_runtime_config_t config = h2_ios_app_host_config();
+        h2_runtime_config_t config = h2_mobile_e2e_runtime_config();
         config.net = h2_ios_net_api(owner);
         rc = h2_net_tls_mobile_run(
             config, [fixture[@"host"] UTF8String],

@@ -17,9 +17,9 @@ This independent App checks all **46 operations** in the nine PAL Core vtables. 
 | Sync | 14 | All mutex/semaphore/condition operations; recursion, competing try_lock, eight-worker contention, multiple semaphore waiters, broadcast and 20 waiter generations |
 | System Event | 5 | init/deinit/post/subscribe/unsubscribe; payload and type filtering, lifecycle, external unsubscribe during an active callback and self-unsubscribe |
 | Firmware Info | 1 | Read actual image metadata twice and compare with the launcher's embedded build version |
-| **Total** | **46** | Static completeness and actual provider execution are checked separately |
+| **Total** | **46** | Executed case results and resource recovery establish acceptance |
 
-`interface_coverage_test` parses the public headers independently of the manifest. It rejects missing/duplicate operations, signature drift, unknown or duplicate case IDs, wrong registry wiring, wrong wrappers and absent source calls. Its own mismatch regressions guard against an accidentally weakened checker. This is a static completeness check, not a line/branch coverage metric; the real Desktop run must independently pass every registered case.
+The operation manifest describes the intended coverage. Acceptance comes from compiling the public APIs and executing every registered case through the actual provider; source spelling, fixed source hashes and call-site text do not establish a pass.
 
 ## Task acceptance
 
@@ -65,14 +65,13 @@ bazel run --config=macos_arm64 --lockfile_mode=off \
   //projects/e2e/targets/cc_binary/pal-core:pal_core_e2e
 ```
 
-Run the mandatory acceptance, inventory and controlled-failure regressions:
+Run the mandatory acceptance and compiled controlled-failure regressions:
 
 ```sh
 bazel test --config=macos_arm64 --lockfile_mode=off \
   //projects/e2e/targets/cc_binary/pal-core:host_regression_test \
   //projects/e2e/targets/cc_binary/pal-core:app_failure_test \
-  //projects/e2e/targets/cc_binary/pal-core:async_event_test \
-  //projects/e2e/apps/pal-core/app:interface_coverage_test
+  //projects/e2e/targets/cc_binary/pal-core:async_event_test
 ```
 
 Keep Bazel disk cache enabled. `host_regression_test` now runs the same complete acceptance as the executable and requires a zero exit status; there is no exception for unsupported Timer/Firmware Info. A successful terminal result is:

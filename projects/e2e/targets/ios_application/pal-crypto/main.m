@@ -1,5 +1,5 @@
 #include "h2_ios_platform.h"
-#include "h2_mobile_app_host.h"
+#include "h2_mobile_e2e_runtime_config.h"
 #include "mobile_runner.h"
 #import <UIKit/UIKit.h>
 
@@ -24,7 +24,7 @@
       NSString *version =
           NSBundle.mainBundle.infoDictionary[@"CFBundleShortVersionString"];
       int rc = h2_crypto_mobile_run(
-          h2_ios_app_host_config(), "ios-simulator", version.UTF8String,
+          h2_mobile_e2e_runtime_config(), "ios-simulator", version.UTF8String,
           report.fileSystemRepresentation, h2_ios_platform_core_shutdown);
       NSString *text = [NSString stringWithContentsOfFile:report
                                                  encoding:NSUTF8StringEncoding

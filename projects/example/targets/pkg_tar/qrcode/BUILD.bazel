@@ -1,4 +1,4 @@
-load("//libs/app_host:web_app.bzl", "h2_web_app")
+load("//tools/bazel/web:web_app.bzl", "h2_web_app")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -11,5 +11,8 @@ h2_web_app(
         "H2_WEB_APP name=qrcode stage=ready",
         "H2_WEB_APP name=qrcode result=PASS rc=0 fs=0 destroy=0",
     ],
-    deps = ["//projects/example/apps/qrcode/app:qrcode"],
+    deps = [
+        "//projects/example/apps/qrcode/app:qrcode",
+        "//projects/example/libs/host_runtime",
+    ],
 )

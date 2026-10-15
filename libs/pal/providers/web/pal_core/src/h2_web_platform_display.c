@@ -96,9 +96,13 @@ EM_JS(void, h2_web_set_brightness_js,
 /* clang-format off */
 EM_JS(void, h2_web_canvas_available_js,
       (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
-  h2WebMain(context, result, completion, [], "i32",
-    () => {
-  return Module['canvas'] ? 1 : 0;
+  h2WebMain(context, result, completion, ["i32", "i32"], "i32",
+    (width, height) => {
+  const canvas = Module['canvas'];
+  if (!canvas) return 0;
+  if (canvas.width !== width) canvas.width = width;
+  if (canvas.height !== height) canvas.height = height;
+  return 1;
 });
 });
 /* clang-format on */
@@ -254,7 +258,8 @@ static h2_pal_result_t h2_web_display_open(void *user) {
   if (platform == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  if (!((int)h2_web_main_call(h2_web_canvas_available_js, NULL).i32)) {
+  if (!((int)h2_web_main_call(h2_web_canvas_available_js,
+          (const void *[]){&platform->width, &platform->height}).i32)) {
     return H2_PAL_ERR_UNAVAILABLE;
   }
   if (platform->rgba == NULL) {

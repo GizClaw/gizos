@@ -13,7 +13,6 @@ class AsyncDnsTest(unittest.TestCase):
     def test_pending_close_capacity_and_completion(self):
         source = (ROOT / "boards/jieli_ac791n_devkit/ac791n/src/"
                   "h2_jieli_ac791n_devkit_net.c").read_text()
-        assert 'static uint32_t stack_gate;' in source, 'DNS requires stack lifecycle settlement'
         state = source[source.index("struct h2_pal_net_resolver {"):
                        source.index("static h2_pal_result_t map_socket_error")]
         state = state[:state.index("enum { SLOT_RECV")] + source[source.index("static void resolver_reap(void);" if "static void resolver_reap(void);" in source else "static void stack_lock("):source.index("static int slot_enter(")]

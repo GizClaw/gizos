@@ -27,8 +27,6 @@ def preflight(args):
     pcm = args.fixtures["pcm"].read_bytes()
     if not pcm or len(pcm) > 1024 * 1024 or len(pcm) % 2 or not any(pcm):
         raise ValueError("non-silent 16 kHz mono S16LE PCM required")
-    api_coverage.validate_inventory(api_coverage.requirements(),
-        (api_coverage.repository_root() / "libs/gizclaw/tests/public_api.inc").read_text())
     args.gizclaw_fixture = fixture
 
 

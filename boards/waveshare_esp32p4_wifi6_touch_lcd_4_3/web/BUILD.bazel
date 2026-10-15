@@ -1,4 +1,4 @@
-load("//libs/app_host:web_board.bzl", "h2_web_board")
+load("//tools/bazel/web:web_board.bzl", "h2_web_board")
 
 package(default_visibility = ["//visibility:public"])
 

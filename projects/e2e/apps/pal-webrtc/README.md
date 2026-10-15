@@ -11,7 +11,7 @@ Host tests use a separately implemented Pion peer with real ICE/DTLS/SRTP/SCTP. 
 Run host qualification:
 
 ```sh
-bazel test //projects/e2e/apps/pal-webrtc/app:interface_coverage_test //projects/e2e/apps/pal-webrtc/app:reject_missing_test //projects/e2e/targets/cc_binary/pal-webrtc:desktop_test //projects/e2e/targets/pkg_tar/pal-webrtc:browser_test
+bazel test //projects/e2e/apps/pal-webrtc/app:reject_missing_test //projects/e2e/targets/cc_binary/pal-webrtc:desktop_test //projects/e2e/targets/pkg_tar/pal-webrtc:browser_test
 ```
 
 Use the exact manual mobile test targets after selecting dedicated simulators:

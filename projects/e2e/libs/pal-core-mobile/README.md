@@ -9,7 +9,7 @@
 - Wall Time 默认读取系统时间；`set_wall_ms` 设置进程内 PAL 时钟偏移，不修改手机系统时间。
 - FirmwareInfo 来自 iOS App 的 `CFBundleShortVersionString`、Android 的 `PackageInfo.versionName`；Android 宿主须在启动前调用 image-version setter。
 - Log observer 检查真实 stderr/liblog 输出；Task observer 从 pthread 查询栈并检查 局部变量地址；故障注入作用在真实 task-stack 分配；资源计数来自实际对象生命周期。
-- `libs/app_host` 负责组装 Runtime。Runtime 和 Atomic 不归入 PAL 包。
+- `projects/e2e/libs/mobile-platform-config` 只拼装借用 provider 的配置，入口/测试套件负责 Runtime 和平台清理。Runtime 和 Atomic 不归入 PAL 包。
 - `h2_swift_package` / `h2_android_aar` 位于 `tools/bazel/mobile_package.bzl`， 只构建本地产物，不上传或发布。
 - Swift Package 包含 iOS arm64 真机和 arm64 模拟器静态 XCFramework、完整 C 头文件、 module map、`Package.swift`、SHA-256 和 metadata。最低 iOS 16，不含 Intel 模拟器。
 - AAR 包含 arm64-v8a 原生库、Prefab 头文件/元数据，附带 Maven POM、SHA-256。 最低 API 和 NDK 版本从实际 ELF note 读取；本次为 API 31 / NDK 28c， E2E APK 最低 API 31。日志观察器使用 API 30 起提供的 liblog hook。 C++ runtime 静态链接，APK 不依赖额外的 `libc++_shared.so`。
