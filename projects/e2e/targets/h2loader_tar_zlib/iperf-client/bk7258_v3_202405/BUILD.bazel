@@ -1,10 +1,66 @@
+load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_bk7258_firmware")
 load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
 load("//tools/bazel:target_task_policy.bzl", "bk7258_target_task_policy")
 
 package(default_visibility = ["//visibility:public"])
+
+copy_file(
+    name = "launcher_test_source_copy",
+    testonly = True,
+    src = "ap/ap_main.c",
+    out = "tests/ap_main_for_test.inc",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+cc_library(
+    name = "launcher_test_source",
+    testonly = True,
+    hdrs = [":launcher_test_source_copy"],
+    includes = ["tests"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+cc_test(
+    name = "uart_handoff_test",
+    srcs = [
+        "tests/sdk/bk_private/bk_init.h",
+        "tests/sdk/common/sys_config.h",
+        "tests/sdk/driver/uart.h",
+        "tests/sdk/h2_bk7258_board.h",
+        "tests/sdk/h2_bk_h2loader.h",
+        "tests/sdk/h2_bk_platform_core.h",
+        "tests/sdk/h2_bk_target_task_policy.h",
+        "tests/sdk/os/os.h",
+        "tests/sdk/test_sdk.h",
+        "tests/test_uart_handoff.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["tests/sdk"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":launcher_test_source",
+        "//libs/atomic/providers/c11",
+        "//projects/e2e/apps/iperf-client/app:iperf_client",
+    ],
+)
 
 bk7258_target_task_policy(
     ap_allocator = "psram",

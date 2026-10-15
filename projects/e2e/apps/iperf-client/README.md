@@ -21,11 +21,14 @@ Every valid bench invocation attempts the final saved-credential observation and
 
 The BK launcher places benchmark buffers and its 32-KiB runner stack in the existing PSRAM provider so receive buffers leave internal SRAM available for Wi-Fi/control. It stops and joins UART management, takes a bounded UART PAL ledger sink, drains/closes that sink and restores management before image confirmation. Qualification captures the actual BOOT prefix and one uninterrupted raw ledger for each mode, with complete corresponding peer receipts; missing records invalidate admission.
 
+Invalid, partial or failed ledger writes retain the first error. A failed pre-confirmation record blocks confirmation. If the SDK has already confirmed the image and the final confirmation record cannot be delivered, the launcher reports the actual logging error and the capture is incomplete; it cannot undo that successful SDK confirmation. Runtime initialization failure releases the board-owned providers before entering the diagnostic hold.
+
 ## Build and verify
 
 ```sh
 bazel test --config=macos_arm64 //projects/e2e/apps/iperf-client/app:client_test
 bazel test --config=macos_arm64 //projects/e2e/apps/iperf-client/app:network_test
+bazel test --config=macos_arm64 //projects/e2e/targets/h2loader_tar_zlib/iperf-client/bk7258_v3_202405:uart_handoff_test
 bazel build --config=esp32s3 //projects/e2e/targets/h2loader_tar_zlib/iperf-client/devkit:package
 bazel build --config=bk7258 //projects/e2e/targets/h2loader_tar_zlib/iperf-client/bk7258_v3_202405:package
 ```
@@ -33,6 +36,8 @@ bazel build --config=bk7258 //projects/e2e/targets/h2loader_tar_zlib/iperf-clien
 The host test uses real loopback IPv4/IPv6 sockets, exercises 60 TCP/UDP exchanges including repeated dual-family rounds, validates non-fail-fast accounting on a refused endpoint and rejects inconsistent mode/family configuration before traffic. Hardware qualification additionally requires exact UID/port, source/package/image hashes, complete serial logs and final coredump/firmware state.
 
 `network_test` injects public PAL/Runtime outcomes into the production network helper. It checks event alignment, bounded readiness timeout, setup/matrix/post-measurement failure cleanup, exactly-once terminal accounting and final saved-state checks on setup failure, no invented cases or positive gates on failure, and preservation of the primary error when disconnect or the subsequent saved-state check also fails.
+
+`uart_handoff_test` compiles and executes the complete BK launcher with controlled SDK/PAL and benchmark outcomes. It checks stop/join ownership, raw UART configuration and bounded drain across clock wrap, one management restart, PSRAM/stack selection, malformed/partial/failed records, the pre-confirmation gate, SDK confirmation errors, final-record delivery failure and board cleanup after failed Runtime initialization. Actual TCP/UDP exchanges and native firmware assembly are verified separately.
 
 ## Two-board performance qualification
 

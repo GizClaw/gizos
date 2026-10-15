@@ -299,6 +299,8 @@ The board fixture emits its DNS success witness only after PAL reports the compl
 
 `iperf-client` 的 DevKit 与 BK7258 launcher 都通过同一 portable App 的公共 Wi-Fi/Net/Runtime 流程连接 AMOLED server，不再在测试 entry 调用 SDK IPv6 初始化。IPv4-only、IPv6-only 与双栈各自验证公共地址就绪、Runtime snapshot、断开/重连清理和保存凭据未变，再保留 TCP/UDP 正反向三轮性能 ledger。SDK provider 的 lifecycle、作用域/地址/结果列表边界有 focused host tests；平台 package、硬件性能和原固件恢复分别提供 source/artifact-bound evidence。双栈逐族测试，不把两族吞吐相加；SCTP provider 未在这两个 App 启用。
 
+BK launcher 在停止并 join 管理 worker 后借用 raw UART，写入和 drain 有界，关闭后只恢复一次管理服务。`uart_handoff_test` 执行完整 launcher 的受控失败路径；非法/partial/失败记录及确认前日志失败阻止确认。SDK 确认成功后的最后一条日志交付失败会使收据不完整，不能反向撤销该确认；主机回归与当前 native package 构建不能继承旧镜像的真机资格。
+
 ## 验证边界
 
 行为验收使用编译并执行的 C/C++ 测试、真实 SDK 构建和实际平台运行。Python 可以驱动编译、浏览器、fixture 或设备，也可以测试构建工具的实际输入输出；源码关键字、调用顺序文本、固定源码哈希和文档字节快照不作为行为验收。历史报告及其中的源码、产物摘要保留原始身份，只描述记录时的版本；当前版本通过当前构建和真实运行验证，不通过重写历史摘要继承资格。

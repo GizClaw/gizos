@@ -17,14 +17,21 @@ static const h2_pal_uart_io_stream_api_t *console;
 H2_ATOMIC_DEFINE_STATIC(bool, console_writable, false);
 static int console_error;
 
+static int console_result(int rc) {
+  if (rc != H2_PAL_OK && console_error == H2_PAL_OK)
+    console_error = rc;
+  return rc;
+}
 static int record(const char *message) {
   if (!h2_atomic_bool_load(&console_writable, H2_ATOMIC_ACQUIRE))
-    return H2_PAL_ERR_INVALID_STATE;
+    return console_result(H2_PAL_ERR_INVALID_STATE);
+  if (!message)
+    return console_result(H2_PAL_ERR_INVALID_ARG);
   char line[1024];
   size_t length = strlen(message);
   if (length == 0 || length > sizeof(line) - 2 || strchr(message, '\r') ||
       strchr(message, '\n'))
-    return H2_PAL_ERR_INVALID_ARG;
+    return console_result(H2_PAL_ERR_INVALID_ARG);
   memcpy(line, message, length);
   line[length++] = '\r';
   line[length++] = '\n';
@@ -32,9 +39,7 @@ static int record(const char *message) {
   int rc = h2_pal_uart_io_stream_write(console, line, length, &written, 5000u);
   if (rc == H2_PAL_OK && written != length)
     rc = H2_PAL_ERR_IO;
-  if (rc != H2_PAL_OK && console_error == H2_PAL_OK)
-    console_error = rc;
-  return rc;
+  return console_result(rc);
 }
 static int ledger_log(void *user, h2_pal_log_level_t level, const char *scope,
                       const char *message) {
@@ -126,13 +131,18 @@ static void run(void *user) {
     rc = restored;
   if (rc != H2_PAL_OK)
     fail("bench-or-console", rc);
-  (void)record("H2_IPERF_CLIENT_PHASE board=bk7258 phase=confirm-begin "
-               "control_restored=1");
+  rc = record("H2_IPERF_CLIENT_PHASE board=bk7258 phase=confirm-begin "
+              "control_restored=1");
+  if (rc != H2_PAL_OK)
+    fail("confirm-log", rc);
   rc = h2_bk_h2loader_confirm_current_app(runtime);
   char line[160];
   snprintf(line, sizeof(line), "H2_IPERF_CLIENT_CONFIRMED board=bk7258 rc=%d",
            rc);
-  if (record(line) != H2_PAL_OK || rc != H2_PAL_OK)
+  int logged = record(line);
+  if (rc == H2_PAL_OK)
+    rc = logged;
+  if (rc != H2_PAL_OK)
     fail("confirm", rc);
   hold();
 }
@@ -147,8 +157,10 @@ static void entry(void *user) {
   board_log = config.log;
   config.log = &ledger_api;
   rc = h2_runtime_init(&config, &runtime);
-  if (rc != H2_PAL_OK)
+  if (rc != H2_PAL_OK) {
+    (void)h2_bk7258_board_runtime_deinit();
     fail("runtime", rc);
+  }
   rc = start_commands();
   if (rc != H2_PAL_OK)
     fail("commands", rc);
