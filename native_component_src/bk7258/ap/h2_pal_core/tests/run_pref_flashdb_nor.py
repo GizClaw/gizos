@@ -60,6 +60,8 @@ def main():
             subprocess.run([str(binary), str(Path(tmp) / ("fault.bin" if phase != "unknown-tail" else "unknown.bin")), phase], check=True, timeout=90)
         subprocess.run([str(binary),str(Path(tmp)/"port-cache.bin"),"port-cache"],check=True,timeout=90)
         subprocess.run([str(binary),str(Path(tmp)/"port-cache.bin"),"clean"],check=True,timeout=90)
+        subprocess.run([str(binary),str(Path(tmp)/"remove-prefetch.bin"),"remove-prefetch"],check=True,timeout=90)
+        subprocess.run([str(binary),str(Path(tmp)/"remove-prefetch.bin"),"clean"],check=True,timeout=90)
         subprocess.run([str(binary),str(Path(tmp)/"cache.bin"),"cache"],check=True,timeout=90)
         subprocess.run([str(binary),str(Path(tmp)/"cache.bin"),"clean"],check=True,timeout=90)
         if args.compare_baseline:

@@ -1,5 +1,5 @@
 #include "h2_android_platform.h"
-#include "h2_mobile_app_host.h"
+#include "h2_mobile_e2e_runtime_config.h"
 #include "mobile_runner.h"
 #include <jni.h>
 
@@ -12,7 +12,7 @@ Java_com_haivivi_gizos_e2e_palaudiodecoder_MainActivity_nativeRun(
     const char *image=(*env)->GetStringUTFChars(env,version,NULL);
     if (!image) { (*env)->ReleaseStringUTFChars(env,report,path); return H2_PAL_ERR_NO_MEMORY; }
     int rc=h2_android_platform_set_image_version(image);
-    if (!rc) rc=h2_adec_mobile_run(h2_android_app_host_config(),
+    if (!rc) rc=h2_adec_mobile_run(h2_mobile_e2e_runtime_config(),
         h2_android_platform_audio_decoder_api(), "android-emulator",image,path,
         h2_android_platform_core_shutdown);
     (*env)->ReleaseStringUTFChars(env,version,image);

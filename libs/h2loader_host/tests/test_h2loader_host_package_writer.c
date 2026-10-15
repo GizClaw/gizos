@@ -1,5 +1,6 @@
 #include "h2_h2loader_host_package.h"
 #include "h2_h2loader_host_internal.h"
+#include "h2_sha256.h"
 
 #include <assert.h>
 #include <stdlib.h>
@@ -74,13 +75,13 @@ int main(void) {
     h2_h2loader_host_package_writer_result_t result;
     assert(h2_h2loader_host_package_write(&config, &result) == H2_PAL_OK);
     assert(output.len == 10240u);
-    h2_h2loader_host_sha256_t sha;
+    h2_sha256_t sha;
     uint8_t digest[32];
     char hex[65];
-    h2_h2loader_host_sha256_init(&sha);
-    h2_h2loader_host_sha256_update(&sha, output.data, output.len);
-    h2_h2loader_host_sha256_finish(&sha, digest);
-    h2_h2loader_host_sha256_hex(digest, hex);
+    h2_sha256_init(&sha);
+    h2_sha256_update(&sha, output.data, output.len);
+    h2_sha256_finish(&sha, digest);
+    h2_sha256_hex(digest, hex);
     assert(strcmp(hex, "e0e9d11a510d23548b9da21651f89c5e315e4b651de5071ee5c12d39d54035be") == 0);
 
     bytes_t package = {.data = output.data, .len = output.len};

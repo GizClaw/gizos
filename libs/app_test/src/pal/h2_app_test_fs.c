@@ -5,7 +5,7 @@ typedef struct file_entry {
   char path[H2_APP_TEST_FS_PATH_MAX + 1u];
   uint8_t *data;
   size_t size;
-  bool opened;
+  bool opened, is_dir;
 } file_entry_t;
 typedef struct store {
   file_entry_t files[H2_APP_TEST_FS_FILES_MAX];
@@ -47,7 +47,7 @@ static int open_file(void *u, const char *path, h2_pal_fs_open_mode_t mode,
   if (rc)
     return rc;
   file_entry_t *e = find(f, path);
-  if (e && e->opened)
+  if (e && (e->opened || e->is_dir))
     return H2_PAL_ERR_INVALID_STATE;
   if (!e && mode == H2_PAL_FS_OPEN_READ)
     return H2_PAL_ERR_NOT_FOUND;
@@ -173,6 +173,7 @@ static int stat_file(void *u, const char *path, h2_pal_fs_stat_t *out) {
   if (!e)
     return H2_PAL_ERR_NOT_FOUND;
   out->size = e->size;
+  out->is_dir = e->is_dir;
   return 0;
 }
 static int remove_file(void *u, const char *path) {
@@ -187,6 +188,14 @@ static int remove_file(void *u, const char *path) {
     return H2_PAL_ERR_NOT_FOUND;
   if (e->opened)
     return H2_PAL_ERR_INVALID_STATE;
+  if (e->is_dir) {
+    store_t *s = f->implementation;
+    size_t length = strlen(path);
+    for (size_t i = 0; i < H2_APP_TEST_FS_FILES_MAX; ++i)
+      if (!strncmp(s->files[i].path, path, length) &&
+          s->files[i].path[length] == '/')
+        return H2_PAL_ERR_BUSY;
+  }
   h2_pal_mem_free(f->mem, e->data);
   memset(e, 0, sizeof(*e));
   return 0;
@@ -201,6 +210,8 @@ static int rename_file(void *u, const char *old, const char *next) {
   file_entry_t *e = find(f, old), *to = find(f, next);
   if (!e)
     return H2_PAL_ERR_NOT_FOUND;
+  if (e->is_dir || (to && to->is_dir))
+    return H2_PAL_ERR_UNSUPPORTED;
   if (e->opened || (to && to->opened))
     return H2_PAL_ERR_INVALID_STATE;
   if (e == to)
@@ -212,12 +223,29 @@ static int rename_file(void *u, const char *old, const char *next) {
   strcpy(e->path, next);
   return 0;
 }
+static int mkdir_path(void *u, const char *path) {
+  h2_app_test_fs_t *f = u;
+  if (!valid_path(path))
+    return H2_PAL_ERR_INVALID_ARG;
+  file_entry_t *entry = find(f, path);
+  if (entry)
+    return entry->is_dir ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE;
+  store_t *s = f->implementation;
+  for (size_t i = 0; i < H2_APP_TEST_FS_FILES_MAX; ++i) {
+    if (s->files[i].path[0])
+      continue;
+    strcpy(s->files[i].path, path);
+    s->files[i].is_dir = true;
+    return H2_PAL_OK;
+  }
+  return H2_PAL_ERR_NO_SPACE;
+}
 static int unsupported_path(void *u, const char *p) {
   (void)u;
   (void)p;
   return H2_PAL_ERR_UNSUPPORTED;
 }
-static const h2_pal_fs_vtable_t vtable = {.mkdir = unsupported_path,
+static const h2_pal_fs_vtable_t vtable = {.mkdir = mkdir_path,
                                           .clear = unsupported_path,
                                           .open = open_file,
                                           .read = read_file,

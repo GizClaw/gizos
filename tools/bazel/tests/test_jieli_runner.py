@@ -58,16 +58,6 @@ def git(checkout: Path, *arguments: str) -> str:
     ).stdout.strip()
 
 
-class StandaloneTargetLayoutTest(unittest.TestCase):
-    def test_mp4_firmware_terminal(self):
-        root = Path(__file__).resolve().parents[3]
-        target = root / "projects/example/targets/native_firmware/mp4-player/jieli_ac791n_devkit"
-        build = (target / "BUILD.bazel").read_text()
-        self.assertIn('name = "firmware"', build)
-        self.assertIn('srcs = ["src/main.c"]', build)
-        self.assertFalse((root / "projects/example/targets/jieli_firmware" / "mp4-player").exists())
-
-
 class JieliRunnerFixture:
     """A fake SDK checkout, toolchain tree and post-build script."""
 
@@ -141,7 +131,7 @@ class JieliRunnerFixture:
         values = dict(
             source_root=str(self.root),
             target=self.target,
-            entry="projects/e2e/targets/jieli_firmware/pal/jieli_dev_board",
+            entry="projects/e2e/targets/jieli_firmware/reference-smoke/ac791n_reference",
             board="fixture_board",
             image="demo",
             project_makefile=str(self.project_makefile.relative_to(self.root)),

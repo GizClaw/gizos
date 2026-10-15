@@ -27,7 +27,7 @@ header-only `//libs/pal:pal`；直接调用 canonical unsupported accessor 的 t
 `//libs/pal:unsupported`。Unsupported source 按 capability 拆成独立 object，最终静态
 链接只抽取真实引用的 capability，不能用 `alwayslink` 或 whole-archive 保留全集。
 
-Library family 可以增加一层只用于分类的 container。例如 `projects/pixa_games/libs` 本身不是 library，不能直接放 `include/`、`src/` 或 shared implementation；其中每个 `projects/pixa_games/libs/<game>/` 才是遵守上述标准结构的独立 reusable library。Family 可以在具名的 `libs/cmake/` package 中提供跨 target build system 复用的 CMake API；该 build library 只拥有 family source inventory、include 和 portable compile contract，不能包含 board wiring、image policy、target SDK glue 或 platform implementation。PIXA Games 的 Host 只注入 shared Player PIXA，game-owned legacy UI 贴图转换成 `src/` 中的 ARGB4444 代码数据；具体边界见 [PIXA Games](/apps/pixa_games)。
+Library family 可以增加一层只用于分类的 container。例如 `libs/crypto/` 按算法组织密码学能力，`libs/crypto/sha256/` 是独立 library；`projects/pixa_games/libs` 按 game 组织 reusable library。分类 container 本身不是 library，不能直接放 `include/`、`src/` 或 shared implementation；每个子 library 遵守上述标准结构。Family 可以在具名的 `libs/cmake/` package 中提供跨 target build system 复用的 CMake API；该 build library 只拥有 family source inventory、include 和 portable compile contract，不能包含 board wiring、image policy、target SDK glue 或 platform implementation。PIXA Games 的 Host 只注入 shared Player PIXA，game-owned legacy UI 贴图转换成 `src/` 中的 ARGB4444 代码数据；具体边界见 [PIXA Games](/apps/pixa_games)。
 
 ## 依赖边界
 
@@ -137,7 +137,8 @@ App 必须在调用 third-party API 之前完成对应 integration 初始化，�
   NFC 子目录中的 `type2` protocol engine 与 `fm17660k` controller driver 分别拥有协议和设备状态机；board wiring 仍由 component/BSP 注入。
 - [`game_runtime`](./game_runtime.md)：跨平台 game runtime。
 - [`pixa_games`](/apps/pixa_games)：可以被多个 project 引用的 PIXA game library family。
-- [`gizclaw`](./gizclaw.md)：GizClaw client、config 和公共类型。
+- [`gizclaw`](./gizclaw.md)：GizClaw client、config、公共类型和复用异步 API-key state 的 [BLE 绑定窗口](./gizclaw_ble_binding.md)。
+- [`lua/apps`](./lua.md#lua-app-目录与流式安装)：预装与安装应用的统一目录、增量包校验和原子安装；不依赖 GizClaw 或产品 UI。
 - [`h2peer`](./h2peer.md)：由 GizOS 维护、通过 PAL 注入平台能力的 portable WebRTC core。
 - [`h2sctp`](./h2sctp.md)：由 GizOS 维护、在调用方 DTLS packet transport 上运行的 portable SCTP PAL provider。
 - [`iperf`](./iperf.md)：只依赖 PAL 的 iperf3 兼容吞吐测试 client 与 server，覆盖 TCP、UDP 和 SCTP。
@@ -152,6 +153,7 @@ App 必须在调用 third-party API 之前完成对应 integration 初始化，�
 - [`tinyh264`](./tinyh264.md)：TinyH264 的 portable Video Decoder PAL provider。
 - [`runtime`](./runtime.md)：提供给 app 使用的跨平台 Runtime。
 - [`semver`](./semver.md)：无堆分配的 SemVer 校验和排序，非法版本统一低于合法版本。
+- [`crypto/sha256`](./sha256.md)：无堆分配的增量摘要，由 Lua App 安装器、H2Loader 和 portable Host Core 共用。
 - [`utils`](./utils.md)：APN 和单份 binary32 reciprocal/FMA 除法等小型 portable helper；数值编译假设与异常语义由生产公共头定义，不在 Lua 或应用中复制实现。
 - [`wolfssl`](./wolfssl.md)：同一 upstream 下的裁剪 Crypto PAL variant 与
   完整 Crypto/DTLS provider；不公开 WolfSSL private type。

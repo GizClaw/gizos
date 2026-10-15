@@ -89,7 +89,7 @@ class ReleaseTest(unittest.TestCase):
 
     def test_catalog_rejects_diagnostics_even_when_tagged(self):
         for entry, label in (
-            ("projects/e2e/targets/h2loader_tar_zlib/pal/devkit", None),
+            ("projects/e2e/targets/h2loader_tar_zlib/pal-core/devkit", None),
             ("projects/example/targets/h2loader_tar_zlib/button/devkit", None),
             ("projects/h2loader/targets/h2loader_tar_zlib/e2e-app/devkit", None),
             (release_bundle.LOADER_ROOT + "devkit", ":package_usb"),

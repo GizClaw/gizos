@@ -66,6 +66,13 @@ static int unsupported_audio_set_mic_gain_percent(void *user, uint32_t percent) 
     return H2_PAL_ERR_UNSUPPORTED;
 }
 
+static int audio_aec_diagnostics_unsupported(void *user,
+    const h2_audio_aec_observer_t *observer) {
+    (void)user;
+    (void)observer;
+    return H2_AUDIO_ERR_UNSUPPORTED;
+}
+
 static const h2_pal_audio_vtable_t unsupported_audio_vtable = {
     .get_info = unsupported_audio_get_info,
     .start_mic = unsupported_audio_start_mic,
@@ -78,6 +85,7 @@ static const h2_pal_audio_vtable_t unsupported_audio_vtable = {
     .set_speaker_volume_percent = unsupported_audio_set_speaker_volume_percent,
     .get_mic_gain_percent = unsupported_audio_get_mic_gain_percent,
     .set_mic_gain_percent = unsupported_audio_set_mic_gain_percent,
+    .set_aec_observer = audio_aec_diagnostics_unsupported,
 };
 static const h2_pal_audio_api_t unsupported_audio_api = { .user = NULL, .vtable = &unsupported_audio_vtable };
 const h2_pal_audio_api_t *h2_pal_unsupported_audio_api(void) { return &unsupported_audio_api; }

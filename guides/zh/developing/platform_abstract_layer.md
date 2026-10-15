@@ -97,7 +97,7 @@ Browser 的 reusable provider 位于 `libs/pal/providers/web/pal_core`，暴露�
 
 Display 的 `open` 幂等；`get_info`、`draw_bitmap`、`present` 和亮度操作必须在成功 open 后调用。重复 open 不增加关闭所需的引用数，close 后调用返回 `INVALID_STATE`。Bitmap 输入只在 draw 调用期间借用，provider 不可把输入指针留给随后 present；stride、source span 和矩形端点必须先做有界计算，再访问像素。native format 必须实现，额外格式和矩形裁剪仍由各 provider 明确支持范围。亮度参数为 0..100，超过范围返回 `INVALID_ARG`，不会静默改变亮度。
 
-Desktop 的 composition frame callback 提供未调亮度的组合 framebuffer；独立、可选的 renderer capture callback 在真正 SDL texture/render/亮度处理后读取 RGBA 像素。未注册时不会执行昂贵 GPU readback，两个 callback 的输入都只在回调期间借用，禁止重入 SDL provider。iOS/Android 的 Display E2E launcher 创建真实 UIKit/Android View 并注入自己的 Runtime；全局 headless App Host 继续使用 unsupported Display。
+Desktop 的 composition frame callback 提供未调亮度的组合 framebuffer；独立、可选的 renderer capture callback 在真正 SDL texture/render/亮度处理后读取 RGBA 像素。未注册时不会执行昂贵 GPU readback，两个 callback 的输入都只在回调期间借用，禁止重入 SDL provider。iOS/Android 的 Display E2E launcher 创建真实 UIKit/Android View 并注入自己的 Runtime；移动端 E2E 的默认 Runtime 配置继续使用 unsupported Display。
 
 独立的 [PAL Display E2E](https://github.com/GizClaw/gizos/tree/main/projects/e2e/apps/pal-display) 通过相同 24 个 case 验证六个公开操作。桌面、浏览器和模拟器观察实际 renderer/页面/View 的像素；AMOLED SPI DMA 完成证据、BK LCD 活跃 DMA/refresh 证据与屏幕光学像素、实测亮度是不同验收层。没有物理 readback/相机或人工确认时，不可仅凭 framebuffer hash 或 draw 返回 OK 宣称物理屏幕通过。
 
@@ -175,7 +175,7 @@ boundary。裁剪 variant 完整实现 Crypto PAL；完整 variant 额外实现 
 ESP-IDF 与 BK7258 provider 使用 public PSA/MbedTLS surface 实现同一完整 vtable，
 不能通过 private header 或本地复制算法补洞。
 
-iOS 与 Android 的 Crypto owner 位于各自 `pal_core/src/h2_*_crypto.c`，通过唯一的完整 `wolfssl` integration 提供完整 15 项接口，并与同进程 HTTP owner 共享引用计数保护的 TLS/加密生命周期。iOS 使用 `SecRandomCopyBytes`，Android 从系统 `/dev/urandom` 读取熵并处理短读和 EINTR；随机源失败返回错误，不退回伪随机。App Host 默认绑定该 process-wide provider，首次 getter 在互斥保护下初始化；返回的 API 由平台持有。调用方必须先停止全部 Crypto 调用并销毁 Runtime，再调用 `h2_*_platform_crypto_shutdown()` 或成功的 `platform_core_shutdown()`；shutdown 幂等，后续 getter 可开启新生命周期。Swift Package 的 module map 和 packaged importer 同时声明 Security framework，Android AAR 包含真实 provider。
+iOS 与 Android 的 Crypto owner 位于各自 `pal_core/src/h2_*_crypto.c`，通过唯一的完整 `wolfssl` integration 提供完整 15 项接口，并与同进程 HTTP owner 共享引用计数保护的 TLS/加密生命周期。iOS 使用 `SecRandomCopyBytes`，Android 从系统 `/dev/urandom` 读取熵并处理短读和 EINTR；随机源失败返回错误，不退回伪随机。移动端 E2E 配置默认绑定该 process-wide provider，首次 getter 在互斥保护下初始化；返回的 API 由平台持有。调用方必须先停止全部 Crypto 调用并销毁 Runtime，再调用 `h2_*_platform_crypto_shutdown()` 或成功的 `platform_core_shutdown()`；shutdown 幂等，后续 getter 可开启新生命周期。Swift Package 的 module map 和 packaged importer 同时声明 Security framework，Android AAR 包含真实 provider。
 
 独立 `projects/e2e/apps/pal-crypto` 以 22 个必选 case 验证全部 Crypto 操作，包括标准向量、无效参数、认证拒绝、重叠/容量边界和重复调用。六端入口使用相同 portable App，缺失接口保持 BLOCKED，不能算通过；随机差异检查不是随机质量或侧信道安全认证。
 
@@ -265,7 +265,7 @@ Net PAL 的 `tcp_connect` 是可跨 poll 继续的 bounded connect operation：`
 
 Net PAL 的 `tcp_listen` 与 `tcp_accept` 是 raw TCP 的 server-side contract：`tcp_listen` 绑定并监听（`port == 0` 选择 ephemeral port，`out_bind_addr` 报告实际绑定地址），`tcp_accept` 在 `timeout_ms` 内接受一个连接并返回新的 opaque socket；`H2_PAL_ERR_TIMEOUT` 与 `H2_PAL_ERR_WOULD_BLOCK` 保留 listener 可继续使用。这两项是可选能力，没有实现的 backend 由 checked wrapper 返回 `H2_PAL_ERR_UNSUPPORTED`；Desktop（POSIX）backend 提供实现，`libs/iperf` 的 server 依赖它。
 
-iOS 与 Android 提供独立 `h2_*_net_create/api/destroy` owner，通过真实 SDK package 导出；owner 持有完整 WolfSSL 生命周期引用，借出的 Net API 只在 owner 存活期有效。销毁前 caller 必须停止调用并释放所有 socket/resolver，AppHost 默认组装保持独立。独立 PAL Net/TLS E2E 使用实际 packaged provider 验证 raw socket 和 TLS，不通过 HTTP 推断 TLS 能力。六平台 assessment 对支持能力要求真实 PASS，对实际缺失能力明确 SKIP；浏览器仍保持本地语义，21 项 canonical unsupported Net 操作不构成 raw Net/TLS 功能通过。
+iOS 与 Android 提供独立 `h2_*_net_create/api/destroy` owner，通过真实 SDK package 导出；owner 持有完整 WolfSSL 生命周期引用，借出的 Net API 只在 owner 存活期有效。销毁前 caller 必须停止调用并释放所有 socket/resolver，移动端 E2E Runtime 配置与实际 Net owner 保持独立。独立 PAL Net/TLS E2E 使用实际 packaged provider 验证 raw socket 和 TLS，不通过 HTTP 推断 TLS 能力。六平台 assessment 对支持能力要求真实 PASS，对实际缺失能力明确 SKIP；浏览器仍保持本地语义，21 项 canonical unsupported Net 操作不构成 raw Net/TLS 功能通过。
 
 SCTP PAL 以 association 为 opaque handle，通过同步 `emit_packet` callback 交付完整
 SCTP packet，并由调用方把收到的完整 packet 送回 provider。所有 timer 都由调用方提供的
@@ -332,11 +332,25 @@ h2/pal/hal/h2_pal_wifi_settings.h
 
 Single-button periph payload 同时声明输入交付模式。`POLL_STATE` 表示 Runtime 通过 Button PAL 读取稳定的 pressed/released 状态；`PUSH_EDGE` 表示拥有该 periph 的 adapter 主动向 Runtime 推送 raw down/up edge，Runtime 不再调用 Button PAL read。未提供 payload 的既有 single-button periph 按 `POLL_STATE` 处理。交付模式是 periph 能力，不是 App component 类型；launcher 仍通过 component mapping 把相同的 App Button component 映射到不同来源。
 
+### Audio AEC 观察
+
+Audio PAL 的可选 `set_aec_observer` 操作提供实际 AEC 的同帧 raw ADC、reference input、processed PCM，以及实际交给 DAC 的播放数据和处理错误。注册时复制 descriptor，callback 中的 PCM 只在调用期间借用；caller 的 user 必须保留到成功撤销。注册、替换和撤销要求 mic、speaker 均停止且 worker 已 join，失败保留旧注册；callback 不等待、不分配、不重入 Audio。
+
+具备完整诊断的 ES8311+ES7210 provider 实现该操作，其余 provider 明确返回 `UNSUPPORTED`，普通 Audio 能力保持各自合同。Runtime 和 lazy Audio proxy 透明转发；替换采集 PCM 的 Testing Audio decorator 不提供声学校准诊断。完整约束见 [Audio AEC Calibration PAL contract](./audio_aec_calibration)，测试与设备声学资格分别由实际执行和独立近端声源夹具证明。
+
 ### Modem 通话扬声器音量
 
 `h2_pal_modem` 通过 `H2_PAL_MODEM_CAPABILITY_CALL_VOLUME` 声明通话扬声器音量能力，`h2_pal_modem_set_call_volume()` / `h2_pal_modem_get_call_volume()` 统一使用 `0..100` percent，模块原生档位由 provider 映射。Quectel 使用 `AT+CLVL`，每次 open 后首次使用时探测并缓存范围；SIMCom 暂不实现，未提供该能力的 provider 返回 `H2_PAL_ERR_UNSUPPORTED`。该接口不控制麦克风、铃声、音频路由或功放，也不要求已有通话，可在拨号前设置。
 
-两个调用都是 task context 下的阻塞操作，与其它 AT 操作串行，应由处理拨号、接听和挂断的 modem task 调用，不能放在 UI/main loop 或 ISR 中。支持 LOW_POWER 的 Quectel 实例要求 modem 已 open，并在命令前完成唤醒准备；音量操作不改变通话持有的唤醒状态。音量是模块的易失状态，不隐式跨 close/open 保存或恢复，调用方应在需要时重新设置。
+两个调用都是 task context 下的阻塞操作，与其它 AT 操作串行，应由处理拨号、接听和挂断的 modem task 调用，不能放在 UI/main loop 或 ISR 中。支持 LOW_POWER 的 Quectel 实例要求 modem 已 open，并在命令前完成唤醒准备；音量操作不改变通话持有的唤醒状态。Provider 不隐式跨 close/open 保存或恢复音量，调用方应在需要时重新设置；模块可能自行保存设置，例如 EC800M 的 CLVL，PAL 不承诺模块设置易失。
+
+### Modem 紧急号码和固件升级
+
+`h2_pal_modem_get_emergency_numbers()` 与 `H2_PAL_MODEM_CAPABILITY_EMERGENCY_NUMBERS` 提供只读号码发现，结果保存字符串、SIM 适用范围、来源和可选类别；未知字段保持 UNKNOWN，不能用手册示例填补。调用要求 modem 已 open，但不以 SIM READY 或网络注册为门槛。列表必须完整，截断、容量不足或格式错误均失败并清空输出；临时电话本选择在成功前恢复。号码不由 provider 跨调用缓存，应用自己的缓存必须随 SIM、模块重启及相关网络变化失效。该查询不拨号，也不承诺网络可以接通。
+
+`h2_pal_modem_ota_start()`／`h2_pal_modem_ota_get_status()` 与 `H2_PAL_MODEM_CAPABILITY_OTA` 提供模组自身固件的 URL 升级。请求包含一个 URL、目标版本及可选源版本约束；当前版本由 `get_identity().revision` 读取。版本是厂商标识，按完整字符串比较，由应用选择升级包及升级时机。OK 只表示请求被接受；Quectel 后端在完成通知、重启及实际目标版本确认后报告 SUCCEEDED。超时可能保留 UNKNOWN；升级期间禁止再次启动、普通 AT 操作、关闭和销毁，保留实例、供电及 URC 接收，不自动重试或断电。状态仅保留在当前 provider 实例，跨主控重启的意图及恢复策略由应用负责。所有阻塞命令及状态确认都在 modem task 中执行，不能进入 ISR、通知回调或 UI loop。
+
+未实现的方法返回 UNSUPPORTED。Quectel 的 EC25／EC800M 查询及升级协议、MiniFOTA 单 URL 和内部 PDP 的接入条件见 [Drivers](./drivers.md#model-families)；该 capability 不代表任意型号／固件／网络都能完成操作。
 
 ### Touch
 
@@ -633,7 +647,7 @@ Target-specific unavailable adapter、dummy 和 fake backend 放在 `libs/pal` �
 
 iOS 和 Android 的 Core（Memory、Log、Time、Timer、Task、Queue、Sync、SystemEvent、 FirmwareInfo）使用原生 pthread/系统时钟实现。公共线程核心位于 `libs/pal/providers/posix/pal_core`，由 iOS、Android 和 Web pthread provider 复用； UIKit、Android UI/媒体适配仍留在各自 provider 下。PAL 的 `set_wall_ms` 在移动端维护 进程内时钟偏移，不要求修改系统时钟的权限。
 
-移动端 provider 的本地发布边界为 iOS `:swift_package` 和 Android `:aar`， 打包规则位于 `tools/bazel/mobile_package.bzl`。这些包不包含 Runtime 或 Atomic。 `libs/app_host` 负责组装 Runtime；独立 PAL Core E2E App 消费实际包的二进制， 验证完整 Core v2 合约。测试入口和证据见 `projects/e2e/libs/pal-core-mobile/README.md`。
+移动端 provider 的本地发布边界为 iOS `:swift_package` 和 Android `:aar`， 打包规则位于 `tools/bazel/mobile_package.bzl`。这些包不包含 Runtime 或 Atomic。 移动端入口通过 `projects/e2e/libs/mobile-platform-config` 获取完整配置并自行组装 Runtime；独立 PAL Core E2E App 消费实际包的二进制， 验证完整 Core v2 合约。测试入口和证据见 `projects/e2e/libs/pal-core-mobile/README.md`。
 
 ### 原生移动端 Storage
 

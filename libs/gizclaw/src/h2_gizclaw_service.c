@@ -106,12 +106,14 @@ static void log_operation_trace(const h2_gizclaw_service_t *service,
 }
 
 static h2_pal_result_t client_init(const h2_gizclaw_config_t *config,
+                                   const gzc_rpc_stream_provider_t *provider,
                                    h2_gizclaw_client_t **out_client) {
 #ifdef H2_GIZCLAW_TESTING
   if (s_client_ops != NULL && s_client_ops->init != NULL)
     return s_client_ops->init(config, out_client);
 #endif
-  return (h2_pal_result_t)h2_gizclaw_client_init(config, out_client);
+  return (h2_pal_result_t)h2_gizclaw_client_init_with_lua_stream_internal(
+      config, provider, out_client);
 }
 
 static h2_pal_result_t client_connect(h2_gizclaw_client_t *client) {
@@ -713,7 +715,11 @@ static void net_worker(void *ctx) {
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_time_prepare_connect_internal(service);
   if (rc == H2_PAL_OK)
-    rc = client_init(&service->client_config, &service->client);
+    rc = h2_gizclaw_device_start_lua_stream_internal(service->device);
+  if (rc == H2_PAL_OK)
+    rc = client_init(&service->client_config,
+                     h2_gizclaw_device_lua_stream_internal(service->device),
+                     &service->client);
   if (rc == H2_PAL_OK) {
     client_set_downlink_stream(service);
     rc = client_connect(service->client);

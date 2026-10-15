@@ -20,6 +20,7 @@ typedef struct metadata_pref_fixture {
     int remove_result;
     int commit_result;
     int open_result;
+    int close_result;
     unsigned commits;
 } metadata_pref_fixture_t;
 
@@ -34,8 +35,8 @@ static void metadata_free(void *user, void *ptr) {
 }
 
 static int metadata_pref_close(h2_pal_pref_namespace_t *ns) {
-    (void)ns;
-    return H2_PAL_OK;
+    metadata_pref_fixture_t *fixture = ns->user;
+    return fixture->close_result;
 }
 
 static int metadata_pref_get_blob(
@@ -339,7 +340,38 @@ static void test_missing_namespace_is_empty_metadata(void) {
     assert(metadata.valid == 0);
 }
 
+static void test_malformed_record_is_distinct_from_backend_failure(void) {
+    static const h2_pal_pref_vtable_t pref_vtable = {.open = metadata_pref_open};
+    static const h2_pal_mem_vtable_t mem_vtable = {
+        .alloc = metadata_alloc,
+        .free = metadata_free,
+    };
+    metadata_pref_fixture_t fixture = {.persisted_len = 1u};
+    const h2_pal_pref_api_t pref = {.user = &fixture, .vtable = &pref_vtable};
+    const h2_pal_mem_api_t mem = {.vtable = &mem_vtable};
+    h2_loader_metadata_t record = valid_stage();
+    int present = 1;
+    assert(h2_loader_metadata_read(
+               &pref, &mem, H2_LOADER_METADATA_SLOT_STAGE,
+               &record, &present) == H2_PAL_ERR_FORMAT);
+    assert(present == 0 && record.valid == 0 && record.image_size == 0u);
+    assert(fixture.persisted_len == 1u && fixture.commits == 0u);
+
+    fixture.close_result = H2_PAL_ERR_IO;
+    assert(h2_loader_metadata_read(
+               &pref, &mem, H2_LOADER_METADATA_SLOT_STAGE,
+               &record, &present) == H2_PAL_ERR_IO);
+    assert(present == 0 && record.valid == 0);
+    fixture.close_result = H2_PAL_OK;
+    fixture.open_result = H2_PAL_ERR_INVALID_ARG;
+    assert(h2_loader_metadata_read(
+               &pref, &mem, H2_LOADER_METADATA_SLOT_STAGE,
+               &record, &present) == H2_PAL_ERR_INVALID_ARG);
+    assert(present == 0 && record.valid == 0);
+}
+
 int main(void) {
+    test_malformed_record_is_distinct_from_backend_failure();
     test_slot_keys();
     test_round_trip_preserves_complete_identity();
     test_slot_validation();

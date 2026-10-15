@@ -35,6 +35,13 @@ h2_pal_result_t h2_quectel_at_exchange_timeout(
     h2_quectel_response_t *response,
     int allow_connect,
     uint32_t timeout_ms);
+/* A borrowed response line delivered under the state lock. The collector
+ * cannot reenter the provider; it records parse errors while AT drains to the
+ * terminal result. Long replies need not inflate every response's stack array. */
+typedef void (*h2_quectel_at_line_fn)(void *user, const char *line);
+h2_pal_result_t h2_quectel_at_collect(h2_quectel_modem_t *modem,
+    const char *cmd, h2_quectel_response_t *response, uint32_t timeout_ms,
+    h2_quectel_at_line_fn collect, void *collect_user);
 const char *h2_quectel_response_find(const h2_quectel_response_t *response, const char *prefix);
 int h2_quectel_parse_int_after(const char *text, const char *prefix, int *out_value);
 void h2_quectel_copy_token(char *dst, size_t dst_len, const char *src);
@@ -79,5 +86,26 @@ void h2_quectel_handle_urc_locked(h2_quectel_modem_t *modem, const char *line);
 
 h2_pal_result_t h2_quectel_set_call_volume(void *user, uint32_t percent);
 h2_pal_result_t h2_quectel_get_call_volume(void *user, uint32_t *out_percent);
+h2_pal_result_t h2_quectel_get_emergency_numbers(void *user, uint32_t timeout_ms,
+    h2_pal_modem_emergency_number_t *out_numbers, size_t capacity,
+    size_t *out_count);
+h2_pal_result_t h2_quectel_resolve_model(h2_quectel_modem_t *modem);
+h2_pal_result_t h2_quectel_ec25_emergency_numbers(h2_quectel_modem_t *modem,
+    uint32_t timeout_ms, h2_pal_modem_emergency_number_t *out_numbers,
+    size_t capacity, size_t *out_count);
+h2_pal_result_t h2_quectel_ec800m_emergency_numbers(h2_quectel_modem_t *modem,
+    uint32_t timeout_ms, h2_pal_modem_emergency_number_t *out_numbers,
+    size_t capacity, size_t *out_count);
+h2_pal_result_t h2_quectel_ec800m_restore_phonebook(h2_quectel_modem_t *modem,
+    uint32_t timeout_ms);
+int h2_quectel_ec800m_parse_rsrp(const char *line, int32_t *out_rsrp);
+
+h2_pal_result_t h2_quectel_ota_start(void *user, const h2_pal_modem_ota_request_t *request);
+h2_pal_result_t h2_quectel_ota_get_status(void *user, uint32_t timeout_ms,
+    h2_pal_modem_ota_status_t *out_status);
+int h2_quectel_is_ota_urc(const char *line);
+void h2_quectel_ota_urc(h2_quectel_modem_t *modem, const char *line);
+h2_pal_result_t h2_quectel_read_revision(h2_quectel_modem_t *modem,
+    uint32_t timeout_ms, char *out_revision, size_t capacity);
 
 #endif

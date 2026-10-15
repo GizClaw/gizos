@@ -408,6 +408,41 @@ task 随后发送 `BYE`，停止广播/扫描，关闭 server 或 stream 并断�
 
 兼容库存固定到 ESP-Claw commit `fb7b248114bb1b12ba0fe8e03d4b59bdbec292c1` 的 36 个 module ID。`json` 和 `capability` 为 `full`；`delay`、`system`、`display`、`lcd_touch`、`audio` 和 `storage` 为 `profile`；`button` 为 `component-adapted`，表示物理 constructor 被 Runtime component acquisition 取代、获取后的必需操作保持兼容；其余 module 为 `unavailable`，`require()` 必须确定性失败。`runtime`、`link`、`kv` 等 GizOS 模块不进入该固定兼容库存。
 
+## Lua App 发布包
+
+`libs/lua/lua_app.bzl` 的公共 `lua_app` rule 声明一个可分发应用：必选的 `<app_id>.lua` 文本入口，以及可选的同名 `<app_id>/` data 目录中的显式文件列表。没有 data 文件时不需要创建目录。入口文件名决定稳定 app id，沿用 Host 的小写字母、数字、`_`、`-`、`.` 和 1..32 字节限制；更改入口 basename 会改变应用与存档身份。源码目录布局和现有单文件 label 可以保持不变。
+
+每个 app 必须消费自己声明的 `firmware_version` target，使用与其他声明式 artifact 相同的 31-byte SemVer 合同。没有默认版本，也不读取 firmware image 版本或 release batch；不同 app 默认独立升级。
+
+```bzl
+load("@gizos//libs/lua:lua_app.bzl", "lua_app")
+load("@gizos//tools/bazel:firmware.bzl", "firmware_version")
+
+firmware_version(name = "abc_version", value = "0.1.0")
+
+lua_app(
+    name = "abc_app",
+    entry = "abc.lua",
+    data = ["abc/tone.pcm"],  # Optional; omit for a single-file app.
+    version = ":abc_version",
+)
+```
+
+Rule 输出 `<app_id>-<version>.lua-app.tar.zlib`、同 stem 的 `.manifest.json` 和 `.json` release metadata，并通过 `LuaAppInfo` 暴露 identity 与三个 File。Archive 是 zlib 格式压缩的 USTAR（RFC 1950 包装的 DEFLATE），含 `manifest.json`、入口和 data 文件，可使用现有 zlib inflate 模式解压；文件排序、mtime、mode、uid/gid 和压缩参数固定，不包含机器路径或发布批次。Manifest `format=1`、`type=lua-app`，记录 app id、version、entry、可空的 data_dir，以及每个 payload 文件的 path、size 和 SHA-256。Release metadata 保留 manifest，并记录压缩包 basename、size 和 SHA-256；下载校验值与包内文件校验值分别使用。
+
+可选的 `compact=True` 复用同一公共 `embed_resource.py` 源码精简器，保留 literal bytes 和源码行数，manifest 与 release metadata 的 `compact` 字段记录该选择；默认保持原始文本。Data 文件必须来自入口旁的同名目录，不能包含绝对路径、路径穿越、隐藏文件或保留的 `.kv`/`.index` 存档。所有 archive entry 都是普通文件；入口拒绝 bytecode 和 NUL。Package 可以声明多层 data 路径，但这不改变下文现有 `storage` 的扁平目录合同；消费宿主必须按自身资源访问能力和配额验证兼容性。打包不创建 Runtime、不运行脚本、不安装设备，也不改变已有存档。
+
+Release consumer 使用公共 `lua_app_catalog.cquery` 从 Provider 读取 app id、version、entry 和 data_dir，使用 `lua_app_release_files.cquery` 读取结构化输出路径，不能从 Bazel package 路径猜测 identity 或维护第二份版本表。发布准入 tag 由产品仓库声明；GizOS 的 runtime C 源码包 release 与 Lua app 包是不同的 artifact。
+
+验证公共 rule 与真实 Bazel 输出：
+
+```sh
+bazel test --config=macos_arm64 //libs/lua:app_package_test
+make bazel-test-downstream-consumer
+```
+
+Host package test 同时校验 archive、manifest 和 metadata 三个 output group。Downstream consumer 用真实 `@gizos` rule 声明无 data 与有 data 的应用，执行两个公共 cquery formatter，再通过 `bazel test` 把 Provider identity、formatter 路径和 `DefaultInfo` 文件集合与全部生成文件逐一核对；同一测试也校验包内 manifest、payload 和发布下载校验值。
+
 ## App 存储
 
 `storage` 让 Lua App 在重启后保留少量数据，例如最高分和设置。Board 或宿主通过 `h2_lua_host_config_t.storage` 提供一个借用的 PAL Filesystem、其命名空间中的 root 目录（例如 ESP LittleFS `data` 分区上的 `/data/lua`）、每个 App 的内容字节配额和文件数上限；字段、默认值和上限以 `h2_lua.h` 中 `h2_lua_storage_config_t` 的 Doxygen 为准。fs 必须提供 `mkdir`、`open`、`read`、`write`、`close`、`stat`、`remove` 和覆盖目标的 `rename`，否则 `h2_lua_host_create()` 返回 `UNSUPPORTED`；root 或上限非法时返回 `INVALID_ARG`。Root 不需要预先存在，首次写入时逐级创建。一个 storage root 同一时间只能由一个 Host 使用，Host 用一个 mutex 串行化所有 job 的存储操作。
@@ -558,6 +593,24 @@ MP4 播放器配置也支持同名选项。启动动画可以借用同一个 Dis
 
 `geometry.mesh(vc,pc)` 返回 writer 和现有公共 Display mesh。 `geometry.update_mesh(writer,xy,topology,nv,np)` 将结果直接复制到 mesh，返回同一 mesh；topology 每行是 `{kind,first,count,rgb565}`，kind 0 为 3..128 点多边形， kind 1 为两点线段。xy 和 topology 可以同时使用 f32；writer 和公共 Display mesh 不绑定数值精度。该操作不绘制、不 present；使用现有 Display 批次绘制接口。f64 保留更小的位移，f32 将数据及 scratch 空间减半并使用单精度运算，批量调用消除逐点 Lua/C 边界开销；尚不承诺 S3 帧率或不同平台结果逐位一致，设备侧应按实际点数和迭代数测量。
 
+## Lua App 目录与流式安装
+
+`//libs/lua/apps:apps` 拥有独立于 Lua Host 和 GizClaw 的应用目录与安装器；[API Reference](/references/lua-apps) 直接来自生产 Public Header。调用方注入 Memory、Filesystem、Sync，并配置 `preinstalled_index` 与专用 `install_root`。用户 KV 必须使用安装目录以外的独立根路径，不能把用户数据放进安装器拥有的目录。应用目录可跨 Service 重连保留，销毁前先停止并释放借用它的 Service 和安装会话。
+
+预装和远程安装使用相同 format-1 Lua App manifest、`app_id` 和版本。`lua_app_index` 从 `LuaAppInfo.manifest` 生成 `format=1, apps=[{root,manifest}]`，不维护手写版本表。规则的 `installed_entry` output group 提供与包内完全相同的原始或 compact Lua 文本，`installed_files` 同时包含该 entry 与原有 data 文件；consumer 将 entry 映射为安装根下的 `<app_id>.lua`，data 保持同名子目录结构。原有 archive/manifest/metadata 默认发行输出不变。加载时缺少所需文件、文件大小不符或 entry 超限的预装项不会进入 listing；已安装的同 ID 项覆盖预装项，每个 ID 只列出一次。
+
+URL 安装入口仅接受 HTTP、HTTPS，长度最多 1024 字节，不接受 data URL；内存中的压缩包通过增量 Binary 输入安装。HTTP 请求不自动重试；redirect 继续限制为 HTTP(S)，允许由 HTTP PAL 解析的相对地址。HTTP 流和增量 Binary 输入均只使用固定窗口，完整压缩包不落盘；`libs/crypto/sha256` 增量计算压缩包与各文件摘要，版本校验复用 `libs/semver`。
+
+增量安装使用 begin/write/finish/abort，同一个会话的调用由一个 owner 串行执行。会话持有目录 reservation，其他 task 上的目录操作返回 BUSY；同一 owner 不重入目录操作。finish 只有在声明长度、可选压缩 SHA-256、manifest、全部文件长度与 SHA-256、完整 USTAR 结束块、zlib EOS 均通过后才发布。默认限制为 32 个应用身份、64 个 payload 文件、256 KiB entry、每包 2 MiB payload 和总计 8 MiB 已安装 payload；预装字节不计入安装字节配额。
+
+安装器先写 ordinal staging 文件，再将验证后的文件移到该 ID 的非活动 slot，最后通过 replacing atomic rename 发布总 index。清理前检查两个 slot 的 manifest identity；文件系统将不同 app_id 映射到同一目录时，拒绝该安装并保留已发布的应用。安装器观察到的取消、输入错误和发布失败保留旧版本与独立 KV。传输超时不能证明设备未安装，重新连接后应查询 listing，不能自动重试安装。成功发布后旧 slot 的清理不会把已完成的安装报告为失败。Filesystem 必须提供同步写入及替换式原子 rename；close 错误无法证明句柄是否已被消费时，目录进入终态存储错误并保留自身与借用依赖，禁止自动重试 close 或释放可能仍存活的 backend，需要结束该进程或设备生命周期后恢复。
+
+`h2_lua_apps_uninstall` 按稳定 `app_id` 幂等卸载并保留独立用户存储。它先原子发布目录移除，再按 manifest 清理两个可写版本 slot；目录发布失败保留旧应用，发布后的清理失败使应用保持不可用，重复卸载重试清理。预装文件不可变，目录用 `{"app_id":"demo","removed":true}` 持久隐藏预装身份及其覆盖版本，重启不会恢复；重新安装同 ID 后恢复正常 listing。远程独有身份移出索引并释放应用数与字节预算。只读目录不公布卸载能力；运行 owner 需要协调仍在使用 entry/data_dir 快照的任务。
+
+`h2_lua_apps_get` 返回 caller-owned entry/data_dir 快照，由产品 owner 在自己的运行流程中提交给 Lua Host。安装器不启动 VM，也不切换产品界面。运行中的 owner 应协调应用更新；快照中的安装路径不会在后续更新后永久保留。
+
+Host 可设置 `on_display_present`，在 Display worker 成功完成 PAL present 后观察完整 RGB565 framebuffer。像素与 callback context 均有明确借用生命周期，回调不能保留像素或重入 Host；它可用于摘要/golden 验证，只证明 renderer 与 PAL 接受了该帧，不证明面板光学输出。
+
 ## 嵌入分层与源码包
 
 `//libs/lua:lua_runtime` 是 portable 下层：包含 Lua Core、Host、modules、`//libs/trie`、`//libs/runtime` 和 PAL headers/inline wrappers，以及 Bazel 固定版本的 Lua 5.5、yyjson。下层的平台访问只依赖 PAL interfaces，不能依赖具体 provider、board、SDK 或 `bleikcp`。`//libs/lua:lua_core` 继续只依赖 upstream Lua。`//libs/lua:lua` 保留现有入口；平台组装由现有 firmware、Desktop、Web launcher 或外部 embedder 完成。可选 `//libs/lua:lua_link` 在上层接入 `bleikcp`，不进入 portable 源码包；未启用时仍遵守既有 `link: unavailable` 合同。
@@ -686,3 +739,11 @@ Display 只持有两份全屏 RGB565 像素：Lua 绘制缓冲 A 与 worker 发�
 `deinit`、job release 和 Host join 在帧传输未完成时返回 busy，保留 VM 引用和所有权，调用方稍后重试。关闭请求通过同一 worker 执行；随后 PAL join 可等待退出或返回 busy，成功后才释放占用和缓冲区。`h2_lua_host_destroy_checked()` 只有成功才释放 Host；失败后不能销毁 Runtime 或恢复借用 Display 的 UI。兼容的 void destroy 也保留失败对象，但调用方必须使用 checked 入口判断释放是否完成。PAL 错误会锁存并停止新提交；唤醒或复制交接等待失败不能证明 worker 已停止读取 A，因此同时冻结绘制并保留两份缓冲。提交任务退出后可 join，但不会在不确定设备状态下自动 close/open 或重试。该原型没有解除故障隔离的 API：fault 后保留 Host/VM/device lease，消费端须维持依赖并走其外部恢复或进程重启流程。PAL 的无限等待可能令同步调用或任务无法退出；软件 busy 不意味着已取消硬件，不能强删任务后 free。
 
 帧率只用成功且像素变化的完成记录计算；submitted、无变化 submit 和失败都不能计为变化帧 FPS。时间是 PAL monotonic transport 完成时间，不是面板 scanout；Web 的传输完成也不证明浏览器已合成到屏幕。观察者不能并发读取 worker 正在更新的普通 64 位字段，应消费 `status/flush` 发布的完成记录。已提交的同源消费例位于 `libs/lua/tests/display_submit.lua`，由 native worker 和 `projects/example/targets/pkg_tar/lua-script-submit` 的浏览器测试共同运行。
+
+Host 回归可直接编译生产目录、GizClaw handler 和 Desktop PAL，运行包校验、卸载、持久化、故障恢复及 stream 测试：
+
+```sh
+python3 libs/lua/apps/tests/run_host_tests.py --yyjson-dir /path/to/yyjson/src --gizclaw-dir /path/to/gizclaw --sanitize
+```
+
+`gizclaw` checkout 应包含生成的 C contract 与已初始化的 pinned nanopb submodule。该验证使用 Host PAL；真机 Golden E2E 另行验证下载、显示与产品任务生命周期。

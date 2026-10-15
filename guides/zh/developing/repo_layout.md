@@ -23,6 +23,8 @@
 │   └── common/                           # 两个以上 Make target 共用的实现
 │
 ├── libs/                                 # 仓库级 Bazel libraries
+│   ├── crypto/                           # 按算法分类的密码学 library family
+│   │   └── sha256/                       # 独立的增量 SHA-256 library，含 include/src/tests/BUILD.bazel
 │   ├── atomic/                            # 独立原子值 contract 与 provider 模板
 │   │   ├── include/h2_atomic.h            # Typed wrapper、order、result 与生命周期 API
 │   │   ├── providers/                     # C11、pthread、locked 与 unsupported 实现
@@ -163,7 +165,7 @@ libs/<library>/
 
 `libs/atomic/` 独立于 PAL，持有 typed atomic wrapper、操作符号与可复用 provider 模板；Runtime、H2Peer 和 App 直接依赖其 contract。最终 target 链入一个平台实现，不经过 PAL vtable 或 Memory PAL 注入。Desktop/Browser 使用 C11 provider，iOS/Android 使用 pthread provider；ESP provider 源码位于 `native_component_src/esp-idf6.x/h2_pal_core/`，其实际原子存储分配在内部 RAM。BK7258 AP 使用 `native_component_src/bk7258/ap/h2_pal_core` 中的 SRAM critical-section provider；wrapper 可位于 PSRAM，backing 保持 SRAM，其资格由独立 Atomic E2E 验证。JieLi 仍使用显式 unsupported provider。这里的 `h2_pal_core` 是现有 SDK component 名称，不改变 atomic contract 的 ownership。
 
-`libs/app_host/` 是上述"platform 无关"要求的唯一例外：它是 App 启动层，当前只有 Web 实现，其他平台以后在同一 library 中增加变体。它消费 PAL provider 组装 Runtime、运行调用方传入的 App entry 并负责 teardown，不实现 PAL capability、不选择 App。依赖边界：`libs/app_host` 只依赖 `libs/pal`、`libs/pal:unsupported`、`libs/pal/providers/web/pal_core`、`libs/lvgl:platform_web` 与 `libs/runtime`，不依赖任何 project、App 或 artifact entry；`targets/pkg_tar/<app>` 依赖它，反向不成立。`web_app.bzl` 的 `h2_web_app()` 在调用方 entry 的 package 内声明 wasm binary、archive、`:serve` 与 `:browser_test`，所以最终 archive、`main`、App entry 与配置、Button/key 映射和 preload 仍归该 entry；entry 也可以不经 `app_host` 自行组装。`libs/lua/web` 可以依赖 `libs/app_host`，同样不依赖 project。
+App 的启动顺序、Runtime assembly 和清理由 artifact entry 拥有；provider 只实现 PAL capability，不依赖 Runtime。`tools/bazel/web/` 保存 Web 编译、打包、shell、布局和纯 board metadata 规则，不能放通用 C 生命周期控制器。`libs/lua/web` 保存 Lua library 自己的 Browser entry：它直接运行一个嵌入脚本并管理所需资源，不接管其他 App。
 
 每个 library 都有独立的 `BUILD.bazel`。`BUILD.bazel` 通过显式 `srcs`、`hdrs`、`data` 和 `deps` 定义 library target 与 tests，测试目录统一使用 `tests/`。CI 直接分析所选平台的完整 compatible graph，不通过 tag 维护第二份 library 或 artifact inventory。平台差异只需要 toolchain 或 compatibility 即可表达时，不复制 source tree；只有接入 API、构建系统或 OS service 不同时，才在 `libs/pal/providers/` 下建立具名平台边界。
 
@@ -285,11 +287,11 @@ Web 入口也归 portable App owner。最终交付物使用实际 Bazel packagin
 projects/example/libs/web/tap-reset/
 projects/example/targets/pkg_tar/tap-reset/
 libs/pal/providers/web/pal_core/
-libs/app_host/
+tools/bazel/web/
 libs/lua/web/
 ```
 
-Project-local Web component 保存 presentation、required capability 和 portable App contract conversion；`pkg_tar/<app>` 保存 Emscripten lifecycle、Runtime assembly、HTML shell 和最终 serve-ready Web archive，其中 Runtime assembly、shell 和 archive 规则可以委托给 `libs/app_host`，页面外观与按键来自所选 web board（`h2_web_board()`，产品 board 放在该 board 目录旁）及其一套外观（见 `libs` 一节的例外），archive target 仍在该 entry 的 package 内。内部编译步骤使用 `wasm_cc_binary`，最终 rule 使用 `pkg_tar`，归档根目录直接提供 `index.html` 及其 JS/WASM 依赖。Web wrapper 不能依赖 Mobile contract。跨 project 的 Canvas、pointer、Memory、Time 与 Queue backend 属于 `libs/pal/providers/web/pal_core`；`pkg_tar/<app>` 可以直接组装 Runtime，也可以复用 `libs/app_host` 的 App 启动层与 `h2_web_app()`；只运行一个 Lua 脚本的页面由 `libs/lua/web` 的 `h2_lua_web_app()` 生成。`libs/lua/web` 是 Lua library 的 Browser artifact helper，与 `libs/lvgl:platform_web` 同类：它只在 `libs/lua` 之上增加 wasm-only 的通用 entry 与宏，依赖 `app_host`，不依赖具体 project。
+Project-local Web component 保存 presentation、required capability 和 portable App contract conversion；`pkg_tar/<app>` 保存 Emscripten lifecycle、Runtime assembly、HTML shell 和最终 serve-ready Web archive。页面资源、board metadata 和打包规则可复用 `tools/bazel/web`，实际初始化、运行和清理始终在 entry 中。内部编译使用 `wasm_cc_binary`，最终 rule 使用 `pkg_tar`，归档根目录提供 `index.html` 及其 JS/WASM 依赖。Web wrapper 不能依赖 Mobile contract。跨 project 的 Canvas、pointer、Memory、Time 与 Queue backend 属于 `libs/pal/providers/web/pal_core`。只运行一个 Lua 脚本的页面可用 `libs/lua/web` 的 `h2_lua_web_app()`：它选择 Lua 自己的通用入口和构建配置，不依赖具体 project。
 
 App 或 library 的 Bazel target 只在 source、defines、toolchain compatibility 或 dependency graph 存在实际差异时拆成 `_embed`、`_desktop`、`_mobile`、`_web` variant；没有差异时保留无后缀 target。Variant 按运行环境命名，不能按具体 App 复制公共 library。
 

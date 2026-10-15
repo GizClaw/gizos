@@ -94,7 +94,8 @@ static int windows_opened_path_valid(const h2_windows_mount_t *mount,
     int result = H2_PAL_ERR_INVALID_ARG;
     if (copied >= mount->source_len && copied <= count &&
         _wcsnicmp(mount->source, final_path, mount->source_len) == 0 &&
-        (final_path[mount->source_len] == L'\0' ||
+        (mount->source[mount->source_len - 1u] == L'\\' ||
+         final_path[mount->source_len] == L'\0' ||
          final_path[mount->source_len] == L'\\')) {
         result = H2_PAL_OK;
     }
@@ -174,7 +175,13 @@ static int windows_resolve_path(h2_windows_platform_t *platform,
             continue;
         }
         size_t relative_len = wcslen(relative);
-        size_t separator_len = relative_len == 0u ? 0u : 1u;
+        size_t separator_len =
+            relative_len != 0u &&
+                    platform->mounts[index]
+                            .source[platform->mounts[index].source_len - 1u] !=
+                        L'\\'
+                ? 1u
+                : 0u;
         if (platform->mounts[index].source_len >
             SIZE_MAX - separator_len - relative_len - 1u) {
             result = H2_PAL_ERR_NO_MEMORY;
@@ -191,7 +198,7 @@ static int windows_resolve_path(h2_windows_platform_t *platform,
                platform->mounts[index].source_len * sizeof(wchar_t));
         size_t offset = platform->mounts[index].source_len;
         if (relative_len != 0u) {
-            host_path[offset++] = L'\\';
+            if (separator_len != 0u) host_path[offset++] = L'\\';
             memcpy(host_path + offset, relative,
                    relative_len * sizeof(wchar_t));
             for (size_t child = 0u; child < relative_len; ++child) {

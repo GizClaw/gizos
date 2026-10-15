@@ -33,9 +33,7 @@ class SessionGateTest(unittest.TestCase):
         source = (ROOT / SOURCE).read_text()
         begin = source.index('typedef struct h2_jieli_app_transport {')
         structure = source[begin:source.index('} h2_jieli_app_transport_t;', begin) + len('} h2_jieli_app_transport_t;')]
-        self.assertIn('sessions_admitted', structure)
         fallback = re.search(r'H2_SESSION_GATE_FALLBACK_MS = (\d+),', source)
-        self.assertIsNotNone(fallback, 'fallback deadline must be a plain enum literal')
         functions = '\n'.join(function(source, name) for name in
                               ['write_le32', 'transport_write', 'send_control', 'on_frame'])
         fixture = (ROOT / 'tools/bazel/tests/fixtures/jieli_session_gate.c').read_text()

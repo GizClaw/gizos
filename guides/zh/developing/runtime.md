@@ -69,6 +69,10 @@ contract，`poll/wait` 仍要求 caller 提供至少 640 B 的 buffer，并在 b
 `get()`，不复制完整 Board periph inventory；只有实际接受的 mapping 或 mapped
 input source 超出所选容量时才返回 `H2_PAL_ERR_NO_SPACE`。
 
+## 产品蓝牙名称
+
+Board 或 launcher 可以用 Runtime config 的 `ble_local_name` 提供可选的稳定产品广播名称；Runtime 原样借用该字符串直到 deinit，不生成型号或设备后缀。H2Loader 管理与产品 App 通过同一个 Runtime 字段使用名称，产品自己的 spelling、factory address 选择和生命周期留在 consumer。名称必须是非空、最多 29 bytes 的 printable ASCII；无效名称使初始化返回 INVALID_ARG。它只包含公开显示元数据，不含凭据，也不能代替 board／target／capabilities 的协议校验。
+
 ## Wi-Fi 凭据与恢复
 
 Runtime 拥有最多 `H2_RUNTIME_WIFI_SAVED_MAX`（8）条网络的集合。`h2_runtime_wifi_saved_list` 按最近连接优先复制，容量不足时截断，`out_count` 返回实际复制数量，零容量允许空缓冲区。`h2_runtime_wifi_saved_save` 按 SSID 长度及大小写敏感字节值去重，更新凭据并置顶；满额插入新 SSID 时淘汰末尾。`h2_runtime_wifi_saved_remove` 只删除指定 SSID，保留其余顺序，不存在返回 NOT_FOUND；`h2_runtime_wifi_saved_clear` 写入空集合。这些操作不改变 PAL 单条凭据，也不改变当前连接。
@@ -171,6 +175,8 @@ App 不直接调用 `runtime->xxx_api->vtable->operation(...)`，也不自己传
 `runtime->video_decoder` 和 `runtime->audio_decoder` 是透明 PAL proxy。Runtime 复制 API object，不取得 decoder session 或 acquired frame 的 ownership，也不改变 frame 的 acquire/release contract。没有对应 decoder 的 board 必须在 config 中绑定 canonical unsupported API，不能传入 `NULL` 或省略 vtable operation。
 
 `runtime->audio` 的 `create_track` 不是透明转发：Runtime 返回自己持有的 wrapper track，用于测量播放帧的电平（见[音频电平](#音频电平)）。wrapper 把 `write`、`close`、`get_volume_factor`、`set_volume_factor`、`drain` 原样转发给 backend track，backend 没有提供的 operation 在 wrapper 上同样是 `NULL`，PAL wrapper 的报错行为不变。`close` 关闭 backend track 并释放 wrapper，调用方仍然只 close 一次。
+
+`runtime->audio` 的可选 `set_aec_observer` 透明转发到底层 Audio provider，不从 Runtime 的内容电平推导 raw ADC／AEC 资格。注册与撤销仍要求停止并 join mic／speaker；observer user 的借用和失败保留合同由 Audio PAL 定义。独立校准应在没有生产 Audio borrower 的窗口运行，保存并恢复同一 provider 的控制值；恢复后的 Runtime 音量 snapshot 会按已有逻辑与实际值对齐。
 
 `runtime->buzzer` 同样是透明 PAL proxy。Runtime 把 `h2_runtime_config_t.buzzer` 的 API object 按值复制到 private storage，再暴露稳定的 App-facing pointer；它不取得物理 provider、tone 或 PWM channel 的 ownership，也不实现 melody sequencing。Buzzer 是 complete capability surface 的必选 binding：真实支持它的 Board 绑定 provider，其余 Runtime owner 显式绑定 `h2_pal_unsupported_buzzer_api()`，传入 `NULL` 会使 Runtime 初始化失败。
 

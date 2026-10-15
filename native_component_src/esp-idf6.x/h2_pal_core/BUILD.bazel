@@ -5,6 +5,37 @@ load("//tools/bazel:native_component.bzl", "firmware_native_component")
 
 package(default_visibility = ["//visibility:public"])
 
+[
+    cc_test(
+        name = "ppp_quiesce" + suffix + "_test",
+        srcs = [
+            "include/h2_esp_platform_core.h",
+            "src/h2_esp_platform_ppp.c",
+            "tests/test_h2_esp_platform_ppp.c",
+        ] + glob([
+            "tests/ppp_sdk/**/*.h",
+            "tests/sdk/**/*.h",
+        ]),
+        conlyopts = H2_C11_OPTS + ["-DCONFIG_PPP_SUPPORT=" + support],
+        copts = H2_WARNING_COPTS,
+        includes = [
+            "include",
+            "tests/ppp_sdk",
+            "tests/sdk",
+        ],
+        target_compatible_with = select({
+            "//tools/bazel/platforms:host_linux_target_linux": [],
+            "//tools/bazel/platforms:host_macos_target_macos": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        deps = ["//libs/pal"],
+    )
+    for suffix, support in [
+        ("", "1"),
+        ("_unsupported", "0"),
+    ]
+]
+
 py_test(
     name = "net_host_address_test",
     srcs = ["tests/test_h2_esp_net_host_address.py"],
@@ -158,10 +189,59 @@ cc_test(
 )
 
 cc_test(
+    name = "time_100hz_test",
+    srcs = [
+        "include/h2_esp_platform_core.h",
+        "src/h2_esp_platform_time.c",
+        "tests/test_h2_esp_platform_time.c",
+    ] + glob(["tests/sdk/**/*.h"]),
+    conlyopts = H2_C11_OPTS + [
+        "-DH2_ESP_TIME_TEST=1",
+        "-DconfigTICK_RATE_HZ=100u",
+    ],
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "tests/sdk",
+    ],
+    # The provider builds on <sys/time.h>, which MSVC does not ship.
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "time_tick_limit_test",
+    srcs = [
+        "include/h2_esp_platform_core.h",
+        "src/h2_esp_platform_time.c",
+        "tests/test_h2_esp_platform_time.c",
+    ] + glob(["tests/sdk/**/*.h"]),
+    conlyopts = H2_C11_OPTS + [
+        "-DH2_ESP_TIME_TEST=1",
+        "-DportMAX_DELAY=65535u",
+    ],
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "tests/sdk",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)
+
+cc_test(
     name = "safe_call_policy_test",
     srcs = [
-        "src/h2_esp_io_phase.h",
         "include/h2_esp_platform_safe_call.h",
+        "src/h2_esp_io_phase.h",
         "src/h2_esp_platform_safe_call.c",
         "tests/test_h2_esp_platform_safe_call.c",
     ] + glob(["tests/sdk/**/*.h"]),
@@ -191,7 +271,11 @@ cc_test(
     ] + glob(["tests/sdk/**/*.h"]),
     conlyopts = H2_C11_OPTS + ["-DH2_ESP_IO_PHASE_DIAGNOSTICS=1"],
     copts = H2_WARNING_COPTS,
-    includes = ["include", "src", "tests/sdk"],
+    includes = [
+        "include",
+        "src",
+        "tests/sdk",
+    ],
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],
@@ -366,8 +450,8 @@ cc_test(
 cc_test(
     name = "pref_io_test",
     srcs = [
-        "src/h2_esp_io_phase.h",
         "include/h2_esp_platform_safe_call.h",
+        "src/h2_esp_io_phase.h",
         "src/h2_esp_platform_littlefs_io.c",
         "src/h2_esp_platform_littlefs_io.h",
         "src/h2_esp_platform_pref_store.c",
@@ -408,7 +492,11 @@ cc_test(
         "-Dprintf=h2_io_phase_test_printf",
     ],
     copts = H2_WARNING_COPTS,
-    includes = ["include", "src", "tests/sdk"],
+    includes = [
+        "include",
+        "src",
+        "tests/sdk",
+    ],
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],
@@ -436,7 +524,11 @@ cc_test(
         "-Dprintf=h2_io_phase_test_printf",
     ],
     copts = H2_WARNING_COPTS,
-    includes = ["include", "src", "tests/sdk"],
+    includes = [
+        "include",
+        "src",
+        "tests/sdk",
+    ],
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],
@@ -578,7 +670,10 @@ cc_test(
     ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
-    includes = ["src", "tests/tls_sdk"],
+    includes = [
+        "src",
+        "tests/tls_sdk",
+    ],
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],
@@ -615,7 +710,10 @@ cc_test(
     ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
-    includes = ["include", "src"],
+    includes = [
+        "include",
+        "src",
+    ],
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],
@@ -657,10 +755,10 @@ cc_test(
     name = "arena_spill_test",
     srcs = [
         "src/h2_esp_platform_arena.c",
-        "tests/test_h2_esp_platform_arena.c",
         "tests/arena_sdk/esp_cpu_utils.h",
         "tests/arena_sdk/esp_debug_helpers.h",
         "tests/arena_sdk/esp_log.h",
+        "tests/test_h2_esp_platform_arena.c",
     ] + glob(["tests/sdk/**/*.h"]),
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
@@ -688,10 +786,10 @@ cc_test(
     name = "arena_spill_riscv_test",
     srcs = [
         "src/h2_esp_platform_arena.c",
-        "tests/test_h2_esp_platform_arena.c",
         "tests/arena_sdk/esp_cpu_utils.h",
         "tests/arena_sdk/esp_debug_helpers.h",
         "tests/arena_sdk/esp_log.h",
+        "tests/test_h2_esp_platform_arena.c",
     ] + glob(["tests/sdk/**/*.h"]),
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
@@ -726,7 +824,10 @@ cc_test(
     ] + glob(["tests/sdk/**/*.h"]),
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
-    includes = ["include", "tests/sdk"],
+    includes = [
+        "include",
+        "tests/sdk",
+    ],
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],

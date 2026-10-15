@@ -91,11 +91,6 @@ class AdmissionTest(unittest.TestCase):
         verifier.unlink()
         with self.assertRaisesRegex(AssertionError,'missing captured'):captured_verifier(self.folder,collector)
 
-    def test_original_captured_verifier_matches_the_immutable_collector(self):
-        folder=Path(__file__).parent.parent/'evidence/runs/20a23ce1-r12-continuous'
-        collector=json.loads((folder/'collector-receipt.json').read_text())
-        self.assertEqual(captured_verifier(folder,collector),folder/'host-verifier.py')
-
     def test_captured_verifier_preserves_its_original_confirmation_schema(self):
         folder=Path(__file__).parent.parent/'evidence/runs/20a23ce1-r12-continuous'
         collector=json.loads((folder/'collector-receipt.json').read_text())

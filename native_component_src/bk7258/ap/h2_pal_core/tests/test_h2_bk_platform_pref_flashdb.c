@@ -23,6 +23,23 @@ static unsigned char legacy_data[64];
 static size_t legacy_size;
 static int fail_legacy_delete;
 static unsigned mutexes[4], mutex_count;
+static unsigned diagnostic_records;
+
+/* Diagnostics may block: require every real provider mutex to be released. */
+int h2_test_pref_printf(const char *format, ...) {
+  (void)format;
+  for (unsigned i = 0; i < mutex_count; ++i)
+    assert(mutexes[i] == 0u);
+  ++diagnostic_records;
+  return 0;
+}
+
+static h2_pal_result_t diagnostic_now(void *user, uint64_t *out) {
+  static uint64_t now;
+  (void)user;
+  *out = (now += 1000u); /* Exercise each slow-call diagnostic boundary. */
+  return H2_PAL_OK;
+}
 static int find(const char *key) {
   for (unsigned i = 0; i < 64; ++i)
     if (entries[i].data && !strcmp(entries[i].key, key))
@@ -135,6 +152,11 @@ int ef_del_env(const char *key) {
   if (!strcmp(key, legacy_key))
     legacy_size = 0;
   return EF_NO_ERR;
+}
+const h2_pal_time_api_t *h2_bk_platform_time_api(void) {
+  static const h2_pal_time_vtable_t vtable = {.get_monotonic_ms = diagnostic_now};
+  static const h2_pal_time_api_t api = {.vtable = &vtable};
+  return &api;
 }
 int rtos_init_mutex(beken_mutex_t *mutex) {
   assert(mutex_count < 4);
@@ -286,6 +308,21 @@ static void identical_bytes_and_types(void) {
   assert(write_count == 1 && !strncmp(write_keys[0], "$h2t.", 5));
   reset_faults();
   expect_type(ns, "key", H2_PAL_PREF_ENTRY_U32);
+  reset_faults();
+  fail_metadata = 1;
+  fail_value = 1;
+  assert(ns->set_u32(ns, "key", value) == H2_PAL_OK);
+  assert(write_count == 0);
+  reset_faults();
+  expect_type(ns, "key", H2_PAL_PREF_ENTRY_U32);
+  store("same.unknown", &value, sizeof(value));
+  expect_type(ns, "unknown", H2_PAL_PREF_ENTRY_UNKNOWN);
+  reset_faults();
+  fail_value = 1;
+  assert(ns->set_u32(ns, "unknown", value) == H2_PAL_OK);
+  assert(write_count == 1 && !strncmp(write_keys[0], "$h2t.", 5));
+  reset_faults();
+  expect_type(ns, "unknown", H2_PAL_PREF_ENTRY_U32);
   assert(ns->set_i32(ns, "signed", -12) == 0);
   int32_t signed_value;
   assert(ns->get_i32(ns, "signed", &signed_value) == 0 && signed_value == -12);
@@ -299,10 +336,13 @@ static void read_and_allocation_failures(void) {
   assert(ns->set_u32(ns, "key", 42) == 0);
   reset_faults();
   fail_alloc = 1;
+  assert(ns->set_u32(ns, "key", 42) == H2_PAL_ERR_NO_MEMORY &&
+         write_count == 0);
   assert(ns->set_string(ns, "key", "changed") == H2_PAL_ERR_NO_MEMORY &&
          write_count == 0);
   reset_faults();
   fail_reads = 1;
+  assert(ns->set_u32(ns, "key", 42) == H2_PAL_ERR_IO && write_count == 0);
   assert(ns->set_string(ns, "key", "changed") == H2_PAL_ERR_IO &&
          write_count == 0);
   reset_faults();
@@ -388,6 +428,37 @@ static void failed_creation_cleanup(void) {
   assert(ns->close(ns) == 0);
 }
 
+static void simultaneous_handles(void) {
+  h2_pal_pref_namespace_t *handles[8] = {0};
+  for (size_t i = 0; i < 8; ++i) {
+    assert(h2_pal_pref_open(h2_bk_platform_pref_api(), "parallel",
+                            i % 2 ? H2_PAL_PREF_OPEN_READ_ONLY
+                                  : H2_PAL_PREF_OPEN_READ_WRITE,
+                            &handles[i]) == H2_PAL_OK);
+    assert(handles[i]);
+    for (size_t j = 0; j < i; ++j)
+      assert(handles[i] != handles[j]);
+  }
+  assert(handles[0]->set_u32(handles[0], "value", 42u) == H2_PAL_OK);
+  assert(handles[0]->commit(handles[0]) == H2_PAL_OK);
+  h2_pal_pref_namespace_t *failed = (void *)(uintptr_t)1;
+  fail_alloc = 1;
+  assert(h2_pal_pref_open(h2_bk_platform_pref_api(), "parallel",
+                          H2_PAL_PREF_OPEN_READ_ONLY, &failed) ==
+         H2_PAL_ERR_NO_MEMORY);
+  assert(!failed);
+  fail_alloc = 0;
+  for (size_t i = 0; i < 8; ++i) {
+    uint32_t value = 0;
+    assert(handles[i]->get_u32(handles[i], "value", &value) == H2_PAL_OK &&
+           value == 42u);
+    assert(handles[i]->close(handles[i]) == H2_PAL_OK);
+  }
+  h2_pal_pref_namespace_t *reopened = open_namespace("parallel");
+  assert(reopened->clear(reopened) == H2_PAL_OK);
+  assert(reopened->close(reopened) == H2_PAL_OK);
+}
+
 int main(void) {
   reserved_namespace();
   reset_faults();
@@ -404,10 +475,13 @@ int main(void) {
   v1_and_legacy_compatibility();
   reset_faults();
   failed_creation_cleanup();
+  reset_faults();
+  simultaneous_handles();
   for (unsigned i = 0; i < 64; ++i)
     free(entries[i].data);
   for (unsigned i = 0; i < mutex_count; ++i)
     assert(mutexes[i] == 0);
+  assert(diagnostic_records != 0u);
   puts("BK Preferences: namespace isolation and metadata/value failure "
        "consistency PASS");
   return 0;

@@ -1,5 +1,5 @@
 #include "h2_ios_platform.h"
-#include "h2_mobile_app_host.h"
+#include "h2_mobile_e2e_runtime_config.h"
 #include "mobile_runner.h"
 #import <UIKit/UIKit.h>
 
@@ -26,7 +26,7 @@
             NSData *pem = [ca dataUsingEncoding:NSUTF8StringEncoding];
             int rc = pem ? h2_ios_http_create(pem.bytes, pem.length, &owner) : H2_PAL_ERR_INVALID_ARG;
             if (rc == H2_PAL_OK) {
-                h2_runtime_config_t config = h2_ios_app_host_config();
+                h2_runtime_config_t config = h2_mobile_e2e_runtime_config();
                 config.http = h2_ios_http_api(owner);
                 rc = h2_http_mobile_run(config, [fixture[@"http"] UTF8String],
                     [fixture[@"https"] UTF8String], [fixture[@"untrusted"] UTF8String], &result);

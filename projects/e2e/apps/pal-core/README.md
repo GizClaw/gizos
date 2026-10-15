@@ -1,6 +1,6 @@
 # PAL Core E2E App
 
-This independent App checks all **46 operations** in the nine PAL Core vtables. Contract v2 contains **41 required cases**. A qualification run must execute all 41 with no FAIL, BLOCKED or NOT_RUN and restore its resource baseline. The old `projects/e2e/apps/pal` App and its launchers remain unchanged; neither App calls the other. This App owns the `pal-core/e2e/*` task namespace.
+This independent App checks all **46 operations** in the nine PAL Core vtables. Contract v2 contains **41 required cases**. A qualification run must execute all 41 with no FAIL, BLOCKED or NOT_RUN and restore its resource baseline. The mixed PAL App has been retired; [the Apps README](../README.md) records its replacements and remaining coverage gaps. This App owns the `pal-core/e2e/*` task namespace.
 
 ## Interface coverage
 
@@ -17,9 +17,9 @@ This independent App checks all **46 operations** in the nine PAL Core vtables. 
 | Sync | 14 | All mutex/semaphore/condition operations; recursion, competing try_lock, eight-worker contention, multiple semaphore waiters, broadcast and 20 waiter generations |
 | System Event | 5 | init/deinit/post/subscribe/unsubscribe; payload and type filtering, lifecycle, external unsubscribe during an active callback and self-unsubscribe |
 | Firmware Info | 1 | Read actual image metadata twice and compare with the launcher's embedded build version |
-| **Total** | **46** | Static completeness and actual provider execution are checked separately |
+| **Total** | **46** | Executed case results and resource recovery establish acceptance |
 
-`interface_coverage_test` parses the public headers independently of the manifest. It rejects missing/duplicate operations, signature drift, unknown or duplicate case IDs, wrong registry wiring, wrong wrappers and absent source calls. Its own mismatch regressions guard against an accidentally weakened checker. This is a static completeness check, not a line/branch coverage metric; the real Desktop run must independently pass every registered case.
+The operation manifest describes the intended coverage. Acceptance comes from compiling the public APIs and executing every registered case through the actual provider; source spelling, fixed source hashes and call-site text do not establish a pass.
 
 ## Task acceptance
 
@@ -40,7 +40,7 @@ Desktop Task uses a provider-owned allocation as its actual pthread stack and re
 
 ## Execution and ownership
 
-The App borrows a fully initialized Runtime and typed launcher observations. It never selects an OS/provider, reads process environment, or changes the old PAL App. Current cases have fixed finite workloads and operation budgets; launchers additionally need an independent process/device watchdog because Task join and mutex lock do not expose a timeout parameter.
+The App borrows a fully initialized Runtime and typed launcher observations. It never selects an OS/provider or reads process environment. Current cases have fixed finite workloads and operation budgets; launchers additionally need an independent process/device watchdog because Task join and mutex lock do not expose a timeout parameter.
 
 All worker/callback state has a lifetime covering its actual use. Failed join, timer/sync destruction, queue close or wall restoration preserves the owning state and stops dependent execution. `h2_pal_core_e2e_cleanup()` retries it; recovering cleanup never upgrades the original failed case. System Event lifecycle tests own an exclusive fixture, not the Runtime's borrowed/default loop. Cross-thread subscription cleanup waits for callbacks before freeing context; self-unsubscribe stops admission without waiting for itself.
 
@@ -65,14 +65,13 @@ bazel run --config=macos_arm64 --lockfile_mode=off \
   //projects/e2e/targets/cc_binary/pal-core:pal_core_e2e
 ```
 
-Run the mandatory acceptance, inventory and controlled-failure regressions:
+Run the mandatory acceptance and compiled controlled-failure regressions:
 
 ```sh
 bazel test --config=macos_arm64 --lockfile_mode=off \
   //projects/e2e/targets/cc_binary/pal-core:host_regression_test \
   //projects/e2e/targets/cc_binary/pal-core:app_failure_test \
-  //projects/e2e/targets/cc_binary/pal-core:async_event_test \
-  //projects/e2e/apps/pal-core/app:interface_coverage_test
+  //projects/e2e/targets/cc_binary/pal-core:async_event_test
 ```
 
 Keep Bazel disk cache enabled. `host_regression_test` now runs the same complete acceptance as the executable and requires a zero exit status; there is no exception for unsupported Timer/Firmware Info. A successful terminal result is:

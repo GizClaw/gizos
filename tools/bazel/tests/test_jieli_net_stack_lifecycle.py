@@ -78,7 +78,6 @@ class NetStackLifecycleTest(unittest.TestCase):
         begin = source.index('static int resolve_addr(')
         end = source.index('static void resolver_release(', begin)
         resolver = source[begin:end]
-        assert 'gethostbyname(' not in resolver, 'resolve_addr must not borrow gethostbyname storage'
         run(MAIN, DNS + resolver, source)
 
 

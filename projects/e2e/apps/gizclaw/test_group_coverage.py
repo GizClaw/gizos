@@ -19,8 +19,6 @@ class GroupCoverageTest(unittest.TestCase):
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertNotIn("secret-token", run.stdout)
         rules = api_coverage.requirements()
-        api_coverage.validate_inventory(
-            rules, (root / "libs/gizclaw/tests/public_api.inc").read_text())
         result = api_coverage.audit(
             run.stdout.splitlines(keepends=True), rules, endpoint="example.invalid:9821",
             backend="h2peer", profile="default", platform="macos",

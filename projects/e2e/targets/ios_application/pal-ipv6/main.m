@@ -1,6 +1,6 @@
 #include "h2_ios_net.h"
 #include "h2_ios_platform.h"
-#include "h2_mobile_app_host.h"
+#include "h2_mobile_e2e_runtime_config.h"
 #include "mobile_runner.h"
 #import <UIKit/UIKit.h>
 #include <stdlib.h>
@@ -91,7 +91,7 @@ static dispatch_queue_t ipv6_run_queue(void) {
       if (rc == H2_PAL_OK)
         rc = h2_ios_webrtc_create(&owner->webrtc);
       if (rc == H2_PAL_OK) {
-        h2_runtime_config_t config = h2_ios_app_host_config();
+        h2_runtime_config_t config = h2_mobile_e2e_runtime_config();
         config.net = h2_ios_net_api(owner->net);
         config.webrtc = h2_ios_webrtc_api(owner->webrtc);
         rc = h2_ipv6_mobile_run(

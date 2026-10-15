@@ -1,6 +1,6 @@
 # PAL JSON E2E
 
-独立 portable C App 对 `h2_pal_json_api_t` 的 24 个 public vtable 操作运行同一份 mandatory case registry。`app/tests/test_interface_coverage.py` 从公开 header 自动枚举操作，并检查每个操作有 wrapper 调用和完整 provider vtable preflight；增加或删除操作时，inventory 会要求同步更新 App。`qualification.json` 保存实际平台执行证据及源码、产物摘要。构建成功或 yyjson provider unit test 不能替代六端 App 运行。
+独立 portable C App 对 `h2_pal_json_api_t` 的 24 个 public vtable 操作运行同一份 mandatory case registry。公开接口与 mandatory registry 由编译和实际执行的 C 测试验证，不使用源码关键字匹配作为调用证据。`qualification.json` 保存实际平台执行证据及源码、产物摘要。构建成功或 yyjson provider unit test 不能替代六端 App 运行。
 
 15 个 case 覆盖严格 JSON/UTF-8 解析、decoded 字符串 span、object/array 查询与构造、修改和 roundtrip、值类型、非法输入、bytes/depth/value 上限、跨文档 attachment、cycle、不可变文档、替换后的 stale handle、错误输出清零、serialize 的 NUL/长度与 release。最后两个 case 通过 launcher 提供的 portable probe callback，在真实 yyjson provider 上验证 live document/buffer 时拒绝 destroy、完整释放，以及逐点 allocator 失败后的零残留。App 只 include public JSON PAL 和 Runtime header；yyjson 的创建、选择和销毁都留在 launcher/provider probe。JSON 测试不需要网络 fixture 或 Wi-Fi 凭据。
 
@@ -8,7 +8,6 @@
 
 ```sh
 bazel test --lockfile_mode=off \
-  //projects/e2e/apps/pal-json/app:interface_coverage_test \
   //projects/e2e/targets/cc_binary/pal-json:desktop_test \
   //projects/e2e/targets/pkg_tar/pal-json:browser_test
 H2_IOS_SIMULATOR_UDID=<booted-uuid> scripts/common/bazel_manual_test.py \

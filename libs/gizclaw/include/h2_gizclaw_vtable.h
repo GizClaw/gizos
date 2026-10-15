@@ -8,6 +8,8 @@
 extern "C" {
 #endif
 struct h2_gizclaw_firmware;
+struct h2_gizclaw_lua_app_run;
+struct h2_gizclaw_lua_app_handoff;
 
 /** Modem identity slots reported in IDENTIFIERS_GET. */
 #define H2_GIZCLAW_DEVICE_IMEI_MAX 2
@@ -106,6 +108,13 @@ typedef struct h2_gizclaw_vtable {
   h2_pal_result_t (*request_run_workspace_set)(void *user,
                                                const char *workspace_name,
                                                bool kickoff);
+  /** Reserve a bounded product-owner launch slot before responding. Copy all
+   * borrowed request data and provide a completion that either publishes the
+   * reserved launch after response success or releases it on response failure.
+   * Returning BUSY/rejection sends an RPC error and does not launch. */
+  h2_pal_result_t (*prepare_lua_app_run)(
+      void *user, const struct h2_gizclaw_lua_app_run *request,
+      struct h2_gizclaw_lua_app_handoff *out_handoff);
 } h2_gizclaw_vtable_t;
 #ifdef __cplusplus
 }

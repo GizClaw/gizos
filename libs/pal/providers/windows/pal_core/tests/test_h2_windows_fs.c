@@ -1,6 +1,7 @@
 #include "h2_windows_platform.h"
 
 #include <assert.h>
+#include <stdio.h>
 #include <string.h>
 #include <windows.h>
 #include <winioctl.h>
@@ -82,16 +83,51 @@ int main(void) {
     assert(CloseHandle(marker));
     assert(WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, path, -1,
                                utf8, sizeof(utf8), NULL, NULL) > 0);
-    const char *sources[] = {utf8};
-    const char *targets[] = {"/data"};
+    assert(utf8[1] == ':' && utf8[2] == '\\');
+    char drive_root[] = {utf8[0], ':', '\\', '\0'};
+    const char *sources[] = {utf8, drive_root};
+    const char *targets[] = {"/data", "/drive"};
     h2_windows_platform_config_t config = {
         .fs_sources = sources,
         .fs_targets = targets,
-        .fs_mount_count = 1u,
+        .fs_mount_count = 2u,
     };
     h2_windows_platform_t *platform = NULL;
     assert(h2_windows_platform_create(&config, &platform) == H2_PAL_OK);
     const h2_pal_fs_api_t *fs = h2_windows_fs_api(platform);
+    h2_pal_fs_stat_t root_stat;
+    assert(h2_pal_fs_stat(fs, "/drive", &root_stat) == H2_PAL_OK);
+    assert(root_stat.is_dir);
+    char drive_file[sizeof(utf8) + 32u];
+    int drive_file_len = snprintf(drive_file, sizeof(drive_file),
+                                  "/drive/%s/root.txt", utf8 + 3u);
+    assert(drive_file_len > 0 &&
+           (size_t)drive_file_len < sizeof(drive_file));
+    for (char *cursor = drive_file; *cursor != '\0'; ++cursor) {
+        if (*cursor == '\\') *cursor = '/';
+    }
+    h2_pal_fs_file_t *drive_handle = NULL;
+    assert(h2_pal_fs_open(fs, drive_file, H2_PAL_FS_OPEN_WRITE_TRUNCATE,
+                          &drive_handle) == H2_PAL_OK);
+    const char root_payload[] = "drive-root";
+    size_t root_written = 0u;
+    assert(h2_pal_fs_write(fs, drive_handle, root_payload,
+                           sizeof(root_payload), &root_written) == H2_PAL_OK);
+    assert(root_written == sizeof(root_payload));
+    assert(h2_pal_fs_close(fs, drive_handle) == H2_PAL_OK);
+    assert(h2_pal_fs_open(fs, drive_file, H2_PAL_FS_OPEN_READ,
+                          &drive_handle) == H2_PAL_OK);
+    char root_readback[sizeof(root_payload)] = {0};
+    size_t root_read = 0u;
+    assert(h2_pal_fs_read(fs, drive_handle, root_readback,
+                          sizeof(root_readback), &root_read) == H2_PAL_OK);
+    assert(root_read == sizeof(root_payload));
+    assert(memcmp(root_readback, root_payload, sizeof(root_payload)) == 0);
+    assert(h2_pal_fs_close(fs, drive_handle) == H2_PAL_OK);
+    assert(h2_pal_fs_remove(fs, drive_file) == H2_PAL_OK);
+    assert(h2_pal_fs_remove(fs, "/drive") == H2_PAL_ERR_INVALID_ARG);
+    assert(h2_pal_fs_stat(fs, "/drive/../escape", &root_stat) ==
+           H2_PAL_ERR_INVALID_ARG);
     h2_pal_fs_file_t *file = NULL;
     assert(h2_pal_fs_open(fs, "/data/中文.txt", H2_PAL_FS_OPEN_WRITE_TRUNCATE,
                           &file) == H2_PAL_OK);
@@ -126,6 +162,15 @@ int main(void) {
     assert(wcscpy_s(junction, MAX_PATH, path) == 0);
     assert(wcscat_s(junction, MAX_PATH, L"\\junction") == 0);
     assert(create_directory_junction(junction, outside));
+    drive_file_len = snprintf(drive_file, sizeof(drive_file),
+                              "/drive/%s/junction/marker.txt", utf8 + 3u);
+    assert(drive_file_len > 0 &&
+           (size_t)drive_file_len < sizeof(drive_file));
+    for (char *cursor = drive_file; *cursor != '\0'; ++cursor) {
+        if (*cursor == '\\') *cursor = '/';
+    }
+    assert(h2_pal_fs_open(fs, drive_file, H2_PAL_FS_OPEN_READ,
+                          &drive_handle) == H2_PAL_ERR_INVALID_ARG);
     assert(h2_pal_fs_clear(fs, "/data") == H2_PAL_ERR_INVALID_ARG);
     assert(GetFileAttributesW(outside_marker) != INVALID_FILE_ATTRIBUTES);
     assert(RemoveDirectoryW(junction));
