@@ -15,12 +15,7 @@ bazel build --config=esp32s31 //projects/e2e/targets/esp_idf_firmware/reference-
 
 ## 板级验证固件
 
-完整 Runtime 的独立诊断入口和烧录说明见
-[board E2E](../../projects/e2e/targets/esp_idf_firmware/mosaico-board/esp_mosaico/README.md)。
-该入口接入主 Type-C TinyUSB CDC，运行共享 PAL 基础 Core suite，并提供色条、
-触摸/按键事件、IMU/磁力计和电量观测。这里的单 CDC 是可选 board component；
-完整 H2Loader 与套件入口另行显式选择双 CDC 管理组件，最小 smoke 保留扩展 UART。
-可选 SC101IOT 摄像头采集和动态预览已完成 bring-up 验证；NAND 和完整外设资格测试仍未完成。
+完整 Runtime 的独立诊断入口和烧录说明见[board E2E](../../projects/e2e/targets/esp_idf_firmware/mosaico-board/esp_mosaico/README.md)。该入口接入主 Type-C TinyUSB CDC，运行独立 PAL Core App 的八项 baseline（完整 Core 资格由独立套件的 41 项合同验收），并提供色条、触摸/按键事件、IMU/磁力计和电量观测。这里的单 CDC 是可选 board component；完整 H2Loader 与套件入口另行显式选择双 CDC 管理组件，最小 smoke 保留扩展 UART。可选 SC101IOT 摄像头采集和动态预览已完成 bring-up 验证；NAND 和完整外设资格测试仍未完成。
 
 ## 版本与上游
 

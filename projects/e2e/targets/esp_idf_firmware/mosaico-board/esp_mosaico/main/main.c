@@ -2,7 +2,7 @@
 #include "h2_chip_board.h"
 #include "h2_mosaico_usb_console.h"
 #include "h2_esp_target_task_policy.h"
-#include "h2_pal_e2e.h"
+#include "h2_pal_core_baseline.h"
 #include "diagnostics.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -114,26 +114,36 @@ static int dashboard_line(h2_runtime_t *runtime, int row, uint16_t color,
     return rc;
 }
 
-static const char *core_status(const h2_pal_e2e_result_t *result, int id) {
+/* This dashboard shows eight baseline probes, not Core v2 qualification. */
+static const int core_ids[] = {1, 2, 3, 4, 5, 6, 10, 11};
+#define CORE_BASELINE_COUNT (sizeof(core_ids) / sizeof(core_ids[0]))
+typedef struct {
+    h2_pal_result_t cases[CORE_BASELINE_COUNT];
+    size_t case_count;
+    unsigned passed, failed;
+    bool complete;
+    h2_pal_core_baseline_result_t baseline;
+} mosaico_core_result_t;
+
+static const char *core_status(const mosaico_core_result_t *result, int id) {
     for (size_t i = 0; i < result->case_count; ++i)
-        if ((int)result->cases[i].case_id == id)
-            return result->cases[i].result == H2_PAL_OK ? "PASS" : "FAIL";
+        if (core_ids[i] == id)
+            return result->cases[i] == H2_PAL_OK ? "PASS" : "FAIL";
     return "SKIP";
 }
 
-static int dashboard(h2_runtime_t *runtime, const h2_pal_e2e_result_t *result, int core_rc) {
+static int dashboard(h2_runtime_t *runtime, const mosaico_core_result_t *result, int core_rc) {
     int first = H2_PAL_OK;
 #define LINE(...) do { int r = dashboard_line(runtime, __VA_ARGS__); if (first == 0) first = r; } while (0)
     LINE(0, INK, "GIZOS MOSAICO / BOARD E2E");
     const bool core_ok = core_rc == 0 && result->complete && result->failed == 0 &&
-                         result->cleanup_result == 0 && result->passed == 8;
-    LINE(1, core_ok ? GOOD : BAD, "CORE %s  PASS:%u FAIL:%u", core_ok ? "PASS" : "FAIL",
+                         result->baseline.cleanup_result == 0 && result->passed == CORE_BASELINE_COUNT;
+    LINE(1, core_ok ? GOOD : BAD, "CORE BASE %s P:%u F:%u", core_ok ? "PASS" : "FAIL",
          (unsigned)result->passed, (unsigned)result->failed);
-    const int ids[] = {1, 2, 3, 4, 5, 6, 10, 11};
     const char *names[] = {"TIME", "TIMER", "TASK", "QUEUE", "MUTEX", "SEMAPHORE", "CONDITION", "CONCURRENCY"};
     for (int i = 0; i < 4; ++i) {
-        const char *a = core_status(result, ids[i * 2]);
-        const char *b = core_status(result, ids[i * 2 + 1]);
+        const char *a = core_status(result, core_ids[i * 2]);
+        const char *b = core_status(result, core_ids[i * 2 + 1]);
         LINE(2 + i, strcmp(a, "PASS") == 0 && strcmp(b, "PASS") == 0 ? GOOD : WARN,
              "%s:%s %s:%s", names[i * 2], a, names[i * 2 + 1], b);
     }
@@ -203,7 +213,7 @@ static void sample_sensors(h2_runtime_t *runtime) {
            rc, battery.voltage_mv, (unsigned)battery.percent_x100);
 }
 
-typedef struct { h2_runtime_t *runtime; const h2_pal_e2e_result_t *result; int core_rc; } screen_context_t;
+typedef struct { h2_runtime_t *runtime; const mosaico_core_result_t *result; int core_rc; } screen_context_t;
 static void refresh_tests(void *user) {
     screen_context_t *ctx = user;
     const int rc = dashboard(ctx->runtime, ctx->result, ctx->core_rc);
@@ -234,19 +244,34 @@ void app_main(void) {
     if (rc == H2_PAL_OK) rc = h2_runtime_init(&config, &runtime);
     report("runtime_init", rc);
     if (rc != H2_PAL_OK) halt("runtime_init", rc);
-    const h2_pal_e2e_config_t tests = {.suite_mask = H2_PAL_E2E_SUITE_CORE};
-    h2_pal_e2e_result_t result;
-    rc = h2_pal_e2e_run(runtime, &tests, &result);
-    for (size_t i = 0; i < result.case_count; ++i) {
-        printf("H2_MOSAICO_CORE case=%u rc=%d\n", (unsigned)result.cases[i].case_id,
-               result.cases[i].result);
+    h2_pal_result_t (*const baseline_cases[])(h2_runtime_t *, h2_pal_core_baseline_result_t *) = {
+        h2_pal_core_baseline_timer, h2_pal_core_baseline_task,
+        h2_pal_core_baseline_queue, h2_pal_core_baseline_mutex,
+        h2_pal_core_baseline_semaphore, h2_pal_core_baseline_condition,
+        h2_pal_core_baseline_concurrency,
+    };
+    _Static_assert(sizeof(baseline_cases) / sizeof(baseline_cases[0]) + 1 ==
+                   CORE_BASELINE_COUNT, "baseline probe mapping mismatch");
+    mosaico_core_result_t result = {0};
+    int core_rc = H2_PAL_OK;
+    for (size_t i = 0; i < CORE_BASELINE_COUNT; ++i) {
+        rc = i == 0 ? h2_pal_core_baseline_time(runtime) :
+             baseline_cases[i - 1](runtime, &result.baseline);
+        result.cases[i] = rc;
+        ++result.case_count;
+        if (rc == H2_PAL_OK) ++result.passed;
+        else ++result.failed;
+        if (core_rc == H2_PAL_OK) core_rc = rc;
+        printf("H2_MOSAICO_CORE case=%u rc=%d\n", (unsigned)core_ids[i], rc);
+        /* A failed join can retain live tasks; preserve Runtime and halt. */
+        if (result.baseline.retained_cleanup != NULL)
+            halt("core_cleanup", result.baseline.cleanup_result);
     }
-    printf("H2_MOSAICO_CORE_SUMMARY rc=%d complete=%d passed=%u failed=%u cleanup=%d\n",
-           rc, result.complete, (unsigned)result.passed, (unsigned)result.failed,
-           result.cleanup_result);
-    const int core_rc = rc;
-    /* A failed join can retain live tasks; preserve Runtime and stop further tests. */
-    if (result.retained_cleanup != NULL) halt("core_cleanup", result.cleanup_result);
+    result.complete = true;
+    if (core_rc == H2_PAL_OK) core_rc = result.baseline.cleanup_result;
+    printf("H2_MOSAICO_CORE_SUMMARY rc=%d complete=%d passed=%u failed=%u cleanup=%d scope=baseline\n",
+           core_rc, result.complete, result.passed, result.failed,
+           result.baseline.cleanup_result);
     const int display_rc = color_bars(runtime);
     report("display_transfer", display_rc);
     printf("H2_MOSAICO_MANUAL check=red_green_blue_white_bars touch=drag_screen buttons=AI_BOOT\n");

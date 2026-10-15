@@ -1,8 +1,6 @@
 # Mosaico board E2E
 
-独立诊断固件消费公共 board、Runtime 和共享 PAL Core/Audio suite，不依赖 H2Loader。
-最终入口拥有任务策略、测试流程和诊断页；它不是产品 UI，也不代表完整整板资格认证。
-适配范围跟进 [GizOS #708](https://github.com/GizClaw/gizos/issues/708)。
+独立诊断固件消费公共 board、Runtime、独立 PAL Core App 的八项 baseline 和共享 Audio suite，不依赖 H2Loader 或已退役的混合 PAL App。最终入口拥有任务策略、测试流程和诊断页；Core baseline 的结果只用于本页 bring-up，完整 Core 资格仍由独立 `pal-core/esp_mosaico` 的 41 项合同验收。适配范围跟进 [GizOS #708](https://github.com/GizClaw/gizos/issues/708)。
 
 ## 构建与烧录
 
