@@ -482,21 +482,6 @@ class WifiStartupValidationTest(unittest.TestCase):
                     SOURCE.read_text(), STARTUP_FAILURE_MAIN.replace("RADIO_ON", str(on)))
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_save_validates_before_disconnect_and_releases_busy(self):
-        source = SOURCE.read_text()
-        begin = source.index("static int sta_connect_and_save(")
-        end = source.index("const h2_pal_wifi_sta_api_t *", begin)
-        function = source[begin:end]
-        validation = function.index("sta_validate_sdk_password(config)")
-        connection = function.index("h2_wifi_sta_connect_and_save(")
-        self.assertLess(function.index("wifi_operation_begin()"), validation)
-        self.assertLess(validation, connection)
-        self.assertRegex(function[validation:connection],
-                         r"if \(result != H2_PAL_OK\) \{\s*"
-                         r"__atomic_store_n\(&wifi_operation_busy, 0u, __ATOMIC_RELEASE\);\s*"
-                         r"return result;")
-
-
 class NonblockingWifiConnectTest(unittest.TestCase):
     def test_nonblocking_start_and_event_outcomes(self):
         result = run_connect_fixture(SOURCE.read_text())

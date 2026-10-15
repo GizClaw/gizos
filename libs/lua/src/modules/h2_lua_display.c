@@ -4498,6 +4498,9 @@ static h2_pal_result_t display_submission_create(lua_State *state,
   }
   job->display_submission = submission;
   job->display_submission_ref = ref;
+  submission->worker.on_present = job->host->config.on_display_present;
+  submission->worker.present_user = job->host->config.display_present_user;
+  submission->worker.job_id = job->id;
   return H2_PAL_OK;
 }
 

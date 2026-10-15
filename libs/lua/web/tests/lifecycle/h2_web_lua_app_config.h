@@ -8,7 +8,7 @@ extern size_t test_source_size;
 #define H2_WEB_LUA_APP_SOURCE_SIZE test_source_size
 #define H2_WEB_LUA_APP_EXIT_BUTTON ""
 #define H2_WEB_LUA_APP_EXTENSION 0
-#define H2_WEB_LUA_APP_RUN_MS 0u
+#define H2_WEB_LUA_APP_RUN_MS (mode == 4 ? 50u : 0u)
 #define H2_WEB_LUA_APP_VM_BYTES (2u * 1024u * 1024u)
 #define H2_WEB_LUA_APP_SOURCE_LIMIT_BYTES 131072u
 #define H2_WEB_LUA_APP_ARG_COUNT 0u

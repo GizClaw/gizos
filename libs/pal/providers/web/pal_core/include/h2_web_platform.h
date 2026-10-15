@@ -109,11 +109,36 @@ h2_web_platform_pref_api(h2_web_platform_t *platform);
 /** Browser Fetch HTTP provider. Requests remain subject to browser CORS. */
 const h2_pal_http_api_t *
 h2_web_platform_http_api(h2_web_platform_t *platform);
+/**
+ * @brief Borrow opt-in simulated radio APIs until platform destruction.
+ * Set Module.h2WebEnvironment (version 1) before platform creation; missing
+ * configuration returns NULL, invalid configuration rejects creation. Wi-Fi
+ * scan/connection/settings and modem data/power/status are simulated in memory;
+ * requests run on the real browser network. Settings last for this platform
+ * only. No real SSID, SIM, identity, calls or location is read or controlled.
+ * Calls are serialized and may synchronously marshal to the browser thread;
+ * use a C/PAL Worker task, not an ISR or browser callback. Unsupported modem
+ * operations keep NULL vtable slots. See the Web guide for the JS contract.
+ */
+const h2_pal_wifi_sta_api_t *h2_web_platform_fake_wifi_sta_api(h2_web_platform_t *platform);
+const h2_pal_wifi_settings_api_t *h2_web_platform_fake_wifi_settings_api(h2_web_platform_t *platform);
+const h2_pal_modem_api_t *h2_web_platform_fake_modem_api(h2_web_platform_t *platform);
 /** wolfCrypt provider seeded from browser cryptographic randomness. */
 const h2_pal_crypto_api_t *
 h2_web_platform_crypto_api(h2_web_platform_t *platform);
 const h2_pal_display_api_t *
 h2_web_platform_display_api(h2_web_platform_t *platform);
+/** Configure browser LED output from a board's borrowed Periph API before
+ * Runtime start. Copies the API; its user/vtable/payloads must remain valid
+ * until platform destroy. A second call returns INVALID_STATE. LED_STRIP
+ * descriptors admit 1..256 RGB/RGBW pixels; other kinds return NOT_FOUND.
+ * PAL writes synchronously publish Module.h2WebOutputs.leds on the UI thread,
+ * including the board's id/name, raw pixels and independent brightness.
+ * Use a C/PAL Worker, never an ISR. No product light policy is synthesized. */
+h2_pal_result_t h2_web_platform_configure_leds(h2_web_platform_t *platform,
+    const h2_pal_periph_api_t *periph);
+/** Borrow the configured LED API until successful platform destruction. */
+const h2_pal_led_api_t *h2_web_platform_led_api(h2_web_platform_t *platform);
 /**
  * Browser Web Audio playback and getUserMedia/AudioWorklet microphone provider.
  *
@@ -196,6 +221,8 @@ h2_web_platform_webrtc_api(h2_web_platform_t *platform);
  * return NOT_FOUND; get_dns_servers and set_default on the browser path return
  * UNSUPPORTED because the browser owns resolution and routing. Without a
  * boolean navigator.onLine every call returns UNSUPPORTED.
+ * When fake radios are configured, an open simulated Wi-Fi or modem data
+ * path is also required. Environment changes publish the same Netif events.
  *
  * navigator.onLine only reports whether the host has any network. A service
  * can still be unreachable (captive portal, firewall, CORS, server down); only

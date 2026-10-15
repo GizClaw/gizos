@@ -1,6 +1,6 @@
 # PAL HTTP E2E
 
-`//projects/e2e/apps/pal-http/app:pal_http_e2e` owns a mandatory 45-case registry for both public HTTP operations and all request fields. It borrows Runtime HTTP/Memory/Time APIs and fixture URLs. Concrete providers, CA trust, browser policy, Wi-Fi, packaging and boot lifecycle belong to launchers. The existing mixed PAL App and Atomic App are unchanged.
+`//projects/e2e/apps/pal-http/app:pal_http_e2e` owns a mandatory 45-case registry for both public HTTP operations and all request fields. It borrows Runtime HTTP/Memory/Time APIs and fixture URLs. Concrete providers, CA trust, browser policy, Wi-Fi, packaging and boot lifecycle belong to launchers. The HTTP and Atomic Apps own separate contracts.
 
 ## Contract
 
@@ -30,7 +30,7 @@ After browser platform teardown, the C pthread queries the real HTTP registry th
 | BK7258 AP | `targets/h2loader_tar_zlib/pal-http/bk7258_v3_202405` | UART1 H2Loader command service, saved STA settings, independent CoreHTTP with injected test CA |
 
 ```sh
-bazel test //projects/e2e/apps/pal-http/app:interface_coverage_test //projects/e2e/apps/pal-http/app:reject_missing_test
+bazel test //projects/e2e/apps/pal-http/app:reject_missing_test
 bazel test //projects/e2e/targets/cc_binary/pal-http:desktop_test //projects/e2e/targets/pkg_tar/pal-http:browser_test
 bazel test //projects/e2e/libs/pal-http-fixture:fixture_evidence_test //projects/e2e/targets/cc_binary/pal-http:endpoint_rejection_test
 bazel test //projects/e2e/targets/pkg_tar/pal-http:browser_evidence_test //projects/e2e/targets/pkg_tar/pal-http:worker_rejection_test //projects/e2e/targets/pkg_tar/pal-http:endpoint_rejection_test

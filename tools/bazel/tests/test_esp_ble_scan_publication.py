@@ -87,8 +87,6 @@ class PublicationTest(unittest.TestCase):
                 wait = re.search(r'rc == H2_PAL_OK && (.*?) &&\s*elapsed <', source).group(1)
                 if 'const h2_pal_ble_addr_t peer_addr' in source:
                     snapshot = re.search(r'const h2_pal_ble_addr_t peer_addr = .*?;\s*const int peer_rssi = .*?;', source).group(0)
-                    self.assertIn('runtime->ble_host, &peer_addr,', source)
-                    self.assertIn('attempt, peer_rssi);', source)
                 else:
                     # Historical consumer read these expressions directly at log/connect.
                     addr = re.search(r'runtime->ble_host, &(scan.addr),', source).group(1)

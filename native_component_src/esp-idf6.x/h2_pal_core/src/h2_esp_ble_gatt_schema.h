@@ -9,11 +9,13 @@
 /**
  * Static capacity of the NimBLE GATT server schema.
  *
- * Three characteristics per service, because libs/ble_wifi_config publishes a
- * command, a scan and a provisioning characteristic in one service. Every
- * table is sized off these, so a slot only costs static storage.
+ * Six retained services let a shared Host keep management, provisioning,
+ * LuaLink, two invite schemas and binding distinct. Per-service unregister
+ * retains its schema slot; registering that UUID again reuses the slot.
+ * Three characteristics per service cover provisioning and LuaLink. Every
+ * table and the startup dynamic CCCD reservation derive from this capacity.
  */
-#define H2_ESP_BLE_MAX_GATT_SERVICES 4u
+#define H2_ESP_BLE_MAX_GATT_SERVICES 6u
 #define H2_ESP_BLE_MAX_GATT_CHARACTERISTICS_PER_SERVICE 3u
 #define H2_ESP_BLE_MAX_GATT_CHARACTERISTICS \
     (H2_ESP_BLE_MAX_GATT_SERVICES * \

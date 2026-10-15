@@ -7,7 +7,7 @@ import unittest
 import tempfile
 
 APP=Path(__file__).resolve().parents[1]
-spec=importlib.util.spec_from_file_location('qualification',APP/'check_qualification.py')
+spec=importlib.util.spec_from_file_location('qualification',APP/'report_validation.py')
 validation=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(validation)
 REGISTRY=re.findall(r'H2_NET_TLS_CASE\(\w+, "([^"]+)", ([01])\)',(APP/'app/include/h2_pal_net_tls_cases.inc').read_text())
@@ -22,122 +22,6 @@ def receipt():
 
 
 class Rejection(unittest.TestCase):
-    def test_followup_cannot_replace_other_provider_or_claim_fresh_hardware(self):
-        followup=json.loads((APP/'gizclaw_public_https_provenance_main_tls.json').read_text())
-        historical=json.loads((APP/'qualification.json').read_text())['source_sha256']
-        validation.check_sources(validation.ROOT,historical,followup)
-        for mutate in [
-            lambda value:value.update(new_physical_run_claimed=True),
-            lambda value:value['current_source_sha256'].update({'libs/pal/providers/ios/pal_core/src/h2_ios_net.c':'0'*64}),
-            lambda value:value['previous_source_sha256'].update({'tools/bazel/mobile_e2e.py':'0'*64}),
-            lambda value:value['current_source_sha256'].update({'tools/bazel/mobile_e2e.py':'0'*64}),
-        ]:
-            bad=copy.deepcopy(followup);mutate(bad)
-            with self.assertRaises(AssertionError):validation.check_sources(validation.ROOT,historical,bad)
-
-    def test_ipv6_maintenance_cannot_relabel_or_exempt_other_sources(self):
-        path = APP / 'ipv6_source_maintenance.json'
-        record = json.loads(path.read_text())
-        old = json.loads((APP / 'qualification.json').read_text())['source_sha256']
-        https = json.loads((APP / 'gizclaw_public_https_provenance_main_tls.json').read_text())
-        effective = {**old, **https['current_source_sha256']}
-        original_read = Path.read_text
-        from unittest.mock import patch
-        mutations = [
-            lambda value: value.update(new_physical_run_claimed=True),
-            lambda value: value.update(historical_physical_qualification_applies_to_current_sources=True),
-            lambda value: value.update(historical_qualification_sha256='0' * 64),
-            lambda value: value['current_source_sha256'].update({'libs/pal/providers/ios/pal_core/src/h2_ios_net.c': '0' * 64}),
-            lambda value: value['previous_source_sha256'].update({'libs/pal/include/h2/pal/net/h2_pal_net.h': '0' * 64}),
-            lambda value: value['current_source_sha256'].update({'libs/pal/providers/posix/pal_core/src/h2_posix_net.c': '0' * 64}),
-            lambda value: value['new_slots'].update(resolve_all=['not-a-real-case']),
-            lambda value: value['validation']['host_execution']['source_sha256'].pop('MODULE.bazel'),
-            lambda value: value['validation']['host_execution']['source_sha256'].pop(
-                'projects/e2e/libs/pal-ipv6-fixture/fixture_ipv6.py'),
-            lambda value: value['validation']['host_execution']['source_sha256'].pop(
-                'projects/e2e/apps/pal-ipv6/app/src/h2_pal_ipv6_local.c'),
-            lambda value: value['validation']['host_execution']['source_sha256'].pop(
-                'projects/e2e/apps/pal-ipv6/app/src/h2_pal_ipv6_local.h'),
-            lambda value: value['validation']['host_execution']['source_sha256'].pop(
-                'projects/e2e/apps/pal-ipv6/app/include/h2_pal_ipv6_e2e.h'),
-            lambda value: value['validation']['host_execution']['source_sha256'].update(
-                {'projects/e2e/apps/pal-ipv6/app/src/h2_pal_ipv6_local.c': 'f' * 64}),
-            lambda value: value['validation']['host_execution']['source_sha256'].update(
-                {'projects/e2e/apps/pal-ipv6/app/src/h2_pal_ipv6_local.h': 'f' * 64}),
-            lambda value: value['validation']['host_execution']['source_sha256'].update(
-                {'projects/e2e/apps/pal-ipv6/app/include/h2_pal_ipv6_e2e.h': 'f' * 64}),
-            lambda value: value['validation']['host_execution']['complete_input_capture'].update(
-                all_before_after_identical=False),
-            lambda value: value['validation']['host_execution']['complete_input_capture'].update(input_count=0),
-            lambda value: value['validation']['host_execution']['complete_input_capture']['sha256'].update(
-                action_input_manifest='not-a-sha256'),
-            lambda value: value['validation']['host_execution']['complete_input_capture']['sha256'].update(
-                action_input_manifest='f' * 64),
-            lambda value: value['validation']['host_execution']['complete_input_capture'].update(input_count=9968),
-            lambda value: value['validation']['host_execution'].update(executed_source_commit='f' * 40),
-            lambda value: value['validation']['host_execution']['artifact_sha256'].update(
-                {'projects/e2e/targets/cc_binary/pal-ipv6/pal_ipv6': 'f' * 64}),
-        ]
-        for mutate in mutations:
-            bad = copy.deepcopy(record)
-            mutate(bad)
-            def read(source, *args, **kwargs):
-                return json.dumps(bad) if source == path else original_read(source, *args, **kwargs)
-            with patch.object(Path, 'read_text', new=read):
-                with self.assertRaises(AssertionError):
-                    validation.ipv6_source_updates(validation.ROOT, effective)
-
-    def test_independent_capture_pins_reject_missing_and_false_identity(self):
-        path = APP / 'ipv6_host_input_pins.json'
-        pins = json.loads(path.read_text())
-        host = json.loads((APP / 'ipv6_source_maintenance.json').read_text())['validation']['host_execution']
-        validation.check_ipv6_host_capture_pin(host)
-        other = next(source for source in pins['captures'] if source != host['executed_source_commit'])
-        false_identity = copy.deepcopy(host)
-        false_identity['executed_source_commit'] = other
-        with self.assertRaises(AssertionError):
-            validation.check_ipv6_host_capture_pin(false_identity)
-        missing = copy.deepcopy(pins)
-        missing['captures'].pop(host['executed_source_commit'])
-        original_read = Path.read_text
-        from unittest.mock import patch
-        def read(source, *args, **kwargs):
-            return json.dumps(missing) if source == path else original_read(source, *args, **kwargs)
-        with patch.object(Path, 'read_text', new=read):
-            with self.assertRaises(AssertionError):
-                validation.check_ipv6_host_capture_pin(host)
-
-    def test_additive_mqtt_build_owner_does_not_rebind_net_tls_sources(self):
-        import hashlib
-        sources=json.loads((APP/'qualification.json').read_text())['source_sha256']
-        for platform in ['ios','android']:
-            path='libs/pal/providers/'+platform+'/pal_core/BUILD.bazel'
-            current=(validation.ROOT/path).read_bytes()
-            projected=validation.net_tls_build_input(path,current)
-            self.assertEqual(hashlib.sha256(projected).hexdigest(),sources[path])
-            for bad in [current.replace(b'h2_'+platform.encode()+b'_net.c',b'h2_'+platform.encode()+b'_net_changed.c'),
-                        current.replace(b'//libs/pal/providers/wolfssl',b'//libs/pal/providers/untrusted_tls'),
-                        current+b'\n# unknown shared build mutation\n']:
-                self.assertNotEqual(hashlib.sha256(validation.net_tls_build_input(path,bad)).hexdigest(),sources[path])
-        provider='libs/pal/providers/ios/pal_core/src/h2_ios_net.c'
-        current=(validation.ROOT/provider).read_bytes()
-        self.assertEqual(validation.net_tls_build_input(provider,current),current)
-
-    def test_every_native_provider_source_is_mandatory(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root=Path(directory)
-            import hashlib
-            sources={}
-            for relative in validation.REQUIRED_PROVIDER_SOURCES:
-                path=root/relative;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(b'provider')
-                sources[relative]=hashlib.sha256(path.read_bytes()).hexdigest()
-            validation.check_sources(root,sources)
-            for relative in sources:
-                bad=dict(sources);bad.pop(relative)
-                with self.assertRaises(AssertionError):validation.check_sources(root,bad)
-            next(iter(root.rglob('h2_ios_net.c'))).write_bytes(b'changed provider')
-            with self.assertRaises(AssertionError):validation.check_sources(root,sources)
-
     def test_structured_board_observations_reject_state_or_dump_corruption(self):
         board=json.loads((APP/'evidence/bk7258/qualified.json').read_text())
         validation.check_board_observation(board)

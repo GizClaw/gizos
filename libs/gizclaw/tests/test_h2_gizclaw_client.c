@@ -49,6 +49,7 @@ static h2_pal_result_t test_send_result = H2_PAL_OK;
 static h2_pal_result_t test_poll_result = H2_PAL_OK;
 static h2_pal_result_t test_poll_event_error = H2_PAL_OK;
 static uint64_t test_monotonic_ms = 1234u;
+static h2_pal_result_t test_monotonic_result;
 static bool test_cancel_requested;
 static int test_opus_send_calls;
 static h2_pal_result_t test_opus_send_result;
@@ -959,7 +960,7 @@ static int test_telemetry_adapter(h2_gizclaw_client_t *client) {
 static h2_pal_result_t test_get_monotonic_ms(void *user, uint64_t *out_ms) {
   (void)user;
   *out_ms = test_monotonic_ms;
-  return H2_PAL_OK;
+  return test_monotonic_result;
 }
 
 static h2_pal_result_t test_sleep_ms(void *user, uint32_t ms) {
@@ -1205,7 +1206,18 @@ static int completion_provider(void *user, h2_gizclaw_tool_t method,
   return H2_PAL_OK;
 }
 
+static unsigned provider_channel_closes;
+static void provider_channel_close(h2_pal_webrtc_channel_t *channel) {
+  assert(channel != NULL);
+  ++provider_channel_closes;
+}
+
 static void test_provider_completions(h2_gizclaw_config_t config) {
+  h2_pal_webrtc_vtable_t webrtc_ops = *config.webrtc->vtable;
+  webrtc_ops.channel_close = provider_channel_close;
+  h2_pal_webrtc_api_t webrtc = *config.webrtc;
+  webrtc.vtable = &webrtc_ops;
+  config.webrtc = &webrtc;
   const int saved_send_calls = test_send_calls;
   const int saved_block_count = test_send_would_block_count;
   test_send_would_block_count = 0;
@@ -1251,6 +1263,12 @@ static void test_provider_completions(h2_gizclaw_config_t config) {
       }
       h2_gizclaw_test_provider_channel_close(client, channel, scenario == 1);
       assert(fixture.calls == 0);
+      if (scenario == 0) {
+        const unsigned closes = provider_channel_closes;
+        (void)h2_gizclaw_client_poll(client, 0);
+        assert(fixture.calls == 0 && provider_channel_closes == closes);
+        h2_gizclaw_test_provider_channel_close(client, channel, true);
+      }
       poll.result = scenario == 2 ? GZC_ERR_TIMEOUT : GZC_OK;
       (void)h2_gizclaw_client_poll(client, 0);
       assert(fixture.calls == 1);
@@ -1277,6 +1295,7 @@ static void test_provider_completions(h2_gizclaw_config_t config) {
     for (size_t i = 0; i < sizeof(response); ++i)
       assert(h2_gizclaw_test_provider_send(ca, response + i, 1) == GZC_OK);
     h2_gizclaw_test_provider_channel_close(pair, ca, false);
+    h2_gizclaw_test_provider_channel_close(pair, ca, true);
     assert(h2_gizclaw_test_provider_response(pair, cb, GZC_OK) == GZC_OK);
     if (failure == 1) {
       test_send_result = H2_PAL_ERR_IO;
@@ -1297,6 +1316,66 @@ static void test_provider_completions(h2_gizclaw_config_t config) {
     h2_gizclaw_test_set_client_poll(NULL, NULL);
     h2_gizclaw_client_deinit(pair);
     assert(a.calls == 2);
+  }
+  /* A requester that never closes must release the reservation on a bounded
+   * timeout; stop/deinit cannot redeliver it or retain the deferred channel. */
+  handler.user = &fixture;
+  for (unsigned terminal = 0u; terminal < 2u; ++terminal) {
+    h2_gizclaw_client_t *pending = NULL;
+    fixture = (provider_completion_fixture_t){0};
+    assert(h2_gizclaw_client_init(&config, &pending) == H2_PAL_OK);
+    h2_pal_webrtc_channel_t *channel = (h2_pal_webrtc_channel_t *)0x501;
+    assert(h2_gizclaw_test_provider_response(pending, channel, GZC_OK) == GZC_OK);
+    const uint8_t eos[] = {0, 0, 0, 0};
+    assert(h2_gizclaw_test_provider_send(channel, eos, sizeof(eos)) == GZC_OK);
+    h2_gizclaw_test_provider_channel_close(pending, channel, false);
+    const unsigned closes = provider_channel_closes;
+    test_client_poll_t poll = {.result = GZC_OK};
+    h2_gizclaw_test_set_client_poll(test_client_poll_call, &poll);
+    (void)h2_gizclaw_client_poll(pending, 0);
+    assert(fixture.calls == 0 && provider_channel_closes == closes);
+    if (terminal == 0u) {
+      test_monotonic_ms += (uint64_t)(config.write_timeout_ms > 0
+          ? config.write_timeout_ms : config.connect_timeout_ms);
+      (void)h2_gizclaw_client_poll(pending, 0);
+      assert(fixture.calls == 1 && fixture.result == H2_PAL_ERR_TIMEOUT);
+    } else {
+      assert(h2_gizclaw_client_close(pending) == H2_PAL_OK);
+      assert(fixture.calls == 1 && fixture.result == H2_PAL_ERR_CLOSED);
+    }
+    assert(provider_channel_closes == closes);
+    h2_gizclaw_test_set_client_poll(NULL, NULL);
+    h2_gizclaw_client_deinit(pending);
+    assert(fixture.calls == 1);
+    assert(provider_channel_closes == closes);
+  }
+  for (unsigned when = 0u; when < 2u; ++when) {
+    h2_gizclaw_client_t *pending = NULL;
+    fixture = (provider_completion_fixture_t){0};
+    assert(h2_gizclaw_client_init(&config, &pending) == H2_PAL_OK);
+    h2_pal_webrtc_channel_t *channel = (h2_pal_webrtc_channel_t *)0x601;
+    if (when == 0u) test_monotonic_result = H2_PAL_ERR_IO;
+    const int response = h2_gizclaw_test_provider_response(pending, channel, GZC_OK);
+    if (when == 0u) {
+      assert(response == GZC_ERR_RPC && fixture.calls == 1 &&
+             fixture.result == H2_PAL_ERR_IO);
+    } else {
+      assert(response == GZC_OK && fixture.calls == 0);
+      const uint8_t eos[] = {0, 0, 0, 0};
+      assert(h2_gizclaw_test_provider_send(channel, eos, sizeof(eos)) == GZC_OK);
+      h2_gizclaw_test_provider_channel_close(pending, channel, false);
+      const unsigned closes = provider_channel_closes;
+      test_client_poll_t poll = {.result = GZC_OK};
+      h2_gizclaw_test_set_client_poll(test_client_poll_call, &poll);
+      test_monotonic_result = H2_PAL_ERR_IO;
+      (void)h2_gizclaw_client_poll(pending, 0);
+      assert(fixture.calls == 1 && fixture.result == H2_PAL_ERR_IO &&
+             provider_channel_closes == closes);
+      h2_gizclaw_test_set_client_poll(NULL, NULL);
+    }
+    test_monotonic_result = H2_PAL_OK;
+    h2_gizclaw_client_deinit(pending);
+    assert(fixture.calls == 1);
   }
   handler.user = &fixture;
   h2_gizclaw_client_t *client = NULL;

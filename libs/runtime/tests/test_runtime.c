@@ -873,9 +873,11 @@ static h2_runtime_config_t test_runtime_config(test_runtime_env_t *env) {
 
 static h2_runtime_t *test_runtime_create(test_runtime_env_t *env) {
     h2_runtime_config_t config = test_runtime_config(env);
+    config.ble_local_name = "h106-tiga-A1B2C3";
     h2_runtime_t *runtime = NULL;
     assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
     assert(runtime != NULL);
+    assert(runtime->ble_local_name == config.ble_local_name);
     assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_OK);
     return runtime;
 }
@@ -925,6 +927,19 @@ static void test_runtime_firmware_info_provider(void) {
     config.firmware_info = NULL;
     assert(h2_runtime_init(&config, &runtime) == H2_PAL_ERR_INVALID_ARG);
     assert(runtime == NULL);
+    config = test_runtime_config(&env);
+    static const char *const invalid_names[] = {
+        "", "bad\nname", "123456789012345678901234567890", "中文",
+    };
+    for (size_t i = 0u; i < sizeof(invalid_names) / sizeof(invalid_names[0]); ++i) {
+        config.ble_local_name = invalid_names[i];
+        assert(h2_runtime_init(&config, &runtime) == H2_PAL_ERR_INVALID_ARG);
+        assert(runtime == NULL);
+    }
+    config.ble_local_name = "12345678901234567890123456789";
+    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+    assert(strcmp(runtime->ble_local_name, config.ble_local_name) == 0);
+    h2_runtime_deinit(runtime);
 }
 
 static void test_runtime_capabilities_are_bound_at_init(void) {

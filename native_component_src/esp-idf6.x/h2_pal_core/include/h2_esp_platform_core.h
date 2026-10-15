@@ -123,6 +123,25 @@ void h2_esp_platform_netif_unregister(void *netif_handle);
 h2_pal_result_t h2_esp_platform_netif_monitor_init(void);
 void h2_esp_platform_netif_monitor_deinit(void);
 h2_pal_result_t h2_esp_platform_netif_reconcile_default(void);
+/**
+ * Stops a borrowed ESP-NETIF PPP interface and confirms PPP_PHASE_DEAD.
+ *
+ * The caller must serialize PPP start/stop and keep the interface, transport,
+ * callbacks and their storage alive until this function succeeds. On failure
+ * they must remain alive for a later retry; this function destroys nothing.
+ * Call only from an ordinary task, never from a TCPIP/event-loop callback.
+ * Phase reads and close requests execute in TCPIP context, independently of
+ * queued PPP status events or the modem SDK's PPP_STARTED bookkeeping.
+ *
+ * @param netif_handle Required borrowed ESP-NETIF PPP interface.
+ * @param timeout_ms PPP termination wait budget in milliseconds; zero performs
+ *                   one close/check without sleeping. SDK TCPIP dispatch is
+ *                   synchronous and follows ESP-NETIF's execution contract.
+ * @return H2_PAL_OK only after PPP is dead; TIMEOUT, INVALID_ARG, INVALID_STATE,
+ *         IO, or UNSUPPORTED when PPP support is disabled.
+ */
+h2_pal_result_t h2_esp_platform_ppp_quiesce(void *netif_handle,
+                                          uint32_t timeout_ms);
 const h2_pal_task_api_t *h2_esp_platform_task_api(void);
 h2_pal_result_t
 h2_esp_platform_task_configure(const h2_esp_task_policy_config_t *config);

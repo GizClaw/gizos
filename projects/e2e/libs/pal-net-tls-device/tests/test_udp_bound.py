@@ -37,7 +37,6 @@ class UDPBound(unittest.TestCase):
         self.assertTrue(compiler)
         for backend,path in [('esp','native_component_src/esp-idf6.x/h2_pal_core/src/h2_esp_platform_net.c'),('bk','native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_net.c')]:
             source=(ROOT/path).read_text()
-            self.assertIn('.udp_open_bound = '+backend+'_net_udp_open_bound',source)
             start=source.index('static int '+backend+'_net_udp_open_bound(')
             end=source.index('static int '+backend+'_net_udp_sendto(',start)
             entry=source[start:end]

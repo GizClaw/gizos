@@ -1,7 +1,7 @@
-load("@rules_python//python:defs.bzl", "py_test")
 load("@emsdk//emscripten_toolchain:wasm_rules.bzl", "wasm_cc_binary")
 load("@rules_cc//cc:defs.bzl", "cc_binary")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_python//python:defs.bzl", "py_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel/platforms:compatibility.bzl", "WEB_WASM32_ARTIFACT_COMPATIBILITY")
 
@@ -33,9 +33,9 @@ cc_binary(
     ],
     target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
     deps = [
-        "//libs/pal/providers/web/pal_core",
-        "//libs/pal:unsupported",
         "//libs/atomic/providers/c11",
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/web/pal_core",
         "//projects/e2e/libs/gizclaw-mobile:runner",
     ],
 )
@@ -66,27 +66,42 @@ pkg_tar(
     target_compatible_with = _HOST,
 )
 
-
 py_test(
     name = "gizclaw_wasm_live_test",
     size = "enormous",
     srcs = ["run_browser.py"],
-    main = "run_browser.py",
-    args = ["--archive", "$(rootpath :gizclaw)", "--pcm",
-            "$(rootpath //projects/e2e/apps/gizclaw:voice_prompt)", "--fixture",
-            "$(rootpath //projects/e2e/apps/gizclaw:app_config_fixture_contract)"],
-    data = [":gizclaw", "//projects/e2e/apps/gizclaw:voice_prompt",
-            "//projects/e2e/apps/gizclaw:app_config_fixture_contract",
-            "//projects/e2e/libs/gizclaw-mobile:suite.py",
-            "//projects/e2e/apps/gizclaw:api_coverage.py", "//libs/gizclaw:public_api_inventory",
-            "//tools/bazel:web_archive_browser_test.py", "//tools/bazel:web_archive_server.py"] + select({
+    args = [
+        "--archive",
+        "$(rootpath :gizclaw)",
+        "--pcm",
+        "$(rootpath //projects/e2e/apps/gizclaw:voice_prompt)",
+        "--fixture",
+        "$(rootpath //projects/e2e/apps/gizclaw:app_config_fixture_contract)",
+    ],
+    data = [
+        ":gizclaw",
+        "//projects/e2e/apps/gizclaw:api_coverage.py",
+        "//projects/e2e/apps/gizclaw:app_config_fixture_contract",
+        "//projects/e2e/apps/gizclaw:voice_prompt",
+        "//projects/e2e/libs/gizclaw-mobile:suite.py",
+        "//tools/bazel:web_archive_browser_test.py",
+        "//tools/bazel:web_archive_server.py",
+    ] + select({
         "//tools/bazel/platforms:host_linux_target_linux": ["@h2_playwright_chromium_linux_x86_64//:runtime"],
         "//tools/bazel/platforms:host_macos_target_macos": ["@h2_playwright_chromium_macos_arm64//:runtime"],
         "//conditions:default": [],
     }),
-    env_inherit = ["H2_GIZCLAW_E2E_ENDPOINT", "H2_GIZCLAW_E2E_REGISTRATION_TOKEN",
-        "H2_GIZCLAW_E2E_DEVICE_API_URL", "H2_GIZCLAW_E2E_AUDIO_URL"],
-    tags = ["manual", "external"],
+    env_inherit = [
+        "H2_GIZCLAW_E2E_ENDPOINT",
+        "H2_GIZCLAW_E2E_REGISTRATION_TOKEN",
+        "H2_GIZCLAW_E2E_DEVICE_API_URL",
+        "H2_GIZCLAW_E2E_AUDIO_URL",
+    ],
     legacy_create_init = False,
+    main = "run_browser.py",
+    tags = [
+        "external",
+        "manual",
+    ],
     target_compatible_with = _HOST,
 )

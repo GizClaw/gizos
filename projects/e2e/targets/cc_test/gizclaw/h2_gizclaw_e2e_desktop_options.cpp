@@ -16,6 +16,7 @@ uint32_t parse_suite(const char *value) {
       {"connectivity", H2_GIZCLAW_E2E_SUITE_CONNECTIVITY},
       {"rpc", H2_GIZCLAW_E2E_SUITE_RPC},
       {"device", H2_GIZCLAW_E2E_SUITE_DEVICE},
+      {"lua-apps", H2_GIZCLAW_E2E_SUITE_LUA_APPS},
       {"firmware", H2_GIZCLAW_E2E_SUITE_FIRMWARE},
       {"voice", H2_GIZCLAW_E2E_SUITE_VOICE},
       {"firmware-voice",

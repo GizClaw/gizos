@@ -426,19 +426,47 @@ static int run_display_and_speaker(test_context_t *context,
                        &(const char *){"open/draw/present/close/reopen"}});
 
   // Speaker: write is paced by the playback clock and drain waits for it.
-  const h2_pal_audio_api_t *audio = h2_web_platform_audio_api(context->platform);
+  const h2_pal_audio_api_t *audio =
+      h2_web_platform_audio_api(context->platform);
   const h2_audio_track_config_t track_config = {
       .format = {16000u, 320u, 1u, H2_AUDIO_SAMPLE_S16LE},
       .volume_factor_milli = 1000u,
   };
   h2_pal_audio_track_t *track = NULL;
+  // Fill a stopped track: no playback can race this capacity observation.
   STEP_CHECK("speaker",
-             h2_pal_audio_start_speaker(audio) == H2_PAL_OK &&
+             h2_pal_audio_stop_speaker(audio) == H2_PAL_OK &&
                  h2_pal_audio_create_track(audio, &track_config, &track) ==
                      H2_PAL_OK,
-             "start speaker");
-  const double started = emscripten_get_now();
+             "create held track");
   int would_block = 0;
+  size_t held_samples = 0u;
+  const h2_audio_frame_t held_frame = {.data = (void *)pcm,
+                                       .capacity = 640u,
+                                       .bytes = 640u,
+                                       .sample_rate_hz = 16000u,
+                                       .samples_per_channel = 320u,
+                                       .channels = 1u,
+                                       .sample_format = H2_AUDIO_SAMPLE_S16LE};
+  for (size_t frame = 0u; frame < 50u; ++frame) {
+    rc = (h2_pal_result_t)h2_pal_audio_track_write(track, &held_frame, 0u);
+    if (rc == H2_AUDIO_ERR_WOULD_BLOCK) {
+      would_block = 1;
+      break;
+    }
+    STEP_CHECK("speaker", rc == H2_PAL_OK, "prefill held track");
+    held_samples += 320u;
+  }
+  STEP_CHECK("speaker", would_block && held_samples > 0u,
+             "held queue must apply backpressure");
+  STEP_CHECK("speaker",
+             h2_pal_audio_start_speaker(audio) == H2_PAL_OK &&
+                 h2_pal_audio_track_drain(track, 3000u) == H2_PAL_OK &&
+                 h2_pal_audio_track_close(track) == H2_PAL_OK &&
+                 h2_pal_audio_create_track(audio, &track_config, &track) ==
+                     H2_PAL_OK,
+             "drain held samples and create playback track");
+  const double started = emscripten_get_now();
   size_t written_samples = 0u;
   for (size_t offset = 0u; offset + 320u <= 16000u; offset += 320u) {
     h2_audio_frame_t frame = {
@@ -450,9 +478,6 @@ static int run_display_and_speaker(test_context_t *context,
         .channels = 1u,
         .sample_format = H2_AUDIO_SAMPLE_S16LE,
     };
-    if (offset == 3200u &&
-        h2_pal_audio_track_write(track, &frame, 0u) == H2_AUDIO_ERR_WOULD_BLOCK)
-      would_block = 1;
     // The writer stalls longer than the first 20 ms frame; the start lead
     // must still cover it.
     if (offset == 320u)
@@ -469,18 +494,19 @@ static int run_display_and_speaker(test_context_t *context,
                            (const void *[]){&(const void *){context->platform},
                                             &(const void *){track}})
                            .i32);
-  rc = rc == H2_PAL_OK
-           ? (h2_pal_result_t)h2_pal_audio_track_drain(track, 3000u)
-           : rc;
+  rc = rc == H2_PAL_OK ? (h2_pal_result_t)h2_pal_audio_track_drain(track, 3000u)
+                       : rc;
   const double total_ms = emscripten_get_now() - started;
-  (void)snprintf(detail, sizeof(detail),
-                 "rc=%d samples=%zu write_ms=%.0f total_ms=%.0f block=%d dry=%d",
-                 rc, written_samples, write_ms, total_ms, would_block, ran_dry);
+  (void)snprintf(
+      detail, sizeof(detail),
+      "rc=%d samples=%zu write_ms=%.0f total_ms=%.0f block=%d dry=%d", rc,
+      written_samples, write_ms, total_ms, would_block, ran_dry);
   // One second of PCM: writes are throttled to the queue depth and drain
   // returns only once playback reached the end.
   STEP_CHECK("speaker",
              rc == H2_PAL_OK && written_samples == 16000u && would_block &&
-                 !ran_dry && write_ms >= 500.0 && total_ms >= 950.0 && total_ms < 2500.0,
+                 !ran_dry && write_ms >= 500.0 && total_ms >= 950.0 &&
+                 total_ms < 2500.0,
              detail);
   STEP_CHECK("speaker",
              h2_pal_audio_track_close(track) == H2_PAL_OK &&

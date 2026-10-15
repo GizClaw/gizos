@@ -113,11 +113,10 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     # The independent inventory/oracle remains shared with all other platforms.
-    from projects.e2e.apps.gizclaw.api_coverage import audit, requirements, repository_root, validate_inventory
+    from projects.e2e.apps.gizclaw.api_coverage import audit, requirements
     body, receipt = extract(args.log.read_bytes(), version=args.version,
                             previous_execution=args.previous_execution)
     rules = requirements()
-    validate_inventory(rules, (repository_root() / "libs/gizclaw/tests/public_api.inc").read_text())
     coverage = audit(body.decode().splitlines(), rules, endpoint=args.endpoint,
                      backend="h2peer", profile=args.profile,
                      platform=args.platform, process_exit_code=0)

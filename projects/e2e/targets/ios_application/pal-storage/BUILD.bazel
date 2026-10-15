@@ -17,7 +17,7 @@ objc_library(
     ],
     target_compatible_with = IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY,
     deps = [
-        "//libs/app_host:ios_packaged",
+        "//projects/e2e/libs/mobile-platform-config:runtime_config",
         "//projects/e2e/libs/pal-storage-mobile:runner",
     ],
 )

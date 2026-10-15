@@ -90,22 +90,29 @@ static void response_add_line(h2_quectel_response_t *response, const char *line)
         response->truncated = 1;
         return;
     }
+    if (strlen(line) >= H2_QUECTEL_LINE_MAX) {
+        response->truncated = 1;
+        return;
+    }
     strncpy(response->lines[response->count], line, H2_QUECTEL_LINE_MAX - 1u);
     response->lines[response->count][H2_QUECTEL_LINE_MAX - 1u] = '\0';
     response->count++;
 }
 
 static void response_add_text(h2_quectel_modem_t *modem, h2_quectel_response_t *response, const char *text, const char *cmd,
-    uint32_t reset_generation, uint32_t sim_generation) {
+    uint32_t reset_generation, uint32_t sim_generation,
+    h2_quectel_at_line_fn collect, void *collect_user) {
     if (text == NULL) {
         return;
     }
 
     const char *cursor = text;
     while (*cursor != '\0') {
-        char line[H2_QUECTEL_LINE_MAX];
+        char line[H2_QUECTEL_AT_LINE_MAX];
         size_t len = 0u;
-        while (cursor[len] != '\0' && cursor[len] != '\r' && cursor[len] != '\n' && len + 1u < sizeof(line)) {
+        const size_t line_capacity = collect != NULL || strlen(cmd) >= H2_QUECTEL_LINE_MAX
+            ? sizeof(line) : H2_QUECTEL_LINE_MAX;
+        while (cursor[len] != '\0' && cursor[len] != '\r' && cursor[len] != '\n' && len + 1u < line_capacity) {
             line[len] = cursor[len];
             len++;
         }
@@ -126,7 +133,11 @@ static void response_add_text(h2_quectel_modem_t *modem, h2_quectel_response_t *
         }
 
         trim_line(line);
-        if (line[0] == '\0' || strcmp(line, "OK") == 0 || (cmd != NULL && strcmp(line, cmd) == 0)) {
+        if (strcmp(line, "OK") == 0) {
+            if (response != NULL) { response->ok = 1; }
+            continue;
+        }
+        if (line[0] == '\0' || (cmd != NULL && strcmp(line, cmd) == 0)) {
             continue;
         }
         if (h2_quectel_is_urc(line, cmd)) {
@@ -140,7 +151,13 @@ static void response_add_text(h2_quectel_modem_t *modem, h2_quectel_response_t *
         } else if (strncmp(line, "+CME ERROR:", 11u) == 0) {
             h2_quectel_handle_urc_locked(modem, line);
         }
-        response_add_line(response, line);
+        if (collect != NULL && strcmp(line, "ERROR") != 0 &&
+            strncmp(line, "+CME ERROR:", 11u) != 0 &&
+            strncmp(line, "+CMS ERROR:", 11u) != 0) {
+            collect(collect_user, line);
+        } else {
+            response_add_line(response, line);
+        }
     }
 }
 
@@ -173,7 +190,7 @@ static h2_pal_result_t at_exchange_impl(
     h2_quectel_modem_t *modem,
     const char *cmd,
     h2_quectel_response_t *response,
-    int allow_connect) {
+    int allow_connect, h2_quectel_at_line_fn collect, void *collect_user) {
     if (modem == NULL || cmd == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
@@ -196,6 +213,10 @@ static h2_pal_result_t at_exchange_impl(
             sizeof(modem->command_response),
             modem->config.command_timeout_ms);
         (void)h2_quectel_state_lock(modem);
+        if (memchr(command_response, '\0', sizeof(modem->command_response)) == NULL) {
+            memset(command_response, 0, sizeof(modem->command_response));
+            return rc == H2_PAL_OK ? H2_PAL_ERR_TRUNCATED : rc;
+        }
         if (generation != modem->reset_generation ||
             ((modem->preparing == 0u || strcmp(cmd, "AT+CPIN?") == 0) &&
              sim_generation != modem->sim_generation)) {
@@ -206,11 +227,13 @@ static h2_pal_result_t at_exchange_impl(
             if (response != NULL) {
                 response->connected = 1;
             }
-            response_add_text(modem, response, command_response, cmd, generation, sim_generation);
+            response_add_text(modem, response, command_response, cmd, generation, sim_generation,
+                collect, collect_user);
             memset(command_response, 0, sizeof(modem->command_response));
             return H2_PAL_OK;
         }
-        response_add_text(modem, response, command_response, cmd, generation, sim_generation);
+        response_add_text(modem, response, command_response, cmd, generation, sim_generation,
+            collect, collect_user);
         /* Transport text may echo credentials; do not retain it in the instance. */
         memset(command_response, 0, sizeof(modem->command_response));
         return rc;
@@ -219,7 +242,7 @@ static h2_pal_result_t at_exchange_impl(
         return H2_PAL_ERR_INVALID_ARG;
     }
 
-    char tx[H2_QUECTEL_LINE_MAX];
+    char tx[H2_QUECTEL_COMMAND_MAX];
     int n = snprintf(tx, sizeof(tx), "%s\r", cmd);
     if (n <= 0 || (size_t)n >= sizeof(tx)) {
         return H2_PAL_ERR_INVALID_ARG;
@@ -232,8 +255,10 @@ static h2_pal_result_t at_exchange_impl(
     }
 
     for (uint32_t i = 0u; i < 128u; ++i) {
-        char line[H2_QUECTEL_LINE_MAX];
-        rc = read_line(modem, line, sizeof(line), modem->config.io_timeout_ms);
+        char line[H2_QUECTEL_AT_LINE_MAX];
+        const size_t line_capacity = collect != NULL || strlen(cmd) >= H2_QUECTEL_LINE_MAX
+            ? sizeof(line) : H2_QUECTEL_LINE_MAX;
+        rc = read_line(modem, line, line_capacity, modem->config.io_timeout_ms);
         if (rc != H2_PAL_OK) {
             return rc;
         }
@@ -246,6 +271,7 @@ static h2_pal_result_t at_exchange_impl(
             continue;
         }
         if (strcmp(line, "OK") == 0) {
+            if (response != NULL) { response->ok = 1; }
             return H2_PAL_OK;
         }
         if (strcmp(line, "ERROR") == 0 || strncmp(line, "+CME ERROR:", 11) == 0 || strncmp(line, "+CMS ERROR:", 11) == 0) {
@@ -270,18 +296,22 @@ static h2_pal_result_t at_exchange_impl(
         if (strcmp(cmd, "AT+CPIN?") == 0) {
             h2_quectel_cpin_response_locked(modem, line, reset_generation, sim_generation);
         }
-        response_add_line(response, line);
+        if (collect != NULL) {
+            collect(collect_user, line);
+        } else {
+            response_add_line(response, line);
+        }
     }
     return H2_PAL_ERR_TIMEOUT;
 }
 
 /* All CPIN callers share the RX outcome while the operation lock serializes
  * exchanges. The RX tap never takes the state lock or depends on the worker. */
-h2_pal_result_t h2_quectel_at_exchange_locked(
+static h2_pal_result_t at_exchange_locked(
     h2_quectel_modem_t *modem,
     const char *cmd,
     h2_quectel_response_t *response,
-    int allow_connect) {
+    int allow_connect, h2_quectel_at_line_fn collect, void *collect_user) {
     if (modem == NULL || cmd == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
@@ -291,7 +321,7 @@ h2_pal_result_t h2_quectel_at_exchange_locked(
     if (cpin) {
         h2_quectel_cpin_absent_store(modem, 0u);
     }
-    h2_pal_result_t rc = at_exchange_impl(modem, cmd, response, allow_connect);
+    h2_pal_result_t rc = at_exchange_impl(modem, cmd, response, allow_connect, collect, collect_user);
     if (cpin && modem->config.command == NULL && rc != H2_PAL_OK) {
         modem->raw_cpin_uncertain = 1u;
     }
@@ -302,15 +332,21 @@ h2_pal_result_t h2_quectel_at_exchange_locked(
     return rc;
 }
 
-h2_pal_result_t h2_quectel_at_exchange_timeout(
+static h2_pal_result_t at_exchange_timeout(
     h2_quectel_modem_t *modem,
     const char *cmd,
     h2_quectel_response_t *response,
     int allow_connect,
-    uint32_t timeout_ms) {
+    uint32_t timeout_ms, h2_quectel_at_line_fn collect, void *collect_user) {
+    /* Callers inspect terminal error evidence even when the exchange fails.
+     * Clear it before lock/admission/wake failures can return without I/O. */
+    if (response != NULL) { memset(response, 0, sizeof(*response)); }
     h2_pal_result_t rc = h2_quectel_operation_begin(modem);
     if (rc != H2_PAL_OK) {
         return rc;
+    }
+    if (modem->ota_hold && !modem->ota_command_allowed) {
+        return h2_quectel_operation_end(modem, H2_PAL_ERR_BUSY);
     }
     /* The timeouts live in the config the exchange reads, so they are swapped
      * under the AT lock and restored before another command can observe them. */
@@ -320,13 +356,10 @@ h2_pal_result_t h2_quectel_at_exchange_timeout(
         modem->config.command_timeout_ms = timeout_ms;
         modem->config.io_timeout_ms = timeout_ms;
     }
-    if (response != NULL) {
-        memset(response, 0, sizeof(*response));
-    }
     rc = h2_quectel_power_wake(modem);
     /* Do not flush here: unsolicited SIM/call notifications must survive. */
     if (rc == H2_PAL_OK) {
-        rc = h2_quectel_at_exchange_locked(modem, cmd, response, allow_connect);
+        rc = at_exchange_locked(modem, cmd, response, allow_connect, collect, collect_user);
     }
     /* A terminal CME response (for example GNSS has no fix) is not an
      * uncertain transport failure. Session holds still survive failed stops. */
@@ -341,6 +374,18 @@ h2_pal_result_t h2_quectel_at_exchange_timeout(
     modem->config.command_timeout_ms = saved_command_timeout_ms;
     modem->config.io_timeout_ms = saved_io_timeout_ms;
     return h2_quectel_operation_end(modem, rc);
+}
+
+h2_pal_result_t h2_quectel_at_exchange_timeout(
+    h2_quectel_modem_t *modem, const char *cmd,
+    h2_quectel_response_t *response, int allow_connect, uint32_t timeout_ms) {
+    return at_exchange_timeout(modem, cmd, response, allow_connect, timeout_ms, NULL, NULL);
+}
+
+h2_pal_result_t h2_quectel_at_collect(h2_quectel_modem_t *modem,
+    const char *cmd, h2_quectel_response_t *response, uint32_t timeout_ms,
+    h2_quectel_at_line_fn collect, void *collect_user) {
+    return at_exchange_timeout(modem, cmd, response, 0, timeout_ms, collect, collect_user);
 }
 
 h2_pal_result_t h2_quectel_at_exchange(

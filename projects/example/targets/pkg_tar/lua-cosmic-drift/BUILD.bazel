@@ -1,4 +1,4 @@
-load("//libs/app_host:web_app.bzl", "h2_web_app")
+load("//tools/bazel/web:web_app.bzl", "h2_web_app")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -23,5 +23,8 @@ h2_web_app(
         120,
         120,
     ]],
-    deps = ["//projects/example/apps/lua-cosmic-drift/app:lua_cosmic_drift"],
+    deps = [
+        "//projects/example/apps/lua-cosmic-drift/app:lua_cosmic_drift",
+        "//projects/example/libs/host_runtime",
+    ],
 )

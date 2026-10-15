@@ -1,4 +1,4 @@
-load("//libs/app_host:web_app.bzl", "h2_web_app")
+load("//tools/bazel/web:web_app.bzl", "h2_web_app")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -23,5 +23,8 @@ h2_web_app(
         100,
         100,
     ]],
-    deps = ["//projects/example/apps/touch/app:touch_smoke"],
+    deps = [
+        "//projects/example/apps/touch/app:touch_smoke",
+        "//projects/example/libs/host_runtime",
+    ],
 )
