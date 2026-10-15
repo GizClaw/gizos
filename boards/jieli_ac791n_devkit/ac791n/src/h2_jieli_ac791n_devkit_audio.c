@@ -717,6 +717,13 @@ int h2_jieli_ac791n_devkit_audio_idle_probe(h2_jieli_ac791n_devkit_audio_idle_t 
   return H2_AUDIO_OK;
 }
 
+static int audio_aec_diagnostics_unsupported(void *user,
+    const h2_audio_aec_observer_t *observer) {
+    (void)user;
+    (void)observer;
+    return H2_AUDIO_ERR_UNSUPPORTED;
+}
+
 const h2_pal_audio_api_t *h2_jieli_ac791n_devkit_audio_api(void) {
   static const h2_pal_audio_vtable_t vtable = {
       .get_info = audio_get_info,
@@ -730,6 +737,7 @@ const h2_pal_audio_api_t *h2_jieli_ac791n_devkit_audio_api(void) {
       .set_speaker_volume_percent = audio_set_volume,
       .get_mic_gain_percent = audio_get_mic_gain,
       .set_mic_gain_percent = audio_set_mic_gain,
+        .set_aec_observer = audio_aec_diagnostics_unsupported,
   };
   static const h2_pal_audio_api_t api = {
       .user = &audio_state,
