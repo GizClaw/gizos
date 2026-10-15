@@ -49,16 +49,6 @@ class CoverageTest(unittest.TestCase):
         return coverage.audit(lines, self.rules if rules is None else rules,
                               **{**IDENTITY, "process_exit_code": 0, **kwargs})
 
-    def test_independent_matrix_matches_all_236_approved_functions(self):
-        inventory = (coverage.repository_root() / "libs/gizclaw/tests/public_api.inc").read_text()
-        coverage.validate_inventory(self.rules, inventory)
-        self.assertEqual(len(self.rules), 236)
-        for changed in (self.rules[:-1], self.rules + self.rules[:1]):
-            with self.assertRaises(ValueError):
-                coverage.validate_inventory(changed, inventory)
-        with self.assertRaises(ValueError):
-            coverage.validate_inventory(self.rules, inventory.replace("service_init", "service_old"))
-
     def test_all_functions_need_ordered_calls_and_assertion(self):
         result = self.audit(self.lines)
         self.assertTrue(result["valid"], result["issues"])

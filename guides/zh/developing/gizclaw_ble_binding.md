@@ -42,7 +42,7 @@ Refresh、not-ready、断连、重连或 revision 拒绝后，手机丢弃部分
 
 Exposure ledger 最多保留 8 个未消费记录。满时，新 generation 的 read 在复制 secret 前返回 NO_SPACE；相同已记录 key name/revision 的后续 chunk 不重复记录，这份 instance 内的去重状态在 stop/start 和 drain 后仍保留。重复打开同一 key revision 的窗口不会耗尽 ledger，新的 revision 仍创建独立记录。Owner 应持续 drain，并在 `stop` 返回后再次 drain，覆盖读与离页并发的最后一条记录。`close` 在记录未 drain 时返回 BUSY，保留 sealed instance，不能静默丢弃义务。
 
-产品合并二维码已经展示的 key name 与 BLE exposure key name，保留任一渠道可能披露的凭证；当前 key 没有被两条路径披露时继续走既有非阻塞 revoke，刷新在途结果继续使用 revoke-after/orphan 规则。Binding service 不替产品决定 refresh 或 revoke，也不改变 API-key state 既有 close/drain/destroy 语义。
+产品合并二维码已经展示的 key name 与 BLE exposure key name，记录任一渠道可能披露的凭证。稳定绑定使用 API-key state 的 `reuse_existing=true`，普通离页保留服务端凭据，重新进入、重连或升级后查找并复用；明确解绑或轮换才撤销。选择临时凭据策略的消费者仍可对未披露 key 提交非阻塞 revoke，并使用 revoke-after/orphan 规则。Binding service 不替产品决定 refresh 或 revoke，也不改变 API-key state 既有 close/drain/destroy 语义。
 
 ## 验证
 

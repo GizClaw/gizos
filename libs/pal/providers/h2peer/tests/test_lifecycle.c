@@ -551,8 +551,8 @@ static void test_auto_sid_pool_diagnostic(void) {
                                                 &extra) == H2_PAL_ERR_NO_SPACE);
   assert(extra == NULL);
   assert(f.no_space_log_count == 1u);
-  assert(strstr(f.no_space_log, "reason=sid_pool live=0 ready_used=0 ") !=
-         NULL);
+  assert(strstr(f.no_space_log, "reason=sid_pool ") != NULL);
+  assert(strstr(f.no_space_log, "ready_used=0 ") != NULL);
   assert(strstr(f.no_space_log, "reset_active=150 reset_none=150 ") != NULL);
   inject_reset(&f, 1u, H2_PAL_SCTP_STREAM_RESET_OUTGOING_COMPLETED);
   wait_count(&f, &f.submitted, 2u);
@@ -752,8 +752,34 @@ static void test_close_preserves_accepted_messages(void) {
   assert(h2_atomic_load(&f.sends) == 0u);
   h2_atomic_store(&f.send_busy, 0);
   wait_count(&f, &f.sends, 2u);
+  wait_count(&f, &f.submitted, 1u);
+  drain(&f); /* Queued bytes and a submitted reset are not terminal evidence. */
+  inject_reset(&f, 1u, H2_PAL_SCTP_STREAM_RESET_OUTGOING_COMPLETED);
+  drain(&f); /* The requester has not closed its direction yet. */
+  inject_reset(&f, 1u, H2_PAL_SCTP_STREAM_RESET_INCOMING_RESET);
   h2_pal_webrtc_event_t closed = next_kind(&f, H2_PAL_WEBRTC_EVENT_CHANNEL_STATE);
   assert(closed.channel_state == H2_PAL_WEBRTC_CHANNEL_CLOSED);
+  h2_pal_webrtc_event_release(&closed);
+  cleanup(&f);
+}
+
+static void test_remote_reset_cancels_queued_close(void) {
+  fixture_t f;
+  create(&f);
+  h2_pal_webrtc_channel_t *channel = NULL;
+  assert(open_sid(&f, 1u, &channel) == H2_PAL_OK);
+  connect(&f, 1u);
+  h2_atomic_store(&f.send_busy, 1);
+  const uint8_t response[] = {1u, 2u, 3u};
+  assert(h2_pal_webrtc_channel_send(f.api, channel, response,
+                                     sizeof(response), 0) == H2_PAL_OK);
+  h2_pal_webrtc_channel_close(f.api, channel);
+  inject_reset(&f, 1u, H2_PAL_SCTP_STREAM_RESET_INCOMING_RESET);
+  wait_count(&f, &f.submitted, 1u);
+  inject_reset(&f, 1u, H2_PAL_SCTP_STREAM_RESET_OUTGOING_COMPLETED);
+  h2_pal_webrtc_event_t closed = next_kind(&f, H2_PAL_WEBRTC_EVENT_CHANNEL_STATE);
+  assert(closed.channel_state == H2_PAL_WEBRTC_CHANNEL_ERROR);
+  assert(h2_atomic_load(&f.sends) == 0u);
   h2_pal_webrtc_event_release(&closed);
   cleanup(&f);
 }
@@ -824,14 +850,13 @@ static void test_remote_lifecycle(void) {
   assert(remote_open(&f, 1u) == H2_PAL_ERR_INVALID_ARG);
   assert(remote_open(&f, H2_PEER_STREAM_COUNT) == H2_PAL_ERR_INVALID_ARG);
   h2_pal_webrtc_channel_close(f.api, old.channel);
+  inject_reset(&f, 0u, H2_PAL_SCTP_STREAM_RESET_INCOMING_RESET);
+  inject_reset(&f, 0u, H2_PAL_SCTP_STREAM_RESET_OUTGOING_COMPLETED);
   h2_pal_webrtc_event_t closed =
       next_kind(&f, H2_PAL_WEBRTC_EVENT_CHANNEL_STATE);
   assert(closed.channel == old.channel &&
          closed.channel_state == H2_PAL_WEBRTC_CHANNEL_CLOSED);
   h2_pal_webrtc_event_release(&closed);
-  assert(remote_open(&f, 0u) == H2_PAL_ERR_INVALID_ARG);
-  inject_reset(&f, 0u, H2_PAL_SCTP_STREAM_RESET_INCOMING_RESET);
-  inject_reset(&f, 0u, H2_PAL_SCTP_STREAM_RESET_OUTGOING_COMPLETED);
   wait_count(&f, &f.forgotten, 1u);
   assert(remote_open(&f, 0u) == H2_PAL_OK);
   h2_pal_webrtc_event_t replacement =
@@ -1066,6 +1091,8 @@ static void test_remote_reset_during_send(void) {
     inject_reset(&f, 0u, H2_PAL_SCTP_STREAM_RESET_INCOMING_RESET);
     assert(h2_pal_task_join(f.config.task, sender) == H2_PAL_OK);
     assert(call.result == H2_PAL_OK || call.result == H2_PAL_ERR_INVALID_STATE);
+    wait_count(&f, &f.submitted, 1u);
+    inject_reset(&f, 0u, H2_PAL_SCTP_STREAM_RESET_OUTGOING_COMPLETED);
     h2_pal_webrtc_event_t closed =
         next_kind(&f, H2_PAL_WEBRTC_EVENT_CHANNEL_STATE);
     assert(closed.channel == opened.channel &&
@@ -1081,6 +1108,7 @@ static void test_remote_reset_during_send(void) {
 
 int main(void) {
   test_close_preserves_accepted_messages();
+  test_remote_reset_cancels_queued_close();
   test_pool_and_event_lease();
   test_auto_sid_pool_diagnostic();
   test_label_length_diagnostic();

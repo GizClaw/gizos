@@ -1,5 +1,5 @@
 #include "h2_android_platform.h"
-#include "h2_mobile_app_host.h"
+#include "h2_mobile_e2e_runtime_config.h"
 #include "mobile_runner.h"
 #include <jni.h>
 #include <string.h>
@@ -20,7 +20,7 @@ Java_com_haivivi_gizos_e2e_palmqtt_MainActivity_nativeRun(JNIEnv *env, jclass ty
     if (rc == H2_PAL_OK) {
         rc = h2_android_platform_set_image_version(values[1]);
         if (tcp_port <= 0 || tcp_port > UINT16_MAX || tls_port <= 0 || tls_port > UINT16_MAX) rc = H2_PAL_ERR_INVALID_ARG;
-        if (rc == H2_PAL_OK) rc = h2_mqtt_mobile_run(h2_android_app_host_config(), values[2],
+        if (rc == H2_PAL_OK) rc = h2_mqtt_mobile_run(h2_mobile_e2e_runtime_config(), values[2],
             (uint16_t)tcp_port, (uint16_t)tls_port, values[3], (const uint8_t *)values[4], strlen(values[4]),
             (const uint8_t *)values[5], strlen(values[5]), &result);
         int teardown = h2_android_platform_core_shutdown();

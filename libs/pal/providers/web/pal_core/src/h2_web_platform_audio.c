@@ -535,6 +535,16 @@ static int h2_web_audio_get_speaker_volume(void *user,
   return H2_AUDIO_OK;
 }
 
+/* clang-format off */
+EM_JS(void, h2_web_audio_volume_output_js,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["u32"], null, percent => {
+    const output = Module.h2WebOutputs ||= {version: 1};
+    output.speakerVolumePercent = percent;
+  });
+});
+/* clang-format on */
+
 static int h2_web_audio_set_speaker_volume(void *user, uint32_t percent) {
   H2_WEB_STATE_GUARD();
   h2_web_platform_t *platform = user;
@@ -542,6 +552,7 @@ static int h2_web_audio_set_speaker_volume(void *user, uint32_t percent) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
   platform->speaker_volume_percent = percent;
+  (void)h2_web_main_call(h2_web_audio_volume_output_js, (const void *[]){&percent});
   for (h2_web_audio_track_t *track = platform->audio_tracks; track != NULL;
        track = track->next) {
     (void)h2_web_main_call(

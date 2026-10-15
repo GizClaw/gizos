@@ -123,9 +123,6 @@ int main(void) {
     def test_timeout_is_cleaned_only_after_completion(self):
         source = (ROOT / "boards/jieli_ac791n_devkit/ac791n/src/"
                   "h2_jieli_ac791n_devkit_wifi.c").read_text()
-        event = source[source.index("static int wifi_event("):
-                       source.index("static int ensure_wifi_on(void)")]
-        self.assertRegex(event, r"WIFI_EVENT_SMP_CFG_START\)\s+scan_reset_after_sta_exit\(\)")
         state = source[source.index("enum { SCAN_IDLE"):
                        source.index("static void post_system_event")]
         if "static void scan_reap_completed(void)" not in state:

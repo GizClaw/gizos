@@ -14,7 +14,7 @@ cc_library(
     copts = H2_WARNING_COPTS,
     target_compatible_with = ANDROID_ARM64_ARTIFACT_COMPATIBILITY,
     deps = [
-        "//libs/app_host:android_packaged",
+        "//projects/e2e/libs/mobile-platform-config:runtime_config",
         "//projects/e2e/libs/pal-storage-mobile:runner",
     ],
 )

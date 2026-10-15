@@ -9,25 +9,6 @@
 int h2_h2loader_host_ble_stage_receive_failed(
     const uint8_t *response, size_t response_len);
 
-typedef struct h2_h2loader_host_sha256 {
-    uint32_t state[8];
-    uint64_t total_bytes;
-    uint8_t block[64];
-    size_t block_len;
-} h2_h2loader_host_sha256_t;
-
-void h2_h2loader_host_sha256_init(h2_h2loader_host_sha256_t *sha);
-void h2_h2loader_host_sha256_update(
-    h2_h2loader_host_sha256_t *sha,
-    const uint8_t *data,
-    size_t len);
-void h2_h2loader_host_sha256_finish(
-    h2_h2loader_host_sha256_t *sha,
-    uint8_t out[32]);
-void h2_h2loader_host_sha256_hex(
-    const uint8_t digest[32],
-    char out[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u]);
-
 int h2_h2loader_host_copy_text(
     char *out,
     size_t out_size,

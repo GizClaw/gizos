@@ -808,6 +808,14 @@ h2_peer_service_stream_resets(h2_pal_webrtc_peer_t *peer) {
       continue;
     }
     if (reset->outgoing_completed && reset->incoming_reset) {
+      h2_pal_webrtc_channel_t *channel = h2_peer_find_channel(peer, (uint16_t)i);
+      if (channel != NULL && channel->generation == reset->generation) {
+        const uint8_t head = h2_atomic_load(&channel->tx_head);
+        const bool truncated = channel->close_pending &&
+            h2_atomic_load(&channel->tx_state[head]) != 0u;
+        h2_peer_terminal_channel(channel, truncated ? H2_PAL_WEBRTC_CHANNEL_ERROR
+                                                    : H2_PAL_WEBRTC_CHANNEL_CLOSED);
+      }
       h2_pal_result_t result = h2_peer_forget_stream(peer, (uint16_t)i);
       if (result != H2_PAL_OK) {
         return h2_peer_fail_stream_resets(peer, result);
@@ -877,7 +885,12 @@ void h2_peer_webrtc_on_stream_reset(
   } else if (event->direction == H2_PAL_SCTP_STREAM_RESET_INCOMING_RESET) {
     reset->incoming_reset = 1;
     if (channel != NULL && channel->generation == reset->generation) {
-      h2_peer_terminal_channel(channel, H2_PAL_WEBRTC_CHANNEL_CLOSED);
+      if (!channel->wire_opened) {
+        h2_peer_terminal_channel(channel, H2_PAL_WEBRTC_CHANNEL_CLOSED);
+      } else {
+        h2_atomic_store(&channel->open, 0);
+        h2_peer_channel_ready_clear(channel);
+      }
     }
   } else {
     peer->stream_reset_failure = H2_PAL_ERR_INVALID_ARG;
@@ -1256,6 +1269,10 @@ static void h2_peer_webrtc_channel_close(h2_pal_webrtc_channel_t *channel) {
       h2_peer_stream_reset_t *reset = &peer->stream_resets[stream_id];
       reset->active = 1;
       reset->generation = channel->generation;
+      h2_atomic_store(&channel->open, 0);
+      h2_peer_channel_ready_clear(channel);
+      h2_peer_record_network_event_error(peer, h2_peer_service_stream_resets(peer));
+      return; /* CLOSED follows both reset acknowledgements, not local send. */
     }
   }
   h2_peer_terminal_channel(channel, H2_PAL_WEBRTC_CHANNEL_CLOSED);

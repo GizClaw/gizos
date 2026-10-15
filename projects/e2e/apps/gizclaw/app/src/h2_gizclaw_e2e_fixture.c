@@ -4,6 +4,8 @@
 #include "h2/pal/os/h2_pal_task.h"
 #include "h2_gizclaw_e2e_internal.h"
 #include "h2_gizclaw_e2e_task_names.h"
+#include "h2_corehttp.h"
+#include "h2_encoding.h"
 
 #include <inttypes.h>
 #include "h2_atomic.h"
@@ -501,7 +503,8 @@ static int actor_connect(h2_gizclaw_e2e_fixture_t *fixture,
       H2_GIZCLAW_TOOL_IDENTIFIERS_GET, provider_call, actor};
   actor->tool_handlers[2] = (h2_gizclaw_tool_handler_t){
       H2_GIZCLAW_TOOL_SOCIAL_PING, provider_call, actor};
-  const bool device = fixture->device_audio || fixture->device_vtable;
+  const bool device = fixture->device_audio || fixture->device_vtable ||
+                      fixture->device_lua_apps;
   /* Service borrows this configuration until deinit, never a stack local. */
   actor->config = (h2_gizclaw_config_t){
       .server_endpoint = h2_gizclaw_e2e_str(fixture->endpoint),
@@ -517,6 +520,8 @@ static int actor_connect(h2_gizclaw_e2e_fixture_t *fixture,
       .log = fixture->log,
       .audio = fixture->device_audio,
       .vtable = fixture->device_vtable,
+      .lua_apps = fixture->device_lua_apps,
+      .user = fixture,
       .audio_buffer_bytes = fixture->device_audio ? 65536u : 0,
       .firmware_channel = H2_GIZCLAW_FIRMWARE_CHANNEL_DEVELOP,
       .tool_handlers = device ? &actor->tool_handlers[2] : actor->tool_handlers,
@@ -623,6 +628,38 @@ static int actor_connect(h2_gizclaw_e2e_fixture_t *fixture,
   return H2_PAL_OK;
 }
 
+static int fixture_http(h2_gizclaw_e2e_fixture_t *fixture) {
+  const char *hex = fixture->config->tls_root_ca_hex;
+  if (!hex || !*hex)
+    return H2_PAL_OK;
+  size_t length = strlen(hex), capacity = 0, decoded = 0;
+  if (length > 32768u || length % 2u ||
+      h2_encoding_max_decoded_len(&h2_encoding_hex, length, &capacity) !=
+          H2_ENCODING_OK)
+    return H2_PAL_ERR_INVALID_ARG;
+  uint8_t *pem = h2_pal_mem_alloc(fixture->allocator, capacity);
+  if (!pem)
+    return H2_PAL_ERR_NO_MEMORY;
+  int rc = h2_encoding_decode(&h2_encoding_hex, hex, length, pem, capacity,
+                              &decoded) == H2_ENCODING_OK
+               ? H2_PAL_OK
+               : H2_PAL_ERR_INVALID_ARG;
+  h2_corehttp_config_t config = {.allocator = fixture->allocator,
+                                 .net = fixture->runtime->net,
+                                 .time = fixture->time,
+                                 .log = fixture->log,
+                                 .tls_verify = H2_PAL_NET_TLS_VERIFY_REQUIRED,
+                                 .root_ca_pem = pem,
+                                 .root_ca_pem_len = decoded};
+  if (rc == H2_PAL_OK)
+    rc = h2_corehttp_create(&config, &fixture->http_owned,
+                            &fixture->configured_http);
+  h2_pal_mem_free(fixture->allocator, pem);
+  if (rc == H2_PAL_OK)
+    fixture->http = &fixture->configured_http;
+  return rc;
+}
+
 int h2_gizclaw_e2e_fixture_init(h2_gizclaw_e2e_fixture_t *fixture,
                                 h2_runtime_t *runtime,
                                 const h2_gizclaw_e2e_config_t *config,
@@ -715,7 +752,14 @@ int h2_gizclaw_e2e_fixture_init(h2_gizclaw_e2e_fixture_t *fixture,
     return rc;
   }
   fixture->webrtc = h2_app_test_webrtc_api(s_webrtc_observer.wrapper);
-  return H2_PAL_OK;
+  rc = fixture_http(fixture);
+  if (rc != H2_PAL_OK) {
+    (void)observer_deinit();
+    memset(fixture->registration_token, 0, config->registration_token.len + 1u);
+    h2_pal_mem_free(fixture->allocator, fixture->registration_token);
+    fixture->registration_token = NULL;
+  }
+  return rc;
 }
 
 int h2_gizclaw_e2e_fixture_connect_actors(h2_gizclaw_e2e_fixture_t *fixture,
@@ -1443,6 +1487,8 @@ int h2_gizclaw_e2e_fixture_deinit(h2_gizclaw_e2e_fixture_t *fixture) {
     fixture->registration_token = NULL;
   }
   fixture->http = NULL;
+  h2_corehttp_destroy(fixture->http_owned);
+  fixture->http_owned = NULL;
   fixture->webrtc = NULL;
   h2_atomic_destroy(&fixture->speech_offset);
   return observer_deinit();

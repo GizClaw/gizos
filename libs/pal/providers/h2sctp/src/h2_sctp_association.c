@@ -209,15 +209,18 @@ static void h2_sctp_association_restore_peer_state(
 
 static h2_pal_result_t h2_sctp_association_send_init_ack(
     h2_pal_sctp_association_t *association,
-    uint64_t now_ms) {
-    h2_pal_result_t result = h2_sctp_association_random(
-        association, association->cookie, sizeof(association->cookie));
-    if (result != H2_PAL_OK) {
-        return result;
+    uint64_t now_ms,
+    bool reuse_cookie) {
+    if (!reuse_cookie) {
+        h2_pal_result_t result = h2_sctp_association_random(
+            association, association->cookie, sizeof(association->cookie));
+        if (result != H2_PAL_OK) {
+            return result;
+        }
+        association->cookie_valid = true;
+        association->cookie_expires_ms = h2_sctp_deadline_add(
+            now_ms, association->config.cookie_lifetime_ms);
     }
-    association->cookie_valid = true;
-    association->cookie_expires_ms = h2_sctp_deadline_add(
-        now_ms, association->config.cookie_lifetime_ms);
 
     uint8_t chunk[68] = {0};
     chunk[0] = H2_SCTP_CHUNK_INIT_ACK;
@@ -266,8 +269,22 @@ static h2_pal_result_t h2_sctp_association_handle_init(
     const bool previous_cookie_valid = association->cookie_valid;
     const uint64_t previous_cookie_expires_ms =
         association->cookie_expires_ms;
+    /* A reordered earlier INIT-ACK remains valid when the peer echoes its
+     * cookie. An identical INIT retry must not rotate the one cached cookie. */
+    const bool reuse_cookie = association->cookie_valid &&
+        now_ms <= association->cookie_expires_ms &&
+        association->peer_verification_tag == values.initiate_tag &&
+        association->peer_initial_tsn == values.initial_tsn &&
+        association->peer_receive_window == values.receive_window &&
+        association->negotiated_outbound_streams == h2_sctp_min_u16(
+            association->config.outbound_streams, values.inbound_streams) &&
+        association->negotiated_inbound_streams == h2_sctp_min_u16(
+            association->config.inbound_streams, values.outbound_streams) &&
+        association->peer_forward_tsn == values.forward_tsn &&
+        association->peer_interleaving == values.interleaving &&
+        association->peer_stream_reset == values.stream_reset;
     h2_sctp_association_apply_peer_init(association, &values);
-    result = h2_sctp_association_send_init_ack(association, now_ms);
+    result = h2_sctp_association_send_init_ack(association, now_ms, reuse_cookie);
     if (result != H2_PAL_OK && result != H2_PAL_ERR_WOULD_BLOCK) {
         h2_sctp_association_restore_peer_state(association, &peer_state);
         memcpy(association->cookie, previous_cookie, sizeof(previous_cookie));
@@ -284,7 +301,8 @@ static h2_pal_result_t h2_sctp_association_handle_init_ack(
     const h2_sctp_chunk_view_t *chunk,
     uint64_t now_ms) {
     if (association->config.role != H2_PAL_SCTP_ROLE_ACTIVE ||
-        association->state != H2_PAL_SCTP_STATE_CONNECTING) {
+        association->state != H2_PAL_SCTP_STATE_CONNECTING ||
+        association->control_kind != H2_SCTP_CONTROL_INIT) {
         return H2_PAL_OK;
     }
     h2_sctp_init_values_t values;
@@ -342,9 +360,11 @@ static h2_pal_result_t h2_sctp_association_handle_cookie_echo(
     h2_pal_sctp_association_t *association,
     const h2_sctp_chunk_view_t *chunk,
     uint64_t now_ms) {
-    if (association->state != H2_PAL_SCTP_STATE_CONNECTING ||
+    const bool established = association->state == H2_PAL_SCTP_STATE_CONNECTED;
+    if ((!established &&
+         association->state != H2_PAL_SCTP_STATE_CONNECTING) ||
         !association->cookie_valid || chunk->len != sizeof(association->cookie) ||
-        now_ms > association->cookie_expires_ms ||
+        (!established && now_ms > association->cookie_expires_ms) ||
         memcmp(chunk->data, association->cookie, sizeof(association->cookie)) !=
             0) {
         return H2_PAL_OK;
@@ -363,11 +383,22 @@ static h2_pal_result_t h2_sctp_association_handle_cookie_echo(
     if (result != H2_PAL_OK && result != H2_PAL_ERR_WOULD_BLOCK) {
         return result;
     }
-    association->cookie_valid = false;
-    association->heartbeat_deadline_ms = h2_sctp_deadline_add(
-        now_ms, H2_SCTP_HEARTBEAT_INTERVAL_MS);
-    h2_sctp_notify_state(
-        association, H2_PAL_SCTP_STATE_CONNECTED, H2_PAL_OK);
+    /* Simultaneous active open can finish through our passive COOKIE-ECHO
+     * path before the ACK for our own ECHO arrives. Retire either setup timer
+     * here; a later ACK is correctly ignored by an established endpoint. */
+    if (association->control_kind == H2_SCTP_CONTROL_INIT ||
+        association->control_kind == H2_SCTP_CONTROL_COOKIE_ECHO) {
+        h2_sctp_clear_control(association);
+    }
+    /* RFC 9260 5.2.4 case D: the peer can retransmit this exact cookie when
+     * our first ACK was lost. Keep its association-bound cookie and resend
+     * ACK without reopening the association or resetting its timers. */
+    if (!established) {
+        association->heartbeat_deadline_ms = h2_sctp_deadline_add(
+            now_ms, H2_SCTP_HEARTBEAT_INTERVAL_MS);
+        h2_sctp_notify_state(
+            association, H2_PAL_SCTP_STATE_CONNECTED, H2_PAL_OK);
+    }
     return H2_PAL_OK;
 }
 

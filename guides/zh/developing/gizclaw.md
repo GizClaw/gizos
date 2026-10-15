@@ -16,7 +16,7 @@ GizClaw library 负责 SDK 集成和 client protocol，不创建具体 HTTP、We
 
 Runtime Profile 负责选择 Workflow driver，`libs/gizclaw` 不在 public Workflow projection 中复制 driver enum，也不要求调用方根据 driver 构造 Workspace 参数。Workspace 更新统一使用 `h2_gizclaw_*workspace_set_parameters`，对应 SDK 0.15.5 的 `server.workspace.parameters.set`（110）；旧的 `workspace_set_input` 入口已删除。
 
-依赖的 GizClaw C SDK 固定为 0.23.2。自 0.17.0 起，`h2_gizclaw_*workspace_activate` 保留 SET-only 语义，`h2_gizclaw_*workspace_reload` 保留重载当前选择的行为。新增 `h2_gizclaw_*workspace_reload_with_options`（RPC 120），在一次调用中可选地选择 Workspace、应用参数补丁，然后重载。传入零长度 `name` 保持当前选择，`parameters == NULL` 不修改参数；非空补丁复用 `h2_gizclaw_workspace_parameters_patch_t` 的字段 presence 语义。请求创建时复制参数，响应仍为 `h2_gizclaw_workspace_activation_t`。
+依赖的 GizClaw C SDK 固定为 0.30.0。自 0.17.0 起，`h2_gizclaw_*workspace_activate` 保留 SET-only 语义，`h2_gizclaw_*workspace_reload` 保留重载当前选择的行为。新增 `h2_gizclaw_*workspace_reload_with_options`（RPC 120），在一次调用中可选地选择 Workspace、应用参数补丁，然后重载。传入零长度 `name` 保持当前选择，`parameters == NULL` 不修改参数；非空补丁复用 `h2_gizclaw_workspace_parameters_patch_t` 的字段 presence 语义。请求创建时复制参数，响应仍为 `h2_gizclaw_workspace_activation_t`。
 
 `h2_gizclaw_workspace_parameters_patch_t` 通过独立 `has_*` 标记选择 input（PTT/Realtime）、conversation initiative（peer/agent）、agent initiative policy（once_when_empty/on_reload）、TTS 语速和安全围栏档位（见 [Workspace 参数补丁](#workspace-参数补丁)）。`workspace_set_parameters` 至少指定一个字段；显式的无效枚举值、空 patch、非法名称在发送前返回 INVALID_ARG。create 编码并持有 patch 数据，调用方随后可释放或修改原对象；同步入口沿用同一 request/parse 流程。
 
@@ -191,6 +191,22 @@ Provider 在 `h2_gizclaw_client_poll()` 所在线程同步运行。上游 C SDK 
 
 设备主动调用 Server 的 unary 或 server-streaming RPC 与 Server 反向调用 Client provider 是两个方向的 contract。前者由 generic RPC call API 发起；后者只能从 poll 驱动的 provider 入口处理，不能由 UI callback 直接执行，也不能跨线程保留 borrowed payload。产品侧的 state、effect command 和 main-loop 投影规则见 [GizClaw 状态与请求](/apps/gizclaw/state)。
 
+### Lua App
+
+产品创建共享 `h2_lua_apps_t`，配置预装 index、安装目录和存储预算，再放入 `h2_gizclaw_config_t.lua_apps`。该 handle 由产品持有，必须覆盖 Service 的完整生命周期，可供本地菜单和后续 Service 重连复用。LIST 在配置目录时启用，INSTALL 和 UNINSTALL 需要可写 Filesystem，RUN 还需要 `vtable.prepare_lua_app_run`；没有相应能力时按 SDK 的 unsupported 路径回答。
+
+C SDK 依赖使用 registry 的 `gizclaw_c_sdk` 0.30.0 及 `third_party/gizclaw_c_sdk_lua_app_uninstall.patch`，补丁直接来自 [GizClaw 的卸载 contract 提交](https://github.com/GizClaw/gizclaw/commit/155a9d512ca4669f02391a89bbc30be3bd128f15)，包含生成消息、Tool 27 和 C provider 输入校验。
+
+`H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL` 对齐 GizClaw ClientTool 27，解码有界 `app_id` 后使用共享 `h2_lua_apps_uninstall`。空身份、路径、重复 ID 字段、嵌入 NUL 和非 ASCII 字节在设备入口拒绝；成功返回空 tool payload。安装中的目录 reservation 或待完成的启动 handoff 返回 BUSY。卸载与预装持久隐藏、清理重试和用户数据保留的语义见 [Lua 应用目录](./lua.md#lua-app-目录与流式安装)。
+
+
+`lua.app.list/install/run` 使用 SDK 的 tool/v0 编码；URL 安装仅支持 HTTP、HTTPS；内存中的压缩包通过独立 Binary stream 直推，data URL 不作为安装入口。独立 RPC 139 `client.lua.app.install` 由 SDK streaming provider 处理：小 metadata、同一请求中的 Binary 帧、请求 EOS、验证并发布后的最终响应。SDK 自动发送多帧，不需要调用方把一次安装拆成多次 RPC。C SDK 0.30.0 的直推限制为 512 KiB、单帧最多 65535 字节、总期限 120 秒；更大的 archive 使用 HTTP(S) URL。
+
+`$gizclaw/lua/install` worker 使用一个固定大小的帧槽，write 回调复制 borrowed bytes 后返回；槽占用时返回 WOULD_BLOCK，SDK 保留原帧并暂停 backend polling，直到 worker 消费完成。 背压及等待 finish 时，poll owner 只在未消费输入的路径上执行有界 1 ms backoff，使共享 CPU 上的低优先级安装 worker 能继续运行，避免成功 poll 的忙重试饿死 worker。metadata、write、finish 和 close 不保留 response callback，也不在网络 owner 上同步解压或写文件。Service stop 先取消会话，再 join worker；join 失败保留句柄供 stop 重试，不能提前销毁目录或 allocator。URL 和 Binary 入口共用 [Lua App 安装器](./lua.md#lua-app-目录与流式安装)，不在 GizClaw 实现第二套解压、校验或文件发布流程。
+
+RUN 的 prepare 回调在 ACK 前复制参数并预留产品 owner 的队列或状态；无法接纳时立即返回 BUSY。返回的 handoff 在响应 EOS 已交给本地 channel 且该 channel 关闭后只完成一次：成功时向产品 owner 发布运行请求，失败或取消时释放 reservation。产品 owner 通过目录快照将 entry、app_id 与 params 提交给 Lua Host，并负责停止旧界面及 Display 交接。回调不直接运行长时间 Lua 程序，accepted 也不等于程序已经执行完成。
+
+
 ## Workspace 参数补丁
 
 `h2_gizclaw_workspace_parameters_patch_t` 是 `workspace.parameters.set`（110）和
@@ -326,7 +342,7 @@ snapshot 使用调用方 response storage。所有业务资源清理完成后才
 
 ### 设备控制回复后的本地动作
 
-产品 provider 可以在成功响应中设置 `on_complete` 与 `complete_user`。GizOS 将其关联到当前入站 RPC 通道，在 SDK 接受响应写入并正常关闭该通道后，从 poll owner 调用一次。普通 poll 返回成功不表示该通道已经完成；非终态的 WOULD_BLOCK、TIMEOUT 或其他 poll error 也不能取消尚未关闭的通道。成功必须同时具备该通道响应 EOS 已被 PAL 接受、SDK 本地关闭的证据；adapter 按通道跟踪已接受的帧，支持跨 send 分片与背压重试。同一次 poll 中其他通道超时或失败，不会撤销已成功关闭的响应。未发完 EOS 的通道即使本地关闭也只能报告失败。发送阻塞时继续保留动作，编码错误、发送失败、远端取消和客户端停止则以非 OK 结果撤销。关闭或销毁客户端时，在对应 owner 上释放未完成动作；注册失败可能在 provider 内同步返回失败通知。每个 client 最多保留四个完成回调；满容量、缺少当前入站通道或错误响应附带回调时，新回调同步收到 INVALID_STATE，响应不提交，已有槽位不受影响。
+产品 provider 可以在成功响应中设置 `on_complete` 与 `complete_user`。GizOS 将其关联到当前入站 RPC 通道，在响应 EOS 被 PAL 接受且请求端随后正常关闭通道后，从 poll owner 调用一次。SDK 本地 close 正常发起 PAL 关闭；adapter 等待 PAL terminal。H2Peer 的正常 CLOSED 在双向 SCTP reset 完成后发布，避免产品立即销毁 Peer 丢掉仍在传输的响应，也不阻塞 Edge tunnel bridge 等待设备 EOF。普通 poll 返回成功不表示该通道已经完成；非终态的 WOULD_BLOCK、TIMEOUT 或其他 poll error 也不能取消尚未关闭的通道。成功必须同时具备该通道响应 EOS 已被 PAL 接受、SDK 本地关闭请求和请求端正常关闭的证据；adapter 按通道跟踪已接受的帧，支持跨 send 分片与背压重试。同一次 poll 中其他通道超时或失败，不会撤销已成功关闭的响应。未发完 EOS 的通道即使本地关闭也只能报告失败。等待请求端关闭的总预算使用 Client `write_timeout_ms`，为零时使用 `connect_timeout_ms`；到期以 TIMEOUT 撤销动作；已消费的 PAL handle 不再次 close，provider 继续持有关闭流程直到 terminal 或 Peer shutdown。发送阻塞时继续保留动作，编码错误、发送失败、提前远端取消和客户端停止则以非 OK 结果撤销。关闭或销毁客户端时，在对应 owner 上释放未完成动作；注册失败可能在 provider 内同步返回失败通知。每个 client 最多保留四个完成回调；满容量、缺少当前入站通道或错误响应附带回调时，新回调同步收到 INVALID_STATE，响应不提交，已有槽位不受影响。
 
 这是本地发送生命周期，不是对端收到或处理回复的确认，不新增网络消息，也不更改 GizClaw 0.15.3 SDK。回调只能向产品 owner 发布待执行动作，不能阻塞或重入 client API。产品参数必须复制到自身状态，生命周期覆盖完成或取消；不能保留借用请求、栈上的响应或已释放的 user。H106 的重启和临时切网消费此路径，OTA 是否支持仍由产品决定。
 
@@ -378,6 +394,8 @@ completion 后不延长文字订阅。应用无需新增下行音频处理流程
 授权绑定窗口可以把同一状态注入 [GizClaw BLE 绑定](./gizclaw_ble_binding.md)，通过公共 HTTPS URL formatter 与二维码保持一致。广播只提供发现；BLE 暴露记录保留实际 key name/revision，产品离页时与二维码已展示记录合并后处理 revoke。
 
 扫码绑定等需要异步刷新和撤销的产品使用 `h2_gizclaw_api_key_state_t`：创建时注入借用的 Service、Mem、Sync、Time 和非零 `timeout_ms`，`display_name` 会复制。产品调用 `request_refresh` 登记请求，主循环继续调用 `service_poll` 驱动 completion，再读取 `snapshot` 展示有效 key。无需创建线程、join 或等待 RPC；原有同步 helper 和 request 接口行为不变。
+
+稳定绑定凭据使用可选的 `reuse_existing=true`。普通 `request_refresh(false)` 先经当前认证设备身份的 `server.api_key.list`（method 97）查找服务端持久化 key；同时精确匹配 `display_name` 与 `manage_api_keys`，复用名字排序最前的一项，不删除其它 key。只有完整列表成功且没有匹配项时才创建。每页最多八项、最多 64 页，要求严格前进且与页末名字一致的 cursor；逐项解码，避免 SDK 的百项固定数组进入 worker stack。全部分页与创建共享原有总预算，错误或不完整列表不降级为创建；已有 key 保留为 stale。新的 Service/state 使用同一设备身份即可找回同一个 key，无需本地 secret 数据库。页面关闭、普通刷新、重连和升级不应调用 revoke；明确解绑或轮换才请求撤销。超过截止时间或 close 后的迟到 list 不创建、不撤销既存 key；新 create 的 orphan 撤销规则保持不变。默认 false 与显式 `request_refresh(true)` 保持原有行为。
 
 `request_refresh(true)` 在当前 key 有效时先撤销再创建；撤销成功或 `NOT_FOUND` 后擦除旧 key 并提交 create，其它撤销错误保留 `valid && stale` 的旧 key，下一次 `request_refresh(true)` 可重试撤销。创建成功后 key 有效且不 stale，普通创建失败则失效；唯一的资源耗尽保留例外见下文。busy 期间重复刷新返回 OK，合并到当前链，不叠加请求、清除 revoke-after 标记、不延长截止时间。每次 refresh 的总时限包含排队、连接、撤销和创建；`snapshot` 或 `request_refresh` 检查到期后将当前请求分离为 orphan（不取消），清除 busy 并记录 `H2_PAL_ERR_TIMEOUT`，保留的旧 key 标为 stale。检查到期的 `request_refresh` 随后可开始新一代刷新。
 

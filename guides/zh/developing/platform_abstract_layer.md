@@ -97,7 +97,7 @@ Browser 的 reusable provider 位于 `libs/pal/providers/web/pal_core`，暴露�
 
 Display 的 `open` 幂等；`get_info`、`draw_bitmap`、`present` 和亮度操作必须在成功 open 后调用。重复 open 不增加关闭所需的引用数，close 后调用返回 `INVALID_STATE`。Bitmap 输入只在 draw 调用期间借用，provider 不可把输入指针留给随后 present；stride、source span 和矩形端点必须先做有界计算，再访问像素。native format 必须实现，额外格式和矩形裁剪仍由各 provider 明确支持范围。亮度参数为 0..100，超过范围返回 `INVALID_ARG`，不会静默改变亮度。
 
-Desktop 的 composition frame callback 提供未调亮度的组合 framebuffer；独立、可选的 renderer capture callback 在真正 SDL texture/render/亮度处理后读取 RGBA 像素。未注册时不会执行昂贵 GPU readback，两个 callback 的输入都只在回调期间借用，禁止重入 SDL provider。iOS/Android 的 Display E2E launcher 创建真实 UIKit/Android View 并注入自己的 Runtime；全局 headless App Host 继续使用 unsupported Display。
+Desktop 的 composition frame callback 提供未调亮度的组合 framebuffer；独立、可选的 renderer capture callback 在真正 SDL texture/render/亮度处理后读取 RGBA 像素。未注册时不会执行昂贵 GPU readback，两个 callback 的输入都只在回调期间借用，禁止重入 SDL provider。iOS/Android 的 Display E2E launcher 创建真实 UIKit/Android View 并注入自己的 Runtime；移动端 E2E 的默认 Runtime 配置继续使用 unsupported Display。
 
 独立的 [PAL Display E2E](https://github.com/GizClaw/gizos/tree/main/projects/e2e/apps/pal-display) 通过相同 24 个 case 验证六个公开操作。桌面、浏览器和模拟器观察实际 renderer/页面/View 的像素；AMOLED SPI DMA 完成证据、BK LCD 活跃 DMA/refresh 证据与屏幕光学像素、实测亮度是不同验收层。没有物理 readback/相机或人工确认时，不可仅凭 framebuffer hash 或 draw 返回 OK 宣称物理屏幕通过。
 
@@ -175,7 +175,7 @@ boundary。裁剪 variant 完整实现 Crypto PAL；完整 variant 额外实现 
 ESP-IDF 与 BK7258 provider 使用 public PSA/MbedTLS surface 实现同一完整 vtable，
 不能通过 private header 或本地复制算法补洞。
 
-iOS 与 Android 的 Crypto owner 位于各自 `pal_core/src/h2_*_crypto.c`，通过唯一的完整 `wolfssl` integration 提供完整 15 项接口，并与同进程 HTTP owner 共享引用计数保护的 TLS/加密生命周期。iOS 使用 `SecRandomCopyBytes`，Android 从系统 `/dev/urandom` 读取熵并处理短读和 EINTR；随机源失败返回错误，不退回伪随机。App Host 默认绑定该 process-wide provider，首次 getter 在互斥保护下初始化；返回的 API 由平台持有。调用方必须先停止全部 Crypto 调用并销毁 Runtime，再调用 `h2_*_platform_crypto_shutdown()` 或成功的 `platform_core_shutdown()`；shutdown 幂等，后续 getter 可开启新生命周期。Swift Package 的 module map 和 packaged importer 同时声明 Security framework，Android AAR 包含真实 provider。
+iOS 与 Android 的 Crypto owner 位于各自 `pal_core/src/h2_*_crypto.c`，通过唯一的完整 `wolfssl` integration 提供完整 15 项接口，并与同进程 HTTP owner 共享引用计数保护的 TLS/加密生命周期。iOS 使用 `SecRandomCopyBytes`，Android 从系统 `/dev/urandom` 读取熵并处理短读和 EINTR；随机源失败返回错误，不退回伪随机。移动端 E2E 配置默认绑定该 process-wide provider，首次 getter 在互斥保护下初始化；返回的 API 由平台持有。调用方必须先停止全部 Crypto 调用并销毁 Runtime，再调用 `h2_*_platform_crypto_shutdown()` 或成功的 `platform_core_shutdown()`；shutdown 幂等，后续 getter 可开启新生命周期。Swift Package 的 module map 和 packaged importer 同时声明 Security framework，Android AAR 包含真实 provider。
 
 独立 `projects/e2e/apps/pal-crypto` 以 22 个必选 case 验证全部 Crypto 操作，包括标准向量、无效参数、认证拒绝、重叠/容量边界和重复调用。六端入口使用相同 portable App，缺失接口保持 BLOCKED，不能算通过；随机差异检查不是随机质量或侧信道安全认证。
 
@@ -641,7 +641,7 @@ Target-specific unavailable adapter、dummy 和 fake backend 放在 `libs/pal` �
 
 iOS 和 Android 的 Core（Memory、Log、Time、Timer、Task、Queue、Sync、SystemEvent、 FirmwareInfo）使用原生 pthread/系统时钟实现。公共线程核心位于 `libs/pal/providers/posix/pal_core`，由 iOS、Android 和 Web pthread provider 复用； UIKit、Android UI/媒体适配仍留在各自 provider 下。PAL 的 `set_wall_ms` 在移动端维护 进程内时钟偏移，不要求修改系统时钟的权限。
 
-移动端 provider 的本地发布边界为 iOS `:swift_package` 和 Android `:aar`， 打包规则位于 `tools/bazel/mobile_package.bzl`。这些包不包含 Runtime 或 Atomic。 `libs/app_host` 负责组装 Runtime；独立 PAL Core E2E App 消费实际包的二进制， 验证完整 Core v2 合约。测试入口和证据见 `projects/e2e/libs/pal-core-mobile/README.md`。
+移动端 provider 的本地发布边界为 iOS `:swift_package` 和 Android `:aar`， 打包规则位于 `tools/bazel/mobile_package.bzl`。这些包不包含 Runtime 或 Atomic。 移动端入口通过 `projects/e2e/libs/mobile-platform-config` 获取完整配置并自行组装 Runtime；独立 PAL Core E2E App 消费实际包的二进制， 验证完整 Core v2 合约。测试入口和证据见 `projects/e2e/libs/pal-core-mobile/README.md`。
 
 ### 原生移动端 Storage
 

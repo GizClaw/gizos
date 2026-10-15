@@ -1,5 +1,7 @@
 #include "h2_bk7258_board_private.h"
 #include "h2_bk7258_display_backlight.h"
+#include "h2_bk7258_display_buffer.h"
+#include "h2_atomic_static.h"
 
 #include "components/bk_display.h"
 #include "components/media_types.h"
@@ -28,6 +30,10 @@
 #define LCD_BACKLIGHT_PIN GPIO_7
 #define LCD_QSPI_RESET_PIN GPIO_40
 
+#ifndef H2_BK7258_DISPLAY_DIAGNOSTICS
+#define H2_BK7258_DISPLAY_DIAGNOSTICS 0
+#endif
+
 extern void bk_psram_frame_buffer_init(void);
 
 typedef enum h2_bk7258_display_bus {
@@ -53,6 +59,17 @@ typedef struct h2_bk7258_display_state {
     bool swap_rgb565_bytes;
     bool first_present_done;
     h2_bk7258_backlight_state_t backlight;
+    struct {
+        frame_buffer_t *frame;
+        h2_bk7258_display_buffer_t buffer;
+    } scanout[2];
+#if H2_BK7258_DISPLAY_DIAGNOSTICS
+    uint32_t diagnostic_presents;
+    bool diagnostic_next_present;
+    uint32_t diagnostic_copies;
+    uint64_t diagnostic_copy_bytes;
+    uint64_t diagnostic_copy_ms;
+#endif
     int initialized;
 } h2_bk7258_display_state_t;
 
@@ -61,7 +78,64 @@ static bool s_media_initialized;
 static h2_bk7258_display_state_t s_display_state = {
     .bus = H2_BK7258_DISPLAY_BUS_DEFAULT,
 };
+/* SDK callbacks may run on another core or inside its critical section.
+ * Each backing remains ordinary internal static storage for process lifetime. */
+H2_ATOMIC_DEFINE_STATIC(bool, s_scanout_available_0, false);
+H2_ATOMIC_DEFINE_STATIC(bool, s_scanout_available_1, false);
 
+#if H2_BK7258_DISPLAY_DIAGNOSTICS
+/* Sample without allocating another framebuffer or waiting for a refresh.
+ * The controller may still be scanning the preceding submitted frame. */
+static uint32_t display_sample(const uint16_t *pixels, size_t count,
+                                unsigned *nonzero) {
+    uint32_t hash = 2166136261u;
+    *nonzero = 0u;
+    if (pixels == NULL) return 0u;
+    for (size_t i = 0u; i < count; i += 257u) {
+        uint16_t pixel = pixels[i];
+        hash = (hash ^ pixel) * 16777619u;
+        if (pixel != 0u) ++*nonzero;
+    }
+    return hash;
+}
+
+static void display_diagnostic(const h2_bk7258_display_state_t *state,
+                                const char *phase, uint32_t brightness,
+                                int result) {
+    if (!state->initialized || state->bus != H2_BK7258_DISPLAY_BUS_RGB)
+        return;
+    gpio_hw_t *gpio = (gpio_hw_t *)GPIO_LL_REG_BASE;
+    uintptr_t source = lcd_disp_ll_get_mater_rd_base_addr();
+    const uint16_t *scanout = NULL;
+    /* Only inspect a complete frame inside this board's physical PSRAM. */
+    if (state->frame_size <= 0x800000u && source >= 0x60000000u &&
+        source <= 0x60800000u - state->frame_size && (source & 1u) == 0u)
+        scanout = (const uint16_t *)source;
+    unsigned shadow_nonzero = 0u, scanout_nonzero = 0u;
+    size_t count = state->frame_size / sizeof(uint16_t);
+    uint32_t shadow_hash = display_sample(
+        (const uint16_t *)state->shadow->frame, count, &shadow_nonzero);
+    uint32_t scanout_hash = display_sample(scanout, count, &scanout_nonzero);
+    printf("H2_BK_DISPLAY_STATE phase=%s time_ms=%u presents=%u rc=%d "
+        "brightness=%u pwm=%u gpio7=%08x mux7=%u gpio13=%08x "
+        "gpio15=%08x mux15=%u mux19=%u rgb=%08x refresh=%u "
+        "source=%08x shadow_hash=%08x shadow_nonzero=%u "
+        "scanout_hash=%08x scanout_nonzero=%u\n",
+        phase, (unsigned)rtos_get_time(),
+        (unsigned)state->diagnostic_presents, result, (unsigned)brightness,
+        (unsigned)state->backlight.running,
+        (unsigned)gpio_ll_get_value(gpio, LCD_BACKLIGHT_PIN),
+        (unsigned)gpio_ll_get_gpio_perial_mode(gpio, LCD_BACKLIGHT_PIN),
+        (unsigned)gpio_ll_get_value(gpio, LCD_LDO_PIN),
+        (unsigned)gpio_ll_get_value(gpio, GPIO_15),
+        (unsigned)gpio_ll_get_gpio_perial_mode(gpio, GPIO_15),
+        (unsigned)gpio_ll_get_gpio_perial_mode(gpio, GPIO_19),
+        (unsigned)lcd_disp_ll_get_rgb_cfg_value(),
+        (unsigned)lcd_disp_ll_get_disp_status_rgb_ver_cnt(),
+        (unsigned)source, (unsigned)shadow_hash, shadow_nonzero,
+        (unsigned)scanout_hash, scanout_nonzero);
+}
+#endif
 
 
 #if H2_BK7258_HAS_QSPI_ST77903
@@ -194,6 +268,45 @@ static avdk_err_t display_frame_done(void *args) {
     return AVDK_ERR_OK;
 }
 
+static avdk_err_t rgb_frame_done(void *args) {
+    if (args == NULL) return AVDK_ERR_INVAL;
+    for (unsigned i = 0u; i < 2u; ++i) {
+        if (s_display_state.scanout[i].frame == args) {
+            h2_bk7258_display_buffer_release(&s_display_state.scanout[i].buffer);
+            return AVDK_ERR_OK;
+        }
+    }
+    return AVDK_ERR_INVAL;
+}
+
+static void release_scanout(h2_bk7258_display_state_t *state) {
+    /* The RGB controller has been closed and drained before these frees. */
+    for (unsigned i = 0u; i < 2u; ++i) {
+        if (state->scanout[i].frame != NULL) {
+            frame_buffer_display_free(state->scanout[i].frame);
+            state->scanout[i].frame = NULL;
+        }
+    }
+}
+
+static int init_scanout(h2_bk7258_display_state_t *state) {
+    h2_atomic_bool_t *available[] = {
+        &s_scanout_available_0, &s_scanout_available_1};
+    for (unsigned i = 0u; i < 2u; ++i) {
+        state->scanout[i].frame = frame_buffer_display_malloc(state->frame_size);
+        if (state->scanout[i].frame == NULL) {
+            release_scanout(state);
+            return H2_DISPLAY_ERR_NO_MEMORY;
+        }
+        fill_frame_meta(state->scanout[i].frame, state->width, state->height,
+                         state->frame_size);
+        h2_bk7258_display_buffer_init(&state->scanout[i].buffer,
+            (uint16_t *)state->scanout[i].frame->frame, available[i],
+            state->width, state->height);
+    }
+    return H2_DISPLAY_OK;
+}
+
 static void lcd_backlight_open(uint8_t bl_io) {
     gpio_dev_unmap(bl_io);
     BK_LOG_ON_ERR(bk_gpio_enable_output(bl_io));
@@ -212,12 +325,17 @@ static int deinit_display(h2_bk7258_display_state_t *state) {
     if (state == NULL || !state->initialized) {
         return H2_DISPLAY_OK;
     }
+#if H2_BK7258_DISPLAY_DIAGNOSTICS
+    display_diagnostic(state, "close", 0u, H2_DISPLAY_OK);
+#endif
 
     int rc = h2_bk7258_backlight_release(&state->backlight);
     if (rc) return rc;
     if (state->handle != NULL) {
-        (void)bk_display_close(state->handle);
+        avdk_err_t closed = bk_display_close(state->handle);
+        if (closed != AVDK_ERR_OK) return avdk_result(closed);
     }
+    release_scanout(state);
     lcd_backlight_close(LCD_BACKLIGHT_PIN);
     if (state->shadow != NULL) {
         frame_buffer_display_free(state->shadow);
@@ -287,11 +405,22 @@ static int init_display(h2_bk7258_display_state_t *state) {
     }
     fill_frame_meta(state->shadow, state->width, state->height, state->frame_size);
     os_memset(state->shadow->frame, 0, state->frame_size);
+    if (state->bus == H2_BK7258_DISPLAY_BUS_RGB) {
+        int rc = init_scanout(state);
+        if (rc != H2_DISPLAY_OK) {
+            frame_buffer_display_free(state->shadow);
+            state->shadow = NULL;
+            (void)bk_display_delete(state->handle);
+            state->handle = NULL;
+            return rc;
+        }
+    }
 
     bk_pm_module_vote_ctrl_external_ldo(GPIO_CTRL_LDO_MODULE_LCD, LCD_LDO_PIN, GPIO_OUTPUT_STATE_HIGH);
     ret = bk_display_open(state->handle);
     if (ret != AVDK_ERR_OK) {
         BK_LOGE(TAG, "bk_display_open failed: %d\r\n", ret);
+        release_scanout(state);
         frame_buffer_display_free(state->shadow);
         state->shadow = NULL;
         (void)bk_display_delete(state->handle);
@@ -302,6 +431,13 @@ static int init_display(h2_bk7258_display_state_t *state) {
 
     state->first_present_done = false;
     state->initialized = 1;
+#if H2_BK7258_DISPLAY_DIAGNOSTICS
+    state->diagnostic_presents = 0u;
+    state->diagnostic_next_present = true;
+    state->diagnostic_copies = 0u;
+    state->diagnostic_copy_bytes = state->diagnostic_copy_ms = 0u;
+    display_diagnostic(state, "open", 100u, H2_DISPLAY_OK);
+#endif
     return H2_DISPLAY_OK;
 }
 
@@ -416,10 +552,52 @@ static int bk_draw_bitmap(
         }
     }
 
+    if (state->bus == H2_BK7258_DISPLAY_BUS_RGB) {
+        for (unsigned i = 0u; i < 2u; ++i)
+            h2_bk7258_display_buffer_dirty(&state->scanout[i].buffer, &clipped);
+    }
+
     return H2_DISPLAY_OK;
 }
 
 static int flush_shadow_once(h2_bk7258_display_state_t *state) {
+    if (state->bus == H2_BK7258_DISPLAY_BUS_RGB) {
+        uint32_t started = rtos_get_time();
+        for (;;) {
+            for (unsigned i = 0u; i < 2u; ++i) {
+                if (!h2_bk7258_display_buffer_claim(&state->scanout[i].buffer))
+                    continue;
+#if H2_BK7258_DISPLAY_DIAGNOSTICS
+                uint32_t copy_started = rtos_get_time();
+#endif
+                size_t bytes = h2_bk7258_display_buffer_copy(
+                    &state->scanout[i].buffer,
+                    (const uint16_t *)state->shadow->frame, state->width);
+#if H2_BK7258_DISPLAY_DIAGNOSTICS
+                state->diagnostic_copy_ms +=
+                    (uint32_t)(rtos_get_time() - copy_started);
+                state->diagnostic_copy_bytes += bytes;
+                if (++state->diagnostic_copies % 32u == 0u) {
+                    printf("H2_BK_DISPLAY_COPY frames=32 mode=retained "
+                        "bytes_avg=%u copy_avg_us=%u\n",
+                        (unsigned)(state->diagnostic_copy_bytes / 32u),
+                        (unsigned)(state->diagnostic_copy_ms * 1000u / 32u));
+                    state->diagnostic_copy_bytes = state->diagnostic_copy_ms = 0u;
+                }
+#else
+                (void)bytes;
+#endif
+                avdk_err_t ret = bk_display_flush(state->handle,
+                    state->scanout[i].frame, rgb_frame_done);
+                if (ret != AVDK_ERR_OK)
+                    h2_bk7258_display_buffer_release(&state->scanout[i].buffer);
+                return avdk_result(ret);
+            }
+            if ((uint32_t)(rtos_get_time() - started) >= 1000u)
+                return H2_PAL_ERR_TIMEOUT;
+            rtos_delay_milliseconds(1u);
+        }
+    }
     frame_buffer_t *display_frame = frame_buffer_display_malloc(state->frame_size);
     if (display_frame == NULL) {
         BK_LOGE(TAG, "display frame malloc failed\r\n");
@@ -453,6 +631,13 @@ static int bk_present(void *user) {
         }
     }
     state->first_present_done = true;
+#if H2_BK7258_DISPLAY_DIAGNOSTICS
+    ++state->diagnostic_presents;
+    if (state->diagnostic_next_present || state->diagnostic_presents <= 3u ||
+        state->diagnostic_presents % 128u == 0u)
+        display_diagnostic(state, "present", UINT32_MAX, rc);
+    state->diagnostic_next_present = false;
+#endif
     return rc;
 }
 
@@ -462,14 +647,24 @@ static int bk_set_brightness_percent(void *user, uint32_t percent) {
         return H2_DISPLAY_ERR_INVALID_STATE;
     }
     if (percent > 100u) return H2_DISPLAY_ERR_INVALID_ARG;
+#if H2_BK7258_DISPLAY_DIAGNOSTICS
+    state->diagnostic_next_present = true;
+#endif
     if (percent == 0u || percent == 100u) {
         int rc = h2_bk7258_backlight_release(&state->backlight);
         if (rc) return rc;
         if (percent == 0u) lcd_backlight_close(LCD_BACKLIGHT_PIN);
         else lcd_backlight_open(LCD_BACKLIGHT_PIN);
     } else {
-        return h2_bk7258_backlight_pwm(&state->backlight, percent);
+        int rc = h2_bk7258_backlight_pwm(&state->backlight, percent);
+#if H2_BK7258_DISPLAY_DIAGNOSTICS
+        display_diagnostic(state, "brightness", percent, rc);
+#endif
+        return rc;
     }
+#if H2_BK7258_DISPLAY_DIAGNOSTICS
+    display_diagnostic(state, "brightness", percent, H2_DISPLAY_OK);
+#endif
     return H2_DISPLAY_OK;
 }
 
@@ -492,6 +687,11 @@ int h2_bk7258_board_display_black(void) {
 
     h2_bk7258_display_state_t *state = (h2_bk7258_display_state_t *)display->user;
     os_memset(state->shadow->frame, 0, state->frame_size);
+    if (state->bus == H2_BK7258_DISPLAY_BUS_RGB) {
+        const h2_display_rect_t full = {0, 0, state->width, state->height};
+        for (unsigned i = 0u; i < 2u; ++i)
+            h2_bk7258_display_buffer_dirty(&state->scanout[i].buffer, &full);
+    }
     return h2_pal_display_present(display);
 }
 

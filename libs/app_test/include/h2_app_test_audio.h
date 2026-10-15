@@ -44,6 +44,9 @@ typedef struct h2_app_test_audio_evidence {
   bool mic_active;
   bool speaker_active;
   uint32_t active_track_count;
+  /** First reader error since mic start or successful fixture replacement.
+   * Separate from physical capture health; OK for resident PCM fixtures. */
+  h2_pal_result_t fixture_read_result;
 } h2_app_test_audio_evidence_t;
 
 typedef struct h2_app_test_audio h2_app_test_audio_t;
@@ -55,6 +58,22 @@ typedef struct h2_app_test_audio_fixture {
   size_t size;
   h2_audio_pcm_format_t format;
 } h2_app_test_audio_fixture_t;
+
+/** Finite, immutable logical PCM supplied without a resident contiguous buffer.
+ * Configuration is copied; user and its data remain borrowed until successful
+ * replacement or destroy. read_at must fill exactly len bytes from offset on
+ * OK. Any other result emits no frame, advances no source progress, and is
+ * recorded separately from real microphone errors. The callback runs on the
+ * mic-read task under the fixture lock and must finish in bounded time; it must
+ * not call fixture setters or microphone lifecycle operations on this object.
+ * Offsets restart at zero on mic start and replacement. Requests never exceed
+ * one microphone frame, and EOF is determined by size. user may be NULL. */
+typedef struct h2_app_test_audio_reader_fixture {
+  void *user;
+  h2_pal_result_t (*read_at)(void *user, size_t offset, uint8_t *data, size_t len);
+  size_t size;
+  h2_audio_pcm_format_t format;
+} h2_app_test_audio_reader_fixture_t;
 
 /** Create an Audio PAL decorator. The delegate may be a real or fake PAL.
  * All dependencies and PCM remain borrowed until destroy or fixture
@@ -141,6 +160,20 @@ void h2_app_test_audio_set_fixture_ready(h2_app_test_audio_t *audio, bool ready)
 h2_pal_result_t
 h2_app_test_audio_set_fixture(h2_app_test_audio_t *audio,
                               const h2_app_test_audio_fixture_t *fixture);
+
+/** Install and rewind a borrowed finite PCM reader, without reading or copying
+ * its content here. Uses the same pause, format, pacing, content-barrier and
+ * replacement rules as set_fixture; failure preserves the previous source.
+ * May block waiting for an in-flight read through the yielding Time PAL.
+ * Caller serializes replacements with mic start/stop and keeps source emission
+ * paused until this operation returns. Not for an observation callback or ISR.
+ * A successful call ends all borrows of the old reader/PCM. INVALID_ARG means
+ * missing callback or malformed size/format; active emission returns
+ * INVALID_STATE, an active mic format mismatch returns FORMAT, and lock wait
+ * failures propagate. The reader is never closed or freed by the decorator. */
+h2_pal_result_t h2_app_test_audio_set_reader_fixture(
+    h2_app_test_audio_t *audio,
+    const h2_app_test_audio_reader_fixture_t *fixture);
 
 /** Copy bounded observations, without resetting counters; INVALID_ARG on NULL.
  * Borrows the mutable instance for portable C11 atomic loads.

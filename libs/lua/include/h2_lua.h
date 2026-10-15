@@ -27,6 +27,15 @@ typedef struct h2_lua_resource {
   size_t source_size;
 } h2_lua_resource_t;
 
+/** Called by the Display worker after a successful PAL present. The complete
+ * retained RGB565 framebuffer is immutable and borrowed only for this call.
+ * This observes accepted rendering, not optical panel output. Keep the
+ * callback bounded; do not call Lua/Host APIs or retain pixels. Its user must
+ * outlive checked Host destruction. NULL adds no frame-copy or hash work. */
+typedef void (*h2_lua_display_present_fn)(void *user, h2_lua_job_id_t job,
+                                          const uint16_t *pixels, size_t width,
+                                          size_t height);
+
 /** Longest storage root, app id and storage file name, in bytes. */
 #define H2_LUA_STORAGE_ROOT_MAX 96u
 #define H2_LUA_STORAGE_APP_ID_MAX 32u
@@ -135,6 +144,9 @@ typedef struct h2_lua_host_config {
    * synchronization storage use platform budgets, not VM quota. Snapshot,
    * frozen plan and mailbox are VM-accounted. */
   size_t display_worker_stack_size;
+  /** Optional successful-present observer; see h2_lua_display_present_fn. */
+  h2_lua_display_present_fn on_display_present;
+  void *display_present_user;
 } h2_lua_host_config_t;
 
 /** Creates a stopped Host that borrows, but never consumes or destroys,

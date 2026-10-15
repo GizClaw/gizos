@@ -27,9 +27,9 @@
     "projects/e2e/apps/pal-display/check_qualification.py": "c3fe8defa194ee0691f1b7550fd8d71dca96d460d3a7c317bf403237ba0b2edf"
   },
   "current_source_sha256": {
-    "projects/e2e/apps/pal-display/BUILD.bazel": "813dfebe34e07c66275939cc71f5ae8263bbe03c0ae24c698ad895dd81042579",
-    "projects/e2e/apps/pal-display/README.md": "f3a46da1356c4ca654d72ea38ae181a1a45383a02dcaea9ea302995a5637b722",
-    "projects/e2e/apps/pal-display/check_qualification.py": "400fa630180fd4837597405b7935b043154c222b7dd42d59b0be2cb95746cef9"
+    "projects/e2e/apps/pal-display/BUILD.bazel": "dd080e281c3702030c5178a741b8ab9c4ab1aa284fc59774009f716b2727869e",
+    "projects/e2e/apps/pal-display/README.md": "42adba5d115a2fcce4d6901dd6ad9c8215065d1ae8e527466dcb4b19c843b2d0",
+    "projects/e2e/apps/pal-display/check_qualification.py": "784cea383cdd9f2038629e6032d10d9728d8ddba37cdf273b7f70b25d59c5f76"
   },
-  "scope": "Host audit maintenance only; exact Display catalog section and row remain historical. The shared PAL guide admits only the exact two BK Pref paragraphs and independent Modem-owned sections projected onto their immutable baseline. Makefile admits only removal of the legacy PAL MQTT phony token and forwarding recipe: reinserting those exact bytes must match its historical whole-file digest. All other guide bytes, qualification, mobile execution, artifact and hardware identities are unchanged."
+  "scope": "Host audit maintenance only; exact Display catalog section and row remain historical. The shared PAL guide admits only the exact two BK Pref paragraphs and independent Modem-owned sections projected onto their immutable baseline. Makefile admits only removal of the legacy PAL MQTT phony token and forwarding recipe: reinserting those exact bytes must match its historical whole-file digest. Web display admits only its two exact host backlight snapshot assignments; removing them must recover the historical provider digest. All other guide bytes, qualification, mobile execution, artifact and hardware identities are unchanged."
 }

@@ -20,6 +20,7 @@ struct h2_app_test_audio {
   const h2_pal_time_api_t *time;
   const h2_pal_audio_api_t *delegate;
   h2_app_test_audio_fixture_t fixture;
+  h2_app_test_audio_reader_fixture_t reader;
   const uint8_t *fixture_pcm;
   size_t fixture_pcm_size;
   size_t fixture_offset;
@@ -39,6 +40,7 @@ struct h2_app_test_audio {
   h2_atomic_u32_t mic_read_count;
   h2_atomic_u32_t fixture_bytes_emitted;
   h2_atomic_bool_t fixture_complete;
+  h2_atomic_int_t fixture_read_result;
   h2_atomic_bool_t fixture_ready;
   h2_atomic_bool_t fixture_content_started;
   h2_atomic_u32_t fixture_lead_in_bytes;
@@ -69,6 +71,7 @@ static void destroy_audio_atomics(h2_app_test_audio_t *audio) {
   h2_atomic_destroy(&audio->mic_read_count);
   h2_atomic_destroy(&audio->fixture_bytes_emitted);
   h2_atomic_destroy(&audio->fixture_complete);
+  h2_atomic_destroy(&audio->fixture_read_result);
   h2_atomic_destroy(&audio->fixture_ready);
   h2_atomic_destroy(&audio->fixture_content_started);
   h2_atomic_destroy(&audio->fixture_lead_in_bytes);
@@ -90,16 +93,21 @@ static void destroy_audio_atomics(h2_app_test_audio_t *audio) {
   h2_atomic_destroy(&audio->playback_peak);
 }
 
-static bool valid_fixture(const h2_app_test_audio_fixture_t *fixture) {
-  if (fixture == NULL || fixture->pcm == NULL || fixture->size == 0u ||
-      fixture->format.sample_rate_hz == 0u ||
-      fixture->format.frame_samples_per_channel == 0u) {
+static bool valid_fixture_format(const h2_audio_pcm_format_t *format,
+                                 size_t size) {
+  if (size == 0u || format->sample_rate_hz == 0u ||
+      format->frame_samples_per_channel == 0u) {
     return false;
   }
-  const size_t sample_bytes = h2_audio_pcm_frame_bytes(&fixture->format);
-  return sample_bytes != 0u && fixture->size % sample_bytes == 0u &&
-         sample_bytes * fixture->format.frame_samples_per_channel <=
-             H2_APP_TEST_AUDIO_SCRATCH_MAX;
+  const size_t sample_bytes = h2_audio_pcm_frame_bytes(format);
+  return sample_bytes != 0u && size % sample_bytes == 0u &&
+         format->frame_samples_per_channel <=
+             H2_APP_TEST_AUDIO_SCRATCH_MAX / sample_bytes;
+}
+
+static bool valid_fixture(const h2_app_test_audio_fixture_t *fixture) {
+  return fixture != NULL && fixture->pcm != NULL &&
+         valid_fixture_format(&fixture->format, fixture->size);
 }
 
 static void counter_add_saturated(h2_atomic_u32_t *counter,
@@ -155,7 +163,8 @@ static int decorated_get_info(void *user, h2_audio_info_t *info) {
   const h2_pal_result_t lock_rc = fixture_lock(audio);
   if (lock_rc != H2_PAL_OK)
     return lock_rc;
-  if (rc == H2_PAL_OK && audio->fixture.pcm == NULL) info->mic_supported = 0u;
+  if (rc == H2_PAL_OK && audio->fixture.pcm == NULL &&
+      audio->reader.read_at == NULL) info->mic_supported = 0u;
   fixture_unlock(audio);
   return rc;
 }
@@ -165,7 +174,7 @@ static int decorated_start_mic(void *user) {
   const h2_pal_result_t lock_rc = fixture_lock(audio);
   if (lock_rc != H2_PAL_OK)
     return lock_rc;
-  if (audio->fixture.pcm == NULL) {
+  if (audio->fixture.pcm == NULL && audio->reader.read_at == NULL) {
     fixture_unlock(audio);
     return H2_PAL_ERR_UNSUPPORTED;
   }
@@ -191,6 +200,7 @@ static int decorated_start_mic(void *user) {
   h2_atomic_store_explicit(&audio->fixture_bytes_emitted, 0u,
                         H2_ATOMIC_RELEASE);
   h2_atomic_store_explicit(&audio->fixture_complete, false, H2_ATOMIC_RELEASE);
+  h2_atomic_store(&audio->fixture_read_result, H2_PAL_OK);
   h2_atomic_store(&audio->fixture_content_started,
                   h2_atomic_load(&audio->fixture_ready));
   h2_atomic_store(&audio->fixture_lead_in_bytes, 0u);
@@ -437,13 +447,31 @@ static int decorated_mic_read(void *user, h2_audio_frame_t *out_frame,
   uint8_t *output = out_frame->data;
   const bool content_started = h2_atomic_load(&audio->fixture_content_started) ||
                                h2_atomic_load(&audio->fixture_ready);
+  size_t content_bytes = content_started
+                             ? audio->fixture_pcm_size - audio->fixture_offset
+                             : 0u;
+  if (content_bytes > frame_bytes)
+    content_bytes = frame_bytes;
+  if (content_bytes != 0u) {
+    if (audio->reader.read_at != NULL) {
+      const h2_pal_result_t read_rc = audio->reader.read_at(
+          audio->reader.user, audio->fixture_offset, output, content_bytes);
+      if (read_rc != H2_PAL_OK) {
+        int expected = H2_PAL_OK;
+        (void)h2_atomic_compare_exchange_strong_explicit(
+            &audio->fixture_read_result, &expected, read_rc,
+            H2_ATOMIC_RELEASE, H2_ATOMIC_RELAXED);
+        fixture_unlock(audio);
+        return read_rc;
+      }
+    } else {
+      memcpy(output, audio->fixture_pcm + audio->fixture_offset, content_bytes);
+    }
+  }
+  memset(output + content_bytes, 0, frame_bytes - content_bytes);
+  audio->fixture_offset += content_bytes;
   if (content_started)
     h2_atomic_store(&audio->fixture_content_started, true);
-  for (size_t index = 0u; index < frame_bytes; ++index) {
-    output[index] = content_started && audio->fixture_offset < audio->fixture_pcm_size
-                        ? audio->fixture_pcm[audio->fixture_offset++]
-                        : 0u;
-  }
   if (!content_started)
     counter_add_saturated(&audio->fixture_lead_in_bytes, (uint32_t)frame_bytes);
   out_frame->bytes = frame_bytes;
@@ -669,6 +697,7 @@ h2_app_test_audio_create(const h2_pal_mem_api_t *mem,
       h2_atomic_init(&audio->mic_read_count, 0u) != H2_ATOMIC_OK ||
       h2_atomic_init(&audio->fixture_bytes_emitted, 0u) != H2_ATOMIC_OK ||
       h2_atomic_init(&audio->fixture_complete, false) != H2_ATOMIC_OK ||
+      h2_atomic_init(&audio->fixture_read_result, H2_PAL_OK) != H2_ATOMIC_OK ||
       h2_atomic_init(&audio->fixture_ready, true) != H2_ATOMIC_OK ||
       h2_atomic_init(&audio->fixture_content_started, false) != H2_ATOMIC_OK ||
       h2_atomic_init(&audio->fixture_lead_in_bytes, 0u) != H2_ATOMIC_OK ||
@@ -738,12 +767,9 @@ void h2_app_test_audio_set_capture_active(h2_app_test_audio_t *audio,
   }
 }
 
-h2_pal_result_t
-h2_app_test_audio_set_fixture(h2_app_test_audio_t *audio,
-                              const h2_app_test_audio_fixture_t *fixture) {
-  if (audio == NULL || !valid_fixture(fixture)) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
+static h2_pal_result_t install_fixture(
+    h2_app_test_audio_t *audio, const h2_app_test_audio_fixture_t *fixture,
+    const h2_app_test_audio_reader_fixture_t *reader) {
   const h2_pal_result_t lock_rc = fixture_lock(audio);
   if (lock_rc != H2_PAL_OK) {
     return lock_rc;
@@ -765,6 +791,8 @@ h2_app_test_audio_set_fixture(h2_app_test_audio_t *audio,
     return H2_PAL_ERR_FORMAT;
   }
   audio->fixture = *fixture;
+  audio->reader = reader != NULL ? *reader
+                                : (h2_app_test_audio_reader_fixture_t){0};
   audio->fixture_pcm = fixture->pcm;
   audio->fixture_pcm_size = fixture->size;
   audio->fixture_offset = 0u;
@@ -776,8 +804,28 @@ h2_app_test_audio_set_fixture(h2_app_test_audio_t *audio,
   h2_atomic_store_explicit(&audio->fixture_bytes_emitted, 0u,
                         H2_ATOMIC_RELEASE);
   h2_atomic_store_explicit(&audio->fixture_complete, false, H2_ATOMIC_RELEASE);
+  h2_atomic_store(&audio->fixture_read_result, H2_PAL_OK);
   fixture_unlock(audio);
   return H2_PAL_OK;
+}
+
+h2_pal_result_t
+h2_app_test_audio_set_fixture(h2_app_test_audio_t *audio,
+                              const h2_app_test_audio_fixture_t *fixture) {
+  if (audio == NULL || !valid_fixture(fixture))
+    return H2_PAL_ERR_INVALID_ARG;
+  return install_fixture(audio, fixture, NULL);
+}
+
+h2_pal_result_t h2_app_test_audio_set_reader_fixture(
+    h2_app_test_audio_t *audio,
+    const h2_app_test_audio_reader_fixture_t *fixture) {
+  if (audio == NULL || fixture == NULL || fixture->read_at == NULL ||
+      !valid_fixture_format(&fixture->format, fixture->size))
+    return H2_PAL_ERR_INVALID_ARG;
+  const h2_app_test_audio_fixture_t format = {
+      .size = fixture->size, .format = fixture->format};
+  return install_fixture(audio, &format, fixture);
 }
 
 h2_pal_result_t
@@ -796,6 +844,8 @@ h2_app_test_audio_copy_evidence(h2_app_test_audio_t *audio,
       h2_atomic_load_explicit(&audio->fixture_bytes_emitted, H2_ATOMIC_ACQUIRE);
   out_evidence->fixture_complete =
       h2_atomic_load_explicit(&audio->fixture_complete, H2_ATOMIC_ACQUIRE);
+  out_evidence->fixture_read_result =
+      h2_atomic_load(&audio->fixture_read_result);
   out_evidence->fixture_content_started =
       h2_atomic_load_explicit(&audio->fixture_content_started, H2_ATOMIC_ACQUIRE);
   out_evidence->fixture_lead_in_bytes =

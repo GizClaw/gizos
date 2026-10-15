@@ -3,6 +3,7 @@
 #include "h2_bundle_tar.h"
 #include "h2_bundle_segmented.h"
 #include "h2_h2loader_host_internal.h"
+#include "h2_sha256.h"
 
 #include <limits.h>
 #include <string.h>
@@ -19,8 +20,8 @@ typedef enum package_tar_phase {
 
 typedef struct package_tar_state {
     h2_h2loader_host_catalog_entry_t asset;
-    h2_h2loader_host_sha256_t data_sha;
-    h2_h2loader_host_sha256_t image_sha;
+    h2_sha256_t data_sha;
+    h2_sha256_t image_sha;
     h2_bundle_entry_t entry;
     package_tar_phase_t phase;
     uint8_t header[512];
@@ -243,8 +244,8 @@ static h2_pal_result_t verify_data_checksum(package_tar_state_t *state) {
             ? H2_PAL_OK
             : H2_PAL_ERR_FORMAT;
     }
-    h2_h2loader_host_sha256_finish(&state->data_sha, digest);
-    h2_h2loader_host_sha256_hex(digest, actual);
+    h2_sha256_finish(&state->data_sha, digest);
+    h2_sha256_hex(digest, actual);
     if (strcmp(actual, state->data_checksum) != 0) {
         return H2_PAL_ERR_FORMAT;
     }
@@ -291,11 +292,11 @@ static h2_pal_result_t start_entry(
             state->last_data_path,
             entry->path,
             strlen(entry->path) + 1u);
-        h2_h2loader_host_sha256_update(
+        h2_sha256_update(
             &state->data_sha,
             (const uint8_t *)entry->path,
             strlen(entry->path));
-        h2_h2loader_host_sha256_update(
+        h2_sha256_update(
             &state->data_sha, &separator, sizeof(separator));
     } else if (path_starts_with(entry->path, "app/")) {
         rc = verify_data_checksum(state);
@@ -304,7 +305,7 @@ static h2_pal_result_t start_entry(
             return H2_PAL_ERR_FORMAT;
         }
         state->image_seen = 1;
-        h2_h2loader_host_sha256_init(&state->image_sha);
+        h2_sha256_init(&state->image_sha);
     } else {
         return H2_PAL_ERR_FORMAT;
     }
@@ -320,7 +321,7 @@ static h2_pal_result_t finish_entry(package_tar_state_t *state) {
         if (rc != H2_PAL_OK) {
             return rc;
         }
-        h2_h2loader_host_sha256_init(&state->data_sha);
+        h2_sha256_init(&state->data_sha);
     } else if (strcmp(state->entry.path, "checksum") == 0) {
         if (state->data_checksum_len ==
                 H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u &&
@@ -334,13 +335,13 @@ static h2_pal_result_t finish_entry(package_tar_state_t *state) {
             return H2_PAL_ERR_FORMAT;
         }
     } else if (path_starts_with(state->entry.path, "data/")) {
-        h2_h2loader_host_sha256_update(
+        h2_sha256_update(
             &state->data_sha, &separator, sizeof(separator));
     } else if (path_starts_with(state->entry.path, "app/")) {
         uint8_t digest[32];
         char actual[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
-        h2_h2loader_host_sha256_finish(&state->image_sha, digest);
-        h2_h2loader_host_sha256_hex(digest, actual);
+        h2_sha256_finish(&state->image_sha, digest);
+        h2_sha256_hex(digest, actual);
         if (strcmp(actual, state->asset.image_sha256) != 0) {
             return H2_PAL_ERR_FORMAT;
         }
@@ -416,9 +417,9 @@ static h2_pal_result_t consume_payload(
                 take);
             state->data_checksum_len += take;
         } else if (path_starts_with(state->entry.path, "data/")) {
-            h2_h2loader_host_sha256_update(&state->data_sha, *cursor, take);
+            h2_sha256_update(&state->data_sha, *cursor, take);
         } else if (path_starts_with(state->entry.path, "app/")) {
-            h2_h2loader_host_sha256_update(&state->image_sha, *cursor, take);
+            h2_sha256_update(&state->image_sha, *cursor, take);
         }
         state->remaining -= take;
         *cursor += take;
@@ -491,27 +492,27 @@ static h2_pal_result_t map_zlib_error(int rc) {
 }
 
 static int segment_sha_start(void *user) {
-    h2_h2loader_host_sha256_init(user);
+    h2_sha256_init(user);
     return H2_PAL_OK;
 }
 
 static int segment_sha_update(void *user, const uint8_t *data, size_t len) {
-    h2_h2loader_host_sha256_update(user, data, len);
+    h2_sha256_update(user, data, len);
     return H2_PAL_OK;
 }
 
 static int segment_sha_finish(void *user, uint8_t hash[32]) {
-    h2_h2loader_host_sha256_finish(user, hash);
+    h2_sha256_finish(user, hash);
     return H2_PAL_OK;
 }
 
 static void segment_sha_abort(void *user) {
-    memset(user, 0, sizeof(h2_h2loader_host_sha256_t));
+    memset(user, 0, sizeof(h2_sha256_t));
 }
 
 static int inspect_segmented(const h2_h2loader_host_package_inspect_config_t *config,
                              h2_h2loader_host_catalog_entry_t *out_asset) {
-    h2_h2loader_host_sha256_t sha;
+    h2_sha256_t sha;
     h2_bundle_segmented_manifest_t m;
     h2_h2loader_host_catalog_entry_t asset = {0};
     const h2_bundle_digest_api_t digest = {.user = &sha,
@@ -522,7 +523,7 @@ static int inspect_segmented(const h2_h2loader_host_package_inspect_config_t *co
     if (rc != H2_PAL_OK) return rc;
     uint8_t data[H2_H2LOADER_HOST_PACKAGE_IO_SIZE], hash[32];
     uint64_t offset = 0u;
-    h2_h2loader_host_sha256_init(&sha);
+    h2_sha256_init(&sha);
     while (offset < config->payload_bytes) {
         size_t n = config->payload_bytes - offset > sizeof(data)
             ? sizeof(data) : (size_t)(config->payload_bytes - offset);
@@ -530,14 +531,14 @@ static int inspect_segmented(const h2_h2loader_host_package_inspect_config_t *co
         rc = config->read_payload(config->payload_user, offset, data, n, &got);
         if (rc != H2_PAL_OK) return rc;
         if (got == 0u || got > n) return H2_PAL_ERR_TRUNCATED;
-        h2_h2loader_host_sha256_update(&sha, data, got);
+        h2_sha256_update(&sha, data, got);
         offset += got;
     }
     size_t extra = 0u;
     rc = config->read_payload(config->payload_user, offset, data, 1u, &extra);
     if (rc != H2_PAL_OK || extra != 0u) return rc == H2_PAL_OK ? H2_PAL_ERR_FORMAT : rc;
-    h2_h2loader_host_sha256_finish(&sha, hash);
-    h2_h2loader_host_sha256_hex(hash, asset.sha256);
+    h2_sha256_finish(&sha, hash);
+    h2_sha256_hex(hash, asset.sha256);
     memcpy(asset.board, m.board, sizeof(asset.board));
     memcpy(asset.target, m.target, sizeof(asset.target));
     memcpy(asset.version, m.version, sizeof(asset.version));
@@ -556,7 +557,7 @@ static int inspect_segmented(const h2_h2loader_host_package_inspect_config_t *co
 h2_pal_result_t h2_h2loader_host_package_inspect(
     const h2_h2loader_host_package_inspect_config_t *config,
     h2_h2loader_host_catalog_entry_t *out_asset) {
-    h2_h2loader_host_sha256_t archive_sha;
+    h2_sha256_t archive_sha;
     package_tar_state_t tar;
     z_stream stream;
     uint8_t input[H2_H2LOADER_HOST_PACKAGE_IO_SIZE];
@@ -597,7 +598,7 @@ h2_pal_result_t h2_h2loader_host_package_inspect(
     if (rc != Z_OK) {
         return map_zlib_error(rc);
     }
-    h2_h2loader_host_sha256_init(&archive_sha);
+    h2_sha256_init(&archive_sha);
     while (offset < config->payload_bytes && result == H2_PAL_OK) {
         size_t request = config->payload_bytes - offset > sizeof(input)
             ? sizeof(input)
@@ -617,7 +618,7 @@ h2_pal_result_t h2_h2loader_host_package_inspect(
             result = H2_PAL_ERR_TRUNCATED;
             break;
         }
-        h2_h2loader_host_sha256_update(&archive_sha, input, read);
+        h2_sha256_update(&archive_sha, input, read);
         offset += read;
         stream.next_in = input;
         stream.avail_in = (uInt)read;
@@ -671,8 +672,8 @@ h2_pal_result_t h2_h2loader_host_package_inspect(
     if (result != H2_PAL_OK) {
         return result;
     }
-    h2_h2loader_host_sha256_finish(&archive_sha, digest);
-    h2_h2loader_host_sha256_hex(digest, tar.asset.sha256);
+    h2_sha256_finish(&archive_sha, digest);
+    h2_sha256_hex(digest, tar.asset.sha256);
     tar.asset.bytes = config->payload_bytes;
     tar.asset.package_format = 1u;
     tar.asset.operation =

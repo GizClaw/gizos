@@ -59,6 +59,7 @@ typedef struct h2_gizclaw_e2e_speed_hooks {
   int error, result;
 } h2_gizclaw_e2e_speed_hooks_t;
 
+struct h2_gizclaw_e2e_lua_state;
 typedef struct h2_gizclaw_e2e_fixture {
   h2_runtime_t *runtime;
   const h2_pal_audio_api_t *device_audio;
@@ -66,10 +67,14 @@ typedef struct h2_gizclaw_e2e_fixture {
   h2_app_test_audio_fake_t device_audio_fake;
   int (*device_cleanup)(struct h2_gizclaw_e2e_fixture *fixture);
   const h2_gizclaw_vtable_t *device_vtable;
+  h2_lua_apps_t *device_lua_apps;
+  struct h2_gizclaw_e2e_lua_state *lua_state;
   const h2_gizclaw_e2e_config_t *config;
   const h2_pal_mem_api_t *allocator;
   const h2_pal_crypto_api_t *crypto;
   const h2_pal_http_api_t *http;
+  struct h2_corehttp *http_owned;
+  h2_pal_http_api_t configured_http;
   const h2_pal_log_api_t *log;
   const h2_pal_time_api_t *time;
   const h2_pal_webrtc_api_t *webrtc;

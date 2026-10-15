@@ -2,12 +2,12 @@ load("@aspect_rules_js//js:defs.bzl", "js_test")
 load("@emsdk//emscripten_toolchain:wasm_rules.bzl", "wasm_cc_binary")
 load("@rules_cc//cc:defs.bzl", "cc_binary")
 load("@rules_python//python:defs.bzl", "py_test")
-load("//libs/app_host:web_app.bzl", "h2_web_app")
 load("//tools/bazel/platforms:compatibility.bzl", "WEB_WASM32_ARTIFACT_COMPATIBILITY")
+load("//tools/bazel/web:web_app.bzl", "h2_web_app")
 
 package(default_visibility = ["//visibility:public"])
 
-# The LVGL App runs in a Web task until the host stops it; the browser test
+# The LVGL App runs on the main Worker until its entry stops it; the browser test
 # taps its button and requires a clean LVGL, Runtime and platform teardown.
 h2_web_app(
     name = "tap-reset",
@@ -20,7 +20,9 @@ h2_web_app(
         470,
     ]],
     deps = [
+        "//libs/lvgl:platform_web",
         "//projects/example/apps/tap-reset/app:tap_reset_web",
+        "//projects/example/libs/host_runtime",
         "//projects/example/libs/web/tap-reset:tap_reset_web",
     ],
 )
