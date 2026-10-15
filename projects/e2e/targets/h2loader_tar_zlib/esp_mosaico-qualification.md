@@ -16,11 +16,11 @@ The new baseline is `68e867d0`. Fresh immutable artifacts are R106 (suite/Loader
 | Display | R106 two independent boots, 24/24 each; driver-transfer and lifecycle evidence, no new optical claim |
 | Core | R106 two independent boots, 41/41 each, task-resource probe, cleanup, confirmation and wall-clock restoration PASS |
 | Storage | R106 36/36 across phases 1/2/3/4/4, independent reboots, empty completion rechecks and unchanged Loader/crash storage PASS |
-| Lua Link | R106/R21 bilateral five rounds PASS; real DevKit USB cycle and final public returns pending |
+| Lua Link | R106/R21 bilateral five rounds, real DevKit USB cycle (`lost:-10`, 4101 ms), both exact public Loader returns and unchanged crash storage PASS |
 | Loader recovery / WebRTC performance | Fresh full matrix and two-boot performance qualification pending |
 | Board diagnostic / original Flash | R108 native build PASS; hardware regression and final original 16 MiB restoration pending |
 
-The first Display controller attempt timed out because it parsed an incomplete trailing replay JSON line. Its raw evidence is retained; the local controller now consumes complete lines and the new two-boot run passes the unchanged 24-case assertions. A full CI build also found the separate board diagnostic still depended on the retired mixed PAL App. That launcher now calls the independent Core App's existing eight baseline probes and uses its task namespace, retains the halt-on-live-cleanup behavior, and explicitly labels the dashboard as baseline coverage. It does not copy retired implementations or claim these eight probes satisfy the full 41-case contract. Full repository build and CI revalidation are in progress.
+The first Display controller attempt timed out because it parsed an incomplete trailing replay JSON line. Its raw evidence is retained; the local controller now consumes complete lines and the new two-boot run passes the unchanged 24-case assertions. A full CI build also found the separate board diagnostic still depended on the retired mixed PAL App. That launcher now calls the independent Core App's existing eight baseline probes and uses its task namespace, retains the halt-on-live-cleanup behavior, and explicitly labels the dashboard as baseline coverage. It does not copy retired implementations or claim these eight probes satisfy the full 41-case contract. The complete macOS build now passes all 3,872 targets after also aligning the three newly reachable Lua task declarations with the mainline DevKit policy. This is build compatibility only; GizClaw business acceptance remains excluded. CI revalidation is in progress.
 
 ## Comparison with existing boards
 
