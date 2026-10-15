@@ -875,10 +875,13 @@ h2_pal_result_t h2_gizclaw_lua_app_catalog_acquire(
     lease = h2_pal_mem_alloc(apps->config.allocator, sizeof(*lease));
     if (lease == NULL)
       rc = H2_PAL_ERR_NO_MEMORY;
-    else if (h2_atomic_uint_init(&lease->refs, 1u) != H2_ATOMIC_OK) {
-      h2_pal_mem_free(apps->config.allocator, lease);
-      lease = NULL;
-      rc = H2_PAL_ERR_NO_MEMORY;
+    else {
+      memset(lease, 0, sizeof(*lease));
+      if (h2_atomic_uint_init(&lease->refs, 1u) != H2_ATOMIC_OK) {
+        h2_pal_mem_free(apps->config.allocator, lease);
+        lease = NULL;
+        rc = H2_PAL_ERR_NO_MEMORY;
+      }
     }
   }
   if (rc == H2_PAL_OK) {

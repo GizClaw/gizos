@@ -14,7 +14,11 @@
 static void *allocate(void *user, size_t size) {
   (void)user;
   assert(size <= 128u * 1024u);
-  return malloc(size);
+  void *ptr = malloc(size);
+  /* PAL allocation does not promise zeroed storage, including reused heaps. */
+  if (ptr != NULL)
+    memset(ptr, 0xa5, size);
+  return ptr;
 }
 static void *resize(void *user, void *ptr, size_t size) {
   (void)user;
