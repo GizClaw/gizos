@@ -7,4 +7,11 @@
 #undef MBEDTLS_ECP_FIXED_POINT_OPTIM
 #define MBEDTLS_ECP_FIXED_POINT_OPTIM 1
 
+/* Public TLS chains can use SHA-384 signatures even with SHA-256 TLS
+ * cipher suites. The minimal SDK profile already enables P-384, but omits
+ * its certificate digest. Preserve normal chain and hostname verification. */
+#ifndef MBEDTLS_SHA384_C
+#define MBEDTLS_SHA384_C
+#endif
+
 #endif

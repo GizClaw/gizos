@@ -31,3 +31,5 @@ key export. A client that omits its certificate must also be rejected before any
 application data or key export. Repeated session cleanup must release all provider-owned allocations.
 Certificate absence or mismatch remains an authentication failure; no case uses
 `VERIFY_NONE` or a fake DTLS provider.
+
+The SHA-384 regression clears upstream SHA-384/SHA-512 defaults before including the production BK software-profile override, matching the missing digest in the SDK minimal profile. It creates ephemeral P-384 CA and leaf certificates with SHA-384 signatures, verifies the chain, and rejects a different root and hostname. It uses the actual SDK certificate parser and verifier; it does not replace them with mocks or qualify the rest of the board configuration.

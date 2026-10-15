@@ -30,3 +30,8 @@ target_compile_options(bk_dtls_contract_test PRIVATE -UNDEBUG)
 target_link_libraries(bk_dtls_contract_test mbedtls mbedx509 mbedcrypto)
 enable_testing()
 add_test(NAME bk_dtls_contract COMMAND bk_dtls_contract_test)
+
+add_executable(bk_tls_sha384_test test_tls_sha384.c)
+target_compile_options(bk_tls_sha384_test PRIVATE -UNDEBUG)
+target_link_libraries(bk_tls_sha384_test mbedx509 mbedcrypto)
+add_test(NAME bk_tls_sha384 COMMAND bk_tls_sha384_test)
