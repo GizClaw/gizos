@@ -107,7 +107,9 @@ PAL WebRTC 的 `CLOSED` 和 `ERROR` callback 只提供 callback 期间有效的 
 
 调用方 wait 后先复制/解码结果，再 complete 并 release。Callback 和 completion 在同一 owner 返回，不能在其中阻塞等待或停止/销毁 Service；既有产品动作仍由产品 owner 接管。关闭时先 close Web adapter，再按原有方式 Service stop、poll drain 和 deinit。Stop/deinit 遇到未释放的 call、adapter borrow 或 failed join 会保留依赖供重试；取消不能撤销已经发生的写入。重连仍新建 Service，不引入独立 device 生命周期或新的 App host。
 
-浏览器对象 API、类型包和现有 Lua 安装工具示例见 [Web GizClaw SDK](/apps/web#本地-gizclaw-sdk)。可执行 fixture `libs/gizclaw/web/tests/local/` 使用同一个 Service，直接通过工具 invoke 执行既有安装/list/uninstall，另有实际编译的 native protocol fixture 验证原 WebRTC 路径。
+//libs/gizclaw/web 只提供固件侧的统一 iframe 通信桥，产品入口通过 C 注册已有 Service，不引用或装配对象 SDK 的 JS 文件。固件页面与只展示页面的嵌入不需要 npm SDK。只有控制嵌入固件 HTML 的宿主网页才 import @gizclaw/firmware，并用 connectFirmware(iframe) 连接已注册端点；ABI/window/origin 握手与独立 MessageChannel 隔离各 frame。对象 codec、类型与 Promise API 由 projects/gizclaw/libs/web 拥有，npm artifact 位于 projects/gizclaw/targets/npm_package/firmware。宿主先复制/解码响应再 ACK，固件收到 ACK 后才选择成功的 delivery completion；取消、断连和解码失败会取消 continuation。SDK client.close() 只断开控制端，不停止固件 Service。
+
+接入和既有 Lua 工具调用示例见 [可选固件控制 SDK](/apps/web#可选的-gizclaw-固件控制-sdk)。libs/gizclaw/web/tests/local/ 验证没有 SDK 的独立固件运行；npm 的 tests/embed/ 使用实际 tarball 和不同 origin 的真实 WASM iframe 验证现有 handler 与交付确认，native protocol fixture 继续验证原 WebRTC 路径。
 
 ## 设备 provider
 

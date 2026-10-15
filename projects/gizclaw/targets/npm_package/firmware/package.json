@@ -1,0 +1,33 @@
+{
+  "name": "@gizclaw/firmware",
+  "version": "0.1.0",
+  "description": "Optional browser controller for embedded GizClaw firmware HTML pages",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GizClaw/gizos.git",
+    "directory": "projects/gizclaw/targets/npm_package/firmware"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://npm.pkg.github.com"
+  },
+  "exports": {
+    ".": {
+      "types": "./firmware.d.ts",
+      "import": "./firmware.js",
+      "default": "./firmware.js"
+    }
+  },
+  "files": [
+    "LICENSE",
+    "README.md",
+    "GIZCLAW_PROTOCOL_LICENSE",
+    "firmware.js",
+    "firmware.d.ts",
+    "method-map.d.ts",
+    "payload-codec.d.ts"
+  ]
+}

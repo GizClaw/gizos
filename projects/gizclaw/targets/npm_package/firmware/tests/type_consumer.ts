@@ -1,5 +1,6 @@
-import type { GizClawWebSDK } from './h2_web_gizclaw';
-declare const api: GizClawWebSDK;
+import { connectFirmware } from '@gizclaw/firmware';
+import type { GizClawFirmwareClient } from '@gizclaw/firmware';
+declare const api: GizClawFirmwareClient;
 async function consume() {
   const value = await api.mhs.read({id: 'led.fixture', hwd: 'led'});
   const enabled: boolean | undefined = value.payload.enabled;
@@ -20,3 +21,12 @@ async function consume() {
   return [enabled, brightness, model];
 }
 void consume;
+declare const frame: HTMLIFrameElement;
+async function connect() {
+  const client = await connectFirmware(frame, {origin: 'https://firmware.example', timeout_ms: 5000});
+  await client.tools.list();
+  client.close();
+  // @ts-expect-error SDK import does not install a global object in firmware
+  globalThis.h2WebGizClaw.tools.list();
+}
+void connect;

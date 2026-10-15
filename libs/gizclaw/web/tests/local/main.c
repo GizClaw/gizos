@@ -17,6 +17,7 @@ static bool fail_bridge_join;
 static _Atomic int reads, writes, entered, gate, completions, delivery;
 static uint32_t brightness;
 static bool enabled;
+static _Atomic bool corrupt_reply;
 static unsigned char *archive;
 static size_t archive_size;
 static int start(void *u, const h2_pal_task_options_t *o,
@@ -51,6 +52,9 @@ EMSCRIPTEN_KEEPALIVE int h2_local_fixture_state(int field) {
 EMSCRIPTEN_KEEPALIVE void h2_local_fixture_gate(int value) {
   atomic_store(&gate, value);
 }
+EMSCRIPTEN_KEEPALIVE void h2_local_fixture_corrupt(int value) {
+  atomic_store(&corrupt_reply, value != 0);
+}
 static int read_led(void *u, h2_gizclaw_mhs_read_t *out) {
   (void)u;
   ++reads;
@@ -73,10 +77,14 @@ static void complete(void *u, int rc) {
 static int find(void *u, h2_gizclaw_tool_t tool, h2_gizclaw_rpc_bytes_t payload,
                 h2_gizclaw_rpc_provider_response_t *out) {
   (void)u; (void)tool; (void)payload;
-  atomic_store(&entered, 1);
+  atomic_fetch_add(&entered, 1);
   while (atomic_load(&gate))
     assert(h2_pal_time_sleep_ms(h2_web_platform_time_api(platform), 1) == 0);
   *out = (h2_gizclaw_rpc_provider_response_t){.on_complete = complete};
+  if (atomic_exchange(&corrupt_reply, false)) {
+    static const uint8_t malformed[] = {0x0a, 0xff};
+    out->payload = (h2_gizclaw_rpc_bytes_t){malformed, sizeof(malformed)};
+  }
   return H2_PAL_OK;
 }
 static int error(void *u, h2_gizclaw_tool_t tool, h2_gizclaw_rpc_bytes_t payload,
@@ -112,6 +120,7 @@ static const h2_pal_http_vtable_t http_vtable = {.request = http};
 static const h2_pal_http_api_t http_api = {.vtable = &http_vtable};
 void h2_local_fixture_assertions(void *, h2_web_main_result_t *, h2_web_main_completion_t *);
 void h2_local_fixture_closed(void *, h2_web_main_result_t *, h2_web_main_completion_t *);
+void h2_local_fixture_final(void *, h2_web_main_result_t *, h2_web_main_completion_t *);
 int main(void) {
   platform = h2_web_platform_create(&(h2_web_platform_config_t){240, 240});
   assert(platform);
@@ -168,5 +177,6 @@ int main(void) {
   int destroy = h2_web_platform_destroy(platform);
   printf("H2_WEB_APP name=gizclaw-local result=%s rc=%d destroy=%d\n",
          !rc && !destroy ? "PASS" : "FAIL", rc, destroy);
+  (void)h2_web_main_call(h2_local_fixture_final, (const void *[]){&rc, &destroy});
   return rc || destroy;
 }

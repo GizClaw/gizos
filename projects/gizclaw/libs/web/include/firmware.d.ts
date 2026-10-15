@@ -1,7 +1,7 @@
 import type {
   ClientHwdID, ClientHwdMap, ClientToolID, ClientToolMap,
   CLIENT_HWD_IDS, CLIENT_TOOL_IDS,
-} from './method-map';
+} from './method-map.js';
 
 type Hwd = ClientHwdID | keyof typeof CLIENT_HWD_IDS;
 type HwdNumber<K extends Hwd> = K extends keyof typeof CLIENT_HWD_IDS
@@ -21,8 +21,10 @@ export interface GizClawError extends Error {
   rpcCode?: number;
   rpcMessage?: string;
 }
-export interface GizClawWebSDK {
+export interface GizClawFirmwareClient {
   readonly version: 1;
+  /** Disconnect this controller; the firmware keeps running. */
+  close(): void;
   call(method: number, request: Uint8Array, options?: GizClawCallOptions): Promise<Uint8Array>;
   readonly mhs: {
     read<K extends Hwd>(request: {id: string; hwd: K}, options?: GizClawCallOptions): Promise<{
@@ -43,6 +45,16 @@ export interface GizClawWebSDK {
       options?: GizClawCallOptions): Promise<ClientToolMap[ToolNumber<K>]['response']>;
   };
 }
-declare global {
-  var h2WebGizClaw: GizClawWebSDK | undefined;
+export interface GizClawConnectOptions {
+  /** Exact iframe origin; defaults to the origin of iframe.src. Opaque origins are unsupported. */
+  origin?: string;
+  /** Wait for the firmware's registered endpoint; does not start the firmware. Default 30000. */
+  timeout_ms?: number;
 }
+/** Connect only the controlling host to an already embedded firmware page.
+ * Different frames are independent. Reconnecting the same frame replaces its
+ * previous controller. Call close() before removing/navigating the iframe.
+ */
+export function connectFirmware(
+  iframe: HTMLIFrameElement, options?: GizClawConnectOptions,
+): Promise<GizClawFirmwareClient>;

@@ -291,25 +291,36 @@ bazel test --config=macos_arm64 --strategy=TestRunner=local --test_env=HOME \
 
 Web 的同步 SystemEvent PAL API 只借给 C Worker，浏览器主线程 accessor 返回 `NULL`。浏览器发起退订时使用 `h2_web_platform_system_event_unsubscribe_async`：成功后立即停止新回调并将 subscription 所有权交给 platform Worker；完成回调仅在所有在途 handler 返回后执行，调用方此前必须保留 handler context。主线程入队使用 try-lock，竞争返回 BUSY 并交还所有权，不能同步阻塞浏览器等待 Worker。回调自身不能等待自己的异步退订完成。
 
-## 本地 GizClaw SDK
+## 可选的 GizClaw 固件控制 SDK
 
-`//libs/gizclaw/web` 从 Worker 调用 `h2_web_gizclaw_open()`，绑定 `globalThis.h2WebGizClaw`；它借用已经开启本地入口的现有 Service。对象方法使用 pinned GizClaw codec/map，MHS 读写和所有工具均调用既有 handler，不依赖远端 Ready。Lua 安装仍是普通 tool invoke：
+@gizclaw/firmware 只由需要控制 GizClaw 固件 HTML 的宿主网页引入。固件页面本身和只展示页面的 iframe 不依赖这个 npm 包，继续按产品原有入口、Start、权限和关闭流程运行。SDK 连接现有 iframe，不加载裸 WASM，也不启动或销毁产品。
+
+```html
+<iframe id="firmware" src="https://firmware.example/index.html"
+        allow="cross-origin-isolated"></iframe>
+```
 
 ```js
-const api = globalThis.h2WebGizClaw;
+import { connectFirmware } from '@gizclaw/firmware';
+
+const frame = document.querySelector('#firmware');
+const api = await connectFirmware(frame);
 const tools = await api.tools.list();
 const state = await api.mhs.read({id: 'speaker.main', hwd: 'speaker'});
-const applied = await api.mhs.write({
+await api.mhs.write({
   id: 'speaker.main', hwd: 'speaker',
   payload: {volume_percent: 0, muted: false},
 });
-const installed = await api.tools.invoke('lua.app.install', {url: archiveUrl});
-const apps = await api.tools.invoke('lua.app.list', {});
-await api.tools.invoke('lua.app.uninstall', {app_id: appId});
+await api.tools.invoke('lua.app.install', {url: archiveUrl});
+api.close();
 ```
 
-实例与可用工具取自产品已有注册表；`lua.app.run` 是否可用仍取决于已有产品 prepare hook。安装格式、URL/Binary 支持和 Lua 交接语义均遵守 [GizClaw Lua App](/zh/developing/gizclaw#lua-app)，SDK 不额外实现 catalog、上传安装器或 Lua 生命周期。`call(method, Uint8Array, options?)` 为需要 canonical payload 的调用方保留字节接口。
+H106 等产品入口只通过 C 注册已有 Service：先 h2_gizclaw_local_start()，再用 h2_web_gizclaw_open() 打开 //libs/gizclaw/web 的统一通信桥；入口不引用 npm SDK、对象 codec 或 SDK JS 文件。固件只接收 canonical method 与字节请求，所有工具和 MHS 仍走已有 handler。产品先 close C adapter，再走原有 Service stop/poll/deinit；SDK client.close() 只断开宿主连接，固件继续运行。
 
-所有方法返回 Promise，支持 `{signal?, timeout_ms?}`。0/false 保留 optional presence；`error.code` 为实际 signed PAL result，仅 wire rejection 时为 -1000，并保留实际 `rpcCode`/`rpcMessage`。容量满返回 BUSY。取消/超时不会撤销已经发生的写入；请求接纳时复制，回复在 resolve 前复制/解码，随后触发既有 delivery completion。
+projects/gizclaw/libs/web 拥有 npm 控制端源码、官方 codec/map 和类型声明，projects/gizclaw/targets/npm_package/firmware 拥有 package identity、文件集合与 tarball。固件与 SDK 共用 ABI identity/version。窗口握手只接受嵌入它的 parent，SDK 检查 iframe window 和精确 origin，再建立 MessageChannel；不同 frame 的状态相互独立。同一 frame 新连接会关闭旧连接并取消其 pending 请求。origin 默认从 iframe.src 推导；发生跨 origin redirect 时由宿主显式提供最终 origin，opaque origin 不支持。SDK 等待已注册端点，不改变固件启动或浏览器授权。
 
-`h2_web_gizclaw_close()` 在 Worker 关闭 ingress、拒绝 pending Promise、取消调用并 join adapter，成功后释放 Service borrow；失败保留 handle 与依赖供重试。产品先 close adapter，再走现有 Service stop/poll/deinit。`//libs/gizclaw/web:sdk_types` 导出 `h2_web_gizclaw.d.ts` 及同一 canonical codec/map 的声明。`libs/gizclaw/web/tests/local/` 的实际 Chrome fixture 验证现有 tool/MHS、Lua 安装工具透传、错误、取消/背压和 close retry；它使用测试 HTTP/Filesystem PAL，不代表实机或真实服务器验收。
+对象方法与类型使用 pinned GizClaw codec/map。实例与可用工具取自产品原有注册表；lua.app.run 是否可用仍取决于产品 prepare hook。安装格式、URL/Binary 支持与交接语义仍遵守 [GizClaw Lua App](/zh/developing/gizclaw#lua-app)。SDK 不另外提供 Lua catalog、安装器或生命周期；call(method, Uint8Array, options?) 保留 canonical 字节接口。
+
+调用返回 Promise，支持 {signal?, timeout_ms?}。请求在 transfer 前复制，回复在复制/解码后才确认 delivery completion；error.code 保留实际 signed PAL result，wire-only rejection 使用 -1000 并保留 rpcCode/rpcMessage，0/false 保留 optional presence。请求容量、请求字节限制与默认 deadline 来自固件配置。取消、断连或超时不能撤销已经发生的写入；解码失败不会提交准备好的工具 continuation。SDK close、iframe navigation 和宿主 pagehide 拒绝 pending 请求；产品 C failed join 仍保留依赖供重试。
+
+多线程固件仍需要真实的 COOP/COEP hosting headers，跨 origin iframe 需要允许 cross-origin-isolated，固件响应需显式允许跨域嵌入（Cross-Origin-Resource-Policy: cross-origin）；这是现有 Web 固件的运行条件，npm 控制端不代替 hosting 或权限配置。//projects/gizclaw/targets/npm_package/firmware:release_tarball 生成独立 npm tarball。libs/gizclaw/web/tests/local/ 验证无 SDK 的固件运行；npm package 的 tests/embed/ 从实际 tarball 导入 SDK，控制不同 origin 的真实 WASM iframe，并覆盖现有 tool/MHS、Lua install/list/uninstall、错误、ACK、取消、重连和 close retry。测试 HTTP/Filesystem PAL 不代表真实服务器、Trial/H106 产品或物理设备验收。
