@@ -121,6 +121,7 @@ App 必须在调用 third-party API 之前完成对应 integration 初始化，�
 - [`app_test`](./app_test.md)：以同一份 C scenario 在 Memory 或未来 device driver
   上验证 Runtime input 到 App state 与 production LVGL subject 的映射。
 - [`audio_mixer`](./audio_mixer.md)：跨平台音频混合 API 和实现。
+- [`ogg_opus`](./ogg_opus.md)：共享标准 Ogg/Opus 解码与有界 encoded-packet reader，支持输入 checkpoint 和调用方控制的播放策略。
 - `wifi_sta`：PAL provider 共用的同步目标认证、IP 验证与保存事务；只借用 STA、Time 和 Wi-Fi Settings，由 provider 持有串行 admission。
 - [`ble_wifi_config`](./ble_wifi_config.md)：设备联网前使用的 BLE 配网服务，逐条上报扫描到的 AP 并接收 Wi-Fi 凭据。
 - [`bleikcp`](./bleikcp.md)：在已建立的 BLE connection 上提供可靠有序 byte stream。
