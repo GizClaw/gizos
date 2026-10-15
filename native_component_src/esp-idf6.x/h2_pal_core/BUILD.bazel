@@ -1,9 +1,32 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
-load("@rules_python//python:defs.bzl", "py_test")
+load("@rules_python//python:defs.bzl", "py_binary", "py_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS", "h2_gnu_only_copts")
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
 
 package(default_visibility = ["//visibility:public"])
+
+py_binary(
+    name = "wifi_ap_stop_test_source_generator",
+    testonly = True,
+    srcs = ["tests/extract_wifi_ap_stop.py"],
+    legacy_create_init = False,
+    main = "tests/extract_wifi_ap_stop.py",
+)
+
+genrule(
+    name = "wifi_ap_stop_test_source",
+    testonly = True,
+    srcs = ["src/h2_esp_platform_wifi.c"],
+    outs = ["tests/h2_esp_wifi_ap_stop_for_test.inc"],
+    cmd = "$(execpath :wifi_ap_stop_test_source_generator) $(location src/h2_esp_platform_wifi.c) $@",
+    tools = [":wifi_ap_stop_test_source_generator"],
+)
+
+cc_library(
+    name = "wifi_ap_stop_test_header",
+    testonly = True,
+    hdrs = [":wifi_ap_stop_test_source"],
+)
 
 [
     cc_test(

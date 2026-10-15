@@ -4,6 +4,8 @@
 
 先在 AMOLED 选择 IPv4、IPv6 或双栈并开启 server，再启动 DevKit。Client 使用固定 SSID `GizOS-iPerf` / 密码 `gizosiperf` / 信道 6，关闭 Wi-Fi 省电，不启用 App 管理 BLE 服务，等待 15 秒完成 DHCP、RA 与 DAD；按实际获得的 IPv4/ULA 地址族选择矩阵。IPv6-only 不等待 IPv4 GOT_IP。测试不写保存的 STA 凭据；服务端换模式后需 fresh boot client，避免旧 netif 地址影响模式识别。
 
+每个地址族独立检查可用性：IPv4 必须非零，IPv6 必须是非 link-local 的单播地址，并与 station Netif、PAL 和 Runtime 状态匹配。IPv4 加 link-local IPv6 只执行 IPv4 矩阵，LINK 日志的 `ipv6_ready` 为零；仅有 link-local IPv6 时继续等待，超过原有 45 秒预算即失败。
+
 每个地址族执行三轮，每轮 TCP 正向/反向各一次（16 KiB block，不限速），UDP 5/10/20/40 Mbit/s 正向/反向各一次（1200 B datagram），每次 5 秒。单栈共 30 case，双栈共 60 case；双栈的两个地址族依次独立测量，不相加。UDP 配置速率是 offered load；性能报告取接收端实际吞吐，并保留丢包、抖动。
 
 地址就绪校验明确读取已关联的 Wi-Fi STA Netif snapshot，并逐项匹配该 station 的 IPv4/IPv6 与 PAL/Runtime 状态。其他活动接口或默认路由接口不会替代 station，也不会使有效的 Wi-Fi association 被误判为失败。

@@ -15,22 +15,80 @@ static unsigned starts, stops, sleeps, pcbs, radio_live;
 static int start_error, stop_error, missing_netif;
 static void (*timer)(void *);
 static void *timer_user;
+
+#ifdef H2_IPERF_TEST_REAL_AP_STOP
+#define WIFI_MODE_STA 1
+#define ESP_ERR_WIFI_NOT_INIT 2
+#define ESP_ERR_WIFI_NOT_STARTED 3
+static unsigned mode_calls, destroys, stopped_events, driver_stops;
+static int critical_depth, s_h2_esp_wifi_ap_lock;
+static int s_h2_esp_wifi_ap_active;
+static esp_netif_t *s_h2_esp_wifi_ap_netif;
+static h2_pal_wifi_ap_status_t s_h2_esp_wifi_ap_status;
+static h2_pal_wifi_ap_client_t s_h2_esp_wifi_ap_clients[H2_PAL_WIFI_AP_MAX_CLIENTS];
+static size_t s_h2_esp_wifi_ap_client_count;
+#define portENTER_CRITICAL(lock) do { (void)(lock); assert(++critical_depth == 1); } while (0)
+#define portEXIT_CRITICAL(lock) do { (void)(lock); assert(--critical_depth == 0); } while (0)
+static esp_err_t esp_wifi_set_mode(int mode) {
+  assert(mode == WIFI_MODE_STA && !critical_depth && radio_live);
+  assert(!pcbs && !timer);
+  ++mode_calls;
+  if (stop_error)
+    return ESP_FAIL;
+  radio_live = 0u;
+  return ESP_OK;
+}
+static int h2_esp_wifi_map_error(esp_err_t error) {
+  assert(error == ESP_FAIL);
+  return H2_PAL_ERR_IO;
+}
+static void esp_netif_destroy_default_wifi(esp_netif_t *netif) {
+  assert(netif == &ap && !radio_live && !pcbs && !timer);
+  ++destroys;
+}
+static void h2_esp_wifi_post_ap_system_event(
+    h2_pal_system_event_type_t type, const h2_pal_wifi_ap_status_t *status) {
+  assert(type == H2_PAL_SYSTEM_EVENT_TYPE_WIFI_AP_STOPPED);
+  assert(status->state == H2_PAL_WIFI_AP_STATE_STOPPED);
+  assert(!status->client_count && !s_h2_esp_wifi_ap_netif && !radio_live);
+  ++stopped_events;
+}
+static int h2_esp_wifi_stop_driver_if_sta_idle(void) {
+  assert(!s_h2_esp_wifi_ap_active && !s_h2_esp_wifi_ap_netif && !radio_live);
+  ++driver_stops;
+  return H2_PAL_OK;
+}
+#include "native_component_src/esp-idf6.x/h2_pal_core/tests/h2_esp_wifi_ap_stop_for_test.inc"
+#endif
 static int ap_start(void *user, const h2_pal_wifi_ap_config_t *config,
                     uint32_t timeout) {
   (void)user;
   assert(config && timeout == 5000u && !radio_live);
   ++starts;
-  if (!start_error)
+  if (!start_error) {
     radio_live = 1u;
+#ifdef H2_IPERF_TEST_REAL_AP_STOP
+    s_h2_esp_wifi_ap_active = 1;
+    s_h2_esp_wifi_ap_netif = &ap;
+    s_h2_esp_wifi_ap_status.state = H2_PAL_WIFI_AP_STATE_STARTED;
+    s_h2_esp_wifi_ap_status.client_count = 2u;
+    s_h2_esp_wifi_ap_client_count = 2u;
+    memset(s_h2_esp_wifi_ap_clients, 0xa5, sizeof(s_h2_esp_wifi_ap_clients));
+#endif
+  }
   return start_error;
 }
 static int ap_stop(void *user, uint32_t timeout) {
   (void)user;
   assert(timeout == 5000u && radio_live && !pcbs && !timer);
   ++stops;
+#ifdef H2_IPERF_TEST_REAL_AP_STOP
+  return h2_esp_wifi_ap_stop(NULL, timeout);
+#else
   if (!stop_error)
     radio_live = 0u;
   return stop_error;
+#endif
 }
 static int disconnect(void *user) {
   (void)user;
@@ -152,22 +210,41 @@ int main(void) {
   assert(!state.active && !radio_live && stops == 0u);
   start_error = H2_PAL_OK;
   missing_netif = 1;
-  stop_error = H2_PAL_ERR_TIMEOUT;
+  const int failed_stop =
+#ifdef H2_IPERF_TEST_REAL_AP_STOP
+      H2_PAL_ERR_IO;
+#else
+      H2_PAL_ERR_TIMEOUT;
+#endif
+  stop_error = failed_stop;
   memset(&network, 0xa5, sizeof(network));
   assert(h2_iperf_amoled_ap_start(&state, H2_IPERF_SERVER_APP_MODE_DUAL,
-                                  &network) == H2_PAL_ERR_TIMEOUT);
+                                  &network) == failed_stop);
   const h2_iperf_server_app_network_t empty = {0};
   assert(!memcmp(&network, &empty, sizeof(network)) && state.active &&
          radio_live);
   assert(stops == 1u && sleeps == 0u);
+#ifdef H2_IPERF_TEST_REAL_AP_STOP
+  assert(s_h2_esp_wifi_ap_active && s_h2_esp_wifi_ap_netif == &ap);
+  assert(s_h2_esp_wifi_ap_status.state == H2_PAL_WIFI_AP_STATE_STARTED);
+  assert(s_h2_esp_wifi_ap_status.client_count == 2u);
+  assert(s_h2_esp_wifi_ap_client_count == 2u);
+  for (size_t i = 0; i < sizeof(s_h2_esp_wifi_ap_clients); ++i)
+    assert(((const unsigned char *)s_h2_esp_wifi_ap_clients)[i] == 0xa5);
+  assert(mode_calls == 1u && !destroys && !stopped_events && !driver_stops);
+#endif
   assert(h2_iperf_amoled_ap_start(&state, H2_IPERF_SERVER_APP_MODE_IPV4,
                                   &network) == H2_PAL_ERR_INVALID_ARG);
-  assert(h2_iperf_amoled_ap_stop(&state) == H2_PAL_ERR_TIMEOUT &&
+  assert(h2_iperf_amoled_ap_stop(&state) == failed_stop &&
          state.active && stops == 2u);
   stop_error = H2_PAL_OK;
   assert(h2_iperf_amoled_ap_stop(&state) == H2_PAL_OK && !state.active &&
          !radio_live && stops == 3u);
   assert(h2_iperf_amoled_ap_stop(&state) == H2_PAL_OK && stops == 3u);
+#ifdef H2_IPERF_TEST_REAL_AP_STOP
+  assert(!s_h2_esp_wifi_ap_active && !s_h2_esp_wifi_ap_netif);
+  assert(mode_calls == 3u && destroys == 1u && stopped_events == 1u && driver_stops == 1u);
+#endif
   missing_netif = 0;
   for (unsigned i = 0; i < 3u; ++i) {
     const h2_iperf_server_app_mode_t modes[] = {H2_IPERF_SERVER_APP_MODE_IPV4,
@@ -178,7 +255,20 @@ int main(void) {
     assert(h2_iperf_amoled_ap_stop(&state) == H2_PAL_OK && !state.active &&
            !radio_live && !pcbs && !timer);
   }
-  assert(starts == 5u && stops == 6u);
+  /* A fully started advertiser is removed once before a failed SDK stop;
+   * retry must keep the live netif and actually reissue the SDK transition. */
+  assert(h2_iperf_amoled_ap_start(&state, H2_IPERF_SERVER_APP_MODE_DUAL,
+                                  &network) == H2_PAL_OK);
+  stop_error = failed_stop;
+  assert(h2_iperf_amoled_ap_stop(&state) == failed_stop && state.active && radio_live);
+  assert(!pcbs && !timer);
+  stop_error = H2_PAL_OK;
+  assert(h2_iperf_amoled_ap_stop(&state) == H2_PAL_OK && !state.active && !radio_live);
+  assert(starts == 6u && stops == 8u);
+#ifdef H2_IPERF_TEST_REAL_AP_STOP
+  assert(!critical_depth && mode_calls == 8u && destroys == 5u);
+  assert(stopped_events == 5u && driver_stops == 5u);
+#endif
   puts("iperf AP PASS: bounded partial-start failure, retained ownership, stop "
        "retry and three modes");
   return 0;

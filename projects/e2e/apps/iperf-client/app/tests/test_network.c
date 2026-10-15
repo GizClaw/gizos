@@ -21,6 +21,8 @@ typedef enum failure {
   FAILURE_SAVED_BEFORE,
   FAILURE_SAVED_AFTER,
   FAILURE_SAVED_CHANGED,
+  FAILURE_LINK_LOCAL,
+  FAILURE_IPV4_ZERO,
 } failure_t;
 
 typedef struct fixture {
@@ -63,7 +65,15 @@ static int connect_wifi(void *user, const h2_pal_wifi_sta_config_t *config,
     const uint8_t address[16] = {0xfd, 0x53, 0x69, 0x7a, 0x6f, 0x73,
                                 0x06, 0x26, 0, 0, 0, 0, 0, 0, 0, 2};
     memcpy(f->wifi.ip.ip6, address, sizeof(address));
+    if (f->failure == FAILURE_LINK_LOCAL) {
+      memset(f->wifi.ip.ip6, 0, sizeof(f->wifi.ip.ip6));
+      f->wifi.ip.ip6[0] = 0xfe;
+      f->wifi.ip.ip6[1] = 0x80;
+      f->wifi.ip.ip6[15] = 2;
+    }
   }
+  if (f->failure == FAILURE_IPV4_ZERO)
+    f->wifi.ip.ip4 = 0u;
   f->pending_event = H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_GOT_IP;
   return f->failure == FAILURE_CONNECT ? H2_PAL_ERR_IO : H2_PAL_OK;
 }
@@ -260,6 +270,9 @@ static int log_record(void *user, h2_pal_log_level_t level, const char *scope,
     assert(strlen(message) < sizeof(f->complete));
     strcpy(f->complete, message);
   }
+  if (f->failure == FAILURE_LINK_LOCAL &&
+      strstr(message, "H2_IPERF_CLIENT_LINK ") == message)
+    assert(strstr(message, " ipv6_ready=0 ") != NULL);
   return H2_PAL_OK;
 }
 
@@ -319,7 +332,12 @@ static void test_case_impl(failure_t failure, int matrix_error,
       const h2_iperf_client_app_network_t empty = {0};
       assert(memcmp(&network, &empty, sizeof(empty)) == 0);
     } else {
-      assert(network.runtime_ready && network.mode == mode);
+      h2_iperf_client_app_mode_t ready_mode = mode;
+      if (mode == H2_IPERF_CLIENT_APP_DUAL && failure == FAILURE_LINK_LOCAL)
+        ready_mode = H2_IPERF_CLIENT_APP_IPV4;
+      if (mode == H2_IPERF_CLIENT_APP_DUAL && failure == FAILURE_IPV4_ZERO)
+        ready_mode = H2_IPERF_CLIENT_APP_IPV6;
+      assert(network.runtime_ready && network.mode == ready_mode);
     }
   }
   assert(rc == expected);
@@ -396,6 +414,16 @@ int main(void) {
                    H2_PAL_ERR_INVALID_STATE, 0, FAILURE_NONE, modes[i], 1);
   }
   test_case(FAILURE_NONE, H2_PAL_ERR_IO, H2_PAL_ERR_BUSY, H2_PAL_ERR_IO, 1);
+  test_case_impl(FAILURE_LINK_LOCAL, H2_PAL_OK, H2_PAL_OK, H2_PAL_OK, 0,
+                 FAILURE_NONE, H2_IPERF_CLIENT_APP_DUAL, 1);
+  test_case_impl(FAILURE_LINK_LOCAL, H2_PAL_OK, H2_PAL_OK, H2_PAL_OK, 1,
+                 FAILURE_NONE, H2_IPERF_CLIENT_APP_DUAL, 1);
+  test_case_impl(FAILURE_LINK_LOCAL, H2_PAL_OK, H2_PAL_OK, H2_PAL_ERR_TIMEOUT, 0,
+                 FAILURE_NONE, H2_IPERF_CLIENT_APP_IPV6, 1);
+  test_case_impl(FAILURE_IPV4_ZERO, H2_PAL_OK, H2_PAL_OK, H2_PAL_OK, 0,
+                 FAILURE_NONE, H2_IPERF_CLIENT_APP_DUAL, 1);
+  test_case_impl(FAILURE_IPV4_ZERO, H2_PAL_OK, H2_PAL_OK, H2_PAL_ERR_TIMEOUT, 0,
+                 FAILURE_NONE, H2_IPERF_CLIENT_APP_IPV4, 1);
   puts("iperf-client network PASS: aligned events and failure cleanup");
   return 0;
 }

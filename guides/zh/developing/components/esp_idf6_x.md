@@ -418,3 +418,7 @@ Mic gain setter 调整 active microphone PGA 并保留 board trim；AEC 的独�
 ### Wi-Fi IPv6 生命周期
 
 STA id-specific observer 位于 ESP-NETIF 默认 connected handler 之后，在 TCP/IP 上初始化本次关联的 IPv6；测试/产品 entry 只调用公共 Wi-Fi PAL。事件 loop 拥有关联和 IP 状态，GOT_IP4/GOT_IP6 对 netif 与当前 peer 重新核对，周期地址事件补齐 preferred 地址过期/IPv4 失租。旧关联 IPv6 与 ND cache 在断开和新关联开始时清理；地址只从实际 preferred 列表选择，ULA 与其他非 link-local 单播都可完成就绪。公共 station status、system event 和 Runtime state 的 IPv4/IPv6 内容一致，IPv4 `ip_valid` 保持原含义。原生 board defaults 开启 IPv6 与 AUTOCONFIG；ESP32-P4 的 unsupported Wi-Fi 路径不因此获得 radio capability。
+
+### AP 停止与重试
+
+AP stop 先请求 SDK 切回 STA mode；转换失败时保留 active、netif、client 列表与公开状态，并返回原有映射错误，后续 Stop 重新执行 SDK 请求。只有 SDK 接受停止（包括已经未初始化或未启动）后才提交 stopped 状态、销毁 AP netif 并发布 stopped 事件。AMOLED iperf adapter 在此之前先撤销 RA timeout/raw PCB；provider 与 adapter 的组合回归编译生产 stop 函数，并注入真实 SDK 调用边界的失败后重试。
