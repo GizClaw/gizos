@@ -11,6 +11,12 @@ py_binary(
     srcs = ["tests/extract_wifi_ap_stop.py"],
     legacy_create_init = False,
     main = "tests/extract_wifi_ap_stop.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
 )
 
 genrule(
@@ -19,6 +25,12 @@ genrule(
     srcs = ["src/h2_esp_platform_wifi.c"],
     outs = ["tests/h2_esp_wifi_ap_stop_for_test.inc"],
     cmd = "$(execpath :wifi_ap_stop_test_source_generator) $(location src/h2_esp_platform_wifi.c) $@",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     tools = [":wifi_ap_stop_test_source_generator"],
 )
 
@@ -26,6 +38,12 @@ cc_library(
     name = "wifi_ap_stop_test_header",
     testonly = True,
     hdrs = [":wifi_ap_stop_test_source"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
 )
 
 [
