@@ -16,6 +16,7 @@ typedef struct fixture {
     bool mic, speaker, near;
     bool mute, mute_double, no_aec, no_reference, malformed, fast_clock, slow_clock;
     bool fail_stop, fail_source_stop, fail_unregister;
+    bool fail_near_mic_stop, fail_near_speaker_stop, fail_near_track_close;
     bool clip_input_reference;
     bool clip_second_mic;
     bool dac_error;
@@ -24,7 +25,7 @@ typedef struct fixture {
     bool clock_fails_while_near;
     bool leak_double, leak_stability;
     unsigned writes;
-    unsigned allocations, frees, near_starts;
+    unsigned allocations, frees, near_starts, near_stops;
     int16_t playback[512];
     const int16_t *near_probe;
 } fixture_t;
@@ -65,7 +66,7 @@ static int mic_start(void *u) {
 }
 static int mic_stop(void *u) {
     fixture_t *f = u;
-    if (f->fail_stop)
+    if (f->fail_stop || (f->near && f->fail_near_mic_stop))
         return H2_AUDIO_ERR_IO;
     f->mic = false;
     return H2_AUDIO_OK;
@@ -75,7 +76,10 @@ static int speaker_start(void *u) {
     return H2_AUDIO_OK;
 }
 static int speaker_stop(void *u) {
-    ((fixture_t *)u)->speaker = false;
+    fixture_t *f = u;
+    if (f->near && f->fail_near_speaker_stop)
+        return H2_AUDIO_ERR_IO;
+    f->speaker = false;
     return H2_AUDIO_OK;
 }
 static int get_volume(void *u, uint32_t *out) {
@@ -122,7 +126,9 @@ static int write_track(h2_pal_audio_track_t *track, const h2_audio_frame_t *fram
     return H2_AUDIO_OK;
 }
 static int close_track(h2_pal_audio_track_t *track) {
-    (void)track;
+    fixture_t *f = track->user;
+    if (f->near && f->fail_near_track_close)
+        return H2_AUDIO_ERR_IO;
     return H2_AUDIO_OK;
 }
 static int drain(h2_pal_audio_track_t *track, uint32_t timeout) {
@@ -198,12 +204,15 @@ static int read_mic(void *u, h2_audio_frame_t *out, uint32_t timeout) {
 static int near_source(void *u, bool enabled, const h2_audio_pcm_format_t *fmt,
                          const int16_t *probe, size_t samples, uint32_t timeout_ms) {
     fixture_t *f = u;
+    assert(!f->mic && !f->speaker);
     assert(fmt->sample_rate_hz == 16000u && samples == 512u);
     assert(timeout_ms == 5000u);
     if (f->slow_source && enabled)
         f->now += 6000u;
     if (!enabled && f->fail_source_stop && f->near)
         return H2_PAL_ERR_IO;
+    if (!enabled && f->near)
+        ++f->near_stops;
     f->near = enabled;
     f->near_probe = probe;
     if (enabled)
@@ -325,6 +334,35 @@ static void retained_test(unsigned failure) {
     assert(f.allocations == f.frees && !f.near && !f.mic && !f.speaker);
 }
 
+static void near_worker_retained_test(unsigned failure) {
+    fixture_t f = {0};
+    h2_pal_mem_api_t mem;
+    h2_aec_calibration_config_t c = config(&f, &mem);
+    c.candidates = pairs + 1;
+    c.candidate_count = 1;
+    f.fail_near_mic_stop = failure == 0u;
+    f.fail_near_speaker_stop = failure == 1u;
+    f.fail_near_track_close = failure == 2u;
+    h2_aec_calibration_t *runner = NULL;
+    const h2_aec_calibration_result_t *r = NULL;
+    assert(h2_aec_calibration_create(&c, &runner) == H2_PAL_OK);
+    assert(h2_aec_calibration_run(runner, &r) == H2_PAL_ERR_IO);
+    assert(r->retained && !r->selected && !r->complete);
+    assert(f.near && f.near_starts == 1u && f.near_stops == 0u);
+    assert(f.mic == (failure == 0u) && f.speaker == (failure != 0u));
+    const int16_t *probe = f.near_probe;
+    assert(probe != NULL && f.frees == 0u);
+    assert(h2_aec_calibration_destroy(runner) == H2_PAL_ERR_IO);
+    assert(f.near && f.near_probe == probe && f.near_stops == 0u);
+    assert(f.frees == 0u);
+    f.fail_near_mic_stop = false;
+    f.fail_near_speaker_stop = false;
+    f.fail_near_track_close = false;
+    assert(h2_aec_calibration_destroy(runner) == H2_PAL_OK);
+    assert(f.allocations == f.frees && f.near_stops == 1u);
+    assert(!f.near && !f.mic && !f.speaker);
+}
+
 static void unsupported_and_validation_test(void) {
     fixture_t f = {0};
     h2_pal_mem_api_t mem;
@@ -403,8 +441,10 @@ int main(int argc, char **argv) {
     selection_test(H2_AEC_CALIBRATION_MIC_FIRST);
     for (unsigned i = 0u; i < 17u; ++i)
         rejects_test(i);
-    for (unsigned i = 0u; i < 3u; ++i)
+    for (unsigned i = 0u; i < 3u; ++i) {
         retained_test(i);
+        near_worker_retained_test(i);
+    }
     unsupported_and_validation_test();
     return 0;
 }

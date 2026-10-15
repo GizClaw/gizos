@@ -334,13 +334,6 @@ static int control_near_source(h2_aec_calibration_t *r, bool enabled) {
 static int stop_phase(h2_aec_calibration_t *r) {
     const h2_pal_audio_api_t *a = r->config.audio;
     int rc, first = H2_PAL_OK;
-    if (r->near_retained) {
-        rc = control_near_source(r, false);
-        if (rc != H2_PAL_OK)
-            first = rc;
-        else
-            r->near_retained = false;
-    }
     if (r->mic_started) {
         rc = h2_pal_audio_stop_mic(a);
         if (rc != H2_AUDIO_OK) {
@@ -370,6 +363,13 @@ static int stop_phase(h2_aec_calibration_t *r) {
         } else {
             r->speaker_started = false;
         }
+    }
+    /* Every independent-source callback requires joined DUT workers. Keep
+     * the source and its borrowed probe alive if either worker cannot stop. */
+    if (r->near_retained && !r->mic_started && !r->speaker_started) {
+        rc = control_near_source(r, false);
+        if (rc != H2_PAL_OK && first == H2_PAL_OK)
+            first = rc;
     }
     return first;
 }

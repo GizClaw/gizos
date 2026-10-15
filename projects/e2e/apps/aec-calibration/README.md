@@ -28,7 +28,7 @@
 
 所有实际测过的候选与失败证据都保留。`PARETO_ONLY` 只返回互不支配的可用组合；`SPEAKER_FIRST` 先最大化扬声器，再在同音量中选择最高 mic；`MIC_FIRST` 顺序相反。相同 actual 值按输入顺序稳定选择。两个方向存在取舍时，不声称存在唯一的双最大值；结果从不自动应用到产品或持久化。
 
-Runner 由 Memory PAL 分配，复制候选与 limits，借用 provider 和独立源 user。Callbacks 不等待、不分配、不调用 Audio；capture 与 playback 各自写独立测量计数，停止并 join 后才由 runner 读取。注册／撤销 observer 需要两个 worker 都停止；失败必须保留旧 registration user。任何阶段、stop、close、unregister 或恢复原控制值失败都不能授予资格。清理尽量停止独立资源；独立声源停止失败仍尝试停 DUT，track close 失败则保留其 handle 与 speaker，避免 provider 销毁 track 后重试悬空地址。失败保留 runner／probe／依赖供 `cleanup` 或 `destroy` 重试，直到成功才释放。
+Runner 由 Memory PAL 分配，复制候选与 limits，借用 provider 和独立源 user。Callbacks 不等待、不分配、不调用 Audio；capture 与 playback 各自写独立测量计数，停止并 join 后才由 runner 读取。注册／撤销 observer 需要两个 worker 都停止；失败必须保留旧 registration user。任何阶段、stop、close、unregister 或恢复原控制值失败都不能授予资格。清理先停止并 join DUT 的 mic／speaker worker，再调用独立声源的停止 callback。DUT stop／track close 失败时保留独立声源、借用 probe 和依赖供重试；track close 失败还保留其 handle 与 speaker，避免 provider 销毁 track 后重试悬空地址。独立声源停止失败时 DUT worker 已停止，probe 保留到独立声源成功停止。失败保留 runner／probe／依赖供 `cleanup` 或 `destroy` 重试，直到成功才释放。
 
 `h2_aec_calibration_report()` 通过调用方 writer 输出带统一 run identity 的 `AEC_CALIBRATION` JSON records，包含格式、probe、幅度、频点、阈值、请求／实际控制、每阶段完整测量、Pareto、selection、complete 与 cleanup。Writer 必须校验完整写入并自行加入换行。`three-band-two-level-v2` probe identity 绑定双讲逐 far 频带抑制条件；旧 probe 记录不能继承这项资格。独立公共验证器重新核对阶段、能量／削波／逐频带 far suppression／near retention、cadence、Pareto 与选择策略，拒绝缺失、重复、混合 run 或矛盾的 PASS。
 

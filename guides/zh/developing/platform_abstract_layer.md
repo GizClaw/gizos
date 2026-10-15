@@ -332,6 +332,12 @@ h2/pal/hal/h2_pal_wifi_settings.h
 
 Single-button periph payload 同时声明输入交付模式。`POLL_STATE` 表示 Runtime 通过 Button PAL 读取稳定的 pressed/released 状态；`PUSH_EDGE` 表示拥有该 periph 的 adapter 主动向 Runtime 推送 raw down/up edge，Runtime 不再调用 Button PAL read。未提供 payload 的既有 single-button periph 按 `POLL_STATE` 处理。交付模式是 periph 能力，不是 App component 类型；launcher 仍通过 component mapping 把相同的 App Button component 映射到不同来源。
 
+### Audio AEC 观察
+
+Audio PAL 的可选 `set_aec_observer` 操作提供实际 AEC 的同帧 raw ADC、reference input、processed PCM，以及实际交给 DAC 的播放数据和处理错误。注册时复制 descriptor，callback 中的 PCM 只在调用期间借用；caller 的 user 必须保留到成功撤销。注册、替换和撤销要求 mic、speaker 均停止且 worker 已 join，失败保留旧注册；callback 不等待、不分配、不重入 Audio。
+
+具备完整诊断的 ES8311+ES7210 provider 实现该操作，其余 provider 明确返回 `UNSUPPORTED`，普通 Audio 能力保持各自合同。Runtime 和 lazy Audio proxy 透明转发；替换采集 PCM 的 Testing Audio decorator 不提供声学校准诊断。完整约束见 [Audio AEC Calibration PAL contract](./audio_aec_calibration)，测试与设备声学资格分别由实际执行和独立近端声源夹具证明。
+
 ### Modem 通话扬声器音量
 
 `h2_pal_modem` 通过 `H2_PAL_MODEM_CAPABILITY_CALL_VOLUME` 声明通话扬声器音量能力，`h2_pal_modem_set_call_volume()` / `h2_pal_modem_get_call_volume()` 统一使用 `0..100` percent，模块原生档位由 provider 映射。Quectel 使用 `AT+CLVL`，每次 open 后首次使用时探测并缓存范围；SIMCom 暂不实现，未提供该能力的 provider 返回 `H2_PAL_ERR_UNSUPPORTED`。该接口不控制麦克风、铃声、音频路由或功放，也不要求已有通话，可在拨号前设置。
