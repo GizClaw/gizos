@@ -283,6 +283,8 @@ The mobile consumer imports actual native SDK packages and injects the public ow
 
 The nonce-bound AAAA peer witness is committed with its successful UDP send under the same lock used by verification. The automatic host `//projects/e2e/libs/pal-ipv6-fixture:dns_publication_test` uses real UDP and Events to prevent a received reply from racing its record publication, and preserves strict rejection for failed sends and wrong nonces.
 
+The board fixture emits its DNS success witness only after PAL reports the complete AAAA reply datagram sent. Negative, zero and short sends produce no success witness. Its host `//projects/e2e/libs/pal-ipv6-board-fixture:startup_cleanup_test` executes the production UDP worker with controlled receive/send/log PAL callbacks to verify those outcomes and reject wrong session names and query types; this regression does not establish physical-board qualification.
+
 ## 验证边界
 
 行为验收使用编译并执行的 C/C++ 测试、真实 SDK 构建和实际平台运行。Python 可以驱动编译、浏览器、fixture 或设备，也可以测试构建工具的实际输入输出；源码关键字、调用顺序文本、固定源码哈希和文档字节快照不作为行为验收。历史报告及其中的源码、产物摘要保留原始身份，只描述记录时的版本；当前版本通过当前构建和真实运行验证，不通过重写历史摘要继承资格。
