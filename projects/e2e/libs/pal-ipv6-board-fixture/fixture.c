@@ -591,9 +591,11 @@ static void udp_worker(void *user) {
                                          0,    0,  0, 1,  0, 16};
         memcpy(packet + size, answer, sizeof(answer));
         memcpy(packet + size + sizeof(answer), host.ip, 16);
-        h2_pal_net_udp_sendto(rt->net, sockets[0], &peer, packet,
-                              (size_t)size + sizeof(answer) + 16);
-        log_line("H2_IPV6_FIXTURE_DNS family=6 query_type=AAAA nonce_valid=1");
+        size_t response_size = (size_t)size + sizeof(answer) + 16;
+        int sent = h2_pal_net_udp_sendto(rt->net, sockets[0], &peer, packet,
+                                       response_size);
+        if (sent == (int)response_size)
+          log_line("H2_IPV6_FIXTURE_DNS family=6 query_type=AAAA nonce_valid=1");
       }
     }
     size = h2_pal_net_udp_recvfrom(rt->net, sockets[1], &peer, packet,
