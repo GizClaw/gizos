@@ -1,12 +1,8 @@
 # ESP-Mosaico E2E qualification
 
-Current checkpoint (2026-10-14): **WebRTC performance R105 two-boot PASS;
-Loader recovery R84 51/51 PASS; final original Flash restoration PASS**.
-PR #709 remains Draft. GizClaw is explicitly excluded from acceptance.
-Each receipt remains bound to its own source and immutable artifact; compile/CI
-success is not device qualification. Older investigations below retain their
-then-current failures and pending statements; later dated receipts supersede
-those statuses without relabeling old artifacts.
+Current checkpoint (2026-10-15): **rebased onto main `68e867d0`; current-baseline requalification in progress**. The 2026-10-14 R105 WebRTC, R84 Loader and final Flash restoration receipts remain historical, bound to their original sources and immutable artifacts. PR #709 stays Draft and GizClaw remains excluded. Rebase does not transfer old hardware qualification to the new binaries.
+
+The mainline retirement of the mixed PAL App also retires Mosaico's legacy `pal-pref` launcher. Preference coverage belongs to the existing independent `pal-storage` contract, including its cross-boot persistence and cleanup checks. No compatibility label or copied old App is retained.
 
 ## Comparison with existing boards
 
@@ -33,7 +29,7 @@ of admission; it must not be silently removed from the registry.
 | atomic | `atomic/devkit` | [`atomic/esp_mosaico`](atomic/esp_mosaico/BUILD.bazel) | r32 56/56 on two independent executions, all 20 workers joined; cleanup/confirmation/screens and managed install PASS |
 | libco-smoke | `libco-smoke/devkit` | [`libco-smoke/esp_mosaico`](libco-smoke/esp_mosaico/BUILD.bazel) | r32 six phases/10,000 switches on ten independent boots; confirmation/screens, managed install and actual original dump preservation PASS |
 | lua-link | `lua-link/devkit` | [`lua-link/esp_mosaico`](lua-link/esp_mosaico/BUILD.bazel) | r32 host/r6 AMOLED join: five full bilateral rounds, confirmed identities and connected hold; operator PWR cycle gives actual lost:-10 / 4100 ms / 1766 ticks, both exact public Loader returns and dump preservation PASS |
-| pal-pref | `pal-pref/devkit` | [`pal-pref/esp_mosaico`](pal-pref/esp_mosaico/BUILD.bazel) | r32 fresh 31 operations over three boots plus independent empty 1 recheck; image reset/persistence/confirmation/screens PASS after missing-ledger interruption; only private fixture prepared using distinct archived r28 image |
+| pal-pref (retired) | historical `pal-pref/devkit` | historical `pal-pref/esp_mosaico`; current replacement: `pal-storage` | r32 fresh 31 operations over three boots plus independent empty 1 recheck; image reset/persistence/confirmation/screens PASS after missing-ledger interruption; only private fixture prepared using distinct archived r28 image |
 
 | iperf | `iperf/amoled` | [`iperf/esp_mosaico`](iperf/esp_mosaico/BUILD.bazel) | r75/r19 two independent 14-case matrices and 28 actual peer witnesses PASS; artifact-bound |
 | webrtc-performance | `webrtc-performance/amoled` | [`webrtc-performance/esp_mosaico`](webrtc-performance/esp_mosaico/BUILD.bazel) | r105 two independent original smoke boots PASS, diagnostics off, actual Pion default DSCP 0; fixed private board AP, source 6c0cb80f |

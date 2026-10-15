@@ -87,11 +87,7 @@ upgrade and recovery qualification is tracked separately in the E2E matrix.
 `lua-link/esp_mosaico-join`，复用 host 入口源码并固定为 join 角色。
 HTTP、MQTT、Net/TLS、WebRTC 使用仓库共用的隔离服务端与独立 peer witnesses。
 
-板级 SDK defaults 启用共享 BLE provider 所需的 NimBLE、动态 GATT 和扩展广播，
-以及共享 DTLS provider 所需的证书生成和 DTLS-SRTP。测试入口负责决定是否启动
-这些服务；Atomic、libco 和 legacy Pref 的串口管理不附带启动 BLE。
-Mosaico Display 套件声明实际 RGB565/no-clipping 能力画像，全部 24 项断言仍执行，
-可选格式和部分越界按准确拒绝及画面保持验证。参考板的共享 helper 不变。
+板级 SDK defaults 启用共享 BLE provider 所需的 NimBLE、动态 GATT 和扩展广播，以及共享 DTLS provider 所需的证书生成和 DTLS-SRTP。测试入口负责决定是否启动这些服务；Atomic 和 libco 的串口管理不附带启动 BLE。Preference 使用独立 `pal-storage` 的跨启动合同；旧混合 PAL 的 `pal-pref` 入口已随主线退役，不保留兼容 label。Mosaico Display 套件声明实际 RGB565/no-clipping 能力画像，全部 24 项断言仍执行，可选格式和部分越界按准确拒绝及画面保持验证。参考板的共享 helper 不变。
 
 The dual-CDC artifact defaults select esp_tinyusb's eFuse base-MAC USB serial
 instead of its fixed example serial. This allows two Mosaico boards to be
