@@ -769,6 +769,7 @@ static h2_pal_result_t reconnect_and_verify_reboot(
     const h2_h2loader_host_status_t *before,
     h2_h2loader_host_status_t *out_status) {
     h2_pal_result_t rc = H2_PAL_ERR_TIMEOUT;
+    int reported_verification = 0;
     for (uint32_t attempt = 0u; attempt < 120u; ++attempt) {
         if (context->config->is_cancelled != NULL &&
             context->config->is_cancelled(context->config->cancel_user)) {
@@ -786,6 +787,17 @@ static h2_pal_result_t reconnect_and_verify_reboot(
         if (rc == H2_PAL_OK) {
             rc = h2_h2loader_cli_verify_reboot_status(kind, before, out_status);
             if (rc == H2_PAL_OK) return H2_PAL_OK;
+            if (!reported_verification) {
+                reported_verification = 1;
+                (void)h2_h2loader_cli_output(
+                    context, H2_H2LOADER_CLI_STREAM_STDERR,
+                    "h2loader: reboot verification waiting running=%u next=%u "
+                    "role=%u intent=%u stage_valid=%u last=%d\n",
+                    out_status->running_partition, out_status->next_partition,
+                    (unsigned)out_status->active_role,
+                    (unsigned)out_status->boot_intent,
+                    (unsigned)out_status->stage.valid, (int)out_status->last);
+            }
         }
         (void)h2_h2loader_cli_transport_disconnect(transport);
     }
