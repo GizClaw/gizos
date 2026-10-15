@@ -167,7 +167,7 @@ static h2_pal_result_t netif_status(esp_netif_t *netif,
   }
 #if LWIP_IPV6
   esp_ip6_addr_t addresses[CONFIG_LWIP_IPV6_NUM_ADDRESSES];
-  int address_count = esp_netif_get_all_ip6(netif, addresses);
+  int address_count = esp_netif_get_all_preferred_ip6(netif, addresses);
   for (int i = 0; i < address_count; ++i) {
     out_status->ipv6.family = H2_PAL_NET_FAMILY_IPV6;
     memcpy(out_status->ipv6.ip, addresses[i].addr, 16u);

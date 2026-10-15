@@ -34,6 +34,7 @@ typedef struct esp_netif {
   esp_err_t dns_result[ESP_NETIF_DNS_MAX];
 #if LWIP_IPV6
   esp_ip6_addr_t ipv6[CONFIG_LWIP_IPV6_NUM_ADDRESSES];
+  uint8_t ipv6_preferred[CONFIG_LWIP_IPV6_NUM_ADDRESSES];
   int ipv6_count;
 #endif
 } esp_netif_t;
@@ -47,6 +48,8 @@ bool esp_netif_is_netif_up(esp_netif_t *netif);
 esp_err_t esp_netif_get_ip_info(esp_netif_t *netif, esp_netif_ip_info_t *ip);
 #if LWIP_IPV6
 int esp_netif_get_all_ip6(esp_netif_t *netif, esp_ip6_addr_t *addresses);
+int esp_netif_get_all_preferred_ip6(esp_netif_t *netif,
+                                    esp_ip6_addr_t *addresses);
 #endif
 esp_err_t esp_netif_get_mac(esp_netif_t *netif, uint8_t *mac);
 esp_err_t esp_netif_get_mtu(esp_netif_t *netif, uint16_t *mtu);

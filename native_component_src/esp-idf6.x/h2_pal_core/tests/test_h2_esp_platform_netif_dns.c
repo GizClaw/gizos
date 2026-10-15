@@ -59,6 +59,18 @@ int esp_netif_get_all_ip6(esp_netif_t *netif, esp_ip6_addr_t *addresses) {
          (size_t)netif->ipv6_count * sizeof(*addresses));
   return netif->ipv6_count;
 }
+int esp_netif_get_all_preferred_ip6(esp_netif_t *netif,
+                                    esp_ip6_addr_t *addresses) {
+  assert(s_tcpip);
+  assert(netif->ipv6_count >= 0 &&
+         netif->ipv6_count <= CONFIG_LWIP_IPV6_NUM_ADDRESSES);
+  int count = 0;
+  for (int i = 0; i < netif->ipv6_count; ++i) {
+    if (netif->ipv6_preferred[i] != 0u)
+      addresses[count++] = netif->ipv6[i];
+  }
+  return count;
+}
 #endif
 esp_err_t esp_netif_get_mac(esp_netif_t *netif, uint8_t *mac) {
   (void)netif;
@@ -159,6 +171,7 @@ static void begin_monitor(void) {
   memset(s_servers, 0, sizeof(s_servers));
 #if LWIP_IPV6
   memset(s_wifi.ipv6, 0, sizeof(s_wifi.ipv6));
+  memset(s_wifi.ipv6_preferred, 0, sizeof(s_wifi.ipv6_preferred));
   s_wifi.ipv6_count = 0;
 #endif
   s_default = &s_wifi;
@@ -343,6 +356,7 @@ static void test_ipv6_netif_and_dns_scope(void) {
   const uint8_t global[16] = {0xfdu, 0x53u, 0, 0, 0, 0, 0, 0,
                             0, 0, 0, 0, 0, 0, 0, 2u};
   memcpy(s_wifi.ipv6[0].addr, link_local, sizeof(link_local));
+  s_wifi.ipv6_preferred[0] = 1u;
   s_wifi.ipv6_count = 1;
   s_wifi.dns[1].ip.type = ESP_IPADDR_TYPE_V6;
   memcpy(s_wifi.dns[1].ip.u_addr.ip6.addr, link_local, sizeof(link_local));
@@ -358,12 +372,23 @@ static void test_ipv6_netif_and_dns_scope(void) {
   assert(status.dns[1].addr.scope_id == (uint32_t)s_wifi.index);
   assert(memcmp(status.dns[1].addr.ip, link_local, sizeof(link_local)) == 0);
   memcpy(s_wifi.ipv6[1].addr, global, sizeof(global));
+  s_wifi.ipv6_preferred[1] = 1u;
   s_wifi.ipv6_count = 2;
   memcpy(s_wifi.dns[1].ip.u_addr.ip6.addr, global, sizeof(global));
   assert(h2_pal_netif_get_status(api, NULL, &status) == H2_PAL_OK);
   assert(status.ipv6.scope_id == 0u);
   assert(memcmp(status.ipv6.ip, global, sizeof(global)) == 0);
   assert(status.dns[1].addr.scope_id == 0u);
+  /* Deprecated global addresses no longer hide a usable scoped link-local. */
+  s_wifi.ipv6_preferred[1] = 0u;
+  assert(h2_pal_netif_get_status(api, NULL, &status) == H2_PAL_OK);
+  assert((status.flags & H2_PAL_NETIF_FLAG_HAS_IPV6) != 0u);
+  assert(status.ipv6.scope_id == (uint32_t)s_wifi.index);
+  assert(memcmp(status.ipv6.ip, link_local, sizeof(link_local)) == 0);
+  s_wifi.ipv6_preferred[0] = 0u;
+  assert(h2_pal_netif_get_status(api, NULL, &status) == H2_PAL_OK);
+  assert((status.flags & H2_PAL_NETIF_FLAG_HAS_IPV6) == 0u);
+  assert(status.ipv6.family == H2_PAL_NET_FAMILY_ANY);
   s_wifi.dns_result[1] = ESP_FAIL;
   assert(h2_pal_netif_get_status(api, NULL, &status) == H2_PAL_OK);
   assert(status.dns_count == 1u);

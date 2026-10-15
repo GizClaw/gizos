@@ -26,12 +26,15 @@ typedef int bk_err_t;
 typedef enum { NETIF_IF_STA=0, NETIF_IF_AP=1 } netif_if_t;
 typedef struct { char ip[16], mask[16], gateway[16], dns[16]; } netif_ip4_config_t;
 enum { BK_OK=0, BK_ERR_NULL_PARAM=-1 };
+enum { EVENT_WIFI_STA_GOT_IPV6=1, EVENT_WIFI_STA_DISCONNECTED=2 };
 extern int ipc_calls, sta_updates, ap_updates;
+extern int ip6_updates, disconnect_events;
 extern netif_ip4_config_t cp_ap, local_sta;
 void ip_address_set(int iface,int dhcp,char *ip,char *mask,char *gw,char *dns);
 bk_err_t bk_netif_set_ip4_config(netif_if_t,const netif_ip4_config_t *);
 bk_err_t sdk_internal_sta_callback(const netif_ip4_config_t *);
 int sdk_other_source(void);
+void sdk_station_event(int event);
 #endif
 '''
 
@@ -39,6 +42,7 @@ BROKEN_SDK = r'''
 #include "stub.h"
 #include <string.h>
 int ipc_calls, sta_updates, ap_updates;
+int ip6_updates, disconnect_events;
 netif_ip4_config_t cp_ap, local_sta;
 void ip_address_set(int iface,int dhcp,char *ip,char *mask,char *gw,char *dns) {
     (void)dhcp; (void)mask; (void)gw; (void)dns;
@@ -56,6 +60,16 @@ bk_err_t bk_netif_set_ip4_config(netif_if_t ifx, const netif_ip4_config_t *ip4_c
 }
 bk_err_t sdk_internal_sta_callback(const netif_ip4_config_t *config) {
     return bk_netif_set_ip4_config(NETIF_IF_STA,config);
+}
+void sdk_station_event(int event) {
+    switch(event) {
+	case EVENT_WIFI_STA_GOT_IPV6:
+        ++ip6_updates;
+        break;
+	case EVENT_WIFI_STA_DISCONNECTED:
+        ++disconnect_events;
+        break;
+    }
 }
 '''
 
@@ -81,6 +95,10 @@ int main(void) {
     strcpy(ap.ip,"192.168.188.2");
     CHECK(bk_netif_set_ip4_config(NETIF_IF_AP,&ap)==BK_OK);
     CHECK(ipc_calls==2 && ap_updates==2 && !strcmp(cp_ap.ip,ap.ip));
+    sdk_station_event(EVENT_WIFI_STA_GOT_IPV6);
+    CHECK(ip6_updates==0);
+    sdk_station_event(EVENT_WIFI_STA_DISCONNECTED);
+    CHECK(disconnect_events==1);
     puts("SDK_OVERLAY_INTERNAL_EXTERNAL_STA_AND_AP PASS");
     return 0;
 }
@@ -149,6 +167,13 @@ target_link_libraries(probe PRIVATE sdk)
         _,result=self.configure('drift')
         self.assertNotEqual(result.returncode,0)
         self.assertIn('Pinned BK Netif STA sync signature changed',result.stdout+result.stderr)
+
+    def test_sdk_ipv6_callback_drift_fails_configure(self):
+        self.sdk_source.write_text(BROKEN_SDK.replace(
+            '\tcase EVENT_WIFI_STA_GOT_IPV6:', '\tcase EVENT_WIFI_STA_RENAMED:'))
+        _,result=self.configure('ipv6-drift')
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('Pinned BK AP IPv6 callback changed',result.stdout+result.stderr)
 
 
 if __name__=='__main__':

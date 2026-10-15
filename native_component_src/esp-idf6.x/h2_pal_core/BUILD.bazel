@@ -835,3 +835,93 @@ cc_test(
     }),
     deps = ["//libs/pal"],
 )
+
+cc_test(
+    name = "wifi_ip_test",
+    srcs = [
+        "src/h2_esp_wifi_ip.c",
+        "src/h2_esp_wifi_ip.h",
+        "tests/test_h2_esp_wifi_ip.c",
+        "tests/wifi_ip_sdk/esp_netif.h",
+        "tests/wifi_ip_sdk/esp_netif_net_stack.h",
+        "tests/wifi_ip_sdk/lwip/def.h",
+        "tests/wifi_ip_sdk/lwip/nd6.h",
+        "tests/wifi_ip_sdk/lwip/netif.h",
+        "tests/wifi_ip_sdk/lwip/priv/tcpip_priv.h",
+        "tests/wifi_ip_sdk/lwip/tcpip.h",
+        "tests/wifi_ip_sdk/sdkconfig.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "src",
+        "tests/wifi_ip_sdk",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "wifi_ipv6_off_test",
+    srcs = [
+        "src/h2_esp_wifi_ip.c",
+        "src/h2_esp_wifi_ip.h",
+        "tests/test_h2_esp_wifi_ip_off.c",
+        "tests/wifi_ip_sdk/esp_netif.h",
+        "tests/wifi_ip_sdk/esp_netif_net_stack.h",
+        "tests/wifi_ip_sdk/lwip/def.h",
+        "tests/wifi_ip_sdk/lwip/nd6.h",
+        "tests/wifi_ip_sdk/lwip/netif.h",
+        "tests/wifi_ip_sdk/lwip/priv/tcpip_priv.h",
+        "tests/wifi_ip_sdk/lwip/tcpip.h",
+        "tests/wifi_ip_sdk/sdkconfig.h",
+    ],
+    conlyopts = H2_C11_OPTS + [
+        "-DCONFIG_LWIP_IPV6=0",
+        "-DCONFIG_LWIP_IPV6_AUTOCONFIG=0",
+    ],
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "src",
+        "tests/wifi_ip_sdk",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "wifi_slaac_off_test",
+    srcs = [
+        "src/h2_esp_wifi_ip.c",
+        "src/h2_esp_wifi_ip.h",
+        "tests/test_h2_esp_wifi_ip_off.c",
+        "tests/wifi_ip_sdk/esp_netif.h",
+        "tests/wifi_ip_sdk/esp_netif_net_stack.h",
+        "tests/wifi_ip_sdk/lwip/def.h",
+        "tests/wifi_ip_sdk/lwip/nd6.h",
+        "tests/wifi_ip_sdk/lwip/netif.h",
+        "tests/wifi_ip_sdk/lwip/priv/tcpip_priv.h",
+        "tests/wifi_ip_sdk/lwip/tcpip.h",
+        "tests/wifi_ip_sdk/sdkconfig.h",
+    ],
+    conlyopts = H2_C11_OPTS + ["-DCONFIG_LWIP_IPV6_AUTOCONFIG=0"],
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "src",
+        "tests/wifi_ip_sdk",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)

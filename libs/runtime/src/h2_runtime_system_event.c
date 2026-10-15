@@ -200,6 +200,8 @@ static void copy_wifi_ip(
     out->ip4 = in->ip4;
     out->netmask4 = in->netmask4;
     out->gateway4 = in->gateway4;
+    memcpy(out->ip6, in->ip6, sizeof(out->ip6));
+    out->ip6_valid = in->ip6_valid;
 }
 
 static void copy_char_array_as_string(

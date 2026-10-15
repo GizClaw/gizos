@@ -326,6 +326,11 @@ static void test_default_reason(void) {
     CHECK(h2_ble_wifi_config_default_reason(H2_PAL_ERR_TIMEOUT, &status) ==
           H2_BLE_WIFI_CONFIG_REASON_DHCP_FAILED);
 
+    status.state = H2_PAL_WIFI_STA_STATE_GOT_IP;
+    status.ip.ip6_valid = 1u;
+    status.ip.ip6[0] = 0xfd;
+    CHECK(h2_ble_wifi_config_default_reason(H2_PAL_ERR_TIMEOUT, &status) ==
+          H2_BLE_WIFI_CONFIG_REASON_CONNECT_TIMEOUT);
     status.state = H2_PAL_WIFI_STA_STATE_DISCONNECTED;
     CHECK(h2_ble_wifi_config_default_reason(H2_PAL_ERR_TIMEOUT, &status) ==
           H2_BLE_WIFI_CONFIG_REASON_CONNECT_TIMEOUT);

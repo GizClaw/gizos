@@ -10,6 +10,7 @@
 #include "bk_private/bk_uart.h"
 #include "components/shell_task.h"
 #include "driver/uart.h"
+#include "modules/pm.h"
 #include "os/os.h"
 #include "shell_drv.h"
 #endif
@@ -23,6 +24,10 @@ static int s_direct_overflow;
 static int s_direct_initialized;
 static beken_mutex_t s_direct_write_mutex;
 static const uart_id_t s_direct_port = CONFIG_UART_PRINT_PORT;
+static const pm_sleep_module_name_e s_direct_sleep_module =
+    CONFIG_UART_PRINT_PORT == 0 ? PM_SLEEP_MODULE_NAME_UART1 :
+    CONFIG_UART_PRINT_PORT == 1 ? PM_SLEEP_MODULE_NAME_UART2 :
+                                  PM_SLEEP_MODULE_NAME_UART3;
 
 static void direct_rx_isr(uart_id_t id, void *user) {
   (void)user;
@@ -42,10 +47,18 @@ static h2_pal_result_t direct_configure(void *user, const h2_pal_uart_io_stream_
   if (s_direct_initialized) return H2_PAL_OK;
   if (!shell_uart.dev_drv || !shell_uart.dev_drv->io_ctrl) return H2_PAL_ERR_INVALID_STATE;
   if (rtos_init_mutex(&s_direct_write_mutex) != kNoErr) return H2_PAL_ERR_IO;
+  /* Raw UART I/O bypasses shell's wakeup bookkeeping. Its PM callback can
+   * otherwise suspend/backup/restore this UART during an accepted write.
+   * Own the UART's separate sleep vote, not LOG (ignored by the AP SDK). */
+  if (bk_pm_module_vote_sleep_ctrl(s_direct_sleep_module, 0u, 0u) != BK_OK) {
+    (void)rtos_deinit_mutex(&s_direct_write_mutex);
+    return H2_PAL_ERR_IO;
+  }
   s_direct_head = s_direct_tail = 0u;
   s_direct_overflow = 0;
   if (bk_uart_set_baud_rate(s_direct_port, config->baud_rate) != BK_OK ||
       bk_uart_take_rx_isr(s_direct_port, direct_rx_isr, NULL) != BK_OK) {
+    (void)bk_pm_module_vote_sleep_ctrl(s_direct_sleep_module, 1u, 0u);
     (void)rtos_deinit_mutex(&s_direct_write_mutex);
     return H2_PAL_ERR_IO;
   }
@@ -121,7 +134,7 @@ static h2_pal_result_t direct_write(void *user, const void *buffer, size_t len,
   while (suspended && result == H2_PAL_OK && *out_written < len) {
     /* With shell TX suspended and this mutex held there is no competing FIFO
      * writer. A ready-checked single-byte write cannot enter SDK's full-FIFO
-     * busy wait. Count bytes accepted by the UART, not physical wire drain. */
+     * busy wait. Keep ownership until accepted bytes leave the FIFO. */
     uint32_t level = rtos_enter_critical();
     int ready = uart_write_ready(s_direct_port) == BK_OK;
     if (ready) {
@@ -140,6 +153,11 @@ static h2_pal_result_t direct_write(void *user, const void *buffer, size_t len,
       result = H2_PAL_ERR_TIMEOUT;
     }
   }
+  /* SDK's resumed owner can change TX state. FIFO drain shares the original
+   * deadline, including partial writes; success must not hand off queued bytes. */
+  while (suspended && result == H2_PAL_OK &&
+         !bk_uart_is_tx_over(s_direct_port))
+    result = direct_wait(started, timeout_ms);
   if (suspended)
     (void)shell_uart.dev_drv->io_ctrl(&shell_uart, SHELL_IO_CTRL_TX_RESUME, NULL);
   (void)rtos_unlock_mutex(&s_direct_write_mutex);
@@ -161,6 +179,7 @@ void h2_bk_platform_uart_io_stream_deinit(void) {
     (void)bk_uart_recover_rx_isr(s_direct_port);
     s_direct_initialized = 0;
     (void)rtos_deinit_mutex(&s_direct_write_mutex);
+    (void)bk_pm_module_vote_sleep_ctrl(s_direct_sleep_module, 1u, 0u);
   }
 }
 #else

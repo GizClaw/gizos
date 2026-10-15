@@ -113,6 +113,16 @@ static void h2_bk_netif_fill_status(
                     &out->dns[out->dns_count].addr, ip_2_ip4(dns));
                 ++out->dns_count;
             }
+#if LWIP_IPV6
+            else if (dns != NULL && IP_IS_V6(dns) &&
+                     !ip6_addr_isany(ip_2_ip6(dns))) {
+              h2_pal_net_addr_t *address = &out->dns[out->dns_count++].addr;
+              address->family = H2_PAL_NET_FAMILY_IPV6;
+              memcpy(address->ip, ip_2_ip6(dns)->addr, 16u);
+              if (ip6_addr_islinklocal(ip_2_ip6(dns)))
+                address->scope_id = netif_get_index(netif);
+            }
+#endif
         }
     }
     if (!ip4_addr_isany_val(*netif_ip4_addr(netif))) {
@@ -121,6 +131,22 @@ static void h2_bk_netif_fill_status(
         h2_bk_netif_set_addr(&out->gateway4, netif_ip4_gw(netif));
         out->flags |= H2_PAL_NETIF_FLAG_HAS_IPV4;
     }
+#if LWIP_IPV6
+    for (unsigned i = 0u; i < LWIP_IPV6_NUM_ADDRESSES; ++i) {
+      if (!ip6_addr_ispreferred(netif_ip6_addr_state(netif, i)))
+        continue;
+      const ip6_addr_t *address = netif_ip6_addr(netif, i);
+      if (ip6_addr_isany(address))
+        continue;
+      out->ipv6.family = H2_PAL_NET_FAMILY_IPV6;
+      memcpy(out->ipv6.ip, address->addr, 16u);
+      out->ipv6.scope_id =
+          ip6_addr_islinklocal(address) ? netif_get_index(netif) : 0u;
+      out->flags |= H2_PAL_NETIF_FLAG_HAS_IPV6;
+      if (h2_pal_net_ipv6_is_non_link_local_unicast(out->ipv6.ip))
+        break;
+    }
+#endif
     out->mtu = netif->mtu;
     if (netif->hwaddr_len >= sizeof(out->mac)) {
         memcpy(out->mac, netif->hwaddr, sizeof(out->mac));
@@ -173,29 +199,78 @@ static void h2_bk_netif_name(
         (unsigned long)status->ref.id);
 }
 
-h2_pal_result_t h2_bk_netif_address_for_prefix(
-    const char *prefix, h2_pal_net_addr_t *out_addr) {
-    if (prefix == NULL || prefix[0] == '\0' || out_addr == NULL)
-        return H2_PAL_ERR_INVALID_ARG;
-    memset(out_addr, 0, sizeof(*out_addr));
-    h2_bk_netif_snapshot_t snapshot;
-    h2_pal_result_t rc = h2_bk_netif_snapshot(&snapshot);
-    if (rc != H2_PAL_OK) return rc;
-    size_t prefix_len = strlen(prefix);
-    int matched = 0;
+h2_pal_result_t h2_bk_netif_address_for_prefix(const char *prefix,
+                                               h2_pal_net_family_t family,
+                                               h2_pal_net_addr_t *out_addr) {
+  if (out_addr == NULL ||
+      (family != H2_PAL_NET_FAMILY_IPV4 && family != H2_PAL_NET_FAMILY_IPV6))
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_addr, 0, sizeof(*out_addr));
+#if !LWIP_IPV6
+  if (family == H2_PAL_NET_FAMILY_IPV6)
+    return H2_PAL_ERR_UNSUPPORTED;
+#endif
+  h2_bk_netif_snapshot_t snapshot;
+  h2_pal_result_t rc = h2_bk_netif_snapshot(&snapshot);
+  if (rc != H2_PAL_OK)
+    return rc;
+  const int explicit_prefix = prefix != NULL && prefix[0] != '\0';
+  const size_t prefix_len = explicit_prefix ? strlen(prefix) : 0u;
+  int matched = !explicit_prefix;
+  /* Actual default first, then physical interfaces, then loopback only for
+   * an unfiltered host lookup. Explicit prefixes never change interfaces. */
+  for (unsigned pass = 0u; pass < 3u; ++pass) {
     for (size_t index = 0u; index < snapshot.count; ++index) {
-        const h2_pal_netif_status_t *status = &snapshot.entries[index];
-        char name[H2_PAL_NETIF_NAME_MAX];
-        h2_bk_netif_name(status, name);
-        if (strncmp(name, prefix, prefix_len) != 0) continue;
-        matched = 1;
-        if (!h2_pal_netif_status_is_usable(status) ||
-            status->ipv4.family != H2_PAL_NET_FAMILY_IPV4) continue;
-        *out_addr = status->ipv4;
-        out_addr->port = 0u;
-        return H2_PAL_OK;
+      const h2_pal_netif_status_t *status = &snapshot.entries[index];
+      char name[H2_PAL_NETIF_NAME_MAX];
+      h2_bk_netif_name(status, name);
+      if (explicit_prefix && strncmp(name, prefix, prefix_len) != 0)
+        continue;
+      matched = 1;
+      const int loopback = status->kind == H2_PAL_NETIF_KIND_LOOPBACK;
+      if ((pass == 0u && !(status->flags & H2_PAL_NETIF_FLAG_DEFAULT_ROUTE)) ||
+          (pass == 1u && loopback) ||
+          (pass == 2u && (explicit_prefix || !loopback)) ||
+          !(status->flags & H2_PAL_NETIF_FLAG_UP))
+        continue;
+      const uint32_t flag = family == H2_PAL_NET_FAMILY_IPV4
+                                ? H2_PAL_NETIF_FLAG_HAS_IPV4
+                                : H2_PAL_NETIF_FLAG_HAS_IPV6;
+      if (!(status->flags & flag))
+        continue;
+      *out_addr =
+          family == H2_PAL_NET_FAMILY_IPV4 ? status->ipv4 : status->ipv6;
+      out_addr->port = 0u;
+      return H2_PAL_OK;
     }
-    return matched ? H2_PAL_ERR_UNAVAILABLE : H2_PAL_ERR_NOT_FOUND;
+  }
+  return matched ? H2_PAL_ERR_UNAVAILABLE : H2_PAL_ERR_NOT_FOUND;
+}
+
+typedef struct h2_bk_netif_name_call {
+  struct tcpip_api_call_data call;
+  uint32_t index;
+  char name[H2_PAL_NETIF_NAME_MAX];
+} h2_bk_netif_name_call_t;
+
+static err_t h2_bk_netif_native_name_call(struct tcpip_api_call_data *raw) {
+  h2_bk_netif_name_call_t *request = (h2_bk_netif_name_call_t *)raw;
+  return netif_index_to_name((uint8_t)request->index, request->name) != NULL
+             ? ERR_OK
+             : ERR_IF;
+}
+
+h2_pal_result_t h2_bk_netif_native_name(uint32_t index, char *out,
+                                        size_t size) {
+  if (!index || index > UINT8_MAX || out == NULL ||
+      size < H2_PAL_NETIF_NAME_MAX)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out, 0, size);
+  h2_bk_netif_name_call_t request = {.index = index};
+  if (tcpip_api_call(h2_bk_netif_native_name_call, &request.call) != ERR_OK)
+    return H2_PAL_ERR_NOT_FOUND;
+  memcpy(out, request.name, sizeof(request.name));
+  return H2_PAL_OK;
 }
 
 static int h2_bk_netif_matches_filter(
@@ -279,23 +354,39 @@ static h2_pal_result_t h2_bk_netif_find(
     return H2_PAL_ERR_NOT_FOUND;
 }
 
-static h2_pal_result_t h2_bk_netif_get_status(
-    void *user,
-    const h2_pal_netif_ref_t *ref,
-    h2_pal_netif_status_t *out_status) {
-    (void)user;
-    h2_bk_netif_snapshot_t snapshot;
-    h2_pal_result_t rc = h2_bk_netif_snapshot(&snapshot);
-    if (rc != H2_PAL_OK) {
-        return rc;
-    }
-    for (size_t i = 0u; i < snapshot.count; ++i) {
-        if (h2_bk_netif_matches_ref(&snapshot.entries[i], ref)) {
-            *out_status = snapshot.entries[i];
-            return H2_PAL_OK;
+typedef struct h2_bk_netif_status_call {
+    struct tcpip_api_call_data call;
+    const h2_pal_netif_ref_t *ref;
+    h2_pal_netif_status_t *status;
+    int found;
+} h2_bk_netif_status_call_t;
+
+static err_t h2_bk_netif_get_status_api_call(struct tcpip_api_call_data *raw) {
+    h2_bk_netif_status_call_t *request = (h2_bk_netif_status_call_t *)raw;
+    for (struct netif *netif = netif_list; netif != NULL; netif = netif->next) {
+        h2_bk_netif_fill_status(netif, request->status);
+        if (h2_bk_netif_matches_ref(request->status, request->ref)) {
+            request->found = 1;
+            return ERR_OK;
         }
     }
-    return H2_PAL_ERR_NOT_FOUND;
+    memset(request->status, 0, sizeof(*request->status));
+    return ERR_OK;
+}
+
+static h2_pal_result_t h2_bk_netif_get_status(
+    void *user, const h2_pal_netif_ref_t *ref, h2_pal_netif_status_t *out_status) {
+    (void)user;
+    if (out_status == NULL) return H2_PAL_ERR_INVALID_ARG;
+    memset(out_status, 0, sizeof(*out_status));
+    /* A station address event runs on the SDK's small event-task stack. A
+     * single-interface query must not reserve the full 16-interface list. */
+    h2_bk_netif_status_call_t request = {.ref = ref, .status = out_status};
+    if (tcpip_api_call(h2_bk_netif_get_status_api_call, &request.call) != ERR_OK) {
+        memset(out_status, 0, sizeof(*out_status));
+        return H2_PAL_ERR_IO;
+    }
+    return request.found ? H2_PAL_OK : H2_PAL_ERR_NOT_FOUND;
 }
 
 static h2_pal_result_t h2_bk_netif_get_dns_servers(

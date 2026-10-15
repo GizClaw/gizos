@@ -1,8 +1,10 @@
+#include "esp_timer.h"
 #include "h2_esp_platform_core.h"
 #include "h2_esp_platform_safe_call.h"
 #include "h2_esp_platform_wifi_activity.h"
-#include "h2_esp_wifi_activity_tracker.h"
 #include "h2_esp_platform_wifi_internal.h"
+#include "h2_esp_wifi_activity_tracker.h"
+#include "h2_esp_wifi_ip.h"
 #include "h2_esp_wifi_teardown.h"
 
 #include "esp_event.h"
@@ -30,6 +32,8 @@ static int s_h2_esp_wifi_started;
 static wifi_config_t s_h2_esp_wifi_legacy_config;
 static esp_err_t s_h2_esp_wifi_legacy_result = ESP_ERR_INVALID_STATE;
 static int s_h2_esp_wifi_events_registered;
+ESP_EVENT_DEFINE_BASE(H2_ESP_WIFI_ADDRESS_EVENT);
+static esp_timer_handle_t s_h2_esp_wifi_address_timer;
 /* Set once the STA_CONNECTED DNS handler sits after the default handlers of
  * the current STA netif; cleared with that netif so the next one re-registers. */
 static int s_h2_esp_wifi_sta_dns_handler_registered;
@@ -323,6 +327,9 @@ static void h2_esp_wifi_post_sta_lost_ip(
     status.state = next_state;
     status.ip_valid = 0u;
     memset(&status.ip, 0, sizeof(status.ip));
+    s_h2_esp_wifi_association.ip_valid = 0u;
+    memset(&s_h2_esp_wifi_association.ip, 0,
+           sizeof(s_h2_esp_wifi_association.ip));
     status.disconnect_reason = disconnect_reason;
     h2_esp_wifi_post_sta_system_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_LOST_IP, &status);
 }
@@ -472,13 +479,62 @@ static int h2_esp_wifi_stop_driver_if_sta_idle(void) {
     return H2_PAL_OK;
 }
 
+/* Runs only on the serialized ESP event loop. Re-read current addresses,
+ * rather than trusting late DHCP/IP6 payloads from an earlier association. */
+static void h2_esp_wifi_refresh_ip(void) {
+  if (s_h2_esp_wifi_sta_netif == NULL ||
+      (xEventGroupGetBits(s_h2_esp_wifi_events) &
+       H2_ESP_WIFI_EVENT_CONNECTED) == 0u)
+    return;
+  wifi_ap_record_t link = {0};
+  if (esp_wifi_sta_get_ap_info(&link) != ESP_OK ||
+      memcmp(link.bssid, s_h2_esp_wifi_association.bssid, 6u) != 0)
+    return;
+  h2_pal_wifi_sta_status_t status = s_h2_esp_wifi_association;
+  h2_esp_wifi_ip_snapshot(s_h2_esp_wifi_sta_netif, &status);
+  status.state = H2_PAL_WIFI_STA_STATE_GOT_IP;
+  const int ready = h2_pal_wifi_sta_status_has_ip(&status);
+  const int changed =
+      status.ip_valid != s_h2_esp_wifi_association.ip_valid ||
+      memcmp(&status.ip, &s_h2_esp_wifi_association.ip, sizeof(status.ip)) != 0;
+  status.state =
+      ready ? H2_PAL_WIFI_STA_STATE_GOT_IP : H2_PAL_WIFI_STA_STATE_CONNECTED;
+  status.rssi = link.rssi;
+  const int lost = s_h2_esp_wifi_had_ip && !ready;
+  s_h2_esp_wifi_association = status;
+  s_h2_esp_wifi_had_ip = ready;
+  if (ready)
+    xEventGroupSetBits(s_h2_esp_wifi_events, H2_ESP_WIFI_EVENT_GOT_IP);
+  else
+    xEventGroupClearBits(s_h2_esp_wifi_events, H2_ESP_WIFI_EVENT_GOT_IP);
+  if (changed && ready)
+    h2_esp_wifi_post_sta_system_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_GOT_IP,
+                                      &status);
+  else if (lost)
+    h2_esp_wifi_post_sta_system_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_LOST_IP,
+                                      &status);
+}
+
+static void h2_esp_wifi_address_timer_callback(void *user) {
+  (void)user;
+  /* The timer never mutates association state; the event loop owns it. */
+  (void)esp_event_post(H2_ESP_WIFI_ADDRESS_EVENT, 0, NULL, 0u, 0u);
+}
+
 static void h2_esp_wifi_sta_connected_dns_handler(void *arg, esp_event_base_t event_base,
                                                   int32_t event_id, void *event_data) {
     (void)arg;
     (void)event_base;
     (void)event_id;
     (void)event_data;
-    /* Put the default interface's DNS servers back after DHCP start. */
+    /* This id-specific observer is after ESP-NETIF's connected handler. */
+    int rc = h2_esp_wifi_ip_start(s_h2_esp_wifi_sta_netif);
+    if (rc != H2_PAL_OK && rc != H2_PAL_ERR_UNSUPPORTED)
+      (void)h2_pal_log_write(h2_esp_platform_log_api(), H2_PAL_LOG_ERROR,
+                             "wifi", "IPv6 station initialization failed");
+    if (s_h2_esp_wifi_address_timer != NULL)
+      (void)esp_timer_start_periodic(s_h2_esp_wifi_address_timer, 1000000u);
+    h2_esp_wifi_refresh_ip();
     (void)h2_esp_platform_netif_reconcile_default();
 }
 
@@ -490,6 +546,10 @@ static void h2_esp_wifi_event_handler(
     (void)arg;
     if (s_h2_esp_wifi_events == NULL) {
         return;
+    }
+    if (event_base == H2_ESP_WIFI_ADDRESS_EVENT) {
+      h2_esp_wifi_refresh_ip();
+      return;
     }
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_CONNECTED) {
         /* A fresh association cannot inherit the old lease, even if a
@@ -518,15 +578,18 @@ static void h2_esp_wifi_event_handler(
         return;
     }
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        h2_pal_wifi_sta_status_t status;
-        memset(&status, 0, sizeof(status));
-        status.state = H2_PAL_WIFI_STA_STATE_DISCONNECTED;
-        const wifi_event_sta_disconnected_t *disconnected =
-            (const wifi_event_sta_disconnected_t *)event_data;
-        if (disconnected != NULL) {
-            status.disconnect_reason = disconnected->reason;
-            s_h2_esp_wifi_sta_disconnect_reason = disconnected->reason;
-        }
+      if (s_h2_esp_wifi_address_timer != NULL)
+        (void)esp_timer_stop(s_h2_esp_wifi_address_timer);
+      h2_esp_wifi_ip_stop(s_h2_esp_wifi_sta_netif);
+      h2_pal_wifi_sta_status_t status;
+      memset(&status, 0, sizeof(status));
+      status.state = H2_PAL_WIFI_STA_STATE_DISCONNECTED;
+      const wifi_event_sta_disconnected_t *disconnected =
+          (const wifi_event_sta_disconnected_t *)event_data;
+      if (disconnected != NULL) {
+        status.disconnect_reason = disconnected->reason;
+        s_h2_esp_wifi_sta_disconnect_reason = disconnected->reason;
+      }
         h2_esp_wifi_post_sta_lost_ip(
             H2_PAL_WIFI_STA_STATE_DISCONNECTED, status.disconnect_reason);
         memset(&s_h2_esp_wifi_association, 0, sizeof(s_h2_esp_wifi_association));
@@ -540,37 +603,25 @@ static void h2_esp_wifi_event_handler(
         return;
     }
     if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
-        xEventGroupSetBits(s_h2_esp_wifi_events, H2_ESP_WIFI_EVENT_GOT_IP);
-        h2_pal_wifi_sta_status_t status;
-        status = s_h2_esp_wifi_association;
-        status.state = H2_PAL_WIFI_STA_STATE_GOT_IP;
-        const ip_event_got_ip_t *got_ip = (const ip_event_got_ip_t *)event_data;
-        if (got_ip != NULL) {
-            status.ip.ip4 = lwip_ntohl(got_ip->ip_info.ip.addr);
-            status.ip.netmask4 = lwip_ntohl(got_ip->ip_info.netmask.addr);
-            status.ip.gateway4 = lwip_ntohl(got_ip->ip_info.gw.addr);
-            status.ip_valid = 1u;
-        }
-        if (status.ip_valid != 0u) {
-            s_h2_esp_wifi_had_ip = 1;
-        }
-        h2_esp_wifi_post_sta_system_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_GOT_IP, &status);
-        (void)h2_esp_platform_netif_reconcile_default();
-        return;
+      const ip_event_got_ip_t *got = event_data;
+      if (got != NULL && got->esp_netif == s_h2_esp_wifi_sta_netif)
+        h2_esp_wifi_refresh_ip();
+      (void)h2_esp_platform_netif_reconcile_default();
+      return;
     }
+#if CONFIG_LWIP_IPV6
+    if (event_base == IP_EVENT && event_id == IP_EVENT_GOT_IP6) {
+      const ip_event_got_ip6_t *got = event_data;
+      if (got != NULL && got->esp_netif == s_h2_esp_wifi_sta_netif)
+        h2_esp_wifi_refresh_ip();
+      return;
+    }
+#endif
     if (event_base == IP_EVENT && event_id == IP_EVENT_STA_LOST_IP) {
-        /* Ignore a delayed event from a previous association if the current
-         * interface still owns a real address. */
-        esp_netif_ip_info_t current_ip;
-        if (s_h2_esp_wifi_had_ip != 0 &&
-            (s_h2_esp_wifi_sta_netif == NULL ||
-             esp_netif_get_ip_info(s_h2_esp_wifi_sta_netif, &current_ip) != ESP_OK ||
-             current_ip.ip.addr == 0u)) {
-            h2_esp_wifi_post_sta_lost_ip(H2_PAL_WIFI_STA_STATE_CONNECTED, 0);
-            xEventGroupClearBits(s_h2_esp_wifi_events, H2_ESP_WIFI_EVENT_GOT_IP);
-        }
-        (void)h2_esp_platform_netif_reconcile_default();
-        return;
+      /* IPv4 can disappear while the station retains preferred IPv6. */
+      h2_esp_wifi_refresh_ip();
+      (void)h2_esp_platform_netif_reconcile_default();
+      return;
     }
 #if CONFIG_ESP_WIFI_SOFTAP_SUPPORT
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_AP_START) {
@@ -747,6 +798,16 @@ int h2_esp_platform_wifi_ensure_started(void) {
         s_h2_esp_wifi_sta_dns_handler_registered = 1;
     }
 
+    if (s_h2_esp_wifi_address_timer == NULL) {
+      const esp_timer_create_args_t timer = {
+          .callback = h2_esp_wifi_address_timer_callback,
+          .name = "h2_wifi_ip",
+      };
+      err = esp_timer_create(&timer, &s_h2_esp_wifi_address_timer);
+      if (err != ESP_OK)
+        return h2_esp_wifi_map_error(err);
+    }
+
     if (s_h2_esp_wifi_events_registered == 0) {
         err = esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, h2_esp_wifi_event_handler, NULL);
         if (err != ESP_OK) {
@@ -756,6 +817,16 @@ int h2_esp_platform_wifi_ensure_started(void) {
         if (err != ESP_OK) {
             return h2_esp_wifi_map_error(err);
         }
+        err = esp_event_handler_register(H2_ESP_WIFI_ADDRESS_EVENT, 0,
+                                         h2_esp_wifi_event_handler, NULL);
+        if (err != ESP_OK)
+          return h2_esp_wifi_map_error(err);
+#if CONFIG_LWIP_IPV6
+        err = esp_event_handler_register(IP_EVENT, IP_EVENT_GOT_IP6,
+                                         h2_esp_wifi_event_handler, NULL);
+        if (err != ESP_OK)
+          return h2_esp_wifi_map_error(err);
+#endif
         err = esp_event_handler_register(IP_EVENT, IP_EVENT_STA_LOST_IP, h2_esp_wifi_event_handler, NULL);
         if (err != ESP_OK) {
             return h2_esp_wifi_map_error(err);
@@ -939,21 +1010,10 @@ static int h2_esp_wifi_sta_get_status(
     esp_err_t err = esp_wifi_sta_get_ap_info(&ap_info);
     if (err == ESP_OK) {
         h2_esp_wifi_status_from_ap(out_status, &ap_info);
-        if (s_h2_esp_wifi_events != NULL) {
-            EventBits_t bits = xEventGroupGetBits(s_h2_esp_wifi_events);
-            if ((bits & H2_ESP_WIFI_EVENT_GOT_IP) != 0u) {
-                out_status->state = H2_PAL_WIFI_STA_STATE_GOT_IP;
-                esp_netif_ip_info_t ip_info;
-                memset(&ip_info, 0, sizeof(ip_info));
-                if (s_h2_esp_wifi_sta_netif != NULL &&
-                    esp_netif_get_ip_info(s_h2_esp_wifi_sta_netif, &ip_info) == ESP_OK) {
-                    out_status->ip.ip4 = lwip_ntohl(ip_info.ip.addr);
-                    out_status->ip.netmask4 = lwip_ntohl(ip_info.netmask.addr);
-                    out_status->ip.gateway4 = lwip_ntohl(ip_info.gw.addr);
-                    out_status->ip_valid = 1u;
-                }
-            }
-        }
+        h2_esp_wifi_ip_snapshot(s_h2_esp_wifi_sta_netif, out_status);
+        out_status->state = H2_PAL_WIFI_STA_STATE_GOT_IP;
+        if (!h2_pal_wifi_sta_status_has_ip(out_status))
+          out_status->state = H2_PAL_WIFI_STA_STATE_CONNECTED;
         return H2_PAL_OK;
     }
     if (err != ESP_ERR_WIFI_NOT_CONNECT && err != ESP_ERR_WIFI_NOT_ASSOC) {

@@ -12,6 +12,9 @@
 #define SHELL_IO_CTRL_TX_RESUME 2
 typedef int uart_id_t;
 typedef int beken_mutex_t;
+typedef enum { PM_SLEEP_MODULE_NAME_UART1=2, PM_SLEEP_MODULE_NAME_UART2=25,
+               PM_SLEEP_MODULE_NAME_UART3=26 } pm_sleep_module_name_e;
+int bk_pm_module_vote_sleep_ctrl(pm_sleep_module_name_e,uint32_t,uint32_t);
 typedef struct shell_dev shell_dev_t;
 typedef struct { int (*io_ctrl)(shell_dev_t *, int, void *); } shell_drv_t;
 struct shell_dev { shell_drv_t *dev_drv; };
