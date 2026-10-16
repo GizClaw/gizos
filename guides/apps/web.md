@@ -128,7 +128,7 @@ Audio PAL 的麦克风通过 `getUserMedia` 与 `AudioWorklet` 采集，显式�
 
 ### 持久 Filesystem
 
-`h2_web_fs_open()` 在 App 启动前锁定并恢复一个持久根目录（Emscripten IDBFS，IndexedDB 数据库名为根路径），其余目录作为只读根（例如 `--preload-file` 资源）暴露；只读根下的任何修改返回 `UNSUPPORTED`，根以外路径返回 `NOT_FOUND`。
+`h2_web_fs_open()` 在 App 启动前锁定并恢复一个持久根目录（Emscripten IDBFS，IndexedDB 数据库名为根路径），其余目录作为只读根（例如 `--preload-file` 资源）暴露；只读根下的任何修改返回 `UNSUPPORTED`，根以外路径返回 `NOT_FOUND`。可见根不要求其祖先也可见，例如配置 `/data/gizclaw` 不会暴露 `/data`；使用该根的目录创建应从最近可见的现有父目录向下进行，不能要求扩大可写范围或先创建 `/data`。
 
 - 写入策略：`write()` 只改内存；`sync()`、写模式文件 `close()`、`rename()`、`remove()`、`mkdir()`、`clear()` 是提交屏障，返回前 IndexedDB 已提交此前全部修改。原子替换（写临时文件、sync、close、rename）返回 OK 后即可在刷新后读到。不依赖 `pagehide` 保存。
 - 错误：配额 `NO_SPACE`，存储被浏览器阻止（部分隐私模式）`UNAVAILABLE`，缺少 IndexedDB 或 Web Locks `UNSUPPORTED`，其它 `IO`，提交超过 30 秒 `TIMEOUT`。失败的修改仍在内存中，下一次屏障重试；`h2_web_fs_get_status()` 给出最后一次失败的浏览器错误名与消息，打开失败同时写入 Console 与 `Module.h2WebFsLastError`。
@@ -137,6 +137,8 @@ Audio PAL 的麦克风通过 `getUserMedia` 与 `AudioWorklet` 采集，显式�
 - 限制：浏览器以 relaxed durability 提交 IndexedDB，已提交数据可跨刷新、关标签页和重启浏览器保留，但操作系统崩溃可能丢失最后一次提交；best-effort 站点存储可能在存储压力下被浏览器回收。Pref 仍使用 localStorage，跨标签页共享且无锁，后写者覆盖。
 
 底层 POSIX Filesystem 可能同步代理 syscall 到 UI。Provider 在这些调用期间释放所有嵌套 state guard，并钉住 filesystem；UI state callback 可以先于 syscall 执行，Worker 返回后重新取得 guard 再发布状态。打开过程也钉住 platform，错误路径对称释放；in-flight 调用期间 close/destroy 返回 `BUSY`，避免悬空借用。单个文件句柄在 POSIX I/O 和提交屏障期间同样保持 active；同句柄重叠的 read/seek/write/sync/close 返回 `BUSY`，读写报告零字节，拒绝的 close 保留句柄供重试。已接受的 close 在提交屏障结束后才回收 wrapper，即使返回 I/O/commit error 也已消费句柄，之后不能再使用。`//libs/pal/providers/web/pal_core/tests/fs_reentry:browser_test` 在真实 POSIX 代理内执行 UI 重入、filesystem/platform 关闭及同句柄并发操作，并在 native close 后的提交回调中再次验证句柄保活，再验证读写、sync、rename、remove、clear 与最终 teardown；原 `:browser_platform_test` 继续覆盖跨刷新持久化、多标签页和存储错误。
+
+`//libs/lua/apps/web/tests/scoped_http:browser_test` 使用真实 PAL 流式 HTTP、持久根 `/data/gizclaw` 和只读 `/data/lua`、`/data/assets`，验证 URL 安装、刷新后的 listing 与 Lua 执行、独立 KV/文件写入、卸载及再次刷新后 KV 保留；同时断言 `/data` 和无关路径仍不可见、只读修改仍被拒绝。该公共 target 也由独立 Bzlmod consumer 运行。
 
 ### HTTP
 

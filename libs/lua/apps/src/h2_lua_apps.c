@@ -128,17 +128,37 @@ int h2_lua_apps_mkdirs(h2_lua_apps_t *apps, const char *file_path) {
     return H2_PAL_ERR_NO_SPACE;
   char path[H2_LUA_APP_PATH_MAX];
   strcpy(path, file_path);
-  for (char *p = path + 1; *p; ++p) {
-    if (*p != '/')
-      continue;
-    *p = 0;
+  char *last = strrchr(path, '/');
+  if (last == NULL || last == path)
+    return H2_PAL_OK;
+  const size_t parent = (size_t)(last - path);
+  size_t anchor = parent;
+  /* A scoped filesystem can expose /data/gizclaw without exposing /data.
+   * Find the nearest existing parent before creating missing descendants. */
+  while (anchor != 0u) {
+    const char saved = path[anchor];
+    path[anchor] = '\0';
     h2_pal_fs_stat_t stat = {0};
-    int rc = h2_pal_fs_stat(apps->config.fs, path, &stat);
-    if (rc == H2_PAL_ERR_NOT_FOUND)
-      rc = h2_pal_fs_mkdir(apps->config.fs, path);
-    else if (rc == H2_PAL_OK && !stat.is_dir)
-      rc = H2_PAL_ERR_FORMAT;
-    *p = '/';
+    const int rc = h2_pal_fs_stat(apps->config.fs, path, &stat);
+    path[anchor] = saved;
+    if (rc == H2_PAL_OK) {
+      if (!stat.is_dir)
+        return H2_PAL_ERR_FORMAT;
+      break;
+    }
+    if (rc != H2_PAL_ERR_NOT_FOUND)
+      return rc;
+    do {
+      --anchor;
+    } while (anchor != 0u && path[anchor] != '/');
+  }
+  for (size_t index = anchor + 1u; index <= parent; ++index) {
+    if (index != parent && path[index] != '/')
+      continue;
+    const char saved = path[index];
+    path[index] = '\0';
+    const int rc = h2_pal_fs_mkdir(apps->config.fs, path);
+    path[index] = saved;
     if (rc != H2_PAL_OK)
       return rc;
   }

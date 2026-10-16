@@ -193,10 +193,74 @@ static void check_directory_alias(const h2_pal_sync_api_t *sync) {
   assert(h2_lua_apps_destroy(apps) == 0);
   h2_app_test_fs_deinit(&fs);
 }
+
+static unsigned outside_directory_calls;
+static int scoped_directory(const char *path) {
+  static const char root[] = "/data/gizclaw";
+  return strncmp(path, root, sizeof(root) - 1u) == 0 &&
+         (path[sizeof(root) - 1u] == '\0' || path[sizeof(root) - 1u] == '/');
+}
+static int scoped_stat(void *user, const char *path, h2_pal_fs_stat_t *out) {
+  if (!scoped_directory(path)) {
+    ++outside_directory_calls;
+    memset(out, 0, sizeof(*out));
+    return H2_PAL_ERR_NOT_FOUND;
+  }
+  return base_fs->stat(user, path, out);
+}
+static int scoped_mkdir(void *user, const char *path) {
+  if (!scoped_directory(path)) {
+    ++outside_directory_calls;
+    return H2_PAL_ERR_NOT_FOUND;
+  }
+  return base_fs->mkdir(user, path);
+}
+static void check_scoped_directory(const h2_pal_sync_api_t *sync) {
+  h2_app_test_fs_t fs;
+  assert(h2_app_test_fs_init(&fs, &storage) == H2_PAL_OK);
+  assert(h2_pal_fs_mkdir(&fs.api, "/data/gizclaw") == H2_PAL_OK);
+  base_fs = fs.api.vtable;
+  h2_pal_fs_vtable_t scoped = *base_fs;
+  scoped.stat = scoped_stat;
+  scoped.mkdir = scoped_mkdir;
+  fs.api.vtable = &scoped;
+  outside_directory_calls = 0u;
+  h2_lua_apps_config_t config = {.allocator = &allocator, .fs = &fs.api,
+      .sync = sync, .install_root = "/data/gizclaw/nested/lua_apps"};
+  h2_lua_apps_t *apps = NULL;
+  assert(h2_lua_apps_create(&config, &apps) == H2_PAL_OK);
+  http_t h = {.archive = fixture_valid, .size = sizeof(fixture_valid), .chunk = 7};
+  h2_pal_http_api_t http = {.user = &h, .vtable = &http_vtable};
+  h2_lua_app_info_t info;
+  assert(h2_lua_apps_install(apps, &http, URI("https://example.test/app"),
+      NULL, 1000, NULL, NULL, &info) == H2_PAL_OK);
+  assert(outside_directory_calls == 0u);
+  expect_file(&fs.api, info.entry, source, sizeof(source) - 1u);
+  assert(h2_lua_apps_destroy(apps) == H2_PAL_OK);
+
+  /* A real non-directory ancestor must remain an error, not be skipped. */
+  put(&fs.api, "/data/gizclaw/file", "x", 1u);
+  config.install_root = "/data/gizclaw/file/lua_apps";
+  assert(h2_lua_apps_create(&config, &apps) == H2_PAL_OK);
+  assert(h2_lua_apps_install(apps, &http, URI("https://example.test/app"),
+      NULL, 1000, NULL, NULL, &info) == H2_PAL_ERR_FORMAT);
+  assert(outside_directory_calls == 0u);
+  assert(h2_lua_apps_destroy(apps) == H2_PAL_OK);
+
+  config.install_root = "/data/gizclaw/io/nested/lua_apps";
+  assert(h2_lua_apps_create(&config, &apps) == H2_PAL_OK);
+  fs.stat = (h2_app_test_fault_t){.result = H2_PAL_ERR_IO, .remaining = 1};
+  assert(h2_lua_apps_install(apps, &http, URI("https://example.test/app"),
+      NULL, 1000, NULL, NULL, &info) == H2_PAL_ERR_IO);
+  assert(outside_directory_calls == 0u);
+  assert(h2_lua_apps_destroy(apps) == H2_PAL_OK);
+  assert(fs.active_handles == 0u && h2_app_test_fs_deinit(&fs) == H2_PAL_OK);
+}
 int main(void) {
   const h2_pal_mem_api_t *mem = &allocator;
   const h2_pal_sync_api_t *sync = h2_desktop_platform_sync_api();
   check_directory_alias(sync);
+  check_scoped_directory(sync);
   h2_app_test_fs_t fs;
   /* Backend storage of the extracted file is independent of installer
    * scratch. The installer must never allocate this archive in one buffer. */

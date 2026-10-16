@@ -35,6 +35,9 @@ extern "C" {
  * write report zero bytes). A rejected close leaves that file valid for retry.
  * An admitted close keeps its wrapper busy through the commit barrier, then
  * consumes the handle even on an I/O/commit error; do not reuse it afterward.
+ * Only the configured persistent and read-only roots are visible. Ancestors
+ * outside those roots (for example /data above /data/gizclaw) remain NOT_FOUND;
+ * consumers must not require creating or statting them to use a visible root.
  * Committed data survives reload, tab close and browser restart. Browsers
  * commit IndexedDB with relaxed durability, and best-effort site storage can
  * be evicted under storage pressure or cleared by the user.

@@ -440,7 +440,7 @@ Host package test 同时校验 archive、manifest 和 metadata 三个 output gro
 
 ## App 存储
 
-`storage` 让 Lua App 在重启后保留少量数据，例如最高分和设置。Board 或宿主通过 `h2_lua_host_config_t.storage` 提供一个借用的 PAL Filesystem、其命名空间中的 root 目录（例如 ESP LittleFS `data` 分区上的 `/data/lua`）、每个 App 的内容字节配额和文件数上限；字段、默认值和上限以 `h2_lua.h` 中 `h2_lua_storage_config_t` 的 Doxygen 为准。fs 必须提供 `mkdir`、`open`、`read`、`write`、`close`、`stat`、`remove` 和覆盖目标的 `rename`，否则 `h2_lua_host_create()` 返回 `UNSUPPORTED`；root 或上限非法时返回 `INVALID_ARG`。Root 不需要预先存在，首次写入时逐级创建。一个 storage root 同一时间只能由一个 Host 使用，Host 用一个 mutex 串行化所有 job 的存储操作。
+`storage` 让 Lua App 在重启后保留少量数据，例如最高分和设置。Board 或宿主通过 `h2_lua_host_config_t.storage` 提供一个借用的 PAL Filesystem、其命名空间中的 root 目录（例如 ESP LittleFS `data` 分区上的 `/data/lua`）、每个 App 的内容字节配额和文件数上限；字段、默认值和上限以 `h2_lua.h` 中 `h2_lua_storage_config_t` 的 Doxygen 为准。fs 必须提供 `mkdir`、`open`、`read`、`write`、`close`、`stat`、`remove` 和覆盖目标的 `rename`，否则 `h2_lua_host_create()` 返回 `UNSUPPORTED`；root 或上限非法时返回 `INVALID_ARG`。Root 不需要预先存在，首次写入时逐级创建。 祖先可能是不可见或拒绝 mkdir 的 mount；KV/storage 继续尝试可见路径，并以最终 App 目录的 stat/is_dir 为准。一个 storage root 同一时间只能由一个 Host 使用，Host 用一个 mutex 串行化所有 job 的存储操作。
 
 每个 `h2_lua_job_submit_*()` 都接收 app id。App id 和文件名都是 `1..32` 字节的 `a-z`、`0-9`、`_`、`-`、`.`，且不能以 `.` 开头，因此绝对路径、`/`、`..`、反斜线、大写字母和隐藏文件都会被拒绝，大小写不敏感的文件系统也不会让两个名字指向同一个文件。非法 app id 使提交返回 `INVALID_ARG`。相同 app id 的 job 共享 `<root>/<app_id>/` 下的文件，不同 app id 互相不可见。
 
@@ -590,7 +590,7 @@ MP4 播放器配置也支持同名选项。启动动画可以借用同一个 Dis
 
 ## Lua App 目录与流式安装
 
-`//libs/lua/apps:apps` 拥有独立于 Lua Host 和 GizClaw 的应用目录与安装器；[API Reference](/references/lua-apps) 直接来自生产 Public Header。调用方注入 Memory、Filesystem、Sync，并配置 `preinstalled_index` 与专用 `install_root`。用户 KV 必须使用安装目录以外的独立根路径，不能把用户数据放进安装器拥有的目录。应用目录可跨 Service 重连保留，销毁前先停止并释放借用它的 Service 和安装会话。
+`//libs/lua/apps:apps` 拥有独立于 Lua Host 和 GizClaw 的应用目录与安装器；[API Reference](/references/lua-apps) 直接来自生产 Public Header。调用方注入 Memory、Filesystem、Sync，并配置 `preinstalled_index` 与专用 `install_root`。用户 KV 必须使用安装目录以外的独立根路径，不能把用户数据放进安装器拥有的目录。 FS 可以只暴露嵌套的 mount/view 根；安装器从目标父目录向上寻找最近可见的现有目录，再向下创建缺失部分，不要求 `/data` 等不可见祖先的 stat/mkdir 成功，不扩大 view。父目录的 stat 证明该位置是文件时返回格式错误，其他 FS 错误继续原样失败。应用目录可跨 Service 重连保留，销毁前先停止并释放借用它的 Service 和安装会话。
 
 预装和远程安装使用相同 format-1 Lua App manifest、`app_id` 和版本。`lua_app_index` 从 `LuaAppInfo.manifest` 生成 `format=1, apps=[{root,manifest}]`，不维护手写版本表。规则的 `installed_entry` output group 提供与包内完全相同的原始或 compact Lua 文本，`installed_files` 同时包含该 entry 与原有 data 文件；consumer 将 entry 映射为安装根下的 `<app_id>.lua`，data 保持同名子目录结构。原有 archive/manifest/metadata 默认发行输出不变。加载时缺少所需文件、文件大小不符或 entry 超限的预装项不会进入 listing；已安装的同 ID 项覆盖预装项，每个 ID 只列出一次。
 
@@ -742,3 +742,5 @@ python3 libs/lua/apps/tests/run_host_tests.py --yyjson-dir /path/to/yyjson/src -
 ```
 
 `gizclaw` checkout 应包含生成的 C contract 与已初始化的 pinned nanopb submodule。该验证使用 Host PAL；真机 Golden E2E 另行验证下载、显示与产品任务生命周期。
+
+公共回归 `//libs/lua/apps/web/tests/scoped_http:browser_test` 通过真实 Web FS 和 HTTP 下载安装 format-1 包，跨两次刷新运行 Lua 并验证独立 KV 与 storage 文件在卸载后保留；同一 target 由独立 Bzlmod consumer 执行。
