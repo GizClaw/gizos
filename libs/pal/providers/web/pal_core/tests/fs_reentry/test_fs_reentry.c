@@ -11,6 +11,24 @@ static h2_web_platform_t *platform;
 static _Atomic(h2_web_fs_t *) current_fs;
 static _Atomic unsigned callbacks, opening_callbacks;
 static _Atomic int opening;
+static _Atomic(h2_pal_fs_file_t *) current_file;
+static _Atomic int file_operation, file_closing, native_closed;
+static _Atomic unsigned same_file_callbacks, after_close_callbacks;
+
+static void file_begin(h2_pal_fs_file_t *file, int closing) {
+  atomic_store(&current_file, file);
+  atomic_store(&file_closing, closing);
+  atomic_store(&native_closed, 0);
+  atomic_store(&file_operation, 1);
+}
+static void file_end(void) {
+  atomic_store(&file_operation, 0);
+  atomic_store(&current_file, NULL);
+}
+EMSCRIPTEN_KEEPALIVE void h2_test_fs_native_closed(void) {
+  if (atomic_load(&file_operation) && atomic_load(&file_closing))
+    atomic_store(&native_closed, 1);
+}
 
 /* Runs on the UI inside real proxied POSIX syscalls. A state callback must
  * enter the same provider guard without blocking the syscall's Worker. */
@@ -24,6 +42,21 @@ EMSCRIPTEN_KEEPALIVE int h2_test_fs_reentry(void) {
       return 1;
     if (atomic_load(&opening))
       atomic_fetch_add(&opening_callbacks, 1u);
+    h2_pal_fs_file_t *file = atomic_load(&current_file);
+    if (file != NULL && atomic_load(&file_operation)) {
+      const h2_pal_fs_api_t *api = h2_web_fs_api(fs);
+      char byte = 0;
+      size_t read = 17u, written = 23u;
+      if (h2_pal_fs_close(api, file) != H2_PAL_ERR_BUSY ||
+          h2_pal_fs_read(api, file, &byte, 1u, &read) != H2_PAL_ERR_BUSY || read != 0u ||
+          h2_pal_fs_write(api, file, &byte, 1u, &written) != H2_PAL_ERR_BUSY || written != 0u ||
+          h2_pal_fs_seek(api, file, 0u) != H2_PAL_ERR_BUSY ||
+          h2_pal_fs_sync(api, file) != H2_PAL_ERR_BUSY)
+        return 3;
+      atomic_fetch_add(&same_file_callbacks, 1u);
+      if (atomic_load(&native_closed))
+        atomic_fetch_add(&after_close_callbacks, 1u);
+    }
   }
   if (h2_web_platform_destroy(platform) != H2_PAL_ERR_BUSY)
     return 2;
@@ -50,7 +83,10 @@ EM_JS(void, hooks,
         const path = typeof args[0] === 'string' ? args[0] : args[0]?.path || "";
         if ((path === '/fs-reentry' || path.startsWith('/fs-reentry/')) &&
             Module._h2_test_fs_reentry() !== 0) throw new Error('FS callback lost an active borrow');
-        return original.apply(this, args);
+        const value = original.apply(this, args);
+        if (name === 'close' && (path === '/fs-reentry' || path.startsWith('/fs-reentry/')))
+          Module._h2_test_fs_native_closed();
+        return value;
       };
     }
     return 0;
@@ -77,17 +113,29 @@ int main(void) {
   assert(atomic_load(&opening_callbacks) != 0u);
   static const char value[] = "actual POSIX proxy reentry";
   size_t count = 0;
+  file_begin(file, 0);
   assert(h2_pal_fs_write(api, file, value, sizeof(value), &count) == H2_PAL_OK);
+  file_end();
   assert(count == sizeof(value));
+  file_begin(file, 0);
   assert(h2_pal_fs_sync(api, file) == H2_PAL_OK);
+  file_end();
+  file_begin(file, 1);
   assert(h2_pal_fs_close(api, file) == H2_PAL_OK);
+  file_end();
   assert(h2_pal_fs_open(api, "/fs-reentry/probe/data", H2_PAL_FS_OPEN_READ,
       &file) == H2_PAL_OK);
   char output[sizeof(value)] = {0};
+  file_begin(file, 0);
   assert(h2_pal_fs_read(api, file, output, sizeof(output), &count) == H2_PAL_OK);
+  file_end();
   assert(count == sizeof(value) && memcmp(value, output, sizeof(value)) == 0);
+  file_begin(file, 0);
   assert(h2_pal_fs_seek(api, file, 0u) == H2_PAL_OK);
+  file_end();
+  file_begin(file, 1);
   assert(h2_pal_fs_close(api, file) == H2_PAL_OK);
+  file_end();
   assert(h2_pal_fs_rename(api, "/fs-reentry/probe/data",
       "/fs-reentry/probe/renamed") == H2_PAL_OK);
   h2_pal_fs_stat_t stat;
@@ -95,6 +143,10 @@ int main(void) {
   assert(h2_pal_fs_remove(api, "/fs-reentry/probe/renamed") == H2_PAL_OK);
   assert(h2_web_fs_clear(fs) == H2_PAL_OK);
   assert(atomic_load(&callbacks) > 8u);
+  assert(atomic_load(&same_file_callbacks) > 0u);
+  assert(atomic_load(&after_close_callbacks) > 0u);
+  puts("FS same_file_overlap=PASS");
+  puts("FS close_barrier_handle_alive=PASS");
   puts("FS guard_reentry=PASS");
   puts("FS borrow_retained_during_io=PASS");
   assert(h2_web_fs_close(fs) == H2_PAL_OK);

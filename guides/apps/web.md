@@ -136,7 +136,7 @@ Audio PAL 的麦克风通过 `getUserMedia` 与 `AudioWorklet` 采集，显式�
 - 清理：`h2_web_fs_clear()` 或对根目录 `h2_pal_fs_clear()` 删除全部内容并提交；用户也可在浏览器站点设置中清除。
 - 限制：浏览器以 relaxed durability 提交 IndexedDB，已提交数据可跨刷新、关标签页和重启浏览器保留，但操作系统崩溃可能丢失最后一次提交；best-effort 站点存储可能在存储压力下被浏览器回收。Pref 仍使用 localStorage，跨标签页共享且无锁，后写者覆盖。
 
-底层 POSIX Filesystem 可能同步代理 syscall 到 UI。Provider 在这些调用期间释放所有嵌套 state guard，并钉住 filesystem；UI state callback 可以先于 syscall 执行，Worker 返回后重新取得 guard 再发布状态。打开过程也钉住 platform，错误路径对称释放；in-flight 调用期间 close/destroy 返回 `BUSY`，避免悬空借用。`//libs/pal/providers/web/pal_core/tests/fs_reentry:browser_test` 在真实 POSIX 代理内执行 UI 重入和关闭尝试，再验证读写、sync、rename、remove、clear 与最终 teardown；原 `:browser_platform_test` 继续覆盖跨刷新持久化、多标签页和存储错误。
+底层 POSIX Filesystem 可能同步代理 syscall 到 UI。Provider 在这些调用期间释放所有嵌套 state guard，并钉住 filesystem；UI state callback 可以先于 syscall 执行，Worker 返回后重新取得 guard 再发布状态。打开过程也钉住 platform，错误路径对称释放；in-flight 调用期间 close/destroy 返回 `BUSY`，避免悬空借用。单个文件句柄在 POSIX I/O 和提交屏障期间同样保持 active；同句柄重叠的 read/seek/write/sync/close 返回 `BUSY`，读写报告零字节，拒绝的 close 保留句柄供重试。已接受的 close 在提交屏障结束后才回收 wrapper，即使返回 I/O/commit error 也已消费句柄，之后不能再使用。`//libs/pal/providers/web/pal_core/tests/fs_reentry:browser_test` 在真实 POSIX 代理内执行 UI 重入、filesystem/platform 关闭及同句柄并发操作，并在 native close 后的提交回调中再次验证句柄保活，再验证读写、sync、rename、remove、clear 与最终 teardown；原 `:browser_platform_test` 继续覆盖跨刷新持久化、多标签页和存储错误。
 
 ### HTTP
 

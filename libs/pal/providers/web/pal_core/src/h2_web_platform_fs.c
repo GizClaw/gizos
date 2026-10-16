@@ -44,6 +44,7 @@ struct h2_web_fs {
 typedef struct h2_web_fs_file {
   h2_pal_fs_file_t *inner;
   bool persistent_write;
+  bool active;
 } h2_web_fs_file_t;
 /* clang-format off */
 EM_JS(void, h2_web_fs_mount_js,
@@ -388,15 +389,29 @@ static int h2_web_fs_open_file(void *user, const char *path,
   return H2_PAL_OK;
 }
 
+/* The state guard serializes admission. Do not wait on a libc FILE lock from
+ * a UI callback while its Worker is waiting for a proxied syscall. Keep the
+ * individual wrapper/stream claimed through POSIX calls and commit barriers. */
+static bool h2_web_fs_file_claim(h2_web_fs_file_t *file) {
+  if (file->active)
+    return false;
+  file->active = true;
+  return true;
+}
+
 static int h2_web_fs_read(void *user, h2_pal_fs_file_t *raw, void *data,
                           size_t len, size_t *out_read) {
   H2_WEB_STATE_GUARD();
   h2_web_fs_t *fs = user;
   h2_web_fs_file_t *file = (h2_web_fs_file_t *)raw;
+  *out_read = 0u;
+  if (!h2_web_fs_file_claim(file))
+    return H2_PAL_ERR_BUSY;
   const unsigned depth = h2_web_fs_inner_pause(fs);
   const int result =
       h2_pal_fs_read(fs->inner, file->inner, data, len, out_read);
   h2_web_fs_inner_resume(fs, depth);
+  file->active = false;
   return result;
 }
 
@@ -405,9 +420,12 @@ static int h2_web_fs_seek(void *user, h2_pal_fs_file_t *raw,
   H2_WEB_STATE_GUARD();
   h2_web_fs_t *fs = user;
   h2_web_fs_file_t *file = (h2_web_fs_file_t *)raw;
+  if (!h2_web_fs_file_claim(file))
+    return H2_PAL_ERR_BUSY;
   const unsigned depth = h2_web_fs_inner_pause(fs);
   const int result = h2_pal_fs_seek(fs->inner, file->inner, position);
   h2_web_fs_inner_resume(fs, depth);
+  file->active = false;
   return result;
 }
 
@@ -416,12 +434,16 @@ static int h2_web_fs_write(void *user, h2_pal_fs_file_t *raw, const void *data,
   H2_WEB_STATE_GUARD();
   h2_web_fs_t *fs = user;
   h2_web_fs_file_t *file = (h2_web_fs_file_t *)raw;
+  *out_written = 0u;
+  if (!h2_web_fs_file_claim(file))
+    return H2_PAL_ERR_BUSY;
   const unsigned depth = h2_web_fs_inner_pause(fs);
   const int result =
       h2_pal_fs_write(fs->inner, file->inner, data, len, out_written);
   h2_web_fs_inner_resume(fs, depth);
   if (file->persistent_write && *out_written != 0u)
     ++fs->changed;
+  file->active = false;
   return result;
 }
 
@@ -429,14 +451,16 @@ static int h2_web_fs_sync(void *user, h2_pal_fs_file_t *raw) {
   H2_WEB_STATE_GUARD();
   h2_web_fs_t *fs = user;
   h2_web_fs_file_t *file = (h2_web_fs_file_t *)raw;
+  if (!h2_web_fs_file_claim(file))
+    return H2_PAL_ERR_BUSY;
+  ++fs->calls;
   const unsigned depth = h2_web_fs_inner_pause(fs);
   int result = h2_pal_fs_sync(fs->inner, file->inner);
   h2_web_fs_inner_resume(fs, depth);
-  if (result == H2_PAL_OK && file->persistent_write) {
-    ++fs->calls;
+  if (result == H2_PAL_OK && file->persistent_write)
     result = h2_web_fs_commit(fs);
-    --fs->calls;
-  }
+  --fs->calls;
+  file->active = false;
   return result;
 }
 
@@ -444,20 +468,23 @@ static int h2_web_fs_close_file(void *user, h2_pal_fs_file_t *raw) {
   H2_WEB_STATE_GUARD();
   h2_web_fs_t *fs = user;
   h2_web_fs_file_t *file = (h2_web_fs_file_t *)raw;
+  if (!h2_web_fs_file_claim(file))
+    return H2_PAL_ERR_BUSY;
+  ++fs->calls;
   const unsigned depth = h2_web_fs_inner_pause(fs);
   int result = h2_pal_fs_close(fs->inner, file->inner);
   h2_web_fs_inner_resume(fs, depth);
-  const bool commit = file->persistent_write;
-  free(file);
-  --fs->open_files;
-  if (commit) {
+  file->inner = NULL;
+  if (file->persistent_write) {
     ++fs->changed;
-    ++fs->calls;
     const int commit_result = h2_web_fs_commit(fs);
-    --fs->calls;
     if (result == H2_PAL_OK)
       result = commit_result;
   }
+  // Keep the busy wrapper alive until the close barrier returns.
+  --fs->open_files;
+  --fs->calls;
+  free(file);
   return result;
 }
 

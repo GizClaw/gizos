@@ -29,7 +29,12 @@ extern "C" {
  * Commit barriers wait on a pthread Worker, leaving the browser UI runnable.
  * POSIX proxy calls release all shared state-guard nesting while retaining
  * the filesystem/platform; UI state callbacks may run before the syscall.
- * A concurrent close returns BUSY until the in-flight call returns.
+ * A concurrent filesystem close returns BUSY until the in-flight call returns.
+ * Operations on an individual file are also admitted serially: overlapping
+ * read/seek/write/sync/close returns BUSY without touching the stream (read and
+ * write report zero bytes). A rejected close leaves that file valid for retry.
+ * An admitted close keeps its wrapper busy through the commit barrier, then
+ * consumes the handle even on an I/O/commit error; do not reuse it afterward.
  * Committed data survives reload, tab close and browser restart. Browsers
  * commit IndexedDB with relaxed durability, and best-effort site storage can
  * be evicted under storage pressure or cleared by the user.
