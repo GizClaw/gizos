@@ -20,18 +20,27 @@ typedef struct h2_web_gizclaw_config {
   size_t request_limit_bytes;
   uint32_t timeout_ms;
 } h2_web_gizclaw_config_t;
-/** Bind globalThis.h2WebGizClaw from a Worker. mhs.read/write and tools.list/
- * invoke use ordinary objects and the canonical SDK codec/registry. call uses
- * canonical method/payload bytes. All return Promises and accept
- * {signal?, timeout_ms?}. Errors preserve signed PAL codes and actual wire
- * details; false/zero optional fields retain presence. No remote Ready is
- * needed. A timeout/abort cannot undo an executing write.
- * The adapter retains the Service's local ingress until successful close.
- * Open failure can retain a non-NULL handle if cleanup fails; retry close.
+/** Register Module.h2GizClaw on this WASM runtime from a Worker. The public
+ * version-1 byte API works without npm: request(method, Uint8Array, callback,
+ * {timeout_ms?}) returns a positive call ID or a negative PAL admission error.
+ * An accepted call invokes callback(response) exactly once on the UI thread,
+ * asynchronously after request returns; cancel(id) completes it with CLOSED.
+ * response contains code, hasError, rpcCode, rpcMessage, copied payload and
+ * optional nativeTools. The synchronous callback returns a signed delivery
+ * result (0 on successful consumption); throw/non-integer returns FORMAT.
+ * No borrowed WASM pointers escape. Default limits are exposed on the API.
+ * Timeout/cancel cannot undo executed writes. C close marks the API closed and
+ * fails pending calls; old references reject requests with CLOSED.
+ * Optional @gizclaw/firmware createFirmwareClient(Module) wraps this same byte
+ * interface with canonical objects, types and Promises. Multiple clients may
+ * share a runtime; client.close() cancels only its own calls. It does not stop
+ * the Service. Product entries register through C and import no npm SDK.
+ * The adapter retains the Service until successful close. Open failure can
+ * retain a non-NULL handle if cleanup fails; retry close.
  */
 h2_pal_result_t h2_web_gizclaw_open(const h2_web_gizclaw_config_t *,
                                    h2_web_gizclaw_t **);
-/** Detach JS, reject pending Promises, cancel requests and join the adapter
+/** Detach the runtime byte API, cancel requests and join the adapter
  * worker before releasing its borrow. Worker-only; NULL *bridge is a no-op.
  * Failure retains the pointer/dependencies for retry. Close this adapter before
  * Service stop/deinit. Existing tool continuations and Lua lifecycles are

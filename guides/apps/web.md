@@ -291,25 +291,42 @@ bazel test --config=macos_arm64 --strategy=TestRunner=local --test_env=HOME \
 
 Web 的同步 SystemEvent PAL API 只借给 C Worker，浏览器主线程 accessor 返回 `NULL`。浏览器发起退订时使用 `h2_web_platform_system_event_unsubscribe_async`：成功后立即停止新回调并将 subscription 所有权交给 platform Worker；完成回调仅在所有在途 handler 返回后执行，调用方此前必须保留 handler context。主线程入队使用 try-lock，竞争返回 BUSY 并交还所有权，不能同步阻塞浏览器等待 Worker。回调自身不能等待自己的异步退订完成。
 
-## 本地 GizClaw SDK
+## 可选的 GizClaw 固件控制 SDK
 
-`//libs/gizclaw/web` 从 Worker 调用 `h2_web_gizclaw_open()`，绑定 `globalThis.h2WebGizClaw`；它借用已经开启本地入口的现有 Service。对象方法使用 pinned GizClaw codec/map，MHS 读写和所有工具均调用既有 handler，不依赖远端 Ready。Lua 安装仍是普通 tool invoke：
+固件在当前 WASM Module 上提供 `Module.h2GizClaw` 底层字节接口，不依赖 npm 包。需要对象参数、类型和 Promise API 的调用代码才 import `@gizclaw/firmware`，并显式绑定已有 Module；安装 npm 包不会自动选择实例。产品入口保持原有启动、Start、权限和关闭流程，不引用 SDK JS 文件，也不需要自己拼接 JavaScript 绑定。
 
 ```js
-const api = globalThis.h2WebGizClaw;
+import { createFirmwareClient } from '@gizclaw/firmware';
+
+// 在已有固件启动并注册 Service 后，传入它的 WASM Module。
+const api = createFirmwareClient(Module);
 const tools = await api.tools.list();
 const state = await api.mhs.read({id: 'speaker.main', hwd: 'speaker'});
-const applied = await api.mhs.write({
+await api.mhs.write({
   id: 'speaker.main', hwd: 'speaker',
   payload: {volume_percent: 0, muted: false},
 });
-const installed = await api.tools.invoke('lua.app.install', {url: archiveUrl});
-const apps = await api.tools.invoke('lua.app.list', {});
-await api.tools.invoke('lua.app.uninstall', {app_id: appId});
+await api.tools.invoke('lua.app.install', {url: archiveUrl});
+api.close();
 ```
 
-实例与可用工具取自产品已有注册表；`lua.app.run` 是否可用仍取决于已有产品 prepare hook。安装格式、URL/Binary 支持和 Lua 交接语义均遵守 [GizClaw Lua App](/zh/developing/gizclaw#lua-app)，SDK 不额外实现 catalog、上传安装器或 Lua 生命周期。`call(method, Uint8Array, options?)` 为需要 canonical payload 的调用方保留字节接口。
+没有 SDK 也能直接调用：
 
-所有方法返回 Promise，支持 `{signal?, timeout_ms?}`。0/false 保留 optional presence；`error.code` 为实际 signed PAL result，仅 wire rejection 时为 -1000，并保留实际 `rpcCode`/`rpcMessage`。容量满返回 BUSY。取消/超时不会撤销已经发生的写入；请求接纳时复制，回复在 resolve 前复制/解码，随后触发既有 delivery completion。
+```js
+const id = Module.h2GizClaw.request(136, new Uint8Array(), response => {
+  if (response.code !== 0 || response.hasError) return -10;
+  console.log(response.nativeTools);
+  return 0; // 同步返回 delivery result，确认已消费回复。
+});
+if (id < 0) console.error('Request was not admitted:', id);
+```
 
-`h2_web_gizclaw_close()` 在 Worker 关闭 ingress、拒绝 pending Promise、取消调用并 join adapter，成功后释放 Service borrow；失败保留 handle 与依赖供重试。产品先 close adapter，再走现有 Service stop/poll/deinit。`//libs/gizclaw/web:sdk_types` 导出 `h2_web_gizclaw.d.ts` 及同一 canonical codec/map 的声明。`libs/gizclaw/web/tests/local/` 的实际 Chrome fixture 验证现有 tool/MHS、Lua 安装工具透传、错误、取消/背压和 close retry；它使用测试 HTTP/Filesystem PAL，不代表实机或真实服务器验收。
+底层 `request(method, bytes, callback, {timeout_ms?})` 接受 canonical method/protobuf，返回正 call ID 或负 admission error；拒绝时不调用 callback。接受的请求在 request 返回之后异步且恰好回调一次，回调在 UI 线程同步返回 signed delivery result。回复包含 code、hasError、rpcCode、rpcMessage、已复制的 payload 和可选 nativeTools；返回 0 表示已成功消费，负数表示失败，抛异常或返回非整数按 FORMAT 处理。回调不可 async；调用方可以自行包装 Promise，但 delivery acknowledgement 必须同步完成。`cancel(id)` 取消已接受调用并回调 CLOSED；超时回调 TIMEOUT。接口公开 version、容量、字节限制、默认 deadline 和 closed。
+
+H106 等产品只通过 C 注册已有 Service：先 `h2_gizclaw_local_start()`，再用 `h2_web_gizclaw_open()` 打开 `//libs/gizclaw/web`；统一字节绑定随固件构建。产品先 close C adapter，再走原有 Service stop/poll/deinit。对象 codec、类型与 Promise API 属于 `projects/gizclaw/libs/web`；npm package/tarball 属于 `projects/gizclaw/targets/npm_package/firmware`。两者共用 ABI version，固件不链接对象 SDK、codec 或 TypeScript compiler。
+
+SDK 对象方法使用 pinned GizClaw codec/map，调用同一 Service、工具注册表和 MHS 实例表。lua.app.run 的可用性仍由产品 prepare hook 决定，安装格式和交接语义见 [GizClaw Lua App](/zh/developing/gizclaw#lua-app)。SDK 不增加 Lua catalog、安装器或生命周期；`call(method, Uint8Array, options?)` 保留字节调用。请求和回复均复制，SDK 在复制/解码成功后同步确认 native delivery；error.code 保留 signed PAL result，wire-only error 使用 -1000 并保留 rpcCode/rpcMessage，0/false 保留 optional presence。
+
+同一 runtime 可同时绑定多个 client，共享底层容量；不同 runtime 相互独立。调用支持 `{signal?, timeout_ms?}`，取消或超时不能撤销已发生的写入。`client.close()` 只取消自己的 pending 请求，不停止固件或影响其它 client、底层调用。Native detach/page teardown 使接口关闭并拒绝 pending 请求，旧引用也返回 CLOSED；failed join 保留依赖供重试。SDK 不要求 iframe，不增加跨 origin 页面通信或加载裸 WASM 的机制；调用方须持有运行中的 Module，并等待其 Service 注册完成。
+
+`//projects/gizclaw/targets/npm_package/firmware:release_tarball` 生成独立 npm tarball。`libs/gizclaw/web/tests/local/` 在不加载 npm 的情况下调用真实 WASM 底层 callback API；npm `tests/runtime/` 在当前页面的真实 WASM 上验证 SDK、现有 tool/MHS、Lua install/list/uninstall、delivery、容量、取消和 close retry，并用第二个实例验证隔离。`package_test` 从实际 tarball 验证 Node 无 DOM 的实例绑定和严格类型。测试 HTTP/Filesystem PAL 不代表真实服务器、Trial/H106 产品或物理设备验收。

@@ -29,8 +29,7 @@ h2_web_app(
     ],
     app_name = "gizclaw-local",
     passes = [
-        "LOCAL tools_mhs=PASS",
-        "LOCAL existing_lua_tools=PASS",
+        "LOCAL standalone_without_sdk=PASS",
         "LOCAL close_retry=PASS",
         "H2_WEB_APP name=gizclaw-local result=PASS rc=0 destroy=0",
     ],

@@ -1,5 +1,6 @@
-import type { GizClawWebSDK } from './h2_web_gizclaw';
-declare const api: GizClawWebSDK;
+import { createFirmwareClient } from '@gizclaw/firmware';
+import type { GizClawFirmwareClient, GizClawFirmwareRuntime } from '@gizclaw/firmware';
+declare const api: GizClawFirmwareClient;
 async function consume() {
   const value = await api.mhs.read({id: 'led.fixture', hwd: 'led'});
   const enabled: boolean | undefined = value.payload.enabled;
@@ -20,3 +21,19 @@ async function consume() {
   return [enabled, brightness, model];
 }
 void consume;
+declare const runtime: GizClawFirmwareRuntime;
+function bind() {
+  const client = createFirmwareClient(runtime);
+  void client.tools.list();
+  client.close();
+  const id = runtime.h2GizClaw?.request(136, new Uint8Array(), response => {
+    const code: number = response.code;
+    return code;
+  });
+  if (id && id > 0) runtime.h2GizClaw?.cancel(id);
+  // @ts-expect-error An iframe is not a WASM runtime.
+  createFirmwareClient(document.createElement('iframe'));
+  // @ts-expect-error Delivery must be acknowledged synchronously, not via Promise.
+  runtime.h2GizClaw?.request(136, new Uint8Array(), async () => 0);
+}
+void bind;

@@ -1,6 +1,6 @@
 # npm Release
 
-`@gizclaw/h2loader` 的 npm tarball 与固件属于同一个 GizOS snapshot Release。`.github/workflows/release.yml` 只由 `workflow_dispatch` 触发，自动生成 UTC `RELEASE_BATCH=YYYYMMDD-HHMMSS` 与 `v<batch>` tag；不再接受 version 输入。上传 draft Release 后重新下载并逐文件 `cmp`，成功才公开；公开前失败会回滚生成的 draft 和 tag。
+`@gizclaw/h2loader` 与 `@gizclaw/firmware` 的 npm tarball 与固件属于同一个 GizOS snapshot Release。`.github/workflows/release.yml` 只由 `workflow_dispatch` 触发，自动生成 UTC `RELEASE_BATCH=YYYYMMDD-HHMMSS` 与 `v<batch>` tag；不再接受 version 输入。上传 draft Release 后重新下载并逐文件 `cmp`，成功才公开；公开前失败会回滚生成的 draft 和 tag。
 
 ## Slice 与本地构建
 
@@ -13,7 +13,7 @@ make bazel-release RELEASE_SLICE=npm-packages RELEASE_BATCH=20260920-120000 RELE
 bazel test //tools/bazel:npm_release_test //tools/bazel:release_test //tools/bazel:release_bundle_test //projects/h2loader/targets/npm_package/h2loader:release_tarball_test
 ```
 
-`npm-packages` 是不接受 `RELEASE_INPUT_DIR` 的 source producer。`//tools/bazel:npm_release_bundle` 构建当前声明的 package 列表，staging 目录只包含每个 package 的 `.tgz` 和一个 `npm-index.json`，不生成 `SHA256SUMS`。当前 H2Loader package version 为 `0.4.1`，对应文件是 `gizclaw-h2loader-0.4.1.tgz` 与 `npm-index.json`。0.4.1 的 Web runtime 使用 pthread Worker 和共享 WASM 内存，使用方必须由 HTTPS 或 localhost 提供页面，并实际发送 `Cross-Origin-Opener-Policy: same-origin` 与 `Cross-Origin-Embedder-Policy: require-corp` 响应头。
+`npm-packages` 是不接受 `RELEASE_INPUT_DIR` 的 source producer。`//tools/bazel:npm_release_bundle` 构建当前声明的 package 列表，staging 目录只包含每个 package 的 `.tgz` 和一个 `npm-index.json`，不生成 `SHA256SUMS`。当前 package manifests 分别声明 H2Loader 0.4.1 与可选固件 WASM runtime SDK 0.1.0，对应 gizclaw-h2loader-0.4.1.tgz、gizclaw-firmware-0.1.0.tgz 与 npm-index.json。后者只由需要对象/Promise API 的调用代码引入并绑定已有 WASM Module；固件和底层回调调用不需要它，见 [Web 固件控制 SDK](/apps/web#可选的-gizclaw-固件控制-sdk)。0.4.1 的 Web runtime 使用 pthread Worker 和共享 WASM 内存，使用方必须由 HTTPS 或 localhost 提供页面，并实际发送 `Cross-Origin-Opener-Policy: same-origin` 与 `Cross-Origin-Embedder-Policy: require-corp` 响应头。
 
 合并已下载的两个 bundle 时，保留各自子目录即可；最终输入扫描拒绝 symlink 和重复 basename：
 
@@ -24,7 +24,7 @@ cp -R build/release/npm-packages build/release/input/npm
 make bazel-release RELEASE_SLICE=release-bundle RELEASE_BATCH=20260920-120000 RELEASE_INPUT_DIR=build/release/input RELEASE_STAGING_DIR=build/release/final
 ```
 
-`release-bundle` 要求 `firmware-release-v<batch>.zip`、`npm-index.json` 与索引声明的全部 npm tarball。它重新校验 ZIP 内固件 identity、checksum coverage、SHA-256/size 和 exact-set，并校验 npm identity 与每个 tarball 的 SHA-256、字节数；多余或缺少任一 asset 都失败。当前恰好四个顶层资产：`firmware-release-v<batch>.zip`、`gizclaw-h2loader-0.4.1.tgz`、`npm-index.json`、重新计算的 `SHA256SUMS`。顶层校验和仅覆盖前三个文件；`firmware-index.json` 与固件自身的 `SHA256SUMS` 位于 ZIP 内。固件 ZIP 的布局和本地 `package` 命令见 [Firmware Release](./index#firmware-release)。
+`release-bundle` 要求 `firmware-release-v<batch>.zip`、`npm-index.json` 与索引声明的全部 npm tarball。它重新校验 ZIP 内固件 identity、checksum coverage、SHA-256/size 和 exact-set，并校验 npm identity 与每个 tarball 的 SHA-256、字节数；多余或缺少任一 asset 都失败。当前恰好五个顶层资产：`firmware-release-v<batch>.zip`、`gizclaw-firmware-0.1.0.tgz`、`gizclaw-h2loader-0.4.1.tgz`、`npm-index.json`、重新计算的 `SHA256SUMS`。顶层校验和仅覆盖前四个文件；`firmware-index.json` 与固件自身的 `SHA256SUMS` 位于 ZIP 内。固件 ZIP 的布局和本地 `package` 命令见 [Firmware Release](./index#firmware-release)。
 
 ## Tarball 合同
 
@@ -43,8 +43,15 @@ make bazel-release RELEASE_SLICE=release-bundle RELEASE_BATCH=20260920-120000 RE
 ```json
 {
   "format": 1,
-  "package_count": 1,
+  "package_count": 2,
   "packages": [
+    {
+      "name": "@gizclaw/firmware",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "size": 123,
+      "tarball": "gizclaw-firmware-0.1.0.tgz",
+      "version": "0.1.0"
+    },
     {
       "name": "@gizclaw/h2loader",
       "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
@@ -69,7 +76,7 @@ make bazel-release RELEASE_SLICE=release-bundle RELEASE_BATCH=20260920-120000 RE
 | `packages[].sha256` | tarball 全部字节的 64 位小写十六进制 SHA-256 |
 | `packages[].size` | tarball 的正整数 byte size |
 
-增加第二个 package 时，在其 owner 的 `BUILD.bazel` 中声明 `npm_release_tarball(package, manifest)`，再把 label 加入 `//tools/bazel:npm_release_bundle` 的 `packages` 列表即可；无需修改 Python 实现、slice 或 workflow。重复 package name、tarball basename 或与其它 Release asset 冲突都会失败。
+增加其他 package 时，在其 owner 的 `BUILD.bazel` 中声明 `npm_release_tarball(package, manifest)`，再把 label 加入 `//tools/bazel:npm_release_bundle` 的 `packages` 列表即可；无需修改 Python 实现、slice 或 workflow。重复 package name、tarball basename 或与其它 Release asset 冲突都会失败。
 
 下游 `GizClaw/deploy` 将以 tag 选择这个 Release，验证 GitHub asset digest、索引中的 SHA-256 与 size，再把同一 tarball 发布到香港分发 bucket 的 `npm/` prefix 并生成 static-registry packument。GizOS 提供源 asset 和索引，不在此流水线中上传 bucket 或生成 packument。
 

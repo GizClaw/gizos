@@ -463,6 +463,16 @@ projects/h2loader/
 
 设备端 Loader App、共用 library、H2Loader 专用 target component、Loader image entry 和 H2Loader package tooling 归 `projects/h2loader/`。`projects/h2loader/tools/bazel/` 拥有 `h2loader_tar_zlib` artifact rule、按 `target`/`board` 选择 layout 的 firmware wrapper，以及共用 partition、recovery 和 variant build input；全仓通用 ESP-IDF、BK firmware rule 仍归顶层 `tools/bazel/`。可复用 Example 归 `projects/example/apps/`，跨目标测试 App 归 `projects/e2e/apps/`，PIXA game App 归 `projects/pixa_games/apps/`；它们的 H2Loader-managed package 同样位于各自 project 的 `targets/h2loader_tar_zlib/`。被 H2Loader 安装不会改变源码或 artifact ownership。内部可复用 Web SDK 与 npm artifact 分别归 `libs/web/` 与 `targets/npm_package/h2loader/`；产品 React/shadcn UI 归 `GizClaw/www`。npm artifact 提交自己的 `package.json` 作为 package identity/version source of truth，并只组装 `libs/web` 的 matching JS/runtime/WASM outputs；它不取得 Browser lifecycle 或 Node.js runtime ownership。Native CLI App 与 executable target 分别归 `projects/h2loader/apps/cli/app/` 和 `projects/h2loader/targets/cc_binary/cli/`；portable Host Core 归 `libs/h2loader_host/`。具体职责见 [H2Loader 产品文档](/apps/h2loader/)。
 
+### GizClaw Firmware Browser SDK
+
+```text
+projects/gizclaw/
+├── libs/web/                       # Optional runtime SDK, canonical codec and TypeScript contract
+└── targets/npm_package/firmware/    # @gizclaw/firmware package identity, tarball and consumer tests
+```
+
+`projects/gizclaw/libs/web` 拥有绑定明确 WASM Module 的可选 npm SDK；最终 artifact 由 `targets/npm_package/firmware` 组装。固件不依赖 npm 包，产品通过 C 使用 `libs/gizclaw/web` 和已有 Service，由固件提供独立的 `Module.h2GizClaw` 字节/回调接口。共享 ABI version 位于 `libs/gizclaw/web/protocol.json`，对象 codec/map 和类型只进入 npm 包。SDK 不包含产品固件，不取得 H106、Runtime、Service 或页面 lifecycle ownership；它只封装传入的 runtime。同一实例可有多个 client，`close()` 只取消所属 client 的调用。
+
 ## `tools`
 
 `tools/` 保存只在开发机运行的命令、生成器和设备操作工具。

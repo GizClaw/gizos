@@ -1,0 +1,53 @@
+load("@rules_python//python:defs.bzl", "py_binary")
+load("//tools/bazel:web_archive.bzl", "web_archive_browser_test", "web_archive_serve")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+py_binary(
+    name = "package",
+    srcs = ["package.py"],
+    legacy_create_init = 0,
+    main = "package.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+genrule(
+    name = "archive",
+    srcs = [
+        "index.html",
+        "assertions.mjs",
+        "//libs/gizclaw/web/tests/local",
+        "//projects/gizclaw/targets/npm_package/firmware:release_tarball",
+    ],
+    outs = ["firmware-sdk.web.tar"],
+    cmd = """$(execpath :package) \\
+        --firmware $(location //libs/gizclaw/web/tests/local:local) \\
+        --package $(location //projects/gizclaw/targets/npm_package/firmware:release_tarball) \\
+        --host $(location index.html) \\
+        --assertions $(location assertions.mjs) \\
+        --output $@""",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    tools = [":package"],
+)
+
+web_archive_browser_test(
+    name = "browser_test",
+    archive = ":archive",
+    fails = ["SDK failure"],
+    passes = [
+        "SDK runtime_tools_mhs=PASS",
+        "SDK existing_lua_tools=PASS",
+        "SDK runtime_isolation=PASS",
+        "SDK client_close_cancel=PASS",
+        "SDK decode_ack=PASS",
+        "SDK raw_callback_api=PASS",
+        "SDK all_runtimes_closed=PASS",
+    ],
+    timeout_s = 90,
+)
+
+web_archive_serve(
+    name = "serve",
+    archive = ":archive",
+)

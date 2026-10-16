@@ -1,0 +1,148 @@
+#include "libs/gizclaw/web/src/h2_web_gizclaw_internal.h"
+#include "h2_web_main_thread.h"
+#include <emscripten.h>
+
+/* clang-format off */
+EM_JS(void, h2_web_gizclaw_bind_impl,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ['pointer','pointer','u32','u32','u32'], 'i32',
+    (address, buffer, limit, defaultTimeout, capacity) => {
+      if (Module.h2WebGizClawState?.attached) return -18;
+      /* FIRMWARE_PROTOCOL */
+      const signed32 = value => Number.isInteger(value) && value >= -2147483648 && value <= 2147483647;
+      const bytes = value => ArrayBuffer.isView(value) &&
+        Object.prototype.toString.call(value) === '[object Uint8Array]';
+      const state = {address, attached: true, closed: false, serial: 0, pending: new Map()};
+      const remove = request => {
+        clearTimeout(request.timer);
+        clearTimeout(request.retry);
+        state.pending.delete(request.id);
+      };
+      const deliver = (request, response) => {
+        if (request.delivered) return -10;
+        request.delivered = true;
+        try {
+          const result = request.callback(response);
+          return signed32(result) ? result : -15;
+        } catch (_) { return -15; }
+      };
+      const failure = code => ({code, hasError: false, rpcCode: 0,
+        rpcMessage: "", payload: new Uint8Array(), nativeTools: null});
+      const cancel = (request, code) => {
+        if (request.canceled) return;
+        request.canceled = true;
+        clearTimeout(request.timer);
+        clearTimeout(request.retry);
+        request.bytes = null;
+        if (request.admitted) Module._h2_web_gizclaw_cancel(request.id);
+        else remove(request);
+        deliver(request, failure(code));
+      };
+      const api = Object.freeze({
+        version: protocol.version,
+        request_capacity: capacity,
+        request_limit_bytes: limit,
+        timeout_ms: defaultTimeout,
+        get closed() { return state.closed; },
+        request(method, payload, callback, options = {}) {
+          if (state.closed) return -10;
+          if (!signed32(method) || !bytes(payload) || typeof callback !== 'function' ||
+              !options || typeof options !== 'object') return -1;
+          const timeout = options.timeout_ms ?? defaultTimeout;
+          if (!Number.isInteger(timeout) || timeout < 1 || timeout > 120000) return -1;
+          if (payload.byteLength > limit) return -13;
+          if (state.pending.size >= capacity) return -18;
+          let copy;
+          try { copy = new Uint8Array(payload); }
+          catch (cause) { return cause instanceof RangeError ? -5 : -1; }
+          // Validate the actual snapshot before writing the fixed native input.
+          if (copy.byteLength > limit) return -13;
+          do { state.serial = state.serial % 0x7fffffff + 1; } while (state.pending.has(state.serial));
+          const request = {id: state.serial, method, callback, timeout,
+            bytes: copy, admitted: false, canceled: false, delivered: false};
+          state.pending.set(request.id, request);
+          request.timer = setTimeout(() => cancel(request, -6), timeout);
+          const submit = () => {
+            if (state.closed || request.canceled) return;
+            HEAPU8.set(request.bytes, buffer);
+            const rc = Module._h2_web_gizclaw_request(request.id, method, request.bytes.length, timeout);
+            if (rc === -9 || rc === -18) { request.retry = setTimeout(submit, 1); return; }
+            if (rc !== 0) { remove(request); deliver(request, failure(rc)); return; }
+            request.admitted = true;
+            request.bytes = null;
+          };
+          // Accepted calls always complete asynchronously, after request returns its ID.
+          request.retry = setTimeout(submit, 0);
+          return request.id;
+        },
+        cancel(id) {
+          if (state.closed) return -10;
+          if (!Number.isInteger(id) || id < 1 || id > 0x7fffffff) return -1;
+          const request = state.pending.get(id);
+          if (!request || request.delivered) return -8;
+          cancel(request, -10);
+          return 0;
+        },
+      });
+      state.finish = (id, code, hasError, rpcCode, payload, length, message, messageLength, toolIds, nativeCount) => {
+        const request = state.pending.get(id);
+        if (!request) return -10;
+        remove(request);
+        if (state.closed || request.canceled) return -10;
+        return deliver(request, {code, hasError: !!hasError, rpcCode,
+          rpcMessage: new TextDecoder().decode(HEAPU8.slice(message, message + messageLength)),
+          payload: HEAPU8.slice(payload, payload + length),
+          nativeTools: nativeCount < 0 ? null :
+            Array.from(HEAPU32.subarray(toolIds >>> 2, (toolIds >>> 2) + nativeCount))});
+      };
+      state.detach = () => {
+        if (state.closed) return;
+        state.closed = true;
+        state.attached = false;
+        for (const request of [...state.pending.values()]) cancel(request, -10);
+        state.pending.clear();
+        Module.h2GizClaw = null;
+        window.removeEventListener('pagehide', state.detach);
+        Module._h2_web_gizclaw_set_current(0);
+      };
+      Module.h2WebGizClawState = state;
+      Module.h2GizClaw = api;
+      Module._h2_web_gizclaw_set_current(address);
+      window.addEventListener('pagehide', state.detach);
+      return 0;
+    });
+});
+EM_JS(void, h2_web_gizclaw_finish_impl,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion,
+    ['pointer','u32','i32','i32','i32','pointer','u32','pointer','u32','pointer','i32'], 'i32',
+    (address, id, code, hasError, rpcCode, payload, length, message, messageLength, toolIds, nativeCount) => {
+      const state = Module.h2WebGizClawState;
+      if (!state || state.address !== address || state.closed) return -10;
+      return state.finish(id, code, hasError, rpcCode, payload, length, message, messageLength, toolIds, nativeCount);
+    });
+});
+EM_JS(void, h2_web_gizclaw_detach_impl,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ['pointer'], 'i32', address => {
+    const state = Module.h2WebGizClawState;
+    if (state?.address !== address) return 0;
+    state.detach();
+    Module.h2WebGizClawState = null;
+    return 0;
+  });
+});
+/* clang-format on */
+
+void h2_web_gizclaw_bind_js(void *context, h2_web_main_result_t *result,
+                           h2_web_main_completion_t *completion) {
+  h2_web_gizclaw_bind_impl(context, result, completion);
+}
+void h2_web_gizclaw_finish_js(void *context, h2_web_main_result_t *result,
+                             h2_web_main_completion_t *completion) {
+  h2_web_gizclaw_finish_impl(context, result, completion);
+}
+void h2_web_gizclaw_detach_js(void *context, h2_web_main_result_t *result,
+                             h2_web_main_completion_t *completion) {
+  h2_web_gizclaw_detach_impl(context, result, completion);
+}

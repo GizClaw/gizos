@@ -1,29 +1,24 @@
 import { readFileSync, writeFileSync, mkdirSync, copyFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { createRequire } from 'node:module';
-const [codecPath, mapPath, sdkPath, templatePath, outputPath, compilerPath, bindingPath, typesDir] = process.argv.slice(2);
-if (!outputPath) throw new Error('codec, map, SDK, C template and output paths are required');
+const [codecPath, mapPath, sdkPath, protocolPath, outputPath, compilerPath, bindingPath, typesDir, licensePath, licenseOutput] = process.argv.slice(2);
 const ts = createRequire(import.meta.url)(resolve(compilerPath));
 const strip = path => ts.transpileModule(readFileSync(path, 'utf8'), {
   compilerOptions: {target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext},
 }).outputText.replace(/^export\s+(?=(?:function|const|class|let|var)\b)/gm, '')
   .replace(/^export\s*\{\s*\};?\s*$/gm, '');
-const codec = strip(codecPath);
-const registry = strip(mapPath);
 const exports = ['encodeRPCRequestPayload', 'decodeRPCResponsePayload',
   'encodeClientToolRequestPayload', 'decodeClientToolResponsePayload',
   'decodeClientHwdReadResponsePayload', 'encodeClientHwdWriteRequestPayload',
   'decodeClientHwdWriteResponsePayload', 'RPC_METHOD_IDS', 'CLIENT_TOOL_IDS',
   'CLIENT_TOOL_NAMES', 'CLIENT_HWD_IDS', 'CLIENT_HWD_NAMES', 'encodeBase64', 'decodeBase64',
   'hasClientHwdWriteRequest: hwd => Object.prototype.hasOwnProperty.call(HWD_WRITE_REQUEST_MESSAGES, String(hwd))'];
-const canonical = `const codec = (() => {\n${codec}\n${registry}\nreturn {${exports.join(',')}};\n})();\n`;
-const template = readFileSync(templatePath, 'utf8');
-const source = template.replace('/* CANONICAL_SDK_AND_ADAPTER */',
-    canonical + readFileSync(sdkPath, 'utf8'));
-if (source === template) throw new Error('C template has no SDK insertion point');
-writeFileSync(outputPath, '// Generated from the pinned GizClaw SDK and the Web adapter.\n' + source);
-
-if (!typesDir) throw new Error('compiler, public binding and declaration output paths are required');
+const identity = JSON.parse(readFileSync(protocolPath, 'utf8'));
+const canonical = 'const codec = (() => {\n' + strip(codecPath) + '\n' + strip(mapPath) +
+  '\nreturn {' + exports.join(',') + '};\n})();\n';
+writeFileSync(outputPath, '// Built from the pinned canonical GizClaw codec and optional host SDK.\n' +
+  'const protocol = ' + JSON.stringify(identity) + ';\n' + canonical + readFileSync(sdkPath, 'utf8'));
+copyFileSync(licensePath, licenseOutput);
 mkdirSync(typesDir, {recursive: true});
 const options = {
   target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext,

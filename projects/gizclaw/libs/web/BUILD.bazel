@@ -1,0 +1,26 @@
+load(":sdk.bzl", "firmware_sdk")
+
+package(default_visibility = ["//visibility:public"])
+
+firmware_sdk(name = "sdk")
+
+filegroup(
+    name = "types",
+    srcs = [":sdk"],
+    output_group = "types",
+)
+
+filegroup(
+    name = "protocol_license",
+    srcs = [":sdk"],
+    output_group = "license",
+)
+
+filegroup(
+    name = "web",
+    srcs = [
+        ":protocol_license",
+        ":sdk",
+        ":types",
+    ],
+)
