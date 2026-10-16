@@ -341,6 +341,7 @@ test ! -e "$consumer_root/private_bk_task_policy"
     --define="h2_host_os=$host_os" \
     --platforms="@gizos//tools/bazel/platforms:$platform" \
     --extra_toolchains="@gizos//tools/bazel/platforms:${platform}_test_toolchain" \
+    --test_output=errors \
     //:embedded_menu_font_test \
     //:font_consumer_test \
     //:lua_app_release_test \

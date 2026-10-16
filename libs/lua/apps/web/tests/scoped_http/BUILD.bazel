@@ -1,6 +1,6 @@
 load("@emsdk//emscripten_toolchain:wasm_rules.bzl", "wasm_cc_binary")
 load("@rules_cc//cc:defs.bzl", "cc_binary")
-load("@rules_pkg//pkg:mappings.bzl", "pkg_files")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//libs/lua:lua_app.bzl", "lua_app")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
@@ -94,12 +94,20 @@ genrule(
     cmd = "printf '/*\\n  Cross-Origin-Opener-Policy: same-origin\\n  Cross-Origin-Embedder-Policy: require-corp\\n' > $@",
 )
 
+pkg_files(
+    name = "runtime_files",
+    srcs = [
+        ":fixture_wasm",
+        ":isolation_headers",
+    ],
+    strip_prefix = strip_prefix.files_only(),
+)
+
 pkg_tar(
     name = "archive",
     srcs = [
-        ":fixture_wasm",
         ":http_package",
-        ":isolation_headers",
+        ":runtime_files",
     ],
     out = "scoped-http.web.tar",
     mode = "0644",

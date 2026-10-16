@@ -2,6 +2,8 @@
 
 Web 入口归 portable App 的 project owner。Web 不是 Mobile 子平台；它有独立的 lifecycle、toolchain 和 hosting contract。
 
+公共 `h2_web_app()` 的归档在本仓库及外部 Bzlmod consumer 中都将 `index.html`、`index.js`、`index.wasm`、可选的 `index.data` 和 `_headers` 放在 tar 根目录。打包使用显式文件映射，不能把 `external/gizos+/` 等 repository 路径带入发行包，也不要求调用方 overlay 或重新打包；入口的编译、启动和生命周期仍由原有 owner 负责。
+
 ## Opt-in fake Wi-Fi and modem
 
 An embedding host can call `h2WebConfigureEnvironment()` on the packaged Web page before Start, then again to change the simulated network scenario. A session started without this opt-in rejects later environment injection; reinstall the page to enable fake radios. The version-1 object is copied to `Module.h2WebEnvironment`:

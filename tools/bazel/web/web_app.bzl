@@ -2,6 +2,7 @@
 
 load("@emsdk//emscripten_toolchain:wasm_rules.bzl", "wasm_cc_binary")
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel:web_archive.bzl", "web_archive_browser_test", "web_archive_serve")
@@ -197,9 +198,14 @@ def h2_web_app(
         outs = ["_headers"],
         cmd = "printf '/*\\n  Cross-Origin-Opener-Policy: same-origin\\n  Cross-Origin-Embedder-Policy: require-corp\\n' > $@",
     )
+    pkg_files(
+        name = name + "_runtime_files",
+        srcs = [":" + name + "_wasm", ":" + name + "_isolation_headers"],
+        strip_prefix = strip_prefix.files_only(),
+    )
     pkg_tar(
         name = name,
-        srcs = [":" + name + "_wasm", ":" + name + "_isolation_headers"],
+        srcs = [":" + name + "_runtime_files"],
         out = name + ".web.tar",
         mode = "0644",
         portable_mtime = True,
