@@ -305,9 +305,17 @@ var Module = {print: t => console.log(t), printErr: t => console.error(t),
             # A second tab cannot open the root while the first holds it.
             reload(session, "fs-hold")
             expect("fs-hold")
-            second, _ = open_tab("fs-busy")
+            second, second_session = open_tab("fs-busy")
             expect("fs-busy")
             expect("destroy")
+            error = cdp.send("Runtime.evaluate", {
+                "expression": "Module.h2WebFsLastError", "returnByValue": True,
+            }, session=second_session)["result"]["value"]
+            assert error["code"] == -18 and error["root"] == "/persist", error
+            message = error["message"]
+            assert "acquire deadline expired" in message, message
+            assert "budget=500ms" in message and "elapsed=" in message, message
+            assert "holder unknown" in message and "another tab" not in message, message
             cdp.send("Target.closeTarget", {"targetId": second})
 
             # Clearing is committed and survives a reload.

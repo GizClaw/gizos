@@ -178,6 +178,21 @@ struct h2_runtime {
 };
 
 h2_pal_result_t h2_runtime_init(const h2_runtime_config_t *config, h2_runtime_t **out_runtime);
+/**
+ * @brief Destroy a Runtime with explicit cleanup evidence.
+ * @param[in,out] runtime Runtime owner pointer. A NULL pointer is invalid;
+ *                       a NULL *runtime succeeds.
+ * @return OK after successful cleanup, BUSY while Test Control borrows the
+ *         Runtime, or the original input/NFC stop/join result.
+ *
+ * Serial with all Runtime users: stop external producers and join App/Lua/
+ * Service workers first. Failed joins retain *runtime and every borrowed
+ * dependency for retry. Once input/NFC tasks are joined, destruction sets
+ * *runtime to NULL even when returning a latched input-worker fault; NULL
+ * proves that providers are no longer borrowed, not that cleanup returned OK.
+ */
+h2_pal_result_t h2_runtime_destroy(h2_runtime_t **runtime);
+/** Compatibility wrapper; callers needing cleanup evidence use destroy. */
 void h2_runtime_deinit(h2_runtime_t *runtime);
 /**
  * Read saved credentials and call PAL connect without saving them again.

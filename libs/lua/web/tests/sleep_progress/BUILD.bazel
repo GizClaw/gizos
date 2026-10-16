@@ -1,0 +1,14 @@
+load("//tools/bazel/web:web_app.bzl", "h2_web_app")
+
+h2_web_app(
+    name = "sleep_progress",
+    srcs = ["test_sleep_progress.c"],
+    app_name = "lua-sleep-progress",
+    passes = [
+        "LUA worker_deadline_progress=PASS",
+        "LUA worker_deadline_stop=PASS",
+        "LUA teardown=PASS",
+    ],
+    test_timeout_s = 30,
+    deps = ["//libs/lua"],
+)

@@ -1,8 +1,6 @@
 # Lua Runtime
 
-`libs/lua` 提供 Lua 5.5 VM Core 和借用 `h2_runtime_t` 的 Runtime Host。Core
-只负责文本 chunk、Lua stack、GC、coroutine 与受限标准库；Host 负责 allocator、
-worker、Timer、Filesystem、事件投递、原生 module 和每个 Skill 的隔离生命周期。
+`libs/lua` 提供 Lua 5.5 VM Core 和借用 `h2_runtime_t` 的 Runtime Host。Core 只负责文本 chunk、Lua stack、GC、coroutine 与受限标准库；Host 负责 allocator、 worker、Filesystem、事件投递、原生 module 和每个 Skill 的隔离生命周期。
 
 Host 归一化后的 `allocator` 同时用于 Lua Link 对象、mutex/cond、BLE-KCP 和 Lua 音轨；worker 与 Link 任务的栈由平台 task provider 配置。Host allocator 为 NULL 时仍回退 Runtime mem，共享平台和驱动内部资源保留各自的分配器。
 
@@ -14,7 +12,7 @@ App owns Runtime event consumption
         ▼
 Runtime Host ── one job / one lua_State ── fixed Runtime worker
         │
-        ├── Runtime Memory / Time / Timer / Task / Queue / Sync / Filesystem
+        ├── Runtime Memory / Time / Task / Queue / Sync / Filesystem
         ├── private yyjson conversion
         ├── Runtime Display / Touch / Audio System singleton modules
         └── Runtime physical component proxy
@@ -72,14 +70,11 @@ Host 的正常生命周期是：
 6. `stop()` 拒绝新 job、取消等待，`join()` 等待 worker 退出，最后 `destroy()`。
 
 `h2_lua_host_step()` 只用于提示 worker 有新工作，不会让调用线程进入 VM。
-Timer callback 和异步 capability completion 只记录完成并唤醒 worker；真正的 Lua
-resume、callback 和资源释放都在 owning worker 或 stop/join 后执行。每次 resume
-记录独立开始时间；instruction hook 按 `instruction_quantum` 检查取消和 job 总超时，
-并在达到 `resume_time_budget_ms` 后 yield，使 CPU-bound Lua 归还 owning worker。
-每个 Runtime event callback 也作为同一 VM 内的短生命周期 scheduler task 执行，
-因此可以 yield，并受相同的 quantum、取消和超时约束。
+异步 capability completion 只记录完成并唤醒 worker；真正的 Lua resume、callback 和资源释放都在 owning worker 或 stop/join 后执行。每次 resume 记录独立开始时间；instruction hook 按 `instruction_quantum` 检查取消和 job 总超时， 并在达到 `resume_time_budget_ms` 后 yield，使 CPU-bound Lua 归还 owning worker。 每个 Runtime event callback 也作为同一 VM 内的短生命周期 scheduler task 执行， 因此可以 yield，并受相同的 quantum、取消和超时约束。
 
 Button `ACTION` 的共享 Runtime payload 只有 `pressed_at_ms` 和 `released_at_ms`。Lua Runtime 在投影到 VM 时自行计算 `duration_ms`，并保持 PR #82 的 Button `gesture_kind` 接口：普通按压为 1、短按为 2、长按为 3，兼容阈值为 500 ms。这个分类只属于 Lua adapter，不进入共享的 `libs/runtime` Button payload；Lua App 无需因底层 Runtime 删除 gesture policy 而更改接口。
+
+`runtime.sleep(ms)` 与 `delay.delay_ms(ms)` 在当前 coroutine 记录 Runtime monotonic wake deadline 后 yield。固定 worker 扫描等待者并把 wake queue 等待上限缩短到最近 deadline，不为每次 sleep 创建、stop 或 destroy PAL Timer，也不为 coroutine 创建原生线程。Cancel/Stop 通过已有 worker 唤醒和 join 完成，不必等长 sleep 到期；其他平台 PAL Timer 能力保持独立。`//libs/lua/web/tests/sleep_progress:browser_test` 在真实 pthread WASM 上使用拒绝 Timer create 的注入 API，验证 240 次 sleep 持续推进、返回值和长 sleep 中 Stop/teardown；这不把所有历史私有 Fishing 停滞归为同一个根因。
 
 ## Lua surface
 

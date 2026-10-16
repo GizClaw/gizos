@@ -3492,7 +3492,8 @@ static void test_input_fault_releases_held_buttons(void) {
     assert(status.last_error_stage == H2_RUNTIME_INPUT_STAGE_SLEEP);
 
     env.time_state.sleep_rc = H2_PAL_OK;
-    h2_runtime_deinit(runtime);
+    assert(h2_runtime_destroy(&runtime) == H2_PAL_ERR_IO);
+    assert(runtime == NULL);
     assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
 }
 
@@ -3537,6 +3538,48 @@ static void test_input_join_failure_is_retryable(void) {
     env.task_state.join_rc = H2_PAL_OK;
     h2_runtime_deinit(runtime);
     assert(env.task_state.joins == 1u);
+    assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
+}
+
+static void test_checked_destroy_retains_dependencies(void) {
+    assert(h2_runtime_destroy(NULL) == H2_PAL_ERR_INVALID_ARG);
+    h2_runtime_t *empty = NULL;
+    assert(h2_runtime_destroy(&empty) == H2_PAL_OK);
+    for (int nfc = 0; nfc < 2; ++nfc) {
+        test_runtime_env_t env;
+        test_env_init(&env);
+        add_periph(&env, 10u, nfc ? H2_PAL_PERIPH_TYPE_NFC_READER
+                                 : H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+        h2_runtime_t *runtime = test_runtime_create(&env);
+        h2_runtime_t *original = runtime;
+        assert(env.task_state.starts == (nfc ? 2u : 1u));
+        const size_t frees = env.allocator_state.free_calls;
+        env.task_state.join_rc = H2_PAL_ERR_IO;
+        assert(h2_runtime_destroy(&runtime) == H2_PAL_ERR_IO);
+        assert(runtime == original);
+        assert(runtime->private_state->input_task != NULL);
+        assert(!nfc || runtime->private_state->input_nfc_task != NULL);
+        assert(env.task_state.joins == 0u && env.allocator_state.free_calls == frees);
+        h2_runtime_component_info_t info;
+        assert(h2_runtime_component_get(runtime, 1u, &info) == H2_PAL_OK);
+        env.task_state.join_rc = H2_PAL_OK;
+        assert(h2_runtime_destroy(&runtime) == H2_PAL_OK && runtime == NULL);
+        assert(env.task_state.joins == (nfc ? 2u : 1u));
+        assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
+        assert(h2_runtime_destroy(&runtime) == H2_PAL_OK);
+    }
+    test_runtime_env_t env;
+    test_env_init(&env);
+    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+    h2_runtime_t *runtime = test_runtime_create(&env);
+    h2_runtime_t *original = runtime;
+    h2_runtime_test_control_t *control = NULL;
+    assert(h2_runtime_test_control_open(runtime, &control) == H2_PAL_OK);
+    const size_t frees = env.allocator_state.free_calls;
+    assert(h2_runtime_destroy(&runtime) == H2_PAL_ERR_BUSY && runtime == original);
+    assert(env.allocator_state.free_calls == frees);
+    h2_runtime_test_control_close(control);
+    assert(h2_runtime_destroy(&runtime) == H2_PAL_OK && runtime == NULL);
     assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
 }
 
@@ -5208,6 +5251,7 @@ int main(void) {
     test_input_task_start_failure_leaves_input_stopped();
     test_input_worker_failure_closes_event_queue();
     test_input_join_failure_is_retryable();
+    test_checked_destroy_retains_dependencies();
     test_input_stop_then_start_resumes_acquisition();
     test_input_restart_delivers_queued_push_edges();
     test_input_start_without_mapped_input_is_noop();
