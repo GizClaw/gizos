@@ -547,3 +547,16 @@ cc_test(
     }),
     deps = ["//libs/pal"],
 )
+
+py_test(
+    name = "net_socket_test",
+    srcs = ["tests/test_h2_bk_net_socket.py"],
+    data = ["src/h2_bk_platform_net.c"],
+    legacy_create_init = False,
+    main = "tests/test_h2_bk_net_socket.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
