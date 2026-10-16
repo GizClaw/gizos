@@ -1,0 +1,16 @@
+load("//tools/bazel/web:web_app.bzl", "h2_web_app")
+
+h2_web_app(
+    name = "fs_reentry",
+    srcs = ["test_fs_reentry.c"],
+    app_name = "fs-reentry",
+    passes = [
+        "FS same_file_overlap=PASS",
+        "FS close_barrier_handle_alive=PASS",
+        "FS guard_reentry=PASS",
+        "FS borrow_retained_during_io=PASS",
+        "FS teardown=PASS",
+    ],
+    test_timeout_s = 30,
+    deps = [],
+)

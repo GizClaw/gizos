@@ -341,10 +341,12 @@ test ! -e "$consumer_root/private_bk_task_policy"
     --define="h2_host_os=$host_os" \
     --platforms="@gizos//tools/bazel/platforms:$platform" \
     --extra_toolchains="@gizos//tools/bazel/platforms:${platform}_test_toolchain" \
+    --test_output=errors \
     //:embedded_menu_font_test \
     //:font_consumer_test \
     //:lua_app_release_test \
     @gizos//libs/gizclaw:h2_gizclaw_local_test \
+    @gizos//libs/lua/apps/web/tests/scoped_http:browser_test \
     @gizos//projects/gizclaw/targets/npm_package/firmware:package_test \
     //:private_esp_task_policy_test \
     //:private_bk_ap_task_policy_test \

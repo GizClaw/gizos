@@ -26,15 +26,27 @@ extern "C" {
  * change made so far, or with the commit error (NO_SPACE for quota,
  * UNAVAILABLE when storage is blocked, IO otherwise, TIMEOUT after 30 s).
  * A failed commit leaves the change in memory; the next barrier retries it.
- * Barrier callers in a task yield to other tasks; root callers need Asyncify.
+ * Commit barriers wait on a pthread Worker, leaving the browser UI runnable.
+ * POSIX proxy calls release all shared state-guard nesting while retaining
+ * the filesystem/platform; UI state callbacks may run before the syscall.
+ * A concurrent filesystem close returns BUSY until the in-flight call returns.
+ * Operations on an individual file are also admitted serially: overlapping
+ * read/seek/write/sync/close returns BUSY without touching the stream (read and
+ * write report zero bytes). A rejected close leaves that file valid for retry.
+ * An admitted close keeps its wrapper busy through the commit barrier, then
+ * consumes the handle even on an I/O/commit error; do not reuse it afterward.
+ * Only the configured persistent and read-only roots are visible. Ancestors
+ * outside those roots (for example /data above /data/gizclaw) remain NOT_FOUND;
+ * consumers must not require creating or statting them to use a visible root.
  * Committed data survives reload, tab close and browser restart. Browsers
  * commit IndexedDB with relaxed durability, and best-effort site storage can
  * be evicted under storage pressure or cleared by the user.
  *
  * Exclusivity: opening takes the Web Lock "h2-web-fs:<root>" for the life of
  * the provider, so one tab or worker of an origin owns a root at a time. Other
- * tabs wait up to lock_timeout_ms and then get BUSY; a reload waits for the
- * previous document to release the lock. Web Locks need a secure context
+ * lock requests wait up to lock_timeout_ms; BUSY reports an expired grant
+ * budget, including browser scheduling, and does not identify a lock holder.
+ * A reload waits for the previous document to release the lock. Web Locks need a secure context
  * (HTTPS or localhost); without them open returns UNSUPPORTED rather than risk
  * two tabs overwriting each other's snapshot.
  */
@@ -46,7 +58,7 @@ typedef struct h2_web_fs_config {
   /** Absolute directories already present in the Emscripten filesystem. */
   const char *const *readonly_roots;
   size_t readonly_root_count;
-  /** Wait for another tab to release the root; zero selects 3000 ms. */
+  /** Web Lock grant budget including browser scheduling; zero is 3000 ms. */
   uint32_t lock_timeout_ms;
 } h2_web_fs_config_t;
 

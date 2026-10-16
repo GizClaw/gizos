@@ -1,8 +1,6 @@
 # Lua Runtime
 
-`libs/lua` 提供 Lua 5.5 VM Core 和借用 `h2_runtime_t` 的 Runtime Host。Core
-只负责文本 chunk、Lua stack、GC、coroutine 与受限标准库；Host 负责 allocator、
-worker、Timer、Filesystem、事件投递、原生 module 和每个 Skill 的隔离生命周期。
+`libs/lua` 提供 Lua 5.5 VM Core 和借用 `h2_runtime_t` 的 Runtime Host。Core 只负责文本 chunk、Lua stack、GC、coroutine 与受限标准库；Host 负责 allocator、 worker、Filesystem、事件投递、原生 module 和每个 Skill 的隔离生命周期。
 
 Host 归一化后的 `allocator` 同时用于 Lua Link 对象、mutex/cond、BLE-KCP 和 Lua 音轨；worker 与 Link 任务的栈由平台 task provider 配置。Host allocator 为 NULL 时仍回退 Runtime mem，共享平台和驱动内部资源保留各自的分配器。
 
@@ -14,7 +12,7 @@ App owns Runtime event consumption
         ▼
 Runtime Host ── one job / one lua_State ── fixed Runtime worker
         │
-        ├── Runtime Memory / Time / Timer / Task / Queue / Sync / Filesystem
+        ├── Runtime Memory / Time / Task / Queue / Sync / Filesystem
         ├── private yyjson conversion
         ├── Runtime Display / Touch / Audio System singleton modules
         └── Runtime physical component proxy
@@ -72,14 +70,11 @@ Host 的正常生命周期是：
 6. `stop()` 拒绝新 job、取消等待，`join()` 等待 worker 退出，最后 `destroy()`。
 
 `h2_lua_host_step()` 只用于提示 worker 有新工作，不会让调用线程进入 VM。
-Timer callback 和异步 capability completion 只记录完成并唤醒 worker；真正的 Lua
-resume、callback 和资源释放都在 owning worker 或 stop/join 后执行。每次 resume
-记录独立开始时间；instruction hook 按 `instruction_quantum` 检查取消和 job 总超时，
-并在达到 `resume_time_budget_ms` 后 yield，使 CPU-bound Lua 归还 owning worker。
-每个 Runtime event callback 也作为同一 VM 内的短生命周期 scheduler task 执行，
-因此可以 yield，并受相同的 quantum、取消和超时约束。
+异步 capability completion 只记录完成并唤醒 worker；真正的 Lua resume、callback 和资源释放都在 owning worker 或 stop/join 后执行。每次 resume 记录独立开始时间；instruction hook 按 `instruction_quantum` 检查取消和 job 总超时， 并在达到 `resume_time_budget_ms` 后 yield，使 CPU-bound Lua 归还 owning worker。 每个 Runtime event callback 也作为同一 VM 内的短生命周期 scheduler task 执行， 因此可以 yield，并受相同的 quantum、取消和超时约束。
 
 Button `ACTION` 的共享 Runtime payload 只有 `pressed_at_ms` 和 `released_at_ms`。Lua Runtime 在投影到 VM 时自行计算 `duration_ms`，并保持 PR #82 的 Button `gesture_kind` 接口：普通按压为 1、短按为 2、长按为 3，兼容阈值为 500 ms。这个分类只属于 Lua adapter，不进入共享的 `libs/runtime` Button payload；Lua App 无需因底层 Runtime 删除 gesture policy 而更改接口。
+
+`runtime.sleep(ms)` 与 `delay.delay_ms(ms)` 在当前 coroutine 记录 Runtime monotonic wake deadline 后 yield。固定 worker 扫描等待者并把 wake queue 等待上限缩短到最近 deadline，不为每次 sleep 创建、stop 或 destroy PAL Timer，也不为 coroutine 创建原生线程。Cancel/Stop 通过已有 worker 唤醒和 join 完成，不必等长 sleep 到期；其他平台 PAL Timer 能力保持独立。`//libs/lua/web/tests/sleep_progress:browser_test` 在真实 pthread WASM 上使用拒绝 Timer create 的注入 API，验证 240 次 sleep 持续推进、返回值和长 sleep 中 Stop/teardown；这不把所有历史私有 Fishing 停滞归为同一个根因。
 
 ## Lua surface
 
@@ -445,7 +440,7 @@ Host package test 同时校验 archive、manifest 和 metadata 三个 output gro
 
 ## App 存储
 
-`storage` 让 Lua App 在重启后保留少量数据，例如最高分和设置。Board 或宿主通过 `h2_lua_host_config_t.storage` 提供一个借用的 PAL Filesystem、其命名空间中的 root 目录（例如 ESP LittleFS `data` 分区上的 `/data/lua`）、每个 App 的内容字节配额和文件数上限；字段、默认值和上限以 `h2_lua.h` 中 `h2_lua_storage_config_t` 的 Doxygen 为准。fs 必须提供 `mkdir`、`open`、`read`、`write`、`close`、`stat`、`remove` 和覆盖目标的 `rename`，否则 `h2_lua_host_create()` 返回 `UNSUPPORTED`；root 或上限非法时返回 `INVALID_ARG`。Root 不需要预先存在，首次写入时逐级创建。一个 storage root 同一时间只能由一个 Host 使用，Host 用一个 mutex 串行化所有 job 的存储操作。
+`storage` 让 Lua App 在重启后保留少量数据，例如最高分和设置。Board 或宿主通过 `h2_lua_host_config_t.storage` 提供一个借用的 PAL Filesystem、其命名空间中的 root 目录（例如 ESP LittleFS `data` 分区上的 `/data/lua`）、每个 App 的内容字节配额和文件数上限；字段、默认值和上限以 `h2_lua.h` 中 `h2_lua_storage_config_t` 的 Doxygen 为准。fs 必须提供 `mkdir`、`open`、`read`、`write`、`close`、`stat`、`remove` 和覆盖目标的 `rename`，否则 `h2_lua_host_create()` 返回 `UNSUPPORTED`；root 或上限非法时返回 `INVALID_ARG`。Root 不需要预先存在，首次写入时逐级创建。 祖先可能是不可见或拒绝 mkdir 的 mount；KV/storage 继续尝试可见路径，并以最终 App 目录的 stat/is_dir 为准。一个 storage root 同一时间只能由一个 Host 使用，Host 用一个 mutex 串行化所有 job 的存储操作。
 
 每个 `h2_lua_job_submit_*()` 都接收 app id。App id 和文件名都是 `1..32` 字节的 `a-z`、`0-9`、`_`、`-`、`.`，且不能以 `.` 开头，因此绝对路径、`/`、`..`、反斜线、大写字母和隐藏文件都会被拒绝，大小写不敏感的文件系统也不会让两个名字指向同一个文件。非法 app id 使提交返回 `INVALID_ARG`。相同 app id 的 job 共享 `<root>/<app_id>/` 下的文件，不同 app id 互相不可见。
 
@@ -595,7 +590,7 @@ MP4 播放器配置也支持同名选项。启动动画可以借用同一个 Dis
 
 ## Lua App 目录与流式安装
 
-`//libs/lua/apps:apps` 拥有独立于 Lua Host 和 GizClaw 的应用目录与安装器；[API Reference](/references/lua-apps) 直接来自生产 Public Header。调用方注入 Memory、Filesystem、Sync，并配置 `preinstalled_index` 与专用 `install_root`。用户 KV 必须使用安装目录以外的独立根路径，不能把用户数据放进安装器拥有的目录。应用目录可跨 Service 重连保留，销毁前先停止并释放借用它的 Service 和安装会话。
+`//libs/lua/apps:apps` 拥有独立于 Lua Host 和 GizClaw 的应用目录与安装器；[API Reference](/references/lua-apps) 直接来自生产 Public Header。调用方注入 Memory、Filesystem、Sync，并配置 `preinstalled_index` 与专用 `install_root`。用户 KV 必须使用安装目录以外的独立根路径，不能把用户数据放进安装器拥有的目录。 FS 可以只暴露嵌套的 mount/view 根；安装器从目标父目录向上寻找最近可见的现有目录，再向下创建缺失部分，不要求 `/data` 等不可见祖先的 stat/mkdir 成功，不扩大 view。父目录的 stat 证明该位置是文件时返回格式错误，其他 FS 错误继续原样失败。应用目录可跨 Service 重连保留，销毁前先停止并释放借用它的 Service 和安装会话。
 
 预装和远程安装使用相同 format-1 Lua App manifest、`app_id` 和版本。`lua_app_index` 从 `LuaAppInfo.manifest` 生成 `format=1, apps=[{root,manifest}]`，不维护手写版本表。规则的 `installed_entry` output group 提供与包内完全相同的原始或 compact Lua 文本，`installed_files` 同时包含该 entry 与原有 data 文件；consumer 将 entry 映射为安装根下的 `<app_id>.lua`，data 保持同名子目录结构。原有 archive/manifest/metadata 默认发行输出不变。加载时缺少所需文件、文件大小不符或 entry 超限的预装项不会进入 listing；已安装的同 ID 项覆盖预装项，每个 ID 只列出一次。
 
@@ -747,3 +742,5 @@ python3 libs/lua/apps/tests/run_host_tests.py --yyjson-dir /path/to/yyjson/src -
 ```
 
 `gizclaw` checkout 应包含生成的 C contract 与已初始化的 pinned nanopb submodule。该验证使用 Host PAL；真机 Golden E2E 另行验证下载、显示与产品任务生命周期。
+
+公共回归 `//libs/lua/apps/web/tests/scoped_http:browser_test` 通过真实 Web FS 和 HTTP 下载安装 format-1 包，跨两次刷新运行 Lua 并验证独立 KV 与 storage 文件在卸载后保留；同一 target 由独立 Bzlmod consumer 执行。

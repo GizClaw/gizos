@@ -23,14 +23,16 @@ flowchart TB
     Runtime --> App
 ```
 
-Runtime 的生命周期属于 `boards/main`：
+Runtime 的生命周期属于创建它的 launcher；native image 通常是 `boards/main`，Web image 是自己的 entry：
 
 1. BSP 完成 board 和 PAL backend 初始化。
 2. `boards/main` 取得 board runtime config，并补充当前 app 的 mapping。
 3. `boards/main` 调用 `h2_runtime_init()`。
 4. `boards/main` 校验 required component，再调用 `h2_runtime_input_start()` 启动 input acquisition。
 5. `boards/main` 将 runtime instance 和 app public contract 要求的其他参数传给 app entry。
-6. App 返回后，`boards/main` 调用 `h2_runtime_deinit()`，再执行平台退出、等待或重启策略。
+6. App 返回且外部 producer/App/Lua/Service worker 全部停止并 join 后，launcher 调用 `h2_runtime_destroy(&runtime)`，按结果与输出指针决定是否可以释放 provider。
+
+`h2_runtime_destroy(&runtime)` 提供 checked cleanup：Test Control 仍借用 Runtime 时返回 `BUSY`；input 或 NFC worker 的 join 未成功时返回原错误，保留 Runtime 指针、队列和所有 borrowed provider 供重试。完成 join 后才释放 Runtime 并把指针置为 `NULL`；若 worker 曾记录运行错误，仍返回该错误，但 `NULL` 明确表示 provider 已不再被借用。调用方不能把非 OK 当作成功，也不能在指针仍非 NULL 时释放依赖。`NULL` 参数返回 `INVALID_ARG`，`*runtime == NULL` 为幂等成功。旧 `h2_runtime_deinit(runtime)` 作为 void 兼容入口保留，需要清理证据的 launcher 使用 checked API。
 
 `h2_runtime_init()` 组装 Runtime 自身：component mapping、event queue、system event
 subscription、private allocation，以及 input 侧全部一次性的部分——input writer

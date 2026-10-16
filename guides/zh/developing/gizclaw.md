@@ -10,6 +10,8 @@
 
 `libs/gizclaw/include` 中实际参与项目构建的头文件是 GizClaw 的生产 Public API contract。Config 提供 server endpoint、private key、cipher mode、timeout 和静态 Tool handler 与 MHS HWD 设备表，并注入 PAL mem、HTTP、WebRTC、crypto、time 和 log API。
 
+Service 校时请求沿用配置 endpoint 的 `http://` 或 `https://` scheme 与 base path，去掉末尾斜杠后追加 `/server-info`；无 scheme 的旧 authority 继续使用 HTTP。只有 scheme 或空 authority 的输入在发送前返回 `INVALID_ARG`。校时仍遵守原有预连接刷新、取消和重试策略，不改变本地 invoke/MHS 或产品 hook。实际 URL、bounded string、尾斜杠和无效根由 `//libs/gizclaw:h2_gizclaw_service_test` 的 HTTP PAL 验证。
+
 ## 依赖和边界
 
 GizClaw library 负责 SDK 集成和 client protocol，不创建具体 HTTP、WebRTC 或 crypto backend。Credential 来源、连接策略和 app workflow 由调用方负责。

@@ -14660,6 +14660,7 @@ typedef struct time_test {
   h2_atomic_bool_t valid;
   h2_atomic_bool_t http_gate;
   const char *first_body;
+  const char *expected_url;
   h2_pal_result_t first_result;
   h2_pal_result_t set_result;
 } time_test_t;
@@ -14699,7 +14700,10 @@ static int time_test_http(void *user, const h2_pal_http_request_t *req,
                           h2_pal_http_response_t *response) {
   time_test_t *test = user;
   unsigned call = h2_atomic_fetch_add(&test->calls, 1);
-  assert(strcmp(req->url.data, "http://example.test:9821/server-info") == 0);
+  const char *expected = test->expected_url != NULL ? test->expected_url
+      : "http://example.test:9821/server-info";
+  assert(req->url.len == strlen(expected));
+  assert(strcmp(req->url.data, expected) == 0);
   while (!h2_atomic_load(&test->http_gate)) {
     if (h2_pal_http_request_is_canceled(req))
       return H2_PAL_ERR_CLOSED;
@@ -14777,6 +14781,54 @@ static void test_time_sync_reconnect(void) {
     assert(wall == 1735689600123ull);
   }
   assert(h2_atomic_load(&test.calls) == 2);
+}
+
+static void test_time_sync_endpoint_urls(void) {
+  const struct {
+    const char *endpoint;
+    size_t length;
+    const char *url;
+  } cases[] = {
+      {"example.test:9821", 0, "http://example.test:9821/server-info"},
+      {"example.test:9821///", 0, "http://example.test:9821/server-info"},
+      {"http://example.test:9821/", 0, "http://example.test:9821/server-info"},
+      {"https://example.test:9821", 0, "https://example.test:9821/server-info"},
+      {"https://example.test:9821/api///", 0,
+       "https://example.test:9821/api/server-info"},
+      {"https://example.test:9821/api///ignored",
+       sizeof("https://example.test:9821/api///") - 1u,
+       "https://example.test:9821/api/server-info"},
+      {"https://", 0, NULL},
+      {"http://", 0, NULL},
+      {"/", 0, NULL},
+  };
+  for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+    time_test_t test = {.expected_url = cases[i].url};
+    time_test_init(&test);
+    h2_atomic_store(&test.http_gate, true);
+    const h2_pal_time_vtable_t tv = {.get_monotonic_ms = time_test_mono,
+        .get_wall_ms = time_test_wall, .get_wall_status = time_test_status,
+        .set_wall_ms = time_test_set};
+    const h2_pal_time_api_t time = {.user = &test, .vtable = &tv};
+    const h2_pal_http_vtable_t hv = {.request = time_test_http};
+    const h2_pal_http_api_t http = {.user = &test, .vtable = &hv};
+    test_env_t env;
+    h2_gizclaw_service_t *service = create_service(&env, 2);
+    service->config.on_event = NULL;
+    service->client_config.time = &time;
+    service->client_config.http = &http;
+    service->client_config.server_endpoint = (h2_gizclaw_str_t){
+        cases[i].endpoint, cases[i].length ? cases[i].length : strlen(cases[i].endpoint)};
+    h2_atomic_store(&env.connect_gate, false);
+    assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+    h2_gizclaw_time_sync_status_t status = time_test_wait(service,
+        cases[i].url ? H2_GIZCLAW_TIME_SYNC_SUCCEEDED : H2_GIZCLAW_TIME_SYNC_RETRY);
+    assert(status.attempts == 1);
+    assert(status.last_result == (cases[i].url ? H2_PAL_OK : H2_PAL_ERR_INVALID_ARG));
+    assert(h2_atomic_load(&test.calls) == (cases[i].url ? 1u : 0u));
+    assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+    assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  }
 }
 
 static void test_preconnect_time_stop(void) {
@@ -15111,6 +15163,7 @@ int main(int argc, char **argv) {
   test_no_http_time_sync();
   test_closed_http_retries_cold_boot();
   test_time_sync_reconnect();
+  test_time_sync_endpoint_urls();
   test_stream_sink_one_shot();
   test_run_stop_downlink();
   test_workspace_reload_with_options();

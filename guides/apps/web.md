@@ -2,6 +2,8 @@
 
 Web 入口归 portable App 的 project owner。Web 不是 Mobile 子平台；它有独立的 lifecycle、toolchain 和 hosting contract。
 
+公共 `h2_web_app()` 的归档在本仓库及外部 Bzlmod consumer 中都将 `index.html`、`index.js`、`index.wasm`、可选的 `index.data` 和 `_headers` 放在 tar 根目录。打包使用显式文件映射，不能把 `external/gizos+/` 等 repository 路径带入发行包，也不要求调用方 overlay 或重新打包；入口的编译、启动和生命周期仍由原有 owner 负责。
+
 ## Opt-in fake Wi-Fi and modem
 
 An embedding host can call `h2WebConfigureEnvironment()` on the packaged Web page before Start, then again to change the simulated network scenario. A session started without this opt-in rejects later environment injection; reinstall the page to enable fake radios. The version-1 object is copied to `Module.h2WebEnvironment`:
@@ -128,13 +130,17 @@ Audio PAL 的麦克风通过 `getUserMedia` 与 `AudioWorklet` 采集，显式�
 
 ### 持久 Filesystem
 
-`h2_web_fs_open()` 在 App 启动前锁定并恢复一个持久根目录（Emscripten IDBFS，IndexedDB 数据库名为根路径），其余目录作为只读根（例如 `--preload-file` 资源）暴露；只读根下的任何修改返回 `UNSUPPORTED`，根以外路径返回 `NOT_FOUND`。
+`h2_web_fs_open()` 在 App 启动前锁定并恢复一个持久根目录（Emscripten IDBFS，IndexedDB 数据库名为根路径），其余目录作为只读根（例如 `--preload-file` 资源）暴露；只读根下的任何修改返回 `UNSUPPORTED`，根以外路径返回 `NOT_FOUND`。可见根不要求其祖先也可见，例如配置 `/data/gizclaw` 不会暴露 `/data`；使用该根的目录创建应从最近可见的现有父目录向下进行，不能要求扩大可写范围或先创建 `/data`。
 
 - 写入策略：`write()` 只改内存；`sync()`、写模式文件 `close()`、`rename()`、`remove()`、`mkdir()`、`clear()` 是提交屏障，返回前 IndexedDB 已提交此前全部修改。原子替换（写临时文件、sync、close、rename）返回 OK 后即可在刷新后读到。不依赖 `pagehide` 保存。
 - 错误：配额 `NO_SPACE`，存储被浏览器阻止（部分隐私模式）`UNAVAILABLE`，缺少 IndexedDB 或 Web Locks `UNSUPPORTED`，其它 `IO`，提交超过 30 秒 `TIMEOUT`。失败的修改仍在内存中，下一次屏障重试；`h2_web_fs_get_status()` 给出最后一次失败的浏览器错误名与消息，打开失败同时写入 Console 与 `Module.h2WebFsLastError`。
-- 刷新与多标签页：打开时持有 Web Lock `h2-web-fs:<root>` 直到 `h2_web_fs_close()` 或页面卸载。刷新会等待旧文档释放锁；另一个标签页在 `lock_timeout_ms`（默认 3 秒）后得到 `BUSY`，不会同时写同一份快照。Web Locks 需要安全上下文（HTTPS 或 localhost），否则 `UNSUPPORTED`。
+- 刷新与多标签页：打开时持有 Web Lock `h2-web-fs:<root>` 直到 `h2_web_fs_close()` 或页面卸载。获取锁的 `lock_timeout_ms`（默认 3 秒）预算包含浏览器服务和 grant callback 调度；到期返回 `BUSY`，仅凭 `AbortError`/`BUSY` 不能断言另一个标签页持锁。诊断记录 budget、elapsed 和 holder unknown。Web Locks 需要安全上下文（HTTPS 或 localhost），否则 `UNSUPPORTED`。
 - 清理：`h2_web_fs_clear()` 或对根目录 `h2_pal_fs_clear()` 删除全部内容并提交；用户也可在浏览器站点设置中清除。
 - 限制：浏览器以 relaxed durability 提交 IndexedDB，已提交数据可跨刷新、关标签页和重启浏览器保留，但操作系统崩溃可能丢失最后一次提交；best-effort 站点存储可能在存储压力下被浏览器回收。Pref 仍使用 localStorage，跨标签页共享且无锁，后写者覆盖。
+
+底层 POSIX Filesystem 可能同步代理 syscall 到 UI。Provider 在这些调用期间释放所有嵌套 state guard，并钉住 filesystem；UI state callback 可以先于 syscall 执行，Worker 返回后重新取得 guard 再发布状态。打开过程也钉住 platform，错误路径对称释放；in-flight 调用期间 close/destroy 返回 `BUSY`，避免悬空借用。单个文件句柄在 POSIX I/O 和提交屏障期间同样保持 active；同句柄重叠的 read/seek/write/sync/close 返回 `BUSY`，读写报告零字节，拒绝的 close 保留句柄供重试。已接受的 close 在提交屏障结束后才回收 wrapper，即使返回 I/O/commit error 也已消费句柄，之后不能再使用。`//libs/pal/providers/web/pal_core/tests/fs_reentry:browser_test` 在真实 POSIX 代理内执行 UI 重入、filesystem/platform 关闭及同句柄并发操作，并在 native close 后的提交回调中再次验证句柄保活，再验证读写、sync、rename、remove、clear 与最终 teardown；原 `:browser_platform_test` 继续覆盖跨刷新持久化、多标签页和存储错误。
+
+`//libs/lua/apps/web/tests/scoped_http:browser_test` 使用真实 PAL 流式 HTTP、持久根 `/data/gizclaw` 和只读 `/data/lua`、`/data/assets`，验证 URL 安装、刷新后的 listing 与 Lua 执行、独立 KV/文件写入、卸载及再次刷新后 KV 保留；同时断言 `/data` 和无关路径仍不可见、只读修改仍被拒绝。该公共 target 也由独立 Bzlmod consumer 运行。
 
 ### HTTP
 
@@ -200,7 +206,7 @@ config.webrtc = h2_web_platform_webrtc_api(platform);
 
 ### Example 与 E2E 的 Web target
 
-`targets/pkg_tar/<app>/main.c` 直接创建 Web platform、组装 Runtime、调用 App，并按依赖顺序清理。`-sPROXY_TO_PTHREAD=1` 已让 main 在 Worker 上运行，Web PAL 自己的 Worker 负责导入事件；入口无需再套 Host task。需要输入的入口显式调用 `h2_runtime_input_start()`，结束时先检查 `h2_runtime_input_stop()`，成功后 deinit Runtime 并释放 provider。Filesystem、LVGL、音频任务只由使用它们的入口初始化和清理；无法确认消费者已停止时保留其依赖并打印 `result=FAIL ... retained=1`。LVGL smoke 没有停止回调，入口单独启动一个 PAL task，在 Stop 或测试期限到达后请求协作取消并 join；其余入口直接运行 App。`h2_web_app()` 位于 `//tools/bazel/web:web_app.bzl`，生成 `.web.tar`、`:serve` 与 `:browser_test`，只负责编译、页面资源、预加载和打包。
+`targets/pkg_tar/<app>/main.c` 直接创建 Web platform、组装 Runtime、调用 App，并按依赖顺序清理。`-sPROXY_TO_PTHREAD=1` 已让 main 在 Worker 上运行，Web PAL 自己的 Worker 负责导入事件；入口无需再套 Host task。需要输入的入口显式调用 `h2_runtime_input_start()`，结束时停止外部 producer/App/Lua/Service worker，使用 `h2_runtime_destroy(&runtime)` 检查 Runtime 清理，只有输出指针为 NULL 才释放其 provider；失败且指针保留时留待重试。Filesystem、LVGL、音频任务只由使用它们的入口初始化和清理；无法确认消费者已停止时保留其依赖并打印 `result=FAIL ... retained=1`。LVGL smoke 没有停止回调，入口单独启动一个 PAL task，在 Stop 或测试期限到达后请求协作取消并 join；其余入口直接运行 App。`h2_web_app()` 位于 `//tools/bazel/web:web_app.bzl`，生成 `.web.tar`、`:serve` 与 `:browser_test`，只负责编译、页面资源、预加载和打包。
 
 板级配置直接写在 entry：在需要的时点准备资源，把 `power`、`periph`、`input`、`pwm_switch` 或 component mapper 放进 `h2_runtime_config_t`，并在最后一个消费者结束后释放。`web-hardware/main.c` 演示 component 42 到 peripheral 501 的显式映射，以及配置失败时只释放一次、释放失败时保留文件和依赖的行为。没有统一 hardware hook 表或通用 run 对象。`h2_web_app()` 的 `copts` 只追加到调用方源文件；生成的 board header 仅含常量 metadata。
 

@@ -44,7 +44,10 @@ typedef struct h2_lua_app_info {
  * manifest is the public lua_app format-1 manifest. Missing index means no
  * preinstalled apps. Missing/oversized entries are omitted from discovery.
  * install_root is optional for read-only discovery. Never place mutable app
- * storage under it: installation and cleanup own its complete contents. */
+ * storage under it: installation and cleanup own its complete contents.
+ * A scoped filesystem need not expose ancestors of its configured root.
+ * Missing installation directories are created beneath the nearest existing
+ * visible parent; non-directory and filesystem errors still abort creation. */
 typedef struct h2_lua_apps_config {
   const h2_pal_mem_api_t *allocator;
   const h2_pal_fs_api_t *fs;

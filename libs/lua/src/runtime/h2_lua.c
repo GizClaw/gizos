@@ -43,6 +43,7 @@ static void worker_entry(void *context) {
   while (h2_atomic_load(&host->stopping) == 0) {
     uint64_t sweep_started_ms = h2_lua_now_ms(host);
     int progressed = 0;
+    uint64_t next_wake_ms = UINT64_MAX;
     size_t i;
     for (i = worker->index; i < host->config.max_jobs;
          i += host->config.worker_count) {
@@ -59,6 +60,14 @@ static void worker_entry(void *context) {
             job->state == H2_LUA_JOB_RUNNING) {
           progressed = 1;
         }
+        if (!is_terminal(job->state)) {
+          for (size_t j = 0; j < host->config.max_coroutines_per_vm; ++j) {
+            const h2_lua_task_t *task = &job->tasks[j];
+            if (task->state == H2_LUA_TASK_SLEEPING &&
+                task->wake_ms < next_wake_ms)
+              next_wake_ms = task->wake_ms;
+          }
+        }
         if (is_terminal(job->state)) {
           terminal_job_id = job->id;
           terminal_job_generation = job->generation;
@@ -72,8 +81,11 @@ static void worker_entry(void *context) {
                                      terminal_job_generation);
     }
     if (!progressed && h2_atomic_load(&host->stopping) == 0) {
+      const uint64_t now = h2_lua_now_ms(host);
+      const uint64_t remaining = next_wake_ms > now ? next_wake_ms - now : 1u;
+      const uint32_t wait_ms = remaining < 10u ? (uint32_t)remaining : 10u;
       (void)h2_pal_queue_recv(host->config.runtime->queue, worker->wake_queue,
-                              &wake, 10u);
+                              &wake, wait_ms);
     } else if (progressed && h2_lua_now_ms(host) - sweep_started_ms >=
                                  host->config.resume_time_budget_ms) {
       (void)h2_pal_time_sleep_ms(host->config.runtime->time, 1u);
@@ -118,7 +130,6 @@ static void release_job(h2_lua_job_t *job) {
   const h2_pal_mem_api_t *mem;
   h2_lua_job_id_t job_id;
   uint32_t job_generation;
-  size_t i;
   if (job == NULL || job->host == NULL) {
     return;
   }
@@ -126,15 +137,11 @@ static void release_job(h2_lua_job_t *job) {
   job_id = job->id;
   job_generation = job->generation;
   h2_lua_release_job_capabilities(job->host, job_id, job_generation);
-  for (i = 0u; i < job->host->config.max_coroutines_per_vm; ++i) {
-    h2_lua_task_timer_destroy(&job->tasks[i]);
-  }
   h2_lua_job_close_display(job);
   if (job->touch_open) {
     (void)h2_pal_touch_close(job->host->config.runtime->touch);
   }
   h2_lua_job_close_audio_tracks(job);
-  h2_lua_task_atomics_destroy(job);
   h2_pal_mem_free(mem, job->tasks);
   h2_pal_mem_free(mem, job->callbacks);
   h2_pal_mem_free(mem, job->events);
@@ -623,10 +630,6 @@ h2_pal_result_t h2_lua_host_stop(h2_lua_host_t *host) {
         !is_terminal(host->jobs[i].state)) {
       job_id = host->jobs[i].id;
       job_generation = host->jobs[i].generation;
-      for (size_t task_index = 0u;
-           task_index < host->config.max_coroutines_per_vm; ++task_index) {
-        h2_lua_task_timer_destroy(&host->jobs[i].tasks[task_index]);
-      }
       h2_lua_job_finish(&host->jobs[i], H2_LUA_JOB_STOPPED, "host stopped");
       h2_lua_link_job_ended(host, job_id, job_generation);
     }
