@@ -22,7 +22,9 @@ def windows_compiler_environment():
     # Print only compiler search variables, never the whole inherited environment.
     setup = (f'call "{script}" -no_logo -arch=x64 -host_arch=x64 >nul && '
              '(set PATH & set INCLUDE & set LIB)')
-    result = run_command(setup, shell=True)
+    # Cold Visual Studio discovery can exceed the ordinary probe budget.
+    # Give setup its own bounded allowance; compile/run commands retain 60s.
+    result = run_command(setup, shell=True, timeout=180)
     if result.returncode != 0:
         raise RuntimeError("Visual C++ environment setup failed: " + result.stdout)
     environment = {}
@@ -41,7 +43,7 @@ def windows_compiler_environment():
     return environment
 
 
-def run_command(command, *, env=None, shell=False):
+def run_command(command, *, env=None, shell=False, timeout=60):
     if not isinstance(command, str) and os.name == "nt" and Path(command[0]).name.lower() == "cmake.exe":
         env = dict(os.environ if env is None else env, **windows_compiler_environment())
         if "-S" in command:
@@ -54,7 +56,7 @@ def run_command(command, *, env=None, shell=False):
         with subprocess.Popen(command, env=env, shell=shell, stdout=output,
                               stderr=subprocess.STDOUT) as process:
             try:
-                process.wait(timeout=60)
+                process.wait(timeout=timeout)
             except subprocess.TimeoutExpired as error:
                 try:
                     if os.name == "nt":
