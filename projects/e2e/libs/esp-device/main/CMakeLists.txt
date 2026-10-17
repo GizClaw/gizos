@@ -31,7 +31,8 @@ idf_component_register(
     h2_pal_core
     ${H2_E2E_REQUIRES})
 
-target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu11 -Wall -Wextra -Werror)
+target_compile_options(${COMPONENT_LIB} PRIVATE
+  $<$<COMPILE_LANGUAGE:C>:-std=gnu11> -Wall -Wextra -Werror)
 
 if(H2_E2E_SUITE STREQUAL "gizclaw-e2e")
   target_add_binary_data(${COMPONENT_LIB}
