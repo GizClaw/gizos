@@ -57,7 +57,8 @@ h2_pal_result_t h2_gizclaw_service_get_time_sync_status(
  * req_wait, response parsers and synchronous RPCs. UNIMPLEMENTED and all other
  * status codes remain H2_GIZCLAW_ERR_REMOTE for generic/Social requests.
  * API-key create documents its scoped RESOURCE_EXHAUSTED projection in
- * h2_gizclaw_api_key.h; it does not change this generic mapping. */
+ * h2_gizclaw_api_key.h; Workspace requests document their scoped pending
+ * deletion result in h2_gizclaw_workspace.h. Neither changes generic mapping. */
 #define H2_GIZCLAW_ERR_REMOTE ((h2_pal_result_t) - 1000)
 
 /** Fill at most capacity bytes for one data-up request. `OK` with zero bytes

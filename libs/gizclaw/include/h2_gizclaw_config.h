@@ -80,7 +80,9 @@ typedef struct h2_gizclaw_config {
      * PAL APIs, vtable and strings are borrowed through service_deinit.
      * Set any device field to enable the standard provider. Inject the same
      * Runtime Audio/Wi-Fi proxies used by local controls: volume is read from
-     * Audio, and Wi-Fi user provisioning explicitly calls connect_and_save. */
+     * Audio. With that same Service Runtime, Wi-Fi connect/list/forget share
+     * its durable set and admission; standalone providers keep PAL single-entry
+     * semantics. Provisioning calls connect_and_save after response success. */
     const h2_pal_audio_api_t *audio;
     const h2_pal_wifi_sta_api_t *wifi;
     /** Modem behind the Service Runtime's modem snapshot. Setting it adds the

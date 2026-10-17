@@ -30,6 +30,8 @@ typedef struct h2_gizclaw_rpc_response {
   int error_code;
   char *error_message;
   size_t error_message_len;
+  char *error_reason;
+  size_t error_reason_len;
 } h2_gizclaw_rpc_response_t;
 
 typedef struct h2_gizclaw_rpc_request h2_gizclaw_rpc_request_t;

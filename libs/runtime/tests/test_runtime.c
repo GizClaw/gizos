@@ -4760,6 +4760,10 @@ typedef struct best_saved_fixture {
     uint32_t budgets[8], scan_budget, scan_ms, connect_ms, list_ms;
     size_t connects, scans, saves;
     int results[8], list_rc, scan_rc;
+    h2_pal_wifi_sta_config_t legacy;
+    bool legacy_present;
+    int legacy_clear_rc;
+    h2_runtime_t *runtime;
     test_time_t *time;
 } best_saved_fixture_t;
 
@@ -4967,6 +4971,82 @@ static int best_saved_provision(void *user, const h2_pal_wifi_sta_config_t *conf
     best_saved_fixture_t *f = user;
     ++f->saves;
     return best_saved_connect(user, config, timeout);
+}
+
+static int legacy_saved_get(void *user, h2_pal_wifi_sta_config_t *out) {
+    best_saved_fixture_t *f = user;
+    *out = f->legacy;
+    return f->legacy_present ? H2_PAL_OK : H2_PAL_ERR_NOT_FOUND;
+}
+static int legacy_saved_clear(void *user) {
+    best_saved_fixture_t *f = user;
+    if (f->legacy_clear_rc)
+        return f->legacy_clear_rc;
+    f->legacy_present = false;
+    memset(&f->legacy, 0, sizeof(f->legacy));
+    return H2_PAL_OK;
+}
+static int busy_provision(void *user, const h2_pal_wifi_sta_config_t *config, uint32_t timeout) {
+    best_saved_fixture_t *f = user;
+    size_t count = 99;
+    assert(h2_runtime_wifi_saved_list(f->runtime, NULL, 0, &count) == H2_PAL_ERR_BUSY);
+    assert(count == 0);
+    assert(h2_runtime_wifi_saved_clear(f->runtime) == H2_PAL_ERR_BUSY);
+    return best_saved_provision(user, config, timeout);
+}
+
+static void test_wifi_legacy_import_and_forget(void) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    best_saved_fixture_t f = {
+        .time = &env.time_state, .legacy_present = true,
+        .legacy = {.ssid = "a", .ssid_len = 1, .password = "old-pass", .password_len = 8},
+        .scan_count = 1, .scan = {{.ssid = "a", .ssid_len = 1, .rssi = -40}}};
+    const h2_pal_wifi_settings_vtable_t settings_vtable = {
+        .get_saved_sta_config = legacy_saved_get, .clear_saved_sta_config = legacy_saved_clear};
+    const h2_pal_wifi_settings_api_t settings = {&f, &settings_vtable};
+    const h2_pal_wifi_sta_vtable_t sta_vtable = {
+        .scan = best_saved_scan, .connect = best_saved_connect, .connect_and_save = busy_provision};
+    const h2_pal_wifi_sta_api_t sta = {&f, &sta_vtable};
+    const h2_pal_pref_api_t pref = {&f, &saved_pref_vtable};
+    h2_runtime_config_t config = test_runtime_config(&env);
+    config.pref = &pref;
+    config.wifi_settings = &settings;
+    config.wifi_sta = &sta;
+    assert(h2_runtime_init(&config, &f.runtime) == H2_PAL_OK);
+    h2_runtime_wifi_saved_network_t list[8];
+    size_t count = 0;
+    unsigned revision = 99;
+    assert(h2_runtime_wifi_saved_revision(f.runtime, &revision) == H2_PAL_OK && revision == 0);
+    f.write_rc = H2_PAL_ERR_IO;
+    assert(h2_runtime_wifi_saved_list(f.runtime, list, 8, &count) == H2_PAL_ERR_IO && !count);
+    assert(f.legacy_present && !f.blob_len);
+    f.write_rc = 0;
+    assert(h2_runtime_wifi_saved_list(f.runtime, list, 8, &count) == H2_PAL_OK && count == 1);
+    assert(f.blob_len == 920 && !memcmp(list[0].config.password, "old-pass", 8));
+    assert(h2_runtime_wifi_saved_revision(f.runtime, &revision) == H2_PAL_OK && revision == 1);
+    h2_runtime_deinit(f.runtime);
+    assert(h2_runtime_init(&config, &f.runtime) == H2_PAL_OK);
+    assert(h2_runtime_wifi_connect_best_saved(f.runtime, 100) == H2_PAL_OK);
+    assert(f.connects == 1 && !memcmp(f.attempts[0].password, "old-pass", 8));
+    f.legacy_clear_rc = H2_PAL_ERR_IO;
+    assert(h2_runtime_wifi_saved_remove(f.runtime, "a", 1) == H2_PAL_ERR_IO);
+    /* Even failed PAL cleanup cannot re-import a forgotten credential. */
+    assert(f.legacy_present);
+    h2_runtime_deinit(f.runtime);
+    assert(h2_runtime_init(&config, &f.runtime) == H2_PAL_OK);
+    assert(h2_runtime_wifi_saved_list(f.runtime, list, 8, &count) == H2_PAL_OK && !count);
+    assert(h2_runtime_wifi_connect_best_saved(f.runtime, 100) == H2_PAL_ERR_NOT_FOUND);
+    f.legacy_clear_rc = 0;
+    assert(h2_runtime_wifi_saved_clear(f.runtime) == H2_PAL_OK && !f.legacy_present);
+    /* Provisioning owns one slot across PAL and the Runtime commit. */
+    const h2_pal_wifi_sta_config_t phone = {.ssid = "phone", .ssid_len = 5};
+    assert(h2_runtime_wifi_connect_and_save(f.runtime, &phone, 100) == H2_PAL_OK);
+    assert(h2_runtime_wifi_saved_list(f.runtime, list, 8, &count) == H2_PAL_OK && count == 1);
+    f.legacy_present = true;
+    f.legacy = (h2_pal_wifi_sta_config_t){.ssid = "phone", .ssid_len = 5};
+    assert(h2_runtime_wifi_saved_remove(f.runtime, "phone", 5) == H2_PAL_OK && !f.legacy_present);
+    h2_runtime_deinit(f.runtime);
 }
 
 static void test_wifi_best_saved(void) {
@@ -5193,6 +5273,7 @@ int main(void) {
     test_audio_level_reads_unaligned_frames();
     test_wifi_connection_persistence();
     test_wifi_saved_set();
+    test_wifi_legacy_import_and_forget();
     test_wifi_best_saved();
     test_time_adjusted_event();
     test_runtime_firmware_info_provider();

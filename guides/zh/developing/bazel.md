@@ -302,6 +302,8 @@ Execution matrix 不使用 fail-fast；任一 execution class 失败后，其他
 
 ## 更新和验证
 
+`MODULE.bazel.lock` 使用 CI 固定版本并校验 SHA-256 的官方 Bazel 生成：更新时执行 `bazel mod deps --lockfile_mode=update`，提交前再执行 `bazel mod deps --lockfile_mode=error`。相同版本号的 Homebrew 构建可能带有不同的内嵌工具，使 Emscripten 等 extension 的 transitive digest 不同；依赖未变时保留官方工具验证的摘要，不用本机发行包覆盖它，也不关闭严格锁定门禁。版本和下载 checksum 以 CI 配置为准。
+
 增加、删除或移动 directory、dependency、ESP/BK7258/BK3633 launcher、global runner input 或 upstream archive pin 时，更新对应 BUILD target 与 compatibility，再运行：
 
 ```sh
