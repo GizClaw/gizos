@@ -62,6 +62,14 @@ ESP chip 差异通过以下方式表达：
 
 ## PAL Backend
 
+### 动态日志桥接
+
+ESP Log PAL 通过 `ESP_LOG_LEVEL` 将已存在的动态消息交给 SDK，保留 DEBUG/INFO/WARN/ERROR 到原生等级的映射，以及 SDK 的 runtime tag 过滤、格式和真实输出 sink。它不使用带 `LOG_LOCAL_LEVEL` 编译门禁的 `ESP_LOGD/I/W/E`：后者适用于原生源码中的静态日志，不能在 PAL 写入后再按 provider 文件的编译等级丢弃动态消息。Board 的 `CONFIG_LOG_DEFAULT_LEVEL`、`CONFIG_LOG_MAXIMUM_LEVEL` 仍约束原生静态日志，bridge 不修改这些配置或任何 tag/default/master 等级。
+
+默认 WARN 的普通任务仍过滤 PAL DEBUG/INFO；仅当调用方明确将某个 tag 设为 DEBUG 时，该 tag 的四等级才可通过 SDK 的 runtime 过滤，其他 tag 继续继承原默认值。固定 SDK 的 log v1 runtime 入口只检查 tag，因此 bridge 在参数和等级校验后，使用 SDK 现有 master getter 保留原 LOCAL 宏的 master 门禁；log v2 继续由 SDK runtime 检查 master 和受限执行环境。Master 为 NONE 时不输出，为 ERROR 时只允许 ERROR，即使该 tag 已设 DEBUG；bridge 不修改任何 master 配置或状态。合法但被 runtime 过滤的 write 返回 OK，不承诺物理传输交付；Core E2E 仍必须独立观察真实 sink 的四等级、scope 和完整消息，不能由 write 返回码或 tag readback 替代。
+
+`//native_component_src/esp-idf6.x/h2_pal_core:log_bridge_test` 和 `:log_bridge_master_test` 编译实际 provider source，以 test-only SDK facade 建模固定 MAX=2、log v1 的 runtime tag 过滤与格式化 sink，覆盖默认 WARN、单 tag DEBUG、恢复 WARN、其它 tag 不变、255-byte 消息、格式字符和参数校验。两个 host variant 分别验证 master 未启用及启用后的 NONE/ERROR 门禁、校验优先级和恢复行为。该 controlled host 回归不运行实际 SDK log v1/v2；native 构建和实板输出验收仍独立执行，不能为测试切换产品的 log version 或 sdkconfig。
+
 ### Task policy ownership
 
 `h2_pal_core` 只拥有一次性 policy 配置、policy 校验、FreeRTOS task 创建、诊断、join 和清理，不得比较具体 App、library、Loader、modem、board、packaging workflow 或 product task name。最终 portable name 到 absolute priority、core affinity、minimum stack 和 Internal/PSRAM placement 的映射属于具体 firmware target，由该 target BUILD 里的 `esp_target_task_policy` policy table 给出，component source 由 `//tools/bazel:target_task_policy.bzl` 生成到 bazel-out 的 `task_policy/h2_esp_target_task_policy.c`。每个 target 仍然拥有自己独立的一组 trie routes，不通过共享 route table 或通用字符串比较层转发。

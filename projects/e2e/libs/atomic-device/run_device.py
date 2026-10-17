@@ -85,7 +85,7 @@ def main():
         index=0
         def run(label,*args,timeout=180,monitor=False,previous=None):
             nonlocal index
-            command=[cli,'--no-ble','--port',port,'--transport','iostreamikcp','--wait-timeout','150',*args]
+            command=[cli,'--no-ble','--port',port,'--transport','iostreamikcp','--wait-timeout','150','--read-timeout','1',*args]
             log_path=output/f'{index:02d}-{label}.log';index+=1
             observed=False
             with log_path.open('w') as log:
