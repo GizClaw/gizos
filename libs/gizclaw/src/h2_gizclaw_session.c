@@ -849,12 +849,6 @@ h2_pal_result_t h2_gizclaw_session_refresh(h2_gizclaw_session_t *s,
 static h2_pal_result_t replace_tags(h2_gizclaw_session_t *s,
                                     const h2_gizclaw_str_t *tags,
                                     size_t count) {
-  bool equal = count == s->config.tag_count;
-  for (size_t i = 0u; equal && i < count; ++i)
-    equal = tags[i].len == s->config.tags[i].len &&
-            memcmp(tags[i].data, s->config.tags[i].data, tags[i].len) == 0;
-  if (equal)
-    return H2_PAL_OK;
   /* The validated maximum is 32 spans of 128 bytes. */
   size_t bytes = count * sizeof(*tags);
   for (size_t i = 0u; i < count; ++i)

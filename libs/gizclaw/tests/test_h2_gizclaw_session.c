@@ -611,6 +611,22 @@ static void test_refresh_tags(void) {
   assert(h2_atomic_load(&lists) == before);
   teardown();
 
+  /* Replacing an equal, initially borrowed selector must still take ownership.
+   */
+  char initial_text[] = "age:child";
+  const h2_gizclaw_str_t initial_tag = {initial_text,
+                                        sizeof(initial_text) - 1u};
+  h2_gizclaw_session_config_t initial_config = session_config(1u);
+  initial_config.tags = &initial_tag;
+  assert(h2_gizclaw_session_create(&initial_config, &session) == H2_PAL_OK);
+  assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
+  assert(h2_gizclaw_session_refresh_with_tags(session, &initial_tag, 1u,
+                                              1000u) == H2_PAL_OK);
+  memset(initial_text, 'X', sizeof(initial_text) - 1u);
+  assert(h2_gizclaw_session_refresh(session, 1000u) == H2_PAL_OK);
+  assert(strcmp(requested_tags[0], "age:child") == 0);
+  teardown();
+
   catalog_test_memory_t memory = {0};
   const h2_pal_mem_api_t mem = {.user = &memory,
                                 .vtable = &catalog_test_mem_vtable};
@@ -627,6 +643,15 @@ static void test_refresh_tags(void) {
   memory.reject_allocations = false;
   assert(h2_gizclaw_session_refresh(session, 1000u) == H2_PAL_OK);
   assert(requested_tag_count == 0u);
+  before = h2_atomic_load(&lists);
+  memory.fail_at = memory.attempts + 2u;
+  assert(h2_gizclaw_session_refresh_with_tags(session, &tag, 1u, 1000u) ==
+         H2_PAL_ERR_NO_MEMORY);
+  assert(h2_atomic_load(&lists) == before &&
+         snapshot().catalog == H2_GIZCLAW_SESSION_FAILED);
+  memory.fail_at = 0u;
+  assert(h2_gizclaw_session_refresh(session, 1000u) == H2_PAL_OK);
+  assert(strcmp(requested_tags[0], "age:preschool") == 0);
   assert(h2_gizclaw_session_refresh_with_tags(session, &tag, 1u, 1000u) ==
          H2_PAL_OK);
   teardown();

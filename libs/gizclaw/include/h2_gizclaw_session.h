@@ -104,7 +104,8 @@ typedef h2_pal_result_t (*h2_gizclaw_catalog_sink_fn)(
     const h2_gizclaw_workflow_page_t *page, const char *profile_name,
     const char *profile_revision);
 
-/** Dependencies, tag spans and their text are borrowed until destroy. One
+/** Dependencies are borrowed until destroy. Initial tag spans and their text
+ * are borrowed until refresh_with_tags replaces them or Session destroy. One
  * Session per Service; use Session operations exclusively for registration,
  * catalog, and conversations on that Service. Existing synchronous workspace
  * RPCs participate in this Session's lifecycle and publish confirmed
@@ -194,9 +195,10 @@ h2_pal_result_t h2_gizclaw_session_refresh(h2_gizclaw_session_t *session,
  * refreshes and Profile-revision retries. Workspace identity is unchanged.
  * Admission is the same as refresh: BUSY while preparing, executing another
  * Workspace RPC, or owning a Conversation. Invalid input, failed admission or
- * allocation leaves the previous selector/catalog unchanged. After replacement,
- * RPC/sink failure keeps the new selector but never exposes the old catalog as
- * READY. Must run on a caller task, never a service_poll callback.
+ * selector-copy allocation failure leaves the previous selector/catalog
+ * unchanged. After replacement, query/sink failure keeps the new selector but
+ * never exposes the old catalog as READY. Must run on a caller task, never a
+ * service_poll callback.
  */
 h2_pal_result_t
 h2_gizclaw_session_refresh_with_tags(h2_gizclaw_session_t *session,
