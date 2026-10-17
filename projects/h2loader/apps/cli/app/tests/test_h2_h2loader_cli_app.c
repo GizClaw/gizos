@@ -193,7 +193,7 @@ static void test_help_and_usage(void) {
     assert(strstr(output.bytes, "--transport iostreamikcp|bleikcp") != NULL);
     assert(strstr(output.bytes,
         "wifi:     wifi scan [--limit <1-16>] [--timeout-ms <1-30000>]\n"
-        "          wifi connect <ssid> <password>\n"
+        "          wifi connect <ssid> <password> [--temporary]\n"
         "          wifi disconnect\n"
         "          wifi status\n") != NULL);
     assert(strstr(output.bytes, "secret") == NULL);
@@ -249,6 +249,17 @@ static void test_ble_transport_routes_the_shared_device_command(void) {
     assert(source.calls == 1u);
     assert(strstr(output.bytes, "usage: h2loader") == NULL);
     assert(strstr(output.bytes, "command failed") != NULL);
+
+    const char *temporary[] = {
+        "h2loader", "--transport", "bleikcp", "--port", "1:001122334455",
+        "wifi", "connect", "factory", "secret", "--temporary",
+    };
+    memset(&output, 0, sizeof(output));
+    source.calls = 0u;
+    assert(run_cli_with_ble(&output, 10, temporary, &source) == H2_H2LOADER_CLI_EXIT_RUNTIME);
+    assert(source.calls == 1u);
+    assert(strstr(output.bytes, "usage: h2loader") == NULL);
+    assert(strstr(output.bytes, "secret") == NULL);
 }
 
 static void *fake_diagnostic_alloc(void *user, size_t size) {
