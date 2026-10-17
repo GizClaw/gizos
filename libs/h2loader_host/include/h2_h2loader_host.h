@@ -230,7 +230,9 @@ typedef struct h2_h2loader_host_serial_connection_config {
     const char *ready_marker;
     /** Optional bounded delay after command delivery and before response read. */
     uint32_t post_command_delay_ms;
-    /** Optional borrowed sink for bytes proven not to belong to a frame. */
+    /** Optional borrowed sink for native console bytes and decoded console
+     * observed while monitoring or reading status. Status control lines are
+     * consumed by the parser and never projected as console output. */
     h2_h2loader_host_transport_log_fn on_log;
     void *log_user;
     /** Leave DTR and RTS untouched for the complete connection lifecycle. */
@@ -252,6 +254,15 @@ h2_pal_result_t h2_h2loader_host_serial_connect(
     const h2_h2loader_host_serial_connection_config_t *config,
     h2_h2loader_host_serial_connection_t **out_connection);
 
+/** Open within one absolute monotonic deadline shared by ready/SESSION_ACK.
+ * deadline_ms uses config->time. An expired deadline returns TIMEOUT without
+ * opening a port. The bound is removed before returning the live connection.
+ * UART flush and session close retain their PAL cleanup bounds. */
+h2_pal_result_t h2_h2loader_host_serial_connect_until(
+    const h2_h2loader_host_serial_connection_config_t *config,
+    h2_h2loader_host_serial_connection_t **out_connection,
+    uint64_t deadline_ms);
+
 /** Close a serial connection. Repeating the call with NULL is a no-op. */
 h2_pal_result_t h2_h2loader_host_serial_disconnect(
     h2_h2loader_host_serial_connection_t **inout_connection);
@@ -260,6 +271,17 @@ h2_pal_result_t h2_h2loader_host_serial_disconnect(
 h2_pal_result_t h2_h2loader_host_serial_read_status(
     h2_h2loader_host_serial_connection_t *connection,
     h2_h2loader_host_status_t *out_status);
+
+/** Read status within one absolute monotonic deadline, including delivery,
+ * post-command delay and response. deadline_ms uses the same borrowed time
+ * provider as connection. An expired deadline returns TIMEOUT without sending;
+ * outputs are cleared on failure. Each delivery/response also retains the
+ * configured command timeout. UART flush retains its PAL cleanup bound.
+ * The legacy read_status budgets are unchanged. */
+h2_pal_result_t h2_h2loader_host_serial_read_status_until(
+    h2_h2loader_host_serial_connection_t *connection,
+    h2_h2loader_host_status_t *out_status,
+    uint64_t deadline_ms);
 
 /** Poll transport logs until cancellation or a physical transport failure. */
 h2_pal_result_t h2_h2loader_host_serial_monitor_logs(

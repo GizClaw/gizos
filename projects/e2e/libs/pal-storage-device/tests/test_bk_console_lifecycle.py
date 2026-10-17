@@ -113,6 +113,7 @@ int main(int argc,char **argv){
 struct h2_h2loader_host_serial_connection {
  const h2_pal_time_api_t *time;const h2_pal_uart_io_stream_api_t *uart;
  h2_h2loader_host_transport_log_fn on_log;void *log_user;
+ uint64_t active_deadline_ms;
  uint8_t pending_input[512];size_t pending_input_len;
 };
 /* FRAME */

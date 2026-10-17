@@ -23,6 +23,10 @@ class DecodedMonitor(unittest.TestCase):
         end = serial.index('static h2_pal_result_t serial_wait_delivery(', start)
         pump = serial[start:end]
         fixture = (ROOT / 'tools/bazel/tests/fixtures/h2loader_decoded_monitor.c').read_text()
+        # This monitor fixture exercises the legacy (unbounded) connection.
+        member = '    const h2_pal_time_api_t *time;'
+        self.assertEqual(fixture.count(member), 1)
+        fixture = fixture.replace(member, member + '\n    uint64_t active_deadline_ms;')
         fixture = fixture.replace('/* SERIAL_LOG */', callback).replace('/* MONITOR */', monitor)
         fixture = fixture.replace('/* SERIAL_NOW */', now).replace('/* SERIAL_PUMP */', pump)
         with tempfile.TemporaryDirectory() as directory:

@@ -178,6 +178,10 @@ static void test_help_and_usage(void) {
         "h2loader", "--transport", "bleikcp", "--port",
         "1:001122334455", "reboot", "app", "--monitor",
     };
+    const char *ble_wifi_monitor[] = {
+        "h2loader", "--transport", "bleikcp", "--port", "1:001122334455",
+        "wifi", "connect", "factory", "secret", "--temporary", "--monitor",
+    };
     fake_output_t output = {0};
     const char *wifi_status[] = {"h2loader", "--transport", "bleikcp",
         "--port", "1:001122334455", "wifi", "status", "extra"};
@@ -193,7 +197,7 @@ static void test_help_and_usage(void) {
     assert(strstr(output.bytes, "--transport iostreamikcp|bleikcp") != NULL);
     assert(strstr(output.bytes,
         "wifi:     wifi scan [--limit <1-16>] [--timeout-ms <1-30000>]\n"
-        "          wifi connect <ssid> <password> [--temporary]\n"
+        "          wifi connect <ssid> <password> [--temporary] [--monitor]\n"
         "          wifi disconnect\n"
         "          wifi status\n") != NULL);
     assert(strstr(output.bytes, "secret") == NULL);
@@ -216,6 +220,26 @@ static void test_help_and_usage(void) {
         H2_H2LOADER_CLI_EXIT_RUNTIME);
     assert(strstr(output.bytes,
         "--monitor requires iostreamikcp log transport") != NULL);
+
+    memset(&output, 0, sizeof(output));
+    fake_ble_source_t source = {.api = h2_pal_unsupported_ble_host_api()};
+    assert(run_cli_with_ble(&output, 11, ble_wifi_monitor, &source) == H2_H2LOADER_CLI_EXIT_RUNTIME);
+    assert(source.calls == 0u);
+    assert(strstr(output.bytes, "--monitor requires iostreamikcp log transport") != NULL);
+    assert(strstr(output.bytes, "secret") == NULL);
+
+    const char *invalid_wifi_monitor[][10] = {
+        {"h2loader", "--port", "fixture", "wifi", "connect", "factory", "secret", "--temporary", "--monitor", "--monitor"},
+        {"h2loader", "--port", "fixture", "wifi", "connect", "factory", "secret", "--monitor", "--temporary"},
+        {"h2loader", "--port", "fixture", "wifi", "connect", "factory", "secret", "--temporary", "--temporary", "--monitor"},
+        {"h2loader", "--port", "fixture", "wifi", "status", "--monitor"},
+    };
+    const int invalid_argc[] = {10, 9, 10, 6};
+    for (size_t i = 0u; i < sizeof(invalid_argc) / sizeof(invalid_argc[0]); ++i) {
+        memset(&output, 0, sizeof(output));
+        assert(run_cli(&output, invalid_argc[i], invalid_wifi_monitor[i]) == H2_H2LOADER_CLI_EXIT_USAGE);
+        assert(strstr(output.bytes, "secret") == NULL);
+    }
 
     memset(&output, 0, sizeof(output));
     assert(run_cli(&output, 4, raw) == H2_H2LOADER_CLI_EXIT_USAGE);
