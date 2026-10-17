@@ -2948,7 +2948,12 @@ static void test_remote_wifi_runtime_persistence(void) {
   h2_runtime_wifi_saved_network_t list[8];
   size_t count = 0;
   for (unsigned i = 0; i < 3000; ++i) {
-    if (h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_OK && count == 1)
+    unsigned revision = 0u;
+    assert(h2_runtime_wifi_saved_revision(runtime, &revision) == H2_PAL_OK);
+    /* Wait like the product observer: a list read before provisioning owns
+     * admission can make the deferred action legitimately return BUSY. */
+    if (revision != 0u &&
+        h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_OK && count == 1)
       break;
     h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u);
   }
