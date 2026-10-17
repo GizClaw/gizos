@@ -230,6 +230,9 @@ def _esp_e2e_firmware_impl(name, visibility, suite, board, board_component, part
     defaults_suite = getattr(spec, "defaults_suite", suite if suite.startswith("pal-") and suite != "pal-ipv6" else "")
     if defaults_suite:
         suite_defaults = [Label(source_package + ":sdkconfig." + defaults_suite + ".defaults")]
+    layout_names = [default.name.split("/")[-1] for default in layout_defaults]
+    if "sdkconfig.h2loader.defaults" not in layout_names:
+        fail("layout_defaults must contain the board's sdkconfig.h2loader.defaults source file")
 
     firmware_lib_component(
         name = name + "_libraries",
@@ -262,9 +265,8 @@ def _esp_e2e_firmware_impl(name, visibility, suite, board, board_component, part
         "H2_E2E_PROJECT_NAME": project_name,
         "H2_E2E_SUITE": suite,
         "H2_E2E_BOARD": board,
+        "H2_E2E_CONFIG_DEFAULTS": ";".join(layout_names + [default.name.split("/")[-1] for default in suite_defaults]),
     })
-    if suite_defaults:
-        cmake_definitions["H2_E2E_SUITE_DEFAULTS"] = "sdkconfig." + defaults_suite + ".defaults"
     h2loader_esp_idf_firmware(
         name = name + "_firmware",
         board = board,
@@ -298,7 +300,7 @@ esp_e2e_firmware = macro(
         "board": attr.string(mandatory = True, configurable = False),
         "board_component": attr.label(mandatory = True, configurable = False),
         "partition": attr.label(mandatory = True, allow_single_file = True, configurable = False),
-        "layout_defaults": attr.label_list(mandatory = True, allow_files = True, configurable = False),
+        "layout_defaults": attr.label_list(doc = "Ordered board-owned SDK defaults source files; their basenames are copied into the native project.", mandatory = True, allow_files = True, configurable = False),
         "libraries": attr.label_list(configurable = False),
         "components": attr.label_list(configurable = False),
         "policies": attr.string_list(configurable = False),
