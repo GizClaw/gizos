@@ -25,6 +25,7 @@ struct h2_gizclaw_session {
   uint64_t deadline;
   uint8_t *catalog_data;
   uint8_t *catalog_scratch;
+  h2_gizclaw_str_t *owned_tags;
   h2_gizclaw_workflow_page_t catalog;
   h2_gizclaw_conversation_t *conversation;
   bool conversation_running;
@@ -254,6 +255,7 @@ h2_pal_result_t h2_gizclaw_session_destroy(h2_gizclaw_session_t **ptr) {
     return rc;
   h2_pal_mem_free(session->config.retained_allocator, session->catalog_data);
   h2_pal_mem_free(session->config.retained_allocator, session->catalog_scratch);
+  h2_pal_mem_free(session->config.mem, session->owned_tags);
   h2_pal_mem_free(session->config.mem, session);
   *ptr = NULL;
   return H2_PAL_OK;
@@ -840,6 +842,62 @@ h2_pal_result_t h2_gizclaw_session_refresh(h2_gizclaw_session_t *s,
   if (rc != H2_PAL_OK)
     return rc;
   return finish(s, refresh(s), H2_GIZCLAW_SESSION_BLOCK_CATALOG);
+}
+
+/* begin() excludes every other preparation and Workspace RPC. Copy before
+ * publishing so allocation failure cannot invalidate an existing catalog. */
+static h2_pal_result_t replace_tags(h2_gizclaw_session_t *s,
+                                    const h2_gizclaw_str_t *tags,
+                                    size_t count) {
+  /* The validated maximum is 32 spans of 128 bytes. */
+  size_t bytes = count * sizeof(*tags);
+  for (size_t i = 0u; i < count; ++i)
+    bytes += tags[i].len;
+  h2_gizclaw_str_t *copy =
+      count == 0u ? NULL : h2_pal_mem_alloc(s->config.mem, bytes);
+  if (count != 0u && copy == NULL)
+    return H2_PAL_ERR_NO_MEMORY;
+  char *text = count == 0u ? NULL : (char *)(copy + count);
+  for (size_t i = 0u; i < count; ++i) {
+    copy[i] = (h2_gizclaw_str_t){text, tags[i].len};
+    memcpy(text, tags[i].data, tags[i].len);
+    text += tags[i].len;
+  }
+  h2_pal_result_t rc = lock(s);
+  if (rc != H2_PAL_OK) {
+    h2_pal_mem_free(s->config.mem, copy);
+    return rc;
+  }
+  if (s->closed || s->operation_generation != s->state.generation) {
+    unlock(s);
+    h2_pal_mem_free(s->config.mem, copy);
+    return H2_PAL_ERR_CLOSED;
+  }
+  h2_gizclaw_str_t *previous = s->owned_tags;
+  s->owned_tags = copy;
+  s->config.tags = copy;
+  s->config.tag_count = count;
+  s->state.catalog = H2_GIZCLAW_SESSION_EMPTY;
+  s->state.workflow_count = 0u;
+  changed(s);
+  unlock(s);
+  h2_pal_mem_free(s->config.mem, previous);
+  return H2_PAL_OK;
+}
+
+h2_pal_result_t
+h2_gizclaw_session_refresh_with_tags(h2_gizclaw_session_t *s,
+                                     const h2_gizclaw_str_t *tags, size_t count,
+                                     uint32_t timeout) {
+  if (!h2_gizclaw_workflow_tags_valid_internal(tags, count))
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_pal_result_t rc = begin(s, timeout, false, false);
+  if (rc != H2_PAL_OK)
+    return rc;
+  rc = replace_tags(s, tags, count);
+  if (rc == H2_PAL_OK)
+    rc = refresh(s);
+  return finish(s, rc, H2_GIZCLAW_SESSION_BLOCK_CATALOG);
 }
 
 h2_pal_result_t h2_gizclaw_session_register(h2_gizclaw_session_t *s,
