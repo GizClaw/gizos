@@ -34,14 +34,18 @@ static uint8_t *decode(const h2_pal_mem_api_t *mem, const char *text,
   *length = size / 2u;
   return out;
 }
-void h2_pal_ipv6_device_report(const h2_runtime_t *runtime,
-                               const h2_pal_ipv6_result_t *result) {
+int h2_pal_ipv6_device_report_with_log(const h2_runtime_t *runtime,
+    const h2_pal_log_api_t *log, const h2_pal_ipv6_result_t *result) {
+  if (!runtime || !result)
+    return H2_PAL_ERR_INVALID_ARG;
+  if (!log)
+    log = runtime->log;
   char line[512];
   for (unsigned i = 0u; i < H2_PAL_IPV6_CASES; ++i) {
     const h2_net_tls_case_result_t *item = &result->cases[i];
-    if (!item->id)
-      continue;
-    snprintf(line, sizeof(line),
+    if (!item->id || !item->id[0])
+      return H2_PAL_ERR_FORMAT;
+    int length = snprintf(line, sizeof(line),
              "H2_PAL_IPV6_CASE {\"id\":\"%s\",\"status\":\"%s\",\"detail\":%d,"
              "\"line\":%u,\"tx\":%zu,\"rx\":%zu,\"boot_id\":\"%s\"}",
              item->id,
@@ -50,10 +54,16 @@ void h2_pal_ipv6_device_report(const h2_runtime_t *runtime,
                              : "FAIL",
              item->detail, item->line, item->bytes_sent, item->bytes_received,
              boot_id);
-    h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-ipv6", line);
-    h2_pal_time_sleep_ms(runtime->time, 40u);
+    if (length < 0 || (size_t)length >= sizeof(line))
+      return H2_PAL_ERR_TRUNCATED;
+    int rc = h2_pal_log_write(log, H2_PAL_LOG_INFO, "pal-ipv6", line);
+    if (rc != H2_PAL_OK)
+      return rc;
+    rc = h2_pal_time_sleep_ms(runtime->time, 40u);
+    if (rc != H2_PAL_OK)
+      return rc;
   }
-  snprintf(line, sizeof(line),
+  int length = snprintf(line, sizeof(line),
            "H2_PAL_IPV6_SUMMARY {\"passed\":%u,\"failed\":%u,\"blocked\":%u,"
            "\"retained_sockets\":%zu,\"retained_resolvers\":%zu,\"retained_"
            "allocations\":%zu,\"retained_tasks\":%zu,\"cleanup_error\":%d,"
@@ -62,10 +72,17 @@ void h2_pal_ipv6_device_report(const h2_runtime_t *runtime,
            result->retained_sockets, result->retained_resolvers,
            result->retained_allocations, result->retained_tasks,
            result->cleanup_error, boot_id);
-  h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-ipv6", line);
+  if (length < 0 || (size_t)length >= sizeof(line))
+    return H2_PAL_ERR_TRUNCATED;
+  return h2_pal_log_write(log, H2_PAL_LOG_INFO, "pal-ipv6", line);
 }
-int h2_pal_ipv6_device_run(h2_runtime_t *runtime, const h2_pal_dtls_api_t *dtls,
-                           h2_pal_ipv6_result_t *result) {
+void h2_pal_ipv6_device_report(const h2_runtime_t *runtime,
+                               const h2_pal_ipv6_result_t *result) {
+  (void)h2_pal_ipv6_device_report_with_log(runtime, NULL, result);
+}
+int h2_pal_ipv6_device_run_with_report_log(h2_runtime_t *runtime,
+    const h2_pal_dtls_api_t *dtls, const h2_pal_log_api_t *log,
+    h2_pal_ipv6_result_t *result) {
   if (!runtime || !result)
     return H2_PAL_ERR_INVALID_ARG;
   if (result->retained_cleanup || result->retained_runtime)
@@ -101,16 +118,24 @@ int h2_pal_ipv6_device_run(h2_runtime_t *runtime, const h2_pal_dtls_api_t *dtls,
     boot_id[i * 2u + 1u] = digits[nonce[i] & 15u];
   }
   char execution[160];
-  snprintf(execution, sizeof(execution),
+  int length = snprintf(execution, sizeof(execution),
            "H2_PAL_IPV6_EXECUTION session=%s boot_id=%s", H2_PAL_IPV6_SESSION,
            boot_id);
-  h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-ipv6", execution);
+  if (length < 0 || (size_t)length >= sizeof(execution)) {
+    rc = H2_PAL_ERR_TRUNCATED;
+    goto cleanup;
+  }
+  rc = h2_pal_log_write(log ? log : runtime->log, H2_PAL_LOG_INFO,
+                         "pal-ipv6", execution);
+  if (rc != H2_PAL_OK)
+    goto cleanup;
   h2_net_tls_fixture_client_t client = {.runtime = runtime,
                                         .host = H2_PAL_IPV6_HOST,
                                         .port = (uint16_t)H2_PAL_IPV6_PORT,
                                         .session = H2_PAL_IPV6_SESSION,
                                         .run_id = boot_id};
   h2_pal_ipv6_config_t config = {
+      .report_log = log,
       .dtls = dtls,
       .local_ipv6 = local,
       .netif = {.type = H2_PAL_NETIF_REF_DEFAULT},
@@ -147,4 +172,8 @@ cleanup:
   h2_pal_mem_free(runtime->mem, ca);
   h2_pal_mem_free(runtime->mem, wrong);
   return rc;
+}
+int h2_pal_ipv6_device_run(h2_runtime_t *runtime, const h2_pal_dtls_api_t *dtls,
+                           h2_pal_ipv6_result_t *result) {
+  return h2_pal_ipv6_device_run_with_report_log(runtime, dtls, NULL, result);
 }

@@ -23,6 +23,10 @@ typedef struct h2_pal_ipv6_config {
   h2_pal_net_addr_t local_ipv6;
   h2_pal_net_addr_t dns_server;
   h2_pal_net_addr_t dns_answer;
+  /** Optional borrowed result sink, valid through run and retained cleanup.
+   * NULL preserves Runtime Log. This never replaces any provider's logger.
+   * The sink must serialize concurrent writes and retain its first error. */
+  const h2_pal_log_api_t *report_log;
 } h2_pal_ipv6_config_t;
 typedef struct h2_pal_ipv6_cleanup h2_pal_ipv6_cleanup_t;
 typedef struct h2_pal_ipv6_result {
