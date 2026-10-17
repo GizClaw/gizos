@@ -53,6 +53,7 @@ esp_target_task_policy(
 firmware_lib_component(
     name = "firmware_lib",
     deps = [
+        "//libs/atomic",
         "//libs/audio_mixer",
         "//libs/bleikcp",
         "//libs/bundle",
@@ -74,6 +75,7 @@ firmware_lib_component(
 firmware_native_component(
     name = "lua_link_launcher",
     srcs = ["main/main.c"],
+    hdrs = ["//projects/e2e/libs/esp-device:result_console.h"],
     component_directory = "projects/e2e/targets/h2loader_tar_zlib/lua-link/amoled/main",
     component_name = "main",
     data = [
@@ -84,6 +86,7 @@ firmware_native_component(
     deps = [
         ":firmware_lib",
         "//boards/amoled/esp32s3",
+        "//libs/atomic",
         "//libs/pal",
         "//native_component_src/esp-idf6.x/h2_es8311_audio_system",
         "//native_component_src/esp-idf6.x/h2_pal_core",

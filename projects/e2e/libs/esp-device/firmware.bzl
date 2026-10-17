@@ -195,6 +195,7 @@ _SUITES.update({"lua-link-" + role: struct(
     image = "lua-link-e2e",
     source_suite = "lua-link",
     source_board = "devkit" if role == "host" else "amoled",
+    headers = [Label("//projects/e2e/libs/esp-device:result_console.h")],
     libraries = [Label("//projects/e2e/apps/lua-link/app:lua_link_e2e")],
     policies = ["$lua/worker default", "$lua/display default", "$lua/link default"],
 ) for role in ["host", "join"]})

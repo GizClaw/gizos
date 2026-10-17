@@ -1,4 +1,5 @@
 #include "h2_esp_board.h"
+#include "result_console.h"
 #include "h2_esp_board_config.h"
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_h2loader_runtime.h"
@@ -15,6 +16,8 @@
 /* The devkit runs the host side; the other board runs the opposite role. */
 #define H2_LUA_LINK_E2E_ROUNDS 5u
 #define H2_LUA_LINK_E2E_ROLE "host"
+
+static h2_esp_e2e_result_log_t result_log;
 
 static void hold(void) {
   for (;;) {
@@ -55,6 +58,12 @@ static void image_entry(void *user) {
   if (rc != H2_PAL_OK) {
     fail("command_start", rc, 0);
   }
+  rc = h2_esp_e2e_result_log_prepare(&result_log, runtime,
+                                     "lua-link-e2e", "lua");
+  if (rc != H2_PAL_OK) {
+    fail("result_console", rc, 1);
+  }
+  vTaskDelay(pdMS_TO_TICKS(5000u));
   rc = h2_esp_h2loader_app_confirm(runtime);
   if (rc != H2_PAL_OK) {
     fail("confirm", rc, 1);
@@ -72,6 +81,10 @@ static void image_entry(void *user) {
                                  .adv_type = H2_PAL_BLE_ADV_TYPE_EXTENDED,
                                  .scan_type = H2_PAL_BLE_SCAN_TYPE_EXTENDED,
                              });
+    const int output_rc = h2_esp_e2e_result_log_error(&result_log);
+    if (output_rc != H2_PAL_OK) {
+      fail("result_output", output_rc, 1);
+    }
     passed += rc == H2_PAL_OK;
     vTaskDelay(pdMS_TO_TICKS(3000u));
   }
@@ -85,6 +98,10 @@ static void image_entry(void *user) {
                                          .scan_type = H2_PAL_BLE_SCAN_TYPE_EXTENDED,
                                          .hold = 1,
                                      });
+  rc = h2_esp_e2e_result_log_error(&result_log);
+  if (rc != H2_PAL_OK) {
+    fail("result_output", rc, 1);
+  }
   hold();
 }
 

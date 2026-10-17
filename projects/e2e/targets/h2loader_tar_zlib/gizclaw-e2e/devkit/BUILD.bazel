@@ -124,6 +124,7 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        "//libs/atomic/providers/c11",
         "//libs/pal",
         "//projects/e2e/libs/esp-device:result_console",
         "//projects/e2e/libs/gizclaw-device:ledger",
