@@ -52,6 +52,7 @@ firmware_lib_component(
 firmware_native_component(
     name = "launcher",
     srcs = ["main/main.c"],
+    hdrs = ["//projects/e2e/libs/esp-device:result_console.h"],
     component_directory = "projects/e2e/targets/h2loader_tar_zlib/iperf-client/devkit/main",
     component_name = "main",
     data = [
@@ -62,6 +63,7 @@ firmware_native_component(
     deps = [
         ":firmware_lib",
         "//boards/devkit/esp32s3",
+        "//libs/atomic",
         "//libs/pal",
         "//native_component_src/esp-idf6.x/h2_pal_core",
         "//native_component_src/esp-idf6.x/opus_port",

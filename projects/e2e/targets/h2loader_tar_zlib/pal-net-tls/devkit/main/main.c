@@ -1,3 +1,4 @@
+#include "result_console.h"
 #include "esp_app_desc.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -14,6 +15,8 @@
 #endif
 
 static h2_runtime_t *runtime;
+static h2_esp_e2e_result_log_t result_log;
+static int confirm_app(void *user) { return h2_esp_h2loader_app_confirm(user); }
 static h2_net_tls_result_t result;
 static void hold(void) {
   for (;;)
@@ -54,14 +57,16 @@ static void run(void *user) {
           result.not_assessed !=
       H2_NET_TLS_CASE_COUNT)
     fail("fixture_or_network", rc);
-  int confirm = rc == H2_PAL_OK ? h2_esp_h2loader_app_confirm(runtime)
-                                : H2_PAL_ERR_INVALID_STATE;
+  size_t before_report = h2_esp_e2e_result_log_record_count(&result_log);
+  h2_pal_net_tls_device_report(runtime, &result);
+  int confirm = h2_esp_e2e_result_log_confirm(&result_log, rc,
+      before_report + H2_NET_TLS_CASE_COUNT + 2u, confirm_app, runtime);
   for (;;) {
-    h2_pal_net_tls_device_report(runtime, &result);
     printf("H2_PAL_NET_TLS_READY board=%s rc=%d confirm=%d\n",
            H2_PAL_NET_TLS_BOARD, rc, confirm);
     fflush(stdout);
     vTaskDelay(pdMS_TO_TICKS(5000u));
+    h2_pal_net_tls_device_report(runtime, &result);
   }
 }
 void app_main(void) {
@@ -79,6 +84,9 @@ void app_main(void) {
   rc = h2_runtime_init(&config, &runtime);
   if (rc != H2_PAL_OK)
     fail("runtime", rc);
+  rc = h2_esp_e2e_result_log_prepare(&result_log, runtime, "pal-net-tls", NULL);
+  if (rc != H2_PAL_OK)
+    fail("result_console", rc);
   printf("H2_PAL_NET_TLS_BOOT board=%s version=%s\n",
          H2_PAL_NET_TLS_BOARD, esp_app_get_description()->version);
   const h2_pal_task_options_t options = {

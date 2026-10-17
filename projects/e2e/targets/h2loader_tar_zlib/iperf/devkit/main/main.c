@@ -1,4 +1,5 @@
 #include "h2_esp_board.h"
+#include "result_console.h"
 #include "h2_esp_board_config.h"
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_h2loader_runtime.h"
@@ -43,6 +44,9 @@
 #define H2_IPERF_DEVKIT_PORT 5201u
 #define H2_IPERF_DEVKIT_SCTP_UDP_PORT 9899u
 #define H2_IPERF_DEVKIT_CASE_MS 5000u
+
+static h2_esp_e2e_result_log_t result_log;
+static int confirm_app(void *user) { return h2_esp_h2loader_app_confirm(user); }
 
 static void hold(void) {
   for (;;) {
@@ -150,7 +154,7 @@ static int apply_power_save(h2_runtime_t *runtime) {
   return rc;
 }
 
-static void serve_forever(const h2_iperf_config_t *pal) {
+static void serve_forever(const h2_iperf_config_t *pal, h2_runtime_t *runtime) {
   h2_iperf_server_params_t params;
   memset(&params, 0, sizeof(params));
   params.port = H2_IPERF_DEVKIT_PORT;
@@ -160,11 +164,19 @@ static void serve_forever(const h2_iperf_config_t *pal) {
   if (rc != H2_PAL_OK) {
     fail("server_create", rc, 1);
   }
-  printf("H2_IPERF_E2E_DEVKIT stage=server status=LISTENING port=%u "
-         "sctp_udp_port=%u\n",
+  char ready[160];
+  int length = snprintf(ready, sizeof(ready),
+         "H2_IPERF_E2E_DEVKIT stage=server status=LISTENING port=%u "
+         "sctp_udp_port=%u",
          (unsigned)h2_iperf_server_port(server),
          (unsigned)h2_iperf_server_sctp_udp_port(server));
-  fflush(stdout);
+  if (length < 0 || (size_t)length >= sizeof(ready))
+    fail("server_report", H2_PAL_ERR_TRUNCATED, 1);
+  rc = h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "iperf_e2e", ready);
+  if (rc == H2_PAL_OK)
+    rc = h2_esp_e2e_result_log_confirm(&result_log, rc, 0u, confirm_app, runtime);
+  if (rc != H2_PAL_OK)
+    fail("server_confirm", rc, 1);
   for (;;) {
     h2_iperf_result_t result;
     memset(&result, 0, sizeof(result));
@@ -227,10 +239,9 @@ static void image_entry(void *user) {
   if (!H2_IPERF_ROLE_SERVER && strcmp(H2_IPERF_SERVER, "192.0.2.1") == 0) {
     fail("endpoint_config", H2_PAL_ERR_INVALID_ARG, 1);
   }
-  rc = h2_esp_h2loader_app_confirm(runtime);
-  if (rc != H2_PAL_OK) {
-    fail("confirm", rc, 1);
-  }
+  rc = h2_esp_e2e_result_log_prepare(&result_log, runtime, "iperf_e2e", NULL);
+  if (rc != H2_PAL_OK)
+    fail("result_console", rc, 1);
   wait_for_wifi(runtime);
   rc = apply_power_save(runtime);
   if (rc != H2_PAL_OK) {
@@ -273,17 +284,22 @@ static void image_entry(void *user) {
       .checkpoint = case_checkpoint,
   };
   if (H2_IPERF_ROLE_SERVER) {
-    serve_forever(&config.pal);
+    serve_forever(&config.pal, runtime);
   }
   h2_iperf_e2e_report_t report = {0};
   memory_checkpoint("matrix_start");
   rc = h2_iperf_e2e_run(&config, &report);
+  int cleanup = h2_sctp_destroy(&sctp);
+  if (rc == H2_PAL_OK) rc = cleanup;
   memory_checkpoint("matrix_end");
   printf("H2_IPERF_E2E_DEVKIT stage=summary status=%s rc=%d passed=%u "
          "total=%u power_save=%d ble_adv=%d\n",
          rc == H2_PAL_OK ? "PASS" : "FAIL", rc, report.passed, report.total,
          (int)H2_IPERF_POWER_SAVE, (int)H2_IPERF_BLE_ADV);
   fflush(stdout);
+  rc = h2_esp_e2e_result_log_confirm(&result_log, rc, 0u, confirm_app, runtime);
+  if (rc != H2_PAL_OK)
+    fail("matrix_or_ledger_or_confirm", rc, 1);
   hold();
 }
 

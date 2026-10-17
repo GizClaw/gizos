@@ -61,7 +61,10 @@ firmware_lib_component(
 firmware_native_component(
     name = "launcher",
     srcs = ["main/main.c"],
-    hdrs = ["main/ledger_console.h"],
+    hdrs = [
+        "main/ledger_console.h",
+        "//projects/e2e/libs/esp-device:result_console.h",
+    ],
     component_directory = "projects/e2e/targets/h2loader_tar_zlib/pal-mqtt/devkit/main",
     component_name = "main",
     data = [
@@ -127,7 +130,10 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = ["//projects/e2e/libs/pal-mqtt-device:runner"],
+    deps = [
+        "//projects/e2e/libs/esp-device:result_console",
+        "//projects/e2e/libs/pal-mqtt-device:runner",
+    ],
 )
 
 py_test(

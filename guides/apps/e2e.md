@@ -55,6 +55,10 @@ Platform artifact entry 持有 Runtime assembly、具体 provider、endpoint 与
 
 `//projects/e2e/libs/esp-device:firmware.bzl` 的 `esp_e2e_firmware` 声明可供下游消费的 ESP32-S3 managed App package，支持 Atomic、libco、独立 PAL Core/Crypto/JSON/Storage/HTTP/Net-TLS/MQTT/WebRTC/Wi-Fi/IPv6/Audio/Audio Decoder/Display、Lua Runtime/Link 双角色、GizClaw、iperf Client、iperf 和 WebRTC performance。另提供 `pal-wifi-fixture`、`pal-ipv6-fixture` 临时 peer，可由两个 consumer Board 交换 DUT/fixture 角色。它直接复用现有 ESP launcher source、App、device runner、task policy 与套件 defaults，不复制用例或修改资格判断。各 launcher 的 board identity 来自所选 BSP 或实际 Runtime。IPv6、WebRTC、GizClaw 和 WebRTC performance 与各自原始入口一致，显式启用真实 ESP WebRTC provider。MQTT ledger 借用 H2Loader 已安装的 USB JTAG 或 UART console，完整原子写与 drain 失败均阻止确认。
 
+ESP HTTP、Net/TLS、WebRTC、Wi-Fi 和两个 iperf 入口复用 `esp-device/result_console.h` 中从 MQTT 提取的有界 console write/drain。只有各入口精确声明的 E2E result scope 路由到该通道，其余记录仍交给原 Runtime Log；不修改 SDK 日志级别、默认过滤、provider 或网络预算。首个格式、短写、write、drain 或同步错误在本次 boot 中保持失败，后续 replay 不能恢复确认资格。HTTP、Net/TLS 和 WebRTC 还检查首次完整 report 的实际交付记录数（WebRTC 包含实际请求的 SOAK）；所有入口在 suite 与输出成功后才确认。记录数门禁不替代 host 对完整首份用例账本、清理、peer witness 和独立启动的校验。iperf server 角色仅在实际监听就绪的记录完成交付后确认，不代表 DUT suite 通过。
+
+Wi-Fi launcher 显式借用 Runtime 的 PAL Time，为其结果 scope 在同一次有界 write/drain 中添加 `H2_E2E_RESULT source=pal_monotonic_ms time_ms=<设备实际值>` 前缀。ESP 的该时钟与用例 elapsed time 都来自 `esp_timer_get_time()/1000`；取时失败保持首错，不能以零值或 host sidecar 时间替代。其它 launcher 和 MQTT 不默认添加前缀。公共 Wi-Fi peer verifier 接受此显式前缀或历史 ESP/BK SDK 时间格式，同一 DUT boot 的全部 CASE/ADDRESS 必须使用同一种设备时钟；缺失、畸形、混用和重复记录均拒绝。对端继续使用其独立 SDK 时钟，首个 lease 建立 offset、三种 AP 模式的每模式两个真实 lease 和 ±3000 毫秒窗口保持不变，source-bound seed 的单 lease 合同也保留。seed 的实际 suite rc 仍为 WOULD_BLOCK，而未执行确认的 wire 字段继续为 INVALID_STATE。
+
 调用方传入 `board`、`board_component`、`partition` 和 `layout_defaults`；后者必须包含 Board 拥有的 `sdkconfig.h2loader.defaults`。这些 source file 按 caller 声明顺序加载在 Board canonical defaults 之后，最后加载公共 suite defaults；额外诊断预算必须进入实际 SDK 配置，缺少已声明文件直接构建失败。BSP 的额外静态库、native component 与 PAL task policy 分别通过 `libraries`、`components` 和 `policies` 显式注入。Board canonical `sdkconfig.defaults` 由其 native component 声明，公共 macro 不注册私有 board、不替换其 PAL provider，也不拥有私有 layout。产物为名为 `name` 的 managed package，其内部构建 target 由 symbolic macro 封装；Display caller 另通过 `launcher_srcs` 提供 `h2_display_esp_capture_fixture()` adapter，它声明实际尺寸并从真实完成的 RGB565 DMA tile 提供观察数据，不得由 PAL 调用输入伪造输出。AMOLED 入口也复用同一公共 Display launcher。host task-policy 测试随 compatible graph 验证。ESP-IDF 的 early requirements 扫描与正式编译均从同一份 Bazel component manifest 声明 native 依赖。
 
 ```starlark
@@ -71,7 +75,7 @@ esp_e2e_firmware(
 )
 ```
 
-在下游仓库直接运行 `bazel build --config=esp32s3 //path/to/entry:pal-core`；构建不执行安装、串口或重启。套件 ledger、跨启动要求、资源清理和 BLOCKED/unsupported 语义仍以各 App README 为准。新增 Board 必须另行执行设备验收；不把公共 DevKit 既有资格、host 测试或 package build 转记为下游 Board PASS。独立网络/业务 suite 继续要求其公共 README 的本轮 fixture 输入。`pal-ipv6-fixture` 的 SDK 预算由 caller layout 显式拥有。`cmake_definitions` 只在本次 firmware action 注入 caller-owned 配置，iperf 与 WebRTC benchmark 的允许变量仍通过 `--define` 传入。`iperf-client` 使用已有 AMOLED iperf Server，对每个 DUT 分别验证 IPv4-only、IPv6-only 和 dual-stack 的 30、30、60-case 矩阵；调用方须在 `layout_defaults` 中声明该 Board 的诊断网络预算。
+在下游仓库直接运行 `bazel build --config=esp32s3 //path/to/entry:pal-core`；构建不执行安装、串口或重启。套件 ledger、跨启动要求、资源清理和 BLOCKED/unsupported 语义仍以各 App README 为准。新增 Board 必须另行执行设备验收；不把公共 DevKit 既有资格、host 测试或 package build 转记为下游 Board PASS。独立网络/业务 suite 继续要求其公共 README 的本轮 fixture 输入。`pal-ipv6-fixture` 的 SDK 预算由 caller layout 显式拥有。`cmake_definitions` 只在本次 firmware action 注入 caller-owned 配置，iperf 与 WebRTC benchmark 的允许变量仍通过 `--define` 传入。`iperf-client` 使用已有 AMOLED iperf Server，对每个 DUT 分别验证 IPv4-only、IPv6-only 和 dual-stack 的 30、30、60-case 矩阵。调用方可通过 `use_suite_defaults = False` 保留 Board canonical 配置；验收记录实际生成的 SDK 配置与资源预算，不能以诊断 overlay 替代所声称的产品配置。
 
 ## AEC 校准
 

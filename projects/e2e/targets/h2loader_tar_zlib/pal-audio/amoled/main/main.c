@@ -75,6 +75,10 @@ static void recover_failed_run(int rc, int confirm) {
 
 static void run(void *user) {
   (void)user;
+  vTaskDelay(pdMS_TO_TICKS(5000u));
+  printf("H2_PAL_AUDIO_BOOT board=" H2_ESP_BOARD_NAME " version=%s\n",
+         esp_app_get_description()->version);
+  fflush(stdout);
   const h2_pal_audio_e2e_config_t config = {
       .audio = provider_audio, .time = runtime->time,
       .stability_ms = 30000u, .report = report};
@@ -123,8 +127,6 @@ static void entry(void *user) {
   if (rc != H2_PAL_OK) fail("command_prepare", rc);
   rc = h2_runtime_init(&config, &runtime);
   if (rc != H2_PAL_OK) fail("runtime", rc);
-  printf("H2_PAL_AUDIO_BOOT board=" H2_ESP_BOARD_NAME " version=%s\n",
-         esp_app_get_description()->version);
   const h2_pal_task_options_t options = {.name = h2_pal_audio_e2e_runner_task_name};
   h2_pal_task_t *runner = NULL;
   rc = h2_pal_task_start(runtime->task, &options, run, NULL, &runner);

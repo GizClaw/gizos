@@ -1,3 +1,4 @@
+#include "result_console.h"
 #include "esp_app_desc.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -10,6 +11,8 @@
 #include <stdio.h>
 
 static h2_runtime_t *runtime;
+static h2_esp_e2e_result_log_t result_log;
+static int confirm_app(void *user) { return h2_esp_h2loader_app_confirm(user); }
 static h2_pal_webrtc_e2e_result_t result;
 static void hold(void) {
   for (;;)
@@ -38,13 +41,16 @@ static void run(void *user) {
   if (result.passed + result.failed + result.blocked !=
       H2_PAL_WEBRTC_E2E_CASE_COUNT)
     fail("fixture_or_network", rc);
-  int confirm = rc == H2_PAL_OK ? h2_esp_h2loader_app_confirm(runtime)
-                                : H2_PAL_ERR_INVALID_STATE;
+  size_t before_report = h2_esp_e2e_result_log_record_count(&result_log);
+  h2_pal_webrtc_device_report(runtime, &result);
+  int confirm = h2_esp_e2e_result_log_confirm(&result_log, rc,
+      before_report + H2_PAL_WEBRTC_E2E_CASE_COUNT + 2u + (result.soak.requested_ms != 0u),
+      confirm_app, runtime);
   for (;;) {
-    h2_pal_webrtc_device_report(runtime, &result);
     printf("H2_PAL_WEBRTC_READY board=" H2_ESP_BOARD_NAME " rc=%d confirm=%d\n", rc, confirm);
     fflush(stdout);
     vTaskDelay(pdMS_TO_TICKS(5000u));
+    h2_pal_webrtc_device_report(runtime, &result);
   }
 }
 static void entry(void *user) {
@@ -61,6 +67,9 @@ static void entry(void *user) {
   rc = h2_runtime_init(&config, &runtime);
   if (rc != H2_PAL_OK)
     fail("runtime", rc);
+  rc = h2_esp_e2e_result_log_prepare(&result_log, runtime, "pal-webrtc", NULL);
+  if (rc != H2_PAL_OK)
+    fail("result_console", rc);
   printf("H2_PAL_WEBRTC_BOOT board=" H2_ESP_BOARD_NAME " version=%s\n",
          esp_app_get_description()->version);
   const h2_pal_task_options_t options = {

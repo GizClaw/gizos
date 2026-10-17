@@ -30,6 +30,39 @@ def verify_fixture(report, audit_artifacts=False):
     return observations
 
 
+def _timed_rows(text, markers, allow_result_clock):
+    """Read every relevant row; missing/ambiguous clocks cannot disappear."""
+    source = None
+    previous = None
+    body = '(' + '|'.join(markers) + r') .+'
+    for line in text.splitlines():
+        if not any(marker in line for marker in markers):
+            continue
+        line = re.sub(r'\x1b\[[0-9;]*m', '', line)
+        assert sum(line.count(marker) for marker in markers) == 1, 'duplicate witness marker'
+        explicit = re.fullmatch(r'H2_E2E_RESULT source=pal_monotonic_ms time_ms=([0-9]+) (' + body + ')', line)
+        sdk = re.fullmatch(r'(?:I\s*\(([0-9]+)\)\s+pal-wifi:\s*|ap0:pal-wifi:I\(([0-9]+)\):\s*)(' + body + ')', line)
+        if explicit is not None:
+            assert allow_result_clock, 'peer requires its actual SDK clock'
+            clock, stamp, payload = 'pal_monotonic_ms', int(explicit[1]), explicit[2]
+        else:
+            assert sdk is not None, 'missing or malformed device clock/witness'
+            clock, stamp, payload = 'sdk', int(sdk[1] or sdk[2]), sdk[3]
+        assert 0 <= stamp <= (1 << 64) - 1, 'device clock outside its integer range'
+        assert source is None or source == clock, 'mixed DUT witness clocks'
+        assert previous is None or stamp >= previous, 'device clock moved backwards'
+        source, previous = clock, stamp
+        yield stamp, payload
+
+
+def _unique_object(items):
+    value = {}
+    for key, item in items:
+        assert key not in value, 'duplicate witness JSON field'
+        value[key] = item
+    return value
+
+
 def verify_peer_witnesses(dut_log, fixture_log, target, mac, repeats=2):
     """Match one or two real peers per AP mode by independent clock offset.
 
@@ -40,16 +73,23 @@ def verify_peer_witnesses(dut_log, fixture_log, target, mac, repeats=2):
     """
     dut = Path(dut_log).read_text(encoding='utf-8', errors='replace')
     fixture = Path(fixture_log).read_text(encoding='utf-8', errors='replace')
-    addresses = [(int(ms), int(ip), int(ap), int(mask)) for ms, ip, ap, mask in
-                 re.findall(r'I\s*\((\d+)\).*H2_WIFI_ADDRESS lease=(\d+) ap=(\d+) mask=(\d+)', dut)]
+    addresses = []
+    cases = {}
+    for ms, payload in _timed_rows(dut, ('H2_WIFI_CASE', 'H2_WIFI_ADDRESS'), True):
+        if payload.startswith('H2_WIFI_ADDRESS '):
+            address = re.fullmatch(r'H2_WIFI_ADDRESS lease=([0-9]+) ap=([0-9]+) mask=([0-9]+)', payload)
+            assert address is not None, 'malformed DUT address witness'
+            observed = (ms, *(int(item) for item in address.groups()))
+            assert observed not in addresses, 'duplicate DUT address witness'
+            addresses.append(observed)
+        else:
+            row = json.loads(payload[len('H2_WIFI_CASE '):], object_pairs_hook=_unique_object)
+            assert row['id'] not in cases, 'duplicate case marker'
+            assert type(row['elapsed_ms']) is int and 0 <= row['elapsed_ms'] <= ms, 'invalid case elapsed time'
+            cases[row['id']] = (ms - row['elapsed_ms'], ms, row['status'])
     assert len(addresses) == 3, 'missing WPA2/open/hidden lease observations'
     for _, ip, ap, mask in addresses:
         assert mask and (ip & mask) == (ap & mask), 'DUT lease outside AP subnet'
-    cases = {}
-    for ms, payload in re.findall(r'I\s*\((\d+)\).*H2_WIFI_CASE (\{[^\n]+\})', dut):
-        row = json.loads(payload)
-        assert row['id'] not in cases, 'duplicate case marker'
-        cases[row['id']] = (int(ms) - int(row['elapsed_ms']), int(ms), row['status'])
     needed = ('access-point-real-client', 'access-point-client-left',
               'access-point-open', 'access-point-hidden')
     assert all(name in cases and cases[name][2] == 'PASS' for name in needed)
@@ -57,8 +97,15 @@ def verify_peer_witnesses(dut_log, fixture_log, target, mac, repeats=2):
     for i, name in ((1, 'access-point-open'), (2, 'access-point-hidden')):
         assert cases[name][0] - 3000 <= addresses[i][0] <= cases[name][1] + 3000
 
-    clients = [(int(ms), name, int(ip), observed_mac) for ms, name, ip, observed_mac in
-               re.findall(r'I\s*\((\d+)\).*H2_WIFI_FIXTURE_CLIENT target=([^\s]+) joined=\d+ ip4=(\d+) mac=([0-9a-f]{12})', fixture)]
+    clients = []
+    joins = set()
+    for ms, payload in _timed_rows(fixture, ('H2_WIFI_FIXTURE_CLIENT',), False):
+        client = re.fullmatch(r'H2_WIFI_FIXTURE_CLIENT target=([^\s]+) joined=([0-9]+) ip4=([0-9]+) mac=([0-9a-f]{12})', payload)
+        assert client is not None, 'malformed peer client witness'
+        name, joined, ip, observed_mac = client.groups()
+        assert int(joined) not in joins, 'duplicate peer lease witness'
+        joins.add(int(joined))
+        clients.append((ms, name, int(ip), observed_mac))
     assert repeats in (1, 2)
     count = 3 * repeats
     for start in range(len(clients) - count + 1):

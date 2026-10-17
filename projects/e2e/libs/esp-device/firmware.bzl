@@ -243,7 +243,7 @@ def _esp_e2e_firmware_impl(name, visibility, suite, board, board_component, part
     firmware_native_component(
         name = name + "_launcher",
         native_srcs = getattr(spec, "sources", [source]) + getattr(spec, "extra_sources", []) + launcher_srcs,
-        hdrs = getattr(spec, "headers", []),
+        hdrs = getattr(spec, "headers", []) + ([Label("//projects/e2e/libs/esp-device:result_console.h")] if suite in ["pal-http", "pal-net-tls", "pal-webrtc", "pal-wifi", "pal-mqtt", "iperf", "iperf-client"] else []),
         component_directory = (_MAIN_CMAKE.workspace_root + "/" + _MAIN_CMAKE.package + "/main").lstrip("/"),
         component_name = "main",
         data = [_MAIN_CMAKE, _MAIN_METADATA] + getattr(spec, "data", []),

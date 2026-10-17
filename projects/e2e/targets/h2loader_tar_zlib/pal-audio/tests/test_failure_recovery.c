@@ -4,7 +4,16 @@
 #endif
 #include <assert.h>
 #include <setjmp.h>
+#include <stdarg.h>
+#include <stdio.h>
 #include <string.h>
+
+#ifndef H2_PAL_AUDIO_TEST_BK
+static int observed_printf(const char *format, ...);
+static int observed_fflush(FILE *stream);
+#define printf observed_printf
+#define fflush observed_fflush
+#endif
 
 /* Compile and execute the actual artifact's runner; no RTOS or board is faked
  * inside the production App. SDK reset is the test's terminal longjmp. */
@@ -17,6 +26,8 @@
 #include "projects/e2e/targets/h2loader_tar_zlib/pal-audio/amoled/main/main.c"
 #endif
 #undef main
+#undef printf
+#undef fflush
 
 static jmp_buf reset_boundary;
 static int run_result, confirm_result, config_result, init_result, reboot_result;
@@ -24,6 +35,56 @@ static unsigned confirms, loader_requests, resets, delays, locks, unlocks;
 static int audio_active, selected_loader;
 static int mutex_cookie;
 const char h2_pal_audio_e2e_runner_task_name[] = "test-audio";
+
+#ifndef H2_PAL_AUDIO_TEST_BK
+static unsigned startup_step, startup_cases, startup_replays;
+static h2_pal_task_entry_t pending_runner;
+static const h2_pal_audio_api_t startup_audio = {0};
+static const h2_pal_time_api_t startup_time = {0};
+static int observed_printf(const char *format, ...) {
+  char message[1024];
+  va_list args;
+  va_start(args, format);
+  const int bytes = vsnprintf(message, sizeof(message), format, args);
+  va_end(args);
+  assert(bytes >= 0 && (size_t)bytes < sizeof(message));
+  if (startup_step) {
+    if (strstr(message, "H2_PAL_AUDIO_BOOT ") == message) {
+      assert(startup_step == 5u);
+      assert(strcmp(message, "H2_PAL_AUDIO_BOOT board=amoled version=test\n") == 0);
+      startup_step = 6u;
+    } else if (strstr(message, "H2_PAL_AUDIO_CASE ") == message) {
+      assert(startup_step == 8u);
+      ++startup_cases;
+    } else if (strstr(message, "H2_PAL_AUDIO_REPLAY ") == message) {
+      assert(startup_step == 9u);
+      ++startup_replays;
+    } else if (strstr(message, "H2_PAL_AUDIO_SUMMARY ") == message) {
+      assert(startup_step == 9u && startup_replays == H2_PAL_AUDIO_E2E_CASE_COUNT);
+      startup_step = 10u;
+    }
+  }
+  return bytes;
+}
+static int observed_fflush(FILE *stream) {
+  assert(stream == stdout);
+  if (startup_step == 6u) startup_step = 7u;
+  if (startup_step == 10u) longjmp(reset_boundary, 2);
+  return 0;
+}
+static int start_runner(void *user, const h2_pal_task_options_t *options,
+    h2_pal_task_entry_t fn, void *ctx, h2_pal_task_t **out) {
+  (void)user;
+  assert(startup_step == 3u && fn == run && ctx == NULL);
+  assert(strcmp(options->name, h2_pal_audio_e2e_runner_task_name) == 0);
+  pending_runner = fn;
+  *out = (h2_pal_task_t *)&mutex_cookie;
+  startup_step = 4u;
+  return H2_PAL_OK;
+}
+static const h2_pal_task_vtable_t startup_task_vtable = {.start = start_runner};
+static const h2_pal_task_api_t startup_task = {.vtable = &startup_task_vtable};
+#endif
 
 static h2_pal_result_t lock_mutex(void *user, h2_pal_mutex_t *mutex) {
   (void)user;
@@ -55,6 +116,16 @@ static const h2_pal_power_api_t power_api = {.vtable = &power_vtable};
 void esp_restart(void) { reset_chip(); }
 const h2_pal_power_api_t *h2_bk_h2loader_power_api(void) { return &power_api; }
 static void delay(uint32_t ms) {
+#ifndef H2_PAL_AUDIO_TEST_BK
+  if (startup_step) {
+    if (startup_step == 4u) {
+      if (ms == 1000u) longjmp(reset_boundary, 3); /* Entry is now holding. */
+      assert(ms == 5000u);
+      startup_step = 5u;
+    } else assert(startup_step == 9u && ms == 10u);
+    return;
+  }
+#endif
   (void)ms;
   if (++delays > 3u) longjmp(reset_boundary, 2); /* Detect the former replay loop. */
 }
@@ -67,9 +138,30 @@ int h2_pal_audio_e2e_run(const h2_pal_audio_e2e_config_t *config,
   out->failed = run_result == H2_AUDIO_OK ? 0u : 1u;
   out->passed = run_result == H2_AUDIO_OK ? H2_PAL_AUDIO_E2E_CASE_COUNT : 0u;
   for (unsigned i = 0; i < H2_PAL_AUDIO_E2E_CASE_COUNT; ++i) out->cases[i].id = "case";
+#ifndef H2_PAL_AUDIO_TEST_BK
+  if (startup_step) {
+    assert(startup_step == 7u && config->audio == &startup_audio);
+    assert(config->time == &startup_time && config->stability_ms == 30000u);
+    assert(config->report == report);
+    startup_step = 8u;
+    for (unsigned i = 0; i < H2_PAL_AUDIO_E2E_CASE_COUNT; ++i) {
+      out->cases[i].passed = 1;
+      config->report(config->report_user, &out->cases[i]);
+    }
+  }
+#endif
   return run_result;
 }
-static int confirm(void) { ++confirms; return confirm_result; }
+static int confirm(void) {
+#ifndef H2_PAL_AUDIO_TEST_BK
+  if (startup_step) {
+    assert(startup_step == 8u && startup_cases == H2_PAL_AUDIO_E2E_CASE_COUNT);
+    startup_step = 9u;
+  }
+#endif
+  ++confirms;
+  return confirm_result;
+}
 int h2_esp_h2loader_app_confirm(h2_runtime_t *value) { (void)value; return confirm(); }
 int h2_bk_h2loader_confirm_current_app(h2_runtime_t *value) { (void)value; return confirm(); }
 static int recovery_config(h2_loader_app_client_config_t *config) {
@@ -101,9 +193,27 @@ int h2_loader_reboot_h2loader_with_transition(h2_loader_t *loader,
 }
 void h2_loader_deinit(h2_loader_t *loader) { (void)loader; }
 int h2_runtime_init(const h2_runtime_config_t *config, h2_runtime_t **out) {
+#ifndef H2_PAL_AUDIO_TEST_BK
+  if (startup_step) {
+    static h2_runtime_t startup_runtime = {.task = &startup_task, .time = &startup_time};
+    assert(startup_step == 2u && config->audio == &startup_audio);
+    *out = &startup_runtime;
+    startup_step = 3u;
+    return H2_PAL_OK;
+  }
+#endif
   (void)config; *out = NULL; return H2_PAL_ERR_UNAVAILABLE;
 }
-int h2_esp_board_runtime_config(h2_runtime_config_t *config) { (void)config; return 0; }
+int h2_esp_board_runtime_config(h2_runtime_config_t *config) {
+#ifndef H2_PAL_AUDIO_TEST_BK
+  if (startup_step) {
+    assert(startup_step == 1u);
+    config->audio = &startup_audio;
+  }
+#endif
+  (void)config;
+  return 0;
+}
 int h2_bk7258_board_runtime_config(h2_runtime_config_t *config) { (void)config; return 0; }
 int h2_esp_board_start_entry_task(const char *name, void (*fn)(void *), void *user) {
   (void)name; (void)fn; (void)user; return 0;
@@ -115,6 +225,13 @@ int h2_esp_target_task_policy_install(void) { return 0; }
 int h2_bk_target_task_policy_install(void) { return 0; }
 int h2_esp_h2loader_app_commands_prepare_serial(const h2_runtime_config_t *config,
     const char *name, uint32_t p1, uint32_t dump) {
+#ifndef H2_PAL_AUDIO_TEST_BK
+  if (startup_step) {
+    assert(startup_step == 1u && config->audio == &startup_audio);
+    assert(strcmp(name, "pal-audio") == 0 && p1 == 1u && dump == 3u);
+    startup_step = 2u;
+  }
+#endif
   (void)config; (void)name; (void)p1; (void)dump; return 0;
 }
 int h2_bk_h2loader_start_app_iostreamikcp_with_capabilities(h2_runtime_t *value,
@@ -158,5 +275,26 @@ int main(void) {
   check(H2_PAL_ERR_INVALID_STATE, 0, 0, H2_PAL_ERR_IO, 0);
   check(H2_PAL_ERR_INVALID_STATE, 0, 0, 0, H2_PAL_ERR_IO);
   check(H2_AUDIO_OK, H2_PAL_ERR_IO, 0, 0, 0);
+#ifndef H2_PAL_AUDIO_TEST_BK
+  startup_step = 1u;
+  startup_cases = startup_replays = confirms = 0u;
+  run_result = confirm_result = H2_PAL_OK;
+  switch (setjmp(reset_boundary)) {
+  case 0:
+    entry(NULL);
+    assert(0 && "entry must hold after scheduling the runner");
+    break;
+  case 3:
+    assert(startup_step == 4u && startup_cases == 0u && confirms == 0u);
+    pending_runner(NULL);
+    assert(0 && "runner must reach its first terminal summary");
+    break;
+  case 2:
+    assert(startup_step == 10u && confirms == 1u);
+    break;
+  default:
+    assert(0 && "unexpected startup stop");
+  }
+#endif
   return 0;
 }
