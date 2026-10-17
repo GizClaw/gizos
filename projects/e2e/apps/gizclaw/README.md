@@ -258,6 +258,22 @@ SDK0.23.2/source123565bf 的真实 macOS 全量执行为5/8，cleanup=-8、retai
 
 ## BLE Binding 覆盖边界
 
-BLE Binding 的八个公开 API 归属 `device-api` 的独立审计要求，全部要求按序成功调用和显式 `ble_binding_<method>-assert` 业务断言。`open`、`start`、`poll` 和 `stop` 还必须在变更后实际调用 `ble_binding_snapshot`，观察 idle/open、广播重启或 sealed window 状态；URL formatter、snapshot、exposure drain 与最终 close 则各自断言实际值、精确 key name/revision 或已释放 instance。READY、函数名出现在源码、普通返回 OK 或 fake-PAL 单测都不能替代这些证据。
+BLE Binding 的八个公开 API 在现有 `device-api` case 中直接执行，保持八项 `all` registry 和 236 项审计。Launcher 先启动真实共享 BLE Host；App 借用它的独立 advertising set、System Event、Memory/Sync 和本轮实际注册 actor 的临时 API-key state。`device_api_url` 必须显式提供 HTTPS origin，不能带路径或尾斜线，Binding 与 Device API 使用同一受控服务，不从 RPC endpoint 推导 origin。`open`、`start`、`poll` 和 `stop` 后实际 snapshot 分别断言 idle、ready/advertising、断连后的可用广播和 sealed window；formatter 比较完整编码，exposure 比较真实 key name/revision，close 验证 instance 已释放。日志只记录 URL 长度与 SHA，不输出 URL、secret 或 key name。
 
-`h2_gizclaw_ble_binding_test` 验证真实异步 key state 与 fake RPC/BLE PAL 上的 wire、生命周期和失败边界；它不输出或提供 live E2E qualification。真实 Server/BLE/手机绑定 lane 尚无这八项调用与业务断言证据时，完整审计继续将它们报告为 missing。历史 228 或 227 函数的完整日志不会资格化 236 项库存；审计器回归测试明确要求旧 228 项的合成日志仍缺少全部八项 BLE 要求。产品页面与手机 adapter 的接入和物理 ESP32-S3/BK7258 验收分别记录，不能把本地 host graph 绿灯写成账号绑定或设备通过。
+本机 Central 必须在 `ble-binding-ready` 后完成两次真实 BLE 连接：按 INFO/REQUEST/CREDENTIAL 分块重组完整 URL并匹配本次 revision、长度与 SHA，第一次断连后重新发现同一随机 window 的广播，再完成第二次传输和断连。App 观察实际 exposure、断连和第二次 adopted connection，缺少 Central 或事件则有界失败。Central 只连接匹配本次 `h2e2e-<16 hex>` 名称和 Binding UUID 的设备，不记录其他扫描结果。没有手机账户参与，该 lane 证明真实 BLE disclosure 与生命周期，不证明账户绑定完成。
+
+从当前 boot 原始日志取得 window、revision、url_bytes 和 url_sha256 后，在 macOS 运行已有 Darwin/CoreBluetooth PAL 装配的独立工具：
+
+```sh
+bazel run --config=macos_arm64 //projects/e2e/libs/gizclaw-device:ble_peer -- \
+  --version <firmware-version> --execution <this-wrapper-execution> \
+  --window <this-window> --revision <this-revision> --size <this-url-bytes> \
+  --sha256 <this-url-sha256> --output <new-peer-receipt.json>
+```
+
+保留该进程实际退出码。`gizclaw-device:verify_device` 的完整账本/API 审计还必须传入 `--ble-peer-receipt=<new-peer-receipt.json>` 和 `--ble-peer-exit-code=<actual-exit-code>`，验证两个实际连接、重新发现、完整传输、时间戳和本次随机 window；不同 boot 的 receipt、单连接、部分读取或 Central 非零退出均拒绝。managed 与 normal boot 各用新的 receipt，normal boot 继续要求 `--previous-execution`。Central 不向服务器提交 credential；App 停止、排空 exposure、close 后明确 revoke 本轮临时 key，失败时保留借用关系并由原 fixture cleanup 精确回收 actor。 Verifier 还要求 `--execution=<this-wrapper-execution>`、`--capture-receipt=<boot-command.json>` 与 `--ble-peer-command-receipt=<central-command.json>`。Central schema 2 显式包含 version/execution，并受真实 120 秒进程 deadline 限制；设备 wrapper、账本、receipt 与实际 argv 必须属于同一执行。
+
+Host UART capture receipt 由实际 collector 写入 `argv`、`version`、`execution`、`started_utc`、`finished_utc`、`boot_observed_utc`、`ble_ready_utc`、原始日志 `sha256`、实际 `exit_code` 和 `monitor_stop=complete-qualified-ledger`。Central command receipt 独立记录真实 `argv`/`pid`、`started_utc`/`finished_utc`、由单调时钟测得的整数 `elapsed_ms`、实际 `exit_code` 与完整 helper 文件的 `receipt_sha256`；不能从 helper 自报的时间复制这些采集事实。缺少事实、错误执行身份、非零退出、跨采集区间、超过 120 秒或时钟间不一致均拒绝。时间顺序为 capture start ≤ wrapper observed ≤ BLE ready observed ≤ process start ≤ helper start ≤ helper finish ≤ process finish ≤ capture finish。审计不读当前系统时间，匹配自身历史事实的完整历史执行仍可离线验证；实时 admission 必须使用本次实际 collector 的身份和区间。
+
+
+`h2_gizclaw_ble_binding_test` 验证 library 的真实异步 key state 与 fake RPC/BLE PAL 边界；`gizclaw_e2e_ble_binding_test` 执行 App 流程的受控失败，`ble_peer_transfer_test` 执行 Central 的截断、错版本/revision/offset/长度、摘要与 I/O 拒绝路径。它们不提供 live qualification。只有本轮设备完整账本、独立 236 项审计与真实 Central receipt 全部通过，才认定该 target 通过；历史 227/228 记录不转移到新库存。

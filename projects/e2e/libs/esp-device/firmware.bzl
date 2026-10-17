@@ -64,6 +64,8 @@ _SUITES = {
     ),
     "libco-smoke": struct(
         image = "libco-smoke",
+        defaults_suite = "libco-smoke",
+        extra_sources = [Label("//projects/e2e/targets/h2loader_tar_zlib/libco-smoke/devkit:main/confirmation.h")],
         libraries = [Label("//projects/e2e/apps/libco/app:libco_smoke")],
         policies = [],
     ),

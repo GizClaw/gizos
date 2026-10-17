@@ -60,6 +60,17 @@ static void deadline(void *unused) {
   (void)unused;
   puts("H2_DISPLAY_WATCHDOG timeout=120s");
   fflush(stdout);
+  if (fixture != NULL && fixture->diagnostics != NULL) {
+    /* The one-shot watchdog is the sole writer; keep this off the timer stack. */
+    static char diagnostic[256];
+    size_t length = fixture->diagnostics(diagnostic, sizeof(diagnostic));
+    if (length >= sizeof(diagnostic))
+      length = sizeof(diagnostic) - 1u;
+    while (length > 0u && diagnostic[length - 1u] == '\n')
+      --length;
+    printf("H2_DISPLAY_DIAGNOSTIC %.*s\n", (int)length, diagnostic);
+    fflush(stdout);
+  }
 }
 static void run(void *unused) {
   (void)unused;

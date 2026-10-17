@@ -19,3 +19,5 @@ one board and read how fast the other reports `lost`.
 The App only uses the Runtime and the Lua `link` module; board launchers own the
 BLE Host (started by the H2Loader command service), the role and the
 advertising/scan type. No Wi-Fi is used.
+
+The AMOLED peer's `//projects/e2e/targets/h2loader_tar_zlib/lua-link/amoled:package` runs the join role; `:host-package` reuses the public host launcher with the real AMOLED BSP through `//projects/e2e/libs/esp-device:firmware.bzl`. Swap the peer and DUT roles to cover both DUT roles. Each launcher runs five complete sessions followed by the hold session; qualification requires the actual two boards' complete session ledgers.

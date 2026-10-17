@@ -2,6 +2,7 @@
 #define H2_DISPLAY_ESP_CAPTURE_H
 
 #include "h2/pal/hal/h2_pal_display.h"
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -23,6 +24,17 @@ typedef struct h2_display_esp_capture {
     int height;
     const char *source;
     void (*set_capture)(h2_display_esp_capture_fn capture, void *user);
+    /**
+     * @brief Optional read-only text snapshot called from the ESP timer task.
+     * @param[out] out Borrowed buffer, valid only during this call.
+     * @param capacity Buffer bytes including the NUL terminator.
+     * @return Bytes stored excluding NUL, at most capacity - 1 for nonzero
+     * capacity; zero for NULL/zero capacity or empty output.
+     * Must tolerate concurrent Display I/O without waiting for its progress,
+     * must not alter or reenter Display, and must not retain out. The callback
+     * and its dependencies have image lifetime. NULL keeps watchdog-only output.
+     */
+    size_t (*diagnostics)(char *out, size_t capacity);
 } h2_display_esp_capture_t;
 
 /**

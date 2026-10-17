@@ -1,15 +1,15 @@
 cmake_minimum_required(VERSION 3.16)
 
-if(NOT DEFINED H2_REPO_ROOT)
-  get_filename_component(H2_REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../../../.." ABSOLUTE)
+if(DEFINED ENV{H2_GIZOS_ROOT} AND NOT "$ENV{H2_GIZOS_ROOT}" STREQUAL "")
+  get_filename_component(H2_GIZOS_ROOT "$ENV{H2_GIZOS_ROOT}" ABSOLUTE)
 else()
-  get_filename_component(H2_REPO_ROOT "${H2_REPO_ROOT}" ABSOLUTE)
+  get_filename_component(H2_GIZOS_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../../../.." ABSOLUTE)
 endif()
 
 set(H2_ESP_TARGET "esp32s3")
-set(H2_ESP_BOARD_DIR "${H2_REPO_ROOT}/boards/amoled/${H2_ESP_TARGET}" CACHE PATH "H2 ESP board component directory" FORCE)
-set(H2_ESP_COMPONENT_DIR "${H2_REPO_ROOT}/native_component_src/esp-idf6.x")
-set(H2_H2LOADER_COMPONENT_DIR "${H2_REPO_ROOT}/projects/h2loader/native_component_src/esp-idf6.x")
+set(H2_ESP_BOARD_DIR "${H2_GIZOS_ROOT}/boards/amoled/${H2_ESP_TARGET}" CACHE PATH "H2 ESP board component directory" FORCE)
+set(H2_ESP_COMPONENT_DIR "${H2_GIZOS_ROOT}/native_component_src/esp-idf6.x")
+set(H2_H2LOADER_COMPONENT_DIR "${H2_GIZOS_ROOT}/projects/h2loader/native_component_src/esp-idf6.x")
 
 if(NOT DEFINED IDF_TARGET)
   set(IDF_TARGET "${H2_ESP_TARGET}" CACHE STRING "ESP-IDF target")

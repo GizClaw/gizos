@@ -443,7 +443,21 @@ static int actor_session_dispose(h2_gizclaw_e2e_actor_t *actor) {
   return rc;
 }
 
+static int actor_binding_dispose(h2_gizclaw_e2e_actor_t *actor) {
+  if (actor->ble_binding == NULL) return H2_PAL_OK;
+  int rc = h2_gizclaw_ble_binding_stop(actor->ble_binding);
+  if (rc != H2_PAL_OK) return rc;
+  h2_gizclaw_ble_binding_exposure_t exposure = {0};
+  while ((rc = h2_gizclaw_ble_binding_next_exposure(actor->ble_binding,
+                                                   &exposure)) == H2_PAL_OK)
+    memset(&exposure, 0, sizeof(exposure));
+  if (rc != H2_PAL_ERR_WOULD_BLOCK) return rc;
+  return h2_gizclaw_ble_binding_close(&actor->ble_binding);
+}
+
 static int actor_stop(h2_gizclaw_e2e_actor_t *actor) {
+  const int binding_rc = actor_binding_dispose(actor);
+  if (binding_rc != H2_PAL_OK) return binding_rc;
   if (actor->service == NULL)
     return H2_PAL_OK;
   if (actor->api_key_state != NULL) {
@@ -1209,6 +1223,12 @@ int h2_gizclaw_e2e_fixture_cleanup(h2_gizclaw_e2e_fixture_t *fixture) {
     if (rc != H2_PAL_OK)
       return rc;
   }
+  /* Detach credential callbacks before remote Peer/key cleanup or stopping
+   * their borrowed Service. The shared BLE Host belongs to the launcher. */
+  for (size_t i = 0u; i < H2_GIZCLAW_E2E_ACTOR_COUNT; ++i) {
+    const int rc = actor_binding_dispose(&fixture->actors[i]);
+    if (rc != H2_PAL_OK) return rc;
+  }
   /* All Session operations and conversation callbacks have joined. End its
    * ownership before the resource-ledger cleanup uses low-level deletion. */
   for (size_t i = 0u; i < H2_GIZCLAW_E2E_ACTOR_COUNT; ++i) {
@@ -1409,6 +1429,9 @@ size_t h2_gizclaw_e2e_fixture_emit_recovery_ledger(
   size_t retained = 0u;
   retained += emit_retained_resource(fixture, "case-hooks-track",
                                      fixture->case_state != NULL);
+  for (size_t i = 0u; i < H2_GIZCLAW_E2E_ACTOR_COUNT; ++i)
+    retained += emit_retained_resource(fixture, "ble-binding",
+                                       fixture->actors[i].ble_binding != NULL);
   retained +=
       emit_retained_resource(fixture, "workspace", fixture->workspace_created);
   retained +=

@@ -1,3 +1,4 @@
+load("//projects/e2e/libs/esp-device:firmware.bzl", "esp_e2e_firmware")
 load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_esp_idf_firmware")
 load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
 load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
@@ -9,6 +10,24 @@ package(default_visibility = ["//visibility:public"])
 exports_files([
     "main/main.c",
 ])
+
+esp_e2e_firmware(
+    name = "host-package",
+    board = "amoled",
+    board_component = "//boards/amoled/esp32s3",
+    components = [
+        "//native_component_src/esp-idf6.x/h2_es8311_audio_system",
+        "//native_component_src/esp-idf6.x/opus_port",
+    ],
+    layout_defaults = ["//boards/amoled/esp32s3/layouts/h2loader:sdkconfig.h2loader.defaults"],
+    libraries = [
+        "//libs/audio_mixer",
+        "//libs/drivers/audio/es8311",
+    ],
+    partition = "//boards/amoled/esp32s3/layouts/h2loader:partition.csv",
+    suite = "lua-link-host",
+    visibility = ["//visibility:public"],
+)
 
 esp_target_task_policy(
     default_policy = "4 any 4096 psram",

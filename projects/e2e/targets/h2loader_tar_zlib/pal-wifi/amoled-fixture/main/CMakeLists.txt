@@ -1,7 +1,7 @@
-if(NOT DEFINED H2_REPO_ROOT)
-  get_filename_component(H2_REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../../../../.." ABSOLUTE)
+if(DEFINED ENV{H2_GIZOS_ROOT} AND NOT "$ENV{H2_GIZOS_ROOT}" STREQUAL "")
+  get_filename_component(H2_GIZOS_ROOT "$ENV{H2_GIZOS_ROOT}" ABSOLUTE)
 else()
-  get_filename_component(H2_REPO_ROOT "${H2_REPO_ROOT}" ABSOLUTE)
+  get_filename_component(H2_GIZOS_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../../../../.." ABSOLUTE)
 endif()
 
 include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native_component.cmake")
@@ -10,13 +10,13 @@ h2_bazel_native_component_sources(H2_MAIN_SOURCES main)
 idf_component_register(
   SRCS ${H2_MAIN_SOURCES}
   INCLUDE_DIRS
-    "${H2_REPO_ROOT}/projects/e2e/apps/pal-wifi/app/include"
-    "${H2_REPO_ROOT}/projects/e2e/libs/pal-wifi-device/include"
-    "${H2_REPO_ROOT}/libs/atomic/include"
-    "${H2_REPO_ROOT}/libs/pal/include"
-    "${H2_REPO_ROOT}/libs/runtime/include"
-    "${H2_REPO_ROOT}/native_component_src/esp-idf6.x/h2_pal_core/include"
-    "${H2_REPO_ROOT}/projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_runtime/include"
+    "${H2_GIZOS_ROOT}/projects/e2e/apps/pal-wifi/app/include"
+    "${H2_GIZOS_ROOT}/projects/e2e/libs/pal-wifi-device/include"
+    "${H2_GIZOS_ROOT}/libs/atomic/include"
+    "${H2_GIZOS_ROOT}/libs/pal/include"
+    "${H2_GIZOS_ROOT}/libs/runtime/include"
+    "${H2_GIZOS_ROOT}/native_component_src/esp-idf6.x/h2_pal_core/include"
+    "${H2_GIZOS_ROOT}/projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_runtime/include"
   REQUIRES
     h2_esp_target_task_policy
     app_update
