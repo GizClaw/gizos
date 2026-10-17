@@ -1,20 +1,11 @@
 include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native_component.cmake")
+include("$ENV{H2_BAZEL_COMPONENT_MANIFEST}")
 h2_bazel_native_component_sources(H2_MAIN_SOURCES main)
 
-set(H2_E2E_REQUIRES)
-if(H2_E2E_SUITE STREQUAL "pal-mqtt")
-  list(APPEND H2_E2E_REQUIRES mbedtls)
-elseif(H2_E2E_SUITE STREQUAL "pal-audio-decoder")
-  list(APPEND H2_E2E_REQUIRES h2_esp_audio_decoder)
-elseif(H2_E2E_SUITE STREQUAL "gizclaw-e2e")
-  list(APPEND H2_E2E_REQUIRES h2_gizclaw esp_netif opus_port)
-elseif(H2_E2E_SUITE STREQUAL "pal-ipv6-fixture")
-  list(APPEND H2_E2E_REQUIRES esp_netif lwip mbedtls esp_timer esp_hw_support)
-elseif(H2_E2E_SUITE STREQUAL "pal-ipv6")
-  list(APPEND H2_E2E_REQUIRES esp_netif)
-elseif(H2_E2E_SUITE STREQUAL "webrtc-performance")
-  list(APPEND H2_E2E_REQUIRES opus_port)
-endif()
+# ESP-IDF scans requirements in a separate CMake script without suite cache
+# variables. The action's component manifest is available in both passes.
+set(H2_E2E_REQUIRES ${H2_BAZEL_COMPONENT_NAMES})
+list(REMOVE_ITEM H2_E2E_REQUIRES main)
 
 idf_component_register(
   SRCS ${H2_MAIN_SOURCES}
@@ -24,6 +15,11 @@ idf_component_register(
     espcoredump
     esp_driver_uart
     esp_driver_usb_serial_jtag
+    esp_netif
+    esp_timer
+    esp_hw_support
+    lwip
+    mbedtls
     h2_firmware_lib
     h2_esp_board
     h2_h2loader_ble
