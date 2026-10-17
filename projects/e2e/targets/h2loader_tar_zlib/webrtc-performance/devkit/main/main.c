@@ -1,4 +1,5 @@
 #include "h2_esp_board.h"
+#include "h2_esp_board_config.h"
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_h2loader_runtime.h"
 #include "h2_webrtc_performance.h"
@@ -206,7 +207,7 @@ static void image_entry(void *user) {
   }
   const h2_webrtc_performance_config_t config = {
       .profile = "smoke",
-      .target = "devkit",
+      .target = H2_ESP_BOARD_NAME,
       .provider = "h2peer",
       .stun_url = {H2_WEBRTC_PERF_STUN_URL,
                    sizeof(H2_WEBRTC_PERF_STUN_URL) - 1u},
@@ -244,7 +245,7 @@ void app_main(void) {
         return;
     }
   const h2_pal_result_t rc = h2_esp_board_start_entry_task(
-      "devkit/webrtc-performance", image_entry, NULL);
+      H2_ESP_BOARD_NAME "/webrtc-performance", image_entry, NULL);
   if (rc != H2_PAL_OK) {
     fail("entry_task", rc, 0);
   }

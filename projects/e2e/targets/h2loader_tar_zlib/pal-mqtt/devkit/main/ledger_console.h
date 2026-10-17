@@ -3,14 +3,16 @@
 
 #include "device_runner.h"
 #include "h2/pal/hal/h2_pal_usb_jtag_io_stream.h"
+#include "h2/pal/hal/h2_pal_uart_io_stream.h"
 #include <stdio.h>
 #include <string.h>
 
-/* This target uses the existing USB JTAG driver installed by H2Loader. Each
+/* Borrow the console driver already installed by H2Loader. Each
  * record has one bounded write and a checked physical TX drain; no prefix retry
  * can make an incomplete first ledger eligible for persistent confirmation. */
 typedef struct h2_mqtt_esp_ledger_console {
     const h2_pal_usb_jtag_io_stream_api_t *usb;
+    const h2_pal_uart_io_stream_api_t *uart;
     uint32_t timeout_ms;
     int error;
 } h2_mqtt_esp_ledger_console_t;
@@ -26,9 +28,14 @@ static inline int h2_mqtt_esp_console_record(h2_mqtt_esp_ledger_console_t *conso
     memcpy(record,message,length);
     record[length++]='\r';record[length++]='\n';
     size_t written=0u;
-    int rc=h2_pal_usb_jtag_io_stream_write(console->usb,record,length,&written,console->timeout_ms);
+    if((console->usb==NULL)==(console->uart==NULL))return console->error=H2_PAL_ERR_INVALID_ARG;
+    int rc=console->usb!=NULL
+        ? h2_pal_usb_jtag_io_stream_write(console->usb,record,length,&written,console->timeout_ms)
+        : h2_pal_uart_io_stream_write(console->uart,record,length,&written,console->timeout_ms);
     if(rc==H2_PAL_OK && written!=length)rc=H2_PAL_ERR_IO;
-    if(rc==H2_PAL_OK)rc=h2_pal_usb_jtag_io_stream_flush(console->usb);
+    if(rc==H2_PAL_OK)rc=console->usb!=NULL
+        ? h2_pal_usb_jtag_io_stream_flush(console->usb)
+        : h2_pal_uart_io_stream_flush(console->uart);
     if(rc!=H2_PAL_OK)console->error=rc;
     return rc;
 }
@@ -42,12 +49,15 @@ static inline int h2_mqtt_esp_console_complete(h2_mqtt_esp_ledger_console_t *con
     if(result->cleanup!=H2_PAL_OK)return result->cleanup;
     if(provider_cleanup!=H2_PAL_OK)return provider_cleanup;
     if(confirm==NULL)return H2_PAL_ERR_INVALID_ARG;
-    rc=h2_mqtt_esp_console_record(console,
-        "H2_PAL_MQTT_READY board=devkit rc=0 confirm=pending provider_cleanup=0");
+    const char *board=runtime->board!=NULL?runtime->board:"devkit";
+    char line[160];
+    int length=snprintf(line,sizeof(line),"H2_PAL_MQTT_READY board=%s rc=0 confirm=pending provider_cleanup=0",board);
+    if(length<0 || (size_t)length>=sizeof(line))return H2_PAL_ERR_TRUNCATED;
+    rc=h2_mqtt_esp_console_record(console,line);
     if(rc!=H2_PAL_OK)return rc;
     int confirmed=confirm(user);
-    char line[96];
-    (void)snprintf(line,sizeof(line),"H2_PAL_MQTT_CONFIRMED board=devkit rc=%d",confirmed);
+    length=snprintf(line,sizeof(line),"H2_PAL_MQTT_CONFIRMED board=%s rc=%d",board,confirmed);
+    if(length<0 || (size_t)length>=sizeof(line))return H2_PAL_ERR_TRUNCATED;
     rc=h2_mqtt_esp_console_record(console,line);
     return confirmed!=H2_PAL_OK?confirmed:rc;
 }

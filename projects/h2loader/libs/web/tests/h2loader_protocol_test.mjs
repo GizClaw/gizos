@@ -8,7 +8,10 @@ import {
 assert.equal(H2LoaderCapabilities.ALL, 0x7);
 assert.equal(H2LoaderCommands.REBOOT_UPGRADE, 1 << 19);
 assert.equal(H2LoaderCommands.WIFI_STATUS, 1 << 20);
-assert.equal(H2LoaderCommands.ALL, 0x001f3f3f);
+assert.equal(H2LoaderCommands.WIFI_CONNECT_TEMPORARY, 1 << 21);
+assert.equal(H2LoaderCommands.ALL, 0x003f3f3f);
+assert.equal(commandAvailable(H2LoaderCommands.ALL, H2LoaderCommands.WIFI_CONNECT_TEMPORARY), true);
+assert.equal(commandAvailable(0x001f3f3f, H2LoaderCommands.WIFI_CONNECT_TEMPORARY), false);
 assert.equal(commandAvailable(H2LoaderCommands.STATUS, H2LoaderCommands.STATUS), true);
 assert.equal(commandAvailable(0, H2LoaderCommands.STATUS), false);
 assert.equal(commandAvailable(0x001f3d3e, H2LoaderCommands.STATUS), true);

@@ -239,7 +239,7 @@ static const char help_text[] =
     "stats:    stats [--data-checksum] (wait for installed-data checksum)\n"
     "reboot:   reboot app|loader|upgrade [--monitor]\n"
     "wifi:     wifi scan [--limit <1-16>] [--timeout-ms <1-30000>]\n"
-    "          wifi connect <ssid> <password>\n"
+    "          wifi connect <ssid> <password> [--temporary]\n"
     "          wifi disconnect\n"
     "          wifi status\n"
     "coredump: coredump status|erase\n"
@@ -584,6 +584,10 @@ static h2_h2loader_host_command_t command_kind(int argc, const char *const *argv
     }
     if (argc == 2 && strcmp(argv[0], "coredump") == 0 && strcmp(argv[1], "erase") == 0) return H2_H2LOADER_HOST_COMMAND_COREDUMP_ERASE;
     if (argc == 4 && strcmp(argv[0], "wifi") == 0 && strcmp(argv[1], "connect") == 0) return H2_H2LOADER_HOST_COMMAND_WIFI_CONNECT;
+    if (argc == 5 && strcmp(argv[0], "wifi") == 0 &&
+        strcmp(argv[1], "connect") == 0 && strcmp(argv[4], "--temporary") == 0) {
+        return H2_H2LOADER_HOST_COMMAND_WIFI_CONNECT_TEMPORARY;
+    }
     return 0;
 }
 
@@ -931,7 +935,8 @@ static int device_command(
         .output_user = coredump_output_path != NULL
             ? (void *)&coredump_sink : (void *)context,
     };
-    if (kind == H2_H2LOADER_HOST_COMMAND_WIFI_CONNECT) {
+    if (kind == H2_H2LOADER_HOST_COMMAND_WIFI_CONNECT ||
+        kind == H2_H2LOADER_HOST_COMMAND_WIFI_CONNECT_TEMPORARY) {
         request.ssid = argv[2];
         request.password = argv[3];
     } else if (kind == H2_H2LOADER_HOST_COMMAND_WIFI_SCAN) {

@@ -7,12 +7,14 @@
 #include <stdlib.h>
 #include <string.h>
 
-enum { HEALTHY, OPEN_FAILURE, STREAM_FAILURE, HANDSHAKE_TIMEOUT, BAD_STATUS, CLOSE_FAILURE, WRONG_REBOOT_ROLE };
+enum { HEALTHY, OPEN_FAILURE, STREAM_FAILURE, HANDSHAKE_TIMEOUT, BAD_STATUS, CLOSE_FAILURE, WRONG_REBOOT_ROLE,
+    OLD_WIFI_TARGET, WIFI_ERROR, WIFI_LEGACY_REPLY };
 enum { CLI_SCAN, CLI_STATUS, CLI_MONITOR, CLI_REBOOT };
 typedef struct cli_fixture {
     int mode;
     unsigned opens, streams, closes, controls, scans, snapshots_closed, requests;
     unsigned reboots, sleeps, cancel_after_opens, cancel_closes;
+    unsigned wifi_connects, wifi_temporary;
     uint32_t modem_lines;
     uint64_t now;
     size_t allocations;
@@ -75,7 +77,7 @@ static void emit_status(cli_fixture_t *f) {
     char line[2048];
     int len=snprintf(line,sizeof(line),
         "H2_LOADER_STATUS board=devkit target=esp32s3 chip=esp32s3 device_uid=102030405060 "
-        "capabilities=0x00000005 command_availability=0x0000000a "
+        "capabilities=0x00000007 command_availability=0x%08x "
         "active_role=%s active_version=v1 active_checksum=%s active_image_size=4096 "
         "running_partition=%u next_partition=%u boot_intent=%s "
         "stage_valid=0 stage_package_checksum=- stage_package_size=0 stage_image_checksum=- "
@@ -87,6 +89,7 @@ static void emit_status(cli_fixture_t *f) {
         "partition_2_image_checksum=%s partition_2_image_size=2 partition_2_role=app "
         "partition_2_version=v1 partition_2_board=devkit partition_2_target=esp32s3 "
         "last_result=0 mfg_mode=1 mfg_steps=0000000000000000000000\n",
+        f->mode==OLD_WIFI_TARGET?0x0002000au:0x0022000au,
         loader?"loader":"app",sha,loader?1u:2u,loader?1u:2u,loader?"loader":"auto",sha,sha,sha,sha);
     assert(len>0 && (size_t)len<sizeof(line));
     if (f->mode==BAD_STATUS) strcpy(line,"H2_LOADER_STATUS invalid=1\n");
@@ -111,13 +114,25 @@ static int peer_frame(void *user, const h2_iostreamikcp_frame_t *frame) {
     assert(frame->flags==H2_IOSTREAMIKCP_FRAME_FLAG_DATA && f->peer!=NULL);
     int rc=h2_iostreamikcp_input_frame(f->peer,frame);
     if (rc!=H2_PAL_OK) return rc;
-    uint8_t command[64]; size_t len=0u;
+    uint8_t command[160]; size_t len=0u;
     rc=h2_iostreamikcp_read(f->peer,command,sizeof(command),&len);
     if (rc==H2_PAL_OK && len!=0u) {
         const char status[]="h2loader status\n";
         const char reboot[]="h2loader reboot loader\n";
         if (len==sizeof(status)-1u && memcmp(command,status,len)==0) {
             ++f->requests; emit_status(f);
+        } else if (len>=14u && memcmp(command,"h2loader wifi ",14u)==0) {
+            const char saved[]="h2loader wifi connect factory secret\n";
+            const char temporary[]="h2loader wifi connect-temporary factory secret\n";
+            const int is_temporary=len==sizeof(temporary)-1u && memcmp(command,temporary,len)==0;
+            assert(is_temporary || (len==sizeof(saved)-1u && memcmp(command,saved,len)==0));
+            if (is_temporary) ++f->wifi_temporary;
+            else ++f->wifi_connects;
+            const char *response=is_temporary && f->mode!=WIFI_LEGACY_REPLY
+                ? f->mode==WIFI_ERROR ? "H2_LOADER_WIFI_TEMPORARY result=error code=-6\n"
+                    : "H2_LOADER_WIFI_TEMPORARY result=connected ssid=factory\n"
+                : "H2_LOADER_WIFI result=connected ssid=factory\n";
+            assert(h2_iostreamikcp_write(f->peer,(const uint8_t *)response,strlen(response))==H2_PAL_OK);
         } else {
             const char accepted[]="H2_LOADER_REBOOT target=loader result=accepted\n"
                 "H2_LOADER_REBOOT_FINAL target=loader result=OK code=0\n";
@@ -230,6 +245,33 @@ static void run_case(int command, int mode) {
     assert(f.allocations==0u);
 }
 
+static void run_wifi_case(int temporary, int mode) {
+    cli_fixture_t f={.mode=mode};
+    f.mem=(h2_pal_mem_api_t){.user=&f,.vtable=&mem_vtable};
+    f.uart=(h2_pal_uart_io_stream_api_t){.user=&f,.vtable=&uart_vtable};
+    h2_iostreamikcp_filter_init(&f.filter);
+    h2_pal_serial_host_api_t serial={.user=&f,.vtable=&serial_vtable};
+    h2_pal_time_api_t time={.user=&f,.vtable=&time_vtable};
+    h2_command_io_api_t io={.user=&f,.vtable=&output_vtable};
+    h2_runtime_t runtime={.mem=&f.mem,.time=&time,.fs=h2_pal_unsupported_fs_api()};
+    const char *argv[]={"h2loader","--port","scan-port","--read-timeout","1",
+        "wifi","connect","factory","secret","--temporary","--temporary"};
+    const int argc=temporary==2?11:temporary?10:9;
+    h2_h2loader_cli_config_t config={.argc=argc,.argv=argv,.serial=&serial,.stdout_io=&io,.stderr_io=&io};
+    int result=h2_h2loader_cli_main(&runtime,&config);
+    if (temporary==2) {
+        assert(result==H2_H2LOADER_CLI_EXIT_USAGE);
+        assert(f.opens==0u && f.wifi_connects==0u && f.wifi_temporary==0u);
+    } else {
+        assert(result==(mode==HEALTHY?H2_H2LOADER_CLI_EXIT_OK:H2_H2LOADER_CLI_EXIT_RUNTIME));
+        assert(f.opens==1u && f.closes==1u);
+        assert(f.wifi_connects==(temporary?0u:1u));
+        assert(f.wifi_temporary==(temporary && mode!=OLD_WIFI_TARGET?1u:0u));
+    }
+    assert(strstr(f.output,"secret")==NULL);
+    assert(f.peer==NULL && f.allocations==0u);
+}
+
 int main(void) {
     for (int mode=HEALTHY; mode<=CLOSE_FAILURE; ++mode) {
         run_case(CLI_SCAN,mode);
@@ -238,5 +280,11 @@ int main(void) {
     run_case(CLI_MONITOR,HEALTHY);
     run_case(CLI_REBOOT,HEALTHY);
     run_case(CLI_REBOOT,WRONG_REBOOT_ROLE);
+    run_wifi_case(0,HEALTHY);
+    run_wifi_case(1,HEALTHY);
+    run_wifi_case(1,OLD_WIFI_TARGET);
+    run_wifi_case(1,WIFI_ERROR);
+    run_wifi_case(1,WIFI_LEGACY_REPLY);
+    run_wifi_case(2,HEALTHY);
     return 0;
 }

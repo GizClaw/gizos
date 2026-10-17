@@ -109,9 +109,11 @@ def main():
     parser.add_argument("--previous-execution")
     parser.add_argument("--endpoint", required=True)
     parser.add_argument("--profile", required=True)
-    parser.add_argument("--platform", choices=("amoled", "devkit", "bk7258"), required=True)
+    parser.add_argument("--platform", required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,127}", args.platform):
+        parser.error("--platform requires the exact canonical board identity")
     # The independent inventory/oracle remains shared with all other platforms.
     from projects.e2e.apps.gizclaw.api_coverage import audit, requirements
     body, receipt = extract(args.log.read_bytes(), version=args.version,

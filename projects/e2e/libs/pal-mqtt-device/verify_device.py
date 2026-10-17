@@ -85,7 +85,7 @@ def after_accepted_reboot(text, target):
     assert startup is not None, 'no actual startup after accepted reboot'
     return remainder[startup.start():]
 
-def boot_ledger(text, ids, version, previous=None):
+def boot_ledger(text, ids, version, previous=None, expected_board=None):
     boot = run = summary = accepted = None
     rows = []
     startup_markers = set()
@@ -129,7 +129,9 @@ def boot_ledger(text, ids, version, previous=None):
         elif 'H2_PAL_MQTT_READY ' in line:
             ready = fields(line.split('H2_PAL_MQTT_READY ', 1)[1])
             assert ready.get('rc') == '0' and ready.get('confirm') == 'pending', 'current admission requires post-delivery confirmation'
-            if ready.get('board') == 'devkit':
+            board = ready.get('board')
+            assert (board == expected_board if expected_board is not None else board in ('bk7258', 'devkit')), 'ledger belongs to another board'
+            if board != 'bk7258':
                 assert ready.get('provider_cleanup') == '0', 'ESP portable provider not released'
             assert summary is not None, 'ready without latest complete ledger'
             assert accepted is None, 'duplicate terminal ledger'
@@ -138,8 +140,7 @@ def boot_ledger(text, ids, version, previous=None):
             assert accepted is not None and 'confirmation' not in accepted, 'duplicate or premature confirmation'
             confirmation = fields(line.split('H2_PAL_MQTT_CONFIRMED ', 1)[1])
             assert accepted is not None and accepted['ready'].get('confirm') == 'pending', 'confirmation without delivered READY'
-            assert accepted['ready'].get('board') in ('bk7258','devkit') and \
-                accepted['ready'].get('board') == confirmation.get('board') and confirmation.get('rc') == '0', 'app confirmation failed'
+            assert accepted['ready'].get('board') == confirmation.get('board') and confirmation.get('rc') == '0', 'app confirmation failed'
             accepted['confirmation'] = confirmation
         if re.search(r'panic|hard fault|assert failed|H2_PAL_MQTT_SETUP_FAIL', line, re.I):
             raise AssertionError('boot/runtime failure')
@@ -147,13 +148,21 @@ def boot_ledger(text, ids, version, previous=None):
     assert accepted['ready'].get('confirm') != 'pending' or 'confirmation' in accepted, 'missing post-READY confirmation'
     return accepted
 
+def log_board(manifest):
+    board = manifest['board']
+    if manifest['target'] == 'esp32s3':
+        assert re.fullmatch(r'[a-z0-9][a-z0-9_.-]{0,127}', board), 'invalid ESP board identity'
+        return board
+    assert (board, manifest['target']) == ('bk7258_v3_202405', 'bk7258'), 'unsupported device package'
+    return 'bk7258'
+
 def package_manifest(package):
     original = Path(package).read_bytes()
     with tarfile.open(fileobj=io.BytesIO(zlib.decompress(original))) as archive:
         manifest = dict(line.split('=', 1) for line in archive.extractfile('manifest').read().decode().splitlines() if line)
         members = [member for member in archive.getmembers() if member.name.startswith('app/') and member.isfile()]
         assert len(members) == 1 and manifest['role'] == 'app'
-        assert (manifest['board'], manifest['target']) in (('bk7258_v3_202405', 'bk7258'), ('devkit', 'esp32s3')), 'unsupported device package'
+        log_board(manifest)
         image = archive.extractfile(members[0]).read()
         assert len(image) == int(manifest['image_size']) and hashlib.sha256(image).hexdigest() == manifest['image_sha256']
     return manifest, hashlib.sha256(original).hexdigest()
@@ -241,9 +250,9 @@ def main():
         'managed':monitor_receipt(directory/'managed.log','upgrade',port),
         'normal':monitor_receipt(directory/'normal.log','app',port),
     }
-    first=boot_ledger(after_accepted_reboot(uart_text(directory/'managed.log'),'upgrade'),ids,manifest['version'])
-    second=boot_ledger(after_accepted_reboot(uart_text(directory/'normal.log'),'app'),ids,manifest['version'],first['boot']['id'])
-    expected_board = 'devkit' if manifest['target'] == 'esp32s3' else 'bk7258'
+    expected_board = log_board(manifest)
+    first=boot_ledger(after_accepted_reboot(uart_text(directory/'managed.log'),'upgrade'),ids,manifest['version'],expected_board=expected_board)
+    second=boot_ledger(after_accepted_reboot(uart_text(directory/'normal.log'),'app'),ids,manifest['version'],first['boot']['id'],expected_board=expected_board)
     assert first['ready'].get('board') == second['ready'].get('board') == expected_board, 'ledger belongs to another board'
     for name,command in [('before-status',['status']),('after-status',['status']),
                          ('before-coredump-status',['coredump','status']),('after-coredump-status',['coredump','status'])]:

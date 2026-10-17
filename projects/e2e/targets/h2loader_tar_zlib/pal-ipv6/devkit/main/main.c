@@ -2,6 +2,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "h2_esp_board.h"
+#include "h2_esp_board_config.h"
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_h2loader_runtime.h"
 #include "h2_esp_platform_core.h"
@@ -11,7 +12,7 @@
 #include <string.h>
 
 #ifndef H2_PAL_IPV6_BOARD
-#define H2_PAL_IPV6_BOARD "devkit"
+#define H2_PAL_IPV6_BOARD H2_ESP_BOARD_NAME
 #endif
 
 static h2_runtime_t *runtime;

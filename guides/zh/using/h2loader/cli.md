@@ -133,7 +133,7 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
 
 结果包含 one-based `index`、`ssid_hex`、12 位十六进制 BSSID、channel、RSSI 和 security enum。SSID 使用十六进制编码，确保隐藏网络、包含空白或非 UTF-8 字节的名称不会破坏逐行协议；operator 可以把 `ssid_hex` 解码为原始 SSID 字节。这里的 `wifi scan` 扫描 Wi-Fi AP，不同于顶层 `h2loader scan` 对 H2Loader 串口/BLE management endpoint 的发现。
 
-Wi-Fi typed command 不按 transport 复制两套协议：serial IO Stream iKCP 的 `h2_h2loader_host_serial_execute_command()` 与 BLE-iKCP 的 `h2_h2loader_host_ble_execute_command()` 都发送同一个 `h2loader wifi status/scan/connect/disconnect` wire command，并在命令尚未结束时逐块交付输出。native CLI 通过全局 `--transport` 对同一个 `wifi` 子命令选择 adapter；BLE 形式只需把 scan 返回的 BLE endpoint 传给 `--port`。
+Wi-Fi typed command 不按 transport 复制两套协议：serial IO Stream iKCP 的 `h2_h2loader_host_serial_execute_command()` 与 BLE-iKCP 的 `h2_h2loader_host_ble_execute_command()` 都消费同一个 typed request 和 wire contract，并在命令尚未结束时逐块交付输出。native CLI 通过全局 `--transport` 对同一个 `wifi` 子命令选择 adapter；BLE 形式只需把 scan 返回的 BLE endpoint 传给 `--port`。
 
 选择 SSID 后连接 Wi-Fi：
 
@@ -144,6 +144,18 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
 ```
 
 `ssid` 和 `password` 都是必填的单个参数，当前 contract 不接受空值或 ASCII 空白字符。命令只有在设备取得 IP 并返回 `H2_LOADER_WIFI result=connected ssid=<ssid>` 后才成功；如果该 Loader 提供 Wi-Fi settings storage，设备会在连接成功后保存这份 STA 配置，后续 App 可以读取并重新连接；AC791N DevKit 共享 App launcher 在启动命令传输前直接通过 PAL 恢复保存的网络，不依赖 Runtime。认证失败、关联超时、没有取得 IP、配置保存失败、PAL 不支持或 transport 失败都会让 CLI 返回非零状态，不能记为已连接。
+
+只连接本次运行、保留已保存的 STA 配置时，显式添加末尾的 `--temporary`：
+
+```sh
+bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- \
+  --port <serial-port> \
+  wifi connect <ssid> <password> --temporary
+```
+
+临时连接只调用 PAL 的非持久化 `connect`，不会保存或清除原有配置，包括原本没有保存配置的设备。它在包含关联等待的 15 秒总预算内确认目标 SSID 取得有效 IPv4 或非 link-local IPv6 地址，以 `H2_LOADER_WIFI_TEMPORARY result=connected ssid=<ssid>` 为成功终止标记；失败不恢复之前的活动连接，但保存的配置始终不变。重启后的自动连接仍由原有保存配置和 App policy 决定。
+
+`--temporary` 对应独立 typed command 和 `WIFI_CONNECT_TEMPORARY` availability bit，wire 使用独立的 `h2loader wifi connect-temporary <ssid> <password>`，不会把 flag 附加到旧 `connect` wire。旧设备没有该 bit 时在发送前拒绝，不会降级成保存连接。普通 `wifi connect` 的 wire 和保存语义不变。两种模式都限制 SSID 至多 32 字节、password 至多 64 字节，并拒绝空值、ASCII 控制字符和空白；`--temporary` 只能出现一次且必须位于末尾。
 
 该命令是否可用只由当前连接的 `command_availability` 决定；APP 与 Loader 使用相同命令和响应，不由 Host 根据 role 另设限制。CLI 不提供任意 raw command 旁路。主动断开当前连接：
 

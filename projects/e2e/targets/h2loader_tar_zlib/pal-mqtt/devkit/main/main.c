@@ -1,4 +1,5 @@
 #include "h2_esp_board.h"
+#include "h2_esp_board_config.h"
 #include "h2_esp_h2loader_runtime.h"
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_platform_core.h"
@@ -9,6 +10,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "psa/crypto.h"
+#include "sdkconfig.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -99,7 +101,7 @@ static void run(void *user) {
     hold();
 }
 void app_main(void) {
-    puts("H2_PAL_MQTT_PLATFORM_BOOT board=devkit");
+    puts("H2_PAL_MQTT_PLATFORM_BOOT board=" H2_ESP_BOARD_NAME "");
     fflush(stdout);
     int rc = h2_esp_target_task_policy_install();
     if (rc != H2_PAL_OK) fail("task-policy", rc);
@@ -134,7 +136,11 @@ void app_main(void) {
         fail("runtime-or-commands", rc);
     }
     board_log=runtime->log;
+#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
     console.usb=h2_esp_platform_usb_jtag_io_stream_api();
+#else
+    console.uart=h2_esp_platform_uart_io_stream_api();
+#endif
     console.timeout_ms=5000u;
     runtime->log=&ledger_log_api;
     printf("H2_PAL_MQTT_PROVIDER policy=coremqtt allocator=psram incoming=8 outgoing=8 owner_bytes=%zu\n", owner_bytes);

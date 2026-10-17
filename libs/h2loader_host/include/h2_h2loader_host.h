@@ -50,6 +50,7 @@ extern "C" {
 #define H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_DISCONNECT (UINT32_C(1) << 18)
 #define H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_UPGRADE (UINT32_C(1) << 19)
 #define H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_STATUS (UINT32_C(1) << 20)
+#define H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_CONNECT_TEMPORARY (UINT32_C(1) << 21)
 #define H2_H2LOADER_HOST_COMMAND_AVAILABILITY_ALL \
     (H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_APP | \
      H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_LOADER | \
@@ -66,6 +67,7 @@ extern "C" {
      H2_H2LOADER_HOST_COMMAND_AVAILABLE_STAGE_URL | \
      H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_SCAN | \
      H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_CONNECT | \
+     H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_CONNECT_TEMPORARY | \
      H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_DISCONNECT | \
      H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_STATUS)
 
@@ -284,6 +286,9 @@ typedef enum h2_h2loader_host_command {
     H2_H2LOADER_HOST_COMMAND_WIFI_STATUS = 20,
     /** `stats`, waiting for its installed-data checksum line after status. */
     H2_H2LOADER_HOST_COMMAND_DATA_CHECKSUM = 21,
+    /** Connect and await target IP without writing or clearing saved credentials.
+     * Requires its own advertised command bit; never falls back to WIFI_CONNECT. */
+    H2_H2LOADER_HOST_COMMAND_WIFI_CONNECT_TEMPORARY = 22,
 } h2_h2loader_host_command_t;
 
 /**
@@ -315,9 +320,13 @@ typedef struct h2_h2loader_host_command_request {
     const h2_h2loader_host_status_t *status;
     /** Nonzero while another managed operation owns this identity. */
     uint8_t operation_active;
-    /** Borrowed bounded parameters used only by the matching typed command. */
+    /** Borrowed nonempty SSID for either Wi-Fi connect command, at most 32 bytes.
+     * ASCII whitespace, control characters and DEL are not wire fields. */
     const char *ssid;
+    /** Borrowed nonempty password, at most 64 bytes, with the same wire bounds.
+     * Valid for the blocking call; never included in command response output. */
     const char *password;
+    /** Bounded parameters used only by the matching typed command. */
     uint32_t wifi_scan_limit;
     uint32_t wifi_scan_timeout_ms;
     const char *url;

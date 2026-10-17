@@ -10,6 +10,12 @@ load("//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files([
+    "main/main.c",
+    "sdkconfig.pal-mqtt.defaults",
+    "main/ledger_console.h",
+])
+
 esp_target_task_policy(
     name = "task_policy",
     default_policy = "4 any 4096 psram",

@@ -3,6 +3,7 @@
 #include "h2_esp_target_task_policy.h"
 
 #include "h2_esp_board.h"
+#include "h2_esp_board_config.h"
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_h2loader_runtime.h"
 #include "h2_esp_platform_core.h"
@@ -138,7 +139,7 @@ static int format_summary(const h2_gizclaw_e2e_devkit_runner_t *runner,
                            bool replay, char *buffer, size_t capacity) {
   const h2_gizclaw_e2e_result_t *result = &runner->result;
   const h2_gizclaw_e2e_devkit_config_t *settings = h2_gizclaw_e2e_devkit_config();
-  return snprintf(buffer, capacity, "H2_GIZCLAW_E2E stage=%s platform=devkit endpoint=%.*s backend=h2peer suite=%s "
+  return snprintf(buffer, capacity, "H2_GIZCLAW_E2E stage=%s platform=" H2_ESP_BOARD_NAME " endpoint=%.*s backend=h2peer suite=%s "
          "profile=%s selected=%zu terminal=%zu pass=%zu fail=%zu error=%zu "
          "blocked=%zu cancelled=%zu first_failure_case=%s "
          "first_failure_rc=%d cleanup_rc=%d retained_resources=%zu "
@@ -441,7 +442,7 @@ static void image_entry(void *user) {
         s_runner.execution[i * 2u + 1u] = hex[nonce[i] & 15u];
       }
       s_runner.execution[32] = '\0';
-      printf("H2_GIZCLAW_BOOT board=devkit version=%s execution=%s\n",
+      printf("H2_GIZCLAW_BOOT board=" H2_ESP_BOARD_NAME " version=%s execution=%s\n",
              esp_app_get_description()->version, s_runner.execution);
       if (h2_atomic_init(&s_runner.exited, false) != H2_ATOMIC_OK)
         fail_launcher("runner_atomic_init", H2_PAL_ERR_NO_MEMORY, true);
@@ -508,9 +509,9 @@ void app_main(void) {
         return;
     }
   h2_pal_result_t rc = h2_esp_board_start_entry_task(
-      "devkit/gizclaw-e2e", image_entry, NULL);
+      H2_ESP_BOARD_NAME "/gizclaw-e2e", image_entry, NULL);
   if (rc != H2_PAL_OK) {
-    printf("H2_BOARD_ENTRY_FAIL board=devkit image=gizclaw-e2e code=%d\n",
+    printf("H2_BOARD_ENTRY_FAIL board=" H2_ESP_BOARD_NAME " image=gizclaw-e2e code=%d\n",
            rc);
   }
 }

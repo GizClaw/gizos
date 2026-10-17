@@ -222,7 +222,7 @@ typedef struct wifi_fixture {
   int status_result, settings_result, get_result, saved, disconnected;
   unsigned saves, connects;
   size_t saved_ssid_len;
-  h2_pal_wifi_sta_config_t target;
+  h2_pal_wifi_sta_config_t target, saved_config;
 } wifi_fixture_t;
 
 static int wifi_connect(void *user, const h2_pal_wifi_sta_config_t *config,
@@ -255,8 +255,10 @@ static int wifi_connect_and_save(void *user, const h2_pal_wifi_sta_config_t *con
                                  uint32_t timeout_ms) {
   wifi_fixture_t *f = user;
   int rc = wifi_connect(user, config, timeout_ms);
-  if (rc == H2_PAL_OK)
+  if (rc == H2_PAL_OK) {
     ++f->saves;
+    f->saved_config = *config;
+  }
   return rc;
 }
 static void test_wifi_saves_only_after_connection(void) {
@@ -279,6 +281,126 @@ static void test_wifi_saves_only_after_connection(void) {
   f.saves = 0;
   assert(h2_loader_command_execute(&command, 5, args) == H2_PAL_OK);
   assert(f.saves == 1); /* Exactly one persistent provider operation. */
+  assert(memcmp(&f.target, &f.saved_config, sizeof(f.target)) == 0);
+}
+
+typedef struct temporary_wifi_fixture {
+  wifi_fixture_t wifi;
+  uint64_t now;
+  unsigned status_calls, waits;
+  int scenario;
+} temporary_wifi_fixture_t;
+
+static uint64_t temporary_wifi_now(void *user) {
+  return ((temporary_wifi_fixture_t *)user)->now;
+}
+
+static void temporary_wifi_sleep(void *user, uint32_t delay_ms) {
+  temporary_wifi_fixture_t *f = user;
+  f->now += delay_ms;
+  ++f->waits;
+}
+
+static int temporary_wifi_connect(void *user, const h2_pal_wifi_sta_config_t *config,
+                                  uint32_t timeout_ms) {
+  temporary_wifi_fixture_t *f = user;
+  f->now += f->scenario == 9 ? 15000u : 400u;
+  return wifi_connect(&f->wifi, config, timeout_ms);
+}
+
+static int temporary_wifi_status(void *user, h2_pal_wifi_sta_status_t *status) {
+  temporary_wifi_fixture_t *f = user;
+  int rc = wifi_status(&f->wifi, status);
+  ++f->status_calls;
+  if (f->scenario == 1 || (f->status_calls == 1u && f->scenario != 10)) {
+    status->state = H2_PAL_WIFI_STA_STATE_CONNECTED;
+    status->ip_valid = 0;
+  }
+  if (f->scenario == 2) status->ssid[0] = 'x';
+  if (f->scenario == 3) status->state = H2_PAL_WIFI_STA_STATE_FAILED;
+  if (f->scenario == 4) status->ssid_len = H2_PAL_WIFI_SSID_MAX + 1u;
+  if (f->scenario == 10) f->now = 15000u;
+  if (f->scenario == 5 || f->scenario == 8) {
+    status->state = H2_PAL_WIFI_STA_STATE_GOT_IP;
+    status->ip_valid = 0;
+    status->ip.ip6_valid = 1;
+    status->ip.ip6[0] = 0xfd;
+    if (f->scenario == 8) {
+      status->ip.ip6[0] = 0xfe;
+      status->ip.ip6[1] = 0x80;
+    }
+    status->ip.ip6[15] = 1;
+  }
+  return rc;
+}
+
+static void test_wifi_temporary_preserves_saved_profile(void) {
+  const h2_pal_wifi_sta_config_t profiles[] = {{0}, {
+      .ssid = "original", .ssid_len = 8,
+      .password = "original-secret", .password_len = 15}};
+  const h2_pal_wifi_sta_vtable_t sta_vtable = {
+      .connect = temporary_wifi_connect,
+      .connect_and_save = wifi_connect_and_save,
+      .get_status = temporary_wifi_status};
+  const char *args[] = {"h2loader", "wifi", "connect-temporary", "network", "password"};
+  const int results[] = {H2_PAL_OK, H2_PAL_ERR_TIMEOUT, H2_PAL_ERR_TIMEOUT,
+      H2_PAL_ERR_UNAVAILABLE, H2_PAL_ERR_FORMAT, H2_PAL_OK,
+      H2_PAL_ERR_IO, H2_PAL_ERR_IO, H2_PAL_ERR_TIMEOUT, H2_PAL_ERR_TIMEOUT,
+      H2_PAL_ERR_TIMEOUT};
+  for (int iteration = 0; iteration < 22; ++iteration) {
+    const int scenario = iteration % 11;
+    const h2_pal_wifi_sta_config_t original = profiles[iteration / 11];
+    command_io_fixture_t io = {0};
+    h2_loader_t loader = {0};
+    loader.status.capabilities = H2_LOADER_CAPABILITY_WIFI;
+    h2_loader_command_t command;
+    assert(command_init(&command, &loader, &io) == H2_PAL_OK);
+    temporary_wifi_fixture_t f = {.wifi = {.saved_config = original}, .scenario = scenario};
+    if (scenario == 6) f.wifi.result = H2_PAL_ERR_IO;
+    if (scenario == 7) f.wifi.status_result = H2_PAL_ERR_IO;
+    const h2_pal_wifi_sta_api_t sta = {&f, &sta_vtable};
+    command.config.wifi = &sta;
+    command.config.clock_user = &f;
+    command.config.now_ms = temporary_wifi_now;
+    command.config.sleep_ms = temporary_wifi_sleep;
+    assert(h2_loader_command_execute(&command, 5, args) == results[scenario]);
+    assert(f.wifi.connects == 1u && f.wifi.saves == 0u);
+    assert(memcmp(&original, &f.wifi.saved_config, sizeof(original)) == 0);
+    assert(strstr(io.output, "password") == NULL);
+    if (results[scenario] == H2_PAL_OK) {
+      assert(strstr(io.output, "H2_LOADER_WIFI_TEMPORARY result=connected ssid=network\n"));
+      if (scenario == 0) assert(f.waits == 1u);
+    } else {
+      assert(strstr(io.output, "H2_LOADER_WIFI_TEMPORARY result=error"));
+      assert(strstr(io.output, "result=connected") == NULL);
+    }
+    if (results[scenario] == H2_PAL_ERR_TIMEOUT) assert(f.now == 15000u);
+  }
+}
+
+static void test_wifi_temporary_admission_and_arguments(void) {
+  command_io_fixture_t io = {0};
+  h2_loader_t loader = {0};
+  loader.status.capabilities = H2_LOADER_CAPABILITY_WIFI;
+  h2_loader_command_t command;
+  assert(command_init(&command, &loader, &io) == H2_PAL_OK);
+  const char *args[] = {"h2loader", "wifi", "connect-temporary", "network", "password", "extra"};
+  assert(h2_loader_command_execute(&command, 5, args) == H2_PAL_ERR_INVALID_STATE);
+  temporary_wifi_fixture_t f = {0};
+  const h2_pal_wifi_sta_vtable_t sta_vtable = {
+      .connect = temporary_wifi_connect, .get_status = temporary_wifi_status};
+  const h2_pal_wifi_sta_api_t sta = {&f, &sta_vtable};
+  command.config.wifi = &sta;
+  memset(&io, 0, sizeof(io));
+  assert(h2_loader_command_execute(&command, 4, args) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_loader_command_execute(&command, 6, args) == H2_PAL_ERR_INVALID_ARG);
+  assert(f.wifi.connects == 0u && f.wifi.saves == 0u);
+  assert(strstr(io.output, "password\n") == NULL);
+  assert(h2_loader_set_command_availability(&loader,
+      H2_LOADER_COMMAND_AVAILABLE_WIFI_CONNECT_TEMPORARY, false) == H2_PAL_OK);
+  memset(&io, 0, sizeof(io));
+  assert(h2_loader_command_execute(&command, 5, args) == H2_PAL_ERR_INVALID_STATE);
+  assert(f.wifi.connects == 0u && f.wifi.saves == 0u);
 }
 
 static int wifi_has_saved(void *user, int *out) {
@@ -390,6 +512,8 @@ static void test_wifi_status_snapshot(void) {
 }
 
 int main(void) {
+  test_wifi_temporary_preserves_saved_profile();
+  test_wifi_temporary_admission_and_arguments();
   test_wifi_status_snapshot();
   test_wifi_saves_only_after_connection();
   test_exact_v2_routes_and_help();
