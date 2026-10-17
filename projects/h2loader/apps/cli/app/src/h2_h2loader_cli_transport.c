@@ -143,7 +143,7 @@ h2_pal_result_t h2_h2loader_cli_transport_connect(
     if (rc == H2_PAL_OK) {
         rc = h2_h2loader_cli_transport_read_status(transport, out_status);
     }
-    if (rc != H2_PAL_OK) {
+    if (rc != H2_PAL_OK && !transport->status_response_pending) {
         (void)h2_h2loader_cli_transport_disconnect(transport);
     }
     return rc;
@@ -187,18 +187,21 @@ h2_pal_result_t h2_h2loader_cli_transport_read_status(
         out_status == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    transport->status_response_pending = 0;
     if (transport->options->transport == H2_H2LOADER_HOST_TRANSPORT_BLE) {
         return h2_h2loader_host_ble_read_status(
             transport->ble_connection, out_status);
     }
     return transport->status_deadline_ms != 0u
         ? h2_h2loader_host_serial_read_status_until(
-            transport->serial_connection, out_status, transport->status_deadline_ms)
+            transport->serial_connection, out_status, transport->status_deadline_ms,
+            &transport->status_response_pending)
         : h2_h2loader_host_serial_read_status(transport->serial_connection, out_status);
 }
 
 h2_pal_result_t h2_h2loader_cli_transport_disconnect(
     h2_h2loader_cli_transport_t *transport) {
+    transport->status_response_pending = 0;
     h2_pal_result_t serial_rc = h2_h2loader_host_serial_disconnect(
         &transport->serial_connection);
     h2_pal_result_t ble_rc = h2_h2loader_host_ble_disconnect(

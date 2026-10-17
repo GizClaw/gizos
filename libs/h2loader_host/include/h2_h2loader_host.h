@@ -274,14 +274,20 @@ h2_pal_result_t h2_h2loader_host_serial_read_status(
 
 /** Read status within one absolute monotonic deadline, including delivery,
  * post-command delay and response. deadline_ms uses the same borrowed time
- * provider as connection. An expired deadline returns TIMEOUT without sending;
+ * provider as connection. An expired deadline (including 0) returns TIMEOUT
+ * without sending and releases any retained response;
  * outputs are cleared on failure. Each delivery/response also retains the
- * configured command timeout. UART flush retains its PAL cleanup bound.
- * The legacy read_status budgets are unchanged. */
+ * configured command timeout. A response slice expiry returns WOULD_BLOCK and
+ * sets optional out_response_pending to 1; resume with this API or disconnect.
+ * The single delivered request, partial response and console projection are
+ * retained without resending. Other errors leave that flag 0 and retain their
+ * original code. UART flush retains its PAL cleanup bound. Legacy read_status
+ * budgets are unchanged; it rejects a still-pending bounded status request. */
 h2_pal_result_t h2_h2loader_host_serial_read_status_until(
     h2_h2loader_host_serial_connection_t *connection,
     h2_h2loader_host_status_t *out_status,
-    uint64_t deadline_ms);
+    uint64_t deadline_ms,
+    int *out_response_pending);
 
 /** Poll transport logs until cancellation or a physical transport failure. */
 h2_pal_result_t h2_h2loader_host_serial_monitor_logs(

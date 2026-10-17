@@ -32,6 +32,7 @@ typedef struct h2_h2loader_cli_transport {
     void *log_user;
     uint32_t command_timeout_ms;
     uint64_t status_deadline_ms;
+    int status_response_pending;
     uint8_t ble_candidate_valid;
     uint8_t authoritative_device_uid_valid;
 } h2_h2loader_cli_transport_t;

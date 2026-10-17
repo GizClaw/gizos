@@ -871,6 +871,11 @@ static h2_pal_result_t wait_serial_reboot(
             rc = h2_h2loader_cli_transport_read_status(transport, out_status);
         }
         if (context->log_result != H2_PAL_OK) return context->log_result;
+        if (rc == H2_PAL_ERR_WOULD_BLOCK && transport->status_response_pending &&
+            transport->serial_connection != NULL) {
+            connected = 1;
+            continue;
+        }
         if (rc != H2_PAL_OK) {
             if (!reboot_transport_failed(rc)) return rc;
             (void)h2_h2loader_cli_transport_disconnect(transport);

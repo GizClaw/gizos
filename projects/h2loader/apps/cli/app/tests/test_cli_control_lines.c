@@ -17,6 +17,12 @@ enum { HEALTHY, OPEN_FAILURE, STREAM_FAILURE, HANDSHAKE_TIMEOUT, BAD_STATUS, CLO
 enum { CLI_SCAN, CLI_STATUS, CLI_MONITOR, CLI_REBOOT };
 typedef struct cli_fixture {
     int mode;
+    int delayed_status, live_fd, response_pending, delayed_prefix_sent;
+    unsigned delayed_requests, request_at_delay, device_logs, gap_logs;
+    uint64_t delayed_started, response_due, event_due;
+    int fail_write_result, fail_clock_result, fail_log_result;
+    int raw_log_error, raw_log_emitted;
+    uint64_t raw_log_due;
     unsigned opens, streams, closes, controls, scans, snapshots_closed, requests;
     unsigned reboots, sleeps, cancel_after_opens, cancel_closes;
     unsigned wifi_connects, wifi_temporary;
@@ -50,6 +56,7 @@ typedef struct cli_fixture {
 
 static void queue_raw_log(cli_fixture_t *f, const char *line);
 static void queue_monitor_log(cli_fixture_t *f);
+static void delayed_device_tick(cli_fixture_t *f);
 
 static void *allocate(void *user, size_t size) {
     cli_fixture_t *f = user;
@@ -67,16 +74,21 @@ static void release(void *user, void *p) {
 static const h2_pal_mem_vtable_t mem_vtable = {.alloc=allocate, .realloc=resize, .free=release};
 static int clock_ms(void *user, uint64_t *out) {
     cli_fixture_t *f=user;
+    if (f->fail_clock_result && f->requests) return f->fail_clock_result;
     if (f->mode==REBOOT_CLOCK_ERROR && f->native_step>=3u) return H2_PAL_ERR_IO;
     *out=f->now; return H2_PAL_OK;
 }
 static uint32_t peer_ms(void *user) { return (uint32_t)((cli_fixture_t *)user)->now; }
 static int sleep_ms(void *user, uint32_t duration) {
-    cli_fixture_t *f=user; ++f->sleeps; f->now+=duration; return H2_PAL_OK;
+    cli_fixture_t *f=user; ++f->sleeps; f->now+=duration; delayed_device_tick(f); return H2_PAL_OK;
 }
 static const h2_pal_time_vtable_t time_vtable = {.get_monotonic_ms=clock_ms,.sleep_ms=sleep_ms};
 static int cancelled(void *user) {
     cli_fixture_t *f=user;
+    if (f->delayed_status) {
+        if (f->delayed_status==6 && f->delayed_started && f->now>=f->delayed_started+300u) return 1;
+        return f->device_logs && f->final_status_count;
+    }
     if (f->trace_reboot) {
         if ((f->mode==REBOOT_CANCEL || f->mode==REBOOT_CANCEL_QUERY) && f->native_step>=3u) return 1;
         if (f->mode==REBOOT_LONG && f->now-f->boot_ms<130000u) return 0;
@@ -104,6 +116,10 @@ static int output(void *user, const void *data, size_t len, size_t *written, uin
     assert(len < sizeof(f->output)-f->output_len);
     memcpy(f->output+f->output_len,data,len); f->output_len+=len;
     f->output[f->output_len]='\0'; *written=len;
+    if (f->fail_log_result && strstr(f->output,f->raw_log_error
+        ? "RAW_LOG_FAILURE\n" : "H2_LOADER_STATU_note actual-console\n")!=NULL) {
+        return f->fail_log_result;
+    }
     if (f->mode==REBOOT_LOG_ERROR && !f->reboot_log_failed &&
         strstr(f->output,"REBOOT_NATIVE_CASE id=2\n")!=NULL) {
         f->reboot_log_failed=1u;
@@ -237,7 +253,7 @@ static void emit_status(cli_fixture_t *f) {
     if (f->trace_reboot) {
         const char log[]="H2_LOADER_STATU_note actual-console\n";
         reboot_status(f,line,sizeof(line));
-        if (f->status_cr_only!=2) {
+        if (f->status_cr_only!=2 && !f->delayed_prefix_sent) {
             assert(h2_iostreamikcp_write(f->peer,(const uint8_t *)log,sizeof(log)-1u)==H2_PAL_OK);
         }
     }
@@ -259,7 +275,36 @@ static void emit_status(cli_fixture_t *f) {
         memcpy(line,log,sizeof(log)-1u);
         line[prefix-1u]='\n';
     }
-    assert(h2_iostreamikcp_write(f->peer,(const uint8_t *)line,strlen(line))==H2_PAL_OK);
+    const char *wire_line=line+(f->delayed_prefix_sent?strlen("H2_LOADER_STA"):0u);
+    assert(h2_iostreamikcp_write(f->peer,(const uint8_t *)wire_line,strlen(wire_line))==H2_PAL_OK);
+    f->delayed_prefix_sent=0;
+}
+
+static void delayed_device_tick(cli_fixture_t *f) {
+    if (!f->delayed_status || !f->delayed_started || f->delayed_status==4) return;
+    if (f->delayed_status==5 && !f->did_disconnect && f->now>=f->delayed_started+700u) {
+        f->did_disconnect=1u;f->physical_down=1;
+    }
+    if ((f->delayed_status==3 || f->delayed_status==7) && !f->delayed_prefix_sent &&
+        f->now>=f->delayed_started+850u) {
+        const char prefix[]="H2_LOADER_STATU_note actual-console\nH2_LOADER_STA";
+        assert(h2_iostreamikcp_write(f->peer,(const uint8_t *)prefix,sizeof(prefix)-1u)==H2_PAL_OK);
+        assert(h2_iostreamikcp_flush(f->peer)==H2_PAL_OK);
+        f->delayed_prefix_sent=1;
+    }
+    if (f->delayed_status==7) return;
+    if (!f->device_logs && f->now>=f->event_due) {
+        ++f->device_logs;f->stage_cleared=1;f->native_step=10u;
+        const char *line="LIBCO_CONFIRM rc=0\nLIBCO_AFTER_CONFIRM rc=0\nLIBCO_READY rc=0\n";
+        if (f->live_fd) queue_raw_log(f,line); else ++f->gap_logs;
+    }
+    if (f->response_pending && f->now>=f->response_due) {
+        f->response_pending=0;
+        if (f->live_fd && f->peer) {
+            emit_status(f);
+            assert(h2_iostreamikcp_flush(f->peer)==H2_PAL_OK);
+        }
+    }
 }
 static int peer_frame(void *user, const h2_iostreamikcp_frame_t *frame) {
     cli_fixture_t *f=user;
@@ -302,7 +347,16 @@ static int peer_frame(void *user, const h2_iostreamikcp_frame_t *frame) {
             : f->trace_reboot?"h2loader reboot upgrade\n":"h2loader reboot loader\n";
         if (len==sizeof(status)-1u && memcmp(command,status,len)==0) {
             ++f->requests;
-            if (!f->drop_response && !(f->mode==REBOOT_CANCEL_QUERY && f->boot_emitted) &&
+            if (f->raw_log_error) f->raw_log_due=f->now+50u;
+            if (f->delayed_status && f->boot_emitted && !f->device_logs && !f->delayed_started &&
+                ++f->delayed_requests==(f->delayed_status==2?2u:1u)) {
+                f->response_pending=1;f->delayed_started=f->now;
+                f->request_at_delay=f->requests;
+                if (f->delayed_status==3 || f->delayed_status==7) f->status_cr_only=1;
+                f->event_due=f->now+1250u;f->response_due=f->event_due;
+            } else if (f->delayed_status==5 && f->did_disconnect && !f->device_logs) {
+                f->response_pending=1;
+            } else if (!f->drop_response && !(f->mode==REBOOT_CANCEL_QUERY && f->boot_emitted) &&
                 !(f->mode==REBOOT_LATE_RESPONSE &&
                 f->boot_emitted && f->now-f->boot_ms>=118000u)) emit_status(f);
         } else if (len>=14u && memcmp(command,"h2loader wifi ",14u)==0) {
@@ -339,6 +393,7 @@ static int peer_frame(void *user, const h2_iostreamikcp_frame_t *frame) {
 }
 static int uart_write(void *user, const void *data, size_t len, size_t *written, uint32_t timeout) {
     cli_fixture_t *f=user; (void)timeout; *written=len;
+    if (f->fail_write_result) { *written=0u;return f->fail_write_result; }
     if (timeout>f->largest_write_timeout) f->largest_write_timeout=timeout;
     if (f->delay_write) {
         assert(f->now<f->io_deadline && timeout<=f->io_deadline-f->now);
@@ -347,8 +402,14 @@ static int uart_write(void *user, const void *data, size_t len, size_t *written,
     return h2_iostreamikcp_filter_input(&f->filter,data,len,peer_frame,f);
 }
 static int uart_read(void *user, void *data, size_t cap, size_t *read, uint32_t timeout) {
-    cli_fixture_t *f=user; f->now+=timeout!=0u?timeout:1u;
-    if (f->trace_reboot && f->boot_emitted) {
+    cli_fixture_t *f=user; f->now+=timeout!=0u?timeout:1u;delayed_device_tick(f);
+    if (f->raw_log_error && !f->raw_log_emitted && f->raw_log_due &&
+        f->now>=f->raw_log_due && f->input_offset==f->input_len) {
+        f->raw_log_emitted=1;
+        queue_raw_log(f,"RAW_LOG_FAILURE\n");
+    }
+    if (f->delayed_status && f->physical_down) { *read=0u;return H2_PAL_ERR_CLOSED; }
+    if (f->trace_reboot && f->boot_emitted && !f->delayed_status) {
         const int disconnect=(f->mode==REBOOT_DISCONNECT && f->native_step>=3u) ||
             (f->mode==REBOOT_POST_DISCONNECT && f->final_status_count!=0u) ||
             (f->mode==REBOOT_LATE_HANDSHAKE && f->now-f->boot_ms>=118000u);
@@ -402,6 +463,7 @@ static int open_port(void *user, const char *id, const h2_pal_uart_io_stream_con
     assert(f->peer==NULL);
     h2_iostreamikcp_filter_init(&f->filter);
     f->physical_down=0;
+    f->live_fd=1;
     if (f->mode==OPEN_FAILURE) return H2_PAL_ERR_BUSY;
     if (f->trace_wifi) queue_raw_log(f,"WIFI_READY\n");
     *out=(h2_pal_serial_host_session_t *)f; return H2_PAL_OK;
@@ -418,6 +480,8 @@ static int set_lines(void *user, h2_pal_serial_host_session_t *session, uint32_t
 static int close_port(void *user, h2_pal_serial_host_session_t **session) {
     cli_fixture_t *f=user; assert(*session==(h2_pal_serial_host_session_t *)f);
     ++f->closes; *session=NULL;
+    f->live_fd=0;
+    if (f->delayed_status==5) f->response_pending=0;
     h2_iostreamikcp_close(f->peer); f->peer=NULL;
     f->input_len=f->input_offset=0u;
     return f->mode==CLOSE_FAILURE?H2_PAL_ERR_IO:H2_PAL_OK;
@@ -628,6 +692,7 @@ static void run_status_deadline_case(unsigned mode) {
         .port_id="scan-port",.handshake_timeout_ms=1000u,.command_timeout_ms=120000u,
         .preserve_control_lines=1,.on_log=host_log,.log_user=&f};
     if (mode==4u) config.post_command_delay_ms=500u;
+    if (mode>=10u) config.command_timeout_ms=1000u;
     h2_h2loader_host_serial_connection_t *connection=NULL;
     assert(h2_h2loader_host_serial_connect(&config,&connection)==H2_PAL_OK);
     f.largest_write_timeout=0u;
@@ -637,15 +702,25 @@ static void run_status_deadline_case(unsigned mode) {
     if (mode==2u) f.drop_delivery=1;
     if (mode==3u) f.drop_response=1;
     if (mode==5u) f.delay_write=1;
-    f.io_deadline=mode==1u?f.now:f.now+(success?3000u:50u);
+    if (mode==7u) f.fail_write_result=H2_PAL_ERR_WOULD_BLOCK;
+    if (mode==8u) f.fail_clock_result=H2_PAL_ERR_WOULD_BLOCK;
+    if (mode==9u) f.fail_log_result=H2_PAL_ERR_WOULD_BLOCK;
+    if (mode>=10u) {
+        f.raw_log_error=1;f.drop_response=1;
+        f.fail_log_result=mode==10u?H2_PAL_ERR_WOULD_BLOCK:H2_PAL_ERR_TIMEOUT;
+    }
+    f.io_deadline=mode==1u?f.now:f.now+(success || mode>=8u?3000u:50u);
     h2_h2loader_host_status_t status;
     memset(&status,0xaa,sizeof(status));
-    int result=h2_h2loader_host_serial_read_status_until(connection,&status,f.io_deadline);
-    if (result!=(success?H2_PAL_OK:H2_PAL_ERR_TIMEOUT)) {
+    int pending=1;
+    int result=h2_h2loader_host_serial_read_status_until(connection,&status,f.io_deadline,&pending);
+    int expected=success?H2_PAL_OK:mode>=7u && mode!=11u?H2_PAL_ERR_WOULD_BLOCK:H2_PAL_ERR_TIMEOUT;
+    if (result!=expected) {
         fprintf(stderr,"status deadline mode=%u result=%d now=%llu deadline=%llu requests=%u\n",
             mode,result,(unsigned long long)f.now,(unsigned long long)f.io_deadline,f.requests);
     }
-    assert(result==(success?H2_PAL_OK:H2_PAL_ERR_TIMEOUT));
+    assert(result==expected && pending==0);
+    if (mode>=10u) assert(f.raw_log_emitted && f.requests==1u && f.now<f.raw_log_due+100u);
     assert(f.now<=f.io_deadline+10u);
     if (success) {
         assert(occurrences(f.output,"H2_LOADER_STATU_note actual-console\n")==1u);
@@ -660,12 +735,87 @@ static void run_status_deadline_case(unsigned mode) {
         if (mode==5u) assert(f.largest_write_timeout<=50u);
     }
     f.drop_delivery=f.drop_response=f.delay_write=f.status_cr_only=0;
+    f.fail_write_result=f.fail_clock_result=f.fail_log_result=0;
+    f.raw_log_error=0;
     f.read_limit=0u;
     f.largest_write_timeout=0u;
     assert(h2_h2loader_host_serial_read_status(connection,&status)==H2_PAL_OK);
-    assert(f.largest_write_timeout==120000u);
+    assert(f.largest_write_timeout==config.command_timeout_ms);
     assert(h2_h2loader_host_serial_disconnect(&connection)==H2_PAL_OK);
     assert(connection==NULL && f.peer==NULL && f.allocations==0u && f.opens==1u && f.closes==1u);
+}
+
+static void run_pending_zero_deadline_case(void) {
+    cli_fixture_t f={0};
+    f.mem=(h2_pal_mem_api_t){.user=&f,.vtable=&mem_vtable};
+    f.uart=(h2_pal_uart_io_stream_api_t){.user=&f,.vtable=&uart_vtable};
+    h2_pal_serial_host_api_t serial={.user=&f,.vtable=&serial_vtable};
+    h2_pal_time_api_t time={.user=&f,.vtable=&time_vtable};
+    h2_h2loader_host_serial_connection_config_t config={.serial=&serial,.time=&time,.allocator=&f.mem,
+        .port_id="scan-port",.handshake_timeout_ms=1000u,.command_timeout_ms=1000u,
+        .preserve_control_lines=1,.on_log=host_log,.log_user=&f};
+    h2_h2loader_host_serial_connection_t *connection=NULL;
+    assert(h2_h2loader_host_serial_connect(&config,&connection)==H2_PAL_OK);
+    f.drop_response=1;
+    h2_h2loader_host_status_t status,empty={0};
+    int pending=0;
+    assert(h2_h2loader_host_serial_read_status_until(connection,&status,f.now+3000u,&pending)==H2_PAL_ERR_WOULD_BLOCK);
+    assert(pending==1 && f.requests==1u && memcmp(&status,&empty,sizeof(status))==0);
+    size_t allocated=f.allocations;
+    assert(h2_h2loader_host_serial_read_status(connection,&status)==H2_PAL_ERR_INVALID_STATE);
+    assert(f.requests==1u && f.allocations==allocated);
+    uint64_t now=f.now;
+    memset(&status,0xaa,sizeof(status));
+    assert(h2_h2loader_host_serial_read_status_until(connection,&status,0u,&pending)==H2_PAL_ERR_TIMEOUT);
+    assert(pending==0 && f.now==now && f.requests==1u && f.allocations+1u==allocated);
+    assert(memcmp(&status,&empty,sizeof(status))==0);
+    f.drop_response=0;
+    assert(h2_h2loader_host_serial_read_status(connection,&status)==H2_PAL_OK);
+    assert(f.requests==2u);
+    assert(h2_h2loader_host_serial_disconnect(&connection)==H2_PAL_OK);
+    assert(connection==NULL && f.peer==NULL && f.allocations==0u && f.opens==1u && f.closes==1u);
+}
+
+static void run_delayed_status_case(int mode) {
+    cli_fixture_t f={.mode=REBOOT_PENDING,.trace_reboot=1,.delayed_status=mode};
+    f.mem=(h2_pal_mem_api_t){.user=&f,.vtable=&mem_vtable};
+    f.uart=(h2_pal_uart_io_stream_api_t){.user=&f,.vtable=&uart_vtable};
+    h2_iostreamikcp_filter_init(&f.filter);
+    h2_pal_serial_host_api_t serial={.user=&f,.vtable=&serial_vtable};
+    h2_pal_time_api_t time={.user=&f,.vtable=&time_vtable};
+    h2_command_io_api_t io={.user=&f,.vtable=&output_vtable};
+    h2_command_io_api_t error_io={.user=&f,.vtable=&error_output_vtable};
+    h2_runtime_t runtime={.mem=&f.mem,.time=&time,.fs=h2_pal_unsupported_fs_api()};
+    const char *argv[]={"h2loader","--port","scan-port","--wait-timeout",
+        mode==4 || mode==7?"65":"120","--read-timeout","1","reboot","upgrade","--monitor"};
+    h2_h2loader_cli_config_t config={.argc=10,.argv=argv,.serial=&serial,.stdout_io=&io,
+        .stderr_io=&error_io,.is_cancelled=cancelled,.cancel_user=&f};
+    int result=h2_h2loader_cli_main(&runtime,&config);
+    assert(result==(mode==4 || mode==7?H2_H2LOADER_CLI_EXIT_RUNTIME:H2_H2LOADER_CLI_EXIT_OK));
+    assert(f.reboots==1u && f.controls==0u);
+    assert(f.opens==(mode==5?3u:2u) && f.closes==f.opens);
+    assert(f.peer==NULL && f.allocations==0u);
+    assert(f.requests==f.request_at_delay+(mode==5?1u:0u));
+    assert(f.delayed_requests==(mode==2?2u:1u));
+    assert(f.gap_logs==0u);
+    assert(strstr(f.output,"H2_LOADER_STATUS ")==NULL && strstr(f.output,"board=devkit")==NULL);
+    if (mode==4 || mode==7) {
+        assert(f.now>=65000u && f.now<67000u && f.device_logs==0u);
+        assert(strstr(f.error_output,"command failed code=-6")!=NULL);
+        assert(strstr(f.output,"actual-console\nH2_LOADER_STA")==NULL);
+    } else if (mode==6) {
+        assert(f.now-f.delayed_started<1250u && f.device_logs==0u);
+    } else {
+        assert(f.device_logs==1u && f.final_status_count>0u);
+        const char *confirm=strstr(f.output,"LIBCO_CONFIRM rc=0\n");
+        const char *after=strstr(f.output,"LIBCO_AFTER_CONFIRM rc=0\n");
+        const char *ready=strstr(f.output,"LIBCO_READY rc=0\n");
+        assert(confirm!=NULL && after>confirm && ready>after);
+        assert(occurrences(f.output,"LIBCO_CONFIRM rc=0\n")==1u);
+        assert(occurrences(f.output,"LIBCO_AFTER_CONFIRM rc=0\n")==1u);
+        assert(occurrences(f.output,"LIBCO_READY rc=0\n")==1u);
+        if (mode==3) assert(occurrences(f.output,"STATUS_TAIL_ACTUAL_CASE\n")==1u);
+    }
 }
 
 static void run_connect_deadline_case(unsigned mode) {
@@ -716,7 +866,9 @@ int main(void) {
     run_wifi_monitor_case(0,1,HEALTHY,1);
     run_wifi_monitor_case(1,1,HEALTHY,1);
     for (int mode=REBOOT_PENDING;mode<=REBOOT_CANCEL_QUERY;++mode) run_reboot_capture_case(mode);
-    for (unsigned mode=0u;mode<=6u;++mode) run_status_deadline_case(mode);
+    for (unsigned mode=0u;mode<=11u;++mode) run_status_deadline_case(mode);
+    run_pending_zero_deadline_case();
     for (unsigned mode=0u;mode<=3u;++mode) run_connect_deadline_case(mode);
+    for (int mode=1;mode<=7;++mode) run_delayed_status_case(mode);
     return 0;
 }

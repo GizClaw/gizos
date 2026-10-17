@@ -26,7 +26,7 @@ class DecodedMonitor(unittest.TestCase):
         # This monitor fixture exercises the legacy (unbounded) connection.
         member = '    const h2_pal_time_api_t *time;'
         self.assertEqual(fixture.count(member), 1)
-        fixture = fixture.replace(member, member + '\n    uint64_t active_deadline_ms;')
+        fixture = fixture.replace(member, member + '\n    uint64_t active_deadline_ms;\n    h2_pal_result_t bounded_log_result;')
         fixture = fixture.replace('/* SERIAL_LOG */', callback).replace('/* MONITOR */', monitor)
         fixture = fixture.replace('/* SERIAL_NOW */', now).replace('/* SERIAL_PUMP */', pump)
         with tempfile.TemporaryDirectory() as directory:

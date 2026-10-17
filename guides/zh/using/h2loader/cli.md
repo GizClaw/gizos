@@ -340,9 +340,9 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
 bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> reboot loader --monitor
 ```
 
-`monitor` 是 Host-only UART 操作，输出原始 non-frame 日志和已解码的控制台 bytes；设备协议中没有 `monitor` 命令。`reboot ... --monitor` 在初次连接前接入日志 sink，reboot accepted 后重建 session。后续 authoritative status 仍是合法安装中间态时，保留同一串口连接，在查询之间持续读取日志；只有 session 或 transport 失效才重连，整个流程只发送一次 reboot。Status 查询中的真实控制台输出也投影到日志，但 `H2_LOADER_STATUS` 控制响应不作为日志输出。
+`monitor` 是 Host-only UART 操作，输出原始 non-frame 日志和已解码的控制台 bytes；设备协议中没有 `monitor` 命令。`reboot ... --monitor` 在初次连接前接入日志 sink，reboot accepted 后重建 session。后续 authoritative status 仍是合法安装中间态时，保留同一串口连接，在查询之间持续读取日志；只有 session 或 transport 失效才重连，整个流程只发送一次 reboot。Status 查询中的真实控制台输出也投影到日志，但 `H2_LOADER_STATUS` 控制响应不作为日志输出。 已握手的 session 等待 status 响应超过一个 `--read-timeout` 读取片时，保留 fd、同一请求和跨片解析状态，继续收集真实日志；不会仅因这个响应片超时重连或重发 status。首个 status 响应尚未返回时也遵守此规则。
 
-确认阶段的总预算为 `max(60 秒, --wait-timeout)`；每次握手和状态查询都受剩余总预算限制，状态查询的 delivery 和 response 还分别受 `--read-timeout` 限制。比如 `--wait-timeout 240` 允许业务在 60 秒后完成确认。预算耗尽、身份或镜像不匹配、真实验证错误、时钟或日志输出错误均退出；已知的 Stage 中间态继续等待，最终仍核对 UID、board/target、预期镜像 checksum、Partition 和 Stage，APP 更新还须保留原 Partition 1。主动取消在 bounded I/O 边界生效，正常退出。UART flush/close 没有 deadline 参数，仍可能增加 PAL 已有的有限清理时间。
+确认阶段的总预算为 `max(60 秒, --wait-timeout)`；每次握手和状态查询都受剩余总预算限制，状态查询的 delivery 与每个 response 读取片还分别受 `--read-timeout` 限制，片间检查取消及总预算。比如 `--wait-timeout 240` 允许业务在 60 秒后完成确认。预算耗尽、身份或镜像不匹配、真实验证错误、时钟或日志输出错误均退出；已知的 Stage 中间态继续等待，最终仍核对 UID、board/target、预期镜像 checksum、Partition 和 Stage，APP 更新还须保留原 Partition 1。主动取消在 bounded I/O 边界生效，正常退出。UART flush/close 没有 deadline 参数，仍可能增加 PAL 已有的有限清理时间。
 
 确认完成后继续监控，直到主动取消或错误；确认预算不会截断之后的正常监控。不带 `--monitor` 的 reboot 保留原来的 120 次重连验证预算，BLE 保留原验证流程；BLE 显式请求 monitoring 会在发送 reboot 前被拒绝。物理失联及真实 MCU session 重置仍可能产生重连间隙，这些间隙的日志完整性需由实际采集证据判断。
 
