@@ -8,9 +8,13 @@ Executor root 是 ESP-IDF 已有且固定到 `ESP_TASK_MAIN_CORE` 的 `main_task
 
 Portable scenario 只借用 Memory、Time 和 Log。Launcher 与独立 PAL Core/Crypto/JSON/Storage 套件一样，把本次 Runtime 的 `system_event` 绑定为 canonical unsupported，避免启动无关的 netif/modem 事件观察。该选择只属于 Libco 入口，不改变 BSP 或 Runtime provider。恢复管理只启动 UART command service，发布 `H2_LOADER_CAPABILITY_UART`，通过 iostreamikcp 操作；此入口不启动 BLE command service。
 
-Suite defaults 显式保留 DevKit 既有的 64 KiB `main_task` stack，供 Runtime 初始化与 H2Loader metadata/Preference 确认使用；consumer Board 复用同一份 defaults。该预算不改变每个 coroutine 的 8 KiB stack 或 10,000 次 switch。INFO 日志和 DEBUG 编译上限确保 portable stage/PASS 真实到达 UART。
+Standalone suite defaults 保留 DevKit 既有的 64 KiB `main_task` stack，供 Runtime 初始化与 H2Loader metadata/Preference 确认使用；consumer 可通过公共 macro 的 `use_suite_defaults=False` 保留自己的产品配置，实际栈与日志预算以生成的 `sdkconfig`、`sdkconfig.h` 为准。这不改变每个 coroutine 的 8 KiB stack 或 10,000 次 switch，也不把 consumer 的 SDK main 等同于独立 Board business entry task。
 
-`H2_ESP_LIBCO_CHECKPOINT` 在 boot、Runtime 初始化后、portable scenario 前后和 confirmation 前后报告 SDK heap integrity、当前 main stack 余量与历史最小余量，单位均为 bytes；`rc` 是这些检查的真实返回结果，输出还须通过 `printf` 与 `fflush` 的结果检查。启动检查失败在 command transport 可用后保持 FAIL，后续检查失败直接保留管理服务。Confirmation 前的失败阻止确认；confirmation 后的失败阻止 READY，并按实际 metadata 记录已经完成的提交。Checkpoint 不替代 portable ledger 或独立启动证据。
+正常启动时，Runtime 和串口恢复服务就绪后，launcher 等待五秒再交付本次启动的首份记录。ROOT 的 task/core 和 boot heap/stack 在原入口时机采样；runtime checkpoint 在 Runtime 初始化刚返回时采样。两份 checkpoint observation 保存在 boot-owned static storage，延后只报告一次原始值，不把等待后的取样标为 boot/runtime，也不重放或合并别次启动。其余 checkpoint 仍在对应执行边界即时采样并报告。
+
+Portable `libco-smoke` scope 的六条 stage 和一条 PASS 借用 H2Loader 已安装的 UART 或 USB JTAG console，由公共 checked result router 有界完整写出并实际 drain；不会新开 console 或调整 SDK/global/tag 日志等级，其余 scope 保留原 Log 的过滤行为。确认前要求 portable 返回 OK、七条实际输出全部成功且 sticky output error 为 OK；短写、write/drain 失败、缺 console capability 或记录数不符均保持 FAIL、不确认。Router 和延后交付的 observation 使用 static storage，不增加 SDK main 的局部大对象。
+
+`H2_ESP_LIBCO_CHECKPOINT` 在 boot、Runtime 初始化后、portable scenario 前后和 confirmation 前后报告 SDK heap integrity、对应采样时刻的 main stack 余量与历史最小余量，单位均为 bytes；`rc` 是这些检查的真实返回结果，输出还须通过 `printf` 与 `fflush` 的结果检查。启动检查失败在 command transport 可用后保持 FAIL，后续检查失败直接保留管理服务。Confirmation 前的失败阻止确认；confirmation 后的 checkpoint 或终态输出失败按实际 metadata 记录已经完成的提交，不能倒推为未确认。Checkpoint 不替代 portable ledger 或独立启动证据。
 
 确认前从已启动的 command service 取得 borrowed `operation_sync`/`operation_mutex`，在同一 root task 上依次 lock、调用 `h2_esp_h2loader_app_confirm()`、unlock，与串口 Stage、digest、status 和 reboot 操作共用串行化边界。取得配置或锁失败时不调用确认；确认失败也必须释放锁并保留首个错误。`H2_ESP_LIBCO_CONFIRM rc=<result>` 在确认包装返回后立即输出，随后才运行 `after_confirm` 检查点；错误保持 FAIL，不输出 READY。
 

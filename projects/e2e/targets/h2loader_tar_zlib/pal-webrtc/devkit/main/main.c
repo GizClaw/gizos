@@ -26,6 +26,13 @@ static void fail(const char *stage, int rc) {
 static void run(void *user) {
   (void)user;
   vTaskDelay(pdMS_TO_TICKS(5000u));
+  char boot[128];
+  const int boot_size = snprintf(boot, sizeof(boot), "H2_PAL_WEBRTC_BOOT board=%s version=%s",
+      H2_ESP_BOARD_NAME, esp_app_get_description()->version);
+  if (boot_size <= 0 || (size_t)boot_size >= sizeof(boot))
+      fail("boot_format", H2_PAL_ERR_TRUNCATED);
+  const int boot_rc = h2_esp_e2e_console_record(&result_log.console, boot);
+  if (boot_rc != H2_PAL_OK) fail("boot_output", boot_rc);
   int rc;
   for (;;) {
     rc = h2_pal_webrtc_device_run(runtime, 20000u, 0u, &result);
@@ -70,8 +77,6 @@ static void entry(void *user) {
   rc = h2_esp_e2e_result_log_prepare(&result_log, runtime, "pal-webrtc", NULL);
   if (rc != H2_PAL_OK)
     fail("result_console", rc);
-  printf("H2_PAL_WEBRTC_BOOT board=" H2_ESP_BOARD_NAME " version=%s\n",
-         esp_app_get_description()->version);
   const h2_pal_task_options_t options = {
       .name = h2_pal_webrtc_device_runner_task_name};
   h2_pal_task_t *runner = NULL;

@@ -44,6 +44,205 @@ def command_arguments(facts):
     return argv
 
 
+def process_interval(fact):
+    start, finish = utc(fact["started_utc"]), utc(fact["finished_utc"])
+    elapsed = fact.get("elapsed_ms")
+    if (type(fact.get("pid")) is not int or fact["pid"] <= 0
+            or type(elapsed) is not int or elapsed < 0 or finish < start
+            or abs((finish - start).total_seconds() * 1000 - elapsed) > 1000):
+        raise ValueError("invalid actual transport process interval")
+    return start, finish
+
+
+def transport_arguments(fact, expected):
+    argv = command_arguments(fact)
+    if (not Path(argv[0]).name.startswith("h2loader")
+            or fact.get("executable_sha256") != expected["cli_sha256"]):
+        raise ValueError("transport executable differs from the frozen CLI")
+    flags, index = {}, 1
+    while index < len(argv) and argv[index].startswith("--"):
+        flag = argv[index]
+        if flag in flags:
+            raise ValueError("duplicate transport option")
+        if flag == "--no-ble":
+            flags[flag] = True
+            index += 1
+        elif flag in {"--port", "--transport", "--baud", "--wait-timeout", "--read-timeout", "--post-delay"} and index + 1 < len(argv):
+            flags[flag] = argv[index + 1]
+            index += 2
+        else:
+            raise ValueError("unknown transport option")
+    if (flags.get("--no-ble") is not True or flags.get("--port") != expected["port"]
+            or flags.get("--transport") != "iostreamikcp" or flags.get("--read-timeout") != "1"):
+        raise ValueError("capture did not use the explicit bounded UART transport")
+    return argv[index:]
+
+
+def typed_transport(fact, expected, command, marker):
+    process_interval(fact)
+    if (type(fact.get("exit_code")) is not int or fact["exit_code"] != 0
+            or transport_arguments(fact, expected) != command
+            or not isinstance(fact.get("stdout"), str)
+            or fact.get("sha256") != hashlib.sha256(fact["stdout"].encode()).hexdigest()):
+        raise ValueError("missing successful typed transport receipt")
+    rows = [line for line in fact["stdout"].splitlines() if line.startswith(marker + " ")]
+    if len(rows) != 1:
+        raise ValueError("missing unique typed device status")
+    fields = {}
+    for token in rows[0][len(marker) + 1:].split():
+        key, value = token.split("=", 1)
+        if not key or not value or key in fields:
+            raise ValueError("invalid typed status fields")
+        fields[key] = value
+    return fields
+
+
+def verify_temporary_capture(capture, raw, body, version, execution):
+    """Two actual processes; a PRECASE/BOOT nonce bridges their UART handoff.
+
+    Metadata is parsed from immutable real-command stdout, never substituted
+    for the first case ledger. The caller owns artifact/device provenance.
+    """
+    try:
+        device, segments = capture["device"], capture["segments"]
+        expected = device["expected"]
+        if (not isinstance(segments, list) or len(segments) != 2
+                or any(not re.fullmatch(r"[0-9a-f]{64}", expected[k])
+                       for k in ("cli_sha256", "package_checksum", "image_checksum"))
+                or any(type(expected[k]) is not int or expected[k] <= 0
+                       for k in ("package_size", "image_size"))
+                or not re.fullmatch(r"[0-9a-f]{12,32}", expected["uid"])
+                or not re.fullmatch(r"[a-z0-9_]+", expected["board"])
+                or expected["target"] != "esp32s3" or not expected["port"]):
+            raise ValueError("missing frozen device/package identity")
+        slices, intervals, offset = [], [], 0
+        for segment in segments:
+            count = segment.get("bytes")
+            if (type(count) is not int or count <= 0 or type(segment.get("offset")) is not int
+                    or segment["offset"] != offset or count > len(raw) - offset
+                    or type(segment.get("exit_code")) is not int or segment["exit_code"] not in (0, 130, -2)):
+                raise ValueError("invalid actual capture segment")
+            chunk = raw[offset:offset + count]
+            if hashlib.sha256(chunk).hexdigest() != segment.get("sha256"):
+                raise ValueError("capture segment bytes changed")
+            slices.append(chunk.replace(b"\r\n", b"\n"))
+            intervals.append(process_interval(segment))
+            offset += count
+        if (offset != len(raw) or intervals[0][1] > intervals[1][0]
+                or segments[0]["pid"] == segments[1]["pid"]
+                or segments[0].get("monitor_stop") != "precase-awaiting-temporary-wifi"
+                or segments[1].get("monitor_stop") != "complete-qualified-ledger"
+                or capture["exit_code"] != segments[1]["exit_code"]
+                or utc(capture["started_utc"]) != intervals[0][0]
+                or utc(capture["finished_utc"]) != intervals[1][1]):
+            raise ValueError("capture processes overlap or contain missing bytes")
+        reboot = transport_arguments(segments[0], expected)
+        wifi = transport_arguments(segments[1], expected)
+        if (len(reboot) != 3 or reboot[0] != "reboot" or reboot[1] not in ("upgrade", "app")
+                or reboot[2] != "--monitor" or len(wifi) != 6 or wifi[:2] != ["wifi", "connect"]
+                or wifi[4:] != ["--temporary", "--monitor"]):
+            raise ValueError("missing real monitored reboot and temporary Wi-Fi commands")
+        ack = f"H2_LOADER_REBOOT target={reboot[1]} result=accepted\n".encode()
+        precase = (f"H2_GIZCLAW_PRECASE board={expected['board']} version={version} "
+                   f"execution={execution} state=precase\n").encode()
+        boot = (f"H2_GIZCLAW_BOOT board={expected['board']} version={version} execution={execution}\n").encode()
+        first, second = slices
+        requested = first.split(ack, 1)[-1]
+        precases = [line for line in (first + second).splitlines() if line.startswith(b"H2_GIZCLAW_PRECASE ")]
+        if (first.count(ack) != 1 or precases != [precase.rstrip(b"\n")]
+                or first.find(ack) >= first.find(precase) or second.count(boot) != 1
+                or any(line.startswith((b"H2_GIZCLAW_BOOT ", b"H2_GIZCLAW_LEDGER ", b"H2_GIZCLAW_E2E "))
+                       for line in requested.splitlines())
+                or b"status=NO_SAVED_WIFI " not in requested):
+            raise ValueError("reboot ACK and precase identity do not bind this waiting boot")
+        boot_index = second.find(boot)
+        if any(line.startswith((b"H2_GIZCLAW_E2E ", b"H2_GIZCLAW_LEDGER "))
+               for line in second[:boot_index].splitlines()):
+            raise ValueError("business evidence appeared before this boot's network gate")
+        boundaries = (b"H2_LOADER_REBOOT ", b"H2_GIZCLAW_PRECASE ", b"H2_GIZCLAW_SETUP_FAIL ",
+                      b"ESP-ROM:", b"rst:0x", b"Guru Meditation Error:", b"Rebooting...", b"H2_BOARD_ENTRY_FAIL ")
+        if (any(line.startswith(boundaries) or LAUNCHER.fullmatch(line) for line in second.splitlines())
+                or any(line.startswith(boundaries) for line in first[first.find(precase) + len(precase):].splitlines())
+                or sum(line.startswith(b"H2_LOADER_REBOOT ") for line in first.splitlines()) != 1):
+            raise ValueError("another reboot/setup boundary interrupted the handoff")
+        frame_index = second.find(b"H2_GIZCLAW_LEDGER stage=begin ")
+        end = re.search(rb"^H2_GIZCLAW_LEDGER stage=end [^\n]+\n", second, re.MULTILINE)
+        ready = BLE_WINDOW.findall(body)
+        live = BLE_WINDOW.search(second[:frame_index]) if frame_index >= 0 else None
+        if (end is None or not live or live.groups() != ready[0] or live.start() <= boot_index
+                or not any(line.startswith(b"H2_LOADER_WIFI_TEMPORARY result=connected ")
+                           for line in second[:frame_index].splitlines())
+                or second[:end.end()].count(b"H2_GIZCLAW_LEDGER stage=begin ") != 1):
+            raise ValueError("missing immediate ready or first complete ledger after real temporary Wi-Fi")
+        first_body, first_identity = extract(second[:end.end()], version=version)
+        if first_body != body or first_identity["execution"] != execution or first_identity["discarded_frames"]:
+            raise ValueError("a replay replaced the first complete case ledger")
+        if not (intervals[0][0] <= utc(capture["precase_observed_utc"]) <= intervals[0][1]
+                and intervals[1][0] <= utc(capture["boot_observed_utc"])
+                <= utc(capture["ble_ready_utc"]) <= intervals[1][1]):
+            raise ValueError("identity observations are outside their actual process")
+        snapshots, transport_intervals = {}, list(intervals)
+        for phase in ("before", "precase", "after"):
+            snapshots[phase] = {}
+            for name, command, marker in (("status", ["status"], "H2_LOADER_STATUS"),
+                    ("wifi", ["wifi", "status"], "H2_LOADER_WIFI_STATUS"),
+                    ("coredump", ["coredump", "status"], "H2_LOADER_COREDUMP_STATUS")):
+                if (phase == "precase" and name == "coredump") or (phase == "before" and name == "wifi"): continue
+                fact = device[phase][name]
+                began, finished = process_interval(fact)
+                transport_intervals.append((began, finished))
+                if ((phase == "before" and finished > intervals[0][0])
+                        or (phase == "precase" and not intervals[0][1] <= began <= finished <= intervals[1][0])
+                        or (phase == "after" and began < intervals[1][1])):
+                    raise ValueError("typed metadata belongs to the wrong capture phase")
+                snapshots[phase][name] = typed_transport(fact, expected, command, marker)
+        transport_intervals.sort()
+        if any(a[1] > b[0] for a, b in zip(transport_intervals, transport_intervals[1:])):
+            raise ValueError("UART command processes overlapped")
+        names = ("valid", "package_checksum", "package_size", "image_checksum", "image_size", "role", "version", "board", "target")
+        original_p1 = {k: snapshots["before"]["status"]["partition_1_" + k] for k in names}
+        if original_p1["valid"] != "1" or original_p1["role"] != "loader":
+            raise ValueError("original Loader/P1 identity is missing")
+        partition = dict(valid="1", package_checksum=expected["package_checksum"],
+            package_size=str(expected["package_size"]), image_checksum=expected["image_checksum"],
+            image_size=str(expected["image_size"]), role="app", version=version,
+            board=expected["board"], target=expected["target"])
+        empty = dict(valid="0", package_checksum="-", package_size="0", image_checksum="-",
+                     image_size="0", role="unknown", version="-", board="-", target="-")
+        for phase, snapshot in snapshots.items():
+            status = snapshot["status"]
+            if (any(status[k] != expected[v] for k, v in (("device_uid", "uid"), ("board", "board"), ("target", "target")))
+                    or {k: status["partition_1_" + k] for k in names} != original_p1):
+                raise ValueError("device or original Loader/P1 changed")
+            if phase != "before":
+                active = dict(active_role="app", active_version=version, active_checksum=expected["image_checksum"],
+                              active_image_size=str(expected["image_size"]), running_partition="2")
+                if any(status[k] != v for k, v in active.items()):
+                    raise ValueError("active App differs from frozen native image")
+            stage = {k: status["stage_" + k] for k in names}
+            if stage != (partition if phase == "precase" and stage["valid"] == "1" else empty):
+                raise ValueError("unexpected or residual Stage")
+        final = snapshots["after"]["status"]
+        if final["last_result"] != "0" or {k: final["partition_2_" + k] for k in names} != partition:
+            raise ValueError("final typed P2 package/image identity is not confirmed")
+        for phase in ("precase", "after"):
+            wifi_status = snapshots[phase]["wifi"]
+            if any(wifi_status.get(k) != v for k, v in dict(result="OK", saved="0", saved_code="0", saved_ssid_hex="-").items()):
+                raise ValueError("actual Saved=0 was not preserved")
+        for phase in ("before", "after"):
+            dump = snapshots[phase]["coredump"]
+            if (set(dump) != {"result", "code", "partition", "bytes", "stored_bytes", "blank"}
+                    or not re.fullmatch(r"[A-Za-z0-9_]+", dump["partition"])
+                    or not re.fullmatch(r"[1-9][0-9]*", dump["bytes"])
+                    or any(dump.get(k) != v for k, v in dict(result="OK", code="0", stored_bytes="0", blank="1").items())):
+                raise ValueError("original blank coredump was not preserved")
+        if snapshots["before"]["coredump"] != snapshots["after"]["coredump"]:
+            raise ValueError("actual coredump status bytes/partition changed")
+        return {"capture_schema": 3, "typed_device_valid": True}
+    except (KeyError, TypeError, IndexError, AttributeError) as error:
+        raise ValueError("missing typed two-process capture facts") from error
+
+
 def verify_ble_peer(body, data, *, version, execution, process_exit_code,
                     raw_log=None, capture_data=None, process_data=None):
     """Compare one execution to independent historical capture/process facts.
@@ -100,11 +299,17 @@ def verify_ble_peer(body, data, *, version, execution, process_exit_code,
                         "--size": size.decode(), "--sha256": digest.decode()}.items():
         if argv.count(flag) != 1 or argv.index(flag) + 1 >= len(argv) or argv[argv.index(flag) + 1] != value:
             raise ValueError("central argv differs from this execution")
-    boot_argv = command_arguments(capture)
-    if (boot_argv.count("reboot") != 1 or boot_argv.index("reboot") + 1 >= len(boot_argv)
-            or boot_argv[boot_argv.index("reboot") + 1] not in ("upgrade", "app")
-            or not ({"--monitor", "--continuous-monitor"} & set(boot_argv))):
-        raise ValueError("missing actual monitored boot command")
+    capture_identity = {}
+    if "schema" in capture:
+        if type(capture["schema"]) is not int or capture["schema"] != 3:
+            raise ValueError("unsupported capture schema")
+        capture_identity = verify_temporary_capture(capture, raw_log, body, version, execution)
+    else:
+        boot_argv = command_arguments(capture)
+        if (boot_argv.count("reboot") != 1 or boot_argv.index("reboot") + 1 >= len(boot_argv)
+                or boot_argv[boot_argv.index("reboot") + 1] not in ("upgrade", "app")
+                or not ({"--monitor", "--continuous-monitor"} & set(boot_argv))):
+            raise ValueError("missing actual monitored boot command")
     try:
         start, finish = utc(peer["started_at_utc"]), utc(peer["finished_at_utc"])
         command_start, command_finish = utc(process["started_utc"]), utc(process["finished_utc"])
@@ -119,7 +324,7 @@ def verify_ble_peer(body, data, *, version, execution, process_exit_code,
             raise ValueError("central duration exceeds its enforced timeout or process facts")
     except KeyError as error:
         raise ValueError("missing independent capture/process timestamps") from error
-    return {**expected, "valid": True, "chunks": chunks,
+    return {**expected, **capture_identity, "valid": True, "chunks": chunks,
             "receipt_sha256": hashlib.sha256(data).hexdigest(),
             "capture_receipt_sha256": hashlib.sha256(capture_data).hexdigest(),
             "command_receipt_sha256": hashlib.sha256(process_data).hexdigest(),
@@ -137,7 +342,7 @@ def extract(data, *, version, previous_execution=None):
     changed_boots = set()
     for line in data.replace(b"\r\n", b"\n").split(b"\n"):
         boot = BOOT.fullmatch(line)
-        if (line.startswith(b"H2_GIZCLAW_BOOT ") or LAUNCHER.fullmatch(line)
+        if (line.startswith((b"H2_GIZCLAW_BOOT ", b"H2_GIZCLAW_PRECASE ")) or LAUNCHER.fullmatch(line)
                 or line.startswith(b"H2_GIZCLAW_SETUP_FAIL ")):
             # A reboot/setup failure after a good run cannot borrow that run.
             # Early platform-only markers precede READY and the execution nonce.

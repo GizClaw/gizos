@@ -65,6 +65,7 @@ _SUITES = {
     "libco-smoke": struct(
         image = "libco-smoke",
         defaults_suite = "libco-smoke",
+        headers = [Label("//projects/e2e/libs/esp-device:result_console.h")],
         extra_sources = [Label("//projects/e2e/targets/h2loader_tar_zlib/libco-smoke/devkit:main/confirmation.h")],
         libraries = [Label("//projects/e2e/apps/libco/app:libco_smoke")],
         policies = [],
@@ -152,7 +153,7 @@ _SUITES.update({
         libraries = [Label("//libs/gizclaw"), Label("//projects/e2e/apps/gizclaw/app:gizclaw_e2e"), Label("//projects/e2e/libs/gizclaw-device:ledger")],
         components = [Label("//native_component_src/esp-idf6.x/h2_gizclaw"), Label("//projects/e2e/apps/gizclaw/app:fixture")],
         extra_sources = [Label("//projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/devkit:main/" + file) for file in ["h2_gizclaw_e2e_devkit_config.c", "h2_gizclaw_e2e_devkit_state.c"]],
-        headers = [Label("//projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/devkit:main/" + file) for file in ["h2_gizclaw_e2e_devkit_config.h", "h2_gizclaw_e2e_devkit_state.h"]],
+        headers = [Label("//projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/devkit:main/" + file) for file in ["h2_gizclaw_e2e_devkit_config.h", "h2_gizclaw_e2e_devkit_state.h", "h2_gizclaw_e2e_devkit_capture.h"]] + [Label("//projects/e2e/libs/esp-device:result_console.h")],
         data = [Label("//projects/e2e/apps/gizclaw:voice_prompt")],
         policies = [
             "$gizclaw/net 5 0 65536 psram",

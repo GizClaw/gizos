@@ -1,5 +1,6 @@
 #include "h2_gizclaw_e2e_devkit_config.h"
 #include "h2_gizclaw_e2e_devkit_state.h"
+#include "h2_gizclaw_e2e_devkit_capture.h"
 #include "h2_esp_target_task_policy.h"
 
 #include "h2_esp_board.h"
@@ -69,6 +70,7 @@ typedef struct h2_gizclaw_e2e_devkit_runner {
   h2_atomic_bool_t capture_failed;
   h2_pal_mutex_t *evidence_mutex;
   h2_gizclaw_e2e_ledger_t ledger;
+  h2_esp_e2e_console_t console;
   char execution[33];
   int confirm_rc;
   bool admitted;
@@ -93,8 +95,8 @@ static void capture_evidence(void *user, const char *record, size_t size) {
     h2_atomic_store_explicit(&runner->capture_failed, true, H2_ATOMIC_RELEASE);
     return;
   }
-  h2_gizclaw_e2e_ledger_append(&runner->ledger, record, size);
-  if (runner->ledger.error != H2_PAL_OK)
+  if (h2_gizclaw_e2e_devkit_capture(&runner->ledger, &runner->console,
+                                    record, size) != H2_PAL_OK)
     h2_atomic_store_explicit(&runner->capture_failed, true, H2_ATOMIC_RELEASE);
   if (h2_pal_mutex_unlock(runner->runtime->sync, runner->evidence_mutex) != H2_PAL_OK)
     h2_atomic_store_explicit(&runner->capture_failed, true, H2_ATOMIC_RELEASE);
@@ -304,7 +306,24 @@ static void image_entry(void *user) {
     fail_launcher("command_start", rc, false);
   }
 
-
+#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
+  s_runner.console.usb = h2_esp_platform_usb_jtag_io_stream_api();
+#else
+  s_runner.console.uart = h2_esp_platform_uart_io_stream_api();
+#endif
+  s_runner.console.timeout_ms = 5000u;
+  rc = h2_gizclaw_e2e_devkit_prepare_execution(runtime->time, runtime->crypto,
+                                               s_runner.execution);
+  if (rc != H2_PAL_OK) fail_launcher("execution_init", rc, true);
+  char precase[256];
+  const int precase_size = snprintf(precase, sizeof(precase),
+      "H2_GIZCLAW_PRECASE board=" H2_ESP_BOARD_NAME
+      " version=%s execution=%s state=precase",
+      esp_app_get_description()->version, s_runner.execution);
+  if (precase_size <= 0 || (size_t)precase_size >= sizeof(precase))
+    fail_launcher("precase_format", H2_PAL_ERR_TRUNCATED, true);
+  rc = h2_esp_e2e_console_record(&s_runner.console, precase);
+  if (rc != H2_PAL_OK) fail_launcher("precase_output", rc, true);
 
   rc = h2_pal_wifi_sta_set_power_save(runtime->wifi_sta,
                                       H2_PAL_WIFI_POWER_SAVE_NONE);
@@ -429,19 +448,11 @@ static void image_entry(void *user) {
       char *evidence = h2_pal_mem_alloc(runtime->mem, H2_GIZCLAW_E2E_LEDGER_CAPACITY);
       const h2_pal_mutex_config_t mutex = {
           .name = "gizclaw-e2e-evidence", .allocator = runtime->mem};
-      uint8_t nonce[16];
       if (evidence == NULL ||
           h2_gizclaw_e2e_ledger_init(&s_runner.ledger, evidence, H2_GIZCLAW_E2E_LEDGER_CAPACITY) != H2_PAL_OK ||
           h2_atomic_init(&s_runner.capture_failed, false) != H2_ATOMIC_OK ||
-          h2_pal_mutex_create(runtime->sync, &mutex, &s_runner.evidence_mutex) != H2_PAL_OK ||
-          h2_pal_crypto_random(runtime->crypto, nonce, sizeof(nonce)) != H2_PAL_OK)
+          h2_pal_mutex_create(runtime->sync, &mutex, &s_runner.evidence_mutex) != H2_PAL_OK)
         fail_launcher("evidence_init", H2_PAL_ERR_NO_MEMORY, true);
-      static const char hex[] = "0123456789abcdef";
-      for (size_t i = 0u; i < sizeof(nonce); ++i) {
-        s_runner.execution[i * 2u] = hex[nonce[i] >> 4u];
-        s_runner.execution[i * 2u + 1u] = hex[nonce[i] & 15u];
-      }
-      s_runner.execution[32] = '\0';
       printf("H2_GIZCLAW_BOOT board=" H2_ESP_BOARD_NAME " version=%s execution=%s\n",
              esp_app_get_description()->version, s_runner.execution);
       if (h2_atomic_init(&s_runner.exited, false) != H2_ATOMIC_OK)

@@ -219,6 +219,192 @@ class BlePeerAdmission(unittest.TestCase):
         with self.assertRaises(ValueError): self.verify(data=data, process=process, capture=capture)
 
 
+def temporary_bundle(base, body):
+    """Protocol fixture only; never physical capture or device qualification."""
+    expected = dict(board="zero_esp_v3_0", target="esp32s3", uid="7c4fadbc2cea",
+                    port="/unit/zero", cli_sha256="e" * 64,
+                    package_checksum="d" * 64, package_size=100,
+                    image_checksum="c" * 64, image_size=200)
+    prefix = ["/unit/h2loader", "--no-ble", "--port", expected["port"],
+              "--transport", "iostreamikcp", "--read-timeout", "1"]
+    first = ("H2_LOADER_REBOOT target=upgrade result=accepted\n"
+             "H2_GIZCLAW_PRECASE board=zero_esp_v3_0 version=unit-r1 execution="
+             + base.execution + " state=precase\n"
+             "H2_GIZCLAW_E2E_DEVKIT stage=launcher status=READY\n"
+             "H2_GIZCLAW_E2E_DEVKIT stage=wifi status=NO_SAVED_WIFI rc=-7 retry_ms=10000\n").encode()
+    second = ("H2_LOADER_WIFI_TEMPORARY result=connected ssid=fixture\n"
+              "H2_GIZCLAW_E2E_DEVKIT stage=time status=READY\n"
+              "H2_GIZCLAW_BOOT board=zero_esp_v3_0 version=unit-r1 execution="
+              + base.execution + "\n").encode() + next(
+                  line + b"\n" for line in body.splitlines()
+                  if line.startswith(b"H2_GIZCLAW_E2E stage=ble-binding-ready ")) + frame(body)
+    raw = first + second
+    capture = {**base.capture, "schema": 3, "sha256": hashlib.sha256(raw).hexdigest(),
+               "boot_observed_utc": "2020-01-01T00:00:00.8Z",
+               "precase_observed_utc": "2020-01-01T00:00:00.2Z"}
+    del capture["argv"]
+    def process(argv, pid, start, finish, elapsed, output, offset=0):
+        return dict(argv=argv, pid=pid, started_utc=start, finished_utc=finish,
+                    elapsed_ms=elapsed, exit_code=130, executable_sha256="e" * 64,
+                    offset=offset, bytes=len(output), sha256=hashlib.sha256(output).hexdigest())
+    capture["segments"] = [
+        process(prefix + ["reboot", "upgrade", "--monitor"], 100,
+                capture["started_utc"], "2020-01-01T00:00:00.5Z", 500, first),
+        process(prefix + ["wifi", "connect", "fixture", "fixture-password", "--temporary", "--monitor"], 101,
+                "2020-01-01T00:00:00.7Z", capture["finished_utc"], 29300, second, len(first))]
+    capture["segments"][0]["monitor_stop"] = "precase-awaiting-temporary-wifi"
+    capture["segments"][1]["monitor_stop"] = "complete-qualified-ledger"
+    def metadata(phase):
+        parts = dict(board=expected["board"], target="esp32s3", device_uid=expected["uid"],
+                     active_role="app", active_version="unit-r1" if phase != "before" else "old-r1",
+                     active_checksum="c" * 64 if phase != "before" else "f" * 64,
+                     active_image_size="200", running_partition="2", last_result="0")
+        p1 = dict(valid="1", package_checksum="a" * 64, package_size="50",
+                  image_checksum="b" * 64, image_size="60", role="loader",
+                  version="loader-r1", board=expected["board"], target="esp32s3")
+        p2 = dict(valid="1", package_checksum="d" * 64, package_size="100",
+                  image_checksum=parts["active_checksum"], image_size="200", role="app",
+                  version=parts["active_version"], board=expected["board"], target="esp32s3")
+        stage = dict(valid="0", package_checksum="-", package_size="0", image_checksum="-",
+                     image_size="0", role="unknown", version="-", board="-", target="-")
+        if phase == "precase": stage = {**p2}
+        for label, values in [("partition_1", p1), ("partition_2", p2), ("stage", stage)]:
+            parts.update({label + "_" + k: v for k, v in values.items()})
+        return "H2_LOADER_STATUS " + " ".join(k + "=" + v for k, v in parts.items()) + "\n"
+    def fact(tail, output, index, phase):
+        from datetime import datetime, timedelta, timezone
+        origin = datetime(2019, 12, 31, 23, 59, 50, tzinfo=timezone.utc)
+        if phase == "precase": origin = datetime(2020, 1, 1, 0, 0, 0, 525000, tzinfo=timezone.utc)
+        if phase == "after": origin = datetime(2020, 1, 1, 0, 0, 31, tzinfo=timezone.utc)
+        start = origin + timedelta(milliseconds=index * 100)
+        return dict(argv=prefix + tail, pid=200 + index + (10 if phase == "after" else 0),
+                    exit_code=0, executable_sha256="e" * 64, stdout=output,
+                    sha256=hashlib.sha256(output.encode()).hexdigest(), elapsed_ms=50,
+                    started_utc=start.isoformat(), finished_utc=(start + timedelta(milliseconds=50)).isoformat())
+    device = {"expected": expected}
+    for phase in ["before", "precase", "after"]:
+        group = {"status": fact(["status"], metadata(phase), 0, phase)}
+        if phase != "before":
+            wifi = "H2_LOADER_WIFI_STATUS result=OK saved=0 saved_code=0 saved_ssid_hex=-\n"
+            group["wifi"] = fact(["wifi", "status"], wifi, 1, phase)
+        if phase != "precase":
+            dump = "H2_LOADER_COREDUMP_STATUS result=OK code=0 partition=coredump bytes=65536 stored_bytes=0 blank=1\n"
+            group["coredump"] = fact(["coredump", "status"], dump, 2, phase)
+        device[phase] = group
+    capture["device"] = device
+    return raw, capture
+
+
+class TemporaryWifiCapture(unittest.TestCase):
+    verify = BlePeerAdmission.verify
+
+    def setUp(self):
+        BlePeerAdmission.setUp(self)
+        self.raw, self.capture = temporary_bundle(self, self.body)
+
+    def test_actual_split_capture_and_typed_device_gate(self):
+        self.assertTrue(self.verify()["valid"])
+
+    def reseal(self, first=None, second=None):
+        cut = self.capture["segments"][0]["bytes"]
+        chunks = [self.raw[:cut] if first is None else first,
+                  self.raw[cut:] if second is None else second]
+        raw = b"".join(chunks)
+        capture = json.loads(json.dumps(self.capture))
+        offset = 0
+        for segment, chunk in zip(capture["segments"], chunks):
+            segment.update(offset=offset, bytes=len(chunk), sha256=hashlib.sha256(chunk).hexdigest())
+            offset += len(chunk)
+        capture["sha256"] = hashlib.sha256(raw).hexdigest()
+        return raw, capture
+
+    def test_old_frozen_replay_before_actual_reboot_ack_cannot_supply_current_cases(self):
+        cut=self.capture["segments"][0]["bytes"]
+        raw,capture=self.reseal(first=frame(self.body, "3"*32)+self.raw[:cut])
+        self.assertTrue(self.verify(raw_log=raw,capture=capture)["valid"])
+
+    def test_real_process_and_segment_integrity_are_required(self):
+        for key, value in [("pid", 0), ("exit_code", -9), ("elapsed_ms", 900000),
+                           ("offset", True), ("sha256", "0" * 64), ("executable_sha256", "0" * 64),
+                           ("monitor_stop", "host-deadline")]:
+            for index in range(2):
+                capture = json.loads(json.dumps(self.capture))
+                capture["segments"][index][key] = value
+                with self.subTest(index=index, key=key), self.assertRaises(ValueError): self.verify(capture=capture)
+        for change in (dict(schema=True), dict(schema=2), dict(segments=[]), dict(device={}),
+                       dict(precase_observed_utc="2020-01-01T00:00:00.6Z"),
+                       dict(boot_observed_utc="2020-01-01T00:00:00.6Z")):
+            with self.subTest(change=change), self.assertRaises(ValueError): self.verify(capture={**self.capture, **change})
+        for index, old, new in [(0, "upgrade", "loader"), (1, "--temporary", "--save"),
+                                (0, "--no-ble", "--ble"), (1, "/unit/zero", "/unit/another"),
+                                (1, "iostreamikcp", "bleikcp"), (1, "--monitor", "--save")]:
+            capture = json.loads(json.dumps(self.capture));argv=capture["segments"][index]["argv"]
+            argv[argv.index(old)] = new
+            with self.subTest(index=index, old=old), self.assertRaises(ValueError): self.verify(capture=capture)
+        capture = json.loads(json.dumps(self.capture));capture["segments"][1]["pid"] = capture["segments"][0]["pid"]
+        with self.assertRaises(ValueError): self.verify(capture=capture)
+
+    def test_rehashed_logs_still_require_real_preferred_boot_and_first_ledger(self):
+        cut = self.capture["segments"][0]["bytes"];first, second=self.raw[:cut],self.raw[cut:]
+        bad_first = [first.replace(b"result=accepted", b"result=fail"),
+                     first.replace(b"H2_GIZCLAW_PRECASE", b"LOST_PRECASE"),
+                     first.replace(b"state=precase", b"state=running"),
+                     first.replace(self.execution.encode(), b"2" * 32),
+                     first + b"H2_GIZCLAW_E2E stage=coverage-begin case=resource\n",
+                     first + b"Rebooting...\n"]
+        bad_second = [second.replace(b"H2_LOADER_WIFI_TEMPORARY", b"H2_LOADER_WIFI"),
+                      second.replace(self.execution.encode(), b"2" * 32),
+                      b"H2_GIZCLAW_E2E stage=coverage-begin case=resource\n" + second,
+                      b"rst:0x1 (POWERON)\n" + second,
+                      b"H2_GIZCLAW_SETUP_FAIL stage=clock rc=-4\n" + second,
+                      second.replace(self.body, b"", 1),
+                      second.replace(frame(self.body), frame(self.body, admitted=0) + frame(self.body))]
+        for first_value in bad_first:
+            raw,capture=self.reseal(first=first_value)
+            with self.subTest(first=first_value[:50]), self.assertRaises(ValueError): self.verify(raw_log=raw,capture=capture)
+        for second_value in bad_second:
+            raw,capture=self.reseal(second=second_value)
+            with self.subTest(second=second_value[:50]), self.assertRaises(ValueError): self.verify(raw_log=raw,capture=capture)
+
+    def test_typed_device_receipts_cannot_replace_or_relax_hardware_gates(self):
+        corruptions = [("after", "status", "device_uid=7c4fadbc2cea", "device_uid=000000000000"),
+            ("after", "status", "partition_1_package_checksum=" + "a" * 64, "partition_1_package_checksum=" + "f" * 64),
+            ("after", "status", "partition_2_package_checksum=" + "d" * 64, "partition_2_package_checksum=" + "f" * 64),
+            ("precase", "status", "active_checksum=" + "c" * 64, "active_checksum=" + "f" * 64),
+            ("after", "status", "last_result=0", "last_result=-7"),
+            ("after", "status", "stage_valid=0", "stage_valid=1"),
+            ("precase", "wifi", "saved=0", "saved=error"),
+            ("after", "wifi", "saved=0", "saved=1"),
+            ("after", "coredump", "stored_bytes=0", "stored_bytes=16"),
+            ("after", "coredump", "blank=1", "blank=0")]
+        for phase, name, old, new in corruptions:
+            capture=json.loads(json.dumps(self.capture));fact=capture["device"][phase][name]
+            self.assertIn(old, fact["stdout"]);fact["stdout"]=fact["stdout"].replace(old,new)
+            fact["sha256"]=hashlib.sha256(fact["stdout"].encode()).hexdigest()
+            with self.subTest(phase=phase,name=name,old=old), self.assertRaises(ValueError): self.verify(capture=capture)
+        for phase,name in [("before","status"),("precase","wifi"),("after","coredump")]:
+            for key,value in [("pid",0),("exit_code",1),("sha256","0"*64),
+                              ("started_utc","2020-01-01T00:00:01Z")]:
+                capture=json.loads(json.dumps(self.capture));capture["device"][phase][name][key]=value
+                with self.subTest(phase=phase,name=name,key=key), self.assertRaises(ValueError): self.verify(capture=capture)
+
+    def test_matching_blank_dumps_require_actual_partition_and_capacity(self):
+        for old, new in [(" partition=coredump", ""), (" bytes=65536", ""),
+                         (" partition=coredump bytes=65536", ""),
+                         ("partition=coredump", "partition=-"),
+                         ("bytes=65536", "bytes=0"), ("bytes=65536", "bytes=-1"),
+                         ("bytes=65536", "bytes=65536.0"),
+                         ("bytes=65536", "bytes=unknown")]:
+            capture = json.loads(json.dumps(self.capture))
+            for phase in ("before", "after"):
+                fact = capture["device"][phase]["coredump"]
+                self.assertIn(old, fact["stdout"])
+                fact["stdout"] = fact["stdout"].replace(old, new)
+                fact["sha256"] = hashlib.sha256(fact["stdout"].encode()).hexdigest()
+            with self.subTest(old=old, new=new), self.assertRaises(ValueError):
+                self.verify(capture=capture)
+
+
 class VerifierCliAdmission(unittest.TestCase):
     """Synthetic whole-CLI regressions; these never qualify physical hardware."""
 
@@ -251,7 +437,7 @@ class VerifierCliAdmission(unittest.TestCase):
                retained_resources=0, complete="true", exit_code=0)
         self.body = "".join(lines).encode()
 
-    def invoke(self, *, ledger_execution="1" * 32, launcher=False, previous=None, old_236=False):
+    def invoke(self, *, ledger_execution="1" * 32, launcher=False, previous=None, old_236=False, temporary=False):
         self.assertIsNotNone(VERIFIER)
         peer = subprocess.run([str(PRODUCER)], capture_output=True, check=True).stdout
         raw = ("H2_GIZCLAW_BOOT board=zero_esp_v3_0 version=unit-r1 execution="
@@ -263,6 +449,7 @@ class VerifierCliAdmission(unittest.TestCase):
                             if b"symbol=h2_gizclaw_session_refresh_with_tags " not in line)
         raw += frame(body, ledger_execution)
         capture = {**self.capture, "sha256": hashlib.sha256(raw).hexdigest()}
+        if temporary: raw, capture = temporary_bundle(self, body)
         process = {**self.process, "receipt_sha256": hashlib.sha256(peer).hexdigest()}
         with tempfile.TemporaryDirectory(prefix="gizclaw-verifier-cli-") as temporary:
             directory = Path(temporary)
@@ -291,6 +478,19 @@ class VerifierCliAdmission(unittest.TestCase):
         self.assertTrue(report["api_coverage"]["valid"])
         self.assertEqual(report["api_coverage"]["covered"], 237)
         self.assertEqual(report["execution"], report["ble_binding_peer"]["execution"])
+
+    def test_temporary_wifi_whole_cli_retains_all_237_rules_and_previous_boot_gate(self):
+        result, report = self.invoke(temporary=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(report["qualified"])
+        self.assertTrue(report["ble_binding_peer"]["typed_device_valid"])
+        self.assertEqual(report["api_coverage"]["covered"], 237)
+        result, report = self.invoke(temporary=True, old_236=True)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertFalse(report["qualified"])
+        result, report = self.invoke(temporary=True, previous=self.execution)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue(report is None or not report["qualified"])
 
     def test_complete_historical_236_bundle_does_not_qualify_new_inventory(self):
         result, report = self.invoke(old_236=True)
