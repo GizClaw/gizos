@@ -75,6 +75,9 @@ void app_main(void) {
   rc = h2_esp_e2e_result_log_prepare(&result_log, runtime, "iperf-client", "iperf_e2e");
   if (rc != H2_PAL_OK)
     fail("result_console", rc);
+  /* Let the reboot monitor reconnect before the sole BOOT and first resource
+   * observation. The benchmark keeps its actual matrix-start sampling point. */
+  vTaskDelay(pdMS_TO_TICKS(5000u));
   printf("H2_IPERF_CLIENT_BOOT board=%s version=%s\n",
          runtime->board, esp_app_get_description()->version);
   fflush(stdout);
