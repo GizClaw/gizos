@@ -13,6 +13,12 @@
 extern "C" {
 #endif
 
+/** A genuine FAILED_PRECONDITION + WORKSPACE_PENDING_DELETION response.
+ * Only Workspace requests project this result; unrelated RPC/transport errors
+ * retain their original mapping. req_wait, typed parsers and sync RPCs agree.
+ * The name remains reserved until asynchronous cleanup completes. */
+#define H2_GIZCLAW_WORKSPACE_ERR_PENDING_DELETION ((h2_pal_result_t)-1002)
+
 #define H2_GIZCLAW_WORKSPACE_NAME_MAX_BYTES 255u
 #define H2_GIZCLAW_WORKSPACE_PAGE_MAX_ITEMS 64u
 #define H2_GIZCLAW_WORKSPACE_HISTORY_ID_MAX_BYTES 255u
@@ -104,6 +110,9 @@ typedef struct h2_gizclaw_workspace_activation {
 
 typedef struct h2_gizclaw_workspace_get_result {
   h2_gizclaw_workspace_t workspace;
+  /** Server creation timestamp, optional; identifies a recreated name for
+   * activation-cache validation. Borrowed from caller response storage. */
+  char *created_at;
   char *runtime_profile_name;
   char *runtime_profile_revision;
   /** Server-stored selection. This does not prove the Workflow injected its

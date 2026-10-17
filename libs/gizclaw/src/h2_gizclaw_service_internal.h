@@ -456,7 +456,7 @@ h2_pal_result_t h2_gizclaw_req_response_internal(
 /** Install a domain-owned unary RPC error projection before req_do. */
 h2_pal_result_t h2_gizclaw_req_set_rpc_error_normalizer_internal(
     h2_gizclaw_req_t *request, const void *tag,
-    h2_pal_result_t (*normalize)(int error_code));
+    h2_pal_result_t (*normalize)(int error_code, h2_gizclaw_str_t reason));
 /** Copy only a genuine terminal unary RPC error, never a transport failure. */
 h2_pal_result_t
 h2_gizclaw_req_rpc_status_internal(const h2_gizclaw_req_t *request,

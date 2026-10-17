@@ -458,7 +458,7 @@ Provider 对当前关联读取实际 preferred 地址，IPv4 失租但 IPv6 仍�
 
 Wi-Fi Settings 始终只保存**一条** STA 凭据，表示“最近一次连上的网络”（由成功的 `connect_and_save` 更新）。`set_saved_sta_config` 原子替换该条，写失败保留旧值；`get_saved_sta_config` 返回该条，空时返回 NOT_FOUND；`clear_saved_sta_config` 清除该条。显式 get/set/clear 不改变当前连接；临时 `connect` 不更新保存值。PAL 不提供网络集合、list/remove 或多网络排序能力，provider 和原有单条格式保持不变。
 
-最多 8 条的网络集合归 Runtime，保存在其专属 pref namespace `h2runtime_wifi` 的 `saved_v1` key 中，与 PAL Wi-Fi Settings 分离。Runtime 使用固定 920 字节小端 blob，整块原子替换；存储位置表示最近连接顺序，UTC 时间戳未校准时为 0。集合 API、格式、淘汰和重连排序详见 [Runtime 的 Wi-Fi 凭据与恢复](./runtime.md#wi-fi-凭据与恢复)。不将已有 PAL 凭据迁移到集合。
+最多 8 条的网络集合归 Runtime，保存在其专属 pref namespace `h2runtime_wifi` 的 `saved_v1` key 中，与 PAL Wi-Fi Settings 分离。Runtime 使用固定 920 字节小端 blob，整块原子替换；存储位置表示最近连接顺序，UTC 时间戳未校准时为 0。集合 API、格式、淘汰和重连排序详见 [Runtime 的 Wi-Fi 凭据与恢复](./runtime.md#wi-fi-凭据与恢复)。仅当集合 namespace/key 尚未建立时由 Runtime 导入已有 PAL 凭据；显式空集合禁止重新导入。Runtime 删除/清空先持久化集合，再清理匹配/全部 PAL 凭据，PAL 不承担集合策略。
 
 Runtime 配网入口先调用 PAL `connect_and_save`，成功后才记录到自己的集合；best-saved 则按扫描 RSSI 和集合顺序尝试 PAL `connect`，成功后只更新 Runtime 集合，不写 PAL 凭据、不等待 IP。原有 `h2_runtime_wifi_connect_saved` 继续只恢复 PAL 单条凭据。
 

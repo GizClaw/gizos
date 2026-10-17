@@ -125,10 +125,14 @@ SDK 拥有 request-scoped Peer RPC channel、`client.tool.v0.invoke`（135）的
 | --- | --- | --- |
 | `info.get`、`identifiers.get`、`device.status.get` | 身份与状态编码、字段校验 | manufacturer/model/hardware_revision/serial、get_facts、Audio |
 | `sound.play`、七个 `audioplayer.*` | 下载、Ogg/Opus、MP3 与 WAV 解码与播放器 | Audio、resolve_sound_url、HTTP |
-| `wifi.scan/connect/saved.list/saved.forget` | 参数解码、PAL 操作与凭据清理 | Wi-Fi 与 Wi-Fi Settings |
+| `wifi.scan/connect/saved.list/saved.forget` | 参数解码、Runtime 集合与 PAL 操作 | 同一 Service Runtime 的 Wi-Fi 与 Wi-Fi Settings |
 | `firmware.update` | 元数据、下载与 OTA Stage | HTTP 与 ota vtable |
 | `device.reboot/factory_reset`、`run.workspace.set` | 参数校验、回复完成后的交接 | Power 或对应 request hook |
 | `device.find`、`social.ping` | 产品 handler | tool_handlers |
+
+Service 配置的 Wi-Fi 与 Settings 来自同一 Runtime 时，远程 `wifi.connect` 调用 Runtime 配网入口，`saved.list` 读取同一最多 8 条的集合，`saved.forget` 删除指定 SSID 并清理匹配的 PAL 凭据；不会断开当前连接。Runtime admission 忙时返回 BUSY，不与 App/BLE 的集合读写相互覆盖。没有匹配 Runtime 的独立 Client/Service 保留 PAL 单条语义。成功连接/保存仍由 PAL 验证目标 IP；远程连接回复仅表示受理，动作在回复发送完成后执行，PAL 或集合失败证据沿原有日志合同保留。
+
+Workspace RPC 保留 SDK 的 `ErrorInfo.reason` 到 request-owned storage。Workspace get/create/activate/reload 仅把 canonical `FAILED_PRECONDITION`（9）且原因精确等于 `WORKSPACE_PENDING_DELETION` 的响应投影为 `H2_GIZCLAW_WORKSPACE_ERR_PENDING_DELETION`；typed parse、`req_wait` 和同步 RPC 返回相同结果。其他 precondition、权限、未知原因、格式与传输错误保留原分类；不从 message 文本猜测删除状态。Session 等待与重建合同见[准备流程](/apps/gizclaw/state#准备流程)。
 
 重启、切网、OTA、恢复出厂和 Workspace 切换仍在本地 RPC 回复发送完成后交给 `$gizclaw/device` task。回复失败或 Service 停止会取消尚未执行的动作。`request_reboot`、`request_factory_reset`、`request_run_workspace_set` 只能复制参数、投递到产品 owner 并立即返回，不得阻塞或停止/销毁 Service。Workspace 的 Session、Conversation 和已确认参数属于 App；App 可把 kickoff 映射为 initiative AGENT 与 ON_RELOAD。成功回复仅表示请求被接受。
 

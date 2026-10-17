@@ -277,6 +277,8 @@ static int runtime_config_is_valid(const h2_runtime_config_t *config) {
 }
 
 static void runtime_atomic_destroy(h2_runtime_private_t *state) {
+    h2_atomic_flag_destroy(&state->wifi_busy);
+    h2_atomic_uint_destroy(&state->wifi_saved_revision);
     h2_atomic_uint_destroy(&state->dropped_event_count);
     h2_atomic_int_destroy(&state->last_dropped_kind);
     h2_atomic_int_destroy(&state->last_dropped_component);
@@ -307,6 +309,8 @@ static void runtime_atomic_destroy(h2_runtime_private_t *state) {
 
 static h2_pal_result_t runtime_atomic_init(h2_runtime_private_t *state) {
     h2_atomic_result_t atomic_rc = H2_ATOMIC_OK;
+    if ((atomic_rc = h2_atomic_flag_init(&state->wifi_busy)) != H2_ATOMIC_OK) goto atomic_failure;
+    if ((atomic_rc = h2_atomic_uint_init(&state->wifi_saved_revision, 0u)) != H2_ATOMIC_OK) goto atomic_failure;
     if ((atomic_rc = h2_atomic_uint_init(&state->dropped_event_count, 0u)) != H2_ATOMIC_OK) goto atomic_failure;
     if ((atomic_rc = h2_atomic_int_init(&state->last_dropped_kind, H2_RUNTIME_EVENT_NONE)) != H2_ATOMIC_OK) goto atomic_failure;
     if ((atomic_rc = h2_atomic_int_init(&state->last_dropped_component, H2_RUNTIME_COMPONENT_NONE)) != H2_ATOMIC_OK) goto atomic_failure;

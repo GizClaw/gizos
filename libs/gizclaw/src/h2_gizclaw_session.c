@@ -19,6 +19,7 @@ struct h2_gizclaw_session {
   /* parameters.set or an uncertain reload can change storage independently of
    * the last confirmed run. An omitted fence cannot confirm that stored value. */
   bool safety_fence_dirty;
+  char workspace_created_at[65];
   bool restarting_input; /* Owns the route across cancellation dispatch. */
   bool closed;
   uint64_t operation_generation;
@@ -978,9 +979,36 @@ catalog_contains_selection(const h2_gizclaw_session_t *s,
   return false;
 }
 
+/* The selected mode survives, but confirmation belongs to one server instance. */
+static h2_pal_result_t forget_workspace_confirmation(
+    h2_gizclaw_session_t *s, const h2_gizclaw_session_selection_t *selection) {
+  h2_pal_result_t rc = lock(s);
+  if (rc != H2_PAL_OK)
+    return rc;
+  if (s->closed || s->operation_generation != s->state.generation) {
+    unlock(s);
+    return H2_PAL_ERR_CLOSED;
+  }
+  if (same(s->state.current_workspace, selection->workspace_name)) {
+    memset(&s->state.parameters, 0, sizeof(s->state.parameters));
+    s->workspace_created_at[0] = '\0';
+    changed(s);
+  }
+  unlock(s);
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t wait_workspace_cleanup(h2_gizclaw_session_t *s) {
+  uint32_t timeout = 0u;
+  h2_pal_result_t rc = remaining(s, &timeout);
+  if (rc == H2_PAL_OK)
+    rc = h2_pal_time_sleep_ms(s->config.time, timeout < 100u ? timeout : 100u);
+  return rc == H2_PAL_OK ? remaining(s, &timeout) : rc;
+}
+
 static h2_pal_result_t
 prepare_workspace(h2_gizclaw_session_t *s,
-                  const h2_gizclaw_session_selection_t *selection) {
+                  const h2_gizclaw_session_selection_t *selection, bool reuse) {
   uint32_t timeout = 0u;
   h2_pal_result_t rc = remaining(s, &timeout);
   if (rc != H2_PAL_OK)
@@ -989,6 +1017,12 @@ prepare_workspace(h2_gizclaw_session_t *s,
   rc = h2_gizclaw_session_snapshot(s, &snapshot);
   if (rc != H2_PAL_OK)
     return rc;
+  char confirmed_created_at[sizeof(s->workspace_created_at)];
+  rc = lock(s);
+  if (rc != H2_PAL_OK)
+    return rc;
+  memcpy(confirmed_created_at, s->workspace_created_at, sizeof(confirmed_created_at));
+  unlock(s);
   uint8_t *data = catalog_scratch_acquire(s);
   if (data == NULL)
     return H2_PAL_ERR_NO_MEMORY;
@@ -1016,10 +1050,29 @@ prepare_workspace(h2_gizclaw_session_t *s,
       goto done;
     storage.used = 0u;
   }
+retry:
+  rc = remaining(s, &timeout);
+  if (rc != H2_PAL_OK)
+    goto done;
+  storage.used = 0u;
   h2_gizclaw_workspace_get_result_t workspace = {0};
   rc = h2_gizclaw_rpc_workspace_get(s->config.service,
                                     str(selection->workspace_name), timeout,
                                     &storage, &workspace);
+  if (rc == H2_GIZCLAW_WORKSPACE_ERR_PENDING_DELETION || rc == H2_PAL_ERR_NOT_FOUND) {
+    reuse = false;
+    h2_pal_result_t forget_rc = forget_workspace_confirmation(s, selection);
+    if (forget_rc != H2_PAL_OK) {
+      rc = forget_rc;
+      goto done;
+    }
+  }
+  if (rc == H2_GIZCLAW_WORKSPACE_ERR_PENDING_DELETION) {
+    rc = wait_workspace_cleanup(s);
+    if (rc == H2_PAL_OK)
+      goto retry;
+    goto done;
+  }
   if (rc == H2_PAL_ERR_NOT_FOUND && selection->workflow_name != NULL) {
     rc = remaining(s, &timeout);
     if (rc != H2_PAL_OK)
@@ -1029,7 +1082,7 @@ prepare_workspace(h2_gizclaw_session_t *s,
     h2_pal_result_t create_rc = h2_gizclaw_rpc_workspace_create(
         s->config.service, str(selection->workflow_name),
         str(selection->workspace_name), timeout, &storage, &created);
-    /* Reconcile even an uncertain create with the same deterministic name. */
+    /* Reconcile an uncertain create using the same name; never create an alias. */
     rc = remaining(s, &timeout);
     if (rc != H2_PAL_OK)
       goto done;
@@ -1037,6 +1090,14 @@ prepare_workspace(h2_gizclaw_session_t *s,
     rc = h2_gizclaw_rpc_workspace_get(s->config.service,
                                       str(selection->workspace_name), timeout,
                                       &storage, &workspace);
+    if (rc == H2_GIZCLAW_WORKSPACE_ERR_PENDING_DELETION ||
+        (rc == H2_PAL_ERR_NOT_FOUND &&
+         create_rc == H2_GIZCLAW_WORKSPACE_ERR_PENDING_DELETION)) {
+      rc = wait_workspace_cleanup(s);
+      if (rc == H2_PAL_OK)
+        goto retry;
+      goto done;
+    }
     if (rc != H2_PAL_OK && create_rc != H2_PAL_OK)
       rc = create_rc;
   }
@@ -1050,6 +1111,22 @@ prepare_workspace(h2_gizclaw_session_t *s,
     goto done;
   }
   strcpy(snapshot.workflow_name, workspace.workspace.workflow_name);
+  char created_at[sizeof(s->workspace_created_at)] = {0};
+  if (workspace.created_at != NULL)
+    snprintf(created_at, sizeof(created_at), "%s", workspace.created_at);
+  /* GET validates existence and identity even when parameters are cached.
+   * A recreated name (or absent discriminator) requires a fresh reload. */
+  const bool same_instance = created_at[0] != '\0' && same(created_at, confirmed_created_at);
+  reuse = reuse && same_instance;
+  if (reuse) {
+    rc = remaining(s, &timeout);
+    goto done;
+  }
+  if (!same_instance) {
+    rc = forget_workspace_confirmation(s, selection);
+    if (rc != H2_PAL_OK)
+      goto done;
+  }
   rc = remaining(s, &timeout);
   if (rc != H2_PAL_OK)
     goto done;
@@ -1058,6 +1135,12 @@ prepare_workspace(h2_gizclaw_session_t *s,
   rc = h2_gizclaw_rpc_workspace_reload_with_options(
       s->config.service, str(selection->workspace_name), selection->parameters,
       timeout, &storage, &activation);
+  if (rc == H2_GIZCLAW_WORKSPACE_ERR_PENDING_DELETION || rc == H2_PAL_ERR_NOT_FOUND) {
+    rc = wait_workspace_cleanup(s);
+    if (rc == H2_PAL_OK)
+      goto retry;
+    goto done;
+  }
   if (rc == H2_PAL_OK &&
       (activation.runtime_state != H2_GIZCLAW_WORKSPACE_RUNTIME_RUNNING ||
        !same(activation.active_workspace_name, selection->workspace_name) ||
@@ -1075,6 +1158,7 @@ prepare_workspace(h2_gizclaw_session_t *s,
     else {
       strcpy(s->state.current_workspace, selection->workspace_name);
       strcpy(s->state.workflow_name, snapshot.workflow_name);
+      strcpy(s->workspace_created_at, created_at);
     }
     unlock(s);
   }
@@ -1114,10 +1198,6 @@ select_workspace(h2_gizclaw_session_t *s,
                (selection->parameters == NULL ||
                 patch_same(&s->state.parameters, selection->parameters));
   strcpy(s->state.target_workspace, selection->workspace_name);
-  if (ready) {
-    unlock(s);
-    return H2_PAL_OK;
-  }
   bool catalog_ready = s->state.catalog == H2_GIZCLAW_SESSION_READY;
   s->state.workspace = H2_GIZCLAW_SESSION_PREPARING;
   changed(s);
@@ -1125,11 +1205,11 @@ select_workspace(h2_gizclaw_session_t *s,
   if (!catalog_ready)
     rc = refresh(s);
   if (rc == H2_PAL_OK)
-    rc = prepare_workspace(s, selection);
+    rc = prepare_workspace(s, selection, ready);
   if (rc == H2_PAL_ERR_INVALID_STATE) {
     rc = refresh(s);
     if (rc == H2_PAL_OK)
-      rc = prepare_workspace(s, selection);
+      rc = prepare_workspace(s, selection, false);
   }
   h2_pal_result_t lock_rc = lock(s);
   if (lock_rc != H2_PAL_OK)
@@ -1518,6 +1598,7 @@ h2_pal_result_t h2_gizclaw_session_workspace_delete_finish_internal(
         s->state.target_workspace[0] = '\0';
       s->state.workspace = H2_GIZCLAW_SESSION_EMPTY;
       s->state.current_workspace[0] = '\0';
+      s->workspace_created_at[0] = '\0';
       s->state.workflow_name[0] = '\0';
       memset(&s->state.parameters, 0, sizeof(s->state.parameters));
     } else {
@@ -1611,6 +1692,10 @@ h2_pal_result_t h2_gizclaw_session_workspace_finish_internal(
     if (!applied && p != NULL && p->has_safety_fence_level)
       s->safety_fence_dirty = true;
     if (applied) {
+      if (activation != NULL && activation->active_workspace_name != NULL &&
+          !same(activation->active_workspace_name, s->state.current_workspace)) {
+        s->workspace_created_at[0] = '\0';
+      }
       /* A fence confirmed for one Workspace says nothing about another one's
        * stored selection. Omission only preserves confirmation on the same
        * Workspace; a failed switch keeps the old snapshot for display. */

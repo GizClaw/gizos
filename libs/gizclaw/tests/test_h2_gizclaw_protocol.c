@@ -189,6 +189,8 @@ static void test_quota_rpc_errors(void) {
        "QUOTA_EXHAUSTED", "Quota exhausted."},
       {gizclaw_rpc_v1_StatusCode_STATUS_CODE_UNAVAILABLE,
        "QUOTA_UNAVAILABLE", "Quota unavailable."},
+      {gizclaw_rpc_v1_StatusCode_STATUS_CODE_FAILED_PRECONDITION,
+       "WORKSPACE_PENDING_DELETION", "Workspace cleanup pending."},
   };
   for (size_t i = 0u; i < sizeof(cases) / sizeof(cases[0]); ++i) {
     gzc_str_t reason = gzc_str_from_cstr(cases[i].reason);

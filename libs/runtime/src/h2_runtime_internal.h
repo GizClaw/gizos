@@ -337,6 +337,8 @@ struct h2_runtime_private {
     h2_pal_netif_api_t netif_proxy;
     h2_pal_mqtt_api_t mqtt_proxy;
     h2_pal_webrtc_api_t webrtc_proxy;
+    h2_atomic_flag_t wifi_busy;
+    h2_atomic_uint_t wifi_saved_revision;
     h2_pal_wifi_sta_api_t wifi_sta_proxy;
     h2_pal_wifi_ap_api_t wifi_ap_proxy;
     h2_pal_wifi_csi_api_t wifi_csi_proxy;

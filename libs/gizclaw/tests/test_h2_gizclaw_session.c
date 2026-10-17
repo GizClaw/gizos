@@ -83,7 +83,23 @@ static bool empty_catalog;
 static size_t requested_tag_count;
 static char requested_tags[H2_GIZCLAW_WORKFLOW_TAG_MAX_ITEMS]
                           [H2_GIZCLAW_WORKFLOW_TAG_MAX_BYTES + 1u];
+static h2_atomic_size_t now;
 static const char *server_revision;
+static const char *created_at;
+static unsigned pending_gets, create_pending, reload_pending, cleanup_sleeps;
+static bool pending_forever, cancel_cleanup, close_cleanup;
+static h2_pal_result_t workspace_error, cleanup_sleep_error;
+static h2_pal_result_t cleanup_sleep(void *user, uint32_t ms) {
+  (void)user;
+  assert(ms > 0u && ms <= 100u);
+  ++cleanup_sleeps;
+  if (cancel_cleanup)
+    assert(h2_gizclaw_session_cancel_pending(session) == H2_PAL_OK);
+  if (close_cleanup)
+    assert(h2_gizclaw_session_close(session) == H2_PAL_OK);
+  h2_atomic_fetch_add(&now, ms);
+  return cleanup_sleep_error;
+}
 static unsigned closed_after_reload;
 static h2_gizclaw_conversation_completion_fn terminal;
 static h2_gizclaw_conversation_callback_fn on_event;
@@ -97,7 +113,7 @@ static unsigned end_noops;
 static size_t downlink_writes;
 static unsigned interrupts;
 /* Typed RPC order: d=delete, g=get, c=create, r=reload. */
-static char rpc_trace[16];
+static char rpc_trace[256];
 static void trace(char step) {
   const size_t len = strlen(rpc_trace);
   assert(len + 1u < sizeof(rpc_trace));
@@ -146,7 +162,6 @@ h2_gizclaw_conversation_cancel_internal(h2_gizclaw_conversation_t *conversation,
 }
 
 static h2_atomic_bool_t cancel_entered;
-static h2_atomic_size_t now;
 static uint64_t list_delay;
 static h2_atomic_bool_t gate_list, list_entered, waiter_entered;
 static h2_pal_result_t wait_cond(void *user, h2_pal_cond_t *cond,
@@ -170,7 +185,8 @@ static h2_pal_result_t monotonic(void *user, uint64_t *out) {
   *out = h2_atomic_load(&now);
   return H2_PAL_OK;
 }
-static const h2_pal_time_vtable_t time_vtable = {.get_monotonic_ms = monotonic};
+static const h2_pal_time_vtable_t time_vtable = {
+    .get_monotonic_ms = monotonic, .sleep_ms = cleanup_sleep};
 static const h2_pal_time_api_t time_api = {.vtable = &time_vtable};
 static char *copy(h2_gizclaw_resp_arena_t *a, const char *text) {
   char *p = h2_pal_mem_alloc(&a->allocator, strlen(text) + 1u);
@@ -305,9 +321,18 @@ h2_gizclaw_rpc_workspace_get(h2_gizclaw_service_t *service,
   }
   if (get_failure)
     return H2_PAL_ERR_IO;
+  if (workspace_error != H2_PAL_OK)
+    return workspace_error;
+  if (pending_gets != 0u || pending_forever) {
+    if (pending_gets != 0u)
+      --pending_gets;
+    missing = true;
+    return H2_GIZCLAW_WORKSPACE_ERR_PENDING_DELETION;
+  }
   if (missing)
     return H2_PAL_ERR_NOT_FOUND;
   *out = (h2_gizclaw_workspace_get_result_t){
+      .created_at = (char *)created_at,
       .workspace = {.name = (char *)name.data,
                     .workflow_name = bound_workflow,
                     .available = true},
@@ -328,6 +353,11 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_create(
   (void)out;
   (void)h2_atomic_fetch_add(&creates, 1u);
   trace('c');
+  if (create_pending != 0u) {
+    --create_pending;
+    pending_gets = 1u;
+    return H2_GIZCLAW_WORKSPACE_ERR_PENDING_DELETION;
+  }
   missing = false;
   /* Server created it but response was lost. Session must reconcile. */
   return H2_PAL_ERR_IO;
@@ -355,6 +385,12 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_reload_with_options(
       h2_gizclaw_session_workspace_begin_internal(session, name, timeout);
   if (rc != H2_PAL_OK)
     return rc;
+  if (reload_pending != 0u) {
+    --reload_pending;
+    pending_gets = 1u;
+    return h2_gizclaw_session_workspace_finish_internal(
+        session, H2_GIZCLAW_WORKSPACE_ERR_PENDING_DELETION, NULL, parameters, true);
+  }
   if (reload_failure) {
     h2_gizclaw_session_workspace_finish_internal(session, H2_PAL_ERR_IO, NULL,
                                                  parameters, true);
@@ -452,6 +488,10 @@ static h2_gizclaw_session_config_t session_config(size_t tag_count) {
   requested_tag_count = 0u;
   memset(requested_tags, 0, sizeof(requested_tags));
   server_revision = "v1";
+  created_at = "2026-10-17T00:00:00Z";
+  pending_gets = create_pending = reload_pending = cleanup_sleeps = 0u;
+  pending_forever = cancel_cleanup = close_cleanup = false;
+  workspace_error = cleanup_sleep_error = H2_PAL_OK;
   closed_after_reload = 0u;
   h2_atomic_store(&now, 0u);
   list_delay = 0u;
@@ -1276,7 +1316,7 @@ static void test_workspace_delete(void) {
   assert(snapshot().revision == revision && snapshot().can_start);
   assert(strcmp(snapshot().current_workspace, "my-chat") == 0);
   assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
-  assert(strcmp(rpc_trace, "d") == 0);
+  assert(strcmp(rpc_trace, "dg") == 0);
 
   /* An uncertain delete fails the Workspace; select re-validates it. */
   rpc_trace[0] = '\0';
@@ -1516,7 +1556,7 @@ static void test_speech_rate_parameter(void) {
   /* Confirmed parameters make a repeat selection a no-op. */
   rpc_trace[0] = '\0';
   assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
-  assert(rpc_trace[0] == '\0');
+  assert(strcmp(rpc_trace, "g") == 0);
 
   /* Changing only the rate must still reload, or the Server would keep the old
    * rate while the Session reported the new one. */
@@ -1590,7 +1630,7 @@ static void test_safety_fence_parameter(void) {
     /* A confirmed identical fence does not reload. */
     rpc_trace[0] = '\0';
     assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
-    assert(rpc_trace[0] == '\0');
+    assert(strcmp(rpc_trace, "g") == 0);
   }
 
   /* A different field reloads without clearing the confirmed OFF value;
@@ -1606,7 +1646,8 @@ static void test_safety_fence_parameter(void) {
          strcmp(snapshot().parameters.safety_fence_level, "off") == 0);
   rpc_trace[0] = '\0';
   assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
-  assert(rpc_trace[0] == '\0');
+  assert(strcmp(rpc_trace, "g") == 0);
+  rpc_trace[0] = '\0';
 
   const char *const invalid[] = {"", "UPPER", "bad.dot", "-bad"};
   for (size_t i = 0u; i < sizeof(invalid) / sizeof(invalid[0]); ++i) {
@@ -1660,6 +1701,109 @@ static void test_safety_fence_parameter(void) {
   teardown();
 }
 
+static void test_pending_workspace_recovery(void) {
+  for (unsigned device_delete = 0u; device_delete < 2u; ++device_delete) {
+    for (unsigned current = 0u; current < 2u; ++current) {
+      for (unsigned realtime = 0u; realtime < 2u; ++realtime) {
+        setup(1u);
+        assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
+        h2_gizclaw_workspace_parameters_patch_t patch = {
+            .has_input = true,
+            .input = realtime ? H2_GIZCLAW_WORKSPACE_INPUT_REALTIME
+                              : H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK};
+        h2_gizclaw_session_selection_t sel = selection;
+        sel.parameters = &patch;
+        assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
+        if (!current)
+          sel.workspace_name = "other";
+        if (device_delete) {
+          assert(delete_workspace(sel.workspace_name, H2_PAL_OK) == H2_PAL_OK);
+          assert(snapshot().can_start == !current);
+        }
+        /* list would already hide it while get still names the tombstone. */
+        pending_gets = 2u;
+        h2_gizclaw_conversation_t *conversation = NULL;
+        const unsigned before = h2_atomic_load(&reloads);
+        assert(h2_gizclaw_session_conversation_create(session, &sel, 1000u, NULL,
+                   completed, NULL, &conversation) == H2_PAL_OK);
+        assert(cleanup_sleeps == 2u && h2_atomic_load(&creates) == 1u);
+        assert(h2_atomic_load(&reloads) == before + 1u);
+        assert(snapshot().workspace == H2_GIZCLAW_SESSION_READY &&
+               !strcmp(snapshot().current_workspace, sel.workspace_name));
+        assert(snapshot().parameters.has_input && snapshot().parameters.input == patch.input);
+        assert(h2_gizclaw_session_audio_start(session) == H2_PAL_OK);
+        assert(snapshot().conversation_input_open);
+        if (realtime)
+          assert(snapshot().conversation == H2_GIZCLAW_SESSION_CONVERSATION_CALLING);
+        else
+          assert(h2_gizclaw_session_audio_end(session) == H2_PAL_OK);
+        /* A real generation can complete again; cleanup never replays input. */
+        const h2_gizclaw_operation_result_t result = {
+            .result = H2_PAL_OK, .terminal_kind = H2_GIZCLAW_OPERATION_CANCELED};
+        terminal(terminal_user, conversation, &result);
+        assert(terminal_count == 1u && h2_atomic_load(&conversations) == 1u);
+        teardown();
+      }
+    }
+  }
+  /* A race after GET or between NOT_FOUND and create uses the same deadline. */
+  for (unsigned race = 0u; race < 2u; ++race) {
+    setup(1u);
+    assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
+    missing = race == 0u;
+    create_pending = race == 0u;
+    reload_pending = race == 1u;
+    assert(h2_gizclaw_session_select(session, &selection, 1000u) == H2_PAL_OK);
+    assert(cleanup_sleeps != 0u && snapshot().can_start);
+    teardown();
+  }
+  /* Every attempt is bounded, no route/microphone starts on failure. */
+  const h2_pal_result_t failures[] = {H2_PAL_ERR_TIMEOUT, H2_PAL_ERR_CLOSED,
+      H2_PAL_ERR_CLOSED, H2_PAL_ERR_IO, H2_GIZCLAW_ERR_REMOTE, H2_PAL_ERR_IO};
+  for (unsigned failure = 0u; failure < 6u; ++failure) {
+    setup(1u);
+    assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
+    pending_forever = true;
+    cancel_cleanup = failure == 1u;
+    close_cleanup = failure == 2u;
+    if (failure == 3u) cleanup_sleep_error = H2_PAL_ERR_IO;
+    if (failure == 4u) workspace_error = H2_GIZCLAW_ERR_REMOTE;
+    if (failure == 5u) workspace_error = H2_PAL_ERR_IO;
+    h2_gizclaw_conversation_t *conversation = (void *)session;
+    assert(h2_gizclaw_session_conversation_create(session, &selection, 250u, NULL,
+                completed, NULL, &conversation) == failures[failure]);
+    assert(conversation == NULL && audio_starts == 0u && !snapshot().can_start);
+    assert(h2_atomic_load(&creates) == 0u && h2_atomic_load(&reloads) == 0u);
+    assert(cleanup_sleeps <= 3u);
+    if (failure == 0u) {
+      assert(h2_atomic_load(&now) == 250u);
+      /* Repeated Record gets a fresh, equally bounded attempt. */
+      assert(h2_gizclaw_session_select(session, &selection, 250u) == H2_PAL_ERR_TIMEOUT);
+      assert(h2_atomic_load(&now) == 500u);
+    }
+    if (!close_cleanup) {
+      pending_forever = cancel_cleanup = false;
+      workspace_error = cleanup_sleep_error = H2_PAL_OK;
+      missing = true;
+      assert(h2_gizclaw_session_select(session, &selection, 1000u) == H2_PAL_OK);
+    }
+    teardown();
+  }
+  /* An externally recreated same name must not inherit old confirmation. */
+  setup(1u);
+  assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
+  const h2_gizclaw_workspace_parameters_patch_t old = {
+      .has_input = true, .input = H2_GIZCLAW_WORKSPACE_INPUT_REALTIME};
+  h2_gizclaw_session_selection_t sel = selection;
+  sel.parameters = &old;
+  assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
+  created_at = "2026-10-18T00:00:00Z";
+  sel.parameters = NULL;
+  assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
+  assert(h2_atomic_load(&reloads) == 2u && !snapshot().parameters.has_input);
+  teardown();
+}
+
 int main(void) {
   assert(h2_atomic_uint_init(&lists, 0u) == H2_ATOMIC_OK);
   assert(h2_atomic_uint_init(&gets, 0u) == H2_ATOMIC_OK);
@@ -1687,6 +1831,7 @@ int main(void) {
   test_control_boundaries();
   test_run_stop();
   test_workspace_delete();
+  test_pending_workspace_recovery();
   test_waiting_selection(false, false);
   test_waiting_selection(true, false);
   test_waiting_selection(false, true);

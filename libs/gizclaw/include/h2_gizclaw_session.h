@@ -207,7 +207,12 @@ h2_gizclaw_session_refresh_with_tags(h2_gizclaw_session_t *session,
 /** Prepares the named Workspace. Streaming selection uses the supplied names
  * directly and needs no in-memory catalog. Current changes
  * only after server confirmation; a failed switch cannot publish its target as
- * current. A version mismatch permits one catalog refresh and retry. */
+ * current. Each preparation gets the named Workspace; activation is cached
+ * only while its creation timestamp, Workflow and parameters still match.
+ * Pending deletion waits in at most 100 ms steps within timeout_ms, then
+ * creates the same name only after NOT_FOUND. Unrelated errors fail directly;
+ * cancel/close prevents further steps. A version mismatch permits one catalog
+ * refresh and retry. */
 h2_pal_result_t
 h2_gizclaw_session_select(h2_gizclaw_session_t *session,
                           const h2_gizclaw_session_selection_t *selection,
