@@ -34,6 +34,9 @@ typedef struct fixture {
   size_t reply_size;
   int isolation, next_socket, alive[32], family[32];
   int listener4, listener6, negative_error, positive4_error;
+  int negative_open_error, positive4_listen_error;
+  int positive6_error, post6_error, wrong_peer_family_for;
+  unsigned positive6_connects, negative_connects;
 } fixture_t;
 
 static void *allocate(void *user, size_t size) {
@@ -59,6 +62,8 @@ static int listen_socket(void *user, h2_pal_net_family_t family, uint16_t port,
   (void)bind;
   if (f->listen_error)
     return f->listen_error;
+  if (f->isolation && family == H2_PAL_NET_FAMILY_IPV4 && f->positive4_listen_error)
+    return f->positive4_listen_error;
   memset(address, 0, sizeof(*address));
   address->family = family;
   address->port = port ? port : 32100u;
@@ -83,6 +88,9 @@ static int open_socket(void *user, h2_pal_net_family_t family,
   fixture_t *f = user;
   (void)bind;
   assert(f->isolation);
+  if (family == H2_PAL_NET_FAMILY_IPV4 && f->listener4 < 0 &&
+      f->negative_open_error)
+    return f->negative_open_error;
   *out = ++f->next_socket;
   assert(*out < 32);
   f->alive[*out] = 1;
@@ -99,11 +107,18 @@ static int connect_socket(void *user, int socket,
   assert(f->isolation && f->alive[socket]);
   assert(f->family[socket] == (int)address->family);
   if (address->family == H2_PAL_NET_FAMILY_IPV4) {
-    if (f->listener4 < 0)
+    if (f->listener4 < 0) {
+      assert(f->listener6 >= 0 && f->alive[f->listener6]);
+      ++f->negative_connects;
       return f->negative_error;
+    }
     return f->positive4_error;
   }
-  return H2_PAL_OK;
+  if (++f->positive6_connects > 1u) {
+    assert(f->listener4 < 0 && f->listener6 >= 0 && f->negative_connects == 1u);
+    return f->post6_error;
+  }
+  return f->positive6_error;
 }
 static int accept_socket(void *user, int listener, int *out,
                          h2_pal_net_addr_t *address, uint32_t timeout) {
@@ -116,6 +131,10 @@ static int accept_socket(void *user, int listener, int *out,
     f->alive[*out] = 1;
     f->family[*out] = f->family[listener];
     address->family = (h2_pal_net_family_t)f->family[listener];
+    if (f->wrong_peer_family_for == (int)address->family)
+      address->family = address->family == H2_PAL_NET_FAMILY_IPV4
+                            ? H2_PAL_NET_FAMILY_IPV6
+                            : H2_PAL_NET_FAMILY_IPV4;
   } else {
     assert(listener == 100 && f->listener_live);
     assert(h2_pal_semaphore_give(f->sync, f->entered) == H2_PAL_OK);
@@ -275,27 +294,52 @@ static void test_http_lifecycle(unsigned first) {
 }
 
 static void test_socket_isolation(void) {
-  const int failures[] = {H2_PAL_ERR_UNSUPPORTED, H2_PAL_ERR_INVALID_ARG,
-      H2_PAL_ERR_NO_MEMORY, H2_PAL_ERR_TIMEOUT, H2_PAL_ERR_WOULD_BLOCK,
-      H2_PAL_OK};
-  for (unsigned i = 0; i <= sizeof(failures) / sizeof(failures[0]); ++i) {
+  const int connect_results[] = {H2_PAL_ERR_CLOSED, H2_PAL_ERR_IO,
+      H2_PAL_ERR_UNSUPPORTED, H2_PAL_ERR_INVALID_ARG, H2_PAL_ERR_NO_MEMORY,
+      H2_PAL_ERR_NO_SPACE, H2_PAL_ERR_TIMEOUT, H2_PAL_ERR_WOULD_BLOCK,
+      H2_PAL_ERR_INVALID_STATE, H2_PAL_ERR_FORMAT, H2_PAL_OK};
+  for (unsigned i = 0; i < sizeof(connect_results) / sizeof(connect_results[0]);
+       ++i) {
     fixture_t f = {.isolation = 1, .listener4 = -1, .listener6 = -1,
-                   .negative_error = H2_PAL_ERR_IO};
-    if (i < sizeof(failures) / sizeof(failures[0]))
-      f.negative_error = failures[i];
+                   .negative_error = connect_results[i]};
     h2_pal_net_api_t net = {&f, &network};
     int rc = h2_pal_ipv6_local_isolation(&net);
-    assert((rc == H2_PAL_OK) == (f.negative_error == H2_PAL_ERR_IO));
+    int refused = f.negative_error == H2_PAL_ERR_IO ||
+                  f.negative_error == H2_PAL_ERR_CLOSED;
+    assert((rc == H2_PAL_OK) == refused);
+    assert(f.negative_connects == 1u);
+    assert(f.positive6_connects == (refused ? 2u : 1u));
     for (unsigned j = 0; j < 32u; ++j)
       assert(!f.alive[j]);
   }
-  fixture_t f = {.isolation = 1, .listener4 = -1, .listener6 = -1,
-                 .negative_error = H2_PAL_ERR_IO,
-                 .positive4_error = H2_PAL_ERR_IO};
-  h2_pal_net_api_t net = {&f, &network};
-  assert(h2_pal_ipv6_local_isolation(&net) != H2_PAL_OK);
-  for (unsigned j = 0; j < 32u; ++j)
-    assert(!f.alive[j]);
+  for (unsigned i = 0; i + 1u < sizeof(connect_results) / sizeof(connect_results[0]);
+       ++i) {
+    fixture_t f = {.isolation = 1, .listener4 = -1, .listener6 = -1,
+                   .negative_error = H2_PAL_ERR_IO,
+                   .negative_open_error = connect_results[i]};
+    h2_pal_net_api_t net = {&f, &network};
+    assert(h2_pal_ipv6_local_isolation(&net) == f.negative_open_error);
+    assert(f.negative_connects == 0u && f.positive6_connects == 1u);
+    for (unsigned j = 0; j < 32u; ++j)
+      assert(!f.alive[j]);
+  }
+  for (unsigned i = 0; i < 7u; ++i) {
+    fixture_t f = {.isolation = 1, .listener4 = -1, .listener6 = -1,
+                   .negative_error = H2_PAL_ERR_CLOSED};
+    if (i == 0u) f.listen_error = H2_PAL_ERR_IO;
+    if (i == 1u) f.positive6_error = H2_PAL_ERR_IO;
+    if (i == 2u) f.positive4_error = H2_PAL_ERR_IO;
+    if (i == 3u) f.wrong_peer_family_for = H2_PAL_NET_FAMILY_IPV4;
+    if (i == 4u) f.wrong_peer_family_for = H2_PAL_NET_FAMILY_IPV6;
+    if (i == 5u) f.post6_error = H2_PAL_ERR_IO;
+    if (i == 6u) f.positive4_listen_error = H2_PAL_ERR_IO;
+    h2_pal_net_api_t net = {&f, &network};
+    assert(h2_pal_ipv6_local_isolation(&net) != H2_PAL_OK);
+    assert(f.negative_connects == (i == 5u ? 1u : 0u));
+    if (i == 5u) assert(f.positive6_connects == 2u);
+    for (unsigned j = 0; j < 32u; ++j)
+      assert(!f.alive[j]);
+  }
 }
 
 typedef struct output_fixture {

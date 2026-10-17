@@ -1,6 +1,8 @@
 #include "fixture.h"
 #include "h2_sctp.h"
 #include "peer.h"
+#include "peer_connection.h"
+#include "sctp.h"
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
@@ -24,6 +26,95 @@ static jmp_buf udp_iteration;
 static unsigned dns_scenario, dns_sends, dns_witnesses;
 static uint8_t dns_query[128];
 static size_t dns_query_size;
+static jmp_buf http_iteration;
+static unsigned reset_scenario, reset_calls, forget_calls, reset_witnesses;
+static unsigned connection_round, connection_closed, connection_destroyed;
+static int http_active, http_offered, in_connection_loop;
+static void (*reset_callback)(const h2_pal_sctp_stream_reset_event_t *, void *);
+static unsigned connection_token;
+static PeerConnection *test_connection(void) {
+  return (PeerConnection *)&connection_token;
+}
+PeerConnection *h2_test_connection_create(PeerConfiguration *config) {
+  assert(http_active && config && config->sctp);
+  reset_callback = NULL;
+  return test_connection();
+}
+void h2_test_connection_close(PeerConnection *connection) {
+  assert(connection == test_connection() && !in_connection_loop);
+  ++connection_closed;
+}
+void h2_test_connection_destroy(PeerConnection *connection) {
+  assert(connection == test_connection() && !in_connection_loop);
+  ++connection_destroyed;
+}
+const char *h2_test_connection_answer(PeerConnection *connection) {
+  assert(connection == test_connection());
+  return "v=0\r\n";
+}
+int h2_test_connection_remote(PeerConnection *connection, const char *sdp,
+                              SdpType type) {
+  assert(connection == test_connection() && !strcmp(sdp, "v=0\r\n"));
+  assert(type == SDP_TYPE_OFFER);
+  return H2_PAL_OK;
+}
+void h2_test_connection_state(PeerConnection *connection,
+    void (*callback)(PeerConnectionState, void *)) {
+  assert(connection == test_connection() && callback);
+}
+void h2_test_connection_data(PeerConnection *connection,
+    h2_pal_result_t (*message)(char *, size_t, void *, uint16_t, int),
+    void (*open)(void *), void (*close)(void *)) {
+  assert(connection == test_connection() && message && !open && !close);
+}
+void h2_test_connection_channel(PeerConnection *connection,
+    int (*callback)(const SctpRemoteChannel *, void *)) {
+  assert(connection == test_connection() && callback);
+}
+void h2_test_connection_reset(PeerConnection *connection,
+    void (*callback)(const h2_pal_sctp_stream_reset_event_t *, void *)) {
+  assert(connection == test_connection() && callback && !reset_callback);
+  reset_callback = callback;
+}
+h2_pal_result_t h2_test_connection_close_sid(PeerConnection *connection,
+                                               uint16_t sid) {
+  assert(connection == test_connection() && sid == 4 && !in_connection_loop);
+  ++reset_calls;
+  if (reset_scenario == 1u && reset_calls == 1u)
+    return H2_PAL_ERR_BUSY;
+  if (reset_scenario == 2u && reset_calls == 1u)
+    return H2_PAL_ERR_WOULD_BLOCK;
+  return reset_scenario == 3u ? H2_PAL_ERR_IO : H2_PAL_OK;
+}
+int h2_test_connection_forget_sid(PeerConnection *connection, uint16_t sid) {
+  assert(connection == test_connection() && sid == 4 && !in_connection_loop);
+  assert(reset_calls == (reset_scenario == 1u || reset_scenario == 2u ? 2u : 1u));
+  ++forget_calls;
+  return reset_scenario == 6u ? -1 : 0;
+}
+h2_pal_result_t h2_test_connection_loop(PeerConnection *connection,
+                                          uint32_t timeout_ms) {
+  assert(connection == test_connection() && timeout_ms == 0u);
+  assert(reset_callback); /* The regression must register the real reset path. */
+  ++connection_round;
+  const unsigned completed_round =
+      reset_scenario == 1u || reset_scenario == 2u ? 3u : 2u;
+  if (connection_round > completed_round)
+    longjmp(http_iteration, 1);
+  in_connection_loop = 1;
+  h2_pal_sctp_stream_reset_event_t event = {
+      .stream_id = reset_scenario == 4u ? 300u : 4u,
+      .direction = H2_PAL_SCTP_STREAM_RESET_INCOMING_RESET,
+      .result = reset_scenario == 5u ? H2_PAL_ERR_IO : H2_PAL_OK};
+  if (connection_round == completed_round)
+    event.direction = H2_PAL_SCTP_STREAM_RESET_OUTGOING_COMPLETED;
+  reset_callback(&event, NULL);
+  reset_callback(&event, NULL); /* A duplicate cannot submit/retire twice. */
+  assert(forget_calls == 0u && reset_witnesses == 0u);
+  assert(reset_calls == connection_round - 1u);
+  in_connection_loop = 0;
+  return H2_PAL_OK;
+}
 
 int h2_test_peer_init(const h2_pal_mem_api_t *mem,
                       const h2_pal_crypto_api_t *crypto) {
@@ -127,11 +218,61 @@ static int open_socket(void *user, h2_pal_net_family_t family, uint16_t port,
 }
 static void close_socket(void *user, int socket) {
   (void)user;
+  if (socket == 100) {
+    assert(http_active && workers == 3u);
+    return;
+  }
+  if (http_active && socket < 0)
+    return;
   assert(workers == 0u);
   if (socket >= 0) {
     assert(sockets);
     --sockets;
   }
+}
+static int accept_http(void *user, int listener, int *out,
+                        h2_pal_net_addr_t *peer, uint32_t timeout_ms) {
+  (void)user;
+  assert(http_active && listener == 2 && timeout_ms == 2u);
+  if (!http_offered) {
+    http_offered = 1;
+    *out = 100;
+    *peer = (h2_pal_net_addr_t){.family = H2_PAL_NET_FAMILY_IPV6};
+    peer->ip[15] = 2u;
+    return H2_PAL_OK;
+  }
+  if (connection_destroyed)
+    longjmp(http_iteration, 1);
+  return H2_PAL_ERR_TIMEOUT;
+}
+static int receive_http(void *user, int socket, uint8_t *data, size_t capacity,
+                         uint32_t timeout_ms) {
+  (void)user;
+  static const char request[] =
+      "POST /offer HTTP/1.1\r\nContent-Length: 5\r\n\r\nv=0\r\n";
+  assert(http_active && socket == 100 && timeout_ms == 1000u);
+  assert(capacity >= sizeof(request) - 1u);
+  memcpy(data, request, sizeof(request) - 1u);
+  return (int)sizeof(request) - 1;
+}
+static int send_http(void *user, int socket, const uint8_t *data, size_t size,
+                      uint32_t timeout_ms) {
+  (void)user;
+  assert(http_active && socket == 100 && data && timeout_ms == 5000u);
+  return (int)size;
+}
+static void *allocate(void *user, size_t size) {
+  (void)user;
+  return malloc(size);
+}
+static void release(void *user, void *value) {
+  (void)user;
+  free(value);
+}
+static int sleep_ms(void *user, uint32_t delay) {
+  (void)user;
+  assert(http_active && delay == 1u);
+  return H2_PAL_OK;
 }
 static int ready_failure(h2_runtime_t *runtime) {
   assert(runtime && sockets == 5u && workers == 3u);
@@ -183,6 +324,12 @@ static int log_write(void *user, h2_pal_log_level_t level, const char *scope,
                    "H2_IPV6_FIXTURE_DNS family=6 query_type=AAAA nonce_valid=1"));
     ++dns_witnesses;
   }
+  if (!strncmp(message, "H2_IPV6_FIXTURE_STREAM_RESET ",
+               strlen("H2_IPV6_FIXTURE_STREAM_RESET "))) {
+    assert(http_active && forget_calls == 1u && !in_connection_loop);
+    assert(strstr(message, "sid=4 incoming=1 outgoing=1"));
+    ++reset_witnesses;
+  }
   return H2_PAL_OK;
 }
 static int ready_dns(h2_runtime_t *runtime) {
@@ -216,10 +363,28 @@ static void make_dns_query(void) {
   if (dns_scenario == 4u)
     dns_query[13] = 'f';
 }
+static int ready_reset(h2_runtime_t *runtime) {
+  assert(runtime && sockets == 5u && workers == 3u);
+  http_active = 1;
+  if (!setjmp(http_iteration))
+    tasks[0].entry(tasks[0].context);
+  const int success = reset_scenario < 3u;
+  assert(reset_callback);
+  assert(reset_calls == (reset_scenario == 1u || reset_scenario == 2u ? 2u
+                         : reset_scenario == 4u || reset_scenario == 5u ? 0u : 1u));
+  assert(forget_calls == (success || reset_scenario == 6u ? 1u : 0u));
+  assert(reset_witnesses == (unsigned)success);
+  assert(connection_closed == (unsigned)!success);
+  assert(connection_destroyed == (unsigned)!success);
+  http_active = 0;
+  return H2_PAL_ERR_IO;
+}
 int main(void) {
   const h2_pal_net_vtable_t net_vtable = {.resolve_addr = resolve,
       .tcp_listen = open_socket, .udp_open_bound = open_socket,
-      .close = close_socket, .udp_recvfrom = udp_receive, .udp_sendto = udp_send};
+      .close = close_socket, .udp_recvfrom = udp_receive, .udp_sendto = udp_send,
+      .tcp_accept = accept_http, .tcp_recv = receive_http,
+      .tcp_send_timeout = send_http};
   const h2_pal_net_api_t net = {.vtable = &net_vtable};
   const h2_pal_task_vtable_t task_vtable = {.start = start, .join = join};
   const h2_pal_task_api_t task = {.vtable = &task_vtable};
@@ -227,8 +392,10 @@ int main(void) {
       .destroy_mutex = destroy_mutex, .lock_mutex = mutex_op,
       .unlock_mutex = mutex_op};
   const h2_pal_sync_api_t sync = {.vtable = &sync_vtable};
-  const h2_pal_time_api_t time = {0};
-  const h2_pal_mem_api_t mem = {0};
+  const h2_pal_time_vtable_t time_vtable = {.sleep_ms = sleep_ms};
+  const h2_pal_time_api_t time = {.vtable = &time_vtable};
+  const h2_pal_mem_vtable_t mem_vtable = {.alloc = allocate, .free = release};
+  const h2_pal_mem_api_t mem = {.vtable = &mem_vtable};
   const h2_pal_crypto_api_t crypto = {0};
   const h2_pal_dtls_api_t dtls = {0};
   const h2_ipv6_tls_server_api_t tls = {0};
@@ -260,6 +427,15 @@ int main(void) {
     assert(!sockets && !workers && !providers && !peers && !mutex.live);
     assert(h2_ipv6_board_fixture_ownership_released());
   }
+  for (reset_scenario = 0; reset_scenario < 7u; ++reset_scenario) {
+    starts = opens = joins = 0u;
+    http_offered = connection_round = connection_closed = connection_destroyed = 0u;
+    reset_calls = forget_calls = reset_witnesses = 0u;
+    assert(h2_ipv6_board_fixture_run(&runtime, &dtls, &tls, ready_reset) == H2_PAL_ERR_IO);
+    assert(connection_closed == 1u && connection_destroyed == 1u);
+    assert(!sockets && !workers && !providers && !peers && !mutex.live);
+    assert(h2_ipv6_board_fixture_ownership_released());
+  }
   starts = opens = joins = 0u;
   fail_join = 9u;
   assert(h2_ipv6_board_fixture_run(&runtime, &dtls, &tls, ready_failure) == H2_PAL_ERR_TIMEOUT);
@@ -269,5 +445,6 @@ int main(void) {
   assert(h2_ipv6_board_fixture_run(&runtime, &dtls, &tls, ready_failure) == H2_PAL_ERR_INVALID_STATE);
   puts("board fixture startup: 12 released paths; persistent join failure retains ownership and dependencies");
   puts("board fixture DNS: complete send alone publishes evidence; error/short/zero sends and invalid nonce/type do not");
+  puts("board fixture reset: callback registration, deferred reciprocal reset, busy/retry, complete retirement, and failure cleanup");
   return 0;
 }
