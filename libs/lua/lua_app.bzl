@@ -1,6 +1,6 @@
 """Versioned Lua application packages: one entry and optional sibling data."""
 
-load("//tools/bazel:firmware.bzl", "FirmwareVersionInfo", "validate_declared_version")
+load("//tools/bazel:app_version.bzl", "AppVersionInfo", "validate_app_version")
 
 LuaAppInfo = provider(
     doc = "Portable Lua app identity and its verified release outputs.",
@@ -26,8 +26,8 @@ def _lua_app_impl(ctx):
     for character in app_id.elems():
         if character not in "abcdefghijklmnopqrstuvwxyz0123456789_.-":
             fail("Lua app id contains an invalid character: " + character)
-    version = ctx.attr.version[FirmwareVersionInfo].value
-    validate_declared_version(version)
+    version = ctx.attr.version[AppVersionInfo].value
+    validate_app_version(version)
     prefix = entry.short_path[:-len(entry.basename)]
     data_prefix = prefix + app_id + "/"
     files = {entry.basename: entry.path}
@@ -98,7 +98,7 @@ lua_app = rule(
         "display_name": attr.string(default = "", doc = "Optional UTF-8 catalog name, at most 128 bytes."),
         "description": attr.string(default = "", doc = "Optional UTF-8 description, at most 1024 bytes."),
         "compact": attr.bool(default = False, doc = "Use the shared Lua source compactor, preserving literal bytes and source lines."),
-        "version": attr.label(mandatory = True, providers = [FirmwareVersionInfo], doc = "An app-owned firmware_version target; no implicit batch or workspace version."),
+        "version": attr.label(mandatory = True, providers = [AppVersionInfo], doc = "An app-owned app_version target; no implicit batch or workspace version."),
         "_packager": attr.label(default = Label("//libs/lua:app_package"), executable = True, cfg = "exec"),
     },
     doc = "Packages a portable Lua application without building or activating firmware.",
