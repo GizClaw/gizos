@@ -1,5 +1,6 @@
-load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
 load("//tools/bazel:tasks.bzl", "h2_tasks")
 load(":fixture_config.bzl", "webrtc_fixture_config")
 
@@ -14,7 +15,11 @@ webrtc_fixture_config(name = "fixture_config")
 
 cc_library(
     name = "runner",
-    srcs = ["src/h2_pal_webrtc_device.c"],
+    srcs = [
+        "src/h2_pal_webrtc_device.c",
+        "src/h2_pal_webrtc_network.c",
+        "src/h2_pal_webrtc_network.h",
+    ],
     hdrs = [
         "include/h2_pal_webrtc_device.h",
         ":fixture_config",
@@ -28,4 +33,18 @@ cc_library(
         "//projects/e2e/libs/pal-webrtc-fixture:client",
         "//projects/e2e/apps/pal-webrtc/app:pal_webrtc_e2e",
     ],
+)
+
+cc_test(
+    name = "network_setup_test",
+    srcs = [
+        "src/h2_pal_webrtc_network.c",
+        "src/h2_pal_webrtc_network.h",
+        "tests/test_network_setup.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = ["//libs/runtime"],
 )

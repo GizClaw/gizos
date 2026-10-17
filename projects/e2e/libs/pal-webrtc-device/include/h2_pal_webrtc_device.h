@@ -7,11 +7,13 @@ extern "C" {
 /** Registered device runner identity; launchers supply a 64 KiB stack. */
 extern const char h2_pal_webrtc_device_runner_task_name[];
 /**
- * Borrow an initialized Board Runtime, connect with its saved STA settings,
- * use the Board WebRTC provider and isolated Pion signaling, and run every
- * case. Only public test fixture inputs come from build definitions;
- * credentials stay in the existing board settings. No reboot, erase or install
- * occurs here.
+ * Borrow an initialized Board Runtime and reuse an active IPv4 or non-link-local
+ * IPv6 STA connection, falling back to its saved STA settings when needed.
+ * Use the Board WebRTC provider and isolated Pion signaling to run every case.
+ * A network prerequisite error leaves the result empty so the launcher can wait
+ * for provisioning; a nonempty result must never be rerun to obtain a pass.
+ * Only public test fixture inputs come from build definitions. Saved credentials
+ * are never changed. No reboot, erase or install occurs here.
  */
 int h2_pal_webrtc_device_run(h2_runtime_t *runtime,
                              uint32_t connection_timeout_ms, uint32_t soak_duration_ms,

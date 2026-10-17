@@ -23,7 +23,18 @@ static void fail(const char *stage, int rc) {
 static void run(void *user) {
   (void)user;
   vTaskDelay(pdMS_TO_TICKS(5000u));
-  int rc = h2_pal_webrtc_device_run(runtime, 20000u, 0u, &result);
+  int rc;
+  for (;;) {
+    rc = h2_pal_webrtc_device_run(runtime, 20000u, 0u, &result);
+    if (result.passed + result.failed + result.blocked != 0u)
+      break;
+    if (rc != H2_PAL_ERR_NOT_FOUND && rc != H2_PAL_ERR_UNAVAILABLE &&
+        rc != H2_PAL_ERR_TIMEOUT && rc != H2_PAL_ERR_BUSY)
+      break;
+    printf("H2_PAL_WEBRTC_SETUP_WAIT network=not_ready rc=%d cases_started=0\n", rc);
+    fflush(stdout);
+    vTaskDelay(pdMS_TO_TICKS(3000u));
+  }
   if (result.passed + result.failed + result.blocked !=
       H2_PAL_WEBRTC_E2E_CASE_COUNT)
     fail("fixture_or_network", rc);
