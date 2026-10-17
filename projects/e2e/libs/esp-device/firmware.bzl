@@ -114,8 +114,12 @@ def _pal_suite(suite):
         libraries = [Label("//projects/e2e/libs/" + suite + "-device:runner")] + ([Label("//libs/pal/providers/coremqtt")] if suite == "pal-mqtt" else []),
         policies = [suite + "/e2e/runner 4 0 65536 psram"] + (["pal-ipv6/e2e/http-peer 4 0 8192 psram"] if suite == "pal-ipv6" else []),
         wide_network = suite in ["pal-ipv6", "pal-webrtc"],
+        variables = ["H2_E2E_WIFI_FIXTURE"] if suite == "pal-mqtt" else [],
         components = [Label("//native_component_src/esp-idf6.x/h2_esp_audio_decoder")] if suite == "pal-audio-decoder" else [],
-        headers = [Label("//projects/e2e/targets/h2loader_tar_zlib/pal-mqtt/devkit:main/ledger_console.h")] if suite == "pal-mqtt" else [],
+        headers = [
+            Label("//projects/e2e/targets/h2loader_tar_zlib/pal-mqtt/devkit:main/ledger_console.h"),
+            Label("//projects/e2e/libs/esp-device:network_provision.h"),
+        ] if suite == "pal-mqtt" else [],
     )
 
 _SUITES.update({suite: _pal_suite(suite) for suite in [
@@ -176,7 +180,8 @@ _SUITES.update({
         image = "iperf",
         libraries = [Label("//libs/iperf"), Label("//projects/e2e/apps/iperf/app:iperf_e2e")],
         policies = [],
-        variables = ["H2_IPERF_SERVER", "H2_IPERF_POWER_SAVE", "H2_IPERF_BLE_ADV", "H2_IPERF_ROLE_SERVER"],
+        variables = ["H2_IPERF_SERVER", "H2_IPERF_POWER_SAVE", "H2_IPERF_BLE_ADV", "H2_IPERF_ROLE_SERVER", "H2_E2E_WIFI_FIXTURE"],
+        headers = [Label("//projects/e2e/libs/esp-device:network_provision.h")],
     ),
     "webrtc-performance": struct(
         image = "webrtc-performance",

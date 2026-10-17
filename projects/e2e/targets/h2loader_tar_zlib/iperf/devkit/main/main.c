@@ -1,5 +1,6 @@
 #include "h2_esp_board.h"
 #include "result_console.h"
+#include "network_provision.h"
 #include "h2_esp_board_config.h"
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_h2loader_runtime.h"
@@ -39,6 +40,10 @@
  * (TCP, UDP and SCTP-over-UDP) so the host can drive each direction itself. */
 #ifndef H2_IPERF_ROLE_SERVER
 #define H2_IPERF_ROLE_SERVER 0
+#endif
+
+#if defined(H2_E2E_WIFI_FIXTURE_HAIVIVI_MFG) && H2_IPERF_ROLE_SERVER
+#error "The public Wi-Fi fixture is only supported by the legacy iperf Client"
 #endif
 
 #define H2_IPERF_DEVKIT_PORT 5201u
@@ -242,6 +247,20 @@ static void image_entry(void *user) {
   rc = h2_esp_e2e_result_log_prepare(&result_log, runtime, "iperf_e2e", NULL);
   if (rc != H2_PAL_OK)
     fail("result_console", rc, 1);
+  const h2_pal_wifi_sta_config_t *fixture = h2_esp_e2e_public_wifi_fixture();
+  if (fixture != NULL) {
+    /* This opt-in capture window is new. The earlier entry checkpoint retains
+     * its original sampling time; this marker identifies provisioning setup. */
+    vTaskDelay(pdMS_TO_TICKS(5000u));
+    rc = h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "iperf_e2e",
+        "H2_IPERF_E2E_PROVISION_BOOT board=" H2_ESP_BOARD_NAME " role=client");
+    if (rc != H2_PAL_OK)
+      fail("provision_boot", rc, 1);
+  }
+  rc = h2_esp_e2e_provision_wifi(runtime->wifi_sta, runtime->wifi_ap,
+      runtime->wifi_settings, fixture, 20000u, true, &result_log.console);
+  if (rc != H2_PAL_OK)
+    fail("wifi_provision", rc, 1);
   wait_for_wifi(runtime);
   rc = apply_power_save(runtime);
   if (rc != H2_PAL_OK) {

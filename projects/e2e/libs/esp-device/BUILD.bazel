@@ -9,7 +9,53 @@ exports_files([
     "main/CMakeLists.txt",
     "main/idf_component.yml",
     "result_console.h",
+    "network_provision.h",
 ])
+
+cc_library(
+    name = "network_provision",
+    hdrs = ["network_provision.h"],
+    includes = ["."],
+    deps = [
+        ":result_console",
+        "//libs/pal",
+    ],
+)
+
+cc_test(
+    name = "network_provision_test",
+    srcs = ["tests/test_network_provision.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":network_provision",
+        "//libs/atomic/providers/c11",
+    ],
+)
+
+cc_test(
+    name = "network_provision_fixture_test",
+    srcs = ["tests/test_network_provision.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    defines = ["H2_E2E_WIFI_FIXTURE_HAIVIVI_MFG=1"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":network_provision",
+        "//libs/atomic/providers/c11",
+    ],
+)
 
 cc_library(
     name = "result_console",

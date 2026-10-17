@@ -63,6 +63,7 @@ firmware_native_component(
     srcs = ["main/main.c"],
     hdrs = [
         "main/ledger_console.h",
+        "//projects/e2e/libs/esp-device:network_provision.h",
         "//projects/e2e/libs/esp-device:result_console.h",
     ],
     component_directory = "projects/e2e/targets/h2loader_tar_zlib/pal-mqtt/devkit/main",
@@ -96,6 +97,7 @@ h2loader_esp_idf_firmware(
     ],
     board = "devkit",
     console = "usb",
+    cmake_variables = ["H2_E2E_WIFI_FIXTURE"],
     graph = [":launcher"],
     project = "CMakeLists.txt",
     project_name = "h2_pal_mqtt_e2e",
@@ -131,6 +133,7 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        "//libs/atomic/providers/c11",
         "//projects/e2e/libs/esp-device:result_console",
         "//projects/e2e/libs/pal-mqtt-device:runner",
     ],

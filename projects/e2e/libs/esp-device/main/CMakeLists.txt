@@ -30,6 +30,20 @@ idf_component_register(
 target_compile_options(${COMPONENT_LIB} PRIVATE
   $<$<COMPILE_LANGUAGE:C>:-std=gnu11> -Wall -Wextra -Werror)
 
+if((H2_E2E_SUITE STREQUAL "pal-mqtt" OR H2_E2E_SUITE STREQUAL "iperf")
+    AND DEFINED H2_E2E_WIFI_FIXTURE
+    AND NOT "${H2_E2E_WIFI_FIXTURE}" STREQUAL "")
+  if(NOT "${H2_E2E_WIFI_FIXTURE}" STREQUAL "haivivi-mfg")
+    message(FATAL_ERROR "Unsupported public H2_E2E_WIFI_FIXTURE selector")
+  endif()
+  if(H2_E2E_SUITE STREQUAL "iperf" AND DEFINED H2_IPERF_ROLE_SERVER
+      AND NOT "${H2_IPERF_ROLE_SERVER}" STREQUAL "0")
+    message(FATAL_ERROR "H2_E2E_WIFI_FIXTURE requires the legacy iperf Client role")
+  endif()
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    H2_E2E_WIFI_FIXTURE_HAIVIVI_MFG=1)
+endif()
+
 if(H2_E2E_SUITE STREQUAL "gizclaw-e2e")
   target_add_binary_data(${COMPONENT_LIB}
     "$ENV{H2_GIZOS_ROOT}/projects/e2e/apps/gizclaw/data/voice_prompt_l16_16khz_mono.pcm"

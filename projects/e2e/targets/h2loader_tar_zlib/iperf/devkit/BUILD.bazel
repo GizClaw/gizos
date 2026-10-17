@@ -52,7 +52,10 @@ firmware_lib_component(
 firmware_native_component(
     name = "iperf_launcher",
     srcs = ["main/main.c"],
-    hdrs = ["//projects/e2e/libs/esp-device:result_console.h"],
+    hdrs = [
+        "//projects/e2e/libs/esp-device:result_console.h",
+        "//projects/e2e/libs/esp-device:network_provision.h",
+    ],
     component_directory = "projects/e2e/targets/h2loader_tar_zlib/iperf/devkit/main",
     component_name = "main",
     data = [
@@ -85,6 +88,7 @@ h2loader_esp_idf_firmware(
     board = "devkit",
     console = "usb",
     cmake_variables = [
+        "H2_E2E_WIFI_FIXTURE",
         "H2_IPERF_BLE_ADV",
         "H2_IPERF_SERVER",
         "H2_IPERF_POWER_SAVE",

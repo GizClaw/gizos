@@ -32,3 +32,11 @@ idf_component_register(
     h2_pal_core)
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu11 -Wall -Wextra -Werror)
+
+if(DEFINED H2_E2E_WIFI_FIXTURE AND NOT "${H2_E2E_WIFI_FIXTURE}" STREQUAL "")
+  if(NOT "${H2_E2E_WIFI_FIXTURE}" STREQUAL "haivivi-mfg")
+    message(FATAL_ERROR "Unsupported public H2_E2E_WIFI_FIXTURE selector")
+  endif()
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    H2_E2E_WIFI_FIXTURE_HAIVIVI_MFG=1)
+endif()
