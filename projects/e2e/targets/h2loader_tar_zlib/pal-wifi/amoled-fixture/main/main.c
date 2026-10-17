@@ -2,6 +2,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "h2_esp_board.h"
+#include "h2_esp_board_config.h"
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_h2loader_runtime.h"
 #include "h2_esp_target_task_policy.h"
@@ -22,7 +23,7 @@ static void run(void *user) {
     vTaskDelay(pdMS_TO_TICKS(3000u));
     int rc = h2_wifi_fixture_run(runtime);
     int confirm = rc == H2_PAL_OK ? h2_esp_h2loader_app_confirm(runtime) : H2_PAL_ERR_INVALID_STATE;
-    printf("H2_WIFI_READY board=amoled-fixture rc=%d confirm=%d\n", rc, confirm);
+    printf("H2_WIFI_READY board=" H2_ESP_BOARD_NAME " role=fixture rc=%d confirm=%d\n", rc, confirm);
     fflush(stdout);
     hold();
 }
@@ -41,7 +42,7 @@ void app_main(void) {
     rc = h2_runtime_init(&config, &runtime);
     if (rc)
         fail("runtime", rc);
-    printf("H2_WIFI_LAUNCHER version=%s board=amoled-fixture\n",
+    printf("H2_WIFI_LAUNCHER version=%s board=" H2_ESP_BOARD_NAME " role=fixture\n",
            esp_app_get_description()->version);
     fflush(stdout);
     const h2_pal_task_options_t options = {.name = h2_wifi_device_runner_task_name,

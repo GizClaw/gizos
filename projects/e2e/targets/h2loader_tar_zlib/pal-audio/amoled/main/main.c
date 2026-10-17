@@ -6,6 +6,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "h2_esp_board.h"
+#include "h2_esp_board_config.h"
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_h2loader_runtime.h"
 #include "h2_esp_target_task_policy.h"
@@ -14,6 +15,10 @@
 #endif
 
 #include <stdio.h>
+
+#ifndef H2_ESP_BOARD_NAME
+#define H2_ESP_BOARD_NAME "amoled"
+#endif
 
 static h2_runtime_t *runtime;
 static const h2_pal_audio_api_t *provider_audio;
@@ -24,7 +29,7 @@ static void hold(void) {
 }
 
 static void fail(const char *stage, int rc) {
-  printf("H2_PAL_AUDIO_SETUP_FAIL board=amoled stage=%s rc=%d\n", stage, rc);
+  printf("H2_PAL_AUDIO_SETUP_FAIL board=" H2_ESP_BOARD_NAME " stage=%s rc=%d\n", stage, rc);
   fflush(stdout);
   hold();
 }
@@ -38,7 +43,7 @@ static void report(void *user, const h2_pal_audio_e2e_case_result_t *item) {
 }
 
 static void recover_failed_run(int rc, int confirm) {
-  printf("H2_PAL_AUDIO_RECOVERY board=amoled rc=%d confirm=%d\n", rc, confirm);
+  printf("H2_PAL_AUDIO_RECOVERY board=" H2_ESP_BOARD_NAME " rc=%d confirm=%d\n", rc, confirm);
   fflush(stdout);
   h2_loader_app_client_config_t recovery_config;
   h2_loader_app_client_t client;
@@ -60,7 +65,7 @@ static void recover_failed_run(int rc, int confirm) {
   if (locked)
     (void)h2_pal_mutex_unlock(recovery_config.operation_sync,
                                recovery_config.operation_mutex);
-  printf("H2_PAL_AUDIO_RECOVERY board=amoled loader_reboot=%d\n", recovery);
+  printf("H2_PAL_AUDIO_RECOVERY board=" H2_ESP_BOARD_NAME " loader_reboot=%d\n", recovery);
   fflush(stdout);
   /* Reboot normally does not return. If it does, reset the whole chip so
    * failed playback cannot remain active in a terminal reporting loop. */
@@ -92,7 +97,7 @@ static void run(void *user) {
       fflush(stdout);
       vTaskDelay(pdMS_TO_TICKS(10u));
     }
-    printf("H2_PAL_AUDIO_SUMMARY {\"platform\":\"amoled\",\"passed\":%u,"
+    printf("H2_PAL_AUDIO_SUMMARY {\"platform\":\"" H2_ESP_BOARD_NAME "\",\"passed\":%u,"
            "\"failed\":%u,\"blocked\":%u,\"mic_frames\":%u,"
            "\"mic_peak\":%u,\"mic_energy\":%llu,\"speaker_frames\":%u,"
            "\"output_peak\":%u,\"stability_elapsed_ms\":%llu,"
@@ -118,7 +123,7 @@ static void entry(void *user) {
   if (rc != H2_PAL_OK) fail("command_prepare", rc);
   rc = h2_runtime_init(&config, &runtime);
   if (rc != H2_PAL_OK) fail("runtime", rc);
-  printf("H2_PAL_AUDIO_BOOT board=amoled version=%s\n",
+  printf("H2_PAL_AUDIO_BOOT board=" H2_ESP_BOARD_NAME " version=%s\n",
          esp_app_get_description()->version);
   const h2_pal_task_options_t options = {.name = h2_pal_audio_e2e_runner_task_name};
   h2_pal_task_t *runner = NULL;
@@ -130,6 +135,6 @@ static void entry(void *user) {
 void app_main(void) {
   int rc = h2_esp_target_task_policy_install();
   if (rc != H2_PAL_OK) fail("task_policy", rc);
-  rc = h2_esp_board_start_entry_task("amoled/pal-audio", entry, NULL);
+  rc = h2_esp_board_start_entry_task(H2_ESP_BOARD_NAME "/pal-audio", entry, NULL);
   if (rc != H2_PAL_OK) fail("entry", rc);
 }

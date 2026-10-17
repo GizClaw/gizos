@@ -1,4 +1,5 @@
 #include "h2_esp_board.h"
+#include "h2_esp_board_config.h"
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_h2loader_runtime.h"
 #include "h2_esp_target_task_policy.h"
@@ -34,7 +35,7 @@ static void run(void *user) {
     int confirm = rc == H2_PAL_OK ? h2_esp_h2loader_app_confirm(runtime) : H2_PAL_ERR_INVALID_STATE;
     for (;;) {
         h2_pal_http_device_report(runtime, &result);
-        printf("H2_PAL_HTTP_READY board=devkit rc=%d confirm=%d\n", rc, confirm);
+        printf("H2_PAL_HTTP_READY board=" H2_ESP_BOARD_NAME " rc=%d confirm=%d\n", rc, confirm);
         fflush(stdout);
         vTaskDelay(pdMS_TO_TICKS(5000u));
     }
@@ -49,7 +50,7 @@ void app_main(void) {
     if (rc != H2_PAL_OK) fail("command_prepare", rc);
     rc = h2_runtime_init(&config, &runtime);
     if (rc != H2_PAL_OK) fail("runtime", rc);
-    printf("H2_PAL_HTTP_BOOT board=devkit version=%s\n", esp_app_get_description()->version);
+    printf("H2_PAL_HTTP_BOOT board=" H2_ESP_BOARD_NAME " version=%s\n", esp_app_get_description()->version);
     const h2_pal_task_options_t options = {.name = h2_pal_http_device_runner_task_name};
     h2_pal_task_t *runner = NULL;
     rc = h2_pal_task_start(runtime->task, &options, run, NULL, &runner);

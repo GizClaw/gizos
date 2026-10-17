@@ -8,6 +8,14 @@ load("//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files([
+    "main/main.c",
+    "main/h2_gizclaw_e2e_devkit_config.c",
+    "main/h2_gizclaw_e2e_devkit_config.h",
+    "main/h2_gizclaw_e2e_devkit_state.c",
+    "main/h2_gizclaw_e2e_devkit_state.h",
+])
+
 esp_target_task_policy(
     default_policy = "4 any 4096 psram",
     graph = [":gizclaw_e2e_devkit_launcher"],

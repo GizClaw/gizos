@@ -36,7 +36,7 @@ static void memory(void *user, const char *checkpoint) {
 static void run(void *user) {
   (void)user;
   memory(NULL, "matrix-start");
-  int rc = h2_iperf_client_app_bench(runtime, "devkit", memory, NULL);
+  int rc = h2_iperf_client_app_bench(runtime, runtime->board, memory, NULL);
   memory(NULL, "matrix-end");
   if (rc != H2_PAL_OK)
     fail("bench", rc);
@@ -69,8 +69,8 @@ void app_main(void) {
   rc = h2_runtime_init(&config, &runtime);
   if (rc != H2_PAL_OK)
     fail("runtime", rc);
-  printf("H2_IPERF_CLIENT_BOOT board=devkit version=%s\n",
-         esp_app_get_description()->version);
+  printf("H2_IPERF_CLIENT_BOOT board=%s version=%s\n",
+         runtime->board, esp_app_get_description()->version);
   fflush(stdout);
   const h2_pal_task_options_t options = {.name = h2_iperf_client_app_task_name,
                                          .min_stack_size = 16384u};

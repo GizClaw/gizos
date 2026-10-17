@@ -1,4 +1,5 @@
 #include "h2_esp_board.h"
+#include "h2_esp_board_config.h"
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_h2loader_runtime.h"
 #include "h2_esp_platform_core.h"
@@ -275,7 +276,7 @@ static void image_entry(void *user) {
               .sctp = h2_sctp_api(sctp),
               .log = runtime->log,
           },
-      .target = "devkit",
+      .target = H2_ESP_BOARD_NAME,
       .server_host = H2_IPERF_SERVER,
       .port = H2_IPERF_DEVKIT_PORT,
       .sctp_udp_port = H2_IPERF_DEVKIT_SCTP_UDP_PORT,
@@ -302,7 +303,7 @@ void app_main(void) {
     return;
   }
   const h2_pal_result_t rc =
-      h2_esp_board_start_entry_task("devkit/iperf", image_entry, NULL);
+      h2_esp_board_start_entry_task(H2_ESP_BOARD_NAME "/iperf", image_entry, NULL);
   if (rc != H2_PAL_OK) {
     fail("entry_task", rc, 0);
   }

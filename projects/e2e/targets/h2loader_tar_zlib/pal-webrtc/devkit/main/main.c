@@ -2,6 +2,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "h2_esp_board.h"
+#include "h2_esp_board_config.h"
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_h2loader_runtime.h"
 #include "h2_esp_target_task_policy.h"
@@ -30,7 +31,7 @@ static void run(void *user) {
                                 : H2_PAL_ERR_INVALID_STATE;
   for (;;) {
     h2_pal_webrtc_device_report(runtime, &result);
-    printf("H2_PAL_WEBRTC_READY board=devkit rc=%d confirm=%d\n", rc, confirm);
+    printf("H2_PAL_WEBRTC_READY board=" H2_ESP_BOARD_NAME " rc=%d confirm=%d\n", rc, confirm);
     fflush(stdout);
     vTaskDelay(pdMS_TO_TICKS(5000u));
   }
@@ -49,7 +50,7 @@ static void entry(void *user) {
   rc = h2_runtime_init(&config, &runtime);
   if (rc != H2_PAL_OK)
     fail("runtime", rc);
-  printf("H2_PAL_WEBRTC_BOOT board=devkit version=%s\n",
+  printf("H2_PAL_WEBRTC_BOOT board=" H2_ESP_BOARD_NAME " version=%s\n",
          esp_app_get_description()->version);
   const h2_pal_task_options_t options = {
       .name = h2_pal_webrtc_device_runner_task_name};
@@ -63,7 +64,7 @@ void app_main(void) {
   int rc = h2_esp_target_task_policy_install();
   if (rc != H2_PAL_OK)
     fail("task_policy", rc);
-  rc = h2_esp_board_start_entry_task("devkit/pal-webrtc", entry, NULL);
+  rc = h2_esp_board_start_entry_task(H2_ESP_BOARD_NAME "/pal-webrtc", entry, NULL);
   if (rc != H2_PAL_OK)
     fail("entry", rc);
 }

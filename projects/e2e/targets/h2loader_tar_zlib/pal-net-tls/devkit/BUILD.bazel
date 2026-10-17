@@ -6,6 +6,10 @@ load("//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files([
+    "sdkconfig.pal-net-tls.defaults",
+])
+
 # Shared ESP launcher accepts the consuming entry's H2_PAL_NET_TLS_BOARD.
 exports_files(["main/main.c"])
 

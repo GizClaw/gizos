@@ -1,4 +1,5 @@
 #include "h2_esp_board.h"
+#include "h2_esp_board_config.h"
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_platform_core.h"
 #include "h2_esp_h2loader_runtime.h"
@@ -73,9 +74,9 @@ void app_main(void) {
         return;
     }
   h2_pal_result_t result = h2_esp_board_start_entry_task(
-      "amoled/lua-runtime-e2e", image_entry, NULL);
+      H2_ESP_BOARD_NAME "/lua-runtime-e2e", image_entry, NULL);
   if (result != H2_PAL_OK) {
-    printf("H2_BOARD_ENTRY_FAIL board=amoled image=lua-runtime-e2e code=%d\n",
+    printf("H2_BOARD_ENTRY_FAIL board=" H2_ESP_BOARD_NAME " image=lua-runtime-e2e code=%d\n",
            (int)result);
   }
 }

@@ -25,6 +25,8 @@ Invalid, partial or failed ledger writes retain the first error. A failed pre-co
 
 ## Build and verify
 
+Consumer-owned ESP32-S3 boards use `//projects/e2e/libs/esp-device:firmware.bzl` with `suite = "iperf-client"`, supplying their own BSP, libraries, task policies and H2Loader layout, including a board-owned diagnostic network budget. This reuses the same launcher and complete matrix; BOOT and benchmark tokens identify the actual Runtime board. The AMOLED image remains the existing server peer.
+
 ```sh
 bazel test --config=macos_arm64 //projects/e2e/apps/iperf-client/app:client_test
 bazel test --config=macos_arm64 //projects/e2e/apps/iperf-client/app:network_test

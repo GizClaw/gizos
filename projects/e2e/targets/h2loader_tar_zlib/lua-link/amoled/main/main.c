@@ -1,4 +1,5 @@
 #include "h2_esp_board.h"
+#include "h2_esp_board_config.h"
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_h2loader_runtime.h"
 #include "h2_esp_platform_core.h"
@@ -63,7 +64,7 @@ static void image_entry(void *user) {
   unsigned passed = 0u;
   for (unsigned round = 1u; round <= H2_LUA_LINK_E2E_ROUNDS; ++round) {
     printf("H2_LUA_LINK_E2E stage=round board=%s role=%s round=%u\n",
-           "amoled", H2_LUA_LINK_E2E_ROLE, round);
+           H2_ESP_BOARD_NAME, H2_LUA_LINK_E2E_ROLE, round);
     fflush(stdout);
     rc = h2_lua_link_e2e_run(runtime,
                              &(h2_lua_link_e2e_config_t){
@@ -75,7 +76,7 @@ static void image_entry(void *user) {
     vTaskDelay(pdMS_TO_TICKS(3000u));
   }
   printf("H2_LUA_LINK_E2E stage=summary board=%s role=%s passed=%u rounds=%u\n",
-         "amoled", H2_LUA_LINK_E2E_ROLE, passed, H2_LUA_LINK_E2E_ROUNDS);
+         H2_ESP_BOARD_NAME, H2_LUA_LINK_E2E_ROLE, passed, H2_LUA_LINK_E2E_ROUNDS);
   fflush(stdout);
   /* Final session stays up until the link drops (e.g. the peer resets). */
   (void)h2_lua_link_e2e_run(runtime, &(h2_lua_link_e2e_config_t){
@@ -92,7 +93,7 @@ void app_main(void) {
     return;
   }
   const h2_pal_result_t rc =
-      h2_esp_board_start_entry_task("amoled/lua-link-e2e", image_entry, NULL);
+      h2_esp_board_start_entry_task(H2_ESP_BOARD_NAME "/lua-link-e2e", image_entry, NULL);
   if (rc != H2_PAL_OK) {
     fail("entry_task", rc, 0);
   }
