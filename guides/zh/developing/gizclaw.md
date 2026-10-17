@@ -67,6 +67,8 @@ capacity 校验的 bounded copy，不把 plaintext 注册成 Crypto PAL algorith
 
 Workflow list 接受最多 32 个 `h2_gizclaw_str_t` tag，每个 1–128 UTF-8 字节且不含 NUL。多个 tag 使用精确 AND 匹配，零 tag 返回全部；重复 selector 保留在请求中并沿用服务端的幂等匹配语义。Library 不 trim、不折叠大小写、不解析年龄或类别，也不把 tags 当作授权条件。请求创建时复制编码后的 bytes；返回的 tags 字符串数组随 response storage 存活，空数组是有效 Workflow。
 
+产品在运行中改变筛选条件时，使用 `h2_gizclaw_session_refresh_with_tags()` 在同一个 Session preparation 内复制并更新 selector，再从空 cursor 开始刷新。所有分页和后续 Profile-revision 重试使用同一个已保存 selector；不能修改 create 时借用的 tag span。非法参数、admission 或复制分配失败保留旧 selector 和 catalog；selector 已更新后的查询失败保留新条件，但旧目录不能继续标为 READY。筛选结果可以为空，也不要求包含某个产品默认 Workflow。Workspace 的身份与授权不由 selector 决定。
+
 Workspace list 没有 collection 参数，返回当前 Peer 可访问的 Workspace；create 只需要 workflow_name 和 Workspace name。Workflow 的 tags 改变不会改变其 name，也不会重绑定已有 Workspace。Session 的 tags 只控制 catalog 查询；按 workflow_name 选择时，完整 catalog 的未命中项会通过 Workflow get 验证，流式模式也通过 get 验证，然后继续 Workspace get/create/reload。现有 Workspace 可省略 workflow_name 按名字打开。内容分级策略、显示顺序、权限与筛选条件由产品拥有。
 
 ## Session catalog 流式合同
