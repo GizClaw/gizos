@@ -2,6 +2,7 @@ load("@gizos//libs/lua:lua_app.bzl", "lua_app")
 load("@gizos//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_bk7258_firmware", "h2loader_esp_idf_firmware")
 load("@gizos//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
 load("@gizos//tools/bazel:bk7258.bzl", "bk7258_firmware")
+load("@gizos//tools/bazel:app_version.bzl", "app_version")
 load("@gizos//tools/bazel:esp_idf.bzl", "esp_idf_firmware")
 load("@gizos//tools/bazel:firmware.bzl", "firmware_version")
 load("@gizos//tools/bazel:firmware_components.bzl", "firmware_lib_component")
@@ -14,7 +15,7 @@ load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("@rules_python//python:defs.bzl", "py_test")
 load(":consumer.bzl", "fake_firmware", "native_component_paths")
 
-firmware_version(
+app_version(
     name = "abc_lua_version",
     value = "1.2.3",
 )
@@ -25,6 +26,7 @@ lua_app(
     version = ":abc_lua_version",
 )
 
+# Keep one legacy declaration to verify both names share the same provider.
 firmware_version(
     name = "xyz_lua_version",
     value = "2.0.0-rc.1",

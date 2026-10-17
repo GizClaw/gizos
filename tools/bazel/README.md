@@ -111,22 +111,7 @@ internal `:firmware` target exposes no H2Loader identity or package provider;
 its `DefaultInfo.files` contains only native outputs;
 CMake/Ninja intermediates and device-operation executables are not outputs.
 
-The action copies only the selected launcher project into an invocation-local
-temporary tree, points it at the read-only repository source, and invokes the
-native `idf.py build` followed by `idf.py merge-bin`. It is explicitly
-unsandboxed and ineligible for remote execution, while its declared outputs may use the local disk cache or the
-authenticated remote cache. The runner constructs a fixed subprocess
-environment from the validated locators, pinned SDK version, and the
-`FirmwareVersionInfo` selected by the firmware target. Product-owned final
-firmware should declare `firmware_version(name, value)` and pass its label with
-the public `version` attribute. Firmware declarations that omit `version`
-continue to use the `//tools/bazel:firmware_version` compatibility build
-setting. A firmware target may explicitly opt in to the allowlisted
-`H2LOADER_WIFI_CREDENTIALS` JSON object containing exact `ssid` and `password`
-fields; the runner validates it and exposes the two values only to that
-target's ESP-IDF subprocess. Unrelated ESP-IDF subprocesses never receive them. The
-runner neither activates the SDK nor performs
-flash, erase, monitor, reset, serial, network, or installation operations.
+The action copies only the selected launcher project into an invocation-local temporary tree, points it at the read-only repository source, and invokes the native `idf.py build` followed by `idf.py merge-bin`. It is explicitly unsandboxed and ineligible for remote execution, while its declared outputs may use the local disk cache or the authenticated remote cache. The runner constructs a fixed subprocess environment from the validated locators, pinned SDK version, and the `AppVersionInfo` selected by the firmware target. An App declares `app_version(name, value)` from `//tools/bazel:app_version.bzl` in its own package; its final firmware targets reference that shared label through the existing public `version` attribute. App-owned environment or image variants may declare named version targets, derived from one base constant when appropriate. Board BUILD files do not copy the version strings; existing local `:version` labels may remain as aliases. Loader declarations live in `//projects/h2loader/apps/loader`; the existing DevKit atomic qualification version remains a named App-owned variant, preserving the current release values. The generic rule/provider reuse the existing validated string contract; `firmware_version` and `FirmwareVersionInfo` remain compatible legacy names. Lua packages use the same App-owned versions without a firmware build. Firmware declarations that omit `version` continue to use the `//tools/bazel:firmware_version` compatibility build setting. A firmware target may explicitly opt in to the allowlisted `H2LOADER_WIFI_CREDENTIALS` JSON object containing exact `ssid` and `password` fields; the runner validates it and exposes the two values only to that target's ESP-IDF subprocess. Unrelated ESP-IDF subprocesses never receive them. The runner neither activates the SDK nor performs flash, erase, monitor, reset, serial, network, or installation operations.
 
 ## BK7258 external builds
 

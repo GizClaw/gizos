@@ -101,15 +101,15 @@ App image 是由 H2Loader 安装和启动的目标固件。Launcher 初始化 BS
 
 发布选择为 opt-in：Bazel 查询 `//projects/...` 中带精确 `firmware-release` tag 的 `h2loader_zlib_tar` rule，并要求它是 Loader 目录中的 canonical `:package`，identity 为 `image=loader`、`role=h2loader`。`projects/e2e`、`projects/example`、H2Loader `e2e-app` 以及 alternate package 均为诊断目标，即使误加发布 tag 也会被校验拒绝。现存 `no-release` 仅保留为诊断标记，发布选择不再读取它。
 
-发布集合已确定为以下三块板，每个现有平台 slice 各一块；三块板的首个正式发布版本均已确认为 `0.1.0`。只有这些 target 标记 `firmware-release`；catalog 必须覆盖全部三项，不能悄悄漏掉不兼容配置。
+发布集合已确定为以下三块板，每个现有平台 slice 各一块；表中列出当前声明的版本。只有这些 target 标记 `firmware-release`；catalog 必须覆盖全部三项，不能悄悄漏掉不兼容配置。
 
 | `//projects/h2loader/targets/h2loader_zlib_tar/loader/<board>:package` 的 board | Slice | 固件版本 |
 | --- | --- | --- |
 | `bk7258_v3_202405` | `bk7258` | `0.1.0` |
-| `devkit` | `esp32s3` | `0.1.0` |
+| `devkit` | `esp32s3` | `0.2.3-atomic-541` |
 | `waveshare_esp32p4_wifi6_touch_lcd_4_3` | `esp32p4` | `0.1.0` |
 
-每个 BUILD 声明 `firmware_version(name = "version", value = "0.1.0")`，native firmware 的 `version = ":version"` 经 `FirmwareVersionInfo` 传递到 package。Release 不再注入全局 `//tools/bazel:firmware_version`；该 compatibility flag 仍供没有独立版本的诊断 target 使用。每项固件版本必须是 31 字节以内的 ASCII SemVer，catalog、native metadata 和 package manifest 必须一致，允许同一批次包含不同固件版本。
+版本字符串集中由 `projects/h2loader/apps/loader/BUILD.bazel` 使用通用 `app_version` 声明：`:version` 为 `0.1.0`，由 BK7258 与 ESP32-P4 共用；`:version_devkit_atomic` 保留已有的 `0.2.3-atomic-541`。三个 board BUILD 的 `:version` 均为指向 App 声明的 `alias`；native firmware 仍通过 `version = ":version"` 取得兼容的 `AppVersionInfo`，package 自动继承。后续版本升级在 App package 修改，不再在各 board BUILD 重复维护。Release 不注入全局 `//tools/bazel:firmware_version`；该 compatibility flag 仍供没有独立版本的诊断 target 使用。E2E 备用镜像的显式版本属于测试 fixture，单独维护以构造不同镜像 identity。每项固件版本必须是 31 字节以内的 ASCII SemVer，catalog、native metadata 和 package manifest 必须一致，允许同一批次包含不同固件版本。
 
 GitHub Release 包含以下资产：
 

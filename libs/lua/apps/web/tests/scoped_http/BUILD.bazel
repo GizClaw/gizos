@@ -3,14 +3,14 @@ load("@rules_cc//cc:defs.bzl", "cc_binary")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//libs/lua:lua_app.bzl", "lua_app")
+load("//tools/bazel:app_version.bzl", "app_version")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
-load("//tools/bazel:firmware.bzl", "firmware_version")
 load("//tools/bazel:web_archive.bzl", "web_archive_browser_test")
 load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY", "WEB_WASM32_ARTIFACT_COMPATIBILITY")
 
 package(default_visibility = ["//visibility:public"])
 
-firmware_version(
+app_version(
     name = "version",
     value = "1.0.0",
 )
