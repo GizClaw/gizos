@@ -97,11 +97,6 @@ static void run(void *unused) {
   }
 }
 void app_main(void) {
-  fixture = h2_display_esp_capture_fixture();
-  if (fixture == NULL || fixture->set_capture == NULL || fixture->source == NULL ||
-      fixture->width <= 0 || fixture->height <= 0 ||
-      fixture->width > 4096 || fixture->height > 4096)
-    fail("capture-fixture", H2_DISPLAY_ERR_INVALID_ARG);
   int rc = h2_esp_target_task_policy_install();
   if (rc)
     fail("task-policy", rc);
@@ -122,6 +117,11 @@ void app_main(void) {
   rc = h2_runtime_init(&config, &runtime);
   if (rc)
     fail("runtime", rc);
+  fixture = h2_display_esp_capture_fixture();
+  if (fixture == NULL || fixture->set_capture == NULL || fixture->source == NULL ||
+      fixture->width <= 0 || fixture->height <= 0 ||
+      fixture->width > 4096 || fixture->height > 4096)
+    fail("capture-fixture", H2_DISPLAY_ERR_INVALID_ARG);
   const esp_timer_create_args_t timer = {.callback = deadline,
                                          .name = "display-watchdog"};
   if (esp_timer_create(&timer, &watchdog) != ESP_OK ||
