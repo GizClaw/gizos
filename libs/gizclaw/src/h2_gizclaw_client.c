@@ -2346,6 +2346,19 @@ int h2_gizclaw_rpc_request_result(h2_gizclaw_rpc_request_t *request,
     memcpy(out_response->error_message, response.error.message.data,
            response.error.message.len);
   }
+  if (response.error.reason.len > 0u) {
+    out_response->error_reason =
+        h2_pal_mem_alloc(request->allocator, response.error.reason.len);
+    if (out_response->error_reason == NULL) {
+      h2_pal_mem_free(request->allocator, out_response->result_payload);
+      h2_pal_mem_free(request->allocator, out_response->error_message);
+      memset(out_response, 0, sizeof(*out_response));
+      return H2_PAL_ERR_NO_MEMORY;
+    }
+    memcpy(out_response->error_reason, response.error.reason.data,
+           response.error.reason.len);
+    out_response->error_reason_len = response.error.reason.len;
+  }
   return H2_PAL_OK;
 }
 

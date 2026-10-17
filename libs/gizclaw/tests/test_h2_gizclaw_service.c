@@ -2836,6 +2836,157 @@ static void test_device_modem_and_battery_hwd(void) {
 static h2_gizclaw_str_t device_span(const char *s) {
   return (h2_gizclaw_str_t){s, strlen(s)};
 }
+/* Durable Preference bytes survive new Runtime instances; radio is a PAL fake. */
+typedef struct remote_wifi_fixture {
+  uint8_t blob[920];
+  size_t len;
+  h2_pal_pref_namespace_t ns;
+  h2_pal_wifi_sta_config_t legacy;
+  bool has_legacy;
+  h2_atomic_uint_t calls;
+  int connect_result;
+} remote_wifi_fixture_t;
+static int remote_wifi_close(h2_pal_pref_namespace_t *ns) { (void)ns; return H2_PAL_OK; }
+static int remote_wifi_get_blob(h2_pal_pref_namespace_t *ns, const h2_pal_mem_api_t *mem,
+    const char *key, void **out, size_t *len) {
+  remote_wifi_fixture_t *f = ns->user;
+  assert(!strcmp(key, "saved_v1"));
+  if (!f->len) return H2_PAL_ERR_NOT_FOUND;
+  *out = h2_pal_mem_alloc(mem, f->len);
+  assert(*out != NULL);
+  *len = f->len;
+  memcpy(*out, f->blob, f->len);
+  return H2_PAL_OK;
+}
+static int remote_wifi_set_blob(h2_pal_pref_namespace_t *ns, const char *key,
+    const void *data, size_t len) {
+  remote_wifi_fixture_t *f = ns->user;
+  assert(!strcmp(key, "saved_v1") && len == sizeof(f->blob));
+  memcpy(f->blob, data, len);
+  f->len = len;
+  return H2_PAL_OK;
+}
+static int remote_wifi_pref(void *user, const char *name, h2_pal_pref_open_mode_t mode,
+    h2_pal_pref_namespace_t **out) {
+  remote_wifi_fixture_t *f = user;
+  (void)mode;
+  assert(!strcmp(name, "h2runtime_wifi"));
+  f->ns = (h2_pal_pref_namespace_t){.user = f, .close = remote_wifi_close,
+      .get_blob = remote_wifi_get_blob, .set_blob = remote_wifi_set_blob,
+      .commit = remote_wifi_close};
+  *out = &f->ns;
+  return H2_PAL_OK;
+}
+static int remote_wifi_get(void *user, h2_pal_wifi_sta_config_t *out) {
+  remote_wifi_fixture_t *f = user;
+  *out = f->legacy;
+  return f->has_legacy ? H2_PAL_OK : H2_PAL_ERR_NOT_FOUND;
+}
+static int remote_wifi_clear(void *user) {
+  remote_wifi_fixture_t *f = user;
+  f->has_legacy = false;
+  memset(&f->legacy, 0, sizeof(f->legacy));
+  return H2_PAL_OK;
+}
+static int remote_wifi_connect(void *user, const h2_pal_wifi_sta_config_t *config,
+    uint32_t timeout) {
+  remote_wifi_fixture_t *f = user;
+  assert(timeout > 0u);
+  if (f->connect_result == H2_PAL_OK) {
+    f->legacy = *config;
+    f->has_legacy = true;
+  }
+  h2_atomic_fetch_add(&f->calls, 1u);
+  return f->connect_result;
+}
+static size_t remote_wifi_list(h2_gizclaw_service_t *service, char first[33]) {
+  h2_gizclaw_rpc_provider_response_t response;
+  gizclaw_rpc_v1_ClientWifiSavedListRequest request = {0};
+  assert(device_call(service, H2_GIZCLAW_TOOL_WIFI_SAVED_LIST,
+      gizclaw_rpc_v1_ClientWifiSavedListRequest_fields, &request, &response) == 0);
+  gizclaw_rpc_v1_ClientWifiSavedListResponse list = {0};
+  pb_istream_t input = pb_istream_from_buffer(response.payload.data, response.payload.len);
+  assert(pb_decode(&input, gizclaw_rpc_v1_ClientWifiSavedListResponse_fields, &list));
+  strcpy(first, list.networks_count ? list.networks[0].ssid : "");
+  return list.networks_count;
+}
+static void test_remote_wifi_runtime_persistence(void) {
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_profile_service(&env);
+  remote_wifi_fixture_t f = {0};
+  assert(h2_atomic_uint_init(&f.calls, 0u) == H2_ATOMIC_OK);
+  const h2_pal_pref_vtable_t pv = {.open = remote_wifi_pref};
+  const h2_pal_pref_api_t pref = {&f, &pv};
+  const h2_pal_wifi_settings_vtable_t sv = {.get_saved_sta_config = remote_wifi_get,
+      .clear_saved_sta_config = remote_wifi_clear};
+  const h2_pal_wifi_settings_api_t settings = {&f, &sv};
+  const h2_pal_wifi_sta_vtable_t wv = {.connect_and_save = remote_wifi_connect};
+  const h2_pal_wifi_sta_api_t wifi = {&f, &wv};
+  h2_runtime_config_t config = device_test_runtime_config(service, h2_pal_unsupported_audio_api());
+  config.pref = &pref;
+  config.wifi_sta = &wifi;
+  config.wifi_settings = &settings;
+  h2_runtime_t *runtime = NULL;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  service->config.runtime = runtime;
+  service->client_config.wifi = runtime->wifi_sta;
+  service->client_config.wifi_settings = runtime->wifi_settings;
+  service->client_config.model = "fixture";
+  assert(h2_gizclaw_device_init_internal(service) == H2_PAL_OK);
+  gizclaw_rpc_v1_ClientWifiConnectRequest connect = {.has_passphrase = true};
+  strcpy(connect.ssid, "single-network");
+  strcpy(connect.passphrase, "test-pass");
+  h2_gizclaw_rpc_provider_response_t response;
+  /* A response that never reached the caller cannot commit a deferred action. */
+  assert(device_call(service, H2_GIZCLAW_TOOL_WIFI_CONNECT,
+      gizclaw_rpc_v1_ClientWifiConnectRequest_fields, &connect, &response) == 0);
+  response.on_complete(response.complete_user, H2_PAL_ERR_IO);
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  assert(device_call(service, H2_GIZCLAW_TOOL_WIFI_CONNECT,
+      gizclaw_rpc_v1_ClientWifiConnectRequest_fields, &connect, &response) == 0);
+  response.on_complete(response.complete_user, H2_PAL_OK);
+  h2_runtime_wifi_saved_network_t list[8];
+  size_t count = 0;
+  for (unsigned i = 0; i < 3000; ++i) {
+    if (h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_OK && count == 1)
+      break;
+    h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u);
+  }
+  assert(count == 1 && !strcmp(list[0].config.ssid, "single-network"));
+  assert(h2_atomic_load(&f.calls) == 1u && f.has_legacy);
+  char first[33];
+  assert(remote_wifi_list(service, first) == 1 && !strcmp(first, "single-network"));
+  const h2_pal_wifi_sta_config_t other = {.ssid = "other", .ssid_len = 5};
+  assert(h2_runtime_wifi_saved_save(runtime, &other) == H2_PAL_OK);
+  assert(remote_wifi_list(service, first) == 2 && !strcmp(first, "other"));
+  gizclaw_rpc_v1_ClientWifiSavedForgetRequest forget = {0};
+  strcpy(forget.ssid, "single-network");
+  assert(device_call(service, H2_GIZCLAW_TOOL_WIFI_SAVED_FORGET,
+      gizclaw_rpc_v1_ClientWifiSavedForgetRequest_fields, &forget, &response) == 0);
+  assert(!f.has_legacy && remote_wifi_list(service, first) == 1 && !strcmp(first, "other"));
+  /* Rejecting a later connection preserves the remaining known-good set. */
+  f.connect_result = H2_PAL_ERR_IO;
+  for (unsigned i = 0; i < 3000; ++i) {
+    if (device_call(service, H2_GIZCLAW_TOOL_WIFI_CONNECT,
+        gizclaw_rpc_v1_ClientWifiConnectRequest_fields, &connect, &response) == 0)
+      break;
+    h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u);
+  }
+  assert(response.on_complete != NULL);
+  response.on_complete(response.complete_user, H2_PAL_OK);
+  for (unsigned i = 0; i < 3000 && h2_atomic_load(&f.calls) < 2u; ++i)
+    h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_atomic_load(&f.calls) == 2u);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  h2_runtime_deinit(runtime);
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_OK && count == 1);
+  assert(!strcmp(list[0].config.ssid, "other") && !f.has_legacy);
+  h2_runtime_deinit(runtime);
+  h2_atomic_uint_destroy(&f.calls);
+}
+
 static void test_device_provider_pal_and_player(void) {
   test_env_t env;
   h2_gizclaw_service_t *service = create_profile_service(&env);
@@ -6514,6 +6665,7 @@ typedef struct test_contact_rpc {
   int error_code;
   const char *error_message;
   size_t error_message_len;
+  const char *error_reason;
   h2_pal_result_t transport_result;
   bool request_matches;
   int calls;
@@ -6634,6 +6786,13 @@ static int workspace_test_result(h2_gizclaw_rpc_request_t *request,
            mock->error_message_len);
     out_response->error_message_len = mock->error_message_len;
   }
+  if (mock->error_reason != NULL) {
+    out_response->error_reason_len = strlen(mock->error_reason);
+    out_response->error_reason = h2_pal_mem_alloc(
+        s_env->service->client_config.allocator, out_response->error_reason_len);
+    assert(out_response->error_reason != NULL);
+    memcpy(out_response->error_reason, mock->error_reason, out_response->error_reason_len);
+  }
   if (mock->response_len != 0u) {
     out_response->result_payload = h2_pal_mem_alloc(
         s_env->service->client_config.allocator, mock->response_len);
@@ -6678,6 +6837,57 @@ static int capture_remote_log(void *user, h2_pal_log_level_t level,
     (void)snprintf(capture->message, sizeof(capture->message), "%s", message);
   }
   return H2_PAL_OK;
+}
+
+static void test_workspace_pending_error_mapping(void) {
+  static const struct {
+    int code;
+    const char *reason;
+    h2_pal_result_t transport, expected;
+  } cases[] = {
+      {9, "WORKSPACE_PENDING_DELETION", H2_PAL_OK, H2_GIZCLAW_WORKSPACE_ERR_PENDING_DELETION},
+      {9, "", H2_PAL_OK, H2_GIZCLAW_ERR_REMOTE},
+      {9, "WORKSPACE_PENDING_DELETION-extra", H2_PAL_OK, H2_GIZCLAW_ERR_REMOTE},
+      {9, "PERMISSION_LOOKUP_FAILED", H2_PAL_OK, H2_GIZCLAW_ERR_REMOTE},
+      {7, "WORKSPACE_PENDING_DELETION", H2_PAL_OK, H2_GIZCLAW_ERR_REMOTE},
+      {5, "WORKSPACE_PENDING_DELETION", H2_PAL_OK, H2_PAL_ERR_NOT_FOUND},
+      {9, "WORKSPACE_PENDING_DELETION", H2_PAL_ERR_IO, H2_PAL_ERR_IO},
+  };
+  for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+    test_env_t env;
+    h2_gizclaw_service_t *service = create_profile_service(&env);
+    test_contact_rpc_t mock = {.has_error = true, .error_code = cases[i].code,
+        .error_reason = cases[i].reason, .transport_result = cases[i].transport};
+    workspace_test_use_single(&mock);
+    h2_gizclaw_async_rpc_test_set_ops(&workspace_test_ops);
+    assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+    h2_gizclaw_req_t *request = NULL;
+    assert(h2_gizclaw_req_create_workspace_get(service, 1, (h2_gizclaw_str_t){"ws", 2},
+               1000, &request) == H2_PAL_OK);
+    assert(h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL) == H2_PAL_OK);
+    assert(h2_gizclaw_req_wait(request, 2000) == cases[i].expected);
+    uint8_t bytes[1024];
+    h2_gizclaw_resp_storage_t storage = {bytes, sizeof(bytes), 0};
+    h2_gizclaw_workspace_get_result_t result;
+    assert(h2_gizclaw_resp_parse_workspace_get(request, &storage, &result) == cases[i].expected);
+    h2_gizclaw_req_release(request);
+    assert(h2_gizclaw_rpc_workspace_get(service, (h2_gizclaw_str_t){"ws", 2},
+               1000, &storage, &result) == cases[i].expected);
+    h2_gizclaw_workspace_t created;
+    assert(h2_gizclaw_rpc_workspace_create(service, (h2_gizclaw_str_t){"chat", 4},
+               (h2_gizclaw_str_t){"ws", 2}, 1000, &storage, &created) == cases[i].expected);
+    h2_gizclaw_workspace_activation_t activation;
+    assert(h2_gizclaw_rpc_workspace_reload_with_options(service, (h2_gizclaw_str_t){"ws", 2},
+               NULL, 1000, &storage, &activation) == cases[i].expected);
+    /* The same reason cannot change an unrelated generic RPC's result. */
+    h2_gizclaw_profile_t profile;
+    const h2_pal_result_t generic = cases[i].transport != H2_PAL_OK ? cases[i].transport
+        : cases[i].code == 5 ? H2_PAL_ERR_NOT_FOUND : H2_GIZCLAW_ERR_REMOTE;
+    assert(h2_gizclaw_rpc_profile_get(service, 1000, &profile) == generic);
+    assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+    assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+    h2_gizclaw_async_rpc_test_set_ops(NULL);
+  }
 }
 
 static void test_req_remote_error_mapping(void) {
@@ -7478,7 +7688,7 @@ static int fence_flow_start(h2_gizclaw_client_t *client,
   static const uint8_t catalog[] = {0x12, 9,   0x0a, 4, 'c', 'h',
                                     'a',  't', 0x1a, 1, 'a', 0x22,
                                     1,    'p', 0x2a, 1, 'r'};
-  static const uint8_t workspace[] = {0x0a, 12,  0x1a, 2,    'w', 's',  0x32,
+  static const uint8_t workspace[] = {0x0a, 15, 0x0a, 1, '1', 0x1a, 2,    'w', 's',  0x32,
                                       4,    'c', 'h',  'a',  't', 0x58, 1,
                                       0x12, 1,   'p',  0x1a, 1,   'r'};
   if (method == H2_GIZCLAW_RPC_SERVER_REGISTER) {
@@ -15169,6 +15379,7 @@ int main(int argc, char **argv) {
   test_workspace_reload_with_options();
   test_workspace_selection_boundaries();
   test_req_remote_error_mapping();
+  test_workspace_pending_error_mapping();
   test_asr_from_owned_pcm_track();
   test_owned_pcm_track_binding();
   test_debug_set_request_paths();
@@ -15224,6 +15435,7 @@ int main(int argc, char **argv) {
   test_req_ping_execution_timing();
   test_req_unary_context_lifetime();
   test_device_provider_pal_and_player();
+  test_remote_wifi_runtime_persistence();
   test_device_modem_and_battery_hwd();
   test_device_playback_speaker_hooks();
   test_device_player_timed_start();

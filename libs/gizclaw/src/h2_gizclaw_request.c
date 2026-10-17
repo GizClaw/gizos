@@ -63,7 +63,7 @@ typedef struct h2_gizclaw_managed_request {
   size_t payload_len;
   h2_gizclaw_rpc_request_t *wire_request;
   h2_gizclaw_rpc_response_t response;
-  h2_pal_result_t (*normalize_rpc_error)(int error_code);
+  h2_pal_result_t (*normalize_rpc_error)(int error_code, h2_gizclaw_str_t reason);
   bool rpc_error_received;
   h2_pal_result_t result;
   uint64_t started_ms;
@@ -137,7 +137,8 @@ static void managed_log_remote_result(const managed_request_t *request,
   if (log == NULL)
     return;
   h2_pal_result_t result = request->normalize_rpc_error != NULL
-                              ? request->normalize_rpc_error(code)
+                              ? request->normalize_rpc_error(code, (h2_gizclaw_str_t){
+                                    request->response.error_reason, request->response.error_reason_len})
                               : h2_gizclaw_rpc_error_result_internal(code);
   bool absent = result == H2_PAL_ERR_NOT_FOUND;
   char message[224];
@@ -531,6 +532,7 @@ static void managed_unref(void *user) {
   (void)h2_pal_mutex_destroy(service->config.sync, request->mutex);
   h2_pal_mem_free(allocator, request->response.result_payload);
   h2_pal_mem_free(allocator, request->response.error_message);
+  h2_pal_mem_free(allocator, request->response.error_reason);
   h2_pal_mem_free(allocator, request->payload);
   h2_atomic_uint_destroy(&request->refs);
   h2_atomic_bool_destroy(&request->terminal);
@@ -549,7 +551,8 @@ static void managed_settle(void *user, h2_gizclaw_operation_t *operation,
     request->rpc_error_received = true;
     request->result =
         request->normalize_rpc_error != NULL
-            ? request->normalize_rpc_error(request->response.error_code)
+            ? request->normalize_rpc_error(request->response.error_code,
+                  (h2_gizclaw_str_t){request->response.error_reason, request->response.error_reason_len})
             : h2_gizclaw_rpc_error_result_internal(
                   request->response.error_code);
     managed_log_remote_result(request, "rpc", request->response.error_code,
@@ -1294,7 +1297,7 @@ h2_pal_result_t h2_gizclaw_req_response_internal(
 
 h2_pal_result_t h2_gizclaw_req_set_rpc_error_normalizer_internal(
     h2_gizclaw_req_t *base, const void *tag,
-    h2_pal_result_t (*normalize)(int error_code)) {
+    h2_pal_result_t (*normalize)(int error_code, h2_gizclaw_str_t reason)) {
   if (base == NULL || base->vtable != &managed_vtable || normalize == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   managed_request_t *request = (managed_request_t *)base;

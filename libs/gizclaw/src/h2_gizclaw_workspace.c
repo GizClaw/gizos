@@ -390,10 +390,12 @@ static int decode_workspace_get(const h2_pal_mem_api_t *allocator,
                                 char **out_profile_name,
                                 char **out_profile_revision,
                                 bool *out_has_fence,
-                                char out_fence[H2_GIZCLAW_SAFETY_FENCE_LEVEL_MAX_BYTES + 1u]) {
+                                char out_fence[H2_GIZCLAW_SAFETY_FENCE_LEVEL_MAX_BYTES + 1u],
+                                char **out_created_at) {
   gizclaw_rpc_v1_WorkspaceGetResponse decoded =
       gizclaw_rpc_v1_WorkspaceGetResponse_init_zero;
-  text_decode_t text[4];
+  text_decode_t text[5];
+  set_text_decoder(&decoded.value.created_at, &text[4], allocator, out_created_at, 64u);
   set_text_decoder(&decoded.value.name, &text[0], allocator,
                    &out_workspace->name, H2_GIZCLAW_WORKSPACE_NAME_MAX_BYTES);
   set_text_decoder(&decoded.value.workflow_name, &text[1], allocator,
@@ -839,6 +841,15 @@ static void workspace_destroy(void *user) {
   h2_pal_mem_free(context->allocator, context);
 }
 
+static h2_pal_result_t workspace_error_result(int code, h2_gizclaw_str_t reason) {
+  static const char pending[] = "WORKSPACE_PENDING_DELETION";
+  return code == H2_GIZCLAW_RPC_ERROR_FAILED_PRECONDITION &&
+                 reason.data != NULL && reason.len == sizeof(pending) - 1u &&
+                 memcmp(reason.data, pending, sizeof(pending) - 1u) == 0
+             ? H2_GIZCLAW_WORKSPACE_ERR_PENDING_DELETION
+             : h2_gizclaw_rpc_error_result_internal(code);
+}
+
 static h2_pal_result_t workspace_create_request(
     h2_gizclaw_service_t *service, uint64_t identity, workspace_kind_t kind,
     h2_gizclaw_str_t first, h2_gizclaw_str_t second, h2_gizclaw_str_t third,
@@ -878,6 +889,15 @@ static h2_pal_result_t workspace_create_request(
         service, identity, context->method, &workspace_tags[kind],
         (h2_gizclaw_rpc_bytes_t){context->payload, context->payload_len},
         timeout_ms, workspace_destroy, context, out_request);
+    if (rc == H2_PAL_OK) {
+      rc = h2_gizclaw_req_set_rpc_error_normalizer_internal(
+          *out_request, &workspace_tags[kind], workspace_error_result);
+      if (rc != H2_PAL_OK) {
+        h2_gizclaw_req_release(*out_request);
+        *out_request = NULL;
+        return rc; /* Request owned and released context. */
+      }
+    }
     if (rc == H2_PAL_OK) {
       /* The common request owns its wire payload. Keep only parser metadata
        * here, not a second copy of the encoded request and input strings. */
@@ -1010,7 +1030,7 @@ h2_pal_result_t h2_gizclaw_resp_parse_workspace_get(
   rc = (h2_pal_result_t)decode_workspace_get(
       allocator, data, len, &result.workspace, &result.runtime_profile_name,
       &result.runtime_profile_revision, &result.has_safety_fence_level,
-      result.safety_fence_level);
+      result.safety_fence_level, &result.created_at);
 
   rc = h2_gizclaw_resp_arena_end(&arena, rc);
   if (rc == H2_PAL_OK)
@@ -1310,6 +1330,18 @@ h2_pal_result_t h2_gizclaw_rpc_run_stop(h2_gizclaw_service_t* service,
   return rc;
 }
 
+static h2_pal_result_t workspace_error_projection(h2_pal_result_t rc,
+    h2_gizclaw_req_t **request, const void *tag) {
+  if (rc == H2_PAL_OK) {
+    rc = h2_gizclaw_req_set_rpc_error_normalizer_internal(*request, tag, workspace_error_result);
+    if (rc != H2_PAL_OK) {
+      h2_gizclaw_req_release(*request);
+      *request = NULL;
+    }
+  }
+  return rc;
+}
+
 h2_pal_result_t h2_gizclaw_req_create_workspace_activate(
     h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
     uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
@@ -1337,17 +1369,18 @@ h2_pal_result_t h2_gizclaw_req_create_workspace_activate(
         &workspace_activate_tag, (h2_gizclaw_rpc_bytes_t){payload, len},
         timeout_ms, out_request);
   h2_pal_mem_free(service->client_config.allocator, payload);
-  return rc;
+  return workspace_error_projection(rc, out_request, &workspace_activate_tag);
 }
 
 h2_pal_result_t
 h2_gizclaw_req_create_workspace_reload(h2_gizclaw_service_t *service,
                                        uint64_t identity, uint32_t timeout_ms,
                                        h2_gizclaw_req_t **out_request) {
-  return h2_gizclaw_req_create_rpc_internal(
+  h2_pal_result_t rc = h2_gizclaw_req_create_rpc_internal(
       service, identity, H2_GIZCLAW_RPC_SERVER_RUN_WORKSPACE_RELOAD,
       &workspace_reload_tag, (h2_gizclaw_rpc_bytes_t){0}, timeout_ms,
       out_request);
+  return workspace_error_projection(rc, out_request, &workspace_reload_tag);
 }
 
 h2_pal_result_t h2_gizclaw_req_create_workspace_reload_with_options(
@@ -1416,7 +1449,7 @@ h2_pal_result_t h2_gizclaw_req_create_workspace_reload_with_options(
         &workspace_reload_with_options_tag,
         (h2_gizclaw_rpc_bytes_t){payload, len}, timeout_ms, out_request);
   h2_pal_mem_free(service->client_config.allocator, payload);
-  return rc;
+  return workspace_error_projection(rc, out_request, &workspace_reload_with_options_tag);
 }
 
 static h2_pal_result_t

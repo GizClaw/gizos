@@ -759,7 +759,8 @@ static void test_local_exhausted_scalar_is_not_server_quota(void) {
   teardown(&env);
 }
 
-static h2_pal_result_t scoped_test_normalizer(int code) {
+static h2_pal_result_t scoped_test_normalizer(int code, h2_gizclaw_str_t reason) {
+  (void)reason;
   return code == H2_GIZCLAW_RPC_ERROR_RESOURCE_EXHAUSTED
              ? H2_GIZCLAW_API_KEY_ERR_EXHAUSTED
              : h2_gizclaw_rpc_error_result_internal(code);

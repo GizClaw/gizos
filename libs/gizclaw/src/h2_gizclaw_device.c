@@ -482,6 +482,13 @@ static bool scan_result(void *user, const h2_pal_wifi_scan_entry_t *entry) {
   }
   return reply->networks_count < 32;
 }
+/* Use the Service Runtime only for the same injected radio/storage pair. */
+static h2_runtime_t *wifi_runtime(h2_gizclaw_device_t *d) {
+  h2_runtime_t *runtime = d->service->config.runtime;
+  return runtime != NULL && runtime->wifi_sta == d->config.wifi &&
+                 runtime->wifi_settings == d->config.wifi_settings
+             ? runtime : NULL;
+}
 static int wifi_rpc(h2_gizclaw_device_t *d, int method,
                     h2_gizclaw_rpc_bytes_t bytes,
                     h2_gizclaw_rpc_provider_response_t *out) {
@@ -494,32 +501,46 @@ static int wifi_rpc(h2_gizclaw_device_t *d, int method,
             : gizclaw_rpc_v1_ClientWifiSavedForgetRequest_fields;
     if (!decode(bytes, fields, &request))
       return H2_PAL_ERR_INVALID_ARG;
-    h2_pal_wifi_sta_config_t saved = {0};
-    int rc = h2_pal_wifi_settings_get_saved_sta_config(d->config.wifi_settings,
-                                                       &saved);
-    if (rc != H2_PAL_OK && rc != H2_PAL_ERR_NOT_FOUND)
-      return rc;
-    if (saved.ssid_len > 32)
-      return H2_PAL_ERR_FORMAT;
-    if (method == H2_GIZCLAW_TOOL_WIFI_SAVED_LIST) {
-      gizclaw_rpc_v1_ClientWifiSavedListResponse reply = {0};
-      if (rc == H2_PAL_OK && saved.ssid_len) {
-        reply.networks_count = 1;
-        memcpy(reply.networks[0].ssid, saved.ssid, saved.ssid_len);
-      }
-      memset(&saved, 0, sizeof(saved));
-      return encode(d, gizclaw_rpc_v1_ClientWifiSavedListResponse_fields,
-                    &reply, out);
-    }
-    bool match = request.ssid[0] && strlen(request.ssid) == saved.ssid_len &&
-                 !memcmp(request.ssid, saved.ssid, saved.ssid_len);
-    memset(&saved, 0, sizeof(saved));
-    if (!request.ssid[0])
+    if (method == H2_GIZCLAW_TOOL_WIFI_SAVED_FORGET && !request.ssid[0])
       return H2_PAL_ERR_INVALID_ARG;
-    return match ? h2_pal_wifi_settings_clear_saved_sta_config(
-                       d->config.wifi_settings)
+    h2_runtime_t *runtime = wifi_runtime(d);
+    if (runtime != NULL && method == H2_GIZCLAW_TOOL_WIFI_SAVED_FORGET)
+      return h2_runtime_wifi_saved_remove(runtime, request.ssid, strlen(request.ssid));
+    h2_runtime_wifi_saved_network_t saved[H2_RUNTIME_WIFI_SAVED_MAX] = {0};
+    size_t count = 0;
+    int rc;
+    if (runtime != NULL) {
+      rc = h2_runtime_wifi_saved_list(runtime, saved, H2_RUNTIME_WIFI_SAVED_MAX, &count);
+    } else {
+      rc = h2_pal_wifi_settings_get_saved_sta_config(d->config.wifi_settings,
+                                                    &saved[0].config);
+      count = rc == H2_PAL_OK ? 1u : 0u;
+      if (rc == H2_PAL_ERR_NOT_FOUND)
+        rc = H2_PAL_OK;
+    }
+    if (rc == H2_PAL_OK && method == H2_GIZCLAW_TOOL_WIFI_SAVED_LIST) {
+      gizclaw_rpc_v1_ClientWifiSavedListResponse reply = {0};
+      for (size_t i = 0; i < count; ++i) {
+        if (saved[i].config.ssid_len > H2_PAL_WIFI_SSID_MAX) {
+          rc = H2_PAL_ERR_FORMAT;
+          break;
+        }
+        memcpy(reply.networks[i].ssid, saved[i].config.ssid, saved[i].config.ssid_len);
+        ++reply.networks_count;
+      }
+      if (rc == H2_PAL_OK)
+        rc = encode(d, gizclaw_rpc_v1_ClientWifiSavedListResponse_fields, &reply, out);
+    } else if (rc == H2_PAL_OK) {
+      const h2_pal_wifi_sta_config_t *config = &saved[0].config;
+      const bool match = count != 0 && strlen(request.ssid) == config->ssid_len &&
+                         !memcmp(request.ssid, config->ssid, config->ssid_len);
+      rc = match ? h2_pal_wifi_settings_clear_saved_sta_config(d->config.wifi_settings)
                  : H2_PAL_ERR_NOT_FOUND;
+    }
+    memset(saved, 0, sizeof(saved));
+    return rc;
   }
+
   if (method == H2_GIZCLAW_TOOL_WIFI_SCAN) {
     gizclaw_rpc_v1_ClientWifiScanRequest request = {0};
     if (!decode(bytes, gizclaw_rpc_v1_ClientWifiScanRequest_fields, &request) ||
@@ -1812,8 +1833,11 @@ static void device_worker(void *user) {
         if (result == H2_PAL_OK && sound_url[1024] == 0 && https_url(sound_url))
           (void)play_url(d, sound_url, d->sound_ms, false, 0, 0);
       } else if (pending == H2_GIZCLAW_TOOL_WIFI_CONNECT) {
-        int rc = h2_pal_wifi_sta_connect_and_save(d->config.wifi, &d->wifi_config,
-                                         io_timeout(d));
+        h2_runtime_t *runtime = wifi_runtime(d);
+        int rc = runtime != NULL
+                     ? h2_runtime_wifi_connect_and_save(runtime, &d->wifi_config, io_timeout(d))
+                     : h2_pal_wifi_sta_connect_and_save(d->config.wifi, &d->wifi_config,
+                                                        io_timeout(d));
         trace(d, "wifi_connect", pending, rc);
       } else if (pending == H2_GIZCLAW_TOOL_DEVICE_REBOOT) {
         if (d->config.vtable && d->config.vtable->request_reboot) {

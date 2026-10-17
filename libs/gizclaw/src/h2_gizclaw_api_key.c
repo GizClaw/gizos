@@ -5,7 +5,8 @@
 #include "pb_encode.h"
 #include <string.h>
 static const char create_tag, revoke_tag, list_tag;
-static h2_pal_result_t create_error_result(int error_code) {
+static h2_pal_result_t create_error_result(int error_code, h2_gizclaw_str_t reason) {
+  (void)reason;
   return error_code == H2_GIZCLAW_RPC_ERROR_RESOURCE_EXHAUSTED
              ? H2_GIZCLAW_API_KEY_ERR_EXHAUSTED
              : h2_gizclaw_rpc_error_result_internal(error_code);

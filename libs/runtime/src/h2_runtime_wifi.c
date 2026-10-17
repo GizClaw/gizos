@@ -2,7 +2,7 @@
 
 #include <string.h>
 
-h2_pal_result_t h2_runtime_wifi_connect_saved(h2_runtime_t *runtime,
+static h2_pal_result_t wifi_connect_saved_locked(h2_runtime_t *runtime,
                                              uint32_t timeout_ms) {
     if (!h2_runtime_ready(runtime))
         return H2_PAL_ERR_INVALID_ARG;
@@ -50,6 +50,27 @@ static bool saved_bytes_zero(const uint8_t *bytes, size_t len) {
     return true;
 }
 
+static int saved_write(h2_runtime_t *runtime, const h2_runtime_wifi_saved_network_t *saved,
+                       size_t count);
+
+static int saved_import_pal(h2_runtime_t *runtime, h2_runtime_wifi_saved_network_t *saved,
+                            size_t *count) {
+    h2_pal_wifi_sta_config_t legacy = {0};
+    int rc = h2_pal_wifi_settings_get_saved_sta_config(runtime->wifi_settings, &legacy);
+    if (saved_storage_absent(rc))
+        return H2_PAL_OK;
+    if (rc == H2_PAL_OK && !saved_config_valid(&legacy))
+        rc = H2_PAL_ERR_FORMAT;
+    if (rc == H2_PAL_OK) {
+        saved[0] = (h2_runtime_wifi_saved_network_t){.config = legacy};
+        rc = saved_write(runtime, saved, 1);
+        if (rc == H2_PAL_OK)
+            *count = 1;
+    }
+    memset(&legacy, 0, sizeof(legacy));
+    return rc;
+}
+
 static int saved_read(h2_runtime_t *runtime, h2_runtime_wifi_saved_network_t *saved,
                       size_t *count) {
     *count = 0;
@@ -57,7 +78,9 @@ static int saved_read(h2_runtime_t *runtime, h2_runtime_wifi_saved_network_t *sa
         return H2_PAL_OK;
     h2_pal_pref_namespace_t *ns = NULL;
     int rc = h2_pal_pref_open(runtime->pref, WIFI_SAVED_NAMESPACE, H2_PAL_PREF_OPEN_READ_ONLY, &ns);
-    if (saved_storage_absent(rc))
+    if (rc == H2_PAL_ERR_NOT_FOUND)
+        return saved_import_pal(runtime, saved, count);
+    if (rc == H2_PAL_ERR_UNSUPPORTED)
         return H2_PAL_OK;
     if (rc != H2_PAL_OK)
         return rc;
@@ -66,6 +89,7 @@ static int saved_read(h2_runtime_t *runtime, h2_runtime_wifi_saved_network_t *sa
     rc = ns->get_blob ? ns->get_blob(ns, runtime->mem, WIFI_SAVED_KEY, &data, &len)
                       : H2_PAL_ERR_UNSUPPORTED;
     int close_rc = ns->close(ns);
+    const bool missing = rc == H2_PAL_ERR_NOT_FOUND;
     if (saved_storage_absent(rc))
         rc = H2_PAL_OK;
     else if (rc == H2_PAL_OK) {
@@ -117,7 +141,11 @@ static int saved_read(h2_runtime_t *runtime, h2_runtime_wifi_saved_network_t *sa
         memset(data, 0, len);
         h2_pal_mem_free(runtime->mem, data);
     }
-    return rc == H2_PAL_OK ? close_rc : rc;
+    if (rc == H2_PAL_OK)
+        rc = close_rc;
+    if (rc == H2_PAL_OK && missing)
+        rc = saved_import_pal(runtime, saved, count);
+    return rc;
 }
 
 static int saved_write(h2_runtime_t *runtime, const h2_runtime_wifi_saved_network_t *saved,
@@ -142,6 +170,7 @@ static int saved_write(h2_runtime_t *runtime, const h2_runtime_wifi_saved_networ
         memset(blob, 0, sizeof(blob));
         return H2_PAL_ERR_UNSUPPORTED;
     }
+    bool committed = false;
     h2_pal_pref_namespace_t *ns = NULL;
     int rc =
         h2_pal_pref_open(runtime->pref, WIFI_SAVED_NAMESPACE, H2_PAL_PREF_OPEN_READ_WRITE, &ns);
@@ -151,15 +180,20 @@ static int saved_write(h2_runtime_t *runtime, const h2_runtime_wifi_saved_networ
         /* Providers that buffer writes discard them on close without this. */
         if (rc == H2_PAL_OK)
             rc = ns->commit ? ns->commit(ns) : H2_PAL_ERR_UNSUPPORTED;
+        committed = rc == H2_PAL_OK;
         int close_rc = ns->close(ns);
         if (rc == H2_PAL_OK)
             rc = close_rc;
     }
     memset(blob, 0, sizeof(blob));
+    if (committed) {
+        h2_atomic_fetch_add(&runtime->private_state->wifi_saved_revision, 1u);
+        h2_runtime_notify(runtime);
+    }
     return rc;
 }
 
-h2_pal_result_t h2_runtime_wifi_saved_list(h2_runtime_t *runtime,
+static h2_pal_result_t wifi_saved_list_locked(h2_runtime_t *runtime,
                                            h2_runtime_wifi_saved_network_t *out, size_t capacity,
                                            size_t *out_count) {
     if (out_count)
@@ -178,7 +212,7 @@ h2_pal_result_t h2_runtime_wifi_saved_list(h2_runtime_t *runtime,
     return rc;
 }
 
-h2_pal_result_t h2_runtime_wifi_saved_save(h2_runtime_t *runtime,
+static h2_pal_result_t wifi_saved_save_locked(h2_runtime_t *runtime,
                                            const h2_pal_wifi_sta_config_t *config) {
     if (!h2_runtime_ready(runtime) || !saved_config_valid(config))
         return H2_PAL_ERR_INVALID_ARG;
@@ -202,7 +236,22 @@ h2_pal_result_t h2_runtime_wifi_saved_save(h2_runtime_t *runtime,
     return rc;
 }
 
-h2_pal_result_t h2_runtime_wifi_saved_remove(h2_runtime_t *runtime, const char *ssid,
+static int saved_clear_pal(h2_runtime_t *runtime, const char *ssid, size_t ssid_len) {
+    h2_pal_wifi_sta_config_t saved = {0};
+    int rc = h2_pal_wifi_settings_get_saved_sta_config(runtime->wifi_settings, &saved);
+    if (saved_storage_absent(rc))
+        return H2_PAL_OK;
+    if (rc == H2_PAL_OK && (ssid == NULL ||
+        (saved.ssid_len == ssid_len && memcmp(saved.ssid, ssid, ssid_len) == 0))) {
+        rc = h2_pal_wifi_settings_clear_saved_sta_config(runtime->wifi_settings);
+        if (rc == H2_PAL_ERR_NOT_FOUND)
+            rc = H2_PAL_OK;
+    }
+    memset(&saved, 0, sizeof(saved));
+    return rc;
+}
+
+static h2_pal_result_t wifi_saved_remove_locked(h2_runtime_t *runtime, const char *ssid,
                                              size_t ssid_len) {
     if (!h2_runtime_ready(runtime) || !ssid || !ssid_len || ssid_len > H2_PAL_WIFI_SSID_MAX)
         return H2_PAL_ERR_INVALID_ARG;
@@ -216,6 +265,8 @@ h2_pal_result_t h2_runtime_wifi_saved_remove(h2_runtime_t *runtime, const char *
                 memcmp(saved[i].config.ssid, ssid, ssid_len) == 0) {
                 memmove(saved + i, saved + i + 1, (count - i - 1) * sizeof(*saved));
                 rc = saved_write(runtime, saved, count - 1);
+                if (rc == H2_PAL_OK)
+                    rc = saved_clear_pal(runtime, ssid, ssid_len);
                 break;
             }
         }
@@ -224,13 +275,14 @@ h2_pal_result_t h2_runtime_wifi_saved_remove(h2_runtime_t *runtime, const char *
     return rc;
 }
 
-h2_pal_result_t h2_runtime_wifi_saved_clear(h2_runtime_t *runtime) {
+static h2_pal_result_t wifi_saved_clear_locked(h2_runtime_t *runtime) {
     if (!h2_runtime_ready(runtime))
         return H2_PAL_ERR_INVALID_ARG;
-    return saved_write(runtime, NULL, 0);
+    int rc = saved_write(runtime, NULL, 0);
+    return rc == H2_PAL_OK ? saved_clear_pal(runtime, NULL, 0) : rc;
 }
 
-h2_pal_result_t h2_runtime_wifi_connect_and_save(h2_runtime_t *runtime,
+static h2_pal_result_t wifi_connect_and_save_locked(h2_runtime_t *runtime,
                                                  const h2_pal_wifi_sta_config_t *config,
                                                  uint32_t timeout_ms) {
     if (!h2_runtime_ready(runtime) || !saved_config_valid(config))
@@ -241,7 +293,7 @@ h2_pal_result_t h2_runtime_wifi_connect_and_save(h2_runtime_t *runtime,
     /* The station is connected and the platform credential is stored. Recording
      * it in the Runtime set is bookkeeping: report the failure, but never turn a
      * working connection into a provisioning failure. */
-    const int save_rc = h2_runtime_wifi_saved_save(runtime, config);
+    const int save_rc = wifi_saved_save_locked(runtime, config);
     if (save_rc != H2_PAL_OK)
         (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_WARN, "runtime/wifi",
                                "saved set not updated after provisioning");
@@ -291,7 +343,7 @@ static int wifi_remaining(h2_runtime_t *runtime, uint64_t started, uint32_t budg
     return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_runtime_wifi_connect_best_saved(h2_runtime_t *runtime, uint32_t timeout_ms) {
+static h2_pal_result_t wifi_connect_best_saved_locked(h2_runtime_t *runtime, uint32_t timeout_ms) {
     if (!h2_runtime_ready(runtime))
         return H2_PAL_ERR_INVALID_ARG;
     uint32_t budget = timeout_ms ? timeout_ms : 15000u;
@@ -306,7 +358,7 @@ h2_pal_result_t h2_runtime_wifi_connect_best_saved(h2_runtime_t *runtime, uint32
      * credential as provisioned, so a later attempt is not tied to that AP. */
     h2_pal_wifi_sta_config_t origins[H2_RUNTIME_WIFI_SAVED_MAX] = {0};
     size_t count = 0;
-    rc = h2_runtime_wifi_saved_list(runtime, scan.saved, H2_RUNTIME_WIFI_SAVED_MAX,
+    rc = wifi_saved_list_locked(runtime, scan.saved, H2_RUNTIME_WIFI_SAVED_MAX,
                                     &scan.saved_count);
     if (rc != H2_PAL_OK)
         goto done;
@@ -362,7 +414,7 @@ h2_pal_result_t h2_runtime_wifi_connect_best_saved(h2_runtime_t *runtime, uint32
         if (rc == H2_PAL_OK) {
             /* Fronting the entry is bookkeeping: report it, but never turn a
              * working connection into a failure. */
-            if (h2_runtime_wifi_saved_save(runtime, &origins[i]) != H2_PAL_OK)
+            if (wifi_saved_save_locked(runtime, &origins[i]) != H2_PAL_OK)
                 (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_WARN, "runtime/wifi",
                                        "saved set not reordered after reconnect");
             break;
@@ -373,4 +425,77 @@ done:
     memset(origins, 0, sizeof(origins));
     memset(&scan, 0, sizeof(scan));
     return rc;
+}
+
+/* Network workers may overlap across App, BLE and remote tools. One admission
+ * slot protects read/modify/write and provisioning; callbacks never wait. */
+static h2_pal_result_t wifi_enter(h2_runtime_t *runtime) {
+    if (!h2_runtime_ready(runtime))
+        return H2_PAL_ERR_INVALID_ARG;
+    return h2_atomic_flag_test_and_set(&runtime->private_state->wifi_busy, H2_ATOMIC_ACQUIRE)
+               ? H2_PAL_ERR_BUSY : H2_PAL_OK;
+}
+static h2_pal_result_t wifi_leave(h2_runtime_t *runtime, h2_pal_result_t rc) {
+    h2_atomic_flag_clear(&runtime->private_state->wifi_busy, H2_ATOMIC_RELEASE);
+    return rc;
+}
+h2_pal_result_t h2_runtime_wifi_saved_revision(h2_runtime_t *runtime, unsigned *out) {
+    if (out == NULL)
+        return H2_PAL_ERR_INVALID_ARG;
+    *out = 0;
+    if (!h2_runtime_ready(runtime))
+        return H2_PAL_ERR_INVALID_ARG;
+    *out = h2_atomic_load(&runtime->private_state->wifi_saved_revision);
+    return H2_PAL_OK;
+}
+
+h2_pal_result_t h2_runtime_wifi_connect_saved(h2_runtime_t *runtime, uint32_t timeout_ms) {
+    h2_pal_result_t rc = wifi_enter(runtime);
+    if (rc != H2_PAL_OK)
+        return rc;
+    return wifi_leave(runtime, wifi_connect_saved_locked(runtime, timeout_ms));
+}
+
+h2_pal_result_t h2_runtime_wifi_saved_list(h2_runtime_t *runtime, h2_runtime_wifi_saved_network_t *out, size_t capacity, size_t *out_count) {
+    if (out_count != NULL)
+        *out_count = 0;
+    h2_pal_result_t rc = wifi_enter(runtime);
+    if (rc != H2_PAL_OK)
+        return rc;
+    return wifi_leave(runtime, wifi_saved_list_locked(runtime, out, capacity, out_count));
+}
+
+h2_pal_result_t h2_runtime_wifi_saved_save(h2_runtime_t *runtime, const h2_pal_wifi_sta_config_t *config) {
+    h2_pal_result_t rc = wifi_enter(runtime);
+    if (rc != H2_PAL_OK)
+        return rc;
+    return wifi_leave(runtime, wifi_saved_save_locked(runtime, config));
+}
+
+h2_pal_result_t h2_runtime_wifi_saved_remove(h2_runtime_t *runtime, const char *ssid, size_t ssid_len) {
+    h2_pal_result_t rc = wifi_enter(runtime);
+    if (rc != H2_PAL_OK)
+        return rc;
+    return wifi_leave(runtime, wifi_saved_remove_locked(runtime, ssid, ssid_len));
+}
+
+h2_pal_result_t h2_runtime_wifi_saved_clear(h2_runtime_t *runtime) {
+    h2_pal_result_t rc = wifi_enter(runtime);
+    if (rc != H2_PAL_OK)
+        return rc;
+    return wifi_leave(runtime, wifi_saved_clear_locked(runtime));
+}
+
+h2_pal_result_t h2_runtime_wifi_connect_and_save(h2_runtime_t *runtime, const h2_pal_wifi_sta_config_t *config, uint32_t timeout_ms) {
+    h2_pal_result_t rc = wifi_enter(runtime);
+    if (rc != H2_PAL_OK)
+        return rc;
+    return wifi_leave(runtime, wifi_connect_and_save_locked(runtime, config, timeout_ms));
+}
+
+h2_pal_result_t h2_runtime_wifi_connect_best_saved(h2_runtime_t *runtime, uint32_t timeout_ms) {
+    h2_pal_result_t rc = wifi_enter(runtime);
+    if (rc != H2_PAL_OK)
+        return rc;
+    return wifi_leave(runtime, wifi_connect_best_saved_locked(runtime, timeout_ms));
 }
