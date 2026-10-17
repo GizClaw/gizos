@@ -104,7 +104,8 @@ typedef h2_pal_result_t (*h2_gizclaw_catalog_sink_fn)(
     const h2_gizclaw_workflow_page_t *page, const char *profile_name,
     const char *profile_revision);
 
-/** Dependencies, tag spans and their text are borrowed until destroy. One
+/** Dependencies are borrowed until destroy. Initial tag spans and their text
+ * are borrowed until refresh_with_tags replaces them or Session destroy. One
  * Session per Service; use Session operations exclusively for registration,
  * catalog, and conversations on that Service. Existing synchronous workspace
  * RPCs participate in this Session's lifecycle and publish confirmed
@@ -188,6 +189,21 @@ h2_pal_result_t h2_gizclaw_session_register(h2_gizclaw_session_t *session,
                                             uint32_t timeout_ms);
 h2_pal_result_t h2_gizclaw_session_refresh(h2_gizclaw_session_t *session,
                                            uint32_t timeout_ms);
+/** Replace the catalog's exact AND selector and refresh it in one serialized
+ * operation. Input tags are copied and may be released when this call returns;
+ * zero tags removes the filter. The copied selector also applies to later
+ * refreshes and Profile-revision retries. Workspace identity is unchanged.
+ * Admission is the same as refresh: BUSY while preparing, executing another
+ * Workspace RPC, or owning a Conversation. Invalid input, failed admission or
+ * selector-copy allocation failure leaves the previous selector/catalog
+ * unchanged. After replacement, query/sink failure keeps the new selector but
+ * never exposes the old catalog as READY. Must run on a caller task, never a
+ * service_poll callback.
+ */
+h2_pal_result_t
+h2_gizclaw_session_refresh_with_tags(h2_gizclaw_session_t *session,
+                                     const h2_gizclaw_str_t *tags,
+                                     size_t tag_count, uint32_t timeout_ms);
 /** Prepares the named Workspace. Streaming selection uses the supplied names
  * directly and needs no in-memory catalog. Current changes
  * only after server confirmation; a failed switch cannot publish its target as

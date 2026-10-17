@@ -79,6 +79,10 @@ static size_t list_limit;
 static bool list_failure, bad_revision, missing, close_during_list,
     reload_failure, divergent_fences;
 static bool paginated, empty_cycle, get_failure;
+static bool empty_catalog;
+static size_t requested_tag_count;
+static char requested_tags[H2_GIZCLAW_WORKFLOW_TAG_MAX_ITEMS]
+                          [H2_GIZCLAW_WORKFLOW_TAG_MAX_BYTES + 1u];
 static const char *server_revision;
 static unsigned closed_after_reload;
 static h2_gizclaw_conversation_completion_fn terminal;
@@ -196,6 +200,12 @@ h2_pal_result_t h2_gizclaw_rpc_workflow_list(
     h2_gizclaw_resp_storage_t *storage, h2_gizclaw_workflow_page_t *out) {
   (void)service;
   list_limit = limit;
+  requested_tag_count = tag_count;
+  for (size_t i = 0u; i < tag_count; ++i) {
+    assert(tags[i].len < sizeof(requested_tags[i]));
+    memcpy(requested_tags[i], tags[i].data, tags[i].len);
+    requested_tags[i][tags[i].len] = '\0';
+  }
   assert(timeout > 0u);
   (void)h2_atomic_fetch_add(&lists, 1u);
   h2_atomic_store(&list_entered, true);
@@ -211,6 +221,9 @@ h2_pal_result_t h2_gizclaw_rpc_workflow_list(
   assert(h2_gizclaw_session_snapshot(session, &pending) == H2_PAL_OK);
   assert(!pending.can_start);
   assert(h2_gizclaw_session_refresh(session, 100u) ==
+         (close_during_list ? H2_PAL_ERR_CLOSED : H2_PAL_ERR_BUSY));
+  const h2_gizclaw_str_t other_tag = {"other-selector", 14u};
+  assert(h2_gizclaw_session_refresh_with_tags(session, &other_tag, 1u, 100u) ==
          (close_during_list ? H2_PAL_ERR_CLOSED : H2_PAL_ERR_BUSY));
   h2_gizclaw_resp_arena_t arena;
   assert(h2_gizclaw_resp_arena_begin(storage, &arena) == H2_PAL_OK);
@@ -228,6 +241,8 @@ h2_pal_result_t h2_gizclaw_rpc_workflow_list(
   if (divergent_fences && cursor.len != 0u)
     strcpy(out->safety_fences->display_name, "Changed");
   out->safety_fence_count = 1u;
+  if (empty_catalog)
+    return h2_gizclaw_resp_arena_end(&arena, H2_PAL_OK);
   if (empty_cycle) {
     out->has_next = true;
     out->next_cursor = copy(
@@ -433,6 +448,9 @@ static h2_gizclaw_session_config_t session_config(size_t tag_count) {
   list_failure = bad_revision = missing = close_during_list = reload_failure =
       divergent_fences = false;
   paginated = empty_cycle = get_failure = false;
+  empty_catalog = false;
+  requested_tag_count = 0u;
+  memset(requested_tags, 0, sizeof(requested_tags));
   server_revision = "v1";
   closed_after_reload = 0u;
   h2_atomic_store(&now, 0u);
@@ -538,6 +556,108 @@ static void assert_catalog(void) {
   assert(strcmp(catalog.items[1].name, "beta") == 0);
 }
 
+static void test_refresh_tags(void) {
+  setup(0u);
+  assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
+  char age[] = "age:child";
+  h2_gizclaw_str_t tag = {age, sizeof(age) - 1u};
+  assert(h2_gizclaw_session_refresh_with_tags(session, &tag, 1u, 1000u) ==
+         H2_PAL_OK);
+  assert(requested_tag_count == 1u &&
+         strcmp(requested_tags[0], "age:child") == 0);
+  memset(age, 'X', sizeof(age) - 1u);
+  server_revision = "v2";
+  assert(h2_gizclaw_session_refresh(session, 1000u) == H2_PAL_OK);
+  assert(strcmp(requested_tags[0], "age:child") == 0);
+  /* Every page keeps the selected filter; a concurrent replacement is BUSY. */
+  paginated = true;
+  tag = (h2_gizclaw_str_t){"age:teen", 8u};
+  unsigned before = h2_atomic_load(&lists);
+  assert(h2_gizclaw_session_refresh_with_tags(session, &tag, 1u, 1000u) ==
+         H2_PAL_OK);
+  assert(h2_atomic_load(&lists) == before + 2u &&
+         strcmp(requested_tags[0], "age:teen") == 0);
+  paginated = false;
+  before = h2_atomic_load(&lists);
+  assert(h2_gizclaw_session_refresh_with_tags(session, NULL, 1u, 1000u) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_session_refresh_with_tags(session, &tag, 33u, 1000u) ==
+         H2_PAL_ERR_INVALID_ARG);
+  const h2_gizclaw_str_t invalid = {"", 0u};
+  assert(h2_gizclaw_session_refresh_with_tags(session, &invalid, 1u, 1000u) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_atomic_load(&lists) == before &&
+         snapshot().catalog == H2_GIZCLAW_SESSION_READY);
+  /* A failed query keeps the new selector, never a READY old catalog. */
+  list_failure = true;
+  tag = (h2_gizclaw_str_t){"age:preschool", 13u};
+  assert(h2_gizclaw_session_refresh_with_tags(session, &tag, 1u, 1000u) ==
+         H2_PAL_ERR_IO);
+  assert(snapshot().catalog == H2_GIZCLAW_SESSION_FAILED);
+  list_failure = false;
+  empty_catalog = true;
+  assert(h2_gizclaw_session_refresh(session, 1000u) == H2_PAL_OK);
+  assert(strcmp(requested_tags[0], "age:preschool") == 0 &&
+         snapshot().workflow_count == 0u &&
+         snapshot().catalog == H2_GIZCLAW_SESSION_READY);
+  empty_catalog = false;
+  assert(h2_gizclaw_session_refresh_with_tags(session, NULL, 0u, 1000u) ==
+         H2_PAL_OK);
+  assert(requested_tag_count == 0u);
+  assert(h2_gizclaw_session_close(session) == H2_PAL_OK);
+  before = h2_atomic_load(&lists);
+  assert(h2_gizclaw_session_refresh_with_tags(session, &tag, 1u, 1000u) ==
+         H2_PAL_ERR_CLOSED);
+  assert(h2_atomic_load(&lists) == before);
+  teardown();
+
+  /* Replacing an equal, initially borrowed selector must still take ownership.
+   */
+  char initial_text[] = "age:child";
+  const h2_gizclaw_str_t initial_tag = {initial_text,
+                                        sizeof(initial_text) - 1u};
+  h2_gizclaw_session_config_t initial_config = session_config(1u);
+  initial_config.tags = &initial_tag;
+  assert(h2_gizclaw_session_create(&initial_config, &session) == H2_PAL_OK);
+  assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
+  assert(h2_gizclaw_session_refresh_with_tags(session, &initial_tag, 1u,
+                                              1000u) == H2_PAL_OK);
+  memset(initial_text, 'X', sizeof(initial_text) - 1u);
+  assert(h2_gizclaw_session_refresh(session, 1000u) == H2_PAL_OK);
+  assert(strcmp(requested_tags[0], "age:child") == 0);
+  teardown();
+
+  catalog_test_memory_t memory = {0};
+  const h2_pal_mem_api_t mem = {.user = &memory,
+                                .vtable = &catalog_test_mem_vtable};
+  h2_gizclaw_session_config_t config = session_config(0u);
+  config.mem = &mem;
+  assert(h2_gizclaw_session_create(&config, &session) == H2_PAL_OK);
+  assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
+  before = h2_atomic_load(&lists);
+  memory.reject_allocations = true;
+  assert(h2_gizclaw_session_refresh_with_tags(session, &tag, 1u, 1000u) ==
+         H2_PAL_ERR_NO_MEMORY);
+  assert(h2_atomic_load(&lists) == before &&
+         snapshot().catalog == H2_GIZCLAW_SESSION_READY);
+  memory.reject_allocations = false;
+  assert(h2_gizclaw_session_refresh(session, 1000u) == H2_PAL_OK);
+  assert(requested_tag_count == 0u);
+  before = h2_atomic_load(&lists);
+  memory.fail_at = memory.attempts + 2u;
+  assert(h2_gizclaw_session_refresh_with_tags(session, &tag, 1u, 1000u) ==
+         H2_PAL_ERR_NO_MEMORY);
+  assert(h2_atomic_load(&lists) == before &&
+         snapshot().catalog == H2_GIZCLAW_SESSION_FAILED);
+  memory.fail_at = 0u;
+  assert(h2_gizclaw_session_refresh(session, 1000u) == H2_PAL_OK);
+  assert(strcmp(requested_tags[0], "age:preschool") == 0);
+  assert(h2_gizclaw_session_refresh_with_tags(session, &tag, 1u, 1000u) ==
+         H2_PAL_OK);
+  teardown();
+  assert(memory.live == 0u && memory.allocations == memory.frees);
+}
+
 typedef struct streaming_sink_state {
   unsigned begin, pages, commit, abort;
   size_t entries;
@@ -628,6 +748,14 @@ static void test_streaming_catalog(void) {
   sink.fail_commit = true;
   assert(h2_gizclaw_session_refresh(session, 1000u) == H2_PAL_ERR_IO);
   assert(sink.abort == 3u);
+  sink.fail_commit = false;
+  empty_catalog = true;
+  const h2_gizclaw_str_t preschool = {"age:preschool", 13u};
+  assert(h2_gizclaw_session_refresh_with_tags(session, &preschool, 1u, 1000u) ==
+         H2_PAL_OK);
+  assert(sink.entries == 0u && snapshot().workflow_count == 0u &&
+         snapshot().catalog == H2_GIZCLAW_SESSION_READY &&
+         strcmp(requested_tags[0], "age:preschool") == 0);
   teardown();
 
   sink = (streaming_sink_state_t){0};
@@ -1545,6 +1673,7 @@ int main(void) {
   assert(h2_atomic_bool_init(&list_entered, false) == H2_ATOMIC_OK);
   assert(h2_atomic_bool_init(&waiter_entered, false) == H2_ATOMIC_OK);
   test_tag_catalog_selector();
+  test_refresh_tags();
   test_streaming_catalog();
   test_catalog_buffer_lifetime(false, false);
   test_catalog_buffer_lifetime(true, false);
