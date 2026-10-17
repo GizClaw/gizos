@@ -224,13 +224,13 @@ _PROJECT = Label(":CMakeLists.txt")
 _MAIN_CMAKE = Label(":main/CMakeLists.txt")
 _MAIN_METADATA = Label(":main/idf_component.yml")
 
-def _esp_e2e_firmware_impl(name, visibility, suite, board, board_component, partition, layout_defaults, libraries, components, policies, launcher_srcs, cmake_definitions):
+def _esp_e2e_firmware_impl(name, visibility, suite, board, board_component, partition, layout_defaults, use_suite_defaults, libraries, components, policies, launcher_srcs, cmake_definitions):
     spec = _SUITES[suite]
     source_package = "//projects/e2e/targets/h2loader_tar_zlib/" + getattr(spec, "source_suite", suite) + "/" + getattr(spec, "source_board", "devkit")
     source = Label(source_package + ":main/main.c")
     suite_defaults = []
     defaults_suite = getattr(spec, "defaults_suite", suite if suite.startswith("pal-") and suite != "pal-ipv6" else "")
-    if defaults_suite:
+    if use_suite_defaults and defaults_suite:
         suite_defaults = [Label(source_package + ":sdkconfig." + defaults_suite + ".defaults")]
     layout_names = [default.name.split("/")[-1] for default in layout_defaults]
     if "sdkconfig.h2loader.defaults" not in layout_names:
@@ -305,6 +305,7 @@ esp_e2e_firmware = macro(
         "board_component": attr.label(mandatory = True, configurable = False),
         "partition": attr.label(mandatory = True, allow_single_file = True, configurable = False),
         "layout_defaults": attr.label_list(doc = "Ordered board-owned SDK defaults source files; their basenames are copied into the native project.", mandatory = True, allow_files = True, configurable = False),
+        "use_suite_defaults": attr.bool(doc = "Append the suite's diagnostic SDK defaults. Disable to test the caller's product configuration unchanged.", default = True, configurable = False),
         "libraries": attr.label_list(configurable = False),
         "components": attr.label_list(configurable = False),
         "policies": attr.string_list(configurable = False),
