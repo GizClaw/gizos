@@ -260,6 +260,8 @@ def _esp_e2e_firmware_impl(name, visibility, suite, board, board_component, part
     )
     project_name = "h2_" + suite.replace("-", "_") + "_e2e"
     cmake_definitions = dict(cmake_definitions)
+    if suite in ["gizclaw-e2e", "pal-ipv6", "pal-webrtc", "webrtc-performance"]:
+        cmake_definitions["H2_ESP_PLATFORM_ENABLE_WEBRTC"] = "ON"
     cmake_definitions.update({
         "H2_E2E_BOARD_DIR": (board_component.workspace_root + "/" + board_component.package).lstrip("/"),
         "H2_E2E_PROJECT_NAME": project_name,
