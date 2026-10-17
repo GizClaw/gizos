@@ -133,12 +133,17 @@ def requirements():
                           "api_key_state_" + method + "-assert"))
     # Session requirements remain fail-closed until a real run emits both
     # the call and its business assertion. Unit mocks are never live evidence.
-    for method in ("create destroy snapshot catalog_copy register refresh select close "
+    for method in ("create destroy snapshot catalog_copy register refresh refresh_with_tags select close "
                    "conversation_create conversation_release audio_start audio_end "
                    "send_text cancel_pending interrupt_playback").split():
         symbol = PREFIX + "session_" + method
         case = "voice"
-        rules.append(Rule(symbol, case, (symbol,), symbol, "session_" + method + "-assert"))
+        calls = (symbol,)
+        if method == "refresh_with_tags":
+            calls = (symbol, PREFIX + "session_catalog_copy", PREFIX + "session_snapshot",
+                     PREFIX + "session_refresh", PREFIX + "session_catalog_copy",
+                     PREFIX + "session_snapshot")
+        rules.append(Rule(symbol, case, calls, symbol, "session_" + method + "-assert"))
     for method in "create destroy snapshot execute close".split():
         symbol = PREFIX + "resource_" + method
         rules.append(Rule(symbol, "resource", (symbol,), symbol, "resource_" + method + "-assert"))

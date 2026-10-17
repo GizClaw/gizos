@@ -52,27 +52,57 @@ class CoverageTest(unittest.TestCase):
     def test_all_functions_need_ordered_calls_and_assertion(self):
         result = self.audit(self.lines)
         self.assertTrue(result["valid"], result["issues"])
-        self.assertEqual(result["covered"], 236)
+        self.assertEqual(result["covered"], 237)
         self.assertEqual(result["missing"], 0)
         for row in result["functions"]:
             self.assertEqual(len(row["call_lines"]), len(row["calls"]))
             self.assertGreater(row["assertion_line"], row["call_lines"][-1])
 
-    def test_legacy_inventory_evidence_cannot_cover_ble_binding(self):
+    def test_legacy_inventory_evidence_cannot_cover_ble_or_tag_refresh(self):
         binding = [rule for rule in self.rules
                    if rule.symbol.startswith("h2_gizclaw_ble_binding_")]
         self.assertEqual(len(binding), 8)
         self.assertEqual({rule.case for rule in binding}, {"device-api"})
-        legacy = [rule for rule in self.rules if rule not in binding]
+        tag_refresh = next(rule for rule in self.rules
+                           if rule.symbol == "h2_gizclaw_session_refresh_with_tags")
+        legacy = [rule for rule in self.rules if rule not in binding and rule != tag_refresh]
         self.assertEqual(len(legacy), 228)
         result = self.audit(passing_log(legacy))
         self.assertFalse(result["valid"])
-        self.assertEqual(result["required"], 236)
+        self.assertEqual(result["required"], 237)
         self.assertEqual(result["covered"], 228)
-        self.assertEqual(result["missing"], 8)
+        self.assertEqual(result["missing"], 9)
         self.assertEqual({row["symbol"] for row in result["functions"]
                           if row["status"] == "missing"},
-                         {rule.symbol for rule in binding})
+                         {rule.symbol for rule in binding} | {tag_refresh.symbol})
+
+    def test_old_236_inventory_is_missing_tag_refresh(self):
+        symbol = "h2_gizclaw_session_refresh_with_tags"
+        legacy = [rule for rule in self.rules if rule.symbol != symbol]
+        self.assertEqual(len(legacy), 236)
+        result = self.audit(passing_log(legacy))
+        self.assertFalse(result["valid"])
+        self.assertEqual((result["required"], result["covered"], result["missing"]), (237, 236, 1))
+        self.assertEqual({row["symbol"] for row in result["functions"] if row["status"] == "missing"}, {symbol})
+
+    def test_tag_refresh_requires_observed_catalog_and_persisted_selector(self):
+        symbol = "h2_gizclaw_session_refresh_with_tags"
+        rules = [rule for rule in self.rules if rule.symbol == symbol]
+        self.assertEqual(len(rules), 1)
+        rule = rules[0]
+        self.assertEqual(rule.case, "voice")
+        self.assertEqual(rule.calls, (symbol, "h2_gizclaw_session_catalog_copy",
+                                     "h2_gizclaw_session_snapshot", "h2_gizclaw_session_refresh",
+                                     "h2_gizclaw_session_catalog_copy", "h2_gizclaw_session_snapshot"))
+        self.assertEqual((rule.assertion_symbol, rule.assertion_stage),
+                         (symbol, "session_refresh_with_tags-assert"))
+        for removed in [evidence(call, "call") for call in rule.calls] + [
+                evidence(rule.assertion_symbol, rule.assertion_stage)]:
+            lines = passing_log([rule]); lines.remove(removed)
+            with self.subTest(removed=removed):
+                result = self.audit(lines, [rule])
+                self.assertFalse(result["valid"])
+                self.assertEqual(result["missing"], 1)
 
     def test_ble_binding_mutations_require_observed_window_snapshot(self):
         snapshot = "h2_gizclaw_ble_binding_snapshot"

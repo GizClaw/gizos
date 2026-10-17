@@ -251,13 +251,17 @@ class VerifierCliAdmission(unittest.TestCase):
                retained_resources=0, complete="true", exit_code=0)
         self.body = "".join(lines).encode()
 
-    def invoke(self, *, ledger_execution="1" * 32, launcher=False, previous=None):
+    def invoke(self, *, ledger_execution="1" * 32, launcher=False, previous=None, old_236=False):
         self.assertIsNotNone(VERIFIER)
         peer = subprocess.run([str(PRODUCER)], capture_output=True, check=True).stdout
         raw = ("H2_GIZCLAW_BOOT board=zero_esp_v3_0 version=unit-r1 execution="
                + self.execution + "\n").encode()
         if launcher: raw += b"H2_GIZCLAW_E2E_DEVKIT stage=launcher status=READY\n"
-        raw += frame(self.body, ledger_execution)
+        body = self.body
+        if old_236:
+            body = b"".join(line for line in body.splitlines(keepends=True)
+                            if b"symbol=h2_gizclaw_session_refresh_with_tags " not in line)
+        raw += frame(body, ledger_execution)
         capture = {**self.capture, "sha256": hashlib.sha256(raw).hexdigest()}
         process = {**self.process, "receipt_sha256": hashlib.sha256(peer).hexdigest()}
         with tempfile.TemporaryDirectory(prefix="gizclaw-verifier-cli-") as temporary:
@@ -285,8 +289,19 @@ class VerifierCliAdmission(unittest.TestCase):
         self.assertTrue(report["qualified"])
         self.assertTrue(report["wrapper_observed"])
         self.assertTrue(report["api_coverage"]["valid"])
-        self.assertEqual(report["api_coverage"]["covered"], 236)
+        self.assertEqual(report["api_coverage"]["covered"], 237)
         self.assertEqual(report["execution"], report["ble_binding_peer"]["execution"])
+
+    def test_complete_historical_236_bundle_does_not_qualify_new_inventory(self):
+        result, report = self.invoke(old_236=True)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertFalse(report["qualified"])
+        self.assertTrue(report["ble_binding_peer"]["valid"])
+        audit = report["api_coverage"]
+        self.assertFalse(audit["valid"])
+        self.assertEqual((audit["required"], audit["covered"], audit["missing"]), (237, 236, 1))
+        self.assertEqual({row["symbol"] for row in audit["functions"] if row["status"] == "missing"},
+                         {"h2_gizclaw_session_refresh_with_tags"})
 
     def test_later_launcher_and_lost_wrapper_cannot_bind_another_ledger_to_old_boot(self):
         result, report = self.invoke(launcher=True, ledger_execution="2" * 32)
