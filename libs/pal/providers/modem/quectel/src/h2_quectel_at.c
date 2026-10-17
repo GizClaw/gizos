@@ -220,6 +220,9 @@ static h2_pal_result_t at_exchange_impl(
         if (generation != modem->reset_generation ||
             ((modem->preparing == 0u || strcmp(cmd, "AT+CPIN?") == 0) &&
              sim_generation != modem->sim_generation)) {
+            printf("H2_QUECTEL_INVALID_STATE operation=at reset=%lu sim=%lu\n",
+                   (unsigned long)modem->reset_generation,
+                   (unsigned long)modem->sim_generation);
             memset(command_response, 0, sizeof(modem->command_response));
             return H2_PAL_ERR_INVALID_STATE;
         }
@@ -265,6 +268,9 @@ static h2_pal_result_t at_exchange_impl(
         if (reset_generation != modem->reset_generation ||
             ((modem->preparing == 0u || strcmp(cmd, "AT+CPIN?") == 0) &&
              sim_generation != modem->sim_generation)) {
+            printf("H2_QUECTEL_INVALID_STATE operation=at reset=%lu sim=%lu\n",
+                   (unsigned long)modem->reset_generation,
+                   (unsigned long)modem->sim_generation);
             return H2_PAL_ERR_INVALID_STATE;
         }
         if (line[0] == '\0' || strcmp(line, cmd) == 0) {

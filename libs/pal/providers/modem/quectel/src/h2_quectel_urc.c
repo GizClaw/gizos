@@ -360,6 +360,9 @@ void h2_quectel_handle_urc_locked(h2_quectel_modem_t *modem, const char *line) {
     }
 
     if (strcmp(line, "RDY") == 0 || strcmp(line, "APP RDY") == 0) {
+        printf("H2_QUECTEL_RESET source=%s generation=%lu->%lu\n", line,
+               (unsigned long)modem->reset_generation,
+               (unsigned long)(modem->reset_generation + 1u));
         h2_quectel_reset_state(modem);
         h2_quectel_post_system_event(
             modem,
@@ -421,6 +424,9 @@ void h2_quectel_sim_update(h2_quectel_modem_t *modem, h2_pal_modem_sim_state_t s
     if (modem->sim_seen != 0u && modem->sim_state == state) {
         return;
     }
+    printf("H2_QUECTEL_SIM previous=%d current=%d seen=%u generation=%lu\n",
+           (int)modem->sim_state, (int)state, (unsigned)modem->sim_seen,
+           (unsigned long)modem->sim_generation);
     if (state == H2_PAL_MODEM_SIM_STATE_READY) {
         modem->sim_refresh_pending = 1u;
     } else {
