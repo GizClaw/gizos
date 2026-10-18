@@ -33,8 +33,8 @@ def _fixture_impl(ctx):
     if len(root_ca_hex) > 32768 or len(root_ca_hex) % 2 or any([c not in "0123456789abcdef" for c in root_ca_hex.elems()]):
         fail("HTTP root CA fixture must be bounded lowercase hex PEM bytes")
     lua = {key: getattr(ctx.attr, key)[BuildSettingInfo].value for key in _LUA_FIELDS}
-    for key in ["lua_archive_sha256", "lua_entry_sha256", "lua_frame_sha256"]:
-        if lua[key] and (len(lua[key]) != 64 or any([c not in "0123456789abcdef" for c in lua[key].elems()])):
+    for digest_key in ["lua_archive_sha256", "lua_entry_sha256", "lua_frame_sha256"]:
+        if lua[digest_key] and (len(lua[digest_key]) != 64 or any([c not in "0123456789abcdef" for c in lua[digest_key].elems()])):
             fail("Lua golden digests must be 64 lowercase hex bytes")
     if len(lua["lua_app_url"]) > 262144 or len(lua["lua_app_http_url"]) > 1024 or len(lua["lua_app_https_url"]) > 1024:
         fail("Lua package URI exceeds its transport limit")

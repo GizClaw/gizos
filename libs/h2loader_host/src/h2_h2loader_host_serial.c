@@ -766,16 +766,36 @@ h2_pal_result_t h2_h2loader_host_serial_read_status(
         sizeof(response) - 1u,
         &response_len,
         connection->command_timeout_ms,
-        connection->on_log,
-        connection->log_user,
+        NULL,
+        NULL,
         0u,
         NULL);
-    if (rc != H2_PAL_OK) {
-        return rc;
-    }
     response[response_len] = '\0';
     const char *marker = find_line_marker(
         (const char *)response, loader_marker);
+    /* Deliver captured diagnostics without echoing the status control line. */
+    if (connection->on_log != NULL) {
+        const uint8_t *end = response + response_len;
+        const uint8_t *tail = marker == NULL ? end : (const uint8_t *)marker;
+        if (tail != response) {
+            h2_pal_result_t output_rc = connection->on_log(
+                connection->log_user, response, (size_t)(tail - response));
+            if (output_rc != H2_PAL_OK) return output_rc;
+        }
+        if (marker != NULL) {
+            while (tail < end && *tail != '\r' && *tail != '\n') ++tail;
+            if (tail < end && *tail == '\r') ++tail;
+            if (tail < end && *tail == '\n') ++tail;
+            if (tail < end) {
+                h2_pal_result_t output_rc = connection->on_log(
+                    connection->log_user, tail, (size_t)(end - tail));
+                if (output_rc != H2_PAL_OK) return output_rc;
+            }
+        }
+    }
+    if (rc != H2_PAL_OK) {
+        return rc;
+    }
     return marker == NULL
         ? H2_PAL_ERR_FORMAT
         : h2_h2loader_host_status_parse(marker, out_status);

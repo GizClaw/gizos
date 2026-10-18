@@ -235,6 +235,8 @@ static void run_case_with_diagnostic(int command, int mode, const char *diagnost
     assert(f.peer==NULL);
     assert(f.allocations==0u);
     if (diagnostic != NULL) assert(strstr(f.output,diagnostic)!=NULL);
+    if (diagnostic != NULL) assert(strstr(f.output,"H2_LOADER_STATUS ")==NULL);
+    if (diagnostic != NULL) assert(f.output_len==strlen(diagnostic));
 }
 
 static void run_case(int command, int mode) {
