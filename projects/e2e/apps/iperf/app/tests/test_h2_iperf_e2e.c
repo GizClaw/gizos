@@ -38,6 +38,74 @@ static const h2_iperf_e2e_case_t s_cases[] = {
     {"sctp_tx_1400", H2_IPERF_PROTOCOL_SCTP, false, 4096u, 0u, 1400u},
 };
 
+typedef struct ledger_capture {
+    char message[512];
+    unsigned records;
+} ledger_capture_t;
+
+static int capture_ledger(void *user, h2_pal_log_level_t level,
+                          const char *scope, const char *message) {
+    ledger_capture_t *capture = user;
+    assert(level == H2_PAL_LOG_INFO);
+    assert(strcmp(scope, "iperf_e2e") == 0);
+    const size_t length = strlen(message);
+    assert(length < sizeof(capture->message));
+    memcpy(capture->message, message, length + 1u);
+    ++capture->records;
+    return H2_PAL_OK;
+}
+
+static void test_case_ledger_preserves_long_records(void) {
+    static const h2_pal_log_vtable_t vtable = {.write = capture_ledger};
+    ledger_capture_t capture = {0};
+    const h2_pal_log_api_t log = {.user = &capture, .vtable = &vtable};
+    h2_iperf_e2e_case_t test_case = {
+        .id = "udp_tx_40m", .protocol = H2_IPERF_PROTOCOL_UDP,
+        .block_len = 1200u, .bitrate_bps = 40000000u};
+    h2_iperf_e2e_case_result_t result = {
+        .id = "udp_tx_40m", .rc = H2_PAL_OK,
+        .receiver_bps = 27365171u, .sender_bps = 37324800u,
+        .packets = 19439u, .lost_packets = 4887,
+        .jitter_us = 334u, .duration_ms = 6237u};
+    static const char expected_dual[] =
+        "H2_IPERF_E2E_CASE {\"v\":1,\"target\":\"zero_esp_v3_0-m46-f4-r1\","
+        "\"id\":\"udp_tx_40m\",\"proto\":\"udp\",\"dir\":\"tx\",\"block\":1200,"
+        "\"bitrate\":40000000,\"pkt\":0,\"rc\":0,\"rx_bps\":27365171,"
+        "\"tx_bps\":37324800,\"packets\":19439,\"lost\":4887,"
+        "\"jitter_us\":334,\"ms\":6237,\"result\":\"pass\"}";
+    h2_iperf_e2e_log_case(&log, "zero_esp_v3_0-m46-f4-r1", &test_case,
+                         &result);
+    assert(strlen(expected_dual) == H2_PAL_LOG_MESSAGE_MAX);
+    assert(capture.records == 1u);
+    assert(capture.message[strlen(capture.message) - 1u] == '}');
+    assert(strcmp(capture.message, expected_dual) == 0);
+
+    test_case = (h2_iperf_e2e_case_t){
+        .id = "0123456789012345678901234567890",
+        .protocol = H2_IPERF_PROTOCOL_SCTP, .reverse = true,
+        .block_len = UINT32_MAX, .bitrate_bps = UINT64_MAX,
+        .sctp_packet_size = UINT16_MAX};
+    result = (h2_iperf_e2e_case_result_t){
+        .id = "0123456789012345678901234567890", .rc = INT32_MIN,
+        .receiver_bps = UINT64_MAX, .sender_bps = UINT64_MAX,
+        .packets = UINT64_MAX, .lost_packets = INT64_MIN,
+        .jitter_us = UINT32_MAX, .duration_ms = UINT32_MAX};
+    static const char expected_max[] =
+        "H2_IPERF_E2E_CASE {\"v\":1,\"target\":\"0123456789012345678901234567890\","
+        "\"id\":\"0123456789012345678901234567890\",\"proto\":\"sctp\",\"dir\":\"rx\","
+        "\"block\":4294967295,\"bitrate\":18446744073709551615,\"pkt\":65535,"
+        "\"rc\":-2147483648,\"rx_bps\":18446744073709551615,"
+        "\"tx_bps\":18446744073709551615,\"packets\":18446744073709551615,"
+        "\"lost\":-9223372036854775808,\"jitter_us\":4294967295,\"ms\":4294967295,"
+        "\"result\":\"fail\"}";
+    h2_iperf_e2e_log_case(&log, test_case.id, &test_case, &result);
+    assert(strlen(test_case.id) == H2_IPERF_E2E_CASE_ID_MAX);
+    assert(strlen(test_case.id) == H2_IPERF_E2E_TARGET_MAX);
+    assert(strlen(expected_max) == 386u);
+    assert(capture.records == 2u);
+    assert(strcmp(capture.message, expected_max) == 0);
+}
+
 static void test_rejects_invalid_config(void) {
     h2_iperf_e2e_report_t report;
     h2_iperf_e2e_config_t config;
@@ -152,6 +220,7 @@ static void test_default_matrix_is_well_formed(void) {
 }
 
 int main(void) {
+    test_case_ledger_preserves_long_records();
     test_default_matrix_is_well_formed();
     test_rejects_invalid_config();
     test_unsupported_sctp_case_is_reported_not_fatal();

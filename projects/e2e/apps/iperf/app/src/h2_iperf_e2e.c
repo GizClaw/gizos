@@ -5,6 +5,7 @@
 #include <string.h>
 
 #define H2_IPERF_E2E_LOG_SCOPE "iperf_e2e"
+#define H2_IPERF_E2E_LEDGER_RECORD_MAX 512u
 
 #define H2_IPERF_E2E_DEFAULT_DURATION_MS 5000u
 #define H2_IPERF_E2E_DEFAULT_SETTLE_MS 500u
@@ -123,14 +124,18 @@ static void record_best(uint64_t *slot, uint64_t value) {
     }
 }
 
-/* Every line goes through the Log PAL; portable code never touches newlib
- * stdout state. Lines are bounded by H2_PAL_LOG_MESSAGE_MAX. */
+/* A case with 31-byte labels and full-width numbers needs at most 386 bytes.
+ * Keep the ledger's own bound; portable code still writes through the Log PAL
+ * without touching newlib stdout state. */
 static void emit(const h2_pal_log_api_t *log, const char *format, ...) {
-    char message[H2_PAL_LOG_MESSAGE_MAX];
+    char message[H2_IPERF_E2E_LEDGER_RECORD_MAX];
     va_list args;
     va_start(args, format);
-    (void)vsnprintf(message, sizeof(message), format, args);
+    const int length = vsnprintf(message, sizeof(message), format, args);
     va_end(args);
+    if (length < 0 || (size_t)length >= sizeof(message)) {
+        return;
+    }
     (void)h2_pal_log_write(log, H2_PAL_LOG_INFO, H2_IPERF_E2E_LOG_SCOPE, message);
 }
 
