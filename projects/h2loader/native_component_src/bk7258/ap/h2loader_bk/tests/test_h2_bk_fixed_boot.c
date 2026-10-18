@@ -32,9 +32,9 @@ static uint8_t *sector_at(uint32_t address, uint32_t size) {
   if (address >= control.partition_start_addr &&
       address + size <= control.partition_start_addr + SECTOR)
     return request_sector + (address - control.partition_start_addr);
-  if (address >= s_app.partition_start_addr &&
-      address + size <= s_app.partition_start_addr + APP_MODEL)
-    return app_sector + (address - s_app.partition_start_addr);
+  const uint32_t app_base = h2_bk_fixed_layout()->app.offset;
+  if (address >= app_base && address + size <= app_base + APP_MODEL)
+    return app_sector + (address - app_base);
   assert(!"flash access outside modeled sectors");
   return NULL;
 }
@@ -256,6 +256,21 @@ static void test_app_layout_slot(void) {
   assert(h2_bk_fixed_current_slot() == 1u);
   assert(h2_bk_fixed_layout()->loader.size == LOADER_SIZE &&
          h2_bk_fixed_layout()->app.offset == APP_OFFSET);
+  /* A pre-confirm App failure explicitly selects Loader. Preserve the trial
+   * failure so Loader's AUTO policy rejects the same staged candidate. */
+  put_app_window_image(APP_OFFSET);
+  native_slot = 0u;
+  memset(request_sector, 0xff, sizeof(request_sector));
+  assert(h2_bk_fixed_select(H2_BK_H2LOADER_APP_PARTITION_ID) == H2_PAL_OK);
+  assert(cp_boot() && h2_bk_fixed_app_failed());
+  unsigned erases = request_erases;
+  assert(h2_bk_fixed_select(H2_BK_H2LOADER_PRIMARY_PARTITION_ID) == H2_PAL_OK);
+  assert(request_erases == erases);
+  assert(h2_bk_fixed_app_failed() && !cp_boot());
+  /* A healthy App can still clear its confirmed selection on return. */
+  assert(h2_bk_fixed_confirm_app() == H2_PAL_OK);
+  assert(h2_bk_fixed_select(H2_BK_H2LOADER_PRIMARY_PARTITION_ID) == H2_PAL_OK);
+  assert(!h2_bk_fixed_app_failed() && !cp_boot());
   /* A table without matching windows is not a fixed layout. */
   ap.partition_start_addr += SECTOR;
   assert(!h2_bk_fixed_layout_active());
