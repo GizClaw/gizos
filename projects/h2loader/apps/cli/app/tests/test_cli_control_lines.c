@@ -26,6 +26,7 @@ typedef struct cli_fixture {
     int mode;
     confirmation_probe_t *confirmation;
     const char *status_diagnostic;
+    const char *status_eol_tail;
     const char *pre_ack_log;
     size_t mixed_read_size, status_prefix_split;
     int mixed_status_output, connect_output, connect_ready_mode;
@@ -97,11 +98,13 @@ static int output(void *user, const void *data, size_t len, size_t *written, uin
 }
 static h2_pal_result_t connect_log(void *user, const uint8_t *data, size_t len) {
     cli_fixture_t *f=user;
-    if (f->log_error_byte && len==1u && data[0]==f->log_error_byte) return H2_PAL_ERR_IO;
-    size_t written=0u;
-    int rc=output(user,data,len,&written,0u);
-    assert(rc==H2_PAL_OK && written==len);
-    return rc;
+    const uint8_t *error=f->log_error_byte?memchr(data,f->log_error_byte,len):NULL;
+    size_t accepted=error?(size_t)(error-data):len, written=0u;
+    if (accepted!=0u) {
+        int rc=output(user,data,accepted,&written,0u);
+        assert(rc==H2_PAL_OK && written==accepted);
+    }
+    return error?H2_PAL_ERR_IO:H2_PAL_OK;
 }
 static int cancel_after_one_poll(void *user) {
     unsigned *remaining=user;
@@ -227,8 +230,10 @@ static int peer_frame(void *user, const h2_iostreamikcp_frame_t *frame) {
                 assert(written==sizeof(mixed_raw)-1u);
             }
             emit_status(f);
-            if (f->status_eol_test)
-                assert(h2_iostreamikcp_write(f->peer,(const uint8_t *)mixed_boot,sizeof(mixed_boot)-1u)==H2_PAL_OK);
+            if (f->status_eol_test) {
+                const char *tail=f->status_eol_tail?f->status_eol_tail:mixed_boot;
+                assert(h2_iostreamikcp_write(f->peer,(const uint8_t *)tail,strlen(tail))==H2_PAL_OK);
+            }
             if (f->mixed_status_output)
                 assert(h2_iostreamikcp_write(f->peer,(const uint8_t *)mixed_tail,sizeof(mixed_tail)-1u)==H2_PAL_OK);
         } else if (f->confirmation != NULL) {
@@ -401,9 +406,9 @@ static void run_connect_ready(int mode, int sink) {
     assert(f.modem_lines==(H2_PAL_SERIAL_HOST_CONTROL_DTR|H2_PAL_SERIAL_HOST_CONTROL_RTS));
 }
 
-static void run_status_boundary(const char *prefix, int crlf, size_t chunk,
+static void run_status_boundary(const char *prefix, const char *tail, int crlf, size_t chunk,
                                 int error_byte, const char *expected) {
-    cli_fixture_t f={.pre_ack_log=prefix,.status_eol_test=1,.status_crlf=crlf,.mixed_read_size=chunk,
+    cli_fixture_t f={.pre_ack_log=prefix,.status_eol_tail=tail,.status_eol_test=1,.status_crlf=crlf,.mixed_read_size=chunk,
         .modem_lines=H2_PAL_SERIAL_HOST_CONTROL_DTR|H2_PAL_SERIAL_HOST_CONTROL_RTS};
     f.mem=(h2_pal_mem_api_t){.user=&f,.vtable=&mem_vtable};
     f.uart=(h2_pal_uart_io_stream_api_t){.user=&f,.vtable=&uart_vtable};
@@ -496,15 +501,24 @@ int main(void) {
     run_connect_ready(1,1);
     run_connect_ready(2,1);
     run_connect_ready(1,0);
-    run_status_boundary(">de",0,512u,0,">de\nH2_DISPLAY_BOOT version=test\r\n");
-    run_status_boundary(">de\r\n",0,512u,0,">de\r\nH2_DISPLAY_BOOT version=test\r\n");
-    run_status_boundary(NULL,0,512u,0,mixed_boot);
-    run_status_boundary(">de",1,1u,0,">de\r\nH2_DISPLAY_BOOT version=test\r\n");
-    run_status_boundary(">de\r\n",1,1u,0,">de\r\nH2_DISPLAY_BOOT version=test\r\n");
-    run_status_boundary(NULL,1,1u,0,mixed_boot);
-    run_status_boundary(">de",0,512u,'\n',">de");
-    run_status_boundary(">de",1,1u,'\r',">de");
-    run_status_boundary(">de",1,1u,'\n',">de\r");
+    run_status_boundary(">de",NULL,0,512u,0,">deH2_DISPLAY_BOOT version=test\r\n");
+    run_status_boundary(">de\r\n",NULL,0,512u,0,">de\r\nH2_DISPLAY_BOOT version=test\r\n");
+    run_status_boundary(NULL,NULL,0,512u,0,mixed_boot);
+    run_status_boundary(">de",NULL,1,1u,0,">deH2_DISPLAY_BOOT version=test\r\n");
+    run_status_boundary(">de\r\n",NULL,1,1u,0,">de\r\nH2_DISPLAY_BOOT version=test\r\n");
+    run_status_boundary(NULL,NULL,1,1u,0,mixed_boot);
+    run_status_boundary(">de",NULL,0,512u,'\n',">deH2_DISPLAY_BOOT version=test\r");
+    run_status_boundary(">de",NULL,1,1u,'\r',">deH2_DISPLAY_BOOT version=test");
+    run_status_boundary(">de",NULL,1,1u,'\n',">deH2_DISPLAY_BOOT version=test\r");
+    const char link_tail[]="stage=start role=join state=joining\r\n";
+    for (int crlf=0;crlf<2;++crlf) {
+        for (size_t chunk=0u;chunk<sizeof(chunks)/sizeof(chunks[0]);++chunk) {
+            run_status_boundary("LINK ",link_tail,crlf,chunks[chunk],0,
+                "LINK stage=start role=join state=joining\r\n");
+            run_status_boundary("LINK \r\n",link_tail,crlf,chunks[chunk],0,
+                "LINK \r\nstage=start role=join state=joining\r\n");
+        }
+    }
     run_confirmation_cases();
     return 0;
 }
