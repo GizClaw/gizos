@@ -96,9 +96,9 @@ macOS Desktop launcher 先通过 Darwin Serial 运行同一 App。Browser launch
 
 ## Lua Link
 
-`h2_lua_link_e2e_run()` 在已启动的 BLE Host 上创建一个 Lua Host，调用 `h2_lua_link_enable()` 并以 `args.role`（`host` 或 `join`）运行固定脚本。每个 session 依次测 20 次可靠消息往返、双向各 200 条有序可靠消息、双向各 100 条 50 Hz datagram、双向各 64 KiB 逐字节校验的字节流，最后 joiner 离开、host 必须报告 `peer_closed`；结果以 `LINK stage=...` 和 `H2_LUA_LINK_E2E result=...` 写入 Runtime Log。`hold` 模式保持一个 10 Hz datagram session 直到链路断开，并报告断开距最后一条 datagram 的时间。App 只依赖 Runtime 与 `link` module，不使用 Wi-Fi；`//projects/e2e/apps/lua-link/app:lua_link_e2e_test` 在 fake BLE air 上让两个角色互跑完整 suite 和 hold 断链。
+`h2_lua_link_e2e_run()` 在已启动的 BLE Host 上创建一个 Lua Host，调用 `h2_lua_link_enable()` 并以 `args.role`（`host` 或 `join`）运行固定脚本。每个 session 依次测 20 次可靠消息往返、双向各 200 条有序可靠消息、双向各 100 条 50 Hz datagram、双向各 64 KiB 逐字节校验的字节流，最后 joiner 离开、host 必须报告 `peer_closed`；结果以 `LINK stage=...` 和 `H2_LUA_LINK_E2E result=...` 写入 Runtime Log。ESP entry 仅将这些原始测试记录转交 checked stdout，其余日志仍使用 board Log，因此不需要提高 Main 的日志级别。`hold` 模式保持一个 10 Hz datagram session 直到链路断开，并报告断开距最后一条 datagram 的时间。App 只依赖 Runtime 与 `link` module，不使用 Wi-Fi；`//projects/e2e/apps/lua-link/app:lua_link_e2e_test` 在 fake BLE air 上让两个角色互跑完整 suite 和 hold 断链。
 
-DevKit launcher（`projects/e2e/targets/h2loader_tar_zlib/lua-link/devkit`）运行 `host`，AMOLED launcher（`.../lua-link/amoled`）运行 `join`，两者都使用 Extended Advertising/Scanning。H2Loader App command service 启动 BLE Host；image 在 command service 运行后确认，只证明基础设施可用。每次 boot 连续运行五个 session 并输出 `stage=summary ... passed=<n> rounds=5`，最后进入 `hold` session。先启动 AMOLED joiner，再启动 DevKit host。
+DevKit launcher（`projects/e2e/targets/h2loader_tar_zlib/lua-link/devkit`）运行 `host`，AMOLED launcher（`.../lua-link/amoled`）默认运行 `join`，也可用 `--define=H2_LUA_LINK_E2E_ROLE=host` 选择对端角色；两者都使用 Extended Advertising/Scanning。ESP entry 在首轮前保留五秒串口重连窗口，原轮间间隔、session deadline 和脚本断言不变。H2Loader App command service 启动 BLE Host；image 在 command service 运行后确认，只证明基础设施可用。每次 boot 连续运行五个 session 并输出实际 Runtime board 的 `stage=summary ... passed=<n> rounds=5`，最后进入 `hold` session。先启动 joiner，再启动 host，保留双方完整的逐轮及 hold 记录。
 
 ## GizClaw
 

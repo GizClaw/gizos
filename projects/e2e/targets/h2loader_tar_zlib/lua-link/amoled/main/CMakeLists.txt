@@ -27,3 +27,11 @@ idf_component_register(
     h2_pal_core)
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu11 -Wall -Wextra -Werror)
+
+if(DEFINED H2_LUA_LINK_E2E_ROLE)
+  if(NOT H2_LUA_LINK_E2E_ROLE MATCHES "^(host|join)$")
+    message(FATAL_ERROR "H2_LUA_LINK_E2E_ROLE must be host or join")
+  endif()
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    H2_LUA_LINK_E2E_ROLE="${H2_LUA_LINK_E2E_ROLE}")
+endif()

@@ -87,6 +87,7 @@ h2loader_esp_idf_firmware(
         "main/main.c",
     ],
     board = "amoled",
+    cmake_variables = ["H2_LUA_LINK_E2E_ROLE"],
     graph = [":lua_link_launcher"],
     project = "CMakeLists.txt",
     project_name = "h2_lua_link_e2e",
