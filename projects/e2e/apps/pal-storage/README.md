@@ -35,8 +35,6 @@ Desktop 三个生命周期测试的每进程预算为 180 秒，整个 Bazel tes
 
 硬件由 `projects/e2e/targets/h2loader_tar_zlib/pal-storage/devkit:package` 和 `projects/e2e/targets/h2loader_tar_zlib/pal-storage/bk7258_v3_202405:package` 构建。每次设置独立 firmware version，使用 H2Loader managed serial send，核对 Stage 的包/镜像 SHA 后 `reboot upgrade --monitor` 收集 seed；再 `reboot app --monitor` 收集 verify，再次正常重启收集 clean-verify，最后重启确认 already-complete empty=1 rc=0。原始串口日志可能含重放，只接受版本/nonce/phase 一致的完整唯一 case ledger。最后确认 Stage 为空、P2 App 有效、Loader 保留且 coredump 与原基线一致。
 
-ESP launcher 对首次 BOOT/case、完整 replay 和 READY 使用实际 console PAL 的整 record write 与 TX flush，交付错误保持 sticky，完整 replay 交付成功后才确认 App。阶段控制提交前的交付失败阻止推进；提交后的 replay 失败阻止确认，但不伪称回滚阶段控制。若确认已成功而 READY 交付失败，保留真实 metadata 状态并拒绝资格。stdout/BK 路径与契约 2 的 36 case、`1/2/3/4/4` 五 boot 和 strict fresh gate 均不改变，详见 [device verifier](../../libs/pal-storage-device/README.md#esp-checked-console-delivery)。
-
 
 ## 资格边界
 

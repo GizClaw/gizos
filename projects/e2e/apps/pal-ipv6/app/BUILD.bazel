@@ -43,10 +43,6 @@ cc_library(
 cc_test(
     name = "local_peer_lifecycle_test",
     srcs = ["tests/test_h2_pal_ipv6_local.c"],
-    additional_compiler_inputs = [
-        "src/h2_pal_ipv6_e2e.c",
-        "//projects/e2e/targets/h2loader_tar_zlib/pal-ipv6/devkit:main/main.c",
-    ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     target_compatible_with = select({
@@ -56,10 +52,7 @@ cc_test(
     }),
     deps = [
         ":local_peer",
-        ":pal_ipv6_e2e",
-        "//libs/atomic/providers/c11",
         "//libs/pal/providers/desktop/pal_core:core",
-        "//projects/e2e/libs/pal-ipv6-device:runner",
     ] + select({
         "@platforms//os:linux": ["//libs/pal/providers/linux/pal_core"],
         "@platforms//os:macos": ["//libs/pal/providers/darwin/pal_core"],

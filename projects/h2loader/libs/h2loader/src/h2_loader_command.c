@@ -38,11 +38,6 @@ static uint32_t h2loader_effective_commands(
     uint32_t available = h2_loader_get_command_availability(
         self->config.loader, status);
     h2_pal_disk_partition_t partition;
-    if (self->config.wifi == NULL || self->config.wifi->vtable == NULL ||
-        self->config.wifi->vtable->connect == NULL ||
-        self->config.wifi->vtable->get_status == NULL) {
-        available &= ~H2_LOADER_COMMAND_AVAILABLE_WIFI_CONNECT_TEMPORARY;
-    }
     if (h2loader_get_coredump_partition(self, &partition) != H2_PAL_OK) {
         available &= ~(H2_LOADER_COMMAND_AVAILABLE_COREDUMP_STATUS |
             H2_LOADER_COMMAND_AVAILABLE_COREDUMP_DUMP |
@@ -90,8 +85,6 @@ static uint32_t h2loader_command_bit(
             return H2_LOADER_COMMAND_AVAILABLE_WIFI_SCAN;
         if (argc >= 3u && strcmp(argv[2], "disconnect") == 0)
             return H2_LOADER_COMMAND_AVAILABLE_WIFI_DISCONNECT;
-        if (argc >= 3u && strcmp(argv[2], "connect-temporary") == 0)
-            return H2_LOADER_COMMAND_AVAILABLE_WIFI_CONNECT_TEMPORARY;
         return H2_LOADER_COMMAND_AVAILABLE_WIFI_CONNECT;
     }
     if (strcmp(argv[1], "coredump") == 0) {
@@ -117,7 +110,6 @@ static h2_pal_result_t h2loader_require_command(
         bit == H2_LOADER_COMMAND_AVAILABLE_WIFI_STATUS ||
         bit == H2_LOADER_COMMAND_AVAILABLE_WIFI_SCAN ||
         bit == H2_LOADER_COMMAND_AVAILABLE_WIFI_CONNECT ||
-        bit == H2_LOADER_COMMAND_AVAILABLE_WIFI_CONNECT_TEMPORARY ||
         bit == H2_LOADER_COMMAND_AVAILABLE_WIFI_DISCONNECT ||
         bit == H2_LOADER_COMMAND_AVAILABLE_COREDUMP_STATUS ||
         bit == H2_LOADER_COMMAND_AVAILABLE_COREDUMP_DUMP ||
@@ -596,12 +588,8 @@ static int h2loader_copy_wifi_text(char *dst, size_t dst_cap, size_t *out_len, c
         return H2_PAL_ERR_INVALID_ARG;
     }
     len = strlen(src);
-    if (len == 0u || len >= dst_cap) {
+    if (len + 1u > dst_cap) {
         return H2_PAL_ERR_INVALID_ARG;
-    }
-    for (size_t i = 0u; i < len; ++i) {
-        const unsigned char byte = (unsigned char)src[i];
-        if (byte <= 0x20u || byte == 0x7fu) return H2_PAL_ERR_INVALID_ARG;
     }
     memcpy(dst, src, len + 1u);
     *out_len = len;
@@ -755,38 +743,6 @@ static int h2loader_wifi_status_command(h2_loader_command_t *self) {
     return H2_PAL_OK;
 }
 
-static int h2loader_wifi_connect_temporary(
-    h2_loader_command_t *self,
-    const h2_pal_wifi_sta_config_t *config) {
-    const uint32_t timeout_ms = 15000u;
-    const uint64_t started_ms = self->config.now_ms(self->config.clock_user);
-    int rc = h2_pal_wifi_sta_connect(self->config.wifi, config, timeout_ms);
-    if (rc != H2_PAL_OK) return rc;
-    for (;;) {
-        uint64_t elapsed_ms = self->config.now_ms(self->config.clock_user) - started_ms;
-        if (elapsed_ms >= timeout_ms) return H2_PAL_ERR_TIMEOUT;
-        h2_pal_wifi_sta_status_t status = {0};
-        rc = h2_pal_wifi_sta_get_status(self->config.wifi, &status);
-        if (rc != H2_PAL_OK) return rc;
-        elapsed_ms = self->config.now_ms(self->config.clock_user) - started_ms;
-        if (elapsed_ms >= timeout_ms) return H2_PAL_ERR_TIMEOUT;
-        if (status.ssid_len > H2_PAL_WIFI_SSID_MAX) return H2_PAL_ERR_FORMAT;
-        if (status.ssid_len == config->ssid_len &&
-            memcmp(status.ssid, config->ssid, config->ssid_len) == 0 &&
-            h2_pal_wifi_sta_status_has_ip(&status)) {
-            return H2_PAL_OK;
-        }
-        if (status.state == H2_PAL_WIFI_STA_STATE_FAILED) {
-            return H2_PAL_ERR_UNAVAILABLE;
-        }
-        uint32_t delay_ms = timeout_ms - (uint32_t)elapsed_ms;
-        if (delay_ms > H2_LOADER_WIFI_READY_POLL_MS) {
-            delay_ms = H2_LOADER_WIFI_READY_POLL_MS;
-        }
-        self->config.sleep_ms(self->config.clock_user, delay_ms);
-    }
-}
-
 static int h2loader_wifi_command(
     h2_loader_command_t *self,
     size_t argc,
@@ -799,15 +755,11 @@ static int h2loader_wifi_command(
     if (argc >= 3 && strcmp(argv[2], "scan") == 0) {
         return h2loader_wifi_scan_command(self, argc, argv);
     }
-    if (argc >= 3 && (strcmp(argv[2], "connect") == 0 ||
-                     strcmp(argv[2], "connect-temporary") == 0)) {
+    if (argc >= 3 && strcmp(argv[2], "connect") == 0) {
         h2_pal_wifi_sta_config_t config;
         h2_pal_wifi_sta_status_t status;
-        const int temporary = strcmp(argv[2], "connect-temporary") == 0;
-        const char *marker = temporary ? "H2_LOADER_WIFI_TEMPORARY" : "H2_LOADER_WIFI";
-        if (argc != 5u) {
-            printf("usage: h2loader wifi %s <ssid> <password>\n",
-                temporary ? "connect-temporary" : "connect");
+        if (argc < 5) {
+            printf("usage: h2loader wifi connect <ssid> <password>\n");
             return H2_PAL_ERR_INVALID_ARG;
         }
         memset(&config, 0, sizeof(config));
@@ -816,27 +768,25 @@ static int h2loader_wifi_command(
             rc = h2loader_copy_wifi_text(config.password, sizeof(config.password), &config.password_len, argv[4]);
         }
         if (rc != H2_PAL_OK) {
-            memset(config.password, 0, sizeof(config.password));
-            printf("%s result=invalid_config code=%d\n", marker, rc);
+            printf("H2_LOADER_WIFI result=invalid_config code=%d\n", rc);
             return rc;
         }
-        rc = temporary ? h2loader_wifi_connect_temporary(self, &config)
-            : h2_pal_wifi_sta_connect_and_save(sta, &config, 15000u);
+        rc = h2_pal_wifi_sta_connect_and_save(sta, &config, 15000u);
         memset(config.password, 0, sizeof(config.password));
         if (rc != H2_PAL_OK) {
             memset(&status, 0, sizeof(status));
             if (h2_pal_wifi_sta_get_status(sta, &status) == H2_PAL_OK) {
-                printf("%s result=error code=%d state=%d disconnect_reason=%d ip_valid=%u\n",
-                    marker, rc,
+                printf("H2_LOADER_WIFI result=error code=%d state=%d disconnect_reason=%d ip_valid=%u\n",
+                    rc,
                     (int)status.state,
                     status.disconnect_reason,
                     (unsigned)status.ip_valid);
             } else {
-                printf("%s result=error code=%d\n", marker, rc);
+                printf("H2_LOADER_WIFI result=error code=%d\n", rc);
             }
             return rc;
         }
-        printf("%s result=connected ssid=%s\n", marker, config.ssid);
+        printf("H2_LOADER_WIFI result=connected ssid=%s\n", config.ssid);
         fflush(stdout);
         return H2_PAL_OK;
     }
@@ -847,7 +797,7 @@ static int h2loader_wifi_command(
         fflush(stdout);
         return rc;
     }
-    printf("usage: h2loader wifi <status|scan|connect|connect-temporary|disconnect>\n");
+    printf("usage: h2loader wifi <status|scan|connect|disconnect>\n");
     return H2_PAL_ERR_INVALID_ARG;
 }
 
@@ -1521,7 +1471,6 @@ int h2_loader_command_init(
             H2_LOADER_COMMAND_AVAILABLE_WIFI_STATUS |
             H2_LOADER_COMMAND_AVAILABLE_WIFI_SCAN |
             H2_LOADER_COMMAND_AVAILABLE_WIFI_CONNECT |
-            H2_LOADER_COMMAND_AVAILABLE_WIFI_CONNECT_TEMPORARY |
             H2_LOADER_COMMAND_AVAILABLE_WIFI_DISCONNECT |
             H2_LOADER_COMMAND_AVAILABLE_REBOOT_UPGRADE |
             H2_LOADER_COMMAND_AVAILABLE_COREDUMP_STATUS |

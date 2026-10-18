@@ -162,12 +162,10 @@ int main(void) {
       .task = &tasks, .queue = config.queue};
   assert(h2_web_gizclaw_open(&web, &bridge) == H2_PAL_OK);
   int rc = h2_web_main_call(h2_local_fixture_assertions, NULL).i32;
+  atomic_store(&gate, 0);
   fail_bridge_join = true;
   assert(h2_web_gizclaw_close(&bridge) == H2_PAL_ERR_IO && bridge);
   if (h2_web_main_call(h2_local_fixture_closed, NULL).i32) rc = 1;
-  /* Keep the provider pending until detach is observed; releasing it earlier
-   * races a successful reply against the cancellation assertion. */
-  atomic_store(&gate, 0);
   assert(h2_gizclaw_service_deinit(service) != H2_PAL_OK);
   assert(h2_web_gizclaw_close(&bridge) == H2_PAL_OK && !bridge);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);

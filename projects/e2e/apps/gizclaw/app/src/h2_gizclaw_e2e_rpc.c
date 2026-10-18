@@ -490,50 +490,6 @@ int h2_gizclaw_e2e_run_rpc(h2_gizclaw_e2e_fixture_t *fixture) {
   return first_rc;
 }
 
-/* Read the complete Session publication through its actual public API. The
- * absent tag is checked against the initial full assistants catalog before it
- * is used as an AND selector, so a no-op selector replacement cannot pass. */
-static int observe_voice_catalog(h2_gizclaw_e2e_fixture_t *fixture,
-                                  h2_gizclaw_session_t *session,
-                                  h2_gizclaw_resp_storage_t *storage,
-                                  h2_gizclaw_workflow_page_t *catalog,
-                                  h2_gizclaw_session_state_t *state,
-                                  bool expect_nonempty, const char *absent_tag) {
-  storage->used = 0u;
-  int rc = h2_gizclaw_session_catalog_copy(session, storage, catalog);
-  h2_gizclaw_e2e_evidence("h2_gizclaw_session_catalog_copy", "session-catalog", rc);
-  if (rc != H2_PAL_OK) return rc;
-  rc = h2_gizclaw_session_snapshot(session, state);
-  h2_gizclaw_e2e_evidence("h2_gizclaw_session_snapshot", "session-snapshot", rc);
-  if (rc != H2_PAL_OK) return rc;
-  if (state->registration != H2_GIZCLAW_SESSION_READY ||
-      state->catalog != H2_GIZCLAW_SESSION_READY || state->last_error != H2_PAL_OK ||
-      state->workflow_count != catalog->count || catalog->has_next ||
-      expect_nonempty != (catalog->count != 0u) ||
-      (catalog->count && !catalog->items) || !catalog->runtime_profile_name ||
-      !catalog->runtime_profile_name[0] || !catalog->runtime_profile_revision || !catalog->runtime_profile_revision[0] ||
-      strcmp(catalog->runtime_profile_name, fixture->runtime_profile_name) ||
-      strcmp(state->profile_name, catalog->runtime_profile_name) ||
-      strcmp(state->profile_revision, catalog->runtime_profile_revision))
-    return H2_PAL_ERR_INVALID_STATE;
-  for (size_t i = 0u; i < catalog->count; ++i) {
-    const h2_gizclaw_workflow_t *workflow = &catalog->items[i];
-    bool assistant = false;
-    if (!workflow->name || !workflow->name[0] || !workflow->tags ||
-        workflow->tag_count > H2_GIZCLAW_WORKFLOW_TAG_MAX_ITEMS)
-      return H2_PAL_ERR_INVALID_STATE;
-    for (size_t j = 0u; j < workflow->tag_count; ++j) {
-      const char *tag = workflow->tags[j];
-      if (!tag || !tag[0] || strlen(tag) > H2_GIZCLAW_WORKFLOW_TAG_MAX_BYTES ||
-          !strcmp(tag, absent_tag))
-        return H2_PAL_ERR_INVALID_STATE;
-      assistant = assistant || !strcmp(tag, "assistants");
-    }
-    if (!assistant) return H2_PAL_ERR_INVALID_STATE;
-  }
-  return H2_PAL_OK;
-}
-
 int h2_gizclaw_e2e_prepare_voice(h2_gizclaw_e2e_fixture_t *fixture) {
   if (fixture == NULL || fixture->pcm == NULL || fixture->pcm_len == 0u) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -545,56 +501,24 @@ int h2_gizclaw_e2e_prepare_voice(h2_gizclaw_e2e_fixture_t *fixture) {
   h2_gizclaw_session_t *session = fixture->actors[H2_GIZCLAW_E2E_OWNER].session;
   if (session != NULL) {
     h2_gizclaw_workflow_page_t catalog = {0};
-    h2_gizclaw_session_state_t state = {0};
-    char absent[H2_GIZCLAW_WORKFLOW_TAG_MAX_BYTES + 1u] = {0};
-    int rc = fixture->run_prefix[0]
-                 ? append_run_suffix(absent, sizeof(absent), "e2e-missing-", fixture->run_prefix)
-                 : H2_PAL_ERR_INVALID_ARG;
-    const size_t absent_len = strlen(absent);
-    if (rc == H2_PAL_OK) rc = h2_gizclaw_session_refresh(session, 30000u);
+    int rc = h2_gizclaw_session_refresh(session, 30000u);
     h2_gizclaw_e2e_evidence("h2_gizclaw_session_refresh", "session-refresh", rc);
     if (rc == H2_PAL_OK)
-      rc = observe_voice_catalog(fixture, session, &storage, &catalog, &state, true, absent);
-    h2_gizclaw_e2e_evidence("h2_gizclaw_session_refresh", "session_refresh-assert", rc);
-    h2_gizclaw_e2e_evidence("h2_gizclaw_session_catalog_copy", "session_catalog_copy-assert", rc);
-    uint64_t previous_revision = state.revision;
-    const h2_gizclaw_str_t empty_tags[] = {{"assistants", 10u},
-        {absent, absent_len}};
-    if (rc == H2_PAL_OK)
-      rc = h2_gizclaw_session_refresh_with_tags(session, empty_tags, 2u, 30000u);
-    h2_gizclaw_e2e_evidence("h2_gizclaw_session_refresh_with_tags", "session-tags-empty", rc);
-    if (rc == H2_PAL_OK)
-      rc = observe_voice_catalog(fixture, session, &storage, &catalog, &state, false, absent);
-    if (rc == H2_PAL_OK && state.revision <= previous_revision)
-      rc = H2_PAL_ERR_INVALID_STATE;
-    h2_gizclaw_e2e_evidence("h2_gizclaw_session_refresh_with_tags",
-                            "session_refresh_with_tags-empty-assert", rc);
-    previous_revision = state.revision;
-    char selector[] = "assistants";
-    h2_gizclaw_str_t tag = {selector, sizeof(selector) - 1u};
-    if (rc == H2_PAL_OK)
-      rc = h2_gizclaw_session_refresh_with_tags(session, &tag, 1u, 30000u);
-    h2_gizclaw_e2e_evidence("h2_gizclaw_session_refresh_with_tags", "session-tags", rc);
-    if (rc == H2_PAL_OK)
-      rc = observe_voice_catalog(fixture, session, &storage, &catalog, &state, true, absent);
-    if (rc == H2_PAL_OK && state.revision <= previous_revision)
-      rc = H2_PAL_ERR_INVALID_STATE;
-    previous_revision = state.revision;
-    /* Both the text and span may be released when replacement returns. A
-     * later refresh must retain the copied assistants selector. */
-    memset(selector, 0, sizeof(selector));
-    tag = (h2_gizclaw_str_t){0};
-    if (rc == H2_PAL_OK) rc = h2_gizclaw_session_refresh(session, 30000u);
-    h2_gizclaw_e2e_evidence("h2_gizclaw_session_refresh", "session-tags-refresh", rc);
-    if (rc == H2_PAL_OK)
-      rc = observe_voice_catalog(fixture, session, &storage, &catalog, &state, true, absent);
-    if (rc == H2_PAL_OK && state.revision <= previous_revision)
-      rc = H2_PAL_ERR_INVALID_STATE;
-    h2_gizclaw_e2e_evidence("h2_gizclaw_session_refresh_with_tags",
-                            "session_refresh_with_tags-assert", rc);
+      rc = h2_gizclaw_session_catalog_copy(session, &storage, &catalog);
+    h2_gizclaw_e2e_evidence("h2_gizclaw_session_catalog_copy", "session-catalog", rc);
     if (rc == H2_PAL_OK)
       rc = h2_gizclaw_e2e_select_workflow_name(&catalog, fixture->workflow_name,
                                              sizeof(fixture->workflow_name));
+    h2_gizclaw_session_state_t state;
+    if (rc == H2_PAL_OK)
+      rc = h2_gizclaw_session_snapshot(session, &state);
+    if (rc == H2_PAL_OK && (state.catalog != H2_GIZCLAW_SESSION_READY ||
+        state.workflow_count != catalog.count ||
+        strcmp(state.profile_name, catalog.runtime_profile_name) != 0 ||
+        strcmp(state.profile_revision, catalog.runtime_profile_revision) != 0))
+      rc = H2_PAL_ERR_INVALID_STATE;
+    h2_gizclaw_e2e_evidence("h2_gizclaw_session_refresh", "session_refresh-assert", rc);
+    h2_gizclaw_e2e_evidence("h2_gizclaw_session_catalog_copy", "session_catalog_copy-assert", rc);
     if (rc == H2_PAL_OK) {
       const h2_gizclaw_session_selection_t selection = {
           .workflow_name = fixture->workflow_name,

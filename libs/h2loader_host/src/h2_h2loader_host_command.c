@@ -1,5 +1,4 @@
 #include "h2_h2loader_host_internal.h"
-#include "h2/pal/hal/h2_pal_wifi_settings.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -78,9 +77,6 @@ h2_pal_result_t h2_h2loader_host_command_validate(
             break;
         case H2_H2LOADER_HOST_COMMAND_WIFI_CONNECT:
             availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_CONNECT;
-            break;
-        case H2_H2LOADER_HOST_COMMAND_WIFI_CONNECT_TEMPORARY:
-            availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_CONNECT_TEMPORARY;
             break;
         case H2_H2LOADER_HOST_COMMAND_WIFI_DISCONNECT:
             availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_DISCONNECT;
@@ -210,23 +206,15 @@ h2_pal_result_t h2_h2loader_host_command_contract(
             break;
         }
         case H2_H2LOADER_HOST_COMMAND_WIFI_CONNECT:
-        case H2_H2LOADER_HOST_COMMAND_WIFI_CONNECT_TEMPORARY:
-            if (!is_wire_field(request->ssid) || !is_wire_field(request->password) ||
-                strlen(request->ssid) > H2_PAL_WIFI_SSID_MAX ||
-                strlen(request->password) > H2_PAL_WIFI_PASSWORD_MAX) {
+            if (!is_wire_field(request->ssid) || !is_wire_field(request->password)) {
                 return H2_PAL_ERR_INVALID_ARG;
             }
             if (snprintf(out_contract->line, sizeof(out_contract->line),
-                    "h2loader wifi %s %s %s\n",
-                    request->command == H2_H2LOADER_HOST_COMMAND_WIFI_CONNECT_TEMPORARY
-                        ? "connect-temporary" : "connect",
-                    request->ssid, request->password) >=
+                    "h2loader wifi connect %s %s\n", request->ssid, request->password) >=
                 (int)sizeof(out_contract->line)) {
                 return H2_PAL_ERR_INVALID_ARG;
             }
-            out_contract->marker =
-                request->command == H2_H2LOADER_HOST_COMMAND_WIFI_CONNECT_TEMPORARY
-                    ? "H2_LOADER_WIFI_TEMPORARY " : "H2_LOADER_WIFI ";
+            out_contract->marker = "H2_LOADER_WIFI ";
             out_contract->success_token = "result=connected";
             break;
         case H2_H2LOADER_HOST_COMMAND_WIFI_DISCONNECT:

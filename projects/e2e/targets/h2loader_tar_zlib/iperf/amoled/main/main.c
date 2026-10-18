@@ -4,7 +4,6 @@
 #include "h2_esp_platform_core.h"
 #include "h2_esp_target_task_policy.h"
 #include "h2_iperf_e2e.h"
-#include "h2_iperf_e2e_wifi.h"
 #include "h2_sctp.h"
 #include "h2/pal/hal/h2_pal_wifi.h"
 #include "h2/pal/hal/h2_pal_wifi_settings.h"
@@ -88,18 +87,27 @@ static void fail(const char *stage, int rc, int commands_started) {
   hold();
 }
 
-/* Only setup is retried. A temporary H2Loader connection can satisfy the
- * prerequisite while the image remains command-responsive with no cases run. */
-static void wait_for_wifi(h2_runtime_t *runtime) {
+/* The image never carries credentials: the Loader's `wifi connect` stores the
+ * STA configuration and the App reconnects with it. */
+static int load_wifi_config(h2_runtime_t *runtime,
+                            h2_pal_wifi_sta_config_t *out_config) {
+  int has_config = 0;
+  int rc = h2_pal_wifi_settings_has_saved_sta_config(runtime->wifi_settings,
+                                                     &has_config);
+  if (rc != H2_PAL_OK) {
+    return rc;
+  }
+  if (!has_config) {
+    return H2_PAL_ERR_NOT_FOUND;
+  }
+  return h2_pal_wifi_settings_get_saved_sta_config(runtime->wifi_settings,
+                                                   out_config);
+}
+
+static void wait_for_wifi(h2_runtime_t *runtime,
+                          const h2_pal_wifi_sta_config_t *wifi) {
   for (;;) {
-    h2_pal_wifi_sta_config_t wifi = {0};
-    int connected = 0;
-    int rc = h2_iperf_e2e_select_wifi(runtime->wifi_sta,
-                                     runtime->wifi_settings, &wifi, &connected);
-    if (rc == H2_PAL_OK && !connected) {
-      rc = h2_pal_wifi_sta_connect(runtime->wifi_sta, &wifi, 20000u);
-    }
-    memset(&wifi, 0, sizeof(wifi));
+    const int rc = h2_pal_wifi_sta_connect(runtime->wifi_sta, wifi, 20000u);
     if (rc == H2_PAL_OK) {
       const TickType_t deadline =
           xTaskGetTickCount() + pdMS_TO_TICKS(20000u);
@@ -122,15 +130,12 @@ static void wait_for_wifi(h2_runtime_t *runtime) {
         if (status_rc != H2_PAL_OK ||
             status.state == H2_PAL_WIFI_STA_STATE_DISCONNECTED ||
             status.state == H2_PAL_WIFI_STA_STATE_FAILED) {
-          rc = status_rc != H2_PAL_OK ? status_rc : H2_PAL_ERR_IO;
           break;
         }
-        rc = H2_PAL_ERR_TIMEOUT;
         vTaskDelay(pdMS_TO_TICKS(100u));
       } while ((int32_t)(deadline - xTaskGetTickCount()) > 0);
     }
-    printf("H2_IPERF_E2E_AMOLED stage=wifi status=SETUP_WAIT "
-           "cases_started=0 rc=%d retry_ms=3000\n",
+    printf("H2_IPERF_E2E_AMOLED stage=wifi status=WAIT rc=%d retry_ms=3000\n",
            rc);
     fflush(stdout);
     vTaskDelay(pdMS_TO_TICKS(3000u));
@@ -230,7 +235,13 @@ static void image_entry(void *user) {
   if (rc != H2_PAL_OK) {
     fail("confirm", rc, 1);
   }
-  wait_for_wifi(runtime);
+  h2_pal_wifi_sta_config_t wifi;
+  memset(&wifi, 0, sizeof(wifi));
+  rc = load_wifi_config(runtime, &wifi);
+  if (rc != H2_PAL_OK) {
+    fail("wifi_settings", rc, 1);
+  }
+  wait_for_wifi(runtime, &wifi);
   rc = apply_power_save(runtime);
   if (rc != H2_PAL_OK) {
     fail("power_save", rc, 1);

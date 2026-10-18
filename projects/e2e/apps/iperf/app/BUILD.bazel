@@ -11,14 +11,8 @@ _HOST_TEST_COMPATIBILITY = select({
 
 cc_library(
     name = "iperf_e2e",
-    srcs = [
-        "src/h2_iperf_e2e.c",
-        "src/h2_iperf_e2e_wifi.c",
-    ],
-    hdrs = [
-        "include/h2_iperf_e2e.h",
-        "include/h2_iperf_e2e_wifi.h",
-    ],
+    srcs = ["src/h2_iperf_e2e.c"],
+    hdrs = ["include/h2_iperf_e2e.h"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = ["include"],
@@ -26,15 +20,6 @@ cc_library(
         "//libs/iperf",
         "//libs/pal",
     ],
-)
-
-cc_test(
-    name = "wifi_setup_test",
-    srcs = ["tests/test_wifi_setup.c"],
-    conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS,
-    target_compatible_with = _HOST_TEST_COMPATIBILITY,
-    deps = [":iperf_e2e"],
 )
 
 cc_test(

@@ -37,7 +37,6 @@ typedef struct h2_gizclaw_e2e_social_observation {
 typedef struct h2_gizclaw_e2e_actor {
   h2_gizclaw_service_t *service;
   h2_gizclaw_api_key_state_t *api_key_state;
-  h2_gizclaw_ble_binding_t *ble_binding;
   h2_gizclaw_session_t *session;
   h2_gizclaw_config_t config;
   h2_gizclaw_tool_handler_t tool_handlers[3];

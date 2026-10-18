@@ -7,9 +7,10 @@ load("//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
+    "main/CMakeLists.txt",
+    "main/idf_component.yml",
     "main/main.c",
-    "sdkconfig.pal-core.defaults",
-])
+], visibility = ["//visibility:public"])
 
 esp_target_task_policy(
     name = "task_policy",

@@ -13,8 +13,7 @@ typedef struct observed {
     unsigned writes,flushes,confirms,fail_write,short_write,fail_flush;
     int firmware_error,confirm_error;
 } observed_t;
-static int emit_ledger,emit_bk,esp_uart;
-static const char *test_board;
+static int emit_ledger,emit_bk;
 static const char execution_id[]="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb";
 
 static int write_record(void *user,const void *bytes,size_t length,size_t *written,uint32_t timeout) {
@@ -60,10 +59,8 @@ static int confirm(void *user) {
     unsigned count=0u;
     for(const char *row=bytes;(row=strstr(row,"H2_PAL_MQTT_CASE "))!=NULL;row+=18u)++count;
     assert(count==36u && strstr(bytes,"H2_PAL_MQTT_SUMMARY {\"selected\":36,\"passed\":36")!=NULL);
-    char ready[160];
-    if(emit_bk)strcpy(ready,"H2_PAL_MQTT_READY board=bk7258 rc=0 confirm=pending\r\n");
-    else (void)snprintf(ready,sizeof(ready),"H2_PAL_MQTT_READY board=%s rc=0 confirm=pending provider_cleanup=0\r\n",
-        test_board!=NULL?test_board:"devkit");
+    const char *ready=emit_bk?"H2_PAL_MQTT_READY board=bk7258 rc=0 confirm=pending\r\n":
+        "H2_PAL_MQTT_READY board=devkit rc=0 confirm=pending provider_cleanup=0\r\n";
     size_t ready_length=strlen(ready);
     assert(length>=ready_length && memcmp(bytes+length-ready_length,ready,ready_length)==0);
     assert(state->flushes==39u+(unsigned)emit_ledger);
@@ -76,9 +73,6 @@ static int execute(observed_t *state,int suite_error) {
     const h2_pal_usb_jtag_io_stream_vtable_t usb_vtable={.write=write_record,.flush=flush_record};
     const h2_pal_usb_jtag_io_stream_api_t usb={.user=state,.vtable=&usb_vtable};
     h2_mqtt_esp_ledger_console_t console={.usb=&usb,.timeout_ms=5000u};
-    const h2_pal_uart_io_stream_vtable_t esp_uart_vtable={.write=write_record,.flush=flush_record};
-    const h2_pal_uart_io_stream_api_t esp_uart_api={.user=state,.vtable=&esp_uart_vtable};
-    if(esp_uart){console.usb=NULL;console.uart=&esp_uart_api;}
     const h2_pal_uart_io_stream_vtable_t uart_vtable={.write=write_uart};
     const h2_pal_uart_io_stream_api_t uart={.user=state,.vtable=&uart_vtable};
     h2_mqtt_bk_ledger_console_t bk_console={.uart=&uart,.timeout_ms=5000u,.writable=1};
@@ -88,7 +82,7 @@ static int execute(observed_t *state,int suite_error) {
     const h2_pal_firmware_info_api_t image={.user=state,.vtable=&firmware_vtable};
     const h2_pal_time_vtable_t time_vtable={.sleep_ms=sleep_ms};
     const h2_pal_time_api_t time={.vtable=&time_vtable};
-    h2_runtime_t runtime={.board=test_board,.log=&log,.firmware_info=&image,.time=&time};
+    h2_runtime_t runtime={.log=&log,.firmware_info=&image,.time=&time};
     h2_mqtt_device_result_t result={.rc=suite_error};
     strcpy(result.execution,execution_id);
     memset(result.ca_sha256,'c',64u);result.ca_sha256[64]='\0';result.epoch_ms=123u;
@@ -118,7 +112,6 @@ int main(int argc,char **argv) {
         emit_ledger=1;emit_bk=strcmp(argv[2],"bk7258")==0;
         observed_t state={0};return execute(&state,0);
     }
-    for(esp_uart=0;esp_uart<=1;++esp_uart){
     for(unsigned boundary=1u;boundary<=39u;++boundary){
         observed_t write_failure={.fail_write=boundary};
         assert(execute(&write_failure,0)==H2_PAL_ERR_TIMEOUT && write_failure.confirms==0u);
@@ -132,12 +125,5 @@ int main(int argc,char **argv) {
     observed_t bad_image={.firmware_error=H2_PAL_ERR_IO};assert(execute(&bad_image,0)==H2_PAL_ERR_IO && bad_image.confirms==0u);
     observed_t bad_confirm={.confirm_error=H2_PAL_ERR_IO};assert(execute(&bad_confirm,0)==H2_PAL_ERR_IO && bad_confirm.confirms==1u);
     observed_t bad_terminal={.fail_flush=40u};assert(execute(&bad_terminal,0)==H2_PAL_ERR_TIMEOUT && bad_terminal.confirms==1u);
-    test_board="consumer_esp";
-    observed_t private_board={0};assert(execute(&private_board,0)==H2_PAL_OK && private_board.confirms==1u);
-    char long_board[161];memset(long_board,'x',sizeof(long_board));long_board[160]='\0';
-    test_board=long_board;
-    observed_t truncated={0};assert(execute(&truncated,0)==H2_PAL_ERR_TRUNCATED && truncated.confirms==0u);
-    test_board=NULL;
-    }
     return 0;
 }

@@ -11,4 +11,5 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     deps = [":tasks", "//projects/e2e/apps/pal-crypto/app:pal_crypto_e2e"],
+    visibility = ["//visibility:public"],
 )

@@ -91,11 +91,8 @@ typedef struct h2_gizclaw_e2e_config {
   /** Required for RPC/all: known non-secret fixture bytes compared by both
    * AppConfig APIs. A non-NULL zero-length view denotes a known empty value. */
   h2_gizclaw_str_t app_config_expected_value;
-  /** Required for Device/all: explicit HTTPS origin, without path or trailing
-   * slash. Also owns the BLE binding URL; never inferred from the RPC endpoint.
-   * The launcher starts the real shared BLE Host before running this case. */
+  /** Optional dedicated device-API acceptance lane endpoints. */
   const char *device_api_url;
-  /** Explicit HTTPS address of the versioned 32-second Ogg Opus fixture. */
   const char *device_audio_url;
   /** Dedicated Lua install/run golden lane: three addresses for the same
    * package, its ID and digests. data URL remains borrowed for the whole run.

@@ -133,7 +133,7 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
 
 结果包含 one-based `index`、`ssid_hex`、12 位十六进制 BSSID、channel、RSSI 和 security enum。SSID 使用十六进制编码，确保隐藏网络、包含空白或非 UTF-8 字节的名称不会破坏逐行协议；operator 可以把 `ssid_hex` 解码为原始 SSID 字节。这里的 `wifi scan` 扫描 Wi-Fi AP，不同于顶层 `h2loader scan` 对 H2Loader 串口/BLE management endpoint 的发现。
 
-Wi-Fi typed command 不按 transport 复制两套协议：serial IO Stream iKCP 的 `h2_h2loader_host_serial_execute_command()` 与 BLE-iKCP 的 `h2_h2loader_host_ble_execute_command()` 都消费同一个 typed request 和 wire contract，并在命令尚未结束时逐块交付输出。native CLI 通过全局 `--transport` 对同一个 `wifi` 子命令选择 adapter；BLE 形式只需把 scan 返回的 BLE endpoint 传给 `--port`。
+Wi-Fi typed command 不按 transport 复制两套协议：serial IO Stream iKCP 的 `h2_h2loader_host_serial_execute_command()` 与 BLE-iKCP 的 `h2_h2loader_host_ble_execute_command()` 都发送同一个 `h2loader wifi status/scan/connect/disconnect` wire command，并在命令尚未结束时逐块交付输出。native CLI 通过全局 `--transport` 对同一个 `wifi` 子命令选择 adapter；BLE 形式只需把 scan 返回的 BLE endpoint 传给 `--port`。
 
 选择 SSID 后连接 Wi-Fi：
 
@@ -144,30 +144,6 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
 ```
 
 `ssid` 和 `password` 都是必填的单个参数，当前 contract 不接受空值或 ASCII 空白字符。命令只有在设备取得 IP 并返回 `H2_LOADER_WIFI result=connected ssid=<ssid>` 后才成功；如果该 Loader 提供 Wi-Fi settings storage，设备会在连接成功后保存这份 STA 配置，后续 App 可以读取并重新连接；AC791N DevKit 共享 App launcher 在启动命令传输前直接通过 PAL 恢复保存的网络，不依赖 Runtime。认证失败、关联超时、没有取得 IP、配置保存失败、PAL 不支持或 transport 失败都会让 CLI 返回非零状态，不能记为已连接。
-
-只连接本次运行、保留已保存的 STA 配置时，显式添加末尾的 `--temporary`：
-
-```sh
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- \
-  --port <serial-port> \
-  wifi connect <ssid> <password> --temporary
-```
-
-临时连接只调用 PAL 的非持久化 `connect`，不会保存或清除原有配置，包括原本没有保存配置的设备。它在包含关联等待的 15 秒总预算内确认目标 SSID 取得有效 IPv4 或非 link-local IPv6 地址，以 `H2_LOADER_WIFI_TEMPORARY result=connected ssid=<ssid>` 为成功终止标记；失败不恢复之前的活动连接，但保存的配置始终不变。重启后的自动连接仍由原有保存配置和 App policy 决定。
-
-`--temporary` 对应独立 typed command 和 `WIFI_CONNECT_TEMPORARY` availability bit，wire 使用独立的 `h2loader wifi connect-temporary <ssid> <password>`，不会把 flag 附加到旧 `connect` wire。旧设备没有该 bit 时在发送前拒绝，不会降级成保存连接。普通 `wifi connect` 的 wire 和保存语义不变。两种模式都限制 SSID 至多 32 字节、password 至多 64 字节，并拒绝空值、ASCII 控制字符和空白；`--temporary` 只能出现一次，并位于 password 后、可选的 `--monitor` 前。
-
-需要从连接过程开始连续保留设备日志时，添加末尾的 `--monitor`；普通保存连接同样支持该参数：
-
-```sh
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- \
-  --port <serial-port> \
-  wifi connect <ssid> <password> --temporary --monitor
-```
-
-该模式只支持 `iostreamikcp`，在初次串口握手和 session open 前即接入日志输出，保留 Wi-Fi 命令执行期间的原始日志与命令响应，连接成功后继续读取同一 session。它不重启设备、不重新连接或重发 Wi-Fi 命令，也不重复等待启动 marker；Wi-Fi、transport 或日志输出失败立即以原始错误码报告非零退出，成功进入监控后的主动取消正常退出。不带 `--monitor` 的命令仍在 Wi-Fi terminal 后结束。
-
-`--monitor` 只在已有 SSID 和 password 两个连接参数后解析为选项；password 的字面值为 `--monitor` 时仍按密码发送，额外的末尾 `--monitor` 才开启监控。
 
 该命令是否可用只由当前连接的 `command_availability` 决定；APP 与 Loader 使用相同命令和响应，不由 Host 根据 role 另设限制。CLI 不提供任意 raw command 旁路。主动断开当前连接：
 
@@ -340,11 +316,7 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
 bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> reboot loader --monitor
 ```
 
-`monitor` 是 Host-only UART 操作，输出原始 non-frame 日志和已解码的控制台 bytes；设备协议中没有 `monitor` 命令。`reboot ... --monitor` 在初次连接前接入日志 sink，reboot accepted 后重建 session。后续 authoritative status 仍是合法安装中间态时，保留同一串口连接，在查询之间持续读取日志；只有 session 或 transport 失效才重连，整个流程只发送一次 reboot。Status 查询中的真实控制台输出也投影到日志，但 `H2_LOADER_STATUS` 控制响应不作为日志输出。 已握手的 session 等待 status 响应超过一个 `--read-timeout` 读取片时，保留 fd、同一请求和跨片解析状态，继续收集真实日志；不会仅因这个响应片超时重连或重发 status。首个 status 响应尚未返回时也遵守此规则。
-
-确认阶段的总预算为 `max(60 秒, --wait-timeout)`；每次握手和状态查询都受剩余总预算限制，状态查询的 delivery 与每个 response 读取片还分别受 `--read-timeout` 限制，片间检查取消及总预算。比如 `--wait-timeout 240` 允许业务在 60 秒后完成确认。预算耗尽、身份或镜像不匹配、真实验证错误、时钟或日志输出错误均退出；已知的 Stage 中间态继续等待，最终仍核对 UID、board/target、预期镜像 checksum、Partition 和 Stage，APP 更新还须保留原 Partition 1。主动取消在 bounded I/O 边界生效，正常退出。UART flush/close 没有 deadline 参数，仍可能增加 PAL 已有的有限清理时间。
-
-确认完成后继续监控，直到主动取消或错误；确认预算不会截断之后的正常监控。不带 `--monitor` 的 reboot 保留原来的 120 次重连验证预算，BLE 保留原验证流程；BLE 显式请求 monitoring 会在发送 reboot 前被拒绝。物理失联及真实 MCU session 重置仍可能产生重连间隙，这些间隙的日志完整性需由实际采集证据判断。
+`monitor` 是 Host-only UART 操作，输出 iostreamikcp 已判定不是 iKCP frame 的日志 bytes；设备协议中没有 `monitor` 命令。`--monitor` 在 reboot accepted 后处理断线、重连并继续输出同类日志。BLE 可以执行三个 reboot 命令，但显式请求 monitoring 会在发送 reboot 前被拒绝。
 
 ## Coredump
 

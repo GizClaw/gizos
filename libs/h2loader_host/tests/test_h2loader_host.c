@@ -270,36 +270,6 @@ static void test_typed_command_wire_contract(void) {
     request.password = "bad password";
     assert(h2_h2loader_host_command_contract(&request, &contract) == H2_PAL_ERR_INVALID_ARG);
 
-    request.command = H2_H2LOADER_HOST_COMMAND_WIFI_CONNECT_TEMPORARY;
-    request.password = "secret";
-    assert(h2_h2loader_host_command_contract(&request, &contract) == H2_PAL_OK);
-    assert(strcmp(contract.line, "h2loader wifi connect-temporary factory secret\n") == 0);
-    assert(strcmp(contract.marker, "H2_LOADER_WIFI_TEMPORARY ") == 0);
-    const char *temporary_connected =
-        "H2_LOADER_WIFI_TEMPORARY result=connected ssid=factory\n";
-    assert(h2_h2loader_host_command_parse_terminal(
-        (const uint8_t *)temporary_connected, strlen(temporary_connected), &contract) ==
-        H2_H2LOADER_HOST_COMMAND_TERMINAL_OK);
-    assert(h2_h2loader_host_command_parse_terminal(
-        (const uint8_t *)connected, strlen(connected), &contract) ==
-        H2_H2LOADER_HOST_COMMAND_TERMINAL_NONE);
-    loader.command_availability &=
-        ~H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_CONNECT_TEMPORARY;
-    assert(h2_h2loader_host_command_contract(&request, &contract) == H2_PAL_ERR_INVALID_STATE);
-    assert(contract.line[0] == '\0'); /* Old targets never receive a saved connect. */
-    loader.command_availability |= H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_CONNECT_TEMPORARY;
-    const char *invalid[] = {"", "bad password", "bad\ncommand", "bad\x7f"};
-    for (size_t i = 0u; i < sizeof(invalid) / sizeof(invalid[0]); ++i) {
-        request.password = invalid[i];
-        assert(h2_h2loader_host_command_contract(&request, &contract) == H2_PAL_ERR_INVALID_ARG);
-    }
-    request.password = "secret";
-    request.ssid = "012345678901234567890123456789012";
-    assert(h2_h2loader_host_command_contract(&request, &contract) == H2_PAL_ERR_INVALID_ARG);
-    request.ssid = "factory";
-    request.password = "01234567890123456789012345678901234567890123456789012345678901234";
-    assert(h2_h2loader_host_command_contract(&request, &contract) == H2_PAL_ERR_INVALID_ARG);
-
     request.command = H2_H2LOADER_HOST_COMMAND_WIFI_DISCONNECT;
     request.ssid = NULL;
     request.password = NULL;

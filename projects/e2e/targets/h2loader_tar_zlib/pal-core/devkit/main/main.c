@@ -399,9 +399,8 @@ void app_main(void) {
     if (esp_timer_create(&timer, &watchdog) != ESP_OK ||
         esp_timer_start_once(watchdog, UINT64_C(120000000)) != ESP_OK)
         fail("watchdog", H2_PAL_ERR_IO);
-    printf("H2_PAL_CORE_E2E_BOOT board=%s version=%s cases=%u resources=native\n",
-           runtime->board, esp_app_get_description()->version,
-           (unsigned)H2_PAL_CORE_E2E_CASE_COUNT);
+    printf("H2_PAL_CORE_E2E_BOOT board=devkit version=%s cases=%u resources=native\n",
+           esp_app_get_description()->version, (unsigned)H2_PAL_CORE_E2E_CASE_COUNT);
     const h2_pal_task_options_t options = {.name = h2_pal_core_e2e_runner_task_name};
     h2_pal_task_t *runner = NULL;
     rc = h2_pal_task_start(runtime->task, &options, run, NULL, &runner);

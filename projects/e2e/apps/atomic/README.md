@@ -87,5 +87,3 @@ package/image/version, unchanged P1 and empty Stage. Stored coredumps are actual
 read and compared byte for byte; an empty dump is checked as unchanged blank
 status, with no invented dump or digest. All live test labels use `external`;
 build caches remain enabled while test execution is fresh.
-
-The device runner explicitly uses H2Loader `--read-timeout 1` to bound command delivery and status response slices, keeping cooperative monitor cancellation within the runner's ten-second shutdown wait during healthy I/O. A pending reboot status response retains the same request, parsed bytes and console output across slices. The overall `--wait-timeout 150`, handshake and cleanup bounds, complete ledgers, two independent boots and final identity checks remain in force; this Host I/O setting does not change device SDK resource budgets or qualification criteria.

@@ -21,13 +21,9 @@ Every valid bench invocation attempts the final saved-credential observation and
 
 The BK launcher places benchmark buffers and its 32-KiB runner stack in the existing PSRAM provider so receive buffers leave internal SRAM available for Wi-Fi/control. It stops and joins UART management, takes a bounded UART PAL ledger sink, drains/closes that sink and restores management before image confirmation. Qualification captures the actual BOOT prefix and one uninterrupted raw ledger for each mode, with complete corresponding peer receipts; missing records invalidate admission.
 
-The ESP launcher waits 5000 ms after command/result-console initialization, before its sole BOOT and the benchmark's actual `matrix-start` resource observation. This allows the H2Loader reboot monitor to reconnect on ordinary App boots as well as managed installs. The delay changes no SDK configuration, task or network budget, measurement duration, case or qualification gate; missing startup records still invalidate the captured run.
-
 Invalid, partial or failed ledger writes retain the first error. A failed pre-confirmation record blocks confirmation. If the SDK has already confirmed the image and the final confirmation record cannot be delivered, the launcher reports the actual logging error and the capture is incomplete; it cannot undo that successful SDK confirmation. Runtime initialization failure releases the board-owned providers before entering the diagnostic hold.
 
 ## Build and verify
-
-Consumer-owned ESP32-S3 boards use `//projects/e2e/libs/esp-device:firmware.bzl` with `suite = "iperf-client"`, supplying their own BSP, libraries, task policies and H2Loader layout, including a board-owned diagnostic network budget. This reuses the same launcher and complete matrix; BOOT and benchmark tokens identify the actual Runtime board. The AMOLED image remains the existing server peer.
 
 ```sh
 bazel test --config=macos_arm64 //projects/e2e/apps/iperf-client/app:client_test

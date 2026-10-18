@@ -141,13 +141,8 @@ static int connect_local(const h2_pal_net_api_t *net,
     address.ip[15] = 1u;
   }
   int rc = h2_pal_net_tcp_open_bound(net, family, NULL, &socket);
-  if (rc == H2_PAL_OK) {
+  if (rc == H2_PAL_OK)
     rc = h2_pal_net_tcp_connect(net, socket, &address, 1000u);
-    /* A refused connect may report CLOSED; an open failure cannot qualify. */
-    if (listener < 0)
-      rc = rc == H2_PAL_ERR_IO || rc == H2_PAL_ERR_CLOSED ? H2_PAL_OK
-                                                        : H2_PAL_ERR_FORMAT;
-  }
   if (rc == H2_PAL_OK && listener >= 0) {
     h2_pal_net_addr_t remote;
     rc = h2_pal_net_tcp_accept(net, listener, &accepted, &remote, 1000u);
@@ -179,10 +174,10 @@ int h2_pal_ipv6_local_isolation(const h2_pal_net_api_t *net) {
     h2_pal_net_close(net, listener4);
     listener4 = -1;
   }
-  if (rc == H2_PAL_OK)
-    rc = connect_local(net, H2_PAL_NET_FAMILY_IPV4, port, -1);
-  if (rc == H2_PAL_OK)
-    rc = connect_local(net, H2_PAL_NET_FAMILY_IPV6, port, listener6);
+  if (rc == H2_PAL_OK) {
+    int refused = connect_local(net, H2_PAL_NET_FAMILY_IPV4, port, -1);
+    rc = refused == H2_PAL_ERR_IO ? H2_PAL_OK : H2_PAL_ERR_FORMAT;
+  }
   h2_pal_net_close(net, listener6);
   return rc;
 }

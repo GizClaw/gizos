@@ -24,9 +24,6 @@ static bool s_null_service;
 static unsigned s_live_services;
 static unsigned s_poll_fault;
 static bool s_user_stop;
-static int s_binding_token, s_binding_stop_rc;
-static bool s_binding_live, s_binding_sealed;
-static unsigned s_binding_exposures, s_binding_closes;
 
 static bool user_stop(void *user) {
   (void)user;
@@ -118,7 +115,6 @@ h2_pal_result_t h2_gizclaw_service_poll(h2_gizclaw_service_t *service,
 }
 
 h2_pal_result_t h2_gizclaw_service_stop(h2_gizclaw_service_t *service) {
-  assert(!s_binding_live);
   ++s_stops;
   service->stopped = s_stop_rc == H2_PAL_OK;
   /* Stop cancels the job's request, so its wait returns. */
@@ -691,25 +687,6 @@ h2_pal_result_t h2_gizclaw_api_key_state_close(h2_gizclaw_api_key_state_t *state
 h2_pal_result_t h2_gizclaw_api_key_state_destroy(h2_gizclaw_api_key_state_t **state) {
   assert(state != NULL && *state == NULL);
   return H2_PAL_OK;
-}
-
-h2_pal_result_t h2_gizclaw_ble_binding_stop(h2_gizclaw_ble_binding_t *binding) {
-  assert(binding == (h2_gizclaw_ble_binding_t *)&s_binding_token && s_binding_live);
-  if (s_binding_stop_rc == H2_PAL_OK) s_binding_sealed = true;
-  return s_binding_stop_rc;
-}
-h2_pal_result_t h2_gizclaw_ble_binding_next_exposure(
-    h2_gizclaw_ble_binding_t *binding, h2_gizclaw_ble_binding_exposure_t *out) {
-  assert(binding == (h2_gizclaw_ble_binding_t *)&s_binding_token && s_binding_sealed);
-  memset(out, 0, sizeof(*out));
-  if (!s_binding_exposures) return H2_PAL_ERR_WOULD_BLOCK;
-  --s_binding_exposures; out->revision = 42u;
-  strcpy(out->key_name, "test-owned-key"); return H2_PAL_OK;
-}
-h2_pal_result_t h2_gizclaw_ble_binding_close(h2_gizclaw_ble_binding_t **binding) {
-  assert(*binding == (h2_gizclaw_ble_binding_t *)&s_binding_token &&
-         s_binding_live && s_binding_sealed && !s_binding_exposures);
-  s_binding_live = false; ++s_binding_closes; *binding = NULL; return H2_PAL_OK;
 }
 
 static int observer_peer_token, observer_channel_tokens[3];
@@ -1313,24 +1290,6 @@ int main(int argc, char **argv) {
   assert(fixture.actors[0].registered && !fixture.runtime_profile_name[0]);
   assert(h2_gizclaw_e2e_fixture_cleanup(&fixture) == H2_PAL_OK);
   assert(s_deletes == deletes_before + 1u && s_registers == registers_before + 1u);
-  assert(h2_gizclaw_e2e_fixture_deinit(&fixture) == H2_PAL_OK);
-  /* A failed BLE detach retains the borrowed Service/key owners and prevents
-   * remote deletion. Retry seals, drains and closes before either teardown. */
-  assert(h2_gizclaw_e2e_fixture_init(&fixture, &runtime, &config, 600000u) == H2_PAL_OK);
-  assert(h2_gizclaw_e2e_fixture_connect_actors(&fixture, 1u) == H2_PAL_OK);
-  fixture.actors[0].ble_binding = (h2_gizclaw_ble_binding_t *)&s_binding_token;
-  s_binding_live = true; s_binding_exposures = 1u; s_binding_stop_rc = H2_PAL_ERR_IO;
-  const unsigned before_binding_deletes = s_deletes, before_binding_stops = s_stops;
-  assert(h2_gizclaw_e2e_fixture_cleanup(&fixture) == H2_PAL_ERR_IO);
-  assert(s_deletes == before_binding_deletes && s_stops == before_binding_stops &&
-         fixture.actors[0].service && fixture.actors[0].ble_binding);
-  assert(h2_gizclaw_e2e_fixture_deinit(&fixture) == H2_PAL_ERR_IO);
-  assert(fixture.actors[0].service && s_binding_live && !s_binding_closes);
-  s_binding_stop_rc = H2_PAL_OK;
-  assert(h2_gizclaw_e2e_fixture_cleanup(&fixture) == H2_PAL_OK);
-  assert(!fixture.actors[0].ble_binding && !s_binding_live &&
-         !s_binding_exposures && s_binding_closes == 1u);
-  assert(s_deletes == before_binding_deletes + 1u);
   assert(h2_gizclaw_e2e_fixture_deinit(&fixture) == H2_PAL_OK);
   assert(s_live_services == 0u);
   return 0;

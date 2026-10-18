@@ -144,29 +144,6 @@ firmware_native_component(
     ],
 )
 
-[
-    cc_test(
-        name = "log_bridge" + suffix + "_test",
-        srcs = [
-            "include/h2_esp_platform_core.h",
-            "src/h2_esp_platform_log.c",
-            "tests/log_sdk/esp_log.h",
-            "tests/test_h2_esp_platform_log.c",
-        ],
-        conlyopts = H2_C11_OPTS + ["-DH2_TEST_LOG_MASTER=" + enabled],
-        copts = H2_WARNING_COPTS,
-        includes = ["include", "tests/log_sdk"],
-        target_compatible_with = select({
-            "//tools/bazel/platforms:host_linux_target_linux": [],
-            "//tools/bazel/platforms:host_macos_target_macos": [],
-            "//tools/bazel/platforms:host_windows_target_windows": [],
-            "//conditions:default": ["@platforms//:incompatible"],
-        }),
-        deps = ["//libs/pal"],
-    )
-    for suffix, enabled in [("", "0"), ("_master", "1")]
-]
-
 cc_test(
     name = "atomic_flag_storage_test",
     srcs = [

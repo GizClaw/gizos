@@ -31,8 +31,6 @@ typedef struct h2_h2loader_cli_transport {
     h2_h2loader_host_transport_log_fn on_log;
     void *log_user;
     uint32_t command_timeout_ms;
-    uint64_t status_deadline_ms;
-    int status_response_pending;
     uint8_t ble_candidate_valid;
     uint8_t authoritative_device_uid_valid;
 } h2_h2loader_cli_transport_t;
@@ -75,7 +73,6 @@ struct h2_h2loader_cli_context {
     h2_runtime_t *runtime;
     const h2_h2loader_cli_config_t *config;
     int ble_disabled;
-    h2_pal_result_t log_result;
 };
 
 const h2_pal_ble_host_api_t *h2_h2loader_cli_acquire_ble(

@@ -9,13 +9,14 @@ load("//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
-    "main/main.c",
+    "main/CMakeLists.txt",
     "main/h2_gizclaw_e2e_devkit_config.c",
     "main/h2_gizclaw_e2e_devkit_config.h",
-    "main/h2_gizclaw_e2e_devkit_capture.h",
     "main/h2_gizclaw_e2e_devkit_state.c",
     "main/h2_gizclaw_e2e_devkit_state.h",
-])
+    "main/idf_component.yml",
+    "main/main.c",
+], visibility = ["//visibility:public"])
 
 esp_target_task_policy(
     default_policy = "4 any 4096 psram",
@@ -79,9 +80,7 @@ firmware_native_component(
     ],
     hdrs = [
         "main/h2_gizclaw_e2e_devkit_config.h",
-        "main/h2_gizclaw_e2e_devkit_capture.h",
         "main/h2_gizclaw_e2e_devkit_state.h",
-        "//projects/e2e/libs/esp-device:result_console.h",
     ],
     component_directory = "projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/devkit/main",
     component_name = "main",
@@ -105,29 +104,6 @@ firmware_native_component(
         "//projects/h2loader/libs/h2loader",
         "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_ble",
         "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_runtime",
-    ],
-)
-
-cc_test(
-    name = "gizclaw_e2e_devkit_capture_test",
-    srcs = [
-        "main/h2_gizclaw_e2e_devkit_capture.h",
-        "tests/test_h2_gizclaw_e2e_devkit_capture.c",
-    ],
-    conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS,
-    includes = ["main"],
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//tools/bazel/platforms:host_windows_target_windows": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    deps = [
-        "//libs/atomic/providers/c11",
-        "//libs/pal",
-        "//projects/e2e/libs/esp-device:result_console",
-        "//projects/e2e/libs/gizclaw-device:ledger",
     ],
 )
 
@@ -157,7 +133,6 @@ h2loader_esp_idf_firmware(
         "main/CMakeLists.txt",
         "main/h2_gizclaw_e2e_devkit_config.c",
         "main/h2_gizclaw_e2e_devkit_config.h",
-        "main/h2_gizclaw_e2e_devkit_capture.h",
         "main/h2_gizclaw_e2e_devkit_state.c",
         "main/h2_gizclaw_e2e_devkit_state.h",
         "main/idf_component.yml",

@@ -239,7 +239,7 @@ static const char help_text[] =
     "stats:    stats [--data-checksum] (wait for installed-data checksum)\n"
     "reboot:   reboot app|loader|upgrade [--monitor]\n"
     "wifi:     wifi scan [--limit <1-16>] [--timeout-ms <1-30000>]\n"
-    "          wifi connect <ssid> <password> [--temporary] [--monitor]\n"
+    "          wifi connect <ssid> <password>\n"
     "          wifi disconnect\n"
     "          wifi status\n"
     "coredump: coredump status|erase\n"
@@ -365,10 +365,7 @@ static h2_pal_result_t command_output(void *user, const uint8_t *data, size_t le
 }
 
 static h2_pal_result_t transport_log(void *user, const uint8_t *data, size_t len) {
-    h2_h2loader_cli_context_t *context = user;
-    h2_pal_result_t rc = command_output(user, data, len);
-    if (rc != H2_PAL_OK && context->log_result == H2_PAL_OK) context->log_result = rc;
-    return rc;
+    return command_output(user, data, len);
 }
 
 static h2_pal_result_t file_read(
@@ -587,10 +584,6 @@ static h2_h2loader_host_command_t command_kind(int argc, const char *const *argv
     }
     if (argc == 2 && strcmp(argv[0], "coredump") == 0 && strcmp(argv[1], "erase") == 0) return H2_H2LOADER_HOST_COMMAND_COREDUMP_ERASE;
     if (argc == 4 && strcmp(argv[0], "wifi") == 0 && strcmp(argv[1], "connect") == 0) return H2_H2LOADER_HOST_COMMAND_WIFI_CONNECT;
-    if (argc == 5 && strcmp(argv[0], "wifi") == 0 &&
-        strcmp(argv[1], "connect") == 0 && strcmp(argv[4], "--temporary") == 0) {
-        return H2_H2LOADER_HOST_COMMAND_WIFI_CONNECT_TEMPORARY;
-    }
     return 0;
 }
 
@@ -769,180 +762,12 @@ h2_pal_result_t h2_h2loader_cli_verify_reboot_status(
         ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE;
 }
 
-static int active_matches_metadata(
-    const h2_h2loader_host_status_t *status,
-    const h2_h2loader_host_metadata_t *metadata) {
-    return metadata->valid && status->active_role == metadata->role &&
-        status->active_image_size == metadata->image_size &&
-        strcmp(status->active_checksum, metadata->image_checksum) == 0 &&
-        strcmp(status->active_version, metadata->version) == 0 &&
-        strcmp(status->board, metadata->board) == 0 &&
-        strcmp(status->target, metadata->target) == 0;
-}
-
-static int reboot_identity_matches(
-    const h2_h2loader_host_status_t *before,
-    const h2_h2loader_host_status_t *after) {
-    return strcmp(before->board, after->board) == 0 &&
-        strcmp(before->target, after->target) == 0 &&
-        (before->device_uid[0] == '\0' || strcmp(before->device_uid, "unknown") == 0 ||
-         strcmp(before->device_uid, after->device_uid) == 0);
-}
-
-static int reboot_status_pending(
-    h2_h2loader_host_command_t kind,
-    const h2_h2loader_host_status_t *before,
-    const h2_h2loader_host_status_t *after) {
-    const int old_active = before->active_role == after->active_role &&
-        before->active_image_size == after->active_image_size &&
-        strcmp(before->active_version, after->active_version) == 0 &&
-        strcmp(before->active_checksum, after->active_checksum) == 0;
-    if (kind == H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE && before->stage.valid) {
-        if (!metadata_equal(&before->stage, &after->stage) ||
-            (after->last != H2_PAL_OK && after->last != before->last)) return 0;
-        if (!old_active && !active_matches_metadata(after, &before->partition_1) &&
-            !active_matches_metadata(after, &before->stage)) return 0;
-        return (metadata_equal(&before->partition_1, &after->partition_1) ||
-                metadata_matches_stage(&after->partition_1, &before->stage)) &&
-            (metadata_equal(&before->partition_2, &after->partition_2) ||
-             metadata_matches_stage(&after->partition_2, &before->stage));
-    }
-    if (!metadata_equal(&before->stage, &after->stage) || !old_active) return 0;
-    h2_h2loader_host_active_role_t expected = kind == H2_H2LOADER_HOST_COMMAND_REBOOT_APP
-        ? H2_H2LOADER_HOST_ACTIVE_ROLE_APP : H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER;
-    if (kind == H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE && before->partition_2.valid &&
-        !metadata_image_equal(&before->partition_1, &before->partition_2)) {
-        expected = before->partition_2.role;
-    }
-    return after->active_role != expected;
-}
-
-typedef struct reboot_log_slice {
-    h2_h2loader_cli_context_t *context;
-    uint64_t deadline_ms;
-    h2_pal_result_t clock_result;
-    int cancelled;
-    int expired;
-} reboot_log_slice_t;
-
-static int reboot_log_slice_done(void *user) {
-    reboot_log_slice_t *slice = user;
-    const h2_h2loader_cli_config_t *config = slice->context->config;
-    if (config->is_cancelled != NULL && config->is_cancelled(config->cancel_user)) {
-        slice->cancelled = 1;
-        return 1;
-    }
-    uint64_t now = 0u;
-    slice->clock_result = h2_pal_time_get_monotonic_ms(slice->context->runtime->time, &now);
-    if (slice->clock_result != H2_PAL_OK) return 1;
-    slice->expired = now >= slice->deadline_ms;
-    return slice->expired;
-}
-
-static int reboot_transport_failed(h2_pal_result_t rc) {
-    return rc == H2_PAL_ERR_CLOSED || rc == H2_PAL_ERR_TIMEOUT ||
-        rc == H2_PAL_ERR_NOT_FOUND;
-}
-
-static h2_pal_result_t wait_serial_reboot(
-    h2_h2loader_cli_context_t *context,
-    h2_h2loader_cli_transport_t *transport,
-    h2_h2loader_host_command_t kind,
-    const h2_h2loader_host_status_t *before,
-    h2_h2loader_host_status_t *out_status,
-    uint64_t started,
-    uint64_t timeout_ms) {
-    h2_pal_result_t rc;
-    int connected = transport->serial_connection != NULL;
-    for (;;) {
-        uint64_t now = 0u;
-        if (context->config->is_cancelled != NULL &&
-            context->config->is_cancelled(context->config->cancel_user)) return H2_PAL_EXIT;
-        rc = h2_pal_time_get_monotonic_ms(context->runtime->time, &now);
-        if (rc != H2_PAL_OK) return rc;
-        if (now < started || now - started >= timeout_ms) return H2_PAL_ERR_TIMEOUT;
-        if (!connected) {
-            uint32_t delay_ms = (uint32_t)(timeout_ms - (now - started));
-            if (delay_ms > 500u) delay_ms = 500u;
-            rc = h2_pal_time_sleep_ms(context->runtime->time, delay_ms);
-            if (rc != H2_PAL_OK) return rc;
-            rc = h2_h2loader_cli_transport_connect(transport, out_status);
-        } else {
-            rc = h2_h2loader_cli_transport_read_status(transport, out_status);
-        }
-        if (context->log_result != H2_PAL_OK) return context->log_result;
-        if (rc == H2_PAL_ERR_WOULD_BLOCK && transport->status_response_pending &&
-            transport->serial_connection != NULL) {
-            connected = 1;
-            continue;
-        }
-        if (rc != H2_PAL_OK) {
-            if (!reboot_transport_failed(rc)) return rc;
-            (void)h2_h2loader_cli_transport_disconnect(transport);
-            connected = 0;
-            continue;
-        }
-        connected = 1;
-        rc = h2_pal_time_get_monotonic_ms(context->runtime->time, &now);
-        if (rc != H2_PAL_OK) return rc;
-        if (now < started || now - started >= timeout_ms) return H2_PAL_ERR_TIMEOUT;
-        if (!reboot_identity_matches(before, out_status)) return H2_PAL_ERR_INVALID_STATE;
-        const int loader_update = kind == H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE &&
-            before->stage.valid && before->stage.role == H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER;
-        if (!loader_update && !metadata_equal(&before->partition_1, &out_status->partition_1)) {
-            return H2_PAL_ERR_INVALID_STATE;
-        }
-        rc = h2_h2loader_cli_verify_reboot_status(kind, before, out_status);
-        if (rc == H2_PAL_OK) {
-            const h2_h2loader_host_metadata_t *running = out_status->running_partition == 1u
-                ? &out_status->partition_1 : &out_status->partition_2;
-            const h2_h2loader_host_metadata_t *expected;
-            if (kind == H2_H2LOADER_HOST_COMMAND_REBOOT_APP) expected = &before->partition_2;
-            else if (kind == H2_H2LOADER_HOST_COMMAND_REBOOT_LOADER) expected = &before->partition_1;
-            else if (before->stage.valid) expected = &before->stage;
-            else expected = before->partition_2.valid &&
-                !metadata_image_equal(&before->partition_1, &before->partition_2)
-                ? &before->partition_2 : &before->partition_1;
-            return metadata_equal(running, expected) && active_matches_metadata(out_status, expected)
-                ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE;
-        }
-        if (!reboot_status_pending(kind, before, out_status)) return rc;
-        rc = h2_pal_time_get_monotonic_ms(context->runtime->time, &now);
-        if (rc != H2_PAL_OK) return rc;
-        uint64_t slice_end = now + 500u;
-        if (slice_end > started + timeout_ms) slice_end = started + timeout_ms;
-        reboot_log_slice_t slice = {.context = context, .deadline_ms = slice_end};
-        rc = h2_h2loader_cli_transport_monitor_logs(transport, reboot_log_slice_done, &slice);
-        if (slice.clock_result != H2_PAL_OK) return slice.clock_result;
-        if (slice.cancelled) return H2_PAL_EXIT;
-        if (context->log_result != H2_PAL_OK) return context->log_result;
-        if (rc == H2_PAL_EXIT && slice.expired) continue;
-        if (!reboot_transport_failed(rc)) return rc == H2_PAL_OK ? H2_PAL_ERR_INVALID_STATE : rc;
-        (void)h2_h2loader_cli_transport_disconnect(transport);
-        connected = 0;
-    }
-}
-
 static h2_pal_result_t reconnect_and_verify_reboot(
     h2_h2loader_cli_context_t *context,
     h2_h2loader_cli_transport_t *transport,
     h2_h2loader_host_command_t kind,
     const h2_h2loader_host_status_t *before,
     h2_h2loader_host_status_t *out_status) {
-    if (transport->options->transport == H2_H2LOADER_HOST_TRANSPORT_SERIAL &&
-        transport->on_log != NULL) {
-        uint64_t started = 0u;
-        h2_pal_result_t rc = h2_pal_time_get_monotonic_ms(context->runtime->time, &started);
-        if (rc != H2_PAL_OK) return rc;
-        uint64_t timeout_ms = transport->options->wait_timeout_ms > 120u * 500u
-            ? transport->options->wait_timeout_ms : 120u * 500u;
-        if (started > UINT64_MAX - timeout_ms) return H2_PAL_ERR_INVALID_STATE;
-        const uint64_t old_deadline = transport->status_deadline_ms;
-        transport->status_deadline_ms = started + timeout_ms;
-        rc = wait_serial_reboot(context, transport, kind, before, out_status, started, timeout_ms);
-        transport->status_deadline_ms = old_deadline;
-        return rc;
-    }
     h2_pal_result_t rc = H2_PAL_ERR_TIMEOUT;
     for (uint32_t attempt = 0u; attempt < 120u; ++attempt) {
         if (context->config->is_cancelled != NULL &&
@@ -985,15 +810,6 @@ static h2_pal_result_t monitor_transport(
             return H2_PAL_EXIT;
         }
         if (!connected) {
-            if (before_reboot != NULL &&
-                transport->options->transport == H2_H2LOADER_HOST_TRANSPORT_SERIAL) {
-                rc = reconnect_and_verify_reboot(
-                    context, transport, reboot_kind, before_reboot, &status);
-                if (rc != H2_PAL_OK) return rc;
-                connected = 1;
-                reported_reconnect = 0;
-                continue;
-            }
             rc = h2_h2loader_cli_transport_rediscover(transport);
             if (rc == H2_PAL_OK) {
                 rc = h2_h2loader_cli_transport_connect(transport, &status);
@@ -1028,11 +844,7 @@ static h2_pal_result_t monitor_transport(
             context->config->cancel_user);
         (void)h2_h2loader_cli_transport_disconnect(transport);
         connected = 0;
-        if (context->log_result != H2_PAL_OK) return context->log_result;
         if (rc == H2_PAL_EXIT) return rc;
-        if (before_reboot != NULL &&
-            transport->options->transport == H2_H2LOADER_HOST_TRANSPORT_SERIAL &&
-            !reboot_transport_failed(rc)) return rc;
     }
 }
 
@@ -1119,8 +931,7 @@ static int device_command(
         .output_user = coredump_output_path != NULL
             ? (void *)&coredump_sink : (void *)context,
     };
-    if (kind == H2_H2LOADER_HOST_COMMAND_WIFI_CONNECT ||
-        kind == H2_H2LOADER_HOST_COMMAND_WIFI_CONNECT_TEMPORARY) {
+    if (kind == H2_H2LOADER_HOST_COMMAND_WIFI_CONNECT) {
         request.ssid = argv[2];
         request.password = argv[3];
     } else if (kind == H2_H2LOADER_HOST_COMMAND_WIFI_SCAN) {
@@ -1132,19 +943,12 @@ static int device_command(
     if (rc == H2_PAL_OK &&
         result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK &&
         monitor_after) {
-        if (reboot_command_kind(kind)) {
-            h2_h2loader_host_status_t final_status = {0};
-            (void)h2_h2loader_cli_transport_disconnect(&transport);
-            rc = reconnect_and_verify_reboot(
-                context, &transport, kind, &status, &final_status);
-            if (rc == H2_PAL_OK) {
-                rc = monitor_transport(context, &transport, 1, kind, &status);
-            }
-        } else {
-            /* Keep the Wi-Fi command's live session and its log sink. Failure
-             * ends this observation; never replay the connection operation. */
-            rc = h2_h2loader_cli_transport_monitor_logs(
-                &transport, context->config->is_cancelled, context->config->cancel_user);
+        h2_h2loader_host_status_t final_status = {0};
+        (void)h2_h2loader_cli_transport_disconnect(&transport);
+        rc = reconnect_and_verify_reboot(
+            context, &transport, kind, &status, &final_status);
+        if (rc == H2_PAL_OK) {
+            rc = monitor_transport(context, &transport, 1, kind, &status);
         }
         if (rc == H2_PAL_EXIT) rc = H2_PAL_OK;
     } else if (rc == H2_PAL_OK &&
@@ -1155,10 +959,7 @@ static int device_command(
         rc = reconnect_and_verify_reboot(
             context, &transport, kind, &status, &final_status);
     }
-    h2_pal_result_t disconnect_rc = h2_h2loader_cli_transport_disconnect(&transport);
-    if (monitor_after && !reboot_command_kind(kind) && rc == H2_PAL_OK) {
-        rc = disconnect_rc;
-    }
+    (void)h2_h2loader_cli_transport_disconnect(&transport);
     if (coredump_output_path != NULL) {
         int complete = rc == H2_PAL_OK &&
             result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK &&
@@ -1421,14 +1222,11 @@ int h2_h2loader_cli_main(h2_runtime_t *runtime, const h2_h2loader_cli_config_t *
         const char *parts[H2_H2LOADER_CLI_DEVICE_ARGV_CAPACITY] = {command};
         int count = 1;
         int monitor_after = 0;
-        if (argc > 0 && strcmp(argv[argc - 1], "--monitor") == 0 &&
-            (strcmp(command, "reboot") == 0 ||
-             (argc >= 4 && strcmp(command, "wifi") == 0 && strcmp(argv[0], "connect") == 0))) {
+        if (strcmp(command, "reboot") == 0 && argc > 0 &&
+            strcmp(argv[argc - 1], "--monitor") == 0) {
             monitor_after = 1;
             --argc;
-            if (strcmp(command, "reboot") == 0 && argc != 1) {
-                return H2_H2LOADER_CLI_EXIT_USAGE;
-            }
+            if (argc != 1) return H2_H2LOADER_CLI_EXIT_USAGE;
         }
         while (count < (int)H2_H2LOADER_CLI_DEVICE_ARGV_CAPACITY && count - 1 < argc) {
             parts[count] = argv[count - 1];

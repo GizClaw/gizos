@@ -15,19 +15,12 @@
 #define H2_H2LOADER_HOST_SERIAL_WRITE_BATCH (64u * 1024u)
 #define H2_H2LOADER_HOST_SERIAL_RESPONSE_SIZE 8192u
 
-typedef struct serial_status_response serial_status_response_t;
-
 struct h2_h2loader_host_serial_connection {
     const h2_pal_serial_host_api_t *serial;
     const h2_pal_time_api_t *time;
     const h2_pal_mem_api_t *allocator;
     h2_pal_serial_host_session_t *session;
     const h2_pal_uart_io_stream_api_t *uart;
-    const h2_pal_uart_io_stream_api_t *physical_uart;
-    h2_pal_uart_io_stream_api_t bounded_uart;
-    uint64_t active_deadline_ms;
-    h2_pal_result_t bounded_log_result;
-    serial_status_response_t *status_response;
     h2_iostreamikcp_t *stream;
     uint32_t conversation_id;
     uint32_t command_timeout_ms;
@@ -43,48 +36,6 @@ struct h2_h2loader_host_serial_connection {
 };
 
 static h2_pal_result_t serial_finish_command_response(void *transport);
-static h2_pal_result_t serial_deadline_budget(
-    h2_h2loader_host_serial_connection_t *connection, uint64_t deadline_ms, uint32_t *out_budget);
-
-static h2_pal_result_t serial_io_budget(
-    h2_h2loader_host_serial_connection_t *connection, uint32_t requested, uint32_t *out_budget) {
-    *out_budget = requested;
-    if (connection->active_deadline_ms == 0u) return H2_PAL_OK;
-    uint32_t remaining = 0u;
-    h2_pal_result_t rc = serial_deadline_budget(connection, connection->active_deadline_ms, &remaining);
-    if (rc == H2_PAL_OK && remaining < *out_budget) *out_budget = remaining;
-    return rc;
-}
-
-static h2_pal_result_t serial_bounded_read(
-    void *user, void *data, size_t len, size_t *out_read, uint32_t timeout_ms) {
-    h2_h2loader_host_serial_connection_t *connection = user;
-    *out_read = 0u;
-    h2_pal_result_t rc = serial_io_budget(connection, timeout_ms, &timeout_ms);
-    return rc == H2_PAL_OK ? h2_pal_uart_io_stream_read(
-        connection->physical_uart, data, len, out_read, timeout_ms) : rc;
-}
-
-static h2_pal_result_t serial_bounded_write(
-    void *user, const void *data, size_t len, size_t *out_written, uint32_t timeout_ms) {
-    h2_h2loader_host_serial_connection_t *connection = user;
-    *out_written = 0u;
-    h2_pal_result_t rc = serial_io_budget(connection, timeout_ms, &timeout_ms);
-    return rc == H2_PAL_OK ? h2_pal_uart_io_stream_write(
-        connection->physical_uart, data, len, out_written, timeout_ms) : rc;
-}
-
-static h2_pal_result_t serial_bounded_flush(void *user) {
-    h2_h2loader_host_serial_connection_t *connection = user;
-    h2_pal_result_t rc = h2_pal_uart_io_stream_flush(connection->physical_uart);
-    uint32_t unused = 0u;
-    return rc == H2_PAL_OK && connection->active_deadline_ms != 0u
-        ? serial_deadline_budget(connection, connection->active_deadline_ms, &unused) : rc;
-}
-
-static const h2_pal_uart_io_stream_vtable_t serial_bounded_vtable = {
-    .read = serial_bounded_read, .write = serial_bounded_write, .flush = serial_bounded_flush,
-};
 
 typedef struct session_ack_context {
     uint32_t conversation_id;
@@ -142,7 +93,7 @@ static h2_pal_result_t uart_write_all(
     return H2_PAL_OK;
 }
 
-static h2_pal_result_t serial_session_control_impl(
+static h2_pal_result_t serial_session_control(
     h2_h2loader_host_serial_connection_t *connection,
     uint32_t conversation_id,
     uint8_t request_flags,
@@ -232,30 +183,8 @@ static h2_pal_result_t serial_session_control_impl(
         if (rc != H2_PAL_OK) {
             return rc;
         }
-        if (connection->active_deadline_ms != 0u && now >= connection->active_deadline_ms) {
-            return H2_PAL_ERR_TIMEOUT;
-        }
     }
     return H2_PAL_ERR_TIMEOUT;
-}
-
-static h2_pal_result_t serial_session_control(
-    h2_h2loader_host_serial_connection_t *connection,
-    uint32_t conversation_id, uint8_t request_flags, uint32_t timeout_ms) {
-    const uint64_t old_deadline = connection->active_deadline_ms;
-    if (old_deadline == 0u) {
-        return serial_session_control_impl(connection, conversation_id, request_flags, timeout_ms);
-    }
-    uint64_t now = 0u;
-    h2_pal_result_t rc = serial_now(connection->time, &now);
-    if (rc != H2_PAL_OK) return rc;
-    if (now > UINT64_MAX - timeout_ms) return H2_PAL_ERR_INVALID_ARG;
-    uint64_t deadline = now + timeout_ms;
-    connection->active_deadline_ms = old_deadline < deadline
-        ? old_deadline : deadline;
-    rc = serial_session_control_impl(connection, conversation_id, request_flags, timeout_ms);
-    connection->active_deadline_ms = old_deadline;
-    return rc;
 }
 
 /* A USB-UART adapter survives the MCU reset, but its KCP conversation does
@@ -297,9 +226,6 @@ static h2_pal_result_t serial_stream_log(
     if (connection->on_log != NULL) {
         h2_pal_result_t rc = connection->on_log(connection->log_user, data, len);
         if (rc != H2_PAL_OK) {
-            if (connection->active_deadline_ms != 0u && connection->bounded_log_result == H2_PAL_OK) {
-                connection->bounded_log_result = rc;
-            }
             return rc;
         }
     }
@@ -349,9 +275,6 @@ static h2_pal_result_t serial_wait_ready_marker(
         }
         rc = serial_now(connection->time, &now);
         if (rc != H2_PAL_OK) return rc;
-        if (connection->active_deadline_ms != 0u && now >= connection->active_deadline_ms) {
-            return H2_PAL_ERR_TIMEOUT;
-        }
     }
     return H2_PAL_ERR_TIMEOUT;
 }
@@ -362,9 +285,6 @@ static h2_pal_result_t serial_pump(
     uint64_t now = 0u;
     h2_pal_result_t rc = h2_iostreamikcp_poll(
         connection->stream, timeout_ms);
-    if (connection->active_deadline_ms != 0u && connection->bounded_log_result != H2_PAL_OK) {
-        return connection->bounded_log_result;
-    }
     if (rc != H2_PAL_OK && rc != H2_PAL_ERR_TIMEOUT &&
         rc != H2_PAL_ERR_WOULD_BLOCK) {
         return rc;
@@ -372,9 +292,6 @@ static h2_pal_result_t serial_pump(
     rc = serial_now(connection->time, &now);
     if (rc != H2_PAL_OK) {
         return rc;
-    }
-    if (connection->active_deadline_ms != 0u && now >= connection->active_deadline_ms) {
-        return H2_PAL_ERR_TIMEOUT;
     }
     return h2_iostreamikcp_update(
         connection->stream, (uint32_t)now);
@@ -455,17 +372,15 @@ static h2_pal_result_t serial_read_until(
     h2_h2loader_host_command_output_fn on_output,
     void *output_user,
     uint8_t stream_output,
-    size_t *out_output_bytes,
-    int *out_slice_expired) {
+    size_t *out_output_bytes) {
     uint8_t input[1024];
     uint64_t start = 0u;
     uint64_t now = 0u;
-    size_t length = out_slice_expired != NULL ? *out_len : 0u;
+    size_t length = 0u;
     size_t output_bytes = 0u;
     h2_pal_result_t rc;
 
-    *out_len = length;
-    if (out_slice_expired != NULL) *out_slice_expired = 0;
+    *out_len = 0u;
     if (out_output_bytes != NULL) *out_output_bytes = 0u;
     rc = serial_now(connection->time, &start);
     if (rc != H2_PAL_OK) {
@@ -552,7 +467,6 @@ static h2_pal_result_t serial_read_until(
     }
     *out_len = length;
     if (out_output_bytes != NULL) *out_output_bytes = output_bytes;
-    if (out_slice_expired != NULL) *out_slice_expired = 1;
     return H2_PAL_ERR_TIMEOUT;
 }
 
@@ -589,10 +503,9 @@ static int marker_result_is_ok(
     return 0;
 }
 
-static h2_pal_result_t serial_connect(
+h2_pal_result_t h2_h2loader_host_serial_connect(
     const h2_h2loader_host_serial_connection_config_t *config,
-    h2_h2loader_host_serial_connection_t **out_connection,
-    uint64_t deadline_ms) {
+    h2_h2loader_host_serial_connection_t **out_connection) {
     h2_h2loader_host_serial_connection_t *connection = NULL;
     uint32_t conversation_id;
     uint64_t now = 0u;
@@ -615,7 +528,6 @@ static h2_pal_result_t serial_connect(
     connection->serial = config->serial;
     connection->time = config->time;
     connection->allocator = config->allocator;
-    connection->active_deadline_ms = deadline_ms;
     connection->command_timeout_ms = config->command_timeout_ms == 0u
         ? H2_H2LOADER_HOST_DEFAULT_COMMAND_TIMEOUT_MS
         : config->command_timeout_ms;
@@ -657,11 +569,6 @@ static h2_pal_result_t serial_connect(
     if (rc != H2_PAL_OK) {
         goto fail;
     }
-    connection->physical_uart = connection->uart;
-    connection->bounded_uart = (h2_pal_uart_io_stream_api_t){
-        .user = connection, .vtable = &serial_bounded_vtable,
-    };
-    connection->uart = &connection->bounded_uart;
     rc = serial_wait_ready_marker(
         connection,
         config->ready_marker,
@@ -716,13 +623,7 @@ static h2_pal_result_t serial_connect(
     if (rc != H2_PAL_OK) {
         goto fail;
     }
-    if (deadline_ms != 0u) {
-        uint32_t remaining = 0u;
-        rc = serial_deadline_budget(connection, deadline_ms, &remaining);
-        if (rc != H2_PAL_OK) goto fail;
-    }
     connection->conversation_id = conversation_id;
-    connection->active_deadline_ms = 0u;
     *out_connection = connection;
     return H2_PAL_OK;
 
@@ -736,27 +637,6 @@ fail:
     }
     h2_pal_mem_free(config->allocator, connection);
     return rc;
-}
-
-h2_pal_result_t h2_h2loader_host_serial_connect(
-    const h2_h2loader_host_serial_connection_config_t *config,
-    h2_h2loader_host_serial_connection_t **out_connection) {
-    return serial_connect(config, out_connection, 0u);
-}
-
-h2_pal_result_t h2_h2loader_host_serial_connect_until(
-    const h2_h2loader_host_serial_connection_config_t *config,
-    h2_h2loader_host_serial_connection_t **out_connection,
-    uint64_t deadline_ms) {
-    if (out_connection != NULL) *out_connection = NULL;
-    if (config == NULL || out_connection == NULL || config->time == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    uint64_t now = 0u;
-    h2_pal_result_t rc = serial_now(config->time, &now);
-    if (rc != H2_PAL_OK) return rc;
-    if (now >= deadline_ms) return H2_PAL_ERR_TIMEOUT;
-    return serial_connect(config, out_connection, deadline_ms);
 }
 
 /* Console output during a monitor session can arrive either as raw non-frame
@@ -856,221 +736,49 @@ h2_pal_result_t h2_h2loader_host_serial_disconnect(
     }
     rc = h2_pal_serial_host_close(
         connection->serial, &connection->session);
-    if (connection->status_response != NULL) {
-        h2_pal_mem_free(connection->allocator, connection->status_response);
-    }
     h2_pal_mem_free(connection->allocator, connection);
-    return rc;
-}
-
-typedef struct serial_status_logs {
-    h2_h2loader_host_serial_connection_t *connection;
-    uint8_t prefix[sizeof("H2_LOADER_STATUS") - 1u];
-    size_t prefix_len;
-    int control_line;
-    int text_line;
-    int swallow_lf;
-} serial_status_logs_t;
-
-struct serial_status_response {
-    uint8_t bytes[H2_H2LOADER_HOST_SERIAL_RESPONSE_SIZE];
-    size_t len;
-    serial_status_logs_t logs;
-};
-
-static void serial_status_response_release(
-    h2_h2loader_host_serial_connection_t *connection) {
-    if (connection->status_response != NULL) {
-        h2_pal_mem_free(connection->allocator, connection->status_response);
-        connection->status_response = NULL;
-    }
-}
-
-/* Status shares decoded KCP input with console output. Suppress only its
- * control line; preserve actual console bytes while the query is pending. */
-static h2_pal_result_t serial_status_log_output(void *user, const uint8_t *data, size_t len) {
-    serial_status_logs_t *logs = user;
-    static const char marker[] = "H2_LOADER_STATUS";
-    uint8_t output[1024u + sizeof(marker)];
-    size_t written = 0u;
-    if (len > 1024u) return H2_PAL_ERR_NO_SPACE;
-    for (size_t i = 0u; i < len; ++i) {
-        const uint8_t byte = data[i];
-        if (logs->swallow_lf) {
-            logs->swallow_lf = 0;
-            if (byte == '\n') continue;
-        }
-        if (logs->control_line) {
-            if (byte == '\r' || byte == '\n') {
-                logs->control_line = 0;
-                logs->swallow_lf = byte == '\r';
-            }
-            continue;
-        }
-        if (logs->text_line) {
-            output[written++] = byte;
-            if (byte == '\r' || byte == '\n') logs->text_line = 0;
-            continue;
-        }
-        if (logs->prefix_len < sizeof(marker) - 1u &&
-            byte == (uint8_t)marker[logs->prefix_len]) {
-            logs->prefix[logs->prefix_len++] = byte;
-            continue;
-        }
-        if (logs->prefix_len == sizeof(marker) - 1u && (byte == ' ' || byte == '_')) {
-            logs->prefix_len = 0u;
-            logs->control_line = 1;
-            continue;
-        }
-        memcpy(output + written, logs->prefix, logs->prefix_len);
-        written += logs->prefix_len;
-        logs->prefix_len = 0u;
-        output[written++] = byte;
-        logs->text_line = byte != '\r' && byte != '\n';
-    }
-    return written == 0u ? H2_PAL_OK : serial_stream_log(logs->connection, output, written);
-}
-
-static h2_pal_result_t serial_deadline_budget(
-    h2_h2loader_host_serial_connection_t *connection,
-    uint64_t deadline_ms,
-    uint32_t *out_budget) {
-    uint64_t now = 0u;
-    h2_pal_result_t rc = serial_now(connection->time, &now);
-    if (rc != H2_PAL_OK) return rc;
-    if (now >= deadline_ms) return H2_PAL_ERR_TIMEOUT;
-    uint64_t remaining = deadline_ms - now;
-    *out_budget = remaining > UINT32_MAX ? UINT32_MAX : (uint32_t)remaining;
-    return H2_PAL_OK;
-}
-
-static h2_pal_result_t serial_read_status(
-    h2_h2loader_host_serial_connection_t *connection,
-    h2_h2loader_host_status_t *out_status,
-    uint64_t deadline_ms,
-    int *out_response_pending) {
-    uint8_t response[H2_H2LOADER_HOST_SERIAL_RESPONSE_SIZE];
-    size_t response_len = 0u;
-    static const char loader_marker[] = "H2_LOADER_STATUS ";
-    serial_status_logs_t logs = {.connection = connection};
-    uint8_t *bytes = response;
-    size_t *length = &response_len;
-    serial_status_logs_t *projection = &logs;
-    int slice_expired = 0;
-    int new_request = 0;
-
-    if (out_response_pending != NULL) *out_response_pending = 0;
-    if (out_status != NULL) memset(out_status, 0, sizeof(*out_status));
-    if (connection == NULL || out_status == NULL) return H2_PAL_ERR_INVALID_ARG;
-    if (deadline_ms == 0u && connection->status_response != NULL) {
-        return H2_PAL_ERR_INVALID_STATE;
-    }
-    uint32_t budget = connection->command_timeout_ms;
-    h2_pal_result_t rc;
-    if (deadline_ms == 0u) {
-        rc = serial_write_command(connection, "h2loader status\n");
-    } else {
-        rc = serial_deadline_budget(connection, deadline_ms, &budget);
-        if (rc != H2_PAL_OK) goto done;
-        new_request = connection->status_response == NULL;
-        if (new_request) {
-            connection->status_response = h2_pal_mem_alloc(
-                connection->allocator, sizeof(*connection->status_response));
-            if (connection->status_response == NULL) return H2_PAL_ERR_NO_MEMORY;
-            memset(connection->status_response, 0, sizeof(*connection->status_response));
-            connection->status_response->logs.connection = connection;
-            rc = h2_iostreamikcp_write(connection->stream,
-                (const uint8_t *)"h2loader status\n", sizeof("h2loader status\n") - 1u);
-            if (rc == H2_PAL_OK) rc = serial_deadline_budget(connection, deadline_ms, &budget);
-            if (budget > connection->command_timeout_ms) budget = connection->command_timeout_ms;
-            if (rc == H2_PAL_OK) rc = serial_wait_delivery(connection, budget);
-            if (rc == H2_PAL_OK && connection->post_command_delay_ms != 0u) {
-                rc = serial_deadline_budget(connection, deadline_ms, &budget);
-                if (rc == H2_PAL_OK) {
-                    uint32_t delay_ms = connection->post_command_delay_ms < budget
-                        ? connection->post_command_delay_ms : budget;
-                    rc = h2_pal_time_sleep_ms(connection->time, delay_ms);
-                }
-            }
-        }
-        if (rc == H2_PAL_OK) rc = serial_deadline_budget(connection, deadline_ms, &budget);
-        if (rc != H2_PAL_OK) goto done;
-        if (budget > connection->command_timeout_ms) budget = connection->command_timeout_ms;
-        bytes = connection->status_response->bytes;
-        length = &connection->status_response->len;
-        projection = &connection->status_response->logs;
-    }
-    if (rc != H2_PAL_OK) goto done;
-    rc = serial_read_until(connection, loader_marker, NULL, bytes,
-        sizeof(response) - 1u, length, budget,
-        connection->on_log != NULL ? serial_status_log_output : NULL,
-        projection, 0u, NULL, deadline_ms != 0u ? &slice_expired : NULL);
-    if (rc == H2_PAL_ERR_TIMEOUT && slice_expired) {
-        /* Only expiry of the response slice is pending. A provider, log or
-         * delivery error with the same numeric code must keep its origin. */
-        h2_pal_result_t deadline_rc = serial_deadline_budget(connection, deadline_ms, &budget);
-        if (deadline_rc == H2_PAL_OK) {
-            if (out_response_pending != NULL) *out_response_pending = 1;
-            return H2_PAL_ERR_WOULD_BLOCK;
-        }
-        rc = deadline_rc;
-    }
-    if (connection->on_log != NULL && projection->prefix_len != 0u &&
-        (deadline_ms == 0u || rc == H2_PAL_OK)) {
-        h2_pal_result_t log_rc = serial_stream_log(
-            connection, projection->prefix, projection->prefix_len);
-        if (rc == H2_PAL_OK) rc = log_rc;
-    }
-    if (rc == H2_PAL_OK && deadline_ms != 0u) {
-        rc = serial_deadline_budget(connection, deadline_ms, &budget);
-    }
-    if (rc == H2_PAL_OK) {
-        bytes[*length] = '\0';
-        char *marker = (char *)find_line_marker((const char *)bytes, loader_marker);
-        char *end = marker != NULL ? strpbrk(marker, "\r\n") : NULL;
-        if (end == NULL) rc = H2_PAL_ERR_FORMAT;
-        else {
-            /* The strict parser owns only its complete control line. */
-            *end = '\0';
-            rc = h2_h2loader_host_status_parse(marker, out_status);
-        }
-    }
-done:
-    if (deadline_ms != 0u) serial_status_response_release(connection);
     return rc;
 }
 
 h2_pal_result_t h2_h2loader_host_serial_read_status(
     h2_h2loader_host_serial_connection_t *connection,
     h2_h2loader_host_status_t *out_status) {
-    return serial_read_status(connection, out_status, 0u, NULL);
-}
+    uint8_t response[H2_H2LOADER_HOST_SERIAL_RESPONSE_SIZE];
+    size_t response_len = 0u;
+    static const char loader_marker[] = "H2_LOADER_STATUS ";
 
-h2_pal_result_t h2_h2loader_host_serial_read_status_until(
-    h2_h2loader_host_serial_connection_t *connection,
-    h2_h2loader_host_status_t *out_status,
-    uint64_t deadline_ms,
-    int *out_response_pending) {
-    if (out_response_pending != NULL) *out_response_pending = 0;
+    if (out_status != NULL) {
+        memset(out_status, 0, sizeof(*out_status));
+    }
     if (connection == NULL || out_status == NULL) {
-        if (out_status != NULL) memset(out_status, 0, sizeof(*out_status));
         return H2_PAL_ERR_INVALID_ARG;
     }
-    if (deadline_ms == 0u) {
-        memset(out_status, 0, sizeof(*out_status));
-        serial_status_response_release(connection);
-        return H2_PAL_ERR_TIMEOUT;
+    h2_pal_result_t rc =
+        serial_write_command(connection, "h2loader status\n");
+    if (rc != H2_PAL_OK) {
+        return rc;
     }
-    const uint64_t old_deadline = connection->active_deadline_ms;
-    const h2_pal_result_t old_log_result = connection->bounded_log_result;
-    connection->bounded_log_result = H2_PAL_OK;
-    connection->active_deadline_ms = old_deadline != 0u && old_deadline < deadline_ms
-        ? old_deadline : deadline_ms;
-    h2_pal_result_t rc = serial_read_status(connection, out_status, connection->active_deadline_ms, out_response_pending);
-    connection->active_deadline_ms = old_deadline;
-    connection->bounded_log_result = old_log_result;
-    if (rc != H2_PAL_OK && out_status != NULL) memset(out_status, 0, sizeof(*out_status));
-    return rc;
+    rc = serial_read_until(
+        connection,
+        loader_marker,
+        NULL,
+        response,
+        sizeof(response) - 1u,
+        &response_len,
+        connection->command_timeout_ms,
+        NULL,
+        NULL,
+        0u,
+        NULL);
+    if (rc != H2_PAL_OK) {
+        return rc;
+    }
+    response[response_len] = '\0';
+    const char *marker = find_line_marker(
+        (const char *)response, loader_marker);
+    return marker == NULL
+        ? H2_PAL_ERR_FORMAT
+        : h2_h2loader_host_status_parse(marker, out_status);
 }
 
 static h2_pal_result_t serial_command_write(
@@ -1101,8 +809,7 @@ static h2_pal_result_t serial_command_read(
         on_output,
         output_user,
         stream_output,
-        out_output_bytes,
-        NULL);
+        out_output_bytes);
 }
 
 static h2_pal_result_t serial_finish_command_response(void *transport) {
@@ -1280,7 +987,6 @@ h2_pal_result_t h2_h2loader_host_serial_stage(
         serial_stage_output,
         &output,
         0u,
-        NULL,
         NULL);
     /* Every payload byte has already been KCP-acknowledged here.  BK can
      * publish the durable candidate but lose the final terminal while its
@@ -1337,7 +1043,6 @@ h2_pal_result_t h2_h2loader_host_serial_activate(
         NULL,
         NULL,
         0u,
-        NULL,
         NULL);
     if ((rc == H2_PAL_ERR_CLOSED || rc == H2_PAL_ERR_TIMEOUT) &&
         response_has_complete_marker(response, response_len, accepted)) {

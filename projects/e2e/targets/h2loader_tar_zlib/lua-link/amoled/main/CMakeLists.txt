@@ -1,7 +1,7 @@
-if(DEFINED ENV{H2_GIZOS_ROOT} AND NOT "$ENV{H2_GIZOS_ROOT}" STREQUAL "")
-  get_filename_component(H2_GIZOS_ROOT "$ENV{H2_GIZOS_ROOT}" ABSOLUTE)
+if(NOT DEFINED H2_REPO_ROOT)
+  get_filename_component(H2_REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../../../../.." ABSOLUTE)
 else()
-  get_filename_component(H2_GIZOS_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../../../../.." ABSOLUTE)
+  get_filename_component(H2_REPO_ROOT "${H2_REPO_ROOT}" ABSOLUTE)
 endif()
 
 include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native_component.cmake")
@@ -10,12 +10,10 @@ h2_bazel_native_component_sources(H2_MAIN_SOURCES main)
 idf_component_register(
   SRCS ${H2_MAIN_SOURCES}
   INCLUDE_DIRS
-    "${H2_GIZOS_ROOT}/projects/e2e/libs/esp-device"
-    "${H2_GIZOS_ROOT}/projects/e2e/apps/lua-link/app/include"
-    "${H2_GIZOS_ROOT}/libs/atomic/include"
-    "${H2_GIZOS_ROOT}/projects/h2loader/libs/h2loader/include"
-    "${H2_GIZOS_ROOT}/libs/pal/include"
-    "${H2_GIZOS_ROOT}/libs/runtime/include"
+    "${H2_REPO_ROOT}/projects/e2e/apps/lua-link/app/include"
+    "${H2_REPO_ROOT}/projects/h2loader/libs/h2loader/include"
+    "${H2_REPO_ROOT}/libs/pal/include"
+    "${H2_REPO_ROOT}/libs/runtime/include"
   REQUIRES
     h2_esp_target_task_policy
     app_update

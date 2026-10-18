@@ -1,13 +1,9 @@
 #include "h2_esp_board.h"
-#include "result_console.h"
-#include "network_provision.h"
-#include "h2_esp_board_config.h"
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_h2loader_runtime.h"
 #include "h2_esp_platform_core.h"
 #include "h2_esp_target_task_policy.h"
 #include "h2_iperf_e2e.h"
-#include "h2_iperf_e2e_wifi.h"
 #include "h2_sctp.h"
 #include "h2/pal/hal/h2_pal_wifi.h"
 #include "h2/pal/hal/h2_pal_wifi_settings.h"
@@ -42,16 +38,9 @@
 #define H2_IPERF_ROLE_SERVER 0
 #endif
 
-#if defined(H2_E2E_WIFI_FIXTURE_HAIVIVI_MFG) && H2_IPERF_ROLE_SERVER
-#error "The public Wi-Fi fixture is only supported by the legacy iperf Client"
-#endif
-
 #define H2_IPERF_DEVKIT_PORT 5201u
 #define H2_IPERF_DEVKIT_SCTP_UDP_PORT 9899u
 #define H2_IPERF_DEVKIT_CASE_MS 5000u
-
-static h2_esp_e2e_result_log_t result_log;
-static int confirm_app(void *user) { return h2_esp_h2loader_app_confirm(user); }
 
 static void hold(void) {
   for (;;) {
@@ -98,18 +87,27 @@ static void fail(const char *stage, int rc, int commands_started) {
   hold();
 }
 
-/* Only setup is retried. A temporary H2Loader connection can satisfy the
- * prerequisite while the image remains command-responsive with no cases run. */
-static void wait_for_wifi(h2_runtime_t *runtime) {
+/* The image never carries credentials: the Loader's `wifi connect` stores the
+ * STA configuration and the App reconnects with it. */
+static int load_wifi_config(h2_runtime_t *runtime,
+                            h2_pal_wifi_sta_config_t *out_config) {
+  int has_config = 0;
+  int rc = h2_pal_wifi_settings_has_saved_sta_config(runtime->wifi_settings,
+                                                     &has_config);
+  if (rc != H2_PAL_OK) {
+    return rc;
+  }
+  if (!has_config) {
+    return H2_PAL_ERR_NOT_FOUND;
+  }
+  return h2_pal_wifi_settings_get_saved_sta_config(runtime->wifi_settings,
+                                                   out_config);
+}
+
+static void wait_for_wifi(h2_runtime_t *runtime,
+                          const h2_pal_wifi_sta_config_t *wifi) {
   for (;;) {
-    h2_pal_wifi_sta_config_t wifi = {0};
-    int connected = 0;
-    int rc = h2_iperf_e2e_select_wifi(runtime->wifi_sta,
-                                     runtime->wifi_settings, &wifi, &connected);
-    if (rc == H2_PAL_OK && !connected) {
-      rc = h2_pal_wifi_sta_connect(runtime->wifi_sta, &wifi, 20000u);
-    }
-    memset(&wifi, 0, sizeof(wifi));
+    const int rc = h2_pal_wifi_sta_connect(runtime->wifi_sta, wifi, 20000u);
     if (rc == H2_PAL_OK) {
       const TickType_t deadline =
           xTaskGetTickCount() + pdMS_TO_TICKS(20000u);
@@ -132,15 +130,12 @@ static void wait_for_wifi(h2_runtime_t *runtime) {
         if (status_rc != H2_PAL_OK ||
             status.state == H2_PAL_WIFI_STA_STATE_DISCONNECTED ||
             status.state == H2_PAL_WIFI_STA_STATE_FAILED) {
-          rc = status_rc != H2_PAL_OK ? status_rc : H2_PAL_ERR_IO;
           break;
         }
-        rc = H2_PAL_ERR_TIMEOUT;
         vTaskDelay(pdMS_TO_TICKS(100u));
       } while ((int32_t)(deadline - xTaskGetTickCount()) > 0);
     }
-    printf("H2_IPERF_E2E_DEVKIT stage=wifi status=SETUP_WAIT "
-           "cases_started=0 rc=%d retry_ms=3000\n",
+    printf("H2_IPERF_E2E_DEVKIT stage=wifi status=WAIT rc=%d retry_ms=3000\n",
            rc);
     fflush(stdout);
     vTaskDelay(pdMS_TO_TICKS(3000u));
@@ -159,7 +154,7 @@ static int apply_power_save(h2_runtime_t *runtime) {
   return rc;
 }
 
-static void serve_forever(const h2_iperf_config_t *pal, h2_runtime_t *runtime) {
+static void serve_forever(const h2_iperf_config_t *pal) {
   h2_iperf_server_params_t params;
   memset(&params, 0, sizeof(params));
   params.port = H2_IPERF_DEVKIT_PORT;
@@ -169,19 +164,11 @@ static void serve_forever(const h2_iperf_config_t *pal, h2_runtime_t *runtime) {
   if (rc != H2_PAL_OK) {
     fail("server_create", rc, 1);
   }
-  char ready[160];
-  int length = snprintf(ready, sizeof(ready),
-         "H2_IPERF_E2E_DEVKIT stage=server status=LISTENING port=%u "
-         "sctp_udp_port=%u",
+  printf("H2_IPERF_E2E_DEVKIT stage=server status=LISTENING port=%u "
+         "sctp_udp_port=%u\n",
          (unsigned)h2_iperf_server_port(server),
          (unsigned)h2_iperf_server_sctp_udp_port(server));
-  if (length < 0 || (size_t)length >= sizeof(ready))
-    fail("server_report", H2_PAL_ERR_TRUNCATED, 1);
-  rc = h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "iperf_e2e", ready);
-  if (rc == H2_PAL_OK)
-    rc = h2_esp_e2e_result_log_confirm(&result_log, rc, 0u, confirm_app, runtime);
-  if (rc != H2_PAL_OK)
-    fail("server_confirm", rc, 1);
+  fflush(stdout);
   for (;;) {
     h2_iperf_result_t result;
     memset(&result, 0, sizeof(result));
@@ -244,24 +231,17 @@ static void image_entry(void *user) {
   if (!H2_IPERF_ROLE_SERVER && strcmp(H2_IPERF_SERVER, "192.0.2.1") == 0) {
     fail("endpoint_config", H2_PAL_ERR_INVALID_ARG, 1);
   }
-  rc = h2_esp_e2e_result_log_prepare(&result_log, runtime, "iperf_e2e", NULL);
-  if (rc != H2_PAL_OK)
-    fail("result_console", rc, 1);
-  const h2_pal_wifi_sta_config_t *fixture = h2_esp_e2e_public_wifi_fixture();
-  if (fixture != NULL) {
-    /* This opt-in capture window is new. The earlier entry checkpoint retains
-     * its original sampling time; this marker identifies provisioning setup. */
-    vTaskDelay(pdMS_TO_TICKS(5000u));
-    rc = h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "iperf_e2e",
-        "H2_IPERF_E2E_PROVISION_BOOT board=" H2_ESP_BOARD_NAME " role=client");
-    if (rc != H2_PAL_OK)
-      fail("provision_boot", rc, 1);
+  rc = h2_esp_h2loader_app_confirm(runtime);
+  if (rc != H2_PAL_OK) {
+    fail("confirm", rc, 1);
   }
-  rc = h2_esp_e2e_provision_wifi(runtime->wifi_sta, runtime->wifi_ap,
-      runtime->wifi_settings, fixture, 20000u, true, &result_log.console);
-  if (rc != H2_PAL_OK)
-    fail("wifi_provision", rc, 1);
-  wait_for_wifi(runtime);
+  h2_pal_wifi_sta_config_t wifi;
+  memset(&wifi, 0, sizeof(wifi));
+  rc = load_wifi_config(runtime, &wifi);
+  if (rc != H2_PAL_OK) {
+    fail("wifi_settings", rc, 1);
+  }
+  wait_for_wifi(runtime, &wifi);
   rc = apply_power_save(runtime);
   if (rc != H2_PAL_OK) {
     fail("power_save", rc, 1);
@@ -295,7 +275,7 @@ static void image_entry(void *user) {
               .sctp = h2_sctp_api(sctp),
               .log = runtime->log,
           },
-      .target = H2_ESP_BOARD_NAME,
+      .target = "devkit",
       .server_host = H2_IPERF_SERVER,
       .port = H2_IPERF_DEVKIT_PORT,
       .sctp_udp_port = H2_IPERF_DEVKIT_SCTP_UDP_PORT,
@@ -303,22 +283,17 @@ static void image_entry(void *user) {
       .checkpoint = case_checkpoint,
   };
   if (H2_IPERF_ROLE_SERVER) {
-    serve_forever(&config.pal, runtime);
+    serve_forever(&config.pal);
   }
   h2_iperf_e2e_report_t report = {0};
   memory_checkpoint("matrix_start");
   rc = h2_iperf_e2e_run(&config, &report);
-  int cleanup = h2_sctp_destroy(&sctp);
-  if (rc == H2_PAL_OK) rc = cleanup;
   memory_checkpoint("matrix_end");
   printf("H2_IPERF_E2E_DEVKIT stage=summary status=%s rc=%d passed=%u "
          "total=%u power_save=%d ble_adv=%d\n",
          rc == H2_PAL_OK ? "PASS" : "FAIL", rc, report.passed, report.total,
          (int)H2_IPERF_POWER_SAVE, (int)H2_IPERF_BLE_ADV);
   fflush(stdout);
-  rc = h2_esp_e2e_result_log_confirm(&result_log, rc, 0u, confirm_app, runtime);
-  if (rc != H2_PAL_OK)
-    fail("matrix_or_ledger_or_confirm", rc, 1);
   hold();
 }
 
@@ -327,7 +302,7 @@ void app_main(void) {
     return;
   }
   const h2_pal_result_t rc =
-      h2_esp_board_start_entry_task(H2_ESP_BOARD_NAME "/iperf", image_entry, NULL);
+      h2_esp_board_start_entry_task("devkit/iperf", image_entry, NULL);
   if (rc != H2_PAL_OK) {
     fail("entry_task", rc, 0);
   }

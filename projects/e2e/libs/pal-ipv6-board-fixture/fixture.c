@@ -274,62 +274,6 @@ static PeerConnection *pc;
 static queued_t outgoing[64];
 static unsigned head, count, session_number;
 static char peer_session[40];
-/* The portable engine negotiates 300 streams in each direction. The HTTP
- * worker owns callbacks, queued echoes and reset service; cleanup joins it. */
-enum { RESET_INCOMING = 1u, RESET_SUBMITTED = 2u, RESET_COMPLETED = 4u };
-static uint8_t peer_resets[300];
-static int peer_reset_error;
-static void on_stream_reset(const h2_pal_sctp_stream_reset_event_t *event,
-                             void *user) {
-  (void)user;
-  if (peer_reset_error)
-    return;
-  if (!event || event->stream_id >= sizeof(peer_resets)) {
-    peer_reset_error = H2_PAL_ERR_INVALID_ARG;
-    return;
-  }
-  if (event->result != H2_PAL_OK) {
-    peer_reset_error = event->result;
-    return;
-  }
-  uint8_t *state = &peer_resets[event->stream_id];
-  if (event->direction == H2_PAL_SCTP_STREAM_RESET_INCOMING_RESET)
-    *state |= RESET_INCOMING;
-  else if (event->direction == H2_PAL_SCTP_STREAM_RESET_OUTGOING_COMPLETED) {
-    if (*state & RESET_SUBMITTED)
-      *state |= RESET_COMPLETED;
-  } else
-    peer_reset_error = H2_PAL_ERR_INVALID_ARG;
-}
-static int service_stream_resets(void) {
-  if (peer_reset_error)
-    return peer_reset_error;
-  for (size_t sid = 0; sid < sizeof(peer_resets); ++sid) {
-    uint8_t *state = &peer_resets[sid];
-    if (!(*state & RESET_INCOMING))
-      continue;
-    if (!(*state & RESET_SUBMITTED)) {
-      int rc = peer_connection_datachannel_close_sid(pc, (uint16_t)sid);
-      if (rc == H2_PAL_ERR_BUSY || rc == H2_PAL_ERR_WOULD_BLOCK)
-        return H2_PAL_OK;
-      if (rc != H2_PAL_OK)
-        return rc;
-      *state |= RESET_SUBMITTED;
-    }
-    if (*state & RESET_COMPLETED) {
-      if (peer_connection_datachannel_forget_sid(pc, (uint16_t)sid))
-        return H2_PAL_ERR_IO;
-      *state = 0;
-      char line[160];
-      snprintf(line, sizeof(line),
-               "H2_IPV6_FIXTURE_STREAM_RESET session=%s peer=%s "
-               "sid=%u incoming=1 outgoing=1",
-               H2_PAL_IPV6_SESSION, peer_session, (unsigned)sid);
-      log_line(line);
-    }
-  }
-  return H2_PAL_OK;
-}
 static int queue_message(const void *data, size_t size, uint16_t sid, int text,
                          int audio) {
   if (count == 64)
@@ -375,8 +319,6 @@ static void peer_closed(void) {
     peer_connection_destroy(pc);
     pc = NULL;
   }
-  memset(peer_resets, 0, sizeof(peer_resets));
-  peer_reset_error = H2_PAL_OK;
   while (count) {
     h2_pal_mem_free(rt->mem, outgoing[head].data);
     head = (head + 1) % 64;
@@ -400,19 +342,6 @@ static void pump_peer(void) {
     h2_pal_mem_free(rt->mem, item->data);
     head = (head + 1) % 64;
     --count;
-  }
-  /* SCTP invokes reset callbacks while processing its association. Defer the
-   * reciprocal request until the loop has returned and accepted echoes have
-   * drained; a response to the peer's request alone closes only one direction. */
-  if (count && !peer_reset_error)
-    return;
-  int rc = service_stream_resets();
-  if (rc != H2_PAL_OK) {
-    char line[96];
-    snprintf(line, sizeof(line),
-             "H2_IPV6_FIXTURE_SIGNAL_FAIL stage=stream_reset rc=%d", rc);
-    log_line(line);
-    peer_closed();
   }
 }
 static int only_ipv6_host(void *user, const char *prefix,
@@ -501,7 +430,6 @@ static void http_request(int fd) {
     peer_connection_oniceconnectionstatechange(pc, on_peer_state);
     peer_connection_ondatachannel(pc, on_message, NULL, NULL);
     peer_connection_onremotechannel(pc, on_remote_channel);
-    peer_connection_onstreamreset(pc, on_stream_reset);
     /* The private engine creates its DTLS identity with local SDP. Prepare
      * that before installing the authenticated remote fingerprint. */
     const char *answer = peer_connection_create_answer(pc);

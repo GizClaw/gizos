@@ -2,7 +2,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "h2_esp_board.h"
-#include "h2_esp_board_config.h"
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_h2loader_runtime.h"
 #include "h2_esp_platform_core.h"
@@ -56,7 +55,7 @@ void app_main(void) {
   rc = h2_runtime_init(&config, &runtime);
   if (rc)
     fail("runtime", rc);
-  printf("H2_IPV6_FIXTURE_BOOT board=" H2_ESP_BOARD_NAME " version=%s session=%s\n",
+  printf("H2_IPV6_FIXTURE_BOOT board=amoled version=%s session=%s\n",
          esp_app_get_description()->version, h2_ipv6_fixture_session());
   const h2_pal_task_options_t options = {.name = h2_ipv6_fixture_task_name};
   h2_pal_task_t *task;

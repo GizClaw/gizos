@@ -6,6 +6,11 @@ load("//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files([
+    "main/CMakeLists.txt",
+    "main/idf_component.yml",
+], visibility = ["//visibility:public"])
+
 # Shared ESP launcher accepts the consuming entry's H2_PAL_IPV6_BOARD.
 exports_files(["main/main.c"])
 

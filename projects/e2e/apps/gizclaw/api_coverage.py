@@ -133,17 +133,12 @@ def requirements():
                           "api_key_state_" + method + "-assert"))
     # Session requirements remain fail-closed until a real run emits both
     # the call and its business assertion. Unit mocks are never live evidence.
-    for method in ("create destroy snapshot catalog_copy register refresh refresh_with_tags select close "
+    for method in ("create destroy snapshot catalog_copy register refresh select close "
                    "conversation_create conversation_release audio_start audio_end "
                    "send_text cancel_pending interrupt_playback").split():
         symbol = PREFIX + "session_" + method
         case = "voice"
-        calls = (symbol,)
-        if method == "refresh_with_tags":
-            calls = (symbol, PREFIX + "session_catalog_copy", PREFIX + "session_snapshot",
-                     PREFIX + "session_refresh", PREFIX + "session_catalog_copy",
-                     PREFIX + "session_snapshot")
-        rules.append(Rule(symbol, case, calls, symbol, "session_" + method + "-assert"))
+        rules.append(Rule(symbol, case, (symbol,), symbol, "session_" + method + "-assert"))
     for method in "create destroy snapshot execute close".split():
         symbol = PREFIX + "resource_" + method
         rules.append(Rule(symbol, "resource", (symbol,), symbol, "resource_" + method + "-assert"))
@@ -282,12 +277,10 @@ def main(argv=None):
     parser.add_argument("--endpoint", required=True)
     parser.add_argument("--backend", choices=("h2peer", "pion"), required=True)
     parser.add_argument("--profile", required=True)
-    parser.add_argument("--platform", required=True)
+    parser.add_argument("--platform", choices=("macos", "linux", "windows", "wasm-chromium", "ios-simulator", "android-emulator", "devkit", "amoled", "bk7258"), required=True)
     parser.add_argument("--process-exit-code", type=int, required=True,
                         help="actual test process status, not the status printed in its log")
     args = parser.parse_args(argv)
-    if not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,127}", args.platform):
-        parser.error("--platform requires the exact canonical platform or board identity")
     rules = requirements()
     try:
         with args.log.open(encoding="utf-8") as log:

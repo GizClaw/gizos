@@ -6,7 +6,11 @@ load("//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files(["main/main.c"])
+exports_files([
+    "main/CMakeLists.txt",
+    "main/idf_component.yml",
+    "main/main.c",
+], visibility = ["//visibility:public"])
 
 esp_target_task_policy(
     default_policy = "4 any 4096 psram",
@@ -52,7 +56,6 @@ firmware_lib_component(
 firmware_native_component(
     name = "launcher",
     srcs = ["main/main.c"],
-    hdrs = ["//projects/e2e/libs/esp-device:result_console.h"],
     component_directory = "projects/e2e/targets/h2loader_tar_zlib/iperf-client/devkit/main",
     component_name = "main",
     data = [
@@ -63,7 +66,6 @@ firmware_native_component(
     deps = [
         ":firmware_lib",
         "//boards/devkit/esp32s3",
-        "//libs/atomic",
         "//libs/pal",
         "//native_component_src/esp-idf6.x/h2_pal_core",
         "//native_component_src/esp-idf6.x/opus_port",

@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 import re
 import unittest
-from verify_device import boot_ledger,status_preserved,coredump_preserved,loader_status,command_receipt,after_accepted_reboot,package_binding,uart_text,monitor_receipt,load_package_binding,verify_witness,log_board
+from verify_device import boot_ledger,status_preserved,coredump_preserved,loader_status,command_receipt,after_accepted_reboot,package_binding,uart_text,monitor_receipt,load_package_binding,verify_witness
 class Verifier(unittest.TestCase):
     def setUp(self):
         root=Path(__file__).absolute().parents[5]
@@ -106,17 +106,6 @@ class Verifier(unittest.TestCase):
         for result in ['-4', '1']:
             with self.assertRaises(AssertionError):boot_ledger(esp.replace('confirm=pending', 'confirm=pending provider_cleanup='+result),self.ids,'v1')
         self.assertEqual(boot_ledger(esp.replace('confirm=pending', 'confirm=pending provider_cleanup=0'),self.ids,'v1')['ready']['board'], 'devkit')
-    def test_consumer_esp_identity_is_bound_to_its_package(self):
-        manifest = dict(board='consumer_esp', target='esp32s3')
-        board = log_board(manifest)
-        esp = self.good.replace('board=bk7258', 'board='+board)
-        with self.assertRaises(AssertionError):boot_ledger(esp,self.ids,'v1',expected_board=board)
-        esp = esp.replace('confirm=pending', 'confirm=pending provider_cleanup=0')
-        self.assertEqual(boot_ledger(esp,self.ids,'v1',expected_board=board)['ready']['board'],board)
-        with self.assertRaises(AssertionError):boot_ledger(esp,self.ids,'v1',expected_board='other_esp')
-        with self.assertRaises(AssertionError):boot_ledger(esp,self.ids,'v1')
-        for invalid in [dict(board='../board',target='esp32s3'),dict(board=board,target='other')]:
-            with self.assertRaises(AssertionError):log_board(invalid)
     def test_real_log_prefix_fields_and_color(self):
         prefixed='\n'.join('\x1b[32mcpu=0 tick='+str(index)+' '+line+'\x1b[0m'
             for index,line in enumerate(self.good.splitlines()))

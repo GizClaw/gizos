@@ -627,8 +627,6 @@ def publish_outputs(
         "partition-table image": (
             build_directory / "partition_table" / "partition-table.bin"
         ),
-        "sdkconfig": build_directory / "sdkconfig",
-        "sdkconfig header": build_directory / "config" / "sdkconfig.h",
     }
     for label, path in native_outputs.items():
         required_file(path, label)
@@ -659,10 +657,6 @@ def publish_outputs(
     copy_output(
         native_outputs["partition-table image"],
         Path(arguments.partition_table_output),
-    )
-    copy_output(native_outputs["sdkconfig"], Path(arguments.sdkconfig_output))
-    copy_output(
-        native_outputs["sdkconfig header"], Path(arguments.sdkconfig_header_output),
     )
     metadata_output = Path(arguments.flash_metadata_output)
     metadata_output.parent.mkdir(parents=True, exist_ok=True)
@@ -696,8 +690,6 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--partition-table-output", required=True)
     parser.add_argument("--flash-files-output", required=True)
     parser.add_argument("--flash-metadata-output", required=True)
-    parser.add_argument("--sdkconfig-output", required=True)
-    parser.add_argument("--sdkconfig-header-output", required=True)
     parser.add_argument("--support-file", action="append", default=[])
     parser.add_argument("--project-support-file", action="append", default=[])
     parser.add_argument("--prebuilt-component", action="append", default=[])

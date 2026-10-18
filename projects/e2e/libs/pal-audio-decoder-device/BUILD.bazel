@@ -23,6 +23,7 @@ cc_library(
         "//libs/runtime",
         "//projects/e2e/apps/pal-audio-decoder/app:pal_audio_decoder_e2e",
     ],
+    visibility = ["//visibility:public"],
 )
 
 py_test(

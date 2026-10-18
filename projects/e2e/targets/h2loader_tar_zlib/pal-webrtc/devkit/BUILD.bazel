@@ -7,9 +7,10 @@ load("//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
+    "main/CMakeLists.txt",
+    "main/idf_component.yml",
     "main/main.c",
-    "sdkconfig.pal-webrtc.defaults",
-])
+], visibility = ["//visibility:public"])
 
 esp_target_task_policy(
     name = "task_policy",
@@ -54,7 +55,6 @@ firmware_lib_component(
 firmware_native_component(
     name = "launcher",
     srcs = ["main/main.c"],
-    hdrs = ["//projects/e2e/libs/esp-device:result_console.h"],
     component_directory = "projects/e2e/targets/h2loader_tar_zlib/pal-webrtc/devkit/main",
     component_name = "main",
     data = [

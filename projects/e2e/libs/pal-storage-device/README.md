@@ -19,22 +19,6 @@ bazel test //projects/e2e/libs/pal-storage-device:ledger_verifier_test
 
 完整资格还必须用同模块的 `final_status(before, after, manifest, package_sha256, uid)` 校验实际 UID 不变、初始 P1 有效且 role=loader、P1 全部 identity 字段不变、最终 P2 有效且 current image 与 package/image checksum 一致、Stage 为空及 `last_result=0`。`coredump_status(before, after, before_sha256, after_sha256)` 校验 dump 参数不变；原本非空时需要实际 dump 文件的前后字节 SHA 相等。`manifest` 使用实际 firmware JSON 的 `package_manifest`，不能只传版本字符串或把新构建 artifact 重绑到旧 boot。
 
-## ESP checked console delivery
-
-ESP Storage launcher 借用 H2Loader 已配置的实际 UART 或 USB JTAG PAL console，不重装驱动、不修改共享 UART 锁或 Loader 生命周期。Storage runner 将 fresh BOOT、case 和 replay 记录有界格式化后交给 Storage 专用同步 callback；每个 record 使用一次完整 PAL write 和一次检查结果的 TX flush，短写不补前缀、不重试成成功。Callback 与 console 的首次错误都保持 sticky，后续 replay 不能抹掉失败。
-
-Fresh/case 的 write 或 flush 在 phase-control 保存之前失败时，保留真实业务清理并拒绝推进阶段；正常提交后的完整不可变 replay 也必须检查交付，成功后才调用 App confirm。已提交的 phase control 不会因随后 replay 失败而伪称回滚，此时 App 不确认且资格拒绝。READY 在实际 confirm 之后受检输出，报告真实 confirm 返回值；若 READY 的 write/flush 此时失败，只能 hold 并拒绝资格，不能声称撤销已成功确认的 metadata。原 stdout 入口及 BK native console owner 保留，portable runner 不访问 SDK 或标准流内部状态。
-
-`checked_output_test` 将实际 Storage device control 与实际 ESP console helper 接到可注入 write/flush/Pref/confirm 边界，覆盖 UART/USB 完整记录、short write、transport error、flush error、sticky replay、控制提交前后与确认后的不同失败边界；真实 provider 的正常 `1/2/3/4/4` 生命周期继续由 `device_lifecycle_test` 单独验证。两者都是 host 回归，不是新实板资格。五个真实 boot、36 个必选 case、fresh marker 和完整有序 replay 的严格门槛不变。
-
-```sh
-bazel test --config=macos_arm64 \
-  //projects/e2e/libs/pal-storage-device:checked_output_test \
-  //projects/e2e/libs/pal-storage-device:ledger_verifier_test \
-  //projects/e2e/libs/pal-storage-device:bk_console_lifecycle_test \
-  //projects/e2e/targets/cc_binary/pal-storage:device_lifecycle_test
-```
-
 ## BK native console startup
 
 The shared fixture emits one non-replay `H2_STORAGE_BOOT` during the actual

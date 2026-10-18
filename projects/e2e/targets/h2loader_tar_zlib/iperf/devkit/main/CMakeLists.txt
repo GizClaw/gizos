@@ -30,17 +30,6 @@ idf_component_register(
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu11 -Wall -Wextra -Werror)
 
-if(DEFINED H2_E2E_WIFI_FIXTURE AND NOT "${H2_E2E_WIFI_FIXTURE}" STREQUAL "")
-  if(NOT "${H2_E2E_WIFI_FIXTURE}" STREQUAL "haivivi-mfg")
-    message(FATAL_ERROR "Unsupported public H2_E2E_WIFI_FIXTURE selector")
-  endif()
-  if(DEFINED H2_IPERF_ROLE_SERVER AND NOT "${H2_IPERF_ROLE_SERVER}" STREQUAL "0")
-    message(FATAL_ERROR "H2_E2E_WIFI_FIXTURE requires the legacy iperf Client role")
-  endif()
-  target_compile_definitions(${COMPONENT_LIB} PRIVATE
-    H2_E2E_WIFI_FIXTURE_HAIVIVI_MFG=1)
-endif()
-
 # Operator-selected LAN peer and Wi-Fi policy enter through the allowlisted
 # CMake cache of this firmware action only (`--define=H2_IPERF_SERVER=...`).
 if(DEFINED H2_IPERF_SERVER)

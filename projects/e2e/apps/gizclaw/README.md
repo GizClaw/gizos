@@ -47,7 +47,7 @@ BK AP media TLS 使用 SDK PSRAM allocator；C emulated TLS 和两个 errno
 
 ## 历史资格快照（2026-10-02，保留原 source/SDK 身份）
 
-当前跟随 main 使用 GizClaw C SDK `0.30.0`，保留 MHS/HWD、tool-v0、catalog tags 和 safety-fence 协议。当前独立 live E2E 矩阵为 **237 项**，C public API 编译 catalog 为 **246 项**；九个既有 local embedding API 不属于 live 矩阵，两个计数分别维护。新增 `h2_gizclaw_session_refresh_with_tags` 需要本轮真实调用及业务断言，旧 236 项结果不转移到新库存；初始输入 readiness 快照由 Service case 实际读取并断言无活动输入，新增的八个 BLE Binding API 则保持独立的调用与业务断言要求。原有 **227 项**执行记录仍保留其历史源码身份；新增库存和本地覆盖 wiring 不资格化那些旧运行。类型和协议语义的更新须重新执行实际业务。下面 source-bound `0.19.0` 记录仅是历史结果，不资格化当前 SDK。当前主线 SCTP #617 与 PAL Net/TLS #621 已合入。source `e228d55b` 的 macOS、iOS Simulator、Android Emulator 均真实 8/8 及 227/227 通过，cleanup=0、retained=0，移动端 teardown=0；早期 source42a/75aad/d214 的独立记录保留原身份。早期 226/default profile 记录保留原身份。六端整体资格仍未完成。
+当前跟随 main 使用 GizClaw C SDK `0.26.0`，保留 MHS/HWD、tool-v0、catalog tags 和 safety-fence 协议。当前公开函数库存为 **236 项**；初始输入 readiness 快照由 Service case 实际读取并断言无活动输入，新增的八个 BLE Binding API 则保持独立的调用与业务断言要求。原有 **227 项**执行记录仍保留其历史源码身份；新增库存和本地覆盖 wiring 不资格化那些旧运行。类型和协议语义的更新须重新执行实际业务。下面 source-bound `0.19.0` 记录仅是历史结果，不资格化当前 SDK。当前主线 SCTP #617 与 PAL Net/TLS #621 已合入。source `e228d55b` 的 macOS、iOS Simulator、Android Emulator 均真实 8/8 及 227/227 通过，cleanup=0、retained=0，移动端 teardown=0；早期 source42a/75aad/d214 的独立记录保留原身份。早期 226/default profile 记录保留原身份。六端整体资格仍未完成。
 
 | 平台 | 当前实际结果 | 尚缺条件 |
 | --- | --- | --- |
@@ -143,7 +143,7 @@ Workspace 响应校验 arena、数组边界/对齐、字符串与 profile/revisi
 
 测速日志的 `integrity` 区分校验范围：下载成功为 `pattern-verified`（逐字节核对固定上游 v0.13.2 的 0..255 循环模式）；上传成功仅为 `length-ack-only`（服务端 EOS 确认消费及长度，未校验上传内容）；失败为 `not-verified`。模式校验不是密码学摘要，不能据此声称完成上传端到端内容校验。
 
-`api_coverage.py` 的矩阵独立列出约定的 237 个函数；运行验收检查实际调用日志和业务断言，公开 API 由 C 编译测试验证。每行指定用例、按序成功调用和显式业务断言；req_create / resp_parse 必须有直接 create → do → wait → parse 的记录，同步 RPC 的内部调用不算另一套 API 的覆盖。Profile / Workflow / Contact 已输出对应业务断言。其他尚未补齐的断言仍保留为要求，不降级成“调用返回成功”。Telemetry 是单向包，其 `telemetry_send-assert` 仅按公开 API 契约确认传输层接受，不表示服务端确认或落库；两套 API 使用不同 sequence、各自读取当前时间，测试值明确标为 `e2e-fixture`。
+`api_coverage.py` 的矩阵独立列出约定的 236 个函数；运行验收检查实际调用日志和业务断言，公开 API 由 C 编译测试验证。每行指定用例、按序成功调用和显式业务断言；req_create / resp_parse 必须有直接 create → do → wait → parse 的记录，同步 RPC 的内部调用不算另一套 API 的覆盖。Profile / Workflow / Contact 已输出对应业务断言。其他尚未补齐的断言仍保留为要求，不降级成“调用返回成功”。Telemetry 是单向包，其 `telemetry_send-assert` 仅按公开 API 契约确认传输层接受，不表示服务端确认或落库；两套 API 使用不同 sequence、各自读取当前时间，测试值明确标为 `e2e-fixture`。
 
 Runner 在 actor 初始化前输出 `coverage-begin`，在清理后输出 `coverage-end`；RPC domain 使用 `rpc/<domain>` 嵌套范围。校验器拒绝缺失、重复、乱序、失败或未关闭的范围，父用例清理失败会使子范围失效。最终只接受指定平台、backend、endpoint 和 profile 的一次 `all` 完整运行，以及全部八个顶层用例和矩阵要求的全部 RPC domain。测试进程真实退出码和日志内 summary 都必须成功；不能把 summary 的 exit_code 当成真实进程退出码。
 
@@ -179,9 +179,7 @@ Debug 的 `req_create_debug_set` / `resp_parse_debug_set`、`req_create_debug_ge
 
 `h2_gizclaw_service_get_time_sync_status` 纳入 227 项审计要求，属于 `service` 用例；必须提供成功调用和 `service_get_time_sync_status-assert` 的校时状态业务断言。Service 实际读取并验证校时状态与尝试次数；`calibrated=1` 仅在 SUCCEEDED 且 last_rc=0 时记录。RETRY/UNSUPPORTED 可证明状态查询契约，但不能证明成功校时。本地边界测试分别覆盖读取失败、未尝试、错误状态和虚假成功，在线结果仍须单独验收。
 
-Session 的 16 个公开操作纳入同一 fail-closed 审计，归属独立 Voice case。Voice 使用真实 Session 进行注册、完整 catalog 加载与刷新、Workspace 选择、PTT/Realtime 输入与终态观察、完整文字输入、释放和重连。文字输入在 PTT 轮次之后用 `h2_gizclaw_session_send_text` 提交一段文字，`session_send_text-assert` 要求 Session 先进入 WAITING、completion 恰好一次且为 FINISHED/OK、随后从 Track 听到非静音回复并回到 IDLE。一轮语音结束、Session 回到 IDLE 后调用 `h2_gizclaw_session_interrupt_playback`，`session_interrupt_playback-assert` 要求返回成功、Session 状态不变且 Track 仍为空；打断正在播放的回复由产品 E2E 覆盖。准备取消仍缺少 live 场景；底层 API 的独立调用要求也不能用 Session 内部调用补记，因此完整 227 项审计仍按缺失 evidence 拒绝通过。AMOLED 的构建和设备验收见 [Session E2E](/apps/h2loader/boards/amoled/gizclaw_e2e)。
-
-`h2_gizclaw_session_refresh_with_tags` 归属既有 Voice case。prepare 先保留普通 refresh 的独立断言，再以 `assistants AND e2e-missing-<本轮 nonce>` 验证完整 READY 空目录，然后显式替换回 `assistants` 并观察非空目录；每条 Workflow 必须含该 tag，copied catalog 与 snapshot 的 count/Profile/revision 一致。成功替换后覆盖调用方 tag 文本和 span，再执行普通 refresh，要求复制后的 selector 仍有效、目录仍非空且 snapshot publication revision 前进，最后从该目录选择 Workflow 并继续原 Voice 业务。普通 refresh 保留当前 selector，不会自动恢复创建时配置。独立审计要求实际 `refresh_with_tags → catalog_copy → snapshot → refresh → catalog_copy → snapshot` 之后的 `session_refresh_with_tags-assert`；return OK、缺少观察或旧 236 项日志不能通过 237 项 gate。
+Session 的 15 个公开操作纳入同一 fail-closed 审计，归属独立 Voice case。Voice 使用真实 Session 进行注册、完整 catalog 加载与刷新、Workspace 选择、PTT/Realtime 输入与终态观察、完整文字输入、释放和重连。文字输入在 PTT 轮次之后用 `h2_gizclaw_session_send_text` 提交一段文字，`session_send_text-assert` 要求 Session 先进入 WAITING、completion 恰好一次且为 FINISHED/OK、随后从 Track 听到非静音回复并回到 IDLE。一轮语音结束、Session 回到 IDLE 后调用 `h2_gizclaw_session_interrupt_playback`，`session_interrupt_playback-assert` 要求返回成功、Session 状态不变且 Track 仍为空；打断正在播放的回复由产品 E2E 覆盖。准备取消仍缺少 live 场景；底层 API 的独立调用要求也不能用 Session 内部调用补记，因此完整 227 项审计仍按缺失 evidence 拒绝通过。AMOLED 的构建和设备验收见 [Session E2E](/apps/h2loader/boards/amoled/gizclaw_e2e)。
 
 ## Resource state E2E
 
@@ -260,33 +258,6 @@ SDK0.23.2/source123565bf 的真实 macOS 全量执行为5/8，cleanup=-8、retai
 
 ## BLE Binding 覆盖边界
 
-BLE Binding 的八个公开 API 在现有 `device-api` case 中直接执行，保持八项 `all` registry 和 237 项审计。Launcher 先启动真实共享 BLE Host；App 借用它的独立 advertising set、System Event、Memory/Sync 和本轮实际注册 actor 的临时 API-key state。`device_api_url` 必须显式提供 HTTPS origin，不能带路径或尾斜线，Binding 与 Device API 使用同一受控服务，不从 RPC endpoint 推导 origin。`open`、`start`、`poll` 和 `stop` 后实际 snapshot 分别断言 idle、ready/advertising、断连后的可用广播和 sealed window；formatter 比较完整编码，exposure 比较真实 key name/revision，close 验证 instance 已释放。日志只记录 URL 长度与 SHA，不输出 URL、secret 或 key name。
+BLE Binding 的八个公开 API 归属 `device-api` 的独立审计要求，全部要求按序成功调用和显式 `ble_binding_<method>-assert` 业务断言。`open`、`start`、`poll` 和 `stop` 还必须在变更后实际调用 `ble_binding_snapshot`，观察 idle/open、广播重启或 sealed window 状态；URL formatter、snapshot、exposure drain 与最终 close 则各自断言实际值、精确 key name/revision 或已释放 instance。READY、函数名出现在源码、普通返回 OK 或 fake-PAL 单测都不能替代这些证据。
 
-本机 Central 必须在 `ble-binding-ready` 后完成两次真实 BLE 连接：按 INFO/REQUEST/CREDENTIAL 分块重组完整 URL并匹配本次 revision、长度与 SHA，第一次断连后重新发现同一随机 window 的广播，再完成第二次传输和断连。App 观察实际 exposure、断连和第二次 adopted connection，缺少 Central 或事件则有界失败。Central 只连接匹配本次 `h2e2e-<16 hex>` 名称和 Binding UUID 的设备，不记录其他扫描结果。没有手机账户参与，该 lane 证明真实 BLE disclosure 与生命周期，不证明账户绑定完成。
-
-从当前 boot 原始日志取得 window、revision、url_bytes 和 url_sha256 后，在 macOS 运行已有 Darwin/CoreBluetooth PAL 装配的独立工具：
-
-```sh
-bazel run --config=macos_arm64 //projects/e2e/libs/gizclaw-device:ble_peer -- \
-  --version <firmware-version> --execution <this-wrapper-execution> \
-  --window <this-window> --revision <this-revision> --size <this-url-bytes> \
-  --sha256 <this-url-sha256> --output <new-peer-receipt.json>
-```
-
-保留该进程实际退出码。`gizclaw-device:verify_device` 的完整账本/API 审计还必须传入 `--ble-peer-receipt=<new-peer-receipt.json>` 和 `--ble-peer-exit-code=<actual-exit-code>`，验证两个实际连接、重新发现、完整传输、时间戳和本次随机 window；不同 boot 的 receipt、单连接、部分读取或 Central 非零退出均拒绝。managed 与 normal boot 各用新的 receipt，normal boot 继续要求 `--previous-execution`。Central 不向服务器提交 credential；App 停止、排空 exposure、close 后明确 revoke 本轮临时 key，失败时保留借用关系并由原 fixture cleanup 精确回收 actor。 Verifier 还要求 `--execution=<this-wrapper-execution>`、`--capture-receipt=<boot-command.json>` 与 `--ble-peer-command-receipt=<central-command.json>`。Central schema 2 显式包含 version/execution，并受真实 120 秒进程 deadline 限制；设备 wrapper、账本、receipt 与实际 argv 必须属于同一执行。
-
-Host UART capture receipt 由实际 collector 写入 `argv`、`version`、`execution`、`started_utc`、`finished_utc`、`boot_observed_utc`、`ble_ready_utc`、原始日志 `sha256`、实际 `exit_code` 和 `monitor_stop=complete-qualified-ledger`。Central command receipt 独立记录真实 `argv`/`pid`、`started_utc`/`finished_utc`、由单调时钟测得的整数 `elapsed_ms`、实际 `exit_code` 与完整 helper 文件的 `receipt_sha256`；不能从 helper 自报的时间复制这些采集事实。缺少事实、错误执行身份、非零退出、跨采集区间、超过 120 秒或时钟间不一致均拒绝。时间顺序为 capture start ≤ wrapper observed ≤ BLE ready observed ≤ process start ≤ helper start ≤ helper finish ≤ process finish ≤ capture finish。审计不读当前系统时间，匹配自身历史事实的完整历史执行仍可离线验证；实时 admission 必须使用本次实际 collector 的身份和区间。
-
-
-ESP devkit 装配及其私有 Board consumer 在 command transport 已启动可用后，先用既有 PAL time 等待五秒供 managed reboot 的真实 CLI 重新接入，sleep 失败直接保留失败且不发布身份；随后在 Wi-Fi/SNTP 与业务 runner 之前用实际 crypto 生成一次非零随机 execution，先经原 console 的 checked write/drain 输出 `H2_GIZCLAW_PRECASE board=... version=... execution=... state=precase`，联网校时后的原 `H2_GIZCLAW_BOOT` 复用同一值。PRECASE 不是第二次 boot，也不替代 BOOT、完整账本或实际确认。不同独立 boot 仍须不同 execution。Observer 继续原样捕获全部账本，仅将严格校验的 `ble-binding-ready` 非敏感四字段即时写入并 drain，供 Central 在实际等待窗口内启动；格式、短写或 drain 失败永久阻止该次账本冻结/qualification/confirm，其它记录不因此流式输出。
-
-`Saved=0` 的 ESP 可以提交 additive capture schema 3，保留原单进程收据规则。Collector 用第一条真实 `reboot upgrade|app --monitor` 取得 accepted ACK、PRECASE 与 `NO_SAVED_WIFI`，以 `monitor_stop=precase-awaiting-temporary-wifi` 正常取消并退出；随后在同一 boot 用第二条真实 `wifi connect <ssid> <password> --temporary --monitor` 建立临时连接并持续采集到首份完整账本，结束原因仍为 `complete-qualified-ledger`。凭据只在本机受限收据保存；不得保存或清除原 Wi-Fi、改写 argv、拼接缺失 case、以 replay 修补首份账本或绕过 Loader 门禁。应用没有新增 Wi-Fi secret/build-environment 输入，SNTP、TLS、SDK 配置和测试预算不变。
-
-Schema 3 的 capture 顶层保留 version/execution、完整 raw SHA、capture start/finish、实际第二段 exit_code、BOOT/ready 观察时刻与最终 stop reason，另有 `precase_observed_utc`、两个 `segments` 和 `device`。每段记录独立实际 argv/pid、frozen CLI `executable_sha256`、UTC start/finish、单调 `elapsed_ms`、真实 exit_code/stop reason，以及在原始 log 中的整数 `offset`/`bytes`/`sha256`。原始 log 严格为两段未改字节按序追加，所有 UART 进程互不重叠，外层时间覆盖这两个实际进程而非冒充其中一个。PRECASE 在第一段、BOOT 和即时 ready 在第二段，其 nonce/version/board 必须一致；ACK 后至 PRECASE 等待期间不得出现 CASE，任何后续 reboot、setup failure 或不同执行都拒绝。ACK 前旧 boot 的重播保留原始字节，但不能贡献本轮用例。
-
-`device.expected` 绑定调用方冻结的 board/target/UID/port、CLI SHA、完整 package/image SHA 和 size。`device.before` 保存原 `status` 与 `coredump`，`device.precase` 在两个 capture 进程之间保存实际 `status` 与 `wifi`，`device.after` 在第二段退出后保存 `status`、`wifi` 与 `coredump`。每份均包含真实 argv/pid、executable SHA、UTC start/finish、单调 elapsed、exit_code=0、原始 UTF-8 `stdout` 与其 SHA，verifier 独立解析唯一 typed `H2_LOADER_STATUS` / `H2_LOADER_WIFI_STATUS` / `H2_LOADER_COREDUMP_STATUS`。原 P1 全字段必须保持；PRECASE 的 active image 与本次包匹配，pending Stage 若存在须完整匹配；最终 active/P2/package/image/version、空 Stage 与 last_result=0 均须正确。Saved=0 在同 boot 临时联网前与最终两次真实读取，unsupported 不能冒充 0；原本空白的 coredump 仍须 stored_bytes=0/blank=1 且分区/大小一致。该新增路径针对 Saved=0/空 dump fixture，非空 dump 不因此获得豁免。调用方继续拥有原始基线与最终恢复、artifact 和设备来源核验责任，不能把可编辑采集元数据称为硬件认证。
-
-两段路径仍必须经原 `verify_device` CLI 同时通过完整八用例、独立 237 项 API audit、真实 Central schema 2、两次完整连接/rediscovery、独立 UTC/monotonic 交叉检查、零 cleanup/retained 和第二 boot 的 previous-execution 门禁。Host 合成两段 fixture 的正反测试只验证 admission 合同；它们不启动 Bluetooth 或提供实板资格。Central 当前实现先全局发现再按随机 window/Binding UUID 过滤，不是按预知 backend identifier 的定向连接；若任务禁止 broad scan，应保持该硬件 gate 未授予，不能用这两项修复代替定向 Central 能力。
-
-
-`h2_gizclaw_ble_binding_test` 验证 library 的真实异步 key state 与 fake RPC/BLE PAL 边界；`gizclaw_e2e_ble_binding_test` 执行 App 流程的受控失败，`ble_peer_transfer_test` 执行 Central 的截断、错版本/revision/offset/长度、摘要与 I/O 拒绝路径。它们不提供 live qualification。只有本轮设备完整账本、独立 237 项审计与真实 Central receipt 全部通过，才认定该 target 通过；历史 227/228 记录不转移到新库存。
+`h2_gizclaw_ble_binding_test` 验证真实异步 key state 与 fake RPC/BLE PAL 上的 wire、生命周期和失败边界；它不输出或提供 live E2E qualification。真实 Server/BLE/手机绑定 lane 尚无这八项调用与业务断言证据时，完整审计继续将它们报告为 missing。历史 228 或 227 函数的完整日志不会资格化 236 项库存；审计器回归测试明确要求旧 228 项的合成日志仍缺少全部八项 BLE 要求。产品页面与手机 adapter 的接入和物理 ESP32-S3/BK7258 验收分别记录，不能把本地 host graph 绿灯写成账号绑定或设备通过。

@@ -754,28 +754,12 @@ cc_test(
 )
 
 cc_library(
-    name = "ble_binding_case",
-    srcs = ["src/h2_gizclaw_e2e_ble_binding.c"],
-    hdrs = ["src/h2_gizclaw_e2e_ble_binding.h"],
-    conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS,
-    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
-    deps = [
-        ":fixture",
-        "//libs/crypto/sha256",
-        "//libs/gizclaw",
-        "//libs/pal",
-    ],
-)
-
-cc_library(
     name = "device_case",
     srcs = ["src/h2_gizclaw_e2e_device.c"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
     deps = [
-        ":ble_binding_case",
         ":debug_case",
         ":device_http",
         ":fixture",
@@ -785,24 +769,6 @@ cc_library(
         "//libs/atomic",
         "//libs/gizclaw",
         "//libs/pal/providers/yyjson",
-    ],
-)
-
-cc_test(
-    name = "gizclaw_e2e_ble_binding_test",
-    srcs = ["tests/test_h2_gizclaw_e2e_ble_binding.c"],
-    conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS,
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//tools/bazel/platforms:host_windows_target_windows": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    deps = [
-        ":ble_binding_case",
-        "//libs/app_test:testing_pal",
-        "//libs/atomic/providers/c11",
     ],
 )
 

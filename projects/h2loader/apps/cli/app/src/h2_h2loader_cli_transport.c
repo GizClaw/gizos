@@ -112,22 +112,13 @@ h2_pal_result_t h2_h2loader_cli_transport_connect(
         }
         return rc;
     }
-    uint32_t handshake_timeout_ms = transport->options->wait_timeout_ms;
-    if (transport->status_deadline_ms != 0u) {
-        uint64_t now = 0u;
-        rc = h2_pal_time_get_monotonic_ms(transport->context->runtime->time, &now);
-        if (rc != H2_PAL_OK) return rc;
-        if (now >= transport->status_deadline_ms) return H2_PAL_ERR_TIMEOUT;
-        uint64_t remaining = transport->status_deadline_ms - now;
-        if (remaining < handshake_timeout_ms) handshake_timeout_ms = (uint32_t)remaining;
-    }
     h2_h2loader_host_serial_connection_config_t connect = {
         .serial = transport->context->config->serial,
         .time = transport->context->runtime->time,
         .allocator = transport->context->runtime->mem,
         .port_id = transport->options->port,
         .baud_rate = transport->options->baud_rate,
-        .handshake_timeout_ms = handshake_timeout_ms,
+        .handshake_timeout_ms = transport->options->wait_timeout_ms,
         .command_timeout_ms = transport->command_timeout_ms,
         .ready_marker = transport->ready_marker,
         .post_command_delay_ms = transport->options->post_delay_ms,
@@ -135,15 +126,14 @@ h2_pal_result_t h2_h2loader_cli_transport_connect(
         .log_user = transport->log_user,
         .preserve_control_lines = 1,
     };
-    rc = transport->status_deadline_ms != 0u
-        ? h2_h2loader_host_serial_connect_until(
-            &connect, &transport->serial_connection, transport->status_deadline_ms)
-        : h2_h2loader_host_serial_connect(&connect, &transport->serial_connection);
+    rc = h2_h2loader_host_serial_connect(
+        &connect, &transport->serial_connection);
     if (rc == H2_PAL_OK) transport->ready_marker = NULL;
     if (rc == H2_PAL_OK) {
-        rc = h2_h2loader_cli_transport_read_status(transport, out_status);
+        rc = h2_h2loader_host_serial_read_status(
+            transport->serial_connection, out_status);
     }
-    if (rc != H2_PAL_OK && !transport->status_response_pending) {
+    if (rc != H2_PAL_OK) {
         (void)h2_h2loader_cli_transport_disconnect(transport);
     }
     return rc;
@@ -187,21 +177,16 @@ h2_pal_result_t h2_h2loader_cli_transport_read_status(
         out_status == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    transport->status_response_pending = 0;
     if (transport->options->transport == H2_H2LOADER_HOST_TRANSPORT_BLE) {
         return h2_h2loader_host_ble_read_status(
             transport->ble_connection, out_status);
     }
-    return transport->status_deadline_ms != 0u
-        ? h2_h2loader_host_serial_read_status_until(
-            transport->serial_connection, out_status, transport->status_deadline_ms,
-            &transport->status_response_pending)
-        : h2_h2loader_host_serial_read_status(transport->serial_connection, out_status);
+    return h2_h2loader_host_serial_read_status(
+        transport->serial_connection, out_status);
 }
 
 h2_pal_result_t h2_h2loader_cli_transport_disconnect(
     h2_h2loader_cli_transport_t *transport) {
-    transport->status_response_pending = 0;
     h2_pal_result_t serial_rc = h2_h2loader_host_serial_disconnect(
         &transport->serial_connection);
     h2_pal_result_t ble_rc = h2_h2loader_host_ble_disconnect(

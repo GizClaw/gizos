@@ -50,7 +50,6 @@ extern "C" {
 #define H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_DISCONNECT (UINT32_C(1) << 18)
 #define H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_UPGRADE (UINT32_C(1) << 19)
 #define H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_STATUS (UINT32_C(1) << 20)
-#define H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_CONNECT_TEMPORARY (UINT32_C(1) << 21)
 #define H2_H2LOADER_HOST_COMMAND_AVAILABILITY_ALL \
     (H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_APP | \
      H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_LOADER | \
@@ -67,7 +66,6 @@ extern "C" {
      H2_H2LOADER_HOST_COMMAND_AVAILABLE_STAGE_URL | \
      H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_SCAN | \
      H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_CONNECT | \
-     H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_CONNECT_TEMPORARY | \
      H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_DISCONNECT | \
      H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_STATUS)
 
@@ -230,9 +228,7 @@ typedef struct h2_h2loader_host_serial_connection_config {
     const char *ready_marker;
     /** Optional bounded delay after command delivery and before response read. */
     uint32_t post_command_delay_ms;
-    /** Optional borrowed sink for native console bytes and decoded console
-     * observed while monitoring or reading status. Status control lines are
-     * consumed by the parser and never projected as console output. */
+    /** Optional borrowed sink for bytes proven not to belong to a frame. */
     h2_h2loader_host_transport_log_fn on_log;
     void *log_user;
     /** Leave DTR and RTS untouched for the complete connection lifecycle. */
@@ -254,15 +250,6 @@ h2_pal_result_t h2_h2loader_host_serial_connect(
     const h2_h2loader_host_serial_connection_config_t *config,
     h2_h2loader_host_serial_connection_t **out_connection);
 
-/** Open within one absolute monotonic deadline shared by ready/SESSION_ACK.
- * deadline_ms uses config->time. An expired deadline returns TIMEOUT without
- * opening a port. The bound is removed before returning the live connection.
- * UART flush and session close retain their PAL cleanup bounds. */
-h2_pal_result_t h2_h2loader_host_serial_connect_until(
-    const h2_h2loader_host_serial_connection_config_t *config,
-    h2_h2loader_host_serial_connection_t **out_connection,
-    uint64_t deadline_ms);
-
 /** Close a serial connection. Repeating the call with NULL is a no-op. */
 h2_pal_result_t h2_h2loader_host_serial_disconnect(
     h2_h2loader_host_serial_connection_t **inout_connection);
@@ -271,23 +258,6 @@ h2_pal_result_t h2_h2loader_host_serial_disconnect(
 h2_pal_result_t h2_h2loader_host_serial_read_status(
     h2_h2loader_host_serial_connection_t *connection,
     h2_h2loader_host_status_t *out_status);
-
-/** Read status within one absolute monotonic deadline, including delivery,
- * post-command delay and response. deadline_ms uses the same borrowed time
- * provider as connection. An expired deadline (including 0) returns TIMEOUT
- * without sending and releases any retained response;
- * outputs are cleared on failure. Each delivery/response also retains the
- * configured command timeout. A response slice expiry returns WOULD_BLOCK and
- * sets optional out_response_pending to 1; resume with this API or disconnect.
- * The single delivered request, partial response and console projection are
- * retained without resending. Other errors leave that flag 0 and retain their
- * original code. UART flush retains its PAL cleanup bound. Legacy read_status
- * budgets are unchanged; it rejects a still-pending bounded status request. */
-h2_pal_result_t h2_h2loader_host_serial_read_status_until(
-    h2_h2loader_host_serial_connection_t *connection,
-    h2_h2loader_host_status_t *out_status,
-    uint64_t deadline_ms,
-    int *out_response_pending);
 
 /** Poll transport logs until cancellation or a physical transport failure. */
 h2_pal_result_t h2_h2loader_host_serial_monitor_logs(
@@ -314,9 +284,6 @@ typedef enum h2_h2loader_host_command {
     H2_H2LOADER_HOST_COMMAND_WIFI_STATUS = 20,
     /** `stats`, waiting for its installed-data checksum line after status. */
     H2_H2LOADER_HOST_COMMAND_DATA_CHECKSUM = 21,
-    /** Connect and await target IP without writing or clearing saved credentials.
-     * Requires its own advertised command bit; never falls back to WIFI_CONNECT. */
-    H2_H2LOADER_HOST_COMMAND_WIFI_CONNECT_TEMPORARY = 22,
 } h2_h2loader_host_command_t;
 
 /**
@@ -348,13 +315,9 @@ typedef struct h2_h2loader_host_command_request {
     const h2_h2loader_host_status_t *status;
     /** Nonzero while another managed operation owns this identity. */
     uint8_t operation_active;
-    /** Borrowed nonempty SSID for either Wi-Fi connect command, at most 32 bytes.
-     * ASCII whitespace, control characters and DEL are not wire fields. */
+    /** Borrowed bounded parameters used only by the matching typed command. */
     const char *ssid;
-    /** Borrowed nonempty password, at most 64 bytes, with the same wire bounds.
-     * Valid for the blocking call; never included in command response output. */
     const char *password;
-    /** Bounded parameters used only by the matching typed command. */
     uint32_t wifi_scan_limit;
     uint32_t wifi_scan_timeout_ms;
     const char *url;

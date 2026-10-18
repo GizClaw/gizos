@@ -10,9 +10,7 @@ h2_bazel_native_component_sources(H2_MAIN_SOURCES main)
 idf_component_register(
   SRCS ${H2_MAIN_SOURCES}
   INCLUDE_DIRS
-    "${H2_REPO_ROOT}/projects/e2e/libs/esp-device"
     "${H2_REPO_ROOT}/projects/e2e/apps/lua-link/app/include"
-    "${H2_REPO_ROOT}/libs/atomic/include"
     "${H2_REPO_ROOT}/libs/pal/include"
     "${H2_REPO_ROOT}/libs/runtime/include"
     "${H2_REPO_ROOT}/projects/h2loader/libs/h2loader/include"

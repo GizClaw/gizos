@@ -6,6 +6,12 @@ load("//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files([
+    "main/CMakeLists.txt",
+    "main/idf_component.yml",
+    "main/main.c",
+], visibility = ["//visibility:public"])
+
 exports_files(glob(["evidence/*.json"]))
 
 esp_target_task_policy(
@@ -55,7 +61,6 @@ firmware_lib_component(
 firmware_native_component(
     name = "launcher",
     srcs = ["main/main.c"],
-    native_srcs = ["//projects/e2e/libs/pal-display-device:esp_main.c"],
     component_directory = "projects/e2e/targets/h2loader_tar_zlib/pal-display/amoled/main",
     component_name = "main",
     data = [

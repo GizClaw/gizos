@@ -11,4 +11,5 @@ cc_library(
     copts = H2_WARNING_COPTS,
     includes = ["include"],
     deps = [":tasks", "//projects/e2e/apps/pal-wifi/app:pal_wifi_e2e"],
+    visibility = ["//visibility:public"],
 )

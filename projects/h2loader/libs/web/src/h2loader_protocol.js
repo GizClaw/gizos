@@ -23,8 +23,7 @@ export const H2LoaderCommands = Object.freeze({
   WIFI_DISCONNECT: 1 << 18,
   REBOOT_UPGRADE: 1 << 19,
   WIFI_STATUS: 1 << 20,
-  WIFI_CONNECT_TEMPORARY: 1 << 21,
-  ALL: 0x003f3f3f,
+  ALL: 0x001f3f3f,
 });
 
 export function commandAvailable(commandAvailability, command) {

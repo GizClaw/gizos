@@ -20,17 +20,6 @@ static const char *ids[H2_PAL_IPV6_EXTRA_CASES] = {
     "netif-ipv6-udp-bind",       "netif-ipv6-tcp-bind",
     "dns-aaaa-ipv6-wire"};
 
-static const h2_pal_log_api_t *report_log(const h2_pal_ipv6_config_t *config) {
-  return config->report_log ? config->report_log : config->transport.runtime->log;
-}
-
-static int report_line(const h2_pal_log_api_t *log, const char *line,
-                        size_t capacity, int length) {
-  if (length < 0 || (size_t)length >= capacity)
-    return H2_PAL_ERR_TRUNCATED;
-  return h2_pal_log_write(log, H2_PAL_LOG_INFO, "pal-ipv6", line);
-}
-
 static int contains(const h2_pal_net_addr_list_t *list,
                     h2_pal_net_family_t family) {
   if (!list->count || list->count > H2_PAL_NET_ADDR_MAX)
@@ -155,9 +144,6 @@ typedef struct webrtc_fixture {
   h2_webrtc_fixture_client_t client;
   unsigned ipv6_pairs;
   const h2_pal_log_api_t *log;
-  /* WebRTC calls report/close_remote synchronously on the run caller. The
-   * borrowed Log sink separately serializes any concurrent console writers. */
-  int report_error;
 } webrtc_fixture_t;
 static int webrtc_close(void *user) {
   webrtc_fixture_t *fixture = user;
@@ -179,33 +165,24 @@ static int webrtc_close(void *user) {
       strstr(body, "\"local_family\":6") && strstr(body, "\"remote_family\":6"))
     ++fixture->ipv6_pairs;
   char line[120];
-  int written = snprintf(line, sizeof(line),
+  snprintf(line, sizeof(line),
            "H2_PAL_IPV6_ICE_WITNESS status=%d rc=%d local6=%d remote6=%d",
            response.status_code, rc, strstr(body, "\"local_family\":6") != NULL,
            strstr(body, "\"remote_family\":6") != NULL);
-  int delivered = report_line(fixture->log, line, sizeof(line), written);
-  if (fixture->report_error == H2_PAL_OK)
-    fixture->report_error = delivered;
+  h2_pal_log_write(fixture->log, H2_PAL_LOG_INFO, "pal-ipv6", line);
   h2_pal_http_response_free(client->http, &response);
   return h2_webrtc_fixture_close(&fixture->client);
 }
 static void webrtc_report(void *user,
                           const h2_pal_webrtc_e2e_case_result_t *item) {
-  webrtc_fixture_t *fixture = user;
-  if (!item || !item->id || !item->id[0]) {
-    if (fixture->report_error == H2_PAL_OK)
-      fixture->report_error = H2_PAL_ERR_FORMAT;
-    return;
-  }
+  const h2_runtime_t *runtime = user;
   char line[256];
-  int written = snprintf(line, sizeof(line),
+  snprintf(line, sizeof(line),
            "H2_PAL_IPV6_WEBRTC_CASE id=%s passed=%d blocked=%d detail=%d "
            "line=%u elapsed_ms=%llu",
            item->id, item->passed, item->blocked, item->detail, item->line,
            (unsigned long long)item->elapsed_ms);
-  int delivered = report_line(fixture->log, line, sizeof(line), written);
-  if (fixture->report_error == H2_PAL_OK)
-    fixture->report_error = delivered;
+  h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-ipv6", line);
 }
 static int webrtc(const h2_pal_ipv6_config_t *config) {
   if (!config->offer_url || !config->stun_url)
@@ -222,7 +199,7 @@ static int webrtc(const h2_pal_ipv6_config_t *config) {
   if (rc != H2_PAL_OK)
     return rc;
   webrtc_fixture_t witness = {
-      .client = {.http = &api, .offer_url = config->offer_url}, .log = report_log(config)};
+      .client = {.http = &api, .offer_url = config->offer_url}, .log = runtime->log};
   h2_pal_webrtc_e2e_config_t fixture = {.runtime = runtime,
                                         .stun_url = config->stun_url,
                                         .exchange_offer =
@@ -230,7 +207,7 @@ static int webrtc(const h2_pal_ipv6_config_t *config) {
                                         .close_remote = webrtc_close,
                                         .fixture_user = &witness,
                                         .report = webrtc_report,
-                                        .report_user = &witness,
+                                        .report_user = (void *)runtime,
                                         .connection_timeout_ms = 10000u};
   h2_pal_webrtc_e2e_result_t result;
   rc = h2_pal_webrtc_e2e_run(&fixture, &result);
@@ -242,7 +219,7 @@ static int webrtc(const h2_pal_ipv6_config_t *config) {
   if (rc == H2_PAL_OK && witness.ipv6_pairs == 0u)
     rc = H2_PAL_ERR_FORMAT;
   h2_corehttp_destroy(http);
-  return rc == H2_PAL_OK ? witness.report_error : rc;
+  return rc;
 }
 typedef struct dtls_endpoint {
   const h2_pal_net_api_t *net;
@@ -278,7 +255,6 @@ static int dtls(const h2_pal_ipv6_config_t *config, unsigned mode) {
   uint8_t fingerprints[2][H2_PAL_DTLS_SHA256_FINGERPRINT_SIZE];
   int complete[2] = {0, 0};
   int rc = H2_PAL_OK;
-  int report_error = H2_PAL_OK;
   uint64_t now = 0u;
   for (unsigned i = 0u; i < 2u; ++i) {
     rc = h2_pal_net_udp_open_bound(runtime->net, H2_PAL_NET_FAMILY_IPV6, 0u,
@@ -369,14 +345,12 @@ static int dtls(const h2_pal_ipv6_config_t *config, unsigned mode) {
       if (size > 0 || complete[i] != previous_complete ||
           (rc != H2_PAL_OK && rc != H2_PAL_ERR_WOULD_BLOCK)) {
         char line[180];
-        int written = snprintf(line, sizeof(line),
+        snprintf(line, sizeof(line),
                  "H2_PAL_IPV6_DTLS_STEP mode=%u side=%u bytes=%d rc=%d "
                  "complete=%d tx=%u rx=%u",
                  mode, i, size, rc, complete[i], endpoints[i].sent,
                  endpoints[i].received);
-        int delivered = report_line(report_log(config), line, sizeof(line), written);
-        if (report_error == H2_PAL_OK)
-          report_error = delivered;
+        h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-ipv6", line);
       }
       if (rc != H2_PAL_OK && rc != H2_PAL_ERR_WOULD_BLOCK)
         goto verdict;
@@ -406,14 +380,12 @@ static int dtls(const h2_pal_ipv6_config_t *config, unsigned mode) {
   goto cleanup;
 verdict: {
   char line[180];
-  int written = snprintf(line, sizeof(line),
+  snprintf(line, sizeof(line),
            "H2_PAL_IPV6_DTLS_VERDICT mode=%u rc=%d c0=%d c1=%d tx0=%u tx1=%u "
            "rx0=%u rx1=%u",
            mode, rc, complete[0], complete[1], endpoints[0].sent,
            endpoints[1].sent, endpoints[0].received, endpoints[1].received);
-  int delivered = report_line(report_log(config), line, sizeof(line), written);
-  if (report_error == H2_PAL_OK)
-    report_error = delivered;
+  h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-ipv6", line);
 }
   if (mode == 1u)
     rc = rc == H2_PAL_ERR_TLS_VERIFY && !endpoints[0].plaintext_len &&
@@ -426,7 +398,7 @@ cleanup:
       h2_pal_dtls_session_destroy(api, &sessions[i]);
     h2_pal_net_close(runtime->net, endpoints[i].socket);
   }
-  return rc == H2_PAL_OK ? report_error : rc;
+  return rc;
 }
 
 static int bound_interface(const h2_pal_ipv6_config_t *config, int tcp) {

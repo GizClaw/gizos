@@ -1,5 +1,4 @@
 #include "h2_esp_board.h"
-#include "h2_esp_board_config.h"
 #include "h2_esp_h2loader_runtime.h"
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_platform_core.h"
@@ -7,11 +6,9 @@
 #include "h2_coremqtt.h"
 #include "device_runner.h"
 #include "ledger_console.h"
-#include "network_provision.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "psa/crypto.h"
-#include "sdkconfig.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -60,13 +57,7 @@ static int ca_digest(void *user, const uint8_t *bytes, size_t length, uint8_t di
 static void run(void *user) {
     (void)user;
     vTaskDelay(pdMS_TO_TICKS(5000u));
-    int rc = h2_mqtt_esp_console_record(&console,
-        "H2_PAL_MQTT_PLATFORM_BOOT board=" H2_ESP_BOARD_NAME);
-    if (rc != H2_PAL_OK) fail("platform-boot", rc);
-    const h2_pal_wifi_sta_config_t *fixture = h2_esp_e2e_public_wifi_fixture();
-    rc = h2_esp_e2e_provision_wifi(runtime->wifi_sta, runtime->wifi_ap,
-        runtime->wifi_settings, fixture, 20000u, true, &console);
-    if (rc != H2_PAL_OK) fail("wifi-provision", rc);
+    int rc;
     for (;;) {
         rc = h2_mqtt_device_prepare(runtime);
         if (rc == H2_PAL_OK) break;
@@ -108,6 +99,8 @@ static void run(void *user) {
     hold();
 }
 void app_main(void) {
+    puts("H2_PAL_MQTT_PLATFORM_BOOT board=devkit");
+    fflush(stdout);
     int rc = h2_esp_target_task_policy_install();
     if (rc != H2_PAL_OK) fail("task-policy", rc);
     h2_runtime_config_t config = {0};
@@ -141,11 +134,7 @@ void app_main(void) {
         fail("runtime-or-commands", rc);
     }
     board_log=runtime->log;
-#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
     console.usb=h2_esp_platform_usb_jtag_io_stream_api();
-#else
-    console.uart=h2_esp_platform_uart_io_stream_api();
-#endif
     console.timeout_ms=5000u;
     runtime->log=&ledger_log_api;
     printf("H2_PAL_MQTT_PROVIDER policy=coremqtt allocator=psram incoming=8 outgoing=8 owner_bytes=%zu\n", owner_bytes);

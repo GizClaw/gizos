@@ -10,9 +10,7 @@
 
 image 使用 `boards/amoled/esp32s3/layouts/h2loader/sdkconfig.h2loader.defaults` 中的 Wi-Fi/lwIP throughput profile：静态 RX buffer 6、动态 RX 32、静态 TX buffer 8、PSRAM TX cache 16、RX Block Ack 窗口 12、tcpip 与 UDP mailbox 32、`LWIP_IRAM_OPTIMIZATION`。这是 ESP-IDF "minimum" 与 "default" rank 之间的有界取值：静态 RX 与 TX buffer 每个约 1.6 KiB 内部 DMA 内存并在 Wi-Fi init 时分配，动态 RX 与 TX cache 通过 `SPIRAM_TRY_ALLOCATE_WIFI_LWIP` 落在 PSRAM；该选项同时要求 TX buffer 为 static 类型，因此不能改用 dynamic TX。board 自身的 `sdkconfig.defaults` 保持不变。
 
-image 不携带 Wi-Fi credential。AMOLED 与 DevKit launcher 在矩阵开始前优先使用当前 STA 的真实 `GOT_IP`、有效且非零的 IPv4；尚未就绪时才读取 Runtime `wifi_settings` 并通过不保存 credential 的 `wifi_sta.connect` 重连。没有保存配置或联网失败时，App 输出 `stage=wifi status=SETUP_WAIT cases_started=0 rc=... retry_ms=3000` 并保持 H2Loader command-responsive。此时可以在同一 App boot 执行 `wifi connect <ssid> <password> --temporary`，取得 IPv4 后继续，已有保存配置保持不变；普通 `wifi connect` 仍按其合同保存配置。等待与重试只发生在矩阵开始前，工作负载开始后不重跑失败 case 或整个矩阵。
-
-取得 IPv4 后 App 用 `H2_IPERF_POWER_SAVE` 选择的 Wi-Fi 省电策略：`0` 关闭 modem sleep（默认，用于吞吐与延迟基线），`1` 为 DTIM sleep，`2` 为 listen-interval sleep。`H2_IPERF_BLE_ADV=0` 会在矩阵开始前暂停 H2Loader App command service 的 BLE 广播（默认 `1` 保持广播）：AMOLED 的 BLE/Wi-Fi 共存会让 Wi-Fi 在广播期间分时休眠，对比两种取值可以量化共存对吞吐的影响；暂停期间只能通过串口管理设备。
+image 不携带 Wi-Fi credential。先在 Loader 或任一 App 中执行 `wifi connect`，设备保存 STA 配置后 App 通过 Runtime `wifi_settings` 重连；没有保存配置时 App 停在 `stage=wifi_settings status=ERROR` 并保持 H2Loader command-responsive。取得 IP 后 App 用 `H2_IPERF_POWER_SAVE` 选择的 Wi-Fi 省电策略：`0` 关闭 modem sleep（默认，用于吞吐与延迟基线），`1` 为 DTIM sleep，`2` 为 listen-interval sleep。 `H2_IPERF_BLE_ADV=0` 会在矩阵开始前暂停 H2Loader App command service 的 BLE 广播（默认 `1` 保持广播）：AMOLED 的 BLE/Wi-Fi 共存会让 Wi-Fi 在广播期间分时休眠，对比两种取值可以量化共存对吞吐的影响；暂停期间只能通过串口管理设备。
 
 `H2_IPERF_ROLE_SERVER=1` 让镜像改为在 5201 端口运行 PAL iperf server（SCTP 封装端口 9899），host 用官方 `iperf3 -c <板子 IP>` 逐个方向驱动；这是分离设备收发路径与 host 工具的最直接方式。App entry task 在两种角色下都把自己提升到优先级 9，避免被 H2Loader 命令服务的串口轮询饿死。
 

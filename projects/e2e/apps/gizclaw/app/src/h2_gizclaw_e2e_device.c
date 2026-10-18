@@ -1,7 +1,6 @@
 #include "h2_gizclaw_api_key.h"
 #include "h2_gizclaw_e2e_catalog.h"
 #include "h2_gizclaw_e2e_debug.h"
-#include "h2_gizclaw_e2e_ble_binding.h"
 #include "h2_gizclaw_telemetry.h"
 #include "h2_yyjson_json.h"
 #include "h2_gizclaw_e2e_device_http.h"
@@ -96,7 +95,6 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
       rc = H2_PAL_ERR_INVALID_STATE;                                           \
   } while (0)
   CHECK(h2_gizclaw_e2e_run_debug(fixture));
-  CHECK(h2_gizclaw_e2e_run_ble_binding(fixture));
   CHECK(h2_gizclaw_player_play(
       service, h2_gizclaw_e2e_str(fixture->config->device_audio_url)));
   h2_gizclaw_e2e_evidence("h2_gizclaw_player_play", "local-player", rc);

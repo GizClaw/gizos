@@ -11,10 +11,11 @@ load("//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
-    "main/main.c",
-    "sdkconfig.pal-mqtt.defaults",
+    "main/CMakeLists.txt",
+    "main/idf_component.yml",
     "main/ledger_console.h",
-])
+    "main/main.c",
+], visibility = ["//visibility:public"])
 
 esp_target_task_policy(
     name = "task_policy",
@@ -61,11 +62,7 @@ firmware_lib_component(
 firmware_native_component(
     name = "launcher",
     srcs = ["main/main.c"],
-    hdrs = [
-        "main/ledger_console.h",
-        "//projects/e2e/libs/esp-device:network_provision.h",
-        "//projects/e2e/libs/esp-device:result_console.h",
-    ],
+    hdrs = ["main/ledger_console.h"],
     component_directory = "projects/e2e/targets/h2loader_tar_zlib/pal-mqtt/devkit/main",
     component_name = "main",
     data = [
@@ -97,7 +94,6 @@ h2loader_esp_idf_firmware(
     ],
     board = "devkit",
     console = "usb",
-    cmake_variables = ["H2_E2E_WIFI_FIXTURE"],
     graph = [":launcher"],
     project = "CMakeLists.txt",
     project_name = "h2_pal_mqtt_e2e",
@@ -132,11 +128,7 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [
-        "//libs/atomic/providers/c11",
-        "//projects/e2e/libs/esp-device:result_console",
-        "//projects/e2e/libs/pal-mqtt-device:runner",
-    ],
+    deps = ["//projects/e2e/libs/pal-mqtt-device:runner"],
 )
 
 py_test(
