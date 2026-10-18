@@ -82,6 +82,11 @@ void h2_pal_net_tls_device_report(const h2_runtime_t *runtime,
 }
 int h2_pal_net_tls_device_run(h2_runtime_t *runtime,
                               h2_net_tls_result_t *result) {
+  return h2_pal_net_tls_device_run_with_wifi(runtime, NULL, result);
+}
+
+int h2_pal_net_tls_device_run_with_wifi(h2_runtime_t *runtime,
+    const h2_pal_wifi_sta_config_t *wifi, h2_net_tls_result_t *result) {
   if (!runtime || !result)
     return H2_PAL_ERR_INVALID_ARG;
   memset(result, 0, sizeof(*result));
@@ -89,7 +94,7 @@ int h2_pal_net_tls_device_run(h2_runtime_t *runtime,
       !H2_PAL_NET_TLS_PORT || H2_PAL_NET_TLS_PORT > 65535u ||
       !H2_PAL_NET_TLS_EPOCH_MS)
     return H2_PAL_ERR_INVALID_ARG;
-  int rc = h2_net_tls_device_prepare_network(runtime);
+  int rc = h2_net_tls_device_prepare_network_with_wifi(runtime, wifi);
   if (rc != H2_PAL_OK)
     return rc;
   rc = h2_pal_time_set_wall_ms(runtime->time, H2_PAL_NET_TLS_EPOCH_MS);

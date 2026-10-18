@@ -5,6 +5,7 @@
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_h2loader_runtime.h"
 #include "h2_esp_target_task_policy.h"
+#include "h2_e2e_fixture_wifi.h"
 #include "h2_pal_net_tls_device.h"
 #include <stdio.h>
 
@@ -31,7 +32,7 @@ static void run(void *user) {
   if (h2_pal_time_get_monotonic_ms(runtime->time, &setup_start) != H2_PAL_OK)
     fail("clock", H2_PAL_ERR_IO);
   for (;;) {
-    rc = h2_pal_net_tls_device_run(runtime, &result);
+    rc = h2_pal_net_tls_device_run_with_wifi(runtime, h2_e2e_fixture_wifi(), &result);
     if (result.passed + result.failed + result.blocked + result.unsupported +
             result.not_assessed !=
         0u)

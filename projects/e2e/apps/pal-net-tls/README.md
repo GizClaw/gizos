@@ -20,6 +20,8 @@ macOS uses native POSIX sockets and WolfSSL. iOS Simulator and Android Emulator 
 
 ESP32-S3 and BK7258 consume the Board Net provider with mbedTLS and borrow previously saved Wi-Fi settings. The App does not print or package a Wi-Fi password; lower-level boot logs may contain saved configuration, so raw logs remain local and are redacted before assembly. The committed structured receipt retains parsed observations and local-source hashes. The build embeds only run-local public fixture addresses, public CA certificates, and the public session identifier. A finite setup budget fails without confirming the App. Successful confirmation requires every mandatory case and App cleanup. Qualification requires managed install and an independent normal App boot, with original Loader/P1 retained, empty Stage and unchanged actual coredump bytes.
 
+That saved-network setup remains the default. The ESP Native entry also accepts an explicit public Wi-Fi fixture through the shared `fixture-wifi` inputs: both `H2_E2E_WIFI_SSID` and `H2_E2E_WIFI_PASSWORD` must be supplied together in the final entry's `cmake_definitions`. Only this explicitly selected public test configuration is attempted; it uses the existing non-saving PAL connect and unchanged setup budgets, without writing PAL saved settings or the Runtime network collection. Operator credentials are not imported from the environment. The original portable cases and peer assertions are unchanged.
+
 Browser AppHost currently supplies canonical unsupported raw Net: standard Fetch/WebRTC does not expose raw TCP/UDP or TLS wrapping. A real C pthread Worker invokes all 21 current unsupported operations and records this diagnostic boundary plus AppHost teardown. It never emits raw TLS PASS or a core qualification. The assessment explicitly skips its 37 mandatory and two optional raw Net/TLS cases after validating those actual unsupported results, Worker identity and successful AppHost teardown. Browser-local semantics are retained: no remote-network relay is introduced. Fetch and WebRTC are qualified by their own Apps, not counted as raw Net/TLS support.
 
 ## Commands
@@ -56,6 +58,8 @@ To expose a fixture to device Wi-Fi, explicitly choose the local bind/advertised
 The ESP entry uses `H2_BAZEL_BOARD` from the generated native manifest as its report identity through `H2_PAL_NET_TLS_BOARD`. Existing DevKit targets report `devkit`; private consumers report their assembled board identity while reusing the same App and assertions.
 
 This work's integration order is Wi-Fi qualification first, then Net/TLS. The runner author must verify the Wi-Fi final source/artifact receipts, cleanup/configuration restoration, and hardware release before starting these integration commands. Builds and deterministic fixture/App self-checks may run while Wi-Fi qualification proceeds.
+
+The recorded Wi-Fi integration gate in `qualification.json` retains that historical source/artifact qualification. A current board run is assessed by its own fresh Net/TLS cases, peer observations, actual IPv4 setup and restoration evidence; a new per-board Wi-Fi qualification receipt is not an input to the Net/TLS verifier.
 
 ## Evidence
 

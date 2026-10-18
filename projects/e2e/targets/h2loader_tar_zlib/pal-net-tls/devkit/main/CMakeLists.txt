@@ -33,3 +33,5 @@ target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu11 -Wall -Wextra -Werror
 if(DEFINED H2_BAZEL_BOARD)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE H2_PAL_NET_TLS_BOARD="${H2_BAZEL_BOARD}")
 endif()
+
+include("${H2_REPO_ROOT}/projects/e2e/targets/h2loader_tar_zlib/fixture-wifi/fixture_wifi.cmake")
