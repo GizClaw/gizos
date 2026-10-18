@@ -57,6 +57,8 @@ To expose a fixture to device Wi-Fi, explicitly choose the local bind/advertised
 
 The ESP entry uses `H2_BAZEL_BOARD` from the generated native manifest as its report identity through `H2_PAL_NET_TLS_BOARD`. Existing DevKit targets report `devkit`; private consumers report their assembled board identity while reusing the same App and assertions.
 
+The ESP entry emits and flushes its one-time BOOT marker after the existing five-second serial reconnection window, before starting network setup and the executing case ledger.
+
 This work's integration order is Wi-Fi qualification first, then Net/TLS. The runner author must verify the Wi-Fi final source/artifact receipts, cleanup/configuration restoration, and hardware release before starting these integration commands. Builds and deterministic fixture/App self-checks may run while Wi-Fi qualification proceeds.
 
 The recorded Wi-Fi integration gate in `qualification.json` retains that historical source/artifact qualification. A current board run is assessed by its own fresh Net/TLS cases, peer observations, actual IPv4 setup and restoration evidence; a new per-board Wi-Fi qualification receipt is not an input to the Net/TLS verifier.

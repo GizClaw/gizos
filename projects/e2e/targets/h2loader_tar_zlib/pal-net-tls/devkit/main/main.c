@@ -27,6 +27,9 @@ static void fail(const char *stage, int rc) {
 static void run(void *user) {
   (void)user;
   vTaskDelay(pdMS_TO_TICKS(5000u));
+  printf("H2_PAL_NET_TLS_BOOT board=%s version=%s\n",
+         H2_PAL_NET_TLS_BOARD, esp_app_get_description()->version);
+  fflush(stdout);
   int rc;
   uint64_t setup_start = 0u;
   if (h2_pal_time_get_monotonic_ms(runtime->time, &setup_start) != H2_PAL_OK)
@@ -79,8 +82,6 @@ void app_main(void) {
   rc = h2_runtime_init(&config, &runtime);
   if (rc != H2_PAL_OK)
     fail("runtime", rc);
-  printf("H2_PAL_NET_TLS_BOOT board=%s version=%s\n",
-         H2_PAL_NET_TLS_BOARD, esp_app_get_description()->version);
   const h2_pal_task_options_t options = {
       .name = h2_pal_net_tls_device_runner_task_name};
   h2_pal_task_t *runner = NULL;
