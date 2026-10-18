@@ -12,6 +12,22 @@
 #include <string.h>
 
 static h2_runtime_t *runtime;
+static const h2_pal_log_api_t *board_log;
+
+static int ledger_log(void *user, h2_pal_log_level_t level, const char *scope,
+                      const char *message) {
+  (void)user;
+  if (scope != NULL && strncmp(scope, "iperf", 5u) == 0) {
+    if (message == NULL)
+      return H2_PAL_ERR_INVALID_ARG;
+    int written = printf("%s\n", message);
+    return written < 0 || fflush(stdout) != 0 ? H2_PAL_ERR_IO : H2_PAL_OK;
+  }
+  return h2_pal_log_write(board_log, level, scope, message);
+}
+static const h2_pal_log_vtable_t ledger_vtable = {.write = ledger_log};
+static const h2_pal_log_api_t ledger_api = {.vtable = &ledger_vtable};
+
 static void hold(void) {
   for (;;)
     vTaskDelay(pdMS_TO_TICKS(1000u));
@@ -56,6 +72,9 @@ void app_main(void) {
   if (rc != H2_PAL_OK)
     fail("board", rc);
   config.mem = h2_esp_platform_psram_allocator();
+  board_log = config.log;
+  if (board_log != NULL)
+    config.log = &ledger_api;
   const h2_esp_h2loader_app_commands_config_t commands = {
       .active_name = "iperf-client",
       .hardware_capabilities =

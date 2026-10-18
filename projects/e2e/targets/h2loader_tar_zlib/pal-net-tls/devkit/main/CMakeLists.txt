@@ -30,3 +30,6 @@ idf_component_register(
     h2_pal_core)
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu11 -Wall -Wextra -Werror)
+if(DEFINED H2_BAZEL_BOARD)
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE H2_PAL_NET_TLS_BOARD="${H2_BAZEL_BOARD}")
+endif()

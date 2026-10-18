@@ -9,9 +9,17 @@
 
 enum { HEALTHY, OPEN_FAILURE, STREAM_FAILURE, HANDSHAKE_TIMEOUT, BAD_STATUS, CLOSE_FAILURE, WRONG_REBOOT_ROLE };
 enum { CLI_SCAN, CLI_STATUS, CLI_MONITOR, CLI_REBOOT };
+static const char mixed_boot[] = "H2_DISPLAY_BOOT version=test\r\n";
+static const char mixed_raw[] = "H2_DISPLAY_CASE first=PASS\r\n";
+static const char mixed_tail[] = "H2_LOADER_STATUX diagnostic\r\nH2_DISPLAY_READY rc=0 confirm=0\r\n";
+static const char mixed_expected[] = "H2_DISPLAY_BOOT version=test\r\n"
+    "H2_DISPLAY_CASE first=PASS\r\n"
+    "H2_LOADER_STATUX diagnostic\r\nH2_DISPLAY_READY rc=0 confirm=0\r\n";
 typedef struct cli_fixture {
     int mode;
     const char *status_diagnostic;
+    size_t mixed_read_size, status_prefix_split;
+    int mixed_status_output;
     unsigned opens, streams, closes, controls, scans, snapshots_closed, requests;
     unsigned reboots, sleeps, cancel_after_opens, cancel_closes;
     uint32_t modem_lines;
@@ -49,6 +57,8 @@ static int sleep_ms(void *user, uint32_t duration) {
 static const h2_pal_time_vtable_t time_vtable = {.get_monotonic_ms=clock_ms,.sleep_ms=sleep_ms};
 static int cancelled(void *user) {
     cli_fixture_t *f=user;
+    if (f->mixed_status_output && f->output_len<sizeof(mixed_expected)-1u && f->now<20000u)
+        return 0;
     if (f->cancel_after_opens!=0u && f->opens>=f->cancel_after_opens) {
         f->cancel_closes=f->closes; return 1;
     }
@@ -91,7 +101,18 @@ static void emit_status(cli_fixture_t *f) {
         loader?"loader":"app",sha,loader?1u:2u,loader?1u:2u,loader?"loader":"auto",sha,sha,sha,sha);
     assert(len>0 && (size_t)len<sizeof(line));
     if (f->mode==BAD_STATUS) strcpy(line,"H2_LOADER_STATUS invalid=1\n");
-    assert(h2_iostreamikcp_write(f->peer,(const uint8_t *)line,strlen(line))==H2_PAL_OK);
+    if (f->mixed_status_output) {
+        size_t end = strlen(line);
+        assert(end + 1u < sizeof(line));
+        line[end - 1u]='\r'; line[end]='\n'; line[end + 1u]='\0';
+    }
+    if (f->status_prefix_split != 0u) {
+        assert(f->status_prefix_split < strlen(line));
+        assert(h2_iostreamikcp_write(f->peer,(const uint8_t *)line,f->status_prefix_split)==H2_PAL_OK);
+        assert(h2_iostreamikcp_flush(f->peer)==H2_PAL_OK);
+    }
+    assert(h2_iostreamikcp_write(f->peer,(const uint8_t *)line+f->status_prefix_split,
+                               strlen(line)-f->status_prefix_split)==H2_PAL_OK);
 }
 static int peer_frame(void *user, const h2_iostreamikcp_frame_t *frame) {
     cli_fixture_t *f=user;
@@ -122,7 +143,15 @@ static int peer_frame(void *user, const h2_iostreamikcp_frame_t *frame) {
             if (f->status_diagnostic != NULL)
                 assert(h2_iostreamikcp_write(f->peer, (const uint8_t *)f->status_diagnostic,
                                            strlen(f->status_diagnostic)) == H2_PAL_OK);
+            if (f->mixed_status_output) {
+                size_t written = 0u;
+                assert(h2_iostreamikcp_flush(f->peer)==H2_PAL_OK);
+                assert(peer_output(f,mixed_raw,sizeof(mixed_raw)-1u,&written,0u)==H2_PAL_OK);
+                assert(written==sizeof(mixed_raw)-1u);
+            }
             emit_status(f);
+            if (f->mixed_status_output)
+                assert(h2_iostreamikcp_write(f->peer,(const uint8_t *)mixed_tail,sizeof(mixed_tail)-1u)==H2_PAL_OK);
         } else {
             const char accepted[]="H2_LOADER_REBOOT target=loader result=accepted\n"
                 "H2_LOADER_REBOOT_FINAL target=loader result=OK code=0\n";
@@ -138,10 +167,13 @@ static int uart_write(void *user, const void *data, size_t len, size_t *written,
     return h2_iostreamikcp_filter_input(&f->filter,data,len,peer_frame,f);
 }
 static int uart_read(void *user, void *data, size_t cap, size_t *read, uint32_t timeout) {
-    cli_fixture_t *f=user; f->now+=timeout!=0u?timeout:1u;
+    cli_fixture_t *f=user;
+    /* Splitting already queued bytes does not consume a fresh I/O deadline. */
+    f->now+=f->mixed_status_output && f->input_offset<f->input_len?0u:timeout!=0u?timeout:1u;
     *read=f->input_len-f->input_offset;
     if (*read>cap) *read=cap;
-    if (*read>67u) *read=67u;
+    const size_t chunk=f->mixed_read_size!=0u?f->mixed_read_size:67u;
+    if (*read>chunk) *read=chunk;
     if (*read==0u) return H2_PAL_ERR_TIMEOUT;
     memcpy(data,f->input+f->input_offset,*read); f->input_offset+=*read; return H2_PAL_OK;
 }
@@ -190,9 +222,13 @@ static const h2_pal_serial_host_vtable_t serial_vtable = {.scan=scan,.snapshot_c
     .snapshot_get=port,.snapshot_destroy=snapshot_close,.open=open_port,.session_stream=stream,
     .set_control_lines=set_lines,.close=close_port};
 
-static void run_case_with_diagnostic(int command, int mode, const char *diagnostic) {
+static void run_case_with_output(int command, int mode, const char *diagnostic,
+                                size_t mixed_read_size, size_t status_prefix_split) {
     cli_fixture_t f={.mode=mode,.modem_lines=H2_PAL_SERIAL_HOST_CONTROL_DTR|H2_PAL_SERIAL_HOST_CONTROL_RTS};
-    f.status_diagnostic=diagnostic;
+    f.mixed_status_output=mixed_read_size!=0u;
+    f.mixed_read_size=mixed_read_size;
+    f.status_prefix_split=status_prefix_split;
+    f.status_diagnostic=f.mixed_status_output?mixed_boot:diagnostic;
     f.cancel_after_opens=command==CLI_MONITOR?1u:command==CLI_REBOOT?2u:0u;
     f.mem=(h2_pal_mem_api_t){.user=&f,.vtable=&mem_vtable};
     f.uart=(h2_pal_uart_io_stream_api_t){.user=&f,.vtable=&uart_vtable};
@@ -239,6 +275,10 @@ static void run_case_with_diagnostic(int command, int mode, const char *diagnost
     if (diagnostic != NULL) assert(f.output_len==strlen(diagnostic));
 }
 
+static void run_case_with_diagnostic(int command, int mode, const char *diagnostic) {
+    run_case_with_output(command,mode,diagnostic,0u,0u);
+}
+
 static void run_case(int command, int mode) {
     run_case_with_diagnostic(command, mode, NULL);
 }
@@ -252,5 +292,9 @@ int main(void) {
     run_case(CLI_REBOOT,HEALTHY);
     run_case(CLI_REBOOT,WRONG_REBOOT_ROLE);
     run_case_with_diagnostic(CLI_MONITOR, HEALTHY, "H2_TEST_STATUS_DIAGNOSTIC received\n");
+    const size_t chunks[]={1024u,67u,1u};
+    for (size_t chunk=0u;chunk<sizeof(chunks)/sizeof(chunks[0]);++chunk)
+        for (size_t split=0u;split<sizeof("H2_LOADER_STATUS ")-1u;++split)
+            run_case_with_output(CLI_MONITOR,HEALTHY,mixed_expected,chunks[chunk],split);
     return 0;
 }

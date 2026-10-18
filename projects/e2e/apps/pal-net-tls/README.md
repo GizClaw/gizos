@@ -53,6 +53,8 @@ Bazel builds/packages the consumer and calls the shared mobile Python engine dir
 
 To expose a fixture to device Wi-Fi, explicitly choose the local bind/advertised LAN address with `bazel run --config=macos_arm64 //projects/e2e/libs/pal-net-tls-fixture:serve -- --bind 0.0.0.0 --advertise <LAN-IPv4> --output <temporary-dir>`; for a board DNS view pass `--dns-expectation <independent-observation.json>` containing hostname, expected IPv4, resolver, query method and actual UTC collection time. Generated `config.json` contains public build inputs named `H2_PAL_NET_TLS_HOST`, `PORT`, `SESSION`, `CA_HEX`, `WRONG_CA_HEX`, `DNS_HOST`, `DNS_IPV4`, and `EPOCH_MS`. Device targets are `//projects/e2e/targets/h2loader_tar_zlib/pal-net-tls/{devkit,bk7258_v3_202405}:package`. Fresh independent peer arm ports prevent a stale rejection receipt from satisfying a later run.
 
+The ESP entry uses `H2_BAZEL_BOARD` from the generated native manifest as its report identity through `H2_PAL_NET_TLS_BOARD`. Existing DevKit targets report `devkit`; private consumers report their assembled board identity while reusing the same App and assertions.
+
 This work's integration order is Wi-Fi qualification first, then Net/TLS. The runner author must verify the Wi-Fi final source/artifact receipts, cleanup/configuration restoration, and hardware release before starting these integration commands. Builds and deterministic fixture/App self-checks may run while Wi-Fi qualification proceeds.
 
 ## Evidence
