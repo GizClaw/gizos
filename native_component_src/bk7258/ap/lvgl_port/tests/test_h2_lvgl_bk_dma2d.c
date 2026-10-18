@@ -6,6 +6,7 @@
 #include <os/os.h>
 
 #include <assert.h>
+#include <setjmp.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -24,6 +25,19 @@ static int require_real_deinit;
 static int fail_semaphore, fail_driver, fail_registration, fail_enable;
 static int fail_fill, fail_start, fail_timeout, fail_isr, fail_busy;
 static int fail_driver_deinit, fail_semaphore_deinit;
+static int fail_stop, fail_irq_disable, fail_reset_busy;
+static jmp_buf assertion_context;
+static int assertion_expected, assertion_seen;
+void test_sdk_assert(void);
+void test_sdk_assert(void) {
+    assert(assertion_expected);
+    assertion_seen = 1;
+    longjmp(assertion_context, 1);
+}
+void rtos_delay_milliseconds(unsigned milliseconds) {
+    (void)milliseconds;
+    assert(!"Unquiesced DMA must enter the SDK assertion before sleeping");
+}
 
 static void event(char value) {
     if (trace_length < sizeof(trace) - 1) trace[trace_length++] = value;
@@ -109,11 +123,11 @@ int bk_dma2d_register_int_callback_isr(int id, dma2d_isr_t callback, void *user)
 }
 int bk_dma2d_int_enable(unsigned mask, bool enable) {
     assert(mask == (DMA2D_CFG_ERROR | DMA2D_TRANS_ERROR | DMA2D_TRANS_COMPLETE));
-    if (enable && fail_enable) return BK_FAIL;
+    if ((enable && fail_enable) || (!enable && fail_irq_disable)) return BK_FAIL;
     irq_enabled = enable;
     return BK_OK;
 }
-int bk_dma2d_stop_transfer(void) { busy = 0; event('T'); return BK_OK; }
+int bk_dma2d_stop_transfer(void) { event('T'); if (fail_stop) return BK_FAIL; busy = 0; return BK_OK; }
 int bk_dma2d_start_transfer(void) {
     assert(powered && irq_enabled);
     ++starts;
@@ -122,7 +136,7 @@ int bk_dma2d_start_transfer(void) {
     busy = 1;
     return BK_OK;
 }
-void bk_dma2d_soft_reset(void) { busy = 0; ++resets; event('R'); }
+void bk_dma2d_soft_reset(void) { if (!fail_reset_busy) busy = 0; ++resets; event('R'); }
 bool bk_dma2d_is_transfer_busy(void) { return busy != 0; }
 void bk_dma2d_memcpy_or_pixel_convert(dma2d_memcpy_pfc_t *copy) {
     assert(copy->mode == DMA2D_M2M && copy->input_alpha == 0xff);
@@ -150,6 +164,8 @@ void __real_lv_deinit(void) { ++real_deinit_calls; }
 
 static void clear_fixture(void) {
     fail_driver_deinit = fail_semaphore_deinit = 0;
+    fail_stop = fail_irq_disable = fail_reset_busy = 0;
+    assertion_expected = assertion_seen = 0;
     require_real_deinit = 0;
     assert(h2_bk_dma2d_suspend() == BK_OK);
     assert(semaphores == 0 && !powered && !irq_enabled && !busy);
@@ -227,6 +243,38 @@ static void test_cleanup_retry(void) {
     assert(h2_bk_dma2d_suspend() == BK_OK);
     assert(semaphores == 0);
 }
+static void test_failed_quiescence_retains_resources(int *fault) {
+    clear_fixture();
+    fail_timeout = 1;
+    *fault = 1;
+    uint16_t output[128];
+    assert(h2_bk_dma2d_rgb565(output, NULL, 16, 8, 32, 0, 1) == 0);
+    assert(semaphores == 1 && powered && irq_enabled && !busy);
+    /* A pending ISR still sees live storage while cleanup is deferred. */
+    assert(callbacks[DMA2D_TRANS_COMPLETE_ISR] != NULL);
+    callbacks[DMA2D_TRANS_COMPLETE_ISR](callback_users[DMA2D_TRANS_COMPLETE_ISR]);
+    assert(h2_bk_dma2d_suspend() == BK_FAIL);
+    assert(semaphores == 1 && powered);
+    *fault = 0;
+    fail_timeout = 0;
+    assert(h2_bk_dma2d_suspend() == BK_OK);
+    assert(semaphores == 0 && !powered && !irq_enabled);
+    assert(h2_bk_dma2d_rgb565(output, NULL, 16, 8, 32, 0, 0x1234) == 1);
+}
+static void test_unquiesced_dma_never_returns(void) {
+    clear_fixture();
+    fail_timeout = fail_stop = fail_reset_busy = 1;
+    assertion_expected = 1;
+    uint16_t output[128];
+    if (setjmp(assertion_context) == 0) {
+        (void)h2_bk_dma2d_rgb565(output, NULL, 16, 8, 32, 0, 1);
+        assert(!"DMA still owns the buffer; CPU fallback must not return");
+    }
+    assert(assertion_seen && semaphores == 1 && powered && irq_enabled && busy);
+    fail_reset_busy = 0;
+    busy = 0;
+    clear_fixture();
+}
 int main(void) {
     test_stride_and_transition();
     test_invalid_input();
@@ -234,6 +282,9 @@ int main(void) {
                     &fail_fill, &fail_start, &fail_timeout, &fail_isr, &fail_busy};
     for (unsigned i = 0; i < sizeof(faults) / sizeof(faults[0]); ++i) test_failure(faults[i]);
     test_cleanup_retry();
+    test_failed_quiescence_retains_resources(&fail_stop);
+    test_failed_quiescence_retains_resources(&fail_irq_disable);
+    test_unquiesced_dma_never_returns();
     clear_fixture();
     return 0;
 }

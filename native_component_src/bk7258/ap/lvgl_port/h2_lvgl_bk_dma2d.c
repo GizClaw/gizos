@@ -5,6 +5,7 @@
 
 #if CONFIG_DMA2D
 #include <armstar.h>
+#include <common/bk_assert.h>
 #include <driver/dma2d.h>
 #include <modules/pm.h>
 #include <os/os.h>
@@ -15,6 +16,7 @@
 static beken_semaphore_t completion;
 static volatile int transfer_error;
 static int initialized;
+static int partial_init_power;
 static int disabled;
 static int last_was_fill;
 
@@ -36,15 +38,26 @@ static void transfer_failed(void *user) {
 
 static int release_resources(void) {
     if (initialized) {
-        /* Reset quiesces a timed-out transfer before CPU fallback can write
-         * the same destination. Deinit unregisters the IRQ before sem free. */
-        (void)bk_dma2d_stop_transfer();
-        (void)bk_dma2d_int_enable(
+        /* Retain the driver and semaphore if stop/masking fails. A late ISR
+         * must never observe freed completion storage. */
+        int rc = bk_dma2d_stop_transfer();
+        if (rc != BK_OK) return rc;
+        rc = bk_dma2d_int_enable(
             DMA2D_CFG_ERROR | DMA2D_TRANS_ERROR | DMA2D_TRANS_COMPLETE, 0);
+        if (rc != BK_OK) return rc;
         bk_dma2d_soft_reset();
-        int rc = bk_dma2d_driver_deinit();
+        if (bk_dma2d_is_transfer_busy()) return BK_FAIL;
+        rc = bk_dma2d_driver_deinit();
         if (rc != BK_OK) return rc;
         initialized = 0;
+    }
+    if (partial_init_power) {
+        int rc = bk_dma2d_driver_deinit();
+        if (rc != BK_OK) return rc;
+        rc = bk_pm_module_vote_power_ctrl(
+            PM_POWER_SUB_MODULE_NAME_VIDP_DMA2D, PM_POWER_MODULE_STATE_OFF);
+        if (rc != BK_OK) return rc;
+        partial_init_power = 0;
     }
     if (completion != NULL) {
         int rc = rtos_deinit_semaphore(&completion);
@@ -57,7 +70,19 @@ static int release_resources(void) {
 
 static int disable_acceleration(void) {
     disabled = 1;
-    (void)release_resources();
+    int rc = release_resources();
+    if (rc != BK_OK && initialized) {
+        /* A failed stop can leave DMA writing the caller's buffer. Force a
+         * logic reset and require idle readback before allowing CPU redraw.
+         * Failed masking retains IRQ, driver and semaphore until retry. */
+        bk_dma2d_soft_reset();
+        if (bk_dma2d_is_transfer_busy()) {
+            BK_ASSERT(0);
+            /* ASSERT_IGNORE builds must also retain buffer ownership instead
+             * of returning to LVGL while hardware can still access it. */
+            for (;;) rtos_delay_milliseconds(1000);
+        }
+    }
     return 0;
 }
 
@@ -67,9 +92,7 @@ static int initialize(void) {
         return disable_acceleration();
     if (bk_dma2d_driver_init() != BK_OK) {
         /* The pinned SDK votes power before its last fallible init step. */
-        (void)bk_dma2d_driver_deinit();
-        (void)bk_pm_module_vote_power_ctrl(
-            PM_POWER_SUB_MODULE_NAME_VIDP_DMA2D, PM_POWER_MODULE_STATE_OFF);
+        partial_init_power = 1;
         return disable_acceleration();
     }
     initialized = 1;

@@ -5,5 +5,6 @@ typedef struct test_semaphore *beken_semaphore_t;
 int rtos_init_semaphore_ex(beken_semaphore_t *out, unsigned maximum, unsigned initial);
 int rtos_deinit_semaphore(beken_semaphore_t *semaphore);
 int rtos_set_semaphore(beken_semaphore_t *semaphore);
+void rtos_delay_milliseconds(unsigned milliseconds);
 int rtos_get_semaphore(beken_semaphore_t *semaphore, unsigned timeout_ms);
 #endif

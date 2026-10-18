@@ -14,6 +14,8 @@ extern "C" {
  * which waits at most 100 ms for DMA completion. Only the single LVGL software
  * draw unit may call this hook. Return 1 when handled, or 0 for CPU rendering.
  * A failed transfer can change dst; the CPU path must redraw the rectangle.
+ * Unrecoverable busy hardware enters target assertion/fail-stop while keeping
+ * the buffer borrowed; it cannot safely return to CPU rendering.
  */
 int h2_bk_dma2d_rgb565(void *dst, const void *src, int32_t width,
                      int32_t height, uint32_t dst_stride,
