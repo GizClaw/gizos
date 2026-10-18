@@ -124,9 +124,10 @@ static void record_best(uint64_t *slot, uint64_t value) {
 }
 
 /* Every line goes through the Log PAL; portable code never touches newlib
- * stdout state. Lines are bounded by H2_PAL_LOG_MESSAGE_MAX. */
+ * stdout state. Keep the full fixed ledger, including 64-bit numeric fields,
+ * in one bounded record. */
 static void emit(const h2_pal_log_api_t *log, const char *format, ...) {
-    char message[H2_PAL_LOG_MESSAGE_MAX];
+    char message[512];
     va_list args;
     va_start(args, format);
     (void)vsnprintf(message, sizeof(message), format, args);

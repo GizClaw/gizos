@@ -134,7 +134,13 @@ void app_main(void) {
         fail("runtime-or-commands", rc);
     }
     board_log=runtime->log;
+#if defined(CONFIG_ESP_CONSOLE_UART) && CONFIG_ESP_CONSOLE_UART
+    console.uart=h2_esp_platform_uart_io_stream_api();
+#elif defined(CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG) && CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
     console.usb=h2_esp_platform_usb_jtag_io_stream_api();
+#else
+#error MQTT ledger requires an existing UART or USB Serial/JTAG console
+#endif
     console.timeout_ms=5000u;
     runtime->log=&ledger_log_api;
     printf("H2_PAL_MQTT_PROVIDER policy=coremqtt allocator=psram incoming=8 outgoing=8 owner_bytes=%zu\n", owner_bytes);

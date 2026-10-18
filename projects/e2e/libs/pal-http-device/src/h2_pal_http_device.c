@@ -14,7 +14,7 @@ static void report(void *user, const h2_pal_http_e2e_case_result_t *result) {
     (void)snprintf(line, sizeof(line), "H2_PAL_HTTP_CASE {\"id\":\"%s\",\"status\":\"%s\",\"detail\":%d,\"line\":%u,\"elapsed_ms\":%llu,\"request_result\":%d}\n",
         result->id, result->passed ? "PASS" : result->blocked ? "BLOCKED" : "FAIL",
         result->detail, result->line, (unsigned long long)result->elapsed_ms, result->request_result);
-    (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-http", line);
+    (void)printf("%s", line);
     if (runtime != NULL) (void)h2_pal_time_sleep_ms(runtime->time, 40u);
 }
 
@@ -23,13 +23,13 @@ void h2_pal_http_device_report(const h2_runtime_t *runtime, const h2_pal_http_e2
     if (h2_pal_firmware_info_get_current(runtime->firmware_info, &image) != H2_PAL_OK) return;
     char run_line[256];
     (void)snprintf(run_line, sizeof(run_line), "H2_PAL_HTTP_RUN id=%s version=%s", fixture_run, image.version);
-    (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-http", run_line);
+    (void)printf("%s\n", run_line);
     for (unsigned index = 0u; index < H2_PAL_HTTP_E2E_CASE_COUNT; ++index)
         if (result->cases[index].id != NULL) report((void *)runtime, &result->cases[index]);
     char line[256];
     (void)snprintf(line, sizeof(line), "H2_PAL_HTTP_SUMMARY {\"passed\":%u,\"failed\":%u,\"blocked\":%u,\"retained_allocations\":%zu,\"cleanup\":0}\n",
         result->passed, result->failed, result->blocked, result->retained_allocations);
-    (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-http", line);
+    (void)printf("%s", line);
 }
 
 static int hex_digit(char value) {

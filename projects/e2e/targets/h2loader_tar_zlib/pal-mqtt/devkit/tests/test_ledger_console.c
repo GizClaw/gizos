@@ -13,7 +13,7 @@ typedef struct observed {
     unsigned writes,flushes,confirms,fail_write,short_write,fail_flush;
     int firmware_error,confirm_error;
 } observed_t;
-static int emit_ledger,emit_bk;
+static int emit_ledger,emit_bk,emit_esp_uart;
 static const char execution_id[]="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb";
 
 static int write_record(void *user,const void *bytes,size_t length,size_t *written,uint32_t timeout) {
@@ -73,8 +73,9 @@ static int execute(observed_t *state,int suite_error) {
     const h2_pal_usb_jtag_io_stream_vtable_t usb_vtable={.write=write_record,.flush=flush_record};
     const h2_pal_usb_jtag_io_stream_api_t usb={.user=state,.vtable=&usb_vtable};
     h2_mqtt_esp_ledger_console_t console={.usb=&usb,.timeout_ms=5000u};
-    const h2_pal_uart_io_stream_vtable_t uart_vtable={.write=write_uart};
+    const h2_pal_uart_io_stream_vtable_t uart_vtable={.write=emit_bk?write_uart:write_record,.flush=flush_record};
     const h2_pal_uart_io_stream_api_t uart={.user=state,.vtable=&uart_vtable};
+    if(emit_esp_uart){console.usb=NULL;console.uart=&uart;}
     h2_mqtt_bk_ledger_console_t bk_console={.uart=&uart,.timeout_ms=5000u,.writable=1};
     const h2_pal_log_vtable_t log_vtable={.write=log_record};
     const h2_pal_log_api_t log={.user=emit_bk?(void *)&bk_console:(void *)&console,.vtable=&log_vtable};
@@ -112,6 +113,7 @@ int main(int argc,char **argv) {
         emit_ledger=1;emit_bk=strcmp(argv[2],"bk7258")==0;
         observed_t state={0};return execute(&state,0);
     }
+    for(emit_esp_uart=0;emit_esp_uart<2;++emit_esp_uart){
     for(unsigned boundary=1u;boundary<=39u;++boundary){
         observed_t write_failure={.fail_write=boundary};
         assert(execute(&write_failure,0)==H2_PAL_ERR_TIMEOUT && write_failure.confirms==0u);
@@ -125,5 +127,6 @@ int main(int argc,char **argv) {
     observed_t bad_image={.firmware_error=H2_PAL_ERR_IO};assert(execute(&bad_image,0)==H2_PAL_ERR_IO && bad_image.confirms==0u);
     observed_t bad_confirm={.confirm_error=H2_PAL_ERR_IO};assert(execute(&bad_confirm,0)==H2_PAL_ERR_IO && bad_confirm.confirms==1u);
     observed_t bad_terminal={.fail_flush=40u};assert(execute(&bad_terminal,0)==H2_PAL_ERR_TIMEOUT && bad_terminal.confirms==1u);
+    }
     return 0;
 }

@@ -13,7 +13,8 @@ static void emit(const char *format, ...) {
     va_end(args);
     int rc = length < 0 || (size_t)length >= sizeof(message)
                  ? H2_PAL_ERR_TRUNCATED
-                 : h2_pal_log_write(log_runtime->log, H2_PAL_LOG_INFO, "pal-wifi", message);
+                 : printf("%s%s", message, length > 0 && message[length - 1] == '\n' ? "" : "\n") < 0
+                     ? H2_PAL_ERR_IO : H2_PAL_OK;
     if (rc && !log_error)
         log_error = rc;
     /* Give the native console/Loader transport and idle task time to drain

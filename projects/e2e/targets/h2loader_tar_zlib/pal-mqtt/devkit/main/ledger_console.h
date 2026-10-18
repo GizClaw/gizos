@@ -3,14 +3,16 @@
 
 #include "device_runner.h"
 #include "h2/pal/hal/h2_pal_usb_jtag_io_stream.h"
+#include "h2/pal/hal/h2_pal_uart_io_stream.h"
 #include <stdio.h>
 #include <string.h>
 
-/* This target uses the existing USB JTAG driver installed by H2Loader. Each
+/* Use the selected console driver already installed by H2Loader. Each
  * record has one bounded write and a checked physical TX drain; no prefix retry
  * can make an incomplete first ledger eligible for persistent confirmation. */
 typedef struct h2_mqtt_esp_ledger_console {
     const h2_pal_usb_jtag_io_stream_api_t *usb;
+    const h2_pal_uart_io_stream_api_t *uart;
     uint32_t timeout_ms;
     int error;
 } h2_mqtt_esp_ledger_console_t;
@@ -26,9 +28,13 @@ static inline int h2_mqtt_esp_console_record(h2_mqtt_esp_ledger_console_t *conso
     memcpy(record,message,length);
     record[length++]='\r';record[length++]='\n';
     size_t written=0u;
-    int rc=h2_pal_usb_jtag_io_stream_write(console->usb,record,length,&written,console->timeout_ms);
+    int rc=console->uart!=NULL
+        ? h2_pal_uart_io_stream_write(console->uart,record,length,&written,console->timeout_ms)
+        : h2_pal_usb_jtag_io_stream_write(console->usb,record,length,&written,console->timeout_ms);
     if(rc==H2_PAL_OK && written!=length)rc=H2_PAL_ERR_IO;
-    if(rc==H2_PAL_OK)rc=h2_pal_usb_jtag_io_stream_flush(console->usb);
+    if(rc==H2_PAL_OK)rc=console->uart!=NULL
+        ? h2_pal_uart_io_stream_flush(console->uart)
+        : h2_pal_usb_jtag_io_stream_flush(console->usb);
     if(rc!=H2_PAL_OK)console->error=rc;
     return rc;
 }

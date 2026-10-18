@@ -51,7 +51,7 @@ static void report(void *user, const h2_net_tls_case_result_t *item) {
         item->bytes_sent, item->bytes_received,
         (unsigned long long)item->elapsed_ms);
   }
-  (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-net-tls", line);
+  (void)printf("%s\n", line);
   (void)h2_pal_time_sleep_ms(runtime->time, 40u);
 }
 void h2_pal_net_tls_device_report(const h2_runtime_t *runtime,
@@ -66,7 +66,7 @@ void h2_pal_net_tls_device_report(const h2_runtime_t *runtime,
            H2_PAL_NET_TLS_SESSION, boot_id,
            version == H2_PAL_OK ? image.version : "unavailable", version,
            H2_PAL_NET_TLS_DNS_HOST, H2_PAL_NET_TLS_DNS_IPV4);
-  (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-net-tls", line);
+  (void)printf("%s\n", line);
   for (unsigned i = 0u; i < H2_NET_TLS_CASE_COUNT; ++i)
     if (result->cases[i].id)
       report((void *)runtime, &result->cases[i]);
@@ -78,7 +78,7 @@ void h2_pal_net_tls_device_report(const h2_runtime_t *runtime,
       result->blocked, result->unsupported, result->not_assessed,
       result->retained_sockets, result->retained_resolvers,
       result->retained_allocations);
-  (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-net-tls", line);
+  (void)printf("%s\n", line);
 }
 int h2_pal_net_tls_device_run(h2_runtime_t *runtime,
                               h2_net_tls_result_t *result) {
@@ -125,8 +125,7 @@ int h2_pal_net_tls_device_run(h2_runtime_t *runtime,
   snprintf(execution, sizeof(execution),
            "H2_PAL_NET_TLS_EXECUTION session=%s boot_id=%s",
            H2_PAL_NET_TLS_SESSION, boot_id);
-  (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-net-tls",
-                         execution);
+  (void)printf("%s\n", execution);
   h2_net_tls_config_t config = {
       .runtime = runtime,
       .host = H2_PAL_NET_TLS_HOST,

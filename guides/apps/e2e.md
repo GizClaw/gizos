@@ -20,6 +20,8 @@ Portable E2E App 可以依赖 Runtime、PAL 与被测 target-independent library
 
 Platform artifact entry 持有 Runtime assembly、具体 provider、endpoint 与 fixture 注入、platform lifecycle 和结果输出。H2Loader-managed E2E image 位于 `projects/e2e/targets/h2loader_tar_zlib/<image>/<board>`；`h2loader_tar_zlib` 表示安装产物类型，不改变 E2E ownership。没有 H2Loader 的独立诊断 image继续位于 `projects/e2e/targets/<firmware-rule>/<image>/<board>`。
 
+IPv6、Net/TLS、HTTP、WebRTC 与 Wi-Fi 的设备测试报告直接写入入口现有的标准输出，保留原 CASE、execution、summary 与失败结果，避免产品日志等级隐藏验收账本；被测 Runtime/PAL 与 SDK 配置保持原样。原本把 Log PAL 本身作为输出合同的 iperf Client、Lua print 与 Core Log 用例仍遵守各自合同，不能以替换真实 Log provider 或提高 SDK 日志预算代替。
+
 可在 host 上确定性运行、没有外部依赖的 App-local、parser、fake 和 loopback 测试属于默认自动测试，不声明 tag。连接外部服务、真实设备或要求人工准备环境的 E2E test 声明 Bazel 特殊 tag `manual`，因此不会被通配 target pattern 自动选中；需要重新观察真实外部状态的 live test 另声明特殊 tag `external`，由 Bazel 禁用测试结果缓存，构建 disk/remote cache 保持启用。新的手工测试入口直接调用 `bazel test --config=<platform> --nocache_test_results <exact-label>`，设备选择与需要继承的 SDK 路径通过 `--test_env` 传入；平台配置和静态 suite 参数属于 `.bazelrc` / `BUILD.bazel`。不为纯转发另建 Make alias、shell wrapper 或 Python Bazel 调度器；已有 legacy Make 入口暂保留兼容，不再维护额外 tag filter。测试仅使用这些 Bazel 原生控制 tag，不另建业务 tag inventory，也不创建 `test_suite` 聚合入口。
 
 ## Apps
@@ -263,7 +265,7 @@ iOS/Android 消费实际 SDK 包导出的显式 MQTT owner；owner 持有本平�
 
 Desktop 直接运行 `//projects/e2e/targets/cc_binary/pal-mqtt:desktop_test`；移动端分别使用 `//projects/e2e/targets/ios_application/pal-mqtt:ios_pal_mqtt_simulator_test` 和 `//projects/e2e/targets/android_binary/pal-mqtt:android_pal_mqtt_simulator_test`。公网 `:public_broker_test` 为 `manual`/`external`，同一 App 的单个 QoS0 round trip 只授予该子集通过，不能代替完整 registry。连接成功但没有 CONNACK 的负例预算由 launcher 注入，仍须 broker 实际观察到 CONNECT，并验证有限 deadline 的上下界；未到达 broker 的 TCP timeout 不满足该负例。入口、命令与平台能力边界见 `projects/e2e/apps/pal-mqtt/README.md`；缺少 raw TCP/TLS MQTT provider 的 Browser 保持明确 unsupported，不能把 host 结果当作六平台资格。
 
-新硬件 capture 的 BK/DevKit 均须 fixed-source package binding；首份 boot/RUN 不完整时后续 replay 或新 startup 不能替代。两者先完整交付首轮 ledger 与 READY(confirm=pending)，再确认 App 并交付实际 CONFIRMED，当前 verifier 拒绝缺少终态或以 confirm=0 绕过该时序的记录。DevKit 借用现有 USB JTAG PAL，逐条检查有界 write 的完整字节数和真实 TX flush；BK 保留原有 UART owner 与管理恢复流程。TLS 拒绝分别绑定实际 CA/hostname alert 与观察到的正常/错误 server-name，null 或缺失 SNI、两个同类失败均不能通过。LAN fixture 要求显式 `--evidence` 保存实际 CA/config/inputs。历史 BK 导入只运行并校验 capture 内的 `host-verifier.py`，其旧 confirm=0 schema 保留原含义；旧资格保留原 host/verifier/fixture schema，不能改称当前修订版 hardware PASS。
+新硬件 capture 的 BK/DevKit 均须 fixed-source package binding；首份 boot/RUN 不完整时后续 replay 或新 startup 不能替代。两者先完整交付首轮 ledger 与 READY(confirm=pending)，再确认 App 并交付实际 CONFIRMED，当前 verifier 拒绝缺少终态或以 confirm=0 绕过该时序的记录。ESP 入口按既有 SDK console 选择 UART 或 USB JTAG PAL，逐条检查有界 write 的完整字节数和真实 TX flush；BK 保留原有 UART owner 与管理恢复流程。TLS 拒绝分别绑定实际 CA/hostname alert 与观察到的正常/错误 server-name，null 或缺失 SNI、两个同类失败均不能通过。LAN fixture 要求显式 `--evidence` 保存实际 CA/config/inputs。历史 BK 导入只运行并校验 capture 内的 `host-verifier.py`，其旧 confirm=0 schema 保留原含义；旧资格保留原 host/verifier/fixture schema，不能改称当前修订版 hardware PASS。
 
 ## PAL Crypto E2E
 
