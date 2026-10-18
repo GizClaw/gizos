@@ -79,6 +79,25 @@ def after_accepted_reboot(text, target):
     reboot = fields(markers[0].group(1))
     assert reboot.get('target') == target and reboot.get('result') == 'accepted', 'requested reboot not accepted'
     remainder = text[markers[0].end():]
+    if target == 'upgrade':
+        events = list(re.finditer(r'(?<!\w)H2_LOADER_STARTUP_EVENT[ \t]+([^\r\n]+)', remainder))
+        assert len(events) == len(re.findall(r'(?<!\w)H2_LOADER_STARTUP_EVENT\b', remainder)), 'corrupt Loader startup event'
+        if events:
+            # App installation can cross Loader and App startups. Copy/finish
+            # events belong to Loader self-upgrade, not this preserved-P1 flow.
+            rows = [re.fullmatch(r'event=(write_partition_2|boot_partition_2) code=0', event[1]) for event in events]
+            assert all(rows), 'failed or unexpected Loader startup event'
+            assert rows[-1][1] == 'boot_partition_2' and len({row[1] for row in rows}) == len(rows), 'missing or repeated Loader handoff'
+            assert not re.search(r'panic|hard fault|assert failed|Guru Meditation|abort\(|H2_PAL_MQTT_SETUP_FAIL|H2_(?:BOARD_ENTRY|PAL_TASK_POLICY)_FAIL', remainder, re.I), 'boot/runtime failure'
+            loader_startup = re.search(STARTUP_MARKER, remainder, re.MULTILINE)
+            prefix = remainder[loader_startup.start():events[-1].end()]
+            assert 'H2_PAL_MQTT_' not in prefix, 'App execution preceded Loader handoff'
+            initial = [match for match in re.finditer(STARTUP_MARKER, prefix, re.MULTILINE)
+                       if match[0] != 'H2_LOADER_STARTUP_EVENT']
+            policy = list(re.finditer(r'\bH2_PAL_TASK_POLICY_READY\b', prefix))
+            assert all(match.start() + loader_startup.start() < events[0].start() for match in initial + policy) and \
+                len({match[0] for match in initial}) == len(initial) and len(policy) <= 1, 'later startup preceded Loader handoff'
+            remainder = remainder[events[-1].end():]
     # Serial buffers may still carry the old App's partial replay after its ACK.
     # Only the subsequent actual startup can begin the requested boot ledger.
     startup = re.search(STARTUP_MARKER, remainder, re.MULTILINE)

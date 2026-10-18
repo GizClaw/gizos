@@ -33,6 +33,74 @@ class Verifier(unittest.TestCase):
         self.assertEqual(boot_ledger(initial+self.good,self.ids,'v1')['boot']['id'],self.execution)
         with self.assertRaisesRegex(AssertionError,'later startup'):
             boot_ledger(initial+initial+self.good,self.ids,'v1')
+    def managed_upgrade_parts(self):
+        loader = ('ESP-ROM:esp32s3-20210327\nrst:0xc (RTC_SW_CPU_RST)\n'
+                  'H2_PAL_TASK_POLICY_READY unit=esp target=projects/h2loader/targets/h2loader_tar_zlib/loader/devkit\n'
+                  'H2_LOADER_STARTUP_EVENT event=write_partition_2 code=0\n'
+                  'H2_LOADER_STARTUP_EVENT event=boot_partition_2 code=0\n')
+        app = ('ESP-ROM:esp32s3-20210327\nrst:0xc (RTC_SW_CPU_RST)\n'
+               'H2_PAL_TASK_POLICY_READY unit=esp target=projects/e2e/targets/h2loader_tar_zlib/pal-mqtt/devkit\n' +
+               self.good.replace('board=bk7258','board=devkit').replace('confirm=pending','confirm=pending provider_cleanup=0'))
+        return 'H2_LOADER_REBOOT target=upgrade result=accepted\n', loader, app
+    def test_managed_loader_handoff_admits_only_the_first_app_ledger(self):
+        ack,loader,app = self.managed_upgrade_parts()
+        for prefix in [loader,loader.replace('H2_LOADER_STARTUP_EVENT event=write_partition_2 code=0\n','')]:
+            with self.subTest(prefix=prefix):
+                raw = (ack+prefix+app).encode()
+                with tempfile.TemporaryDirectory() as directory:
+                    path = Path(directory)/'managed.log';path.write_bytes(raw)
+                    parsed = boot_ledger(after_accepted_reboot(uart_text(path),'upgrade'),self.ids,'v1')
+                    self.assertEqual(parsed['boot']['id'],self.execution)
+                    self.assertEqual(len(parsed['cases']),36)
+                    self.assertEqual(parsed['confirmation']['rc'],'0')
+                    self.assertEqual(path.read_bytes(),raw)
+    def test_managed_handoff_retains_old_partial_before_actual_loader_startup(self):
+        ack,loader,app = self.managed_upgrade_parts()
+        for tail in ['H2_PAL_MQTT_CASE {"id":"publish-qos1","status":',
+                     'H2_PAL_MQTT_SETUP_WAIT network=not_ready rc=-8 cases_started=0\n']:
+            with self.subTest(tail=tail):
+                parsed = boot_ledger(after_accepted_reboot(ack+tail+loader+app,'upgrade'),self.ids,'v1')
+                self.assertEqual(len(parsed['cases']),36)
+                self.assertEqual(parsed['boot']['id'],self.execution)
+    def test_managed_loader_handoff_rejects_failed_or_ambiguous_loader_prefix(self):
+        ack,loader,app = self.managed_upgrade_parts()
+        handoff = 'H2_LOADER_STARTUP_EVENT event=boot_partition_2 code=0\n'
+        write = 'H2_LOADER_STARTUP_EVENT event=write_partition_2 code=0\n'
+        bad = [loader+handoff,loader.replace(handoff,''),loader.replace(handoff,handoff.replace('code=0','code=-4')),
+               loader.replace(write,write.replace('code=0','code=-4')),loader.replace(write,write+write)]
+        bad.append(loader.replace(write,write.replace('EVENT event=','EVENT? event=')))
+        for event in ['recovery_failed','unknown','copy_partition_1','stage_finished']:
+            bad.append(loader.replace(handoff,'H2_LOADER_STARTUP_EVENT event='+event+' code=0\n'+handoff))
+        for prefix in bad:
+            with self.subTest(prefix=prefix):
+                with self.assertRaises(AssertionError):
+                    boot_ledger(after_accepted_reboot(ack+prefix+app,'upgrade'),self.ids,'v1')
+        for fault in ['Guru Meditation Error: panic','assert failed','abort() was called','H2_PAL_MQTT_SETUP_FAIL rc=-4',
+                      'H2_PAL_TASK_POLICY_FAIL rc=-4','H2_BOARD_ENTRY_FAIL rc=-4']:
+            for text in [ack+loader.replace(handoff,fault+'\n'+handoff)+app,ack+loader+fault+'\n'+app]:
+                with self.subTest(fault=fault,text=text):
+                    with self.assertRaises(AssertionError):
+                        boot_ledger(after_accepted_reboot(text,'upgrade'),self.ids,'v1')
+    def test_managed_handoff_cannot_discard_partial_or_restarted_app(self):
+        ack,loader,app = self.managed_upgrade_parts()
+        handoff = 'H2_LOADER_STARTUP_EVENT event=boot_partition_2 code=0\n'
+        first_case = next(line for line in app.splitlines() if line.startswith('H2_PAL_MQTT_CASE '))+'\n'
+        for partial in ['H2_PAL_MQTT_PLATFORM_BOOT board=devkit\n','H2_PAL_MQTT_BOOT '+self.boot+'\n','H2_PAL_MQTT_RUN '+self.boot+'\n',first_case,
+                        'ESP-ROM:esp32s3-20210327\n','H2_PAL_TASK_POLICY_READY unit=esp target=app\n']:
+            with self.subTest(partial=partial):
+                with self.assertRaises(AssertionError):
+                    boot_ledger(after_accepted_reboot(ack+loader.replace(handoff,partial+handoff)+app,'upgrade'),self.ids,'v1')
+        for partial in [app.split('H2_PAL_MQTT_BOOT ',1)[0],app.split('H2_PAL_MQTT_SUMMARY ',1)[0].replace(first_case,'')]:
+            with self.assertRaises(AssertionError):
+                boot_ledger(after_accepted_reboot(ack+loader+partial+app,'upgrade'),self.ids,'v1')
+        for text,target in [(ack.replace('result=accepted','result=rejected')+loader+app,'upgrade'),
+                            (ack.replace('target=upgrade','target=app')+loader+app,'upgrade'),
+                            (ack+'H2_PAL_MQTT_BOOT '+self.boot+'\n'+loader+app,'upgrade'),
+                            (ack+loader+app+handoff,'upgrade'),(ack+loader+app+ack,'upgrade'),
+                            (ack.replace('target=upgrade','target=app')+loader+app,'app')]:
+            with self.subTest(target=target,text=text):
+                with self.assertRaises(AssertionError):
+                    boot_ledger(after_accepted_reboot(text,target),self.ids,'v1')
     def test_ready_pending_requires_actual_post_delivery_confirmation(self):
         pending=self.good.split('H2_PAL_MQTT_CONFIRMED ',1)[0]
         with self.assertRaisesRegex(AssertionError,'missing post-READY'):boot_ledger(pending,self.ids,'v1')
