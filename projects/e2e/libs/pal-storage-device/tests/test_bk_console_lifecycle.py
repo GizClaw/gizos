@@ -99,6 +99,7 @@ int main(int argc,char **argv){
 
     def test_real_filter_forwards_fresh_boot_before_session_ack(self):
         serial = (ROOT / "libs/h2loader_host/src/h2_h2loader_host_serial.c").read_text()
+        log_output = section(serial, "static h2_pal_result_t serial_log_output(", "static h2_pal_result_t serial_status_emit(")
         handshake = section(serial, "typedef struct session_ack_context", "/* A USB-UART adapter survives")
         frame = (ROOT / "libs/iostreamikcp/src/h2_iostreamikcp_frame.c").read_text().replace(
             '#include "h2_iostreamikcp_internal.h"', '#include "h2_iostreamikcp.h"\n#define H2_IOSTREAMIKCP_FRAME_MAGIC_LEN 6u\n#define H2_IOSTREAMIKCP_FRAME_LEN_OFFSET 12u')
@@ -114,8 +115,10 @@ struct h2_h2loader_host_serial_connection {
  const h2_pal_time_api_t *time;const h2_pal_uart_io_stream_api_t *uart;
  h2_h2loader_host_transport_log_fn on_log;void *log_user;
  uint8_t pending_input[512];size_t pending_input_len;
+ int log_line_open;
 };
 /* FRAME */
+/* LOG */
 /* HANDSHAKE */
 static uint64_t now;
 static uint8_t wire[512];static size_t wire_size,position,limit;
@@ -145,7 +148,7 @@ int main(void){
  }
  puts("PASS native fresh BOOT reaches sink with fragmented/no/delayed session ACK");return 0;
 }
-'''.replace("/* FRAME */", frame).replace("/* HANDSHAKE */", handshake)
+'''.replace("/* FRAME */", frame).replace("/* LOG */", log_output).replace("/* HANDSHAKE */", handshake)
         output = compile_run(fixture, includes=["libs/pal/include", "libs/h2loader_host/include", "libs/iostreamikcp/include"])
         self.assertIn("PASS native fresh BOOT reaches sink", output)
 

@@ -20,7 +20,8 @@ static const h2_command_io_api_t *stream_io(
 static h2_pal_result_t write_all(
     const h2_command_io_api_t *io,
     const uint8_t *data,
-    size_t len) {
+    size_t len,
+    uint8_t *line_open) {
     if (io == NULL || io->vtable == NULL || io->vtable->write == NULL ||
         (data == NULL && len != 0u)) {
         return H2_PAL_ERR_INVALID_ARG;
@@ -31,6 +32,7 @@ static h2_pal_result_t write_all(
             io->user, data, len, &written, UINT32_MAX);
         if (result != H2_PAL_OK) return result;
         if (written == 0u || written > len) return H2_PAL_ERR_IO;
+        if (line_open != NULL) *line_open = data[written - 1u] != '\n';
         data += written;
         len -= written;
     }
@@ -44,7 +46,28 @@ h2_pal_result_t h2_h2loader_cli_output_bytes(
     h2_h2loader_cli_stream_t stream,
     const uint8_t *data,
     size_t len) {
-    return write_all(stream_io(context, stream), data, len);
+    return write_all(stream_io(context, stream), data, len,
+        context != NULL && stream == H2_H2LOADER_CLI_STREAM_STDOUT
+            ? &context->stdout_line_open : NULL);
+}
+
+h2_pal_result_t h2_h2loader_cli_command_output(
+    h2_h2loader_cli_context_t *context,
+    const uint8_t *data,
+    size_t len) {
+    if (context == NULL || (data == NULL && len != 0u)) return H2_PAL_ERR_INVALID_ARG;
+    if (len != 0u && !context->command_output_started) {
+        /* Preserve a response's first line after an unfinished console chunk. */
+        if (context->stdout_line_open && data[0] != '\r' && data[0] != '\n') {
+            const uint8_t newline = '\n';
+            h2_pal_result_t rc = h2_h2loader_cli_output_bytes(
+                context, H2_H2LOADER_CLI_STREAM_STDOUT, &newline, 1u);
+            if (rc != H2_PAL_OK) return rc;
+        }
+        context->command_output_started = 1u;
+    }
+    return h2_h2loader_cli_output_bytes(
+        context, H2_H2LOADER_CLI_STREAM_STDOUT, data, len);
 }
 
 h2_pal_result_t h2_h2loader_cli_output(
@@ -66,7 +89,8 @@ h2_pal_result_t h2_h2loader_cli_output(
     if (len < 0 || (size_t)len >= sizeof(buffer)) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    return write_all(io, (const uint8_t *)buffer, (size_t)len);
+    return h2_h2loader_cli_output_bytes(
+        context, stream, (const uint8_t *)buffer, (size_t)len);
 }
 
 h2_pal_result_t h2_h2loader_cli_output_json_string(
@@ -100,7 +124,8 @@ h2_pal_result_t h2_h2loader_cli_output_json_string(
     }
     if (out + 1u >= sizeof(escaped)) return H2_PAL_ERR_INVALID_ARG;
     escaped[out++] = '"';
-    return write_all(stream_io(context, stream), (const uint8_t *)escaped, out);
+    return h2_h2loader_cli_output_bytes(
+        context, stream, (const uint8_t *)escaped, out);
 }
 
 h2_pal_result_t h2_h2loader_cli_transport_diagnostic(

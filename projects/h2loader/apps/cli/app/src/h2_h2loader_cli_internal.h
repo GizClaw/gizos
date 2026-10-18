@@ -73,6 +73,8 @@ struct h2_h2loader_cli_context {
     h2_runtime_t *runtime;
     const h2_h2loader_cli_config_t *config;
     int ble_disabled;
+    uint8_t stdout_line_open;
+    uint8_t command_output_started;
 };
 
 const h2_pal_ble_host_api_t *h2_h2loader_cli_acquire_ble(
@@ -101,6 +103,11 @@ h2_pal_result_t h2_h2loader_cli_output(
 h2_pal_result_t h2_h2loader_cli_output_bytes(
     h2_h2loader_cli_context_t *context,
     h2_h2loader_cli_stream_t stream,
+    const uint8_t *data,
+    size_t len);
+
+h2_pal_result_t h2_h2loader_cli_command_output(
+    h2_h2loader_cli_context_t *context,
     const uint8_t *data,
     size_t len);
 

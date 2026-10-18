@@ -20,8 +20,10 @@ static const char mixed_expected[] = "H2_DISPLAY_BOOT version=test\r\n"
 typedef struct cli_fixture {
     int mode;
     const char *status_diagnostic;
+    const char *pre_ack_log;
     size_t mixed_read_size, status_prefix_split;
     int mixed_status_output, connect_output, connect_ready_mode;
+    int status_eol_test, status_crlf, log_error_byte;
     size_t before_status_output_len;
     unsigned opens, streams, closes, controls, scans, snapshots_closed, requests;
     unsigned reboots, sleeps, cancel_after_opens, cancel_closes;
@@ -75,6 +77,8 @@ static int output(void *user, const void *data, size_t len, size_t *written, uin
     f->output[f->output_len]='\0'; *written=len; return H2_PAL_OK;
 }
 static h2_pal_result_t connect_log(void *user, const uint8_t *data, size_t len) {
+    cli_fixture_t *f=user;
+    if (f->log_error_byte && len==1u && data[0]==f->log_error_byte) return H2_PAL_ERR_IO;
     size_t written=0u;
     int rc=output(user,data,len,&written,0u);
     assert(rc==H2_PAL_OK && written==len);
@@ -115,11 +119,12 @@ static void emit_status(cli_fixture_t *f) {
         loader?"loader":"app",sha,loader?1u:2u,loader?1u:2u,loader?"loader":"auto",sha,sha,sha,sha);
     assert(len>0 && (size_t)len<sizeof(line));
     if (f->mode==BAD_STATUS) strcpy(line,"H2_LOADER_STATUS invalid=1\n");
-    if (f->mixed_status_output) {
+    if (f->mixed_status_output || f->status_crlf) {
         size_t end = strlen(line);
         assert(end + 1u < sizeof(line));
         line[end - 1u]='\r'; line[end]='\n'; line[end + 1u]='\0';
     }
+    if (f->status_eol_test && f->status_crlf) f->status_prefix_split=strlen(line)-1u;
     if (f->status_prefix_split != 0u) {
         assert(f->status_prefix_split < strlen(line));
         assert(h2_iostreamikcp_write(f->peer,(const uint8_t *)line,f->status_prefix_split)==H2_PAL_OK);
@@ -142,6 +147,8 @@ static int peer_frame(void *user, const h2_iostreamikcp_frame_t *frame) {
         h2_iostreamikcp_frame_t ack=*frame; ack.flags=H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_ACK;
         uint8_t encoded[32]; size_t len=0u, written=0u;
         assert(h2_iostreamikcp_frame_encode(&ack,encoded,sizeof(encoded),&len)==H2_PAL_OK);
+        if (frame->flags==H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_OPEN && f->pre_ack_log)
+            assert(peer_output(f,f->pre_ack_log,strlen(f->pre_ack_log),&written,0u)==H2_PAL_OK);
         int rc=peer_output(f,encoded,len,&written,0u);
         if (rc==H2_PAL_OK && frame->flags==H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_OPEN && f->connect_ready_mode) {
             size_t prefix=f->connect_ready_mode==2?sizeof("H2_LOADER_REA")-1u:sizeof(connect_ready)-1u;
@@ -180,6 +187,8 @@ static int peer_frame(void *user, const h2_iostreamikcp_frame_t *frame) {
                 assert(written==sizeof(mixed_raw)-1u);
             }
             emit_status(f);
+            if (f->status_eol_test)
+                assert(h2_iostreamikcp_write(f->peer,(const uint8_t *)mixed_boot,sizeof(mixed_boot)-1u)==H2_PAL_OK);
             if (f->mixed_status_output)
                 assert(h2_iostreamikcp_write(f->peer,(const uint8_t *)mixed_tail,sizeof(mixed_tail)-1u)==H2_PAL_OK);
         } else {
@@ -199,7 +208,7 @@ static int uart_write(void *user, const void *data, size_t len, size_t *written,
 static int uart_read(void *user, void *data, size_t cap, size_t *read, uint32_t timeout) {
     cli_fixture_t *f=user;
     /* Splitting already queued bytes does not consume a fresh I/O deadline. */
-    f->now+=f->mixed_status_output && f->input_offset<f->input_len?0u:timeout!=0u?timeout:1u;
+    f->now+=(f->mixed_status_output || f->status_eol_test) && f->input_offset<f->input_len?0u:timeout!=0u?timeout:1u;
     *read=f->input_len-f->input_offset;
     if (*read>cap) *read=cap;
     const size_t chunk=f->mixed_read_size!=0u?f->mixed_read_size:67u;
@@ -346,6 +355,34 @@ static void run_connect_ready(int mode, int sink) {
     assert(f.modem_lines==(H2_PAL_SERIAL_HOST_CONTROL_DTR|H2_PAL_SERIAL_HOST_CONTROL_RTS));
 }
 
+static void run_status_boundary(const char *prefix, int crlf, size_t chunk,
+                                int error_byte, const char *expected) {
+    cli_fixture_t f={.pre_ack_log=prefix,.status_eol_test=1,.status_crlf=crlf,.mixed_read_size=chunk,
+        .modem_lines=H2_PAL_SERIAL_HOST_CONTROL_DTR|H2_PAL_SERIAL_HOST_CONTROL_RTS};
+    f.mem=(h2_pal_mem_api_t){.user=&f,.vtable=&mem_vtable};
+    f.uart=(h2_pal_uart_io_stream_api_t){.user=&f,.vtable=&uart_vtable};
+    h2_pal_serial_host_api_t serial={.user=&f,.vtable=&serial_vtable};
+    h2_pal_time_api_t time={.user=&f,.vtable=&time_vtable};
+    h2_h2loader_host_serial_connection_config_t config={.serial=&serial,.time=&time,.allocator=&f.mem,
+        .port_id="scan-port",.preserve_control_lines=1,.on_log=connect_log,.log_user=&f};
+    h2_h2loader_host_serial_connection_t *connection=NULL;
+    h2_h2loader_host_status_t status;
+    assert(h2_h2loader_host_serial_connect(&config,&connection)==H2_PAL_OK);
+    f.log_error_byte=error_byte;
+    h2_pal_result_t rc=h2_h2loader_host_serial_read_status(connection,&status);
+    if (rc==H2_PAL_OK) {
+        assert(status.running_partition==2u);
+        unsigned polls=512u;
+        rc=h2_h2loader_host_serial_monitor_logs(connection,cancel_after_one_poll,&polls);
+    }
+    assert(rc==(error_byte?H2_PAL_ERR_IO:H2_PAL_EXIT));
+    assert(strcmp(f.output,expected)==0 && f.output_len==strlen(expected));
+    assert(strstr(f.output,"H2_LOADER_STATUS ")==NULL);
+    assert(h2_h2loader_host_serial_disconnect(&connection)==H2_PAL_OK && connection==NULL);
+    assert(f.requests==1u && f.opens==1u && f.closes==1u && f.controls==0u);
+    assert(f.peer==NULL && f.allocations==0u);
+}
+
 int main(void) {
     for (int mode=HEALTHY; mode<=CLOSE_FAILURE; ++mode) {
         run_case(CLI_SCAN,mode);
@@ -364,5 +401,14 @@ int main(void) {
     run_connect_ready(1,1);
     run_connect_ready(2,1);
     run_connect_ready(1,0);
+    run_status_boundary(">de",0,512u,0,">de\nH2_DISPLAY_BOOT version=test\r\n");
+    run_status_boundary(">de\r\n",0,512u,0,">de\r\nH2_DISPLAY_BOOT version=test\r\n");
+    run_status_boundary(NULL,0,512u,0,mixed_boot);
+    run_status_boundary(">de",1,1u,0,">de\r\nH2_DISPLAY_BOOT version=test\r\n");
+    run_status_boundary(">de\r\n",1,1u,0,">de\r\nH2_DISPLAY_BOOT version=test\r\n");
+    run_status_boundary(NULL,1,1u,0,mixed_boot);
+    run_status_boundary(">de",0,512u,'\n',">de");
+    run_status_boundary(">de",1,1u,'\r',">de");
+    run_status_boundary(">de",1,1u,'\n',">de\r");
     return 0;
 }

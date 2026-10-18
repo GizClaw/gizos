@@ -359,13 +359,13 @@ const h2_pal_ble_host_api_t *h2_h2loader_cli_acquire_ble(
 }
 
 static h2_pal_result_t command_output(void *user, const uint8_t *data, size_t len) {
-    h2_h2loader_cli_context_t *context = user;
-    return h2_h2loader_cli_output_bytes(
-        context, H2_H2LOADER_CLI_STREAM_STDOUT, data, len);
+    return h2_h2loader_cli_command_output(user, data, len);
 }
 
 static h2_pal_result_t transport_log(void *user, const uint8_t *data, size_t len) {
-    return command_output(user, data, len);
+    h2_h2loader_cli_context_t *context = user;
+    return h2_h2loader_cli_output_bytes(
+        context, H2_H2LOADER_CLI_STREAM_STDOUT, data, len);
 }
 
 static h2_pal_result_t file_read(
@@ -938,8 +938,10 @@ static int device_command(
         request.wifi_scan_limit = wifi_scan_limit;
         request.wifi_scan_timeout_ms = wifi_scan_timeout_ms;
     }
-    if (rc == H2_PAL_OK) rc = h2_h2loader_cli_transport_execute(
-        &transport, &request, &result);
+    if (rc == H2_PAL_OK) {
+        context->command_output_started = 0u;
+        rc = h2_h2loader_cli_transport_execute(&transport, &request, &result);
+    }
     if (rc == H2_PAL_OK &&
         result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK &&
         monitor_after) {

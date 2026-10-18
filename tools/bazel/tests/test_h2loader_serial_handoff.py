@@ -19,7 +19,7 @@ class SerialHandoff(unittest.TestCase):
         frame = (ROOT/'libs/iostreamikcp/src/h2_iostreamikcp_frame.c').read_text().replace('#include "h2_iostreamikcp_internal.h"', '#include "h2_iostreamikcp.h"\n#define H2_IOSTREAMIKCP_FRAME_MAGIC_LEN 6u\n#define H2_IOSTREAMIKCP_FRAME_LEN_OFFSET 12u')
         app = (ROOT/'projects/h2loader/apps/cli/app/src/h2_h2loader_cli_app.c').read_text()
         # Main keeps the serial log callback in app.c; no BLE sink dependency.
-        output = section(app, 'static h2_pal_result_t command_output(', 'static h2_pal_result_t file_read(')
+        output = section(app, 'static h2_pal_result_t transport_log(', 'static h2_pal_result_t file_read(')
         verify = section(app, 'static int metadata_equal(', 'static int reboot_command_kind(')
         verify += section(app, 'h2_pal_result_t h2_h2loader_cli_verify_reboot_status(', 'static int monitor_transport(') if 'static int monitor_transport(' in app else section(app, 'h2_pal_result_t h2_h2loader_cli_verify_reboot_status(', 'static h2_pal_result_t monitor_transport(')
         fixture = (ROOT/'tools/bazel/tests/fixtures/h2loader_serial_handoff.c').read_text()
