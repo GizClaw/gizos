@@ -3,7 +3,16 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "h2_amoled_display_capture.h"
+#ifndef H2_DISPLAY_CAPTURE_HEADER
+#define H2_DISPLAY_CAPTURE_HEADER "h2_amoled_display_capture.h"
+#endif
+#include H2_DISPLAY_CAPTURE_HEADER
+#ifndef H2_DISPLAY_CAPTURE_CONFIGURE
+#define H2_DISPLAY_CAPTURE_CONFIGURE(fn, user) \
+  (h2_amoled_display_set_transfer_capture((fn), (user)), \
+   (h2_display_info_t){.width = 368, .height = 448, \
+                        .native_format = H2_DISPLAY_PIXEL_RGB565})
+#endif
 #include "h2_esp_board.h"
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_h2loader_runtime.h"
@@ -15,14 +24,24 @@ static h2_runtime_t *runtime;
 static esp_timer_handle_t watchdog;
 static uint16_t *transferred;
 static size_t transfer_count;
+static int capture_width, capture_height, capture_error;
 static void capture(void *user, const h2_display_rect_t *rect,
                     const uint16_t *pixels) {
   (void)user;
+  if (!transferred || !rect || !pixels || rect->x < 0 || rect->y < 0 ||
+      rect->x >= capture_width || rect->y >= capture_height ||
+      rect->width <= 0 || rect->height <= 0 ||
+      rect->width > capture_width - rect->x ||
+      rect->height > capture_height - rect->y) {
+    capture_error = H2_DISPLAY_ERR_IO;
+    return;
+  }
+  const uint8_t *bytes = (const uint8_t *)pixels;
   for (int y = 0; y < rect->height; ++y)
     for (int x = 0; x < rect->width; ++x) {
-      uint16_t p = pixels[(size_t)y * rect->width + x];
-      transferred[(size_t)(rect->y + y) * 368 + rect->x + x] =
-          (uint16_t)((p << 8) | (p >> 8));
+      size_t offset = ((size_t)y * rect->width + x) * 2u;
+      transferred[(size_t)(rect->y + y) * capture_width + rect->x + x] =
+          (uint16_t)((uint16_t)bytes[offset] << 8) | bytes[offset + 1u];
     }
   ++transfer_count;
 }
@@ -30,7 +49,8 @@ static int observe(void *user, const uint16_t *pixels, int width, int height,
                    uint32_t brightness, const char *id) {
   (void)user;
   (void)brightness;
-  if (width != 368 || height != 448 || !transfer_count)
+  if (width != capture_width || height != capture_height ||
+      capture_error || !transfer_count)
     return H2_DISPLAY_ERR_IO;
   int rc = memcmp(pixels, transferred, (size_t)width * height * 2)
                ? H2_DISPLAY_ERR_IO
@@ -54,14 +74,25 @@ static void deadline(void *unused) {
 static void run(void *unused) {
   (void)unused;
   vTaskDelay(pdMS_TO_TICKS(5000));
-  transferred = h2_pal_mem_alloc(runtime->mem, 368u * 448u * 2u);
+  /* Query fixture caps without opening Display before the original cases. */
+  h2_display_info_t info = H2_DISPLAY_CAPTURE_CONFIGURE(NULL, NULL);
+  if (info.width < 16 || info.height < 16 ||
+      info.width > 4096 || info.height > 4096 ||
+      info.native_format != H2_DISPLAY_PIXEL_RGB565)
+    fail("capture-info", H2_DISPLAY_ERR_IO);
+  capture_width = info.width;
+  capture_height = info.height;
+  capture_error = 0;
+  transfer_count = 0;
+  size_t capture_bytes = (size_t)capture_width * capture_height * 2u;
+  transferred = h2_pal_mem_alloc(runtime->mem, capture_bytes);
   if (!transferred)
     fail("capture-allocation", H2_DISPLAY_ERR_NO_MEMORY);
-  memset(transferred, 0, 368u * 448u * 2u);
-  h2_amoled_display_set_transfer_capture(capture, NULL);
+  memset(transferred, 0, capture_bytes);
+  (void)H2_DISPLAY_CAPTURE_CONFIGURE(capture, NULL);
   int rc = h2_display_device_run(runtime, esp_app_get_description()->version,
                                  observe, NULL, NULL);
-  h2_amoled_display_set_transfer_capture(NULL, NULL);
+  (void)H2_DISPLAY_CAPTURE_CONFIGURE(NULL, NULL);
   h2_pal_mem_free(runtime->mem, transferred);
   transferred = NULL;
   esp_timer_stop(watchdog);

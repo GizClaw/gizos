@@ -169,7 +169,7 @@ static int webrtc_close(void *user) {
            "H2_PAL_IPV6_ICE_WITNESS status=%d rc=%d local6=%d remote6=%d",
            response.status_code, rc, strstr(body, "\"local_family\":6") != NULL,
            strstr(body, "\"remote_family\":6") != NULL);
-  h2_pal_log_write(fixture->log, H2_PAL_LOG_INFO, "pal-ipv6", line);
+  (void)printf("%s\n", line);
   h2_pal_http_response_free(client->http, &response);
   return h2_webrtc_fixture_close(&fixture->client);
 }

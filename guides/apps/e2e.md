@@ -173,6 +173,8 @@ macOS 使用 FFmpeg；WASM C 在 Worker 执行、WebCodecs UI callback 只做有
 
 ## PAL Display
 
+ESP Display 入口可通过 `H2_DISPLAY_CAPTURE_HEADER` 与 `H2_DISPLAY_CAPTURE_CONFIGURE` 注入最终 board 的诊断 tap；默认继续使用 AMOLED 的 tap。fixture 注册函数返回各自 board 的真实尺寸和格式，NULL 只查询／注销；不增加 preflight open/close，原 runner 仍从 cold/closed 起点运行不变的 24-case 合同。tap 只借出已完成 DMA 的真实字节；不替换 Display PAL、不复制 launcher，也不把传输比对提升为光学或亮度通过。
+
 `projects/e2e/apps/pal-display/app` 借用真实 Runtime 和 launcher 的输出观察器，覆盖 open/info/draw/present/brightness/close，固定运行 24 个 mandatory case。测试检查 native 格式、borrowed 像素生命周期、全屏及局部更新、padding/unaligned stride、可选格式的明确支持或拒绝、矩形/整数溢出、重复 present、0/50/100 亮度和重复 close/reopen；失败、未运行或清理失败不能授予资格。
 
 Desktop 从 SDL renderer 读回，Browser 比对真实 Chromium composited screenshot，移动端捕获已显示的 UIKit/Android View。移动端分别消费实际 Swift Package/XCFramework 和 AAR，manual 入口为 `make bazel-test-ios_pal_display_simulator_test` 与 `make bazel-test-android_pal_display_simulator_test`。
