@@ -792,6 +792,7 @@ static h2_pal_result_t reconnect_and_verify_reboot(
                 }
             }
         }
+        const h2_pal_result_t status_result = rc;
         if (rc == H2_PAL_OK) {
             rc = h2_h2loader_cli_verify_reboot_status(kind, before, out_status);
             if (rc == H2_PAL_OK) return H2_PAL_OK;
@@ -812,6 +813,12 @@ static h2_pal_result_t reconnect_and_verify_reboot(
                 awaiting_confirmation = 1;
                 continue;
             }
+        }
+        if (awaiting_confirmation) {
+            (void)h2_h2loader_cli_output(
+                context, H2_H2LOADER_CLI_STREAM_STDERR,
+                "h2loader: pending upgrade status failed status_code=%d result_code=%d\n",
+                (int)status_result, (int)rc);
         }
         awaiting_confirmation = 0;
         (void)h2_h2loader_cli_transport_disconnect(transport);

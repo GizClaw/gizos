@@ -11,6 +11,12 @@ struct runtime { const h2_pal_time_api_t *time; };
 static char output[65536];
 static size_t output_len;
 #define H2_H2LOADER_CLI_STREAM_STDOUT 1
+#define H2_H2LOADER_CLI_STREAM_STDERR 2
+static h2_pal_result_t h2_h2loader_cli_output(h2_h2loader_cli_context_t *ctx,int kind,const char *format,...) {
+    (void)ctx; (void)kind; (void)format;
+    assert(0 && "unexpected pending-upgrade diagnostic in non-monitor scenario");
+    return H2_PAL_ERR_INVALID_STATE;
+}
 static h2_pal_result_t h2_h2loader_cli_output_bytes(h2_h2loader_cli_context_t *ctx,int kind,const uint8_t *data,size_t n) {
     (void)ctx;
     (void)kind;
