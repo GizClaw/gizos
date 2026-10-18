@@ -12,6 +12,8 @@ enum { CLI_SCAN, CLI_STATUS, CLI_MONITOR, CLI_REBOOT };
 static const char mixed_boot[] = "H2_DISPLAY_BOOT version=test\r\n";
 static const char mixed_raw[] = "H2_DISPLAY_CASE first=PASS\r\n";
 static const char mixed_tail[] = "H2_LOADER_STATUX diagnostic\r\nH2_DISPLAY_READY rc=0 confirm=0\r\n";
+static const char connect_ready[] = "H2_LOADER_READY board=devkit target=esp32s3\r\n";
+static const char after_ready[] = "H2_DISPLAY_CASE after-ready=PASS\r\n";
 static const char mixed_expected[] = "H2_DISPLAY_BOOT version=test\r\n"
     "H2_DISPLAY_CASE first=PASS\r\n"
     "H2_LOADER_STATUX diagnostic\r\nH2_DISPLAY_READY rc=0 confirm=0\r\n";
@@ -19,7 +21,8 @@ typedef struct cli_fixture {
     int mode;
     const char *status_diagnostic;
     size_t mixed_read_size, status_prefix_split;
-    int mixed_status_output;
+    int mixed_status_output, connect_output, connect_ready_mode;
+    size_t before_status_output_len;
     unsigned opens, streams, closes, controls, scans, snapshots_closed, requests;
     unsigned reboots, sleeps, cancel_after_opens, cancel_closes;
     uint32_t modem_lines;
@@ -68,7 +71,18 @@ static int output(void *user, const void *data, size_t len, size_t *written, uin
     cli_fixture_t *f=user; (void)timeout;
     assert(len < sizeof(f->output)-f->output_len);
     memcpy(f->output+f->output_len,data,len); f->output_len+=len;
+    if (f->connect_output && f->requests==0u) f->before_status_output_len+=len;
     f->output[f->output_len]='\0'; *written=len; return H2_PAL_OK;
+}
+static h2_pal_result_t connect_log(void *user, const uint8_t *data, size_t len) {
+    size_t written=0u;
+    int rc=output(user,data,len,&written,0u);
+    assert(rc==H2_PAL_OK && written==len);
+    return rc;
+}
+static int cancel_after_one_poll(void *user) {
+    unsigned *remaining=user;
+    return (*remaining)--==0u;
 }
 static int flush(void *user) { (void)user; return H2_PAL_OK; }
 static const h2_command_io_vtable_t output_vtable = {.write=output, .flush=flush};
@@ -128,7 +142,23 @@ static int peer_frame(void *user, const h2_iostreamikcp_frame_t *frame) {
         h2_iostreamikcp_frame_t ack=*frame; ack.flags=H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_ACK;
         uint8_t encoded[32]; size_t len=0u, written=0u;
         assert(h2_iostreamikcp_frame_encode(&ack,encoded,sizeof(encoded),&len)==H2_PAL_OK);
-        return peer_output(f,encoded,len,&written,0u);
+        int rc=peer_output(f,encoded,len,&written,0u);
+        if (rc==H2_PAL_OK && frame->flags==H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_OPEN && f->connect_ready_mode) {
+            size_t prefix=f->connect_ready_mode==2?sizeof("H2_LOADER_REA")-1u:sizeof(connect_ready)-1u;
+            assert(h2_iostreamikcp_write(f->peer,(const uint8_t *)connect_ready,prefix)==H2_PAL_OK);
+            assert(h2_iostreamikcp_flush(f->peer)==H2_PAL_OK);
+            const char *raw=f->connect_ready_mode==2?connect_ready+prefix:after_ready;
+            assert(peer_output(f,raw,strlen(raw),&written,0u)==H2_PAL_OK);
+            assert(written==strlen(raw));
+        }
+        if (rc==H2_PAL_OK && frame->flags==H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_OPEN && f->connect_output) {
+            /* OPEN ACK, then decoded BOOT and raw CASE in the same UART read. */
+            assert(h2_iostreamikcp_write(f->peer,(const uint8_t *)mixed_boot,sizeof(mixed_boot)-1u)==H2_PAL_OK);
+            assert(h2_iostreamikcp_flush(f->peer)==H2_PAL_OK);
+            assert(peer_output(f,mixed_raw,sizeof(mixed_raw)-1u,&written,0u)==H2_PAL_OK);
+            assert(written==sizeof(mixed_raw)-1u);
+        }
+        return rc;
     }
     assert(frame->flags==H2_IOSTREAMIKCP_FRAME_FLAG_DATA && f->peer!=NULL);
     int rc=h2_iostreamikcp_input_frame(f->peer,frame);
@@ -143,7 +173,7 @@ static int peer_frame(void *user, const h2_iostreamikcp_frame_t *frame) {
             if (f->status_diagnostic != NULL)
                 assert(h2_iostreamikcp_write(f->peer, (const uint8_t *)f->status_diagnostic,
                                            strlen(f->status_diagnostic)) == H2_PAL_OK);
-            if (f->mixed_status_output) {
+            if (f->mixed_status_output && !f->connect_output) {
                 size_t written = 0u;
                 assert(h2_iostreamikcp_flush(f->peer)==H2_PAL_OK);
                 assert(peer_output(f,mixed_raw,sizeof(mixed_raw)-1u,&written,0u)==H2_PAL_OK);
@@ -223,12 +253,13 @@ static const h2_pal_serial_host_vtable_t serial_vtable = {.scan=scan,.snapshot_c
     .set_control_lines=set_lines,.close=close_port};
 
 static void run_case_with_output(int command, int mode, const char *diagnostic,
-                                size_t mixed_read_size, size_t status_prefix_split) {
+                                size_t mixed_read_size, size_t status_prefix_split, int connect_output) {
     cli_fixture_t f={.mode=mode,.modem_lines=H2_PAL_SERIAL_HOST_CONTROL_DTR|H2_PAL_SERIAL_HOST_CONTROL_RTS};
     f.mixed_status_output=mixed_read_size!=0u;
     f.mixed_read_size=mixed_read_size;
     f.status_prefix_split=status_prefix_split;
-    f.status_diagnostic=f.mixed_status_output?mixed_boot:diagnostic;
+    f.connect_output=connect_output;
+    f.status_diagnostic=connect_output?NULL:f.mixed_status_output?mixed_boot:diagnostic;
     f.cancel_after_opens=command==CLI_MONITOR?1u:command==CLI_REBOOT?2u:0u;
     f.mem=(h2_pal_mem_api_t){.user=&f,.vtable=&mem_vtable};
     f.uart=(h2_pal_uart_io_stream_api_t){.user=&f,.vtable=&uart_vtable};
@@ -270,17 +301,49 @@ static void run_case_with_output(int command, int mode, const char *diagnostic,
     }
     assert(f.peer==NULL);
     assert(f.allocations==0u);
+    if (connect_output && strcmp(f.output,diagnostic)!=0)
+        fprintf(stderr,"connect pending expected=[%s] actual=[%s]\n",diagnostic,f.output);
     if (diagnostic != NULL) assert(strstr(f.output,diagnostic)!=NULL);
     if (diagnostic != NULL) assert(strstr(f.output,"H2_LOADER_STATUS ")==NULL);
     if (diagnostic != NULL) assert(f.output_len==strlen(diagnostic));
+    if (connect_output && mixed_read_size>=512u)
+        assert(f.before_status_output_len==sizeof(mixed_boot)+sizeof(mixed_raw)-2u);
 }
 
 static void run_case_with_diagnostic(int command, int mode, const char *diagnostic) {
-    run_case_with_output(command,mode,diagnostic,0u,0u);
+    run_case_with_output(command,mode,diagnostic,0u,0u,0);
 }
 
 static void run_case(int command, int mode) {
     run_case_with_diagnostic(command, mode, NULL);
+}
+
+static void run_connect_ready(int mode, int sink) {
+    cli_fixture_t f={.mode=HEALTHY,.mixed_read_size=512u,.connect_ready_mode=mode,
+        .modem_lines=H2_PAL_SERIAL_HOST_CONTROL_DTR|H2_PAL_SERIAL_HOST_CONTROL_RTS};
+    f.mem=(h2_pal_mem_api_t){.user=&f,.vtable=&mem_vtable};
+    f.uart=(h2_pal_uart_io_stream_api_t){.user=&f,.vtable=&uart_vtable};
+    h2_pal_serial_host_api_t serial={.user=&f,.vtable=&serial_vtable};
+    h2_pal_time_api_t time={.user=&f,.vtable=&time_vtable};
+    h2_h2loader_host_serial_connection_config_t config={.serial=&serial,.time=&time,.allocator=&f.mem,
+        .port_id="scan-port",.preserve_control_lines=1,.on_log=sink?connect_log:NULL,.log_user=&f};
+    h2_h2loader_host_serial_connection_t *connection=NULL;
+    h2_pal_result_t rc=h2_h2loader_host_serial_connect(&config,&connection);
+    if (sink) {
+        if (rc!=H2_PAL_ERR_CLOSED)
+            fprintf(stderr,"post-ACK READY mode=%d rc=%d output=[%s]\n",mode,rc,f.output);
+        assert(rc==H2_PAL_ERR_CLOSED && connection==NULL);
+        assert(f.output_len==sizeof(connect_ready)-1u && strcmp(f.output,connect_ready)==0);
+    } else {
+        assert(rc==H2_PAL_OK && connection!=NULL && f.output_len==0u);
+        unsigned polls=1u;
+        assert(h2_h2loader_host_serial_monitor_logs(connection,cancel_after_one_poll,&polls)==H2_PAL_ERR_CLOSED);
+        assert(f.output_len==0u);
+        assert(h2_h2loader_host_serial_disconnect(&connection)==H2_PAL_OK && connection==NULL);
+    }
+    assert(f.opens==1u && f.streams==1u && f.closes==1u && f.controls==0u);
+    assert(f.requests==0u && f.reboots==0u && f.peer==NULL && f.allocations==0u);
+    assert(f.modem_lines==(H2_PAL_SERIAL_HOST_CONTROL_DTR|H2_PAL_SERIAL_HOST_CONTROL_RTS));
 }
 
 int main(void) {
@@ -295,6 +358,11 @@ int main(void) {
     const size_t chunks[]={1024u,67u,1u};
     for (size_t chunk=0u;chunk<sizeof(chunks)/sizeof(chunks[0]);++chunk)
         for (size_t split=0u;split<sizeof("H2_LOADER_STATUS ")-1u;++split)
-            run_case_with_output(CLI_MONITOR,HEALTHY,mixed_expected,chunks[chunk],split);
+            run_case_with_output(CLI_MONITOR,HEALTHY,mixed_expected,chunks[chunk],split,0);
+    for (size_t chunk=0u;chunk<sizeof(chunks)/sizeof(chunks[0]);++chunk)
+        run_case_with_output(CLI_MONITOR,HEALTHY,mixed_expected,chunks[chunk],0u,1);
+    run_connect_ready(1,1);
+    run_connect_ready(2,1);
+    run_connect_ready(1,0);
     return 0;
 }

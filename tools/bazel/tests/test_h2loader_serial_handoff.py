@@ -23,16 +23,17 @@ class SerialHandoff(unittest.TestCase):
         verify = section(app, 'static int metadata_equal(', 'static int reboot_command_kind(')
         verify += section(app, 'h2_pal_result_t h2_h2loader_cli_verify_reboot_status(', 'static int monitor_transport(') if 'static int monitor_transport(' in app else section(app, 'h2_pal_result_t h2_h2loader_cli_verify_reboot_status(', 'static h2_pal_result_t monitor_transport(')
         fixture = (ROOT/'tools/bazel/tests/fixtures/h2loader_serial_handoff.c').read_text()
-        # The real prefix includes status-output helpers; handoff must never use them.
-        unexpected_read = '''
+        # Fake input parses frames without decoding KCP payloads, so its queue is empty.
+        empty_read = '''
 h2_pal_result_t h2_iostreamikcp_read(
     h2_iostreamikcp_t *stream, uint8_t *out, size_t size, size_t *len) {
-    (void)stream; (void)out; (void)size; (void)len;
-    assert(0 && "handoff fixture must not read decoded data");
-    return H2_PAL_ERR_INVALID_STATE;
+    assert(stream != NULL && stream->config.conv != 0u);
+    assert(out != NULL && size > 0u && len != NULL);
+    *len = 0u;
+    return H2_PAL_ERR_WOULD_BLOCK;
 }
 '''
-        for key, value in [('FRAME',frame),('SERIAL',unexpected_read+prefix+connect),('OUTPUT',output),('VERIFY',verify)]:
+        for key, value in [('FRAME',frame),('SERIAL',empty_read+prefix+connect),('OUTPUT',output),('VERIFY',verify)]:
             fixture=fixture.replace('/* '+key+' */',value)
         with tempfile.TemporaryDirectory() as directory:
             unit=Path(directory)/'test.c';binary=Path(directory)/'test'

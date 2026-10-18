@@ -153,6 +153,28 @@ static h2_pal_result_t serial_decoded_output(
     return on_output != NULL && len > 0u ? on_output(user, data, len) : H2_PAL_OK;
 }
 
+static h2_pal_result_t serial_stream_log(
+    void *user, const uint8_t *data, size_t len);
+
+/* OPEN handoff precedes every command. Apply the existing post-ACK READY
+ * recognizer to queued console payload before processing later raw bytes. */
+static h2_pal_result_t serial_drain_connect_logs(
+    h2_h2loader_host_serial_connection_t *connection) {
+    if (connection->on_log == NULL) return H2_PAL_OK;
+    for (;;) {
+        uint8_t input[512];
+        size_t read = 0u;
+        h2_pal_result_t rc = h2_iostreamikcp_read(
+            connection->stream, input, sizeof(input), &read);
+        if (rc == H2_PAL_ERR_WOULD_BLOCK || (rc == H2_PAL_OK && read == 0u)) return H2_PAL_OK;
+        if (rc != H2_PAL_OK) return rc;
+        connection->decoded_log_active = 1;
+        rc = serial_stream_log(connection, input, read);
+        connection->decoded_log_active = 0;
+        if (rc != H2_PAL_OK) return rc;
+    }
+}
+
 static h2_pal_result_t serial_finish_command_response(void *transport);
 
 typedef struct session_ack_context {
@@ -317,6 +339,10 @@ static h2_pal_result_t serial_stream_log(
     h2_h2loader_host_serial_connection_t *connection = user;
     static const char marker[] = "H2_LOADER_READY ";
     int reset = 0;
+    if (connection->pending_input_len != 0u && !connection->decoded_log_active) {
+        h2_pal_result_t rc = serial_drain_connect_logs(connection);
+        if (rc != H2_PAL_OK) return rc;
+    }
     for (size_t index = 0u; index < len; ++index) {
         if (data[index] == '\r' || data[index] == '\n') {
             connection->ready_prefix_len = 0u;
@@ -751,6 +777,9 @@ h2_pal_result_t h2_h2loader_host_serial_connect(
     }
     rc = h2_iostreamikcp_input(connection->stream, connection->pending_input,
                               connection->pending_input_len);
+    if (rc == H2_PAL_OK && connection->pending_input_len != 0u) {
+        rc = serial_drain_connect_logs(connection);
+    }
     connection->pending_input_len = 0u;
     if (rc != H2_PAL_OK) {
         goto fail;
