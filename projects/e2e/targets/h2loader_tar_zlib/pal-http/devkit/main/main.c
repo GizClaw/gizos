@@ -6,6 +6,7 @@
 #include "esp_app_desc.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "h2_e2e_fixture_wifi.h"
 #include <stdio.h>
 
 static h2_runtime_t *runtime;
@@ -21,7 +22,7 @@ static void run(void *user) {
     vTaskDelay(pdMS_TO_TICKS(5000u));
     int rc;
     for (;;) {
-        rc = h2_pal_http_device_run(runtime, &result);
+        rc = h2_pal_http_device_run_with_wifi(runtime, h2_e2e_fixture_wifi(), &result);
         if (result.passed + result.failed + result.blocked != 0u) break;
         if (rc != H2_PAL_ERR_NOT_FOUND && rc != H2_PAL_ERR_UNAVAILABLE &&
             rc != H2_PAL_ERR_TIMEOUT && rc != H2_PAL_ERR_BUSY) break;

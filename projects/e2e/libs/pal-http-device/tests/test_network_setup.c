@@ -51,5 +51,13 @@ int main(void) {
     fixture = (fixture_t){.saved_result = H2_PAL_OK};
     if (h2_pal_http_device_prepare_network(&runtime) != H2_PAL_OK ||
         fixture.saved_reads != 1u || fixture.connects != 1u || fixture.statuses != 2u) return 3;
+    const h2_pal_wifi_sta_config_t explicit_wifi = {.ssid = "fixture", .ssid_len = 7u};
+    fixture = (fixture_t){.connected = 1, .saved_result = H2_PAL_ERR_NOT_FOUND};
+    if (h2_pal_http_device_prepare_network_with_wifi(&runtime, &explicit_wifi) != H2_PAL_OK ||
+        fixture.saved_reads != 0u || fixture.connects != 1u) return 4;
+    const h2_pal_wifi_sta_config_t rejected_wifi = {.ssid = "bad", .ssid_len = 3u};
+    fixture = (fixture_t){.saved_result = H2_PAL_OK};
+    if (h2_pal_http_device_prepare_network_with_wifi(&runtime, &rejected_wifi) != H2_PAL_ERR_INVALID_ARG ||
+        fixture.saved_reads != 0u || fixture.connects != 1u) return 5;
     return 0;
 }

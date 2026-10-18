@@ -41,6 +41,11 @@ static int hex_digit(char value) {
 
 
 int h2_pal_http_device_run(h2_runtime_t *runtime, h2_pal_http_e2e_result_t *result) {
+    return h2_pal_http_device_run_with_wifi(runtime, NULL, result);
+}
+
+int h2_pal_http_device_run_with_wifi(h2_runtime_t *runtime,
+    const h2_pal_wifi_sta_config_t *wifi, h2_pal_http_e2e_result_t *result) {
     if (runtime == NULL || result == NULL) return H2_PAL_ERR_INVALID_ARG;
     memset(result, 0, sizeof(*result));
     const char *hex = H2_PAL_HTTP_CA_PEM_HEX;
@@ -57,7 +62,7 @@ int h2_pal_http_device_run(h2_runtime_t *runtime, h2_pal_http_e2e_result_t *resu
         if (high < 0 || low < 0) { rc = H2_PAL_ERR_INVALID_ARG; break; }
         ca[index / 2u] = (uint8_t)((high << 4) | low);
     }
-    if (rc == H2_PAL_OK) rc = h2_pal_http_device_prepare_network(runtime);
+    if (rc == H2_PAL_OK) rc = h2_pal_http_device_prepare_network_with_wifi(runtime, wifi);
     if (rc == H2_PAL_OK)
         rc = h2_pal_time_set_wall_ms(runtime->time, H2_PAL_HTTP_FIXTURE_EPOCH_MS);
     h2_corehttp_t *provider = NULL;

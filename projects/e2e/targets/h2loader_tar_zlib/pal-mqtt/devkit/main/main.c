@@ -9,6 +9,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "psa/crypto.h"
+#include "h2_e2e_fixture_wifi.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -59,7 +60,7 @@ static void run(void *user) {
     vTaskDelay(pdMS_TO_TICKS(5000u));
     int rc;
     for (;;) {
-        rc = h2_mqtt_device_prepare(runtime);
+        rc = h2_mqtt_device_prepare_with_wifi(runtime, h2_e2e_fixture_wifi());
         if (rc == H2_PAL_OK) break;
         if (rc != H2_PAL_ERR_NOT_FOUND && rc != H2_PAL_ERR_UNAVAILABLE &&
             rc != H2_PAL_ERR_TIMEOUT && rc != H2_PAL_ERR_BUSY) fail("network", rc);

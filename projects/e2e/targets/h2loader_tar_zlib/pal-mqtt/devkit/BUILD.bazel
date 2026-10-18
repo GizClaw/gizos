@@ -62,10 +62,14 @@ firmware_lib_component(
 firmware_native_component(
     name = "launcher",
     srcs = ["main/main.c"],
-    hdrs = ["main/ledger_console.h"],
+    hdrs = [
+        "main/ledger_console.h",
+        "//projects/e2e/targets/h2loader_tar_zlib/fixture-wifi:h2_e2e_fixture_wifi.h",
+    ],
     component_directory = "projects/e2e/targets/h2loader_tar_zlib/pal-mqtt/devkit/main",
     component_name = "main",
     data = [
+        "//projects/e2e/targets/h2loader_tar_zlib/fixture-wifi:fixture_wifi.cmake",
         "main/CMakeLists.txt",
         "main/idf_component.yml",
     ],

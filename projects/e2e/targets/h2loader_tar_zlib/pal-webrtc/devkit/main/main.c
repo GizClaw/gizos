@@ -6,6 +6,7 @@
 #include "h2_esp_h2loader_runtime.h"
 #include "h2_esp_target_task_policy.h"
 #include "h2_pal_webrtc_device.h"
+#include "h2_e2e_fixture_wifi.h"
 #include <stdio.h>
 
 static h2_runtime_t *runtime;
@@ -22,7 +23,7 @@ static void fail(const char *stage, int rc) {
 static void run(void *user) {
   (void)user;
   vTaskDelay(pdMS_TO_TICKS(5000u));
-  int rc = h2_pal_webrtc_device_run(runtime, 20000u, 0u, &result);
+  int rc = h2_pal_webrtc_device_run_with_wifi(runtime, h2_e2e_fixture_wifi(), 20000u, 0u, &result);
   if (result.passed + result.failed + result.blocked !=
       H2_PAL_WEBRTC_E2E_CASE_COUNT)
     fail("fixture_or_network", rc);
