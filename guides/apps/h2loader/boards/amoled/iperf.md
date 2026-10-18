@@ -12,6 +12,8 @@ image 使用 `boards/amoled/esp32s3/layouts/h2loader/sdkconfig.h2loader.defaults
 
 image 不携带 Wi-Fi credential。先在 Loader 或任一 App 中执行 `wifi connect`，设备保存 STA 配置后 App 通过 Runtime `wifi_settings` 重连；没有保存配置时 App 停在 `stage=wifi_settings status=ERROR` 并保持 H2Loader command-responsive。取得 IP 后 App 用 `H2_IPERF_POWER_SAVE` 选择的 Wi-Fi 省电策略：`0` 关闭 modem sleep（默认，用于吞吐与延迟基线），`1` 为 DTIM sleep，`2` 为 listen-interval sleep。 `H2_IPERF_BLE_ADV=0` 会在矩阵开始前暂停 H2Loader App command service 的 BLE 广播（默认 `1` 保持广播）：AMOLED 的 BLE/Wi-Fi 共存会让 Wi-Fi 在广播期间分时休眠，对比两种取值可以量化共存对吞吐的影响；暂停期间只能通过串口管理设备。
 
+复用同一矩阵的 `iperf/devkit` native entry 另支持共享[可选 Wi-Fi fixture](/apps/e2e#ownership)：最终入口显式提供 `H2_E2E_WIFI_SSID` 和 `H2_E2E_WIFI_PASSWORD` 时借用该配置执行原非保存 connect；未提供时读取原保存配置。DevKit 仅把 `iperf_e2e` scope 的 INFO 诊断记录送到 checked stdout，其余日志仍使用原 board Log；原 14-case 参数、配网循环、测量预算和测试前确认位置保持不变。
+
 `H2_IPERF_ROLE_SERVER=1` 让镜像改为在 5201 端口运行 PAL iperf server（SCTP 封装端口 9899），host 用官方 `iperf3 -c <板子 IP>` 逐个方向驱动；这是分离设备收发路径与 host 工具的最直接方式。App entry task 在两种角色下都把自己提升到优先级 9，避免被 H2Loader 命令服务的串口轮询饿死。
 
 layout 把动态 RX buffer 保持在 UDP mailbox 之上（64 对 32）：lwIP 零拷贝交付 Wi-Fi 帧，socket mailbox 里每个未读的报文都占着一个动态 RX buffer，两者相等时一个停止读取的 socket 就会让整个射频收不到任何帧，包括 TCP 控制连接。

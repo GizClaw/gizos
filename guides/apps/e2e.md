@@ -22,9 +22,9 @@ Platform artifact entry 持有 Runtime assembly、具体 provider、endpoint 与
 
 IPv6、Net/TLS、HTTP、WebRTC 与 Wi-Fi 的设备测试报告直接写入入口现有的标准输出，保留原 CASE、execution、summary 与失败结果，避免产品日志等级隐藏验收账本；被测 Runtime/PAL 与 SDK 配置保持原样。原本把 Log PAL 本身作为输出合同的 iperf Client、Lua print 与 Core Log 用例仍遵守各自合同，不能以替换真实 Log provider 或提高 SDK 日志预算代替。
 
-HTTP、MQTT 与 WebRTC 的 ESP Native 入口通过共享的 `projects/e2e/targets/h2loader_tar_zlib/fixture-wifi` 接收可选公开 Wi-Fi fixture。最终固件入口可在既有 `cmake_definitions` 中同时显式提供 `H2_E2E_WIFI_SSID` 和 `H2_E2E_WIFI_PASSWORD`；配置不完整或包含不支持的字符时构建失败，不读取 operator environment。借用的 fixture 配置只替换原 setup 的凭据来源，使用真实 Runtime 的非保存 STA connect，保持原关联、取得 IP、case、资源基线及 cleanup 预算，不写入 PAL 已保存凭据或 Runtime 网络集合。
+HTTP、MQTT 与 WebRTC 的 ESP Native 入口，以及 legacy iperf 的 DevKit 入口，通过共享的 `projects/e2e/targets/h2loader_tar_zlib/fixture-wifi` 接收可选公开 Wi-Fi fixture。最终固件入口可在既有 `cmake_definitions` 中同时显式提供 `H2_E2E_WIFI_SSID` 和 `H2_E2E_WIFI_PASSWORD`；配置不完整或包含不支持的字符时构建失败，不读取 operator environment。借用的 fixture 配置只替换原 setup 的凭据来源，使用真实 Runtime 的非保存 STA connect，保持原关联、取得 IP、case、资源基线及 cleanup 预算，不写入 PAL 已保存凭据或 Runtime 网络集合。
 
-未提供这两个输入时，HTTP/MQTT 继续复用现有可用连接，否则读取原保存配置；WebRTC 继续使用原保存配置。显式提供 fixture 时只尝试该配置，不回退到其他连接或保存项。网络准备仍先于原 portable case runner，实际网络失败和不完整账本保留原结果；构建成功不授予设备测试资格。
+未提供这两个输入时，HTTP/MQTT 继续复用现有可用连接，否则读取原保存配置；WebRTC 和 legacy iperf 的 DevKit 入口继续使用原保存配置。显式提供 fixture 时只尝试该配置，不回退到其他连接或保存项。网络准备仍先于原 portable case runner，实际网络失败和不完整账本保留原结果；构建成功不授予设备测试资格。
 
 可在 host 上确定性运行、没有外部依赖的 App-local、parser、fake 和 loopback 测试属于默认自动测试，不声明 tag。连接外部服务、真实设备或要求人工准备环境的 E2E test 声明 Bazel 特殊 tag `manual`，因此不会被通配 target pattern 自动选中；需要重新观察真实外部状态的 live test 另声明特殊 tag `external`，由 Bazel 禁用测试结果缓存，构建 disk/remote cache 保持启用。新的手工测试入口直接调用 `bazel test --config=<platform> --nocache_test_results <exact-label>`，设备选择与需要继承的 SDK 路径通过 `--test_env` 传入；平台配置和静态 suite 参数属于 `.bazelrc` / `BUILD.bazel`。不为纯转发另建 Make alias、shell wrapper 或 Python Bazel 调度器；已有 legacy Make 入口暂保留兼容，不再维护额外 tag filter。测试仅使用这些 Bazel 原生控制 tag，不另建业务 tag inventory，也不创建 `test_suite` 聚合入口。
 
@@ -196,6 +196,8 @@ Desktop launcher 位于 `projects/e2e/targets/cc_binary/webrtc-performance`，�
 ## iperf
 
 `h2_iperf_e2e_run()` 只消费 launcher 借用的 Memory、Net、Time、Crypto、可选 SCTP 与 Log PAL，以及 operator 提供的 server 地址。portable App 拥有固定顺序的 case 矩阵（TCP 参考、UDP 上下行 10/20/40 Mbit/s 与 1200 B datagram、SCTP 上下行 1200 B 与 1400 B packet budget）、每个 case 的 deadline、non-fail-fast aggregation、每 case 一行 `H2_IPERF_E2E_CASE` JSON 和 `H2_IPERF_E2E_SUMMARY`。它不读取 environment 或文件，不连接 Wi-Fi，也不选择 provider；SCTP case 在没有 SCTP PAL 时记为 `UNSUPPORTED` 并继续。
+
+DevKit native entry 仅将 `iperf_e2e` scope 的 INFO 诊断记录交给 checked stdout，其余日志继续委托原 board Log。portable App 仍通过原 Log PAL 报告，14-case 矩阵、5 秒测量、内存 checkpoint 和测试前确认位置不变；`iperf-client` 的真实 Log PAL 合同也保持原样。
 
 App-local `iperf_e2e_test` 用 `//libs/iperf:test_support` 在 loopback 上对同一个 PAL server 顺序执行 TCP、UDP reverse 与两条 SCTP association，验证共享封装 socket 上的后续 association 不会被前一条的尾包污染。host launcher `//projects/e2e/targets/cc_binary/iperf:h2iperf` 同时提供 `server`（TCP/UDP/SCTP-over-UDP 的 PAL server）和 `client <host>`（同一矩阵）。AMOLED launcher 位于 `projects/e2e/targets/h2loader_tar_zlib/iperf/amoled`，从 Runtime `wifi_settings` 取回 Loader 保存的 STA 配置，用 `--define=H2_IPERF_SERVER` 指定 LAN server，并用 `--define=H2_IPERF_POWER_SAVE` 选择 Wi-Fi 省电策略。
 
