@@ -88,6 +88,8 @@ void app_main(void) {
   rc = h2_runtime_init(&config, &runtime);
   if (rc != H2_PAL_OK)
     fail("runtime", rc);
+  /* Let managed serial reconnect before the one-shot startup reports. */
+  vTaskDelay(pdMS_TO_TICKS(5000u));
   printf("H2_IPERF_CLIENT_BOOT board=devkit version=%s\n",
          esp_app_get_description()->version);
   fflush(stdout);
