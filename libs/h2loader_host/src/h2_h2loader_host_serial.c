@@ -766,8 +766,8 @@ h2_pal_result_t h2_h2loader_host_serial_read_status(
         sizeof(response) - 1u,
         &response_len,
         connection->command_timeout_ms,
-        NULL,
-        NULL,
+        connection->on_log,
+        connection->log_user,
         0u,
         NULL);
     if (rc != H2_PAL_OK) {

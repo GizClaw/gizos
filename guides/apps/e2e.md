@@ -187,6 +187,8 @@ AMOLED 比对已完成 SPI DMA 的传输数据；BK 比对 LCD controller 当前
 
 Desktop launcher 位于 `projects/e2e/targets/cc_binary/webrtc-performance`，自动启动并回收只绑定 loopback 的 Pion fixture。DevKit H2Loader App 位于 `projects/e2e/targets/h2loader_tar_zlib/webrtc-performance/devkit`；operator 必须在构建时显式注入可从测试 Wi-Fi 访问的 HTTP signaling 和 STUN LAN endpoint，launcher 同时输出 internal、DMA-capable 与 PSRAM heap 的 KiB checkpoint。Desktop loopback 结果不能替代真实 DevKit、Wi-Fi 或远程服务证据。
 
+复用该入口的 consumer 可以通过 CMake constants `H2_WEBRTC_PERF_WIFI_SSID` 和 `H2_WEBRTC_PERF_WIFI_PASSWORD` 显式提供测试网络；未定义时使用原有 `H2LOADER_WIFI_SSID` / `H2LOADER_WIFI_PASSWORD` environment 输入。空密码与不支持的字符仍按同一入口检查拒绝。
+
 ## iperf
 
 `h2_iperf_e2e_run()` 只消费 launcher 借用的 Memory、Net、Time、Crypto、可选 SCTP 与 Log PAL，以及 operator 提供的 server 地址。portable App 拥有固定顺序的 case 矩阵（TCP 参考、UDP 上下行 10/20/40 Mbit/s 与 1200 B datagram、SCTP 上下行 1200 B 与 1400 B packet budget）、每个 case 的 deadline、non-fail-fast aggregation、每 case 一行 `H2_IPERF_E2E_CASE` JSON 和 `H2_IPERF_E2E_SUMMARY`。它不读取 environment 或文件，不连接 Wi-Fi，也不选择 provider；SCTP case 在没有 SCTP PAL 时记为 `UNSUPPORTED` 并继续。

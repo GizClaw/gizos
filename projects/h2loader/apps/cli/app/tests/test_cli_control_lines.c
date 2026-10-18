@@ -11,6 +11,7 @@ enum { HEALTHY, OPEN_FAILURE, STREAM_FAILURE, HANDSHAKE_TIMEOUT, BAD_STATUS, CLO
 enum { CLI_SCAN, CLI_STATUS, CLI_MONITOR, CLI_REBOOT };
 typedef struct cli_fixture {
     int mode;
+    const char *status_diagnostic;
     unsigned opens, streams, closes, controls, scans, snapshots_closed, requests;
     unsigned reboots, sleeps, cancel_after_opens, cancel_closes;
     uint32_t modem_lines;
@@ -117,7 +118,11 @@ static int peer_frame(void *user, const h2_iostreamikcp_frame_t *frame) {
         const char status[]="h2loader status\n";
         const char reboot[]="h2loader reboot loader\n";
         if (len==sizeof(status)-1u && memcmp(command,status,len)==0) {
-            ++f->requests; emit_status(f);
+            ++f->requests;
+            if (f->status_diagnostic != NULL)
+                assert(h2_iostreamikcp_write(f->peer, (const uint8_t *)f->status_diagnostic,
+                                           strlen(f->status_diagnostic)) == H2_PAL_OK);
+            emit_status(f);
         } else {
             const char accepted[]="H2_LOADER_REBOOT target=loader result=accepted\n"
                 "H2_LOADER_REBOOT_FINAL target=loader result=OK code=0\n";
@@ -185,8 +190,9 @@ static const h2_pal_serial_host_vtable_t serial_vtable = {.scan=scan,.snapshot_c
     .snapshot_get=port,.snapshot_destroy=snapshot_close,.open=open_port,.session_stream=stream,
     .set_control_lines=set_lines,.close=close_port};
 
-static void run_case(int command, int mode) {
+static void run_case_with_diagnostic(int command, int mode, const char *diagnostic) {
     cli_fixture_t f={.mode=mode,.modem_lines=H2_PAL_SERIAL_HOST_CONTROL_DTR|H2_PAL_SERIAL_HOST_CONTROL_RTS};
+    f.status_diagnostic=diagnostic;
     f.cancel_after_opens=command==CLI_MONITOR?1u:command==CLI_REBOOT?2u:0u;
     f.mem=(h2_pal_mem_api_t){.user=&f,.vtable=&mem_vtable};
     f.uart=(h2_pal_uart_io_stream_api_t){.user=&f,.vtable=&uart_vtable};
@@ -228,6 +234,11 @@ static void run_case(int command, int mode) {
     }
     assert(f.peer==NULL);
     assert(f.allocations==0u);
+    if (diagnostic != NULL) assert(strstr(f.output,diagnostic)!=NULL);
+}
+
+static void run_case(int command, int mode) {
+    run_case_with_diagnostic(command, mode, NULL);
 }
 
 int main(void) {
@@ -238,5 +249,6 @@ int main(void) {
     run_case(CLI_MONITOR,HEALTHY);
     run_case(CLI_REBOOT,HEALTHY);
     run_case(CLI_REBOOT,WRONG_REBOOT_ROLE);
+    run_case_with_diagnostic(CLI_MONITOR, HEALTHY, "H2_TEST_STATUS_DIAGNOSTIC received\n");
     return 0;
 }
