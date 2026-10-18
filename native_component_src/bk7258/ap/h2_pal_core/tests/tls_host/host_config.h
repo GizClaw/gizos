@@ -1,0 +1,19 @@
+#ifndef H2_BK_SHA384_HOST_CONFIG_H
+#define H2_BK_SHA384_HOST_CONFIG_H
+
+#include <stdio.h>
+#include <stdlib.h>
+
+/* Replace only SDK OS hooks; digest feature definitions come from CMake. */
+#undef MBEDTLS_THREADING_ALT
+#undef MBEDTLS_THREADING_C
+#undef MBEDTLS_PLATFORM_MEMORY
+#undef MBEDTLS_PLATFORM_STD_CALLOC
+#undef MBEDTLS_PLATFORM_STD_FREE
+#undef MBEDTLS_PLATFORM_SNPRINTF_ALT
+#undef MBEDTLS_PLATFORM_STD_SNPRINTF
+#undef MBEDTLS_PLATFORM_PRINTF_MACRO
+#define MBEDTLS_PLATFORM_PRINTF_MACRO printf
+#undef MBEDTLS_SELF_TEST
+
+#endif
