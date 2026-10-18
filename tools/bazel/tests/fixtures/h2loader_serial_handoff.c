@@ -119,7 +119,13 @@ static void drain(void) {
     }
 }
 static void disconnect_serial(void) { h2_iostreamikcp_close(connection->stream);free(connection);connection=NULL; }
-typedef struct { int unused; } h2_h2loader_cli_transport_t;
+typedef struct {
+    h2_h2loader_host_transport_t transport;
+} h2_h2loader_cli_options_t;
+typedef struct {
+    const h2_h2loader_cli_options_t *options;
+    h2_h2loader_host_transport_log_fn on_log;
+} h2_h2loader_cli_transport_t;
 static h2_pal_result_t h2_h2loader_cli_transport_rediscover(h2_h2loader_cli_transport_t *t) { (void)t; return H2_PAL_OK; }
 static int h2_h2loader_cli_reconnect_must_fail_closed(h2_h2loader_cli_transport_t *t,h2_pal_result_t rc) { (void)t;(void)rc;return 0; }
 static h2_pal_result_t h2_h2loader_cli_transport_connect(h2_h2loader_cli_transport_t *t,h2_h2loader_host_status_t *out) {
@@ -133,6 +139,12 @@ static h2_pal_result_t h2_h2loader_cli_transport_connect(h2_h2loader_cli_transpo
     return H2_PAL_OK;
 }
 static h2_pal_result_t h2_h2loader_cli_transport_disconnect(h2_h2loader_cli_transport_t *t) { (void)t;disconnect_serial();return H2_PAL_OK; }
+static h2_pal_result_t h2_h2loader_cli_transport_read_status(h2_h2loader_cli_transport_t *t,h2_h2loader_host_status_t *out) {
+    (void)t; (void)out;
+    /* These non-monitor scenarios must retain their reconnect path. */
+    assert(0 && "unexpected live-confirmation status poll");
+    return H2_PAL_ERR_INVALID_STATE;
+}
 /* VERIFY */
 int main(int argc,char **argv) {
     assert(argc==2);

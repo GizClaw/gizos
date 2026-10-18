@@ -769,26 +769,55 @@ static h2_pal_result_t reconnect_and_verify_reboot(
     const h2_h2loader_host_status_t *before,
     h2_h2loader_host_status_t *out_status) {
     h2_pal_result_t rc = H2_PAL_ERR_TIMEOUT;
-    for (uint32_t attempt = 0u; attempt < 120u; ++attempt) {
+    int awaiting_confirmation = 0;
+    for (uint32_t failed_attempts = 0u; failed_attempts < 120u;) {
         if (context->config->is_cancelled != NULL &&
             context->config->is_cancelled(context->config->cancel_user)) {
+            if (awaiting_confirmation) (void)h2_h2loader_cli_transport_disconnect(transport);
             return H2_PAL_EXIT;
         }
         rc = h2_pal_time_sleep_ms(context->runtime->time, 500u);
-        if (rc != H2_PAL_OK) return rc;
-        rc = h2_h2loader_cli_transport_rediscover(transport);
-        if (rc == H2_PAL_OK) {
-            rc = h2_h2loader_cli_transport_connect(transport, out_status);
-            if (h2_h2loader_cli_reconnect_must_fail_closed(transport, rc)) {
-                return rc;
+        if (rc != H2_PAL_OK) {
+            if (awaiting_confirmation) (void)h2_h2loader_cli_transport_disconnect(transport);
+            return rc;
+        }
+        if (awaiting_confirmation) {
+            rc = h2_h2loader_cli_transport_read_status(transport, out_status);
+        } else {
+            rc = h2_h2loader_cli_transport_rediscover(transport);
+            if (rc == H2_PAL_OK) {
+                rc = h2_h2loader_cli_transport_connect(transport, out_status);
+                if (h2_h2loader_cli_reconnect_must_fail_closed(transport, rc)) {
+                    return rc;
+                }
             }
         }
         if (rc == H2_PAL_OK) {
             rc = h2_h2loader_cli_verify_reboot_status(kind, before, out_status);
             if (rc == H2_PAL_OK) return H2_PAL_OK;
+            /* Keep only this live serial App while its exact Stage awaits confirmation. */
+            if (transport->on_log != NULL &&
+                context->config->is_cancelled != NULL &&
+                transport->options->transport == H2_H2LOADER_HOST_TRANSPORT_SERIAL &&
+                kind == H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE &&
+                before->stage.valid && before->stage.role == H2_H2LOADER_HOST_ACTIVE_ROLE_APP &&
+                out_status->stage.valid && metadata_equal(&out_status->stage, &before->stage) &&
+                out_status->active_role == H2_H2LOADER_HOST_ACTIVE_ROLE_APP &&
+                out_status->running_partition == 2u && out_status->next_partition == 2u &&
+                out_status->boot_intent == H2_H2LOADER_HOST_BOOT_INTENT_AUTO && out_status->last == H2_PAL_OK &&
+                strcmp(out_status->device_uid, before->device_uid) == 0 &&
+                strcmp(out_status->board, before->board) == 0 && strcmp(out_status->target, before->target) == 0 &&
+                metadata_equal(&out_status->partition_1, &before->partition_1) &&
+                metadata_matches_stage(&out_status->partition_2, &before->stage)) {
+                awaiting_confirmation = 1;
+                continue;
+            }
         }
+        awaiting_confirmation = 0;
         (void)h2_h2loader_cli_transport_disconnect(transport);
+        ++failed_attempts;
     }
+    if (awaiting_confirmation) (void)h2_h2loader_cli_transport_disconnect(transport);
     return rc;
 }
 

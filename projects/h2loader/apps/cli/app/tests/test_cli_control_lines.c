@@ -17,8 +17,14 @@ static const char after_ready[] = "H2_DISPLAY_CASE after-ready=PASS\r\n";
 static const char mixed_expected[] = "H2_DISPLAY_BOOT version=test\r\n"
     "H2_DISPLAY_CASE first=PASS\r\n"
     "H2_LOADER_STATUX diagnostic\r\nH2_DISPLAY_READY rc=0 confirm=0\r\n";
+typedef struct confirmation_probe {
+    unsigned confirm_at, cancel_at, bad_at, bad_from, uid_from, sleep_fail_at;
+    unsigned polls, stage_valid, cancel_seen;
+    int mismatched_stage;
+} confirmation_probe_t;
 typedef struct cli_fixture {
     int mode;
+    confirmation_probe_t *confirmation;
     const char *status_diagnostic;
     const char *pre_ack_log;
     size_t mixed_read_size, status_prefix_split;
@@ -57,11 +63,24 @@ static const h2_pal_mem_vtable_t mem_vtable = {.alloc=allocate, .realloc=resize,
 static int clock_ms(void *user, uint64_t *out) { *out=((cli_fixture_t *)user)->now; return H2_PAL_OK; }
 static uint32_t peer_ms(void *user) { return (uint32_t)((cli_fixture_t *)user)->now; }
 static int sleep_ms(void *user, uint32_t duration) {
-    cli_fixture_t *f=user; ++f->sleeps; f->now+=duration; return H2_PAL_OK;
+    cli_fixture_t *f=user; ++f->sleeps; f->now+=duration;
+    if (f->confirmation != NULL) {
+        assert(duration==500u);
+        if (f->confirmation->sleep_fail_at==f->sleeps) return H2_PAL_ERR_IO;
+    }
+    return H2_PAL_OK;
 }
 static const h2_pal_time_vtable_t time_vtable = {.get_monotonic_ms=clock_ms,.sleep_ms=sleep_ms};
 static int cancelled(void *user) {
     cli_fixture_t *f=user;
+    if (f->confirmation != NULL) {
+        confirmation_probe_t *p=f->confirmation;
+        if (p->cancel_at!=0u && p->polls>=p->cancel_at) {
+            p->cancel_seen=1u;
+            return 1;
+        }
+        return p->polls>=p->confirm_at && !p->stage_valid;
+    }
     if (f->mixed_status_output && f->output_len<sizeof(mixed_expected)-1u && f->now<20000u)
         return 0;
     if (f->cancel_after_opens!=0u && f->opens>=f->cancel_after_opens) {
@@ -101,14 +120,33 @@ static int peer_output(void *user, const void *data, size_t len, size_t *written
 static void emit_status(cli_fixture_t *f) {
     const char *sha="abababababababababababababababababababababababababababababababab";
     int loader=f->reboots!=0u && f->mode!=WRONG_REBOOT_ROLE;
+    char probe_stage[512];
+    const char *stage="stage_valid=0 stage_package_checksum=- stage_package_size=0 stage_image_checksum=- stage_image_size=0 stage_role=unknown stage_version=- stage_board=- stage_target=-";
+    if (f->confirmation != NULL) {
+        confirmation_probe_t *p=f->confirmation;
+        if (f->reboots!=0u) ++p->polls;
+        p->stage_valid=f->reboots==0u || p->polls<p->confirm_at;
+        loader=0;
+        if (p->stage_valid) {
+            int n=snprintf(probe_stage,sizeof(probe_stage),
+                "stage_valid=1 stage_package_checksum=%s stage_package_size=3 stage_image_checksum=%s "
+                "stage_image_size=2 stage_role=app stage_version=%s stage_board=devkit stage_target=esp32s3",
+                sha,sha,p->mismatched_stage && f->reboots!=0u?"other":"v1");
+            assert(n>0 && (size_t)n<sizeof(probe_stage)); stage=probe_stage;
+        }
+        if (f->reboots!=0u && (p->bad_at==p->polls || (p->bad_from!=0u && p->polls>=p->bad_from))) {
+            const char bad[]="H2_LOADER_STATUS invalid=1\n";
+            assert(h2_iostreamikcp_write(f->peer,(const uint8_t *)bad,sizeof(bad)-1u)==H2_PAL_OK);
+            return;
+        }
+    }
     char line[2048];
     int len=snprintf(line,sizeof(line),
-        "H2_LOADER_STATUS board=devkit target=esp32s3 chip=esp32s3 device_uid=102030405060 "
-        "capabilities=0x00000005 command_availability=0x0000000a "
+        "H2_LOADER_STATUS board=devkit target=esp32s3 chip=esp32s3 device_uid=%s "
+        "capabilities=0x00000005 command_availability=0x%08x "
         "active_role=%s active_version=v1 active_checksum=%s active_image_size=4096 "
         "running_partition=%u next_partition=%u boot_intent=%s "
-        "stage_valid=0 stage_package_checksum=- stage_package_size=0 stage_image_checksum=- "
-        "stage_image_size=0 stage_role=unknown stage_version=- stage_board=- stage_target=- "
+        "%s "
         "partition_1_valid=1 partition_1_package_checksum=%s partition_1_package_size=3 "
         "partition_1_image_checksum=%s partition_1_image_size=2 partition_1_role=loader "
         "partition_1_version=v1 partition_1_board=devkit partition_1_target=esp32s3 "
@@ -116,7 +154,9 @@ static void emit_status(cli_fixture_t *f) {
         "partition_2_image_checksum=%s partition_2_image_size=2 partition_2_role=app "
         "partition_2_version=v1 partition_2_board=devkit partition_2_target=esp32s3 "
         "last_result=0 mfg_mode=1 mfg_steps=0000000000000000000000\n",
-        loader?"loader":"app",sha,loader?1u:2u,loader?1u:2u,loader?"loader":"auto",sha,sha,sha,sha);
+        f->confirmation && f->confirmation->uid_from && f->confirmation->polls>=f->confirmation->uid_from?"112233445566":"102030405060",
+        (unsigned)(0x0au | (f->confirmation?H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_UPGRADE:0u)),
+        loader?"loader":"app",sha,loader?1u:2u,loader?1u:2u,loader?"loader":"auto",stage,sha,sha,sha,sha);
     assert(len>0 && (size_t)len<sizeof(line));
     if (f->mode==BAD_STATUS) strcpy(line,"H2_LOADER_STATUS invalid=1\n");
     if (f->mixed_status_output || f->status_crlf) {
@@ -191,6 +231,12 @@ static int peer_frame(void *user, const h2_iostreamikcp_frame_t *frame) {
                 assert(h2_iostreamikcp_write(f->peer,(const uint8_t *)mixed_boot,sizeof(mixed_boot)-1u)==H2_PAL_OK);
             if (f->mixed_status_output)
                 assert(h2_iostreamikcp_write(f->peer,(const uint8_t *)mixed_tail,sizeof(mixed_tail)-1u)==H2_PAL_OK);
+        } else if (f->confirmation != NULL) {
+            const char upgrade[]="h2loader reboot upgrade\n";
+            const char accepted[]="H2_LOADER_REBOOT target=upgrade result=accepted\n";
+            assert(len==sizeof(upgrade)-1u && memcmp(command,upgrade,len)==0);
+            ++f->reboots;
+            assert(h2_iostreamikcp_write(f->peer,(const uint8_t *)accepted,sizeof(accepted)-1u)==H2_PAL_OK);
         } else {
             const char accepted[]="H2_LOADER_REBOOT target=loader result=accepted\n"
                 "H2_LOADER_REBOOT_FINAL target=loader result=OK code=0\n";
@@ -383,6 +429,55 @@ static void run_status_boundary(const char *prefix, int crlf, size_t chunk,
     assert(f.peer==NULL && f.allocations==0u);
 }
 
+static void run_confirmation_cases(void) {
+    static const struct {
+        const char *name;
+        unsigned confirm_at, cancel_at, bad_at, bad_from, uid_from, sleep_fail_at;
+        int mismatched_stage, monitored, null_cancel, result;
+        unsigned polls, sleeps, opens;
+    } cases[]={
+        {"already-confirmed",1,0,0,0,0,0,0,1,0,H2_H2LOADER_CLI_EXIT_OK,1,1,2},
+        {"pending150-then-stage0",151,0,0,0,0,0,0,1,0,H2_H2LOADER_CLI_EXIT_OK,151,151,2},
+        {"pending650-then-stage0",651,0,0,0,0,0,0,1,0,H2_H2LOADER_CLI_EXIT_OK,651,651,2},
+        {"pending-cancel",999,200,0,0,0,0,0,1,0,H2_H2LOADER_CLI_EXIT_OK,200,200,2},
+        {"pending-then120-status-errors",999,0,0,151,0,0,0,1,0,H2_H2LOADER_CLI_EXIT_RUNTIME,270,270,121},
+        {"pending-then120-UID-errors",999,0,0,0,151,0,0,1,0,H2_H2LOADER_CLI_EXIT_RUNTIME,270,270,121},
+        {"pending-one-status-error-then-stage0",171,0,151,0,0,0,0,1,0,H2_H2LOADER_CLI_EXIT_OK,171,171,3},
+        {"pending-sleep-error",999,0,0,0,0,151,0,1,0,H2_H2LOADER_CLI_EXIT_RUNTIME,150,151,2},
+        {"plain-upgrade-bounded120",151,0,0,0,0,0,0,0,0,H2_H2LOADER_CLI_EXIT_RUNTIME,120,120,121},
+        {"wrong-stage-bounded120",999,0,0,0,0,0,1,1,0,H2_H2LOADER_CLI_EXIT_RUNTIME,120,120,121},
+        {"NULL-cancel-bounded120",151,0,0,0,0,0,0,1,1,H2_H2LOADER_CLI_EXIT_RUNTIME,120,120,121},
+    };
+    for (size_t i=0u;i<sizeof(cases)/sizeof(cases[0]);++i) {
+        confirmation_probe_t p={.confirm_at=cases[i].confirm_at,.cancel_at=cases[i].cancel_at,
+            .bad_at=cases[i].bad_at,.bad_from=cases[i].bad_from,.uid_from=cases[i].uid_from,
+            .sleep_fail_at=cases[i].sleep_fail_at,.mismatched_stage=cases[i].mismatched_stage};
+        cli_fixture_t f={.confirmation=&p,
+            .modem_lines=H2_PAL_SERIAL_HOST_CONTROL_DTR|H2_PAL_SERIAL_HOST_CONTROL_RTS};
+        f.mem=(h2_pal_mem_api_t){.user=&f,.vtable=&mem_vtable};
+        f.uart=(h2_pal_uart_io_stream_api_t){.user=&f,.vtable=&uart_vtable};
+        h2_pal_serial_host_api_t serial={.user=&f,.vtable=&serial_vtable};
+        h2_pal_time_api_t time={.user=&f,.vtable=&time_vtable};
+        h2_command_io_api_t io={.user=&f,.vtable=&output_vtable};
+        h2_runtime_t runtime={.mem=&f.mem,.time=&time,.fs=h2_pal_unsupported_fs_api()};
+        const char *argv[]={"h2loader","--no-ble","--port","scan-port","reboot","upgrade","--monitor"};
+        h2_h2loader_cli_config_t config={.argc=cases[i].monitored?7:6,.argv=argv,.serial=&serial,
+            .stdout_io=&io,.stderr_io=&io,.is_cancelled=cases[i].null_cancel?NULL:cancelled,.cancel_user=&f};
+        int result=h2_h2loader_cli_main(&runtime,&config);
+        if (result!=cases[i].result || p.polls!=cases[i].polls || f.sleeps!=cases[i].sleeps || f.opens!=cases[i].opens)
+            fprintf(stderr,"confirmation case=%s result=%d polls=%u sleeps=%u opens=%u\n",
+                cases[i].name,result,p.polls,f.sleeps,f.opens);
+        assert(result==cases[i].result && p.polls==cases[i].polls && f.sleeps==cases[i].sleeps);
+        assert(f.opens==cases[i].opens && f.closes==f.opens && f.reboots==1u);
+        assert(strstr(f.output,"H2_LOADER_REBOOT target=upgrade result=accepted\n")!=NULL);
+        if (result==H2_H2LOADER_CLI_EXIT_OK && !cases[i].cancel_at) assert(!p.stage_valid);
+        else assert(p.stage_valid);
+        if (cases[i].cancel_at) assert(p.cancel_seen);
+        assert(f.controls==0u && f.modem_lines==(H2_PAL_SERIAL_HOST_CONTROL_DTR|H2_PAL_SERIAL_HOST_CONTROL_RTS));
+        assert(f.peer==NULL && f.allocations==0u);
+    }
+}
+
 int main(void) {
     for (int mode=HEALTHY; mode<=CLOSE_FAILURE; ++mode) {
         run_case(CLI_SCAN,mode);
@@ -410,5 +505,6 @@ int main(void) {
     run_status_boundary(">de",0,512u,'\n',">de");
     run_status_boundary(">de",1,1u,'\r',">de");
     run_status_boundary(">de",1,1u,'\n',">de\r");
+    run_confirmation_cases();
     return 0;
 }
