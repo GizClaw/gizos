@@ -1,6 +1,6 @@
 load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_esp_idf_firmware")
 load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
-load("//tools/bazel:firmware.bzl", "firmware_version")
+load("//tools/bazel:app_version.bzl", "app_version")
 load("//projects/h2loader/tools/bazel:checksum_matrix.bzl", "h2loader_checksum_matrix")
 load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
@@ -94,7 +94,7 @@ h2loader_tar_zlib(
 )
 
 # A distinct linked App identity is required to exercise App-only and both.
-firmware_version(name = "alternate_version", value = "0.7.2-e2e-alt")
+app_version(name = "alternate_version", value = "0.7.2-e2e-alt")
 
 h2loader_esp_idf_firmware(
     name = "firmware_alt",

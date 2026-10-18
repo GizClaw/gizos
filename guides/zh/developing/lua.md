@@ -407,13 +407,13 @@ task 随后发送 `BYE`，停止广播/扫描，关闭 server 或 stream 并断�
 
 `libs/lua/lua_app.bzl` 的公共 `lua_app` rule 声明一个可分发应用：必选的 `<app_id>.lua` 文本入口，以及可选的同名 `<app_id>/` data 目录中的显式文件列表。没有 data 文件时不需要创建目录。入口文件名决定稳定 app id，沿用 Host 的小写字母、数字、`_`、`-`、`.` 和 1..32 字节限制；更改入口 basename 会改变应用与存档身份。源码目录布局和现有单文件 label 可以保持不变。
 
-每个 app 必须消费自己声明的 `firmware_version` target，使用与其他声明式 artifact 相同的 31-byte SemVer 合同。没有默认版本，也不读取 firmware image 版本或 release batch；不同 app 默认独立升级。
+每个 app 必须消费自己声明的 `app_version` target，使用与其他声明式 artifact 相同的 31-byte SemVer 合同。没有默认版本，也不读取 firmware image 版本或 release batch；不同 app 默认独立升级。
 
 ```bzl
 load("@gizos//libs/lua:lua_app.bzl", "lua_app")
-load("@gizos//tools/bazel:firmware.bzl", "firmware_version")
+load("@gizos//tools/bazel:app_version.bzl", "app_version")
 
-firmware_version(name = "abc_version", value = "0.1.0")
+app_version(name = "abc_version", value = "0.1.0")
 
 lua_app(
     name = "abc_app",

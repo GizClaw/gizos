@@ -1,9 +1,9 @@
 load("//libs/lua:lua_app.bzl", "lua_app", "lua_app_index")
-load("//tools/bazel:firmware.bzl", "firmware_version")
+load("//tools/bazel:app_version.bzl", "app_version")
 
 package(default_visibility = ["//libs/lua:__pkg__"])
 
-firmware_version(
+app_version(
     name = "abc_version",
     value = "1.2.3",
 )
@@ -42,7 +42,7 @@ filegroup(
     srcs = ["xyz/tone.pcm"],
 )
 
-firmware_version(
+app_version(
     name = "xyz_version",
     value = "2.0.0-rc.1",
 )

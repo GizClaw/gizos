@@ -17,9 +17,9 @@ Session 不内置产品 tags、默认 Workflow、命名规则或文件路径。C
 
 注册成功立即按配置的 tags 做精确 AND 查询，不依赖产品打开页面；零 tag 加载全部 Workflow。分页必须符合容量上限、有界页数、所有请求的 tags 和唯一 Workflow name 要求，所有页面必须具有同一个 Profile name/revision。只有完整成功才替换 catalog；失败保留已分配的旧数据，但公开读取拒绝 把它当作有效数据。注册成功而 catalog 失败分别记录，不把聊天配置错误误报成连接失败。
 
-产品选择 Workflow name 和 Workspace name 后，Session 在必要时刷新 catalog，精确 get Workspace，只有 Not Found 才创建同一个名字。创建结果不确定时仍精确 get 同一名字 进行确认。校验 Profile 版本及稳定 Workflow name 后，通过 reload-with-options 准备目标； 只有返回 RUNNING 且 active name 匹配才发布新的 current Workspace。版本不一致允许 刷新 catalog 后再尝试一次，所有步骤共享同一个单调时间总期限。
+产品选择 Workflow name 和 Workspace name 后，Session 在必要时刷新 catalog，精确 get Workspace，只有 Not Found 才创建同一个名字。创建结果不确定时仍精确 get 同一名字进行确认。明确的 `WORKSPACE_PENDING_DELETION` 是服务端已接受删除、尚未释放名字的状态：保持 PREPARING，每次最多等待 100 ms 后再次 get，不重放删除、不激活旧对象、不创建另一个名字。get/create/reload 遇到该状态的竞态均复用同一总期限；清理后 Not Found 才重建。其他远端或本地错误立即失败，清理未完成返回 TIMEOUT；取消/close 后不再发起下一步或提交迟到结果。校验 Profile 版本及稳定 Workflow name 后，通过 reload-with-options 准备目标，只有返回 RUNNING 且 active name 匹配才发布新的 current Workspace。版本不一致允许刷新 catalog 后再尝试一次，所有步骤共享同一个单调时间总期限。
 
-`target_workspace` 在准备开始时更新；`current_workspace` 只在服务端确认后更新。 切换失败保留旧名字用于展示，但 workspace phase 为 FAILED，不能假定旧目标仍可对话。 完整 catalog 模式下，相同有效 Workspace、Workflow name 和参数可复用已确认的就绪结果，不在每轮对话重复 reload。Tags 只影响 catalog 过滤；catalog 未命中的 Workflow name 通过 get 验证，不能把缺少某个 tag 当成 Workspace 身份失效。
+`target_workspace` 在准备开始时更新；`current_workspace` 只在服务端确认后更新。切换失败保留旧名字用于展示，但 workspace phase 为 FAILED，不能假定旧目标仍可对话。每次 select/Conversation 创建都精确 get，完整 catalog 模式下只有相同有效 Workspace、Workflow name、参数和非空 `created_at` 才复用激活确认，避免每轮重复 reload。发现当前对象不存在、正在删除或创建时间改变时清空旧确认参数，保留产品选择意图，再为新对象应用本次 patch；缺少创建时间时保守 reload。外部 App 删除同样在这个边界被发现。Tags 只影响 catalog 过滤，catalog 未命中的 Workflow name 通过 get 验证，不能把缺少某个 tag 当成 Workspace 身份失效。
 
 Conversation 创建在同一个准备操作中完成 Workspace 校验，然后绑定当前 Workspace。后续切换成功时，核心在旧 generation 结束后更新保留 route 的目标，下一次输入使用新 Workspace。 产品显式调用 Session audio start/end 开启或结束输入；回复、取消和完成沿用现有 Conversation callback。Session 先更新自身状态，再转发 callback。产品必须使用 Session 对应的 release 释放该 route，不能在活动对话结束前释放。等待或回复期间调用 audio start 由核心取消旧 generation，等待取消分发后在同一路由开始新输入；不要求产品先判断 UI 状态。重复 start（输入已开）与重复 end（输入已关）幂等，空闲 end 不会复活旧轮次。
 
@@ -40,7 +40,7 @@ PTT 在录音期间收到下行音频也不能关闭输入或影响松手 EOS。
 
 Workspace 切换或 reload 先关闭旧输入并取消旧 generation，丢弃旧播放、发布 IDLE，只等待本地取消分发，不等待 Agent 回复完成。期间旧事件不转发到产品。RPC 成功且目标确认为 RUNNING 后发布有效参数和 Workspace；失败时Workspace 标为 FAILED，保留旧名称和参数作为显示信息。调用在控制任务执行，`service_poll` 必须持续运行以分发取消完成；同一 Session 的 Workspace RPC 串行。
 
-同步 delete 只在名字等于 `current_workspace` 时参与 Session：与切换相同，先关闭旧输入、取消旧 generation 并占用同一个串行 Workspace RPC 槽位，已有 Workspace RPC 进行中时返回 BUSY。删除成功后 workspace phase 回到 EMPTY，清空 `current_workspace`、`workflow_name` 和已确认的 `parameters`，Conversation route 仍由产品通过 Session release 释放；下一次 select 或 Conversation 创建按正常准备流程 get、Not Found 时创建同名 Workspace 并 reload。删除失败或结果不确定（例如超时）时 workspace phase 为 FAILED，下一次 select 重新 get 校验，不把可能已被删除的名字当作就绪。删除其它 Workspace 不改变 Session 状态，也不打断对话；Session 关闭后 delete 与其它 Workspace RPC 一样返回 CLOSED。
+同步 delete 只在名字等于 `current_workspace` 时参与 Session：与切换相同，先关闭旧输入、取消旧 generation 并占用同一个串行 Workspace RPC 槽位，已有 Workspace RPC 进行中时返回 BUSY。删除成功后 workspace phase 回到 EMPTY，清空 `current_workspace`、`workflow_name` 和已确认的 `parameters`，Conversation route 仍由产品通过 Session release 释放；下一次 select 或 Conversation 创建按正常准备流程 get、等待异步删除清理、Not Found 时创建同名 Workspace 并 reload。删除失败或结果不确定（例如超时）时 workspace phase 为 FAILED，下一次 select 重新 get 校验，不把可能已被删除的名字当作就绪。删除其它 Workspace 不改变 Session 状态，也不打断对话；Session 关闭后 delete 与其它 Workspace RPC 一样返回 CLOSED。
 ## 对话错误详情
 
 Conversation 的远端 ERROR 只表示服务端拒绝了本轮输入，在事件、完成回调和 Session 快照中保留原始 `error_code` 与 `retryable`；下行流的结束（有无错误码）都不是 ERROR。完成结果拥有错误码副本，释放本轮请求后仍可在完成回调中读取；Session 在转发错误事件前更新快照，并在完成后保留详情。产品展示错误时读取这些字段和 `error_stage`，不能只用通用 `last_error` 显示 `STREAM ERROR`。PAL 完成状态仍表示通用失败，不替代服务端错误原因；服务端只提供笼统错误码时，客户端不会推测更具体原因。
@@ -59,7 +59,7 @@ Session 借用 Service、PAL 和配置中的 tag spans 及其字符串。准备�
 
 ## 验证
 
-Session 测试在 typed RPC 边界注入结果，执行真实的库内状态管理。覆盖自动分页加载、 读取副本隔离、混合版本拒绝、空页循环限制、总超时、等待中的选择、取消等待、创建响应 丢失后的精确恢复、重复选择复用、切换失败、Conversation 回调释放、删除当前 Workspace 后先取消对话再回到 EMPTY 并按 get、create、reload 重新准备、删除失败置 FAILED 后重新校验、删除其它 Workspace 不影响就绪，以及关闭后迟到 catalog/activation 不提交。真实服务器和设备验收与这些自动测试分别记录。Portable E2E 的普通 Voice case 从连接注册开始使用 Session，并在 PTT、Realtime 和 route 释放边界验证公共快照；AMOLED 可通过 `H2_GIZCLAW_E2E_VOICE_ONLY` 单独运行该流程，见 [AMOLED Session E2E](/apps/h2loader/boards/amoled/gizclaw_e2e)。
+Session 测试在 typed RPC 边界注入结果，执行真实的库内状态管理。覆盖自动分页加载、 读取副本隔离、混合版本拒绝、空页循环限制、总超时、等待中的选择、取消等待、创建响应 丢失后的精确恢复、重复选择校验创建时间后复用、切换失败、Conversation 回调释放、删除当前 Workspace 后先取消对话再回到 EMPTY 并按 get、create、reload 重新准备、删除失败置 FAILED 后重新校验、删除其它 Workspace 不影响就绪，以及关闭后迟到 catalog/activation 不提交。同时覆盖设备端/外部删除、当前/非当前对象、PTT/Realtime、清理等待、create/reload 竞态、总超时、反复准备、取消/关闭/断线和 sleep/权限/传输失败；失败前不创建 Conversation 或打开输入。生产 request/codec 测试验证 reason 的精确分类，不把任意 status 9 当作删除。真实服务器和设备验收与这些自动测试分别记录。Portable E2E 的普通 Voice case 从连接注册开始使用 Session，并在 PTT、Realtime 和 route 释放边界验证公共快照；AMOLED 可通过 `H2_GIZCLAW_E2E_VOICE_ONLY` 单独运行该流程，见 [AMOLED Session E2E](/apps/h2loader/boards/amoled/gizclaw_e2e)。
 
 ## 自动系统校时
 
