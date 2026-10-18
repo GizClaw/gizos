@@ -131,13 +131,17 @@ socket 的 send、bounded send、recv 和 close 继续使用相同 PAL socket id
 registry 有固定并发上限，但完整 Mbed TLS context 必须随 provider 在 heap 上分配，
 不能按 slot 常驻静态 DRAM。
 
-可能 freeze 或关闭 external-memory cache 的 ESP-IDF operation 统一通过 `h2_pal_core` 的 safe-call 执行。Safe-call 使用一个固定在 CPU0、优先级 `9` 的 Internal worker，持有 4 KiB Internal stack 和 1 KiB bounded Internal context buffer；PSRAM caller 同步复用该 worker，不在调用期间申请或释放 task、stack、TCB 或 context。Worker 内发生的 nested safe-call 直接复用当前 Internal stack，避免自锁。只有能够同时证明 caller stack 与 context 位于 Internal RAM 时，启用 PSRAM XIP 的 target 才可直接执行 callback；未启用 XIP 时还必须证明 callback 位于 IRAM。
+可能 freeze 或关闭 external-memory cache 的 ESP-IDF operation 统一通过 `h2_pal_core` 的 safe-call 执行。Safe-call 使用一个固定在 CPU0、优先级 `9` 的 Internal worker，持有既有的 16 KiB Internal stack 和 1 KiB bounded Internal context buffer；PSRAM caller 同步复用该 worker，worker 首次按需初始化后不逐次申请或释放 task、stack、TCB 或 context。普通 SafeCall 只有能够同时证明 caller stack 与 context 位于 Internal RAM 时才可直接执行 callback；未启用 PSRAM XIP 时还必须证明 callback 位于 IRAM。该 inline 条件不保证当前 caller 的剩余栈容量。
+
+`h2_esp_platform_safe_call_on_worker()` 显式同步复用同一个 worker，包括 caller 本身已经使用 Internal stack 的情况；普通和 timed 路径共享 dispatcher、容量、copy-back 与错误语义，不增加 worker 或改变 SDK/task policy。Worker 内的 nested 普通或显式调用必须具备 Internal context 全范围和 IRAM/XIP callback，满足时在当前 worker 直接执行，否则返回 `INVALID_STATE`；不递归取得共享 mutex、不向自己排队，也不覆盖当前 singleton context。初始化、stack allocation 或提交失败返回错误，不退回 caller inline 执行。
 
 仓库内所有启用 PSRAM 的 ESP target 必须同时启用 `CONFIG_SPIRAM_XIP_FROM_PSRAM`；`h2_pal_core` 在编译期拒绝 PSRAM 已启用但 XIP 被关闭的配置。没有 PSRAM 的 ESP companion target 不适用该约束。XIP 把 flash text 与 read-only data 复制并映射到 PSRAM，但不代表所有 ESP-IDF flash API 都允许 PSRAM task stack。例如 `esp_partition_mmap()` 会 freeze external-memory cache，并明确要求当前 stack 位于 Internal RAM；因此不能仅凭 XIP 配置绕过 safe-call worker。
 
 NVS、internal partition、OTA、Wi-Fi persisted config、LittleFS 和 SPIFFS adapter 分别拥有自己的串行边界。LittleFS、NVS 和 internal partition I/O 还串行复用一块固定 16 KiB Internal safe I/O scratch：路径、key、config 和 bounded byte chunk 在进入 SDK/VFS operation 前复制到 Internal RAM；读取结果只在 cache 恢复并回到原 caller 后复制到 PAL output。Safe-call 是 ESP-IDF component 私有机制，不能改变或进入 `libs/pal/include`，也不能把 FreeRTOS、ESP memory capability 或 SDK handle 暴露给 portable consumer。
 
 ESP Preference provider 挂载独立 label `pref` 到私有 `/h2pref`，要求 partition subtype 为 LittleFS、容量严格等于 256 KiB，并把所有 VFS operation 放在上述 SafeCall/scratch 边界。只有 partition 全擦除且首次 mount 失败时允许 format；非空 mount failure、record path/CRC mismatch 必须保留原始 bytes 并返回错误。旧 `h2pref` NVS namespace 只由一次性只读迁移 adapter 打开；trial App 确认前保留旧值，确认后只擦除该 namespace，系统 NVS 继续由 ESP-IDF 内部能力使用。
+
+Pref native I/O callback 始终通过显式 worker 入口运行，避免深 Pref/VFS/flash 调用链消耗小型 Internal caller 的剩余栈。原 caller 保持 operation/Pref → scratch → SafeCall dispatcher 的锁顺序和同步等待；worker 只执行已经准备好的 bounded native store callback，不取得上层 Pref、operation 或 scratch 锁。完整 context、value/list/count/result 与 committed-total cache 按原路径同步返回，scratch 仍由 caller 持有至结果复制完成；不得将整个 confirmation 或上层 PAL Pref transaction 放进 worker 而反转锁顺序。
 
 负责运行完整 Runtime 的 ESP target 必须提供完整 PAL surface。不支持的能力使用 canonical unsupported backend，不能通过删除 header、symbol 或 config field 表达。
 

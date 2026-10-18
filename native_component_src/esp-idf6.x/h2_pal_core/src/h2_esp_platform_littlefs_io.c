@@ -129,7 +129,7 @@ static int run_call_on(h2_esp_pref_store_t *store,
                        h2_esp_pref_io_call_t *call) {
 #if H2_ESP_IO_PHASE_DIAGNOSTICS
     h2_esp_io_phase_t phase = call->phase;
-    int rc = h2_esp_platform_safe_call_timed(
+    int rc = h2_esp_platform_safe_call_on_worker_timed(
         pref_io_callback, call, sizeof(*call),
         H2_ESP_PREF_IO_STACK_DEPTH, &phase);
     call->phase = phase;
@@ -139,7 +139,9 @@ static int run_call_on(h2_esp_pref_store_t *store,
         h2_esp_io_phase_report("pref", (unsigned)call->op, call->value_size,
                               rc == H2_PAL_OK ? call->result : rc, &phase);
 #else
-    int rc = h2_esp_platform_safe_call(pref_io_callback, call, sizeof(*call),
+    /* Keep Pref/scratch ownership on the caller. Only the prepared native I/O
+     * runs on the fixed worker, even when the caller has an Internal stack. */
+    int rc = h2_esp_platform_safe_call_on_worker(pref_io_callback, call, sizeof(*call),
                                        H2_ESP_PREF_IO_STACK_DEPTH);
 #endif
     if (rc != H2_PAL_OK) return rc;

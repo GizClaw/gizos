@@ -36,6 +36,10 @@ void h2_esp_io_phase_report(const char *owner, unsigned op, size_t bytes,
 h2_pal_result_t h2_esp_platform_safe_call_timed(
     h2_esp_platform_safe_call_cb_t callback, void *context,
     size_t context_size, size_t stack_depth, h2_esp_io_phase_t *phase);
+/* Same explicit worker dispatch contract, with the existing phase counters. */
+h2_pal_result_t h2_esp_platform_safe_call_on_worker_timed(
+    h2_esp_platform_safe_call_cb_t callback, void *context,
+    size_t context_size, size_t stack_depth, h2_esp_io_phase_t *phase);
 #endif
 
 #endif

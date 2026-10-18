@@ -72,6 +72,15 @@ static int safe_call_current_stack_is_internal(void) {
     return stack_start != NULL && esp_ptr_internal(stack_start);
 }
 
+static int safe_call_current_is_worker(void) {
+    const StackType_t *stack_start = xTaskGetStackStart(NULL);
+    portENTER_CRITICAL(&s_safe_call_mutex_init_lock);
+    const int is_worker = stack_start != NULL &&
+        stack_start == s_safe_call_worker.stack;
+    portEXIT_CRITICAL(&s_safe_call_mutex_init_lock);
+    return is_worker;
+}
+
 static SemaphoreHandle_t safe_call_mutex(void) {
     portENTER_CRITICAL(&s_safe_call_mutex_init_lock);
     if (s_safe_call_mutex == NULL) {
@@ -131,9 +140,12 @@ static h2_pal_result_t safe_call_worker_init(void) {
         return H2_PAL_ERR_TASK;
     }
     if (s_safe_call_worker.stack == NULL) {
-        s_safe_call_worker.stack = heap_caps_malloc(
+        StackType_t *stack = heap_caps_malloc(
             H2_ESP_SAFE_CALL_WORKER_STACK_DEPTH,
             MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        portENTER_CRITICAL(&s_safe_call_mutex_init_lock);
+        s_safe_call_worker.stack = stack;
+        portEXIT_CRITICAL(&s_safe_call_mutex_init_lock);
     }
     if (s_safe_call_worker.stack == NULL) {
         return H2_PAL_ERR_TASK;
@@ -150,17 +162,13 @@ static h2_pal_result_t safe_call_worker_init(void) {
     return s_safe_call_worker.task != NULL ? H2_PAL_OK : H2_PAL_ERR_TASK;
 }
 
-#if H2_ESP_IO_PHASE_DIAGNOSTICS
 static h2_pal_result_t safe_call_run(
     h2_esp_platform_safe_call_cb_t callback, void *context,
-    size_t context_size, size_t stack_depth, h2_esp_io_phase_t *phase) {
-#else
-h2_pal_result_t h2_esp_platform_safe_call(
-    h2_esp_platform_safe_call_cb_t callback,
-    void *context,
-    size_t context_size,
-    size_t stack_depth) {
+    size_t context_size, size_t stack_depth, int force_worker
+#if H2_ESP_IO_PHASE_DIAGNOSTICS
+    , h2_esp_io_phase_t *phase
 #endif
+) {
     SemaphoreHandle_t mutex;
     h2_pal_result_t rc;
 
@@ -173,9 +181,16 @@ h2_pal_result_t h2_esp_platform_safe_call(
         return H2_PAL_ERR_INVALID_ARG;
     }
 
-    if (safe_call_current_stack_is_internal() && esp_ptr_internal(context) &&
+    const int worker_caller = safe_call_current_is_worker();
+    const int can_inline =
+        safe_call_current_stack_is_internal() && esp_ptr_internal(context) &&
         (H2_ESP_SAFE_CALL_PSRAM_XIP ||
-         esp_ptr_in_iram((const void *)callback))) {
+         esp_ptr_in_iram((const void *)callback));
+    if (worker_caller && (!can_inline ||
+        !esp_ptr_internal((const uint8_t *)context + context_size - 1u))) {
+        return H2_PAL_ERR_INVALID_STATE;
+    }
+    if (can_inline && (!force_worker || worker_caller)) {
 #if H2_ESP_IO_PHASE_DIAGNOSTICS
         const uint64_t started = h2_esp_io_phase_now();
 #endif
@@ -241,17 +256,37 @@ h2_pal_result_t h2_esp_platform_safe_call(
     return H2_PAL_OK;
 }
 
-#if H2_ESP_IO_PHASE_DIAGNOSTICS
 h2_pal_result_t h2_esp_platform_safe_call(
     h2_esp_platform_safe_call_cb_t callback, void *context,
     size_t context_size, size_t stack_depth) {
-    return safe_call_run(callback, context, context_size, stack_depth, NULL);
+    return safe_call_run(callback, context, context_size, stack_depth, 0
+#if H2_ESP_IO_PHASE_DIAGNOSTICS
+        , NULL
+#endif
+    );
 }
 
+h2_pal_result_t h2_esp_platform_safe_call_on_worker(
+    h2_esp_platform_safe_call_cb_t callback, void *context,
+    size_t context_size, size_t stack_depth) {
+    return safe_call_run(callback, context, context_size, stack_depth, 1
+#if H2_ESP_IO_PHASE_DIAGNOSTICS
+        , NULL
+#endif
+    );
+}
+
+#if H2_ESP_IO_PHASE_DIAGNOSTICS
 h2_pal_result_t h2_esp_platform_safe_call_timed(
     h2_esp_platform_safe_call_cb_t callback, void *context,
     size_t context_size, size_t stack_depth, h2_esp_io_phase_t *phase) {
-    return safe_call_run(callback, context, context_size, stack_depth, phase);
+    return safe_call_run(callback, context, context_size, stack_depth, 0, phase);
+}
+
+h2_pal_result_t h2_esp_platform_safe_call_on_worker_timed(
+    h2_esp_platform_safe_call_cb_t callback, void *context,
+    size_t context_size, size_t stack_depth, h2_esp_io_phase_t *phase) {
+    return safe_call_run(callback, context, context_size, stack_depth, 1, phase);
 }
 #endif
 
