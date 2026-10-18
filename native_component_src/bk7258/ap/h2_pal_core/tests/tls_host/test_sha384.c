@@ -1,6 +1,5 @@
 #include "mbedtls/md.h"
 #include "mbedtls/entropy.h"
-#include "mbedtls/sha512.h"
 #include "mbedtls/x509_crt.h"
 
 #include <assert.h>
@@ -66,29 +65,48 @@ static const unsigned char abc_sha384[48] = {
     0xcb, 0x00, 0x75, 0x3f, 0x45, 0xa3, 0x5e, 0x8b, 0xb5, 0xa0, 0x3d, 0x69, 0x9a, 0xc6, 0x50, 0x07, 0x27, 0x2c, 0x32, 0xab, 0x0e, 0xde, 0xd1, 0x63, 0x1a, 0x8b, 0x60, 0x5a, 0x43, 0xff, 0x5b, 0xed, 0x80, 0x86, 0x07, 0x2b, 0xa1, 0xe7, 0xcc, 0x23, 0x58, 0xba, 0xec, 0xa1, 0x34, 0xc8, 0x25, 0xa7
 };
 
-int main(void) {
-#if !defined(MBEDTLS_SHA384_C)
-    fputs("SHA-384 is missing from the production public feature block\n", stderr);
-    return 1;
-#else
-    unsigned char digest[48];
-    assert(mbedtls_sha512((const unsigned char *)"abc", 3, digest, 1) == 0);
-    assert(memcmp(digest, abc_sha384, sizeof(digest)) == 0);
-    assert(mbedtls_md_info_from_type(MBEDTLS_MD_SHA384) != NULL);
+int main(int argc, char **argv) {
+    const int expect_unavailable = argc == 2 && strcmp(argv[1], "--expect-unavailable") == 0;
+    unsigned char digest[48] = {0};
+    const mbedtls_md_info_t *info = mbedtls_md_info_from_type(MBEDTLS_MD_SHA384);
+    const int digest_result = mbedtls_md(info, (const unsigned char *)"abc", 3, digest);
 
     mbedtls_x509_crt root, leaf, other, corrupted;
     mbedtls_x509_crt_init(&root);
     mbedtls_x509_crt_init(&leaf);
     mbedtls_x509_crt_init(&other);
     mbedtls_x509_crt_init(&corrupted);
-    assert(mbedtls_x509_crt_parse(&root, root_pem, sizeof(root_pem)) == 0);
-    assert(mbedtls_x509_crt_parse(&leaf, leaf_pem, sizeof(leaf_pem)) == 0);
-    assert(mbedtls_x509_crt_parse(&other, other_pem, sizeof(other_pem)) == 0);
-    assert(leaf.MBEDTLS_PRIVATE(sig_md) == MBEDTLS_MD_SHA384);
+    const int root_result = mbedtls_x509_crt_parse(&root, root_pem, sizeof(root_pem));
+    const int leaf_result = mbedtls_x509_crt_parse(&leaf, leaf_pem, sizeof(leaf_pem));
+    const int other_result = mbedtls_x509_crt_parse(&other, other_pem, sizeof(other_pem));
     uint32_t flags = 0;
-    assert(mbedtls_x509_crt_verify(&leaf, &root, NULL,
-        "sha384.example.invalid", &flags, NULL, NULL) == 0);
-    assert(flags == 0);
+    int chain_result = MBEDTLS_ERR_X509_CERT_VERIFY_FAILED;
+    if (root_result == 0 && leaf_result == 0)
+        chain_result = mbedtls_x509_crt_verify(&leaf, &root, NULL,
+            "sha384.example.invalid", &flags, NULL, NULL);
+    printf("BK_SHA384_PROBE digest=%d root_parse=%d leaf_parse=%d verify=%d\n",
+           digest_result, root_result, leaf_result, chain_result);
+    if (expect_unavailable) {
+        /* Both configurations execute the same real digest/chain operations.
+         * The negative control must fail those operations, not a macro check. */
+        assert(digest_result != 0 && chain_result != 0);
+        mbedtls_x509_crt_free(&corrupted);
+        mbedtls_x509_crt_free(&other);
+        mbedtls_x509_crt_free(&leaf);
+        mbedtls_x509_crt_free(&root);
+        puts("BK_SHA384_REAL_OPERATIONS_REJECT_WITHOUT_FEATURE PASS");
+        return 0;
+    }
+    if (digest_result != 0 || root_result != 0 || leaf_result != 0 ||
+        other_result != 0 || chain_result != 0) {
+        mbedtls_x509_crt_free(&corrupted);
+        mbedtls_x509_crt_free(&other);
+        mbedtls_x509_crt_free(&leaf);
+        mbedtls_x509_crt_free(&root);
+        return 1;
+    }
+    assert(memcmp(digest, abc_sha384, sizeof(digest)) == 0);
+    assert(leaf.MBEDTLS_PRIVATE(sig_md) == MBEDTLS_MD_SHA384 && flags == 0);
 
     flags = 0;
     assert(mbedtls_x509_crt_verify(&leaf, &other, NULL,
@@ -112,5 +130,4 @@ int main(void) {
     mbedtls_x509_crt_free(&root);
     puts("BK_SHA384_DIGEST_CHAIN_AND_REJECTIONS PASS");
     return 0;
-#endif
 }

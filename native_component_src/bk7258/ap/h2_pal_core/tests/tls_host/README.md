@@ -9,4 +9,4 @@ cmake --build /tmp/bk-sha384 -j 4
 ctest --test-dir /tmp/bk-sha384 --output-on-failure
 ```
 
-Repeat with a separate build directory and `-DDISABLE_SHA384=ON`; the same positive digest/certificate probe must fail. SDK source stays unchanged. This local SDK-dependent regression does not establish physical HTTPS or network interoperability; the standard native BK package still builds with its own board configuration.
+Repeat with a separate build directory and `-DDISABLE_SHA384=ON`. Both configurations execute the same real digest and certificate parse/verification operations. In the disabled build, CTest passes `--expect-unavailable` and requires both operations to reject; running that binary without the argument must return nonzero. There is no preprocessor early exit or independently enabled digest feature in the probe. SDK source stays unchanged. This local SDK-dependent regression does not establish physical HTTPS or network interoperability; the standard native BK package still builds with its own board configuration.
