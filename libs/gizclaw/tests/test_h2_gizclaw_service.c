@@ -7374,6 +7374,133 @@ static void test_workspace_request_and_response_paths(void) {
          strcmp(activation.workspace_name, "ws") == 0);
 }
 
+static void test_workspace_list_options(void) {
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_profile_service(&env);
+  static const h2_pal_time_vtable_t tv = {
+      .get_monotonic_ms = fake_req_clock,
+      .get_wall_ms = fake_valid_wall,
+      .get_wall_status = fake_valid_wall_status};
+  const h2_pal_time_api_t time = {.user = &env, .vtable = &tv};
+  service->client_config.time = &time;
+  h2_gizclaw_async_rpc_test_set_ops(&workspace_test_ops);
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  uint8_t buffer[4096];
+  h2_gizclaw_resp_storage_t storage = {.data = buffer,
+                                     .capacity = sizeof(buffer)};
+  h2_gizclaw_workspace_page_t page;
+  h2_gizclaw_req_t *request = NULL;
+  static const uint8_t empty_page[] = {0x22, 1, 'p', 0x2a, 1, 'r'};
+  static const uint8_t unfiltered[] = {0x10, 1};
+  test_contact_rpc_t mock = {
+      .expected_method = H2_GIZCLAW_RPC_SERVER_WORKSPACE_LIST,
+      .expected_request = unfiltered,
+      .expected_request_len = sizeof(unfiltered),
+      .response = empty_page,
+      .response_len = sizeof(empty_page)};
+  workspace_test_use_single(&mock);
+  assert(h2_gizclaw_req_create_workspace_list_with_options(
+             service, 1u, NULL, (h2_gizclaw_str_t){0}, 1u, 1234u,
+             &request) == H2_PAL_OK);
+  assert(mock.calls == 0);
+  assert(h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL) == H2_PAL_OK);
+  assert(h2_gizclaw_req_wait(request, 2000u) == H2_PAL_OK &&
+         mock.request_matches);
+  assert(h2_gizclaw_resp_parse_workspace_list(request, &storage, &page) ==
+         H2_PAL_OK);
+  assert(page.count == 0u && !page.has_next && page.next_cursor == NULL &&
+         strcmp(page.runtime_profile_name, "p") == 0);
+  h2_gizclaw_req_release(request);
+
+  /* Inspect exact nanopb bytes: absent, explicit false, explicit true.
+   * Mutating borrowed inputs after create must not change the request. */
+  for (unsigned selector = 0u; selector < 3u; ++selector) {
+    char prefix[] = "pre", cursor[] = "next";
+    h2_gizclaw_workspace_list_options_t options = {
+        .prefix = {prefix, 3u},
+        .has_system = selector != 0u,
+        .system = selector != 1u};
+    const uint8_t expected[] = {0x0a, 4, 'n', 'e', 'x', 't', 0x10, 1,
+                                0x1a, 3, 'p', 'r', 'e', 0x20,
+                                selector == 2u ? 1 : 0};
+    /* An ordinary unavailable Workspace remains a valid result. */
+    const uint8_t response[] = {0x08, 1, 0x12, 12, 0x1a, 2, 'w', 's',
+                                0x32, 4, 'c', 'h', 'a', 't', 0x40,
+                                selector == 2u ? 1 : 0,
+                                0x1a, 4, 'n', 'e', 'x', 't',
+                                0x22, 1, 'p', 0x2a, 1, 'r'};
+    mock.expected_request = expected;
+    mock.expected_request_len = sizeof(expected) - (selector == 0u ? 2u : 0u);
+    mock.response = response;
+    mock.response_len = sizeof(response);
+    mock.calls = 0;
+    assert(h2_gizclaw_req_create_workspace_list_with_options(
+               service, 2u, &options, (h2_gizclaw_str_t){cursor, 4u}, 1u,
+               1234u, &request) == H2_PAL_OK);
+    prefix[0] = cursor[0] = 'X';
+    options.has_system = !options.has_system;
+    options.system = !options.system;
+    assert(mock.calls == 0);
+    assert(h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL) == H2_PAL_OK);
+    assert(h2_gizclaw_req_wait(request, 2000u) == H2_PAL_OK &&
+           mock.request_matches && mock.calls == 1);
+    storage.used = 0u;
+    assert(h2_gizclaw_resp_parse_workspace_list(request, &storage, &page) ==
+           H2_PAL_OK);
+    assert(page.count == 1u && page.has_next &&
+           strcmp(page.next_cursor, "next") == 0 &&
+           page.items[0].system == (selector == 2u) &&
+           !page.items[0].available);
+    h2_gizclaw_req_release(request);
+
+    prefix[0] = 'p';
+    cursor[0] = 'n';
+    options.has_system = selector != 0u;
+    options.system = selector != 1u;
+    storage.used = 0u;
+    assert(h2_gizclaw_rpc_workspace_list_with_options(
+               service, &options, (h2_gizclaw_str_t){cursor, 4u}, 1u, 1234u,
+               &storage, &page) == H2_PAL_OK);
+    assert(mock.request_matches && mock.calls == 2 && page.count == 1u);
+  }
+
+  static const uint8_t ordinary[] = {0x10, 1, 0x20, 0};
+  h2_gizclaw_workspace_list_options_t options = {.has_system = true};
+  mock.expected_request = ordinary;
+  mock.expected_request_len = sizeof(ordinary);
+  mock.response = empty_page;
+  mock.response_len = sizeof(empty_page);
+  storage.used = 0u;
+  assert(h2_gizclaw_rpc_workspace_list_with_options(
+             service, &options, (h2_gizclaw_str_t){0}, 1u, 1234u, &storage,
+             &page) == H2_PAL_OK);
+  assert(mock.request_matches && page.count == 0u && !page.has_next);
+  mock.has_error = true;
+  mock.error_code = H2_GIZCLAW_RPC_ERROR_ABORTED;
+  mock.response = NULL;
+  mock.response_len = 0u;
+  assert(h2_gizclaw_rpc_workspace_list_with_options(
+             service, &options, (h2_gizclaw_str_t){0}, 1u, 1234u, &storage,
+             &page) == H2_GIZCLAW_ERR_REMOTE);
+  assert(mock.request_matches && page.count == 0u && !page.has_next);
+
+  static const h2_gizclaw_str_t invalid_prefixes[] = {
+      {NULL, 1u}, {"p\0x", 3u}, {"\xff", 1u}, {"p", 256u}};
+  const int calls = mock.calls;
+  for (size_t i = 0u; i < sizeof(invalid_prefixes) / sizeof(invalid_prefixes[0]);
+       ++i) {
+    options.prefix = invalid_prefixes[i];
+    request = (h2_gizclaw_req_t *)service;
+    assert(h2_gizclaw_req_create_workspace_list_with_options(
+               service, 3u, &options, (h2_gizclaw_str_t){0}, 1u, 1234u,
+               &request) == H2_PAL_ERR_INVALID_ARG);
+    assert(request == NULL && mock.calls == calls);
+  }
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  h2_gizclaw_async_rpc_test_set_ops(NULL);
+}
+
 static void test_run_stop_downlink(void) {
   for (unsigned attached = 0u; attached < 2u; ++attached) {
     test_env_t env;
@@ -15424,6 +15551,7 @@ int main(int argc, char **argv) {
   test_contact_and_group_public_paths();
   test_contact_mutation_requests();
   test_workspace_request_and_response_paths();
+  test_workspace_list_options();
   test_workspace_direct_input_update();
   test_workspace_safety_fence();
   test_workspace_fence_server_readback();

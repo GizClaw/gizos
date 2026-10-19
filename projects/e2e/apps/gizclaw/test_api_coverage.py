@@ -52,7 +52,7 @@ class CoverageTest(unittest.TestCase):
     def test_all_functions_need_ordered_calls_and_assertion(self):
         result = self.audit(self.lines)
         self.assertTrue(result["valid"], result["issues"])
-        self.assertEqual(result["covered"], 236)
+        self.assertEqual(result["covered"], 238)
         self.assertEqual(result["missing"], 0)
         for row in result["functions"]:
             self.assertEqual(len(row["call_lines"]), len(row["calls"]))
@@ -64,11 +64,11 @@ class CoverageTest(unittest.TestCase):
         self.assertEqual(len(binding), 8)
         self.assertEqual({rule.case for rule in binding}, {"device-api"})
         legacy = [rule for rule in self.rules if rule not in binding]
-        self.assertEqual(len(legacy), 228)
+        self.assertEqual(len(legacy), 230)
         result = self.audit(passing_log(legacy))
         self.assertFalse(result["valid"])
-        self.assertEqual(result["required"], 236)
-        self.assertEqual(result["covered"], 228)
+        self.assertEqual(result["required"], 238)
+        self.assertEqual(result["covered"], 230)
         self.assertEqual(result["missing"], 8)
         self.assertEqual({row["symbol"] for row in result["functions"]
                           if row["status"] == "missing"},

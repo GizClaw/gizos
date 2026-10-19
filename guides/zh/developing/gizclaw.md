@@ -18,7 +18,7 @@ GizClaw library 负责 SDK 集成和 client protocol，不创建具体 HTTP、We
 
 Runtime Profile 负责选择 Workflow driver，`libs/gizclaw` 不在 public Workflow projection 中复制 driver enum，也不要求调用方根据 driver 构造 Workspace 参数。Workspace 更新统一使用 `h2_gizclaw_*workspace_set_parameters`，对应 SDK 0.15.5 的 `server.workspace.parameters.set`（110）；旧的 `workspace_set_input` 入口已删除。
 
-依赖的 GizClaw C SDK 固定为 0.30.0。自 0.17.0 起，`h2_gizclaw_*workspace_activate` 保留 SET-only 语义，`h2_gizclaw_*workspace_reload` 保留重载当前选择的行为。新增 `h2_gizclaw_*workspace_reload_with_options`（RPC 120），在一次调用中可选地选择 Workspace、应用参数补丁，然后重载。传入零长度 `name` 保持当前选择，`parameters == NULL` 不修改参数；非空补丁复用 `h2_gizclaw_workspace_parameters_patch_t` 的字段 presence 语义。请求创建时复制参数，响应仍为 `h2_gizclaw_workspace_activation_t`。
+依赖的 GizClaw C SDK 固定为 0.33.7。自 0.17.0 起，`h2_gizclaw_*workspace_activate` 保留 SET-only 语义，`h2_gizclaw_*workspace_reload` 保留重载当前选择的行为。新增 `h2_gizclaw_*workspace_reload_with_options`（RPC 120），在一次调用中可选地选择 Workspace、应用参数补丁，然后重载。传入零长度 `name` 保持当前选择，`parameters == NULL` 不修改参数；非空补丁复用 `h2_gizclaw_workspace_parameters_patch_t` 的字段 presence 语义。请求创建时复制参数，响应仍为 `h2_gizclaw_workspace_activation_t`。
 
 `h2_gizclaw_workspace_parameters_patch_t` 通过独立 `has_*` 标记选择 input（PTT/Realtime）、conversation initiative（peer/agent）、agent initiative policy（once_when_empty/on_reload）、TTS 语速和安全围栏档位（见 [Workspace 参数补丁](#workspace-参数补丁)）。`workspace_set_parameters` 至少指定一个字段；显式的无效枚举值、空 patch、非法名称在发送前返回 INVALID_ARG。create 编码并持有 patch 数据，调用方随后可释放或修改原对象；同步入口沿用同一 request/parse 流程。
 
@@ -69,7 +69,7 @@ Workflow list 接受最多 32 个 `h2_gizclaw_str_t` tag，每个 1–128 UTF-8 
 
 产品在运行中改变筛选条件时，使用 `h2_gizclaw_session_refresh_with_tags()` 在同一个 Session preparation 内复制并更新 selector，再从空 cursor 开始刷新。所有分页和后续 Profile-revision 重试使用同一个已保存 selector；不能修改 create 时借用的 tag span。非法参数、admission 或复制分配失败保留旧 selector 和 catalog；selector 已更新后的查询失败保留新条件，但旧目录不能继续标为 READY。筛选结果可以为空，也不要求包含某个产品默认 Workflow。Workspace 的身份与授权不由 selector 决定。
 
-Workspace list 没有 collection 参数，返回当前 Peer 可访问的 Workspace；create 只需要 workflow_name 和 Workspace name。Workflow 的 tags 改变不会改变其 name，也不会重绑定已有 Workspace。Session 的 tags 只控制 catalog 查询；按 workflow_name 选择时，完整 catalog 的未命中项会通过 Workflow get 验证，流式模式也通过 get 验证，然后继续 Workspace get/create/reload。现有 Workspace 可省略 workflow_name 按名字打开。内容分级策略、显示顺序、权限与筛选条件由产品拥有。
+Workspace list 返回当前 Peer 可访问的 Workspace。`h2_gizclaw_*workspace_list_with_options()` 接受 `h2_gizclaw_workspace_list_options_t`：`has_system=false` 省略筛选，返回全部；`has_system=true, system=false` 只返回普通 Workspace，`has_system=true, system=true` 只返回系统 Workspace。可选 `prefix` 与 system 取交集，由 Server 在排序和分页前筛选；普通 Workspace 即使 `available=false` 仍可返回。分类以服务端保存的 system 为准，不根据名称或 Workflow 推断。NULL options 和原 `workspace_list` 入口保留未筛选行为；request 在 create 时复制 prefix、cursor 与 selector，共用 `h2_gizclaw_resp_parse_workspace_list()`。翻页保持相同条件；筛选条件或 Profile revision 改变时 Server 返回 `ABORTED`（GizOS 沿用 `H2_GIZCLAW_ERR_REMOTE`，可读 request 的 remote error），调用方应清空 cursor 重新查询。create 只需要 workflow_name 和 Workspace name。Workflow 的 tags 改变不会改变其 name，也不会重绑定已有 Workspace。Session 的 tags 只控制 catalog 查询；按 workflow_name 选择时，完整 catalog 的未命中项会通过 Workflow get 验证，流式模式也通过 get 验证，然后继续 Workspace get/create/reload。现有 Workspace 可省略 workflow_name 按名字打开。内容分级策略、显示顺序、权限与筛选条件由产品拥有。
 
 ## Session catalog 流式合同
 
@@ -215,12 +215,12 @@ Provider 在 `h2_gizclaw_client_poll()` 所在线程同步运行。上游 C SDK 
 
 产品创建共享 `h2_lua_apps_t`，配置预装 index、安装目录和存储预算，再放入 `h2_gizclaw_config_t.lua_apps`。该 handle 由产品持有，必须覆盖 Service 的完整生命周期，可供本地菜单和后续 Service 重连复用。LIST 在配置目录时启用，INSTALL 和 UNINSTALL 需要可写 Filesystem，RUN 还需要 `vtable.prepare_lua_app_run`；没有相应能力时按 SDK 的 unsupported 路径回答。
 
-C SDK 依赖使用 registry 的 `gizclaw_c_sdk` 0.30.0 及 `third_party/gizclaw_c_sdk_lua_app_uninstall.patch`，补丁直接来自 [GizClaw 的卸载 contract 提交](https://github.com/GizClaw/gizclaw/commit/155a9d512ca4669f02391a89bbc30be3bd128f15)，包含生成消息、Tool 27 和 C provider 输入校验。
+C SDK 依赖使用 registry 的 `gizclaw_c_sdk` 0.33.7 发布归档，已包含 Lua App uninstall 的生成消息、Tool 27 和 C provider 输入校验，无需本地补丁。
 
 `H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL` 对齐 GizClaw ClientTool 27，解码有界 `app_id` 后使用共享 `h2_lua_apps_uninstall`。空身份、路径、重复 ID 字段、嵌入 NUL 和非 ASCII 字节在设备入口拒绝；成功返回空 tool payload。安装中的目录 reservation 或待完成的启动 handoff 返回 BUSY。卸载与预装持久隐藏、清理重试和用户数据保留的语义见 [Lua 应用目录](./lua.md#lua-app-目录与流式安装)。
 
 
-`lua.app.list/install/run` 使用 SDK 的 tool/v0 编码；URL 安装仅支持 HTTP、HTTPS；内存中的压缩包通过独立 Binary stream 直推，data URL 不作为安装入口。独立 RPC 139 `client.lua.app.install` 由 SDK streaming provider 处理：小 metadata、同一请求中的 Binary 帧、请求 EOS、验证并发布后的最终响应。SDK 自动发送多帧，不需要调用方把一次安装拆成多次 RPC。C SDK 0.30.0 的直推限制为 512 KiB、单帧最多 65535 字节、总期限 120 秒；更大的 archive 使用 HTTP(S) URL。
+`lua.app.list/install/run` 使用 SDK 的 tool/v0 编码；URL 安装仅支持 HTTP、HTTPS；内存中的压缩包通过独立 Binary stream 直推，data URL 不作为安装入口。独立 RPC 139 `client.lua.app.install` 由 SDK streaming provider 处理：小 metadata、同一请求中的 Binary 帧、请求 EOS、验证并发布后的最终响应。SDK 自动发送多帧，不需要调用方把一次安装拆成多次 RPC。C SDK 0.33.7 的直推限制为 512 KiB、单帧最多 65535 字节、总期限 120 秒；更大的 archive 使用 HTTP(S) URL。
 
 `$gizclaw/lua/install` worker 使用一个固定大小的帧槽，write 回调复制 borrowed bytes 后返回；槽占用时返回 WOULD_BLOCK，SDK 保留原帧并暂停 backend polling，直到 worker 消费完成。 背压及等待 finish 时，poll owner 只在未消费输入的路径上执行有界 1 ms backoff，使共享 CPU 上的低优先级安装 worker 能继续运行，避免成功 poll 的忙重试饿死 worker。metadata、write、finish 和 close 不保留 response callback，也不在网络 owner 上同步解压或写文件。Service stop 先取消会话，再 join worker；join 失败保留句柄供 stop 重试，不能提前销毁目录或 allocator。URL 和 Binary 入口共用 [Lua App 安装器](./lua.md#lua-app-目录与流式安装)，不在 GizClaw 实现第二套解压、校验或文件发布流程。
 
@@ -301,7 +301,7 @@ EOS 不产生该错误通知。因此 SDK 升级本身不会增加 quota 的产�
 
 `@gizclaw_c_sdk//:gizclaw_core` 中的 RPC registry 与 protobuf payload 是 wire contract 的生成结果。RPC schema 更新时，先把 `MODULE.bazel` 中 C SDK 归档版本、完整性校验及对应上游 delta 同步到同一个规范版本，再同步已有 `libs/gizclaw` stable wrapper；不能只修改手写 method number、复制旧 protobuf struct，或只更新产品文档。没有 GizOS-owned domain/lifecycle 语义的 RPC（例如 Firmware metadata）直接使用 generic RPC API 与 pinned generated schema，不为相同字段再增加一层 typed wrapper。GizOS 中公开的 RPC method 常量通过 compile-time assertion 与上游 registry 对齐，registry 再次漂移时必须使 build 失败。
 
-C SDK 自带 Bazel targets、生成代码和精确的 nanopb runtime，GizOS 不注入另一份 BUILD overlay 或 nanopb。`MODULE.bazel` 声明完整性锁定的 0.30.0 发布归档及直接来自上游的既有 Lua uninstall delta，使独立 Bzlmod consumer 继承与 GizOS 相同的依赖；dependency MODULE 中的 root-only override 不会传播。JS codec/map 锁定到对应上游 commit，类型声明由锁定的官方 TypeScript compiler 生成。具体版本与校验以 `MODULE.bazel` 为准。
+C SDK 自带 Bazel targets、生成代码和精确的 nanopb runtime，GizOS 不注入另一份 BUILD overlay 或 nanopb。`MODULE.bazel` 声明完整性锁定的 0.33.7 发布归档，使独立 Bzlmod consumer 继承与 GizOS 相同的依赖；dependency MODULE 中的 root-only override 不会传播。JS codec/map 锁定到对应上游 commit，类型声明由锁定的官方 TypeScript compiler 生成。具体版本与校验以 `MODULE.bazel` 为准。
 
 Wire message 使用 `name` / `*_name`。GizOS wrapper 将 Peer-addressable resource 继续公开为 name；将 occurrence、relationship、history 和 ledger 的 wire name 逐字节映射到既有 public `id` / `*_id`，不做 trim、派生、翻译或 storage-ID 替换。技术性 transport request ID、idempotency key 和 `gear_id` 不属于这层业务 identity 映射：
 

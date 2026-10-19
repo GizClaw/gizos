@@ -10,7 +10,7 @@
 #include <limits.h>
 #include <string.h>
 
-/* Pinned SDK 0.30.0's canonical dispatcher, also used by gzc_rpc inbound.
+/* The pinned SDK's canonical dispatcher, also used by gzc_rpc inbound.
  * Keep this dependency inside the GizOS adapter and exercise the actual symbol
  * in compiled tests. No method registry or protobuf validator is duplicated. */
 int gzc_client_dispatch_rpc_internal(gzc_client_t *, int, gzc_str_t,

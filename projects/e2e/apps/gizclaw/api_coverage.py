@@ -81,6 +81,14 @@ def requirements():
                 rules.append(Rule(rpc, case, (rpc,), rpc, stage))
     symbol = PREFIX + "rpc_run_stop"
     rules.append(Rule(symbol, "rpc/catalog-workspace", (symbol,), symbol, "run_stop-assert"))
+    create = PREFIX + "req_create_workspace_list_with_options"
+    parse = PREFIX + "resp_parse_workspace_list"
+    rpc = PREFIX + "rpc_workspace_list_with_options"
+    stage = "workspace_list_with_options-assert"
+    rules.append(Rule(create, "rpc/catalog-workspace",
+                      (create, PREFIX + "req_do", PREFIX + "req_wait", parse),
+                      parse, stage))
+    rules.append(Rule(rpc, "rpc/catalog-workspace", (rpc,), rpc, stage))
     for method in "init start set_track unset_track audio_start audio_end audio_input_snapshot poll stop deinit get_time_sync_status".split():
         symbol = PREFIX + "service_" + method
         case = "voice" if method in {"set_track", "unset_track", "audio_start", "audio_end"} else "service"
