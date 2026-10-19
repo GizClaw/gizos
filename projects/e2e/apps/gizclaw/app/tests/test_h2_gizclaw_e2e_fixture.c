@@ -1357,8 +1357,8 @@ int main(int argc, char **argv) {
          H2_PAL_OK);
   fixture.device_audio = &audio;
   assert(h2_gizclaw_e2e_fixture_connect_actors(&fixture, 1u) == H2_PAL_OK);
-  assert(fixture.actors[0].config.audio_buffer_bytes == 16384u &&
-         fixture.actors[0].config.audio_prebuffer_bytes == 4096u);
+  assert(fixture.actors[0].config.audio_buffer_bytes == 65536u &&
+         fixture.actors[0].config.audio_prebuffer_bytes == 0u);
   assert(h2_gizclaw_e2e_fixture_cleanup(&fixture) == H2_PAL_OK);
   assert(h2_gizclaw_e2e_fixture_deinit(&fixture) == H2_PAL_OK);
   assert(allocator.live_blocks == 0u);

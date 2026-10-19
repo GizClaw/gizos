@@ -232,7 +232,7 @@ Workspace 覆盖包含 28 个函数。`h2_gizclaw_rpc_run_stop` 在独立 req/re
 
 E2E config 的可选 `fixture_allocator` 只选择 case、Service/client 及其缓冲区的分配来源，NULL 保持 Runtime Mem；allocator 必须覆盖全部借用者及失败后的 retained 状态。ESP DevKit launcher 可由 consumer 用 CMake scalar `H2_GIZCLAW_E2E_ALLOCATOR_ACCESSOR=<C identifier>` 显式提供现有 allocator accessor，同时用该 allocator 保存完整分页账本；显式 accessor 返回 NULL 或耗尽即失败，不回退原 heap。此输入不改变 Runtime、Board、SDK 默认值、用例、数据、断言或时间预算。
 
-可选 `--//projects/e2e/apps/gizclaw:app_config_fixture_workflow_tag=<tag>` 默认仍为 `assistants`；当前采用结构化标签的 fixture 可显式选择 `category:assistants`。Session 与两套 Workflow list API 使用同一 selector，原成员标签、非空目录、Profile metadata 和完整业务断言仍须满足，空结果不会回退为全目录。Device fixture 只把现有客户端压缩音频 ring/prebuffer 显式设为 16 KiB / 4 KiB，继续完整流式播放并执行原 PCM、时长及状态断言；不修改 SDK、用例数或超时。
+可选 `--//projects/e2e/apps/gizclaw:app_config_fixture_workflow_tag=<tag>` 默认仍为 `assistants`；当前采用结构化标签的 fixture 可显式选择 `category:assistants`。Session 与两套 Workflow list API 使用同一 selector，原成员标签、非空目录、Profile metadata 和完整业务断言仍须满足，空结果不会回退为全目录。Device fixture 使用 64 KiB 压缩音频 ring 和既有客户端默认预缓冲，继续完整流式播放并执行原 PCM、时长及状态断言；不修改 SDK、用例数或超时。
 
 DevKit 的设备证据账本按需分块分配，保留 384 KiB 逻辑上限、全部原始记录、完整字节计数和 CRC32。冻结后直接按块重播，不再为重播分配连续副本；分配失败、溢出或不完整记录仍阻止确认。顶层 case 继续逐个执行并完成原清理，所有业务断言、并发请求矩阵和接口审计要求保持。
 
