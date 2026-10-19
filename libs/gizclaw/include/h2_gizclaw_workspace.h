@@ -121,11 +121,33 @@ typedef struct h2_gizclaw_workspace_get_result {
   char safety_fence_level[H2_GIZCLAW_SAFETY_FENCE_LEVEL_MAX_BYTES + 1u];
 } h2_gizclaw_workspace_get_result_t;
 
-/** List owned Workspaces without a required filter. Cursor and output
+/** Optional selectors applied by the Server before pagination. */
+typedef struct h2_gizclaw_workspace_list_options {
+  /** Optional UTF-8 name prefix, at most 255 bytes without NUL. */
+  h2_gizclaw_str_t prefix;
+  /** Omit system when has_system is false; otherwise select ordinary
+   * (system=false) or
+   * system (system=true) Workspaces. Classification is independent of name,
+   * workflow_name and available. */
+  bool has_system;
+  bool system;
+} h2_gizclaw_workspace_list_options_t;
+
+/** List accessible Workspaces without a required filter. Cursor and output
  * storage retain the usual request-copy and response-storage contracts. */
 h2_pal_result_t h2_gizclaw_req_create_workspace_list(
     h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t cursor,
     size_t limit, uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
+
+/** List with optional prefix and system selectors. NULL options lists all.
+ * Values are copied at creation. Reuse the same selectors for subsequent
+ * pages; changing them requires an empty cursor. Parse with
+ * h2_gizclaw_resp_parse_workspace_list(). */
+h2_pal_result_t h2_gizclaw_req_create_workspace_list_with_options(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    const h2_gizclaw_workspace_list_options_t *options,
+    h2_gizclaw_str_t cursor, size_t limit, uint32_t timeout_ms,
+    h2_gizclaw_req_t **out_request);
 
 h2_pal_result_t h2_gizclaw_req_create_workspace_get(
     h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
@@ -263,6 +285,13 @@ h2_pal_result_t h2_gizclaw_resp_parse_workspace_history_list(
 h2_pal_result_t h2_gizclaw_rpc_workspace_list(
     h2_gizclaw_service_t *service, h2_gizclaw_str_t cursor, size_t limit,
     uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_workspace_page_t *out_result);
+
+h2_pal_result_t h2_gizclaw_rpc_workspace_list_with_options(
+    h2_gizclaw_service_t *service,
+    const h2_gizclaw_workspace_list_options_t *options,
+    h2_gizclaw_str_t cursor, size_t limit, uint32_t timeout_ms,
+    h2_gizclaw_resp_storage_t *storage,
     h2_gizclaw_workspace_page_t *out_result);
 
 h2_pal_result_t

@@ -1,7 +1,7 @@
 #include "h2_gizclaw_app_config.h"
 #include "h2_gizclaw_service_internal.h"
 #include "payload/system.pb.h"
-#include "rpc.pb.h"
+#include "gizclaw_rpc.pb.h"
 #include "pb_decode.h"
 #include "pb_encode.h"
 #ifdef NDEBUG

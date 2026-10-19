@@ -226,7 +226,7 @@ API key state 的 5 个公开操作归属 `rpc/api-key`：create 验证初始空
 
 API key state 的六个公开函数归属 `rpc/api-key`：create、request_refresh、request_revoke、snapshot、close、destroy。真实应用在成功创建后调用 request_revoke，并有界轮询至快照 invalid、idle、非 stale、last_error=OK、name/secret 已擦除且 revision 递增，才输出 `api_key_state_request_revoke-assert`。覆盖规则要求调用后实际读取 snapshot，单有返回 OK 不计入覆盖。
 
-Workspace 覆盖包含 28 个函数。`h2_gizclaw_rpc_run_stop` 在独立 req/resp 与 RPC 场景结束后，通过 Session 选择已运行的 Workspace，停止 run 并验证 EMPTY、当前名称及参数清空，再选择同名 Workspace，验证经 get/reload 后恢复 READY。调用失败或状态断言失败均记录失败证据；主机故障注入不代表真实设备验收。
+Workspace 覆盖包含 30 个函数。创建后分别运行原未筛选入口与 `workspace_list_with_options` 的 req/resp、同步 RPC；筛选入口显式发送 `has_system=true, system=false`，逐项断言没有系统 Workspace。两种入口共用 list parser，覆盖审计分别要求实际调用与业务断言。`h2_gizclaw_rpc_run_stop` 在独立 req/resp 与 RPC 场景结束后，通过 Session 选择已运行的 Workspace，停止 run 并验证 EMPTY、当前名称及参数清空，再选择同名 Workspace，验证经 get/reload 后恢复 READY。调用失败或状态断言失败均记录失败证据；主机故障注入不代表真实设备验收。
 
 ## 显式 AppConfig fixture
 
