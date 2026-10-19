@@ -33,7 +33,9 @@ acquire 使用 provider 文档规定的有限超时；成功后帧由消费者�
 
 Mosaico provider 固定左槽 1280×720 UYVY、1000 ms 获取超时；仅有效 camera 描述符允许打开。
 它把上游零 bytes-per-line 规范化为 width×2，并检查尺寸、溢出和缓冲区长度。
-SDK DVP 补丁作用于构建目录副本，SC101IOT 补丁作用于临时 managed component，均失败即停止构建。
+构建直接使用固定版本的 SDK DVP 和 SC101IOT 驱动，不再复制或修改下层源码。
+此前摄像头实测使用过驱动补丁，不能作为当前无补丁组合的通过证据；必须重新实测，
+失败须按日志区分板级适配与共享 provider/SDK 原因，不在板级构建脚本中隐式修补下层。
 消费者须使用 board 的 `camera/sdk_setup.cmake`；格式协商、多路流、编码及网络服务不在范围内。
 
 ## 磁力计和电池
@@ -50,8 +52,15 @@ BQ27220 只读取标准遥测寄存器，不调用会改写容量/CEDV 的官方
 
 V1.2 bring-up 已有人眼/听觉确认的显示、提示音和 SC101IOT 动态预览，以及基础 Core、Audio、
 Wi-Fi/BLE smoke 日志。整合后构建与历史实机证据分别记录；V1.0/1.1 接线只有版本映射测试。
-摄像头实际热插入、右侧扩展功能、NAND、振动和更新回滚尚未验收。
+左侧摄像头热插入及 Loader 完整恢复矩阵已有历史实测；新基线和无补丁摄像头组合
+须重新验证，不能继承旧固件的通过结论。右侧扩展功能、NAND 和振动不在这些实测证明中。
+各固件的完整用例、失败与恢复状态见
+[板级 E2E 验收记录](../../../projects/e2e/targets/h2loader_tar_zlib/esp_mosaico-qualification.md)。
 S31 不链接缺少相应 ABI 的 ESP-SR，板级 AEC 显式关闭。
+
+`pal-ipv6`、`iperf-client` 和 `lua-runtime` 的 Mosaico 入口直接组合既有 portable App。
+入口拥有 USB 管理通道、启动任务、Runtime 生命周期和测试确认；不新增 board 拥有的 App 层。
+IPv6 的双板 H2Peer 证据、Pion 互操作、TCP/UDP 三模式吞吐和原含 SCTP 的 14 项矩阵分别记录。
 
 摄像头热插入仅限左侧，不支持带电拔出。右侧 GPIO 与音频共享；模块发现不能证明电气热插拔安全。
 通用接口扩展需由新的跨板消费者需求驱动，不能仅凭本板诊断页增加 Runtime 或产品流程。

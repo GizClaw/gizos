@@ -1,6 +1,6 @@
 # ESP-Mosaico E2E qualification
 
-Current baseline: rebased onto main `d3ff30bc` on 2026-10-19. Previous green receipts remain artifact-bound historical evidence; new-baseline hardware qualification is open. See the [architecture, IDF 6.2 impact and remaining E2E assessment](esp_mosaico-baseline-20261019.md).
+Current baseline: rebased onto main `d3ff30bc` on 2026-10-19. Previous green receipts remain artifact-bound historical evidence; new-baseline hardware qualification is open. See the [architecture, IDF 6.2 impact and remaining E2E assessment](esp_mosaico-baseline-20261019.md). The [current full rerun and layer review](esp_mosaico-rerun-20261019.md) records fresh results and remaining gates under the board/test-only edit boundary.
 
 Pre-rebase checkpoint (2026-10-19): **rebased onto main `68e867d0`; repaired-source WebRTC R119 passes two default-off smoke boots and PAL-WebRTC R120 passes 43/43 twice; paired iperf R125/R27 now passes the original 14/14 matrix on two independent Mosaico boots with all 28 AMOLED peer witnesses verified**. The prior DevKit R122 failure and all earlier artifact-bound receipts remain historical evidence. PR #709 stays Draft and GizClaw remains excluded. Original Mosaico 16 MiB Flash restoration, complete independent readback and public layout validation now pass.
 
