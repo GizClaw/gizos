@@ -762,6 +762,37 @@ h2_pal_result_t h2_h2loader_cli_verify_reboot_status(
         ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE;
 }
 
+typedef struct confirmation_wait {
+  h2_h2loader_cli_context_t *context;
+  uint64_t start_ms;
+  h2_pal_result_t control_result;
+  int deadline_reached;
+} confirmation_wait_t;
+
+static int confirmation_wait_done(void *user) {
+  confirmation_wait_t *wait = user;
+  h2_h2loader_cli_context_t *context = wait->context;
+  if (context->config->is_cancelled != NULL &&
+      context->config->is_cancelled(context->config->cancel_user)) {
+    wait->control_result = H2_PAL_EXIT;
+    return 1;
+  }
+  uint64_t now_ms = 0u;
+  wait->control_result =
+      h2_pal_time_get_monotonic_ms(context->runtime->time, &now_ms);
+  if (wait->control_result != H2_PAL_OK) {
+    if (wait->control_result == H2_PAL_EXIT)
+      wait->control_result = H2_PAL_ERR_INVALID_STATE;
+    return 1;
+  }
+  if (now_ms < wait->start_ms) {
+    wait->control_result = H2_PAL_ERR_INVALID_STATE;
+    return 1;
+  }
+  wait->deadline_reached = now_ms - wait->start_ms >= 500u;
+  return wait->deadline_reached;
+}
+
 static h2_pal_result_t reconnect_and_verify_reboot(
     h2_h2loader_cli_context_t *context,
     h2_h2loader_cli_transport_t *transport,
@@ -776,21 +807,38 @@ static h2_pal_result_t reconnect_and_verify_reboot(
             if (awaiting_confirmation) (void)h2_h2loader_cli_transport_disconnect(transport);
             return H2_PAL_EXIT;
         }
-        rc = h2_pal_time_sleep_ms(context->runtime->time, 500u);
-        if (rc != H2_PAL_OK) {
-            if (awaiting_confirmation) (void)h2_h2loader_cli_transport_disconnect(transport);
-            return rc;
-        }
         if (awaiting_confirmation) {
+          confirmation_wait_t wait = {.context = context};
+          rc = h2_pal_time_get_monotonic_ms(context->runtime->time,
+                                            &wait.start_ms);
+          if (rc != H2_PAL_OK) {
+            (void)h2_h2loader_cli_transport_disconnect(transport);
+            return rc == H2_PAL_EXIT ? H2_PAL_ERR_INVALID_STATE : rc;
+          }
+          rc = h2_h2loader_cli_transport_monitor_logs(
+              transport, confirmation_wait_done, &wait);
+          if (wait.control_result != H2_PAL_OK) {
+            (void)h2_h2loader_cli_transport_disconnect(transport);
+            return wait.control_result;
+          }
+          if (rc == H2_PAL_EXIT && wait.deadline_reached) {
             rc = h2_h2loader_cli_transport_read_status(transport, out_status);
+          } else if (rc == H2_PAL_EXIT || rc == H2_PAL_OK) {
+            /* An unclassified monitor return cannot confirm an upgrade. */
+            rc = H2_PAL_ERR_INVALID_STATE;
+          }
+          /* Read/sink errors use the existing failed-attempt path below. */
         } else {
-            rc = h2_h2loader_cli_transport_rediscover(transport);
-            if (rc == H2_PAL_OK) {
-                rc = h2_h2loader_cli_transport_connect(transport, out_status);
-                if (h2_h2loader_cli_reconnect_must_fail_closed(transport, rc)) {
-                    return rc;
-                }
+          rc = h2_pal_time_sleep_ms(context->runtime->time, 500u);
+          if (rc != H2_PAL_OK)
+            return rc;
+          rc = h2_h2loader_cli_transport_rediscover(transport);
+          if (rc == H2_PAL_OK) {
+            rc = h2_h2loader_cli_transport_connect(transport, out_status);
+            if (h2_h2loader_cli_reconnect_must_fail_closed(transport, rc)) {
+              return rc;
             }
+          }
         }
         const h2_pal_result_t status_result = rc;
         if (rc == H2_PAL_OK) {

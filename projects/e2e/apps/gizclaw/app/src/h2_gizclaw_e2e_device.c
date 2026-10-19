@@ -110,7 +110,7 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
     h2_gizclaw_e2e_evidence("h2_gizclaw_player_get_status", "local-player", rc);
     uint64_t now = 0;
     CHECK(h2_pal_time_get_monotonic_ms(fixture->time, &now));
-    if (fixture->config->device_real_audio && i % 4u == 0)
+    if (i % 4u == 0)
       h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=player-status state=%s position_ms=%llu "
              "pcm_bytes=%llu peak=%u\n",
              local.state, (unsigned long long)local.position_ms,

@@ -151,6 +151,16 @@ static h2_pal_result_t h2_h2loader_cli_transport_read_status(h2_h2loader_cli_tra
     assert(0 && "unexpected live-confirmation status poll");
     return H2_PAL_ERR_INVALID_STATE;
 }
+static h2_pal_result_t h2_h2loader_cli_transport_monitor_logs(
+    h2_h2loader_cli_transport_t *t, h2_h2loader_host_cancelled_fn is_cancelled,
+    void *cancel_user) {
+  (void)t;
+  (void)is_cancelled;
+  (void)cancel_user;
+  /* These non-monitor scenarios must never enter the live log wait. */
+  assert(0 && "unexpected live-confirmation log wait");
+  return H2_PAL_ERR_INVALID_STATE;
+}
 /* VERIFY */
 int main(int argc,char **argv) {
     assert(argc==2);

@@ -17,10 +17,27 @@ static const char after_ready[] = "H2_DISPLAY_CASE after-ready=PASS\r\n";
 static const char mixed_expected[] = "H2_DISPLAY_BOOT version=test\r\n"
     "H2_DISPLAY_CASE first=PASS\r\n"
     "H2_LOADER_STATUX diagnostic\r\nH2_DISPLAY_READY rc=0 confirm=0\r\n";
+enum {
+  WAIT_NORMAL,
+  WAIT_CLOCK_START,
+  WAIT_CLOCK_ERROR,
+  WAIT_CLOCK_BACKWARDS,
+  WAIT_READ_IO,
+  WAIT_READ_EXIT,
+  WAIT_SINK_IO,
+  WAIT_SINK_EXIT,
+  WAIT_SINK_ZERO,
+  WAIT_CANCEL,
+  WAIT_CLOCK_START_EXIT,
+  WAIT_CLOCK_CALLBACK_EXIT
+};
 typedef struct confirmation_probe {
     unsigned confirm_at, cancel_at, bad_at, bad_from, uid_from, sleep_fail_at;
     unsigned polls, stage_valid, cancel_seen;
     int mismatched_stage;
+    uint64_t last_poll_ms, wait_start_ms;
+    unsigned wait_checks, fault_count, fault_limit;
+    int wait_active, wait_fault;
 } confirmation_probe_t;
 typedef struct cli_fixture {
     int mode;
@@ -37,6 +54,10 @@ typedef struct cli_fixture {
     uint32_t modem_lines;
     uint64_t now;
     size_t allocations;
+    const uint8_t *burst;
+    size_t burst_len, burst_produced, burst_dropped;
+    uint64_t burst_start_ms;
+    int burst_started, fault_this_open;
     uint8_t input[16384];
     size_t input_len, input_offset;
     char output[16384];
@@ -61,14 +82,63 @@ static void release(void *user, void *p) {
     if (p != NULL) { --((cli_fixture_t *)user)->allocations; free(p); }
 }
 static const h2_pal_mem_vtable_t mem_vtable = {.alloc=allocate, .realloc=resize, .free=release};
-static int clock_ms(void *user, uint64_t *out) { *out=((cli_fixture_t *)user)->now; return H2_PAL_OK; }
+/* Virtual wire arrivals continue even when the caller does not read. The
+ * bounded queue is a test-only loss model, not a production buffer change. */
+static void advance_clock(cli_fixture_t *f, uint32_t duration) {
+  f->now += duration;
+  if (f->burst == NULL || !f->burst_started)
+    return;
+  size_t produced = (size_t)(f->now - f->burst_start_ms) * 32u;
+  if (produced > f->burst_len)
+    produced = f->burst_len;
+  if (f->input_offset != 0u) {
+    memmove(f->input, f->input + f->input_offset,
+            f->input_len - f->input_offset);
+    f->input_len -= f->input_offset;
+    f->input_offset = 0u;
+  }
+  while (f->burst_produced < produced) {
+    uint8_t byte = f->burst[f->burst_produced++];
+    if (f->input_len < 1024u)
+      f->input[f->input_len++] = byte;
+    else
+      ++f->burst_dropped;
+  }
+}
+static int clock_ms(void *user, uint64_t *out) {
+  cli_fixture_t *f = user;
+  confirmation_probe_t *p = f->confirmation;
+  if (p != NULL && p->fault_count == 0u &&
+      (((p->wait_fault == WAIT_CLOCK_START ||
+         p->wait_fault == WAIT_CLOCK_START_EXIT) &&
+        p->wait_checks == 1u) ||
+       ((p->wait_fault == WAIT_CLOCK_ERROR ||
+         p->wait_fault == WAIT_CLOCK_CALLBACK_EXIT ||
+         p->wait_fault == WAIT_CLOCK_BACKWARDS) &&
+        p->wait_active))) {
+    ++p->fault_count;
+    if (p->wait_fault == WAIT_CLOCK_START_EXIT ||
+        p->wait_fault == WAIT_CLOCK_CALLBACK_EXIT)
+      return H2_PAL_EXIT;
+    if (p->wait_fault != WAIT_CLOCK_BACKWARDS)
+      return H2_PAL_ERR_IO;
+    assert(p->wait_start_ms != 0u);
+    *out = p->wait_start_ms - 1u;
+    return H2_PAL_OK;
+  }
+  *out = f->now;
+  return H2_PAL_OK;
+}
 static uint32_t peer_ms(void *user) { return (uint32_t)((cli_fixture_t *)user)->now; }
 static int sleep_ms(void *user, uint32_t duration) {
-    cli_fixture_t *f=user; ++f->sleeps; f->now+=duration;
-    if (f->confirmation != NULL) {
-        assert(duration==500u);
-        if (f->confirmation->sleep_fail_at==f->sleeps) return H2_PAL_ERR_IO;
-    }
+  cli_fixture_t *f = user;
+  ++f->sleeps;
+  advance_clock(f, duration);
+  if (f->confirmation != NULL) {
+    assert(duration == 500u);
+    if (f->confirmation->sleep_fail_at == f->sleeps)
+      return H2_PAL_ERR_IO;
+  }
     return H2_PAL_OK;
 }
 static const h2_pal_time_vtable_t time_vtable = {.get_monotonic_ms=clock_ms,.sleep_ms=sleep_ms};
@@ -79,6 +149,20 @@ static int cancelled(void *user) {
         if (p->cancel_at!=0u && p->polls>=p->cancel_at) {
             p->cancel_seen=1u;
             return 1;
+        }
+        if (p->polls != 0u && p->stage_valid) {
+          if (++p->wait_checks == 1u)
+            p->wait_start_ms = f->now;
+          p->wait_active = p->wait_checks >= 2u;
+          if (f->burst != NULL && !f->burst_started) {
+            f->burst_started = 1;
+            f->burst_start_ms = f->now;
+          }
+          if (p->wait_fault == WAIT_CANCEL && p->wait_active &&
+              f->now > p->wait_start_ms) {
+            p->cancel_seen = 1u;
+            return 1;
+          }
         }
         return p->polls>=p->confirm_at && !p->stage_valid;
     }
@@ -91,6 +175,24 @@ static int cancelled(void *user) {
 }
 static int output(void *user, const void *data, size_t len, size_t *written, uint32_t timeout) {
     cli_fixture_t *f=user; (void)timeout;
+    confirmation_probe_t *p = f->confirmation;
+    if (p != NULL && p->wait_active && !f->fault_this_open &&
+        p->fault_count < p->fault_limit &&
+        (p->wait_fault == WAIT_SINK_IO || p->wait_fault == WAIT_SINK_EXIT ||
+         p->wait_fault == WAIT_SINK_ZERO)) {
+      f->fault_this_open = 1;
+      ++p->fault_count;
+      *written = 0u;
+      return p->wait_fault == WAIT_SINK_EXIT   ? H2_PAL_EXIT
+             : p->wait_fault == WAIT_SINK_ZERO ? H2_PAL_OK
+                                               : H2_PAL_ERR_IO;
+    }
+    if (len >= sizeof(f->output) - f->output_len)
+      fprintf(stderr,
+              "output overflow bytes=%zu incoming=%zu polls=%u fault=%d "
+              "opens=%u burst=%zu dropped=%zu\n",
+              f->output_len, len, p ? p->polls : 0u, p ? p->wait_fault : 0,
+              f->opens, f->burst_produced, f->burst_dropped);
     assert(len < sizeof(f->output)-f->output_len);
     memcpy(f->output+f->output_len,data,len); f->output_len+=len;
     if (f->connect_output && f->requests==0u) f->before_status_output_len+=len;
@@ -127,7 +229,14 @@ static void emit_status(cli_fixture_t *f) {
     const char *stage="stage_valid=0 stage_package_checksum=- stage_package_size=0 stage_image_checksum=- stage_image_size=0 stage_role=unknown stage_version=- stage_board=- stage_target=-";
     if (f->confirmation != NULL) {
         confirmation_probe_t *p=f->confirmation;
-        if (f->reboots!=0u) ++p->polls;
+        if (f->reboots != 0u) {
+          if (p->polls != 0u)
+            assert(f->now - p->last_poll_ms >= 500u);
+          p->last_poll_ms = f->now;
+          ++p->polls;
+          p->wait_checks = 0u;
+          p->wait_active = 0;
+        }
         p->stage_valid=f->reboots==0u || p->polls<p->confirm_at;
         loader=0;
         if (p->stage_valid) {
@@ -258,8 +367,31 @@ static int uart_write(void *user, const void *data, size_t len, size_t *written,
 }
 static int uart_read(void *user, void *data, size_t cap, size_t *read, uint32_t timeout) {
     cli_fixture_t *f=user;
-    /* Splitting already queued bytes does not consume a fresh I/O deadline. */
-    f->now+=(f->mixed_status_output || f->status_eol_test) && f->input_offset<f->input_len?0u:timeout!=0u?timeout:1u;
+    confirmation_probe_t *p = f->confirmation;
+    *read = 0u;
+    if (p != NULL && p->wait_active && !f->fault_this_open &&
+        p->fault_count < p->fault_limit) {
+      if (p->wait_fault == WAIT_READ_IO || p->wait_fault == WAIT_READ_EXIT) {
+        f->fault_this_open = 1;
+        ++p->fault_count;
+        return p->wait_fault == WAIT_READ_EXIT ? H2_PAL_EXIT : H2_PAL_ERR_IO;
+      }
+      if ((p->wait_fault == WAIT_SINK_IO || p->wait_fault == WAIT_SINK_EXIT ||
+           p->wait_fault == WAIT_SINK_ZERO) &&
+          f->input_offset == f->input_len) {
+        *(uint8_t *)data = '~';
+        *read = 1u;
+        return H2_PAL_OK;
+      }
+    }
+    /* Ready bytes are read immediately; only an empty wire consumes a timeout.
+     */
+    advance_clock(
+        f, (f->mixed_status_output || f->status_eol_test || f->burst != NULL) &&
+                   f->input_offset < f->input_len
+               ? 0u
+           : timeout != 0u ? timeout
+                           : 1u);
     *read=f->input_len-f->input_offset;
     if (*read>cap) *read=cap;
     const size_t chunk=f->mixed_read_size!=0u?f->mixed_read_size:67u;
@@ -286,11 +418,18 @@ static int snapshot_close(void *user, h2_pal_serial_host_snapshot_t **snapshot) 
     ++f->snapshots_closed; *snapshot=NULL; return H2_PAL_OK;
 }
 static int open_port(void *user, const char *id, const h2_pal_uart_io_stream_config_t *config, h2_pal_serial_host_session_t **out) {
-    cli_fixture_t *f=user; ++f->opens; assert(strcmp(id,"scan-port")==0 && config->baud_rate==460800u);
-    assert(f->peer==NULL);
-    h2_iostreamikcp_filter_init(&f->filter);
-    if (f->mode==OPEN_FAILURE) return H2_PAL_ERR_BUSY;
-    *out=(h2_pal_serial_host_session_t *)f; return H2_PAL_OK;
+  cli_fixture_t *f = user;
+  ++f->opens;
+  f->fault_this_open = 0;
+  if (f->confirmation != NULL)
+    f->confirmation->wait_active = 0;
+  assert(strcmp(id, "scan-port") == 0 && config->baud_rate == 460800u);
+  assert(f->peer == NULL);
+  h2_iostreamikcp_filter_init(&f->filter);
+  if (f->mode == OPEN_FAILURE)
+    return H2_PAL_ERR_BUSY;
+  *out = (h2_pal_serial_host_session_t *)f;
+  return H2_PAL_OK;
 }
 static int stream(void *user, h2_pal_serial_host_session_t *session, const h2_pal_uart_io_stream_api_t **out) {
     cli_fixture_t *f=user; assert(session==(h2_pal_serial_host_session_t *)f); ++f->streams;
@@ -434,24 +573,129 @@ static void run_status_boundary(const char *prefix, const char *tail, int crlf, 
     assert(f.peer==NULL && f.allocations==0u);
 }
 
+static int run_confirmation_fixture(cli_fixture_t *f, int monitored,
+                                    int null_cancel) {
+  f->mem = (h2_pal_mem_api_t){.user = f, .vtable = &mem_vtable};
+  f->uart = (h2_pal_uart_io_stream_api_t){.user = f, .vtable = &uart_vtable};
+  h2_pal_serial_host_api_t serial = {.user = f, .vtable = &serial_vtable};
+  h2_pal_time_api_t time = {.user = f, .vtable = &time_vtable};
+  h2_command_io_api_t io = {.user = f, .vtable = &output_vtable};
+  h2_runtime_t runtime = {
+      .mem = &f->mem, .time = &time, .fs = h2_pal_unsupported_fs_api()};
+  const char *argv[] = {"h2loader", "--no-ble", "--port",   "scan-port",
+                        "reboot",   "upgrade",  "--monitor"};
+  h2_h2loader_cli_config_t config = {.argc = monitored ? 7 : 6,
+                                     .argv = argv,
+                                     .serial = &serial,
+                                     .stdout_io = &io,
+                                     .stderr_io = &io,
+                                     .is_cancelled =
+                                         null_cancel ? NULL : cancelled,
+                                     .cancel_user = f};
+  return h2_h2loader_cli_main(&runtime, &config);
+}
+
+static uint32_t crc32_bytes(const uint8_t *data, size_t len) {
+  uint32_t crc = UINT32_MAX;
+  for (size_t i = 0u; i < len; ++i) {
+    crc ^= data[i];
+    for (unsigned bit = 0u; bit < 8u; ++bit)
+      crc = (crc >> 1u) ^ ((crc & 1u) ? UINT32_C(0xedb88320) : 0u);
+  }
+  return ~crc;
+}
+
+static void run_pending_burst(void) {
+  uint8_t payload[8192];
+  for (size_t i = 0u; i < sizeof(payload); ++i)
+    payload[i] = i % 64u == 63u ? '\n' : (uint8_t)('A' + i % 26u);
+  memcpy(payload, "CLOCKED ", 8u);
+  confirmation_probe_t p = {.confirm_at = 3u};
+  cli_fixture_t f = {.confirmation = &p,
+                     .burst = payload,
+                     .burst_len = sizeof(payload),
+                     .modem_lines = H2_PAL_SERIAL_HOST_CONTROL_DTR |
+                                    H2_PAL_SERIAL_HOST_CONTROL_RTS};
+  int rc = run_confirmation_fixture(&f, 1, 0);
+  if (f.burst_dropped != 0u)
+    fprintf(stderr, "pending burst produced=%zu dropped=%zu\n",
+            f.burst_produced, f.burst_dropped);
+  assert(rc == H2_H2LOADER_CLI_EXIT_OK && !p.stage_valid && p.polls == 3u);
+  assert(f.burst_produced == sizeof(payload) && f.burst_dropped == 0u);
+  const char *body = strstr(f.output, "CLOCKED ");
+  assert(body != NULL &&
+         f.output_len - (size_t)(body - f.output) == sizeof(payload));
+  assert(memcmp(body, payload, sizeof(payload)) == 0);
+  assert(crc32_bytes((const uint8_t *)body, sizeof(payload)) ==
+         crc32_bytes(payload, sizeof(payload)));
+  assert(f.opens == 2u && f.closes == 2u && f.reboots == 1u &&
+         f.controls == 0u);
+  assert(f.peer == NULL && f.allocations == 0u);
+}
+
+static void run_pending_faults(void) {
+  const int faults[] = {WAIT_CLOCK_START,     WAIT_CLOCK_START_EXIT,
+                        WAIT_CLOCK_ERROR,     WAIT_CLOCK_CALLBACK_EXIT,
+                        WAIT_CLOCK_BACKWARDS, WAIT_READ_IO,
+                        WAIT_READ_EXIT,       WAIT_SINK_IO,
+                        WAIT_SINK_EXIT,       WAIT_SINK_ZERO,
+                        WAIT_CANCEL};
+  for (size_t i = 0u; i < sizeof(faults) / sizeof(faults[0]); ++i) {
+    int cancel = faults[i] == WAIT_CANCEL;
+    int clock =
+        (faults[i] >= WAIT_CLOCK_START && faults[i] <= WAIT_CLOCK_BACKWARDS) ||
+        faults[i] == WAIT_CLOCK_START_EXIT ||
+        faults[i] == WAIT_CLOCK_CALLBACK_EXIT;
+    confirmation_probe_t p = {
+        .confirm_at = 999u, .wait_fault = faults[i], .fault_limit = 120u};
+    cli_fixture_t f = {.confirmation = &p,
+                       .modem_lines = H2_PAL_SERIAL_HOST_CONTROL_DTR |
+                                      H2_PAL_SERIAL_HOST_CONTROL_RTS};
+    int rc = run_confirmation_fixture(&f, 1, 0);
+    if (rc != (cancel ? H2_H2LOADER_CLI_EXIT_OK : H2_H2LOADER_CLI_EXIT_RUNTIME))
+      fprintf(stderr, "wait fault=%d rc=%d polls=%u faults=%u opens=%u\n",
+              faults[i], rc, p.polls, p.fault_count, f.opens);
+    assert(rc ==
+           (cancel ? H2_H2LOADER_CLI_EXIT_OK : H2_H2LOADER_CLI_EXIT_RUNTIME));
+    assert(p.stage_valid && p.polls == (cancel || clock ? 1u : 120u));
+    assert(p.fault_count == (cancel ? 0u : clock ? 1u : 120u));
+    assert(f.opens == (cancel || clock ? 2u : 121u) && f.closes == f.opens);
+    assert(f.reboots == 1u && f.controls == 0u && f.peer == NULL &&
+           f.allocations == 0u);
+    if (cancel)
+      assert(p.cancel_seen);
+  }
+}
+
 static void run_confirmation_cases(void) {
     static const struct {
         const char *name;
         unsigned confirm_at, cancel_at, bad_at, bad_from, uid_from, sleep_fail_at;
         int mismatched_stage, monitored, null_cancel, result;
-        unsigned polls, sleeps, opens;
-    } cases[]={
-        {"already-confirmed",1,0,0,0,0,0,0,1,0,H2_H2LOADER_CLI_EXIT_OK,1,1,2},
-        {"pending150-then-stage0",151,0,0,0,0,0,0,1,0,H2_H2LOADER_CLI_EXIT_OK,151,151,2},
-        {"pending650-then-stage0",651,0,0,0,0,0,0,1,0,H2_H2LOADER_CLI_EXIT_OK,651,651,2},
-        {"pending-cancel",999,200,0,0,0,0,0,1,0,H2_H2LOADER_CLI_EXIT_OK,200,200,2},
-        {"pending-then120-status-errors",999,0,0,151,0,0,0,1,0,H2_H2LOADER_CLI_EXIT_RUNTIME,270,270,121},
-        {"pending-then120-UID-errors",999,0,0,0,151,0,0,1,0,H2_H2LOADER_CLI_EXIT_RUNTIME,270,270,121},
-        {"pending-one-status-error-then-stage0",171,0,151,0,0,0,0,1,0,H2_H2LOADER_CLI_EXIT_OK,171,171,3},
-        {"pending-sleep-error",999,0,0,0,0,151,0,1,0,H2_H2LOADER_CLI_EXIT_RUNTIME,150,151,2},
-        {"plain-upgrade-bounded120",151,0,0,0,0,0,0,0,0,H2_H2LOADER_CLI_EXIT_RUNTIME,120,120,121},
-        {"wrong-stage-bounded120",999,0,0,0,0,0,1,1,0,H2_H2LOADER_CLI_EXIT_RUNTIME,120,120,121},
-        {"NULL-cancel-bounded120",151,0,0,0,0,0,0,1,1,H2_H2LOADER_CLI_EXIT_RUNTIME,120,120,121},
+        unsigned polls, opens;
+    } cases[] = {
+        {"already-confirmed", 1, 0, 0, 0, 0, 0, 0, 1, 0,
+         H2_H2LOADER_CLI_EXIT_OK, 1, 2},
+        {"pending150-then-stage0", 151, 0, 0, 0, 0, 0, 0, 1, 0,
+         H2_H2LOADER_CLI_EXIT_OK, 151, 2},
+        {"pending650-then-stage0", 651, 0, 0, 0, 0, 0, 0, 1, 0,
+         H2_H2LOADER_CLI_EXIT_OK, 651, 2},
+        {"pending-cancel", 999, 200, 0, 0, 0, 0, 0, 1, 0,
+         H2_H2LOADER_CLI_EXIT_OK, 200, 2},
+        {"pending-then120-status-errors", 999, 0, 0, 151, 0, 0, 0, 1, 0,
+         H2_H2LOADER_CLI_EXIT_RUNTIME, 270, 121},
+        {"pending-then120-UID-errors", 999, 0, 0, 0, 151, 0, 0, 1, 0,
+         H2_H2LOADER_CLI_EXIT_RUNTIME, 270, 121},
+        {"pending-one-status-error-then-stage0", 171, 0, 151, 0, 0, 0, 0, 1, 0,
+         H2_H2LOADER_CLI_EXIT_OK, 171, 3},
+        {"initial-sleep-error", 999, 0, 0, 0, 0, 1, 0, 1, 0,
+         H2_H2LOADER_CLI_EXIT_RUNTIME, 0, 1},
+        {"plain-upgrade-bounded120", 151, 0, 0, 0, 0, 0, 0, 0, 0,
+         H2_H2LOADER_CLI_EXIT_RUNTIME, 120, 121},
+        {"wrong-stage-bounded120", 999, 0, 0, 0, 0, 0, 1, 1, 0,
+         H2_H2LOADER_CLI_EXIT_RUNTIME, 120, 121},
+        {"NULL-cancel-bounded120", 151, 0, 0, 0, 0, 0, 0, 1, 1,
+         H2_H2LOADER_CLI_EXIT_RUNTIME, 120, 121},
     };
     for (size_t i=0u;i<sizeof(cases)/sizeof(cases[0]);++i) {
         confirmation_probe_t p={.confirm_at=cases[i].confirm_at,.cancel_at=cases[i].cancel_at,
@@ -459,20 +703,15 @@ static void run_confirmation_cases(void) {
             .sleep_fail_at=cases[i].sleep_fail_at,.mismatched_stage=cases[i].mismatched_stage};
         cli_fixture_t f={.confirmation=&p,
             .modem_lines=H2_PAL_SERIAL_HOST_CONTROL_DTR|H2_PAL_SERIAL_HOST_CONTROL_RTS};
-        f.mem=(h2_pal_mem_api_t){.user=&f,.vtable=&mem_vtable};
-        f.uart=(h2_pal_uart_io_stream_api_t){.user=&f,.vtable=&uart_vtable};
-        h2_pal_serial_host_api_t serial={.user=&f,.vtable=&serial_vtable};
-        h2_pal_time_api_t time={.user=&f,.vtable=&time_vtable};
-        h2_command_io_api_t io={.user=&f,.vtable=&output_vtable};
-        h2_runtime_t runtime={.mem=&f.mem,.time=&time,.fs=h2_pal_unsupported_fs_api()};
-        const char *argv[]={"h2loader","--no-ble","--port","scan-port","reboot","upgrade","--monitor"};
-        h2_h2loader_cli_config_t config={.argc=cases[i].monitored?7:6,.argv=argv,.serial=&serial,
-            .stdout_io=&io,.stderr_io=&io,.is_cancelled=cases[i].null_cancel?NULL:cancelled,.cancel_user=&f};
-        int result=h2_h2loader_cli_main(&runtime,&config);
-        if (result!=cases[i].result || p.polls!=cases[i].polls || f.sleeps!=cases[i].sleeps || f.opens!=cases[i].opens)
-            fprintf(stderr,"confirmation case=%s result=%d polls=%u sleeps=%u opens=%u\n",
-                cases[i].name,result,p.polls,f.sleeps,f.opens);
-        assert(result==cases[i].result && p.polls==cases[i].polls && f.sleeps==cases[i].sleeps);
+        int result = run_confirmation_fixture(&f, cases[i].monitored,
+                                              cases[i].null_cancel);
+        if (result != cases[i].result || p.polls != cases[i].polls ||
+            f.opens != cases[i].opens)
+          fprintf(
+              stderr,
+              "confirmation case=%s result=%d polls=%u sleeps=%u opens=%u\n",
+              cases[i].name, result, p.polls, f.sleeps, f.opens);
+        assert(result == cases[i].result && p.polls == cases[i].polls);
         assert(f.opens==cases[i].opens && f.closes==f.opens && f.reboots==1u);
         assert(strstr(f.output,"H2_LOADER_REBOOT target=upgrade result=accepted\n")!=NULL);
         if (result==H2_H2LOADER_CLI_EXIT_OK && !cases[i].cancel_at) assert(!p.stage_valid);
@@ -519,6 +758,8 @@ int main(void) {
                 "LINK \r\nstage=start role=join state=joining\r\n");
         }
     }
+    run_pending_burst();
     run_confirmation_cases();
+    run_pending_faults();
     return 0;
 }
