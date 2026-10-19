@@ -38,17 +38,26 @@ static channel_t *channel_for(peer_t *p, h2_pal_webrtc_channel_t *delegate) {
   p->channels = channel;
   return channel;
 }
-static h2_pal_result_t peer_create(void *user, h2_pal_webrtc_peer_t **out) {
+static h2_pal_result_t
+peer_create_impl(void *user, const h2_pal_webrtc_peer_config_t *config,
+                 bool configured, h2_pal_webrtc_peer_t **out) {
   if (!out)
     return H2_PAL_ERR_INVALID_ARG;
   *out = NULL;
   h2_app_test_webrtc_t *w = user;
+  /* Preserve optional-capability rejection before reserving wrapper storage,
+   * so allocation pressure cannot mask the caller's legacy fallback signal. */
+  if (configured && config && config->allocator &&
+      !w->delegate->vtable->peer_create_with_config)
+    return H2_PAL_ERR_UNSUPPORTED;
   peer_t *p = h2_pal_mem_alloc(w->mem, sizeof(*p));
   if (!p)
     return H2_PAL_ERR_NO_MEMORY;
   memset(p, 0, sizeof(*p));
   p->owner = w;
-  int rc = h2_pal_webrtc_peer_create(w->delegate, &p->delegate);
+  int rc = configured ? h2_pal_webrtc_peer_create_with_config(
+                            w->delegate, config, &p->delegate)
+                      : h2_pal_webrtc_peer_create(w->delegate, &p->delegate);
   if (rc) {
     h2_pal_mem_free(w->mem, p);
     return rc;
@@ -56,6 +65,14 @@ static h2_pal_result_t peer_create(void *user, h2_pal_webrtc_peer_t **out) {
   h2_atomic_fetch_add(&w->peers, 1u);
   *out = (h2_pal_webrtc_peer_t *)p;
   return H2_PAL_OK;
+}
+static h2_pal_result_t peer_create(void *user, h2_pal_webrtc_peer_t **out) {
+  return peer_create_impl(user, NULL, false, out);
+}
+static h2_pal_result_t
+peer_create_with_config(void *user, const h2_pal_webrtc_peer_config_t *config,
+                        h2_pal_webrtc_peer_t **out) {
+  return peer_create_impl(user, config, true, out);
 }
 static h2_pal_result_t
 peer_add_ice_server(h2_pal_webrtc_peer_t *peer,
@@ -176,6 +193,7 @@ static void peer_close(h2_pal_webrtc_peer_t *peer) {
 }
 static const h2_pal_webrtc_vtable_t vtable = {
     .peer_create = peer_create,
+    .peer_create_with_config = peer_create_with_config,
     .peer_add_ice_server = peer_add_ice_server,
     .peer_start_offer = peer_start_offer,
     .peer_set_remote_sdp = peer_set_remote_sdp,

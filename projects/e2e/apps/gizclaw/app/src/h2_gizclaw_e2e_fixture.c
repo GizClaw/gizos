@@ -1217,10 +1217,20 @@ int h2_gizclaw_e2e_fixture_cleanup(h2_gizclaw_e2e_fixture_t *fixture) {
       return rc;
   }
   int result = H2_PAL_OK;
-  uint8_t *buffer = h2_pal_mem_alloc(fixture->allocator, 65536u);
-  if (buffer == NULL)
+  const bool needs_storage =
+      fixture->workspace_created || fixture->contact_created ||
+      fixture->friendship_created || fixture->friend_group_created ||
+      fixture->friend_group_member_joined || fixture->isolation_group_pending ||
+      fixture->isolation_contact_pending ||
+      fixture->isolation_workspace_pending;
+  /* Peer deletion and invitation clearing have no response arena. Keep these
+   * recovery paths usable when the failed case has exhausted its allocator. */
+  uint8_t *buffer =
+      needs_storage ? h2_pal_mem_alloc(fixture->allocator, 65536u) : NULL;
+  if (needs_storage && buffer == NULL)
     return H2_PAL_ERR_NO_MEMORY;
-  h2_gizclaw_resp_storage_t storage = {.data = buffer, .capacity = 65536u};
+  h2_gizclaw_resp_storage_t storage = {.data = buffer,
+                                       .capacity = needs_storage ? 65536u : 0u};
   h2_gizclaw_service_t *owner = fixture->actors[H2_GIZCLAW_E2E_OWNER].service;
   h2_gizclaw_service_t *friend_service =
       fixture->actors[H2_GIZCLAW_E2E_FRIEND].service;

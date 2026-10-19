@@ -13,15 +13,32 @@
 typedef struct backend {
   h2_pal_webrtc_api_t api;
   unsigned creates, closes, polls, releases, observations;
+  unsigned configured_creates;
   unsigned channel_creates, channel_closes;
   int peer_token, channel_token;
   int channel_tokens[24];
   h2_pal_result_t poll_result, send_result;
+  h2_pal_result_t configured_result;
+  const h2_pal_webrtc_peer_config_t *observed_config;
+  const h2_pal_mem_api_t *observed_allocator;
 } backend_t;
 static backend_t *active_backend;
 static h2_pal_result_t create_peer(void *user, h2_pal_webrtc_peer_t **out) {
   backend_t *b = user;
   ++b->creates;
+  *out = (h2_pal_webrtc_peer_t *)&b->peer_token;
+  return H2_PAL_OK;
+}
+static h2_pal_result_t
+create_peer_with_config(void *user, const h2_pal_webrtc_peer_config_t *config,
+                        h2_pal_webrtc_peer_t **out) {
+  backend_t *b = user;
+  ++b->configured_creates;
+  b->observed_config = config;
+  b->observed_allocator = config ? config->allocator : NULL;
+  *out = NULL;
+  if (b->configured_result != H2_PAL_OK)
+    return b->configured_result;
   *out = (h2_pal_webrtc_peer_t *)&b->peer_token;
   return H2_PAL_OK;
 }
@@ -98,6 +115,69 @@ static const h2_pal_webrtc_vtable_t backend_vtable = {
     .peer_create_data_channel = create_channel,
     .channel_send = send_channel,
     .channel_close = close_channel};
+static void test_configured_peer_errors(void) {
+  h2_app_test_mem_t mem, peer_mem;
+  h2_app_test_mem_init(&mem, NULL);
+  h2_app_test_mem_init(&peer_mem, NULL);
+  backend_t backend = {0};
+  active_backend = &backend;
+  h2_pal_webrtc_vtable_t delegate_vtable = backend_vtable;
+  backend.api = (h2_pal_webrtc_api_t){&backend, &delegate_vtable};
+  h2_app_test_webrtc_t *wrapper = NULL;
+  assert(h2_app_test_webrtc_create(&mem.api, &backend.api, NULL, NULL,
+                                   &wrapper) == H2_PAL_OK);
+  const h2_pal_webrtc_api_t *api = h2_app_test_webrtc_api(wrapper);
+  const h2_pal_webrtc_peer_config_t config = {.allocator = &peer_mem.api};
+  h2_pal_webrtc_peer_t *peer = (h2_pal_webrtc_peer_t *)&backend.peer_token;
+  const size_t allocations_before = mem.calls;
+  mem.fail_at = mem.calls + 1u;
+  assert(h2_pal_webrtc_peer_create_with_config(api, &config, &peer) ==
+         H2_PAL_ERR_UNSUPPORTED);
+  assert(!peer && !backend.creates && !backend.configured_creates &&
+         mem.live_blocks == 1u && mem.calls == allocations_before);
+  mem.fail_at = 0u;
+  delegate_vtable.peer_create_with_config = create_peer_with_config;
+  const int errors[] = {H2_PAL_ERR_UNSUPPORTED, H2_PAL_ERR_IO,
+                        H2_PAL_ERR_NO_MEMORY};
+  for (size_t i = 0u; i < sizeof(errors) / sizeof(errors[0]); ++i) {
+    backend.configured_result = errors[i];
+    peer = (h2_pal_webrtc_peer_t *)&backend.peer_token;
+    assert(h2_pal_webrtc_peer_create_with_config(api, &config, &peer) ==
+           errors[i]);
+    assert(!peer && !backend.creates && backend.configured_creates == i + 1u &&
+           backend.observed_config == &config &&
+           backend.observed_allocator == &peer_mem.api &&
+           mem.live_blocks == 1u);
+  }
+  backend.configured_result = H2_PAL_OK;
+  const unsigned configured_before = backend.configured_creates;
+  mem.fail_at = mem.calls + 1u;
+  peer = (h2_pal_webrtc_peer_t *)&backend.peer_token;
+  assert(h2_pal_webrtc_peer_create_with_config(api, &config, &peer) ==
+         H2_PAL_ERR_NO_MEMORY);
+  assert(!peer && backend.configured_creates == configured_before &&
+         !backend.creates && mem.live_blocks == 1u);
+  assert(h2_pal_webrtc_peer_create_with_config(api, &config, NULL) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(backend.configured_creates == configured_before);
+  assert(h2_pal_webrtc_peer_create_with_config(api, NULL, &peer) == H2_PAL_OK);
+  assert(peer && backend.observed_config == NULL &&
+         backend.observed_allocator == NULL && !backend.creates);
+  h2_pal_webrtc_peer_close(api, peer);
+  const unsigned configured_after = backend.configured_creates;
+  assert(h2_pal_webrtc_peer_create(api, &peer) == H2_PAL_OK);
+  assert(peer && backend.creates == 1u &&
+         backend.configured_creates == configured_after);
+  h2_pal_webrtc_peer_close(api, peer);
+  delegate_vtable.peer_create_with_config = NULL;
+  assert(h2_pal_webrtc_peer_create_with_config(api, NULL, &peer) == H2_PAL_OK);
+  assert(peer && backend.creates == 2u);
+  h2_pal_webrtc_peer_close(api, peer);
+  assert(backend.closes == 3u);
+  assert(h2_app_test_webrtc_destroy(wrapper) == H2_PAL_OK);
+  assert(mem.live_blocks == 0u && mem.live_bytes == 0u &&
+         peer_mem.live_blocks == 0u);
+}
 static void increment(void *user) { ++*(unsigned *)user; }
 int main(void) {
   h2_app_test_mem_t mem;
@@ -148,16 +228,31 @@ int main(void) {
   assert(h2_pal_mutex_destroy(&sync.api, mutex) == H2_PAL_OK);
 
   backend_t backends[2] = {0};
+  h2_pal_webrtc_vtable_t configured_vtable = backend_vtable;
+  configured_vtable.peer_create_with_config = create_peer_with_config;
+  h2_app_test_mem_t peer_mem;
+  h2_app_test_mem_init(&peer_mem, NULL);
+  const h2_pal_webrtc_peer_config_t peer_config = {.allocator = &peer_mem.api};
   h2_app_test_webrtc_t *wrappers[2] = {0};
   h2_pal_webrtc_peer_t *peers[2] = {0};
   for (unsigned i = 0; i < 2; ++i) {
     backend_t *b = &backends[i];
     active_backend = b;
-    b->api = (h2_pal_webrtc_api_t){b, &backend_vtable};
+    b->api = (h2_pal_webrtc_api_t){b, i == 0u ? &backend_vtable
+                                              : &configured_vtable};
     assert(h2_app_test_webrtc_create(&mem.api, &b->api, observe, b,
                                      &wrappers[i]) == H2_PAL_OK);
     const h2_pal_webrtc_api_t *api = h2_app_test_webrtc_api(wrappers[i]);
-    assert(h2_pal_webrtc_peer_create(api, &peers[i]) == H2_PAL_OK);
+    if (i == 0u) {
+      assert(h2_pal_webrtc_peer_create(api, &peers[i]) == H2_PAL_OK);
+      assert(b->creates == 1u && !b->configured_creates);
+    } else {
+      assert(h2_pal_webrtc_peer_create_with_config(api, &peer_config,
+                                                   &peers[i]) == H2_PAL_OK);
+      assert(!b->creates && b->configured_creates == 1u &&
+             b->observed_config == &peer_config &&
+             b->observed_allocator == &peer_mem.api);
+    }
     assert(h2_app_test_webrtc_destroy(wrappers[i]) == H2_PAL_ERR_INVALID_STATE);
     h2_pal_webrtc_event_t event = {0};
     mem.fail_at = mem.calls + 1;
@@ -205,7 +300,8 @@ int main(void) {
     assert(backends[i].closes == 1);
     assert(h2_app_test_webrtc_destroy(wrappers[i]) == H2_PAL_OK);
   }
-  assert(mem.live_blocks == 0);
+  assert(mem.live_blocks == 0 && peer_mem.live_blocks == 0);
+  test_configured_peer_errors();
   assert(h2_pal_mem_alloc(&mem.api, 8));
   assert(h2_pal_mem_alloc(&mem.api, 16));
   h2_app_test_mem_release_all(&mem);

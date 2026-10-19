@@ -1291,6 +1291,46 @@ int main(int argc, char **argv) {
   assert(h2_gizclaw_e2e_fixture_cleanup(&fixture) == H2_PAL_OK);
   assert(s_deletes == deletes_before + 1u && s_registers == registers_before + 1u);
   assert(h2_gizclaw_e2e_fixture_deinit(&fixture) == H2_PAL_OK);
+
+  /* Peer-only cleanup must work without allocating another response arena. */
+  assert(h2_gizclaw_e2e_fixture_init(&fixture, &runtime, &config, 45000u) ==
+         H2_PAL_OK);
+  assert(h2_gizclaw_e2e_fixture_connect_actors(&fixture, 1u) == H2_PAL_OK);
+  const size_t calls_before_peer_cleanup = allocator.calls;
+  const unsigned deletes_before_low_memory = s_deletes;
+  allocator.fail_at = allocator.calls + 1u;
+  assert(h2_gizclaw_e2e_fixture_cleanup(&fixture) == H2_PAL_OK);
+  assert(allocator.calls == calls_before_peer_cleanup &&
+         s_deletes == deletes_before_low_memory + 1u &&
+         !fixture.actors[0].peer_delete_required);
+  allocator.fail_at = 0u;
+  assert(h2_gizclaw_e2e_fixture_deinit(&fixture) == H2_PAL_OK);
+
+  /* A response-dependent deletion still fails closed, retains its identity
+   * and obligations, and needs a real acknowledged retry after OOM. */
+  assert(h2_gizclaw_e2e_fixture_init(&fixture, &runtime, &config, 45000u) ==
+         H2_PAL_OK);
+  assert(h2_gizclaw_e2e_fixture_connect_actors(&fixture, 1u) == H2_PAL_OK);
+  fixture.workspace_created = true;
+  s_business_fixture = &fixture;
+  s_business_allowed = WORKSPACE;
+  s_business_seen = s_business_failed = 0u;
+  s_workspace_role = H2_GIZCLAW_E2E_OWNER;
+  s_workspace_mode = 0u;
+  const unsigned deletes_before_arena_failure = s_deletes;
+  const size_t bytes_before_arena_failure = allocator.live_bytes;
+  allocator.fail_at = allocator.calls + 1u;
+  assert(h2_gizclaw_e2e_fixture_cleanup(&fixture) == H2_PAL_ERR_NO_MEMORY);
+  assert(s_deletes == deletes_before_arena_failure &&
+         fixture.workspace_created && fixture.actors[0].peer_delete_required &&
+         fixture.actors[0].private_key[0] &&
+         allocator.live_bytes == bytes_before_arena_failure);
+  allocator.fail_at = 0u;
+  assert(h2_gizclaw_e2e_fixture_cleanup(&fixture) == H2_PAL_OK);
+  assert(!fixture.workspace_created &&
+         s_deletes == deletes_before_arena_failure + 1u);
+  assert(h2_gizclaw_e2e_fixture_deinit(&fixture) == H2_PAL_OK);
+  assert(allocator.live_blocks == 0u);
   assert(s_live_services == 0u);
   return 0;
 }

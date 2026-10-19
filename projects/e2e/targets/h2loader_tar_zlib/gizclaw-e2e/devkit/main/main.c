@@ -19,10 +19,11 @@
 #include "h2/pal/os/h2_pal_time.h"
 #include "h2_runtime_event.h"
 
-#include "esp_system.h"
 #include "esp_app_desc.h"
+#include "esp_heap_caps.h"
 #include "esp_memory_utils.h"
 #include "esp_netif_sntp.h"
+#include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -86,6 +87,31 @@ typedef union h2_gizclaw_e2e_devkit_event_payload {
 
 static h2_gizclaw_e2e_devkit_runner_t s_runner;
 static h2_gizclaw_e2e_devkit_wifi_supervisor_t s_wifi_supervisor;
+
+static void emit_memory_snapshot(const char *point) {
+  const uint32_t internal = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+  const uint32_t spiram = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
+  size_t ledger_bytes = 0u;
+  bool ledger_known = h2_pal_mutex_lock(s_runner.runtime->sync,
+                                        s_runner.evidence_mutex) == H2_PAL_OK;
+  if (ledger_known) {
+    ledger_bytes = s_runner.ledger.size;
+    ledger_known = h2_pal_mutex_unlock(s_runner.runtime->sync,
+                                       s_runner.evidence_mutex) == H2_PAL_OK;
+  }
+  (void)printf("H2_GIZCLAW_E2E_DEVKIT stage=memory point=%s "
+               "internal_free=%zu internal_largest=%zu internal_min_free=%zu "
+               "spiram_free=%zu spiram_largest=%zu spiram_min_free=%zu "
+               "ledger_known=%d ledger_bytes=%zu\n",
+               point, heap_caps_get_free_size(internal),
+               heap_caps_get_largest_free_block(internal),
+               heap_caps_get_minimum_free_size(internal),
+               heap_caps_get_free_size(spiram),
+               heap_caps_get_largest_free_block(spiram),
+               heap_caps_get_minimum_free_size(spiram), ledger_known ? 1 : 0,
+               ledger_bytes);
+  (void)fflush(stdout);
+}
 
 static void capture_evidence(void *user, const char *record, size_t size) {
   h2_gizclaw_e2e_devkit_runner_t *runner = user;
@@ -170,14 +196,28 @@ static void emit_summary(const h2_gizclaw_e2e_devkit_runner_t *runner, bool repl
 static void replay_ledger(const h2_gizclaw_e2e_devkit_runner_t *runner) {
   if (!runner->ledger.frozen)
     return;
+  /* A page may end inside a record; keep other stdio writers outside the
+   * complete frame, as the previous contiguous body write did. */
+  flockfile(stdout);
   printf("H2_GIZCLAW_LEDGER stage=begin version=%s execution=%s bytes=%zu records=%zu crc32=%08x admitted=%d confirm_rc=%d physical_audio=0\n",
          esp_app_get_description()->version, runner->execution, runner->ledger.size,
          runner->ledger.records, (unsigned)runner->ledger.crc32,
          runner->admitted ? 1 : 0, runner->confirm_rc);
-  fwrite(runner->ledger.data, 1u, runner->ledger.size, stdout);
+  for (size_t offset = 0u; offset < runner->ledger.size;) {
+    const char *data = NULL;
+    size_t size = 0u;
+    if (h2_gizclaw_e2e_ledger_span(&runner->ledger, offset, &data, &size) !=
+            H2_PAL_OK ||
+        size == 0u || fwrite(data, 1u, size, stdout) != size) {
+      funlockfile(stdout);
+      return;
+    }
+    offset += size;
+  }
   printf("H2_GIZCLAW_LEDGER stage=end execution=%s crc32=%08x\n",
          runner->execution, (unsigned)runner->ledger.crc32);
   fflush(stdout);
+  funlockfile(stdout);
 }
 
 static void run_e2e(void *raw) {
@@ -435,15 +475,17 @@ static void image_entry(void *user) {
       s_runner.result = (h2_gizclaw_e2e_result_t){0};
       s_runner.exit_code = H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
       s_runner.confirm_rc = H2_PAL_ERR_INVALID_STATE;
-      char *evidence = h2_pal_mem_alloc(runtime->mem, H2_GIZCLAW_E2E_LEDGER_CAPACITY);
       const h2_pal_mutex_config_t mutex = {
           .name = "gizclaw-e2e-evidence", .allocator = runtime->mem};
       uint8_t nonce[16];
-      if (evidence == NULL ||
-          h2_gizclaw_e2e_ledger_init(&s_runner.ledger, evidence, H2_GIZCLAW_E2E_LEDGER_CAPACITY) != H2_PAL_OK ||
+      if (h2_gizclaw_e2e_ledger_init_paged(&s_runner.ledger, runtime->mem,
+                                           H2_GIZCLAW_E2E_LEDGER_CAPACITY) !=
+              H2_PAL_OK ||
           h2_atomic_init(&s_runner.capture_failed, false) != H2_ATOMIC_OK ||
-          h2_pal_mutex_create(runtime->sync, &mutex, &s_runner.evidence_mutex) != H2_PAL_OK ||
-          h2_pal_crypto_random(runtime->crypto, nonce, sizeof(nonce)) != H2_PAL_OK)
+          h2_pal_mutex_create(runtime->sync, &mutex,
+                              &s_runner.evidence_mutex) != H2_PAL_OK ||
+          h2_pal_crypto_random(runtime->crypto, nonce, sizeof(nonce)) !=
+              H2_PAL_OK)
         fail_launcher("evidence_init", H2_PAL_ERR_NO_MEMORY, true);
       static const char hex[] = "0123456789abcdef";
       for (size_t i = 0u; i < sizeof(nonce); ++i) {
@@ -459,6 +501,7 @@ static void image_entry(void *user) {
           .name = h2_gizclaw_e2e_launcher_task_name,
           .min_stack_size = H2_GIZCLAW_E2E_DEVKIT_RUNNER_STACK_SIZE,
       };
+      emit_memory_snapshot("before_runner");
       rc = h2_pal_task_start(runtime->task, &runner_options, run_e2e,
                              &s_runner, &runner_task);
       if (rc != H2_PAL_OK) {
@@ -477,6 +520,7 @@ static void image_entry(void *user) {
       }
       runner_task = NULL;
       h2_atomic_destroy(&s_runner.exited);
+      emit_memory_snapshot("after_runner_join");
       if (s_runner.result.retained_resources == 0u &&
           !h2_atomic_load_explicit(&s_runner.capture_failed, H2_ATOMIC_ACQUIRE)) {
         char summary[1024];
@@ -495,6 +539,10 @@ static void image_entry(void *user) {
       }
       if (!s_runner.admitted && s_runner.exit_code == H2_GIZCLAW_E2E_EXIT_PASS)
         s_runner.exit_code = H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
+      /* Joined producers may release an unusable capture. Frozen evidence
+       * stays owned for later replay; retained callbacks keep their pages. */
+      if (!s_runner.ledger.frozen && s_runner.result.retained_resources == 0u)
+        h2_gizclaw_e2e_ledger_deinit(&s_runner.ledger);
       if (h2_pal_time_get_monotonic_ms(runtime->time, &now_ms) != H2_PAL_OK) {
         fail_launcher("summary_clock", H2_PAL_ERR_UNAVAILABLE, true);
       }

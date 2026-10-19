@@ -230,6 +230,10 @@ Workspace 覆盖包含 28 个函数。`h2_gizclaw_rpc_run_stop` 在独立 req/re
 
 ## 显式 AppConfig fixture
 
+DevKit 的设备证据账本按需分块分配，保留 384 KiB 逻辑上限、全部原始记录、完整字节计数和 CRC32。冻结后直接按块重播，不再为重播分配连续副本；分配失败、溢出或不完整记录仍阻止确认。顶层 case 继续逐个执行并完成原清理，所有业务断言、并发请求矩阵和接口审计要求保持。
+
+Fixture 只为 workspace、contact、friend/group 等需要响应存储的清理申请 64 KiB arena；仅删除 peer 或清除 invitation token 时不额外申请该 arena。删除仍须收到真实 ACK 才清除义务；分配失败时保留身份和未完成义务以供原清理重试。WebRTC 观察包装器透传请求的 peer allocator，保留底层的 unsupported 和错误结果。
+
 `gizclaw_e2e_fixture` macro 生成只包含非敏感 key 的 C 配置及 JSON contract。RPC/all 必须通过 `--//projects/e2e/apps/gizclaw:app_config_fixture_key=<key>`、`app_config_fixture_profile=<profile>`、`app_config_fixture_value=<known-value>` 明确传入受控 E2E profile 的 key 和期望 bytes；为空在注册和业务资源 mutation 之前失败，不再从列表任取第一项。两套 list 必须找到该 key，两套 get 验证 profile/revision、storage ownership、长度和逐字节一致性。凭据仍独立注入，key 不进入日志。
 
 只读核对 Deploy 的 E2E 资源 checkpoint：`RuntimeProfile/default` 当前没有 `app_config`；`h106-tiga`、`h106-zero` 各有 64 项，例如非敏感的 `media.songs.en-us`。选择这些受控 E2E profile 时必须同时显式使用其注册 fixture 身份并保存全新结果，不能在 default 结果中使用其他 profile 的 key。此源码改动未修改服务器、Terraform、旧设备证据或旧通过记录。
