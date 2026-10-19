@@ -51,6 +51,8 @@ firmware_native_component(
     srcs = ["main/main.c"],
     component_directory = "projects/e2e/targets/h2loader_tar_zlib/iperf/amoled/main",
     component_name = "main",
+    native_srcs = ["//projects/e2e/libs/iperf-tcp-control:control_net.c"],
+    hdrs = ["//projects/e2e/libs/iperf-tcp-control:control_net.h"],
     data = [
         "main/CMakeLists.txt",
         "main/idf_component.yml",
