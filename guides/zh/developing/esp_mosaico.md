@@ -55,7 +55,7 @@ Wi-Fi/BLE smoke 日志。整合后构建与历史实机证据分别记录；V1.0
 左侧摄像头热插入及 Loader 完整恢复矩阵已有历史实测；新基线和无补丁摄像头组合
 须重新验证，不能继承旧固件的通过结论。右侧扩展功能、NAND 和振动不在这些实测证明中。
 各固件的完整用例、失败与恢复状态见
-[板级 E2E 验收记录](../../../projects/e2e/targets/h2loader_tar_zlib/esp_mosaico-qualification.md)。
+[板级 E2E 验收记录（407ca43d 检查点）](https://github.com/GizClaw/gizos/blob/407ca43d3b01b8b2cd182aa9560c1ff9cb68d2e6/projects/e2e/targets/h2loader_tar_zlib/esp_mosaico-qualification.md)。
 S31 不链接缺少相应 ABI 的 ESP-SR，板级 AEC 显式关闭。
 
 `pal-ipv6`、`iperf-client` 和 `lua-runtime` 的 Mosaico 入口直接组合既有 portable App。
