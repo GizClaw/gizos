@@ -34,7 +34,7 @@ UART 接线 profile 和 AT 协议 family 是两个独立维度。`h2_quectel_mod
 | GNSS | `QGPS`／`QGPSEND`／`QGPSLOC=0` | 应用指导定义相同的命令和字段顺序，复用现有路径 |
 | UART sleep／SIM hot-plug | `QSCLK`、DTR／RI、`QSIMDET`／`QSIMSTAT` | 共用命令；仍需 board 明确注入接线和 transport 能力 |
 | 呼叫音量 | 探测 `CLVL` 等级并映射百分比 | 同样探测等级；厂商音频手册说明设置自动保存，PAL 不承诺易失性 |
-| token 型 QuecLocator | 通过配置 token 启用 `QLBSCFG`／`QLBS` | 提供的文档未建立这一后端的支持；不发布该 capability，也不发送 token 命令 |
+| token 型 QuecLocator | 通过配置 token 启用 `QLBSCFG`／`QLBS` | 通过配置 token 启用相同后端；具体模组固件和服务仍须设备验收 |
 | 模组固件 URL OTA | `QFOTADL`，EC25 DFOTA 参数与进度 | `QFOTADL`，按固件 flash 标识／包名区分 DFOTA 和 MiniFOTA |
 
 EC800M 核对依据为厂商提供的 LTE Standard(A) AT 命令手册 V1.4（2026-06-30）§8.3–8.4、§11.3，QuecCell 应用指导 V1.6 §2.3，音频应用指导 V1.3 §2.1，GNSS 应用指导 V1.1 §2.3.2–2.3.4，以及低功耗模式应用指导 V1.2 的 UART 接入说明。AT 手册明确包含 EC800M-CN，并注明部分软件版本不支持电话本命令；识别到 family 不代表所有固件都具有所有可选能力。实际拒绝命令仍返回错误，主机 mock 测试不代替型号／固件／接线的设备验收。
@@ -89,9 +89,9 @@ Capability 表示 provider 实现了查询入口；具体型号／固件拒绝�
 
 Cell locate 是 QuecLocator 基站定位，与卫星定位是两条独立路径：它不依赖卫星信号，室内和冷启动也能返回粗略位置，代价是每次查询都要经 packet data 访问运营商定位服务。Provider 用 `AT+QLBSCFG="token",<token>` 配置身份、`AT+QLBS` 发起单次查询（成功应答为 `+QLBS: 0,<经度>,<纬度>[,…]`，经度在前），结果通过 `h2_pal_modem_cell_locate()` 返回 `h2_pal_modem_cell_location_t`。`valid = 0` 表示服务未能定位，是正常返回而非错误。何时查询、缓存多久、如何与 GNSS fix 融合都属于产品策略，不在 PAL 或 provider 内决定。
 
-Token 由集成方通过 `h2_quectel_modem_config_t` 的 `cell_locate_token` 注入，字符串是借用的，生命周期必须覆盖 modem instance；`cell_locate_timeout_ms` 控制单次查询超时，0 取默认 60 s。Token 为 NULL 或空串时 `cell_locate` 不装配进 vtable，`get_capabilities` 不置 `H2_PAL_MODEM_CAPABILITY_CELL_LOCATE`，调用返回 `H2_PAL_ERR_UNSUPPORTED`，模组上不会出现任何 QLBS 命令。配置 token 仅表示候选后端；首次使用前通过 CGMM 确认 EC25，EC800M／未知型号清除该 capability 并返回 UNSUPPORTED。含引号、逗号或换行、或超过 127 字节的 token 会让 `h2_quectel_modem_init` 返回 `H2_PAL_ERR_INVALID_ARG`。
+Token 由集成方通过 `h2_quectel_modem_config_t` 的 `cell_locate_token` 注入，字符串是借用的，生命周期必须覆盖 modem instance；`cell_locate_timeout_ms` 控制单次查询超时，0 取默认 60 s。Token 为 NULL 或空串时 `cell_locate` 不装配进 vtable，`get_capabilities` 不置 `H2_PAL_MODEM_CAPABILITY_CELL_LOCATE`，调用返回 `H2_PAL_ERR_UNSUPPORTED`，模组上不会出现任何 QLBS 命令。配置 token 仅表示候选后端；首次使用前通过 CGMM 确认 EC25／EC25- 或 EC800M／EC800M-；未知及相似型号（如 EC800MX）清除该 capability 并返回 UNSUPPORTED。识别到 family 不保证当前固件支持该服务；实际命令拒绝、SIM 不可用、token／配额错误和超时保持各自 PAL 错误，不产生有效坐标。设备验收须记录实际型号、revision 和有效 fix，主机 mock 通过不代表实机定位成功。含引号、逗号或换行、或超过 127 字节的 token 会让 `h2_quectel_modem_init` 返回 `H2_PAL_ERR_INVALID_ARG`。
 
-前置条件是 packet data 已激活，provider 不会自行拉起 PPP；数据不可用时返回 `H2_PAL_ERR_INVALID_STATE`。Token 在首次 `cell_locate` 时惰性下发一次，`close` 后重置，因此没有用到基站定位的产品完全不会发出 token。
+前置条件是 packet data 已激活，provider 不会自行拉起 PPP；数据不可用时返回 `H2_PAL_ERR_INVALID_STATE`。Token 在首次 `cell_locate` 时惰性下发一次，模块重启或 `close` 后重置，因此没有用到基站定位的产品完全不会发出 token。
 
 Token 是企业身份凭据：仓库不提供默认值，也不接受把真实 token 写进代码、测试或注释。除了必须携带它的那一条 QLBSCFG 命令外，token 不进入 modem state、response buffer、错误信息和任何日志输出；模组回显 token 时该次调用按 `H2_PAL_ERR_IO` 失败。返回的坐标同样不写入日志。
 

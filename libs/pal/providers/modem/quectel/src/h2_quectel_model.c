@@ -31,9 +31,7 @@ h2_pal_result_t h2_quectel_resolve_model(h2_quectel_modem_t *modem) {
         } else {
             modem->capabilities |= H2_PAL_MODEM_CAPABILITY_EMERGENCY_NUMBERS;
             modem->capabilities |= H2_PAL_MODEM_CAPABILITY_OTA;
-            if (modem->family == H2_QUECTEL_MODEM_FAMILY_EC800M) {
-                modem->capabilities &= ~(uint32_t)H2_PAL_MODEM_CAPABILITY_CELL_LOCATE;
-            } else if (h2_quectel_cell_locate_token_valid(modem->config.cell_locate_token)) {
+            if (h2_quectel_cell_locate_token_valid(modem->config.cell_locate_token)) {
                 modem->capabilities |= H2_PAL_MODEM_CAPABILITY_CELL_LOCATE;
             }
         }
