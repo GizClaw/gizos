@@ -538,6 +538,17 @@ h2_pal_result_t h2_runtime_emit_event(
     const void *payload,
     size_t payload_size);
 
+/*
+ * Normal drop-on-full policy with immediate atomic accounting at the failed
+ * send. Clears *report_needed first; the caller must synchronously report after
+ * returning from any large payload frame when it is set. Other provider errors
+ * propagate unchanged, including WOULD_BLOCK.
+ */
+h2_pal_result_t h2_runtime_enqueue_event_deferred_report(
+    h2_runtime_t *runtime,
+    const h2_runtime_queued_event_t *queued,
+    int *report_needed);
+
 h2_pal_result_t h2_runtime_enqueue_event(
     h2_runtime_t *runtime,
     const h2_runtime_queued_event_t *queued);

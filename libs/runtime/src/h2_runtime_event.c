@@ -82,7 +82,7 @@ static uint32_t add_dropped_event(h2_runtime_private_t *private_state) {
            1u;
 }
 
-void h2_runtime_record_dropped_event(
+static void note_dropped_event(
     h2_runtime_t *runtime,
     h2_runtime_event_kind_t kind,
     h2_runtime_component_t component,
@@ -100,6 +100,14 @@ void h2_runtime_record_dropped_event(
         &private_state->last_dropped_component_id, component_id,
         H2_ATOMIC_RELAXED);
     (void)add_dropped_event(private_state);
+}
+
+void h2_runtime_record_dropped_event(
+    h2_runtime_t *runtime,
+    h2_runtime_event_kind_t kind,
+    h2_runtime_component_t component,
+    h2_runtime_component_id_t component_id) {
+    note_dropped_event(runtime, kind, component, component_id);
     h2_runtime_report_dropped_events(runtime);
 }
 
@@ -208,9 +216,13 @@ h2_pal_result_t h2_runtime_dropped_event_count(
     return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_runtime_enqueue_event(
+h2_pal_result_t h2_runtime_enqueue_event_deferred_report(
     h2_runtime_t *runtime,
-    const h2_runtime_queued_event_t *queued) {
+    const h2_runtime_queued_event_t *queued, int *report_needed) {
+    if (report_needed == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    *report_needed = 0;
     if (!queued_event_is_valid(runtime, queued)) {
         return H2_PAL_ERR_INVALID_ARG;
     }
@@ -219,12 +231,25 @@ h2_pal_result_t h2_runtime_enqueue_event(
         h2_pal_queue_send(runtime->queue, runtime->private_state->event_queue,
                           queued, H2_PAL_QUEUE_NO_WAIT);
     if (rc == H2_PAL_ERR_FULL || rc == H2_PAL_QUEUE_ERR_TIMEOUT) {
-        h2_runtime_record_dropped_event(
+        note_dropped_event(
             runtime, queued->kind, queued->component, queued->component_id);
+        *report_needed = 1;
         return H2_PAL_OK;
     }
     if (rc == H2_PAL_OK) {
         h2_runtime_notify_internal(runtime);
+    }
+    return rc;
+}
+
+h2_pal_result_t h2_runtime_enqueue_event(
+    h2_runtime_t *runtime,
+    const h2_runtime_queued_event_t *queued) {
+    int report_needed = 0;
+    const h2_pal_result_t rc = h2_runtime_enqueue_event_deferred_report(
+        runtime, queued, &report_needed);
+    if (report_needed) {
+        h2_runtime_report_dropped_events(runtime);
     }
     return rc;
 }
