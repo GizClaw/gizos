@@ -2,5 +2,10 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "partition.csv",
+    "sdkconfig.core-e2e.defaults",
+    "sdkconfig.crash-e2e.defaults",
     "sdkconfig.h2loader.defaults",
+    "sdkconfig.iperf-e2e.defaults",
+    "sdkconfig.log-e2e.defaults",
+    "sdkconfig.webrtc-e2e.defaults",
 ])

@@ -51,13 +51,16 @@ firmware_native_component(
 )
 esp_idf_firmware(
     name = "firmware",
-    srcs = ["CMakeLists.txt", "sdkconfig.e2e.defaults", "main/main.c", "main/diagnostics.c", "main/camera_probe.c", "main/camera_e2e.c", "main/diagnostics.h", "main/CMakeLists.txt"],
+    srcs = ["CMakeLists.txt", "main/main.c", "main/diagnostics.c", "main/camera_probe.c", "main/camera_e2e.c", "main/diagnostics.h", "main/CMakeLists.txt"],
     board = "esp_mosaico",
     graph = [":main"],
     partition = "//boards/esp_mosaico/esp32s31/layouts/board_e2e:partition.csv",
     project = "CMakeLists.txt",
     project_name = "h2_mosaico_board_e2e",
-    project_support_files = ["//boards/esp_mosaico/esp32s31:sdkconfig.defaults"],
+    project_support_files = [
+        "//boards/esp_mosaico/esp32s31:sdkconfig.defaults",
+        "//boards/esp_mosaico/esp32s31/layouts/board_e2e:sdkconfig.e2e.defaults",
+    ],
     target = "esp32s31",
     task_policy = ":task_policy",
 )

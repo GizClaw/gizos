@@ -1,2 +1,2 @@
 package(default_visibility = ["//visibility:public"])
-exports_files(["partition.csv"])
+exports_files(["partition.csv", "sdkconfig.e2e.defaults"])

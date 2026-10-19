@@ -74,9 +74,16 @@ firmware_native_component(
 h2loader_esp_idf_firmware(
     name = "firmware",
     srcs = ["CMakeLists.txt", "main/CMakeLists.txt", "main/idf_component.yml",
-            "main/main.c", "main/audible.c", "main/audible.h", "sdkconfig.pal-audio.defaults"],
+            "main/main.c", "main/audible.c", "main/audible.h"],
     board = "esp_mosaico",
     graph = [":launcher"],
+    layout_files = {
+        "partition": "//boards/esp_mosaico/esp32s31/layouts/h2loader:partition.csv",
+        "project_support_files": [
+            "//boards/esp_mosaico/esp32s31/layouts/h2loader:sdkconfig.h2loader.defaults",
+            "//boards/esp_mosaico/esp32s31/layouts/h2loader:sdkconfig.log-e2e.defaults",
+        ],
+    },
     project = "CMakeLists.txt",
     project_name = "h2_pal_audio_e2e",
     target = "esp32s31",

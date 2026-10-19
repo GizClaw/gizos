@@ -50,7 +50,7 @@ bazel build --config=esp32s31 //projects/e2e/targets/esp_idf_firmware/reference-
 组件通过 `h2_mosaico_camera()` 返回可选 PAL；调用前初始化官方模块管理器，
 所有调用由一个消费者串行执行。固定左侧、1280×720 UYVY，获取超时 1000 ms；
 不包含 Runtime camera 绑定、编码或联网服务。最终固件配置 DVP 和所需 sensor，
-E2E 的 `sdkconfig.e2e.defaults` 是诊断配置示例。当前实机只验收 SC101IOT。
+板级 `layouts/board_e2e/sdkconfig.e2e.defaults` 是诊断配置示例。当前实机只验收 SC101IOT。
 
 实现边界、资源契约和证据范围见 [适配指南](../../guides/zh/developing/esp_mosaico.md)。
 
@@ -101,3 +101,8 @@ Wi-Fi 对端窗口和 Lua 传输/等待断连都有各自提示。屏幕提示�
 日志和真实对端证据，API 成功也不等于已完成光学或声音观察。状态页不新增
 共享 PAL 接口或板级应用任务；每套新固件的完整资格仍按上述 qualification
 文档验证。
+
+当前 main `d3ff30bc` 的接入审查、IPv6/AEC 能力边界及公共 IDF 6.2 升级的跨板补测范围见
+[基线评估](../../projects/e2e/targets/h2loader_tar_zlib/esp_mosaico-baseline-20261019.md)。
+E2E 的日志、崩溃存储和性能内存变体由板级 layout 拥有，经 `layout_files` /
+`project_support_files` 显式传入；项目入口不再保存 SDK defaults。

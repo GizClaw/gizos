@@ -79,10 +79,16 @@ h2loader_esp_idf_firmware(
         "main/CMakeLists.txt",
         "main/idf_component.yml",
         "main/main.c",
-        "sdkconfig.pal-http.defaults",
     ],
     board = "esp_mosaico",
     graph = [":launcher"],
+    layout_files = {
+        "partition": "//boards/esp_mosaico/esp32s31/layouts/h2loader:partition.csv",
+        "project_support_files": [
+            "//boards/esp_mosaico/esp32s31/layouts/h2loader:sdkconfig.h2loader.defaults",
+            "//boards/esp_mosaico/esp32s31/layouts/h2loader:sdkconfig.log-e2e.defaults",
+        ],
+    },
     project = "CMakeLists.txt",
     project_name = "h2_pal_http_e2e",
     target = "esp32s31",

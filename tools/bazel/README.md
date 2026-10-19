@@ -323,6 +323,7 @@ toolchain, checkout-cleanliness, output, package, or Release validation.
 ## Mobile E2E
 
 [Packaged mobile runners](mobile_e2e.md) share simulator/emulator lifecycle, artifact identity and failure evidence through a direct Python Bazel test. Suite fixtures, phase plans and qualification assertions remain suite-owned.
+
 ## ESP32-S31 / ESP-Mosaico
 
 `--config=esp32s31` uses independent `IDF_S31_PATH` and `IDF_S31_TOOLS_PATH`
