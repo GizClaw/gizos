@@ -9,21 +9,41 @@
 #define H2_JIELI_SYSTEM_EVENT_MAX_SUBSCRIPTIONS \
     (H2_PAL_SYSTEM_EVENT_TYPE_COUNT + 8u)
 
-typedef struct event_dispatch event_dispatch_t;
+#define H2_JIELI_WL82_SYSTEM_EVENT_PAYLOAD_MAX 1024u
+#define H2_JIELI_WL82_SYSTEM_EVENT_QUEUE_DEPTH 4u
+
+typedef struct {
+    uint64_t generation_ceiling;
+    uint64_t timestamp_ms;
+    uint32_t source_id;
+    uint8_t type;
+    uint8_t flags;
+    uint16_t payload_size;
+    union {
+        uint8_t inline_bytes[8];
+        void *heap;
+    } data;
+} event_message_t;
+
+_Static_assert(sizeof(event_message_t) == H2_JIELI_SDK_EVENT_MESSAGE_SIZE,
+               "sys_event has only a 32-byte read buffer");
+_Static_assert(H2_PAL_SYSTEM_EVENT_TYPE_COUNT <= UINT8_MAX, "event type must fit");
+
+static uint32_t s_depth;
+static uint32_t s_overflow;
+/* Accessed only under the registry lock, including the first delivery. */
+static const void *s_dispatcher_task;
+static void event_dispatch(const void *message, size_t size);
+
 struct h2_pal_system_event_subscription {
     h2_pal_system_event_type_t type;
     h2_pal_system_event_handler_t handler;
     void *handler_user;
     uint64_t generation;
-    event_dispatch_t *dispatches;
+    unsigned queued;
+    int dispatching;
     unsigned waiters;
     int retiring;
-};
-
-/* Stack-owned nodes identify nested/self dispatch without SDK TLS support. */
-struct event_dispatch {
-    event_dispatch_t *next;
-    const void *task;
 };
 
 static void event_lock_wait(h2_jieli_sdk_mutex_t *lock) {
@@ -81,6 +101,7 @@ static void event_destroy(void)
     h2_jieli_sdk_mutex_destroy(s_lock);
     s_lock = NULL;
     memset(s_subscriptions, 0, sizeof(s_subscriptions));
+    h2_jieli_atomic_store_u32(&s_depth, 0u);
     h2_jieli_atomic_store_u32(&s_lifecycle, 0u);
 }
 
@@ -111,6 +132,10 @@ static int system_event_init(void *user)
         h2_jieli_atomic_store_u32(&s_lifecycle, 0u);
         return H2_PAL_ERR_NO_MEMORY;
     }
+    if (h2_jieli_sdk_event_dispatcher_start(event_dispatch) != 0) {
+        event_destroy();
+        return H2_PAL_ERR_TASK;
+    }
     memset(s_subscriptions, 0, sizeof(s_subscriptions));
     s_generation = 0u;
     h2_jieli_atomic_store_u32(&s_lifecycle, EVENT_ACTIVE | EVENT_OWNER_ONE);
@@ -131,6 +156,75 @@ static void system_event_deinit(void *user)
     if (next == EVENT_CLOSING) event_destroy();
 }
 
+static void event_clear_retired(h2_pal_system_event_subscription_t *sub)
+{
+    if (sub->retiring && sub->queued == 0u && !sub->dispatching && sub->waiters == 0u)
+        memset(sub, 0, sizeof(*sub));
+}
+
+static int event_reserve(void)
+{
+    uint32_t depth = h2_jieli_atomic_load_u32(&s_depth);
+    for (;;) {
+        if (depth >= H2_JIELI_WL82_SYSTEM_EVENT_QUEUE_DEPTH) return 0;
+        if (h2_jieli_atomic_cas_u32(&s_depth, &depth, depth + 1u)) return 1;
+    }
+}
+
+static void event_message_release(event_message_t *message)
+{
+    if (message->payload_size > sizeof(message->data.inline_bytes))
+        h2_jieli_sdk_free(message->data.heap);
+    (void)h2_jieli_atomic_fetch_sub_u32(&s_depth, 1u);
+    event_release();
+}
+
+static int event_matches(const h2_pal_system_event_subscription_t *sub,
+                         const event_message_t *message)
+{
+    return sub->type == (h2_pal_system_event_type_t)message->type &&
+           sub->generation <= message->generation_ceiling;
+}
+
+static void event_dispatch(const void *bytes, size_t size)
+{
+    /* The SDK payload is byte-aligned, so do not cast it to our envelope. */
+    event_message_t message;
+    if (bytes == NULL || size != sizeof(message)) return;
+    memcpy(&message, bytes, sizeof(message));
+    h2_pal_system_event_t event = {
+        .type = (h2_pal_system_event_type_t)message.type,
+        .source_id = message.source_id,
+        .timestamp_ms = message.timestamp_ms,
+        .payload_size = message.payload_size,
+        .payload = message.payload_size > sizeof(message.data.inline_bytes)
+            ? message.data.heap : message.data.inline_bytes,
+    };
+    h2_jieli_sdk_mutex_t *lock = s_lock; /* The queued reference pins this lock. */
+    event_lock_wait(lock);
+    s_dispatcher_task = h2_jieli_sdk_task_current();
+    (void)h2_jieli_sdk_mutex_unlock(lock);
+    for (size_t i = 0; i < H2_JIELI_SYSTEM_EVENT_MAX_SUBSCRIPTIONS; ++i) {
+        event_lock_wait(lock);
+        h2_pal_system_event_subscription_t *sub = &s_subscriptions[i];
+        if (sub->queued != 0u && event_matches(sub, &message)) {
+            --sub->queued;
+            if (!sub->retiring && sub->handler != NULL) {
+                h2_pal_system_event_handler_t handler = sub->handler;
+                void *handler_user = sub->handler_user;
+                sub->dispatching = 1;
+                (void)h2_jieli_sdk_mutex_unlock(lock);
+                (void)handler(handler_user, &event);
+                event_lock_wait(lock);
+                sub->dispatching = 0;
+            }
+            event_clear_retired(sub);
+        }
+        (void)h2_jieli_sdk_mutex_unlock(lock);
+    }
+    event_message_release(&message);
+}
+
 static int system_event_post(
     void *user,
     const h2_pal_system_event_t *event,
@@ -138,55 +232,66 @@ static int system_event_post(
 {
     (void)user;
     int result = h2_pal_system_event_validate(event);
-    if (result != H2_PAL_OK) {
-        return result;
-    }
+    if (result != H2_PAL_OK) return result;
+    if (event->payload_size > H2_JIELI_WL82_SYSTEM_EVENT_PAYLOAD_MAX)
+        return H2_PAL_ERR_INVALID_ARG;
+    if (h2_jieli_sdk_in_interrupt()) return H2_PAL_ERR_INVALID_STATE;
     h2_jieli_sdk_mutex_t *lock = event_retain(0);
-    if (lock == NULL) {
-        return H2_PAL_ERR_INVALID_STATE;
+    if (lock == NULL) return H2_PAL_ERR_INVALID_STATE;
+    if (!event_reserve()) {
+        (void)h2_jieli_atomic_fetch_add_u32(&s_overflow, 1u);
+        event_release();
+        return H2_PAL_ERR_FULL;
+    }
+    event_message_t message = {
+        .type = (uint8_t)event->type,
+        .source_id = event->source_id,
+        .timestamp_ms = event->timestamp_ms,
+        .payload_size = (uint16_t)event->payload_size,
+    };
+    if (message.payload_size > sizeof(message.data.inline_bytes)) {
+        message.data.heap = h2_jieli_sdk_malloc(message.payload_size);
+        if (message.data.heap == NULL) {
+            event_message_release(&message);
+            return H2_PAL_ERR_NO_MEMORY;
+        }
+        memcpy(message.data.heap, event->payload, message.payload_size);
+    } else if (message.payload_size != 0u) {
+        memcpy(message.data.inline_bytes, event->payload, message.payload_size);
     }
     int lock_result = h2_jieli_sdk_mutex_lock(lock, timeout_ms);
     if (lock_result != 0) {
-        event_release();
+        event_message_release(&message);
         return lock_result == 1 ? H2_PAL_ERR_TIMEOUT : H2_PAL_ERR_IO;
     }
-
-    /* BLE and Wi-Fi SDK callbacks run on vendor tasks with small stacks.  Do
-     * not place a maximum-sized subscription snapshot (about 1 KiB on WL82)
-     * on those stacks.  A generation ceiling preserves snapshot semantics:
-     * subscriptions created by a callback do not receive the current event. */
-    const uint64_t generation_ceiling = s_generation;
-    (void)h2_jieli_sdk_mutex_unlock(lock);
-
-    result = H2_PAL_OK;
-    for (size_t i = 0u; i < H2_JIELI_SYSTEM_EVENT_MAX_SUBSCRIPTIONS; ++i) {
-        event_dispatch_t dispatch = {.task = h2_jieli_sdk_task_current()};
-        h2_pal_system_event_handler_t handler = NULL;
-        void *handler_user = NULL;
-        event_lock_wait(lock);
+    message.generation_ceiling = s_generation;
+    unsigned matched = 0;
+    for (size_t i = 0; i < H2_JIELI_SYSTEM_EVENT_MAX_SUBSCRIPTIONS; ++i) {
         h2_pal_system_event_subscription_t *sub = &s_subscriptions[i];
-        if (!sub->retiring && sub->handler != NULL && sub->type == event->type &&
-            sub->generation <= generation_ceiling) {
-            handler = sub->handler;
-            handler_user = sub->handler_user;
-            dispatch.next = sub->dispatches;
-            sub->dispatches = &dispatch;
+        if (!sub->retiring && sub->handler != NULL && event_matches(sub, &message)) {
+            ++sub->queued;
+            ++matched;
         }
-        (void)h2_jieli_sdk_mutex_unlock(lock);
-        if (handler == NULL) continue;
-        int handler_result = handler(handler_user, event);
-        event_lock_wait(lock);
-        event_dispatch_t **entry = &sub->dispatches;
-        while (*entry != &dispatch) entry = &(*entry)->next;
-        *entry = dispatch.next;
-        if (sub->retiring && sub->dispatches == NULL && sub->waiters == 0u)
-            memset(sub, 0, sizeof(*sub));
-        (void)h2_jieli_sdk_mutex_unlock(lock);
-        if (result == H2_PAL_OK && handler_result != H2_PAL_OK)
-            result = handler_result;
     }
-    event_release();
-    return result;
+    (void)h2_jieli_sdk_mutex_unlock(lock);
+    if (matched == 0u) {
+        event_message_release(&message);
+        return H2_PAL_OK;
+    }
+    result = h2_jieli_sdk_event_post(&message, sizeof(message));
+    if (result == 0) return H2_PAL_OK;
+    event_lock_wait(lock);
+    for (size_t i = 0; i < H2_JIELI_SYSTEM_EVENT_MAX_SUBSCRIPTIONS; ++i) {
+        h2_pal_system_event_subscription_t *sub = &s_subscriptions[i];
+        if (sub->queued != 0u && event_matches(sub, &message)) {
+            --sub->queued;
+            event_clear_retired(sub);
+        }
+    }
+    (void)h2_jieli_sdk_mutex_unlock(lock);
+    if (result == 1) (void)h2_jieli_atomic_fetch_add_u32(&s_overflow, 1u);
+    event_message_release(&message);
+    return result == 1 ? H2_PAL_ERR_FULL : H2_PAL_ERR_IO;
 }
 
 static int system_event_subscribe(
@@ -251,20 +356,16 @@ static void system_event_unsubscribe(
     subscription->retiring = 1;
     subscription->handler = NULL; /* atomic with dispatch admission under lock */
     const void *task = h2_jieli_sdk_task_current();
-    int self = 0;
-    for (event_dispatch_t *d = subscription->dispatches; d != NULL; d = d->next)
-        if (d->task == task) self = 1;
-    if (!self) {
+    if (task != s_dispatcher_task) {
         ++subscription->waiters; /* prevent slot reuse while waiting */
-        while (subscription->dispatches != NULL) {
+        while (subscription->queued != 0u || subscription->dispatching) {
             (void)h2_jieli_sdk_mutex_unlock(lock);
             h2_jieli_sdk_sleep_ms(1u);
             event_lock_wait(lock);
         }
         --subscription->waiters;
     }
-    if (subscription->dispatches == NULL && subscription->waiters == 0u)
-        memset(subscription, 0, sizeof(*subscription));
+    event_clear_retired(subscription);
     (void)h2_jieli_sdk_mutex_unlock(lock);
     event_release();
 }
@@ -283,4 +384,9 @@ const h2_pal_system_event_api_t *h2_jieli_wl82_platform_system_event_api(void)
         .vtable = &vtable,
     };
     return &api;
+}
+
+uint32_t h2_jieli_wl82_platform_system_event_overflow_count(void)
+{
+    return h2_jieli_atomic_load_u32(&s_overflow);
 }

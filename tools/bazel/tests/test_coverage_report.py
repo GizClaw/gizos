@@ -212,6 +212,24 @@ class CoverageReportTest(unittest.TestCase):
             with self.assertRaisesRegex(coverage_report.ReportError, "function summary"):
                 coverage_report.parse_lcov(lcov, root)
 
+    def test_macro_registry_eof_region_is_not_a_source_line(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "libs/example/cases.inc"
+            source.parent.mkdir(parents=True)
+            source.write_text('CASE("covered")\nCASE("missed")\n', encoding="utf-8")
+            lcov = self._write_lcov(
+                root,
+                "SF:libs/example/cases.inc\nFNF:0\nFNH:0\n"
+                "DA:1,1\nDA:2,0\nDA:3,1\nLF:3\nLH:2\nend_of_record\n",
+            )
+            records, filtered = coverage_report.parse_lcov(lcov, root)
+        self.assertEqual(records["libs/example/cases.inc"]["metrics"]["lines"],
+                         {"covered": 1, "total": 2, "percent": 50.0})
+        self.assertIn("DA:1,1\nDA:2,0\n", filtered)
+        self.assertNotIn("DA:3,", filtered)
+        self.assertIn("LF:2\nLH:1\n", filtered)
+
     def test_target_accounting_distinguishes_all_statuses(self):
         targets = coverage_report.parse_target_inventory(
             "//a:measured\tcc_library\t\t//a:a.c\n"

@@ -8,8 +8,10 @@
 extern "C" {
 #endif
 struct h2_gizclaw_firmware;
+struct h2_gizclaw_lua_app_run;
+struct h2_gizclaw_lua_app_handoff;
 
-/** Modem identity slots reported in client.identifiers.get. */
+/** Modem identity slots reported in IDENTIFIERS_GET. */
 #define H2_GIZCLAW_DEVICE_IMEI_MAX 2
 #define H2_GIZCLAW_DEVICE_IMEI_NAME_MAX 32
 
@@ -42,7 +44,8 @@ typedef struct h2_gizclaw_device_facts {
  * An absent method means unsupported, not successful execution. */
 typedef struct h2_gizclaw_vtable {
   h2_pal_result_t (*get_facts)(void *user, h2_gizclaw_device_facts_t *out);
-  /** Optional product sound catalog; return a bounded HTTPS Ogg/Opus URL.
+  /** Optional product sound catalog; return a bounded HTTPS URL of an
+   * Ogg/Opus, MP3 or WAV file, the formats the player decodes.
    * Called on the device worker. Download/decode/play remain library-owned. */
   h2_pal_result_t (*resolve_sound_url)(void *user, const char *name,
                                        char *out_url, size_t capacity);
@@ -59,7 +62,7 @@ typedef struct h2_gizclaw_vtable {
    * the next firmware must verify its identity and send SUCCEEDED telemetry
    * using the saved update_id. */
   h2_pal_result_t (*ota_activate)(void *user);
-  /** Optional non-blocking handoff for client.device.reboot. Called once on
+  /** Optional non-blocking handoff for DEVICE_REBOOT. Called once on
    * the device worker after the RPC response was sent, with the requested
    * delay in milliseconds. The callback must only copy the request and post
    * it to a product-owned execution context (for example a Runtime custom
@@ -70,7 +73,7 @@ typedef struct h2_gizclaw_vtable {
    * the library waits `delay_ms` on the worker and calls the power PAL. */
   h2_pal_result_t (*request_reboot)(void *user, uint32_t delay_ms);
   /** Optional shared-speaker ownership for library playback (audio player
-   * and client.device.sound.play). Set both or neither; Service init rejects
+   * and SOUND_PLAY). Set both or neither; Service init rejects
    * a lone hook with H2_PAL_ERR_INVALID_ARG. When set, the device
    * worker calls speaker_acquire before opening its PCM track and exactly one
    * speaker_release after the track is closed, on every exit path including
@@ -81,6 +84,37 @@ typedef struct h2_gizclaw_vtable {
    * start_speaker before playback and leaves the speaker on afterwards. */
   h2_pal_result_t (*speaker_acquire)(void *user);
   h2_pal_result_t (*speaker_release)(void *user);
+  /** Optional non-blocking handoff for DEVICE_FACTORY_RESET. Called once
+   * on the device worker after the RPC response was sent, like request_reboot:
+   * copy the request, post the erase to a product-owned execution context and
+   * return promptly. It must not sleep, block, or stop or destroy the Service
+   * inline. keep_network asks the product to keep saved Wi-Fi and cellular
+   * configuration so the device can reconnect without being re-provisioned.
+   * There is no library fallback, because what device-local state means is a
+   * product decision; unset answers UNIMPLEMENTED. A product that deletes its
+   * own Peer during the reset invalidates every API key of that Peer, including
+   * the caller's. */
+  h2_pal_result_t (*request_factory_reset)(void *user, bool keep_network);
+  /** Optional non-blocking handoff for RUN_WORKSPACE_SET. Called once on
+   * the device worker after the RPC response was sent, with a NUL-terminated
+   * name in library storage that is valid only for the call. The library does
+   * not switch the Workspace itself: the App owns the Session, its conversation
+   * and its confirmed parameters. Copy the name, post a
+   * h2_gizclaw_session_select() for it to the App thread and return promptly;
+   * kickoff is best expressed as initiative AGENT with agent_initiative_policy
+   * ON_RELOAD in that selection's parameter patch. The response only means the
+   * request was accepted; the committed Workspace is the one the Server
+   * reports. Unset answers UNIMPLEMENTED. */
+  h2_pal_result_t (*request_run_workspace_set)(void *user,
+                                               const char *workspace_name,
+                                               bool kickoff);
+  /** Reserve a bounded product-owner launch slot before responding. Copy all
+   * borrowed request data and provide a completion that either publishes the
+   * reserved launch after response success or releases it on response failure.
+   * Returning BUSY/rejection sends an RPC error and does not launch. */
+  h2_pal_result_t (*prepare_lua_app_run)(
+      void *user, const struct h2_gizclaw_lua_app_run *request,
+      struct h2_gizclaw_lua_app_handoff *out_handoff);
 } h2_gizclaw_vtable_t;
 #ifdef __cplusplus
 }

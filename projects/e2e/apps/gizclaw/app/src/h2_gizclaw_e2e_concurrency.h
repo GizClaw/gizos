@@ -12,7 +12,7 @@ int h2_gizclaw_e2e_run_concurrency(h2_gizclaw_e2e_fixture_t *fixture);
 int h2_gizclaw_e2e_concurrency_classify(
     int requests_result, int recovery_result, int observation_result,
     size_t started_requests, size_t completed_requests,
-    size_t max_open_channels, size_t unique_stream_ids, size_t open_channels);
+    size_t max_open_channels, size_t opened_channels, size_t open_channels);
 
 #ifdef __cplusplus
 }

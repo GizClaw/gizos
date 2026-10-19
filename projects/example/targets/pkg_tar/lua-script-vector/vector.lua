@@ -46,7 +46,8 @@ assert(display.present()==0)
 local region = display.capture_region(5,5,16,16,'black')
 display.draw_region(region,210,210,0,display.height,'black')
 submitted, rectangles = display.present()
-assert(submitted==1024 and rectangles==1)
+-- Fine retained planning submits the 11x11 changed patch, without tile padding.
+assert(submitted==121 and rectangles==1)
 assert(display.present()==0)
 display.release_background()
 background, region = nil, nil

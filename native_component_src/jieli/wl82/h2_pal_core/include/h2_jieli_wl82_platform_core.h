@@ -53,24 +53,40 @@ const h2_pal_sync_api_t *h2_jieli_wl82_platform_sync_api(void);
 h2_pal_result_t h2_jieli_wl82_cond_wait_owned(
     h2_pal_cond_t *cond, h2_pal_mutex_t *mutex, uint32_t timeout_ms, int *out_locked);
 
-/** Thread-safe in-process event fanout used by BLE, network and loader services.
- * Each successful init acquires one owner (maximum 16383; overflow returns FULL).
- * Pair each with one deinit, after retiring that owner's subscriptions. Other
- * owners and their subscriptions remain active until the final owner releases.
- * The last deinit closes admission; in-flight operations defer destruction,
- * including deinit from a handler. Init during INITIALIZING/CLOSING returns
- * BUSY and acquires nothing. Extra deinit while inactive is harmless; a caller
- * must not release another owner's reference. External unsubscribe waits for
- * all dispatches of that subscription; self-unsubscribe only stops admission
- * and defers slot reuse until all dispatches return. Keep callback context
- * alive across other already-running callbacks in the self-unsubscribe case.
- * Post snapshots a registry-locked 64-bit generation ceiling: subscriptions
- * added after that snapshot never receive that post. Generations never wrap;
- * at UINT64_MAX subscribe returns FULL without changing live subscriptions.
- * An admitted post still dispatches to every subscription it admitted even if
- * a handler releases the last owner; destruction is deferred until it returns.
- * Only complete teardown followed by fresh init resets the generation epoch. */
+/** Asynchronous SDK sys_event fanout on the persistent h2_sysevt task.
+ * Post copies a 32-byte envelope into the SDK ring (type 0x0100, from 0x50).
+ * Payloads up to 8 bytes are inline; 9..1024 bytes use an owned heap copy freed
+ * after delivery. Larger payloads return INVALID_ARG, allocation failure
+ * returns NO_MEMORY, and interrupt-context posts return INVALID_STATE.
+ * No caller memory is borrowed after post; callback payloads last only for
+ * that callback. Post reports enqueue status, not handler return values.
+ * Four in-flight events bound PAL depth. Depth exhaustion or SDK ring full
+ * returns FULL and increments the image-lifetime overflow counter. Other SDK
+ * post errors return IO. timeout_ms bounds only registry lock acquisition.
+ * Unmatched events return OK without entering the SDK ring.
+ * Each successful init acquires one owner (maximum 16383; overflow is FULL).
+ * Pair each with deinit, after retiring that owner's subscriptions. The last
+ * deinit closes admission; queued operation references defer destruction and
+ * preserve delivery to still-live subscriptions, even after handler deinit.
+ * Init during INITIALIZING/CLOSING returns BUSY; inactive post/subscribe return
+ * INVALID_STATE. Dispatcher start failure returns TASK with no owner acquired.
+ * Extra inactive deinit is harmless; never release another owner's reference.
+ * External unsubscribe waits for queued and running callbacks, including in
+ * CLOSING, then handler_user can be freed. Any dispatcher-task unsubscribe,
+ * of itself or another subscription, stops admission without waiting. Keep
+ * handler_user alive for callbacks already admitted; retiring queued events
+ * are consumed without a callback and slots are reused only after quiescence.
+ * The fixed registry has H2_PAL_SYSTEM_EVENT_TYPE_COUNT + 8 slots. Post takes
+ * a registry-locked 64-bit generation ceiling, excluding subscriptions added
+ * before dispatch but after enqueue admission. Generations never wrap: at
+ * UINT64_MAX subscribe returns FULL. Only complete teardown and fresh init
+ * reset the epoch. The dispatcher task and SDK registration persist forever.
+ * Handlers run serially in SDK enqueue order and must stay short/nonblocking:
+ * blocking the callback chain for 40 seconds causes SDK assertion or reset. */
 const h2_pal_system_event_api_t *h2_jieli_wl82_platform_system_event_api(void);
+
+/** Image-lifetime count of posts rejected by PAL depth or SDK ring capacity. */
+uint32_t h2_jieli_wl82_platform_system_event_overflow_count(void);
 
 /** Bounded FIFO with one mutex-protected ring and predicate-based condition waits. */
 const h2_pal_queue_api_t *h2_jieli_wl82_platform_queue_api(void);

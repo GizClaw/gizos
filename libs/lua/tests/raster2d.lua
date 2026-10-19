@@ -135,15 +135,7 @@ probe.oom(function() return d.compile_palette(ca) end)
 probe.oom(function() return d.compile_rects(source) end)
 collectgarbage('collect')
 d.clear('black');d.draw_rects(batch,b);d.present()
--- Failed submission invalidates the retained baseline and retries all pixels.
-for _, failure in ipairs({{1,false},{0,true}}) do
-    d.clear('black');d.present({retained=true})
-    d.draw_rects(batch,b)
-    probe.fail(failure[1],failure[2])
-    assert(not pcall(d.present))
-    assert(d.present()==64)
-    assert(d.present()==0)
-end
+-- Draw/present fault quarantine is covered by isolated display_fault_test cases.
 -- A getter may close Display during compilation; no subsequent draw may use it.
 local closing = setmetatable({}, {__index=function() d.deinit();return 0 end})
 local unused = d.compile_palette({closing})

@@ -3,7 +3,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -33,14 +33,15 @@ typedef struct h2_bloomspeaker_snapshot {
 } h2_bloomspeaker_snapshot_t;
 
 typedef struct h2_bloomspeaker_controller {
-  _Atomic uint64_t state_word;
-  _Atomic uint64_t peer_tag;
-  _Atomic uint32_t local_level;
-  _Atomic uint32_t local_peak;
-  _Atomic uint32_t remote_level;
-  _Atomic uint32_t remote_peak;
-  _Atomic bool native_audio;
-  _Atomic int last_error;
+  h2_atomic_flag_t lock;
+  uint64_t state_word;
+  uint64_t peer_tag;
+  uint32_t local_level;
+  uint32_t local_peak;
+  uint32_t remote_level;
+  uint32_t remote_peak;
+  bool native_audio;
+  int last_error;
 } h2_bloomspeaker_controller_t;
 
 typedef struct h2_bloomspeaker_hold_tracker {
@@ -53,8 +54,9 @@ bool h2_bloomspeaker_hold_tracker_update(
     h2_bloomspeaker_hold_tracker_t *tracker, bool pressed, uint64_t now_ms,
     uint32_t hold_ms);
 
-void h2_bloomspeaker_controller_init(h2_bloomspeaker_controller_t *controller,
+bool h2_bloomspeaker_controller_init(h2_bloomspeaker_controller_t *controller,
                                      uint64_t now_ms);
+void h2_bloomspeaker_controller_destroy(h2_bloomspeaker_controller_t *controller);
 
 void h2_bloomspeaker_controller_long_press(
     h2_bloomspeaker_controller_t *controller, uint64_t now_ms);

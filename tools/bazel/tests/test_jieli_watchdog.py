@@ -20,7 +20,7 @@ class WatchdogTest(unittest.TestCase):
             unit=Path(directory)/'test.c'
             binary=Path(directory)/'test'
             unit.write_text(fixture.replace('/* PROVIDER */',source).replace('/* BOOT */',boot))
-            subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-pthread',*shlex.split(os.environ.get('JIELI_TEST_CFLAGS','')),'-I',str(ROOT/'native_component_src/jieli/wl82/h2_pal_core/include'),str(unit),'-o',str(binary)],check=True)
+            subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-pthread',*shlex.split(os.environ.get('JIELI_TEST_CFLAGS','')),'-I',str(ROOT/'native_component_src/jieli/wl82/h2_pal_core/include'),str(unit),'-I', str(ROOT / 'libs/atomic/include'), str(ROOT / 'libs/atomic/providers/c11/src/h2_atomic_c11.c'), '-o',str(binary)],check=True)
             for case in ['stopped_0','stopped_1','healthy','boot','threads']:
                 with self.subTest(case=case):
                     result=subprocess.run([str(binary),case],capture_output=True,text=True,timeout=10)

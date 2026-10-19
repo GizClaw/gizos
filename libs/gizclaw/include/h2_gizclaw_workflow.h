@@ -14,13 +14,23 @@ extern "C" {
 #endif
 
 #define H2_GIZCLAW_WORKFLOW_NAME_MAX_BYTES 63u
-#define H2_GIZCLAW_WORKFLOW_COLLECTION_MAX_BYTES 63u
+#define H2_GIZCLAW_WORKFLOW_TAG_MAX_BYTES 128u
+#define H2_GIZCLAW_WORKFLOW_TAG_MAX_ITEMS 32u
 #define H2_GIZCLAW_WORKFLOW_LOCALE_MAX_BYTES 31u
 #define H2_GIZCLAW_WORKFLOW_DISPLAY_NAME_MAX_BYTES 127u
 #define H2_GIZCLAW_WORKFLOW_DESCRIPTION_MAX_BYTES 255u
 #define H2_GIZCLAW_WORKFLOW_LANG_PAIR_MAX_BYTES 31u
 #define H2_GIZCLAW_WORKFLOW_PAGE_MAX_ITEMS 64u
 #define H2_GIZCLAW_WORKFLOW_I18N_MAX_ITEMS 8u
+#define H2_GIZCLAW_SAFETY_FENCE_NAME_MAX_BYTES 64u
+#define H2_GIZCLAW_SAFETY_FENCE_DISPLAY_MAX_BYTES 128u
+
+/** Public Profile option. The complete prompt remains on the Server. */
+typedef struct h2_gizclaw_safety_fence_option {
+  char name[H2_GIZCLAW_SAFETY_FENCE_NAME_MAX_BYTES + 1u];
+  bool has_display_name;
+  char display_name[H2_GIZCLAW_SAFETY_FENCE_DISPLAY_MAX_BYTES + 1u];
+} h2_gizclaw_safety_fence_option_t;
 
 typedef struct h2_gizclaw_workflow_i18n {
   char *locale;
@@ -30,7 +40,9 @@ typedef struct h2_gizclaw_workflow_i18n {
 
 /** Owned safe projection of one Runtime Profile workflow. */
 typedef struct h2_gizclaw_workflow {
-  char *collection;
+  /** Owned opaque UTF-8 tags in wire order; no tags means an empty set. */
+  char **tags;
+  size_t tag_count;
   char *name;
   h2_gizclaw_workflow_i18n_t *i18n;
   size_t i18n_count;
@@ -45,6 +57,9 @@ typedef struct h2_gizclaw_workflow_page {
   char *next_cursor;
   char *runtime_profile_name;
   char *runtime_profile_revision;
+  /** All options supported by this Profile, repeated on every catalog page. */
+  h2_gizclaw_safety_fence_option_t *safety_fences;
+  size_t safety_fence_count;
 } h2_gizclaw_workflow_page_t;
 
 typedef struct h2_gizclaw_workflow_get_result {
@@ -53,10 +68,14 @@ typedef struct h2_gizclaw_workflow_get_result {
   char *runtime_profile_revision;
 } h2_gizclaw_workflow_get_result_t;
 
+/** List workflows matching every tag exactly. Zero tags returns all.
+ * Up to 32 tags, each 1-128 UTF-8 bytes without NUL; duplicate selectors are
+ * permitted. Request creation copies their encoded bytes before returning.
+ * Tags affect filtering only; Workflow identity remains name. */
 h2_pal_result_t h2_gizclaw_req_create_workflow_list(
     h2_gizclaw_service_t *service, uint64_t identity,
-    h2_gizclaw_str_t collection, h2_gizclaw_str_t cursor, size_t limit,
-    uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
+    const h2_gizclaw_str_t *tags, size_t tag_count, h2_gizclaw_str_t cursor,
+    size_t limit, uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
 h2_pal_result_t h2_gizclaw_req_create_workflow_get(
     h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
     uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
@@ -71,9 +90,10 @@ h2_pal_result_t h2_gizclaw_resp_parse_workflow_get(
     h2_gizclaw_workflow_get_result_t *out_result);
 
 h2_pal_result_t h2_gizclaw_rpc_workflow_list(
-    h2_gizclaw_service_t *service, h2_gizclaw_str_t collection,
-    h2_gizclaw_str_t cursor, size_t limit, uint32_t timeout_ms,
-    h2_gizclaw_resp_storage_t *storage, h2_gizclaw_workflow_page_t *out_page);
+    h2_gizclaw_service_t *service, const h2_gizclaw_str_t *tags,
+    size_t tag_count, h2_gizclaw_str_t cursor, size_t limit,
+    uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_workflow_page_t *out_page);
 h2_pal_result_t
 h2_gizclaw_rpc_workflow_get(h2_gizclaw_service_t *service,
                             h2_gizclaw_str_t name, uint32_t timeout_ms,

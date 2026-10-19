@@ -829,7 +829,7 @@
     },
     "//tools/bazel/toolchains/local_embedded_cc:repositories.bzl%local_embedded_cc_toolchains": {
       "general": {
-        "bzlTransitiveDigest": "azuI7YbMyogrDCUASU0HWLw1tm7bzY434t82xVVvf5o=",
+        "bzlTransitiveDigest": "YTotws1aCkdTDArp+3NVnTqmWyAiySdlQcmba3NUl/o=",
         "usagesDigest": "B/O908nh4na4DNodhC/G5N8iv+2coljLauBD/qYw1+8=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
@@ -1053,7 +1053,7 @@
     "//tools/bazel/vendor:repositories.bzl%vendor_repositories": {
       "general": {
         "bzlTransitiveDigest": "GN36J8ZXGtronxAfN2q+0sqa5qSORQLPGXJJoOa1qYw=",
-        "usagesDigest": "cRnJkfSENSBF6/YqnZLX6VJIAMgDvBis72pFXkTzIPo=",
+        "usagesDigest": "80QevQgghCJFWCNXT+7JJMQz4HPht2u+seiU7fdm7uc=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
           "h2_fdk_aac": {
@@ -1074,6 +1074,23 @@
             "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_k4b_cedarx_repository",
             "attributes": {
               "build_file": "@@//tools/bazel/vendor:kickpi_k4b_cedarx.BUILD.bazel"
+            }
+          },
+          "h2_vendor_dr_libs": {
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_archive_repository",
+            "attributes": {
+              "build_file": "@@//third_party:dr_libs.BUILD.bazel",
+              "ffmpeg_configure_adapter": false,
+              "nested_archive_sha256": {},
+              "nested_archive_strip_prefix": {},
+              "nested_archive_urls": {},
+              "overlay_files": {},
+              "patches": [],
+              "sha256": "96115bda02a1947e97acff3568863b76f8661b4744507aac4d2817d53bf3d380",
+              "strip_prefix": "dr_libs-5690d4671d7ad07ae6021756d7222eb159745f06",
+              "urls": [
+                "https://codeload.github.com/mackron/dr_libs/tar.gz/5690d4671d7ad07ae6021756d7222eb159745f06"
+              ]
             }
           },
           "h2_vendor_esp_serial_flasher": {
@@ -1266,6 +1283,26 @@
               ]
             }
           },
+          "h2_vendor_tlsf": {
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_archive_repository",
+            "attributes": {
+              "build_file": "@@//third_party:tlsf.BUILD.bazel",
+              "ffmpeg_configure_adapter": false,
+              "nested_archive_sha256": {},
+              "nested_archive_strip_prefix": {},
+              "nested_archive_urls": {},
+              "overlay_files": {
+                "@@//third_party/tlsf_patch:h2_tlsf.h": "src/h2_tlsf.h",
+                "@@//third_party/tlsf_patch:h2_tlsf_embedded_stdio.h": "src/h2_tlsf_embedded_stdio.h"
+              },
+              "patches": [],
+              "sha256": "df67543d45ad5e67d96168b54022a0f4803f8d5ae9770d398e20dd9a0e2934d6",
+              "strip_prefix": "tlsf-deff9ab509341f264addbd3c8ada533678591905",
+              "urls": [
+                "https://codeload.github.com/mattconte/tlsf/tar.gz/deff9ab509341f264addbd3c8ada533678591905"
+              ]
+            }
+          },
           "h2_vendor_lua": {
             "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_archive_repository",
             "attributes": {
@@ -1294,8 +1331,9 @@
               "nested_archive_strip_prefix": {},
               "nested_archive_urls": {},
               "overlay_files": {
-                "@@//third_party/lvgl_patch:config/bk7258/lv_conf.h": "config/bk7258/lv_conf.h",
-                "@@//third_party/lvgl_patch:config/esp_idf6_x/lv_conf.h": "config/esp_idf6_x/lv_conf.h"
+                "@@//third_party/lvgl_patch:config/bk7258/h2_lvgl_bk_dma2d.h": "config/bk7258/h2_lvgl_bk_dma2d.h",
+                "@@//third_party/lvgl_patch:config/bk7258/lv_conf.h": "config/bk7258/h2_bk7258_lv_conf.h",
+                "@@//third_party/lvgl_patch:config/esp_idf6_x/lv_conf.h": "config/esp_idf6_x/h2_esp_idf6_x_lv_conf.h"
               },
               "patches": [],
               "sha256": "68abe1316ce8f9a9ede55d89ad9788292753373ad4218480480ae81052fb005d",
@@ -1551,7 +1589,7 @@
     },
     "@@emsdk+//:emscripten_deps.bzl%emscripten_deps": {
       "general": {
-        "bzlTransitiveDigest": "gjpXFlmRoikpKBKLlvSG1yMu+z6INXTttO5Aii1NmPI=",
+        "bzlTransitiveDigest": "+mL9YdscZK6fHcc912tbT/m590Ry9xm3HHqZe9OchI0=",
         "usagesDigest": "flUObZHi2IGMvU5Pv/OjoeL0X6fln/JjxkuXcVQGS8U=",
         "recordedInputs": [
           "REPO_MAPPING:bazel_features+,bazel_features_globals bazel_features++version_extension+bazel_features_globals",

@@ -55,13 +55,17 @@
   - Task 支持 `join`：每个任务有唯一 native 名 `<policy>/<hex id>`（匿名任务为 `$h2anon/…`，调用者不能使用该前缀），join 等待完成后按该名字删除；同名 policy 的多个任务互不影响。
   - Timer 的所有生命周期操作同步派发到 SDK `sys_timer` 任务，timer 回调内调用直接内联执行；不支持 ISR 和调度器启动前调用；资源失败保持 timer 停止且可重试。
   - Mutex、semaphore、condition 和 queue 遵循 `config->allocator`，对象从创建到销毁一直持有该 allocator。
-- **System Event。** 固定 `H2_PAL_SYSTEM_EVENT_TYPE_COUNT + 8` 个槽位，在 post 调用线程上同步派发。
-  - 每次成功 init 获得一个 owner，最多 16383 个，超出返回 `H2_PAL_ERR_FULL`；只有最后一个 deinit 关闭准入，已准入的操作结束后才销毁。
-  - 已准入的 post 会派发完它准入时的全部订阅，即使某个 handler 释放了最后一个 owner。
-  - 外部 unsubscribe 等待该订阅所有正在执行的回调返回（包括最后一个 owner 已 deinit 的 CLOSING 阶段），之后可释放 `handler_user`；handler 内的 self-unsubscribe 只停止准入，不等待自身。
-  - 订阅 generation 为 64 位且不回绕：post 只派发给 generation 不大于准入时快照的订阅，到达 `UINT64_MAX` 后 subscribe 返回 `H2_PAL_ERR_FULL`，只有完整 teardown 后重新 init 才重置。
+- **System Event。** 固定 `H2_PAL_SYSTEM_EVENT_TYPE_COUNT + 8` 个订阅槽位，通过 SDK `sys_event` 异步派发；每条消息为 32 字节 envelope（64 位 generation ceiling、时间戳、source ID、type、flags、payload 长度与 8 字节数据区），使用 `type=0x0100`、`from=0x50`，不会超过 SDK 的 32 字节读取缓冲区。
+  - Port 创建常驻 `h2_sysevt` 任务（priority 20、1024 stack words、32 queue words），由该任务注册 handler 并循环 `os_taskq_pend`；SDK 在注册任务的 pend 内执行 `Q_CALLBACK`，所有 PAL handler 按 SDK 入队顺序串行执行。首次启动最多等待 1000 ms，失败返回 `H2_PAL_ERR_TASK`；后续 init 周期复用任务与注册。
+  - post 复制 payload：不超过 8 字节内联，9..1024 字节使用 SDK heap 副本，超过 1024 字节返回 `H2_PAL_ERR_INVALID_ARG`，分配失败返回 `H2_PAL_ERR_NO_MEMORY`；post 返回后不再引用调用者内存，副本在整条事件派发完毕或丢弃时释放，handler 的 payload 仅在回调期间有效。
+  - 最多保留 4 条尚未完成派发的 PAL 事件；深度耗尽或 SDK ring 返回 -12 时 post 返回 `H2_PAL_ERR_FULL`，并增加只读的 `h2_jieli_wl82_platform_system_event_overflow_count()`，该计数不随 init/deinit 清零。四条消息连同 SDK header 共占 144 字节，SDK 的 256 字节 ring 还与 key、device、network、Bluetooth 等事件共享，因此未达到 PAL 深度上限也可能 FULL。
+  - post 的 `timeout_ms` 只约束注册表锁获取；成功表示入队，不传递 handler 返回值，没有匹配订阅时直接返回 OK 而不触碰 SDK。SDK 的 notify 支持中断上下文，但 PAL 的锁、64 位 generation 和 heap 复制不支持，中断 post 返回 `H2_PAL_ERR_INVALID_STATE`，不入队也不增加 overflow。
+  - 每次成功 init 获得一个 owner，最多 16383 个，超出返回 `H2_PAL_ERR_FULL`；最后一个 deinit 关闭准入，之后 post/subscribe 返回 `H2_PAL_ERR_INVALID_STATE`，INITIALIZING/CLOSING 期间 init 返回 `H2_PAL_ERR_BUSY`。已排队事件持有操作引用，仍向准入时且尚未退订的订阅交付，即使某个 handler 释放最后一个 owner；最后一个引用释放后才销毁注册表和锁。
+  - unsubscribe 先停止准入；外部任务等待该订阅排队事件被消费且运行中的回调返回（包括 CLOSING 阶段），返回后可释放 `handler_user`。dispatcher 内对自身或其他订阅的 unsubscribe 都不等待，以免阻塞唯一的消费任务；已退订的排队回调被跳过，槽位待 queued、dispatching、waiters 全部归零后复用，已准入回调的 user 必须保持有效。
+  - 订阅 generation 为 64 位且不回绕：post 在锁内记录 ceiling，入队准入后新建的订阅不会收到该事件，无论由其他任务还是 handler 创建；到达 `UINT64_MAX` 后 subscribe 返回 `H2_PAL_ERR_FULL`，只有完整 teardown 后重新 init 才重置。
+  - SDK `sys_event` 任务等待整条 handler 链完成，默认超时 40 s，超时触发 assert 或系统复位；handler 必须保持短小、非阻塞。
 - **原子操作。** wl82 的 pi32v2 clang 把 C11/GCC 原子操作降级为 `__sync_*` libcall，而工具链 compiler-rt 的实现在双核上不安全。`h2_jieli_wl82_sdk_port.c` 为 1/2/4/8 字节 `__sync_*` 提供由 SDK spinlock 保护的强定义。
-- **Host 验证。** 测试链接 `tests/` 下的确定性 fake 或 pthread SDK port：`bazel test //native_component_src/jieli/wl82/...`，以及 `//tools/bazel:jieli_{allocator,dynamic_task,event_generation,log_text,runtime_events,sdk_memory,task_identity,wl82_sync_atomics}_test`。`test_jieli_event_generation.py` 与 `test_jieli_runtime_events.py` 读取 `CC` 和 `JIELI_TEST_CFLAGS`，可用 GCC 与 TSan 运行。这些测试不替代 AC791N 实机验收。
+- **Host 验证。** 测试链接 `tests/` 下的确定性 fake 或 pthread SDK port：`bazel test //native_component_src/jieli/wl82/...`，以及 `//tools/bazel:jieli_{allocator,dynamic_task,event_generation,log_text,runtime_events,sdk_memory,sys_event_port,task_identity,wl82_sync_atomics}_test`。`test_jieli_event_generation.py`、`test_jieli_runtime_events.py` 与 `test_jieli_sys_event_port.py` 读取 `CC` 和 `JIELI_TEST_CFLAGS`，可用 GCC 与 TSan 运行。这些测试不替代 AC791N 实机验收。
 
 ## Repository-owned native project
 
@@ -108,9 +112,17 @@ FDK AAC 与 Linux FDK AAC decoder provider 允许 pi32v2；`libs/fdk_aac` 在该
 
 `boards/jieli_ac791n_devkit/ac791n` 提供 board identity 与 device UID、TIMER5 单调时钟、UART console、NOR disk partition、NOR 上基于 LittleFS 的 Pref、共享引用计数 NOR write window、SD filesystem、Net/Netif 与 Wi-Fi（STA、AP、saved settings）、BLE host、Audio、Display/Touch/Button input，以及 board runtime config。
 
+SDK 最多保存 63 字节密码，超过 63 字节的密码会被拒绝并返回 `INVALID_ARG`。STA 需要提取 `wpasupplicant.a` 中的真实 supplicant，覆盖 `wl_wifi.a` 的弱 stub。H2Loader layout 将 `wpasupplicant.a` 放在 `wl_wifi.a` 前，移除 `hostapd_and_wpasupplicant.a`，并通过 `LFLAGS += --undefined=wpa_supplicant_get_state` 保证提取该成员。连接前调用 SDK `wifi_set_sta_connect_timeout()`，非零 PAL 预算向上取整为秒，零预算使用 30 秒。`wifi_enter_sta_mode()` 以非阻塞方式调用，其返回值只反映站点是否已经连接，因此忽略该返回值；连接结果由 PAL 预算内的 SDK 事件决定。radio 关闭时，provider 在 `wifi_on()` 前将目标设为强制且不由 SDK 保存的 STA 默认配置，让 HSM 首次进入 STA 就携带目标（先以占位 SSID 进入、再调用 `wifi_enter_sta_mode()` 无法关联）；radio 已开启时使用 `wifi_enter_sta_mode()`。STA disconnect 通过进入 SDK 配置/monitor 模式保留 radio 和 lwIP，因为 `wifi_off()` 后再 `wifi_on()` 会触发 `netif already added` 断言；重连通过 `wifi_enter_sta_mode()` 再次进入 STA。按照 [仓库布局](../repo_layout.md) 的归属规则，每个具备 Wi-Fi capability 的 App target 都在自己的 task policy 中列出五条 SDK driver task 配置（`tcpip_thread`、`tasklet`、`RtmpMlmeTask`、`RtmpCmdQTask`、`wl_rx_irq_thread`），因为 SDK `task_create` 遇到 `task_info_table` 中缺失的名称会失败。其中 `RtmpMlmeTask` 使用 1400 words 栈，因为 SDK demo 的 700 words 在 2026-09-17 实机上处理被拒绝的缓存 BSSID 关联后的扫描完成事件时发生溢出。
+
 所有 NOR erase/write 都必须通过 `h2_jieli_flash_window_open()` / `h2_jieli_flash_window_close()` 配对管理；包括失败在内的每条退出路径都关闭 lease，最后一次 close 恢复 SDK write protection。嵌套或重叠 lease 始终保留首次 open 保存的 protection 值，直到最后一个 lease 关闭。
 
 Board 不安装任何 `NULL` vtable member；未实现的 operation 返回 `H2_PAL_ERR_UNSUPPORTED`，包括 `tcp_listen`、`tcp_accept`、`set_default`，以及通过共享 `h2_pal_unsupported_ble_*` stub 填充的 BLE scan / central-GATT entry。
+
+Wi-Fi scan 要求当前处于 STA mode 且已关联：非 STA mode 返回 `H2_PAL_ERR_INVALID_STATE`，未关联时 SDK 拒绝请求并返回 `H2_PAL_ERR_BUSY`。scan 返回 `H2_PAL_ERR_TIMEOUT` 后，status 恢复报告关联状态，不再报告 `SCANNING`，但 scan 仍由 SDK 持有，新的 scan / connect 返回 `H2_PAL_ERR_BUSY`，直到迟到的完成事件被回收，或通过 `sta_disconnect` / `ap_stop` / `ap_start` 的停止路径复位；只有 `wifi_off()` 成功，或 SDK 离开 STA 进入配网模式并回调 `WIFI_EVENT_SMP_CFG_START`（此时 STA 驱动与扫描定时器已停止）后，才释放 scan 所有权，正在等待完成或清理中的 scan 仍拒绝停止操作。
+
+SD filesystem 的 rename 在同目录内以“删除已有普通文件，再重命名”实现替换，不保证原子性；映射后的同一路径只验证存在并关闭，成功即返回 OK，跨目录返回 `H2_PAL_ERR_UNSUPPORTED`，目标为目录或以任一模式打开目录返回 `H2_PAL_ERR_INVALID_STATE`。Board 用 atomic gate 保护按映射路径登记的 PAL 句柄，并覆盖 open/close 和删除、重命名操作：路径有打开的句柄时，rename、remove、clear 与截断写 open 返回 `H2_PAL_ERR_BUSY`，clear 还检查目录下的所有路径；有写句柄时读 open 也返回 BUSY，多个读句柄可以共存，同路径 rename 的存在性检查不受此 BUSY 规则限制。直接调用 SDK 的句柄不在登记范围内。SDK 的 `fdelete` 即使失败也消费句柄，rename 会传播原生关闭失败；目录写 open 前先只读检查属性，因为实机确认 jlfat 的 `fopen("w+")` 可以打开已有目录，直接放行会允许调用者写入目录数据。翻译后的完整路径最多 191 字节（另加 NUL），provider 同时在调用 SDK 前检查每个组件最多 130 个 UTF-16 单元，超限返回 `H2_PAL_ERR_NO_SPACE`，避免 SDK 静默截断名称后文件无法按原路径访问；UTF-8 短名和长名统一交给 SDK `fopen` 编码。jlfat 的 `f_free_cache` 没有对应的 flush 实现，`sync` 成功但不落盘，文件大小和簇信息在原生 `fclose` 时写回。
+
+Net provider 在 lwIP full-duplex 的单 reader、单 writer、单 closer 保证上增加每个 socket 的操作门控：同方向操作重叠、connect 与收发重叠返回 `H2_PAL_ERR_BUSY`，close 仍可唤醒阻塞的 recv / send / connect。PAL Wi-Fi 尚未启动或正在停止时，访问 lwIP 的操作返回 `H2_PAL_ERR_UNAVAILABLE`；stop 先等待正在执行的操作退出，再停止 SDK 栈并将 pending resolver 结算为 `UNAVAILABLE`。每次启动推进栈 generation，旧 descriptor 不可继续使用，也不能在停栈后安全回收；调用方必须在 disconnect / ap_stop 前关闭所有 socket 和 resolver。同步 DNS 使用调用方独占的地址存储；异步 DNS 保持四个 pending slot，`TIMEOUT` / `WOULD_BLOCK` 不取消查询，提前 close 后由后端持有到完成或停栈，结算后的迟到 callback 被忽略，重试时序仍由 lwIP 决定。
 
 `h2_jieli_ac791n_devkit_runtime_config()` 只提供 `h2_runtime_config_t`，`h2_jieli_ac791n_devkit_runtime_deinit()` 只释放 board 持有的 SD filesystem 资源。完整 Runtime 初始化、input 启动、app 调用和 `h2_runtime_deinit()` 属于最终 artifact target，见 [Runtime 初始化与接线](../runtime.md#初始化与接线)。
 
@@ -142,34 +154,9 @@ SDK locator 使用 `JIELI_AC707N_SDK_PATH`，由 firmware-devenv 导出为
 `h2vivi/e_badge_707_sdk_200@d0167685d032d745d88fe50233302edd46941622`。
 这是 2.0.0 系列吧唧 SDK；头文件位于 `interface`。
 
-`boards/ac707n_chip/ac707n/layouts/compile_only` 拥有最小原生工程，使用 SDK 的
-BR35 startup、CPU/system/config/VM/FS/device 库和链接脚本。仓库 launcher
-启动 UCOS 后组装 Runtime，调用现有 `projects/e2e/apps/pal/app:pal_e2e` 的 core suite。
-测试结果保留在 `h2_ac707n_pal_e2e_result`；未启用的外设使用 PAL unsupported provider。
+`boards/ac707n_chip/ac707n/layouts/compile_only` 保留 SDK 的 BR35 startup、 CPU/system/config/VM/FS/device 库和链接脚本配置。旧 PAL Core launcher、普通 firmware 与 H2Loader package 入口已经下线；独立 `pal-core` 尚无 AC707N launcher。JieLi 之前未进行 PAL E2E v2 验收，当前已纳入后续平台接入缺口； 旧入口清理与待补范围记录在 `projects/e2e/apps/README.md`。 保留的 toolchain/layout 不表示仍有完整 Runtime E2E image。
 
-在 Linux x86_64 开发环境（macOS 使用 Linux/amd64 容器）内运行：
-
-```sh
-bazel build --config=ac707n //projects/e2e/targets/h2loader_tar_zlib/pal/ac707n_chip:firmware
-```
-
-firmware-devenv 的 `make jieli-ac707n-toolchain-check` 另行验证 BR35 参数下
-的编译及 `r3-large` 运行库链接，不代表硬件运行验收。
-
-输出目录为 `bazel-bin/projects/e2e/targets/h2loader_tar_zlib/pal/ac707n_chip/firmware/`，
-包含 `firmware.elf`、`symbols.txt`、`jl_isd.bin`、`jl_isd.fw`、`update.ufw` 和固定依赖版本的 `manifest.json`。
-CI native build matrix 包含 AC707N。编译、链接与离线打包可验证；没有开发板，
-启动、时钟、Flash 配置和升级包的硬件适配尚未验收。当前 compile-only 配置
-采用 8 MiB Flash、24 MHz 晶振和 PB07 reset，实际板卡必须另建并验证板级配置。
-
-普通固件入口是 `//projects/e2e/targets/native_firmware/pal/ac707n_chip:firmware`，
-遵循上文定义的 standalone vendor artifact contract，而不是新增 SDK demo 或新的
-底层 firmware rule。
-H2Loader 入口 `//projects/e2e/targets/h2loader_tar_zlib/pal/ac707n_chip:package`
-产出 H2Loader format-1 tar.zlib，固件成员为
-`app/jieli/update.ufw`。这只验证封装和依赖图；设备端 H2Loader UFW 安装、
-Loader/App 选择及回退还需要 BR35 专用 backend，不能把普通 SDK 双 bank OTA
-当作已完成的 H2Loader 启动协议。
+firmware-devenv 的 `make jieli-ac707n-toolchain-check` 可以另行验证 BR35 参数下 的编译及 `r3-large` 运行库链接，不代表硬件运行验收。当前 compile-only 配置 采用 8 MiB Flash、24 MHz 晶振和 PB07 reset，实际板卡必须另建并验证板级配置。 设备端 H2Loader UFW 安装、Loader/App 选择及回退仍需 BR35 专用 backend 验收， 普通 SDK 双 bank OTA 不代表已完成 H2Loader 启动协议。
 
 BR35 PAL core 在 `native_component_src/jieli/br35/h2_pal_core`，使用 UCOS，
 仅 CPU0；互斥量采用二值信号量，零等待在关中断区域查询并消费已有 token，

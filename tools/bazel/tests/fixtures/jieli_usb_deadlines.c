@@ -3,7 +3,8 @@
 #include <stddef.h>
 #include <string.h>
 #include <pthread.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
+#include <stdlib.h>
 #include <sched.h>
 #include "h2/pal/core/h2_pal_errors.h"
 typedef uint8_t u8;
@@ -28,7 +29,7 @@ static uint32_t now, first_clock, completion, transferred;
 static int first_clock_set, stalled, absent_dma, short_native;
 static uint8_t dma[64], received[256];
 static int pending;
-static atomic_int worker_entered, worker_release;
+static h2_atomic_int_t worker_entered, worker_release;
 static uint32_t timer_get_ms(void) {
     ++now;
     if (!first_clock_set) { first_clock = now; first_clock_set = 1; }
@@ -75,12 +76,20 @@ u32 usb_g_bulk_write(usb_dev id, u32 ep, u8 *buffer, u32 count) {
 static void *hold_native_writer(void *unused) {
     (void)unused;
     assert(pthread_mutex_lock(&gadget.mutex_data) == 0);
-    atomic_store(&worker_entered, 1);
-    while (!atomic_load(&worker_release)) sched_yield();
+    h2_atomic_store(&worker_entered, 1);
+    while (!h2_atomic_load(&worker_release)) sched_yield();
     assert(pthread_mutex_unlock(&gadget.mutex_data) == 0);
     return NULL;
 }
+static void h2_fixture_atomic_cleanup(void) {
+    h2_atomic_destroy(&worker_entered);
+    h2_atomic_destroy(&worker_release);
+}
 int main(int argc, char **argv) {
+    assert(atexit(h2_fixture_atomic_cleanup) == 0);
+    assert(h2_atomic_init(&worker_entered, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_init(&worker_release, 0) == H2_ATOMIC_OK);
+
     assert(argc == 2);
     (void)app;
     (void)usb_tx_mutex;
@@ -109,7 +118,7 @@ int main(int argc, char **argv) {
         threaded = 1;
         budget = 0u;
         assert(pthread_create(&worker, NULL, hold_native_writer, NULL) == 0);
-        while (!atomic_load(&worker_entered)) sched_yield();
+        while (!h2_atomic_load(&worker_entered)) sched_yield();
     } else {
         budget = 100u;
         short_native = strcmp(argv[1], "short") == 0;
@@ -117,7 +126,7 @@ int main(int argc, char **argv) {
     size_t written = 0;
     int result = physical_write(user, bytes, sizeof(bytes), &written, budget);
     if (threaded) {
-        atomic_store(&worker_release, 1);
+        h2_atomic_store(&worker_release, 1);
         assert(pthread_join(worker, NULL) == 0);
     }
     if (locked) assert(pthread_mutex_unlock(outer) == 0);

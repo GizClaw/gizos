@@ -5,12 +5,32 @@
 
 h2_pal_result_t h2_android_audio_validate_decoder_stream(
     const h2_audio_decoder_stream_config_t *config) {
-  if (config == NULL || config->codec != H2_AUDIO_CODEC_AAC_LC ||
-      config->bitstream_format != H2_AUDIO_BITSTREAM_AAC_RAW ||
+  if (config == NULL ||
       config->sample_rate_hz == 0u || config->sample_rate_hz > INT32_MAX ||
       config->channels == 0u || config->codec_config == NULL ||
       config->codec_config_size == 0u) {
     return H2_PAL_ERR_INVALID_ARG;
+  }
+  if (config->codec != H2_AUDIO_CODEC_AAC_LC ||
+      config->bitstream_format != H2_AUDIO_BITSTREAM_AAC_RAW ||
+      config->channels > 2u) {
+    return H2_PAL_ERR_UNSUPPORTED;
+  }
+  /* MediaCodec can accept malformed csd-0 and report the error only after
+   * input arrives. Validate the supported AAC-LC ASC before creating it. */
+  static const uint32_t rates[] = {
+      96000u, 88200u, 64000u, 48000u, 44100u, 32000u, 24000u,
+      22050u, 16000u, 12000u, 11025u, 8000u, 7350u};
+  if (config->codec_config_size < 2u) return H2_PAL_ERR_FORMAT;
+  const uint8_t *asc = config->codec_config;
+  const uint16_t bits = ((uint16_t)asc[0] << 8u) | asc[1];
+  const unsigned object = bits >> 11u;
+  const unsigned rate = (bits >> 7u) & 15u;
+  const unsigned channels = (bits >> 3u) & 15u;
+  if (object != 2u || rate >= sizeof(rates) / sizeof(rates[0]) ||
+      rates[rate] != config->sample_rate_hz || channels != config->channels ||
+      (bits & 4u) != 0u) {
+    return H2_PAL_ERR_FORMAT;
   }
   return H2_PAL_OK;
 }

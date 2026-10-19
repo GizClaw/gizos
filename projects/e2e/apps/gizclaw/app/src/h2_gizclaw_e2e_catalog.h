@@ -17,10 +17,12 @@ typedef struct e2e_case {
   int (*prepare)(h2_gizclaw_e2e_fixture_t *fixture);
 } e2e_case_t;
 
-/* Link exactly one catalog. The full app retains all seven acceptance cases;
+/* Link exactly one catalog. The full app retains every acceptance case;
  * a dedicated connectivity app is a measurement lane, never full acceptance. */
 int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture);
 int h2_gizclaw_e2e_prepare_device(h2_gizclaw_e2e_fixture_t *fixture);
+int h2_gizclaw_e2e_run_lua_apps(h2_gizclaw_e2e_fixture_t *fixture);
+int h2_gizclaw_e2e_prepare_lua_apps(h2_gizclaw_e2e_fixture_t *fixture);
 extern const e2e_case_t h2_gizclaw_e2e_cases[];
 extern const size_t h2_gizclaw_e2e_case_count;
 

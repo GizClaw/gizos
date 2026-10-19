@@ -1,5 +1,6 @@
 #include "h2_esp_h2loader_runtime.h"
 #include "h2_esp_h2loader_iostreamikcp_internal.h"
+#include "h2_atomic.h"
 
 #include "h2_esp_platform_core.h"
 #include "h2_esp_platform_safe_call.h"
@@ -51,7 +52,7 @@ typedef struct h2_esp_h2loader_digest_call {
 } h2_esp_h2loader_digest_call_t;
 
 static h2_esp_h2loader_digest_t s_digest;
-static int s_command_stop_requested;
+static h2_atomic_bool_t s_command_stop_requested;
 static h2_esp_h2loader_command_transport_t s_command_transport;
 
 typedef struct h2_esp_h2loader_confirm_call {
@@ -851,8 +852,8 @@ static int serve_loader(void *user, h2_loader_t *loader,
   (void)loader;
   printf("H2_LOADER_READY target=esp status=ready action=%d\n", (int)action);
   fflush(stdout);
-  __atomic_store_n(&s_command_stop_requested, 0, __ATOMIC_RELEASE);
-  while (__atomic_load_n(&s_command_stop_requested, __ATOMIC_ACQUIRE) == 0) {
+  h2_atomic_bool_store(&s_command_stop_requested, false, H2_ATOMIC_RELEASE);
+  while (!h2_atomic_bool_load(&s_command_stop_requested, H2_ATOMIC_ACQUIRE)) {
     if (s_command_transport.pending_conv != 0u) {
       rc = h2_loader_command_init(command, &command_config);
       if (rc == H2_PAL_OK) {
@@ -899,7 +900,7 @@ static int serve_loader(void *user, h2_loader_t *loader,
 
 static int stop_serve_loader(void *user) {
   (void)user;
-  __atomic_store_n(&s_command_stop_requested, 1, __ATOMIC_RELEASE);
+  h2_atomic_bool_store(&s_command_stop_requested, true, H2_ATOMIC_RELEASE);
   return H2_PAL_OK;
 }
 
@@ -1002,7 +1003,13 @@ void h2_esp_h2loader_run_with_command_service_config(
   config.rearm_before_startup = runtime_loader_config->rearm_mfg;
   config.stop_serve = stop_serve_loader;
   config.serve = serve_loader;
+  if (h2_atomic_bool_init(&s_command_stop_requested, false) != H2_ATOMIC_OK) {
+    h2_esp_h2loader_command_transport_deinit(&s_command_transport);
+    printf("H2_LOADER_READY target=esp status=atomic_init_fail\n");
+    return;
+  }
   rc = h2loader_app_run_with_command_service(runtime, &config, command_service);
+  h2_atomic_bool_destroy(&s_command_stop_requested);
   h2_esp_h2loader_command_transport_deinit(&s_command_transport);
   printf("H2_LOADER_READY target=esp status=app_exit code=%d\n", rc);
 }

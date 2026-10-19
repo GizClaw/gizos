@@ -8,7 +8,7 @@ class WebArchiveTest(unittest.TestCase):
     def test_archive(self):
         with tarfile.open(pathlib.Path(sys.argv[1])) as archive:
             names = [member.name for member in archive.getmembers()]
-            self.assertEqual(["index.html", "index.js", "index.wasm"], names)
+            self.assertEqual(["_headers", "index.html", "index.js", "index.wasm"], names)
             for member in archive.getmembers():
                 path = pathlib.PurePosixPath(member.name)
                 self.assertFalse(path.is_absolute())

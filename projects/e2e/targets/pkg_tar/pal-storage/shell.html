@@ -1,0 +1,13 @@
+<!doctype html><meta charset="utf-8"><title>PAL Storage E2E</title>
+<pre id="report">PAL Storage E2E</pre><canvas id="canvas" width="1" height="1"></canvas>
+<script>
+const query = new URLSearchParams(location.search);
+var Module = {
+  arguments: [query.get('phase') || '1', query.get('nonce') || '1'],
+  canvas: document.getElementById('canvas'),
+  print: text => { console.log(text); document.getElementById('report').textContent += '\n' + text; },
+  printErr: text => console.error(text),
+  onExit: code => console.log('H2_STORAGE_EXIT ' + code)
+};
+</script>
+{{{ SCRIPT }}}

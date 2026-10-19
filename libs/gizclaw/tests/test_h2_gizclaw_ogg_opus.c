@@ -1,4 +1,4 @@
-#include "h2_gizclaw_ogg_opus_internal.h"
+#include "h2_ogg_opus.h"
 #include "opus.h"
 
 // These tests use assertions for both checks and the operations under test.
@@ -56,16 +56,16 @@ static size_t decode_mode(fixture_t *f, h2_pal_result_t expected, size_t fail_at
                            bool streaming) {
   memory_t mem = {.fail_at = fail_at};
   h2_pal_mem_api_t allocator = {.user = &mem, .vtable = &memory_vtable};
-  h2_gizclaw_ogg_opus_t *decoder = NULL;
+  h2_ogg_opus_t *decoder = NULL;
   stream_input_t input = {.data = f->bytes, .length = f->len};
   h2_pal_result_t rc = streaming ?
-      h2_gizclaw_ogg_opus_create_reader(&allocator, stream_read, &input, &decoder) :
-      h2_gizclaw_ogg_opus_create(&allocator, f->bytes, f->len, &decoder);
-  uint8_t pcm[H2_GIZCLAW_OGG_OPUS_PCM_BYTES];
+      h2_ogg_opus_create_reader(&allocator, stream_read, &input, &decoder) :
+      h2_ogg_opus_create(&allocator, f->bytes, f->len, &decoder);
+  uint8_t pcm[H2_OGG_OPUS_PCM_BYTES];
   size_t total = 0, nonzero = 0, steps = 0;
   while (rc == H2_PAL_OK) {
     size_t len;
-    rc = h2_gizclaw_ogg_opus_next(decoder, pcm, sizeof(pcm), &len);
+    rc = h2_ogg_opus_next(decoder, pcm, sizeof(pcm), &len);
     assert(++steps < 1000);
     total += len;
     for (size_t i = 0; i < len; ++i)
@@ -79,10 +79,10 @@ static size_t decode_mode(fixture_t *f, h2_pal_result_t expected, size_t fail_at
     assert(nonzero > 0);
   if (decoder) {
     size_t len = SIZE_MAX;
-    assert(h2_gizclaw_ogg_opus_next(decoder, pcm, sizeof(pcm), &len) == rc);
+    assert(h2_ogg_opus_next(decoder, pcm, sizeof(pcm), &len) == rc);
     assert(len == 0);
   }
-  h2_gizclaw_ogg_opus_destroy(decoder);
+  h2_ogg_opus_destroy(decoder);
   assert(mem.live == 0);
   return total;
 }
@@ -275,15 +275,15 @@ static seek_result_t seek_decode(const fixture_t *f, size_t header_len,
   h2_pal_mem_api_t allocator = {.user = &mem, .vtable = &memory_vtable};
   seek_input_t input = {.file = f->bytes, .file_len = f->len,
                         .range = range, .range_len = range_len};
-  h2_gizclaw_ogg_opus_t *decoder = NULL;
-  assert(h2_gizclaw_ogg_opus_create_reader(&allocator, seek_read, &input,
+  h2_ogg_opus_t *decoder = NULL;
+  assert(h2_ogg_opus_create_reader(&allocator, seek_read, &input,
                                            &decoder) == H2_PAL_OK);
-  uint8_t pcm[H2_GIZCLAW_OGG_OPUS_PCM_BYTES];
+  uint8_t pcm[H2_OGG_OPUS_PCM_BYTES];
   size_t len = 0;
   uint64_t origin = 0;
-  assert(h2_gizclaw_ogg_opus_seek(decoder, 0, false) == H2_PAL_ERR_INVALID_STATE);
-  while (!h2_gizclaw_ogg_opus_headers_done(decoder)) {
-    assert(h2_gizclaw_ogg_opus_next(decoder, pcm, sizeof(pcm), &len) == H2_PAL_OK);
+  assert(h2_ogg_opus_seek(decoder, 0, false) == H2_PAL_ERR_INVALID_STATE);
+  while (!h2_ogg_opus_headers_done(decoder)) {
+    assert(h2_ogg_opus_next(decoder, pcm, sizeof(pcm), &len) == H2_PAL_OK);
     assert(len == 0);
   }
   /* The reader consumed exactly the header pages. */
@@ -292,17 +292,17 @@ static seek_result_t seek_decode(const fixture_t *f, size_t header_len,
     input.switched = true;
     input.offset = 0;
   }
-  assert(h2_gizclaw_ogg_opus_seek(decoder, target_ms, range != NULL) == H2_PAL_OK);
-  assert(h2_gizclaw_ogg_opus_seek(decoder, target_ms, false) ==
+  assert(h2_ogg_opus_seek(decoder, target_ms, range != NULL) == H2_PAL_OK);
+  assert(h2_ogg_opus_seek(decoder, target_ms, false) ==
          H2_PAL_ERR_INVALID_STATE);
   seek_result_t result = {.rc = H2_PAL_OK};
   bool known = false;
   for (unsigned steps = 0; result.rc == H2_PAL_OK; ++steps) {
     assert(steps < 10000);
-    result.rc = h2_gizclaw_ogg_opus_next(decoder, pcm, sizeof(pcm), &len);
+    result.rc = h2_ogg_opus_next(decoder, pcm, sizeof(pcm), &len);
     if (len) {
       /* The origin is known before the first sample leaves the decoder. */
-      assert(h2_gizclaw_ogg_opus_origin(decoder, &origin));
+      assert(h2_ogg_opus_origin(decoder, &origin));
       if (!known) result.origin = origin;
       assert(origin == result.origin);
       known = true;
@@ -310,10 +310,10 @@ static seek_result_t seek_decode(const fixture_t *f, size_t header_len,
     result.emitted += len / 2;
   }
   if (result.rc == H2_PAL_EXIT && !known) {
-    assert(h2_gizclaw_ogg_opus_origin(decoder, &origin));
+    assert(h2_ogg_opus_origin(decoder, &origin));
     result.origin = origin;
   }
-  h2_gizclaw_ogg_opus_destroy(decoder);
+  h2_ogg_opus_destroy(decoder);
   assert(mem.live == 0);
   return result;
 }
@@ -350,18 +350,18 @@ static void test_seek_sequential(void) {
   /* Only a reader decoder can resync; memory decoders seek sequentially. */
   memory_t mem = {0};
   h2_pal_mem_api_t allocator = {.user = &mem, .vtable = &memory_vtable};
-  h2_gizclaw_ogg_opus_t *decoder = NULL;
-  assert(h2_gizclaw_ogg_opus_create(&allocator, f.bytes, f.len, &decoder) == H2_PAL_OK);
-  uint8_t pcm[H2_GIZCLAW_OGG_OPUS_PCM_BYTES];
+  h2_ogg_opus_t *decoder = NULL;
+  assert(h2_ogg_opus_create(&allocator, f.bytes, f.len, &decoder) == H2_PAL_OK);
+  uint8_t pcm[H2_OGG_OPUS_PCM_BYTES];
   size_t len;
-  while (!h2_gizclaw_ogg_opus_headers_done(decoder))
-    assert(h2_gizclaw_ogg_opus_next(decoder, pcm, sizeof(pcm), &len) == H2_PAL_OK);
-  assert(h2_gizclaw_ogg_opus_seek(decoder, 0, true) == H2_PAL_ERR_INVALID_ARG);
-  assert(h2_gizclaw_ogg_opus_seek(NULL, 0, false) == H2_PAL_ERR_INVALID_ARG);
-  assert(!h2_gizclaw_ogg_opus_origin(NULL, &r.origin));
-  assert(h2_gizclaw_ogg_opus_seek(decoder, 200, false) == H2_PAL_OK);
-  assert(!h2_gizclaw_ogg_opus_origin(decoder, &r.origin));
-  h2_gizclaw_ogg_opus_destroy(decoder);
+  while (!h2_ogg_opus_headers_done(decoder))
+    assert(h2_ogg_opus_next(decoder, pcm, sizeof(pcm), &len) == H2_PAL_OK);
+  assert(h2_ogg_opus_seek(decoder, 0, true) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_ogg_opus_seek(NULL, 0, false) == H2_PAL_ERR_INVALID_ARG);
+  assert(!h2_ogg_opus_origin(NULL, &r.origin));
+  assert(h2_ogg_opus_seek(decoder, 200, false) == H2_PAL_OK);
+  assert(!h2_ogg_opus_origin(decoder, &r.origin));
+  h2_ogg_opus_destroy(decoder);
   assert(mem.live == 0);
 }
 
@@ -502,20 +502,20 @@ static int decode_file(const char *source, const char *target) {
   assert(out);
   memory_t mem = {0};
   h2_pal_mem_api_t allocator = {.user = &mem, .vtable = &memory_vtable};
-  h2_gizclaw_ogg_opus_t *d;
-  assert(h2_gizclaw_ogg_opus_create(&allocator, data, (size_t)length, &d) ==
+  h2_ogg_opus_t *d;
+  assert(h2_ogg_opus_create(&allocator, data, (size_t)length, &d) ==
          H2_PAL_OK);
-  uint8_t pcm[H2_GIZCLAW_OGG_OPUS_PCM_BYTES];
+  uint8_t pcm[H2_OGG_OPUS_PCM_BYTES];
   h2_pal_result_t rc;
   size_t total = 0;
   do {
     size_t len;
-    rc = h2_gizclaw_ogg_opus_next(d, pcm, sizeof(pcm), &len);
+    rc = h2_ogg_opus_next(d, pcm, sizeof(pcm), &len);
     assert(fwrite(pcm, 1, len, out) == len);
     total += len;
   } while (rc == H2_PAL_OK);
   fclose(out);
-  h2_gizclaw_ogg_opus_destroy(d);
+  h2_ogg_opus_destroy(d);
   free(data);
   assert(mem.live == 0);
   printf("decoded_bytes=%zu result=%d\n", total, rc);
@@ -578,26 +578,26 @@ static seek_result_t sweep_one(const sweep_file_t *file, bool resync,
   h2_pal_mem_api_t allocator = {.user = &mem, .vtable = &memory_vtable};
   seek_input_t input = {.file = file->data, .file_len = file->len,
                         .range = file->data + from, .range_len = file->len - from};
-  h2_gizclaw_ogg_opus_t *decoder = NULL;
-  assert(h2_gizclaw_ogg_opus_create_reader(&allocator, seek_read, &input,
+  h2_ogg_opus_t *decoder = NULL;
+  assert(h2_ogg_opus_create_reader(&allocator, seek_read, &input,
                                            &decoder) == H2_PAL_OK);
-  uint8_t pcm[H2_GIZCLAW_OGG_OPUS_PCM_BYTES];
+  uint8_t pcm[H2_OGG_OPUS_PCM_BYTES];
   size_t len = 0;
   seek_result_t result = {.rc = H2_PAL_OK};
-  while (result.rc == H2_PAL_OK && !h2_gizclaw_ogg_opus_headers_done(decoder))
-    result.rc = h2_gizclaw_ogg_opus_next(decoder, pcm, sizeof(pcm), &len);
+  while (result.rc == H2_PAL_OK && !h2_ogg_opus_headers_done(decoder))
+    result.rc = h2_ogg_opus_next(decoder, pcm, sizeof(pcm), &len);
   if (result.rc == H2_PAL_OK) {
     if (resync) {
       input.switched = true;
       input.offset = 0;
     }
-    assert(h2_gizclaw_ogg_opus_seek(decoder, target_ms, resync) == H2_PAL_OK);
+    assert(h2_ogg_opus_seek(decoder, target_ms, resync) == H2_PAL_OK);
   }
   bool known = false;
   while (result.rc == H2_PAL_OK) {
-    result.rc = h2_gizclaw_ogg_opus_next(decoder, pcm, sizeof(pcm), &len);
+    result.rc = h2_ogg_opus_next(decoder, pcm, sizeof(pcm), &len);
     if (len && !known) {
-      assert(h2_gizclaw_ogg_opus_origin(decoder, &result.origin));
+      assert(h2_ogg_opus_origin(decoder, &result.origin));
       known = true;
     }
     if (result.emitted * 2u + len <= out_cap * 2u)
@@ -605,8 +605,8 @@ static seek_result_t sweep_one(const sweep_file_t *file, bool resync,
     result.emitted += len / 2u;
   }
   if (result.rc == H2_PAL_EXIT && !known)
-    assert(h2_gizclaw_ogg_opus_origin(decoder, &result.origin));
-  h2_gizclaw_ogg_opus_destroy(decoder);
+    assert(h2_ogg_opus_origin(decoder, &result.origin));
+  h2_ogg_opus_destroy(decoder);
   assert(mem.live == 0);
   return result;
 }
@@ -637,23 +637,23 @@ static int seek_sweep(const char *path) {
   memory_t mem = {0};
   h2_pal_mem_api_t allocator = {.user = &mem, .vtable = &memory_vtable};
   seek_input_t input = {.file = file.data, .file_len = file.len};
-  h2_gizclaw_ogg_opus_t *decoder = NULL;
-  assert(h2_gizclaw_ogg_opus_create_reader(&allocator, seek_read, &input,
+  h2_ogg_opus_t *decoder = NULL;
+  assert(h2_ogg_opus_create_reader(&allocator, seek_read, &input,
                                            &decoder) == H2_PAL_OK);
-  uint8_t pcm[H2_GIZCLAW_OGG_OPUS_PCM_BYTES];
+  uint8_t pcm[H2_OGG_OPUS_PCM_BYTES];
   size_t len = 0, cap = file.len * 64u + 16000u;
   file.plain = malloc(cap * 2u);
   assert(file.plain);
   h2_pal_result_t rc = H2_PAL_OK;
   while (rc == H2_PAL_OK) {
-    rc = h2_gizclaw_ogg_opus_next(decoder, pcm, sizeof(pcm), &len);
-    if (!file.header_len && h2_gizclaw_ogg_opus_headers_done(decoder))
+    rc = h2_ogg_opus_next(decoder, pcm, sizeof(pcm), &len);
+    if (!file.header_len && h2_ogg_opus_headers_done(decoder))
       file.header_len = input.offset;
     assert(file.plain_samples + len / 2u <= cap);
     memcpy(file.plain + file.plain_samples, pcm, len);
     file.plain_samples += len / 2u;
   }
-  h2_gizclaw_ogg_opus_destroy(decoder);
+  h2_ogg_opus_destroy(decoder);
   printf("file=%s bytes=%zu header=%zu plain_rc=%d duration_ms=%zu\n", path,
          file.len, file.header_len, rc, file.plain_samples / 16u);
   if (rc != H2_PAL_EXIT) {

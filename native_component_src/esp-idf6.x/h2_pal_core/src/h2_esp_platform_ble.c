@@ -128,7 +128,9 @@ static uint8_t s_h2_esp_ble_discovery_uuid_filter_data[16];
 static uint8_t *s_h2_esp_ble_read_out;
 static size_t s_h2_esp_ble_read_out_size;
 static size_t s_h2_esp_ble_read_out_len;
-static uint8_t s_h2_esp_ble_adv_data[H2_PAL_BLE_EXT_ADV_DATA_MAX_LEN];
+/* NimBLE consumes these copies on its host task, never from a cache-off ISR. */
+static EXT_RAM_BSS_ATTR uint8_t
+    s_h2_esp_ble_adv_data[H2_PAL_BLE_EXT_ADV_DATA_MAX_LEN];
 static size_t s_h2_esp_ble_adv_data_len;
 static uint8_t s_h2_esp_ble_legacy_adv_data[
     H2_PAL_BLE_LEGACY_ADV_DATA_MAX_LEN];
@@ -140,7 +142,8 @@ static bool s_h2_esp_ble_legacy_adv_data_valid;
 static bool s_h2_esp_ble_adv_data_staged;
 static bool s_h2_esp_ble_adv_active;
 static bool s_h2_esp_ble_ext_adv_configured;
-static h2_pal_ble_uuid_t s_h2_esp_ble_scan_uuids[H2_ESP_BLE_MAX_SCAN_UUIDS];
+static EXT_RAM_BSS_ATTR h2_pal_ble_uuid_t
+    s_h2_esp_ble_scan_uuids[H2_ESP_BLE_MAX_SCAN_UUIDS];
 #if CONFIG_BT_NIMBLE_EXT_ADV
 static h2_pal_ble_adv_set_t
     s_h2_esp_ble_adv_sets[CONFIG_BT_NIMBLE_MAX_EXT_ADV_INSTANCES];

@@ -35,6 +35,7 @@ cc_test(
     }),
     deps = [
         ":starboy",
+        "//libs/atomic/providers/c11",
         "//libs/pal",
         "//libs/runtime",
     ],

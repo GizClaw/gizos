@@ -152,6 +152,10 @@ h2_pal_result_t h2_sctp_timer_service(
     } else if (result != H2_PAL_OK) {
         return result;
     }
+    result = h2_sctp_stream_service_deferred_reset(association, now_ms);
+    if (result != H2_PAL_OK) {
+        return result;
+    }
 
     result = h2_sctp_reliability_service_sack(
         association, now_ms, out_next_deadline_ms);

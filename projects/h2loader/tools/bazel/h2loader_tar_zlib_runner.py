@@ -37,6 +37,7 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--target", required=True)
     parser.add_argument("--version", required=True)
     parser.add_argument("--package-output", required=True)
+    parser.add_argument("--package-format", type=int, choices=(1, 2), default=2)
     parser.add_argument("--metadata-output", required=True)
     parser.add_argument("--factory-image")
     parser.add_argument("--factory-output")
@@ -47,6 +48,8 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--bk-recovery-config")
     parser.add_argument("--package-data-root", default="")
     parser.add_argument("--package-data-file", action="append", default=[])
+    # One per --package-data-file, in the same order: where its bytes are.
+    parser.add_argument("--package-data-source", action="append", default=[])
     parser.add_argument(
         "--native-artifact",
         action="append",
@@ -97,11 +100,13 @@ def run(arguments: argparse.Namespace) -> None:
         app_path=arguments.app_path,
         data_root=arguments.package_data_root,
         data_files=arguments.package_data_file,
+        data_sources=arguments.package_data_source or arguments.package_data_file,
         output=package,
         board=arguments.board,
         role=arguments.role,
         target=arguments.target,
         version=arguments.version,
+        package_format=arguments.package_format,
     )
     publish_metadata(
         output=Path(arguments.metadata_output),
@@ -117,6 +122,7 @@ def run(arguments: argparse.Namespace) -> None:
         factory=factory,
         recovery=recovery,
         native=arguments.native_artifact,
+        package_format=arguments.package_format,
     )
 
 

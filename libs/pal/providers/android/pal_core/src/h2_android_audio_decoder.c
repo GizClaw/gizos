@@ -159,10 +159,10 @@ static h2_pal_result_t android_audio_decoder_acquire_frame(
     void *user, h2_pal_audio_decoder_session_t *session, uint32_t timeout_ms,
     h2_pal_audio_decoder_frame_t **out_frame) {
   (void)user;
-  if (session == NULL || out_frame == NULL || !session->configured ||
-      session->acquired) {
+  if (session == NULL || out_frame == NULL || !session->configured) {
     return H2_PAL_ERR_INVALID_STATE;
   }
+  if (session->acquired) return H2_PAL_ERR_WOULD_BLOCK;
   if (session->eos_reached) {
     return H2_PAL_EXIT;
   }

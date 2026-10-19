@@ -34,11 +34,30 @@ cc_library(
     ],
     deps = [
         ":tasks",
+        "//libs/atomic",
         "//libs/bleikcp",
         "//libs/command",
         "//libs/h2loader_host",
         "//libs/pal",
         "//libs/runtime",
+    ],
+)
+
+cc_test(
+    name = "cli_control_lines_test",
+    srcs = ["tests/test_cli_control_lines.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":h2loader_cli_app",
+        "//libs/iostreamikcp",
+        "//libs/pal:unsupported",
     ],
 )
 
@@ -58,6 +77,7 @@ cc_test(
     }),
     deps = [
         ":h2loader_cli_app",
+        "//libs/atomic/providers/c11",
         "//libs/pal:unsupported",
         "//libs/runtime",
     ],
@@ -79,6 +99,7 @@ cc_test(
     }),
     deps = [
         ":h2loader_cli_app",
+        "//libs/atomic/providers/c11",
         "//libs/pal:unsupported",
         "//libs/runtime",
     ],
@@ -100,6 +121,7 @@ cc_test(
     }),
     deps = [
         ":h2loader_cli_app",
+        "//libs/atomic/providers/c11",
         "//libs/runtime",
     ],
 )
@@ -120,6 +142,7 @@ cc_test(
     }),
     deps = [
         ":h2loader_cli_app",
+        "//libs/atomic/providers/c11",
         "//libs/runtime",
     ],
 )

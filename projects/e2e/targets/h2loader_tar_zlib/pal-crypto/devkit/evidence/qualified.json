@@ -1,0 +1,162 @@
+{
+  "version": "pal-crypto-esp-20260928-r5",
+  "contract": 1,
+  "operations": 15,
+  "passed": 22,
+  "failed": 0,
+  "blocked": 0,
+  "not_run": 0,
+  "complete": 1,
+  "qualified": 1,
+  "rc": 0,
+  "cases": [
+    {
+      "version": "pal-crypto-esp-20260928-r5",
+      "id": "pal.crypto.arguments",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "version": "pal-crypto-esp-20260928-r5",
+      "id": "pal.crypto.random.bounds",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "version": "pal-crypto-esp-20260928-r5",
+      "id": "pal.crypto.random.distinct",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "version": "pal-crypto-esp-20260928-r5",
+      "id": "pal.crypto.x25519.known-answer",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "version": "pal-crypto-esp-20260928-r5",
+      "id": "pal.crypto.x25519.exchange",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "version": "pal-crypto-esp-20260928-r5",
+      "id": "pal.crypto.hkdf.known-answer",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "version": "pal-crypto-esp-20260928-r5",
+      "id": "pal.crypto.hkdf.limits",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "version": "pal-crypto-esp-20260928-r5",
+      "id": "pal.crypto.aead.aes128-known-answer",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "version": "pal-crypto-esp-20260928-r5",
+      "id": "pal.crypto.aead.aes256-known-answer",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "version": "pal-crypto-esp-20260928-r5",
+      "id": "pal.crypto.aead.chacha-known-answer",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "version": "pal-crypto-esp-20260928-r5",
+      "id": "pal.crypto.aead.aes128-boundaries",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "version": "pal-crypto-esp-20260928-r5",
+      "id": "pal.crypto.aead.aes256-boundaries",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "version": "pal-crypto-esp-20260928-r5",
+      "id": "pal.crypto.aead.chacha-boundaries",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "version": "pal-crypto-esp-20260928-r5",
+      "id": "pal.crypto.aead.capacity",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "version": "pal-crypto-esp-20260928-r5",
+      "id": "pal.crypto.aes-ctr.known-answer",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "version": "pal-crypto-esp-20260928-r5",
+      "id": "pal.crypto.hashes.known-answer",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "version": "pal-crypto-esp-20260928-r5",
+      "id": "pal.crypto.p256.derive",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "version": "pal-crypto-esp-20260928-r5",
+      "id": "pal.crypto.p256.generate",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "version": "pal-crypto-esp-20260928-r5",
+      "id": "pal.crypto.p256.invalid",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "version": "pal-crypto-esp-20260928-r5",
+      "id": "pal.crypto.p256.sign-verify",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "version": "pal-crypto-esp-20260928-r5",
+      "id": "pal.crypto.p256.known-signature",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "version": "pal-crypto-esp-20260928-r5",
+      "id": "pal.crypto.churn",
+      "status": "PASS",
+      "rc": 0
+    }
+  ],
+  "device_uid": "9888e0115c52",
+  "platform": "devkit",
+  "final_status": "H2_LOADER_STATUS board=devkit target=esp32s3 chip=esp32s3 device_uid=9888e0115c52 capabilities=0x00000001 command_availability=0x00081d3f active_role=app active_version=pal-crypto-esp-20260928-r5 active_checksum=12f45103b71a9c4d9ab024c7ba26e964f1ad54a498b98a9743e49e4c79f25f92 active_image_size=1517808 running_partition=2 next_partition=2 boot_intent=auto stage_valid=0 stage_package_checksum=- stage_package_size=0 stage_image_checksum=- stage_image_size=0 stage_role=unknown stage_version=- stage_board=- stage_target=- partition_1_valid=1 partition_1_package_checksum=f4fd26deba579fb6b8955e9ea7a83122b25cf6e4c433b3d652090d6958197568 partition_1_package_size=975428 partition_1_image_checksum=9479960ee19af062cb1a599c4d4b52f948d476efc842aabdfa6ca2ec812befd5 partition_1_image_size=1496656 partition_1_role=loader partition_1_version=0.2.3-atomic-541 partition_1_board=devkit partition_1_target=esp32s3 partition_2_valid=1 partition_2_package_checksum=805491d0040931a3c3ab59f7f0c1f934c57faa076ba5c20dbca0cb9d0967d229 partition_2_package_size=977446 partition_2_image_checksum=12f45103b71a9c4d9ab024c7ba26e964f1ad54a498b98a9743e49e4c79f25f92 partition_2_image_size=1517808 partition_2_role=app partition_2_version=pal-crypto-esp-20260928-r5 partition_2_board=devkit partition_2_target=esp32s3 last_result=0 mfg_mode=1 mfg_steps=0000000000000000000000\n",
+  "coredump_status": "H2_LOADER_COREDUMP_STATUS result=OK code=0 partition=coredump bytes=65536 stored_bytes=0 blank=1\n",
+  "raw_capture_sha256": "b1afb4e9522c41c667011ced4ce5e3357a3778e26e1ea13202dc83060d77f51d",
+  "verification": {
+    "image_matches_build": true,
+    "package_matches_build": true,
+    "app_confirmed": true,
+    "stage_empty": true,
+    "loader_unchanged": true,
+    "final_coredump_blank": true
+  },
+  "notes": [
+    "This receipt describes r5 only. Earlier development images exposed failures; their diagnostic dumps were retained outside Git before the successful r5 run."
+  ]
+}

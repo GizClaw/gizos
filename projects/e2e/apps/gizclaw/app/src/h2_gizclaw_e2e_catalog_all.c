@@ -1,6 +1,7 @@
 #include "h2_gizclaw_e2e_catalog.h"
 #include "h2_gizclaw_e2e_concurrency.h"
 #include "h2_gizclaw_e2e_firmware.h"
+#include "h2_gizclaw_e2e_fence.h"
 #include "h2_gizclaw_e2e_rpc.h"
 #include "h2_gizclaw_e2e_service.h"
 #include "h2_gizclaw_e2e_voice.h"
@@ -13,14 +14,31 @@ static int prepare_session(h2_gizclaw_e2e_fixture_t *fixture) {
 
 static int run_voice(h2_gizclaw_e2e_fixture_t *fixture) {
   int rc = h2_gizclaw_e2e_prepare_voice(fixture);
-  return rc == H2_PAL_OK ? h2_gizclaw_e2e_run_voice(fixture) : rc;
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_e2e_run_voice(fixture);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_e2e_run_session_cancel(fixture);
+  /* Session owns its route; raw Conversation and Service audio APIs require
+   * their own run after Session teardown. Its internal calls are not evidence
+   * that an application can use those public APIs directly. */
+  if (rc == H2_PAL_OK) {
+    fixture->use_session = false;
+    rc = h2_gizclaw_e2e_fixture_reconnect_actor(fixture, H2_GIZCLAW_E2E_OWNER);
+    if (rc == H2_PAL_OK)
+      rc = h2_gizclaw_e2e_run_voice(fixture);
+  }
+  return rc;
 }
 
 const e2e_case_t h2_gizclaw_e2e_cases[] = {
+    {"lua-apps", H2_GIZCLAW_E2E_SUITE_LUA_APPS, 1u, false,
+     h2_gizclaw_e2e_run_lua_apps, h2_gizclaw_e2e_prepare_lua_apps},
     {"resource", H2_GIZCLAW_E2E_SUITE_RESOURCE, 1u, false,
      h2_gizclaw_e2e_run_resource, NULL},
     {"device-api", H2_GIZCLAW_E2E_SUITE_DEVICE, 1u, false,
      h2_gizclaw_e2e_run_device, h2_gizclaw_e2e_prepare_device},
+    {"workspace-fence", H2_GIZCLAW_E2E_SUITE_FENCE, 1u, false,
+     h2_gizclaw_e2e_run_fence, NULL},
     {"connectivity", H2_GIZCLAW_E2E_SUITE_CONNECTIVITY, 2u, false,
      h2_gizclaw_e2e_run_connectivity, NULL},
     {"rpc", H2_GIZCLAW_E2E_SUITE_RPC, H2_GIZCLAW_E2E_ACTOR_COUNT, true,

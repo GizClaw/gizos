@@ -189,7 +189,10 @@ int wifi_connect(void *, const h2_pal_wifi_sta_config_t *config, uint32_t) {
   wifi_status.bssid_set = 1u;
   wifi_status.state = H2_PAL_WIFI_STA_STATE_GOT_IP;
   wifi_status.ip_valid = 1u;
-  wifi_status.ip = {0xc0000201u, 0xffffff00u, 0xc00002feu};
+  wifi_status.ip = {};
+  wifi_status.ip.ip4 = 0xc0000201u;
+  wifi_status.ip.netmask4 = 0xffffff00u;
+  wifi_status.ip.gateway4 = 0xc00002feu;
   return H2_PAL_OK;
 }
 
@@ -724,6 +727,10 @@ h2_pal_result_t power_deep_sleep(void *, uint32_t reason) {
   return H2_PAL_OK;
 }
 
+h2_pal_result_t power_set_deep_sleep_wake_timer(void *, uint32_t) {
+  return H2_PAL_ERR_UNSUPPORTED;
+}
+
 const h2_pal_power_vtable_t power_vtable = {
     power_capabilities,
     power_boot_info,
@@ -738,6 +745,7 @@ const h2_pal_power_vtable_t power_vtable = {
     power_reboot,
     nullptr,
     power_deep_sleep,
+    power_set_deep_sleep_wake_timer,
 };
 h2_pal_power_api_t power_api = {nullptr, &power_vtable};
 

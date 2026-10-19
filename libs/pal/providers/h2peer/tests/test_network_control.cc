@@ -2,7 +2,7 @@
 #include "h2_desktop_platform.h"
 #include "h2_peer.h"
 
-#include <atomic>
+#include "h2_atomic.h"
 // These tests use assertions for both checks and the operations under test.
 #ifdef NDEBUG
 #undef NDEBUG
@@ -23,7 +23,7 @@ std::condition_variable gate_changed;
 bool parked = false;
 bool resume = false;
 thread_local bool park_before_lock = false;
-std::atomic<unsigned> started{0}, joined{0};
+h2_atomic_uint_t started{}, joined{};
 bool fail_start = false;
 
 h2_pal_result_t create_mutex(void *user, const h2_pal_mutex_config_t *config,
@@ -53,14 +53,14 @@ int start_task(void *user, const h2_pal_task_options_t *options,
   }
   const auto rc = real_task->vtable->start(user, options, entry, context, out);
   if (rc == H2_PAL_OK)
-    ++started;
+    (void)h2_atomic_uint_fetch_add(&started, 1u, H2_ATOMIC_SEQ_CST);
   return rc;
 }
 
 int join_task(void *user, h2_pal_task_t *task) {
   const auto rc = real_task->vtable->join(user, task);
   if (rc == H2_PAL_OK)
-    ++joined;
+    (void)h2_atomic_uint_fetch_add(&joined, 1u, H2_ATOMIC_SEQ_CST);
   return rc;
 }
 
@@ -72,6 +72,8 @@ h2_pal_result_t read_track(void *, uint8_t *, size_t, size_t *) {
 } // namespace
 
 int main() {
+  assert(h2_atomic_uint_init(&started, 0u) == H2_ATOMIC_OK);
+  assert(h2_atomic_uint_init(&joined, 0u) == H2_ATOMIC_OK);
   real_sync = h2_desktop_platform_sync_api();
   real_task = h2_desktop_platform_task_api();
   auto sync_vtable = *real_sync->vtable;
@@ -101,10 +103,10 @@ int main() {
   h2_pal_webrtc_peer_t *peer = nullptr;
   fail_start = true;
   assert(h2_pal_webrtc_peer_create(api, &peer) == H2_PAL_ERR_UNSUPPORTED);
-  assert(peer == nullptr && started == 0u);
+  assert(peer == nullptr && h2_atomic_uint_load(&started, H2_ATOMIC_SEQ_CST) == 0u);
   fail_start = false;
   assert(h2_pal_webrtc_peer_create(api, &peer) == H2_PAL_OK);
-  assert(started == 1u);
+  assert(h2_atomic_uint_load(&started, H2_ATOMIC_SEQ_CST) == 1u);
 
   h2_pal_webrtc_track_vtable_t track_vtable = {};
   track_vtable.read = read_track;
@@ -143,23 +145,25 @@ int main() {
 
   // A second caller must not consume events concurrently, and a close must
   // wait for the in-flight poll instead of destroying the queue under it.
-  std::atomic<int> blocked_result{H2_PAL_OK};
-  std::atomic<bool> blocked_entered{false};
-  std::atomic<int> blocked_kind{0};
+  h2_atomic_int_t blocked_result{}, blocked_kind{};
+  h2_atomic_bool_t blocked_entered{};
+  assert(h2_atomic_int_init(&blocked_result, H2_PAL_OK) == H2_ATOMIC_OK);
+  assert(h2_atomic_bool_init(&blocked_entered, false) == H2_ATOMIC_OK);
+  assert(h2_atomic_int_init(&blocked_kind, 0) == H2_ATOMIC_OK);
   std::thread blocked_poll([&] {
     h2_pal_webrtc_event_t blocked_event = {};
     int rc = H2_PAL_ERR_BUSY;
     // The prober below can hold the slot for the length of one non-blocking
     // poll, so retry rather than mistaking that for the contended case.
     while (rc == H2_PAL_ERR_BUSY) {
-      blocked_entered = true;
+      h2_atomic_bool_store(&blocked_entered, true, H2_ATOMIC_SEQ_CST);
       rc = h2_pal_webrtc_peer_poll(api, peer, 5000, &blocked_event);
     }
-    blocked_kind = static_cast<int>(blocked_event.kind);
-    blocked_result = rc;
+    h2_atomic_int_store(&blocked_kind, static_cast<int>(blocked_event.kind), H2_ATOMIC_SEQ_CST);
+    h2_atomic_int_store(&blocked_result, rc, H2_ATOMIC_SEQ_CST);
     h2_pal_webrtc_event_release(&blocked_event);
   });
-  while (!blocked_entered)
+  while (!h2_atomic_bool_load(&blocked_entered, H2_ATOMIC_SEQ_CST))
     std::this_thread::yield();
   h2_pal_webrtc_event_t busy_event = {};
   int busy_result = H2_PAL_OK;
@@ -179,10 +183,15 @@ int main() {
   // a freed queue: either the terminal peer-state event or CLOSED.
   h2_pal_webrtc_peer_close(api, peer);
   blocked_poll.join();
-  assert(blocked_result == H2_PAL_ERR_CLOSED ||
-         (blocked_result == H2_PAL_OK &&
-          blocked_kind == H2_PAL_WEBRTC_EVENT_PEER_STATE));
+  assert(h2_atomic_int_load(&blocked_result, H2_ATOMIC_SEQ_CST) == H2_PAL_ERR_CLOSED ||
+         (h2_atomic_int_load(&blocked_result, H2_ATOMIC_SEQ_CST) == H2_PAL_OK &&
+          h2_atomic_int_load(&blocked_kind, H2_ATOMIC_SEQ_CST) == H2_PAL_WEBRTC_EVENT_PEER_STATE));
   h2_peer_destroy(&owner);
-  assert(owner == nullptr && started == 1u && joined == 1u);
+  assert(owner == nullptr && h2_atomic_uint_load(&started, H2_ATOMIC_SEQ_CST) == 1u && h2_atomic_uint_load(&joined, H2_ATOMIC_SEQ_CST) == 1u);
+  h2_atomic_int_destroy(&blocked_result);
+  h2_atomic_bool_destroy(&blocked_entered);
+  h2_atomic_int_destroy(&blocked_kind);
+  h2_atomic_uint_destroy(&started);
+  h2_atomic_uint_destroy(&joined);
   return 0;
 }

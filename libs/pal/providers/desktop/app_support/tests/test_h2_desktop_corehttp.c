@@ -35,6 +35,7 @@ typedef struct http_server {
     pthread_cond_t cond;
     uint16_t port;
     int ready;
+    int stalled;
     http_server_scenario_t scenario;
     size_t connection_count;
     const char *cert_path;
@@ -80,7 +81,7 @@ static void send_response(int fd, const char *response) {
 }
 
 static void serve_raw_http(
-    const http_server_t *server, int fd, size_t connection_index) {
+    http_server_t *server, int fd, size_t connection_index) {
     char request[1024] = {0};
     read_request(fd, request, sizeof(request));
     if (server->scenario == HTTP_SERVER_METHODS) {
@@ -114,6 +115,9 @@ static void serve_raw_http(
         return;
     }
     assert(server->scenario == HTTP_SERVER_STALL);
+    assert(pthread_mutex_lock(&server->lock) == 0);
+    server->stalled = 1;
+    assert(pthread_mutex_unlock(&server->lock) == 0);
     const struct timespec delay = {.tv_sec = 0, .tv_nsec = 250000000};
     assert(nanosleep(&delay, NULL) == 0);
 }
@@ -179,6 +183,11 @@ static void *server_thread(void *arg) {
     assert(getsockname(listen_fd, (struct sockaddr *)&address, &address_len) == 0);
     publish_port(server, ntohs(address.sin_port));
     for (size_t index = 0u; index < server->connection_count; ++index) {
+        fd_set pending;
+        FD_ZERO(&pending);
+        FD_SET(listen_fd, &pending);
+        struct timeval accept_budget = {.tv_sec = 5};
+        assert(select(listen_fd + 1, &pending, NULL, NULL, &accept_budget) == 1);
         int fd = accept(listen_fd, NULL, NULL);
         assert(fd >= 0);
         if (server->scenario == HTTP_SERVER_TLS_INTERRUPT) {
@@ -308,10 +317,12 @@ static void run_redirect_stream(const h2_pal_http_api_t *http) {
     finish_server(&server, thread);
 }
 
-static int cancel_after_checks(void *user) {
-    size_t *checks = user;
-    *checks += 1u;
-    return *checks >= 5u;
+static int cancel_after_stall(void *user) {
+    http_server_t *server = user;
+    assert(pthread_mutex_lock(&server->lock) == 0);
+    int stalled = server->stalled;
+    assert(pthread_mutex_unlock(&server->lock) == 0);
+    return stalled;
 }
 
 static void run_stall(const h2_pal_http_api_t *http, int cancel) {
@@ -323,13 +334,12 @@ static void run_stall(const h2_pal_http_api_t *http, int cancel) {
     int url_len = snprintf(
         url, sizeof(url), "http://localhost:%u/stall", port);
     assert(url_len > 0 && (size_t)url_len < sizeof(url));
-    size_t checks = 0u;
     const h2_pal_http_request_t request = {
         .method = H2_PAL_HTTP_GET,
         .url = {.data = url, .len = (size_t)url_len},
         .timeout_ms = cancel ? 3000 : 50,
-        .cancel_cb = cancel ? cancel_after_checks : NULL,
-        .cancel_user = cancel ? &checks : NULL,
+        .cancel_cb = cancel ? cancel_after_stall : NULL,
+        .cancel_user = cancel ? &server : NULL,
     };
     h2_pal_http_response_t response;
     assert(h2_pal_http_request(http, &request, &response) ==
@@ -433,9 +443,11 @@ int main(int argc, char **argv) {
     config.root_ca_pem = ca.data;
     config.root_ca_pem_len = ca.len;
     assert(h2_corehttp_create(&config, &provider, &http) == H2_PAL_OK);
-    run_rejected_tls_request(
-        &http, HTTP_SERVER_TLS_REJECT, "127.0.0.1", argv[3], argv[4],
-        H2_PAL_ERR_TLS_VERIFY);
+    /* The fixture includes 127.0.0.1 as an IP SAN, so this identity is trusted. */
+    port = start_server(
+        &server, &thread, HTTP_SERVER_TLS_SUCCESS, 1u, argv[3], argv[4]);
+    run_request(&http, port, "127.0.0.1", 1);
+    finish_server(&server, thread);
     run_rejected_tls_request(
         &http, HTTP_SERVER_TLS_INTERRUPT, "localhost", argv[3], argv[4],
         H2_PAL_ERR_IO);

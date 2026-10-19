@@ -153,8 +153,8 @@ static inline int h2_pal_netif_kind_is_valid(h2_pal_netif_kind_t kind) {
  * @brief Return nonzero when status describes a path that can carry traffic.
  *
  * The interface must be UP and LINK_UP and must not be loopback. Interfaces
- * the provider can address must also report HAS_IPV4 (the IPv4 default-route
- * contract); a HOST interface satisfies addressing through its host stack.
+ * the provider can address report IPv4 or a non-link-local IPv6 address;
+ * a HOST interface satisfies addressing through its host stack.
  * Usable only means a default network exists: whether a particular service is
  * reachable is decided by the result of the actual connection.
  */
@@ -166,7 +166,10 @@ static inline int h2_pal_netif_status_is_usable(
         return 0;
     }
     return status->kind == H2_PAL_NETIF_KIND_HOST ||
-           (status->flags & H2_PAL_NETIF_FLAG_HAS_IPV4) != 0u;
+           (status->flags & H2_PAL_NETIF_FLAG_HAS_IPV4) != 0u ||
+           ((status->flags & H2_PAL_NETIF_FLAG_HAS_IPV6) != 0u &&
+            status->ipv6.family == H2_PAL_NET_FAMILY_IPV6 &&
+            h2_pal_net_ipv6_is_non_link_local_unicast(status->ipv6.ip));
 }
 
 static inline int h2_pal_netif_ref_is_zero(const h2_pal_netif_ref_t *ref) {

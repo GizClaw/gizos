@@ -1,0 +1,156 @@
+load("@rules_cc//cc:defs.bzl", "cc_test")
+load("@rules_python//python:defs.bzl", "py_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//projects/e2e/libs/pal-mqtt-device:device_test.bzl", "mqtt_device_test")
+load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_bk7258_firmware")
+load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+load("//tools/bazel:target_task_policy.bzl", "bk7258_target_task_policy")
+
+package(default_visibility = ["//visibility:public"])
+
+bk7258_target_task_policy(
+    ap_allocator = "psram",
+    ap_default_policy = "7 0 4096 default",
+    ap_policies = [
+        "pal-mqtt/e2e/runner 7 0 65536 psram",
+        "h2loader/appcmd    5        0  8192  psram",
+        "$h2loader/uartcmd  5        0  8192  psram",
+        "$bleikcp/kcp       default",
+        "$bleikcp/server    default",
+        "$h2peer/net        default",
+        "$h2peer/udp        default",
+        "$runtime/input     default",
+        "$runtime/nfc       default",
+        "$h2loader/return   default",
+        "$h2loader/blelink  default",
+    ],
+    cp_default_policy = "6 4096 default",
+    graph = [":pal_mqtt_launcher"],
+)
+
+firmware_lib_component(
+    name = "firmware_lib",
+    deps = [
+        "//libs/audio_mixer",
+        "//libs/bleikcp",
+        "//libs/bundle",
+        "//libs/command",
+        "//libs/iostreamikcp",
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/corehttp",
+        "//libs/pal/providers/coremqtt",
+        "//libs/pal/providers/h2peer",
+        "//libs/pal/providers/h2sctp",
+        "//libs/pal/providers/libco",
+        "//libs/pal/providers/yyjson",
+        "//libs/pixa",
+        "//libs/runtime",
+        "//libs/wifi_sta",
+        "//projects/e2e/libs/pal-mqtt-device:runner",
+    ],
+)
+
+firmware_native_component(
+    name = "ap_launcher_component",
+    srcs = [
+        "ap/ap_main.c",
+    ],
+    hdrs = ["ap/ledger_console.h"],
+    component_directory = "projects/e2e/targets/h2loader_tar_zlib/pal-mqtt/bk7258_v3_202405/ap",
+    component_name = "ap",
+    data = ["ap/CMakeLists.txt"],
+    execution_unit = "ap",
+)
+
+firmware_native_component(
+    name = "pal_mqtt_launcher",
+    srcs = [],
+    hdrs = [],
+    data = [
+    ],
+    tags = ["manual"],
+    deps = [
+        ":ap_launcher_component",
+        ":firmware_lib",
+        "//boards/bk7258_v3_202405/bk7258",
+        "//libs/pal",
+        "//libs/pal/providers/libco",
+        "//libs/runtime",
+        "//native_component_src/bk7258/ap/h2_pal_core",
+        "//native_component_src/bk7258/ap/zlib",
+        "//native_component_src/bk7258/cp/h2_pal_core",
+        "//projects/e2e/libs/pal-mqtt-device:runner",
+        "//projects/h2loader/apps/loader/app:tasks",
+        "//projects/h2loader/libs/h2loader",
+        "//projects/h2loader/native_component_src/bk7258/ap/h2loader_bk",
+        "//projects/h2loader/native_component_src/bk7258/cp/h2loader_cp_launcher",
+    ],
+)
+
+h2loader_bk7258_firmware(
+    name = "firmware",
+    srcs = [
+        "CMakeLists.txt",
+        "ap/CMakeLists.txt",
+        "ap/ap_main.c",
+        "ap/ledger_console.h",
+    ],
+    ap_task_policy = ":ap_task_policy",
+    board = "bk7258_v3_202405",
+    cp_task_policy = ":cp_task_policy",
+    graph = [
+        ":pal_mqtt_launcher",
+    ],
+    project = "CMakeLists.txt",
+    project_name = "h2_bk_pal_mqtt",
+    target = "bk7258",
+)
+
+h2loader_tar_zlib(
+    name = "package",
+    board = "bk7258_v3_202405",
+    firmware = ":firmware",
+    image = "pal-mqtt",
+    role = "app",
+    target = "bk7258",
+)
+
+mqtt_device_test(
+    name = "device_test",
+    package = ":package",
+)
+
+cc_test(
+    name = "ledger_console_test",
+    srcs = ["tests/test_ledger_console.c", "ap/ledger_console.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["ap"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)
+
+py_test(
+    name = "import_qualification_test",
+    srcs = ["tools/import_qualification.py", "tools/test_import_qualification.py"],
+    data = [
+        "evidence/runs/20a23ce1-r12-continuous/collector-receipt.json",
+        "evidence/runs/20a23ce1-r12-continuous/host-verifier.py",
+    ],
+    imports = ["tools"],
+    legacy_create_init = 0,
+    main = "tools/test_import_qualification.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)

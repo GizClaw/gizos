@@ -98,6 +98,11 @@ static h2_gizclaw_e2e_config_t test_config(test_state_t *state, uint8_t *pcm,
   return (h2_gizclaw_e2e_config_t){
       .server_endpoint = {endpoint, sizeof(endpoint) - 1u},
       .registration_token = {token, sizeof(token) - 1u},
+      .app_config_key = "fixture.test",
+      .expected_runtime_profile = "mock-runtime-profile",
+      .app_config_expected_value = {"known-fixture", 13u},
+      .device_api_url = "https://api.example.invalid",
+      .device_audio_url = "https://audio.example.invalid/tone.ogg",
       .voice_pcm_s16le_16khz_mono = pcm,
       .voice_pcm_len = pcm_len,
       .suites = H2_GIZCLAW_E2E_SUITE_ALL,
@@ -112,6 +117,26 @@ static h2_gizclaw_e2e_config_t test_config(test_state_t *state, uint8_t *pcm,
 }
 
 int main(void) {
+  /* Hardware admission uses this same gate. A successful diagnostic subset
+   * must never become permission to confirm the complete business image. */
+  h2_gizclaw_e2e_result_t admission = {
+      .selected = 8u, .terminal = 8u, .passed = 8u, .complete = true};
+  assert(h2_gizclaw_e2e_result_all_passed(&admission));
+  h2_gizclaw_e2e_result_t subset = admission;
+  subset.selected = subset.terminal = subset.passed = 1u;
+  assert(!h2_gizclaw_e2e_result_all_passed(&subset));
+  subset = admission;
+  subset.selected = subset.terminal = subset.passed = 7u;
+  assert(!h2_gizclaw_e2e_result_all_passed(&subset));
+  subset = admission;
+  subset.cleanup_rc = H2_PAL_ERR_IO;
+  assert(!h2_gizclaw_e2e_result_all_passed(&subset));
+  subset = admission;
+  subset.retained_resources = 1u;
+  assert(!h2_gizclaw_e2e_result_all_passed(&subset));
+  subset = admission;
+  subset.complete = false;
+  assert(!h2_gizclaw_e2e_result_all_passed(&subset));
   h2_gizclaw_workflow_t default_workflows[] = {
       {.name = "general-assistant"},
       {.name = "doubao-realtime"},
@@ -160,26 +185,26 @@ int main(void) {
                                                   "workspace-1"));
 
   assert(h2_gizclaw_e2e_concurrency_classify(H2_PAL_OK, H2_PAL_OK, H2_PAL_OK,
-                                             3u, 3u, 3u, 3u, 0u) == H2_PAL_OK);
+                                             6u, 6u, 6u, 6u, 0u) == H2_PAL_OK);
   assert(h2_gizclaw_e2e_concurrency_classify(H2_PAL_ERR_TIMEOUT, H2_PAL_OK,
                                              H2_PAL_OK, 2u, 0u, 2u, 2u,
                                              0u) == H2_PAL_ERR_TIMEOUT);
   assert(h2_gizclaw_e2e_concurrency_classify(H2_PAL_OK, H2_PAL_ERR_IO,
-                                             H2_PAL_OK, 3u, 3u, 3u, 3u,
+                                             H2_PAL_OK, 6u, 6u, 6u, 6u,
                                              0u) == H2_PAL_ERR_IO);
   assert(h2_gizclaw_e2e_concurrency_classify(H2_PAL_OK, H2_PAL_OK, H2_PAL_OK,
-                                             3u, 3u, 2u, 3u, 0u) == H2_PAL_OK);
+                                             6u, 6u, 2u, 6u, 0u) == H2_PAL_OK);
   assert(h2_gizclaw_e2e_concurrency_classify(H2_PAL_OK, H2_PAL_OK, H2_PAL_OK,
-                                             3u, 3u, 4u, 3u,
+                                             6u, 6u, 7u, 6u,
                                              0u) == H2_PAL_ERR_INVALID_STATE);
   assert(h2_gizclaw_e2e_concurrency_classify(H2_PAL_OK, H2_PAL_OK, H2_PAL_OK,
-                                             3u, 3u, 0u, 3u,
+                                             6u, 6u, 0u, 6u,
                                              0u) == H2_PAL_ERR_INVALID_STATE);
   assert(h2_gizclaw_e2e_concurrency_classify(H2_PAL_OK, H2_PAL_OK, H2_PAL_OK,
-                                             3u, 3u, 3u, 2u,
+                                             6u, 6u, 6u, 2u,
                                              0u) == H2_PAL_ERR_INVALID_STATE);
   assert(h2_gizclaw_e2e_concurrency_classify(H2_PAL_OK, H2_PAL_OK, H2_PAL_OK,
-                                             3u, 3u, 3u, 3u,
+                                             6u, 6u, 6u, 6u,
                                              1u) == H2_PAL_ERR_INVALID_STATE);
 
   h2_gizclaw_e2e_result_t result;
@@ -203,7 +228,13 @@ int main(void) {
   assert(memcmp(&result, &empty, sizeof(result)) == 0);
   config.suites = H2_GIZCLAW_E2E_SUITE_ALL;
 
-  assert(h2_gizclaw_e2e_case_count == 8u);
+  config.app_config_key = NULL;
+  assert(h2_gizclaw_e2e_run(&runtime, &config, &result) ==
+         H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR);
+  assert(memcmp(&result, &empty, sizeof(result)) == 0);
+  config.app_config_key = "fixture.test";
+
+  assert(h2_gizclaw_e2e_case_count == 10u);
   assert((config.suites & H2_GIZCLAW_E2E_SUITE_DEVICE) != 0);
   state.task.join.remaining = 1u;
   assert(h2_gizclaw_e2e_run(&runtime, &config, &result) ==

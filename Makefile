@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help cfg-doctor format format-check bazel-build bazel-test bazel-test-downstream-consumer bazel-test-mqtt_public_broker_smoke bazel-test-gizclaw_h2peer_live_test bazel-test-gizclaw_pion_live_test bazel-coverage-report bazel-release h2loader-bin test-web guides-build guides-watch guides-preview
+.PHONY: help cfg-doctor format format-check bazel-build bazel-test bazel-test-downstream-consumer bazel-coverage-report bazel-release h2loader-bin test-web guides-build guides-watch guides-preview
 
 BAZEL_BIN ?= bazel
 GUIDES_WATCH_HOST ?= 127.0.0.1
@@ -8,7 +8,7 @@ GUIDES_WATCH_PORT ?= 5174
 GUIDES_PREVIEW_HOST ?= 127.0.0.1
 GUIDES_PREVIEW_PORT ?= 4173
 
-export BAZEL_BIN BAZEL_CONFIG RELEASE_SLICE RELEASE_VERSION RELEASE_INPUT_DIR
+export BAZEL_BIN BAZEL_CONFIG RELEASE_SLICE RELEASE_BATCH RELEASE_INPUT_DIR
 export RELEASE_STAGING_DIR H2_BAZEL_CONFIG
 export BAZEL_REMOTE_CACHE_URL BAZEL_REMOTE_CACHE_MODE
 export BAZEL_BUILD_REMOTE_DOWNLOAD_OUTPUTS
@@ -22,10 +22,10 @@ cfg-doctor:
 	@scripts/config/cfg-doctor.sh
 
 format:
-	@scripts/format.sh --fix
+	@scripts/config/format.sh
 
 format-check:
-	@scripts/format.sh
+	@scripts/config/format-check.sh
 
 bazel-build:
 	@scripts/bazel/bazel-build.py
@@ -35,15 +35,6 @@ bazel-test:
 
 bazel-test-downstream-consumer:
 	@scripts/bazel/bazel-test-downstream-consumer.sh
-
-bazel-test-mqtt_public_broker_smoke:
-	@scripts/bazel/bazel-test-mqtt_public_broker_smoke.sh
-
-bazel-test-gizclaw_h2peer_live_test:
-	@scripts/bazel/bazel-test-gizclaw_h2peer_live_test.sh
-
-bazel-test-gizclaw_pion_live_test:
-	@scripts/bazel/bazel-test-gizclaw_pion_live_test.sh
 
 bazel-coverage-report:
 	@scripts/bazel/bazel-coverage-report.py
@@ -65,3 +56,70 @@ guides-watch:
 
 guides-preview:
 	@scripts/guides/guides-preview.sh
+
+.PHONY: bazel-test-ios_pal_core_simulator_test bazel-test-android_pal_core_simulator_test
+bazel-test-ios_pal_core_simulator_test:
+	@scripts/bazel/bazel-test-ios_pal_core_simulator_test.sh
+
+bazel-test-android_pal_core_simulator_test:
+	@scripts/bazel/bazel-test-android_pal_core_simulator_test.sh
+
+.PHONY: bazel-test-ios_pal_storage_simulator_test bazel-test-android_pal_storage_simulator_test
+bazel-test-ios_pal_storage_simulator_test:
+	@scripts/bazel/bazel-test-ios_pal_storage_simulator_test.sh
+
+bazel-test-android_pal_storage_simulator_test:
+	@scripts/bazel/bazel-test-android_pal_storage_simulator_test.sh
+
+.PHONY: bazel-test-ios_pal_crypto_simulator_test bazel-test-android_pal_crypto_simulator_test
+bazel-test-ios_pal_crypto_simulator_test:
+	@scripts/bazel/bazel-test-ios_pal_crypto_simulator_test.sh
+
+bazel-test-android_pal_crypto_simulator_test:
+	@scripts/bazel/bazel-test-android_pal_crypto_simulator_test.sh
+
+.PHONY: bazel-test-ios_pal_http_simulator_test bazel-test-android_pal_http_simulator_test
+bazel-test-ios_pal_http_simulator_test:
+	@scripts/bazel/bazel-test-ios_pal_http_simulator_test.sh
+
+bazel-test-android_pal_http_simulator_test:
+	@scripts/bazel/bazel-test-android_pal_http_simulator_test.sh
+
+.PHONY: bazel-test-ios_pal_webrtc_simulator_test bazel-test-android_pal_webrtc_simulator_test
+bazel-test-ios_pal_webrtc_simulator_test:
+	@scripts/bazel/bazel-test-ios_pal_webrtc_simulator_test.sh
+
+bazel-test-android_pal_webrtc_simulator_test:
+	@scripts/bazel/bazel-test-android_pal_webrtc_simulator_test.sh
+
+.PHONY: bazel-test-ios_pal_audio_simulator_test bazel-test-android_pal_audio_simulator_test bazel-test-desktop_test
+bazel-test-desktop_test:
+	@scripts/bazel/bazel-test-desktop_test.sh
+
+bazel-test-ios_pal_audio_simulator_test:
+	@scripts/bazel/bazel-test-ios_pal_audio_simulator_test.sh
+
+bazel-test-android_pal_audio_simulator_test:
+	@scripts/bazel/bazel-test-android_pal_audio_simulator_test.sh
+
+.PHONY: bazel-test-ios_pal_wifi_simulator_test bazel-test-android_pal_wifi_simulator_test
+bazel-test-ios_pal_wifi_simulator_test:
+	@scripts/bazel/bazel-test-ios_pal_wifi_simulator_test.sh
+bazel-test-android_pal_wifi_simulator_test:
+	@scripts/bazel/bazel-test-android_pal_wifi_simulator_test.sh
+.PHONY: bazel-test-ios_pal_audio_decoder_simulator_test bazel-test-android_pal_audio_decoder_simulator_test bazel-test-wasm_pal_audio_decoder_browser_test
+bazel-test-ios_pal_audio_decoder_simulator_test:
+	@scripts/bazel/bazel-test-ios_pal_audio_decoder_simulator_test.sh
+
+bazel-test-android_pal_audio_decoder_simulator_test:
+	@scripts/bazel/bazel-test-android_pal_audio_decoder_simulator_test.sh
+
+bazel-test-wasm_pal_audio_decoder_browser_test:
+	@scripts/bazel/bazel-test-wasm_pal_audio_decoder_browser_test.sh
+
+.PHONY: bazel-test-ios_pal_display_simulator_test bazel-test-android_pal_display_simulator_test
+bazel-test-ios_pal_display_simulator_test:
+	@scripts/bazel/bazel-test-ios_pal_display_simulator_test.sh
+
+bazel-test-android_pal_display_simulator_test:
+	@scripts/bazel/bazel-test-android_pal_display_simulator_test.sh

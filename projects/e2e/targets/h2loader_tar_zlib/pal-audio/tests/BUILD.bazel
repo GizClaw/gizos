@@ -1,0 +1,37 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "board_sources",
+    hdrs = ["h2_pal_audio_board_test_sdk.h"],
+    textual_hdrs = [
+        "//projects/e2e/apps/pal-audio/app:include/h2_pal_audio_e2e.h",
+        "//projects/e2e/apps/pal-audio/app:include/h2_pal_audio_cases.inc",
+        "//projects/e2e/targets/h2loader_tar_zlib/pal-audio/amoled:main/main.c",
+        "//projects/e2e/targets/h2loader_tar_zlib/pal-audio/bk7258_v3_202405:ap/ap_main.c",
+    ],
+    includes = ["."],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = ["//libs/runtime", "//projects/h2loader/libs/h2loader"],
+)
+
+[cc_test(
+    name = name,
+    srcs = ["test_failure_recovery.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    defines = ["H2_PAL_AUDIO_BOARD_HOST_TEST"] + extra,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":board_sources"],
+) for name, extra in [
+    ("amoled_failure_recovery_test", []),
+    ("bk_failure_recovery_test", ["H2_PAL_AUDIO_TEST_BK"]),
+]]
+
+filegroup(
+    name = "recovery_test_inputs",
+    srcs = ["test_failure_recovery.c", "h2_pal_audio_board_test_sdk.h"],
+)

@@ -24,7 +24,6 @@ endif()
 set(H2PEER_PORTABLE_SOURCES
   "${H2PEER_ROOT}/src/providers/portable/address.c"
   "${H2PEER_ROOT}/src/providers/portable/agent.c"
-  "${H2PEER_ROOT}/src/providers/portable/base64.c"
   "${H2PEER_ROOT}/src/providers/portable/dtls_srtp.c"
   "${H2PEER_ROOT}/src/providers/portable/ice.c"
   "${H2PEER_ROOT}/src/providers/portable/ice_transport.c"
@@ -50,6 +49,7 @@ target_include_directories(h2peer
   PUBLIC
     "${H2PEER_ROOT}/include"
     "${H2PEER_REPO_ROOT}/libs/pal/include"
+    "${H2PEER_REPO_ROOT}/libs/atomic/include"
   PRIVATE
     "${H2PEER_ROOT}/src"
     "${H2PEER_ROOT}/src/providers/portable")

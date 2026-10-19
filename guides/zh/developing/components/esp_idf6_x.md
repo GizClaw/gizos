@@ -13,11 +13,38 @@ native_component_src/esp-idf6.x/
 ├── h2_es8311_audio_system/         # Hardware capability component
 ├── h2_es8311_es7210_audio_system/
 ├── h2_nfc_fm175xx/
+├── h2_lierda_modem/                # Explicit NT26-KCN B data-only UART PPP
 ├── opus_port/
 └── zlib/
 ```
 
 只有包含 ESP-IDF implementation source，或拥有独立 SDK dependency 或 registration identity 的 component 才放在这个 root。没有该 native contract 的 Bazel archive 由真实 source component 或 firmware composition owner 直接导入，不建立只转发 include 和 `.a` 的目录。具体 board 的 `sdkconfig.defaults`、partition、GPIO 和 wiring 仍然属于 `boards/<board>/<esp-chip>/` 或具体 image entry。SDK 配置的所有权分两层并按序合并：board 拥有完整的 canonical `sdkconfig.defaults`；layout 只拥有 partition/rollback 或注册变体（如诊断串口、E2E 内存保留）等 layout 专属项。ESP 没有具名 config profile，也没有 project-local SDK config；配置项不得替代 component 依赖声明。
+
+## Lierda data-only UART PPP
+
+`native_component_src/esp-idf6.x/h2_lierda_modem` 将 `libs/pal/providers/modem/lierda:lierda_modem` 接到 esp_modem 1.4.3 Generic UART DCE 与 ESP-NETIF PPP。最终 firmware 的 `firmware_lib_component` 必须包含 portable library，BSP 依赖 native component 并提供显式 SKU、独占 UART/TX/RX、实际 AT 波特率、PAL allocator/sync、APN，以及借用 context 的幂等 power callback。Power callback 拥有当前板的供电/PWRKEY/settling 和异常恢复；adapter 不解释某个 enable GPIO 的硬件意义，不包含私有 board 的引脚或电压渐升策略。
+
+Canonical board `sdkconfig.defaults` 必须启用 `CONFIG_LWIP_PPP_SUPPORT=y`、`CONFIG_LWIP_PPP_NOTIFY_PHASE_SUPPORT=y` 和 `CONFIG_LWIP_IPV4=y`；仅有 `REQUIRES esp_modem` 不代替产品配置。提供 PPP username/password 时还需要 `CONFIG_LWIP_PPP_PAP_SUPPORT=y` 和/或 `CONFIG_LWIP_PPP_CHAP_SUPPORT=y`，按 carrier 与固件配置编译实际认证协议。无认证 backend 时带凭据的 data open 返回 UNSUPPORTED，不降级为无认证拨号。IPv4/PPP 未编译时 adapter creation 不提供 DATA backend。
+
+普通 AT 默认使用模组的 115200 波特率。配置中的 baud 必须已经与模组实际 UART 匹配；adapter 不发送 IPR，不自动改速，不启用 RTS/CTS 或 CMUX。NT26-KCN B 硬件手册 Rev2.3 §4.2.1 列出的普通 AT/data 可配值截至 460800，921600 单独列为固件升级默认；不能从其他产品旧源码的提速调用推断普通 921600 PPP 已获厂商保证。其他速率必须由 consumer 结合具体模组固件单独核验。
+
+每次拨号先更新 Generic DCE 内部 APN/PDP context，再配置 host PPP auth、进入 DATA 并等待当前 SDK netif 真实 IPv4。API 接入 `MODEM_DATA` netif registry，不手动抢占 Wi-Fi default；产品按 PAL netif policy 选择 route，SDK保留自身 route-priority 与销毁时重选行为，接口变化后 reconcile DNS。Callback 过滤所属 netif；关闭中和没有当前 SDK IPv4 的迟到 GOT_IP 不恢复 OPEN。Lost IP/PPP failure 保留非 CLOSED 状态，防止发送 AT 混入数据。Data close 保留 COMMAND 已确认状态，每次通过公共 PPP quiescence helper 检查当前真实 DEAD，不使用历史停止通知作完成依据；清空 SDK 旧 IP 成功后才报告 CLOSED。
+
+整机 close 先调用 board power-off，再通过公共 `h2_esp_platform_ppp_quiesce` 在 TCPIP context 请求停止并确认实际 `PPP_PHASE_DEAD`，之后从普通 task 同步注销默认 event-loop handlers，最后销毁 DCE/netif/event group。电源关闭、DISCONNECT、历史 DEAD event 或 SDK `PPP_STARTED` bit 均不作为释放依据；data close 在 COMMAND 已确认后也使用同一公共终止检查。PPP quiescence 或注销失败时停止释放，保留 DCE/netif、callback 引用和 event group 供重试；callback 内调用 close/destroy 不受支持。真实 UART、SIM、APN auth、运营商网络、GPIO电源与串口改速须由 consumer 实机验收；`lierda_ppp_test` 使用 SDK fixture 编译真实 adapter source，属于 host 状态与 teardown 回归。
+
+Native 私有 C++ bridge 使用固定 esp_modem 1.4.3 公开导出的 [`include/esp_private/c_api_wrapper.hpp`](https://github.com/espressif/esp-protocols/blob/modem-v1.4.3/components/esp_modem/include/esp_private/c_api_wrapper.hpp)。该 header 明确用于 C-extension 开发者；adapter 使用 vendor 定义的 Generic UART wrapper 和公开 `DCE::command`，不复制 wrapper 布局，不使用 SDK `private_include`，不把 SDK type 暴露到生产 public header。普通 `esp_modem_at` 只保留最后信息行，raw C API 的单个 pass/fail 子串也不能完整表达多种 final result，因此这里用每次调用捕获的 collector；不使用全局当前命令指针。
+
+固定 SDK DTE callback 重放累计响应，collector 每次检查完整已收前缀；成功保留全部信息行并消耗 final result，随后 portable parser 拒绝重复或有歧义的 CPIN/CIMI 等信息。整次响应（包含 final framing）要求少于 512 字节且无嵌入 NUL；超长或异常时继续等完整结束标记，不在错误正文中途放弃，避免残留 OK 被下一条命令接受。只把完整行 `OK`、`ERROR`、`+CME ERROR:`、`+CMS ERROR:` 作为终态，信息字段内包含 OK/ERROR 不结束事务。SDK `DTE::command` 返回或超时前，在 line lock 下清除 callback；借出的输出及捕获状态不逃出同步调用。失败时输出为空，Error/CME 不作为成功信息交给 portable getter。已经发出命令但没有完整 final result（包括 timeout/SDK 接收失败）时，后续 AT/data open 返回 INVALID_STATE，直到 successful whole close/reopen；普通 data close 不解除这个命令 fence，迟到 ACK 不能作为新命令的确认。
+
+仅失败时输出 `LIERDA_FAIL`，字段是固定步骤/命令标签、SDK/PAL result，以及严格完整十进制 `0..65535` 或 TS27.007 §9.2.1 精确标准 verbose 白名单归一的 CME code；未知文本、大小写/后缀变种或超范围 CME 为 `-1`（unknown）。没有 AT 正文、回包文本、APN/认证数据、IMEI/IMSI，也不从未知 CME 推断没卡、忙或运营商故障。产品总体网络失败日志不能单凭一个 IO 码证明 DCE 构造失败，需结合这些具体调用边界和设备证据。
+
+`CMEE=2` 依据 TS27.007 §9.1 返回 verbose error。Native 在原始 command 返回 IO 后，只有完整有效 CME final result 才保存本次 typed metadata，并在每条命令（含拒绝/timeout）以及 open/close 前清空；记录属于当前 instance/operation mutex，不会把前一次 busy 借给后一次 generic ERROR、超时或损坏回复。Portable 仅消费刚完成的 CPIN metadata：14→WOULD_BLOCK，10→ABSENT，定义的 PIN/PUK requirement→LOCKED；13/15/unknown 保持 IO，错误正文仍清空。产品已有轮询可保持电源等待 busy→READY；无公共固定上电延时、阻塞等待、自动 PIN/复位、SIM 插卡假设或网络参数修改。
+
+固定诊断中的 `cme_present`、`complete` 布尔字段分别表明是否看到 CME final line、是否完整结束；仅 `cme_code=-1` 不能区分未知文本 CME 与 bare ERROR，不作为“忙/没卡”证据。这两个字段不包含回包文本。
+
+```sh
+bazel test --config=macos_arm64 //libs/pal/providers/modem/lierda:lierda_modem_test //native_component_src/esp-idf6.x/h2_lierda_modem:lierda_ppp_test //native_component_src/esp-idf6.x/h2_lierda_modem:lierda_ppp_no_auth_test
+```
 
 ## Chip 差异
 
@@ -45,6 +72,12 @@ Runtime-capable launcher 必须在 board Runtime configuration、`h2_runtime_ini
 
 Maintained Runtime scope 是使用 ESP32-S3 与 ESP32-P4 五种 public board layouts 的 H2Loader firmware targets。特定 App 的 route 只进入实际构建它的 target：`bleikcp-speed/*` 只属于 BLEIKCP speed client/server，modem routes 只属于 modem smoke。`standard` 与 ESP32-C5 `compile_only` images 不初始化 Runtime，因此不安装 task policy，也不属于此 contract 的 firmware validation scope。
 
+PSRAM-stack PAL task 的 entry 返回后先发出 completion semaphore，再 suspend 等待 join。默认 `esp_task_join()` 消费 completion 后调用 `vTaskDeleteWithCaps(handle)`；配置 `psram_stack_allocator` 时则挂起并等待 worker 离开所有 core，调用 `vTaskDelete` 后分别释放 caller stack 和 internal TCB。两条路径均由 joiner 同步回收 worker storage，再销毁 semaphore 和 PAL handle，不为每个结束的 worker 创建临时清理 task。仓库锁定的 ESP-IDF 实现会先 suspend 目标并等待它退出 running 状态，再执行删除和释放，因此 join 可以发生在 completion signal 与 worker 自行 suspend 之间，包括跨 core 的情形。Worker 发出 completion 后不再访问 PAL handle 或 entry context。
+
+Internal-stack task 仍在 completion 后调用 `vTaskDelete(NULL)`，由 idle task 回收原生 stack 和 TCB，避免 delayed join 长时间保留启动所需的 Internal RAM。两种 placement 都要求 caller 最终成功 join；失败的 join 保留 handle 供重试。没有 detached task contract：永不 join 原本就会泄漏 PAL handle 和 semaphore，PSRAM task 现在还会保留 suspended worker 的 stack 和 TCB，不能把它当成受支持的 fire-and-forget 用法。
+
+`//native_component_src/esp-idf6.x/h2_pal_core:task_policy_test` 在 host 上执行真实 trampoline 和 join，覆盖先 join 后完成、先完成后 join、completion 发布时立即 join、Internal self-delete、PSRAM join-delete、清理顺序和失败重试。SDK mock 只验证 PAL ownership；跨 core 的停止与释放依赖锁定的 IDF 实现，持续负载下的 task count、PSRAM 回收和启动资源仍需 target bench 验证。
+
 Netif provider 枚举现有 `esp_netif`，以 implementation index 优先、if-key 兜底
 建立稳定 identity，并映射 IPv4、MAC、DNS 与当前 default。没有 active netif
 时返回空 list/`NOT_FOUND`，不是 `UNSUPPORTED`。Portable `set_default` 只接受
@@ -60,6 +93,14 @@ reconcile。一个 provider-owned mutex 把 default read、baseline compare/upda
 event post 串行化，避免 ESP event-loop 与 modem task 的旧快照反向覆盖；Netif
 不接管 IDF route priority。Board/modem 在 interface 存活期通过 registration hook
 补充 PPP 等不能仅凭 if-key 可靠判断的 kind。
+
+同一次 TCPIP context reconcile 还负责 lwIP resolver 与当前 default 一致：在 `CONFIG_ESP_NETIF_SET_DNS_PER_DEFAULT_NETIF` 下，完整读取 default `esp_netif` 自己的 DNS server 后逐项写回全局 resolver（该接口没有 fallback server 时保留已配置的 global fallback）。Provider 在 TCPIP context 保存上一轮完整有效的 default 与实际生效 server 集合；接口切换、纠正全局 server，或实际生效集合发生变化时，恰好调用一次 `dns_clear_cache()`，并打一行 `H2_ESP_NETIF_DNS` WARN 日志。SDK 已经同时更新接口配置和全局 resolver 时，仍会通过前后快照检测变化；关闭 per-interface DNS 配置时只比较全局 resolver 集合，不改写 server。比较包含地址类型与有效地址，稳定状态不清缓存、不输出该日志。首次有效同步有 default 时清一次缓存；没有 default 时只建立 baseline。Monitor deinit 和新生命周期 init 在 TCPIP context 重置 DNS baseline，重复 init 保留活跃 baseline。默认接口查询失败、任一 DNS slot 读取失败或地址类型无效时，不改写 server、不清缓存、不提交部分 baseline；DNS 读取失败记录 WARN，已成功读取的默认路由事件仍按原合同发布，下次 reconcile 用完整有效集合恢复同步。
+
+这覆盖 DHCP client 清空全局 server、手动 default 后 IDF 不再在 GOT_IP 时补回 DNS，以及同一接口的 DNS 已被 SDK 更新的路径。清缓存会令当时仍在等待的解析立即失败；调用方按自己的重试策略重新解析。Wi-Fi provider 在 `esp_netif_create_default_wifi_sta()` 后另注册 `WIFI_EVENT_STA_CONNECTED` 专用 handler 调用 reconcile；它排在 ESP-NETIF 默认 handler 之后，能在其启动 DHCP client 清空全局 server 后补回（例如 STA 重新关联时 PPP 仍是 default）。解析失败或 TCP connect 失败本身不触发全局清缓存。
+
+Host fixture 编译实际 `h2_esp_platform_netif.c`，通过 `//native_component_src/esp-idf6.x/h2_pal_core:netif_dns_test`、`:netif_dns_ipv4_test` 和 `:netif_dns_global_test` 覆盖 SDK 同时更新两份 DNS、重复 reconcile、默认接口切换与丢失、global fallback、IPv4/IPv6、完整读取失败和 monitor 生命周期。Fixture 验证失效触发和 TCPIP context，不替代真实 DHCP/PPP 与 lwIP 在途查询的设备验收。
+
+公共 PPP quiescence 入口供 modem/board 在 transport 销毁前执行终止检查：在 TCPIP context 中请求关闭并确认真实 `PPP_PHASE_DEAD`。`DISCONNECT` 通知、历史 status event 或 esp_modem 的 `PPP_STARTED` bit 均不能作为释放依据：lwIP 的 `ppp_free()` 在非 DEAD phase 返回失败，ESP-NETIF 的销毁路径不会保留调用方资源。Quiescence 超时或 SDK 失败时，调用方必须保留 DCE、netif、event handler 和 event group，并在排除新的 PPP start 后重试；只有成功后才可依次注销 handler、销毁 transport 和 netif。该入口不依赖事件回调完成、不重新上电，未启用 PPP 的 image 返回 `UNSUPPORTED`。Host 的 `ppp_quiesce_test` 与 `ppp_quiesce_unsupported_test` 编译实际实现，覆盖已终止、协商中关闭、DISCONNECT 未终止、timeout/retry、SDK 错误、无效接口与 compile-time unsupported；真实 PPP/CMUX 开关仍需设备回归。
 
 ESP SIMCOM 的数据会话关闭与整机关闭是两个独立生命周期。`data_close` 让 modem 保持供电，通过 COMMAND/PPP 交互有界地退出数据模式；失败时保留非 `CLOSED` 状态供调用方重试。整机 `close` 不复用该交互路径：transport 先驱动配置的 modem power GPIO 到关闭电平，再只依赖 ESP 本机状态恢复 default netif、同步注销 PPP/IP event handler、销毁 DCE、PPP netif 和 event group。default netif 恢复失败会在销毁 PPP netif 前返回并保留 route ownership state，供下一次 close 重试。
 
@@ -94,9 +135,9 @@ ESP Preference provider 挂载独立 label `pref` 到私有 `/h2pref`，要求 p
 
 PAL backend 只处理 platform/SDK 能力。具体 display、audio codec、sensor、modem 和 GPIO wiring 由硬件 capability component 与 BSP 继续组装。
 
-NimBLE GATT server schema 的静态上限是 4 个 service、每个 service 3 个 characteristic；每个 characteristic 的值副本（最多 514 字节）以 `EXT_RAM_BSS_ATTR` 声明，板级开启 `CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY` 时位于 PSRAM，否则仍在内部 DRAM；超出的注册在改变 state 前返回 `H2_PAL_ERR_UNSUPPORTED`。Characteristic 与 NimBLE access callback 之间的 index 在注册时写入，不来自手写的常量列表——否则扩大表格会让靠后的槽位读成 index 0，把一个 characteristic 的读写派发到另一个上。
+NimBLE GATT server schema 的静态上限是 6 个 service、每个 service 3 个 characteristic，共 18 个 characteristic slot。容量按 Host 曾注册的不同 UUID 累计，不按当前活跃页面计数；management、配网、LuaLink、好友邀请、战队邀请和绑定窗口可以各保留一个独立 schema。第 7 个新 UUID 在改变 state 前返回 `H2_PAL_ERR_NO_MEMORY`；单次注册必须是一份 service declaration，超过 3 个 characteristic 的布局返回 `H2_PAL_ERR_UNSUPPORTED`。每个 characteristic 的值副本（最多 514 字节）以 `EXT_RAM_BSS_ATTR` 声明，板级开启 `CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY` 时位于 PSRAM，否则仍在内部 DRAM；值副本总共占 9252 字节，另有 UUID、callback 和 SDK metadata。Characteristic 与 NimBLE access callback 之间的 index 在注册时写入，不来自手写的常量列表——否则扩大表格会让靠后的槽位读成 index 0，把一个 characteristic 的读写派发到另一个上。
 
-`h2_pal_ble_unregister_gatt_service()` 在 GATT mutex 下仅清除指定 UUID 对应 service 的 read/write callback、user context 和 output-handle 指针，保留 slot 供同 UUID 重注册；其他 service 的绑定不变。仅在所有 service 都没有绑定回调时清除 `gatt_attached`，未知 UUID 返回 `H2_PAL_ERR_NOT_FOUND`。全局 unregister 仍解绑全部 service。
+`h2_pal_ble_unregister_gatt_service()` 在 GATT mutex 下仅清除指定 UUID 对应 service 的 read/write callback、user context 和 output-handle 指针，保留 slot 供同 UUID 重注册；其他 service 的绑定不变。同 UUID、同 characteristic 数量和 UUID 顺序重开时复用原 slot，即使 6 个 slot 都曾使用也不会因重开耗尽容量；改变已保留布局返回 `H2_PAL_ERR_INVALID_STATE`。仅在所有 service 都没有绑定回调时清除 `gatt_attached`，未知 UUID 返回 `H2_PAL_ERR_NOT_FOUND`。全局 unregister 仍解绑全部 service，不能用它回收某个页面的容量。
 
 启用动态服务时，component 在 Host 启动前通过 `ble_gatts_count_cfg()` 按上述容量预留资源，包含每个 characteristic 在每条连接及缓存中的 CCCD；容量定义只用于计数，不注册服务。NimBLE 的 connectable advertising 检查要求 CCCD 池仍有空闲项，仅靠动态注册的 heap fallback 不足以保证广播可以启动。仅按启动时已注册服务分配，会使随后打开的 BLE 配网服务耗尽初始池并返回 `H2_PAL_ERR_NO_MEMORY`。验证时需要覆盖先启动 Host、再打开配网、手机连接及通知、退出后重新打开；`CONFIG_BT_NIMBLE_MAX_CCCDS` 控制持久化 CCCD 数量，不能替代运行时池预留。
 
@@ -121,6 +162,10 @@ AES-GCM/ChaCha20-Poly1305、AES-CTR、MD5、HMAC-SHA1、P-256 和 ECDSA。
 实现不能 include `mbedtls/private/**`，也不能为缺失 operation 保留 private
 SHA fallback；portable libSRTP 等 consumer 因此可以注入同一完整 Crypto PAL。
 
+## App BLE command display name
+
+ESP App command adapter 优先把 Runtime 的 `ble_local_name` 传给公共 H2Loader BLE service；Runtime 未提供时使用 App command config 的可选同名字段，两者都为 NULL 时保持无名广播。非空名称在 service open 时复制，并在断开、共存 pause/resume 后保留。产品在自己的 Board／launcher 构造稳定名称，不修改 NimBLE backend 或公共 registry。Legacy 名称与 compact manufacturer identity 能同时装入 31-byte scan response 时保留两者；较长名称只携带管理 UUID 与完整名称，Host 通过连接后的 `status` 获取 board／capabilities 与 `device_uid`。显示名称不用于 package identity 校验。最终 consumer 必须用真实 scan response 和连接后 status 交叉验证名称、board 与 UID；host packing test 不代表手机显示已经通过。
+
 ## Hardware Capability
 
 ESP hardware component 把 portable driver、ESP-IDF driver API 和 component state 组合起来。例如：
@@ -136,9 +181,17 @@ Component 定义 config shape，BSP 填写当前 board 的 bus handle、GPIO、a
 
 `h2_es8311_audio_system` 与 `h2_es8311_es7210_audio_system` 的 playback worker 使用每次 speaker session 独立的 task。Control mutex 只保护 playback state、task handle、I2S/Mixer 生命周期检查和把一帧 Mixer 数据复制到 worker scratch；PCM conversion 与 I2S write 在锁外执行。Control mutex 与 I2S operation 的单次等待上限都是 100 ms；worker 失败后延迟 20 ms 重试。`stop_speaker` 使用 200 ms 总 deadline，在短锁内发布 stop 后立即关闭 PA，再等待 worker 清空真实 task handle。只有 worker 已退出时才能释放 Mixer、I2S 或 codec；join timeout 保留这些资源并拒绝新的 speaker session，后续 stop 可以继续收敛。成功 stop 结束当前 worker 并释放 session 标记；双 codec system 继续执行既有 idle teardown，单 codec system 保留共享 Mixer/I2S 到静态 system 生命周期。返回后旧 session 不再执行 I2S write。
 
+ES8311+ES7210 的 `config.aec_nlp_level` 同样允许 normal 与 aggressive FD 非线性处理，零初始化保留 normal；非法值在初始化前拒绝。可选 `aec_observe` 在 mic processing task 上同步收到完整帧的四路原始 lane mean-square、peak、clipped count 和 AEC output 统计。Lane 是实际 I²S buffer 的位置，不是 ES7210 MIC input 号码。可选 `aec_observe_enabled` 在同一 mic task/user 上按帧检查是否需要诊断；返回 false 时跳过 energy 计算和 callback，不改变 AEC PCM。未安装 observer 时不计算逐 lane power，AEC PCM 与既有输入／输出路径不变；observer 不保存 PCM、不阻塞、不分配或重入 Audio lifecycle，caller 用自己的同步保护复制值，并将 user 保留到 Audio System 成功 deinit。回采声道、gain、物理 speaker/mic 与业务安静窗口由 board/product 验收，不能仅因 direct-AEC handle 建立或 host fake 通过就断言声学消回声成功。
+
 两套 audio system 的 direct-AEC handle 与工作 buffer 都在 component 初始化成功时建立，并归静态 Audio System 生命周期所有。`start_mic` 只 reset 既有 AEC state；`stop_mic` 与 start partial failure 不释放 AEC。Board composition root 必须在 `h2_runtime_deinit()` 之后调用自身的 Runtime deinit；该入口先调用对应 audio-system deinit，停止并 join microphone/speaker worker，再释放 queue、Mixer、I2S、codec 和 direct-AEC，最后才释放 Audio 依赖的其他 Board provider。Board Runtime deinit 的每个 cleanup step 相互独立：audio-system deinit 返回错误不跳过 HTTP provider destroy、cached Runtime config 清零和 filesystem unmount，入口把第一个错误返回给调用方。Audio-system deinit 是幂等操作；worker 未能在有界 deadline 内退出时返回错误并保留剩余资源，允许调用方安全重试。AEC disabled 时保持现有 fallback。`h2_es8311_audio_system` 的 `config.aec_nlp_level`（`H2_ESP_ES8311_AEC_NLP_NORMAL` 或 `H2_ESP_ES8311_AEC_NLP_AGGRESSIVE`）直接映射到 ESP-SR direct-AEC 的 `nlp_level`；init 拒绝其他取值。麦克风 PGA gain 写入 `ES8311_REG_SYSTEM_14`，由 `h2_esp_es8311_mic_gain_register()` 把 `mic_gain_db`（0-30 dB）换算成 datasheet 定义的 3 dB 步进寄存器值，component 不再使用与该寄存器语义不符的旧映射表。
 
 AMOLED Board 在 `h2_esp_board_runtime_config()` 之前，通过可选的 `h2_esp_board_audio_configure()` 和 `h2_esp_board_display_configure()` 声明 workload-owned 调优：前者覆盖 I2S DMA descriptor/frame 数、`mic_gain_db`、mic queue frame 数和 `aggressive_aec_nlp`；后者覆盖 SH8601 面板 `pclk_hz`（`0` 保留 component 默认）。两者都只在对应资源（audio system/panel IO）尚未初始化时接受调用，之后调用返回 `H2_PAL_ERR_INVALID_STATE`；重复调用以最后一次为准，字段校验与该 lifecycle guard 都拆成独立的纯函数（`h2_esp_board_audio_config_is_valid`/`_may_apply` 与 display 对应函数），由 host test 直接覆盖。Board 保留未覆盖字段的既有默认值，不引入 Board 级常量表之外的隐式状态。这两个 API 不暴露 mic/speaker task 优先级或绑核：按本节前述约定，portable task name 到 absolute priority、core affinity、minimum stack 的映射只属于最终 firmware target 的 policy table，`h2_es8311_audio_system_config_t` 的 `mic_task_priority`/`mic_task_core_id`/`speaker_task_priority`/`speaker_task_core_id` 继续由 Board 按既有硬编码值传入，不作为 workload 可调项。
+
+### ES8311 control-port startup
+
+单 ES8311 audio system 的 lazy prepare/start 先启用 I2S 时钟，再完成 codec control-port 就绪握手，随后才写入 clock/reset/ADC/DAC 配置和启动 worker。握手使用已有的 `0x44=0x08` noise-immunity 写入，保留 ready codec 的两次初始写入；该序列来自 [Espressif ES8311 driver](https://github.com/espressif/esp-adf/blob/release/v2.x/components/esp_codec_dev/device/es8311/es8311.c#L514-L517)。首次访问可能连续返回 `ESP_ERR_INVALID_RESPONSE` 或 `ESP_ERR_TIMEOUT`，因此只在握手阶段按 20 ms 间隔重试，并用一个包含每次 I2C 等待的 2 秒总 deadline 限制初始化。已就绪的硬件没有固定 sleep；PA 和 mic/speaker worker 在握手完成前保持关闭。持续无应答在 deadline 后返回 `H2_AUDIO_ERR_IO`，其它错误直接返回既有映射结果，握手之后的配置写入不使用此重试策略。I2C API 的 timeout 参数始终以毫秒传入。
+
+`codec control not ready`、`codec control ready` 和 `codec control readiness timeout` 日志分别记录等待、恢复和耗尽 deadline。Host regression 覆盖连续 NACK/timeout 后恢复、永久无应答、tick rollover、正常热启动无额外延迟，以及首写和后续配置写入的真实错误。真机验收须分别覆盖断电后的首次 microphone/speaker 启动和保留供电的软件重启，不能用软件重启代替冷上电。
 
 ## Library 与 Third-party Integration
 
@@ -149,6 +202,10 @@ Bazel 分别使用 Xtensa windowed ABI 或 RV32 `ilp32f` toolchain，将 `libs/p
 DevKit `libco-smoke` 从 `projects/e2e/apps/libco` 编译 portable App，并直接以 pinned `main_task` 为一个 executor root；启动和每次 context-switch boundary 都拒绝 task/core 变化。FreeRTOS 仍可在 coroutine stack 上抢占这个 outer task；因此 backend 必须在 1 kHz tick 与普通 interrupt 下保持完整 outer task state。Coroutine 自己不能调用 blocking RTOS/PAL operation；Runtime sleep、log、allocation 和 H2Loader lifecycle 只能在所有 coroutine 已返回 root 后执行。FreeRTOS high-water mark 和 stack watchpoint 只描述 outer task，不覆盖 libco 单独分配的 coroutine stack。
 
 `h2_audio_mixer`、`h2_bleikcp`、`h2_iostreamikcp`、`h2_pixa`、`h2_mp4_decoder`、`h2_tinyh264`、`h2_utils`、`h2_yyjson`、libco、PAL 和 CoreHTTP 等 portable libraries，都由消费它们的 firmware entry 在同一个 `firmware_lib_component` 中列举；跨平台 library package 和 `h2_pal_core` 不定义 image composition target。PIXA Games 不创建逐游戏 native component wrapper；project-owned game library 仍由对应 firmware entry 完成 archive handoff。静态 archive 只按最终链接中的真实未解析符号抽取 object，不使用全库 retention。`lvgl_port`、`h2_esp_audio_decoder`、`opus_port` 和 `zlib` 是 SDK-dependent source component，由相同 firmware graph 声明 direct source、header 与 metadata，并继续由 IDF 使用最终 configuration 编译。ESP32 的 AEC 由 `esp-sr` managed component 提供，不创建 SpeexDSP archive adapter。GizOS 的跨平台 API 仍然属于对应 library owner。
+
+ESP Net 的 UDP source-address bind 使用真实 lwIP `bind` 和 `getsockname`；失败时释放新 socket 并保持输出无有效 handle。Raw TLS 保留 ESP-IDF 在证书 bundle attach 时安装的验证 callback，由该 callback 继续决定 bundle membership、签名信任与 SDK flags，再对每个真实 peer-chain certificate 使用校准后的 PAL wall time 校验有效期，即使 SDK 未启用内置日期检查或不保留完成后的 chain，`REQUIRED`/`DEFAULT` 也不能接受 expired/future certificate；时钟不可用时 fail closed。ESP-IDF cross-signed bundle 的 CA lookup 可以生成只含 subject/SPKI、没有 DER 与有效期字段的信任锚；只有 bundle delegate 存在、depth 大于 0、raw 为空且两端 year 都为 0 的此类锚不重复添加日期错误，SDK 的未信任 flags 和 fatal result 始终保留，真实叶证书、intermediate 与显式 PEM CA 不使用该例外。校准时钟不可用仍失败。显式 `INSECURE_TEST_ONLY` 保持测试专用行为，无效 verify enum 返回 `INVALID_ARG`。独立 Net/TLS E2E 对已有 ICMP callback 执行真实 echo，不能将支持项标成未评估。
+
+使用默认证书包时，日期检查必须组合 `esp_crt_bundle_attach` 已安装的信任/签名回调，不能覆盖它。ESP bundle 的合成父证书只含 subject/public key，没有 DER 和有效期；只有经过原回调且 `depth > 0`、无 DER、两端年份均为零的合成父证书免于重复日期检查，仍保留其信任失败 flags。真实 leaf/intermediate、显式 CA 和所有已有验证失败保持严格校验。
 
 ## Build Validation
 
@@ -295,3 +352,75 @@ bazel test //libs/drivers/audio/es8311:volume_test \
 `//projects/example/targets/h2loader_tar_zlib/`。分别使用 `--config=esp32s3` 和
 `--config=esp32p4`。ESP32-C5 的 ES8311 消费路径目前没有可构建的板级 target，
 因此该 codec 路径标记为 SKIP；C5 通用 CI 通过也不证明其 codec 集成或硬件行为。
+
+NimBLE 的 extended-advertising 编码缓存与扫描 UUID 列表，以及 H2Loader App 的 serial client／iKCP framing state 只由任务访问，使用 `EXT_RAM_BSS_ATTR`；允许 external BSS 的 target 将它们放在 PSRAM，其余 target 保持 SDK 的普通 BSS 布局。UART/BLE driver 的 ISR storage、DMA ring、atomic backing、safe-call worker 与 safe I/O scratch 继续保留其 Internal allocation contract。最终 firmware 的 ELF/map 必须核对这些对象的实际地址；host fixture 只验证行为，不证明设备上的内存区域。
+
+## PSRAM arena
+
+`h2_pal_core` 的 `h2_esp_platform_arena.h` 为公共 `libs/mem_arena` core 提供 PSRAM reservation、fallback 与 FreeRTOS lock adapter。Core 将调用方提供的一块内存按 `small_pool_bytes` 分成独立的 small/large TLSF；请求大小不超过 `small_request_max` 时使用 small，否则使用 large。某池无法满足请求时先尝试另一池，只有两池都无法服务时才考虑可选 system spill；`small_pool_bytes=0` 保留单一 large pool。Board 在 Wi-Fi、UI、音频等 consumer 初始化之前指定预留字节数和诊断名称，持有 opaque instance，向需要降低碎片的 consumer 借出标准 Memory PAL；Runtime 默认 allocator 不被全局替换。`spill_to_system` 默认 `false`：不设置 fallback，耗尽返回 NULL，由提供 result code 的 consumer 传播 NO_MEMORY，避免污染 Wi-Fi/lwIP/IDF 共享的系统 PSRAM heap；只有显式设为 `true` 才允许 system spill。Reservation 与启用后的 spill 都从 `MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT` 分配，控制对象和 FreeRTOS 静态 mutex storage 位于 Internal RAM。Mutex 具有优先级继承，所有操作只允许普通 task context，不使用 spin lock。
+
+每块保存原始分配基址和请求字节数，按块头记录的 pool/fallback owner 路由 free/realloc；realloc 可在 TLSF 与 PSRAM heap 间双向迁移，并在底层移动后重新对齐有效数据。失败保留旧块；零字节释放并返回 NULL。创建失败清理部分资源并返回 NULL，由 board 决定是否继续使用默认分配器。销毁前调用方必须停止并 join 所有 borrower；仍有 arena 或 fallback 块时返回 INVALID_STATE，保留实例。
+
+Stats 在 mutex 下分别对 small/large 取一致快照；每池 reserved 包括元数据，live/peak 只统计实际由本池服务的请求 payload，`borrowed_count` 累计替另一请求类别成功服务的 alloc/realloc 次数，free 不递减。Fallback_live 单列，fallback_count/bytes 按原请求类别累计两池都未满足后的回退尝试（含失败或未配置 fallback），largest 记录本请求类别以及本池成功接收的借用的最大请求。普通 stats 日志由调用方在查询返回后输出，不在 allocator 锁内调用 Log PAL。`h2_esp_platform_arena_mem()` 返回的 Memory PAL 由 ESP arena 包装，`user` 指向 ESP arena 而非 portable core；需要块检查时使用 `h2_esp_platform_arena_core()` 借用 core，NULL arena 返回 NULL，借用不得超过 destroy。
+
+非零 alloc/realloc 请求最终返回 NULL 时，ESP 包装层在 core 操作解锁后输出 `H2_ARENA_REFUSED` WARN，字段包含 `op`、`bytes`、`count`、small/large 的 live/free/largest、PSRAM free/largest 和 Internal free。计数按 arena 实例独立，前 24 次及其后每 64 次输出；零字节释放和 free 不输出，host 构建不编译日志。该日志也覆盖默认禁止 spill 的池耗尽以及显式 spill 仍失败的情形。
+
+启用 spill 的 ESP arena 在创建时尝试从 PSRAM 分配每实例 512 项的有界诊断表，记录 live spill 的系统基址、含 arena header/padding 的申请字节数和至多六帧调用栈；reservation 不进入表。表分配失败或表满只丢弃追踪，分配行为不受影响；`untracked` 是累计丢弃的追踪事件数，不是 live block 数。成功 realloc 保留原始调用帧并更新地址、字节数；失败保持原条目，free 和迁回池内删除条目。表及计数受该 arena mutex 保护，销毁和创建失败均释放表，不共享跨实例状态。Xtensa 使用 SDK frame walking，其他 ESP 架构保留块统计并报告零 PC；host 普通构建编译掉诊断表、回溯和日志。
+
+`h2_esp_platform_arena_log_spills()` 在 mutex 下抓取快照，释放锁后输出 `H2_ARENA_SPILL_LIVE` 和按字节数降序排列的 `H2_ARENA_SPILL_SITE`。分组使用完整的已捕获调用帧，至多输出 24 组；其余已追踪条目的字节数归入 `other`，不从总量中扣除。快照和分组使用固定栈空间，不在查询时分配堆内存；每实例每分钟最多一次，`force=true` 可立即输出，NULL arena 是 no-op。调用方必须保证 arena 在整个调用中存活。Spill allocator 失败在当前 arena 锁内通过 SDK `ESP_LOGW` 输出 `H2_ARENA_SPILL_FAILED`，包含操作、请求大小、失败次数和 PSRAM/Internal free/largest；每实例前 16 次及其后每 64 次输出。未启用 spill 的正常耗尽只输出上述 `H2_ARENA_REFUSED`。
+
+Host SDK fake tests 验证默认耗尽不调用系统 heap、显式 spill、owner 路由、alignment、双向迁移、realloc 失败原子性、统计分离和创建失败清理。`arena_spill_test` 以 Xtensa SDK stubs 编译并执行 ESP 诊断路径，`arena_spill_riscv_test` 验证无 Xtensa 回溯时的路径；覆盖 realloc/free 追踪、表满与重用、表分配失败、多实例独立统计、限频及回溯提前结束或损坏时的尾部清零。PSRAM/XIP 压力、实际调用帧质量与调度延迟仍需设备测量。
+
+```sh
+bazel test //libs/mem_arena/... //native_component_src/esp-idf6.x/h2_pal_core:all //libs/lvgl:arena_test --test_output=errors
+```
+
+ESP task provider 从 `h2_esp_task_policy_config_t.psram_stack_allocator` 借用可选 allocator。解析后的 PSRAM policy 使用该 allocator 分配栈、用 internal 8-bit RAM 分配 `StaticTask_t`，并通过 `xTaskCreateStaticPinnedToCore` 创建任务；internal policy 和 NULL allocator 分别保留原有普通 SDK 与 WithCaps 路径。栈或 TCB 分配失败时完整释放、返回 NO_MEMORY 且不发布 task。Join 等待 entry 返回，挂起任务并确认所有 core 均未运行它，再 `vTaskDelete`，最后各释放一次栈与 TCB；allocator 生命周期覆盖所有 task 的成功 join。
+
+生成的 `h2_esp_target_task_policy_install_with_configure()` 同步把目标 resolver 配置交给 board callback，board 可先创建 arena，再复制配置并设置 `psram_stack_allocator`，最后调用 `h2_esp_platform_task_configure()`。无参数 installer 保留默认配置路径；生成器不依赖私有 board。
+
+Arena 的诊断查询与普通 stats 分离：`h2_mem_arena_inspect()` 显式遍历池才计算 free total、largest raw free block 和 consumed；`h2_mem_arena_block_info()` 查询仍存活且由调用方排除并发 free/realloc 的块。这些按需 inspection 不增加 instance/header state；ESP spill 追踪由独立的可选诊断表负责。每块 consumed 包含 arena header、alignment 和 TLSF block/header；fallback 值是下界，固定控制元数据不归属某个块。生成的 task policy 额外提供 `*_stack_accounting` filegroup，供 desktop consumer 复用相同的栈尺寸/region 决策；它不参与 ESP firmware 的源码编译或改变其行为。
+
+ESP Wi-Fi admission 与 WebRTC/H2Peer singleton 各使用一个文件级 static flag backing，由统一的 `H2_ATOMIC_DEFINE_STATIC` 定义普通 static 对象；链接布局把 backing 放在内部 DRAM，不需要 `DRAM_ATTR`，也不在宏中判断平台。它们不额外增加 board Runtime init/shutdown。Runtime/connection 等动态 owner 的 atomic wrapper 仍可位于 PSRAM，其实际 C11 值必须由 provider 在实例 init 时分配到内部 RAM，失败后回滚并返回 `NO_MEMORY`；`flag` 与 int/bool/pointer 的生命周期和存储模型一致。所有 flag 直接对各自存储执行 C11 交换/写入，没有 provider 级全局锁或 mux。
+
+### Storage 资格
+
+DevKit 的 `pal-storage` managed App 使用板载 Flash 上的 LittleFS 与独立 pref store，不需要 SD 卡。LittleFS 的目录 clear 与目录 remove 在既有 internal-stack safe-call 中完成；空长度 read/write 按 public wrapper 允许 NULL buffer。测试只清理 `/data/pal-storage` 子目录，整分区 format 仍属于显式 board policy。真实两次 boot 的资格结果位于 `projects/e2e/targets/h2loader_tar_zlib/pal-storage/devkit/evidence`。
+
+Crypto 的 `random(NULL, 0)` 是成功 no-op；ESP adapter 在零长度时不调用要求非空 buffer 的 `esp_fill_random`，避免合法 PAL 边界触发 SDK assert。`pal-crypto` DevKit E2E 覆盖该边界并验证完整 15 操作 / 22 case，同一 App 还在其他五个平台执行。
+
+X25519 raw key agreement 对格式错误或低阶远端公钥的 PSA INVALID_ARGUMENT 转换为 PAL FORMAT；失败路径清零 shared-secret 输出，成功路径仍校验并拒绝全零 shared secret。
+
+`pal-ipv6` 的 IPv6、SLAAC 与地址槽位设置由 DevKit/AMOLED 的 canonical `sdkconfig.defaults` 声明。诊断日志由板级 H2Loader `sdkconfig.ipv6-client.defaults`/`sdkconfig.ipv6-fixture.defaults` registration variant 提供；fixture 的 24 sockets、12 active TCP、8 listeners 与 8192-byte TCP/IP stack 只属于该 fixture 的板级 memory variant，不扩大一般 board budget。Target 用既有 `layout_files` 的 `partition`、`project_support_files` 与 DevKit USB `support_files` 明确列举源文件，runner 仅复制这些声明的板级支持文件到隔离 project；工程目录不再拥有 SDK defaults，也不增加 config-profile registry。SDK 原有 per-interface loopback 与 SNI 默认保持开启。
+
+前置 Net 实现阶段的 DevKit qualification adapter 仅准备 Net 用例环境，不宣称 public Wi-Fi PAL 已实现 IPv6-only readiness、reconnect 或 saved-credential 生命周期。本 Wi-Fi 实现阶段已用公共 Wi-Fi provider 替换 adapter 的直接 SDK 初始化：provider 在 STA 关联时初始化 IPv6/SLAAC，DevKit entry 只调用公共 Wi-Fi PAL，并在有限预算内等待 preferred 地址可用；disconnect/reconnect cleanup 由 Wi-Fi provider 拥有。ESP Net 保留 scope、按地址族查询 DNS，并通过实际 netif index 执行接口绑定。硬件资格仍要求明确端口/UID、可达 IPv6 夹具和 Loader/P1、Settings、Stage、coredump 记录，不能由 package build 代替。
+
+### Flash-safe I/O 阶段诊断
+
+`H2_ESP_IO_PHASE_DIAGNOSTICS` 是默认 OFF 的原生 CMake 诊断选项。调用方需在最终 firmware rule 的 `cmake_variables` 逐项允许该名称，再用`--define=H2_ESP_IO_PHASE_DIAGNOSTICS=ON` 显式启用；portable `cc_test`的宏定义不代表 SDK image 已启用。OFF 时不编译计时字段、时钟读取或日志，不改变 worker 的 priority、core、stack、context 容量或 16 KiB scratch。
+
+ON 时只对至少 100 ms 的操作输出 `H2_ESP_IO_PHASE` 数值记录。FS 操作号1–14 依次是 mkdir/open/read/seek/write/sync/close/stat/remove/rename/mount/unmount/format/clear；Pref 操作号 1–8 是 prepare/get/set/remove/clear/list/write-marker/read-marker。记录不包含路径、namespace、key、值、buffer 内容或指针。时间以 boot monotonic 微秒表示，日志输出发生在终点取时之后、所有外层 FS/scratch 锁释放之后。
+
+`fs_wait_us`、`scratch_wait_us` 和 `shared_wait_us` 分别记录 FS mutex、scratch mutex 与共享 SafeCall mutex 的等待。`dispatch_us` 从 request 提交到 worker 开始 callback；`native_us` 是 callback 的 wall time，包含其内部stdio、pref store 与调度等待，并不是纯 flash 或 CPU 耗时。`wake_copy_us`从 callback 返回到 caller 收到完成信号，包含 context copy 和唤醒。`direct_calls` 区分 internal-stack 直接调用；它不经过共享 dispatcher。READ/WRITE 在保留原 4096-byte 分块与 scratch 持有范围的同时累加各块计数，`native_max_us` 保留最慢 callback。Pref 保留整个原 store 操作和原子写入步骤，不为计时拆分 transaction。Pref 数字从内部 I/O wrapper 开始，不包含其外层Preference provider mutex 等待；VFS 内部锁仍在 callback wall time 内。READ/WRITE 的 `wall_us` 从 scratch acquire 之前开始；其他 FS 操作从内部 `littlefs_run_safe` 开始，OPEN 之前的 path translation 与 file-wrapper calloc 不在其中。因此总 `wall_us` 不是完整 PAL Open 时间，还包括该计时范围内的初始化、普通拷贝与 wrapper 工作，不能把嵌套记录相加或据缺失的快记录推定操作未执行。
+
+这是定位工具；ON 的时钟和输出会影响调度，记录不是硬件资格结果。实际用例仍需保留完整 CASE、原门限、checked canonical 输出与真实 cleanup 证据。
+
+### Positive Time delays
+
+ESP Time PAL converts milliseconds to FreeRTOS ticks with ceiling division using 64-bit arithmetic. Every positive delay blocks for at least one tick; zero preserves the explicit yield. This keeps short capture/playback backoff from becoming a CPU spin at a 100 Hz tick rate. Unrepresentable tick counts return INVALID_ARG without delaying; wall-clock retention and calibration are unchanged. Host tests cover 100 Hz and 1000 Hz boundaries, including UINT32_MAX.
+
+## AEC Calibration PAL observation
+
+`h2_es8311_es7210_audio_system` 在 Audio PAL 提供 `set_aec_observer`：只在实际 AEC 可用且 mic／speaker worker 都已停止并 join 时复制或撤销 descriptor；运行中或 shutdown pending 时拒绝。Capture callback 在完整 AEC 处理之后同步借用同帧 raw packed ADC、AEC 实际使用的 gain-scaled mono reference 和 processed mono output；sequence 每次 mic session 重置，mic mask 包含所有实际 AEC microphone lanes。Playback callback 仅在完整 I2S DAC write 成功后观察混音后的 PCM，partial/error write 不交付 PCM，但通过 per-worker error callback 显式报告失败。两个 worker 的 callback 可互相并发，停止对应 worker 后才允许 caller 读取其测量；native SDK 类型不进入公共校准 App。
+
+Mic gain setter 调整 active microphone PGA 并保留 board trim；AEC 的独立 reference ADC input 不参与 mic gain 上调，实际增益回读与失败 rollback 合同保持有效。校准只搜索 board 定义的百分比范围，不更改 codec 模拟上限、raw lane mapping 或 reference gain。原非内容 ES7210 energy observer、正常／aggressive NLP 与按需统计仍可独立使用；新 PAL observer 不替代这些已有接口，也不把处理 metadata 当作物理验收。
+
+公共 `projects/e2e/apps/aec-calibration` App 和验证器只消费 PAL。生产 target 必须另提供独立真实近端声源与同设备原始日志、package/image、摆位和输入电平证据；缺失时 `UNSUPPORTED`。默认分频、两幅度探针的推荐仅适用于本次实测条件，真实重叠语音、满幅压力、长期运行和 provider 的硬件 ADC drop 资格仍需独立证据。
+
+### Wi-Fi IPv6 生命周期
+
+STA id-specific observer 位于 ESP-NETIF 默认 connected handler 之后，在 TCP/IP 上初始化本次关联的 IPv6；测试/产品 entry 只调用公共 Wi-Fi PAL。事件 loop 拥有关联和 IP 状态，GOT_IP4/GOT_IP6 对 netif 与当前 peer 重新核对，周期地址事件补齐 preferred 地址过期/IPv4 失租。旧关联 IPv6 与 ND cache 在断开和新关联开始时清理；地址只从实际 preferred 列表选择，ULA 与其他非 link-local 单播都可完成就绪。公共 station status、system event 和 Runtime state 的 IPv4/IPv6 内容一致，IPv4 `ip_valid` 保持原含义。原生 board defaults 开启 IPv6 与 AUTOCONFIG；ESP32-P4 的 unsupported Wi-Fi 路径不因此获得 radio capability。
+
+### AP 停止与重试
+
+AP stop 先请求 SDK 切回 STA mode；转换失败时保留 active、netif、client 列表与公开状态，并返回原有映射错误，后续 Stop 重新执行 SDK 请求。只有 SDK 接受停止（包括已经未初始化或未启动）后才提交 stopped 状态、销毁 AP netif 并发布 stopped 事件。AMOLED iperf adapter 在此之前先撤销 RA timeout/raw PCB；provider 与 adapter 的组合回归编译生产 stop 函数，并注入真实 SDK 调用边界的失败后重试。

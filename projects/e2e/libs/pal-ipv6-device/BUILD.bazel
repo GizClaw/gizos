@@ -1,0 +1,39 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
+load(":fixture_config.bzl", "ipv6_fixture_config")
+
+package(default_visibility = ["//visibility:public"])
+
+h2_tasks(
+    name = "tasks",
+    tasks = [
+        "pal-ipv6/e2e/runner",
+        "pal-ipv6/e2e/http-peer",
+    ],
+)
+
+ipv6_fixture_config(name = "fixture_config")
+
+cc_library(
+    name = "config",
+    hdrs = [":fixture_config"],
+    includes = ["include"],
+)
+
+cc_library(
+    name = "runner",
+    srcs = ["src/device.c"],
+    hdrs = [
+        "include/h2_pal_ipv6_device.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    deps = [
+        ":config",
+        ":tasks",
+        "//projects/e2e/libs/pal-ipv6-runner:fixture_client",
+        "//projects/e2e/libs/pal-net-tls-runner:fixture_client",
+    ],
+)

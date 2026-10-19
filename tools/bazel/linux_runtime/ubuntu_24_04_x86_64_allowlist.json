@@ -11,6 +11,7 @@
     "libXrandr.so.2",
     "libasound.so.2",
     "libavcodec.so.62",
+    "libavformat.so.62",
     "libavutil.so.60",
     "libbsd.so.0",
     "libc.so.6",

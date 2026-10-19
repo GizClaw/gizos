@@ -203,6 +203,12 @@ int h2_bk_fixed_select(uint32_t partition_id) {
     if (rc != H2_PAL_OK) return rc;
     if (!read_request(&current)) return H2_PAL_ERR_IO;
     if (partition_id == H2_BK_H2LOADER_PRIMARY_PARTITION_ID) {
+        /* An unconfirmed App explicitly returning to Loader must retain its
+         * consumed trial. CP already boots Loader for this record; erasing it
+         * would hide the failure and let AUTO reinstall the same Stage. */
+        if (layout->app_table && h2_fixed_request_failed(&current, layout)) {
+            return H2_PAL_OK;
+        }
         /* Loader selection clears any request and the failed-attempt record. */
         if (request_is_blank(&current)) return H2_PAL_OK;
         rc = program(layout->control_offset, NULL, 0u, 1);

@@ -66,6 +66,10 @@ struct h2_libco {
     bool faulted;
     uint64_t next_wait_order;
     size_t live_pal_objects;
+    size_t live_pal_queues;
+    size_t live_pal_mutexes;
+    size_t live_pal_semaphores;
+    size_t live_pal_conditions;
 };
 
 bool h2_libco_internal_root_context(const h2_libco_t *core);
@@ -76,6 +80,10 @@ h2_libco_result_t h2_libco_internal_wait_deferred_cancel(
 h2_libco_result_t h2_libco_internal_wake_one(
     h2_libco_t *core, uintptr_t wait_key, h2_libco_task_t **out_task);
 h2_pal_result_t h2_libco_internal_to_pal(h2_libco_result_t result);
+/** Release a successfully joined private PAL native task. Public native task
+ * handles must retain their rejected tombstone until executor destruction. */
+void h2_libco_internal_release_joined_task(h2_libco_t *core,
+                                           h2_libco_task_t *task);
 void h2_libco_internal_init_pal_apis(h2_libco_t *core);
 const h2_pal_time_vtable_t *h2_libco_internal_time_vtable(void);
 const h2_pal_queue_vtable_t *h2_libco_internal_queue_vtable(void);

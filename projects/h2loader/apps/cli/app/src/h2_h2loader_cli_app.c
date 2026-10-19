@@ -1,4 +1,5 @@
 #include "h2_h2loader_cli_internal.h"
+#include "h2_bleikcp.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -235,10 +236,12 @@ static const char help_text[] =
     "                [--post-delay SECONDS] [--no-ble] COMMAND ...\n\n"
     "commands: package golden check scan status stats memory send send-url\n"
     "          stage wifi reboot monitor coredump bleikcp-speed\n\n"
+    "stats:    stats [--data-checksum] (wait for installed-data checksum)\n"
     "reboot:   reboot app|loader|upgrade [--monitor]\n"
     "wifi:     wifi scan [--limit <1-16>] [--timeout-ms <1-30000>]\n"
     "          wifi connect <ssid> <password>\n"
     "          wifi disconnect\n"
+    "          wifi status\n"
     "coredump: coredump status|erase\n"
     "          coredump dump [--output <file>]\n";
 
@@ -557,6 +560,8 @@ static int scan_command(
 }
 
 static h2_h2loader_host_command_t command_kind(int argc, const char *const *argv) {
+    if (argc == 2 && strcmp(argv[0], "stats") == 0 &&
+        strcmp(argv[1], "--data-checksum") == 0) return H2_H2LOADER_HOST_COMMAND_DATA_CHECKSUM;
     if (argc == 1 && strcmp(argv[0], "status") == 0) return H2_H2LOADER_HOST_COMMAND_STATUS;
     if (argc == 1 && strcmp(argv[0], "stats") == 0) return H2_H2LOADER_HOST_COMMAND_STATS;
     if (argc == 1 && strcmp(argv[0], "memory") == 0) return H2_H2LOADER_HOST_COMMAND_MEMORY;
@@ -567,6 +572,7 @@ static h2_h2loader_host_command_t command_kind(int argc, const char *const *argv
     if (argc == 2 && strcmp(argv[0], "reboot") == 0 &&
         strcmp(argv[1], "upgrade") == 0) return H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE;
     if (argc == 2 && strcmp(argv[0], "stage") == 0 && strcmp(argv[1], "abort") == 0) return H2_H2LOADER_HOST_COMMAND_STAGE_ABORT;
+    if (argc == 2 && strcmp(argv[0], "wifi") == 0 && strcmp(argv[1], "status") == 0) return H2_H2LOADER_HOST_COMMAND_WIFI_STATUS;
     if (argc == 2 && strcmp(argv[0], "wifi") == 0 && strcmp(argv[1], "disconnect") == 0) return H2_H2LOADER_HOST_COMMAND_WIFI_DISCONNECT;
     if (argc >= 2 && strcmp(argv[0], "wifi") == 0 && strcmp(argv[1], "scan") == 0) return H2_H2LOADER_HOST_COMMAND_WIFI_SCAN;
     if (argc == 2 && strcmp(argv[0], "coredump") == 0 && strcmp(argv[1], "status") == 0) return H2_H2LOADER_HOST_COMMAND_COREDUMP_STATUS;
@@ -1205,8 +1211,13 @@ int h2_h2loader_cli_main(h2_runtime_t *runtime, const h2_h2loader_cli_config_t *
         return h2_h2loader_cli_server_command(&context, &options, argc, argv);
     }
     if (strcmp(command, "monitor") == 0) return monitor_command(&context, &options, argc);
-    if (strcmp(command, "bleikcp-speed") == 0)
-        return h2_h2loader_cli_bleikcp_speed_command(&context, argc, argv);
+    if (strcmp(command, "bleikcp-speed") == 0) {
+        int init_rc = h2_bleikcp_global_init();
+        if (init_rc != H2_PAL_OK) return H2_H2LOADER_CLI_EXIT_RUNTIME;
+        int result = h2_h2loader_cli_bleikcp_speed_command(&context, argc, argv);
+        (void)h2_bleikcp_global_shutdown();
+        return result;
+    }
     {
         const char *parts[H2_H2LOADER_CLI_DEVICE_ARGV_CAPACITY] = {command};
         int count = 1;

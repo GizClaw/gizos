@@ -49,6 +49,7 @@ extern "C" {
 #define H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_CONNECT (UINT32_C(1) << 17)
 #define H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_DISCONNECT (UINT32_C(1) << 18)
 #define H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_UPGRADE (UINT32_C(1) << 19)
+#define H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_STATUS (UINT32_C(1) << 20)
 #define H2_H2LOADER_HOST_COMMAND_AVAILABILITY_ALL \
     (H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_APP | \
      H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_LOADER | \
@@ -65,7 +66,8 @@ extern "C" {
      H2_H2LOADER_HOST_COMMAND_AVAILABLE_STAGE_URL | \
      H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_SCAN | \
      H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_CONNECT | \
-     H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_DISCONNECT)
+     H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_DISCONNECT | \
+     H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_STATUS)
 
 typedef enum h2_h2loader_host_transport {
     H2_H2LOADER_HOST_TRANSPORT_SERIAL = 1,
@@ -229,12 +231,15 @@ typedef struct h2_h2loader_host_serial_connection_config {
     /** Optional borrowed sink for bytes proven not to belong to a frame. */
     h2_h2loader_host_transport_log_fn on_log;
     void *log_user;
+    /** Leave DTR and RTS untouched for the complete connection lifecycle. */
+    int preserve_control_lines;
 } h2_h2loader_host_serial_connection_config_t;
 
 /**
  * @brief Open a reliable serial H2Loader session and complete SESSION_ACK.
  *
- * After open, the Host deasserts DTR/RTS before borrowing the stream. A
+ * Unless preserve_control_lines is set, the Host deasserts DTR/RTS before
+ * borrowing the stream. A
  * canonical unsupported result is accepted for endpoints without control-line
  * support; any other failure aborts the connection. conversation_id must be
  * nonzero or a nonzero value is derived from the monotonic clock. The
@@ -276,6 +281,9 @@ typedef enum h2_h2loader_host_command {
     H2_H2LOADER_HOST_COMMAND_COREDUMP_ERASE = 17,
     H2_H2LOADER_HOST_COMMAND_STAGE_URL = 18,
     H2_H2LOADER_HOST_COMMAND_WIFI_SCAN = 19,
+    H2_H2LOADER_HOST_COMMAND_WIFI_STATUS = 20,
+    /** `stats`, waiting for its installed-data checksum line after status. */
+    H2_H2LOADER_HOST_COMMAND_DATA_CHECKSUM = 21,
 } h2_h2loader_host_command_t;
 
 /**

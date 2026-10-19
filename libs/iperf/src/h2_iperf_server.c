@@ -18,6 +18,7 @@ struct h2_iperf_server {
     uint16_t sctp_udp_port;
     uint16_t sctp_packet_size;
     uint32_t control_timeout_ms;
+    uint32_t max_block_len;
     h2_pal_net_socket_t listener;
     h2_pal_net_socket_t sctp_udp;
     uint32_t random_state;
@@ -61,12 +62,17 @@ h2_pal_result_t h2_iperf_server_create(
     if (!h2_iperf_config_is_valid(config) || params == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    if ((params->family != 0 && params->family != H2_PAL_NET_FAMILY_IPV4 &&
+         params->family != H2_PAL_NET_FAMILY_IPV6) || params->max_block_len > 1024u * 1024u) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
     h2_iperf_server_t *server = h2_pal_mem_alloc(config->mem, sizeof(*server));
     if (server == NULL) {
         return H2_PAL_ERR_NO_MEMORY;
     }
     memset(server, 0, sizeof(*server));
     server->config = *config;
+    server->max_block_len = params->max_block_len != 0u ? params->max_block_len : 1024u * 1024u;
     server->family = params->family == H2_PAL_NET_FAMILY_IPV6
         ? H2_PAL_NET_FAMILY_IPV6
         : H2_PAL_NET_FAMILY_IPV4;
@@ -176,7 +182,7 @@ static int32_t session_reject_reason(const session_t *session) {
         return H2_IPERF_IE_NOSCTP;
     }
     if (p->parallel != 1 || p->bidirectional || p->blockcount != 0 ||
-        p->len < 0 || p->len > (int64_t)(1024u * 1024u)) {
+        p->len < 0 || p->len > (int64_t)session->server->max_block_len) {
         return H2_IPERF_IE_UNIMP;
     }
     return 0;
@@ -186,14 +192,18 @@ static h2_pal_result_t session_accept_tcp_stream(session_t *session) {
     const h2_iperf_config_t *config = session->config;
     uint64_t deadline = h2_iperf_now_ms(config) + H2_IPERF_SERVER_STREAM_ACCEPT_TIMEOUT_MS;
     for (;;) {
+        if (h2_iperf_should_stop(config)) {
+            return H2_PAL_ERR_CLOSED;
+        }
         uint64_t now = h2_iperf_now_ms(config);
         if (h2_pal_time_deadline_expired(now, deadline)) {
             return H2_PAL_ERR_TIMEOUT;
         }
         h2_pal_net_socket_t sock = -1;
         h2_pal_result_t result = h2_pal_net_tcp_accept(
-            config->net, session->server->listener, &sock, NULL, (uint32_t)(deadline - now));
-        if (result == H2_PAL_ERR_WOULD_BLOCK) {
+            config->net, session->server->listener, &sock, NULL,
+            h2_iperf_io_slice(config, (uint32_t)(deadline - now)));
+        if (result == H2_PAL_ERR_WOULD_BLOCK || result == H2_PAL_ERR_TIMEOUT) {
             continue;
         }
         if (result != H2_PAL_OK) {
@@ -383,7 +393,7 @@ static h2_pal_result_t session_exchange_results(session_t *session) {
     }
     int8_t state = 0;
     (void)h2_iperf_ctrl_recv_state(config, session->ctrl, &state, timeout);
-    return H2_PAL_OK;
+    return h2_iperf_should_stop(config) ? H2_PAL_ERR_CLOSED : H2_PAL_OK;
 }
 
 static h2_pal_result_t session_run(session_t *session) {
@@ -429,6 +439,10 @@ static h2_pal_result_t session_run(session_t *session) {
                 ? H2_IPERF_DEFAULT_SCTP_BLOCK_LEN
                 : H2_IPERF_DEFAULT_TCP_BLOCK_LEN;
         session->params.len = (int64_t)len;
+    }
+    if (len > server->max_block_len) {
+        (void)h2_iperf_ctrl_send_server_error(config, session->ctrl, H2_IPERF_IE_UNIMP, timeout);
+        return H2_PAL_ERR_UNSUPPORTED;
     }
     session->block_len = len;
     if (session->params.protocol == H2_IPERF_PROTOCOL_UDP &&
@@ -493,8 +507,21 @@ h2_pal_result_t h2_iperf_server_run_once(
     out_result->remote.retransmits = -1;
 
     h2_pal_net_socket_t ctrl = -1;
-    h2_pal_result_t result = h2_pal_net_tcp_accept(
-        config->net, server->listener, &ctrl, NULL, accept_timeout_ms);
+    h2_pal_result_t result = H2_PAL_ERR_TIMEOUT;
+    uint64_t accept_deadline = h2_iperf_now_ms(config) + accept_timeout_ms;
+    do {
+        if (h2_iperf_should_stop(config)) {
+            return H2_PAL_ERR_CLOSED;
+        }
+        uint64_t now = h2_iperf_now_ms(config);
+        uint32_t left = h2_pal_time_deadline_expired(now, accept_deadline)
+            ? 0u : (uint32_t)(accept_deadline - now);
+        result = h2_pal_net_tcp_accept(config->net, server->listener, &ctrl, NULL,
+                                      h2_iperf_io_slice(config, left));
+        if (result != H2_PAL_ERR_TIMEOUT && result != H2_PAL_ERR_WOULD_BLOCK) {
+            break;
+        }
+    } while (!h2_pal_time_deadline_expired(h2_iperf_now_ms(config), accept_deadline));
     if (result == H2_PAL_ERR_WOULD_BLOCK) {
         return H2_PAL_ERR_TIMEOUT;
     }

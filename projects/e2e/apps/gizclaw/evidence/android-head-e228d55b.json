@@ -1,0 +1,95 @@
+{
+  "schema": 1,
+  "qualified": true,
+  "platform": "android-emulator",
+  "source_head": "e228d55be5bb96c0be8be4823cfd8fb69679e43f",
+  "sdk_version": "0.19.0",
+  "api_count": 227,
+  "result": {
+    "platform": "android-emulator",
+    "rc": 0,
+    "teardown": 0,
+    "selected": 8,
+    "passed": 8,
+    "failed": 0,
+    "cleanup_rc": 0,
+    "retained_resources": 0,
+    "complete": true,
+    "cases": [
+      {
+        "id": "resource",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "device-api",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "connectivity",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "rpc",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "firmware",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "voice",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "concurrency",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "service",
+        "status": "PASS",
+        "rc": 0
+      }
+    ]
+  },
+  "environment": {
+    "platform": "android",
+    "package": "com.haivivi.gizos.e2e.gizclaw",
+    "observation_started_at_utc": "2026-10-01T12:55:26.777608+00:00",
+    "app_sha256": "4512ba8ef050eb66719661c91215c42125eb58666cf0ffe2f1badacdf8af842d",
+    "sdk_sha256": "fd3d6fcdfd00bd91eb866e308d84055a9816c1e52bb12045e096e9a0f3d2d827",
+    "serial": "emulator-5566",
+    "aar_binary_sha256": "79b0581a73d637b209cd9d209f1d8393bd3b8eadbfa602eca4af8a2d66808f1b",
+    "apk_binary_sha256": "79b0581a73d637b209cd9d209f1d8393bd3b8eadbfa602eca4af8a2d66808f1b",
+    "apk_aar_binary_identical": true,
+    "api": "36",
+    "fingerprint": "Android/sdk_slim_arm64/emu64a:16/BE2A.250530.027/13847098:userdebug/test-keys",
+    "suite_sha256": "b20d7a74c5685f1fb23e1e848ddb06f496f8912e5a921196643423aa105bd9b9",
+    "runtime_profile": "h106-tiga",
+    "app_config_key": "media.songs.en-us",
+    "app_config_value_sha256": "d74740796f20765bd12d5ae41401da6b142ac5268f788c05dd0cc700dde35603",
+    "fixture_contract_sha256": "d3a6de96710d1dd52c8ce312218eb75c6cf6cbb34d432cf1fbf6b079b81bd376",
+    "pcm_sha256": "9451f89df86cc66d053801f38fbfa661b83a0174d222af976e55b94f34336f0b",
+    "api_covered": 227,
+    "redaction_required": false,
+    "observation_finished_at_utc": "2026-10-01T12:58:02.975961+00:00",
+    "evidence_timezone": "UTC",
+    "launches": 1,
+    "runner_status": "completed"
+  },
+  "api_audit": {
+    "valid": true,
+    "covered": 227,
+    "required": 227,
+    "missing": 0,
+    "log_sha256": "1697e187631298152bc43da2c9b2c6f9e09586d832511c693c072a1d07f62dcb"
+  },
+  "raw_log_local": "build/validation/gizclaw-227/android-dns-r34/results/test.log",
+  "audio_scope": "Real service traffic and software PCM/speaker delegate; simulator/emulator business qualification only."
+}

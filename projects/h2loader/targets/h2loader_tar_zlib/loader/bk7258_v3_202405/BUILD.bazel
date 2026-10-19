@@ -9,6 +9,11 @@ load("@rules_python//python:defs.bzl", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
+alias(
+    name = "version",
+    actual = "//projects/h2loader/apps/loader:version",
+)
+
 py_test(
     name = "cp_startup_contract_test",
     srcs = ["tests/test_cp_startup_contract.py"],
@@ -134,6 +139,7 @@ h2loader_bk7258_firmware(
     project = "CMakeLists.txt",
     project_name = "h2_bk_h2loader",
     target = "bk7258",
+    version = ":version",
 )
 
 h2loader_tar_zlib(

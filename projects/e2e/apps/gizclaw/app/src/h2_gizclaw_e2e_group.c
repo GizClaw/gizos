@@ -1,4 +1,5 @@
 #include "h2_gizclaw_e2e_group.h"
+#include "h2_gizclaw_e2e_social_ping.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -455,6 +456,8 @@ static int cycle(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
                H2_GIZCLAW_FRIEND_GROUP_ROLE_MEMBER);
   if (proof(req, JOIN, rc) != H2_PAL_OK)
     return rc;
+  rc = h2_gizclaw_e2e_check_social_ping(f, true, req);
+  if (rc != H2_PAL_OK) return rc;
   rc = call(f, s, req, TOKEN_CLEAR, id, "", &r);
   if (rc == H2_PAL_OK)
     rc = call(f, s, req, TOKEN_GET, id, "", &r);

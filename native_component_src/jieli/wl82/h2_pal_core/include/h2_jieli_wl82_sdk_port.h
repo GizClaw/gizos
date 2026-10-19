@@ -36,6 +36,10 @@ void *h2_jieli_sdk_malloc(size_t size);
 void *h2_jieli_sdk_realloc(void *ptr, size_t size);
 void h2_jieli_sdk_free(void *ptr);
 
+/* Cross-core testset spinlock for the standalone atomic provider. */
+void h2_jieli_sdk_atomic_lock(void);
+void h2_jieli_sdk_atomic_unlock(void);
+
 /* ---- Layout-selected debug output ---------------------------------------- */
 
 /** Writes length-delimited log text through the SDK buffered debug producer.
@@ -96,6 +100,20 @@ void h2_jieli_sdk_task_park(void);
  * and stays valid while the task lives. NULL before the scheduler runs.
  */
 const void *h2_jieli_sdk_task_current(void);
+
+/** Fixed envelope size, bounded by the SDK dispatcher read buffer. */
+#define H2_JIELI_SDK_EVENT_MESSAGE_SIZE 32u
+typedef void (*h2_jieli_sdk_event_handler_t)(const void *message, size_t size);
+/** Start the persistent h2_sysevt owner task once; wait at most 1000 ms for
+ * registration. Return 0 on readiness, negative on creation/registration/timeout.
+ * Delivery is serial on that task inside os_taskq_pend; messages are borrowed
+ * until the handler returns. Later starts do not create another task. */
+int h2_jieli_sdk_event_dispatcher_start(h2_jieli_sdk_event_handler_t handler);
+/** Copy exactly 32 bytes into sys_event (type 0x0100, from 0x50).
+ * Return 0 on success, 1 on ring full (-12), negative on error/invalid input. */
+int h2_jieli_sdk_event_post(const void *message, size_t size);
+/** Nonzero in interrupt context; PAL posts must reject this context. */
+int h2_jieli_sdk_in_interrupt(void);
 
 /* ---- Timers -------------------------------------------------------------- */
 

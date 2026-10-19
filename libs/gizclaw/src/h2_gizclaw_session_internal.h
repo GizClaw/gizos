@@ -66,7 +66,14 @@ h2_pal_result_t h2_gizclaw_session_workspace_begin_internal(
 h2_pal_result_t h2_gizclaw_session_workspace_finish_internal(
     h2_gizclaw_session_t *session, h2_pal_result_t result,
     const h2_gizclaw_workspace_activation_t *activation,
+    const h2_gizclaw_workspace_parameters_patch_t *parameters, bool reloaded);
+/* Serialize storage-only updates without stopping the current conversation.
+ * A possible fence write makes later omitted reload confirmation unknown. */
+h2_pal_result_t h2_gizclaw_session_parameters_begin_internal(
+    h2_gizclaw_session_t *session, h2_gizclaw_str_t name,
     const h2_gizclaw_workspace_parameters_patch_t *parameters);
+h2_pal_result_t h2_gizclaw_session_parameters_finish_internal(
+    h2_gizclaw_session_t *session, h2_pal_result_t result);
 /* Workspace delete participates only when name is the Session's current
  * Workspace: that path stops the conversation and owns the serialized
  * workspace RPC slot. Other names leave the Session untouched. A closed
@@ -83,9 +90,11 @@ h2_pal_result_t h2_gizclaw_session_run_stop_begin_internal(
 h2_pal_result_t h2_gizclaw_session_workspace_delete_finish_internal(
     h2_gizclaw_session_t *session, h2_pal_result_t result);
 
-/* Drop the downlink's buffered audio: queued Opus, the decoder state and the
- * Track's unplayed PCM (unless another owner holds the Track downlink). */
-void h2_gizclaw_conversation_downlink_flush_internal(
+/* Interrupt the downlink: close it until the next downstream audio BOS,
+ * forget the active stream, and drop what is buffered: queued Opus, the
+ * decoder state and the Track's unplayed PCM (unless another owner holds the
+ * Track downlink). */
+void h2_gizclaw_conversation_downlink_interrupt_internal(
     h2_gizclaw_service_t *service);
 /* Decoded chunks written to the Track so far; changes when sound arrives. */
 size_t h2_gizclaw_conversation_downlink_writes_internal(

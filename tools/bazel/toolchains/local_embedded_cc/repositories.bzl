@@ -76,10 +76,10 @@ def _mirror_tree(repository_ctx, source_root, destination_root):
         if source.startswith(prefix):
             repository_ctx.symlink(source, destination_root + "/" + source[len(prefix):])
 
-def _builtin_includes(repository_ctx, compiler, compile_flags):
-    result = repository_ctx.execute([compiler, "-E", "-x", "c", "/dev/null", "-v"] + compile_flags)
+def _builtin_includes(repository_ctx, compiler, language, compile_flags):
+    result = repository_ctx.execute([compiler, "-E", "-x", language, "/dev/null", "-v"] + compile_flags)
     if result.return_code:
-        fail("failed to inspect %s compiler includes:\n%s" % (repository_ctx.attr.name, result.stderr))
+        fail("failed to inspect %s %s compiler includes:\n%s" % (repository_ctx.attr.name, language, result.stderr))
     directories = []
     recording = False
     for raw_line in result.stderr.splitlines():
@@ -89,10 +89,34 @@ def _builtin_includes(repository_ctx, compiler, compile_flags):
         elif line == "End of search list.":
             break
         elif recording and line and not line.startswith("("):
-            directories.append(line)
+            directories.append(str(repository_ctx.path(line).realpath))
     if not directories:
-        fail("%s compiler reported no builtin include directories" % repository_ctx.attr.name)
+        fail("%s compiler reported no builtin %s include directories" % (repository_ctx.attr.name, language))
     return directories
+
+def _include_roots(directories):
+    """Returns the search directories that are not nested inside another one."""
+    roots = []
+    for directory in directories:
+        if directory in roots:
+            continue
+        nested = False
+        for other in directories:
+            if directory.startswith(other + "/"):
+                nested = True
+                break
+        if not nested:
+            roots.append(directory)
+    return roots
+
+def _mirrored_include(roots, directory):
+    """Maps a compiler search directory to its mirror, relative to the toolchain package."""
+    for index, root in enumerate(roots):
+        if directory == root:
+            return "inputs/compiler/include/%d" % index
+        if directory.startswith(root + "/"):
+            return "inputs/compiler/include/%d/%s" % (index, directory[len(root) + 1:])
+    fail("include directory %s is outside every mirrored root" % directory)
 
 def _wrapper(repository_ctx, executable):
     return """#!/bin/sh
@@ -143,13 +167,30 @@ def _repository_impl(repository_ctx):
             expected_version,
             actual_version,
         ))
-    compile_flags = list(repository_ctx.attr.compile_flags)
+    probe_flags = list(repository_ctx.attr.compile_flags)
     for relative in repository_ctx.attr.system_include_dirs:
         directory = bin_dir.get_child(relative)
         if not directory.exists:
             fail("%s system include directory is missing: %s" % (repository_ctx.attr.name, directory))
-        compile_flags.extend(["-isystem", str(directory.realpath)])
-    builtin_includes = _builtin_includes(repository_ctx, compiler, compile_flags)
+        probe_flags.extend(["-isystem", str(directory.realpath)])
+
+    # Compile actions search only the mirrored copies of these directories,
+    # through execroot-relative paths, so dependency files and cache entries
+    # never name the output base that holds the downloaded compiler.
+    c_includes = _builtin_includes(repository_ctx, compiler, "c", probe_flags)
+    cxx_includes = _builtin_includes(repository_ctx, compiler, "c++", probe_flags)
+    include_roots = _include_roots(c_includes + cxx_includes)
+    c_include_directories = [_mirrored_include(include_roots, directory) for directory in c_includes]
+    cxx_include_directories = [_mirrored_include(include_roots, directory) for directory in cxx_includes]
+    builtin_include_directories = []
+    for directory in c_include_directories + cxx_include_directories:
+        if directory not in builtin_include_directories:
+            builtin_include_directories.append(directory)
+    compile_flags = list(repository_ctx.attr.compile_flags)
+    if repository_ctx.attr.compiler_kind == "gcc":
+        # GCC otherwise reports a system header by its resolved absolute path
+        # whenever that is shorter than the mirrored relative path.
+        compile_flags.append("-fno-canonical-system-headers")
     _mirror_file(repository_ctx, compiler, "inputs/compiler/bin/gcc")
     if repository_ctx.attr.compiler_kind == "gcc":
         _mirror_file(repository_ctx, bin_dir.get_child(tool_names["as"]), "inputs/compiler/bin/as")
@@ -158,7 +199,7 @@ def _repository_impl(repository_ctx):
             fail("failed to resolve %s cc1 executable" % repository_ctx.attr.name)
         _mirror_file(repository_ctx, repository_ctx.path(cc1.stdout.strip()), "inputs/compiler/libexec/cc1")
     _mirror_file(repository_ctx, bin_dir.get_child(tool_names["ar"]), "inputs/archiver/bin/ar")
-    for index, directory in enumerate(builtin_includes):
+    for index, directory in enumerate(include_roots):
         _mirror_tree(repository_ctx, repository_ctx.path(directory), "inputs/compiler/include/%d" % index)
     mirrored = {}
     for name in _TOOLS:
@@ -171,9 +212,11 @@ def _repository_impl(repository_ctx):
         "BUILD.bazel",
         repository_ctx.attr.build_file,
         substitutions = {
-            "{BUILTIN_INCLUDE_DIRECTORIES}": repr(builtin_includes),
+            "{BUILTIN_INCLUDE_DIRECTORIES}": repr(builtin_include_directories),
             "{COMPILE_FLAGS}": repr(compile_flags),
             "{COMPILER}": tool_names["gcc"],
+            "{CXX_INCLUDE_DIRECTORIES}": repr(cxx_include_directories),
+            "{C_INCLUDE_DIRECTORIES}": repr(c_include_directories),
             "{EXEC_CONSTRAINTS}": repr(_exec_constraints(repository_ctx)),
             "{TARGET_CONSTRAINTS}": repr(repository_ctx.attr.target_constraints),
             "{TARGET_CPU}": repository_ctx.attr.target_cpu,
@@ -201,7 +244,7 @@ local_embedded_cc_repository = repository_rule(
         "locator_path": attr.string(mandatory = True),
         "prefix": attr.string(mandatory = True),
         "system_include_dirs": attr.string_list(
-            doc = "Bin-directory-relative libc include roots passed as -isystem (compilers without a builtin sysroot).",
+            doc = "Bin-directory-relative libc include roots added to the compiler's search list (compilers without a builtin sysroot).",
         ),
         "target_constraints": attr.string_list(mandatory = True),
         "target_cpu": attr.string(mandatory = True),

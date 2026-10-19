@@ -79,6 +79,7 @@ cc_library(
 firmware_native_component(
     name = "h2_pal_core",
     srcs = [
+        "src/h2_bk3633_atomic.c",
         "src/h2_bk3633_flash_disk.c",
         "src/h2_bk3633_nvds_pref.c",
         "src/h2_bk3633_platform_battery.c",
@@ -108,6 +109,7 @@ firmware_native_component(
         "manual",
     ],
     deps = [
+        "//libs/atomic:unsupported_template",
         "//libs/drivers/rtc/bm8563",
         "//libs/pal",
         "//libs/pal:unsupported",

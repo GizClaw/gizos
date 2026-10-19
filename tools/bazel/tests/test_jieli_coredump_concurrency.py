@@ -28,9 +28,9 @@ class CoredumpTest(unittest.TestCase):
             'RELEASE_LOG': 'h2_jieli_sdk_unlock_byte(&log_lock);',
             'HOLD_CAPTURE': 'assert(h2_jieli_sdk_try_lock_byte(&capture_lock));',
             'RELEASE_CAPTURE': 'h2_jieli_sdk_unlock_byte(&capture_lock);',
-            'WAIT_WRITER': 'while (!atomic_load(&writer_entered)) {}',
+            'WAIT_WRITER': 'while (!h2_atomic_load(&writer_entered)) {}',
         }.items():
-            fixture = fixture.replace('/* '+tag+' */', statement if modern else ('while (!atomic_load(&writer_finished)) {}' if tag == 'WAIT_WRITER' else ''))
+            fixture = fixture.replace('/* '+tag+' */', statement if modern else ('while (!h2_atomic_load(&writer_finished)) {}' if tag == 'WAIT_WRITER' else ''))
         if not modern:
             fixture = fixture.replace('static uint32_t h2_jieli_atomic_load_u32', 'static __attribute__((unused)) uint32_t h2_jieli_atomic_load_u32').replace('static void h2_jieli_atomic_store_u32', 'static __attribute__((unused)) void h2_jieli_atomic_store_u32')
         with tempfile.TemporaryDirectory() as directory:
@@ -38,7 +38,7 @@ class CoredumpTest(unittest.TestCase):
             binary = Path(directory)/'test'
             unit.write_text(fixture.replace('/* PROVIDER */',source))
             for role in ['app','loader']:
-                subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-pthread',*shlex.split(os.environ.get('JIELI_TEST_CFLAGS','')), *(['-DTEST_LOADER'] if role == 'loader' else []),str(unit),'-o',str(binary)],check=True)
+                subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-pthread',*shlex.split(os.environ.get('JIELI_TEST_CFLAGS','')), *(['-DTEST_LOADER'] if role == 'loader' else []),str(unit),'-I', str(ROOT / 'libs/atomic/include'), str(ROOT / 'libs/atomic/providers/c11/src/h2_atomic_c11.c'), '-o',str(binary)],check=True)
                 for case in ['watchdog_loader','watchdog_app','early_role','warm_dirty','warm_layout','invalid_pending','recovery_policy','preboot','flush_capture','counter','dirty','busy_log','busy_capture','threads','torn']:
                     with self.subTest(role=role,case=case):
                         result=subprocess.run([str(binary),case],capture_output=True,text=True,timeout=20)

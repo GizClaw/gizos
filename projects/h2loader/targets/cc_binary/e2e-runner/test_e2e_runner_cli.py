@@ -25,6 +25,16 @@ class E2ERunnerCliTest(unittest.TestCase):
         self.assertIn("--baud RATE", result.stdout)
         self.assertIn("UART baud (default 460800)", result.stdout)
         self.assertIn("--monitor-ms MS", result.stdout)
+        self.assertIn("--checksum-tar-zlib DIR", result.stdout)
+        self.assertIn("--checksum-zlib-tar DIR", result.stdout)
+
+    def test_checksum_inputs_are_loaded_before_device_access(self):
+        result = self.run_cli("--uart", "fake", "--checksum-zlib-tar", "/nonexistent-checksum-fixtures")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("cannot read checksum fixture", result.stderr)
+        result = self.run_cli("--uart", "fake", "--checksum-tar-zlib", "first", "--checksum-tar-zlib", "second")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("usage:", result.stderr)
 
     def test_endpoint_is_required(self):
         result = self.run_cli()

@@ -13,6 +13,7 @@
 #include "lwip.h"
 #include "wifi/wifi_connect.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 /* Pinned SDK eb04f196: wifi_get_sta_entry_rssi rejects WCID >= 5 and
@@ -74,6 +75,18 @@ static void scan_reap_completed(void) {
   }
 }
 
+/* STA exit halts the driver and scan timers before SMP_CFG_START; no late
+ * scan completion can follow. Under network_hsm_mtx, no synchronous SDK call
+ * is allowed here. */
+static void scan_reset_after_sta_exit(void) {
+  unsigned expected = SCAN_ABANDONED;
+  if (__atomic_compare_exchange_n(&scan_phase, &expected, SCAN_IDLE, 0,
+                                   __ATOMIC_RELEASE, __ATOMIC_RELAXED)) return;
+  expected = SCAN_REAPABLE;
+  (void)__atomic_compare_exchange_n(&scan_phase, &expected, SCAN_IDLE, 0,
+                                     __ATOMIC_RELEASE, __ATOMIC_RELAXED);
+}
+
 static void post_system_event(
     h2_pal_system_event_type_t type, const void *payload,
     size_t payload_size) {
@@ -129,6 +142,7 @@ static int wifi_event(void *context, enum WIFI_EVENT event) {
     scan_completed();
     return 0;
   }
+  if (event == WIFI_EVENT_SMP_CFG_START) scan_reset_after_sta_exit();
   /* These SDK queries execute in its serialized Wi-Fi event context, never
    * under the PAL gate. A newer PAL transition invalidates this refresh. */
   h2_pal_wifi_sta_status_t native_status;
@@ -282,6 +296,7 @@ static int ensure_wifi_on(void) {
   /* Bind events even when board startup already enabled the SDK interface. */
   wifi_set_event_callback(wifi_event);
   if (!wifi_is_on() && wifi_on() != 0) return H2_PAL_ERR_IO;
+  h2_jieli_net_stack_started();
   wifi_state_lock();
   wifi_state.on = 1;
   wifi_state_unlock();
@@ -324,7 +339,7 @@ static int sta_get_status(void *user, h2_pal_wifi_sta_status_t *out_status) {
   }
   wifi_state_unlock();
   const unsigned phase = __atomic_load_n(&scan_phase, __ATOMIC_ACQUIRE);
-  if (phase == SCAN_PENDING || phase == SCAN_ABANDONED) {
+  if (phase == SCAN_PENDING) {
     /* Report the live scan without overwriting association/IP state, which
      * can continue to change through SDK events while scanning. */
     out_status->state = H2_PAL_WIFI_STA_STATE_SCANNING;
@@ -340,6 +355,9 @@ static int sta_scan(
   if (on_result == NULL) return H2_PAL_ERR_INVALID_ARG;
   int result = ensure_wifi_on();
   if (result != H2_PAL_OK) return result;
+  struct wifi_mode_info info;
+  wifi_get_mode_cur_info(&info);
+  if (info.mode != STA_MODE) return H2_PAL_ERR_INVALID_STATE;
   unsigned expected = SCAN_IDLE;
   if (!__atomic_compare_exchange_n(&scan_phase, &expected, SCAN_PENDING, 0,
                                     __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
@@ -388,9 +406,32 @@ static int sta_scan(
     entry.security = map_security(source->auth_mode);
     if (!on_result(callback_user, &entry)) break;
   }
+  if (entries != NULL) free(entries);
   wifi_clear_scan_result();
   __atomic_store_n(&scan_phase, SCAN_IDLE, __ATOMIC_RELEASE);
   return H2_PAL_OK;
+}
+
+static int sta_validate_sdk_password(const h2_pal_wifi_sta_config_t *config) {
+  /* Both our default-mode copy and SDK wifi_enter_sta_mode's strncpy(..., 63)
+   * reserve a NUL byte in wifi_store_info.pwd[0]; neither can carry 64 bytes. */
+  if (config == NULL ||
+      config->password_len > sizeof(((struct wifi_store_info *)0)->pwd[0]) - 1u) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  return H2_PAL_OK;
+}
+
+static void sta_connect_fail(int reason) {
+  h2_pal_wifi_sta_status_t status;
+  wifi_state_lock();
+  ++wifi_sta_generation;
+  wifi_state.sta.state = H2_PAL_WIFI_STA_STATE_FAILED;
+  wifi_state.sta.ip_valid = 0u;
+  wifi_state.sta.disconnect_reason = reason;
+  status = wifi_state.sta;
+  wifi_state_unlock();
+  post_sta_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_DISCONNECTED, &status);
 }
 
 static int sta_connect(
@@ -399,7 +440,7 @@ static int sta_connect(
   (void)user;
   int result = h2_pal_wifi_settings_validate_sta_config(config);
   if (result != H2_PAL_OK) return result;
-  result = ensure_wifi_on();
+  result = sta_validate_sdk_password(config);
   if (result != H2_PAL_OK) return result;
   char ssid[H2_PAL_WIFI_SSID_MAX + 1];
   char password[H2_PAL_WIFI_PASSWORD_MAX + 1];
@@ -419,17 +460,42 @@ static int sta_connect(
   status = wifi_state.sta;
   wifi_state_unlock();
   post_sta_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTING, &status);
-  result = wifi_enter_sta_mode(ssid, password);
-  if (result != 0) {
-    wifi_state_lock();
-    ++wifi_sta_generation;
-    wifi_state.sta.state = H2_PAL_WIFI_STA_STATE_FAILED;
-    wifi_state.sta.ip_valid = 0u;
-    wifi_state.sta.disconnect_reason = result;
-    status = wifi_state.sta;
-    wifi_state_unlock();
-    post_sta_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_DISCONNECTED, &status);
-    return H2_PAL_ERR_IO;
+  if (!wifi_is_on()) {
+    /* The SDK demos install the target before wifi_on(): a placeholder-SSID
+     * first HSM STA entry followed by wifi_enter_sta_mode never associates. */
+    struct wifi_store_info parm = {0};
+    parm.mode = STA_MODE;
+    strncpy((char *)parm.ssid[0], ssid, sizeof(parm.ssid[0]) - 1u);
+    strncpy((char *)parm.pwd[0], password, sizeof(parm.pwd[0]) - 1u);
+    parm.connect_best_network = 0;
+    wifi_set_sta_connect_timeout(timeout_ms == 0u
+        ? 30 : (int)(timeout_ms / 1000u + (timeout_ms % 1000u != 0u)));
+    result = wifi_set_default_mode(
+        &parm, 1 /* Force this mode after wifi_on. */,
+        0 /* PAL settings own persistence; do not store in the SDK. */);
+    memset(&parm, 0, sizeof(parm));
+    if (result != 0) {
+      sta_connect_fail(result);
+      return H2_PAL_ERR_IO;
+    }
+    result = ensure_wifi_on();
+    if (result != H2_PAL_OK) {
+      sta_connect_fail(result);
+      return result;
+    }
+  } else {
+    result = ensure_wifi_on();
+    if (result != H2_PAL_OK) {
+      sta_connect_fail(result);
+      return result;
+    }
+    wifi_set_sta_connect_timeout(timeout_ms == 0u
+        ? 30 : (int)(timeout_ms / 1000u + (timeout_ms % 1000u != 0u)));
+    /* With network_connect_block == 0, the SDK queues the credentials and its
+     * tail returns wifi_sta_connect_state != 5 ? -1 : 0 without waiting. This
+     * only reflects whether STA was already connected, not whether starting
+     * the connection failed. SDK events and the PAL budget decide the outcome. */
+    (void)wifi_enter_sta_mode(ssid, password);
   }
   if (timeout_ms == 0u) return H2_PAL_OK;
   const uint32_t started = timer_get_ms();
@@ -454,7 +520,10 @@ static int wifi_stop(void) {
   const int on = wifi_state.on;
   wifi_state_unlock();
   if (!on && !wifi_is_on()) return H2_PAL_OK;
+  h2_jieli_net_stack_stopping();
   if (wifi_off() != 0) return H2_PAL_ERR_IO;
+  h2_jieli_net_stack_stopped();
+  __atomic_store_n(&scan_phase, SCAN_IDLE, __ATOMIC_RELEASE);
   wifi_state_lock();
   ++wifi_sta_generation;
   wifi_state.on = 0;
@@ -469,7 +538,26 @@ static int wifi_stop(void) {
 
 static int sta_disconnect(void *user) {
   (void)user;
-  return wifi_stop();
+  if (!wifi_is_on()) return H2_PAL_OK;
+  /* wifi_off() is irreversible for STA use on this SDK: wifi_on() re-adds
+   * the retained lwIP netif and asserts "netif already added". Leave STA
+   * through config/monitor mode instead, keeping the radio and lwIP up. */
+  /* Like wifi_enter_sta_mode, this only posts an asynchronous HSM message;
+   * its return value does not report completion of the mode transition. */
+  (void)wifi_enter_smp_cfg_mode();
+  h2_pal_wifi_sta_status_t status;
+  wifi_state_lock();
+  const int had_ip = wifi_state.sta.state == H2_PAL_WIFI_STA_STATE_GOT_IP;
+  ++wifi_sta_generation;
+  wifi_state.sta.state = H2_PAL_WIFI_STA_STATE_DISCONNECTED;
+  wifi_state.sta.ip_valid = 0u;
+  status = wifi_state.sta;
+  wifi_state_unlock();
+  if (had_ip) {
+    post_sta_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_LOST_IP, &status);
+  }
+  post_sta_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_DISCONNECTED, &status);
+  return H2_PAL_OK;
 }
 
 static int wifi_get_mac_address(void *user, uint8_t out_mac[6]) {
@@ -581,10 +669,10 @@ static int ap_get_clients(
 }
 
 /* Serialize task-side radio mutations, including reentrant scan callbacks.
- * A timed-out scan still owns SDK storage until its completion callback. */
+ * A timed-out scan still owns SDK storage until completion or a successful stop. */
 static unsigned wifi_operation_busy;
 
-static int wifi_operation_begin(void) {
+static int wifi_operation_begin_internal(int for_stop) {
   /* SDK event subscribers run on the network HSM task. A synchronous SDK
    * request there would wait for the callback itself to release its mutex.
    * Reject admission while callbacks dispatch; never wait for subscribers. */
@@ -596,11 +684,16 @@ static int wifi_operation_begin(void) {
     return H2_PAL_ERR_BUSY;
   }
   scan_reap_completed();
-  if (__atomic_load_n(&scan_phase, __ATOMIC_ACQUIRE) != SCAN_IDLE) {
+  const unsigned phase = __atomic_load_n(&scan_phase, __ATOMIC_ACQUIRE);
+  if (phase != SCAN_IDLE && !(for_stop && phase == SCAN_ABANDONED)) {
     __atomic_store_n(&wifi_operation_busy, 0u, __ATOMIC_RELEASE);
     return H2_PAL_ERR_BUSY;
   }
   return H2_PAL_OK;
+}
+
+static int wifi_operation_begin(void) {
+  return wifi_operation_begin_internal(0);
 }
 
 int h2_jieli_wifi_netif_begin(h2_pal_netif_status_t *status, uint32_t *generation) {
@@ -659,8 +752,12 @@ static int guarded_sta_connect(void *user, const h2_pal_wifi_sta_config_t *confi
   return result;
 }
 
+static int wifi_operation_begin_for_stop(void) {
+  return wifi_operation_begin_internal(1);
+}
+
 static int guarded_sta_disconnect(void *user) {
-  int result = wifi_operation_begin();
+  int result = wifi_operation_begin_for_stop();
   if (result != H2_PAL_OK) return result;
   result = sta_disconnect(user);
   __atomic_store_n(&wifi_operation_busy, 0u, __ATOMIC_RELEASE);
@@ -668,7 +765,7 @@ static int guarded_sta_disconnect(void *user) {
 }
 
 static int guarded_ap_start(void *user, const h2_pal_wifi_ap_config_t *config, uint32_t timeout_ms) {
-  int result = wifi_operation_begin();
+  int result = wifi_operation_begin_for_stop();
   if (result != H2_PAL_OK) return result;
   result = ap_start(user, config, timeout_ms);
   __atomic_store_n(&wifi_operation_busy, 0u, __ATOMIC_RELEASE);
@@ -676,7 +773,7 @@ static int guarded_ap_start(void *user, const h2_pal_wifi_ap_config_t *config, u
 }
 
 static int guarded_ap_stop(void *user, uint32_t timeout_ms) {
-  int result = wifi_operation_begin();
+  int result = wifi_operation_begin_for_stop();
   if (result != H2_PAL_OK) return result;
   result = ap_stop(user, timeout_ms);
   __atomic_store_n(&wifi_operation_busy, 0u, __ATOMIC_RELEASE);
@@ -695,6 +792,11 @@ static int sta_connect_and_save(void *user,
     const h2_pal_wifi_sta_config_t *config, uint32_t timeout_ms) {
   int result = wifi_operation_begin();
   if (result != H2_PAL_OK) return result;
+  result = sta_validate_sdk_password(config);
+  if (result != H2_PAL_OK) {
+    __atomic_store_n(&wifi_operation_busy, 0u, __ATOMIC_RELEASE);
+    return result;
+  }
   static const h2_pal_wifi_sta_vtable_t raw_vtable = {
       .get_status = sta_get_status, .connect = sta_connect, .disconnect = sta_disconnect,
   };

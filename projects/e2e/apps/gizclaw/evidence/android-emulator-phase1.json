@@ -1,0 +1,210 @@
+{
+  "schema": 1,
+  "qualified": false,
+  "platform": "android-emulator",
+  "source_head": "a200e4070d9fcdc23403858877bcd11732666bcc",
+  "sdk_version": "0.19.0",
+  "api_count": 226,
+  "summary": {
+    "stage": "summary",
+    "platform": "android-emulator",
+    "endpoint": "edge-bj-01.e2e.gizclaw.com:9821",
+    "backend": "h2peer",
+    "suite": "all",
+    "profile": "default",
+    "selected": "8",
+    "terminal": "8",
+    "pass": "5",
+    "fail": "3",
+    "error": "0",
+    "blocked": "0",
+    "cancelled": "0",
+    "first_failure_case": "device-api",
+    "first_failure_rc": "-4",
+    "cleanup_rc": "0",
+    "retained_resources": "0",
+    "complete": "true",
+    "exit_code": "1"
+  },
+  "cases": [
+    {
+      "stage": "coverage-end",
+      "case": "resource",
+      "status": "PASS",
+      "rc": "0",
+      "cleanup_rc": "0"
+    },
+    {
+      "stage": "coverage-end",
+      "case": "device-api",
+      "status": "FAIL",
+      "rc": "-4",
+      "cleanup_rc": "0"
+    },
+    {
+      "stage": "coverage-end",
+      "case": "connectivity",
+      "status": "PASS",
+      "rc": "0",
+      "cleanup_rc": "0"
+    },
+    {
+      "stage": "coverage-end",
+      "case": "rpc/profile",
+      "status": "PASS",
+      "rc": "0",
+      "cleanup_rc": "0"
+    },
+    {
+      "stage": "coverage-end",
+      "case": "rpc/catalog-workspace",
+      "status": "PASS",
+      "rc": "0",
+      "cleanup_rc": "0"
+    },
+    {
+      "stage": "coverage-end",
+      "case": "rpc/speech",
+      "status": "PASS",
+      "rc": "0",
+      "cleanup_rc": "0"
+    },
+    {
+      "stage": "coverage-end",
+      "case": "rpc/workspace-reconnect",
+      "status": "PASS",
+      "rc": "0",
+      "cleanup_rc": "0"
+    },
+    {
+      "stage": "coverage-end",
+      "case": "rpc/contact",
+      "status": "PASS",
+      "rc": "0",
+      "cleanup_rc": "0"
+    },
+    {
+      "stage": "coverage-end",
+      "case": "rpc/friend",
+      "status": "PASS",
+      "rc": "0",
+      "cleanup_rc": "0"
+    },
+    {
+      "stage": "coverage-end",
+      "case": "rpc/group",
+      "status": "PASS",
+      "rc": "0",
+      "cleanup_rc": "0"
+    },
+    {
+      "stage": "coverage-end",
+      "case": "rpc/peer-name-isolation",
+      "status": "PASS",
+      "rc": "0",
+      "cleanup_rc": "0"
+    },
+    {
+      "stage": "coverage-end",
+      "case": "rpc/telemetry",
+      "status": "PASS",
+      "rc": "0",
+      "cleanup_rc": "0"
+    },
+    {
+      "stage": "coverage-end",
+      "case": "rpc/api-key",
+      "status": "PASS",
+      "rc": "0",
+      "cleanup_rc": "0"
+    },
+    {
+      "stage": "coverage-end",
+      "case": "rpc/app-config",
+      "status": "FAIL",
+      "rc": "-8",
+      "cleanup_rc": "0"
+    },
+    {
+      "stage": "coverage-end",
+      "case": "rpc",
+      "status": "FAIL",
+      "rc": "-8",
+      "cleanup_rc": "0"
+    },
+    {
+      "stage": "coverage-end",
+      "case": "firmware",
+      "status": "FAIL",
+      "rc": "-17",
+      "cleanup_rc": "0"
+    },
+    {
+      "stage": "coverage-end",
+      "case": "voice",
+      "status": "PASS",
+      "rc": "0",
+      "cleanup_rc": "0"
+    },
+    {
+      "stage": "coverage-end",
+      "case": "concurrency",
+      "status": "PASS",
+      "rc": "0",
+      "cleanup_rc": "0"
+    },
+    {
+      "stage": "coverage-end",
+      "case": "service",
+      "status": "PASS",
+      "rc": "0",
+      "cleanup_rc": "0"
+    }
+  ],
+  "audit": {
+    "valid": false,
+    "covered": 53,
+    "missing": 173,
+    "issues": [
+      "test process did not exit successfully",
+      "a case failed, was skipped, or lacks a unique passing terminal",
+      "E2E summary failed or run identity differs from requested acceptance lane"
+    ]
+  },
+  "apis_without_call_assertion_chain": [
+    "h2_gizclaw_ota_get_status",
+    "h2_gizclaw_ota_start",
+    "h2_gizclaw_player_get_status",
+    "h2_gizclaw_player_play",
+    "h2_gizclaw_player_play_index",
+    "h2_gizclaw_player_play_index_at",
+    "h2_gizclaw_player_playlist_set",
+    "h2_gizclaw_player_playlist_snapshot",
+    "h2_gizclaw_player_rate_set",
+    "h2_gizclaw_player_repeat_set",
+    "h2_gizclaw_player_stop",
+    "h2_gizclaw_req_create_app_config_get",
+    "h2_gizclaw_req_create_app_config_list",
+    "h2_gizclaw_resp_parse_app_config_get",
+    "h2_gizclaw_resp_parse_app_config_list",
+    "h2_gizclaw_rpc_app_config_get",
+    "h2_gizclaw_rpc_app_config_list"
+  ],
+  "log_sha256": "2ba62426406753fd2abca2d543e241e4753ba311ae59ad8f40ec115ee97b752a",
+  "raw_log_local": "/tmp/gizclaw-e2e-qualification/android-phase1/test.log",
+  "audio_scope": "Real service traffic and decoded PCM through deterministic capture and virtual speaker sink; no microphone or acoustic qualification.",
+  "package": {
+    "qualified": false,
+    "all_cases_passed": false,
+    "api_audit_required": true,
+    "identity": {
+      "serial": "emulator-5554",
+      "fingerprint": "Android/sdk_slim_arm64/emu64a:16/BE2A.250530.027/13847098:userdebug/test-keys"
+    },
+    "app_sha256": "93df5e466cd83a232855fec25921ccdbbb49214437085bbfcc6764d8d9dc94a6",
+    "sdk_sha256": "78d19e2a683060bd1b2c4309335cb7a22a453ed822ebb15bfba7e0b6fa42c3cc",
+    "pcm_sha256": "9451f89df86cc66d053801f38fbfa661b83a0174d222af976e55b94f34336f0b",
+    "log_sha256": "2ba62426406753fd2abca2d543e241e4753ba311ae59ad8f40ec115ee97b752a",
+    "redaction_required": false
+  }
+}

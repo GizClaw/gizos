@@ -1,7 +1,8 @@
 #include <assert.h>
 #include <pthread.h>
 #include <sched.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
+#include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
 #include "h2/pal/hal/h2_pal_ble.h"
@@ -22,7 +23,7 @@ static void check_unlocked(void) { h2_gatt_lock(); h2_gatt_unlock(); }
 static int h2_ble_cmd_result(int value) { return value; }
 static void (*sdk_hook)(void);
 static const struct conn_update_param_t *borrowed;
-static atomic_int blocked, entered, release_call;
+static h2_atomic_int_t blocked, entered, release_call;
 static int fail_from, fail_persistent;
 static int early_hook, registrations;
 static int registration_error, request_error, idle = 1, requests;
@@ -49,9 +50,9 @@ static int ble_op_conn_param_request(uint16_t handle, const struct conn_update_p
     assert(handle == 42);
     ++requests;
     borrowed = request;
-    if (atomic_load(&blocked) && requests == 1) {
-        atomic_store(&entered, 1);
-        while (!atomic_load(&release_call))
+    if (h2_atomic_load(&blocked) && requests == 1) {
+        h2_atomic_store(&entered, 1);
+        while (!h2_atomic_load(&release_call))
             sched_yield();
     }
     return request_error;
@@ -80,7 +81,17 @@ static void *submit(void *unused) {
            (fail_from ? H2_PAL_ERR_IO : 0));
     return NULL;
 }
+static void h2_fixture_atomic_cleanup(void) {
+    h2_atomic_destroy(&blocked);
+    h2_atomic_destroy(&entered);
+    h2_atomic_destroy(&release_call);
+}
 int main(int argc, char **argv) {
+    assert(atexit(h2_fixture_atomic_cleanup) == 0);
+    assert(h2_atomic_init(&blocked, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_init(&entered, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_init(&release_call, 0) == H2_ATOMIC_OK);
+
     assert(argc == 2);
     h2_ble.conn_handle = 42;
     if (strncmp(argv[1], "rearm_", 6) == 0) {
@@ -90,15 +101,15 @@ int main(int argc, char **argv) {
         if (strcmp(argv[1], "rearm_threaded") == 0) {
             early_hook = 0;
             pthread_t thread;
-            atomic_store(&blocked, 1);
+            h2_atomic_store(&blocked, 1);
             assert(pthread_create(&thread, NULL, submit, NULL) == 0);
-            while (!atomic_load(&entered))
+            while (!h2_atomic_load(&entered))
                 sched_yield();
             void (*hook)(void) = sdk_hook;
             sdk_hook = NULL;
             assert(hook != NULL);
             hook();
-            atomic_store(&release_call, 1);
+            h2_atomic_store(&release_call, 1);
             assert(pthread_join(thread, NULL) == 0);
         } else {
             assert(h2_update_connection(NULL, 42, &first) == H2_PAL_ERR_IO);
@@ -140,16 +151,16 @@ int main(int argc, char **argv) {
     }
     if (strcmp(argv[1], "submitting") == 0) {
         pthread_t thread;
-        atomic_store(&blocked, 1);
+        h2_atomic_store(&blocked, 1);
         assert(pthread_create(&thread, NULL, submit, NULL) == 0);
-        while (!atomic_load(&entered))
+        while (!h2_atomic_load(&entered))
             sched_yield();
         if (sdk_hook != NULL)
             sdk_hook();
         assert(h2_update_connection(NULL, 42, &second) == H2_PAL_ERR_WOULD_BLOCK);
-        atomic_store(&release_call, 1);
+        h2_atomic_store(&release_call, 1);
         assert(pthread_join(thread, NULL) == 0);
-        atomic_store(&blocked, 0);
+        h2_atomic_store(&blocked, 0);
     } else {
         assert(h2_update_connection(NULL, 42, &first) == 0);
         if (strcmp(argv[1], "consumer_busy") == 0 && sdk_hook != NULL) {

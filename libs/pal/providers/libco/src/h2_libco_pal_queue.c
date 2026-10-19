@@ -14,6 +14,7 @@ struct h2_pal_queue {
     size_t waiting_senders;
     size_t waiting_receivers;
     uint64_t close_generation;
+    uint64_t reset_generation;
     bool closed;
     uint8_t not_empty_key;
     uint8_t not_full_key;
@@ -66,6 +67,7 @@ static int h2_libco_queue_create(
     queue->item_size = config->item_size;
     queue->item_count = config->item_count;
     ++core->live_pal_objects;
+    ++core->live_pal_queues;
     *out_queue = queue;
     return H2_PAL_OK;
 }
@@ -82,6 +84,7 @@ static void h2_libco_queue_destroy(void *user, h2_pal_queue_t *queue) {
     allocator = queue->allocator;
     h2_pal_mem_free(allocator, queue->items);
     --core->live_pal_objects;
+    --core->live_pal_queues;
     h2_pal_mem_free(allocator, queue);
 }
 
@@ -91,7 +94,8 @@ static h2_pal_result_t h2_libco_queue_wait(
     uint32_t timeout_ms,
     uint64_t deadline_ms,
     size_t *waiter_count,
-    uint64_t close_generation) {
+    const uint64_t *generation,
+    uint64_t expected_generation) {
     uint32_t remaining = timeout_ms;
     h2_libco_result_t result;
     if (timeout_ms != H2_PAL_QUEUE_WAIT_FOREVER) {
@@ -103,7 +107,7 @@ static h2_pal_result_t h2_libco_queue_wait(
     ++*waiter_count;
     result = h2_libco_wait(queue->core, key, remaining);
     --*waiter_count;
-    if (queue->close_generation != close_generation) {
+    if (*generation != expected_generation) {
         return H2_PAL_ERR_CLOSED;
     }
     return h2_libco_internal_to_pal(result);
@@ -142,7 +146,7 @@ static int h2_libco_queue_send(
         }
         result = h2_libco_queue_wait(
             queue, (uintptr_t)&queue->not_full_key, timeout_ms, deadline_ms,
-            &queue->waiting_senders, generation);
+            &queue->waiting_senders, &queue->close_generation, generation);
         if (result != H2_PAL_OK) {
             return result;
         }
@@ -190,14 +194,14 @@ static int h2_libco_queue_recv(
         out_item == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    if (queue->closed) {
+    if (queue->closed && queue->count == 0u) {
         return H2_PAL_ERR_CLOSED;
     }
     if (timeout_ms != H2_PAL_QUEUE_NO_WAIT &&
         !h2_libco_internal_task_context(core)) {
         return H2_PAL_ERR_INVALID_STATE;
     }
-    generation = queue->close_generation;
+    generation = queue->reset_generation;
     if (timeout_ms != H2_PAL_QUEUE_NO_WAIT &&
         timeout_ms != H2_PAL_QUEUE_WAIT_FOREVER) {
         uint64_t now_ms = core->config.now_ms(core->config.user);
@@ -212,11 +216,11 @@ static int h2_libco_queue_recv(
         }
         result = h2_libco_queue_wait(
             queue, (uintptr_t)&queue->not_empty_key, timeout_ms, deadline_ms,
-            &queue->waiting_receivers, generation);
+            &queue->waiting_receivers, &queue->reset_generation, generation);
         if (result != H2_PAL_OK) {
             return result;
         }
-        if (queue->closed) {
+        if (queue->closed && queue->count == 0u) {
             return H2_PAL_ERR_CLOSED;
         }
     }
@@ -236,6 +240,12 @@ static int h2_libco_queue_reset(void *user, h2_pal_queue_t *queue) {
     queue->head = 0u;
     queue->count = 0u;
     queue->closed = false;
+    /* A receiver admitted before reset must never consume the new buffer.
+     * Senders keep the close generation: resetting an open full queue still
+     * creates room for the already-blocked producer, as before. */
+    ++queue->reset_generation;
+    (void)h2_libco_wake(core, (uintptr_t)&queue->not_empty_key,
+                        H2_LIBCO_WAKE_ALL, NULL);
     (void)h2_libco_wake(core, (uintptr_t)&queue->not_full_key,
                         H2_LIBCO_WAKE_ALL, NULL);
     return H2_PAL_OK;
@@ -248,8 +258,8 @@ static int h2_libco_queue_close(void *user, h2_pal_queue_t *queue) {
     }
     if (!queue->closed) {
         queue->closed = true;
-        queue->head = 0u;
-        queue->count = 0u;
+        /* Existing FIFO data remains readable, including by a receiver that
+         * was woken by send immediately before this close. */
         ++queue->close_generation;
         (void)h2_libco_wake(core, (uintptr_t)&queue->not_empty_key,
                             H2_LIBCO_WAKE_ALL, NULL);

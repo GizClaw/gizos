@@ -25,7 +25,7 @@ class BleSnapshotsTest(unittest.TestCase):
             binary = Path(directory) / 'test'
             subprocess.run(['cc', '-std=c11', '-D_POSIX_C_SOURCE=200809L', '-Wall', '-Wextra', '-Werror', '-pthread',
                 *os.environ.get('JIELI_TEST_CFLAGS', '').split(), '-I', str(ROOT / 'libs/pal/include'),
-                str(test), '-o', str(binary)], check=True)
+                str(test), '-I', str(ROOT / 'libs/atomic/include'), str(ROOT / 'libs/atomic/providers/c11/src/h2_atomic_c11.c'), '-o', str(binary)], check=True)
             for case in ['failed_disconnect', 'short_events', 'stale_mtu', 'invalid_mtu', 'stale_disconnect', 'current_events', 'snapshots', 'trace']:
                 with self.subTest(case=case):
                     result = subprocess.run([str(binary), case], capture_output=True, text=True, timeout=15)

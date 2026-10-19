@@ -1,25 +1,35 @@
 # JieLi AC791N DevKit H2Loader <Badge type="warning" text="WIP" />
 
+本板不在固件发布集合中，canonical `:package` 不标记 `firmware-release`，Release 工作流不提供 AC791N slice。普通 Bazel 构建与 JieLi CI 继续保留。
+
 ## 构建
 
 Linux x86_64（或 macOS 上的 Linux x86_64 dev container）：
 
 ```sh
 bazel build --config=ac791n \
-  //projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit:package \
-  //projects/example/targets/h2loader_tar_zlib/display/jieli_ac791n_devkit:package \
-  //projects/example/targets/h2loader_tar_zlib/crash-before-confirm/jieli_ac791n_devkit:package
+  //projects/h2loader/targets/h2loader_zlib_tar/loader/jieli_ac791n_devkit:package \
+  //projects/example/targets/h2loader_zlib_tar/display/jieli_ac791n_devkit:package \
+  //projects/example/targets/h2loader_zlib_tar/crash-before-confirm/jieli_ac791n_devkit:package
 ```
 
 Managed package 内的 `app/jieli/update.ufw` 是 native updater 消费的 image。空片首刷使用杰理 USB UBOOT 工具或烧写器，之后只通过 H2Loader `send` 加 `reboot upgrade` 更新。
 
 ### App watchdog 诊断
 
-`//projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit:app_watchdog_package` 是手动诊断 App，不属于任何发布镜像：`:app_watchdog_trial` 带 `manual`，package 带 `no-release` 与 `manual`，`scripts/bazel/bazel-release.py` 的发布目录查询排除 `no-release`，因此它不会进入 release packaging。
+`//projects/h2loader/targets/h2loader_zlib_tar/loader/jieli_ac791n_devkit:app_watchdog_package` 是手动诊断 App，不属于任何发布镜像：`:app_watchdog_trial` 带 `manual`，package 带 `no-release` 与 `manual`，`scripts/bazel/bazel-release.py` 只选择带 `firmware-release` 的 canonical Loader `:package`，并拒绝 alternate package；`no-release` 仅作诊断标记。
 
 该镜像从共享 color-bar launcher 启动；launcher 在确认 trial 前调用强符号 `h2_jieli_target_application_run()` hook，输出一行 `H2_WDT_TRIAL role=app core=<id> control=0x<wdt_con> action=hang`，随后关闭当前核中断并永久执行 `idle`，使该核停止喂狗。它不修改 watchdog 超时或复位模式，也不调用 `wdt_close()`，用于验证双核喂狗策略在任一核停喂时会复位整板。该镜像始终不确认 trial，因此复位回到 P1 后，`jieli_trial_attempt` 仍匹配 P2 App 的 image checksum，PAL 将该 App 判为不可启动，公共 Loader 留在命令模式。
 
 同一 BUILD 文件中的 `:loader_watchdog_package` 在 Loader stage `105` 执行相同的停喂检查。编译通过不代表复位行为已验证；实机记录保留在 PR #178。
+
+### Audio stop/restart 诊断
+
+`//projects/example/targets/h2loader_tar_zlib/audio-system/jieli_ac791n_devkit:audio_stop_restart_package` 是手动诊断 App（`manual`、`no-release`，不进入发布目录），用于在实机上证明板级 audio provider 能承受受控的停止→重启循环。它复用 audio-system 场景（Opus 音乐播放加麦克风回环）：入口初始化 Runtime、打印 `H2_JIELI_AUDIO_CYCLE baseline heap_free=<n> tasks=<n> cycles=<N>`，启动 image 自有的 `audio-cycle` worker，并在第一轮 `h2_smoke_audio_system_run()` 返回后以 `H2_JIELI_AUDIO_CYCLE_READY cycles=<N> result=<rc>` 返回该结果，使 launcher 在 120 s trial 窗口内确认；随后 worker 持有 Runtime 完成其余循环。循环次数 N 是 Bazel string build setting，默认 10，可用 `--//projects/example/targets/h2loader_tar_zlib/audio-system/jieli_ac791n_devkit:stop_restart_cycles=50` 覆盖；只接受 [1, 1000] 内不带符号、不带前导零的十进制值，`0`、`010`、`ten` 或 `1001` 等覆盖在 analysis 阶段即失败并指出 flag 与取值，不会进入编译或上板。
+
+每轮循环启动场景、流式运行 3 s、经正常 `h2_smoke_audio_system_stop()` 路径停止（失败时按 audio target 的 100 次、10 ms 间隔有界重试），然后用 `h2_jieli_ac791n_devkit_audio_idle_probe()` 检查 provider 已无打开 track、无保留操作、无 PCM ring 字节、无 SDK server 句柄、麦克风关闭且扬声器停止，并最多等待 2 s 让 `os_tasks_num_query()` 回到参考值。每轮打印一行 `H2_JIELI_AUDIO_CYCLE cycle=<i>/<N> run=<rc> mic_frames=<n> music_frames=<n> consumed=<bytes> stop=<rc> stop_ms=<ms> idle=<0|1> heap_free=<bytes> tasks=<n> result=<ok|fail>`：`run=0`、`mic_frames>0`、`music_frames>0`、`consumed>0`（SDK decoder 确实从 track ring 取走 PCM）、`stop=0`、`idle=1` 且 `tasks` 等于参考值才算 `ok`。参考值取自第 1 轮结束后的堆余量和任务数，因此 SDK 首次打开后按设计常驻的分配不计为泄漏，但 baseline 仍打印以便看到首轮差值。结束时打印 `H2_JIELI_AUDIO_CYCLE_SUMMARY cycles=<N> ok=<n> failed=<n> heap_baseline=<b> heap_ref=<r> heap_last=<l> heap_min=<m> tasks_baseline=<b> tasks_ref=<r> tasks_max=<x> result=<ok|fail>`，`result=ok` 要求全部循环 `ok` 且 `heap_last >= heap_ref`。任一轮 `run()` 或停止失败即终止循环，但汇总行始终打印。
+
+Runtime 归属遵循 audio target 的规则：最后一次停止成功后 worker 调用 `h2_runtime_deinit()`；有界清理耗尽时打印 `cleanup did not complete; Runtime intentionally retained` 并保留 Runtime，不释放 worker 仍可能借用的内存。该镜像在循环结束后保持已确认状态留在 P2，主机用 `reboot loader` 返回 P1。
 
 ## 分区与启动
 
@@ -78,8 +88,8 @@ bazel run //projects/h2loader/targets/cc_binary/e2e-runner:e2e-runner -- \
   --ble-id <ble-endpoint> \
   --expected-board jieli_ac791n_devkit \
   --expected-target wl82 \
-  --app-firmware <jieli_ac791n_devkit-color-bar-wl82.update.tar.zlib> \
-  --loader-firmware <jieli_ac791n_devkit-loader-wl82.update.tar.zlib> \
+  --app-firmware <jieli_ac791n_devkit-color-bar-wl82.update.tar> \
+  --loader-firmware <jieli_ac791n_devkit-loader-wl82.update.tar> \
   --crash-firmware <jieli_ac791n_devkit-crash-before-confirm-wl82.update.tar.zlib> \
   --monitor-ms 3000 \
   --report <report.json>
@@ -102,6 +112,37 @@ Loader 只有 UART 与 BLE capability，不提供 Wi-Fi 与 HTTP；runner 一旦
 直接 arm/publish 不修复非空冲突头；有效但不同的完整 bank 也不得自动擦除，只允许显式完整安装替换。相同头 publish 幂等，P2 arm 拒绝，不在 P2 增加恢复擦除。[固定 SDK 追踪、host 回归与两轮 UART 验收](./evidence/2026-09-15/p2-header-reinstall.md)记录擦除命令/地址、镜像 SHA、独立状态及未捕获确认文本的限制。
 
 ## 验收记录
+
+### 2026-09-17：App Wi-Fi 凭据持久化与重启自动重连
+
+`efbabcc3`（PR #459，Issue #454，含 main `3eeb1b55`）在 UID `d879349abc9f` 上完成台架验收：display App 通过 UART `wifi connect` 用 2 s 保存 `HAIVIVI-MFG`，`wifi status` 报告 `state=5 ip=192.168.4.150 saved=1`；此后 `reboot app`、`reboot loader` 再 `reboot app`、全新安装的 button App 每次启动都从保存的凭据自动重连，无需再次 `wifi connect`。错误密码由认证失败事件结束（host 墙钟 6 s，`code=-4 disconnect_reason=11`），不存在的 SSID 在设备侧 15 s `connect_and_save` 预算到期时返回 `TIMEOUT`（`code=-6`；host 墙钟 17 s，另含串口会话建立与状态读取），保存的凭据均不变，随后重启仍自动重连；显式 `wifi disconnect` 后可再次连接。在最终镜像上连续 10 次连接全部成功，无复位、栈溢出或 netif 断言。途中修复了弱 supplicant stub、非阻塞返回值误判、缺失的 SDK Wi-Fi 驱动任务、冷启动须先安装 STA 默认模式、断开时 `wifi_off` 导致的 netif 重复添加，以及 `RtmpMlmeTask` 栈溢出。Loader 仍无 Wi-Fi capability；台架网络未清除（没有对应命令）；未覆盖断电。[逐步结果、镜像 SHA 与边界](./evidence/2026-09-17/wifi-persistence.md)。
+
+### 2026-09-17：Wi-Fi scan 超时恢复
+
+PR #458（Issue #453，验收 head `c289ae4b`）关闭 2026-09-14 PAL review 的 O3：固定 SDK 只在已关联的 STA 下完成 scan；超时后 provider 发布终态 status，STA disconnect 在 SDK 进入配网模式回调 `WIFI_EVENT_SMP_CFG_START` 时释放被放弃的 scan，AP stop/start 在 `wifi_off` 成功后释放。同一 UID `d879349abc9f` 上经 UART Loader 安装 PAL App 后首轮十条 case 全在且 `result=0 passed=10 failed=0`，强制超时序列按合同返回，A/B 对照中去掉该事件复位的镜像在断开后始终返回 `-18`，最终独立 status 为 P1 main Loader、Stage 空、`last_result=0`。合入前的一次镜像曾在 `wifi connect` 时无响应且未复位，30 次重复序列未再复现，原因仍待查。[SDK 事实、返回码、A/B 与边界](./evidence/2026-09-17/wifi-scan-timeout-recovery.md)。
+
+### 2026-09-17：SD rename/open 的 SDK 审计
+
+PR #456（Issue #451，验收 head `5dbfe8c5`）关闭 2026-09-14 PAL review 的 O9：从 `fs.a` bitcode 与实机探针确认 jlfat 拒绝重命名到已有名称、允许以写模式打开目录、`fdelete` 总是消费句柄、`f_free_cache` 不落盘、超过 130 个 UTF-16 单元的组件会被静默截断；provider 改为“删除再重命名”替换、拒绝目录 open 与超长组件（131 字节组件返回 `H2_PAL_ERR_NO_SPACE`）、对有 PAL 句柄的路径返回 `H2_PAL_ERR_BUSY`。同一 UID `d879349abc9f` 上经 UART Loader 安装该 head 的 PAL App 后所有探针按合同返回，UTF-8 短名/长名读写往返成功，首轮十条 case 全在且 `result=0 passed=10 failed=0`，最终独立 status 为 P1 main Loader、`last_result=0`。[SDK 事实、探针结果与边界](./evidence/2026-09-17/sd-rename-open-audit.md)。
+
+### 2026-09-17：Net provider 的 socket 并发与 DNS 生命周期审计
+
+PR #457（Issue #452，基于 main `4fd6e947`）关闭 2026-09-14 PAL review 的 O7：固定 SDK 的 lwIP 只保证每个 socket 一个 reader、一个 writer、一个 closer，Wi-Fi HSM 退出时 `tcpip_uninit` 只清标志，之后任何 `tcpip_send_msg_wait_sem` 永久阻塞；provider 为每个 descriptor 增加 BUSY 门控与栈 generation，PAL Wi-Fi 未启动或已停止时返回 `H2_PAL_ERR_UNAVAILABLE`，stop 先排空在途操作再关闭 SDK 并结算 pending resolver，同步 DNS 改用 `netconn_gethostbyname_addrtype`。同一 UID `d879349abc9f` 上经 UART Loader 安装 PAL App 后首轮十条 case 全在且 `result=0 passed=10 failed=0`，Wi-Fi 27 经过新的 stop hook，最终独立 status 为 P1 main Loader、`last_result=0`。[SDK 事实、host 与实机结果](./evidence/2026-09-17/net-socket-dns-audit.md)。
+### 2026-09-17：audio provider 停止/重启循环
+
+`705bd197`（Issue #450，基于 main `4fd6e947`）新增 `audio-stop-restart` 手动诊断镜像，在同一 UID `d879349abc9f` 上以 N=10（package `be7ecd28…`）和 N=50（package `0b7e502e…`）各跑一轮：两轮 `H2_JIELI_AUDIO_CYCLE_READY result=0`、`JIELI_APP_CONFIRM result=OK`，逐轮均 `run=0 stop=0 idle=1 result=ok`，`heap_free` 从第 1 轮结束起恒为 `7171688`、`tasks` 恒为 `16`（baseline `7315688` / `15` 的一次性差值来自 SDK audio server 首次打开），N=50 的 `stop_ms` 在 80–991 ms 之间，汇总行均 `result=ok`；最终独立 status 为 P1 Loader、Stage 空、`last_result=0`。写入阻塞时停止与过期回调拒绝仅由 host 测试覆盖。[全部镜像 SHA、逐步结果、堆与任务数与边界](./evidence/2026-09-17/audio-stop-restart.md)。
+
+### 2026-09-17：System Event provider 迁移到 SDK sys_event
+
+`99f1f89a`（Issue #448，基于 main `e6c7b6aa`）把 wl82 PAL System Event 改为通过 SDK `sys_event` 入队、在常驻 `h2_sysevt` 任务上异步派发；同一 UID `d879349abc9f` 上完成新 Loader 自更新（`H2_JIELI_LOADER_TRIAL confirmed=1`，双分区收敛到 `ed7d71a6…`）、PAL 首轮十条 case 全在且 `result=0 passed=10 failed=0`、UART 25/25（339.512 s）、BLE 22/22 两轮（373.098 s、382.811 s）、button 与 touch 试运行均捕获 READY、`JIELI_APP_CONFIRM result=OK` 与 trial timer 删除并返回 P1、audio-system READY 后 35 s 内 27 条 mic peak 报告；最终独立 status 为新 P1 Loader、Stage 空、`last_result=0`。溢出、SDK 40 s handler 超时与中断 post 仅由 host 测试覆盖。[全部镜像 SHA、逐项结果与边界](./evidence/2026-09-17/sys-event-provider-acceptance.md)。
+
+### 2026-09-17：button 确认控制台在会话下的丢失修复
+
+2026-09-16 定位的 button 确认文本丢失是设备侧问题：一旦主机在确认之前打开可靠 iKCP 会话，App 之后产生的原始控制台写入就不再上线（原始 `cat` 无会话时可捕获，字节级 tee 证实会话下不上线）。修复在共享 App transport 增加会话准入门：确认控制台产生完毕前 App 不应答 `SESSION_OPEN`，这些行沿无会话原始路径上线，随后 App 打开门；一个有界回退期限保证从不确认的启动也不会把主机永久挡在命令通道之外。实测普通 `reboot app --monitor` 现可捕获 `H2_JIELI_BUTTON_SMOKE_READY`、`JIELI_APP_CONFIRM result=OK` 与 `JIELI_TRIAL_TIMER state=deleted id=11`，独立 status 为 P2 确认、Stage 空、`last_result=0`，字节级 tee 显示确认行在 `H2IKCP` 会话应答帧之前上线，PAL 首轮十条 case 全在且无 12 字节乱码，最终返回 P1 Loader。[全部镜像 SHA、独立状态、逐项结果与边界](./evidence/2026-09-17/button-console-flush.md)。
+
+### 2026-09-16：main 硬件验收，button 启动日志捕获失败
+
+`667cd925` 在 UID `d879349abc9f` 上完成新 Loader 自更新、PAL 10/10、UART 25/25、BLE 22/22 两轮及 audio-system READY 后 30.801 秒流式运行。button image startup log capture 判定失败：两次 CLI 捕获均丢失 READY/确认文本；随后经验证的 460800 原始 cat 捕获包含两行，定位为 host monitor 文本路径问题，尚未修复。原 UART 20/20 partial 的外部宽泛 `pkill` 来源已查明。最终独立 status 为新 P1 Loader、Stage 空、`last_result=0`；Wi-Fi 凭据持久化跳过。[全部 SHA、独立状态、逐项结果及开放问题](./evidence/2026-09-16/main-acceptance.md)。
 
 ### 2026-09-15：system-event owner 引用计数
 

@@ -50,6 +50,35 @@ enqueue leaves the timer untouched and retryable. Host behavior tests cover
 cross-caller operations, callback destruction, stale fires and enqueue failure;
 the AC791N public PAL E2E launcher is required to establish real SDK dispatch.
 
+## System event dispatch
+
+At pinned SDK revision `eb04f1966cf2b7cbb72cbb54db906bcb293b5a4a`, `cpu/wl82/liba/event.a` contains LLVM bitcode (`event.c.o`, magic `BC C0 DE`). The following dispatch facts come from its IR and `include_lib/utils/event/event.h`; the public `u8 len` permits 255 bytes, but the dispatcher's actual read buffer holds only 32 bytes with no bounds check, so PAL always sends a 32-byte envelope.
+
+`sys_event_notify` lazily allocates a 292-byte pool: a 36-byte cbuf header and a 256-byte ring shared with SDK events. It copies a 4-byte event header plus the payload under local interrupt masking and a spinlock, posts the event semaphore, and never waits for delivery. A full ring drops the message and returns -12. Notify is interrupt-safe once the pool exists because `os_sem_post` uses `xQueueGiveFromISR` in interrupt context; PAL nevertheless rejects interrupt posts because registry locking, generation operations and heap copies are not interrupt-safe.
+
+The SDK `sys_event` task dispatches matching events by posting a `Q_CALLBACK` to the registering task, recorded as the handler's owner. That task executes the callback inline inside `os_taskq_pend`; handlers do not run on `sys_event`. The SDK waits for completion, retrying a full owner queue after two ticks, with a default 40000 ms timeout that causes an assertion or `P33_SYSTEM_RESET()`. PAL handlers must remain short and non-blocking. SDK unregister only marks a handler deleted and cannot recall an already-posted owner callback.
+
+The port therefore owns a persistent `h2_sysevt` task (priority 20, 1024 stack words, 32 queue words), registers `(0x0100, 0x50, 0)` there, signals readiness, and loops in `os_taskq_pend`. First start waits at most 1000 ms; later starts reuse the task. The trampoline accepts only matching type/from and exactly 32 bytes. The SDK's `app_core` all-events handler also sees these events and ignores them. Neither the owner task nor its registration is removed on PAL deinit.
+
+The envelope carries a 64-bit generation ceiling, timestamp, source ID, type, flags, payload size and an 8-byte inline/pointer union. Payloads of at most 8 bytes are copied inline; 9..1024 bytes use an owned heap copy released after delivery or discard. Larger payloads return INVALID_ARG and copy allocation failure returns NO_MEMORY. Callbacks borrow the reconstructed event and payload only for their duration. Post returns enqueue status rather than callback return values; its timeout only bounds registry lock acquisition.
+
+PAL reserves at most four in-flight events, occupying at most 144 bytes of the shared SDK ring including headers. Either PAL depth exhaustion or SDK -12 returns FULL and increments the image-lifetime overflow counter; other SDK post failures return IO. Each queued event retains an operation reference and per-subscription queued counts. Generation snapshots exclude subscriptions created after admission. External unsubscribe retires admission and waits for queued/running callbacks, including during CLOSING; any unsubscribe on the dispatcher task returns without waiting, and retiring queued callbacks are skipped. Last-owner deinit closes admission but keeps queued delivery alive until the final reference releases the registry and lock.
+
+### Reproduce the system event export check
+
+From the pinned SDK checkout, the observed GNU `nm` export check is:
+
+```sh
+nm -A cpu/wl82/liba/event.a | rg ' T (sys_event_notify|register_sys_event_handler)$'
+```
+
+```text
+cpu/wl82/liba/event.a:event.c.o:-------- T register_sys_event_handler
+cpu/wl82/liba/event.a:event.c.o:-------- T sys_event_notify
+```
+
+The host fake, pthread driver and `//tools/bazel:jieli_sys_event_port_test` cover queueing, ownership, quiescence and the SDK port contract. These checks establish software behavior only; native linking and the AC791N board acceptance round remain separate validation.
+
 ## Caller allocator ownership
 
 Mutex, semaphore, condition and queue configs honor `config->allocator`.

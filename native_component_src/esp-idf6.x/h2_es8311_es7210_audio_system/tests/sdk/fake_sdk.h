@@ -10,6 +10,7 @@ typedef int esp_err_t;
 #define ESP_ERR_INVALID_ARG 2
 #define ESP_ERR_INVALID_STATE 3
 #define ESP_ERR_TIMEOUT 4
+#define ESP_ERR_INVALID_RESPONSE 5
 #define ESP_RETURN_ON_ERROR(expr, tag, ...) do { int err_ = (expr); if (err_ != ESP_OK) return err_; } while (0)
 #define ESP_LOGI(tag, ...) ((void)(tag))
 #define ESP_LOGW(tag, ...) ((void)(tag))
@@ -20,6 +21,7 @@ typedef uint32_t TickType_t;
 typedef void *TaskHandle_t;
 typedef void *SemaphoreHandle_t;
 #define pdMS_TO_TICKS(ms) ((TickType_t)(ms))
+#define pdTICKS_TO_MS(ticks) ((TickType_t)(ticks))
 #define pdTRUE 1
 #define pdPASS 1
 #define MALLOC_CAP_SPIRAM 1

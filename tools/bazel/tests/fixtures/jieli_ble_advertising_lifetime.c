@@ -2,7 +2,8 @@
 #include <pthread.h>
 #include <stdint.h>
 #include <stdarg.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
+#include <stdlib.h>
 #include <sched.h>
 #include <stdio.h>
 #include <string.h>
@@ -34,7 +35,7 @@ static int fail_from, fail_persistent, inline_retry, exit_calls;
 static const struct conn_update_param_t *conn_borrowed;
 static int early_hook, registrations, stop_hook;
 static int fence_error, registration_error, stop_error, sdk_starts, posted;
-static atomic_int hold_submit, submit_entered, release_submit;
+static h2_atomic_int_t hold_submit, submit_entered, release_submit;
 enum { Q_CALLBACK = 0x300000 };
 int ble_op_regist_thread_call(void (*hook)(void)) {
     check_unlocked();
@@ -108,9 +109,9 @@ static int ble_op_set_ext_adv_param(const void *data, uint16_t size) {
     assert(size == sizeof(*ext_params));
     ext_params = data;
     ++sdk_starts;
-    if (atomic_load(&hold_submit) && sdk_starts == 1) {
-        atomic_store(&submit_entered, 1);
-        while (!atomic_load(&release_submit))
+    if (h2_atomic_load(&hold_submit) && sdk_starts == 1) {
+        h2_atomic_store(&submit_entered, 1);
+        while (!h2_atomic_load(&release_submit))
             sched_yield();
     }
     return 0;
@@ -198,7 +199,17 @@ static void *consume_thread(void *unused) {
     }
     return NULL;
 }
+static void h2_fixture_atomic_cleanup(void) {
+    h2_atomic_destroy(&hold_submit);
+    h2_atomic_destroy(&submit_entered);
+    h2_atomic_destroy(&release_submit);
+}
 int main(int argc, char **argv) {
+    assert(atexit(h2_fixture_atomic_cleanup) == 0);
+    assert(h2_atomic_init(&hold_submit, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_init(&submit_entered, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_init(&release_submit, 0) == H2_ATOMIC_OK);
+
     assert(argc == 2);
     (void)h2_connection_command_consumed;
     (void)h2_adv_apply;
@@ -401,13 +412,13 @@ int main(int argc, char **argv) {
         }
         if (strcmp(argv[1], "submitting") == 0) {
             pthread_t thread;
-            atomic_store(&hold_submit, 1);
+            h2_atomic_store(&hold_submit, 1);
             assert(pthread_create(&thread, NULL, start_thread, NULL) == 0);
-            while (!atomic_load(&submit_entered))
+            while (!h2_atomic_load(&submit_entered))
                 sched_yield();
             assert(h2_adv_set_start(NULL, set) == H2_PAL_ERR_WOULD_BLOCK);
             assert(h2_adv_set_stop(NULL, set) == H2_PAL_ERR_WOULD_BLOCK);
-            atomic_store(&release_submit, 1);
+            h2_atomic_store(&release_submit, 1);
             assert(pthread_join(thread, NULL) == 0);
         } else {
             assert(h2_adv_set_start(NULL, set) == 0);

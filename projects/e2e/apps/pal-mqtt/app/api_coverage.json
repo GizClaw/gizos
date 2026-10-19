@@ -1,0 +1,135 @@
+{
+  "schema": 1,
+  "header": "libs/pal/include/h2/pal/application/h2_pal_mqtt.h",
+  "operations": {
+    "open": {
+      "wrapper": "h2_pal_mqtt_open",
+      "cases": [
+        "open-close",
+        "invalid-open-host",
+        "invalid-open-buffer",
+        "invalid-open-tls"
+      ]
+    },
+    "connect": {
+      "wrapper": "h2_pal_mqtt_connect",
+      "cases": [
+        "connect-events",
+        "repeated-connect",
+        "authenticated",
+        "auth-refused",
+        "tls-trusted",
+        "tls-untrusted",
+        "tls-wrong-name",
+        "connect-timeout",
+        "reconnect"
+      ]
+    },
+    "disconnect": {
+      "wrapper": "h2_pal_mqtt_disconnect",
+      "cases": [
+        "local-disconnect",
+        "reconnect",
+        "repeated-lifecycle"
+      ]
+    },
+    "publish": {
+      "wrapper": "h2_pal_mqtt_publish",
+      "cases": [
+        "publish-qos0",
+        "publish-qos1",
+        "publish-binary",
+        "publish-empty",
+        "publish-large",
+        "input-lifetime",
+        "retained-delivery",
+        "invalid-qos",
+        "invalid-publish",
+        "qos-capacity"
+      ]
+    },
+    "subscribe": {
+      "wrapper": "h2_pal_mqtt_subscribe",
+      "cases": [
+        "subscribe-qos0",
+        "subscribe-qos1",
+        "subscribe-multi",
+        "invalid-qos",
+        "invalid-subscribe"
+      ]
+    },
+    "unsubscribe": {
+      "wrapper": "h2_pal_mqtt_unsubscribe",
+      "cases": [
+        "unsubscribe-ack",
+        "invalid-unsubscribe"
+      ]
+    },
+    "process": {
+      "wrapper": "h2_pal_mqtt_process",
+      "cases": [
+        "idle-process",
+        "remote-disconnect",
+        "keepalive-timeout",
+        "publish-qos1"
+      ]
+    },
+    "close": {
+      "wrapper": "h2_pal_mqtt_close",
+      "cases": [
+        "open-close",
+        "callback-close",
+        "repeated-lifecycle",
+        "disconnected-operations"
+      ]
+    }
+  },
+  "cases": [
+    "open-close",
+    "invalid-open-host",
+    "invalid-open-buffer",
+    "invalid-open-tls",
+    "disconnected-operations",
+    "connect-events",
+    "repeated-connect",
+    "subscribe-qos0",
+    "subscribe-qos1",
+    "subscribe-multi",
+    "publish-qos0",
+    "publish-qos1",
+    "publish-binary",
+    "publish-empty",
+    "publish-large",
+    "input-lifetime",
+    "unsubscribe-ack",
+    "retained-delivery",
+    "idle-process",
+    "invalid-qos",
+    "invalid-publish",
+    "invalid-subscribe",
+    "invalid-unsubscribe",
+    "local-disconnect",
+    "reconnect",
+    "authenticated",
+    "auth-refused",
+    "tls-trusted",
+    "tls-untrusted",
+    "tls-wrong-name",
+    "connect-timeout",
+    "remote-disconnect",
+    "qos-capacity",
+    "callback-close",
+    "repeated-lifecycle",
+    "keepalive-timeout"
+  ],
+  "qos": [
+    0,
+    1
+  ],
+  "unsupported": [
+    "QoS2",
+    "cancel operation is absent",
+    "Browser raw TCP/TLS",
+    "IPv6 qualification deferred"
+  ]
+}

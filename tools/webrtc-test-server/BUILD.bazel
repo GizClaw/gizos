@@ -17,7 +17,7 @@ filegroup(
 
 go_library(
     name = "server_lib",
-    srcs = ["main.go"],
+    srcs = ["main.go", "conformance.go"],
     importpath = "h2vivi/firmwares/tools/webrtc-test-server",
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
@@ -29,6 +29,9 @@ go_library(
     deps = [
         "@com_github_pion_datachannel//:datachannel",
         "@com_github_pion_dtls_v3//:dtls",
+        "@com_github_pion_dtls_v3//pkg/protocol",
+        "@com_github_pion_dtls_v3//pkg/protocol/alert",
+        "@com_github_pion_logging//:logging",
         "@com_github_pion_rtp//:rtp",
         "@com_github_pion_stun_v3//:stun",
         "@com_github_pion_turn_v4//:turn",
@@ -50,8 +53,11 @@ go_binary(
 
 go_test(
     name = "webrtc_test_server_test",
-    srcs = ["main_test.go"],
+    srcs = ["main_test.go", "conformance_test.go"],
     embed = [":server_lib"],
+    deps = [
+        "@com_github_pion_dtls_v3//pkg/protocol/alert",
+    ],
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],

@@ -13,6 +13,12 @@
 extern "C" {
 #endif
 
+/** A genuine FAILED_PRECONDITION + WORKSPACE_PENDING_DELETION response.
+ * Only Workspace requests project this result; unrelated RPC/transport errors
+ * retain their original mapping. req_wait, typed parsers and sync RPCs agree.
+ * The name remains reserved until asynchronous cleanup completes. */
+#define H2_GIZCLAW_WORKSPACE_ERR_PENDING_DELETION ((h2_pal_result_t)-1002)
+
 #define H2_GIZCLAW_WORKSPACE_NAME_MAX_BYTES 255u
 #define H2_GIZCLAW_WORKSPACE_PAGE_MAX_ITEMS 64u
 #define H2_GIZCLAW_WORKSPACE_HISTORY_ID_MAX_BYTES 255u
@@ -33,8 +39,6 @@ h2_pal_result_t h2_gizclaw_req_create_audio_play(
 
 typedef struct h2_gizclaw_workspace {
   char *name;
-  /** Owned collection when the source operation is collection-scoped. */
-  char *collection;
   char *workflow_name;
   bool system;
   bool available;
@@ -102,26 +106,36 @@ typedef struct h2_gizclaw_workspace_activation {
   h2_gizclaw_workspace_runtime_state_t runtime_state;
 } h2_gizclaw_workspace_activation_t;
 
+#define H2_GIZCLAW_SAFETY_FENCE_LEVEL_MAX_BYTES 64u
+
 typedef struct h2_gizclaw_workspace_get_result {
   h2_gizclaw_workspace_t workspace;
+  /** Server creation timestamp, optional; identifies a recreated name for
+   * activation-cache validation. Borrowed from caller response storage. */
+  char *created_at;
   char *runtime_profile_name;
   char *runtime_profile_revision;
+  /** Server-stored selection. This does not prove the Workflow injected its
+   * prompt; compare the Profile revision and reload result separately. */
+  bool has_safety_fence_level;
+  char safety_fence_level[H2_GIZCLAW_SAFETY_FENCE_LEVEL_MAX_BYTES + 1u];
 } h2_gizclaw_workspace_get_result_t;
 
-/* create */
+/** List owned Workspaces without a required filter. Cursor and output
+ * storage retain the usual request-copy and response-storage contracts. */
 h2_pal_result_t h2_gizclaw_req_create_workspace_list(
-    h2_gizclaw_service_t *service, uint64_t identity,
-    h2_gizclaw_str_t collection, h2_gizclaw_str_t cursor, size_t limit,
-    uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t cursor,
+    size_t limit, uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
 
 h2_pal_result_t h2_gizclaw_req_create_workspace_get(
     h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
     uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
 
+/** Create by stable workflow name. Tags do not participate in identity. */
 h2_pal_result_t h2_gizclaw_req_create_workspace_create(
     h2_gizclaw_service_t *service, uint64_t identity,
-    h2_gizclaw_str_t collection, h2_gizclaw_str_t workflow_name,
-    h2_gizclaw_str_t name, uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
+    h2_gizclaw_str_t workflow_name, h2_gizclaw_str_t name, uint32_t timeout_ms,
+    h2_gizclaw_req_t **out_request);
 
 typedef enum h2_gizclaw_conversation_initiative {
   H2_GIZCLAW_CONVERSATION_INITIATIVE_PEER = 1,
@@ -133,8 +147,21 @@ typedef enum h2_gizclaw_agent_initiative_policy {
   H2_GIZCLAW_AGENT_INITIATIVE_ON_RELOAD = 2,
 } h2_gizclaw_agent_initiative_policy_t;
 
+#define H2_GIZCLAW_WORKSPACE_TTS_SPEECH_RATE_MIN_PERCENT 50
+#define H2_GIZCLAW_WORKSPACE_TTS_SPEECH_RATE_MAX_PERCENT 200
+
 /** Parameter patch. Unset fields preserve the server's stored values.
- * Values are copied at request creation; no patch storage is borrowed. */
+ * Values are copied at request creation; no patch storage is borrowed.
+ * tts_speech_rate_percent scales the speech the server synthesizes for agent
+ * replies, from H2_GIZCLAW_WORKSPACE_TTS_SPEECH_RATE_MIN_PERCENT to
+ * H2_GIZCLAW_WORKSPACE_TTS_SPEECH_RATE_MAX_PERCENT percent of the provider's
+ * normal rate (100 = normal); leaving it unset keeps the Workflow
+ * configuration. The rate applies from the next reload and a value out of range
+ * is rejected at request creation with H2_PAL_ERR_INVALID_ARG. The rate has to
+ * apply where speech is synthesized: downlink audio arrives in real time, so
+ * slowing playback on the device would only grow its buffer and latency. A
+ * system (SFU) Workspace accepts a valid value as a no-op, so one patch serves
+ * every Workspace. */
 typedef struct h2_gizclaw_workspace_parameters_patch {
   bool has_input;
   h2_gizclaw_workspace_input_mode_t input;
@@ -142,6 +169,19 @@ typedef struct h2_gizclaw_workspace_parameters_patch {
   h2_gizclaw_conversation_initiative_t initiative;
   bool has_agent_initiative_policy;
   h2_gizclaw_agent_initiative_policy_t agent_initiative_policy;
+  bool has_tts_speech_rate_percent;
+  int32_t tts_speech_rate_percent;
+  /** When false, preserve the stored fence and ignore safety_fence_level. */
+  bool has_safety_fence_level;
+  /** Profile-defined identifier, ^[a-z][a-z0-9_-]{0,63}$. It must appear in
+   * the bound RuntimeProfile's workflow-list safety_fences before selection.
+   * Syntax errors return H2_PAL_ERR_INVALID_ARG before I/O.
+   * The Server checks profile membership on reload.
+   * parameters.set only stores the selection. reload-with-options can store
+   * it even when reload fails (for example, a missing RuntimeProfile prompt);
+   * failure does not roll back server storage or confirm an applied fence.
+   * SFU accepts it as a no-op. ASTTranslate stores it without injection. */
+  char safety_fence_level[H2_GIZCLAW_SAFETY_FENCE_LEVEL_MAX_BYTES + 1u];
 } h2_gizclaw_workspace_parameters_patch_t;
 
 h2_pal_result_t h2_gizclaw_req_create_workspace_set_parameters(
@@ -221,9 +261,8 @@ h2_pal_result_t h2_gizclaw_resp_parse_workspace_history_list(
 
 /* sync */
 h2_pal_result_t h2_gizclaw_rpc_workspace_list(
-    h2_gizclaw_service_t *service, h2_gizclaw_str_t collection,
-    h2_gizclaw_str_t cursor, size_t limit, uint32_t timeout_ms,
-    h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t cursor, size_t limit,
+    uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
     h2_gizclaw_workspace_page_t *out_result);
 
 h2_pal_result_t
@@ -233,8 +272,8 @@ h2_gizclaw_rpc_workspace_get(h2_gizclaw_service_t *service,
                              h2_gizclaw_workspace_get_result_t *out_result);
 
 h2_pal_result_t h2_gizclaw_rpc_workspace_create(
-    h2_gizclaw_service_t *service, h2_gizclaw_str_t collection,
-    h2_gizclaw_str_t workflow_name, h2_gizclaw_str_t name, uint32_t timeout_ms,
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t workflow_name,
+    h2_gizclaw_str_t name, uint32_t timeout_ms,
     h2_gizclaw_resp_storage_t *storage, h2_gizclaw_workspace_t *out_result);
 
 h2_pal_result_t h2_gizclaw_rpc_workspace_set_parameters(

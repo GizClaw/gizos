@@ -1,5 +1,6 @@
 #include "h2_h2loader_cli_app.h"
 #include "h2_h2loader_cli_internal.h"
+#include "h2_bleikcp.h"
 
 #include "h2/pal/h2_pal_unsupported.h"
 
@@ -178,6 +179,12 @@ static void test_help_and_usage(void) {
         "1:001122334455", "reboot", "app", "--monitor",
     };
     fake_output_t output = {0};
+    const char *wifi_status[] = {"h2loader", "--transport", "bleikcp",
+        "--port", "1:001122334455", "wifi", "status", "extra"};
+    assert(run_cli(&output, 7, wifi_status) == H2_H2LOADER_CLI_EXIT_RUNTIME);
+    memset(&output, 0, sizeof(output));
+    assert(run_cli(&output, 8, wifi_status) == H2_H2LOADER_CLI_EXIT_USAGE);
+    memset(&output, 0, sizeof(output));
 
     assert(run_cli(&output, 2, help) == H2_H2LOADER_CLI_EXIT_OK);
     assert(strstr(output.bytes, "commands: package golden check scan") != NULL);
@@ -187,7 +194,8 @@ static void test_help_and_usage(void) {
     assert(strstr(output.bytes,
         "wifi:     wifi scan [--limit <1-16>] [--timeout-ms <1-30000>]\n"
         "          wifi connect <ssid> <password>\n"
-        "          wifi disconnect\n") != NULL);
+        "          wifi disconnect\n"
+        "          wifi status\n") != NULL);
     assert(strstr(output.bytes, "secret") == NULL);
 
     memset(&output, 0, sizeof(output));
@@ -780,6 +788,7 @@ static void test_reboot_final_status_is_authoritative(void) {
 }
 
 int main(void) {
+    assert(h2_bleikcp_global_init() == H2_PAL_OK);
     test_ble_connect_diagnostic_uses_stderr();
     test_transport_diagnostic_arguments();
     test_help_and_usage();
@@ -796,5 +805,6 @@ int main(void) {
     test_send_reports_unreadable_file();
     test_reboot_final_status_is_authoritative();
     puts("h2loader cli app tests passed");
+    assert(h2_bleikcp_global_shutdown() == H2_PAL_OK);
     return 0;
 }

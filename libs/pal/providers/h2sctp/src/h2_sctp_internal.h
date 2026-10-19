@@ -127,6 +127,7 @@ struct h2_sctp {
 
 struct h2_pal_sctp_association {
     h2_sctp_t *owner;
+    const h2_pal_mem_api_t *mem;
     h2_pal_sctp_association_config_t config;
     h2_pal_sctp_state_t state;
     h2_pal_result_t terminal_reason;
@@ -145,6 +146,13 @@ struct h2_pal_sctp_association {
     uint32_t advanced_peer_ack;
     uint32_t next_reset_sequence;
     uint32_t expected_reset_sequence;
+    /* RFC 6525 5.2.2 deferred reset: an incoming reset request whose last
+     * assigned TSN is still beyond the cumulative point. The stream list is a
+     * copy of the request's stream identifiers, two wire bytes each. */
+    uint8_t *deferred_reset_streams;
+    size_t deferred_reset_streams_len;
+    uint32_t deferred_reset_sequence;
+    uint32_t deferred_reset_last_tsn;
     uint16_t negotiated_inbound_streams;
     uint16_t negotiated_outbound_streams;
     bool peer_forward_tsn;
@@ -212,8 +220,8 @@ struct h2_pal_sctp_association {
     uint64_t sack_deadline_ms;
 };
 
-void *h2_sctp_alloc(h2_sctp_t *provider, size_t size);
-void h2_sctp_free(h2_sctp_t *provider, void *pointer);
+void *h2_sctp_alloc(const h2_pal_mem_api_t *mem, size_t size);
+void h2_sctp_free(const h2_pal_mem_api_t *mem, void *pointer);
 uint64_t h2_sctp_deadline_add(uint64_t now_ms, uint64_t delta_ms);
 bool h2_sctp_tsn_before(uint32_t left, uint32_t right);
 bool h2_sctp_tsn_after(uint32_t left, uint32_t right);

@@ -23,6 +23,13 @@
 │   └── common/                           # 两个以上 Make target 共用的实现
 │
 ├── libs/                                 # 仓库级 Bazel libraries
+│   ├── crypto/                           # 按算法分类的密码学 library family
+│   │   └── sha256/                       # 独立的增量 SHA-256 library，含 include/src/tests/BUILD.bazel
+│   ├── atomic/                            # 独立原子值 contract 与 provider 模板
+│   │   ├── include/h2_atomic.h            # Typed wrapper、order、result 与生命周期 API
+│   │   ├── providers/                     # C11、pthread、locked 与 unsupported 实现
+│   │   ├── tests/                         # Provider 与失败路径测试
+│   │   └── BUILD.bazel                    # Contract 和测试目标
 │   ├── pal/
 │   │   ├── include/                      # PAL public contract
 │   │   ├── src/                          # Canonical unsupported API objects
@@ -132,6 +139,7 @@
 - `AGENTS.md` 是 Agent 使用的仓库入口，只保存索引、稳定根目录和必须遵守的工作规则。
 - `.gitattributes` 和 `.gitignore` 保存 Git 行为；公开 upstream archive 的 URL、commit、解压根和 SHA-256 pin 统一由 `MODULE.bazel` 保存。
 - `Makefile` 只定义公共 target、默认变量、export 和对 `scripts/` 同名脚本的调度。除 `common/` 外，每个 `scripts/<category>/<target>.py|sh` 必须只拥有对应的一个 target entry；两个以上 target 共用的 Make 实现只放在 `scripts/common/`。
+- `make format` 和 `make format-check` 分别由 `scripts/config/format.sh` 与 `scripts/config/format-check.sh` 调用 `scripts/common/format.sh`。固定版本的 clang-format 检查 C/C++ 变更行，StyLua 与 buildifier 检查整个变更文件；工具执行或下载失败必须返回非零，其他语言的检查继续执行。`python3 scripts/common/test_format.py` 在临时 Git 仓库中验证这些失败路径，不下载工具。
 - `.bazelversion`、`MODULE.bazel`、`REPO.bazel` 和根 `BUILD.bazel` 定义
   [Bazel 构建与 CI 依赖图](/zh/developing/bazel)。Bazel 是 stable host
   C/C++ package 以及 ESP-IDF/BK7258/BK3633 firmware 的入口、产物和 CI graph
@@ -156,7 +164,9 @@ libs/<library>/
 └── BUILD.bazel
 ```
 
-`libs/app_host/` 是上述"platform 无关"要求的唯一例外：它是 App 启动层，当前只有 Web 实现，其他平台以后在同一 library 中增加变体。它消费 PAL provider 组装 Runtime、运行调用方传入的 App entry 并负责 teardown，不实现 PAL capability、不选择 App。依赖边界：`libs/app_host` 只依赖 `libs/pal`、`libs/pal:unsupported`、`libs/pal/providers/web/pal_core`、`libs/lvgl:platform_web` 与 `libs/runtime`，不依赖任何 project、App 或 artifact entry；`targets/pkg_tar/<app>` 依赖它，反向不成立。`web_app.bzl` 的 `h2_web_app()` 在调用方 entry 的 package 内声明 wasm binary、archive、`:serve` 与 `:browser_test`，所以最终 archive、`main`、App entry 与配置、Button/key 映射和 preload 仍归该 entry；entry 也可以不经 `app_host` 自行组装。`libs/lua/web` 可以依赖 `libs/app_host`，同样不依赖 project。
+`libs/atomic/` 独立于 PAL，持有 typed atomic wrapper、操作符号与可复用 provider 模板；Runtime、H2Peer 和 App 直接依赖其 contract。最终 target 链入一个平台实现，不经过 PAL vtable 或 Memory PAL 注入。Desktop/Browser 使用 C11 provider，iOS/Android 使用 pthread provider；ESP provider 源码位于 `native_component_src/esp-idf6.x/h2_pal_core/`，其实际原子存储分配在内部 RAM。BK7258 AP 使用 `native_component_src/bk7258/ap/h2_pal_core` 中的 SRAM critical-section provider；wrapper 可位于 PSRAM，backing 保持 SRAM，其资格由独立 Atomic E2E 验证。JieLi 仍使用显式 unsupported provider。这里的 `h2_pal_core` 是现有 SDK component 名称，不改变 atomic contract 的 ownership。
+
+App 的启动顺序、Runtime assembly 和清理由 artifact entry 拥有；provider 只实现 PAL capability，不依赖 Runtime。`tools/bazel/web/` 保存 Web 编译、打包、shell、布局和纯 board metadata 规则，不能放通用 C 生命周期控制器。`libs/lua/web` 保存 Lua library 自己的 Browser entry：它直接运行一个嵌入脚本并管理所需资源，不接管其他 App。
 
 每个 library 都有独立的 `BUILD.bazel`。`BUILD.bazel` 通过显式 `srcs`、`hdrs`、`data` 和 `deps` 定义 library target 与 tests，测试目录统一使用 `tests/`。CI 直接分析所选平台的完整 compatible graph，不通过 tag 维护第二份 library 或 artifact inventory。平台差异只需要 toolchain 或 compatibility 即可表达时，不复制 source tree；只有接入 API、构建系统或 OS service 不同时，才在 `libs/pal/providers/` 下建立具名平台边界。
 
@@ -278,11 +288,11 @@ Web 入口也归 portable App owner。最终交付物使用实际 Bazel packagin
 projects/example/libs/web/tap-reset/
 projects/example/targets/pkg_tar/tap-reset/
 libs/pal/providers/web/pal_core/
-libs/app_host/
+tools/bazel/web/
 libs/lua/web/
 ```
 
-Project-local Web component 保存 presentation、required capability 和 portable App contract conversion；`pkg_tar/<app>` 保存 Emscripten lifecycle、Runtime assembly、HTML shell 和最终 serve-ready Web archive，其中 Runtime assembly、shell 和 archive 规则可以委托给 `libs/app_host`，页面外观与按键来自所选 web board（`h2_web_board()`，产品 board 放在该 board 目录旁）及其一套外观（见 `libs` 一节的例外），archive target 仍在该 entry 的 package 内。内部编译步骤使用 `wasm_cc_binary`，最终 rule 使用 `pkg_tar`，归档根目录直接提供 `index.html` 及其 JS/WASM 依赖。Web wrapper 不能依赖 Mobile contract。跨 project 的 Canvas、pointer、Memory、Time 与 Queue backend 属于 `libs/pal/providers/web/pal_core`；`pkg_tar/<app>` 可以直接组装 Runtime，也可以复用 `libs/app_host` 的 App 启动层与 `h2_web_app()`；只运行一个 Lua 脚本的页面由 `libs/lua/web` 的 `h2_lua_web_app()` 生成。`libs/lua/web` 是 Lua library 的 Browser artifact helper，与 `libs/lvgl:platform_web` 同类：它只在 `libs/lua` 之上增加 wasm-only 的通用 entry 与宏，依赖 `app_host`，不依赖具体 project。
+Project-local Web component 保存 presentation、required capability 和 portable App contract conversion；`pkg_tar/<app>` 保存 Emscripten lifecycle、Runtime assembly、HTML shell 和最终 serve-ready Web archive。页面资源、board metadata 和打包规则可复用 `tools/bazel/web`，实际初始化、运行和清理始终在 entry 中。内部编译使用 `wasm_cc_binary`，最终 rule 使用 `pkg_tar`，归档根目录提供 `index.html` 及其 JS/WASM 依赖。Web wrapper 不能依赖 Mobile contract。跨 project 的 Canvas、pointer、Memory、Time 与 Queue backend 属于 `libs/pal/providers/web/pal_core`。只运行一个 Lua 脚本的页面可用 `libs/lua/web` 的 `h2_lua_web_app()`：它选择 Lua 自己的通用入口和构建配置，不依赖具体 project。
 
 App 或 library 的 Bazel target 只在 source、defines、toolchain compatibility 或 dependency graph 存在实际差异时拆成 `_embed`、`_desktop`、`_mobile`、`_web` variant；没有差异时保留无后缀 target。Variant 按运行环境命名，不能按具体 App 复制公共 library。
 
@@ -311,9 +321,11 @@ Example 不能 include target SDK、launcher private type 或 H2Loader product p
 
 ### E2E 测试 App
 
-`projects/e2e/` 是 reusable cross-target headless test App project group。每个 portable registry 位于 `projects/e2e/apps/<test-app>/app/`，持有机器可验证的 case、deadline、progress、non-fail-fast aggregation、result schema 与 App-owned cleanup；library-local unit、fake、parser 和 protocol test 仍留在对应 library owner。
+`projects/e2e/` 是 reusable cross-target test App 与设备间吞吐测试台 project group。每个 portable registry 位于 `projects/e2e/apps/<test-app>/app/`，持有机器可验证的 case、deadline、progress、non-fail-fast aggregation、result schema 与 App-owned cleanup；library-local unit、fake、parser 和 protocol test 仍留在对应 library owner。
 
 Portable E2E App 只依赖 Runtime/PAL 和被测 target-independent library，不能依赖 Desktop、OS、Board、SDK、H2Loader、process environment、host filesystem path 或具体 backend。Desktop 与 firmware launcher 持有 Runtime/provider assembly、endpoint/fixture 注入、platform lifecycle 与结果输出。Provider 名属于 launcher target，不通过复制 portable registry 表达。
+
+`iperf-server` 是交互式吞吐测试台：portable App 持有触屏页面、异步控制器、测量结果和 server 生命周期，launcher 注入 AP 网络生命周期并持有 SDK-specific IPv4 DHCP/IPv6 SLAAC 配置。它与 headless case registry 共用相同的 Runtime/PAL 与 artifact ownership 边界。
 
 H2Loader-managed E2E image 位于 `projects/e2e/targets/h2loader_tar_zlib/<image>/<board>/`。`h2loader_tar_zlib` 表示安装产物类型，不改变 E2E App ownership。没有 H2Loader 的 standalone diagnostic image 位于 `projects/e2e/targets/<firmware-rule>/<image>/<board>/`。比如 BK3633 Libco Smoke 位于 `projects/e2e/targets/bk3633_firmware/libco-smoke/tapdoki_v2_0/`；它使用 TapDoki v2.0 Board 与 BK3633 component，但不属于 TapDoki production project。
 
@@ -452,6 +464,16 @@ projects/h2loader/
 
 设备端 Loader App、共用 library、H2Loader 专用 target component、Loader image entry 和 H2Loader package tooling 归 `projects/h2loader/`。`projects/h2loader/tools/bazel/` 拥有 `h2loader_tar_zlib` artifact rule、按 `target`/`board` 选择 layout 的 firmware wrapper，以及共用 partition、recovery 和 variant build input；全仓通用 ESP-IDF、BK firmware rule 仍归顶层 `tools/bazel/`。可复用 Example 归 `projects/example/apps/`，跨目标测试 App 归 `projects/e2e/apps/`，PIXA game App 归 `projects/pixa_games/apps/`；它们的 H2Loader-managed package 同样位于各自 project 的 `targets/h2loader_tar_zlib/`。被 H2Loader 安装不会改变源码或 artifact ownership。内部可复用 Web SDK 与 npm artifact 分别归 `libs/web/` 与 `targets/npm_package/h2loader/`；产品 React/shadcn UI 归 `GizClaw/www`。npm artifact 提交自己的 `package.json` 作为 package identity/version source of truth，并只组装 `libs/web` 的 matching JS/runtime/WASM outputs；它不取得 Browser lifecycle 或 Node.js runtime ownership。Native CLI App 与 executable target 分别归 `projects/h2loader/apps/cli/app/` 和 `projects/h2loader/targets/cc_binary/cli/`；portable Host Core 归 `libs/h2loader_host/`。具体职责见 [H2Loader 产品文档](/apps/h2loader/)。
 
+### GizClaw Firmware Browser SDK
+
+```text
+projects/gizclaw/
+├── libs/web/                       # Optional runtime SDK, canonical codec and TypeScript contract
+└── targets/npm_package/firmware/    # @gizclaw/firmware package identity, tarball and consumer tests
+```
+
+`projects/gizclaw/libs/web` 拥有绑定明确 WASM Module 的可选 npm SDK；最终 artifact 由 `targets/npm_package/firmware` 组装。固件不依赖 npm 包，产品通过 C 使用 `libs/gizclaw/web` 和已有 Service，由固件提供独立的 `Module.h2GizClaw` 字节/回调接口。共享 ABI version 位于 `libs/gizclaw/web/protocol.json`，对象 codec/map 和类型只进入 npm 包。SDK 不包含产品固件，不取得 H106、Runtime、Service 或页面 lifecycle ownership；它只封装传入的 runtime。同一实例可有多个 client，`close()` 只取消所属 client 的调用。
+
 ## `tools`
 
 `tools/` 保存只在开发机运行的命令、生成器和设备操作工具。
@@ -518,3 +540,8 @@ guides/.vitepress/dist/
 ```
 
 生成产物不能作为 include、package、asset 或运行时输入的稳定来源，也不能提交成新的源码目录。需要提交的 generated contract 或 fixture 必须由对应 library、project 或 tool 明确拥有，并提供可重复生成和验证的方法。
+
+
+### H2Loader 双格式产物
+
+保留 `targets/h2loader_tar_zlib/<image>/<board>/` 的 native firmware ownership 与 format-1 package。新增 `targets/h2loader_zlib_tar/<image>/<board>/` 只声明 format-2 artifact wrapper，其 `source` 指向对应旧 package 的原始输入 provider，不复制 CMake、native component、task policy 或 App source。H106 private consumer 使用相同边界。两类安装产物的实现归 `projects/h2loader/tools/bazel/`；checksum matrix fixture builder 与两种 package action 复用 native image，不取得 firmware ownership。

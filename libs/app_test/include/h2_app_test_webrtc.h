@@ -2,9 +2,12 @@
 #define H2_APP_TEST_WEBRTC_H
 #include "h2/pal/application/h2_pal_webrtc.h"
 #include "h2/pal/os/h2_pal_mem.h"
+#include <stdbool.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
+/* Deprecated compatibility value. The observer no longer limits channels to
+ * this count; callers must not use it as a runtime capacity guarantee. */
 #define H2_APP_TEST_WEBRTC_CHANNELS_MAX 16u
 typedef struct h2_app_test_webrtc h2_app_test_webrtc_t;
 /** Called synchronously after a successful poll. Event is borrowed and must not
@@ -14,10 +17,10 @@ typedef void (*h2_app_test_webrtc_observe_fn)(
     void *user, const h2_pal_webrtc_event_t *event);
 /** Decorate a real or fake provider, preserving errors, payload ownership and
  * track handles. Peer/channel handles belong to this decorator and must only be
- * used with its API. Each peer retains at most CHANNELS_MAX distinct channel
- * handles until peer close. Caller serializes operations on each peer and its
- * channels, and releases events before closing their peer. Dependencies and
- * callback context remain borrowed until destroy. */
+ * used with its API. Each peer retains distinct channel handles until peer
+ * close so borrowed event handles stay stable. Caller serializes operations
+ * on each peer and its channels, and releases events before closing the peer.
+ * Dependencies and callback context remain borrowed until destroy. */
 h2_pal_result_t h2_app_test_webrtc_create(const h2_pal_mem_api_t *mem,
                                           const h2_pal_webrtc_api_t *delegate,
                                           h2_app_test_webrtc_observe_fn observe,
@@ -25,6 +28,10 @@ h2_pal_result_t h2_app_test_webrtc_create(const h2_pal_mem_api_t *mem,
                                           h2_app_test_webrtc_t **out);
 const h2_pal_webrtc_api_t *
 h2_app_test_webrtc_api(h2_app_test_webrtc_t *wrapper);
+/** True for a live decorator channel returned by local create_data_channel.
+ * Remote channels first observed in peer_poll return false. Call only with
+ * this decorator's live handles, under the same peer serialization as poll. */
+bool h2_app_test_webrtc_channel_created_locally(const h2_pal_webrtc_channel_t *channel);
 /** Requires quiescent callers. Active peers/events return INVALID_STATE and
  * retain ownership; NULL is OK. */
 h2_pal_result_t h2_app_test_webrtc_destroy(h2_app_test_webrtc_t *wrapper);

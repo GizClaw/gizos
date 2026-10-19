@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "h2_esp_es8311_es7210_aec_stats.h"
 
 #define H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_MAX_MIC_CHANNELS 2u
 
@@ -33,6 +34,10 @@ typedef struct h2_esp_es8311_es7210_audio_system_config {
     uint8_t ref_channel_index;
     uint32_t aec_reference_gain_milli;
     int enable_aec;
+    h2_esp_es8311_es7210_aec_nlp_level_t aec_nlp_level;
+    h2_esp_es8311_es7210_aec_observe_fn aec_observe;
+    h2_esp_es8311_es7210_aec_observe_enabled_fn aec_observe_enabled;
+    void *aec_observer_user;
 } h2_esp_es8311_es7210_audio_system_config_t;
 
 typedef struct h2_esp_es8311_es7210_sr_state {
@@ -50,6 +55,9 @@ typedef struct h2_esp_es8311_es7210_sr_state {
     int16_t *ref_frame;
     int16_t *out_frame;
     uint32_t processed_frame_count;
+    h2_esp_es8311_es7210_aec_observe_fn observe;
+    h2_esp_es8311_es7210_aec_observe_enabled_fn observe_enabled;
+    void *observer_user;
 } h2_esp_es8311_es7210_sr_state_t;
 
 int h2_esp_es8311_es7210_sr_init(

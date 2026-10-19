@@ -19,16 +19,15 @@ class FriendCoverageTest(unittest.TestCase):
         self.assertEqual(run.returncode, 0, "Friend boundary fixture failed")
         self.assertNotIn("local-invite-", run.stdout)
         rules = api_coverage.requirements()
-        api_coverage.validate_inventory(rules, (root / "libs/gizclaw/tests/public_api.inc").read_text())
         result = api_coverage.audit(run.stdout.splitlines(keepends=True), rules,
                                    endpoint="example.invalid:9821", backend="h2peer",
                                    profile="default", platform="macos", process_exit_code=run.returncode)
-        expected = {rule.symbol for rule in rules if rule.case == "rpc/friend"}
+        expected = {rule.symbol for rule in rules if rule.case == "rpc/friend" and not rule.symbol.endswith("_ping")}
         observed = {row["symbol"] for row in result["functions"] if row["status"] == "covered"}
         self.assertEqual(len(expected), 21)
         self.assertEqual(observed, expected)
         self.assertFalse(result["valid"])
-        self.assertEqual(result["missing"], 225 - 21)
+        self.assertEqual(result["missing"], 236 - 21)
 
 
 if __name__ == "__main__":

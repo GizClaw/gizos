@@ -64,6 +64,7 @@ cc_test(
     }),
     deps = [
         ":tuxemon",
+        "//libs/atomic/providers/c11",
         "//libs/game_runtime:game_test_support",
     ],
 )

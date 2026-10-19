@@ -77,6 +77,8 @@ make bazel-test-downstream-consumer
 
 Run `make format` before committing. It formats changes since `origin/main` with pinned tools: clang-format 22.1.5 for C/C++ (changed lines only; paths in `.clang-format-ignore` are skipped), StyLua 2.5.2 for Lua and buildifier 10.0.1 for Bazel files (whole changed files). StyLua and buildifier are downloaded and checksum-verified on first use. `make format-check` runs the same check as CI without modifying files.
 
+The command entries are `scripts/config/format.sh` and `scripts/config/format-check.sh`, with shared logic in `scripts/common/format.sh`. Both commands fail on tool errors while still checking the other languages. A successful C/C++ rewrite is accepted in fix mode; Lua fixes must stabilize within five passes. Run `python3 scripts/common/test_format.py` for the isolated failure-path regression tests; they need no formatter downloads.
+
 ## Use GizOS from Bzlmod
 
 Add GizOS as a module override in the consuming repository and depend on public targets through `@gizos//...`:

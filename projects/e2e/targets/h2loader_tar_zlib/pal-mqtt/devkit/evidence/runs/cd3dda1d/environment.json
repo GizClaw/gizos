@@ -1,0 +1,23 @@
+{
+  "artifact_source_commit": "cd3dda1dfc28f5d3666851d870779468286720aa",
+  "fixture_source_commit": "cd3dda1dfc28f5d3666851d870779468286720aa",
+  "host_oracle_source_commit": "7ee9f3d1cb14023d0261500ad5bf3334e5da2f0b",
+  "version": "mqtt-esp-retained-cd3-r3",
+  "qualified": true,
+  "case_count": 36,
+  "boots": [
+    "b789aa066e4241e6abaae70bb4359673-4d567da916c992c1",
+    "b789aa066e4241e6abaae70bb4359673-720e6262ed27324a"
+  ],
+  "retained_received_each": 2,
+  "retained_wire_publish_each": 2,
+  "retained_wire_disconnect_each": 1,
+  "new_p1_loader_image_sha256": "7109a515fb662b76abb2bf4927cffd294c4c26a02e1610b8a2bf8eebbf4ae136",
+  "new_p1_loader_package_sha256": "4a49186722ec477d75eeeac4865030c6cc5d017eb4d00acbee731b9d7d79775f",
+  "restored": true,
+  "uart_released": true,
+  "earlier_955dcf_and_da770_receipts_preserved": true,
+  "restore_host_failures_preserved": true,
+  "raw_evidence_directory": "/Users/idy/.codex/task-evidence/pal-pref-mqtt-platforms-20261004/mqtt-esp-retained-cd3dda1d-qualified",
+  "recorded_at_utc": "2026-10-04T17:34:29.571987+00:00"
+}

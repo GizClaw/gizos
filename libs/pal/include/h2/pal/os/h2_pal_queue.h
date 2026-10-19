@@ -32,6 +32,9 @@ typedef struct h2_pal_queue_vtable {
     int (*send_latest)(void *user, h2_pal_queue_t *queue, const void *item);
     int (*recv)(void *user, h2_pal_queue_t *queue, void *out_item, uint32_t timeout_ms);
     int (*reset)(void *user, h2_pal_queue_t *queue);
+    /* Stop accepting sends and wake waiters. Buffered items remain available
+     * to recv in FIFO order; recv reports CLOSED only after that data is drained.
+     * Destroy only after all callers have returned from queue operations. */
     int (*close)(void *user, h2_pal_queue_t *queue);
 } h2_pal_queue_vtable_t;
 

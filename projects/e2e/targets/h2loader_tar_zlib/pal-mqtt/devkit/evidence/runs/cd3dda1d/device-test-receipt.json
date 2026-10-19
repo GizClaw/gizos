@@ -1,0 +1,12 @@
+{
+  "exit": 0,
+  "command": [
+    "bazel",
+    "test",
+    "--config=macos_arm64",
+    "--nocache_test_results",
+    "//projects/e2e/targets/h2loader_tar_zlib/pal-mqtt/devkit:device_test"
+  ],
+  "log_sha256": "a6757872531b5f376e48cf7fbc5bbd116957b396214a91262098e2e8d87d2805",
+  "qualification_sha256": "d139f2eb742480999601f6b0be1b70574ece44ac6d2bd4a7ed1585274327ee2e"
+}

@@ -1,4 +1,5 @@
 #include "h2_bloomspeaker.h"
+#include "h2_bleikcp.h"
 
 #include "h2_desktop_platform.h"
 #include "h2_smoke_host_runtime.h"
@@ -54,6 +55,7 @@ static h2_pal_result_t ready(void *user) {
 }
 
 int main(void) {
+  assert(h2_bleikcp_global_init() == H2_PAL_OK);
   static const h2_pal_display_vtable_t display_vtable = {
       .open = display_open,
       .get_info = display_info,
@@ -86,5 +88,6 @@ int main(void) {
   assert(fixture.display_open == 1u && fixture.display_close == 1u);
   assert(fixture.draw >= 1u && fixture.present >= 1u);
   h2_runtime_deinit(runtime);
+  assert(h2_bleikcp_global_shutdown() == H2_PAL_OK);
   return 0;
 }

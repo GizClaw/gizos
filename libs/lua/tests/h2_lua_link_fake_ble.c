@@ -16,7 +16,7 @@ static h2_pal_result_t fake_sync_unlock(void *user, h2_pal_mutex_t *mutex) {
   if (gate != NULL) {
     s_terminal_gate = NULL;
     pthread_mutex_lock(&gate->mutex);
-    atomic_store(&gate->reached, 1);
+    h2_atomic_store(&gate->reached, 1);
     while (!gate->released) {
       pthread_cond_wait(&gate->cond, &gate->mutex);
     }

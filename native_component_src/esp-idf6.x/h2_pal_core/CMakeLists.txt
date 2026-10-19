@@ -1,16 +1,24 @@
 set(REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../..")
 
 option(H2_ESP_PLATFORM_ENABLE_WEBRTC "Enable ESP WebRTC platform implementation backed by H2Peer" OFF)
+option(H2_ESP_IO_PHASE_DIAGNOSTICS "Report slow FS/Pref flash-safe I/O phases" OFF)
 
 set(H2_ESP_PLATFORM_CORE_SRCS
+  "src/h2_esp_io_phase.c"
   "src/h2_esp_lazy_audio.c"
   "src/h2_esp_platform_mem.c"
+  "src/h2_esp_resource_stats.c"
+  "src/h2_esp_platform_timer.c"
+  "src/h2_esp_atomic.c"
+  "src/h2_esp_platform_arena.c"
   "src/h2_esp_platform_log.c"
   "src/h2_esp_platform_firmware_info.c"
   "src/h2_esp_platform_partition.c"
   "src/h2_esp_platform_sync.c"
   "src/h2_esp_platform_net.c"
+  "src/h2_esp_platform_net_tls_verify.c"
   "src/h2_esp_platform_netif.c"
+  "src/h2_esp_platform_ppp.c"
   "src/h2_esp_platform_task.c"
   "src/h2_esp_platform_queue.c"
   "src/h2_esp_platform_safe_call.c"
@@ -33,6 +41,14 @@ set(H2_ESP_PLATFORM_CORE_SRCS
   "src/h2_esp_platform_littlefs.c"
   "src/h2_esp_platform_spiffs.c")
 
+# ESP-IDF disables inline S32C1I atomics when PSRAM is enabled. This provider
+# allocates every C11 atomic value, including flags, in internal RAM, so this
+# one source can use the hardware instructions.
+if(CONFIG_IDF_TARGET_ESP32S3 AND CONFIG_STDATOMIC_S32C1I_SPIRAM_WORKAROUND)
+  set_source_files_properties("src/h2_esp_atomic.c"
+    PROPERTIES COMPILE_FLAGS "-mno-disable-hardware-atomics")
+endif()
+
 if(IDF_TARGET STREQUAL "esp32p4" AND NOT CONFIG_ESP_WIFI_REMOTE_ENABLED)
   list(APPEND H2_ESP_PLATFORM_CORE_SRCS
     "src/h2_esp_platform_wifi_unsupported.c"
@@ -41,6 +57,7 @@ if(IDF_TARGET STREQUAL "esp32p4" AND NOT CONFIG_ESP_WIFI_REMOTE_ENABLED)
 else()
   list(APPEND H2_ESP_PLATFORM_CORE_SRCS
     "src/h2_esp_platform_wifi.c"
+    "src/h2_esp_wifi_ip.c"
     "src/h2_esp_platform_wifi_settings.c"
     "src/h2_esp_wifi_teardown.c")
   if(CONFIG_ESP_WIFI_CSI_ENABLED)
@@ -93,6 +110,9 @@ idf_component_register(
   INCLUDE_DIRS
     "include"
     "${REPO_ROOT}/libs/pal/include"
+    "${REPO_ROOT}/libs/atomic/include"
+    "${REPO_ROOT}/libs/atomic/providers/c11"
+    "${REPO_ROOT}/libs/mem_arena/include"
     "${REPO_ROOT}/libs/wifi_sta/include"
     "${REPO_ROOT}/libs/pal/providers/corehttp/include"
     "${REPO_ROOT}/libs/pal/providers/h2peer/include"
@@ -108,3 +128,6 @@ if(IDF_TARGET STREQUAL "esp32p4")
 endif()
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -Wall -Wextra -Werror)
+if(H2_ESP_IO_PHASE_DIAGNOSTICS)
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE H2_ESP_IO_PHASE_DIAGNOSTICS=1)
+endif()

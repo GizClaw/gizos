@@ -5,7 +5,7 @@
 #include <assert.h>
 #include <errno.h>
 #include <pthread.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <stdlib.h>
 #include <time.h>
 
@@ -16,8 +16,8 @@ struct h2_jieli_sdk_sem {
     unsigned count;
     unsigned max_count;
 };
-static atomic_int allocations, waiting, polling;
-static atomic_int reset_parked, reset_release;
+static h2_atomic_int_t allocations, waiting, polling;
+static h2_atomic_int_t reset_parked, reset_release;
 static _Thread_local int park_next_lock;
 
 uint32_t h2_jieli_sdk_time_ms(void) {
@@ -36,11 +36,11 @@ const void *h2_jieli_sdk_task_current(void) {
 
 void *h2_jieli_sdk_malloc(size_t size) {
     void *p = calloc(1, size);
-    if (p != NULL) atomic_fetch_add(&allocations, 1);
+    if (p != NULL) h2_atomic_fetch_add(&allocations, 1);
     return p;
 }
 void h2_jieli_sdk_free(void *p) {
-    if (p != NULL) atomic_fetch_sub(&allocations, 1);
+    if (p != NULL) h2_atomic_fetch_sub(&allocations, 1);
     free(p);
 }
 h2_jieli_sdk_mutex_t *h2_jieli_sdk_mutex_create(void) {
@@ -56,8 +56,8 @@ int h2_jieli_sdk_mutex_lock(h2_jieli_sdk_mutex_t *m, uint32_t timeout) {
     (void)timeout;
     if (park_next_lock) {
         park_next_lock = 0;
-        atomic_store(&reset_parked, 1);
-        while (!atomic_load(&reset_release)) {
+        h2_atomic_store(&reset_parked, 1);
+        while (!h2_atomic_load(&reset_release)) {
             const struct timespec delay = {0, 1000000L};
             (void)nanosleep(&delay, NULL);
         }
@@ -105,13 +105,13 @@ int h2_jieli_sdk_sem_take(h2_jieli_sdk_sem_t *s, uint32_t timeout) {
         deadline.tv_nsec -= 1000000000L;
     }
     assert(pthread_mutex_lock(&s->lock) == 0);
-    atomic_fetch_add(&waiting, 1);
+    h2_atomic_fetch_add(&waiting, 1);
     int rc = 0;
     while (s->count == 0u && rc == 0) {
         rc = timeout == 0u ? ETIMEDOUT :
             pthread_cond_timedwait(&s->changed, &s->lock, &deadline);
     }
-    atomic_fetch_sub(&waiting, 1);
+    h2_atomic_fetch_sub(&waiting, 1);
     if (s->count != 0u) { --s->count; rc = 0; }
     assert(pthread_mutex_unlock(&s->lock) == 0);
     assert(rc == 0 || rc == ETIMEDOUT);
@@ -142,20 +142,26 @@ static void *poll_sender(void *arg) {
         w->result = h2_pal_queue_send(api, w->queue, &value, 0u);
         if (w->result == H2_PAL_ERR_CLOSED) return NULL;
         assert(w->result == H2_PAL_ERR_FULL);
-        atomic_fetch_add(&polling, 1);
+        h2_atomic_fetch_add(&polling, 1);
     }
     assert(!"polling sender did not observe close");
     return NULL;
 }
 static void await_waiters(int count) {
     for (unsigned i = 0; i < 5000u; ++i) {
-        if (atomic_load(&waiting) == count) return;
+        if (h2_atomic_load(&waiting) == count) return;
         const struct timespec delay = {0, 1000000L};
         (void)nanosleep(&delay, NULL);
     }
     assert(!"queue waiters did not reach barrier");
 }
 int main(void) {
+    assert(h2_atomic_int_init(&allocations, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_int_init(&waiting, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_int_init(&polling, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_int_init(&reset_parked, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_int_init(&reset_release, 0) == H2_ATOMIC_OK);
+
     const h2_pal_queue_api_t *api = h2_jieli_wl82_platform_queue_api();
     const h2_pal_queue_config_t config = {.item_size = sizeof(int), .item_count = 1u};
     {
@@ -166,20 +172,20 @@ int main(void) {
         worker_t receiver = {queue, 0, -1};
         pthread_t thread;
         assert(pthread_create(&thread, NULL, reset_receiver, &receiver) == 0);
-        for (unsigned i = 0; i < 5000u && !atomic_load(&reset_parked); ++i) {
+        for (unsigned i = 0; i < 5000u && !h2_atomic_load(&reset_parked); ++i) {
             const struct timespec delay = {0, 1000000L};
             (void)nanosleep(&delay, NULL);
         }
-        assert(atomic_load(&reset_parked));
+        assert(h2_atomic_load(&reset_parked));
         assert(h2_pal_queue_reset(api, queue) == H2_PAL_OK);
-        atomic_store(&reset_release, 1);
+        h2_atomic_store(&reset_release, 1);
         assert(pthread_join(thread, NULL) == 0);
         assert(receiver.result == H2_PAL_ERR_TIMEOUT);
         assert(h2_pal_queue_send(api, queue, &value, 0u) == H2_PAL_OK);
         assert(h2_pal_queue_recv(api, queue, &value, 0u) == H2_PAL_OK);
         assert(value == 7);
         h2_pal_queue_destroy(api, queue);
-        assert(atomic_load(&allocations) == 0);
+        assert(h2_atomic_load(&allocations) == 0);
     }
     {
         h2_pal_queue_t *queue = NULL;
@@ -197,7 +203,7 @@ int main(void) {
         assert(value == 91);
         assert(h2_pal_queue_recv(api, queue, &value, 0u) == H2_PAL_ERR_TIMEOUT);
         h2_pal_queue_destroy(api, queue);
-        assert(atomic_load(&allocations) == 0);
+        assert(h2_atomic_load(&allocations) == 0);
     }
     for (unsigned iteration = 0; iteration < 50u; ++iteration) {
         for (int send = 0; send <= 1; ++send) {
@@ -215,9 +221,9 @@ int main(void) {
             worker_t poll = {queue, 1, -1};
             pthread_t poll_thread;
             if (send) {
-                atomic_store(&polling, 0);
+                h2_atomic_store(&polling, 0);
                 assert(pthread_create(&poll_thread, NULL, poll_sender, &poll) == 0);
-                while (atomic_load(&polling) < 100) {
+                while (h2_atomic_load(&polling) < 100) {
                     const struct timespec delay = {0, 1000000L};
                     (void)nanosleep(&delay, NULL);
                 }
@@ -238,8 +244,13 @@ int main(void) {
             }
             assert(h2_pal_queue_recv(api, queue, &value, 0u) == H2_PAL_ERR_CLOSED);
             h2_pal_queue_destroy(api, queue);
-            assert(atomic_load(&allocations) == 0);
+            assert(h2_atomic_load(&allocations) == 0);
         }
     }
+    h2_atomic_int_destroy(&allocations);
+    h2_atomic_int_destroy(&waiting);
+    h2_atomic_int_destroy(&polling);
+    h2_atomic_int_destroy(&reset_parked);
+    h2_atomic_int_destroy(&reset_release);
     return 0;
 }

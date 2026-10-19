@@ -67,7 +67,7 @@ static const char *option_value(
 int h2_h2loader_cli_package_command(
     h2_h2loader_cli_context_t *context, int argc, const char *const *argv,
     int golden) {
-    const char *out = "/tmp/update.tar.zlib";
+    const char *out = "/tmp/update.tar";
     const char *app_bin = NULL;
     const char *app_path = "app/esp/app.bin";
     const char *data_dir = NULL;

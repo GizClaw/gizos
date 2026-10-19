@@ -14,6 +14,7 @@ class PartialP1Test(unittest.TestCase):
 #include <stdint.h>
 #include <stddef.h>
 #include <assert.h>
+#include "h2_atomic.h"
 #include <setjmp.h>
 #include "jieli_native_image.h"
 #define H2_JIELI_BANK_1_SFC_BASE 0x4020u
@@ -72,6 +73,8 @@ int main(void){
             (path / "test.c").write_text(stub + source + main)
             subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
                             "-I", str(ROOT / "boards/jieli_ac791n_devkit/ac791n/layouts/h2loader/include"),
+                            "-I", str(ROOT / "libs/atomic/include"),
+                            str(ROOT / "libs/atomic/providers/c11/src/h2_atomic_c11.c"),
                             str(path / "test.c"), "-o", str(path / "test")], check=True, timeout=60)
             subprocess.run([str(path / "test")], check=True, timeout=10)
 

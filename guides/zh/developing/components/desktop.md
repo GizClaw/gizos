@@ -18,7 +18,7 @@ libs/pal/providers/desktop/
 └── tests/                          # 只保留跨 package Desktop integration
 ```
 
-Desktop 的 semantic target 是 `//libs/pal/providers/desktop/pal_core:pal_core`；顶层 `BUILD.bazel` 只保存跨 package integration test，不是第二个 semantic owner。`pal_core/` 只包含跨 Linux/macOS 的 standard C/C++ core 与确定性 simulator；`app_support/` 选择真实 Linux/Darwin owner 与可复用 provider，并负责 consumer-first teardown。Windows 的 Memory、Time、Task、Queue、Sync、Filesystem、Net、Netif 和 System Event 等 OS capability 由 `//libs/pal/providers/windows/pal_core:pal_core` 独立拥有，不能反向依赖 Desktop；共享的 `//projects/e2e/targets/cc_binary/pal:pal_e2e_test` 只复用 OS-neutral case registry。SDL3、PortAudio、FFmpeg 与 SQLite 分别由 `libs/pal/providers/<provider>/` 拥有；LVGL Display adapter 由 `libs/lvgl` 拥有。Opus 没有 GizOS adapter，Desktop、H106 与 Audio System consumer 直接依赖 `//tools/bazel:vendor_third_party_opus`，不保留 implementation-free 的 `desktop/pkgs/opus` forwarding package。PortAudio 直接依赖完整的 `@h2_vendor_speexdsp//:speexdsp`，不保留 implementation-free 的 `libs/speexdsp` 或 Desktop forwarding package。
+Desktop 的 semantic target 是 `//libs/pal/providers/desktop/pal_core:pal_core`；顶层 `BUILD.bazel` 只保存跨 package integration test，不是第二个 semantic owner。`pal_core/` 只包含跨 Linux/macOS 的 standard C/C++ core 与确定性 simulator；`app_support/` 选择真实 Linux/Darwin owner 与可复用 provider，并负责 consumer-first teardown。Windows 的 Memory、Time、Task、Queue、Sync、Filesystem、Net、Netif 和 System Event 等 OS capability 由 `//libs/pal/providers/windows/pal_core:pal_core` 独立拥有，不能反向依赖 Desktop。旧混合 Host E2E 已下线，独立 PAL App 的 Linux/Windows 覆盖缺口见 `projects/e2e/apps/README.md`。SDL3、PortAudio、FFmpeg 与 SQLite 分别由 `libs/pal/providers/<provider>/` 拥有；LVGL Display adapter 由 `libs/lvgl` 拥有。Opus 没有 GizOS adapter，Desktop、H106 与 Audio System consumer 直接依赖 `//tools/bazel:vendor_third_party_opus`，不保留 implementation-free 的 `desktop/pkgs/opus` forwarding package。PortAudio 直接依赖完整的 `@h2_vendor_speexdsp//:speexdsp`，不保留 implementation-free 的 `libs/speexdsp` 或 Desktop forwarding package。
 
 Desktop executable 归 App owner project：
 
@@ -85,6 +85,16 @@ Display brightness 通过 framebuffer presentation 的 color modulation 模拟�
 帮助框包含 `Controls / Help` 和 `Simulator` 两部分。按键说明从当前 keyboard-backed peripheral 配置生成；模拟器信息在打开时读取当前 app title、display 尺寸、power、Wi-Fi、peripheral 类型和状态。Battery 注入值、PWM 当前 duty、button pressed state 等动态数据必须反映打开帮助框时的 snapshot，不能只展示 build-time default。Wi-Fi password、private endpoint、contact phone 或其他 secret 不进入帮助文本。
 
 帮助框是主 SDL window 的 host-native modal dialog，不创建第二个 firmware display、framebuffer 或 portable App route。测试可以通过 `h2_desktop_platform_copy_help_text()` 取得同一份 UTF-8 snapshot，而不实际打开 dialog。
+
+## Display / Mic / Speaker Capture Hooks
+
+`app_support:capture` 在 Desktop 组合层接受可选的 `h2_desktop_capture_config_t.hooks`，包括 `on_display`、`on_mic`、`on_speaker` 与调用方 `user`。这些是观察回调，不是新的 PAL capability 或 vtable。未配置的回调关闭对应捕获；空配置成功返回 NULL registration。Desktop 只交出数据，不规定 callback 用于录像、统计、分析还是其它用途，也不启动设备或写文件。
+
+Display hook 取得实际 SDL 呈现的完整 RGB565 framebuffer 与 brightness，包含 LVGL 已完成的透明合成。Speaker hook 取得混音、音量处理后成功送出的 PCM；Mic hook 取得真实输入经过 AEC 后、进入 Audio PAL queue 前的 PCM，synthetic fallback 不触发 mic hook。三路使用相同 native steady-clock 微秒时间轴：speaker timestamp 含 PortAudio 报告的输出延迟估计；mic timestamp 是 read 完成时间减去 frame 时长，不代表 ADC 硬件时间戳。Mic hook 位于 Desktop provider，早于 App/E2E fixture decorator 的输入替换。
+
+配置和函数指针在注册时复制，`user` 与 providers 借用到 registration 销毁。Payload 仅在 callback 期间有效；消费者需要保留时复制，并自行安排耗时处理。Display 与 audio callback 可能并发；callback 不得重入 source provider 或 capture 配置。一个 source 只允许一个 owner，冲突返回 BUSY 并回滚本次已完成的注册。Destroy 同步注销并等待在途 callback 退出，调用方随后才能释放 user、recorder 或 providers。
+
+`libs/desktop_recording` 是 hooks 的一个消费者。它提供 display/speaker callbacks 和独立编码生命周期，Desktop capture 不依赖 FFmpeg。产品 E2E launcher 组织产物路径并执行注册、注销和编码器收尾。具体编码、有界缓冲和停止尾帧/尾音合同见 [Desktop 音视频录像](../desktop_recording.md)。
 
 ## Video Decoder
 
@@ -249,14 +259,11 @@ metadata、重复 terminal 和反向通道由本地 unit/受控 Pion 测试负�
 label，不使用 Make 聚合入口。Live E2E 通过 exact label 请求 `manual` target，并使用
 `--cache_test_results=no`，防止默认自动测试触发外部服务或复用旧结果。
 
-默认 package test 通过 `//libs/pal/providers/desktop/app_support:network_services_test` 验证 wolfSSL、CoreMQTT、H2SCTP 与 H2Peer 的初始化顺序、API wiring 和反向清理。Portable MQTT live flow 属于
-`//projects/e2e/apps/pal/app:pal_e2e`；
-`//projects/e2e/targets/cc_binary/pal:mqtt_loopback_test` 只装配 Desktop Runtime/provider 和进程内
-broker fixture，并通过该 App 完成 connect、subscribe、publish echo 和 disconnect，不依赖外部服务。
-访问公共 broker 的 Desktop launcher 也调用同一 portable flow，按需执行：
+默认 package test 通过 `//libs/pal/providers/desktop/app_support:network_services_test` 验证 wolfSSL、CoreMQTT、H2SCTP 与 H2Peer 的初始化顺序、API wiring 和反向清理。Portable MQTT live flow 属于 `//projects/e2e/apps/pal-mqtt/app:pal_mqtt_e2e`； `//projects/e2e/targets/cc_binary/pal-mqtt:desktop_test` 装配真实 Desktop provider 与受控 TCP/TLS broker fixture，执行完整 36-case 合同并验证 ACK、事件、TLS 拒绝和清理。 访问公共 broker 的独立 smoke target 按需执行，不代表完整 MQTT 资格：
 
 ```sh
-bazel run --config=macos_arm64 //projects/e2e/targets/cc_binary/pal:mqtt_public_broker_smoke
+bazel test --config=macos_arm64 --cache_test_results=no \
+  //projects/e2e/targets/cc_binary/pal-mqtt:public_broker_test
 ```
 
 ## 边界
@@ -282,3 +289,15 @@ Desktop Component 不应该：
 Desktop App 的 `layout.json` 可以在 `simulation.wifi_sta.scan_results` 中声明扫描可见的 Wi-Fi，包含 SSID、RSSI、信道、安全类型和加密网络的预期密码；open 网络不得配置密码。`wifi_sta.scan_outcome` 可以配置 `success`、`io_error` 或 `timeout`，`scan_delay_ms` 可以在 60 秒内延迟结果，用于验证失败、PAL timeout、取消和迟到结果；当延迟超过 PAL 调用的 `timeout_ms` 时，Desktop 必须在 deadline 返回 timeout，不能再投递结果。`wifi_sta` 的当前连接状态与扫描列表分开配置。`simulation.modem` 可以声明 modem 是否可用、`mobile_data_enabled` 初始用户期望、运营商、信号和 RAT；不能用瞬时 PPP 连接结果代替初始用户期望。Desktop H106 只在 `cellular_enabled` preference 缺失时用该值初始化 preference，随后通过正式 Modem PAL 恢复状态；用户在页面上的修改继续跨启动保留。Desktop modem 在移动数据关闭时不报告有效 RSSI，H106 在后台恢复或切换完成后也必须立即刷新 Header，不能留下与当前模拟状态不一致的旧信号。Desktop backend 必须复制配置，并通过正式的 Wi-Fi STA 与 Modem PAL 返回和修改状态；App 不能直接读取 JSON 配置。Desktop H106 示例中加密网络的测试密码是 `h106test`。
 
 Wi-Fi 用户配网通过显式 PAL `connect_and_save` 调用 `libs/wifi_sta` 的共享事务；普通 `connect` 不写保存配置。Provider 在整个事务期间串行接纳连接和断开，只有目标网络认证且得到有效 IP 后才保存，保存失败原样返回。Desktop 成功连接使用文档示例网段的模拟 IPv4，保存仅在当前进程有效；不访问宿主真实 Wi-Fi 配置。
+
+## Task 栈记账
+
+Desktop PAL task 保留 OS thread stack。可选的 `h2_desktop_platform_configure_task_stacks()` 接受长期借用的 allocator、尺寸 resolver 和 user，在 task start 前解析 placeholder 大小；零表示不占位，非零在启动线程前分配并持有到 join。解析/分配失败不启动线程、不发布 handle，线程创建失败归还占位。配置尚有 start/join borrower 时替换或清除返回 BUSY；消费者先 join，再移除 hook，再销毁 allocator。该接口属于 desktop provider，不改变 portable `h2_pal_task_options_t` 或 ESP task 行为。
+
+需要与 ESP 对齐的 desktop consumer 可以使用 `esp_target_task_policy` 生成的 `*_stack_accounting` filegroup：它从同一 target policy 表产生不依赖 SDK 的 C fragment，按 exact match、最长 prefix、default 的顺序解析；internal 返回零，PSRAM 返回 PAL request、policy floor 与 4096 的最大值。Consumer 在包含 `<stddef.h>`、`<string.h>` 后，将 fragment 放入自己的 namespace，并将函数接到 resolver。这样 task policy 仍由最终 firmware target 单点拥有，无需复制第二份桌面表。
+
+## Arena 诊断边界
+
+`libs/mem_arena` 的普通 alloc/free/realloc 和轻量 stats 不含 tag、pattern、hash 或调用栈追踪。可选的 `h2_mem_arena_block_info()` 在常数时间内返回请求、实际 TLSF block 占用和 pool/fallback；`h2_mem_arena_inspect()` 只在显式调用时遍历两个池，报告 raw free total、largest free block 和已分配块 consumed。这些查询不扩大 arena instance，不改变布局或 ESP 分配路径。Fallback 的 consumed 是交给 fallback allocator 的大小下界，无法从 Memory PAL 推导 system allocator 自身开销。
+
+Desktop consumer 可以在标准 Memory PAL 外层维护 owner view 和 allocation generation，元数据放在 system heap，精确记录同时存活总量刷新时的 owner composition。Content sampling 必须同时与 allocation lifetime 和业务写入同步，短时复制后在锁外分析；allocator 锁只保护块的生命周期，不授权对并发写入的 payload 进行无锁读取。Pattern tail 是未写空间的启发式估计，hash 相同只是重复候选，二者不能直接判定泄漏或允许删减 buffer。Task placeholder 不代表实际业务数据，应排除这些内容分析。

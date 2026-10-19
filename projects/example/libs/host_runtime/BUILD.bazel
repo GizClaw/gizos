@@ -24,6 +24,7 @@ cc_test(
     }),
     deps = [
         ":host_runtime",
+        "//libs/atomic/providers/c11",
         "//libs/pal:unsupported",
     ],
 )

@@ -6,6 +6,7 @@ import {
   OPENAI_ELIGIBILITY_CONTEXT,
   OWNERSHIP_ELIGIBILITY_CONTEXT,
   assertLatestPendingStatus,
+  assertMergeGateRules,
   openAiFinalStatus,
   statusPayload,
   validateSha,
@@ -64,6 +65,26 @@ async function publishStatus(repository, sha, status) {
     method: "POST",
     body: status,
   });
+}
+
+async function verifyMergeGateRules(repository, headSha, runUrl) {
+  try {
+    assertMergeGateRules(
+      await githubRequest(`/repos/${repository}/rules/branches/main`),
+    );
+  } catch (error) {
+    await assertCurrentGeneration(repository, headSha, runUrl);
+    await publishStatus(
+      repository, headSha,
+      statusPayload({
+        state: "failure",
+        context: OPENAI_ELIGIBILITY_CONTEXT,
+        description: "Required merge checks differ from the eligibility contract",
+        targetUrl: runUrl,
+      }),
+    );
+    throw error;
+  }
 }
 
 async function assertCurrentGeneration(repository, sha, runUrl) {
@@ -172,6 +193,7 @@ async function start(repository, event, runUrl) {
       targetUrl: runUrl,
     }),
   );
+  await verifyMergeGateRules(repository, headSha, runUrl);
   await writeOutputs({
     pull_request_number: pullRequest.number,
     base_sha: baseSha,
@@ -245,6 +267,8 @@ async function finish(repository, runUrl) {
     );
   }
 
+  await assertCurrentGeneration(repository, expectedHeadSha, runUrl);
+  await verifyMergeGateRules(repository, expectedHeadSha, runUrl);
   await assertCurrentGeneration(repository, expectedHeadSha, runUrl);
   const finalStatus = openAiFinalStatus({
     reviewResult: process.env.REVIEW_RESULT,

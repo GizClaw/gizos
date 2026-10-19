@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>PAL Core · Web/WASM 实测</title>
+  <style>
+    body { max-width: 1100px; margin: 32px auto; padding: 0 20px; font: 15px/1.65 system-ui; color: #20242a; }
+    pre { padding: 18px; background: #f4f5f7; overflow: auto; font: 12px/1.6 monospace; }
+    #result { border-left: 4px solid #bb7900; }
+  </style>
+</head>
+<body>
+  <h1>PAL Core · Web/WASM 实测</h1>
+  <p>运行全部 41 项 Core v2 用例，并验证 Worker 并行、任务回收和事件生命周期。所有断言通过后才判定合格。</p>
+  <canvas id="canvas" width="1" height="1" hidden></canvas>
+  <pre id="result">运行中…</pre>
+  <pre id="ledger"></pre>
+  <script>
+    globalThis.h2CoreConsole = [];
+    for (const [level, name] of ['debug', 'info', 'warn', 'error'].entries()) {
+      const original = console[name].bind(console);
+      console[name] = (...args) => {
+        const text = args.map(String).join(' ');
+        if (text.startsWith('[pal-core] ')) h2CoreConsole.push({level, text});
+        original(...args);
+      };
+    }
+    const append = text => {
+      document.getElementById('ledger').textContent += text + '\n';
+      console.log(text);
+    };
+    var Module = {
+      canvas: document.getElementById('canvas'),
+      print: append,
+      printErr: append,
+    };
+  </script>
+  {{{ SCRIPT }}}
+</body>
+</html>

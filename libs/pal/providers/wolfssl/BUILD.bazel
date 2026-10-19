@@ -8,6 +8,8 @@ _WOLFCRYPT_COMPATIBILITY = select({
     "//tools/bazel/platforms:host_macos_target_macos": [],
     "//tools/bazel/platforms:host_windows_target_windows": [],
     "@platforms//cpu:wasm32": [],
+    "@platforms//os:ios": [],
+    "@platforms//os:android": [],
     "//conditions:default": ["@platforms//:incompatible"],
 })
 
@@ -206,6 +208,8 @@ cc_library(
     target_compatible_with = select({
         "@platforms//os:linux": [],
         "@platforms//os:macos": [],
+        "@platforms//os:ios": [],
+        "@platforms//os:android": [],
         "@platforms//os:windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -240,6 +244,10 @@ cc_library(
     ],
     linkopts = select({
         "@platforms//os:macos": ["-framework Security"],
+        "@platforms//os:ios": [
+            "-framework",
+            "Security",
+        ],
         "@platforms//os:windows": [
             "-DEFAULTLIB:Crypt32.lib",
             "-DEFAULTLIB:Ws2_32.lib",
@@ -249,6 +257,8 @@ cc_library(
     target_compatible_with = select({
         "@platforms//os:linux": [],
         "@platforms//os:macos": [],
+        "@platforms//os:ios": [],
+        "@platforms//os:android": [],
         "@platforms//os:windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),

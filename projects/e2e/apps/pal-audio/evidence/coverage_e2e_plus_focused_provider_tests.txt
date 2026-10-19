@@ -1,0 +1,4 @@
+Compiler LLVM coverage: Regions MissedRegions Cover Functions MissedFunctions Executed Lines MissedLines Cover Branches MissedBranches Cover
+projects/e2e/apps/pal-audio/app/src/h2_pal_audio_e2e.c 1226 297 75.77% 32 1 96.88% 435 25 94.25% 570 235 58.77%
+libs/pal/providers/portaudio/src/h2_portaudio.cpp 703 159 77.38% 60 3 95.00% 984 220 77.64% 434 167 61.52%
+libs/audio_mixer/src/h2_audio_mixer.c 785 214 72.74% 26 2 92.31% 665 207 68.87% 402 191 52.49%

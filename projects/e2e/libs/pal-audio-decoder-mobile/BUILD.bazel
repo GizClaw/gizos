@@ -1,0 +1,57 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:mobile_e2e.bzl", "mobile_e2e_suite")
+
+package(default_visibility = ["//projects/e2e:__subpackages__"])
+
+cc_library(
+    name = "runner",
+    srcs = ["mobile_runner.c"],
+    hdrs = ["mobile_runner.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["."],
+    target_compatible_with = select({
+        "@platforms//os:ios": [],
+        "@platforms//os:android": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/pal:unsupported",
+        "//libs/runtime",
+        "//projects/e2e/apps/pal-audio-decoder/app:pal_audio_decoder_e2e",
+    ] + select({
+        "@platforms//os:ios": ["//libs/pal/providers/ios/pal_core:packaged"],
+        "@platforms//os:android": ["//libs/pal/providers/android/pal_core:packaged"],
+        "//conditions:default": [],
+    }),
+)
+
+mobile_e2e_suite(
+    name = "mobile_e2e",
+    android_sdk = {
+        "required_header": "prefab/modules/h2_pal_core/include/h2_android_platform.h",
+        "public_symbols": ["h2_android_platform_audio_decoder_api"],
+    },
+    case_result = "detail",
+    expected = {
+        "version": "2.0.0",
+        "contract": 1,
+        "operations": 8,
+        "failed": 0,
+        "blocked": 0,
+        "retained": 0,
+        "qualified": 1,
+        "rc": 0,
+        "teardown": 0,
+    },
+    ios_sdk = {
+        "executable": "GizOSPALAudioDecoderE2E",
+        "provider_symbols": ["_h2_ios_platform_audio_decoder_api"],
+        "portable_symbol": "_h2_pal_audio_decoder_e2e_run",
+    },
+    package = "com.haivivi.gizos.e2e.palaudiodecoder",
+    registry = "//projects/e2e/apps/pal-audio-decoder/app:include/h2_pal_audio_decoder_cases.inc",
+    registry_pattern = "H2_PAL_ADEC_CASE\\(\"([^\"]+)\"",
+    report = "pal-audio-decoder-result.json",
+)

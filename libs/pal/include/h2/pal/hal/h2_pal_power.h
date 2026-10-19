@@ -23,6 +23,7 @@ typedef enum h2_pal_power_capability {
     H2_PAL_POWER_CAPABILITY_DEEP_SLEEP = 1u << 6,
     H2_PAL_POWER_CAPABILITY_BOOT_SOURCE = 1u << 7,
     H2_PAL_POWER_CAPABILITY_RESET_REASON = 1u << 8,
+    H2_PAL_POWER_CAPABILITY_DEEP_SLEEP_WAKE_TIMER = 1u << 9,
 } h2_pal_power_capability_t;
 
 typedef struct h2_pal_power_capabilities {
@@ -152,6 +153,9 @@ typedef struct h2_pal_power_vtable {
     h2_pal_result_t (*reboot)(void *user, uint32_t reason);
     h2_pal_result_t (*sleep)(void *user, uint32_t reason);
     h2_pal_result_t (*deep_sleep)(void *user, uint32_t reason);
+    h2_pal_result_t (*set_deep_sleep_wake_timer)(
+        void *user,
+        uint32_t delay_ms);
 } h2_pal_power_vtable_t;
 
 typedef struct h2_pal_power_api {
@@ -296,6 +300,22 @@ static inline h2_pal_result_t h2_pal_power_deep_sleep(
         return H2_PAL_ERR_UNSUPPORTED;
     }
     return api->vtable->deep_sleep(api->user, reason);
+}
+
+/**
+ * Arm a wake timer for the next deep_sleep() call. The delay starts when
+ * deep sleep is entered; 0 restores the provider's default wake policy. The
+ * armed value stays in effect until it is changed or the device leaves deep
+ * sleep. A timer wake reports
+ * H2_PAL_POWER_BOOT_SOURCE_TIMER. Physical power off does not keep the timer.
+ */
+static inline h2_pal_result_t h2_pal_power_set_deep_sleep_wake_timer(
+    const h2_pal_power_api_t *api,
+    uint32_t delay_ms) {
+    if (api == NULL || api->vtable == NULL || api->vtable->set_deep_sleep_wake_timer == NULL) {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
+    return api->vtable->set_deep_sleep_wake_timer(api->user, delay_ms);
 }
 
 #ifdef __cplusplus

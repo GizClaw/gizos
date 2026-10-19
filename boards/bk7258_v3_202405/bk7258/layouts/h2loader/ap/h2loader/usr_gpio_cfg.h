@@ -18,3 +18,14 @@ extern "C" {
 #ifdef __cplusplus
 }
 #endif
+
+/* PWM1 drives the board LCD backlight on GPIO7. The SDK default GPIO19
+ * belongs to LCD_R7 and must never be remapped by a brightness request. */
+#define GPIO_PWM_MAP_TABLE { \
+    {{GPIO_18, GPIO_DEV_PWM0}, {GPIO_7, GPIO_DEV_PWM1}, \
+     {GPIO_8, GPIO_DEV_PWM2}, {GPIO_9, GPIO_DEV_PWM3}, \
+     {GPIO_24, GPIO_DEV_PWM4}, {GPIO_25, GPIO_DEV_PWM5}}, \
+    {{GPIO_32, GPIO_DEV_PWM6}, {GPIO_33, GPIO_DEV_PWM7}, \
+     {GPIO_34, GPIO_DEV_PWM8}, {GPIO_35, GPIO_DEV_PWM9}, \
+     {GPIO_36, GPIO_DEV_PWM10}, {GPIO_37, GPIO_DEV_PWM11}} \
+}

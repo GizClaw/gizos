@@ -1,0 +1,88 @@
+{
+  "schema": 1,
+  "qualified": true,
+  "sdk_version": "0.23.2",
+  "server_version": "0.24.1",
+  "environment": "controlled Dev",
+  "runtime_profile": "gizos-e2e-626",
+  "endpoint": "edge-bj-01.dev.gizclaw.com:9821",
+  "source_base": "c29d6958658b89ab7af7ce4fcaac755383bc4d44",
+  "source_patch_sha256": "bfe918d94b0ef37d8ddf21d98a957ff5f73e97b7ad020cdfc42cc45755a73760",
+  "version": "gizclaw-amp-r49-small-rx",
+  "device_uid": "30eda0ae0f86",
+  "package_sha256": "e47c6c771d96842b410946dc129be2d1992f3394cc20006651fc68898fae24cc",
+  "image_sha256": "1acd92fc24b1ad5bb1d6c872e5bb6af4e9b5752b1e96b561b91196f0dc716475",
+  "actual_config": {
+    "receive_window": 11520,
+    "receive_mailbox": 12,
+    "send_buffer": 65535,
+    "ooseq_max_pbufs": 0,
+    "sack_out": false,
+    "speaker_priority": 6,
+    "psram_wifi_lwip": true
+  },
+  "sdkconfig_sha256": "e54741f9b33a7404bd447030d867a71d6195d439f4d1a9842c582b292b32d2c0",
+  "managed": {
+    "version": "gizclaw-amp-r49-small-rx",
+    "execution": "de1ea7ef9cd3e03e16920cea53b72fc2",
+    "physical_audio": true,
+    "confirm_rc": 0,
+    "records": 2047,
+    "record_bytes": 187412,
+    "transport_crc32": "325ab2d8",
+    "ledger_sha256": "8480959b566d46731c2585cf7e3d4dd3ed0635f5a8a386b7c593791202a77bf3",
+    "discarded_frames": 0,
+    "qualified": true,
+    "api_coverage": {
+      "valid": true,
+      "required": 227,
+      "covered": 227,
+      "missing": 0
+    }
+  },
+  "normal": {
+    "version": "gizclaw-amp-r49-small-rx",
+    "execution": "baa55fe32ccb3c575075a1a538a10a91",
+    "physical_audio": true,
+    "confirm_rc": 0,
+    "records": 2057,
+    "record_bytes": 188345,
+    "transport_crc32": "1c4247d6",
+    "ledger_sha256": "cf36656c04ed68b67df97e6a21cc9f139b6278d3d60cdcb12934d422d3d687cb",
+    "discarded_frames": 0,
+    "qualified": true,
+    "api_coverage": {
+      "valid": true,
+      "required": 227,
+      "covered": 227,
+      "missing": 0
+    }
+  },
+  "selected": 8,
+  "passed": 8,
+  "cleanup_rc": 0,
+  "retained_resources": 0,
+  "p1_preserved": true,
+  "stage_final": 0,
+  "coredump_status_unchanged": true,
+  "normal_boot_independent": true,
+  "audio_scope": "Actual BSP audio chain with deterministic PCM; no microphone/acoustic quality claim",
+  "previous_failed_small_rx_run": {
+    "version": "gizclaw-amp-r48-small-rx",
+    "selected": 8,
+    "passed": 7,
+    "failure_case": "resource",
+    "failure_rc": -10,
+    "failure_stage": "registration",
+    "firmware_passed": true,
+    "device_api_passed": true,
+    "admitted": false,
+    "confirm_rc": -7,
+    "failure_ledger_sha256": "de063164f47d756bcdeb4920787062c94379e46d0ff93c02dbd902fc88f86f06"
+  },
+  "raw_capture_sha256": {
+    "control-complete-snapshot.private.log": "2456a5a2e4cdbe7a356e9c64d6b6fcb811ab36803490f8d275d818638f361c1d",
+    "normal-complete-snapshot.private.log": "ad690e9d9e20889ec336dd3066541cbec0e91601e99eddb2d230f9ecb0403dc2"
+  },
+  "conclusion_scope": "Both changed receive settings are qualified together with SDK TCP defaults on this board/environment; this does not establish a single-setting cause of packet reordering."
+}

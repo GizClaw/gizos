@@ -7,6 +7,7 @@
 typedef struct h2_audio_mixer_track_state {
     h2_pal_audio_track_t track;
     struct h2_audio_mixer_impl *owner;
+    const h2_pal_mem_api_t *allocator;
     h2_pal_queue_t *queue;
     h2_pal_queue_t *drain_queue;
     uint8_t *write_item;
@@ -181,9 +182,15 @@ static void mixer_destroy_track_queue(h2_audio_mixer_track_state_t *track) {
         h2_pal_queue_destroy(impl->config.queue_api, track->drain_queue);
         track->drain_queue = NULL;
     }
-    mixer_free(impl, track->write_item);
+    if (track->allocator != NULL)
+        h2_pal_mem_free(track->allocator, track->write_item);
+    else
+        mixer_free(impl, track->write_item);
     track->write_item = NULL;
-    mixer_free(impl, track->drain_item);
+    if (track->allocator != NULL)
+        h2_pal_mem_free(track->allocator, track->drain_item);
+    else
+        mixer_free(impl, track->drain_item);
     track->drain_item = NULL;
 }
 
@@ -522,6 +529,7 @@ int h2_audio_mixer_create_track(
     mixer_destroy_track_queue(slot);
     memset(slot, 0, sizeof(*slot));
     slot->owner = impl;
+    slot->allocator = config->allocator != NULL ? config->allocator : impl->config.allocator;
     const size_t queue_frames = config->buffer_frames != 0u ? config->buffer_frames : impl->config.track_queue_frames;
     if (queue_frames == 0u) {
         (void)mixer_unlock(impl);
@@ -531,7 +539,7 @@ int h2_audio_mixer_create_track(
         .name = config->name,
         .item_size = mixer_item_size(impl),
         .item_count = queue_frames,
-        .allocator = impl->config.allocator,
+        .allocator = slot->allocator,
     };
     rc = h2_pal_queue_create(impl->config.queue_api, &queue_config, &slot->queue);
     if (rc != H2_PAL_QUEUE_OK) {
@@ -543,12 +551,16 @@ int h2_audio_mixer_create_track(
         .name = "audio-track-drain",
         .item_size = sizeof(uint64_t),
         .item_count = 1u,
-        .allocator = impl->config.allocator,
+        .allocator = slot->allocator,
     };
     rc = h2_pal_queue_create(
         impl->config.queue_api, &drain_queue_config, &slot->drain_queue);
-    slot->write_item = (uint8_t *)mixer_alloc(impl, mixer_item_size(impl));
-    slot->drain_item = (uint8_t *)mixer_alloc(impl, mixer_item_size(impl));
+    slot->write_item = (uint8_t *)(slot->allocator != NULL
+        ? h2_pal_mem_alloc(slot->allocator, mixer_item_size(impl))
+        : mixer_alloc(impl, mixer_item_size(impl)));
+    slot->drain_item = (uint8_t *)(slot->allocator != NULL
+        ? h2_pal_mem_alloc(slot->allocator, mixer_item_size(impl))
+        : mixer_alloc(impl, mixer_item_size(impl)));
     if (rc != H2_PAL_QUEUE_OK || slot->write_item == NULL ||
         slot->drain_item == NULL) {
         const int result = rc != H2_PAL_QUEUE_OK

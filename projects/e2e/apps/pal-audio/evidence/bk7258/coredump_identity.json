@@ -1,0 +1,10 @@
+{
+  "device_uid": "c8478ca2a87c",
+  "before_bytes": 32,
+  "after_bytes": 32,
+  "before_sha256": "f59f522edd1cc5bd0aab008b938dc7cdfac8a4333c34fdf763404923210a3829",
+  "after_sha256": "f59f522edd1cc5bd0aab008b938dc7cdfac8a4333c34fdf763404923210a3829",
+  "byte_identical": true,
+  "observation_finished_at_utc": "2026-09-28T22:10:55.171861+00:00",
+  "capture_scope": "Before Audio r5 managed install and after independent App reboot; raw dumps retained outside the repository."
+}

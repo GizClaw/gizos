@@ -3,6 +3,7 @@
 
 #include "h2/pal/os/h2_pal_queue.h"
 #include "h2/pal/os/h2_pal_task.h"
+#include "h2_atomic.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -37,6 +38,10 @@ typedef struct h2_modem_urc_worker {
     h2_pal_result_t result;
     int stopping;
     h2_modem_urc_stats_t stats;
+    h2_atomic_u32_t accepted_atomic;
+    h2_atomic_u32_t handled_atomic;
+    h2_atomic_u32_t full_atomic;
+    h2_atomic_u32_t truncated_atomic;
 } h2_modem_urc_worker_t;
 
 /* Zero-initialize before first start. Lifecycle calls are externally

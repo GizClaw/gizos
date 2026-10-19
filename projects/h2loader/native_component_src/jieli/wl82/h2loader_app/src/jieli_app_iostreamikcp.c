@@ -3,6 +3,7 @@
 #include "h2_command.h"
 #include "h2_iostreamikcp.h"
 #include "h2_jieli_ac791n_devkit.h"
+#include "h2_jieli_wl82_atomic.h"
 #include "jieli_app_iostreamikcp.h"
 #include "os/os_api.h"
 #include "usb/device/cdc.h"
@@ -30,6 +31,11 @@ enum {
    * before nested metadata formatting and KCP I/O. PAL sizes are bytes. */
   H2_APP_COMMAND_STACK_SIZE = 48 * 1024,
   H2_USB_RX_TASK_STACK_SIZE = 4096,
+  /* Upper bound on how long SESSION_OPEN is deferred while the App flushes its
+   * boot and confirmation console on the raw pre-session path. The App normally
+   * lifts the gate at confirmation (~1 s); this fallback keeps a boot that never
+   * reaches confirmation from locking the host out of the command transport. */
+  H2_SESSION_GATE_FALLBACK_MS = 8000,
 };
 
 typedef struct h2_jieli_app_transport {
@@ -45,6 +51,14 @@ typedef struct h2_jieli_app_transport {
   int io_deadline_active;
   int replacement_pending;
   int close_pending;
+  /* Session admission gate. While closed, SESSION_OPEN is ignored so every
+   * console byte already produced leaves on the raw pre-session path the host
+   * captures losslessly; the App opens it once its confirmation has drained,
+   * and a fallback deadline opens it regardless so a stuck boot cannot lock the
+   * host out. Sticky once open. The launcher task writes it and the command
+   * task reads it on the other core, so both sides use the wl82 atomics. */
+  volatile uint32_t sessions_admitted;
+  uint32_t gate_started_ms;
 } h2_jieli_app_transport_t;
 
 typedef struct h2_jieli_app_console {
@@ -304,6 +318,17 @@ static int on_frame(void *user, const h2_iostreamikcp_frame_t *frame) {
   h2_jieli_app_transport_t *self = user;
   if (frame->flags == H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_OPEN) {
     if (frame->conv == 0u) return H2_PAL_ERR_INVALID_ARG;
+    /* Hold the session closed until the App has flushed its boot and
+     * confirmation console. Answering here would move the console into the
+     * reliable tunnel mid-flush, and the queued lines would be discarded when
+     * the App proceeds; ignoring the frame makes the host retransmit it, and
+     * the confirmation reaches the wire raw in the meantime. */
+    if (h2_jieli_atomic_load_u32(&self->sessions_admitted) == 0u &&
+        (uint32_t)(timer_get_ms() - self->gate_started_ms) <
+            H2_SESSION_GATE_FALLBACK_MS) {
+      return H2_PAL_OK;
+    }
+    h2_jieli_atomic_store_u32(&self->sessions_admitted, 1u);
     if (self->stream != NULL && frame->conv == self->conv) {
       return send_control(
           self, H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_ACK, frame->conv);
@@ -663,7 +688,12 @@ int h2_jieli_app_iostreamikcp_start(
     }
     goto start_command;
   }
+  /* A session admission requested before the first start is sticky: carry
+   * it across the fresh initialization so it opens the gate for this boot. */
+  const uint32_t admitted =
+      h2_jieli_atomic_load_u32(&state.transport.sessions_admitted);
   memset(&state, 0, sizeof(state));
+  h2_jieli_atomic_store_u32(&state.transport.sessions_admitted, admitted);
   state.client = client;
   state.transport.allocator = allocator;
   state.transport.physical_io = (h2_iostreamikcp_io_t){
@@ -702,6 +732,12 @@ int h2_jieli_app_iostreamikcp_start(
 #endif
   state.initialized = 1;
 start_command:
+  /* Arm the fallback deadline now: the command task begins polling as soon as
+   * it is created, and the host may send SESSION_OPEN before the App confirms.
+   * The gate itself starts closed on a fresh boot and is never reset here, so
+   * an admission requested before start (or before a command-task retry)
+   * stays in force. */
+  state.transport.gate_started_ms = timer_get_ms();
   state.started = 1;
   const h2_loader_app_client_return_console_config_t console = {
       .client = client,
@@ -716,4 +752,12 @@ start_command:
   int rc = h2_loader_app_client_start_return_console(&console);
   if (rc != H2_PAL_OK) state.started = 0;
   return rc;
+}
+
+void h2_jieli_app_iostreamikcp_admit_sessions(void) {
+  /* Idempotent, sticky, and safe before start: start only arms the fallback
+   * deadline and never clears the flag, so a pre-start admission opens the
+   * gate for the transport that starts later. Published atomically for the
+   * command task on the other core. */
+  h2_jieli_atomic_store_u32(&state.transport.sessions_admitted, 1u);
 }

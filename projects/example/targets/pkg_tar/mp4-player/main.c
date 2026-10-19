@@ -1,5 +1,6 @@
 #include "h2_smoke_host_runtime.h"
 #include "h2_smoke_mp4_player.h"
+#include "h2_web_main_thread.h"
 #include "h2_web_platform.h"
 
 #include <emscripten.h>
@@ -27,19 +28,31 @@ typedef struct web_player {
 #define H2_WEB_MP4_HEIGHT 240
 #endif
 
-EM_JS(void, web_size_canvas, (int width, int height), {
+/* clang-format off */
+EM_JS(void, web_size_canvas,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["i32", "i32"], null,
+    (width, height) => {
   const canvas = Module['canvas'];
   if (canvas) {
     canvas.width = width;
     canvas.height = height;
   }
 });
+});
+/* clang-format on */
 
-EM_JS(void, web_set_status, (const char *status), {
+/* clang-format off */
+EM_JS(void, web_set_status,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["pointer"], null,
+    (status) => {
   const element = document.getElementById('status');
   if (element)
     element.textContent = UTF8ToString(status);
 });
+});
+/* clang-format on */
 
 static h2_pal_result_t web_media_read_at(void *user, uint64_t offset,
                                          void *buffer, size_t capacity,
@@ -91,17 +104,24 @@ int main(void) {
       .display_width = H2_WEB_MP4_WIDTH,
       .display_height = H2_WEB_MP4_HEIGHT,
   };
-  web_size_canvas(H2_WEB_MP4_WIDTH, H2_WEB_MP4_HEIGHT);
+  (void)h2_web_main_call(
+      web_size_canvas,
+      (const void *[]){&(int){H2_WEB_MP4_WIDTH}, &(int){H2_WEB_MP4_HEIGHT}});
   h2_web_platform_t *platform = h2_web_platform_create(&platform_config);
   if (platform == NULL) {
-    web_set_status("Web PAL initialization failed");
+    (void)h2_web_main_call(
+        web_set_status,
+        (const void *[]){&(const char *){"Web PAL initialization failed"}});
     return 1;
   }
-  web_set_status("Loading embedded MP4");
+  (void)h2_web_main_call(web_set_status, (const void *[]){&(const char *){
+                                             "Loading embedded MP4"}});
 
   web_media_t media = {0};
   if (!web_load_media("/media/startup.mp4", &media)) {
-    web_set_status("Embedded MP4 could not be loaded");
+    (void)h2_web_main_call(
+        web_set_status,
+        (const void *[]){&(const char *){"Embedded MP4 could not be loaded"}});
     h2_web_platform_destroy(platform);
     return 1;
   }
@@ -132,7 +152,9 @@ int main(void) {
             },
         .result = H2_PAL_ERR_TASK,
     };
-    web_set_status("Decoding with browser WebCodecs");
+    (void)h2_web_main_call(
+        web_set_status,
+        (const void *[]){&(const char *){"Decoding with browser WebCodecs"}});
     h2_pal_task_t *task = NULL;
     const h2_pal_task_options_t task_options = {
         .name = "web-mp4-player",
@@ -143,7 +165,7 @@ int main(void) {
     while (result == H2_PAL_OK && !player.done) {
       result = h2_web_platform_pump(platform, 32u, NULL);
       if (result == H2_PAL_OK && !player.done)
-        emscripten_sleep(1u);
+        h2_web_worker_sleep(1u);
     }
     if (result == H2_PAL_OK)
       result = player.result;
@@ -157,7 +179,10 @@ int main(void) {
     h2_runtime_deinit(runtime);
   free(media.data);
   h2_web_platform_destroy(platform);
-  web_set_status(result == H2_PAL_OK ? "Playback complete"
-                                     : "Playback failed — see console");
+  (void)h2_web_main_call(
+      web_set_status,
+      (const void *[]){&(const char *){result == H2_PAL_OK
+                                           ? "Playback complete"
+                                           : "Playback failed — see console"}});
   return result == H2_PAL_OK ? 0 : 1;
 }

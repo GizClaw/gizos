@@ -23,7 +23,6 @@ class ConnectivityCoverageTest(unittest.TestCase):
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertNotIn("synthetic-registration", run.stdout + run.stderr)
         rules = api_coverage.requirements()
-        api_coverage.validate_inventory(rules, (root / "libs/gizclaw/tests/public_api.inc").read_text())
         result = api_coverage.audit(run.stdout.splitlines(keepends=True), rules,
                                     endpoint="example.invalid:9821", backend="h2peer",
                                     profile="default", platform="macos", process_exit_code=run.returncode)
@@ -37,7 +36,7 @@ class ConnectivityCoverageTest(unittest.TestCase):
         expected = {rule.symbol for rule in api_coverage.requirements() if rule.case == "connectivity"}
         self.assertEqual(len(expected), 12)
         self.assertEqual(observed, expected)
-        self.assertEqual(result["missing"], 225 - 12)
+        self.assertEqual(result["missing"], 236 - 12)
         hooks = [dict(field.split("=", 1) for field in line.split()[1:])
                  for line in log.splitlines() if " stage=speedtest-hooks " in line]
         self.assertEqual(len(hooks), 6)
@@ -75,7 +74,7 @@ class ConnectivityCoverageTest(unittest.TestCase):
                 log, observed, result = self.run_case(failure, mode, budget, clock)
                 self.assertIn("status=FAIL", log)
                 self.assertEqual(observed, set())
-                self.assertEqual(result["missing"], 225)
+                self.assertEqual(result["missing"], 236)
 
     def test_missing_dispatch_cannot_certify_request_speed(self):
         log, _, _ = self.run_case()

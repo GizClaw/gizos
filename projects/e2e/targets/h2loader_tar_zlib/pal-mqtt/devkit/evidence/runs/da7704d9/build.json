@@ -1,0 +1,31 @@
+{
+  "source_commit": "da7704d9495c9da568cb0ed878395e5b7496ef01",
+  "source_dirty": false,
+  "manifest": {
+    "format": "1",
+    "role": "app",
+    "board": "devkit",
+    "target": "esp32s3",
+    "version": "mqtt-esp-da7704d9-r2",
+    "image_size": "1540688",
+    "image_sha256": "8dfc91b86ec0f013e327efc9e250dde83e8d53fe13a7ac1baa40202d5a3dc364"
+  },
+  "package_sha256": "40b83628cedd612b058994a1b3264db0e77e5240f13ec7cf1a7c6360f0c62845",
+  "package_bytes": 993295,
+  "package_path": "/Users/idy/.codex/worktrees/mqtt-e2e-qualification/gizos/build/validation/mqtt-esp-da7704d9-r2/devkit-pal-mqtt-esp32s3.update.tar.zlib",
+  "fixture_inputs": {
+    "bind": "192.168.31.151",
+    "advertised": "192.168.31.151",
+    "tcp_port": 55601,
+    "tls_port": 55602,
+    "session_prefix": "a71fa80023dd4e46ae6c880a4ded8339",
+    "epoch_ms": 1791119238503,
+    "ca_sha256": "1c6e541a10c2bcfec098bafdc6ecc890b122194c7a2fd0406b209e4c21a4602a",
+    "wrong_ca_sha256": "f2b7e83901983549355b0cbf9aa7ba0d41e7769431ac12594706d97d06db82c1",
+    "bazelrc_sha256": "549e6ca953684c712f32ba34acc4d76b625dba4e6f3c47fd7152cddd0e1cc140",
+    "tls_handshake_timeout_seconds": 2.0
+  },
+  "build_log_sha256": "58c7ba6379e2aa9f45d8c3ed73ca38ce908e6db9e37d5294ae23176d0d8375af",
+  "hardware_qualified": false,
+  "recorded_at_utc": "2026-10-04T13:08:43.885421+00:00"
+}

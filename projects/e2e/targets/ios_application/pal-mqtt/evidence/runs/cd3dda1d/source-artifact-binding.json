@@ -1,0 +1,20 @@
+{
+  "source_commit": "cd3dda1dfc28f5d3666851d870779468286720aa",
+  "source_dirty": false,
+  "platform": "ios",
+  "qualified": true,
+  "retained_received": 2,
+  "artifact_sha256": "60bc713f74da9ddd1e8ba5d4f81a9df97c8b8f1a03475cb12bb859eb1a405a05",
+  "sdk_sha256": "e1dee804423ad16730583229f4e2895886813075efa799c957c70586fcdd8661",
+  "fixture_inputs": {
+    "session": "352306e912654c168c3e9162c8f45a29",
+    "host": "127.0.0.1",
+    "tcp_port": 50689,
+    "tls_port": 50690,
+    "json_sha256": "742628d8b9f8fb094d8327bbb6012d3af13f4d8b1c4802f1998d742fdc3bd21b",
+    "ca_sha256": "7d09566224ae176f91369d2e81a1a16c8f18bf9e3b54e441abf6525e31e04115",
+    "wrong_ca_sha256": "241c629b6bdd02d55dac3057d281c92d9ae8f5ef505b418e6ba983b730c452b7",
+    "registry_sha256": "f3f5798bb6f8793eeede6f3464c847be1b6ad807d6059bc17b759fad6995837f"
+  },
+  "historical_da770_preserved": true
+}

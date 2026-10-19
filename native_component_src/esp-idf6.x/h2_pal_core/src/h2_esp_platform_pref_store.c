@@ -259,10 +259,15 @@ static int decode_record(const uint8_t *record, size_t record_size,
     return H2_PAL_OK;
 }
 
-static int committed_size(const h2_esp_pref_store_t *store, size_t *out_size) {
-    DIR *root = opendir(store->base_path);
+static int committed_size(h2_esp_pref_store_t *store, size_t *out_size) {
+    DIR *root;
     struct dirent *namespace_entry;
     size_t total = 0u;
+    if (store->committed_total_valid) {
+        *out_size = store->committed_total;
+        return H2_PAL_OK;
+    }
+    root = opendir(store->base_path);
     if (root == NULL) return map_errno_value(errno);
     while ((namespace_entry = readdir(root)) != NULL) {
         char directory[H2_ESP_PREF_PATH_MAX];
@@ -329,6 +334,8 @@ static int committed_size(const h2_esp_pref_store_t *store, size_t *out_size) {
         closedir(namespace_dir);
     }
     closedir(root);
+    store->committed_total = total;
+    store->committed_total_valid = 1;
     *out_size = total;
     return H2_PAL_OK;
 }
@@ -395,6 +402,8 @@ int h2_esp_pref_store_prepare(h2_esp_pref_store_t *store) {
     struct dirent *namespace_entry;
     if (store == NULL || store->base_path == NULL || store->committed_budget == 0u)
         return H2_PAL_ERR_INVALID_ARG;
+    /* Prepare also follows a format; count the tree again on the next set. */
+    store->committed_total_valid = 0;
     if (mkdir(store->base_path, 0700) != 0 && errno != EEXIST)
         return map_errno_value(errno);
     if (snprintf(migration_temporary, sizeof(migration_temporary),
@@ -525,6 +534,12 @@ int h2_esp_pref_store_set(h2_esp_pref_store_t *store, const char *name_space,
     }
     rc = write_atomic_file(store, path, record, record_size);
     free(record);
+    if (rc == H2_PAL_OK) {
+        store->committed_total = total - (had_old ? old_size : 0u) + record_size;
+        store->committed_total_valid = 1;
+    } else {
+        store->committed_total_valid = 0;
+    }
     return rc;
 }
 
@@ -546,7 +561,15 @@ int h2_esp_pref_store_remove(h2_esp_pref_store_t *store, const char *name_space,
     }
     free(record);
     if (rc != H2_PAL_OK) return rc;
-    return unlink(path) == 0 ? H2_PAL_OK : map_errno_value(errno);
+    if (unlink(path) != 0) {
+        store->committed_total_valid = 0;
+        return map_errno_value(errno);
+    }
+    if (store->committed_total_valid && store->committed_total >= record_size)
+        store->committed_total -= record_size;
+    else
+        store->committed_total_valid = 0;
+    return H2_PAL_OK;
 }
 
 int h2_esp_pref_store_clear(h2_esp_pref_store_t *store, const char *name_space) {
@@ -558,6 +581,7 @@ int h2_esp_pref_store_clear(h2_esp_pref_store_t *store, const char *name_space) 
     if (rc != H2_PAL_OK) return rc;
     rc = h2_esp_pref_store_list(store, name_space, &entries, &count);
     if (rc != H2_PAL_OK) return rc;
+    store->committed_total_valid = 0;
     for (index = 0u; index < count; ++index) {
         char path[H2_ESP_PREF_PATH_MAX];
         rc = record_path(store, name_space, entries[index].key, path,

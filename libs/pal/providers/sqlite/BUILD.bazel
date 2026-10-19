@@ -14,6 +14,8 @@ cc_library(
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//tools/bazel/platforms:host_windows_target_windows": [],
+        "@platforms//os:ios": [],
+        "@platforms//os:android": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [

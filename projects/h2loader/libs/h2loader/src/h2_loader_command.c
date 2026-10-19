@@ -79,6 +79,8 @@ static uint32_t h2loader_command_bit(
         return H2_LOADER_COMMAND_AVAILABLE_STAGE_PAYLOAD;
     }
     if (strcmp(argv[1], "wifi") == 0) {
+        if (argc >= 3u && strcmp(argv[2], "status") == 0)
+            return H2_LOADER_COMMAND_AVAILABLE_WIFI_STATUS;
         if (argc >= 3u && strcmp(argv[2], "scan") == 0)
             return H2_LOADER_COMMAND_AVAILABLE_WIFI_SCAN;
         if (argc >= 3u && strcmp(argv[2], "disconnect") == 0)
@@ -105,6 +107,7 @@ static h2_pal_result_t h2loader_require_command(
     int rc;
     if (bit == H2_LOADER_COMMAND_AVAILABLE_HELP ||
         bit == H2_LOADER_COMMAND_AVAILABLE_MEMORY ||
+        bit == H2_LOADER_COMMAND_AVAILABLE_WIFI_STATUS ||
         bit == H2_LOADER_COMMAND_AVAILABLE_WIFI_SCAN ||
         bit == H2_LOADER_COMMAND_AVAILABLE_WIFI_CONNECT ||
         bit == H2_LOADER_COMMAND_AVAILABLE_WIFI_DISCONNECT ||
@@ -434,9 +437,8 @@ static int h2loader_stage_url(
             fflush(stdout);
             return rc;
         }
-        if (wifi_status.state == H2_PAL_WIFI_STA_STATE_GOT_IP &&
-            wifi_status.ip_valid != 0u) {
-            break;
+        if (h2_pal_wifi_sta_status_has_ip(&wifi_status)) {
+          break;
         }
         if (waited_ms >= H2_LOADER_WIFI_READY_TIMEOUT_MS ||
             (wifi_status.state != H2_PAL_WIFI_STA_STATE_CONNECTING &&
@@ -601,10 +603,19 @@ typedef struct h2loader_wifi_scan_context {
     int output_result;
 } h2loader_wifi_scan_context_t;
 
+static void h2loader_wifi_ssid_hex(char *out, const char *ssid, size_t len) {
+    static const char hex[] = "0123456789abcdef";
+    for (size_t i = 0u; i < len; ++i) {
+        uint8_t byte = (uint8_t)ssid[i];
+        out[i * 2u] = hex[(byte >> 4u) & 0x0fu];
+        out[i * 2u + 1u] = hex[byte & 0x0fu];
+    }
+    out[len * 2u] = '\0';
+}
+
 static bool h2loader_wifi_scan_result(
     void *user,
     const h2_pal_wifi_scan_entry_t *entry) {
-    static const char hex[] = "0123456789abcdef";
     h2loader_wifi_scan_context_t *context = user;
     h2_loader_command_t *self;
     char ssid_hex[(H2_PAL_WIFI_SSID_MAX * 2u) + 1u];
@@ -621,12 +632,7 @@ static bool h2loader_wifi_scan_result(
         return false;
     }
     self = context->command;
-    for (size_t i = 0u; i < entry->ssid_len; ++i) {
-        uint8_t byte = (uint8_t)entry->ssid[i];
-        ssid_hex[i * 2u] = hex[(byte >> 4u) & 0x0fu];
-        ssid_hex[(i * 2u) + 1u] = hex[byte & 0x0fu];
-    }
-    ssid_hex[entry->ssid_len * 2u] = '\0';
+    h2loader_wifi_ssid_hex(ssid_hex, entry->ssid, entry->ssid_len);
     context->count++;
     if (printf(
             "H2_LOADER_WIFI_SCAN_RESULT index=%u ssid_hex=%s "
@@ -695,12 +701,57 @@ static int h2loader_wifi_scan_command(
     return rc;
 }
 
+static int h2loader_wifi_status_command(h2_loader_command_t *self) {
+    h2_pal_wifi_sta_status_t status = {0};
+    h2_pal_wifi_sta_config_t saved = {0};
+    char ssid_hex[H2_PAL_WIFI_SSID_MAX * 2u + 1u] = {0};
+    char saved_ssid_hex[H2_PAL_WIFI_SSID_MAX * 2u + 1u] = {0};
+    uint8_t ip[4] = {0};
+    int has_saved = 0;
+    int rc = h2_pal_wifi_sta_get_status(self->config.wifi, &status);
+    if (rc == H2_PAL_OK && status.ssid_len > H2_PAL_WIFI_SSID_MAX) {
+        rc = H2_PAL_ERR_FORMAT;
+    }
+    if (rc != H2_PAL_OK) {
+        memset(&saved, 0, sizeof(saved));
+        printf("H2_LOADER_WIFI_STATUS result=error code=%d\n", rc);
+        return rc;
+    }
+    h2loader_wifi_ssid_hex(ssid_hex, status.ssid, status.ssid_len);
+    if (status.ip_valid) h2_pal_wifi_ip4_to_bytes(status.ip.ip4, ip);
+    rc = h2_pal_wifi_settings_has_saved_sta_config(
+        self->config.wifi_settings, &has_saved);
+    if (rc == H2_PAL_OK && has_saved) {
+        rc = h2_pal_wifi_settings_get_saved_sta_config(
+            self->config.wifi_settings, &saved);
+        if (rc == H2_PAL_OK && saved.ssid_len > H2_PAL_WIFI_SSID_MAX) {
+            rc = H2_PAL_ERR_FORMAT;
+        }
+        if (rc == H2_PAL_OK) {
+            h2loader_wifi_ssid_hex(saved_ssid_hex, saved.ssid, saved.ssid_len);
+        }
+    }
+    memset(&saved, 0, sizeof(saved));
+    printf("H2_LOADER_WIFI_STATUS result=OK state=%d ip_valid=%u "
+        "ip=%u.%u.%u.%u ssid_hex=%s rssi=%d disconnect_reason=%d "
+        "saved=%s saved_code=%d saved_ssid_hex=%s\n",
+        (int)status.state, (unsigned)status.ip_valid,
+        ip[0], ip[1], ip[2], ip[3], ssid_hex[0] ? ssid_hex : "-",
+        status.rssi, status.disconnect_reason,
+        rc != H2_PAL_OK ? "error" : has_saved ? "1" : "0", rc,
+        saved_ssid_hex[0] ? saved_ssid_hex : "-");
+    return H2_PAL_OK;
+}
+
 static int h2loader_wifi_command(
     h2_loader_command_t *self,
     size_t argc,
     const char *const *argv) {
     const h2_pal_wifi_sta_api_t *sta = self->config.wifi;
     int rc;
+    if (argc == 3u && strcmp(argv[2], "status") == 0) {
+        return h2loader_wifi_status_command(self);
+    }
     if (argc >= 3 && strcmp(argv[2], "scan") == 0) {
         return h2loader_wifi_scan_command(self, argc, argv);
     }
@@ -746,7 +797,7 @@ static int h2loader_wifi_command(
         fflush(stdout);
         return rc;
     }
-    printf("usage: h2loader wifi <scan|connect|disconnect>\n");
+    printf("usage: h2loader wifi <status|scan|connect|disconnect>\n");
     return H2_PAL_ERR_INVALID_ARG;
 }
 
@@ -917,6 +968,42 @@ static h2_pal_result_t h2loader_help_handler(
     return H2_PAL_OK;
 }
 
+/* Keep the status wire line stable; stats adds a separate read-only fact. */
+static h2_pal_result_t h2loader_data_checksum_line(h2_loader_command_t *self) {
+    char checksum[66] = {0};
+    char line[112];
+    const char *value = "unavailable";
+    const char *path = self->config.loader->package.config.installed_checksum_path;
+    h2_pal_fs_file_t *file = NULL;
+    const h2_pal_fs_api_t *fs = self->config.fs;
+    size_t len = 0u;
+    int rc = fs == NULL ? H2_PAL_ERR_UNSUPPORTED : h2_pal_fs_open(
+        fs, path == NULL ? "/data/.checksum" : path, H2_PAL_FS_OPEN_READ, &file);
+    if (rc == H2_PAL_ERR_NOT_FOUND) value = "none";
+    if (rc == H2_PAL_OK) {
+        while (len < sizeof(checksum)) {
+            size_t got = 0u;
+            rc = h2_pal_fs_read(fs, file, checksum + len, sizeof(checksum) - len, &got);
+            if (rc != H2_PAL_OK) break;
+            if (got > sizeof(checksum) - len) { rc = H2_PAL_ERR_FORMAT; break; }
+            len += got;
+            if (got == 0u) break;
+        }
+        int close_rc = h2_pal_fs_close(fs, file);
+        if (len == 65u && checksum[64] == '\n') len = 64u;
+        if (rc == H2_PAL_OK && close_rc == H2_PAL_OK && len == 64u) {
+            int valid = 1;
+            for (size_t i = 0u; i < len; ++i) {
+                if (!((checksum[i] >= '0' && checksum[i] <= '9') ||
+                      (checksum[i] >= 'a' && checksum[i] <= 'f'))) valid = 0;
+            }
+            if (valid) { checksum[64] = '\0'; value = checksum; }
+        }
+    }
+    (void)snprintf(line, sizeof(line), "H2_LOADER_DATA_CHECKSUM checksum=%s", value);
+    return h2loader_write_line(self, line);
+}
+
 static h2_pal_result_t h2loader_status_handler_unlocked(
     void *user,
     h2_command_t *command,
@@ -939,7 +1026,10 @@ static h2_pal_result_t h2loader_status_handler_unlocked(
     if (rc != H2_PAL_OK) {
         return (h2_pal_result_t)rc;
     }
-    return h2loader_write_line(self, line);
+    rc = h2loader_write_line(self, line);
+    if (rc == H2_PAL_OK && argc == 2u && strcmp(argv[1], "stats") == 0)
+        rc = h2loader_data_checksum_line(self);
+    return rc;
 }
 
 static h2_pal_result_t h2loader_memory_handler_unlocked(
@@ -1226,6 +1316,9 @@ static h2_pal_result_t h2loader_invoke_locked(
     result = h2loader_require_command(self, argc, argv, NULL);
     if (result == H2_PAL_OK) {
         result = handler(self, command, argc, argv);
+    } else if (h2loader_command_bit(argc, argv) ==
+               H2_LOADER_COMMAND_AVAILABLE_STAGE_PAYLOAD) {
+        printf("H2_LOADER_STAGE_RECEIVE result=fail code=%d\n", result);
     }
     if (operation_locked) {
         int unlock_rc = h2_pal_mutex_unlock(
@@ -1271,8 +1364,9 @@ static h2_pal_result_t h2loader_wifi_handler(
     h2_command_t *command,
     size_t argc,
     const char *const *argv) {
+    int status = argc >= 3u && strcmp(argv[2], "status") == 0;
     return h2loader_invoke_locked(
-        (h2_loader_command_t *)user, command, argc, argv, 1, 0,
+        (h2_loader_command_t *)user, command, argc, argv, !status, status,
         h2loader_wifi_handler_unlocked);
 }
 
@@ -1374,6 +1468,7 @@ int h2_loader_command_init(
             H2_LOADER_COMMAND_AVAILABLE_STAGE_PAYLOAD |
             H2_LOADER_COMMAND_AVAILABLE_STAGE_ABORT |
             H2_LOADER_COMMAND_AVAILABLE_STAGE_URL |
+            H2_LOADER_COMMAND_AVAILABLE_WIFI_STATUS |
             H2_LOADER_COMMAND_AVAILABLE_WIFI_SCAN |
             H2_LOADER_COMMAND_AVAILABLE_WIFI_CONNECT |
             H2_LOADER_COMMAND_AVAILABLE_WIFI_DISCONNECT |

@@ -16,10 +16,10 @@ bazel run //projects/h2loader/targets/cc_binary/e2e-runner -- \
   --ble-id <endpoint-returned-by-scan> \
   --expected-board devkit \
   --expected-target esp32s3 \
-  --app-firmware /absolute/path/devkit-app-esp32s3.update.tar.zlib \
-  --loader-firmware /absolute/path/devkit-loader-esp32s3.update.tar.zlib \
-  --crash-firmware /absolute/path/devkit-crash-before-confirm-esp32s3.update.tar.zlib \
-  --firmware-url http://192.168.1.2:8766/update.tar.zlib \
+  --app-firmware /absolute/path/devkit-app-esp32s3.update.tar \
+  --loader-firmware /absolute/path/devkit-loader-esp32s3.update.tar \
+  --crash-firmware /absolute/path/devkit-crash-before-confirm-esp32s3.update.tar \
+  --firmware-url http://192.168.1.2:8766/update.tar \
   --url-bytes 938442 \
   --url-sha256 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
   --wifi-ssid TEST-NETWORK \
@@ -84,3 +84,69 @@ bytes contribute to output/log byte counters only during monitor cases.
 Each attempt reconnects to the expected partition, observes a full monitor window
 with output, and reads live status to confirm the partition. A second transition,
 any other error, a wrong partition, or cancellation ends the case.
+
+
+## Old/new checksum matrix
+
+Build two distinct command-responsive, confirming Apps for the same board. The
+DevKit fixture target shares the original launcher and uses a separate linked
+version for its alternate App:
+
+```sh
+bazel build --config=esp32s3 //projects/h2loader/targets/h2loader_tar_zlib/e2e-app/devkit:checksum-matrix
+bazel run --config=macos_arm64 //projects/h2loader/targets/cc_binary/e2e-runner -- \
+  --uart <directed-port> --expected-board devkit --expected-target esp32s3 \
+  --checksum-tar-zlib <absolute-checksum-matrix-dir>/tar_zlib \
+  --checksum-zlib-tar <absolute-checksum-matrix-dir>/zlib_tar \
+  --report /tmp/h2loader-checksum-e2e.json
+```
+
+Either format directory may be selected independently; both compare identical
+App/data identities through old/new wire formats. Each directory must contain
+`baseline`, `unchanged`, `app-only`, `data-only`, `both-changed`, with suffix
+`.update.tar.zlib` for format 1 or `.update.tar` for format 2. The sequence is
+A/A baseline → A/A unchanged → B/A App-only → B/B data-only → A/A both-changed.
+Every repeat and selected UART/BLE transport establishes its own baseline.
+These controlled fixtures replace the App and data tree with the E2E App and
+`data/h2loader-e2e/probe.txt`; use them on the explicitly selected test device.
+The runner's endpoint flags own device selection and do not authorize a global scan.
+
+Before any connection, inspect every packet, verify its format/role/board/target,
+canonical data identity, four change relations, and old/new pair agreement.
+Format-2 unchanged has two invalid zlib streams, App-only invalidates data,
+and data-only invalidates App. Their compressed SHA-256 fields and complete
+package identities remain correct. The runner checks the guards too: valid
+unguarded packets cannot report skip proof. A successful device install proves
+those skipped streams were not inflated. All changed streams are valid.
+
+A current Loader/App command implementation must return the separate
+`H2_LOADER_DATA_CHECKSUM` fact from `stats`; the typed Host `DATA_CHECKSUM`
+request waits for that complete line even when it arrives after a separate
+status frame. Older or unsupported implementations
+fail before the first baseline mutation. Before each transition compare the
+observed App/data checksums with the previous successful fixture, then use the
+normal managed Stage/activate/reconnect flow. Afterward require the expected
+active App/package metadata, Partition 2, no Stage, and the expected installed
+data checksum. Data-only success with the old data checksum fails. A failed
+matrix case blocks its dependent cases; the other format starts its own baseline.
+
+Checksum runs use `h2loader-e2e-report/v2`; normal runs retain v1. Each checksum
+case records its immutable package SHA, format, observed before/after checksums,
+expected update flags and verified status. Baseline expectations are null because
+it establishes the initial state. The elapsed time covers the full managed
+operation and observation, not an isolated decompression benchmark. Host tests
+exercise recipes, orchestration and negative acceptance; hardware PASS requires
+running these real cases on the directed endpoints and retaining their report.
+
+
+When both format directories are selected, eight additional independently named
+cross-format cases run on each selected transport in one iteration: old-to-new
+and new-to-old, each with unchanged, App-only, data-only and both-changed inputs.
+Each case first installs the predecessor through its source format, then verifies
+that the device's Partition 2 package checksum matches that exact source packet
+before installing the target-format candidate. Reports include `source_format`
+and the observed `before_package_sha256`; a matching App/data identity without
+the required source-package provenance cannot pass. These cases reuse the same
+ten fixtures and do not rely on a second transport or repeat to cover the reverse
+transition. A single transport with both directories now runs 23 cases (five
+command checks, ten within-format cases and eight cross-format cases).

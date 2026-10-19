@@ -3,7 +3,7 @@
 
 #include "h2_loader_app_client.h"
 
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -141,12 +141,14 @@ struct h2_loader_ble_service {
      * pause, or the automatic Wi-Fi coexistence pause. */
     bool advertising_pause_manual;
     bool advertising_pause_auto;
-    atomic_int advertising_pause_request;
-    atomic_bool closing_requested;
+    h2_atomic_int_t advertising_pause_request;
+    h2_atomic_bool_t closing_requested;
     bool closing;
     uint8_t service_data[H2_LOADER_BLE_SERVICE_DATA_FIXED_LEN +
                          H2_LOADER_BLE_BOARD_MAX];
     size_t service_data_len;
+    bool name_only_legacy;
+    char local_name[H2_LOADER_BLE_LOCAL_NAME_MAX + 1u];
     h2_pal_ble_uuid_t additional_services[
         H2_LOADER_BLE_MAX_ADDITIONAL_ADVERTISED_SERVICES];
     uint8_t additional_service_data[
@@ -202,16 +204,18 @@ static int h2_loader_ble_service_update_advertising(
         services[i + 1u] = additional_services[i];
     }
     h2_pal_ble_adv_data_t adv_data = {
-        .local_name = NULL,
+        .local_name = service->local_name[0] != '\0' ? service->local_name : NULL,
         .service_uuids = services,
         .service_uuid_count = additional_service_count + 1u,
     };
     if (service->config.advertising_mode ==
         H2_LOADER_BLE_ADVERTISING_LEGACY) {
-        adv_data.manufacturer_data = (h2_pal_ble_bytes_t){
-            .data = service->service_data,
-            .len = service->service_data_len,
-        };
+        if (!service->name_only_legacy) {
+            adv_data.manufacturer_data = (h2_pal_ble_bytes_t){
+                .data = service->service_data,
+                .len = service->service_data_len,
+            };
+        }
     } else {
         adv_data.service_data_uuid = services[0];
         adv_data.service_data = (h2_pal_ble_bytes_t){
@@ -276,7 +280,7 @@ static void h2_loader_ble_link_task(void *ctx) {
         }
         (void)h2_pal_mutex_unlock(
             service->config.api.sync, service->link_mutex);
-        int advertising_pause_request = atomic_exchange(
+        int advertising_pause_request = h2_atomic_exchange(
             &service->advertising_pause_request,
             H2_LOADER_BLE_ADV_PAUSE_REQUEST_NONE);
         if (advertising_pause_request !=
@@ -545,7 +549,7 @@ static int h2_loader_ble_stop_link_task(h2_loader_ble_service_t *service) {
         (void)h2_pal_mutex_lock(
             service->config.api.sync, service->link_mutex);
         service->closing = true;
-        atomic_store(&service->closing_requested, true);
+        h2_atomic_store(&service->closing_requested, true);
         service->link_pending = false;
         (void)h2_pal_mutex_unlock(
             service->config.api.sync, service->link_mutex);
@@ -734,7 +738,10 @@ int h2_loader_ble_service_open(
     };
     int rc;
 
-    if (config == NULL || out_service == NULL || config->api.ble == NULL ||
+    if (out_service == NULL)
+        return H2_PAL_ERR_INVALID_ARG;
+    *out_service = NULL;
+    if (config == NULL || config->api.ble == NULL ||
         config->api.task == NULL || config->api.time == NULL ||
         config->api.sync == NULL || config->api.system_event == NULL ||
         config->api.allocator == NULL || config->board == NULL ||
@@ -743,27 +750,67 @@ int h2_loader_ble_service_open(
          config->advertising_mode != H2_LOADER_BLE_ADVERTISING_EXTENDED)) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    *out_service = NULL;
+    size_t name_len = 0u;
+    if (config->local_name != NULL) {
+        while (name_len <= H2_LOADER_BLE_LOCAL_NAME_MAX &&
+               config->local_name[name_len] != '\0')
+            ++name_len;
+        if (name_len == 0u || name_len > H2_LOADER_BLE_LOCAL_NAME_MAX)
+            return H2_PAL_ERR_INVALID_ARG;
+        for (size_t i = 0u; i < name_len; ++i) {
+            const unsigned char c = (unsigned char)config->local_name[i];
+            if (c < 0x20u || c > 0x7eu) return H2_PAL_ERR_INVALID_ARG;
+        }
+    }
+    size_t identity_capacity = config->advertising_mode ==
+            H2_LOADER_BLE_ADVERTISING_LEGACY
+        ? H2_PAL_BLE_LEGACY_ADV_DATA_MAX_LEN - 2u
+        : H2_LOADER_BLE_SERVICE_DATA_FIXED_LEN + H2_LOADER_BLE_BOARD_MAX;
+    if (config->advertising_mode == H2_LOADER_BLE_ADVERTISING_LEGACY &&
+        name_len != 0u) {
+        if (name_len + 2u < identity_capacity)
+            identity_capacity -= name_len + 2u;
+        else
+            identity_capacity = 0u;
+    }
+    if (!h2_bleikcp_global_ready()) return H2_PAL_ERR_INVALID_STATE;
     service = h2_pal_mem_alloc(config->api.allocator, sizeof(*service));
     if (service == NULL) {
         return H2_PAL_ERR_NO_MEMORY;
     }
     memset(service, 0, sizeof(*service));
-    atomic_init(
+    h2_atomic_result_t atomic_rc = h2_atomic_int_init(
         &service->advertising_pause_request,
         H2_LOADER_BLE_ADV_PAUSE_REQUEST_NONE);
-    atomic_init(&service->closing_requested, false);
+    if (atomic_rc == H2_ATOMIC_OK)
+        atomic_rc = h2_atomic_bool_init(&service->closing_requested, false);
+    if (atomic_rc != H2_ATOMIC_OK) {
+        h2_atomic_int_destroy(&service->advertising_pause_request);
+        h2_atomic_bool_destroy(&service->closing_requested);
+        h2_pal_mem_free(config->api.allocator, service);
+        return atomic_rc == H2_ATOMIC_UNSUPPORTED ? H2_PAL_ERR_UNSUPPORTED
+                                                   : H2_PAL_ERR_NO_MEMORY;
+    }
     service->config = *config;
+    if (name_len != 0u) {
+        memcpy(service->local_name, config->local_name, name_len);
+        service->config.local_name = service->local_name;
+    }
     service->active_conn_handle = H2_PAL_BLE_INVALID_CONN_HANDLE;
     service->pending_conn_handle = H2_PAL_BLE_INVALID_CONN_HANDLE;
-    const size_t identity_capacity = config->advertising_mode ==
-            H2_LOADER_BLE_ADVERTISING_LEGACY
-        ? H2_PAL_BLE_LEGACY_ADV_DATA_MAX_LEN - 2u
-        : sizeof(service->service_data);
     rc = h2_loader_ble_encode_identity(
         config->capabilities, config->board,
         service->service_data, identity_capacity,
         &service->service_data_len);
+    if (rc != H2_PAL_OK && name_len != 0u &&
+        config->advertising_mode == H2_LOADER_BLE_ADVERTISING_LEGACY) {
+        /* Keep a complete long name and the management UUID. Discovery then
+         * reads authoritative identity from command status after connecting. */
+        rc = h2_loader_ble_encode_identity(
+            config->capabilities, config->board, service->service_data,
+            H2_PAL_BLE_LEGACY_ADV_DATA_MAX_LEN - 2u, &service->service_data_len);
+        service->name_only_legacy = rc == H2_PAL_OK;
+    }
     if (rc != H2_PAL_OK) {
         goto fail;
     }
@@ -877,6 +924,8 @@ fail:
     if (service->server != NULL) {
         (void)h2_bleikcp_server_close(service->server);
     }
+    h2_atomic_int_destroy(&service->advertising_pause_request);
+    h2_atomic_bool_destroy(&service->closing_requested);
     h2_pal_mem_free(config->api.allocator, service);
     return rc;
 }
@@ -915,6 +964,8 @@ int h2_loader_ble_service_close(h2_loader_ble_service_t *service) {
         ? h2_bleikcp_server_close(service->server)
         : H2_PAL_OK;
     const h2_pal_mem_api_t *allocator = service->config.api.allocator;
+    h2_atomic_int_destroy(&service->advertising_pause_request);
+    h2_atomic_bool_destroy(&service->closing_requested);
     h2_pal_mem_free(allocator, service);
     return adv_rc != H2_PAL_OK ? adv_rc : server_rc;
 }
@@ -1059,10 +1110,10 @@ int h2_loader_ble_service_request_advertising_paused(
     if (service == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    if (atomic_load(&service->closing_requested)) {
+    if (h2_atomic_load(&service->closing_requested)) {
         return H2_PAL_ERR_CLOSED;
     }
-    atomic_store(
+    h2_atomic_store(
         &service->advertising_pause_request,
         paused ? H2_LOADER_BLE_ADV_PAUSE_REQUEST_PAUSE
                : H2_LOADER_BLE_ADV_PAUSE_REQUEST_RESUME);

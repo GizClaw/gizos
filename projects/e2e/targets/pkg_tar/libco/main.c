@@ -1,20 +1,27 @@
 #include "h2_libco_smoke.h"
 #include "h2_smoke_host_runtime.h"
+#include "h2_web_main_thread.h"
 #include "h2_web_platform.h"
 
 #include <emscripten.h>
 #include <stdio.h>
 
+/* clang-format off */
 EM_JS(void, h2_web_libco_result,
-      (int result, uint32_t switches, uint64_t elapsed_ms), {
-  const element = globalThis.document && document.getElementById('result');
-  if (element) {
-    element.textContent = result === 0
-      ? `PASS switches=${switches} elapsed_ms=${elapsed_ms}`
-      : `FAIL rc=${result} switches=${switches} elapsed_ms=${elapsed_ms}`;
-    element.dataset.terminal = result === 0 ? 'pass' : 'fail';
-  }
+      (void *context, h2_web_main_result_t *result,
+       h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["i32", "u32", "u64"], null,
+    (result, switches, elapsed_ms) => {
+      const element = globalThis.document && document.getElementById('result');
+      if (element) {
+        element.textContent = result === 0
+          ? `PASS switches=${switches} elapsed_ms=${elapsed_ms}`
+          : `FAIL rc=${result} switches=${switches} elapsed_ms=${elapsed_ms}`;
+        element.dataset.terminal = result === 0 ? 'pass' : 'fail';
+      }
+    });
 });
+/* clang-format on */
 
 static h2_pal_result_t h2_web_root_monotonic(void *user,
                                               uint64_t *out_ms) {
@@ -62,7 +69,9 @@ int main(void) {
   };
   h2_web_platform_t *platform = h2_web_platform_create(&platform_config);
   if (platform == NULL) {
-    h2_web_libco_result(H2_PAL_ERR_NO_MEMORY, 0u, 0u);
+    (void)h2_web_main_call(h2_web_libco_result,
+                           (const void *[]){&(int){H2_PAL_ERR_NO_MEMORY},
+                                            &(uint32_t){0u}, &(uint64_t){0u}});
     return 1;
   }
   h2_runtime_config_t config = h2_smoke_host_runtime_config(
@@ -86,12 +95,16 @@ int main(void) {
   }
   h2_web_platform_destroy(platform);
   const uint64_t elapsed_ms = (uint64_t)emscripten_get_now() - started_ms;
-  h2_web_libco_result(result, H2_LIBCO_SMOKE_DEFAULT_SWITCH_ITERATIONS,
-                      elapsed_ms);
+  (void)h2_web_main_call(
+      h2_web_libco_result,
+      (const void *[]){&(int){result},
+                       &(uint32_t){H2_LIBCO_SMOKE_DEFAULT_SWITCH_ITERATIONS},
+                       &(uint64_t){elapsed_ms}});
   fprintf(result == H2_PAL_OK ? stdout : stderr,
           "H2_WEB_LIBCO_E2E result=%s rc=%d switches=%u elapsed_ms=%llu\n",
           result == H2_PAL_OK ? "PASS" : "FAIL", result,
           H2_LIBCO_SMOKE_DEFAULT_SWITCH_ITERATIONS,
           (unsigned long long)elapsed_ms);
+  emscripten_force_exit(result == H2_PAL_OK ? 0 : 1);
   return result == H2_PAL_OK ? 0 : 1;
 }

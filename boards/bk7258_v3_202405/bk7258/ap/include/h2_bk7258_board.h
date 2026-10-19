@@ -22,6 +22,11 @@ h2_pal_result_t h2_bk7258_board_runtime_config(h2_runtime_config_t *out_config);
  */
 h2_pal_result_t h2_bk7258_board_runtime_deinit(void);
 
+/* Diagnostic copy of active RGB LCD DMA scanout; draw/present/close callers
+ * must be quiescent. Host-endian RGB565. Confirms controller refresh progress,
+ * not optical panel output. Capacity is a pixel count. */
+int h2_bk7258_board_display_capture(uint16_t *pixels, size_t capacity);
+
 /** Board PSRAM allocator for large target-specific working sets. */
 h2_pal_mem_api_t *h2_bk7258_board_psram_allocator(void);
 

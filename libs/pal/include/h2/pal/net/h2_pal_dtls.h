@@ -159,6 +159,9 @@ static inline h2_pal_result_t h2_pal_dtls_session_set_remote_fingerprint(
         api->user, session, fingerprint);
 }
 
+/** Continue the same handshake deadline using actual monotonic now_ms.
+ * An expired deadline is a provider timeout, including now_ms > deadline_ms;
+ * it is not an invalid clock argument. */
 static inline h2_pal_result_t h2_pal_dtls_session_handshake(
     const h2_pal_dtls_api_t *api,
     h2_pal_dtls_session_t *session,
@@ -170,7 +173,7 @@ static inline h2_pal_result_t h2_pal_dtls_session_handshake(
     if (out_complete != NULL) {
         *out_complete = 0;
     }
-    if (session == NULL || out_complete == NULL || now_ms > deadline_ms ||
+    if (session == NULL || out_complete == NULL ||
         (datagram == NULL && datagram_len != 0u)) {
         return H2_PAL_ERR_INVALID_ARG;
     }

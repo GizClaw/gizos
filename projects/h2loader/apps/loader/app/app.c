@@ -150,6 +150,7 @@ int h2loader_app_run_with_command_service(
     };
     rc = h2_pal_mutex_create(runtime->sync, &mutex_config, &operation_mutex);
     if (rc != H2_PAL_OK) {
+        h2_loader_deinit(&loader);
         return rc;
     }
     const h2_pal_mutex_config_t wifi_mutex_config = {
@@ -161,6 +162,7 @@ int h2loader_app_run_with_command_service(
         runtime->sync, &wifi_mutex_config, &wifi_operation_mutex);
     if (rc != H2_PAL_OK) {
         destroy_operation_mutexes(runtime, operation_mutex, NULL);
+        h2_loader_deinit(&loader);
         return rc;
     }
     command.operation_sync = runtime->sync;
@@ -172,6 +174,7 @@ int h2loader_app_run_with_command_service(
     if (rc != H2_PAL_OK) {
         destroy_operation_mutexes(
             runtime, operation_mutex, wifi_operation_mutex);
+        h2_loader_deinit(&loader);
         return rc;
     }
     if (config->before_startup != NULL) {
@@ -186,6 +189,7 @@ int h2loader_app_run_with_command_service(
                 command_service, additional_command_service);
             destroy_operation_mutexes(
                 runtime, operation_mutex, wifi_operation_mutex);
+            h2_loader_deinit(&loader);
             return rc;
         }
         if (action != H2_LOADER_STARTUP_ACTION_COMMAND_MODE) {
@@ -193,6 +197,7 @@ int h2loader_app_run_with_command_service(
                 command_service, additional_command_service);
             destroy_operation_mutexes(
                 runtime, operation_mutex, wifi_operation_mutex);
+            h2_loader_deinit(&loader);
             return H2_PAL_OK;
         }
         serve_context = (h2loader_serve_context_t){
@@ -213,6 +218,7 @@ int h2loader_app_run_with_command_service(
                 command_service, additional_command_service);
             destroy_operation_mutexes(
                 runtime, operation_mutex, wifi_operation_mutex);
+            h2_loader_deinit(&loader);
             return rc;
         }
         start_additional_command_service(
@@ -291,6 +297,7 @@ int h2loader_app_run_with_command_service(
                 command_service, additional_command_service);
             destroy_operation_mutexes(
                 runtime, operation_mutex, wifi_operation_mutex);
+            h2_loader_deinit(&loader);
             return rc;
         }
         if (action == H2_LOADER_STARTUP_ACTION_COMMAND_MODE) {
@@ -321,11 +328,13 @@ int h2loader_app_run_with_command_service(
         }
         destroy_operation_mutexes(
             runtime, operation_mutex, wifi_operation_mutex);
+        h2_loader_deinit(&loader);
         return result;
     }
     (void)close_additional_command_service(
         command_service, additional_command_service);
     destroy_operation_mutexes(runtime, operation_mutex, wifi_operation_mutex);
+    h2_loader_deinit(&loader);
     return H2_PAL_ERR_INVALID_STATE;
 }
 

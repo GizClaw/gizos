@@ -1,5 +1,6 @@
 #include "h2_libco_internal.h"
 
+#include <assert.h>
 #include <limits.h>
 #include <string.h>
 
@@ -35,6 +36,30 @@ static bool h2_libco_valid_context(const h2_libco_t *core) {
 
 h2_libco_task_t *h2_libco_internal_current_task(h2_libco_t *core) {
     return h2_libco_internal_task_context(core) ? core->running : NULL;
+}
+
+h2_libco_result_t h2_libco_get_resource_stats(
+    h2_libco_t *core, h2_libco_resource_stats_t *out_stats) {
+    if (out_stats == NULL) return H2_LIBCO_ERR_INVALID_ARG;
+    memset(out_stats, 0, sizeof(*out_stats));
+    if (core == NULL) return H2_LIBCO_ERR_INVALID_ARG;
+    if (!h2_libco_valid_context(core)) return H2_LIBCO_ERR_INVALID_STATE;
+    for (const h2_libco_task_t *task = core->tasks; task != NULL;
+         task = task->all_next) {
+        if (task->state != H2_LIBCO_TASK_JOINED) {
+            ++out_stats->live_tasks;
+            out_stats->task_stack_bytes += task->stack_size;
+        }
+    }
+    out_stats->live_queues = core->live_pal_queues;
+    out_stats->live_mutexes = core->live_pal_mutexes;
+    out_stats->live_semaphores = core->live_pal_semaphores;
+    out_stats->live_conditions = core->live_pal_conditions;
+    return H2_LIBCO_OK;
+}
+
+const h2_libco_task_t *h2_libco_current_task(h2_libco_t *core) {
+    return h2_libco_internal_current_task(core);
 }
 
 static bool h2_libco_task_owned(const h2_libco_t *core,
@@ -166,6 +191,24 @@ static h2_libco_result_t h2_libco_reclaim(h2_libco_t *core,
     task->state = H2_LIBCO_TASK_JOINED;
     task->joiner = NULL;
     return H2_LIBCO_OK;
+}
+
+void h2_libco_internal_release_joined_task(h2_libco_t *core,
+                                           h2_libco_task_t *task) {
+    /* Only PAL owns a native handle with no externally retained tombstone.
+     * Native public join deliberately does not call this helper. */
+    assert(h2_libco_valid_context(core));
+    assert(task != NULL && task->owner == core);
+    assert(task->state == H2_LIBCO_TASK_JOINED && !task->queued);
+    assert(task->stack_allocation == NULL && task->joiner == NULL &&
+           task->join_target == NULL && core->running != task);
+    h2_libco_task_t **cursor = &core->tasks;
+    while (*cursor != task) {
+        assert(*cursor != NULL);
+        cursor = &(*cursor)->all_next;
+    }
+    *cursor = task->all_next;
+    core->config.free(core->config.user, task);
 }
 
 h2_libco_result_t h2_libco_create(const h2_libco_config_t *config,
@@ -554,6 +597,15 @@ h2_libco_result_t h2_libco_internal_wait_deferred_cancel(
     task->resume_result = H2_LIBCO_WOKEN;
     task->deadline_set = false;
     return h2_libco_suspend(core, false);
+}
+
+h2_libco_result_t h2_libco_wait_cleanup(h2_libco_t *core,
+                                        uintptr_t wait_key) {
+    h2_libco_result_t result;
+    do {
+        result = h2_libco_internal_wait_deferred_cancel(core, wait_key);
+    } while (result == H2_LIBCO_ERR_CANCELLED);
+    return result;
 }
 
 h2_libco_result_t h2_libco_internal_wake_one(

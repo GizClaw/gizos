@@ -31,6 +31,7 @@ typedef struct h2_esp_ft3168_state {
     int32_t last_y;
     bool opened;
     bool contact_active;
+    bool read_error_reported;
 } h2_esp_ft3168_state_t;
 
 static const char *TAG = "h2_ft3168";
@@ -148,6 +149,7 @@ static h2_pal_result_t touch_open(void *user) {
 
     s_touch.opened = true;
     s_touch.contact_active = false;
+    s_touch.read_error_reported = false;
     ESP_LOGI(TAG, "FT3168 ready address=0x38 id=0x%02x", device_id);
     return H2_PAL_OK;
 }
@@ -194,8 +196,13 @@ static h2_pal_result_t touch_poll_event(
     esp_err_t err = read_registers(
         H2_FT3168_REG_TOUCH_COUNT, data, sizeof(data));
     if (err != ESP_OK) {
+        if (!s_touch.read_error_reported) {
+            ESP_LOGW(TAG, "FT3168 touch read failed: %s", esp_err_to_name(err));
+            s_touch.read_error_reported = true;
+        }
         return map_esp_err(err);
     }
+    s_touch.read_error_reported = false;
     const uint8_t contact_count = data[0] & 0x0fu;
     if (contact_count == 0u) {
         if (!s_touch.contact_active) {

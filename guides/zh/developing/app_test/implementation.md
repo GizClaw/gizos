@@ -83,9 +83,23 @@ Testing Time 的 sleep 仅推进虚拟时钟，不调度其他 task。生产 Run
 
 Audio decorator 借用 delegate、Time、Memory 和 PCM，mic lifecycle 委托给底层，采集 scratch 读取后清零，再按 monotonic time 返回 fixture PCM；EOF 后输出静音。物理采集错误单独观测，不覆盖 fixture 的业务输入。Evidence 支持并发读取，但多字段不是原子快照。Mic lifecycle/read 串行，speaker lifecycle 串行，每条 track 独立串行，销毁前所有调用者 quiescent。
 
+有限 PCM 也可以通过 borrowed reader fixture 提供。Decorator 复制 reader 配置，每次最多请求一帧的指定 offset 内容，保留原 pacing、一次性 READY barrier、暂停与 EOF 静音语义；不预读或保存整段录音。Reader 回调在 mic-read task 上持有 fixture lock 时执行，必须有界完成，不能重入本对象的 setter 或 mic lifecycle。Reader 错误返回零帧、不推进内容 offset，并由 `fixture_read_result` 保留首个错误，与真实 Mic 健康统计分开；mic start 或成功替换清零。替换与 PCM 使用同一锁和格式门禁，失败保留原 source，成功后调用方才可关闭或释放原 reader context；Decorator 不拥有 reader 的文件、连接或用户存储。
+
 Audio decorator 默认输出 fixture。后台麦克风泵持续读取的产品应在启动 Runtime 前暂停 fixture，再由公开 observation callback 发布实际 capture 状态；暂停期间继续采样真实麦克风健康，但 read 立即返回 WOULD_BLOCK 和零字节，不消耗 PCM。恢复保留样本位置与 EOF，从首次启用的 read 重新建立 pacing epoch，不补发暂停期间的帧；重复发布同一状态不重置时钟。暂停／恢复即使发生在两次 read 之间或 pacing sleep 内也会被检测。控制状态跨 mic stop/start 与 fixture 更换保留，mic start 仍回绕样本。调用方保持输出暂停后，可在后台 mic 持续运行时更换同格式 fixture；替换与在途帧复制互斥，成功后旧 PCM 可释放，进度与 EOF 清零，真实采集健康保留。替换需与 mic start/stop 串行，不在 observation callback 中执行。该控制只发布原子状态，不调用 PAL 或获取 fixture lock；已越过最终状态检查的在途 read 仍可能输出一帧，因此它不是停止上传的 completion barrier。产品采集状态、素材选择和业务断言由 consumer 拥有。
 
+`h2_app_test_audio_set_fixture_ready()` 是独立于 capture 的一次内容起播闸门，默认
+true 保持既有 caller 行为。mic start 或成功替换 fixture 时采样该值；若 false，
+实际 capture 开启后按相同 PCM 格式与速率输出 lead-in silence，记录
+`fixture_lead_in_bytes`，但不消耗 fixture offset、不提前 EOF。true 在下一到期帧
+开启内容，此后 false 不能暂停或降速当前内容；下一次 mic start 或暂停中的 fixture
+替换才重新采样。capture_active=false 仍返回 WOULD_BLOCK，真实采集健康计数继续
+独立记录。该 setter 只发布原子状态，不调用 PAL、分配或加 fixture lock；在途帧
+限制与 capture setter 相同。caller 应将真实请求的初始 ready 与本轮 owner 绑定，
+不能把动态 queue credit 当成起播条件，也不能重置总测试预算。
+
 ### 失败和 cleanup
+
+Modem fake 初始化后 `lifecycle_supported=false`、`opened=false`。Scenario 在无在途调用时把 `lifecycle_supported` 设为 true，只有原本 unsupported 的 open/close 改为脚本化 lifecycle。未启用时二者返回 UNSUPPORTED，不改状态、不记录 timeout、不消耗 fault。启用后 open 记录 timeout：已打开时直接成功且不消耗 open fault，否则应用 open fault，成功才设置 opened=true。close 每次记录 timeout 并应用 close fault，即使已经关闭；成功才设置 opened=false。零初始化 fault 默认成功，因此重复 close 默认成功；注入失败保留原 opened 状态和配置的错误码。它不控制真实电源、不生成异步事件，dial/answer/hangup/status 的行为不变。Capabilities 不随 lifecycle 启用而增加：init 默认 CALL，scenario 必须为无蜂窝 E2E 单独设为零，调用操作仍按 capability gate 返回 unsupported。配置、调用和 evidence 读取必须由 consumer 串行组织。
 
 Fault 在有效调用到达对应操作时计数，零初始化默认成功；持续失败和有界失败均可配置。Preference commit filter 仅统计匹配 namespace/key 的调用。Wi-Fi connect 和 Modem call 不自动生成完成事件，Power transition 不重启 Host 或增加 boot count，Crypto fixture 不提供真实密码算法。
 
@@ -291,6 +305,6 @@ Adopter至少覆盖：
 
 GizClaw E2E 的公共支撑新增 `h2_app_test_mem`、`h2_app_test_task`、`h2_app_test_sync`、`h2_app_test_webrtc`，对应同名 public header 与 `src/pal/` 实现，归属 `testing_pal`。Memory 对每个分配维护对齐头和存活链表；失败的 realloc 保留旧块。Task/Sync 只验证串行生命周期，生产并发继续用真实或 libco PAL。Testing Time 可在单调读之后显式步进，成功 sleep 后可通知借用的场景观察函数；故障 helper 支持跳过指定次数后再注入。
 
-WebRTC decorator 每个实例拥有自己的 peer/channel wrapper，无全局实例。每次成功 poll 返回可释放的包装事件，释放时把原始事件完整交还 delegate；callback 只同步借用事件。每个 peer 最多保留 16 个不同 channel handle，直到 peer close。活动 peer 或未释放 event 阻止 decorator destroy。调用方串行访问同一 peer 及其 channel，释放事件后再关闭 peer；不同 peer 的观察 callback 可并发，需要 consumer 自行同步。
+WebRTC decorator 每个实例拥有自己的 peer/channel wrapper，无全局实例。每次成功 poll 返回可释放的包装事件，释放时把原始事件完整交还 delegate；callback 只同步借用事件。每个 peer 按需分配不同 channel 的稳定包装句柄，直到 peer close 才释放；包装句柄分配失败时关闭刚创建的 delegate channel 并返回 `NO_MEMORY`，不额外限制底层 provider 的 channel 数量。活动 peer 或未释放 event 阻止 decorator destroy。调用方串行访问同一 peer 及其 channel，释放事件后再关闭 peer；不同 peer 的观察 callback 可并发，需要 consumer 自行同步。
 
 Audio decorator 支持 NULL fixture 的仅播放模式：不暴露 mic，直至安装有效 fixture。成功的 S16LE write 记录原子最大幅值（含 -32768），字节数与 digest 保持原语义。Audio fake 可借用 `playback_time`，成功写入按 PCM 时长向上取整等待；失败不记录已播放字节。GizClaw Device 的 PAL 销毁 hook 在所有 actor 停止后执行，保留 stop/close 失败的所有权。

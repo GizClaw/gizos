@@ -1,0 +1,12 @@
+{
+  "abis": [
+    "arm64-v8a"
+  ],
+  "min_api": 31,
+  "ndk": "r28c",
+  "name": "h2-pal-core",
+  "version": "2.0.0",
+  "sha256": "300fd73779a50f334c35242170002e43b7900da48aa27c20fd8d65ee339926cd",
+  "artifact": "aar.aar",
+  "header_count": 51
+}

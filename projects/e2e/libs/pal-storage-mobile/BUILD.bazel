@@ -1,0 +1,89 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_python//python:defs.bzl", "py_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:mobile_e2e.bzl", "mobile_e2e_suite")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+
+package(default_visibility = ["//projects/e2e:__subpackages__"])
+
+cc_library(
+    name = "runner",
+    srcs = ["runner.c"],
+    hdrs = ["runner.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["."],
+    target_compatible_with = select({
+        "@platforms//os:ios": [],
+        "@platforms//os:android": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//projects/e2e/apps/pal-storage/app:pal_storage_e2e"],
+)
+
+exports_files(["run_mobile.py"])
+
+py_test(
+    name = "runner_contract_test",
+    srcs = [
+        "run_mobile.py",
+        "tests/test_run_mobile.py",
+    ],
+    data = [":mobile_e2e"],
+    imports = ["."],
+    legacy_create_init = False,
+    main = "tests/test_run_mobile.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = ["//tools/bazel:mobile_e2e_runtime"],
+)
+
+mobile_e2e_suite(
+    name = "mobile_e2e",
+    android_sdk = {
+        "required_header": "prefab/modules/h2_pal_core/include/h2_android_platform.h",
+        "public_symbols": [
+            "h2_android_storage_create",
+            "h2_android_storage_fs_api",
+            "h2_android_storage_pref_api",
+            "h2_android_storage_destroy",
+        ],
+    },
+    case_count = 36,
+    expected = {
+        "contract": 2,
+        "operations": 28,
+        "qualified": True,
+        "failed": 0,
+        "blocked": 0,
+    },
+    hook = "run_mobile.py",
+    ios_sdk = {
+        "executable": "GizOSPALStorageE2E",
+        "provider_symbols": [
+            "_h2_ios_storage_create",
+            "_h2_ios_storage_fs_api",
+            "_h2_ios_storage_pref_api",
+            "_h2_ios_storage_destroy",
+        ],
+        "portable_symbol": "_h2_pal_storage_e2e_run",
+    },
+    options = {
+        "root": "pal-storage",
+        "nonce_bits": 32,
+        "phase_expected": {
+            "contract": 2,
+            "failed": 0,
+            "blocked": 0,
+            "cleanup": 0,
+            "teardown": 0,
+            "rc": 0,
+        },
+    },
+    output_default = "/tmp/pal-storage-mobile",
+    package = "com.haivivi.gizos.e2e.palstorage",
+    plain_platform = True,
+    prefix = "pal-storage",
+    registry = "//projects/e2e/apps/pal-storage/app:include/h2_pal_storage_cases.inc",
+    registry_pattern = "H2_PAL_STORAGE_CASE\\(\"([^\"]+)\", ([123])\\)",
+    report = "pal-storage-phase.json",
+)

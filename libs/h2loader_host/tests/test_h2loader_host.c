@@ -125,6 +125,11 @@ static void test_typed_command_role_parity(void) {
                &loader, 1u, H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE) == H2_PAL_ERR_INVALID_STATE);
     assert(h2_h2loader_host_command_validate(
                &loader, 0u, H2_H2LOADER_HOST_COMMAND_WIFI_SCAN) == H2_PAL_OK);
+    assert(h2_h2loader_host_command_validate(
+        &loader, 0u, H2_H2LOADER_HOST_COMMAND_WIFI_STATUS) == H2_PAL_ERR_INVALID_STATE);
+    loader.command_availability |= H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_STATUS;
+    assert(h2_h2loader_host_command_validate(
+        &loader, 1u, H2_H2LOADER_HOST_COMMAND_WIFI_STATUS) == H2_PAL_OK);
     loader.command_availability &=
         ~H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_DISCONNECT;
     loader.capabilities |= H2_H2LOADER_HOST_CAPABILITY_WIFI;
@@ -218,6 +223,14 @@ static void test_typed_command_wire_contract(void) {
                "H2_LOADER_REBOOT target=loader result=accepted") == 0);
     assert(contract.lifecycle_transition == 1u);
 
+    request.command = H2_H2LOADER_HOST_COMMAND_WIFI_STATUS;
+    assert(H2_H2LOADER_HOST_COMMAND_WIFI_STATUS == 20);
+    assert(H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_STATUS == (1u << 20));
+    assert(h2_h2loader_host_command_contract(&request, &contract) == H2_PAL_OK);
+    assert(strcmp(contract.line, "h2loader wifi status\n") == 0);
+    assert(strcmp(contract.marker, "H2_LOADER_WIFI_STATUS ") == 0);
+    assert(strcmp(contract.success_token, "result=OK") == 0);
+
     request.command = H2_H2LOADER_HOST_COMMAND_WIFI_SCAN;
     request.wifi_scan_limit = 0u;
     request.wifi_scan_timeout_ms = 0u;
@@ -245,7 +258,15 @@ static void test_typed_command_wire_contract(void) {
     request.password = "secret";
     assert(h2_h2loader_host_command_contract(&request, &contract) == H2_PAL_OK);
     assert(strcmp(contract.line, "h2loader wifi connect factory secret\n") == 0);
-    assert(strcmp(contract.success_token, "result=connecting") == 0);
+    assert(strcmp(contract.success_token, "result=connected") == 0);
+    const char *connected = "H2_LOADER_WIFI result=connected ssid=x\n";
+    const char *connecting = "H2_LOADER_WIFI result=connecting ssid=x\n";
+    assert(h2_h2loader_host_command_parse_terminal(
+        (const uint8_t *)connected, strlen(connected), &contract) ==
+        H2_H2LOADER_HOST_COMMAND_TERMINAL_OK);
+    assert(h2_h2loader_host_command_parse_terminal(
+        (const uint8_t *)connecting, strlen(connecting), &contract) ==
+        H2_H2LOADER_HOST_COMMAND_TERMINAL_NONE);
     request.password = "bad password";
     assert(h2_h2loader_host_command_contract(&request, &contract) == H2_PAL_ERR_INVALID_ARG);
 
@@ -462,6 +483,60 @@ static h2_pal_result_t command_transport_output(
 
 static int command_transport_cancelled(void *user) {
     return ((command_transport_fixture_t *)user)->cancelled;
+}
+
+static void test_data_checksum_waits_for_second_line(void) {
+    static const uint8_t status_only[] = "H2_LOADER_STATUS board=devkit\n";
+    static const uint8_t response[] =
+        "H2_LOADER_STATUS board=devkit\n"
+        "H2_LOADER_DATA_CHECKSUM checksum="
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n";
+    h2_h2loader_host_status_t app = command_status(
+        H2_H2LOADER_HOST_ACTIVE_ROLE_APP,
+        H2_H2LOADER_HOST_COMMAND_AVAILABLE_STATS);
+    command_transport_fixture_t fixture = {
+        .response = response,
+        .response_len = sizeof(response) - 1u,
+        .output_chunk_size = 7u,
+    };
+    h2_h2loader_host_command_request_t request = {
+        .command = H2_H2LOADER_HOST_COMMAND_DATA_CHECKSUM,
+        .status = &app,
+        .on_output = command_transport_output,
+        .output_user = &fixture,
+    };
+    h2_h2loader_host_command_contract_t contract = {0};
+    h2_h2loader_host_command_result_t result = {0};
+    assert(h2_h2loader_host_command_contract(&request, &contract) == H2_PAL_OK);
+    assert(h2_h2loader_host_command_parse_terminal(
+        status_only, sizeof(status_only) - 1u, &contract) ==
+        H2_H2LOADER_HOST_COMMAND_TERMINAL_NONE);
+    assert(h2_h2loader_host_command_execute_transport(
+        &fixture, command_transport_write, command_transport_read, NULL,
+        &request, &result) == H2_PAL_OK);
+    assert(strcmp(fixture.line, "h2loader stats\n") == 0);
+    assert(strcmp(fixture.marker, "H2_LOADER_DATA_CHECKSUM checksum=") == 0);
+    assert(fixture.output_count > 1u);
+    assert(result.output_bytes == sizeof(response) - 1u);
+    assert(result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK);
+
+    /* A status response alone cannot establish the installed-data fact. */
+    fixture.response = status_only;
+    fixture.response_len = sizeof(status_only) - 1u;
+    assert(h2_h2loader_host_command_execute_transport(
+        &fixture, command_transport_write, command_transport_read, NULL,
+        &request, &result) == H2_PAL_ERR_IO);
+    assert(result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_NONE);
+
+    /* Ordinary stats keeps accepting legacy devices with only status. */
+    request.command = H2_H2LOADER_HOST_COMMAND_STATS;
+    assert(h2_h2loader_host_command_execute_transport(
+        &fixture, command_transport_write, command_transport_read, NULL,
+        &request, &result) == H2_PAL_OK);
+    app.command_availability = 0u;
+    request.command = H2_H2LOADER_HOST_COMMAND_DATA_CHECKSUM;
+    assert(h2_h2loader_host_command_validate(&app, 0u, request.command) ==
+        H2_PAL_ERR_INVALID_STATE);
 }
 
 static void test_typed_command_transport_execution(void) {
@@ -1441,6 +1516,8 @@ typedef struct operation_fixture {
     int cancelled;
     int bad_final_checksum;
     int stage_only;
+    int stage_unavailable;
+    int stage_unavailable_after_reconnect;
     int fail_stage_status_once;
     int stage_missing_after_reconnect;
     int stage_mismatch_after_reconnect;
@@ -1473,6 +1550,11 @@ static h2_pal_result_t operation_connect(
     strcpy(out_status->board, fixture->status_board);
     strcpy(out_status->target, fixture->asset.target);
     out_status->active_role = fixture->initial_active_role;
+    out_status->command_availability =
+        (fixture->stage_unavailable ||
+         (fixture->connect_count > 1 &&
+          fixture->stage_unavailable_after_reconnect)) ? 0u :
+        H2_H2LOADER_HOST_COMMAND_AVAILABLE_STAGE_PAYLOAD;
     out_status->boot_intent = H2_H2LOADER_HOST_BOOT_INTENT_AUTO;
     out_status->running_partition = 1u;
     out_status->next_partition = 1u;
@@ -1955,6 +2037,44 @@ static void test_managed_operation(void) {
            H2_H2LOADER_HOST_OPERATION_FINAL_VERIFY);
     assert(fixture.event_result[fixture.event_count - 1u] ==
            H2_PAL_ERR_NOT_FOUND);
+
+    fixture.stage_unavailable = 1;
+    fixture.rediscover_result = H2_PAL_OK;
+    fixture.connect_count = 0;
+    fixture.stage_count = 0;
+    fixture.activate_count = 0;
+    fixture.disconnect_count = 0;
+    assert(h2_h2loader_host_managed_operation_run(
+               &config, &final_status) == H2_PAL_ERR_INVALID_STATE);
+    assert(fixture.connect_count == 1);
+    assert(fixture.stage_count == 0);
+    assert(fixture.activate_count == 0);
+    assert(fixture.disconnect_count == 1);
+
+    fixture.stage_only = 1;
+    fixture.connect_count = 0;
+    fixture.stage_count = 0;
+    fixture.disconnect_count = 0;
+    assert(h2_h2loader_host_stage_operation_run(
+               &config, &final_status) == H2_PAL_ERR_INVALID_STATE);
+    assert(fixture.connect_count == 1);
+    assert(fixture.stage_count == 0);
+    assert(fixture.disconnect_count == 1);
+
+    fixture.stage_unavailable = 0;
+    fixture.stage_unavailable_after_reconnect = 1;
+    fixture.stage_missing_after_reconnect = 1;
+    fixture.transient_stage_failures = 1;
+    fixture.connect_count = 0;
+    fixture.stage_count = 0;
+    fixture.disconnect_count = 0;
+    fixture.rediscover_count = 0;
+    assert(h2_h2loader_host_stage_operation_run(
+               &config, &final_status) == H2_PAL_ERR_INVALID_STATE);
+    assert(fixture.connect_count == 2);
+    assert(fixture.stage_count == 1);
+    assert(fixture.rediscover_count == 1);
+    assert(fixture.disconnect_count == 2);
 }
 
 typedef struct export_buffer {
@@ -2352,6 +2472,19 @@ static void test_serial_connect_deasserts_dtr_and_rts(void) {
         (H2_PAL_SERIAL_HOST_CONTROL_DTR |
          H2_PAL_SERIAL_HOST_CONTROL_RTS));
     assert(fixture.asserted_lines == 0u);
+
+    memset(&fixture, 0, sizeof(fixture));
+    fixture.set_result = H2_PAL_ERR_TIMEOUT;
+    fixture.stream_result = H2_PAL_ERR_IO;
+    fixture.expected_baud = 460800u;
+    config.preserve_control_lines = 1;
+    assert(h2_h2loader_host_serial_connect(&config, &connection) ==
+        H2_PAL_ERR_IO);
+    assert(connection == NULL);
+    assert(fixture.event_count == 3u);
+    assert(memcmp(fixture.events, "otc", 3u) == 0);
+    assert(fixture.line_mask == 0u);
+    assert(fixture.asserted_lines == 0u);
 }
 
 static void test_ble_stage_receive_failure(void) {
@@ -2376,6 +2509,7 @@ int main(void) {
     test_typed_command_role_parity();
     test_typed_command_wire_contract();
     test_typed_command_terminal_contract();
+    test_data_checksum_waits_for_second_line();
     test_typed_command_transport_execution();
     test_catalog();
     test_catalog_esp_loader_assets();

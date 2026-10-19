@@ -95,11 +95,12 @@ static int dtls_srtp_parse_fingerprint(
 }
 
 static int dtls_srtp_create_session(
-    h2_libsrtp_direction_t direction,
+    const h2_pal_mem_api_t *allocator, h2_libsrtp_direction_t direction,
     const uint8_t* key,
     const uint8_t* salt,
     h2_libsrtp_session_t** out_session) {
   const h2_libsrtp_session_config_t config = {
+      .allocator = allocator,
       .profile = H2_LIBSRTP_PROFILE_AES128_CM_SHA1_80,
       .direction = direction,
       .ssrc_policy = H2_LIBSRTP_SSRC_ANY,
@@ -139,11 +140,11 @@ static int dtls_srtp_configure_srtp(DtlsSrtp* dtls_srtp) {
   }
 
   int result = dtls_srtp_create_session(
-      H2_LIBSRTP_DIRECTION_INBOUND, remote_key, remote_salt,
+      dtls_srtp->allocator, H2_LIBSRTP_DIRECTION_INBOUND, remote_key, remote_salt,
       &dtls_srtp->srtp_in);
   if (result == 0) {
     result = dtls_srtp_create_session(
-        H2_LIBSRTP_DIRECTION_OUTBOUND, local_key, local_salt,
+        dtls_srtp->allocator, H2_LIBSRTP_DIRECTION_OUTBOUND, local_key, local_salt,
         &dtls_srtp->srtp_out);
   }
   memset(key_material, 0, sizeof(key_material));
@@ -234,11 +235,11 @@ int dtls_srtp_handshake(
     DtlsSrtp* dtls_srtp, const uint8_t* datagram, size_t datagram_len) {
   if (dtls_srtp == NULL || dtls_srtp->session == NULL ||
       !dtls_srtp->remote_fingerprint_set) {
-    return -1;
+    return H2_PAL_ERR_INVALID_STATE;
   }
   uint64_t now_ms = 0u;
   if (h2_pal_time_get_monotonic_ms(dtls_srtp->time, &now_ms) != H2_PAL_OK) {
-    return -1;
+    return H2_PAL_ERR_IO;
   }
   if (dtls_srtp->state == DTLS_SRTP_STATE_INIT) {
     dtls_srtp->state = DTLS_SRTP_STATE_HANDSHAKE;
@@ -254,14 +255,16 @@ int dtls_srtp_handshake(
       dtls_srtp->handshake_deadline_ms, &complete);
   h2_pal_result_t flush_result = h2_pal_dtls_session_flush(
       dtls_srtp->dtls, dtls_srtp->session);
+  /* Preserve the provider's authentication/timeout reason. A pending output
+   * flush must never hide a terminal certificate verification failure. */
+  if (result != H2_PAL_OK && result != H2_PAL_ERR_WOULD_BLOCK)
+    return result;
+  if (flush_result != H2_PAL_OK && flush_result != H2_PAL_ERR_WOULD_BLOCK)
+    return flush_result;
   if (result == H2_PAL_ERR_WOULD_BLOCK || flush_result == H2_PAL_ERR_WOULD_BLOCK ||
-      (result == H2_PAL_OK && !complete)) {
+      !complete)
     return 1;
-  }
-  if (result != H2_PAL_OK || flush_result != H2_PAL_OK) {
-    return -1;
-  }
-  return dtls_srtp_configure_srtp(dtls_srtp);
+  return dtls_srtp_configure_srtp(dtls_srtp) == 0 ? 0 : H2_PAL_ERR_IO;
 }
 
 void dtls_srtp_reset_session(DtlsSrtp* dtls_srtp) {

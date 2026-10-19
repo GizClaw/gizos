@@ -1,0 +1,35 @@
+exec ${PAGER:-/usr/bin/less} "$0" || exit 1
+Executing tests from //projects/e2e/targets/cc_binary/pal-audio:desktop_test
+-----------------------------------------------------------------------------
+H2_PAL_AUDIO_CASE {"id":"wrapper-arguments","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"info","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"mic-stopped-read","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"mic-gain-bounds","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"mic-gain-roundtrip","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"speaker-volume-bounds","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"speaker-volume-roundtrip","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"track-format-bounds","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"speaker-start","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"track-create","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"track-volume-bounds","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"track-volume-roundtrip","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"track-write-bounds","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"track-write","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"track-drain","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"mic-start","status":"PASS","detail":0,"line":0}
+warning: discarded first playback frame
+H2_PAL_AUDIO_CASE {"id":"mic-read","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"mic-gain-live","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"mic-stop","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"track-close","status":"PASS","detail":0,"line":0}
+desktop audio: output underflow count=0
+H2_PAL_AUDIO_CASE {"id":"speaker-stop","status":"PASS","detail":0,"line":0}
+desktop audio: output underflow count=0
+desktop audio: output underflow count=0
+desktop audio: output underflow count=0
+H2_PAL_AUDIO_CASE {"id":"resource-churn","status":"PASS","detail":0,"line":0}
+warning: discarded first playback frame
+desktop audio: output underflow count=2
+H2_PAL_AUDIO_CASE {"id":"stability","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"cleanup","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_SUMMARY {"passed":24,"failed":0,"blocked":0,"mic_frames":1491,"mic_peak":4152,"mic_energy":14285309021,"speaker_frames":1493,"output_peak":1120,"witness_mic_frames":1498,"witness_speaker_frames":1785,"witness_mic_peak":6920,"witness_speaker_peak":224,"stability_elapsed_ms":30019}

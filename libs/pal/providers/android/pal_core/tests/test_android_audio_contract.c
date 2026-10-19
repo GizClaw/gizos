@@ -44,15 +44,22 @@ static void test_decoder_stream_validation(void) {
   assert(h2_android_audio_validate_decoder_stream(&config) == H2_PAL_OK);
   config.codec = (h2_audio_codec_t)0;
   assert(h2_android_audio_validate_decoder_stream(&config) ==
-         H2_PAL_ERR_INVALID_ARG);
+         H2_PAL_ERR_UNSUPPORTED);
   config.codec = H2_AUDIO_CODEC_AAC_LC;
   config.bitstream_format = (h2_audio_bitstream_format_t)0;
   assert(h2_android_audio_validate_decoder_stream(&config) ==
-         H2_PAL_ERR_INVALID_ARG);
+         H2_PAL_ERR_UNSUPPORTED);
   config.bitstream_format = H2_AUDIO_BITSTREAM_AAC_RAW;
   config.codec_config_size = 0u;
   assert(h2_android_audio_validate_decoder_stream(&config) ==
          H2_PAL_ERR_INVALID_ARG);
+  config.codec_config_size = 1u;
+  assert(h2_android_audio_validate_decoder_stream(&config) == H2_PAL_ERR_FORMAT);
+  config.codec_config_size = sizeof(codec_config);
+  config.sample_rate_hz = 48000u;
+  assert(h2_android_audio_validate_decoder_stream(&config) == H2_PAL_ERR_FORMAT);
+  config.sample_rate_hz = 16000u;
+  assert(h2_android_audio_validate_decoder_stream(&config) == H2_PAL_OK);
 }
 
 static void test_pcm_copy_validation_and_allocation(void) {

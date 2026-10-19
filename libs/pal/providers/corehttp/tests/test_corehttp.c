@@ -1,3 +1,4 @@
+#include "h2_test_allocator.h"
 #include "fake_net.h"
 
 #include <limits.h>
@@ -263,6 +264,7 @@ static int test_response_header_callback(void) {
     provider = create_provider(&platform, &api, NULL, 0u);
     CHECK(provider != NULL);
     headers = (header_result_t){.result = H2_PAL_ERR_CLOSED};
+    request.retry_count = 2;
     request.response_header_user = &headers;
     CHECK(h2_pal_http_request(&api, &request, &response) ==
           H2_PAL_ERR_CLOSED);
@@ -992,7 +994,102 @@ static int test_failure_diagnostics(void) {
     return 0;
 }
 
+static int test_request_allocator(void) {
+    for (int custom = 0; custom < 2; ++custom) {
+        h2_test_allocator_t provider_mem, request_mem;
+        h2_test_allocator_init(&provider_mem);
+        h2_test_allocator_init(&request_mem);
+        fake_http_platform_t platform;
+        fake_http_platform_init(&platform);
+        platform.mem = provider_mem.api;
+        platform.recv_fragment = 3u;
+        fake_http_platform_add_response(&platform,
+            "HTTP/1.1 302 Found\r\nLocation: ../next?q=1\r\nContent-Length: 0\r\n\r\n");
+        fake_http_platform_add_response(&platform,
+            "HTTP/1.1 200 OK\r\nX-Header: value\r\nContent-Length: 2\r\n\r\nok");
+        h2_pal_http_api_t api;
+        h2_corehttp_t *provider = create_provider(&platform, &api, NULL, 0u);
+        CHECK(provider != NULL);
+        size_t before = h2_atomic_load(&provider_mem.calls);
+        uint8_t body[8];
+        const char url[] = "http://example.test/base/path";
+        h2_pal_http_request_t request = {
+            .method = H2_PAL_HTTP_GET,
+            .url = {url, sizeof(url) - 1u},
+            .response_buf = body, .response_buf_cap = sizeof(body),
+            .allocator = custom ? &request_mem.api : NULL,
+        };
+        h2_pal_http_response_t response;
+        CHECK(h2_pal_http_request(&api, &request, &response) == H2_PAL_OK);
+        CHECK(response.status_code == 200 && response.body_len == 2u);
+        CHECK(memcmp(body, "ok", 2u) == 0);
+        CHECK(count_bytes(platform.request_bytes, platform.request_len, "GET /next?q=1 HTTP/1.1", 21u) == 1u);
+        CHECK(h2_atomic_load(&request_mem.calls) > 0u || !custom);
+        CHECK(custom ? h2_atomic_load(&provider_mem.calls) == before
+                     : h2_atomic_load(&provider_mem.calls) > before);
+        CHECK(h2_atomic_load(&request_mem.live) == 0u);
+        h2_pal_http_response_free(&api, &response);
+        h2_corehttp_destroy(provider);
+        CHECK(h2_atomic_load(&provider_mem.live) == 0u);
+        h2_test_allocator_destroy(&request_mem);
+        h2_test_allocator_destroy(&provider_mem);
+    }
+    return 0;
+}
+
+static const h2_pal_net_vtable_t *candidate_base;
+static h2_pal_result_t candidate_start(void *user, const char *host,
+    h2_pal_net_family_t family, h2_pal_net_resolver_t **out) {
+    if (family != H2_PAL_NET_FAMILY_ANY)
+        return H2_PAL_ERR_INVALID_ARG;
+    return candidate_base->resolve_start(user, host, out);
+}
+static h2_pal_result_t candidate_poll(void *user, h2_pal_net_resolver_t *resolver,
+    h2_pal_net_addr_list_t *out, uint32_t timeout) {
+    memset(out, 0, sizeof(*out));
+    int rc = candidate_base->resolve_poll(user, resolver, &out->addrs[1], timeout);
+    if (rc)
+        return rc;
+    out->count = 2u;
+    out->addrs[0].family = H2_PAL_NET_FAMILY_IPV6;
+    out->addrs[0].ip[15] = 1u;
+    return H2_PAL_OK;
+}
+static int test_multi_address_connect_budget(void) {
+    for (unsigned rejected = 0u; rejected < 2u; ++rejected) {
+        fake_http_platform_t platform;
+        fake_http_platform_init(&platform);
+        candidate_base = platform.net.vtable;
+        h2_pal_net_vtable_t vtable = *candidate_base;
+        vtable.resolve_start_family = candidate_start;
+        vtable.resolve_poll_all = candidate_poll;
+        platform.net.vtable = &vtable;
+        platform.ipv6_connect_remaining_ms = 300u;
+        platform.fail_ipv6_connect = (int)rejected;
+        for (unsigned i = 0; i < 2; ++i)
+            fake_http_platform_add_response(&platform,
+                "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok");
+        h2_pal_http_api_t api;
+        h2_corehttp_t *provider = create_provider(&platform, &api, NULL, 0u);
+        CHECK(provider != NULL);
+        h2_pal_http_request_t request = {.method = H2_PAL_HTTP_GET,
+            .url = {.data = "http://example.test/", .len = 20u}, .timeout_ms = 1000};
+        h2_pal_http_response_t response;
+        CHECK(h2_pal_http_request(&api, &request, &response) == H2_PAL_OK);
+        CHECK(platform.connected_family == (rejected ? H2_PAL_NET_FAMILY_IPV4 : H2_PAL_NET_FAMILY_IPV6));
+        CHECK(platform.open_count == (rejected ? 2 : 1));
+        CHECK(platform.close_count == platform.open_count);
+        CHECK(platform.resolver_close_count == 1);
+        CHECK(platform.now_ms < 1000u);
+        h2_pal_http_response_free(&api, &response);
+        h2_corehttp_destroy(provider);
+    }
+    return 0;
+}
+
 int main(void) {
+    if (test_multi_address_connect_budget() != 0) return 1;
+    if (test_request_allocator() != 0) return 1;
     if (test_failure_diagnostics() != 0) return 1;
     int rc = test_create_failure_resets_outputs();
     if (rc == 0) {

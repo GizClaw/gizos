@@ -184,6 +184,7 @@ typedef struct fixture {
     int entered, released, received, rx_returned;
     int vendor, timeout;
     const char *blocked_command;
+    const char *ota_revision;
     int notify_reset;
     h2_quectel_modem_t quectel;
     h2_simcom_modem_t simcom;
@@ -317,6 +318,11 @@ static h2_pal_result_t command(void *user, const char *cmd, char *response, size
         if (strcmp(cmd, "AT+CGMM") == 0) { text = "A7670E\r\nOK\r\n"; }
         if (strcmp(cmd, "AT+CGMR") == 0) { text = "TEST-REVISION\r\nOK\r\n"; }
         if (strcmp(cmd, "AT+CGSN") == 0) { text = "123456789012345\r\nOK\r\n"; }
+        if (f->ota_revision != NULL && strcmp(cmd, "AT+CGMM") == 0) { text = "EC800M\r\nOK\r\n"; }
+        if (f->ota_revision != NULL && strcmp(cmd, "AT+CGMR") == 0) {
+            snprintf(response, size, "%s\r\nOK\r\n", f->ota_revision);
+            return H2_PAL_OK;
+        }
         snprintf(response, size, "%s", text);
     }
     return H2_PAL_OK;
@@ -411,6 +417,45 @@ static void test_quectel_rx_storm(void) {
     finish_fixture(&fixture);
 }
 
+static void test_ota_worker_progress(void) {
+    fixture_t f;
+    init_fixture(&f);
+    f.ota_revision = "EC800MCNLER06A07M08";
+    const h2_pal_system_event_api_t events = {.user = &f, .vtable = &event_vtable};
+    const h2_quectel_modem_config_t config = {
+        .transport_user = &f, .command = command, .sync_api = &sync_api,
+        .urc_task_api = &tasks, .urc_queue_api = &queues, .system_events = &events,
+    };
+    assert(h2_quectel_modem_init(&f.quectel, &config) == H2_PAL_OK);
+    assert(h2_pal_modem_open(&f.quectel.platform, 0u) == H2_PAL_OK);
+    f.notify_reset = 1;
+    const h2_pal_modem_ota_request_t request = {
+        .url = "http://example.com/fw.mini_1", .expected_revision = f.ota_revision,
+        .target_revision = "EC800MCNLER06A08M08",
+    };
+    assert(h2_pal_modem_ota_start(&f.quectel.platform, &request) == H2_PAL_OK);
+    h2_modem_rx_t receiver = {0};
+    const uint8_t first[] = "+QIND: \"FOTA\",\"START\"\r\n+QIND: \"FOTA\",\"UPDATING\",60\r\nRDY\r\n";
+    assert(h2_quectel_rx_feed(&f.quectel, &receiver, 0u, first, sizeof(first) - 1u, NULL) == H2_PAL_OK);
+    wait_value(&f, &f.received, 1);
+    h2_pal_modem_ota_status_t status;
+    assert(h2_pal_modem_ota_get_status(&f.quectel.platform, 0u, &status) == H2_PAL_OK);
+    assert(status.state == H2_PAL_MODEM_OTA_UPDATING && status.progress_percent == 60u);
+    const uint8_t final[] = "+QIND: \"FOTA\",\"END\",0\r\nAPP RDY\r\n";
+    assert(h2_quectel_rx_feed(&f.quectel, &receiver, receiver.next_offset, final, sizeof(final) - 1u, NULL) == H2_PAL_OK);
+    wait_value(&f, &f.received, 2);
+    f.ota_revision = request.target_revision;
+    assert(h2_pal_modem_ota_get_status(&f.quectel.platform, 0u, &status) == H2_PAL_OK);
+    assert(status.state == H2_PAL_MODEM_OTA_SUCCEEDED && strcmp(status.observed_revision, request.target_revision) == 0);
+    assert(h2_pal_modem_close(&f.quectel.platform, 0u) == H2_PAL_OK);
+    assert(h2_modem_urc_stop(&f.quectel.urc_worker) == H2_PAL_OK);
+    h2_modem_urc_stats_t stats;
+    assert(h2_modem_urc_get_stats(&f.quectel.urc_worker, &stats) == H2_PAL_OK);
+    assert(stats.accepted == 5u && stats.handled == 5u && stats.full == 0u);
+    assert(h2_quectel_modem_deinit(&f.quectel) == H2_PAL_OK);
+    finish_fixture(&f);
+}
+
 static void test_identity_registration_progress(void) {
     const char *commands[] = {"AT+CIMI", "AT+CEREG?", "AT+CIMI"};
     for (size_t index = 0u; index < sizeof(commands) / sizeof(commands[0]); index++) {
@@ -500,6 +545,7 @@ static void test_worker_insertion(void) {
 }
 
 int main(void) {
+    test_ota_worker_progress();
     test_worker_insertion();
     test_queue_and_lifecycle();
     test_provider_receive();

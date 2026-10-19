@@ -4,6 +4,8 @@
 
 `libs/pal/providers/<platform-or-sdk>/` 是明确例外：它保存由 Bazel 直接编译的平台实现，或把 Bazel archive 接入 ESP-IDF、BK7258 等原生 build system 的薄 adapter。它仍属于 Bazel library graph，不是原生 SDK source component；需要 SDK config、SDK lifecycle 或 SDK-owned source selection 的源码继续属于 `native_component_src/<sdk-family>/`。
 
+`libs/desktop_recording` 是 Desktop 专用的 native library，显式限定为 Linux/macOS target，提供直接 C lifecycle 和 Desktop hooks consumer，并通过 FFmpeg 编码。它不声明跨平台 PAL capability 或 vtable；Desktop source registration 属于 `app_support:capture`，由 launcher 持有。
+
 ## 标准结构
 
 ```text
@@ -25,7 +27,7 @@ header-only `//libs/pal:pal`；直接调用 canonical unsupported accessor 的 t
 `//libs/pal:unsupported`。Unsupported source 按 capability 拆成独立 object，最终静态
 链接只抽取真实引用的 capability，不能用 `alwayslink` 或 whole-archive 保留全集。
 
-Library family 可以增加一层只用于分类的 container。例如 `projects/pixa_games/libs` 本身不是 library，不能直接放 `include/`、`src/` 或 shared implementation；其中每个 `projects/pixa_games/libs/<game>/` 才是遵守上述标准结构的独立 reusable library。Family 可以在具名的 `libs/cmake/` package 中提供跨 target build system 复用的 CMake API；该 build library 只拥有 family source inventory、include 和 portable compile contract，不能包含 board wiring、image policy、target SDK glue 或 platform implementation。PIXA Games 的 Host 只注入 shared Player PIXA，game-owned legacy UI 贴图转换成 `src/` 中的 ARGB4444 代码数据；具体边界见 [PIXA Games](/apps/pixa_games)。
+Library family 可以增加一层只用于分类的 container。例如 `libs/crypto/` 按算法组织密码学能力，`libs/crypto/sha256/` 是独立 library；`projects/pixa_games/libs` 按 game 组织 reusable library。分类 container 本身不是 library，不能直接放 `include/`、`src/` 或 shared implementation；每个子 library 遵守上述标准结构。Family 可以在具名的 `libs/cmake/` package 中提供跨 target build system 复用的 CMake API；该 build library 只拥有 family source inventory、include 和 portable compile contract，不能包含 board wiring、image policy、target SDK glue 或 platform implementation。PIXA Games 的 Host 只注入 shared Player PIXA，game-owned legacy UI 贴图转换成 `src/` 中的 ARGB4444 代码数据；具体边界见 [PIXA Games](/apps/pixa_games)。
 
 ## 依赖边界
 
@@ -119,6 +121,7 @@ App 必须在调用 third-party API 之前完成对应 integration 初始化，�
 - [`app_test`](./app_test.md)：以同一份 C scenario 在 Memory 或未来 device driver
   上验证 Runtime input 到 App state 与 production LVGL subject 的映射。
 - [`audio_mixer`](./audio_mixer.md)：跨平台音频混合 API 和实现。
+- [`audio/ogg_opus`](./ogg_opus.md)：共享标准 Ogg/Opus 解码与有界 encoded-packet reader，支持输入 checkpoint 和调用方控制的播放策略。
 - `wifi_sta`：PAL provider 共用的同步目标认证、IP 验证与保存事务；只借用 STA、Time 和 Wi-Fi Settings，由 provider 持有串行 admission。
 - [`ble_wifi_config`](./ble_wifi_config.md)：设备联网前使用的 BLE 配网服务，逐条上报扫描到的 AP 并接收 Wi-Fi 凭据。
 - [`bleikcp`](./bleikcp.md)：在已建立的 BLE connection 上提供可靠有序 byte stream。
@@ -130,15 +133,18 @@ App 必须在调用 third-party API 之前完成对应 integration 初始化，�
 - [`coremqtt`](./coremqtt.md)：CoreMQTT 的 GizOS integration。
 - [`corehttp`](./corehttp.md)：通过 Net PAL 提供 HTTP/1.1 的 portable coreHTTP provider。
 - [`dns`](./dns.md)：跨平台 DNS client。
+- [`encoding`](./encoding.md)：参照 Go `encoding` 的 hex、base32、base64 与 base85 编解码，按算法族加 alphabet 描述，无堆分配；Lua Display 的 base85 区域读取器也使用它。
 - [`drivers`](./drivers.md)：modem、motion、NFC 等 portable driver family。
   NFC 子目录中的 `type2` protocol engine 与 `fm17660k` controller driver 分别拥有协议和设备状态机；board wiring 仍由 component/BSP 注入。
 - [`game_runtime`](./game_runtime.md)：跨平台 game runtime。
 - [`pixa_games`](/apps/pixa_games)：可以被多个 project 引用的 PIXA game library family。
-- [`gizclaw`](./gizclaw.md)：GizClaw client、config 和公共类型。
+- [`gizclaw`](./gizclaw.md)：GizClaw client、config、公共类型和复用异步 API-key state 的 [BLE 绑定窗口](./gizclaw_ble_binding.md)。
+- [`lua/apps`](./lua.md#lua-app-目录与流式安装)：预装与安装应用的统一目录、增量包校验和原子安装；不依赖 GizClaw 或产品 UI。
 - [`h2peer`](./h2peer.md)：由 GizOS 维护、通过 PAL 注入平台能力的 portable WebRTC core。
 - [`h2sctp`](./h2sctp.md)：由 GizOS 维护、在调用方 DTLS packet transport 上运行的 portable SCTP PAL provider。
 - [`iperf`](./iperf.md)：只依赖 PAL 的 iperf3 兼容吞吐测试 client 与 server，覆盖 TCP、UDP 和 SCTP。
 - [`lvgl`](./lvgl.md)：LVGL platform 与 OSAL contract。
+- [`mem_arena`](./mem_arena.md)：把调用方的一块内存分成独立 small/large TLSF pool，借出 Memory PAL，支持 fallback、按 owner 释放、逐池统计和按需碎片诊断。调用方提供成对 lock/unlock；core 不依赖 SDK，也不分配外部控制对象。ESP reservation 与 mutex adapter 由 [ESP-IDF 6.x](./components/esp_idf6_x.md#psram-arena) 拥有，桌面占位栈统计见 [Desktop](./components/desktop.md)。
 - [`mp4_decoder`](./mp4_decoder.md)：从 random-access MP4 source 产生同步、可写的音视频 presentation frame。
 - [`ntp`](./ntp.md)：跨平台 NTP client。
 - [`pal`](./platform_abstract_layer.md)：Platform Abstraction Layer contract。
@@ -148,6 +154,7 @@ App 必须在调用 third-party API 之前完成对应 integration 初始化，�
 - [`tinyh264`](./tinyh264.md)：TinyH264 的 portable Video Decoder PAL provider。
 - [`runtime`](./runtime.md)：提供给 app 使用的跨平台 Runtime。
 - [`semver`](./semver.md)：无堆分配的 SemVer 校验和排序，非法版本统一低于合法版本。
+- [`crypto/sha256`](./sha256.md)：无堆分配的增量摘要，由 Lua App 安装器、H2Loader 和 portable Host Core 共用。
 - [`utils`](./utils.md)：APN 和单份 binary32 reciprocal/FMA 除法等小型 portable helper；数值编译假设与异常语义由生产公共头定义，不在 Lua 或应用中复制实现。
 - [`wolfssl`](./wolfssl.md)：同一 upstream 下的裁剪 Crypto PAL variant 与
   完整 Crypto/DTLS provider；不公开 WolfSSL private type。

@@ -74,6 +74,8 @@ static h2_pal_result_t capture(void *user, const uint8_t *data, size_t len) {
 }
 
 /* Fake the stream boundary while exercising the real Host status parser. */
+bool h2_bleikcp_global_ready(void) { return true; }
+
 int h2_bleikcp_client_open(
     const h2_bleikcp_api_t *api, const h2_bleikcp_config_t *config,
     uint16_t handle, uint16_t mtu, h2_bleikcp_t **out_stream) {

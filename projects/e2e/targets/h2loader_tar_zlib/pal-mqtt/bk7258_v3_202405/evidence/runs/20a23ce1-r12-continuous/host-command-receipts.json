@@ -1,0 +1,140 @@
+{
+  "before-coredump-dump-receipt.json": {
+    "command": [
+      "coredump",
+      "dump",
+      "--output",
+      "/Users/idy/.codex/task-evidence/pal-pref-mqtt-platforms-20261004/mqtt-bk-r12-continuous/coredump-before.bin"
+    ],
+    "exit": 0,
+    "port": "/dev/cu.usbserial-1240",
+    "started_at_utc": "2026-10-04T18:32:40.025114+00:00",
+    "log_sha256": "0d494a2070eb2c4356e7795db253e7ddb9f7105f238b53ccec5220921223e434"
+  },
+  "after-status-receipt.json": {
+    "command": [
+      "status"
+    ],
+    "exit": 0,
+    "port": "/dev/cu.usbserial-1240",
+    "started_at_utc": "2026-10-04T18:44:08.991139+00:00",
+    "finished_at_utc": "2026-10-04T18:44:14.114894+00:00",
+    "host_pid": 7518,
+    "timed_out": false,
+    "error": null,
+    "log_sha256": "2e31f3eaec9f0d7b4af1dd92785ebdc1149e66b7bdcd64ef86cc98a9e03666b3"
+  },
+  "normal-receipt.json": {
+    "command": [
+      "reboot",
+      "app",
+      "--monitor",
+      "--continuous-monitor"
+    ],
+    "port": "/dev/cu.usbserial-1240",
+    "started_at_utc": "2026-10-04T18:42:40.831465+00:00",
+    "captured_at_utc": "2026-10-04T18:44:08.990514+00:00",
+    "host_pid": 6912,
+    "exit_after_capture": 130,
+    "controlled_stop": true,
+    "stop_reason": "validated complete ledger",
+    "error": null,
+    "log_sha256": "cc068da415ea1091a6119e08c260e8ed0903a4f999e3445faa501e39e770f501"
+  },
+  "after-coredump-status-receipt.json": {
+    "command": [
+      "coredump",
+      "status"
+    ],
+    "exit": 0,
+    "port": "/dev/cu.usbserial-1240",
+    "started_at_utc": "2026-10-04T18:44:14.115898+00:00",
+    "finished_at_utc": "2026-10-04T18:44:16.868963+00:00",
+    "host_pid": 7543,
+    "timed_out": false,
+    "error": null,
+    "log_sha256": "871dcafc5212b2c5520d923a2e7fc7bd38f5466e77ef0b5c3c951406f41d6621"
+  },
+  "staged-status-receipt.json": {
+    "command": [
+      "status"
+    ],
+    "exit": 0,
+    "port": "/dev/cu.usbserial-1240",
+    "started_at_utc": "2026-10-04T18:34:00.053620+00:00",
+    "log_sha256": "accaddb566380188d0dea2bb1d3f8f83ff79127f14875e16a4368767086d7a7b"
+  },
+  "send-receipt.json": {
+    "command": [
+      "send",
+      "--file",
+      "/Users/idy/.codex/task-evidence/pal-pref-mqtt-platforms-20261004/mqtt-bk-r12-continuous/bk7258_v3_202405-pal-mqtt-bk7258.update.tar.zlib"
+    ],
+    "exit": 0,
+    "port": "/dev/cu.usbserial-1240",
+    "started_at_utc": "2026-10-04T18:32:44.544508+00:00",
+    "log_sha256": "9b6c3c58d24c32ea5ef29af64c875d49364e632643c4e3bf697ac9157f70595a"
+  },
+  "managed-receipt.json": {
+    "command": [
+      "reboot",
+      "upgrade",
+      "--monitor",
+      "--continuous-monitor"
+    ],
+    "port": "/dev/cu.usbserial-1240",
+    "started_at_utc": "2026-10-04T18:39:57.325402+00:00",
+    "captured_at_utc": "2026-10-04T18:42:40.830470+00:00",
+    "host_pid": 5423,
+    "exit_after_capture": 130,
+    "controlled_stop": true,
+    "stop_reason": "validated complete ledger",
+    "error": null,
+    "log_sha256": "4cd2d2fdb6766c85bf30af8fb895820ba339cd0e50d851522d409475e669b368"
+  },
+  "park-before-restoration-receipt.json": {
+    "command": [
+      "reboot",
+      "loader"
+    ],
+    "exit": 0,
+    "port": "/dev/cu.usbserial-1240",
+    "started_at_utc": "2026-10-04T18:46:01.968297+00:00",
+    "log_sha256": "e3edb7132359fcac3847ba1187200be2e35b6bf258f763d8ce8406be7150fccd"
+  },
+  "after-coredump-dump-receipt.json": {
+    "command": [
+      "coredump",
+      "dump",
+      "--output",
+      "/Users/idy/.codex/task-evidence/pal-pref-mqtt-platforms-20261004/mqtt-bk-r12-continuous/coredump-after.bin"
+    ],
+    "exit": 0,
+    "port": "/dev/cu.usbserial-1240",
+    "started_at_utc": "2026-10-04T18:44:16.869865+00:00",
+    "finished_at_utc": "2026-10-04T18:44:19.616672+00:00",
+    "host_pid": 7565,
+    "timed_out": false,
+    "error": null,
+    "log_sha256": "6edbf38cb9c9c44814d4953c1715c5837e7e8d9ef3410d777f3de1de0584c62d"
+  },
+  "before-status-receipt.json": {
+    "command": [
+      "status"
+    ],
+    "exit": 0,
+    "port": "/dev/cu.usbserial-1240",
+    "started_at_utc": "2026-10-04T18:32:26.728045+00:00",
+    "log_sha256": "0c2d7c6fa0c21ff22719b5240c193a502294efea491b911f49a4b1ae5e6168d1"
+  },
+  "before-coredump-status-receipt.json": {
+    "command": [
+      "coredump",
+      "status"
+    ],
+    "exit": 0,
+    "port": "/dev/cu.usbserial-1240",
+    "started_at_utc": "2026-10-04T18:32:35.492905+00:00",
+    "log_sha256": "871dcafc5212b2c5520d923a2e7fc7bd38f5466e77ef0b5c3c951406f41d6621"
+  }
+}

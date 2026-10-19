@@ -1,0 +1,77 @@
+{
+  "assets": [
+    {
+      "name": "bk7258_v3_202405-pal-display-bk7258.update.tar.zlib",
+      "operation": "managed-install",
+      "release_suffix": ".update.tar.zlib",
+      "sha256": "3a1b69e01fd5a9d53b0d06301a00d64c9052704c93d5afaadbd74bac4bb2a308",
+      "size": 1721840
+    }
+  ],
+  "board": "bk7258_v3_202405",
+  "entry": "projects/e2e/targets/h2loader_tar_zlib/pal-display/bk7258_v3_202405",
+  "image": "pal-display",
+  "native_artifacts": [
+    {
+      "name": "ap/firmware.elf",
+      "operation": "native-debug-or-flash",
+      "sha256": "d23155b819754ccfa8c06211970e4b5c4fcbe41b5a7ae55197016037ae604f74",
+      "size": 13176784
+    },
+    {
+      "name": "ap/firmware.map",
+      "operation": "native-debug-or-flash",
+      "sha256": "7677c3707e5874c33f75fafa040db0cf4df2f9da29acf7d9022eeeea0c18f129",
+      "size": 8075618
+    },
+    {
+      "name": "ap/app.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "7343782baca2f9aff119d42c6023e4d827fa1adc41d2a278aeedb443aa98c07e",
+      "size": 1307424
+    },
+    {
+      "name": "cp/firmware.elf",
+      "operation": "native-debug-or-flash",
+      "sha256": "dbd27fd36c1fe670df44456e759d6e51e1c88d609bbae809b18476552fae814e",
+      "size": 14381948
+    },
+    {
+      "name": "cp/firmware.map",
+      "operation": "native-debug-or-flash",
+      "sha256": "deded4b63255a2988de0f204e8ae624242a62d793ace007614f11195868f54fd",
+      "size": 6893219
+    },
+    {
+      "name": "cp/app.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "fde1174f342a1809200860ce4edc513b071b934797160832f11a195c5c6086d6",
+      "size": 1056268
+    },
+    {
+      "name": "app_ab_crc.rbl",
+      "operation": "native-debug-or-flash",
+      "sha256": "cb3c4317b5c1663e66d3fccd68ec1da4b2442afb6a72b140ea9ea22bd960c274",
+      "size": 5222400
+    },
+    {
+      "name": "all-app.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "02bffcf8975bbdc6922c4a3400568a13ddc8380117a525ab35085604bafaff27",
+      "size": 5292032
+    }
+  ],
+  "package_manifest": {
+    "board": "bk7258_v3_202405",
+    "format": 1,
+    "image_sha256": "cb3c4317b5c1663e66d3fccd68ec1da4b2442afb6a72b140ea9ea22bd960c274",
+    "image_size": 5222400,
+    "role": "app",
+    "target": "bk7258",
+    "version": "pal-display-e2e-20260929-r13"
+  },
+  "platform": "bk7258",
+  "role": "app",
+  "target": "bk7258",
+  "version": "pal-display-e2e-20260929-r13"
+}

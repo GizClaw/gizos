@@ -1,0 +1,139 @@
+load("@emsdk//emscripten_toolchain:wasm_rules.bzl", "wasm_cc_binary")
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//libs/lua:lua_app.bzl", "lua_app")
+load("//tools/bazel:app_version.bzl", "app_version")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:web_archive.bzl", "web_archive_browser_test")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY", "WEB_WASM32_ARTIFACT_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+app_version(
+    name = "version",
+    value = "1.0.0",
+)
+
+lua_app(
+    name = "package",
+    entry = "web_probe.lua",
+    version = ":version",
+)
+
+filegroup(
+    name = "package_archive",
+    srcs = [":package"],
+    output_group = "archive",
+)
+
+pkg_files(
+    name = "http_package",
+    srcs = [":package_archive"],
+    renames = {":package_archive": "web_probe.tar.zlib"},
+)
+
+genrule(
+    name = "shell",
+    srcs = ["//tools/bazel/web:shell.html"],
+    outs = ["fixture_shell.html"],
+    cmd = """sed 's@</body>@<script>if (sessionStorage.getItem("h2-scoped-phase")) setTimeout(() => document.getElementById("start").click(), 0);</script></body>@' $(location //tools/bazel/web:shell.html) > $@""",
+)
+
+cc_binary(
+    name = "_wasm/index",
+    srcs = ["test_scoped_http.c"],
+    additional_linker_inputs = [
+        "web_probe.lua",
+        ":shell",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    features = ["-output_format_js"],
+    linkopts = [
+        "-sALLOW_MEMORY_GROWTH=1",
+        "-sASSERTIONS=1",
+        "-sPROXY_TO_PTHREAD=1",
+        "-sPTHREAD_POOL_SIZE=16",
+        "-sINITIAL_MEMORY=67108864",
+        "-sSTACK_SIZE=1048576",
+        "-sNO_EXIT_RUNTIME=1",
+        "--shell-file",
+        "$(location :shell)",
+        "--oformat=html",
+        "--preload-file",
+        "$(location web_probe.lua)@/data/lua/web_probe.lua",
+        "--preload-file",
+        "$(location web_probe.lua)@/data/assets/probe.lua",
+    ],
+    target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
+    deps = [
+        "//libs/atomic/providers/c11",
+        "//libs/lua",
+        "//libs/lua/apps",
+        "//libs/pal/providers/web/pal_core",
+    ],
+)
+
+wasm_cc_binary(
+    name = "fixture_wasm",
+    cc_target = ":_wasm/index",
+    outputs = [
+        "index.html",
+        "index.js",
+        "index.wasm",
+        "index.data",
+    ],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    threads = "emscripten",
+)
+
+genrule(
+    name = "isolation_headers",
+    outs = ["_headers"],
+    cmd = "printf '/*\\n  Cross-Origin-Opener-Policy: same-origin\\n  Cross-Origin-Embedder-Policy: require-corp\\n' > $@",
+)
+
+pkg_files(
+    name = "runtime_files",
+    srcs = [
+        ":fixture_wasm",
+        ":isolation_headers",
+    ],
+    strip_prefix = strip_prefix.files_only(),
+)
+
+pkg_tar(
+    name = "archive",
+    srcs = [
+        ":http_package",
+        ":runtime_files",
+    ],
+    out = "scoped-http.web.tar",
+    mode = "0644",
+    portable_mtime = True,
+    strip_prefix = ".",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+web_archive_browser_test(
+    name = "browser_test",
+    archive = ":archive",
+    evals = [
+        [
+            "SCOPED phase0_saved",
+            "sessionStorage.setItem('h2-scoped-phase', '1'); location.reload()",
+        ],
+        [
+            "SCOPED phase1_saved",
+            "sessionStorage.setItem('h2-scoped-phase', '2'); location.reload()",
+        ],
+    ],
+    passes = [
+        "SCOPED HTTP_install=PASS",
+        "SCOPED restored_app_and_KV=PASS",
+        "SCOPED uninstall_keeps_KV=PASS",
+        "SCOPED teardown=PASS",
+    ],
+    timeout_s = 90,
+)

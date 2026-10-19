@@ -7,6 +7,8 @@ ESP-IDF 与 BK7258 使用所选 Bazel embedded toolchain 编译这个 semantic t
 `h2_pal_core` 只导入其 archive closure，不再从 native SDK source list 重编 wrapper、
 coreHTTP 或 llhttp。
 
+请求的 `h2_pal_http_request_t.allocator` 非 NULL 时，该请求的 header buffer、响应 header/Location、URL/authority/path 与 redirect 临时副本全部由它分配并配对释放；NULL 时保持 provider allocator。共享 provider 与 root CA 的存储仍归 provider，response body 继续遵守独立的 response allocator 契约。
+
 ## API Reference
 
 [API Reference](/references/corehttp)
@@ -63,3 +65,11 @@ DNS deadline、取消、retry、redirect 和 TLS 参数，并验证每条 resolv
 共同 host PAL E2E 在 Linux、macOS 和 Windows 使用仓库内证书与 loopback
 HTTP/HTTPS fixture 验证真实 `coreHTTP -> Net PAL -> wolfSSL` 路径。Firmware build
 只能证明平台 adapter 可编译，不能替代真实设备上的 HTTPS、取消或 timeout 验证。
+
+## HTTP 资格验证
+
+独立 `projects/e2e/apps/pal-http` App 通过真实 local HTTP/HTTPS fixture 验证 CoreHTTP 与 Browser HTTP 的公共生命周期。相对 redirect 在合成新 URL 时按 RFC 3986 消除 literal dot segment，并保留 query 和 escaped bytes；请求整体 deadline、callback 返回错误和已交付 body 的不可重试边界保持不变。请求指定不存在的 interface 时底层 Net 必须报错，不能回退到其他 route。POSIX TLS 对数字 authority 使用 IP SAN 检查，对 DNS authority 使用域名检查；二者均保留证书链验证。完整 WolfSSL 配置启用 IP SAN，以便真实数字地址 HTTPS 与错误地址拒绝均可验证。
+
+IPv6 列表解析在同一个请求 deadline 内尝试各个地址族和地址；失败连接关闭后再回退。显式 interface 在 DNS 前预取 IPv4/IPv6 可用 source，两个地址族都不可用时不产生 DNS activity；连接阶段只使用对应地址族的已验证 source。TLS 验证失败保持终态，不能作为地址回退或验证降级理由。
+
+IPv6 DNS 列表中的每个 TCP attempt 沿用调用方原始 deadline。`TIMEOUT`/`WOULD_BLOCK` 保留当前 pending socket 并继续有界轮询和取消检查，不为候选地址另设 250 ms 上限。只有终态连接失败才关闭该 socket 并尝试下一地址；解析、各次连接和 TLS 共用请求预算。

@@ -16,14 +16,19 @@ class WifiOperationsTest(unittest.TestCase):
         guard = source[begin:source.index("static int sta_connect_and_save(", begin)]
         state = source[source.index("enum { SCAN_IDLE"):
                        source.index("static void post_system_event")]
+        stop = source[source.index("static int wifi_stop(void)"):
+                      source.index("static int sta_disconnect(")]
+        disconnect = source[source.index("static int sta_disconnect("):
+                            source.index("static int wifi_get_mac_address(")]
         fixture = r'''
 #include <assert.h>
 #include <pthread.h>
 #include <sched.h>
 #include "h2/pal/hal/h2_pal_wifi.h"
 #include "h2/pal/net/h2_pal_netif.h"
+#include "h2/pal/os/h2_pal_system_event.h"
 #include <string.h>
-static struct { int on; h2_pal_wifi_sta_status_t sta; h2_pal_wifi_ap_status_t ap; } wifi_state;
+static struct { int on; h2_pal_wifi_sta_status_t sta; h2_pal_wifi_ap_status_t ap; h2_pal_wifi_ap_client_t ap_clients[5]; } wifi_state;
 static uint32_t wifi_sta_generation;
 static pthread_mutex_t state_gate = PTHREAD_MUTEX_INITIALIZER;
 static unsigned wifi_callbacks_active;
@@ -32,8 +37,21 @@ static void wifi_state_unlock(void) { assert(pthread_mutex_unlock(&state_gate) =
 static int clears;
 static void wifi_clear_scan_result(void) { ++clears; }
 ''' + state + r'''
-static int calls;
-static unsigned pause_scan, entered_scan, release_scan, abandon_scan;
+static int off_error = 1, off_calls;
+static int wifi_is_on(void) { return 1; }
+static int stack_stopping_calls, stack_stopped_calls;
+static void h2_jieli_net_stack_stopping(void) { ++stack_stopping_calls; }
+static void h2_jieli_net_stack_stopped(void) { ++stack_stopped_calls; }
+static int wifi_off(void) { ++off_calls; return off_error; }
+static int calls, smp_calls;
+/* SDK: only posts the HSM message; the STA exit and WIFI_EVENT_SMP_CFG_START
+ * callback run later on the network HSM task. */
+static int wifi_enter_smp_cfg_mode(void) { ++calls; ++smp_calls; return 0; }
+static void post_sta_event(h2_pal_system_event_type_t type, const h2_pal_wifi_sta_status_t *status) {
+    (void)type; (void)status;
+}
+''' + stop + disconnect + r'''
+static unsigned pause_scan, entered_scan, release_scan, abandon_scan, scan_success;
 static int guarded_ap_stop(void *user, uint32_t timeout_ms);
 static int sta_scan(void *u, const h2_pal_wifi_scan_request_t *r,
     h2_pal_wifi_scan_result_fn f, void *c, uint32_t t) {
@@ -48,12 +66,11 @@ static int sta_scan(void *u, const h2_pal_wifi_scan_request_t *r,
         __atomic_store_n(&entered_scan, 1u, __ATOMIC_RELEASE);
         while (!__atomic_load_n(&release_scan, __ATOMIC_ACQUIRE)) sched_yield();
     }
-    return H2_PAL_ERR_IO;
+    return scan_success ? H2_PAL_OK : H2_PAL_ERR_IO;
 }
 static int sta_connect(void *u, const h2_pal_wifi_sta_config_t *c, uint32_t t) { (void)u; (void)c; (void)t; ++calls; return H2_PAL_ERR_IO; }
-static int sta_disconnect(void *u) { (void)u; ++calls; return H2_PAL_ERR_IO; }
-static int ap_start(void *u, const h2_pal_wifi_ap_config_t *c, uint32_t t) { (void)u; (void)c; (void)t; ++calls; return H2_PAL_ERR_IO; }
-static int ap_stop(void *u, uint32_t t) { (void)u; (void)t; ++calls; return H2_PAL_ERR_IO; }
+static int ap_start(void *u, const h2_pal_wifi_ap_config_t *c, uint32_t t) { (void)u; (void)c; (void)t; ++calls; return wifi_stop(); }
+static int ap_stop(void *u, uint32_t t) { (void)u; (void)t; ++calls; return wifi_stop(); }
 static int wifi_get_mac_address(void *u, uint8_t mac[6]) { (void)u; (void)mac; ++calls; return H2_PAL_ERR_IO; }
 '''
         main = r'''
@@ -64,6 +81,7 @@ static void *scan_thread(void *unused) {
 }
 int main(void) {
     for (unsigned phase = SCAN_PENDING; phase <= SCAN_CLEANING; ++phase) {
+        if (phase == SCAN_ABANDONED) continue;
         scan_phase = phase;
         assert(guarded_sta_disconnect(NULL) == H2_PAL_ERR_BUSY);
         assert(guarded_ap_start(NULL, NULL, 0) == H2_PAL_ERR_BUSY);
@@ -73,7 +91,7 @@ int main(void) {
     assert(guarded_sta_scan(NULL, NULL, NULL, NULL, 0) == H2_PAL_ERR_IO);
     assert(calls == 1 && wifi_operation_busy == 0);
     assert(guarded_sta_connect(NULL, NULL, 0) == H2_PAL_ERR_IO);
-    assert(guarded_sta_disconnect(NULL) == H2_PAL_ERR_IO);
+    assert(guarded_sta_disconnect(NULL) == H2_PAL_OK);
     assert(guarded_ap_start(NULL, NULL, 0) == H2_PAL_ERR_IO);
     assert(guarded_ap_stop(NULL, 0) == H2_PAL_ERR_IO);
     assert(guarded_wifi_get_mac(NULL, NULL) == H2_PAL_ERR_IO);
@@ -87,20 +105,57 @@ int main(void) {
     __atomic_store_n(&release_scan, 1u, __ATOMIC_RELEASE);
     assert(pthread_join(worker, NULL) == 0);
     assert(calls == 7 && wifi_operation_busy == 0);
-    assert(guarded_sta_disconnect(NULL) == H2_PAL_ERR_IO);
+    assert(guarded_sta_disconnect(NULL) == H2_PAL_OK);
     assert(calls == 8 && wifi_operation_busy == 0);
     abandon_scan = 1;
     assert(guarded_sta_scan(NULL, NULL, NULL, NULL, 0) == H2_PAL_ERR_TIMEOUT);
     assert(wifi_operation_busy == 0 && scan_phase == SCAN_ABANDONED);
     assert(guarded_sta_connect(NULL, NULL, 0) == H2_PAL_ERR_BUSY);
-    assert(guarded_ap_start(NULL, NULL, 0) == H2_PAL_ERR_BUSY);
-    assert(guarded_sta_disconnect(NULL) == H2_PAL_ERR_BUSY);
+    assert(guarded_sta_scan(NULL, NULL, NULL, NULL, 0) == H2_PAL_ERR_BUSY);
     assert(calls == 9);
+    /* Real STA disconnect: admitted while abandoned, enters config mode, and
+     * does not release the scan until the SDK reports the STA exit. */
+    int before_smp = smp_calls, before_off = off_calls;
+    assert(guarded_sta_disconnect(NULL) == H2_PAL_OK);
+    assert(smp_calls == before_smp + 1 && off_calls == before_off);
+    assert(scan_phase == SCAN_ABANDONED && wifi_operation_busy == 0);
+    assert(guarded_sta_scan(NULL, NULL, NULL, NULL, 0) == H2_PAL_ERR_BUSY);
+    assert(guarded_sta_connect(NULL, NULL, 0) == H2_PAL_ERR_BUSY);
+    assert(calls == 10);
+    scan_reset_after_sta_exit(); /* wifi_event(WIFI_EVENT_SMP_CFG_START) */
+    assert(scan_phase == SCAN_IDLE && clears == 0);
+    scan_completed(); /* SDK drops it in SMP_CFG; a stray one must be ignored */
+    assert(scan_phase == SCAN_IDLE && clears == 0);
+    abandon_scan = 0; pause_scan = 0; scan_success = 1;
+    assert(guarded_sta_scan(NULL, NULL, NULL, NULL, 0) == H2_PAL_OK);
+    /* A late completion before the STA exit is reaped instead. */
+    scan_phase = SCAN_REAPABLE;
+    scan_reset_after_sta_exit();
+    assert(scan_phase == SCAN_IDLE && clears == 0);
+    for (unsigned phase = SCAN_PENDING; phase <= SCAN_REAPABLE; ++phase) {
+        if (phase == SCAN_ABANDONED || phase == SCAN_REAPABLE) continue;
+        scan_phase = phase;
+        scan_reset_after_sta_exit();
+        assert(scan_phase == phase);
+    }
+    /* AP stop/start still reset through a successful wifi_off. */
+    off_error = 0;
+    scan_phase = SCAN_ABANDONED;
+    assert(guarded_ap_start(NULL, NULL, 0) == H2_PAL_OK);
+    assert(scan_phase == SCAN_IDLE && off_calls == before_off + 1);
+    scan_phase = SCAN_ABANDONED;
+    assert(guarded_ap_stop(NULL, 0) == H2_PAL_OK);
+    assert(scan_phase == SCAN_IDLE && off_calls == before_off + 2);
+    scan_phase = SCAN_ABANDONED;
+    off_error = 1;
+    assert(guarded_ap_stop(NULL, 0) == H2_PAL_ERR_IO);
+    assert(scan_phase == SCAN_ABANDONED && wifi_operation_busy == 0);
+    /* Disconnect without the STA-exit event: a late completion is reaped. */
+    assert(guarded_sta_disconnect(NULL) == H2_PAL_OK && scan_phase == SCAN_ABANDONED);
     scan_completed();
     assert(scan_phase == SCAN_REAPABLE && clears == 0);
     assert(guarded_sta_connect(NULL, NULL, 0) == H2_PAL_ERR_IO);
-    assert(calls == 10 && wifi_operation_busy == 0);
-    assert(clears == 1 && scan_phase == SCAN_IDLE);
+    assert(wifi_operation_busy == 0 && clears == 1 && scan_phase == SCAN_IDLE);
     wifi_state.on = 1;
     wifi_state.sta.state = H2_PAL_WIFI_STA_STATE_GOT_IP;
     wifi_state.sta.ip_valid = 1;
@@ -123,7 +178,7 @@ int main(void) {
             unit = Path(directory) / "operations.c"
             binary = Path(directory) / "operations-test"
             unit.write_text(fixture + guard + main)
-            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", "-pthread",
+            subprocess.run([os.environ.get("CC", "cc"), "-std=c11", "-Wall", "-Wextra", "-Werror", "-pthread",
                             *shlex.split(os.environ.get("JIELI_TEST_CFLAGS", "")), "-I", str(ROOT / "libs/pal/include"),
                             str(unit), "-o", str(binary)], check=True, timeout=30)
             subprocess.run([str(binary)], check=True, timeout=10)

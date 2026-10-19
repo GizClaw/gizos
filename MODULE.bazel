@@ -41,18 +41,57 @@ register_toolchains(
 cc_configure = use_extension("@rules_cc//cc:extensions.bzl", "cc_configure_extension")
 use_repo(cc_configure, "local_config_cc")
 
+# macOS host C/C++ uses the Xcode-aware apple_support toolchain, which declares
+# the Xcode SDK root as builtin. Root registrations precede every dependency
+# module, so rules_cc's generic local_config_cc never serves the macOS host.
+apple_cc_configure = use_extension(
+    "@apple_support//crosstool:setup.bzl",
+    "apple_cc_configure_extension",
+    dev_dependency = True,
+)
+use_repo(apple_cc_configure, "local_config_apple_cc_toolchains")
+
+register_toolchains(
+    "@local_config_apple_cc_toolchains//:all",
+    dev_dependency = True,
+)
+
 http_archive = use_repo_rule(
     "@bazel_tools//tools/build_defs/repo:http.bzl",
     "http_archive",
 )
 
+# Overrides in a dependency MODULE are ignored by Bzlmod. Declare the exact
+# published SDK archive and upstream delta here so every GizOS consumer gets
+# the same canonical protocol, without copying root-only overrides.
 http_archive(
-    name = "h2_gizclaw_c_sdk",
-    integrity = "sha256-yzYO4soaVD28YP4XK16jgcYdrC/MAxNprl4cFCKOL9Q=",
-    strip_prefix = "gizclaw-c-sdk-0.18.7",
-    urls = [
-        "https://github.com/GizClaw/gizclaw/releases/download/v0.18.7/gizclaw-c-sdk-0.18.7.tar.gz",
-    ],
+    name = "gizclaw_c_sdk",
+    integrity = "sha256-snnzVUK0oZ+YvHTrIXdxZlRaHMijkcDvRitwVL2N1e4=",
+    patch_args = ["-p1"],
+    patches = ["//third_party:gizclaw_c_sdk_lua_app_uninstall.patch"],
+    strip_prefix = "gizclaw-c-sdk-0.30.0",
+    urls = ["https://static-volc.gizclaw.com/bazel/archives/gizclaw_c_sdk/gizclaw-c-sdk-0.30.0.tar.gz"],
+)
+
+# Canonical object codecs and numeric/name registries matching the C SDK's
+# public uninstall contract. The overlay exposes only upstream source files.
+http_archive(
+    name = "h2_gizclaw_protocol",
+    build_file = "//third_party:gizclaw_protocol.BUILD.bazel",
+    sha256 = "62b02f078c39fa401644b95b7933335632323cfa325ad5a4ec695f07201c9529",
+    strip_prefix = "gizclaw-155a9d512ca4669f02391a89bbc30be3bd128f15",
+    type = "tar.gz",
+    urls = ["https://codeload.github.com/GizClaw/gizclaw/tar.gz/155a9d512ca4669f02391a89bbc30be3bd128f15"],
+)
+
+# The declaration emitter is a pinned host tool, independent of runtime code.
+http_archive(
+    name = "h2_typescript",
+    build_file = "//third_party:typescript.BUILD.bazel",
+    sha256 = "10e108c9cf7d5f2879053dff18515fb405abf2ccef63eaaf017d9c571687a1d3",
+    strip_prefix = "package",
+    type = "tgz",
+    urls = ["https://registry.npmjs.org/typescript/-/typescript-5.9.3.tgz"],
 )
 
 # Playwright 1.52.0 uses Chromium headless shell revision 1169. Keep the two
@@ -154,6 +193,11 @@ use_repo(python, "python_3_11")
 
 register_toolchains("@python_3_11//:all")
 
+register_toolchains(
+    "//tools/bazel:mobile_e2e_python_ios",
+    "//tools/bazel:mobile_e2e_python_android",
+)
+
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
 pip.parse(
     hub_name = "bk7258_pip",
@@ -205,6 +249,7 @@ use_repo(
     "com_github_getkin_kin_openapi",
     "com_github_pion_datachannel",
     "com_github_pion_dtls_v3",
+    "com_github_pion_logging",
     "com_github_pion_rtp",
     "com_github_pion_stun_v3",
     "com_github_pion_turn_v4",
@@ -248,6 +293,15 @@ use_repo(firmware_release_inputs, "h2_firmware_release_inputs")
 vendor_repositories = use_extension(
     "//tools/bazel/vendor:repositories.bzl",
     "vendor_repositories",
+)
+
+# dr_mp3 0.7.3 (tag mp3-0.7.3); only its low-level frame decoder is used.
+vendor_repositories.repository(
+    name = "h2_vendor_dr_libs",
+    build_file = "//third_party:dr_libs.BUILD.bazel",
+    sha256 = "96115bda02a1947e97acff3568863b76f8661b4744507aac4d2817d53bf3d380",
+    strip_prefix = "dr_libs-5690d4671d7ad07ae6021756d7222eb159745f06",
+    urls = ["https://codeload.github.com/mackron/dr_libs/tar.gz/5690d4671d7ad07ae6021756d7222eb159745f06"],
 )
 vendor_repositories.repository(
     name = "h2_vendor_esp_serial_flasher",
@@ -346,6 +400,17 @@ vendor_repositories.repository(
     urls = ["https://codeload.github.com/higan-emu/libco/tar.gz/e18e09d634d612a01781168ad4d76be10a7e3bad"],
 )
 vendor_repositories.repository(
+    name = "h2_vendor_tlsf",
+    build_file = "//third_party:tlsf.BUILD.bazel",
+    overlay_files = {
+        "//third_party/tlsf_patch:h2_tlsf.h": "src/h2_tlsf.h",
+        "//third_party/tlsf_patch:h2_tlsf_embedded_stdio.h": "src/h2_tlsf_embedded_stdio.h",
+    },
+    sha256 = "df67543d45ad5e67d96168b54022a0f4803f8d5ae9770d398e20dd9a0e2934d6",
+    strip_prefix = "tlsf-deff9ab509341f264addbd3c8ada533678591905",
+    urls = ["https://codeload.github.com/mattconte/tlsf/tar.gz/deff9ab509341f264addbd3c8ada533678591905"],
+)
+vendor_repositories.repository(
     name = "h2_vendor_lua",
     build_file = "//third_party:lua.BUILD.bazel",
     overlay_files = {
@@ -359,8 +424,9 @@ vendor_repositories.repository(
     name = "h2_vendor_lvgl",
     build_file = "//third_party:lvgl.BUILD.bazel",
     overlay_files = {
-        "//third_party/lvgl_patch:config/bk7258/lv_conf.h": "config/bk7258/lv_conf.h",
-        "//third_party/lvgl_patch:config/esp_idf6_x/lv_conf.h": "config/esp_idf6_x/lv_conf.h",
+        "//third_party/lvgl_patch:config/bk7258/h2_lvgl_bk_dma2d.h": "config/bk7258/h2_lvgl_bk_dma2d.h",
+        "//third_party/lvgl_patch:config/bk7258/lv_conf.h": "config/bk7258/h2_bk7258_lv_conf.h",
+        "//third_party/lvgl_patch:config/esp_idf6_x/lv_conf.h": "config/esp_idf6_x/h2_esp_idf6_x_lv_conf.h",
     },
     sha256 = "68abe1316ce8f9a9ede55d89ad9788292753373ad4218480480ae81052fb005d",
     strip_prefix = "lvgl-237d06943a3f33d9f8e41597aadcc3a80cd461eb",
@@ -468,6 +534,7 @@ use_repo(
     "h2_k4b_cedarx_sdk",
     "h2_vendor_corehttp",
     "h2_vendor_coremqtt",
+    "h2_vendor_dr_libs",
     "h2_vendor_esp_serial_flasher",
     "h2_vendor_ffmpeg",
     "h2_vendor_ikcp",
@@ -486,6 +553,7 @@ use_repo(
     "h2_vendor_speexdsp",
     "h2_vendor_sqlite",
     "h2_vendor_tinyh264",
+    "h2_vendor_tlsf",
     "h2_vendor_wolfssl",
     "h2_vendor_yyjson",
     "h2_vendor_zlib",

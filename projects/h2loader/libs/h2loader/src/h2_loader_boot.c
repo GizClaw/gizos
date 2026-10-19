@@ -5,10 +5,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#if defined(_MSC_VER)
-#include <intrin.h>
-#endif
-
 #define H2_LOADER_REBOOT_REASON_DEFAULT 0u
 #define H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED (UINT32_C(1) << 30)
 
@@ -22,25 +18,9 @@ static void copy_text(char *out, size_t capacity, const char *value) {
   (void)snprintf(out, capacity, "%s", value != NULL ? value : "");
 }
 
-static int atomic_load(const h2_loader_atomic_flag_t *value) {
-#if defined(_MSC_VER)
-  return (int)_InterlockedCompareExchange((volatile long *)value, 0, 0);
-#else
-  return __atomic_load_n(value, __ATOMIC_ACQUIRE);
-#endif
-}
-
-static void atomic_store(h2_loader_atomic_flag_t *value, int stored) {
-#if defined(_MSC_VER)
-  (void)_InterlockedExchange((volatile long *)value, (long)stored);
-#else
-  __atomic_store_n(value, stored, __ATOMIC_RELEASE);
-#endif
-}
-
 static void atomic_update_flags(h2_loader_atomic_flag_t *value, uint32_t flags,
                                 bool available) {
-  int expected = atomic_load(value);
+  int expected = h2_atomic_int_load(value, H2_ATOMIC_ACQUIRE);
   for (;;) {
     uint32_t base = (uint32_t)expected;
     if ((base & H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED) == 0u) {
@@ -49,23 +29,15 @@ static void atomic_update_flags(h2_loader_atomic_flag_t *value, uint32_t flags,
     }
     uint32_t next = available ? base | flags : base & ~flags;
     next |= H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED;
-#if defined(_MSC_VER)
-    int observed = (int)_InterlockedCompareExchange((volatile long *)value,
-                                                    (long)next, (long)expected);
-    if (observed == expected)
-      return;
-    expected = observed;
-#else
-    if (__atomic_compare_exchange_n(value, &expected, (int)next, 0,
-                                    __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+    if (h2_atomic_int_compare_exchange(value, &expected, (int)next,
+                                       H2_ATOMIC_ACQ_REL, H2_ATOMIC_ACQUIRE)) {
       return;
     }
-#endif
   }
 }
 
 static uint32_t load_availability(const h2_loader_atomic_flag_t *value) {
-  uint32_t stored = (uint32_t)atomic_load(value);
+  uint32_t stored = (uint32_t)h2_atomic_int_load(value, H2_ATOMIC_ACQUIRE);
   return (stored & H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED) != 0u
              ? stored & H2_LOADER_COMMAND_AVAILABILITY_ALL
              : H2_LOADER_COMMAND_AVAILABILITY_ALL;
@@ -73,7 +45,7 @@ static uint32_t load_availability(const h2_loader_atomic_flag_t *value) {
 
 static int mfg_gate_satisfied(const h2_loader_t *loader) {
   return loader != NULL &&
-         (atomic_load(&loader->mfg_gate_bypass) != 0 ||
+         (h2_atomic_int_load(&loader->mfg_gate_bypass, H2_ATOMIC_ACQUIRE) != 0 ||
           loader->config.mfg_required_total == 0u ||
           h2_loader_mfg_summary_is_passed(&loader->status.mfg,
                                           loader->config.mfg_required_total));
@@ -83,7 +55,7 @@ int h2_loader_set_mfg_gate_bypass(h2_loader_t *loader, int enabled) {
   if (loader == NULL || (enabled != 0 && enabled != 1)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  atomic_store(&loader->mfg_gate_bypass, enabled);
+  h2_atomic_int_store(&loader->mfg_gate_bypass, enabled, H2_ATOMIC_RELEASE);
   return H2_PAL_OK;
 }
 
@@ -92,8 +64,9 @@ int h2_loader_set_implemented_commands(h2_loader_t *loader, uint32_t commands) {
       (commands & ~H2_LOADER_COMMAND_AVAILABILITY_ALL) != 0u) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  atomic_store(&loader->implemented_commands,
-               (int)(H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED | commands));
+  h2_atomic_int_store(&loader->implemented_commands,
+                      (int)(H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED | commands),
+                      H2_ATOMIC_RELEASE);
   return H2_PAL_OK;
 }
 
@@ -115,7 +88,8 @@ uint32_t h2_loader_get_command_availability(const h2_loader_t *loader,
   available = load_availability(&loader->implemented_commands) &
               load_availability(&loader->command_availability);
   if ((status->capabilities & H2_LOADER_CAPABILITY_WIFI) == 0u) {
-    available &= ~(H2_LOADER_COMMAND_AVAILABLE_WIFI_SCAN |
+    available &= ~(H2_LOADER_COMMAND_AVAILABLE_WIFI_STATUS |
+                   H2_LOADER_COMMAND_AVAILABLE_WIFI_SCAN |
                    H2_LOADER_COMMAND_AVAILABLE_WIFI_CONNECT |
                    H2_LOADER_COMMAND_AVAILABLE_WIFI_DISCONNECT |
                    H2_LOADER_COMMAND_AVAILABLE_STAGE_URL);
@@ -366,6 +340,88 @@ static int identity_valid(const h2_loader_image_identity_t *identity) {
   copy_text(metadata.target, sizeof(metadata.target), identity->target);
   return h2_loader_metadata_validate(H2_LOADER_METADATA_SLOT_PARTITION_1,
                                      &metadata) == H2_PAL_OK;
+}
+
+int h2_loader_read_current_loader_identity(
+    const h2_loader_config_t *config, const char *version,
+    h2_loader_image_identity_t *out_identity) {
+  if (out_identity == NULL) return H2_PAL_ERR_INVALID_ARG;
+  memset(out_identity, 0, sizeof(*out_identity));
+  if (config == NULL || config->pref == NULL || config->power == NULL ||
+      config->package.allocator == NULL || config->board == NULL ||
+      config->target == NULL || version == NULL ||
+      config->h2loader_partition_id == 0u || config->app_partition_id == 0u ||
+      config->h2loader_partition_id == config->app_partition_id ||
+      config->package.allocator->vtable == NULL ||
+      config->package.allocator->vtable->alloc == NULL ||
+      config->package.allocator->vtable->free == NULL || config->board[0] == '\0' ||
+      config->target[0] == '\0' || version[0] == '\0' ||
+      strlen(config->board) >= sizeof(out_identity->board) ||
+      strlen(config->target) >= sizeof(out_identity->target) ||
+      strlen(version) >= sizeof(out_identity->version))
+    return H2_PAL_ERR_INVALID_ARG;
+  const h2_loader_image_reader_api_t *reader = config->package.image_reader;
+  const h2_loader_digest_api_t *digest_api = &config->package.digest;
+  if (reader == NULL || reader->vtable == NULL ||
+      reader->vtable->get_capacity == NULL || reader->vtable->read == NULL ||
+      digest_api->start == NULL || digest_api->update == NULL ||
+      digest_api->finish == NULL || digest_api->abort == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_pal_power_boot_partition_t running = {0};
+  int rc = h2_pal_power_get_running_boot_partition(config->power, &running);
+  if (rc != H2_PAL_OK) return rc;
+  if (running.id != config->h2loader_partition_id && running.id != config->app_partition_id)
+    return H2_PAL_ERR_INVALID_STATE;
+  h2_loader_metadata_t metadata = {0};
+  int present = 0;
+  const h2_loader_metadata_slot_t slot = running.id == config->h2loader_partition_id
+      ? H2_LOADER_METADATA_SLOT_PARTITION_1 : H2_LOADER_METADATA_SLOT_PARTITION_2;
+  rc = h2_loader_metadata_read(config->pref, config->package.allocator, slot,
+                               &metadata, &present);
+  if (rc != H2_PAL_OK && rc != H2_PAL_ERR_FORMAT) return rc;
+  /* Malformed persistent identity is not evidence about the running image. */
+  const h2_loader_metadata_t *active = &metadata;
+  if (rc != H2_PAL_OK || !present || !active->valid ||
+      active->role != H2_LOADER_IMAGE_ROLE_H2LOADER ||
+      strcmp(active->version, version) != 0 || strcmp(active->board, config->board) != 0 ||
+      strcmp(active->target, config->target) != 0)
+    active = NULL;
+  uint64_t capacity = 0u, size = active != NULL ? active->image_size : 0u;
+  rc = reader->vtable->get_capacity(reader->user, running.id, &capacity);
+  if (rc != H2_PAL_OK) return rc;
+  if (active == NULL) {
+    rc = reader->vtable->get_capacity(reader->user, config->h2loader_partition_id, &size);
+    if (rc != H2_PAL_OK) return rc;
+  }
+  if (size == 0u || size > capacity) return H2_PAL_ERR_FORMAT;
+  uint8_t *buffer = h2_pal_mem_alloc(config->package.allocator, 4096u);
+  if (buffer == NULL) return H2_PAL_ERR_NO_MEMORY;
+  uint8_t digest[32];
+  rc = digest_api->start(digest_api->user);
+  for (uint64_t offset = 0u; rc == H2_PAL_OK && offset < size;) {
+    size_t take = size - offset > 4096u ? 4096u : (size_t)(size - offset);
+    rc = reader->vtable->read(reader->user, running.id, offset, buffer, take);
+    if (rc == H2_PAL_OK) rc = digest_api->update(digest_api->user, buffer, take);
+    offset += take;
+  }
+  if (rc == H2_PAL_OK) rc = digest_api->finish(digest_api->user, digest);
+  if (rc != H2_PAL_OK) digest_api->abort(digest_api->user);
+  h2_pal_mem_free(config->package.allocator, buffer);
+  if (rc != H2_PAL_OK) return rc;
+  h2_loader_image_identity_t identity = {.format = 1u, .role = H2_LOADER_IMAGE_ROLE_H2LOADER,
+                                         .image_size = size};
+  static const char hex[] = "0123456789abcdef";
+  for (size_t i = 0u; i < sizeof(digest); ++i) {
+    identity.image_sha256[2u * i] = hex[digest[i] >> 4u];
+    identity.image_sha256[2u * i + 1u] = hex[digest[i] & 15u];
+  }
+  copy_text(identity.board, sizeof(identity.board), config->board);
+  copy_text(identity.target, sizeof(identity.target), config->target);
+  copy_text(identity.version, sizeof(identity.version), version);
+  if (active != NULL && strcmp(identity.image_sha256, active->image_checksum) != 0)
+    return H2_PAL_ERR_FORMAT;
+  *out_identity = identity;
+  return H2_PAL_OK;
 }
 
 static void metadata_from_identity(const h2_loader_image_identity_t *identity,
@@ -899,15 +955,38 @@ int h2_loader_init(h2_loader_t *loader, const h2_loader_config_t *config) {
   if (loader->config.package.app_partition_id == 0u) {
     loader->config.package.app_partition_id = config->app_partition_id;
   }
-  atomic_store(&loader->implemented_commands,
-               (int)H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED);
-  atomic_store(&loader->command_availability,
-               (int)(H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED |
-                     H2_LOADER_COMMAND_AVAILABILITY_ALL));
+  h2_atomic_result_t atomic_rc = h2_atomic_int_init(&loader->mfg_gate_bypass, 0);
+  if (atomic_rc == H2_ATOMIC_OK)
+    atomic_rc = h2_atomic_int_init(&loader->implemented_commands,
+                                  (int)H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED);
+  if (atomic_rc == H2_ATOMIC_OK)
+    atomic_rc = h2_atomic_int_init(&loader->command_availability,
+                                  (int)(H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED |
+                                        H2_LOADER_COMMAND_AVAILABILITY_ALL));
+  if (atomic_rc != H2_ATOMIC_OK) {
+    h2_atomic_int_destroy(&loader->mfg_gate_bypass);
+    h2_atomic_int_destroy(&loader->implemented_commands);
+    h2_atomic_int_destroy(&loader->command_availability);
+    return atomic_rc == H2_ATOMIC_UNSUPPORTED ? H2_PAL_ERR_UNSUPPORTED
+                                               : H2_PAL_ERR_NO_MEMORY;
+  }
   rc = h2_loader_package_init(&loader->package, &loader->config.package);
-  if (rc != H2_PAL_OK)
+  if (rc != H2_PAL_OK) {
+    h2_loader_deinit(loader);
     return rc;
-  return h2_loader_read_status(loader, &loader->status);
+  }
+  rc = h2_loader_read_status(loader, &loader->status);
+  if (rc != H2_PAL_OK)
+    h2_loader_deinit(loader);
+  return rc;
+}
+
+void h2_loader_deinit(h2_loader_t *loader) {
+  if (loader == NULL)
+    return;
+  h2_atomic_int_destroy(&loader->mfg_gate_bypass);
+  h2_atomic_int_destroy(&loader->implemented_commands);
+  h2_atomic_int_destroy(&loader->command_availability);
 }
 
 int h2_loader_startup(h2_loader_t *loader,

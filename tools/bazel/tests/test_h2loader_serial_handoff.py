@@ -12,7 +12,10 @@ class SerialHandoff(unittest.TestCase):
         prefix = serial[:serial.index('static h2_pal_result_t serial_pump(')]
         prefix = prefix.replace('#include "h2_h2loader_host_internal.h"', '')
         prefix = prefix.replace('static h2_pal_result_t serial_finish_command_response(void *transport);', '')
-        connect = section(serial, 'h2_pal_result_t h2_h2loader_host_serial_connect(', 'h2_pal_result_t h2_h2loader_host_serial_monitor_logs(')
+        # Stop before the monitor-only decoded-log drain: this fixture exercises
+        # the handshake handoff and never calls it, so pulling it in would trip
+        # -Wunused-function.
+        connect = section(serial, 'h2_pal_result_t h2_h2loader_host_serial_connect(', '/* Console output during a monitor session')
         frame = (ROOT/'libs/iostreamikcp/src/h2_iostreamikcp_frame.c').read_text().replace('#include "h2_iostreamikcp_internal.h"', '#include "h2_iostreamikcp.h"\n#define H2_IOSTREAMIKCP_FRAME_MAGIC_LEN 6u\n#define H2_IOSTREAMIKCP_FRAME_LEN_OFFSET 12u')
         app = (ROOT/'projects/h2loader/apps/cli/app/src/h2_h2loader_cli_app.c').read_text()
         # Main keeps the serial log callback in app.c; no BLE sink dependency.

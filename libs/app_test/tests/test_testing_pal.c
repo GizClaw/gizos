@@ -59,6 +59,30 @@ static void test_wifi_persistent_operation(void) {
   assert(h2_pal_wifi_sta_connect_and_save(&w.api, &target, 100) == H2_PAL_ERR_IO);
 }
 
+static void test_modem_lifecycle(void) {
+  h2_app_test_modem_t m;
+  h2_app_test_modem_init(&m);
+  assert(h2_pal_modem_open(&m.api, 25u) == H2_PAL_ERR_UNSUPPORTED);
+  assert(h2_pal_modem_close(&m.api, 25u) == H2_PAL_ERR_UNSUPPORTED);
+  m.lifecycle_supported = true;
+  m.status.capabilities = 0u;
+  OK(h2_pal_modem_close(&m.api, 10u));
+  OK(h2_pal_modem_close(&m.api, 10u));
+  assert(!m.opened && m.last_close_timeout_ms == 10u);
+  FAIL_ONCE(m.open);
+  assert(h2_pal_modem_open(&m.api, 50u) == H2_PAL_ERR_IO && !m.opened);
+  OK(h2_pal_modem_open(&m.api, 60u));
+  assert(m.opened && m.last_open_timeout_ms == 60u);
+  OK(h2_pal_modem_open(&m.api, 70u));
+  FAIL_ONCE(m.close);
+  assert(h2_pal_modem_close(&m.api, 80u) == H2_PAL_ERR_IO && m.opened);
+  OK(h2_pal_modem_close(&m.api, 90u));
+  assert(!m.opened && m.last_close_timeout_ms == 90u);
+  uint32_t capabilities = UINT32_MAX;
+  OK(h2_pal_modem_get_capabilities(&m.api, &capabilities));
+  assert(capabilities == 0u);
+}
+
 static void test_wifi_modem(void) {
   h2_app_test_wifi_t w;
   h2_app_test_wifi_init(&w);
@@ -106,6 +130,52 @@ static void test_wifi_modem(void) {
   assert(m.last_answer_timeout_ms == 20u && m.last_hangup_timeout_ms == 30u);
   memset(call.number, 'x', sizeof(call.number));
   assert(h2_pal_modem_call_dial(&m.api, &call) == H2_PAL_ERR_INVALID_ARG);
+  h2_pal_modem_emergency_number_t numbers[2];
+  size_t emergency_count = 99u;
+  assert(h2_pal_modem_get_emergency_numbers(&m.api, 100u, numbers, 2u, &emergency_count) == H2_PAL_ERR_UNSUPPORTED);
+  assert(emergency_count == 0u);
+  const h2_pal_modem_emergency_number_t table[] = {
+      {.number = "123", .scope = H2_PAL_MODEM_EMERGENCY_SCOPE_WITHOUT_SIM,
+       .source = H2_PAL_MODEM_EMERGENCY_SOURCE_MODULE},
+      {.number = "456", .scope = H2_PAL_MODEM_EMERGENCY_SCOPE_WITH_SIM,
+       .source = H2_PAL_MODEM_EMERGENCY_SOURCE_SIM},
+  };
+  m.status.capabilities |= H2_PAL_MODEM_CAPABILITY_EMERGENCY_NUMBERS;
+  m.emergency_numbers = table;
+  m.emergency_number_count = 2u;
+  OK(h2_pal_modem_get_emergency_numbers(&m.api, 100u, numbers, 2u, &emergency_count));
+  assert(emergency_count == 2u && !strcmp(numbers[0].number, "123"));
+  assert(numbers[1].source == H2_PAL_MODEM_EMERGENCY_SOURCE_SIM);
+  assert(m.last_emergency_numbers_timeout_ms == 100u);
+  FAIL_ONCE(m.get_emergency_numbers);
+  assert(h2_pal_modem_get_emergency_numbers(&m.api, 0u, numbers, 2u, &emergency_count) == H2_PAL_ERR_IO);
+  assert(emergency_count == 0u && numbers[0].number[0] == '\0');
+  assert(h2_pal_modem_get_emergency_numbers(&m.api, 0u, numbers, 1u, &emergency_count) == H2_PAL_ERR_TRUNCATED);
+  assert(emergency_count == 0u);
+  m.emergency_number_count = 0u;
+  OK(h2_pal_modem_get_emergency_numbers(&m.api, 0u, numbers, 2u, &emergency_count));
+  assert(emergency_count == 0u);
+  strcpy(m.identity.revision, "R01");
+  h2_pal_modem_identity_t identity;
+  OK(h2_pal_modem_get_identity(&m.api, &identity));
+  assert(strcmp(identity.revision, "R01") == 0);
+  char url[] = "https://example.com/fw", target[] = "R02";
+  h2_pal_modem_ota_request_t ota_request = {.url = url, .expected_revision = "R01", .target_revision = target, .timeout_ms = 90u};
+  h2_pal_modem_ota_status_t ota_status;
+  assert(h2_pal_modem_ota_start(&m.api, &ota_request) == H2_PAL_ERR_UNSUPPORTED);
+  m.status.capabilities |= H2_PAL_MODEM_CAPABILITY_OTA;
+  OK(h2_pal_modem_ota_start(&m.api, &ota_request));
+  url[0] = 'X'; target[0] = 'X';
+  assert(strcmp(m.last_ota_request.url, "https://example.com/fw") == 0);
+  assert(strcmp(m.last_ota_request.target_revision, "R02") == 0 && m.last_ota_request.timeout_ms == 90u);
+  assert(m.ota_status.state == H2_PAL_MODEM_OTA_IDLE); /* Recorded intent is not completion. */
+  m.ota_status.state = H2_PAL_MODEM_OTA_UPDATING;
+  m.ota_status.progress_percent = 60u;
+  OK(h2_pal_modem_ota_get_status(&m.api, 80u, &ota_status));
+  assert(ota_status.state == H2_PAL_MODEM_OTA_UPDATING && m.last_ota_status_timeout_ms == 80u);
+  FAIL_ONCE(m.ota_get_status);
+  assert(h2_pal_modem_ota_get_status(&m.api, 0u, &ota_status) == H2_PAL_ERR_IO);
+  assert(ota_status.state == H2_PAL_MODEM_OTA_IDLE && ota_status.progress_percent == 0u);
 }
 static h2_pal_result_t periph_count(void *u, const h2_pal_periph_info_t *i) {
   (void)i;
@@ -121,8 +191,13 @@ static void test_devices(void) {
   OK(h2_pal_power_reboot(&p.api, 43u));
   assert(p.state == H2_PAL_POWER_STATE_REBOOTING &&
          p.boot_info.boot_count == 0u);
+  OK(h2_pal_power_set_deep_sleep_wake_timer(&p.api, 60000u));
+  assert(p.deep_sleep_wake_timer_ms == 60000u);
   p.capabilities.flags = 0;
   assert(h2_pal_power_deep_sleep(&p.api, 0u) == H2_PAL_ERR_UNSUPPORTED);
+  assert(h2_pal_power_set_deep_sleep_wake_timer(&p.api, 0u) ==
+         H2_PAL_ERR_UNSUPPORTED);
+  assert(p.deep_sleep_wake_timer_ms == 60000u);
   h2_app_test_display_t d;
   h2_app_test_display_init(&d);
   assert(h2_pal_display_set_brightness_percent(&d.api, 10u) ==
@@ -323,6 +398,18 @@ static void test_audio(const h2_pal_mem_api_t *mem) {
   h2_app_test_audio_t *wrapper = NULL;
   OK(h2_app_test_audio_create(mem, &time.api, &a.api, &fixture, &wrapper));
   const h2_pal_audio_api_t *api = h2_app_test_audio_api(wrapper);
+  uint32_t mic_gain = 0u;
+  OK(h2_pal_audio_get_mic_gain_percent(api, &mic_gain));
+  assert(mic_gain == 100u);
+  OK(h2_pal_audio_set_mic_gain_percent(api, 70u));
+  OK(h2_pal_audio_get_mic_gain_percent(api, &mic_gain));
+  assert(mic_gain == 70u);
+  assert(h2_pal_audio_set_mic_gain_percent(api, 101u) ==
+         H2_PAL_ERR_INVALID_ARG);
+  FAIL_ONCE(a.set_mic_gain);
+  assert(h2_pal_audio_set_mic_gain_percent(api, 80u) == H2_PAL_ERR_IO);
+  OK(h2_pal_audio_get_mic_gain_percent(api, &mic_gain));
+  assert(mic_gain == 70u);
   OK(h2_pal_audio_start_mic(api));
   uint8_t output[640];
   h2_audio_frame_t frame =
@@ -390,6 +477,7 @@ int main(void) {
   test_time();
   test_wifi_persistent_operation();
   test_wifi_modem();
+  test_modem_lifecycle();
   test_devices();
   test_pref(&mem);
   test_fs(&mem);

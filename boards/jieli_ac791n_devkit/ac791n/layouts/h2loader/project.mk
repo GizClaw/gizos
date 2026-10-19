@@ -33,9 +33,8 @@ H2_JIELI_BOARD_LIBS := \
 	cpu/wl82/liba/libaec.a \
 	cpu/wl82/liba/libdns.a \
 	cpu/wl82/liba/hsm.a \
-	cpu/wl82/liba/wl_wifi.a \
-	cpu/wl82/liba/hostapd_and_wpasupplicant.a \
 	cpu/wl82/liba/wpasupplicant.a \
+	cpu/wl82/liba/wl_wifi.a \
 	cpu/wl82/liba/lwip_2_2_0.a
 H2_JIELI_BOARD_INCLUDES := \
 	-Iapps/common \
@@ -82,3 +81,6 @@ H2_JIELI_BOARD_C_SRC_FILES := \
 include $(abspath $(H2_JIELI_LAYOUT_ROOT)/../../../../ac791n_chip/ac791n/layouts/compile_only/project.mk)
 
 LFLAGS += -T $(H2_JIELI_LAYOUT_ROOT)/sdk_abi.ld
+
+# Extract the real supplicant so its strong definitions override wl_wifi weak stubs.
+LFLAGS += --undefined=wpa_supplicant_get_state

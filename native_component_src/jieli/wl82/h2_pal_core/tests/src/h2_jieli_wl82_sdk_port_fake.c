@@ -51,8 +51,63 @@ static int s_timer_service_task;
 static int s_fail_next_timer_call;
 static const void *s_current_task = &s_default_task;
 
+static unsigned char s_events[16][H2_JIELI_SDK_EVENT_MESSAGE_SIZE];
+static size_t s_event_head, s_event_count, s_event_capacity = 8u;
+static int s_event_task, s_event_starts, s_event_start_fail, s_event_post_fail;
+static int s_in_interrupt;
+static h2_jieli_sdk_event_handler_t s_event_handler;
+
+void h2_jieli_fake_set_event_capacity(size_t capacity)
+{
+    s_event_capacity = capacity > 16u ? 16u : capacity;
+}
+size_t h2_jieli_fake_event_queued(void) { return s_event_count; }
+void h2_jieli_fake_fail_next_event_post(void) { s_event_post_fail = 1; }
+void h2_jieli_fake_set_in_interrupt(int value) { s_in_interrupt = value; }
+int h2_jieli_sdk_in_interrupt(void) { return s_in_interrupt; }
+int h2_jieli_fake_event_dispatcher_starts(void) { return s_event_starts; }
+void h2_jieli_fake_fail_event_dispatcher_start(int fail) { s_event_start_fail = fail; }
+int h2_jieli_sdk_event_dispatcher_start(h2_jieli_sdk_event_handler_t handler)
+{
+    if (s_event_handler != NULL) return 0;
+    if (s_event_start_fail || handler == NULL) return -1;
+    s_event_handler = handler;
+    ++s_event_starts;
+    return 0;
+}
+int h2_jieli_sdk_event_post(const void *message, size_t size)
+{
+    if (message == NULL || size != H2_JIELI_SDK_EVENT_MESSAGE_SIZE) return -1;
+    if (s_event_post_fail) {
+        s_event_post_fail = 0;
+        return 1;
+    }
+    if (s_event_count >= s_event_capacity) return 1;
+    memcpy(s_events[(s_event_head + s_event_count) % 16u], message, size);
+    ++s_event_count;
+    return 0;
+}
+void h2_jieli_fake_event_drain(void)
+{
+    const void *previous = s_current_task;
+    s_current_task = &s_event_task;
+    while (s_event_count != 0u) {
+        unsigned char message[H2_JIELI_SDK_EVENT_MESSAGE_SIZE];
+        memcpy(message, s_events[s_event_head], sizeof(message));
+        s_event_head = (s_event_head + 1u) % 16u;
+        --s_event_count;
+        s_event_handler(message, sizeof(message));
+    }
+    s_current_task = previous;
+}
+
 void h2_jieli_fake_reset(void)
 {
+    s_event_head = s_event_count = 0u;
+    s_event_capacity = 8u;
+    s_event_starts = s_event_start_fail = s_event_post_fail = s_in_interrupt = 0;
+    s_event_handler = NULL;
+    memset(s_events, 0, sizeof(s_events));
     s_fail_next_timer_call = 0;
     s_timer_dispatch_hook = NULL;
     s_current_task = &s_default_task;

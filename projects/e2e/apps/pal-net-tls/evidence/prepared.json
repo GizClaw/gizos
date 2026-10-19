@@ -1,0 +1,82 @@
+{
+  "phase": "prepared_only",
+  "core_qualified": false,
+  "full_net_qualified": false,
+  "platform_e2e_executed": false,
+  "hardware_accessed": false,
+  "wifi_gate": "closed",
+  "source_commit": "7771a2c28c340e525e091fda843dacf6af9b7956",
+  "operation_inventory": 21,
+  "registry_cases": 39,
+  "mandatory_cases": 37,
+  "artifacts": {
+    "macos": {
+      "built": true,
+      "sha256": "39760e549835499978597deadb3fa4cc446b4e1adb8deee33c91d8526ae0f353",
+      "size": 1148744,
+      "relative_build_output": "bazel-out/darwin_arm64-fastbuild/bin/projects/e2e/targets/cc_binary/pal-net-tls/pal_net_tls",
+      "observed_execution": false
+    },
+    "wasm": {
+      "built": true,
+      "sha256": "1b627c3d7a4cc934ef6f68dc5809409c715652a1f7cdd46995de95b125cf37b1",
+      "size": 890880,
+      "relative_build_output": "bazel-out/darwin_arm64-fastbuild/bin/projects/e2e/targets/pkg_tar/pal-net-tls/pal-net-tls.web.tar",
+      "observed_execution": false
+    },
+    "ios": {
+      "built": true,
+      "sha256": "47d4ae25a5af8aaa60e680afb1a2ea033eb1485a9a48c3b9403aaa06255f692a",
+      "size": 1686242,
+      "relative_build_output": "bazel-out/ios_sim_arm64-fastbuild-ios-sim_arm64-min16.0-ST-7f3d80d04ac6/bin/projects/e2e/targets/ios_application/pal-net-tls/pal_net_tls_e2e.ipa",
+      "observed_execution": false
+    },
+    "android": {
+      "built": true,
+      "sha256": "715ce1e520b6ffd4d50e5d8b0969ee49520f65f776a802d8befd155f6dd1932e",
+      "size": 3904097,
+      "relative_build_output": "bazel-out/darwin_arm64-fastbuild/bin/projects/e2e/targets/android_binary/pal-net-tls/pal_net_tls_e2e.apk",
+      "observed_execution": false
+    },
+    "devkit": {
+      "built": true,
+      "sha256": "0f432908b19b7543279cb060c9d47312d8483a7f82917cc3e7ee690dd738ff81",
+      "size": 973902,
+      "relative_build_output": "bazel-out/darwin_arm64-fastbuild/bin/projects/e2e/targets/h2loader_tar_zlib/pal-net-tls/devkit/package/devkit-pal-net-tls-esp32s3.update.tar.zlib",
+      "observed_execution": false
+    },
+    "bk7258": {
+      "built": true,
+      "sha256": "3ea3f7ac72e5ae4ca62fe2acd0402154eb7a699ac8497f5048d9faade352f5a6",
+      "size": 1713221,
+      "relative_build_output": "bazel-out/darwin_arm64-fastbuild/bin/projects/e2e/targets/h2loader_tar_zlib/pal-net-tls/bk7258_v3_202405/package/bk7258_v3_202405-pal-net-tls-bk7258.update.tar.zlib",
+      "observed_execution": false
+    }
+  },
+  "deterministic_validation": {
+    "passed_targets": [
+      "interface_coverage_test",
+      "rejection_test",
+      "evidence_rejection_test",
+      "fixture_evidence_test",
+      "udp_source_bind_fault_test",
+      "fresh_boot_rejection_test"
+    ],
+    "log_sha256": "d6084702326a58e198f089b6d1430290cfed50b0c1de45f3786895a2b33003f7",
+    "scope": "App oracle/fault rejection, fixture self-tests, production UDP-bound entry with mocked syscalls; no actual PAL integration"
+  },
+  "sdk_headers_and_symbols_verified": {
+    "ios": [
+      "h2_ios_net.h",
+      "h2_ios_net_create",
+      "h2_ios_net_api",
+      "h2_ios_net_destroy"
+    ],
+    "android": [
+      "h2_android_net.h",
+      "h2_android_net_create",
+      "h2_android_net_api",
+      "h2_android_net_destroy"
+    ]
+  }
+}

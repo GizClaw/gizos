@@ -107,6 +107,7 @@ static void copy_sockaddr(
         const struct sockaddr_in6 *in6 = (const struct sockaddr_in6 *)addr;
         out->family = H2_PAL_NET_FAMILY_IPV6;
         memcpy(out->ip, &in6->sin6_addr, 16u);
+        out->scope_id = in6->sin6_scope_id;
     }
 }
 

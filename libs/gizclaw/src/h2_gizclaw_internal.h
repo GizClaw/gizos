@@ -10,6 +10,7 @@
 
 #include "gzc_buffer.h"
 #include "gzc_event.h"
+#include "gzc_client.h"
 #include "pb.h"
 
 /* Normalize only a canonical NOT_FOUND status. UNIMPLEMENTED, any other
@@ -29,6 +30,8 @@ typedef struct h2_gizclaw_rpc_response {
   int error_code;
   char *error_message;
   size_t error_message_len;
+  char *error_reason;
+  size_t error_reason_len;
 } h2_gizclaw_rpc_response_t;
 
 typedef struct h2_gizclaw_rpc_request h2_gizclaw_rpc_request_t;
@@ -124,8 +127,14 @@ void h2_gizclaw_rpc_request_destroy(h2_gizclaw_rpc_request_t *request);
 typedef struct gzc_client gzc_client_t;
 typedef struct h2_gizclaw_conversation h2_gizclaw_conversation_t;
 
+int h2_gizclaw_tools_validate_internal(
+    const h2_gizclaw_tool_handler_t *handlers, size_t count);
 int h2_gizclaw_client_init(const h2_gizclaw_config_t *config,
                            h2_gizclaw_client_t **out_client);
+int h2_gizclaw_client_init_with_lua_stream_internal(
+    const h2_gizclaw_config_t *config,
+    const gzc_rpc_stream_provider_t *provider,
+    h2_gizclaw_client_t **out_client);
 int h2_gizclaw_client_connect(h2_gizclaw_client_t *client);
 int h2_gizclaw_client_poll(h2_gizclaw_client_t *client, int timeout_ms);
 int h2_gizclaw_client_dispatch_event(h2_gizclaw_client_t *client,
@@ -215,14 +224,19 @@ void h2_gizclaw_conversation_invalidate_internal(
     h2_gizclaw_conversation_t *conversation);
 bool h2_gizclaw_conversation_accepts_peer_event_internal(
     h2_gizclaw_conversation_t *conversation, const gzc_peer_event_t *event);
-/* Whether the event is a downstream audio BOS; text BOS and our input's own
- * BOS are not. */
+/* Whether the event is a downstream audio BOS or EOS; text boundaries and
+ * our input's own are not. */
 bool h2_gizclaw_conversation_downstream_audio_bos_internal(
     const h2_gizclaw_conversation_t *active, const gzc_peer_event_t *event);
-/* Tells the owner that the server announced a downstream audio stream. */
-typedef void (*h2_gizclaw_client_bos_fn)(void *user);
-void h2_gizclaw_client_set_downlink_bos_internal(
-    h2_gizclaw_client_t *client, h2_gizclaw_client_bos_fn on_bos, void *user);
+bool h2_gizclaw_conversation_downstream_audio_eos_internal(
+    const h2_gizclaw_conversation_t *active, const gzc_peer_event_t *event);
+/* Tells the owner that the server began (BOS) or ended (EOS) a downstream
+ * audio stream. stream_id is borrowed for the call. */
+typedef void (*h2_gizclaw_client_downlink_stream_fn)(void *user, bool begin,
+                                                     const char *stream_id);
+void h2_gizclaw_client_set_downlink_stream_internal(
+    h2_gizclaw_client_t *client, h2_gizclaw_client_downlink_stream_fn on_stream,
+    void *user);
 /* Formats a peer event and the input it arrived for, for diagnostics. */
 void h2_gizclaw_conversation_describe_peer_event_internal(
     const h2_gizclaw_conversation_t *conversation,
@@ -239,11 +253,19 @@ int h2_gizclaw_event_stream_read_internal(gzc_event_stream_t *stream,
 int h2_gizclaw_client_read_packet_internal(gzc_client_t *client, int timeout_ms,
                                            uint8_t *out_protocol,
                                            gzc_buf_t *out_payload);
+void h2_gizclaw_client_set_local_internal(h2_gizclaw_client_t *client,
+    h2_gizclaw_service_t *service);
+h2_pal_result_t h2_gizclaw_result_from_gzc(int result);
+
 #if defined(H2_GIZCLAW_TESTING)
 #include "gzc_telemetry.h"
 #include "platform/gzc_platform_webrtc.h"
 
 bool h2_gizclaw_test_rpc_diagnostic(void);
+/* Completes an RPC started on `client` with `status`; `inbound` counts one
+ * message received on the Peer while it was outstanding. */
+void h2_gizclaw_test_rpc_complete_on_client(h2_gizclaw_client_t *client,
+                                            int status, bool inbound);
 int h2_gizclaw_test_stream_failure_result(int pal_error, bool eos,
                                           int *out_sdk_result);
 typedef int (*h2_gizclaw_test_event_send_fn)(void *user,
@@ -306,6 +328,8 @@ int h2_gizclaw_test_provider_response(h2_gizclaw_client_t *client,
 void h2_gizclaw_test_provider_channel_close(h2_gizclaw_client_t *client,
     h2_pal_webrtc_channel_t *channel, bool remote);
 bool h2_gizclaw_test_media_registered(h2_gizclaw_client_t *client);
+const gzc_webrtc_vtable_t *
+h2_gizclaw_test_webrtc_api(h2_gizclaw_client_t *client);
 int h2_gizclaw_test_peer_create(h2_gizclaw_client_t *client,
                                 h2_pal_webrtc_peer_t **out_peer);
 int h2_gizclaw_test_peer_poll(h2_gizclaw_client_t *client,
@@ -321,5 +345,6 @@ void h2_gizclaw_test_media_emit_opus(h2_gizclaw_client_t *client,
                                      size_t opus_len);
 void h2_gizclaw_test_media_close_peer(h2_gizclaw_client_t *client,
                                       gzc_rtc_peer_t *peer);
+
 #endif
 #endif

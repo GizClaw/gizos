@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "qualified": false,
+  "boards": {
+    "bk7258": {
+      "source_head": "8f151c649d0e4f203e50ba7eebf51c464d264ca5",
+      "built": true,
+      "physical_qualification": false,
+      "artifacts": {
+        "bk7258_v3_202405-gizclaw-e2e-bk7258.firmware.json": {
+          "sha256": "71a6a0833f1ac7f53e03d08bff7f038e65487cb66e79286cf7aecef59a10d141",
+          "bytes": 2395
+        },
+        "bk7258_v3_202405-gizclaw-e2e-bk7258.update.tar.zlib": {
+          "sha256": "a9ce0fe8cd53a1e0e99488b02f2618b95162bbf51eb3dde63b5eb9fc99bb2a8d",
+          "bytes": 2176392
+        }
+      }
+    },
+    "amoled": {
+      "source_head": "5c6ec81d98b34b1f79e9ab8c1b61fb6772bee903",
+      "built": true,
+      "physical_qualification": false,
+      "artifacts": {
+        "amoled-gizclaw-e2e-esp32s3.update.tar.zlib": {
+          "sha256": "b1dc5bfe865eedf49feca1c8f3028ee5953d0e657ef66b01fab1f296ad0bd419",
+          "bytes": 1549584
+        },
+        "amoled-gizclaw-e2e-esp32s3.firmware.json": {
+          "sha256": "1dc8fab079d81217f8daaa2fa8ea106f00582539b917627d1b84b84d008fdac6",
+          "bytes": 2161
+        }
+      }
+    },
+    "devkit": {
+      "source_head": "5c6ec81d98b34b1f79e9ab8c1b61fb6772bee903",
+      "built": true,
+      "physical_qualification": false,
+      "artifacts": {
+        "devkit-gizclaw-e2e-esp32s3.update.tar.zlib": {
+          "sha256": "71da5df1a82a00124122301d167a10bbae4cbaf7477657819290fceeec08b6f8",
+          "bytes": 1482356
+        },
+        "devkit-gizclaw-e2e-esp32s3.firmware.json": {
+          "sha256": "916b2f7c0f7436a57880951aca5c7303c52326e1ee00d96a7428ec8a86629376",
+          "bytes": 2161
+        }
+      }
+    }
+  },
+  "physical_tests": "Not run; boards remain reserved for the preceding Wi-Fi and TLS qualification."
+}

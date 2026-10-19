@@ -292,10 +292,20 @@ static esp_err_t init_es8311(h2_esp_es8311_es7210_audio_system_t *state) {
 static uint8_t es7210_input_gain(
     const h2_esp_es8311_es7210_audio_system_t *state,
     uint8_t input) {
+    uint32_t gain_db = state->config.mic_gain_db;
+    if (input < H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_ES7210_INPUT_COUNT &&
+        (state->config.es7210_input_gain_mask & (1u << input)) != 0u)
+        gain_db = state->config.es7210_input_gain_db[input];
+    if (!(state->config.enable_aec &&
+          input == state->config.es7210_ref_input_index)) {
+        const int32_t adjusted = (int32_t)gain_db +
+            (int32_t)state->mic_gain_db_current -
+            (int32_t)state->config.mic_gain_db;
+        gain_db = adjusted < 0 ? 0u : adjusted > 38 ? 38u :
+                  (uint32_t)adjusted;
+    }
     return h2_esp_es8311_es7210_input_gain_register(
-        state->config.mic_gain_db,
-        state->config.es7210_input_gain_mask,
-        state->config.es7210_input_gain_db,
+        gain_db, 0u, NULL,
         input);
 }
 
@@ -603,6 +613,29 @@ static int audio_open(void *user) {
     return H2_AUDIO_OK;
 }
 
+static void observe_aec_capture(h2_esp_es8311_es7210_audio_system_t *state,
+                                const h2_audio_frame_t *raw,
+                                const h2_audio_frame_t *processed) {
+    if (state->aec_observer.on_capture == NULL)
+        return;
+    h2_audio_frame_t reference = *processed;
+    reference.data = state->sr.ref_frame;
+    reference.capacity = reference.bytes;
+    uint8_t microphone_mask = 0u;
+    for (unsigned i = 0u; i < state->config.mic_channel_count; ++i)
+        microphone_mask |= (uint8_t)(1u << state->config.mic_channel_indices[i]);
+    const h2_audio_aec_frame_t frame = {
+        .sequence = ++state->aec_sequence,
+        .raw = raw,
+        .reference_input = &reference,
+        .processed = processed,
+        .microphone_lane = state->config.mic_channel_indices[0],
+        .reference_lane = state->config.ref_channel_index,
+        .microphone_mask = microphone_mask,
+    };
+    state->aec_observer.on_capture(state->aec_observer.user, &frame);
+}
+
 static void mic_task(void *arg) {
     h2_esp_es8311_es7210_audio_system_t *state = (h2_esp_es8311_es7210_audio_system_t *)arg;
     const h2_audio_pcm_format_t raw_format = audio_raw_mic_format(state);
@@ -617,13 +650,17 @@ static void mic_task(void *arg) {
         }
         size_t bytes_read = 0u;
         esp_err_t err = i2s_channel_read(state->rx_chan, state->mic_raw_scratch, requested, &bytes_read, pdMS_TO_TICKS(100));
-        if (!state->mic_started || err == ESP_ERR_TIMEOUT || bytes_read == 0u) {
+        if (!state->mic_started || err == ESP_ERR_TIMEOUT) {
             continue;
         }
         if (err != ESP_OK) {
+            if (state->aec_observer.on_error != NULL)
+                state->aec_observer.on_error(state->aec_observer.user, 1, H2_AUDIO_ERR_IO);
             ESP_LOGW(TAG, "i2s mic read failed err=0x%x", (unsigned)err);
             continue;
         }
+        if (bytes_read == 0u)
+            continue;
         h2_audio_frame_t raw_frame = h2_audio_frame_for_buffer(state->mic_raw_scratch, sizeof(state->mic_raw_scratch), raw_format);
         raw_frame.bytes = bytes_read;
         raw_frame.samples_per_channel = (uint16_t)(bytes_read / raw_frame_bytes);
@@ -631,8 +668,12 @@ static void mic_task(void *arg) {
         h2_audio_frame_t processed = h2_audio_frame_for_buffer(state->mic_processed_scratch, sizeof(state->mic_processed_scratch), processed_format);
         int rc = h2_esp_es8311_es7210_audio_system_process_mic(state, &raw_frame, &processed, 0u);
         if (rc != H2_AUDIO_OK || processed.bytes == 0u) {
+            if (state->aec_observer.on_error != NULL)
+                state->aec_observer.on_error(state->aec_observer.user, 1,
+                    rc == H2_AUDIO_OK ? H2_AUDIO_ERR_IO : rc);
             continue;
         }
+        observe_aec_capture(state, &raw_frame, &processed);
         h2_esp_es8311_es7210_mic_queue_frame_t item;
         item.bytes = processed.bytes;
         item.samples_per_channel = processed.samples_per_channel;
@@ -718,6 +759,9 @@ static void playback_task(void *arg) {
         int rc = h2_audio_mixer_read(&state->mixer, &frame);
         xSemaphoreGive(state->write_mutex);
         if (rc != H2_AUDIO_OK || frame.bytes == 0u) {
+            if (rc != H2_AUDIO_OK && rc != H2_AUDIO_ERR_WOULD_BLOCK &&
+                state->aec_observer.on_error != NULL)
+                state->aec_observer.on_error(state->aec_observer.user, 0, rc);
             vTaskDelay(pdMS_TO_TICKS(H2_ESP_ES8311_ES7210_RETRY_DELAY_MS));
             continue;
         }
@@ -736,11 +780,15 @@ static void playback_task(void *arg) {
             &bytes_written,
             pdMS_TO_TICKS(H2_ESP_ES8311_ES7210_IO_TIMEOUT_MS));
         if (err != ESP_OK || bytes_written != samples * 2u * sizeof(int32_t)) {
+            if (state->aec_observer.on_error != NULL)
+                state->aec_observer.on_error(state->aec_observer.user, 0, H2_AUDIO_ERR_IO);
             ESP_LOGW(TAG, "i2s playback write failed err=0x%x bytes=%u/%u",
                 (unsigned)err,
                 (unsigned)bytes_written,
                 (unsigned)(samples * 2u * sizeof(int32_t)));
             vTaskDelay(pdMS_TO_TICKS(H2_ESP_ES8311_ES7210_RETRY_DELAY_MS));
+        } else if (state->aec_observer.on_playback != NULL) {
+            state->aec_observer.on_playback(state->aec_observer.user, &frame);
         }
     }
 }
@@ -817,6 +865,8 @@ static int audio_get_info(void *user, h2_audio_info_t *info) {
 
 static int audio_read_mic(void *user, h2_audio_frame_t *out_frame, uint32_t timeout_ms) {
     h2_esp_es8311_es7210_audio_system_t *state = (h2_esp_es8311_es7210_audio_system_t *)user;
+    if (state->mic_gain_uncertain)
+        return H2_AUDIO_ERR_IO;
     if (!state->mic_started || state->mic_queue == NULL) {
         return H2_AUDIO_ERR_INVALID_STATE;
     }
@@ -863,6 +913,7 @@ static int audio_start_mic(void *user) {
     }
     (void)h2_pal_queue_reset(state->config.queue_api, state->mic_queue);
     state->mic_started = 1;
+    state->aec_sequence = 0u;
     h2_esp_es8311_es7210_sr_reset(&state->sr);
     rc = start_mic_task(state);
     if (rc != H2_AUDIO_OK) {
@@ -1120,6 +1171,91 @@ static int audio_set_speaker_volume_percent(void *user, uint32_t percent) {
     return H2_AUDIO_OK;
 }
 
+static int audio_get_mic_gain_percent(void *user, uint32_t *out_percent) {
+    h2_esp_es8311_es7210_audio_system_t *state =
+        (h2_esp_es8311_es7210_audio_system_t *)user;
+    if (state->mic_gain_uncertain)
+        return H2_AUDIO_ERR_IO;
+    *out_percent = state->mic_gain_percent;
+    return H2_AUDIO_OK;
+}
+
+static void rollback_mic_gain(h2_esp_es8311_es7210_audio_system_t *state,
+                              const uint8_t old[H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_ES7210_INPUT_COUNT],
+                              uint8_t changed) {
+    for (uint8_t input = 0u;
+         input < H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_ES7210_INPUT_COUNT;
+         ++input) {
+        if ((changed & (1u << input)) != 0u &&
+            write_reg(state->es7210, ES7210_REG_MIC1_GAIN + input,
+                      old[input]) != ESP_OK)
+            state->mic_gain_uncertain = 1;
+    }
+}
+
+static int audio_set_mic_gain_percent(void *user, uint32_t percent) {
+    h2_esp_es8311_es7210_audio_system_t *state =
+        (h2_esp_es8311_es7210_audio_system_t *)user;
+    if (percent > 100u)
+        return H2_AUDIO_ERR_INVALID_ARG;
+    if (state->codec_shutdown_pending)
+        return H2_AUDIO_ERR_INVALID_STATE;
+    const uint32_t min_db = state->config.mic_gain_min_db;
+    const uint32_t max_db = state->config.mic_gain_max_db == 0u
+                                ? 38u : state->config.mic_gain_max_db;
+    const uint32_t requested_db = min_db +
+        (percent * (max_db - min_db) + 50u) / 100u;
+    /* Keep each input's board trim, and do not boost the AEC reference. */
+    if (state->es7210 != NULL) {
+        uint8_t old[H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_ES7210_INPUT_COUNT] = {0};
+        uint8_t changed = 0u;
+        const uint32_t previous_db = state->mic_gain_db_current;
+        state->mic_gain_db_current = requested_db;
+        for (uint8_t input = 0u;
+             input < H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_ES7210_INPUT_COUNT;
+             ++input) {
+            if ((state->config.es7210_input_mask & (1u << input)) == 0u ||
+                (state->config.enable_aec &&
+                 input == state->config.es7210_ref_input_index))
+                continue;
+            const uint8_t reg = ES7210_REG_MIC1_GAIN + input;
+            if (read_reg(state->es7210, reg, &old[input]) != ESP_OK) {
+                state->mic_gain_db_current = previous_db;
+                rollback_mic_gain(state, old, changed);
+                return H2_AUDIO_ERR_IO;
+            }
+            changed |= (uint8_t)(1u << input);
+            if (write_reg(state->es7210, reg,
+                    (uint8_t)((old[input] & 0xf0u) |
+                              (es7210_input_gain(state, input) & 0x0fu))) != ESP_OK) {
+                state->mic_gain_db_current = previous_db;
+                rollback_mic_gain(state, old, changed);
+                return H2_AUDIO_ERR_IO;
+            }
+        }
+    } else {
+        state->mic_gain_db_current = requested_db;
+    }
+    state->mic_gain_percent = percent;
+    state->mic_gain_uncertain = 0;
+    return H2_AUDIO_OK;
+}
+
+static int audio_set_aec_observer(void *user, const h2_audio_aec_observer_t *observer) {
+    h2_esp_es8311_es7210_audio_system_t *state = user;
+    if (!state->config.enable_aec || !state->sr.available)
+        return H2_AUDIO_ERR_UNSUPPORTED;
+    if (state->mic_started || state->mic_task != NULL || state->mic_task_started ||
+        state->playback_started || state->playback_task != NULL || state->playback_task_started ||
+        state->codec_shutdown_pending)
+        return H2_AUDIO_ERR_INVALID_STATE;
+    if (observer != NULL)
+        state->aec_observer = *observer;
+    else
+        memset(&state->aec_observer, 0, sizeof(state->aec_observer));
+    return H2_AUDIO_OK;
+}
+
 h2_pal_audio_t *h2_esp_es8311_es7210_audio_system_audio(h2_esp_es8311_es7210_audio_system_t *system) {
     if (system == NULL) {
         return NULL;
@@ -1134,6 +1270,9 @@ h2_pal_audio_t *h2_esp_es8311_es7210_audio_system_audio(h2_esp_es8311_es7210_aud
         .create_track = audio_create_track,
         .get_speaker_volume_percent = audio_get_speaker_volume_percent,
         .set_speaker_volume_percent = audio_set_speaker_volume_percent,
+        .get_mic_gain_percent = audio_get_mic_gain_percent,
+        .set_mic_gain_percent = audio_set_mic_gain_percent,
+        .set_aec_observer = audio_set_aec_observer,
     };
     system->audio.user = system;
     system->audio.vtable = &vtable;

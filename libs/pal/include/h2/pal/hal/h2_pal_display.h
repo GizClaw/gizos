@@ -69,6 +69,9 @@ static inline int h2_pal_display_get_info(const h2_pal_display_api_t *display, h
     return display->vtable->get_info(display->user, info);
 }
 
+/* Pixels are borrowed only for this call. Each source row has stride_bytes;
+ * the provider must validate row/span arithmetic before accessing pixels.
+ * Native format is required; other formats and clipping are provider-specific. */
 static inline int h2_pal_display_draw_bitmap(
     const h2_pal_display_api_t *display,
     const h2_display_rect_t *rect,
@@ -95,8 +98,9 @@ static inline int h2_pal_display_present(const h2_pal_display_api_t *display) {
     return display->vtable->present(display->user);
 }
 
+/* Brightness accepts 0..100; values above 100 return INVALID_ARG. */
 static inline int h2_pal_display_set_brightness_percent(const h2_pal_display_api_t *display, uint32_t percent) {
-    if (display == NULL) {
+    if (display == NULL || percent > 100u) {
         return H2_DISPLAY_ERR_INVALID_ARG;
     }
     if (display->vtable == NULL || display->vtable->set_brightness_percent == NULL) {

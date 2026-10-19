@@ -135,7 +135,7 @@ h2_pal_result_t h2_lua_storage_normalize(h2_lua_storage_config_t *config) {
 
 h2_pal_result_t h2_lua_storage_host_init(h2_lua_host_t *host) {
   const h2_lua_storage_config_t *config = &host->config.storage;
-  const h2_pal_mem_api_t *mem = host->config.runtime->mem;
+  const h2_pal_mem_api_t *mem = host->config.allocator;
   storage_scratch_t *scratch;
   size_t entry_capacity;
   h2_pal_result_t result;
@@ -169,7 +169,7 @@ h2_pal_result_t h2_lua_storage_host_init(h2_lua_host_t *host) {
 }
 
 void h2_lua_storage_host_deinit(h2_lua_host_t *host) {
-  const h2_pal_mem_api_t *mem = host->config.runtime->mem;
+  const h2_pal_mem_api_t *mem = host->config.allocator;
   if (host->storage_mutex != NULL) {
     (void)h2_pal_mutex_destroy(host->config.runtime->sync, host->storage_mutex);
     host->storage_mutex = NULL;

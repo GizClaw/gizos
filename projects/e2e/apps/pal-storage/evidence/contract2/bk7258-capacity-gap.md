@@ -1,0 +1,14 @@
+# BK7258 contract 2 capacity gap
+
+执行代码为 `de68d16a6b2e3f298eadbdf5b5a4dda0bd0b69a9`，实际包版本为 `pref-strength-20261004-bk`。phase 1 有效观察行是 `pal.storage.pref.overwrite-type status=FAIL rc=-13 nonce=523931790`；`-13` 是 `H2_PAL_ERR_NO_SPACE`，后续 case 为 BLOCKED。原始 UART 有缺行，不能推造缺失 case 的结果，不能把有效 FAIL 当作尚未运行；记录见 [bk7258-failed.json](bk7258-failed.json)。基础 `pref.blob` 仅测试 1537 bytes，首次 16 KiB 写位于 `overwrite-type` 末尾的 `seed_values`；该粗粒度 case 的输出不提供精确失败调用点，但固定实现的 16 KiB KV 必定无法分配。
+
+固定 SDK 为 `aa5df964b0f64924ee6d0d2ffd6c3ca6ed59f9ca`。[FDB 初始化](https://github.com/h2vivi/bk-avdk-smp/blob/aa5df964b0f64924ee6d0d2ffd6c3ca6ed59f9ca/ap/components/flashdb/src/fdb.c#L63) 默认使用 FAL device 的 block size 作为 logical sector size。[GizOS FAL port](../../../../../../native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_pref_flashdb_port.c) 的 block size 为 4096，provider 未设置其它 sector size。[单 KV 分配](https://github.com/h2vivi/bk-avdk-smp/blob/aa5df964b0f64924ee6d0d2ffd6c3ca6ed59f9ca/ap/components/flashdb/src/fdb_kvdb.c#L991) 要求整个 KV 位于一个 sector；[写入检查](https://github.com/h2vivi/bk-avdk-smp/blob/aa5df964b0f64924ee6d0d2ffd6c3ca6ed59f9ca/ap/components/flashdb/src/fdb_kvdb.c#L1103) 明确返回 `FDB_SAVED_FULL`。[读取路径](https://github.com/h2vivi/bk-avdk-smp/blob/aa5df964b0f64924ee6d0d2ffd6c3ca6ed59f9ca/ap/components/flashdb/src/fdb_kvdb.c#L332) 对跨 sector 的记录仍为 TODO/assert，并非可用的跨 sector 实现。
+
+实际 de68 AP ELF 的 `.rodata.partition_table_def` 为 `h2_pref`、offset `0x780000`、length `0x6000`（24 KiB）；`g_flashdb0` 的 block size 为 `0x1000`、write granularity 为 8 bits。该 ELF 的 FlashDB DWARF 确认 sector header 20 bytes、KV header 28 bytes。`h2storea.blob` 的 key 长 13 bytes：16 KiB value 的记录为 `28 + 13 + 16384 = 16425`，单 sector 可用量为 `4096 - 20 = 4076`。allocator 还要求 `remain > kv_size`，该 key 在空 sector 的 payload 上限约 4034 bytes；增加总 DB 空间不能解除单 KV 上限，4095-byte string 也需要覆盖相同容量问题。
+
+[公共 Preferences header](../../../../../../libs/pal/include/h2/pal/os/h2_pal_pref.h) 没有承诺跨 provider 的统一最大 value size；BK provider 也没有公开的 16 KiB 保证，只将 SDK 的 `FDB_SAVED_FULL` 透传为 `NO_SPACE`。现有 `pref_flashdb_test` 的 SDK shim 使用无容量限制的内存条目，因此不证明此真实 sector 边界。
+
+本次保留失败镜像、数据和 16 KiB/1000 次测试强度，没有改 provider、SDK、格式或 partition。直接把既有 DB 的 sector 改为 32 KiB 会在当前 24 KiB DB 触发初始化约束；即使扩到物理 128 KiB，也改变旧 4 KiB 数据的扫描和 erase 几何，不能作为无损配置修复。后续方案必须先审计和备份旧存储，在保持旧区域可读的前提下设计大值 backing、完整 generation 提交及错误回收；真实固定 FlashDB engine 配合 NOR/FAL 模拟应先复现此限制，再验证容量、GC、失败后旧值/类型保留、兼容和原 36 项实板资格。此文记录实际限制与未实施的修复要求，不宣称容量问题已解决。
+
+
+后续修复已在独立 Pref worktree 实现，并通过固定真实 FlashDB/FAL + NOR 的容量、覆盖/GC、失败恢复及私有实板备份兼容测试。方案保持原 24 KiB/4 KiB DB，新增同物理分区尾部 104 KiB 的独立分片/manifest backing；细节见 [BK large-value backing](../../../../../../native_component_src/bk7258/ap/h2_pal_core/tests/README.pref-large.md)。这里的 de68 实板 FAIL 是历史事实，不能重绑到新实现；新包在原 36 case / 五 fresh boot 资格完成前仍不能记 BK PASS。

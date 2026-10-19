@@ -7,6 +7,7 @@
 
 #include <limits.h>
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 
 #if defined(H2_GIZCLAW_TESTING)
@@ -159,6 +160,36 @@ static bool ota_valid(const h2_gizclaw_telemetry_ota_t *v) {
          (!v->has_error_message || span_valid(v->error_message, 512u));
 }
 
+/* Mirrors telemetry_activity_is_valid() in the SDK and the activity pattern of
+ * the server's peer_status.json: 1 to H2_GIZCLAW_TELEMETRY_ACTIVITY_ID_MAX
+ * bytes, first byte [a-z0-9], the rest [a-z0-9_.-]. */
+static bool activity_id_valid(h2_gizclaw_str_t id) {
+  if (!span_valid(id, H2_GIZCLAW_TELEMETRY_ACTIVITY_ID_MAX))
+    return false;
+  for (size_t index = 0u; index < id.len; ++index) {
+    const char value = id.data[index];
+    if ((value >= 'a' && value <= 'z') || (value >= '0' && value <= '9'))
+      continue;
+    if (index > 0u && (value == '_' || value == '.' || value == '-'))
+      continue;
+    return false;
+  }
+  return true;
+}
+
+static bool activity_valid(const h2_gizclaw_telemetry_activity_t *value) {
+  return activity_id_valid(value->activity) &&
+         (!value->has_detail || value->detail.len == 0u ||
+          span_valid(value->detail,
+                     H2_GIZCLAW_TELEMETRY_ACTIVITY_DETAIL_MAX));
+}
+
+/* An empty detail span carries nothing, so it is dropped instead of being sent
+ * as an empty string, matching how an empty cellular identity is treated. */
+static bool activity_detail_present(const h2_gizclaw_telemetry_activity_t *v) {
+  return v->has_detail && v->detail.len > 0u;
+}
+
 static bool
 observation_valid(const h2_gizclaw_telemetry_observation_t *observation) {
   switch (observation->kind) {
@@ -174,6 +205,8 @@ observation_valid(const h2_gizclaw_telemetry_observation_t *observation) {
     return ota_valid(&observation->value.ota);
   case H2_GIZCLAW_TELEMETRY_SYSTEM:
     return system_valid(&observation->value.system);
+  case H2_GIZCLAW_TELEMETRY_ACTIVITY:
+    return activity_valid(&observation->value.activity);
   default:
     return false;
   }
@@ -183,11 +216,36 @@ static gzc_str_t to_gzc_str(h2_gizclaw_str_t value) {
   return gzc_str_from_parts(value.data, value.len);
 }
 
+/* Library kinds are not SDK kinds: OTA is library-only (the SDK carries it on
+ * its dedicated frame API) and the SDK reuses 6 for ACTIVITY, so the two spaces
+ * are bridged here and never by a cast. OTA is unreachable because the OTA
+ * frame is handled before the batch path; it maps to 0, which the SDK encoder
+ * rejects, rather than to an unrelated kind. */
+static gzc_telemetry_observation_kind_t
+sdk_kind(h2_gizclaw_telemetry_kind_t kind) {
+  switch (kind) {
+  case H2_GIZCLAW_TELEMETRY_BATTERY:
+    return GZC_TELEMETRY_OBSERVATION_BATTERY;
+  case H2_GIZCLAW_TELEMETRY_GNSS:
+    return GZC_TELEMETRY_OBSERVATION_GNSS;
+  case H2_GIZCLAW_TELEMETRY_NETWORK:
+    return GZC_TELEMETRY_OBSERVATION_NETWORK;
+  case H2_GIZCLAW_TELEMETRY_SYSTEM:
+    return GZC_TELEMETRY_OBSERVATION_SYSTEM;
+  case H2_GIZCLAW_TELEMETRY_AUDIOPLAYER:
+    return GZC_TELEMETRY_OBSERVATION_AUDIOPLAYER;
+  case H2_GIZCLAW_TELEMETRY_ACTIVITY:
+    return GZC_TELEMETRY_OBSERVATION_ACTIVITY;
+  default:
+    return (gzc_telemetry_observation_kind_t)0;
+  }
+}
+
 static void map_observation(const h2_gizclaw_telemetry_observation_t *source,
                             gzc_telemetry_observation_t *target) {
   memset(target, 0, sizeof(*target));
   target->observed_at_delta_ms = source->observed_at_delta_ms;
-  target->kind = (gzc_telemetry_observation_kind_t)source->kind;
+  target->kind = sdk_kind(source->kind);
   switch (source->kind) {
   case H2_GIZCLAW_TELEMETRY_BATTERY:
     target->battery.has_percent = source->value.battery.has_percent;
@@ -261,6 +319,12 @@ static void map_observation(const h2_gizclaw_telemetry_observation_t *source,
     target->audioplayer.error_code = to_gzc_str(source->value.audioplayer.error_code);
     target->audioplayer.has_error_message = source->value.audioplayer.has_error_message;
     target->audioplayer.error_message = to_gzc_str(source->value.audioplayer.error_message);
+    break;
+  case H2_GIZCLAW_TELEMETRY_ACTIVITY:
+    target->activity.activity = to_gzc_str(source->value.activity.activity);
+    target->activity.has_detail =
+        activity_detail_present(&source->value.activity);
+    target->activity.detail = to_gzc_str(source->value.activity.detail);
     break;
   default:
     break;
@@ -356,6 +420,26 @@ int h2_gizclaw_test_telemetry_send(h2_gizclaw_client_t *client,
 }
 #endif
 
+/* Names the field and its length so a product can find the offending value in
+ * its own code. The id and the detail are never logged: detail is product
+ * display text and the server contract forbids secrets in it, so the library
+ * does not decide it is safe to print. */
+static void
+log_rejected_activity(h2_gizclaw_service_t *service,
+                      const h2_gizclaw_telemetry_observation_t *observation) {
+  if (observation->kind != H2_GIZCLAW_TELEMETRY_ACTIVITY)
+    return;
+  const h2_gizclaw_telemetry_activity_t *value = &observation->value.activity;
+  const bool id_bad = !activity_id_valid(value->activity);
+  char message[96];
+  (void)snprintf(message, sizeof(message),
+                 "telemetry activity rejected field=%s len=%zu",
+                 id_bad ? "activity" : "detail",
+                 id_bad ? value->activity.len : value->detail.len);
+  (void)h2_pal_log_write(service->client_config.log, H2_PAL_LOG_WARN, "gizclaw",
+                         message);
+}
+
 typedef struct h2_gizclaw_telemetry_request {
   const h2_pal_mem_api_t *allocator;
   h2_gizclaw_telemetry_frame_t frame;
@@ -423,6 +507,18 @@ telemetry_copy_frame(h2_gizclaw_telemetry_request_t *request,
         } else {
           *texts[i] = (h2_gizclaw_str_t){0};
         }
+      }
+    }
+    if (observation->kind == H2_GIZCLAW_TELEMETRY_ACTIVITY) {
+      h2_gizclaw_telemetry_activity_t *v = &observation->value.activity;
+      if (telemetry_copy_span(request, v->activity, &v->activity) != H2_PAL_OK)
+        return H2_PAL_ERR_INVALID_ARG;
+      v->has_detail = activity_detail_present(v);
+      if (v->has_detail) {
+        if (telemetry_copy_span(request, v->detail, &v->detail) != H2_PAL_OK)
+          return H2_PAL_ERR_INVALID_ARG;
+      } else {
+        v->detail = (h2_gizclaw_str_t){0};
       }
     }
     if (observation->kind == H2_GIZCLAW_TELEMETRY_NETWORK) {
@@ -505,7 +601,10 @@ h2_pal_result_t h2_gizclaw_req_create_telemetry_send(
     return H2_PAL_ERR_INVALID_ARG;
   size_t strings_capacity = 0;
   for (size_t i = 0; i < frame->observation_count; ++i) {
-    if (!observation_valid(&frame->observations[i])) return H2_PAL_ERR_INVALID_ARG;
+    if (!observation_valid(&frame->observations[i])) {
+      log_rejected_activity(service, &frame->observations[i]);
+      return H2_PAL_ERR_INVALID_ARG;
+    }
     switch (frame->observations[i].kind) {
     case H2_GIZCLAW_TELEMETRY_NETWORK:
       strings_capacity += 2u * 97u + 2u * (H2_GIZCLAW_TELEMETRY_IMEI_LEN + 1u);
@@ -513,6 +612,10 @@ h2_pal_result_t h2_gizclaw_req_create_telemetry_send(
     case H2_GIZCLAW_TELEMETRY_SYSTEM: strings_capacity += 3u * 97u; break;
     case H2_GIZCLAW_TELEMETRY_AUDIOPLAYER: strings_capacity += 17u + 5u + 129u + 513u; break;
     case H2_GIZCLAW_TELEMETRY_OTA: strings_capacity += 4u * 513u; break;
+    case H2_GIZCLAW_TELEMETRY_ACTIVITY:
+      strings_capacity += (H2_GIZCLAW_TELEMETRY_ACTIVITY_ID_MAX + 1u) +
+                          (H2_GIZCLAW_TELEMETRY_ACTIVITY_DETAIL_MAX + 1u);
+      break;
     default: break;
     }
   }

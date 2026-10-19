@@ -1,0 +1,755 @@
+{
+  "contract": 2,
+  "version": "pref-bk-console-r4-native",
+  "nonce": 2193992247,
+  "passed": 36,
+  "failed": 0,
+  "blocked": 0,
+  "ledger_complete": true,
+  "phases": [
+    {
+      "phase": 1,
+      "nonce": 2193992247,
+      "passed": 31,
+      "cases": [
+        {
+          "id": "pal.storage.fs.directory",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2193992247
+        },
+        {
+          "id": "pal.storage.fs.binary",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2193992247
+        },
+        {
+          "id": "pal.storage.fs.empty-eof",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2193992247
+        },
+        {
+          "id": "pal.storage.fs.seek",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2193992247
+        },
+        {
+          "id": "pal.storage.fs.truncate",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2193992247
+        },
+        {
+          "id": "pal.storage.fs.rename",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2193992247
+        },
+        {
+          "id": "pal.storage.fs.remove",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2193992247
+        },
+        {
+          "id": "pal.storage.fs.clear",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2193992247
+        },
+        {
+          "id": "pal.storage.fs.path-isolation",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2193992247
+        },
+        {
+          "id": "pal.storage.fs.arguments",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2193992247
+        },
+        {
+          "id": "pal.storage.fs.churn",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2193992247
+        },
+        {
+          "id": "pal.storage.pref.namespace",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2193992247
+        },
+        {
+          "id": "pal.storage.pref.blob",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2193992247
+        },
+        {
+          "id": "pal.storage.pref.string",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2193992247
+        },
+        {
+          "id": "pal.storage.pref.u32",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2193992247
+        },
+        {
+          "id": "pal.storage.pref.i32",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2193992247
+        },
+        {
+          "id": "pal.storage.pref.bool",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2193992247
+        },
+        {
+          "id": "pal.storage.pref.overwrite-type",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2193992247
+        },
+        {
+          "id": "pal.storage.pref.namespace-isolation",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2193992247
+        },
+        {
+          "id": "pal.storage.pref.read-only",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2193992247
+        },
+        {
+          "id": "pal.storage.pref.iteration",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2193992247
+        },
+        {
+          "id": "pal.storage.pref.cursor-close",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2193992247
+        },
+        {
+          "id": "pal.storage.pref.allocation-failure",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2193992247
+        },
+        {
+          "id": "pal.storage.pref.remove",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2193992247
+        },
+        {
+          "id": "pal.storage.pref.clear",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2193992247
+        },
+        {
+          "id": "pal.storage.pref.churn",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2193992247
+        },
+        {
+          "id": "pal.storage.persist.seed",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2193992247
+        },
+        {
+          "id": "pal.storage.pref.blob-boundaries",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2193992247
+        },
+        {
+          "id": "pal.storage.pref.string-boundaries",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2193992247
+        },
+        {
+          "id": "pal.storage.pref.integer-boundaries",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2193992247
+        },
+        {
+          "id": "pal.storage.pref.overwrite-stress",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 1,
+          "nonce": 2193992247
+        }
+      ],
+      "report": {
+        "contract": 2,
+        "version": "pref-bk-console-r4-native",
+        "phase": 1,
+        "nonce": 2193992247,
+        "passed": 31,
+        "failed": 0,
+        "blocked": 0,
+        "cleanup": 0,
+        "rc": 0,
+        "control": 0
+      },
+      "duplicate_replay_rows": 62,
+      "observed_initial_cases": 31,
+      "complete_replay_blocks": 1
+    },
+    {
+      "phase": 2,
+      "nonce": 2193992247,
+      "passed": 3,
+      "cases": [
+        {
+          "id": "pal.storage.persist.fs",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 2,
+          "nonce": 2193992247
+        },
+        {
+          "id": "pal.storage.persist.pref",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 2,
+          "nonce": 2193992247
+        },
+        {
+          "id": "pal.storage.cleanup.storage",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 2,
+          "nonce": 2193992247
+        }
+      ],
+      "report": {
+        "contract": 2,
+        "version": "pref-bk-console-r4-native",
+        "phase": 2,
+        "nonce": 2193992247,
+        "passed": 3,
+        "failed": 0,
+        "blocked": 0,
+        "cleanup": 0,
+        "rc": 0,
+        "control": 0
+      },
+      "duplicate_replay_rows": 6,
+      "observed_initial_cases": 3,
+      "complete_replay_blocks": 2
+    },
+    {
+      "phase": 3,
+      "nonce": 2193992247,
+      "passed": 2,
+      "cases": [
+        {
+          "id": "pal.storage.cleanup.persist.fs",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 3,
+          "nonce": 2193992247
+        },
+        {
+          "id": "pal.storage.cleanup.persist.pref",
+          "status": "PASS",
+          "rc": 0,
+          "phase": 3,
+          "nonce": 2193992247
+        }
+      ],
+      "report": {
+        "contract": 2,
+        "version": "pref-bk-console-r4-native",
+        "phase": 3,
+        "nonce": 2193992247,
+        "passed": 2,
+        "failed": 0,
+        "blocked": 0,
+        "cleanup": 0,
+        "rc": 0,
+        "control": 0
+      },
+      "duplicate_replay_rows": 4,
+      "observed_initial_cases": 2,
+      "complete_replay_blocks": 2
+    },
+    {
+      "phase": 4,
+      "nonce": 2193992247,
+      "passed": 0,
+      "completion_rechecked": true,
+      "cases": []
+    },
+    {
+      "phase": 4,
+      "nonce": 2193992247,
+      "passed": 0,
+      "completion_rechecked": true,
+      "cases": []
+    }
+  ],
+  "cases": [
+    {
+      "id": "pal.storage.fs.directory",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2193992247
+    },
+    {
+      "id": "pal.storage.fs.binary",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2193992247
+    },
+    {
+      "id": "pal.storage.fs.empty-eof",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2193992247
+    },
+    {
+      "id": "pal.storage.fs.seek",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2193992247
+    },
+    {
+      "id": "pal.storage.fs.truncate",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2193992247
+    },
+    {
+      "id": "pal.storage.fs.rename",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2193992247
+    },
+    {
+      "id": "pal.storage.fs.remove",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2193992247
+    },
+    {
+      "id": "pal.storage.fs.clear",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2193992247
+    },
+    {
+      "id": "pal.storage.fs.path-isolation",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2193992247
+    },
+    {
+      "id": "pal.storage.fs.arguments",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2193992247
+    },
+    {
+      "id": "pal.storage.fs.churn",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2193992247
+    },
+    {
+      "id": "pal.storage.pref.namespace",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2193992247
+    },
+    {
+      "id": "pal.storage.pref.blob",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2193992247
+    },
+    {
+      "id": "pal.storage.pref.string",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2193992247
+    },
+    {
+      "id": "pal.storage.pref.u32",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2193992247
+    },
+    {
+      "id": "pal.storage.pref.i32",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2193992247
+    },
+    {
+      "id": "pal.storage.pref.bool",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2193992247
+    },
+    {
+      "id": "pal.storage.pref.overwrite-type",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2193992247
+    },
+    {
+      "id": "pal.storage.pref.namespace-isolation",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2193992247
+    },
+    {
+      "id": "pal.storage.pref.read-only",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2193992247
+    },
+    {
+      "id": "pal.storage.pref.iteration",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2193992247
+    },
+    {
+      "id": "pal.storage.pref.cursor-close",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2193992247
+    },
+    {
+      "id": "pal.storage.pref.allocation-failure",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2193992247
+    },
+    {
+      "id": "pal.storage.pref.remove",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2193992247
+    },
+    {
+      "id": "pal.storage.pref.clear",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2193992247
+    },
+    {
+      "id": "pal.storage.pref.churn",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2193992247
+    },
+    {
+      "id": "pal.storage.persist.seed",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2193992247
+    },
+    {
+      "id": "pal.storage.pref.blob-boundaries",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2193992247
+    },
+    {
+      "id": "pal.storage.pref.string-boundaries",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2193992247
+    },
+    {
+      "id": "pal.storage.pref.integer-boundaries",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2193992247
+    },
+    {
+      "id": "pal.storage.pref.overwrite-stress",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2193992247
+    },
+    {
+      "id": "pal.storage.persist.fs",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 2,
+      "nonce": 2193992247
+    },
+    {
+      "id": "pal.storage.persist.pref",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 2,
+      "nonce": 2193992247
+    },
+    {
+      "id": "pal.storage.cleanup.storage",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 2,
+      "nonce": 2193992247
+    },
+    {
+      "id": "pal.storage.cleanup.persist.fs",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 3,
+      "nonce": 2193992247
+    },
+    {
+      "id": "pal.storage.cleanup.persist.pref",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 3,
+      "nonce": 2193992247
+    }
+  ],
+  "log_sha256": [
+    "7409711e080a1642935c77aba0a6e7c41928f861e182cba8f39628a9783aa35d",
+    "914d90e079658a929c8caed93a9e1e2a3f0d03dbdbb9530f0a6562db2d23f6a4",
+    "a6b6ba47db7896c7b890c0543f43012fc3046d8961e9f3efede57e0c4bce786b",
+    "fcf8e77de13151863b7368987eb6f08fc78963dc5ae225d4933e267b09a04d89",
+    "2ec622d1cff94b1dcd3c85aad794b845551df01e7e270e27084a2c7a5be7c7c4"
+  ],
+  "evidence_boundary": "Five actual independent 1/2/3/4/4 boot command receipts (controlled SIGINT actual 0/130/-2 retained), strict 36-case/fresh/immutable-replay oracle, exact R4 artifact, unchanged P1 and original nonblank 32-byte dump, valid P2 and Stage empty. Native UART/backup values remain private; earlier source-bound failures are not rebound.",
+  "platform": "bk7258",
+  "qualified": true,
+  "status": "qualified",
+  "source_revision": "f7cc80a524795ba42021ecdd6fddf5c50adec134",
+  "source_dirty": false,
+  "artifact": {
+    "sha256": "2e1f394b4116b5a637f2897f5a5c5f5d4bb3facbd79c09a4326d901f23654762",
+    "image_sha256": "831a078236ec5ec7fb2cef72e7078b0e6d174dd8f929de902b30fdbca13a64ff",
+    "manifest": {
+      "format": "1",
+      "role": "app",
+      "board": "bk7258_v3_202405",
+      "target": "bk7258",
+      "version": "pref-bk-console-r4-native",
+      "image_size": "5222400",
+      "image_sha256": "831a078236ec5ec7fb2cef72e7078b0e6d174dd8f929de902b30fdbca13a64ff"
+    }
+  },
+  "uid": "c8478ca2a87c",
+  "raw_log_sha256": [
+    "274b4dcc691c28461aeadd650bacb9532fcf1d0921261aec35ef9a0be4f41781",
+    "0adf0d38380b724d7ea51d6e6f348a191ae05f33d57a8f3dd3c4351ae245c994",
+    "888df04be9986ad420604be275b87093b73dd4ae97a43ac23ee4afa67f3a853e",
+    "99d85b094c4784ba1db5eb0dd72be086059be77900f9c60886257347fd498889",
+    "5de6e14188cd8d7ffd35ad8ca181ade675d273b1a56b04a1cf37f9fe7dd26a20"
+  ],
+  "reboot_receipts": [
+    {
+      "command": [
+        "reboot",
+        "upgrade",
+        "--monitor"
+      ],
+      "phase": 1,
+      "host_pid": 75484,
+      "actual_exit": 130,
+      "started_at_utc": "2026-10-04T16:48:48.417566+00:00",
+      "finished_at_utc": "2026-10-04T17:06:30.739545+00:00",
+      "controlled_stop": true,
+      "stop_signal": "SIGINT",
+      "validated": false,
+      "log_sha256": "274b4dcc691c28461aeadd650bacb9532fcf1d0921261aec35ef9a0be4f41781",
+      "readonly_admission_sha256": "964c5aa6347b9183230fef8167285f4a9302a8e83c285ff17ca36dd1ef361c15",
+      "readonly_admitted": true,
+      "original_validation_error": "AssertionError: CLI did not finish its reboot command successfully",
+      "admission_boundary": "Original collector wrongly rejected a normal controlled SIGINT exit after a complete strict ledger; original actual exit and receipt are retained."
+    },
+    {
+      "command": [
+        "reboot",
+        "app",
+        "--monitor"
+      ],
+      "phase": 2,
+      "host_pid": 12952,
+      "actual_exit": 130,
+      "started_at_utc": "2026-10-04T17:08:42.002841+00:00",
+      "finished_at_utc": "2026-10-04T17:13:31.583010+00:00",
+      "controlled_stop": true,
+      "stop_signal": "SIGINT",
+      "validated": true,
+      "log_sha256": "0adf0d38380b724d7ea51d6e6f348a191ae05f33d57a8f3dd3c4351ae245c994"
+    },
+    {
+      "command": [
+        "reboot",
+        "app",
+        "--monitor"
+      ],
+      "phase": 3,
+      "host_pid": 16576,
+      "actual_exit": 130,
+      "started_at_utc": "2026-10-04T17:13:31.583727+00:00",
+      "finished_at_utc": "2026-10-04T17:18:01.049771+00:00",
+      "controlled_stop": true,
+      "stop_signal": "SIGINT",
+      "validated": true,
+      "log_sha256": "888df04be9986ad420604be275b87093b73dd4ae97a43ac23ee4afa67f3a853e"
+    },
+    {
+      "command": [
+        "reboot",
+        "app",
+        "--monitor"
+      ],
+      "phase": 4,
+      "host_pid": 25598,
+      "actual_exit": 130,
+      "started_at_utc": "2026-10-04T17:18:01.050271+00:00",
+      "finished_at_utc": "2026-10-04T17:22:25.876461+00:00",
+      "controlled_stop": true,
+      "stop_signal": "SIGINT",
+      "validated": true,
+      "log_sha256": "99d85b094c4784ba1db5eb0dd72be086059be77900f9c60886257347fd498889"
+    },
+    {
+      "command": [
+        "reboot",
+        "app",
+        "--monitor"
+      ],
+      "phase": 4,
+      "host_pid": 38246,
+      "actual_exit": 130,
+      "started_at_utc": "2026-10-04T17:22:25.876902+00:00",
+      "finished_at_utc": "2026-10-04T17:26:51.967479+00:00",
+      "controlled_stop": true,
+      "stop_signal": "SIGINT",
+      "validated": true,
+      "log_sha256": "5de6e14188cd8d7ffd35ad8ca181ade675d273b1a56b04a1cf37f9fe7dd26a20"
+    }
+  ],
+  "private_qualification_sha256": "6cb30681278580a5b622193eb6fad325d3d8e7ee34e78407e9ffed9c227bee55",
+  "package_binding_sha256": "a30d18ee943fb874e8d737b882df445c6392661dfc4d8da0e6621ad01efe26e4",
+  "native_build_receipt_sha256": "af82d13e35a39002c70bb4ccbea1e2175849adf6a9b7d75fe10ceecf840350e4",
+  "portable_runner_sha256": "94a7aeac8ad509f4c53cab2336483787a6742a65ae7dd4b4b621d93b51df71df",
+  "preservation": {
+    "loader": {
+      "partition_1_valid": "1",
+      "partition_1_package_checksum": "041769c71398254bf2103e873c2c5b28490cd7f02f402349919db6b704bf1731",
+      "partition_1_package_size": "1578984",
+      "partition_1_image_checksum": "31a3c6780e1b2918ff3af9e3d323826c154a9cb9cd0b60740888efc368f9cb86",
+      "partition_1_image_size": "2437120",
+      "partition_1_role": "loader",
+      "partition_1_version": "0.7.0",
+      "partition_1_board": "bk7258_v3_202405",
+      "partition_1_target": "bk7258"
+    },
+    "final": {
+      "active_role": "app",
+      "active_version": "pref-bk-console-r4-native",
+      "active_checksum": "831a078236ec5ec7fb2cef72e7078b0e6d174dd8f929de902b30fdbca13a64ff",
+      "running_partition": "2",
+      "next_partition": "2",
+      "stage_valid": "0",
+      "partition_2_valid": "1",
+      "partition_2_role": "app",
+      "partition_2_version": "pref-bk-console-r4-native",
+      "partition_2_image_checksum": "831a078236ec5ec7fb2cef72e7078b0e6d174dd8f929de902b30fdbca13a64ff",
+      "partition_2_package_checksum": "2e1f394b4116b5a637f2897f5a5c5f5d4bb3facbd79c09a4326d901f23654762",
+      "last_result": "0"
+    },
+    "coredump": {
+      "stored_bytes": 32,
+      "blank": false,
+      "sha256": "f59f522edd1cc5bd0aab008b938dc7cdfac8a4333c34fdf763404923210a3829"
+    }
+  },
+  "host_verifier_sha256": "0756b4f4a41f63a2d3efeb749ee339b5271112dfbb1ee5b1845e3351ffe07770",
+  "recorded_at_utc": "2026-10-04T17:27:08.773690+00:00"
+}

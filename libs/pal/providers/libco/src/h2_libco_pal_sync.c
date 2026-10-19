@@ -153,6 +153,7 @@ static h2_pal_result_t h2_libco_sync_create_mutex(
     mutex->recursive =
         (config->flags & H2_PAL_MUTEX_FLAG_RECURSIVE) != 0u;
     ++core->live_pal_objects;
+    ++core->live_pal_mutexes;
     *out_mutex = mutex;
     return H2_PAL_OK;
 }
@@ -170,6 +171,7 @@ static h2_pal_result_t h2_libco_sync_destroy_mutex(
     }
     allocator = mutex->allocator;
     --core->live_pal_objects;
+    --core->live_pal_mutexes;
     h2_pal_mem_free(allocator, mutex);
     return H2_PAL_OK;
 }
@@ -206,7 +208,7 @@ static h2_pal_result_t h2_libco_sync_try_lock_mutex(
     }
     if (mutex->owner != NULL ||
         (mutex->handoff != NULL && mutex->handoff != current)) {
-        return H2_PAL_ERR_BUSY;
+        return H2_PAL_ERR_WOULD_BLOCK;
     }
     mutex->owner = current;
     mutex->handoff = NULL;
@@ -247,6 +249,7 @@ static h2_pal_result_t h2_libco_sync_create_semaphore(
     semaphore->count = config->initial_count;
     semaphore->max_count = config->max_count;
     ++core->live_pal_objects;
+    ++core->live_pal_semaphores;
     *out_semaphore = semaphore;
     return H2_PAL_OK;
 }
@@ -263,6 +266,7 @@ static h2_pal_result_t h2_libco_sync_destroy_semaphore(
     }
     allocator = semaphore->allocator;
     --core->live_pal_objects;
+    --core->live_pal_semaphores;
     h2_pal_mem_free(allocator, semaphore);
     return H2_PAL_OK;
 }
@@ -386,6 +390,7 @@ static h2_pal_result_t h2_libco_sync_create_cond(
     cond->core = core;
     cond->allocator = config->allocator;
     ++core->live_pal_objects;
+    ++core->live_pal_conditions;
     *out_cond = cond;
     return H2_PAL_OK;
 }
@@ -402,6 +407,7 @@ static h2_pal_result_t h2_libco_sync_destroy_cond(
     }
     allocator = cond->allocator;
     --core->live_pal_objects;
+    --core->live_pal_conditions;
     h2_pal_mem_free(allocator, cond);
     return H2_PAL_OK;
 }

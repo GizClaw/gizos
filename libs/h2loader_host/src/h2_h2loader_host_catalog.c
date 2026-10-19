@@ -1,6 +1,7 @@
 #include "h2_h2loader_host_catalog.h"
 
 #include "h2_h2loader_host_internal.h"
+#include "h2_sha256.h"
 
 #include <limits.h>
 #include <string.h>
@@ -562,13 +563,13 @@ static int json_u64(
 static h2_pal_result_t verify_resource(
     const h2_h2loader_host_catalog_config_t *config,
     const h2_h2loader_host_catalog_entry_t *entry) {
-    h2_h2loader_host_sha256_t sha;
+    h2_sha256_t sha;
     uint8_t buffer[8192];
     uint8_t digest[32];
     char actual[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
     uint64_t offset = 0u;
 
-    h2_h2loader_host_sha256_init(&sha);
+    h2_sha256_init(&sha);
     while (offset < entry->bytes) {
         size_t request = entry->bytes - offset > sizeof(buffer)
             ? sizeof(buffer)
@@ -587,7 +588,7 @@ static h2_pal_result_t verify_resource(
         if (read == 0u || read > request) {
             return H2_PAL_ERR_TRUNCATED;
         }
-        h2_h2loader_host_sha256_update(&sha, buffer, read);
+        h2_sha256_update(&sha, buffer, read);
         offset += read;
     }
     size_t trailing = 0u;
@@ -604,8 +605,8 @@ static h2_pal_result_t verify_resource(
     if (trailing != 0u) {
         return H2_PAL_ERR_FORMAT;
     }
-    h2_h2loader_host_sha256_finish(&sha, digest);
-    h2_h2loader_host_sha256_hex(digest, actual);
+    h2_sha256_finish(&sha, digest);
+    h2_sha256_hex(digest, actual);
     return strcmp(actual, entry->sha256) == 0
         ? H2_PAL_OK
         : H2_PAL_ERR_FORMAT;
@@ -792,6 +793,17 @@ static h2_pal_result_t parse_identity(
         &manifest_index);
     if (token == NULL || token->kind != JSON_TOKEN_OBJECT) {
         return H2_PAL_ERR_FORMAT;
+    }
+    uint64_t package_format = 1u;
+    token = json_object_value(json, tokens, token_count, manifest_index, "format", NULL);
+    if (token != NULL && (!json_u64(json, token, &package_format) ||
+        (package_format != 1u && package_format != 2u))) return H2_PAL_ERR_FORMAT;
+    out_identity->package_format = (uint32_t)package_format;
+    token = json_object_value(json, tokens, token_count, item_index, "package_format", NULL);
+    if (token != NULL) {
+        uint64_t declared = 0u;
+        if (!json_u64(json, token, &declared) || declared != package_format)
+            return H2_PAL_ERR_FORMAT;
     }
     token = json_object_value(
         json,

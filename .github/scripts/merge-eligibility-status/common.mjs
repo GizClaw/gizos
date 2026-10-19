@@ -1,6 +1,12 @@
 export const OPENAI_ELIGIBILITY_CONTEXT = "OpenAI review eligibility";
 export const OWNERSHIP_ELIGIBILITY_CONTEXT = "Ownership eligibility";
 
+export const REQUIRED_MERGE_CHECKS = Object.freeze([
+  Object.freeze({context: "CI required", integration_id: 15368}),
+  Object.freeze({context: OPENAI_ELIGIBILITY_CONTEXT, integration_id: 15368}),
+  Object.freeze({context: OWNERSHIP_ELIGIBILITY_CONTEXT, integration_id: 15368}),
+]);
+
 const STATUS_STATES = new Set(["error", "failure", "pending", "success"]);
 const SHA_PATTERN = /^[0-9a-f]{40}$/i;
 const HASH_PATTERN = /^[0-9a-f]{64}$/i;
@@ -18,6 +24,39 @@ const OPENAI_BLOCKER_STAGES = new Map(
 
 export class EligibilityStatusError extends Error {}
 export class SupersededEligibilityStatusError extends EligibilityStatusError {}
+
+export function assertMergeGateRules(rules) {
+  if (!Array.isArray(rules)) {
+    throw new EligibilityStatusError("GitHub main branch rules must be an array");
+  }
+  const checks = rules
+    .filter((rule) => rule.type === "required_status_checks")
+    .flatMap((rule) => {
+      const values = rule.parameters?.required_status_checks;
+      if (!Array.isArray(values)) {
+        throw new EligibilityStatusError("malformed required status check rule");
+      }
+      return values;
+    });
+  for (const stage of [
+    "OpenAI PR Review", "OpenAI Issue Review", "OpenAI Code Review",
+  ]) {
+    if (checks.some((check) => check.context === stage)) {
+      throw new EligibilityStatusError(
+        `${stage} is diagnostic; require ${OPENAI_ELIGIBILITY_CONTEXT} instead`,
+      );
+    }
+  }
+  for (const expected of REQUIRED_MERGE_CHECKS) {
+    const matching = checks.filter((check) => check.context === expected.context);
+    if (matching.length === 0 ||
+        matching.some((check) => check.integration_id !== expected.integration_id)) {
+      throw new EligibilityStatusError(
+        `main must require ${expected.context} from GitHub Actions`,
+      );
+    }
+  }
+}
 
 export function validateSha(value, label = "commit SHA") {
   const sha = String(value ?? "");

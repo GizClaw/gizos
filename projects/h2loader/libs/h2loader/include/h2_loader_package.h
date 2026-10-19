@@ -2,6 +2,7 @@
 #define H2_LOADER_PACKAGE_H
 
 #include "h2_bundle_installer.h"
+#include "h2_bundle_segmented.h"
 #include "h2/pal/os/h2_pal_disk.h"
 #include "h2/pal/os/h2_pal_fs.h"
 #include "h2/pal/os/h2_pal_mem.h"
@@ -117,9 +118,11 @@ typedef struct h2_loader_package_inspection {
     size_t data_checksum_len;
     uint64_t data_bytes;
     uint64_t pixa_bytes;
+    /** Independent compressed member locations for format 2; zero for format 1. */
+    h2_bundle_segmented_manifest_t segments;
 } h2_loader_package_inspection_t;
 
-/** Per-component decisions computed before installing a format-1 package. */
+/** Per-component decisions computed before installing a managed package. */
 typedef struct h2_loader_package_install_plan {
     /** Nonzero when the App partition must be written. */
     int update_app;
@@ -200,6 +203,8 @@ int h2_loader_package_plan_install(
     const h2_loader_package_inspection_t *inspection,
     uint32_t destination_partition_id,
     h2_loader_package_install_plan_t *out_plan);
+/** Legacy format-1 whole-stream installer. Managed dual-format installation
+ * uses inspect_path, plan_install and install_to instead. */
 int h2_loader_package_install_staged(
     h2_loader_package_t *package,
     const h2_loader_identity_t *identity);

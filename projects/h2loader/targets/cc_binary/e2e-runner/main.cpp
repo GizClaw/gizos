@@ -1,6 +1,9 @@
 #include "h2_desktop_app_support.h"
 #include "h2_h2loader_e2e_runner.h"
 
+#include <array>
+#include <memory>
+#include <new>
 #include <cerrno>
 #include <csignal>
 #include <cstdint>
@@ -29,6 +32,7 @@ struct Options {
   std::filesystem::path app_firmware;
   std::filesystem::path loader_firmware;
   std::filesystem::path crash_firmware;
+  std::array<std::filesystem::path, 2> checksum_fixtures;
   std::string firmware_url;
   std::string firmware_url_sha256;
   std::string wifi_ssid;
@@ -61,11 +65,13 @@ void usage(const char *program, FILE *stream) {
       "options:\n"
       "  --expected-board ID          require exact board identity\n"
       "  --expected-target ID         require exact target identity\n"
-      "  --app-firmware FILE          APP update.tar.zlib for Stage/install\n"
-      "  --loader-firmware FILE       Loader update.tar.zlib for full "
+      "  --app-firmware FILE          APP update package for Stage/install\n"
+      "  --loader-firmware FILE       Loader update package for full "
       "lifecycle\n"
       "  --crash-firmware FILE        crash-before-confirm APP; verify "
       "rollback and coredump\n"
+      "  --checksum-tar-zlib DIR      format-1 baseline and four checksum cases\n"
+      "  --checksum-zlib-tar DIR      format-2 baseline and guarded skip cases\n"
       "  --firmware-url URL           test device-side URL download\n"
       "  --url-bytes BYTES            expected URL payload size\n"
       "  --url-sha256 HEX             expected URL payload SHA-256\n"
@@ -139,6 +145,8 @@ bool parse_options(int argc, char **argv, Options *out) {
     kBaud = 1ull << 15,
     kMonitor = 1ull << 16,
     kCrashFirmware = 1ull << 17,
+    kChecksumTarZlib = 1ull << 18,
+    kChecksumZlibTar = 1ull << 19,
   };
   std::uint64_t seen = 0u;
   for (int index = 1; index < argc; ++index) {
@@ -172,6 +180,12 @@ bool parse_options(int argc, char **argv, Options *out) {
     } else if (std::strcmp(name, "--crash-firmware") == 0) {
       bit = kCrashFirmware;
       out->crash_firmware = value;
+    } else if (std::strcmp(name, "--checksum-tar-zlib") == 0) {
+      bit = kChecksumTarZlib;
+      out->checksum_fixtures[0] = value;
+    } else if (std::strcmp(name, "--checksum-zlib-tar") == 0) {
+      bit = kChecksumZlibTar;
+      out->checksum_fixtures[1] = value;
     } else if (std::strcmp(name, "--firmware-url") == 0) {
       bit = kUrl;
       out->firmware_url = value;
@@ -252,7 +266,9 @@ bool parse_options(int argc, char **argv, Options *out) {
   if (out->monitor_ms != 0u && out->uart.empty())
     return false;
   const std::size_t cases =
-      1u + (!out->wifi_ssid.empty() ? 3u : 0u) +
+      5u + (!out->checksum_fixtures[0].empty() ? 5u : 0u) +
+      (!out->checksum_fixtures[1].empty() ? 5u : 0u) +
+      (!out->checksum_fixtures[0].empty() && !out->checksum_fixtures[1].empty() ? 8u : 0u) + (!out->wifi_ssid.empty() ? 3u : 0u) +
       (!out->app_firmware.empty() ? 2u : 0u) + (has_url ? 2u : 0u) +
                             (!out->loader_firmware.empty() ? 4u : 0u) +
       (out->coredump_bytes != 0u || !out->crash_firmware.empty() ? 4u : 0u);
@@ -397,7 +413,9 @@ bool write_report(const std::filesystem::path &path, const Options &options,
   if (!output)
     return false;
   output << "{\n"
-         << "  \"schema\": \"h2loader-e2e-report/v1\",\n"
+         << "  \"schema\": \"h2loader-e2e-report/v"
+         << ((!options.checksum_fixtures[0].empty() || !options.checksum_fixtures[1].empty()) ? 2 : 1)
+         << "\",\n"
          << "  \"result\": \"" << (result.result == H2_PAL_OK ? "PASS" : "FAIL")
          << "\",\n"
          << "  \"rc\": " << result.result << ",\n"
@@ -442,7 +460,22 @@ bool write_report(const std::filesystem::path &path, const Options &options,
            << ", \"output_bytes\": " << entry.output_bytes
            << ", \"log_bytes\": " << entry.log_bytes
            << ", \"reconnect_attempts\": " << entry.reconnect_attempts
-           << ", \"status\": ";
+           ;
+    const bool checksum_report = !options.checksum_fixtures[0].empty() || !options.checksum_fixtures[1].empty();
+    if (checksum_report) output << ", \"checksum_case\": ";
+    if (checksum_report && entry.package_format != 0u) {
+      output << "{\"format\": " << entry.package_format
+             << ", \"source_format\": " << entry.source_package_format
+             << ", \"before_package_sha256\": \"" << json_escape(entry.before_package_sha256) << "\""
+             << ", \"package_sha256\": \"" << json_escape(entry.package_sha256) << "\""
+             << ", \"expected_update_app\": " << (!entry.checksum_expectations_valid ? "null" : entry.expected_update_app ? "true" : "false")
+             << ", \"expected_update_data\": " << (!entry.checksum_expectations_valid ? "null" : entry.expected_update_data ? "true" : "false")
+             << ", \"before_image_sha256\": \"" << json_escape(entry.before_image_sha256)
+             << "\", \"before_data_sha256\": \"" << json_escape(entry.before_data_sha256)
+             << "\", \"data_sha256\": \"" << json_escape(entry.data_sha256)
+             << "\", \"verified\": " << (entry.data_checksum_valid ? "true" : "false") << "}";
+    } else if (checksum_report) output << "null";
+    output << ", \"status\": ";
     if (entry.status_valid != 0u) {
       output << "{\"board\": \"" << json_escape(entry.status.board)
              << "\", \"target\": \"" << json_escape(entry.status.target)
@@ -523,6 +556,26 @@ int main(int argc, char **argv) {
       return 2;
     }
   }
+  static const std::array<const char *, 5> checksum_names = {
+      "baseline", "unchanged", "app-only", "data-only", "both-changed"};
+  std::array<std::array<std::vector<std::uint8_t>, 5>, 2> checksum_packages;
+  for (std::size_t format = 0u; format < 2u; ++format) {
+    if (options.checksum_fixtures[format].empty()) continue;
+    options.checksum_fixtures[format] = resolve_input_path(options.checksum_fixtures[format]);
+    const char *suffix = format == 0u ? ".update.tar.zlib" : ".update.tar";
+    for (std::size_t index = 0u; index < checksum_names.size(); ++index) {
+      const auto path = options.checksum_fixtures[format] /
+          (std::string(checksum_names[index]) + suffix);
+      if (!load_file(path, &checksum_packages[format][index])) {
+        std::fprintf(stderr, "h2loader-e2e: cannot read checksum fixture: %s\n", path.string().c_str());
+        return 2;
+      }
+    }
+  }
+  std::unique_ptr<h2_h2loader_e2e_result_t> result_storage(
+      new (std::nothrow) h2_h2loader_e2e_result_t{});
+  if (!result_storage) return 2;
+  auto &result = *result_storage;
   const char *wifi_password = nullptr;
   if (!options.wifi_password_env.empty()) {
     wifi_password = std::getenv(options.wifi_password_env.c_str());
@@ -557,9 +610,8 @@ int main(int argc, char **argv) {
   h2_runtime_config_t runtime_config = h2::desktop::runtime_config(nullptr);
   if (rc == H2_PAL_OK)
     rc = h2_runtime_init(&runtime_config, &runtime);
-  h2_h2loader_e2e_result_t result = {};
   if (rc == H2_PAL_OK) {
-    const h2_h2loader_e2e_config_t config = {
+    h2_h2loader_e2e_config_t config = {
         .runtime = runtime,
         .serial = h2::desktop::serial_host_api(),
         .ble = ble,
@@ -606,6 +658,10 @@ int main(int argc, char **argv) {
             options.coredump_bytes != 0u || !crash_firmware.empty()),
         .include_monitor = static_cast<std::uint8_t>(options.monitor_ms != 0u),
         .include_crash = static_cast<std::uint8_t>(!crash_firmware.empty()),
+        .checksum_formats = static_cast<std::uint8_t>(
+            (!options.checksum_fixtures[0].empty() ? 1u : 0u) |
+            (!options.checksum_fixtures[1].empty() ? 2u : 0u)),
+        .checksum_packages = {},
         .is_cancelled = is_cancelled,
         .cancel_user = nullptr,
         .on_case = case_event,
@@ -617,6 +673,12 @@ int main(int argc, char **argv) {
         .execute_case = nullptr,
         .execute_user = nullptr,
     };
+    for (std::size_t format = 0u; format < 2u; ++format)
+      for (std::size_t index = 0u; index < checksum_names.size(); ++index) {
+        config.checksum_packages[format][index].data = checksum_packages[format][index].empty()
+            ? nullptr : checksum_packages[format][index].data();
+        config.checksum_packages[format][index].size = checksum_packages[format][index].size();
+      }
     rc = h2_h2loader_e2e_run(&config, &result);
   } else {
     result.result = rc;

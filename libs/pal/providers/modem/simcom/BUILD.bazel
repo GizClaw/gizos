@@ -53,5 +53,5 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":simcom_modem"],
+    deps = [":simcom_modem", "//libs/atomic/providers/c11"],
 )

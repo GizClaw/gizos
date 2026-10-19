@@ -5,7 +5,7 @@
 #include <string.h>
 
 typedef struct memory_file {
-    uint8_t data[4096];
+    uint8_t data[16384];
     size_t len;
 } memory_file_t;
 
@@ -125,7 +125,7 @@ int main(void) {
 
     assert(h2_h2loader_cli_package_command(&context, 2, argv, 1) ==
         H2_H2LOADER_CLI_EXIT_OK);
-    assert(fs_state.published.len == 358u);
+    assert(fs_state.published.len == 10240u);
     h2_h2loader_host_catalog_entry_t asset;
     const h2_h2loader_host_package_inspect_config_t inspect = {
         .allocator = &mem,
@@ -136,6 +136,12 @@ int main(void) {
     assert(h2_h2loader_host_package_inspect(&inspect, &asset) == H2_PAL_OK);
     assert(strcmp(asset.board, "fixture") == 0);
     assert(strcmp(asset.target, "host") == 0);
+    assert(asset.package_format == 2u);
+
+    {
+        const char *legacy[] = {"--format", "1"};
+        assert(h2_h2loader_cli_package_command(&context, 2, legacy, 1) == H2_H2LOADER_CLI_EXIT_USAGE);
+    }
 
     {
         const char *relative[] = {"--out", "golden"};

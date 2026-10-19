@@ -54,6 +54,11 @@ typedef struct tar_state {
     int data_cleared;
     uint32_t entry_crc32;
     char dst_path[H2_BUNDLE_PATH_MAX];
+    const h2_bundle_digest_api_t *data_digest;
+    int hashing_data_entry;
+    char last_data_path[H2_BUNDLE_PATH_MAX];
+    uint64_t data_payload_bytes;
+    uint64_t pixa_payload_bytes;
 } tar_state_t;
 
 typedef struct pixa_progress_context {
@@ -437,6 +442,27 @@ static int start_entry(tar_state_t *state, const h2_bundle_entry_t *entry) {
     state->pixa_data = NULL;
     state->out_file = NULL;
     state->entry_crc32 = (uint32_t)crc32(0L, Z_NULL, 0);
+    state->hashing_data_entry = 0;
+
+    if (state->data_digest != NULL &&
+        (!path_starts_with(entry->path, "data/") || entry->kind != H2_BUNDLE_ENTRY_FILE))
+        return H2_BUNDLE_ERR_LAYOUT;
+
+    if (state->data_digest != NULL && path_starts_with(entry->path, "data/") &&
+        entry->kind == H2_BUNDLE_ENTRY_FILE) {
+        static const uint8_t zero = 0u;
+        if (strcmp(entry->path, state->last_data_path) <= 0) return H2_BUNDLE_ERR_LAYOUT;
+        memcpy(state->last_data_path, entry->path, strlen(entry->path) + 1u);
+        rc = state->data_digest->update(state->data_digest->user,
+            (const uint8_t *)entry->path, strlen(entry->path));
+        if (rc == H2_PAL_OK) rc = state->data_digest->update(state->data_digest->user, &zero, 1u);
+        if (rc != H2_PAL_OK) return rc;
+        state->hashing_data_entry = 1;
+        uint64_t *total = h2_bundle_path_has_suffix(entry->path, ".pixa")
+            ? &state->pixa_payload_bytes : &state->data_payload_bytes;
+        if (entry->size > UINT64_MAX - *total) return H2_BUNDLE_ERR_NO_SPACE;
+        *total += entry->size;
+    }
 
     if (state->options->ota_layout) {
         if (strcmp(entry->path, "manifest") == 0) {
@@ -574,6 +600,13 @@ static int start_entry(tar_state_t *state, const h2_bundle_entry_t *entry) {
 static int finish_file_entry(tar_state_t *state) {
     int rc = H2_BUNDLE_OK;
 
+    if (state->hashing_data_entry) {
+        static const uint8_t zero = 0u;
+        rc = state->data_digest->update(state->data_digest->user, &zero, 1u);
+        state->hashing_data_entry = 0;
+        if (rc != H2_PAL_OK) return rc;
+    }
+
     if (state->output == TAR_OUTPUT_CHECKSUM) {
         rc = finish_checksum_entry(state);
         if (rc == H2_BUNDLE_OK) {
@@ -704,6 +737,11 @@ static int consume_file_bytes(tar_state_t *state, const uint8_t **cursor, size_t
         return finish_file_entry(state);
     }
 
+    if (state->hashing_data_entry) {
+        rc = state->data_digest->update(state->data_digest->user, *cursor, take);
+        if (rc != H2_PAL_OK) return rc;
+    }
+
     if (state->output == TAR_OUTPUT_CHECKSUM) {
         if (state->checksum_len + take >= sizeof(state->checksum_data)) {
             return H2_BUNDLE_ERR_LAYOUT;
@@ -747,6 +785,11 @@ static int consume_padding_bytes(tar_state_t *state, const uint8_t **cursor, siz
     if ((uint64_t)take > state->padding_remaining) {
         take = (size_t)state->padding_remaining;
     }
+    if (state->data_digest != NULL) {
+        for (size_t i = 0u; i < take; ++i) {
+            if ((*cursor)[i] != 0u) return H2_BUNDLE_ERR_TAR;
+        }
+    }
     state->padding_remaining -= take;
     *cursor += take;
     *remaining -= take;
@@ -779,6 +822,11 @@ static int tar_state_feed(tar_state_t *state, const uint8_t *data, size_t len) {
             return rc;
         }
     }
+    if (state->data_digest != NULL && state->done) {
+        for (size_t i = 0u; i < remaining; ++i) {
+            if (cursor[i] != 0u) return H2_BUNDLE_ERR_TAR;
+        }
+    }
     return H2_BUNDLE_OK;
 }
 
@@ -792,7 +840,7 @@ static int tar_state_finish(tar_state_t *state) {
     if (state->kind != TAR_STATE_HEADER || state->header_len != 0u) {
         return H2_BUNDLE_ERR_TAR;
     }
-    if (state->zero_blocks == 0) {
+    if (state->zero_blocks == 0 || (state->data_digest != NULL && state->zero_blocks < 2)) {
         return H2_BUNDLE_ERR_TAR;
     }
     if (state->options != NULL && state->options->ota_layout) {
@@ -823,6 +871,61 @@ static int tar_state_finish(tar_state_t *state) {
         }
     }
     return H2_BUNDLE_OK;
+}
+
+static int feed_data_tar(void *user, const uint8_t *data, size_t len) {
+    return tar_state_feed((tar_state_t *)user, data, len);
+}
+
+int h2_bundle_archive_install_data_zlib(
+    h2_bundle_installer_t *installer, const h2_bundle_ota_options_t *options,
+    h2_bundle_segmented_read_fn read, void *read_user,
+    const h2_bundle_segmented_manifest_t *manifest,
+    const h2_bundle_digest_api_t *digest) {
+    h2_bundle_install_options_t data_options = {0};
+    tar_state_t tar = {0};
+    uint8_t hash[32];
+    char actual[65];
+    int rc;
+    if (installer == NULL || options == NULL || options->data_root == NULL ||
+        options->installed_checksum_path == NULL || options->clear_data == NULL ||
+        read == NULL || manifest == NULL ||
+        strlen(manifest->data_sha256) != 64u || !h2_bundle_digest_valid(digest))
+        return H2_PAL_ERR_INVALID_ARG;
+    data_options.dst_root = options->data_root;
+    data_options.installed_checksum_path = options->installed_checksum_path;
+    data_options.clear_data = options->clear_data;
+    data_options.clear_data_user = options->clear_data_user;
+    data_options.ota_layout = 1;
+    data_options.skip_app_install = 1;
+    memset(&installer->stats, 0, sizeof(installer->stats));
+    tar.installer = installer;
+    tar.options = &data_options;
+    tar.kind = TAR_STATE_HEADER;
+    tar.checksum_seen = 1;
+    tar.app_seen = 1;
+    tar.data_install_needed = 1;
+    tar.data_digest = digest;
+    memcpy(tar.checksum_data, manifest->data_sha256, 64u);
+    tar.checksum_data[64] = '\n';
+    tar.checksum_len = 65u;
+    /* A partial replacement must never remain identifiable as the old tree. */
+    rc = h2_pal_fs_remove(installer->fs, options->installed_checksum_path);
+    if (rc != H2_PAL_OK && rc != H2_PAL_FS_ERR_NOT_FOUND) return rc;
+    rc = digest->start(digest->user);
+    if (rc == H2_PAL_OK) rc = h2_bundle_segmented_inflate(
+        read, read_user, &manifest->data, installer->allocator, feed_data_tar, &tar);
+    if (rc == H2_PAL_OK) rc = digest->finish(digest->user, hash);
+    digest->abort(digest->user);
+    if (rc == H2_PAL_OK) {
+        h2_bundle_digest_hex(hash, actual);
+        if (strcmp(actual, manifest->data_sha256) != 0 ||
+            tar.data_payload_bytes != manifest->data_bytes ||
+            tar.pixa_payload_bytes != manifest->pixa_bytes) rc = H2_PAL_ERR_FORMAT;
+    }
+    if (rc == H2_PAL_OK) rc = tar_state_finish(&tar);
+    release_entry_buffers(&tar);
+    return rc;
 }
 
 static int init_manifest_seen(tar_state_t *tar) {

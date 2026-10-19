@@ -41,6 +41,19 @@ int main(void) {
   };
   h2_esp_es8311_audio_system_t system;
   assert(h2_esp_es8311_audio_system_init(&system, &config) == H2_AUDIO_OK);
+  config.mic_gain_db = 21u;
+  config.mic_gain_min_db = 0u;
+  config.mic_gain_max_db = 30u;
+  assert(h2_esp_es8311_audio_system_init(&system, &config) == H2_AUDIO_OK);
+  assert(system.mic_gain_percent == 70u);
+  config.mic_gain_db = 17u;
+  assert(h2_esp_es8311_audio_system_init(&system, &config) == H2_AUDIO_OK);
+  assert(system.mic_gain_percent == 60u);
+  config.mic_gain_db = 21u;
+  config.mic_gain_max_db = 20u;
+  assert(h2_esp_es8311_audio_system_init(&system, &config) ==
+         H2_AUDIO_ERR_INVALID_ARG);
+  config.mic_gain_max_db = 30u;
   config.codec_volume_default = 0xb0u;
   config.speaker_volume = (h2_es8311_volume_config_t){
       .point_count = 3u, .points = {{1u, 120u}, {50u, 12u}, {100u, 0u}},

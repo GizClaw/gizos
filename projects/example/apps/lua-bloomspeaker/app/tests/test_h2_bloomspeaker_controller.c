@@ -16,7 +16,7 @@ int main(void) {
   assert(!h2_bloomspeaker_hold_tracker_update(&hold, true, 100u, 1000u));
 
   h2_bloomspeaker_controller_t controller;
-  h2_bloomspeaker_controller_init(&controller, 10u);
+  assert(h2_bloomspeaker_controller_init(&controller, 10u));
   h2_bloomspeaker_snapshot_t snapshot;
   h2_bloomspeaker_controller_snapshot(&controller, &snapshot);
   assert(snapshot.state == H2_BLOOMSPEAKER_STATE_IDLE);
@@ -95,5 +95,6 @@ int main(void) {
   h2_bloomspeaker_controller_long_press(&controller, 60u);
   h2_bloomspeaker_controller_snapshot(&controller, &snapshot);
   assert(snapshot.state == H2_BLOOMSPEAKER_STATE_DISCONNECTING);
+  h2_bloomspeaker_controller_destroy(&controller);
   return 0;
 }

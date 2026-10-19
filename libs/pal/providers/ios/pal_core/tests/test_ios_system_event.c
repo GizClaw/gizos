@@ -2,7 +2,7 @@
 
 #include <assert.h>
 #include <pthread.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <stddef.h>
 #include <time.h>
 
@@ -28,8 +28,8 @@ typedef struct post_args {
 typedef struct unsubscribe_args {
     const h2_pal_system_event_api_t *events;
     h2_pal_system_event_subscription_t *subscription;
-    atomic_int started;
-    atomic_int done;
+    h2_atomic_int_t started;
+    h2_atomic_int_t done;
 } unsubscribe_args_t;
 
 typedef struct self_unsubscribe_handler {
@@ -81,9 +81,9 @@ static void *post_event(void *user) {
 
 static void *unsubscribe_event(void *user) {
     unsubscribe_args_t *args = user;
-    atomic_store_explicit(&args->started, 1, memory_order_release);
+    h2_atomic_store_explicit(&args->started, 1, H2_ATOMIC_RELEASE);
     h2_pal_system_event_unsubscribe(args->events, args->subscription);
-    atomic_store_explicit(&args->done, 1, memory_order_release);
+    h2_atomic_store_explicit(&args->done, 1, H2_ATOMIC_RELEASE);
     return NULL;
 }
 
@@ -137,17 +137,17 @@ static void test_unsubscribe_drains_in_flight(
         .events = events,
         .subscription = subscription,
     };
-    atomic_init(&unsubscribe.started, 0);
-    atomic_init(&unsubscribe.done, 0);
+    assert(h2_atomic_init(&unsubscribe.started, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_init(&unsubscribe.done, 0) == H2_ATOMIC_OK);
     pthread_t unsubscribe_thread;
     assert(pthread_create(&unsubscribe_thread, NULL, unsubscribe_event,
                           &unsubscribe) == 0);
-    while (atomic_load_explicit(&unsubscribe.started,
-                                memory_order_acquire) == 0) {
+    while (h2_atomic_load_explicit(&unsubscribe.started,
+                                H2_ATOMIC_ACQUIRE) == 0) {
     }
     const struct timespec drain_check = {.tv_nsec = 10000000L};
     assert(nanosleep(&drain_check, NULL) == 0);
-    assert(atomic_load_explicit(&unsubscribe.done, memory_order_acquire) == 0);
+    assert(h2_atomic_load_explicit(&unsubscribe.done, H2_ATOMIC_ACQUIRE) == 0);
 
     pthread_mutex_lock(&blocking.mutex);
     blocking.release = 1;
@@ -156,7 +156,9 @@ static void test_unsubscribe_drains_in_flight(
     assert(pthread_join(posting_thread, NULL) == 0);
     assert(pthread_join(unsubscribe_thread, NULL) == 0);
     assert(post.result == H2_PAL_OK);
-    assert(atomic_load_explicit(&unsubscribe.done, memory_order_acquire) == 1);
+    assert(h2_atomic_load_explicit(&unsubscribe.done, H2_ATOMIC_ACQUIRE) == 1);
+    h2_atomic_destroy(&unsubscribe.started);
+    h2_atomic_destroy(&unsubscribe.done);
     assert(pthread_cond_destroy(&blocking.condition) == 0);
     assert(pthread_mutex_destroy(&blocking.mutex) == 0);
 }

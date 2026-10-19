@@ -9,8 +9,12 @@
  * definition. When h2_lua_web_app() gets `extension = <lib>`, the generated
  * config enables the hooks and exactly that library must define
  * `h2_web_lua_app_extension` (a second definition is a link error). Without an
- * extension the entry never references the symbol. Every hook runs on the App
- * task, never on a Lua worker, and a NULL field keeps the default behaviour.
+ * extension the entry never references the symbol. Every hook runs on the entry
+ * Worker, never on a Lua worker, and a NULL field keeps the default behaviour.
+ * Registered module/capability/provider contexts must be static or owned heap
+ * storage and remain alive if checked shutdown quarantines the Lua Host. The
+ * Lua Web entry retains Runtime/platform dependencies and reports failure;
+ * no extension cleanup or successful hardware release is implied on failure.
  */
 
 #include "h2_lua.h"

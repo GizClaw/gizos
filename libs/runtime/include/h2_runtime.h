@@ -39,6 +39,11 @@ typedef struct h2_runtime_config {
     const char *board;
     const char *target;
     const char *chip;
+    /** Optional nonempty product BLE local name, NUL-terminated and at most
+     * 29 printable ASCII bytes; invalid names fail Runtime initialization.
+     * Borrowed through Runtime deinit. The product owns its spelling and stable
+     * device suffix; it is display metadata, never an authenticated identity. */
+    const char *ble_local_name;
 
     const h2_pal_firmware_info_api_t *firmware_info;
 
@@ -114,6 +119,8 @@ struct h2_runtime {
     const char *board;
     const char *target;
     const char *chip;
+    /** Borrowed product advertising name from the Runtime config, or NULL. */
+    const char *ble_local_name;
 
     const h2_pal_firmware_info_api_t *firmware_info;
 
@@ -171,6 +178,21 @@ struct h2_runtime {
 };
 
 h2_pal_result_t h2_runtime_init(const h2_runtime_config_t *config, h2_runtime_t **out_runtime);
+/**
+ * @brief Destroy a Runtime with explicit cleanup evidence.
+ * @param[in,out] runtime Runtime owner pointer. A NULL pointer is invalid;
+ *                       a NULL *runtime succeeds.
+ * @return OK after successful cleanup, BUSY while Test Control borrows the
+ *         Runtime, or the original input/NFC stop/join result.
+ *
+ * Serial with all Runtime users: stop external producers and join App/Lua/
+ * Service workers first. Failed joins retain *runtime and every borrowed
+ * dependency for retry. Once input/NFC tasks are joined, destruction sets
+ * *runtime to NULL even when returning a latched input-worker fault; NULL
+ * proves that providers are no longer borrowed, not that cleanup returned OK.
+ */
+h2_pal_result_t h2_runtime_destroy(h2_runtime_t **runtime);
+/** Compatibility wrapper; callers needing cleanup evidence use destroy. */
 void h2_runtime_deinit(h2_runtime_t *runtime);
 /**
  * Read saved credentials and call PAL connect without saving them again.
@@ -189,9 +211,12 @@ typedef struct h2_runtime_wifi_saved_network {
 } h2_runtime_wifi_saved_network_t;
 
 /** Runtime-owned durable set, stored most recently connected first.
- * Serialize all saved-set and connection operations; finish before deinit.
+ * Concurrent Runtime Wi-Fi calls return BUSY while another call owns them;
+ * finish every operation before deinit. Direct PAL calls remain caller-serialized.
  * List truncates to capacity and reports copied entries; NULL is allowed at
- * zero capacity. Missing storage is an empty list. Storage errors propagate.
+ * zero capacity. Missing storage is an empty list. When the key never existed,
+ * import the PAL credential once; an explicit empty set prevents re-import.
+ * Storage errors propagate. Listing can persist that import on a worker.
  */
 h2_pal_result_t h2_runtime_wifi_saved_list(h2_runtime_t *runtime,
                                            h2_runtime_wifi_saved_network_t *out, size_t capacity,
@@ -202,10 +227,17 @@ h2_pal_result_t h2_runtime_wifi_saved_list(h2_runtime_t *runtime,
  */
 h2_pal_result_t h2_runtime_wifi_saved_save(h2_runtime_t *runtime,
                                            const h2_pal_wifi_sta_config_t *config);
-/** Remove exactly one SSID; return NOT_FOUND if absent. */
+/** Remove exactly one SSID and its matching PAL credential; no disconnect.
+ * Persist the set first, so even failed PAL cleanup cannot resurrect it.
+ * Return NOT_FOUND if absent; other storage errors propagate. */
 h2_pal_result_t h2_runtime_wifi_saved_remove(h2_runtime_t *runtime, const char *ssid,
                                              size_t ssid_len);
+/** Persist an empty set before clearing PAL; errors propagate. No disconnect. */
 h2_pal_result_t h2_runtime_wifi_saved_clear(h2_runtime_t *runtime);
+/** Copy the in-process saved-set change counter without storage I/O or waiting.
+ * Poll from an observer, then reload the list on a worker when it changes.
+ * Counter wraps as unsigned; it resets for a new Runtime. */
+h2_pal_result_t h2_runtime_wifi_saved_revision(h2_runtime_t *runtime, unsigned *out_revision);
 /** Provision through PAL, then record in the Runtime set only on success.
  * PAL timeout/IP semantics are unchanged; Runtime adds no IP wait. Returns the
  * PAL result: once PAL reports success the station is connected and the

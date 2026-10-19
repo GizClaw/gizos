@@ -1,0 +1,262 @@
+{
+  "platform": "devkit",
+  "device_uid": "9888e0115c52",
+  "image_version": "pal-storage-esp-20260928-r1",
+  "contract": 1,
+  "operations": 28,
+  "qualified": true,
+  "passed": 30,
+  "failed": 0,
+  "blocked": 0,
+  "cases": [
+    {
+      "id": "pal.storage.fs.directory",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 203733005
+    },
+    {
+      "id": "pal.storage.fs.binary",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 203733005
+    },
+    {
+      "id": "pal.storage.fs.empty-eof",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 203733005
+    },
+    {
+      "id": "pal.storage.fs.seek",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 203733005
+    },
+    {
+      "id": "pal.storage.fs.truncate",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 203733005
+    },
+    {
+      "id": "pal.storage.fs.rename",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 203733005
+    },
+    {
+      "id": "pal.storage.fs.remove",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 203733005
+    },
+    {
+      "id": "pal.storage.fs.clear",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 203733005
+    },
+    {
+      "id": "pal.storage.fs.path-isolation",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 203733005
+    },
+    {
+      "id": "pal.storage.fs.arguments",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 203733005
+    },
+    {
+      "id": "pal.storage.fs.churn",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 203733005
+    },
+    {
+      "id": "pal.storage.pref.namespace",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 203733005
+    },
+    {
+      "id": "pal.storage.pref.blob",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 203733005
+    },
+    {
+      "id": "pal.storage.pref.string",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 203733005
+    },
+    {
+      "id": "pal.storage.pref.u32",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 203733005
+    },
+    {
+      "id": "pal.storage.pref.i32",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 203733005
+    },
+    {
+      "id": "pal.storage.pref.bool",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 203733005
+    },
+    {
+      "id": "pal.storage.pref.overwrite-type",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 203733005
+    },
+    {
+      "id": "pal.storage.pref.namespace-isolation",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 203733005
+    },
+    {
+      "id": "pal.storage.pref.read-only",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 203733005
+    },
+    {
+      "id": "pal.storage.pref.iteration",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 203733005
+    },
+    {
+      "id": "pal.storage.pref.cursor-close",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 203733005
+    },
+    {
+      "id": "pal.storage.pref.allocation-failure",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 203733005
+    },
+    {
+      "id": "pal.storage.pref.remove",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 203733005
+    },
+    {
+      "id": "pal.storage.pref.clear",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 203733005
+    },
+    {
+      "id": "pal.storage.pref.churn",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 203733005
+    },
+    {
+      "id": "pal.storage.persist.seed",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 203733005
+    },
+    {
+      "id": "pal.storage.persist.fs",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 2,
+      "nonce": 203733005
+    },
+    {
+      "id": "pal.storage.persist.pref",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 2,
+      "nonce": 203733005
+    },
+    {
+      "id": "pal.storage.cleanup.storage",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 2,
+      "nonce": 203733005
+    }
+  ],
+  "phases": [
+    {
+      "version": "pal-storage-esp-20260928-r1",
+      "phase": 1,
+      "nonce": 203733005,
+      "passed": 27,
+      "failed": 0,
+      "blocked": 0,
+      "cleanup": 0,
+      "rc": 0,
+      "control": 0
+    },
+    {
+      "version": "pal-storage-esp-20260928-r1",
+      "phase": 2,
+      "nonce": 203733005,
+      "passed": 3,
+      "failed": 0,
+      "blocked": 0,
+      "cleanup": 0,
+      "rc": 0,
+      "control": 0
+    }
+  ],
+  "raw_capture_receipts": [
+    {
+      "phase": 1,
+      "sha256": "e2d2acd326805104bd08649ae8619e3b9f484d40226c764ee855f543b84638d2",
+      "captured_report_file_mtime_utc": "2026-09-27T23:28:47.548905+00:00"
+    },
+    {
+      "phase": 2,
+      "sha256": "d2e354962723a9889b6de8c4b3325731a2dca969bba685537d1cca8aa145f31e",
+      "captured_report_file_mtime_utc": "2026-09-27T23:29:23.111562+00:00"
+    }
+  ],
+  "final_status": "H2_LOADER_STATUS board=devkit target=esp32s3 chip=esp32s3 device_uid=9888e0115c52 capabilities=0x00000001 command_availability=0x00081d3f active_role=app active_version=pal-storage-esp-20260928-r1 active_checksum=8d9fba8f4cb34712f1368b1afc48079658422fb05c454a2055220db81de6a531 active_image_size=1517056 running_partition=2 next_partition=2 boot_intent=auto stage_valid=0 stage_package_checksum=- stage_package_size=0 stage_image_checksum=- stage_image_size=0 stage_role=unknown stage_version=- stage_board=- stage_target=- partition_1_valid=1 partition_1_package_checksum=f4fd26deba579fb6b8955e9ea7a83122b25cf6e4c433b3d652090d6958197568 partition_1_package_size=975428 partition_1_image_checksum=9479960ee19af062cb1a599c4d4b52f948d476efc842aabdfa6ca2ec812befd5 partition_1_image_size=1496656 partition_1_role=loader partition_1_version=0.2.3-atomic-541 partition_1_board=devkit partition_1_target=esp32s3 partition_2_valid=1 partition_2_package_checksum=f6e5c5de4fef9c4319a6825cada294780e65141124b06247491959008a4cc392 partition_2_package_size=976660 partition_2_image_checksum=8d9fba8f4cb34712f1368b1afc48079658422fb05c454a2055220db81de6a531 partition_2_image_size=1517056 partition_2_role=app partition_2_version=pal-storage-esp-20260928-r1 partition_2_board=devkit partition_2_target=esp32s3 last_result=0 mfg_mode=1 mfg_steps=0000000000000000000000",
+  "coredump_status": "H2_LOADER_COREDUMP_STATUS result=OK code=0 partition=coredump bytes=65536 stored_bytes=0 blank=1",
+  "observed_at_utc": "2026-09-27T23:35:04.627822+00:00"
+}

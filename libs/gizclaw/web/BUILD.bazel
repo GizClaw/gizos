@@ -1,0 +1,62 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_python//python:defs.bzl", "py_binary")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY", "WEB_WASM32_ARTIFACT_COMPATIBILITY")
+load(":transport.bzl", "firmware_transport_source")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["protocol.json"])
+
+filegroup(
+    name = "public_headers",
+    srcs = ["include/h2_web_gizclaw.h"],
+)
+
+cc_library(
+    name = "headers",
+    hdrs = ["include/h2_web_gizclaw.h"],
+    includes = ["include"],
+    deps = ["//libs/gizclaw:local"],
+)
+
+cc_library(
+    name = "web",
+    srcs = [
+        "src/h2_web_gizclaw.c",
+        "src/h2_web_gizclaw_internal.h",
+        ":transport_source",
+    ],
+    hdrs = ["include/h2_web_gizclaw.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":tasks",
+        "//libs/atomic",
+        "//libs/gizclaw:local",
+        "//libs/pal/providers/web/pal_core",
+    ],
+)
+
+h2_tasks(
+    name = "tasks",
+    tasks = ["$gizclaw/web/device"],
+)
+
+py_binary(
+    name = "transport_generator",
+    srcs = ["bundle_transport.py"],
+    legacy_create_init = 0,
+    main = "bundle_transport.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+firmware_transport_source(
+    name = "transport_source",
+    out = "h2_web_gizclaw_transport.c",
+    protocol = "protocol.json",
+    template = "src/h2_web_gizclaw_transport.c.in",
+)

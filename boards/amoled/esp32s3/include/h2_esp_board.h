@@ -18,6 +18,10 @@ typedef void (*h2_esp_board_entry_task_fn)(void *user);
  */
 typedef struct h2_esp_board_display_config {
     uint32_t pclk_hz;
+    /** Internal DMA chunk ceiling in rows: 8, 16, 32 or 64; zero keeps 64.
+     * Smaller chunks leave internal SRAM available to Wi-Fi/lwIP.
+     */
+    uint32_t dma_buffer_rows;
 } h2_esp_board_display_config_t;
 
 h2_pal_result_t h2_esp_board_display_configure(
