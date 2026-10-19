@@ -345,7 +345,8 @@ static h2_pal_result_t h2_quectel_modem_cell_locate_impl(
 
     h2_pal_result_t model_result = h2_quectel_resolve_model(modem);
     if (model_result != H2_PAL_OK) { return model_result; }
-    if (modem->family != H2_QUECTEL_MODEM_FAMILY_EC25) { return H2_PAL_ERR_UNSUPPORTED; }
+    if (modem->family != H2_QUECTEL_MODEM_FAMILY_EC25 &&
+        modem->family != H2_QUECTEL_MODEM_FAMILY_EC800M) { return H2_PAL_ERR_UNSUPPORTED; }
 
     uint32_t effective_timeout_ms = timeout_ms != 0u
         ? timeout_ms

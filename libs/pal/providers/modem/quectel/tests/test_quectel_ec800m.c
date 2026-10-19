@@ -107,6 +107,10 @@ static h2_pal_result_t command(void *user, const char *cmd, char *response,
         strcpy(response, f->quality_reply);
     } else if (strcmp(cmd, "AT+QGPSLOC=0") == 0) {
         strcpy(response, "+QGPSLOC: 120000.00,3000.0000N,12000.0000E,1.2,12.3,3,90.0,36.0,19.438,081026,10\r\nOK\r\n");
+    } else if (strncmp(cmd, "AT+QLBSCFG=", 11u) == 0) {
+        strcpy(response, "OK\r\n");
+    } else if (strcmp(cmd, "AT+QLBS") == 0) {
+        strcpy(response, "+QLBS: 0,120.0,30.0,100\r\nOK\r\n");
     } else if (strcmp(cmd, "AT+QECCNUM?") == 0) {
         assert(strncmp(f->model, "EC25", 4u) == 0);
         strcpy(response, "+QECCNUM: 0,\"110\"\r\n+QECCNUM: 1,\"112\"\r\nOK\r\n");
@@ -242,7 +246,7 @@ static void test_models(void) {
         assert(f.modem.family == H2_QUECTEL_MODEM_FAMILY_EC800M);
         uint32_t capabilities;
         assert(h2_pal_modem_get_capabilities(&f.modem.platform, &capabilities) == H2_PAL_OK);
-        assert(!(capabilities & H2_PAL_MODEM_CAPABILITY_CELL_LOCATE));
+        assert(capabilities & H2_PAL_MODEM_CAPABILITY_CELL_LOCATE);
         for (unsigned j = 0u; j < f.count; j++) {
             if (strncmp(f.commands[j], "AT+CPB", 6u) == 0) { assert(f.timeouts[j] == 777u); }
         }
@@ -442,8 +446,16 @@ static void test_quality(void) {
     assert(calls(&f, "AT+QCSQ") == 0u);
     h2_pal_modem_cell_location_t location;
     f.modem.data_status.state = H2_PAL_MODEM_DATA_OPEN;
+    assert(h2_pal_modem_cell_locate(&f.modem.platform, 0u, &location) == H2_PAL_OK);
+    assert(location.valid && location.longitude_e7 == 1200000000 && location.latitude_e7 == 300000000);
+    assert(calls(&f, "AT+QLBSCFG=") == 1u && calls(&f, "AT+QLBS") == 2u);
+    assert_released(&f);
+    f.fail_command = "AT+QLBS";
+    f.failure = H2_PAL_ERR_IO;
+    f.fail_reply = "+CME ERROR: 4\r\n";
     assert(h2_pal_modem_cell_locate(&f.modem.platform, 0u, &location) == H2_PAL_ERR_UNSUPPORTED);
-    assert(calls(&f, "AT+QLBS") == 0u);
+    assert(!location.valid && !location.longitude_e7 && !location.latitude_e7);
+    assert_released(&f);
     finish(&f);
 }
 
@@ -456,6 +468,10 @@ static void test_shared_gnss_and_power(void) {
     assert(f.asleep);
     query(&f, H2_PAL_OK, 64u, 2u);
     assert(f.asleep);
+    h2_pal_modem_cell_location_t location;
+    assert(h2_pal_modem_cell_locate(&f.modem.platform, 777u, &location) == H2_PAL_OK);
+    assert(location.valid && f.asleep);
+    assert_released(&f);
     assert(h2_pal_modem_gnss_start(&f.modem.platform, 777u) == H2_PAL_OK);
     assert(!f.asleep && f.modem.gnss_hold);
     h2_pal_modem_gnss_fix_t fix;

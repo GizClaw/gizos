@@ -10,6 +10,9 @@
 
 #define MAX_RECORDS 32u
 
+static const char *test_model = "EC25";
+static h2_quectel_modem_profile_t test_profile;
+
 typedef struct command_record {
     char cmd[H2_QUECTEL_LINE_MAX];
     uint32_t timeout_ms;
@@ -33,9 +36,8 @@ static h2_pal_result_t transport_command(
     transport_state_t *state = (transport_state_t *)user;
     /* This suite counts location transactions; family discovery is separate. */
     if (strcmp(cmd, "AT+CGMM") == 0) {
-        const char *model = "EC25\r\nOK\r\n";
-        assert(response_size > strlen(model));
-        strcpy(response, model);
+        int length = snprintf(response, response_size, "%s\r\nOK\r\n", test_model);
+        assert(length > 0 && (size_t)length < response_size);
         return H2_PAL_OK;
     }
     assert(state->count < MAX_RECORDS);
@@ -97,6 +99,7 @@ static void init_config(h2_quectel_modem_config_t *config, transport_state_t *st
     memset(config, 0, sizeof(*config));
     config->transport_user = state;
     config->command = transport_command;
+    config->profile = test_profile;
 }
 
 static void test_locate_sends_token_once(void) {
@@ -126,6 +129,9 @@ static void test_locate_sends_token_once(void) {
     assert(location.longitude_e7 == 1172001340);
     assert(location.accuracy_m == 120u);
 
+    assert(modem.model_checked);
+    assert(h2_pal_modem_get_capabilities(platform, &capabilities) == H2_PAL_OK);
+    assert(capabilities & H2_PAL_MODEM_CAPABILITY_CELL_LOCATE);
     assert(state.count == 2u);
     assert(strcmp(state.records[0].cmd, "AT+QLBSCFG=\"token\",\"" FAKE_TOKEN "\"") == 0);
     assert(strcmp(state.records[1].cmd, "AT+QLBS") == 0);
@@ -152,6 +158,7 @@ static void test_locate_sends_token_once(void) {
      * send the token again. */
     assert(h2_pal_modem_open(platform, 1000u) == H2_PAL_OK);
     assert(h2_pal_modem_close(platform, 1000u) == H2_PAL_OK);
+    assert(h2_pal_modem_open(platform, 1000u) == H2_PAL_OK);
     state.count = 0u;
     assert(h2_pal_modem_cell_locate(platform, 0u, &location) == H2_PAL_OK);
     assert(state.count == 2u);
@@ -159,6 +166,18 @@ static void test_locate_sends_token_once(void) {
     assert(strcmp(state.records[1].cmd, "AT+QLBS") == 0);
     assert(state.records[0].timeout_ms == 45000u);
 
+    /* A module reboot also invalidates both model and token configuration. */
+    h2_quectel_handle_urc_line(&modem, "RDY");
+    assert(!modem.model_checked && !modem.cell_locate_token_sent);
+    state.count = 0u;
+    assert(h2_pal_modem_cell_locate(platform, 0u, &location) == H2_PAL_ERR_INVALID_STATE);
+    assert(!location.valid && state.count == 0u);
+    h2_quectel_handle_urc_line(&modem, "+CPIN: READY");
+    assert(h2_pal_modem_cell_locate(platform, 0u, &location) == H2_PAL_OK);
+    assert(location.valid && modem.model_checked);
+    assert(count_commands_with(&state, "QLBSCFG") == 1u);
+    assert(count_commands_with(&state, "AT+QLBS") == 2u);
+    assert(!bytes_contain(&modem, sizeof(modem), FAKE_TOKEN));
     h2_quectel_modem_deinit(&modem);
 }
 
@@ -285,6 +304,10 @@ static void test_service_and_format_errors(void) {
         H2_PAL_ERR_IO,
         H2_PAL_ERR_INVALID_STATE);
     check_failure("+CME ERROR: 3\r\n", H2_PAL_ERR_IO, H2_PAL_ERR_INVALID_STATE);
+    /* Actual firmware refusal and transport timeout remain distinct. */
+    check_failure("+CME ERROR: 4\r\n", H2_PAL_ERR_IO, H2_PAL_ERR_UNSUPPORTED);
+    check_failure("+CME ERROR: operation not supported\r\n", H2_PAL_ERR_IO, H2_PAL_ERR_UNSUPPORTED);
+    check_failure("", H2_PAL_ERR_TIMEOUT, H2_PAL_ERR_TIMEOUT);
     /* Malformed responses. */
     check_failure("+QLBS: 0,117.200134\r\nOK\r\n", H2_PAL_OK, H2_PAL_ERR_FORMAT);
     check_failure("+QLBS: 0,north,east\r\nOK\r\n", H2_PAL_OK, H2_PAL_ERR_FORMAT);
@@ -353,6 +376,35 @@ static void test_token_never_leaks_back(void) {
     h2_quectel_modem_deinit(&modem);
 }
 
+static void test_token_configuration_errors(void) {
+    const char *replies[] = {"+CME ERROR: 4\r\n", "+CME ERROR: 516\r\n", ""};
+    const h2_pal_result_t expected[] = {
+        H2_PAL_ERR_UNSUPPORTED, H2_PAL_ERR_INVALID_ARG, H2_PAL_ERR_TIMEOUT,
+    };
+    for (size_t i = 0u; i < sizeof(replies) / sizeof(replies[0]); i++) {
+        transport_state_t state = {0};
+        state.qlbscfg_response = replies[i];
+        state.qlbscfg_result = i == 2u ? H2_PAL_ERR_TIMEOUT : H2_PAL_ERR_IO;
+        state.qlbs_response = "+QLBS: 0,117.200134,31.847649\r\nOK\r\n";
+        h2_quectel_modem_config_t config;
+        init_config(&config, &state);
+        config.cell_locate_token = FAKE_TOKEN;
+        h2_quectel_modem_t modem;
+        assert(h2_quectel_modem_init(&modem, &config) == H2_PAL_OK);
+        h2_pal_modem_cell_location_t location;
+        memset(&location, 0xAA, sizeof(location));
+        assert(h2_pal_modem_cell_locate(&modem.platform, 0u, &location) == expected[i]);
+        assert(!location.valid && !location.latitude_e7 && !location.longitude_e7 && !location.accuracy_m);
+        assert(!modem.cell_locate_token_sent && state.count == 1u);
+        assert(!bytes_contain(&modem, sizeof(modem), FAKE_TOKEN));
+        state.qlbscfg_response = NULL;
+        assert(h2_pal_modem_cell_locate(&modem.platform, 0u, &location) == H2_PAL_OK);
+        assert(location.valid && modem.cell_locate_token_sent);
+        assert(count_commands_with(&state, "QLBSCFG") == 2u);
+        h2_quectel_modem_deinit(&modem);
+    }
+}
+
 static void test_gnss_path_unchanged(void) {
     transport_state_t state;
     memset(&state, 0, sizeof(state));
@@ -388,7 +440,29 @@ static void test_locate_rejects_known_absent_sim(void) {
     h2_quectel_modem_deinit(&modem);
 }
 
-int main(void) {
+static void test_rejected_models(void) {
+    const char *models[] = {"EC800MX", "EC25X", "EC200U", "EC25"};
+    for (size_t i = 0u; i < sizeof(models) / sizeof(models[0]); i++) {
+        test_model = models[i];
+        test_profile = i == 3u ? H2_QUECTEL_MODEM_PROFILE_EC800M_UART
+            : H2_QUECTEL_MODEM_PROFILE_UNSPECIFIED;
+        transport_state_t state = {0};
+        h2_quectel_modem_config_t config;
+        init_config(&config, &state);
+        config.cell_locate_token = FAKE_TOKEN;
+        h2_quectel_modem_t modem;
+        assert(h2_quectel_modem_init(&modem, &config) == H2_PAL_OK);
+        h2_pal_modem_cell_location_t location;
+        memset(&location, 0xAA, sizeof(location));
+        assert(h2_pal_modem_cell_locate(&modem.platform, 0u, &location) == H2_PAL_ERR_UNSUPPORTED);
+        assert(!location.valid && !location.latitude_e7 && !location.longitude_e7 && !location.accuracy_m);
+        assert(!(modem.capabilities & H2_PAL_MODEM_CAPABILITY_CELL_LOCATE));
+        assert(state.count == 0u);
+        h2_quectel_modem_deinit(&modem);
+    }
+}
+
+static void test_family(void) {
     test_locate_rejects_known_absent_sim();
     test_locate_sends_token_once();
     test_locate_without_token();
@@ -396,6 +470,21 @@ int main(void) {
     test_service_and_format_errors();
     test_optional_field_and_negative_degrees();
     test_token_never_leaks_back();
+    test_token_configuration_errors();
     test_gnss_path_unchanged();
+}
+
+int main(void) {
+    const char *models[] = {"EC25", "EC25-E", "EC800M", "EC800M-CN"};
+    for (size_t i = 0u; i < sizeof(models) / sizeof(models[0]); i++) {
+        test_model = models[i];
+        test_profile = H2_QUECTEL_MODEM_PROFILE_EC25_UART;
+        test_family();
+        if (i >= 2u) {
+            test_profile = H2_QUECTEL_MODEM_PROFILE_EC800M_UART;
+            test_family();
+        }
+    }
+    test_rejected_models();
     return 0;
 }
