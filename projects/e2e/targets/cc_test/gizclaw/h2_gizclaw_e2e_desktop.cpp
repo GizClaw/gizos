@@ -505,6 +505,7 @@ int run_desktop(int argc, char **argv) {
                          ? validate_lua_record
                          : nullptr,
       .evidence_user = session.get(),
+      .fixture_allocator = nullptr,
   };
   h2_gizclaw_e2e_result_t result = {};
   const bool lua_lane = suites == H2_GIZCLAW_E2E_SUITE_LUA_APPS;
