@@ -88,8 +88,11 @@ h2_gizclaw_service_init(const h2_gizclaw_service_config_t *config,
     *out_service = NULL;
     return H2_PAL_OK;
   }
-  *out_service = calloc(1, sizeof(**out_service));
-  assert(*out_service != NULL);
+  *out_service =
+      h2_pal_mem_alloc(config->client_config->allocator, sizeof(**out_service));
+  if (*out_service == NULL)
+    return H2_PAL_ERR_NO_MEMORY;
+  memset(*out_service, 0, sizeof(**out_service));
   (*out_service)->config = *config;
   ++s_live_services;
   return H2_PAL_OK;
@@ -128,7 +131,7 @@ h2_pal_result_t h2_gizclaw_service_deinit(h2_gizclaw_service_t *service) {
   assert(service->config.client_config->private_key.len != 0u);
   if (s_deinit_rc == H2_PAL_OK) {
     --s_live_services;
-    free(service);
+    h2_pal_mem_free(service->config.client_config->allocator, service);
   }
   return s_deinit_rc;
 }
@@ -1359,6 +1362,41 @@ int main(int argc, char **argv) {
   assert(h2_gizclaw_e2e_fixture_cleanup(&fixture) == H2_PAL_OK);
   assert(h2_gizclaw_e2e_fixture_deinit(&fixture) == H2_PAL_OK);
   assert(allocator.live_blocks == 0u);
+  /* A separate fixture allocator owns every case allocation and fake Service.
+   * Runtime Mem remains unchanged and must not receive fallback allocations. */
+  h2_app_test_mem_t case_mem;
+  h2_app_test_mem_init(&case_mem, NULL);
+  h2_gizclaw_e2e_config_t allocated = config;
+  allocated.fixture_allocator = &case_mem.api;
+  const size_t raw_calls_before = allocator.calls;
+  assert(h2_gizclaw_e2e_fixture_init(&fixture, &runtime, &allocated, 45000u) ==
+         H2_PAL_OK);
+  assert(fixture.allocator == &case_mem.api);
+  assert(h2_gizclaw_e2e_fixture_connect_actors(&fixture, 3u) == H2_PAL_OK);
+  for (size_t i = 0u; i < H2_GIZCLAW_E2E_ACTOR_COUNT; ++i)
+    assert(fixture.actors[i].config.allocator == &case_mem.api);
+  assert(case_mem.live_blocks != 0u && allocator.calls == raw_calls_before);
+  assert(h2_gizclaw_e2e_fixture_cleanup(&fixture) == H2_PAL_OK);
+  assert(h2_gizclaw_e2e_fixture_deinit(&fixture) == H2_PAL_OK);
+  assert(case_mem.live_blocks == 0u && case_mem.live_bytes == 0u &&
+         allocator.calls == raw_calls_before);
+  /* Explicit allocator exhaustion is an error, never a Runtime Mem fallback. */
+  case_mem.fail_at = case_mem.calls + 1u;
+  assert(h2_gizclaw_e2e_fixture_init(&fixture, &runtime, &allocated, 45000u) ==
+         H2_PAL_ERR_NO_MEMORY);
+  assert(case_mem.live_blocks == 0u && allocator.calls == raw_calls_before);
+  case_mem.fail_at = 0u;
+  assert(h2_gizclaw_e2e_fixture_init(&fixture, &runtime, &allocated, 45000u) ==
+         H2_PAL_OK);
+  assert(h2_gizclaw_e2e_fixture_connect_actors(&fixture, 1u) == H2_PAL_OK);
+  assert(h2_gizclaw_e2e_fixture_cleanup(&fixture) == H2_PAL_OK);
+  s_deinit_rc = H2_PAL_ERR_IO;
+  assert(h2_gizclaw_e2e_fixture_deinit(&fixture) == H2_PAL_ERR_IO);
+  assert(fixture.allocator == &case_mem.api && case_mem.live_blocks != 0u);
+  s_deinit_rc = H2_PAL_OK;
+  assert(h2_gizclaw_e2e_fixture_deinit(&fixture) == H2_PAL_OK);
+  assert(case_mem.live_blocks == 0u && case_mem.live_bytes == 0u &&
+         allocator.calls == raw_calls_before);
   assert(s_live_services == 0u);
   return 0;
 }

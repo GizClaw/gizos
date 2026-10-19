@@ -46,6 +46,14 @@ target_add_binary_data(
   BINARY
   RENAME_TO h2_gizclaw_e2e_voice_prompt)
 
+if(DEFINED H2_GIZCLAW_E2E_ALLOCATOR_ACCESSOR)
+  if(NOT H2_GIZCLAW_E2E_ALLOCATOR_ACCESSOR MATCHES "^[A-Za-z_][A-Za-z0-9_]*$")
+    message(FATAL_ERROR "E2E allocator accessor must be one C identifier")
+  endif()
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    "H2_GIZCLAW_E2E_ALLOCATOR_ACCESSOR=${H2_GIZCLAW_E2E_ALLOCATOR_ACCESSOR}")
+endif()
+
 target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu11 -Wall -Wextra -Werror)
 include("${H2_REPO_ROOT}/projects/e2e/targets/h2loader_tar_zlib/fixture-wifi/fixture_wifi.cmake")
 

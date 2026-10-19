@@ -66,6 +66,7 @@ extern const uint8_t h2_gizclaw_e2e_voice_prompt_end[]
 
 typedef struct h2_gizclaw_e2e_devkit_runner {
   h2_runtime_t *runtime;
+  const h2_pal_mem_api_t *fixture_allocator;
   h2_gizclaw_e2e_config_t app_config;
   h2_gizclaw_e2e_result_t result;
   h2_gizclaw_e2e_exit_t exit_code;
@@ -345,6 +346,7 @@ static void run_e2e(void *raw) {
       .on_progress = emit_progress,
       .on_evidence = capture_evidence,
       .evidence_user = runner,
+      .fixture_allocator = runner->fixture_allocator,
   };
   runner->exit_code =
       h2_gizclaw_e2e_run(runner->runtime, &runner->app_config, &runner->result);
@@ -442,8 +444,12 @@ static void image_entry(void *user) {
   if (rc != H2_PAL_OK) {
     fail_launcher("command_start", rc, false);
   }
-
-
+  const h2_pal_mem_api_t *fixture_allocator = runtime->mem;
+#if defined(H2_GIZCLAW_E2E_ALLOCATOR_ACCESSOR)
+  fixture_allocator = H2_GIZCLAW_E2E_ALLOCATOR_ACCESSOR();
+  if (fixture_allocator == NULL)
+    fail_launcher("fixture_allocator", H2_PAL_ERR_NO_MEMORY, true);
+#endif
 
   rc = h2_pal_wifi_sta_set_power_save(runtime->wifi_sta,
                                       H2_PAL_WIFI_POWER_SAVE_NONE);
@@ -562,13 +568,14 @@ static void image_entry(void *user) {
         h2_gizclaw_e2e_devkit_state_set_prerequisites(
             &state, wifi_has_ip, state.clock_ready)) {
       s_runner.runtime = runtime;
+      s_runner.fixture_allocator = fixture_allocator;
       s_runner.result = (h2_gizclaw_e2e_result_t){0};
       s_runner.exit_code = H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
       s_runner.confirm_rc = H2_PAL_ERR_INVALID_STATE;
       const h2_pal_mutex_config_t mutex = {
           .name = "gizclaw-e2e-evidence", .allocator = runtime->mem};
       uint8_t nonce[16];
-      if (h2_gizclaw_e2e_ledger_init_paged(&s_runner.ledger, runtime->mem,
+      if (h2_gizclaw_e2e_ledger_init_paged(&s_runner.ledger, fixture_allocator,
                                            H2_GIZCLAW_E2E_LEDGER_CAPACITY) !=
               H2_PAL_OK ||
           h2_atomic_init(&s_runner.capture_failed, false) != H2_ATOMIC_OK ||

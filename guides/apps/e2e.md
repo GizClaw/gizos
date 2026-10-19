@@ -129,6 +129,8 @@ DevKit launcher 位于 `projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/devki
 
 DevKit 的完整证据账本按需分块增长，保留 384 KiB 上限；冻结后逐块重播相同原始字节、record 计数和 CRC32，不创建另一份连续副本。Fixture 的响应 arena 仅在清理业务资源时申请，peer-only 清理不依赖额外的 64 KiB 分配；WebRTC 观察包装器保留调用方指定的 peer allocator。内存分配失败、未收到删除 ACK、清理残留或证据不完整仍按原标准失败，不调整产品 SDK 配置或测试容量、断言与超时。
 
+GizClaw E2E 可用 `fixture_allocator` 显式借用 consumer 提供的内存池，默认仍使用 Runtime Mem。ESP launcher 的可选 CMake `H2_GIZCLAW_E2E_ALLOCATOR_ACCESSOR` 只接受一个 C identifier；未配置时不引用任何额外 Board API，显式配置而不可用或耗尽时失败。Case、Service/client、响应及完整分页账本借用同一 allocator；失败后仍有 retained 资源时必须保持它有效。Runtime、Board 和生产 Main 配置不变。
+
 GizClaw 的可选 `app_config_fixture_workflow_tag` 通过既有 fixture 输入通道选择精确标签，默认 `assistants`；Session、两套 Workflow list 与原标签成员检查保持一致。结构化目录须显式提供相应标签，不能忽略空目录或放宽原断言。Device fixture 通过客户端已有选项使用 16 KiB 音频 ring 和 4 KiB prebuffer，保留完整音频流、原业务用例、236 接口审计及时间预算。
 
 DevKit 的 E2E runner、launcher 和 job task 显式使用 PSRAM stack；runner 入口以实际栈局部地址检查 PSRAM，失败时报告 harness error。`$gizclaw/net` 也使用 PSRAM，DevKit E2E policy 为它保留 64 KiB：在同一块 DevKit（UID `9888e0115c52`）上，原 32 KiB 实际栈曾在 Voice 的 `session_audio_start` 后溢出并重启。64 KiB 复测越过了该溢出点，`all` 的两轮实机测试分别为 8 项中 4 项通过、4 项失败：第一轮 `cleanup_rc=0`、`retained_resources=0`，第二轮出现 `peer_create_data_channel rc=-13`，`cleanup_rc=-4`、`retained_resources=8`。独立的 `voice` 实机测试中，PTT、文本、实时 VAD、service 重连和清理均通过，`selected=1`、`pass=1`、`cleanup_rc=0`、`retained_resources=0`。DevKit 无音频后端，其测试不作为真实麦克风和扬声器验收。测试没有取得 `$gizclaw/net` 的 stack high-water 数据，因此 64 KiB 不能作为其他固件 target 的容量结论。

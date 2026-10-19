@@ -683,6 +683,11 @@ int h2_gizclaw_e2e_fixture_init(h2_gizclaw_e2e_fixture_t *fixture,
              config->registration_token.len) != NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
+  if (config->fixture_allocator != NULL &&
+      (config->fixture_allocator->vtable == NULL ||
+       config->fixture_allocator->vtable->alloc == NULL ||
+       config->fixture_allocator->vtable->free == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
   /* Only one observer-backed fixture may be live. Reject before clearing
    * caller storage so accidental re-init cannot orphan active Services. */
   if (s_webrtc_observer.initialized)
@@ -690,7 +695,9 @@ int h2_gizclaw_e2e_fixture_init(h2_gizclaw_e2e_fixture_t *fixture,
   memset(fixture, 0, sizeof(*fixture));
   fixture->runtime = runtime;
   fixture->config = config;
-  fixture->allocator = runtime->mem;
+  fixture->allocator = config->fixture_allocator != NULL
+                           ? config->fixture_allocator
+                           : runtime->mem;
   fixture->crypto = runtime->crypto;
   fixture->http = runtime->http;
   fixture->log = runtime->log;
@@ -746,7 +753,7 @@ int h2_gizclaw_e2e_fixture_init(h2_gizclaw_e2e_fixture_t *fixture,
     fixture->registration_token = NULL;
     return H2_PAL_ERR_INVALID_STATE;
   }
-  rc = observer_init(fixture->webrtc, runtime->sync, runtime->mem);
+  rc = observer_init(fixture->webrtc, runtime->sync, fixture->allocator);
   if (rc != H2_PAL_OK) {
     memset(fixture->registration_token, 0, config->registration_token.len + 1u);
     h2_pal_mem_free(fixture->allocator, fixture->registration_token);
