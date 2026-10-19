@@ -26,6 +26,8 @@ HTTP、MQTT、Net/TLS 与 WebRTC 的 ESP Native 入口，以及 legacy iperf 的
 
 未提供这两个输入时，HTTP/MQTT/Net/TLS 继续复用现有可用连接，否则读取原保存配置；WebRTC 和 legacy iperf 的 DevKit 入口继续使用原保存配置。显式提供 fixture 时只尝试该配置，不回退到其他连接或保存项。网络准备仍先于原 portable case runner，实际网络失败和不完整账本保留原结果；构建成功不授予设备测试资格。
 
+GizClaw DevKit 入口在原保存配置缺失时，也可使用同一 Native 输入完成非保存连接；已有连接和保存配置继续使用原路径，Wi-Fi 重试间隔、业务用例、API 审计及确认条件不变。
+
 可在 host 上确定性运行、没有外部依赖的 App-local、parser、fake 和 loopback 测试属于默认自动测试，不声明 tag。连接外部服务、真实设备或要求人工准备环境的 E2E test 声明 Bazel 特殊 tag `manual`，因此不会被通配 target pattern 自动选中；需要重新观察真实外部状态的 live test 另声明特殊 tag `external`，由 Bazel 禁用测试结果缓存，构建 disk/remote cache 保持启用。新的手工测试入口直接调用 `bazel test --config=<platform> --nocache_test_results <exact-label>`，设备选择与需要继承的 SDK 路径通过 `--test_env` 传入；平台配置和静态 suite 参数属于 `.bazelrc` / `BUILD.bazel`。不为纯转发另建 Make alias、shell wrapper 或 Python Bazel 调度器；已有 legacy Make 入口暂保留兼容，不再维护额外 tag filter。测试仅使用这些 Bazel 原生控制 tag，不另建业务 tag inventory，也不创建 `test_suite` 聚合入口。
 
 ## Apps

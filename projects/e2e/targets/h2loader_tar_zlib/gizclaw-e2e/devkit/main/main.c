@@ -1,6 +1,7 @@
 #include "h2_gizclaw_e2e_devkit_config.h"
 #include "h2_gizclaw_e2e_devkit_state.h"
 #include "h2_esp_target_task_policy.h"
+#include "h2_e2e_fixture_wifi.h"
 
 #include "h2_esp_board.h"
 #include "h2_esp_h2loader_ble.h"
@@ -234,10 +235,19 @@ static void supervise_wifi(void *raw) {
       fflush(stdout);
     } else if (result.outcome ==
                H2_GIZCLAW_E2E_DEVKIT_WIFI_NO_SAVED_CONFIG) {
-      printf("H2_GIZCLAW_E2E_DEVKIT stage=wifi status=NO_SAVED_WIFI rc=%d "
-             "retry_ms=%u\n",
-             result.rc,
-             (unsigned)supervisor->config->wifi_retry_interval_ms);
+      const h2_pal_wifi_sta_config_t *fixture = h2_e2e_fixture_wifi();
+      if (fixture != NULL) {
+        int fixture_rc = h2_pal_wifi_sta_connect(
+            supervisor->runtime->wifi_sta, fixture,
+            supervisor->config->wifi_connect_timeout_ms);
+        printf("H2_GIZCLAW_E2E_DEVKIT stage=wifi status=FIXTURE_CONNECT rc=%d "
+               "retry_ms=%u\n", fixture_rc,
+               (unsigned)supervisor->config->wifi_retry_interval_ms);
+      } else {
+        printf("H2_GIZCLAW_E2E_DEVKIT stage=wifi status=NO_SAVED_WIFI rc=%d "
+               "retry_ms=%u\n", result.rc,
+               (unsigned)supervisor->config->wifi_retry_interval_ms);
+      }
       fflush(stdout);
     } else if (result.outcome == H2_GIZCLAW_E2E_DEVKIT_WIFI_CONNECTED) {
       printf("H2_GIZCLAW_E2E_DEVKIT stage=wifi status=CONNECTING\n");

@@ -81,12 +81,14 @@ firmware_native_component(
     hdrs = [
         "main/h2_gizclaw_e2e_devkit_config.h",
         "main/h2_gizclaw_e2e_devkit_state.h",
+        "//projects/e2e/targets/h2loader_tar_zlib/fixture-wifi:h2_e2e_fixture_wifi.h",
     ],
     component_directory = "projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/devkit/main",
     component_name = "main",
     data = [
         "main/CMakeLists.txt",
         "main/idf_component.yml",
+        "//projects/e2e/targets/h2loader_tar_zlib/fixture-wifi:fixture_wifi.cmake",
     ],
     tags = ["manual"],
     deps = [
@@ -137,6 +139,8 @@ h2loader_esp_idf_firmware(
         "main/h2_gizclaw_e2e_devkit_state.h",
         "main/idf_component.yml",
         "main/main.c",
+        "//projects/e2e/targets/h2loader_tar_zlib/fixture-wifi:fixture_wifi.cmake",
+        "//projects/e2e/targets/h2loader_tar_zlib/fixture-wifi:h2_e2e_fixture_wifi.h",
     ],
     board = "devkit",
     cmake_variables = [

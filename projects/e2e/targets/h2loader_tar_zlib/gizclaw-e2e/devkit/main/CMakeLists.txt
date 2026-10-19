@@ -45,6 +45,7 @@ target_add_binary_data(
   RENAME_TO h2_gizclaw_e2e_voice_prompt)
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu11 -Wall -Wextra -Werror)
+include("${H2_REPO_ROOT}/projects/e2e/targets/h2loader_tar_zlib/fixture-wifi/fixture_wifi.cmake")
 
 if(H2_GIZCLAW_E2E_VOICE_ONLY)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE H2_GIZCLAW_E2E_VOICE_ONLY=1)
