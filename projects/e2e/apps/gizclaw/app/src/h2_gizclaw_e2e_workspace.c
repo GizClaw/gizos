@@ -450,13 +450,14 @@ static int configure(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
 static int stop_run(h2_gizclaw_e2e_fixture_t *f,
                     h2_gizclaw_resp_storage_t *s) {
   h2_gizclaw_e2e_actor_t *actor = &f->actors[H2_GIZCLAW_E2E_OWNER];
-  static const h2_gizclaw_str_t tags[] = {{"assistants", 10u}};
+  actor->workflow_tag =
+      h2_gizclaw_e2e_str(h2_gizclaw_e2e_workflow_tag(f->config));
   const h2_gizclaw_session_config_t config = {.service = actor->service,
                                               .mem = f->allocator,
                                               .sync = f->runtime->sync,
                                               .time = f->time,
                                               .runtime = f->runtime,
-                                              .tags = tags,
+                                              .tags = &actor->workflow_tag,
                                               .tag_count = 1u,
                                               .max_workflows = 128u,
                                               .catalog_bytes = 65536u};

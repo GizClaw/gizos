@@ -8,6 +8,7 @@ _LUA_FIELDS = ["lua_app_url", "lua_app_http_url", "lua_app_https_url", "lua_app_
 def _fixture_impl(ctx):
     key = ctx.attr.key[BuildSettingInfo].value
     profile = ctx.attr.profile[BuildSettingInfo].value
+    workflow_tag = ctx.attr.workflow_tag[BuildSettingInfo].value
     value = ctx.attr.value[BuildSettingInfo].value
     endpoint = ctx.attr.endpoint[BuildSettingInfo].value
     token = ctx.attr.token[BuildSettingInfo].value
@@ -21,6 +22,8 @@ def _fixture_impl(ctx):
         fail("AppConfig fixture key must be a 1-63 byte lowercase alias, or empty when not configured")
     if len(profile) > 63 or any([c not in allowed for c in profile.elems()]):
         fail("fixture RuntimeProfile must be a lowercase resource ID")
+    if not workflow_tag or len(workflow_tag) > 128:
+        fail("Workflow fixture tag must be nonempty and at most 128 bytes")
     if len(value) > 4096:
         fail("AppConfig expected value exceeds the server fixture limit")
     if len(endpoint) >= 128 or len(token) > 4096:
@@ -43,6 +46,7 @@ def _fixture_impl(ctx):
     ctx.actions.write(source, "\n".join([
         "const char *h2_gizclaw_e2e_fixture_key(void) { return %s; }" % json.encode(key),
         "const char *h2_gizclaw_e2e_fixture_profile(void) { return %s; }" % json.encode(profile),
+        "const char *h2_gizclaw_e2e_fixture_workflow_tag(void) { return %s; }" % json.encode(workflow_tag),
         "const char *h2_gizclaw_e2e_fixture_value(void) { return %s; }" % json.encode(value),
         "const char *h2_gizclaw_e2e_fixture_endpoint(void) { return %s; }" % json.encode(endpoint),
         "const char *h2_gizclaw_e2e_fixture_token(void) { return %s; }" % json.encode(token),
@@ -52,7 +56,7 @@ def _fixture_impl(ctx):
         "const char *h2_gizclaw_e2e_fixture_audio_url(void) { return %s; }" % json.encode(audio_url),
         "const char *h2_gizclaw_e2e_fixture_root_ca_hex(void) { return %s; }" % json.encode(root_ca_hex),
     ] + ["const char *h2_gizclaw_e2e_fixture_%s(void) { return %s; }" % (key, json.encode(lua[key])) for key in _LUA_FIELDS]) + "\n")
-    ctx.actions.write(contract, json.encode({"app_config_key": key, "runtime_profile": profile, "app_config_value": value, "time_server": time_server, "physical_audio": physical_audio}) + "\n")
+    ctx.actions.write(contract, json.encode({"app_config_key": key, "runtime_profile": profile, "workflow_tag": workflow_tag, "app_config_value": value, "time_server": time_server, "physical_audio": physical_audio}) + "\n")
     return [
         DefaultInfo(files = depset([source, contract])),
         OutputGroupInfo(source = depset([source]), contract = depset([contract])),
@@ -63,6 +67,7 @@ _fixture = rule(
     attrs = {
         "key": attr.label(mandatory = True, providers = [BuildSettingInfo]),
         "profile": attr.label(mandatory = True, providers = [BuildSettingInfo]),
+        "workflow_tag": attr.label(mandatory = True, providers = [BuildSettingInfo]),
         "value": attr.label(mandatory = True, providers = [BuildSettingInfo]),
         "endpoint": attr.label(mandatory = True, providers = [BuildSettingInfo]),
         "token": attr.label(mandatory = True, providers = [BuildSettingInfo]),
@@ -77,7 +82,7 @@ _fixture = rule(
     },
 )
 
-def gizclaw_e2e_fixture(name, app_config_key = "", runtime_profile = "", app_config_value = "", server_endpoint = "", registration_token = "", time_server = "", physical_audio = False, device_api_url = "", audio_url = "", root_ca_hex = "", lua_app_url = "", lua_app_http_url = "", lua_app_https_url = "", lua_app_id = "", lua_archive_sha256 = "", lua_entry_sha256 = "", lua_frame_sha256 = ""):
+def gizclaw_e2e_fixture(name, app_config_key = "", runtime_profile = "", app_config_value = "", server_endpoint = "", registration_token = "", time_server = "", physical_audio = False, device_api_url = "", audio_url = "", root_ca_hex = "", lua_app_url = "", lua_app_http_url = "", lua_app_https_url = "", lua_app_id = "", lua_archive_sha256 = "", lua_entry_sha256 = "", lua_frame_sha256 = "", workflow_tag = "assistants"):
     """Empty is buildable but RPC/all launchers reject it before networking.
 
     Supply the public profile key via the macro argument or the generated
@@ -85,6 +90,7 @@ def gizclaw_e2e_fixture(name, app_config_key = "", runtime_profile = "", app_con
     """
     string_flag(name = name + "_key", build_setting_default = app_config_key)
     string_flag(name = name + "_profile", build_setting_default = runtime_profile)
+    string_flag(name = name + "_workflow_tag", build_setting_default = workflow_tag)
     string_flag(name = name + "_value", build_setting_default = app_config_value)
 
     # Board launchers have no process environment. These explicit build inputs
@@ -99,7 +105,7 @@ def gizclaw_e2e_fixture(name, app_config_key = "", runtime_profile = "", app_con
     lua = {"lua_app_url": lua_app_url, "lua_app_http_url": lua_app_http_url, "lua_app_https_url": lua_app_https_url, "lua_app_id": lua_app_id, "lua_archive_sha256": lua_archive_sha256, "lua_entry_sha256": lua_entry_sha256, "lua_frame_sha256": lua_frame_sha256}
     for key in _LUA_FIELDS:
         string_flag(name = name + "_" + key, build_setting_default = lua[key])
-    _fixture(name = name + "_generated", key = ":" + name + "_key", profile = ":" + name + "_profile", value = ":" + name + "_value", endpoint = ":" + name + "_endpoint", token = ":" + name + "_token", time_server = ":" + name + "_time_server", physical_audio = ":" + name + "_physical_audio", device_api_url = ":" + name + "_device_api_url", audio_url = ":" + name + "_audio_url", root_ca_hex = ":" + name + "_root_ca_hex", **{key: ":" + name + "_" + key for key in _LUA_FIELDS})
+    _fixture(name = name + "_generated", key = ":" + name + "_key", profile = ":" + name + "_profile", workflow_tag = ":" + name + "_workflow_tag", value = ":" + name + "_value", endpoint = ":" + name + "_endpoint", token = ":" + name + "_token", time_server = ":" + name + "_time_server", physical_audio = ":" + name + "_physical_audio", device_api_url = ":" + name + "_device_api_url", audio_url = ":" + name + "_audio_url", root_ca_hex = ":" + name + "_root_ca_hex", **{key: ":" + name + "_" + key for key in _LUA_FIELDS})
     native.filegroup(name = name + "_contract", srcs = [":" + name + "_generated"], output_group = "contract")
     native.filegroup(name = name + "_source", srcs = [":" + name + "_generated"], output_group = "source")
     cc_library(

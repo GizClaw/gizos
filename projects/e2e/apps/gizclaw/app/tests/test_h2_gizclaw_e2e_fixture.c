@@ -24,6 +24,7 @@ static bool s_null_service;
 static unsigned s_live_services;
 static unsigned s_poll_fault;
 static bool s_user_stop;
+static const h2_gizclaw_e2e_actor_t *s_tag_actor;
 
 static bool user_stop(void *user) {
   (void)user;
@@ -1331,14 +1332,47 @@ int main(int argc, char **argv) {
          s_deletes == deletes_before_arena_failure + 1u);
   assert(h2_gizclaw_e2e_fixture_deinit(&fixture) == H2_PAL_OK);
   assert(allocator.live_blocks == 0u);
+  /* Session borrows an actor-owned view, not actor_connect's stack array. */
+  h2_gizclaw_e2e_config_t tagged = config;
+  tagged.workflow_tag = "category:assistants";
+  assert(h2_gizclaw_e2e_fixture_init(&fixture, &runtime, &tagged, 45000u) ==
+         H2_PAL_OK);
+  fixture.use_session = true;
+  s_tag_actor = &fixture.actors[0];
+  assert(h2_gizclaw_e2e_fixture_connect_actors(&fixture, 1u) ==
+         H2_PAL_ERR_UNSUPPORTED);
+  assert(s_tag_actor->workflow_tag.data == tagged.workflow_tag &&
+         s_tag_actor->workflow_tag.len == strlen(tagged.workflow_tag));
+  s_tag_actor = NULL;
+  fixture.use_session = false;
+  assert(h2_gizclaw_e2e_fixture_cleanup(&fixture) == H2_PAL_OK);
+  assert(h2_gizclaw_e2e_fixture_deinit(&fixture) == H2_PAL_OK);
+
+  /* The unchanged streamed player receives bounded fixture-owned buffering. */
+  static const h2_pal_audio_api_t audio = {0};
+  assert(h2_gizclaw_e2e_fixture_init(&fixture, &runtime, &config, 45000u) ==
+         H2_PAL_OK);
+  fixture.device_audio = &audio;
+  assert(h2_gizclaw_e2e_fixture_connect_actors(&fixture, 1u) == H2_PAL_OK);
+  assert(fixture.actors[0].config.audio_buffer_bytes == 16384u &&
+         fixture.actors[0].config.audio_prebuffer_bytes == 4096u);
+  assert(h2_gizclaw_e2e_fixture_cleanup(&fixture) == H2_PAL_OK);
+  assert(h2_gizclaw_e2e_fixture_deinit(&fixture) == H2_PAL_OK);
+  assert(allocator.live_blocks == 0u);
   assert(s_live_services == 0u);
   return 0;
 }
 
-/* This fixture test isolates the raw Service lane. Session orchestration is
+/* Only inspect Session's borrowed configuration here; its orchestration is
  * exercised with the real Session in the Voice test. */
 h2_pal_result_t h2_gizclaw_session_create(const h2_gizclaw_session_config_t *config, h2_gizclaw_session_t **out) {
-  (void)config; (void)out; assert(false); return H2_PAL_ERR_UNSUPPORTED;
+  assert(s_tag_actor != NULL && config->tags == &s_tag_actor->workflow_tag &&
+         config->tag_count == 1u &&
+         config->tags[0].len == strlen("category:assistants") &&
+         memcmp(config->tags[0].data, "category:assistants",
+                config->tags[0].len) == 0);
+  *out = NULL;
+  return H2_PAL_ERR_UNSUPPORTED;
 }
 h2_pal_result_t h2_gizclaw_session_register(h2_gizclaw_session_t *session, const char *token, uint32_t timeout) {
   (void)session; (void)token; (void)timeout; assert(false); return H2_PAL_ERR_UNSUPPORTED;

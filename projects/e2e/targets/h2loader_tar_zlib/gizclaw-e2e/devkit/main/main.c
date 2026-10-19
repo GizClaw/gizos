@@ -20,15 +20,18 @@
 #include "h2_runtime_event.h"
 
 #include "esp_app_desc.h"
+#include "esp_attr.h"
 #include "esp_heap_caps.h"
 #include "esp_memory_utils.h"
 #include "esp_netif_sntp.h"
+#include "esp_private/cache_utils.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-#include <stdalign.h>
 #include "h2_atomic.h"
+#include "h2_atomic_static.h"
+#include <stdalign.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -88,6 +91,47 @@ typedef union h2_gizclaw_e2e_devkit_event_payload {
 static h2_gizclaw_e2e_devkit_runner_t s_runner;
 static h2_gizclaw_e2e_devkit_wifi_supervisor_t s_wifi_supervisor;
 
+H2_ATOMIC_DEFINE_STATIC(u32, s_alloc_fail_count, 0u);
+H2_ATOMIC_DEFINE_STATIC(size, s_alloc_fail_max_requested, 0u);
+H2_ATOMIC_DEFINE_STATIC(u32, s_alloc_fail_caps_union, 0u);
+H2_ATOMIC_DEFINE_STATIC(u32, s_alloc_fail_spi_requested, 0u);
+H2_ATOMIC_DEFINE_STATIC(u32, s_alloc_fail_internal_requested, 0u);
+H2_ATOMIC_DEFINE_STATIC(u32, s_alloc_fail_no_region_requested, 0u);
+H2_ATOMIC_DEFINE_STATIC(u32, s_memory_marker, 0u);
+static esp_err_t s_alloc_hook_rc = ESP_ERR_INVALID_STATE;
+static const char *const s_memory_marker_prefixes[] = {
+    "H2_GIZCLAW_E2E stage=coverage-begin ",
+    "H2_GIZCLAW_E2E stage=coverage-end ",
+    "H2_GIZCLAW_E2E symbol=h2_gizclaw_service_init stage=registration ",
+    "H2_GIZCLAW_E2E symbol=h2_gizclaw_service_start stage=registration ",
+    "H2_GIZCLAW_E2E symbol=h2_gizclaw_rpc_register stage=registration ",
+};
+
+static void IRAM_ATTR note_alloc_failure(size_t size, uint32_t caps,
+                                         const char *function) {
+  if (!spi_flash_cache_enabled())
+    return;
+  (void)function;
+  h2_atomic_fetch_add_explicit(&s_alloc_fail_count, 1u, H2_ATOMIC_RELAXED);
+  h2_atomic_fetch_or_explicit(&s_alloc_fail_caps_union, caps,
+                              H2_ATOMIC_RELAXED);
+  if (caps & MALLOC_CAP_SPIRAM)
+    h2_atomic_fetch_add_explicit(&s_alloc_fail_spi_requested, 1u,
+                                 H2_ATOMIC_RELAXED);
+  if (caps & MALLOC_CAP_INTERNAL)
+    h2_atomic_fetch_add_explicit(&s_alloc_fail_internal_requested, 1u,
+                                 H2_ATOMIC_RELAXED);
+  if (!(caps & (MALLOC_CAP_SPIRAM | MALLOC_CAP_INTERNAL)))
+    h2_atomic_fetch_add_explicit(&s_alloc_fail_no_region_requested, 1u,
+                                 H2_ATOMIC_RELAXED);
+  size_t maximum =
+      h2_atomic_load_explicit(&s_alloc_fail_max_requested, H2_ATOMIC_RELAXED);
+  while (maximum < size && !h2_atomic_compare_exchange_weak_explicit(
+                               &s_alloc_fail_max_requested, &maximum, size,
+                               H2_ATOMIC_RELAXED, H2_ATOMIC_RELAXED)) {
+  }
+}
+
 static void emit_memory_snapshot(const char *point) {
   const uint32_t internal = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
   const uint32_t spiram = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
@@ -99,18 +143,48 @@ static void emit_memory_snapshot(const char *point) {
     ledger_known = h2_pal_mutex_unlock(s_runner.runtime->sync,
                                        s_runner.evidence_mutex) == H2_PAL_OK;
   }
-  (void)printf("H2_GIZCLAW_E2E_DEVKIT stage=memory point=%s "
-               "internal_free=%zu internal_largest=%zu internal_min_free=%zu "
-               "spiram_free=%zu spiram_largest=%zu spiram_min_free=%zu "
-               "ledger_known=%d ledger_bytes=%zu\n",
-               point, heap_caps_get_free_size(internal),
-               heap_caps_get_largest_free_block(internal),
-               heap_caps_get_minimum_free_size(internal),
-               heap_caps_get_free_size(spiram),
-               heap_caps_get_largest_free_block(spiram),
-               heap_caps_get_minimum_free_size(spiram), ledger_known ? 1 : 0,
-               ledger_bytes);
+  /* Lifetime u32 counters wrap; caps categories can overlap and describe only
+   * requested flags. Independent aggregates never identify one failed event. */
+  const uint32_t marker =
+      h2_atomic_load_explicit(&s_memory_marker, H2_ATOMIC_ACQUIRE);
+  (void)printf(
+      "H2_GIZCLAW_E2E_DEVKIT stage=memory point=%s "
+      "internal_free=%zu internal_largest=%zu internal_min_free=%zu "
+      "spiram_free=%zu spiram_largest=%zu spiram_min_free=%zu "
+      "ledger_known=%d ledger_bytes=%zu "
+      "marker_last=%u marker_seq=%u marker_coalesced=1 alloc_hook_rc=%d "
+      "alloc_scope=cache_on_only alloc_aggregate_unpaired=1 "
+      "alloc_count_u32=%u alloc_max_requested=%zu "
+      "alloc_caps_union=%08x alloc_spi_requested_u32=%u "
+      "alloc_internal_requested_u32=%u alloc_no_region_requested_u32=%u\n",
+      point, heap_caps_get_free_size(internal),
+      heap_caps_get_largest_free_block(internal),
+      heap_caps_get_minimum_free_size(internal),
+      heap_caps_get_free_size(spiram), heap_caps_get_largest_free_block(spiram),
+      heap_caps_get_minimum_free_size(spiram), ledger_known ? 1 : 0,
+      ledger_bytes, (unsigned)(marker & 7u), (unsigned)(marker >> 3u),
+      (int)s_alloc_hook_rc,
+      (unsigned)h2_atomic_load_explicit(&s_alloc_fail_count, H2_ATOMIC_RELAXED),
+      h2_atomic_load_explicit(&s_alloc_fail_max_requested, H2_ATOMIC_RELAXED),
+      (unsigned)h2_atomic_load_explicit(&s_alloc_fail_caps_union,
+                                        H2_ATOMIC_RELAXED),
+      (unsigned)h2_atomic_load_explicit(&s_alloc_fail_spi_requested,
+                                        H2_ATOMIC_RELAXED),
+      (unsigned)h2_atomic_load_explicit(&s_alloc_fail_internal_requested,
+                                        H2_ATOMIC_RELAXED),
+      (unsigned)h2_atomic_load_explicit(&s_alloc_fail_no_region_requested,
+                                        H2_ATOMIC_RELAXED));
   (void)fflush(stdout);
+}
+
+static void emit_pending_memory_snapshot(void) {
+  static uint32_t reported = 0u; /* Only the image_entry caller writes this. */
+  uint32_t marker =
+      h2_atomic_load_explicit(&s_memory_marker, H2_ATOMIC_ACQUIRE);
+  if (marker != reported) {
+    reported = marker;
+    emit_memory_snapshot("coalesced_last_marker");
+  }
 }
 
 static void capture_evidence(void *user, const char *record, size_t size) {
@@ -122,6 +196,21 @@ static void capture_evidence(void *user, const char *record, size_t size) {
   h2_gizclaw_e2e_ledger_append(&runner->ledger, record, size);
   if (runner->ledger.error != H2_PAL_OK)
     h2_atomic_store_explicit(&runner->capture_failed, true, H2_ATOMIC_RELEASE);
+  for (size_t i = 0u;
+       record != NULL && i < sizeof(s_memory_marker_prefixes) /
+                                 sizeof(s_memory_marker_prefixes[0]);
+       ++i) {
+    size_t prefix_size = strlen(s_memory_marker_prefixes[i]);
+    if (size >= prefix_size &&
+        memcmp(record, s_memory_marker_prefixes[i], prefix_size) == 0) {
+      uint32_t marker =
+          h2_atomic_load_explicit(&s_memory_marker, H2_ATOMIC_RELAXED);
+      h2_atomic_store_explicit(
+          &s_memory_marker, ((marker + 8u) & ~UINT32_C(7)) | (uint32_t)(i + 1u),
+          H2_ATOMIC_RELEASE);
+      break;
+    }
+  }
   if (h2_pal_mutex_unlock(runner->runtime->sync, runner->evidence_mutex) != H2_PAL_OK)
     h2_atomic_store_explicit(&runner->capture_failed, true, H2_ATOMIC_RELEASE);
 }
@@ -241,11 +330,12 @@ static void run_e2e(void *raw) {
       .registration_token = launcher_config->registration_token,
       .app_config_key = h2_gizclaw_e2e_fixture_key(),
       .expected_runtime_profile = h2_gizclaw_e2e_fixture_profile(),
+      .workflow_tag = h2_gizclaw_e2e_fixture_workflow_tag(),
       .app_config_expected_value = {h2_gizclaw_e2e_fixture_value(),
-                                   strlen(h2_gizclaw_e2e_fixture_value())},
+                                    strlen(h2_gizclaw_e2e_fixture_value())},
       .voice_pcm_s16le_16khz_mono = h2_gizclaw_e2e_voice_prompt_start,
       .voice_pcm_len = (size_t)(h2_gizclaw_e2e_voice_prompt_end -
-                               h2_gizclaw_e2e_voice_prompt_start),
+                                h2_gizclaw_e2e_voice_prompt_start),
       .suites = H2_GIZCLAW_E2E_DEVKIT_SUITES,
       .device_api_url = h2_gizclaw_e2e_fixture_device_api_url(),
       .device_audio_url = h2_gizclaw_e2e_fixture_audio_url(),
@@ -558,13 +648,18 @@ static void image_entry(void *user) {
       emit_summary(&s_runner, true);
       replay_ledger(&s_runner);
     }
+    emit_pending_memory_snapshot();
   }
 }
 
 void app_main(void) {
-    if (h2_esp_target_task_policy_install() != H2_PAL_OK) {
-        return;
-    }
+  /* This E2E entry replaces production Main; its two hook entries do not link.
+   */
+  s_alloc_hook_rc =
+      heap_caps_register_failed_alloc_callback(note_alloc_failure);
+  if (h2_esp_target_task_policy_install() != H2_PAL_OK) {
+    return;
+  }
   h2_pal_result_t rc = h2_esp_board_start_entry_task(
       "devkit/gizclaw-e2e", image_entry, NULL);
   if (rc != H2_PAL_OK) {

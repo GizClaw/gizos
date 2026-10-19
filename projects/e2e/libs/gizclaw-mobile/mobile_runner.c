@@ -38,15 +38,18 @@ int h2_gizclaw_mobile_run(h2_runtime_config_t runtime_config,
   if (!run->pcm) goto done;
   memcpy(run->pcm, pcm, pcm_len);
   run->config = (h2_gizclaw_e2e_config_t){
-      .server_endpoint={run->endpoint,strlen(run->endpoint)},
-      .registration_token={run->token,strlen(run->token)},
-      .app_config_key=h2_gizclaw_e2e_fixture_key(),
-      .expected_runtime_profile=h2_gizclaw_e2e_fixture_profile(),
-      .app_config_expected_value={h2_gizclaw_e2e_fixture_value(),
-                                 strlen(h2_gizclaw_e2e_fixture_value())},
-      .device_api_url=run->api, .device_audio_url=run->audio,
-      .voice_pcm_s16le_16khz_mono=run->pcm, .voice_pcm_len=pcm_len,
-      .suites=H2_GIZCLAW_E2E_SUITE_ALL};
+      .server_endpoint = {run->endpoint, strlen(run->endpoint)},
+      .registration_token = {run->token, strlen(run->token)},
+      .app_config_key = h2_gizclaw_e2e_fixture_key(),
+      .expected_runtime_profile = h2_gizclaw_e2e_fixture_profile(),
+      .workflow_tag = h2_gizclaw_e2e_fixture_workflow_tag(),
+      .app_config_expected_value = {h2_gizclaw_e2e_fixture_value(),
+                                    strlen(h2_gizclaw_e2e_fixture_value())},
+      .device_api_url = run->api,
+      .device_audio_url = run->audio,
+      .voice_pcm_s16le_16khz_mono = run->pcm,
+      .voice_pcm_len = pcm_len,
+      .suites = H2_GIZCLAW_E2E_SUITE_ALL};
   if (h2_runtime_init(&runtime_config, &run->runtime) != H2_PAL_OK) goto done;
   rc = h2_gizclaw_e2e_run(run->runtime, &run->config, result);
   printf("H2_GIZCLAW_E2E stage=summary platform=%s endpoint=%s backend=h2peer "

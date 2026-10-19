@@ -20,6 +20,11 @@ extern "C" {
 #define H2_GIZCLAW_E2E_ACTOR_COUNT 3u
 #define H2_GIZCLAW_E2E_NAME_CAPACITY 256u
 
+static inline const char *
+h2_gizclaw_e2e_workflow_tag(const h2_gizclaw_e2e_config_t *config) {
+  return config != NULL && config->workflow_tag != NULL ? config->workflow_tag
+                                                        : "assistants";
+}
 
 typedef enum h2_gizclaw_e2e_actor_role {
   H2_GIZCLAW_E2E_OWNER = 0,
@@ -38,6 +43,8 @@ typedef struct h2_gizclaw_e2e_actor {
   h2_gizclaw_service_t *service;
   h2_gizclaw_api_key_state_t *api_key_state;
   h2_gizclaw_session_t *session;
+  /* Session borrows the view; its text has the config's full-run lifetime. */
+  h2_gizclaw_str_t workflow_tag;
   h2_gizclaw_config_t config;
   h2_gizclaw_tool_handler_t tool_handlers[3];
   char private_key[H2_PAL_CRYPTO_X25519_KEY_SIZE * 2u + 1u];

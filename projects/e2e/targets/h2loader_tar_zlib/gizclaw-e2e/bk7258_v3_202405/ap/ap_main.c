@@ -206,9 +206,11 @@ static void run(void *user) {
       .registration_token = settings->registration_token,
       .app_config_key = h2_gizclaw_e2e_fixture_key(),
       .expected_runtime_profile = h2_gizclaw_e2e_fixture_profile(),
+      .workflow_tag = h2_gizclaw_e2e_fixture_workflow_tag(),
       .app_config_expected_value = {h2_gizclaw_e2e_fixture_value(),
-                                   strlen(h2_gizclaw_e2e_fixture_value())},
-      .voice_audio = h2_gizclaw_e2e_fixture_physical_audio() ? runtime->audio : NULL,
+                                    strlen(h2_gizclaw_e2e_fixture_value())},
+      .voice_audio =
+          h2_gizclaw_e2e_fixture_physical_audio() ? runtime->audio : NULL,
       .voice_pcm_s16le_16khz_mono = h2_gizclaw_e2e_pcm,
       .voice_pcm_len = h2_gizclaw_e2e_pcm_size,
       .device_api_url = h2_gizclaw_e2e_fixture_device_api_url(),

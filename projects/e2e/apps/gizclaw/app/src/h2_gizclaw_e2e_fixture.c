@@ -522,7 +522,8 @@ static int actor_connect(h2_gizclaw_e2e_fixture_t *fixture,
       .vtable = fixture->device_vtable,
       .lua_apps = fixture->device_lua_apps,
       .user = fixture,
-      .audio_buffer_bytes = fixture->device_audio ? 65536u : 0,
+      .audio_buffer_bytes = fixture->device_audio ? 16384u : 0u,
+      .audio_prebuffer_bytes = fixture->device_audio ? 4096u : 0u,
       .firmware_channel = H2_GIZCLAW_FIRMWARE_CHANNEL_DEVELOP,
       .tool_handlers = device ? &actor->tool_handlers[2] : actor->tool_handlers,
       .tool_handler_count = device ? 1u : 3u,
@@ -555,14 +556,15 @@ static int actor_connect(h2_gizclaw_e2e_fixture_t *fixture,
    * Retain the identity for cleanup rather than assuming no remote Peer. */
   h2_gizclaw_registration_result_t registration = {0};
   if (fixture->use_session) {
-    static const h2_gizclaw_str_t tags[] = {{"assistants", 10u}};
+    actor->workflow_tag =
+        h2_gizclaw_e2e_str(h2_gizclaw_e2e_workflow_tag(fixture->config));
     const h2_gizclaw_session_config_t session_config = {
         .service = actor->service,
         .mem = fixture->allocator,
         .sync = fixture->runtime->sync,
         .time = fixture->time,
         .runtime = fixture->runtime,
-        .tags = tags,
+        .tags = &actor->workflow_tag,
         .tag_count = 1u,
         .max_workflows = 128u,
         .catalog_bytes = 65536u};
