@@ -522,7 +522,7 @@ static int actor_connect(h2_gizclaw_e2e_fixture_t *fixture,
       .vtable = fixture->device_vtable,
       .lua_apps = fixture->device_lua_apps,
       .user = fixture,
-      .audio_buffer_bytes = fixture->device_audio ? 65536u : 0,
+      .audio_buffer_bytes = fixture->device_audio ? 65536u : 0u,
       .firmware_channel = H2_GIZCLAW_FIRMWARE_CHANNEL_DEVELOP,
       .tool_handlers = device ? &actor->tool_handlers[2] : actor->tool_handlers,
       .tool_handler_count = device ? 1u : 3u,
@@ -555,14 +555,15 @@ static int actor_connect(h2_gizclaw_e2e_fixture_t *fixture,
    * Retain the identity for cleanup rather than assuming no remote Peer. */
   h2_gizclaw_registration_result_t registration = {0};
   if (fixture->use_session) {
-    static const h2_gizclaw_str_t tags[] = {{"assistants", 10u}};
+    actor->workflow_tag =
+        h2_gizclaw_e2e_str(h2_gizclaw_e2e_workflow_tag(fixture->config));
     const h2_gizclaw_session_config_t session_config = {
         .service = actor->service,
         .mem = fixture->allocator,
         .sync = fixture->runtime->sync,
         .time = fixture->time,
         .runtime = fixture->runtime,
-        .tags = tags,
+        .tags = &actor->workflow_tag,
         .tag_count = 1u,
         .max_workflows = 128u,
         .catalog_bytes = 65536u};
@@ -681,6 +682,11 @@ int h2_gizclaw_e2e_fixture_init(h2_gizclaw_e2e_fixture_t *fixture,
              config->registration_token.len) != NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
+  if (config->fixture_allocator != NULL &&
+      (config->fixture_allocator->vtable == NULL ||
+       config->fixture_allocator->vtable->alloc == NULL ||
+       config->fixture_allocator->vtable->free == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
   /* Only one observer-backed fixture may be live. Reject before clearing
    * caller storage so accidental re-init cannot orphan active Services. */
   if (s_webrtc_observer.initialized)
@@ -688,7 +694,9 @@ int h2_gizclaw_e2e_fixture_init(h2_gizclaw_e2e_fixture_t *fixture,
   memset(fixture, 0, sizeof(*fixture));
   fixture->runtime = runtime;
   fixture->config = config;
-  fixture->allocator = runtime->mem;
+  fixture->allocator = config->fixture_allocator != NULL
+                           ? config->fixture_allocator
+                           : runtime->mem;
   fixture->crypto = runtime->crypto;
   fixture->http = runtime->http;
   fixture->log = runtime->log;
@@ -744,7 +752,7 @@ int h2_gizclaw_e2e_fixture_init(h2_gizclaw_e2e_fixture_t *fixture,
     fixture->registration_token = NULL;
     return H2_PAL_ERR_INVALID_STATE;
   }
-  rc = observer_init(fixture->webrtc, runtime->sync, runtime->mem);
+  rc = observer_init(fixture->webrtc, runtime->sync, fixture->allocator);
   if (rc != H2_PAL_OK) {
     memset(fixture->registration_token, 0, config->registration_token.len + 1u);
     h2_pal_mem_free(fixture->allocator, fixture->registration_token);
@@ -1217,10 +1225,20 @@ int h2_gizclaw_e2e_fixture_cleanup(h2_gizclaw_e2e_fixture_t *fixture) {
       return rc;
   }
   int result = H2_PAL_OK;
-  uint8_t *buffer = h2_pal_mem_alloc(fixture->allocator, 65536u);
-  if (buffer == NULL)
+  const bool needs_storage =
+      fixture->workspace_created || fixture->contact_created ||
+      fixture->friendship_created || fixture->friend_group_created ||
+      fixture->friend_group_member_joined || fixture->isolation_group_pending ||
+      fixture->isolation_contact_pending ||
+      fixture->isolation_workspace_pending;
+  /* Peer deletion and invitation clearing have no response arena. Keep these
+   * recovery paths usable when the failed case has exhausted its allocator. */
+  uint8_t *buffer =
+      needs_storage ? h2_pal_mem_alloc(fixture->allocator, 65536u) : NULL;
+  if (needs_storage && buffer == NULL)
     return H2_PAL_ERR_NO_MEMORY;
-  h2_gizclaw_resp_storage_t storage = {.data = buffer, .capacity = 65536u};
+  h2_gizclaw_resp_storage_t storage = {.data = buffer,
+                                       .capacity = needs_storage ? 65536u : 0u};
   h2_gizclaw_service_t *owner = fixture->actors[H2_GIZCLAW_E2E_OWNER].service;
   h2_gizclaw_service_t *friend_service =
       fixture->actors[H2_GIZCLAW_E2E_FRIEND].service;

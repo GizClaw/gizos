@@ -27,6 +27,7 @@ struct h2_pal_queue {
     size_t item_size;
     size_t item_count;
     size_t count;
+    size_t send_calls;
     size_t head;
     size_t tail;
     uint8_t *items;
@@ -414,6 +415,7 @@ static int test_queue_create(
     }
     queue->item_size = config->item_size;
     queue->item_count = config->item_count;
+    queue->send_calls = 0u;
     queue->mem = config->allocator;
     if (state != NULL && state->full_rc == H2_PAL_OK) {
         state->full_rc = H2_PAL_ERR_FULL;
@@ -435,6 +437,7 @@ static int test_queue_send(
     const void *item,
     uint32_t timeout_ms) {
     test_queue_state_t *state = (test_queue_state_t *)user;
+    queue->send_calls += 1u;
     (void)timeout_ms;
     if (queue->closed != 0) {
         return H2_PAL_ERR_CLOSED;
@@ -2565,6 +2568,74 @@ static void test_dropped_events_warn_at_most_once_per_second(void) {
     assert(log_state.warn_count == 2u);
 
     h2_runtime_deinit(runtime);
+}
+
+/* The PAL system-event producer retains the normal drop/error policy. */
+static void test_system_event_queue_errors_and_synchronous_warning(void) {
+    const struct {
+        h2_pal_result_t provider;
+        h2_pal_result_t result;
+        unsigned drops;
+    } cases[] = {
+        {H2_PAL_ERR_FULL, H2_PAL_OK, 1u},
+        {H2_PAL_QUEUE_ERR_TIMEOUT, H2_PAL_OK, 1u},
+        {H2_PAL_ERR_WOULD_BLOCK, H2_PAL_ERR_WOULD_BLOCK, 0u},
+        {H2_PAL_ERR_IO, H2_PAL_ERR_IO, 0u},
+        {H2_PAL_ERR_CLOSED, H2_PAL_ERR_CLOSED, 0u},
+        {H2_PAL_OK, H2_PAL_OK, 0u},
+    };
+    for (size_t i = 0u; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        test_runtime_env_t env;
+        test_env_init(&env);
+        test_log_t log_state = {0};
+        static const h2_pal_log_vtable_t log_vtable = {.write = test_log_write};
+        const h2_pal_log_api_t log = {.user = &log_state, .vtable = &log_vtable};
+        h2_runtime_config_t config = test_runtime_config(&env);
+        config.system_event = &env.system_event;
+        config.log = &log;
+        h2_runtime_t *runtime = NULL;
+        assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+        env.time_state.now_ms = 100u;
+        env.queue_state.send_rc = cases[i].provider;
+        assert(test_system_event_dispatch(
+                   &env, H2_PAL_SYSTEM_EVENT_TYPE_BLE_HOST_STARTED, NULL, 0u) ==
+               cases[i].result);
+        assert(dropped_events(runtime) == cases[i].drops);
+        /* The first WARN is visible before the dispatch call returns. */
+        assert(log_state.warn_count == cases[i].drops);
+        assert(runtime->private_state->event_queue->count ==
+               (cases[i].provider == H2_PAL_OK ? 1u : 0u));
+        assert(runtime->private_state->wake_queue->count ==
+               (cases[i].provider == H2_PAL_OK ? 1u : 0u));
+        assert(runtime->private_state->wake_queue->send_calls ==
+               (cases[i].provider == H2_PAL_OK ? 1u : 0u));
+        if (cases[i].drops != 0u) {
+            char expected[128];
+            (void)snprintf(expected, sizeof(expected),
+                           "event queue full: dropped 1 event(s), total 1; "
+                           "last kind %d component %d id 0",
+                           (int)H2_RUNTIME_SYSTEM_EVENT_BLE_HOST_STARTED,
+                           (int)H2_RUNTIME_COMPONENT_SYSTEM_BLE);
+            assert(strcmp(log_state.last_scope, "runtime/event") == 0);
+            assert(strcmp(log_state.last_message, expected) == 0);
+            env.time_state.now_ms = 101u;
+            assert(test_system_event_dispatch(
+                       &env, H2_PAL_SYSTEM_EVENT_TYPE_BLE_HOST_STARTED, NULL, 0u) ==
+                   H2_PAL_OK);
+            assert(dropped_events(runtime) == 2u);
+            assert(log_state.warn_count == 1u);
+            /* Invalid payload must not flush the pending, rate-limited drop. */
+            env.time_state.now_ms = 1100u;
+            const uint8_t invalid_payload = 1u;
+            assert(test_system_event_dispatch(
+                       &env, H2_PAL_SYSTEM_EVENT_TYPE_BLE_HOST_STARTED,
+                       &invalid_payload, sizeof(invalid_payload)) ==
+                   H2_PAL_ERR_INVALID_ARG);
+            assert(dropped_events(runtime) == 2u);
+            assert(log_state.warn_count == 1u);
+        }
+        h2_runtime_deinit(runtime);
+    }
 }
 
 /*
@@ -5309,6 +5380,7 @@ int main(void) {
     test_button_final_action_is_retained_alone();
     test_button_retention_lifecycle();
     test_dropped_events_warn_at_most_once_per_second();
+    test_system_event_queue_errors_and_synchronous_warning();
     test_custom_events_interleave_with_input_events();
     test_button_action_emits_on_release();
     test_button_action_emits_on_every_pressed_poll();

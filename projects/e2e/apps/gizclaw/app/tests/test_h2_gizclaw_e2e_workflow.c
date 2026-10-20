@@ -20,6 +20,8 @@ static struct {
   unsigned calls[6];
 } state;
 
+static const char *expected_tag = "assistants";
+
 static int step(void) {
   return ++state.step == state.fail_at ? H2_PAL_ERR_IO : H2_PAL_OK;
 }
@@ -75,8 +77,8 @@ static void list_reply(h2_gizclaw_resp_storage_t *storage,
   out->count = 2u;
   out->items[0].name = save(storage, "zeta-model");
   out->items[1].name = save(storage, "alpha-model");
-  save_tag(storage, &out->items[0], "assistants");
-  save_tag(storage, &out->items[1], "assistants");
+  save_tag(storage, &out->items[0], expected_tag);
+  save_tag(storage, &out->items[1], expected_tag);
   out->runtime_profile_name = save(storage, "default");
   out->runtime_profile_revision = save(storage, "revision");
   const size_t alignment = _Alignof(h2_gizclaw_safety_fence_option_t);
@@ -142,7 +144,7 @@ static void get_reply(h2_gizclaw_resp_storage_t *storage,
   const unsigned fault = begin_reply(storage);
   memset(out, 0, sizeof(*out));
   out->workflow.name = save(storage, "alpha-model");
-  save_tag(storage, &out->workflow, "assistants");
+  save_tag(storage, &out->workflow, expected_tag);
   out->runtime_profile_name = save(storage, "default");
   out->runtime_profile_revision = save(storage, "revision");
   switch (fault) {
@@ -179,8 +181,8 @@ static void get_reply(h2_gizclaw_resp_storage_t *storage,
 
 static void check_list(const h2_gizclaw_str_t *tags, size_t tag_count,
                        h2_gizclaw_str_t cursor, size_t limit) {
-  assert(tag_count == 1u && tags && tags[0].len == strlen("assistants") &&
-         memcmp(tags[0].data, "assistants", tags[0].len) == 0);
+  assert(tag_count == 1u && tags && tags[0].len == strlen(expected_tag) &&
+         memcmp(tags[0].data, expected_tag, tags[0].len) == 0);
   assert(cursor.len == 0u && limit == 32u);
 }
 static void check_name(h2_gizclaw_str_t name) {
@@ -324,6 +326,23 @@ int main(void) {
   for (unsigned i = 0u; i < 6u; ++i)
     assert(state.calls[i] == 1u);
   assert(storage.used == 0u && !state.alive);
+  /* Both API families and membership checks use the explicit fixture tag. */
+  h2_gizclaw_e2e_config_t tagged = {.workflow_tag = "category:assistants"};
+  fixture.config = &tagged;
+  expected_tag = "category:assistants";
+  memset(&state, 0, sizeof(state));
+  assert(h2_gizclaw_e2e_run_workflow(&fixture, &storage) == H2_PAL_OK);
+  for (unsigned i = 0u; i < 6u; ++i)
+    assert(state.calls[i] == 1u);
+  memset(&state, 0, sizeof(state));
+  state.fault_at = 1u;
+  state.fault = 11u; /* A nonmatching tag still rejects the real list. */
+  assert(h2_gizclaw_e2e_run_workflow(&fixture, &storage) ==
+         H2_PAL_ERR_INVALID_STATE);
+  assert(!state.alive && storage.used == 0u &&
+         fixture.workflow_name[0] == '\0');
+  fixture.config = NULL;
+  expected_tag = "assistants";
   memset(&state, 0, sizeof(state));
   state.paginated = true;
   assert(h2_gizclaw_e2e_run_workflow(&fixture, &storage) == H2_PAL_OK);

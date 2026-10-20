@@ -462,12 +462,15 @@ int run_desktop(int argc, char **argv) {
       .server_endpoint = {session->endpoint.data(), session->endpoint.size()},
       .registration_token = {session->token.data(), session->token.size()},
       .app_config_key = h2_gizclaw_e2e_fixture_key(),
-      .expected_runtime_profile = h2_gizclaw_e2e_fixture_profile()[0] ?
-          h2_gizclaw_e2e_fixture_profile() : nullptr,
+      .expected_runtime_profile = h2_gizclaw_e2e_fixture_profile()[0]
+                                      ? h2_gizclaw_e2e_fixture_profile()
+                                      : nullptr,
+      .workflow_tag = h2_gizclaw_e2e_fixture_workflow_tag(),
       .app_config_expected_value = {h2_gizclaw_e2e_fixture_value(),
-                                   strlen(h2_gizclaw_e2e_fixture_value())},
-      .device_api_url = std::getenv("H2_GIZCLAW_E2E_DEVICE_API_URL") ?
-          std::getenv("H2_GIZCLAW_E2E_DEVICE_API_URL") : h2_gizclaw_e2e_fixture_device_api_url(),
+                                    strlen(h2_gizclaw_e2e_fixture_value())},
+      .device_api_url = std::getenv("H2_GIZCLAW_E2E_DEVICE_API_URL")
+                            ? std::getenv("H2_GIZCLAW_E2E_DEVICE_API_URL")
+                            : h2_gizclaw_e2e_fixture_device_api_url(),
       .device_audio_url = std::getenv("H2_GIZCLAW_E2E_AUDIO_URL"),
       .lua_app_url = h2_gizclaw_e2e_fixture_lua_app_url(),
       .lua_app_http_url = h2_gizclaw_e2e_fixture_lua_app_http_url(),
@@ -477,7 +480,8 @@ int run_desktop(int argc, char **argv) {
       .lua_entry_sha256 = h2_gizclaw_e2e_fixture_lua_entry_sha256(),
       .lua_frame_sha256 = h2_gizclaw_e2e_fixture_lua_frame_sha256(),
       .lua_storage_root = nullptr,
-      .lua_record_golden = std::getenv("H2_GIZCLAW_E2E_LUA_RECORD_GOLDEN") &&
+      .lua_record_golden =
+          std::getenv("H2_GIZCLAW_E2E_LUA_RECORD_GOLDEN") &&
           !std::strcmp(std::getenv("H2_GIZCLAW_E2E_LUA_RECORD_GOLDEN"), "1"),
       .lua_preserve_storage = false,
       .lua_expect_persisted = false,
@@ -497,8 +501,11 @@ int run_desktop(int argc, char **argv) {
       .should_stop_user = nullptr,
       .on_progress = emit_progress,
       .progress_user = nullptr,
-      .on_evidence = (suites & H2_GIZCLAW_E2E_SUITE_LUA_APPS) ? validate_lua_record : nullptr,
+      .on_evidence = (suites & H2_GIZCLAW_E2E_SUITE_LUA_APPS)
+                         ? validate_lua_record
+                         : nullptr,
       .evidence_user = session.get(),
+      .fixture_allocator = nullptr,
   };
   h2_gizclaw_e2e_result_t result = {};
   const bool lua_lane = suites == H2_GIZCLAW_E2E_SUITE_LUA_APPS;

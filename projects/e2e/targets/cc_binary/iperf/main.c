@@ -8,9 +8,13 @@
 #include "h2_linux_platform.h"
 #endif
 
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
 
 static h2_pal_result_t host_random(void *user, uint8_t *out, size_t len) {
     (void)user;
@@ -73,6 +77,32 @@ static int init_pal(h2_iperf_config_t *pal, h2_sctp_t **out_sctp) {
     return 0;
 }
 
+/* Host Net providers return POSIX fds. run_server accepts each control
+ * socket before any TCP data, on one thread. */
+static const h2_pal_net_api_t *s_server_base_net;
+static bool s_server_next_accept_is_control;
+
+static h2_pal_result_t server_accept(void *user, h2_pal_net_socket_t listener,
+                                     h2_pal_net_socket_t *out_socket,
+                                     h2_pal_net_addr_t *out_peer,
+                                     uint32_t timeout_ms) {
+  (void)user;
+  const h2_pal_result_t rc = h2_pal_net_tcp_accept(
+      s_server_base_net, listener, out_socket, out_peer, timeout_ms);
+  if (rc != H2_PAL_OK || !s_server_next_accept_is_control) {
+    return rc;
+  }
+  const int enabled = 1;
+  if (setsockopt(*out_socket, IPPROTO_TCP, TCP_NODELAY, &enabled,
+                 sizeof(enabled)) != 0) {
+    h2_pal_net_close(s_server_base_net, *out_socket);
+    *out_socket = -1;
+    return H2_PAL_ERR_IO;
+  }
+  s_server_next_accept_is_control = false;
+  return rc;
+}
+
 static int run_server(int argc, char **argv) {
     uint32_t port = 0u;
     uint32_t sctp_udp_port = 0u;
@@ -99,6 +129,12 @@ static int run_server(int argc, char **argv) {
         fprintf(stderr, "h2iperf: PAL initialisation failed\n");
         return 1;
     }
+    s_server_base_net = pal.net;
+    h2_pal_net_vtable_t server_net_vtable = *pal.net->vtable;
+    server_net_vtable.tcp_accept = server_accept;
+    h2_pal_net_api_t server_net = *pal.net;
+    server_net.vtable = &server_net_vtable;
+    pal.net = &server_net;
     h2_iperf_server_params_t params;
     memset(&params, 0, sizeof(params));
     params.port = (uint16_t)port;
@@ -114,12 +150,13 @@ static int run_server(int argc, char **argv) {
            (unsigned)h2_iperf_server_sctp_udp_port(server));
     fflush(stdout);
     for (;;) {
-        h2_iperf_result_t result;
-        const h2_pal_result_t run_rc =
-            h2_iperf_server_run_once(server, 60000u, &result);
-        if (run_rc == H2_PAL_ERR_TIMEOUT) {
-            continue;
-        }
+      s_server_next_accept_is_control = true;
+      h2_iperf_result_t result;
+      const h2_pal_result_t run_rc =
+          h2_iperf_server_run_once(server, 60000u, &result);
+      if (run_rc == H2_PAL_ERR_TIMEOUT) {
+        continue;
+      }
         if (run_rc != H2_PAL_OK) {
             printf("H2IPERF_SERVER test rc=%d\n", (int)run_rc);
             fflush(stdout);

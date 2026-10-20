@@ -1,12 +1,21 @@
+#include "h2_atomic.h"
 #include "h2_gizclaw_api_key.h"
 #include "h2_gizclaw_e2e_catalog.h"
 #include "h2_gizclaw_e2e_debug.h"
+#include "h2_gizclaw_e2e_device_http.h"
 #include "h2_gizclaw_telemetry.h"
 #include "h2_yyjson_json.h"
-#include "h2_gizclaw_e2e_device_http.h"
-#include "h2_atomic.h"
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+
+#ifndef H2_GIZCLAW_E2E_DEVICE_AUDIO_DURATION_MS
+#define H2_GIZCLAW_E2E_DEVICE_AUDIO_DURATION_MS 32000u
+#endif
+#if H2_GIZCLAW_E2E_DEVICE_AUDIO_DURATION_MS <= 1000 ||                         \
+    H2_GIZCLAW_E2E_DEVICE_AUDIO_DURATION_MS > UINT32_MAX
+#error "fixture audio duration must be in 1001..UINT32_MAX ms"
+#endif
 
 /* OTA rejection is a GizClaw case policy; Audio support belongs to app_test. */
 static h2_atomic_size_t stage_bytes;
@@ -95,6 +104,10 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
       rc = H2_PAL_ERR_INVALID_STATE;                                           \
   } while (0)
   CHECK(h2_gizclaw_e2e_run_debug(fixture));
+  uint64_t player_started_at = 0;
+  const bool player_clock_valid =
+      rc == H2_PAL_OK && h2_pal_time_get_monotonic_ms(
+                             fixture->time, &player_started_at) == H2_PAL_OK;
   CHECK(h2_gizclaw_player_play(
       service, h2_gizclaw_e2e_str(fixture->config->device_audio_url)));
   h2_gizclaw_e2e_evidence("h2_gizclaw_player_play", "local-player", rc);
@@ -110,12 +123,25 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
     h2_gizclaw_e2e_evidence("h2_gizclaw_player_get_status", "local-player", rc);
     uint64_t now = 0;
     CHECK(h2_pal_time_get_monotonic_ms(fixture->time, &now));
-    if (fixture->config->device_real_audio && i % 4u == 0)
-      h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=player-status state=%s position_ms=%llu "
-             "pcm_bytes=%llu peak=%u\n",
-             local.state, (unsigned long long)local.position_ms,
-             (unsigned long long)device_evidence(fixture).playback_bytes,
-             (unsigned)device_evidence(fixture).playback_peak);
+    if (i % 4u == 0) {
+      const h2_app_test_audio_evidence_t audio = device_evidence(fixture);
+      const bool elapsed_valid =
+          player_clock_valid && rc == H2_PAL_OK && now >= player_started_at;
+      h2_gizclaw_e2e_emit(
+          "H2_GIZCLAW_E2E stage=player-status state=%s position_ms=%llu "
+          "pcm_bytes=%llu peak=%u elapsed_ms=%llu elapsed_valid=%u "
+          "speaker_start_count=%llu track_create_count=%llu "
+          "track_write_count=%llu active_track_count=%u\n",
+          local.state, (unsigned long long)local.position_ms,
+          (unsigned long long)audio.playback_bytes,
+          (unsigned)audio.playback_peak,
+          (unsigned long long)(elapsed_valid ? now - player_started_at : 0u),
+          (unsigned)elapsed_valid,
+          (unsigned long long)audio.speaker_start_count,
+          (unsigned long long)audio.track_create_count,
+          (unsigned long long)audio.track_write_count,
+          (unsigned)audio.active_track_count);
+    }
     if (!first_playing_at && !strcmp(local.state, "playing") &&
         local.position_ms)
       first_playing_at = now;
@@ -200,7 +226,8 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
   const h2_gizclaw_player_playlist_entry_t album[] = {
       {track, h2_gizclaw_e2e_str("gizos-e2e-track-1"), album_ref, 0u},
       {track, h2_gizclaw_e2e_str("gizos-e2e-track-2"), album_ref, 0u},
-      {track, h2_gizclaw_e2e_str("gizos-e2e-track-3"), album_ref, 32000u},
+      {track, h2_gizclaw_e2e_str("gizos-e2e-track-3"), album_ref,
+       H2_GIZCLAW_E2E_DEVICE_AUDIO_DURATION_MS},
   };
   CHECK(h2_gizclaw_player_playlist_set(service, album, 3u));
   h2_gizclaw_e2e_evidence("h2_gizclaw_player_playlist_set", "local-playlist",
@@ -273,9 +300,9 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
       ASSERT(strcmp(local.state, "error") != 0);
     }
     ASSERT(played);
-    /* The pinned device fixture is 32 seconds. The third entry supplies its
-     * duration so play_index_at must actually reach the requested media time.
-     * This does not imply that the HTTP server honored Range. */
+    /* The third entry supplies the configured duration so play_index_at must
+     * actually reach the requested media time. This does not imply that the
+     * HTTP server honored Range. */
     int bad_index = H2_PAL_OK;
     if (rc == H2_PAL_OK) bad_index = h2_gizclaw_player_play_index(service, 3u);
     ASSERT(bad_index == H2_PAL_ERR_INVALID_ARG);

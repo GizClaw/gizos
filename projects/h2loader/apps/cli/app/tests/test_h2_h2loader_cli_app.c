@@ -376,6 +376,72 @@ static void test_transport_diagnostic_arguments(void) {
         H2_PAL_ERR_IO);
 }
 
+static void test_command_response_line_boundary(void) {
+    static const char accepted[] = "H2_LOADER_REBOOT target=upgrade result=accepted\n";
+    static const struct { const char *console; const char *separator; } cases[] = {
+        {"H2_DISPLAY_IDENTITY version=0.1.0-e2e.c", "\n"},
+        {"console\n", ""},
+        {"console\r\n", ""},
+        {"console\r", "\n"},
+        {"", ""},
+    };
+    for (size_t item = 0u; item < sizeof(cases) / sizeof(cases[0]); ++item) {
+        for (size_t split = 1u; split < sizeof(accepted) - 1u; ++split) {
+            fake_output_t output = {0};
+            h2_command_io_api_t io = {.user = &output, .vtable = &output_vtable};
+            h2_h2loader_cli_config_t config = {.stdout_io = &io};
+            h2_h2loader_cli_context_t context = {.config = &config};
+            char expected[256];
+            assert(h2_h2loader_cli_output_bytes(&context, H2_H2LOADER_CLI_STREAM_STDOUT,
+                (const uint8_t *)cases[item].console, strlen(cases[item].console)) == H2_PAL_OK);
+            assert(h2_h2loader_cli_command_output(&context, NULL, 0u) == H2_PAL_OK);
+            assert(context.command_output_started == 0u);
+            assert(h2_h2loader_cli_command_output(&context,
+                (const uint8_t *)accepted, split) == H2_PAL_OK);
+            for (size_t offset = split; offset < sizeof(accepted) - 1u; ++offset)
+                assert(h2_h2loader_cli_command_output(&context,
+                    (const uint8_t *)accepted + offset, 1u) == H2_PAL_OK);
+            (void)snprintf(expected, sizeof(expected), "%s%s%s",
+                cases[item].console, cases[item].separator, accepted);
+            assert(output.len == strlen(expected) && strcmp(output.bytes, expected) == 0);
+        }
+    }
+    fake_output_t output = {0};
+    h2_command_io_api_t io = {.user = &output, .vtable = &output_vtable};
+    h2_h2loader_cli_config_t config = {.stdout_io = &io};
+    h2_h2loader_cli_context_t context = {.config = &config};
+    assert(h2_h2loader_cli_command_output(&context, (const uint8_t *)accepted,
+        sizeof(accepted) - 1u) == H2_PAL_OK);
+    assert(h2_h2loader_cli_output(&context, H2_H2LOADER_CLI_STREAM_STDOUT, "next console") == H2_PAL_OK);
+    context.command_output_started = 0u;
+    assert(h2_h2loader_cli_command_output(&context, (const uint8_t *)accepted,
+        sizeof(accepted) - 1u) == H2_PAL_OK);
+    assert(strcmp(output.bytes,
+        "H2_LOADER_REBOOT target=upgrade result=accepted\nnext console\n"
+        "H2_LOADER_REBOOT target=upgrade result=accepted\n") == 0);
+}
+
+static void test_command_response_output_failures(void) {
+    fake_output_t output = {0};
+    h2_command_io_api_t io = {.user = &output, .vtable = &output_vtable};
+    h2_h2loader_cli_config_t config = {.stdout_io = &io};
+    h2_h2loader_cli_context_t context = {.config = &config};
+    static const uint8_t response[] = "H2_LOADER_REBOOT target=upgrade result=accepted\n";
+    assert(h2_h2loader_cli_output_bytes(&context, H2_H2LOADER_CLI_STREAM_STDOUT,
+        (const uint8_t *)"partial", 7u) == H2_PAL_OK);
+    output.write_result = H2_PAL_ERR_IO;
+    assert(h2_h2loader_cli_command_output(&context, response, sizeof(response) - 1u) == H2_PAL_ERR_IO);
+    assert(strcmp(output.bytes, "partial") == 0 && context.command_output_started == 0u);
+    output.write_result = H2_PAL_OK;
+    output.flush_result = H2_PAL_ERR_IO;
+    assert(h2_h2loader_cli_command_output(&context, response, sizeof(response) - 1u) == H2_PAL_ERR_IO);
+    assert(strcmp(output.bytes, "partial\n") == 0 && context.command_output_started == 0u);
+    output.flush_result = H2_PAL_OK;
+    assert(h2_h2loader_cli_command_output(&context, response, sizeof(response) - 1u) == H2_PAL_OK);
+    assert(strcmp(output.bytes,
+        "partial\nH2_LOADER_REBOOT target=upgrade result=accepted\n") == 0);
+}
+
 static void test_ble_uid_mismatch_stops_reconnect(void) {
     h2_h2loader_cli_transport_t transport = {0};
     h2_h2loader_cli_options_t options = {
@@ -791,6 +857,8 @@ int main(void) {
     assert(h2_bleikcp_global_init() == H2_PAL_OK);
     test_ble_connect_diagnostic_uses_stderr();
     test_transport_diagnostic_arguments();
+    test_command_response_line_boundary();
+    test_command_response_output_failures();
     test_help_and_usage();
     test_ble_transport_routes_the_shared_device_command();
     test_ble_uid_mismatch_stops_reconnect();

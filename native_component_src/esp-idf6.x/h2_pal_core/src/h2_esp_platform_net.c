@@ -1326,7 +1326,7 @@ static h2_pal_result_t esp_net_tcp_connect(
         ESP_LOGE("h2_net", "stage=tcp_connect errno=%d", error);
         errno = error;
         (void)fcntl(socket_fd, F_SETFL, flags);
-        return esp_net_socket_error();
+        return H2_PAL_ERR_IO;
     }
     result = h2_esp_net_wait_fd(socket_fd, 1, timeout_ms);
     if (result != H2_PAL_OK) {
@@ -1345,7 +1345,7 @@ static h2_pal_result_t esp_net_tcp_connect(
                  socket_error, socket_rc < 0 ? errno : 0);
         (void)fcntl(socket_fd, F_SETFL, flags);
         errno = socket_error;
-        return esp_net_socket_error();
+        return H2_PAL_ERR_IO;
     }
     return fcntl(socket_fd, F_SETFL, flags & ~O_NONBLOCK) == 0
         ? H2_PAL_OK

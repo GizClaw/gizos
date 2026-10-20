@@ -20,6 +20,16 @@ Portable E2E App 可以依赖 Runtime、PAL 与被测 target-independent library
 
 Platform artifact entry 持有 Runtime assembly、具体 provider、endpoint 与 fixture 注入、platform lifecycle 和结果输出。H2Loader-managed E2E image 位于 `projects/e2e/targets/h2loader_tar_zlib/<image>/<board>`；`h2loader_tar_zlib` 表示安装产物类型，不改变 E2E ownership。没有 H2Loader 的独立诊断 image继续位于 `projects/e2e/targets/<firmware-rule>/<image>/<board>`。
 
+IPv6、Net/TLS、HTTP、WebRTC 与 Wi-Fi 的设备测试报告直接写入入口现有的标准输出，保留原 CASE、execution、summary 与失败结果，避免产品日志等级隐藏验收账本；被测 Runtime/PAL 与 SDK 配置保持原样。原本把 Log PAL 本身作为输出合同的 iperf Client、Lua print 与 Core Log 用例仍遵守各自合同，不能以替换真实 Log provider 或提高 SDK 日志预算代替。
+
+Core Log 的可配置输出合同由 launcher 的 `log_min_level` 声明，默认 DEBUG 要求四级真实输出；所有配置仍调用 DEBUG、INFO、WARN、ERROR 四种 PAL write 并验证非法参数。ESP 入口从已有 `CONFIG_LOG_MAXIMUM_LEVEL` 推导应观察的输出级别，启用 master level 时再取其当前值作为上限；BOOT 记录 PAL 最低级别、SDK 最高级别与实际有效上限，不修改 sdkconfig 或提升 master level。已启用级别缺少真实 sink 输出仍为 FAIL；未提供观察器或日志完全关闭为 BLOCKED。完整 Core 资格必须同时记录该 profile 和原 41 项账本，不能把被过滤级别写成已观察通过。
+
+HTTP、MQTT、Net/TLS 与 WebRTC 的 ESP Native 入口，以及 legacy iperf 的 DevKit 入口，通过共享的 `projects/e2e/targets/h2loader_tar_zlib/fixture-wifi` 接收可选公开 Wi-Fi fixture。最终固件入口可在既有 `cmake_definitions` 中同时显式提供 `H2_E2E_WIFI_SSID` 和 `H2_E2E_WIFI_PASSWORD`；配置不完整或包含不支持的字符时构建失败，不读取 operator environment。借用的 fixture 配置只替换原 setup 的凭据来源，使用真实 Runtime 的非保存 STA connect，保持原关联、取得 IP、case、资源基线及 cleanup 预算，不写入 PAL 已保存凭据或 Runtime 网络集合。
+
+未提供这两个输入时，HTTP/MQTT/Net/TLS 继续复用现有可用连接，否则读取原保存配置；WebRTC 和 legacy iperf 的 DevKit 入口继续使用原保存配置。显式提供 fixture 时只尝试该配置，不回退到其他连接或保存项。网络准备仍先于原 portable case runner，实际网络失败和不完整账本保留原结果；构建成功不授予设备测试资格。
+
+GizClaw DevKit 入口在原保存配置缺失时，也可使用同一 Native 输入完成非保存连接；已有连接和保存配置继续使用原路径，Wi-Fi 重试间隔、业务用例、API 审计及确认条件不变。
+
 可在 host 上确定性运行、没有外部依赖的 App-local、parser、fake 和 loopback 测试属于默认自动测试，不声明 tag。连接外部服务、真实设备或要求人工准备环境的 E2E test 声明 Bazel 特殊 tag `manual`，因此不会被通配 target pattern 自动选中；需要重新观察真实外部状态的 live test 另声明特殊 tag `external`，由 Bazel 禁用测试结果缓存，构建 disk/remote cache 保持启用。新的手工测试入口直接调用 `bazel test --config=<platform> --nocache_test_results <exact-label>`，设备选择与需要继承的 SDK 路径通过 `--test_env` 传入；平台配置和静态 suite 参数属于 `.bazelrc` / `BUILD.bazel`。不为纯转发另建 Make alias、shell wrapper 或 Python Bazel 调度器；已有 legacy Make 入口暂保留兼容，不再维护额外 tag filter。测试仅使用这些 Bazel 原生控制 tag，不另建业务 tag inventory，也不创建 `test_suite` 聚合入口。
 
 ## Apps
@@ -94,9 +104,9 @@ macOS Desktop launcher 先通过 Darwin Serial 运行同一 App。Browser launch
 
 ## Lua Link
 
-`h2_lua_link_e2e_run()` 在已启动的 BLE Host 上创建一个 Lua Host，调用 `h2_lua_link_enable()` 并以 `args.role`（`host` 或 `join`）运行固定脚本。每个 session 依次测 20 次可靠消息往返、双向各 200 条有序可靠消息、双向各 100 条 50 Hz datagram、双向各 64 KiB 逐字节校验的字节流，最后 joiner 离开、host 必须报告 `peer_closed`；结果以 `LINK stage=...` 和 `H2_LUA_LINK_E2E result=...` 写入 Runtime Log。`hold` 模式保持一个 10 Hz datagram session 直到链路断开，并报告断开距最后一条 datagram 的时间。App 只依赖 Runtime 与 `link` module，不使用 Wi-Fi；`//projects/e2e/apps/lua-link/app:lua_link_e2e_test` 在 fake BLE air 上让两个角色互跑完整 suite 和 hold 断链。
+`h2_lua_link_e2e_run()` 在已启动的 BLE Host 上创建一个 Lua Host，调用 `h2_lua_link_enable()` 并以 `args.role`（`host` 或 `join`）运行固定脚本。每个 session 依次测 20 次可靠消息往返、双向各 200 条有序可靠消息、双向各 100 条 50 Hz datagram、双向各 64 KiB 逐字节校验的字节流，最后 joiner 离开、host 必须报告 `peer_closed`；结果以 `LINK stage=...` 和 `H2_LUA_LINK_E2E result=...` 写入 Runtime Log。ESP entry 仅将这些原始测试记录转交 checked stdout，其余日志仍使用 board Log，因此不需要提高 Main 的日志级别。`hold` 模式保持一个 10 Hz datagram session 直到链路断开，并报告断开距最后一条 datagram 的时间。App 只依赖 Runtime 与 `link` module，不使用 Wi-Fi；`//projects/e2e/apps/lua-link/app:lua_link_e2e_test` 在 fake BLE air 上让两个角色互跑完整 suite 和 hold 断链。
 
-DevKit launcher（`projects/e2e/targets/h2loader_tar_zlib/lua-link/devkit`）运行 `host`，AMOLED launcher（`.../lua-link/amoled`）运行 `join`，两者都使用 Extended Advertising/Scanning。H2Loader App command service 启动 BLE Host；image 在 command service 运行后确认，只证明基础设施可用。每次 boot 连续运行五个 session 并输出 `stage=summary ... passed=<n> rounds=5`，最后进入 `hold` session。先启动 AMOLED joiner，再启动 DevKit host。
+DevKit launcher（`projects/e2e/targets/h2loader_tar_zlib/lua-link/devkit`）运行 `host`，AMOLED launcher（`.../lua-link/amoled`）默认运行 `join`，也可用 `--define=H2_LUA_LINK_E2E_ROLE=host` 选择对端角色；两者都使用 Extended Advertising/Scanning。ESP entry 在首轮前保留五秒串口重连窗口，原轮间间隔、session deadline 和脚本断言不变。H2Loader App command service 启动 BLE Host；image 在 command service 运行后确认，只证明基础设施可用。每次 boot 连续运行五个 session 并输出实际 Runtime board 的 `stage=summary ... passed=<n> rounds=5`，最后进入 `hold` session。先启动 joiner，再启动 host，保留双方完整的逐轮及 hold 记录。
 
 ## GizClaw
 
@@ -118,6 +128,12 @@ bazel test --config=macos_arm64 //projects/e2e/targets/cc_test/gizclaw:gizclaw_p
 ```
 
 DevKit launcher 位于 `projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/devkit`，使用 H2Peer 与明确注入的受控 E2E endpoint、RuntimeProfile、key/value、token 和 HTTPS fixtures；旧 default/deploy-default 运行记录保留原身份。通用 RPC/Voice 测试从该 profile 返回的 `assistants` catalog 选择真实 Workflow，不假设 H106 的 `chat` alias。它在首次 Wi-Fi `GOT_IP` 后每次 boot 只运行一次 `all`；构建时设置 `--define=H2_GIZCLAW_E2E_VOICE_ONLY=1` 可只运行 `voice`，用于隔离跨 case 的资源状态。断线重连不创建第二个 runner。portable App 继续 non-fail-fast 执行选中的独立 case，launcher 在完成后每 10 秒重放 bounded summary。普通 GizClaw E2E 仅在本轮选定用例全部通过、结果完整且没有清理失败/保留资源时确认 App。失败镜像保持未确认；AMOLED 显式 OTA-only 的源镜像准备仍遵循独立硬件升级流程。
+
+DevKit 的完整证据账本按需分块增长，保留 384 KiB 上限；冻结后逐块重播相同原始字节、record 计数和 CRC32，不创建另一份连续副本。Fixture 的响应 arena 仅在清理业务资源时申请，peer-only 清理不依赖额外的 64 KiB 分配；WebRTC 观察包装器保留调用方指定的 peer allocator。内存分配失败、未收到删除 ACK、清理残留或证据不完整仍按原标准失败，不调整产品 SDK 配置或测试容量、断言与超时。
+
+GizClaw E2E 可用 `fixture_allocator` 显式借用 consumer 提供的内存池，默认仍使用 Runtime Mem。ESP launcher 的可选 CMake `H2_GIZCLAW_E2E_ALLOCATOR_ACCESSOR` 只接受一个 C identifier；未配置时不引用任何额外 Board API，显式配置而不可用或耗尽时失败。Case、Service/client、响应及完整分页账本借用同一 allocator；失败后仍有 retained 资源时必须保持它有效。Runtime、Board 和生产 Main 配置不变。
+
+GizClaw 的可选 `app_config_fixture_workflow_tag` 通过既有 fixture 输入通道选择精确标签，默认 `assistants`；Session、两套 Workflow list 与原标签成员检查保持一致。结构化目录须显式提供相应标签，不能忽略空目录或放宽原断言。Device fixture 沿用原 64 KiB 音频 ring 和客户端默认预缓冲，保留完整音频流、原业务用例、236 接口审计及时间预算。
 
 DevKit 的 E2E runner、launcher 和 job task 显式使用 PSRAM stack；runner 入口以实际栈局部地址检查 PSRAM，失败时报告 harness error。`$gizclaw/net` 也使用 PSRAM，DevKit E2E policy 为它保留 64 KiB：在同一块 DevKit（UID `9888e0115c52`）上，原 32 KiB 实际栈曾在 Voice 的 `session_audio_start` 后溢出并重启。64 KiB 复测越过了该溢出点，`all` 的两轮实机测试分别为 8 项中 4 项通过、4 项失败：第一轮 `cleanup_rc=0`、`retained_resources=0`，第二轮出现 `peer_create_data_channel rc=-13`，`cleanup_rc=-4`、`retained_resources=8`。独立的 `voice` 实机测试中，PTT、文本、实时 VAD、service 重连和清理均通过，`selected=1`、`pass=1`、`cleanup_rc=0`、`retained_resources=0`。DevKit 无音频后端，其测试不作为真实麦克风和扬声器验收。测试没有取得 `$gizclaw/net` 的 stack high-water 数据，因此 64 KiB 不能作为其他固件 target 的容量结论。
 
@@ -171,6 +187,8 @@ macOS 使用 FFmpeg；WASM C 在 Worker 执行、WebCodecs UI callback 只做有
 
 ## PAL Display
 
+ESP Display 入口可通过 `H2_DISPLAY_CAPTURE_HEADER` 与 `H2_DISPLAY_CAPTURE_CONFIGURE` 注入最终 board 的诊断 tap；默认继续使用 AMOLED 的 tap。fixture 注册函数返回各自 board 的真实尺寸和格式，NULL 只查询／注销；不增加 preflight open/close，原 runner 仍从 cold/closed 起点运行不变的 24-case 合同。tap 只借出已完成 DMA 的真实字节；不替换 Display PAL、不复制 launcher，也不把传输比对提升为光学或亮度通过。
+
 `projects/e2e/apps/pal-display/app` 借用真实 Runtime 和 launcher 的输出观察器，覆盖 open/info/draw/present/brightness/close，固定运行 24 个 mandatory case。测试检查 native 格式、borrowed 像素生命周期、全屏及局部更新、padding/unaligned stride、可选格式的明确支持或拒绝、矩形/整数溢出、重复 present、0/50/100 亮度和重复 close/reopen；失败、未运行或清理失败不能授予资格。
 
 Desktop 从 SDL renderer 读回，Browser 比对真实 Chromium composited screenshot，移动端捕获已显示的 UIKit/Android View。移动端分别消费实际 Swift Package/XCFramework 和 AAR，manual 入口为 `make bazel-test-ios_pal_display_simulator_test` 与 `make bazel-test-android_pal_display_simulator_test`。
@@ -183,11 +201,15 @@ AMOLED 比对已完成 SPI DMA 的传输数据；BK 比对 LCD controller 当前
 
 Desktop launcher 位于 `projects/e2e/targets/cc_binary/webrtc-performance`，自动启动并回收只绑定 loopback 的 Pion fixture。DevKit H2Loader App 位于 `projects/e2e/targets/h2loader_tar_zlib/webrtc-performance/devkit`；operator 必须在构建时显式注入可从测试 Wi-Fi 访问的 HTTP signaling 和 STUN LAN endpoint，launcher 同时输出 internal、DMA-capable 与 PSRAM heap 的 KiB checkpoint。Desktop loopback 结果不能替代真实 DevKit、Wi-Fi 或远程服务证据。
 
+复用该入口的 consumer 可以通过 CMake constants `H2_WEBRTC_PERF_WIFI_SSID` 和 `H2_WEBRTC_PERF_WIFI_PASSWORD` 显式提供测试网络；未定义时使用原有 `H2LOADER_WIFI_SSID` / `H2LOADER_WIFI_PASSWORD` environment 输入。空密码与不支持的字符仍按同一入口检查拒绝。
+
 ## iperf
 
 `h2_iperf_e2e_run()` 只消费 launcher 借用的 Memory、Net、Time、Crypto、可选 SCTP 与 Log PAL，以及 operator 提供的 server 地址。portable App 拥有固定顺序的 case 矩阵（TCP 参考、UDP 上下行 10/20/40 Mbit/s 与 1200 B datagram、SCTP 上下行 1200 B 与 1400 B packet budget）、每个 case 的 deadline、non-fail-fast aggregation、每 case 一行 `H2_IPERF_E2E_CASE` JSON 和 `H2_IPERF_E2E_SUMMARY`。它不读取 environment 或文件，不连接 Wi-Fi，也不选择 provider；SCTP case 在没有 SCTP PAL 时记为 `UNSUPPORTED` 并继续。
 
-App-local `iperf_e2e_test` 用 `//libs/iperf:test_support` 在 loopback 上对同一个 PAL server 顺序执行 TCP、UDP reverse 与两条 SCTP association，验证共享封装 socket 上的后续 association 不会被前一条的尾包污染。host launcher `//projects/e2e/targets/cc_binary/iperf:h2iperf` 同时提供 `server`（TCP/UDP/SCTP-over-UDP 的 PAL server）和 `client <host>`（同一矩阵）。AMOLED launcher 位于 `projects/e2e/targets/h2loader_tar_zlib/iperf/amoled`，从 Runtime `wifi_settings` 取回 Loader 保存的 STA 配置，用 `--define=H2_IPERF_SERVER` 指定 LAN server，并用 `--define=H2_IPERF_POWER_SAVE` 选择 Wi-Fi 省电策略。
+DevKit native entry 仅将 `iperf_e2e` scope 的 INFO 诊断记录交给 checked stdout，其余日志继续委托原 board Log。portable App 仍通过原 Log PAL 报告，14-case 矩阵、5 秒测量、内存 checkpoint 和测试前确认位置不变；`iperf-client` 的真实 Log PAL 合同也保持原样。 错误诊断继续使用既有可选 Log sink，分别报告连续发送失败耗尽时的最后 PAL 结果/计数/包长、SCTP failure reason、pump 的 service/UDP receive、data run 与 TEST_END control send 返回层次；诊断不改变返回值、1,000 次发送失败上限、原 case 或 deadline，也不把 PAL 结果解释为原生 socket errno。 若真实 UDP send 在本次 service 返回暂时不可写，且立即 pending deadline 导致 pump 原本不等待而调用方允许等待，pump 在 service/callback 返回后调用一次既有 Time PAL 的 `sleep_ms(1)`；原计数、1,000 次上限、成功清零、测量和控制截止保持不变。零等待调用保持非阻塞；Time sleep 不可用时仍走原有界重试，不做忙等补偿。
+
+App-local `iperf_e2e_test` 用 `//libs/iperf:test_support` 在 loopback 上对同一个 PAL server 顺序执行 TCP、UDP reverse 与两条 SCTP association，验证共享封装 socket 上的后续 association 不会被前一条的尾包污染。host launcher `//projects/e2e/targets/cc_binary/iperf:h2iperf` 同时提供 `server`（TCP/UDP/SCTP-over-UDP 的 PAL server）和 `client <host>`（同一矩阵）。 Host server 入口只为每次会话的首个成功 accept（control socket）设置 `TCP_NODELAY`，让小控制状态及时发送；后续 TCP data socket 与 client 模式保持原 provider 行为，原矩阵和截止不变。AMOLED launcher 位于 `projects/e2e/targets/h2loader_tar_zlib/iperf/amoled`，从 Runtime `wifi_settings` 取回 Loader 保存的 STA 配置，用 `--define=H2_IPERF_SERVER` 指定 LAN server，并用 `--define=H2_IPERF_POWER_SAVE` 选择 Wi-Fi 省电策略。
 
 ## iperf Server
 
@@ -263,7 +285,7 @@ iOS/Android 消费实际 SDK 包导出的显式 MQTT owner；owner 持有本平�
 
 Desktop 直接运行 `//projects/e2e/targets/cc_binary/pal-mqtt:desktop_test`；移动端分别使用 `//projects/e2e/targets/ios_application/pal-mqtt:ios_pal_mqtt_simulator_test` 和 `//projects/e2e/targets/android_binary/pal-mqtt:android_pal_mqtt_simulator_test`。公网 `:public_broker_test` 为 `manual`/`external`，同一 App 的单个 QoS0 round trip 只授予该子集通过，不能代替完整 registry。连接成功但没有 CONNACK 的负例预算由 launcher 注入，仍须 broker 实际观察到 CONNECT，并验证有限 deadline 的上下界；未到达 broker 的 TCP timeout 不满足该负例。入口、命令与平台能力边界见 `projects/e2e/apps/pal-mqtt/README.md`；缺少 raw TCP/TLS MQTT provider 的 Browser 保持明确 unsupported，不能把 host 结果当作六平台资格。
 
-新硬件 capture 的 BK/DevKit 均须 fixed-source package binding；首份 boot/RUN 不完整时后续 replay 或新 startup 不能替代。两者先完整交付首轮 ledger 与 READY(confirm=pending)，再确认 App 并交付实际 CONFIRMED，当前 verifier 拒绝缺少终态或以 confirm=0 绕过该时序的记录。DevKit 借用现有 USB JTAG PAL，逐条检查有界 write 的完整字节数和真实 TX flush；BK 保留原有 UART owner 与管理恢复流程。TLS 拒绝分别绑定实际 CA/hostname alert 与观察到的正常/错误 server-name，null 或缺失 SNI、两个同类失败均不能通过。LAN fixture 要求显式 `--evidence` 保存实际 CA/config/inputs。历史 BK 导入只运行并校验 capture 内的 `host-verifier.py`，其旧 confirm=0 schema 保留原含义；旧资格保留原 host/verifier/fixture schema，不能改称当前修订版 hardware PASS。
+新硬件 capture 的 BK/DevKit 均须 fixed-source package binding；首份 boot/RUN 不完整时后续 replay 或新 startup 不能替代。两者先完整交付首轮 ledger 与 READY(confirm=pending)，再确认 App 并交付实际 CONFIRMED，当前 verifier 拒绝缺少终态或以 confirm=0 绕过该时序的记录。ESP 入口按既有 SDK console 选择 UART 或 USB JTAG PAL，逐条检查有界 write 的完整字节数和真实 TX flush；BK 保留原有 UART owner 与管理恢复流程。TLS 拒绝分别绑定实际 CA/hostname alert 与观察到的正常/错误 server-name，null 或缺失 SNI、两个同类失败均不能通过。LAN fixture 要求显式 `--evidence` 保存实际 CA/config/inputs。历史 BK 导入只运行并校验 capture 内的 `host-verifier.py`，其旧 confirm=0 schema 保留原含义；旧资格保留原 host/verifier/fixture schema，不能改称当前修订版 hardware PASS。
 
 ## PAL Crypto E2E
 

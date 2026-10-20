@@ -9,6 +9,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "psa/crypto.h"
+#include "h2_e2e_fixture_wifi.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -59,7 +60,7 @@ static void run(void *user) {
     vTaskDelay(pdMS_TO_TICKS(5000u));
     int rc;
     for (;;) {
-        rc = h2_mqtt_device_prepare(runtime);
+        rc = h2_mqtt_device_prepare_with_wifi(runtime, h2_e2e_fixture_wifi());
         if (rc == H2_PAL_OK) break;
         if (rc != H2_PAL_ERR_NOT_FOUND && rc != H2_PAL_ERR_UNAVAILABLE &&
             rc != H2_PAL_ERR_TIMEOUT && rc != H2_PAL_ERR_BUSY) fail("network", rc);
@@ -134,7 +135,13 @@ void app_main(void) {
         fail("runtime-or-commands", rc);
     }
     board_log=runtime->log;
+#if defined(CONFIG_ESP_CONSOLE_UART) && CONFIG_ESP_CONSOLE_UART
+    console.uart=h2_esp_platform_uart_io_stream_api();
+#elif defined(CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG) && CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
     console.usb=h2_esp_platform_usb_jtag_io_stream_api();
+#else
+#error MQTT ledger requires an existing UART or USB Serial/JTAG console
+#endif
     console.timeout_ms=5000u;
     runtime->log=&ledger_log_api;
     printf("H2_PAL_MQTT_PROVIDER policy=coremqtt allocator=psram incoming=8 outgoing=8 owner_bytes=%zu\n", owner_bytes);

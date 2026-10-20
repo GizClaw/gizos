@@ -16,11 +16,12 @@ typedef struct h2_app_test_webrtc h2_app_test_webrtc_t;
 typedef void (*h2_app_test_webrtc_observe_fn)(
     void *user, const h2_pal_webrtc_event_t *event);
 /** Decorate a real or fake provider, preserving errors, payload ownership and
- * track handles. Peer/channel handles belong to this decorator and must only be
- * used with its API. Each peer retains distinct channel handles until peer
- * close so borrowed event handles stay stable. Caller serializes operations
- * on each peer and its channels, and releases events before closing the peer.
- * Dependencies and callback context remain borrowed until destroy. */
+ * track handles. Configured peer creation preserves the delegate's allocator
+ * selection and errors. Peer/channel handles belong to this decorator and must
+ * only be used with its API. Each peer retains distinct channel handles until
+ * peer close so borrowed event handles stay stable. Caller serializes
+ * operations on each peer and its channels, and releases events before closing
+ * the peer. Dependencies and callback context remain borrowed until destroy. */
 h2_pal_result_t h2_app_test_webrtc_create(const h2_pal_mem_api_t *mem,
                                           const h2_pal_webrtc_api_t *delegate,
                                           h2_app_test_webrtc_observe_fn observe,

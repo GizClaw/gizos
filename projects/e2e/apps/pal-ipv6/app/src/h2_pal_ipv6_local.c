@@ -146,8 +146,11 @@ static int connect_local(const h2_pal_net_api_t *net,
   if (rc == H2_PAL_OK && listener >= 0) {
     h2_pal_net_addr_t remote;
     rc = h2_pal_net_tcp_accept(net, listener, &accepted, &remote, 1000u);
-    if (rc == H2_PAL_OK && remote.family != family)
+    if (rc == H2_PAL_OK && remote.family != family) {
+      printf("H2_PAL_IPV6_ISOLATION accepted_family=%d expected_family=%d\n",
+             (int)remote.family, (int)family);
       rc = H2_PAL_ERR_FORMAT;
+    }
   }
   if (accepted >= 0)
     h2_pal_net_close(net, accepted);
@@ -176,6 +179,8 @@ int h2_pal_ipv6_local_isolation(const h2_pal_net_api_t *net) {
   }
   if (rc == H2_PAL_OK) {
     int refused = connect_local(net, H2_PAL_NET_FAMILY_IPV4, port, -1);
+    printf("H2_PAL_IPV6_ISOLATION ipv4_refusal=%d expected_refusal=%d\n",
+           refused, H2_PAL_ERR_IO);
     rc = refused == H2_PAL_ERR_IO ? H2_PAL_OK : H2_PAL_ERR_FORMAT;
   }
   h2_pal_net_close(net, listener6);

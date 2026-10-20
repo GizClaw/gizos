@@ -4,6 +4,7 @@
 #include "h2_esp_platform_core.h"
 #include "h2_esp_target_task_policy.h"
 #include "h2_iperf_e2e.h"
+#include "h2_e2e_fixture_wifi.h"
 #include "h2_sctp.h"
 #include "h2/pal/hal/h2_pal_wifi.h"
 #include "h2/pal/hal/h2_pal_wifi_settings.h"
@@ -41,6 +42,22 @@
 #define H2_IPERF_DEVKIT_PORT 5201u
 #define H2_IPERF_DEVKIT_SCTP_UDP_PORT 9899u
 #define H2_IPERF_DEVKIT_CASE_MS 5000u
+
+static const h2_pal_log_api_t *board_log;
+
+static int result_write(void *user, h2_pal_log_level_t level, const char *scope,
+                        const char *message) {
+  (void)user;
+  if (level == H2_PAL_LOG_INFO && scope != NULL && message != NULL &&
+      strcmp(scope, "iperf_e2e") == 0) {
+    return printf("%s\n", message) < 0 || fflush(stdout) != 0
+               ? H2_PAL_ERR_IO : H2_PAL_OK;
+  }
+  return h2_pal_log_write(board_log, level, scope, message);
+}
+
+static const h2_pal_log_vtable_t result_log_vtable = {.write = result_write};
+static const h2_pal_log_api_t result_log = {.vtable = &result_log_vtable};
 
 static void hold(void) {
   for (;;) {
@@ -87,10 +104,15 @@ static void fail(const char *stage, int rc, int commands_started) {
   hold();
 }
 
-/* The image never carries credentials: the Loader's `wifi connect` stores the
- * STA configuration and the App reconnects with it. */
+/* Explicit native fixture input is borrowed for a non-saving connect; NULL
+ * keeps the original Loader-saved STA configuration path. */
 static int load_wifi_config(h2_runtime_t *runtime,
                             h2_pal_wifi_sta_config_t *out_config) {
+  const h2_pal_wifi_sta_config_t *fixture = h2_e2e_fixture_wifi();
+  if (fixture != NULL) {
+    *out_config = *fixture;
+    return H2_PAL_OK;
+  }
   int has_config = 0;
   int rc = h2_pal_wifi_settings_has_saved_sta_config(runtime->wifi_settings,
                                                      &has_config);
@@ -215,6 +237,11 @@ static void image_entry(void *user) {
   /* Data buffers (iperf blocks, h2sctp windows, H2Peer slots and mailboxes)
    * live in PSRAM; internal RAM stays for Wi-Fi, lwIP and task stacks. */
   runtime_config.mem = h2_esp_platform_psram_allocator();
+  if (runtime_config.log != NULL && runtime_config.log->vtable != NULL &&
+      runtime_config.log->vtable->write != NULL) {
+    board_log = runtime_config.log;
+    runtime_config.log = &result_log;
+  }
   rc = h2_esp_h2loader_app_commands_prepare_serial(&runtime_config, "iperf",
                                                    1u, 3u);
   if (rc != H2_PAL_OK) {

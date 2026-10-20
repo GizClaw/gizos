@@ -22,6 +22,7 @@ cc_library(
         ":tasks",
         "//projects/e2e/apps/pal-storage/app:pal_storage_e2e",
     ],
+    visibility = ["//visibility:public"],
 )
 
 py_test(

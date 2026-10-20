@@ -5,6 +5,7 @@
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_h2loader_runtime.h"
 #include "h2_esp_target_task_policy.h"
+#include "h2_e2e_fixture_wifi.h"
 #include "h2_pal_net_tls_device.h"
 #include <stdio.h>
 
@@ -26,12 +27,15 @@ static void fail(const char *stage, int rc) {
 static void run(void *user) {
   (void)user;
   vTaskDelay(pdMS_TO_TICKS(5000u));
+  printf("H2_PAL_NET_TLS_BOOT board=%s version=%s\n",
+         H2_PAL_NET_TLS_BOARD, esp_app_get_description()->version);
+  fflush(stdout);
   int rc;
   uint64_t setup_start = 0u;
   if (h2_pal_time_get_monotonic_ms(runtime->time, &setup_start) != H2_PAL_OK)
     fail("clock", H2_PAL_ERR_IO);
   for (;;) {
-    rc = h2_pal_net_tls_device_run(runtime, &result);
+    rc = h2_pal_net_tls_device_run_with_wifi(runtime, h2_e2e_fixture_wifi(), &result);
     if (result.passed + result.failed + result.blocked + result.unsupported +
             result.not_assessed !=
         0u)
@@ -78,8 +82,6 @@ void app_main(void) {
   rc = h2_runtime_init(&config, &runtime);
   if (rc != H2_PAL_OK)
     fail("runtime", rc);
-  printf("H2_PAL_NET_TLS_BOOT board=%s version=%s\n",
-         H2_PAL_NET_TLS_BOARD, esp_app_get_description()->version);
   const h2_pal_task_options_t options = {
       .name = h2_pal_net_tls_device_runner_task_name};
   h2_pal_task_t *runner = NULL;

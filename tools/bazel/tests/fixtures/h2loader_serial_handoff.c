@@ -11,6 +11,12 @@ struct runtime { const h2_pal_time_api_t *time; };
 static char output[65536];
 static size_t output_len;
 #define H2_H2LOADER_CLI_STREAM_STDOUT 1
+#define H2_H2LOADER_CLI_STREAM_STDERR 2
+static h2_pal_result_t h2_h2loader_cli_output(h2_h2loader_cli_context_t *ctx,int kind,const char *format,...) {
+    (void)ctx; (void)kind; (void)format;
+    assert(0 && "unexpected pending-upgrade diagnostic in non-monitor scenario");
+    return H2_PAL_ERR_INVALID_STATE;
+}
 static h2_pal_result_t h2_h2loader_cli_output_bytes(h2_h2loader_cli_context_t *ctx,int kind,const uint8_t *data,size_t n) {
     (void)ctx;
     (void)kind;
@@ -119,7 +125,13 @@ static void drain(void) {
     }
 }
 static void disconnect_serial(void) { h2_iostreamikcp_close(connection->stream);free(connection);connection=NULL; }
-typedef struct { int unused; } h2_h2loader_cli_transport_t;
+typedef struct {
+    h2_h2loader_host_transport_t transport;
+} h2_h2loader_cli_options_t;
+typedef struct {
+    const h2_h2loader_cli_options_t *options;
+    h2_h2loader_host_transport_log_fn on_log;
+} h2_h2loader_cli_transport_t;
 static h2_pal_result_t h2_h2loader_cli_transport_rediscover(h2_h2loader_cli_transport_t *t) { (void)t; return H2_PAL_OK; }
 static int h2_h2loader_cli_reconnect_must_fail_closed(h2_h2loader_cli_transport_t *t,h2_pal_result_t rc) { (void)t;(void)rc;return 0; }
 static h2_pal_result_t h2_h2loader_cli_transport_connect(h2_h2loader_cli_transport_t *t,h2_h2loader_host_status_t *out) {
@@ -133,6 +145,22 @@ static h2_pal_result_t h2_h2loader_cli_transport_connect(h2_h2loader_cli_transpo
     return H2_PAL_OK;
 }
 static h2_pal_result_t h2_h2loader_cli_transport_disconnect(h2_h2loader_cli_transport_t *t) { (void)t;disconnect_serial();return H2_PAL_OK; }
+static h2_pal_result_t h2_h2loader_cli_transport_read_status(h2_h2loader_cli_transport_t *t,h2_h2loader_host_status_t *out) {
+    (void)t; (void)out;
+    /* These non-monitor scenarios must retain their reconnect path. */
+    assert(0 && "unexpected live-confirmation status poll");
+    return H2_PAL_ERR_INVALID_STATE;
+}
+static h2_pal_result_t h2_h2loader_cli_transport_monitor_logs(
+    h2_h2loader_cli_transport_t *t, h2_h2loader_host_cancelled_fn is_cancelled,
+    void *cancel_user) {
+  (void)t;
+  (void)is_cancelled;
+  (void)cancel_user;
+  /* These non-monitor scenarios must never enter the live log wait. */
+  assert(0 && "unexpected live-confirmation log wait");
+  return H2_PAL_ERR_INVALID_STATE;
+}
 /* VERIFY */
 int main(int argc,char **argv) {
     assert(argc==2);

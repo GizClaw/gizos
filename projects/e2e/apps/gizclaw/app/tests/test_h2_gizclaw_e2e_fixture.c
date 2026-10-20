@@ -24,6 +24,7 @@ static bool s_null_service;
 static unsigned s_live_services;
 static unsigned s_poll_fault;
 static bool s_user_stop;
+static const h2_gizclaw_e2e_actor_t *s_tag_actor;
 
 static bool user_stop(void *user) {
   (void)user;
@@ -87,8 +88,11 @@ h2_gizclaw_service_init(const h2_gizclaw_service_config_t *config,
     *out_service = NULL;
     return H2_PAL_OK;
   }
-  *out_service = calloc(1, sizeof(**out_service));
-  assert(*out_service != NULL);
+  *out_service =
+      h2_pal_mem_alloc(config->client_config->allocator, sizeof(**out_service));
+  if (*out_service == NULL)
+    return H2_PAL_ERR_NO_MEMORY;
+  memset(*out_service, 0, sizeof(**out_service));
   (*out_service)->config = *config;
   ++s_live_services;
   return H2_PAL_OK;
@@ -127,7 +131,7 @@ h2_pal_result_t h2_gizclaw_service_deinit(h2_gizclaw_service_t *service) {
   assert(service->config.client_config->private_key.len != 0u);
   if (s_deinit_rc == H2_PAL_OK) {
     --s_live_services;
-    free(service);
+    h2_pal_mem_free(service->config.client_config->allocator, service);
   }
   return s_deinit_rc;
 }
@@ -1291,14 +1295,122 @@ int main(int argc, char **argv) {
   assert(h2_gizclaw_e2e_fixture_cleanup(&fixture) == H2_PAL_OK);
   assert(s_deletes == deletes_before + 1u && s_registers == registers_before + 1u);
   assert(h2_gizclaw_e2e_fixture_deinit(&fixture) == H2_PAL_OK);
+
+  /* Peer-only cleanup must work without allocating another response arena. */
+  assert(h2_gizclaw_e2e_fixture_init(&fixture, &runtime, &config, 45000u) ==
+         H2_PAL_OK);
+  assert(h2_gizclaw_e2e_fixture_connect_actors(&fixture, 1u) == H2_PAL_OK);
+  const size_t calls_before_peer_cleanup = allocator.calls;
+  const unsigned deletes_before_low_memory = s_deletes;
+  allocator.fail_at = allocator.calls + 1u;
+  assert(h2_gizclaw_e2e_fixture_cleanup(&fixture) == H2_PAL_OK);
+  assert(allocator.calls == calls_before_peer_cleanup &&
+         s_deletes == deletes_before_low_memory + 1u &&
+         !fixture.actors[0].peer_delete_required);
+  allocator.fail_at = 0u;
+  assert(h2_gizclaw_e2e_fixture_deinit(&fixture) == H2_PAL_OK);
+
+  /* A response-dependent deletion still fails closed, retains its identity
+   * and obligations, and needs a real acknowledged retry after OOM. */
+  assert(h2_gizclaw_e2e_fixture_init(&fixture, &runtime, &config, 45000u) ==
+         H2_PAL_OK);
+  assert(h2_gizclaw_e2e_fixture_connect_actors(&fixture, 1u) == H2_PAL_OK);
+  fixture.workspace_created = true;
+  s_business_fixture = &fixture;
+  s_business_allowed = WORKSPACE;
+  s_business_seen = s_business_failed = 0u;
+  s_workspace_role = H2_GIZCLAW_E2E_OWNER;
+  s_workspace_mode = 0u;
+  const unsigned deletes_before_arena_failure = s_deletes;
+  const size_t bytes_before_arena_failure = allocator.live_bytes;
+  allocator.fail_at = allocator.calls + 1u;
+  assert(h2_gizclaw_e2e_fixture_cleanup(&fixture) == H2_PAL_ERR_NO_MEMORY);
+  assert(s_deletes == deletes_before_arena_failure &&
+         fixture.workspace_created && fixture.actors[0].peer_delete_required &&
+         fixture.actors[0].private_key[0] &&
+         allocator.live_bytes == bytes_before_arena_failure);
+  allocator.fail_at = 0u;
+  assert(h2_gizclaw_e2e_fixture_cleanup(&fixture) == H2_PAL_OK);
+  assert(!fixture.workspace_created &&
+         s_deletes == deletes_before_arena_failure + 1u);
+  assert(h2_gizclaw_e2e_fixture_deinit(&fixture) == H2_PAL_OK);
+  assert(allocator.live_blocks == 0u);
+  /* Session borrows an actor-owned view, not actor_connect's stack array. */
+  h2_gizclaw_e2e_config_t tagged = config;
+  tagged.workflow_tag = "category:assistants";
+  assert(h2_gizclaw_e2e_fixture_init(&fixture, &runtime, &tagged, 45000u) ==
+         H2_PAL_OK);
+  fixture.use_session = true;
+  s_tag_actor = &fixture.actors[0];
+  assert(h2_gizclaw_e2e_fixture_connect_actors(&fixture, 1u) ==
+         H2_PAL_ERR_UNSUPPORTED);
+  assert(s_tag_actor->workflow_tag.data == tagged.workflow_tag &&
+         s_tag_actor->workflow_tag.len == strlen(tagged.workflow_tag));
+  s_tag_actor = NULL;
+  fixture.use_session = false;
+  assert(h2_gizclaw_e2e_fixture_cleanup(&fixture) == H2_PAL_OK);
+  assert(h2_gizclaw_e2e_fixture_deinit(&fixture) == H2_PAL_OK);
+
+  /* The unchanged streamed player receives bounded fixture-owned buffering. */
+  static const h2_pal_audio_api_t audio = {0};
+  assert(h2_gizclaw_e2e_fixture_init(&fixture, &runtime, &config, 45000u) ==
+         H2_PAL_OK);
+  fixture.device_audio = &audio;
+  assert(h2_gizclaw_e2e_fixture_connect_actors(&fixture, 1u) == H2_PAL_OK);
+  assert(fixture.actors[0].config.audio_buffer_bytes == 65536u &&
+         fixture.actors[0].config.audio_prebuffer_bytes == 0u);
+  assert(h2_gizclaw_e2e_fixture_cleanup(&fixture) == H2_PAL_OK);
+  assert(h2_gizclaw_e2e_fixture_deinit(&fixture) == H2_PAL_OK);
+  assert(allocator.live_blocks == 0u);
+  /* A separate fixture allocator owns every case allocation and fake Service.
+   * Runtime Mem remains unchanged and must not receive fallback allocations. */
+  h2_app_test_mem_t case_mem;
+  h2_app_test_mem_init(&case_mem, NULL);
+  h2_gizclaw_e2e_config_t allocated = config;
+  allocated.fixture_allocator = &case_mem.api;
+  const size_t raw_calls_before = allocator.calls;
+  assert(h2_gizclaw_e2e_fixture_init(&fixture, &runtime, &allocated, 45000u) ==
+         H2_PAL_OK);
+  assert(fixture.allocator == &case_mem.api);
+  assert(h2_gizclaw_e2e_fixture_connect_actors(&fixture, 3u) == H2_PAL_OK);
+  for (size_t i = 0u; i < H2_GIZCLAW_E2E_ACTOR_COUNT; ++i)
+    assert(fixture.actors[i].config.allocator == &case_mem.api);
+  assert(case_mem.live_blocks != 0u && allocator.calls == raw_calls_before);
+  assert(h2_gizclaw_e2e_fixture_cleanup(&fixture) == H2_PAL_OK);
+  assert(h2_gizclaw_e2e_fixture_deinit(&fixture) == H2_PAL_OK);
+  assert(case_mem.live_blocks == 0u && case_mem.live_bytes == 0u &&
+         allocator.calls == raw_calls_before);
+  /* Explicit allocator exhaustion is an error, never a Runtime Mem fallback. */
+  case_mem.fail_at = case_mem.calls + 1u;
+  assert(h2_gizclaw_e2e_fixture_init(&fixture, &runtime, &allocated, 45000u) ==
+         H2_PAL_ERR_NO_MEMORY);
+  assert(case_mem.live_blocks == 0u && allocator.calls == raw_calls_before);
+  case_mem.fail_at = 0u;
+  assert(h2_gizclaw_e2e_fixture_init(&fixture, &runtime, &allocated, 45000u) ==
+         H2_PAL_OK);
+  assert(h2_gizclaw_e2e_fixture_connect_actors(&fixture, 1u) == H2_PAL_OK);
+  assert(h2_gizclaw_e2e_fixture_cleanup(&fixture) == H2_PAL_OK);
+  s_deinit_rc = H2_PAL_ERR_IO;
+  assert(h2_gizclaw_e2e_fixture_deinit(&fixture) == H2_PAL_ERR_IO);
+  assert(fixture.allocator == &case_mem.api && case_mem.live_blocks != 0u);
+  s_deinit_rc = H2_PAL_OK;
+  assert(h2_gizclaw_e2e_fixture_deinit(&fixture) == H2_PAL_OK);
+  assert(case_mem.live_blocks == 0u && case_mem.live_bytes == 0u &&
+         allocator.calls == raw_calls_before);
   assert(s_live_services == 0u);
   return 0;
 }
 
-/* This fixture test isolates the raw Service lane. Session orchestration is
+/* Only inspect Session's borrowed configuration here; its orchestration is
  * exercised with the real Session in the Voice test. */
 h2_pal_result_t h2_gizclaw_session_create(const h2_gizclaw_session_config_t *config, h2_gizclaw_session_t **out) {
-  (void)config; (void)out; assert(false); return H2_PAL_ERR_UNSUPPORTED;
+  assert(s_tag_actor != NULL && config->tags == &s_tag_actor->workflow_tag &&
+         config->tag_count == 1u &&
+         config->tags[0].len == strlen("category:assistants") &&
+         memcmp(config->tags[0].data, "category:assistants",
+                config->tags[0].len) == 0);
+  *out = NULL;
+  return H2_PAL_ERR_UNSUPPORTED;
 }
 h2_pal_result_t h2_gizclaw_session_register(h2_gizclaw_session_t *session, const char *token, uint32_t timeout) {
   (void)session; (void)token; (void)timeout; assert(false); return H2_PAL_ERR_UNSUPPORTED;

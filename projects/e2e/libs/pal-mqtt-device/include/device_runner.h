@@ -10,6 +10,10 @@ typedef struct h2_mqtt_device_result {
 } h2_mqtt_device_result_t;
 extern const char h2_pal_mqtt_device_runner_task_name[];
 int h2_mqtt_device_prepare(h2_runtime_t *runtime);
+/** Borrow optional fixture credentials until return; NULL retains old setup.
+ * Uses non-saving PAL connect and the original association/IP wait budgets. */
+int h2_mqtt_device_prepare_with_wifi(h2_runtime_t *runtime,
+    const h2_pal_wifi_sta_config_t *wifi);
 typedef int (*h2_mqtt_device_digest_fn)(void *user, const uint8_t *bytes, size_t length, uint8_t digest[32]);
 int h2_mqtt_device_run(h2_runtime_t *runtime, unsigned outgoing_capacity,
     h2_mqtt_device_digest_fn digest, void *digest_user, h2_mqtt_device_result_t *out);

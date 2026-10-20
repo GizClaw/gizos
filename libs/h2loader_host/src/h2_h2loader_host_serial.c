@@ -15,6 +15,8 @@
 #define H2_H2LOADER_HOST_SERIAL_WRITE_BATCH (64u * 1024u)
 #define H2_H2LOADER_HOST_SERIAL_RESPONSE_SIZE 8192u
 
+typedef struct serial_status_output serial_status_output_t;
+
 struct h2_h2loader_host_serial_connection {
     const h2_pal_serial_host_api_t *serial;
     const h2_pal_time_api_t *time;
@@ -33,7 +35,151 @@ struct h2_h2loader_host_serial_connection {
     size_t ready_prefix_len;
     int ready_line_rejected;
     int ready_banner_pending;
+    serial_status_output_t *status_output;
+    int status_pending_lf;
+    int decoded_log_active;
 };
+
+struct serial_status_output {
+    h2_h2loader_host_serial_connection_t *connection;
+    uint8_t *response;
+    size_t response_size;
+    size_t length;
+    size_t prefix_len;
+    int line_rejected;
+    int skip_line;
+    h2_pal_result_t capture_result;
+    h2_pal_result_t sink_result;
+};
+
+static const char serial_status_marker[] = "H2_LOADER_STATUS ";
+
+static h2_pal_result_t serial_log_output(
+    void *user, const uint8_t *data, size_t len) {
+    h2_h2loader_host_serial_connection_t *connection = user;
+    if (connection->on_log == NULL || len == 0u) return H2_PAL_OK;
+    return connection->on_log(connection->log_user, data, len);
+}
+
+static h2_pal_result_t serial_status_emit(
+    serial_status_output_t *output, const uint8_t *data, size_t len) {
+    if (output->sink_result != H2_PAL_OK || len == 0u) {
+        return output->sink_result;
+    }
+    output->sink_result = serial_log_output(output->connection, data, len);
+    return output->sink_result;
+}
+
+/* Hold only an undecided control-marker prefix, never a diagnostic line. */
+static h2_pal_result_t serial_status_diagnostics(
+    void *user, const uint8_t *data, size_t len) {
+    serial_status_output_t *output = user;
+    size_t offset = 0u;
+    while (offset < len) {
+        if (output->connection->status_pending_lf) {
+            output->connection->status_pending_lf = 0;
+            if (data[offset] == '\n') {
+                ++offset;
+                continue;
+            }
+        }
+        if (output->skip_line) {
+            while (offset < len && data[offset] != '\r' && data[offset] != '\n') ++offset;
+            if (offset < len) {
+                output->connection->status_pending_lf = data[offset] == '\r';
+                output->skip_line = 0;
+                ++offset;
+            }
+        } else if (output->line_rejected) {
+            size_t start = offset;
+            while (offset < len && data[offset] != '\r' && data[offset] != '\n') ++offset;
+            if (offset < len) {
+                ++offset;
+                output->line_rejected = 0;
+            }
+            h2_pal_result_t rc = serial_status_emit(output, data + start, offset - start);
+            if (rc != H2_PAL_OK) return rc;
+        } else if (data[offset] == (uint8_t)serial_status_marker[output->prefix_len]) {
+            ++offset;
+            if (++output->prefix_len == sizeof(serial_status_marker) - 1u) {
+                output->prefix_len = 0u;
+                output->skip_line = 1;
+            }
+        } else {
+            h2_pal_result_t rc = serial_status_emit(
+                output, (const uint8_t *)serial_status_marker, output->prefix_len);
+            output->prefix_len = 0u;
+            if (rc != H2_PAL_OK) return rc;
+            output->line_rejected = 1;
+        }
+    }
+    return H2_PAL_OK;
+}
+
+/* A raw callback can run after a decoded frame in the same UART read. Tee
+ * that earlier payload into the original response before delivering raw logs.
+ * This only drains the existing receive queue; it does not poll or send. */
+static h2_pal_result_t serial_status_capture_pending(serial_status_output_t *output) {
+    while (output->capture_result == H2_PAL_OK) {
+        if (output->length == output->response_size) {
+            output->capture_result = H2_PAL_ERR_NO_SPACE;
+            break;
+        }
+        uint8_t input[1024];
+        size_t read = 0u;
+        h2_pal_result_t rc = h2_iostreamikcp_read(
+            output->connection->stream, input, sizeof(input), &read);
+        if (rc == H2_PAL_ERR_WOULD_BLOCK || (rc == H2_PAL_OK && read == 0u)) break;
+        if (rc != H2_PAL_OK) {
+            output->capture_result = rc;
+            break;
+        }
+        rc = serial_status_diagnostics(output, input, read);
+        if (rc != H2_PAL_OK) return rc;
+        size_t capture = read > output->response_size - output->length
+            ? output->response_size - output->length : read;
+        memcpy(output->response + output->length, input, capture);
+        output->length += capture;
+        if (capture != read) output->capture_result = H2_PAL_ERR_NO_SPACE;
+    }
+    return H2_PAL_OK;
+}
+
+static h2_pal_result_t serial_decoded_output(
+    h2_h2loader_host_serial_connection_t *connection,
+    h2_h2loader_host_command_output_fn on_output, void *user,
+    const uint8_t *data, size_t len) {
+    if (connection->status_output == NULL && connection->status_pending_lf && len > 0u) {
+        connection->status_pending_lf = 0;
+        if (data[0] == '\n') {
+            ++data;
+            --len;
+        }
+    }
+    return on_output != NULL && len > 0u ? on_output(user, data, len) : H2_PAL_OK;
+}
+
+static h2_pal_result_t serial_stream_log(
+    void *user, const uint8_t *data, size_t len);
+
+/* OPEN handoff precedes every command. Apply the existing post-ACK READY
+ * recognizer to queued console payload before processing later raw bytes. */
+static h2_pal_result_t serial_drain_connect_logs(
+    h2_h2loader_host_serial_connection_t *connection) {
+    if (connection->on_log == NULL) return H2_PAL_OK;
+    for (;;) {
+        uint8_t input[512];
+        size_t read = 0u;
+        h2_pal_result_t rc = h2_iostreamikcp_read(
+            connection->stream, input, sizeof(input), &read);
+        if (rc == H2_PAL_ERR_WOULD_BLOCK || (rc == H2_PAL_OK && read == 0u)) return H2_PAL_OK;
+        if (rc != H2_PAL_OK) return rc;
+        connection->decoded_log_active = 1;
+        rc = serial_stream_log(connection, input, read);
+        connection->decoded_log_active = 0;
+        if (rc != H2_PAL_OK) return rc;
+    }
+}
 
 static h2_pal_result_t serial_finish_command_response(void *transport);
 
@@ -161,7 +307,7 @@ static h2_pal_result_t serial_session_control(
         for (size_t index = 0u; index < read; ++index) {
             rc = h2_iostreamikcp_filter_input_with_log(
                 &filter, &input[index], 1u, session_frame, &ack,
-                connection->on_log, connection->log_user);
+                connection->on_log != NULL ? serial_log_output : NULL, connection);
             if (rc != H2_PAL_OK) {
                 return rc;
             }
@@ -199,6 +345,10 @@ static h2_pal_result_t serial_stream_log(
     h2_h2loader_host_serial_connection_t *connection = user;
     static const char marker[] = "H2_LOADER_READY ";
     int reset = 0;
+    if (connection->pending_input_len != 0u && !connection->decoded_log_active) {
+        h2_pal_result_t rc = serial_drain_connect_logs(connection);
+        if (rc != H2_PAL_OK) return rc;
+    }
     for (size_t index = 0u; index < len; ++index) {
         if (data[index] == '\r' || data[index] == '\n') {
             connection->ready_prefix_len = 0u;
@@ -223,9 +373,16 @@ static h2_pal_result_t serial_stream_log(
             connection->ready_line_rejected = 1;
         }
     }
+    if (connection->status_output != NULL) {
+        h2_pal_result_t rc = serial_status_capture_pending(connection->status_output);
+        if (rc != H2_PAL_OK) return rc;
+    }
     if (connection->on_log != NULL) {
-        h2_pal_result_t rc = connection->on_log(connection->log_user, data, len);
+        h2_pal_result_t rc = connection->decoded_log_active
+            ? serial_decoded_output(connection, serial_log_output, connection, data, len)
+            : serial_log_output(connection, data, len);
         if (rc != H2_PAL_OK) {
+            if (connection->status_output != NULL) connection->status_output->sink_result = rc;
             return rc;
         }
     }
@@ -261,8 +418,7 @@ static h2_pal_result_t serial_wait_ready_marker(
         if (rc != H2_PAL_OK && rc != H2_PAL_ERR_TIMEOUT &&
             rc != H2_PAL_ERR_WOULD_BLOCK) return rc;
         if (read > 0u && connection->on_log != NULL) {
-            rc = connection->on_log(
-                connection->log_user, input, read);
+            rc = serial_log_output(connection, input, read);
             if (rc != H2_PAL_OK) return rc;
         }
         for (size_t i = 0u; i < read; ++i) {
@@ -376,11 +532,12 @@ static h2_pal_result_t serial_read_until(
     uint8_t input[1024];
     uint64_t start = 0u;
     uint64_t now = 0u;
-    size_t length = 0u;
+    serial_status_output_t *status_output = connection->status_output;
+    size_t length = status_output != NULL ? status_output->length : 0u;
     size_t output_bytes = 0u;
     h2_pal_result_t rc;
 
-    *out_len = 0u;
+    *out_len = length;
     if (out_output_bytes != NULL) *out_output_bytes = 0u;
     rc = serial_now(connection->time, &start);
     if (rc != H2_PAL_OK) {
@@ -390,9 +547,14 @@ static h2_pal_result_t serial_read_until(
     while (now - start < timeout_ms) {
         rc = serial_pump(
             connection, H2_H2LOADER_HOST_SERIAL_POLL_MS);
+        if (status_output != NULL) length = status_output->length;
         if (rc != H2_PAL_OK) {
             *out_len = length;
             return rc;
+        }
+        if (status_output != NULL && status_output->capture_result != H2_PAL_OK) {
+            *out_len = length;
+            return status_output->capture_result;
         }
         for (;;) {
             size_t read = 0u;
@@ -418,8 +580,8 @@ static h2_pal_result_t serial_read_until(
                 break;
             }
             output_bytes += read;
-            if (on_output != NULL) {
-                rc = on_output(output_user, input, read);
+            if (on_output != NULL || connection->status_pending_lf) {
+                rc = serial_decoded_output(connection, on_output, output_user, input, read);
                 if (rc != H2_PAL_OK) {
                     *out_len = length;
                     if (out_output_bytes != NULL) *out_output_bytes = output_bytes;
@@ -445,6 +607,7 @@ static h2_pal_result_t serial_read_until(
                     ? response_size - length : read;
                 memcpy(&response[length], input, capture);
                 length += capture;
+                if (status_output != NULL) status_output->length = length;
                 if (capture != read) {
                     *out_len = length;
                     if (out_output_bytes != NULL) *out_output_bytes = output_bytes;
@@ -619,6 +782,9 @@ h2_pal_result_t h2_h2loader_host_serial_connect(
     }
     rc = h2_iostreamikcp_input(connection->stream, connection->pending_input,
                               connection->pending_input_len);
+    if (rc == H2_PAL_OK && connection->pending_input_len != 0u) {
+        rc = serial_drain_connect_logs(connection);
+    }
     connection->pending_input_len = 0u;
     if (rc != H2_PAL_OK) {
         goto fail;
@@ -663,7 +829,9 @@ static h2_pal_result_t serial_drain_decoded_logs(
         if (read == 0u) {
             return H2_PAL_OK;
         }
+        connection->decoded_log_active = 1;
         rc = serial_stream_log(connection, buffer, read);
+        connection->decoded_log_active = 0;
         if (rc != H2_PAL_OK) {
             return rc;
         }
@@ -745,7 +913,6 @@ h2_pal_result_t h2_h2loader_host_serial_read_status(
     h2_h2loader_host_status_t *out_status) {
     uint8_t response[H2_H2LOADER_HOST_SERIAL_RESPONSE_SIZE];
     size_t response_len = 0u;
-    static const char loader_marker[] = "H2_LOADER_STATUS ";
 
     if (out_status != NULL) {
         memset(out_status, 0, sizeof(*out_status));
@@ -753,29 +920,44 @@ h2_pal_result_t h2_h2loader_host_serial_read_status(
     if (connection == NULL || out_status == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    h2_pal_result_t rc =
-        serial_write_command(connection, "h2loader status\n");
-    if (rc != H2_PAL_OK) {
-        return rc;
+    serial_status_output_t output = {
+        .connection = connection,
+        .response = response,
+        .response_size = sizeof(response) - 1u,
+    };
+    if (connection->on_log != NULL) {
+        /* Delivery pumping can receive console bytes before read_until starts. */
+        connection->status_output = &output;
     }
-    rc = serial_read_until(
-        connection,
-        loader_marker,
-        NULL,
-        response,
-        sizeof(response) - 1u,
-        &response_len,
-        connection->command_timeout_ms,
-        NULL,
-        NULL,
-        0u,
-        NULL);
+    h2_pal_result_t rc = serial_write_command(connection, "h2loader status\n");
+    if (rc == H2_PAL_OK) {
+        rc = serial_read_until(
+            connection, serial_status_marker, NULL,
+            response, sizeof(response) - 1u, &response_len,
+            connection->command_timeout_ms,
+            connection->on_log != NULL ? serial_status_diagnostics : NULL,
+            &output, 0u, NULL);
+    }
+    connection->status_output = NULL;
+    if (connection->on_log != NULL) {
+        h2_pal_result_t output_rc = serial_status_emit(
+            &output, (const uint8_t *)serial_status_marker, output.prefix_len);
+        if (output_rc != H2_PAL_OK) return output_rc;
+    }
     if (rc != H2_PAL_OK) {
         return rc;
     }
     response[response_len] = '\0';
-    const char *marker = find_line_marker(
-        (const char *)response, loader_marker);
+    const char *marker = find_line_marker((const char *)response, serial_status_marker);
+    if (marker != NULL) {
+        /* Diagnostics after the complete control line were already forwarded. */
+        char *end = strpbrk((char *)marker, "\r\n");
+        if (end != NULL) {
+            if (*end == '\r') ++end;
+            if (*end == '\n') ++end;
+            *end = '\0';
+        }
+    }
     return marker == NULL
         ? H2_PAL_ERR_FORMAT
         : h2_h2loader_host_status_parse(marker, out_status);
@@ -878,8 +1060,7 @@ static h2_pal_result_t serial_stage_output(void *user,
     const uint8_t *data, size_t len) {
     serial_stage_output_t *output = user;
     if (output->connection->on_log != NULL) {
-        h2_pal_result_t rc = output->connection->on_log(
-            output->connection->log_user, data, len);
+        h2_pal_result_t rc = serial_log_output(output->connection, data, len);
         if (rc != H2_PAL_OK) return rc;
     }
     /* A failed receive never emits the later STAGE result. Surface that

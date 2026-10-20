@@ -74,7 +74,8 @@ static int validate_list(h2_gizclaw_e2e_fixture_t *fixture,
   for (size_t i = 0u; i < page->count; ++i) {
     const h2_gizclaw_workflow_t *workflow = &page->items[i];
     if (workflow->name == NULL || workflow->name[0] == '\0' ||
-        !workflow_has_tag(workflow, "assistants"))
+        !workflow_has_tag(workflow,
+                          h2_gizclaw_e2e_workflow_tag(fixture->config)))
       return H2_PAL_ERR_INVALID_STATE;
   }
   return h2_gizclaw_e2e_select_workflow_name(page, selected, capacity);
@@ -123,7 +124,8 @@ int h2_gizclaw_e2e_run_workflow(h2_gizclaw_e2e_fixture_t *fixture,
       rc = checked("h2_gizclaw_req_create_workflow_list", "workflow-req",
                    h2_gizclaw_req_create_workflow_list(
                        service, 21u,
-                       (h2_gizclaw_str_t[]){h2_gizclaw_e2e_str("assistants")},
+                       (h2_gizclaw_str_t[]){h2_gizclaw_e2e_str(
+                           h2_gizclaw_e2e_workflow_tag(fixture->config))},
                        1u, (h2_gizclaw_str_t){0}, WORKFLOW_LIMIT,
                        WORKFLOW_TIMEOUT_MS, &request));
       if (rc == H2_PAL_OK)
@@ -136,7 +138,8 @@ int h2_gizclaw_e2e_run_workflow(h2_gizclaw_e2e_fixture_t *fixture,
       rc = checked(list_symbol, "workflow-rpc",
                    h2_gizclaw_rpc_workflow_list(
                        service,
-                       (h2_gizclaw_str_t[]){h2_gizclaw_e2e_str("assistants")},
+                       (h2_gizclaw_str_t[]){h2_gizclaw_e2e_str(
+                           h2_gizclaw_e2e_workflow_tag(fixture->config))},
                        1u, (h2_gizclaw_str_t){0}, WORKFLOW_LIMIT,
                        WORKFLOW_TIMEOUT_MS, storage, &page));
     }

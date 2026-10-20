@@ -41,6 +41,8 @@ The host test uses real loopback IPv4/IPv6 sockets, exercises 60 TCP/UDP exchang
 
 ## Two-board performance qualification
 
+The ESP launcher leaves a five-second serial reconnection window after Runtime initialization, before its one-shot BOOT and initial MEMORY reports. The original network readiness deadlines and five-second case measurements begin afterward and are unchanged. A complete fresh startup ledger is still required for each client boot.
+
 On AMOLED select the desired mode and Start server, then boot the client. Automated qualification can build the same AMOLED target with `--define=H2_IPERF_SERVER_AUTOSTART_MODE=4`, `6` or `46`; the default is `0` (touch-controlled, stopped at boot). This option starts the existing controller after the real Display/Touch readiness callback, without injecting touch events. The UI continues to show the real mode and can stop the service.
 
 For each server mode: record the installed server image, wait for LISTENING, freshly boot the same client image, capture all cases and COMPLETE, and compare the client-inferred mode with the installed server mode. Compare the median of the three receive-throughput measurements for each protocol/direction/offered-rate tuple; retain UDP loss and jitter for each round. Record failures separately and do not relabel failed runs as performance results. Preserve original Loader, Stage, saved STA credentials and coredump state; restore the operator's images after testing. Radio measurements depend on board position, channel contention and RSSI, so these are measurements of the actual bench rather than guaranteed device specifications.

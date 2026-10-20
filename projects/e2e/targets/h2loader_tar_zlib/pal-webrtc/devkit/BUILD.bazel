@@ -6,6 +6,12 @@ load("//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files([
+    "main/CMakeLists.txt",
+    "main/idf_component.yml",
+    "main/main.c",
+], visibility = ["//visibility:public"])
+
 esp_target_task_policy(
     name = "task_policy",
     default_policy = "4 any 4096 psram",
@@ -49,9 +55,11 @@ firmware_lib_component(
 firmware_native_component(
     name = "launcher",
     srcs = ["main/main.c"],
+    hdrs = ["//projects/e2e/targets/h2loader_tar_zlib/fixture-wifi:h2_e2e_fixture_wifi.h"],
     component_directory = "projects/e2e/targets/h2loader_tar_zlib/pal-webrtc/devkit/main",
     component_name = "main",
     data = [
+        "//projects/e2e/targets/h2loader_tar_zlib/fixture-wifi:fixture_wifi.cmake",
         "main/CMakeLists.txt",
         "main/idf_component.yml",
     ],

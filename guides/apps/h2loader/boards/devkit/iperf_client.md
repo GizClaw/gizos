@@ -18,6 +18,8 @@ bazel build --config=esp32s3 //projects/e2e/targets/h2loader_tar_zlib/iperf-clie
 
 定向核对设备 UID/port、P1、原 App、Stage、coredump 和恢复包后，通过 H2Loader send/upgrade 安装；禁止以 host loopback 或编译成功代替实板测速。`H2_IPERF_CLIENT_LINK` 记录实际地址、RSSI、BSSID、信道和无线 policy，`H2_IPERF_E2E_CASE` 的 target（如 `devkit-m46-f6-r2`）包含服务器模式、测试地址族和轮次。最终 `H2_IPERF_CLIENT_COMPLETE` 必须完整对应 30/60 个 case；其中 PASS 表示成功交换结果并接收 payload，不代表固定吞吐或丢包阈值。比较每个协议/方向/速率的三轮接收吞吐中位数，并保留全部原始结果和 source/package/image hash。
 
+ESP 入口将 scope 以 `iperf` 开头的原始结果行交给现有 stdout，检查写入和 flush 返回值；其它日志仍交由原 board Log provider 处理。LINK、CASE 和 COMPLETE 的输出因此不依赖 board 的 INFO 日志阈值，consumer 可以保留自己的 SDK 日志配置。
+
 连接成功后的 setup 错误、测速失败或后续重连/凭据核验失败都会尽力断开临时 test AP，保留原始错误供 launcher 报告。只有完整 bench 返回成功时，DevKit launcher 才确认 image 并记录 `H2_IPERF_CLIENT_CONFIRMED rc=0`；失败 image 保持未确认。`network_test` 覆盖事件对齐、地址等待预算、失败清理，以及 disconnect 同时失败时的错误保留。
 
 有效 bench 即使在首次连接或地址族发现前失败，也会执行最终保存凭据核验并尝试输出一次 `H2_IPERF_CLIENT_COMPLETE`。未运行矩阵记录 `matrix_started=0`、零个 case 和 `matrix_rc=INVALID_STATE`，尚未识别模式时 mode 为零；`saved_check_rc` 只记录结果，不输出密码或 signature。失败时资格 gates 全为零，后续清理或凭据核验错误不会覆盖第一项错误，失败流程保持未确认。

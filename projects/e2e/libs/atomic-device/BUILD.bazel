@@ -24,6 +24,7 @@ cc_library(
         "//libs/runtime",
         "//projects/e2e/apps/atomic/app:atomic_e2e",
     ],
+    visibility = ["//visibility:public"],
 )
 
 exports_files([

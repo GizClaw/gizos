@@ -12,6 +12,7 @@ enum method {
   RELOAD_OPTIONS, LIST_OPTIONS
 };
 static unsigned s_runs;
+static const h2_gizclaw_e2e_config_t *run_config;
 struct h2_gizclaw_req {
   enum method method;
   char name[256], cursor[256];
@@ -593,11 +594,15 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_history_list(
 }
 
 static h2_gizclaw_session_state_t session_state;
+static const h2_gizclaw_str_t *session_tags;
 static unsigned selects, stops;
 static bool bad_stop, bad_reselect;
 h2_pal_result_t h2_gizclaw_session_create(
     const h2_gizclaw_session_config_t *config, h2_gizclaw_session_t **out) {
   assert(config->service == state.fixture->actors[0].service);
+  assert(config->tag_count == 1u &&
+         config->tags == &state.fixture->actors[0].workflow_tag);
+  session_tags = config->tags;
   memset(&session_state, 0, sizeof(session_state));
   selects = stops = 0;
   int rc = step();
@@ -654,6 +659,11 @@ h2_pal_result_t h2_gizclaw_rpc_run_stop(h2_gizclaw_service_t *actor,
 }
 h2_pal_result_t h2_gizclaw_session_destroy(h2_gizclaw_session_t **session) {
   assert(*session == (void *)&session_state);
+  const char *expected_tag =
+      run_config ? run_config->workflow_tag : "assistants";
+  assert(session_tags == &state.fixture->actors[0].workflow_tag &&
+         session_tags->len == strlen(expected_tag) &&
+         memcmp(session_tags->data, expected_tag, session_tags->len) == 0);
   int rc = step();
   if (!rc) *session = NULL;
   return rc;
@@ -679,6 +689,7 @@ static int run(unsigned fail, unsigned budget, unsigned response, unsigned mode,
   assert(f);
   state.fixture = f;
   f->runtime = &runtime;
+  f->config = run_config;
   for (size_t role = 0u; role < H2_GIZCLAW_E2E_ACTOR_COUNT; ++role)
     f->actors[role].service = (h2_gizclaw_service_t *)&service_tokens[role];
   strcpy(f->workspace_name, "isolated");
@@ -777,6 +788,11 @@ int main(int argc, char **argv) {
     return 0;
   }
   assert(run(0, 0, 0, 0, 0, 0, false, true) == H2_PAL_OK);
+  static const h2_gizclaw_e2e_config_t tagged = {.workflow_tag =
+                                                     "category:assistants"};
+  run_config = &tagged;
+  assert(run(0, 0, 0, 0, 0, 0, false, true) == H2_PAL_OK);
+  run_config = NULL;
   assert(run(0, 0, 0, 0, 0, 0, true, true) == H2_PAL_OK);
   assert(run(0, 0, 0, 0, 0, 0, false, false) == H2_PAL_OK);
   assert(run(0, 0, 0, 0, 0, 0, 2u, true) == H2_PAL_ERR_INVALID_STATE);

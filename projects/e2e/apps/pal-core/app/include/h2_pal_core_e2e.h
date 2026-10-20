@@ -75,6 +75,10 @@ typedef struct h2_pal_core_e2e_config {
    * It must not replace start/join with a fake Task implementation. */
   h2_pal_result_t (*task_allocation_fault)(void *user,
                                            int successful_before_failure);
+  /** Lowest PAL level expected at the configured output sink, DEBUG..ERROR.
+   * Zero preserves the default four-level check. All four writes still run;
+   * only levels below this declared threshold omit sink observation. */
+  h2_pal_log_level_t log_min_level;
 } h2_pal_core_e2e_config_t;
 
 typedef struct h2_pal_core_e2e_owner h2_pal_core_e2e_owner_t;

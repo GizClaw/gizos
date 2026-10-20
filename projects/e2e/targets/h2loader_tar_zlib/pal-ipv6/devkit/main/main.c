@@ -61,7 +61,7 @@ static void run(void *user) {
                local.ip[5], local.ip[6], local.ip[7], local.ip[8], local.ip[9],
                local.ip[10], local.ip[11], local.ip[12], local.ip[13],
                local.ip[14], local.ip[15], h2_pal_ipv6_device_host());
-      h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-ipv6", line);
+      (void)printf("%s\n", line);
       break;
     }
     if (rc != H2_PAL_OK && rc != H2_PAL_ERR_NOT_FOUND &&

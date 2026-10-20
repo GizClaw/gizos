@@ -22,7 +22,7 @@ static void report(void *user, const h2_pal_webrtc_e2e_case_result_t *result) {
                  result->detail, result->line,
                  (unsigned long long)result->elapsed_ms,
                  result->observed_error, result->authentication_evidence);
-  (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-webrtc", line);
+  (void)printf("%s", line);
   if (runtime != NULL)
     (void)h2_pal_time_sleep_ms(runtime->time, 40u);
 }
@@ -41,7 +41,7 @@ static void report_soak(void *user, const h2_pal_webrtc_e2e_soak_result_t *resul
       result->opus_roundtrips, result->completed, result->detail,
       (unsigned long long)uptime, result->opus_sent, result->opus_missing,
       result->opus_duplicates, (unsigned long long)result->max_opus_gap_ms);
-  (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-webrtc", line);
+  (void)printf("%s\n", line);
 }
 
 void h2_pal_webrtc_device_report(const h2_runtime_t *runtime,
@@ -54,7 +54,7 @@ void h2_pal_webrtc_device_report(const h2_runtime_t *runtime,
   (void)snprintf(run_line, sizeof(run_line),
                  "H2_PAL_WEBRTC_RUN id=%s version=%s", fixture_run,
                  image.version);
-  (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-webrtc", run_line);
+  (void)printf("%s\n", run_line);
   for (unsigned index = 0u; index < H2_PAL_WEBRTC_E2E_CASE_COUNT; ++index)
     if (result->cases[index].id != NULL)
       report((void *)runtime, &result->cases[index]);
@@ -67,13 +67,15 @@ void h2_pal_webrtc_device_report(const h2_runtime_t *runtime,
                  "allocations\":%zu,\"cleanup\":0}\n",
                  result->passed, result->failed, result->blocked,
                  result->retained_allocations);
-  (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-webrtc", line);
+  (void)printf("%s", line);
 }
 
-static int connect_saved_wifi(h2_runtime_t *runtime) {
+static int prepare_wifi(h2_runtime_t *runtime,
+                        const h2_pal_wifi_sta_config_t *fixture) {
   h2_pal_wifi_sta_config_t wifi = {0};
-  int rc =
-      h2_pal_wifi_settings_get_saved_sta_config(runtime->wifi_settings, &wifi);
+  int rc = H2_PAL_OK;
+  if (fixture != NULL) wifi = *fixture;
+  else rc = h2_pal_wifi_settings_get_saved_sta_config(runtime->wifi_settings, &wifi);
   if (rc == H2_PAL_OK)
     rc = h2_pal_wifi_sta_connect(runtime->wifi_sta, &wifi, 20000u);
   memset(&wifi, 0, sizeof(wifi));
@@ -101,12 +103,19 @@ static int connect_saved_wifi(h2_runtime_t *runtime) {
 int h2_pal_webrtc_device_run(h2_runtime_t *runtime,
                              uint32_t connection_timeout_ms, uint32_t soak_duration_ms,
                              h2_pal_webrtc_e2e_result_t *result) {
+  return h2_pal_webrtc_device_run_with_wifi(runtime, NULL,
+      connection_timeout_ms, soak_duration_ms, result);
+}
+
+int h2_pal_webrtc_device_run_with_wifi(h2_runtime_t *runtime,
+    const h2_pal_wifi_sta_config_t *wifi, uint32_t connection_timeout_ms,
+    uint32_t soak_duration_ms, h2_pal_webrtc_e2e_result_t *result) {
   if (runtime == NULL || result == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   memset(result, 0, sizeof(*result));
   if (!H2_PAL_WEBRTC_OFFER_URL[0] || !H2_PAL_WEBRTC_STUN_URL[0])
     return H2_PAL_ERR_INVALID_ARG;
-  int rc = connect_saved_wifi(runtime);
+  int rc = prepare_wifi(runtime, wifi);
   if (rc != H2_PAL_OK)
     return rc;
   h2_corehttp_t *provider = NULL;

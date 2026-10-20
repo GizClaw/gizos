@@ -154,6 +154,17 @@ int main(int argc, char **argv) {
       .case_timeout_ms = 1000,
       .cleanup_timeout_ms = 1000};
   h2_gizclaw_e2e_result_t result;
+  char oversized_tag[H2_GIZCLAW_WORKFLOW_TAG_MAX_BYTES + 2u];
+  memset(oversized_tag, 'x', sizeof(oversized_tag) - 1u);
+  oversized_tag[sizeof(oversized_tag) - 1u] = '\0';
+  const char *invalid_tags[] = {"", oversized_tag};
+  for (size_t i = 0u; i < sizeof(invalid_tags) / sizeof(*invalid_tags); ++i) {
+    config.workflow_tag = invalid_tags[i];
+    assert(h2_gizclaw_e2e_run(&runtime, &config, &result) ==
+           H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR);
+    assert(allocator.live_blocks == 0 && s_connected == 0 && s_ran == 0);
+  }
+  config.workflow_tag = NULL;
   if (!connectivity_only) {
     const uint32_t original_suites = config.suites;
     const uint8_t pcm[] = {1u, 0u};

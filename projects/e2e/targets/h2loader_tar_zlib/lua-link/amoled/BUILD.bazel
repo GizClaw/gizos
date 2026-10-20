@@ -6,6 +6,12 @@ load("//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files([
+    "main/CMakeLists.txt",
+    "main/idf_component.yml",
+    "main/main.c",
+], visibility = ["//visibility:public"])
+
 esp_target_task_policy(
     default_policy = "4 any 4096 psram",
     graph = [":lua_link_launcher"],
@@ -81,6 +87,7 @@ h2loader_esp_idf_firmware(
         "main/main.c",
     ],
     board = "amoled",
+    cmake_variables = ["H2_LUA_LINK_E2E_ROLE"],
     graph = [":lua_link_launcher"],
     project = "CMakeLists.txt",
     project_name = "h2_lua_link_e2e",

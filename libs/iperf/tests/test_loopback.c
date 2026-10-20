@@ -3,6 +3,7 @@
  * directions. The server runs on a second thread; both sides own independent
  * PAL providers (including separate H2SCTP instances).
  */
+#include "h2_iperf_internal.h"
 #include "h2_iperf_test_support.h"
 
 #ifdef NDEBUG
@@ -14,6 +15,145 @@
 #include <string.h>
 
 #define SERVER_ACCEPT_TIMEOUT_MS 10000u
+
+/* Only PAL inputs are intercepted: SCTP, emit accounting and pump are real. */
+static struct {
+  const h2_pal_net_api_t *net;
+  const h2_pal_sctp_api_t *sctp;
+  h2_pal_net_vtable_t net_vtable;
+  h2_pal_net_api_t net_api;
+  h2_pal_sctp_vtable_t sctp_vtable;
+  h2_pal_sctp_api_t sctp_api;
+  h2_pal_time_vtable_t time_vtable;
+  h2_pal_time_api_t time_api;
+  unsigned left, sends, sleeps, reads;
+  uint64_t now;
+  int error;
+  bool forward, in_service, fail_sleep;
+} pressure;
+
+static int pressure_send(void *user, h2_pal_net_socket_t sock,
+                         const h2_pal_net_addr_t *addr, const uint8_t *data,
+                         size_t len) {
+  (void)user;
+  ++pressure.sends;
+  if (pressure.left != 0u) {
+    --pressure.left;
+    return pressure.error;
+  }
+  return pressure.forward
+             ? h2_pal_net_udp_sendto(pressure.net, sock, addr, data, len)
+             : (int)len;
+}
+
+static int pressure_recv(void *user, h2_pal_net_socket_t sock,
+                         h2_pal_net_addr_t *addr, uint8_t *data, size_t len,
+                         uint32_t wait) {
+  (void)user;
+  return pressure.forward ? h2_pal_net_udp_recvfrom(pressure.net, sock, addr,
+                                                    data, len, wait)
+                          : H2_PAL_ERR_WOULD_BLOCK;
+}
+
+static void pressure_net(h2_iperf_config_t *config) {
+  pressure.net = config->net;
+  pressure.net_vtable = *config->net->vtable;
+  pressure.net_vtable.udp_sendto = pressure_send;
+  pressure.net_vtable.udp_recvfrom = pressure_recv;
+  pressure.net_api = (h2_pal_net_api_t){.user = config->net->user,
+                                        .vtable = &pressure.net_vtable};
+  config->net = &pressure.net_api;
+}
+
+static h2_pal_result_t pressure_clock(void *user, uint64_t *now) {
+  (void)user;
+  assert(++pressure.reads <=
+         8u); /* Frozen clock makes a fallback spin fail promptly. */
+  *now = pressure.now;
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t pressure_sleep(void *user, uint32_t ms) {
+  (void)user;
+  assert(!pressure.in_service && ms == 1u);
+  ++pressure.sleeps;
+  pressure.now += pressure.fail_sleep ? 0u : ms;
+  return pressure.fail_sleep ? H2_PAL_ERR_IO : H2_PAL_OK;
+}
+
+static h2_pal_result_t pressure_service(void *user,
+                                        h2_pal_sctp_association_t *assoc,
+                                        uint64_t now, uint64_t *next) {
+  (void)user;
+  pressure.in_service = true;
+  h2_pal_result_t rc =
+      h2_pal_sctp_association_service(pressure.sctp, assoc, now, next);
+  pressure.in_service = false;
+  return rc;
+}
+
+static void pressure_init(h2_iperf_test_env_t *env, h2_iperf_stream_t *stream,
+                          int error) {
+  memset(&pressure, 0, sizeof(pressure));
+  pressure.left = 1001u;
+  pressure.error = error;
+  h2_iperf_test_env_init(env, true);
+  pressure_net(&env->config);
+  pressure.sctp = env->config.sctp;
+  pressure.sctp_vtable = *pressure.sctp->vtable;
+  pressure.sctp_vtable.association_service = pressure_service;
+  pressure.sctp_api = (h2_pal_sctp_api_t){.user = pressure.sctp->user,
+                                          .vtable = &pressure.sctp_vtable};
+  env->config.sctp = &pressure.sctp_api;
+  pressure.time_vtable = (h2_pal_time_vtable_t){
+      .get_monotonic_ms = pressure_clock, .sleep_ms = pressure_sleep};
+  pressure.time_api = (h2_pal_time_api_t){.vtable = &pressure.time_vtable};
+  env->config.time = &pressure.time_api;
+  h2_iperf_stream_init(stream, &env->config, H2_IPERF_PROTOCOL_SCTP, NULL);
+  stream->sock = 1;
+  stream->peer_known = true;
+  stream->peer = h2_iperf_test_loopback(1u);
+  assert(h2_iperf_stream_sctp_create(stream, H2_PAL_SCTP_ROLE_ACTIVE, 5000u,
+                                     5001u, 1200u, 1024u) == H2_PAL_OK);
+}
+
+static void test_sctp_backpressure_bounds(void) {
+  h2_iperf_test_env_t env;
+  h2_iperf_stream_t stream;
+  for (unsigned mode = 0u; mode < 2u; ++mode) {
+    pressure_init(&env, &stream,
+                  mode == 0u ? H2_PAL_ERR_WOULD_BLOCK : H2_PAL_ERR_IO);
+    assert(h2_pal_sctp_association_start(env.config.sctp, stream.assoc, 0u) ==
+           H2_PAL_OK);
+    h2_pal_result_t rc = H2_PAL_OK;
+    while (rc == H2_PAL_OK && pressure.sends < 1001u) {
+      pressure.reads = 0u;
+      rc = h2_iperf_stream_sctp_pump(&stream, 1u);
+    }
+    assert(rc == H2_PAL_ERR_IO && pressure.sends == 1001u);
+    assert(mode == 0u ? pressure.sleeps > 0u : pressure.sleeps == 0u);
+    h2_iperf_stream_close(&stream);
+    h2_iperf_test_env_deinit(&env);
+  }
+  for (unsigned mode = 0u; mode < 3u; ++mode) {
+    pressure_init(&env, &stream, H2_PAL_ERR_WOULD_BLOCK);
+    assert(h2_pal_sctp_association_start(env.config.sctp, stream.assoc, 0u) ==
+           H2_PAL_OK);
+    if (mode == 1u)
+      pressure.time_vtable.sleep_ms = NULL;
+    pressure.fail_sleep = mode == 2u;
+    assert(h2_iperf_stream_sctp_pump(&stream, mode == 0u ? 0u : 1u) ==
+           H2_PAL_OK);
+    assert(pressure.sleeps == (mode == 2u ? 1u : 0u));
+    h2_iperf_stream_close(&stream);
+    h2_iperf_test_env_deinit(&env);
+  }
+  pressure_init(&env, &stream, H2_PAL_ERR_WOULD_BLOCK);
+  assert(h2_iperf_stream_sctp_connect(&stream, 2u) == H2_PAL_ERR_TIMEOUT);
+  assert(pressure.now == 2u && pressure.sends < 1001u);
+  h2_iperf_stream_close(&stream);
+  h2_iperf_test_env_deinit(&env);
+}
 
 typedef struct server_thread {
     h2_iperf_server_t *server;
@@ -44,6 +184,9 @@ static void run_scenario(const scenario_t *scenario) {
     h2_iperf_test_env_t client_env;
     h2_iperf_test_env_init(&server_env, with_sctp);
     h2_iperf_test_env_init(&client_env, with_sctp);
+    if (pressure.forward) {
+      pressure_net(&client_env.config);
+    }
 
     const h2_iperf_server_params_t server_params = {
         .family = H2_PAL_NET_FAMILY_IPV4,
@@ -83,6 +226,9 @@ static void run_scenario(const scenario_t *scenario) {
     h2_iperf_test_print_result("client", &client_result);
     h2_iperf_test_print_result("server", &thread.result);
     assert(status == H2_PAL_OK);
+    if (pressure.forward) {
+      assert(pressure.left == 0u && pressure.sends > 3u);
+    }
     assert(thread.status == H2_PAL_OK);
     assert(memcmp(client_result.cookie, thread.result.cookie, H2_IPERF_COOKIE_SIZE) == 0);
     assert(client_result.protocol == scenario->protocol);
@@ -184,8 +330,21 @@ int main(void) {
         {"sctp paced", H2_IPERF_PROTOCOL_SCTP, false, 1000u, 0u, 1024u, 4u * 1024u * 1024u},
     };
     for (size_t i = 0u; i < sizeof(scenarios) / sizeof(scenarios[0]); ++i) {
-        run_scenario(&scenarios[i]);
+      run_scenario(&scenarios[i]);
     }
+    const scenario_t recovered = {"sctp WB recovery",
+                                  H2_IPERF_PROTOCOL_SCTP,
+                                  false,
+                                  0u,
+                                  4u * 1024u * 1024u,
+                                  8u * 1024u,
+                                  0u};
+    memset(&pressure, 0, sizeof(pressure));
+    pressure.left = 3u;
+    pressure.error = H2_PAL_ERR_WOULD_BLOCK;
+    pressure.forward = true;
+    run_scenario(&recovered);
+    test_sctp_backpressure_bounds();
     test_udp_limit_below_header_rejected();
     return 0;
 }

@@ -50,7 +50,7 @@ void h2_pal_ipv6_device_report(const h2_runtime_t *runtime,
                              : "FAIL",
              item->detail, item->line, item->bytes_sent, item->bytes_received,
              boot_id);
-    h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-ipv6", line);
+    (void)printf("%s\n", line);
     h2_pal_time_sleep_ms(runtime->time, 40u);
   }
   snprintf(line, sizeof(line),
@@ -62,7 +62,7 @@ void h2_pal_ipv6_device_report(const h2_runtime_t *runtime,
            result->retained_sockets, result->retained_resolvers,
            result->retained_allocations, result->retained_tasks,
            result->cleanup_error, boot_id);
-  h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-ipv6", line);
+  (void)printf("%s\n", line);
 }
 int h2_pal_ipv6_device_run(h2_runtime_t *runtime, const h2_pal_dtls_api_t *dtls,
                            h2_pal_ipv6_result_t *result) {
@@ -104,7 +104,7 @@ int h2_pal_ipv6_device_run(h2_runtime_t *runtime, const h2_pal_dtls_api_t *dtls,
   snprintf(execution, sizeof(execution),
            "H2_PAL_IPV6_EXECUTION session=%s boot_id=%s", H2_PAL_IPV6_SESSION,
            boot_id);
-  h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-ipv6", execution);
+  (void)printf("%s\n", execution);
   h2_net_tls_fixture_client_t client = {.runtime = runtime,
                                         .host = H2_PAL_IPV6_HOST,
                                         .port = (uint16_t)H2_PAL_IPV6_PORT,

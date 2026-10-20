@@ -32,3 +32,5 @@ idf_component_register(
     h2_pal_core)
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu11 -Wall -Wextra -Werror)
+
+include("${H2_REPO_ROOT}/projects/e2e/targets/h2loader_tar_zlib/fixture-wifi/fixture_wifi.cmake")

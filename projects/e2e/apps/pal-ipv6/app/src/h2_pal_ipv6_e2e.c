@@ -169,20 +169,20 @@ static int webrtc_close(void *user) {
            "H2_PAL_IPV6_ICE_WITNESS status=%d rc=%d local6=%d remote6=%d",
            response.status_code, rc, strstr(body, "\"local_family\":6") != NULL,
            strstr(body, "\"remote_family\":6") != NULL);
-  h2_pal_log_write(fixture->log, H2_PAL_LOG_INFO, "pal-ipv6", line);
+  (void)printf("%s\n", line);
   h2_pal_http_response_free(client->http, &response);
   return h2_webrtc_fixture_close(&fixture->client);
 }
 static void webrtc_report(void *user,
                           const h2_pal_webrtc_e2e_case_result_t *item) {
-  const h2_runtime_t *runtime = user;
+  (void)user;
   char line[256];
   snprintf(line, sizeof(line),
            "H2_PAL_IPV6_WEBRTC_CASE id=%s passed=%d blocked=%d detail=%d "
            "line=%u elapsed_ms=%llu",
            item->id, item->passed, item->blocked, item->detail, item->line,
            (unsigned long long)item->elapsed_ms);
-  h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-ipv6", line);
+  (void)printf("%s\n", line);
 }
 static int webrtc(const h2_pal_ipv6_config_t *config) {
   if (!config->offer_url || !config->stun_url)

@@ -263,6 +263,7 @@ static void run_e2e(void *raw) {
       .registration_token = launcher_config->registration_token,
       .app_config_key = h2_gizclaw_e2e_fixture_key(),
       .expected_runtime_profile = h2_gizclaw_e2e_fixture_profile(),
+      .workflow_tag = h2_gizclaw_e2e_fixture_workflow_tag(),
       .app_config_expected_value = {h2_gizclaw_e2e_fixture_value(),
                                     strlen(h2_gizclaw_e2e_fixture_value())},
       .voice_audio = h2_gizclaw_e2e_fixture_physical_audio()

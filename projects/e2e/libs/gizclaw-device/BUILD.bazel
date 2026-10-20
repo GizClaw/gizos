@@ -13,6 +13,7 @@ cc_library(
     copts = H2_WARNING_COPTS,
     includes = ["."],
     deps = ["//libs/pal"],
+    visibility = ["//visibility:public"],
 )
 
 cc_test(

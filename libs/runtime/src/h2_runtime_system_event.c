@@ -767,8 +767,17 @@ static h2_pal_result_t map_payload(
     }
 }
 
-static int h2_runtime_system_event_handler(void *user, const h2_pal_system_event_t *event) {
-    h2_runtime_t *runtime = (h2_runtime_t *)user;
+/* Keep the payload mapper frame out of the synchronous drop-report path. */
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__) || defined(__clang__)
+__attribute__((noinline))
+#else
+#error "The system-event stack boundary requires compiler noinline support"
+#endif
+static int enqueue_system_event(
+    h2_runtime_t *runtime, const h2_pal_system_event_t *event,
+    int *report_needed) {
     if (!h2_runtime_ready(runtime) || event == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
@@ -801,7 +810,18 @@ static int h2_runtime_system_event_handler(void *user, const h2_pal_system_event
      * to read a snapshot older than the event that woke it.
      */
     publish_system_state(runtime, kind, &queued.payload);
-    return h2_runtime_enqueue_event(runtime, &queued);
+    return h2_runtime_enqueue_event_deferred_report(
+        runtime, &queued, report_needed);
+}
+
+static int h2_runtime_system_event_handler(void *user, const h2_pal_system_event_t *event) {
+    h2_runtime_t *runtime = (h2_runtime_t *)user;
+    int report_needed = 0;
+    const int rc = enqueue_system_event(runtime, event, &report_needed);
+    if (report_needed) {
+        h2_runtime_report_dropped_events(runtime);
+    }
+    return rc;
 }
 
 h2_pal_result_t h2_runtime_start_system_events(h2_runtime_t *runtime) {

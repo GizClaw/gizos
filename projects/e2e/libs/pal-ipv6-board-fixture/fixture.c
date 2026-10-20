@@ -268,12 +268,13 @@ typedef struct queued {
   uint8_t *data;
   size_t size;
   uint16_t sid;
-  int text, audio;
+  int text, audio, reset;
 } queued_t;
 static PeerConnection *pc;
 static queued_t outgoing[64];
 static unsigned head, count, session_number;
 static char peer_session[40];
+static h2_pal_result_t reset_error;
 static int queue_message(const void *data, size_t size, uint16_t sid, int text,
                          int audio) {
   if (count == 64)
@@ -289,7 +290,7 @@ static int queue_message(const void *data, size_t size, uint16_t sid, int text,
   if (size)
     memcpy(copy + prefix_len, data, size);
   outgoing[(head + count) % 64] =
-      (queued_t){copy, prefix_len + size, sid, text, audio};
+      (queued_t){copy, prefix_len + size, sid, text, audio, 0};
   ++count;
   return H2_PAL_OK;
 }
@@ -313,6 +314,29 @@ static int on_remote_channel(const SctpRemoteChannel *channel, void *user) {
              ? 0
              : -1;
 }
+static void on_stream_reset(const h2_pal_sctp_stream_reset_event_t *event,
+                            void *user) {
+  (void)user;
+  if (!event || reset_error != H2_PAL_OK)
+    return;
+  if (event->result != H2_PAL_OK) {
+    reset_error = event->result;
+  } else if (event->direction == H2_PAL_SCTP_STREAM_RESET_OUTGOING_COMPLETED) {
+    /* A rejected DCEP stream can already have no mapping. This only removes
+     * the portable mapping; it does not reenter the SCTP association. */
+    (void)peer_connection_datachannel_forget_sid(pc, event->stream_id);
+  } else if (event->direction != H2_PAL_SCTP_STREAM_RESET_INCOMING_RESET) {
+    reset_error = H2_PAL_ERR_INVALID_ARG;
+  } else if (count == 64) {
+    reset_error = H2_PAL_ERR_NO_SPACE;
+  } else {
+    /* Drain accepted echoes first and submit the reciprocal reset outside
+     * the SCTP callback, where BUSY/WOULD_BLOCK can be retried. */
+    outgoing[(head + count) % 64] =
+        (queued_t){.sid = event->stream_id, .reset = 1};
+    ++count;
+  }
+}
 static void peer_closed(void) {
   if (pc) {
     peer_connection_close(pc);
@@ -324,24 +348,42 @@ static void peer_closed(void) {
     head = (head + 1) % 64;
     --count;
   }
+  reset_error = H2_PAL_OK;
 }
 static void pump_peer(void) {
   if (!pc)
     return;
   peer_connection_loop(pc, 0);
-  while (count) {
+  while (count && reset_error == H2_PAL_OK) {
     queued_t *item = &outgoing[head];
-    int rc = item->audio
-                 ? peer_connection_send_audio(pc, item->data, item->size)
-                 : sctp_outgoing_data(peer_connection_get_sctp(pc),
-                                      (char *)item->data, item->size,
-                                      item->text ? PPID_STRING : PPID_BINARY,
-                                      item->sid);
-    if (rc == H2_PAL_ERR_WOULD_BLOCK || rc == H2_PAL_ERR_TIMEOUT)
-      break;
+    int rc;
+    if (item->reset) {
+      rc = peer_connection_datachannel_close_sid(pc, item->sid);
+      if (rc == H2_PAL_ERR_BUSY || rc == H2_PAL_ERR_WOULD_BLOCK)
+        break;
+      if (rc != H2_PAL_OK) {
+        reset_error = rc;
+        break;
+      }
+    } else {
+      rc = item->audio
+               ? peer_connection_send_audio(pc, item->data, item->size)
+               : sctp_outgoing_data(peer_connection_get_sctp(pc),
+                                    (char *)item->data, item->size,
+                                    item->text ? PPID_STRING : PPID_BINARY,
+                                    item->sid);
+      if (rc == H2_PAL_ERR_WOULD_BLOCK || rc == H2_PAL_ERR_TIMEOUT)
+        break;
+    }
     h2_pal_mem_free(rt->mem, item->data);
     head = (head + 1) % 64;
     --count;
+  }
+  if (reset_error != H2_PAL_OK) {
+    char line[96];
+    snprintf(line, sizeof(line), "H2_IPV6_FIXTURE_RESET_FAIL rc=%d", reset_error);
+    log_line(line);
+    peer_closed();
   }
 }
 static int only_ipv6_host(void *user, const char *prefix,
@@ -430,6 +472,7 @@ static void http_request(int fd) {
     peer_connection_oniceconnectionstatechange(pc, on_peer_state);
     peer_connection_ondatachannel(pc, on_message, NULL, NULL);
     peer_connection_onremotechannel(pc, on_remote_channel);
+    peer_connection_onstreamreset(pc, on_stream_reset);
     /* The private engine creates its DTLS identity with local SDP. Prepare
      * that before installing the authenticated remote fingerprint. */
     const char *answer = peer_connection_create_answer(pc);

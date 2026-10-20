@@ -359,13 +359,13 @@ const h2_pal_ble_host_api_t *h2_h2loader_cli_acquire_ble(
 }
 
 static h2_pal_result_t command_output(void *user, const uint8_t *data, size_t len) {
-    h2_h2loader_cli_context_t *context = user;
-    return h2_h2loader_cli_output_bytes(
-        context, H2_H2LOADER_CLI_STREAM_STDOUT, data, len);
+    return h2_h2loader_cli_command_output(user, data, len);
 }
 
 static h2_pal_result_t transport_log(void *user, const uint8_t *data, size_t len) {
-    return command_output(user, data, len);
+    h2_h2loader_cli_context_t *context = user;
+    return h2_h2loader_cli_output_bytes(
+        context, H2_H2LOADER_CLI_STREAM_STDOUT, data, len);
 }
 
 static h2_pal_result_t file_read(
@@ -762,6 +762,37 @@ h2_pal_result_t h2_h2loader_cli_verify_reboot_status(
         ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE;
 }
 
+typedef struct confirmation_wait {
+  h2_h2loader_cli_context_t *context;
+  uint64_t start_ms;
+  h2_pal_result_t control_result;
+  int deadline_reached;
+} confirmation_wait_t;
+
+static int confirmation_wait_done(void *user) {
+  confirmation_wait_t *wait = user;
+  h2_h2loader_cli_context_t *context = wait->context;
+  if (context->config->is_cancelled != NULL &&
+      context->config->is_cancelled(context->config->cancel_user)) {
+    wait->control_result = H2_PAL_EXIT;
+    return 1;
+  }
+  uint64_t now_ms = 0u;
+  wait->control_result =
+      h2_pal_time_get_monotonic_ms(context->runtime->time, &now_ms);
+  if (wait->control_result != H2_PAL_OK) {
+    if (wait->control_result == H2_PAL_EXIT)
+      wait->control_result = H2_PAL_ERR_INVALID_STATE;
+    return 1;
+  }
+  if (now_ms < wait->start_ms) {
+    wait->control_result = H2_PAL_ERR_INVALID_STATE;
+    return 1;
+  }
+  wait->deadline_reached = now_ms - wait->start_ms >= 500u;
+  return wait->deadline_reached;
+}
+
 static h2_pal_result_t reconnect_and_verify_reboot(
     h2_h2loader_cli_context_t *context,
     h2_h2loader_cli_transport_t *transport,
@@ -769,26 +800,79 @@ static h2_pal_result_t reconnect_and_verify_reboot(
     const h2_h2loader_host_status_t *before,
     h2_h2loader_host_status_t *out_status) {
     h2_pal_result_t rc = H2_PAL_ERR_TIMEOUT;
-    for (uint32_t attempt = 0u; attempt < 120u; ++attempt) {
+    int awaiting_confirmation = 0;
+    for (uint32_t failed_attempts = 0u; failed_attempts < 120u;) {
         if (context->config->is_cancelled != NULL &&
             context->config->is_cancelled(context->config->cancel_user)) {
+            if (awaiting_confirmation) (void)h2_h2loader_cli_transport_disconnect(transport);
             return H2_PAL_EXIT;
         }
-        rc = h2_pal_time_sleep_ms(context->runtime->time, 500u);
-        if (rc != H2_PAL_OK) return rc;
-        rc = h2_h2loader_cli_transport_rediscover(transport);
-        if (rc == H2_PAL_OK) {
+        if (awaiting_confirmation) {
+          confirmation_wait_t wait = {.context = context};
+          rc = h2_pal_time_get_monotonic_ms(context->runtime->time,
+                                            &wait.start_ms);
+          if (rc != H2_PAL_OK) {
+            (void)h2_h2loader_cli_transport_disconnect(transport);
+            return rc == H2_PAL_EXIT ? H2_PAL_ERR_INVALID_STATE : rc;
+          }
+          rc = h2_h2loader_cli_transport_monitor_logs(
+              transport, confirmation_wait_done, &wait);
+          if (wait.control_result != H2_PAL_OK) {
+            (void)h2_h2loader_cli_transport_disconnect(transport);
+            return wait.control_result;
+          }
+          if (rc == H2_PAL_EXIT && wait.deadline_reached) {
+            rc = h2_h2loader_cli_transport_read_status(transport, out_status);
+          } else if (rc == H2_PAL_EXIT || rc == H2_PAL_OK) {
+            /* An unclassified monitor return cannot confirm an upgrade. */
+            rc = H2_PAL_ERR_INVALID_STATE;
+          }
+          /* Read/sink errors use the existing failed-attempt path below. */
+        } else {
+          rc = h2_pal_time_sleep_ms(context->runtime->time, 500u);
+          if (rc != H2_PAL_OK)
+            return rc;
+          rc = h2_h2loader_cli_transport_rediscover(transport);
+          if (rc == H2_PAL_OK) {
             rc = h2_h2loader_cli_transport_connect(transport, out_status);
             if (h2_h2loader_cli_reconnect_must_fail_closed(transport, rc)) {
-                return rc;
+              return rc;
             }
+          }
         }
+        const h2_pal_result_t status_result = rc;
         if (rc == H2_PAL_OK) {
             rc = h2_h2loader_cli_verify_reboot_status(kind, before, out_status);
             if (rc == H2_PAL_OK) return H2_PAL_OK;
+            /* Keep only this live serial App while its exact Stage awaits confirmation. */
+            if (transport->on_log != NULL &&
+                context->config->is_cancelled != NULL &&
+                transport->options->transport == H2_H2LOADER_HOST_TRANSPORT_SERIAL &&
+                kind == H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE &&
+                before->stage.valid && before->stage.role == H2_H2LOADER_HOST_ACTIVE_ROLE_APP &&
+                out_status->stage.valid && metadata_equal(&out_status->stage, &before->stage) &&
+                out_status->active_role == H2_H2LOADER_HOST_ACTIVE_ROLE_APP &&
+                out_status->running_partition == 2u && out_status->next_partition == 2u &&
+                out_status->boot_intent == H2_H2LOADER_HOST_BOOT_INTENT_AUTO && out_status->last == H2_PAL_OK &&
+                strcmp(out_status->device_uid, before->device_uid) == 0 &&
+                strcmp(out_status->board, before->board) == 0 && strcmp(out_status->target, before->target) == 0 &&
+                metadata_equal(&out_status->partition_1, &before->partition_1) &&
+                metadata_matches_stage(&out_status->partition_2, &before->stage)) {
+                awaiting_confirmation = 1;
+                continue;
+            }
         }
+        if (awaiting_confirmation) {
+            (void)h2_h2loader_cli_output(
+                context, H2_H2LOADER_CLI_STREAM_STDERR,
+                "h2loader: pending upgrade status failed status_code=%d result_code=%d\n",
+                (int)status_result, (int)rc);
+        }
+        awaiting_confirmation = 0;
         (void)h2_h2loader_cli_transport_disconnect(transport);
+        ++failed_attempts;
     }
+    if (awaiting_confirmation) (void)h2_h2loader_cli_transport_disconnect(transport);
     return rc;
 }
 
@@ -938,8 +1022,10 @@ static int device_command(
         request.wifi_scan_limit = wifi_scan_limit;
         request.wifi_scan_timeout_ms = wifi_scan_timeout_ms;
     }
-    if (rc == H2_PAL_OK) rc = h2_h2loader_cli_transport_execute(
-        &transport, &request, &result);
+    if (rc == H2_PAL_OK) {
+        context->command_output_started = 0u;
+        rc = h2_h2loader_cli_transport_execute(&transport, &request, &result);
+    }
     if (rc == H2_PAL_OK &&
         result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK &&
         monitor_after) {

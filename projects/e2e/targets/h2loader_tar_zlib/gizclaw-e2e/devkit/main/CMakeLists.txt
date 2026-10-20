@@ -22,6 +22,8 @@ idf_component_register(
     "${H2_REPO_ROOT}/libs/pal/include"
     "${H2_REPO_ROOT}/libs/runtime/include"
     "${H2_REPO_ROOT}/projects/h2loader/libs/h2loader/include"
+  PRIV_REQUIRES
+    spi_flash
   REQUIRES
     h2_esp_target_task_policy
     app_update
@@ -44,7 +46,16 @@ target_add_binary_data(
   BINARY
   RENAME_TO h2_gizclaw_e2e_voice_prompt)
 
+if(DEFINED H2_GIZCLAW_E2E_ALLOCATOR_ACCESSOR)
+  if(NOT H2_GIZCLAW_E2E_ALLOCATOR_ACCESSOR MATCHES "^[A-Za-z_][A-Za-z0-9_]*$")
+    message(FATAL_ERROR "E2E allocator accessor must be one C identifier")
+  endif()
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    "H2_GIZCLAW_E2E_ALLOCATOR_ACCESSOR=${H2_GIZCLAW_E2E_ALLOCATOR_ACCESSOR}")
+endif()
+
 target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu11 -Wall -Wextra -Werror)
+include("${H2_REPO_ROOT}/projects/e2e/targets/h2loader_tar_zlib/fixture-wifi/fixture_wifi.cmake")
 
 if(H2_GIZCLAW_E2E_VOICE_ONLY)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE H2_GIZCLAW_E2E_VOICE_ONLY=1)
@@ -62,4 +73,11 @@ if(H2_GIZCLAW_E2E_FIRMWARE_ONLY)
     message(FATAL_ERROR "Select only one GizClaw E2E suite")
   endif()
   target_compile_definitions(${COMPONENT_LIB} PRIVATE H2_GIZCLAW_E2E_FIRMWARE_ONLY=1)
+endif()
+
+if(H2_GIZCLAW_E2E_DEVICE_ONLY)
+  if(H2_GIZCLAW_E2E_FIRMWARE_ONLY OR H2_GIZCLAW_E2E_VOICE_ONLY OR H2_GIZCLAW_E2E_CONCURRENCY_ONLY)
+    message(FATAL_ERROR "Select only one GizClaw E2E suite")
+  endif()
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE H2_GIZCLAW_E2E_DEVICE_ONLY=1)
 endif()
