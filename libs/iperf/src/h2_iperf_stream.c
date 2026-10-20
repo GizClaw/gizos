@@ -49,7 +49,11 @@ static h2_pal_result_t sctp_emit(
     /* Transient datagram send failures (for example ENOBUFS on a flooded
      * loopback) are retried by the association; persistent ones are fatal. */
     if (++stream->emit_failures > H2_IPERF_SCTP_EMIT_FAILURE_LIMIT) {
-        return H2_PAL_ERR_IO;
+      h2_iperf_log(
+          stream->config, H2_PAL_LOG_ERROR,
+          "sctp emit exhausted pal_rc=%d consecutive=%u packet_len=%zu", sent,
+          stream->emit_failures, packet_len);
+      return H2_PAL_ERR_IO;
     }
     return H2_PAL_ERR_WOULD_BLOCK;
 }
@@ -63,6 +67,10 @@ static void sctp_on_state(
     (void)association;
     stream->assoc_state = state;
     stream->assoc_reason = reason;
+    if (state == H2_PAL_SCTP_STATE_FAILED) {
+      h2_iperf_log(stream->config, H2_PAL_LOG_ERROR,
+                   "sctp state failed reason=%d", (int)reason);
+    }
 }
 
 static h2_pal_result_t sctp_on_message(
@@ -450,7 +458,9 @@ h2_pal_result_t h2_iperf_stream_sctp_pump(
     h2_pal_result_t result = h2_pal_sctp_association_service(
         config->sctp, stream->assoc, now, &stream->next_deadline_ms);
     if (result != H2_PAL_OK && result != H2_PAL_ERR_WOULD_BLOCK) {
-        return result;
+      h2_iperf_log(config, H2_PAL_LOG_ERROR, "sctp pump stage=service rc=%d",
+                   (int)result);
+      return result;
     }
     result = sctp_status(stream);
     if (result != H2_PAL_OK) {
@@ -472,7 +482,9 @@ h2_pal_result_t h2_iperf_stream_sctp_pump(
             break;
         }
         if (got < 0) {
-            return (h2_pal_result_t)got;
+          h2_iperf_log(config, H2_PAL_LOG_ERROR,
+                       "sctp pump stage=udp_recv rc=%d", got);
+          return (h2_pal_result_t)got;
         }
         if (!stream->peer_known) {
             stream->peer = from;

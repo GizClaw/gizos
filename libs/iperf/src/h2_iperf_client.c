@@ -225,7 +225,9 @@ static h2_pal_result_t client_run_data(client_t *client) {
         client->stream_ready = false;
     }
     if (result != H2_PAL_OK) {
-        return result;
+      h2_iperf_log(client->config, H2_PAL_LOG_ERROR, "data run failed rc=%d",
+                   (int)result);
+      return result;
     }
     if (run.ctrl_closed) {
         return H2_PAL_ERR_CLOSED;
@@ -235,8 +237,14 @@ static h2_pal_result_t client_run_data(client_t *client) {
         client->pending_state = run.ctrl_state;
         return H2_PAL_OK;
     }
-    return h2_iperf_ctrl_send_state(
-        client->config, client->ctrl, H2_IPERF_STATE_TEST_END, params->control_timeout_ms);
+    result = h2_iperf_ctrl_send_state(client->config, client->ctrl,
+                                      H2_IPERF_STATE_TEST_END,
+                                      params->control_timeout_ms);
+    if (result != H2_PAL_OK) {
+      h2_iperf_log(client->config, H2_PAL_LOG_ERROR,
+                   "test end control send failed rc=%d", (int)result);
+    }
+    return result;
 }
 
 static h2_pal_result_t client_exchange_results(client_t *client) {
