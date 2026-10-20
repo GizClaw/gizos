@@ -647,6 +647,8 @@ typedef struct workspace_context {
   char *second;
   char *third;
   size_t limit;
+  bool has_system;
+  bool system;
   h2_gizclaw_workspace_parameters_patch_t parameters;
   h2_gizclaw_workspace_history_order_t history_order;
   h2_gizclaw_rpc_method_t method;
@@ -725,12 +727,19 @@ static h2_pal_result_t workspace_request_start(workspace_context_t *request) {
     gizclaw_rpc_v1_WorkspaceListRequest message =
         gizclaw_rpc_v1_WorkspaceListRequest_init_zero;
     text_encode_t cursor_text = {.data = second.data, .len = second.len};
+    text_encode_t prefix_text = {.data = first.data, .len = first.len};
     if (second.len > 0u) {
       message.cursor.funcs.encode = encode_text;
       message.cursor.arg = &cursor_text;
     }
     message.has_limit = true;
     message.limit = (int64_t)request->limit;
+    if (first.len > 0u) {
+      message.prefix.funcs.encode = encode_text;
+      message.prefix.arg = &prefix_text;
+    }
+    message.has_system = request->has_system;
+    message.system = request->system;
     return workspace_request_start_message(
         request, H2_GIZCLAW_RPC_SERVER_WORKSPACE_LIST,
         gizclaw_rpc_v1_WorkspaceListRequest_fields, &message);
@@ -854,8 +863,9 @@ static h2_pal_result_t workspace_create_request(
     h2_gizclaw_service_t *service, uint64_t identity, workspace_kind_t kind,
     h2_gizclaw_str_t first, h2_gizclaw_str_t second, h2_gizclaw_str_t third,
     size_t limit, const h2_gizclaw_workspace_parameters_patch_t *parameters,
-    h2_gizclaw_workspace_history_order_t order, uint32_t timeout_ms,
-    h2_gizclaw_req_t **out_request) {
+    h2_gizclaw_workspace_history_order_t order,
+    const h2_gizclaw_workspace_list_options_t *list_options,
+    uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
   if (out_request != NULL)
     *out_request = NULL;
   if (service == NULL || out_request == NULL || timeout_ms == 0u ||
@@ -869,6 +879,9 @@ static h2_pal_result_t workspace_create_request(
       .allocator = allocator,
       .kind = kind,
       .limit = limit,
+      .has_system = list_options != NULL && list_options->has_system,
+      .system = list_options != NULL && list_options->has_system &&
+                list_options->system,
       .parameters = parameters != NULL
                         ? *parameters
                         : (h2_gizclaw_workspace_parameters_patch_t){0},
@@ -933,14 +946,26 @@ workspace_request_response(const h2_gizclaw_req_t *request,
 h2_pal_result_t h2_gizclaw_req_create_workspace_list(
     h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t cursor,
     size_t limit, uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
+  return h2_gizclaw_req_create_workspace_list_with_options(
+      service, identity, NULL, cursor, limit, timeout_ms, out_request);
+}
+
+h2_pal_result_t h2_gizclaw_req_create_workspace_list_with_options(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    const h2_gizclaw_workspace_list_options_t *options,
+    h2_gizclaw_str_t cursor, size_t limit, uint32_t timeout_ms,
+    h2_gizclaw_req_t **out_request) {
   if (out_request != NULL)
     *out_request = NULL;
-  if (!(valid_optional_text(cursor, 255u) && limit > 0u &&
-        limit <= H2_GIZCLAW_WORKSPACE_PAGE_MAX_ITEMS))
+  const h2_gizclaw_str_t prefix =
+      options != NULL ? options->prefix : (h2_gizclaw_str_t){0};
+  if (!(valid_optional_text(cursor, 255u) &&
+        valid_optional_text(prefix, H2_GIZCLAW_WORKSPACE_NAME_MAX_BYTES) &&
+        limit > 0u && limit <= H2_GIZCLAW_WORKSPACE_PAGE_MAX_ITEMS))
     return H2_PAL_ERR_INVALID_ARG;
-  return workspace_create_request(
-      service, identity, WS_LIST, (h2_gizclaw_str_t){0}, cursor,
-      (h2_gizclaw_str_t){0}, limit, 0, 0, timeout_ms, out_request);
+  return workspace_create_request(service, identity, WS_LIST, prefix, cursor,
+                                  (h2_gizclaw_str_t){0}, limit, 0, 0, options,
+                                  timeout_ms, out_request);
 }
 
 h2_pal_result_t
@@ -976,6 +1001,16 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_list(
     h2_gizclaw_service_t *service, h2_gizclaw_str_t cursor, size_t limit,
     uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
     h2_gizclaw_workspace_page_t *out_result) {
+  return h2_gizclaw_rpc_workspace_list_with_options(
+      service, NULL, cursor, limit, timeout_ms, storage, out_result);
+}
+
+h2_pal_result_t h2_gizclaw_rpc_workspace_list_with_options(
+    h2_gizclaw_service_t *service,
+    const h2_gizclaw_workspace_list_options_t *options,
+    h2_gizclaw_str_t cursor, size_t limit, uint32_t timeout_ms,
+    h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_workspace_page_t *out_result) {
   if (out_result == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   memset(out_result, 0, sizeof(*out_result));
@@ -983,8 +1018,8 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_list(
       (storage->capacity != 0u && storage->data == NULL))
     return H2_PAL_ERR_INVALID_ARG;
   h2_gizclaw_req_t *request = NULL;
-  h2_pal_result_t rc = h2_gizclaw_req_create_workspace_list(
-      service, 0u, cursor, limit, timeout_ms, &request);
+  h2_pal_result_t rc = h2_gizclaw_req_create_workspace_list_with_options(
+      service, 0u, options, cursor, limit, timeout_ms, &request);
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
   if (rc == H2_PAL_OK)
@@ -1004,7 +1039,7 @@ h2_pal_result_t h2_gizclaw_req_create_workspace_get(
     return H2_PAL_ERR_INVALID_ARG;
   return workspace_create_request(service, identity, WS_GET, name,
                                   (h2_gizclaw_str_t){0}, (h2_gizclaw_str_t){0},
-                                  0u, 0, 0, timeout_ms, out_request);
+                                  0u, 0, 0, NULL, timeout_ms, out_request);
 }
 
 h2_pal_result_t h2_gizclaw_resp_parse_workspace_get(
@@ -1073,7 +1108,7 @@ h2_pal_result_t h2_gizclaw_req_create_workspace_create(
     return H2_PAL_ERR_INVALID_ARG;
   return workspace_create_request(service, identity, WS_CREATE,
                                   (h2_gizclaw_str_t){0}, workflow_name, name,
-                                  0u, 0, 0, timeout_ms, out_request);
+                                  0u, 0, 0, NULL, timeout_ms, out_request);
 }
 
 h2_pal_result_t
@@ -1153,7 +1188,8 @@ h2_pal_result_t h2_gizclaw_req_create_workspace_set_parameters(
     return H2_PAL_ERR_INVALID_ARG;
   return workspace_create_request(service, identity, WS_SET_PARAMETERS, name,
                                   (h2_gizclaw_str_t){0}, (h2_gizclaw_str_t){0},
-                                  0u, parameters, 0, timeout_ms, out_request);
+                                  0u, parameters, 0, NULL, timeout_ms,
+                                  out_request);
 }
 
 h2_pal_result_t h2_gizclaw_resp_parse_workspace_set_parameters(
@@ -1231,7 +1267,7 @@ h2_pal_result_t h2_gizclaw_req_create_workspace_delete(
     return H2_PAL_ERR_INVALID_ARG;
   return workspace_create_request(service, identity, WS_DELETE, name,
                                   (h2_gizclaw_str_t){0}, (h2_gizclaw_str_t){0},
-                                  0u, 0, 0, timeout_ms, out_request);
+                                  0u, 0, 0, NULL, timeout_ms, out_request);
 }
 
 h2_pal_result_t
@@ -1655,7 +1691,7 @@ h2_pal_result_t h2_gizclaw_req_create_workspace_history_list(
     return H2_PAL_ERR_INVALID_ARG;
   return workspace_create_request(service, identity, WS_HISTORY_LIST,
                                   workspace_name, cursor, (h2_gizclaw_str_t){0},
-                                  limit, 0, order, timeout_ms, out_request);
+                                  limit, 0, order, NULL, timeout_ms, out_request);
 }
 
 h2_pal_result_t h2_gizclaw_resp_parse_workspace_history_list(

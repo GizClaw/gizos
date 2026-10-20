@@ -6,7 +6,6 @@ exports_files([
     "esp_serial_flasher.BUILD.bazel",
     "esp_mosaico_bsp.BUILD.bazel",
     "ffmpeg.BUILD.bazel",
-    "gizclaw_c_sdk_lua_app_uninstall.patch",
     "gizclaw_protocol.BUILD.bazel",
     "ikcp.BUILD.bazel",
     "iperf.BUILD.bazel",

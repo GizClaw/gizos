@@ -4,7 +4,10 @@
 #define TIMEOUT_MS 30000u
 #define LIMIT 32u
 #define MAX_PAGES 32u
-enum method { LIST, GET, CREATE, INPUT, DELETE, ACTIVATE, HISTORY, RELOAD, RELOAD_OPTIONS };
+enum method {
+  LIST, GET, CREATE, INPUT, DELETE, ACTIVATE, HISTORY, RELOAD,
+  RELOAD_OPTIONS, LIST_OPTIONS
+};
 static const char *const creates[] = {
     "h2_gizclaw_req_create_workspace_list",
     "h2_gizclaw_req_create_workspace_get",
@@ -14,7 +17,8 @@ static const char *const creates[] = {
     "h2_gizclaw_req_create_workspace_activate",
     "h2_gizclaw_req_create_workspace_history_list",
     "h2_gizclaw_req_create_workspace_reload",
-    "h2_gizclaw_req_create_workspace_reload_with_options"};
+    "h2_gizclaw_req_create_workspace_reload_with_options",
+    "h2_gizclaw_req_create_workspace_list_with_options"};
 static const char *const parses[] = {
     "h2_gizclaw_resp_parse_workspace_list",
     "h2_gizclaw_resp_parse_workspace_get",
@@ -24,7 +28,8 @@ static const char *const parses[] = {
     "h2_gizclaw_resp_parse_workspace_activate",
     "h2_gizclaw_resp_parse_workspace_history_list",
     "h2_gizclaw_resp_parse_workspace_reload",
-    "h2_gizclaw_resp_parse_workspace_reload_with_options"};
+    "h2_gizclaw_resp_parse_workspace_reload_with_options",
+    "h2_gizclaw_resp_parse_workspace_list"};
 static const char *const rpcs[] = {"h2_gizclaw_rpc_workspace_list",
                                    "h2_gizclaw_rpc_workspace_get",
                                    "h2_gizclaw_rpc_workspace_create",
@@ -33,13 +38,14 @@ static const char *const rpcs[] = {"h2_gizclaw_rpc_workspace_list",
                                    "h2_gizclaw_rpc_workspace_activate",
                                    "h2_gizclaw_rpc_workspace_history_list",
                                    "h2_gizclaw_rpc_workspace_reload",
-    "h2_gizclaw_rpc_workspace_reload_with_options"};
+    "h2_gizclaw_rpc_workspace_reload_with_options",
+    "h2_gizclaw_rpc_workspace_list_with_options"};
 static const char *const proofs[] = {
     "workspace_list-assert",         "workspace_get-assert",
     "workspace_create-assert",       "workspace_set_parameters-assert",
     "workspace_delete-assert",       "workspace_activate-assert",
     "workspace_history_list-assert", "workspace_reload-assert",
-    "workspace_reload_with_options-assert"};
+    "workspace_reload_with_options-assert", "workspace_list_with_options-assert"};
 union response {
   h2_gizclaw_workspace_t object;
   h2_gizclaw_workspace_get_result_t get;
@@ -99,6 +105,8 @@ static int call(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
   h2_gizclaw_str_t name = h2_gizclaw_e2e_str(f->workspace_name);
   h2_gizclaw_str_t workflow = h2_gizclaw_e2e_str(f->workflow_name);
   h2_gizclaw_str_t cursor = h2_gizclaw_e2e_str(next);
+  const h2_gizclaw_workspace_list_options_t list_options = {
+      .has_system = true, .system = false};
   h2_gizclaw_workspace_parameters_patch_t input_patch = {
       .has_input = true,
       .input = H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK};
@@ -114,6 +122,10 @@ static int call(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
     case LIST:
       rc = h2_gizclaw_req_create_workspace_list(service, id, cursor, LIMIT,
                                                 TIMEOUT_MS, &request);
+      break;
+    case LIST_OPTIONS:
+      rc = h2_gizclaw_req_create_workspace_list_with_options(
+          service, id, &list_options, cursor, LIMIT, TIMEOUT_MS, &request);
       break;
     case GET:
       rc = h2_gizclaw_req_create_workspace_get(service, id, name, TIMEOUT_MS,
@@ -165,6 +177,7 @@ static int call(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
     if (rc == H2_PAL_OK) {
       switch (method) {
       case LIST:
+      case LIST_OPTIONS:
         rc = h2_gizclaw_resp_parse_workspace_list(request, s, &out->page);
         break;
       case GET:
@@ -212,6 +225,10 @@ static int call(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
     case LIST:
       rc = h2_gizclaw_rpc_workspace_list(service, cursor, LIMIT, TIMEOUT_MS, s,
                                          &out->page);
+      break;
+    case LIST_OPTIONS:
+      rc = h2_gizclaw_rpc_workspace_list_with_options(
+          service, &list_options, cursor, LIMIT, TIMEOUT_MS, s, &out->page);
       break;
     case GET:
       rc =
@@ -267,12 +284,12 @@ static int get(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
 }
 static int list(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
                 h2_gizclaw_e2e_actor_role_t role, bool req, uint64_t *id,
-                bool present) {
+                bool present, enum method method) {
   char cursor[256] = {0};
   size_t found = 0u;
   for (unsigned page = 0; page < MAX_PAGES; ++page) {
     union response r;
-    int rc = call(f, s, role, req, LIST, id, cursor, &r);
+    int rc = call(f, s, role, req, method, id, cursor, &r);
     h2_gizclaw_workspace_page_t *p = &r.page;
     if (rc == H2_PAL_OK &&
         (!metadata(f, s, p->runtime_profile_name,
@@ -283,7 +300,8 @@ static int list(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
                        !owned(s, p->items, p->count * sizeof(*p->items))))))
       rc = H2_PAL_ERR_INVALID_STATE;
     for (size_t i = 0; rc == H2_PAL_OK && i < p->count; ++i) {
-      if (!object_valid(s, &p->items[i])) {
+      if (!object_valid(s, &p->items[i]) ||
+          (method == LIST_OPTIONS && p->items[i].system)) {
         rc = H2_PAL_ERR_INVALID_STATE;
         break;
       }
@@ -296,16 +314,16 @@ static int list(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
       }
     }
     if (rc != H2_PAL_OK)
-      return proof(req, LIST, rc);
+      return proof(req, method, rc);
     if (!p->has_next)
-      return proof(req, LIST,
+      return proof(req, method,
                    found == (present ? 1u : 0u) ? H2_PAL_OK
                                                 : H2_PAL_ERR_INVALID_STATE);
     if (strcmp(cursor, p->next_cursor) == 0)
-      return proof(req, LIST, H2_PAL_ERR_INVALID_STATE);
+      return proof(req, method, H2_PAL_ERR_INVALID_STATE);
     memcpy(cursor, p->next_cursor, strlen(p->next_cursor) + 1u);
   }
-  return proof(req, LIST, H2_PAL_ERR_NO_SPACE);
+  return proof(req, method, H2_PAL_ERR_NO_SPACE);
 }
 
 static int history(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
@@ -388,7 +406,9 @@ static int create(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
   if (rc == H2_PAL_OK)
     rc = get(f, s, role, req, id, false);
   if (rc == H2_PAL_OK)
-    rc = list(f, s, role, req, id, true);
+    rc = list(f, s, role, req, id, true, LIST);
+  if (rc == H2_PAL_OK && role != H2_GIZCLAW_E2E_OWNER)
+    rc = list(f, s, role, req, id, true, LIST_OPTIONS);
   return proof(req, CREATE, rc);
 }
 static int configure(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,

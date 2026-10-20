@@ -62,26 +62,24 @@ http_archive = use_repo_rule(
 )
 
 # Overrides in a dependency MODULE are ignored by Bzlmod. Declare the exact
-# published SDK archive and upstream delta here so every GizOS consumer gets
+# published SDK archive here so every GizOS consumer gets
 # the same canonical protocol, without copying root-only overrides.
 http_archive(
     name = "gizclaw_c_sdk",
-    integrity = "sha256-snnzVUK0oZ+YvHTrIXdxZlRaHMijkcDvRitwVL2N1e4=",
-    patch_args = ["-p1"],
-    patches = ["//third_party:gizclaw_c_sdk_lua_app_uninstall.patch"],
-    strip_prefix = "gizclaw-c-sdk-0.30.0",
-    urls = ["https://static-volc.gizclaw.com/bazel/archives/gizclaw_c_sdk/gizclaw-c-sdk-0.30.0.tar.gz"],
+    integrity = "sha256-4Ss94uUNJNlHatfx7LkWKF+2sUXaVTkTTXcnpA39P+8=",
+    strip_prefix = "gizclaw-c-sdk-0.33.7",
+    urls = ["https://static-volc.gizclaw.com/bazel/archives/gizclaw_c_sdk/gizclaw-c-sdk-0.33.7.tar.gz"],
 )
 
-# Canonical object codecs and numeric/name registries matching the C SDK's
-# public uninstall contract. The overlay exposes only upstream source files.
+# Canonical object codecs and numeric/name registries from the C SDK release's
+# source commit. The overlay exposes only upstream source files.
 http_archive(
     name = "h2_gizclaw_protocol",
     build_file = "//third_party:gizclaw_protocol.BUILD.bazel",
-    sha256 = "62b02f078c39fa401644b95b7933335632323cfa325ad5a4ec695f07201c9529",
-    strip_prefix = "gizclaw-155a9d512ca4669f02391a89bbc30be3bd128f15",
+    sha256 = "40cf622fc577d20a607a8977c792e5ec8703050ae4ad9cdfc9373002bcf9e38f",
+    strip_prefix = "gizclaw-666ce64d8b1bb3e127de85e331c6a2c298ba1b65",
     type = "tar.gz",
-    urls = ["https://codeload.github.com/GizClaw/gizclaw/tar.gz/155a9d512ca4669f02391a89bbc30be3bd128f15"],
+    urls = ["https://codeload.github.com/GizClaw/gizclaw/tar.gz/666ce64d8b1bb3e127de85e331c6a2c298ba1b65"],
 )
 
 # The declaration emitter is a pinned host tool, independent of runtime code.

@@ -84,11 +84,10 @@ application, or packaging. Issue #835 owns Windows PAL integration.
 
 ## ESP-IDF external builds
 
-Source `.env/devenv` for the native development tools, then explicitly select
-a clean ESP-IDF 6.2 checkout matching `native_versions/esp_idf_commit.txt`
-and its GCC 16.1 tools. A provider exporting an older SDK must be overridden
-with `IDF_PATH` and `IDF_TOOLS_PATH`. The tools repository derives the unique
-`python_env/idf6.2_py*_env` installation from that tools root, validates it
+Source `.env/devenv` for native tools, then select a clean ESP-IDF 6.2
+checkout matching `native_versions/esp_idf_commit.txt` and its GCC 16.1 tools.
+Override an older provider with `IDF_PATH` and `IDF_TOOLS_PATH`. The tools
+repository derives the unique `python_env/idf6.2_py*_env` installation and validates it
 against the pinned ESP-IDF constraints, and materializes versioned SDK/tool
 locators. The native action receives those locator files instead of the
 machine paths or caller `PATH`.
