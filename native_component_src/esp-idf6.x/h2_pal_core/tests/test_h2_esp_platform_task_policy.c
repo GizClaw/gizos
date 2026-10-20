@@ -214,7 +214,7 @@ static h2_pal_result_t resolve(void* user, const char* name,
   if (name != NULL && strcmp(name, "known") == 0) {
     *out = (h2_esp_task_policy_t){
         .priority = 9u,
-        .core = H2_ESP_TASK_CORE_1,
+        .core = CONFIG_FREERTOS_NUMBER_OF_CORES - 1,
         .min_stack_size = 8192u,
         .stack_region = H2_ESP_TASK_STACK_INTERNAL,
     };
@@ -371,6 +371,21 @@ static void test_psram_stack_allocator(void) {
 }
 
 int main(void) {
+#if defined(H2_TASK_POLICY_TEST_NO_PSRAM)
+  {
+    test_completion("known", 0);
+    test_completion("known", 1);
+    reset();
+    h2_esp_task_policy_config_t cfg = config();
+    assert(h2_esp_platform_task_configure(&cfg) == H2_PAL_OK);
+    h2_pal_task_options_t options = {.name = "dynamic-high"};
+    h2_pal_task_t *task = NULL;
+    assert(h2_pal_task_start(h2_esp_platform_task_api(), &options, entry, NULL,
+                             &task) == H2_PAL_ERR_TASK);
+    assert(task == NULL && s.creates == 0);
+    return 0;
+  }
+#endif
   test_psram_stack_allocator();
   const h2_pal_task_api_t* api = h2_esp_platform_task_api();
   h2_pal_task_t* task = (h2_pal_task_t*)(uintptr_t)7u;

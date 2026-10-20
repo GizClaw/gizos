@@ -173,3 +173,9 @@ BSP 选择最大增益和曲线，ESP-IDF audio system 负责硬件应用与错�
 [ES8311 板级音量映射](./components/esp_idf6_x#es8311-板级音量映射)。
 
 语音呼叫支持可选 DSCI 状态通知，prepare 每轮 best-effort 启用，不支持时保留传统 URC 回退；来电 ID、结束事件去重及迟到通知规则见 [Modem URC 接收与并发合同](./modem_urc.md#语音呼叫状态通知)。
+
+### CW2017 电量采样
+
+`//libs/drivers/battery/cw2017` 提供无分配的同步只读 driver，通过调用方注入的 I2C register callback 读取版本、电压和 Q8 SOC。寄存器与换算依据 [AI Passport BSP](https://github.com/FoloToy/ai-passport/blob/3d685a90bdb96dd8526d84edde1e63fec25b460e/components/bsp/src/bsp_battery.c)：VCELL 为 14-bit、312.5 µV/LSB，SOC 为 1/256 percent。读取失败清空输出并传播 transport error；超过 100% 的 SOC 表示尚不可用。独立 VCELL 读取不以 SOC 就绪为前提，可以在保留无效 SOC 状态的同时读取电压。ACK 不是唯一型号识别。
+
+电池 profile、上电/wake、sleep/reset、SOC 平滑、欠压关机、I2C 地址和总线共享属于产品 BSP。读取接口不编程 profile，不保证电量计已正确初始化；固件应先完成产品电池配置。两次 register transaction 不是原子硬件 snapshot。真实电池精度、I2C、电压及休眠电流需设备验收。

@@ -592,6 +592,7 @@ local_embedded_cc = use_extension(
 use_repo(
     local_embedded_cc,
     "gizos_bk7258_cc_toolchain",
+    "gizos_esp32c3_cc_toolchain",
     "gizos_esp32c5_cc_toolchain",
     "gizos_esp32p4_cc_toolchain",
     "gizos_esp32s31_cc_toolchain",
@@ -601,6 +602,7 @@ use_repo(
 
 register_toolchains(
     "@gizos_bk7258_cc_toolchain//:toolchain",
+    "@gizos//tools/bazel/toolchains/local_embedded_cc/esp32c3:toolchain",
     "@gizos_esp32c5_cc_toolchain//:toolchain",
     "@gizos_esp32p4_cc_toolchain//:toolchain",
     "@gizos_esp32s31_cc_toolchain//:toolchain",
