@@ -250,6 +250,8 @@ Fixture 只为 workspace、contact、friend/group 等需要响应存储的清理
 
 Device/all 实板还须显式传入 `app_config_fixture_device_api_url` 与 `app_config_fixture_audio_url` 的HTTPS输入，不在源码固定GitHub地址，不允许明文音频输入绕过TLS。受控E2E profile的已部署非敏感media对象可作为输入；绑定实际HTTP对象身份、大小和SHA，并保留全新六端结果。注册、RPC、Device API、Firmware metadata和语音业务仍使用真实E2E服务。
 
+Device playlist 第三项的已知时长默认仍为 32000 ms。受控媒体不同时，可仅对 `h2_gizclaw_e2e_device.c` 使用普通 Bazel `--per_file_copt` 设置 `H2_GIZCLAW_E2E_DEVICE_AUDIO_DURATION_MS`，值必须为 1001 到 `UINT32_MAX` 的整数毫秒；例如已核对元数据为 167983 ms 的媒体使用 `167983u`。该输入只用于原 1000 ms seek 的 playlist metadata，不改变解码所得 status duration、真实 PCM、原断言或时间预算；其他 32 秒 fixture 默认值保持原样。长媒体以 software audio 输入时，保持 `app_config_fixture_physical_audio=false`，不构成 physical-ended 资格。
+
 Firmware 完整下载使用至多300秒且不超过剩余case预算的有界超时；HTTP在已有有界job任务内运行，App任务持续poll真实Service，包括DNS/握手/receive阻塞阶段，避免慢传输期间Peer失活；同一Service不由两任务并发poll。任何poll错误、取消、截断、长度或SHA-256不匹配仍失败，不能只验证前30秒或部分bytes。
 
 ESP32-S3还要求显式 `app_config_fixture_time_server=<DNS-or-IPv4>`，由本次网络fixture提供真实NTP时间，不使用源码固定外网pool。SNTP失败保持pending、不启动业务套件；TLS校验仍使用同步后的真实UTC且不关闭验证。H2Loader CLI upgrade的短验证窗口可能先于长业务套件的最后confirmation结束，必须另接当前boot的日志并最终核对package/P1/Stage/coredump，不能提前确认来绕过该窗口。

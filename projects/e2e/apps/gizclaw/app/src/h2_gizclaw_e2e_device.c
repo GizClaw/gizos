@@ -1,12 +1,21 @@
+#include "h2_atomic.h"
 #include "h2_gizclaw_api_key.h"
 #include "h2_gizclaw_e2e_catalog.h"
 #include "h2_gizclaw_e2e_debug.h"
+#include "h2_gizclaw_e2e_device_http.h"
 #include "h2_gizclaw_telemetry.h"
 #include "h2_yyjson_json.h"
-#include "h2_gizclaw_e2e_device_http.h"
-#include "h2_atomic.h"
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+
+#ifndef H2_GIZCLAW_E2E_DEVICE_AUDIO_DURATION_MS
+#define H2_GIZCLAW_E2E_DEVICE_AUDIO_DURATION_MS 32000u
+#endif
+#if H2_GIZCLAW_E2E_DEVICE_AUDIO_DURATION_MS <= 1000 ||                         \
+    H2_GIZCLAW_E2E_DEVICE_AUDIO_DURATION_MS > UINT32_MAX
+#error "fixture audio duration must be in 1001..UINT32_MAX ms"
+#endif
 
 /* OTA rejection is a GizClaw case policy; Audio support belongs to app_test. */
 static h2_atomic_size_t stage_bytes;
@@ -217,7 +226,8 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
   const h2_gizclaw_player_playlist_entry_t album[] = {
       {track, h2_gizclaw_e2e_str("gizos-e2e-track-1"), album_ref, 0u},
       {track, h2_gizclaw_e2e_str("gizos-e2e-track-2"), album_ref, 0u},
-      {track, h2_gizclaw_e2e_str("gizos-e2e-track-3"), album_ref, 32000u},
+      {track, h2_gizclaw_e2e_str("gizos-e2e-track-3"), album_ref,
+       H2_GIZCLAW_E2E_DEVICE_AUDIO_DURATION_MS},
   };
   CHECK(h2_gizclaw_player_playlist_set(service, album, 3u));
   h2_gizclaw_e2e_evidence("h2_gizclaw_player_playlist_set", "local-playlist",
@@ -290,9 +300,9 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
       ASSERT(strcmp(local.state, "error") != 0);
     }
     ASSERT(played);
-    /* The pinned device fixture is 32 seconds. The third entry supplies its
-     * duration so play_index_at must actually reach the requested media time.
-     * This does not imply that the HTTP server honored Range. */
+    /* The third entry supplies the configured duration so play_index_at must
+     * actually reach the requested media time. This does not imply that the
+     * HTTP server honored Range. */
     int bad_index = H2_PAL_OK;
     if (rc == H2_PAL_OK) bad_index = h2_gizclaw_player_play_index(service, 3u);
     ASSERT(bad_index == H2_PAL_ERR_INVALID_ARG);
