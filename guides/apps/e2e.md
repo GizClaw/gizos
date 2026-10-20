@@ -22,6 +22,8 @@ Platform artifact entry 持有 Runtime assembly、具体 provider、endpoint 与
 
 IPv6、Net/TLS、HTTP、WebRTC 与 Wi-Fi 的设备测试报告直接写入入口现有的标准输出，保留原 CASE、execution、summary 与失败结果，避免产品日志等级隐藏验收账本；被测 Runtime/PAL 与 SDK 配置保持原样。原本把 Log PAL 本身作为输出合同的 iperf Client、Lua print 与 Core Log 用例仍遵守各自合同，不能以替换真实 Log provider 或提高 SDK 日志预算代替。
 
+Core Log 的可配置输出合同由 launcher 的 `log_min_level` 声明，默认 DEBUG 要求四级真实输出；所有配置仍调用 DEBUG、INFO、WARN、ERROR 四种 PAL write 并验证非法参数。ESP 入口从已有 `CONFIG_LOG_MAXIMUM_LEVEL` 推导应观察的输出级别，启用 master level 时再取其当前值作为上限；BOOT 记录 PAL 最低级别、SDK 最高级别与实际有效上限，不修改 sdkconfig 或提升 master level。已启用级别缺少真实 sink 输出仍为 FAIL；未提供观察器或日志完全关闭为 BLOCKED。完整 Core 资格必须同时记录该 profile 和原 41 项账本，不能把被过滤级别写成已观察通过。
+
 HTTP、MQTT、Net/TLS 与 WebRTC 的 ESP Native 入口，以及 legacy iperf 的 DevKit 入口，通过共享的 `projects/e2e/targets/h2loader_tar_zlib/fixture-wifi` 接收可选公开 Wi-Fi fixture。最终固件入口可在既有 `cmake_definitions` 中同时显式提供 `H2_E2E_WIFI_SSID` 和 `H2_E2E_WIFI_PASSWORD`；配置不完整或包含不支持的字符时构建失败，不读取 operator environment。借用的 fixture 配置只替换原 setup 的凭据来源，使用真实 Runtime 的非保存 STA connect，保持原关联、取得 IP、case、资源基线及 cleanup 预算，不写入 PAL 已保存凭据或 Runtime 网络集合。
 
 未提供这两个输入时，HTTP/MQTT/Net/TLS 继续复用现有可用连接，否则读取原保存配置；WebRTC 和 legacy iperf 的 DevKit 入口继续使用原保存配置。显式提供 fixture 时只尝试该配置，不回退到其他连接或保存项。网络准备仍先于原 portable case runner，实际网络失败和不完整账本保留原结果；构建成功不授予设备测试资格。

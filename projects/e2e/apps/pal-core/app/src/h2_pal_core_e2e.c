@@ -100,8 +100,9 @@ static h2_pal_result_t log_case(owner_t *o) {
     message[sizeof(message) - 1u] = '\0';
     TRY(h2_pal_log_write(o->runtime->log, (h2_pal_log_level_t)level, "pal-core",
                          message));
-    TRY(o->config->observe_log(o->config->observer_user,
-                               (h2_pal_log_level_t)level, "pal-core", message));
+    if (level >= (int)o->config->log_min_level)
+      TRY(o->config->observe_log(o->config->observer_user,
+                                 (h2_pal_log_level_t)level, "pal-core", message));
   }
   REQUIRE(h2_pal_log_write(o->runtime->log, H2_PAL_LOG_INFO, "pal-core",
                            NULL) == H2_PAL_ERR_INVALID_ARG);
@@ -678,6 +679,7 @@ h2_pal_result_t h2_pal_core_e2e_run(h2_runtime_t *runtime,
     result->cases[i].id = case_ids[i];
   if (runtime == NULL || config == NULL ||
       (unsigned)config->queue_latest > H2_PAL_CORE_QUEUE_LATEST_FALLBACK ||
+      (unsigned)config->log_min_level > H2_PAL_LOG_ERROR ||
       (config->timeout_ms != 0u &&
        (config->timeout_ms < 100u || config->timeout_ms > 60000u))) {
     summarize(result);

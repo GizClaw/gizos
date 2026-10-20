@@ -9,7 +9,7 @@ This independent App checks all **46 operations** in the nine PAL Core vtables. 
 | Capability | Operations | Contract-v2 evidence |
 | --- | ---: | --- |
 | Memory | 3 | alloc/realloc/free, NULL API behavior, alignment, preserved data, independent objects, 100 allocation/reallocation cycles and accounting |
-| Log | 1 | Actual output for all four levels, exact scope/body and maximum message, invalid argument |
+| Log | 1 | All four write levels, actual output at configured levels, exact scope/body and maximum message, invalid argument |
 | Time | 6 | ms/us monotonic domain against an independent observer, sleep, wall validity/read/set/restore and monotonic independence |
 | Timer | 7 | create/destroy/start/stop/reset/set_period/is_running; one-shot/auto-start/repeat, quiet stop, independent timers and 100 create/fire/destroy cycles |
 | Task | 2 | Normal lifecycle plus the eight additional lifecycle, concurrency, stack and real allocation-failure scenarios below |
@@ -20,6 +20,8 @@ This independent App checks all **46 operations** in the nine PAL Core vtables. 
 | **Total** | **46** | Executed case results and resource recovery establish acceptance |
 
 The operation manifest describes the intended coverage. Acceptance comes from compiling the public APIs and executing every registered case through the actual provider; source spelling, fixed source hashes and call-site text do not establish a pass.
+
+The launcher's `log_min_level` declares the lowest log level expected at its output sink (DEBUG through ERROR). Zero initialization retains the original DEBUG profile and requires all four output levels. Every profile still writes DEBUG, INFO, WARN and ERROR through the real PAL and checks invalid arguments; sink observation is required for every level at or above the declared minimum, with the exact scope and full 255-byte body. Missing enabled output is FAIL, and a missing observer is BLOCKED. The ESP launcher derives this profile from the existing SDK compile-time log maximum, capped by the current master level when enabled, and records the profile and both limits in its boot marker; it does not increase either limit. Qualification records must retain that profile rather than claim filtered levels were observed.
 
 ## Task acceptance
 
@@ -80,7 +82,7 @@ Keep Bazel disk cache enabled. `host_regression_test` now runs the same complete
 contract=2 passed=41 failed=0 blocked=0 not_run=0 complete=1 qualified=1 cleanup=0
 ```
 
-`app_failure_test` separately validates the test harness with controlled faults: missing evidence, invalid configuration, Runtime queue proxy/fallback, deferred join, live timer callback after failed destruction, failed wall restoration and a queue close that returns success without waking its reader. These fake/forwarding regression results never count as platform capability passes. Provider-local tests additionally cover Timer callback stop/destroy, failed allocation, resource counters and metadata lifetime.
+`app_failure_test` separately validates the test harness with controlled faults: log output profiles and missing enabled levels, missing evidence, invalid configuration, Runtime queue proxy/fallback, deferred join, live timer callback after failed destruction, failed wall restoration and a queue close that returns success without waking its reader. These fake/forwarding regression results never count as platform capability passes. Provider-local tests additionally cover Timer callback stop/destroy, failed allocation, resource counters and metadata lifetime.
 
 macOS is the execution environment for this change. The portable App can be reused by other launchers, but this strict host target does not yet declare Linux compatibility: its existing System Event provider needs the matching self-unsubscribe lifecycle fix and a full qualification run. No case is skipped to qualify macOS. An embedded package compiling likewise does not establish runtime acceptance there. Record the source revision, contract version, image/build metadata, provider configuration and full runtime report when qualifying any additional target.
 

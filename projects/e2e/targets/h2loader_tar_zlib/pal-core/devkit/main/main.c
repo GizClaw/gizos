@@ -203,6 +203,20 @@ static h2_pal_result_t observed_log(void *user, h2_pal_log_level_t level,
     portEXIT_CRITICAL(&observation_lock);
     return matches ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE;
 }
+static esp_log_level_t configured_log_maximum(void) {
+    esp_log_level_t maximum = CONFIG_LOG_MAXIMUM_LEVEL;
+#if CONFIG_LOG_MASTER_LEVEL
+    const esp_log_level_t master = esp_log_get_level_master();
+    if (master < maximum) maximum = master;
+#endif
+    return maximum;
+}
+static h2_pal_log_level_t configured_log_min_level(esp_log_level_t maximum) {
+    if (maximum >= ESP_LOG_DEBUG) return H2_PAL_LOG_DEBUG;
+    if (maximum >= ESP_LOG_INFO) return H2_PAL_LOG_INFO;
+    if (maximum >= ESP_LOG_WARN) return H2_PAL_LOG_WARN;
+    return H2_PAL_LOG_ERROR;
+}
 static void report_case(size_t index) {
     printf("H2_PAL_CORE_E2E case=%s status=%s result=%d\n", result.cases[index].id,
            h2_pal_core_e2e_status_name(result.cases[index].status), result.cases[index].result);
@@ -315,11 +329,13 @@ static void run(void *user) {
     previous_log = vprintf;
     previous_log = esp_log_set_vprintf(log_sink);
     esp_log_level_set("pal-core", ESP_LOG_DEBUG);
+    const esp_log_level_t log_maximum = configured_log_maximum();
     config = (h2_pal_core_e2e_config_t){
         .timeout_ms = 3000u,
         .queue_latest = H2_PAL_CORE_QUEUE_LATEST_REPLACE,
         .observe_monotonic_us = independent_clock,
-        .observe_log = observed_log,
+        .observe_log = log_maximum == ESP_LOG_NONE ? NULL : observed_log,
+        .log_min_level = configured_log_min_level(log_maximum),
         .case_begin = case_begin,
         .allow_wall_set = 1,
         .firmware_version = esp_app_get_description()->version,
@@ -399,8 +415,12 @@ void app_main(void) {
     if (esp_timer_create(&timer, &watchdog) != ESP_OK ||
         esp_timer_start_once(watchdog, UINT64_C(120000000)) != ESP_OK)
         fail("watchdog", H2_PAL_ERR_IO);
-    printf("H2_PAL_CORE_E2E_BOOT board=devkit version=%s cases=%u resources=native\n",
-           esp_app_get_description()->version, (unsigned)H2_PAL_CORE_E2E_CASE_COUNT);
+    const esp_log_level_t log_maximum = configured_log_maximum();
+    printf("H2_PAL_CORE_E2E_BOOT board=devkit version=%s cases=%u resources=native "
+           "log_min_level=%d sdk_log_maximum=%d effective_log_maximum=%d\n",
+           esp_app_get_description()->version, (unsigned)H2_PAL_CORE_E2E_CASE_COUNT,
+           (int)configured_log_min_level(log_maximum), CONFIG_LOG_MAXIMUM_LEVEL,
+           (int)log_maximum);
     const h2_pal_task_options_t options = {.name = h2_pal_core_e2e_runner_task_name};
     h2_pal_task_t *runner = NULL;
     rc = h2_pal_task_start(runtime->task, &options, run, NULL, &runner);
