@@ -60,8 +60,10 @@ cc_test(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = [
-        "include",
+        # Test SDK headers must precede the production headers.
+        # do not sort
         "tests/system_include",
+        "include",
     ],
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
     deps = ["//libs/drivers/audio/es8311"],
@@ -77,8 +79,10 @@ cc_test(
     ],
     copts = H2_C11_OPTS + H2_WARNING_COPTS,
     includes = [
-        "include",
+        # Test SDK headers must precede the production headers.
+        # do not sort
         "tests/include",
+        "include",
     ],
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
 )
