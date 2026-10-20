@@ -139,6 +139,7 @@
 - `AGENTS.md` 是 Agent 使用的仓库入口，只保存索引、稳定根目录和必须遵守的工作规则。
 - `.gitattributes` 和 `.gitignore` 保存 Git 行为；公开 upstream archive 的 URL、commit、解压根和 SHA-256 pin 统一由 `MODULE.bazel` 保存。
 - `Makefile` 只定义公共 target、默认变量、export 和对 `scripts/` 同名脚本的调度。除 `common/` 外，每个 `scripts/<category>/<target>.py|sh` 必须只拥有对应的一个 target entry；两个以上 target 共用的 Make 实现只放在 `scripts/common/`。
+- `make format` 和 `make format-check` 分别由 `scripts/config/format.sh` 与 `scripts/config/format-check.sh` 调用 `scripts/common/format.sh`。固定版本的 clang-format 检查 C/C++ 变更行，StyLua 与 buildifier 检查整个变更文件；工具执行或下载失败必须返回非零，其他语言的检查继续执行。`python3 scripts/common/test_format.py` 在临时 Git 仓库中验证这些失败路径，不下载工具。
 - `.bazelversion`、`MODULE.bazel`、`REPO.bazel` 和根 `BUILD.bazel` 定义
   [Bazel 构建与 CI 依赖图](/zh/developing/bazel)。Bazel 是 stable host
   C/C++ package 以及 ESP-IDF/BK7258/BK3633 firmware 的入口、产物和 CI graph

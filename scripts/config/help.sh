@@ -8,6 +8,8 @@ printf '%s\n' \
   'Configuration:' \
   '  help                             show every public Make target' \
   '  cfg-doctor                       report the local build and H2Loader environment' \
+  '  format                           format C/C++, Lua and Bazel changes since origin/main' \
+  '  format-check                     check C/C++, Lua and Bazel changes since origin/main' \
   '' \
   'Bazel:' \
   '  bazel-build                      build every target compatible with the selected config' \

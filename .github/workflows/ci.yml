@@ -31,6 +31,32 @@ env:
   BAZEL_WINDOWS_X86_64_SHA256: 5fc2f2805b8c697a54732558576938d06bab63aa0f9b6610cc01d2cae0388705
 
 jobs:
+  format:
+    # Checks only changes made by the PR until the tree is reformatted; not yet part of "CI required".
+    if: github.event_name == 'pull_request'
+    name: format
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # Include the merge commit's parents so the PR base is available
+          # without retaining credentials for a later fetch.
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Test formatter failure handling
+        run: python3 scripts/common/test_format.py
+
+      - name: Install clang-format
+        run: pipx install clang-format==22.1.5
+
+      - name: Check formatting of changes
+        env:
+          FORMAT_BASE: ${{ github.event.pull_request.base.sha }}
+        run: make format-check
+
   private-dependencies:
     if: >-
       github.event_name != 'pull_request' ||
