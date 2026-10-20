@@ -15,6 +15,7 @@ export const apiSources = [
     roots: [
       "libs/pal/providers/modem/quectel/include",
       "libs/drivers/motion/qmi8658/include",
+      "libs/drivers/battery/cw2017/include",
       "libs/drivers/nfc/fm175xx/include",
     ],
   },

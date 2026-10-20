@@ -1,0 +1,83 @@
+load("//tools/bazel:esp_idf.bzl", "esp_idf_firmware")
+load("//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
+load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+esp_target_task_policy(
+    name = "task_policy",
+    default_policy = "4 0 4096 internal",
+    graph = [":main"],
+    policies = [
+        "$runtime/input default",
+        "$runtime/nfc default",
+        "$lua/worker 4 0 16384 internal",
+        "$lua/display default",
+        "$h2peer/net default",
+        "$h2peer/udp default",
+        "h2loader/blecmd default",
+        "h2loader/appcmd default",
+        "$h2loader/return default",
+        "$h2loader/blelink default",
+        "$h2loader/uartcmd default",
+        "$bleikcp/kcp default",
+        "$bleikcp/server default",
+    ],
+)
+
+# Include portable dependencies required by the SDK components below.
+# This validates their C3 compile/link ABI; the entry starts only Runtime/Lua.
+firmware_lib_component(
+    name = "firmware_lib",
+    deps = [
+        "//projects/e2e/apps/lua-platform-smoke/app:lua_platform_smoke",
+        "//libs/pal:unsupported",
+        "//libs/mem_arena",
+        "//projects/h2loader/libs/h2loader",
+        "//projects/h2loader/apps/loader/app:loader",
+        "//libs/iostreamikcp",
+        "//libs/audio_mixer",
+        "//libs/drivers/audio/es8311",
+        "//libs/pal/providers/libco",
+        "//libs/pal/providers/corehttp",
+        "//libs/pal/providers/h2peer",
+        "//libs/pal/providers/h2sctp",
+        "//libs/wifi_sta",
+    ],
+)
+
+firmware_native_component(
+    name = "main",
+    srcs = ["main/main.c"],
+    component_directory = "projects/e2e/targets/native_firmware/lua-platform-smoke/esp32c3_chip/main",
+    component_name = "main",
+    data = ["main/CMakeLists.txt"],
+    deps = [
+        ":firmware_lib",
+        "//boards/esp32c3_chip/esp32c3",
+        "//projects/e2e/apps/lua-platform-smoke/app:lua_platform_smoke",
+        "//native_component_src/esp-idf6.x/h2_adc_oneshot",
+        "//native_component_src/esp-idf6.x/h2_es8311_audio_system",
+        "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_runtime",
+    ],
+)
+
+esp_idf_firmware(
+    name = "firmware",
+    srcs = [
+        "CMakeLists.txt",
+        "main/CMakeLists.txt",
+        "main/main.c",
+    ],
+    board = "esp32c3_chip",
+    graph = [
+        ":main",
+        ":task_policy",
+    ],
+    partition = "//boards/esp32c3_chip/esp32c3/layouts/compile_only:partition.csv",
+    project = "CMakeLists.txt",
+    project_name = "h2_esp32c3_lua_platform_smoke",
+    project_support_files = ["//boards/esp32c3_chip/esp32c3/layouts/compile_only:sdkconfig"],
+    target = "esp32c3",
+)

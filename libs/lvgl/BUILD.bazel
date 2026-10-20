@@ -284,6 +284,7 @@ cc_library(
     includes = ["include"],
     target_compatible_with = select({
         "//tools/bazel/platforms:is_bk7258": [],
+        "//tools/bazel/platforms:is_esp32c3": [],
         "//tools/bazel/platforms:is_esp32p4": [],
         "//tools/bazel/platforms:is_esp32s3": [],
         "//conditions:default": ["@platforms//:incompatible"],
@@ -295,6 +296,7 @@ cc_library(
         "@h2_vendor_tlsf//:tlsf",
     ] + select({
         "//tools/bazel/platforms:is_bk7258": ["@h2_vendor_lvgl//:bk7258_config"],
+        "//tools/bazel/platforms:is_esp32c3": ["@h2_vendor_lvgl//:esp_idf6_x_config"],
         "//tools/bazel/platforms:is_esp32p4": ["@h2_vendor_lvgl//:esp_idf6_x_config"],
         "//tools/bazel/platforms:is_esp32s3": ["@h2_vendor_lvgl//:esp_idf6_x_config"],
         "//conditions:default": [],
@@ -305,6 +307,7 @@ cc_library(
     name = "lvgl",
     deps = select({
         "//tools/bazel/platforms:is_bk7258": [":firmware"],
+        "//tools/bazel/platforms:is_esp32c3": [":firmware"],
         "//tools/bazel/platforms:is_esp32p4": [":firmware"],
         "//tools/bazel/platforms:is_esp32s3": [":firmware"],
         "@platforms//cpu:wasm32": [":platform_web"],

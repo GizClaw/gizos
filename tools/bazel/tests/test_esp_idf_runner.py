@@ -289,6 +289,7 @@ class EspIdfRunnerTest(unittest.TestCase):
         tool_versions_file.write_text(
             tool_versions
             or (
+                "esp32c3=riscv32-esp-elf-gcc (crosstool-NG esp-16.1.0_20260609) 16.1.0\n"
                 "esp32c5=riscv32-esp-elf-gcc (crosstool-NG "
                 "esp-16.1.0_20260609) 16.1.0\n"
                 "esp32p4=riscv32-esp-elf-gcc (crosstool-NG "
@@ -452,6 +453,15 @@ class EspIdfRunnerTest(unittest.TestCase):
         metadata = json.loads(output.joinpath("flasher_args.json").read_text())
         self.assertEqual(metadata["flash_files"]["0x10000"], "fixture.bin")
         self.assertFalse(self.project.joinpath("generated.lock").exists())
+
+    def test_c3_success_publishes_validated_firmware(self):
+        (self.project / "CMakeLists.txt").write_text(
+            'set(H2_ESP_TARGET "esp32c3")\n', encoding="utf-8"
+        )
+        result, output = self._run(target="esp32c3")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(output.joinpath("firmware.elf").read_bytes(), b"elf")
+        self.assertEqual(output.joinpath("combined_factory.bin").read_bytes(), b"combined")
 
     def test_missing_rom_elf_version_fails_closed(self):
         shutil.rmtree(self.root / "tools" / "esp-rom-elfs" / "fixture-version")
@@ -711,6 +721,7 @@ class EspIdfRunnerTest(unittest.TestCase):
     def test_compiler_version_mismatch_fails_closed(self):
         result, _ = self._run(
             tool_versions=(
+                "esp32c3=riscv32-esp-elf-gcc (crosstool-NG esp-16.1.0_20260609) 16.1.0\n"
                 "esp32c5=riscv32-esp-elf-gcc (crosstool-NG "
                 "esp-16.1.0_20260609) 16.1.0\n"
                 "esp32p4=riscv32-esp-elf-gcc (crosstool-NG "
@@ -731,6 +742,7 @@ class EspIdfRunnerTest(unittest.TestCase):
     def test_ninja_missing_fails_closed(self):
         self.tool_bin.joinpath("ninja").unlink()
         result, _ = self._run(tool_versions=(
+            "esp32c3=riscv32-esp-elf-gcc (crosstool-NG esp-16.1.0_20260609) 16.1.0\n"
             "esp32c5=riscv32-esp-elf-gcc (crosstool-NG esp-16.1.0_20260609) 16.1.0\n"
             "esp32p4=riscv32-esp-elf-gcc (crosstool-NG esp-16.1.0_20260609) 16.1.0\n"
             "esp32s3=xtensa-esp-elf-gcc (crosstool-NG esp-16.1.0_20260609) 16.1.0\n"

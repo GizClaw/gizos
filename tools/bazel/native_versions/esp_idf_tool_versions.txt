@@ -1,3 +1,4 @@
+esp32c3=riscv32-esp-elf-gcc (crosstool-NG esp-16.1.0_20260609) 16.1.0
 esp32c5=riscv32-esp-elf-gcc (crosstool-NG esp-16.1.0_20260609) 16.1.0
 esp32p4=riscv32-esp-elf-gcc (crosstool-NG esp-16.1.0_20260609) 16.1.0
 esp32s3=xtensa-esp-elf-gcc (crosstool-NG esp-16.1.0_20260609) 16.1.0

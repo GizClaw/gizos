@@ -1,5 +1,6 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
 load("//tools/bazel:tasks.bzl", "h2_tasks")
 
 package(default_visibility = ["//visibility:public"])
@@ -49,6 +50,7 @@ cc_library(
     target_compatible_with = select({
         "//tools/bazel/platforms:target_bk3633": ["@platforms//:incompatible"],
         "//tools/bazel/platforms:target_bk7258": ["@platforms//:incompatible"],
+        "//tools/bazel/platforms:target_esp32c3": ["@platforms//:incompatible"],
         "//tools/bazel/platforms:target_esp32p4": ["@platforms//:incompatible"],
         "//tools/bazel/platforms:target_esp32s3": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -189,4 +191,14 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [":h2loader_host"],
+)
+
+cc_test(
+    name = "esp_flash_chip_test",
+    srcs = ["tests/test_esp_flash_chip.c", "src/h2_h2loader_host_internal.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":h2loader_host", "//tools/bazel:vendor_third_party_esp_serial_flasher"],
 )

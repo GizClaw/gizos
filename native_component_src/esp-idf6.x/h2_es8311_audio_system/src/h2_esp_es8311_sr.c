@@ -5,7 +5,7 @@
 
 #include <string.h>
 
-#if defined(__has_include)
+#if defined(__has_include) && !defined(CONFIG_IDF_TARGET_ESP32C3)
 #if __has_include("esp_aec.h")
 #include "esp_aec.h"
 #define H2_ESP_ES8311_HAVE_DIRECT_AEC 1

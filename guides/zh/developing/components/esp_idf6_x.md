@@ -1,6 +1,6 @@
 # ESP-IDF 6.x Components
 
-`native_component_src/esp-idf6.x/` 是 ESP-IDF 6.x compatibility line 的统一 SDK-coupled component source root。ESP32-S3、ESP32-P4 和 ESP32-C5 共享这里的 PAL backend、器件组件和 SDK-owned port，不再为每个 chip 复制一套顶层 component tree。Bazel archive 只有在拥有独立 SDK dependency 或 registration identity 时才建立薄导入 adapter。
+`native_component_src/esp-idf6.x/` 是 ESP-IDF 6.x compatibility line 的统一 SDK-coupled component source root。ESP32-C3、ESP32-S3、ESP32-P4 和 ESP32-C5 共享这里的 PAL backend、器件组件和 SDK-owned port，不再为每个 chip 复制一套顶层 component tree。Bazel archive 只有在拥有独立 SDK dependency 或 registration identity 时才建立薄导入 adapter。
 
 ## 目录结构
 
@@ -56,7 +56,7 @@ ESP chip 差异通过以下方式表达：
 - Component config 中由 BSP 提供的 chip/board 参数。
 - 仅在某个 chip 可用的 ESP-IDF dependency。
 
-不能因为 ESP32-S3、ESP32-P4 或 ESP32-C5 的 capability 不同，就复制整个 component root。差异应该限制在拥有该差异的 source、config 或 dependency 上。
+不能因为 ESP32-C3、ESP32-S3、ESP32-P4 或 ESP32-C5 的 capability 不同，就复制整个 component root。差异应该限制在拥有该差异的 source、config 或 dependency 上。
 
 例如 ESP32-P4 没有片上 Wi-Fi 时，`h2_pal_core` 可以选择 unsupported Wi-Fi backend；它不需要复制一套独立 PAL component。
 
@@ -424,3 +424,9 @@ STA id-specific observer 位于 ESP-NETIF 默认 connected handler 之后，在 
 ### AP 停止与重试
 
 AP stop 先请求 SDK 切回 STA mode；转换失败时保留 active、netif、client 列表与公开状态，并返回原有映射错误，后续 Stop 重新执行 SDK 请求。只有 SDK 接受停止（包括已经未初始化或未启动）后才提交 stopped 状态、销毁 AP netif 并发布 stopped 事件。AMOLED iperf adapter 在此之前先撤销 RA timeout/raw PCB；provider 与 adapter 的组合回归编译生产 stop 函数，并注入真实 SDK 调用边界的失败后重试。
+
+## ESP32-C3 无 PSRAM 音频
+
+C3 使用现有 `h2_es8311_audio_system`，不安装 ESP-SR；`enable_aec = false` 使用普通采集/播放，当前 codec clock 配置为 16 kHz、`mclk_multiple = 384`；显式启用 AEC 返回 UNSUPPORTED。未启用 PSRAM 的构建为 mic/playback worker 使用 Internal RAM，任务 core 必须由 BSP 配为 0 或 any。Codec 在产品请求时才初始化；平台接入不启动常驻语音服务。显示、音频与网络同时启用的 heap 峰值、I2S DMA 和真实采集/播放仍需产品设备验证。
+
+C3 的 SDK 不提供外部任务栈配置时，PAL 将其视为不可用；内部栈任务仍可创建，PSRAM 栈请求返回任务错误。C3 复用现有 RV32 协程 backend，不引入其他芯片的 coprocessor 栈保护组件。

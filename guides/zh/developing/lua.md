@@ -744,3 +744,13 @@ python3 libs/lua/apps/tests/run_host_tests.py --yyjson-dir /path/to/yyjson/src -
 `gizclaw` checkout 应包含生成的 C contract 与已初始化的 pinned nanopb submodule。该验证使用 Host PAL；真机 Golden E2E 另行验证下载、显示与产品任务生命周期。
 
 公共回归 `//libs/lua/apps/web/tests/scoped_http:browser_test` 通过真实 Web FS 和 HTTP 下载安装 format-1 包，跨两次刷新运行 Lua 并验证独立 KV 与 storage 文件在卸载后保留；同一 target 由独立 Bzlmod consumer 执行。
+
+## 单 framebuffer 显示
+
+无 PSRAM 产品可以在 Host config 中设置 `display_single_buffer`。Display 仍在专属 worker 调用 PAL，但 `submit` 和 `present` 均等待 transport 完成，之后 Lua 才能继续修改 framebuffer；没有第二份发送帧或 retained 像素基线。Lua 绘制 API、提交序号和状态查询保持可用，`retained`、`tiles`、`bounds` 与 `merge_gap` 仍接受，但只提交 dirty bounding rectangle，不进行逐像素 retained 比较；重新绘制相同颜色仍可能提交，`changed_frames` 记录 dirty submission。默认零值保持原有双缓冲异步行为。
+
+240×320 RGB565 framebuffer 需要 153600 bytes，由 Host allocator 拥有，在 VM quota 之外单独预算；64 KiB VM quota 不包含这 150 KiB，也不包含 worker stack、Runtime、无线栈或 panel DMA buffer。此模式不分配发送帧 userdata，不重复计入 VM quota。背景 capture、mesh 等显式申请仍会使用 VM 内存；不要将本选项理解为所有 Display 功能都能在 64 KiB 内完成。产品须测量最大连续 heap block 和整机峰值。
+
+传输失败仍冻结绘制并保留资源；stop/join 成功前不释放 framebuffer。PAL draw/present 必须在成功返回前结束对像素的使用，异步 DMA provider 应在自身完成边界等待。此选项不改变 PAL contract，也不增加强制取消。
+
+在 C3 上，150 KiB 连续块必须在创建 Runtime、Lua worker 和无线服务前由产品预留，并通过已有 Host allocator 注入；只看总 free heap 无法证明之后还能分配这一块。实机组件测试使用 16 KiB Lua worker、8 KiB Display worker，Runtime input/mapping capacity 各为 3、event queue 为 8；Lua 使用 1 job、4 coroutine、2 event delivery、4 callback、1 audio track、8 ready slots、4 waiters、2 pending capability 和 2 capability slots。产品应按实际并发和功能重新配置这些有界容量；16 KiB 栈只验证了本测试负载，不是任意 Lua app 的最低栈保证。
