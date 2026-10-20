@@ -25,6 +25,8 @@ static h2_pal_result_t (*const result_abi_callback)(int) = legacy_callback;
 static int (*const legacy_abi_callback)(int) = result_callback;
 
 int main() {
-    return result_abi_callback(-1000) == -1000 &&
-           legacy_abi_callback(INT32_MIN) == INT32_MIN ? 0 : 1;
+  return result_abi_callback(-1000) == -1000 &&
+                 legacy_abi_callback(INT32_MIN) == INT32_MIN
+             ? 0
+             : 1;
 }

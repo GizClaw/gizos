@@ -10,87 +10,84 @@
 #if defined(_MSC_VER)
 #include <intrin.h>
 
-static inline const void *h2_jieli_atomic_load_ptr(const void *volatile *address)
-{
-    return _InterlockedCompareExchangePointer((void *volatile *)address, 0, 0);
+static inline const void* h2_jieli_atomic_load_ptr(
+    const void* volatile* address) {
+  return _InterlockedCompareExchangePointer((void* volatile*)address, 0, 0);
 }
 
-static inline void h2_jieli_atomic_store_ptr(const void *volatile *address, const void *value)
-{
-    (void)_InterlockedExchangePointer((void *volatile *)address, (void *)value);
+static inline void h2_jieli_atomic_store_ptr(const void* volatile* address,
+                                             const void* value) {
+  (void)_InterlockedExchangePointer((void* volatile*)address, (void*)value);
 }
 
-static inline uint32_t h2_jieli_atomic_load_u32(volatile uint32_t *address)
-{
-    return (uint32_t)_InterlockedCompareExchange((volatile long *)address, 0L, 0L);
+static inline uint32_t h2_jieli_atomic_load_u32(volatile uint32_t* address) {
+  return (uint32_t)_InterlockedCompareExchange((volatile long*)address, 0L, 0L);
 }
 
-static inline void h2_jieli_atomic_store_u32(volatile uint32_t *address, uint32_t value)
-{
-    (void)_InterlockedExchange((volatile long *)address, (long)value);
+static inline void h2_jieli_atomic_store_u32(volatile uint32_t* address,
+                                             uint32_t value) {
+  (void)_InterlockedExchange((volatile long*)address, (long)value);
 }
 
-static inline uint32_t h2_jieli_atomic_fetch_add_u32(volatile uint32_t *address, uint32_t value)
-{
-    return (uint32_t)_InterlockedExchangeAdd((volatile long *)address, (long)value);
+static inline uint32_t h2_jieli_atomic_fetch_add_u32(volatile uint32_t* address,
+                                                     uint32_t value) {
+  return (uint32_t)_InterlockedExchangeAdd((volatile long*)address,
+                                           (long)value);
 }
 
-static inline uint32_t h2_jieli_atomic_fetch_sub_u32(volatile uint32_t *address, uint32_t value)
-{
-    return (uint32_t)_InterlockedExchangeAdd((volatile long *)address, -(long)value);
+static inline uint32_t h2_jieli_atomic_fetch_sub_u32(volatile uint32_t* address,
+                                                     uint32_t value) {
+  return (uint32_t)_InterlockedExchangeAdd((volatile long*)address,
+                                           -(long)value);
 }
 
-static inline int h2_jieli_atomic_cas_u32(
-    volatile uint32_t *address,
-    uint32_t *expected,
-    uint32_t desired)
-{
-    const uint32_t observed = (uint32_t)_InterlockedCompareExchange(
-        (volatile long *)address, (long)desired, (long)*expected);
-    if (observed == *expected) {
-        return 1;
-    }
-    *expected = observed;
-    return 0;
+static inline int h2_jieli_atomic_cas_u32(volatile uint32_t* address,
+                                          uint32_t* expected,
+                                          uint32_t desired) {
+  const uint32_t observed = (uint32_t)_InterlockedCompareExchange(
+      (volatile long*)address, (long)desired, (long)*expected);
+  if (observed == *expected) {
+    return 1;
+  }
+  *expected = observed;
+  return 0;
 }
 #else
 
-static inline const void *h2_jieli_atomic_load_ptr(const void *volatile *address)
-{
-    return __atomic_load_n(address, __ATOMIC_ACQUIRE);
+static inline const void* h2_jieli_atomic_load_ptr(
+    const void* volatile* address) {
+  return __atomic_load_n(address, __ATOMIC_ACQUIRE);
 }
 
-static inline void h2_jieli_atomic_store_ptr(const void *volatile *address, const void *value)
-{
-    __atomic_store_n(address, value, __ATOMIC_RELEASE);
+static inline void h2_jieli_atomic_store_ptr(const void* volatile* address,
+                                             const void* value) {
+  __atomic_store_n(address, value, __ATOMIC_RELEASE);
 }
 
-static inline uint32_t h2_jieli_atomic_load_u32(volatile uint32_t *address)
-{
-    return __atomic_load_n(address, __ATOMIC_ACQUIRE);
+static inline uint32_t h2_jieli_atomic_load_u32(volatile uint32_t* address) {
+  return __atomic_load_n(address, __ATOMIC_ACQUIRE);
 }
 
-static inline void h2_jieli_atomic_store_u32(volatile uint32_t *address, uint32_t value)
-{
-    __atomic_store_n(address, value, __ATOMIC_RELEASE);
+static inline void h2_jieli_atomic_store_u32(volatile uint32_t* address,
+                                             uint32_t value) {
+  __atomic_store_n(address, value, __ATOMIC_RELEASE);
 }
 
-static inline uint32_t h2_jieli_atomic_fetch_add_u32(volatile uint32_t *address, uint32_t value)
-{
-    return __atomic_fetch_add(address, value, __ATOMIC_ACQ_REL);
+static inline uint32_t h2_jieli_atomic_fetch_add_u32(volatile uint32_t* address,
+                                                     uint32_t value) {
+  return __atomic_fetch_add(address, value, __ATOMIC_ACQ_REL);
 }
 
-static inline uint32_t h2_jieli_atomic_fetch_sub_u32(volatile uint32_t *address, uint32_t value)
-{
-    return __atomic_fetch_sub(address, value, __ATOMIC_ACQ_REL);
+static inline uint32_t h2_jieli_atomic_fetch_sub_u32(volatile uint32_t* address,
+                                                     uint32_t value) {
+  return __atomic_fetch_sub(address, value, __ATOMIC_ACQ_REL);
 }
 
-static inline int h2_jieli_atomic_cas_u32(
-    volatile uint32_t *address,
-    uint32_t *expected,
-    uint32_t desired)
-{
-    return __atomic_compare_exchange_n(address, expected, desired, 0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
+static inline int h2_jieli_atomic_cas_u32(volatile uint32_t* address,
+                                          uint32_t* expected,
+                                          uint32_t desired) {
+  return __atomic_compare_exchange_n(address, expected, desired, 0,
+                                     __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
 }
 #endif
 

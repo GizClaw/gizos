@@ -7,25 +7,23 @@
 #include <stddef.h>
 
 typedef h2_pal_result_t (*h2_pal_json_test_provider_create_fn)(
-    const h2_pal_mem_api_t *mem,
-    void **out_provider,
-    const h2_pal_json_api_t **out_api);
+    const h2_pal_mem_api_t* mem, void** out_provider,
+    const h2_pal_json_api_t** out_api);
 
 typedef h2_pal_result_t (*h2_pal_json_test_provider_destroy_fn)(
-    void **provider);
+    void** provider);
 
 typedef struct h2_pal_json_test_provider {
-    const char *name;
-    h2_pal_json_test_provider_create_fn create;
-    h2_pal_json_test_provider_destroy_fn destroy;
+  const char* name;
+  h2_pal_json_test_provider_create_fn create;
+  h2_pal_json_test_provider_destroy_fn destroy;
 } h2_pal_json_test_provider_t;
 
 typedef struct h2_pal_json_conformance_result {
-    size_t peak_live_bytes;
+  size_t peak_live_bytes;
 } h2_pal_json_conformance_result_t;
 
-void h2_pal_json_run_conformance(
-    const h2_pal_json_test_provider_t *factory,
-    h2_pal_json_conformance_result_t *out_result);
+void h2_pal_json_run_conformance(const h2_pal_json_test_provider_t* factory,
+                                 h2_pal_json_conformance_result_t* out_result);
 
 #endif

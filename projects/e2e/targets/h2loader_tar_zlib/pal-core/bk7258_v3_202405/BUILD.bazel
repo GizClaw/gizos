@@ -35,13 +35,11 @@ firmware_lib_component(
     name = "firmware_lib",
     deps = [
         "//libs/audio_mixer",
-        "//projects/e2e/apps/pal-core/app:pal_core_e2e",
         "//libs/bleikcp",
         "//libs/bundle",
         "//libs/command",
         "//libs/iostreamikcp",
         "//libs/pal:unsupported",
-        "//libs/wifi_sta",
         "//libs/pal/providers/corehttp",
         "//libs/pal/providers/coremqtt",
         "//libs/pal/providers/h2peer",
@@ -50,6 +48,8 @@ firmware_lib_component(
         "//libs/pal/providers/yyjson",
         "//libs/pixa",
         "//libs/runtime",
+        "//libs/wifi_sta",
+        "//projects/e2e/apps/pal-core/app:pal_core_e2e",
     ],
 )
 
@@ -73,7 +73,6 @@ firmware_native_component(
     ],
     tags = ["manual"],
     deps = [
-        "//projects/h2loader/apps/loader/app:tasks",
         ":ap_launcher_component",
         ":firmware_lib",
         "//boards/bk7258_v3_202405/bk7258",
@@ -84,6 +83,7 @@ firmware_native_component(
         "//native_component_src/bk7258/ap/zlib",
         "//native_component_src/bk7258/cp/h2_pal_core",
         "//projects/e2e/apps/pal-core/app:pal_core_e2e",
+        "//projects/h2loader/apps/loader/app:tasks",
         "//projects/h2loader/libs/h2loader",
         "//projects/h2loader/native_component_src/bk7258/ap/h2loader_bk",
         "//projects/h2loader/native_component_src/bk7258/cp/h2loader_cp_launcher",

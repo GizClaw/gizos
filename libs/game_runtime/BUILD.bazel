@@ -1,7 +1,7 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_NO_EXCEPTIONS_RTTI_COPTS", "H2_WARNING_COPTS", "h2_gnu_only_copts")
-load("//tools/bazel/platforms:compatibility.bzl", "PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY")
 load("//tools/bazel:tasks.bzl", "h2_tasks")
+load("//tools/bazel/platforms:compatibility.bzl", "PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -179,10 +179,10 @@ cc_library(
     # C++17 is not available on the JieLi pi32v2 clang 4.0.1 toolchain.
     target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
     deps = [
-        ":tasks",
         ":game_audio",
         ":pixelroot32",
         ":pixelroot32_compat",
+        ":tasks",
         "//libs/pal",
     ],
 )

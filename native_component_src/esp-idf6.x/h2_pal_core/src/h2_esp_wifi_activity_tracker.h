@@ -12,24 +12,24 @@
  * idle state, so a consumer sees active once while any operation is running.
  */
 typedef struct h2_esp_wifi_activity_tracker {
-    int depth;
+  int depth;
 } h2_esp_wifi_activity_tracker_t;
 
 static inline void h2_esp_wifi_activity_tracker_clear(
-    h2_esp_wifi_activity_tracker_t *tracker) {
-    tracker->depth = 0;
+    h2_esp_wifi_activity_tracker_t* tracker) {
+  tracker->depth = 0;
 }
 
 static inline bool h2_esp_wifi_activity_tracker_is_active(
-    const h2_esp_wifi_activity_tracker_t *tracker) {
-    return tracker->depth > 0;
+    const h2_esp_wifi_activity_tracker_t* tracker) {
+  return tracker->depth > 0;
 }
 
 /** Returns true only for the operation that started radio activity. */
 static inline bool h2_esp_wifi_activity_tracker_enter(
-    h2_esp_wifi_activity_tracker_t *tracker) {
-    tracker->depth += 1;
-    return tracker->depth == 1;
+    h2_esp_wifi_activity_tracker_t* tracker) {
+  tracker->depth += 1;
+  return tracker->depth == 1;
 }
 
 /**
@@ -37,12 +37,12 @@ static inline bool h2_esp_wifi_activity_tracker_enter(
  * unbalanced exit is ignored instead of driving the counter negative.
  */
 static inline bool h2_esp_wifi_activity_tracker_exit(
-    h2_esp_wifi_activity_tracker_t *tracker) {
-    if (tracker->depth <= 0) {
-        return false;
-    }
-    tracker->depth -= 1;
-    return tracker->depth == 0;
+    h2_esp_wifi_activity_tracker_t* tracker) {
+  if (tracker->depth <= 0) {
+    return false;
+  }
+  tracker->depth -= 1;
+  return tracker->depth == 0;
 }
 
 #endif

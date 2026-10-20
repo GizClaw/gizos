@@ -12,10 +12,10 @@ extern "C" {
 #define H2_ESP_ADC_BINARY_CONFIRM_SAMPLES 2u
 
 typedef struct h2_esp_adc_binary_stabilizer {
-    bool stable_value;
-    bool candidate_value;
-    uint8_t candidate_count;
-    bool initialized;
+  bool stable_value;
+  bool candidate_value;
+  uint8_t candidate_count;
+  bool initialized;
 } h2_esp_adc_binary_stabilizer_t;
 
 /**
@@ -23,8 +23,7 @@ typedef struct h2_esp_adc_binary_stabilizer {
  *
  * @param state State to reset. NULL is accepted as a no-op.
  */
-void h2_esp_adc_binary_stabilizer_init(
-    h2_esp_adc_binary_stabilizer_t *state);
+void h2_esp_adc_binary_stabilizer_init(h2_esp_adc_binary_stabilizer_t* state);
 
 /**
  * @brief Applies one binary sample and returns the stable value.
@@ -39,28 +38,26 @@ void h2_esp_adc_binary_stabilizer_init(
  * @return true on success, or false for a NULL state or output pointer. An
  * invalid call does not modify valid state or output storage.
  */
-bool h2_esp_adc_binary_stabilizer_update(
-    h2_esp_adc_binary_stabilizer_t *state,
-    bool sample,
-    bool *out_stable_value);
+bool h2_esp_adc_binary_stabilizer_update(h2_esp_adc_binary_stabilizer_t* state,
+                                         bool sample, bool* out_stable_value);
 
 typedef enum h2_esp_adc_radio_button_sample_kind {
-    H2_ESP_ADC_RADIO_BUTTON_SAMPLE_UNKNOWN = 0,
-    H2_ESP_ADC_RADIO_BUTTON_SAMPLE_RELEASED,
-    H2_ESP_ADC_RADIO_BUTTON_SAMPLE_PRESSED,
+  H2_ESP_ADC_RADIO_BUTTON_SAMPLE_UNKNOWN = 0,
+  H2_ESP_ADC_RADIO_BUTTON_SAMPLE_RELEASED,
+  H2_ESP_ADC_RADIO_BUTTON_SAMPLE_PRESSED,
 } h2_esp_adc_radio_button_sample_kind_t;
 
 typedef struct h2_esp_adc_radio_button_state {
-    uint32_t stable_button_id;
-    uint32_t candidate_button_id;
-    uint8_t candidate_count;
-    uint8_t release_count;
+  uint32_t stable_button_id;
+  uint32_t candidate_button_id;
+  uint8_t candidate_count;
+  uint8_t release_count;
 } h2_esp_adc_radio_button_state_t;
 
 /**
  * @brief Resets a radio-button group to the stable released state.
  */
-void h2_esp_adc_radio_button_init(h2_esp_adc_radio_button_state_t *state);
+void h2_esp_adc_radio_button_init(h2_esp_adc_radio_button_state_t* state);
 
 /**
  * @brief Applies one decoded ADC sample to a radio-button group.
@@ -73,36 +70,34 @@ void h2_esp_adc_radio_button_init(h2_esp_adc_radio_button_state_t *state);
  * @param out_button_id Receives the stable child id, or zero when released.
  * @return true when all arguments and sample fields are valid.
  */
-bool h2_esp_adc_radio_button_update(
-    h2_esp_adc_radio_button_state_t *state,
-    h2_esp_adc_radio_button_sample_kind_t kind,
-    uint32_t button_id,
-    uint32_t *out_button_id);
+bool h2_esp_adc_radio_button_update(h2_esp_adc_radio_button_state_t* state,
+                                    h2_esp_adc_radio_button_sample_kind_t kind,
+                                    uint32_t button_id,
+                                    uint32_t* out_button_id);
 
 typedef enum h2_esp_adc_value_read_reason {
-    H2_ESP_ADC_VALUE_READ_DIRECT = 0,
-    H2_ESP_ADC_VALUE_READ_STEADY,
-    H2_ESP_ADC_VALUE_READ_STARTUP,
-    H2_ESP_ADC_VALUE_READ_JUMP,
+  H2_ESP_ADC_VALUE_READ_DIRECT = 0,
+  H2_ESP_ADC_VALUE_READ_STEADY,
+  H2_ESP_ADC_VALUE_READ_STARTUP,
+  H2_ESP_ADC_VALUE_READ_JUMP,
 } h2_esp_adc_value_read_reason_t;
 
 typedef struct h2_esp_adc_value_reading {
-    /** Whether this read was direct, steady, startup, or a raw jump. */
-    h2_esp_adc_value_read_reason_t reason;
-    /** Median/EMA output in raw ADC counts. */
-    int32_t stable_raw;
-    /** Last hardware sample acquired by this transaction, in raw counts. */
-    int32_t immediate_raw;
+  /** Whether this read was direct, steady, startup, or a raw jump. */
+  h2_esp_adc_value_read_reason_t reason;
+  /** Median/EMA output in raw ADC counts. */
+  int32_t stable_raw;
+  /** Last hardware sample acquired by this transaction, in raw counts. */
+  int32_t immediate_raw;
 } h2_esp_adc_value_reading_t;
 
 typedef struct h2_esp_adc_percent_stabilizer {
-    uint16_t published_percent_x100;
-    bool initialized;
-    bool charging;
+  uint16_t published_percent_x100;
+  bool initialized;
+  bool charging;
 } h2_esp_adc_percent_stabilizer_t;
 
-void h2_esp_adc_percent_stabilizer_init(
-    h2_esp_adc_percent_stabilizer_t *state);
+void h2_esp_adc_percent_stabilizer_init(h2_esp_adc_percent_stabilizer_t* state);
 
 /**
  * @brief Applies one-percent hysteresis and charge-direction monotonicity.
@@ -112,10 +107,8 @@ void h2_esp_adc_percent_stabilizer_init(
  * transition resets the directional baseline to the current candidate.
  */
 bool h2_esp_adc_percent_stabilizer_update(
-    h2_esp_adc_percent_stabilizer_t *state,
-    uint16_t candidate_percent_x100,
-    bool charging,
-    uint16_t *out_percent_x100);
+    h2_esp_adc_percent_stabilizer_t* state, uint16_t candidate_percent_x100,
+    bool charging, uint16_t* out_percent_x100);
 
 #ifdef __cplusplus
 }

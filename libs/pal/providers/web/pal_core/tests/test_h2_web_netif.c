@@ -8,13 +8,13 @@
 #include <stdio.h>
 #include <string.h>
 
-#define CHECK(condition)                                                       \
-  do {                                                                         \
-    if (!(condition)) {                                                        \
-      fprintf(stderr, "Web netif test failed at line %d: %s\n", __LINE__,     \
-              #condition);                                                     \
-      emscripten_force_exit(1);                                                \
-    }                                                                          \
+#define CHECK(condition)                                                  \
+  do {                                                                    \
+    if (!(condition)) {                                                   \
+      fprintf(stderr, "Web netif test failed at line %d: %s\n", __LINE__, \
+              #condition);                                                \
+      emscripten_force_exit(1);                                           \
+    }                                                                     \
   } while (0)
 
 /* clang-format off */
@@ -46,8 +46,8 @@ typedef struct test_events {
   h2_pal_netif_default_changed_t last;
 } test_events_t;
 
-static int test_record_event(void *user, const h2_pal_system_event_t *event) {
-  test_events_t *events = user;
+static int test_record_event(void* user, const h2_pal_system_event_t* event) {
+  test_events_t* events = user;
   CHECK(event->type == H2_PAL_SYSTEM_EVENT_TYPE_NETIF_DEFAULT_CHANGED);
   CHECK(event->payload_size == sizeof(events->last));
   memcpy(&events->last, event->payload, sizeof(events->last));
@@ -56,29 +56,30 @@ static int test_record_event(void *user, const h2_pal_system_event_t *event) {
   return H2_PAL_OK;
 }
 
-static int test_count_netif(void *user, const h2_pal_netif_ref_t *ref,
-                            const h2_pal_netif_status_t *status) {
-  int *count = user;
+static int test_count_netif(void* user, const h2_pal_netif_ref_t* ref,
+                            const h2_pal_netif_status_t* status) {
+  int* count = user;
   CHECK(ref != NULL && status != NULL);
   ++*count;
   return 0;
 }
 
-static void test_pump(h2_web_platform_t *platform) {
+static void test_pump(h2_web_platform_t* platform) {
   CHECK(h2_web_platform_pump(platform, 8u, NULL) == H2_PAL_OK);
 }
 
-static int test_is_browser(const h2_pal_netif_ref_t *ref) {
+static int test_is_browser(const h2_pal_netif_ref_t* ref) {
   return ref->type == H2_PAL_NETIF_REF_NAME &&
-         ref->kind == H2_PAL_NETIF_KIND_HOST && strcmp(ref->name, "browser") == 0;
+         ref->kind == H2_PAL_NETIF_KIND_HOST &&
+         strcmp(ref->name, "browser") == 0;
 }
 
-static void test_status_contract(h2_web_platform_t *platform) {
-  const h2_pal_netif_api_t *netif = h2_web_platform_netif_api(platform);
+static void test_status_contract(h2_web_platform_t* platform) {
+  const h2_pal_netif_api_t* netif = h2_web_platform_netif_api(platform);
   const h2_pal_netif_ref_t default_ref = h2_pal_netif_default_ref();
   h2_pal_netif_status_t status;
   (void)h2_web_main_call(test_set_online,
-                         (const void *[]){&(int){1}, &(int){0}});
+                         (const void*[]){&(int){1}, &(int){0}});
   CHECK(h2_pal_netif_get_status(netif, &default_ref, &status) == H2_PAL_OK);
   CHECK(test_is_browser(&status.ref));
   CHECK(status.kind == H2_PAL_NETIF_KIND_HOST);
@@ -103,8 +104,7 @@ static void test_status_contract(h2_web_platform_t *platform) {
       H2_PAL_NETIF_KIND_WIFI_STA, H2_PAL_NETIF_KIND_WIFI_AP,
       H2_PAL_NETIF_KIND_MODEM_DATA, H2_PAL_NETIF_KIND_ETHERNET,
       H2_PAL_NETIF_KIND_LOOPBACK};
-  for (size_t index = 0u; index < sizeof(absent) / sizeof(absent[0]);
-       ++index) {
+  for (size_t index = 0u; index < sizeof(absent) / sizeof(absent[0]); ++index) {
     const h2_pal_netif_filter_t filter = {.kind = absent[index]};
     CHECK(h2_pal_netif_find(netif, &filter, &found) == H2_PAL_ERR_NOT_FOUND);
     int count = 0;
@@ -128,26 +128,25 @@ static void test_status_contract(h2_web_platform_t *platform) {
   wifi.kind = H2_PAL_NETIF_KIND_WIFI_STA;
   memcpy(wifi.name, "wlan0", sizeof("wlan0"));
   CHECK(h2_pal_netif_set_default(netif, &wifi) == H2_PAL_ERR_NOT_FOUND);
-  CHECK(h2_pal_netif_get_status(netif, &wifi, &status) ==
-        H2_PAL_ERR_NOT_FOUND);
+  CHECK(h2_pal_netif_get_status(netif, &wifi, &status) == H2_PAL_ERR_NOT_FOUND);
 
   // Offline: no default route, the host path stays enumerable but unusable.
   (void)h2_web_main_call(test_set_online,
-                         (const void *[]){&(int){0}, &(int){0}});
+                         (const void*[]){&(int){0}, &(int){0}});
   CHECK(h2_pal_netif_get_status(netif, &default_ref, &status) ==
         H2_PAL_ERR_NOT_FOUND);
   CHECK(h2_pal_netif_get_status(netif, &browser, &status) == H2_PAL_OK);
   CHECK(status.flags == H2_PAL_NETIF_FLAG_UP);
   CHECK(!h2_pal_netif_status_is_usable(&status));
   (void)h2_web_main_call(test_set_online,
-                         (const void *[]){&(int){1}, &(int){0}});
+                         (const void*[]){&(int){1}, &(int){0}});
 }
 
-static void test_events(h2_web_platform_t *platform) {
-  const h2_pal_system_event_api_t *events_api =
+static void test_events(h2_web_platform_t* platform) {
+  const h2_pal_system_event_api_t* events_api =
       h2_web_platform_system_event_api(platform);
   test_events_t events = {0};
-  h2_pal_system_event_subscription_t *subscription = NULL;
+  h2_pal_system_event_subscription_t* subscription = NULL;
   CHECK(h2_pal_system_event_init(events_api) == H2_PAL_OK);
   CHECK(h2_pal_system_event_subscribe(
             events_api, H2_PAL_SYSTEM_EVENT_TYPE_NETIF_DEFAULT_CHANGED,
@@ -156,7 +155,7 @@ static void test_events(h2_web_platform_t *platform) {
   CHECK(events.count == 0);
 
   (void)h2_web_main_call(test_set_online,
-                         (const void *[]){&(int){0}, &(int){1}});
+                         (const void*[]){&(int){0}, &(int){1}});
   test_pump(platform);
   CHECK(events.count == 1);
   CHECK(events.last.previous_valid == 1u && events.last.current_valid == 0u);
@@ -164,12 +163,12 @@ static void test_events(h2_web_platform_t *platform) {
 
   // A repeated browser notification without a state change is deduplicated.
   (void)h2_web_main_call(test_set_online,
-                         (const void *[]){&(int){0}, &(int){1}});
+                         (const void*[]){&(int){0}, &(int){1}});
   test_pump(platform);
   CHECK(events.count == 1);
 
   (void)h2_web_main_call(test_set_online,
-                         (const void *[]){&(int){1}, &(int){1}});
+                         (const void*[]){&(int){1}, &(int){1}});
   test_pump(platform);
   CHECK(events.count == 2);
   CHECK(events.last.previous_valid == 0u && events.last.current_valid == 1u);
@@ -181,22 +180,22 @@ MAIN_THREAD_EM_ASM({
     globalThis.h2TestNetif.set(false, true);
     globalThis.h2TestNetif.set(true, true);
   });
-/* clang-format on */
+  /* clang-format on */
   test_pump(platform);
   CHECK(events.count == 2);
 
   h2_pal_system_event_unsubscribe(events_api, subscription);
   (void)h2_web_main_call(test_set_online,
-                         (const void *[]){&(int){0}, &(int){1}});
+                         (const void*[]){&(int){0}, &(int){1}});
   test_pump(platform);
   CHECK(events.count == 2);
   (void)h2_web_main_call(test_set_online,
-                         (const void *[]){&(int){1}, &(int){1}});
+                         (const void*[]){&(int){1}, &(int){1}});
   test_pump(platform);
   h2_pal_system_event_deinit(events_api);
 }
 
-static h2_runtime_config_t test_runtime_config(h2_web_platform_t *platform) {
+static h2_runtime_config_t test_runtime_config(h2_web_platform_t* platform) {
   h2_runtime_config_t config = {0};
   config.board = "browser";
   config.target = "webassembly";
@@ -246,28 +245,28 @@ static h2_runtime_config_t test_runtime_config(h2_web_platform_t *platform) {
   return config;
 }
 
-static void test_runtime_delivery(h2_web_platform_t *platform) {
+static void test_runtime_delivery(h2_web_platform_t* platform) {
   const h2_runtime_config_t config = test_runtime_config(platform);
-  h2_runtime_t *runtime = NULL;
+  h2_runtime_t* runtime = NULL;
   CHECK(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
   uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
   h2_runtime_event_t event = {
       .payload = payload,
       .payload_capacity = sizeof(payload),
   };
-  const h2_runtime_system_event_netif_default_changed_t *change =
-      (const h2_runtime_system_event_netif_default_changed_t *)payload;
+  const h2_runtime_system_event_netif_default_changed_t* change =
+      (const h2_runtime_system_event_netif_default_changed_t*)payload;
   const int expected_online[] = {0, 1};
   for (size_t index = 0u; index < 2u; ++index) {
     (void)h2_web_main_call(
         test_set_online,
-        (const void *[]){&(int){expected_online[index]}, &(int){1}});
+        (const void*[]){&(int){expected_online[index]}, &(int){1}});
     test_pump(platform);
     CHECK(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
     CHECK(event.component == H2_RUNTIME_COMPONENT_SYSTEM_NETIF);
     CHECK(event.kind == H2_RUNTIME_SYSTEM_EVENT_NETIF_DEFAULT_CHANGED);
     CHECK(change->current_valid == (uint8_t)expected_online[index]);
-    const h2_runtime_system_netif_ref_t *ref =
+    const h2_runtime_system_netif_ref_t* ref =
         expected_online[index] ? &change->current : &change->previous;
     CHECK(ref->kind == H2_RUNTIME_SYSTEM_NETIF_KIND_HOST);
     CHECK(ref->name_valid == 1u && strcmp(ref->name, "browser") == 0);
@@ -276,21 +275,21 @@ static void test_runtime_delivery(h2_web_platform_t *platform) {
     const h2_pal_netif_ref_t default_ref = h2_pal_netif_default_ref();
     const h2_pal_result_t status_rc =
         h2_pal_netif_get_status(runtime->netif, &default_ref, &status);
-    CHECK(expected_online[index] ? status_rc == H2_PAL_OK &&
-                                       h2_pal_netif_status_is_usable(&status)
-                                 : status_rc == H2_PAL_ERR_NOT_FOUND);
+    CHECK(expected_online[index]
+              ? status_rc == H2_PAL_OK && h2_pal_netif_status_is_usable(&status)
+              : status_rc == H2_PAL_ERR_NOT_FOUND);
   }
   CHECK(h2_runtime_poll_event(runtime, &event) != H2_PAL_OK);
   h2_runtime_deinit(runtime);
 }
 
 static void test_unsupported_environment(void) {
-  (void)h2_web_main_call(test_set_present, (const void *[]){&(int){0}});
+  (void)h2_web_main_call(test_set_present, (const void*[]){&(int){0}});
   const h2_web_platform_config_t config = {.display_width = 1,
                                            .display_height = 1};
-  h2_web_platform_t *platform = h2_web_platform_create(&config);
+  h2_web_platform_t* platform = h2_web_platform_create(&config);
   CHECK(platform != NULL);
-  const h2_pal_netif_api_t *netif = h2_web_platform_netif_api(platform);
+  const h2_pal_netif_api_t* netif = h2_web_platform_netif_api(platform);
   const h2_pal_netif_ref_t default_ref = h2_pal_netif_default_ref();
   h2_pal_netif_status_t status;
   h2_pal_netif_ref_t ref;
@@ -303,13 +302,13 @@ static void test_unsupported_environment(void) {
         H2_PAL_ERR_UNSUPPORTED);
   CHECK(((int)h2_web_main_call(test_listener_count, NULL).i32) == 0);
   h2_web_platform_destroy(platform);
-  (void)h2_web_main_call(test_set_present, (const void *[]){&(int){1}});
+  (void)h2_web_main_call(test_set_present, (const void*[]){&(int){1}});
 }
 
 int main(void) {
   const h2_web_platform_config_t config = {.display_width = 1,
                                            .display_height = 1};
-  h2_web_platform_t *platform = h2_web_platform_create(&config);
+  h2_web_platform_t* platform = h2_web_platform_create(&config);
   CHECK(platform != NULL);
   CHECK(((int)h2_web_main_call(test_listener_count, NULL).i32) == 2);
   test_status_contract(platform);
@@ -323,7 +322,7 @@ MAIN_THREAD_EM_ASM({
     globalThis.h2TestNetif.set(false, true);
     globalThis.h2TestNetif.set(true, true);
   });
-/* clang-format on */
+  /* clang-format on */
   test_unsupported_environment();
   printf("WEB_NETIF PASS\n");
   return 0;

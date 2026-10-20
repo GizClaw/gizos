@@ -3,11 +3,11 @@
 #include "lauxlib.h"
 #include "lua.h"
 
-static h2_bloomspeaker_lua_context_t *module_context(lua_State *state) {
+static h2_bloomspeaker_lua_context_t* module_context(lua_State* state) {
   return lua_touserdata(state, lua_upvalueindex(1));
 }
 
-static uint64_t module_now_ms(h2_bloomspeaker_lua_context_t *context) {
+static uint64_t module_now_ms(h2_bloomspeaker_lua_context_t* context) {
   uint64_t now_ms = 0u;
   if (context != NULL && context->runtime != NULL &&
       context->runtime->time != NULL) {
@@ -16,8 +16,8 @@ static uint64_t module_now_ms(h2_bloomspeaker_lua_context_t *context) {
   return now_ms;
 }
 
-static int module_long_press(lua_State *state) {
-  h2_bloomspeaker_lua_context_t *context = module_context(state);
+static int module_long_press(lua_State* state) {
+  h2_bloomspeaker_lua_context_t* context = module_context(state);
   if (context == NULL || context->controller == NULL) {
     return luaL_error(state, "intercom controller unavailable");
   }
@@ -29,8 +29,8 @@ static int module_long_press(lua_State *state) {
   return 1;
 }
 
-static int module_hold_release(lua_State *state) {
-  h2_bloomspeaker_lua_context_t *context = module_context(state);
+static int module_hold_release(lua_State* state) {
+  h2_bloomspeaker_lua_context_t* context = module_context(state);
   if (context == NULL || context->controller == NULL) {
     return luaL_error(state, "intercom controller unavailable");
   }
@@ -42,23 +42,23 @@ static int module_hold_release(lua_State *state) {
   return 1;
 }
 
-static int module_touch_pairing_enabled(lua_State *state) {
-  h2_bloomspeaker_lua_context_t *context = module_context(state);
+static int module_touch_pairing_enabled(lua_State* state) {
+  h2_bloomspeaker_lua_context_t* context = module_context(state);
   lua_pushboolean(state, context != NULL && context->touch_pairing_enabled);
   return 1;
 }
 
-static int module_shutdown_requested(lua_State *state) {
-  h2_bloomspeaker_lua_context_t *context = module_context(state);
-  lua_pushboolean(
-      state, context != NULL && context->shutdown_requested != NULL &&
-                 h2_atomic_load_explicit(context->shutdown_requested,
-                                      H2_ATOMIC_ACQUIRE));
+static int module_shutdown_requested(lua_State* state) {
+  h2_bloomspeaker_lua_context_t* context = module_context(state);
+  lua_pushboolean(state,
+                  context != NULL && context->shutdown_requested != NULL &&
+                      h2_atomic_load_explicit(context->shutdown_requested,
+                                              H2_ATOMIC_ACQUIRE));
   return 1;
 }
 
-static int module_snapshot(lua_State *state) {
-  h2_bloomspeaker_lua_context_t *context = module_context(state);
+static int module_snapshot(lua_State* state) {
+  h2_bloomspeaker_lua_context_t* context = module_context(state);
   if (context == NULL || context->controller == NULL) {
     return luaL_error(state, "intercom controller unavailable");
   }
@@ -89,8 +89,8 @@ static int module_snapshot(lua_State *state) {
 }
 
 /* Allocation-free hot-path projection used by the render loop. */
-static int module_sample(lua_State *state) {
-  h2_bloomspeaker_lua_context_t *context = module_context(state);
+static int module_sample(lua_State* state) {
+  h2_bloomspeaker_lua_context_t* context = module_context(state);
   if (context == NULL || context->controller == NULL) {
     return luaL_error(state, "intercom controller unavailable");
   }
@@ -108,17 +108,17 @@ static int module_sample(lua_State *state) {
   return 9;
 }
 
-static void set_module_function(lua_State *state, const char *name,
+static void set_module_function(lua_State* state, const char* name,
                                 lua_CFunction function,
-                                h2_bloomspeaker_lua_context_t *context) {
+                                h2_bloomspeaker_lua_context_t* context) {
   lua_pushlightuserdata(state, context);
   lua_pushcclosure(state, function, 1);
   lua_setfield(state, -2, name);
 }
 
-int h2_bloomspeaker_lua_open(void *lua_state, void *user) {
-  lua_State *state = lua_state;
-  h2_bloomspeaker_lua_context_t *context = user;
+int h2_bloomspeaker_lua_open(void* lua_state, void* user) {
+  lua_State* state = lua_state;
+  h2_bloomspeaker_lua_context_t* context = user;
   lua_createtable(state, 0, 6);
   set_module_function(state, "long_press", module_long_press, context);
   set_module_function(state, "hold_release", module_hold_release, context);

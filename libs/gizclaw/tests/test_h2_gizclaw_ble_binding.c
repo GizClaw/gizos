@@ -17,10 +17,10 @@
 /* Use the same client/request seams as the Service tests. The real Service
  * worker, request queues, cancellation and owner dispatch remain under test. */
 typedef struct test_env {
-  h2_gizclaw_service_t *service;
-  h2_gizclaw_api_key_state_t *state;
+  h2_gizclaw_service_t* service;
+  h2_gizclaw_api_key_state_t* state;
   h2_gizclaw_cancel_fn cancel;
-  void *cancel_user;
+  void* cancel_user;
   h2_atomic_bool_t connected;
   h2_atomic_bool_t reply;
   h2_atomic_uint_t starts;
@@ -36,7 +36,7 @@ typedef struct test_env {
   int create_rpc_code, revoke_rpc_code;
   h2_pal_time_api_t time;
 } test_env_t;
-static test_env_t *s_env;
+static test_env_t* s_env;
 
 /* Real time bounds scheduling waits; env->time remains the fake RPC clock. */
 static uint64_t wall_ms(void) {
@@ -49,46 +49,45 @@ static void pause_poll(void) {
   assert(h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u) == H2_PAL_OK);
 }
 
-static h2_pal_result_t fake_init(const h2_gizclaw_config_t *config,
-                                 h2_gizclaw_client_t **out_client) {
+static h2_pal_result_t fake_init(const h2_gizclaw_config_t* config,
+                                 h2_gizclaw_client_t** out_client) {
   s_env->cancel = config->cancel_requested;
   s_env->cancel_user = config->cancel_user;
-  *out_client = (h2_gizclaw_client_t *)s_env;
+  *out_client = (h2_gizclaw_client_t*)s_env;
   return H2_PAL_OK;
 }
-static h2_pal_result_t fake_connect(h2_gizclaw_client_t *client) {
+static h2_pal_result_t fake_connect(h2_gizclaw_client_t* client) {
   (void)client;
   const uint64_t deadline = wall_ms() + 10000u;
   while (!h2_atomic_load(&s_env->connected)) {
     assert(wall_ms() < deadline);
-    if (s_env->cancel(s_env->cancel_user))
-      return H2_PAL_ERR_CLOSED;
+    if (s_env->cancel(s_env->cancel_user)) return H2_PAL_ERR_CLOSED;
     pause_poll();
   }
   return H2_PAL_OK;
 }
-static h2_pal_result_t fake_poll(h2_gizclaw_client_t *client, int timeout_ms) {
+static h2_pal_result_t fake_poll(h2_gizclaw_client_t* client, int timeout_ms) {
   (void)client;
   (void)timeout_ms;
   return H2_PAL_ERR_TIMEOUT;
 }
-static h2_pal_result_t fake_handler(h2_gizclaw_client_t *client,
+static h2_pal_result_t fake_handler(h2_gizclaw_client_t* client,
                                     h2_gizclaw_client_event_sink_fn handler,
-                                    void *user) {
+                                    void* user) {
   (void)client;
   (void)handler;
   (void)user;
   return H2_PAL_OK;
 }
-static h2_pal_result_t fake_dispatch(h2_gizclaw_client_t *client) {
+static h2_pal_result_t fake_dispatch(h2_gizclaw_client_t* client) {
   (void)client;
   return H2_PAL_ERR_WOULD_BLOCK;
 }
-static h2_pal_result_t fake_close(h2_gizclaw_client_t *client) {
+static h2_pal_result_t fake_close(h2_gizclaw_client_t* client) {
   (void)client;
   return H2_PAL_OK;
 }
-static void fake_deinit(h2_gizclaw_client_t *client) { (void)client; }
+static void fake_deinit(h2_gizclaw_client_t* client) { (void)client; }
 static const h2_gizclaw_service_client_ops_t client_ops = {
     .init = fake_init,
     .connect = fake_connect,
@@ -98,10 +97,10 @@ static const h2_gizclaw_service_client_ops_t client_ops = {
     .close = fake_close,
     .deinit = fake_deinit};
 
-static int fake_start(h2_gizclaw_client_t *client,
+static int fake_start(h2_gizclaw_client_t* client,
                       h2_gizclaw_rpc_method_t method,
                       h2_gizclaw_rpc_bytes_t payload, uint32_t timeout_ms,
-                      h2_gizclaw_rpc_request_t **out_request) {
+                      h2_gizclaw_rpc_request_t** out_request) {
   (void)client;
   assert(timeout_ms != 0u);
   pb_istream_t stream = pb_istream_from_buffer(payload.data, payload.len);
@@ -122,25 +121,22 @@ static int fake_start(h2_gizclaw_client_t *client,
   unsigned count = h2_atomic_load(&s_env->starts);
   assert(count < 128u);
   s_env->methods[count] = method;
-  *out_request = (h2_gizclaw_rpc_request_t *)s_env;
+  *out_request = (h2_gizclaw_rpc_request_t*)s_env;
   h2_atomic_fetch_add(&s_env->starts, 1u);
   return H2_PAL_OK;
 }
-static int fake_result(h2_gizclaw_rpc_request_t *request,
-                       h2_gizclaw_rpc_response_t *out_response) {
+static int fake_result(h2_gizclaw_rpc_request_t* request,
+                       h2_gizclaw_rpc_response_t* out_response) {
   (void)request;
-  if (!h2_atomic_load(&s_env->reply))
-    return H2_PAL_ERR_WOULD_BLOCK;
+  if (!h2_atomic_load(&s_env->reply)) return H2_PAL_ERR_WOULD_BLOCK;
   int rc = s_env->method == 98 ? s_env->revoke_result : s_env->create_result;
   *out_response = (h2_gizclaw_rpc_response_t){
       .has_error = s_env->method == 98 ? s_env->revoke_rpc_error
                                        : s_env->create_rpc_error,
       .error_code = s_env->method == 98 ? s_env->revoke_rpc_code
                                         : s_env->create_rpc_code};
-  if (rc != H2_PAL_OK)
-    return rc;
-  if (out_response->has_error)
-    return H2_PAL_OK;
+  if (rc != H2_PAL_OK) return rc;
+  if (out_response->has_error) return H2_PAL_OK;
   uint8_t bytes[256];
   pb_ostream_t stream = pb_ostream_from_buffer(bytes, sizeof(bytes));
   if (s_env->method == 96) {
@@ -164,8 +160,8 @@ static int fake_result(h2_gizclaw_rpc_request_t *request,
   }
   return H2_PAL_OK;
 }
-static void fake_cancel(h2_gizclaw_rpc_request_t *request) { (void)request; }
-static void fake_destroy(h2_gizclaw_rpc_request_t *request) {
+static void fake_cancel(h2_gizclaw_rpc_request_t* request) { (void)request; }
+static void fake_destroy(h2_gizclaw_rpc_request_t* request) {
   (void)request;
   h2_atomic_fetch_add(&s_env->destroys, 1u);
 }
@@ -173,14 +169,14 @@ static const h2_gizclaw_async_rpc_ops_t rpc_ops = {.start = fake_start,
                                                    .result = fake_result,
                                                    .cancel = fake_cancel,
                                                    .destroy = fake_destroy};
-static h2_pal_result_t fake_time(void *user, uint64_t *out_ms) {
-  test_env_t *env = user;
+static h2_pal_result_t fake_time(void* user, uint64_t* out_ms) {
+  test_env_t* env = user;
   *out_ms = h2_atomic_load(&env->now);
   return H2_PAL_OK;
 }
 static const h2_pal_time_vtable_t time_ops = {.get_monotonic_ms = fake_time};
 
-static void setup(test_env_t *env, bool connected) {
+static void setup(test_env_t* env, bool connected) {
   memset(env, 0, sizeof(*env));
   strcpy(env->secret, "gizclaw_sk_v1_public_fixture_001");
   strcpy(env->key_name, "key-name");
@@ -195,13 +191,13 @@ static void setup(test_env_t *env, bool connected) {
   h2_gizclaw_config_t client_config = {
       .allocator = h2_desktop_platform_default_allocator(),
       .time = h2_desktop_platform_time_api()};
-  h2_gizclaw_service_config_t config = {.client_config = &client_config,
-                                        .task = h2_desktop_platform_task_api(),
-                                        .queue =
-                                            h2_desktop_platform_queue_api(),
-                                        .sync = h2_desktop_platform_sync_api(),
-                                        .operation_capacity = 8u,
-                                        .client_poll_timeout_ms = 1};
+  h2_gizclaw_service_config_t config = {
+      .client_config = &client_config,
+      .task = h2_desktop_platform_task_api(),
+      .queue = h2_desktop_platform_queue_api(),
+      .sync = h2_desktop_platform_sync_api(),
+      .operation_capacity = 8u,
+      .client_poll_timeout_ms = 1};
   assert(h2_gizclaw_service_init(&config, &env->service) == H2_PAL_OK);
   assert(h2_gizclaw_service_start(env->service) == H2_PAL_OK);
   env->time = (h2_pal_time_api_t){.user = env, .vtable = &time_ops};
@@ -218,35 +214,33 @@ static void setup(test_env_t *env, bool connected) {
          H2_PAL_OK);
   memset(name, 'x', sizeof(name)); /* State must own its display name. */
 }
-static h2_gizclaw_api_key_snapshot_t snapshot(test_env_t *env) {
+static h2_gizclaw_api_key_snapshot_t snapshot(test_env_t* env) {
   h2_gizclaw_api_key_snapshot_t result;
   assert(h2_gizclaw_api_key_state_snapshot(env->state, &result) == H2_PAL_OK);
   return result;
 }
-static void poll_once(test_env_t *env) {
+static void poll_once(test_env_t* env) {
   size_t count = 0u;
   assert(h2_gizclaw_service_poll(env->service, 1u, &count) == H2_PAL_OK);
   pause_poll();
 }
-static void finish(test_env_t *env) {
+static void finish(test_env_t* env) {
   const uint64_t deadline = wall_ms() + 10000u;
   do {
     poll_once(env);
-    if (!snapshot(env).busy)
-      return;
+    if (!snapshot(env).busy) return;
   } while (wall_ms() < deadline);
   assert(false);
 }
-static void wait_count(h2_atomic_uint_t *count, unsigned expected) {
+static void wait_count(h2_atomic_uint_t* count, unsigned expected) {
   const uint64_t deadline = wall_ms() + 10000u;
   do {
-    if (h2_atomic_load(count) >= expected)
-      return;
+    if (h2_atomic_load(count) >= expected) return;
     pause_poll();
   } while (wall_ms() < deadline);
   assert(false);
 }
-static void destroy_env_atomics(test_env_t *env) {
+static void destroy_env_atomics(test_env_t* env) {
   h2_atomic_bool_destroy(&env->connected);
   h2_atomic_bool_destroy(&env->reply);
   h2_atomic_uint_destroy(&env->starts);
@@ -254,7 +248,7 @@ static void destroy_env_atomics(test_env_t *env) {
   h2_atomic_size_destroy(&env->now);
 }
 
-static void teardown(test_env_t *env) {
+static void teardown(test_env_t* env) {
   assert(h2_gizclaw_api_key_state_close(env->state) == H2_PAL_OK);
   assert(h2_gizclaw_service_stop(env->service) == H2_PAL_OK);
   const uint64_t deadline = wall_ms() + 10000u;
@@ -262,8 +256,7 @@ static void teardown(test_env_t *env) {
   do {
     poll_once(env);
     rc = h2_gizclaw_api_key_state_destroy(&env->state);
-    if (rc != H2_PAL_ERR_BUSY)
-      break;
+    if (rc != H2_PAL_ERR_BUSY) break;
   } while (wall_ms() < deadline);
   assert(rc == H2_PAL_OK);
   assert(env->state == NULL);
@@ -271,7 +264,7 @@ static void teardown(test_env_t *env) {
   assert(h2_gizclaw_service_deinit(env->service) == H2_PAL_OK);
   destroy_env_atomics(env);
 }
-static void refresh(test_env_t *env, bool revoke) {
+static void refresh(test_env_t* env, bool revoke) {
   assert(h2_gizclaw_api_key_state_request_refresh(env->state, revoke) ==
          H2_PAL_OK);
   finish(env);
@@ -283,7 +276,7 @@ struct h2_pal_ble_adv_set {
 struct h2_pal_system_event_subscription {
   h2_pal_system_event_type_t type;
   h2_pal_system_event_handler_t handler;
-  void *user;
+  void* user;
   bool live;
 };
 typedef struct fake_ble {
@@ -291,7 +284,7 @@ typedef struct fake_ble {
   h2_pal_system_event_api_t events;
   struct h2_pal_system_event_subscription subscriptions[6];
   struct h2_pal_ble_adv_set set;
-  const h2_pal_ble_gatt_service_t *service;
+  const h2_pal_ble_gatt_service_t* service;
   bool other_service;
   bool other_advertising;
   unsigned registrations, unregistrations, creates, starts, stops, destroys;
@@ -303,23 +296,23 @@ typedef struct fake_ble {
   char local_name[30];
 } fake_ble_t;
 
-static bool uuid_equal(const h2_pal_ble_uuid_t *a, const h2_pal_ble_uuid_t *b) {
+static bool uuid_equal(const h2_pal_ble_uuid_t* a, const h2_pal_ble_uuid_t* b) {
   return a->len == b->len && memcmp(a->data, b->data, a->len) == 0;
 }
-static void emit(fake_ble_t *ble, h2_pal_system_event_type_t type,
-                 const void *payload, size_t payload_size) {
+static void emit(fake_ble_t* ble, h2_pal_system_event_type_t type,
+                 const void* payload, size_t payload_size) {
   h2_pal_system_event_t event = {
       .type = type, .payload = payload, .payload_size = payload_size};
   for (size_t i = 0u; i < 6u; ++i) {
-    struct h2_pal_system_event_subscription *sub = &ble->subscriptions[i];
+    struct h2_pal_system_event_subscription* sub = &ble->subscriptions[i];
     if (sub->live && sub->type == type)
       assert(sub->handler(sub->user, &event) == H2_PAL_OK);
   }
 }
-static int fake_subscribe(void *user, h2_pal_system_event_type_t type,
-                          h2_pal_system_event_handler_t handler, void *context,
-                          h2_pal_system_event_subscription_t **out) {
-  fake_ble_t *ble = user;
+static int fake_subscribe(void* user, h2_pal_system_event_type_t type,
+                          h2_pal_system_event_handler_t handler, void* context,
+                          h2_pal_system_event_subscription_t** out) {
+  fake_ble_t* ble = user;
   if (ble->fail_subscribe_at != 0u &&
       ble->subscriptions_created + 1u == ble->fail_subscribe_at)
     return H2_PAL_ERR_IO;
@@ -334,19 +327,19 @@ static int fake_subscribe(void *user, h2_pal_system_event_type_t type,
   }
   return H2_PAL_ERR_NO_SPACE;
 }
-static void fake_unsubscribe(void *user,
-                             h2_pal_system_event_subscription_t *subscription) {
-  fake_ble_t *ble = user;
+static void fake_unsubscribe(void* user,
+                             h2_pal_system_event_subscription_t* subscription) {
+  fake_ble_t* ble = user;
   assert(subscription->live);
   subscription->live = false;
   ++ble->subscriptions_destroyed;
 }
 static const h2_pal_system_event_vtable_t event_ops = {
     .subscribe = fake_subscribe, .unsubscribe = fake_unsubscribe};
-static h2_pal_result_t fake_register(void *user,
-                                     const h2_pal_ble_gatt_service_t *services,
+static h2_pal_result_t fake_register(void* user,
+                                     const h2_pal_ble_gatt_service_t* services,
                                      size_t count) {
-  fake_ble_t *ble = user;
+  fake_ble_t* ble = user;
   assert(count == 1u && ble->service == NULL);
   assert(uuid_equal(&services->uuid, &h2_gizclaw_ble_binding_service_uuid));
   assert(services->primary && services->characteristic_count == 3u);
@@ -357,21 +350,20 @@ static h2_pal_result_t fake_register(void *user,
   assert(services->characteristics[2].properties ==
          H2_PAL_BLE_GATT_PROPERTY_READ);
   ++ble->registrations;
-  if (ble->register_result != H2_PAL_OK)
-    return ble->register_result;
+  if (ble->register_result != H2_PAL_OK) return ble->register_result;
   ble->service = services;
   for (size_t i = 0u; i < 3u; ++i)
     *services->characteristics[i].out_value_handle = (uint16_t)(0x10u + i);
   return H2_PAL_OK;
 }
-static h2_pal_result_t fake_unregister(void *user,
-                                       const h2_pal_ble_uuid_t *uuid) {
-  fake_ble_t *ble = user;
+static h2_pal_result_t fake_unregister(void* user,
+                                       const h2_pal_ble_uuid_t* uuid) {
+  fake_ble_t* ble = user;
   assert(uuid_equal(uuid, &h2_gizclaw_ble_binding_service_uuid));
   assert(ble->service != NULL);
   ++ble->unregistrations;
   if (ble->read_during_unregister) {
-    const h2_pal_ble_gatt_characteristic_t *info =
+    const h2_pal_ble_gatt_characteristic_t* info =
         &ble->service->characteristics[0];
     h2_pal_ble_gatt_access_t access = {.conn_handle = 1u, .attr_handle = 0x10u};
     uint8_t out[14];
@@ -380,40 +372,39 @@ static h2_pal_result_t fake_unregister(void *user,
            H2_PAL_ERR_CLOSED);
     assert(len == 0u);
   }
-  if (ble->unregister_result != H2_PAL_OK)
-    return ble->unregister_result;
+  if (ble->unregister_result != H2_PAL_OK) return ble->unregister_result;
   ble->service = NULL;
   return H2_PAL_OK;
 }
-static h2_pal_result_t fake_set_create(void *user,
-                                       const h2_pal_ble_adv_params_t *params,
-                                       h2_pal_ble_adv_set_t **out) {
-  fake_ble_t *ble = user;
+static h2_pal_result_t fake_set_create(void* user,
+                                       const h2_pal_ble_adv_params_t* params,
+                                       h2_pal_ble_adv_set_t** out) {
+  fake_ble_t* ble = user;
   assert(!ble->set.live);
   assert(params->mode == H2_PAL_BLE_ADV_MODE_CONNECTABLE);
   assert(params->type == H2_PAL_BLE_ADV_TYPE_LEGACY);
   assert(params->interval_min_ms == 100u && params->interval_max_ms == 200u);
   ++ble->creates;
-  if (ble->create_result != H2_PAL_OK)
-    return ble->create_result;
+  if (ble->create_result != H2_PAL_OK) return ble->create_result;
   ble->set.live = true;
   *out = &ble->set;
   return H2_PAL_OK;
 }
-static h2_pal_result_t fake_set_data(void *user, h2_pal_ble_adv_set_t *set,
-                                     const h2_pal_ble_adv_data_t *data) {
-  fake_ble_t *ble = user;
+static h2_pal_result_t fake_set_data(void* user, h2_pal_ble_adv_set_t* set,
+                                     const h2_pal_ble_adv_data_t* data) {
+  fake_ble_t* ble = user;
   assert(set == &ble->set && set->live);
   assert(data->service_uuid_count == 1u);
-  assert(data->local_name == NULL || strlen(data->local_name) < sizeof(ble->local_name));
+  assert(data->local_name == NULL ||
+         strlen(data->local_name) < sizeof(ble->local_name));
   strcpy(ble->local_name, data->local_name != NULL ? data->local_name : "");
   assert(uuid_equal(data->service_uuids, &h2_gizclaw_ble_binding_service_uuid));
   assert(data->manufacturer_data.len == 0u && data->service_data.len == 0u);
   assert(data->service_data_uuid.len == 0u);
   return H2_PAL_OK;
 }
-static h2_pal_result_t fake_set_start(void *user, h2_pal_ble_adv_set_t *set) {
-  fake_ble_t *ble = user;
+static h2_pal_result_t fake_set_start(void* user, h2_pal_ble_adv_set_t* set) {
+  fake_ble_t* ble = user;
   assert(set == &ble->set && set->live);
   ++ble->starts;
   h2_pal_ble_adv_set_event_t event = {.set = set, .status = ble->start_result};
@@ -421,8 +412,8 @@ static h2_pal_result_t fake_set_start(void *user, h2_pal_ble_adv_set_t *set) {
        sizeof(event));
   return ble->start_result;
 }
-static h2_pal_result_t fake_set_stop(void *user, h2_pal_ble_adv_set_t *set) {
-  fake_ble_t *ble = user;
+static h2_pal_result_t fake_set_stop(void* user, h2_pal_ble_adv_set_t* set) {
+  fake_ble_t* ble = user;
   assert(set == &ble->set && set->live);
   ++ble->stops;
   h2_pal_ble_adv_set_event_t event = {.set = set, .status = ble->stop_result};
@@ -430,12 +421,11 @@ static h2_pal_result_t fake_set_stop(void *user, h2_pal_ble_adv_set_t *set) {
        sizeof(event));
   return ble->stop_result;
 }
-static h2_pal_result_t fake_set_destroy(void *user, h2_pal_ble_adv_set_t *set) {
-  fake_ble_t *ble = user;
+static h2_pal_result_t fake_set_destroy(void* user, h2_pal_ble_adv_set_t* set) {
+  fake_ble_t* ble = user;
   assert(set == &ble->set && set->live);
   ++ble->destroys;
-  if (ble->destroy_result == H2_PAL_OK)
-    set->live = false;
+  if (ble->destroy_result == H2_PAL_OK) set->live = false;
   return ble->destroy_result;
 }
 /* Unrelated/global operations are intentionally absent: any fallback fails. */
@@ -447,18 +437,18 @@ static const h2_pal_ble_vtable_t ble_ops = {
     .adv_set_destroy = fake_set_destroy,
     .register_gatt_services = fake_register,
     .unregister_gatt_service = fake_unregister};
-static void ble_setup(fake_ble_t *ble) {
+static void ble_setup(fake_ble_t* ble) {
   memset(ble, 0, sizeof(*ble));
   ble->api = (h2_pal_ble_host_api_t){.user = ble, .vtable = &ble_ops};
   ble->events = (h2_pal_system_event_api_t){.user = ble, .vtable = &event_ops};
   ble->other_service = ble->other_advertising = true;
 }
-static h2_gizclaw_str_t text(const char *value) {
+static h2_gizclaw_str_t text(const char* value) {
   return (h2_gizclaw_str_t){value, strlen(value)};
 }
-static h2_gizclaw_ble_binding_t *binding_open_named(test_env_t *env,
-                                                   fake_ble_t *ble,
-                                                   const char *local_name) {
+static h2_gizclaw_ble_binding_t* binding_open_named(test_env_t* env,
+                                                    fake_ble_t* ble,
+                                                    const char* local_name) {
   h2_gizclaw_ble_binding_config_t config = {
       .api_key_state = env->state,
       .ble = &ble->api,
@@ -469,54 +459,53 @@ static h2_gizclaw_ble_binding_t *binding_open_named(test_env_t *env,
       .icon = text("h106_tiga"),
       .name = text("客厅"),
       .local_name = text(local_name)};
-  h2_gizclaw_ble_binding_t *binding = NULL;
+  h2_gizclaw_ble_binding_t* binding = NULL;
   assert(h2_gizclaw_ble_binding_open(&config, &binding) == H2_PAL_OK);
   return binding;
 }
-static h2_gizclaw_ble_binding_t *binding_open(test_env_t *env,
-                                              fake_ble_t *ble) {
+static h2_gizclaw_ble_binding_t* binding_open(test_env_t* env,
+                                              fake_ble_t* ble) {
   return binding_open_named(env, ble, "");
 }
-static h2_gizclaw_ble_binding_snapshot_t
-binding_snapshot(h2_gizclaw_ble_binding_t *binding) {
+static h2_gizclaw_ble_binding_snapshot_t binding_snapshot(
+    h2_gizclaw_ble_binding_t* binding) {
   h2_gizclaw_ble_binding_snapshot_t value;
   assert(h2_gizclaw_ble_binding_snapshot(binding, &value) == H2_PAL_OK);
   return value;
 }
-static h2_pal_result_t read_value(fake_ble_t *ble, size_t index, uint16_t conn,
-                                  uint16_t offset, uint8_t *out,
-                                  size_t capacity, size_t *out_len) {
+static h2_pal_result_t read_value(fake_ble_t* ble, size_t index, uint16_t conn,
+                                  uint16_t offset, uint8_t* out,
+                                  size_t capacity, size_t* out_len) {
   assert(ble->service != NULL);
-  const h2_pal_ble_gatt_characteristic_t *value =
+  const h2_pal_ble_gatt_characteristic_t* value =
       &ble->service->characteristics[index];
   h2_pal_ble_gatt_access_t access = {.conn_handle = conn,
                                      .attr_handle = (uint16_t)(0x10u + index),
                                      .offset = offset};
   return value->read(value->user, &access, out, capacity, out_len);
 }
-static void put16(uint8_t *out, uint16_t value) {
+static void put16(uint8_t* out, uint16_t value) {
   out[0] = (uint8_t)value;
   out[1] = (uint8_t)(value >> 8u);
 }
-static uint16_t u16(const uint8_t *data) {
+static uint16_t u16(const uint8_t* data) {
   return (uint16_t)((uint16_t)data[0] | ((uint16_t)data[1] << 8u));
 }
-static uint64_t u64(const uint8_t *data) {
+static uint64_t u64(const uint8_t* data) {
   uint64_t value = 0u;
-  for (size_t i = 0u; i < 8u; ++i)
-    value |= (uint64_t)data[i] << (8u * i);
+  for (size_t i = 0u; i < 8u; ++i) value |= (uint64_t)data[i] << (8u * i);
   return value;
 }
-static h2_pal_result_t request_raw(fake_ble_t *ble, uint16_t conn,
-                                   uint16_t offset, const uint8_t *data,
+static h2_pal_result_t request_raw(fake_ble_t* ble, uint16_t conn,
+                                   uint16_t offset, const uint8_t* data,
                                    size_t len) {
-  const h2_pal_ble_gatt_characteristic_t *request =
+  const h2_pal_ble_gatt_characteristic_t* request =
       &ble->service->characteristics[1];
   h2_pal_ble_gatt_access_t access = {
       .conn_handle = conn, .attr_handle = 0x11u, .offset = offset};
   return request->write(request->user, &access, data, len);
 }
-static h2_pal_result_t request(fake_ble_t *ble, uint16_t conn,
+static h2_pal_result_t request(fake_ble_t* ble, uint16_t conn,
                                uint64_t revision, uint16_t offset,
                                uint16_t limit) {
   uint8_t bytes[13] = {1u};
@@ -526,16 +515,16 @@ static h2_pal_result_t request(fake_ble_t *ble, uint16_t conn,
   put16(bytes + 11u, limit);
   return request_raw(ble, conn, 0u, bytes, sizeof(bytes));
 }
-static void connect_event(fake_ble_t *ble, uint16_t conn, uint16_t mtu) {
+static void connect_event(fake_ble_t* ble, uint16_t conn, uint16_t mtu) {
   h2_pal_ble_connection_t value = {
       .conn_handle = conn, .role = H2_PAL_BLE_ROLE_PERIPHERAL, .mtu = mtu};
   emit(ble, H2_PAL_SYSTEM_EVENT_TYPE_BLE_CONNECTED, &value, sizeof(value));
 }
-static void disconnect_event(fake_ble_t *ble, uint16_t conn) {
+static void disconnect_event(fake_ble_t* ble, uint16_t conn) {
   h2_pal_ble_disconnected_info_t value = {.conn_handle = conn};
   emit(ble, H2_PAL_SYSTEM_EVENT_TYPE_BLE_DISCONNECTED, &value, sizeof(value));
 }
-static size_t decode_hex(const char *hex, uint8_t *out) {
+static size_t decode_hex(const char* hex, uint8_t* out) {
   size_t len = strlen(hex);
   assert(len % 2u == 0u && len <= 488u);
   for (size_t i = 0u; i < len / 2u; ++i) {
@@ -545,21 +534,21 @@ static size_t decode_hex(const char *hex, uint8_t *out) {
   }
   return len / 2u;
 }
-static void equals_hex(const uint8_t *actual, size_t len, const char *hex) {
+static void equals_hex(const uint8_t* actual, size_t len, const char* hex) {
   uint8_t expected[244];
   assert(len == decode_hex(hex, expected));
   assert(memcmp(actual, expected, len) == 0);
 }
-static const char *json_string(yyjson_val *value, const char *key) {
-  const char *out = yyjson_get_str(yyjson_obj_get(value, key));
+static const char* json_string(yyjson_val* value, const char* key) {
+  const char* out = yyjson_get_str(yyjson_obj_get(value, key));
   assert(out != NULL);
   return out;
 }
 
-static void test_url_contract(yyjson_val *fixture) {
-  yyjson_val *cases = yyjson_obj_get(fixture, "url_cases");
+static void test_url_contract(yyjson_val* fixture) {
+  yyjson_val* cases = yyjson_obj_get(fixture, "url_cases");
   size_t index, count;
-  yyjson_val *value;
+  yyjson_val* value;
   yyjson_arr_foreach(cases, index, count, value) {
     char url[1025];
     size_t len = 99u;
@@ -569,7 +558,7 @@ static void test_url_contract(yyjson_val *fixture) {
                                              text(json_string(value, "secret")),
                                              url, sizeof(url),
                                              &len) == H2_PAL_OK);
-    const char *expected = json_string(value, "url");
+    const char* expected = json_string(value, "url");
     assert(strcmp(url, expected) == 0 && len == strlen(expected));
     char exact[1025];
     assert(h2_gizclaw_ble_binding_format_url(text(json_string(value, "origin")),
@@ -586,10 +575,9 @@ static void test_url_contract(yyjson_val *fixture) {
                                              exact, strlen(expected),
                                              &len) == H2_PAL_ERR_TRUNCATED);
     assert(len == 0u);
-    for (size_t i = 0u; i < strlen(expected); ++i)
-      assert(exact[i] == 0);
+    for (size_t i = 0u; i < strlen(expected); ++i) assert(exact[i] == 0);
   }
-  const char *origins[] = {"http://ap.gizclaw.com",
+  const char* origins[] = {"http://ap.gizclaw.com",
                            "https://",
                            "https://ap.gizclaw.com/",
                            "https://u@ap.gizclaw.com",
@@ -608,7 +596,7 @@ static void test_url_contract(yyjson_val *fixture) {
                &len) == H2_PAL_ERR_INVALID_ARG);
     assert(out[0] == 0 && len == 0u);
   }
-  const char *secrets[] = {"gizclaw_sk_v1_", "test-secret",
+  const char* secrets[] = {"gizclaw_sk_v1_", "test-secret",
                            "gizclaw_sk_v1_foo/bar", "gizclaw_sk_v1_x?key=z",
                            "gizclaw_sk_v1_x y"};
   for (size_t i = 0u; i < sizeof(secrets) / sizeof(secrets[0]); ++i) {
@@ -619,7 +607,7 @@ static void test_url_contract(yyjson_val *fixture) {
                                              text(secrets[i]), out, sizeof(out),
                                              &len) == H2_PAL_ERR_INVALID_ARG);
   }
-  const char *names[] = {"\xc0\x80",
+  const char* names[] = {"\xc0\x80",
                          "\xed\xa0\x80",
                          "\xf4\x90\x80\x80",
                          "\xe5\xae",
@@ -640,9 +628,8 @@ static void test_url_contract(yyjson_val *fixture) {
              text("https://ap.gizclaw.com"), text(""), text(""),
              text("gizclaw_sk_v1_public_fixture_001"), out, sizeof(out),
              NULL) == H2_PAL_ERR_INVALID_ARG);
-  for (size_t i = 0u; i < sizeof(out); ++i)
-    assert(out[i] == 0);
-  yyjson_val *uuids = yyjson_obj_get(fixture, "uuid_att_hex");
+  for (size_t i = 0u; i < sizeof(out); ++i) assert(out[i] == 0);
+  yyjson_val* uuids = yyjson_obj_get(fixture, "uuid_att_hex");
   equals_hex(h2_gizclaw_ble_binding_service_uuid.data, 16u,
              json_string(uuids, "service"));
   equals_hex(h2_gizclaw_ble_binding_info_uuid.data, 16u,
@@ -653,12 +640,12 @@ static void test_url_contract(yyjson_val *fixture) {
              json_string(uuids, "credential"));
 }
 
-static void test_discovery_and_transfer(yyjson_val *fixture) {
+static void test_discovery_and_transfer(yyjson_val* fixture) {
   test_env_t env;
   fake_ble_t ble;
   setup(&env, true);
   ble_setup(&ble);
-  h2_gizclaw_ble_binding_t *binding = binding_open(&env, &ble);
+  h2_gizclaw_ble_binding_t* binding = binding_open(&env, &ble);
   assert(!binding_snapshot(binding).open && !binding_snapshot(binding).ready);
   assert(ble.registrations == 0u && h2_atomic_load(&env.starts) == 0u);
   assert(h2_gizclaw_ble_binding_start(binding) == H2_PAL_OK);
@@ -669,7 +656,7 @@ static void test_discovery_and_transfer(yyjson_val *fixture) {
   assert(read_value(&ble, 0u, 1u, 0u, bytes, sizeof(bytes), &len) == H2_PAL_OK);
   assert(len == 14u && bytes[1] == 0u && u16(bytes + 10u) == 0u);
   refresh(&env, false);
-  yyjson_val *transfer = yyjson_obj_get(fixture, "transfer");
+  yyjson_val* transfer = yyjson_obj_get(fixture, "transfer");
   assert(snapshot(&env).revision == 2u);
   assert(read_value(&ble, 0u, 1u, 0u, bytes, sizeof(bytes), &len) == H2_PAL_OK);
   equals_hex(bytes, len, json_string(transfer, "info_hex"));
@@ -689,7 +676,7 @@ static void test_discovery_and_transfer(yyjson_val *fixture) {
   assert(len < 23u - 1u);
   assert(read_value(&ble, 2u, 1u, 0u, bytes, sizeof(bytes), &len) ==
          H2_PAL_ERR_INVALID_STATE);
-  const char *url = json_string(transfer, "url");
+  const char* url = json_string(transfer, "url");
   char reconstructed[1025] = {0};
   size_t offset = 0u;
   for (; offset < strlen(url);) {
@@ -728,7 +715,7 @@ static void test_refresh_connection_and_boundaries(void) {
   fake_ble_t ble;
   setup(&env, true);
   ble_setup(&ble);
-  h2_gizclaw_ble_binding_t *binding = binding_open(&env, &ble);
+  h2_gizclaw_ble_binding_t* binding = binding_open(&env, &ble);
   assert(h2_gizclaw_ble_binding_start(binding) == H2_PAL_OK);
   refresh(&env, false);
   uint8_t bytes[514];
@@ -818,7 +805,7 @@ static void test_stale_failed_and_timeout(void) {
   fake_ble_t ble;
   setup(&env, true);
   ble_setup(&ble);
-  h2_gizclaw_ble_binding_t *binding = binding_open(&env, &ble);
+  h2_gizclaw_ble_binding_t* binding = binding_open(&env, &ble);
   assert(h2_gizclaw_ble_binding_start(binding) == H2_PAL_OK);
   refresh(&env, false);
   env.revoke_result = H2_PAL_ERR_IO;
@@ -856,7 +843,7 @@ static void test_exposure_backpressure(void) {
   fake_ble_t ble;
   setup(&env, true);
   ble_setup(&ble);
-  h2_gizclaw_ble_binding_t *binding = binding_open(&env, &ble);
+  h2_gizclaw_ble_binding_t* binding = binding_open(&env, &ble);
   assert(h2_gizclaw_ble_binding_start(binding) == H2_PAL_OK);
   uint8_t bytes[244];
   size_t len;
@@ -894,7 +881,7 @@ static void test_retryable_cleanup_and_reopen(void) {
   fake_ble_t ble;
   setup(&env, true);
   ble_setup(&ble);
-  h2_gizclaw_ble_binding_t *binding = binding_open(&env, &ble);
+  h2_gizclaw_ble_binding_t* binding = binding_open(&env, &ble);
   ble.fail_subscribe_at = 3u;
   assert(h2_gizclaw_ble_binding_start(binding) == H2_PAL_ERR_IO);
   assert(ble.subscriptions_created == ble.subscriptions_destroyed &&
@@ -969,7 +956,7 @@ static void test_reopen_preserves_exposure_deduplication(void) {
   setup(&env, true);
   ble_setup(&ble);
   refresh(&env, false);
-  h2_gizclaw_ble_binding_t *binding = binding_open(&env, &ble);
+  h2_gizclaw_ble_binding_t* binding = binding_open(&env, &ble);
   const uint64_t revision = snapshot(&env).revision;
   uint8_t bytes[244];
   size_t len;
@@ -1005,26 +992,25 @@ static void test_reopen_preserves_exposure_deduplication(void) {
   teardown(&env);
 }
 
-static void assert_info_state(fake_ble_t *ble, yyjson_val *states,
-                              const char *name) {
+static void assert_info_state(fake_ble_t* ble, yyjson_val* states,
+                              const char* name) {
   uint8_t bytes[244];
   size_t len;
   assert(read_value(ble, 0u, 1u, 0u, bytes, sizeof(bytes), &len) == H2_PAL_OK);
-  yyjson_val *state = yyjson_obj_get(states, name);
+  yyjson_val* state = yyjson_obj_get(states, name);
   assert(state != NULL);
   equals_hex(bytes, len, json_string(state, "info_hex"));
 }
 
-static void test_quota_wire_and_recovery(yyjson_val *fixture) {
-  yyjson_val *states = yyjson_obj_get(fixture, "info_states");
+static void test_quota_wire_and_recovery(yyjson_val* fixture) {
+  yyjson_val* states = yyjson_obj_get(fixture, "info_states");
   for (unsigned old_key = 0u; old_key < 2u; ++old_key) {
     test_env_t env;
     fake_ble_t ble;
     setup(&env, true);
     ble_setup(&ble);
-    if (old_key != 0u)
-      refresh(&env, false);
-    h2_gizclaw_ble_binding_t *binding = binding_open(&env, &ble);
+    if (old_key != 0u) refresh(&env, false);
+    h2_gizclaw_ble_binding_t* binding = binding_open(&env, &ble);
     assert(h2_gizclaw_ble_binding_start(binding) == H2_PAL_OK);
     uint8_t bytes[244];
     size_t len;
@@ -1053,9 +1039,9 @@ static void test_quota_wire_and_recovery(yyjson_val *fixture) {
     h2_atomic_store(&env.reply, false);
     assert(h2_gizclaw_api_key_state_request_refresh(env.state, false) ==
            H2_PAL_OK);
-    assert_info_state(&ble, states,
-                      old_key != 0u ? "busy_retry_retained_key"
-                                    : "busy_retry_no_key");
+    assert_info_state(
+        &ble, states,
+        old_key != 0u ? "busy_retry_retained_key" : "busy_retry_no_key");
     h2_gizclaw_ble_binding_snapshot_t retry = binding_snapshot(binding);
     assert(retry.info_flags == H2_GIZCLAW_BLE_BINDING_BUSY && !retry.ready &&
            retry.last_error == H2_PAL_OK && !retry.has_rpc_error &&
@@ -1064,9 +1050,9 @@ static void test_quota_wire_and_recovery(yyjson_val *fixture) {
            H2_PAL_ERR_INVALID_STATE);
     h2_atomic_store(&env.reply, true);
     finish(&env);
-    assert_info_state(&ble, states,
-                      old_key != 0u ? "recovered_retained_key"
-                                    : "recovered_no_key");
+    assert_info_state(
+        &ble, states,
+        old_key != 0u ? "recovered_retained_key" : "recovered_no_key");
     assert(binding_snapshot(binding).ready &&
            !binding_snapshot(binding).has_rpc_error);
     assert(h2_gizclaw_api_key_state_close(env.state) == H2_PAL_OK);
@@ -1090,7 +1076,7 @@ static void test_quota_wire_and_recovery(yyjson_val *fixture) {
   fake_ble_t ble;
   setup(&env, true);
   ble_setup(&ble);
-  h2_gizclaw_ble_binding_t *binding = binding_open(&env, &ble);
+  h2_gizclaw_ble_binding_t* binding = binding_open(&env, &ble);
   assert(h2_gizclaw_ble_binding_start(binding) == H2_PAL_OK);
   env.create_rpc_error = true;
   env.create_rpc_code = H2_GIZCLAW_RPC_ERROR_PERMISSION_DENIED;
@@ -1119,8 +1105,8 @@ typedef struct concurrent_reader {
   h2_atomic_uint_t iterations, closed_reads;
 } concurrent_reader_t;
 
-static void read_concurrently(void *user) {
-  concurrent_reader_t *reader = user;
+static void read_concurrently(void* user) {
+  concurrent_reader_t* reader = user;
   const h2_pal_ble_gatt_access_t access = {.conn_handle = 1u};
   uint8_t bytes[244];
   const uint8_t request_bytes[13] = {1u, 2u, 0u, 0u, 0u, 0u, 0u,
@@ -1151,7 +1137,7 @@ static void test_stop_during_reads(void) {
   setup(&env, true);
   ble_setup(&ble);
   refresh(&env, false);
-  h2_gizclaw_ble_binding_t *binding = binding_open(&env, &ble);
+  h2_gizclaw_ble_binding_t* binding = binding_open(&env, &ble);
   assert(h2_gizclaw_ble_binding_start(binding) == H2_PAL_OK);
   concurrent_reader_t reader = {.info = ble.service->characteristics[0],
                                 .request = ble.service->characteristics[1],
@@ -1159,7 +1145,7 @@ static void test_stop_during_reads(void) {
   assert(h2_atomic_bool_init(&reader.finish, false) == H2_ATOMIC_OK);
   assert(h2_atomic_uint_init(&reader.iterations, 0u) == H2_ATOMIC_OK);
   assert(h2_atomic_uint_init(&reader.closed_reads, 0u) == H2_ATOMIC_OK);
-  h2_pal_task_t *task = NULL;
+  h2_pal_task_t* task = NULL;
   h2_pal_task_options_t options = {.name = "binding-read-test",
                                    .min_stack_size = 65536u};
   assert(h2_pal_task_start(h2_desktop_platform_task_api(), &options,
@@ -1186,30 +1172,34 @@ static void test_copied_advertising_name(void) {
   setup(&env, true);
   ble_setup(&ble);
   char name[] = "h106-tiga-A1B2C3";
-  h2_gizclaw_ble_binding_t *binding = binding_open_named(&env, &ble, name);
+  h2_gizclaw_ble_binding_t* binding = binding_open_named(&env, &ble, name);
   memset(name, 'X', sizeof(name) - 1u);
   assert(h2_gizclaw_ble_binding_start(binding) == H2_PAL_OK);
   assert(strcmp(ble.local_name, "h106-tiga-A1B2C3") == 0);
   assert(h2_gizclaw_ble_binding_close(&binding) == H2_PAL_OK);
   h2_gizclaw_ble_binding_config_t config = {
-      .api_key_state = env.state, .ble = &ble.api, .system_event = &ble.events,
+      .api_key_state = env.state,
+      .ble = &ble.api,
+      .system_event = &ble.events,
       .mem = h2_desktop_platform_default_allocator(),
       .sync = h2_desktop_platform_sync_api(),
       .server_origin = text("https://ap.gizclaw.com"),
       .local_name = text("invalid\nname")};
-  assert(h2_gizclaw_ble_binding_open(&config, &binding) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_ble_binding_open(&config, &binding) ==
+         H2_PAL_ERR_INVALID_ARG);
   assert(binding == NULL);
   config.local_name = text("012345678901234567890123456789");
-  assert(h2_gizclaw_ble_binding_open(&config, &binding) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_ble_binding_open(&config, &binding) ==
+         H2_PAL_ERR_INVALID_ARG);
   assert(binding == NULL);
   teardown(&env);
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   assert(argc == 2);
-  yyjson_doc *fixture = yyjson_read_file(argv[1], 0u, NULL, NULL);
+  yyjson_doc* fixture = yyjson_read_file(argv[1], 0u, NULL, NULL);
   assert(fixture != NULL);
-  yyjson_val *root = yyjson_doc_get_root(fixture);
+  yyjson_val* root = yyjson_doc_get_root(fixture);
   test_url_contract(root);
   test_discovery_and_transfer(root);
   test_refresh_connection_and_boundaries();

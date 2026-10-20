@@ -11,23 +11,22 @@
 #include <string.h>
 
 static _Atomic int live_allocations;
-static void *allocate(void *u, size_t n) {
+static void* allocate(void* u, size_t n) {
   (void)u;
-  void *p = malloc(n);
+  void* p = malloc(n);
   if (p) {
     memset(p, 0xa5, n);
     ++live_allocations;
   }
   return p;
 }
-static void *resize(void *u, void *p, size_t n) {
+static void* resize(void* u, void* p, size_t n) {
   (void)u;
-  void *v = realloc(p, n);
-  if (!p && v)
-    ++live_allocations;
+  void* v = realloc(p, n);
+  if (!p && v) ++live_allocations;
   return v;
 }
-static void release(void *u, void *p) {
+static void release(void* u, void* p) {
   (void)u;
   if (p) {
     --live_allocations;
@@ -36,21 +35,19 @@ static void release(void *u, void *p) {
 }
 static const h2_pal_mem_vtable_t memory_vtable = {allocate, resize, release};
 static const h2_pal_mem_api_t memory = {.vtable = &memory_vtable};
-static const h2_pal_task_api_t *base_task;
-static h2_pal_task_t *rpc_task;
+static const h2_pal_task_api_t* base_task;
+static h2_pal_task_t* rpc_task;
 static int fail_join;
 static unsigned device_starts;
-static int task_start(void *u, const h2_pal_task_options_t *o,
-                      h2_pal_task_entry_t e, void *c, h2_pal_task_t **out) {
+static int task_start(void* u, const h2_pal_task_options_t* o,
+                      h2_pal_task_entry_t e, void* c, h2_pal_task_t** out) {
   (void)u;
   int rc = h2_pal_task_start(base_task, o, e, c, out);
-  if (!rc && !strcmp(o->name, "$gizclaw/device"))
-    ++device_starts;
-  if (!rc && !strcmp(o->name, "$gizclaw/local"))
-    rpc_task = *out;
+  if (!rc && !strcmp(o->name, "$gizclaw/device")) ++device_starts;
+  if (!rc && !strcmp(o->name, "$gizclaw/local")) rpc_task = *out;
   return rc;
 }
-static int task_join(void *u, h2_pal_task_t *t) {
+static int task_join(void* u, h2_pal_task_t* t) {
   (void)u;
   if (t == rpc_task && fail_join) {
     fail_join = 0;
@@ -67,8 +64,8 @@ typedef struct fixture {
       error;
   pthread_t invoke_thread, completion_thread;
 } fixture_t;
-static int speaker_read(void *u, h2_gizclaw_mhs_read_t *out) {
-  fixture_t *f = u;
+static int speaker_read(void* u, h2_gizclaw_mhs_read_t* out) {
+  fixture_t* f = u;
   ++f->reads;
   out->speaker =
       (gizclaw_rpc_v1_SpeakerHwdReadResponse){.has_volume_percent = true,
@@ -77,83 +74,80 @@ static int speaker_read(void *u, h2_gizclaw_mhs_read_t *out) {
                                               .muted = f->muted};
   return H2_PAL_OK;
 }
-static int speaker_write(void *u, const h2_gizclaw_mhs_write_t *in,
-                         h2_gizclaw_mhs_read_t *out) {
-  fixture_t *f = u;
+static int speaker_write(void* u, const h2_gizclaw_mhs_write_t* in,
+                         h2_gizclaw_mhs_read_t* out) {
+  fixture_t* f = u;
   ++f->writes;
-  if (in->speaker.has_volume_percent)
-    f->volume = in->speaker.volume_percent;
-  if (in->speaker.has_muted)
-    f->muted = in->speaker.muted;
+  if (in->speaker.has_volume_percent) f->volume = in->speaker.volume_percent;
+  if (in->speaker.has_muted) f->muted = in->speaker.muted;
   return speaker_read(u, out);
 }
-static int wifi_read(void *u, h2_gizclaw_mhs_read_t *out) {
+static int wifi_read(void* u, h2_gizclaw_mhs_read_t* out) {
   (void)u;
   out->wifi = (gizclaw_rpc_v1_WifiHwdReadResponse){.has_connected = true,
                                                    .connected = false};
   return H2_PAL_OK;
 }
-static void completed(void *u, int rc) {
-  fixture_t *f = u;
+static void completed(void* u, int rc) {
+  fixture_t* f = u;
   f->completion_thread = pthread_self();
   atomic_store(&f->completion_result, rc);
   ++f->completions;
 }
-static int product_find(void *u, h2_gizclaw_tool_t tool,
+static int product_find(void* u, h2_gizclaw_tool_t tool,
                         h2_gizclaw_rpc_bytes_t in,
-                        h2_gizclaw_rpc_provider_response_t *out) {
+                        h2_gizclaw_rpc_provider_response_t* out) {
   (void)in;
   assert(tool == H2_GIZCLAW_TOOL_DEVICE_FIND);
-  fixture_t *f = u;
+  fixture_t* f = u;
   f->invoke_thread = pthread_self();
   atomic_store(&f->entered, 1);
   while (atomic_load(&f->gate))
     assert(h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u) ==
            H2_PAL_OK);
-  if (atomic_load(&f->error))
-    return -1234;
+  if (atomic_load(&f->error)) return -1234;
   out->on_complete = completed;
   out->complete_user = f;
   return H2_PAL_OK;
 }
 typedef struct bytes {
-  const uint8_t *data;
+  const uint8_t* data;
   size_t size;
 } bytes_t;
-static bool put_bytes(pb_ostream_t *s, const pb_field_t *f, void *const *u) {
-  const bytes_t *b = *u;
+static bool put_bytes(pb_ostream_t* s, const pb_field_t* f, void* const* u) {
+  const bytes_t* b = *u;
   return pb_encode_tag_for_field(s, f) && pb_encode_string(s, b->data, b->size);
 }
-static bool get_bytes(pb_istream_t *s, const pb_field_t *f, void **u) {
+static bool get_bytes(pb_istream_t* s, const pb_field_t* f, void** u) {
   (void)f;
-  bytes_t *b = *u;
+  bytes_t* b = *u;
   b->data = s->state;
   b->size = s->bytes_left;
   return pb_read(s, NULL, s->bytes_left);
 }
-static size_t encode(uint8_t *out, size_t capacity, const pb_msgdesc_t *desc,
-                     const void *value) {
+static size_t encode(uint8_t* out, size_t capacity, const pb_msgdesc_t* desc,
+                     const void* value) {
   pb_ostream_t stream = pb_ostream_from_buffer(out, capacity);
   assert(pb_encode(&stream, desc, value));
   return stream.bytes_written;
 }
-static h2_gizclaw_local_call_t *submit(h2_gizclaw_service_t *d, int method,
-                                        const uint8_t *p, size_t n) {
-  h2_gizclaw_local_call_t *c = NULL;
+static h2_gizclaw_local_call_t* submit(h2_gizclaw_service_t* d, int method,
+                                       const uint8_t* p, size_t n) {
+  h2_gizclaw_local_call_t* c = NULL;
   assert(h2_gizclaw_local_submit(d, method, (h2_gizclaw_rpc_bytes_t){p, n},
-                                  5000u, &c) == H2_PAL_OK);
+                                 5000u, &c) == H2_PAL_OK);
   return c;
 }
-static h2_gizclaw_local_result_t wait_call(h2_gizclaw_local_call_t *c) {
+static h2_gizclaw_local_result_t wait_call(h2_gizclaw_local_call_t* c) {
   h2_gizclaw_local_result_t view;
   assert(h2_gizclaw_local_call_wait(c, 5000u, &view) == H2_PAL_OK);
   return view;
 }
-static void done(h2_gizclaw_local_call_t **c) {
+static void done(h2_gizclaw_local_call_t** c) {
   assert(h2_gizclaw_local_call_complete(*c, H2_PAL_OK) == H2_PAL_OK);
   assert(h2_gizclaw_local_call_release(c) == H2_PAL_OK && *c == NULL);
 }
-static void wait_counter(_Atomic int *value, int target) {
+static void wait_counter(_Atomic int* value, int target) {
   for (unsigned i = 0; i < 5000 && atomic_load(value) < target; ++i)
     assert(h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u) ==
            H2_PAL_OK);
@@ -180,17 +174,20 @@ int main(void) {
                                       .tool_handler_count = 1,
                                       .mhs_devices = devices,
                                       .mhs_device_count = 2};
-  const h2_gizclaw_service_config_t setup = {.client_config = &config,
-      .task = &tasks, .sync = h2_desktop_platform_sync_api(),
-      .queue = h2_desktop_platform_queue_api(), .operation_capacity = 4,
+  const h2_gizclaw_service_config_t setup = {
+      .client_config = &config,
+      .task = &tasks,
+      .sync = h2_desktop_platform_sync_api(),
+      .queue = h2_desktop_platform_queue_api(),
+      .operation_capacity = 4,
       .client_poll_timeout_ms = 1};
-  h2_gizclaw_service_t *d = NULL;
+  h2_gizclaw_service_t* d = NULL;
   assert(h2_gizclaw_service_init(&setup, &d) == H2_PAL_OK && d);
   assert(h2_gizclaw_local_start(d) == H2_PAL_OK);
   assert(h2_gizclaw_local_retain(d) == H2_PAL_OK);
-  h2_gizclaw_service_t *borrow = d;
+  h2_gizclaw_service_t* borrow = d;
   assert(h2_gizclaw_local_release(&borrow) == H2_PAL_OK && !borrow);
-  h2_gizclaw_local_call_t *c =
+  h2_gizclaw_local_call_t* c =
       submit(d, H2_GIZCLAW_RPC_CLIENT_TOOL_V0_LIST, NULL, 0);
   h2_gizclaw_local_result_t view = wait_call(c);
   assert(view.result == H2_PAL_OK && !view.has_error);
@@ -211,9 +208,9 @@ int main(void) {
                                                  .volume_percent = 0,
                                                  .has_muted = true,
                                                  .muted = false};
-  bytes_t payload = {inner, encode(inner, sizeof(inner),
-                                   gizclaw_rpc_v1_SpeakerHwdWriteRequest_fields,
-                                   &write)};
+  bytes_t payload = {
+      inner, encode(inner, sizeof(inner),
+                    gizclaw_rpc_v1_SpeakerHwdWriteRequest_fields, &write)};
   gizclaw_rpc_v1_ClientMhsV0WriteRequest mhs = {
       .hwd = gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_SPEAKER,
       .payload = {.funcs.encode = put_bytes, .arg = &payload}};
@@ -247,7 +244,7 @@ int main(void) {
                         gizclaw_rpc_v1_SpeakerHwdWriteRequest_fields, &write);
   length = encode(request, sizeof(request),
                   gizclaw_rpc_v1_ClientMhsV0WriteRequest_fields, &mhs);
-  h2_gizclaw_local_call_t *second =
+  h2_gizclaw_local_call_t* second =
       submit(d, H2_GIZCLAW_RPC_CLIENT_MHS_V0_WRITE, request, length);
   h2_gizclaw_local_result_t second_view = wait_call(second);
   assert(second_view.result == H2_PAL_OK && f.volume == 33 &&
@@ -301,7 +298,7 @@ int main(void) {
   atomic_store(&f.gate, 1);
   c = submit(d, H2_GIZCLAW_RPC_CLIENT_TOOL_V0_INVOKE, request, length);
   wait_counter(&f.entered, 1);
-  h2_gizclaw_local_call_t *queued =
+  h2_gizclaw_local_call_t* queued =
       submit(d, H2_GIZCLAW_RPC_CLIENT_MHS_V0_READ, request, 0);
   assert(h2_gizclaw_local_call_cancel(queued) == H2_PAL_OK);
   assert(h2_gizclaw_local_call_release(&queued) == H2_PAL_OK);
@@ -323,13 +320,13 @@ int main(void) {
   assert(view.result == -1234 && view.has_error);
   done(&c);
   atomic_store(&f.error, 0);
-  h2_gizclaw_local_call_t *held[4];
+  h2_gizclaw_local_call_t* held[4];
   for (size_t i = 0; i < 4; ++i) {
     held[i] = submit(d, H2_GIZCLAW_RPC_CLIENT_TOOL_V0_LIST, NULL, 0);
     (void)wait_call(held[i]);
   }
   assert(h2_gizclaw_local_submit(d, 136, (h2_gizclaw_rpc_bytes_t){0}, 1000,
-                                  &c) == H2_PAL_ERR_BUSY &&
+                                 &c) == H2_PAL_ERR_BUSY &&
          !c);
   assert(h2_gizclaw_service_stop(d) == H2_PAL_ERR_BUSY);
   assert(h2_gizclaw_service_deinit(d) != H2_PAL_OK);

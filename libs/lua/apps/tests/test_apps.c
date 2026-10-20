@@ -10,27 +10,27 @@
 #include <stdlib.h>
 #include <string.h>
 
-static void *allocate(void *user, size_t size) {
+static void* allocate(void* user, size_t size) {
   (void)user;
   assert(size <= 128u * 1024u);
   return malloc(size);
 }
-static void *resize(void *user, void *ptr, size_t size) {
+static void* resize(void* user, void* ptr, size_t size) {
   (void)user;
   assert(size <= 128u * 1024u);
   return realloc(ptr, size);
 }
-static void release(void *user, void *ptr) {
+static void release(void* user, void* ptr) {
   (void)user;
   free(ptr);
 }
 static const h2_pal_mem_vtable_t mem_vtable = {allocate, resize, release};
 static const h2_pal_mem_api_t allocator = {.vtable = &mem_vtable};
-static void *storage_allocate(void *user, size_t size) {
+static void* storage_allocate(void* user, size_t size) {
   (void)user;
   return malloc(size);
 }
-static void *storage_resize(void *user, void *ptr, size_t size) {
+static void* storage_resize(void* user, void* ptr, size_t size) {
   (void)user;
   return realloc(ptr, size);
 }
@@ -40,13 +40,13 @@ static const h2_pal_mem_api_t storage = {.vtable = &storage_vtable};
 #define URI(s) ((h2_lua_app_source_t){s, sizeof(s) - 1u})
 static const unsigned char source[] = "assert(args.mode == \"single\")\n";
 typedef struct http {
-  const unsigned char *archive;
+  const unsigned char* archive;
   size_t size, chunk, chunks, cancel_after;
-  const char *location;
+  const char* location;
 } http_t;
-static int request(void *user, const h2_pal_http_request_t *r,
-                   h2_pal_http_response_t *out) {
-  http_t *h = user;
+static int request(void* user, const h2_pal_http_request_t* r,
+                   h2_pal_http_response_t* out) {
+  http_t* h = user;
   assert(r->read_cb && r->chunk_buf && r->chunk_buf_cap <= 4096 &&
          !r->response_buf && !r->response_allocator);
   assert(r->retry_count == 0);
@@ -55,44 +55,39 @@ static int request(void *user, const h2_pal_http_request_t *r,
   if (h->location) {
     int rc = h2_pal_http_deliver_response_header(r, "Location", 8, h->location,
                                                  strlen(h->location));
-    if (rc != H2_PAL_OK)
-      return rc;
+    if (rc != H2_PAL_OK) return rc;
   }
   for (size_t offset = 0; offset < h->size;) {
-    if (h2_pal_http_request_is_canceled(r))
-      return H2_PAL_ERR_CLOSED;
+    if (h2_pal_http_request_is_canceled(r)) return H2_PAL_ERR_CLOSED;
     size_t take = h->size - offset;
-    if (take > h->chunk)
-      take = h->chunk;
+    if (take > h->chunk) take = h->chunk;
     ++h->chunks;
     int rc = r->read_cb(r->user, r, h->archive + offset, take, offset + take,
                         h->size - offset - take);
-    if (rc != H2_PAL_OK)
-      return rc;
+    if (rc != H2_PAL_OK) return rc;
     offset += take;
   }
   int eof_rc = r->read_cb(r->user, r, NULL, 0, h->size, 0);
-  if (eof_rc != H2_PAL_OK)
-    return eof_rc;
+  if (eof_rc != H2_PAL_OK) return eof_rc;
   out->body_len = h->size;
   return H2_PAL_OK;
 }
 static const h2_pal_http_vtable_t http_vtable = {.request = request};
-static int cancelled(void *user) {
-  http_t *h = user;
+static int cancelled(void* user) {
+  http_t* h = user;
   return h->cancel_after && h->chunks >= h->cancel_after;
 }
-static void put(const h2_pal_fs_api_t *fs, const char *path, const void *bytes,
+static void put(const h2_pal_fs_api_t* fs, const char* path, const void* bytes,
                 size_t size) {
-  h2_pal_fs_file_t *f = NULL;
+  h2_pal_fs_file_t* f = NULL;
   size_t written = 0;
   assert(h2_pal_fs_open(fs, path, H2_PAL_FS_OPEN_WRITE_TRUNCATE, &f) == 0);
   assert(h2_pal_fs_write(fs, f, bytes, size, &written) == 0 && written == size);
   assert(h2_pal_fs_close(fs, f) == 0);
 }
-static void expect_file(const h2_pal_fs_api_t *fs, const char *path,
-                        const void *bytes, size_t size) {
-  h2_pal_fs_file_t *f = NULL;
+static void expect_file(const h2_pal_fs_api_t* fs, const char* path,
+                        const void* bytes, size_t size) {
+  h2_pal_fs_file_t* f = NULL;
   size_t got = 0;
   unsigned char buffer[128];
   assert(size <= sizeof(buffer));
@@ -101,7 +96,7 @@ static void expect_file(const h2_pal_fs_api_t *fs, const char *path,
          got == size && !memcmp(bytes, buffer, size));
   assert(h2_pal_fs_close(fs, f) == 0);
 }
-static void check_version(h2_lua_apps_t *apps, const char *version) {
+static void check_version(h2_lua_apps_t* apps, const char* version) {
   h2_lua_app_info_t info[2];
   size_t count = 0;
   assert(h2_lua_apps_list(apps, info, 2, &count) == 0 && count == 1);
@@ -111,47 +106,45 @@ static void check_version(h2_lua_apps_t *apps, const char *version) {
          !strcmp(found.entry, info[0].entry));
 }
 
-static const h2_pal_fs_vtable_t *base_fs;
-static void normalize(const char *input, char out[H2_LUA_APP_PATH_MAX]) {
+static const h2_pal_fs_vtable_t* base_fs;
+static void normalize(const char* input, char out[H2_LUA_APP_PATH_MAX]) {
   size_t at = 0;
   for (size_t i = 0;; ++i) {
     if (!input[i] || input[i] == '/')
-      while (at && out[at - 1u] == '.')
-        --at;
+      while (at && out[at - 1u] == '.') --at;
     assert(at < H2_LUA_APP_PATH_MAX);
     out[at++] = input[i];
-    if (!input[i])
-      break;
+    if (!input[i]) break;
   }
 }
-static int alias_mkdir(void *user, const char *path) {
+static int alias_mkdir(void* user, const char* path) {
   char normalized[H2_LUA_APP_PATH_MAX];
   normalize(path, normalized);
   return base_fs->mkdir(user, normalized);
 }
-static int alias_open(void *user, const char *path, h2_pal_fs_open_mode_t mode,
-                       h2_pal_fs_file_t **out) {
+static int alias_open(void* user, const char* path, h2_pal_fs_open_mode_t mode,
+                      h2_pal_fs_file_t** out) {
   char normalized[H2_LUA_APP_PATH_MAX];
   normalize(path, normalized);
   return base_fs->open(user, normalized, mode, out);
 }
-static int alias_stat(void *user, const char *path, h2_pal_fs_stat_t *out) {
+static int alias_stat(void* user, const char* path, h2_pal_fs_stat_t* out) {
   char normalized[H2_LUA_APP_PATH_MAX];
   normalize(path, normalized);
   return base_fs->stat(user, normalized, out);
 }
-static int alias_remove(void *user, const char *path) {
+static int alias_remove(void* user, const char* path) {
   char normalized[H2_LUA_APP_PATH_MAX];
   normalize(path, normalized);
   return base_fs->remove(user, normalized);
 }
-static int alias_rename(void *user, const char *from, const char *to) {
+static int alias_rename(void* user, const char* from, const char* to) {
   char normalized_from[H2_LUA_APP_PATH_MAX], normalized_to[H2_LUA_APP_PATH_MAX];
   normalize(from, normalized_from);
   normalize(to, normalized_to);
   return base_fs->rename(user, normalized_from, normalized_to);
 }
-static void check_directory_alias(const h2_pal_sync_api_t *sync) {
+static void check_directory_alias(const h2_pal_sync_api_t* sync) {
   h2_app_test_fs_t fs;
   assert(h2_app_test_fs_init(&fs, &storage) == 0);
   base_fs = fs.api.vtable;
@@ -166,23 +159,25 @@ static void check_directory_alias(const h2_pal_sync_api_t *sync) {
                                  .fs = &fs.api,
                                  .sync = sync,
                                  .install_root = "/apps"};
-  h2_lua_apps_t *apps = NULL;
+  h2_lua_apps_t* apps = NULL;
   h2_lua_app_info_t info, original;
   assert(h2_lua_apps_create(&config, &apps) == 0);
-  http_t h = {.archive = fixture_valid,
-              .size = sizeof(fixture_valid), .chunk = 7};
+  http_t h = {
+      .archive = fixture_valid, .size = sizeof(fixture_valid), .chunk = 7};
   h2_pal_http_api_t http = {.user = &h, .vtable = &http_vtable};
   for (unsigned generation = 0; generation < 2u; ++generation) {
-    h = (http_t){.archive = generation ? fixture_update : fixture_valid,
-                  .size = generation ? sizeof(fixture_update)
-                                     : sizeof(fixture_valid), .chunk = 7};
+    h = (http_t){
+        .archive = generation ? fixture_update : fixture_valid,
+        .size = generation ? sizeof(fixture_update) : sizeof(fixture_valid),
+        .chunk = 7};
     assert(h2_lua_apps_install(apps, &http, URI("https://example.test/app"),
                                NULL, 1000, NULL, NULL, &original) == 0);
     h = (http_t){.archive = fixture_alias_id,
-                  .size = sizeof(fixture_alias_id), .chunk = 7};
+                 .size = sizeof(fixture_alias_id),
+                 .chunk = 7};
     assert(h2_lua_apps_install(apps, &http, URI("https://example.test/app"),
-                               NULL, 1000, NULL, NULL, &info) ==
-           H2_PAL_ERR_FORMAT);
+                               NULL, 1000, NULL, NULL,
+                               &info) == H2_PAL_ERR_FORMAT);
     check_version(apps, generation ? "2.0.0" : "1.0.0");
     expect_file(&fs.api, original.entry, source, sizeof(source) - 1u);
   }
@@ -195,12 +190,12 @@ static void check_directory_alias(const h2_pal_sync_api_t *sync) {
 }
 
 static unsigned outside_directory_calls;
-static int scoped_directory(const char *path) {
+static int scoped_directory(const char* path) {
   static const char root[] = "/data/gizclaw";
   return strncmp(path, root, sizeof(root) - 1u) == 0 &&
          (path[sizeof(root) - 1u] == '\0' || path[sizeof(root) - 1u] == '/');
 }
-static int scoped_stat(void *user, const char *path, h2_pal_fs_stat_t *out) {
+static int scoped_stat(void* user, const char* path, h2_pal_fs_stat_t* out) {
   if (!scoped_directory(path)) {
     ++outside_directory_calls;
     memset(out, 0, sizeof(*out));
@@ -208,14 +203,14 @@ static int scoped_stat(void *user, const char *path, h2_pal_fs_stat_t *out) {
   }
   return base_fs->stat(user, path, out);
 }
-static int scoped_mkdir(void *user, const char *path) {
+static int scoped_mkdir(void* user, const char* path) {
   if (!scoped_directory(path)) {
     ++outside_directory_calls;
     return H2_PAL_ERR_NOT_FOUND;
   }
   return base_fs->mkdir(user, path);
 }
-static void check_scoped_directory(const h2_pal_sync_api_t *sync) {
+static void check_scoped_directory(const h2_pal_sync_api_t* sync) {
   h2_app_test_fs_t fs;
   assert(h2_app_test_fs_init(&fs, &storage) == H2_PAL_OK);
   assert(h2_pal_fs_mkdir(&fs.api, "/data/gizclaw") == H2_PAL_OK);
@@ -225,15 +220,19 @@ static void check_scoped_directory(const h2_pal_sync_api_t *sync) {
   scoped.mkdir = scoped_mkdir;
   fs.api.vtable = &scoped;
   outside_directory_calls = 0u;
-  h2_lua_apps_config_t config = {.allocator = &allocator, .fs = &fs.api,
-      .sync = sync, .install_root = "/data/gizclaw/nested/lua_apps"};
-  h2_lua_apps_t *apps = NULL;
+  h2_lua_apps_config_t config = {
+      .allocator = &allocator,
+      .fs = &fs.api,
+      .sync = sync,
+      .install_root = "/data/gizclaw/nested/lua_apps"};
+  h2_lua_apps_t* apps = NULL;
   assert(h2_lua_apps_create(&config, &apps) == H2_PAL_OK);
-  http_t h = {.archive = fixture_valid, .size = sizeof(fixture_valid), .chunk = 7};
+  http_t h = {
+      .archive = fixture_valid, .size = sizeof(fixture_valid), .chunk = 7};
   h2_pal_http_api_t http = {.user = &h, .vtable = &http_vtable};
   h2_lua_app_info_t info;
-  assert(h2_lua_apps_install(apps, &http, URI("https://example.test/app"),
-      NULL, 1000, NULL, NULL, &info) == H2_PAL_OK);
+  assert(h2_lua_apps_install(apps, &http, URI("https://example.test/app"), NULL,
+                             1000, NULL, NULL, &info) == H2_PAL_OK);
   assert(outside_directory_calls == 0u);
   expect_file(&fs.api, info.entry, source, sizeof(source) - 1u);
   assert(h2_lua_apps_destroy(apps) == H2_PAL_OK);
@@ -242,23 +241,23 @@ static void check_scoped_directory(const h2_pal_sync_api_t *sync) {
   put(&fs.api, "/data/gizclaw/file", "x", 1u);
   config.install_root = "/data/gizclaw/file/lua_apps";
   assert(h2_lua_apps_create(&config, &apps) == H2_PAL_OK);
-  assert(h2_lua_apps_install(apps, &http, URI("https://example.test/app"),
-      NULL, 1000, NULL, NULL, &info) == H2_PAL_ERR_FORMAT);
+  assert(h2_lua_apps_install(apps, &http, URI("https://example.test/app"), NULL,
+                             1000, NULL, NULL, &info) == H2_PAL_ERR_FORMAT);
   assert(outside_directory_calls == 0u);
   assert(h2_lua_apps_destroy(apps) == H2_PAL_OK);
 
   config.install_root = "/data/gizclaw/io/nested/lua_apps";
   assert(h2_lua_apps_create(&config, &apps) == H2_PAL_OK);
   fs.stat = (h2_app_test_fault_t){.result = H2_PAL_ERR_IO, .remaining = 1};
-  assert(h2_lua_apps_install(apps, &http, URI("https://example.test/app"),
-      NULL, 1000, NULL, NULL, &info) == H2_PAL_ERR_IO);
+  assert(h2_lua_apps_install(apps, &http, URI("https://example.test/app"), NULL,
+                             1000, NULL, NULL, &info) == H2_PAL_ERR_IO);
   assert(outside_directory_calls == 0u);
   assert(h2_lua_apps_destroy(apps) == H2_PAL_OK);
   assert(fs.active_handles == 0u && h2_app_test_fs_deinit(&fs) == H2_PAL_OK);
 }
 int main(void) {
-  const h2_pal_mem_api_t *mem = &allocator;
-  const h2_pal_sync_api_t *sync = h2_desktop_platform_sync_api();
+  const h2_pal_mem_api_t* mem = &allocator;
+  const h2_pal_sync_api_t* sync = h2_desktop_platform_sync_api();
   check_directory_alias(sync);
   check_scoped_directory(sync);
   h2_app_test_fs_t fs;
@@ -269,13 +268,13 @@ int main(void) {
   put(&fs.api, "/preinstalled/index.json", fixture_preinstalled_index,
       sizeof(fixture_preinstalled_index));
   put(&fs.api, "/user/demo/.kv", "save", 4);
-  h2_lua_apps_config_t config = {.allocator = mem,
-                                 .fs = &fs.api,
-                                 .sync = sync,
-                                 .preinstalled_index =
-                                     "/preinstalled/index.json",
-                                 .install_root = "/apps"};
-  h2_lua_apps_t *apps = NULL;
+  h2_lua_apps_config_t config = {
+      .allocator = mem,
+      .fs = &fs.api,
+      .sync = sync,
+      .preinstalled_index = "/preinstalled/index.json",
+      .install_root = "/apps"};
+  h2_lua_apps_t* apps = NULL;
   assert(h2_lua_apps_create(&config, &apps) == 0 &&
          h2_lua_apps_can_install(apps));
   check_version(apps, "0.1.0");
@@ -300,7 +299,7 @@ int main(void) {
   assert(h2_lua_apps_create(&config, &apps) == 0);
   check_version(apps, "1.0.0");
   struct bad {
-    const unsigned char *bytes;
+    const unsigned char* bytes;
     size_t size;
   } bad[] = {
 #define BAD(name) {fixture_##name, sizeof(fixture_##name)}
@@ -315,8 +314,7 @@ int main(void) {
     h = (http_t){.archive = bad[i].bytes, .size = bad[i].size, .chunk = 7};
     int rc = h2_lua_apps_install(apps, &http, URI("https://example.test/app"),
                                  NULL, 1000, cancelled, &h, &info);
-    if (rc == 0)
-      fprintf(stderr, "accepted bad archive %zu\n", i);
+    if (rc == 0) fprintf(stderr, "accepted bad archive %zu\n", i);
     assert(rc != 0 && info.app_id[0] == 0);
     check_version(apps, "1.0.0");
     expect_file(&fs.api, "/user/demo/.kv", "save", 4);
@@ -388,7 +386,7 @@ int main(void) {
   assert(h2_lua_apps_install(apps, &http, URI("https://example.test/app"), NULL,
                              1000, NULL, NULL, &info) != 0);
   h.location = NULL;
-  h2_lua_app_install_t *install = NULL;
+  h2_lua_app_install_t* install = NULL;
   assert(h2_lua_app_install_begin(apps, sizeof(fixture_valid),
                                   fixture_valid_sha256, NULL, NULL,
                                   &install) == 0);
@@ -428,8 +426,7 @@ int main(void) {
                                   &install) == 0);
   for (size_t offset = 0; offset < sizeof(fixture_stream);) {
     size_t take = sizeof(fixture_stream) - offset;
-    if (take > 32768u)
-      take = 32768u;
+    if (take > 32768u) take = 32768u;
     assert(h2_lua_app_install_write(install, fixture_stream + offset, take) ==
            0);
     offset += take;
@@ -456,7 +453,7 @@ int main(void) {
   assert(h2_lua_apps_uninstall(apps, "demo") == H2_PAL_ERR_IO);
   check_version(apps, "1.0.0");
   fs.rename = (h2_app_test_fault_t){0};
-  h2_lua_app_install_t *reservation = NULL;
+  h2_lua_app_install_t* reservation = NULL;
   assert(h2_lua_app_install_begin(apps, sizeof(fixture_valid), NULL, NULL, NULL,
                                   &reservation) == 0);
   assert(h2_lua_apps_uninstall(apps, "demo") == H2_PAL_ERR_BUSY);
@@ -482,8 +479,8 @@ int main(void) {
   expect_file(&fs.api, "/user/demo/.kv", "save", 4);
   h = (http_t){
       .archive = fixture_valid, .size = sizeof(fixture_valid), .chunk = 31};
-  assert(h2_lua_apps_install(apps, &http, URI("https://example.test/app"), NULL, 1000,
-                             NULL, NULL, &info) == 0);
+  assert(h2_lua_apps_install(apps, &http, URI("https://example.test/app"), NULL,
+                             1000, NULL, NULL, &info) == 0);
   check_version(apps, "1.0.0");
   assert(h2_lua_apps_destroy(apps) == 0);
   assert(h2_lua_apps_create(&config, &apps) == 0);
@@ -501,8 +498,8 @@ int main(void) {
   for (unsigned cycle = 0; cycle < 3u; ++cycle) {
     h = (http_t){
         .archive = fixture_valid, .size = sizeof(fixture_valid), .chunk = 31};
-    assert(h2_lua_apps_install(apps, &http, URI("https://example.test/app"), NULL, 1000,
-                               NULL, NULL, &info) == 0);
+    assert(h2_lua_apps_install(apps, &http, URI("https://example.test/app"),
+                               NULL, 1000, NULL, NULL, &info) == 0);
     assert(h2_lua_apps_uninstall(apps, "demo") == 0);
     assert(h2_lua_apps_list(apps, NULL, 0, &available) == 0 && available == 0);
   }
@@ -517,7 +514,8 @@ int main(void) {
   assert(h2_lua_apps_uninstall(apps, "other") == 0);
   assert(h2_lua_apps_destroy(apps) == 0);
   assert(fs.active_handles == 0 && h2_app_test_fs_deinit(&fs) == 0);
-  puts("Lua app streaming, preinstalled overlay, rollback and persistence "
-       "passed");
+  puts(
+      "Lua app streaming, preinstalled overlay, rollback and persistence "
+      "passed");
   return 0;
 }

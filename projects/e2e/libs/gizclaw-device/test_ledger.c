@@ -15,31 +15,29 @@ typedef struct test_memory {
 
 typedef union test_allocation {
   long double alignment;
-  void *pointer_alignment;
+  void* pointer_alignment;
   size_t size;
 } test_allocation_t;
 
-static void *test_alloc(void *user, size_t size) {
-  test_memory_t *memory = user;
+static void* test_alloc(void* user, size_t size) {
+  test_memory_t* memory = user;
   /* A growth allocation is one page, never the full logical capacity. */
   assert(size >= H2_GIZCLAW_E2E_LEDGER_PAGE_BYTES);
   assert(size <= H2_GIZCLAW_E2E_LEDGER_PAGE_BYTES + 64u);
   ++memory->calls;
-  if (memory->calls == memory->fail_call)
-    return NULL;
-  test_allocation_t *allocation = malloc(sizeof(*allocation) + size);
+  if (memory->calls == memory->fail_call) return NULL;
+  test_allocation_t* allocation = malloc(sizeof(*allocation) + size);
   assert(allocation != NULL);
   allocation->size = size;
   ++memory->live;
   memory->bytes += size;
-  if (memory->bytes > memory->peak_bytes)
-    memory->peak_bytes = memory->bytes;
+  if (memory->bytes > memory->peak_bytes) memory->peak_bytes = memory->bytes;
   return allocation + 1;
 }
 
-static void test_free(void *user, void *ptr) {
-  test_memory_t *memory = user;
-  test_allocation_t *allocation = (test_allocation_t *)ptr - 1;
+static void test_free(void* user, void* ptr) {
+  test_memory_t* memory = user;
+  test_allocation_t* allocation = (test_allocation_t*)ptr - 1;
   assert(memory->live > 0u && memory->bytes >= allocation->size);
   --memory->live;
   memory->bytes -= allocation->size;
@@ -50,11 +48,11 @@ static void test_free(void *user, void *ptr) {
 static const h2_pal_mem_vtable_t test_memory_vtable = {.alloc = test_alloc,
                                                        .free = test_free};
 
-static h2_pal_mem_api_t memory_api(test_memory_t *memory) {
+static h2_pal_mem_api_t memory_api(test_memory_t* memory) {
   return (h2_pal_mem_api_t){.user = memory, .vtable = &test_memory_vtable};
 }
 
-static void make_record(char *record, size_t size) {
+static void make_record(char* record, size_t size) {
   static const char prefix[] = "H2_GIZCLAW_E2E ";
   assert(size >= sizeof(prefix));
   memset(record, 'x', size);
@@ -62,10 +60,10 @@ static void make_record(char *record, size_t size) {
   record[size - 1u] = '\n';
 }
 
-static void assert_replay(const h2_gizclaw_e2e_ledger_t *ledger,
-                          const char *expected, size_t expected_size) {
+static void assert_replay(const h2_gizclaw_e2e_ledger_t* ledger,
+                          const char* expected, size_t expected_size) {
   assert(ledger->size == expected_size);
-  const char *data = NULL;
+  const char* data = NULL;
   size_t size = 0u;
   for (size_t offset = 0u; offset < expected_size;) {
     assert(h2_gizclaw_e2e_ledger_span(ledger, offset, &data, &size) ==
@@ -84,7 +82,8 @@ static void assert_replay(const h2_gizclaw_e2e_ledger_t *ledger,
 static void test_borrowed(void) {
   char buffer[512] = {0};
   h2_gizclaw_e2e_ledger_t ledger;
-  assert(h2_gizclaw_e2e_ledger_init(&ledger, buffer, sizeof(buffer)) == H2_PAL_OK);
+  assert(h2_gizclaw_e2e_ledger_init(&ledger, buffer, sizeof(buffer)) ==
+         H2_PAL_OK);
   assert(h2_gizclaw_e2e_ledger_freeze(&ledger) == H2_PAL_ERR_INVALID_STATE);
   h2_gizclaw_e2e_ledger_append(&ledger, line, sizeof(line) - 1u);
   assert(h2_gizclaw_e2e_ledger_freeze(&ledger) == H2_PAL_OK);
@@ -94,7 +93,8 @@ static void test_borrowed(void) {
   assert_replay(&ledger, line, sizeof(line) - 1u);
   uint32_t checksum = ledger.crc32;
   h2_gizclaw_e2e_ledger_append(&ledger, line, sizeof(line) - 1u);
-  assert(ledger.error != H2_PAL_OK && ledger.crc32 == checksum && ledger.records == 1u);
+  assert(ledger.error != H2_PAL_OK && ledger.crc32 == checksum &&
+         ledger.records == 1u);
   assert_replay(&ledger, line, sizeof(line) - 1u);
   h2_gizclaw_e2e_ledger_deinit(&ledger);
   assert(memcmp(buffer, line, sizeof(line) - 1u) == 0);
@@ -102,13 +102,16 @@ static void test_borrowed(void) {
   h2_gizclaw_e2e_ledger_append(&ledger, line, sizeof(line) - 1u);
   assert(ledger.error == H2_PAL_ERR_NO_SPACE && ledger.size == 0u);
   assert(h2_gizclaw_e2e_ledger_freeze(&ledger) == H2_PAL_ERR_NO_SPACE);
-  assert(h2_gizclaw_e2e_ledger_init(&ledger, buffer, sizeof(buffer)) == H2_PAL_OK);
+  assert(h2_gizclaw_e2e_ledger_init(&ledger, buffer, sizeof(buffer)) ==
+         H2_PAL_OK);
   h2_gizclaw_e2e_ledger_append(&ledger, NULL, 0u);
   assert(h2_gizclaw_e2e_ledger_freeze(&ledger) != H2_PAL_OK);
-  assert(h2_gizclaw_e2e_ledger_init(&ledger, buffer, sizeof(buffer)) == H2_PAL_OK);
+  assert(h2_gizclaw_e2e_ledger_init(&ledger, buffer, sizeof(buffer)) ==
+         H2_PAL_OK);
   h2_gizclaw_e2e_ledger_append(&ledger, line, sizeof(line) - 2u);
   assert(ledger.error != H2_PAL_OK);
-  assert(h2_gizclaw_e2e_ledger_init(NULL, buffer, sizeof(buffer)) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_e2e_ledger_init(NULL, buffer, sizeof(buffer)) ==
+         H2_PAL_ERR_INVALID_ARG);
   h2_gizclaw_e2e_ledger_deinit(&ledger);
 }
 
@@ -122,7 +125,7 @@ static void test_cross_page_copy_and_replay(void) {
                                           sizeof(expected)) == H2_PAL_OK);
   assert(memory.calls == 0u && ledger.data == NULL);
   assert(h2_gizclaw_e2e_ledger_freeze(&ledger) == H2_PAL_ERR_INVALID_STATE);
-  const char *span = NULL;
+  const char* span = NULL;
   size_t span_size = 0u;
   assert(h2_gizclaw_e2e_ledger_span(&ledger, 0u, &span, &span_size) ==
          H2_PAL_ERR_INVALID_STATE);

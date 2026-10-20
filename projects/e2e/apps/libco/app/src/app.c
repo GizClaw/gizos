@@ -14,33 +14,33 @@
 typedef struct h2_libco_smoke_state h2_libco_smoke_state_t;
 
 typedef struct h2_libco_smoke_task_slot {
-  h2_libco_task_t *task;
+  h2_libco_task_t* task;
   bool joined;
 } h2_libco_smoke_task_slot_t;
 
 typedef struct h2_libco_smoke_fifo_task {
-  h2_libco_t *core;
+  h2_libco_t* core;
   uint32_t id;
-  uint32_t *order;
-  size_t *order_count;
+  uint32_t* order;
+  size_t* order_count;
 } h2_libco_smoke_fifo_task_t;
 
 typedef struct h2_libco_smoke_wait_task {
-  h2_libco_t *core;
+  h2_libco_t* core;
   uint32_t timeout_ms;
   h2_libco_result_t result;
   uint32_t calls;
 } h2_libco_smoke_wait_task_t;
 
 typedef struct h2_libco_smoke_join_task {
-  h2_libco_t *core;
-  h2_libco_task_t *target;
+  h2_libco_t* core;
+  h2_libco_task_t* target;
   h2_libco_result_t result;
   int target_result;
 } h2_libco_smoke_join_task_t;
 
 typedef struct h2_libco_smoke_stress_task {
-  h2_libco_t *core;
+  h2_libco_t* core;
   uint32_t iterations;
   uint32_t switches;
   uint32_t checksum;
@@ -48,8 +48,8 @@ typedef struct h2_libco_smoke_stress_task {
 } h2_libco_smoke_stress_task_t;
 
 struct h2_libco_smoke_state {
-  h2_runtime_t *runtime;
-  h2_libco_t *core;
+  h2_runtime_t* runtime;
+  h2_libco_t* core;
   h2_libco_task_options_t task_options;
   h2_libco_smoke_task_slot_t slots[H2_LIBCO_SMOKE_MAX_LIVE_TASKS];
   size_t slot_count;
@@ -63,7 +63,7 @@ struct h2_libco_smoke_state {
   h2_libco_smoke_stress_task_t stress_tasks[2];
 };
 
-static bool h2_libco_smoke_runtime_valid(const h2_runtime_t *runtime) {
+static bool h2_libco_smoke_runtime_valid(const h2_runtime_t* runtime) {
   return runtime != NULL && runtime->mem != NULL &&
          runtime->mem->vtable != NULL && runtime->mem->vtable->alloc != NULL &&
          runtime->mem->vtable->free != NULL && runtime->time != NULL &&
@@ -73,14 +73,14 @@ static bool h2_libco_smoke_runtime_valid(const h2_runtime_t *runtime) {
          runtime->log->vtable != NULL && runtime->log->vtable->write != NULL;
 }
 
-static int h2_libco_smoke_log(h2_libco_smoke_state_t *state,
-                              h2_pal_log_level_t level, const char *message) {
+static int h2_libco_smoke_log(h2_libco_smoke_state_t* state,
+                              h2_pal_log_level_t level, const char* message) {
   return h2_pal_log_write(state->runtime->log, level, H2_LIBCO_SMOKE_SCOPE,
                           message);
 }
 
-static int h2_libco_smoke_stage(h2_libco_smoke_state_t *state,
-                                const char *stage) {
+static int h2_libco_smoke_stage(h2_libco_smoke_state_t* state,
+                                const char* stage) {
   char message[H2_PAL_LOG_MESSAGE_MAX];
   int length = snprintf(message, sizeof(message),
                         "H2_LIBCO_SMOKE_STAGE stage=%s", stage);
@@ -90,7 +90,7 @@ static int h2_libco_smoke_stage(h2_libco_smoke_state_t *state,
   return h2_libco_smoke_log(state, H2_PAL_LOG_INFO, message);
 }
 
-static int h2_libco_smoke_fail(h2_libco_smoke_state_t *state, const char *stage,
+static int h2_libco_smoke_fail(h2_libco_smoke_state_t* state, const char* stage,
                                int result) {
   if (!state->failure_logged) {
     char message[H2_PAL_LOG_MESSAGE_MAX];
@@ -104,17 +104,17 @@ static int h2_libco_smoke_fail(h2_libco_smoke_state_t *state, const char *stage,
   return result == H2_PAL_OK ? H2_PAL_ERR_INVALID_STATE : result;
 }
 
-static void *h2_libco_smoke_alloc(void *user, size_t size) {
-  h2_libco_smoke_state_t *state = user;
+static void* h2_libco_smoke_alloc(void* user, size_t size) {
+  h2_libco_smoke_state_t* state = user;
   return h2_pal_mem_alloc(state->runtime->mem, size);
 }
 
-static void h2_libco_smoke_free(void *user, void *memory) {
-  h2_libco_smoke_state_t *state = user;
+static void h2_libco_smoke_free(void* user, void* memory) {
+  h2_libco_smoke_state_t* state = user;
   h2_pal_mem_free(state->runtime->mem, memory);
 }
 
-static int h2_libco_smoke_refresh_time(h2_libco_smoke_state_t *state) {
+static int h2_libco_smoke_refresh_time(h2_libco_smoke_state_t* state) {
   uint64_t now_ms = state->last_now_ms;
   h2_pal_result_t result =
       h2_pal_time_get_monotonic_ms(state->runtime->time, &now_ms);
@@ -128,31 +128,31 @@ static int h2_libco_smoke_refresh_time(h2_libco_smoke_state_t *state) {
   return H2_PAL_OK;
 }
 
-static uint64_t h2_libco_smoke_now_ms(void *user) {
-  h2_libco_smoke_state_t *state = user;
+static uint64_t h2_libco_smoke_now_ms(void* user) {
+  h2_libco_smoke_state_t* state = user;
   return state->last_now_ms;
 }
 
-static int h2_libco_smoke_schedule(h2_libco_smoke_state_t *state, size_t budget,
-                                   size_t *out_resumed) {
+static int h2_libco_smoke_schedule(h2_libco_smoke_state_t* state, size_t budget,
+                                   size_t* out_resumed) {
   int refresh_result = h2_libco_smoke_refresh_time(state);
   h2_libco_result_t result =
       h2_libco_schedule(state->core, budget, out_resumed);
   return result == H2_LIBCO_OK ? refresh_result : result;
 }
 
-static void h2_libco_smoke_reset_slots(h2_libco_smoke_state_t *state) {
+static void h2_libco_smoke_reset_slots(h2_libco_smoke_state_t* state) {
   memset(state->slots, 0, sizeof(state->slots));
   state->slot_count = 0u;
 }
 
-static int h2_libco_smoke_start(h2_libco_smoke_state_t *state,
-                                h2_libco_task_entry_fn_t entry, void *user,
-                                h2_libco_task_t **out_task) {
+static int h2_libco_smoke_start(h2_libco_smoke_state_t* state,
+                                h2_libco_task_entry_fn_t entry, void* user,
+                                h2_libco_task_t** out_task) {
   if (state->slot_count >= H2_LIBCO_SMOKE_MAX_LIVE_TASKS) {
     return H2_PAL_ERR_NO_SPACE;
   }
-  h2_libco_task_t *task = NULL;
+  h2_libco_task_t* task = NULL;
   h2_libco_result_t result = h2_libco_task_start(
       state->core, &state->task_options, entry, user, &task);
   if (result != H2_LIBCO_OK) {
@@ -164,8 +164,8 @@ static int h2_libco_smoke_start(h2_libco_smoke_state_t *state,
   return H2_PAL_OK;
 }
 
-static int h2_libco_smoke_join_slot(h2_libco_smoke_state_t *state, size_t index,
-                                    int *out_entry_result) {
+static int h2_libco_smoke_join_slot(h2_libco_smoke_state_t* state, size_t index,
+                                    int* out_entry_result) {
   if (index >= state->slot_count || state->slots[index].joined) {
     return H2_PAL_ERR_INVALID_STATE;
   }
@@ -177,7 +177,7 @@ static int h2_libco_smoke_join_slot(h2_libco_smoke_state_t *state, size_t index,
   return result;
 }
 
-static int h2_libco_smoke_cleanup(h2_libco_smoke_state_t *state) {
+static int h2_libco_smoke_cleanup(h2_libco_smoke_state_t* state) {
   int cleanup_result = H2_PAL_OK;
   for (size_t index = 0u; index < state->slot_count; ++index) {
     if (!state->slots[index].joined) {
@@ -214,8 +214,8 @@ static int h2_libco_smoke_cleanup(h2_libco_smoke_state_t *state) {
   return cleanup_result;
 }
 
-static int h2_libco_smoke_fifo_entry(void *user) {
-  h2_libco_smoke_fifo_task_t *task = user;
+static int h2_libco_smoke_fifo_entry(void* user) {
+  h2_libco_smoke_fifo_task_t* task = user;
   task->order[(*task->order_count)++] = task->id;
   h2_libco_result_t result = h2_libco_yield(task->core);
   if (result != H2_LIBCO_OK) {
@@ -225,8 +225,8 @@ static int h2_libco_smoke_fifo_entry(void *user) {
   return (int)task->id;
 }
 
-static int h2_libco_smoke_wait_entry(void *user) {
-  h2_libco_smoke_wait_task_t *task = user;
+static int h2_libco_smoke_wait_entry(void* user) {
+  h2_libco_smoke_wait_task_t* task = user;
   ++task->calls;
   task->result =
       h2_libco_wait(task->core, H2_LIBCO_SMOKE_WAIT_KEY, task->timeout_ms);
@@ -234,22 +234,21 @@ static int h2_libco_smoke_wait_entry(void *user) {
   return task->result;
 }
 
-static int h2_libco_smoke_target_entry(void *user) {
-  h2_libco_t *core = user;
+static int h2_libco_smoke_target_entry(void* user) {
+  h2_libco_t* core = user;
   h2_libco_result_t result = h2_libco_yield(core);
   return result == H2_LIBCO_OK ? 33 : result;
 }
 
-static int h2_libco_smoke_join_entry(void *user) {
-  h2_libco_smoke_join_task_t *task = user;
+static int h2_libco_smoke_join_entry(void* user) {
+  h2_libco_smoke_join_task_t* task = user;
   task->result =
       h2_libco_task_join(task->core, task->target, &task->target_result);
   return task->result == H2_LIBCO_OK ? 12 : task->result;
 }
 
-static h2_libco_result_t
-h2_libco_smoke_depth_yield(h2_libco_smoke_stress_task_t *task, uint32_t depth,
-                           uint32_t token) {
+static h2_libco_result_t h2_libco_smoke_depth_yield(
+    h2_libco_smoke_stress_task_t* task, uint32_t depth, uint32_t token) {
   volatile uint32_t canary = token ^ depth ^ UINT32_C(0xa55aa55a);
   h2_libco_result_t result =
       depth == 0u ? h2_libco_yield(task->core)
@@ -260,8 +259,8 @@ h2_libco_smoke_depth_yield(h2_libco_smoke_stress_task_t *task, uint32_t depth,
   return result;
 }
 
-static int h2_libco_smoke_stress_entry(void *user) {
-  h2_libco_smoke_stress_task_t *task = user;
+static int h2_libco_smoke_stress_entry(void* user) {
+  h2_libco_smoke_stress_task_t* task = user;
   uint32_t local = UINT32_C(0x12345678) ^ task->iterations;
   for (uint32_t index = 0u; index < task->iterations; ++index) {
     local = local * UINT32_C(1664525) + UINT32_C(1013904223);
@@ -283,7 +282,7 @@ static uint32_t h2_libco_smoke_expected_checksum(uint32_t iterations) {
   return value;
 }
 
-static int h2_libco_smoke_fifo_phase(h2_libco_smoke_state_t *state) {
+static int h2_libco_smoke_fifo_phase(h2_libco_smoke_state_t* state) {
   h2_libco_smoke_reset_slots(state);
   memset(state->fifo_order, 0, sizeof(state->fifo_order));
   state->fifo_order_count = 0u;
@@ -293,7 +292,7 @@ static int h2_libco_smoke_fifo_phase(h2_libco_smoke_state_t *state) {
     state->fifo_tasks[index].id = (uint32_t)index + 1u;
     state->fifo_tasks[index].order = state->fifo_order;
     state->fifo_tasks[index].order_count = &state->fifo_order_count;
-    h2_libco_task_t *task = NULL;
+    h2_libco_task_t* task = NULL;
     int result = h2_libco_smoke_start(state, h2_libco_smoke_fifo_entry,
                                       &state->fifo_tasks[index], &task);
     if (result != H2_PAL_OK) {
@@ -323,15 +322,15 @@ static int h2_libco_smoke_fifo_phase(h2_libco_smoke_state_t *state) {
   return h2_libco_smoke_stage(state, "fifo-yield");
 }
 
-static int h2_libco_smoke_wait_phase(h2_libco_smoke_state_t *state,
-                                     const char *stage, uint32_t timeout_ms,
+static int h2_libco_smoke_wait_phase(h2_libco_smoke_state_t* state,
+                                     const char* stage, uint32_t timeout_ms,
                                      h2_libco_result_t expected, bool wake,
                                      bool cancel) {
   memset(&state->wait_task, 0, sizeof(state->wait_task));
   state->wait_task.core = state->core;
   state->wait_task.timeout_ms = timeout_ms;
   h2_libco_smoke_reset_slots(state);
-  h2_libco_task_t *task = NULL;
+  h2_libco_task_t* task = NULL;
   int result = h2_libco_smoke_start(state, h2_libco_smoke_wait_entry,
                                     &state->wait_task, &task);
   if (result != H2_PAL_OK) {
@@ -372,9 +371,9 @@ static int h2_libco_smoke_wait_phase(h2_libco_smoke_state_t *state,
   return h2_libco_smoke_stage(state, stage);
 }
 
-static int h2_libco_smoke_join_phase(h2_libco_smoke_state_t *state) {
+static int h2_libco_smoke_join_phase(h2_libco_smoke_state_t* state) {
   h2_libco_smoke_reset_slots(state);
-  h2_libco_task_t *target = NULL;
+  h2_libco_task_t* target = NULL;
   int result = h2_libco_smoke_start(state, h2_libco_smoke_target_entry,
                                     state->core, &target);
   if (result != H2_PAL_OK) {
@@ -383,7 +382,7 @@ static int h2_libco_smoke_join_phase(h2_libco_smoke_state_t *state) {
   memset(&state->join_task, 0, sizeof(state->join_task));
   state->join_task.core = state->core;
   state->join_task.target = target;
-  h2_libco_task_t *joiner = NULL;
+  h2_libco_task_t* joiner = NULL;
   result = h2_libco_smoke_start(state, h2_libco_smoke_join_entry,
                                 &state->join_task, &joiner);
   if (result != H2_PAL_OK) {
@@ -411,7 +410,7 @@ static int h2_libco_smoke_join_phase(h2_libco_smoke_state_t *state) {
   return h2_libco_smoke_stage(state, "join");
 }
 
-static int h2_libco_smoke_stress_phase(h2_libco_smoke_state_t *state,
+static int h2_libco_smoke_stress_phase(h2_libco_smoke_state_t* state,
                                        uint32_t iterations) {
   size_t task_count = iterations == 1u ? 1u : 2u;
   memset(state->stress_tasks, 0, sizeof(state->stress_tasks));
@@ -421,7 +420,7 @@ static int h2_libco_smoke_stress_phase(h2_libco_smoke_state_t *state,
   state->stress_tasks[1].iterations = iterations / 2u;
   h2_libco_smoke_reset_slots(state);
   for (size_t index = 0u; index < task_count; ++index) {
-    h2_libco_task_t *task = NULL;
+    h2_libco_task_t* task = NULL;
     int result = h2_libco_smoke_start(state, h2_libco_smoke_stress_entry,
                                       &state->stress_tasks[index], &task);
     if (result != H2_PAL_OK) {
@@ -462,8 +461,8 @@ static int h2_libco_smoke_stress_phase(h2_libco_smoke_state_t *state,
   return h2_libco_smoke_stage(state, "switch-stress");
 }
 
-int h2_libco_smoke_run(h2_runtime_t *runtime,
-                       const h2_libco_smoke_config_t *config) {
+int h2_libco_smoke_run(h2_runtime_t* runtime,
+                       const h2_libco_smoke_config_t* config) {
   size_t stack_size = config == NULL || config->task_stack_size == 0u
                           ? H2_LIBCO_SMOKE_DEFAULT_STACK_SIZE
                           : config->task_stack_size;
@@ -496,7 +495,7 @@ int h2_libco_smoke_run(h2_runtime_t *runtime,
       .now_ms = h2_libco_smoke_now_ms,
   };
   result = h2_libco_create(&libco_config, &state.core);
-  const char *stage = "create";
+  const char* stage = "create";
   if (result == H2_LIBCO_OK) {
     result = h2_libco_smoke_fifo_phase(&state);
     stage = "fifo-yield";

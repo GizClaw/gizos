@@ -21,13 +21,12 @@ typedef struct linux_gpio_button_entry {
   int line_fd;
 } linux_gpio_button_entry_t;
 
-static linux_gpio_button_entry_t
-    s_linux_gpio_buttons[H2_LINUX_GPIO_BUTTON_MAX];
+static linux_gpio_button_entry_t s_linux_gpio_buttons[H2_LINUX_GPIO_BUTTON_MAX];
 static size_t s_linux_gpio_button_count;
 
 #if defined(H2_LINUX_TESTING)
 static h2_linux_gpio_test_read_fn s_linux_gpio_test_reader;
-static void *s_linux_gpio_test_reader_user;
+static void* s_linux_gpio_test_reader_user;
 #endif
 
 static h2_pal_result_t linux_gpio_result_from_errno(int error_number) {
@@ -43,8 +42,8 @@ static h2_pal_result_t linux_gpio_result_from_errno(int error_number) {
   return H2_PAL_ERR_IO;
 }
 
-static linux_gpio_button_entry_t *
-linux_gpio_find_button(h2_pal_periph_id_t periph_id) {
+static linux_gpio_button_entry_t* linux_gpio_find_button(
+    h2_pal_periph_id_t periph_id) {
   for (size_t index = 0u; index < s_linux_gpio_button_count; ++index) {
     if (s_linux_gpio_buttons[index].periph_id == periph_id) {
       return &s_linux_gpio_buttons[index];
@@ -53,12 +52,12 @@ linux_gpio_find_button(h2_pal_periph_id_t periph_id) {
   return NULL;
 }
 
-static int linux_gpio_is_chip_node_name(const char *name) {
+static int linux_gpio_is_chip_node_name(const char* name) {
   static const char prefix[] = "gpiochip";
   if (name == NULL || strncmp(name, prefix, sizeof(prefix) - 1u) != 0) {
     return 0;
   }
-  const char *suffix = name + sizeof(prefix) - 1u;
+  const char* suffix = name + sizeof(prefix) - 1u;
   if (*suffix == '\0') {
     return 0;
   }
@@ -79,17 +78,17 @@ static h2_pal_result_t linux_gpio_discovery_result(
   return has_match != 0 ? H2_PAL_OK : H2_PAL_ERR_NOT_FOUND;
 }
 
-static h2_pal_result_t
-linux_gpio_request_line(linux_gpio_button_entry_t *entry) {
+static h2_pal_result_t linux_gpio_request_line(
+    linux_gpio_button_entry_t* entry) {
   h2_pal_result_t first_error = H2_PAL_ERR_NOT_FOUND;
   int matched_chip_fd = -1;
-  DIR *directory = opendir("/dev");
+  DIR* directory = opendir("/dev");
   if (directory == NULL) {
     return linux_gpio_result_from_errno(errno);
   }
 
   errno = 0;
-  struct dirent *node = NULL;
+  struct dirent* node = NULL;
   while ((node = readdir(directory)) != NULL) {
     if (linux_gpio_is_chip_node_name(node->d_name) == 0) {
       continue;
@@ -122,8 +121,8 @@ linux_gpio_request_line(linux_gpio_button_entry_t *entry) {
       }
       continue;
     }
-    if (strncmp(chip_info.label, entry->chip_label,
-                sizeof(chip_info.label)) != 0 ||
+    if (strncmp(chip_info.label, entry->chip_label, sizeof(chip_info.label)) !=
+            0 ||
         entry->line_offset >= chip_info.lines) {
       if (close(chip_fd) != 0) {
         return H2_PAL_ERR_IO;
@@ -195,14 +194,13 @@ linux_gpio_request_line(linux_gpio_button_entry_t *entry) {
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t
-linux_gpio_read_entry(linux_gpio_button_entry_t *entry,
-                      h2_pal_button_state_t *out_state) {
+static h2_pal_result_t linux_gpio_read_entry(linux_gpio_button_entry_t* entry,
+                                             h2_pal_button_state_t* out_state) {
 #if defined(H2_LINUX_TESTING)
   if (s_linux_gpio_test_reader != NULL) {
-    return s_linux_gpio_test_reader(
-        s_linux_gpio_test_reader_user, entry->chip_label, entry->line_offset,
-        entry->active_low, out_state);
+    return s_linux_gpio_test_reader(s_linux_gpio_test_reader_user,
+                                    entry->chip_label, entry->line_offset,
+                                    entry->active_low, out_state);
   }
 #endif
   if (entry->line_fd < 0) {
@@ -228,14 +226,14 @@ linux_gpio_read_entry(linux_gpio_button_entry_t *entry,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t
-linux_gpio_read_single_button(void *user, h2_pal_periph_id_t periph_id,
-                              h2_pal_single_button_reading_t *out_reading) {
+static h2_pal_result_t linux_gpio_read_single_button(
+    void* user, h2_pal_periph_id_t periph_id,
+    h2_pal_single_button_reading_t* out_reading) {
   (void)user;
   if (out_reading == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  linux_gpio_button_entry_t *entry = linux_gpio_find_button(periph_id);
+  linux_gpio_button_entry_t* entry = linux_gpio_find_button(periph_id);
   if (entry == NULL) {
     return H2_PAL_ERR_NOT_FOUND;
   }
@@ -252,8 +250,8 @@ linux_gpio_read_single_button(void *user, h2_pal_periph_id_t periph_id,
 }
 
 static h2_pal_result_t linux_gpio_read_radio_button_group(
-    void *user, h2_pal_periph_id_t periph_id,
-    h2_pal_radio_button_group_reading_t *out_reading) {
+    void* user, h2_pal_periph_id_t periph_id,
+    h2_pal_radio_button_group_reading_t* out_reading) {
   (void)user;
   (void)periph_id;
   (void)out_reading;
@@ -270,9 +268,8 @@ static const h2_pal_button_api_t s_linux_gpio_button_api = {
     .vtable = &s_linux_gpio_button_vtable,
 };
 
-h2_pal_result_t
-h2_linux_configure_gpio_buttons(const h2_linux_gpio_button_config_t *entries,
-                                size_t count) {
+h2_pal_result_t h2_linux_configure_gpio_buttons(
+    const h2_linux_gpio_button_config_t* entries, size_t count) {
   if (count > H2_LINUX_GPIO_BUTTON_MAX || (count != 0u && entries == NULL)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -282,7 +279,7 @@ h2_linux_configure_gpio_buttons(const h2_linux_gpio_button_config_t *entries,
     configured[index].line_fd = -1;
   }
   for (size_t index = 0u; index < count; ++index) {
-    const h2_linux_gpio_button_config_t *source = &entries[index];
+    const h2_linux_gpio_button_config_t* source = &entries[index];
     if (source->periph_id == 0u || source->chip_label == NULL ||
         source->chip_label[0] == '\0' ||
         (source->active_low != 0 && source->active_low != 1)) {
@@ -319,13 +316,13 @@ h2_linux_configure_gpio_buttons(const h2_linux_gpio_button_config_t *entries,
   return H2_PAL_OK;
 }
 
-const h2_pal_button_api_t *h2_linux_gpio_button_api(void) {
+const h2_pal_button_api_t* h2_linux_gpio_button_api(void) {
   return &s_linux_gpio_button_api;
 }
 
 #if defined(H2_LINUX_TESTING)
 void h2_linux_gpio_test_set_reader(h2_linux_gpio_test_read_fn read_fn,
-                                   void *user) {
+                                   void* user) {
   s_linux_gpio_test_reader = read_fn;
   s_linux_gpio_test_reader_user = user;
 }
@@ -335,7 +332,7 @@ h2_pal_result_t h2_linux_gpio_test_discovery_result(
   return linux_gpio_discovery_result(has_match, candidate_error);
 }
 
-int h2_linux_gpio_test_is_chip_node_name(const char *name) {
+int h2_linux_gpio_test_is_chip_node_name(const char* name) {
   return linux_gpio_is_chip_node_name(name);
 }
 #endif

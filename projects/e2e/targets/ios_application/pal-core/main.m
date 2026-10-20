@@ -8,8 +8,8 @@
 #include <unistd.h>
 
 static int log_read = -1, saved_stderr = -1;
-static h2_pal_result_t log_seen(void *user, h2_pal_log_level_t level,
-                                const char *scope, const char *message) {
+static h2_pal_result_t log_seen(void *user, h2_pal_log_level_t level, const char *scope,
+                                const char *message) {
   (void)user;
   static const char *names[] = {"debug", "info", "warn", "error"};
   char expected[512], text[4096];
@@ -17,23 +17,20 @@ static h2_pal_result_t log_seen(void *user, h2_pal_log_level_t level,
   fflush(stderr);
   for (;;) {
     ssize_t n = read(log_read, text + used, sizeof(text) - used - 1);
-    if (n <= 0)
-      break;
+    if (n <= 0) break;
     used += (size_t)n;
-    if (used == sizeof(text) - 1)
-      break;
+    if (used == sizeof(text) - 1) break;
   }
   text[used] = 0;
-  snprintf(expected, sizeof(expected), "H2_LOG level=%s scope=%s message=%s\n",
-           names[level], scope, message);
+  snprintf(expected, sizeof(expected), "H2_LOG level=%s scope=%s message=%s\n", names[level], scope,
+           message);
   return strstr(text, expected) ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE;
 }
 static h2_pal_result_t resources(void *user, h2_pal_core_resources_t *out) {
   (void)user;
   h2_ios_platform_resource_stats_t v;
   int rc = h2_ios_platform_get_resource_stats(&v);
-  if (rc)
-    return rc;
+  if (rc) return rc;
   *out = (h2_pal_core_resources_t){.tasks = v.tasks,
                                    .task_stack_bytes = v.task_stack_bytes,
                                    .queues = v.queues,
@@ -60,25 +57,19 @@ static h2_pal_result_t fault(void *user, int after) {
   [super viewDidLoad];
   self.view.backgroundColor = UIColor.systemBackgroundColor;
   _report = [[UITextView alloc] initWithFrame:self.view.bounds];
-  _report.autoresizingMask =
-      UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+  _report.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
   _report.editable = NO;
-  _report.font = [UIFont monospacedSystemFontOfSize:13
-                                             weight:UIFontWeightRegular];
+  _report.font = [UIFont monospacedSystemFontOfSize:13 weight:UIFontWeightRegular];
   _report.text = @"PAL Core E2E — running 41 cases…";
   [self.view addSubview:_report];
-  NSString *directory = NSSearchPathForDirectoriesInDomains(
-                            NSDocumentDirectory, NSUserDomainMask, YES)
-                            .firstObject;
-  NSString *path =
-      [directory stringByAppendingPathComponent:@"pal-core-result.json"];
-  NSString *version =
-      NSBundle.mainBundle.infoDictionary[@"CFBundleShortVersionString"];
+  NSString *directory =
+      NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
+  NSString *path = [directory stringByAppendingPathComponent:@"pal-core-result.json"];
+  NSString *version = NSBundle.mainBundle.infoDictionary[@"CFBundleShortVersionString"];
   dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
     @autoreleasepool {
       int pipes[2];
-      if (pipe(pipes) != 0)
-        return;
+      if (pipe(pipes) != 0) return;
       log_read = pipes[0];
       fcntl(log_read, F_SETFL, O_NONBLOCK);
       saved_stderr = dup(STDERR_FILENO);
@@ -103,8 +94,7 @@ static h2_pal_result_t fault(void *user, int after) {
                                                       error:nil];
       dispatch_async(dispatch_get_main_queue(), ^{
         self->_report.text =
-            [NSString stringWithFormat:@"PAL Core E2E: %@\n\n%@",
-                                       rc == 0 ? @"PASS" : @"FAIL",
+            [NSString stringWithFormat:@"PAL Core E2E: %@\n\n%@", rc == 0 ? @"PASS" : @"FAIL",
                                        report ?: @"No report"];
       });
     }
@@ -134,16 +124,14 @@ static h2_pal_result_t fault(void *user, int after) {
                                    options:(UISceneConnectionOptions *)options {
   (void)app;
   (void)options;
-  UISceneConfiguration *config =
-      [[UISceneConfiguration alloc] initWithName:@"Default"
-                                     sessionRole:session.role];
+  UISceneConfiguration *config = [[UISceneConfiguration alloc] initWithName:@"Default"
+                                                                sessionRole:session.role];
   config.delegateClass = H2CoreSceneDelegate.class;
   return config;
 }
 @end
 int main(int argc, char **argv) {
   @autoreleasepool {
-    return UIApplicationMain(argc, argv, nil,
-                             NSStringFromClass(H2CoreAppDelegate.class));
+    return UIApplicationMain(argc, argv, nil, NSStringFromClass(H2CoreAppDelegate.class));
   }
 }

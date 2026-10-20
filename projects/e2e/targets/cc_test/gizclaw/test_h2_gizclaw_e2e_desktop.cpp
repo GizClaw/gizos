@@ -15,23 +15,23 @@ namespace {
 unsigned runs = 0;
 bool retain = false;
 bool case_failure = false;
-const h2_gizclaw_e2e_config_t *saved_config = nullptr;
-h2_runtime_t *saved_runtime = nullptr;
+const h2_gizclaw_e2e_config_t* saved_config = nullptr;
+h2_runtime_t* saved_runtime = nullptr;
 void original_signal_handler(int) {}
-void set_env(const char *name, const char *value) {
+void set_env(const char* name, const char* value) {
 #ifdef _WIN32
   assert(_putenv_s(name, value == nullptr ? "" : value) == 0);
 #else
   assert((value == nullptr ? unsetenv(name) : setenv(name, value, 1)) == 0);
 #endif
 }
-} // namespace
+}  // namespace
 
 // The launcher uses real Desktop providers; this boundary double never opens
 // a Peer, sends a packet, or registers anything with an external service.
-extern "C" h2_gizclaw_e2e_exit_t
-h2_gizclaw_e2e_run(h2_runtime_t *runtime, const h2_gizclaw_e2e_config_t *config,
-                   h2_gizclaw_e2e_result_t *result) {
+extern "C" h2_gizclaw_e2e_exit_t h2_gizclaw_e2e_run(
+    h2_runtime_t* runtime, const h2_gizclaw_e2e_config_t* config,
+    h2_gizclaw_e2e_result_t* result) {
   ++runs;
   assert(runtime != nullptr && runtime->webrtc != nullptr &&
          runtime->http != nullptr);
@@ -44,7 +44,7 @@ h2_gizclaw_e2e_run(h2_runtime_t *runtime, const h2_gizclaw_e2e_config_t *config,
   // Re-entrant launch must not alter the active signal/stop state or providers.
   char program[] = "e2e", pcm[] = "unused.pcm", suite[] = "firmware";
   char endpoint[] = "--endpoint=localhost:9821";
-  char *again[] = {program, pcm, suite, endpoint};
+  char* again[] = {program, pcm, suite, endpoint};
   assert(h2_gizclaw_e2e_desktop_main(4, again) ==
          H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR);
   assert(config->should_stop(config->should_stop_user) == (runs == 1u));
@@ -63,15 +63,14 @@ h2_gizclaw_e2e_run(h2_runtime_t *runtime, const h2_gizclaw_e2e_config_t *config,
                       : H2_GIZCLAW_E2E_EXIT_PASS;
 }
 
-
 int main() {
-  auto *running = h2_gizclaw_e2e_desktop_running_flag();
+  auto* running = h2_gizclaw_e2e_desktop_running_flag();
   assert(running != nullptr && running->storage != nullptr);
   assert(h2_atomic_flag_init(running) == H2_ATOMIC_INVALID_STATE);
-  auto *stop_requested = h2_gizclaw_e2e_desktop_stop_requested();
+  auto* stop_requested = h2_gizclaw_e2e_desktop_stop_requested();
   assert(stop_requested != nullptr && stop_requested->storage != nullptr);
   assert(h2_atomic_bool_init(stop_requested, false) == H2_ATOMIC_INVALID_STATE);
-  auto *static_storage = running->storage;
+  auto* static_storage = running->storage;
   set_env("H2_GIZCLAW_E2E_SUITE", nullptr);
   char program[] = "gizclaw-e2e";
   char pcm[] = "unused.pcm";
@@ -79,30 +78,30 @@ int main() {
   char invalid_suite[] = "invalid";
   char endpoint[] = "--endpoint=edge-bj-01.e2e.gizclaw.com:9821";
   char invalid_endpoint[] = "--endpoint=invalid";
-  char *missing_args[] = {program, nullptr};
+  char* missing_args[] = {program, nullptr};
   assert(h2_gizclaw_e2e_desktop_main(1, missing_args) ==
          H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR);
 
   set_env("H2_GIZCLAW_E2E_REGISTRATION_TOKEN", "test-token");
-  char *bad_suite_args[] = {program, pcm, invalid_suite, endpoint, nullptr};
+  char* bad_suite_args[] = {program, pcm, invalid_suite, endpoint, nullptr};
   assert(h2_gizclaw_e2e_desktop_main(4, bad_suite_args) ==
          H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR);
-  char *bad_endpoint_args[] = {program, pcm, all, invalid_endpoint, nullptr};
+  char* bad_endpoint_args[] = {program, pcm, all, invalid_endpoint, nullptr};
   assert(h2_gizclaw_e2e_desktop_main(4, bad_endpoint_args) ==
          H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR);
   set_env("H2_GIZCLAW_E2E_SUITE", "invalid");
-  char *suite_override_args[] = {program, pcm, all, endpoint, nullptr};
+  char* suite_override_args[] = {program, pcm, all, endpoint, nullptr};
   assert(h2_gizclaw_e2e_desktop_main(4, suite_override_args) ==
          H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR);
   set_env("H2_GIZCLAW_E2E_SUITE", nullptr);
   const std::string oversized(H2_GIZCLAW_E2E_REGISTRATION_TOKEN_MAX + 1u, 'x');
   set_env("H2_GIZCLAW_E2E_REGISTRATION_TOKEN", oversized.c_str());
-  char *oversized_args[] = {program, pcm, all, endpoint, nullptr};
+  char* oversized_args[] = {program, pcm, all, endpoint, nullptr};
   assert(h2_gizclaw_e2e_desktop_main(4, oversized_args) ==
          H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR);
   set_env("H2_GIZCLAW_E2E_REGISTRATION_TOKEN", nullptr);
   char firmware[] = "firmware";
-  char *missing_token_args[] = {program, pcm, firmware, endpoint, nullptr};
+  char* missing_token_args[] = {program, pcm, firmware, endpoint, nullptr};
   assert(h2_gizclaw_e2e_desktop_main(4, missing_token_args) ==
          H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR);
   assert(runs == 0u);
@@ -119,7 +118,7 @@ int main() {
          H2_GIZCLAW_E2E_EXIT_CASE_FAILURE);
   assert(runs == 2u);
   case_failure = false;
-  const char *tmpdir = std::getenv("TEST_TMPDIR");
+  const char* tmpdir = std::getenv("TEST_TMPDIR");
   assert(tmpdir != nullptr);
   std::string pcm_path = std::string(tmpdir) + "/launcher.pcm";
   const char samples[] = {1, 0, 2, 0};
@@ -161,8 +160,7 @@ int main() {
          H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR);
   assert(runs == 3u);
   (void)std::remove(pcm_path.c_str());
-  if (old_signal != SIG_ERR)
-    (void)std::signal(SIGINT, old_signal);
+  if (old_signal != SIG_ERR) (void)std::signal(SIGINT, old_signal);
   assert(running->storage == static_storage);
   return 0;
 }

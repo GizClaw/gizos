@@ -13,8 +13,9 @@
 #include <stdio.h>
 #include <string.h>
 #define OK(x) assert((x) == H2_PAL_OK)
-#define FAIL_ONCE(field)                                                       \
-  ((field) = (h2_app_test_fault_t){.result = H2_PAL_ERR_IO, .remaining = 1u, .calls = 0u})
+#define FAIL_ONCE(field)            \
+  ((field) = (h2_app_test_fault_t){ \
+       .result = H2_PAL_ERR_IO, .remaining = 1u, .calls = 0u})
 
 static void test_time(void) {
   h2_app_test_time_t t;
@@ -37,9 +38,9 @@ static void test_time(void) {
   assert(h2_pal_time_get_monotonic_us(&t.api, &n) == H2_PAL_ERR_NO_SPACE);
   assert(n == 0);
 }
-static bool scan_stop(void *u, const h2_pal_wifi_scan_entry_t *e) {
+static bool scan_stop(void* u, const h2_pal_wifi_scan_entry_t* e) {
   assert(e->ssid_len == 3u);
-  ++*(unsigned *)u;
+  ++*(unsigned*)u;
   return false;
 }
 static void test_wifi_persistent_operation(void) {
@@ -48,15 +49,19 @@ static void test_wifi_persistent_operation(void) {
   h2_pal_wifi_sta_config_t old = {.ssid = "old", .ssid_len = 3};
   h2_pal_wifi_sta_config_t target = {.ssid = "new", .ssid_len = 3};
   OK(h2_pal_wifi_settings_set_saved_sta_config(&w.settings, &old));
-  w.connect_status = (h2_pal_wifi_sta_status_t){
-      .state = H2_PAL_WIFI_STA_STATE_GOT_IP, .ssid = "new", .ssid_len = 3,
-      .ip_valid = 1, .ip.ip4 = 0xc0000201};
+  w.connect_status =
+      (h2_pal_wifi_sta_status_t){.state = H2_PAL_WIFI_STA_STATE_GOT_IP,
+                                 .ssid = "new",
+                                 .ssid_len = 3,
+                                 .ip_valid = 1,
+                                 .ip.ip4 = 0xc0000201};
   OK(h2_pal_wifi_sta_connect(&w.api, &target, 100));
   assert(!memcmp(&w.saved, &old, sizeof(old)));
   OK(h2_pal_wifi_sta_connect_and_save(&w.api, &target, 100));
   assert(!memcmp(&w.saved, &target, sizeof(target)));
   w.set_saved = (h2_app_test_fault_t){.result = H2_PAL_ERR_IO, .remaining = 1};
-  assert(h2_pal_wifi_sta_connect_and_save(&w.api, &target, 100) == H2_PAL_ERR_IO);
+  assert(h2_pal_wifi_sta_connect_and_save(&w.api, &target, 100) ==
+         H2_PAL_ERR_IO);
 }
 
 static void test_modem_lifecycle(void) {
@@ -132,54 +137,72 @@ static void test_wifi_modem(void) {
   assert(h2_pal_modem_call_dial(&m.api, &call) == H2_PAL_ERR_INVALID_ARG);
   h2_pal_modem_emergency_number_t numbers[2];
   size_t emergency_count = 99u;
-  assert(h2_pal_modem_get_emergency_numbers(&m.api, 100u, numbers, 2u, &emergency_count) == H2_PAL_ERR_UNSUPPORTED);
+  assert(h2_pal_modem_get_emergency_numbers(&m.api, 100u, numbers, 2u,
+                                            &emergency_count) ==
+         H2_PAL_ERR_UNSUPPORTED);
   assert(emergency_count == 0u);
   const h2_pal_modem_emergency_number_t table[] = {
-      {.number = "123", .scope = H2_PAL_MODEM_EMERGENCY_SCOPE_WITHOUT_SIM,
+      {.number = "123",
+       .scope = H2_PAL_MODEM_EMERGENCY_SCOPE_WITHOUT_SIM,
        .source = H2_PAL_MODEM_EMERGENCY_SOURCE_MODULE},
-      {.number = "456", .scope = H2_PAL_MODEM_EMERGENCY_SCOPE_WITH_SIM,
+      {.number = "456",
+       .scope = H2_PAL_MODEM_EMERGENCY_SCOPE_WITH_SIM,
        .source = H2_PAL_MODEM_EMERGENCY_SOURCE_SIM},
   };
   m.status.capabilities |= H2_PAL_MODEM_CAPABILITY_EMERGENCY_NUMBERS;
   m.emergency_numbers = table;
   m.emergency_number_count = 2u;
-  OK(h2_pal_modem_get_emergency_numbers(&m.api, 100u, numbers, 2u, &emergency_count));
+  OK(h2_pal_modem_get_emergency_numbers(&m.api, 100u, numbers, 2u,
+                                        &emergency_count));
   assert(emergency_count == 2u && !strcmp(numbers[0].number, "123"));
   assert(numbers[1].source == H2_PAL_MODEM_EMERGENCY_SOURCE_SIM);
   assert(m.last_emergency_numbers_timeout_ms == 100u);
   FAIL_ONCE(m.get_emergency_numbers);
-  assert(h2_pal_modem_get_emergency_numbers(&m.api, 0u, numbers, 2u, &emergency_count) == H2_PAL_ERR_IO);
+  assert(h2_pal_modem_get_emergency_numbers(&m.api, 0u, numbers, 2u,
+                                            &emergency_count) == H2_PAL_ERR_IO);
   assert(emergency_count == 0u && numbers[0].number[0] == '\0');
-  assert(h2_pal_modem_get_emergency_numbers(&m.api, 0u, numbers, 1u, &emergency_count) == H2_PAL_ERR_TRUNCATED);
+  assert(h2_pal_modem_get_emergency_numbers(&m.api, 0u, numbers, 1u,
+                                            &emergency_count) ==
+         H2_PAL_ERR_TRUNCATED);
   assert(emergency_count == 0u);
   m.emergency_number_count = 0u;
-  OK(h2_pal_modem_get_emergency_numbers(&m.api, 0u, numbers, 2u, &emergency_count));
+  OK(h2_pal_modem_get_emergency_numbers(&m.api, 0u, numbers, 2u,
+                                        &emergency_count));
   assert(emergency_count == 0u);
   strcpy(m.identity.revision, "R01");
   h2_pal_modem_identity_t identity;
   OK(h2_pal_modem_get_identity(&m.api, &identity));
   assert(strcmp(identity.revision, "R01") == 0);
   char url[] = "https://example.com/fw", target[] = "R02";
-  h2_pal_modem_ota_request_t ota_request = {.url = url, .expected_revision = "R01", .target_revision = target, .timeout_ms = 90u};
+  h2_pal_modem_ota_request_t ota_request = {.url = url,
+                                            .expected_revision = "R01",
+                                            .target_revision = target,
+                                            .timeout_ms = 90u};
   h2_pal_modem_ota_status_t ota_status;
-  assert(h2_pal_modem_ota_start(&m.api, &ota_request) == H2_PAL_ERR_UNSUPPORTED);
+  assert(h2_pal_modem_ota_start(&m.api, &ota_request) ==
+         H2_PAL_ERR_UNSUPPORTED);
   m.status.capabilities |= H2_PAL_MODEM_CAPABILITY_OTA;
   OK(h2_pal_modem_ota_start(&m.api, &ota_request));
-  url[0] = 'X'; target[0] = 'X';
+  url[0] = 'X';
+  target[0] = 'X';
   assert(strcmp(m.last_ota_request.url, "https://example.com/fw") == 0);
-  assert(strcmp(m.last_ota_request.target_revision, "R02") == 0 && m.last_ota_request.timeout_ms == 90u);
-  assert(m.ota_status.state == H2_PAL_MODEM_OTA_IDLE); /* Recorded intent is not completion. */
+  assert(strcmp(m.last_ota_request.target_revision, "R02") == 0 &&
+         m.last_ota_request.timeout_ms == 90u);
+  assert(m.ota_status.state ==
+         H2_PAL_MODEM_OTA_IDLE); /* Recorded intent is not completion. */
   m.ota_status.state = H2_PAL_MODEM_OTA_UPDATING;
   m.ota_status.progress_percent = 60u;
   OK(h2_pal_modem_ota_get_status(&m.api, 80u, &ota_status));
-  assert(ota_status.state == H2_PAL_MODEM_OTA_UPDATING && m.last_ota_status_timeout_ms == 80u);
+  assert(ota_status.state == H2_PAL_MODEM_OTA_UPDATING &&
+         m.last_ota_status_timeout_ms == 80u);
   FAIL_ONCE(m.ota_get_status);
   assert(h2_pal_modem_ota_get_status(&m.api, 0u, &ota_status) == H2_PAL_ERR_IO);
-  assert(ota_status.state == H2_PAL_MODEM_OTA_IDLE && ota_status.progress_percent == 0u);
+  assert(ota_status.state == H2_PAL_MODEM_OTA_IDLE &&
+         ota_status.progress_percent == 0u);
 }
-static h2_pal_result_t periph_count(void *u, const h2_pal_periph_info_t *i) {
+static h2_pal_result_t periph_count(void* u, const h2_pal_periph_info_t* i) {
   (void)i;
-  ++*(unsigned *)u;
+  ++*(unsigned*)u;
   return H2_PAL_ERR_IO;
 }
 static void test_devices(void) {
@@ -211,7 +234,7 @@ static void test_devices(void) {
   OK(h2_pal_display_close(&d.api));
   h2_app_test_periph_t registry;
   h2_app_test_periph_init(&registry);
-  h2_app_test_periph_entry_t *e = NULL;
+  h2_app_test_periph_entry_t* e = NULL;
   h2_pal_periph_info_t i = {
       .id = 7u, .type = H2_PAL_PERIPH_TYPE_BATTERY, .name = "battery"};
   OK(h2_app_test_periph_add(&registry, &i, &e));
@@ -243,7 +266,7 @@ static void test_devices(void) {
                             &count) == H2_PAL_ERR_IO);
   assert(count == 1u);
 }
-static void test_pref(const h2_pal_mem_api_t *mem) {
+static void test_pref(const h2_pal_mem_api_t* mem) {
   h2_app_test_pref_t p;
   OK(h2_app_test_pref_init(&p, mem));
   h2_pal_pref_namespace_t *w, *r, *other;
@@ -275,11 +298,11 @@ static void test_pref(const h2_pal_mem_api_t *mem) {
   uint8_t bytes[] = {0u, 1u, 0u, 255u};
   OK(w->set_blob(w, "identity", bytes, sizeof(bytes)));
   OK(w->commit(w));
-  char *text = NULL;
+  char* text = NULL;
   OK(r->get_string(r, mem, "label", &text));
   assert(!strcmp(text, "hello"));
   h2_pal_mem_free(mem, text);
-  void *data = NULL;
+  void* data = NULL;
   size_t size = 0;
   OK(r->get_blob(r, mem, "identity", &data, &size));
   assert(size == sizeof(bytes) && !memcmp(data, bytes, size));
@@ -319,10 +342,10 @@ static void test_pref(const h2_pal_mem_api_t *mem) {
   OK(h2_app_test_pref_deinit(&p));
   OK(h2_app_test_pref_deinit(&p));
 }
-static void test_fs(const h2_pal_mem_api_t *mem) {
+static void test_fs(const h2_pal_mem_api_t* mem) {
   h2_app_test_fs_t f;
   OK(h2_app_test_fs_init(&f, mem));
-  h2_pal_fs_file_t *h;
+  h2_pal_fs_file_t* h;
   size_t n = 0;
   h2_pal_fs_stat_t st;
   assert(h2_pal_fs_stat(&f.api, "/audio.pcm", &st) == H2_PAL_ERR_NOT_FOUND);
@@ -388,16 +411,16 @@ static void test_crypto(void) {
              &c.api, &keypair.private_key, &public_key) ==
          H2_PAL_ERR_NOT_FOUND);
 }
-static void test_audio(const h2_pal_mem_api_t *mem) {
+static void test_audio(const h2_pal_mem_api_t* mem) {
   h2_app_test_audio_fake_t a;
   OK(h2_app_test_audio_fake_init(&a, mem));
   h2_app_test_time_t time;
   h2_app_test_time_init(&time, 0);
   uint8_t pcm[] = {1, 2, 3, 4};
   h2_app_test_audio_fixture_t fixture = {pcm, sizeof(pcm), a.info.mic_format};
-  h2_app_test_audio_t *wrapper = NULL;
+  h2_app_test_audio_t* wrapper = NULL;
   OK(h2_app_test_audio_create(mem, &time.api, &a.api, &fixture, &wrapper));
-  const h2_pal_audio_api_t *api = h2_app_test_audio_api(wrapper);
+  const h2_pal_audio_api_t* api = h2_app_test_audio_api(wrapper);
   uint32_t mic_gain = 0u;
   OK(h2_pal_audio_get_mic_gain_percent(api, &mic_gain));
   assert(mic_gain == 100u);
@@ -434,7 +457,7 @@ static void test_audio(const h2_pal_mem_api_t *mem) {
   assert(evidence.real_capture_first_error == H2_PAL_ERR_IO);
   OK(h2_pal_audio_stop_mic(api));
   OK(h2_pal_audio_start_speaker(api));
-  h2_pal_audio_track_t *track;
+  h2_pal_audio_track_t* track;
   h2_audio_track_config_t config = {.name = "playback",
                                     .format = a.info.playback_format};
   OK(h2_pal_audio_create_track(api, &config, &track));
@@ -455,7 +478,7 @@ static void test_allocation_failures(void) {
     h2_app_test_pref_t p;
     OK(h2_app_test_pref_init(&p, &mem));
     m.fail_at = m.calls + offset;
-    h2_pal_pref_namespace_t *h = NULL;
+    h2_pal_pref_namespace_t* h = NULL;
     int rc = h2_pal_pref_open(&p.api, "new", H2_PAL_PREF_OPEN_READ_WRITE, &h);
     if (rc == 0)
       OK(h->close(h));

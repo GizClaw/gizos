@@ -13,7 +13,7 @@ static h2_runtime_config_t runtime_config;
 static int runtime_ready;
 
 h2_pal_result_t h2_jieli_ac791n_devkit_runtime_config(
-    h2_runtime_config_t *out_config) {
+    h2_runtime_config_t* out_config) {
   if (out_config == NULL) return H2_PAL_ERR_INVALID_ARG;
   if (runtime_ready) {
     *out_config = runtime_config;
@@ -65,7 +65,8 @@ h2_pal_result_t h2_jieli_ac791n_devkit_runtime_config(
 #else
       .wifi_settings = h2_pal_unsupported_wifi_settings_api(),
 #endif
-      .ble_host = h2_jieli_ac791n_devkit_ble_host_api(h2_jieli_wl82_platform_log_api()),
+      .ble_host =
+          h2_jieli_ac791n_devkit_ble_host_api(h2_jieli_wl82_platform_log_api()),
       .modem = h2_pal_unsupported_modem_api(),
       .power = h2_pal_unsupported_power_api(),
       .display = h2_jieli_ac791n_devkit_display_api(),

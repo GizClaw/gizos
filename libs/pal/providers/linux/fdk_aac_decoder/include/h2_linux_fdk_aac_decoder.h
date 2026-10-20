@@ -8,7 +8,7 @@ extern "C" {
 #endif
 
 /** Return the process-wide FDK AAC-LC Audio Decoder PAL provider. */
-const h2_pal_audio_decoder_api_t *h2_linux_fdk_aac_decoder_api(void);
+const h2_pal_audio_decoder_api_t* h2_linux_fdk_aac_decoder_api(void);
 
 #ifdef __cplusplus
 }

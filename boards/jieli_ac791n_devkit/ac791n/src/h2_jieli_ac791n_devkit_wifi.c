@@ -50,26 +50,34 @@ static void wifi_state_unlock(void) {
   h2_jieli_atomic_store_u32(&wifi_state_gate, 0u);
 }
 
-static void update_sta_snapshot(h2_pal_wifi_sta_status_t *status);
+static void update_sta_snapshot(h2_pal_wifi_sta_status_t* status);
 
-enum { SCAN_IDLE, SCAN_PENDING, SCAN_READY, SCAN_ABANDONED, SCAN_CLEANING, SCAN_REAPABLE };
+enum {
+  SCAN_IDLE,
+  SCAN_PENDING,
+  SCAN_READY,
+  SCAN_ABANDONED,
+  SCAN_CLEANING,
+  SCAN_REAPABLE
+};
 static unsigned scan_phase;
 
 static void scan_completed(void) {
   unsigned expected = SCAN_PENDING;
   if (__atomic_compare_exchange_n(&scan_phase, &expected, SCAN_READY, 0,
-                                   __ATOMIC_RELEASE, __ATOMIC_RELAXED)) return;
+                                  __ATOMIC_RELEASE, __ATOMIC_RELAXED))
+    return;
   expected = SCAN_ABANDONED;
   /* SDK callbacks run under network_hsm_mtx. Clearing results synchronously
    * dispatches through that same mutex, so only publish task-side work here. */
   (void)__atomic_compare_exchange_n(&scan_phase, &expected, SCAN_REAPABLE, 0,
-                                     __ATOMIC_RELEASE, __ATOMIC_RELAXED);
+                                    __ATOMIC_RELEASE, __ATOMIC_RELAXED);
 }
 
 static void scan_reap_completed(void) {
   unsigned expected = SCAN_REAPABLE;
   if (__atomic_compare_exchange_n(&scan_phase, &expected, SCAN_CLEANING, 0,
-                                   __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
+                                  __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
     wifi_clear_scan_result();
     __atomic_store_n(&scan_phase, SCAN_IDLE, __ATOMIC_RELEASE);
   }
@@ -81,15 +89,15 @@ static void scan_reap_completed(void) {
 static void scan_reset_after_sta_exit(void) {
   unsigned expected = SCAN_ABANDONED;
   if (__atomic_compare_exchange_n(&scan_phase, &expected, SCAN_IDLE, 0,
-                                   __ATOMIC_RELEASE, __ATOMIC_RELAXED)) return;
+                                  __ATOMIC_RELEASE, __ATOMIC_RELAXED))
+    return;
   expected = SCAN_REAPABLE;
   (void)__atomic_compare_exchange_n(&scan_phase, &expected, SCAN_IDLE, 0,
-                                     __ATOMIC_RELEASE, __ATOMIC_RELAXED);
+                                    __ATOMIC_RELEASE, __ATOMIC_RELAXED);
 }
 
-static void post_system_event(
-    h2_pal_system_event_type_t type, const void *payload,
-    size_t payload_size) {
+static void post_system_event(h2_pal_system_event_type_t type,
+                              const void* payload, size_t payload_size) {
   const h2_pal_system_event_t event = {
       .type = type,
       .source_id = 0u,
@@ -99,17 +107,17 @@ static void post_system_event(
   };
   /* The runtime owns system-event initialization. Wi-Fi may start earlier
    * during a board probe, in which case there are no subscribers yet. */
-  (void)h2_pal_system_event_post(
-      h2_jieli_wl82_platform_system_event_api(), &event, 0u);
+  (void)h2_pal_system_event_post(h2_jieli_wl82_platform_system_event_api(),
+                                 &event, 0u);
 }
 
-static void post_sta_event(
-    h2_pal_system_event_type_t type, const h2_pal_wifi_sta_status_t *status) {
+static void post_sta_event(h2_pal_system_event_type_t type,
+                           const h2_pal_wifi_sta_status_t* status) {
   post_system_event(type, status, sizeof(*status));
 }
 
-static void post_ap_event(
-    h2_pal_system_event_type_t type, const h2_pal_wifi_ap_status_t *status) {
+static void post_ap_event(h2_pal_system_event_type_t type,
+                          const h2_pal_wifi_ap_status_t* status) {
   h2_pal_wifi_ap_event_t event;
   memset(&event, 0, sizeof(event));
   event.status = *status;
@@ -117,26 +125,33 @@ static void post_ap_event(
 }
 
 static uint32_t pack_ip4(uint8_t a, uint8_t b, uint8_t c, uint8_t d) {
-  return ((uint32_t)a << 24u) | ((uint32_t)b << 16u) |
-         ((uint32_t)c << 8u) | (uint32_t)d;
+  return ((uint32_t)a << 24u) | ((uint32_t)b << 16u) | ((uint32_t)c << 8u) |
+         (uint32_t)d;
 }
 
 static h2_pal_wifi_security_t map_security(WIFI_802_11_AUTH_MODE mode) {
   switch (mode) {
-    case WIFI_AUTH_MODE_OPEN: return H2_PAL_WIFI_SECURITY_OPEN;
-    case WIFI_AUTH_MODE_WEP: return H2_PAL_WIFI_SECURITY_WEP;
-    case WIFI_AUTH_MODE_WPA: return H2_PAL_WIFI_SECURITY_WPA;
-    case WIFI_AUTH_MODE_WPA2PSK: return H2_PAL_WIFI_SECURITY_WPA2;
-    case WIFI_AUTH_MODE_WPAWPA2PSK: return H2_PAL_WIFI_SECURITY_WPA_WPA2;
+    case WIFI_AUTH_MODE_OPEN:
+      return H2_PAL_WIFI_SECURITY_OPEN;
+    case WIFI_AUTH_MODE_WEP:
+      return H2_PAL_WIFI_SECURITY_WEP;
+    case WIFI_AUTH_MODE_WPA:
+      return H2_PAL_WIFI_SECURITY_WPA;
+    case WIFI_AUTH_MODE_WPA2PSK:
+      return H2_PAL_WIFI_SECURITY_WPA2;
+    case WIFI_AUTH_MODE_WPAWPA2PSK:
+      return H2_PAL_WIFI_SECURITY_WPA_WPA2;
     case WIFI_AUTH_MODE_WPA3SAE:
-    case WIFI_AUTH_MODE_WPA3H2E: return H2_PAL_WIFI_SECURITY_WPA3;
+    case WIFI_AUTH_MODE_WPA3H2E:
+      return H2_PAL_WIFI_SECURITY_WPA3;
     case WIFI_AUTH_MODE_WPA2PSKWPA3SAE:
       return H2_PAL_WIFI_SECURITY_WPA2_WPA3;
-    default: return H2_PAL_WIFI_SECURITY_UNKNOWN;
+    default:
+      return H2_PAL_WIFI_SECURITY_UNKNOWN;
   }
 }
 
-static int wifi_event(void *context, enum WIFI_EVENT event) {
+static int wifi_event(void* context, enum WIFI_EVENT event) {
   (void)context;
   if (event == WIFI_EVENT_STA_SCAN_COMPLETED) {
     scan_completed();
@@ -148,14 +163,15 @@ static int wifi_event(void *context, enum WIFI_EVENT event) {
   h2_pal_wifi_sta_status_t native_status;
   memset(&native_status, 0, sizeof(native_status));
   const int refresh = event == WIFI_EVENT_STA_CONNECT_SUCC ||
-      event == WIFI_EVENT_STA_NETWORK_STACK_DHCP_SUCC;
+                      event == WIFI_EVENT_STA_NETWORK_STACK_DHCP_SUCC;
   wifi_state_lock();
   ++wifi_callbacks_active;
   const uint32_t generation = wifi_sta_generation;
   wifi_state_unlock();
   if (refresh) {
     native_status.state = event == WIFI_EVENT_STA_NETWORK_STACK_DHCP_SUCC
-        ? H2_PAL_WIFI_STA_STATE_GOT_IP : H2_PAL_WIFI_STA_STATE_CONNECTED;
+                              ? H2_PAL_WIFI_STA_STATE_GOT_IP
+                              : H2_PAL_WIFI_STA_STATE_CONNECTED;
     update_sta_snapshot(&native_status);
   }
   if (event == WIFI_EVENT_AP_START) wifi_rxfilter_cfg(1);
@@ -184,11 +200,13 @@ static int wifi_event(void *context, enum WIFI_EVENT event) {
     case WIFI_EVENT_STA_NETWORK_STACK_DHCP_SUCC:
       wifi_state.sta.state = native_status.state;
       wifi_state.sta.disconnect_reason = 0;
-      memcpy(wifi_state.sta.bssid, native_status.bssid, sizeof(native_status.bssid));
+      memcpy(wifi_state.sta.bssid, native_status.bssid,
+             sizeof(native_status.bssid));
       wifi_state.sta.bssid_set = native_status.bssid_set;
       wifi_state.sta.channel = native_status.channel;
       wifi_state.sta.rssi = native_status.rssi;
-      if (event == WIFI_EVENT_STA_NETWORK_STACK_DHCP_SUCC && !native_status.ip_valid) {
+      if (event == WIFI_EVENT_STA_NETWORK_STACK_DHCP_SUCC &&
+          !native_status.ip_valid) {
         wifi_state.sta.state = H2_PAL_WIFI_STA_STATE_FAILED;
         wifi_state.sta.disconnect_reason = H2_PAL_ERR_IO;
         wifi_state.sta.ip_valid = 0u;
@@ -198,8 +216,8 @@ static int wifi_event(void *context, enum WIFI_EVENT event) {
       wifi_state.sta.ip_valid = event == WIFI_EVENT_STA_NETWORK_STACK_DHCP_SUCC;
       if (wifi_state.sta.ip_valid) wifi_state.sta.ip = native_status.ip;
       types[count++] = wifi_state.sta.ip_valid
-          ? H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_GOT_IP
-          : H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTED;
+                           ? H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_GOT_IP
+                           : H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTED;
       break;
     case WIFI_EVENT_STA_CONNECT_TIMEOUT_NOT_FOUND_SSID:
     case WIFI_EVENT_STA_CONNECT_ASSOCIAT_FAIL:
@@ -209,8 +227,8 @@ static int wifi_event(void *context, enum WIFI_EVENT event) {
       wifi_state.sta.disconnect_reason = (int)event;
       wifi_state.sta.ip_valid = 0u;
       types[count++] = event == WIFI_EVENT_STA_NETWORK_STACK_DHCP_TIMEOUT
-          ? H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_LOST_IP
-          : H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_DISCONNECTED;
+                           ? H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_LOST_IP
+                           : H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_DISCONNECTED;
       break;
     case WIFI_EVENT_STA_DISCONNECT:
     case WIFI_EVENT_STA_STOP:
@@ -240,16 +258,20 @@ static int wifi_event(void *context, enum WIFI_EVENT event) {
     case WIFI_EVENT_AP_ON_ASSOC:
     case WIFI_EVENT_AP_ON_DISCONNECTED: {
       sta_changed = 0;
-      if (context == NULL || wifi_state.ap.state != H2_PAL_WIFI_AP_STATE_STARTED) break;
+      if (context == NULL ||
+          wifi_state.ap.state != H2_PAL_WIFI_AP_STATE_STARTED)
+        break;
       size_t index = 0u;
       while (index < wifi_state.ap.client_count &&
              memcmp(wifi_state.ap_clients[index].mac, context, 6u) != 0) {
         ++index;
       }
       if (event == WIFI_EVENT_AP_ON_ASSOC) {
-        /* SDK drift must not grow the owned cache or publish an uncached JOINED. */
-        if (index == wifi_state.ap.client_count && index < H2_JIELI_AP_STATION_SLOTS) {
-          h2_pal_wifi_ap_client_t *client = &wifi_state.ap_clients[index];
+        /* SDK drift must not grow the owned cache or publish an uncached
+         * JOINED. */
+        if (index == wifi_state.ap.client_count &&
+            index < H2_JIELI_AP_STATION_SLOTS) {
+          h2_pal_wifi_ap_client_t* client = &wifi_state.ap_clients[index];
           memset(client, 0, sizeof(*client));
           /* The SDK event owns six MAC bytes only. As with ESP's cached
            * clients, fields absent from the event remain zero. */
@@ -261,10 +283,12 @@ static int wifi_event(void *context, enum WIFI_EVENT event) {
       } else if (index < wifi_state.ap.client_count) {
         client_event.client = wifi_state.ap_clients[index];
         --wifi_state.ap.client_count;
-        memmove(&wifi_state.ap_clients[index], &wifi_state.ap_clients[index + 1u],
-            (wifi_state.ap.client_count - index) * sizeof(wifi_state.ap_clients[0]));
+        memmove(&wifi_state.ap_clients[index],
+                &wifi_state.ap_clients[index + 1u],
+                (wifi_state.ap.client_count - index) *
+                    sizeof(wifi_state.ap_clients[0]));
         memset(&wifi_state.ap_clients[wifi_state.ap.client_count], 0,
-            sizeof(wifi_state.ap_clients[0]));
+               sizeof(wifi_state.ap_clients[0]));
         client_type = H2_PAL_SYSTEM_EVENT_TYPE_WIFI_AP_CLIENT_LEFT;
       }
       break;
@@ -281,7 +305,8 @@ static int wifi_event(void *context, enum WIFI_EVENT event) {
     post_sta_event(types[index], &sta_status);
   }
   if (ap_event) post_ap_event(ap_type, &ap_status);
-  if (client_type != 0) post_system_event(client_type, &client_event, sizeof(client_event));
+  if (client_type != 0)
+    post_system_event(client_type, &client_event, sizeof(client_event));
   wifi_state_lock();
   --wifi_callbacks_active;
   wifi_state_unlock();
@@ -303,7 +328,7 @@ static int ensure_wifi_on(void) {
   return H2_PAL_OK;
 }
 
-static void update_sta_snapshot(h2_pal_wifi_sta_status_t *status) {
+static void update_sta_snapshot(h2_pal_wifi_sta_status_t* status) {
   /* SSID is owned by the PAL connect request; never borrow the SDK's mutable
    * mode-info strings from status readers. */
   wifi_get_bssid(status->bssid);
@@ -316,19 +341,21 @@ static void update_sta_snapshot(h2_pal_wifi_sta_status_t *status) {
     /* This callback is inside the SDK HSM: radio teardown cannot overlap.
      * IP/DNS storage still belongs to tcpip_thread, so copy there and wait. */
     status->ip_valid = h2_jieli_netif_capture_ip(&netif) == H2_PAL_OK &&
-        (netif.flags & H2_PAL_NETIF_FLAG_HAS_IPV4) != 0u;
+                       (netif.flags & H2_PAL_NETIF_FLAG_HAS_IPV4) != 0u;
     if (status->ip_valid) {
-      status->ip.ip4 = pack_ip4(
-          netif.ipv4.ip[0], netif.ipv4.ip[1], netif.ipv4.ip[2], netif.ipv4.ip[3]);
-      status->ip.netmask4 = pack_ip4(
-          netif.netmask4.ip[0], netif.netmask4.ip[1], netif.netmask4.ip[2], netif.netmask4.ip[3]);
-      status->ip.gateway4 = pack_ip4(
-          netif.gateway4.ip[0], netif.gateway4.ip[1], netif.gateway4.ip[2], netif.gateway4.ip[3]);
+      status->ip.ip4 = pack_ip4(netif.ipv4.ip[0], netif.ipv4.ip[1],
+                                netif.ipv4.ip[2], netif.ipv4.ip[3]);
+      status->ip.netmask4 =
+          pack_ip4(netif.netmask4.ip[0], netif.netmask4.ip[1],
+                   netif.netmask4.ip[2], netif.netmask4.ip[3]);
+      status->ip.gateway4 =
+          pack_ip4(netif.gateway4.ip[0], netif.gateway4.ip[1],
+                   netif.gateway4.ip[2], netif.gateway4.ip[3]);
     }
   }
 }
 
-static int sta_get_status(void *user, h2_pal_wifi_sta_status_t *out_status) {
+static int sta_get_status(void* user, h2_pal_wifi_sta_status_t* out_status) {
   (void)user;
   if (out_status == NULL) return H2_PAL_ERR_INVALID_ARG;
   wifi_state_lock();
@@ -347,10 +374,9 @@ static int sta_get_status(void *user, h2_pal_wifi_sta_status_t *out_status) {
   return H2_PAL_OK;
 }
 
-static int sta_scan(
-    void *user, const h2_pal_wifi_scan_request_t *request,
-    h2_pal_wifi_scan_result_fn on_result, void *callback_user,
-    uint32_t timeout_ms) {
+static int sta_scan(void* user, const h2_pal_wifi_scan_request_t* request,
+                    h2_pal_wifi_scan_result_fn on_result, void* callback_user,
+                    uint32_t timeout_ms) {
   (void)user;
   if (on_result == NULL) return H2_PAL_ERR_INVALID_ARG;
   int result = ensure_wifi_on();
@@ -360,7 +386,7 @@ static int sta_scan(
   if (info.mode != STA_MODE) return H2_PAL_ERR_INVALID_STATE;
   unsigned expected = SCAN_IDLE;
   if (!__atomic_compare_exchange_n(&scan_phase, &expected, SCAN_PENDING, 0,
-                                    __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
+                                   __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
     return H2_PAL_ERR_BUSY;
   }
   if (wifi_scan_req() != 0) {
@@ -372,8 +398,8 @@ static int sta_scan(
     const uint32_t elapsed = (uint32_t)(timer_get_ms() - start);
     if (elapsed >= timeout_ms || timeout_ms - elapsed < 10u) {
       expected = SCAN_PENDING;
-      if (__atomic_compare_exchange_n(&scan_phase, &expected, SCAN_ABANDONED,
-                                       0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+      if (__atomic_compare_exchange_n(&scan_phase, &expected, SCAN_ABANDONED, 0,
+                                      __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
         return H2_PAL_ERR_TIMEOUT;
       }
       /* Completion won the race; this caller still owns the ready result. */
@@ -382,9 +408,9 @@ static int sta_scan(
     os_time_dly(1u);
   }
   uint32_t count = 0u;
-  struct wifi_scan_ssid_info *entries = wifi_get_scan_result(&count);
+  struct wifi_scan_ssid_info* entries = wifi_get_scan_result(&count);
   for (uint32_t index = 0u; entries != NULL && index < count; ++index) {
-    struct wifi_scan_ssid_info *source = &entries[index];
+    struct wifi_scan_ssid_info* source = &entries[index];
     if (request != NULL && request->ssid_len != 0u &&
         (request->ssid_len != source->ssid_len ||
          memcmp(request->ssid, source->ssid, request->ssid_len) != 0)) {
@@ -412,11 +438,12 @@ static int sta_scan(
   return H2_PAL_OK;
 }
 
-static int sta_validate_sdk_password(const h2_pal_wifi_sta_config_t *config) {
+static int sta_validate_sdk_password(const h2_pal_wifi_sta_config_t* config) {
   /* Both our default-mode copy and SDK wifi_enter_sta_mode's strncpy(..., 63)
-   * reserve a NUL byte in wifi_store_info.pwd[0]; neither can carry 64 bytes. */
-  if (config == NULL ||
-      config->password_len > sizeof(((struct wifi_store_info *)0)->pwd[0]) - 1u) {
+   * reserve a NUL byte in wifi_store_info.pwd[0]; neither can carry 64 bytes.
+   */
+  if (config == NULL || config->password_len >
+                            sizeof(((struct wifi_store_info*)0)->pwd[0]) - 1u) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   return H2_PAL_OK;
@@ -434,9 +461,8 @@ static void sta_connect_fail(int reason) {
   post_sta_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_DISCONNECTED, &status);
 }
 
-static int sta_connect(
-    void *user, const h2_pal_wifi_sta_config_t *config,
-    uint32_t timeout_ms) {
+static int sta_connect(void* user, const h2_pal_wifi_sta_config_t* config,
+                       uint32_t timeout_ms) {
   (void)user;
   int result = h2_pal_wifi_settings_validate_sta_config(config);
   if (result != H2_PAL_OK) return result;
@@ -465,11 +491,13 @@ static int sta_connect(
      * first HSM STA entry followed by wifi_enter_sta_mode never associates. */
     struct wifi_store_info parm = {0};
     parm.mode = STA_MODE;
-    strncpy((char *)parm.ssid[0], ssid, sizeof(parm.ssid[0]) - 1u);
-    strncpy((char *)parm.pwd[0], password, sizeof(parm.pwd[0]) - 1u);
+    strncpy((char*)parm.ssid[0], ssid, sizeof(parm.ssid[0]) - 1u);
+    strncpy((char*)parm.pwd[0], password, sizeof(parm.pwd[0]) - 1u);
     parm.connect_best_network = 0;
-    wifi_set_sta_connect_timeout(timeout_ms == 0u
-        ? 30 : (int)(timeout_ms / 1000u + (timeout_ms % 1000u != 0u)));
+    wifi_set_sta_connect_timeout(
+        timeout_ms == 0u
+            ? 30
+            : (int)(timeout_ms / 1000u + (timeout_ms % 1000u != 0u)));
     result = wifi_set_default_mode(
         &parm, 1 /* Force this mode after wifi_on. */,
         0 /* PAL settings own persistence; do not store in the SDK. */);
@@ -489,12 +517,15 @@ static int sta_connect(
       sta_connect_fail(result);
       return result;
     }
-    wifi_set_sta_connect_timeout(timeout_ms == 0u
-        ? 30 : (int)(timeout_ms / 1000u + (timeout_ms % 1000u != 0u)));
+    wifi_set_sta_connect_timeout(
+        timeout_ms == 0u
+            ? 30
+            : (int)(timeout_ms / 1000u + (timeout_ms % 1000u != 0u)));
     /* With network_connect_block == 0, the SDK queues the credentials and its
      * tail returns wifi_sta_connect_state != 5 ? -1 : 0 without waiting. This
      * only reflects whether STA was already connected, not whether starting
-     * the connection failed. SDK events and the PAL budget decide the outcome. */
+     * the connection failed. SDK events and the PAL budget decide the outcome.
+     */
     (void)wifi_enter_sta_mode(ssid, password);
   }
   if (timeout_ms == 0u) return H2_PAL_OK;
@@ -536,7 +567,7 @@ static int wifi_stop(void) {
   return H2_PAL_OK;
 }
 
-static int sta_disconnect(void *user) {
+static int sta_disconnect(void* user) {
   (void)user;
   if (!wifi_is_on()) return H2_PAL_OK;
   /* wifi_off() is irreversible for STA use on this SDK: wifi_on() re-adds
@@ -560,7 +591,7 @@ static int sta_disconnect(void *user) {
   return H2_PAL_OK;
 }
 
-static int wifi_get_mac_address(void *user, uint8_t out_mac[6]) {
+static int wifi_get_mac_address(void* user, uint8_t out_mac[6]) {
   (void)user;
   if (out_mac == NULL) return H2_PAL_ERR_INVALID_ARG;
   int result = ensure_wifi_on();
@@ -568,14 +599,14 @@ static int wifi_get_mac_address(void *user, uint8_t out_mac[6]) {
   return wifi_get_mac(out_mac) == 0 ? H2_PAL_OK : H2_PAL_ERR_IO;
 }
 
-static int ap_start(
-    void *user, const h2_pal_wifi_ap_config_t *config,
-    uint32_t timeout_ms) {
+static int ap_start(void* user, const h2_pal_wifi_ap_config_t* config,
+                    uint32_t timeout_ms) {
   (void)user;
   int result = h2_pal_wifi_ap_config_validate(config);
   if (result != H2_PAL_OK) return result;
   /* wifi_conf.c bounds MaxStaNum at 5; its wl_set_passphrase selects
-   * OPEN/NONE or WPA2PSK/AES, not an arbitrary requested authentication mode. */
+   * OPEN/NONE or WPA2PSK/AES, not an arbitrary requested authentication mode.
+   */
   if (config->max_clients > 5u ||
       (config->security != H2_PAL_WIFI_SECURITY_OPEN &&
        config->security != H2_PAL_WIFI_SECURITY_WPA2)) {
@@ -587,10 +618,12 @@ static int ap_start(
   }
   if (config->channel > 14u) return H2_PAL_ERR_INVALID_ARG;
   const uint8_t channel = config->channel != 0u ? config->channel : 1u;
-  const uint8_t max_clients = config->max_clients != 0u ? config->max_clients : 2u;
+  const uint8_t max_clients =
+      config->max_clients != 0u ? config->max_clients : 2u;
   result = wifi_stop();
   if (result != H2_PAL_OK) return result;
-  if (h2_jieli_wifi_configure_ap(channel, max_clients, config->hidden != 0u) != 0) {
+  if (h2_jieli_wifi_configure_ap(channel, max_clients, config->hidden != 0u) !=
+      0) {
     return H2_PAL_ERR_IO;
   }
   result = ensure_wifi_on();
@@ -635,13 +668,13 @@ static int ap_start(
   return H2_PAL_OK;
 }
 
-static int ap_stop(void *user, uint32_t timeout_ms) {
+static int ap_stop(void* user, uint32_t timeout_ms) {
   (void)user;
   (void)timeout_ms;
   return wifi_stop();
 }
 
-static int ap_get_status(void *user, h2_pal_wifi_ap_status_t *out_status) {
+static int ap_get_status(void* user, h2_pal_wifi_ap_status_t* out_status) {
   (void)user;
   if (out_status == NULL) return H2_PAL_ERR_INVALID_ARG;
   wifi_state_lock();
@@ -650,26 +683,28 @@ static int ap_get_status(void *user, h2_pal_wifi_ap_status_t *out_status) {
   return H2_PAL_OK;
 }
 
-static int ap_get_clients(
-    void *user, h2_pal_wifi_ap_client_t *out_clients, size_t max_clients,
-    size_t *out_count) {
+static int ap_get_clients(void* user, h2_pal_wifi_ap_client_t* out_clients,
+                          size_t max_clients, size_t* out_count) {
   (void)user;
   if (out_count == NULL || (out_clients == NULL && max_clients != 0u)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   wifi_state_lock();
   const size_t count = wifi_state.ap.state == H2_PAL_WIFI_AP_STATE_STARTED
-      ? wifi_state.ap.client_count : 0u;
+                           ? wifi_state.ap.client_count
+                           : 0u;
   *out_count = count < max_clients ? count : max_clients;
   if (*out_count != 0u) {
-    memcpy(out_clients, wifi_state.ap_clients, *out_count * sizeof(*out_clients));
+    memcpy(out_clients, wifi_state.ap_clients,
+           *out_count * sizeof(*out_clients));
   }
   wifi_state_unlock();
   return H2_PAL_OK;
 }
 
 /* Serialize task-side radio mutations, including reentrant scan callbacks.
- * A timed-out scan still owns SDK storage until completion or a successful stop. */
+ * A timed-out scan still owns SDK storage until completion or a successful
+ * stop. */
 static unsigned wifi_operation_busy;
 
 static int wifi_operation_begin_internal(int for_stop) {
@@ -696,15 +731,17 @@ static int wifi_operation_begin(void) {
   return wifi_operation_begin_internal(0);
 }
 
-int h2_jieli_wifi_netif_begin(h2_pal_netif_status_t *status, uint32_t *generation) {
+int h2_jieli_wifi_netif_begin(h2_pal_netif_status_t* status,
+                              uint32_t* generation) {
   int result = wifi_operation_begin();
   if (result != H2_PAL_OK) return result;
   memset(status, 0, sizeof(*status));
   wifi_state_lock();
   *generation = wifi_sta_generation;
   status->kind = wifi_state.ap.state == H2_PAL_WIFI_AP_STATE_STARTED ||
-      wifi_state.ap.state == H2_PAL_WIFI_AP_STATE_STARTING
-      ? H2_PAL_NETIF_KIND_WIFI_AP : H2_PAL_NETIF_KIND_WIFI_STA;
+                         wifi_state.ap.state == H2_PAL_WIFI_AP_STATE_STARTING
+                     ? H2_PAL_NETIF_KIND_WIFI_AP
+                     : H2_PAL_NETIF_KIND_WIFI_STA;
   status->ref.kind = status->kind;
   status->ref.type = H2_PAL_NETIF_REF_NAME;
   strcpy(status->ref.name, "wl0");
@@ -735,8 +772,10 @@ int h2_jieli_wifi_netif_end(uint32_t generation) {
   return unchanged ? H2_PAL_OK : H2_PAL_ERR_BUSY;
 }
 
-static int guarded_sta_scan(void *user, const h2_pal_wifi_scan_request_t *request,
-    h2_pal_wifi_scan_result_fn on_result, void *callback_user, uint32_t timeout_ms) {
+static int guarded_sta_scan(void* user,
+                            const h2_pal_wifi_scan_request_t* request,
+                            h2_pal_wifi_scan_result_fn on_result,
+                            void* callback_user, uint32_t timeout_ms) {
   int result = wifi_operation_begin();
   if (result != H2_PAL_OK) return result;
   result = sta_scan(user, request, on_result, callback_user, timeout_ms);
@@ -744,7 +783,9 @@ static int guarded_sta_scan(void *user, const h2_pal_wifi_scan_request_t *reques
   return result;
 }
 
-static int guarded_sta_connect(void *user, const h2_pal_wifi_sta_config_t *config, uint32_t timeout_ms) {
+static int guarded_sta_connect(void* user,
+                               const h2_pal_wifi_sta_config_t* config,
+                               uint32_t timeout_ms) {
   int result = wifi_operation_begin();
   if (result != H2_PAL_OK) return result;
   result = sta_connect(user, config, timeout_ms);
@@ -756,7 +797,7 @@ static int wifi_operation_begin_for_stop(void) {
   return wifi_operation_begin_internal(1);
 }
 
-static int guarded_sta_disconnect(void *user) {
+static int guarded_sta_disconnect(void* user) {
   int result = wifi_operation_begin_for_stop();
   if (result != H2_PAL_OK) return result;
   result = sta_disconnect(user);
@@ -764,7 +805,8 @@ static int guarded_sta_disconnect(void *user) {
   return result;
 }
 
-static int guarded_ap_start(void *user, const h2_pal_wifi_ap_config_t *config, uint32_t timeout_ms) {
+static int guarded_ap_start(void* user, const h2_pal_wifi_ap_config_t* config,
+                            uint32_t timeout_ms) {
   int result = wifi_operation_begin_for_stop();
   if (result != H2_PAL_OK) return result;
   result = ap_start(user, config, timeout_ms);
@@ -772,7 +814,7 @@ static int guarded_ap_start(void *user, const h2_pal_wifi_ap_config_t *config, u
   return result;
 }
 
-static int guarded_ap_stop(void *user, uint32_t timeout_ms) {
+static int guarded_ap_stop(void* user, uint32_t timeout_ms) {
   int result = wifi_operation_begin_for_stop();
   if (result != H2_PAL_OK) return result;
   result = ap_stop(user, timeout_ms);
@@ -780,7 +822,7 @@ static int guarded_ap_stop(void *user, uint32_t timeout_ms) {
   return result;
 }
 
-static int guarded_wifi_get_mac(void *user, uint8_t out_mac[6]) {
+static int guarded_wifi_get_mac(void* user, uint8_t out_mac[6]) {
   int result = wifi_operation_begin();
   if (result != H2_PAL_OK) return result;
   result = wifi_get_mac_address(user, out_mac);
@@ -788,8 +830,9 @@ static int guarded_wifi_get_mac(void *user, uint8_t out_mac[6]) {
   return result;
 }
 
-static int sta_connect_and_save(void *user,
-    const h2_pal_wifi_sta_config_t *config, uint32_t timeout_ms) {
+static int sta_connect_and_save(void* user,
+                                const h2_pal_wifi_sta_config_t* config,
+                                uint32_t timeout_ms) {
   int result = wifi_operation_begin();
   if (result != H2_PAL_OK) return result;
   result = sta_validate_sdk_password(config);
@@ -798,7 +841,9 @@ static int sta_connect_and_save(void *user,
     return result;
   }
   static const h2_pal_wifi_sta_vtable_t raw_vtable = {
-      .get_status = sta_get_status, .connect = sta_connect, .disconnect = sta_disconnect,
+      .get_status = sta_get_status,
+      .connect = sta_connect,
+      .disconnect = sta_disconnect,
   };
   const h2_pal_wifi_sta_api_t raw = {user, &raw_vtable};
   const h2_wifi_sta_dependencies_t deps = {
@@ -811,7 +856,7 @@ static int sta_connect_and_save(void *user,
   return result;
 }
 
-const h2_pal_wifi_sta_api_t *h2_jieli_ac791n_devkit_wifi_sta_api(void) {
+const h2_pal_wifi_sta_api_t* h2_jieli_ac791n_devkit_wifi_sta_api(void) {
   static const h2_pal_wifi_sta_vtable_t vtable = {
       .get_status = sta_get_status,
       .scan = guarded_sta_scan,
@@ -824,7 +869,7 @@ const h2_pal_wifi_sta_api_t *h2_jieli_ac791n_devkit_wifi_sta_api(void) {
   return &api;
 }
 
-const h2_pal_wifi_ap_api_t *h2_jieli_ac791n_devkit_wifi_ap_api(void) {
+const h2_pal_wifi_ap_api_t* h2_jieli_ac791n_devkit_wifi_ap_api(void) {
   static const h2_pal_wifi_ap_vtable_t vtable = {
       .start = guarded_ap_start,
       .stop = guarded_ap_stop,
@@ -836,20 +881,18 @@ const h2_pal_wifi_ap_api_t *h2_jieli_ac791n_devkit_wifi_ap_api(void) {
   return &api;
 }
 
-static int settings_get(
-    void *user, h2_pal_wifi_sta_config_t *out_config) {
+static int settings_get(void* user, h2_pal_wifi_sta_config_t* out_config) {
   (void)user;
   if (out_config == NULL) return H2_PAL_ERR_INVALID_ARG;
-  h2_pal_pref_namespace_t *name_space = NULL;
-  int result = h2_pal_pref_open(
-      h2_jieli_ac791n_devkit_pref_api(), "wifi",
-      H2_PAL_PREF_OPEN_READ_ONLY, &name_space);
+  h2_pal_pref_namespace_t* name_space = NULL;
+  int result = h2_pal_pref_open(h2_jieli_ac791n_devkit_pref_api(), "wifi",
+                                H2_PAL_PREF_OPEN_READ_ONLY, &name_space);
   if (result != H2_PAL_OK) return result;
-  void *data = NULL;
+  void* data = NULL;
   size_t length = 0u;
-  const h2_pal_mem_api_t *allocator = h2_jieli_wl82_platform_mem_api();
-  result = name_space->get_blob(
-      name_space, allocator, "sta-config", &data, &length);
+  const h2_pal_mem_api_t* allocator = h2_jieli_wl82_platform_mem_api();
+  result =
+      name_space->get_blob(name_space, allocator, "sta-config", &data, &length);
   if (result == H2_PAL_OK && length != sizeof(*out_config)) {
     result = H2_PAL_ERR_FORMAT;
   }
@@ -862,29 +905,26 @@ static int settings_get(
   return result == H2_PAL_OK ? close_result : result;
 }
 
-static int settings_set(
-    void *user, const h2_pal_wifi_sta_config_t *config) {
+static int settings_set(void* user, const h2_pal_wifi_sta_config_t* config) {
   (void)user;
   int result = h2_pal_wifi_settings_validate_sta_config(config);
   if (result != H2_PAL_OK) return result;
-  h2_pal_pref_namespace_t *name_space = NULL;
-  result = h2_pal_pref_open(
-      h2_jieli_ac791n_devkit_pref_api(), "wifi",
-      H2_PAL_PREF_OPEN_READ_WRITE, &name_space);
+  h2_pal_pref_namespace_t* name_space = NULL;
+  result = h2_pal_pref_open(h2_jieli_ac791n_devkit_pref_api(), "wifi",
+                            H2_PAL_PREF_OPEN_READ_WRITE, &name_space);
   if (result != H2_PAL_OK) return result;
-  result = name_space->set_blob(
-      name_space, "sta-config", config, sizeof(*config));
+  result =
+      name_space->set_blob(name_space, "sta-config", config, sizeof(*config));
   if (result == H2_PAL_OK) result = name_space->commit(name_space);
   int close_result = name_space->close(name_space);
   return result == H2_PAL_OK ? close_result : result;
 }
 
-static int settings_clear(void *user) {
+static int settings_clear(void* user) {
   (void)user;
-  h2_pal_pref_namespace_t *name_space = NULL;
-  int result = h2_pal_pref_open(
-      h2_jieli_ac791n_devkit_pref_api(), "wifi",
-      H2_PAL_PREF_OPEN_READ_WRITE, &name_space);
+  h2_pal_pref_namespace_t* name_space = NULL;
+  int result = h2_pal_pref_open(h2_jieli_ac791n_devkit_pref_api(), "wifi",
+                                H2_PAL_PREF_OPEN_READ_WRITE, &name_space);
   if (result != H2_PAL_OK) return result;
   result = name_space->remove(name_space, "sta-config");
   if (result == H2_PAL_ERR_NOT_FOUND) result = H2_PAL_OK;
@@ -893,7 +933,7 @@ static int settings_clear(void *user) {
   return result == H2_PAL_OK ? close_result : result;
 }
 
-static int settings_has(void *user, int *out_has_config) {
+static int settings_has(void* user, int* out_has_config) {
   (void)user;
   if (out_has_config == NULL) return H2_PAL_ERR_INVALID_ARG;
   h2_pal_wifi_sta_config_t config;
@@ -906,8 +946,8 @@ static int settings_has(void *user, int *out_has_config) {
   return result;
 }
 
-const h2_pal_wifi_settings_api_t *
-h2_jieli_ac791n_devkit_wifi_settings_api(void) {
+const h2_pal_wifi_settings_api_t* h2_jieli_ac791n_devkit_wifi_settings_api(
+    void) {
   static const h2_pal_wifi_settings_vtable_t vtable = {
       .get_saved_sta_config = settings_get,
       .set_saved_sta_config = settings_set,
@@ -923,16 +963,16 @@ h2_jieli_ac791n_devkit_wifi_settings_api(void) {
 
 #else
 
-const h2_pal_wifi_sta_api_t *h2_jieli_ac791n_devkit_wifi_sta_api(void) {
+const h2_pal_wifi_sta_api_t* h2_jieli_ac791n_devkit_wifi_sta_api(void) {
   return NULL;
 }
 
-const h2_pal_wifi_ap_api_t *h2_jieli_ac791n_devkit_wifi_ap_api(void) {
+const h2_pal_wifi_ap_api_t* h2_jieli_ac791n_devkit_wifi_ap_api(void) {
   return NULL;
 }
 
-const h2_pal_wifi_settings_api_t *
-h2_jieli_ac791n_devkit_wifi_settings_api(void) {
+const h2_pal_wifi_settings_api_t* h2_jieli_ac791n_devkit_wifi_settings_api(
+    void) {
   return NULL;
 }
 

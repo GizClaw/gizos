@@ -26,16 +26,16 @@ struct Observer {
   bool entered = false;
   bool release = false;
 };
-void display_frame(void *user, const h2_sdl3_capture_frame_t *frame) {
-  auto *observer = static_cast<Observer *>(user);
+void display_frame(void* user, const h2_sdl3_capture_frame_t* frame) {
+  auto* observer = static_cast<Observer*>(user);
   assert(frame->width == 32u && frame->height == 24u);
   assert(frame->stride_bytes == 64u && frame->timestamp_us > 0u);
   ++observer->displays;
   observer->first_pixel = frame->pixels[0];
   observer->brightness = frame->brightness;
 }
-void mic_frame(void *user, const h2_portaudio_capture_frame_t *frame) {
-  auto *observer = static_cast<Observer *>(user);
+void mic_frame(void* user, const h2_portaudio_capture_frame_t* frame) {
+  auto* observer = static_cast<Observer*>(user);
   assert(frame->sample_rate == 16000u && frame->channels == 1u);
   assert(frame->frames == observer->mic.size());
   std::copy_n(frame->samples, frame->frames, observer->mic.begin());
@@ -48,18 +48,18 @@ void mic_frame(void *user, const h2_portaudio_capture_frame_t *frame) {
     observer->changed.wait(lock, [&] { return observer->release; });
   }
 }
-void speaker_frame(void *, const h2_portaudio_capture_frame_t *) {}
-void present(h2_sdl3_t *provider) {
+void speaker_frame(void*, const h2_portaudio_capture_frame_t*) {}
+void present(h2_sdl3_t* provider) {
   assert(h2_pal_display_present(h2_sdl3_display(provider)) == H2_PAL_OK);
   h2_sdl3_event_t event = {};
   while (h2_sdl3_poll_event(provider, &event) == H2_PAL_OK) {
   }
 }
-} // namespace
+}  // namespace
 
 int main() {
   assert(setenv("SDL_VIDEODRIVER", "dummy", 1) == 0);
-  h2_desktop_capture_t *capture = nullptr;
+  h2_desktop_capture_t* capture = nullptr;
   assert(h2_desktop_capture_create(nullptr, &capture) == H2_PAL_OK);
   assert(capture == nullptr);
   h2_desktop_capture_config_t config = {};
@@ -69,11 +69,11 @@ int main() {
   assert(h2_desktop_capture_create(&config, &capture) ==
          H2_PAL_ERR_INVALID_ARG);
 
-  h2_sdl3_t *display = nullptr;
+  h2_sdl3_t* display = nullptr;
   const h2_sdl3_config_t display_config = {"Desktop capture test", 32, 24};
   assert(h2_sdl3_create(&display_config, &display) == H2_PAL_OK);
   assert(h2_pal_display_open(h2_sdl3_display(display)) == H2_PAL_OK);
-  h2_portaudio_t *audio = nullptr;
+  h2_portaudio_t* audio = nullptr;
   const h2_portaudio_config_t audio_config = {
       h2_desktop_platform_default_allocator(), h2_desktop_platform_queue_api(),
       h2_desktop_platform_sync_api(), 0};
@@ -108,7 +108,7 @@ int main() {
   assert(observer.brightness == 128u);
   h2_portaudio_publish_mic_for_test(audio, samples.data(), samples.size(),
                                     1000u, 0);
-  assert(observer.microphones == 0u); // synthetic fallback is not real capture
+  assert(observer.microphones == 0u);  // synthetic fallback is not real capture
   h2_portaudio_publish_mic_for_test(audio, samples.data(), samples.size(),
                                     2000u, 1);
   assert(observer.microphones == 1u && observer.mic == samples);

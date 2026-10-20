@@ -15,18 +15,16 @@ typedef struct memory {
   size_t attempts, fail_at, live;
 } memory_t;
 
-static void *allocate(void *user, size_t len) {
-  memory_t *memory = user;
-  if (++memory->attempts == memory->fail_at)
-    return NULL;
-  void *ptr = malloc(len);
-  if (ptr != NULL)
-    ++memory->live;
+static void* allocate(void* user, size_t len) {
+  memory_t* memory = user;
+  if (++memory->attempts == memory->fail_at) return NULL;
+  void* ptr = malloc(len);
+  if (ptr != NULL) ++memory->live;
   return ptr;
 }
 
-static void release(void *user, void *ptr) {
-  memory_t *memory = user;
+static void release(void* user, void* ptr) {
+  memory_t* memory = user;
   if (ptr != NULL) {
     assert(memory->live > 0u);
     --memory->live;
@@ -37,10 +35,10 @@ static void release(void *user, void *ptr) {
 static const h2_pal_mem_vtable_t memory_vtable = {.alloc = allocate,
                                                   .free = release};
 
-static void boundaries(const h2_pal_mem_api_t *allocator) {
+static void boundaries(const h2_pal_mem_api_t* allocator) {
   h2_gizclaw_pcm_track_config_t config = {
       .allocator = allocator, .uplink_capacity = 8u, .downlink_capacity = 16u};
-  h2_gizclaw_track_t *track = NULL;
+  h2_gizclaw_track_t* track = NULL;
   assert(h2_gizclaw_pcm_track_create(&config, &track) == H2_PAL_OK);
   const uint8_t input[16] = {0, 1, 2,  3,  4,  5,  6,  7,
                              8, 9, 10, 11, 12, 13, 14, 15};
@@ -98,7 +96,7 @@ static void boundaries(const h2_pal_mem_api_t *allocator) {
     if (capacity == 0u || capacity == 2u || capacity == 4u || capacity == 8u)
       continue;
     config.uplink_capacity = capacity;
-    track = (void *)1;
+    track = (void*)1;
     assert(h2_gizclaw_pcm_track_create(&config, &track) ==
            H2_PAL_ERR_INVALID_ARG);
     assert(track == NULL);
@@ -106,14 +104,14 @@ static void boundaries(const h2_pal_mem_api_t *allocator) {
 }
 
 typedef struct lane {
-  h2_gizclaw_track_t *track;
+  h2_gizclaw_track_t* track;
   bool downlink;
 } lane_t;
 
 enum { TRANSFER_BYTES = 42 * 10000 };
 
-static void *producer(void *user) {
-  lane_t *lane = user;
+static void* producer(void* user) {
+  lane_t* lane = user;
   for (size_t offset = 0; offset < TRANSFER_BYTES;) {
     uint8_t data[14];
     for (size_t i = 0; i < sizeof(data); ++i)
@@ -132,8 +130,8 @@ static void *producer(void *user) {
   return NULL;
 }
 
-static void *consumer(void *user) {
-  lane_t *lane = user;
+static void* consumer(void* user) {
+  lane_t* lane = user;
   for (size_t offset = 0; offset < TRANSFER_BYTES;) {
     uint8_t data[6];
     size_t len = 0;
@@ -154,10 +152,10 @@ static void *consumer(void *user) {
   return NULL;
 }
 
-static void concurrency(const h2_pal_mem_api_t *allocator) {
+static void concurrency(const h2_pal_mem_api_t* allocator) {
   const h2_gizclaw_pcm_track_config_t config = {
       .allocator = allocator, .uplink_capacity = 32u, .downlink_capacity = 64u};
-  h2_gizclaw_track_t *track = NULL;
+  h2_gizclaw_track_t* track = NULL;
   assert(h2_gizclaw_pcm_track_create(&config, &track) == H2_PAL_OK);
   lane_t lanes[2] = {{track, false}, {track, true}};
   pthread_t threads[4];
@@ -165,12 +163,11 @@ static void concurrency(const h2_pal_mem_api_t *allocator) {
     assert(pthread_create(&threads[i * 2], NULL, producer, &lanes[i]) == 0);
     assert(pthread_create(&threads[i * 2 + 1], NULL, consumer, &lanes[i]) == 0);
   }
-  for (size_t i = 0; i < 4u; ++i)
-    assert(pthread_join(threads[i], NULL) == 0);
+  for (size_t i = 0; i < 4u; ++i) assert(pthread_join(threads[i], NULL) == 0);
   assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK);
 }
 
-static void counter_wrap(const h2_pal_mem_api_t *allocator) {
+static void counter_wrap(const h2_pal_mem_api_t* allocator) {
   h2_gizclaw_pcm_ring_t ring;
   assert(h2_gizclaw_pcm_ring_init(&ring, allocator, 8u) == H2_PAL_OK);
   h2_atomic_size_store(&ring.read_index, SIZE_MAX - 3u, H2_ATOMIC_SEQ_CST);
@@ -185,10 +182,10 @@ static void counter_wrap(const h2_pal_mem_api_t *allocator) {
   h2_gizclaw_pcm_ring_deinit(&ring);
 }
 
-static void recording_window(const h2_pal_mem_api_t *allocator) {
+static void recording_window(const h2_pal_mem_api_t* allocator) {
   const h2_gizclaw_pcm_track_config_t config = {
       .allocator = allocator, .uplink_capacity = 16u, .downlink_capacity = 16u};
-  h2_gizclaw_track_t *track = NULL;
+  h2_gizclaw_track_t* track = NULL;
   assert(h2_gizclaw_pcm_track_create(&config, &track) == H2_PAL_OK);
   const uint8_t stale[4] = {1, 2, 3, 4};
   const uint8_t current[10] = {10, 11, 12, 13, 14, 15, 16, 17, 18, 19};
@@ -197,18 +194,21 @@ static void recording_window(const h2_pal_mem_api_t *allocator) {
   assert(h2_gizclaw_pcm_input_end(&input, track) == H2_PAL_ERR_INVALID_STATE);
   assert(h2_gizclaw_pcm_track_write(track, stale, sizeof(stale)) == H2_PAL_OK);
   assert(h2_gizclaw_pcm_input_start(&input, track, allocator) == H2_PAL_OK);
-  assert(h2_gizclaw_pcm_input_start(&input, track, allocator) == H2_PAL_ERR_INVALID_STATE);
-  assert(h2_gizclaw_pcm_track_write(track, current, sizeof(current)) == H2_PAL_OK);
+  assert(h2_gizclaw_pcm_input_start(&input, track, allocator) ==
+         H2_PAL_ERR_INVALID_STATE);
+  assert(h2_gizclaw_pcm_track_write(track, current, sizeof(current)) ==
+         H2_PAL_OK);
   assert(h2_gizclaw_pcm_input_end(&input, track) == H2_PAL_OK);
   assert(!input.empty);
   assert(h2_gizclaw_pcm_track_write(track, later, 2u) == H2_PAL_OK);
   /* Neither control call steals the consumer cursor. */
   assert(h2_gizclaw_pcm_track_pending_internal(track) == 16u);
   assert(h2_gizclaw_pcm_input_end(&input, track) == H2_PAL_OK);
-  memory_t *memory = allocator->user;
+  memory_t* memory = allocator->user;
   memory->fail_at = memory->attempts + 1u;
   assert(h2_gizclaw_pcm_input_prepare(&input, track) == H2_PAL_ERR_NO_MEMORY);
-  /* Only stale pre-start PCM was discarded. The unsaved tail stays protected. */
+  /* Only stale pre-start PCM was discarded. The unsaved tail stays protected.
+   */
   assert(h2_gizclaw_pcm_track_pending_internal(track) == 12u);
   memory->fail_at = 0u;
   assert(h2_gizclaw_pcm_input_prepare(&input, track) == H2_PAL_OK);
@@ -236,9 +236,9 @@ static void recording_window(const h2_pal_mem_api_t *allocator) {
   assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK);
 }
 
-static void default_capacity(const h2_pal_mem_api_t *allocator) {
+static void default_capacity(const h2_pal_mem_api_t* allocator) {
   const h2_gizclaw_pcm_track_config_t config = {.allocator = allocator};
-  h2_gizclaw_track_t *track = NULL;
+  h2_gizclaw_track_t* track = NULL;
   assert(h2_gizclaw_pcm_track_create(&config, &track) == H2_PAL_OK);
   uint8_t data[16384] = {0};
   assert(h2_gizclaw_pcm_track_write(track, data, sizeof(data)) == H2_PAL_OK);
@@ -249,30 +249,33 @@ static void default_capacity(const h2_pal_mem_api_t *allocator) {
   assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK);
 }
 
-static void tail_outlives_track(const h2_pal_mem_api_t *service_allocator) {
+static void tail_outlives_track(const h2_pal_mem_api_t* service_allocator) {
   memory_t track_memory = {0};
-  const h2_pal_mem_api_t track_allocator = {
-      .user = &track_memory, .vtable = &memory_vtable};
-  const h2_gizclaw_pcm_track_config_t config = {
-      .allocator = &track_allocator, .uplink_capacity = 8u, .downlink_capacity = 8u};
-  h2_gizclaw_track_t *track = NULL;
+  const h2_pal_mem_api_t track_allocator = {.user = &track_memory,
+                                            .vtable = &memory_vtable};
+  const h2_gizclaw_pcm_track_config_t config = {.allocator = &track_allocator,
+                                                .uplink_capacity = 8u,
+                                                .downlink_capacity = 8u};
+  h2_gizclaw_track_t* track = NULL;
   h2_gizclaw_pcm_input_t input = {0};
   const uint8_t data[6] = {0, 1, 2, 3, 4, 5};
   assert(h2_gizclaw_pcm_track_create(&config, &track) == H2_PAL_OK);
-  assert(h2_gizclaw_pcm_input_start(&input, track, service_allocator) == H2_PAL_OK);
+  assert(h2_gizclaw_pcm_input_start(&input, track, service_allocator) ==
+         H2_PAL_OK);
   assert(h2_gizclaw_pcm_track_write(track, data, sizeof(data)) == H2_PAL_OK);
   assert(h2_gizclaw_pcm_input_end(&input, track) == H2_PAL_OK);
   assert(h2_gizclaw_pcm_input_prepare(&input, track) == H2_PAL_OK);
   assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK);
   assert(track_memory.live == 0u);
-  assert(input.tail_len == sizeof(data) && memcmp(input.tail, data, sizeof(data)) == 0);
+  assert(input.tail_len == sizeof(data) &&
+         memcmp(input.tail, data, sizeof(data)) == 0);
   h2_gizclaw_pcm_input_deinit(&input);
 }
 
-static void discard_downlink(const h2_pal_mem_api_t *allocator) {
+static void discard_downlink(const h2_pal_mem_api_t* allocator) {
   h2_gizclaw_pcm_track_config_t config = {
       .allocator = allocator, .uplink_capacity = 8u, .downlink_capacity = 16u};
-  h2_gizclaw_track_t *track = NULL;
+  h2_gizclaw_track_t* track = NULL;
   assert(h2_gizclaw_pcm_track_create(&config, &track) == H2_PAL_OK);
   const uint8_t stale[8] = {1, 1, 1, 1, 1, 1, 1, 1};
   const uint8_t fresh[4] = {7, 8, 9, 10};
@@ -337,7 +340,7 @@ int main(void) {
   assert(memory.live == 0u);
   for (size_t fail = 1u; fail <= 3u; ++fail) {
     memory = (memory_t){.fail_at = fail};
-    h2_gizclaw_track_t *track = (void *)1;
+    h2_gizclaw_track_t* track = (void*)1;
     const h2_gizclaw_pcm_track_config_t config = {.allocator = &allocator,
                                                   .uplink_capacity = 32u,
                                                   .downlink_capacity = 32u};

@@ -14,11 +14,11 @@
 #include <stdio.h>
 #include <string.h>
 
-static const h2_pal_log_api_t *board_log;
-static h2_pal_task_t *entry_task;
+static const h2_pal_log_api_t* board_log;
+static h2_pal_task_t* entry_task;
 
-static int result_write(void *user, h2_pal_log_level_t level, const char *scope,
-                        const char *message) {
+static int result_write(void* user, h2_pal_log_level_t level, const char* scope,
+                        const char* message) {
   (void)user;
   if (level == H2_PAL_LOG_INFO && scope != NULL && message != NULL &&
       strcmp(scope, "libco-smoke") == 0) {
@@ -36,7 +36,7 @@ static void h2_libco_smoke_hold(void) {
   }
 }
 
-static void h2_libco_smoke_fail(const char *stage, int result,
+static void h2_libco_smoke_fail(const char* stage, int result,
                                 bool command_transport_started) {
   printf("H2_ESP_LIBCO_SMOKE_FAIL stage=%s rc=%d\n", stage, result);
   fflush(stdout);
@@ -46,10 +46,10 @@ static void h2_libco_smoke_fail(const char *stage, int result,
   h2_libco_smoke_hold();
 }
 
-static void image_entry(void *user) {
+static void image_entry(void* user) {
   (void)user;
   h2_runtime_config_t runtime_config = {0};
-  h2_runtime_t *runtime = NULL;
+  h2_runtime_t* runtime = NULL;
   BaseType_t task_core = xTaskGetCoreID(NULL);
   BaseType_t current_core = xPortGetCoreID();
   if (printf("H2_ESP_LIBCO_ROOT task=%s task_core=%d current_core=%d "

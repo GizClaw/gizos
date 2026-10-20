@@ -29,8 +29,8 @@ typedef struct h2_gizclaw_cancel_token h2_gizclaw_cancel_token_t;
  * supplied cancellation token and must not retain the client or token.
  */
 typedef h2_pal_result_t (*h2_gizclaw_operation_run_fn)(
-    void *user, h2_gizclaw_client_t *client,
-    const h2_gizclaw_cancel_token_t *cancel_token);
+    void* user, h2_gizclaw_client_t* client,
+    const h2_gizclaw_cancel_token_t* cancel_token);
 
 /**
  * Apply one terminal result on the thread calling service dispatch.
@@ -39,66 +39,65 @@ typedef h2_pal_result_t (*h2_gizclaw_operation_run_fn)(
  * callback return. This callback may release its operation handle.
  */
 typedef void (*h2_gizclaw_operation_completion_fn)(
-    void *user, h2_gizclaw_operation_t *operation,
-    const h2_gizclaw_operation_result_t *result);
+    void* user, h2_gizclaw_operation_t* operation,
+    const h2_gizclaw_operation_result_t* result);
 
 /* Sole network-owner scheduling internals, not application request handles. */
-bool h2_gizclaw_cancel_requested(const h2_gizclaw_cancel_token_t *cancel_token);
-h2_pal_result_t h2_gizclaw_operation_cancel(h2_gizclaw_operation_t *operation);
-void h2_gizclaw_operation_release(h2_gizclaw_operation_t *operation);
+bool h2_gizclaw_cancel_requested(const h2_gizclaw_cancel_token_t* cancel_token);
+h2_pal_result_t h2_gizclaw_operation_cancel(h2_gizclaw_operation_t* operation);
+void h2_gizclaw_operation_release(h2_gizclaw_operation_t* operation);
 
 typedef struct h2_gizclaw_req_vtable {
-  h2_pal_result_t (*do_request)(h2_gizclaw_req_t *request,
-                                void *user,
+  h2_pal_result_t (*do_request)(h2_gizclaw_req_t* request, void* user,
                                 h2_gizclaw_req_input_read_fn input_read,
                                 h2_gizclaw_req_output_write_fn output_write,
                                 h2_gizclaw_req_complete_fn on_complete);
-  h2_pal_result_t (*wait)(h2_gizclaw_req_t *request, uint32_t timeout_ms);
-  h2_pal_result_t (*cancel)(h2_gizclaw_req_t *request);
-  void (*release)(h2_gizclaw_req_t *request);
+  h2_pal_result_t (*wait)(h2_gizclaw_req_t* request, uint32_t timeout_ms);
+  h2_pal_result_t (*cancel)(h2_gizclaw_req_t* request);
+  void (*release)(h2_gizclaw_req_t* request);
 } h2_gizclaw_req_vtable_t;
 
 struct h2_gizclaw_req {
-  const h2_gizclaw_req_vtable_t *vtable;
+  const h2_gizclaw_req_vtable_t* vtable;
 };
 
 /* One owner-task submission, with no pending poll or retry. Even WOULD_BLOCK
  * is terminal. Context ownership transfers only on successful construction. */
 h2_pal_result_t h2_gizclaw_req_create_send_internal(
-    h2_gizclaw_service_t *service, uint64_t identity, uint32_t timeout_ms,
-    const void *tag, h2_gizclaw_operation_run_fn send,
-    void (*destroy)(void *context), void *context,
-    h2_gizclaw_req_t **out_request);
-h2_pal_result_t h2_gizclaw_req_context_internal(const h2_gizclaw_req_t *request,
-                                                const void *tag,
-                                                const void **out_context);
+    h2_gizclaw_service_t* service, uint64_t identity, uint32_t timeout_ms,
+    const void* tag, h2_gizclaw_operation_run_fn send,
+    void (*destroy)(void* context), void* context,
+    h2_gizclaw_req_t** out_request);
+h2_pal_result_t h2_gizclaw_req_context_internal(const h2_gizclaw_req_t* request,
+                                                const void* tag,
+                                                const void** out_context);
 /* Unary RPC with owned parser metadata. Context ownership transfers only on
  * successful construction. */
 h2_pal_result_t h2_gizclaw_req_create_rpc_context_internal(
-    h2_gizclaw_service_t *service, uint64_t identity,
-    h2_gizclaw_rpc_method_t method, const void *tag,
-    h2_gizclaw_rpc_bytes_t payload, uint32_t timeout_ms,
-    void (*destroy)(void *), void *context, h2_gizclaw_req_t **out_request);
+    h2_gizclaw_service_t* service, uint64_t identity,
+    h2_gizclaw_rpc_method_t method, const void* tag,
+    h2_gizclaw_rpc_bytes_t payload, uint32_t timeout_ms, void (*destroy)(void*),
+    void* context, h2_gizclaw_req_t** out_request);
 
 /* Fixed-length benchmark source; protocol I/O stays on the network owner.
  * Frame consumers run on their independent direction task, never under SDK.
  * Context ownership transfers only when construction succeeds. */
 h2_pal_result_t h2_gizclaw_req_create_stream_internal(
-    h2_gizclaw_service_t *service, uint64_t identity,
-    h2_gizclaw_rpc_method_t method, const void *tag,
+    h2_gizclaw_service_t* service, uint64_t identity,
+    h2_gizclaw_rpc_method_t method, const void* tag,
     h2_gizclaw_rpc_bytes_t payload, uint32_t timeout_ms, size_t input_bytes,
-    h2_gizclaw_rpc_stream_fn on_frame, void (*destroy)(void *), void *context,
-    h2_gizclaw_req_t **out_request);
+    h2_gizclaw_rpc_stream_fn on_frame, void (*destroy)(void*), void* context,
+    h2_gizclaw_req_t** out_request);
 
 /* Enable failure-only benchmark accounting before request submission. */
-void h2_gizclaw_req_speedtest_diagnostic_internal(h2_gizclaw_req_t *request,
-                                                size_t download_bytes);
-void h2_gizclaw_rpc_snapshot_internal(h2_gizclaw_rpc_request_t *request,
-                                      h2_gizclaw_rpc_diagnostic_t *out);
+void h2_gizclaw_req_speedtest_diagnostic_internal(h2_gizclaw_req_t* request,
+                                                  size_t download_bytes);
+void h2_gizclaw_rpc_snapshot_internal(h2_gizclaw_rpc_request_t* request,
+                                      h2_gizclaw_rpc_diagnostic_t* out);
 
 /* Select direct worker-side consumption for streams whose payload is only
  * counted/validated internally and does not need caller delivery. */
-void h2_gizclaw_req_output_optional_internal(h2_gizclaw_req_t *request);
+void h2_gizclaw_req_output_optional_internal(h2_gizclaw_req_t* request);
 typedef enum h2_gizclaw_stream_lane {
   H2_GIZCLAW_STREAM_AUDIO_UPLINK,
   H2_GIZCLAW_STREAM_AUDIO_DOWNLINK,
@@ -131,9 +130,9 @@ typedef struct h2_gizclaw_stream_ring {
 } h2_gizclaw_stream_ring_t;
 
 /* The caller must hold service->mutex while inspecting a lane-ready flag. */
-bool h2_gizclaw_req_data_ready_internal(h2_gizclaw_service_t *service,
+bool h2_gizclaw_req_data_ready_internal(h2_gizclaw_service_t* service,
                                         h2_gizclaw_stream_lane_t lane);
-bool h2_gizclaw_req_data_step_internal(h2_gizclaw_service_t *service,
+bool h2_gizclaw_req_data_step_internal(h2_gizclaw_service_t* service,
                                        h2_gizclaw_stream_lane_t lane);
 
 /* A download sink is admitted once by do. received is a one-shot lane-task
@@ -141,35 +140,34 @@ bool h2_gizclaw_req_data_step_internal(h2_gizclaw_service_t *service,
  * It must eventually publish sink_done (possibly from the downlink task).
  * detach quiesces the sink before request/context destruction. */
 h2_pal_result_t h2_gizclaw_req_create_sink_stream_internal(
-    h2_gizclaw_service_t *service, uint64_t identity,
-    h2_gizclaw_rpc_method_t method, const void *tag,
+    h2_gizclaw_service_t* service, uint64_t identity,
+    h2_gizclaw_rpc_method_t method, const void* tag,
     h2_gizclaw_rpc_bytes_t payload, uint32_t timeout_ms,
     h2_gizclaw_rpc_stream_fn on_frame,
-    void (*received)(void *, h2_gizclaw_req_t *),
-    h2_pal_result_t (*admit)(void *), void (*detach)(void *),
-    void (*destroy)(void *), void *context, bool audio_sink,
-    h2_gizclaw_req_t **out_request);
-void h2_gizclaw_req_sink_done_internal(h2_gizclaw_req_t *request,
+    void (*received)(void*, h2_gizclaw_req_t*), h2_pal_result_t (*admit)(void*),
+    void (*detach)(void*), void (*destroy)(void*), void* context,
+    bool audio_sink, h2_gizclaw_req_t** out_request);
+void h2_gizclaw_req_sink_done_internal(h2_gizclaw_req_t* request,
                                        h2_pal_result_t result);
 
 /* PCM is supplied only by the Service uplink task, not application code.
  * admit reserves the route; detach waits for in-flight uplink references.
  * Closing input queues protocol EOS after the last accepted slot drains. */
 h2_pal_result_t h2_gizclaw_req_create_pcm_stream_internal(
-    h2_gizclaw_service_t *service, uint64_t identity,
-    h2_gizclaw_rpc_method_t method, const void *tag,
+    h2_gizclaw_service_t* service, uint64_t identity,
+    h2_gizclaw_rpc_method_t method, const void* tag,
     h2_gizclaw_rpc_bytes_t payload, uint32_t timeout_ms,
-    h2_gizclaw_rpc_stream_fn on_frame, h2_pal_result_t (*admit)(void *),
-    void (*detach)(void *), void (*destroy)(void *), void *context,
-    h2_gizclaw_req_t **out_request);
-bool h2_gizclaw_req_pcm_ready_internal(h2_gizclaw_req_t *request);
+    h2_gizclaw_rpc_stream_fn on_frame, h2_pal_result_t (*admit)(void*),
+    void (*detach)(void*), void (*destroy)(void*), void* context,
+    h2_gizclaw_req_t** out_request);
+bool h2_gizclaw_req_pcm_ready_internal(h2_gizclaw_req_t* request);
 /* audio_mutex keeps the request alive; this helper takes service->mutex. */
 h2_pal_result_t h2_gizclaw_req_pcm_input_snapshot_internal(
-    h2_gizclaw_req_t *request, bool *active, bool *ready);
-h2_pal_result_t h2_gizclaw_req_pcm_write_internal(h2_gizclaw_req_t *request,
-                                                  const uint8_t *data,
+    h2_gizclaw_req_t* request, bool* active, bool* ready);
+h2_pal_result_t h2_gizclaw_req_pcm_write_internal(h2_gizclaw_req_t* request,
+                                                  const uint8_t* data,
                                                   size_t len);
-void h2_gizclaw_req_pcm_end_internal(h2_gizclaw_req_t *request,
+void h2_gizclaw_req_pcm_end_internal(h2_gizclaw_req_t* request,
                                      h2_pal_result_t result);
 
 typedef enum h2_gizclaw_operation_state {
@@ -181,20 +179,20 @@ typedef enum h2_gizclaw_operation_state {
 } h2_gizclaw_operation_state_t;
 
 struct h2_gizclaw_cancel_token {
-  h2_gizclaw_operation_t *operation;
+  h2_gizclaw_operation_t* operation;
 };
 
 struct h2_gizclaw_operation {
-  h2_gizclaw_service_t *service;
+  h2_gizclaw_service_t* service;
   h2_gizclaw_operation_run_fn run;
   h2_gizclaw_operation_run_fn poll;
   h2_gizclaw_operation_completion_fn completion;
   /* Internal publication only; called with the service mutex held. */
   h2_gizclaw_operation_completion_fn settle;
   /* Drop the execution/callback reference outside the service mutex. */
-  void (*release_user)(void *user);
-  void (*finish)(void *user);
-  void *user;
+  void (*release_user)(void* user);
+  void (*finish)(void* user);
+  void* user;
   h2_gizclaw_operation_result_t result;
   h2_atomic_bool_t terminal;
   h2_gizclaw_operation_state_t state;
@@ -205,7 +203,7 @@ struct h2_gizclaw_operation {
   bool notification_driven;
   bool ready;
   h2_gizclaw_cancel_token_t cancel_token;
-  h2_gizclaw_operation_t *next_pending;
+  h2_gizclaw_operation_t* next_pending;
   uint64_t trace_sequence;
   uint64_t queued_at_ms;
   uint64_t started_at_ms;
@@ -221,54 +219,55 @@ typedef enum h2_gizclaw_dispatch_kind {
 
 typedef struct h2_gizclaw_dispatch_item {
   h2_gizclaw_dispatch_kind_t kind;
-  h2_gizclaw_operation_t *operation;
+  h2_gizclaw_operation_t* operation;
   h2_gizclaw_client_event_t event;
-  char *event_workspace_name;
-  void (*notify)(void *user);
-  void *notify_user;
+  char* event_workspace_name;
+  void (*notify)(void* user);
+  void* notify_user;
 } h2_gizclaw_dispatch_item_t;
 
 struct h2_gizclaw_service {
-  struct h2_gizclaw_device *device;
-  struct h2_gizclaw_local *local;
+  struct h2_gizclaw_device* device;
+  struct h2_gizclaw_local* local;
   /* The mutex protects attachment and RPC admission references together. */
-  struct h2_gizclaw_session *session;
+  struct h2_gizclaw_session* session;
   size_t session_references;
   h2_gizclaw_service_config_t config;
   h2_gizclaw_config_t client_config;
   h2_gizclaw_cancel_fn original_cancel;
-  void *original_cancel_user;
-  h2_pal_queue_t *request_queue;
-  h2_pal_queue_t *dispatch_queue;
-  h2_pal_mutex_t *mutex;
-  h2_pal_mutex_t *audio_mutex;
-  h2_gizclaw_conversation_t *audio_conversation;
+  void* original_cancel_user;
+  h2_pal_queue_t* request_queue;
+  h2_pal_queue_t* dispatch_queue;
+  h2_pal_mutex_t* mutex;
+  h2_pal_mutex_t* audio_mutex;
+  h2_gizclaw_conversation_t* audio_conversation;
   bool audio_ended; /* audio_mutex; repeated button release is harmless. */
   uint64_t audio_input_generation; /* audio_mutex; successful starts only. */
-  const void *audio_input_owner; /* audio_mutex; equality only, never dereferenced. */
-  h2_pal_cond_t *progress_cond;
-  h2_pal_task_t *net_task;
-  h2_pal_task_t *time_task;
+  const void*
+      audio_input_owner; /* audio_mutex; equality only, never dereferenced. */
+  h2_pal_cond_t* progress_cond;
+  h2_pal_task_t* net_task;
+  h2_pal_task_t* time_task;
   h2_gizclaw_time_sync_status_t time_sync;
   uint64_t time_start_retry_ms;
-  h2_pal_task_t *uplink_task;
-  h2_pal_task_t *downlink_task;
-  h2_pal_task_t *data_uplink_task;
-  h2_pal_task_t *data_downlink_task;
+  h2_pal_task_t* uplink_task;
+  h2_pal_task_t* downlink_task;
+  h2_pal_task_t* data_uplink_task;
+  h2_pal_task_t* data_downlink_task;
   /* One active target per independent source/direction; never a request queue.
    */
-  struct h2_gizclaw_managed_request *audio_uplink_stream;
-  struct h2_gizclaw_managed_request *audio_downlink_stream;
-  struct h2_gizclaw_managed_request *data_uplink_stream;
-  struct h2_gizclaw_managed_request *data_downlink_stream;
+  struct h2_gizclaw_managed_request* audio_uplink_stream;
+  struct h2_gizclaw_managed_request* audio_downlink_stream;
+  struct h2_gizclaw_managed_request* data_uplink_stream;
+  struct h2_gizclaw_managed_request* data_downlink_stream;
   /* Allocated once with Service. A lane ring is reset only while its active
    * target slot is empty, so steady-state chunk transport never allocates. */
   h2_gizclaw_stream_ring_t stream_rings[H2_GIZCLAW_STREAM_LANE_COUNT];
-  struct h2_gizclaw_audio_play *audio_play; /* Protected by mutex. */
+  struct h2_gizclaw_audio_play* audio_play; /* Protected by mutex. */
   h2_atomic_ptr_t media_request;
   /* Downstream audio of the configured Conversation route; mutex protects
    * publication and downlink_refs counts callers inside it. */
-  h2_gizclaw_conversation_downlink_t *conversation_downlink;
+  h2_gizclaw_conversation_downlink_t* conversation_downlink;
   size_t downlink_refs;
   h2_atomic_ptr_t speech_request;
   h2_atomic_ptr_t pcm_track;
@@ -279,9 +278,9 @@ struct h2_gizclaw_service {
   h2_pal_webrtc_track_t webrtc_track;
   h2_atomic_uint_t media_callback_refs;
   h2_atomic_int_t media_holder_tag; /* source line of the last acquirer */
-  h2_gizclaw_client_t *client;
-  h2_gizclaw_operation_t *current;
-  h2_gizclaw_operation_t *pending;
+  h2_gizclaw_client_t* client;
+  h2_gizclaw_operation_t* current;
+  h2_gizclaw_operation_t* pending;
   size_t active_count;
   size_t caller_reference_count;
   size_t request_reference_count;
@@ -302,7 +301,7 @@ struct h2_gizclaw_service {
   struct {
     bool known;
     char mode[64];
-    h2_gizclaw_req_t *request;
+    h2_gizclaw_req_t* request;
     bool request_is_set;
     bool starting;
     h2_pal_result_t last_result;
@@ -311,34 +310,31 @@ struct h2_gizclaw_service {
 };
 
 h2_pal_result_t h2_gizclaw_time_prepare_connect_internal(
-    h2_gizclaw_service_t *service);
-void h2_gizclaw_time_sync_start_internal(h2_gizclaw_service_t *service);
+    h2_gizclaw_service_t* service);
+void h2_gizclaw_time_sync_start_internal(h2_gizclaw_service_t* service);
 
 /* Wake the optional Runtime; the Runtime coalesces repeated wakes. */
-void h2_gizclaw_service_wake_dispatch_internal(
-    h2_gizclaw_service_t *service);
+void h2_gizclaw_service_wake_dispatch_internal(h2_gizclaw_service_t* service);
 
 #ifdef H2_GIZCLAW_TESTING
-typedef void (*h2_gizclaw_runtime_notify_test_fn)(h2_runtime_t *runtime);
+typedef void (*h2_gizclaw_runtime_notify_test_fn)(h2_runtime_t* runtime);
 void h2_gizclaw_service_test_set_runtime_notify(
     h2_gizclaw_runtime_notify_test_fn notify);
 #endif
 
 /* Dispatch one pending data-down write on the app poll task. */
-bool h2_gizclaw_req_dispatch_output_internal(h2_gizclaw_service_t *service);
+bool h2_gizclaw_req_dispatch_output_internal(h2_gizclaw_service_t* service);
 
-h2_pal_result_t
-h2_gizclaw_service_pcm_read_internal(h2_gizclaw_service_t *service,
-                                     uint8_t *pcm, size_t capacity,
-                                     size_t *out_len);
-h2_pal_result_t
-h2_gizclaw_service_pcm_write_internal(h2_gizclaw_service_t *service,
-                                      const uint8_t *pcm, size_t len);
+h2_pal_result_t h2_gizclaw_service_pcm_read_internal(
+    h2_gizclaw_service_t* service, uint8_t* pcm, size_t capacity,
+    size_t* out_len);
+h2_pal_result_t h2_gizclaw_service_pcm_write_internal(
+    h2_gizclaw_service_t* service, const uint8_t* pcm, size_t len);
 /* A new audio request, or a cancel, discards downlink PCM still queued from
  * the previous request so its tail cannot play over the next turn. */
 void h2_gizclaw_service_pcm_discard_downlink_internal(
-    h2_gizclaw_service_t *service);
-bool h2_gizclaw_service_pcm_readable_internal(h2_gizclaw_service_t *service);
+    h2_gizclaw_service_t* service);
+bool h2_gizclaw_service_pcm_readable_internal(h2_gizclaw_service_t* service);
 typedef enum h2_gizclaw_pcm_input_action {
   H2_GIZCLAW_PCM_INPUT_START,
   H2_GIZCLAW_PCM_INPUT_END,
@@ -346,46 +342,46 @@ typedef enum h2_gizclaw_pcm_input_action {
   H2_GIZCLAW_PCM_INPUT_READ,
 } h2_gizclaw_pcm_input_action_t;
 h2_pal_result_t h2_gizclaw_service_pcm_input_internal(
-    h2_gizclaw_service_t *service, h2_gizclaw_pcm_input_t *input,
-    h2_gizclaw_pcm_input_action_t action, uint8_t *pcm, size_t len,
-    size_t *out_len);
-h2_pal_result_t h2_gizclaw_speech_audio_start_internal(void *context);
-h2_pal_result_t h2_gizclaw_speech_audio_end_internal(void *context);
-h2_pal_result_t h2_gizclaw_speech_input_snapshot_internal(
-    void *context, bool *active, bool *ready);
-void h2_gizclaw_speech_uplink_step_internal(h2_gizclaw_service_t *service);
+    h2_gizclaw_service_t* service, h2_gizclaw_pcm_input_t* input,
+    h2_gizclaw_pcm_input_action_t action, uint8_t* pcm, size_t len,
+    size_t* out_len);
+h2_pal_result_t h2_gizclaw_speech_audio_start_internal(void* context);
+h2_pal_result_t h2_gizclaw_speech_audio_end_internal(void* context);
+h2_pal_result_t h2_gizclaw_speech_input_snapshot_internal(void* context,
+                                                          bool* active,
+                                                          bool* ready);
+void h2_gizclaw_speech_uplink_step_internal(h2_gizclaw_service_t* service);
 void h2_gizclaw_conversation_uplink_step_internal(
-    h2_gizclaw_service_t *service);
+    h2_gizclaw_service_t* service);
 void h2_gizclaw_conversation_downlink_step_internal(
-    h2_gizclaw_service_t *service);
+    h2_gizclaw_service_t* service);
 /* Deinit only: workers and media callbacks have stopped. */
 void h2_gizclaw_conversation_downlink_destroy_internal(
-    h2_gizclaw_service_t *service);
+    h2_gizclaw_service_t* service);
 void h2_gizclaw_audio_play_downlink_step_internal(
-    h2_gizclaw_service_t *service);
+    h2_gizclaw_service_t* service);
 h2_pal_result_t h2_gizclaw_audio_play_create_internal(
-    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_service_t* service, uint64_t identity,
     h2_gizclaw_str_t workspace, h2_gizclaw_str_t history,
     h2_gizclaw_rpc_bytes_t payload, uint32_t timeout_ms,
-    h2_gizclaw_req_t **out_request);
+    h2_gizclaw_req_t** out_request);
 
 h2_pal_result_t h2_gizclaw_conversation_media_attach(
-    h2_gizclaw_service_t *service, h2_gizclaw_conversation_request_t *request);
+    h2_gizclaw_service_t* service, h2_gizclaw_conversation_request_t* request);
 void h2_gizclaw_conversation_media_detach(
-    h2_gizclaw_conversation_request_t *request);
-h2_pal_result_t
-h2_gizclaw_service_media_read_opus(h2_gizclaw_service_t *service, uint8_t *opus,
-                                   size_t capacity, size_t *out_len);
-h2_pal_result_t
-h2_gizclaw_service_media_write_opus(h2_gizclaw_service_t *service,
-                                    const uint8_t *opus, size_t opus_len);
+    h2_gizclaw_conversation_request_t* request);
+h2_pal_result_t h2_gizclaw_service_media_read_opus(
+    h2_gizclaw_service_t* service, uint8_t* opus, size_t capacity,
+    size_t* out_len);
+h2_pal_result_t h2_gizclaw_service_media_write_opus(
+    h2_gizclaw_service_t* service, const uint8_t* opus, size_t opus_len);
 /* A downstream audio BOS makes its stream the active one and opens the
  * downlink; an EOS of the active stream closes it again, letting what is
  * already buffered play out. An EOS of any other stream is stale. */
 void h2_gizclaw_conversation_downlink_bos_internal(
-    h2_gizclaw_service_t *service, const char *stream_id);
+    h2_gizclaw_service_t* service, const char* stream_id);
 void h2_gizclaw_conversation_downlink_eos_internal(
-    h2_gizclaw_service_t *service, const char *stream_id);
+    h2_gizclaw_service_t* service, const char* stream_id);
 
 /* Downlink-lifetime ingress counters, wrapping at uint_least32_t's width.
  * received includes valid zero-length PLC markers, but not invalid arguments
@@ -404,139 +400,137 @@ typedef struct h2_gizclaw_conversation_downlink_counters {
  * Hold, BOS, flush and Conversation release do not reset these counters. */
 h2_gizclaw_conversation_downlink_counters_t
 h2_gizclaw_conversation_downlink_counters_internal(
-    h2_gizclaw_service_t *service);
+    h2_gizclaw_service_t* service);
 #if defined(H2_GIZCLAW_TESTING)
 /* Opus packets the downlink accepted into its ring so far. */
-size_t h2_gizclaw_test_downlink_frames(h2_gizclaw_service_t *service);
+size_t h2_gizclaw_test_downlink_frames(h2_gizclaw_service_t* service);
 #endif
 
 h2_pal_result_t h2_gizclaw_service_submit_async_internal(
-    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_service_t* service, uint64_t identity,
     h2_gizclaw_operation_run_fn start, h2_gizclaw_operation_run_fn poll,
-    h2_gizclaw_operation_completion_fn completion, void *user,
-    h2_gizclaw_operation_t **out_operation);
+    h2_gizclaw_operation_completion_fn completion, void* user,
+    h2_gizclaw_operation_t** out_operation);
 
 /* Bounded, nonblocking FIFO delivery on service_poll(). The payload owner must
  * retain user until notify returns, including after stop. An operation can
  * safely retain it until its later completion, on this same FIFO. WOULD_BLOCK
  * means nothing was queued; retry without replacing the retained payload. */
-h2_pal_result_t h2_gizclaw_service_post_internal(h2_gizclaw_service_t *service,
-                                                 void (*notify)(void *user),
-                                                 void *user);
+h2_pal_result_t h2_gizclaw_service_post_internal(h2_gizclaw_service_t* service,
+                                                 void (*notify)(void* user),
+                                                 void* user);
 
 /* NULL poll selects one-shot delivery: start's result is terminal, including
  * WOULD_BLOCK. A non-NULL poll retains the existing pending-request contract.
  */
 h2_pal_result_t h2_gizclaw_service_submit_request_internal(
-    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_service_t* service, uint64_t identity,
     h2_gizclaw_operation_run_fn start, h2_gizclaw_operation_run_fn poll,
     h2_gizclaw_operation_completion_fn settle,
     h2_gizclaw_operation_completion_fn completion,
-    void (*release_user)(void *user), void (*finish)(void *user), void *user,
-    bool notification_driven,
-    h2_gizclaw_operation_t **out_operation);
+    void (*release_user)(void* user), void (*finish)(void* user), void* user,
+    bool notification_driven, h2_gizclaw_operation_t** out_operation);
 
 /* Each distinct public parser uses a distinct static tag, even when two
  * requests share the same wire method (e.g. the two profile updates). */
 /** Test support: run `hook` between req_do and publication in debug_start,
  * to force the start/stop interleaving. NULL disables it. */
-void h2_gizclaw_debug_test_set_publish_hook(void (*hook)(void *user),
-                                            void *user);
+void h2_gizclaw_debug_test_set_publish_hook(void (*hook)(void* user),
+                                            void* user);
 /** Cancel and drop the library's in-flight debug request (service stop). */
-void h2_gizclaw_debug_stop_internal(h2_gizclaw_service_t *service);
+void h2_gizclaw_debug_stop_internal(h2_gizclaw_service_t* service);
 
 h2_pal_result_t h2_gizclaw_req_create_rpc_internal(
-    h2_gizclaw_service_t *service, uint64_t identity,
-    h2_gizclaw_rpc_method_t method, const void *tag,
+    h2_gizclaw_service_t* service, uint64_t identity,
+    h2_gizclaw_rpc_method_t method, const void* tag,
     h2_gizclaw_rpc_bytes_t payload, uint32_t timeout_ms,
-    h2_gizclaw_req_t **out_request);
+    h2_gizclaw_req_t** out_request);
 h2_pal_result_t h2_gizclaw_req_response_internal(
-    const h2_gizclaw_req_t *request, const void *tag,
-    const h2_gizclaw_rpc_response_t **out_response);
+    const h2_gizclaw_req_t* request, const void* tag,
+    const h2_gizclaw_rpc_response_t** out_response);
 /** Install a domain-owned unary RPC error projection before req_do. */
 h2_pal_result_t h2_gizclaw_req_set_rpc_error_normalizer_internal(
-    h2_gizclaw_req_t *request, const void *tag,
+    h2_gizclaw_req_t* request, const void* tag,
     h2_pal_result_t (*normalize)(int error_code, h2_gizclaw_str_t reason));
 /** Copy only a genuine terminal unary RPC error, never a transport failure. */
-h2_pal_result_t
-h2_gizclaw_req_rpc_status_internal(const h2_gizclaw_req_t *request,
-                                   const void *tag, bool *out_has_error,
-                                   int32_t *out_error_code);
-h2_pal_result_t h2_gizclaw_req_elapsed_internal(const h2_gizclaw_req_t *request,
-                                                const void *tag,
-                                                uint64_t *out_elapsed_ms);
-h2_pal_result_t
-h2_gizclaw_req_input_internal(const h2_gizclaw_req_t *request, const void *tag,
-                              h2_gizclaw_rpc_bytes_t *out_input);
+h2_pal_result_t h2_gizclaw_req_rpc_status_internal(
+    const h2_gizclaw_req_t* request, const void* tag, bool* out_has_error,
+    int32_t* out_error_code);
+h2_pal_result_t h2_gizclaw_req_elapsed_internal(const h2_gizclaw_req_t* request,
+                                                const void* tag,
+                                                uint64_t* out_elapsed_ms);
+h2_pal_result_t h2_gizclaw_req_input_internal(
+    const h2_gizclaw_req_t* request, const void* tag,
+    h2_gizclaw_rpc_bytes_t* out_input);
 
-int h2_gizclaw_rpc_start_internal(h2_gizclaw_client_t *client,
+int h2_gizclaw_rpc_start_internal(h2_gizclaw_client_t* client,
                                   h2_gizclaw_rpc_method_t method,
                                   h2_gizclaw_rpc_bytes_t payload,
                                   uint32_t timeout_ms,
-                                  h2_gizclaw_rpc_request_t **out_request);
-int h2_gizclaw_rpc_result_internal(h2_gizclaw_rpc_request_t *request,
-                                   h2_gizclaw_rpc_response_t *out_response);
+                                  h2_gizclaw_rpc_request_t** out_request);
+int h2_gizclaw_rpc_result_internal(h2_gizclaw_rpc_request_t* request,
+                                   h2_gizclaw_rpc_response_t* out_response);
 bool h2_gizclaw_rpc_set_complete_internal(
-    h2_gizclaw_rpc_request_t *request, h2_gizclaw_rpc_complete_fn on_complete,
-    void *user);
+    h2_gizclaw_rpc_request_t* request, h2_gizclaw_rpc_complete_fn on_complete,
+    void* user);
 int h2_gizclaw_rpc_start_stream_internal(
-    h2_gizclaw_client_t *client, h2_gizclaw_rpc_method_t method,
+    h2_gizclaw_client_t* client, h2_gizclaw_rpc_method_t method,
     h2_gizclaw_rpc_bytes_t payload, uint32_t timeout_ms,
-    h2_gizclaw_rpc_stream_fn on_event, void *user,
-    h2_gizclaw_rpc_request_t **out_request);
-int h2_gizclaw_rpc_finish_write_internal(h2_gizclaw_rpc_request_t *request);
-int h2_gizclaw_rpc_write_internal(h2_gizclaw_rpc_request_t *request,
-                                  const uint8_t *data, size_t len);
-void h2_gizclaw_rpc_cancel_internal(h2_gizclaw_rpc_request_t *request);
-void h2_gizclaw_rpc_destroy_internal(h2_gizclaw_rpc_request_t *request);
+    h2_gizclaw_rpc_stream_fn on_event, void* user,
+    h2_gizclaw_rpc_request_t** out_request);
+int h2_gizclaw_rpc_finish_write_internal(h2_gizclaw_rpc_request_t* request);
+int h2_gizclaw_rpc_write_internal(h2_gizclaw_rpc_request_t* request,
+                                  const uint8_t* data, size_t len);
+void h2_gizclaw_rpc_cancel_internal(h2_gizclaw_rpc_request_t* request);
+void h2_gizclaw_rpc_destroy_internal(h2_gizclaw_rpc_request_t* request);
 
-void h2_gizclaw_service_log_request(const h2_gizclaw_service_t *service,
+void h2_gizclaw_service_log_request(const h2_gizclaw_service_t* service,
                                     h2_pal_log_level_t level,
-                                    const char *request_kind, const char *stage,
+                                    const char* request_kind, const char* stage,
                                     uint64_t identity, h2_pal_result_t result,
                                     int detail_code, size_t frame_count,
                                     size_t byte_count);
 
 #ifdef H2_GIZCLAW_TESTING
 typedef struct h2_gizclaw_service_client_ops {
-  h2_pal_result_t (*init)(const h2_gizclaw_config_t *config,
-                          h2_gizclaw_client_t **out_client);
-  h2_pal_result_t (*connect)(h2_gizclaw_client_t *client);
-  h2_pal_result_t (*poll)(h2_gizclaw_client_t *client, int timeout_ms);
-  h2_pal_result_t (*set_event_handler)(h2_gizclaw_client_t *client,
+  h2_pal_result_t (*init)(const h2_gizclaw_config_t* config,
+                          h2_gizclaw_client_t** out_client);
+  h2_pal_result_t (*connect)(h2_gizclaw_client_t* client);
+  h2_pal_result_t (*poll)(h2_gizclaw_client_t* client, int timeout_ms);
+  h2_pal_result_t (*set_event_handler)(h2_gizclaw_client_t* client,
                                        h2_gizclaw_client_event_sink_fn on_event,
-                                       void *event_user);
-  h2_pal_result_t (*dispatch_event)(h2_gizclaw_client_t *client);
-  h2_pal_result_t (*close)(h2_gizclaw_client_t *client);
-  void (*deinit)(h2_gizclaw_client_t *client);
+                                       void* event_user);
+  h2_pal_result_t (*dispatch_event)(h2_gizclaw_client_t* client);
+  h2_pal_result_t (*close)(h2_gizclaw_client_t* client);
+  void (*deinit)(h2_gizclaw_client_t* client);
 } h2_gizclaw_service_client_ops_t;
 
 void h2_gizclaw_service_test_set_client_ops(
-    const h2_gizclaw_service_client_ops_t *ops);
+    const h2_gizclaw_service_client_ops_t* ops);
 
 typedef struct h2_gizclaw_async_rpc_ops {
-  int (*start_stream)(h2_gizclaw_client_t *client,
+  int (*start_stream)(h2_gizclaw_client_t* client,
                       h2_gizclaw_rpc_method_t method,
                       h2_gizclaw_rpc_bytes_t payload, uint32_t timeout_ms,
-                      h2_gizclaw_rpc_stream_fn on_event, void *user,
-                      h2_gizclaw_rpc_request_t **out_request);
-  int (*finish_write)(h2_gizclaw_rpc_request_t *request);
-  int (*write)(h2_gizclaw_rpc_request_t *request, const uint8_t *data,
+                      h2_gizclaw_rpc_stream_fn on_event, void* user,
+                      h2_gizclaw_rpc_request_t** out_request);
+  int (*finish_write)(h2_gizclaw_rpc_request_t* request);
+  int (*write)(h2_gizclaw_rpc_request_t* request, const uint8_t* data,
                size_t len);
-  int (*start)(h2_gizclaw_client_t *client, h2_gizclaw_rpc_method_t method,
+  int (*start)(h2_gizclaw_client_t* client, h2_gizclaw_rpc_method_t method,
                h2_gizclaw_rpc_bytes_t params_payload, uint32_t timeout_ms,
-               h2_gizclaw_rpc_request_t **out_request);
-  int (*result)(h2_gizclaw_rpc_request_t *request,
-                h2_gizclaw_rpc_response_t *out_response);
-  void (*diagnostic)(h2_gizclaw_rpc_request_t *request,
-                     h2_gizclaw_rpc_diagnostic_t *out);
-  void (*cancel)(h2_gizclaw_rpc_request_t *request);
-  void (*destroy)(h2_gizclaw_rpc_request_t *request);
-  void (*set_complete)(h2_gizclaw_rpc_request_t *request,
-                       h2_gizclaw_rpc_complete_fn on_complete, void *user);
+               h2_gizclaw_rpc_request_t** out_request);
+  int (*result)(h2_gizclaw_rpc_request_t* request,
+                h2_gizclaw_rpc_response_t* out_response);
+  void (*diagnostic)(h2_gizclaw_rpc_request_t* request,
+                     h2_gizclaw_rpc_diagnostic_t* out);
+  void (*cancel)(h2_gizclaw_rpc_request_t* request);
+  void (*destroy)(h2_gizclaw_rpc_request_t* request);
+  void (*set_complete)(h2_gizclaw_rpc_request_t* request,
+                       h2_gizclaw_rpc_complete_fn on_complete, void* user);
 } h2_gizclaw_async_rpc_ops_t;
 
-void h2_gizclaw_async_rpc_test_set_ops(const h2_gizclaw_async_rpc_ops_t *ops);
+void h2_gizclaw_async_rpc_test_set_ops(const h2_gizclaw_async_rpc_ops_t* ops);
 
 #endif
 

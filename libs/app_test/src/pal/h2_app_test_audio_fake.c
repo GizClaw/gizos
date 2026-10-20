@@ -2,7 +2,7 @@
 #include <string.h>
 typedef struct track {
   h2_pal_audio_track_t api;
-  h2_app_test_audio_fake_t *owner;
+  h2_app_test_audio_fake_t* owner;
   bool active;
   h2_audio_pcm_format_t format;
   uint32_t volume;
@@ -10,119 +10,100 @@ typedef struct track {
 typedef struct store {
   track_t tracks[H2_APP_TEST_AUDIO_FAKE_TRACKS_MAX];
 } store_t;
-static bool format_valid(const h2_audio_pcm_format_t *f) {
+static bool format_valid(const h2_audio_pcm_format_t* f) {
   return f->sample_rate_hz && f->frame_samples_per_channel &&
          h2_audio_pcm_frame_bytes(f);
 }
-static int info(void *u, h2_audio_info_t *out) {
-  h2_app_test_audio_fake_t *a = u;
+static int info(void* u, h2_audio_info_t* out) {
+  h2_app_test_audio_fake_t* a = u;
   memset(out, 0, sizeof(*out));
   int rc = h2_app_test_fault_take(&a->get_info);
-  if (!rc)
-    *out = a->info;
+  if (!rc) *out = a->info;
   return rc;
 }
-static int start_mic(void *u) {
-  h2_app_test_audio_fake_t *a = u;
-  if (a->mic_active)
-    return H2_PAL_ERR_INVALID_STATE;
+static int start_mic(void* u) {
+  h2_app_test_audio_fake_t* a = u;
+  if (a->mic_active) return H2_PAL_ERR_INVALID_STATE;
   if (!a->info.available || !a->info.mic_supported)
     return H2_PAL_ERR_UNSUPPORTED;
-  if (!format_valid(&a->info.mic_format))
-    return H2_PAL_ERR_FORMAT;
+  if (!format_valid(&a->info.mic_format)) return H2_PAL_ERR_FORMAT;
   int rc = h2_app_test_fault_take(&a->start_mic);
-  if (!rc)
-    a->mic_active = true;
+  if (!rc) a->mic_active = true;
   return rc;
 }
-static int stop_mic(void *u) {
-  h2_app_test_audio_fake_t *a = u;
+static int stop_mic(void* u) {
+  h2_app_test_audio_fake_t* a = u;
   int rc = h2_app_test_fault_take(&a->stop_mic);
-  if (!rc)
-    a->mic_active = false;
+  if (!rc) a->mic_active = false;
   return rc;
 }
-static int start_speaker(void *u) {
-  h2_app_test_audio_fake_t *a = u;
+static int start_speaker(void* u) {
+  h2_app_test_audio_fake_t* a = u;
   if (!a->info.available || !a->info.playback_supported)
     return H2_PAL_ERR_UNSUPPORTED;
   int rc = h2_app_test_fault_take(&a->start_speaker);
-  if (!rc)
-    a->speaker_active = true;
+  if (!rc) a->speaker_active = true;
   return rc;
 }
-static int stop_speaker(void *u) {
-  h2_app_test_audio_fake_t *a = u;
-  if (a->active_tracks)
-    return H2_PAL_ERR_INVALID_STATE;
+static int stop_speaker(void* u) {
+  h2_app_test_audio_fake_t* a = u;
+  if (a->active_tracks) return H2_PAL_ERR_INVALID_STATE;
   int rc = h2_app_test_fault_take(&a->stop_speaker);
-  if (!rc)
-    a->speaker_active = false;
+  if (!rc) a->speaker_active = false;
   return rc;
 }
-static int read_mic(void *u, h2_audio_frame_t *out, uint32_t timeout) {
-  h2_app_test_audio_fake_t *a = u;
-  if (!out)
-    return H2_PAL_ERR_INVALID_ARG;
+static int read_mic(void* u, h2_audio_frame_t* out, uint32_t timeout) {
+  h2_app_test_audio_fake_t* a = u;
+  if (!out) return H2_PAL_ERR_INVALID_ARG;
   out->bytes = 0;
-  if (!out->data)
-    return H2_PAL_ERR_INVALID_ARG;
-  if (!a->mic_active)
-    return H2_PAL_ERR_INVALID_STATE;
-  if (!format_valid(&a->info.mic_format))
-    return H2_PAL_ERR_FORMAT;
+  if (!out->data) return H2_PAL_ERR_INVALID_ARG;
+  if (!a->mic_active) return H2_PAL_ERR_INVALID_STATE;
+  if (!format_valid(&a->info.mic_format)) return H2_PAL_ERR_FORMAT;
   size_t bytes = h2_audio_pcm_frame_bytes(&a->info.mic_format) *
                  a->info.mic_format.frame_samples_per_channel;
-  if (out->capacity < bytes)
-    return H2_PAL_ERR_NO_SPACE;
+  if (out->capacity < bytes) return H2_PAL_ERR_NO_SPACE;
   a->last_timeout_ms = timeout;
   int rc = h2_app_test_fault_take(&a->read_mic);
-  if (rc)
-    return rc;
+  if (rc) return rc;
   *out =
       h2_audio_frame_for_buffer(out->data, out->capacity, a->info.mic_format);
   memset(out->data, 0, bytes);
   out->bytes = bytes;
   return 0;
 }
-static int get_volume(void *u, uint32_t *out) {
-  *out = ((h2_app_test_audio_fake_t *)u)->volume_percent;
+static int get_volume(void* u, uint32_t* out) {
+  *out = ((h2_app_test_audio_fake_t*)u)->volume_percent;
   return 0;
 }
-static int set_volume(void *u, uint32_t percent) {
-  h2_app_test_audio_fake_t *a = u;
-  if (percent > 100u)
-    return H2_PAL_ERR_INVALID_ARG;
+static int set_volume(void* u, uint32_t percent) {
+  h2_app_test_audio_fake_t* a = u;
+  if (percent > 100u) return H2_PAL_ERR_INVALID_ARG;
   a->last_volume_percent = percent;
   int rc = h2_app_test_fault_take(&a->set_volume);
-  if (!rc)
-    a->volume_percent = percent;
+  if (!rc) a->volume_percent = percent;
   return rc;
 }
-static int get_mic_gain(void *u, uint32_t *out_percent) {
-  h2_app_test_audio_fake_t *a = u;
+static int get_mic_gain(void* u, uint32_t* out_percent) {
+  h2_app_test_audio_fake_t* a = u;
   if (!a->info.available || !a->info.mic_supported)
     return H2_PAL_ERR_UNSUPPORTED;
   *out_percent = a->mic_gain_percent;
   return H2_PAL_OK;
 }
-static int set_mic_gain(void *u, uint32_t percent) {
-  h2_app_test_audio_fake_t *a = u;
-  if (percent > 100u)
-    return H2_PAL_ERR_INVALID_ARG;
+static int set_mic_gain(void* u, uint32_t percent) {
+  h2_app_test_audio_fake_t* a = u;
+  if (percent > 100u) return H2_PAL_ERR_INVALID_ARG;
   if (!a->info.available || !a->info.mic_supported)
     return H2_PAL_ERR_UNSUPPORTED;
   int rc = h2_app_test_fault_take(&a->set_mic_gain);
-  if (rc == H2_PAL_OK)
-    a->mic_gain_percent = percent;
+  if (rc == H2_PAL_OK) a->mic_gain_percent = percent;
   return rc;
 }
-static int write_track(h2_pal_audio_track_t *api, const h2_audio_frame_t *f,
+static int write_track(h2_pal_audio_track_t* api, const h2_audio_frame_t* f,
                        uint32_t timeout) {
-  track_t *t = api->user;
-  h2_app_test_audio_fake_t *a = t->owner;
-  if (!t->active)
-    return H2_PAL_ERR_INVALID_STATE;
+  track_t* t = api->user;
+  h2_app_test_audio_fake_t* a = t->owner;
+  if (!t->active) return H2_PAL_ERR_INVALID_STATE;
   if (f->bytes > f->capacity || f->sample_rate_hz != t->format.sample_rate_hz ||
       f->channels != t->format.channels ||
       f->sample_format != t->format.sample_format ||
@@ -134,8 +115,9 @@ static int write_track(h2_pal_audio_track_t *api, const h2_audio_frame_t *f,
     const uint64_t samples = f->bytes / h2_audio_pcm_frame_bytes(&t->format);
     if (samples > (UINT64_MAX - t->format.sample_rate_hz + 1u) / 1000u)
       return H2_PAL_ERR_NO_SPACE;
-    const uint64_t duration = (samples * 1000u + t->format.sample_rate_hz - 1u) /
-                              t->format.sample_rate_hz;
+    const uint64_t duration =
+        (samples * 1000u + t->format.sample_rate_hz - 1u) /
+        t->format.sample_rate_hz;
     if (duration > UINT32_MAX) return H2_PAL_ERR_NO_SPACE;
     rc = h2_pal_time_sleep_ms(a->playback_time, (uint32_t)duration);
   }
@@ -145,17 +127,15 @@ static int write_track(h2_pal_audio_track_t *api, const h2_audio_frame_t *f,
                             : a->playback_bytes + f->bytes;
   return rc;
 }
-static int drain_track(h2_pal_audio_track_t *api, uint32_t timeout) {
-  track_t *t = api->user;
-  if (!t->active)
-    return H2_PAL_ERR_INVALID_STATE;
+static int drain_track(h2_pal_audio_track_t* api, uint32_t timeout) {
+  track_t* t = api->user;
+  if (!t->active) return H2_PAL_ERR_INVALID_STATE;
   t->owner->last_timeout_ms = timeout;
   return h2_app_test_fault_take(&t->owner->drain_track);
 }
-static int close_track(h2_pal_audio_track_t *api) {
-  track_t *t = api->user;
-  if (!t->active)
-    return H2_PAL_ERR_INVALID_STATE;
+static int close_track(h2_pal_audio_track_t* api) {
+  track_t* t = api->user;
+  if (!t->active) return H2_PAL_ERR_INVALID_STATE;
   int rc = h2_app_test_fault_take(&t->owner->close_track);
   if (!rc) {
     t->active = false;
@@ -163,40 +143,34 @@ static int close_track(h2_pal_audio_track_t *api) {
   }
   return rc;
 }
-static int get_track_volume(h2_pal_audio_track_t *api, uint32_t *out) {
-  track_t *t = api->user;
+static int get_track_volume(h2_pal_audio_track_t* api, uint32_t* out) {
+  track_t* t = api->user;
   *out = 0;
-  if (!t->active)
-    return H2_PAL_ERR_INVALID_STATE;
+  if (!t->active) return H2_PAL_ERR_INVALID_STATE;
   *out = t->volume;
   return 0;
 }
-static int set_track_volume(h2_pal_audio_track_t *api, uint32_t value) {
-  track_t *t = api->user;
-  if (!t->active)
-    return H2_PAL_ERR_INVALID_STATE;
+static int set_track_volume(h2_pal_audio_track_t* api, uint32_t value) {
+  track_t* t = api->user;
+  if (!t->active) return H2_PAL_ERR_INVALID_STATE;
   t->volume = value;
   return 0;
 }
-static int create_track(void *u, const h2_audio_track_config_t *c,
-                        h2_pal_audio_track_t **out) {
-  h2_app_test_audio_fake_t *a = u;
+static int create_track(void* u, const h2_audio_track_config_t* c,
+                        h2_pal_audio_track_t** out) {
+  h2_app_test_audio_fake_t* a = u;
   *out = NULL;
-  if (!a->speaker_active)
-    return H2_PAL_ERR_INVALID_STATE;
-  if (!format_valid(&c->format))
-    return H2_PAL_ERR_FORMAT;
+  if (!a->speaker_active) return H2_PAL_ERR_INVALID_STATE;
+  if (!format_valid(&c->format)) return H2_PAL_ERR_FORMAT;
   int rc = h2_app_test_fault_take(&a->create_track);
-  if (rc)
-    return rc;
+  if (rc) return rc;
   if (a->active_tracks >= H2_APP_TEST_AUDIO_FAKE_TRACKS_MAX ||
       a->active_tracks >= a->info.max_tracks)
     return H2_PAL_ERR_NO_SPACE;
-  store_t *s = a->implementation;
+  store_t* s = a->implementation;
   for (size_t i = 0; i < H2_APP_TEST_AUDIO_FAKE_TRACKS_MAX; ++i) {
-    track_t *t = &s->tracks[i];
-    if (t->active)
-      continue;
+    track_t* t = &s->tracks[i];
+    if (t->active) continue;
     t->owner = a;
     t->active = true;
     t->format = c->format;
@@ -214,11 +188,11 @@ static int create_track(void *u, const h2_audio_track_config_t *c,
   }
   return H2_PAL_ERR_NO_SPACE;
 }
-static int audio_aec_diagnostics_unsupported(void *user,
-    const h2_audio_aec_observer_t *observer) {
-    (void)user;
-    (void)observer;
-    return H2_AUDIO_ERR_UNSUPPORTED;
+static int audio_aec_diagnostics_unsupported(
+    void* user, const h2_audio_aec_observer_t* observer) {
+  (void)user;
+  (void)observer;
+  return H2_AUDIO_ERR_UNSUPPORTED;
 }
 
 static const h2_pal_audio_vtable_t vtable = {
@@ -235,16 +209,14 @@ static const h2_pal_audio_vtable_t vtable = {
     .set_mic_gain_percent = set_mic_gain,
     .set_aec_observer = audio_aec_diagnostics_unsupported,
 };
-h2_pal_result_t h2_app_test_audio_fake_init(h2_app_test_audio_fake_t *a,
-                                            const h2_pal_mem_api_t *m) {
-  if (!a)
-    return H2_PAL_ERR_INVALID_ARG;
+h2_pal_result_t h2_app_test_audio_fake_init(h2_app_test_audio_fake_t* a,
+                                            const h2_pal_mem_api_t* m) {
+  if (!a) return H2_PAL_ERR_INVALID_ARG;
   memset(a, 0, sizeof(*a));
   if (!m || !m->vtable || !m->vtable->alloc || !m->vtable->free)
     return H2_PAL_ERR_INVALID_ARG;
   a->implementation = h2_pal_mem_alloc(m, sizeof(store_t));
-  if (!a->implementation)
-    return H2_PAL_ERR_NO_MEMORY;
+  if (!a->implementation) return H2_PAL_ERR_NO_MEMORY;
   memset(a->implementation, 0, sizeof(store_t));
   a->mem = m;
   a->api = (h2_pal_audio_api_t){a, &vtable};
@@ -258,9 +230,8 @@ h2_pal_result_t h2_app_test_audio_fake_init(h2_app_test_audio_fake_t *a,
       .max_tracks = H2_APP_TEST_AUDIO_FAKE_TRACKS_MAX};
   return 0;
 }
-h2_pal_result_t h2_app_test_audio_fake_deinit(h2_app_test_audio_fake_t *a) {
-  if (!a || !a->implementation)
-    return 0;
+h2_pal_result_t h2_app_test_audio_fake_deinit(h2_app_test_audio_fake_t* a) {
+  if (!a || !a->implementation) return 0;
   if (a->mic_active || a->speaker_active || a->active_tracks)
     return H2_PAL_ERR_INVALID_STATE;
   h2_pal_mem_free(a->mem, a->implementation);

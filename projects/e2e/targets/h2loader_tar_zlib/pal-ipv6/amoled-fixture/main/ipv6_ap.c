@@ -12,17 +12,16 @@
 #include <string.h>
 
 /* An isolated on-link /64. A zero router lifetime advertises no WAN route. */
-static struct netif *ap_netif;
-static struct raw_pcb *advertiser;
+static struct netif* ap_netif;
+static struct raw_pcb* advertiser;
 static atomic_int advertiser_result = H2_PAL_ERR_WOULD_BLOCK;
 static atomic_int advertiser_enabled;
 static int ap_owned;
 static int advertiser_cleanup_pending;
 static uint8_t prefix[16];
-static void advertise(void *user) {
+static void advertise(void* user) {
   (void)user;
-  if (!advertiser_enabled || !advertiser || !ap_netif)
-    return;
+  if (!advertiser_enabled || !advertiser || !ap_netif) return;
   uint8_t packet[56] = {134, 0, 0, 0, 64};
   packet[16] = 1; /* source link-layer address */
   packet[17] = 1;
@@ -36,7 +35,7 @@ static void advertise(void *user) {
   packet[34] = 0x02;
   packet[35] = 0x58; /* preferred 600 seconds */
   memcpy(packet + 40, prefix, 16);
-  struct pbuf *buffer = pbuf_alloc(PBUF_IP, sizeof(packet), PBUF_RAM);
+  struct pbuf* buffer = pbuf_alloc(PBUF_IP, sizeof(packet), PBUF_RAM);
   if (buffer) {
     ip_addr_t destination, source;
     IP_SET_TYPE_VAL(destination, IPADDR_TYPE_V6);
@@ -49,13 +48,11 @@ static void advertise(void *user) {
     pbuf_free(buffer);
   }
   /* Repeated advertisements also cover a station joining after AP startup. */
-  if (advertiser_enabled)
-    sys_timeout(6000, advertise, NULL);
+  if (advertiser_enabled) sys_timeout(6000, advertise, NULL);
 }
-static void start_advertiser(void *user) {
+static void start_advertiser(void* user) {
   (void)user;
-  if (!advertiser_enabled || !ap_netif)
-    return;
+  if (!advertiser_enabled || !ap_netif) return;
   ip6_addr_t subnet;
   ip6addr_aton("fd53:697a:6f73:626::", &subnet);
   memcpy(prefix, subnet.addr, sizeof(prefix));
@@ -73,7 +70,7 @@ static void start_advertiser(void *user) {
   advertise(NULL);
   advertiser_result = H2_PAL_OK;
 }
-static esp_err_t stop_advertiser(void *user) {
+static esp_err_t stop_advertiser(void* user) {
   (void)user;
   sys_untimeout(advertise, NULL);
   if (advertiser) {
@@ -83,32 +80,29 @@ static esp_err_t stop_advertiser(void *user) {
   ap_netif = NULL;
   return ESP_OK;
 }
-int h2_ipv6_ap_stop(h2_runtime_t *runtime) {
-  if (!runtime)
-    return H2_PAL_ERR_INVALID_ARG;
+int h2_ipv6_ap_stop(h2_runtime_t* runtime) {
+  if (!runtime) return H2_PAL_ERR_INVALID_ARG;
   advertiser_enabled = 0;
-  if (!ap_owned && !advertiser_cleanup_pending)
-    return H2_PAL_OK;
+  if (!ap_owned && !advertiser_cleanup_pending) return H2_PAL_OK;
   /* This synchronous TCP/IP callback also fences a queued startup callback.
    * A late callback checks enabled and cannot revive the advertiser. */
   int cleaned = esp_netif_tcpip_exec(stop_advertiser, NULL) == ESP_OK
-                    ? H2_PAL_OK : H2_PAL_ERR_IO;
+                    ? H2_PAL_OK
+                    : H2_PAL_ERR_IO;
   advertiser_cleanup_pending = cleaned != H2_PAL_OK;
   /* Service owners have already released the interface. ESP AP stop also
    * serializes netif destruction through the SDK TCP/IP thread, fencing any
    * advertisement already in flight; future callbacks see enabled == false. */
-  int stopped = ap_owned ? h2_pal_wifi_ap_stop(runtime->wifi_ap, 10000) : H2_PAL_OK;
-  if (!stopped)
-    ap_owned = 0;
+  int stopped =
+      ap_owned ? h2_pal_wifi_ap_stop(runtime->wifi_ap, 10000) : H2_PAL_OK;
+  if (!stopped) ap_owned = 0;
   /* A failed callback retains PCB/timeout cleanup ownership even when radio
    * stop succeeds. A later stop retries it; a new AP must not reuse it. */
   return cleaned ? cleaned : stopped;
 }
-int h2_ipv6_ap_start(h2_runtime_t *runtime) {
-  if (!runtime || !runtime->time)
-    return H2_PAL_ERR_INVALID_ARG;
-  if (ap_owned || advertiser_cleanup_pending)
-    return H2_PAL_ERR_INVALID_STATE;
+int h2_ipv6_ap_start(h2_runtime_t* runtime) {
+  if (!runtime || !runtime->time) return H2_PAL_ERR_INVALID_ARG;
+  if (ap_owned || advertiser_cleanup_pending) return H2_PAL_ERR_INVALID_STATE;
   advertiser_result = H2_PAL_ERR_WOULD_BLOCK;
   advertiser_enabled = 0;
   h2_pal_wifi_ap_config_t config = {.ssid = "h2ipv6-amoled",
@@ -119,18 +113,16 @@ int h2_ipv6_ap_start(h2_runtime_t *runtime) {
                                     .max_clients = 1,
                                     .security = H2_PAL_WIFI_SECURITY_WPA2};
   int rc = h2_pal_wifi_sta_disconnect(runtime->wifi_sta);
-  if (!rc)
-    rc = h2_pal_wifi_ap_start(runtime->wifi_ap, &config, 10000);
-  if (rc)
-    return rc;
+  if (!rc) rc = h2_pal_wifi_ap_start(runtime->wifi_ap, &config, 10000);
+  if (rc) return rc;
   ap_owned = 1;
-  esp_netif_t *ap = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
+  esp_netif_t* ap = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
   if (!ap || esp_netif_create_ip6_linklocal(ap) != ESP_OK) {
     rc = H2_PAL_ERR_UNAVAILABLE;
     goto cleanup;
   }
   esp_ip6_addr_t address;
-  if (!ip6addr_aton("fd53:697a:6f73:626::1", (ip6_addr_t *)&address) ||
+  if (!ip6addr_aton("fd53:697a:6f73:626::1", (ip6_addr_t*)&address) ||
       esp_netif_add_ip6_address(ap, address, true) != ESP_OK) {
     rc = H2_PAL_ERR_IO;
     goto cleanup;
@@ -153,18 +145,15 @@ int h2_ipv6_ap_start(h2_runtime_t *runtime) {
            j < 100 && advertiser_result == H2_PAL_ERR_WOULD_BLOCK; ++j)
         h2_pal_time_sleep_ms(runtime->time, 10);
       rc = advertiser_result;
-      if (rc == H2_PAL_ERR_WOULD_BLOCK)
-        rc = H2_PAL_ERR_TIMEOUT;
-      if (rc)
-        goto cleanup;
+      if (rc == H2_PAL_ERR_WOULD_BLOCK) rc = H2_PAL_ERR_TIMEOUT;
+      if (rc) goto cleanup;
       return H2_PAL_OK;
     }
     h2_pal_time_sleep_ms(runtime->time, 100);
   }
   rc = H2_PAL_ERR_TIMEOUT;
-cleanup:
-  {
-    int cleaned = h2_ipv6_ap_stop(runtime);
-    return cleaned ? cleaned : rc;
-  }
+cleanup: {
+  int cleaned = h2_ipv6_ap_stop(runtime);
+  return cleaned ? cleaned : rc;
+}
 }

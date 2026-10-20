@@ -1,5 +1,5 @@
-load("//tools/bazel:native_component.bzl", "firmware_native_component")
 load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
 load("//tools/bazel:tasks.bzl", "h2_tasks")
 
 package(default_visibility = ["//visibility:public"])
@@ -15,8 +15,8 @@ firmware_lib_component(
     component_name = "jieli_ac791n_devkit_display_reliable_transport",
     deps = [
         "//libs/command",
-        "//libs/iostreamikcp",
         "//libs/crypto/sha256",
+        "//libs/iostreamikcp",
     ],
 )
 
@@ -31,6 +31,7 @@ firmware_native_component(
         "//libs/bundle:include/h2_bundle_tar.h",
         "//libs/bundle:include/h2_bundle_types.h",
     ],
+    component_name = "jieli_ac791n_devkit_bundle",
     include_roots = ["libs/bundle/include"],
     native_srcs = [
         "//libs/bundle:src/h2_bundle_archive.c",
@@ -40,7 +41,6 @@ firmware_native_component(
         "//libs/bundle:src/h2_bundle_tar.c",
         "//libs/bundle:src/h2_bundle_types.c",
     ],
-    component_name = "jieli_ac791n_devkit_bundle",
     deps = [
         "//libs/pal:pal_header_files",
         "//native_component_src/jieli/wl82/h2_pixa",
@@ -53,6 +53,7 @@ firmware_native_component(
     hdrs = [
         "//projects/h2loader/libs/h2loader:h2loader_headers",
     ],
+    component_name = "jieli_ac791n_devkit_h2loader_app_client",
     include_roots = [
         "projects/h2loader/libs/h2loader/include",
     ],
@@ -69,13 +70,12 @@ firmware_native_component(
         "//projects/h2loader/libs/h2loader:src/h2_loader_status.c",
         "//projects/h2loader/libs/h2loader:src/h2_loader_task_names.c",
     ],
-    component_name = "jieli_ac791n_devkit_h2loader_app_client",
     deps = [
-        "//projects/h2loader/libs/h2loader:tasks",
         ":bundle_native",
         ":reliable_transport",
         "//libs/command",
         "//libs/pal:pal_header_files",
+        "//projects/h2loader/libs/h2loader:tasks",
     ],
 )
 
@@ -83,8 +83,8 @@ firmware_native_component(
     name = "app_support",
     srcs = ["src/jieli_h2loader_app_support.c"],
     hdrs = ["include/jieli_h2loader_app_support.h"],
-    include_roots = ["projects/h2loader/native_component_src/jieli/wl82/h2loader_app/include"],
     component_name = "jieli_ac791n_devkit_app_support",
+    include_roots = ["projects/h2loader/native_component_src/jieli/wl82/h2loader_app/include"],
     tags = ["manual"],
     target_compatible_with = AC791N_COMPATIBILITY,
     deps = [
@@ -105,13 +105,13 @@ firmware_native_component(
         "src/jieli_app_iostreamikcp.c",
     ],
     hdrs = ["include/jieli_app_iostreamikcp.h"],
-    include_roots = ["projects/h2loader/native_component_src/jieli/wl82/h2loader_app/include"],
     component_name = "jieli_ac791n_devkit_app_transport",
+    include_roots = ["projects/h2loader/native_component_src/jieli/wl82/h2loader_app/include"],
     tags = ["manual"],
     target_compatible_with = AC791N_COMPATIBILITY,
     deps = [
-        ":app_transport_tasks",
         ":app_support",
+        ":app_transport_tasks",
         ":reliable_transport",
         "//boards/ac791n_chip/ac791n",
         "//boards/jieli_ac791n_devkit/ac791n",
@@ -128,14 +128,14 @@ firmware_native_component(
     name = "app_ble",
     srcs = ["src/jieli_app_ble.c"],
     hdrs = ["//projects/h2loader/apps/loader/app:include/h2loader_app_task_names.h"],
+    component_name = "jieli_ac791n_devkit_app_ble",
     include_roots = ["projects/h2loader/apps/loader/app/include"],
     native_srcs = ["//projects/h2loader/libs/h2loader:src/h2_loader_ble.c"],
-    component_name = "jieli_ac791n_devkit_app_ble",
     tags = ["manual"],
     target_compatible_with = AC791N_COMPATIBILITY,
     deps = [
-        "//projects/h2loader/apps/loader/app:ble_tasks",
-        ":app_support",
         ":app_ble_transport",
+        ":app_support",
+        "//projects/h2loader/apps/loader/app:ble_tasks",
     ],
 )

@@ -178,25 +178,24 @@ typedef struct h2_gizclaw_telemetry_observation {
 typedef struct h2_gizclaw_telemetry_frame {
   uint32_t sequence;
   int64_t observed_at_unix_ms;
-  const h2_gizclaw_telemetry_observation_t *observations;
+  const h2_gizclaw_telemetry_observation_t* observations;
   size_t observation_count;
 } h2_gizclaw_telemetry_frame_t;
 
 /** Copy the frame and its strings into a CREATED request. */
 h2_pal_result_t h2_gizclaw_req_create_telemetry_send(
-    h2_gizclaw_service_t *service, uint64_t identity,
-    const h2_gizclaw_telemetry_frame_t *frame, uint32_t timeout_ms,
-    h2_gizclaw_req_t **out_request);
+    h2_gizclaw_service_t* service, uint64_t identity,
+    const h2_gizclaw_telemetry_frame_t* frame, uint32_t timeout_ms,
+    h2_gizclaw_req_t** out_request);
 /** Telemetry is a one-way packet: success confirms transport acceptance,
  * not a server acknowledgement or persisted observation. Submission runs once
  * on the Service owner task. WOULD_BLOCK is a terminal result returned by wait,
  * this parser and the synchronous RPC; the library never retries the packet. */
-h2_pal_result_t
-h2_gizclaw_resp_parse_telemetry_send(const h2_gizclaw_req_t *request);
-h2_pal_result_t
-h2_gizclaw_rpc_telemetry_send(h2_gizclaw_service_t *service,
-                              const h2_gizclaw_telemetry_frame_t *frame,
-                              uint32_t timeout_ms);
+h2_pal_result_t h2_gizclaw_resp_parse_telemetry_send(
+    const h2_gizclaw_req_t* request);
+h2_pal_result_t h2_gizclaw_rpc_telemetry_send(
+    h2_gizclaw_service_t* service, const h2_gizclaw_telemetry_frame_t* frame,
+    uint32_t timeout_ms);
 
 #ifdef __cplusplus
 }

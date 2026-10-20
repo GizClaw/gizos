@@ -2,7 +2,6 @@
 
 _ENV = "H2_FIRMWARE_RELEASE_INPUT_DIR"
 
-
 def _repository_impl(repository_ctx):
     source = repository_ctx.os.environ.get(_ENV)
     if source:
@@ -21,16 +20,13 @@ filegroup(
 """,
     )
 
-
 _repository = repository_rule(
     implementation = _repository_impl,
     environ = [_ENV],
     local = True,
 )
 
-
 def _extension_impl(module_ctx):
     _repository(name = "h2_firmware_release_inputs")
-
 
 release_inputs = module_extension(implementation = _extension_impl)

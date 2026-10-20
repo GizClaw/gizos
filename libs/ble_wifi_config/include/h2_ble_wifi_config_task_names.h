@@ -7,8 +7,8 @@
 extern "C" {
 #endif
 
-extern const char h2_ble_wifi_config_worker_task_name
-    [sizeof(H2_BLE_WIFI_CONFIG_WORKER_TASK_NAME_VALUE)];
+extern const char h2_ble_wifi_config_worker_task_name[sizeof(
+    H2_BLE_WIFI_CONFIG_WORKER_TASK_NAME_VALUE)];
 
 #ifdef __cplusplus
 }

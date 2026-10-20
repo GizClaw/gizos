@@ -62,10 +62,10 @@
 #define WOLFSSL_HAVE_SP_ECC
 #define SP_WORD_SIZE 32
 
-int h2_wolfcrypt_strcasecmp(const char *first, const char *second);
+int h2_wolfcrypt_strcasecmp(const char* first, const char* second);
 #define XSTRCASECMP(first, second) h2_wolfcrypt_strcasecmp((first), (second))
 
-int h2_wolfcrypt_generate_seed(unsigned char *out, unsigned int len);
+int h2_wolfcrypt_generate_seed(unsigned char* out, unsigned int len);
 #define CUSTOM_RAND_GENERATE_SEED h2_wolfcrypt_generate_seed
 
 #endif

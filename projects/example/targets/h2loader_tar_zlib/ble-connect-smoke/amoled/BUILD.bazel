@@ -9,10 +9,12 @@ firmware_native_component(
     srcs = ["main/main.c"],
     component_directory = "projects/example/targets/h2loader_tar_zlib/ble-connect-smoke/amoled/main",
     component_name = "main",
-    data = ["main/CMakeLists.txt", "main/idf_component.yml"],
+    data = [
+        "main/CMakeLists.txt",
+        "main/idf_component.yml",
+    ],
     tags = ["manual"],
     deps = [
-        "//projects/example/targets/h2loader_tar_zlib/bleikcp-speed-client/amoled:firmware_lib",
         "//boards/amoled/esp32s3",
         "//libs/atomic",
         "//libs/pal",
@@ -20,6 +22,7 @@ firmware_native_component(
         "//native_component_src/esp-idf6.x/h2_pal_core",
         "//native_component_src/esp-idf6.x/opus_port",
         "//native_component_src/esp-idf6.x/zlib",
+        "//projects/example/targets/h2loader_tar_zlib/bleikcp-speed-client/amoled:firmware_lib",
         "//projects/h2loader/libs/h2loader",
         "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_ble",
         "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_runtime",
@@ -28,7 +31,12 @@ firmware_native_component(
 
 h2loader_esp_idf_firmware(
     name = "firmware",
-    srcs = ["CMakeLists.txt", "main/CMakeLists.txt", "main/idf_component.yml", "main/main.c"],
+    srcs = [
+        "CMakeLists.txt",
+        "main/CMakeLists.txt",
+        "main/idf_component.yml",
+        "main/main.c",
+    ],
     board = "amoled",
     graph = [":launcher"],
     project = "CMakeLists.txt",

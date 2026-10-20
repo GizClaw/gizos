@@ -14,14 +14,14 @@
 
 typedef struct h2_web_h2loader_resource {
   char name[H2_H2LOADER_HOST_RESOURCE_NAME_MAX_LEN];
-  uint8_t *bytes;
+  uint8_t* bytes;
   size_t len;
 } h2_web_h2loader_resource_t;
 
 typedef struct h2_web_h2loader_app {
-  h2_web_platform_t *platform;
-  h2_runtime_t *runtime;
-  h2_pal_task_t *task;
+  h2_web_platform_t* platform;
+  h2_runtime_t* runtime;
+  h2_pal_task_t* task;
   h2_h2loader_serial_e2e_result_t result;
   h2_pal_result_t run_result;
   h2_pal_result_t shutdown_result;
@@ -36,7 +36,7 @@ typedef struct h2_web_h2loader_app {
   char expected_board[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
   char expected_target[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
   char asset_sha256[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
-  uint8_t *catalog_json;
+  uint8_t* catalog_json;
   size_t catalog_json_len;
   h2_web_h2loader_resource_t resources[H2_WEB_H2LOADER_MAX_RESOURCES];
   size_t resource_count;
@@ -45,39 +45,40 @@ typedef struct h2_web_h2loader_app {
 static h2_web_h2loader_app_t app;
 
 static void h2_web_h2loader_print_ledger(
-    const h2_h2loader_serial_e2e_result_t *result) {
+    const h2_h2loader_serial_e2e_result_t* result) {
   for (size_t index = 0u; index < result->case_count; ++index) {
-    printf("H2_WEB_H2LOADER_CASE id=%d rc=%d\n",
-           result->cases[index].case_id, result->cases[index].result);
+    printf("H2_WEB_H2LOADER_CASE id=%d rc=%d\n", result->cases[index].case_id,
+           result->cases[index].result);
   }
-  printf("H2_WEB_H2LOADER_INITIAL board=%s target=%s role=%u "
-         "version=%s checksum=%s availability=0x%08x\n",
-         result->initial_status.board, result->initial_status.target,
-         (unsigned int)h2_h2loader_host_status_active_role(
-             &result->initial_status),
-         result->initial_status.active_version,
-         result->initial_status.active_checksum,
-         result->initial_status.command_availability);
-  printf("H2_WEB_H2LOADER_FINAL board=%s target=%s role=%u "
-         "version=%s checksum=%s availability=0x%08x\n",
-         result->final_status.board, result->final_status.target,
-         (unsigned int)h2_h2loader_host_status_active_role(
-             &result->final_status),
-         result->final_status.active_version,
-         result->final_status.active_checksum,
-         result->final_status.command_availability);
-  printf("H2_WEB_H2LOADER_METRICS command_bytes=%zu command_transport=%d "
-         "command_terminal=%d command_truncated=%u command_lifecycle=%u "
-         "acknowledged=%llu "
-         "total=%llu elapsed_ms=%llu skipped=%zu cleanup=%d complete=%d\n",
-         result->command_output_bytes, (int)result->command_transport_result,
-         (int)result->command_terminal,
-         (unsigned int)result->command_output_truncated,
-         (unsigned int)result->command_lifecycle_transition,
-         (unsigned long long)result->acknowledged_bytes,
-         (unsigned long long)result->total_bytes,
-         (unsigned long long)result->elapsed_ms, result->skipped,
-         result->cleanup_result, result->complete);
+  printf(
+      "H2_WEB_H2LOADER_INITIAL board=%s target=%s role=%u "
+      "version=%s checksum=%s availability=0x%08x\n",
+      result->initial_status.board, result->initial_status.target,
+      (unsigned int)h2_h2loader_host_status_active_role(
+          &result->initial_status),
+      result->initial_status.active_version,
+      result->initial_status.active_checksum,
+      result->initial_status.command_availability);
+  printf(
+      "H2_WEB_H2LOADER_FINAL board=%s target=%s role=%u "
+      "version=%s checksum=%s availability=0x%08x\n",
+      result->final_status.board, result->final_status.target,
+      (unsigned int)h2_h2loader_host_status_active_role(&result->final_status),
+      result->final_status.active_version, result->final_status.active_checksum,
+      result->final_status.command_availability);
+  printf(
+      "H2_WEB_H2LOADER_METRICS command_bytes=%zu command_transport=%d "
+      "command_terminal=%d command_truncated=%u command_lifecycle=%u "
+      "acknowledged=%llu "
+      "total=%llu elapsed_ms=%llu skipped=%zu cleanup=%d complete=%d\n",
+      result->command_output_bytes, (int)result->command_transport_result,
+      (int)result->command_terminal,
+      (unsigned int)result->command_output_truncated,
+      (unsigned int)result->command_lifecycle_transition,
+      (unsigned long long)result->acknowledged_bytes,
+      (unsigned long long)result->total_bytes,
+      (unsigned long long)result->elapsed_ms, result->skipped,
+      result->cleanup_result, result->complete);
 }
 
 static void h2_web_h2loader_release_resources(void) {
@@ -118,20 +119,20 @@ EM_JS(void, h2_web_h2loader_progress,
 });
 /* clang-format on */
 
-static int h2_web_h2loader_cancelled(void *user) {
-  return ((h2_web_h2loader_app_t *)user)->cancelled;
+static int h2_web_h2loader_cancelled(void* user) {
+  return ((h2_web_h2loader_app_t*)user)->cancelled;
 }
 
 static h2_pal_result_t h2_web_h2loader_read_resource(
-    void *user, const char *name, uint64_t offset, uint8_t *out,
-    size_t out_size, size_t *out_read) {
-  h2_web_h2loader_app_t *state = user;
+    void* user, const char* name, uint64_t offset, uint8_t* out,
+    size_t out_size, size_t* out_read) {
+  h2_web_h2loader_app_t* state = user;
   if (name == NULL || out_read == NULL || (out == NULL && out_size != 0u)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   *out_read = 0u;
   for (size_t index = 0u; index < state->resource_count; ++index) {
-    h2_web_h2loader_resource_t *resource = &state->resources[index];
+    h2_web_h2loader_resource_t* resource = &state->resources[index];
     if (strcmp(name, resource->name) != 0) continue;
     if (offset >= resource->len) return H2_PAL_OK;
     size_t count = resource->len - (size_t)offset;
@@ -145,8 +146,8 @@ static h2_pal_result_t h2_web_h2loader_read_resource(
   return H2_PAL_ERR_NOT_FOUND;
 }
 
-static void h2_web_h2loader_run(void *user) {
-  h2_web_h2loader_app_t *state = user;
+static void h2_web_h2loader_run(void* user) {
+  h2_web_h2loader_app_t* state = user;
   const h2_h2loader_serial_e2e_config_t config = {
       .suite_mask = state->suite,
       .serial = h2_web_platform_serial_host_api(state->platform),
@@ -178,20 +179,19 @@ EMSCRIPTEN_KEEPALIVE int h2_web_h2loader_authorization_status(void) {
   if (app.shutting_down || app.platform == NULL) {
     return H2_PAL_ERR_INVALID_STATE;
   }
-  return h2_web_platform_serial_authorization(
-      app.platform, app.port_id, sizeof(app.port_id));
+  return h2_web_platform_serial_authorization(app.platform, app.port_id,
+                                              sizeof(app.port_id));
 }
 
-static int h2_web_h2loader_copy_text(char *out, size_t out_size,
-                                     const char *value) {
+static int h2_web_h2loader_copy_text(char* out, size_t out_size,
+                                     const char* value) {
   if (value == NULL || strlen(value) >= out_size) return 0;
   strcpy(out, value);
   return 1;
 }
 
-static int h2_web_h2loader_sha256_valid(const char *sha256) {
-  if (sha256 == NULL ||
-      strlen(sha256) != H2_H2LOADER_HOST_SHA256_HEX_LEN) {
+static int h2_web_h2loader_sha256_valid(const char* sha256) {
+  if (sha256 == NULL || strlen(sha256) != H2_H2LOADER_HOST_SHA256_HEX_LEN) {
     return 0;
   }
   for (size_t index = 0u; index < H2_H2LOADER_HOST_SHA256_HEX_LEN; ++index) {
@@ -203,9 +203,10 @@ static int h2_web_h2loader_sha256_valid(const char *sha256) {
   return 1;
 }
 
-EMSCRIPTEN_KEEPALIVE int h2_web_h2loader_configure(
-    uint32_t suite, int command, const char *board, const char *target,
-    const char *sha256) {
+EMSCRIPTEN_KEEPALIVE int h2_web_h2loader_configure(uint32_t suite, int command,
+                                                   const char* board,
+                                                   const char* target,
+                                                   const char* sha256) {
   const uint32_t known_suites = H2_H2LOADER_SERIAL_E2E_SUITE_PREFLIGHT |
                                 H2_H2LOADER_SERIAL_E2E_SUITE_STATUS |
                                 H2_H2LOADER_SERIAL_E2E_SUITE_COMMAND |
@@ -214,12 +215,12 @@ EMSCRIPTEN_KEEPALIVE int h2_web_h2loader_configure(
   const int command_valid = command >= H2_H2LOADER_HOST_COMMAND_HELP &&
                             command <= H2_H2LOADER_HOST_COMMAND_MEMORY;
   if (app.started || app.shutting_down || !suite_valid ||
-      !h2_web_h2loader_copy_text(app.expected_board,
-                                  sizeof(app.expected_board), board) ||
+      !h2_web_h2loader_copy_text(app.expected_board, sizeof(app.expected_board),
+                                 board) ||
       !h2_web_h2loader_copy_text(app.expected_target,
-                                  sizeof(app.expected_target), target) ||
-      !h2_web_h2loader_copy_text(app.asset_sha256,
-                                  sizeof(app.asset_sha256), sha256)) {
+                                 sizeof(app.expected_target), target) ||
+      !h2_web_h2loader_copy_text(app.asset_sha256, sizeof(app.asset_sha256),
+                                 sha256)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   if (((suite & H2_H2LOADER_SERIAL_E2E_SUITE_COMMAND) != 0u &&
@@ -236,7 +237,7 @@ EMSCRIPTEN_KEEPALIVE int h2_web_h2loader_configure(
 
 EMSCRIPTEN_KEEPALIVE uintptr_t h2_web_h2loader_allocate_catalog(size_t len) {
   if (app.started || app.shutting_down || len == 0u) return 0u;
-  uint8_t *copy = malloc(len);
+  uint8_t* copy = malloc(len);
   if (copy == NULL) return 0u;
   free(app.catalog_json);
   app.catalog_json = copy;
@@ -244,13 +245,13 @@ EMSCRIPTEN_KEEPALIVE uintptr_t h2_web_h2loader_allocate_catalog(size_t len) {
   return (uintptr_t)copy;
 }
 
-static int h2_web_h2loader_resource_name_valid(const char *name) {
+static int h2_web_h2loader_resource_name_valid(const char* name) {
   if (name == NULL || name[0] == '\0' || name[0] == '/' ||
       strchr(name, '\\') != NULL) {
     return 0;
   }
-  const char *segment = name;
-  for (const char *cursor = name;; ++cursor) {
+  const char* segment = name;
+  for (const char* cursor = name;; ++cursor) {
     if (*cursor != '/' && *cursor != '\0') continue;
     const size_t length = (size_t)(cursor - segment);
     if (length == 0u || (length == 1u && segment[0] == '.') ||
@@ -262,8 +263,8 @@ static int h2_web_h2loader_resource_name_valid(const char *name) {
   }
 }
 
-EMSCRIPTEN_KEEPALIVE uintptr_t h2_web_h2loader_allocate_resource(
-    const char *name, size_t len) {
+EMSCRIPTEN_KEEPALIVE uintptr_t
+h2_web_h2loader_allocate_resource(const char* name, size_t len) {
   if (app.started || app.shutting_down ||
       !h2_web_h2loader_resource_name_valid(name) || len == 0u ||
       app.resource_count >= H2_WEB_H2LOADER_MAX_RESOURCES ||
@@ -273,10 +274,9 @@ EMSCRIPTEN_KEEPALIVE uintptr_t h2_web_h2loader_allocate_resource(
   for (size_t index = 0u; index < app.resource_count; ++index) {
     if (strcmp(name, app.resources[index].name) == 0) return 0u;
   }
-  uint8_t *copy = malloc(len);
+  uint8_t* copy = malloc(len);
   if (copy == NULL) return 0u;
-  h2_web_h2loader_resource_t *resource =
-      &app.resources[app.resource_count++];
+  h2_web_h2loader_resource_t* resource = &app.resources[app.resource_count++];
   strcpy(resource->name, name);
   resource->bytes = copy;
   resource->len = len;
@@ -290,16 +290,18 @@ EMSCRIPTEN_KEEPALIVE int h2_web_h2loader_reset_resources(void) {
   return H2_PAL_OK;
 }
 
-EMSCRIPTEN_KEEPALIVE int h2_web_h2loader_write_allocation(
-    uintptr_t destination, size_t total_len, size_t offset,
-    const uint8_t *bytes, size_t len) {
+EMSCRIPTEN_KEEPALIVE int h2_web_h2loader_write_allocation(uintptr_t destination,
+                                                          size_t total_len,
+                                                          size_t offset,
+                                                          const uint8_t* bytes,
+                                                          size_t len) {
   if (app.started || app.shutting_down || destination == 0u || bytes == NULL ||
-      len == 0u ||
-      offset > total_len || len > total_len - offset) {
+      len == 0u || offset > total_len || len > total_len - offset) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  uint8_t *allocation = (uint8_t *)destination;
-  int found = allocation == app.catalog_json && total_len == app.catalog_json_len;
+  uint8_t* allocation = (uint8_t*)destination;
+  int found =
+      allocation == app.catalog_json && total_len == app.catalog_json_len;
   for (size_t index = 0u; !found && index < app.resource_count; ++index) {
     found = allocation == app.resources[index].bytes &&
             total_len == app.resources[index].len;
@@ -309,9 +311,7 @@ EMSCRIPTEN_KEEPALIVE int h2_web_h2loader_write_allocation(
   return H2_PAL_OK;
 }
 
-EMSCRIPTEN_KEEPALIVE void h2_web_h2loader_cancel(void) {
-  app.cancelled = 1;
-}
+EMSCRIPTEN_KEEPALIVE void h2_web_h2loader_cancel(void) { app.cancelled = 1; }
 
 EMSCRIPTEN_KEEPALIVE int h2_web_h2loader_start(void) {
   if (app.started || app.shutting_down || app.platform == NULL) {
@@ -319,8 +319,8 @@ EMSCRIPTEN_KEEPALIVE int h2_web_h2loader_start(void) {
   }
   h2_pal_result_t result = H2_PAL_OK;
   if (app.suite != H2_H2LOADER_SERIAL_E2E_SUITE_PREFLIGHT) {
-    result = h2_web_platform_serial_authorization(
-        app.platform, app.port_id, sizeof(app.port_id));
+    result = h2_web_platform_serial_authorization(app.platform, app.port_id,
+                                                  sizeof(app.port_id));
     if (result != H2_PAL_OK) return result;
   } else {
     app.port_id[0] = '\0';
@@ -329,9 +329,9 @@ EMSCRIPTEN_KEEPALIVE int h2_web_h2loader_start(void) {
       .name = h2_h2loader_serial_e2e_runner_task_name,
       .min_stack_size = H2_WEB_H2LOADER_TASK_STACK_SIZE,
   };
-  result = h2_pal_task_start(h2_web_platform_task_api(app.platform),
-                             &task_options, h2_web_h2loader_run, &app,
-                             &app.task);
+  result =
+      h2_pal_task_start(h2_web_platform_task_api(app.platform), &task_options,
+                        h2_web_h2loader_run, &app, &app.task);
   if (result == H2_PAL_OK) {
     app.started = 1;
 #if defined(H2_WEB_H2LOADER_INTERACTIVE)
@@ -345,17 +345,17 @@ static h2_pal_result_t h2_web_h2loader_finalize(int present_result) {
   if (app.finalized) return H2_PAL_OK;
   h2_pal_result_t result = app.run_result;
   if (app.task != NULL) {
-    const h2_pal_result_t join_result = h2_pal_task_join(
-        h2_web_platform_task_api(app.platform), app.task);
+    const h2_pal_result_t join_result =
+        h2_pal_task_join(h2_web_platform_task_api(app.platform), app.task);
     if (join_result != H2_PAL_OK) return join_result;
     app.task = NULL;
     h2_web_h2loader_print_ledger(&app.result);
     if (present_result) {
       (void)h2_web_main_call(
           h2_web_h2loader_present,
-          (const void *[]){&(int){app.run_result}, &(size_t){app.result.passed},
-                           &(size_t){app.result.failed},
-                           &(size_t){app.result.enumerated_ports}});
+          (const void*[]){&(int){app.run_result}, &(size_t){app.result.passed},
+                          &(size_t){app.result.failed},
+                          &(size_t){app.result.enumerated_ports}});
     }
   }
   if (app.runtime != NULL) {
@@ -376,15 +376,15 @@ static h2_pal_result_t h2_web_h2loader_advance(int present_result) {
   h2_pal_result_t result = h2_web_platform_pump(app.platform, 32u, NULL);
   (void)h2_web_main_call(
       h2_web_h2loader_progress,
-      (const void *[]){&(uint64_t){app.result.acknowledged_bytes},
-                       &(uint64_t){app.result.total_bytes}});
+      (const void*[]){&(uint64_t){app.result.acknowledged_bytes},
+                      &(uint64_t){app.result.total_bytes}});
   if (result != H2_PAL_OK) return result;
   if (!app.complete) {
     if (!app.shutting_down || app.task == NULL) {
       return H2_PAL_ERR_WOULD_BLOCK;
     }
-    const h2_pal_result_t join_result = h2_pal_task_join(
-        h2_web_platform_task_api(app.platform), app.task);
+    const h2_pal_result_t join_result =
+        h2_pal_task_join(h2_web_platform_task_api(app.platform), app.task);
     if (join_result == H2_PAL_ERR_BUSY) return H2_PAL_ERR_WOULD_BLOCK;
     if (join_result != H2_PAL_OK && join_result != H2_PAL_EXIT) {
       return join_result;
@@ -398,11 +398,10 @@ EMSCRIPTEN_KEEPALIVE int h2_web_h2loader_tick(void) {
   if (app.shutting_down) return H2_PAL_ERR_INVALID_STATE;
   (void)h2_web_main_call(
       h2_web_h2loader_progress,
-      (const void *[]){&(uint64_t){app.result.acknowledged_bytes},
-                       &(uint64_t){app.result.total_bytes}});
-  const h2_pal_result_t result = app.complete
-                                     ? h2_web_h2loader_finalize(1)
-                                     : H2_PAL_ERR_WOULD_BLOCK;
+      (const void*[]){&(uint64_t){app.result.acknowledged_bytes},
+                      &(uint64_t){app.result.total_bytes}});
+  const h2_pal_result_t result =
+      app.complete ? h2_web_h2loader_finalize(1) : H2_PAL_ERR_WOULD_BLOCK;
   if (result != H2_PAL_ERR_WOULD_BLOCK) {
     printf("H2_WEB_H2LOADER_TICK rc=%d complete=%d task=%s finalized=%d\n",
            result, app.complete, app.task == NULL ? "none" : "owned",
@@ -471,10 +470,11 @@ int main(void) {
       break;
     }
   }
-  printf("H2_WEB_H2LOADER_SERIAL_E2E result=%s rc=%d passed=%zu failed=%zu "
-         "skipped=%zu ports=%zu\n",
-         result == H2_PAL_OK ? "PASS" : "FAIL", result, app.result.passed,
-         app.result.failed, app.result.skipped, app.result.enumerated_ports);
+  printf(
+      "H2_WEB_H2LOADER_SERIAL_E2E result=%s rc=%d passed=%zu failed=%zu "
+      "skipped=%zu ports=%zu\n",
+      result == H2_PAL_OK ? "PASS" : "FAIL", result, app.result.passed,
+      app.result.failed, app.result.skipped, app.result.enumerated_ports);
   if (app.runtime != NULL) h2_runtime_deinit(app.runtime);
   if (app.platform != NULL) h2_web_platform_destroy(app.platform);
   h2_web_h2loader_release_resources();

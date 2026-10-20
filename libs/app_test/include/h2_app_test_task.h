@@ -14,13 +14,13 @@ extern "C" {
 typedef struct h2_app_test_task {
   h2_pal_task_api_t api;
   h2_pal_task_entry_t entry;
-  void *context;
+  void* context;
   h2_pal_task_options_t options;
   h2_app_test_fault_t start, join;
   bool active, running, complete, run_on_start;
 } h2_app_test_task_t;
-void h2_app_test_task_init(h2_app_test_task_t *task);
-h2_pal_result_t h2_app_test_task_run(h2_app_test_task_t *task);
+void h2_app_test_task_init(h2_app_test_task_t* task);
+h2_pal_result_t h2_app_test_task_run(h2_app_test_task_t* task);
 #ifdef __cplusplus
 }
 #endif

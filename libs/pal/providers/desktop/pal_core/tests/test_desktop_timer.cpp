@@ -10,7 +10,7 @@
 namespace {
 using Clock = std::chrono::steady_clock;
 using namespace std::chrono_literals;
-const h2_pal_timer_api_t *api;
+const h2_pal_timer_api_t* api;
 
 struct Calls {
   std::mutex mutex;
@@ -20,28 +20,26 @@ struct Calls {
   bool self_destroy = false;
   h2_pal_result_t result = H2_PAL_ERR_INVALID_STATE;
 };
-void callback(void *user, h2_pal_timer_t *timer) {
-  auto *calls = static_cast<Calls *>(user);
+void callback(void* user, h2_pal_timer_t* timer) {
+  auto* calls = static_cast<Calls*>(user);
   h2_pal_result_t result = H2_PAL_OK;
-  if (calls->self_stop)
-    result = h2_pal_timer_stop(api, timer);
-  if (calls->self_destroy)
-    result = h2_pal_timer_destroy(api, timer);
+  if (calls->self_stop) result = h2_pal_timer_stop(api, timer);
+  if (calls->self_destroy) result = h2_pal_timer_destroy(api, timer);
   std::lock_guard<std::mutex> lock(calls->mutex);
   calls->result = result;
   ++calls->count;
   calls->changed.notify_all();
 }
-void wait_for(Calls &calls, size_t count) {
+void wait_for(Calls& calls, size_t count) {
   std::unique_lock<std::mutex> lock(calls.mutex);
   assert(
       calls.changed.wait_for(lock, 2s, [&] { return calls.count >= count; }));
 }
-size_t count(Calls &calls) {
+size_t count(Calls& calls) {
   std::lock_guard<std::mutex> lock(calls.mutex);
   return calls.count;
 }
-void quiet(Calls &calls, size_t expected) {
+void quiet(Calls& calls, size_t expected) {
   std::unique_lock<std::mutex> lock(calls.mutex);
   assert(!calls.changed.wait_for(lock, 30ms,
                                  [&] { return calls.count != expected; }));
@@ -61,7 +59,7 @@ void wait_for_reclamation(size_t baseline) {
 void test_validation() {
   Calls calls;
   h2_pal_timer_config_t config = {"timer", 10u, 0u, callback, &calls};
-  h2_pal_timer_t *timer = reinterpret_cast<h2_pal_timer_t *>(1);
+  h2_pal_timer_t* timer = reinterpret_cast<h2_pal_timer_t*>(1);
   assert(api->vtable->create(api->user, nullptr, &timer) ==
          H2_PAL_ERR_INVALID_ARG);
   assert(timer == nullptr);
@@ -90,7 +88,7 @@ void test_one_shot() {
   Calls calls;
   const h2_pal_timer_config_t config = {"one-shot", 1000u, 0u, callback,
                                         &calls};
-  h2_pal_timer_t *timer = nullptr;
+  h2_pal_timer_t* timer = nullptr;
   assert(h2_pal_timer_create(api, &config, &timer) == H2_PAL_OK);
   assert(live_timers() == baseline + 1u);
   int running = -1;
@@ -110,7 +108,7 @@ void test_one_shot() {
   assert(h2_pal_timer_start(api, timer) == H2_PAL_OK);
   assert(h2_pal_timer_set_period_ms(api, timer, 5u) == H2_PAL_OK);
   wait_for(calls,
-           3u); // A running period change rearms, rather than waiting 1s.
+           3u);  // A running period change rearms, rather than waiting 1s.
   assert(h2_pal_timer_set_period_ms(api, timer, 0u) == H2_PAL_ERR_INVALID_ARG);
   assert(h2_pal_timer_stop(api, timer) == H2_PAL_OK);
   assert(h2_pal_timer_stop(api, timer) == H2_PAL_OK);
@@ -125,7 +123,7 @@ void test_repeat_and_generation() {
   const h2_pal_timer_config_t config = {
       "repeat", 5u, H2_PAL_TIMER_FLAG_AUTO_START | H2_PAL_TIMER_FLAG_REPEAT,
       callback, &calls};
-  h2_pal_timer_t *timer = nullptr;
+  h2_pal_timer_t* timer = nullptr;
   assert(h2_pal_timer_create(api, &config, &timer) == H2_PAL_OK);
   wait_for(calls, 3u);
   assert(h2_pal_timer_stop(api, timer) == H2_PAL_OK);
@@ -157,8 +155,8 @@ struct Gate {
   h2_pal_result_t rearm_result = H2_PAL_OK;
   h2_pal_result_t destroy_result = H2_PAL_OK;
 };
-void gated_callback(void *user, h2_pal_timer_t *timer) {
-  auto *gate = static_cast<Gate *>(user);
+void gated_callback(void* user, h2_pal_timer_t* timer) {
+  auto* gate = static_cast<Gate*>(user);
   std::unique_lock<std::mutex> lock(gate->mutex);
   gate->entered = true;
   gate->changed.notify_all();
@@ -183,7 +181,7 @@ void test_external_stop_waits() {
   const h2_pal_timer_config_t config = {
       "in-flight", 1u, H2_PAL_TIMER_FLAG_REPEAT | H2_PAL_TIMER_FLAG_AUTO_START,
       gated_callback, &gate};
-  h2_pal_timer_t *timer = nullptr;
+  h2_pal_timer_t* timer = nullptr;
   assert(h2_pal_timer_create(api, &config, &timer) == H2_PAL_OK);
   {
     std::unique_lock<std::mutex> lock(gate.mutex);
@@ -205,7 +203,7 @@ void test_external_stop_waits() {
   {
     std::unique_lock<std::mutex> lock(gate.mutex);
     assert(
-        !gate.finished); // stop has cancelled admission but cannot return yet.
+        !gate.finished);  // stop has cancelled admission but cannot return yet.
     gate.check_busy = true;
     gate.changed.notify_all();
     assert(gate.changed.wait_for(lock, 2s, [&] { return gate.checked; }));
@@ -225,7 +223,7 @@ void test_external_destroy_waits() {
   const h2_pal_timer_config_t config = {"destroy-flight", 1u,
                                         H2_PAL_TIMER_FLAG_AUTO_START,
                                         gated_callback, &gate};
-  h2_pal_timer_t *timer = nullptr;
+  h2_pal_timer_t* timer = nullptr;
   assert(h2_pal_timer_create(api, &config, &timer) == H2_PAL_OK);
   {
     std::unique_lock<std::mutex> lock(gate.mutex);
@@ -256,7 +254,7 @@ void test_callback_control_and_churn() {
     calls.self_destroy = mode == 1;
     const h2_pal_timer_config_t config = {
         "self-control", 1u, H2_PAL_TIMER_FLAG_REPEAT, callback, &calls};
-    h2_pal_timer_t *timer = nullptr;
+    h2_pal_timer_t* timer = nullptr;
     assert(h2_pal_timer_create(api, &config, &timer) == H2_PAL_OK);
     assert(h2_pal_timer_start(api, timer) == H2_PAL_OK);
     wait_for(calls, 1u);
@@ -270,13 +268,13 @@ void test_callback_control_and_churn() {
     Calls calls;
     const h2_pal_timer_config_t config = {
         "churn", 1u, H2_PAL_TIMER_FLAG_AUTO_START, callback, &calls};
-    h2_pal_timer_t *timer = nullptr;
+    h2_pal_timer_t* timer = nullptr;
     assert(h2_pal_timer_create(api, &config, &timer) == H2_PAL_OK);
     assert(h2_pal_timer_destroy(api, timer) == H2_PAL_OK);
     assert(live_timers() == baseline);
   }
 }
-} // namespace
+}  // namespace
 
 int main() {
   alarm(30u);

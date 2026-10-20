@@ -18,17 +18,15 @@ typedef struct h2_mobile_ios_app_context {
 
 static int h2_mobile_ios_should_stop(void *user) {
   h2_mobile_ios_app_context_t *context = user;
-  return context == NULL ||
-         h2_atomic_load_explicit(&context->stop, H2_ATOMIC_ACQUIRE);
+  return context == NULL || h2_atomic_load_explicit(&context->stop, H2_ATOMIC_ACQUIRE);
 }
 
-static h2_pal_result_t
-h2_mobile_ios_read_pointer(void *user, h2_mobile_pointer_state_t *out_state) {
+static h2_pal_result_t h2_mobile_ios_read_pointer(void *user,
+                                                  h2_mobile_pointer_state_t *out_state) {
   if (out_state == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  return h2_ios_platform_read_pointer(user, &out_state->x, &out_state->y,
-                                      &out_state->pressed);
+  return h2_ios_platform_read_pointer(user, &out_state->x, &out_state->y, &out_state->pressed);
 }
 
 static void *h2_mobile_ios_app_thread(void *user) {
@@ -57,10 +55,7 @@ static void *h2_mobile_ios_app_thread(void *user) {
 
 - (void)viewDidLoad {
   [super viewDidLoad];
-  self.view.backgroundColor = [UIColor colorWithRed:0.02
-                                              green:0.03
-                                               blue:0.07
-                                              alpha:1.0];
+  self.view.backgroundColor = [UIColor colorWithRed:0.02 green:0.03 blue:0.07 alpha:1.0];
 
   const h2_ios_platform_config_t platform_config = {
       .display_width = H2_MOBILE_APP_WIDTH,
@@ -82,14 +77,11 @@ static void *h2_mobile_ios_app_thread(void *user) {
   ]];
 
   h2_runtime_config_t runtime_config = h2_smoke_host_runtime_config(
-      "iphone", "ios", "simulator", h2_ios_platform_mem_api(),
-      h2_ios_platform_time_api(), h2_ios_platform_queue_api(),
-      h2_ios_platform_display_api(_context.host));
-  const h2_pal_result_t runtime_result =
-      h2_runtime_init(&runtime_config, &_context.runtime);
+      "iphone", "ios", "simulator", h2_ios_platform_mem_api(), h2_ios_platform_time_api(),
+      h2_ios_platform_queue_api(), h2_ios_platform_display_api(_context.host));
+  const h2_pal_result_t runtime_result = h2_runtime_init(&runtime_config, &_context.runtime);
   if (runtime_result != H2_PAL_OK) {
-    NSLog(@"Firmwares Runtime initialization failed with result %d",
-          runtime_result);
+    NSLog(@"Firmwares Runtime initialization failed with result %d", runtime_result);
     h2_ios_platform_destroy(_context.host);
     _context.host = NULL;
     return;
@@ -99,13 +91,12 @@ static void *h2_mobile_ios_app_thread(void *user) {
     [self stopPortableApp];
     return;
   }
-  const int thread_result = pthread_create(&_context.thread, NULL,
-                                           h2_mobile_ios_app_thread, &_context);
+  const int thread_result =
+      pthread_create(&_context.thread, NULL, h2_mobile_ios_app_thread, &_context);
   if (thread_result == 0) {
     _context.thread_started = 1;
   } else {
-    NSLog(@"Firmwares App thread creation failed with result %d",
-          thread_result);
+    NSLog(@"Firmwares App thread creation failed with result %d", thread_result);
     [self stopPortableApp];
   }
 }
@@ -178,9 +169,9 @@ static void *h2_mobile_ios_app_thread(void *user) {
                                    options:(UISceneConnectionOptions *)options {
   (void)application;
   (void)options;
-  UISceneConfiguration *configuration = [[UISceneConfiguration alloc]
-      initWithName:@"Default Configuration"
-       sessionRole:connectingSceneSession.role];
+  UISceneConfiguration *configuration =
+      [[UISceneConfiguration alloc] initWithName:@"Default Configuration"
+                                     sessionRole:connectingSceneSession.role];
   configuration.delegateClass = H2MobileSceneDelegate.class;
   return configuration;
 }
@@ -189,7 +180,6 @@ static void *h2_mobile_ios_app_thread(void *user) {
 
 int main(int argc, char *argv[]) {
   @autoreleasepool {
-    return UIApplicationMain(argc, argv, nil,
-                             NSStringFromClass(H2MobileAppDelegate.class));
+    return UIApplicationMain(argc, argv, nil, NSStringFromClass(H2MobileAppDelegate.class));
   }
 }

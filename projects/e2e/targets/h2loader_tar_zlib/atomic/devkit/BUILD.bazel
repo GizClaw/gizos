@@ -7,11 +7,14 @@ load("//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files([
-    "main/CMakeLists.txt",
-    "main/idf_component.yml",
-    "main/main.c",
-], visibility = ["//visibility:public"])
+exports_files(
+    [
+        "main/CMakeLists.txt",
+        "main/idf_component.yml",
+        "main/main.c",
+    ],
+    visibility = ["//visibility:public"],
+)
 
 esp_target_task_policy(
     name = "task_policy",
@@ -47,16 +50,16 @@ firmware_lib_component(
         "//libs/command",
         "//libs/iostreamikcp",
         "//libs/pal:unsupported",
-        "//libs/wifi_sta",
         "//libs/pal/providers/corehttp",
         "//libs/pal/providers/h2peer",
         "//libs/pal/providers/h2sctp",
         "//libs/pal/providers/libco",
         "//libs/pixa",
         "//libs/runtime",
+        "//libs/wifi_sta",
         "//projects/e2e/apps/atomic/app:atomic_e2e",
-        "//projects/e2e/libs/atomic-device:runner",
         "//projects/e2e/apps/atomic/app:c11_comparison",
+        "//projects/e2e/libs/atomic-device:runner",
     ],
 )
 
@@ -65,7 +68,10 @@ firmware_native_component(
     srcs = ["main/main.c"],
     component_directory = "projects/e2e/targets/h2loader_tar_zlib/atomic/devkit/main",
     component_name = "main",
-    data = ["main/CMakeLists.txt", "main/idf_component.yml"],
+    data = [
+        "main/CMakeLists.txt",
+        "main/idf_component.yml",
+    ],
     tags = ["manual"],
     deps = [
         ":firmware_lib",
@@ -105,4 +111,8 @@ h2loader_tar_zlib(
     target = "esp32s3",
 )
 
-atomic_device_test(name="device_test", package=":package", target="esp32s3")
+atomic_device_test(
+    name = "device_test",
+    package = ":package",
+    target = "esp32s3",
+)

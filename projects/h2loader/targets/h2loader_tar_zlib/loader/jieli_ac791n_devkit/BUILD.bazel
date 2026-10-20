@@ -1,8 +1,8 @@
 load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_jieli_firmware")
 load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
 load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
-load("//tools/bazel:native_component.bzl", "firmware_native_component")
 load("//tools/bazel:jieli_task_policy.bzl", "jieli_target_task_policy")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -29,8 +29,8 @@ firmware_lib_component(
     component_name = "h2loader_ac791n_devkit_support",
     deps = [
         "//libs/command",
-        "//libs/runtime",
         "//libs/crypto/sha256",
+        "//libs/runtime",
     ],
 )
 
@@ -91,6 +91,7 @@ firmware_native_component(
         "//libs/bundle:include/h2_bundle_tar.h",
         "//libs/bundle:include/h2_bundle_types.h",
     ],
+    component_name = "h2loader_ac791n_devkit_bundle",
     include_roots = ["libs/bundle/include"],
     native_srcs = [
         "//libs/bundle:src/h2_bundle_archive.c",
@@ -100,7 +101,6 @@ firmware_native_component(
         "//libs/bundle:src/h2_bundle_tar.c",
         "//libs/bundle:src/h2_bundle_types.c",
     ],
-    component_name = "h2loader_ac791n_devkit_bundle",
     deps = [
         "//libs/pal:pal_header_files",
         "//native_component_src/jieli/wl82/h2_pixa",
@@ -111,9 +111,9 @@ firmware_native_component(
 firmware_native_component(
     name = "ble_loader_service",
     hdrs = ["//projects/h2loader/libs/h2loader:h2loader_headers"],
+    component_name = "h2loader_ac791n_devkit_ble_service",
     include_roots = ["projects/h2loader/libs/h2loader/include"],
     native_srcs = ["//projects/h2loader/libs/h2loader:src/h2_loader_ble.c"],
-    component_name = "h2loader_ac791n_devkit_ble_service",
     deps = [
         ":ble_loader",
         "//libs/bundle",
@@ -128,6 +128,7 @@ firmware_native_component(
         "//projects/h2loader/apps/loader/app:include/h2loader_app.h",
         "//projects/h2loader/libs/h2loader:h2loader_headers",
     ],
+    component_name = "h2loader_ac791n_devkit_common",
     include_roots = [
         "projects/h2loader/apps/loader/app",
         "projects/h2loader/apps/loader/app/include",
@@ -149,14 +150,13 @@ firmware_native_component(
         "//projects/h2loader/libs/h2loader:src/h2_loader_status.c",
         "//projects/h2loader/libs/h2loader:src/h2_loader_task_names.c",
     ],
-    component_name = "h2loader_ac791n_devkit_common",
     deps = [
         ":ble_loader_service",
         ":bundle_native",
         ":loader_support",
         "//libs/pal:pal_header_files",
-        "//projects/h2loader/apps/loader/app:tasks",
         "//projects/h2loader/apps/loader/app:ble_tasks",
+        "//projects/h2loader/apps/loader/app:tasks",
         "//projects/h2loader/libs/h2loader:tasks",
     ],
 )
@@ -170,20 +170,20 @@ firmware_native_component(
     hdrs = [
         "src/jieli_loader_platform.h",
     ],
+    component_name = "h2loader_ac791n_devkit_launcher",
     include_roots = [
         "projects/h2loader/apps/loader/app/include",
         "projects/h2loader/apps/loader/app",
         "projects/h2loader/libs/h2loader/include",
     ],
-    component_name = "h2loader_ac791n_devkit_launcher",
     tags = ["manual"],
     target_compatible_with = AC791N_COMPATIBILITY,
     deps = [
-        "//boards/jieli_ac791n_devkit/ac791n/layouts/h2loader:warm_boot",
         ":loader_common",
         ":reliable_transport",
-        "//libs/atomic",
         "//boards/ac791n_chip/ac791n",
+        "//boards/jieli_ac791n_devkit/ac791n/layouts/h2loader:warm_boot",
+        "//libs/atomic",
         "//native_component_src/jieli/wl82/h2_pal_core",
     ],
 )
@@ -236,9 +236,9 @@ firmware_native_component(
     name = "loader_trial_crash",
     srcs = ["src/loader_trial_crash.c"],
     component_name = "jieli_ac791n_devkit_loader_trial_crash",
-    deps = ["//boards/ac791n_chip/ac791n"],
     tags = ["manual"],
     target_compatible_with = AC791N_COMPATIBILITY,
+    deps = ["//boards/ac791n_chip/ac791n"],
 )
 
 h2loader_jieli_firmware(
@@ -268,9 +268,9 @@ firmware_native_component(
     name = "loader_copy_powercut",
     srcs = ["src/loader_copy_powercut.c"],
     component_name = "jieli_ac791n_devkit_loader_copy_powercut",
-    deps = ["//boards/jieli_ac791n_devkit/ac791n"],
     tags = ["manual"],
     target_compatible_with = AC791N_COMPATIBILITY,
+    deps = ["//boards/jieli_ac791n_devkit/ac791n"],
 )
 
 h2loader_jieli_firmware(
@@ -300,24 +300,24 @@ firmware_native_component(
     name = "loader_partial_p1_header",
     srcs = ["src/loader_partial_p1_header.c"],
     component_name = "jieli_ac791n_devkit_loader_partial_p1_header",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
     deps = [
         "//boards/jieli_ac791n_devkit/ac791n/layouts/h2loader:warm_boot",
         "//libs/atomic",
     ],
-    tags = ["manual"],
-    target_compatible_with = AC791N_COMPATIBILITY,
 )
 
 firmware_native_component(
     name = "loader_pref_powercut",
     srcs = ["src/loader_pref_powercut.c"],
     component_name = "jieli_ac791n_devkit_loader_pref_powercut",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
     deps = [
         "//boards/jieli_ac791n_devkit/ac791n/layouts/h2loader:warm_boot",
         "//libs/pal:pal_header_files",
     ],
-    tags = ["manual"],
-    target_compatible_with = AC791N_COMPATIBILITY,
 )
 
 h2loader_jieli_firmware(
@@ -370,9 +370,9 @@ firmware_native_component(
     name = "loader_partial_header",
     srcs = ["src/loader_partial_header.c"],
     component_name = "jieli_ac791n_devkit_loader_partial_header",
-    deps = ["//boards/jieli_ac791n_devkit/ac791n/layouts/h2loader:warm_boot"],
     tags = ["manual"],
     target_compatible_with = AC791N_COMPATIBILITY,
+    deps = ["//boards/jieli_ac791n_devkit/ac791n/layouts/h2loader:warm_boot"],
 )
 
 h2loader_jieli_firmware(
@@ -403,9 +403,9 @@ firmware_native_component(
     srcs = ["src/loader_partial_header32.c"],
     hdrs = ["src/loader_partial_header.c"],
     component_name = "jieli_ac791n_devkit_loader_partial_header32",
-    deps = ["//boards/jieli_ac791n_devkit/ac791n/layouts/h2loader:warm_boot"],
     tags = ["manual"],
     target_compatible_with = AC791N_COMPATIBILITY,
+    deps = ["//boards/jieli_ac791n_devkit/ac791n/layouts/h2loader:warm_boot"],
 )
 
 h2loader_jieli_firmware(
@@ -435,9 +435,9 @@ firmware_native_component(
     name = "watchdog_trial",
     srcs = ["src/watchdog_trial.c"],
     component_name = "jieli_ac791n_devkit_watchdog_trial",
-    deps = ["//boards/jieli_ac791n_devkit/ac791n"],
     tags = ["manual"],
     target_compatible_with = AC791N_COMPATIBILITY,
+    deps = ["//boards/jieli_ac791n_devkit/ac791n"],
 )
 
 h2loader_jieli_firmware(
@@ -459,7 +459,10 @@ h2loader_tar_zlib(
     firmware = ":loader_watchdog_firmware",
     image = "loader-watchdog",
     role = "h2loader",
-    tags = ["no-release", "manual"],
+    tags = [
+        "manual",
+        "no-release",
+    ],
     target = "wl82",
 )
 
@@ -467,9 +470,9 @@ firmware_native_component(
     name = "app_watchdog_trial",
     srcs = ["src/app_watchdog_trial.c"],
     component_name = "jieli_ac791n_devkit_app_watchdog_trial",
-    deps = ["//boards/jieli_ac791n_devkit/ac791n"],
     tags = ["manual"],
     target_compatible_with = AC791N_COMPATIBILITY,
+    deps = ["//boards/jieli_ac791n_devkit/ac791n"],
 )
 
 h2loader_jieli_firmware(
@@ -491,6 +494,9 @@ h2loader_tar_zlib(
     firmware = ":app_watchdog_firmware",
     image = "app-watchdog",
     role = "app",
-    tags = ["no-release", "manual"],
+    tags = [
+        "manual",
+        "no-release",
+    ],
     target = "wl82",
 )

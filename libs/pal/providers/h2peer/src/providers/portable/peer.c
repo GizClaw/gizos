@@ -2,7 +2,7 @@
 #include "config.h"
 #include "h2_libsrtp.h"
 
-int peer_init(const h2_pal_mem_api_t *mem, const h2_pal_crypto_api_t *crypto) {
+int peer_init(const h2_pal_mem_api_t* mem, const h2_pal_crypto_api_t* crypto) {
   if (mem == NULL || crypto == NULL) {
     return -1;
   }
@@ -17,6 +17,4 @@ int peer_init(const h2_pal_mem_api_t *mem, const h2_pal_crypto_api_t *crypto) {
   return 0;
 }
 
-void peer_deinit() {
-  (void)h2_libsrtp_deinit();
-}
+void peer_deinit() { (void)h2_libsrtp_deinit(); }

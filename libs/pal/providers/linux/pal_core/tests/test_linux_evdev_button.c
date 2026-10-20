@@ -5,17 +5,17 @@
 #include <string.h>
 
 typedef struct fake_reader_state {
-  const char *expected_device_name;
+  const char* expected_device_name;
   uint16_t expected_key_code;
   h2_pal_button_state_t state;
   h2_pal_result_t result;
   unsigned int calls;
 } fake_reader_state_t;
 
-static h2_pal_result_t fake_read(void *user, const char *device_name,
+static h2_pal_result_t fake_read(void* user, const char* device_name,
                                  uint16_t key_code,
-                                 h2_pal_button_state_t *out_state) {
-  fake_reader_state_t *state = user;
+                                 h2_pal_button_state_t* out_state) {
+  fake_reader_state_t* state = user;
   assert(strcmp(device_name, state->expected_device_name) == 0);
   assert(key_code == state->expected_key_code);
   ++state->calls;
@@ -44,7 +44,7 @@ static void test_configuration_and_reads(void) {
   h2_linux_evdev_test_set_reader(fake_read, &reader);
 
   h2_pal_single_button_reading_t reading = {0};
-  const h2_pal_button_api_t *api = h2_linux_evdev_button_api();
+  const h2_pal_button_api_t* api = h2_linux_evdev_button_api();
   assert(h2_pal_button_read_single_button(api, 7u, &reading) == H2_PAL_OK);
   assert(reading.id == 7u);
   assert(reading.state == H2_PAL_BUTTON_STATE_PRESSED);

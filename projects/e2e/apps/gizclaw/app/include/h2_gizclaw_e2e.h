@@ -49,9 +49,9 @@ typedef enum h2_gizclaw_e2e_progress_kind {
 
 typedef struct h2_gizclaw_e2e_progress {
   h2_gizclaw_e2e_progress_kind_t kind;
-  const char *case_id;
-  const char *status;
-  const char *blocked_by;
+  const char* case_id;
+  const char* status;
+  const char* blocked_by;
   uint64_t elapsed_ms;
   size_t selected;
   size_t terminal;
@@ -64,14 +64,14 @@ typedef struct h2_gizclaw_e2e_progress {
   bool complete;
 } h2_gizclaw_e2e_progress_t;
 
-typedef bool (*h2_gizclaw_e2e_should_stop_fn)(void *user);
+typedef bool (*h2_gizclaw_e2e_should_stop_fn)(void* user);
 /** Progress observers run synchronously on the calling task. */
 typedef void (*h2_gizclaw_e2e_progress_fn)(
-    void *user, const h2_gizclaw_e2e_progress_t *progress);
+    void* user, const h2_gizclaw_e2e_progress_t* progress);
 /** Non-secret evidence records may arrive on different App-owned tasks.
  * Copy synchronously; NULL/zero signals a formatting failure. */
-typedef void (*h2_gizclaw_e2e_evidence_fn)(void *user, const char *record,
-                                        size_t size);
+typedef void (*h2_gizclaw_e2e_evidence_fn)(void* user, const char* record,
+                                           size_t size);
 
 /**
  * All views are borrowed until h2_gizclaw_e2e_run() returns with zero retained
@@ -85,30 +85,31 @@ typedef struct h2_gizclaw_e2e_config {
   h2_gizclaw_str_t registration_token;
   /** Required for RPC/all: explicitly selected non-secret profile fixture.
    * List must contain this key; both get APIs must return identical bytes. */
-  const char *app_config_key;
-  /** Expected registration identity; fail on a token bound to another profile. */
-  const char *expected_runtime_profile;
+  const char* app_config_key;
+  /** Expected registration identity; fail on a token bound to another profile.
+   */
+  const char* expected_runtime_profile;
   /** Optional exact Workflow tag shared by list requests and membership checks.
    * NULL retains "assistants"; an explicit value must be nonempty. */
-  const char *workflow_tag;
+  const char* workflow_tag;
   /** Required for RPC/all: known non-secret fixture bytes compared by both
    * AppConfig APIs. A non-NULL zero-length view denotes a known empty value. */
   h2_gizclaw_str_t app_config_expected_value;
   /** Optional dedicated device-API acceptance lane endpoints. */
-  const char *device_api_url;
-  const char *device_audio_url;
+  const char* device_api_url;
+  const char* device_audio_url;
   /** Dedicated Lua install/run golden lane: three addresses for the same
    * package, its ID and digests. data URL remains borrowed for the whole run.
    * A host reference run may record the first-frame digest explicitly; device
    * qualification requires the independently recorded expected frame digest. */
-  const char *lua_app_url;
-  const char *lua_app_http_url;
-  const char *lua_app_https_url;
-  const char *lua_app_id;
-  const char *lua_archive_sha256;
-  const char *lua_entry_sha256;
-  const char *lua_frame_sha256;
-  const char *lua_storage_root;
+  const char* lua_app_url;
+  const char* lua_app_http_url;
+  const char* lua_app_https_url;
+  const char* lua_app_id;
+  const char* lua_archive_sha256;
+  const char* lua_entry_sha256;
+  const char* lua_frame_sha256;
+  const char* lua_storage_root;
   bool lua_record_golden;
   /** Keep the installed catalog and its isolated KV directory after releasing
    * all live handles. Useful for device persistence checks; host runs default
@@ -117,60 +118,62 @@ typedef struct h2_gizclaw_e2e_config {
   bool lua_preserve_storage;
   /** Require the prior installation and its entry digest before any upload;
    * then run that retained entry against the same frame golden. Set this for
-   * the independent persistence boot, including when the whole index is lost. */
+   * the independent persistence boot, including when the whole index is lost.
+   */
   bool lua_expect_persisted;
   /** Optional lowercase hex PEM trust fixture (at most 16 KiB decoded).
    * Creates a case-owned coreHTTP provider with required TLS verification. */
-  const char *tls_root_ca_hex;
+  const char* tls_root_ca_hex;
   /** Test Profile selectors for the dedicated safety-fence lane. */
-  const char *fence_workflow_name;
-  const char *fence_first_id;
-  const char *fence_second_id;
+  const char* fence_workflow_name;
+  const char* fence_first_id;
+  const char* fence_second_id;
   /** Forward the device case PCM sink to runtime.audio for audible testing. */
   bool device_real_audio;
   /** Borrowed Audio PAL for Voice capture health. NULL selects the public
    * Testing Audio fake. The App decorates it with the supplied PCM fixture;
    * physical samples are discarded. Must support 16 kHz mono S16LE capture. */
-  const h2_pal_audio_api_t *voice_audio;
-  const uint8_t *voice_pcm_s16le_16khz_mono;
+  const h2_pal_audio_api_t* voice_audio;
+  const uint8_t* voice_pcm_s16le_16khz_mono;
   size_t voice_pcm_len;
   uint32_t suites;
   uint32_t case_timeout_ms;
   uint32_t cleanup_timeout_ms;
   uint32_t progress_interval_ms;
   h2_gizclaw_e2e_should_stop_fn should_stop;
-  void *should_stop_user;
+  void* should_stop_user;
   h2_gizclaw_e2e_progress_fn on_progress;
-  void *progress_user;
+  void* progress_user;
   h2_gizclaw_e2e_evidence_fn on_evidence;
-  void *evidence_user;
+  void* evidence_user;
   /** Optional allocation source for case-owned state, Services, clients and
    * their buffers. NULL retains Runtime Mem. Borrowed through successful
    * cleanup; retained resources require keeping this API alive after return. */
-  const h2_pal_mem_api_t *fixture_allocator;
+  const h2_pal_mem_api_t* fixture_allocator;
 } h2_gizclaw_e2e_config_t;
 
 /** Launcher configuration generated by gizclaw_e2e_fixture in Bazel. */
-const char *h2_gizclaw_e2e_fixture_key(void);
-const char *h2_gizclaw_e2e_fixture_profile(void);
-const char *h2_gizclaw_e2e_fixture_workflow_tag(void);
-const char *h2_gizclaw_e2e_fixture_value(void);
-/** Board-only build inputs; host launchers continue to use runtime credentials. */
-const char *h2_gizclaw_e2e_fixture_endpoint(void);
-const char *h2_gizclaw_e2e_fixture_token(void);
-const char *h2_gizclaw_e2e_fixture_time_server(void);
+const char* h2_gizclaw_e2e_fixture_key(void);
+const char* h2_gizclaw_e2e_fixture_profile(void);
+const char* h2_gizclaw_e2e_fixture_workflow_tag(void);
+const char* h2_gizclaw_e2e_fixture_value(void);
+/** Board-only build inputs; host launchers continue to use runtime credentials.
+ */
+const char* h2_gizclaw_e2e_fixture_endpoint(void);
+const char* h2_gizclaw_e2e_fixture_token(void);
+const char* h2_gizclaw_e2e_fixture_time_server(void);
 int h2_gizclaw_e2e_fixture_physical_audio(void);
-const char *h2_gizclaw_e2e_fixture_device_api_url(void);
-const char *h2_gizclaw_e2e_fixture_audio_url(void);
+const char* h2_gizclaw_e2e_fixture_device_api_url(void);
+const char* h2_gizclaw_e2e_fixture_audio_url(void);
 /** Explicit public trust roots for launchers without a native CA bundle. */
-const char *h2_gizclaw_e2e_fixture_root_ca_hex(void);
-const char *h2_gizclaw_e2e_fixture_lua_app_url(void);
-const char *h2_gizclaw_e2e_fixture_lua_app_http_url(void);
-const char *h2_gizclaw_e2e_fixture_lua_app_https_url(void);
-const char *h2_gizclaw_e2e_fixture_lua_app_id(void);
-const char *h2_gizclaw_e2e_fixture_lua_archive_sha256(void);
-const char *h2_gizclaw_e2e_fixture_lua_entry_sha256(void);
-const char *h2_gizclaw_e2e_fixture_lua_frame_sha256(void);
+const char* h2_gizclaw_e2e_fixture_root_ca_hex(void);
+const char* h2_gizclaw_e2e_fixture_lua_app_url(void);
+const char* h2_gizclaw_e2e_fixture_lua_app_http_url(void);
+const char* h2_gizclaw_e2e_fixture_lua_app_https_url(void);
+const char* h2_gizclaw_e2e_fixture_lua_app_id(void);
+const char* h2_gizclaw_e2e_fixture_lua_archive_sha256(void);
+const char* h2_gizclaw_e2e_fixture_lua_entry_sha256(void);
+const char* h2_gizclaw_e2e_fixture_lua_frame_sha256(void);
 
 typedef struct h2_gizclaw_e2e_result {
   size_t selected;
@@ -189,9 +192,10 @@ typedef struct h2_gizclaw_e2e_result {
 } h2_gizclaw_e2e_result_t;
 
 /** Full business qualification only; diagnostic suite subsets cannot confirm
- * an image. Transport framing and independent API auditing remain caller gates. */
+ * an image. Transport framing and independent API auditing remain caller gates.
+ */
 static inline bool h2_gizclaw_e2e_result_all_passed(
-    const h2_gizclaw_e2e_result_t *result) {
+    const h2_gizclaw_e2e_result_t* result) {
   return result != NULL && result->complete && result->selected == 8u &&
          result->terminal == 8u && result->passed == 8u && !result->failed &&
          !result->errors && !result->blocked && !result->cancelled &&
@@ -211,9 +215,9 @@ static inline bool h2_gizclaw_e2e_result_all_passed(
  * failed-to-stop Service may still borrow config and Runtime views. Concurrent
  * calls are rejected with H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR.
  */
-h2_gizclaw_e2e_exit_t h2_gizclaw_e2e_run(h2_runtime_t *runtime,
-                                         const h2_gizclaw_e2e_config_t *config,
-                                         h2_gizclaw_e2e_result_t *out_result);
+h2_gizclaw_e2e_exit_t h2_gizclaw_e2e_run(h2_runtime_t* runtime,
+                                         const h2_gizclaw_e2e_config_t* config,
+                                         h2_gizclaw_e2e_result_t* out_result);
 
 #ifdef __cplusplus
 }

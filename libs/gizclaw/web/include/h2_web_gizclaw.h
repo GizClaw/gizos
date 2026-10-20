@@ -12,10 +12,10 @@ typedef struct h2_web_gizclaw h2_web_gizclaw_t;
  * existing handlers. Zero selects four calls, 64 KiB and 30000 ms.
  * Capacity <=32, byte limit <=1 MiB and timeout <=120000 ms. */
 typedef struct h2_web_gizclaw_config {
-  h2_gizclaw_service_t *service;
-  const h2_pal_mem_api_t *allocator;
-  const h2_pal_queue_api_t *queue;
-  const h2_pal_task_api_t *task;
+  h2_gizclaw_service_t* service;
+  const h2_pal_mem_api_t* allocator;
+  const h2_pal_queue_api_t* queue;
+  const h2_pal_task_api_t* task;
   size_t request_capacity;
   size_t request_limit_bytes;
   uint32_t timeout_ms;
@@ -38,14 +38,14 @@ typedef struct h2_web_gizclaw_config {
  * The adapter retains the Service until successful close. Open failure can
  * retain a non-NULL handle if cleanup fails; retry close.
  */
-h2_pal_result_t h2_web_gizclaw_open(const h2_web_gizclaw_config_t *,
-                                   h2_web_gizclaw_t **);
+h2_pal_result_t h2_web_gizclaw_open(const h2_web_gizclaw_config_t*,
+                                    h2_web_gizclaw_t**);
 /** Detach the runtime byte API, cancel requests and join the adapter
  * worker before releasing its borrow. Worker-only; NULL *bridge is a no-op.
  * Failure retains the pointer/dependencies for retry. Close this adapter before
  * Service stop/deinit. Existing tool continuations and Lua lifecycles are
  * owned by the existing product hooks; this adapter adds none. */
-h2_pal_result_t h2_web_gizclaw_close(h2_web_gizclaw_t **bridge);
+h2_pal_result_t h2_web_gizclaw_close(h2_web_gizclaw_t** bridge);
 #ifdef __cplusplus
 }
 #endif

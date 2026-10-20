@@ -3,14 +3,14 @@
 #include <new>
 
 struct h2_desktop_capture {
-  h2_sdl3_t *display = nullptr;
-  h2_portaudio_t *audio = nullptr;
+  h2_sdl3_t* display = nullptr;
+  h2_portaudio_t* audio = nullptr;
 };
 
 extern "C" {
-h2_pal_result_t
-h2_desktop_capture_create(const h2_desktop_capture_config_t *config,
-                          h2_desktop_capture_t **out_capture) {
+h2_pal_result_t h2_desktop_capture_create(
+    const h2_desktop_capture_config_t* config,
+    h2_desktop_capture_t** out_capture) {
   if (out_capture == nullptr) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -26,7 +26,7 @@ h2_desktop_capture_create(const h2_desktop_capture_config_t *config,
       (with_audio && config->audio == nullptr)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  auto *capture = new (std::nothrow) h2_desktop_capture_t();
+  auto* capture = new (std::nothrow) h2_desktop_capture_t();
   if (capture == nullptr) {
     return H2_PAL_ERR_NO_MEMORY;
   }
@@ -54,7 +54,7 @@ h2_desktop_capture_create(const h2_desktop_capture_config_t *config,
   return H2_PAL_OK;
 }
 
-void h2_desktop_capture_destroy(h2_desktop_capture_t *capture) {
+void h2_desktop_capture_destroy(h2_desktop_capture_t* capture) {
   if (capture == nullptr) {
     return;
   }

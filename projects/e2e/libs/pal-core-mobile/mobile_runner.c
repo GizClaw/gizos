@@ -8,15 +8,14 @@
 #include <string.h>
 #include <time.h>
 
-h2_pal_result_t h2_mobile_core_clock(void *user, uint64_t *out) {
+h2_pal_result_t h2_mobile_core_clock(void* user, uint64_t* out) {
   (void)user;
   struct timespec t;
-  if (clock_gettime(CLOCK_MONOTONIC, &t) != 0)
-    return H2_PAL_ERR_IO;
+  if (clock_gettime(CLOCK_MONOTONIC, &t) != 0) return H2_PAL_ERR_IO;
   *out = (uint64_t)t.tv_sec * 1000000u + (uint64_t)t.tv_nsec / 1000u;
   return H2_PAL_OK;
 }
-h2_pal_result_t h2_mobile_core_stack(void *user, size_t *out) {
+h2_pal_result_t h2_mobile_core_stack(void* user, size_t* out) {
   (void)user;
   uintptr_t local = (uintptr_t)&local;
 #if defined(__APPLE__)
@@ -26,9 +25,8 @@ h2_pal_result_t h2_mobile_core_stack(void *user, size_t *out) {
     return H2_PAL_ERR_INVALID_STATE;
 #else
   pthread_attr_t attr;
-  if (pthread_getattr_np(pthread_self(), &attr))
-    return H2_PAL_ERR_IO;
-  void *base = NULL;
+  if (pthread_getattr_np(pthread_self(), &attr)) return H2_PAL_ERR_IO;
+  void* base = NULL;
   int rc = pthread_attr_getstack(&attr, &base, out);
   pthread_attr_destroy(&attr);
   if (rc || !*out || local < (uintptr_t)base || local >= (uintptr_t)base + *out)
@@ -37,13 +35,13 @@ h2_pal_result_t h2_mobile_core_stack(void *user, size_t *out) {
   printf("H2_MOBILE_CORE_STACK observed=%zu local_in_stack=1\n", *out);
   return H2_PAL_OK;
 }
-static void begin(void *user, const char *id) {
+static void begin(void* user, const char* id) {
   (void)user;
   printf("H2_MOBILE_CORE_BEGIN id=%s\n", id);
   fflush(stdout);
 }
-int h2_mobile_core_run(const h2_mobile_core_fixture_t *f, const char *path) {
-  h2_runtime_t *runtime = NULL;
+int h2_mobile_core_run(const h2_mobile_core_fixture_t* f, const char* path) {
+  h2_runtime_t* runtime = NULL;
   h2_runtime_config_t native = f->runtime_config;
   /* The test owns the actual event fixture exclusively. */
   native.system_event = h2_pal_unsupported_system_event_api();
@@ -76,9 +74,8 @@ int h2_mobile_core_run(const h2_mobile_core_fixture_t *f, const char *path) {
   }
   const int balanced = before_rc == 0 && after_rc == 0 &&
                        memcmp(&before, &after, sizeof(before)) == 0;
-  FILE *out = fopen(path, "w");
-  if (!out)
-    return H2_PAL_ERR_IO;
+  FILE* out = fopen(path, "w");
+  if (!out) return H2_PAL_ERR_IO;
   fprintf(out,
           "{\n  "
           "\"platform\":\"%s\",\"version\":\"%s\",\"contract\":%u,\"passed\":%"
@@ -112,10 +109,11 @@ int h2_mobile_core_run(const h2_mobile_core_fixture_t *f, const char *path) {
           after.semaphores, after.conditions, after.timers, after.allocations,
           after.allocation_bytes);
   fclose(out);
-  printf("H2_MOBILE_CORE_REPORT platform=%s passed=%zu failed=%zu blocked=%zu "
-         "qualified=%d cleanup=%d teardown=%d balanced=%d\n",
-         f->platform, result.passed, result.failed, result.blocked,
-         result.qualified, result.cleanup_result, teardown, balanced);
+  printf(
+      "H2_MOBILE_CORE_REPORT platform=%s passed=%zu failed=%zu blocked=%zu "
+      "qualified=%d cleanup=%d teardown=%d balanced=%d\n",
+      f->platform, result.passed, result.failed, result.blocked,
+      result.qualified, result.cleanup_result, teardown, balanced);
   fflush(stdout);
   return rc == 0 && result.qualified && teardown == 0 && balanced
              ? 0

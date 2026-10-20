@@ -11,11 +11,11 @@ extern "C" {
 typedef struct h2_lvgl_fs h2_lvgl_fs_t;
 
 typedef struct h2_lvgl_fs_config {
-    const h2_pal_fs_api_t *fs;
-    const h2_pal_mem_api_t *allocator;
-    const char *root;
-    char drive_letter;
-    uint32_t cache_size;
+  const h2_pal_fs_api_t* fs;
+  const h2_pal_mem_api_t* allocator;
+  const char* root;
+  char drive_letter;
+  uint32_t cache_size;
 } h2_lvgl_fs_config_t;
 
 /**
@@ -24,8 +24,8 @@ typedef struct h2_lvgl_fs_config {
  * LVGL must already be initialized. The returned adapter owns only its driver
  * state and open-file wrappers; the PAL APIs and root string remain borrowed.
  */
-h2_pal_result_t h2_lvgl_fs_register(const h2_lvgl_fs_config_t *config,
-                                    h2_lvgl_fs_t **out_fs);
+h2_pal_result_t h2_lvgl_fs_register(const h2_lvgl_fs_config_t* config,
+                                    h2_lvgl_fs_t** out_fs);
 
 /**
  * @brief Release adapter state after LVGL has been deinitialized.
@@ -36,7 +36,7 @@ h2_pal_result_t h2_lvgl_fs_register(const h2_lvgl_fs_config_t *config,
  *
  * This function does not call LVGL and is safe to call with NULL.
  */
-void h2_lvgl_fs_release(h2_lvgl_fs_t *fs);
+void h2_lvgl_fs_release(h2_lvgl_fs_t* fs);
 
 #ifdef __cplusplus
 }

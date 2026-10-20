@@ -7,24 +7,23 @@ typedef struct rotation_data {
   double axis[3], parallel[3], moment[18][3], weight_max, magnitude;
   double *segments, *weights, *dots;
 } rotation_data_t;
-static double rotation_checked(lua_State *s, double x) {
+static double rotation_checked(lua_State* s, double x) {
   if (!(fabs(x) <= H2_LUA_NUMERIC_VALUE_LIMIT))
     luaL_error(s, "rotation value out of bounds");
   return x;
 }
-static h2_numeric_buffer_t *rotation_buffer(lua_State *s, int at, size_t n) {
-  h2_numeric_buffer_t *b = h2_numeric_check(s, at);
-  if (b->is_f32)
-    luaL_error(s, "prepared rotations require f64 buffers");
+static h2_numeric_buffer_t* rotation_buffer(lua_State* s, int at, size_t n) {
+  h2_numeric_buffer_t* b = h2_numeric_check(s, at);
+  if (b->is_f32) luaL_error(s, "prepared rotations require f64 buffers");
   h2_numeric_capacity(s, b, n);
   return b;
 }
-static void rotation_cross(const double *a, const double *b, double *out) {
+static void rotation_cross(const double* a, const double* b, double* out) {
   out[0] = a[1] * b[2] - a[2] * b[1];
   out[1] = a[2] * b[0] - a[0] * b[2];
   out[2] = a[0] * b[1] - a[1] * b[0];
 }
-static int rotations_new(lua_State *s) {
+static int rotations_new(lua_State* s) {
   size_t n = h2_numeric_size(s, 4, 256);
   h2_numeric_buffer_t *segments = rotation_buffer(s, 1, 3 * n),
                       *weights = rotation_buffer(s, 2, n),
@@ -34,21 +33,20 @@ static int rotations_new(lua_State *s) {
   double magnitude = 0;
   for (size_t j = 0; j < 3; ++j)
     magnitude += fabs(rotation_checked(s, axis->data.f64[j]));
-  if (magnitude == 0)
-    return luaL_error(s, "zero rotation axis");
-  rotation_data_t *r =
+  if (magnitude == 0) return luaL_error(s, "zero rotation axis");
+  rotation_data_t* r =
       lua_newuserdatauv(s, sizeof(*r) + 5 * n * sizeof(double), 0);
   memset(r, 0, sizeof(*r));
   r->n = n;
   luaL_setmetatable(s, ROTATION_META);
-  r->segments = (double *)(r + 1);
+  r->segments = (double*)(r + 1);
   r->weights = r->segments + 3 * n;
   r->dots = r->weights + n;
   memcpy(r->axis, axis->data.f64, sizeof(r->axis));
   for (size_t i = 0; i < n; ++i) {
     r->weights[i] = rotation_checked(s, weights->data.f64[i]);
     r->weight_max = fmax(r->weight_max, fabs(r->weights[i]));
-    double *v = r->segments + 3 * i;
+    double* v = r->segments + 3 * i;
     for (size_t j = 0; j < 3; ++j)
       v[j] = rotation_checked(s, segments->data.f64[3 * i + j]);
     r->dots[i] = r->axis[0] * v[0] + r->axis[1] * v[1] + r->axis[2] * v[2];
@@ -68,21 +66,20 @@ static int rotations_new(lua_State *s) {
   }
   return 1;
 }
-static int rotations_evaluate(lua_State *s) {
-  rotation_data_t *r = luaL_checkudata(s, 1, ROTATION_META);
+static int rotations_evaluate(lua_State* s) {
+  rotation_data_t* r = luaL_checkudata(s, 1, ROTATION_META);
   double angle = h2_numeric_number(s, 3), bend = h2_numeric_number(s, 4),
          yaw = h2_numeric_number(s, 5);
   double position[3];
-  for (int j = 0; j < 3; ++j)
-    position[j] = h2_numeric_number(s, 6 + j);
+  for (int j = 0; j < 3; ++j) position[j] = h2_numeric_number(s, 6 + j);
   luaL_checktype(s, 9, LUA_TBOOLEAN);
   luaL_checktype(s, 10, LUA_TBOOLEAN);
   int full = lua_toboolean(s, 9), shared = lua_toboolean(s, 10);
   if (shared && bend != 0)
     return luaL_error(s, "shared rotation requires zero bend");
   size_t count = full ? 3 * (r->n + 1) : 3;
-  h2_numeric_buffer_t *out = rotation_buffer(s, 2, count);
-  double *scratch = out->data.f64 + out->count;
+  h2_numeric_buffer_t* out = rotation_buffer(s, 2, count);
+  double* scratch = out->data.f64 + out->count;
   double ca = cos(angle), sa = sin(angle), cy = cos(yaw), sy = sin(yaw);
   double axis_sum = fabs(r->axis[0]) + fabs(r->axis[1]) + fabs(r->axis[2]);
   /* Degree-17 remainder <= x^18/18!, plus a conservative accumulated
@@ -92,8 +89,7 @@ static int rotations_evaluate(lua_State *s) {
                  (7.38e-13 + (double)(r->n + 18) * DBL_EPSILON * 32);
   int fast = !full && !shared && r->weight_max <= 1 && fabs(bend) <= 1.6 &&
              fabs(angle) <= 16 && axis_sum <= 2 && error <= 1e-9;
-  if (full)
-    memcpy(scratch, position, sizeof(position));
+  if (full) memcpy(scratch, position, sizeof(position));
   if (fast) {
     double cv[3] = {0}, sv[3] = {0}, power = 1, cc[3], cs[3], delta[3];
     for (size_t k = 0; k < 18; ++k) {
@@ -103,8 +99,7 @@ static int rotations_evaluate(lua_State *s) {
         else
           sv[j] += power * r->moment[k][j];
       power *= bend / (double)(k + 1);
-      if (k % 2 == 1)
-        power = -power;
+      if (k % 2 == 1) power = -power;
     }
     rotation_cross(r->axis, cv, cc);
     rotation_cross(r->axis, sv, cs);
@@ -116,8 +111,7 @@ static int rotations_evaluate(lua_State *s) {
       delta[2] = -delta[0] * sy + delta[2] * cy;
       delta[0] = x;
     }
-    for (size_t j = 0; j < 3; ++j)
-      position[j] += delta[j];
+    for (size_t j = 0; j < 3; ++j) position[j] += delta[j];
   } else {
     double matrix[3][3] = {{0}};
     if (shared)
@@ -133,7 +127,7 @@ static int rotations_evaluate(lua_State *s) {
         matrix[2][j] = -rotated[0] * sy + rotated[2] * cy;
       }
     for (size_t i = 0; i < r->n; ++i) {
-      const double *v = r->segments + 3 * i;
+      const double* v = r->segments + 3 * i;
       double delta[3], cross[3];
       if (shared)
         for (size_t j = 0; j < 3; ++j)
@@ -155,20 +149,17 @@ static int rotations_evaluate(lua_State *s) {
       }
       for (size_t j = 0; j < 3; ++j) {
         position[j] += delta[j];
-        if (full)
-          scratch[3 * (i + 1) + j] = position[j];
+        if (full) scratch[3 * (i + 1) + j] = position[j];
       }
     }
   }
-  if (!full)
-    memcpy(scratch, position, sizeof(position));
-  for (size_t i = 0; i < count; ++i)
-    rotation_checked(s, scratch[i]);
+  if (!full) memcpy(scratch, position, sizeof(position));
+  for (size_t i = 0; i < count; ++i) rotation_checked(s, scratch[i]);
   memcpy(out->data.f64, scratch, count * sizeof(double));
   lua_pushboolean(s, fast);
   return 1;
 }
-void h2_geometry_prepared_register(lua_State *s) {
+void h2_geometry_prepared_register(lua_State* s) {
   if (luaL_newmetatable(s, ROTATION_META)) {
     lua_pushcfunction(s, rotations_evaluate);
     lua_setfield(s, -2, "evaluate");

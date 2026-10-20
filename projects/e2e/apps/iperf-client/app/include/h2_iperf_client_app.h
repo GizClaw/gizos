@@ -22,7 +22,7 @@ typedef enum h2_iperf_client_app_mode {
 typedef struct h2_iperf_client_app_config {
   h2_iperf_client_app_mode_t mode;
   /** Optional printable board token; NULL selects "client". */
-  const char *target;
+  const char* target;
   h2_pal_net_addr_t ipv4;
   h2_pal_net_addr_t ipv6;
   /** Zero selects 5201. Overrides the port in either endpoint. */
@@ -34,7 +34,7 @@ typedef struct h2_iperf_client_app_config {
   /** Zero selects 500 ms between cases. */
   uint32_t settle_ms;
   h2_iperf_e2e_checkpoint_fn checkpoint;
-  void *checkpoint_user;
+  void* checkpoint_user;
 } h2_iperf_client_app_config_t;
 
 typedef struct h2_iperf_client_app_report {
@@ -58,13 +58,12 @@ typedef struct h2_iperf_client_app_network {
  * insufficient. On success the caller owns the temporary association; on
  * failure after connecting, disconnects best-effort and preserves the
  * original setup error. Clears out_network on failure. */
-h2_pal_result_t
-h2_iperf_client_app_connect(h2_runtime_t *runtime,
-                            const h2_pal_wifi_sta_config_t *config,
-                            h2_iperf_client_app_network_t *out_network);
+h2_pal_result_t h2_iperf_client_app_connect(
+    h2_runtime_t* runtime, const h2_pal_wifi_sta_config_t* config,
+    h2_iperf_client_app_network_t* out_network);
 
-/** Fixed GizOS-iPerf bench: verify public Wi-Fi/Runtime/STA Netif readiness, run
- * the three-round performance matrix, verify disconnect/reconnect and saved
+/** Fixed GizOS-iPerf bench: verify public Wi-Fi/Runtime/STA Netif readiness,
+ * run the three-round performance matrix, verify disconnect/reconnect and saved
  * credential preservation. Does not persist, initialize SDK networking, or
  * confirm a firmware image. Reports typed readiness and performance receipts.
  * Leaves the verified association active on success; disconnects best-effort
@@ -77,10 +76,10 @@ h2_iperf_client_app_connect(h2_runtime_t *runtime,
  * qualification gates; saved_check_rc reports the private comparison result,
  * without exposing credential or signature bytes.
  */
-h2_pal_result_t h2_iperf_client_app_bench(h2_runtime_t *runtime,
-                                          const char *target,
+h2_pal_result_t h2_iperf_client_app_bench(h2_runtime_t* runtime,
+                                          const char* target,
                                           h2_iperf_e2e_checkpoint_fn checkpoint,
-                                          void *checkpoint_user);
+                                          void* checkpoint_user);
 
 /** Run TCP in both directions and UDP at 5/10/20/40 Mbit/s in both
  * directions, using 1200-byte datagrams and 16-KiB TCP blocks. Dual mode
@@ -92,10 +91,9 @@ h2_pal_result_t h2_iperf_client_app_bench(h2_runtime_t *runtime,
  * INVALID_ARG clears the report without sending traffic; IO means at least
  * one failed case. Ledger target tokens encode mode, family and round.
  */
-h2_pal_result_t
-h2_iperf_client_app_run(h2_runtime_t *runtime,
-                        const h2_iperf_client_app_config_t *config,
-                        h2_iperf_client_app_report_t *out_report);
+h2_pal_result_t h2_iperf_client_app_run(
+    h2_runtime_t* runtime, const h2_iperf_client_app_config_t* config,
+    h2_iperf_client_app_report_t* out_report);
 
 /** Task declaration consumed by device launchers and the task-policy graph. */
 extern const char h2_iperf_client_app_task_name[];

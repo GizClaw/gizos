@@ -21,14 +21,13 @@
 static struct timeval s_clock;
 static int s_clock_read_fails;
 
-int h2_esp_platform_time_test_gettimeofday(struct timeval *tv) {
-  if (s_clock_read_fails)
-    return -1;
+int h2_esp_platform_time_test_gettimeofday(struct timeval* tv) {
+  if (s_clock_read_fails) return -1;
   *tv = s_clock;
   return 0;
 }
 
-int h2_esp_platform_time_test_settimeofday(const struct timeval *tv) {
+int h2_esp_platform_time_test_settimeofday(const struct timeval* tv) {
   s_clock = *tv;
   return 0;
 }
@@ -47,20 +46,20 @@ static void set_clock_ms(uint64_t ms) {
   s_clock.tv_usec = (suseconds_t)((ms % 1000u) * 1000u);
 }
 
-static uint64_t wall_ms(const h2_pal_time_api_t *api) {
+static uint64_t wall_ms(const h2_pal_time_api_t* api) {
   uint64_t value = 0u;
   (void)h2_pal_time_get_wall_ms(api, &value);
   return value;
 }
 
-static h2_pal_time_wall_status_t wall_status(const h2_pal_time_api_t *api) {
+static h2_pal_time_wall_status_t wall_status(const h2_pal_time_api_t* api) {
   h2_pal_time_wall_status_t status = {0};
   assert(h2_pal_time_get_wall_status(api, &status) == H2_PAL_OK);
   return status;
 }
 
 /* A cold boot leaves the clock near the epoch: uncalibrated, no time shown. */
-static void test_epoch_clock_is_invalid(const h2_pal_time_api_t *api) {
+static void test_epoch_clock_is_invalid(const h2_pal_time_api_t* api) {
   set_clock_ms(12000u);
   const h2_pal_time_wall_status_t status = wall_status(api);
   assert(!status.valid);
@@ -69,7 +68,7 @@ static void test_epoch_clock_is_invalid(const h2_pal_time_api_t *api) {
 }
 
 /* Setting the clock is enough to make it read as calibrated. */
-static void test_set_makes_clock_valid(const h2_pal_time_api_t *api) {
+static void test_set_makes_clock_valid(const h2_pal_time_api_t* api) {
   assert(h2_pal_time_set_wall_ms(api, TEST_WALL_MS) == H2_PAL_OK);
   const h2_pal_time_wall_status_t status = wall_status(api);
   assert(status.valid);
@@ -79,7 +78,7 @@ static void test_set_makes_clock_valid(const h2_pal_time_api_t *api) {
 
 /* Deep-sleep wake and software reset keep the RTC-backed clock, so the time
  * stays available without another calibration. */
-static void test_clock_carried_over_stays_valid(const h2_pal_time_api_t *api) {
+static void test_clock_carried_over_stays_valid(const h2_pal_time_api_t* api) {
   set_clock_ms(TEST_WALL_MS + TEST_SLEEP_MS);
   const h2_pal_time_wall_status_t status = wall_status(api);
   assert(status.valid);
@@ -88,14 +87,14 @@ static void test_clock_carried_over_stays_valid(const h2_pal_time_api_t *api) {
 }
 
 /* A reading just before the floor is treated as uncalibrated. */
-static void test_reading_before_floor_is_invalid(const h2_pal_time_api_t *api) {
+static void test_reading_before_floor_is_invalid(const h2_pal_time_api_t* api) {
   set_clock_ms(TEST_BEFORE_FLOOR_MS);
   assert(!wall_status(api).valid);
   assert(wall_ms(api) == 0u);
 }
 
 /* Losing the RTC (power-on, brownout) drops validity again. */
-static void test_clock_loss_drops_validity(const h2_pal_time_api_t *api) {
+static void test_clock_loss_drops_validity(const h2_pal_time_api_t* api) {
   assert(h2_pal_time_set_wall_ms(api, TEST_WALL_MS) == H2_PAL_OK);
   assert(wall_status(api).valid);
   set_clock_ms(5000u);
@@ -104,7 +103,7 @@ static void test_clock_loss_drops_validity(const h2_pal_time_api_t *api) {
 }
 
 /* A rejected set leaves the clock untouched. */
-static void test_rejected_set_keeps_clock(const h2_pal_time_api_t *api) {
+static void test_rejected_set_keeps_clock(const h2_pal_time_api_t* api) {
   assert(h2_pal_time_set_wall_ms(api, TEST_WALL_MS) == H2_PAL_OK);
   assert(h2_pal_time_set_wall_ms(api, 0u) == H2_PAL_ERR_INVALID_ARG);
   assert(wall_status(api).valid);
@@ -112,7 +111,7 @@ static void test_rejected_set_keeps_clock(const h2_pal_time_api_t *api) {
 }
 
 /* An unreadable clock is an error, not an uncalibrated clock. */
-static void test_read_failure_is_an_error(const h2_pal_time_api_t *api) {
+static void test_read_failure_is_an_error(const h2_pal_time_api_t* api) {
   set_clock_ms(TEST_WALL_MS);
   s_clock_read_fails = 1;
   h2_pal_time_wall_status_t status = {0};
@@ -124,7 +123,7 @@ static void test_read_failure_is_an_error(const h2_pal_time_api_t *api) {
 }
 
 /* A pre-epoch reading must not wrap past the plausibility floor. */
-static void test_pre_epoch_clock_is_unavailable(const h2_pal_time_api_t *api) {
+static void test_pre_epoch_clock_is_unavailable(const h2_pal_time_api_t* api) {
   s_clock.tv_sec = -1;
   s_clock.tv_usec = 0;
   h2_pal_time_wall_status_t status = {0};
@@ -136,11 +135,12 @@ static void test_pre_epoch_clock_is_unavailable(const h2_pal_time_api_t *api) {
 }
 
 int main(void) {
-  const h2_pal_time_api_t *api = h2_esp_platform_time_api();
+  const h2_pal_time_api_t* api = h2_esp_platform_time_api();
   assert(api != NULL);
   const uint32_t delays[] = {0u, 1u, 5u, 10u, 11u, 32u, UINT32_MAX};
   for (unsigned i = 0u; i < sizeof(delays) / sizeof(delays[0]); ++i) {
-    const uint64_t expected = ((uint64_t)delays[i] * configTICK_RATE_HZ + 999u) / 1000u;
+    const uint64_t expected =
+        ((uint64_t)delays[i] * configTICK_RATE_HZ + 999u) / 1000u;
     s_sleep_calls = 0u;
     s_sleep_ticks = 123u;
     const h2_pal_result_t rc = h2_pal_time_sleep_ms(api, delays[i]);
@@ -155,12 +155,14 @@ int main(void) {
   }
   /* A reduced SDK tick limit reaches both sides of the representability
    * boundary without requiring a millisecond value wider than the PAL API. */
-  const uint64_t limit_ms = (uint64_t)portMAX_DELAY * 1000u / configTICK_RATE_HZ;
+  const uint64_t limit_ms =
+      (uint64_t)portMAX_DELAY * 1000u / configTICK_RATE_HZ;
   if (limit_ms < UINT32_MAX) {
     assert(h2_pal_time_sleep_ms(api, (uint32_t)limit_ms) == H2_PAL_OK);
     assert(s_sleep_ticks == portMAX_DELAY);
     s_sleep_calls = 0u;
-    assert(h2_pal_time_sleep_ms(api, (uint32_t)limit_ms + 1u) == H2_PAL_ERR_INVALID_ARG);
+    assert(h2_pal_time_sleep_ms(api, (uint32_t)limit_ms + 1u) ==
+           H2_PAL_ERR_INVALID_ARG);
     assert(s_sleep_calls == 0u && s_sleep_ticks == portMAX_DELAY);
   }
   test_epoch_clock_is_invalid(api);

@@ -13,1846 +13,1816 @@
 #include <stdlib.h>
 #include <string.h>
 
-const h2_pal_buzzer_api_t *h2_runtime_test_buzzer_api(void);
-void h2_runtime_test_buzzer_binding(const h2_runtime_t *runtime);
+const h2_pal_buzzer_api_t* h2_runtime_test_buzzer_api(void);
+void h2_runtime_test_buzzer_binding(const h2_runtime_t* runtime);
 
 struct h2_pal_system_event_subscription {
-    h2_pal_system_event_type_t type;
-    h2_pal_system_event_handler_t handler;
-    void *handler_user;
-    int active;
+  h2_pal_system_event_type_t type;
+  h2_pal_system_event_handler_t handler;
+  void* handler_user;
+  int active;
 };
 
 struct h2_pal_queue {
-    size_t item_size;
-    size_t item_count;
-    size_t count;
-    size_t send_calls;
-    size_t head;
-    size_t tail;
-    uint8_t *items;
-    const h2_pal_mem_api_t *mem;
-    int closed;
+  size_t item_size;
+  size_t item_count;
+  size_t count;
+  size_t send_calls;
+  size_t head;
+  size_t tail;
+  uint8_t* items;
+  const h2_pal_mem_api_t* mem;
+  int closed;
 };
 
 struct h2_pal_task {
-    h2_pal_task_entry_t entry;
-    void *ctx;
+  h2_pal_task_entry_t entry;
+  void* ctx;
 };
 
 struct h2_pal_mutex {
-    int locked;
-    const h2_pal_mem_api_t *mem;
+  int locked;
+  const h2_pal_mem_api_t* mem;
 };
 
 struct h2_pal_cond {
-    const h2_pal_mem_api_t *mem;
+  const h2_pal_mem_api_t* mem;
 };
 
 typedef struct test_allocator {
-    size_t alloc_calls;
-    size_t free_calls;
-    size_t fail_on_call;
-    size_t live_allocations;
-    int fill_allocations_nonzero;
+  size_t alloc_calls;
+  size_t free_calls;
+  size_t fail_on_call;
+  size_t live_allocations;
+  int fill_allocations_nonzero;
 } test_allocator_t;
 
 typedef struct test_time {
-    uint64_t now_ms;
-    h2_pal_result_t now_rc;
-    uint64_t wall_ms;
-    uint8_t wall_valid;
-    uint32_t sleep_calls;
-    h2_pal_result_t sleep_rc;
-    h2_runtime_t *stop_after_sleep_runtime;
+  uint64_t now_ms;
+  h2_pal_result_t now_rc;
+  uint64_t wall_ms;
+  uint8_t wall_valid;
+  uint32_t sleep_calls;
+  h2_pal_result_t sleep_rc;
+  h2_runtime_t* stop_after_sleep_runtime;
 } test_time_t;
 
 typedef struct test_queue_state {
-    h2_pal_result_t full_rc;
-    h2_pal_result_t send_rc;
-    h2_pal_result_t reset_rc;
+  h2_pal_result_t full_rc;
+  h2_pal_result_t send_rc;
+  h2_pal_result_t reset_rc;
 } test_queue_state_t;
 
 typedef struct test_periph_set {
-    h2_pal_periph_info_t infos[16];
-    size_t count;
-    size_t get_calls;
-    size_t list_calls;
+  h2_pal_periph_info_t infos[16];
+  size_t count;
+  size_t get_calls;
+  size_t list_calls;
 } test_periph_set_t;
 
 typedef struct test_button {
-    h2_pal_button_state_t single_state;
-    h2_pal_periph_id_t radio_pressed_id;
-    h2_pal_result_t group_rc;
-    size_t single_reads;
-    size_t group_reads;
+  h2_pal_button_state_t single_state;
+  h2_pal_periph_id_t radio_pressed_id;
+  h2_pal_result_t group_rc;
+  size_t single_reads;
+  size_t group_reads;
 } test_button_t;
 
 typedef struct test_nfc {
-    h2_pal_nfc_scan_t scan;
-    h2_pal_result_t scan_rc;
-    h2_pal_result_t read_rc;
-    uint8_t read_bytes[4];
-    uint8_t last_expected_uid[H2_PAL_NFC_UID_MAX_LEN];
-    uint8_t last_expected_uid_len;
-    size_t scan_calls;
+  h2_pal_nfc_scan_t scan;
+  h2_pal_result_t scan_rc;
+  h2_pal_result_t read_rc;
+  uint8_t read_bytes[4];
+  uint8_t last_expected_uid[H2_PAL_NFC_UID_MAX_LEN];
+  uint8_t last_expected_uid_len;
+  size_t scan_calls;
 } test_nfc_t;
 
 typedef struct test_nfc_card_emulation {
-    size_t capability_calls;
-    h2_pal_periph_id_t last_periph_id;
+  size_t capability_calls;
+  h2_pal_periph_id_t last_periph_id;
 } test_nfc_card_emulation_t;
 
 typedef struct test_imu {
-    h2_pal_imu_reading_t reading;
-    h2_pal_result_t rc;
+  h2_pal_imu_reading_t reading;
+  h2_pal_result_t rc;
 } test_imu_t;
 
 typedef struct test_input {
-    h2_pal_battery_reading_t battery;
-    h2_pal_temperature_reading_t temperature;
-    h2_pal_result_t battery_rc;
-    h2_pal_result_t temperature_rc;
-    size_t battery_reads;
-    size_t temperature_reads;
+  h2_pal_battery_reading_t battery;
+  h2_pal_temperature_reading_t temperature;
+  h2_pal_result_t battery_rc;
+  h2_pal_result_t temperature_rc;
+  size_t battery_reads;
+  size_t temperature_reads;
 } test_input_t;
 
 typedef struct test_task {
-    h2_pal_task_t *current;
-    h2_pal_task_t *handles[4];
-    size_t handle_count;
-    h2_pal_result_t start_rc;
-    h2_pal_result_t join_rc;
-    size_t starts;
-    size_t joins;
-    h2_pal_task_options_t options;
+  h2_pal_task_t* current;
+  h2_pal_task_t* handles[4];
+  size_t handle_count;
+  h2_pal_result_t start_rc;
+  h2_pal_result_t join_rc;
+  size_t starts;
+  size_t joins;
+  h2_pal_task_options_t options;
 } test_task_t;
 
 typedef struct test_sync {
-    size_t creates;
-    size_t destroys;
-    size_t locks;
-    size_t unlocks;
-    h2_pal_result_t cond_create_rc;
-    h2_pal_result_t mutex_create_rc;
-    h2_pal_result_t cond_wait_rc;
-    h2_pal_result_t cond_broadcast_rc;
+  size_t creates;
+  size_t destroys;
+  size_t locks;
+  size_t unlocks;
+  h2_pal_result_t cond_create_rc;
+  h2_pal_result_t mutex_create_rc;
+  h2_pal_result_t cond_wait_rc;
+  h2_pal_result_t cond_broadcast_rc;
 } test_sync_t;
 
 typedef struct test_system_event {
-    h2_pal_system_event_subscription_t subscriptions[H2_RUNTIME_SYSTEM_EVENT_SUBSCRIPTION_MAX];
-    size_t subscribe_calls;
-    size_t unsubscribe_calls;
-    size_t init_calls;
-    size_t deinit_calls;
-    size_t fail_subscribe_after;
+  h2_pal_system_event_subscription_t
+      subscriptions[H2_RUNTIME_SYSTEM_EVENT_SUBSCRIPTION_MAX];
+  size_t subscribe_calls;
+  size_t unsubscribe_calls;
+  size_t init_calls;
+  size_t deinit_calls;
+  size_t fail_subscribe_after;
 } test_system_event_t;
 
 typedef struct test_runtime_env {
-    test_allocator_t allocator_state;
-    h2_pal_mem_api_t mem;
-    test_time_t time_state;
-    h2_pal_time_api_t time;
-    test_queue_state_t queue_state;
-    h2_pal_queue_api_t queue;
-    test_periph_set_t periphs;
-    h2_pal_periph_api_t periph;
-    h2_runtime_component_mapper_t component_mapper;
-    test_button_t button_state;
-    h2_pal_button_api_t button;
-    test_nfc_t nfc_state;
-    h2_pal_nfc_api_t nfc;
-    test_nfc_card_emulation_t nfc_card_emulation_state;
-    h2_pal_nfc_card_emulation_api_t nfc_card_emulation;
-    test_imu_t imu_state;
-    h2_pal_imu_api_t imu;
-    test_input_t input_state;
-    h2_pal_input_api_t input;
-    test_task_t task_state;
-    h2_pal_task_api_t task;
-    test_sync_t sync_state;
-    h2_pal_sync_api_t sync;
-    test_system_event_t system_event_state;
-    h2_pal_system_event_api_t system_event;
+  test_allocator_t allocator_state;
+  h2_pal_mem_api_t mem;
+  test_time_t time_state;
+  h2_pal_time_api_t time;
+  test_queue_state_t queue_state;
+  h2_pal_queue_api_t queue;
+  test_periph_set_t periphs;
+  h2_pal_periph_api_t periph;
+  h2_runtime_component_mapper_t component_mapper;
+  test_button_t button_state;
+  h2_pal_button_api_t button;
+  test_nfc_t nfc_state;
+  h2_pal_nfc_api_t nfc;
+  test_nfc_card_emulation_t nfc_card_emulation_state;
+  h2_pal_nfc_card_emulation_api_t nfc_card_emulation;
+  test_imu_t imu_state;
+  h2_pal_imu_api_t imu;
+  test_input_t input_state;
+  h2_pal_input_api_t input;
+  test_task_t task_state;
+  h2_pal_task_api_t task;
+  test_sync_t sync_state;
+  h2_pal_sync_api_t sync;
+  test_system_event_t system_event_state;
+  h2_pal_system_event_api_t system_event;
 } test_runtime_env_t;
 
 static h2_pal_result_t test_input_read_battery(
-    void *user,
-    h2_pal_periph_id_t id,
-    h2_pal_battery_reading_t *out_reading) {
-    test_input_t *state = user;
-    state->battery_reads++;
-    *out_reading = state->battery;
-    out_reading->id = id;
-    return state->battery_rc;
+    void* user, h2_pal_periph_id_t id, h2_pal_battery_reading_t* out_reading) {
+  test_input_t* state = user;
+  state->battery_reads++;
+  *out_reading = state->battery;
+  out_reading->id = id;
+  return state->battery_rc;
 }
 
 static h2_pal_result_t test_input_read_temperature(
-    void *user,
-    h2_pal_periph_id_t id,
-    h2_pal_temperature_reading_t *out_reading) {
-    test_input_t *state = user;
-    state->temperature_reads++;
-    *out_reading = state->temperature;
-    out_reading->id = id;
-    return state->temperature_rc;
+    void* user, h2_pal_periph_id_t id,
+    h2_pal_temperature_reading_t* out_reading) {
+  test_input_t* state = user;
+  state->temperature_reads++;
+  *out_reading = state->temperature;
+  out_reading->id = id;
+  return state->temperature_rc;
 }
 
 static h2_pal_result_t test_nfc_card_emulation_get_capabilities(
-    void *user,
-    h2_pal_periph_id_t periph_id,
-    h2_pal_nfc_card_emulation_capabilities_t *out_capabilities) {
-    test_nfc_card_emulation_t *state = user;
-    state->capability_calls++;
-    state->last_periph_id = periph_id;
-    *out_capabilities = (h2_pal_nfc_card_emulation_capabilities_t){
-        .technology_mask =
-            H2_PAL_NFC_CARD_EMULATION_TECHNOLOGY_ISO14443A,
-        .exchange_mode_mask = H2_PAL_NFC_CARD_EMULATION_MODE_RAW_FRAME,
-        .min_uid_len = 7u,
-        .max_uid_len = 7u,
-    };
-    return H2_PAL_OK;
+    void* user, h2_pal_periph_id_t periph_id,
+    h2_pal_nfc_card_emulation_capabilities_t* out_capabilities) {
+  test_nfc_card_emulation_t* state = user;
+  state->capability_calls++;
+  state->last_periph_id = periph_id;
+  *out_capabilities = (h2_pal_nfc_card_emulation_capabilities_t){
+      .technology_mask = H2_PAL_NFC_CARD_EMULATION_TECHNOLOGY_ISO14443A,
+      .exchange_mode_mask = H2_PAL_NFC_CARD_EMULATION_MODE_RAW_FRAME,
+      .min_uid_len = 7u,
+      .max_uid_len = 7u,
+  };
+  return H2_PAL_OK;
 }
 
 static h2_runtime_component_t test_component_from_periph_type(
     h2_pal_periph_type_t type) {
-    switch (type) {
+  switch (type) {
     case H2_PAL_PERIPH_TYPE_SINGLE_BUTTON:
     case H2_PAL_PERIPH_TYPE_RADIO_BUTTON:
-        return H2_RUNTIME_COMPONENT_BUTTON;
+      return H2_RUNTIME_COMPONENT_BUTTON;
     case H2_PAL_PERIPH_TYPE_NFC_READER:
-        return H2_RUNTIME_COMPONENT_NFC_READER;
+      return H2_RUNTIME_COMPONENT_NFC_READER;
     case H2_PAL_PERIPH_TYPE_IMU:
-        return H2_RUNTIME_COMPONENT_IMU;
+      return H2_RUNTIME_COMPONENT_IMU;
     case H2_PAL_PERIPH_TYPE_BATTERY:
-        return H2_RUNTIME_COMPONENT_BATTERY;
+      return H2_RUNTIME_COMPONENT_BATTERY;
     case H2_PAL_PERIPH_TYPE_PWM_SWITCH:
-        return H2_RUNTIME_COMPONENT_PWM_SWITCH;
+      return H2_RUNTIME_COMPONENT_PWM_SWITCH;
     case H2_PAL_PERIPH_TYPE_TEMPERATURE_SENSOR:
-        return H2_RUNTIME_COMPONENT_TEMPERATURE_SENSOR;
+      return H2_RUNTIME_COMPONENT_TEMPERATURE_SENSOR;
     case H2_PAL_PERIPH_TYPE_BUZZER:
-        return H2_RUNTIME_COMPONENT_BUZZER;
+      return H2_RUNTIME_COMPONENT_BUZZER;
     case H2_PAL_PERIPH_TYPE_GPIO_IRQ:
-        return H2_RUNTIME_COMPONENT_SYSTEM_GPIO_IRQ;
+      return H2_RUNTIME_COMPONENT_SYSTEM_GPIO_IRQ;
     default:
-        return H2_RUNTIME_COMPONENT_NONE;
-    }
+      return H2_RUNTIME_COMPONENT_NONE;
+  }
 }
 
-static h2_pal_result_t test_mapper_list(
-    void *user,
-    h2_runtime_component_t component_filter,
-    h2_runtime_component_mapping_cb_t cb,
-    void *cb_user) {
-    test_runtime_env_t *env = (test_runtime_env_t *)user;
-    test_periph_set_t *periphs;
-    if (env == NULL || cb == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
+static h2_pal_result_t test_mapper_list(void* user,
+                                        h2_runtime_component_t component_filter,
+                                        h2_runtime_component_mapping_cb_t cb,
+                                        void* cb_user) {
+  test_runtime_env_t* env = (test_runtime_env_t*)user;
+  test_periph_set_t* periphs;
+  if (env == NULL || cb == NULL) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  periphs = &env->periphs;
+  for (size_t i = 0u; i < periphs->count; ++i) {
+    if (test_component_from_periph_type(periphs->infos[i].type) !=
+        component_filter) {
+      continue;
     }
-    periphs = &env->periphs;
-    for (size_t i = 0u; i < periphs->count; ++i) {
-        if (test_component_from_periph_type(periphs->infos[i].type) != component_filter) {
-            continue;
-        }
-        const h2_runtime_component_mapping_entry_t entry = {
-            .component_id = (h2_runtime_component_id_t)(i + 1u),
-            .periph_id = periphs->infos[i].id,
-        };
-        h2_pal_result_t rc = cb(cb_user, &entry);
-        if (rc != H2_PAL_OK) {
-            return rc;
-        }
+    const h2_runtime_component_mapping_entry_t entry = {
+        .component_id = (h2_runtime_component_id_t)(i + 1u),
+        .periph_id = periphs->infos[i].id,
+    };
+    h2_pal_result_t rc = cb(cb_user, &entry);
+    if (rc != H2_PAL_OK) {
+      return rc;
     }
-    return H2_PAL_OK;
+  }
+  return H2_PAL_OK;
 }
 
-static void *test_alloc(void *user, size_t len) {
-    test_allocator_t *state = (test_allocator_t *)user;
-    state->alloc_calls += 1u;
-    if (state->fail_on_call == state->alloc_calls) {
-        return NULL;
-    }
-    void *ptr = malloc(len);
-    if (ptr != NULL) {
-        memset(ptr, state->fill_allocations_nonzero != 0 ? 0xa5 : 0, len);
-        state->live_allocations += 1u;
-    }
-    return ptr;
+static void* test_alloc(void* user, size_t len) {
+  test_allocator_t* state = (test_allocator_t*)user;
+  state->alloc_calls += 1u;
+  if (state->fail_on_call == state->alloc_calls) {
+    return NULL;
+  }
+  void* ptr = malloc(len);
+  if (ptr != NULL) {
+    memset(ptr, state->fill_allocations_nonzero != 0 ? 0xa5 : 0, len);
+    state->live_allocations += 1u;
+  }
+  return ptr;
 }
 
-static void test_free(void *user, void *ptr) {
-    test_allocator_t *state = (test_allocator_t *)user;
-    state->free_calls += 1u;
-    assert(ptr != NULL);
-    assert(state->live_allocations != 0u);
-    state->live_allocations -= 1u;
-    free(ptr);
+static void test_free(void* user, void* ptr) {
+  test_allocator_t* state = (test_allocator_t*)user;
+  state->free_calls += 1u;
+  assert(ptr != NULL);
+  assert(state->live_allocations != 0u);
+  state->live_allocations -= 1u;
+  free(ptr);
 }
 
-static h2_pal_result_t test_time_now(void *user, uint64_t *out_ms) {
-    test_time_t *time = (test_time_t *)user;
-    if (time->now_rc != H2_PAL_OK)
-        return time->now_rc;
-    *out_ms = time->now_ms;
-    return H2_PAL_OK;
+static h2_pal_result_t test_time_now(void* user, uint64_t* out_ms) {
+  test_time_t* time = (test_time_t*)user;
+  if (time->now_rc != H2_PAL_OK) return time->now_rc;
+  *out_ms = time->now_ms;
+  return H2_PAL_OK;
 }
 
-static h2_pal_result_t test_sleep(void *user, uint32_t ms) {
-    test_time_t *time = (test_time_t *)user;
-    time->sleep_calls += 1u;
-    time->now_ms += ms;
-    if (time->stop_after_sleep_runtime != NULL) {
-        h2_atomic_store(&time->stop_after_sleep_runtime->private_state->input_stop_requested,
-            1);
-    }
-    return time->sleep_rc;
+static h2_pal_result_t test_sleep(void* user, uint32_t ms) {
+  test_time_t* time = (test_time_t*)user;
+  time->sleep_calls += 1u;
+  time->now_ms += ms;
+  if (time->stop_after_sleep_runtime != NULL) {
+    h2_atomic_store(
+        &time->stop_after_sleep_runtime->private_state->input_stop_requested,
+        1);
+  }
+  return time->sleep_rc;
 }
 
 static h2_pal_result_t test_sync_create_mutex(
-    void *user,
-    const h2_pal_mutex_config_t *config,
-    h2_pal_mutex_t **out_mutex) {
-    test_sync_t *sync = (test_sync_t *)user;
-    if (sync->mutex_create_rc != H2_PAL_OK) {
-        return sync->mutex_create_rc;
+    void* user, const h2_pal_mutex_config_t* config,
+    h2_pal_mutex_t** out_mutex) {
+  test_sync_t* sync = (test_sync_t*)user;
+  if (sync->mutex_create_rc != H2_PAL_OK) {
+    return sync->mutex_create_rc;
+  }
+  h2_pal_mutex_t* mutex =
+      (h2_pal_mutex_t*)h2_pal_mem_alloc(config->allocator, sizeof(*mutex));
+  if (mutex == NULL) return H2_PAL_ERR_NO_MEMORY;
+  memset(mutex, 0, sizeof(*mutex));
+  mutex->mem = config->allocator;
+  sync->creates += 1u;
+  *out_mutex = mutex;
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t test_sync_destroy_mutex(void* user,
+                                               h2_pal_mutex_t* mutex) {
+  test_sync_t* sync = (test_sync_t*)user;
+  sync->destroys += 1u;
+  h2_pal_mem_free(mutex->mem, mutex);
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t test_sync_lock_mutex(void* user, h2_pal_mutex_t* mutex) {
+  test_sync_t* sync = (test_sync_t*)user;
+  sync->locks += 1u;
+  mutex->locked = 1;
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t test_sync_unlock_mutex(void* user,
+                                              h2_pal_mutex_t* mutex) {
+  test_sync_t* sync = (test_sync_t*)user;
+  sync->unlocks += 1u;
+  mutex->locked = 0;
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t test_sync_create_cond(void* user,
+                                             const h2_pal_cond_config_t* config,
+                                             h2_pal_cond_t** out_cond) {
+  test_sync_t* sync = (test_sync_t*)user;
+  if (sync->cond_create_rc != H2_PAL_OK) {
+    return sync->cond_create_rc;
+  }
+  h2_pal_cond_t* cond =
+      (h2_pal_cond_t*)h2_pal_mem_alloc(config->allocator, sizeof(*cond));
+  if (cond == NULL) {
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  cond->mem = config->allocator;
+  sync->creates += 1u;
+  *out_cond = cond;
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t test_sync_destroy_cond(void* user, h2_pal_cond_t* cond) {
+  test_sync_t* sync = (test_sync_t*)user;
+  sync->destroys += 1u;
+  h2_pal_mem_free(cond->mem, cond);
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t test_sync_wait_cond(void* user, h2_pal_cond_t* cond,
+                                           h2_pal_mutex_t* mutex,
+                                           uint32_t timeout_ms) {
+  test_sync_t* sync = (test_sync_t*)user;
+  (void)cond;
+  (void)mutex;
+  (void)timeout_ms;
+  return sync->cond_wait_rc != H2_PAL_OK ? sync->cond_wait_rc
+                                         : H2_PAL_ERR_WOULD_BLOCK;
+}
+
+static h2_pal_result_t test_sync_broadcast_cond(void* user,
+                                                h2_pal_cond_t* cond) {
+  test_sync_t* sync = (test_sync_t*)user;
+  (void)cond;
+  return sync->cond_broadcast_rc;
+}
+
+static int test_queue_create(void* user, const h2_pal_queue_config_t* config,
+                             h2_pal_queue_t** out_queue) {
+  test_queue_state_t* state = (test_queue_state_t*)user;
+  h2_pal_queue_t* queue =
+      (h2_pal_queue_t*)h2_pal_mem_alloc(config->allocator, sizeof(*queue));
+  if (queue == NULL) return H2_PAL_ERR_NO_MEMORY;
+  queue->items = (uint8_t*)h2_pal_mem_alloc(
+      config->allocator, config->item_size * config->item_count);
+  if (queue->items == NULL) {
+    h2_pal_mem_free(config->allocator, queue);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  queue->item_size = config->item_size;
+  queue->item_count = config->item_count;
+  queue->send_calls = 0u;
+  queue->mem = config->allocator;
+  if (state != NULL && state->full_rc == H2_PAL_OK) {
+    state->full_rc = H2_PAL_ERR_FULL;
+  }
+  *out_queue = queue;
+  return H2_PAL_OK;
+}
+
+static void test_queue_destroy(void* user, h2_pal_queue_t* queue) {
+  (void)user;
+  const h2_pal_mem_api_t* mem = queue->mem;
+  h2_pal_mem_free(mem, queue->items);
+  h2_pal_mem_free(mem, queue);
+}
+
+static int test_queue_send(void* user, h2_pal_queue_t* queue, const void* item,
+                           uint32_t timeout_ms) {
+  test_queue_state_t* state = (test_queue_state_t*)user;
+  queue->send_calls += 1u;
+  (void)timeout_ms;
+  if (queue->closed != 0) {
+    return H2_PAL_ERR_CLOSED;
+  }
+  if (state != NULL && state->send_rc != H2_PAL_OK) {
+    return state->send_rc;
+  }
+  if (queue->count == queue->item_count) {
+    return state != NULL && state->full_rc != H2_PAL_OK ? state->full_rc
+                                                        : H2_PAL_ERR_FULL;
+  }
+  memcpy(queue->items + queue->tail * queue->item_size, item, queue->item_size);
+  queue->tail = (queue->tail + 1u) % queue->item_count;
+  queue->count += 1u;
+  return H2_PAL_OK;
+}
+
+static int test_queue_recv(void* user, h2_pal_queue_t* queue, void* out_item,
+                           uint32_t timeout_ms) {
+  (void)user;
+  (void)timeout_ms;
+  if (queue->count == 0u) {
+    return queue->closed != 0 ? H2_PAL_ERR_CLOSED : H2_PAL_ERR_WOULD_BLOCK;
+  }
+  memcpy(out_item, queue->items + queue->head * queue->item_size,
+         queue->item_size);
+  queue->head = (queue->head + 1u) % queue->item_count;
+  queue->count -= 1u;
+  return H2_PAL_OK;
+}
+
+static int test_queue_reset(void* user, h2_pal_queue_t* queue) {
+  test_queue_state_t* state = (test_queue_state_t*)user;
+  if (queue == NULL) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  if (state != NULL && state->reset_rc != H2_PAL_OK) {
+    return state->reset_rc;
+  }
+  queue->count = 0u;
+  queue->head = 0u;
+  queue->tail = 0u;
+  queue->closed = 0;
+  return H2_PAL_OK;
+}
+
+static int test_queue_close(void* user, h2_pal_queue_t* queue) {
+  (void)user;
+  if (queue == NULL) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  queue->closed = 1;
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t test_periph_get(void* user, h2_pal_periph_id_t id,
+                                       h2_pal_periph_info_t* out_info) {
+  test_periph_set_t* set = (test_periph_set_t*)user;
+  set->get_calls += 1u;
+  for (size_t i = 0u; i < set->count; ++i) {
+    if (set->infos[i].id == id) {
+      *out_info = set->infos[i];
+      return H2_PAL_OK;
     }
-    h2_pal_mutex_t *mutex =
-        (h2_pal_mutex_t *)h2_pal_mem_alloc(config->allocator, sizeof(*mutex));
-    if (mutex == NULL) return H2_PAL_ERR_NO_MEMORY;
-    memset(mutex, 0, sizeof(*mutex));
-    mutex->mem = config->allocator;
-    sync->creates += 1u;
-    *out_mutex = mutex;
-    return H2_PAL_OK;
+  }
+  return H2_PAL_ERR_NOT_FOUND;
 }
 
-static h2_pal_result_t test_sync_destroy_mutex(void *user, h2_pal_mutex_t *mutex) {
-    test_sync_t *sync = (test_sync_t *)user;
-    sync->destroys += 1u;
-    h2_pal_mem_free(mutex->mem, mutex);
-    return H2_PAL_OK;
-}
-
-static h2_pal_result_t test_sync_lock_mutex(void *user, h2_pal_mutex_t *mutex) {
-    test_sync_t *sync = (test_sync_t *)user;
-    sync->locks += 1u;
-    mutex->locked = 1;
-    return H2_PAL_OK;
-}
-
-static h2_pal_result_t test_sync_unlock_mutex(void *user, h2_pal_mutex_t *mutex) {
-    test_sync_t *sync = (test_sync_t *)user;
-    sync->unlocks += 1u;
-    mutex->locked = 0;
-    return H2_PAL_OK;
-}
-
-static h2_pal_result_t test_sync_create_cond(
-    void *user,
-    const h2_pal_cond_config_t *config,
-    h2_pal_cond_t **out_cond) {
-    test_sync_t *sync = (test_sync_t *)user;
-    if (sync->cond_create_rc != H2_PAL_OK) {
-        return sync->cond_create_rc;
+static h2_pal_result_t test_periph_list(void* user,
+                                        h2_pal_periph_type_t type_filter,
+                                        h2_pal_periph_cb_t cb, void* cb_user) {
+  test_periph_set_t* set = (test_periph_set_t*)user;
+  set->list_calls += 1u;
+  for (size_t i = 0u; i < set->count; ++i) {
+    if (type_filter == H2_PAL_PERIPH_TYPE_ANY ||
+        set->infos[i].type == type_filter) {
+      h2_pal_result_t rc = cb(cb_user, &set->infos[i]);
+      if (rc != H2_PAL_OK) return rc;
     }
-    h2_pal_cond_t *cond =
-        (h2_pal_cond_t *)h2_pal_mem_alloc(config->allocator, sizeof(*cond));
-    if (cond == NULL) {
-        return H2_PAL_ERR_NO_MEMORY;
-    }
-    cond->mem = config->allocator;
-    sync->creates += 1u;
-    *out_cond = cond;
-    return H2_PAL_OK;
-}
-
-static h2_pal_result_t test_sync_destroy_cond(
-    void *user,
-    h2_pal_cond_t *cond) {
-    test_sync_t *sync = (test_sync_t *)user;
-    sync->destroys += 1u;
-    h2_pal_mem_free(cond->mem, cond);
-    return H2_PAL_OK;
-}
-
-static h2_pal_result_t test_sync_wait_cond(
-    void *user,
-    h2_pal_cond_t *cond,
-    h2_pal_mutex_t *mutex,
-    uint32_t timeout_ms) {
-    test_sync_t *sync = (test_sync_t *)user;
-    (void)cond;
-    (void)mutex;
-    (void)timeout_ms;
-    return sync->cond_wait_rc != H2_PAL_OK
-               ? sync->cond_wait_rc
-               : H2_PAL_ERR_WOULD_BLOCK;
-}
-
-static h2_pal_result_t test_sync_broadcast_cond(
-    void *user,
-    h2_pal_cond_t *cond) {
-    test_sync_t *sync = (test_sync_t *)user;
-    (void)cond;
-    return sync->cond_broadcast_rc;
-}
-
-static int test_queue_create(
-    void *user,
-    const h2_pal_queue_config_t *config,
-    h2_pal_queue_t **out_queue) {
-    test_queue_state_t *state = (test_queue_state_t *)user;
-    h2_pal_queue_t *queue =
-        (h2_pal_queue_t *)h2_pal_mem_alloc(config->allocator, sizeof(*queue));
-    if (queue == NULL) return H2_PAL_ERR_NO_MEMORY;
-    queue->items = (uint8_t *)h2_pal_mem_alloc(
-        config->allocator,
-        config->item_size * config->item_count);
-    if (queue->items == NULL) {
-        h2_pal_mem_free(config->allocator, queue);
-        return H2_PAL_ERR_NO_MEMORY;
-    }
-    queue->item_size = config->item_size;
-    queue->item_count = config->item_count;
-    queue->send_calls = 0u;
-    queue->mem = config->allocator;
-    if (state != NULL && state->full_rc == H2_PAL_OK) {
-        state->full_rc = H2_PAL_ERR_FULL;
-    }
-    *out_queue = queue;
-    return H2_PAL_OK;
-}
-
-static void test_queue_destroy(void *user, h2_pal_queue_t *queue) {
-    (void)user;
-    const h2_pal_mem_api_t *mem = queue->mem;
-    h2_pal_mem_free(mem, queue->items);
-    h2_pal_mem_free(mem, queue);
-}
-
-static int test_queue_send(
-    void *user,
-    h2_pal_queue_t *queue,
-    const void *item,
-    uint32_t timeout_ms) {
-    test_queue_state_t *state = (test_queue_state_t *)user;
-    queue->send_calls += 1u;
-    (void)timeout_ms;
-    if (queue->closed != 0) {
-        return H2_PAL_ERR_CLOSED;
-    }
-    if (state != NULL && state->send_rc != H2_PAL_OK) {
-        return state->send_rc;
-    }
-    if (queue->count == queue->item_count) {
-        return state != NULL && state->full_rc != H2_PAL_OK ? state->full_rc : H2_PAL_ERR_FULL;
-    }
-    memcpy(queue->items + queue->tail * queue->item_size, item, queue->item_size);
-    queue->tail = (queue->tail + 1u) % queue->item_count;
-    queue->count += 1u;
-    return H2_PAL_OK;
-}
-
-static int test_queue_recv(
-    void *user,
-    h2_pal_queue_t *queue,
-    void *out_item,
-    uint32_t timeout_ms) {
-    (void)user;
-    (void)timeout_ms;
-    if (queue->count == 0u) {
-        return queue->closed != 0 ? H2_PAL_ERR_CLOSED
-                                  : H2_PAL_ERR_WOULD_BLOCK;
-    }
-    memcpy(out_item, queue->items + queue->head * queue->item_size, queue->item_size);
-    queue->head = (queue->head + 1u) % queue->item_count;
-    queue->count -= 1u;
-    return H2_PAL_OK;
-}
-
-static int test_queue_reset(void *user, h2_pal_queue_t *queue) {
-    test_queue_state_t *state = (test_queue_state_t *)user;
-    if (queue == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    if (state != NULL && state->reset_rc != H2_PAL_OK) {
-        return state->reset_rc;
-    }
-    queue->count = 0u;
-    queue->head = 0u;
-    queue->tail = 0u;
-    queue->closed = 0;
-    return H2_PAL_OK;
-}
-
-static int test_queue_close(void *user, h2_pal_queue_t *queue) {
-    (void)user;
-    if (queue == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    queue->closed = 1;
-    return H2_PAL_OK;
-}
-
-static h2_pal_result_t test_periph_get(
-    void *user,
-    h2_pal_periph_id_t id,
-    h2_pal_periph_info_t *out_info) {
-    test_periph_set_t *set = (test_periph_set_t *)user;
-    set->get_calls += 1u;
-    for (size_t i = 0u; i < set->count; ++i) {
-        if (set->infos[i].id == id) {
-            *out_info = set->infos[i];
-            return H2_PAL_OK;
-        }
-    }
-    return H2_PAL_ERR_NOT_FOUND;
-}
-
-static h2_pal_result_t test_periph_list(
-    void *user,
-    h2_pal_periph_type_t type_filter,
-    h2_pal_periph_cb_t cb,
-    void *cb_user) {
-    test_periph_set_t *set = (test_periph_set_t *)user;
-    set->list_calls += 1u;
-    for (size_t i = 0u; i < set->count; ++i) {
-        if (type_filter == H2_PAL_PERIPH_TYPE_ANY || set->infos[i].type == type_filter) {
-            h2_pal_result_t rc = cb(cb_user, &set->infos[i]);
-            if (rc != H2_PAL_OK) return rc;
-        }
-    }
-    return H2_PAL_OK;
+  }
+  return H2_PAL_OK;
 }
 
 static h2_pal_result_t test_read_single_button(
-    void *user,
-    h2_pal_periph_id_t id,
-    h2_pal_single_button_reading_t *out_reading) {
-    test_button_t *button = (test_button_t *)user;
-    button->single_reads += 1u;
-    *out_reading = (h2_pal_single_button_reading_t){
-        .id = id,
-        .state = button->single_state,
-    };
-    return H2_PAL_OK;
+    void* user, h2_pal_periph_id_t id,
+    h2_pal_single_button_reading_t* out_reading) {
+  test_button_t* button = (test_button_t*)user;
+  button->single_reads += 1u;
+  *out_reading = (h2_pal_single_button_reading_t){
+      .id = id,
+      .state = button->single_state,
+  };
+  return H2_PAL_OK;
 }
 
 static h2_pal_result_t test_read_radio_group(
-    void *user,
-    h2_pal_periph_id_t id,
-    h2_pal_radio_button_group_reading_t *out_reading) {
-    test_button_t *button = (test_button_t *)user;
-    button->group_reads += 1u;
-    if (button->group_rc != H2_PAL_OK) return button->group_rc;
-    *out_reading = (h2_pal_radio_button_group_reading_t){
-        .id = id,
-        .pressed_button_id = button->radio_pressed_id,
-    };
-    return H2_PAL_OK;
+    void* user, h2_pal_periph_id_t id,
+    h2_pal_radio_button_group_reading_t* out_reading) {
+  test_button_t* button = (test_button_t*)user;
+  button->group_reads += 1u;
+  if (button->group_rc != H2_PAL_OK) return button->group_rc;
+  *out_reading = (h2_pal_radio_button_group_reading_t){
+      .id = id,
+      .pressed_button_id = button->radio_pressed_id,
+  };
+  return H2_PAL_OK;
 }
 
-static h2_pal_result_t test_nfc_scan(
-    void *user,
-    h2_pal_periph_id_t id,
-    h2_pal_nfc_scan_t *out_scan) {
-    test_nfc_t *nfc = (test_nfc_t *)user;
-    nfc->scan_calls += 1u;
-    if (nfc->scan_rc != H2_PAL_OK) return nfc->scan_rc;
-    *out_scan = nfc->scan;
-    out_scan->id = id;
-    return H2_PAL_OK;
+static h2_pal_result_t test_nfc_scan(void* user, h2_pal_periph_id_t id,
+                                     h2_pal_nfc_scan_t* out_scan) {
+  test_nfc_t* nfc = (test_nfc_t*)user;
+  nfc->scan_calls += 1u;
+  if (nfc->scan_rc != H2_PAL_OK) return nfc->scan_rc;
+  *out_scan = nfc->scan;
+  out_scan->id = id;
+  return H2_PAL_OK;
 }
 
-static h2_pal_result_t test_nfc_read(
-    void *user,
-    h2_pal_periph_id_t id,
-    const uint8_t *expected_uid,
-    uint8_t expected_uid_len,
-    h2_pal_nfc_data_type_t requested_type,
-    const h2_pal_mem_api_t *mem,
-    h2_pal_nfc_data_read_t *out_data) {
-    test_nfc_t *nfc = (test_nfc_t *)user;
-    (void)id;
-    if (nfc->read_rc != H2_PAL_OK) return nfc->read_rc;
-    nfc->last_expected_uid_len = expected_uid_len;
-    memcpy(nfc->last_expected_uid, expected_uid, expected_uid_len);
-    uint8_t *bytes = (uint8_t *)h2_pal_mem_alloc(mem, sizeof(nfc->read_bytes));
-    if (bytes == NULL) return H2_PAL_ERR_NO_MEMORY;
-    memcpy(bytes, nfc->read_bytes, sizeof(nfc->read_bytes));
-    *out_data = (h2_pal_nfc_data_read_t){
-        .id = id,
-        .tag_type = nfc->scan.tag_type,
-        .uid_len = nfc->scan.uid_len,
-        .type = requested_type,
-        .bytes = bytes,
-        .len = sizeof(nfc->read_bytes),
-    };
-    memcpy(out_data->uid, nfc->scan.uid, sizeof(out_data->uid));
-    return H2_PAL_OK;
+static h2_pal_result_t test_nfc_read(void* user, h2_pal_periph_id_t id,
+                                     const uint8_t* expected_uid,
+                                     uint8_t expected_uid_len,
+                                     h2_pal_nfc_data_type_t requested_type,
+                                     const h2_pal_mem_api_t* mem,
+                                     h2_pal_nfc_data_read_t* out_data) {
+  test_nfc_t* nfc = (test_nfc_t*)user;
+  (void)id;
+  if (nfc->read_rc != H2_PAL_OK) return nfc->read_rc;
+  nfc->last_expected_uid_len = expected_uid_len;
+  memcpy(nfc->last_expected_uid, expected_uid, expected_uid_len);
+  uint8_t* bytes = (uint8_t*)h2_pal_mem_alloc(mem, sizeof(nfc->read_bytes));
+  if (bytes == NULL) return H2_PAL_ERR_NO_MEMORY;
+  memcpy(bytes, nfc->read_bytes, sizeof(nfc->read_bytes));
+  *out_data = (h2_pal_nfc_data_read_t){
+      .id = id,
+      .tag_type = nfc->scan.tag_type,
+      .uid_len = nfc->scan.uid_len,
+      .type = requested_type,
+      .bytes = bytes,
+      .len = sizeof(nfc->read_bytes),
+  };
+  memcpy(out_data->uid, nfc->scan.uid, sizeof(out_data->uid));
+  return H2_PAL_OK;
 }
 
-static h2_pal_result_t test_imu_read(
-    void *user,
-    h2_pal_periph_id_t id,
-    h2_pal_imu_reading_t *out_reading) {
-    test_imu_t *imu = (test_imu_t *)user;
-    if (imu->rc != H2_PAL_OK) return imu->rc;
-    *out_reading = imu->reading;
-    out_reading->id = id;
-    return H2_PAL_OK;
+static h2_pal_result_t test_imu_read(void* user, h2_pal_periph_id_t id,
+                                     h2_pal_imu_reading_t* out_reading) {
+  test_imu_t* imu = (test_imu_t*)user;
+  if (imu->rc != H2_PAL_OK) return imu->rc;
+  *out_reading = imu->reading;
+  out_reading->id = id;
+  return H2_PAL_OK;
 }
 
-static int test_task_start(
-    void *user,
-    const h2_pal_task_options_t *options,
-    h2_pal_task_entry_t entry,
-    void *ctx,
-    h2_pal_task_t **out_task) {
-    test_task_t *task = (test_task_t *)user;
-    (void)options;
-    if (task->start_rc != H2_PAL_OK) {
-        return task->start_rc;
-    }
-    h2_pal_task_t *handle = (h2_pal_task_t *)calloc(1u, sizeof(*handle));
-    if (handle == NULL) return H2_PAL_ERR_NO_MEMORY;
-    handle->entry = entry;
-    handle->ctx = ctx;
-    task->options = options != NULL ? *options : (h2_pal_task_options_t){0};
-    if (task->handle_count >= sizeof(task->handles) / sizeof(task->handles[0])) {
-        free(handle);
-        return H2_PAL_ERR_NO_SPACE;
-    }
-    task->handles[task->handle_count++] = handle;
-    if (task->current == NULL) {
-        task->current = handle;
-    }
-    task->starts += 1u;
-    *out_task = handle;
-    return H2_PAL_OK;
-}
-
-static int test_task_join(void *user, h2_pal_task_t *handle) {
-    test_task_t *task = (test_task_t *)user;
-    if (handle == NULL) return H2_PAL_ERR_INVALID_ARG;
-    if (task->join_rc != H2_PAL_OK) return task->join_rc;
-    size_t index = 0u;
-    while (index < task->handle_count && task->handles[index] != handle) {
-        ++index;
-    }
-    if (index == task->handle_count) return H2_PAL_ERR_INVALID_ARG;
-    for (size_t next = index + 1u; next < task->handle_count; ++next) {
-        task->handles[next - 1u] = task->handles[next];
-    }
-    task->handle_count -= 1u;
-    task->joins += 1u;
+static int test_task_start(void* user, const h2_pal_task_options_t* options,
+                           h2_pal_task_entry_t entry, void* ctx,
+                           h2_pal_task_t** out_task) {
+  test_task_t* task = (test_task_t*)user;
+  (void)options;
+  if (task->start_rc != H2_PAL_OK) {
+    return task->start_rc;
+  }
+  h2_pal_task_t* handle = (h2_pal_task_t*)calloc(1u, sizeof(*handle));
+  if (handle == NULL) return H2_PAL_ERR_NO_MEMORY;
+  handle->entry = entry;
+  handle->ctx = ctx;
+  task->options = options != NULL ? *options : (h2_pal_task_options_t){0};
+  if (task->handle_count >= sizeof(task->handles) / sizeof(task->handles[0])) {
     free(handle);
-    if (task->current == handle) {
-        task->current = task->handle_count > 0u ? task->handles[0] : NULL;
-    }
-    return H2_PAL_OK;
+    return H2_PAL_ERR_NO_SPACE;
+  }
+  task->handles[task->handle_count++] = handle;
+  if (task->current == NULL) {
+    task->current = handle;
+  }
+  task->starts += 1u;
+  *out_task = handle;
+  return H2_PAL_OK;
 }
 
-static int test_system_event_init(void *user) {
-    test_system_event_t *events = (test_system_event_t *)user;
-    events->init_calls += 1u;
-    return H2_PAL_OK;
+static int test_task_join(void* user, h2_pal_task_t* handle) {
+  test_task_t* task = (test_task_t*)user;
+  if (handle == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (task->join_rc != H2_PAL_OK) return task->join_rc;
+  size_t index = 0u;
+  while (index < task->handle_count && task->handles[index] != handle) {
+    ++index;
+  }
+  if (index == task->handle_count) return H2_PAL_ERR_INVALID_ARG;
+  for (size_t next = index + 1u; next < task->handle_count; ++next) {
+    task->handles[next - 1u] = task->handles[next];
+  }
+  task->handle_count -= 1u;
+  task->joins += 1u;
+  free(handle);
+  if (task->current == handle) {
+    task->current = task->handle_count > 0u ? task->handles[0] : NULL;
+  }
+  return H2_PAL_OK;
 }
 
-static void test_system_event_deinit(void *user) {
-    test_system_event_t *events = (test_system_event_t *)user;
-    events->deinit_calls += 1u;
+static int test_system_event_init(void* user) {
+  test_system_event_t* events = (test_system_event_t*)user;
+  events->init_calls += 1u;
+  return H2_PAL_OK;
+}
+
+static void test_system_event_deinit(void* user) {
+  test_system_event_t* events = (test_system_event_t*)user;
+  events->deinit_calls += 1u;
 }
 
 static int test_system_event_subscribe(
-    void *user,
-    h2_pal_system_event_type_t type,
-    h2_pal_system_event_handler_t handler,
-    void *handler_user,
-    h2_pal_system_event_subscription_t **out_subscription) {
-    test_system_event_t *events = (test_system_event_t *)user;
-    if (events->fail_subscribe_after != 0u &&
-        events->subscribe_calls >= events->fail_subscribe_after) {
-        return H2_PAL_ERR_IO;
-    }
-    if (events->subscribe_calls >= H2_RUNTIME_SYSTEM_EVENT_SUBSCRIPTION_MAX) {
-        return H2_PAL_ERR_NO_SPACE;
-    }
-    h2_pal_system_event_subscription_t *subscription =
-        &events->subscriptions[events->subscribe_calls++];
-    *subscription = (h2_pal_system_event_subscription_t){
-        .type = type,
-        .handler = handler,
-        .handler_user = handler_user,
-        .active = 1,
-    };
-    *out_subscription = subscription;
-    return H2_PAL_OK;
+    void* user, h2_pal_system_event_type_t type,
+    h2_pal_system_event_handler_t handler, void* handler_user,
+    h2_pal_system_event_subscription_t** out_subscription) {
+  test_system_event_t* events = (test_system_event_t*)user;
+  if (events->fail_subscribe_after != 0u &&
+      events->subscribe_calls >= events->fail_subscribe_after) {
+    return H2_PAL_ERR_IO;
+  }
+  if (events->subscribe_calls >= H2_RUNTIME_SYSTEM_EVENT_SUBSCRIPTION_MAX) {
+    return H2_PAL_ERR_NO_SPACE;
+  }
+  h2_pal_system_event_subscription_t* subscription =
+      &events->subscriptions[events->subscribe_calls++];
+  *subscription = (h2_pal_system_event_subscription_t){
+      .type = type,
+      .handler = handler,
+      .handler_user = handler_user,
+      .active = 1,
+  };
+  *out_subscription = subscription;
+  return H2_PAL_OK;
 }
 
 static void test_system_event_unsubscribe(
-    void *user,
-    h2_pal_system_event_subscription_t *subscription) {
-    test_system_event_t *events = (test_system_event_t *)user;
-    if (subscription != NULL && subscription->active != 0) {
-        subscription->active = 0;
-        events->unsubscribe_calls += 1u;
+    void* user, h2_pal_system_event_subscription_t* subscription) {
+  test_system_event_t* events = (test_system_event_t*)user;
+  if (subscription != NULL && subscription->active != 0) {
+    subscription->active = 0;
+    events->unsubscribe_calls += 1u;
+  }
+}
+
+static int test_system_event_dispatch(test_runtime_env_t* env,
+                                      h2_pal_system_event_type_t type,
+                                      const void* payload,
+                                      size_t payload_size) {
+  h2_pal_system_event_t event = {
+      .type = type,
+      .payload = payload,
+      .payload_size = payload_size,
+  };
+  for (size_t i = 0u; i < env->system_event_state.subscribe_calls; ++i) {
+    h2_pal_system_event_subscription_t* subscription =
+        &env->system_event_state.subscriptions[i];
+    if (subscription->active != 0 && subscription->type == type) {
+      return subscription->handler(subscription->handler_user, &event);
     }
+  }
+  return H2_PAL_ERR_NOT_FOUND;
 }
 
-static int test_system_event_dispatch(
-    test_runtime_env_t *env,
-    h2_pal_system_event_type_t type,
-    const void *payload,
-    size_t payload_size) {
-    h2_pal_system_event_t event = {
-        .type = type,
-        .payload = payload,
-        .payload_size = payload_size,
-    };
-    for (size_t i = 0u; i < env->system_event_state.subscribe_calls; ++i) {
-        h2_pal_system_event_subscription_t *subscription =
-            &env->system_event_state.subscriptions[i];
-        if (subscription->active != 0 && subscription->type == type) {
-            return subscription->handler(subscription->handler_user, &event);
-        }
-    }
-    return H2_PAL_ERR_NOT_FOUND;
+static void test_env_init(test_runtime_env_t* env) {
+  memset(env, 0, sizeof(*env));
+  static const h2_pal_mem_vtable_t allocator_vtable = {
+      .alloc = test_alloc,
+      .free = test_free,
+  };
+  env->mem = (h2_pal_mem_api_t){
+      .user = &env->allocator_state,
+      .vtable = &allocator_vtable,
+  };
+  static const h2_pal_time_vtable_t time_vtable = {
+      .get_monotonic_ms = test_time_now,
+      .sleep_ms = test_sleep,
+  };
+  env->time =
+      (h2_pal_time_api_t){.user = &env->time_state, .vtable = &time_vtable};
+  env->queue_state.full_rc = H2_PAL_ERR_FULL;
+  static const h2_pal_queue_vtable_t queue_vtable = {
+      .create = test_queue_create,
+      .destroy = test_queue_destroy,
+      .send = test_queue_send,
+      .recv = test_queue_recv,
+      .reset = test_queue_reset,
+      .close = test_queue_close,
+  };
+  env->queue = (h2_pal_queue_api_t){
+      .user = &env->queue_state,
+      .vtable = &queue_vtable,
+  };
+  static const h2_pal_periph_vtable_t periph_vtable = {
+      .list = test_periph_list,
+      .get = test_periph_get,
+  };
+  env->periph =
+      (h2_pal_periph_api_t){.user = &env->periphs, .vtable = &periph_vtable};
+  static const h2_runtime_component_mapper_vtable_t component_mapper_vtable = {
+      .list = test_mapper_list,
+  };
+  env->component_mapper = (h2_runtime_component_mapper_t){
+      .user = env,
+      .vtable = &component_mapper_vtable,
+  };
+  static const h2_pal_button_vtable_t button_vtable = {
+      .read_single_button = test_read_single_button,
+      .read_radio_button_group = test_read_radio_group,
+  };
+  env->button = (h2_pal_button_api_t){.user = &env->button_state,
+                                      .vtable = &button_vtable};
+  static const h2_pal_nfc_vtable_t nfc_vtable = {
+      .scan_nfc_reader = test_nfc_scan,
+      .read_nfc_data = test_nfc_read,
+  };
+  env->nfc = (h2_pal_nfc_api_t){.user = &env->nfc_state, .vtable = &nfc_vtable};
+  static const h2_pal_nfc_card_emulation_vtable_t nfc_card_emulation_vtable = {
+      .get_capabilities = test_nfc_card_emulation_get_capabilities,
+  };
+  env->nfc_card_emulation = (h2_pal_nfc_card_emulation_api_t){
+      .user = &env->nfc_card_emulation_state,
+      .vtable = &nfc_card_emulation_vtable,
+  };
+  static const h2_pal_imu_vtable_t imu_vtable = {
+      .read_imu = test_imu_read,
+  };
+  env->imu = (h2_pal_imu_api_t){.user = &env->imu_state, .vtable = &imu_vtable};
+  static const h2_pal_input_vtable_t input_vtable = {
+      .read_battery = test_input_read_battery,
+      .read_temperature = test_input_read_temperature,
+  };
+  env->input = (h2_pal_input_api_t){
+      .user = &env->input_state,
+      .vtable = &input_vtable,
+  };
+  static const h2_pal_task_vtable_t task_vtable = {
+      .start = test_task_start,
+      .join = test_task_join,
+  };
+  env->task = (h2_pal_task_api_t){
+      .user = &env->task_state,
+      .vtable = &task_vtable,
+  };
+  static const h2_pal_sync_vtable_t sync_vtable = {
+      .create_mutex = test_sync_create_mutex,
+      .destroy_mutex = test_sync_destroy_mutex,
+      .lock_mutex = test_sync_lock_mutex,
+      .unlock_mutex = test_sync_unlock_mutex,
+      .create_cond = test_sync_create_cond,
+      .destroy_cond = test_sync_destroy_cond,
+      .wait_cond = test_sync_wait_cond,
+      .broadcast_cond = test_sync_broadcast_cond,
+  };
+  env->sync =
+      (h2_pal_sync_api_t){.user = &env->sync_state, .vtable = &sync_vtable};
+  static const h2_pal_system_event_vtable_t system_event_vtable = {
+      .init = test_system_event_init,
+      .deinit = test_system_event_deinit,
+      .subscribe = test_system_event_subscribe,
+      .unsubscribe = test_system_event_unsubscribe,
+  };
+  env->system_event = (h2_pal_system_event_api_t){
+      .user = &env->system_event_state,
+      .vtable = &system_event_vtable,
+  };
 }
 
-static void test_env_init(test_runtime_env_t *env) {
-    memset(env, 0, sizeof(*env));
-    static const h2_pal_mem_vtable_t allocator_vtable = {
-        .alloc = test_alloc,
-        .free = test_free,
-    };
-    env->mem = (h2_pal_mem_api_t){
-        .user = &env->allocator_state,
-        .vtable = &allocator_vtable,
-    };
-    static const h2_pal_time_vtable_t time_vtable = {
-        .get_monotonic_ms = test_time_now,
-        .sleep_ms = test_sleep,
-    };
-    env->time = (h2_pal_time_api_t){ .user = &env->time_state, .vtable = &time_vtable };
-    env->queue_state.full_rc = H2_PAL_ERR_FULL;
-    static const h2_pal_queue_vtable_t queue_vtable = {
-        .create = test_queue_create,
-        .destroy = test_queue_destroy,
-        .send = test_queue_send,
-        .recv = test_queue_recv,
-        .reset = test_queue_reset,
-        .close = test_queue_close,
-    };
-    env->queue = (h2_pal_queue_api_t){
-        .user = &env->queue_state,
-        .vtable = &queue_vtable,
-    };
-    static const h2_pal_periph_vtable_t periph_vtable = {
-        .list = test_periph_list,
-        .get = test_periph_get,
-    };
-    env->periph = (h2_pal_periph_api_t){ .user = &env->periphs, .vtable = &periph_vtable };
-    static const h2_runtime_component_mapper_vtable_t component_mapper_vtable = {
-        .list = test_mapper_list,
-    };
-    env->component_mapper = (h2_runtime_component_mapper_t){
-        .user = env,
-        .vtable = &component_mapper_vtable,
-    };
-    static const h2_pal_button_vtable_t button_vtable = {
-        .read_single_button = test_read_single_button,
-        .read_radio_button_group = test_read_radio_group,
-    };
-    env->button = (h2_pal_button_api_t){ .user = &env->button_state, .vtable = &button_vtable };
-    static const h2_pal_nfc_vtable_t nfc_vtable = {
-        .scan_nfc_reader = test_nfc_scan,
-        .read_nfc_data = test_nfc_read,
-    };
-    env->nfc = (h2_pal_nfc_api_t){ .user = &env->nfc_state, .vtable = &nfc_vtable };
-    static const h2_pal_nfc_card_emulation_vtable_t
-        nfc_card_emulation_vtable = {
-            .get_capabilities =
-                test_nfc_card_emulation_get_capabilities,
-        };
-    env->nfc_card_emulation = (h2_pal_nfc_card_emulation_api_t){
-        .user = &env->nfc_card_emulation_state,
-        .vtable = &nfc_card_emulation_vtable,
-    };
-    static const h2_pal_imu_vtable_t imu_vtable = {
-        .read_imu = test_imu_read,
-    };
-    env->imu = (h2_pal_imu_api_t){ .user = &env->imu_state, .vtable = &imu_vtable };
-    static const h2_pal_input_vtable_t input_vtable = {
-        .read_battery = test_input_read_battery,
-        .read_temperature = test_input_read_temperature,
-    };
-    env->input = (h2_pal_input_api_t){
-        .user = &env->input_state,
-        .vtable = &input_vtable,
-    };
-    static const h2_pal_task_vtable_t task_vtable = {
-        .start = test_task_start,
-        .join = test_task_join,
-    };
-    env->task = (h2_pal_task_api_t){
-        .user = &env->task_state,
-        .vtable = &task_vtable,
-    };
-    static const h2_pal_sync_vtable_t sync_vtable = {
-        .create_mutex = test_sync_create_mutex,
-        .destroy_mutex = test_sync_destroy_mutex,
-        .lock_mutex = test_sync_lock_mutex,
-        .unlock_mutex = test_sync_unlock_mutex,
-        .create_cond = test_sync_create_cond,
-        .destroy_cond = test_sync_destroy_cond,
-        .wait_cond = test_sync_wait_cond,
-        .broadcast_cond = test_sync_broadcast_cond,
-    };
-    env->sync = (h2_pal_sync_api_t){ .user = &env->sync_state, .vtable = &sync_vtable };
-    static const h2_pal_system_event_vtable_t system_event_vtable = {
-        .init = test_system_event_init,
-        .deinit = test_system_event_deinit,
-        .subscribe = test_system_event_subscribe,
-        .unsubscribe = test_system_event_unsubscribe,
-    };
-    env->system_event = (h2_pal_system_event_api_t){
-        .user = &env->system_event_state,
-        .vtable = &system_event_vtable,
-    };
+static h2_runtime_config_t test_runtime_config(test_runtime_env_t* env) {
+  return (h2_runtime_config_t){
+      .board = "test-board",
+      .target = "host",
+      .chip = "host",
+      .firmware_info = h2_pal_unsupported_firmware_info_api(),
+      .log = h2_pal_unsupported_log_api(),
+      .time = &env->time,
+      .timer = h2_pal_unsupported_timer_api(),
+      .queue = &env->queue,
+      .fs = h2_pal_unsupported_fs_api(),
+      .disk = h2_pal_unsupported_disk_api(),
+      .pref = h2_pal_unsupported_pref_api(),
+      .crypto = h2_pal_unsupported_crypto_api(),
+      .http = h2_pal_unsupported_http_api(),
+      .net = h2_pal_unsupported_net_api(),
+      .netif = h2_pal_unsupported_netif_api(),
+      .mqtt = h2_pal_unsupported_mqtt_api(),
+      .webrtc = h2_pal_unsupported_webrtc_api(),
+      .wifi_sta = h2_pal_unsupported_wifi_sta_api(),
+      .wifi_ap = h2_pal_unsupported_wifi_ap_api(),
+      .wifi_csi = h2_pal_unsupported_wifi_csi_api(),
+      .wifi_settings = h2_pal_unsupported_wifi_settings_api(),
+      .ble_host = h2_pal_unsupported_ble_host_api(),
+      .modem = h2_pal_unsupported_modem_api(),
+      .power = h2_pal_unsupported_power_api(),
+      .display = h2_pal_unsupported_display_api(),
+      .audio = h2_pal_unsupported_audio_api(),
+      .audio_decoder = h2_pal_unsupported_audio_decoder_api(),
+      .periph = &env->periph,
+      .button = &env->button,
+      .touch = h2_pal_unsupported_touch_api(),
+      .buzzer = h2_pal_unsupported_buzzer_api(),
+      .nfc = &env->nfc,
+      .nfc_card_emulation = &env->nfc_card_emulation,
+      .imu = &env->imu,
+      .gpio_irq = h2_pal_unsupported_gpio_irq_api(),
+      .led = h2_pal_unsupported_led_api(),
+      .switch_api = h2_pal_unsupported_switch_api(),
+      .pwm_switch = h2_pal_unsupported_pwm_switch_api(),
+      .input = &env->input,
+      .task = &env->task,
+      .sync = &env->sync,
+      .mem = &env->mem,
+      .system_event = h2_pal_unsupported_system_event_api(),
+      .video_decoder = h2_pal_unsupported_video_decoder_api(),
+      .component_mapper = &env->component_mapper,
+      .event_queue_capacity = 4u,
+  };
 }
 
-static h2_runtime_config_t test_runtime_config(test_runtime_env_t *env) {
-    return (h2_runtime_config_t){
-        .board = "test-board",
-        .target = "host",
-        .chip = "host",
-        .firmware_info = h2_pal_unsupported_firmware_info_api(),
-        .log = h2_pal_unsupported_log_api(),
-        .time = &env->time,
-        .timer = h2_pal_unsupported_timer_api(),
-        .queue = &env->queue,
-        .fs = h2_pal_unsupported_fs_api(),
-        .disk = h2_pal_unsupported_disk_api(),
-        .pref = h2_pal_unsupported_pref_api(),
-        .crypto = h2_pal_unsupported_crypto_api(),
-        .http = h2_pal_unsupported_http_api(),
-        .net = h2_pal_unsupported_net_api(),
-        .netif = h2_pal_unsupported_netif_api(),
-        .mqtt = h2_pal_unsupported_mqtt_api(),
-        .webrtc = h2_pal_unsupported_webrtc_api(),
-        .wifi_sta = h2_pal_unsupported_wifi_sta_api(),
-        .wifi_ap = h2_pal_unsupported_wifi_ap_api(),
-        .wifi_csi = h2_pal_unsupported_wifi_csi_api(),
-        .wifi_settings = h2_pal_unsupported_wifi_settings_api(),
-        .ble_host = h2_pal_unsupported_ble_host_api(),
-        .modem = h2_pal_unsupported_modem_api(),
-        .power = h2_pal_unsupported_power_api(),
-        .display = h2_pal_unsupported_display_api(),
-        .audio = h2_pal_unsupported_audio_api(),
-        .audio_decoder = h2_pal_unsupported_audio_decoder_api(),
-        .periph = &env->periph,
-        .button = &env->button,
-        .touch = h2_pal_unsupported_touch_api(),
-        .buzzer = h2_pal_unsupported_buzzer_api(),
-        .nfc = &env->nfc,
-        .nfc_card_emulation = &env->nfc_card_emulation,
-        .imu = &env->imu,
-        .gpio_irq = h2_pal_unsupported_gpio_irq_api(),
-        .led = h2_pal_unsupported_led_api(),
-        .switch_api = h2_pal_unsupported_switch_api(),
-        .pwm_switch = h2_pal_unsupported_pwm_switch_api(),
-        .input = &env->input,
-        .task = &env->task,
-        .sync = &env->sync,
-        .mem = &env->mem,
-        .system_event = h2_pal_unsupported_system_event_api(),
-        .video_decoder = h2_pal_unsupported_video_decoder_api(),
-        .component_mapper = &env->component_mapper,
-        .event_queue_capacity = 4u,
-    };
+static h2_runtime_t* test_runtime_create(test_runtime_env_t* env) {
+  h2_runtime_config_t config = test_runtime_config(env);
+  config.ble_local_name = "h106-tiga-A1B2C3";
+  h2_runtime_t* runtime = NULL;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  assert(runtime != NULL);
+  assert(runtime->ble_local_name == config.ble_local_name);
+  assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_OK);
+  return runtime;
 }
 
-static h2_runtime_t *test_runtime_create(test_runtime_env_t *env) {
-    h2_runtime_config_t config = test_runtime_config(env);
-    config.ble_local_name = "h106-tiga-A1B2C3";
-    h2_runtime_t *runtime = NULL;
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
-    assert(runtime != NULL);
-    assert(runtime->ble_local_name == config.ble_local_name);
-    assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_OK);
-    return runtime;
-}
-
-static h2_runtime_t *test_runtime_create_with_system_events(test_runtime_env_t *env) {
-    h2_runtime_config_t config = test_runtime_config(env);
-    config.system_event = &env->system_event;
-    h2_runtime_t *runtime = NULL;
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
-    assert(runtime != NULL);
-    assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_OK);
-    return runtime;
+static h2_runtime_t* test_runtime_create_with_system_events(
+    test_runtime_env_t* env) {
+  h2_runtime_config_t config = test_runtime_config(env);
+  config.system_event = &env->system_event;
+  h2_runtime_t* runtime = NULL;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  assert(runtime != NULL);
+  assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_OK);
+  return runtime;
 }
 
 static h2_pal_result_t test_firmware_info_get_current(
-    void *user,
-    h2_pal_firmware_info_t *out_info) {
-    const char *version = (const char *)user;
+    void* user, h2_pal_firmware_info_t* out_info) {
+  const char* version = (const char*)user;
 
-    memcpy(out_info->version, version, strlen(version) + 1u);
-    return H2_PAL_OK;
+  memcpy(out_info->version, version, strlen(version) + 1u);
+  return H2_PAL_OK;
 }
 
 static void test_runtime_firmware_info_provider(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    static const h2_pal_firmware_info_vtable_t firmware_info_vtable = {
-        .get_current = test_firmware_info_get_current,
-    };
-    h2_pal_firmware_info_api_t firmware_info_api = {
-        .user = (void *)"runtime-version",
-        .vtable = &firmware_info_vtable,
-    };
-    h2_runtime_config_t config = test_runtime_config(&env);
-    config.firmware_info = &firmware_info_api;
-    h2_runtime_t *runtime = NULL;
+  test_runtime_env_t env;
+  test_env_init(&env);
+  static const h2_pal_firmware_info_vtable_t firmware_info_vtable = {
+      .get_current = test_firmware_info_get_current,
+  };
+  h2_pal_firmware_info_api_t firmware_info_api = {
+      .user = (void*)"runtime-version",
+      .vtable = &firmware_info_vtable,
+  };
+  h2_runtime_config_t config = test_runtime_config(&env);
+  config.firmware_info = &firmware_info_api;
+  h2_runtime_t* runtime = NULL;
 
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
-    assert(runtime->firmware_info != &firmware_info_api);
-    h2_pal_firmware_info_t firmware_info;
-    assert(h2_pal_firmware_info_get_current(
-               runtime->firmware_info,
-               &firmware_info) == H2_PAL_OK);
-    assert(strcmp(firmware_info.version, "runtime-version") == 0);
-    h2_runtime_deinit(runtime);
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  assert(runtime->firmware_info != &firmware_info_api);
+  h2_pal_firmware_info_t firmware_info;
+  assert(h2_pal_firmware_info_get_current(runtime->firmware_info,
+                                          &firmware_info) == H2_PAL_OK);
+  assert(strcmp(firmware_info.version, "runtime-version") == 0);
+  h2_runtime_deinit(runtime);
 
-    config.firmware_info = NULL;
+  config.firmware_info = NULL;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_ERR_INVALID_ARG);
+  assert(runtime == NULL);
+  config = test_runtime_config(&env);
+  static const char* const invalid_names[] = {
+      "",
+      "bad\nname",
+      "123456789012345678901234567890",
+      "中文",
+  };
+  for (size_t i = 0u; i < sizeof(invalid_names) / sizeof(invalid_names[0]);
+       ++i) {
+    config.ble_local_name = invalid_names[i];
     assert(h2_runtime_init(&config, &runtime) == H2_PAL_ERR_INVALID_ARG);
     assert(runtime == NULL);
-    config = test_runtime_config(&env);
-    static const char *const invalid_names[] = {
-        "", "bad\nname", "123456789012345678901234567890", "中文",
-    };
-    for (size_t i = 0u; i < sizeof(invalid_names) / sizeof(invalid_names[0]); ++i) {
-        config.ble_local_name = invalid_names[i];
-        assert(h2_runtime_init(&config, &runtime) == H2_PAL_ERR_INVALID_ARG);
-        assert(runtime == NULL);
-    }
-    config.ble_local_name = "12345678901234567890123456789";
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
-    assert(strcmp(runtime->ble_local_name, config.ble_local_name) == 0);
-    h2_runtime_deinit(runtime);
+  }
+  config.ble_local_name = "12345678901234567890123456789";
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  assert(strcmp(runtime->ble_local_name, config.ble_local_name) == 0);
+  h2_runtime_deinit(runtime);
 }
 
 static void test_runtime_capabilities_are_bound_at_init(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    h2_runtime_t *runtime = test_runtime_create(&env);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  h2_runtime_t* runtime = test_runtime_create(&env);
 
-    assert(runtime->mem != &env.mem);
-    assert(runtime->firmware_info != h2_pal_unsupported_firmware_info_api());
-    assert(runtime->firmware_info->vtable ==
-           h2_pal_unsupported_firmware_info_api()->vtable);
-    assert(runtime->mem->user == env.mem.user);
-    assert(runtime->mem->vtable == env.mem.vtable);
-    assert(runtime->time != &env.time && runtime->time->vtable != env.time.vtable);
-    assert(runtime->queue != &env.queue && runtime->queue->vtable == env.queue.vtable);
-    assert(runtime->task != &env.task && runtime->task->vtable == env.task.vtable);
-    assert(runtime->sync != &env.sync && runtime->sync->vtable == env.sync.vtable);
-    assert(runtime->periph != &env.periph && runtime->periph->vtable == env.periph.vtable);
-    assert(runtime->button != &env.button && runtime->button->vtable == env.button.vtable);
-    assert(runtime->buzzer != h2_pal_unsupported_buzzer_api());
-    assert(runtime->buzzer->vtable == h2_pal_unsupported_buzzer_api()->vtable);
-    assert(runtime->nfc != &env.nfc && runtime->nfc->vtable == env.nfc.vtable);
-    assert(runtime->nfc_card_emulation != &env.nfc_card_emulation);
-    assert(runtime->nfc_card_emulation->user ==
-           env.nfc_card_emulation.user);
-    assert(runtime->nfc_card_emulation->vtable ==
-           env.nfc_card_emulation.vtable);
-    assert(runtime->imu != &env.imu && runtime->imu->vtable == env.imu.vtable);
-    assert(runtime->display != h2_pal_unsupported_display_api());
-    assert(runtime->display->vtable == h2_pal_unsupported_display_api()->vtable);
-    assert(runtime->system_event != h2_pal_unsupported_system_event_api());
-    assert(runtime->system_event->vtable == h2_pal_unsupported_system_event_api()->vtable);
-    assert(runtime->video_decoder != h2_pal_unsupported_video_decoder_api());
-    assert(runtime->video_decoder->vtable == h2_pal_unsupported_video_decoder_api()->vtable);
-    assert(runtime->wifi_csi != h2_pal_unsupported_wifi_csi_api());
-    assert(runtime->wifi_csi->vtable == h2_pal_unsupported_wifi_csi_api()->vtable);
-    assert(runtime->private_state != NULL);
-    assert(runtime->private_state->input_source_capacity ==
-           H2_RUNTIME_DEFAULT_INPUT_SOURCE_CAPACITY);
-    assert(runtime->private_state->component_mapping_capacity ==
-           H2_RUNTIME_DEFAULT_COMPONENT_MAPPING_CAPACITY);
-    assert(runtime->private_state->event_payload_capacity ==
-           H2_RUNTIME_EVENT_PAYLOAD_MAX);
+  assert(runtime->mem != &env.mem);
+  assert(runtime->firmware_info != h2_pal_unsupported_firmware_info_api());
+  assert(runtime->firmware_info->vtable ==
+         h2_pal_unsupported_firmware_info_api()->vtable);
+  assert(runtime->mem->user == env.mem.user);
+  assert(runtime->mem->vtable == env.mem.vtable);
+  assert(runtime->time != &env.time &&
+         runtime->time->vtable != env.time.vtable);
+  assert(runtime->queue != &env.queue &&
+         runtime->queue->vtable == env.queue.vtable);
+  assert(runtime->task != &env.task &&
+         runtime->task->vtable == env.task.vtable);
+  assert(runtime->sync != &env.sync &&
+         runtime->sync->vtable == env.sync.vtable);
+  assert(runtime->periph != &env.periph &&
+         runtime->periph->vtable == env.periph.vtable);
+  assert(runtime->button != &env.button &&
+         runtime->button->vtable == env.button.vtable);
+  assert(runtime->buzzer != h2_pal_unsupported_buzzer_api());
+  assert(runtime->buzzer->vtable == h2_pal_unsupported_buzzer_api()->vtable);
+  assert(runtime->nfc != &env.nfc && runtime->nfc->vtable == env.nfc.vtable);
+  assert(runtime->nfc_card_emulation != &env.nfc_card_emulation);
+  assert(runtime->nfc_card_emulation->user == env.nfc_card_emulation.user);
+  assert(runtime->nfc_card_emulation->vtable == env.nfc_card_emulation.vtable);
+  assert(runtime->imu != &env.imu && runtime->imu->vtable == env.imu.vtable);
+  assert(runtime->display != h2_pal_unsupported_display_api());
+  assert(runtime->display->vtable == h2_pal_unsupported_display_api()->vtable);
+  assert(runtime->system_event != h2_pal_unsupported_system_event_api());
+  assert(runtime->system_event->vtable ==
+         h2_pal_unsupported_system_event_api()->vtable);
+  assert(runtime->video_decoder != h2_pal_unsupported_video_decoder_api());
+  assert(runtime->video_decoder->vtable ==
+         h2_pal_unsupported_video_decoder_api()->vtable);
+  assert(runtime->wifi_csi != h2_pal_unsupported_wifi_csi_api());
+  assert(runtime->wifi_csi->vtable ==
+         h2_pal_unsupported_wifi_csi_api()->vtable);
+  assert(runtime->private_state != NULL);
+  assert(runtime->private_state->input_source_capacity ==
+         H2_RUNTIME_DEFAULT_INPUT_SOURCE_CAPACITY);
+  assert(runtime->private_state->component_mapping_capacity ==
+         H2_RUNTIME_DEFAULT_COMPONENT_MAPPING_CAPACITY);
+  assert(runtime->private_state->event_payload_capacity ==
+         H2_RUNTIME_EVENT_PAYLOAD_MAX);
 
-    h2_pal_nfc_card_emulation_capabilities_t capabilities;
-    assert(h2_pal_nfc_card_emulation_get_capabilities(
-               runtime->nfc_card_emulation,
-               1u,
-               &capabilities) == H2_PAL_OK);
-    assert(env.nfc_card_emulation_state.capability_calls == 1u);
-    assert(env.nfc_card_emulation_state.last_periph_id == 1u);
+  h2_pal_nfc_card_emulation_capabilities_t capabilities;
+  assert(h2_pal_nfc_card_emulation_get_capabilities(
+             runtime->nfc_card_emulation, 1u, &capabilities) == H2_PAL_OK);
+  assert(env.nfc_card_emulation_state.capability_calls == 1u);
+  assert(env.nfc_card_emulation_state.last_periph_id == 1u);
 
-    h2_runtime_deinit(runtime);
+  h2_runtime_deinit(runtime);
 }
 
 static void test_runtime_rejects_incomplete_video_decoder(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    static const h2_pal_video_decoder_vtable_t incomplete_vtable = {0};
-    const h2_pal_video_decoder_api_t incomplete_api = {
-        .user = NULL,
-        .vtable = &incomplete_vtable,
-    };
-    h2_runtime_config_t config = test_runtime_config(&env);
-    h2_runtime_t *runtime = (h2_runtime_t *)(uintptr_t)1u;
+  test_runtime_env_t env;
+  test_env_init(&env);
+  static const h2_pal_video_decoder_vtable_t incomplete_vtable = {0};
+  const h2_pal_video_decoder_api_t incomplete_api = {
+      .user = NULL,
+      .vtable = &incomplete_vtable,
+  };
+  h2_runtime_config_t config = test_runtime_config(&env);
+  h2_runtime_t* runtime = (h2_runtime_t*)(uintptr_t)1u;
 
-    config.video_decoder = NULL;
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_ERR_INVALID_ARG);
-    assert(runtime == NULL);
+  config.video_decoder = NULL;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_ERR_INVALID_ARG);
+  assert(runtime == NULL);
 
-    runtime = (h2_runtime_t *)(uintptr_t)1u;
-    config.video_decoder = &incomplete_api;
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_ERR_INVALID_ARG);
-    assert(runtime == NULL);
+  runtime = (h2_runtime_t*)(uintptr_t)1u;
+  config.video_decoder = &incomplete_api;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_ERR_INVALID_ARG);
+  assert(runtime == NULL);
 }
 
 static void test_runtime_rejects_missing_wifi_csi(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    h2_runtime_config_t config = test_runtime_config(&env);
-    h2_runtime_t *runtime = (h2_runtime_t *)(uintptr_t)1u;
+  test_runtime_env_t env;
+  test_env_init(&env);
+  h2_runtime_config_t config = test_runtime_config(&env);
+  h2_runtime_t* runtime = (h2_runtime_t*)(uintptr_t)1u;
 
-    config.wifi_csi = NULL;
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_ERR_INVALID_ARG);
-    assert(runtime == NULL);
+  config.wifi_csi = NULL;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_ERR_INVALID_ARG);
+  assert(runtime == NULL);
 }
 
 static void test_runtime_rejects_missing_nfc_card_emulation(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    h2_runtime_config_t config = test_runtime_config(&env);
-    h2_runtime_t *runtime = (h2_runtime_t *)(uintptr_t)1u;
+  test_runtime_env_t env;
+  test_env_init(&env);
+  h2_runtime_config_t config = test_runtime_config(&env);
+  h2_runtime_t* runtime = (h2_runtime_t*)(uintptr_t)1u;
 
-    config.nfc_card_emulation = NULL;
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_ERR_INVALID_ARG);
-    assert(runtime == NULL);
+  config.nfc_card_emulation = NULL;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_ERR_INVALID_ARG);
+  assert(runtime == NULL);
 }
 
 static void test_runtime_buzzer_contract(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    h2_runtime_config_t config = test_runtime_config(&env);
-    config.buzzer = h2_runtime_test_buzzer_api();
-    h2_runtime_t *runtime = NULL;
+  test_runtime_env_t env;
+  test_env_init(&env);
+  h2_runtime_config_t config = test_runtime_config(&env);
+  config.buzzer = h2_runtime_test_buzzer_api();
+  h2_runtime_t* runtime = NULL;
 
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
-    h2_runtime_test_buzzer_binding(runtime);
-    h2_runtime_deinit(runtime);
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  h2_runtime_test_buzzer_binding(runtime);
+  h2_runtime_deinit(runtime);
 
-    config = test_runtime_config(&env);
-    config.buzzer = NULL;
-    runtime = (h2_runtime_t *)(uintptr_t)1u;
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_ERR_INVALID_ARG);
-    assert(runtime == NULL);
+  config = test_runtime_config(&env);
+  config.buzzer = NULL;
+  runtime = (h2_runtime_t*)(uintptr_t)1u;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_ERR_INVALID_ARG);
+  assert(runtime == NULL);
 
-    config = test_runtime_config(&env);
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
-    h2_pal_buzzer_info_t info;
-    assert(h2_pal_buzzer_get_info(runtime->buzzer, 1u, &info) ==
-           H2_PAL_ERR_UNSUPPORTED);
-    assert(h2_pal_buzzer_start(runtime->buzzer, 1u, 440u, 50u) ==
-           H2_PAL_ERR_UNSUPPORTED);
-    assert(h2_pal_buzzer_stop(runtime->buzzer, 1u) == H2_PAL_ERR_UNSUPPORTED);
-    h2_runtime_deinit(runtime);
+  config = test_runtime_config(&env);
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  h2_pal_buzzer_info_t info;
+  assert(h2_pal_buzzer_get_info(runtime->buzzer, 1u, &info) ==
+         H2_PAL_ERR_UNSUPPORTED);
+  assert(h2_pal_buzzer_start(runtime->buzzer, 1u, 440u, 50u) ==
+         H2_PAL_ERR_UNSUPPORTED);
+  assert(h2_pal_buzzer_stop(runtime->buzzer, 1u) == H2_PAL_ERR_UNSUPPORTED);
+  h2_runtime_deinit(runtime);
 }
 
 static void test_runtime_binds_unsupported_nfc_card_emulation(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    h2_runtime_config_t config = test_runtime_config(&env);
-    config.nfc_card_emulation =
-        h2_pal_unsupported_nfc_card_emulation_api();
-    h2_runtime_t *runtime = NULL;
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
-    h2_pal_nfc_card_emulation_capabilities_t capabilities;
-    assert(h2_pal_nfc_card_emulation_get_capabilities(
-               runtime->nfc_card_emulation,
-               1u,
-               &capabilities) == H2_PAL_ERR_UNSUPPORTED);
-    h2_runtime_deinit(runtime);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  h2_runtime_config_t config = test_runtime_config(&env);
+  config.nfc_card_emulation = h2_pal_unsupported_nfc_card_emulation_api();
+  h2_runtime_t* runtime = NULL;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  h2_pal_nfc_card_emulation_capabilities_t capabilities;
+  assert(h2_pal_nfc_card_emulation_get_capabilities(runtime->nfc_card_emulation,
+                                                    1u, &capabilities) ==
+         H2_PAL_ERR_UNSUPPORTED);
+  h2_runtime_deinit(runtime);
 }
 
 static void test_runtime_private_allocation_failure_cleans_up(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    env.allocator_state.fail_on_call = 2u;
-    env.allocator_state.fill_allocations_nonzero = 1;
-    h2_runtime_config_t config = test_runtime_config(&env);
-    h2_runtime_t *runtime = (h2_runtime_t *)(uintptr_t)1u;
+  test_runtime_env_t env;
+  test_env_init(&env);
+  env.allocator_state.fail_on_call = 2u;
+  env.allocator_state.fill_allocations_nonzero = 1;
+  h2_runtime_config_t config = test_runtime_config(&env);
+  h2_runtime_t* runtime = (h2_runtime_t*)(uintptr_t)1u;
 
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_ERR_NO_MEMORY);
-    assert(runtime == NULL);
-    assert(env.allocator_state.alloc_calls == 2u);
-    assert(env.allocator_state.free_calls == 1u);
-    assert(env.allocator_state.live_allocations == 0u);
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_ERR_NO_MEMORY);
+  assert(runtime == NULL);
+  assert(env.allocator_state.alloc_calls == 2u);
+  assert(env.allocator_state.free_calls == 1u);
+  assert(env.allocator_state.live_allocations == 0u);
 }
 
-static void add_periph(
-    test_runtime_env_t *env,
-    h2_pal_periph_id_t periph_id,
-    h2_pal_periph_type_t type,
-    const void *payload,
-    size_t payload_size) {
-    env->periphs.infos[env->periphs.count++] = (h2_pal_periph_info_t){
-        .id = periph_id,
-        .type = type,
-        .payload = payload,
-        .payload_size = payload_size,
-    };
+static void add_periph(test_runtime_env_t* env, h2_pal_periph_id_t periph_id,
+                       h2_pal_periph_type_t type, const void* payload,
+                       size_t payload_size) {
+  env->periphs.infos[env->periphs.count++] = (h2_pal_periph_info_t){
+      .id = periph_id,
+      .type = type,
+      .payload = payload,
+      .payload_size = payload_size,
+  };
 }
 
 static void test_runtime_uses_initialization_capacities(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    const size_t payload_capacity =
-        h2_runtime_system_event_payload_capacity_min();
-    h2_runtime_config_t config = test_runtime_config(&env);
-    config.input_source_capacity = 3u;
-    config.component_mapping_capacity = 6u;
-    config.event_payload_capacity = payload_capacity;
-    h2_runtime_t *runtime = NULL;
+  test_runtime_env_t env;
+  test_env_init(&env);
+  const size_t payload_capacity =
+      h2_runtime_system_event_payload_capacity_min();
+  h2_runtime_config_t config = test_runtime_config(&env);
+  config.input_source_capacity = 3u;
+  config.component_mapping_capacity = 6u;
+  config.event_payload_capacity = payload_capacity;
+  h2_runtime_t* runtime = NULL;
 
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
-    assert(runtime->private_state->input_source_capacity == 3u);
-    assert(runtime->private_state->component_mapping_capacity == 6u);
-    assert(runtime->private_state->input_pending_event_capacity == 4u);
-    assert(runtime->private_state->event_payload_capacity == payload_capacity);
-    assert(runtime->private_state->event_queue->item_size ==
-           offsetof(h2_runtime_queued_event_t, payload) + payload_capacity);
-    assert((uintptr_t)runtime->private_state->component_mappings %
-               _Alignof(h2_runtime_component_mapping_t) ==
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  assert(runtime->private_state->input_source_capacity == 3u);
+  assert(runtime->private_state->component_mapping_capacity == 6u);
+  assert(runtime->private_state->input_pending_event_capacity == 4u);
+  assert(runtime->private_state->event_payload_capacity == payload_capacity);
+  assert(runtime->private_state->event_queue->item_size ==
+         offsetof(h2_runtime_queued_event_t, payload) + payload_capacity);
+  assert((uintptr_t)runtime->private_state->component_mappings %
+             _Alignof(h2_runtime_component_mapping_t) ==
+         0u);
+  assert((uintptr_t)runtime->private_state->input_sources %
+             _Alignof(h2_runtime_input_source_t) ==
+         0u);
+  assert((uintptr_t)runtime->private_state->input_pending_events %
+             _Alignof(h2_runtime_input_pending_event_t) ==
+         0u);
+  for (size_t index = 0u; index < H2_RUNTIME_STATE_SLOT_COUNT; ++index) {
+    assert(
+        runtime->private_state->state_publication.banks[index].entry_capacity ==
+        3u);
+    assert((uintptr_t)runtime->private_state->state_publication.banks[index]
+                   .entries %
+               _Alignof(h2_runtime_state_entry_t) ==
            0u);
-    assert((uintptr_t)runtime->private_state->input_sources %
-               _Alignof(h2_runtime_input_source_t) ==
-           0u);
-    assert((uintptr_t)runtime->private_state->input_pending_events %
-               _Alignof(h2_runtime_input_pending_event_t) ==
-           0u);
-    for (size_t index = 0u;
-         index < H2_RUNTIME_STATE_SLOT_COUNT;
-         ++index) {
-        assert(runtime->private_state->state_publication.banks[index]
-                   .entry_capacity == 3u);
-        assert((uintptr_t)runtime->private_state->state_publication
-                       .banks[index]
-                       .entries %
-                   _Alignof(h2_runtime_state_entry_t) ==
-               0u);
-    }
+  }
 
-    h2_runtime_deinit(runtime);
-    assert(env.allocator_state.live_allocations == 0u);
+  h2_runtime_deinit(runtime);
+  assert(env.allocator_state.live_allocations == 0u);
 }
 
 static void test_runtime_rejects_invalid_initialization_capacities(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    h2_runtime_config_t config = test_runtime_config(&env);
-    config.event_payload_capacity =
-        h2_runtime_system_event_payload_capacity_min() - 1u;
-    h2_runtime_t *runtime = (h2_runtime_t *)(uintptr_t)1u;
+  test_runtime_env_t env;
+  test_env_init(&env);
+  h2_runtime_config_t config = test_runtime_config(&env);
+  config.event_payload_capacity =
+      h2_runtime_system_event_payload_capacity_min() - 1u;
+  h2_runtime_t* runtime = (h2_runtime_t*)(uintptr_t)1u;
 
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_ERR_INVALID_ARG);
-    assert(runtime == NULL);
-    assert(env.allocator_state.alloc_calls == 0u);
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_ERR_INVALID_ARG);
+  assert(runtime == NULL);
+  assert(env.allocator_state.alloc_calls == 0u);
 
-    config.event_payload_capacity = H2_RUNTIME_EVENT_PAYLOAD_MAX + 1u;
-    runtime = (h2_runtime_t *)(uintptr_t)1u;
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_ERR_INVALID_ARG);
-    assert(runtime == NULL);
-    assert(env.allocator_state.alloc_calls == 0u);
+  config.event_payload_capacity = H2_RUNTIME_EVENT_PAYLOAD_MAX + 1u;
+  runtime = (h2_runtime_t*)(uintptr_t)1u;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_ERR_INVALID_ARG);
+  assert(runtime == NULL);
+  assert(env.allocator_state.alloc_calls == 0u);
 
-    config.event_payload_capacity =
-        h2_runtime_system_event_payload_capacity_min();
-    config.input_source_capacity = SIZE_MAX;
-    runtime = (h2_runtime_t *)(uintptr_t)1u;
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_ERR_INVALID_ARG);
-    assert(runtime == NULL);
-    assert(env.allocator_state.alloc_calls == 0u);
+  config.event_payload_capacity =
+      h2_runtime_system_event_payload_capacity_min();
+  config.input_source_capacity = SIZE_MAX;
+  runtime = (h2_runtime_t*)(uintptr_t)1u;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_ERR_INVALID_ARG);
+  assert(runtime == NULL);
+  assert(env.allocator_state.alloc_calls == 0u);
 }
 
 static void test_runtime_allocation_failures_release_owned_memory(void) {
-    for (size_t fail_on_call = 1u; fail_on_call <= 4u; ++fail_on_call) {
-        test_runtime_env_t env;
-        test_env_init(&env);
-        add_periph(&env, 401u, H2_PAL_PERIPH_TYPE_BATTERY, NULL, 0u);
-        env.allocator_state.fail_on_call = fail_on_call;
-        h2_runtime_config_t config = test_runtime_config(&env);
-        h2_runtime_t *runtime = (h2_runtime_t *)(uintptr_t)1u;
+  for (size_t fail_on_call = 1u; fail_on_call <= 4u; ++fail_on_call) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    add_periph(&env, 401u, H2_PAL_PERIPH_TYPE_BATTERY, NULL, 0u);
+    env.allocator_state.fail_on_call = fail_on_call;
+    h2_runtime_config_t config = test_runtime_config(&env);
+    h2_runtime_t* runtime = (h2_runtime_t*)(uintptr_t)1u;
 
-        assert(h2_runtime_init(&config, &runtime) == H2_PAL_ERR_NO_MEMORY);
-        assert(runtime == NULL);
-        assert(env.allocator_state.live_allocations == 0u);
-    }
+    assert(h2_runtime_init(&config, &runtime) == H2_PAL_ERR_NO_MEMORY);
+    assert(runtime == NULL);
+    assert(env.allocator_state.live_allocations == 0u);
+  }
 }
 
 static void test_runtime_mapping_queries_only_mapped_peripherals(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    for (h2_pal_periph_id_t id = 1u; id <= 7u; ++id) {
-        add_periph(&env, id, H2_PAL_PERIPH_TYPE_LED_STRIP, NULL, 0u);
-    }
-    add_periph(&env, 401u, H2_PAL_PERIPH_TYPE_BATTERY, NULL, 0u);
-    h2_runtime_config_t config = test_runtime_config(&env);
-    config.component_mapping_capacity = 1u;
-    h2_runtime_t *runtime = NULL;
+  test_runtime_env_t env;
+  test_env_init(&env);
+  for (h2_pal_periph_id_t id = 1u; id <= 7u; ++id) {
+    add_periph(&env, id, H2_PAL_PERIPH_TYPE_LED_STRIP, NULL, 0u);
+  }
+  add_periph(&env, 401u, H2_PAL_PERIPH_TYPE_BATTERY, NULL, 0u);
+  h2_runtime_config_t config = test_runtime_config(&env);
+  config.component_mapping_capacity = 1u;
+  h2_runtime_t* runtime = NULL;
 
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
-    assert(runtime->private_state->component_mapping_count == 1u);
-    assert(h2_runtime_find_component_mapping_by_periph(runtime, 401u) !=
-           NULL);
-    assert(env.periphs.get_calls == 1u);
-    /* Init resolves mapper entries and discovers input sources once. */
-    assert(env.periphs.list_calls == 1u);
-    assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_OK);
-    assert(env.periphs.get_calls == 1u);
-    assert(env.periphs.list_calls == 1u);
-    h2_runtime_deinit(runtime);
-    assert(env.allocator_state.live_allocations == 0u);
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  assert(runtime->private_state->component_mapping_count == 1u);
+  assert(h2_runtime_find_component_mapping_by_periph(runtime, 401u) != NULL);
+  assert(env.periphs.get_calls == 1u);
+  /* Init resolves mapper entries and discovers input sources once. */
+  assert(env.periphs.list_calls == 1u);
+  assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_OK);
+  assert(env.periphs.get_calls == 1u);
+  assert(env.periphs.list_calls == 1u);
+  h2_runtime_deinit(runtime);
+  assert(env.allocator_state.live_allocations == 0u);
 }
 
 static void test_runtime_reports_configured_capacity_exhaustion(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(&env, 1u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
-    add_periph(&env, 2u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
-    h2_runtime_config_t config = test_runtime_config(&env);
-    config.component_mapping_capacity = 1u;
-    h2_runtime_t *runtime = NULL;
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_ERR_NO_SPACE);
-    assert(runtime == NULL);
-    assert(env.allocator_state.live_allocations == 0u);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 1u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  add_periph(&env, 2u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  h2_runtime_config_t config = test_runtime_config(&env);
+  config.component_mapping_capacity = 1u;
+  h2_runtime_t* runtime = NULL;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_ERR_NO_SPACE);
+  assert(runtime == NULL);
+  assert(env.allocator_state.live_allocations == 0u);
 
-    test_env_init(&env);
-    add_periph(&env, 1u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
-    add_periph(&env, 2u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
-    /*
-     * Input source discovery runs during init, so capacity exhaustion is an
-     * initialization failure rather than something a later start reports.
-     */
-    config = test_runtime_config(&env);
-    config.component_mapping_capacity = 2u;
-    config.input_source_capacity = 1u;
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_ERR_NO_SPACE);
-    assert(runtime == NULL);
-    assert(env.allocator_state.live_allocations == 0u);
+  test_env_init(&env);
+  add_periph(&env, 1u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  add_periph(&env, 2u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  /*
+   * Input source discovery runs during init, so capacity exhaustion is an
+   * initialization failure rather than something a later start reports.
+   */
+  config = test_runtime_config(&env);
+  config.component_mapping_capacity = 2u;
+  config.input_source_capacity = 1u;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_ERR_NO_SPACE);
+  assert(runtime == NULL);
+  assert(env.allocator_state.live_allocations == 0u);
 }
 
 static void test_runtime_payload_capacity_only_limits_enqueue(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    const size_t system_event_capacity =
-        h2_runtime_system_event_payload_capacity_min();
-    const size_t payload_capacity =
-        system_event_capacity > 528u ? system_event_capacity : 528u;
-    h2_runtime_config_t config = test_runtime_config(&env);
-    config.event_payload_capacity = payload_capacity;
-    h2_runtime_t *runtime = NULL;
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  const size_t system_event_capacity =
+      h2_runtime_system_event_payload_capacity_min();
+  const size_t payload_capacity =
+      system_event_capacity > 528u ? system_event_capacity : 528u;
+  h2_runtime_config_t config = test_runtime_config(&env);
+  config.event_payload_capacity = payload_capacity;
+  h2_runtime_t* runtime = NULL;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
 
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    for (size_t index = 0u; index < sizeof(payload); ++index) {
-        payload[index] = (uint8_t)index;
-    }
-    assert(h2_runtime_emit_event(
-               runtime,
-               H2_RUNTIME_SYSTEM_EVENT_MODEM_READY,
-               H2_RUNTIME_COMPONENT_SYSTEM_MODEM,
-               H2_RUNTIME_COMPONENT_ID_NONE,
-               1u,
-               2u,
-               payload,
-               payload_capacity) == H2_PAL_OK);
-    assert(h2_runtime_emit_event(
-               runtime,
-               H2_RUNTIME_SYSTEM_EVENT_MODEM_READY,
-               H2_RUNTIME_COMPONENT_SYSTEM_MODEM,
-               H2_RUNTIME_COMPONENT_ID_NONE,
-               2u,
-               3u,
-               payload,
-               payload_capacity + 1u) == H2_PAL_ERR_INVALID_ARG);
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  for (size_t index = 0u; index < sizeof(payload); ++index) {
+    payload[index] = (uint8_t)index;
+  }
+  assert(h2_runtime_emit_event(runtime, H2_RUNTIME_SYSTEM_EVENT_MODEM_READY,
+                               H2_RUNTIME_COMPONENT_SYSTEM_MODEM,
+                               H2_RUNTIME_COMPONENT_ID_NONE, 1u, 2u, payload,
+                               payload_capacity) == H2_PAL_OK);
+  assert(h2_runtime_emit_event(
+             runtime, H2_RUNTIME_SYSTEM_EVENT_MODEM_READY,
+             H2_RUNTIME_COMPONENT_SYSTEM_MODEM, H2_RUNTIME_COMPONENT_ID_NONE,
+             2u, 3u, payload, payload_capacity + 1u) == H2_PAL_ERR_INVALID_ARG);
 
-    uint8_t selected_capacity_buffer[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = {
-        .payload = selected_capacity_buffer,
-        .payload_capacity = payload_capacity,
-    };
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_TRUNCATED);
+  uint8_t selected_capacity_buffer[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = {
+      .payload = selected_capacity_buffer,
+      .payload_capacity = payload_capacity,
+  };
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_TRUNCATED);
 
-    uint8_t app_buffer[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    event = (h2_runtime_event_t){
-        .payload = app_buffer,
-        .payload_capacity = sizeof(app_buffer),
-    };
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.payload_size == payload_capacity);
-    assert(memcmp(event.payload, payload, payload_capacity) == 0);
+  uint8_t app_buffer[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  event = (h2_runtime_event_t){
+      .payload = app_buffer,
+      .payload_capacity = sizeof(app_buffer),
+  };
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.payload_size == payload_capacity);
+  assert(memcmp(event.payload, payload, payload_capacity) == 0);
 
-    h2_runtime_deinit(runtime);
-    assert(env.allocator_state.live_allocations == 0u);
+  h2_runtime_deinit(runtime);
+  assert(env.allocator_state.live_allocations == 0u);
 }
 
-
-static h2_runtime_event_t event_with_payload(uint8_t *payload) {
-    return (h2_runtime_event_t){
-        .payload = payload,
-        .payload_capacity = H2_RUNTIME_EVENT_PAYLOAD_MAX,
-    };
+static h2_runtime_event_t event_with_payload(uint8_t* payload) {
+  return (h2_runtime_event_t){
+      .payload = payload,
+      .payload_capacity = H2_RUNTIME_EVENT_PAYLOAD_MAX,
+  };
 }
 
 static h2_runtime_button_action_event_t poll_button_action(
-    h2_runtime_t *runtime,
-    h2_runtime_event_t *event) {
-    assert(h2_runtime_poll_event(runtime, event) == H2_PAL_OK);
-    assert(event->kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION);
-    assert(event->payload_size == sizeof(h2_runtime_button_action_event_t));
-    h2_runtime_button_action_event_t action;
-    memcpy(&action, event->payload, sizeof(action));
-    assert(event->timestamp_ms >= action.pressed_at_ms);
-    assert(action.released_at_ms == 0u ||
-           action.released_at_ms == event->timestamp_ms);
-    return action;
+    h2_runtime_t* runtime, h2_runtime_event_t* event) {
+  assert(h2_runtime_poll_event(runtime, event) == H2_PAL_OK);
+  assert(event->kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION);
+  assert(event->payload_size == sizeof(h2_runtime_button_action_event_t));
+  h2_runtime_button_action_event_t action;
+  memcpy(&action, event->payload, sizeof(action));
+  assert(event->timestamp_ms >= action.pressed_at_ms);
+  assert(action.released_at_ms == 0u ||
+         action.released_at_ms == event->timestamp_ms);
+  return action;
 }
 
 static void assert_system_event_mapping(
-    test_runtime_env_t *env,
-    h2_runtime_t *runtime,
-    h2_pal_system_event_type_t pal_type,
-    const void *pal_payload,
-    size_t pal_payload_size,
-    h2_runtime_component_t component,
-    h2_runtime_event_kind_t kind,
-    size_t runtime_payload_size) {
-    assert(test_system_event_dispatch(env, pal_type, pal_payload, pal_payload_size) == H2_PAL_OK);
+    test_runtime_env_t* env, h2_runtime_t* runtime,
+    h2_pal_system_event_type_t pal_type, const void* pal_payload,
+    size_t pal_payload_size, h2_runtime_component_t component,
+    h2_runtime_event_kind_t kind, size_t runtime_payload_size) {
+  assert(test_system_event_dispatch(env, pal_type, pal_payload,
+                                    pal_payload_size) == H2_PAL_OK);
 
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = event_with_payload(payload);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.component == component);
-    assert(event.component_id == H2_RUNTIME_COMPONENT_ID_NONE);
-    assert(event.kind == kind);
-    assert(event.sequence != 0u);
-    assert(event.payload_size == runtime_payload_size);
-    if (component == H2_RUNTIME_COMPONENT_SYSTEM_WIFI &&
-        runtime_payload_size == sizeof(h2_runtime_system_event_wifi_sta_t)) {
-      const h2_pal_wifi_sta_status_t *pal = pal_payload;
-      h2_runtime_system_event_wifi_sta_t copied;
-      memcpy(&copied, event.payload, sizeof(copied));
-      assert(copied.ip_valid == pal->ip_valid && copied.ip.ip4 == pal->ip.ip4);
-      assert(copied.ip.ip6_valid == pal->ip.ip6_valid);
-      assert(memcmp(copied.ip.ip6, pal->ip.ip6, sizeof(pal->ip.ip6)) == 0);
-      h2_runtime_system_wifi_sta_state_t state;
-      assert(h2_runtime_system_state_wifi_sta(runtime, &state) == H2_PAL_OK);
-      assert(state.ip.ip6_valid == pal->ip.ip6_valid);
-      assert(memcmp(state.ip.ip6, pal->ip.ip6, sizeof(pal->ip.ip6)) == 0);
-    }
-    if (kind == H2_RUNTIME_SYSTEM_EVENT_MODEM_SIGNAL_CHANGED) {
-        const h2_pal_modem_signal_t *pal = pal_payload;
-        h2_runtime_system_event_modem_signal_t signal;
-        memcpy(&signal, event.payload, sizeof(signal));
-        assert(signal.rssi_dbm == pal->rssi_dbm && signal.rssi_valid == pal->rssi_valid);
-        assert(signal.rsrp_dbm == pal->rsrp_dbm && signal.rsrp_valid == pal->rsrp_valid);
-        assert(signal.ber == pal->ber);
-        assert(signal.rat == (h2_runtime_system_modem_rat_t)pal->rat);
-    }
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.component == component);
+  assert(event.component_id == H2_RUNTIME_COMPONENT_ID_NONE);
+  assert(event.kind == kind);
+  assert(event.sequence != 0u);
+  assert(event.payload_size == runtime_payload_size);
+  if (component == H2_RUNTIME_COMPONENT_SYSTEM_WIFI &&
+      runtime_payload_size == sizeof(h2_runtime_system_event_wifi_sta_t)) {
+    const h2_pal_wifi_sta_status_t* pal = pal_payload;
+    h2_runtime_system_event_wifi_sta_t copied;
+    memcpy(&copied, event.payload, sizeof(copied));
+    assert(copied.ip_valid == pal->ip_valid && copied.ip.ip4 == pal->ip.ip4);
+    assert(copied.ip.ip6_valid == pal->ip.ip6_valid);
+    assert(memcmp(copied.ip.ip6, pal->ip.ip6, sizeof(pal->ip.ip6)) == 0);
+    h2_runtime_system_wifi_sta_state_t state;
+    assert(h2_runtime_system_state_wifi_sta(runtime, &state) == H2_PAL_OK);
+    assert(state.ip.ip6_valid == pal->ip.ip6_valid);
+    assert(memcmp(state.ip.ip6, pal->ip.ip6, sizeof(pal->ip.ip6)) == 0);
+  }
+  if (kind == H2_RUNTIME_SYSTEM_EVENT_MODEM_SIGNAL_CHANGED) {
+    const h2_pal_modem_signal_t* pal = pal_payload;
+    h2_runtime_system_event_modem_signal_t signal;
+    memcpy(&signal, event.payload, sizeof(signal));
+    assert(signal.rssi_dbm == pal->rssi_dbm &&
+           signal.rssi_valid == pal->rssi_valid);
+    assert(signal.rsrp_dbm == pal->rsrp_dbm &&
+           signal.rsrp_valid == pal->rsrp_valid);
+    assert(signal.ber == pal->ber);
+    assert(signal.rat == (h2_runtime_system_modem_rat_t)pal->rat);
+  }
 }
 
 static h2_pal_wifi_sta_status_t test_wifi_sta_status(void) {
-    h2_pal_wifi_sta_status_t status;
-    memset(&status, 0, sizeof(status));
-    status.state = H2_PAL_WIFI_STA_STATE_GOT_IP;
-    memcpy(status.ssid, "ssid", 4u);
-    status.ssid_len = 4u;
-    status.bssid[0] = 0xaa;
-    status.bssid_set = 1u;
-    status.channel = 6u;
-    status.rssi = -45;
-    status.ip.ip4 = 0x01020304u;
-    status.ip_valid = 1u;
-    return status;
+  h2_pal_wifi_sta_status_t status;
+  memset(&status, 0, sizeof(status));
+  status.state = H2_PAL_WIFI_STA_STATE_GOT_IP;
+  memcpy(status.ssid, "ssid", 4u);
+  status.ssid_len = 4u;
+  status.bssid[0] = 0xaa;
+  status.bssid_set = 1u;
+  status.channel = 6u;
+  status.rssi = -45;
+  status.ip.ip4 = 0x01020304u;
+  status.ip_valid = 1u;
+  return status;
 }
 
 static h2_pal_wifi_ap_event_t test_wifi_ap_event(void) {
-    h2_pal_wifi_ap_event_t event;
-    memset(&event, 0, sizeof(event));
-    event.status.state = H2_PAL_WIFI_AP_STATE_STARTED;
-    memcpy(event.status.ssid, "ap", 2u);
-    event.status.ssid_len = 2u;
-    event.status.channel = 11u;
-    event.status.max_clients = 4u;
-    event.status.client_count = 1u;
-    event.status.security = H2_PAL_WIFI_SECURITY_WPA2;
-    return event;
+  h2_pal_wifi_ap_event_t event;
+  memset(&event, 0, sizeof(event));
+  event.status.state = H2_PAL_WIFI_AP_STATE_STARTED;
+  memcpy(event.status.ssid, "ap", 2u);
+  event.status.ssid_len = 2u;
+  event.status.channel = 11u;
+  event.status.max_clients = 4u;
+  event.status.client_count = 1u;
+  event.status.security = H2_PAL_WIFI_SECURITY_WPA2;
+  return event;
 }
 
 static h2_pal_wifi_ap_client_event_t test_wifi_client_event(void) {
-    h2_pal_wifi_ap_client_event_t event;
-    memset(&event, 0, sizeof(event));
-    event.client.mac[0] = 0x10u;
-    event.client.rssi = -50;
-    event.client.lease.ip4 = 0x0a000002u;
-    event.client.lease_valid = 1u;
-    event.client.station_id = 3;
-    return event;
+  h2_pal_wifi_ap_client_event_t event;
+  memset(&event, 0, sizeof(event));
+  event.client.mac[0] = 0x10u;
+  event.client.rssi = -50;
+  event.client.lease.ip4 = 0x0a000002u;
+  event.client.lease_valid = 1u;
+  event.client.station_id = 3;
+  return event;
 }
 
 static h2_pal_ble_connection_t test_ble_connection(void) {
-    h2_pal_ble_connection_t connection;
-    memset(&connection, 0, sizeof(connection));
-    connection.conn_handle = 7u;
-    connection.role = H2_PAL_BLE_ROLE_CENTRAL;
-    connection.peer_addr.type = H2_PAL_BLE_ADDR_TYPE_RANDOM;
-    connection.peer_addr.value[0] = 0x22u;
-    connection.mtu = 247u;
-    return connection;
+  h2_pal_ble_connection_t connection;
+  memset(&connection, 0, sizeof(connection));
+  connection.conn_handle = 7u;
+  connection.role = H2_PAL_BLE_ROLE_CENTRAL;
+  connection.peer_addr.type = H2_PAL_BLE_ADDR_TYPE_RANDOM;
+  connection.peer_addr.value[0] = 0x22u;
+  connection.mtu = 247u;
+  return connection;
 }
 
 static h2_pal_ble_gatt_client_value_t test_ble_gatt_value(void) {
-    h2_pal_ble_gatt_client_value_t value;
-    memset(&value, 0, sizeof(value));
-    value.conn_handle = 7u;
-    value.attr_handle = 9u;
-    value.value_len = 2u;
-    value.value[0] = 0xabu;
-    value.value[1] = 0xcdu;
-    return value;
+  h2_pal_ble_gatt_client_value_t value;
+  memset(&value, 0, sizeof(value));
+  value.conn_handle = 7u;
+  value.attr_handle = 9u;
+  value.value_len = 2u;
+  value.value[0] = 0xabu;
+  value.value[1] = 0xcdu;
+  return value;
 }
 
 static h2_pal_modem_status_t test_modem_status(void) {
-    h2_pal_modem_status_t status;
-    memset(&status, 0, sizeof(status));
-    status.capabilities = H2_PAL_MODEM_CAPABILITY_DATA | H2_PAL_MODEM_CAPABILITY_CALL;
-    status.sim = H2_PAL_MODEM_SIM_STATE_READY;
-    status.registration = H2_PAL_MODEM_REGISTRATION_HOME;
-    status.packet = H2_PAL_MODEM_PACKET_CONNECTED;
-    status.rat = H2_PAL_MODEM_RAT_LTE;
-    return status;
+  h2_pal_modem_status_t status;
+  memset(&status, 0, sizeof(status));
+  status.capabilities =
+      H2_PAL_MODEM_CAPABILITY_DATA | H2_PAL_MODEM_CAPABILITY_CALL;
+  status.sim = H2_PAL_MODEM_SIM_STATE_READY;
+  status.registration = H2_PAL_MODEM_REGISTRATION_HOME;
+  status.packet = H2_PAL_MODEM_PACKET_CONNECTED;
+  status.rat = H2_PAL_MODEM_RAT_LTE;
+  return status;
 }
 
 static h2_pal_modem_call_event_t test_modem_call_event(void) {
-    h2_pal_modem_call_event_t event;
-    memset(&event, 0, sizeof(event));
-    event.call.call_id = 2;
-    event.call.direction = H2_PAL_MODEM_CALL_DIRECTION_INCOMING;
-    event.call.state = H2_PAL_MODEM_CALL_STATE_ACTIVE;
-    memcpy(event.call.number, "+123", 5u);
-    return event;
+  h2_pal_modem_call_event_t event;
+  memset(&event, 0, sizeof(event));
+  event.call.call_id = 2;
+  event.call.direction = H2_PAL_MODEM_CALL_DIRECTION_INCOMING;
+  event.call.state = H2_PAL_MODEM_CALL_STATE_ACTIVE;
+  memcpy(event.call.number, "+123", 5u);
+  return event;
 }
 
 static void test_system_event_lifecycle_and_gpio_payload_copy(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    env.time_state.now_ms = 55u;
-    h2_runtime_t *runtime = test_runtime_create_with_system_events(&env);
-    assert(env.system_event_state.init_calls == 1u);
-    assert(env.system_event_state.subscribe_calls ==
-           (size_t)H2_PAL_SYSTEM_EVENT_TYPE_COUNT - 1u);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  env.time_state.now_ms = 55u;
+  h2_runtime_t* runtime = test_runtime_create_with_system_events(&env);
+  assert(env.system_event_state.init_calls == 1u);
+  assert(env.system_event_state.subscribe_calls ==
+         (size_t)H2_PAL_SYSTEM_EVENT_TYPE_COUNT - 1u);
 
-    h2_pal_gpio_irq_event_t pal = {
-        .trigger = H2_PAL_GPIO_IRQ_TRIGGER_RISING,
-    };
-    assert(test_system_event_dispatch(
-        &env,
-        H2_PAL_SYSTEM_EVENT_TYPE_GPIO_IRQ,
-        &pal,
-        sizeof(pal)) == H2_PAL_OK);
-    pal.trigger = H2_PAL_GPIO_IRQ_TRIGGER_FALLING;
+  h2_pal_gpio_irq_event_t pal = {
+      .trigger = H2_PAL_GPIO_IRQ_TRIGGER_RISING,
+  };
+  assert(test_system_event_dispatch(&env, H2_PAL_SYSTEM_EVENT_TYPE_GPIO_IRQ,
+                                    &pal, sizeof(pal)) == H2_PAL_OK);
+  pal.trigger = H2_PAL_GPIO_IRQ_TRIGGER_FALLING;
 
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = event_with_payload(payload);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.component == H2_RUNTIME_COMPONENT_SYSTEM_GPIO_IRQ);
-    assert(event.component_id == H2_RUNTIME_COMPONENT_ID_NONE);
-    assert(event.kind == H2_RUNTIME_SYSTEM_EVENT_GPIO_IRQ_TRIGGERED);
-    assert(event.sequence == 1u);
-    assert(event.timestamp_ms == 55u);
-    assert(event.payload_size == sizeof(h2_runtime_system_event_gpio_irq_t));
-    const h2_runtime_system_event_gpio_irq_t *gpio =
-        (const h2_runtime_system_event_gpio_irq_t *)event.payload;
-    assert(gpio->trigger == H2_RUNTIME_SYSTEM_GPIO_IRQ_TRIGGER_RISING);
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.component == H2_RUNTIME_COMPONENT_SYSTEM_GPIO_IRQ);
+  assert(event.component_id == H2_RUNTIME_COMPONENT_ID_NONE);
+  assert(event.kind == H2_RUNTIME_SYSTEM_EVENT_GPIO_IRQ_TRIGGERED);
+  assert(event.sequence == 1u);
+  assert(event.timestamp_ms == 55u);
+  assert(event.payload_size == sizeof(h2_runtime_system_event_gpio_irq_t));
+  const h2_runtime_system_event_gpio_irq_t* gpio =
+      (const h2_runtime_system_event_gpio_irq_t*)event.payload;
+  assert(gpio->trigger == H2_RUNTIME_SYSTEM_GPIO_IRQ_TRIGGER_RISING);
 
-    h2_runtime_system_gpio_irq_state_t state;
-    assert(h2_runtime_system_state_gpio_irq(runtime, &state) == H2_PAL_ERR_UNSUPPORTED);
+  h2_runtime_system_gpio_irq_state_t state;
+  assert(h2_runtime_system_state_gpio_irq(runtime, &state) ==
+         H2_PAL_ERR_UNSUPPORTED);
 
-    h2_pal_system_event_subscription_t old_subscription = env.system_event_state.subscriptions[0];
-    h2_runtime_stop_system_events(runtime);
-    assert(env.system_event_state.unsubscribe_calls ==
-           (size_t)H2_PAL_SYSTEM_EVENT_TYPE_COUNT - 1u);
-    assert(env.system_event_state.deinit_calls == 1u);
-    h2_pal_system_event_t event_after_stop = {
-        .type = H2_PAL_SYSTEM_EVENT_TYPE_GPIO_IRQ,
-        .payload = &pal,
-        .payload_size = sizeof(pal),
-    };
-    assert(old_subscription.handler(old_subscription.handler_user, &event_after_stop) ==
-           H2_PAL_ERR_CLOSED);
+  h2_pal_system_event_subscription_t old_subscription =
+      env.system_event_state.subscriptions[0];
+  h2_runtime_stop_system_events(runtime);
+  assert(env.system_event_state.unsubscribe_calls ==
+         (size_t)H2_PAL_SYSTEM_EVENT_TYPE_COUNT - 1u);
+  assert(env.system_event_state.deinit_calls == 1u);
+  h2_pal_system_event_t event_after_stop = {
+      .type = H2_PAL_SYSTEM_EVENT_TYPE_GPIO_IRQ,
+      .payload = &pal,
+      .payload_size = sizeof(pal),
+  };
+  assert(old_subscription.handler(old_subscription.handler_user,
+                                  &event_after_stop) == H2_PAL_ERR_CLOSED);
 
-    h2_runtime_deinit(runtime);
-    assert(env.system_event_state.deinit_calls == 1u);
+  h2_runtime_deinit(runtime);
+  assert(env.system_event_state.deinit_calls == 1u);
 }
 
 static void test_system_event_maximum_ble_value_is_copied(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    const size_t system_event_capacity =
-        h2_runtime_system_event_payload_capacity_min();
-    const size_t payload_capacity =
-        system_event_capacity > 528u ? system_event_capacity : 528u;
-    h2_runtime_config_t config = test_runtime_config(&env);
-    config.system_event = &env.system_event;
-    config.event_payload_capacity = payload_capacity;
-    h2_runtime_t *runtime = NULL;
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
-    assert(runtime->private_state->event_payload_capacity == payload_capacity);
-    assert(runtime->private_state->event_queue->item_size ==
-           offsetof(h2_runtime_queued_event_t, payload) + payload_capacity);
-    h2_pal_ble_gatt_client_value_t pal;
-    memset(&pal, 0, sizeof(pal));
-    pal.conn_handle = 17u;
-    pal.attr_handle = 29u;
-    pal.value_len = H2_RUNTIME_SYSTEM_BLE_ATT_MAX_VALUE_LEN;
-    for (size_t i = 0u; i < pal.value_len; ++i) {
-        pal.value[i] = (uint8_t)(i ^ 0xa5u);
-    }
+  test_runtime_env_t env;
+  test_env_init(&env);
+  const size_t system_event_capacity =
+      h2_runtime_system_event_payload_capacity_min();
+  const size_t payload_capacity =
+      system_event_capacity > 528u ? system_event_capacity : 528u;
+  h2_runtime_config_t config = test_runtime_config(&env);
+  config.system_event = &env.system_event;
+  config.event_payload_capacity = payload_capacity;
+  h2_runtime_t* runtime = NULL;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  assert(runtime->private_state->event_payload_capacity == payload_capacity);
+  assert(runtime->private_state->event_queue->item_size ==
+         offsetof(h2_runtime_queued_event_t, payload) + payload_capacity);
+  h2_pal_ble_gatt_client_value_t pal;
+  memset(&pal, 0, sizeof(pal));
+  pal.conn_handle = 17u;
+  pal.attr_handle = 29u;
+  pal.value_len = H2_RUNTIME_SYSTEM_BLE_ATT_MAX_VALUE_LEN;
+  for (size_t i = 0u; i < pal.value_len; ++i) {
+    pal.value[i] = (uint8_t)(i ^ 0xa5u);
+  }
 
-    assert(test_system_event_dispatch(
-        &env,
-        H2_PAL_SYSTEM_EVENT_TYPE_BLE_GATT_CLIENT_NOTIFICATION,
-        &pal,
-        sizeof(pal)) == H2_PAL_OK);
-    memset(pal.value, 0, sizeof(pal.value));
+  assert(test_system_event_dispatch(
+             &env, H2_PAL_SYSTEM_EVENT_TYPE_BLE_GATT_CLIENT_NOTIFICATION, &pal,
+             sizeof(pal)) == H2_PAL_OK);
+  memset(pal.value, 0, sizeof(pal.value));
 
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = {
-        .payload = payload,
-        .payload_capacity = sizeof(payload),
-    };
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.payload_size ==
-           sizeof(h2_runtime_system_event_ble_gatt_client_value_t));
-    const h2_runtime_system_event_ble_gatt_client_value_t *value =
-        (const h2_runtime_system_event_ble_gatt_client_value_t *)event.payload;
-    assert(value->conn_handle == 17u);
-    assert(value->attr_handle == 29u);
-    assert(value->value_len == H2_RUNTIME_SYSTEM_BLE_ATT_MAX_VALUE_LEN);
-    for (size_t i = 0u; i < value->value_len; ++i) {
-        assert(value->value[i] == (uint8_t)(i ^ 0xa5u));
-    }
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = {
+      .payload = payload,
+      .payload_capacity = sizeof(payload),
+  };
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.payload_size ==
+         sizeof(h2_runtime_system_event_ble_gatt_client_value_t));
+  const h2_runtime_system_event_ble_gatt_client_value_t* value =
+      (const h2_runtime_system_event_ble_gatt_client_value_t*)event.payload;
+  assert(value->conn_handle == 17u);
+  assert(value->attr_handle == 29u);
+  assert(value->value_len == H2_RUNTIME_SYSTEM_BLE_ATT_MAX_VALUE_LEN);
+  for (size_t i = 0u; i < value->value_len; ++i) {
+    assert(value->value[i] == (uint8_t)(i ^ 0xa5u));
+  }
 
-    h2_runtime_deinit(runtime);
+  h2_runtime_deinit(runtime);
 }
 
 static void test_system_event_partial_subscribe_cleans_up(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    env.system_event_state.fail_subscribe_after = 2u;
-    h2_runtime_config_t config = test_runtime_config(&env);
-    config.system_event = &env.system_event;
-    h2_runtime_t *runtime = NULL;
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_ERR_IO);
-    assert(runtime == NULL);
-    assert(env.system_event_state.unsubscribe_calls == 2u);
-    assert(env.system_event_state.deinit_calls == 1u);
-    assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  env.system_event_state.fail_subscribe_after = 2u;
+  h2_runtime_config_t config = test_runtime_config(&env);
+  config.system_event = &env.system_event;
+  h2_runtime_t* runtime = NULL;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_ERR_IO);
+  assert(runtime == NULL);
+  assert(env.system_event_state.unsubscribe_calls == 2u);
+  assert(env.system_event_state.deinit_calls == 1u);
+  assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
 }
 
 static void test_system_event_projects_all_scope_events(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    h2_runtime_t *runtime = test_runtime_create_with_system_events(&env);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  h2_runtime_t* runtime = test_runtime_create_with_system_events(&env);
 
-    h2_pal_gpio_irq_event_t gpio = { .trigger = H2_PAL_GPIO_IRQ_TRIGGER_HIGH };
-    h2_pal_wifi_sta_status_t sta = test_wifi_sta_status();
-    h2_pal_wifi_ap_event_t ap = test_wifi_ap_event();
-    h2_pal_wifi_ap_client_event_t client = test_wifi_client_event();
-    h2_pal_ble_connection_t ble_connection = test_ble_connection();
-    h2_pal_ble_connection_params_t ble_params = {
-        .interval_min_ms = 10u,
-        .interval_max_ms = 20u,
-        .latency = 1u,
-        .supervision_timeout_ms = 400u,
-    };
-    h2_pal_ble_disconnected_info_t ble_disconnected = {
-        .conn_handle = 7u,
-        .reason = 19,
-    };
-    h2_pal_ble_mtu_info_t ble_mtu = {
-        .conn_handle = 7u,
-        .mtu = 247u,
-    };
-    h2_pal_ble_subscription_state_t ble_subscription = {
-        .conn_handle = 7u,
-        .value_handle = 9u,
-        .mode = H2_PAL_BLE_SUBSCRIBE_MODE_NOTIFY,
-        .enabled = true,
-    };
-    h2_pal_ble_gatt_client_value_t ble_value = test_ble_gatt_value();
-    uint8_t advertising_set_identity = 0u;
-    h2_pal_ble_adv_set_event_t ble_advertising = {
-        .set = (h2_pal_ble_adv_set_t *)&advertising_set_identity,
-        .status = H2_PAL_ERR_IO,
-    };
-    h2_pal_modem_event_t modem_error = {
-        .result = H2_PAL_ERR_IO,
-        .vendor_code = 12,
-    };
-    h2_pal_modem_status_t modem_status = test_modem_status();
-    h2_pal_modem_signal_t modem_signal = {
-        .rssi_dbm = -70,
-        .rssi_valid = 1u,
-        .rsrp_dbm = -96,
-        .rsrp_valid = 1u,
-        .ber = 1,
-        .rat = H2_PAL_MODEM_RAT_LTE,
-    };
-    h2_pal_modem_data_status_t modem_data = {
-        .state = H2_PAL_MODEM_DATA_OPEN,
-        .ip4 = 0x0a000003u,
-        .ip4_valid = 1u,
-    };
-    h2_pal_modem_call_event_t modem_call = test_modem_call_event();
-    h2_pal_netif_default_changed_t netif_change;
-    memset(&netif_change, 0, sizeof(netif_change));
-    netif_change.previous.type = H2_PAL_NETIF_REF_NAME;
-    netif_change.previous.kind = H2_PAL_NETIF_KIND_WIFI_STA;
-    memcpy(netif_change.previous.name, "en0", 4u);
-    netif_change.previous_valid = 1u;
-    netif_change.current.type = H2_PAL_NETIF_REF_ID;
-    netif_change.current.kind = H2_PAL_NETIF_KIND_MODEM_DATA;
-    netif_change.current.id = 9u;
-    netif_change.current_valid = 1u;
+  h2_pal_gpio_irq_event_t gpio = {.trigger = H2_PAL_GPIO_IRQ_TRIGGER_HIGH};
+  h2_pal_wifi_sta_status_t sta = test_wifi_sta_status();
+  h2_pal_wifi_ap_event_t ap = test_wifi_ap_event();
+  h2_pal_wifi_ap_client_event_t client = test_wifi_client_event();
+  h2_pal_ble_connection_t ble_connection = test_ble_connection();
+  h2_pal_ble_connection_params_t ble_params = {
+      .interval_min_ms = 10u,
+      .interval_max_ms = 20u,
+      .latency = 1u,
+      .supervision_timeout_ms = 400u,
+  };
+  h2_pal_ble_disconnected_info_t ble_disconnected = {
+      .conn_handle = 7u,
+      .reason = 19,
+  };
+  h2_pal_ble_mtu_info_t ble_mtu = {
+      .conn_handle = 7u,
+      .mtu = 247u,
+  };
+  h2_pal_ble_subscription_state_t ble_subscription = {
+      .conn_handle = 7u,
+      .value_handle = 9u,
+      .mode = H2_PAL_BLE_SUBSCRIBE_MODE_NOTIFY,
+      .enabled = true,
+  };
+  h2_pal_ble_gatt_client_value_t ble_value = test_ble_gatt_value();
+  uint8_t advertising_set_identity = 0u;
+  h2_pal_ble_adv_set_event_t ble_advertising = {
+      .set = (h2_pal_ble_adv_set_t*)&advertising_set_identity,
+      .status = H2_PAL_ERR_IO,
+  };
+  h2_pal_modem_event_t modem_error = {
+      .result = H2_PAL_ERR_IO,
+      .vendor_code = 12,
+  };
+  h2_pal_modem_status_t modem_status = test_modem_status();
+  h2_pal_modem_signal_t modem_signal = {
+      .rssi_dbm = -70,
+      .rssi_valid = 1u,
+      .rsrp_dbm = -96,
+      .rsrp_valid = 1u,
+      .ber = 1,
+      .rat = H2_PAL_MODEM_RAT_LTE,
+  };
+  h2_pal_modem_data_status_t modem_data = {
+      .state = H2_PAL_MODEM_DATA_OPEN,
+      .ip4 = 0x0a000003u,
+      .ip4_valid = 1u,
+  };
+  h2_pal_modem_call_event_t modem_call = test_modem_call_event();
+  h2_pal_netif_default_changed_t netif_change;
+  memset(&netif_change, 0, sizeof(netif_change));
+  netif_change.previous.type = H2_PAL_NETIF_REF_NAME;
+  netif_change.previous.kind = H2_PAL_NETIF_KIND_WIFI_STA;
+  memcpy(netif_change.previous.name, "en0", 4u);
+  netif_change.previous_valid = 1u;
+  netif_change.current.type = H2_PAL_NETIF_REF_ID;
+  netif_change.current.kind = H2_PAL_NETIF_KIND_MODEM_DATA;
+  netif_change.current.id = 9u;
+  netif_change.current_valid = 1u;
 
-    assert_system_event_mapping(
-        &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_GPIO_IRQ, &gpio, sizeof(gpio),
-        H2_RUNTIME_COMPONENT_SYSTEM_GPIO_IRQ, H2_RUNTIME_SYSTEM_EVENT_GPIO_IRQ_TRIGGERED,
-        sizeof(h2_runtime_system_event_gpio_irq_t));
+  assert_system_event_mapping(&env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_GPIO_IRQ,
+                              &gpio, sizeof(gpio),
+                              H2_RUNTIME_COMPONENT_SYSTEM_GPIO_IRQ,
+                              H2_RUNTIME_SYSTEM_EVENT_GPIO_IRQ_TRIGGERED,
+                              sizeof(h2_runtime_system_event_gpio_irq_t));
 
-    const h2_pal_system_event_type_t sta_types[] = {
-        H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTING,
-        H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTED,
-        H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_DISCONNECTED,
-        H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_GOT_IP,
-        H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_LOST_IP,
-    };
-    const h2_runtime_event_kind_t sta_kinds[] = {
-        H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_CONNECTING,
-        H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_CONNECTED,
-        H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_DISCONNECTED,
-        H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_GOT_IP,
-        H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_LOST_IP,
-    };
-    for (size_t i = 0u; i < sizeof(sta_types) / sizeof(sta_types[0]); ++i) {
-        assert_system_event_mapping(
-            &env, runtime, sta_types[i], &sta, sizeof(sta),
-            H2_RUNTIME_COMPONENT_SYSTEM_WIFI, sta_kinds[i],
-            sizeof(h2_runtime_system_event_wifi_sta_t));
-    }
-
-    sta.ip.ip6_valid = 1u;
-    sta.ip.ip6[0] = 0xfd;
-    sta.ip.ip6[15] = 1u;
-    for (unsigned family = 0u; family < 2u; ++family) {
-      sta.ip_valid = family != 0u;
-      sta.ip.ip4 = family != 0u ? 0x01020304u : 0u;
-      assert_system_event_mapping(
-          &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_GOT_IP, &sta,
-          sizeof(sta), H2_RUNTIME_COMPONENT_SYSTEM_WIFI,
-          H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_GOT_IP,
-          sizeof(h2_runtime_system_event_wifi_sta_t));
-    }
-    memset(&sta.ip, 0, sizeof(sta.ip));
-    sta.ip_valid = 0u;
-    sta.state = H2_PAL_WIFI_STA_STATE_DISCONNECTED;
-    assert_system_event_mapping(&env, runtime,
-                                H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_LOST_IP, &sta,
-                                sizeof(sta), H2_RUNTIME_COMPONENT_SYSTEM_WIFI,
-                                H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_LOST_IP,
+  const h2_pal_system_event_type_t sta_types[] = {
+      H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTING,
+      H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTED,
+      H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_DISCONNECTED,
+      H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_GOT_IP,
+      H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_LOST_IP,
+  };
+  const h2_runtime_event_kind_t sta_kinds[] = {
+      H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_CONNECTING,
+      H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_CONNECTED,
+      H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_DISCONNECTED,
+      H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_GOT_IP,
+      H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_LOST_IP,
+  };
+  for (size_t i = 0u; i < sizeof(sta_types) / sizeof(sta_types[0]); ++i) {
+    assert_system_event_mapping(&env, runtime, sta_types[i], &sta, sizeof(sta),
+                                H2_RUNTIME_COMPONENT_SYSTEM_WIFI, sta_kinds[i],
                                 sizeof(h2_runtime_system_event_wifi_sta_t));
+  }
 
-    assert_system_event_mapping(
-        &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_WIFI_AP_STARTED, &ap, sizeof(ap),
-        H2_RUNTIME_COMPONENT_SYSTEM_WIFI, H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_STARTED,
-        sizeof(h2_runtime_system_event_wifi_ap_t));
-    assert_system_event_mapping(
-        &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_WIFI_AP_STOPPED, &ap, sizeof(ap),
-        H2_RUNTIME_COMPONENT_SYSTEM_WIFI, H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_STOPPED,
-        sizeof(h2_runtime_system_event_wifi_ap_t));
+  sta.ip.ip6_valid = 1u;
+  sta.ip.ip6[0] = 0xfd;
+  sta.ip.ip6[15] = 1u;
+  for (unsigned family = 0u; family < 2u; ++family) {
+    sta.ip_valid = family != 0u;
+    sta.ip.ip4 = family != 0u ? 0x01020304u : 0u;
+    assert_system_event_mapping(&env, runtime,
+                                H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_GOT_IP, &sta,
+                                sizeof(sta), H2_RUNTIME_COMPONENT_SYSTEM_WIFI,
+                                H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_GOT_IP,
+                                sizeof(h2_runtime_system_event_wifi_sta_t));
+  }
+  memset(&sta.ip, 0, sizeof(sta.ip));
+  sta.ip_valid = 0u;
+  sta.state = H2_PAL_WIFI_STA_STATE_DISCONNECTED;
+  assert_system_event_mapping(&env, runtime,
+                              H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_LOST_IP, &sta,
+                              sizeof(sta), H2_RUNTIME_COMPONENT_SYSTEM_WIFI,
+                              H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_LOST_IP,
+                              sizeof(h2_runtime_system_event_wifi_sta_t));
 
-    const h2_pal_system_event_type_t client_types[] = {
-        H2_PAL_SYSTEM_EVENT_TYPE_WIFI_AP_CLIENT_JOINED,
-        H2_PAL_SYSTEM_EVENT_TYPE_WIFI_AP_CLIENT_LEFT,
-        H2_PAL_SYSTEM_EVENT_TYPE_WIFI_AP_LEASE_GRANTED,
-        H2_PAL_SYSTEM_EVENT_TYPE_WIFI_AP_LEASE_RELEASED,
-    };
-    const h2_runtime_event_kind_t client_kinds[] = {
-        H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_CLIENT_JOINED,
-        H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_CLIENT_LEFT,
-        H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_LEASE_GRANTED,
-        H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_LEASE_RELEASED,
-    };
-    for (size_t i = 0u; i < sizeof(client_types) / sizeof(client_types[0]); ++i) {
-        assert_system_event_mapping(
-            &env, runtime, client_types[i], &client, sizeof(client),
-            H2_RUNTIME_COMPONENT_SYSTEM_WIFI, client_kinds[i],
-            sizeof(h2_runtime_system_event_wifi_ap_client_t));
-    }
+  assert_system_event_mapping(
+      &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_WIFI_AP_STARTED, &ap, sizeof(ap),
+      H2_RUNTIME_COMPONENT_SYSTEM_WIFI, H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_STARTED,
+      sizeof(h2_runtime_system_event_wifi_ap_t));
+  assert_system_event_mapping(
+      &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_WIFI_AP_STOPPED, &ap, sizeof(ap),
+      H2_RUNTIME_COMPONENT_SYSTEM_WIFI, H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_STOPPED,
+      sizeof(h2_runtime_system_event_wifi_ap_t));
 
-    const h2_pal_system_event_type_t ble_no_payload_types[] = {
-        H2_PAL_SYSTEM_EVENT_TYPE_BLE_HOST_STARTED,
-        H2_PAL_SYSTEM_EVENT_TYPE_BLE_HOST_STOPPED,
-        H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STARTED,
-        H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STOPPED,
-        H2_PAL_SYSTEM_EVENT_TYPE_BLE_SCAN_STARTED,
-        H2_PAL_SYSTEM_EVENT_TYPE_BLE_SCAN_STOPPED,
-    };
-    const h2_runtime_event_kind_t ble_no_payload_kinds[] = {
-        H2_RUNTIME_SYSTEM_EVENT_BLE_HOST_STARTED,
-        H2_RUNTIME_SYSTEM_EVENT_BLE_HOST_STOPPED,
-        H2_RUNTIME_SYSTEM_EVENT_BLE_ADVERTISING_STARTED,
-        H2_RUNTIME_SYSTEM_EVENT_BLE_ADVERTISING_STOPPED,
-        H2_RUNTIME_SYSTEM_EVENT_BLE_SCAN_STARTED,
-        H2_RUNTIME_SYSTEM_EVENT_BLE_SCAN_STOPPED,
-    };
-    for (size_t i = 0u; i < sizeof(ble_no_payload_types) / sizeof(ble_no_payload_types[0]); ++i) {
-        assert_system_event_mapping(
-            &env, runtime, ble_no_payload_types[i], NULL, 0u,
-            H2_RUNTIME_COMPONENT_SYSTEM_BLE, ble_no_payload_kinds[i], 0u);
-    }
+  const h2_pal_system_event_type_t client_types[] = {
+      H2_PAL_SYSTEM_EVENT_TYPE_WIFI_AP_CLIENT_JOINED,
+      H2_PAL_SYSTEM_EVENT_TYPE_WIFI_AP_CLIENT_LEFT,
+      H2_PAL_SYSTEM_EVENT_TYPE_WIFI_AP_LEASE_GRANTED,
+      H2_PAL_SYSTEM_EVENT_TYPE_WIFI_AP_LEASE_RELEASED,
+  };
+  const h2_runtime_event_kind_t client_kinds[] = {
+      H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_CLIENT_JOINED,
+      H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_CLIENT_LEFT,
+      H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_LEASE_GRANTED,
+      H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_LEASE_RELEASED,
+  };
+  for (size_t i = 0u; i < sizeof(client_types) / sizeof(client_types[0]); ++i) {
     assert_system_event_mapping(
-        &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STARTED,
-        &ble_advertising, sizeof(ble_advertising),
-        H2_RUNTIME_COMPONENT_SYSTEM_BLE,
-        H2_RUNTIME_SYSTEM_EVENT_BLE_ADVERTISING_STARTED,
-        sizeof(h2_runtime_system_event_ble_advertising_set_t));
-    assert_system_event_mapping(
-        &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_BLE_CONNECTED, &ble_connection, sizeof(ble_connection),
-        H2_RUNTIME_COMPONENT_SYSTEM_BLE, H2_RUNTIME_SYSTEM_EVENT_BLE_CONNECTED,
-        sizeof(h2_runtime_system_event_ble_connection_t));
-    assert_system_event_mapping(
-        &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_BLE_CONNECTION_UPDATED, &ble_params, sizeof(ble_params),
-        H2_RUNTIME_COMPONENT_SYSTEM_BLE, H2_RUNTIME_SYSTEM_EVENT_BLE_CONNECTION_UPDATED,
-        sizeof(h2_runtime_system_event_ble_connection_params_t));
-    assert_system_event_mapping(
-        &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_BLE_DISCONNECTED, &ble_disconnected, sizeof(ble_disconnected),
-        H2_RUNTIME_COMPONENT_SYSTEM_BLE, H2_RUNTIME_SYSTEM_EVENT_BLE_DISCONNECTED,
-        sizeof(h2_runtime_system_event_ble_disconnected_t));
-    assert_system_event_mapping(
-        &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_BLE_MTU_CHANGED, &ble_mtu, sizeof(ble_mtu),
-        H2_RUNTIME_COMPONENT_SYSTEM_BLE, H2_RUNTIME_SYSTEM_EVENT_BLE_MTU_CHANGED,
-        sizeof(h2_runtime_system_event_ble_mtu_t));
-    assert_system_event_mapping(
-        &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_BLE_SUBSCRIPTION_CHANGED, &ble_subscription, sizeof(ble_subscription),
-        H2_RUNTIME_COMPONENT_SYSTEM_BLE, H2_RUNTIME_SYSTEM_EVENT_BLE_SUBSCRIPTION_CHANGED,
-        sizeof(h2_runtime_system_event_ble_subscription_t));
-    assert_system_event_mapping(
-        &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_BLE_GATT_CLIENT_NOTIFICATION, &ble_value, sizeof(ble_value),
-        H2_RUNTIME_COMPONENT_SYSTEM_BLE, H2_RUNTIME_SYSTEM_EVENT_BLE_GATT_CLIENT_NOTIFICATION,
-        sizeof(h2_runtime_system_event_ble_gatt_client_value_t));
-    assert_system_event_mapping(
-        &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_BLE_GATT_CLIENT_INDICATION, &ble_value, sizeof(ble_value),
-        H2_RUNTIME_COMPONENT_SYSTEM_BLE, H2_RUNTIME_SYSTEM_EVENT_BLE_GATT_CLIENT_INDICATION,
-        sizeof(h2_runtime_system_event_ble_gatt_client_value_t));
-    assert_system_event_mapping(
-        &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_READY, NULL, 0u,
-        H2_RUNTIME_COMPONENT_SYSTEM_MODEM, H2_RUNTIME_SYSTEM_EVENT_MODEM_READY, 0u);
-    assert_system_event_mapping(
-        &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_ERROR, &modem_error, sizeof(modem_error),
-        H2_RUNTIME_COMPONENT_SYSTEM_MODEM, H2_RUNTIME_SYSTEM_EVENT_MODEM_ERROR,
-        sizeof(h2_runtime_system_event_modem_error_t));
-    assert_system_event_mapping(
-        &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_SIM_CHANGED, &modem_status, sizeof(modem_status),
-        H2_RUNTIME_COMPONENT_SYSTEM_MODEM, H2_RUNTIME_SYSTEM_EVENT_MODEM_SIM_CHANGED,
-        sizeof(h2_runtime_system_event_modem_sim_t));
-    assert_system_event_mapping(
-        &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_REGISTRATION_CHANGED, &modem_status, sizeof(modem_status),
-        H2_RUNTIME_COMPONENT_SYSTEM_MODEM, H2_RUNTIME_SYSTEM_EVENT_MODEM_REGISTRATION_CHANGED,
-        sizeof(h2_runtime_system_event_modem_registration_t));
-    assert_system_event_mapping(
-        &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_PACKET_CHANGED, &modem_status, sizeof(modem_status),
-        H2_RUNTIME_COMPONENT_SYSTEM_MODEM, H2_RUNTIME_SYSTEM_EVENT_MODEM_PACKET_CHANGED,
-        sizeof(h2_runtime_system_event_modem_packet_t));
-    assert_system_event_mapping(
-        &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_SIGNAL_CHANGED, &modem_signal, sizeof(modem_signal),
-        H2_RUNTIME_COMPONENT_SYSTEM_MODEM, H2_RUNTIME_SYSTEM_EVENT_MODEM_SIGNAL_CHANGED,
-        sizeof(h2_runtime_system_event_modem_signal_t));
-    modem_signal.rssi_dbm = 0;
-    modem_signal.rssi_valid = 0u;
-    modem_signal.rsrp_dbm = 0;
-    modem_signal.rsrp_valid = 0u;
-    assert_system_event_mapping(
-        &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_SIGNAL_CHANGED, &modem_signal, sizeof(modem_signal),
-        H2_RUNTIME_COMPONENT_SYSTEM_MODEM, H2_RUNTIME_SYSTEM_EVENT_MODEM_SIGNAL_CHANGED,
-        sizeof(h2_runtime_system_event_modem_signal_t));
-    assert_system_event_mapping(
-        &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_DATA_OPENED, &modem_data, sizeof(modem_data),
-        H2_RUNTIME_COMPONENT_SYSTEM_MODEM, H2_RUNTIME_SYSTEM_EVENT_MODEM_DATA_OPENED,
-        sizeof(h2_runtime_system_event_modem_data_t));
-    assert_system_event_mapping(
-        &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_DATA_CLOSED, &modem_data, sizeof(modem_data),
-        H2_RUNTIME_COMPONENT_SYSTEM_MODEM, H2_RUNTIME_SYSTEM_EVENT_MODEM_DATA_CLOSED,
-        sizeof(h2_runtime_system_event_modem_data_t));
-    assert_system_event_mapping(
-        &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_INCOMING, &modem_call, sizeof(modem_call),
-        H2_RUNTIME_COMPONENT_SYSTEM_MODEM, H2_RUNTIME_SYSTEM_EVENT_MODEM_CALL_INCOMING,
-        sizeof(h2_runtime_system_event_modem_call_t));
-    assert_system_event_mapping(
-        &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_STATE_CHANGED, &modem_call, sizeof(modem_call),
-        H2_RUNTIME_COMPONENT_SYSTEM_MODEM, H2_RUNTIME_SYSTEM_EVENT_MODEM_CALL_STATE_CHANGED,
-        sizeof(h2_runtime_system_event_modem_call_t));
-    assert_system_event_mapping(
-        &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_ENDED, &modem_call, sizeof(modem_call),
-        H2_RUNTIME_COMPONENT_SYSTEM_MODEM, H2_RUNTIME_SYSTEM_EVENT_MODEM_CALL_ENDED,
-        sizeof(h2_runtime_system_event_modem_call_t));
-    assert_system_event_mapping(
-        &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_NETIF_DEFAULT_CHANGED,
-        &netif_change, sizeof(netif_change),
-        H2_RUNTIME_COMPONENT_SYSTEM_NETIF,
-        H2_RUNTIME_SYSTEM_EVENT_NETIF_DEFAULT_CHANGED,
-        sizeof(h2_runtime_system_event_netif_default_changed_t));
+        &env, runtime, client_types[i], &client, sizeof(client),
+        H2_RUNTIME_COMPONENT_SYSTEM_WIFI, client_kinds[i],
+        sizeof(h2_runtime_system_event_wifi_ap_client_t));
+  }
 
-    h2_runtime_deinit(runtime);
+  const h2_pal_system_event_type_t ble_no_payload_types[] = {
+      H2_PAL_SYSTEM_EVENT_TYPE_BLE_HOST_STARTED,
+      H2_PAL_SYSTEM_EVENT_TYPE_BLE_HOST_STOPPED,
+      H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STARTED,
+      H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STOPPED,
+      H2_PAL_SYSTEM_EVENT_TYPE_BLE_SCAN_STARTED,
+      H2_PAL_SYSTEM_EVENT_TYPE_BLE_SCAN_STOPPED,
+  };
+  const h2_runtime_event_kind_t ble_no_payload_kinds[] = {
+      H2_RUNTIME_SYSTEM_EVENT_BLE_HOST_STARTED,
+      H2_RUNTIME_SYSTEM_EVENT_BLE_HOST_STOPPED,
+      H2_RUNTIME_SYSTEM_EVENT_BLE_ADVERTISING_STARTED,
+      H2_RUNTIME_SYSTEM_EVENT_BLE_ADVERTISING_STOPPED,
+      H2_RUNTIME_SYSTEM_EVENT_BLE_SCAN_STARTED,
+      H2_RUNTIME_SYSTEM_EVENT_BLE_SCAN_STOPPED,
+  };
+  for (size_t i = 0u;
+       i < sizeof(ble_no_payload_types) / sizeof(ble_no_payload_types[0]);
+       ++i) {
+    assert_system_event_mapping(&env, runtime, ble_no_payload_types[i], NULL,
+                                0u, H2_RUNTIME_COMPONENT_SYSTEM_BLE,
+                                ble_no_payload_kinds[i], 0u);
+  }
+  assert_system_event_mapping(
+      &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STARTED,
+      &ble_advertising, sizeof(ble_advertising),
+      H2_RUNTIME_COMPONENT_SYSTEM_BLE,
+      H2_RUNTIME_SYSTEM_EVENT_BLE_ADVERTISING_STARTED,
+      sizeof(h2_runtime_system_event_ble_advertising_set_t));
+  assert_system_event_mapping(
+      &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_BLE_CONNECTED, &ble_connection,
+      sizeof(ble_connection), H2_RUNTIME_COMPONENT_SYSTEM_BLE,
+      H2_RUNTIME_SYSTEM_EVENT_BLE_CONNECTED,
+      sizeof(h2_runtime_system_event_ble_connection_t));
+  assert_system_event_mapping(
+      &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_BLE_CONNECTION_UPDATED,
+      &ble_params, sizeof(ble_params), H2_RUNTIME_COMPONENT_SYSTEM_BLE,
+      H2_RUNTIME_SYSTEM_EVENT_BLE_CONNECTION_UPDATED,
+      sizeof(h2_runtime_system_event_ble_connection_params_t));
+  assert_system_event_mapping(
+      &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_BLE_DISCONNECTED,
+      &ble_disconnected, sizeof(ble_disconnected),
+      H2_RUNTIME_COMPONENT_SYSTEM_BLE, H2_RUNTIME_SYSTEM_EVENT_BLE_DISCONNECTED,
+      sizeof(h2_runtime_system_event_ble_disconnected_t));
+  assert_system_event_mapping(
+      &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_BLE_MTU_CHANGED, &ble_mtu,
+      sizeof(ble_mtu), H2_RUNTIME_COMPONENT_SYSTEM_BLE,
+      H2_RUNTIME_SYSTEM_EVENT_BLE_MTU_CHANGED,
+      sizeof(h2_runtime_system_event_ble_mtu_t));
+  assert_system_event_mapping(
+      &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_BLE_SUBSCRIPTION_CHANGED,
+      &ble_subscription, sizeof(ble_subscription),
+      H2_RUNTIME_COMPONENT_SYSTEM_BLE,
+      H2_RUNTIME_SYSTEM_EVENT_BLE_SUBSCRIPTION_CHANGED,
+      sizeof(h2_runtime_system_event_ble_subscription_t));
+  assert_system_event_mapping(
+      &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_BLE_GATT_CLIENT_NOTIFICATION,
+      &ble_value, sizeof(ble_value), H2_RUNTIME_COMPONENT_SYSTEM_BLE,
+      H2_RUNTIME_SYSTEM_EVENT_BLE_GATT_CLIENT_NOTIFICATION,
+      sizeof(h2_runtime_system_event_ble_gatt_client_value_t));
+  assert_system_event_mapping(
+      &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_BLE_GATT_CLIENT_INDICATION,
+      &ble_value, sizeof(ble_value), H2_RUNTIME_COMPONENT_SYSTEM_BLE,
+      H2_RUNTIME_SYSTEM_EVENT_BLE_GATT_CLIENT_INDICATION,
+      sizeof(h2_runtime_system_event_ble_gatt_client_value_t));
+  assert_system_event_mapping(&env, runtime,
+                              H2_PAL_SYSTEM_EVENT_TYPE_MODEM_READY, NULL, 0u,
+                              H2_RUNTIME_COMPONENT_SYSTEM_MODEM,
+                              H2_RUNTIME_SYSTEM_EVENT_MODEM_READY, 0u);
+  assert_system_event_mapping(
+      &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_ERROR, &modem_error,
+      sizeof(modem_error), H2_RUNTIME_COMPONENT_SYSTEM_MODEM,
+      H2_RUNTIME_SYSTEM_EVENT_MODEM_ERROR,
+      sizeof(h2_runtime_system_event_modem_error_t));
+  assert_system_event_mapping(
+      &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_SIM_CHANGED, &modem_status,
+      sizeof(modem_status), H2_RUNTIME_COMPONENT_SYSTEM_MODEM,
+      H2_RUNTIME_SYSTEM_EVENT_MODEM_SIM_CHANGED,
+      sizeof(h2_runtime_system_event_modem_sim_t));
+  assert_system_event_mapping(
+      &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_REGISTRATION_CHANGED,
+      &modem_status, sizeof(modem_status), H2_RUNTIME_COMPONENT_SYSTEM_MODEM,
+      H2_RUNTIME_SYSTEM_EVENT_MODEM_REGISTRATION_CHANGED,
+      sizeof(h2_runtime_system_event_modem_registration_t));
+  assert_system_event_mapping(
+      &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_PACKET_CHANGED,
+      &modem_status, sizeof(modem_status), H2_RUNTIME_COMPONENT_SYSTEM_MODEM,
+      H2_RUNTIME_SYSTEM_EVENT_MODEM_PACKET_CHANGED,
+      sizeof(h2_runtime_system_event_modem_packet_t));
+  assert_system_event_mapping(
+      &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_SIGNAL_CHANGED,
+      &modem_signal, sizeof(modem_signal), H2_RUNTIME_COMPONENT_SYSTEM_MODEM,
+      H2_RUNTIME_SYSTEM_EVENT_MODEM_SIGNAL_CHANGED,
+      sizeof(h2_runtime_system_event_modem_signal_t));
+  modem_signal.rssi_dbm = 0;
+  modem_signal.rssi_valid = 0u;
+  modem_signal.rsrp_dbm = 0;
+  modem_signal.rsrp_valid = 0u;
+  assert_system_event_mapping(
+      &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_SIGNAL_CHANGED,
+      &modem_signal, sizeof(modem_signal), H2_RUNTIME_COMPONENT_SYSTEM_MODEM,
+      H2_RUNTIME_SYSTEM_EVENT_MODEM_SIGNAL_CHANGED,
+      sizeof(h2_runtime_system_event_modem_signal_t));
+  assert_system_event_mapping(
+      &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_DATA_OPENED, &modem_data,
+      sizeof(modem_data), H2_RUNTIME_COMPONENT_SYSTEM_MODEM,
+      H2_RUNTIME_SYSTEM_EVENT_MODEM_DATA_OPENED,
+      sizeof(h2_runtime_system_event_modem_data_t));
+  assert_system_event_mapping(
+      &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_DATA_CLOSED, &modem_data,
+      sizeof(modem_data), H2_RUNTIME_COMPONENT_SYSTEM_MODEM,
+      H2_RUNTIME_SYSTEM_EVENT_MODEM_DATA_CLOSED,
+      sizeof(h2_runtime_system_event_modem_data_t));
+  assert_system_event_mapping(
+      &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_INCOMING, &modem_call,
+      sizeof(modem_call), H2_RUNTIME_COMPONENT_SYSTEM_MODEM,
+      H2_RUNTIME_SYSTEM_EVENT_MODEM_CALL_INCOMING,
+      sizeof(h2_runtime_system_event_modem_call_t));
+  assert_system_event_mapping(
+      &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_STATE_CHANGED,
+      &modem_call, sizeof(modem_call), H2_RUNTIME_COMPONENT_SYSTEM_MODEM,
+      H2_RUNTIME_SYSTEM_EVENT_MODEM_CALL_STATE_CHANGED,
+      sizeof(h2_runtime_system_event_modem_call_t));
+  assert_system_event_mapping(
+      &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_ENDED, &modem_call,
+      sizeof(modem_call), H2_RUNTIME_COMPONENT_SYSTEM_MODEM,
+      H2_RUNTIME_SYSTEM_EVENT_MODEM_CALL_ENDED,
+      sizeof(h2_runtime_system_event_modem_call_t));
+  assert_system_event_mapping(
+      &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_NETIF_DEFAULT_CHANGED,
+      &netif_change, sizeof(netif_change), H2_RUNTIME_COMPONENT_SYSTEM_NETIF,
+      H2_RUNTIME_SYSTEM_EVENT_NETIF_DEFAULT_CHANGED,
+      sizeof(h2_runtime_system_event_netif_default_changed_t));
+
+  h2_runtime_deinit(runtime);
 }
 
 static void test_system_event_modem_call_number_is_terminated(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    h2_runtime_t *runtime = test_runtime_create_with_system_events(&env);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  h2_runtime_t* runtime = test_runtime_create_with_system_events(&env);
 
-    h2_pal_modem_call_event_t modem_call = test_modem_call_event();
-    memset(modem_call.call.number, '9', sizeof(modem_call.call.number));
-    assert(test_system_event_dispatch(
-        &env,
-        H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_INCOMING,
-        &modem_call,
-        sizeof(modem_call)) == H2_PAL_OK);
+  h2_pal_modem_call_event_t modem_call = test_modem_call_event();
+  memset(modem_call.call.number, '9', sizeof(modem_call.call.number));
+  assert(test_system_event_dispatch(
+             &env, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_INCOMING, &modem_call,
+             sizeof(modem_call)) == H2_PAL_OK);
 
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = event_with_payload(payload);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.payload_size == sizeof(h2_runtime_system_event_modem_call_t));
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.payload_size == sizeof(h2_runtime_system_event_modem_call_t));
 
-    const h2_runtime_system_event_modem_call_t *call =
-        (const h2_runtime_system_event_modem_call_t *)event.payload;
-    assert(call->number[H2_RUNTIME_SYSTEM_MODEM_PHONE_NUMBER_MAX] == '\0');
-    for (size_t i = 0u; i < H2_RUNTIME_SYSTEM_MODEM_PHONE_NUMBER_MAX; ++i) {
-        assert(call->number[i] == '9');
-    }
+  const h2_runtime_system_event_modem_call_t* call =
+      (const h2_runtime_system_event_modem_call_t*)event.payload;
+  assert(call->number[H2_RUNTIME_SYSTEM_MODEM_PHONE_NUMBER_MAX] == '\0');
+  for (size_t i = 0u; i < H2_RUNTIME_SYSTEM_MODEM_PHONE_NUMBER_MAX; ++i) {
+    assert(call->number[i] == '9');
+  }
 
-    h2_runtime_deinit(runtime);
+  h2_runtime_deinit(runtime);
 }
 
 /*
@@ -1861,386 +1831,368 @@ static void test_system_event_modem_call_number_is_terminated(void) {
  * snapshot is readable without touching the modem.
  */
 static void test_system_event_modem_state_follows_events(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    h2_runtime_t *runtime = test_runtime_create_with_system_events(&env);
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = event_with_payload(payload);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  h2_runtime_t* runtime = test_runtime_create_with_system_events(&env);
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
 
-    h2_runtime_system_modem_state_t state;
-    memset(&state, 0xa5, sizeof(state));
-    assert(h2_runtime_system_state_modem(runtime, &state) == H2_PAL_OK);
-    assert(state.sim == H2_RUNTIME_SYSTEM_MODEM_SIM_UNKNOWN);
-    assert(state.registration == H2_RUNTIME_SYSTEM_MODEM_REGISTRATION_UNKNOWN);
-    assert(state.rat == H2_RUNTIME_SYSTEM_MODEM_RAT_UNKNOWN);
-    assert(state.signal_valid == 0u);
+  h2_runtime_system_modem_state_t state;
+  memset(&state, 0xa5, sizeof(state));
+  assert(h2_runtime_system_state_modem(runtime, &state) == H2_PAL_OK);
+  assert(state.sim == H2_RUNTIME_SYSTEM_MODEM_SIM_UNKNOWN);
+  assert(state.registration == H2_RUNTIME_SYSTEM_MODEM_REGISTRATION_UNKNOWN);
+  assert(state.rat == H2_RUNTIME_SYSTEM_MODEM_RAT_UNKNOWN);
+  assert(state.signal_valid == 0u);
 
-    h2_pal_modem_status_t status = test_modem_status();
-    status.sim = H2_PAL_MODEM_SIM_STATE_READY;
-    status.registration = H2_PAL_MODEM_REGISTRATION_SEARCHING;
-    status.rat = H2_PAL_MODEM_RAT_UNKNOWN;
-    assert(test_system_event_dispatch(&env, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_SIM_CHANGED,
-                                      &status, sizeof(status)) == H2_PAL_OK);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(h2_runtime_system_state_modem(runtime, &state) == H2_PAL_OK);
-    assert(state.sim == H2_RUNTIME_SYSTEM_MODEM_SIM_READY);
-    /* A SIM event says nothing about registration. */
-    assert(state.registration == H2_RUNTIME_SYSTEM_MODEM_REGISTRATION_UNKNOWN);
+  h2_pal_modem_status_t status = test_modem_status();
+  status.sim = H2_PAL_MODEM_SIM_STATE_READY;
+  status.registration = H2_PAL_MODEM_REGISTRATION_SEARCHING;
+  status.rat = H2_PAL_MODEM_RAT_UNKNOWN;
+  assert(test_system_event_dispatch(&env,
+                                    H2_PAL_SYSTEM_EVENT_TYPE_MODEM_SIM_CHANGED,
+                                    &status, sizeof(status)) == H2_PAL_OK);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(h2_runtime_system_state_modem(runtime, &state) == H2_PAL_OK);
+  assert(state.sim == H2_RUNTIME_SYSTEM_MODEM_SIM_READY);
+  /* A SIM event says nothing about registration. */
+  assert(state.registration == H2_RUNTIME_SYSTEM_MODEM_REGISTRATION_UNKNOWN);
 
-    status.registration = H2_PAL_MODEM_REGISTRATION_HOME;
-    status.rat = H2_PAL_MODEM_RAT_LTE;
-    assert(test_system_event_dispatch(&env, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_REGISTRATION_CHANGED,
-                                      &status, sizeof(status)) == H2_PAL_OK);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    status.packet = H2_PAL_MODEM_PACKET_CONNECTED;
-    status.rat = H2_PAL_MODEM_RAT_UNKNOWN;
-    assert(test_system_event_dispatch(&env, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_PACKET_CHANGED,
-                                      &status, sizeof(status)) == H2_PAL_OK);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(h2_runtime_system_state_modem(runtime, &state) == H2_PAL_OK);
-    assert(state.sim == H2_RUNTIME_SYSTEM_MODEM_SIM_READY);
-    assert(state.registration == H2_RUNTIME_SYSTEM_MODEM_REGISTRATION_HOME);
-    assert(state.packet == H2_RUNTIME_SYSTEM_MODEM_PACKET_CONNECTED);
-    /* An event without an access technology keeps the last one reported. */
-    assert(state.rat == H2_RUNTIME_SYSTEM_MODEM_RAT_LTE);
-    assert(state.signal_valid == 0u);
+  status.registration = H2_PAL_MODEM_REGISTRATION_HOME;
+  status.rat = H2_PAL_MODEM_RAT_LTE;
+  assert(test_system_event_dispatch(
+             &env, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_REGISTRATION_CHANGED, &status,
+             sizeof(status)) == H2_PAL_OK);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  status.packet = H2_PAL_MODEM_PACKET_CONNECTED;
+  status.rat = H2_PAL_MODEM_RAT_UNKNOWN;
+  assert(test_system_event_dispatch(
+             &env, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_PACKET_CHANGED, &status,
+             sizeof(status)) == H2_PAL_OK);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(h2_runtime_system_state_modem(runtime, &state) == H2_PAL_OK);
+  assert(state.sim == H2_RUNTIME_SYSTEM_MODEM_SIM_READY);
+  assert(state.registration == H2_RUNTIME_SYSTEM_MODEM_REGISTRATION_HOME);
+  assert(state.packet == H2_RUNTIME_SYSTEM_MODEM_PACKET_CONNECTED);
+  /* An event without an access technology keeps the last one reported. */
+  assert(state.rat == H2_RUNTIME_SYSTEM_MODEM_RAT_LTE);
+  assert(state.signal_valid == 0u);
 
-    h2_pal_modem_signal_t signal = {
-        .rssi_dbm = -70,
-        .rssi_valid = 1u,
-        .rsrp_dbm = -96,
-        .rsrp_valid = 1u,
-        .rat = H2_PAL_MODEM_RAT_LTE,
-    };
-    assert(test_system_event_dispatch(&env, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_SIGNAL_CHANGED,
-                                      &signal, sizeof(signal)) == H2_PAL_OK);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(h2_runtime_system_state_modem(runtime, &state) == H2_PAL_OK);
-    assert(state.signal_valid == 1u);
-    assert(state.rssi_valid == 1u && state.rssi_dbm == -70);
-    assert(state.rsrp_valid == 1u && state.rsrp_dbm == -96);
+  h2_pal_modem_signal_t signal = {
+      .rssi_dbm = -70,
+      .rssi_valid = 1u,
+      .rsrp_dbm = -96,
+      .rsrp_valid = 1u,
+      .rat = H2_PAL_MODEM_RAT_LTE,
+  };
+  assert(test_system_event_dispatch(
+             &env, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_SIGNAL_CHANGED, &signal,
+             sizeof(signal)) == H2_PAL_OK);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(h2_runtime_system_state_modem(runtime, &state) == H2_PAL_OK);
+  assert(state.signal_valid == 1u);
+  assert(state.rssi_valid == 1u && state.rssi_dbm == -70);
+  assert(state.rsrp_valid == 1u && state.rsrp_dbm == -96);
 
-    /* A later measurement without RSRP clears it instead of keeping -96. */
-    signal.rssi_dbm = -85;
-    signal.rsrp_dbm = 0;
-    signal.rsrp_valid = 0u;
-    assert(test_system_event_dispatch(&env, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_SIGNAL_CHANGED,
-                                      &signal, sizeof(signal)) == H2_PAL_OK);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(h2_runtime_system_state_modem(runtime, &state) == H2_PAL_OK);
-    assert(state.rssi_dbm == -85);
-    assert(state.rsrp_valid == 0u && state.rsrp_dbm == 0);
-    assert(state.registration == H2_RUNTIME_SYSTEM_MODEM_REGISTRATION_HOME);
+  /* A later measurement without RSRP clears it instead of keeping -96. */
+  signal.rssi_dbm = -85;
+  signal.rsrp_dbm = 0;
+  signal.rsrp_valid = 0u;
+  assert(test_system_event_dispatch(
+             &env, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_SIGNAL_CHANGED, &signal,
+             sizeof(signal)) == H2_PAL_OK);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(h2_runtime_system_state_modem(runtime, &state) == H2_PAL_OK);
+  assert(state.rssi_dbm == -85);
+  assert(state.rsrp_valid == 0u && state.rsrp_dbm == 0);
+  assert(state.registration == H2_RUNTIME_SYSTEM_MODEM_REGISTRATION_HOME);
 
-    h2_runtime_deinit(runtime);
+  h2_runtime_deinit(runtime);
 }
 
-static h2_pal_netif_ref_t test_netif_name_ref(
-    const char *name,
-    h2_pal_netif_kind_t kind) {
-    h2_pal_netif_ref_t ref;
-    memset(&ref, 0, sizeof(ref));
-    ref.type = H2_PAL_NETIF_REF_NAME;
-    ref.kind = kind;
-    size_t length = strlen(name);
-    assert(length < sizeof(ref.name));
-    memcpy(ref.name, name, length + 1u);
-    return ref;
+static h2_pal_netif_ref_t test_netif_name_ref(const char* name,
+                                              h2_pal_netif_kind_t kind) {
+  h2_pal_netif_ref_t ref;
+  memset(&ref, 0, sizeof(ref));
+  ref.type = H2_PAL_NETIF_REF_NAME;
+  ref.kind = kind;
+  size_t length = strlen(name);
+  assert(length < sizeof(ref.name));
+  memcpy(ref.name, name, length + 1u);
+  return ref;
 }
 
 static void test_system_event_netif_transitions_copy_and_order(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    h2_runtime_t *runtime = test_runtime_create_with_system_events(&env);
-    const h2_pal_netif_ref_t wifi =
-        test_netif_name_ref("wifi0", H2_PAL_NETIF_KIND_WIFI_STA);
-    const h2_pal_netif_ref_t ppp =
-        test_netif_name_ref("ppp0", H2_PAL_NETIF_KIND_MODEM_DATA);
-    const h2_pal_netif_ref_t host =
-        test_netif_name_ref("browser", H2_PAL_NETIF_KIND_HOST);
-    const struct {
-        h2_pal_netif_ref_t previous;
-        h2_pal_netif_ref_t current;
-        uint8_t previous_valid;
-        uint8_t current_valid;
-    } transitions[] = {
-        {.current = wifi, .current_valid = 1u},
-        {.previous = wifi, .current = ppp,
-         .previous_valid = 1u, .current_valid = 1u},
-        {.previous = ppp, .current = wifi,
-         .previous_valid = 1u, .current_valid = 1u},
-        {.previous = wifi, .previous_valid = 1u},
-        {.current = host, .current_valid = 1u},
-        {.previous = host, .previous_valid = 1u},
+  test_runtime_env_t env;
+  test_env_init(&env);
+  h2_runtime_t* runtime = test_runtime_create_with_system_events(&env);
+  const h2_pal_netif_ref_t wifi =
+      test_netif_name_ref("wifi0", H2_PAL_NETIF_KIND_WIFI_STA);
+  const h2_pal_netif_ref_t ppp =
+      test_netif_name_ref("ppp0", H2_PAL_NETIF_KIND_MODEM_DATA);
+  const h2_pal_netif_ref_t host =
+      test_netif_name_ref("browser", H2_PAL_NETIF_KIND_HOST);
+  const struct {
+    h2_pal_netif_ref_t previous;
+    h2_pal_netif_ref_t current;
+    uint8_t previous_valid;
+    uint8_t current_valid;
+  } transitions[] = {
+      {.current = wifi, .current_valid = 1u},
+      {.previous = wifi,
+       .current = ppp,
+       .previous_valid = 1u,
+       .current_valid = 1u},
+      {.previous = ppp,
+       .current = wifi,
+       .previous_valid = 1u,
+       .current_valid = 1u},
+      {.previous = wifi, .previous_valid = 1u},
+      {.current = host, .current_valid = 1u},
+      {.previous = host, .previous_valid = 1u},
+  };
+  h2_runtime_sequence_t last_sequence = 0u;
+  for (size_t i = 0u; i < sizeof(transitions) / sizeof(transitions[0]); ++i) {
+    h2_pal_netif_default_changed_t pal = {
+        .previous = transitions[i].previous,
+        .current = transitions[i].current,
+        .previous_valid = transitions[i].previous_valid,
+        .current_valid = transitions[i].current_valid,
     };
-    h2_runtime_sequence_t last_sequence = 0u;
-    for (size_t i = 0u; i < sizeof(transitions) / sizeof(transitions[0]); ++i) {
-        h2_pal_netif_default_changed_t pal = {
-            .previous = transitions[i].previous,
-            .current = transitions[i].current,
-            .previous_valid = transitions[i].previous_valid,
-            .current_valid = transitions[i].current_valid,
-        };
-        assert(test_system_event_dispatch(
-                   &env, H2_PAL_SYSTEM_EVENT_TYPE_NETIF_DEFAULT_CHANGED,
-                   &pal, sizeof(pal)) == H2_PAL_OK);
-        memset(&pal, 0xa5, sizeof(pal));
+    assert(test_system_event_dispatch(
+               &env, H2_PAL_SYSTEM_EVENT_TYPE_NETIF_DEFAULT_CHANGED, &pal,
+               sizeof(pal)) == H2_PAL_OK);
+    memset(&pal, 0xa5, sizeof(pal));
 
-        uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-        h2_runtime_event_t event = event_with_payload(payload);
-        assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-        assert(event.component == H2_RUNTIME_COMPONENT_SYSTEM_NETIF);
-        assert(event.kind == H2_RUNTIME_SYSTEM_EVENT_NETIF_DEFAULT_CHANGED);
-        assert(event.sequence > last_sequence);
-        last_sequence = event.sequence;
-        const h2_runtime_system_event_netif_default_changed_t *change =
-            (const h2_runtime_system_event_netif_default_changed_t *)
-                event.payload;
-        assert(change->previous_valid == transitions[i].previous_valid);
-        assert(change->current_valid == transitions[i].current_valid);
-        if (change->previous_valid != 0u) {
-            assert(change->previous.name_valid == 1u);
-            assert(strcmp(change->previous.name,
-                          transitions[i].previous.name) == 0);
-        }
-        if (change->current_valid != 0u) {
-            assert(change->current.name_valid == 1u);
-            assert(strcmp(change->current.name,
-                          transitions[i].current.name) == 0);
-            assert(change->current.kind ==
-                   (transitions[i].current.kind == H2_PAL_NETIF_KIND_HOST
-                        ? H2_RUNTIME_SYSTEM_NETIF_KIND_HOST
-                        : transitions[i].current.kind ==
-                                  H2_PAL_NETIF_KIND_WIFI_STA
-                              ? H2_RUNTIME_SYSTEM_NETIF_KIND_WIFI_STA
-                              : H2_RUNTIME_SYSTEM_NETIF_KIND_MODEM_DATA));
-        }
+    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+    h2_runtime_event_t event = event_with_payload(payload);
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+    assert(event.component == H2_RUNTIME_COMPONENT_SYSTEM_NETIF);
+    assert(event.kind == H2_RUNTIME_SYSTEM_EVENT_NETIF_DEFAULT_CHANGED);
+    assert(event.sequence > last_sequence);
+    last_sequence = event.sequence;
+    const h2_runtime_system_event_netif_default_changed_t* change =
+        (const h2_runtime_system_event_netif_default_changed_t*)event.payload;
+    assert(change->previous_valid == transitions[i].previous_valid);
+    assert(change->current_valid == transitions[i].current_valid);
+    if (change->previous_valid != 0u) {
+      assert(change->previous.name_valid == 1u);
+      assert(strcmp(change->previous.name, transitions[i].previous.name) == 0);
     }
-    h2_runtime_deinit(runtime);
+    if (change->current_valid != 0u) {
+      assert(change->current.name_valid == 1u);
+      assert(strcmp(change->current.name, transitions[i].current.name) == 0);
+      assert(change->current.kind ==
+             (transitions[i].current.kind == H2_PAL_NETIF_KIND_HOST
+                  ? H2_RUNTIME_SYSTEM_NETIF_KIND_HOST
+              : transitions[i].current.kind == H2_PAL_NETIF_KIND_WIFI_STA
+                  ? H2_RUNTIME_SYSTEM_NETIF_KIND_WIFI_STA
+                  : H2_RUNTIME_SYSTEM_NETIF_KIND_MODEM_DATA));
+    }
+  }
+  h2_runtime_deinit(runtime);
 }
 
 static void test_system_event_rejects_invalid_payloads(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    h2_runtime_t *runtime = test_runtime_create_with_system_events(&env);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  h2_runtime_t* runtime = test_runtime_create_with_system_events(&env);
 
-    uint8_t bad_payload = 1u;
-    assert(test_system_event_dispatch(
-        &env,
-        H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTED,
-        &bad_payload,
-        sizeof(bad_payload)) == H2_PAL_ERR_INVALID_ARG);
+  uint8_t bad_payload = 1u;
+  assert(test_system_event_dispatch(
+             &env, H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTED, &bad_payload,
+             sizeof(bad_payload)) == H2_PAL_ERR_INVALID_ARG);
 
-    h2_pal_ble_gatt_client_value_t bad_ble = test_ble_gatt_value();
-    bad_ble.value_len = H2_RUNTIME_SYSTEM_BLE_ATT_MAX_VALUE_LEN + 1u;
-    assert(test_system_event_dispatch(
-        &env,
-        H2_PAL_SYSTEM_EVENT_TYPE_BLE_GATT_CLIENT_NOTIFICATION,
-        &bad_ble,
-        sizeof(bad_ble)) == H2_PAL_ERR_INVALID_ARG);
+  h2_pal_ble_gatt_client_value_t bad_ble = test_ble_gatt_value();
+  bad_ble.value_len = H2_RUNTIME_SYSTEM_BLE_ATT_MAX_VALUE_LEN + 1u;
+  assert(test_system_event_dispatch(
+             &env, H2_PAL_SYSTEM_EVENT_TYPE_BLE_GATT_CLIENT_NOTIFICATION,
+             &bad_ble, sizeof(bad_ble)) == H2_PAL_ERR_INVALID_ARG);
 
-    h2_pal_netif_default_changed_t bad_netif;
-    memset(&bad_netif, 0, sizeof(bad_netif));
-    bad_netif.current.type = H2_PAL_NETIF_REF_DEFAULT;
-    bad_netif.current_valid = 1u;
-    assert(test_system_event_dispatch(
-        &env,
-        H2_PAL_SYSTEM_EVENT_TYPE_NETIF_DEFAULT_CHANGED,
-        &bad_netif,
-        sizeof(bad_netif)) == H2_PAL_ERR_INVALID_ARG);
-    assert(test_system_event_dispatch(
-        &env,
-        H2_PAL_SYSTEM_EVENT_TYPE_NETIF_DEFAULT_CHANGED,
-        &bad_netif,
-        sizeof(bad_netif) - 1u) == H2_PAL_ERR_INVALID_ARG);
-    assert(test_system_event_dispatch(
-        &env,
-        H2_PAL_SYSTEM_EVENT_TYPE_NETIF_DEFAULT_CHANGED,
-        &bad_netif,
-        sizeof(bad_netif) + 1u) == H2_PAL_ERR_INVALID_ARG);
-    bad_netif.current =
-        test_netif_name_ref("bad0", (h2_pal_netif_kind_t)99);
-    assert(test_system_event_dispatch(
-        &env,
-        H2_PAL_SYSTEM_EVENT_TYPE_NETIF_DEFAULT_CHANGED,
-        &bad_netif,
-        sizeof(bad_netif)) == H2_PAL_ERR_INVALID_ARG);
-    bad_netif.current.kind = H2_PAL_NETIF_KIND_UNKNOWN;
-    bad_netif.current_valid = 2u;
-    assert(test_system_event_dispatch(
-        &env,
-        H2_PAL_SYSTEM_EVENT_TYPE_NETIF_DEFAULT_CHANGED,
-        &bad_netif,
-        sizeof(bad_netif)) == H2_PAL_ERR_INVALID_ARG);
+  h2_pal_netif_default_changed_t bad_netif;
+  memset(&bad_netif, 0, sizeof(bad_netif));
+  bad_netif.current.type = H2_PAL_NETIF_REF_DEFAULT;
+  bad_netif.current_valid = 1u;
+  assert(test_system_event_dispatch(
+             &env, H2_PAL_SYSTEM_EVENT_TYPE_NETIF_DEFAULT_CHANGED, &bad_netif,
+             sizeof(bad_netif)) == H2_PAL_ERR_INVALID_ARG);
+  assert(test_system_event_dispatch(
+             &env, H2_PAL_SYSTEM_EVENT_TYPE_NETIF_DEFAULT_CHANGED, &bad_netif,
+             sizeof(bad_netif) - 1u) == H2_PAL_ERR_INVALID_ARG);
+  assert(test_system_event_dispatch(
+             &env, H2_PAL_SYSTEM_EVENT_TYPE_NETIF_DEFAULT_CHANGED, &bad_netif,
+             sizeof(bad_netif) + 1u) == H2_PAL_ERR_INVALID_ARG);
+  bad_netif.current = test_netif_name_ref("bad0", (h2_pal_netif_kind_t)99);
+  assert(test_system_event_dispatch(
+             &env, H2_PAL_SYSTEM_EVENT_TYPE_NETIF_DEFAULT_CHANGED, &bad_netif,
+             sizeof(bad_netif)) == H2_PAL_ERR_INVALID_ARG);
+  bad_netif.current.kind = H2_PAL_NETIF_KIND_UNKNOWN;
+  bad_netif.current_valid = 2u;
+  assert(test_system_event_dispatch(
+             &env, H2_PAL_SYSTEM_EVENT_TYPE_NETIF_DEFAULT_CHANGED, &bad_netif,
+             sizeof(bad_netif)) == H2_PAL_ERR_INVALID_ARG);
 
-    h2_pal_ble_adv_set_event_t bad_advertising = {
-        .set = NULL,
-        .status = H2_PAL_OK,
-    };
-    assert(test_system_event_dispatch(
-        &env,
-        H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STARTED,
-        &bad_advertising,
-        sizeof(bad_advertising)) == H2_PAL_ERR_INVALID_ARG);
-    assert(test_system_event_dispatch(
-        &env,
-        H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STARTED,
-        &bad_payload,
-        sizeof(bad_payload)) == H2_PAL_ERR_INVALID_ARG);
+  h2_pal_ble_adv_set_event_t bad_advertising = {
+      .set = NULL,
+      .status = H2_PAL_OK,
+  };
+  assert(test_system_event_dispatch(
+             &env, H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STARTED,
+             &bad_advertising,
+             sizeof(bad_advertising)) == H2_PAL_ERR_INVALID_ARG);
+  assert(test_system_event_dispatch(
+             &env, H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STARTED,
+             &bad_payload, sizeof(bad_payload)) == H2_PAL_ERR_INVALID_ARG);
 
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = event_with_payload(payload);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_WOULD_BLOCK);
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_WOULD_BLOCK);
 
-    h2_runtime_deinit(runtime);
+  h2_runtime_deinit(runtime);
 }
 
 static void test_system_event_advertising_set_correlation_and_copy(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    h2_runtime_t *runtime = test_runtime_create_with_system_events(&env);
-    uint8_t first_identity = 0u;
-    uint8_t second_identity = 0u;
-    h2_pal_ble_adv_set_event_t first = {
-        .set = (h2_pal_ble_adv_set_t *)&first_identity,
-        .status = H2_PAL_OK,
-    };
-    h2_pal_ble_adv_set_event_t second = {
-        .set = (h2_pal_ble_adv_set_t *)&second_identity,
-        .status = H2_PAL_ERR_IO,
-    };
-    assert(test_system_event_dispatch(
-        &env, H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STARTED,
-        &first, sizeof(first)) == H2_PAL_OK);
-    assert(test_system_event_dispatch(
-        &env, H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STOPPED,
-        &second, sizeof(second)) == H2_PAL_OK);
-    first.set = NULL;
-    first.status = H2_PAL_ERR_IO;
-    second.set = NULL;
-    second.status = H2_PAL_OK;
+  test_runtime_env_t env;
+  test_env_init(&env);
+  h2_runtime_t* runtime = test_runtime_create_with_system_events(&env);
+  uint8_t first_identity = 0u;
+  uint8_t second_identity = 0u;
+  h2_pal_ble_adv_set_event_t first = {
+      .set = (h2_pal_ble_adv_set_t*)&first_identity,
+      .status = H2_PAL_OK,
+  };
+  h2_pal_ble_adv_set_event_t second = {
+      .set = (h2_pal_ble_adv_set_t*)&second_identity,
+      .status = H2_PAL_ERR_IO,
+  };
+  assert(test_system_event_dispatch(
+             &env, H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STARTED, &first,
+             sizeof(first)) == H2_PAL_OK);
+  assert(test_system_event_dispatch(
+             &env, H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STOPPED, &second,
+             sizeof(second)) == H2_PAL_OK);
+  first.set = NULL;
+  first.status = H2_PAL_ERR_IO;
+  second.set = NULL;
+  second.status = H2_PAL_OK;
 
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = event_with_payload(payload);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    const h2_runtime_system_event_ble_advertising_set_t *mapped =
-        event.payload;
-    assert(event.kind == H2_RUNTIME_SYSTEM_EVENT_BLE_ADVERTISING_STARTED);
-    assert(mapped->set == &first_identity);
-    assert(mapped->result == H2_PAL_OK);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    mapped = event.payload;
-    assert(event.kind == H2_RUNTIME_SYSTEM_EVENT_BLE_ADVERTISING_STOPPED);
-    assert(mapped->set == &second_identity);
-    assert(mapped->result == H2_PAL_ERR_IO);
-    h2_runtime_deinit(runtime);
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  const h2_runtime_system_event_ble_advertising_set_t* mapped = event.payload;
+  assert(event.kind == H2_RUNTIME_SYSTEM_EVENT_BLE_ADVERTISING_STARTED);
+  assert(mapped->set == &first_identity);
+  assert(mapped->result == H2_PAL_OK);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  mapped = event.payload;
+  assert(event.kind == H2_RUNTIME_SYSTEM_EVENT_BLE_ADVERTISING_STOPPED);
+  assert(mapped->set == &second_identity);
+  assert(mapped->result == H2_PAL_ERR_IO);
+  h2_runtime_deinit(runtime);
 }
 
 static void test_system_event_advertising_queue_failure(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    h2_runtime_t *runtime = test_runtime_create_with_system_events(&env);
-    uint8_t identity = 0u;
-    const h2_pal_ble_adv_set_event_t advertising = {
-        .set = (h2_pal_ble_adv_set_t *)&identity,
-        .status = H2_PAL_OK,
-    };
-    env.queue_state.send_rc = H2_PAL_ERR_IO;
-    assert(test_system_event_dispatch(
-        &env, H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STARTED,
-        &advertising, sizeof(advertising)) == H2_PAL_ERR_IO);
-    h2_runtime_deinit(runtime);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  h2_runtime_t* runtime = test_runtime_create_with_system_events(&env);
+  uint8_t identity = 0u;
+  const h2_pal_ble_adv_set_event_t advertising = {
+      .set = (h2_pal_ble_adv_set_t*)&identity,
+      .status = H2_PAL_OK,
+  };
+  env.queue_state.send_rc = H2_PAL_ERR_IO;
+  assert(test_system_event_dispatch(
+             &env, H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STARTED,
+             &advertising, sizeof(advertising)) == H2_PAL_ERR_IO);
+  h2_runtime_deinit(runtime);
 }
 
 static void test_event_small_buffer_does_not_dequeue(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
-    h2_runtime_t *runtime = test_runtime_create(&env);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  h2_runtime_t* runtime = test_runtime_create(&env);
 
-    env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = event_with_payload(payload);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
-    (void)poll_button_action(runtime, &event);
-    env.button_state.single_state = H2_PAL_BUTTON_STATE_RELEASED;
-    env.time_state.now_ms = H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+  (void)poll_button_action(runtime, &event);
+  env.button_state.single_state = H2_PAL_BUTTON_STATE_RELEASED;
+  env.time_state.now_ms = H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
 
-    uint8_t tiny_payload[1];
-    h2_runtime_event_t tiny = {
-        .payload = tiny_payload,
-        .payload_capacity = sizeof(tiny_payload),
-    };
-    assert(h2_runtime_poll_event(runtime, &tiny) == H2_PAL_ERR_TRUNCATED);
+  uint8_t tiny_payload[1];
+  h2_runtime_event_t tiny = {
+      .payload = tiny_payload,
+      .payload_capacity = sizeof(tiny_payload),
+  };
+  assert(h2_runtime_poll_event(runtime, &tiny) == H2_PAL_ERR_TRUNCATED);
 
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP);
-    assert(event.component_id == 1u);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP);
+  assert(event.component_id == 1u);
 
-    h2_runtime_deinit(runtime);
+  h2_runtime_deinit(runtime);
 }
 
 static void test_event_queue_timeout_drops_event(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    env.queue_state.full_rc = H2_PAL_QUEUE_ERR_TIMEOUT;
-    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
-    h2_runtime_t *runtime = test_runtime_create(&env);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  env.queue_state.full_rc = H2_PAL_QUEUE_ERR_TIMEOUT;
+  add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  h2_runtime_t* runtime = test_runtime_create(&env);
 
-    for (size_t i = 0u; i < 5u; ++i) {
-        env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
-        env.time_state.now_ms += H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
-        assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-        env.button_state.single_state = H2_PAL_BUTTON_STATE_RELEASED;
-        env.time_state.now_ms += H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
-        assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    }
-
-    h2_runtime_deinit(runtime);
-}
-
-static uint32_t dropped_events(const h2_runtime_t *runtime) {
-    uint32_t count = UINT32_MAX;
-    assert(h2_runtime_dropped_event_count(runtime, &count) == H2_PAL_OK);
-    return count;
-}
-
-static size_t drain_events(h2_runtime_t *runtime) {
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = event_with_payload(payload);
-    size_t count = 0u;
-    while (h2_runtime_poll_event(runtime, &event) == H2_PAL_OK) {
-        count += 1u;
-    }
-    return count;
-}
-
-static void poll_button_at(
-    test_runtime_env_t *env,
-    h2_runtime_t *runtime,
-    h2_pal_button_state_t state,
-    uint64_t now_ms) {
-    env->button_state.single_state = state;
-    env->time_state.now_ms = now_ms;
+  for (size_t i = 0u; i < 5u; ++i) {
+    env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
+    env.time_state.now_ms += H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
     assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+    env.button_state.single_state = H2_PAL_BUTTON_STATE_RELEASED;
+    env.time_state.now_ms += H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
+    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  }
+
+  h2_runtime_deinit(runtime);
+}
+
+static uint32_t dropped_events(const h2_runtime_t* runtime) {
+  uint32_t count = UINT32_MAX;
+  assert(h2_runtime_dropped_event_count(runtime, &count) == H2_PAL_OK);
+  return count;
+}
+
+static size_t drain_events(h2_runtime_t* runtime) {
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
+  size_t count = 0u;
+  while (h2_runtime_poll_event(runtime, &event) == H2_PAL_OK) {
+    count += 1u;
+  }
+  return count;
+}
+
+static void poll_button_at(test_runtime_env_t* env, h2_runtime_t* runtime,
+                           h2_pal_button_state_t state, uint64_t now_ms) {
+  env->button_state.single_state = state;
+  env->time_state.now_ms = now_ms;
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
 }
 
 static void test_dropped_event_count_rejects_invalid_arguments(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    h2_runtime_t *runtime = test_runtime_create(&env);
-    uint32_t count = 7u;
-    assert(h2_runtime_dropped_event_count(NULL, &count) ==
-           H2_PAL_ERR_INVALID_ARG);
-    assert(count == 0u);
-    assert(h2_runtime_dropped_event_count(runtime, NULL) ==
-           H2_PAL_ERR_INVALID_ARG);
-    assert(h2_runtime_dropped_event_count(runtime, &count) == H2_PAL_OK);
-    assert(count == 0u);
-    h2_runtime_deinit(runtime);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  h2_runtime_t* runtime = test_runtime_create(&env);
+  uint32_t count = 7u;
+  assert(h2_runtime_dropped_event_count(NULL, &count) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(count == 0u);
+  assert(h2_runtime_dropped_event_count(runtime, NULL) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_runtime_dropped_event_count(runtime, &count) == H2_PAL_OK);
+  assert(count == 0u);
+  h2_runtime_deinit(runtime);
 }
 
 /*
@@ -2249,65 +2201,60 @@ static void test_dropped_event_count_rejects_invalid_arguments(void) {
  * is delivered with its original timestamps once the consumer drains.
  */
 static void test_button_release_survives_full_queue(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
-    h2_runtime_t *runtime = test_runtime_create(&env);
-    assert(dropped_events(runtime) == 0u);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  h2_runtime_t* runtime = test_runtime_create(&env);
+  assert(dropped_events(runtime) == 0u);
 
-    /* Queue capacity 4: press (DOWN + ACTION) and one repeat fill it. */
-    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 10u);
-    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 30u);
-    assert(dropped_events(runtime) == 0u);
-    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 50u);
-    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 70u);
-    assert(dropped_events(runtime) == 4u);
+  /* Queue capacity 4: press (DOWN + ACTION) and one repeat fill it. */
+  poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 10u);
+  poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 30u);
+  assert(dropped_events(runtime) == 0u);
+  poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 50u);
+  poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 70u);
+  assert(dropped_events(runtime) == 4u);
 
-    /* Released while the queue is still full: the edge is kept, not lost. */
-    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_RELEASED, 90u);
-    assert(runtime->private_state->input_sources[0].button.retained_count ==
-           1u);
-    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_RELEASED, 110u);
-    assert(dropped_events(runtime) == 4u);
-    h2_runtime_button_state_t state;
-    assert(h2_runtime_component_state_button(runtime, 1u, &state) ==
-           H2_PAL_OK);
-    assert(!state.pressed);
+  /* Released while the queue is still full: the edge is kept, not lost. */
+  poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_RELEASED, 90u);
+  assert(runtime->private_state->input_sources[0].button.retained_count == 1u);
+  poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_RELEASED, 110u);
+  assert(dropped_events(runtime) == 4u);
+  h2_runtime_button_state_t state;
+  assert(h2_runtime_component_state_button(runtime, 1u, &state) == H2_PAL_OK);
+  assert(!state.pressed);
 
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = event_with_payload(payload);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
-    assert(event.timestamp_ms == 10u);
-    assert(drain_events(runtime) == 3u);
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+  assert(event.timestamp_ms == 10u);
+  assert(drain_events(runtime) == 3u);
 
-    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_RELEASED, 130u);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP);
-    assert(event.timestamp_ms == 90u);
-    h2_runtime_button_up_event_t up;
-    memcpy(&up, event.payload, sizeof(up));
-    assert(up.pressed_at_ms == 10u);
-    assert(up.released_at_ms == 90u);
-    const h2_runtime_sequence_t up_sequence = event.sequence;
-    h2_runtime_button_action_event_t action =
-        poll_button_action(runtime, &event);
-    assert(action.pressed_at_ms == 10u);
-    assert(action.released_at_ms == 90u);
-    assert(h2_runtime_sequence_after(event.sequence, up_sequence));
-    const h2_runtime_state_publication_t *publication =
-        &runtime->private_state->state_publication;
-    assert(!h2_runtime_sequence_after(
-        event.sequence,
-        publication->banks[h2_atomic_load(&publication->active_index)]
-            .event_sequence_ceiling));
-    assert(h2_runtime_poll_event(runtime, &event) ==
-           H2_PAL_ERR_WOULD_BLOCK);
-    assert(runtime->private_state->input_sources[0].button.retained_count ==
-           0u);
-    assert(dropped_events(runtime) == 4u);
+  poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_RELEASED, 130u);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP);
+  assert(event.timestamp_ms == 90u);
+  h2_runtime_button_up_event_t up;
+  memcpy(&up, event.payload, sizeof(up));
+  assert(up.pressed_at_ms == 10u);
+  assert(up.released_at_ms == 90u);
+  const h2_runtime_sequence_t up_sequence = event.sequence;
+  h2_runtime_button_action_event_t action = poll_button_action(runtime, &event);
+  assert(action.pressed_at_ms == 10u);
+  assert(action.released_at_ms == 90u);
+  assert(h2_runtime_sequence_after(event.sequence, up_sequence));
+  const h2_runtime_state_publication_t* publication =
+      &runtime->private_state->state_publication;
+  assert(!h2_runtime_sequence_after(
+      event.sequence,
+      publication->banks[h2_atomic_load(&publication->active_index)]
+          .event_sequence_ceiling));
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_WOULD_BLOCK);
+  assert(runtime->private_state->input_sources[0].button.retained_count == 0u);
+  assert(dropped_events(runtime) == 4u);
 
-    h2_runtime_deinit(runtime);
+  h2_runtime_deinit(runtime);
 }
 
 /*
@@ -2315,48 +2262,47 @@ static void test_button_release_survives_full_queue(void) {
  * of the same source, with the timestamp that marks it as the first sample.
  */
 static void test_button_press_edge_waits_for_queue_space(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
-    h2_runtime_t *runtime = test_runtime_create(&env);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  h2_runtime_t* runtime = test_runtime_create(&env);
 
-    const uint32_t filler = 1u;
-    const h2_runtime_custom_event_t custom = {
-        .id = H2_RUNTIME_CUSTOM_EVENT_ID(0x0106u, 1u),
-        .payload = &filler,
-        .payload_size = sizeof(filler),
-    };
-    for (size_t i = 0u; i < 4u; ++i) {
-        assert(h2_runtime_post_custom_event(runtime, &custom) == H2_PAL_OK);
-    }
+  const uint32_t filler = 1u;
+  const h2_runtime_custom_event_t custom = {
+      .id = H2_RUNTIME_CUSTOM_EVENT_ID(0x0106u, 1u),
+      .payload = &filler,
+      .payload_size = sizeof(filler),
+  };
+  for (size_t i = 0u; i < 4u; ++i) {
+    assert(h2_runtime_post_custom_event(runtime, &custom) == H2_PAL_OK);
+  }
 
-    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 10u);
-    /* Only the press action, a held sample, is dropped. */
-    assert(dropped_events(runtime) == 1u);
-    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 30u);
-    /* Repeats of a source with a retained edge never overtake it. */
-    assert(dropped_events(runtime) == 3u);
-    assert(drain_events(runtime) == 4u);
+  poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 10u);
+  /* Only the press action, a held sample, is dropped. */
+  assert(dropped_events(runtime) == 1u);
+  poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 30u);
+  /* Repeats of a source with a retained edge never overtake it. */
+  assert(dropped_events(runtime) == 3u);
+  assert(drain_events(runtime) == 4u);
 
-    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 50u);
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = event_with_payload(payload);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
-    h2_runtime_button_down_event_t down;
-    memcpy(&down, event.payload, sizeof(down));
-    assert(down.pressed_at_ms == 10u);
-    assert(event.timestamp_ms == down.pressed_at_ms);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
-    assert(event.timestamp_ms == 50u);
-    h2_runtime_button_action_event_t action =
-        poll_button_action(runtime, &event);
-    assert(action.pressed_at_ms == 10u);
-    assert(action.released_at_ms == 0u);
-    assert(dropped_events(runtime) == 3u);
+  poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 50u);
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+  h2_runtime_button_down_event_t down;
+  memcpy(&down, event.payload, sizeof(down));
+  assert(down.pressed_at_ms == 10u);
+  assert(event.timestamp_ms == down.pressed_at_ms);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+  assert(event.timestamp_ms == 50u);
+  h2_runtime_button_action_event_t action = poll_button_action(runtime, &event);
+  assert(action.pressed_at_ms == 10u);
+  assert(action.released_at_ms == 0u);
+  assert(dropped_events(runtime) == 3u);
 
-    h2_runtime_deinit(runtime);
+  h2_runtime_deinit(runtime);
 }
 
 /*
@@ -2364,278 +2310,271 @@ static void test_button_press_edge_waits_for_queue_space(void) {
  * complementary pair, so the consumer still ends on the right level.
  */
 static void test_button_retained_edges_discard_oldest_pair(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
-    h2_runtime_t *runtime = test_runtime_create(&env);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  h2_runtime_t* runtime = test_runtime_create(&env);
 
-    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 10u);
-    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 30u);
-    assert(dropped_events(runtime) == 0u);
+  poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 10u);
+  poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 30u);
+  assert(dropped_events(runtime) == 0u);
 
-    /* release (UP + action), press (DOWN), release: 3 edges, cap 2. */
-    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_RELEASED, 50u);
-    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 70u);
-    const h2_runtime_button_recognizer_t *button =
-        &runtime->private_state->input_sources[0].button;
-    assert(button->retained_count == 2u);
-    /* The press action of the retained re-press is a dropped sample. */
-    assert(dropped_events(runtime) == 1u);
-    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_RELEASED, 90u);
-    assert(button->retained_count == 1u);
-    /* The discarded pair: UP + final action at 50, DOWN at 70. */
-    assert(dropped_events(runtime) == 4u);
+  /* release (UP + action), press (DOWN), release: 3 edges, cap 2. */
+  poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_RELEASED, 50u);
+  poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 70u);
+  const h2_runtime_button_recognizer_t* button =
+      &runtime->private_state->input_sources[0].button;
+  assert(button->retained_count == 2u);
+  /* The press action of the retained re-press is a dropped sample. */
+  assert(dropped_events(runtime) == 1u);
+  poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_RELEASED, 90u);
+  assert(button->retained_count == 1u);
+  /* The discarded pair: UP + final action at 50, DOWN at 70. */
+  assert(dropped_events(runtime) == 4u);
 
-    assert(drain_events(runtime) == 4u);
-    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_RELEASED, 110u);
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = event_with_payload(payload);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP);
-    h2_runtime_button_up_event_t up;
-    memcpy(&up, event.payload, sizeof(up));
-    assert(up.pressed_at_ms == 70u);
-    assert(up.released_at_ms == 90u);
-    h2_runtime_button_action_event_t action =
-        poll_button_action(runtime, &event);
-    assert(action.pressed_at_ms == 70u);
-    assert(action.released_at_ms == 90u);
-    assert(h2_runtime_poll_event(runtime, &event) ==
-           H2_PAL_ERR_WOULD_BLOCK);
-    assert(button->retained_count == 0u);
+  assert(drain_events(runtime) == 4u);
+  poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_RELEASED, 110u);
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP);
+  h2_runtime_button_up_event_t up;
+  memcpy(&up, event.payload, sizeof(up));
+  assert(up.pressed_at_ms == 70u);
+  assert(up.released_at_ms == 90u);
+  h2_runtime_button_action_event_t action = poll_button_action(runtime, &event);
+  assert(action.pressed_at_ms == 70u);
+  assert(action.released_at_ms == 90u);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_WOULD_BLOCK);
+  assert(button->retained_count == 0u);
 
-    h2_runtime_deinit(runtime);
+  h2_runtime_deinit(runtime);
 }
 
 /* An UP that fit while its final action did not still delivers the action. */
 static void test_button_final_action_is_retained_alone(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
-    h2_runtime_t *runtime = test_runtime_create(&env);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  h2_runtime_t* runtime = test_runtime_create(&env);
 
-    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 10u);
-    const uint32_t filler = 1u;
-    const h2_runtime_custom_event_t custom = {
-        .id = H2_RUNTIME_CUSTOM_EVENT_ID(0x0106u, 1u),
-        .payload = &filler,
-        .payload_size = sizeof(filler),
-    };
-    assert(h2_runtime_post_custom_event(runtime, &custom) == H2_PAL_OK);
-    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_RELEASED, 30u);
-    const h2_runtime_button_recognizer_t *button =
-        &runtime->private_state->input_sources[0].button;
-    assert(button->retained_count == 1u);
-    assert(button->retained[0].edge_owed == 0u);
-    assert(button->retained[0].action_owed == 1u);
-    assert(dropped_events(runtime) == 0u);
+  poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 10u);
+  const uint32_t filler = 1u;
+  const h2_runtime_custom_event_t custom = {
+      .id = H2_RUNTIME_CUSTOM_EVENT_ID(0x0106u, 1u),
+      .payload = &filler,
+      .payload_size = sizeof(filler),
+  };
+  assert(h2_runtime_post_custom_event(runtime, &custom) == H2_PAL_OK);
+  poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_RELEASED, 30u);
+  const h2_runtime_button_recognizer_t* button =
+      &runtime->private_state->input_sources[0].button;
+  assert(button->retained_count == 1u);
+  assert(button->retained[0].edge_owed == 0u);
+  assert(button->retained[0].action_owed == 1u);
+  assert(dropped_events(runtime) == 0u);
 
-    assert(drain_events(runtime) == 4u);
-    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_RELEASED, 50u);
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = event_with_payload(payload);
-    h2_runtime_button_action_event_t action =
-        poll_button_action(runtime, &event);
-    assert(action.pressed_at_ms == 10u);
-    assert(action.released_at_ms == 30u);
-    assert(event.timestamp_ms == 30u);
-    assert(h2_runtime_poll_event(runtime, &event) ==
-           H2_PAL_ERR_WOULD_BLOCK);
+  assert(drain_events(runtime) == 4u);
+  poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_RELEASED, 50u);
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
+  h2_runtime_button_action_event_t action = poll_button_action(runtime, &event);
+  assert(action.pressed_at_ms == 10u);
+  assert(action.released_at_ms == 30u);
+  assert(event.timestamp_ms == 30u);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_WOULD_BLOCK);
 
-    h2_runtime_deinit(runtime);
+  h2_runtime_deinit(runtime);
 }
 
 /* Retained release survives stop/start, but test sessions reset history. */
 static void test_button_retention_lifecycle(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
-    h2_runtime_t *runtime = test_runtime_create(&env);
-    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 10u);
-    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 30u);
-    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_RELEASED, 50u);
-    assert(runtime->private_state->input_sources[0].button.retained_count == 1u);
-    assert(h2_runtime_input_stop(runtime) == H2_PAL_OK);
-    assert(drain_events(runtime) == 4u);
-    env.time_state.now_ms = 70u;
-    assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_OK);
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = event_with_payload(payload);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP);
-    assert(event.timestamp_ms == 50u);
-    assert(drain_events(runtime) == 1u);
-    assert(dropped_events(runtime) == 0u);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  h2_runtime_t* runtime = test_runtime_create(&env);
+  poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 10u);
+  poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 30u);
+  poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_RELEASED, 50u);
+  assert(runtime->private_state->input_sources[0].button.retained_count == 1u);
+  assert(h2_runtime_input_stop(runtime) == H2_PAL_OK);
+  assert(drain_events(runtime) == 4u);
+  env.time_state.now_ms = 70u;
+  assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_OK);
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP);
+  assert(event.timestamp_ms == 50u);
+  assert(drain_events(runtime) == 1u);
+  assert(dropped_events(runtime) == 0u);
 
-    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 90u);
-    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 110u);
-    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_RELEASED, 130u);
-    assert(runtime->private_state->input_sources[0].button.retained_count == 1u);
-    h2_runtime_test_control_t *control = NULL;
-    assert(h2_runtime_test_control_open(runtime, &control) == H2_PAL_OK);
-    assert(runtime->private_state->input_sources[0].button.retained_count == 0u);
-    assert(drain_events(runtime) == 0u);
-    assert(h2_runtime_test_button_down(control, 1u, 150u) == H2_PAL_OK);
-    assert(h2_runtime_test_button_up(control, 1u, 150u, 170u) == H2_PAL_OK);
-    h2_runtime_test_control_close(control);
-    /* Close keeps already queued injected events, as the public contract does. */
-    assert(drain_events(runtime) == 2u);
-    assert(dropped_events(runtime) == 0u);
-    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_RELEASED, 190u);
-    assert(drain_events(runtime) == 0u);
-    assert(runtime->private_state->input_sources[0].button.retained_count == 0u);
-    h2_runtime_deinit(runtime);
-    assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
+  poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 90u);
+  poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 110u);
+  poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_RELEASED, 130u);
+  assert(runtime->private_state->input_sources[0].button.retained_count == 1u);
+  h2_runtime_test_control_t* control = NULL;
+  assert(h2_runtime_test_control_open(runtime, &control) == H2_PAL_OK);
+  assert(runtime->private_state->input_sources[0].button.retained_count == 0u);
+  assert(drain_events(runtime) == 0u);
+  assert(h2_runtime_test_button_down(control, 1u, 150u) == H2_PAL_OK);
+  assert(h2_runtime_test_button_up(control, 1u, 150u, 170u) == H2_PAL_OK);
+  h2_runtime_test_control_close(control);
+  /* Close keeps already queued injected events, as the public contract does. */
+  assert(drain_events(runtime) == 2u);
+  assert(dropped_events(runtime) == 0u);
+  poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_RELEASED, 190u);
+  assert(drain_events(runtime) == 0u);
+  assert(runtime->private_state->input_sources[0].button.retained_count == 0u);
+  h2_runtime_deinit(runtime);
+  assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
 }
 
 typedef struct test_log {
-    size_t warn_count;
-    char last_scope[32];
-    char last_message[H2_PAL_LOG_MESSAGE_MAX];
+  size_t warn_count;
+  char last_scope[32];
+  char last_message[H2_PAL_LOG_MESSAGE_MAX];
 } test_log_t;
 
-static int test_log_write(
-    void *user,
-    h2_pal_log_level_t level,
-    const char *scope,
-    const char *message) {
-    test_log_t *log = (test_log_t *)user;
-    if (level == H2_PAL_LOG_WARN) {
-        log->warn_count += 1u;
-        const size_t scope_len = strlen(scope);
-        const size_t message_len = strlen(message);
-        assert(scope_len < sizeof(log->last_scope));
-        assert(message_len < sizeof(log->last_message));
-        memcpy(log->last_scope, scope, scope_len + 1u);
-        memcpy(log->last_message, message, message_len + 1u);
-    }
-    return H2_PAL_OK;
+static int test_log_write(void* user, h2_pal_log_level_t level,
+                          const char* scope, const char* message) {
+  test_log_t* log = (test_log_t*)user;
+  if (level == H2_PAL_LOG_WARN) {
+    log->warn_count += 1u;
+    const size_t scope_len = strlen(scope);
+    const size_t message_len = strlen(message);
+    assert(scope_len < sizeof(log->last_scope));
+    assert(message_len < sizeof(log->last_message));
+    memcpy(log->last_scope, scope, scope_len + 1u);
+    memcpy(log->last_message, message, message_len + 1u);
+  }
+  return H2_PAL_OK;
 }
 
 static void test_dropped_events_warn_at_most_once_per_second(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
-    test_log_t log_state;
-    memset(&log_state, 0, sizeof(log_state));
-    static const h2_pal_log_vtable_t log_vtable = {.write = test_log_write};
-    const h2_pal_log_api_t log = {.user = &log_state, .vtable = &log_vtable};
-    h2_runtime_config_t config = test_runtime_config(&env);
-    config.log = &log;
-    h2_runtime_t *runtime = NULL;
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
-    assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_OK);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  test_log_t log_state;
+  memset(&log_state, 0, sizeof(log_state));
+  static const h2_pal_log_vtable_t log_vtable = {.write = test_log_write};
+  const h2_pal_log_api_t log = {.user = &log_state, .vtable = &log_vtable};
+  h2_runtime_config_t config = test_runtime_config(&env);
+  config.log = &log;
+  h2_runtime_t* runtime = NULL;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_OK);
 
-    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 10u);
-    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 30u);
-    assert(log_state.warn_count == 0u);
+  poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 10u);
+  poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 30u);
+  assert(log_state.warn_count == 0u);
 
-    /* The first drop is reported at once. */
-    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 50u);
-    assert(log_state.warn_count == 1u);
-    assert(strcmp(log_state.last_scope, "runtime/event") == 0);
-    char expected[96];
-    (void)snprintf(expected, sizeof(expected),
-                   "event queue full: dropped 1 event(s), total 1; "
-                   "last kind %d component %d id 1",
-                   (int)H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN,
-                   (int)H2_RUNTIME_COMPONENT_BUTTON);
-    assert(strcmp(log_state.last_message, expected) == 0);
+  /* The first drop is reported at once. */
+  poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 50u);
+  assert(log_state.warn_count == 1u);
+  assert(strcmp(log_state.last_scope, "runtime/event") == 0);
+  char expected[96];
+  (void)snprintf(expected, sizeof(expected),
+                 "event queue full: dropped 1 event(s), total 1; "
+                 "last kind %d component %d id 1",
+                 (int)H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN,
+                 (int)H2_RUNTIME_COMPONENT_BUTTON);
+  assert(strcmp(log_state.last_message, expected) == 0);
 
-    /* Further drops inside the window are counted, not logged. */
-    for (uint64_t now = 70u; now < 1050u; now += 20u) {
-        poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, now);
-    }
-    assert(log_state.warn_count == 1u);
-    const uint32_t total = dropped_events(runtime);
-    assert(total > 2u);
+  /* Further drops inside the window are counted, not logged. */
+  for (uint64_t now = 70u; now < 1050u; now += 20u) {
+    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, now);
+  }
+  assert(log_state.warn_count == 1u);
+  const uint32_t total = dropped_events(runtime);
+  assert(total > 2u);
 
-    /*
-     * Drops stopped inside the window; once it passes, the next input poll
-     * reports the held-back total even though that poll drops nothing.
-     */
-    assert(drain_events(runtime) == 4u);
-    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 1050u);
-    assert(dropped_events(runtime) == total);
-    assert(log_state.warn_count == 2u);
-    (void)snprintf(expected, sizeof(expected),
-                   "dropped %u event(s), total %u;", total - 1u, total);
-    assert(strstr(log_state.last_message, expected) != NULL);
+  /*
+   * Drops stopped inside the window; once it passes, the next input poll
+   * reports the held-back total even though that poll drops nothing.
+   */
+  assert(drain_events(runtime) == 4u);
+  poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 1050u);
+  assert(dropped_events(runtime) == total);
+  assert(log_state.warn_count == 2u);
+  (void)snprintf(expected, sizeof(expected), "dropped %u event(s), total %u;",
+                 total - 1u, total);
+  assert(strstr(log_state.last_message, expected) != NULL);
 
-    /* No new drop, no new line. */
-    assert(drain_events(runtime) == 2u);
-    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 3000u);
-    assert(log_state.warn_count == 2u);
+  /* No new drop, no new line. */
+  assert(drain_events(runtime) == 2u);
+  poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 3000u);
+  assert(log_state.warn_count == 2u);
 
-    h2_runtime_deinit(runtime);
+  h2_runtime_deinit(runtime);
 }
 
 /* The PAL system-event producer retains the normal drop/error policy. */
 static void test_system_event_queue_errors_and_synchronous_warning(void) {
-    const struct {
-        h2_pal_result_t provider;
-        h2_pal_result_t result;
-        unsigned drops;
-    } cases[] = {
-        {H2_PAL_ERR_FULL, H2_PAL_OK, 1u},
-        {H2_PAL_QUEUE_ERR_TIMEOUT, H2_PAL_OK, 1u},
-        {H2_PAL_ERR_WOULD_BLOCK, H2_PAL_ERR_WOULD_BLOCK, 0u},
-        {H2_PAL_ERR_IO, H2_PAL_ERR_IO, 0u},
-        {H2_PAL_ERR_CLOSED, H2_PAL_ERR_CLOSED, 0u},
-        {H2_PAL_OK, H2_PAL_OK, 0u},
-    };
-    for (size_t i = 0u; i < sizeof(cases) / sizeof(cases[0]); ++i) {
-        test_runtime_env_t env;
-        test_env_init(&env);
-        test_log_t log_state = {0};
-        static const h2_pal_log_vtable_t log_vtable = {.write = test_log_write};
-        const h2_pal_log_api_t log = {.user = &log_state, .vtable = &log_vtable};
-        h2_runtime_config_t config = test_runtime_config(&env);
-        config.system_event = &env.system_event;
-        config.log = &log;
-        h2_runtime_t *runtime = NULL;
-        assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
-        env.time_state.now_ms = 100u;
-        env.queue_state.send_rc = cases[i].provider;
-        assert(test_system_event_dispatch(
-                   &env, H2_PAL_SYSTEM_EVENT_TYPE_BLE_HOST_STARTED, NULL, 0u) ==
-               cases[i].result);
-        assert(dropped_events(runtime) == cases[i].drops);
-        /* The first WARN is visible before the dispatch call returns. */
-        assert(log_state.warn_count == cases[i].drops);
-        assert(runtime->private_state->event_queue->count ==
-               (cases[i].provider == H2_PAL_OK ? 1u : 0u));
-        assert(runtime->private_state->wake_queue->count ==
-               (cases[i].provider == H2_PAL_OK ? 1u : 0u));
-        assert(runtime->private_state->wake_queue->send_calls ==
-               (cases[i].provider == H2_PAL_OK ? 1u : 0u));
-        if (cases[i].drops != 0u) {
-            char expected[128];
-            (void)snprintf(expected, sizeof(expected),
-                           "event queue full: dropped 1 event(s), total 1; "
-                           "last kind %d component %d id 0",
-                           (int)H2_RUNTIME_SYSTEM_EVENT_BLE_HOST_STARTED,
-                           (int)H2_RUNTIME_COMPONENT_SYSTEM_BLE);
-            assert(strcmp(log_state.last_scope, "runtime/event") == 0);
-            assert(strcmp(log_state.last_message, expected) == 0);
-            env.time_state.now_ms = 101u;
-            assert(test_system_event_dispatch(
-                       &env, H2_PAL_SYSTEM_EVENT_TYPE_BLE_HOST_STARTED, NULL, 0u) ==
-                   H2_PAL_OK);
-            assert(dropped_events(runtime) == 2u);
-            assert(log_state.warn_count == 1u);
-            /* Invalid payload must not flush the pending, rate-limited drop. */
-            env.time_state.now_ms = 1100u;
-            const uint8_t invalid_payload = 1u;
-            assert(test_system_event_dispatch(
-                       &env, H2_PAL_SYSTEM_EVENT_TYPE_BLE_HOST_STARTED,
-                       &invalid_payload, sizeof(invalid_payload)) ==
-                   H2_PAL_ERR_INVALID_ARG);
-            assert(dropped_events(runtime) == 2u);
-            assert(log_state.warn_count == 1u);
-        }
-        h2_runtime_deinit(runtime);
+  const struct {
+    h2_pal_result_t provider;
+    h2_pal_result_t result;
+    unsigned drops;
+  } cases[] = {
+      {H2_PAL_ERR_FULL, H2_PAL_OK, 1u},
+      {H2_PAL_QUEUE_ERR_TIMEOUT, H2_PAL_OK, 1u},
+      {H2_PAL_ERR_WOULD_BLOCK, H2_PAL_ERR_WOULD_BLOCK, 0u},
+      {H2_PAL_ERR_IO, H2_PAL_ERR_IO, 0u},
+      {H2_PAL_ERR_CLOSED, H2_PAL_ERR_CLOSED, 0u},
+      {H2_PAL_OK, H2_PAL_OK, 0u},
+  };
+  for (size_t i = 0u; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    test_log_t log_state = {0};
+    static const h2_pal_log_vtable_t log_vtable = {.write = test_log_write};
+    const h2_pal_log_api_t log = {.user = &log_state, .vtable = &log_vtable};
+    h2_runtime_config_t config = test_runtime_config(&env);
+    config.system_event = &env.system_event;
+    config.log = &log;
+    h2_runtime_t* runtime = NULL;
+    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+    env.time_state.now_ms = 100u;
+    env.queue_state.send_rc = cases[i].provider;
+    assert(test_system_event_dispatch(&env,
+                                      H2_PAL_SYSTEM_EVENT_TYPE_BLE_HOST_STARTED,
+                                      NULL, 0u) == cases[i].result);
+    assert(dropped_events(runtime) == cases[i].drops);
+    /* The first WARN is visible before the dispatch call returns. */
+    assert(log_state.warn_count == cases[i].drops);
+    assert(runtime->private_state->event_queue->count ==
+           (cases[i].provider == H2_PAL_OK ? 1u : 0u));
+    assert(runtime->private_state->wake_queue->count ==
+           (cases[i].provider == H2_PAL_OK ? 1u : 0u));
+    assert(runtime->private_state->wake_queue->send_calls ==
+           (cases[i].provider == H2_PAL_OK ? 1u : 0u));
+    if (cases[i].drops != 0u) {
+      char expected[128];
+      (void)snprintf(expected, sizeof(expected),
+                     "event queue full: dropped 1 event(s), total 1; "
+                     "last kind %d component %d id 0",
+                     (int)H2_RUNTIME_SYSTEM_EVENT_BLE_HOST_STARTED,
+                     (int)H2_RUNTIME_COMPONENT_SYSTEM_BLE);
+      assert(strcmp(log_state.last_scope, "runtime/event") == 0);
+      assert(strcmp(log_state.last_message, expected) == 0);
+      env.time_state.now_ms = 101u;
+      assert(test_system_event_dispatch(
+                 &env, H2_PAL_SYSTEM_EVENT_TYPE_BLE_HOST_STARTED, NULL, 0u) ==
+             H2_PAL_OK);
+      assert(dropped_events(runtime) == 2u);
+      assert(log_state.warn_count == 1u);
+      /* Invalid payload must not flush the pending, rate-limited drop. */
+      env.time_state.now_ms = 1100u;
+      const uint8_t invalid_payload = 1u;
+      assert(test_system_event_dispatch(
+                 &env, H2_PAL_SYSTEM_EVENT_TYPE_BLE_HOST_STARTED,
+                 &invalid_payload,
+                 sizeof(invalid_payload)) == H2_PAL_ERR_INVALID_ARG);
+      assert(dropped_events(runtime) == 2u);
+      assert(log_state.warn_count == 1u);
     }
+    h2_runtime_deinit(runtime);
+  }
 }
 
 /*
@@ -2643,1239 +2582,1218 @@ static void test_system_event_queue_errors_and_synchronous_warning(void) {
  * order relative to them.
  */
 static void test_custom_events_interleave_with_input_events(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
-    h2_runtime_t *runtime = test_runtime_create(&env);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  h2_runtime_t* runtime = test_runtime_create(&env);
 
-    const uint32_t job_id = 0x1234u;
-    const h2_runtime_custom_event_t before = {
-        .id = H2_RUNTIME_CUSTOM_EVENT_ID(0x0106u, 1u),
-        .payload = &job_id,
-        .payload_size = sizeof(job_id),
-    };
-    assert(h2_runtime_post_custom_event(runtime, &before) == H2_PAL_OK);
+  const uint32_t job_id = 0x1234u;
+  const h2_runtime_custom_event_t before = {
+      .id = H2_RUNTIME_CUSTOM_EVENT_ID(0x0106u, 1u),
+      .payload = &job_id,
+      .payload_size = sizeof(job_id),
+  };
+  assert(h2_runtime_post_custom_event(runtime, &before) == H2_PAL_OK);
 
-    env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
-    env.time_state.now_ms = 10u;
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
+  env.time_state.now_ms = 10u;
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
 
-    h2_runtime_event_payload_buffer_t buffer;
-    h2_runtime_event_t event = {
-        .payload = buffer.bytes,
-        .payload_capacity = sizeof(buffer.bytes),
-    };
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_EVENT_CUSTOM);
-    assert(event.component == H2_RUNTIME_COMPONENT_APP);
-    const h2_runtime_custom_event_payload_t *custom =
-        (const h2_runtime_custom_event_payload_t *)event.payload;
-    assert(custom->id == H2_RUNTIME_CUSTOM_EVENT_ID(0x0106u, 1u));
-    assert(custom->size == sizeof(job_id));
-    uint32_t received = 0u;
-    memcpy(&received, custom->data, sizeof(received));
-    assert(received == job_id);
+  h2_runtime_event_payload_buffer_t buffer;
+  h2_runtime_event_t event = {
+      .payload = buffer.bytes,
+      .payload_capacity = sizeof(buffer.bytes),
+  };
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_EVENT_CUSTOM);
+  assert(event.component == H2_RUNTIME_COMPONENT_APP);
+  const h2_runtime_custom_event_payload_t* custom =
+      (const h2_runtime_custom_event_payload_t*)event.payload;
+  assert(custom->id == H2_RUNTIME_CUSTOM_EVENT_ID(0x0106u, 1u));
+  assert(custom->size == sizeof(job_id));
+  uint32_t received = 0u;
+  memcpy(&received, custom->data, sizeof(received));
+  assert(received == job_id);
 
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
-    assert(event.component == H2_RUNTIME_COMPONENT_BUTTON);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+  assert(event.component == H2_RUNTIME_COMPONENT_BUTTON);
 
-    h2_runtime_deinit(runtime);
+  h2_runtime_deinit(runtime);
 }
 
 static void test_button_action_emits_on_release(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
-    h2_runtime_t *runtime = test_runtime_create(&env);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  h2_runtime_t* runtime = test_runtime_create(&env);
 
-    env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
-    env.time_state.now_ms = 10u;
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = event_with_payload(payload);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
-    assert(event.timestamp_ms == 10u);
-    assert(event.payload_size == sizeof(h2_runtime_button_down_event_t));
-    h2_runtime_button_down_event_t down;
-    memcpy(&down, event.payload, sizeof(down));
-    assert(down.pressed_at_ms == 10u);
-    h2_runtime_button_action_event_t action = poll_button_action(runtime, &event);
-    assert(action.pressed_at_ms == 10u);
-    assert(action.released_at_ms == 0u);
+  env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
+  env.time_state.now_ms = 10u;
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+  assert(event.timestamp_ms == 10u);
+  assert(event.payload_size == sizeof(h2_runtime_button_down_event_t));
+  h2_runtime_button_down_event_t down;
+  memcpy(&down, event.payload, sizeof(down));
+  assert(down.pressed_at_ms == 10u);
+  h2_runtime_button_action_event_t action = poll_button_action(runtime, &event);
+  assert(action.pressed_at_ms == 10u);
+  assert(action.released_at_ms == 0u);
 
-    env.button_state.single_state = H2_PAL_BUTTON_STATE_RELEASED;
-    env.time_state.now_ms = 40u;
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP);
-    assert(event.timestamp_ms == 40u);
-    assert(event.payload_size == sizeof(h2_runtime_button_up_event_t));
-    h2_runtime_button_up_event_t up;
-    memcpy(&up, event.payload, sizeof(up));
-    assert(up.pressed_at_ms == 10u);
-    assert(up.released_at_ms == 40u);
-    action = poll_button_action(runtime, &event);
-    assert(event.component == H2_RUNTIME_COMPONENT_BUTTON);
-    assert(event.component_id == 1u);
-    assert(action.pressed_at_ms == 10u);
-    assert(action.released_at_ms == 40u);
+  env.button_state.single_state = H2_PAL_BUTTON_STATE_RELEASED;
+  env.time_state.now_ms = 40u;
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP);
+  assert(event.timestamp_ms == 40u);
+  assert(event.payload_size == sizeof(h2_runtime_button_up_event_t));
+  h2_runtime_button_up_event_t up;
+  memcpy(&up, event.payload, sizeof(up));
+  assert(up.pressed_at_ms == 10u);
+  assert(up.released_at_ms == 40u);
+  action = poll_button_action(runtime, &event);
+  assert(event.component == H2_RUNTIME_COMPONENT_BUTTON);
+  assert(event.component_id == 1u);
+  assert(action.pressed_at_ms == 10u);
+  assert(action.released_at_ms == 40u);
 
-    h2_runtime_button_state_t state;
-    assert(h2_runtime_component_state_button(runtime, 1u, &state) == H2_PAL_OK);
-    assert(!state.pressed);
-    assert(state.pressed_at_ms == 0u);
-    assert(state.updated_at_ms == 40u);
-    assert(state.result == H2_PAL_OK);
+  h2_runtime_button_state_t state;
+  assert(h2_runtime_component_state_button(runtime, 1u, &state) == H2_PAL_OK);
+  assert(!state.pressed);
+  assert(state.pressed_at_ms == 0u);
+  assert(state.updated_at_ms == 40u);
+  assert(state.result == H2_PAL_OK);
 
-    h2_runtime_deinit(runtime);
+  h2_runtime_deinit(runtime);
 }
 
 static void test_button_action_emits_on_every_pressed_poll(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
-    h2_runtime_t *runtime = test_runtime_create(&env);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  h2_runtime_t* runtime = test_runtime_create(&env);
 
-    env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
-    env.time_state.now_ms = 10u;
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = event_with_payload(payload);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
-    h2_runtime_button_action_event_t action = poll_button_action(runtime, &event);
-    assert(action.pressed_at_ms == 10u);
-    assert(action.released_at_ms == 0u);
+  env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
+  env.time_state.now_ms = 10u;
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+  h2_runtime_button_action_event_t action = poll_button_action(runtime, &event);
+  assert(action.pressed_at_ms == 10u);
+  assert(action.released_at_ms == 0u);
 
-    env.time_state.now_ms += H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
-    h2_runtime_button_down_event_t down;
-    memcpy(&down, event.payload, sizeof(down));
-    assert(down.pressed_at_ms == 10u);
-    action = poll_button_action(runtime, &event);
-    assert(action.pressed_at_ms == 10u);
-    assert(action.released_at_ms == 0u);
+  env.time_state.now_ms += H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+  h2_runtime_button_down_event_t down;
+  memcpy(&down, event.payload, sizeof(down));
+  assert(down.pressed_at_ms == 10u);
+  action = poll_button_action(runtime, &event);
+  assert(action.pressed_at_ms == 10u);
+  assert(action.released_at_ms == 0u);
 
-    env.button_state.single_state = H2_PAL_BUTTON_STATE_RELEASED;
-    env.time_state.now_ms += H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP);
-    action = poll_button_action(runtime, &event);
-    assert(action.pressed_at_ms == 10u);
-    assert(action.released_at_ms == env.time_state.now_ms);
+  env.button_state.single_state = H2_PAL_BUTTON_STATE_RELEASED;
+  env.time_state.now_ms += H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP);
+  action = poll_button_action(runtime, &event);
+  assert(action.pressed_at_ms == 10u);
+  assert(action.released_at_ms == env.time_state.now_ms);
 
-    h2_runtime_deinit(runtime);
+  h2_runtime_deinit(runtime);
 }
 
 static void test_button_rapid_clicks_emit_separate_events(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
-    h2_runtime_t *runtime = test_runtime_create(&env);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  h2_runtime_t* runtime = test_runtime_create(&env);
 
-    env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
-    env.time_state.now_ms = 10u;
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = event_with_payload(payload);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
-    (void)poll_button_action(runtime, &event);
-    env.button_state.single_state = H2_PAL_BUTTON_STATE_RELEASED;
-    env.time_state.now_ms = 40u;
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION);
-    h2_runtime_button_action_event_t click;
-    memcpy(&click, event.payload, sizeof(click));
-    assert(click.pressed_at_ms == 10u);
-    assert(click.released_at_ms == 40u);
+  env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
+  env.time_state.now_ms = 10u;
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+  (void)poll_button_action(runtime, &event);
+  env.button_state.single_state = H2_PAL_BUTTON_STATE_RELEASED;
+  env.time_state.now_ms = 40u;
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION);
+  h2_runtime_button_action_event_t click;
+  memcpy(&click, event.payload, sizeof(click));
+  assert(click.pressed_at_ms == 10u);
+  assert(click.released_at_ms == 40u);
 
-    env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
-    env.time_state.now_ms = 40u + H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
-    (void)poll_button_action(runtime, &event);
+  env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
+  env.time_state.now_ms = 40u + H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+  (void)poll_button_action(runtime, &event);
 
-    h2_runtime_button_state_t state;
-    assert(h2_runtime_component_state_button(runtime, 1u, &state) == H2_PAL_OK);
-    assert(state.pressed);
-    assert(state.pressed_at_ms == env.time_state.now_ms);
+  h2_runtime_button_state_t state;
+  assert(h2_runtime_component_state_button(runtime, 1u, &state) == H2_PAL_OK);
+  assert(state.pressed);
+  assert(state.pressed_at_ms == env.time_state.now_ms);
 
-    env.button_state.single_state = H2_PAL_BUTTON_STATE_RELEASED;
-    env.time_state.now_ms += H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION);
-    memcpy(&click, event.payload, sizeof(click));
-    assert(click.pressed_at_ms ==
-           40u + H2_RUNTIME_BUTTON_POLL_INTERVAL_MS);
-    assert(click.released_at_ms == env.time_state.now_ms);
+  env.button_state.single_state = H2_PAL_BUTTON_STATE_RELEASED;
+  env.time_state.now_ms += H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION);
+  memcpy(&click, event.payload, sizeof(click));
+  assert(click.pressed_at_ms == 40u + H2_RUNTIME_BUTTON_POLL_INTERVAL_MS);
+  assert(click.released_at_ms == env.time_state.now_ms);
 
-    h2_runtime_deinit(runtime);
+  h2_runtime_deinit(runtime);
 }
 
 static void test_button_held_polls_publish_samples_and_release_action(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
-    h2_runtime_t *runtime = test_runtime_create(&env);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  h2_runtime_t* runtime = test_runtime_create(&env);
 
-    env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
-    env.time_state.now_ms = 10u;
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = event_with_payload(payload);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
-    (void)poll_button_action(runtime, &event);
+  env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
+  env.time_state.now_ms = 10u;
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+  (void)poll_button_action(runtime, &event);
 
-    /* Every due pressed poll publishes the retained press timestamp. */
-    env.time_state.now_ms = 10u + H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
-    (void)poll_button_action(runtime, &event);
-    h2_runtime_button_state_t state;
-    assert(h2_runtime_component_state_button(runtime, 1u, &state) ==
-           H2_PAL_OK);
-    assert(state.pressed);
-    assert(state.pressed_at_ms == 10u);
+  /* Every due pressed poll publishes the retained press timestamp. */
+  env.time_state.now_ms = 10u + H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+  (void)poll_button_action(runtime, &event);
+  h2_runtime_button_state_t state;
+  assert(h2_runtime_component_state_button(runtime, 1u, &state) == H2_PAL_OK);
+  assert(state.pressed);
+  assert(state.pressed_at_ms == 10u);
 
-    env.button_state.single_state = H2_PAL_BUTTON_STATE_RELEASED;
-    env.time_state.now_ms += H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP);
-    h2_runtime_button_action_event_t action = poll_button_action(runtime, &event);
-    assert(action.pressed_at_ms == 10u);
-    assert(action.released_at_ms == 10u + 2u * H2_RUNTIME_BUTTON_POLL_INTERVAL_MS);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_WOULD_BLOCK);
-    assert(h2_runtime_component_state_button(runtime, 1u, &state) ==
-           H2_PAL_OK);
-    assert(!state.pressed);
+  env.button_state.single_state = H2_PAL_BUTTON_STATE_RELEASED;
+  env.time_state.now_ms += H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP);
+  h2_runtime_button_action_event_t action = poll_button_action(runtime, &event);
+  assert(action.pressed_at_ms == 10u);
+  assert(action.released_at_ms ==
+         10u + 2u * H2_RUNTIME_BUTTON_POLL_INTERVAL_MS);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_WOULD_BLOCK);
+  assert(h2_runtime_component_state_button(runtime, 1u, &state) == H2_PAL_OK);
+  assert(!state.pressed);
 
-    /* A second press starts another timestamp-defined action. */
-    env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
-    env.time_state.now_ms += H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
-    (void)poll_button_action(runtime, &event);
-    assert(h2_runtime_component_state_button(runtime, 1u, &state) ==
-           H2_PAL_OK);
-    assert(state.pressed);
+  /* A second press starts another timestamp-defined action. */
+  env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
+  env.time_state.now_ms += H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+  (void)poll_button_action(runtime, &event);
+  assert(h2_runtime_component_state_button(runtime, 1u, &state) == H2_PAL_OK);
+  assert(state.pressed);
 
-    h2_runtime_deinit(runtime);
+  h2_runtime_deinit(runtime);
 }
 
 static void test_push_button_uses_mapping_and_retained_pressed_state(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    const h2_pal_periph_single_button_payload_t push_payload = {
-        .delivery = H2_PAL_BUTTON_DELIVERY_PUSH_EDGE,
-    };
-    add_periph(&env, 77u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON,
-               &push_payload, sizeof(push_payload));
-    h2_runtime_t *runtime = test_runtime_create(&env);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  const h2_pal_periph_single_button_payload_t push_payload = {
+      .delivery = H2_PAL_BUTTON_DELIVERY_PUSH_EDGE,
+  };
+  add_periph(&env, 77u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, &push_payload,
+             sizeof(push_payload));
+  h2_runtime_t* runtime = test_runtime_create(&env);
 
-    h2_pal_periph_id_t periph_id = 0u;
-    assert(h2_runtime_periph_id(runtime, 1u, &periph_id) == H2_PAL_OK);
-    assert(periph_id == 77u);
+  h2_pal_periph_id_t periph_id = 0u;
+  assert(h2_runtime_periph_id(runtime, 1u, &periph_id) == H2_PAL_OK);
+  assert(periph_id == 77u);
 
-    env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    assert(env.button_state.single_reads == 0u);
+  env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  assert(env.button_state.single_reads == 0u);
 
-    env.time_state.now_ms = 10u;
-    assert(h2_runtime_button_push_edge(
-               runtime, 77u, H2_RUNTIME_BUTTON_EDGE_DOWN) == H2_PAL_OK);
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  env.time_state.now_ms = 10u;
+  assert(h2_runtime_button_push_edge(runtime, 77u,
+                                     H2_RUNTIME_BUTTON_EDGE_DOWN) == H2_PAL_OK);
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
 
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = event_with_payload(payload);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
-    assert(event.component == H2_RUNTIME_COMPONENT_BUTTON);
-    assert(event.component_id == 1u);
-    (void)poll_button_action(runtime, &event);
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+  assert(event.component == H2_RUNTIME_COMPONENT_BUTTON);
+  assert(event.component_id == 1u);
+  (void)poll_button_action(runtime, &event);
 
-    env.time_state.now_ms = 10u + H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    assert(env.button_state.single_reads == 0u);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
-    (void)poll_button_action(runtime, &event);
+  env.time_state.now_ms = 10u + H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  assert(env.button_state.single_reads == 0u);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+  (void)poll_button_action(runtime, &event);
 
-    env.time_state.now_ms += H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
-    assert(h2_runtime_button_push_edge(
-               runtime, 77u, H2_RUNTIME_BUTTON_EDGE_UP) == H2_PAL_OK);
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP);
-    (void)poll_button_action(runtime, &event);
-    assert(h2_runtime_poll_event(runtime, &event) ==
-           H2_PAL_ERR_WOULD_BLOCK);
+  env.time_state.now_ms += H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
+  assert(h2_runtime_button_push_edge(runtime, 77u, H2_RUNTIME_BUTTON_EDGE_UP) ==
+         H2_PAL_OK);
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP);
+  (void)poll_button_action(runtime, &event);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_WOULD_BLOCK);
 
-    env.time_state.now_ms += H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
-    assert(h2_runtime_button_push_edge(
-               runtime, 77u, H2_RUNTIME_BUTTON_EDGE_DOWN) == H2_PAL_OK);
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
-    (void)poll_button_action(runtime, &event);
-    env.time_state.now_ms += 100u;
-    assert(h2_runtime_button_push_edge(
-               runtime, 77u, H2_RUNTIME_BUTTON_EDGE_UP) == H2_PAL_OK);
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP);
-    (void)poll_button_action(runtime, &event);
-    assert(h2_runtime_poll_event(runtime, &event) ==
-           H2_PAL_ERR_WOULD_BLOCK);
-    assert(h2_runtime_button_push_edge(
-               runtime, 78u, H2_RUNTIME_BUTTON_EDGE_DOWN) ==
-           H2_PAL_ERR_NOT_FOUND);
-    assert(h2_runtime_button_push_edge(runtime, 77u, 0) ==
-           H2_PAL_ERR_INVALID_ARG);
+  env.time_state.now_ms += H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
+  assert(h2_runtime_button_push_edge(runtime, 77u,
+                                     H2_RUNTIME_BUTTON_EDGE_DOWN) == H2_PAL_OK);
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+  (void)poll_button_action(runtime, &event);
+  env.time_state.now_ms += 100u;
+  assert(h2_runtime_button_push_edge(runtime, 77u, H2_RUNTIME_BUTTON_EDGE_UP) ==
+         H2_PAL_OK);
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP);
+  (void)poll_button_action(runtime, &event);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_WOULD_BLOCK);
+  assert(
+      h2_runtime_button_push_edge(runtime, 78u, H2_RUNTIME_BUTTON_EDGE_DOWN) ==
+      H2_PAL_ERR_NOT_FOUND);
+  assert(h2_runtime_button_push_edge(runtime, 77u, 0) ==
+         H2_PAL_ERR_INVALID_ARG);
 
-    h2_runtime_deinit(runtime);
+  h2_runtime_deinit(runtime);
 }
 
 static void test_test_control_discards_stale_push_edges(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    const h2_pal_periph_single_button_payload_t push_payload = {
-        .delivery = H2_PAL_BUTTON_DELIVERY_PUSH_EDGE,
-    };
-    add_periph(&env, 77u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON,
-               &push_payload, sizeof(push_payload));
-    h2_runtime_t *runtime = test_runtime_create(&env);
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  const h2_pal_periph_single_button_payload_t push_payload = {
+      .delivery = H2_PAL_BUTTON_DELIVERY_PUSH_EDGE,
+  };
+  add_periph(&env, 77u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, &push_payload,
+             sizeof(push_payload));
+  h2_runtime_t* runtime = test_runtime_create(&env);
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
 
-    /* A physical edge is accepted but not yet consumed by the poller. */
-    env.time_state.now_ms = 10u;
-    assert(h2_runtime_button_push_edge(
-               runtime, 77u, H2_RUNTIME_BUTTON_EDGE_DOWN) == H2_PAL_OK);
+  /* A physical edge is accepted but not yet consumed by the poller. */
+  env.time_state.now_ms = 10u;
+  assert(h2_runtime_button_push_edge(runtime, 77u,
+                                     H2_RUNTIME_BUTTON_EDGE_DOWN) == H2_PAL_OK);
 
-    /* Test control replaces the production source table. */
-    h2_runtime_test_control_t *control = NULL;
-    assert(h2_runtime_test_control_open(runtime, &control) == H2_PAL_OK);
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = event_with_payload(payload);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_WOULD_BLOCK);
-    h2_runtime_test_control_close(control);
+  /* Test control replaces the production source table. */
+  h2_runtime_test_control_t* control = NULL;
+  assert(h2_runtime_test_control_open(runtime, &control) == H2_PAL_OK);
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_WOULD_BLOCK);
+  h2_runtime_test_control_close(control);
 
-    /* The stale edge must neither fault the poller nor replay afterwards. */
-    env.time_state.now_ms = 20u + H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_WOULD_BLOCK);
-    h2_runtime_button_state_t state;
-    assert(h2_runtime_component_state_button(runtime, 1u, &state) ==
-           H2_PAL_OK);
-    assert(!state.pressed);
+  /* The stale edge must neither fault the poller nor replay afterwards. */
+  env.time_state.now_ms = 20u + H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_WOULD_BLOCK);
+  h2_runtime_button_state_t state;
+  assert(h2_runtime_component_state_button(runtime, 1u, &state) == H2_PAL_OK);
+  assert(!state.pressed);
 
-    h2_runtime_deinit(runtime);
+  h2_runtime_deinit(runtime);
 }
 
 static void test_button_push_rejects_non_push_and_invalid_payload(void) {
-    test_runtime_env_t poll_env;
-    test_env_init(&poll_env);
-    add_periph(&poll_env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
-    h2_runtime_t *poll_runtime = test_runtime_create(&poll_env);
-    assert(h2_runtime_button_push_edge(
-               poll_runtime, 10u, H2_RUNTIME_BUTTON_EDGE_DOWN) ==
-           H2_PAL_ERR_NOT_FOUND);
-    h2_runtime_deinit(poll_runtime);
+  test_runtime_env_t poll_env;
+  test_env_init(&poll_env);
+  add_periph(&poll_env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  h2_runtime_t* poll_runtime = test_runtime_create(&poll_env);
+  assert(h2_runtime_button_push_edge(poll_runtime, 10u,
+                                     H2_RUNTIME_BUTTON_EDGE_DOWN) ==
+         H2_PAL_ERR_NOT_FOUND);
+  h2_runtime_deinit(poll_runtime);
 
-    test_runtime_env_t invalid_env;
-    test_env_init(&invalid_env);
-    const h2_pal_periph_single_button_payload_t invalid_payload = {
-        .delivery = (h2_pal_button_delivery_t)99,
-    };
-    add_periph(&invalid_env, 11u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON,
-               &invalid_payload, sizeof(invalid_payload));
-    h2_runtime_config_t invalid_config = test_runtime_config(&invalid_env);
-    h2_runtime_t *invalid_runtime = NULL;
-    /* Delivery mode is validated by init-time source discovery. */
-    assert(h2_runtime_init(&invalid_config, &invalid_runtime) ==
-           H2_PAL_ERR_INVALID_ARG);
-    assert(invalid_runtime == NULL);
-    assert(invalid_env.allocator_state.live_allocations == 0u);
+  test_runtime_env_t invalid_env;
+  test_env_init(&invalid_env);
+  const h2_pal_periph_single_button_payload_t invalid_payload = {
+      .delivery = (h2_pal_button_delivery_t)99,
+  };
+  add_periph(&invalid_env, 11u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON,
+             &invalid_payload, sizeof(invalid_payload));
+  h2_runtime_config_t invalid_config = test_runtime_config(&invalid_env);
+  h2_runtime_t* invalid_runtime = NULL;
+  /* Delivery mode is validated by init-time source discovery. */
+  assert(h2_runtime_init(&invalid_config, &invalid_runtime) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(invalid_runtime == NULL);
+  assert(invalid_env.allocator_state.live_allocations == 0u);
 }
 
-static void run_nfc_task_once(test_runtime_env_t *env,
-                              h2_runtime_t *runtime) {
-    assert(env->task_state.handle_count == 2u);
-    env->time_state.stop_after_sleep_runtime = runtime;
-    env->task_state.handles[1]->entry(env->task_state.handles[1]->ctx);
-    env->time_state.stop_after_sleep_runtime = NULL;
-    h2_atomic_store(&runtime->private_state->input_stop_requested, 0);
+static void run_nfc_task_once(test_runtime_env_t* env, h2_runtime_t* runtime) {
+  assert(env->task_state.handle_count == 2u);
+  env->time_state.stop_after_sleep_runtime = runtime;
+  env->task_state.handles[1]->entry(env->task_state.handles[1]->ctx);
+  env->time_state.stop_after_sleep_runtime = NULL;
+  h2_atomic_store(&runtime->private_state->input_stop_requested, 0);
 }
 
 static void test_nfc_discovery_and_state(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(&env, 20u, H2_PAL_PERIPH_TYPE_NFC_READER, NULL, 0u);
-    env.nfc_state.scan = (h2_pal_nfc_scan_t){
-        .stage = H2_PAL_NFC_STAGE_DISCOVERED,
-        .result = H2_PAL_OK,
-        .tag_type = H2_PAL_NFC_TAG_TYPE_NTAG,
-        .uid_len = 4u,
-        .uid = {1u, 2u, 3u, 4u},
-    };
-    env.nfc_state.read_bytes[0] = 0xaa;
-    env.nfc_state.read_bytes[1] = 0xbb;
-    h2_runtime_t *runtime = test_runtime_create(&env);
-    run_nfc_task_once(&env, runtime);
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    assert(env.nfc_card_emulation_state.capability_calls == 0u);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 20u, H2_PAL_PERIPH_TYPE_NFC_READER, NULL, 0u);
+  env.nfc_state.scan = (h2_pal_nfc_scan_t){
+      .stage = H2_PAL_NFC_STAGE_DISCOVERED,
+      .result = H2_PAL_OK,
+      .tag_type = H2_PAL_NFC_TAG_TYPE_NTAG,
+      .uid_len = 4u,
+      .uid = {1u, 2u, 3u, 4u},
+  };
+  env.nfc_state.read_bytes[0] = 0xaa;
+  env.nfc_state.read_bytes[1] = 0xbb;
+  h2_runtime_t* runtime = test_runtime_create(&env);
+  run_nfc_task_once(&env, runtime);
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  assert(env.nfc_card_emulation_state.capability_calls == 0u);
 
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = event_with_payload(payload);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_NFC_STATE);
-    assert(event.component == H2_RUNTIME_COMPONENT_NFC_READER);
-    assert(event.component_id == 1u);
-    h2_runtime_nfc_state_t event_state;
-    memcpy(&event_state, event.payload, sizeof(event_state));
-    assert(event_state.status == H2_RUNTIME_NFC_STATE_DISCOVERED);
-    assert(event_state.uid_len == 4u);
-    assert(memcmp(event_state.uid, env.nfc_state.scan.uid, 4u) == 0);
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_NFC_STATE);
+  assert(event.component == H2_RUNTIME_COMPONENT_NFC_READER);
+  assert(event.component_id == 1u);
+  h2_runtime_nfc_state_t event_state;
+  memcpy(&event_state, event.payload, sizeof(event_state));
+  assert(event_state.status == H2_RUNTIME_NFC_STATE_DISCOVERED);
+  assert(event_state.uid_len == 4u);
+  assert(memcmp(event_state.uid, env.nfc_state.scan.uid, 4u) == 0);
 
-    env.time_state.now_ms += H2_RUNTIME_NFC_POLL_INTERVAL_MS;
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_WOULD_BLOCK);
+  env.time_state.now_ms += H2_RUNTIME_NFC_POLL_INTERVAL_MS;
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_WOULD_BLOCK);
 
-    h2_runtime_nfc_state_t state;
-    assert(h2_runtime_component_state_nfc(runtime, 1u, &state) == H2_PAL_OK);
-    assert(state.status == H2_RUNTIME_NFC_STATE_DISCOVERED);
-    assert(state.tag_type == H2_PAL_NFC_TAG_TYPE_NTAG);
-    assert(state.uid_len == 4u);
+  h2_runtime_nfc_state_t state;
+  assert(h2_runtime_component_state_nfc(runtime, 1u, &state) == H2_PAL_OK);
+  assert(state.status == H2_RUNTIME_NFC_STATE_DISCOVERED);
+  assert(state.tag_type == H2_PAL_NFC_TAG_TYPE_NTAG);
+  assert(state.uid_len == 4u);
 
-    h2_runtime_deinit(runtime);
+  h2_runtime_deinit(runtime);
 }
 
 static void test_nfc_background_task_does_not_block_input_task(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(&env, 20u, H2_PAL_PERIPH_TYPE_NFC_READER, NULL, 0u);
-    env.nfc_state.scan = (h2_pal_nfc_scan_t){
-        .stage = H2_PAL_NFC_STAGE_DISCOVERED,
-        .result = H2_PAL_OK,
-        .uid_len = 1u,
-        .uid = {0x42u},
-    };
-    h2_runtime_t *runtime = test_runtime_create(&env);
-    assert(env.task_state.starts == 2u);
-    assert(env.nfc_state.scan_calls == 0u);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 20u, H2_PAL_PERIPH_TYPE_NFC_READER, NULL, 0u);
+  env.nfc_state.scan = (h2_pal_nfc_scan_t){
+      .stage = H2_PAL_NFC_STAGE_DISCOVERED,
+      .result = H2_PAL_OK,
+      .uid_len = 1u,
+      .uid = {0x42u},
+  };
+  h2_runtime_t* runtime = test_runtime_create(&env);
+  assert(env.task_state.starts == 2u);
+  assert(env.nfc_state.scan_calls == 0u);
 
-    run_nfc_task_once(&env, runtime);
-    assert(env.nfc_state.scan_calls == 1u);
-    env.time_state.stop_after_sleep_runtime = runtime;
-    env.task_state.handles[0]->entry(env.task_state.handles[0]->ctx);
-    env.time_state.stop_after_sleep_runtime = NULL;
-    h2_atomic_store(&runtime->private_state->input_stop_requested, 0);
+  run_nfc_task_once(&env, runtime);
+  assert(env.nfc_state.scan_calls == 1u);
+  env.time_state.stop_after_sleep_runtime = runtime;
+  env.task_state.handles[0]->entry(env.task_state.handles[0]->ctx);
+  env.time_state.stop_after_sleep_runtime = NULL;
+  h2_atomic_store(&runtime->private_state->input_stop_requested, 0);
 
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = event_with_payload(payload);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_NFC_STATE);
-    h2_runtime_deinit(runtime);
-    assert(env.task_state.joins == 2u);
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_NFC_STATE);
+  h2_runtime_deinit(runtime);
+  assert(env.task_state.joins == 2u);
 }
 
 static void test_imu_tilt_event_and_state(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(&env, 30u, H2_PAL_PERIPH_TYPE_IMU, NULL, 0u);
-    env.imu_state.reading = (h2_pal_imu_reading_t){
-        .flags = H2_PAL_IMU_HAS_ACCEL,
-        .accel_mg = { .x = H2_RUNTIME_IMU_TILT_THRESHOLD_MG, .y = 0, .z = 1000 },
-    };
-    env.time_state.now_ms = H2_RUNTIME_IMU_TILT_DEBOUNCE_MS;
-    h2_runtime_t *runtime = test_runtime_create(&env);
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 30u, H2_PAL_PERIPH_TYPE_IMU, NULL, 0u);
+  env.imu_state.reading = (h2_pal_imu_reading_t){
+      .flags = H2_PAL_IMU_HAS_ACCEL,
+      .accel_mg = {.x = H2_RUNTIME_IMU_TILT_THRESHOLD_MG, .y = 0, .z = 1000},
+  };
+  env.time_state.now_ms = H2_RUNTIME_IMU_TILT_DEBOUNCE_MS;
+  h2_runtime_t* runtime = test_runtime_create(&env);
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
 
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = event_with_payload(payload);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_IMU_GESTURE);
-    assert(event.component == H2_RUNTIME_COMPONENT_IMU);
-    assert(event.component_id == 1u);
-    h2_runtime_imu_gesture_event_t gesture;
-    memcpy(&gesture, event.payload, sizeof(gesture));
-    assert(gesture.kind == H2_RUNTIME_IMU_GESTURE_TILT);
-    assert(gesture.gesture.tilt.x_mg == H2_RUNTIME_IMU_TILT_THRESHOLD_MG);
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_IMU_GESTURE);
+  assert(event.component == H2_RUNTIME_COMPONENT_IMU);
+  assert(event.component_id == 1u);
+  h2_runtime_imu_gesture_event_t gesture;
+  memcpy(&gesture, event.payload, sizeof(gesture));
+  assert(gesture.kind == H2_RUNTIME_IMU_GESTURE_TILT);
+  assert(gesture.gesture.tilt.x_mg == H2_RUNTIME_IMU_TILT_THRESHOLD_MG);
 
-    h2_runtime_imu_state_t state;
-    assert(h2_runtime_component_state_imu(runtime, 1u, &state) == H2_PAL_OK);
-    assert(state.gesture_kind == H2_RUNTIME_IMU_GESTURE_TILT);
-    assert(state.gesture.tilt.x_mg == H2_RUNTIME_IMU_TILT_THRESHOLD_MG);
+  h2_runtime_imu_state_t state;
+  assert(h2_runtime_component_state_imu(runtime, 1u, &state) == H2_PAL_OK);
+  assert(state.gesture_kind == H2_RUNTIME_IMU_GESTURE_TILT);
+  assert(state.gesture.tilt.x_mg == H2_RUNTIME_IMU_TILT_THRESHOLD_MG);
 
-    h2_runtime_deinit(runtime);
+  h2_runtime_deinit(runtime);
 }
 
 static void test_imu_shake_suppresses_intermediate_tilt(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(&env, 30u, H2_PAL_PERIPH_TYPE_IMU, NULL, 0u);
-    env.imu_state.reading = (h2_pal_imu_reading_t){
-        .flags = H2_PAL_IMU_HAS_ACCEL,
-        .accel_mg = { .x = H2_RUNTIME_IMU_SHAKE_THRESHOLD_MG, .y = 0, .z = 0 },
-    };
-    env.time_state.now_ms = H2_RUNTIME_IMU_TILT_DEBOUNCE_MS;
-    h2_runtime_t *runtime = test_runtime_create(&env);
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 30u, H2_PAL_PERIPH_TYPE_IMU, NULL, 0u);
+  env.imu_state.reading = (h2_pal_imu_reading_t){
+      .flags = H2_PAL_IMU_HAS_ACCEL,
+      .accel_mg = {.x = H2_RUNTIME_IMU_SHAKE_THRESHOLD_MG, .y = 0, .z = 0},
+  };
+  env.time_state.now_ms = H2_RUNTIME_IMU_TILT_DEBOUNCE_MS;
+  h2_runtime_t* runtime = test_runtime_create(&env);
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
 
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = event_with_payload(payload);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_WOULD_BLOCK);
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_WOULD_BLOCK);
 
-    env.time_state.now_ms += H2_RUNTIME_IMU_SHAKE_MIN_DURATION_MS;
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_IMU_GESTURE);
-    h2_runtime_imu_gesture_event_t gesture;
-    memcpy(&gesture, event.payload, sizeof(gesture));
-    assert(gesture.kind == H2_RUNTIME_IMU_GESTURE_SHAKE);
+  env.time_state.now_ms += H2_RUNTIME_IMU_SHAKE_MIN_DURATION_MS;
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_IMU_GESTURE);
+  h2_runtime_imu_gesture_event_t gesture;
+  memcpy(&gesture, event.payload, sizeof(gesture));
+  assert(gesture.kind == H2_RUNTIME_IMU_GESTURE_SHAKE);
 
-    h2_runtime_deinit(runtime);
+  h2_runtime_deinit(runtime);
 }
 
 static void test_imu_int32_min_sample_is_safe(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(&env, 30u, H2_PAL_PERIPH_TYPE_IMU, NULL, 0u);
-    env.imu_state.reading = (h2_pal_imu_reading_t){
-        .flags = H2_PAL_IMU_HAS_ACCEL,
-        .accel_mg = { .x = INT32_MIN, .y = 0, .z = 0 },
-    };
-    h2_runtime_t *runtime = test_runtime_create(&env);
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    env.time_state.now_ms = H2_RUNTIME_IMU_SHAKE_MIN_DURATION_MS;
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 30u, H2_PAL_PERIPH_TYPE_IMU, NULL, 0u);
+  env.imu_state.reading = (h2_pal_imu_reading_t){
+      .flags = H2_PAL_IMU_HAS_ACCEL,
+      .accel_mg = {.x = INT32_MIN, .y = 0, .z = 0},
+  };
+  h2_runtime_t* runtime = test_runtime_create(&env);
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  env.time_state.now_ms = H2_RUNTIME_IMU_SHAKE_MIN_DURATION_MS;
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
 
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = event_with_payload(payload);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    h2_runtime_imu_gesture_event_t gesture;
-    memcpy(&gesture, event.payload, sizeof(gesture));
-    assert(gesture.kind == H2_RUNTIME_IMU_GESTURE_SHAKE);
-    assert(gesture.gesture.shake.magnitude_mg == INT32_MAX);
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  h2_runtime_imu_gesture_event_t gesture;
+  memcpy(&gesture, event.payload, sizeof(gesture));
+  assert(gesture.kind == H2_RUNTIME_IMU_GESTURE_SHAKE);
+  assert(gesture.gesture.shake.magnitude_mg == INT32_MAX);
 
-    h2_runtime_deinit(runtime);
+  h2_runtime_deinit(runtime);
 }
 
 static void test_imu_ignores_samples_without_required_flags(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(&env, 30u, H2_PAL_PERIPH_TYPE_IMU, NULL, 0u);
-    env.imu_state.reading = (h2_pal_imu_reading_t){
-        .flags = H2_PAL_IMU_FLAG_NONE,
-        .accel_mg = { .x = H2_RUNTIME_IMU_TILT_THRESHOLD_MG, .y = 0, .z = 0 },
-        .gyro_mdps = { .x = 0, .y = 0, .z = H2_RUNTIME_IMU_FLIP_GYRO_THRESHOLD_MDPS },
-    };
-    env.time_state.now_ms = H2_RUNTIME_IMU_TILT_DEBOUNCE_MS;
-    h2_runtime_t *runtime = test_runtime_create(&env);
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 30u, H2_PAL_PERIPH_TYPE_IMU, NULL, 0u);
+  env.imu_state.reading = (h2_pal_imu_reading_t){
+      .flags = H2_PAL_IMU_FLAG_NONE,
+      .accel_mg = {.x = H2_RUNTIME_IMU_TILT_THRESHOLD_MG, .y = 0, .z = 0},
+      .gyro_mdps = {.x = 0,
+                    .y = 0,
+                    .z = H2_RUNTIME_IMU_FLIP_GYRO_THRESHOLD_MDPS},
+  };
+  env.time_state.now_ms = H2_RUNTIME_IMU_TILT_DEBOUNCE_MS;
+  h2_runtime_t* runtime = test_runtime_create(&env);
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
 
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = event_with_payload(payload);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_WOULD_BLOCK);
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_WOULD_BLOCK);
 
-    h2_runtime_imu_state_t state;
-    assert(h2_runtime_component_state_imu(runtime, 1u, &state) == H2_PAL_OK);
-    assert(state.gesture_kind == H2_RUNTIME_IMU_GESTURE_NONE);
+  h2_runtime_imu_state_t state;
+  assert(h2_runtime_component_state_imu(runtime, 1u, &state) == H2_PAL_OK);
+  assert(state.gesture_kind == H2_RUNTIME_IMU_GESTURE_NONE);
 
-    h2_runtime_deinit(runtime);
+  h2_runtime_deinit(runtime);
 }
 
 static void test_nfc_rejects_oversized_uid_len(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(&env, 20u, H2_PAL_PERIPH_TYPE_NFC_READER, NULL, 0u);
-    env.nfc_state.scan = (h2_pal_nfc_scan_t){
-        .stage = H2_PAL_NFC_STAGE_DISCOVERED,
-        .result = H2_PAL_OK,
-        .tag_type = H2_PAL_NFC_TAG_TYPE_NTAG,
-        .uid_len = H2_PAL_NFC_UID_MAX_LEN + 1u,
-    };
-    h2_runtime_t *runtime = test_runtime_create(&env);
-    run_nfc_task_once(&env, runtime);
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 20u, H2_PAL_PERIPH_TYPE_NFC_READER, NULL, 0u);
+  env.nfc_state.scan = (h2_pal_nfc_scan_t){
+      .stage = H2_PAL_NFC_STAGE_DISCOVERED,
+      .result = H2_PAL_OK,
+      .tag_type = H2_PAL_NFC_TAG_TYPE_NTAG,
+      .uid_len = H2_PAL_NFC_UID_MAX_LEN + 1u,
+  };
+  h2_runtime_t* runtime = test_runtime_create(&env);
+  run_nfc_task_once(&env, runtime);
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
 
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = event_with_payload(payload);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_ERROR);
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_ERROR);
 
-    h2_runtime_nfc_state_t state;
-    assert(h2_runtime_component_state_nfc(runtime, 1u, &state) == H2_PAL_OK);
-    assert(state.status == H2_RUNTIME_NFC_STATE_ERROR);
-    assert(state.result == H2_PAL_ERR_INVALID_ARG);
+  h2_runtime_nfc_state_t state;
+  assert(h2_runtime_component_state_nfc(runtime, 1u, &state) == H2_PAL_OK);
+  assert(state.status == H2_RUNTIME_NFC_STATE_ERROR);
+  assert(state.result == H2_PAL_ERR_INVALID_ARG);
 
-    h2_runtime_deinit(runtime);
+  h2_runtime_deinit(runtime);
 }
 
 static void test_periph_id_and_unsupported_component_state(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
-    h2_runtime_t *runtime = test_runtime_create(&env);
-    h2_pal_periph_id_t periph_id = 0u;
-    assert(h2_runtime_periph_id(runtime, 1u, &periph_id) == H2_PAL_OK);
-    assert(periph_id == 10u);
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  h2_runtime_t* runtime = test_runtime_create(&env);
+  h2_pal_periph_id_t periph_id = 0u;
+  assert(h2_runtime_periph_id(runtime, 1u, &periph_id) == H2_PAL_OK);
+  assert(periph_id == 10u);
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
 
-    periph_id = 0u;
-    assert(h2_runtime_periph_id(runtime, 1u, &periph_id) == H2_PAL_OK);
-    assert(periph_id == 10u);
+  periph_id = 0u;
+  assert(h2_runtime_periph_id(runtime, 1u, &periph_id) == H2_PAL_OK);
+  assert(periph_id == 10u);
 
-    h2_runtime_component_state_display_t display_state;
-    assert(h2_runtime_component_state_display(runtime, &display_state) ==
-           H2_PAL_ERR_UNSUPPORTED);
+  h2_runtime_component_state_display_t display_state;
+  assert(h2_runtime_component_state_display(runtime, &display_state) ==
+         H2_PAL_ERR_UNSUPPORTED);
 
-    h2_runtime_deinit(runtime);
+  h2_runtime_deinit(runtime);
 }
 
 static void test_runtime_component_registry_queries_physical_kind(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
 
-    h2_runtime_t *runtime = test_runtime_create(&env);
-    h2_runtime_component_info_t info = {0};
-    assert(h2_runtime_component_get(runtime, 1u, &info) == H2_PAL_OK);
-    assert(info.component_id == 1u);
-    assert(info.kind == H2_RUNTIME_COMPONENT_BUTTON);
-    assert(h2_runtime_component_get(runtime, 999u, &info) ==
-           H2_PAL_ERR_NOT_FOUND);
-    h2_runtime_deinit(runtime);
+  h2_runtime_t* runtime = test_runtime_create(&env);
+  h2_runtime_component_info_t info = {0};
+  assert(h2_runtime_component_get(runtime, 1u, &info) == H2_PAL_OK);
+  assert(info.component_id == 1u);
+  assert(info.kind == H2_RUNTIME_COMPONENT_BUTTON);
+  assert(h2_runtime_component_get(runtime, 999u, &info) ==
+         H2_PAL_ERR_NOT_FOUND);
+  h2_runtime_deinit(runtime);
 }
 
 static void test_radio_group_is_read_once_for_child_buttons(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    static const h2_pal_periph_radio_button_payload_t radio_payload = {
-        .group_id = 40u,
-    };
-    add_periph(
-        &env,
-        41u,
-        H2_PAL_PERIPH_TYPE_RADIO_BUTTON,
-        &radio_payload,
-        sizeof(radio_payload));
-    add_periph(
-        &env,
-        42u,
-        H2_PAL_PERIPH_TYPE_RADIO_BUTTON,
-        &radio_payload,
-        sizeof(radio_payload));
-    env.button_state.radio_pressed_id = 41u;
-    h2_runtime_t *runtime = test_runtime_create(&env);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  static const h2_pal_periph_radio_button_payload_t radio_payload = {
+      .group_id = 40u,
+  };
+  add_periph(&env, 41u, H2_PAL_PERIPH_TYPE_RADIO_BUTTON, &radio_payload,
+             sizeof(radio_payload));
+  add_periph(&env, 42u, H2_PAL_PERIPH_TYPE_RADIO_BUTTON, &radio_payload,
+             sizeof(radio_payload));
+  env.button_state.radio_pressed_id = 41u;
+  h2_runtime_t* runtime = test_runtime_create(&env);
 
-    h2_runtime_button_state_t state;
-    assert(h2_runtime_component_state_button(runtime, 1u, &state) == H2_PAL_OK);
-    assert(state.pressed);
-    assert(h2_runtime_component_state_button(runtime, 2u, &state) == H2_PAL_OK);
-    assert(!state.pressed);
-    assert(env.button_state.group_reads == 1u);
-    assert(env.button_state.single_reads == 0u);
+  h2_runtime_button_state_t state;
+  assert(h2_runtime_component_state_button(runtime, 1u, &state) == H2_PAL_OK);
+  assert(state.pressed);
+  assert(h2_runtime_component_state_button(runtime, 2u, &state) == H2_PAL_OK);
+  assert(!state.pressed);
+  assert(env.button_state.group_reads == 1u);
+  assert(env.button_state.single_reads == 0u);
 
-    h2_runtime_deinit(runtime);
+  h2_runtime_deinit(runtime);
 }
 
 static void test_radio_group_error_advances_child_buttons(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    static const h2_pal_periph_radio_button_payload_t radio_payload = {
-        .group_id = 40u,
-    };
-    add_periph(
-        &env,
-        41u,
-        H2_PAL_PERIPH_TYPE_RADIO_BUTTON,
-        &radio_payload,
-        sizeof(radio_payload));
-    add_periph(
-        &env,
-        42u,
-        H2_PAL_PERIPH_TYPE_RADIO_BUTTON,
-        &radio_payload,
-        sizeof(radio_payload));
-    env.button_state.group_rc = H2_PAL_ERR_IO;
-    h2_runtime_t *runtime = test_runtime_create(&env);
-    assert(env.button_state.group_reads == 1u);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  static const h2_pal_periph_radio_button_payload_t radio_payload = {
+      .group_id = 40u,
+  };
+  add_periph(&env, 41u, H2_PAL_PERIPH_TYPE_RADIO_BUTTON, &radio_payload,
+             sizeof(radio_payload));
+  add_periph(&env, 42u, H2_PAL_PERIPH_TYPE_RADIO_BUTTON, &radio_payload,
+             sizeof(radio_payload));
+  env.button_state.group_rc = H2_PAL_ERR_IO;
+  h2_runtime_t* runtime = test_runtime_create(&env);
+  assert(env.button_state.group_reads == 1u);
 
-    h2_runtime_deinit(runtime);
+  h2_runtime_deinit(runtime);
 }
 
 static void test_runtime_owns_input_task_lifecycle(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
-    env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
-    h2_runtime_config_t config = test_runtime_config(&env);
-    const h2_runtime_input_poll_config_t input_poll = {
-        .tick_ms = 7u,
-        .button_poll_interval_ms = 11u,
-        .nfc_poll_interval_ms = 13u,
-        .imu_poll_interval_ms = 17u,
-        .battery_poll_interval_ms = 19u,
-        .temperature_poll_interval_ms = 23u,
-        .task_options = {
-            .name = "runtime-input-test",
-            .min_stack_size = 4096u,
-        },
-    };
-    h2_runtime_t *runtime = NULL;
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
+  h2_runtime_config_t config = test_runtime_config(&env);
+  const h2_runtime_input_poll_config_t input_poll = {
+      .tick_ms = 7u,
+      .button_poll_interval_ms = 11u,
+      .nfc_poll_interval_ms = 13u,
+      .imu_poll_interval_ms = 17u,
+      .battery_poll_interval_ms = 19u,
+      .temperature_poll_interval_ms = 23u,
+      .task_options =
+          {
+              .name = "runtime-input-test",
+              .min_stack_size = 4096u,
+          },
+  };
+  h2_runtime_t* runtime = NULL;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
 
-    /* Init leaves acquisition stopped; the caller owns the first start. */
-    assert(env.task_state.starts == 0u);
-    assert(h2_atomic_load(&runtime->private_state->input_phase) ==
-           H2_RUNTIME_INPUT_PHASE_STOPPED);
-    h2_runtime_button_state_t stopped_state;
-    assert(h2_runtime_component_state_button(runtime, 1u, &stopped_state) !=
-           H2_PAL_OK);
+  /* Init leaves acquisition stopped; the caller owns the first start. */
+  assert(env.task_state.starts == 0u);
+  assert(h2_atomic_load(&runtime->private_state->input_phase) ==
+         H2_RUNTIME_INPUT_PHASE_STOPPED);
+  h2_runtime_button_state_t stopped_state;
+  assert(h2_runtime_component_state_button(runtime, 1u, &stopped_state) !=
+         H2_PAL_OK);
 
-    assert(h2_runtime_input_start(runtime, &input_poll) == H2_PAL_OK);
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    assert(env.task_state.starts == 1u);
-    assert(env.task_state.joins == 0u);
-    assert(env.time_state.sleep_calls == 0u);
-    assert(env.button_state.single_reads == 2u);
-    assert(runtime->private_state->input_tick_ms == 7u);
-    assert(runtime->private_state->input_button_poll_interval_ms == 11u);
-    assert(runtime->private_state->input_nfc_poll_interval_ms == 13u);
-    assert(runtime->private_state->input_imu_poll_interval_ms == 17u);
-    assert(runtime->private_state->input_battery_poll_interval_ms == 19u);
-    assert(runtime->private_state->input_temperature_poll_interval_ms == 23u);
-    assert(strcmp(env.task_state.options.name, h2_runtime_input_task_name) == 0);
-    assert(env.task_state.options.min_stack_size == 4096u);
+  assert(h2_runtime_input_start(runtime, &input_poll) == H2_PAL_OK);
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  assert(env.task_state.starts == 1u);
+  assert(env.task_state.joins == 0u);
+  assert(env.time_state.sleep_calls == 0u);
+  assert(env.button_state.single_reads == 2u);
+  assert(runtime->private_state->input_tick_ms == 7u);
+  assert(runtime->private_state->input_button_poll_interval_ms == 11u);
+  assert(runtime->private_state->input_nfc_poll_interval_ms == 13u);
+  assert(runtime->private_state->input_imu_poll_interval_ms == 17u);
+  assert(runtime->private_state->input_battery_poll_interval_ms == 19u);
+  assert(runtime->private_state->input_temperature_poll_interval_ms == 23u);
+  assert(strcmp(env.task_state.options.name, h2_runtime_input_task_name) == 0);
+  assert(env.task_state.options.min_stack_size == 4096u);
 
-    h2_runtime_button_state_t state;
-    assert(h2_runtime_component_state_button(runtime, 1u, &state) == H2_PAL_OK);
-    assert(state.pressed);
-    h2_runtime_deinit(runtime);
-    assert(env.task_state.joins == 1u);
+  h2_runtime_button_state_t state;
+  assert(h2_runtime_component_state_button(runtime, 1u, &state) == H2_PAL_OK);
+  assert(state.pressed);
+  h2_runtime_deinit(runtime);
+  assert(env.task_state.joins == 1u);
 }
 
 static void test_input_task_start_failure_leaves_input_stopped(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
-    env.task_state.start_rc = H2_PAL_ERR_TASK;
-    h2_runtime_config_t config = test_runtime_config(&env);
-    h2_runtime_t *runtime = NULL;
-    /*
-     * The Runtime itself no longer depends on the input task, so a task start
-     * failure fails the caller's start instead of aborting init. The failed
-     * start releases everything it created and stays retryable.
-     */
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
-    assert(runtime != NULL);
-    assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_ERR_TASK);
-    assert(env.task_state.current == NULL);
-    assert(runtime->private_state->input_task == NULL);
-    assert(h2_atomic_load(&runtime->private_state->input_phase) ==
-           H2_RUNTIME_INPUT_PHASE_STOPPED);
-    /* A failed start only leaves the poller off; init-owned state survives. */
-    assert(runtime->private_state->input_writer_mutex != NULL);
-    assert(h2_runtime_state_publication_ready(runtime));
-    assert(runtime->private_state->input_sources_ready == 1);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  env.task_state.start_rc = H2_PAL_ERR_TASK;
+  h2_runtime_config_t config = test_runtime_config(&env);
+  h2_runtime_t* runtime = NULL;
+  /*
+   * The Runtime itself no longer depends on the input task, so a task start
+   * failure fails the caller's start instead of aborting init. The failed
+   * start releases everything it created and stays retryable.
+   */
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  assert(runtime != NULL);
+  assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_ERR_TASK);
+  assert(env.task_state.current == NULL);
+  assert(runtime->private_state->input_task == NULL);
+  assert(h2_atomic_load(&runtime->private_state->input_phase) ==
+         H2_RUNTIME_INPUT_PHASE_STOPPED);
+  /* A failed start only leaves the poller off; init-owned state survives. */
+  assert(runtime->private_state->input_writer_mutex != NULL);
+  assert(h2_runtime_state_publication_ready(runtime));
+  assert(runtime->private_state->input_sources_ready == 1);
 
-    /* A later start succeeds once the task provider recovers. */
-    env.task_state.start_rc = H2_PAL_OK;
-    assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_OK);
-    assert(env.task_state.starts == 1u);
+  /* A later start succeeds once the task provider recovers. */
+  env.task_state.start_rc = H2_PAL_OK;
+  assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_OK);
+  assert(env.task_state.starts == 1u);
 
-    h2_runtime_deinit(runtime);
-    assert(env.task_state.joins == 1u);
-    assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
+  h2_runtime_deinit(runtime);
+  assert(env.task_state.joins == 1u);
+  assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
 }
 
 static void test_input_worker_failure_closes_event_queue(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
-    h2_runtime_t *runtime = test_runtime_create(&env);
-    assert(env.task_state.current != NULL);
-    env.time_state.sleep_rc = H2_PAL_ERR_IO;
-    env.task_state.current->entry(env.task_state.current->ctx);
-    assert(h2_atomic_load(&runtime->private_state->input_phase) ==
-           H2_RUNTIME_INPUT_PHASE_FAULTED);
-    assert(h2_atomic_load(&runtime->private_state->input_worker_result) ==
-           H2_PAL_ERR_IO);
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = event_with_payload(payload);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_CLOSED);
-    h2_runtime_deinit(runtime);
-    assert(env.task_state.joins == 1u);
-    assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  h2_runtime_t* runtime = test_runtime_create(&env);
+  assert(env.task_state.current != NULL);
+  env.time_state.sleep_rc = H2_PAL_ERR_IO;
+  env.task_state.current->entry(env.task_state.current->ctx);
+  assert(h2_atomic_load(&runtime->private_state->input_phase) ==
+         H2_RUNTIME_INPUT_PHASE_FAULTED);
+  assert(h2_atomic_load(&runtime->private_state->input_worker_result) ==
+         H2_PAL_ERR_IO);
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_CLOSED);
+  h2_runtime_deinit(runtime);
+  assert(env.task_state.joins == 1u);
+  assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
 }
 
-static void run_input_task_once(test_runtime_env_t *env,
-                                h2_runtime_t *runtime) {
-    env->time_state.stop_after_sleep_runtime = runtime;
-    env->task_state.handles[0]->entry(env->task_state.handles[0]->ctx);
-    env->time_state.stop_after_sleep_runtime = NULL;
-    h2_atomic_store(&runtime->private_state->input_stop_requested, 0);
+static void run_input_task_once(test_runtime_env_t* env,
+                                h2_runtime_t* runtime) {
+  env->time_state.stop_after_sleep_runtime = runtime;
+  env->task_state.handles[0]->entry(env->task_state.handles[0]->ctx);
+  env->time_state.stop_after_sleep_runtime = NULL;
+  h2_atomic_store(&runtime->private_state->input_stop_requested, 0);
 }
 
 static void test_input_worker_keeps_running_after_poll_error(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
-    add_periph(&env, 30u, H2_PAL_PERIPH_TYPE_BATTERY, NULL, 0u);
-    h2_runtime_t *runtime = test_runtime_create(&env);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  add_periph(&env, 30u, H2_PAL_PERIPH_TYPE_BATTERY, NULL, 0u);
+  h2_runtime_t* runtime = test_runtime_create(&env);
 
-    /* One failed poll step used to stop the worker and close the queue. */
-    env.time_state.now_rc = H2_PAL_ERR_IO;
-    run_input_task_once(&env, runtime);
-    env.time_state.now_rc = H2_PAL_OK;
-    assert(h2_atomic_load(&runtime->private_state->input_phase) ==
-           H2_RUNTIME_INPUT_PHASE_TASK_RUNNING);
-    h2_runtime_input_status_t status;
-    assert(h2_runtime_input_status(runtime, &status) == H2_PAL_OK);
-    assert(status.phase == H2_RUNTIME_INPUT_PHASE_TASK_RUNNING);
-    assert(status.worker_result == H2_PAL_OK);
-    assert(status.last_error == H2_PAL_ERR_IO);
-    assert(status.last_error_stage == H2_RUNTIME_INPUT_STAGE_TIME);
-    assert(status.error_count == 1u);
-    assert(status.consecutive_error_count == 1u);
-    assert(strcmp(h2_runtime_input_stage_name(status.last_error_stage),
-                  "time") == 0);
+  /* One failed poll step used to stop the worker and close the queue. */
+  env.time_state.now_rc = H2_PAL_ERR_IO;
+  run_input_task_once(&env, runtime);
+  env.time_state.now_rc = H2_PAL_OK;
+  assert(h2_atomic_load(&runtime->private_state->input_phase) ==
+         H2_RUNTIME_INPUT_PHASE_TASK_RUNNING);
+  h2_runtime_input_status_t status;
+  assert(h2_runtime_input_status(runtime, &status) == H2_PAL_OK);
+  assert(status.phase == H2_RUNTIME_INPUT_PHASE_TASK_RUNNING);
+  assert(status.worker_result == H2_PAL_OK);
+  assert(status.last_error == H2_PAL_ERR_IO);
+  assert(status.last_error_stage == H2_RUNTIME_INPUT_STAGE_TIME);
+  assert(status.error_count == 1u);
+  assert(status.consecutive_error_count == 1u);
+  assert(strcmp(h2_runtime_input_stage_name(status.last_error_stage), "time") ==
+         0);
 
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = event_with_payload(payload);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_WOULD_BLOCK);
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_WOULD_BLOCK);
 
-    /* The next poll reads the Button and the Battery again. */
-    env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
-    env.input_state.battery.voltage_mv = 4100;
-    env.time_state.now_ms += H2_RUNTIME_BATTERY_POLL_INTERVAL_MS;
-    const uint64_t polled_at_ms = env.time_state.now_ms;
-    run_input_task_once(&env, runtime);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
-    h2_runtime_battery_state_t battery;
-    assert(h2_runtime_component_state_battery(runtime, 2u, &battery) ==
-           H2_PAL_OK);
-    assert(battery.reading.voltage_mv == 4100);
-    assert(battery.updated_at_ms == polled_at_ms);
-    assert(h2_runtime_input_status(runtime, &status) == H2_PAL_OK);
-    assert(status.consecutive_error_count == 0u);
-    assert(status.error_count == 1u);
-    assert(status.poll_count >= 1u);
-    assert(status.last_poll_ok_at_ms == polled_at_ms);
+  /* The next poll reads the Button and the Battery again. */
+  env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
+  env.input_state.battery.voltage_mv = 4100;
+  env.time_state.now_ms += H2_RUNTIME_BATTERY_POLL_INTERVAL_MS;
+  const uint64_t polled_at_ms = env.time_state.now_ms;
+  run_input_task_once(&env, runtime);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+  h2_runtime_battery_state_t battery;
+  assert(h2_runtime_component_state_battery(runtime, 2u, &battery) ==
+         H2_PAL_OK);
+  assert(battery.reading.voltage_mv == 4100);
+  assert(battery.updated_at_ms == polled_at_ms);
+  assert(h2_runtime_input_status(runtime, &status) == H2_PAL_OK);
+  assert(status.consecutive_error_count == 0u);
+  assert(status.error_count == 1u);
+  assert(status.poll_count >= 1u);
+  assert(status.last_poll_ok_at_ms == polled_at_ms);
 
-    h2_runtime_deinit(runtime);
-    assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
+  h2_runtime_deinit(runtime);
+  assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
 }
 
 static void test_input_fault_release_never_precedes_its_snapshot(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
-    h2_runtime_t *runtime = test_runtime_create(&env);
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = event_with_payload(payload);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  h2_runtime_t* runtime = test_runtime_create(&env);
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
 
-    /* Pin two slots across publications so every retired slot is pinned. */
-    const h2_runtime_state_bank_t *bank = NULL;
-    uint8_t pinned[2];
-    assert(h2_runtime_state_read_begin(runtime, &bank, &pinned[0]) ==
-           H2_PAL_OK);
-    env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
-    env.time_state.now_ms += H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    assert(h2_runtime_state_read_begin(runtime, &bank, &pinned[1]) ==
-           H2_PAL_OK);
-    env.time_state.now_ms += H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    while (h2_runtime_poll_event(runtime, &event) == H2_PAL_OK) {
-    }
-    const uint32_t dropped_before =
-        dropped_events(runtime);
+  /* Pin two slots across publications so every retired slot is pinned. */
+  const h2_runtime_state_bank_t* bank = NULL;
+  uint8_t pinned[2];
+  assert(h2_runtime_state_read_begin(runtime, &bank, &pinned[0]) == H2_PAL_OK);
+  env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
+  env.time_state.now_ms += H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  assert(h2_runtime_state_read_begin(runtime, &bank, &pinned[1]) == H2_PAL_OK);
+  env.time_state.now_ms += H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  while (h2_runtime_poll_event(runtime, &event) == H2_PAL_OK) {
+  }
+  const uint32_t dropped_before = dropped_events(runtime);
 
-    env.time_state.sleep_rc = H2_PAL_ERR_IO;
-    env.task_state.current->entry(env.task_state.current->ctx);
-    h2_pal_result_t rc;
-    while ((rc = h2_runtime_poll_event(runtime, &event)) == H2_PAL_OK) {
-        assert(event.kind != H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP);
-    }
-    assert(rc == H2_PAL_ERR_CLOSED);
-    assert(dropped_events(runtime) > dropped_before);
-    assert(runtime->private_state->input_sources[0].button.retained_count == 0u);
+  env.time_state.sleep_rc = H2_PAL_ERR_IO;
+  env.task_state.current->entry(env.task_state.current->ctx);
+  h2_pal_result_t rc;
+  while ((rc = h2_runtime_poll_event(runtime, &event)) == H2_PAL_OK) {
+    assert(event.kind != H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP);
+  }
+  assert(rc == H2_PAL_ERR_CLOSED);
+  assert(dropped_events(runtime) > dropped_before);
+  assert(runtime->private_state->input_sources[0].button.retained_count == 0u);
 
-    assert(h2_runtime_state_read_end(runtime, pinned[0]) == H2_PAL_OK);
-    assert(h2_runtime_state_read_end(runtime, pinned[1]) == H2_PAL_OK);
-    env.time_state.sleep_rc = H2_PAL_OK;
-    h2_runtime_deinit(runtime);
-    assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
+  assert(h2_runtime_state_read_end(runtime, pinned[0]) == H2_PAL_OK);
+  assert(h2_runtime_state_read_end(runtime, pinned[1]) == H2_PAL_OK);
+  env.time_state.sleep_rc = H2_PAL_OK;
+  h2_runtime_deinit(runtime);
+  assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
 }
 
 static void test_input_fault_releases_held_buttons(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
-    h2_runtime_t *runtime = test_runtime_create(&env);
-    env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
-    env.time_state.now_ms += H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = event_with_payload(payload);
-    while (h2_runtime_poll_event(runtime, &event) == H2_PAL_OK) {
-    }
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  h2_runtime_t* runtime = test_runtime_create(&env);
+  env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
+  env.time_state.now_ms += H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
+  while (h2_runtime_poll_event(runtime, &event) == H2_PAL_OK) {
+  }
 
-    /* A worker that cannot sleep is fatal, but must not freeze the hold. */
-    env.time_state.sleep_rc = H2_PAL_ERR_IO;
-    env.task_state.current->entry(env.task_state.current->ctx);
-    int saw_up = 0;
-    h2_pal_result_t rc;
-    while ((rc = h2_runtime_poll_event(runtime, &event)) == H2_PAL_OK) {
-        if (event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP) {
-            saw_up = 1;
-        }
+  /* A worker that cannot sleep is fatal, but must not freeze the hold. */
+  env.time_state.sleep_rc = H2_PAL_ERR_IO;
+  env.task_state.current->entry(env.task_state.current->ctx);
+  int saw_up = 0;
+  h2_pal_result_t rc;
+  while ((rc = h2_runtime_poll_event(runtime, &event)) == H2_PAL_OK) {
+    if (event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP) {
+      saw_up = 1;
     }
-    assert(saw_up);
-    assert(rc == H2_PAL_ERR_CLOSED);
-    h2_runtime_button_state_t state;
-    assert(h2_runtime_component_state_button(runtime, 1u, &state) ==
-           H2_PAL_OK);
-    assert(!state.pressed);
-    h2_runtime_input_status_t status;
-    assert(h2_runtime_input_status(runtime, &status) == H2_PAL_OK);
-    assert(status.phase == H2_RUNTIME_INPUT_PHASE_FAULTED);
-    assert(status.worker_result == H2_PAL_ERR_IO);
-    assert(status.last_error_stage == H2_RUNTIME_INPUT_STAGE_SLEEP);
+  }
+  assert(saw_up);
+  assert(rc == H2_PAL_ERR_CLOSED);
+  h2_runtime_button_state_t state;
+  assert(h2_runtime_component_state_button(runtime, 1u, &state) == H2_PAL_OK);
+  assert(!state.pressed);
+  h2_runtime_input_status_t status;
+  assert(h2_runtime_input_status(runtime, &status) == H2_PAL_OK);
+  assert(status.phase == H2_RUNTIME_INPUT_PHASE_FAULTED);
+  assert(status.worker_result == H2_PAL_ERR_IO);
+  assert(status.last_error_stage == H2_RUNTIME_INPUT_STAGE_SLEEP);
 
-    env.time_state.sleep_rc = H2_PAL_OK;
-    assert(h2_runtime_destroy(&runtime) == H2_PAL_ERR_IO);
-    assert(runtime == NULL);
-    assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
+  env.time_state.sleep_rc = H2_PAL_OK;
+  assert(h2_runtime_destroy(&runtime) == H2_PAL_ERR_IO);
+  assert(runtime == NULL);
+  assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
 }
 
 static void test_input_fault_release_with_full_queue_keeps_state_released(
     void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
-    h2_runtime_t *runtime = test_runtime_create(&env);
-    env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
-    env.time_state.now_ms += H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  h2_runtime_t* runtime = test_runtime_create(&env);
+  env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
+  env.time_state.now_ms += H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
 
-    /* The consumer never drains: the release cannot be queued. */
-    env.queue_state.send_rc = H2_PAL_ERR_FULL;
-    env.time_state.sleep_rc = H2_PAL_ERR_IO;
-    env.task_state.current->entry(env.task_state.current->ctx);
-    h2_runtime_button_state_t state;
-    assert(h2_runtime_component_state_button(runtime, 1u, &state) ==
-           H2_PAL_OK);
-    assert(!state.pressed);
-    h2_runtime_input_status_t status;
-    assert(h2_runtime_input_status(runtime, &status) == H2_PAL_OK);
-    assert(status.phase == H2_RUNTIME_INPUT_PHASE_FAULTED);
+  /* The consumer never drains: the release cannot be queued. */
+  env.queue_state.send_rc = H2_PAL_ERR_FULL;
+  env.time_state.sleep_rc = H2_PAL_ERR_IO;
+  env.task_state.current->entry(env.task_state.current->ctx);
+  h2_runtime_button_state_t state;
+  assert(h2_runtime_component_state_button(runtime, 1u, &state) == H2_PAL_OK);
+  assert(!state.pressed);
+  h2_runtime_input_status_t status;
+  assert(h2_runtime_input_status(runtime, &status) == H2_PAL_OK);
+  assert(status.phase == H2_RUNTIME_INPUT_PHASE_FAULTED);
 
-    env.queue_state.send_rc = H2_PAL_OK;
-    env.time_state.sleep_rc = H2_PAL_OK;
-    h2_runtime_deinit(runtime);
-    assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
+  env.queue_state.send_rc = H2_PAL_OK;
+  env.time_state.sleep_rc = H2_PAL_OK;
+  h2_runtime_deinit(runtime);
+  assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
 }
 
 static void test_input_join_failure_is_retryable(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
-    h2_runtime_t *runtime = test_runtime_create(&env);
-    env.task_state.join_rc = H2_PAL_ERR_IO;
-    h2_runtime_deinit(runtime);
-    assert(runtime->private_state->input_task != NULL);
-    assert(h2_atomic_load(&runtime->private_state->input_stop_requested) != 0);
-    assert(env.task_state.joins == 0u);
-    env.task_state.join_rc = H2_PAL_OK;
-    h2_runtime_deinit(runtime);
-    assert(env.task_state.joins == 1u);
-    assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  h2_runtime_t* runtime = test_runtime_create(&env);
+  env.task_state.join_rc = H2_PAL_ERR_IO;
+  h2_runtime_deinit(runtime);
+  assert(runtime->private_state->input_task != NULL);
+  assert(h2_atomic_load(&runtime->private_state->input_stop_requested) != 0);
+  assert(env.task_state.joins == 0u);
+  env.task_state.join_rc = H2_PAL_OK;
+  h2_runtime_deinit(runtime);
+  assert(env.task_state.joins == 1u);
+  assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
 }
 
 static void test_checked_destroy_retains_dependencies(void) {
-    assert(h2_runtime_destroy(NULL) == H2_PAL_ERR_INVALID_ARG);
-    h2_runtime_t *empty = NULL;
-    assert(h2_runtime_destroy(&empty) == H2_PAL_OK);
-    for (int nfc = 0; nfc < 2; ++nfc) {
-        test_runtime_env_t env;
-        test_env_init(&env);
-        add_periph(&env, 10u, nfc ? H2_PAL_PERIPH_TYPE_NFC_READER
-                                 : H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
-        h2_runtime_t *runtime = test_runtime_create(&env);
-        h2_runtime_t *original = runtime;
-        assert(env.task_state.starts == (nfc ? 2u : 1u));
-        const size_t frees = env.allocator_state.free_calls;
-        env.task_state.join_rc = H2_PAL_ERR_IO;
-        assert(h2_runtime_destroy(&runtime) == H2_PAL_ERR_IO);
-        assert(runtime == original);
-        assert(runtime->private_state->input_task != NULL);
-        assert(!nfc || runtime->private_state->input_nfc_task != NULL);
-        assert(env.task_state.joins == 0u && env.allocator_state.free_calls == frees);
-        h2_runtime_component_info_t info;
-        assert(h2_runtime_component_get(runtime, 1u, &info) == H2_PAL_OK);
-        env.task_state.join_rc = H2_PAL_OK;
-        assert(h2_runtime_destroy(&runtime) == H2_PAL_OK && runtime == NULL);
-        assert(env.task_state.joins == (nfc ? 2u : 1u));
-        assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
-        assert(h2_runtime_destroy(&runtime) == H2_PAL_OK);
-    }
+  assert(h2_runtime_destroy(NULL) == H2_PAL_ERR_INVALID_ARG);
+  h2_runtime_t* empty = NULL;
+  assert(h2_runtime_destroy(&empty) == H2_PAL_OK);
+  for (int nfc = 0; nfc < 2; ++nfc) {
     test_runtime_env_t env;
     test_env_init(&env);
-    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
-    h2_runtime_t *runtime = test_runtime_create(&env);
-    h2_runtime_t *original = runtime;
-    h2_runtime_test_control_t *control = NULL;
-    assert(h2_runtime_test_control_open(runtime, &control) == H2_PAL_OK);
+    add_periph(
+        &env, 10u,
+        nfc ? H2_PAL_PERIPH_TYPE_NFC_READER : H2_PAL_PERIPH_TYPE_SINGLE_BUTTON,
+        NULL, 0u);
+    h2_runtime_t* runtime = test_runtime_create(&env);
+    h2_runtime_t* original = runtime;
+    assert(env.task_state.starts == (nfc ? 2u : 1u));
     const size_t frees = env.allocator_state.free_calls;
-    assert(h2_runtime_destroy(&runtime) == H2_PAL_ERR_BUSY && runtime == original);
-    assert(env.allocator_state.free_calls == frees);
-    h2_runtime_test_control_close(control);
+    env.task_state.join_rc = H2_PAL_ERR_IO;
+    assert(h2_runtime_destroy(&runtime) == H2_PAL_ERR_IO);
+    assert(runtime == original);
+    assert(runtime->private_state->input_task != NULL);
+    assert(!nfc || runtime->private_state->input_nfc_task != NULL);
+    assert(env.task_state.joins == 0u &&
+           env.allocator_state.free_calls == frees);
+    h2_runtime_component_info_t info;
+    assert(h2_runtime_component_get(runtime, 1u, &info) == H2_PAL_OK);
+    env.task_state.join_rc = H2_PAL_OK;
     assert(h2_runtime_destroy(&runtime) == H2_PAL_OK && runtime == NULL);
+    assert(env.task_state.joins == (nfc ? 2u : 1u));
     assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
+    assert(h2_runtime_destroy(&runtime) == H2_PAL_OK);
+  }
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  h2_runtime_t* runtime = test_runtime_create(&env);
+  h2_runtime_t* original = runtime;
+  h2_runtime_test_control_t* control = NULL;
+  assert(h2_runtime_test_control_open(runtime, &control) == H2_PAL_OK);
+  const size_t frees = env.allocator_state.free_calls;
+  assert(h2_runtime_destroy(&runtime) == H2_PAL_ERR_BUSY &&
+         runtime == original);
+  assert(env.allocator_state.free_calls == frees);
+  h2_runtime_test_control_close(control);
+  assert(h2_runtime_destroy(&runtime) == H2_PAL_OK && runtime == NULL);
+  assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
 }
 
 static void test_input_stop_then_start_resumes_acquisition(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
-    h2_runtime_t *runtime = test_runtime_create(&env);
-    assert(env.task_state.starts == 1u);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  h2_runtime_t* runtime = test_runtime_create(&env);
+  assert(env.task_state.starts == 1u);
 
-    /* One complete click before the stop establishes a click sequence. */
-    env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
-    env.time_state.now_ms = 10u;
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    env.button_state.single_state = H2_PAL_BUTTON_STATE_RELEASED;
-    env.time_state.now_ms = 40u;
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = event_with_payload(payload);
-    while (h2_runtime_poll_event(runtime, &event) == H2_PAL_OK) {
-    }
+  /* One complete click before the stop establishes a click sequence. */
+  env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
+  env.time_state.now_ms = 10u;
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  env.button_state.single_state = H2_PAL_BUTTON_STATE_RELEASED;
+  env.time_state.now_ms = 40u;
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
+  while (h2_runtime_poll_event(runtime, &event) == H2_PAL_OK) {
+  }
 
-    assert(h2_runtime_input_stop(runtime) == H2_PAL_OK);
-    assert(env.task_state.joins == 1u);
-    assert(runtime->private_state->input_task == NULL);
-    assert(h2_atomic_load(&runtime->private_state->input_phase) ==
-           H2_RUNTIME_INPUT_PHASE_STOPPED);
-    /*
-     * Stopping the poller only stops the task. The writer mutex, the source
-     * table and the published component state all belong to the Runtime and
-     * stay exactly as they were, so the last observation is still readable.
-     */
-    assert(runtime->private_state->input_writer_mutex != NULL);
-    assert(runtime->private_state->input_sources_ready == 1);
-    assert(h2_runtime_state_publication_ready(runtime));
-    h2_runtime_button_state_t state;
-    assert(h2_runtime_component_state_button(runtime, 1u, &state) == H2_PAL_OK);
-    assert(!state.pressed);
-    assert(state.updated_at_ms == 40u);
+  assert(h2_runtime_input_stop(runtime) == H2_PAL_OK);
+  assert(env.task_state.joins == 1u);
+  assert(runtime->private_state->input_task == NULL);
+  assert(h2_atomic_load(&runtime->private_state->input_phase) ==
+         H2_RUNTIME_INPUT_PHASE_STOPPED);
+  /*
+   * Stopping the poller only stops the task. The writer mutex, the source
+   * table and the published component state all belong to the Runtime and
+   * stay exactly as they were, so the last observation is still readable.
+   */
+  assert(runtime->private_state->input_writer_mutex != NULL);
+  assert(runtime->private_state->input_sources_ready == 1);
+  assert(h2_runtime_state_publication_ready(runtime));
+  h2_runtime_button_state_t state;
+  assert(h2_runtime_component_state_button(runtime, 1u, &state) == H2_PAL_OK);
+  assert(!state.pressed);
+  assert(state.updated_at_ms == 40u);
 
-    /* Stop is idempotent and does not join a second time. */
-    assert(h2_runtime_input_stop(runtime) == H2_PAL_OK);
-    assert(env.task_state.joins == 1u);
+  /* Stop is idempotent and does not join a second time. */
+  assert(h2_runtime_input_stop(runtime) == H2_PAL_OK);
+  assert(env.task_state.joins == 1u);
 
-    const h2_runtime_input_poll_config_t restart_poll = {
-        .tick_ms = 5u,
-        .button_poll_interval_ms = 9u,
-        .task_options = {.name = "runtime-input-restart"},
-    };
-    assert(h2_runtime_input_start(runtime, &restart_poll) == H2_PAL_OK);
-    assert(env.task_state.starts == 2u);
-    assert(runtime->private_state->input_task != NULL);
-    /* Discovery already ran at init and is not repeated by a restart. */
-    assert(env.periphs.list_calls == 1u);
-    assert(runtime->private_state->input_tick_ms == 5u);
-    assert(runtime->private_state->input_button_poll_interval_ms == 9u);
-    assert(strcmp(env.task_state.options.name, h2_runtime_input_task_name) == 0);
-    assert(h2_atomic_load(&runtime->private_state->input_phase) ==
-           H2_RUNTIME_INPUT_PHASE_TASK_RUNNING);
+  const h2_runtime_input_poll_config_t restart_poll = {
+      .tick_ms = 5u,
+      .button_poll_interval_ms = 9u,
+      .task_options = {.name = "runtime-input-restart"},
+  };
+  assert(h2_runtime_input_start(runtime, &restart_poll) == H2_PAL_OK);
+  assert(env.task_state.starts == 2u);
+  assert(runtime->private_state->input_task != NULL);
+  /* Discovery already ran at init and is not repeated by a restart. */
+  assert(env.periphs.list_calls == 1u);
+  assert(runtime->private_state->input_tick_ms == 5u);
+  assert(runtime->private_state->input_button_poll_interval_ms == 9u);
+  assert(strcmp(env.task_state.options.name, h2_runtime_input_task_name) == 0);
+  assert(h2_atomic_load(&runtime->private_state->input_phase) ==
+         H2_RUNTIME_INPUT_PHASE_TASK_RUNNING);
 
-    /* The first frame after a start republishes the current hardware state. */
-    assert(h2_runtime_component_state_button(runtime, 1u, &state) == H2_PAL_OK);
-    assert(!state.pressed);
+  /* The first frame after a start republishes the current hardware state. */
+  assert(h2_runtime_component_state_button(runtime, 1u, &state) == H2_PAL_OK);
+  assert(!state.pressed);
 
-    /* Events flow again with timestamps for the newly observed action. */
-    env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
-    env.time_state.now_ms = 100u;
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
-    (void)poll_button_action(runtime, &event);
-    env.button_state.single_state = H2_PAL_BUTTON_STATE_RELEASED;
-    env.time_state.now_ms = 130u;
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION);
-    h2_runtime_button_action_event_t action;
-    memcpy(&action, event.payload, sizeof(action));
-    assert(action.pressed_at_ms == 100u);
-    assert(action.released_at_ms == 130u);
+  /* Events flow again with timestamps for the newly observed action. */
+  env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
+  env.time_state.now_ms = 100u;
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+  (void)poll_button_action(runtime, &event);
+  env.button_state.single_state = H2_PAL_BUTTON_STATE_RELEASED;
+  env.time_state.now_ms = 130u;
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION);
+  h2_runtime_button_action_event_t action;
+  memcpy(&action, event.payload, sizeof(action));
+  assert(action.pressed_at_ms == 100u);
+  assert(action.released_at_ms == 130u);
 
-    h2_runtime_deinit(runtime);
-    assert(env.task_state.joins == 2u);
-    assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
+  h2_runtime_deinit(runtime);
+  assert(env.task_state.joins == 2u);
+  assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
 }
 
 static void test_input_restart_delivers_queued_push_edges(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    const h2_pal_periph_single_button_payload_t push_payload = {
-        .delivery = H2_PAL_BUTTON_DELIVERY_PUSH_EDGE,
-    };
-    add_periph(&env, 77u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON,
-               &push_payload, sizeof(push_payload));
-    h2_runtime_t *runtime = test_runtime_create(&env);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  const h2_pal_periph_single_button_payload_t push_payload = {
+      .delivery = H2_PAL_BUTTON_DELIVERY_PUSH_EDGE,
+  };
+  add_periph(&env, 77u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, &push_payload,
+             sizeof(push_payload));
+  h2_runtime_t* runtime = test_runtime_create(&env);
 
-    /* An edge is accepted but not yet consumed when the poller stops. */
-    env.time_state.now_ms = 10u;
-    assert(h2_runtime_button_push_edge(
-               runtime, 77u, H2_RUNTIME_BUTTON_EDGE_DOWN) == H2_PAL_OK);
-    assert(h2_runtime_input_stop(runtime) == H2_PAL_OK);
-    assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_OK);
+  /* An edge is accepted but not yet consumed when the poller stops. */
+  env.time_state.now_ms = 10u;
+  assert(h2_runtime_button_push_edge(runtime, 77u,
+                                     H2_RUNTIME_BUTTON_EDGE_DOWN) == H2_PAL_OK);
+  assert(h2_runtime_input_stop(runtime) == H2_PAL_OK);
+  assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_OK);
 
-    /*
-     * The edge really happened; the poller had simply not consumed it yet.
-     * Stopping the poller does not discard queued input, so the restarted
-     * poller delivers it instead of dropping it on the floor.
-     */
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = event_with_payload(payload);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
-    h2_runtime_button_state_t state;
-    assert(h2_runtime_component_state_button(runtime, 1u, &state) == H2_PAL_OK);
-    assert(state.pressed);
+  /*
+   * The edge really happened; the poller had simply not consumed it yet.
+   * Stopping the poller does not discard queued input, so the restarted
+   * poller delivers it instead of dropping it on the floor.
+   */
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+  h2_runtime_button_state_t state;
+  assert(h2_runtime_component_state_button(runtime, 1u, &state) == H2_PAL_OK);
+  assert(state.pressed);
 
-    h2_runtime_deinit(runtime);
-    assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
+  h2_runtime_deinit(runtime);
+  assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
 }
 
 static void test_input_start_without_mapped_input_is_noop(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    h2_runtime_t *runtime = test_runtime_create(&env);
-    assert(env.task_state.starts == 0u);
-    assert(h2_atomic_load(&runtime->private_state->input_phase) ==
-           H2_RUNTIME_INPUT_PHASE_STOPPED);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  h2_runtime_t* runtime = test_runtime_create(&env);
+  assert(env.task_state.starts == 0u);
+  assert(h2_atomic_load(&runtime->private_state->input_phase) ==
+         H2_RUNTIME_INPUT_PHASE_STOPPED);
 
-    assert(h2_runtime_input_stop(runtime) == H2_PAL_OK);
-    assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_OK);
-    assert(env.task_state.starts == 0u);
-    assert(env.task_state.joins == 0u);
-    assert(runtime->private_state->input_task == NULL);
-    assert(h2_atomic_load(&runtime->private_state->input_phase) ==
-           H2_RUNTIME_INPUT_PHASE_STOPPED);
+  assert(h2_runtime_input_stop(runtime) == H2_PAL_OK);
+  assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_OK);
+  assert(env.task_state.starts == 0u);
+  assert(env.task_state.joins == 0u);
+  assert(runtime->private_state->input_task == NULL);
+  assert(h2_atomic_load(&runtime->private_state->input_phase) ==
+         H2_RUNTIME_INPUT_PHASE_STOPPED);
 
-    h2_runtime_deinit(runtime);
-    assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
+  h2_runtime_deinit(runtime);
+  assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
 }
 
 static void test_input_double_start_is_rejected(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
-    h2_runtime_t *runtime = test_runtime_create(&env);
-    assert(env.task_state.starts == 1u);
-    h2_pal_mutex_t *mutex = runtime->private_state->input_writer_mutex;
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  h2_runtime_t* runtime = test_runtime_create(&env);
+  assert(env.task_state.starts == 1u);
+  h2_pal_mutex_t* mutex = runtime->private_state->input_writer_mutex;
 
-    assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_ERR_INVALID_STATE);
-    assert(env.task_state.starts == 1u);
-    assert(runtime->private_state->input_writer_mutex == mutex);
-    assert(h2_atomic_load(&runtime->private_state->input_phase) ==
-           H2_RUNTIME_INPUT_PHASE_TASK_RUNNING);
+  assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_ERR_INVALID_STATE);
+  assert(env.task_state.starts == 1u);
+  assert(runtime->private_state->input_writer_mutex == mutex);
+  assert(h2_atomic_load(&runtime->private_state->input_phase) ==
+         H2_RUNTIME_INPUT_PHASE_TASK_RUNNING);
 
-    h2_runtime_deinit(runtime);
-    assert(env.task_state.joins == 1u);
-    assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
+  h2_runtime_deinit(runtime);
+  assert(env.task_state.joins == 1u);
+  assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
 }
 
 static void test_input_start_after_worker_fault_is_rejected(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
-    h2_runtime_t *runtime = test_runtime_create(&env);
-    assert(env.task_state.current != NULL);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  h2_runtime_t* runtime = test_runtime_create(&env);
+  assert(env.task_state.current != NULL);
 
-    env.time_state.sleep_rc = H2_PAL_ERR_IO;
-    env.task_state.current->entry(env.task_state.current->ctx);
-    assert(h2_atomic_load(&runtime->private_state->input_phase) ==
-           H2_RUNTIME_INPUT_PHASE_FAULTED);
+  env.time_state.sleep_rc = H2_PAL_ERR_IO;
+  env.task_state.current->entry(env.task_state.current->ctx);
+  assert(h2_atomic_load(&runtime->private_state->input_phase) ==
+         H2_RUNTIME_INPUT_PHASE_FAULTED);
 
-    /* Stop reports the fault; the closed event queue makes it terminal. */
-    env.time_state.sleep_rc = H2_PAL_OK;
-    assert(h2_runtime_input_stop(runtime) == H2_PAL_ERR_IO);
-    assert(h2_atomic_load(&runtime->private_state->input_phase) ==
-           H2_RUNTIME_INPUT_PHASE_STOPPED);
-    assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_ERR_INVALID_STATE);
-    assert(env.task_state.starts == 1u);
-    assert(runtime->private_state->input_task == NULL);
+  /* Stop reports the fault; the closed event queue makes it terminal. */
+  env.time_state.sleep_rc = H2_PAL_OK;
+  assert(h2_runtime_input_stop(runtime) == H2_PAL_ERR_IO);
+  assert(h2_atomic_load(&runtime->private_state->input_phase) ==
+         H2_RUNTIME_INPUT_PHASE_STOPPED);
+  assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_ERR_INVALID_STATE);
+  assert(env.task_state.starts == 1u);
+  assert(runtime->private_state->input_task == NULL);
 
-    h2_runtime_deinit(runtime);
-    assert(env.task_state.joins == 1u);
-    assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
+  h2_runtime_deinit(runtime);
+  assert(env.task_state.joins == 1u);
+  assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
 }
 
 static void test_input_lifecycle_is_closed_during_test_session(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
-    h2_runtime_t *runtime = test_runtime_create(&env);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  h2_runtime_t* runtime = test_runtime_create(&env);
 
-    h2_runtime_test_control_t *control = NULL;
-    assert(h2_runtime_test_control_open(runtime, &control) == H2_PAL_OK);
-    /*
-     * The session owns the source table, so starting the poller underneath it
-     * is refused. Stopping is harmless now that stop only stops the task, so
-     * the two are deliberately not symmetric.
-     */
-    assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_ERR_INVALID_STATE);
-    assert(env.task_state.starts == 1u);
-    assert(h2_runtime_input_stop(runtime) == H2_PAL_OK);
-    assert(env.task_state.joins == 1u);
-    assert(h2_runtime_state_publication_ready(runtime));
-    h2_runtime_test_control_close(control);
+  h2_runtime_test_control_t* control = NULL;
+  assert(h2_runtime_test_control_open(runtime, &control) == H2_PAL_OK);
+  /*
+   * The session owns the source table, so starting the poller underneath it
+   * is refused. Stopping is harmless now that stop only stops the task, so
+   * the two are deliberately not symmetric.
+   */
+  assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_ERR_INVALID_STATE);
+  assert(env.task_state.starts == 1u);
+  assert(h2_runtime_input_stop(runtime) == H2_PAL_OK);
+  assert(env.task_state.joins == 1u);
+  assert(h2_runtime_state_publication_ready(runtime));
+  h2_runtime_test_control_close(control);
 
-    /* A session may also open and close while the poller is stopped. */
-    assert(h2_runtime_test_control_open(runtime, &control) == H2_PAL_OK);
-    assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_ERR_INVALID_STATE);
-    h2_runtime_test_control_close(control);
+  /* A session may also open and close while the poller is stopped. */
+  assert(h2_runtime_test_control_open(runtime, &control) == H2_PAL_OK);
+  assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_ERR_INVALID_STATE);
+  h2_runtime_test_control_close(control);
 
-    assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_OK);
-    assert(env.task_state.starts == 2u);
-    env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
-    env.time_state.now_ms = 200u;
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = event_with_payload(payload);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+  assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_OK);
+  assert(env.task_state.starts == 2u);
+  env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
+  env.time_state.now_ms = 200u;
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
 
-    h2_runtime_deinit(runtime);
-    assert(env.task_state.joins == 2u);
-    assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
+  h2_runtime_deinit(runtime);
+  assert(env.task_state.joins == 2u);
+  assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
 }
 
 /*
@@ -3884,613 +3802,588 @@ static void test_input_lifecycle_is_closed_during_test_session(void) {
  * snapshot is simply unavailable, and a publication into it is dropped.
  */
 static void test_station_snapshot_unavailable_without_mutex(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    env.sync_state.mutex_create_rc = H2_PAL_ERR_UNSUPPORTED;
-    h2_runtime_config_t config = test_runtime_config(&env);
-    h2_runtime_t *runtime = NULL;
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
-    assert(runtime != NULL);
-    assert(env.sync_state.creates == 0u);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  env.sync_state.mutex_create_rc = H2_PAL_ERR_UNSUPPORTED;
+  h2_runtime_config_t config = test_runtime_config(&env);
+  h2_runtime_t* runtime = NULL;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  assert(runtime != NULL);
+  assert(env.sync_state.creates == 0u);
 
-    h2_runtime_system_wifi_sta_state_t state;
-    memset(&state, 0, sizeof(state));
-    assert(h2_runtime_system_state_wifi_sta(runtime, &state) ==
-           H2_PAL_ERR_UNSUPPORTED);
+  h2_runtime_system_wifi_sta_state_t state;
+  memset(&state, 0, sizeof(state));
+  assert(h2_runtime_system_state_wifi_sta(runtime, &state) ==
+         H2_PAL_ERR_UNSUPPORTED);
 
-    h2_runtime_system_wifi_sta_state_t published;
-    memset(&published, 0, sizeof(published));
-    published.valid = 1u;
-    published.status = H2_RUNTIME_SYSTEM_WIFI_STA_STATUS_GOT_IP;
-    assert(h2_runtime_test_set_system_wifi_sta_state(runtime, &published) ==
-           H2_PAL_OK);
-    assert(h2_runtime_system_state_wifi_sta(runtime, &state) ==
-           H2_PAL_ERR_UNSUPPORTED);
+  h2_runtime_system_wifi_sta_state_t published;
+  memset(&published, 0, sizeof(published));
+  published.valid = 1u;
+  published.status = H2_RUNTIME_SYSTEM_WIFI_STA_STATUS_GOT_IP;
+  assert(h2_runtime_test_set_system_wifi_sta_state(runtime, &published) ==
+         H2_PAL_OK);
+  assert(h2_runtime_system_state_wifi_sta(runtime, &state) ==
+         H2_PAL_ERR_UNSUPPORTED);
 
-    h2_runtime_system_modem_state_t modem;
-    memset(&modem, 0, sizeof(modem));
-    modem.sim = H2_RUNTIME_SYSTEM_MODEM_SIM_READY;
-    assert(h2_runtime_test_set_system_modem_state(runtime, &modem) == H2_PAL_OK);
-    assert(h2_runtime_system_state_modem(runtime, &modem) ==
-           H2_PAL_ERR_UNSUPPORTED);
+  h2_runtime_system_modem_state_t modem;
+  memset(&modem, 0, sizeof(modem));
+  modem.sim = H2_RUNTIME_SYSTEM_MODEM_SIM_READY;
+  assert(h2_runtime_test_set_system_modem_state(runtime, &modem) == H2_PAL_OK);
+  assert(h2_runtime_system_state_modem(runtime, &modem) ==
+         H2_PAL_ERR_UNSUPPORTED);
 
-    h2_runtime_deinit(runtime);
-    assert(env.sync_state.destroys == 0u);
-    assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
+  h2_runtime_deinit(runtime);
+  assert(env.sync_state.destroys == 0u);
+  assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
 }
 
 static void test_input_snapshot_does_not_create_condition(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
-    env.sync_state.cond_create_rc = H2_PAL_ERR_IO;
-    h2_runtime_config_t config = test_runtime_config(&env);
-    h2_runtime_t *runtime = NULL;
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
-    assert(runtime != NULL);
-    /*
-     * Three mutexes, the system state lock, the input writer lock and the
-     * input health lock, and no condition variable: the snapshot readers and
-     * the input poller both take a lock, neither waits on one.
-     */
-    assert(env.sync_state.creates == 3u);
-    assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_OK);
-    assert(env.sync_state.creates == 3u);
-    h2_runtime_deinit(runtime);
-    assert(env.sync_state.destroys == 3u);
-    assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  env.sync_state.cond_create_rc = H2_PAL_ERR_IO;
+  h2_runtime_config_t config = test_runtime_config(&env);
+  h2_runtime_t* runtime = NULL;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  assert(runtime != NULL);
+  /*
+   * Three mutexes, the system state lock, the input writer lock and the
+   * input health lock, and no condition variable: the snapshot readers and
+   * the input poller both take a lock, neither waits on one.
+   */
+  assert(env.sync_state.creates == 3u);
+  assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_OK);
+  assert(env.sync_state.creates == 3u);
+  h2_runtime_deinit(runtime);
+  assert(env.sync_state.destroys == 3u);
+  assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
 }
 
 static void test_sequence_wraps_and_skips_zero(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    h2_runtime_t *runtime = test_runtime_create(&env);
-    h2_atomic_uint_store(&runtime->private_state->next_sequence, UINT32_MAX, H2_ATOMIC_SEQ_CST);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  h2_runtime_t* runtime = test_runtime_create(&env);
+  h2_atomic_uint_store(&runtime->private_state->next_sequence, UINT32_MAX,
+                       H2_ATOMIC_SEQ_CST);
 
-    assert(h2_runtime_next_sequence(runtime) == UINT32_MAX);
-    /* 0 means "no sequence", so the wrap lands on 1. */
-    assert(h2_runtime_next_sequence(runtime) == 1u);
-    assert(h2_runtime_next_sequence(runtime) == 2u);
+  assert(h2_runtime_next_sequence(runtime) == UINT32_MAX);
+  /* 0 means "no sequence", so the wrap lands on 1. */
+  assert(h2_runtime_next_sequence(runtime) == 1u);
+  assert(h2_runtime_next_sequence(runtime) == 2u);
 
-    assert(h2_runtime_sequence_after(1u, UINT32_MAX));
-    assert(!h2_runtime_sequence_after(UINT32_MAX, 1u));
-    assert(h2_runtime_sequence_after(2u, 1u));
-    assert(!h2_runtime_sequence_after(1u, 1u));
-    /* 0 is "no sequence": every real sequence is after it. */
-    assert(h2_runtime_sequence_after(UINT32_MAX, 0u));
-    assert(h2_runtime_sequence_after(1u, 0u));
-    assert(!h2_runtime_sequence_after(0u, 1u));
-    assert(!h2_runtime_sequence_after(0u, 0u));
+  assert(h2_runtime_sequence_after(1u, UINT32_MAX));
+  assert(!h2_runtime_sequence_after(UINT32_MAX, 1u));
+  assert(h2_runtime_sequence_after(2u, 1u));
+  assert(!h2_runtime_sequence_after(1u, 1u));
+  /* 0 is "no sequence": every real sequence is after it. */
+  assert(h2_runtime_sequence_after(UINT32_MAX, 0u));
+  assert(h2_runtime_sequence_after(1u, 0u));
+  assert(!h2_runtime_sequence_after(0u, 1u));
+  assert(!h2_runtime_sequence_after(0u, 0u));
 
-    h2_runtime_deinit(runtime);
+  h2_runtime_deinit(runtime);
 }
 
 /* A first input event with a high sequence must establish the ceiling. */
 static void test_high_first_sequence_sets_input_ceiling(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(
-        &env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
-    h2_runtime_t *runtime = test_runtime_create(&env);
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    h2_runtime_test_control_t *control = NULL;
-    assert(h2_runtime_test_control_open(runtime, &control) == H2_PAL_OK);
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  h2_runtime_t* runtime = test_runtime_create(&env);
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  h2_runtime_test_control_t* control = NULL;
+  assert(h2_runtime_test_control_open(runtime, &control) == H2_PAL_OK);
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
 
-    assert(runtime->private_state->input_event_sequence_ceiling == 0u);
-    h2_atomic_uint_store(&runtime->private_state->next_sequence, UINT32_MAX, H2_ATOMIC_SEQ_CST);
-    assert(h2_runtime_test_button_down(control, 1u, 100u) == H2_PAL_OK);
-    assert(runtime->private_state->input_event_sequence_ceiling == UINT32_MAX);
+  assert(runtime->private_state->input_event_sequence_ceiling == 0u);
+  h2_atomic_uint_store(&runtime->private_state->next_sequence, UINT32_MAX,
+                       H2_ATOMIC_SEQ_CST);
+  assert(h2_runtime_test_button_down(control, 1u, 100u) == H2_PAL_OK);
+  assert(runtime->private_state->input_event_sequence_ceiling == UINT32_MAX);
 
-    /* The wrap right after it still advances the ceiling. */
-    assert(h2_runtime_test_button_up(control, 1u, 100u, 160u) == H2_PAL_OK);
-    assert(runtime->private_state->input_event_sequence_ceiling == 1u);
+  /* The wrap right after it still advances the ceiling. */
+  assert(h2_runtime_test_button_up(control, 1u, 100u, 160u) == H2_PAL_OK);
+  assert(runtime->private_state->input_event_sequence_ceiling == 1u);
 
-    h2_runtime_test_control_close(control);
-    h2_runtime_deinit(runtime);
+  h2_runtime_test_control_close(control);
+  h2_runtime_deinit(runtime);
 }
 
 static void test_sensor_component_mapping(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(&env, 401u, H2_PAL_PERIPH_TYPE_BATTERY, NULL, 0u);
-    add_periph(&env, 501u, H2_PAL_PERIPH_TYPE_TEMPERATURE_SENSOR, NULL, 0u);
-    add_periph(&env, 701u, H2_PAL_PERIPH_TYPE_PWM_SWITCH, NULL, 0u);
-    add_periph(&env, 801u, H2_PAL_PERIPH_TYPE_BUZZER, NULL, 0u);
-    h2_runtime_t *runtime = test_runtime_create(&env);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 401u, H2_PAL_PERIPH_TYPE_BATTERY, NULL, 0u);
+  add_periph(&env, 501u, H2_PAL_PERIPH_TYPE_TEMPERATURE_SENSOR, NULL, 0u);
+  add_periph(&env, 701u, H2_PAL_PERIPH_TYPE_PWM_SWITCH, NULL, 0u);
+  add_periph(&env, 801u, H2_PAL_PERIPH_TYPE_BUZZER, NULL, 0u);
+  h2_runtime_t* runtime = test_runtime_create(&env);
 
-    assert(runtime->private_state->component_mapping_count == 4u);
-    const h2_runtime_component_mapping_t *battery =
-        h2_runtime_find_component_mapping_by_periph(runtime, 401u);
-    const h2_runtime_component_mapping_t *temperature =
-        h2_runtime_find_component_mapping_by_periph(runtime, 501u);
-    const h2_runtime_component_mapping_t *pwm =
-        h2_runtime_find_component_mapping_by_periph(runtime, 701u);
-    const h2_runtime_component_mapping_t *buzzer =
-        h2_runtime_find_component_mapping_by_periph(runtime, 801u);
-    assert(battery != NULL && battery->component == H2_RUNTIME_COMPONENT_BATTERY);
-    assert(temperature != NULL &&
-           temperature->component == H2_RUNTIME_COMPONENT_TEMPERATURE_SENSOR);
-    assert(pwm != NULL && pwm->component == H2_RUNTIME_COMPONENT_PWM_SWITCH);
-    assert(buzzer != NULL && buzzer->component == H2_RUNTIME_COMPONENT_BUZZER);
+  assert(runtime->private_state->component_mapping_count == 4u);
+  const h2_runtime_component_mapping_t* battery =
+      h2_runtime_find_component_mapping_by_periph(runtime, 401u);
+  const h2_runtime_component_mapping_t* temperature =
+      h2_runtime_find_component_mapping_by_periph(runtime, 501u);
+  const h2_runtime_component_mapping_t* pwm =
+      h2_runtime_find_component_mapping_by_periph(runtime, 701u);
+  const h2_runtime_component_mapping_t* buzzer =
+      h2_runtime_find_component_mapping_by_periph(runtime, 801u);
+  assert(battery != NULL && battery->component == H2_RUNTIME_COMPONENT_BATTERY);
+  assert(temperature != NULL &&
+         temperature->component == H2_RUNTIME_COMPONENT_TEMPERATURE_SENSOR);
+  assert(pwm != NULL && pwm->component == H2_RUNTIME_COMPONENT_PWM_SWITCH);
+  assert(buzzer != NULL && buzzer->component == H2_RUNTIME_COMPONENT_BUZZER);
 
-    assert(runtime->private_state->input_source_count == 2u);
-    assert(env.task_state.starts == 1u);
-    assert(env.input_state.battery_reads == 1u);
-    assert(env.input_state.temperature_reads == 1u);
-    h2_runtime_battery_state_t battery_state = {0};
-    assert(h2_runtime_component_state_battery(runtime, battery->component_id,
-                                              &battery_state) == H2_PAL_OK);
-    assert(battery_state.result == H2_PAL_OK);
-    assert(battery_state.reading.id == 401u);
-    h2_runtime_temperature_state_t temperature_state = {0};
-    assert(h2_runtime_component_state_temperature(
-               runtime, temperature->component_id, &temperature_state) ==
-           H2_PAL_OK);
-    assert(temperature_state.result == H2_PAL_OK);
-    assert(temperature_state.reading.id == 501u);
-    h2_runtime_deinit(runtime);
+  assert(runtime->private_state->input_source_count == 2u);
+  assert(env.task_state.starts == 1u);
+  assert(env.input_state.battery_reads == 1u);
+  assert(env.input_state.temperature_reads == 1u);
+  h2_runtime_battery_state_t battery_state = {0};
+  assert(h2_runtime_component_state_battery(runtime, battery->component_id,
+                                            &battery_state) == H2_PAL_OK);
+  assert(battery_state.result == H2_PAL_OK);
+  assert(battery_state.reading.id == 401u);
+  h2_runtime_temperature_state_t temperature_state = {0};
+  assert(h2_runtime_component_state_temperature(
+             runtime, temperature->component_id, &temperature_state) ==
+         H2_PAL_OK);
+  assert(temperature_state.result == H2_PAL_OK);
+  assert(temperature_state.reading.id == 501u);
+  h2_runtime_deinit(runtime);
 }
 
 static void test_control_keeps_test_sources_while_sensors_poll(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
-    add_periph(&env, 401u, H2_PAL_PERIPH_TYPE_BATTERY, NULL, 0u);
-    h2_runtime_t *runtime = test_runtime_create(&env);
-    const h2_runtime_component_mapping_t *button =
-        h2_runtime_find_component_mapping_by_periph(runtime, 10u);
-    const h2_runtime_component_mapping_t *battery =
-        h2_runtime_find_component_mapping_by_periph(runtime, 401u);
-    assert(button != NULL && battery != NULL);
-    const size_t battery_reads_before = env.input_state.battery_reads;
-    const size_t button_reads_before = env.button_state.single_reads;
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  add_periph(&env, 401u, H2_PAL_PERIPH_TYPE_BATTERY, NULL, 0u);
+  h2_runtime_t* runtime = test_runtime_create(&env);
+  const h2_runtime_component_mapping_t* button =
+      h2_runtime_find_component_mapping_by_periph(runtime, 10u);
+  const h2_runtime_component_mapping_t* battery =
+      h2_runtime_find_component_mapping_by_periph(runtime, 401u);
+  assert(button != NULL && battery != NULL);
+  const size_t battery_reads_before = env.input_state.battery_reads;
+  const size_t button_reads_before = env.button_state.single_reads;
 
-    h2_runtime_test_control_t *control = NULL;
-    assert(h2_runtime_test_control_open(runtime, &control) == H2_PAL_OK);
-    assert(h2_runtime_test_button_down(
-               control, button->component_id, 100u) == H2_PAL_OK);
+  h2_runtime_test_control_t* control = NULL;
+  assert(h2_runtime_test_control_open(runtime, &control) == H2_PAL_OK);
+  assert(h2_runtime_test_button_down(control, button->component_id, 100u) ==
+         H2_PAL_OK);
 
-    /* A sensor-only poll refreshes the passive sensors from their PAL ... */
-    env.time_state.now_ms = 600u;
-    assert(h2_runtime_test_poll_sensors(runtime) == H2_PAL_OK);
-    assert(env.input_state.battery_reads == battery_reads_before + 1u);
-    h2_runtime_battery_state_t battery_state = {0};
-    assert(h2_runtime_component_state_battery(
-               runtime, battery->component_id, &battery_state) == H2_PAL_OK);
-    assert(battery_state.result == H2_PAL_OK);
-    assert(battery_state.reading.id == 401u);
+  /* A sensor-only poll refreshes the passive sensors from their PAL ... */
+  env.time_state.now_ms = 600u;
+  assert(h2_runtime_test_poll_sensors(runtime) == H2_PAL_OK);
+  assert(env.input_state.battery_reads == battery_reads_before + 1u);
+  h2_runtime_battery_state_t battery_state = {0};
+  assert(h2_runtime_component_state_battery(runtime, battery->component_id,
+                                            &battery_state) == H2_PAL_OK);
+  assert(battery_state.result == H2_PAL_OK);
+  assert(battery_state.reading.id == 401u);
 
-    /* ... without rediscovering physical sources over the test-owned table. */
-    h2_runtime_button_state_t state;
-    assert(h2_runtime_component_state_button(
-               runtime, button->component_id, &state) == H2_PAL_OK);
-    assert(state.pressed);
-    assert(state.pressed_at_ms == 100u);
-    assert(env.button_state.single_reads == button_reads_before);
+  /* ... without rediscovering physical sources over the test-owned table. */
+  h2_runtime_button_state_t state;
+  assert(h2_runtime_component_state_button(runtime, button->component_id,
+                                           &state) == H2_PAL_OK);
+  assert(state.pressed);
+  assert(state.pressed_at_ms == 100u);
+  assert(env.button_state.single_reads == button_reads_before);
 
-    h2_runtime_test_control_close(control);
-    h2_runtime_deinit(runtime);
+  h2_runtime_test_control_close(control);
+  h2_runtime_deinit(runtime);
 }
 
 static void test_control_button_actions_track_timestamps(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
-    h2_runtime_t *runtime = test_runtime_create(&env);
-    h2_runtime_test_control_t *control = NULL;
-    assert(h2_runtime_test_control_open(runtime, &control) == H2_PAL_OK);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  h2_runtime_t* runtime = test_runtime_create(&env);
+  h2_runtime_test_control_t* control = NULL;
+  assert(h2_runtime_test_control_open(runtime, &control) == H2_PAL_OK);
 
-    h2_runtime_button_state_t state;
-    const size_t button_locks_before = env.sync_state.locks;
-    const size_t button_unlocks_before = env.sync_state.unlocks;
-    assert(h2_runtime_test_button_down(control, 1u, 100u) == H2_PAL_OK);
-    assert(env.sync_state.locks == button_locks_before + 1u);
-    assert(env.sync_state.unlocks == button_unlocks_before + 1u);
-    assert(h2_runtime_component_state_button(runtime, 1u, &state) ==
-           H2_PAL_OK);
-    assert(state.pressed && state.pressed_at_ms == 100u);
+  h2_runtime_button_state_t state;
+  const size_t button_locks_before = env.sync_state.locks;
+  const size_t button_unlocks_before = env.sync_state.unlocks;
+  assert(h2_runtime_test_button_down(control, 1u, 100u) == H2_PAL_OK);
+  assert(env.sync_state.locks == button_locks_before + 1u);
+  assert(env.sync_state.unlocks == button_unlocks_before + 1u);
+  assert(h2_runtime_component_state_button(runtime, 1u, &state) == H2_PAL_OK);
+  assert(state.pressed && state.pressed_at_ms == 100u);
 
-    assert(h2_runtime_test_button_up(control, 1u, 100u, 140u) == H2_PAL_OK);
-    assert(h2_runtime_component_state_button(runtime, 1u, &state) ==
-           H2_PAL_OK);
-    assert(!state.pressed);
-    assert(h2_runtime_test_button_down(control, 1u, 160u) == H2_PAL_OK);
-    assert(h2_runtime_component_state_button(runtime, 1u, &state) ==
-           H2_PAL_OK);
-    assert(state.pressed && state.pressed_at_ms == 160u);
+  assert(h2_runtime_test_button_up(control, 1u, 100u, 140u) == H2_PAL_OK);
+  assert(h2_runtime_component_state_button(runtime, 1u, &state) == H2_PAL_OK);
+  assert(!state.pressed);
+  assert(h2_runtime_test_button_down(control, 1u, 160u) == H2_PAL_OK);
+  assert(h2_runtime_component_state_button(runtime, 1u, &state) == H2_PAL_OK);
+  assert(state.pressed && state.pressed_at_ms == 160u);
 
-    assert(h2_runtime_test_button_action(
-               control, 1u, 390u, 420u, 420u) == H2_PAL_OK);
-    assert(h2_runtime_component_state_button(runtime, 1u, &state) ==
-           H2_PAL_OK);
-    assert(!state.pressed && state.updated_at_ms == 420u);
-    assert(h2_runtime_test_button_action(
-               control, 1u, 500u, 0u, 540u) == H2_PAL_OK);
-    assert(h2_runtime_component_state_button(runtime, 1u, &state) ==
-           H2_PAL_OK);
-    assert(state.pressed && state.pressed_at_ms == 500u &&
-           state.updated_at_ms == 540u);
+  assert(h2_runtime_test_button_action(control, 1u, 390u, 420u, 420u) ==
+         H2_PAL_OK);
+  assert(h2_runtime_component_state_button(runtime, 1u, &state) == H2_PAL_OK);
+  assert(!state.pressed && state.updated_at_ms == 420u);
+  assert(h2_runtime_test_button_action(control, 1u, 500u, 0u, 540u) ==
+         H2_PAL_OK);
+  assert(h2_runtime_component_state_button(runtime, 1u, &state) == H2_PAL_OK);
+  assert(state.pressed && state.pressed_at_ms == 500u &&
+         state.updated_at_ms == 540u);
 
-    h2_runtime_test_control_close(control);
-    h2_runtime_deinit(runtime);
+  h2_runtime_test_control_close(control);
+  h2_runtime_deinit(runtime);
 }
 
 static void test_control_injects_validated_runtime_events(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    h2_runtime_t *runtime = test_runtime_create(&env);
-    h2_runtime_test_control_t *control = NULL;
+  test_runtime_env_t env;
+  test_env_init(&env);
+  h2_runtime_t* runtime = test_runtime_create(&env);
+  h2_runtime_test_control_t* control = NULL;
 
-    assert(h2_runtime_test_control_open(runtime, &control) == H2_PAL_OK);
-    assert(control != NULL);
-    h2_runtime_test_control_t *duplicate = NULL;
-    assert(h2_runtime_test_control_open(runtime, &duplicate) ==
-           H2_PAL_ERR_INVALID_STATE);
-    assert(duplicate == NULL);
+  assert(h2_runtime_test_control_open(runtime, &control) == H2_PAL_OK);
+  assert(control != NULL);
+  h2_runtime_test_control_t* duplicate = NULL;
+  assert(h2_runtime_test_control_open(runtime, &duplicate) ==
+         H2_PAL_ERR_INVALID_STATE);
+  assert(duplicate == NULL);
 
-    h2_runtime_system_event_wifi_sta_t wifi;
-    memset(&wifi, 0, sizeof(wifi));
-    wifi.status = H2_RUNTIME_SYSTEM_WIFI_STA_STATUS_CONNECTED;
-    assert(h2_runtime_test_emit_event(
-               control,
-               H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_CONNECTED,
-               H2_RUNTIME_COMPONENT_SYSTEM_WIFI,
-               H2_RUNTIME_COMPONENT_ID_NONE,
-               42u,
-               &wifi,
-               sizeof(wifi)) == H2_PAL_OK);
+  h2_runtime_system_event_wifi_sta_t wifi;
+  memset(&wifi, 0, sizeof(wifi));
+  wifi.status = H2_RUNTIME_SYSTEM_WIFI_STA_STATUS_CONNECTED;
+  assert(h2_runtime_test_emit_event(
+             control, H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_CONNECTED,
+             H2_RUNTIME_COMPONENT_SYSTEM_WIFI, H2_RUNTIME_COMPONENT_ID_NONE,
+             42u, &wifi, sizeof(wifi)) == H2_PAL_OK);
 
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = event_with_payload(payload);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_CONNECTED);
-    assert(event.component == H2_RUNTIME_COMPONENT_SYSTEM_WIFI);
-    assert(event.sequence == 1u);
-    assert(event.timestamp_ms == 42u);
-    assert(event.payload_size == sizeof(wifi));
-    assert(memcmp(event.payload, &wifi, sizeof(wifi)) == 0);
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_CONNECTED);
+  assert(event.component == H2_RUNTIME_COMPONENT_SYSTEM_WIFI);
+  assert(event.sequence == 1u);
+  assert(event.timestamp_ms == 42u);
+  assert(event.payload_size == sizeof(wifi));
+  assert(memcmp(event.payload, &wifi, sizeof(wifi)) == 0);
 
-    assert(h2_runtime_test_emit_event(
-               control,
-               H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_CONNECTED,
-               H2_RUNTIME_COMPONENT_SYSTEM_MODEM,
-               H2_RUNTIME_COMPONENT_ID_NONE,
-               43u,
-               &wifi,
-               sizeof(wifi)) == H2_PAL_ERR_INVALID_ARG);
-    assert(h2_runtime_test_emit_event(
-               control,
-               H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_CONNECTED,
-               H2_RUNTIME_COMPONENT_SYSTEM_WIFI,
-               H2_RUNTIME_COMPONENT_ID_NONE,
-               43u,
-               &wifi,
-               sizeof(wifi) - 1u) == H2_PAL_ERR_INVALID_ARG);
-    assert(h2_atomic_uint_load(&runtime->private_state->next_sequence, H2_ATOMIC_SEQ_CST) == 2u);
+  assert(h2_runtime_test_emit_event(
+             control, H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_CONNECTED,
+             H2_RUNTIME_COMPONENT_SYSTEM_MODEM, H2_RUNTIME_COMPONENT_ID_NONE,
+             43u, &wifi, sizeof(wifi)) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_runtime_test_emit_event(
+             control, H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_CONNECTED,
+             H2_RUNTIME_COMPONENT_SYSTEM_WIFI, H2_RUNTIME_COMPONENT_ID_NONE,
+             43u, &wifi, sizeof(wifi) - 1u) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_atomic_uint_load(&runtime->private_state->next_sequence,
+                             H2_ATOMIC_SEQ_CST) == 2u);
 
-    h2_runtime_test_control_close(control);
-    assert(runtime->private_state->test_control == NULL);
-    assert(h2_runtime_test_control_open(runtime, &control) == H2_PAL_OK);
-    h2_runtime_test_control_close(control);
-    h2_runtime_deinit(runtime);
-    assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
+  h2_runtime_test_control_close(control);
+  assert(runtime->private_state->test_control == NULL);
+  assert(h2_runtime_test_control_open(runtime, &control) == H2_PAL_OK);
+  h2_runtime_test_control_close(control);
+  h2_runtime_deinit(runtime);
+  assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
 }
 
 static void test_control_open_failure_is_transactional(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    h2_runtime_t *runtime = test_runtime_create(&env);
-    h2_runtime_test_control_t *control = NULL;
+  test_runtime_env_t env;
+  test_env_init(&env);
+  h2_runtime_t* runtime = test_runtime_create(&env);
+  h2_runtime_test_control_t* control = NULL;
 
-    env.queue_state.reset_rc = H2_PAL_ERR_IO;
-    assert(h2_runtime_test_control_open(runtime, &control) == H2_PAL_ERR_IO);
-    assert(control == NULL);
-    assert(runtime->private_state->test_control == NULL);
+  env.queue_state.reset_rc = H2_PAL_ERR_IO;
+  assert(h2_runtime_test_control_open(runtime, &control) == H2_PAL_ERR_IO);
+  assert(control == NULL);
+  assert(runtime->private_state->test_control == NULL);
 
-    env.queue_state.reset_rc = H2_PAL_OK;
-    assert(h2_runtime_test_control_open(runtime, &control) == H2_PAL_OK);
-    h2_runtime_test_control_close(control);
-    h2_runtime_deinit(runtime);
-    assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
+  env.queue_state.reset_rc = H2_PAL_OK;
+  assert(h2_runtime_test_control_open(runtime, &control) == H2_PAL_OK);
+  h2_runtime_test_control_close(control);
+  h2_runtime_deinit(runtime);
+  assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
 }
 
 static void test_control_button_helpers_share_state_and_event_sequence(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    add_periph(
-        &env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
-    h2_runtime_t *runtime = test_runtime_create(&env);
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    h2_runtime_test_control_t *control = NULL;
-    assert(h2_runtime_test_control_open(runtime, &control) == H2_PAL_OK);
-    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  h2_runtime_t* runtime = test_runtime_create(&env);
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  h2_runtime_test_control_t* control = NULL;
+  assert(h2_runtime_test_control_open(runtime, &control) == H2_PAL_OK);
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
 
-    assert(h2_runtime_test_button_down(control, 1u, 100u) == H2_PAL_OK);
-    h2_runtime_button_state_t state;
-    assert(h2_runtime_component_state_button(runtime, 1u, &state) ==
-           H2_PAL_OK);
-    assert(state.pressed);
-    assert(state.pressed_at_ms == 100u);
+  assert(h2_runtime_test_button_down(control, 1u, 100u) == H2_PAL_OK);
+  h2_runtime_button_state_t state;
+  assert(h2_runtime_component_state_button(runtime, 1u, &state) == H2_PAL_OK);
+  assert(state.pressed);
+  assert(state.pressed_at_ms == 100u);
 
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = event_with_payload(payload);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
-    assert(event.sequence ==
-           runtime->private_state->input_sources[0].sequence);
-    const unsigned int active_index = h2_atomic_load_explicit(
-        &runtime->private_state->state_publication.active_index,
-        H2_ATOMIC_ACQUIRE);
-    assert(runtime->private_state->state_publication.banks[active_index]
-               .event_sequence_ceiling >= event.sequence);
-    assert(event.payload_size == sizeof(h2_runtime_button_down_event_t));
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+  assert(event.sequence == runtime->private_state->input_sources[0].sequence);
+  const unsigned int active_index = h2_atomic_load_explicit(
+      &runtime->private_state->state_publication.active_index,
+      H2_ATOMIC_ACQUIRE);
+  assert(runtime->private_state->state_publication.banks[active_index]
+             .event_sequence_ceiling >= event.sequence);
+  assert(event.payload_size == sizeof(h2_runtime_button_down_event_t));
 
-    assert(h2_runtime_test_button_action(control, 1u, 100u, 140u, 140u) ==
-           H2_PAL_OK);
-    assert(h2_runtime_component_state_button(runtime, 1u, &state) ==
-           H2_PAL_OK);
-    assert(!state.pressed);
-    assert(state.updated_at_ms == 140u);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION);
-    assert(event.sequence ==
-           runtime->private_state->input_sources[0].sequence);
+  assert(h2_runtime_test_button_action(control, 1u, 100u, 140u, 140u) ==
+         H2_PAL_OK);
+  assert(h2_runtime_component_state_button(runtime, 1u, &state) == H2_PAL_OK);
+  assert(!state.pressed);
+  assert(state.updated_at_ms == 140u);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION);
+  assert(event.sequence == runtime->private_state->input_sources[0].sequence);
 
-    const h2_runtime_button_state_t prior_state = state;
-    const h2_runtime_sequence_t prior_sequence =
-        runtime->private_state->input_sources[0].sequence;
-    const h2_runtime_sequence_t prior_ceiling =
-        runtime->private_state->input_event_sequence_ceiling;
-    env.queue_state.send_rc = H2_PAL_QUEUE_ERR_IO;
-    assert(h2_runtime_test_button_up(control, 1u, 100u, 160u) ==
-           H2_PAL_QUEUE_ERR_IO);
-    env.queue_state.send_rc = H2_PAL_OK;
-    assert(h2_runtime_component_state_button(runtime, 1u, &state) ==
-           H2_PAL_OK);
-    assert(memcmp(&state, &prior_state, sizeof(state)) == 0);
-    assert(runtime->private_state->input_sources[0].sequence ==
-           prior_sequence);
-    assert(runtime->private_state->input_event_sequence_ceiling ==
-           prior_ceiling);
-    assert(h2_runtime_poll_event(runtime, &event) ==
-           H2_PAL_ERR_WOULD_BLOCK);
+  const h2_runtime_button_state_t prior_state = state;
+  const h2_runtime_sequence_t prior_sequence =
+      runtime->private_state->input_sources[0].sequence;
+  const h2_runtime_sequence_t prior_ceiling =
+      runtime->private_state->input_event_sequence_ceiling;
+  env.queue_state.send_rc = H2_PAL_QUEUE_ERR_IO;
+  assert(h2_runtime_test_button_up(control, 1u, 100u, 160u) ==
+         H2_PAL_QUEUE_ERR_IO);
+  env.queue_state.send_rc = H2_PAL_OK;
+  assert(h2_runtime_component_state_button(runtime, 1u, &state) == H2_PAL_OK);
+  assert(memcmp(&state, &prior_state, sizeof(state)) == 0);
+  assert(runtime->private_state->input_sources[0].sequence == prior_sequence);
+  assert(runtime->private_state->input_event_sequence_ceiling == prior_ceiling);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_WOULD_BLOCK);
 
-    const h2_runtime_sequence_t next_sequence =
-        h2_atomic_uint_load(&runtime->private_state->next_sequence, H2_ATOMIC_SEQ_CST);
-    state.updated_at_ms = 150u;
-    const size_t state_locks_before = env.sync_state.locks;
-    const size_t state_unlocks_before = env.sync_state.unlocks;
-    assert(h2_runtime_test_set_component_state(
-               control, 1u, &state, sizeof(state)) == H2_PAL_OK);
-    assert(env.sync_state.locks == state_locks_before + 1u);
-    assert(env.sync_state.unlocks == state_unlocks_before + 1u);
-    assert(h2_atomic_uint_load(&runtime->private_state->next_sequence, H2_ATOMIC_SEQ_CST) == next_sequence);
-    h2_runtime_button_state_t published_state;
-    assert(h2_runtime_component_state_button(
-               runtime, 1u, &published_state) == H2_PAL_OK);
-    assert(published_state.updated_at_ms == 150u);
+  const h2_runtime_sequence_t next_sequence = h2_atomic_uint_load(
+      &runtime->private_state->next_sequence, H2_ATOMIC_SEQ_CST);
+  state.updated_at_ms = 150u;
+  const size_t state_locks_before = env.sync_state.locks;
+  const size_t state_unlocks_before = env.sync_state.unlocks;
+  assert(h2_runtime_test_set_component_state(control, 1u, &state,
+                                             sizeof(state)) == H2_PAL_OK);
+  assert(env.sync_state.locks == state_locks_before + 1u);
+  assert(env.sync_state.unlocks == state_unlocks_before + 1u);
+  assert(h2_atomic_uint_load(&runtime->private_state->next_sequence,
+                             H2_ATOMIC_SEQ_CST) == next_sequence);
+  h2_runtime_button_state_t published_state;
+  assert(h2_runtime_component_state_button(runtime, 1u, &published_state) ==
+         H2_PAL_OK);
+  assert(published_state.updated_at_ms == 150u);
 
-    h2_runtime_button_state_t invalid = state;
-    invalid.pressed_at_ms = 1u;
-    assert(h2_runtime_test_set_component_state(
-               control, 1u, &invalid, sizeof(invalid)) == H2_PAL_ERR_FORMAT);
-    assert(h2_runtime_test_button_up(control, 1u, 200u, 199u) ==
-           H2_PAL_ERR_INVALID_ARG);
-    assert(h2_runtime_test_set_component_state(
-               control, 999u, &state, sizeof(state)) ==
-           H2_PAL_ERR_NOT_FOUND);
-    assert(h2_runtime_component_state_button(runtime, 999u, &state) ==
-           H2_PAL_ERR_NOT_FOUND);
+  h2_runtime_button_state_t invalid = state;
+  invalid.pressed_at_ms = 1u;
+  assert(h2_runtime_test_set_component_state(
+             control, 1u, &invalid, sizeof(invalid)) == H2_PAL_ERR_FORMAT);
+  assert(h2_runtime_test_button_up(control, 1u, 200u, 199u) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_runtime_test_set_component_state(
+             control, 999u, &state, sizeof(state)) == H2_PAL_ERR_NOT_FOUND);
+  assert(h2_runtime_component_state_button(runtime, 999u, &state) ==
+         H2_PAL_ERR_NOT_FOUND);
 
-    h2_runtime_test_control_close(control);
-    assert(h2_runtime_component_state_button(runtime, 1u, &state) ==
-           H2_PAL_ERR_NOT_FOUND);
-    h2_runtime_deinit(runtime);
-    assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
+  h2_runtime_test_control_close(control);
+  assert(h2_runtime_component_state_button(runtime, 1u, &state) ==
+         H2_PAL_ERR_NOT_FOUND);
+  h2_runtime_deinit(runtime);
+  assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
 }
 
 static void test_control_preserves_runtime_queue_drop_behavior(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    h2_runtime_config_t config = test_runtime_config(&env);
-    config.event_queue_capacity = 1u;
-    h2_runtime_t *runtime = NULL;
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
-    h2_runtime_test_control_t *control = NULL;
-    assert(h2_runtime_test_control_open(runtime, &control) == H2_PAL_OK);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  h2_runtime_config_t config = test_runtime_config(&env);
+  config.event_queue_capacity = 1u;
+  h2_runtime_t* runtime = NULL;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  h2_runtime_test_control_t* control = NULL;
+  assert(h2_runtime_test_control_open(runtime, &control) == H2_PAL_OK);
 
-    assert(h2_runtime_test_emit_event(
-               control,
-               H2_RUNTIME_SYSTEM_EVENT_MODEM_READY,
-               H2_RUNTIME_COMPONENT_SYSTEM_MODEM,
-               H2_RUNTIME_COMPONENT_ID_NONE,
-               10u,
-               NULL,
-               0u) == H2_PAL_OK);
-    assert(h2_runtime_test_emit_event(
-               control,
-               H2_RUNTIME_SYSTEM_EVENT_MODEM_READY,
-               H2_RUNTIME_COMPONENT_SYSTEM_MODEM,
-               H2_RUNTIME_COMPONENT_ID_NONE,
-               11u,
-               NULL,
-               0u) == H2_PAL_OK);
-    uint32_t dropped = 0u;
-    assert(h2_runtime_dropped_event_count(runtime, &dropped) == H2_PAL_OK);
-    assert(dropped == 1u);
-    assert(h2_atomic_uint_load(&runtime->private_state->next_sequence, H2_ATOMIC_SEQ_CST) == 3u);
+  assert(h2_runtime_test_emit_event(
+             control, H2_RUNTIME_SYSTEM_EVENT_MODEM_READY,
+             H2_RUNTIME_COMPONENT_SYSTEM_MODEM, H2_RUNTIME_COMPONENT_ID_NONE,
+             10u, NULL, 0u) == H2_PAL_OK);
+  assert(h2_runtime_test_emit_event(
+             control, H2_RUNTIME_SYSTEM_EVENT_MODEM_READY,
+             H2_RUNTIME_COMPONENT_SYSTEM_MODEM, H2_RUNTIME_COMPONENT_ID_NONE,
+             11u, NULL, 0u) == H2_PAL_OK);
+  uint32_t dropped = 0u;
+  assert(h2_runtime_dropped_event_count(runtime, &dropped) == H2_PAL_OK);
+  assert(dropped == 1u);
+  assert(h2_atomic_uint_load(&runtime->private_state->next_sequence,
+                             H2_ATOMIC_SEQ_CST) == 3u);
 
-    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = event_with_payload(payload);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.timestamp_ms == 10u);
-    assert(h2_runtime_poll_event(runtime, &event) ==
-           H2_PAL_ERR_WOULD_BLOCK);
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.timestamp_ms == 10u);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_WOULD_BLOCK);
 
-    h2_runtime_test_control_close(control);
-    h2_runtime_deinit(runtime);
+  h2_runtime_test_control_close(control);
+  h2_runtime_deinit(runtime);
 }
 
 typedef struct audio_state_fixture {
-    uint32_t actual;
-    uint32_t mic_gain_percent;
-    int set_result;
+  uint32_t actual;
+  uint32_t mic_gain_percent;
+  int set_result;
 } audio_state_fixture_t;
 
-static int state_audio_get(void *user, uint32_t *out) {
-    *out = ((audio_state_fixture_t *)user)->actual;
-    return H2_PAL_OK;
+static int state_audio_get(void* user, uint32_t* out) {
+  *out = ((audio_state_fixture_t*)user)->actual;
+  return H2_PAL_OK;
 }
 
-static int state_audio_set(void *user, uint32_t volume) {
-    audio_state_fixture_t *f = user;
-    if (f->set_result == H2_PAL_OK)
-        f->actual = volume;
-    return f->set_result;
+static int state_audio_set(void* user, uint32_t volume) {
+  audio_state_fixture_t* f = user;
+  if (f->set_result == H2_PAL_OK) f->actual = volume;
+  return f->set_result;
 }
 
-static int state_audio_get_mic_gain(void *user, uint32_t *out) {
-    *out = ((audio_state_fixture_t *)user)->mic_gain_percent;
-    return H2_PAL_OK;
+static int state_audio_get_mic_gain(void* user, uint32_t* out) {
+  *out = ((audio_state_fixture_t*)user)->mic_gain_percent;
+  return H2_PAL_OK;
 }
 
-static int state_audio_set_mic_gain(void *user, uint32_t percent) {
-    ((audio_state_fixture_t *)user)->mic_gain_percent = percent;
-    return H2_PAL_OK;
+static int state_audio_set_mic_gain(void* user, uint32_t percent) {
+  ((audio_state_fixture_t*)user)->mic_gain_percent = percent;
+  return H2_PAL_OK;
 }
 
 static void test_audio_shared_state(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    audio_state_fixture_t f = {.actual = 60, .mic_gain_percent = 70};
-    const h2_pal_audio_vtable_t vtable = {
-        .get_speaker_volume_percent = state_audio_get,
-        .set_speaker_volume_percent = state_audio_set,
-        .get_mic_gain_percent = state_audio_get_mic_gain,
-        .set_mic_gain_percent = state_audio_set_mic_gain};
-    const h2_pal_audio_api_t audio = {&f, &vtable};
-    h2_runtime_config_t config = test_runtime_config(&env);
-    config.audio = &audio;
-    h2_runtime_t *runtime = NULL;
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
-    uint32_t mic_gain = 0u;
-    assert(h2_pal_audio_get_mic_gain_percent(runtime->audio, &mic_gain) == H2_PAL_OK);
-    assert(mic_gain == 70u);
-    assert(h2_pal_audio_set_mic_gain_percent(runtime->audio, 100u) == H2_PAL_OK);
-    assert(f.mic_gain_percent == 100u);
-    assert(h2_pal_audio_get_mic_gain_percent(runtime->audio, &mic_gain) == H2_PAL_OK);
-    assert(mic_gain == 100u);
-    assert(h2_pal_audio_set_mic_gain_percent(runtime->audio, 101u) ==
-           H2_PAL_ERR_INVALID_ARG);
-    f.mic_gain_percent = 101u;
-    mic_gain = 55u;
-    assert(h2_pal_audio_get_mic_gain_percent(runtime->audio, &mic_gain) ==
-           H2_PAL_ERR_IO);
-    assert(mic_gain == 0u);
-    f.mic_gain_percent = 100u;
-    h2_runtime_system_audio_state_t snapshot;
-    assert(h2_runtime_system_state_audio(runtime, &snapshot) == H2_PAL_OK);
-    assert(snapshot.volume_percent == 60 && !snapshot.muted);
-    assert(h2_runtime_audio_set_volume(runtime, 42, 1) == H2_PAL_OK);
-    assert(f.actual == 0);
-    assert(h2_runtime_system_state_audio(runtime, &snapshot) == H2_PAL_OK);
-    assert(snapshot.volume_percent == 42 && snapshot.muted);
-    uint32_t effective = 100;
-    assert(h2_pal_audio_get_speaker_volume_percent(runtime->audio, &effective) == H2_PAL_OK);
-    assert(effective == 0);
-    assert(h2_runtime_audio_set_volume(runtime, snapshot.volume_percent, 0) == H2_PAL_OK);
-    assert(f.actual == 42);
-    assert(h2_runtime_audio_set_volume(runtime, 42, 1) == H2_PAL_OK);
-    assert(h2_pal_audio_set_speaker_volume_percent(runtime->audio, 73) == H2_PAL_OK);
-    assert(h2_runtime_system_state_audio(runtime, &snapshot) == H2_PAL_OK);
-    assert(snapshot.volume_percent == 73 && !snapshot.muted);
-    f.set_result = H2_PAL_ERR_IO;
-    assert(h2_runtime_audio_set_volume(runtime, 22, 1) == H2_PAL_ERR_IO);
-    assert(h2_runtime_system_state_audio(runtime, &snapshot) == H2_PAL_OK);
-    assert(snapshot.volume_percent == 73 && !snapshot.muted);
-    assert(h2_runtime_audio_set_volume(runtime, 101, 0) == H2_PAL_ERR_INVALID_ARG);
-    f.actual = 19;
-    assert(h2_runtime_system_state_audio(runtime, &snapshot) == H2_PAL_OK);
-    assert(snapshot.volume_percent == 19);
-    h2_runtime_deinit(runtime);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  audio_state_fixture_t f = {.actual = 60, .mic_gain_percent = 70};
+  const h2_pal_audio_vtable_t vtable = {
+      .get_speaker_volume_percent = state_audio_get,
+      .set_speaker_volume_percent = state_audio_set,
+      .get_mic_gain_percent = state_audio_get_mic_gain,
+      .set_mic_gain_percent = state_audio_set_mic_gain};
+  const h2_pal_audio_api_t audio = {&f, &vtable};
+  h2_runtime_config_t config = test_runtime_config(&env);
+  config.audio = &audio;
+  h2_runtime_t* runtime = NULL;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  uint32_t mic_gain = 0u;
+  assert(h2_pal_audio_get_mic_gain_percent(runtime->audio, &mic_gain) ==
+         H2_PAL_OK);
+  assert(mic_gain == 70u);
+  assert(h2_pal_audio_set_mic_gain_percent(runtime->audio, 100u) == H2_PAL_OK);
+  assert(f.mic_gain_percent == 100u);
+  assert(h2_pal_audio_get_mic_gain_percent(runtime->audio, &mic_gain) ==
+         H2_PAL_OK);
+  assert(mic_gain == 100u);
+  assert(h2_pal_audio_set_mic_gain_percent(runtime->audio, 101u) ==
+         H2_PAL_ERR_INVALID_ARG);
+  f.mic_gain_percent = 101u;
+  mic_gain = 55u;
+  assert(h2_pal_audio_get_mic_gain_percent(runtime->audio, &mic_gain) ==
+         H2_PAL_ERR_IO);
+  assert(mic_gain == 0u);
+  f.mic_gain_percent = 100u;
+  h2_runtime_system_audio_state_t snapshot;
+  assert(h2_runtime_system_state_audio(runtime, &snapshot) == H2_PAL_OK);
+  assert(snapshot.volume_percent == 60 && !snapshot.muted);
+  assert(h2_runtime_audio_set_volume(runtime, 42, 1) == H2_PAL_OK);
+  assert(f.actual == 0);
+  assert(h2_runtime_system_state_audio(runtime, &snapshot) == H2_PAL_OK);
+  assert(snapshot.volume_percent == 42 && snapshot.muted);
+  uint32_t effective = 100;
+  assert(h2_pal_audio_get_speaker_volume_percent(runtime->audio, &effective) ==
+         H2_PAL_OK);
+  assert(effective == 0);
+  assert(h2_runtime_audio_set_volume(runtime, snapshot.volume_percent, 0) ==
+         H2_PAL_OK);
+  assert(f.actual == 42);
+  assert(h2_runtime_audio_set_volume(runtime, 42, 1) == H2_PAL_OK);
+  assert(h2_pal_audio_set_speaker_volume_percent(runtime->audio, 73) ==
+         H2_PAL_OK);
+  assert(h2_runtime_system_state_audio(runtime, &snapshot) == H2_PAL_OK);
+  assert(snapshot.volume_percent == 73 && !snapshot.muted);
+  f.set_result = H2_PAL_ERR_IO;
+  assert(h2_runtime_audio_set_volume(runtime, 22, 1) == H2_PAL_ERR_IO);
+  assert(h2_runtime_system_state_audio(runtime, &snapshot) == H2_PAL_OK);
+  assert(snapshot.volume_percent == 73 && !snapshot.muted);
+  assert(h2_runtime_audio_set_volume(runtime, 101, 0) ==
+         H2_PAL_ERR_INVALID_ARG);
+  f.actual = 19;
+  assert(h2_runtime_system_state_audio(runtime, &snapshot) == H2_PAL_OK);
+  assert(snapshot.volume_percent == 19);
+  h2_runtime_deinit(runtime);
 }
 
 typedef struct audio_level_fixture {
-    int16_t mic_samples[4];
-    size_t mic_bytes;
-    h2_audio_sample_format_t mic_format;
-    int mic_result;
-    h2_pal_audio_track_t backend_track;
-    unsigned int writes, closes, gets, sets, drains;
-    uint32_t factor_milli;
-    int backend_track_result;
-    int omit_track_ops;
+  int16_t mic_samples[4];
+  size_t mic_bytes;
+  h2_audio_sample_format_t mic_format;
+  int mic_result;
+  h2_pal_audio_track_t backend_track;
+  unsigned int writes, closes, gets, sets, drains;
+  uint32_t factor_milli;
+  int backend_track_result;
+  int omit_track_ops;
 } audio_level_fixture_t;
 
-static int level_mic_read(void *user, h2_audio_frame_t *frame, uint32_t timeout_ms) {
-    audio_level_fixture_t *f = user;
-    (void)timeout_ms;
-    if (f->mic_result != H2_PAL_OK)
-        return f->mic_result;
-    memcpy(frame->data, f->mic_samples, f->mic_bytes);
-    frame->bytes = f->mic_bytes;
-    frame->sample_format = f->mic_format;
-    frame->channels = 1u;
-    frame->samples_per_channel = (uint16_t)(f->mic_bytes / sizeof(int16_t));
-    return H2_PAL_OK;
+static int level_mic_read(void* user, h2_audio_frame_t* frame,
+                          uint32_t timeout_ms) {
+  audio_level_fixture_t* f = user;
+  (void)timeout_ms;
+  if (f->mic_result != H2_PAL_OK) return f->mic_result;
+  memcpy(frame->data, f->mic_samples, f->mic_bytes);
+  frame->bytes = f->mic_bytes;
+  frame->sample_format = f->mic_format;
+  frame->channels = 1u;
+  frame->samples_per_channel = (uint16_t)(f->mic_bytes / sizeof(int16_t));
+  return H2_PAL_OK;
 }
 
-static int level_track_write(
-    h2_pal_audio_track_t *track, const h2_audio_frame_t *frame, uint32_t timeout_ms) {
-    audio_level_fixture_t *f = track->user;
-    (void)frame;
-    (void)timeout_ms;
-    f->writes += 1u;
-    return H2_PAL_OK;
+static int level_track_write(h2_pal_audio_track_t* track,
+                             const h2_audio_frame_t* frame,
+                             uint32_t timeout_ms) {
+  audio_level_fixture_t* f = track->user;
+  (void)frame;
+  (void)timeout_ms;
+  f->writes += 1u;
+  return H2_PAL_OK;
 }
 
-static int level_track_close(h2_pal_audio_track_t *track) {
-    ((audio_level_fixture_t *)track->user)->closes += 1u;
-    return H2_PAL_OK;
+static int level_track_close(h2_pal_audio_track_t* track) {
+  ((audio_level_fixture_t*)track->user)->closes += 1u;
+  return H2_PAL_OK;
 }
 
-static int level_track_get_factor(h2_pal_audio_track_t *track, uint32_t *out_factor_milli) {
-    audio_level_fixture_t *f = track->user;
-    f->gets += 1u;
-    *out_factor_milli = f->factor_milli;
-    return H2_PAL_OK;
+static int level_track_get_factor(h2_pal_audio_track_t* track,
+                                  uint32_t* out_factor_milli) {
+  audio_level_fixture_t* f = track->user;
+  f->gets += 1u;
+  *out_factor_milli = f->factor_milli;
+  return H2_PAL_OK;
 }
 
-static int level_track_set_factor(h2_pal_audio_track_t *track, uint32_t factor_milli) {
-    audio_level_fixture_t *f = track->user;
-    f->sets += 1u;
-    f->factor_milli = factor_milli;
-    return H2_PAL_OK;
+static int level_track_set_factor(h2_pal_audio_track_t* track,
+                                  uint32_t factor_milli) {
+  audio_level_fixture_t* f = track->user;
+  f->sets += 1u;
+  f->factor_milli = factor_milli;
+  return H2_PAL_OK;
 }
 
-static int level_track_drain(h2_pal_audio_track_t *track, uint32_t timeout_ms) {
-    (void)timeout_ms;
-    ((audio_level_fixture_t *)track->user)->drains += 1u;
-    return H2_PAL_OK;
+static int level_track_drain(h2_pal_audio_track_t* track, uint32_t timeout_ms) {
+  (void)timeout_ms;
+  ((audio_level_fixture_t*)track->user)->drains += 1u;
+  return H2_PAL_OK;
 }
 
-static int level_create_track(
-    void *user, const h2_audio_track_config_t *config, h2_pal_audio_track_t **out) {
-    audio_level_fixture_t *f = user;
-    (void)config;
-    if (f->backend_track_result != H2_PAL_OK)
-        return f->backend_track_result;
-    f->backend_track = (h2_pal_audio_track_t){
-        .user = f,
-        .write = level_track_write,
-        .close = level_track_close,
-        .get_volume_factor = f->omit_track_ops ? NULL : level_track_get_factor,
-        .set_volume_factor = f->omit_track_ops ? NULL : level_track_set_factor,
-        .drain = f->omit_track_ops ? NULL : level_track_drain,
-    };
-    *out = &f->backend_track;
-    return H2_PAL_OK;
+static int level_create_track(void* user, const h2_audio_track_config_t* config,
+                              h2_pal_audio_track_t** out) {
+  audio_level_fixture_t* f = user;
+  (void)config;
+  if (f->backend_track_result != H2_PAL_OK) return f->backend_track_result;
+  f->backend_track = (h2_pal_audio_track_t){
+      .user = f,
+      .write = level_track_write,
+      .close = level_track_close,
+      .get_volume_factor = f->omit_track_ops ? NULL : level_track_get_factor,
+      .set_volume_factor = f->omit_track_ops ? NULL : level_track_set_factor,
+      .drain = f->omit_track_ops ? NULL : level_track_drain,
+  };
+  *out = &f->backend_track;
+  return H2_PAL_OK;
 }
 
 static const h2_pal_audio_vtable_t level_audio_vtable = {
@@ -4499,932 +4392,1029 @@ static const h2_pal_audio_vtable_t level_audio_vtable = {
 };
 
 static void test_audio_track_allocator(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    audio_level_fixture_t f = {0};
-    const h2_pal_audio_api_t audio = {&f, &level_audio_vtable};
-    h2_runtime_config_t config = test_runtime_config(&env);
-    config.audio = &audio;
-    h2_runtime_t *runtime = NULL;
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
-    h2_test_allocator_t arena;
-    h2_test_allocator_init(&arena);
-    size_t baseline = env.allocator_state.live_allocations;
-    for (int custom = 0; custom < 2; ++custom) {
-        h2_audio_track_config_t track_config = {
-            .name = "arena", .allocator = custom ? &arena.api : NULL,
-        };
-        h2_pal_audio_track_t *track = NULL;
-        assert(h2_pal_audio_create_track(runtime->audio, &track_config, &track) == H2_PAL_OK);
-        assert(h2_atomic_load(&arena.live) == (custom ? 1u : 0u));
-        assert(env.allocator_state.live_allocations == baseline + (custom ? 0u : 1u));
-        assert(h2_pal_audio_track_close(track) == H2_PAL_OK);
-        assert(h2_atomic_load(&arena.live) == 0u);
-        assert(env.allocator_state.live_allocations == baseline);
-    }
-    h2_runtime_deinit(runtime);
-    assert(env.allocator_state.live_allocations == 0u);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  audio_level_fixture_t f = {0};
+  const h2_pal_audio_api_t audio = {&f, &level_audio_vtable};
+  h2_runtime_config_t config = test_runtime_config(&env);
+  config.audio = &audio;
+  h2_runtime_t* runtime = NULL;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  h2_test_allocator_t arena;
+  h2_test_allocator_init(&arena);
+  size_t baseline = env.allocator_state.live_allocations;
+  for (int custom = 0; custom < 2; ++custom) {
+    h2_audio_track_config_t track_config = {
+        .name = "arena",
+        .allocator = custom ? &arena.api : NULL,
+    };
+    h2_pal_audio_track_t* track = NULL;
+    assert(h2_pal_audio_create_track(runtime->audio, &track_config, &track) ==
+           H2_PAL_OK);
+    assert(h2_atomic_load(&arena.live) == (custom ? 1u : 0u));
+    assert(env.allocator_state.live_allocations ==
+           baseline + (custom ? 0u : 1u));
+    assert(h2_pal_audio_track_close(track) == H2_PAL_OK);
+    assert(h2_atomic_load(&arena.live) == 0u);
+    assert(env.allocator_state.live_allocations == baseline);
+  }
+  h2_runtime_deinit(runtime);
+  assert(env.allocator_state.live_allocations == 0u);
 }
 
 static void test_audio_levels_follow_measured_frames(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    audio_level_fixture_t f = {
-        .mic_samples = {0, -16384, 4096, 0},
-        .mic_bytes = 4u * sizeof(int16_t),
-        .mic_format = H2_AUDIO_SAMPLE_S16LE,
-    };
-    const h2_pal_audio_api_t audio = {&f, &level_audio_vtable};
-    h2_runtime_config_t config = test_runtime_config(&env);
-    config.audio = &audio;
-    env.time_state.now_ms = 1000u;
-    h2_runtime_t *runtime = NULL;
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  audio_level_fixture_t f = {
+      .mic_samples = {0, -16384, 4096, 0},
+      .mic_bytes = 4u * sizeof(int16_t),
+      .mic_format = H2_AUDIO_SAMPLE_S16LE,
+  };
+  const h2_pal_audio_api_t audio = {&f, &level_audio_vtable};
+  h2_runtime_config_t config = test_runtime_config(&env);
+  config.audio = &audio;
+  env.time_state.now_ms = 1000u;
+  h2_runtime_t* runtime = NULL;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
 
-    h2_runtime_audio_levels_t levels;
-    assert(h2_runtime_audio_get_levels(runtime, &levels) == H2_PAL_OK);
-    assert(levels.capture_percent == 0 && levels.playback_percent == 0);
-    assert(levels.capture_updated_ms == 0u && levels.playback_updated_ms == 0u);
+  h2_runtime_audio_levels_t levels;
+  assert(h2_runtime_audio_get_levels(runtime, &levels) == H2_PAL_OK);
+  assert(levels.capture_percent == 0 && levels.playback_percent == 0);
+  assert(levels.capture_updated_ms == 0u && levels.playback_updated_ms == 0u);
 
-    /* A mic frame peaking at half scale reports half scale, timestamped. */
-    int16_t buffer[8];
-    h2_audio_frame_t frame = {
-        .data = buffer, .capacity = sizeof(buffer), .channels = 1u,
-        .sample_format = H2_AUDIO_SAMPLE_S16LE};
-    env.time_state.now_ms = 1200u;
-    assert(h2_pal_audio_mic_read(runtime->audio, &frame, 0u) == H2_PAL_OK);
-    assert(h2_runtime_audio_get_levels(runtime, &levels) == H2_PAL_OK);
-    assert(levels.capture_percent == 50u);
-    assert(levels.capture_updated_ms == 1200u);
-    assert(levels.playback_percent == 0u && levels.playback_updated_ms == 0u);
+  /* A mic frame peaking at half scale reports half scale, timestamped. */
+  int16_t buffer[8];
+  h2_audio_frame_t frame = {.data = buffer,
+                            .capacity = sizeof(buffer),
+                            .channels = 1u,
+                            .sample_format = H2_AUDIO_SAMPLE_S16LE};
+  env.time_state.now_ms = 1200u;
+  assert(h2_pal_audio_mic_read(runtime->audio, &frame, 0u) == H2_PAL_OK);
+  assert(h2_runtime_audio_get_levels(runtime, &levels) == H2_PAL_OK);
+  assert(levels.capture_percent == 50u);
+  assert(levels.capture_updated_ms == 1200u);
+  assert(levels.playback_percent == 0u && levels.playback_updated_ms == 0u);
 
-    /* A full-scale negative sample saturates at 100 rather than wrapping. */
-    f.mic_samples[1] = INT16_MIN;
-    env.time_state.now_ms = 1300u;
-    assert(h2_pal_audio_mic_read(runtime->audio, &frame, 0u) == H2_PAL_OK);
-    assert(h2_runtime_audio_get_levels(runtime, &levels) == H2_PAL_OK);
-    assert(levels.capture_percent == 100u && levels.capture_updated_ms == 1300u);
+  /* A full-scale negative sample saturates at 100 rather than wrapping. */
+  f.mic_samples[1] = INT16_MIN;
+  env.time_state.now_ms = 1300u;
+  assert(h2_pal_audio_mic_read(runtime->audio, &frame, 0u) == H2_PAL_OK);
+  assert(h2_runtime_audio_get_levels(runtime, &levels) == H2_PAL_OK);
+  assert(levels.capture_percent == 100u && levels.capture_updated_ms == 1300u);
 
-    /* A frame the Runtime cannot measure leaves the previous level in place. */
-    f.mic_format = (h2_audio_sample_format_t)99;
-    f.mic_samples[1] = 0;
-    env.time_state.now_ms = 1400u;
-    assert(h2_pal_audio_mic_read(runtime->audio, &frame, 0u) == H2_PAL_OK);
-    assert(h2_runtime_audio_get_levels(runtime, &levels) == H2_PAL_OK);
-    assert(levels.capture_percent == 100u && levels.capture_updated_ms == 1300u);
+  /* A frame the Runtime cannot measure leaves the previous level in place. */
+  f.mic_format = (h2_audio_sample_format_t)99;
+  f.mic_samples[1] = 0;
+  env.time_state.now_ms = 1400u;
+  assert(h2_pal_audio_mic_read(runtime->audio, &frame, 0u) == H2_PAL_OK);
+  assert(h2_runtime_audio_get_levels(runtime, &levels) == H2_PAL_OK);
+  assert(levels.capture_percent == 100u && levels.capture_updated_ms == 1300u);
 
-    /* A failed read publishes nothing either. */
-    f.mic_format = H2_AUDIO_SAMPLE_S16LE;
-    f.mic_result = H2_PAL_ERR_IO;
-    env.time_state.now_ms = 1500u;
-    assert(h2_pal_audio_mic_read(runtime->audio, &frame, 0u) == H2_PAL_ERR_IO);
-    assert(h2_runtime_audio_get_levels(runtime, &levels) == H2_PAL_OK);
-    assert(levels.capture_updated_ms == 1300u);
+  /* A failed read publishes nothing either. */
+  f.mic_format = H2_AUDIO_SAMPLE_S16LE;
+  f.mic_result = H2_PAL_ERR_IO;
+  env.time_state.now_ms = 1500u;
+  assert(h2_pal_audio_mic_read(runtime->audio, &frame, 0u) == H2_PAL_ERR_IO);
+  assert(h2_runtime_audio_get_levels(runtime, &levels) == H2_PAL_OK);
+  assert(levels.capture_updated_ms == 1300u);
 
-    h2_pal_audio_track_t *track = NULL;
-    h2_audio_track_config_t track_config = {.name = "levels"};
-    assert(h2_pal_audio_create_track(runtime->audio, &track_config, &track) == H2_PAL_OK);
-    assert(track != NULL && track != &f.backend_track);
+  h2_pal_audio_track_t* track = NULL;
+  h2_audio_track_config_t track_config = {.name = "levels"};
+  assert(h2_pal_audio_create_track(runtime->audio, &track_config, &track) ==
+         H2_PAL_OK);
+  assert(track != NULL && track != &f.backend_track);
 
-    int16_t played[2] = {8192, -2048};
-    h2_audio_frame_t out_frame = {
-        .data = played, .capacity = sizeof(played), .bytes = sizeof(played),
-        .channels = 1u, .samples_per_channel = 2u,
-        .sample_format = H2_AUDIO_SAMPLE_S16LE};
-    env.time_state.now_ms = 1600u;
-    assert(h2_pal_audio_track_write(track, &out_frame, 0u) == H2_PAL_OK);
-    assert(f.writes == 1u);
-    assert(h2_runtime_audio_get_levels(runtime, &levels) == H2_PAL_OK);
-    assert(levels.playback_percent == 25u && levels.playback_updated_ms == 1600u);
-    assert(levels.capture_percent == 100u && levels.capture_updated_ms == 1300u);
+  int16_t played[2] = {8192, -2048};
+  h2_audio_frame_t out_frame = {.data = played,
+                                .capacity = sizeof(played),
+                                .bytes = sizeof(played),
+                                .channels = 1u,
+                                .samples_per_channel = 2u,
+                                .sample_format = H2_AUDIO_SAMPLE_S16LE};
+  env.time_state.now_ms = 1600u;
+  assert(h2_pal_audio_track_write(track, &out_frame, 0u) == H2_PAL_OK);
+  assert(f.writes == 1u);
+  assert(h2_runtime_audio_get_levels(runtime, &levels) == H2_PAL_OK);
+  assert(levels.playback_percent == 25u && levels.playback_updated_ms == 1600u);
+  assert(levels.capture_percent == 100u && levels.capture_updated_ms == 1300u);
 
-    out_frame.sample_format = (h2_audio_sample_format_t)99;
-    env.time_state.now_ms = 1700u;
-    assert(h2_pal_audio_track_write(track, &out_frame, 0u) == H2_PAL_OK);
-    assert(f.writes == 2u);
-    assert(h2_runtime_audio_get_levels(runtime, &levels) == H2_PAL_OK);
-    assert(levels.playback_percent == 25u && levels.playback_updated_ms == 1600u);
+  out_frame.sample_format = (h2_audio_sample_format_t)99;
+  env.time_state.now_ms = 1700u;
+  assert(h2_pal_audio_track_write(track, &out_frame, 0u) == H2_PAL_OK);
+  assert(f.writes == 2u);
+  assert(h2_runtime_audio_get_levels(runtime, &levels) == H2_PAL_OK);
+  assert(levels.playback_percent == 25u && levels.playback_updated_ms == 1600u);
 
-    /* Every other track operation reaches the backend track unchanged. */
-    uint32_t factor = 0u;
-    assert(h2_pal_audio_track_set_volume_factor(track, 700u) == H2_PAL_OK);
-    assert(h2_pal_audio_track_get_volume_factor(track, &factor) == H2_PAL_OK);
-    assert(factor == 700u && f.sets == 1u && f.gets == 1u);
-    assert(h2_pal_audio_track_drain(track, 5u) == H2_PAL_OK);
-    assert(f.drains == 1u);
-    assert(h2_pal_audio_track_close(track) == H2_PAL_OK);
-    assert(f.closes == 1u);
+  /* Every other track operation reaches the backend track unchanged. */
+  uint32_t factor = 0u;
+  assert(h2_pal_audio_track_set_volume_factor(track, 700u) == H2_PAL_OK);
+  assert(h2_pal_audio_track_get_volume_factor(track, &factor) == H2_PAL_OK);
+  assert(factor == 700u && f.sets == 1u && f.gets == 1u);
+  assert(h2_pal_audio_track_drain(track, 5u) == H2_PAL_OK);
+  assert(f.drains == 1u);
+  assert(h2_pal_audio_track_close(track) == H2_PAL_OK);
+  assert(f.closes == 1u);
 
-    assert(h2_runtime_audio_get_levels(runtime, NULL) == H2_PAL_ERR_INVALID_ARG);
-    assert(h2_runtime_audio_get_levels(NULL, &levels) == H2_PAL_ERR_INVALID_ARG);
-    h2_runtime_deinit(runtime);
+  assert(h2_runtime_audio_get_levels(runtime, NULL) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_runtime_audio_get_levels(NULL, &levels) == H2_PAL_ERR_INVALID_ARG);
+  h2_runtime_deinit(runtime);
 }
 
 /* The stored timestamp keeps only the low 32 bits of the monotonic clock, so
  * the widening has to place a frame in the right epoch on both sides of the
  * UINT32_MAX millisecond rollover. */
 static void test_audio_level_timestamp_survives_rollover(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    audio_level_fixture_t f = {
-        .mic_samples = {0, -16384, 4096, 0},
-        .mic_bytes = 4u * sizeof(int16_t),
-        .mic_format = H2_AUDIO_SAMPLE_S16LE,
-    };
-    const h2_pal_audio_api_t audio = {&f, &level_audio_vtable};
-    h2_runtime_config_t config = test_runtime_config(&env);
-    config.audio = &audio;
-    h2_runtime_t *runtime = NULL;
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  audio_level_fixture_t f = {
+      .mic_samples = {0, -16384, 4096, 0},
+      .mic_bytes = 4u * sizeof(int16_t),
+      .mic_format = H2_AUDIO_SAMPLE_S16LE,
+  };
+  const h2_pal_audio_api_t audio = {&f, &level_audio_vtable};
+  h2_runtime_config_t config = test_runtime_config(&env);
+  config.audio = &audio;
+  h2_runtime_t* runtime = NULL;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
 
-    int16_t buffer[8];
-    h2_audio_frame_t frame = {
-        .data = buffer, .capacity = sizeof(buffer), .channels = 1u,
-        .sample_format = H2_AUDIO_SAMPLE_S16LE};
-    h2_runtime_audio_levels_t levels;
+  int16_t buffer[8];
+  h2_audio_frame_t frame = {.data = buffer,
+                            .capacity = sizeof(buffer),
+                            .channels = 1u,
+                            .sample_format = H2_AUDIO_SAMPLE_S16LE};
+  h2_runtime_audio_levels_t levels;
 
-    /* Measured just before the rollover, read just after it. */
-    const uint64_t before = (uint64_t)UINT32_MAX - 100u;
-    env.time_state.now_ms = before;
-    assert(h2_pal_audio_mic_read(runtime->audio, &frame, 0u) == H2_PAL_OK);
-    env.time_state.now_ms = (uint64_t)UINT32_MAX + 200u;
-    assert(h2_runtime_audio_get_levels(runtime, &levels) == H2_PAL_OK);
-    assert(levels.capture_updated_ms == before);
+  /* Measured just before the rollover, read just after it. */
+  const uint64_t before = (uint64_t)UINT32_MAX - 100u;
+  env.time_state.now_ms = before;
+  assert(h2_pal_audio_mic_read(runtime->audio, &frame, 0u) == H2_PAL_OK);
+  env.time_state.now_ms = (uint64_t)UINT32_MAX + 200u;
+  assert(h2_runtime_audio_get_levels(runtime, &levels) == H2_PAL_OK);
+  assert(levels.capture_updated_ms == before);
 
-    /* Measured just after the rollover, read a little later in the same epoch. */
-    const uint64_t after = (uint64_t)UINT32_MAX + 1u + 50u;
-    env.time_state.now_ms = after;
-    assert(h2_pal_audio_mic_read(runtime->audio, &frame, 0u) == H2_PAL_OK);
-    env.time_state.now_ms = after + 100u;
-    assert(h2_runtime_audio_get_levels(runtime, &levels) == H2_PAL_OK);
-    assert(levels.capture_updated_ms == after);
+  /* Measured just after the rollover, read a little later in the same epoch. */
+  const uint64_t after = (uint64_t)UINT32_MAX + 1u + 50u;
+  env.time_state.now_ms = after;
+  assert(h2_pal_audio_mic_read(runtime->audio, &frame, 0u) == H2_PAL_OK);
+  env.time_state.now_ms = after + 100u;
+  assert(h2_runtime_audio_get_levels(runtime, &levels) == H2_PAL_OK);
+  assert(levels.capture_updated_ms == after);
 
-    /* Exactly on the wrap boundary the stored low word is zero, which must
-     * still read back as the boundary and not as "never measured". */
-    const uint64_t boundary = (uint64_t)UINT32_MAX + 1u;
-    env.time_state.now_ms = boundary;
-    assert(h2_pal_audio_mic_read(runtime->audio, &frame, 0u) == H2_PAL_OK);
-    env.time_state.now_ms = boundary + 10u;
-    assert(h2_runtime_audio_get_levels(runtime, &levels) == H2_PAL_OK);
-    assert(levels.capture_updated_ms == boundary);
-    assert(levels.capture_percent == 50u);
+  /* Exactly on the wrap boundary the stored low word is zero, which must
+   * still read back as the boundary and not as "never measured". */
+  const uint64_t boundary = (uint64_t)UINT32_MAX + 1u;
+  env.time_state.now_ms = boundary;
+  assert(h2_pal_audio_mic_read(runtime->audio, &frame, 0u) == H2_PAL_OK);
+  env.time_state.now_ms = boundary + 10u;
+  assert(h2_runtime_audio_get_levels(runtime, &levels) == H2_PAL_OK);
+  assert(levels.capture_updated_ms == boundary);
+  assert(levels.capture_percent == 50u);
 
-    /* A clock the Runtime cannot read leaves the previous measurement alone
-     * rather than publishing a valid sample stamped zero. */
-    env.time_state.now_rc = H2_PAL_ERR_IO;
-    assert(h2_pal_audio_mic_read(runtime->audio, &frame, 0u) == H2_PAL_OK);
-    env.time_state.now_rc = H2_PAL_OK;
-    env.time_state.now_ms = boundary + 20u;
-    assert(h2_runtime_audio_get_levels(runtime, &levels) == H2_PAL_OK);
-    assert(levels.capture_updated_ms == boundary);
-    h2_runtime_deinit(runtime);
+  /* A clock the Runtime cannot read leaves the previous measurement alone
+   * rather than publishing a valid sample stamped zero. */
+  env.time_state.now_rc = H2_PAL_ERR_IO;
+  assert(h2_pal_audio_mic_read(runtime->audio, &frame, 0u) == H2_PAL_OK);
+  env.time_state.now_rc = H2_PAL_OK;
+  env.time_state.now_ms = boundary + 20u;
+  assert(h2_runtime_audio_get_levels(runtime, &levels) == H2_PAL_OK);
+  assert(levels.capture_updated_ms == boundary);
+  h2_runtime_deinit(runtime);
 }
 
 /* A byte-aligned S16LE buffer must be measured without an aligned load. */
 static void test_audio_level_reads_unaligned_frames(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    audio_level_fixture_t f = {.mic_format = H2_AUDIO_SAMPLE_S16LE};
-    const h2_pal_audio_api_t audio = {&f, &level_audio_vtable};
-    h2_runtime_config_t config = test_runtime_config(&env);
-    config.audio = &audio;
-    h2_runtime_t *runtime = NULL;
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  audio_level_fixture_t f = {.mic_format = H2_AUDIO_SAMPLE_S16LE};
+  const h2_pal_audio_api_t audio = {&f, &level_audio_vtable};
+  h2_runtime_config_t config = test_runtime_config(&env);
+  config.audio = &audio;
+  h2_runtime_t* runtime = NULL;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
 
-    h2_pal_audio_track_t *track = NULL;
-    h2_audio_track_config_t track_config = {.name = "unaligned"};
-    assert(h2_pal_audio_create_track(runtime->audio, &track_config, &track) == H2_PAL_OK);
+  h2_pal_audio_track_t* track = NULL;
+  h2_audio_track_config_t track_config = {.name = "unaligned"};
+  assert(h2_pal_audio_create_track(runtime->audio, &track_config, &track) ==
+         H2_PAL_OK);
 
-    /* One byte of padding puts the samples on an odd address. */
-    unsigned char storage[1u + 4u * sizeof(int16_t)];
-    const int16_t samples[2] = {8192, -2048};
-    memcpy(storage + 1, samples, sizeof(samples));
-    h2_audio_frame_t out_frame = {
-        .data = storage + 1, .capacity = sizeof(samples), .bytes = sizeof(samples),
-        .channels = 1u, .samples_per_channel = 2u,
-        .sample_format = H2_AUDIO_SAMPLE_S16LE};
-    env.time_state.now_ms = 2400u;
-    assert(h2_pal_audio_track_write(track, &out_frame, 0u) == H2_PAL_OK);
-    h2_runtime_audio_levels_t levels;
-    assert(h2_runtime_audio_get_levels(runtime, &levels) == H2_PAL_OK);
-    assert(levels.playback_percent == 25u && levels.playback_updated_ms == 2400u);
-    assert(h2_pal_audio_track_close(track) == H2_PAL_OK);
-    h2_runtime_deinit(runtime);
+  /* One byte of padding puts the samples on an odd address. */
+  unsigned char storage[1u + 4u * sizeof(int16_t)];
+  const int16_t samples[2] = {8192, -2048};
+  memcpy(storage + 1, samples, sizeof(samples));
+  h2_audio_frame_t out_frame = {.data = storage + 1,
+                                .capacity = sizeof(samples),
+                                .bytes = sizeof(samples),
+                                .channels = 1u,
+                                .samples_per_channel = 2u,
+                                .sample_format = H2_AUDIO_SAMPLE_S16LE};
+  env.time_state.now_ms = 2400u;
+  assert(h2_pal_audio_track_write(track, &out_frame, 0u) == H2_PAL_OK);
+  h2_runtime_audio_levels_t levels;
+  assert(h2_runtime_audio_get_levels(runtime, &levels) == H2_PAL_OK);
+  assert(levels.playback_percent == 25u && levels.playback_updated_ms == 2400u);
+  assert(h2_pal_audio_track_close(track) == H2_PAL_OK);
+  h2_runtime_deinit(runtime);
 }
 
 static void test_audio_track_wrapper_forwards_absent_operations(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    audio_level_fixture_t f = {.omit_track_ops = 1};
-    const h2_pal_audio_api_t audio = {&f, &level_audio_vtable};
-    h2_runtime_config_t config = test_runtime_config(&env);
-    config.audio = &audio;
-    h2_runtime_t *runtime = NULL;
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  audio_level_fixture_t f = {.omit_track_ops = 1};
+  const h2_pal_audio_api_t audio = {&f, &level_audio_vtable};
+  h2_runtime_config_t config = test_runtime_config(&env);
+  config.audio = &audio;
+  h2_runtime_t* runtime = NULL;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
 
-    h2_pal_audio_track_t *track = NULL;
-    h2_audio_track_config_t track_config = {.name = "absent"};
-    assert(h2_pal_audio_create_track(runtime->audio, &track_config, &track) == H2_PAL_OK);
-    uint32_t factor = 0u;
-    assert(h2_pal_audio_track_get_volume_factor(track, &factor) == H2_AUDIO_ERR_INVALID_ARG);
-    assert(h2_pal_audio_track_set_volume_factor(track, 1u) == H2_AUDIO_ERR_INVALID_ARG);
-    assert(h2_pal_audio_track_drain(track, 0u) == H2_AUDIO_ERR_INVALID_ARG);
-    assert(f.gets == 0u && f.sets == 0u && f.drains == 0u);
-    assert(h2_pal_audio_track_close(track) == H2_PAL_OK);
-    assert(f.closes == 1u);
+  h2_pal_audio_track_t* track = NULL;
+  h2_audio_track_config_t track_config = {.name = "absent"};
+  assert(h2_pal_audio_create_track(runtime->audio, &track_config, &track) ==
+         H2_PAL_OK);
+  uint32_t factor = 0u;
+  assert(h2_pal_audio_track_get_volume_factor(track, &factor) ==
+         H2_AUDIO_ERR_INVALID_ARG);
+  assert(h2_pal_audio_track_set_volume_factor(track, 1u) ==
+         H2_AUDIO_ERR_INVALID_ARG);
+  assert(h2_pal_audio_track_drain(track, 0u) == H2_AUDIO_ERR_INVALID_ARG);
+  assert(f.gets == 0u && f.sets == 0u && f.drains == 0u);
+  assert(h2_pal_audio_track_close(track) == H2_PAL_OK);
+  assert(f.closes == 1u);
 
-    /* A backend that refuses the track leaves nothing allocated. */
-    f.backend_track_result = H2_PAL_ERR_IO;
-    track = NULL;
-    assert(h2_pal_audio_create_track(runtime->audio, &track_config, &track) == H2_PAL_ERR_IO);
-    assert(track == NULL);
-    h2_runtime_deinit(runtime);
+  /* A backend that refuses the track leaves nothing allocated. */
+  f.backend_track_result = H2_PAL_ERR_IO;
+  track = NULL;
+  assert(h2_pal_audio_create_track(runtime->audio, &track_config, &track) ==
+         H2_PAL_ERR_IO);
+  assert(track == NULL);
+  h2_runtime_deinit(runtime);
 }
 
 typedef struct wifi_dispatch_fixture {
-    unsigned int connects, saves;
-    uint32_t timeout;
-    int result;
-    h2_pal_wifi_sta_config_t last;
+  unsigned int connects, saves;
+  uint32_t timeout;
+  int result;
+  h2_pal_wifi_sta_config_t last;
 } wifi_dispatch_fixture_t;
 
-static int dispatch_connect(void *user, const h2_pal_wifi_sta_config_t *config,
+static int dispatch_connect(void* user, const h2_pal_wifi_sta_config_t* config,
                             uint32_t timeout_ms) {
-    wifi_dispatch_fixture_t *f = user;
-    ++f->connects;
-    f->timeout = timeout_ms;
-    f->last = *config;
-    return f->result;
+  wifi_dispatch_fixture_t* f = user;
+  ++f->connects;
+  f->timeout = timeout_ms;
+  f->last = *config;
+  return f->result;
 }
 
-static int dispatch_save(void *user, const h2_pal_wifi_sta_config_t *config,
+static int dispatch_save(void* user, const h2_pal_wifi_sta_config_t* config,
                          uint32_t timeout_ms) {
-    wifi_dispatch_fixture_t *f = user;
-    ++f->saves;
-    f->timeout = timeout_ms;
-    f->last = *config;
-    return f->result;
+  wifi_dispatch_fixture_t* f = user;
+  ++f->saves;
+  f->timeout = timeout_ms;
+  f->last = *config;
+  return f->result;
 }
 
-static int dispatch_saved_get(void *user, h2_pal_wifi_sta_config_t *out) {
-    *out = ((wifi_dispatch_fixture_t *)user)->last;
-    return out->ssid_len ? H2_PAL_OK : H2_PAL_ERR_NOT_FOUND;
+static int dispatch_saved_get(void* user, h2_pal_wifi_sta_config_t* out) {
+  *out = ((wifi_dispatch_fixture_t*)user)->last;
+  return out->ssid_len ? H2_PAL_OK : H2_PAL_ERR_NOT_FOUND;
 }
 
 static void test_wifi_connection_persistence(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    wifi_dispatch_fixture_t f = {0};
-    const h2_pal_wifi_sta_vtable_t vtable = {
-        .connect = dispatch_connect, .connect_and_save = dispatch_save};
-    const h2_pal_wifi_sta_api_t sta = {&f, &vtable};
-    const h2_pal_wifi_settings_vtable_t settings_vtable = {
-        .get_saved_sta_config = dispatch_saved_get};
-    const h2_pal_wifi_settings_api_t settings = {&f, &settings_vtable};
-    h2_runtime_config_t config = test_runtime_config(&env);
-    config.wifi_sta = &sta;
-    config.wifi_settings = &settings;
-    h2_runtime_t *runtime = NULL;
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
-    assert(runtime->wifi_sta->user == sta.user);
-    assert(runtime->wifi_sta->vtable == sta.vtable);
-    assert(h2_runtime_wifi_connect_saved(runtime, 100) == H2_PAL_ERR_NOT_FOUND);
-    h2_pal_wifi_sta_config_t network = {.ssid = "first", .ssid_len = 5};
-    const uint32_t budgets[] = {0, 1, 100, UINT32_MAX};
-    for (size_t i = 0; i < sizeof(budgets) / sizeof(budgets[0]); ++i) {
-        assert(h2_pal_wifi_sta_connect(runtime->wifi_sta, &network, budgets[i]) == H2_PAL_OK);
-        assert(f.timeout == budgets[i] && f.saves == 0);
-    }
-    assert(h2_pal_wifi_sta_connect_and_save(runtime->wifi_sta, &network, 0) == H2_PAL_ERR_INVALID_ARG);
-    assert(f.saves == 0);
-    const int results[] = {H2_PAL_OK, H2_PAL_ERR_IO, H2_PAL_ERR_TIMEOUT,
-                           H2_PAL_ERR_UNSUPPORTED, H2_PAL_ERR_BUSY};
-    for (size_t i = 0; i < sizeof(results) / sizeof(results[0]); ++i) {
-        f.result = results[i];
-        assert(h2_pal_wifi_sta_connect_and_save(runtime->wifi_sta, &network, 72) == results[i]);
-        assert(f.timeout == 72 && f.connects == 4);
-    }
-    f.result = H2_PAL_OK;
-    unsigned int saves = f.saves;
-    assert(h2_runtime_wifi_connect_saved(runtime, 0) == H2_PAL_OK);
-    assert(f.timeout == 15000 && f.saves == saves && f.connects == 5);
-    h2_runtime_deinit(runtime);
-    /* Settings availability cannot change connection dispatch. */
-    config.wifi_settings = h2_pal_unsupported_wifi_settings_api();
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
-    assert(h2_pal_wifi_sta_connect(runtime->wifi_sta, &network, 100) == H2_PAL_OK);
-    assert(f.saves == saves);
-    h2_runtime_deinit(runtime);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  wifi_dispatch_fixture_t f = {0};
+  const h2_pal_wifi_sta_vtable_t vtable = {.connect = dispatch_connect,
+                                           .connect_and_save = dispatch_save};
+  const h2_pal_wifi_sta_api_t sta = {&f, &vtable};
+  const h2_pal_wifi_settings_vtable_t settings_vtable = {
+      .get_saved_sta_config = dispatch_saved_get};
+  const h2_pal_wifi_settings_api_t settings = {&f, &settings_vtable};
+  h2_runtime_config_t config = test_runtime_config(&env);
+  config.wifi_sta = &sta;
+  config.wifi_settings = &settings;
+  h2_runtime_t* runtime = NULL;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  assert(runtime->wifi_sta->user == sta.user);
+  assert(runtime->wifi_sta->vtable == sta.vtable);
+  assert(h2_runtime_wifi_connect_saved(runtime, 100) == H2_PAL_ERR_NOT_FOUND);
+  h2_pal_wifi_sta_config_t network = {.ssid = "first", .ssid_len = 5};
+  const uint32_t budgets[] = {0, 1, 100, UINT32_MAX};
+  for (size_t i = 0; i < sizeof(budgets) / sizeof(budgets[0]); ++i) {
+    assert(h2_pal_wifi_sta_connect(runtime->wifi_sta, &network, budgets[i]) ==
+           H2_PAL_OK);
+    assert(f.timeout == budgets[i] && f.saves == 0);
+  }
+  assert(h2_pal_wifi_sta_connect_and_save(runtime->wifi_sta, &network, 0) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(f.saves == 0);
+  const int results[] = {H2_PAL_OK, H2_PAL_ERR_IO, H2_PAL_ERR_TIMEOUT,
+                         H2_PAL_ERR_UNSUPPORTED, H2_PAL_ERR_BUSY};
+  for (size_t i = 0; i < sizeof(results) / sizeof(results[0]); ++i) {
+    f.result = results[i];
+    assert(h2_pal_wifi_sta_connect_and_save(runtime->wifi_sta, &network, 72) ==
+           results[i]);
+    assert(f.timeout == 72 && f.connects == 4);
+  }
+  f.result = H2_PAL_OK;
+  unsigned int saves = f.saves;
+  assert(h2_runtime_wifi_connect_saved(runtime, 0) == H2_PAL_OK);
+  assert(f.timeout == 15000 && f.saves == saves && f.connects == 5);
+  h2_runtime_deinit(runtime);
+  /* Settings availability cannot change connection dispatch. */
+  config.wifi_settings = h2_pal_unsupported_wifi_settings_api();
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  assert(h2_pal_wifi_sta_connect(runtime->wifi_sta, &network, 100) ==
+         H2_PAL_OK);
+  assert(f.saves == saves);
+  h2_runtime_deinit(runtime);
 }
 
 typedef struct best_saved_fixture {
-    uint8_t blob[920];
-    size_t blob_len;
-    /* Mirror the Preference contract: writes stay pending until commit. */
-    uint8_t pending[920];
-    size_t pending_len;
-    h2_pal_pref_namespace_t ns;
-    int write_rc;
-    h2_pal_wifi_scan_entry_t scan[24];
-    size_t scan_count;
-    h2_pal_wifi_sta_config_t attempts[8];
-    uint32_t budgets[8], scan_budget, scan_ms, connect_ms, list_ms;
-    size_t connects, scans, saves;
-    int results[8], list_rc, scan_rc;
-    h2_pal_wifi_sta_config_t legacy;
-    bool legacy_present;
-    int legacy_clear_rc;
-    h2_runtime_t *runtime;
-    test_time_t *time;
+  uint8_t blob[920];
+  size_t blob_len;
+  /* Mirror the Preference contract: writes stay pending until commit. */
+  uint8_t pending[920];
+  size_t pending_len;
+  h2_pal_pref_namespace_t ns;
+  int write_rc;
+  h2_pal_wifi_scan_entry_t scan[24];
+  size_t scan_count;
+  h2_pal_wifi_sta_config_t attempts[8];
+  uint32_t budgets[8], scan_budget, scan_ms, connect_ms, list_ms;
+  size_t connects, scans, saves;
+  int results[8], list_rc, scan_rc;
+  h2_pal_wifi_sta_config_t legacy;
+  bool legacy_present;
+  int legacy_clear_rc;
+  h2_runtime_t* runtime;
+  test_time_t* time;
 } best_saved_fixture_t;
 
-static int saved_pref_close(h2_pal_pref_namespace_t *ns) {
-    best_saved_fixture_t *f = ns->user;
+static int saved_pref_close(h2_pal_pref_namespace_t* ns) {
+  best_saved_fixture_t* f = ns->user;
+  f->pending_len = 0;
+  return H2_PAL_OK;
+}
+
+static int saved_pref_get(h2_pal_pref_namespace_t* ns,
+                          const h2_pal_mem_api_t* mem, const char* key,
+                          void** out, size_t* len) {
+  best_saved_fixture_t* f = ns->user;
+  assert(strcmp(key, "saved_v1") == 0);
+  f->time->now_ms += f->list_ms;
+  if (f->list_rc) return f->list_rc;
+  if (!f->blob_len) return H2_PAL_ERR_NOT_FOUND;
+  *out = h2_pal_mem_alloc(mem, f->blob_len);
+  assert(*out);
+  *len = f->blob_len;
+  memcpy(*out, f->blob, *len);
+  return H2_PAL_OK;
+}
+
+static int saved_pref_set(h2_pal_pref_namespace_t* ns, const char* key,
+                          const void* data, size_t len) {
+  best_saved_fixture_t* f = ns->user;
+  assert(strcmp(key, "saved_v1") == 0 && len == sizeof(f->blob));
+  if (f->write_rc) return f->write_rc;
+  memcpy(f->pending, data, len);
+  f->pending_len = len;
+  return H2_PAL_OK;
+}
+
+static int saved_pref_commit(h2_pal_pref_namespace_t* ns) {
+  best_saved_fixture_t* f = ns->user;
+  if (f->pending_len) {
+    memcpy(f->blob, f->pending, f->pending_len);
+    f->blob_len = f->pending_len;
     f->pending_len = 0;
-    return H2_PAL_OK;
+  }
+  return H2_PAL_OK;
 }
 
-static int saved_pref_get(h2_pal_pref_namespace_t *ns, const h2_pal_mem_api_t *mem, const char *key,
-                          void **out, size_t *len) {
-    best_saved_fixture_t *f = ns->user;
-    assert(strcmp(key, "saved_v1") == 0);
-    f->time->now_ms += f->list_ms;
-    if (f->list_rc)
-        return f->list_rc;
-    if (!f->blob_len)
-        return H2_PAL_ERR_NOT_FOUND;
-    *out = h2_pal_mem_alloc(mem, f->blob_len);
-    assert(*out);
-    *len = f->blob_len;
-    memcpy(*out, f->blob, *len);
-    return H2_PAL_OK;
-}
-
-static int saved_pref_set(h2_pal_pref_namespace_t *ns, const char *key, const void *data,
-                          size_t len) {
-    best_saved_fixture_t *f = ns->user;
-    assert(strcmp(key, "saved_v1") == 0 && len == sizeof(f->blob));
-    if (f->write_rc)
-        return f->write_rc;
-    memcpy(f->pending, data, len);
-    f->pending_len = len;
-    return H2_PAL_OK;
-}
-
-static int saved_pref_commit(h2_pal_pref_namespace_t *ns) {
-    best_saved_fixture_t *f = ns->user;
-    if (f->pending_len) {
-        memcpy(f->blob, f->pending, f->pending_len);
-        f->blob_len = f->pending_len;
-        f->pending_len = 0;
-    }
-    return H2_PAL_OK;
-}
-
-static int saved_pref_open(void *user, const char *name, h2_pal_pref_open_mode_t mode,
-                           h2_pal_pref_namespace_t **out) {
-    best_saved_fixture_t *f = user;
-    assert(strcmp(name, "h2runtime_wifi") == 0);
-    assert(mode == H2_PAL_PREF_OPEN_READ_ONLY || mode == H2_PAL_PREF_OPEN_READ_WRITE);
-    f->ns = (h2_pal_pref_namespace_t){.user = f,
-                                      .close = saved_pref_close,
-                                      .get_blob = saved_pref_get,
-                                      .set_blob = saved_pref_set,
-                                      .commit = saved_pref_commit};
-    *out = &f->ns;
-    return H2_PAL_OK;
+static int saved_pref_open(void* user, const char* name,
+                           h2_pal_pref_open_mode_t mode,
+                           h2_pal_pref_namespace_t** out) {
+  best_saved_fixture_t* f = user;
+  assert(strcmp(name, "h2runtime_wifi") == 0);
+  assert(mode == H2_PAL_PREF_OPEN_READ_ONLY ||
+         mode == H2_PAL_PREF_OPEN_READ_WRITE);
+  f->ns = (h2_pal_pref_namespace_t){.user = f,
+                                    .close = saved_pref_close,
+                                    .get_blob = saved_pref_get,
+                                    .set_blob = saved_pref_set,
+                                    .commit = saved_pref_commit};
+  *out = &f->ns;
+  return H2_PAL_OK;
 }
 
 static const h2_pal_pref_vtable_t saved_pref_vtable = {.open = saved_pref_open};
-static h2_pal_result_t test_wall_get(void *user, uint64_t *out);
-static h2_pal_result_t test_wall_status(void *user, h2_pal_time_wall_status_t *out);
+static h2_pal_result_t test_wall_get(void* user, uint64_t* out);
+static h2_pal_result_t test_wall_status(void* user,
+                                        h2_pal_time_wall_status_t* out);
 
 static void test_wifi_saved_set(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    h2_pal_time_vtable_t time_vtable = *env.time.vtable;
-    time_vtable.get_wall_ms = test_wall_get;
-    time_vtable.get_wall_status = test_wall_status;
-    env.time.vtable = &time_vtable;
-    best_saved_fixture_t f = {.time = &env.time_state};
-    h2_pal_pref_api_t pref = {&f, &saved_pref_vtable};
-    h2_runtime_config_t config = test_runtime_config(&env);
-    config.pref = &pref;
-    h2_runtime_t *runtime = NULL;
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
-    h2_runtime_wifi_saved_network_t list[8];
-    size_t count = 99;
-    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_OK && !count);
-    h2_pal_wifi_sta_config_t network = {.ssid = "a", .ssid_len = 1};
+  test_runtime_env_t env;
+  test_env_init(&env);
+  h2_pal_time_vtable_t time_vtable = *env.time.vtable;
+  time_vtable.get_wall_ms = test_wall_get;
+  time_vtable.get_wall_status = test_wall_status;
+  env.time.vtable = &time_vtable;
+  best_saved_fixture_t f = {.time = &env.time_state};
+  h2_pal_pref_api_t pref = {&f, &saved_pref_vtable};
+  h2_runtime_config_t config = test_runtime_config(&env);
+  config.pref = &pref;
+  h2_runtime_t* runtime = NULL;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  h2_runtime_wifi_saved_network_t list[8];
+  size_t count = 99;
+  assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_OK &&
+         !count);
+  h2_pal_wifi_sta_config_t network = {.ssid = "a", .ssid_len = 1};
+  assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_OK);
+  env.time_state.wall_valid = 1;
+  /* The canonical unsupported provider installs a real vtable whose open
+   * returns UNSUPPORTED: reads see an empty set, writes report UNSUPPORTED. */
+  {
+    h2_runtime_config_t no_pref = config;
+    no_pref.pref = h2_pal_unsupported_pref_api();
+    h2_runtime_t* bare = NULL;
+    assert(h2_runtime_init(&no_pref, &bare) == H2_PAL_OK);
+    size_t bare_count = 99;
+    assert(h2_runtime_wifi_saved_list(bare, list, 8, &bare_count) ==
+               H2_PAL_OK &&
+           !bare_count);
+    assert(h2_runtime_wifi_saved_save(bare, &network) ==
+           H2_PAL_ERR_UNSUPPORTED);
+    /* Nothing is stored, so removal answers NOT_FOUND before any write. */
+    assert(h2_runtime_wifi_saved_remove(bare, "a", 1) == H2_PAL_ERR_NOT_FOUND);
+    assert(h2_runtime_wifi_saved_clear(bare) == H2_PAL_ERR_UNSUPPORTED);
+    h2_runtime_deinit(bare);
+  }
+  env.time_state.wall_ms = UINT64_C(1800000000123);
+  network.ssid[0] = 'b';
+  assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_OK);
+  assert(f.blob_len == 920 && memcmp(f.blob, "H2WN\1\0\2\0", 8) == 0);
+  assert(f.blob[8 + 106] == (uint8_t)env.time_state.wall_ms);
+  h2_runtime_deinit(runtime);
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_OK &&
+         count == 2);
+  assert(list[0].config.ssid[0] == 'b' && list[1].config.ssid[0] == 'a');
+  assert(list[0].last_connected_at_ms == env.time_state.wall_ms);
+  assert(list[1].last_connected_at_ms == 0);
+  /* Loss of wall calibration must not undo stored recency. */
+  env.time_state.wall_valid = 0;
+  network.ssid[0] = 'a';
+  memcpy(network.password, "new-pass", 8);
+  network.password_len = 8;
+  assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_OK);
+  assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_OK &&
+         count == 2);
+  assert(list[0].config.ssid[0] == 'a' && list[0].last_connected_at_ms == 0);
+  assert(list[0].config.password_len == 8 &&
+         !memcmp(list[0].config.password, "new-pass", 8));
+  for (char name = 'c'; name <= 'i'; ++name) {
+    network.ssid[0] = name;
     assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_OK);
-    env.time_state.wall_valid = 1;
-    /* The canonical unsupported provider installs a real vtable whose open
-     * returns UNSUPPORTED: reads see an empty set, writes report UNSUPPORTED. */
-    {
-        h2_runtime_config_t no_pref = config;
-        no_pref.pref = h2_pal_unsupported_pref_api();
-        h2_runtime_t *bare = NULL;
-        assert(h2_runtime_init(&no_pref, &bare) == H2_PAL_OK);
-        size_t bare_count = 99;
-        assert(h2_runtime_wifi_saved_list(bare, list, 8, &bare_count) == H2_PAL_OK && !bare_count);
-        assert(h2_runtime_wifi_saved_save(bare, &network) == H2_PAL_ERR_UNSUPPORTED);
-        /* Nothing is stored, so removal answers NOT_FOUND before any write. */
-        assert(h2_runtime_wifi_saved_remove(bare, "a", 1) == H2_PAL_ERR_NOT_FOUND);
-        assert(h2_runtime_wifi_saved_clear(bare) == H2_PAL_ERR_UNSUPPORTED);
-        h2_runtime_deinit(bare);
-    }
-    env.time_state.wall_ms = UINT64_C(1800000000123);
-    network.ssid[0] = 'b';
-    assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_OK);
-    assert(f.blob_len == 920 && memcmp(f.blob, "H2WN\1\0\2\0", 8) == 0);
-    assert(f.blob[8 + 106] == (uint8_t)env.time_state.wall_ms);
-    h2_runtime_deinit(runtime);
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
-    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_OK && count == 2);
-    assert(list[0].config.ssid[0] == 'b' && list[1].config.ssid[0] == 'a');
-    assert(list[0].last_connected_at_ms == env.time_state.wall_ms);
-    assert(list[1].last_connected_at_ms == 0);
-    /* Loss of wall calibration must not undo stored recency. */
-    env.time_state.wall_valid = 0;
-    network.ssid[0] = 'a';
-    memcpy(network.password, "new-pass", 8);
-    network.password_len = 8;
-    assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_OK);
-    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_OK && count == 2);
-    assert(list[0].config.ssid[0] == 'a' && list[0].last_connected_at_ms == 0);
-    assert(list[0].config.password_len == 8 && !memcmp(list[0].config.password, "new-pass", 8));
-    for (char name = 'c'; name <= 'i'; ++name) {
-        network.ssid[0] = name;
-        assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_OK);
-    }
-    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_OK && count == 8);
-    assert(list[0].config.ssid[0] == 'i' && list[7].config.ssid[0] == 'a');
-    assert(h2_runtime_wifi_saved_remove(runtime, "b", 1) == H2_PAL_ERR_NOT_FOUND);
-    assert(h2_runtime_wifi_saved_remove(runtime, "e", 1) == H2_PAL_OK);
-    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_OK && count == 7);
-    const char expected[] = "ihgfdca";
-    for (size_t i = 0; i < count; ++i)
-        assert(list[i].config.ssid[0] == expected[i]);
-    uint8_t previous[920];
-    memcpy(previous, f.blob, sizeof(previous));
-    f.write_rc = H2_PAL_ERR_IO;
-    assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_ERR_IO);
-    assert(h2_runtime_wifi_saved_remove(runtime, "a", 1) == H2_PAL_ERR_IO);
-    assert(h2_runtime_wifi_saved_clear(runtime) == H2_PAL_ERR_IO);
-    assert(!memcmp(previous, f.blob, sizeof(previous)));
-    assert(h2_runtime_wifi_saved_list(runtime, list, 1, &count) == H2_PAL_OK && count == 1);
-    assert(h2_runtime_wifi_saved_list(runtime, NULL, 0, &count) == H2_PAL_OK && !count);
-    assert(h2_runtime_wifi_saved_list(runtime, NULL, 1, &count) == H2_PAL_ERR_INVALID_ARG);
-    assert(h2_runtime_wifi_saved_save(runtime, NULL) == H2_PAL_ERR_INVALID_ARG);
-    network.ssid_len = 33;
-    assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_ERR_INVALID_ARG);
-    assert(h2_runtime_wifi_saved_remove(runtime, "", 0) == H2_PAL_ERR_INVALID_ARG);
-    /* Reject malformed and duplicate records without exposing a partial set. */
-    const size_t bad_offsets[] = {0, 4, 6, 7, 8, 9, 16};
-    for (size_t i = 0; i < sizeof(bad_offsets) / sizeof(bad_offsets[0]); ++i) {
-        memcpy(f.blob, previous, sizeof(previous));
-        f.blob[bad_offsets[i]] = 255;
-        assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_ERR_FORMAT && !count);
-    }
+  }
+  assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_OK &&
+         count == 8);
+  assert(list[0].config.ssid[0] == 'i' && list[7].config.ssid[0] == 'a');
+  assert(h2_runtime_wifi_saved_remove(runtime, "b", 1) == H2_PAL_ERR_NOT_FOUND);
+  assert(h2_runtime_wifi_saved_remove(runtime, "e", 1) == H2_PAL_OK);
+  assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_OK &&
+         count == 7);
+  const char expected[] = "ihgfdca";
+  for (size_t i = 0; i < count; ++i)
+    assert(list[i].config.ssid[0] == expected[i]);
+  uint8_t previous[920];
+  memcpy(previous, f.blob, sizeof(previous));
+  f.write_rc = H2_PAL_ERR_IO;
+  assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_ERR_IO);
+  assert(h2_runtime_wifi_saved_remove(runtime, "a", 1) == H2_PAL_ERR_IO);
+  assert(h2_runtime_wifi_saved_clear(runtime) == H2_PAL_ERR_IO);
+  assert(!memcmp(previous, f.blob, sizeof(previous)));
+  assert(h2_runtime_wifi_saved_list(runtime, list, 1, &count) == H2_PAL_OK &&
+         count == 1);
+  assert(h2_runtime_wifi_saved_list(runtime, NULL, 0, &count) == H2_PAL_OK &&
+         !count);
+  assert(h2_runtime_wifi_saved_list(runtime, NULL, 1, &count) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_runtime_wifi_saved_save(runtime, NULL) == H2_PAL_ERR_INVALID_ARG);
+  network.ssid_len = 33;
+  assert(h2_runtime_wifi_saved_save(runtime, &network) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_runtime_wifi_saved_remove(runtime, "", 0) ==
+         H2_PAL_ERR_INVALID_ARG);
+  /* Reject malformed and duplicate records without exposing a partial set. */
+  const size_t bad_offsets[] = {0, 4, 6, 7, 8, 9, 16};
+  for (size_t i = 0; i < sizeof(bad_offsets) / sizeof(bad_offsets[0]); ++i) {
     memcpy(f.blob, previous, sizeof(previous));
-    memcpy(f.blob + 8 + 114, f.blob + 8, 114);
-    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_ERR_FORMAT && !count);
-    /* Only the canonical encoding decodes: padding past each length and every
-     * slot beyond the count must be zero. */
-    const size_t garbage_offsets[] = {
-        8 + 10 + previous[8],       /* one byte past the first record's SSID */
-        8 + 42 + previous[8 + 1],   /* one byte past its password */
-        8 + 7 * 114,                /* an unused slot */
-    };
-    for (size_t i = 0; i < sizeof(garbage_offsets) / sizeof(garbage_offsets[0]); ++i) {
-        memcpy(f.blob, previous, sizeof(previous));
-        f.blob[garbage_offsets[i]] = 1;
-        assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_ERR_FORMAT && !count);
-    }
-    f.blob_len--;
-    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_ERR_FORMAT && !count);
-    f.write_rc = 0;
-    assert(h2_runtime_wifi_saved_clear(runtime) == H2_PAL_OK);
-    h2_runtime_deinit(runtime);
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
-    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_OK && !count);
-    h2_runtime_deinit(runtime);
+    f.blob[bad_offsets[i]] = 255;
+    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) ==
+               H2_PAL_ERR_FORMAT &&
+           !count);
+  }
+  memcpy(f.blob, previous, sizeof(previous));
+  memcpy(f.blob + 8 + 114, f.blob + 8, 114);
+  assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) ==
+             H2_PAL_ERR_FORMAT &&
+         !count);
+  /* Only the canonical encoding decodes: padding past each length and every
+   * slot beyond the count must be zero. */
+  const size_t garbage_offsets[] = {
+      8 + 10 + previous[8],     /* one byte past the first record's SSID */
+      8 + 42 + previous[8 + 1], /* one byte past its password */
+      8 + 7 * 114,              /* an unused slot */
+  };
+  for (size_t i = 0; i < sizeof(garbage_offsets) / sizeof(garbage_offsets[0]);
+       ++i) {
+    memcpy(f.blob, previous, sizeof(previous));
+    f.blob[garbage_offsets[i]] = 1;
+    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) ==
+               H2_PAL_ERR_FORMAT &&
+           !count);
+  }
+  f.blob_len--;
+  assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) ==
+             H2_PAL_ERR_FORMAT &&
+         !count);
+  f.write_rc = 0;
+  assert(h2_runtime_wifi_saved_clear(runtime) == H2_PAL_OK);
+  h2_runtime_deinit(runtime);
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_OK &&
+         !count);
+  h2_runtime_deinit(runtime);
 }
 
-static int best_saved_scan(void *user, const h2_pal_wifi_scan_request_t *request,
-                           h2_pal_wifi_scan_result_fn callback, void *callback_user,
-                           uint32_t timeout) {
-    best_saved_fixture_t *f = user;
-    assert(!request);
-    ++f->scans;
-    f->scan_budget = timeout;
-    f->time->now_ms += f->scan_ms;
-    if (f->scan_rc)
-        return f->scan_rc;
-    for (size_t i = 0; i < f->scan_count; ++i)
-        if (!callback(callback_user, &f->scan[i]))
-            break;
-    return H2_PAL_OK;
+static int best_saved_scan(void* user,
+                           const h2_pal_wifi_scan_request_t* request,
+                           h2_pal_wifi_scan_result_fn callback,
+                           void* callback_user, uint32_t timeout) {
+  best_saved_fixture_t* f = user;
+  assert(!request);
+  ++f->scans;
+  f->scan_budget = timeout;
+  f->time->now_ms += f->scan_ms;
+  if (f->scan_rc) return f->scan_rc;
+  for (size_t i = 0; i < f->scan_count; ++i)
+    if (!callback(callback_user, &f->scan[i])) break;
+  return H2_PAL_OK;
 }
 
-static int best_saved_connect(void *user, const h2_pal_wifi_sta_config_t *config,
+static int best_saved_connect(void* user,
+                              const h2_pal_wifi_sta_config_t* config,
                               uint32_t timeout) {
-    best_saved_fixture_t *f = user;
-    assert(f->connects < 8);
-    f->attempts[f->connects] = *config;
-    f->budgets[f->connects] = timeout;
-    f->time->now_ms += f->connect_ms;
-    return f->results[f->connects++];
+  best_saved_fixture_t* f = user;
+  assert(f->connects < 8);
+  f->attempts[f->connects] = *config;
+  f->budgets[f->connects] = timeout;
+  f->time->now_ms += f->connect_ms;
+  return f->results[f->connects++];
 }
 
-static int best_saved_provision(void *user, const h2_pal_wifi_sta_config_t *config,
+static int best_saved_provision(void* user,
+                                const h2_pal_wifi_sta_config_t* config,
                                 uint32_t timeout) {
-    best_saved_fixture_t *f = user;
-    ++f->saves;
-    return best_saved_connect(user, config, timeout);
+  best_saved_fixture_t* f = user;
+  ++f->saves;
+  return best_saved_connect(user, config, timeout);
 }
 
-static int legacy_saved_get(void *user, h2_pal_wifi_sta_config_t *out) {
-    best_saved_fixture_t *f = user;
-    *out = f->legacy;
-    return f->legacy_present ? H2_PAL_OK : H2_PAL_ERR_NOT_FOUND;
+static int legacy_saved_get(void* user, h2_pal_wifi_sta_config_t* out) {
+  best_saved_fixture_t* f = user;
+  *out = f->legacy;
+  return f->legacy_present ? H2_PAL_OK : H2_PAL_ERR_NOT_FOUND;
 }
-static int legacy_saved_clear(void *user) {
-    best_saved_fixture_t *f = user;
-    if (f->legacy_clear_rc)
-        return f->legacy_clear_rc;
-    f->legacy_present = false;
-    memset(&f->legacy, 0, sizeof(f->legacy));
-    return H2_PAL_OK;
+static int legacy_saved_clear(void* user) {
+  best_saved_fixture_t* f = user;
+  if (f->legacy_clear_rc) return f->legacy_clear_rc;
+  f->legacy_present = false;
+  memset(&f->legacy, 0, sizeof(f->legacy));
+  return H2_PAL_OK;
 }
-static int busy_provision(void *user, const h2_pal_wifi_sta_config_t *config, uint32_t timeout) {
-    best_saved_fixture_t *f = user;
-    size_t count = 99;
-    assert(h2_runtime_wifi_saved_list(f->runtime, NULL, 0, &count) == H2_PAL_ERR_BUSY);
-    assert(count == 0);
-    assert(h2_runtime_wifi_saved_clear(f->runtime) == H2_PAL_ERR_BUSY);
-    return best_saved_provision(user, config, timeout);
+static int busy_provision(void* user, const h2_pal_wifi_sta_config_t* config,
+                          uint32_t timeout) {
+  best_saved_fixture_t* f = user;
+  size_t count = 99;
+  assert(h2_runtime_wifi_saved_list(f->runtime, NULL, 0, &count) ==
+         H2_PAL_ERR_BUSY);
+  assert(count == 0);
+  assert(h2_runtime_wifi_saved_clear(f->runtime) == H2_PAL_ERR_BUSY);
+  return best_saved_provision(user, config, timeout);
 }
 
 static void test_wifi_legacy_import_and_forget(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    best_saved_fixture_t f = {
-        .time = &env.time_state, .legacy_present = true,
-        .legacy = {.ssid = "a", .ssid_len = 1, .password = "old-pass", .password_len = 8},
-        .scan_count = 1, .scan = {{.ssid = "a", .ssid_len = 1, .rssi = -40}}};
-    const h2_pal_wifi_settings_vtable_t settings_vtable = {
-        .get_saved_sta_config = legacy_saved_get, .clear_saved_sta_config = legacy_saved_clear};
-    const h2_pal_wifi_settings_api_t settings = {&f, &settings_vtable};
-    const h2_pal_wifi_sta_vtable_t sta_vtable = {
-        .scan = best_saved_scan, .connect = best_saved_connect, .connect_and_save = busy_provision};
-    const h2_pal_wifi_sta_api_t sta = {&f, &sta_vtable};
-    const h2_pal_pref_api_t pref = {&f, &saved_pref_vtable};
-    h2_runtime_config_t config = test_runtime_config(&env);
-    config.pref = &pref;
-    config.wifi_settings = &settings;
-    config.wifi_sta = &sta;
-    assert(h2_runtime_init(&config, &f.runtime) == H2_PAL_OK);
-    h2_runtime_wifi_saved_network_t list[8];
-    size_t count = 0;
-    unsigned revision = 99;
-    assert(h2_runtime_wifi_saved_revision(f.runtime, &revision) == H2_PAL_OK && revision == 0);
-    f.write_rc = H2_PAL_ERR_IO;
-    assert(h2_runtime_wifi_saved_list(f.runtime, list, 8, &count) == H2_PAL_ERR_IO && !count);
-    assert(f.legacy_present && !f.blob_len);
-    f.write_rc = 0;
-    assert(h2_runtime_wifi_saved_list(f.runtime, list, 8, &count) == H2_PAL_OK && count == 1);
-    assert(f.blob_len == 920 && !memcmp(list[0].config.password, "old-pass", 8));
-    assert(h2_runtime_wifi_saved_revision(f.runtime, &revision) == H2_PAL_OK && revision == 1);
-    h2_runtime_deinit(f.runtime);
-    assert(h2_runtime_init(&config, &f.runtime) == H2_PAL_OK);
-    assert(h2_runtime_wifi_connect_best_saved(f.runtime, 100) == H2_PAL_OK);
-    assert(f.connects == 1 && !memcmp(f.attempts[0].password, "old-pass", 8));
-    f.legacy_clear_rc = H2_PAL_ERR_IO;
-    assert(h2_runtime_wifi_saved_remove(f.runtime, "a", 1) == H2_PAL_ERR_IO);
-    /* Even failed PAL cleanup cannot re-import a forgotten credential. */
-    assert(f.legacy_present);
-    h2_runtime_deinit(f.runtime);
-    assert(h2_runtime_init(&config, &f.runtime) == H2_PAL_OK);
-    assert(h2_runtime_wifi_saved_list(f.runtime, list, 8, &count) == H2_PAL_OK && !count);
-    assert(h2_runtime_wifi_connect_best_saved(f.runtime, 100) == H2_PAL_ERR_NOT_FOUND);
-    f.legacy_clear_rc = 0;
-    assert(h2_runtime_wifi_saved_clear(f.runtime) == H2_PAL_OK && !f.legacy_present);
-    /* Provisioning owns one slot across PAL and the Runtime commit. */
-    const h2_pal_wifi_sta_config_t phone = {.ssid = "phone", .ssid_len = 5};
-    assert(h2_runtime_wifi_connect_and_save(f.runtime, &phone, 100) == H2_PAL_OK);
-    assert(h2_runtime_wifi_saved_list(f.runtime, list, 8, &count) == H2_PAL_OK && count == 1);
-    f.legacy_present = true;
-    f.legacy = (h2_pal_wifi_sta_config_t){.ssid = "phone", .ssid_len = 5};
-    assert(h2_runtime_wifi_saved_remove(f.runtime, "phone", 5) == H2_PAL_OK && !f.legacy_present);
-    h2_runtime_deinit(f.runtime);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  best_saved_fixture_t f = {
+      .time = &env.time_state,
+      .legacy_present = true,
+      .legacy = {.ssid = "a",
+                 .ssid_len = 1,
+                 .password = "old-pass",
+                 .password_len = 8},
+      .scan_count = 1,
+      .scan = {{.ssid = "a", .ssid_len = 1, .rssi = -40}}};
+  const h2_pal_wifi_settings_vtable_t settings_vtable = {
+      .get_saved_sta_config = legacy_saved_get,
+      .clear_saved_sta_config = legacy_saved_clear};
+  const h2_pal_wifi_settings_api_t settings = {&f, &settings_vtable};
+  const h2_pal_wifi_sta_vtable_t sta_vtable = {
+      .scan = best_saved_scan,
+      .connect = best_saved_connect,
+      .connect_and_save = busy_provision};
+  const h2_pal_wifi_sta_api_t sta = {&f, &sta_vtable};
+  const h2_pal_pref_api_t pref = {&f, &saved_pref_vtable};
+  h2_runtime_config_t config = test_runtime_config(&env);
+  config.pref = &pref;
+  config.wifi_settings = &settings;
+  config.wifi_sta = &sta;
+  assert(h2_runtime_init(&config, &f.runtime) == H2_PAL_OK);
+  h2_runtime_wifi_saved_network_t list[8];
+  size_t count = 0;
+  unsigned revision = 99;
+  assert(h2_runtime_wifi_saved_revision(f.runtime, &revision) == H2_PAL_OK &&
+         revision == 0);
+  f.write_rc = H2_PAL_ERR_IO;
+  assert(h2_runtime_wifi_saved_list(f.runtime, list, 8, &count) ==
+             H2_PAL_ERR_IO &&
+         !count);
+  assert(f.legacy_present && !f.blob_len);
+  f.write_rc = 0;
+  assert(h2_runtime_wifi_saved_list(f.runtime, list, 8, &count) == H2_PAL_OK &&
+         count == 1);
+  assert(f.blob_len == 920 && !memcmp(list[0].config.password, "old-pass", 8));
+  assert(h2_runtime_wifi_saved_revision(f.runtime, &revision) == H2_PAL_OK &&
+         revision == 1);
+  h2_runtime_deinit(f.runtime);
+  assert(h2_runtime_init(&config, &f.runtime) == H2_PAL_OK);
+  assert(h2_runtime_wifi_connect_best_saved(f.runtime, 100) == H2_PAL_OK);
+  assert(f.connects == 1 && !memcmp(f.attempts[0].password, "old-pass", 8));
+  f.legacy_clear_rc = H2_PAL_ERR_IO;
+  assert(h2_runtime_wifi_saved_remove(f.runtime, "a", 1) == H2_PAL_ERR_IO);
+  /* Even failed PAL cleanup cannot re-import a forgotten credential. */
+  assert(f.legacy_present);
+  h2_runtime_deinit(f.runtime);
+  assert(h2_runtime_init(&config, &f.runtime) == H2_PAL_OK);
+  assert(h2_runtime_wifi_saved_list(f.runtime, list, 8, &count) == H2_PAL_OK &&
+         !count);
+  assert(h2_runtime_wifi_connect_best_saved(f.runtime, 100) ==
+         H2_PAL_ERR_NOT_FOUND);
+  f.legacy_clear_rc = 0;
+  assert(h2_runtime_wifi_saved_clear(f.runtime) == H2_PAL_OK &&
+         !f.legacy_present);
+  /* Provisioning owns one slot across PAL and the Runtime commit. */
+  const h2_pal_wifi_sta_config_t phone = {.ssid = "phone", .ssid_len = 5};
+  assert(h2_runtime_wifi_connect_and_save(f.runtime, &phone, 100) == H2_PAL_OK);
+  assert(h2_runtime_wifi_saved_list(f.runtime, list, 8, &count) == H2_PAL_OK &&
+         count == 1);
+  f.legacy_present = true;
+  f.legacy = (h2_pal_wifi_sta_config_t){.ssid = "phone", .ssid_len = 5};
+  assert(h2_runtime_wifi_saved_remove(f.runtime, "phone", 5) == H2_PAL_OK &&
+         !f.legacy_present);
+  h2_runtime_deinit(f.runtime);
 }
 
 static void test_wifi_best_saved(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    h2_pal_time_vtable_t time_vtable = *env.time.vtable;
-    time_vtable.get_wall_ms = test_wall_get;
-    time_vtable.get_wall_status = test_wall_status;
-    env.time.vtable = &time_vtable;
-    env.time_state.wall_valid = 1;
-    env.time_state.wall_ms = UINT64_C(1800000000000);
-    best_saved_fixture_t f = {
-        .time = &env.time_state,
-        .scan_count = 3,
-        .scan_ms = 20,
-        .list_ms = 5,
-        .connect_ms = 10,
-        .scan = {{.ssid = "a", .ssid_len = 1, .rssi = -70, .bssid = {1}, .channel = 1},
-                 {.ssid = "b", .ssid_len = 1, .rssi = -20, .bssid = {2}, .channel = 6},
-                 {.ssid = "a", .ssid_len = 1, .rssi = -40, .bssid = {3}, .channel = 11}}};
-    const h2_pal_wifi_sta_vtable_t sta_vtable = {.scan = best_saved_scan,
-                                                 .connect = best_saved_connect,
-                                                 .connect_and_save = best_saved_provision};
+  test_runtime_env_t env;
+  test_env_init(&env);
+  h2_pal_time_vtable_t time_vtable = *env.time.vtable;
+  time_vtable.get_wall_ms = test_wall_get;
+  time_vtable.get_wall_status = test_wall_status;
+  env.time.vtable = &time_vtable;
+  env.time_state.wall_valid = 1;
+  env.time_state.wall_ms = UINT64_C(1800000000000);
+  best_saved_fixture_t f = {
+      .time = &env.time_state,
+      .scan_count = 3,
+      .scan_ms = 20,
+      .list_ms = 5,
+      .connect_ms = 10,
+      .scan = {
+          {.ssid = "a", .ssid_len = 1, .rssi = -70, .bssid = {1}, .channel = 1},
+          {.ssid = "b", .ssid_len = 1, .rssi = -20, .bssid = {2}, .channel = 6},
+          {.ssid = "a",
+           .ssid_len = 1,
+           .rssi = -40,
+           .bssid = {3},
+           .channel = 11}}};
+  const h2_pal_wifi_sta_vtable_t sta_vtable = {
+      .scan = best_saved_scan,
+      .connect = best_saved_connect,
+      .connect_and_save = best_saved_provision};
 
-    const h2_pal_wifi_sta_api_t sta = {&f, &sta_vtable};
-    const h2_pal_pref_api_t pref = {&f, &saved_pref_vtable};
-    h2_runtime_config_t config = test_runtime_config(&env);
-    config.wifi_sta = &sta;
-    config.pref = &pref;
-    h2_runtime_t *runtime = NULL;
-    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
-    h2_pal_wifi_sta_config_t network = {.ssid = "b", .ssid_len = 1};
-    assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_OK);
-    network.ssid[0] = 'a';
-    assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_OK);
-    h2_pal_wifi_sta_config_t provision = {.ssid = "phone", .ssid_len = 5};
-    f.results[0] = H2_PAL_ERR_IO;
-    assert(h2_runtime_wifi_connect_and_save(runtime, &provision, 100) == H2_PAL_ERR_IO);
-    h2_runtime_wifi_saved_network_t list[8];
-    size_t saved_count = 0;
-    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &saved_count) == H2_PAL_OK &&
-           saved_count == 2);
-    f.connects = 0;
-    f.results[0] = H2_PAL_OK;
-    assert(h2_runtime_wifi_connect_and_save(runtime, &provision, 100) == H2_PAL_OK);
-    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &saved_count) == H2_PAL_OK &&
-           saved_count == 3);
-    assert(!memcmp(list[0].config.ssid, "phone", 5));
-    f.connects = 0;
-    assert(h2_runtime_wifi_connect_best_saved(NULL, 100) == H2_PAL_ERR_INVALID_ARG);
-    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_OK);
-    assert(f.connects == 1 && f.attempts[0].ssid[0] == 'b');
-    assert(f.attempts[0].bssid_set && f.attempts[0].bssid[0] == 2 && f.attempts[0].channel == 6);
-    assert(f.scan_budget == 95 && f.budgets[0] == 75);
-    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &saved_count) == H2_PAL_OK);
-    assert(list[0].config.ssid[0] == 'b' && list[0].last_connected_at_ms == env.time_state.wall_ms);
-    env.time_state.wall_ms += 1000;
-    f.connects = 0;
-    f.results[0] = H2_PAL_ERR_IO;
-    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_OK);
-    assert(f.connects == 2 && f.attempts[1].ssid[0] == 'a');
-    assert(f.attempts[1].bssid[0] == 3 && f.attempts[1].channel == 11);
-    assert(f.budgets[0] == 75 && f.budgets[1] == 65);
-    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &saved_count) == H2_PAL_OK);
-    assert(list[0].config.ssid[0] == 'a' && list[0].last_connected_at_ms == env.time_state.wall_ms);
-    uint8_t previous[920];
-    memcpy(previous, f.blob, sizeof(previous));
-    f.connects = 0;
-    f.results[1] = H2_PAL_ERR_UNAVAILABLE;
-    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_ERR_UNAVAILABLE);
-    assert(f.connects == 2);
-    assert(!memcmp(previous, f.blob, sizeof(previous)));
-    f.connects = 0;
-    f.connect_ms = 75;
-    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_ERR_TIMEOUT);
-    assert(f.connects == 1);
-    f.connects = 0;
-    f.scan_ms = 100;
-    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_ERR_TIMEOUT);
-    assert(!f.connects);
-    f.scan_ms = 20;
-    f.connect_ms = 10;
-    f.results[0] = H2_PAL_OK;
-    assert(h2_runtime_wifi_connect_best_saved(runtime, 0) == H2_PAL_OK);
-    assert(f.budgets[0] == 14975);
-    f.connects = 0;
-    f.scan[2].rssi = -20;
-    env.time_state.wall_valid = 0;
-    assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_OK);
-    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_OK);
-    assert(f.attempts[0].ssid[0] == 'a');
-    /* A matching AP after more than SCAN_MAX_RESULTS must still be seen. */
-    f.connects = 0;
-    for (size_t i = 0; i < 23; ++i)
-        f.scan[i] = (h2_pal_wifi_scan_entry_t){.ssid = "other", .ssid_len = 5};
-    f.scan[23] = (h2_pal_wifi_scan_entry_t){.ssid = "a", .ssid_len = 1, .rssi = -30};
-    f.scan_count = 24;
-    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_OK);
-    assert(f.connects == 1 && f.attempts[0].ssid[0] == 'a');
-    f.connects = 0;
-    f.scan_count = 23;
-    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_ERR_NOT_FOUND);
-    assert(!f.connects);
-    f.scan_count = 0;
-    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_ERR_NOT_FOUND);
-    f.scan_rc = H2_PAL_ERR_IO;
-    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_ERR_IO);
-    f.scan_rc = 0;
-    /* Unsupported storage reads as an empty set, so there is nothing to try;
-     * a real storage error still propagates. */
-    f.list_rc = H2_PAL_ERR_UNSUPPORTED;
-    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_ERR_NOT_FOUND);
-    f.list_rc = H2_PAL_ERR_IO;
-    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_ERR_IO);
-    f.list_rc = 0;
-    /* The stored entry keeps the credential as provisioned: a candidate pinned
-     * to the AP that happened to be strongest must not be written back. */
-    f.scan_count = 1;
-    f.scan[0] = (h2_pal_wifi_scan_entry_t){
-        .ssid = "a", .ssid_len = 1, .rssi = -30, .channel = 11, .bssid = {3}};
-    network.ssid[0] = 'a';
-    network.bssid_set = 0;
-    network.channel = 0;
-    assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_OK);
-    f.connects = 0;
-    f.results[0] = H2_PAL_OK;
-    f.results[1] = H2_PAL_OK;
-    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_OK);
-    assert(f.connects == 1 && f.attempts[0].bssid_set == 1 && f.attempts[0].channel == 11);
-    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &saved_count) == H2_PAL_OK);
-    assert(list[0].config.ssid[0] == 'a' && !list[0].config.bssid_set && !list[0].config.channel);
-    /* A failed bookkeeping write never turns a working connection into an
-     * error, and it leaves the stored set untouched. */
-    memcpy(previous, f.blob, sizeof(previous));
-    f.write_rc = H2_PAL_ERR_IO;
-    f.connects = 0;
-    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_OK);
-    assert(f.connects == 1 && !memcmp(previous, f.blob, sizeof(previous)));
-    f.connects = 0;
-    size_t provisions = f.saves;
-    assert(h2_runtime_wifi_connect_and_save(runtime, &provision, 100) == H2_PAL_OK);
-    assert(f.saves == provisions + 1 && !memcmp(previous, f.blob, sizeof(previous)));
-    f.write_rc = 0;
-    f.connects = 0;
-    size_t scans = f.scans;
-    assert(h2_runtime_wifi_saved_clear(runtime) == H2_PAL_OK);
-    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_ERR_NOT_FOUND);
-    assert(f.scans == scans && !f.connects);
+  const h2_pal_wifi_sta_api_t sta = {&f, &sta_vtable};
+  const h2_pal_pref_api_t pref = {&f, &saved_pref_vtable};
+  h2_runtime_config_t config = test_runtime_config(&env);
+  config.wifi_sta = &sta;
+  config.pref = &pref;
+  h2_runtime_t* runtime = NULL;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  h2_pal_wifi_sta_config_t network = {.ssid = "b", .ssid_len = 1};
+  assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_OK);
+  network.ssid[0] = 'a';
+  assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_OK);
+  h2_pal_wifi_sta_config_t provision = {.ssid = "phone", .ssid_len = 5};
+  f.results[0] = H2_PAL_ERR_IO;
+  assert(h2_runtime_wifi_connect_and_save(runtime, &provision, 100) ==
+         H2_PAL_ERR_IO);
+  h2_runtime_wifi_saved_network_t list[8];
+  size_t saved_count = 0;
+  assert(h2_runtime_wifi_saved_list(runtime, list, 8, &saved_count) ==
+             H2_PAL_OK &&
+         saved_count == 2);
+  f.connects = 0;
+  f.results[0] = H2_PAL_OK;
+  assert(h2_runtime_wifi_connect_and_save(runtime, &provision, 100) ==
+         H2_PAL_OK);
+  assert(h2_runtime_wifi_saved_list(runtime, list, 8, &saved_count) ==
+             H2_PAL_OK &&
+         saved_count == 3);
+  assert(!memcmp(list[0].config.ssid, "phone", 5));
+  f.connects = 0;
+  assert(h2_runtime_wifi_connect_best_saved(NULL, 100) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_OK);
+  assert(f.connects == 1 && f.attempts[0].ssid[0] == 'b');
+  assert(f.attempts[0].bssid_set && f.attempts[0].bssid[0] == 2 &&
+         f.attempts[0].channel == 6);
+  assert(f.scan_budget == 95 && f.budgets[0] == 75);
+  assert(h2_runtime_wifi_saved_list(runtime, list, 8, &saved_count) ==
+         H2_PAL_OK);
+  assert(list[0].config.ssid[0] == 'b' &&
+         list[0].last_connected_at_ms == env.time_state.wall_ms);
+  env.time_state.wall_ms += 1000;
+  f.connects = 0;
+  f.results[0] = H2_PAL_ERR_IO;
+  assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_OK);
+  assert(f.connects == 2 && f.attempts[1].ssid[0] == 'a');
+  assert(f.attempts[1].bssid[0] == 3 && f.attempts[1].channel == 11);
+  assert(f.budgets[0] == 75 && f.budgets[1] == 65);
+  assert(h2_runtime_wifi_saved_list(runtime, list, 8, &saved_count) ==
+         H2_PAL_OK);
+  assert(list[0].config.ssid[0] == 'a' &&
+         list[0].last_connected_at_ms == env.time_state.wall_ms);
+  uint8_t previous[920];
+  memcpy(previous, f.blob, sizeof(previous));
+  f.connects = 0;
+  f.results[1] = H2_PAL_ERR_UNAVAILABLE;
+  assert(h2_runtime_wifi_connect_best_saved(runtime, 100) ==
+         H2_PAL_ERR_UNAVAILABLE);
+  assert(f.connects == 2);
+  assert(!memcmp(previous, f.blob, sizeof(previous)));
+  f.connects = 0;
+  f.connect_ms = 75;
+  assert(h2_runtime_wifi_connect_best_saved(runtime, 100) ==
+         H2_PAL_ERR_TIMEOUT);
+  assert(f.connects == 1);
+  f.connects = 0;
+  f.scan_ms = 100;
+  assert(h2_runtime_wifi_connect_best_saved(runtime, 100) ==
+         H2_PAL_ERR_TIMEOUT);
+  assert(!f.connects);
+  f.scan_ms = 20;
+  f.connect_ms = 10;
+  f.results[0] = H2_PAL_OK;
+  assert(h2_runtime_wifi_connect_best_saved(runtime, 0) == H2_PAL_OK);
+  assert(f.budgets[0] == 14975);
+  f.connects = 0;
+  f.scan[2].rssi = -20;
+  env.time_state.wall_valid = 0;
+  assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_OK);
+  assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_OK);
+  assert(f.attempts[0].ssid[0] == 'a');
+  /* A matching AP after more than SCAN_MAX_RESULTS must still be seen. */
+  f.connects = 0;
+  for (size_t i = 0; i < 23; ++i)
+    f.scan[i] = (h2_pal_wifi_scan_entry_t){.ssid = "other", .ssid_len = 5};
+  f.scan[23] =
+      (h2_pal_wifi_scan_entry_t){.ssid = "a", .ssid_len = 1, .rssi = -30};
+  f.scan_count = 24;
+  assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_OK);
+  assert(f.connects == 1 && f.attempts[0].ssid[0] == 'a');
+  f.connects = 0;
+  f.scan_count = 23;
+  assert(h2_runtime_wifi_connect_best_saved(runtime, 100) ==
+         H2_PAL_ERR_NOT_FOUND);
+  assert(!f.connects);
+  f.scan_count = 0;
+  assert(h2_runtime_wifi_connect_best_saved(runtime, 100) ==
+         H2_PAL_ERR_NOT_FOUND);
+  f.scan_rc = H2_PAL_ERR_IO;
+  assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_ERR_IO);
+  f.scan_rc = 0;
+  /* Unsupported storage reads as an empty set, so there is nothing to try;
+   * a real storage error still propagates. */
+  f.list_rc = H2_PAL_ERR_UNSUPPORTED;
+  assert(h2_runtime_wifi_connect_best_saved(runtime, 100) ==
+         H2_PAL_ERR_NOT_FOUND);
+  f.list_rc = H2_PAL_ERR_IO;
+  assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_ERR_IO);
+  f.list_rc = 0;
+  /* The stored entry keeps the credential as provisioned: a candidate pinned
+   * to the AP that happened to be strongest must not be written back. */
+  f.scan_count = 1;
+  f.scan[0] = (h2_pal_wifi_scan_entry_t){
+      .ssid = "a", .ssid_len = 1, .rssi = -30, .channel = 11, .bssid = {3}};
+  network.ssid[0] = 'a';
+  network.bssid_set = 0;
+  network.channel = 0;
+  assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_OK);
+  f.connects = 0;
+  f.results[0] = H2_PAL_OK;
+  f.results[1] = H2_PAL_OK;
+  assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_OK);
+  assert(f.connects == 1 && f.attempts[0].bssid_set == 1 &&
+         f.attempts[0].channel == 11);
+  assert(h2_runtime_wifi_saved_list(runtime, list, 8, &saved_count) ==
+         H2_PAL_OK);
+  assert(list[0].config.ssid[0] == 'a' && !list[0].config.bssid_set &&
+         !list[0].config.channel);
+  /* A failed bookkeeping write never turns a working connection into an
+   * error, and it leaves the stored set untouched. */
+  memcpy(previous, f.blob, sizeof(previous));
+  f.write_rc = H2_PAL_ERR_IO;
+  f.connects = 0;
+  assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_OK);
+  assert(f.connects == 1 && !memcmp(previous, f.blob, sizeof(previous)));
+  f.connects = 0;
+  size_t provisions = f.saves;
+  assert(h2_runtime_wifi_connect_and_save(runtime, &provision, 100) ==
+         H2_PAL_OK);
+  assert(f.saves == provisions + 1 &&
+         !memcmp(previous, f.blob, sizeof(previous)));
+  f.write_rc = 0;
+  f.connects = 0;
+  size_t scans = f.scans;
+  assert(h2_runtime_wifi_saved_clear(runtime) == H2_PAL_OK);
+  assert(h2_runtime_wifi_connect_best_saved(runtime, 100) ==
+         H2_PAL_ERR_NOT_FOUND);
+  assert(f.scans == scans && !f.connects);
 
-    assert(f.saves == 3); /* Best-saved must never call PAL connect_and_save. */
-    h2_runtime_deinit(runtime);
+  assert(f.saves == 3); /* Best-saved must never call PAL connect_and_save. */
+  h2_runtime_deinit(runtime);
 }
 
-static h2_pal_result_t test_wall_set(void *user, uint64_t wall_ms) {
-    test_time_t *time = user;
-    if (time->sleep_rc == H2_PAL_OK) {
-        time->wall_ms = wall_ms;
-        time->wall_valid = 1u;
-    }
-    return time->sleep_rc;
+static h2_pal_result_t test_wall_set(void* user, uint64_t wall_ms) {
+  test_time_t* time = user;
+  if (time->sleep_rc == H2_PAL_OK) {
+    time->wall_ms = wall_ms;
+    time->wall_valid = 1u;
+  }
+  return time->sleep_rc;
 }
 
-static h2_pal_result_t test_wall_get(void *user, uint64_t *out) {
-    *out = ((test_time_t *)user)->wall_ms;
-    return H2_PAL_OK;
+static h2_pal_result_t test_wall_get(void* user, uint64_t* out) {
+  *out = ((test_time_t*)user)->wall_ms;
+  return H2_PAL_OK;
 }
 
-static h2_pal_result_t test_wall_status(void *user, h2_pal_time_wall_status_t *out) {
-    out->valid = ((test_time_t *)user)->wall_valid;
-    out->source = H2_PAL_TIME_WALL_SOURCE_USER;
-    return H2_PAL_OK;
+static h2_pal_result_t test_wall_status(void* user,
+                                        h2_pal_time_wall_status_t* out) {
+  out->valid = ((test_time_t*)user)->wall_valid;
+  out->source = H2_PAL_TIME_WALL_SOURCE_USER;
+  return H2_PAL_OK;
 }
 
 static void test_time_adjusted_event(void) {
-    test_runtime_env_t env;
-    test_env_init(&env);
-    h2_pal_time_vtable_t vtable = *env.time.vtable;
-    vtable.set_wall_ms = test_wall_set;
-    vtable.get_wall_ms = test_wall_get;
-    vtable.get_wall_status = test_wall_status;
-    env.time.vtable = &vtable;
-    env.time_state.now_ms = 123u;
-    h2_runtime_t *runtime = test_runtime_create(&env);
-    unsigned char buffer[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_event_t event = {.payload = buffer, .payload_capacity = sizeof(buffer)};
-    uint64_t wall = 0u;
-    assert(h2_pal_time_get_wall_ms(runtime->time, &wall) == H2_PAL_TIME_ERR_UNCALIBRATED);
-    const uint64_t utc = UINT64_C(1788652800000);
-    assert(h2_pal_time_set_wall_ms(runtime->time, utc) == H2_PAL_OK);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_SYSTEM_EVENT_TIME_ADJUSTED);
-    assert(event.component == H2_RUNTIME_COMPONENT_SYSTEM_TIME);
-    assert(event.timestamp_ms == 123u);
-    assert(event.payload_size == sizeof(h2_runtime_system_event_time_adjusted_t));
-    h2_runtime_system_event_time_adjusted_t payload;
-    memcpy(&payload, buffer, sizeof(payload));
-    assert(payload.wall_ms == utc);
-    assert(h2_pal_time_get_wall_ms(runtime->time, &wall) == H2_PAL_OK);
-    assert(wall == utc);
-    uint64_t now = 0;
-    assert(h2_pal_time_get_monotonic_ms(runtime->time, &now) == H2_PAL_OK);
-    assert(now == 123u);
-    assert(h2_pal_time_get_monotonic_us(runtime->time, &now) == H2_PAL_ERR_UNSUPPORTED);
-    env.time_state.sleep_rc = H2_PAL_ERR_IO;
-    assert(h2_pal_time_set_wall_ms(runtime->time, utc + 60000u) == H2_PAL_ERR_IO);
-    assert(h2_pal_time_get_wall_ms(runtime->time, &wall) == H2_PAL_OK);
-    assert(wall == utc);
-    assert(h2_runtime_poll_event(runtime, &event) != H2_PAL_OK);
-    env.time_state.sleep_rc = H2_PAL_OK;
-    for (size_t i = 0; i < 5u; ++i)
-        assert(h2_pal_time_set_wall_ms(runtime->time, utc + i) == H2_PAL_OK);
-    uint32_t dropped = 0u;
-    assert(h2_runtime_dropped_event_count(runtime, &dropped) == H2_PAL_OK);
-    assert(dropped == 1u);
-    h2_runtime_deinit(runtime);
+  test_runtime_env_t env;
+  test_env_init(&env);
+  h2_pal_time_vtable_t vtable = *env.time.vtable;
+  vtable.set_wall_ms = test_wall_set;
+  vtable.get_wall_ms = test_wall_get;
+  vtable.get_wall_status = test_wall_status;
+  env.time.vtable = &vtable;
+  env.time_state.now_ms = 123u;
+  h2_runtime_t* runtime = test_runtime_create(&env);
+  unsigned char buffer[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = {.payload = buffer,
+                              .payload_capacity = sizeof(buffer)};
+  uint64_t wall = 0u;
+  assert(h2_pal_time_get_wall_ms(runtime->time, &wall) ==
+         H2_PAL_TIME_ERR_UNCALIBRATED);
+  const uint64_t utc = UINT64_C(1788652800000);
+  assert(h2_pal_time_set_wall_ms(runtime->time, utc) == H2_PAL_OK);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_SYSTEM_EVENT_TIME_ADJUSTED);
+  assert(event.component == H2_RUNTIME_COMPONENT_SYSTEM_TIME);
+  assert(event.timestamp_ms == 123u);
+  assert(event.payload_size == sizeof(h2_runtime_system_event_time_adjusted_t));
+  h2_runtime_system_event_time_adjusted_t payload;
+  memcpy(&payload, buffer, sizeof(payload));
+  assert(payload.wall_ms == utc);
+  assert(h2_pal_time_get_wall_ms(runtime->time, &wall) == H2_PAL_OK);
+  assert(wall == utc);
+  uint64_t now = 0;
+  assert(h2_pal_time_get_monotonic_ms(runtime->time, &now) == H2_PAL_OK);
+  assert(now == 123u);
+  assert(h2_pal_time_get_monotonic_us(runtime->time, &now) ==
+         H2_PAL_ERR_UNSUPPORTED);
+  env.time_state.sleep_rc = H2_PAL_ERR_IO;
+  assert(h2_pal_time_set_wall_ms(runtime->time, utc + 60000u) == H2_PAL_ERR_IO);
+  assert(h2_pal_time_get_wall_ms(runtime->time, &wall) == H2_PAL_OK);
+  assert(wall == utc);
+  assert(h2_runtime_poll_event(runtime, &event) != H2_PAL_OK);
+  env.time_state.sleep_rc = H2_PAL_OK;
+  for (size_t i = 0; i < 5u; ++i)
+    assert(h2_pal_time_set_wall_ms(runtime->time, utc + i) == H2_PAL_OK);
+  uint32_t dropped = 0u;
+  assert(h2_runtime_dropped_event_count(runtime, &dropped) == H2_PAL_OK);
+  assert(dropped == 1u);
+  h2_runtime_deinit(runtime);
 }
 
 int main(void) {
-    test_audio_shared_state();
-    test_audio_track_allocator();
-    test_audio_levels_follow_measured_frames();
-    test_audio_track_wrapper_forwards_absent_operations();
-    test_audio_level_timestamp_survives_rollover();
-    test_audio_level_reads_unaligned_frames();
-    test_wifi_connection_persistence();
-    test_wifi_saved_set();
-    test_wifi_legacy_import_and_forget();
-    test_wifi_best_saved();
-    test_time_adjusted_event();
-    test_runtime_firmware_info_provider();
-    test_runtime_capabilities_are_bound_at_init();
-    test_runtime_rejects_incomplete_video_decoder();
-    test_runtime_rejects_missing_wifi_csi();
-    test_runtime_rejects_missing_nfc_card_emulation();
-    test_runtime_buzzer_contract();
-    test_runtime_binds_unsupported_nfc_card_emulation();
-    test_runtime_private_allocation_failure_cleans_up();
-    test_runtime_uses_initialization_capacities();
-    test_runtime_rejects_invalid_initialization_capacities();
-    test_runtime_allocation_failures_release_owned_memory();
-    test_runtime_mapping_queries_only_mapped_peripherals();
-    test_runtime_reports_configured_capacity_exhaustion();
-    test_runtime_payload_capacity_only_limits_enqueue();
-    test_system_event_lifecycle_and_gpio_payload_copy();
-    test_system_event_maximum_ble_value_is_copied();
-    test_system_event_netif_transitions_copy_and_order();
-    test_system_event_partial_subscribe_cleans_up();
-    test_system_event_projects_all_scope_events();
-    test_system_event_modem_call_number_is_terminated();
-    test_system_event_modem_state_follows_events();
-    test_system_event_rejects_invalid_payloads();
-    test_system_event_advertising_set_correlation_and_copy();
-    test_system_event_advertising_queue_failure();
-    test_event_small_buffer_does_not_dequeue();
-    test_event_queue_timeout_drops_event();
-    test_dropped_event_count_rejects_invalid_arguments();
-    test_button_release_survives_full_queue();
-    test_button_press_edge_waits_for_queue_space();
-    test_button_retained_edges_discard_oldest_pair();
-    test_button_final_action_is_retained_alone();
-    test_button_retention_lifecycle();
-    test_dropped_events_warn_at_most_once_per_second();
-    test_system_event_queue_errors_and_synchronous_warning();
-    test_custom_events_interleave_with_input_events();
-    test_button_action_emits_on_release();
-    test_button_action_emits_on_every_pressed_poll();
-    test_button_rapid_clicks_emit_separate_events();
-    test_button_held_polls_publish_samples_and_release_action();
-    test_push_button_uses_mapping_and_retained_pressed_state();
-    test_test_control_discards_stale_push_edges();
-    test_button_push_rejects_non_push_and_invalid_payload();
-    test_nfc_discovery_and_state();
-    test_nfc_background_task_does_not_block_input_task();
-    test_imu_tilt_event_and_state();
-    test_imu_shake_suppresses_intermediate_tilt();
-    test_imu_int32_min_sample_is_safe();
-    test_imu_ignores_samples_without_required_flags();
-    test_nfc_rejects_oversized_uid_len();
-    test_periph_id_and_unsupported_component_state();
-    test_runtime_component_registry_queries_physical_kind();
-    test_radio_group_is_read_once_for_child_buttons();
-    test_radio_group_error_advances_child_buttons();
-    test_runtime_owns_input_task_lifecycle();
-    test_input_task_start_failure_leaves_input_stopped();
-    test_input_worker_failure_closes_event_queue();
-    test_input_join_failure_is_retryable();
-    test_checked_destroy_retains_dependencies();
-    test_input_stop_then_start_resumes_acquisition();
-    test_input_restart_delivers_queued_push_edges();
-    test_input_start_without_mapped_input_is_noop();
-    test_input_double_start_is_rejected();
-    test_input_start_after_worker_fault_is_rejected();
-    test_input_worker_keeps_running_after_poll_error();
-    test_input_fault_releases_held_buttons();
-    test_input_fault_release_never_precedes_its_snapshot();
-    test_input_fault_release_with_full_queue_keeps_state_released();
-    test_input_lifecycle_is_closed_during_test_session();
-    test_station_snapshot_unavailable_without_mutex();
-    test_input_snapshot_does_not_create_condition();
-    test_sequence_wraps_and_skips_zero();
-    test_high_first_sequence_sets_input_ceiling();
-    test_sensor_component_mapping();
-    test_control_keeps_test_sources_while_sensors_poll();
-    test_control_button_actions_track_timestamps();
-    test_control_injects_validated_runtime_events();
-    test_control_open_failure_is_transactional();
-    test_control_button_helpers_share_state_and_event_sequence();
-    test_control_preserves_runtime_queue_drop_behavior();
-    return 0;
+  test_audio_shared_state();
+  test_audio_track_allocator();
+  test_audio_levels_follow_measured_frames();
+  test_audio_track_wrapper_forwards_absent_operations();
+  test_audio_level_timestamp_survives_rollover();
+  test_audio_level_reads_unaligned_frames();
+  test_wifi_connection_persistence();
+  test_wifi_saved_set();
+  test_wifi_legacy_import_and_forget();
+  test_wifi_best_saved();
+  test_time_adjusted_event();
+  test_runtime_firmware_info_provider();
+  test_runtime_capabilities_are_bound_at_init();
+  test_runtime_rejects_incomplete_video_decoder();
+  test_runtime_rejects_missing_wifi_csi();
+  test_runtime_rejects_missing_nfc_card_emulation();
+  test_runtime_buzzer_contract();
+  test_runtime_binds_unsupported_nfc_card_emulation();
+  test_runtime_private_allocation_failure_cleans_up();
+  test_runtime_uses_initialization_capacities();
+  test_runtime_rejects_invalid_initialization_capacities();
+  test_runtime_allocation_failures_release_owned_memory();
+  test_runtime_mapping_queries_only_mapped_peripherals();
+  test_runtime_reports_configured_capacity_exhaustion();
+  test_runtime_payload_capacity_only_limits_enqueue();
+  test_system_event_lifecycle_and_gpio_payload_copy();
+  test_system_event_maximum_ble_value_is_copied();
+  test_system_event_netif_transitions_copy_and_order();
+  test_system_event_partial_subscribe_cleans_up();
+  test_system_event_projects_all_scope_events();
+  test_system_event_modem_call_number_is_terminated();
+  test_system_event_modem_state_follows_events();
+  test_system_event_rejects_invalid_payloads();
+  test_system_event_advertising_set_correlation_and_copy();
+  test_system_event_advertising_queue_failure();
+  test_event_small_buffer_does_not_dequeue();
+  test_event_queue_timeout_drops_event();
+  test_dropped_event_count_rejects_invalid_arguments();
+  test_button_release_survives_full_queue();
+  test_button_press_edge_waits_for_queue_space();
+  test_button_retained_edges_discard_oldest_pair();
+  test_button_final_action_is_retained_alone();
+  test_button_retention_lifecycle();
+  test_dropped_events_warn_at_most_once_per_second();
+  test_system_event_queue_errors_and_synchronous_warning();
+  test_custom_events_interleave_with_input_events();
+  test_button_action_emits_on_release();
+  test_button_action_emits_on_every_pressed_poll();
+  test_button_rapid_clicks_emit_separate_events();
+  test_button_held_polls_publish_samples_and_release_action();
+  test_push_button_uses_mapping_and_retained_pressed_state();
+  test_test_control_discards_stale_push_edges();
+  test_button_push_rejects_non_push_and_invalid_payload();
+  test_nfc_discovery_and_state();
+  test_nfc_background_task_does_not_block_input_task();
+  test_imu_tilt_event_and_state();
+  test_imu_shake_suppresses_intermediate_tilt();
+  test_imu_int32_min_sample_is_safe();
+  test_imu_ignores_samples_without_required_flags();
+  test_nfc_rejects_oversized_uid_len();
+  test_periph_id_and_unsupported_component_state();
+  test_runtime_component_registry_queries_physical_kind();
+  test_radio_group_is_read_once_for_child_buttons();
+  test_radio_group_error_advances_child_buttons();
+  test_runtime_owns_input_task_lifecycle();
+  test_input_task_start_failure_leaves_input_stopped();
+  test_input_worker_failure_closes_event_queue();
+  test_input_join_failure_is_retryable();
+  test_checked_destroy_retains_dependencies();
+  test_input_stop_then_start_resumes_acquisition();
+  test_input_restart_delivers_queued_push_edges();
+  test_input_start_without_mapped_input_is_noop();
+  test_input_double_start_is_rejected();
+  test_input_start_after_worker_fault_is_rejected();
+  test_input_worker_keeps_running_after_poll_error();
+  test_input_fault_releases_held_buttons();
+  test_input_fault_release_never_precedes_its_snapshot();
+  test_input_fault_release_with_full_queue_keeps_state_released();
+  test_input_lifecycle_is_closed_during_test_session();
+  test_station_snapshot_unavailable_without_mutex();
+  test_input_snapshot_does_not_create_condition();
+  test_sequence_wraps_and_skips_zero();
+  test_high_first_sequence_sets_input_ceiling();
+  test_sensor_component_mapping();
+  test_control_keeps_test_sources_while_sensors_poll();
+  test_control_button_actions_track_timestamps();
+  test_control_injects_validated_runtime_events();
+  test_control_open_failure_is_transactional();
+  test_control_button_helpers_share_state_and_event_sequence();
+  test_control_preserves_runtime_queue_drop_behavior();
+  return 0;
 }

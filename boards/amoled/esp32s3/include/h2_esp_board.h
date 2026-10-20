@@ -9,7 +9,7 @@
 extern "C" {
 #endif
 
-typedef void (*h2_esp_board_entry_task_fn)(void *user);
+typedef void (*h2_esp_board_entry_task_fn)(void* user);
 
 /**
  * Optional workload-specific display transport tuning. A zero pixel clock
@@ -17,15 +17,15 @@ typedef void (*h2_esp_board_entry_task_fn)(void *user);
  * or panel power operation.
  */
 typedef struct h2_esp_board_display_config {
-    uint32_t pclk_hz;
-    /** Internal DMA chunk ceiling in rows: 8, 16, 32 or 64; zero keeps 64.
-     * Smaller chunks leave internal SRAM available to Wi-Fi/lwIP.
-     */
-    uint32_t dma_buffer_rows;
+  uint32_t pclk_hz;
+  /** Internal DMA chunk ceiling in rows: 8, 16, 32 or 64; zero keeps 64.
+   * Smaller chunks leave internal SRAM available to Wi-Fi/lwIP.
+   */
+  uint32_t dma_buffer_rows;
 } h2_esp_board_display_config_t;
 
 h2_pal_result_t h2_esp_board_display_configure(
-    const h2_esp_board_display_config_t *config);
+    const h2_esp_board_display_config_t* config);
 
 /**
  * Pure field validation for h2_esp_board_display_config_t, shared with
@@ -34,7 +34,7 @@ h2_pal_result_t h2_esp_board_display_configure(
  * h2_esp_board_display_configure() itself.
  */
 int h2_esp_board_display_config_is_valid(
-    const h2_esp_board_display_config_t *config);
+    const h2_esp_board_display_config_t* config);
 
 /**
  * Pure lifecycle guard shared with h2_esp_board_display_configure(): returns
@@ -52,15 +52,15 @@ int h2_esp_board_display_config_may_apply(int already_initialized);
  * firmware target's task_policy/h2_esp_target_task_policy.c, not the board.
  */
 typedef struct h2_esp_board_audio_config {
-    uint32_t i2s_dma_desc_num;
-    uint32_t i2s_dma_frame_num;
-    uint32_t mic_gain_db;
-    uint8_t mic_queue_frames;
-    int aggressive_aec_nlp;
+  uint32_t i2s_dma_desc_num;
+  uint32_t i2s_dma_frame_num;
+  uint32_t mic_gain_db;
+  uint8_t mic_queue_frames;
+  int aggressive_aec_nlp;
 } h2_esp_board_audio_config_t;
 
 h2_pal_result_t h2_esp_board_audio_configure(
-    const h2_esp_board_audio_config_t *config);
+    const h2_esp_board_audio_config_t* config);
 
 /**
  * Pure field validation for h2_esp_board_audio_config_t, shared with
@@ -69,7 +69,7 @@ h2_pal_result_t h2_esp_board_audio_configure(
  * lifecycle constraint enforced by h2_esp_board_audio_configure() itself.
  */
 int h2_esp_board_audio_config_is_valid(
-    const h2_esp_board_audio_config_t *config);
+    const h2_esp_board_audio_config_t* config);
 
 /**
  * Pure lifecycle guard shared with h2_esp_board_audio_configure(): returns
@@ -78,7 +78,7 @@ int h2_esp_board_audio_config_is_valid(
  */
 int h2_esp_board_audio_config_may_apply(int already_initialized);
 
-h2_pal_result_t h2_esp_board_runtime_config(h2_runtime_config_t *out_config);
+h2_pal_result_t h2_esp_board_runtime_config(h2_runtime_config_t* out_config);
 
 /**
  * Tears down board-owned Runtime providers after h2_runtime_deinit().
@@ -98,10 +98,9 @@ h2_pal_result_t h2_esp_board_runtime_deinit(void);
  * The entry function must release Runtime before returning; the task wrapper
  * then calls h2_esp_board_runtime_deinit() before deleting itself.
  */
-h2_pal_result_t h2_esp_board_start_entry_task(
-    const char *name,
-    h2_esp_board_entry_task_fn entry,
-    void *user);
+h2_pal_result_t h2_esp_board_start_entry_task(const char* name,
+                                              h2_esp_board_entry_task_fn entry,
+                                              void* user);
 
 #ifdef __cplusplus
 }

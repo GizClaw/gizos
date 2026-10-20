@@ -2,7 +2,7 @@
 
 #include <string.h>
 
-static size_t bounded_length(const char *value, size_t limit) {
+static size_t bounded_length(const char* value, size_t limit) {
   if (value == NULL) {
     return limit;
   }
@@ -13,15 +13,15 @@ static size_t bounded_length(const char *value, size_t limit) {
   return length;
 }
 
-static bool valid_name(const char *name) {
+static bool valid_name(const char* name) {
   return name != NULL && name[0] != '\0' &&
          bounded_length(name, H2_APP_TEST_PROBE_NAME_MAX + 1u) <=
              H2_APP_TEST_PROBE_NAME_MAX;
 }
 
-static h2_pal_result_t
-snapshot_probe_name(const h2_app_test_snapshot_t *snapshot,
-                    const h2_app_test_probe_t *probe, const char **name) {
+static h2_pal_result_t snapshot_probe_name(
+    const h2_app_test_snapshot_t* snapshot, const h2_app_test_probe_t* probe,
+    const char** name) {
   if (snapshot == NULL || probe == NULL || name == NULL ||
       snapshot->name_size > H2_APP_TEST_SNAPSHOT_NAME_BYTES_MAX) {
     return H2_PAL_ERR_FORMAT;
@@ -38,7 +38,7 @@ snapshot_probe_name(const h2_app_test_snapshot_t *snapshot,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t validate_snapshot(const h2_app_test_snapshot_t *snapshot,
+static h2_pal_result_t validate_snapshot(const h2_app_test_snapshot_t* snapshot,
                                          uint32_t generation) {
   if (snapshot->generation != generation) {
     return H2_PAL_ERR_INVALID_STATE;
@@ -53,8 +53,8 @@ static h2_pal_result_t validate_snapshot(const h2_app_test_snapshot_t *snapshot,
     return H2_PAL_ERR_FORMAT;
   }
   for (size_t index = 0u; index < snapshot->probe_count; ++index) {
-    const h2_app_test_probe_t *probe = &snapshot->probes[index];
-    const char *probe_name = NULL;
+    const h2_app_test_probe_t* probe = &snapshot->probes[index];
+    const char* probe_name = NULL;
     if (snapshot_probe_name(snapshot, probe, &probe_name) != H2_PAL_OK ||
         probe->kind < H2_APP_TEST_VALUE_BOOL ||
         probe->kind > H2_APP_TEST_VALUE_STRING) {
@@ -70,7 +70,7 @@ static h2_pal_result_t validate_snapshot(const h2_app_test_snapshot_t *snapshot,
       }
     }
     for (size_t previous = 0u; previous < index; ++previous) {
-      const char *previous_name = NULL;
+      const char* previous_name = NULL;
       if (snapshot_probe_name(snapshot, &snapshot->probes[previous],
                               &previous_name) != H2_PAL_OK ||
           strcmp(previous_name, probe_name) == 0) {
@@ -81,11 +81,13 @@ static h2_pal_result_t validate_snapshot(const h2_app_test_snapshot_t *snapshot,
   return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_app_test_event_init(
-    h2_app_test_event_t *event, h2_runtime_event_kind_t kind,
-    h2_runtime_component_t component, h2_runtime_component_id_t component_id,
-    h2_runtime_timestamp_ms_t timestamp_ms, const void *payload,
-    size_t payload_size) {
+h2_pal_result_t h2_app_test_event_init(h2_app_test_event_t* event,
+                                       h2_runtime_event_kind_t kind,
+                                       h2_runtime_component_t component,
+                                       h2_runtime_component_id_t component_id,
+                                       h2_runtime_timestamp_ms_t timestamp_ms,
+                                       const void* payload,
+                                       size_t payload_size) {
   if (event == NULL || kind == H2_RUNTIME_EVENT_NONE ||
       payload_size > H2_RUNTIME_EVENT_PAYLOAD_MAX ||
       (payload_size != 0u && payload == NULL)) {
@@ -103,8 +105,8 @@ h2_pal_result_t h2_app_test_event_init(
   return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_app_test_fixture_init(h2_app_test_fixture_t *fixture,
-                                         uint32_t schema, const void *data,
+h2_pal_result_t h2_app_test_fixture_init(h2_app_test_fixture_t* fixture,
+                                         uint32_t schema, const void* data,
                                          size_t size) {
   if (fixture == NULL || schema == 0u || size > H2_APP_TEST_FIXTURE_MAX ||
       (size != 0u && data == NULL)) {
@@ -119,10 +121,10 @@ h2_pal_result_t h2_app_test_fixture_init(h2_app_test_fixture_t *fixture,
   return H2_PAL_OK;
 }
 
-h2_pal_result_t
-h2_app_test_session_open(h2_app_test_driver_t *driver, const char *app_id,
-                         const h2_app_test_fixture_t *fixture,
-                         h2_app_test_session_t **session) {
+h2_pal_result_t h2_app_test_session_open(h2_app_test_driver_t* driver,
+                                         const char* app_id,
+                                         const h2_app_test_fixture_t* fixture,
+                                         h2_app_test_session_t** session) {
   if (driver == NULL || driver->vtable == NULL ||
       driver->vtable->open == NULL || driver->vtable->execute == NULL ||
       driver->vtable->close == NULL || app_id == NULL || app_id[0] == '\0' ||
@@ -136,8 +138,7 @@ h2_app_test_session_open(h2_app_test_driver_t *driver, const char *app_id,
   if (driver->session.open) {
     return H2_PAL_ERR_INVALID_STATE;
   }
-  h2_pal_result_t rc =
-      driver->vtable->open(driver->user, app_id, fixture);
+  h2_pal_result_t rc = driver->vtable->open(driver->user, app_id, fixture);
   if (rc != H2_PAL_OK) {
     driver->vtable->close(driver->user);
     return rc;
@@ -149,11 +150,10 @@ h2_app_test_session_open(h2_app_test_driver_t *driver, const char *app_id,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t session_execute(
-    h2_app_test_session_t *session,
-    const h2_app_test_operation_t *operation,
-    uint32_t timeout_ms,
-    h2_app_test_snapshot_t *snapshot) {
+static h2_pal_result_t session_execute(h2_app_test_session_t* session,
+                                       const h2_app_test_operation_t* operation,
+                                       uint32_t timeout_ms,
+                                       h2_app_test_snapshot_t* snapshot) {
   if (session == NULL || !session->open || session->driver == NULL ||
       operation == NULL || snapshot == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -175,8 +175,8 @@ static h2_pal_result_t session_execute(
 }
 
 h2_pal_result_t h2_app_test_session_emit_event(
-    h2_app_test_session_t *session, const h2_app_test_event_t *event,
-    uint32_t timeout_ms, h2_app_test_snapshot_t *snapshot) {
+    h2_app_test_session_t* session, const h2_app_test_event_t* event,
+    uint32_t timeout_ms, h2_app_test_snapshot_t* snapshot) {
   if (event == NULL || event->kind == H2_RUNTIME_EVENT_NONE ||
       event->payload_size > H2_RUNTIME_EVENT_PAYLOAD_MAX) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -189,10 +189,9 @@ h2_pal_result_t h2_app_test_session_emit_event(
 }
 
 h2_pal_result_t h2_app_test_session_set_component_state(
-    h2_app_test_session_t *session,
-    h2_runtime_component_id_t component_id, const void *state,
-    size_t state_size, uint32_t timeout_ms,
-    h2_app_test_snapshot_t *snapshot) {
+    h2_app_test_session_t* session, h2_runtime_component_id_t component_id,
+    const void* state, size_t state_size, uint32_t timeout_ms,
+    h2_app_test_snapshot_t* snapshot) {
   if (component_id == H2_RUNTIME_COMPONENT_ID_NONE || state == NULL ||
       state_size == 0u || state_size > H2_APP_TEST_COMPONENT_STATE_MAX) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -209,12 +208,13 @@ h2_pal_result_t h2_app_test_session_set_component_state(
   return session_execute(session, &operation, timeout_ms, snapshot);
 }
 
-static h2_pal_result_t session_button(
-    h2_app_test_session_t *session, h2_app_test_operation_kind_t kind,
-    h2_runtime_component_id_t component_id,
-    h2_runtime_timestamp_ms_t pressed_at_ms,
-    h2_runtime_timestamp_ms_t released_at_ms,
-    uint32_t timeout_ms, h2_app_test_snapshot_t *snapshot) {
+static h2_pal_result_t session_button(h2_app_test_session_t* session,
+                                      h2_app_test_operation_kind_t kind,
+                                      h2_runtime_component_id_t component_id,
+                                      h2_runtime_timestamp_ms_t pressed_at_ms,
+                                      h2_runtime_timestamp_ms_t released_at_ms,
+                                      uint32_t timeout_ms,
+                                      h2_app_test_snapshot_t* snapshot) {
   if (component_id == H2_RUNTIME_COMPONENT_ID_NONE) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -231,69 +231,63 @@ static h2_pal_result_t session_button(
 }
 
 h2_pal_result_t h2_app_test_session_button_down(
-    h2_app_test_session_t *session,
-    h2_runtime_component_id_t component_id,
+    h2_app_test_session_t* session, h2_runtime_component_id_t component_id,
     h2_runtime_timestamp_ms_t pressed_at_ms, uint32_t timeout_ms,
-    h2_app_test_snapshot_t *snapshot) {
-  return session_button(
-      session, H2_APP_TEST_OPERATION_BUTTON_DOWN, component_id,
-      pressed_at_ms, 0u, timeout_ms, snapshot);
+    h2_app_test_snapshot_t* snapshot) {
+  return session_button(session, H2_APP_TEST_OPERATION_BUTTON_DOWN,
+                        component_id, pressed_at_ms, 0u, timeout_ms, snapshot);
 }
 
 h2_pal_result_t h2_app_test_session_button_hold(
-    h2_app_test_session_t *session,
-    h2_runtime_component_id_t component_id,
+    h2_app_test_session_t* session, h2_runtime_component_id_t component_id,
     h2_runtime_timestamp_ms_t pressed_at_ms,
     h2_runtime_timestamp_ms_t observed_at_ms, uint32_t timeout_ms,
-    h2_app_test_snapshot_t *snapshot) {
+    h2_app_test_snapshot_t* snapshot) {
   if (observed_at_ms < pressed_at_ms) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   /* The button operation carries two timestamps; for a hold the second one
    * is the observation time, not a release. */
-  return session_button(
-      session, H2_APP_TEST_OPERATION_BUTTON_HOLD, component_id,
-      pressed_at_ms, observed_at_ms, timeout_ms, snapshot);
+  return session_button(session, H2_APP_TEST_OPERATION_BUTTON_HOLD,
+                        component_id, pressed_at_ms, observed_at_ms, timeout_ms,
+                        snapshot);
 }
 
 h2_pal_result_t h2_app_test_session_button_up(
-    h2_app_test_session_t *session,
-    h2_runtime_component_id_t component_id,
+    h2_app_test_session_t* session, h2_runtime_component_id_t component_id,
     h2_runtime_timestamp_ms_t pressed_at_ms,
     h2_runtime_timestamp_ms_t released_at_ms, uint32_t timeout_ms,
-    h2_app_test_snapshot_t *snapshot) {
+    h2_app_test_snapshot_t* snapshot) {
   if (released_at_ms < pressed_at_ms) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  return session_button(
-      session, H2_APP_TEST_OPERATION_BUTTON_UP, component_id,
-      pressed_at_ms, released_at_ms, timeout_ms, snapshot);
+  return session_button(session, H2_APP_TEST_OPERATION_BUTTON_UP, component_id,
+                        pressed_at_ms, released_at_ms, timeout_ms, snapshot);
 }
 
 h2_pal_result_t h2_app_test_session_button_action(
-    h2_app_test_session_t *session,
-    h2_runtime_component_id_t component_id,
+    h2_app_test_session_t* session, h2_runtime_component_id_t component_id,
     h2_runtime_timestamp_ms_t pressed_at_ms,
     h2_runtime_timestamp_ms_t released_at_ms, uint32_t timeout_ms,
-    h2_app_test_snapshot_t *snapshot) {
+    h2_app_test_snapshot_t* snapshot) {
   if (released_at_ms < pressed_at_ms) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  return session_button(
-      session, H2_APP_TEST_OPERATION_BUTTON_ACTION, component_id,
-      pressed_at_ms, released_at_ms, timeout_ms, snapshot);
+  return session_button(session, H2_APP_TEST_OPERATION_BUTTON_ACTION,
+                        component_id, pressed_at_ms, released_at_ms, timeout_ms,
+                        snapshot);
 }
 
-h2_pal_result_t h2_app_test_session_run(
-    h2_app_test_session_t *session, uint32_t timeout_ms,
-    h2_app_test_snapshot_t *snapshot) {
+h2_pal_result_t h2_app_test_session_run(h2_app_test_session_t* session,
+                                        uint32_t timeout_ms,
+                                        h2_app_test_snapshot_t* snapshot) {
   const h2_app_test_operation_t operation = {
       .kind = H2_APP_TEST_OPERATION_RUN,
   };
   return session_execute(session, &operation, timeout_ms, snapshot);
 }
 
-void h2_app_test_session_close(h2_app_test_session_t *session) {
+void h2_app_test_session_close(h2_app_test_session_t* session) {
   if (session == NULL || !session->open || session->driver == NULL) {
     return;
   }
@@ -303,21 +297,21 @@ void h2_app_test_session_close(h2_app_test_session_t *session) {
   session->driver = NULL;
 }
 
-static h2_pal_result_t write_probe(h2_app_test_snapshot_writer_t *writer,
-                                   const char *name,
+static h2_pal_result_t write_probe(h2_app_test_snapshot_writer_t* writer,
+                                   const char* name,
                                    h2_app_test_value_kind_t kind,
-                                   h2_app_test_probe_t **probe) {
+                                   h2_app_test_probe_t** probe) {
   if (writer == NULL || writer->snapshot == NULL || !valid_name(name) ||
       probe == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  h2_app_test_snapshot_t *snapshot = writer->snapshot;
+  h2_app_test_snapshot_t* snapshot = writer->snapshot;
   if (snapshot->probe_count > H2_APP_TEST_PROBE_COUNT_MAX ||
       snapshot->name_size > H2_APP_TEST_SNAPSHOT_NAME_BYTES_MAX) {
     return H2_PAL_ERR_FORMAT;
   }
   for (size_t index = 0u; index < snapshot->probe_count; ++index) {
-    const char *probe_name = NULL;
+    const char* probe_name = NULL;
     if (snapshot_probe_name(snapshot, &snapshot->probes[index], &probe_name) !=
         H2_PAL_OK) {
       return H2_PAL_ERR_FORMAT;
@@ -344,15 +338,15 @@ static h2_pal_result_t write_probe(h2_app_test_snapshot_writer_t *writer,
   return H2_PAL_OK;
 }
 
-#define H2_APP_TEST_DEFINE_WRITE(name_, kind_, member_, type_)                 \
-  h2_pal_result_t name_(h2_app_test_snapshot_writer_t *writer,                 \
-                        const char *name, type_ value) {                       \
-    h2_app_test_probe_t *probe = NULL;                                         \
-    h2_pal_result_t rc = write_probe(writer, name, kind_, &probe);             \
-    if (rc == H2_PAL_OK) {                                                     \
-      probe->value.member_ = value;                                            \
-    }                                                                          \
-    return rc;                                                                 \
+#define H2_APP_TEST_DEFINE_WRITE(name_, kind_, member_, type_)     \
+  h2_pal_result_t name_(h2_app_test_snapshot_writer_t* writer,     \
+                        const char* name, type_ value) {           \
+    h2_app_test_probe_t* probe = NULL;                             \
+    h2_pal_result_t rc = write_probe(writer, name, kind_, &probe); \
+    if (rc == H2_PAL_OK) {                                         \
+      probe->value.member_ = value;                                \
+    }                                                              \
+    return rc;                                                     \
   }
 
 H2_APP_TEST_DEFINE_WRITE(h2_app_test_snapshot_write_bool,
@@ -366,9 +360,9 @@ H2_APP_TEST_DEFINE_WRITE(h2_app_test_snapshot_write_i64, H2_APP_TEST_VALUE_I64,
 H2_APP_TEST_DEFINE_WRITE(h2_app_test_snapshot_write_u64, H2_APP_TEST_VALUE_U64,
                          u64, uint64_t)
 
-h2_pal_result_t
-h2_app_test_snapshot_write_string(h2_app_test_snapshot_writer_t *writer,
-                                  const char *name, const char *value) {
+h2_pal_result_t h2_app_test_snapshot_write_string(
+    h2_app_test_snapshot_writer_t* writer, const char* name,
+    const char* value) {
   const size_t length = bounded_length(value, H2_APP_TEST_STRING_MAX + 1u);
   if (value == NULL || length > H2_APP_TEST_STRING_MAX || writer == NULL ||
       writer->snapshot == NULL) {
@@ -381,11 +375,11 @@ h2_app_test_snapshot_write_string(h2_app_test_snapshot_writer_t *writer,
       H2_APP_TEST_SNAPSHOT_STRING_BYTES_MAX - writer->snapshot->string_size) {
     return H2_PAL_ERR_FULL;
   }
-  h2_app_test_probe_t *probe = NULL;
+  h2_app_test_probe_t* probe = NULL;
   h2_pal_result_t rc =
       write_probe(writer, name, H2_APP_TEST_VALUE_STRING, &probe);
   if (rc == H2_PAL_OK) {
-    h2_app_test_snapshot_t *snapshot = writer->snapshot;
+    h2_app_test_snapshot_t* snapshot = writer->snapshot;
     probe->value.string.offset = (uint16_t)snapshot->string_size;
     probe->value.string.length = (uint16_t)length;
     memcpy(&snapshot->string_storage[snapshot->string_size], value,
@@ -395,10 +389,10 @@ h2_app_test_snapshot_write_string(h2_app_test_snapshot_writer_t *writer,
   return rc;
 }
 
-static h2_pal_result_t find_probe(const h2_app_test_snapshot_t *snapshot,
-                                  const char *name,
+static h2_pal_result_t find_probe(const h2_app_test_snapshot_t* snapshot,
+                                  const char* name,
                                   h2_app_test_value_kind_t kind,
-                                  const h2_app_test_probe_t **probe) {
+                                  const h2_app_test_probe_t** probe) {
   if (snapshot == NULL || !valid_name(name) || probe == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -406,7 +400,7 @@ static h2_pal_result_t find_probe(const h2_app_test_snapshot_t *snapshot,
     return H2_PAL_ERR_FORMAT;
   }
   for (size_t index = 0u; index < snapshot->probe_count; ++index) {
-    const char *probe_name = NULL;
+    const char* probe_name = NULL;
     if (snapshot_probe_name(snapshot, &snapshot->probes[index], &probe_name) !=
         H2_PAL_OK) {
       return H2_PAL_ERR_FORMAT;
@@ -422,18 +416,18 @@ static h2_pal_result_t find_probe(const h2_app_test_snapshot_t *snapshot,
   return H2_PAL_ERR_NOT_FOUND;
 }
 
-#define H2_APP_TEST_DEFINE_GET(name_, kind_, member_, type_)                   \
-  h2_pal_result_t name_(const h2_app_test_snapshot_t *snapshot,                \
-                        const char *name, type_ *value) {                      \
-    if (value == NULL) {                                                       \
-      return H2_PAL_ERR_INVALID_ARG;                                           \
-    }                                                                          \
-    const h2_app_test_probe_t *probe = NULL;                                   \
-    h2_pal_result_t rc = find_probe(snapshot, name, kind_, &probe);            \
-    if (rc == H2_PAL_OK) {                                                     \
-      *value = probe->value.member_;                                           \
-    }                                                                          \
-    return rc;                                                                 \
+#define H2_APP_TEST_DEFINE_GET(name_, kind_, member_, type_)        \
+  h2_pal_result_t name_(const h2_app_test_snapshot_t* snapshot,     \
+                        const char* name, type_* value) {           \
+    if (value == NULL) {                                            \
+      return H2_PAL_ERR_INVALID_ARG;                                \
+    }                                                               \
+    const h2_app_test_probe_t* probe = NULL;                        \
+    h2_pal_result_t rc = find_probe(snapshot, name, kind_, &probe); \
+    if (rc == H2_PAL_OK) {                                          \
+      *value = probe->value.member_;                                \
+    }                                                               \
+    return rc;                                                      \
   }
 
 H2_APP_TEST_DEFINE_GET(h2_app_test_snapshot_get_bool, H2_APP_TEST_VALUE_BOOL,
@@ -447,13 +441,13 @@ H2_APP_TEST_DEFINE_GET(h2_app_test_snapshot_get_i64, H2_APP_TEST_VALUE_I64, i64,
 H2_APP_TEST_DEFINE_GET(h2_app_test_snapshot_get_u64, H2_APP_TEST_VALUE_U64, u64,
                        uint64_t)
 
-h2_pal_result_t
-h2_app_test_snapshot_get_string(const h2_app_test_snapshot_t *snapshot,
-                                const char *name, const char **value) {
+h2_pal_result_t h2_app_test_snapshot_get_string(
+    const h2_app_test_snapshot_t* snapshot, const char* name,
+    const char** value) {
   if (value == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  const h2_app_test_probe_t *probe = NULL;
+  const h2_app_test_probe_t* probe = NULL;
   h2_pal_result_t rc =
       find_probe(snapshot, name, H2_APP_TEST_VALUE_STRING, &probe);
   if (rc == H2_PAL_OK) {

@@ -20,7 +20,7 @@ typedef struct h2_app_test_power {
 } h2_app_test_power_t;
 /** Initialize stopped-test storage with RUNNING state and supported
  * transitions. NULL is a no-op. No allocation or destroy needed. */
-void h2_app_test_power_init(h2_app_test_power_t *power);
+void h2_app_test_power_init(h2_app_test_power_t* power);
 
 #ifdef __cplusplus
 }

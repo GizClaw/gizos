@@ -3,7 +3,6 @@
 #include "h2_peer_internal.h"
 #include "providers/h2_peer_portable_backend.h"
 
-
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
@@ -23,16 +22,17 @@ typedef struct fixture {
   h2_pal_mem_api_t mem;
   h2_pal_log_api_t log;
   h2_pal_task_api_t task;
-  h2_peer_t *owner;
-  h2_pal_webrtc_peer_t *peer;
-  const h2_pal_webrtc_api_t *api;
-  h2_pal_queue_t *resets;
+  h2_peer_t* owner;
+  h2_pal_webrtc_peer_t* peer;
+  const h2_pal_webrtc_api_t* api;
+  h2_pal_queue_t* resets;
   h2_atomic_size_t attempts, allocations, frees, fail_at;
   h2_atomic_uint_t starts, joins, polls, connected, opens, sends, opus_sends;
   h2_atomic_uint_t reset_attempts, submitted, processed, forgotten;
   h2_atomic_int_t offer_result, answer_result, poll_result, reset_result,
       open_result;
-  h2_atomic_int_t terminal_next_open, send_busy, opus_busy, poll_gate, poll_entered;
+  h2_atomic_int_t terminal_next_open, send_busy, opus_busy, poll_gate,
+      poll_entered;
   h2_atomic_int_t track_ready;
   h2_atomic_uint_t track_reads, track_writes;
   h2_atomic_int_t remote_sid, remote_result;
@@ -46,9 +46,9 @@ typedef struct fixture {
 
 static _Thread_local int in_protocol_task;
 
-static int capture_log(void *user, h2_pal_log_level_t level, const char *scope,
-                       const char *message) {
-  fixture_t *f = user;
+static int capture_log(void* user, h2_pal_log_level_t level, const char* scope,
+                       const char* message) {
+  fixture_t* f = user;
   if (level == H2_PAL_LOG_WARN && strcmp(scope, "h2peer") == 0 &&
       strncmp(message, "no_space ", 9u) == 0) {
     (void)snprintf(f->no_space_log, sizeof(f->no_space_log), "%s", message);
@@ -59,22 +59,22 @@ static int capture_log(void *user, h2_pal_log_level_t level, const char *scope,
 
 typedef struct task_entry {
   h2_pal_task_entry_t entry;
-  void *context;
+  void* context;
 } task_entry_t;
 
-static void enter_task(void *user) {
-  task_entry_t entry = *(task_entry_t *)user;
+static void enter_task(void* user) {
+  task_entry_t entry = *(task_entry_t*)user;
   free(user);
   in_protocol_task = 1;
   entry.entry(entry.context);
   in_protocol_task = 0;
 }
 
-static int start_task(void *user, const h2_pal_task_options_t *options,
-                      h2_pal_task_entry_t entry, void *context,
-                      h2_pal_task_t **out) {
-  fixture_t *f = user;
-  task_entry_t *call = malloc(sizeof(*call));
+static int start_task(void* user, const h2_pal_task_options_t* options,
+                      h2_pal_task_entry_t entry, void* context,
+                      h2_pal_task_t** out) {
+  fixture_t* f = user;
+  task_entry_t* call = malloc(sizeof(*call));
   assert(call != NULL);
   *call = (task_entry_t){entry, context};
   int rc = h2_pal_task_start(h2_desktop_platform_task_api(), options,
@@ -86,44 +86,39 @@ static int start_task(void *user, const h2_pal_task_options_t *options,
   return rc;
 }
 
-static int join_task(void *user, h2_pal_task_t *task) {
-  fixture_t *f = user;
-  if (h2_atomic_exchange(&f->fail_joins, 0))
-    return H2_PAL_ERR_IO;
+static int join_task(void* user, h2_pal_task_t* task) {
+  fixture_t* f = user;
+  if (h2_atomic_exchange(&f->fail_joins, 0)) return H2_PAL_ERR_IO;
   int rc = h2_pal_task_join(h2_desktop_platform_task_api(), task);
-  if (rc == H2_PAL_OK)
-    h2_atomic_fetch_add(&((fixture_t *)user)->joins, 1u);
+  if (rc == H2_PAL_OK) h2_atomic_fetch_add(&((fixture_t*)user)->joins, 1u);
   return rc;
 }
 
-static void *allocate(void *user, size_t size) {
-  fixture_t *f = user;
+static void* allocate(void* user, size_t size) {
+  fixture_t* f = user;
   size_t attempt = h2_atomic_fetch_add(&f->attempts, 1u) + 1u;
-  if (attempt == h2_atomic_load(&f->fail_at))
-    return NULL;
-  void *p = malloc(size);
-  if (p != NULL)
-    h2_atomic_fetch_add(&f->allocations, 1u);
+  if (attempt == h2_atomic_load(&f->fail_at)) return NULL;
+  void* p = malloc(size);
+  if (p != NULL) h2_atomic_fetch_add(&f->allocations, 1u);
   return p;
 }
 
-static void deallocate(void *user, void *p) {
+static void deallocate(void* user, void* p) {
   if (p != NULL) {
-    h2_atomic_fetch_add(&((fixture_t *)user)->frees, 1u);
+    h2_atomic_fetch_add(&((fixture_t*)user)->frees, 1u);
     free(p);
   }
 }
 
-static fixture_t *protocol(h2_pal_webrtc_peer_t *peer) {
+static fixture_t* protocol(h2_pal_webrtc_peer_t* peer) {
   assert(in_protocol_task);
   return peer->owner->config.mem->user;
 }
 
-h2_pal_result_t h2_peer_portable_start_offer(h2_pal_webrtc_peer_t *peer) {
-  fixture_t *f = protocol(peer);
+h2_pal_result_t h2_peer_portable_start_offer(h2_pal_webrtc_peer_t* peer) {
+  fixture_t* f = protocol(peer);
   h2_pal_result_t rc = h2_atomic_load(&f->offer_result);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   peer->production_pc = f;
   peer->offer_started = 1;
   h2_peer_webrtc_emit_peer_state(peer, H2_PAL_WEBRTC_PEER_CONNECTING);
@@ -132,33 +127,31 @@ h2_pal_result_t h2_peer_portable_start_offer(h2_pal_webrtc_peer_t *peer) {
   return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_peer_portable_set_remote_sdp(h2_pal_webrtc_peer_t *peer,
+h2_pal_result_t h2_peer_portable_set_remote_sdp(h2_pal_webrtc_peer_t* peer,
                                                 h2_pal_webrtc_sdp_type_t type,
                                                 h2_pal_webrtc_str_t sdp) {
-  fixture_t *f = protocol(peer);
+  fixture_t* f = protocol(peer);
   if (type != H2_PAL_WEBRTC_SDP_ANSWER || sdp.len != 6u ||
       memcmp(sdp.data, "answer", 6u) != 0)
     return H2_PAL_ERR_FORMAT;
   h2_pal_result_t rc = h2_atomic_load(&f->answer_result);
-  if (rc == H2_PAL_OK)
-    peer->remote_answer_set = 1;
+  if (rc == H2_PAL_OK) peer->remote_answer_set = 1;
   return rc;
 }
 
-static void record_transport_wait(fixture_t *f, int timeout_ms) {
+static void record_transport_wait(fixture_t* f, int timeout_ms) {
   assert(timeout_ms >= 0);
   if (h2_atomic_exchange(&f->sent_since_poll, 0)) {
-    if (timeout_ms > 0)
-      h2_atomic_fetch_add(&f->post_send_waits, 1u);
+    if (timeout_ms > 0) h2_atomic_fetch_add(&f->post_send_waits, 1u);
     h2_atomic_fetch_add(&f->post_send_polls, 1u);
   } else if (timeout_ms > 0) {
     h2_atomic_fetch_add(&f->idle_waits, 1u);
   }
 }
 
-h2_pal_result_t h2_peer_portable_poll(h2_pal_webrtc_peer_t *peer,
+h2_pal_result_t h2_peer_portable_poll(h2_pal_webrtc_peer_t* peer,
                                       int timeout_ms) {
-  fixture_t *f = protocol(peer);
+  fixture_t* f = protocol(peer);
   record_transport_wait(f, timeout_ms);
   h2_atomic_fetch_add(&f->polls, 1u);
   while (h2_atomic_load(&f->poll_gate)) {
@@ -166,8 +159,7 @@ h2_pal_result_t h2_peer_portable_poll(h2_pal_webrtc_peer_t *peer,
     (void)h2_pal_time_sleep_ms(f->config.time, 1u);
   }
   h2_pal_result_t rc = h2_atomic_load(&f->poll_result);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   if (!peer->production_sctp_open) {
     peer->production_sctp_open = 1;
     h2_peer_webrtc_emit_peer_state(peer, H2_PAL_WEBRTC_PEER_CONNECTED);
@@ -182,50 +174,50 @@ h2_pal_result_t h2_peer_portable_poll(h2_pal_webrtc_peer_t *peer,
   int remote = h2_atomic_exchange(&f->remote_sid, 0);
   if (remote != 0) {
     h2_atomic_store(&f->remote_result,
-                 h2_peer_webrtc_on_remote_channel_open(
-                     peer, (h2_pal_webrtc_str_t){"remote", 6u},
-                     (uint16_t)(remote - 1), 1, 1));
+                    h2_peer_webrtc_on_remote_channel_open(
+                        peer, (h2_pal_webrtc_str_t){"remote", 6u},
+                        (uint16_t)(remote - 1), 1, 1));
     h2_atomic_fetch_add(&f->remote_processed, 1u);
   }
   return H2_PAL_OK;
 }
 
-int h2_peer_portable_async_receive_supported(const h2_pal_webrtc_peer_t *peer) {
+int h2_peer_portable_async_receive_supported(const h2_pal_webrtc_peer_t* peer) {
   assert(in_protocol_task);
-  fixture_t *f = peer->owner->config.mem->user;
+  fixture_t* f = peer->owner->config.mem->user;
   return h2_atomic_load(&f->async_receive);
 }
 
-int h2_peer_portable_receive_datagram(h2_pal_webrtc_peer_t *peer,
-                                      h2_pal_net_addr_t *addr, uint8_t *packet,
+int h2_peer_portable_receive_datagram(h2_pal_webrtc_peer_t* peer,
+                                      h2_pal_net_addr_t* addr, uint8_t* packet,
                                       size_t cap, uint32_t timeout_ms) {
   (void)addr;
   (void)packet;
   (void)cap;
-  fixture_t *f = protocol(peer);
+  fixture_t* f = protocol(peer);
   assert(h2_atomic_load(&f->async_receive));
   record_transport_wait(f, (int)timeout_ms);
   return 0;
 }
 
-h2_pal_result_t h2_peer_portable_service_datagram(h2_pal_webrtc_peer_t *peer,
-                                                  h2_pal_net_addr_t *addr,
-                                                  uint8_t *packet, size_t len) {
+h2_pal_result_t h2_peer_portable_service_datagram(h2_pal_webrtc_peer_t* peer,
+                                                  h2_pal_net_addr_t* addr,
+                                                  uint8_t* packet, size_t len) {
   (void)addr;
   (void)packet;
   assert(len == 0u && h2_atomic_load(&protocol(peer)->async_receive));
   return h2_peer_portable_poll(peer, 0);
 }
 
-h2_pal_result_t
-h2_peer_portable_channel_prepare(h2_pal_webrtc_channel_t *channel) {
+h2_pal_result_t h2_peer_portable_channel_prepare(
+    h2_pal_webrtc_channel_t* channel) {
   assert(channel != NULL && channel->owner != NULL);
   return H2_PAL_OK;
 }
 
-h2_pal_result_t
-h2_peer_portable_channel_open(h2_pal_webrtc_channel_t *channel) {
-  fixture_t *f = protocol(channel->owner);
+h2_pal_result_t h2_peer_portable_channel_open(
+    h2_pal_webrtc_channel_t* channel) {
+  fixture_t* f = protocol(channel->owner);
   if (h2_atomic_exchange(&f->terminal_next_open, 0)) {
     const h2_pal_sctp_stream_reset_event_t reset = {
         .stream_id = channel->info.stream_id,
@@ -241,19 +233,18 @@ h2_peer_portable_channel_open(h2_pal_webrtc_channel_t *channel) {
   return h2_atomic_load(&f->open_result);
 }
 
-h2_pal_result_t h2_peer_portable_sctp_is_writable(h2_pal_webrtc_peer_t *peer,
-                                                  bool *out) {
+h2_pal_result_t h2_peer_portable_sctp_is_writable(h2_pal_webrtc_peer_t* peer,
+                                                  bool* out) {
   (void)protocol(peer);
   *out = true;
   return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_peer_portable_channel_send(h2_pal_webrtc_channel_t *channel,
-                                              const uint8_t *data, size_t len,
+h2_pal_result_t h2_peer_portable_channel_send(h2_pal_webrtc_channel_t* channel,
+                                              const uint8_t* data, size_t len,
                                               int text) {
-  fixture_t *f = protocol(channel->owner);
-  if (h2_atomic_load(&f->send_busy))
-    return H2_PAL_ERR_WOULD_BLOCK;
+  fixture_t* f = protocol(channel->owner);
+  if (h2_atomic_load(&f->send_busy)) return H2_PAL_ERR_WOULD_BLOCK;
   h2_pal_result_t rc = h2_peer_webrtc_emit_channel_message(
       channel->owner, channel, data, len, text);
   if (rc == H2_PAL_OK) {
@@ -263,43 +254,41 @@ h2_pal_result_t h2_peer_portable_channel_send(h2_pal_webrtc_channel_t *channel,
   return rc;
 }
 
-h2_pal_result_t h2_peer_portable_send_opus(h2_pal_webrtc_peer_t *peer,
-                                           const uint8_t *opus, size_t len) {
-  fixture_t *f = protocol(peer);
-  if (h2_atomic_load(&f->opus_busy))
-    return H2_PAL_ERR_WOULD_BLOCK;
+h2_pal_result_t h2_peer_portable_send_opus(h2_pal_webrtc_peer_t* peer,
+                                           const uint8_t* opus, size_t len) {
+  fixture_t* f = protocol(peer);
+  if (h2_atomic_load(&f->opus_busy)) return H2_PAL_ERR_WOULD_BLOCK;
   h2_peer_webrtc_emit_opus_frame(peer, opus, len);
   h2_atomic_store(&f->sent_since_poll, 1);
   h2_atomic_fetch_add(&f->opus_sends, 1u);
   return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_peer_portable_reset_stream(h2_pal_webrtc_peer_t *peer,
+h2_pal_result_t h2_peer_portable_reset_stream(h2_pal_webrtc_peer_t* peer,
                                               uint16_t sid) {
-  fixture_t *f = protocol(peer);
+  fixture_t* f = protocol(peer);
   assert(sid < H2_PEER_STREAM_COUNT);
   h2_atomic_fetch_add(&f->reset_attempts, 1u);
   h2_pal_result_t rc = h2_atomic_load(&f->reset_result);
-  if (rc == H2_PAL_OK)
-    h2_atomic_fetch_add(&f->submitted, 1u);
+  if (rc == H2_PAL_OK) h2_atomic_fetch_add(&f->submitted, 1u);
   return rc;
 }
 
-h2_pal_result_t h2_peer_portable_forget_stream(h2_pal_webrtc_peer_t *peer,
+h2_pal_result_t h2_peer_portable_forget_stream(h2_pal_webrtc_peer_t* peer,
                                                uint16_t sid) {
-  fixture_t *f = protocol(peer);
+  fixture_t* f = protocol(peer);
   assert(sid < H2_PEER_STREAM_COUNT);
   h2_atomic_fetch_add(&f->forgotten, 1u);
   return H2_PAL_OK;
 }
 
-void h2_peer_portable_peer_close(h2_pal_webrtc_peer_t *peer) {
+void h2_peer_portable_peer_close(h2_pal_webrtc_peer_t* peer) {
   (void)protocol(peer);
   peer->production_pc = NULL;
   peer->production_sctp_open = 0;
 }
 
-static void initialize(fixture_t *f) {
+static void initialize(fixture_t* f) {
   *f = (fixture_t){0};
   assert(h2_atomic_size_init(&f->attempts, 0) == H2_ATOMIC_OK);
   assert(h2_atomic_size_init(&f->allocations, 0) == H2_ATOMIC_OK);
@@ -368,14 +357,14 @@ static void initialize(fixture_t *f) {
          H2_PAL_OK);
 }
 
-static void create(fixture_t *f) {
+static void create(fixture_t* f) {
   initialize(f);
   assert(h2_peer_create(&f->config, &f->owner) == H2_PAL_OK);
   f->api = h2_peer_webrtc_api(f->owner);
   assert(h2_pal_webrtc_peer_create(f->api, &f->peer) == H2_PAL_OK);
 }
 
-static void cleanup(fixture_t *f) {
+static void cleanup(fixture_t* f) {
   h2_peer_destroy(&f->owner);
   assert(f->owner == NULL);
   assert(h2_atomic_load(&f->starts) == h2_atomic_load(&f->joins));
@@ -420,28 +409,27 @@ static void cleanup(fixture_t *f) {
   h2_atomic_int_destroy(&f->async_receive);
 }
 
-static void wait_count(fixture_t *f, h2_atomic_uint_t *count, unsigned expected) {
+static void wait_count(fixture_t* f, h2_atomic_uint_t* count,
+                       unsigned expected) {
   for (unsigned i = 0u; i < 2000u && h2_atomic_load(count) < expected; ++i)
     (void)h2_pal_time_sleep_ms(f->config.time, 1u);
   assert(h2_atomic_load(count) >= expected);
 }
 
-static void drain(fixture_t *f) {
+static void drain(fixture_t* f) {
   h2_pal_webrtc_event_t event = {0};
   while (h2_pal_webrtc_peer_poll(f->api, f->peer, 0, &event) == H2_PAL_OK)
     h2_pal_webrtc_event_release(&event);
 }
 
-static h2_pal_webrtc_event_t next_kind(fixture_t *f,
+static h2_pal_webrtc_event_t next_kind(fixture_t* f,
                                        h2_pal_webrtc_event_kind_t kind) {
   h2_pal_webrtc_event_t event = {0};
   for (unsigned i = 0u; i < 200u; ++i) {
     h2_pal_result_t rc = h2_pal_webrtc_peer_poll(f->api, f->peer, 10, &event);
-    if (rc == H2_PAL_ERR_TIMEOUT || rc == H2_PAL_ERR_WOULD_BLOCK)
-      continue;
+    if (rc == H2_PAL_ERR_TIMEOUT || rc == H2_PAL_ERR_WOULD_BLOCK) continue;
     assert(rc == H2_PAL_OK);
-    if (event.kind == kind)
-      return event;
+    if (event.kind == kind) return event;
     assert(event.kind != H2_PAL_WEBRTC_EVENT_ERROR);
     h2_pal_webrtc_event_release(&event);
   }
@@ -449,7 +437,7 @@ static h2_pal_webrtc_event_t next_kind(fixture_t *f,
   return event;
 }
 
-static void connect(fixture_t *f, unsigned channels) {
+static void connect(fixture_t* f, unsigned channels) {
   assert(h2_pal_webrtc_peer_start_offer(f->api, f->peer) == H2_PAL_OK);
   assert(h2_pal_webrtc_peer_start_offer(f->api, f->peer) ==
          H2_PAL_ERR_INVALID_STATE);
@@ -462,8 +450,8 @@ static void connect(fixture_t *f, unsigned channels) {
   drain(f);
 }
 
-static h2_pal_result_t open_sid(fixture_t *f, uint16_t sid,
-                                h2_pal_webrtc_channel_t **out) {
+static h2_pal_result_t open_sid(fixture_t* f, uint16_t sid,
+                                h2_pal_webrtc_channel_t** out) {
   const h2_pal_webrtc_channel_config_t config = {
       .label = {"channel", 7u},
       .has_stream_id = 1,
@@ -474,7 +462,7 @@ static h2_pal_result_t open_sid(fixture_t *f, uint16_t sid,
   return h2_pal_webrtc_peer_create_data_channel(f->api, f->peer, &config, out);
 }
 
-static void inject_reset(fixture_t *f, uint16_t sid,
+static void inject_reset(fixture_t* f, uint16_t sid,
                          h2_pal_sctp_stream_reset_direction_t direction) {
   unsigned processed = h2_atomic_load(&f->processed);
   const h2_pal_sctp_stream_reset_event_t event = {
@@ -490,10 +478,10 @@ static void inject_reset(fixture_t *f, uint16_t sid,
 static void test_pool_and_event_lease(void) {
   fixture_t f;
   create(&f);
-  h2_pal_webrtc_channel_t *channels[H2_PEER_READY_CHANNEL_COUNT] = {0};
+  h2_pal_webrtc_channel_t* channels[H2_PEER_READY_CHANNEL_COUNT] = {0};
   for (size_t i = 0u; i < H2_PEER_READY_CHANNEL_COUNT; ++i)
     assert(open_sid(&f, (uint16_t)(i * 2u + 1u), &channels[i]) == H2_PAL_OK);
-  h2_pal_webrtc_channel_t *extra = NULL;
+  h2_pal_webrtc_channel_t* extra = NULL;
   assert(open_sid(&f, 299u, &extra) == H2_PAL_ERR_NO_SPACE && extra == NULL);
   assert(f.no_space_log_count == 1u);
   assert(strstr(f.no_space_log, "reason=ready_slots live=32 ready_used=32 ") !=
@@ -539,14 +527,14 @@ static void test_auto_sid_pool_diagnostic(void) {
   const h2_pal_webrtc_channel_config_t config = {
       .label = {"service", 7u}, .ordered = 1, .reliable = 1};
   for (size_t i = 0u; i < H2_PEER_LOCAL_STREAM_COUNT; ++i) {
-    h2_pal_webrtc_channel_t *channel = NULL;
+    h2_pal_webrtc_channel_t* channel = NULL;
     assert(h2_pal_webrtc_peer_create_data_channel(f.api, f.peer, &config,
                                                   &channel) == H2_PAL_OK);
     assert(channel != NULL);
     h2_pal_webrtc_channel_close(f.api, channel);
     drain(&f);
   }
-  h2_pal_webrtc_channel_t *extra = NULL;
+  h2_pal_webrtc_channel_t* extra = NULL;
   assert(h2_pal_webrtc_peer_create_data_channel(f.api, f.peer, &config,
                                                 &extra) == H2_PAL_ERR_NO_SPACE);
   assert(extra == NULL);
@@ -576,7 +564,7 @@ static void test_label_length_diagnostic(void) {
   char label[H2_PEER_CHANNEL_LABEL_MAX + 1u] = {0};
   const h2_pal_webrtc_channel_config_t config = {
       .label = {label, sizeof(label)}};
-  h2_pal_webrtc_channel_t *channel = NULL;
+  h2_pal_webrtc_channel_t* channel = NULL;
   assert(h2_pal_webrtc_peer_create_data_channel(
              f.api, f.peer, &config, &channel) == H2_PAL_ERR_NO_SPACE);
   assert(channel == NULL);
@@ -638,7 +626,7 @@ static void test_terminal_during_open(void) {
     connect(&f, 0u);
     h2_atomic_store(&f.terminal_next_open, 1);
     h2_atomic_store(&f.open_result, fails ? H2_PAL_ERR_IO : H2_PAL_OK);
-    h2_pal_webrtc_channel_t *channel = (void *)(uintptr_t)1u;
+    h2_pal_webrtc_channel_t* channel = (void*)(uintptr_t)1u;
     assert(open_sid(&f, 1u, &channel) ==
            (fails ? H2_PAL_ERR_IO : H2_PAL_ERR_CLOSED));
     assert(channel == NULL);
@@ -646,12 +634,11 @@ static void test_terminal_during_open(void) {
   }
 }
 
-static h2_pal_result_t read_track(void *user, uint8_t *out, size_t cap,
-                                  size_t *len) {
-  fixture_t *f = user;
+static h2_pal_result_t read_track(void* user, uint8_t* out, size_t cap,
+                                  size_t* len) {
+  fixture_t* f = user;
   assert(in_protocol_task);
-  if (!h2_atomic_exchange(&f->track_ready, 0))
-    return H2_PAL_ERR_WOULD_BLOCK;
+  if (!h2_atomic_exchange(&f->track_ready, 0)) return H2_PAL_ERR_WOULD_BLOCK;
   assert(cap >= 2u);
   out[0] = 0xf8u;
   out[1] = 0x42u;
@@ -660,9 +647,9 @@ static h2_pal_result_t read_track(void *user, uint8_t *out, size_t cap,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t write_track(void *user, const uint8_t *data,
+static h2_pal_result_t write_track(void* user, const uint8_t* data,
                                    size_t len) {
-  fixture_t *f = user;
+  fixture_t* f = user;
   assert(in_protocol_task && len == 2u && data[0] == 0xf8u && data[1] == 0x42u);
   h2_atomic_fetch_add(&f->track_writes, 1u);
   return H2_PAL_OK;
@@ -675,7 +662,7 @@ static void test_media_and_channel_busy(void) {
                                                       .write = write_track};
   h2_pal_webrtc_track_t track = {.user = &f, .vtable = &vtable};
   assert(h2_pal_webrtc_peer_set_track(f.api, f.peer, &track) == H2_PAL_OK);
-  h2_pal_webrtc_channel_t *channel = NULL;
+  h2_pal_webrtc_channel_t* channel = NULL;
   assert(open_sid(&f, 1u, &channel) == H2_PAL_OK);
   connect(&f, 1u);
   h2_atomic_store(&f.opus_busy, 1);
@@ -685,12 +672,13 @@ static void test_media_and_channel_busy(void) {
   const uint8_t message[] = {0u, 0xffu, 0x42u};
   // A busy transport still accepts one ring's worth of queued messages.
   for (size_t i = 0u; i < H2_PEER_INPUT_SLOT_COUNT; ++i) {
-    assert(h2_pal_webrtc_channel_send(f.api, channel, message,
-                                      sizeof(message), 0) == H2_PAL_OK);
+    assert(h2_pal_webrtc_channel_send(f.api, channel, message, sizeof(message),
+                                      0) == H2_PAL_OK);
   }
   assert(h2_pal_webrtc_channel_send(f.api, channel, message, sizeof(message),
                                     0) == H2_PAL_ERR_WOULD_BLOCK);
-  assert(h2_atomic_load(&f.track_reads) == 1u && h2_atomic_load(&f.opus_sends) == 0u);
+  assert(h2_atomic_load(&f.track_reads) == 1u &&
+         h2_atomic_load(&f.opus_sends) == 0u);
   h2_atomic_store(&f.opus_busy, 0);
   h2_atomic_store(&f.send_busy, 0);
   wait_count(&f, &f.track_writes, 1u);
@@ -712,7 +700,7 @@ static void test_send_progress_does_not_idle_wait(int async_receive) {
   fixture_t f;
   create(&f);
   h2_atomic_store(&f.async_receive, async_receive);
-  h2_pal_webrtc_channel_t *channel = NULL;
+  h2_pal_webrtc_channel_t* channel = NULL;
   assert(open_sid(&f, 1u, &channel) == H2_PAL_OK);
   connect(&f, 1u);
   // Idle peers must still use bounded waiting rather than busy-spin.
@@ -738,16 +726,16 @@ static void test_send_progress_does_not_idle_wait(int async_receive) {
 static void test_close_preserves_accepted_messages(void) {
   fixture_t f;
   create(&f);
-  h2_pal_webrtc_channel_t *channel = NULL;
+  h2_pal_webrtc_channel_t* channel = NULL;
   assert(open_sid(&f, 1u, &channel) == H2_PAL_OK);
   connect(&f, 1u);
   h2_atomic_store(&f.send_busy, 1);
   const uint8_t response[] = {0x01, 0x02};
   const uint8_t eos[] = {0x03};
-  assert(h2_pal_webrtc_channel_send(f.api, channel, response,
-      sizeof(response), 0) == H2_PAL_OK);
-  assert(h2_pal_webrtc_channel_send(f.api, channel, eos,
-      sizeof(eos), 0) == H2_PAL_OK);
+  assert(h2_pal_webrtc_channel_send(f.api, channel, response, sizeof(response),
+                                    0) == H2_PAL_OK);
+  assert(h2_pal_webrtc_channel_send(f.api, channel, eos, sizeof(eos), 0) ==
+         H2_PAL_OK);
   h2_pal_webrtc_channel_close(f.api, channel);
   assert(h2_atomic_load(&f.sends) == 0u);
   h2_atomic_store(&f.send_busy, 0);
@@ -757,7 +745,8 @@ static void test_close_preserves_accepted_messages(void) {
   inject_reset(&f, 1u, H2_PAL_SCTP_STREAM_RESET_OUTGOING_COMPLETED);
   drain(&f); /* The requester has not closed its direction yet. */
   inject_reset(&f, 1u, H2_PAL_SCTP_STREAM_RESET_INCOMING_RESET);
-  h2_pal_webrtc_event_t closed = next_kind(&f, H2_PAL_WEBRTC_EVENT_CHANNEL_STATE);
+  h2_pal_webrtc_event_t closed =
+      next_kind(&f, H2_PAL_WEBRTC_EVENT_CHANNEL_STATE);
   assert(closed.channel_state == H2_PAL_WEBRTC_CHANNEL_CLOSED);
   h2_pal_webrtc_event_release(&closed);
   cleanup(&f);
@@ -766,18 +755,19 @@ static void test_close_preserves_accepted_messages(void) {
 static void test_remote_reset_cancels_queued_close(void) {
   fixture_t f;
   create(&f);
-  h2_pal_webrtc_channel_t *channel = NULL;
+  h2_pal_webrtc_channel_t* channel = NULL;
   assert(open_sid(&f, 1u, &channel) == H2_PAL_OK);
   connect(&f, 1u);
   h2_atomic_store(&f.send_busy, 1);
   const uint8_t response[] = {1u, 2u, 3u};
-  assert(h2_pal_webrtc_channel_send(f.api, channel, response,
-                                     sizeof(response), 0) == H2_PAL_OK);
+  assert(h2_pal_webrtc_channel_send(f.api, channel, response, sizeof(response),
+                                    0) == H2_PAL_OK);
   h2_pal_webrtc_channel_close(f.api, channel);
   inject_reset(&f, 1u, H2_PAL_SCTP_STREAM_RESET_INCOMING_RESET);
   wait_count(&f, &f.submitted, 1u);
   inject_reset(&f, 1u, H2_PAL_SCTP_STREAM_RESET_OUTGOING_COMPLETED);
-  h2_pal_webrtc_event_t closed = next_kind(&f, H2_PAL_WEBRTC_EVENT_CHANNEL_STATE);
+  h2_pal_webrtc_event_t closed =
+      next_kind(&f, H2_PAL_WEBRTC_EVENT_CHANNEL_STATE);
   assert(closed.channel_state == H2_PAL_WEBRTC_CHANNEL_ERROR);
   assert(h2_atomic_load(&f.sends) == 0u);
   h2_pal_webrtc_event_release(&closed);
@@ -794,7 +784,7 @@ static void test_allocations_and_config(void) {
       f.api = h2_peer_webrtc_api(f.owner);
       rc = h2_pal_webrtc_peer_create(f.api, &f.peer);
       if (rc == H2_PAL_OK) {
-        h2_pal_webrtc_channel_t *channel = NULL;
+        h2_pal_webrtc_channel_t* channel = NULL;
         rc = open_sid(&f, 1u, &channel);
         assert(rc == H2_PAL_OK || rc == H2_PAL_ERR_NO_MEMORY);
         const h2_pal_webrtc_ice_server_t server = {
@@ -830,7 +820,7 @@ static void test_allocations_and_config(void) {
   cleanup(&f);
 }
 
-static h2_pal_result_t remote_open(fixture_t *f, uint16_t sid) {
+static h2_pal_result_t remote_open(fixture_t* f, uint16_t sid) {
   unsigned processed = h2_atomic_load(&f->remote_processed);
   h2_atomic_store(&f->remote_sid, (int)sid + 1);
   wait_count(f, &f->remote_processed, processed + 1u);
@@ -865,7 +855,7 @@ static void test_remote_lifecycle(void) {
          replacement.channel != old.channel);
   h2_pal_webrtc_event_release(&old);
   assert(h2_pal_webrtc_channel_send(f.api, replacement.channel,
-                                    (const uint8_t *)"echo", 4u,
+                                    (const uint8_t*)"echo", 4u,
                                     1) == H2_PAL_OK);
   wait_count(&f, &f.sends, 1u);
   h2_pal_webrtc_event_t message =
@@ -921,14 +911,14 @@ static void test_destroy_retries_failed_join(void) {
   for (unsigned explicit_close = 0u; explicit_close < 2u; ++explicit_close) {
     fixture_t f;
     create(&f);
-    h2_peer_t *owner = f.owner;
+    h2_peer_t* owner = f.owner;
     h2_atomic_store(&f.fail_joins, 1);
     if (explicit_close) {
       h2_pal_webrtc_peer_close(f.api, f.peer);
     } else {
       h2_peer_destroy(&f.owner);
       assert(f.owner == owner && h2_peer_webrtc_api(f.owner) == NULL);
-      h2_pal_webrtc_peer_t *rejected = NULL;
+      h2_pal_webrtc_peer_t* rejected = NULL;
       assert(h2_pal_webrtc_peer_create(f.api, &rejected) == H2_PAL_ERR_CLOSED);
       assert(rejected == NULL);
     }
@@ -939,13 +929,13 @@ static void test_destroy_retries_failed_join(void) {
 }
 
 typedef struct release_call {
-  fixture_t *fixture;
-  h2_atomic_int_t *gate;
+  fixture_t* fixture;
+  h2_atomic_int_t* gate;
   h2_pal_webrtc_event_t events[2];
 } release_call_t;
 
-static void release_events(void *user) {
-  release_call_t *call = user;
+static void release_events(void* user) {
+  release_call_t* call = user;
   while (!h2_atomic_load(call->gate))
     (void)h2_pal_time_sleep_ms(call->fixture->config.time, 1u);
   for (size_t i = 0u; i < 2u; ++i) {
@@ -959,15 +949,15 @@ static void test_concurrent_event_release_and_destroy(void) {
   for (unsigned round = 0u; round < 8u; ++round) {
     fixture_t f;
     create(&f);
-    h2_pal_webrtc_peer_t *peers[2] = {f.peer, NULL};
+    h2_pal_webrtc_peer_t* peers[2] = {f.peer, NULL};
     assert(h2_pal_webrtc_peer_create(f.api, &peers[1]) == H2_PAL_OK);
     h2_atomic_int_t gate = {0};
     assert(h2_atomic_int_init(&gate, 0) == H2_ATOMIC_OK);
     release_call_t calls[4] = {0};
-    h2_pal_task_t *workers[4] = {0};
+    h2_pal_task_t* workers[4] = {0};
     for (size_t p = 0u; p < 2u; ++p) {
       f.peer = peers[p];
-      h2_pal_webrtc_channel_t *channel = NULL;
+      h2_pal_webrtc_channel_t* channel = NULL;
       assert(open_sid(&f, 1u, &channel) == H2_PAL_OK);
       unsigned connected = h2_atomic_load(&f.connected);
       unsigned opens = h2_atomic_load(&f.opens);
@@ -982,7 +972,7 @@ static void test_concurrent_event_release_and_destroy(void) {
         for (unsigned retry = 0u; retry < 2000u && rc == H2_PAL_ERR_WOULD_BLOCK;
              ++retry) {
           rc = h2_pal_webrtc_channel_send(f.api, channel,
-                                          (const uint8_t *)"echo", 4u, 1);
+                                          (const uint8_t*)"echo", 4u, 1);
           if (rc == H2_PAL_ERR_WOULD_BLOCK)
             (void)h2_pal_time_sleep_ms(f.config.time, 1u);
         }
@@ -1016,7 +1006,7 @@ static void test_ice_server_transport_validation(void) {
   h2_pal_webrtc_ice_server_t server = {.username = {"user", 4u},
                                        .credential = {"test-only", 9u}};
   const struct {
-    const char *url;
+    const char* url;
     h2_pal_result_t result;
   } cases[] = {
       {"turns:example.invalid:5349", H2_PAL_ERR_UNSUPPORTED},
@@ -1038,7 +1028,7 @@ static void test_ice_server_transport_validation(void) {
 static void test_terminal_while_opening_pending_channel(void) {
   fixture_t f;
   create(&f);
-  h2_pal_webrtc_channel_t *channel = NULL;
+  h2_pal_webrtc_channel_t* channel = NULL;
   assert(open_sid(&f, 1u, &channel) == H2_PAL_OK);
   h2_atomic_store(&f.terminal_next_open, 1);
   assert(h2_pal_webrtc_peer_start_offer(f.api, f.peer) == H2_PAL_OK);
@@ -1057,18 +1047,18 @@ static void test_terminal_while_opening_pending_channel(void) {
 }
 
 typedef struct send_call {
-  fixture_t *fixture;
-  h2_pal_webrtc_channel_t *channel;
+  fixture_t* fixture;
+  h2_pal_webrtc_channel_t* channel;
   h2_atomic_int_t go;
   h2_pal_result_t result;
 } send_call_t;
 
-static void send_while_closing(void *user) {
-  send_call_t *call = user;
+static void send_while_closing(void* user) {
+  send_call_t* call = user;
   while (!h2_atomic_load(&call->go))
     (void)h2_pal_time_sleep_ms(call->fixture->config.time, 1u);
   call->result = h2_pal_webrtc_channel_send(call->fixture->api, call->channel,
-                                            (const uint8_t *)"echo", 4u, 1);
+                                            (const uint8_t*)"echo", 4u, 1);
 }
 
 static void test_remote_reset_during_send(void) {
@@ -1082,7 +1072,7 @@ static void test_remote_reset_during_send(void) {
     assert(opened.channel_state == H2_PAL_WEBRTC_CHANNEL_OPEN);
     send_call_t call = {.fixture = &f, .channel = opened.channel};
     assert(h2_atomic_int_init(&call.go, 0) == H2_ATOMIC_OK);
-    h2_pal_task_t *sender = NULL;
+    h2_pal_task_t* sender = NULL;
     const h2_pal_task_options_t options = {.name = "test/send-reset",
                                            .min_stack_size = 64u * 1024u};
     assert(h2_pal_task_start(f.config.task, &options, send_while_closing, &call,

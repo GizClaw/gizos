@@ -12,18 +12,18 @@ extern "C" {
  * allocations. */
 typedef struct h2_app_test_mem {
   h2_pal_mem_api_t api;
-  const h2_pal_mem_api_t *delegate;
-  void *allocations;
+  const h2_pal_mem_api_t* delegate;
+  void* allocations;
   size_t calls, fail_at, live_blocks, live_bytes, peak_bytes;
 } h2_app_test_mem_t;
 /** Initialize fresh storage; fail_at == 0 disables failure injection, otherwise
  * that numbered allocation/reallocation fails once. Reset counters only after
  * live_blocks is zero. NULL input is ignored. */
-void h2_app_test_mem_init(h2_app_test_mem_t *mem,
-                          const h2_pal_mem_api_t *delegate);
+void h2_app_test_mem_init(h2_app_test_mem_t* mem,
+                          const h2_pal_mem_api_t* delegate);
 /** Explicit test-process teardown for intentionally retained allocations.
  * All users must be stopped; invalidates every outstanding allocation. */
-void h2_app_test_mem_release_all(h2_app_test_mem_t *mem);
+void h2_app_test_mem_release_all(h2_app_test_mem_t* mem);
 #ifdef __cplusplus
 }
 #endif

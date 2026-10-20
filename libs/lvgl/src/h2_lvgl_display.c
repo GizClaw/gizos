@@ -3,9 +3,9 @@
 #include <limits.h>
 #include <string.h>
 
-static void display_flush(lv_display_t *lvgl, const lv_area_t *area,
-                          uint8_t *pixels) {
-  h2_lvgl_display_t *adapter = lv_display_get_driver_data(lvgl);
+static void display_flush(lv_display_t* lvgl, const lv_area_t* area,
+                          uint8_t* pixels) {
+  h2_lvgl_display_t* adapter = lv_display_get_driver_data(lvgl);
   if (adapter == NULL || area == NULL || pixels == NULL) {
     lv_display_flush_ready(lvgl);
     return;
@@ -16,8 +16,8 @@ static void display_flush(lv_display_t *lvgl, const lv_area_t *area,
       .width = area->x2 - area->x1 + 1,
       .height = area->y2 - area->y1 + 1,
   };
-  const uint32_t stride = lv_draw_buf_width_to_stride(
-      (uint32_t)rect.width, LV_COLOR_FORMAT_RGB565);
+  const uint32_t stride =
+      lv_draw_buf_width_to_stride((uint32_t)rect.width, LV_COLOR_FORMAT_RGB565);
   h2_pal_result_t result = (h2_pal_result_t)h2_pal_display_draw_bitmap(
       adapter->display, &rect, pixels, stride, H2_DISPLAY_PIXEL_RGB565);
   if (result == H2_PAL_OK && lv_display_flush_is_last(lvgl)) {
@@ -29,15 +29,14 @@ static void display_flush(lv_display_t *lvgl, const lv_area_t *area,
   lv_display_flush_ready(lvgl);
 }
 
-h2_pal_result_t h2_lvgl_display_create(
-    const h2_lvgl_display_config_t *config,
-    h2_lvgl_display_t **out_display) {
+h2_pal_result_t h2_lvgl_display_create(const h2_lvgl_display_config_t* config,
+                                       h2_lvgl_display_t** out_display) {
   if (out_display == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   *out_display = NULL;
-  if (config == NULL || config->display == NULL ||
-      config->allocator == NULL || !lv_is_initialized()) {
+  if (config == NULL || config->display == NULL || config->allocator == NULL ||
+      !lv_is_initialized()) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   int result = h2_pal_display_open(config->display);
@@ -51,7 +50,7 @@ h2_pal_result_t h2_lvgl_display_create(
     return result == H2_DISPLAY_OK ? H2_PAL_ERR_INVALID_STATE
                                    : (h2_pal_result_t)result;
   }
-  h2_lvgl_display_t *adapter =
+  h2_lvgl_display_t* adapter =
       h2_pal_mem_alloc(config->allocator, sizeof(*adapter));
   if (adapter == NULL) {
     (void)h2_pal_display_close(config->display);
@@ -62,14 +61,13 @@ h2_pal_result_t h2_lvgl_display_create(
   adapter->allocator = config->allocator;
   adapter->opened = 1;
   adapter->last_result = H2_PAL_OK;
-  uint32_t rows = config->draw_buffer_rows == 0u
-                      ? 32u
-                      : config->draw_buffer_rows;
+  uint32_t rows =
+      config->draw_buffer_rows == 0u ? 32u : config->draw_buffer_rows;
   if (rows > (uint32_t)info.height) {
     rows = (uint32_t)info.height;
   }
-  const uint32_t stride = lv_draw_buf_width_to_stride(
-      (uint32_t)info.width, LV_COLOR_FORMAT_RGB565);
+  const uint32_t stride =
+      lv_draw_buf_width_to_stride((uint32_t)info.width, LV_COLOR_FORMAT_RGB565);
   if (rows == 0u || stride == 0u || stride > SIZE_MAX / rows) {
     h2_lvgl_display_destroy(adapter);
     return H2_PAL_ERR_INVALID_STATE;
@@ -98,16 +96,15 @@ h2_pal_result_t h2_lvgl_display_create(
   return H2_PAL_OK;
 }
 
-lv_display_t *h2_lvgl_display_lvgl(h2_lvgl_display_t *display) {
+lv_display_t* h2_lvgl_display_lvgl(h2_lvgl_display_t* display) {
   return display == NULL ? NULL : display->lvgl;
 }
 
-h2_pal_result_t h2_lvgl_display_last_result(
-    const h2_lvgl_display_t *display) {
+h2_pal_result_t h2_lvgl_display_last_result(const h2_lvgl_display_t* display) {
   return display == NULL ? H2_PAL_ERR_INVALID_ARG : display->last_result;
 }
 
-void h2_lvgl_display_destroy(h2_lvgl_display_t *display) {
+void h2_lvgl_display_destroy(h2_lvgl_display_t* display) {
   if (display == NULL) {
     return;
   }
@@ -118,7 +115,7 @@ void h2_lvgl_display_destroy(h2_lvgl_display_t *display) {
   if (display->opened) {
     (void)h2_pal_display_close(display->display);
   }
-  const h2_pal_mem_api_t *allocator = display->allocator;
+  const h2_pal_mem_api_t* allocator = display->allocator;
   h2_pal_mem_free(allocator, display->draw_buffer);
   memset(display, 0, sizeof(*display));
   h2_pal_mem_free(allocator, display);

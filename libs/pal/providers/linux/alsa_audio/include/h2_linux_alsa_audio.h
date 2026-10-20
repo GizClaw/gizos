@@ -8,16 +8,16 @@ extern "C" {
 #endif
 
 typedef struct h2_linux_alsa_audio_config {
-    const char *device;
-    h2_audio_pcm_format_t playback_format;
+  const char* device;
+  h2_audio_pcm_format_t playback_format;
 } h2_linux_alsa_audio_config_t;
 
 /** Configure the process-wide ALSA playback provider before Runtime init. */
 h2_pal_result_t h2_linux_alsa_audio_configure(
-    const h2_linux_alsa_audio_config_t *config);
+    const h2_linux_alsa_audio_config_t* config);
 
 /** Return the process-wide Linux ALSA Audio PAL provider. */
-h2_pal_audio_t *h2_linux_alsa_audio_api(void);
+h2_pal_audio_t* h2_linux_alsa_audio_api(void);
 
 #ifdef __cplusplus
 }

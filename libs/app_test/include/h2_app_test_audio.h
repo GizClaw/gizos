@@ -54,7 +54,7 @@ typedef struct h2_app_test_audio h2_app_test_audio_t;
 /** Immutable, borrowed interleaved S16LE PCM. Size must contain whole samples
  * across all channels. Format must match the delegate microphone format. */
 typedef struct h2_app_test_audio_fixture {
-  const uint8_t *pcm;
+  const uint8_t* pcm;
   size_t size;
   h2_audio_pcm_format_t format;
 } h2_app_test_audio_fixture_t;
@@ -69,8 +69,9 @@ typedef struct h2_app_test_audio_fixture {
  * Offsets restart at zero on mic start and replacement. Requests never exceed
  * one microphone frame, and EOF is determined by size. user may be NULL. */
 typedef struct h2_app_test_audio_reader_fixture {
-  void *user;
-  h2_pal_result_t (*read_at)(void *user, size_t offset, uint8_t *data, size_t len);
+  void* user;
+  h2_pal_result_t (*read_at)(void* user, size_t offset, uint8_t* data,
+                             size_t len);
   size_t size;
   h2_audio_pcm_format_t format;
 } h2_app_test_audio_reader_fixture_t;
@@ -84,40 +85,38 @@ typedef struct h2_app_test_audio_reader_fixture {
  * task: it paces fixture frames and backs off while fixture state is busy; a
  * failed back-off sleep is returned by the operation that was waiting.
  * Fixture emission is enabled by default. At EOF, frames continue as silence.
- * A NULL fixture creates a playback-only observer: mic is advertised unsupported
- * and start_mic returns UNSUPPORTED until a valid fixture is installed.
- * Speaker and track operations delegate unchanged. Caller serializes mic
- * start/read/stop and speaker lifecycle; each
- * track is serialized independently. Evidence may be read concurrently, but is
- * not an atomic multi-field snapshot. Destroy requires all callers to be
- * quiescent. Returns INVALID_ARG for invalid config or NO_MEMORY; failure
- * clears out_audio.
+ * A NULL fixture creates a playback-only observer: mic is advertised
+ * unsupported and start_mic returns UNSUPPORTED until a valid fixture is
+ * installed. Speaker and track operations delegate unchanged. Caller serializes
+ * mic start/read/stop and speaker lifecycle; each track is serialized
+ * independently. Evidence may be read concurrently, but is not an atomic
+ * multi-field snapshot. Destroy requires all callers to be quiescent. Returns
+ * INVALID_ARG for invalid config or NO_MEMORY; failure clears out_audio.
  */
-h2_pal_result_t
-h2_app_test_audio_create(const h2_pal_mem_api_t *mem,
-                         const h2_pal_time_api_t *time,
-                         const h2_pal_audio_api_t *delegate,
-                         const h2_app_test_audio_fixture_t *fixture,
-                         h2_app_test_audio_t **out_audio);
+h2_pal_result_t h2_app_test_audio_create(
+    const h2_pal_mem_api_t* mem, const h2_pal_time_api_t* time,
+    const h2_pal_audio_api_t* delegate,
+    const h2_app_test_audio_fixture_t* fixture,
+    h2_app_test_audio_t** out_audio);
 
 /** Borrow the decorated PAL until destroy. NULL input returns NULL. */
-const h2_pal_audio_api_t *h2_app_test_audio_api(h2_app_test_audio_t *audio);
+const h2_pal_audio_api_t* h2_app_test_audio_api(h2_app_test_audio_t* audio);
 
 /** Enable or pause fixture emission independently of the delegate mic.
- * Defaults to enabled and persists across mic stop/start and fixture replacement.
- * While paused, reads still drain/clear real capture and record its health, but
- * return WOULD_BLOCK with zero bytes without sleeping, regardless of timeout.
- * Resume preserves the PCM offset and EOF evidence; the first enabled read
- * establishes a new pacing epoch, without catching up for paused time. Repeated
- * publication of the same state does not reset pacing. Start mic rewinds PCM.
- * Safe from a task/observation callback concurrent with mic reads: publishes only
- * atomic state, without PAL calls, allocation or the fixture lock. Not an ISR
- * guarantee. An in-flight read past its final state check may still emit a frame;
- * this setter is not a completion barrier. NULL is ignored. All callers must be
- * quiescent before destroy.
+ * Defaults to enabled and persists across mic stop/start and fixture
+ * replacement. While paused, reads still drain/clear real capture and record
+ * its health, but return WOULD_BLOCK with zero bytes without sleeping,
+ * regardless of timeout. Resume preserves the PCM offset and EOF evidence; the
+ * first enabled read establishes a new pacing epoch, without catching up for
+ * paused time. Repeated publication of the same state does not reset pacing.
+ * Start mic rewinds PCM. Safe from a task/observation callback concurrent with
+ * mic reads: publishes only atomic state, without PAL calls, allocation or the
+ * fixture lock. Not an ISR guarantee. An in-flight read past its final state
+ * check may still emit a frame; this setter is not a completion barrier. NULL
+ * is ignored. All callers must be quiescent before destroy.
  */
-void h2_app_test_audio_set_capture_active(h2_app_test_audio_t *audio,
-                                         bool active);
+void h2_app_test_audio_set_capture_active(h2_app_test_audio_t* audio,
+                                          bool active);
 
 /** Switch mic reads to the delegate's actual PCM for acoustic/AEC acceptance.
  * Defaults to false. With passthrough enabled, capture_active and the fixture
@@ -127,9 +126,9 @@ void h2_app_test_audio_set_capture_active(h2_app_test_audio_t *audio,
  * Valid fixture/mic start requirements remain unchanged. Disabling returns to
  * fixture mode with a fresh pacing epoch and the existing fixture offset.
  * Atomic-only, callable concurrently with reads; one in-flight frame can still
- * come from the previous source. Does not start/stop the delegate or retain PCM.
- * Callers remain quiescent before destroy. NULL is ignored. */
-void h2_app_test_audio_set_capture_passthrough(h2_app_test_audio_t *audio,
+ * come from the previous source. Does not start/stop the delegate or retain
+ * PCM. Callers remain quiescent before destroy. NULL is ignored. */
+void h2_app_test_audio_set_capture_passthrough(h2_app_test_audio_t* audio,
                                                bool enabled);
 
 /** Control the initial content barrier independently of capture activity.
@@ -145,21 +144,22 @@ void h2_app_test_audio_set_capture_passthrough(h2_app_test_audio_t *audio,
  * returns WOULD_BLOCK, including during lead-in. Atomic-only publication has
  * the same concurrency/lifetime and in-flight-frame limits as capture_active.
  */
-void h2_app_test_audio_set_fixture_ready(h2_app_test_audio_t *audio, bool ready);
+void h2_app_test_audio_set_fixture_ready(h2_app_test_audio_t* audio,
+                                         bool ready);
 
 /** Replace and rewind borrowed PCM while mic is stopped or emission is paused;
  * active emission returns INVALID_STATE. With a running mic, format must match
  * its current format or FORMAT is returned. Failure preserves the old fixture.
  * May run concurrently with mic reads; caller serializes replacements with each
- * other and mic start/stop, and keeps emission paused until replacement returns.
- * Uses the fixture lock and may wait for an in-flight frame copy; not for an
- * observation callback or ISR. After success, old PCM can be released. The next
- * enabled read establishes a fresh pacing epoch; progress and EOF reset without
- * resetting real capture health. Does not start/stop the delegate microphone.
+ * other and mic start/stop, and keeps emission paused until replacement
+ * returns. Uses the fixture lock and may wait for an in-flight frame copy; not
+ * for an observation callback or ISR. After success, old PCM can be released.
+ * The next enabled read establishes a fresh pacing epoch; progress and EOF
+ * reset without resetting real capture health. Does not start/stop the delegate
+ * microphone.
  */
-h2_pal_result_t
-h2_app_test_audio_set_fixture(h2_app_test_audio_t *audio,
-                              const h2_app_test_audio_fixture_t *fixture);
+h2_pal_result_t h2_app_test_audio_set_fixture(
+    h2_app_test_audio_t* audio, const h2_app_test_audio_fixture_t* fixture);
 
 /** Install and rewind a borrowed finite PCM reader, without reading or copying
  * its content here. Uses the same pause, format, pacing, content-barrier and
@@ -172,20 +172,19 @@ h2_app_test_audio_set_fixture(h2_app_test_audio_t *audio,
  * INVALID_STATE, an active mic format mismatch returns FORMAT, and lock wait
  * failures propagate. The reader is never closed or freed by the decorator. */
 h2_pal_result_t h2_app_test_audio_set_reader_fixture(
-    h2_app_test_audio_t *audio,
-    const h2_app_test_audio_reader_fixture_t *fixture);
+    h2_app_test_audio_t* audio,
+    const h2_app_test_audio_reader_fixture_t* fixture);
 
 /** Copy bounded observations, without resetting counters; INVALID_ARG on NULL.
  * Borrows the mutable instance for portable C11 atomic loads.
  */
-h2_pal_result_t
-h2_app_test_audio_copy_evidence(h2_app_test_audio_t *audio,
-                                h2_app_test_audio_evidence_t *out_evidence);
+h2_pal_result_t h2_app_test_audio_copy_evidence(
+    h2_app_test_audio_t* audio, h2_app_test_audio_evidence_t* out_evidence);
 
 /** Free wrapper only, never the delegate. NULL is OK. Active mic, speaker or
  * tracks return INVALID_STATE and retain ownership. Failed stop/close may be
  * retried; after successful destroy the pointer must no longer be used. */
-h2_pal_result_t h2_app_test_audio_destroy(h2_app_test_audio_t *audio);
+h2_pal_result_t h2_app_test_audio_destroy(h2_app_test_audio_t* audio);
 
 #ifdef __cplusplus
 }

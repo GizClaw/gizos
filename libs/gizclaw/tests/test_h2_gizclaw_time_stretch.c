@@ -33,7 +33,7 @@ typedef struct run {
   uint64_t source;
 } run_t;
 
-static void append(run_t *run, const int16_t *out, size_t count,
+static void append(run_t* run, const int16_t* out, size_t count,
                    uint64_t source) {
   assert(run->output + count <= sizeof(s_output) / sizeof(s_output[0]));
   memcpy(s_output + run->output, out, count * sizeof(*out));
@@ -42,12 +42,12 @@ static void append(run_t *run, const int16_t *out, size_t count,
 }
 
 /* Feeds [first, last) of the source in decoder-sized chunks at rate. */
-static void stretch_range(run_t *run, size_t first, size_t last,
+static void stretch_range(run_t* run, size_t first, size_t last,
                           uint32_t rate) {
   for (size_t done = first; done < last;) {
     size_t chunk = last - done < 1920u ? last - done : 1920u;
     done += h2_gizclaw_stretch_push(&s_stretch, s_source + done, chunk);
-    const int16_t *out = NULL;
+    const int16_t* out = NULL;
     size_t count = 0;
     uint64_t source = 0;
     while (h2_gizclaw_stretch_step(&s_stretch, rate, &out, &count, &source)) {
@@ -57,8 +57,8 @@ static void stretch_range(run_t *run, size_t first, size_t last,
   }
 }
 
-static void flush(run_t *run) {
-  const int16_t *out = NULL;
+static void flush(run_t* run) {
+  const int16_t* out = NULL;
   size_t count = 0;
   uint64_t source = 0;
   h2_gizclaw_stretch_flush(&s_stretch, &out, &count, &source);
@@ -85,10 +85,8 @@ static int32_t largest_step(size_t count) {
   int32_t largest = 0;
   for (size_t i = 1; i < count; ++i) {
     int32_t diff = (int32_t)s_output[i] - (int32_t)s_output[i - 1u];
-    if (diff < 0)
-      diff = -diff;
-    if (diff > largest)
-      largest = diff;
+    if (diff < 0) diff = -diff;
+    if (diff > largest) largest = diff;
   }
   return largest;
 }
@@ -160,7 +158,7 @@ static void test_bounds(void) {
   /* Too little input for a step: the flush returns it unchanged. */
   h2_gizclaw_stretch_reset(&s_stretch);
   assert(h2_gizclaw_stretch_push(&s_stretch, s_source, 100u) == 100u);
-  const int16_t *out = NULL;
+  const int16_t* out = NULL;
   size_t count = 0;
   uint64_t source = 0;
   assert(!h2_gizclaw_stretch_step(&s_stretch, 800u, &out, &count, &source));
@@ -174,9 +172,11 @@ static void test_bounds(void) {
   assert(h2_gizclaw_stretch_push(&s_stretch, s_source, 1u) == 0u);
   /* Rates outside the supported range are clamped, not trusted. */
   assert(h2_gizclaw_stretch_step(&s_stretch, 1u, &out, &count, &source));
-  assert(source == H2_GIZCLAW_STRETCH_STEP * H2_GIZCLAW_STRETCH_RATE_MIN / 1000u);
+  assert(source ==
+         H2_GIZCLAW_STRETCH_STEP * H2_GIZCLAW_STRETCH_RATE_MIN / 1000u);
   assert(h2_gizclaw_stretch_step(&s_stretch, 100000u, &out, &count, &source));
-  assert(source == H2_GIZCLAW_STRETCH_STEP * H2_GIZCLAW_STRETCH_RATE_MAX / 1000u);
+  assert(source ==
+         H2_GIZCLAW_STRETCH_STEP * H2_GIZCLAW_STRETCH_RATE_MAX / 1000u);
 }
 
 int main(void) {

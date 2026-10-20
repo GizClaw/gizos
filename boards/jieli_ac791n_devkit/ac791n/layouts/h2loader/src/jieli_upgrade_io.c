@@ -19,10 +19,10 @@
 extern u32 boot_info_get_sfc_base_addr(void);
 /* Optional, diagnostic-only observer; production packages do not define it. */
 __attribute__((weak)) void h2_jieli_upgrade_erase_observer(u32 addr) {
-    (void)addr;
+  (void)addr;
 }
-__attribute__((weak)) void h2_jieli_upgrade_write_observer(
-    const u8 *data, u32 addr, u32 len) {
+__attribute__((weak)) void h2_jieli_upgrade_write_observer(const u8* data,
+                                                           u32 addr, u32 len) {
   (void)data;
   (void)addr;
   (void)len;
@@ -42,7 +42,7 @@ int h2_jieli_upgrade_erase_failed(void) {
 }
 static u8 captured_header[H2_JIELI_UPGRADE_HEADER_SIZE];
 
-static int erased(const u8 *data) {
+static int erased(const u8* data) {
   for (unsigned i = 0; i < H2_JIELI_UPGRADE_HEADER_SIZE; ++i)
     if (data[i] != 0xffu) return 0;
   return 1;
@@ -58,36 +58,46 @@ int h2_jieli_upgrade_header_arm(void) {
   if (h2_jieli_upgrade_erase_failed()) return -1;
   if (boot_info_get_sfc_base_addr() != H2_JIELI_BANK_1_SFC_BASE ||
       norflash_origin_read(physical, HEADER_ADDR, sizeof(physical)) !=
-          (int)sizeof(physical) || !erased(physical)) return -1;
+          (int)sizeof(physical) ||
+      !erased(physical))
+    return -1;
   int expected = GATE_OFF;
   return __atomic_compare_exchange_n(&header_gate, &expected, GATE_ARMED, 0,
-                                    __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE) ? 0 : -1;
+                                     __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)
+             ? 0
+             : -1;
 }
 
 int h2_jieli_upgrade_header_copy(u8 out[H2_JIELI_UPGRADE_HEADER_SIZE]) {
   if (h2_jieli_upgrade_erase_failed() || out == NULL ||
-      __atomic_load_n(&header_gate, __ATOMIC_ACQUIRE) != GATE_CAPTURED) return -1;
+      __atomic_load_n(&header_gate, __ATOMIC_ACQUIRE) != GATE_CAPTURED)
+    return -1;
   memcpy(out, captured_header, sizeof(captured_header));
-  return __atomic_load_n(&header_gate, __ATOMIC_ACQUIRE) == GATE_CAPTURED ? 0 : -1;
+  return __atomic_load_n(&header_gate, __ATOMIC_ACQUIRE) == GATE_CAPTURED ? 0
+                                                                          : -1;
 }
 
-int h2_jieli_upgrade_header_publish(const u8 header[H2_JIELI_UPGRADE_HEADER_SIZE]) {
+int h2_jieli_upgrade_header_publish(
+    const u8 header[H2_JIELI_UPGRADE_HEADER_SIZE]) {
   u8 physical[H2_JIELI_UPGRADE_HEADER_SIZE];
   if (h2_jieli_upgrade_erase_failed()) return -1;
   if (header == NULL || erased(header) ||
       boot_info_get_sfc_base_addr() != H2_JIELI_BANK_2_SFC_BASE ||
       norflash_origin_read(physical, HEADER_ADDR, sizeof(physical)) !=
-          (int)sizeof(physical)) goto failed;
+          (int)sizeof(physical))
+    goto failed;
   if (memcmp(physical, header, sizeof(physical)) == 0) return 0;
   if (!erased(physical)) goto failed;
   h2_jieli_upgrade_publish_observer(header);
   h2_jieli_flash_window_t window = {0};
   if (h2_jieli_flash_window_open(&window) != 0) goto failed;
-  int written = norflash_write(NULL, (void *)header, sizeof(physical), HEADER_ADDR);
+  int written =
+      norflash_write(NULL, (void*)header, sizeof(physical), HEADER_ADDR);
   if (h2_jieli_flash_window_close(&window) != 0) goto failed;
   if (written != (int)sizeof(physical) ||
       norflash_origin_read(physical, HEADER_ADDR, sizeof(physical)) !=
-          (int)sizeof(physical)) goto failed;
+          (int)sizeof(physical))
+    goto failed;
   if (memcmp(physical, header, sizeof(physical)) == 0) return 0;
 failed:
   /* A delayed SDK retry must not acknowledge a captured header after its
@@ -101,26 +111,26 @@ void switch_upgrade_dev(u8 dev_type) {
   (void)dev_type;
 }
 
-u32 get_app_boot_base_addr(void) {
-  return boot_info_get_sfc_base_addr();
-}
+u32 get_app_boot_base_addr(void) { return boot_info_get_sfc_base_addr(); }
 
-u32 dev_upgrade_read(u8 *buf, u32 addr, u32 len) {
+u32 dev_upgrade_read(u8* buf, u32 addr, u32 len) {
   if (h2_jieli_upgrade_erase_failed()) return 0u;
   return norflash_read(NULL, buf, len, addr) == (int)len ? len : 0u;
 }
 
-u32 dev_upgrade_origin_read(u8 *buf, u32 addr, u32 len) {
+u32 dev_upgrade_origin_read(u8* buf, u32 addr, u32 len) {
   if (h2_jieli_upgrade_erase_failed()) return 0u;
   if (__atomic_load_n(&header_gate, __ATOMIC_ACQUIRE) != GATE_OFF &&
       overlaps_header(addr, len)) {
     return addr == HEADER_ADDR && len == sizeof(captured_header) &&
-           h2_jieli_upgrade_header_copy(buf) == 0 ? len : 0u;
+                   h2_jieli_upgrade_header_copy(buf) == 0
+               ? len
+               : 0u;
   }
   return norflash_origin_read(buf, addr, len) == (int)len ? len : 0u;
 }
 
-u32 dev_upgrade_write(u8 *buf, u32 addr, u32 len) {
+u32 dev_upgrade_write(u8* buf, u32 addr, u32 len) {
   if (h2_jieli_upgrade_erase_failed()) return 0u;
   if (__atomic_load_n(&header_gate, __ATOMIC_ACQUIRE) != GATE_OFF &&
       overlaps_header(addr, len)) {
@@ -133,11 +143,14 @@ u32 dev_upgrade_write(u8 *buf, u32 addr, u32 len) {
                                     __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
       memcpy(captured_header, buf, sizeof(captured_header));
       expected = GATE_WRITING;
-      return __atomic_compare_exchange_n(&header_gate, &expected, GATE_CAPTURED, 0,
-                                        __ATOMIC_RELEASE, __ATOMIC_RELAXED) ? len : 0u;
+      return __atomic_compare_exchange_n(&header_gate, &expected, GATE_CAPTURED,
+                                         0, __ATOMIC_RELEASE, __ATOMIC_RELAXED)
+                 ? len
+                 : 0u;
     }
     if (expected == GATE_CAPTURED &&
-        memcmp(captured_header, buf, sizeof(captured_header)) == 0) return len;
+        memcmp(captured_header, buf, sizeof(captured_header)) == 0)
+      return len;
     __atomic_store_n(&header_gate, GATE_FAILED, __ATOMIC_RELEASE);
     return 0u;
   }
@@ -153,10 +166,20 @@ u8 dev_upgrade_erase(u32 command, u32 addr) {
   u32 ioctl, size;
   if (h2_jieli_upgrade_erase_failed()) return 0u;
   switch (command) {
-    case 1u: ioctl = IOCTL_ERASE_BLOCK; size = 65536u; break;
-    case 2u: ioctl = IOCTL_ERASE_SECTOR; size = 4096u; break;
-    case 3u: ioctl = IOCTL_ERASE_PAGE; size = 256u; break;
-    default: return 0u;
+    case 1u:
+      ioctl = IOCTL_ERASE_BLOCK;
+      size = 65536u;
+      break;
+    case 2u:
+      ioctl = IOCTL_ERASE_SECTOR;
+      size = 4096u;
+      break;
+    case 3u:
+      ioctl = IOCTL_ERASE_PAGE;
+      size = 256u;
+      break;
+    default:
+      return 0u;
   }
   /* Pinned norflash_erase rounds down by the command size and discards its
    * wait result. Verify every byte, even when ioctl reports success. */
@@ -169,7 +192,8 @@ u8 dev_upgrade_erase(u32 command, u32 addr) {
   if (erased_result != 0 || closed != 0) goto failed;
   for (u32 offset = 0u; offset < size; offset += sizeof(physical)) {
     if (norflash_origin_read(physical, start + offset, sizeof(physical)) !=
-        (int)sizeof(physical)) goto failed;
+        (int)sizeof(physical))
+      goto failed;
     for (unsigned i = 0u; i < sizeof(physical); ++i) {
       if (physical[i] != 0xffu) goto failed;
     }
@@ -184,7 +208,8 @@ failed:
 
 /* SDK has one active updater transaction; its init/exit may run on different
  * tasks. Token state is protected by the shared window lock, not task identity.
- * Per-operation leases above also cover calls outside that outer transaction. */
+ * Per-operation leases above also cover calls outside that outer transaction.
+ */
 static h2_jieli_flash_window_t upgrade_window;
 void dev_upgrade_protect_suspend(void) {
   if (h2_jieli_flash_window_open(&upgrade_window) != 0) {

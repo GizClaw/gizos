@@ -19,8 +19,8 @@ py_binary(
 py_test(
     name = "ttf_subset_test",
     srcs = [
-        "ttf_subset.py",
         "tests/test_ttf_subset.py",
+        "ttf_subset.py",
     ],
     imports = ["."],
     legacy_create_init = 0,
@@ -43,8 +43,8 @@ ttf_subset_c(
 cc_test(
     name = "fixture_font_test",
     srcs = [
-        ":fixture_font",
         "tests/consumer.c",
+        ":fixture_font",
     ],
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
 )

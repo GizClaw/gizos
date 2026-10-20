@@ -20,11 +20,11 @@ EM_JS(void, fixture_setup,
 });
 /* clang-format on */
 
-static h2_runtime_t *runtime_create(h2_web_platform_t *platform,
-                                    const h2_pal_fs_api_t *fs);
+static h2_runtime_t* runtime_create(h2_web_platform_t* platform,
+                                    const h2_pal_fs_api_t* fs);
 
-static void run_job(h2_runtime_t *runtime, const char *entry, int expected) {
-  h2_lua_host_t *host = NULL;
+static void run_job(h2_runtime_t* runtime, const char* entry, int expected) {
+  h2_lua_host_t* host = NULL;
   const h2_lua_host_config_t config = {
       .runtime = runtime,
       .worker_count = 1,
@@ -42,15 +42,14 @@ static void run_job(h2_runtime_t *runtime, const char *entry, int expected) {
         "assert(require('storage').read_file('visits')=='2');"
         "return require('kv').get('visits')";
     assert(h2_lua_job_submit_text(host, "web_probe", "retained KV",
-                                  (const uint8_t *)verify, sizeof(verify) - 1u,
+                                  (const uint8_t*)verify, sizeof(verify) - 1u,
                                   NULL, 0, &id) == H2_PAL_OK);
   }
   h2_lua_job_status_t status;
   const double deadline = emscripten_get_now() + 15000.0;
   do {
     assert(h2_lua_job_get_status(host, id, &status) == H2_PAL_OK);
-    if (status.state >= H2_LUA_JOB_SUCCEEDED)
-      break;
+    if (status.state >= H2_LUA_JOB_SUCCEEDED) break;
     assert(emscripten_get_now() < deadline);
     assert(h2_pal_time_sleep_ms(runtime->time, 2u) == H2_PAL_OK);
   } while (1);
@@ -70,28 +69,28 @@ static void run_job(h2_runtime_t *runtime, const char *entry, int expected) {
 }
 
 int main(void) {
-  h2_web_platform_t *platform =
+  h2_web_platform_t* platform =
       h2_web_platform_create(&(h2_web_platform_config_t){64, 64});
   assert(platform != NULL);
   char url[H2_LUA_APP_URL_MAX];
   const int phase =
       h2_web_main_call(fixture_setup,
-                       (const void *[]){&(char *){url}, &(size_t){sizeof(url)}})
+                       (const void*[]){&(char*){url}, &(size_t){sizeof(url)}})
           .i32;
   assert(phase >= 0 && phase <= 2);
-  const char *readonly[] = {"/data/lua", "/data/assets"};
-  h2_web_fs_t *fs = NULL;
+  const char* readonly[] = {"/data/lua", "/data/assets"};
+  h2_web_fs_t* fs = NULL;
   const h2_web_fs_config_t fs_config = {.persistent_root = "/data/gizclaw",
                                         .readonly_roots = readonly,
                                         .readonly_root_count = 2u};
   assert(h2_web_fs_open(platform, &fs_config, &fs) == H2_PAL_OK);
-  const h2_pal_fs_api_t *api = h2_web_fs_api(fs);
+  const h2_pal_fs_api_t* api = h2_web_fs_api(fs);
   h2_pal_fs_stat_t stat;
   assert(h2_pal_fs_stat(api, "/data", &stat) == H2_PAL_ERR_NOT_FOUND);
   assert(h2_pal_fs_mkdir(api, "/data") == H2_PAL_ERR_NOT_FOUND);
   assert(h2_pal_fs_mkdir(api, "/data/outside") == H2_PAL_ERR_NOT_FOUND);
   assert(h2_pal_fs_mkdir(api, "/data/lua/new") == H2_PAL_ERR_UNSUPPORTED);
-  h2_lua_apps_t *apps = NULL;
+  h2_lua_apps_t* apps = NULL;
   const h2_lua_apps_config_t catalog = {
       .allocator = h2_web_platform_mem_api(),
       .fs = api,
@@ -108,7 +107,7 @@ int main(void) {
     assert(result == H2_PAL_OK);
     puts("SCOPED HTTP_install=PASS");
   }
-  h2_runtime_t *runtime = runtime_create(platform, api);
+  h2_runtime_t* runtime = runtime_create(platform, api);
   h2_lua_app_info_t listed;
   size_t listed_count = 99u;
   assert(h2_lua_apps_list(apps, &listed, 1u, &listed_count) == H2_PAL_OK);
@@ -142,8 +141,8 @@ int main(void) {
   return 0;
 }
 
-static h2_runtime_t *runtime_create(h2_web_platform_t *platform,
-                                    const h2_pal_fs_api_t *fs) {
+static h2_runtime_t* runtime_create(h2_web_platform_t* platform,
+                                    const h2_pal_fs_api_t* fs) {
   h2_runtime_config_t rcfg = {0};
   rcfg.board = "browser";
   rcfg.target = "webassembly";
@@ -196,7 +195,7 @@ static h2_runtime_t *runtime_create(h2_web_platform_t *platform,
   rcfg.video_decoder = h2_web_platform_video_decoder_api(platform);
   rcfg.component_mapper = NULL;
   rcfg.event_queue_capacity = H2_RUNTIME_DEFAULT_EVENT_QUEUE_CAPACITY;
-  h2_runtime_t *runtime = NULL;
+  h2_runtime_t* runtime = NULL;
   assert(h2_runtime_init(&rcfg, &runtime) == H2_PAL_OK);
   return runtime;
 }

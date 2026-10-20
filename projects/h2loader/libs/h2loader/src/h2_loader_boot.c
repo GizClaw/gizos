@@ -8,17 +8,16 @@
 #define H2_LOADER_REBOOT_REASON_DEFAULT 0u
 #define H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED (UINT32_C(1) << 30)
 
-static const char *default_if_empty(const char *value, const char *fallback) {
+static const char* default_if_empty(const char* value, const char* fallback) {
   return value != NULL && value[0] != '\0' ? value : fallback;
 }
 
-static void copy_text(char *out, size_t capacity, const char *value) {
-  if (out == NULL || capacity == 0u)
-    return;
+static void copy_text(char* out, size_t capacity, const char* value) {
+  if (out == NULL || capacity == 0u) return;
   (void)snprintf(out, capacity, "%s", value != NULL ? value : "");
 }
 
-static void atomic_update_flags(h2_loader_atomic_flag_t *value, uint32_t flags,
+static void atomic_update_flags(h2_loader_atomic_flag_t* value, uint32_t flags,
                                 bool available) {
   int expected = h2_atomic_int_load(value, H2_ATOMIC_ACQUIRE);
   for (;;) {
@@ -36,22 +35,23 @@ static void atomic_update_flags(h2_loader_atomic_flag_t *value, uint32_t flags,
   }
 }
 
-static uint32_t load_availability(const h2_loader_atomic_flag_t *value) {
+static uint32_t load_availability(const h2_loader_atomic_flag_t* value) {
   uint32_t stored = (uint32_t)h2_atomic_int_load(value, H2_ATOMIC_ACQUIRE);
   return (stored & H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED) != 0u
              ? stored & H2_LOADER_COMMAND_AVAILABILITY_ALL
              : H2_LOADER_COMMAND_AVAILABILITY_ALL;
 }
 
-static int mfg_gate_satisfied(const h2_loader_t *loader) {
+static int mfg_gate_satisfied(const h2_loader_t* loader) {
   return loader != NULL &&
-         (h2_atomic_int_load(&loader->mfg_gate_bypass, H2_ATOMIC_ACQUIRE) != 0 ||
+         (h2_atomic_int_load(&loader->mfg_gate_bypass, H2_ATOMIC_ACQUIRE) !=
+              0 ||
           loader->config.mfg_required_total == 0u ||
           h2_loader_mfg_summary_is_passed(&loader->status.mfg,
                                           loader->config.mfg_required_total));
 }
 
-int h2_loader_set_mfg_gate_bypass(h2_loader_t *loader, int enabled) {
+int h2_loader_set_mfg_gate_bypass(h2_loader_t* loader, int enabled) {
   if (loader == NULL || (enabled != 0 && enabled != 1)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -59,18 +59,19 @@ int h2_loader_set_mfg_gate_bypass(h2_loader_t *loader, int enabled) {
   return H2_PAL_OK;
 }
 
-int h2_loader_set_implemented_commands(h2_loader_t *loader, uint32_t commands) {
+int h2_loader_set_implemented_commands(h2_loader_t* loader, uint32_t commands) {
   if (loader == NULL ||
       (commands & ~H2_LOADER_COMMAND_AVAILABILITY_ALL) != 0u) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  h2_atomic_int_store(&loader->implemented_commands,
-                      (int)(H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED | commands),
-                      H2_ATOMIC_RELEASE);
+  h2_atomic_int_store(
+      &loader->implemented_commands,
+      (int)(H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED | commands),
+      H2_ATOMIC_RELEASE);
   return H2_PAL_OK;
 }
 
-int h2_loader_set_command_availability(h2_loader_t *loader, uint32_t flags,
+int h2_loader_set_command_availability(h2_loader_t* loader, uint32_t flags,
                                        bool available) {
   if (loader == NULL || flags == 0u ||
       (flags & ~H2_LOADER_COMMAND_AVAILABILITY_ALL) != 0u) {
@@ -80,11 +81,10 @@ int h2_loader_set_command_availability(h2_loader_t *loader, uint32_t flags,
   return H2_PAL_OK;
 }
 
-uint32_t h2_loader_get_command_availability(const h2_loader_t *loader,
-                                            const h2_loader_status_t *status) {
+uint32_t h2_loader_get_command_availability(const h2_loader_t* loader,
+                                            const h2_loader_status_t* status) {
   uint32_t available;
-  if (loader == NULL || status == NULL)
-    return 0u;
+  if (loader == NULL || status == NULL) return 0u;
   available = load_availability(&loader->implemented_commands) &
               load_availability(&loader->command_availability);
   if ((status->capabilities & H2_LOADER_CAPABILITY_WIFI) == 0u) {
@@ -102,98 +102,85 @@ uint32_t h2_loader_get_command_availability(const h2_loader_t *loader,
   return available;
 }
 
-const char *h2_loader_boot_intent_name(h2_loader_boot_intent_t intent) {
+const char* h2_loader_boot_intent_name(h2_loader_boot_intent_t intent) {
   switch (intent) {
-  case H2_LOADER_BOOT_INTENT_LOADER:
-    return "loader";
-  case H2_LOADER_BOOT_INTENT_AUTO:
-    return "auto";
-  default:
-    return "unknown";
+    case H2_LOADER_BOOT_INTENT_LOADER:
+      return "loader";
+    case H2_LOADER_BOOT_INTENT_AUTO:
+      return "auto";
+    default:
+      return "unknown";
   }
 }
 
-static int pref_open(const h2_pal_pref_api_t *pref,
+static int pref_open(const h2_pal_pref_api_t* pref,
                      h2_pal_pref_open_mode_t mode,
-                     h2_pal_pref_namespace_t **out_ns) {
-  if (pref == NULL || out_ns == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+                     h2_pal_pref_namespace_t** out_ns) {
+  if (pref == NULL || out_ns == NULL) return H2_PAL_ERR_INVALID_ARG;
   *out_ns = NULL;
   return h2_pal_pref_open(pref, H2_LOADER_PREF_NAMESPACE, mode, out_ns);
 }
 
-static int pref_set_u32(const h2_pal_pref_api_t *pref, const char *key,
+static int pref_set_u32(const h2_pal_pref_api_t* pref, const char* key,
                         uint32_t value) {
-  h2_pal_pref_namespace_t *ns = NULL;
+  h2_pal_pref_namespace_t* ns = NULL;
   int rc = pref_open(pref, H2_PAL_PREF_OPEN_READ_WRITE, &ns);
   int close_rc;
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   if (ns == NULL || ns->set_u32 == NULL || ns->commit == NULL) {
     rc = H2_PAL_ERR_UNSUPPORTED;
   } else {
     rc = ns->set_u32(ns, key, value);
-    if (rc == H2_PAL_OK)
-      rc = ns->commit(ns);
+    if (rc == H2_PAL_OK) rc = ns->commit(ns);
   }
   close_rc = ns != NULL && ns->close != NULL ? ns->close(ns) : H2_PAL_OK;
   return rc == H2_PAL_OK ? close_rc : rc;
 }
 
-static int pref_set_i32(const h2_pal_pref_api_t *pref, const char *key,
+static int pref_set_i32(const h2_pal_pref_api_t* pref, const char* key,
                         int32_t value) {
-  h2_pal_pref_namespace_t *ns = NULL;
+  h2_pal_pref_namespace_t* ns = NULL;
   int rc = pref_open(pref, H2_PAL_PREF_OPEN_READ_WRITE, &ns);
   int close_rc;
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   if (ns == NULL || ns->set_i32 == NULL || ns->commit == NULL) {
     rc = H2_PAL_ERR_UNSUPPORTED;
   } else {
     rc = ns->set_i32(ns, key, value);
-    if (rc == H2_PAL_OK)
-      rc = ns->commit(ns);
+    if (rc == H2_PAL_OK) rc = ns->commit(ns);
   }
   close_rc = ns != NULL && ns->close != NULL ? ns->close(ns) : H2_PAL_OK;
   return rc == H2_PAL_OK ? close_rc : rc;
 }
 
-static int read_control_fields(const h2_pal_pref_api_t *pref,
-                               h2_loader_status_t *status) {
-  h2_pal_pref_namespace_t *ns = NULL;
+static int read_control_fields(const h2_pal_pref_api_t* pref,
+                               h2_loader_status_t* status) {
+  h2_pal_pref_namespace_t* ns = NULL;
   uint32_t intent = H2_LOADER_BOOT_INTENT_LOADER;
   int32_t result = H2_PAL_OK;
   int rc = pref_open(pref, H2_PAL_PREF_OPEN_READ_ONLY, &ns);
   int close_rc;
-  if (rc == H2_PAL_ERR_NOT_FOUND)
-    return H2_PAL_OK;
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc == H2_PAL_ERR_NOT_FOUND) return H2_PAL_OK;
+  if (rc != H2_PAL_OK) return rc;
   if (ns == NULL) {
     rc = H2_PAL_ERR_UNSUPPORTED;
   } else {
     if (ns->get_u32 != NULL) {
       uint32_t saved_intent = 0u;
       int get_rc = ns->get_u32(ns, "boot_intent", &saved_intent);
-      if (get_rc == H2_PAL_OK)
-        intent = saved_intent;
-      if (get_rc != H2_PAL_OK && get_rc != H2_PAL_ERR_NOT_FOUND)
-        rc = get_rc;
+      if (get_rc == H2_PAL_OK) intent = saved_intent;
+      if (get_rc != H2_PAL_OK && get_rc != H2_PAL_ERR_NOT_FOUND) rc = get_rc;
     }
     if (rc == H2_PAL_OK && ns->get_i32 != NULL) {
       int32_t saved_result = 0;
       int get_rc = ns->get_i32(ns, "last_result", &saved_result);
-      if (get_rc == H2_PAL_OK)
-        result = saved_result;
-      if (get_rc != H2_PAL_OK && get_rc != H2_PAL_ERR_NOT_FOUND)
-        rc = get_rc;
+      if (get_rc == H2_PAL_OK) result = saved_result;
+      if (get_rc != H2_PAL_OK && get_rc != H2_PAL_ERR_NOT_FOUND) rc = get_rc;
     }
   }
   close_rc = ns != NULL && ns->close != NULL ? ns->close(ns) : H2_PAL_OK;
-  if (rc != H2_PAL_OK)
-    return rc;
-  if (close_rc != H2_PAL_OK)
-    return close_rc;
+  if (rc != H2_PAL_OK) return rc;
+  if (close_rc != H2_PAL_OK) return close_rc;
   if (intent != H2_LOADER_BOOT_INTENT_LOADER &&
       intent != H2_LOADER_BOOT_INTENT_AUTO) {
     return H2_PAL_ERR_FORMAT;
@@ -203,9 +190,9 @@ static int read_control_fields(const h2_pal_pref_api_t *pref,
   return H2_PAL_OK;
 }
 
-int h2_loader_read_pref_status(const h2_pal_pref_api_t *pref,
-                               const h2_pal_mem_api_t *allocator,
-                               h2_loader_status_t *out_status) {
+int h2_loader_read_pref_status(const h2_pal_pref_api_t* pref,
+                               const h2_pal_mem_api_t* allocator,
+                               h2_loader_status_t* out_status) {
   int present = 0;
   int rc;
   if (pref == NULL || allocator == NULL || out_status == NULL) {
@@ -214,29 +201,25 @@ int h2_loader_read_pref_status(const h2_pal_pref_api_t *pref,
   memset(out_status, 0, sizeof(*out_status));
   out_status->boot_intent = H2_LOADER_BOOT_INTENT_LOADER;
   rc = read_control_fields(pref, out_status);
-  if (rc != H2_PAL_OK)
-    return rc;
-#define READ_SLOT(slot_name, field)                                            \
-  do {                                                                         \
-    rc = h2_loader_metadata_read(pref, allocator, (slot_name),                 \
-                                 &out_status->field, &present);                \
-    if (rc != H2_PAL_OK)                                                       \
-      return rc;                                                               \
+  if (rc != H2_PAL_OK) return rc;
+#define READ_SLOT(slot_name, field)                             \
+  do {                                                          \
+    rc = h2_loader_metadata_read(pref, allocator, (slot_name),  \
+                                 &out_status->field, &present); \
+    if (rc != H2_PAL_OK) return rc;                             \
   } while (0)
   READ_SLOT(H2_LOADER_METADATA_SLOT_STAGE, stage);
   READ_SLOT(H2_LOADER_METADATA_SLOT_PARTITION_1, partition_1);
   READ_SLOT(H2_LOADER_METADATA_SLOT_PARTITION_2, partition_2);
 #undef READ_SLOT
   rc = h2_loader_mfg_read(pref, allocator, &out_status->mfg, &present);
-  if (rc != H2_PAL_OK)
-    return rc;
-  if (!present)
-    memset(&out_status->mfg, 0, sizeof(out_status->mfg));
+  if (rc != H2_PAL_OK) return rc;
+  if (!present) memset(&out_status->mfg, 0, sizeof(out_status->mfg));
   return H2_PAL_OK;
 }
 
-static void status_from_config(const h2_loader_config_t *config,
-                               h2_loader_status_t *status) {
+static void status_from_config(const h2_loader_config_t* config,
+                               h2_loader_status_t* status) {
   h2_loader_active_role_t role = H2_LOADER_ACTIVE_ROLE_UNKNOWN;
   if (config->active_identity.role == H2_LOADER_IMAGE_ROLE_H2LOADER) {
     role = H2_LOADER_ACTIVE_ROLE_H2LOADER;
@@ -245,8 +228,7 @@ static void status_from_config(const h2_loader_config_t *config,
   }
   (void)h2_loader_status_set_device(status, config->board, config->target,
                                     config->chip);
-  copy_text(status->device_uid, sizeof(status->device_uid),
-            config->device_uid);
+  copy_text(status->device_uid, sizeof(status->device_uid), config->device_uid);
   if (role != H2_LOADER_ACTIVE_ROLE_UNKNOWN) {
     (void)h2_loader_status_set_active(
         status, role, role == H2_LOADER_ACTIVE_ROLE_APP ? "app" : "loader",
@@ -256,20 +238,18 @@ static void status_from_config(const h2_loader_config_t *config,
   status->capabilities = config->hardware_capabilities;
 }
 
-static int refresh_partitions(h2_loader_t *loader, h2_loader_status_t *status) {
+static int refresh_partitions(h2_loader_t* loader, h2_loader_status_t* status) {
   h2_pal_power_boot_partition_t partition;
   int rc =
       h2_pal_power_get_running_boot_partition(loader->config.power, &partition);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   status->running_partition_id = partition.id;
   rc = h2_pal_power_get_next_boot_partition(loader->config.power, &partition);
   if (rc == H2_PAL_ERR_UNSUPPORTED) {
     status->next_partition_id = status->running_partition_id;
     return H2_PAL_OK;
   }
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   status->next_partition_id = partition.id;
   return H2_PAL_OK;
 }
@@ -280,10 +260,9 @@ typedef struct h2_loader_bootable_probe {
   int bootable;
 } h2_loader_bootable_probe_t;
 
-static h2_pal_result_t
-probe_bootable_partition(void *user,
-                         const h2_pal_power_boot_partition_t *partition) {
-  h2_loader_bootable_probe_t *probe = user;
+static h2_pal_result_t probe_bootable_partition(
+    void* user, const h2_pal_power_boot_partition_t* partition) {
+  h2_loader_bootable_probe_t* probe = user;
   if (partition->id == probe->partition_id) {
     probe->found = 1;
     probe->bootable =
@@ -292,8 +271,8 @@ probe_bootable_partition(void *user,
   return H2_PAL_OK;
 }
 
-static int partition_is_bootable(h2_loader_t *loader, uint32_t partition_id,
-                                 int *out_bootable) {
+static int partition_is_bootable(h2_loader_t* loader, uint32_t partition_id,
+                                 int* out_bootable) {
   h2_loader_bootable_probe_t probe = {.partition_id = partition_id};
   int rc = h2_pal_power_list_boot_partitions(loader->config.power,
                                              probe_bootable_partition, &probe);
@@ -301,35 +280,29 @@ static int partition_is_bootable(h2_loader_t *loader, uint32_t partition_id,
     *out_bootable = 1;
     return H2_PAL_OK;
   }
-  if (rc != H2_PAL_OK)
-    return rc;
-  if (!probe.found)
-    return H2_PAL_ERR_NOT_FOUND;
+  if (rc != H2_PAL_OK) return rc;
+  if (!probe.found) return H2_PAL_ERR_NOT_FOUND;
   *out_bootable = probe.bootable;
   return H2_PAL_OK;
 }
 
-int h2_loader_read_status(h2_loader_t *loader, h2_loader_status_t *out_status) {
+int h2_loader_read_status(h2_loader_t* loader, h2_loader_status_t* out_status) {
   int rc;
-  if (loader == NULL || out_status == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+  if (loader == NULL || out_status == NULL) return H2_PAL_ERR_INVALID_ARG;
   rc = h2_loader_read_pref_status(loader->config.pref,
                                   loader->config.package.allocator, out_status);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   status_from_config(&loader->config, out_status);
   rc = refresh_partitions(loader, out_status);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   out_status->command_availability =
       h2_loader_get_command_availability(loader, out_status);
   return H2_PAL_OK;
 }
 
-static int identity_valid(const h2_loader_image_identity_t *identity) {
+static int identity_valid(const h2_loader_image_identity_t* identity) {
   h2_loader_metadata_t metadata = {0};
-  if (identity == NULL)
-    return 0;
+  if (identity == NULL) return 0;
   metadata.valid = 1;
   metadata.role = identity->role;
   metadata.image_size = identity->image_size;
@@ -343,8 +316,8 @@ static int identity_valid(const h2_loader_image_identity_t *identity) {
 }
 
 int h2_loader_read_current_loader_identity(
-    const h2_loader_config_t *config, const char *version,
-    h2_loader_image_identity_t *out_identity) {
+    const h2_loader_config_t* config, const char* version,
+    h2_loader_image_identity_t* out_identity) {
   if (out_identity == NULL) return H2_PAL_ERR_INVALID_ARG;
   memset(out_identity, 0, sizeof(*out_identity));
   if (config == NULL || config->pref == NULL || config->power == NULL ||
@@ -354,14 +327,15 @@ int h2_loader_read_current_loader_identity(
       config->h2loader_partition_id == config->app_partition_id ||
       config->package.allocator->vtable == NULL ||
       config->package.allocator->vtable->alloc == NULL ||
-      config->package.allocator->vtable->free == NULL || config->board[0] == '\0' ||
-      config->target[0] == '\0' || version[0] == '\0' ||
+      config->package.allocator->vtable->free == NULL ||
+      config->board[0] == '\0' || config->target[0] == '\0' ||
+      version[0] == '\0' ||
       strlen(config->board) >= sizeof(out_identity->board) ||
       strlen(config->target) >= sizeof(out_identity->target) ||
       strlen(version) >= sizeof(out_identity->version))
     return H2_PAL_ERR_INVALID_ARG;
-  const h2_loader_image_reader_api_t *reader = config->package.image_reader;
-  const h2_loader_digest_api_t *digest_api = &config->package.digest;
+  const h2_loader_image_reader_api_t* reader = config->package.image_reader;
+  const h2_loader_digest_api_t* digest_api = &config->package.digest;
   if (reader == NULL || reader->vtable == NULL ||
       reader->vtable->get_capacity == NULL || reader->vtable->read == NULL ||
       digest_api->start == NULL || digest_api->update == NULL ||
@@ -370,46 +344,52 @@ int h2_loader_read_current_loader_identity(
   h2_pal_power_boot_partition_t running = {0};
   int rc = h2_pal_power_get_running_boot_partition(config->power, &running);
   if (rc != H2_PAL_OK) return rc;
-  if (running.id != config->h2loader_partition_id && running.id != config->app_partition_id)
+  if (running.id != config->h2loader_partition_id &&
+      running.id != config->app_partition_id)
     return H2_PAL_ERR_INVALID_STATE;
   h2_loader_metadata_t metadata = {0};
   int present = 0;
-  const h2_loader_metadata_slot_t slot = running.id == config->h2loader_partition_id
-      ? H2_LOADER_METADATA_SLOT_PARTITION_1 : H2_LOADER_METADATA_SLOT_PARTITION_2;
+  const h2_loader_metadata_slot_t slot =
+      running.id == config->h2loader_partition_id
+          ? H2_LOADER_METADATA_SLOT_PARTITION_1
+          : H2_LOADER_METADATA_SLOT_PARTITION_2;
   rc = h2_loader_metadata_read(config->pref, config->package.allocator, slot,
                                &metadata, &present);
   if (rc != H2_PAL_OK && rc != H2_PAL_ERR_FORMAT) return rc;
   /* Malformed persistent identity is not evidence about the running image. */
-  const h2_loader_metadata_t *active = &metadata;
+  const h2_loader_metadata_t* active = &metadata;
   if (rc != H2_PAL_OK || !present || !active->valid ||
       active->role != H2_LOADER_IMAGE_ROLE_H2LOADER ||
-      strcmp(active->version, version) != 0 || strcmp(active->board, config->board) != 0 ||
+      strcmp(active->version, version) != 0 ||
+      strcmp(active->board, config->board) != 0 ||
       strcmp(active->target, config->target) != 0)
     active = NULL;
   uint64_t capacity = 0u, size = active != NULL ? active->image_size : 0u;
   rc = reader->vtable->get_capacity(reader->user, running.id, &capacity);
   if (rc != H2_PAL_OK) return rc;
   if (active == NULL) {
-    rc = reader->vtable->get_capacity(reader->user, config->h2loader_partition_id, &size);
+    rc = reader->vtable->get_capacity(reader->user,
+                                      config->h2loader_partition_id, &size);
     if (rc != H2_PAL_OK) return rc;
   }
   if (size == 0u || size > capacity) return H2_PAL_ERR_FORMAT;
-  uint8_t *buffer = h2_pal_mem_alloc(config->package.allocator, 4096u);
+  uint8_t* buffer = h2_pal_mem_alloc(config->package.allocator, 4096u);
   if (buffer == NULL) return H2_PAL_ERR_NO_MEMORY;
   uint8_t digest[32];
   rc = digest_api->start(digest_api->user);
   for (uint64_t offset = 0u; rc == H2_PAL_OK && offset < size;) {
     size_t take = size - offset > 4096u ? 4096u : (size_t)(size - offset);
     rc = reader->vtable->read(reader->user, running.id, offset, buffer, take);
-    if (rc == H2_PAL_OK) rc = digest_api->update(digest_api->user, buffer, take);
+    if (rc == H2_PAL_OK)
+      rc = digest_api->update(digest_api->user, buffer, take);
     offset += take;
   }
   if (rc == H2_PAL_OK) rc = digest_api->finish(digest_api->user, digest);
   if (rc != H2_PAL_OK) digest_api->abort(digest_api->user);
   h2_pal_mem_free(config->package.allocator, buffer);
   if (rc != H2_PAL_OK) return rc;
-  h2_loader_image_identity_t identity = {.format = 1u, .role = H2_LOADER_IMAGE_ROLE_H2LOADER,
-                                         .image_size = size};
+  h2_loader_image_identity_t identity = {
+      .format = 1u, .role = H2_LOADER_IMAGE_ROLE_H2LOADER, .image_size = size};
   static const char hex[] = "0123456789abcdef";
   for (size_t i = 0u; i < sizeof(digest); ++i) {
     identity.image_sha256[2u * i] = hex[digest[i] >> 4u];
@@ -418,14 +398,15 @@ int h2_loader_read_current_loader_identity(
   copy_text(identity.board, sizeof(identity.board), config->board);
   copy_text(identity.target, sizeof(identity.target), config->target);
   copy_text(identity.version, sizeof(identity.version), version);
-  if (active != NULL && strcmp(identity.image_sha256, active->image_checksum) != 0)
+  if (active != NULL &&
+      strcmp(identity.image_sha256, active->image_checksum) != 0)
     return H2_PAL_ERR_FORMAT;
   *out_identity = identity;
   return H2_PAL_OK;
 }
 
-static void metadata_from_identity(const h2_loader_image_identity_t *identity,
-                                   h2_loader_metadata_t *metadata) {
+static void metadata_from_identity(const h2_loader_image_identity_t* identity,
+                                   h2_loader_metadata_t* metadata) {
   memset(metadata, 0, sizeof(*metadata));
   metadata->valid = 1;
   metadata->role = identity->role;
@@ -437,17 +418,16 @@ static void metadata_from_identity(const h2_loader_image_identity_t *identity,
   copy_text(metadata->target, sizeof(metadata->target), identity->target);
 }
 
-static int
-metadata_matches_identity(const h2_loader_metadata_t *metadata,
-                          const h2_loader_image_identity_t *identity) {
+static int metadata_matches_identity(
+    const h2_loader_metadata_t* metadata,
+    const h2_loader_image_identity_t* identity) {
   h2_loader_metadata_t active;
-  if (!identity_valid(identity))
-    return 0;
+  if (!identity_valid(identity)) return 0;
   metadata_from_identity(identity, &active);
   return h2_loader_metadata_image_equal(metadata, &active);
 }
 
-static h2_loader_metadata_slot_t slot_for_partition(const h2_loader_t *loader,
+static h2_loader_metadata_slot_t slot_for_partition(const h2_loader_t* loader,
                                                     uint32_t partition_id) {
   if (partition_id == loader->config.h2loader_partition_id) {
     return H2_LOADER_METADATA_SLOT_PARTITION_1;
@@ -458,10 +438,10 @@ static h2_loader_metadata_slot_t slot_for_partition(const h2_loader_t *loader,
   return (h2_loader_metadata_slot_t)0;
 }
 
-static int seed_running_metadata(h2_loader_t *loader) {
+static int seed_running_metadata(h2_loader_t* loader) {
   h2_loader_metadata_slot_t slot =
       slot_for_partition(loader, loader->status.running_partition_id);
-  h2_loader_metadata_t *stored;
+  h2_loader_metadata_t* stored;
   h2_loader_metadata_t active;
   if (slot == 0 || !identity_valid(&loader->config.active_identity)) {
     return H2_PAL_ERR_INVALID_STATE;
@@ -480,49 +460,44 @@ static int seed_running_metadata(h2_loader_t *loader) {
     active.package_size = stored->package_size;
   }
   int rc = h2_loader_metadata_write(loader->config.pref, slot, &active);
-  if (rc == H2_PAL_OK)
-    *stored = active;
+  if (rc == H2_PAL_OK) *stored = active;
   return rc;
 }
 
-static void emit_event(h2_loader_t *loader, h2_loader_startup_event_t event,
+static void emit_event(h2_loader_t* loader, h2_loader_startup_event_t event,
                        int code) {
   if (loader->config.on_event != NULL) {
     loader->config.on_event(loader->config.event_user, event, code);
   }
 }
 
-int h2_loader_set_last_result(h2_loader_t *loader, int result) {
-  if (loader == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+int h2_loader_set_last_result(h2_loader_t* loader, int result) {
+  if (loader == NULL) return H2_PAL_ERR_INVALID_ARG;
   int rc = pref_set_i32(loader->config.pref, "last_result", result);
-  if (rc == H2_PAL_OK)
-    loader->status.last_result = result;
+  if (rc == H2_PAL_OK) loader->status.last_result = result;
   return rc;
 }
 
-static int fail_recovery(h2_loader_t *loader, int result) {
+static int fail_recovery(h2_loader_t* loader, int result) {
   (void)h2_loader_set_last_result(loader, result);
   emit_event(loader, H2_LOADER_STARTUP_EVENT_RECOVERY_FAILED, result);
   return result;
 }
 
-static int remove_optional_file(const h2_pal_fs_api_t *fs, const char *path) {
-  if (path == NULL || path[0] == '\0')
-    return H2_PAL_OK;
+static int remove_optional_file(const h2_pal_fs_api_t* fs, const char* path) {
+  if (path == NULL || path[0] == '\0') return H2_PAL_OK;
   int rc = h2_pal_fs_remove(fs, path);
   return rc == H2_PAL_FS_ERR_NOT_FOUND ? H2_PAL_OK : rc;
 }
 
-int h2_loader_begin_stage(h2_loader_t *loader, const char *temporary_path,
-                          const char *previous_path) {
+int h2_loader_begin_stage(h2_loader_t* loader, const char* temporary_path,
+                          const char* previous_path) {
   int rc;
   if (loader == NULL || loader->config.package.fs == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   rc = h2_loader_stage_begin(loader->config.pref);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   rc = remove_optional_file(loader->config.package.fs, temporary_path);
   if (rc == H2_PAL_OK) {
     rc = remove_optional_file(loader->config.package.fs, previous_path);
@@ -536,34 +511,29 @@ int h2_loader_begin_stage(h2_loader_t *loader, const char *temporary_path,
   return rc;
 }
 
-int h2_loader_commit_stage(h2_loader_t *loader, uint64_t bytes,
-                           const char *sha256) {
+int h2_loader_commit_stage(h2_loader_t* loader, uint64_t bytes,
+                           const char* sha256) {
   h2_loader_metadata_t stage;
-  if (loader == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+  if (loader == NULL) return H2_PAL_ERR_INVALID_ARG;
   int rc = h2_loader_stage_publish(&loader->package, loader->config.pref, bytes,
                                    sha256, &stage);
-  if (rc == H2_PAL_OK)
-    loader->status.stage = stage;
+  if (rc == H2_PAL_OK) loader->status.stage = stage;
   return rc;
 }
 
 int h2_loader_commit_inspected_stage(
-    h2_loader_t *loader, uint64_t bytes, const char *sha256,
-    const h2_loader_package_inspection_t *inspection) {
+    h2_loader_t* loader, uint64_t bytes, const char* sha256,
+    const h2_loader_package_inspection_t* inspection) {
   h2_loader_metadata_t stage;
-  if (loader == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+  if (loader == NULL) return H2_PAL_ERR_INVALID_ARG;
   int rc = h2_loader_stage_commit_inspection(loader->config.pref, bytes, sha256,
                                              inspection, &stage);
-  if (rc == H2_PAL_OK)
-    loader->status.stage = stage;
+  if (rc == H2_PAL_OK) loader->status.stage = stage;
   return rc;
 }
 
-int h2_loader_cancel_stage(h2_loader_t *loader) {
-  if (loader == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+int h2_loader_cancel_stage(h2_loader_t* loader) {
+  if (loader == NULL) return H2_PAL_ERR_INVALID_ARG;
   int rc = h2_loader_stage_abort(loader->config.package.fs, loader->config.pref,
                                  loader->config.package.package_path);
   if (rc == H2_PAL_OK)
@@ -571,9 +541,9 @@ int h2_loader_cancel_stage(h2_loader_t *loader) {
   return rc;
 }
 
-static int
-stage_matches_inspection(const h2_loader_metadata_t *stage,
-                         const h2_loader_package_inspection_t *inspection) {
+static int stage_matches_inspection(
+    const h2_loader_metadata_t* stage,
+    const h2_loader_package_inspection_t* inspection) {
   return stage->valid && !inspection->legacy &&
          stage->role == inspection->manifest.role &&
          stage->image_size == inspection->manifest.image_size &&
@@ -584,8 +554,8 @@ stage_matches_inspection(const h2_loader_metadata_t *stage,
          strcmp(stage->target, inspection->manifest.target) == 0;
 }
 
-static int inspect_current_stage(h2_loader_t *loader,
-                                 h2_loader_package_inspection_t *inspection) {
+static int inspect_current_stage(h2_loader_t* loader,
+                                 h2_loader_package_inspection_t* inspection) {
   int rc = h2_loader_package_verify_path(
       &loader->package, loader->config.package.package_path,
       loader->status.stage.package_size, loader->status.stage.package_checksum);
@@ -614,29 +584,26 @@ static int inspect_current_stage(h2_loader_t *loader,
   return rc;
 }
 
-static int finish_stage(const h2_pal_pref_api_t *pref,
-                        const h2_pal_fs_api_t *fs, const char *package_path,
-                        h2_loader_metadata_t *stage) {
+static int finish_stage(const h2_pal_pref_api_t* pref,
+                        const h2_pal_fs_api_t* fs, const char* package_path,
+                        h2_loader_metadata_t* stage) {
   h2_loader_metadata_t invalid = {0};
   int rc =
       h2_loader_metadata_write(pref, H2_LOADER_METADATA_SLOT_STAGE, &invalid);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   rc = remove_optional_file(fs, package_path);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   rc = h2_loader_metadata_clear(pref, H2_LOADER_METADATA_SLOT_STAGE);
-  if (rc == H2_PAL_OK && stage != NULL)
-    *stage = invalid;
+  if (rc == H2_PAL_OK && stage != NULL) *stage = invalid;
   return rc;
 }
 
 int h2_loader_finalize_active_app_with_confirmation(
-    const h2_pal_pref_api_t *pref, const h2_pal_mem_api_t *allocator,
-    const h2_pal_fs_api_t *fs, const char *package_path,
-    const h2_loader_image_identity_t *active_identity,
+    const h2_pal_pref_api_t* pref, const h2_pal_mem_api_t* allocator,
+    const h2_pal_fs_api_t* fs, const char* package_path,
+    const h2_loader_image_identity_t* active_identity,
     uint32_t running_partition_id, uint32_t app_partition_id,
-    h2_loader_reboot_transition_fn confirm, void *confirm_user) {
+    h2_loader_reboot_transition_fn confirm, void* confirm_user) {
   h2_loader_metadata_t stage;
   h2_loader_metadata_t partition;
   h2_loader_metadata_t stored;
@@ -654,23 +621,20 @@ int h2_loader_finalize_active_app_with_confirmation(
   metadata_from_identity(active_identity, &partition);
   rc = h2_loader_metadata_read(pref, allocator, H2_LOADER_METADATA_SLOT_STAGE,
                                &stage, &stage_present);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   rc = h2_loader_metadata_read(pref, allocator,
                                H2_LOADER_METADATA_SLOT_PARTITION_2, &stored,
                                &stored_present);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   if (!stored_present || !stored.valid ||
       !h2_loader_metadata_image_equal(&stored, &partition)) {
     /* The running APP identity is authoritative even when Preference was
      * erased or contains stale P2 metadata. Seed the slot from the image, but
      * keep Stage intact because there is no durable proof that this exact
      * source package (including data-only contents) was installed. */
-    rc = h2_loader_metadata_write(
-        pref, H2_LOADER_METADATA_SLOT_PARTITION_2, &partition);
-    if (rc != H2_PAL_OK)
-      return rc;
+    rc = h2_loader_metadata_write(pref, H2_LOADER_METADATA_SLOT_PARTITION_2,
+                                  &partition);
+    if (rc != H2_PAL_OK) return rc;
     return confirm != NULL ? confirm(confirm_user) : H2_PAL_OK;
   }
   stage_installed =
@@ -680,8 +644,7 @@ int h2_loader_finalize_active_app_with_confirmation(
       strcmp(stage.package_checksum, stored.package_checksum) == 0;
   if (stage_installed) {
     rc = h2_loader_metadata_from_stage(&stage, &partition);
-    if (rc != H2_PAL_OK)
-      return rc;
+    if (rc != H2_PAL_OK) return rc;
   } else {
     copy_text(partition.package_checksum, sizeof(partition.package_checksum),
               stored.package_checksum);
@@ -689,16 +652,14 @@ int h2_loader_finalize_active_app_with_confirmation(
   }
   rc = h2_loader_metadata_write(pref, H2_LOADER_METADATA_SLOT_PARTITION_2,
                                 &partition);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   /* Persist the running APP identity before platform confirmation, but retain
    * Stage until confirmation succeeds. A reset at either boundary therefore
    * leaves enough durable evidence to retry without confirming an image whose
    * metadata was never committed or discarding its source package early. */
   if (confirm != NULL) {
     rc = confirm(confirm_user);
-    if (rc != H2_PAL_OK)
-      return rc;
+    if (rc != H2_PAL_OK) return rc;
   }
   if (!stage_installed) {
     return H2_PAL_OK;
@@ -708,25 +669,24 @@ int h2_loader_finalize_active_app_with_confirmation(
 }
 
 int h2_loader_finalize_active_app(
-    const h2_pal_pref_api_t *pref, const h2_pal_mem_api_t *allocator,
-    const h2_pal_fs_api_t *fs, const char *package_path,
-    const h2_loader_image_identity_t *active_identity,
+    const h2_pal_pref_api_t* pref, const h2_pal_mem_api_t* allocator,
+    const h2_pal_fs_api_t* fs, const char* package_path,
+    const h2_loader_image_identity_t* active_identity,
     uint32_t running_partition_id, uint32_t app_partition_id) {
   return h2_loader_finalize_active_app_with_confirmation(
       pref, allocator, fs, package_path, active_identity, running_partition_id,
       app_partition_id, NULL, NULL);
 }
 
-static int write_partition_2(h2_loader_t *loader,
-                             const h2_loader_package_inspection_t *inspection) {
+static int write_partition_2(h2_loader_t* loader,
+                             const h2_loader_package_inspection_t* inspection) {
   h2_loader_metadata_t invalid = {0};
   h2_loader_metadata_t installed;
   h2_loader_package_install_plan_t plan;
   h2_loader_package_install_result_t result;
   int rc = h2_loader_package_plan_install(
       &loader->package, inspection, loader->config.app_partition_id, &plan);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   if (inspection->manifest.role == H2_LOADER_IMAGE_ROLE_H2LOADER) {
     plan.update_app = 1;
     plan.update_data = 0;
@@ -734,27 +694,23 @@ static int write_partition_2(h2_loader_t *loader,
   if (plan.update_app) {
     rc = h2_loader_metadata_write(
         loader->config.pref, H2_LOADER_METADATA_SLOT_PARTITION_2, &invalid);
-    if (rc != H2_PAL_OK)
-      return rc;
+    if (rc != H2_PAL_OK) return rc;
     loader->status.partition_2 = invalid;
   }
   emit_event(loader, H2_LOADER_STARTUP_EVENT_WRITE_PARTITION_2, H2_PAL_OK);
   rc = h2_loader_package_install_to(&loader->package, inspection,
                                     loader->config.app_partition_id, &plan,
                                     &result);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   rc = h2_loader_metadata_from_stage(&loader->status.stage, &installed);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   rc = h2_loader_metadata_write(
       loader->config.pref, H2_LOADER_METADATA_SLOT_PARTITION_2, &installed);
-  if (rc == H2_PAL_OK)
-    loader->status.partition_2 = installed;
+  if (rc == H2_PAL_OK) loader->status.partition_2 = installed;
   return rc;
 }
 
-static int prepare_disruptive(h2_loader_t *loader,
+static int prepare_disruptive(h2_loader_t* loader,
                               h2_loader_disruptive_action_t action) {
   return loader->config.before_disruptive != NULL
              ? loader->config.before_disruptive(loader->config.disruptive_user,
@@ -762,23 +718,20 @@ static int prepare_disruptive(h2_loader_t *loader,
              : H2_PAL_OK;
 }
 
-static int set_next_and_reboot(h2_loader_t *loader, uint32_t partition_id,
+static int set_next_and_reboot(h2_loader_t* loader, uint32_t partition_id,
                                h2_loader_boot_intent_t intent,
                                h2_loader_disruptive_action_t action,
                                h2_loader_reboot_transition_fn transition,
-                               void *transition_user) {
+                               void* transition_user) {
   h2_pal_power_boot_partition_t previous_next = {0};
   h2_loader_boot_intent_t previous_intent = loader->status.boot_intent;
   int rc = h2_pal_power_get_next_boot_partition(loader->config.power,
-                                                 &previous_next);
-  if (rc != H2_PAL_OK)
-    return rc;
+                                                &previous_next);
+  if (rc != H2_PAL_OK) return rc;
   rc = prepare_disruptive(loader, action);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   rc = pref_set_u32(loader->config.pref, "boot_intent", (uint32_t)intent);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   rc = h2_pal_power_set_next_boot_partition(loader->config.power, partition_id);
   if (rc != H2_PAL_OK) {
     (void)pref_set_u32(loader->config.pref, "boot_intent",
@@ -789,7 +742,7 @@ static int set_next_and_reboot(h2_loader_t *loader, uint32_t partition_id,
     rc = transition(transition_user);
     if (rc != H2_PAL_OK) {
       (void)h2_pal_power_set_next_boot_partition(loader->config.power,
-                                                  previous_next.id);
+                                                 previous_next.id);
       (void)pref_set_u32(loader->config.pref, "boot_intent",
                          (uint32_t)previous_intent);
       return rc;
@@ -799,7 +752,7 @@ static int set_next_and_reboot(h2_loader_t *loader, uint32_t partition_id,
                            H2_LOADER_REBOOT_REASON_DEFAULT);
   if (rc != H2_PAL_OK) {
     (void)h2_pal_power_set_next_boot_partition(loader->config.power,
-                                                previous_next.id);
+                                               previous_next.id);
     (void)pref_set_u32(loader->config.pref, "boot_intent",
                        (uint32_t)previous_intent);
     return rc;
@@ -809,49 +762,42 @@ static int set_next_and_reboot(h2_loader_t *loader, uint32_t partition_id,
   return H2_PAL_OK;
 }
 
-static int copy_partition_2_to_1(h2_loader_t *loader) {
+static int copy_partition_2_to_1(h2_loader_t* loader) {
   h2_loader_metadata_t invalid = {0};
   h2_loader_metadata_t copied;
   int rc = h2_pal_power_set_next_boot_partition(
       loader->config.power, loader->config.app_partition_id);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   rc = h2_loader_metadata_write(loader->config.pref,
                                 H2_LOADER_METADATA_SLOT_PARTITION_1, &invalid);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   loader->status.partition_1 = invalid;
   emit_event(loader, H2_LOADER_STARTUP_EVENT_COPY_PARTITION_1, H2_PAL_OK);
   rc = h2_loader_image_copy_to(
       &loader->package, &loader->config.active_identity,
       loader->config.app_partition_id, loader->config.h2loader_partition_id);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   metadata_from_identity(&loader->config.active_identity, &copied);
   if (h2_loader_metadata_image_equal(&loader->status.stage, &copied)) {
     rc = h2_loader_metadata_from_stage(&loader->status.stage, &copied);
-    if (rc != H2_PAL_OK)
-      return rc;
+    if (rc != H2_PAL_OK) return rc;
     rc = h2_loader_metadata_write(loader->config.pref,
                                   H2_LOADER_METADATA_SLOT_PARTITION_2, &copied);
-    if (rc != H2_PAL_OK)
-      return rc;
+    if (rc != H2_PAL_OK) return rc;
     loader->status.partition_2 = copied;
   }
   rc = h2_loader_metadata_write(loader->config.pref,
                                 H2_LOADER_METADATA_SLOT_PARTITION_1, &copied);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   loader->status.partition_1 = copied;
   rc = h2_loader_set_last_result(loader, H2_PAL_OK);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   return set_next_and_reboot(loader, loader->config.h2loader_partition_id,
                              H2_LOADER_BOOT_INTENT_AUTO,
                              H2_LOADER_DISRUPTIVE_REBOOT_UPGRADE, NULL, NULL);
 }
 
-static int finish_loader_stage_if_converged(h2_loader_t *loader) {
+static int finish_loader_stage_if_converged(h2_loader_t* loader) {
   /* APP packages can carry an independent data tree. Only a Loader package is
    * complete when both executable partitions converge on the Stage image;
    * APP Stage completion belongs to the running APP finalizer, which also
@@ -870,34 +816,27 @@ static int finish_loader_stage_if_converged(h2_loader_t *loader) {
   }
   h2_loader_metadata_t partition;
   int rc = h2_loader_metadata_from_stage(&loader->status.stage, &partition);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   rc = h2_loader_metadata_write(
       loader->config.pref, H2_LOADER_METADATA_SLOT_PARTITION_2, &partition);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   loader->status.partition_2 = partition;
   rc = h2_loader_metadata_write(
       loader->config.pref, H2_LOADER_METADATA_SLOT_PARTITION_1, &partition);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   loader->status.partition_1 = partition;
   rc = finish_stage(loader->config.pref, loader->config.package.fs,
                     loader->config.package.package_path, &loader->status.stage);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   rc = h2_loader_set_last_result(loader, H2_PAL_OK);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   emit_event(loader, H2_LOADER_STARTUP_EVENT_STAGE_FINISHED, H2_PAL_OK);
   return H2_PAL_OK;
 }
 
-static int detect_rolled_back_app(h2_loader_t *loader,
-                                  int *out_rolled_back) {
+static int detect_rolled_back_app(h2_loader_t* loader, int* out_rolled_back) {
   int bootable = 1;
-  if (loader == NULL || out_rolled_back == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+  if (loader == NULL || out_rolled_back == NULL) return H2_PAL_ERR_INVALID_ARG;
   *out_rolled_back = 0;
   /* Covers App and Loader candidates alike: once the platform reports that a
    * candidate in Partition 2 failed to confirm, AUTO must not relaunch it
@@ -912,16 +851,14 @@ static int detect_rolled_back_app(h2_loader_t *loader,
   }
   int rc =
       partition_is_bootable(loader, loader->config.app_partition_id, &bootable);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   *out_rolled_back = !bootable;
   return H2_PAL_OK;
 }
 
-static int mount_file_points(h2_loader_t *loader) {
+static int mount_file_points(h2_loader_t* loader) {
   int rc;
-  if (loader->config.mount_file_point == NULL)
-    return H2_PAL_OK;
+  if (loader->config.mount_file_point == NULL) return H2_PAL_OK;
   rc = loader->config.mount_file_point(loader->config.mount_user, "/dl");
   if (rc == H2_PAL_OK) {
     rc = loader->config.mount_file_point(loader->config.mount_user, "/data");
@@ -929,7 +866,7 @@ static int mount_file_points(h2_loader_t *loader) {
   return rc;
 }
 
-int h2_loader_init(h2_loader_t *loader, const h2_loader_config_t *config) {
+int h2_loader_init(h2_loader_t* loader, const h2_loader_config_t* config) {
   int rc;
   if (loader == NULL || config == NULL || config->package.fs == NULL ||
       config->package.allocator == NULL || config->pref == NULL ||
@@ -955,20 +892,23 @@ int h2_loader_init(h2_loader_t *loader, const h2_loader_config_t *config) {
   if (loader->config.package.app_partition_id == 0u) {
     loader->config.package.app_partition_id = config->app_partition_id;
   }
-  h2_atomic_result_t atomic_rc = h2_atomic_int_init(&loader->mfg_gate_bypass, 0);
+  h2_atomic_result_t atomic_rc =
+      h2_atomic_int_init(&loader->mfg_gate_bypass, 0);
   if (atomic_rc == H2_ATOMIC_OK)
-    atomic_rc = h2_atomic_int_init(&loader->implemented_commands,
-                                  (int)H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED);
+    atomic_rc =
+        h2_atomic_int_init(&loader->implemented_commands,
+                           (int)H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED);
   if (atomic_rc == H2_ATOMIC_OK)
-    atomic_rc = h2_atomic_int_init(&loader->command_availability,
-                                  (int)(H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED |
-                                        H2_LOADER_COMMAND_AVAILABILITY_ALL));
+    atomic_rc =
+        h2_atomic_int_init(&loader->command_availability,
+                           (int)(H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED |
+                                 H2_LOADER_COMMAND_AVAILABILITY_ALL));
   if (atomic_rc != H2_ATOMIC_OK) {
     h2_atomic_int_destroy(&loader->mfg_gate_bypass);
     h2_atomic_int_destroy(&loader->implemented_commands);
     h2_atomic_int_destroy(&loader->command_availability);
     return atomic_rc == H2_ATOMIC_UNSUPPORTED ? H2_PAL_ERR_UNSUPPORTED
-                                               : H2_PAL_ERR_NO_MEMORY;
+                                              : H2_PAL_ERR_NO_MEMORY;
   }
   rc = h2_loader_package_init(&loader->package, &loader->config.package);
   if (rc != H2_PAL_OK) {
@@ -976,40 +916,33 @@ int h2_loader_init(h2_loader_t *loader, const h2_loader_config_t *config) {
     return rc;
   }
   rc = h2_loader_read_status(loader, &loader->status);
-  if (rc != H2_PAL_OK)
-    h2_loader_deinit(loader);
+  if (rc != H2_PAL_OK) h2_loader_deinit(loader);
   return rc;
 }
 
-void h2_loader_deinit(h2_loader_t *loader) {
-  if (loader == NULL)
-    return;
+void h2_loader_deinit(h2_loader_t* loader) {
+  if (loader == NULL) return;
   h2_atomic_int_destroy(&loader->mfg_gate_bypass);
   h2_atomic_int_destroy(&loader->implemented_commands);
   h2_atomic_int_destroy(&loader->command_availability);
 }
 
-int h2_loader_startup(h2_loader_t *loader,
-                      h2_loader_startup_action_t *out_action) {
+int h2_loader_startup(h2_loader_t* loader,
+                      h2_loader_startup_action_t* out_action) {
   h2_loader_package_inspection_t inspection;
   int app_rolled_back = 0;
   int rc;
-  if (loader == NULL || out_action == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+  if (loader == NULL || out_action == NULL) return H2_PAL_ERR_INVALID_ARG;
   *out_action = H2_LOADER_STARTUP_ACTION_COMMAND_MODE;
   rc = mount_file_points(loader);
-  if (rc != H2_PAL_OK)
-    return fail_recovery(loader, rc);
+  if (rc != H2_PAL_OK) return fail_recovery(loader, rc);
   rc = h2_loader_read_status(loader, &loader->status);
-  if (rc != H2_PAL_OK)
-    return fail_recovery(loader, rc);
+  if (rc != H2_PAL_OK) return fail_recovery(loader, rc);
   rc = seed_running_metadata(loader);
-  if (rc != H2_PAL_OK)
-    return fail_recovery(loader, rc);
+  if (rc != H2_PAL_OK) return fail_recovery(loader, rc);
   if (loader->config.confirm_active_image != NULL) {
     rc = loader->config.confirm_active_image(loader->config.confirm_user);
-    if (rc != H2_PAL_OK)
-      return fail_recovery(loader, rc);
+    if (rc != H2_PAL_OK) return fail_recovery(loader, rc);
   }
 
   if (loader->config.active_identity.role != H2_LOADER_IMAGE_ROLE_H2LOADER) {
@@ -1017,8 +950,7 @@ int h2_loader_startup(h2_loader_t *loader,
   }
   if (loader->status.running_partition_id == loader->config.app_partition_id) {
     rc = copy_partition_2_to_1(loader);
-    if (rc != H2_PAL_OK)
-      return fail_recovery(loader, rc);
+    if (rc != H2_PAL_OK) return fail_recovery(loader, rc);
     *out_action = H2_LOADER_STARTUP_ACTION_REBOOTING_H2LOADER;
     return H2_PAL_OK;
   }
@@ -1035,20 +967,15 @@ int h2_loader_startup(h2_loader_t *loader,
   }
 
   rc = finish_loader_stage_if_converged(loader);
-  if (rc != H2_PAL_OK)
-    return fail_recovery(loader, rc);
+  if (rc != H2_PAL_OK) return fail_recovery(loader, rc);
   rc = detect_rolled_back_app(loader, &app_rolled_back);
-  if (rc != H2_PAL_OK)
-    return fail_recovery(loader, rc);
-  if (app_rolled_back)
-    return H2_PAL_OK;
+  if (rc != H2_PAL_OK) return fail_recovery(loader, rc);
+  if (app_rolled_back) return H2_PAL_OK;
   if (loader->status.stage.valid) {
     rc = inspect_current_stage(loader, &inspection);
-    if (rc != H2_PAL_OK)
-      return fail_recovery(loader, rc);
+    if (rc != H2_PAL_OK) return fail_recovery(loader, rc);
     rc = write_partition_2(loader, &inspection);
-    if (rc != H2_PAL_OK)
-      return fail_recovery(loader, rc);
+    if (rc != H2_PAL_OK) return fail_recovery(loader, rc);
   }
   if (!loader->status.partition_2.valid ||
       h2_loader_metadata_image_equal(&loader->status.partition_1,
@@ -1056,23 +983,20 @@ int h2_loader_startup(h2_loader_t *loader,
     rc = finish_loader_stage_if_converged(loader);
     return rc == H2_PAL_OK ? H2_PAL_OK : fail_recovery(loader, rc);
   }
-  if (!mfg_gate_satisfied(loader))
-    return H2_PAL_OK;
+  if (!mfg_gate_satisfied(loader)) return H2_PAL_OK;
   emit_event(loader, H2_LOADER_STARTUP_EVENT_BOOT_PARTITION_2, H2_PAL_OK);
   rc = set_next_and_reboot(loader, loader->config.app_partition_id,
                            H2_LOADER_BOOT_INTENT_AUTO,
                            H2_LOADER_DISRUPTIVE_REBOOT_APP, NULL, NULL);
-  if (rc != H2_PAL_OK)
-    return fail_recovery(loader, rc);
+  if (rc != H2_PAL_OK) return fail_recovery(loader, rc);
   *out_action = H2_LOADER_STARTUP_ACTION_REBOOTING_APP;
   return H2_PAL_OK;
 }
 
 int h2_loader_reboot_h2loader_with_transition(
-    h2_loader_t *loader, h2_loader_reboot_transition_fn transition,
-    void *transition_user) {
-  if (loader == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+    h2_loader_t* loader, h2_loader_reboot_transition_fn transition,
+    void* transition_user) {
+  if (loader == NULL) return H2_PAL_ERR_INVALID_ARG;
   return set_next_and_reboot(loader, loader->config.h2loader_partition_id,
                              H2_LOADER_BOOT_INTENT_LOADER,
                              H2_LOADER_DISRUPTIVE_REBOOT_LOADER, transition,
@@ -1080,10 +1004,9 @@ int h2_loader_reboot_h2loader_with_transition(
 }
 
 int h2_loader_reboot_app_with_transition(
-    h2_loader_t *loader, h2_loader_reboot_transition_fn transition,
-    void *transition_user) {
-  if (loader == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+    h2_loader_t* loader, h2_loader_reboot_transition_fn transition,
+    void* transition_user) {
+  if (loader == NULL) return H2_PAL_ERR_INVALID_ARG;
   if (!loader->status.partition_2.valid ||
       loader->status.partition_2.role != H2_LOADER_IMAGE_ROLE_APP ||
       !mfg_gate_satisfied(loader))
@@ -1094,10 +1017,9 @@ int h2_loader_reboot_app_with_transition(
 }
 
 int h2_loader_reboot_upgrade_with_transition(
-    h2_loader_t *loader, h2_loader_reboot_transition_fn transition,
-    void *transition_user) {
-  if (loader == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+    h2_loader_t* loader, h2_loader_reboot_transition_fn transition,
+    void* transition_user) {
+  if (loader == NULL) return H2_PAL_ERR_INVALID_ARG;
   return set_next_and_reboot(
       loader, loader->config.h2loader_partition_id, H2_LOADER_BOOT_INTENT_AUTO,
       H2_LOADER_DISRUPTIVE_REBOOT_UPGRADE, transition, transition_user);

@@ -14,8 +14,8 @@ struct Events {
 
 constexpr uint32_t kGameplayFrameMs = 22;
 
-static void onEvent(void *user, h2_dinorun_event_t event) {
-  auto *events = static_cast<Events *>(user);
+static void onEvent(void* user, h2_dinorun_event_t event) {
+  auto* events = static_cast<Events*>(user);
   if (event == H2_DINORUN_EVENT_JUMP) {
     ++events->jump;
   } else if (event == H2_DINORUN_EVENT_GAME_OVER) {
@@ -23,7 +23,7 @@ static void onEvent(void *user, h2_dinorun_event_t event) {
   }
 }
 
-static std::vector<unsigned char> readFile(const char *path) {
+static std::vector<unsigned char> readFile(const char* path) {
   std::ifstream input(path, std::ios::binary);
   return {
       std::istreambuf_iterator<char>(input),
@@ -31,7 +31,7 @@ static std::vector<unsigned char> readFile(const char *path) {
   };
 }
 
-static void action(h2_dinorun_t *game, h2_game_input_type_t type) {
+static void action(h2_dinorun_t* game, h2_game_input_type_t type) {
   const h2_game_input_event_t event = {
       type,
       0,
@@ -41,7 +41,7 @@ static void action(h2_dinorun_t *game, h2_game_input_type_t type) {
   h2_dinorun_handle_input(game, &event);
 }
 
-static int jumpHeight(h2_dinorun_t *game, int chargeFrames) {
+static int jumpHeight(h2_dinorun_t* game, int chargeFrames) {
   h2_dinorun_reset(game);
   action(game, H2_GAME_INPUT_BUTTON_DOWN);
   for (int i = 0; i < chargeFrames; ++i) {
@@ -57,13 +57,13 @@ static int jumpHeight(h2_dinorun_t *game, int chargeFrames) {
   return 152 - minimumY;
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   assert(argc == 2);
   const auto playerData = readFile(argv[1]);
   pixa_asset_t player = {};
   assert(pixa_open_memory(playerData.data(), playerData.size(), &player) ==
          PIXA_OK);
-  for (const char *name : {"run_right", "jump", "game_over"}) {
+  for (const char* name : {"run_right", "jump", "game_over"}) {
     pixa_clip_t clip = {};
     assert(pixa_find_clip(&player, name, &clip) == PIXA_OK);
     assert(clip.frame_count > 0);
@@ -75,7 +75,7 @@ int main(int argc, char **argv) {
       &player,     nullptr, &text,   h2_dinorun_english_texts(),
       0x12345678u, onEvent, &events, nullptr,
   };
-  h2_dinorun_t *game = nullptr;
+  h2_dinorun_t* game = nullptr;
   assert(h2_dinorun_create(&config, &game) == H2_DINORUN_OK);
   assert(game != nullptr && !game->started);
 
@@ -86,7 +86,7 @@ int main(int argc, char **argv) {
   };
   h2_dinorun_config_t remappedConfig = config;
   remappedConfig.player_clips = &remappedClips;
-  h2_dinorun_t *remappedGame = nullptr;
+  h2_dinorun_t* remappedGame = nullptr;
   assert(h2_dinorun_create(&remappedConfig, &remappedGame) == H2_DINORUN_OK);
   h2_dinorun_destroy(remappedGame);
 
@@ -160,22 +160,20 @@ int main(int argc, char **argv) {
          H2_DINORUN_ERR_INVALID_ARG);
   const uint8_t invalid_utf8[] = {0xffu};
   assert(h2_dinorun_set_game_over_status(
-             game,
-             h2_game_text_span_t{reinterpret_cast<const char *>(invalid_utf8),
-                                 sizeof(invalid_utf8)}) ==
-         H2_DINORUN_ERR_INVALID_ARG);
+             game, h2_game_text_span_t{
+                       reinterpret_cast<const char*>(invalid_utf8),
+                       sizeof(invalid_utf8)}) == H2_DINORUN_ERR_INVALID_ARG);
   char maximum_status[63];
   std::memset(maximum_status, 'x', sizeof(maximum_status));
-  assert(h2_dinorun_set_game_over_status(
-             game,
-             h2_game_text_span_t{maximum_status, sizeof(maximum_status)}) ==
-         H2_DINORUN_OK);
+  assert(
+      h2_dinorun_set_game_over_status(
+          game, h2_game_text_span_t{maximum_status, sizeof(maximum_status)}) ==
+      H2_DINORUN_OK);
   char oversized_status[64];
   std::memset(oversized_status, 'x', sizeof(oversized_status));
   assert(h2_dinorun_set_game_over_status(
              game,
-             h2_game_text_span_t{oversized_status,
-                                 sizeof(oversized_status)}) ==
+             h2_game_text_span_t{oversized_status, sizeof(oversized_status)}) ==
          H2_DINORUN_ERR_INVALID_ARG);
   assert(h2_dinorun_set_game_over_status(
              game, h2_game_text_span_t{nullptr, 0u}) == H2_DINORUN_OK);
@@ -209,7 +207,7 @@ int main(int argc, char **argv) {
   pixa_asset_t invalidPlayer = player;
   invalidPlayer.clip_count = 0;
   missingClipConfig.player = &invalidPlayer;
-  game = reinterpret_cast<h2_dinorun_t *>(1);
+  game = reinterpret_cast<h2_dinorun_t*>(1);
   assert(h2_dinorun_create(&missingClipConfig, &game) == H2_DINORUN_ERR_ASSET);
   assert(game == nullptr);
   return 0;

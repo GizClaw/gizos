@@ -96,36 +96,36 @@ typedef uint16_t att_size_t;
 #define PERM_POS_IP 4u
 
 enum {
-    GAPM_RESET_CMD = 99u,
-    GAPM_ACTIVITY_CREATE_CMD,
-    GAPM_ACTIVITY_START_CMD,
-    GAPM_ACTIVITY_STOP_CMD,
-    GAPM_ACTIVITY_DELETE_CMD,
-    GAPM_SET_ADV_DATA_CMD,
-    GAPC_DISCONNECT_CMD,
-    GAPC_CONNECTION_CFM,
-    GAPC_PARAM_UPDATE_CFM,
-    GAPC_GET_DEV_INFO_CFM,
-    GAPC_SET_DEV_INFO_CFM,
-    GATTC_READ_CFM,
-    GATTC_WRITE_CFM,
-    GATTC_ATT_INFO_CFM,
-    GATTC_SEND_EVT_CMD,
-    GAPC_CONNECTION_REQ_IND = 200u,
-    GAPC_DISCONNECT_IND,
-    GAPC_PARAM_UPDATED_IND,
-    GAPC_PARAM_UPDATE_REQ_IND,
-    GAPC_GET_DEV_INFO_REQ_IND,
-    GAPC_SET_DEV_INFO_REQ_IND,
-    GATTC_MTU_CHANGED_IND,
-    GATTC_CMP_EVT,
-    GATTC_READ_REQ_IND,
-    GATTC_WRITE_REQ_IND,
-    GATTC_ATT_INFO_REQ_IND,
-    GAPM_ACTIVITY_CREATED_IND,
-    GAPM_ACTIVITY_STOPPED_IND,
-    GAPM_CMP_EVT,
-    GAPM_EXT_ADV_REPORT_IND,
+  GAPM_RESET_CMD = 99u,
+  GAPM_ACTIVITY_CREATE_CMD,
+  GAPM_ACTIVITY_START_CMD,
+  GAPM_ACTIVITY_STOP_CMD,
+  GAPM_ACTIVITY_DELETE_CMD,
+  GAPM_SET_ADV_DATA_CMD,
+  GAPC_DISCONNECT_CMD,
+  GAPC_CONNECTION_CFM,
+  GAPC_PARAM_UPDATE_CFM,
+  GAPC_GET_DEV_INFO_CFM,
+  GAPC_SET_DEV_INFO_CFM,
+  GATTC_READ_CFM,
+  GATTC_WRITE_CFM,
+  GATTC_ATT_INFO_CFM,
+  GATTC_SEND_EVT_CMD,
+  GAPC_CONNECTION_REQ_IND = 200u,
+  GAPC_DISCONNECT_IND,
+  GAPC_PARAM_UPDATED_IND,
+  GAPC_PARAM_UPDATE_REQ_IND,
+  GAPC_GET_DEV_INFO_REQ_IND,
+  GAPC_SET_DEV_INFO_REQ_IND,
+  GATTC_MTU_CHANGED_IND,
+  GATTC_CMP_EVT,
+  GATTC_READ_REQ_IND,
+  GATTC_WRITE_REQ_IND,
+  GATTC_ATT_INFO_REQ_IND,
+  GAPM_ACTIVITY_CREATED_IND,
+  GAPM_ACTIVITY_STOPPED_IND,
+  GAPM_CMP_EVT,
+  GAPM_EXT_ADV_REPORT_IND,
 };
 
 #define GAPM_RESET 1u
@@ -135,261 +135,296 @@ enum {
 #define GAPC_DEV_SLV_PREF_PARAMS 2u
 
 typedef struct bd_addr {
-    uint8_t addr[6];
+  uint8_t addr[6];
 } bd_addr_t;
 
 struct gapm_adv_primary_cfg {
-    uint32_t adv_intv_min;
-    uint32_t adv_intv_max;
-    uint8_t chnl_map;
-    uint8_t phy;
+  uint32_t adv_intv_min;
+  uint32_t adv_intv_max;
+  uint8_t chnl_map;
+  uint8_t phy;
 };
 
 struct gapm_adv_secondary_cfg {
-    uint8_t phy;
-    uint8_t adv_sid;
+  uint8_t phy;
+  uint8_t adv_sid;
 };
 
 struct gapm_adv_create_param {
-    uint8_t type;
-    uint8_t disc_mode;
-    uint16_t prop;
-    uint8_t filter_pol;
-    struct gapm_adv_primary_cfg prim_cfg;
-    struct gapm_adv_secondary_cfg second_cfg;
+  uint8_t type;
+  uint8_t disc_mode;
+  uint16_t prop;
+  uint8_t filter_pol;
+  struct gapm_adv_primary_cfg prim_cfg;
+  struct gapm_adv_secondary_cfg second_cfg;
 };
 
 struct gapm_activity_create_adv_cmd {
-    uint8_t operation;
-    uint8_t own_addr_type;
-    bd_addr_t own_addr;
-    struct gapm_adv_create_param adv_param;
+  uint8_t operation;
+  uint8_t own_addr_type;
+  bd_addr_t own_addr;
+  struct gapm_adv_create_param adv_param;
 };
 
 struct gapm_activity_create_cmd {
-    uint8_t operation;
-    uint8_t own_addr_type;
+  uint8_t operation;
+  uint8_t own_addr_type;
 };
 
-struct gapm_reset_cmd { uint8_t operation; };
+struct gapm_reset_cmd {
+  uint8_t operation;
+};
 
 struct gapm_scan_phy_param {
-    uint16_t scan_intv;
-    uint16_t scan_wd;
+  uint16_t scan_intv;
+  uint16_t scan_wd;
 };
 
 struct gapm_scan_param {
-    uint8_t type;
-    uint8_t prop;
-    uint16_t dup_filt_pol;
-    struct gapm_scan_phy_param scan_param_1m;
-    struct gapm_scan_phy_param scan_param_coded;
-    uint16_t duration;
+  uint8_t type;
+  uint8_t prop;
+  uint16_t dup_filt_pol;
+  struct gapm_scan_phy_param scan_param_1m;
+  struct gapm_scan_phy_param scan_param_coded;
+  uint16_t duration;
 };
 
 struct gapm_adv_add_param {
-    uint16_t duration;
-    uint8_t max_adv_evt;
+  uint16_t duration;
+  uint8_t max_adv_evt;
 };
 
 union gapm_u_param {
-    struct gapm_scan_param scan_param;
-    struct gapm_adv_add_param adv_add_param;
+  struct gapm_scan_param scan_param;
+  struct gapm_adv_add_param adv_add_param;
 };
 
 struct gapm_activity_start_cmd {
-    uint8_t operation;
-    uint8_t actv_idx;
-    union gapm_u_param u_param;
+  uint8_t operation;
+  uint8_t actv_idx;
+  union gapm_u_param u_param;
 };
 
 struct gapm_activity_stop_cmd {
-    uint8_t operation;
-    uint8_t actv_idx;
+  uint8_t operation;
+  uint8_t actv_idx;
 };
 
 struct gapm_activity_delete_cmd {
-    uint8_t operation;
-    uint8_t actv_idx;
+  uint8_t operation;
+  uint8_t actv_idx;
 };
 
 struct gapm_set_adv_data_cmd {
-    uint8_t operation;
-    uint8_t actv_idx;
-    uint16_t length;
-    uint8_t data[];
+  uint8_t operation;
+  uint8_t actv_idx;
+  uint16_t length;
+  uint8_t data[];
 };
 
 struct gapm_activity_created_ind {
-    uint8_t actv_idx;
-    uint8_t actv_type;
-    int8_t tx_pwr;
+  uint8_t actv_idx;
+  uint8_t actv_type;
+  int8_t tx_pwr;
 };
 
 struct gapm_activity_stopped_ind {
-    uint8_t actv_idx;
-    uint8_t actv_type;
-    uint8_t reason;
-    uint8_t per_adv_stop;
+  uint8_t actv_idx;
+  uint8_t actv_type;
+  uint8_t reason;
+  uint8_t per_adv_stop;
 };
 
 struct gapm_cmp_evt {
-    uint8_t operation;
-    uint8_t status;
+  uint8_t operation;
+  uint8_t status;
 };
 
 struct gap_bdaddr {
-    bd_addr_t addr;
-    uint8_t addr_type;
+  bd_addr_t addr;
+  uint8_t addr_type;
 };
 
 struct gapm_ext_adv_report_ind {
-    struct gap_bdaddr trans_addr;
-    int8_t rssi;
-    uint16_t info;
-    uint8_t phy_prim;
-    uint8_t phy_second;
-    uint8_t adv_sid;
-    int8_t tx_pwr;
-    uint16_t length;
-    uint8_t data[];
+  struct gap_bdaddr trans_addr;
+  int8_t rssi;
+  uint16_t info;
+  uint8_t phy_prim;
+  uint8_t phy_second;
+  uint8_t adv_sid;
+  int8_t tx_pwr;
+  uint16_t length;
+  uint8_t data[];
 };
 
 struct gapc_connection_req_ind {
-    uint16_t conhdl;
-    uint8_t role;
-    uint8_t peer_addr_type;
-    bd_addr_t peer_addr;
+  uint16_t conhdl;
+  uint8_t role;
+  uint8_t peer_addr_type;
+  bd_addr_t peer_addr;
 };
 
-struct gapc_connection_cfm { uint8_t auth; };
-struct gapc_disconnect_cmd { uint8_t operation; uint8_t reason; };
-struct gapc_disconnect_ind { uint16_t conhdl; uint8_t reason; };
+struct gapc_connection_cfm {
+  uint8_t auth;
+};
+struct gapc_disconnect_cmd {
+  uint8_t operation;
+  uint8_t reason;
+};
+struct gapc_disconnect_ind {
+  uint16_t conhdl;
+  uint8_t reason;
+};
 struct gapc_param_updated_ind {
-    uint16_t con_interval;
-    uint16_t con_latency;
-    uint16_t sup_to;
+  uint16_t con_interval;
+  uint16_t con_latency;
+  uint16_t sup_to;
 };
-struct gapc_param_update_req_ind { uint8_t unused; };
+struct gapc_param_update_req_ind {
+  uint8_t unused;
+};
 struct gapc_param_update_cfm {
-    bool accept;
-    uint16_t ce_len_min;
-    uint16_t ce_len_max;
+  bool accept;
+  uint16_t ce_len_min;
+  uint16_t ce_len_max;
 };
-struct gapc_get_dev_info_req_ind { uint8_t req; };
+struct gapc_get_dev_info_req_ind {
+  uint8_t req;
+};
 struct gapc_get_dev_info_cfm {
-    uint8_t req;
-    union {
-        struct { uint16_t length; uint8_t value[1]; } name;
-        struct {
-            uint16_t con_intv_min;
-            uint16_t con_intv_max;
-            uint16_t slave_latency;
-            uint16_t conn_timeout;
-        } slv_pref_params;
-    } info;
+  uint8_t req;
+  union {
+    struct {
+      uint16_t length;
+      uint8_t value[1];
+    } name;
+    struct {
+      uint16_t con_intv_min;
+      uint16_t con_intv_max;
+      uint16_t slave_latency;
+      uint16_t conn_timeout;
+    } slv_pref_params;
+  } info;
 };
-struct gapc_set_dev_info_req_ind { uint8_t req; };
-struct gapc_set_dev_info_cfm { uint8_t req; uint8_t status; };
+struct gapc_set_dev_info_req_ind {
+  uint8_t req;
+};
+struct gapc_set_dev_info_cfm {
+  uint8_t req;
+  uint8_t status;
+};
 
-struct gattc_mtu_changed_ind { uint16_t mtu; };
-struct gattc_cmp_evt { uint8_t operation; uint8_t status; uint16_t seq_num; };
-struct gattc_read_req_ind { uint16_t handle; };
+struct gattc_mtu_changed_ind {
+  uint16_t mtu;
+};
+struct gattc_cmp_evt {
+  uint8_t operation;
+  uint8_t status;
+  uint16_t seq_num;
+};
+struct gattc_read_req_ind {
+  uint16_t handle;
+};
 struct gattc_read_cfm {
-    uint16_t handle;
-    uint8_t status;
-    uint16_t length;
-    uint8_t value[];
+  uint16_t handle;
+  uint8_t status;
+  uint16_t length;
+  uint8_t value[];
 };
 struct gattc_write_req_ind {
-    uint16_t handle;
-    uint16_t offset;
-    uint16_t length;
-    uint8_t value[];
+  uint16_t handle;
+  uint16_t offset;
+  uint16_t length;
+  uint8_t value[];
 };
-struct gattc_write_cfm { uint16_t handle; uint8_t status; };
-struct gattc_att_info_req_ind { uint16_t handle; };
+struct gattc_write_cfm {
+  uint16_t handle;
+  uint8_t status;
+};
+struct gattc_att_info_req_ind {
+  uint16_t handle;
+};
 struct gattc_att_info_cfm {
-    uint16_t handle;
-    uint16_t length;
-    uint8_t status;
+  uint16_t handle;
+  uint16_t length;
+  uint8_t status;
 };
 struct gattc_send_evt_cmd {
-    uint8_t operation;
-    uint16_t seq_num;
-    uint16_t handle;
-    uint16_t length;
-    uint8_t value[];
+  uint8_t operation;
+  uint16_t seq_num;
+  uint16_t handle;
+  uint16_t length;
+  uint8_t value[];
 };
 
 struct attm_desc {
-    uint16_t uuid;
-    uint16_t perm;
-    uint16_t ext_perm;
-    uint16_t max_size;
+  uint16_t uuid;
+  uint16_t perm;
+  uint16_t ext_perm;
+  uint16_t max_size;
 };
 
 struct attm_desc_128 {
-    uint8_t uuid[16];
-    uint16_t perm;
-    uint16_t ext_perm;
-    uint16_t max_size;
+  uint8_t uuid[16];
+  uint16_t perm;
+  uint16_t ext_perm;
+  uint16_t max_size;
 };
 
-void *h2_bk3633_ble_sdk_fake_alloc(
-    size_t size, size_t extra, uint16_t id, uint16_t dest, uint16_t src);
-void h2_bk3633_ble_sdk_fake_send(void *message);
+void* h2_bk3633_ble_sdk_fake_alloc(size_t size, size_t extra, uint16_t id,
+                                   uint16_t dest, uint16_t src);
+void h2_bk3633_ble_sdk_fake_send(void* message);
 void h2_bk3633_ble_sdk_fake_fail_next_allocations(size_t count);
 
-#define KE_MSG_ALLOC(id, dest, src, type) \
-    ((struct type *)h2_bk3633_ble_sdk_fake_alloc( \
-        sizeof(struct type), 0u, (id), (dest), (src)))
-#define KE_MSG_ALLOC_DYN(id, dest, src, type, extra) \
-    ((struct type *)h2_bk3633_ble_sdk_fake_alloc( \
-        sizeof(struct type), (extra), (id), (dest), (src)))
+#define KE_MSG_ALLOC(id, dest, src, type)                                    \
+  ((struct type*)h2_bk3633_ble_sdk_fake_alloc(sizeof(struct type), 0u, (id), \
+                                              (dest), (src)))
+#define KE_MSG_ALLOC_DYN(id, dest, src, type, extra)                        \
+  ((struct type*)h2_bk3633_ble_sdk_fake_alloc(sizeof(struct type), (extra), \
+                                              (id), (dest), (src)))
 #define ke_msg_send(message) h2_bk3633_ble_sdk_fake_send(message)
 
-uint8_t attm_svc_create_db(
-    uint16_t *start_handle, uint16_t uuid, uint8_t *cfg_flag,
-    uint8_t max_nb_att, uint8_t *att_tbl, uint16_t dest_id,
-    const struct attm_desc *att_db, uint8_t sec_lvl);
-uint8_t attm_svc_create_db_128(
-    uint16_t *start_handle, const uint8_t uuid[16], uint8_t *cfg_flag,
-    uint8_t max_nb_att, uint8_t *att_tbl, uint16_t dest_id,
-    const struct attm_desc_128 *att_db, uint8_t sec_lvl);
+uint8_t attm_svc_create_db(uint16_t* start_handle, uint16_t uuid,
+                           uint8_t* cfg_flag, uint8_t max_nb_att,
+                           uint8_t* att_tbl, uint16_t dest_id,
+                           const struct attm_desc* att_db, uint8_t sec_lvl);
+uint8_t attm_svc_create_db_128(uint16_t* start_handle, const uint8_t uuid[16],
+                               uint8_t* cfg_flag, uint8_t max_nb_att,
+                               uint8_t* att_tbl, uint16_t dest_id,
+                               const struct attm_desc_128* att_db,
+                               uint8_t sec_lvl);
 uint8_t attmdb_svc_visibility_set(uint16_t handle, bool hide);
-uint8_t attm_att_set_value(
-    uint16_t handle, att_size_t length, uint16_t offset, uint8_t *value);
-void attm_convert_to128(
-    uint8_t out[16], const uint8_t *uuid, uint8_t uuid_len);
+uint8_t attm_att_set_value(uint16_t handle, att_size_t length, uint16_t offset,
+                           uint8_t* value);
+void attm_convert_to128(uint8_t out[16], const uint8_t* uuid, uint8_t uuid_len);
 
 typedef struct h2_bk3633_ble_sdk_fake_message {
-    uint16_t id;
-    uint16_t dest;
-    uint16_t src;
-    const void *payload;
-    size_t payload_size;
+  uint16_t id;
+  uint16_t dest;
+  uint16_t src;
+  const void* payload;
+  size_t payload_size;
 } h2_bk3633_ble_sdk_fake_message_t;
 
 typedef struct h2_bk3633_ble_sdk_fake_service {
-    uint16_t handle;
-    size_t uuid_len;
-    uint8_t uuid[16];
-    uint8_t attribute_count;
-    size_t attribute_uuid_len[16];
-    uint8_t attribute_uuid[16][16];
-    uint16_t attribute_ext_permissions[16];
-    uint8_t permissions;
-    bool hidden;
+  uint16_t handle;
+  size_t uuid_len;
+  uint8_t uuid[16];
+  uint8_t attribute_count;
+  size_t attribute_uuid_len[16];
+  uint8_t attribute_uuid[16][16];
+  uint16_t attribute_ext_permissions[16];
+  uint8_t permissions;
+  bool hidden;
 } h2_bk3633_ble_sdk_fake_service_t;
 
 void h2_bk3633_ble_sdk_fake_reset(void);
 size_t h2_bk3633_ble_sdk_fake_message_count(void);
-const h2_bk3633_ble_sdk_fake_message_t *
-h2_bk3633_ble_sdk_fake_message(size_t index);
+const h2_bk3633_ble_sdk_fake_message_t* h2_bk3633_ble_sdk_fake_message(
+    size_t index);
 size_t h2_bk3633_ble_sdk_fake_service_count(void);
-const h2_bk3633_ble_sdk_fake_service_t *
-h2_bk3633_ble_sdk_fake_service(size_t index);
+const h2_bk3633_ble_sdk_fake_service_t* h2_bk3633_ble_sdk_fake_service(
+    size_t index);
 void h2_bk3633_ble_sdk_fake_fail_service_create(size_t call_index);
 void h2_bk3633_ble_sdk_fake_fail_service_visibility(size_t call_index);
 void h2_bk3633_platform_ble_test_reset(void);

@@ -7,7 +7,8 @@
 extern "C" {
 #endif
 
-/** Returns a deterministic value used to prove a portable archive was linked. */
+/** Returns a deterministic value used to prove a portable archive was linked.
+ */
 uint32_t h2_reference_smoke_value(uint32_t seed);
 
 #ifdef __cplusplus

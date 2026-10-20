@@ -19,9 +19,9 @@
 
 #include <string.h>
 
-extern int printf(const char *format, ...);
-extern int puts(const char *text);
-extern int snprintf(char *buffer, size_t size, const char *format, ...);
+extern int printf(const char* format, ...);
+extern int puts(const char* text);
+extern int snprintf(char* buffer, size_t size, const char* format, ...);
 
 enum {
   H2_USB_PACKET_SIZE = 64,
@@ -41,8 +41,8 @@ enum {
 typedef struct h2_jieli_transport {
   h2_iostreamikcp_io_t physical_io;
   h2_iostreamikcp_filter_t filter;
-  h2_iostreamikcp_t *stream;
-  const h2_pal_mem_api_t *allocator;
+  h2_iostreamikcp_t* stream;
+  const h2_pal_mem_api_t* allocator;
   uint32_t conv;
   uint32_t pending_conv;
   uint32_t write_timeout_ms;
@@ -112,7 +112,7 @@ int h2_jieli_usb_debug_is_draining(void) {
   return h2_atomic_bool_load(&usb_debug_locked, H2_ATOMIC_ACQUIRE);
 }
 
-static void usb_diag_write(const char *text) {
+static void usb_diag_write(const char* text) {
 #if defined CONFIG_H2_UART1_DEBUG_ENABLE
   if (text != NULL) {
     (void)h2_jieli_ac791n_devkit_console_write(text, strlen(text), 100);
@@ -123,8 +123,7 @@ static void usb_diag_write(const char *text) {
   size_t len = strlen(text);
   while (len != 0u) {
     uint32_t take = len > UINT32_MAX ? UINT32_MAX : (uint32_t)len;
-    uint32_t written =
-        cdc_write_data(0, (uint8_t *)(uintptr_t)text, take);
+    uint32_t written = cdc_write_data(0, (uint8_t*)(uintptr_t)text, take);
     /* Diagnostics are best-effort: before the host opens CDC there is no TX
      * consumer, and blocking here would prevent Loader startup entirely. */
     if (written == 0u) break;
@@ -135,20 +134,17 @@ static void usb_diag_write(const char *text) {
 #endif
 }
 
-void h2_jieli_sd_fs_trace_write(
-    const char *stage, size_t offset, size_t length, int result) {
+void h2_jieli_sd_fs_trace_write(const char* stage, size_t offset, size_t length,
+                                int result) {
   char line[160];
-  (void)snprintf(
-      line, sizeof(line),
-      "H2_JIELI_SD_WRITE phase=%s offset=%u length=%u result=%d\r\n",
-      stage != NULL ? stage : "unknown", (unsigned)offset,
-      (unsigned)length, result);
+  (void)snprintf(line, sizeof(line),
+                 "H2_JIELI_SD_WRITE phase=%s offset=%u length=%u result=%d\r\n",
+                 stage != NULL ? stage : "unknown", (unsigned)offset,
+                 (unsigned)length, result);
   usb_diag_write(line);
 }
 
-void h2_jieli_loader_diag_write(const char *text) {
-  usb_diag_write(text);
-}
+void h2_jieli_loader_diag_write(const char* text) { usb_diag_write(text); }
 
 void h2_jieli_usb_debug_heartbeat(void) {
 #ifdef H2_JIELI_BLE_DIAG_QUIET_UART
@@ -159,44 +155,41 @@ void h2_jieli_usb_debug_heartbeat(void) {
       line, sizeof(line),
       "H2_JIELI_LINK ms=%u rx_phase=%u rx_calls=%u rx_busy=%u rx_bytes=%u "
       "frames=%u last_flags=%u last_frame_ms=%u fs=%s\r\n",
-      (unsigned)timer_get_ms(), (unsigned)cdc_rx_phase,
-      (unsigned)cdc_rx_calls, (unsigned)cdc_rx_busy, (unsigned)cdc_rx_bytes,
-      (unsigned)link_frames, (unsigned)link_last_flags,
-      (unsigned)link_last_frame_ms,
+      (unsigned)timer_get_ms(), (unsigned)cdc_rx_phase, (unsigned)cdc_rx_calls,
+      (unsigned)cdc_rx_busy, (unsigned)cdc_rx_bytes, (unsigned)link_frames,
+      (unsigned)link_last_flags, (unsigned)link_last_frame_ms,
       h2_jieli_ac791n_devkit_sd_fs_last_stage());
   usb_diag_write(line);
 #endif
 }
 
-static void usb_diag_error_forever(const char *step, int code) {
+static void usb_diag_error_forever(const char* step, int code) {
   char line[96];
-  (void)snprintf(
-      line, sizeof(line),
-      "H2_JIELI_LOADER_ERROR step=%s code=%d\r\n", step, code);
+  (void)snprintf(line, sizeof(line),
+                 "H2_JIELI_LOADER_ERROR step=%s code=%d\r\n", step, code);
   for (;;) {
     usb_diag_write(line);
     os_time_dly(100u);
   }
 }
 
-static uint32_t now_ms32(void *user) {
+static uint32_t now_ms32(void* user) {
   (void)user;
   return timer_get_ms();
 }
 
-static uint64_t now_ms64(void *user) {
+static uint64_t now_ms64(void* user) {
   (void)user;
   return timer_get_ms();
 }
 
-static void sleep_ms(void *user, uint32_t delay_ms) {
+static void sleep_ms(void* user, uint32_t delay_ms) {
   (void)user;
   os_time_dly((delay_ms + 9u) / 10u);
 }
 
-static int physical_read(
-    void *user, void *buffer, size_t len, size_t *out_read,
-    uint32_t timeout_ms) {
+static int physical_read(void* user, void* buffer, size_t len, size_t* out_read,
+                         uint32_t timeout_ms) {
   (void)user;
   if (buffer == NULL || out_read == NULL || len == 0u) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -224,7 +217,7 @@ static int physical_read(
     uint32_t received = (uint32_t)count;
     h2_jieli_usb_cdc_rx_trace(4, received);
 #else
-    uint32_t received = cdc_read_data(0, (uint8_t *)buffer, requested);
+    uint32_t received = cdc_read_data(0, (uint8_t*)buffer, requested);
 #endif
     if (received != 0u) {
       *out_read = received;
@@ -236,10 +229,9 @@ static int physical_read(
   }
 }
 
-static int physical_write(
-    void *user, const void *buffer, size_t len, size_t *out_written,
-    uint32_t timeout_ms) {
-  const uint8_t *cursor = buffer;
+static int physical_write(void* user, const void* buffer, size_t len,
+                          size_t* out_written, uint32_t timeout_ms) {
+  const uint8_t* cursor = buffer;
   (void)user;
   if ((buffer == NULL && len != 0u) || out_written == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -258,7 +250,8 @@ static int physical_write(
     uint32_t elapsed = timer_get_ms() - started;
     if (elapsed >= timeout_ms) return H2_PAL_ERR_TIMEOUT;
     uint32_t ticks = (timeout_ms - elapsed) / 10u;
-    if (ticks != 0u && os_mutex_pend(&usb_tx_mutex, (int)ticks) == OS_NO_ERR) break;
+    if (ticks != 0u && os_mutex_pend(&usb_tx_mutex, (int)ticks) == OS_NO_ERR)
+      break;
   }
   int result = H2_PAL_OK;
   while (*out_written < len) {
@@ -271,8 +264,8 @@ static int physical_write(
     uint32_t take = remaining > UINT32_MAX ? UINT32_MAX : (uint32_t)remaining;
     /* The board CDC patch performs one immediately available short packet;
      * it never waits on native TX or a trailing zero-length packet. */
-    uint32_t written = cdc_write_data(
-        0, (uint8_t *)(uintptr_t)&cursor[*out_written], take);
+    uint32_t written =
+        cdc_write_data(0, (uint8_t*)(uintptr_t)&cursor[*out_written], take);
     if (written > take) {
       result = H2_PAL_ERR_IO;
       break;
@@ -296,7 +289,7 @@ static int physical_write(
 #endif
 }
 
-static int physical_flush(void *user) {
+static int physical_flush(void* user) {
   (void)user;
   return H2_PAL_OK;
 }
@@ -310,40 +303,40 @@ static void write_le32(uint8_t out[4], uint32_t value) {
 
 /* KCP may emit several frames in one call. Its per-frame default must not
  * restart the command caller's budget. The command task owns this scope. */
-static h2_pal_result_t transport_read(
-    void *user, void *buffer, size_t len, size_t *out_read,
-    uint32_t timeout_ms) {
-  h2_jieli_transport_t *self = user;
-  return self->physical_io.read(
-      self->physical_io.user, buffer, len, out_read, timeout_ms);
+static h2_pal_result_t transport_read(void* user, void* buffer, size_t len,
+                                      size_t* out_read, uint32_t timeout_ms) {
+  h2_jieli_transport_t* self = user;
+  return self->physical_io.read(self->physical_io.user, buffer, len, out_read,
+                                timeout_ms);
 }
 
-static h2_pal_result_t transport_write(
-    void *user, const void *buffer, size_t len, size_t *out_written,
-    uint32_t timeout_ms) {
-  h2_jieli_transport_t *self = user;
+static h2_pal_result_t transport_write(void* user, const void* buffer,
+                                       size_t len, size_t* out_written,
+                                       uint32_t timeout_ms) {
+  h2_jieli_transport_t* self = user;
   if (self->io_deadline_active) {
     uint32_t elapsed = timer_get_ms() - self->io_started_ms;
     if (self->io_timeout_ms != 0u && elapsed >= self->io_timeout_ms) {
       *out_written = 0u;
       return H2_PAL_ERR_TIMEOUT;
     }
-    uint32_t remaining = elapsed >= self->io_timeout_ms
-                             ? 0u : self->io_timeout_ms - elapsed;
+    uint32_t remaining =
+        elapsed >= self->io_timeout_ms ? 0u : self->io_timeout_ms - elapsed;
     if (timeout_ms > remaining) timeout_ms = remaining;
   }
-  return self->physical_io.write(
-      self->physical_io.user, buffer, len, out_written, timeout_ms);
+  return self->physical_io.write(self->physical_io.user, buffer, len,
+                                 out_written, timeout_ms);
 }
 
-static h2_pal_result_t transport_flush(void *user) {
-  h2_jieli_transport_t *self = user;
-  return self->physical_io.flush == NULL ? H2_PAL_OK
-      : self->physical_io.flush(self->physical_io.user);
+static h2_pal_result_t transport_flush(void* user) {
+  h2_jieli_transport_t* self = user;
+  return self->physical_io.flush == NULL
+             ? H2_PAL_OK
+             : self->physical_io.flush(self->physical_io.user);
 }
 
-static int send_control(
-    h2_jieli_transport_t *self, uint8_t flags, uint32_t conv) {
+static int send_control(h2_jieli_transport_t* self, uint8_t flags,
+                        uint32_t conv) {
   uint8_t payload[H2_IOSTREAMIKCP_SESSION_CONTROL_PAYLOAD_LEN];
   uint8_t encoded[H2_IOSTREAMIKCP_FRAME_HEADER_LEN +
                   H2_IOSTREAMIKCP_SESSION_CONTROL_PAYLOAD_LEN];
@@ -356,20 +349,19 @@ static int send_control(
       .payload = payload,
       .payload_len = sizeof(payload),
   };
-  int rc = h2_iostreamikcp_frame_encode(
-      &frame, encoded, sizeof(encoded), &encoded_len);
+  int rc = h2_iostreamikcp_frame_encode(&frame, encoded, sizeof(encoded),
+                                        &encoded_len);
   if (rc == H2_PAL_OK) {
-    rc = transport_write(
-        self, encoded, encoded_len, &written,
-        H2_WRITE_TIMEOUT_MS);
+    rc = transport_write(self, encoded, encoded_len, &written,
+                         H2_WRITE_TIMEOUT_MS);
   }
   return rc == H2_PAL_OK && written == encoded_len
              ? H2_PAL_OK
              : (rc == H2_PAL_OK ? H2_PAL_ERR_IO : rc);
 }
 
-static int on_frame(void *user, const h2_iostreamikcp_frame_t *frame) {
-  h2_jieli_transport_t *self = user;
+static int on_frame(void* user, const h2_iostreamikcp_frame_t* frame) {
+  h2_jieli_transport_t* self = user;
   ++link_frames;
   link_last_flags = frame->flags;
   link_last_frame_ms = timer_get_ms();
@@ -377,8 +369,8 @@ static int on_frame(void *user, const h2_iostreamikcp_frame_t *frame) {
   if (frame->flags == H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_OPEN) {
     if (frame->conv == 0u) return H2_PAL_ERR_INVALID_ARG;
     if (self->stream != NULL && frame->conv == self->conv) {
-      return send_control(
-          self, H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_ACK, frame->conv);
+      return send_control(self, H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_ACK,
+                          frame->conv);
     }
     self->pending_conv = frame->conv;
     self->replacement_pending = self->stream != NULL;
@@ -386,23 +378,22 @@ static int on_frame(void *user, const h2_iostreamikcp_frame_t *frame) {
   }
   if (frame->flags == H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_CLOSE &&
       self->stream != NULL && frame->conv == self->conv) {
-    int rc = send_control(
-        self, H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_ACK, frame->conv);
+    int rc =
+        send_control(self, H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_ACK, frame->conv);
     if (rc == H2_PAL_OK) {
       self->close_pending = 1;
       self->replacement_pending = 1;
     }
     return rc;
   }
-  if (frame->flags == H2_IOSTREAMIKCP_FRAME_FLAG_DATA &&
-      self->stream != NULL && frame->conv == self->conv) {
+  if (frame->flags == H2_IOSTREAMIKCP_FRAME_FLAG_DATA && self->stream != NULL &&
+      frame->conv == self->conv) {
     return h2_iostreamikcp_input_frame(self->stream, frame);
   }
   return H2_PAL_OK;
 }
 
-static int poll_physical(
-    h2_jieli_transport_t *self, uint32_t timeout_ms) {
+static int poll_physical(h2_jieli_transport_t* self, uint32_t timeout_ms) {
   uint8_t buffer[H2_PHYSICAL_READ_SIZE];
   size_t count = 0u;
   uint32_t read_timeout_ms = timeout_ms;
@@ -410,16 +401,16 @@ static int poll_physical(
   if (self->stream != NULL && read_timeout_ms > H2_PHYSICAL_POLL_MS) {
     read_timeout_ms = H2_PHYSICAL_POLL_MS;
   }
-  int rc = self->physical_io.read(
-      self->physical_io.user, buffer, sizeof(buffer), &count, read_timeout_ms);
+  int rc = self->physical_io.read(self->physical_io.user, buffer,
+                                  sizeof(buffer), &count, read_timeout_ms);
   if (rc != H2_PAL_OK && rc != H2_PAL_ERR_TIMEOUT &&
       rc != H2_PAL_ERR_WOULD_BLOCK) {
     return rc;
   }
   /* A callback can exhaust its deadline with complete frames still buffered.
    * Resume those frames even when the physical link supplies no new bytes. */
-  int input_rc = h2_iostreamikcp_filter_input(
-      &self->filter, buffer, count, on_frame, self);
+  int input_rc = h2_iostreamikcp_filter_input(&self->filter, buffer, count,
+                                              on_frame, self);
   if (input_rc != H2_PAL_OK) return input_rc;
   if (self->stream != NULL) {
     int update_rc = h2_iostreamikcp_update(self->stream, timer_get_ms());
@@ -428,7 +419,7 @@ static int poll_physical(
   return rc;
 }
 
-static void deactivate_current(h2_jieli_transport_t *self) {
+static void deactivate_current(h2_jieli_transport_t* self) {
   if (self == NULL) return;
   h2_iostreamikcp_close(self->stream);
   self->stream = NULL;
@@ -438,13 +429,15 @@ static void deactivate_current(h2_jieli_transport_t *self) {
   self->close_pending = 0;
 }
 
-static int activate_pending(h2_jieli_transport_t *self) {
+static int activate_pending(h2_jieli_transport_t* self) {
   if (self->pending_conv == 0u) return H2_PAL_ERR_INVALID_STATE;
   uint32_t conv = self->pending_conv;
   deactivate_current(self);
   const h2_iostreamikcp_config_t config = {
-      .io = {.user = self, .read = transport_read,
-             .write = transport_write, .flush = transport_flush},
+      .io = {.user = self,
+             .read = transport_read,
+             .write = transport_write,
+             .flush = transport_flush},
       .allocator = self->allocator,
       .now_ms = now_ms32,
       .time_user = self,
@@ -457,9 +450,8 @@ static int activate_pending(h2_jieli_transport_t *self) {
   int rc = h2_iostreamikcp_open(&config, &self->stream);
   if (rc != H2_PAL_OK) {
     char line[96];
-    (void)snprintf(
-        line, sizeof(line),
-        "H2_JIELI_LOADER_ERROR step=session_open code=%d\r\n", rc);
+    (void)snprintf(line, sizeof(line),
+                   "H2_JIELI_LOADER_ERROR step=session_open code=%d\r\n", rc);
     usb_diag_write(line);
     self->pending_conv = 0u;
     self->replacement_pending = 0;
@@ -479,10 +471,9 @@ static int activate_pending(h2_jieli_transport_t *self) {
   return rc;
 }
 
-static int command_read_impl(
-    void *user, void *buffer, size_t len, size_t *out_read,
-    uint32_t timeout_ms) {
-  h2_jieli_transport_t *self = user;
+static int command_read_impl(void* user, void* buffer, size_t len,
+                             size_t* out_read, uint32_t timeout_ms) {
+  h2_jieli_transport_t* self = user;
   if (self == NULL || buffer == NULL || out_read == NULL ||
       self->stream == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -493,8 +484,7 @@ static int command_read_impl(
     if (stop_requested || self->replacement_pending) {
       return H2_PAL_ERR_CLOSED;
     }
-    int rc = h2_iostreamikcp_read(
-        self->stream, buffer, len, out_read);
+    int rc = h2_iostreamikcp_read(self->stream, buffer, len, out_read);
     if (rc == H2_PAL_OK && *out_read != 0u) return H2_PAL_OK;
     if (rc != H2_PAL_ERR_WOULD_BLOCK) return rc;
     uint32_t elapsed = timer_get_ms() - started;
@@ -507,10 +497,9 @@ static int command_read_impl(
   }
 }
 
-static int command_read(
-    void *user, void *buffer, size_t len, size_t *out_read,
-    uint32_t timeout_ms) {
-  h2_jieli_transport_t *self = user;
+static int command_read(void* user, void* buffer, size_t len, size_t* out_read,
+                        uint32_t timeout_ms) {
+  h2_jieli_transport_t* self = user;
   if (self == NULL) return H2_PAL_ERR_INVALID_ARG;
   self->io_started_ms = timer_get_ms();
   self->io_timeout_ms = timeout_ms;
@@ -520,12 +509,11 @@ static int command_read(
   return result;
 }
 
-static int command_write_impl(
-    void *user, const void *buffer, size_t len, size_t *out_written,
-    uint32_t timeout_ms) {
-  h2_jieli_transport_t *self = user;
-  if (self == NULL || (buffer == NULL && len != 0u) ||
-      out_written == NULL || self->stream == NULL) {
+static int command_write_impl(void* user, const void* buffer, size_t len,
+                              size_t* out_written, uint32_t timeout_ms) {
+  h2_jieli_transport_t* self = user;
+  if (self == NULL || (buffer == NULL && len != 0u) || out_written == NULL ||
+      self->stream == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   if (stop_requested || self->replacement_pending) {
@@ -547,9 +535,8 @@ static int command_write_impl(
     }
     uint32_t elapsed = timer_get_ms() - started;
     uint32_t remaining = self->write_timeout_ms - elapsed;
-    uint32_t poll_ms = remaining < H2_PHYSICAL_POLL_MS
-                           ? remaining
-                           : H2_PHYSICAL_POLL_MS;
+    uint32_t poll_ms =
+        remaining < H2_PHYSICAL_POLL_MS ? remaining : H2_PHYSICAL_POLL_MS;
     rc = poll_physical(self, poll_ms);
     if (rc != H2_PAL_OK && rc != H2_PAL_ERR_TIMEOUT &&
         rc != H2_PAL_ERR_WOULD_BLOCK) {
@@ -568,10 +555,9 @@ static int command_write_impl(
   return rc;
 }
 
-static int command_write(
-    void *user, const void *buffer, size_t len, size_t *out_written,
-    uint32_t timeout_ms) {
-  h2_jieli_transport_t *self = user;
+static int command_write(void* user, const void* buffer, size_t len,
+                         size_t* out_written, uint32_t timeout_ms) {
+  h2_jieli_transport_t* self = user;
   if (self == NULL) return H2_PAL_ERR_INVALID_ARG;
   self->io_started_ms = timer_get_ms();
   self->io_timeout_ms = timeout_ms;
@@ -581,8 +567,8 @@ static int command_write(
   return result;
 }
 
-static int command_flush_impl(void *user) {
-  h2_jieli_transport_t *self = user;
+static int command_flush_impl(void* user) {
+  h2_jieli_transport_t* self = user;
   if (self == NULL || self->stream == NULL) {
     return H2_PAL_ERR_INVALID_STATE;
   }
@@ -597,9 +583,8 @@ static int command_flush_impl(void *user) {
   uint64_t estimate = (uint64_t)stats.waitsnd * H2_SEGMENT_TIMEOUT_MS;
   uint32_t timeout_ms = self->write_timeout_ms;
   if (estimate > timeout_ms) {
-    timeout_ms = estimate > H2_MAX_FLUSH_TIMEOUT_MS
-                     ? H2_MAX_FLUSH_TIMEOUT_MS
-                     : (uint32_t)estimate;
+    timeout_ms = estimate > H2_MAX_FLUSH_TIMEOUT_MS ? H2_MAX_FLUSH_TIMEOUT_MS
+                                                    : (uint32_t)estimate;
   }
   uint32_t started = timer_get_ms();
   while (rc == H2_PAL_OK) {
@@ -613,9 +598,8 @@ static int command_flush_impl(void *user) {
       return H2_PAL_ERR_TIMEOUT;
     }
     uint32_t remaining = timeout_ms - elapsed;
-    uint32_t poll_ms = remaining < H2_PHYSICAL_POLL_MS
-                           ? remaining
-                           : H2_PHYSICAL_POLL_MS;
+    uint32_t poll_ms =
+        remaining < H2_PHYSICAL_POLL_MS ? remaining : H2_PHYSICAL_POLL_MS;
     rc = poll_physical(self, poll_ms);
     if (rc == H2_PAL_ERR_TIMEOUT || rc == H2_PAL_ERR_WOULD_BLOCK) {
       rc = h2_iostreamikcp_update(self->stream, timer_get_ms());
@@ -624,8 +608,8 @@ static int command_flush_impl(void *user) {
   return rc;
 }
 
-static int command_flush(void *user) {
-  h2_jieli_transport_t *self = user;
+static int command_flush(void* user) {
+  h2_jieli_transport_t* self = user;
   if (self == NULL || self->stream == NULL) return H2_PAL_ERR_INVALID_STATE;
   h2_iostreamikcp_stats_t stats = {0};
   int result = h2_iostreamikcp_get_stats(self->stream, &stats);
@@ -633,8 +617,8 @@ static int command_flush(void *user) {
   uint64_t estimate = (uint64_t)stats.waitsnd * H2_SEGMENT_TIMEOUT_MS;
   uint32_t budget = self->write_timeout_ms;
   if (estimate > budget) {
-    budget = estimate > H2_MAX_FLUSH_TIMEOUT_MS
-                 ? H2_MAX_FLUSH_TIMEOUT_MS : (uint32_t)estimate;
+    budget = estimate > H2_MAX_FLUSH_TIMEOUT_MS ? H2_MAX_FLUSH_TIMEOUT_MS
+                                                : (uint32_t)estimate;
   }
   self->io_started_ms = timer_get_ms();
   self->io_timeout_ms = budget;
@@ -650,17 +634,16 @@ static const h2_command_io_vtable_t command_io_vtable = {
     .flush = command_flush,
 };
 
-static int digest_start(void *user) {
-  h2_jieli_digest_t *self = user;
+static int digest_start(void* user) {
+  h2_jieli_digest_t* self = user;
   h2_loader_sha256_init(&self->sha);
   self->bytes = 0u;
   self->active = 1;
   return H2_PAL_OK;
 }
 
-static int digest_update(
-    void *user, const uint8_t *data, size_t len) {
-  h2_jieli_digest_t *self = user;
+static int digest_update(void* user, const uint8_t* data, size_t len) {
+  h2_jieli_digest_t* self = user;
   if (!self->active || (data == NULL && len != 0u)) {
     return H2_PAL_ERR_INVALID_STATE;
   }
@@ -669,44 +652,42 @@ static int digest_update(
   return H2_PAL_OK;
 }
 
-static int digest_finish(void *user, uint8_t out[32]) {
-  h2_jieli_digest_t *self = user;
+static int digest_finish(void* user, uint8_t out[32]) {
+  h2_jieli_digest_t* self = user;
   char digest_hex[65];
   char line[128];
   if (!self->active || out == NULL) return H2_PAL_ERR_INVALID_STATE;
   h2_loader_sha256_finish(&self->sha, out);
   h2_loader_sha256_hex(out, digest_hex);
-  (void)snprintf(
-      line, sizeof(line),
-      "H2_JIELI_DIGEST_FINISH bytes=%u sha256=%s\r\n",
-      self->bytes, digest_hex);
+  (void)snprintf(line, sizeof(line),
+                 "H2_JIELI_DIGEST_FINISH bytes=%u sha256=%s\r\n", self->bytes,
+                 digest_hex);
   usb_diag_write(line);
   self->active = 0;
   return H2_PAL_OK;
 }
 
-static void digest_abort(void *user) {
-  h2_jieli_digest_t *self = user;
+static void digest_abort(void* user) {
+  h2_jieli_digest_t* self = user;
   if (self->active) {
     char line[64];
-    (void)snprintf(
-        line, sizeof(line),
-        "H2_JIELI_DIGEST_ABORT bytes=%u\r\n", self->bytes);
+    (void)snprintf(line, sizeof(line), "H2_JIELI_DIGEST_ABORT bytes=%u\r\n",
+                   self->bytes);
     usb_diag_write(line);
   }
   memset(self, 0, sizeof(*self));
 }
 
-static int clear_data(void *user, const char *path) {
+static int clear_data(void* user, const char* path) {
   return h2_pal_fs_clear(user, path);
 }
 
-static int current_loader_identity(
-    const h2_runtime_t *runtime, const char *version,
-    h2_loader_image_identity_t *out_identity) {
+static int current_loader_identity(const h2_runtime_t* runtime,
+                                   const char* version,
+                                   h2_loader_image_identity_t* out_identity) {
   h2_pal_power_boot_partition_t running;
   h2_loader_status_t status;
-  const h2_loader_metadata_t *persisted = NULL;
+  const h2_loader_metadata_t* persisted = NULL;
   struct BootInfo boot_info;
   h2_loader_sha256_t sha;
   uint8_t digest_value[32];
@@ -720,22 +701,19 @@ static int current_loader_identity(
   memset(&status, 0, sizeof(status));
   rc = h2_loader_read_pref_status(runtime->pref, runtime->mem, &status);
   if (rc == H2_PAL_OK) {
-    persisted = running.id == H2_JIELI_PARTITION_LOADER
-                    ? &status.partition_1
-                    : &status.partition_2;
+    persisted = running.id == H2_JIELI_PARTITION_LOADER ? &status.partition_1
+                                                        : &status.partition_2;
   }
 
   memset(out_identity, 0, sizeof(*out_identity));
   out_identity->format = 1u;
   out_identity->role = H2_LOADER_IMAGE_ROLE_H2LOADER;
-  (void)snprintf(
-      out_identity->board, sizeof(out_identity->board), "%s",
-      runtime->board);
-  (void)snprintf(
-      out_identity->target, sizeof(out_identity->target), "%s",
-      runtime->target);
-  (void)snprintf(
-      out_identity->version, sizeof(out_identity->version), "%s", version);
+  (void)snprintf(out_identity->board, sizeof(out_identity->board), "%s",
+                 runtime->board);
+  (void)snprintf(out_identity->target, sizeof(out_identity->target), "%s",
+                 runtime->target);
+  (void)snprintf(out_identity->version, sizeof(out_identity->version), "%s",
+                 version);
   if (persisted != NULL && persisted->valid &&
       persisted->role == H2_LOADER_IMAGE_ROLE_H2LOADER &&
       persisted->image_size != 0u &&
@@ -744,12 +722,12 @@ static int current_loader_identity(
     /* The verified package owns its version. It may intentionally differ
      * from the binary's build label. Falling back to a BootInfo-derived
      * identity here loses the UFW size/hash needed by self-upgrade copy. */
-    (void)snprintf(out_identity->version, sizeof(out_identity->version),
-                   "%s", persisted->version);
+    (void)snprintf(out_identity->version, sizeof(out_identity->version), "%s",
+                   persisted->version);
     out_identity->image_size = persisted->image_size;
-    (void)snprintf(
-        out_identity->image_sha256, sizeof(out_identity->image_sha256),
-        "%s", persisted->image_checksum);
+    (void)snprintf(out_identity->image_sha256,
+                   sizeof(out_identity->image_sha256), "%s",
+                   persisted->image_checksum);
     usb_diag_write("H2_JIELI_ACTIVE_IDENTITY source=pref\r\n");
     return H2_PAL_OK;
   }
@@ -765,14 +743,12 @@ static int current_loader_identity(
    * target identity.  A Loader-installed image always takes the persisted,
    * package-verified identity path above. */
   h2_loader_sha256_init(&sha);
-  h2_loader_sha256_update(
-      &sha, (const uint8_t *)&boot_info, sizeof(boot_info));
-  h2_loader_sha256_update(
-      &sha, (const uint8_t *)version, strlen(version));
-  h2_loader_sha256_update(
-      &sha, (const uint8_t *)runtime->board, strlen(runtime->board));
-  h2_loader_sha256_update(
-      &sha, (const uint8_t *)runtime->target, strlen(runtime->target));
+  h2_loader_sha256_update(&sha, (const uint8_t*)&boot_info, sizeof(boot_info));
+  h2_loader_sha256_update(&sha, (const uint8_t*)version, strlen(version));
+  h2_loader_sha256_update(&sha, (const uint8_t*)runtime->board,
+                          strlen(runtime->board));
+  h2_loader_sha256_update(&sha, (const uint8_t*)runtime->target,
+                          strlen(runtime->target));
   h2_loader_sha256_finish(&sha, digest_value);
   h2_loader_sha256_hex(digest_value, out_identity->image_sha256);
   out_identity->image_size = boot_info.codeLength;
@@ -780,23 +756,21 @@ static int current_loader_identity(
   return H2_PAL_OK;
 }
 
-static void loader_startup_event(
-    void *user, h2_loader_startup_event_t event, int code) {
+static void loader_startup_event(void* user, h2_loader_startup_event_t event,
+                                 int code) {
   char line[96];
   (void)user;
-  (void)snprintf(
-      line, sizeof(line),
-      "H2_JIELI_STARTUP_EVENT event=%u code=%d\r\n",
-      (unsigned)event, code);
+  (void)snprintf(line, sizeof(line),
+                 "H2_JIELI_STARTUP_EVENT event=%u code=%d\r\n", (unsigned)event,
+                 code);
   usb_diag_write(line);
 }
 
-static int prepare_loader(void *user, h2_loader_t *loader) {
-  h2_runtime_t *runtime = user;
+static int prepare_loader(void* user, h2_loader_t* loader) {
+  h2_runtime_t* runtime = user;
   (void)loader;
   int rc = h2_loader_package_recover_publish(
-      runtime->fs, runtime->pref, runtime->mem,
-      H2_LOADER_DEFAULT_PACKAGE_PATH,
+      runtime->fs, runtime->pref, runtime->mem, H2_LOADER_DEFAULT_PACKAGE_PATH,
       "/dl/update.tar.zlib.prev");
   if (rc != H2_PAL_OK) return rc;
   /* The portable Loader interprets a prepare failure as force-command-mode.
@@ -805,15 +779,15 @@ static int prepare_loader(void *user, h2_loader_t *loader) {
 }
 
 __attribute__((weak)) void h2_jieli_loader_pref_probe(
-    const h2_pal_pref_api_t *pref, const h2_pal_mem_api_t *mem) {
+    const h2_pal_pref_api_t* pref, const h2_pal_mem_api_t* mem) {
   (void)pref;
   (void)mem;
 }
 
-static int serve_loader(
-    void *user, h2_loader_t *loader, h2_loader_command_t *command,
-    h2_loader_startup_action_t action) {
-  h2_runtime_t *runtime = user;
+static int serve_loader(void* user, h2_loader_t* loader,
+                        h2_loader_command_t* command,
+                        h2_loader_startup_action_t action) {
+  h2_runtime_t* runtime = user;
   (void)loader;
   (void)action;
   h2_jieli_loader_pref_probe(runtime->pref, runtime->mem);
@@ -827,7 +801,8 @@ static int serve_loader(
       .flush = physical_flush,
   };
   h2_iostreamikcp_filter_init(&transport.filter);
-  puts("H2_LOADER_READY board=jieli_ac791n_devkit target=wl82 transport=iostreamikcp-usb0");
+  puts(
+      "H2_LOADER_READY board=jieli_ac791n_devkit target=wl82 transport=iostreamikcp-usb0");
 #ifndef H2_JIELI_BLE_DIAG_QUIET_UART
   uint32_t next_ready_diag_ms = 0u;
 #endif
@@ -836,7 +811,8 @@ static int serve_loader(
     uint32_t now = timer_get_ms();
 #ifndef H2_JIELI_BLE_DIAG_QUIET_UART
     if (transport.stream == NULL &&
-        (next_ready_diag_ms == 0u || (int32_t)(now - next_ready_diag_ms) >= 0)) {
+        (next_ready_diag_ms == 0u ||
+         (int32_t)(now - next_ready_diag_ms) >= 0)) {
       usb_diag_write(
           "H2_LOADER_READY board=jieli_ac791n_devkit target=wl82 "
           "transport=iostreamikcp-usb0\r\n");
@@ -871,9 +847,8 @@ static int serve_loader(
       continue;
     }
     char line[96];
-    (void)snprintf(
-        line, sizeof(line),
-        "H2_JIELI_LOADER_ERROR step=command code=%d\r\n", rc);
+    (void)snprintf(line, sizeof(line),
+                   "H2_JIELI_LOADER_ERROR step=command code=%d\r\n", rc);
     usb_diag_write(line);
     /* A framing, filesystem, or overflow error invalidates the current KCP
      * command stream. Drop it completely so a fresh Host session can recover
@@ -886,13 +861,13 @@ static int serve_loader(
   return H2_PAL_OK;
 }
 
-static int stop_serve(void *user) {
+static int stop_serve(void* user) {
   (void)user;
   stop_requested = 1;
   return H2_PAL_OK;
 }
 
-static void loader_task(void *private_data) {
+static void loader_task(void* private_data) {
   (void)private_data;
   /* Let USB CDC and storage settle before the first diagnostic. */
   os_time_dly(10u);
@@ -908,7 +883,7 @@ static void loader_task(void *private_data) {
         "app_boot=blocked\r\n");
   }
   h2_runtime_config_t runtime_config;
-  h2_runtime_t *runtime = NULL;
+  h2_runtime_t* runtime = NULL;
   int rc;
   uint32_t runtime_config_attempt = 0u;
   for (;;) {
@@ -922,14 +897,13 @@ static void loader_task(void *private_data) {
         (unsigned)runtime_config_attempt, rc);
     char sd_diagnostic[384];
     char line[544];
-    (void)h2_jieli_ac791n_devkit_sd_fs_diagnostic(
-        sd_diagnostic, sizeof(sd_diagnostic));
-    (void)snprintf(
-        line, sizeof(line),
-        "H2_JIELI_LOADER_WAIT step=runtime_config sd_stage=%s "
-        "attempt=%u code=%d %s\r\n",
-        h2_jieli_ac791n_devkit_sd_fs_last_stage(),
-        (unsigned)runtime_config_attempt, rc, sd_diagnostic);
+    (void)h2_jieli_ac791n_devkit_sd_fs_diagnostic(sd_diagnostic,
+                                                  sizeof(sd_diagnostic));
+    (void)snprintf(line, sizeof(line),
+                   "H2_JIELI_LOADER_WAIT step=runtime_config sd_stage=%s "
+                   "attempt=%u code=%d %s\r\n",
+                   h2_jieli_ac791n_devkit_sd_fs_last_stage(),
+                   (unsigned)runtime_config_attempt, rc, sd_diagnostic);
     usb_diag_write(line);
     if (rc != H2_PAL_ERR_UNAVAILABLE && rc != H2_PAL_ERR_IO) {
       usb_diag_error_forever("runtime_config", rc);
@@ -947,8 +921,8 @@ static void loader_task(void *private_data) {
     usb_diag_write("H2_JIELI_LOADER_OK step=coredump_flush stored=0\r\n");
   }
   usb_diag_write("H2_JIELI_LOADER_ENTER step=loader_platform\r\n");
-  rc = h2_jieli_loader_platform_init(
-      runtime_config.fs, runtime_config.pref, runtime_config.mem);
+  rc = h2_jieli_loader_platform_init(runtime_config.fs, runtime_config.pref,
+                                     runtime_config.mem);
   if (rc != H2_PAL_OK) {
     printf("H2_JIELI_LOADER_ERROR step=loader_platform code=%d\r\n", rc);
     usb_diag_error_forever("loader_platform", rc);
@@ -965,8 +939,7 @@ static void loader_task(void *private_data) {
 
   h2_pal_firmware_info_t firmware_info;
   usb_diag_write("H2_JIELI_LOADER_ENTER step=firmware_info\r\n");
-  rc = h2_pal_firmware_info_get_current(
-      runtime->firmware_info, &firmware_info);
+  rc = h2_pal_firmware_info_get_current(runtime->firmware_info, &firmware_info);
   if (rc != H2_PAL_OK) {
     printf("H2_JIELI_LOADER_ERROR step=firmware_info code=%d\r\n", rc);
     usb_diag_error_forever("firmware_info", rc);
@@ -987,7 +960,7 @@ static void loader_task(void *private_data) {
       .abort = digest_abort,
   };
   config.loader.package.clear_data = clear_data;
-  config.loader.package.clear_data_user = (void *)runtime->fs;
+  config.loader.package.clear_data_user = (void*)runtime->fs;
   config.loader.package.app_entry_path = H2_JIELI_APP_ENTRY_PATH;
   config.loader.package.image_reader = h2_jieli_loader_image_reader();
   config.loader.package.image_writer = h2_jieli_loader_image_writer();
@@ -999,14 +972,13 @@ static void loader_task(void *private_data) {
   config.loader.hardware_capabilities =
       H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_BLE;
   config.loader.on_event = loader_startup_event;
-  rc = current_loader_identity(
-      runtime, firmware_info.version, &config.loader.active_identity);
+  rc = current_loader_identity(runtime, firmware_info.version,
+                               &config.loader.active_identity);
   if (rc != H2_PAL_OK) {
     printf("H2_JIELI_LOADER_ERROR step=active_identity code=%d\r\n", rc);
     usb_diag_error_forever("active_identity", rc);
   }
-  config.loader.confirm_active_image =
-      h2_jieli_loader_confirm_active_image;
+  config.loader.confirm_active_image = h2_jieli_loader_confirm_active_image;
   config.command.digest = config.loader.package.digest;
   config.command.now_ms = now_ms64;
   config.command.sleep_ms = sleep_ms;
@@ -1026,10 +998,10 @@ static void loader_task(void *private_data) {
   /* A failing optional transport must never take the recovery transport down
    * with it.  After a watchdog/assert reset, keep UART Loader command mode
    * alive and skip BLE until a repaired Loader is installed. */
-  const h2loader_app_command_service_api_t *additional_command_service =
+  const h2loader_app_command_service_api_t* additional_command_service =
       crash_recovery_active ? NULL : h2loader_bleikcp_command_service();
-  rc = h2loader_app_run_with_command_service(
-      runtime, &config, additional_command_service);
+  rc = h2loader_app_run_with_command_service(runtime, &config,
+                                             additional_command_service);
   printf("H2_JIELI_LOADER_EXIT code=%d\r\n", rc);
   for (;;) os_time_dly(100u);
 }
@@ -1062,14 +1034,12 @@ void app_main(void) {
     return;
   }
   usb_tx_ready = 1;
-  usb_diag_write(
-      "H2_JIELI_LOADER_USB_READY port=usb0 class=cdc\r\n");
+  usb_diag_write("H2_JIELI_LOADER_USB_READY port=usb0 class=cdc\r\n");
   usb_diag_write(
       "H2_JIELI_LOADER_TRANSPORT_READY port=usb0 protocol=iostreamikcp\r\n");
 #endif
-  if (os_task_create(
-          loader_task, NULL, 10, H2_LOADER_TASK_STACK_SIZE, 0,
-          "h2loader") != OS_NO_ERR) {
+  if (os_task_create(loader_task, NULL, 10, H2_LOADER_TASK_STACK_SIZE, 0,
+                     "h2loader") != OS_NO_ERR) {
     puts("H2_JIELI_LOADER_ERROR step=task_create");
     usb_diag_error_forever("task_create", H2_PAL_ERR_NO_MEMORY);
   }

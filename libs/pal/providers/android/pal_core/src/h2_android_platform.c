@@ -13,41 +13,44 @@
 
 typedef struct h2_android_audio_track {
   h2_pal_audio_track_t base;
-  struct h2_android_platform *host;
-  AAudioStream *stream;
+  struct h2_android_platform* host;
+  AAudioStream* stream;
   h2_audio_pcm_format_t format;
   uint32_t volume_factor_milli;
-  int16_t *pending_samples;
+  int16_t* pending_samples;
   uint32_t pending_frame_count;
   uint32_t pending_frame_offset;
   h2_pal_mem_api_t allocator;
 } h2_android_audio_track_t;
 
-static void *android_track_alloc(h2_android_audio_track_t *track, size_t bytes) {
+static void* android_track_alloc(h2_android_audio_track_t* track,
+                                 size_t bytes) {
   return track->allocator.vtable != NULL
-      ? h2_pal_mem_alloc(&track->allocator, bytes) : malloc(bytes);
+             ? h2_pal_mem_alloc(&track->allocator, bytes)
+             : malloc(bytes);
 }
 
-static void android_track_free(h2_android_audio_track_t *track, void *ptr) {
+static void android_track_free(h2_android_audio_track_t* track, void* ptr) {
   if (track->allocator.vtable != NULL)
     h2_pal_mem_free(&track->allocator, ptr);
-  else free(ptr);
+  else
+    free(ptr);
 }
 
 struct h2_android_platform {
   pthread_mutex_t mutex;
-  JavaVM *vm;
+  JavaVM* vm;
   jobject view;
   jmethodID request_frame;
   int32_t width;
   int32_t height;
-  uint32_t *rgba;
+  uint32_t* rgba;
   int32_t pointer_x;
   int32_t pointer_y;
   int pointer_pressed;
   h2_pal_audio_api_t audio;
-  h2_android_audio_track_t *audio_track;
-  AAudioStream *mic_stream;
+  h2_android_audio_track_t* audio_track;
+  AAudioStream* mic_stream;
   uint32_t mic_gain_percent;
   uint32_t speaker_volume_percent;
   int speaker_started;
@@ -56,7 +59,7 @@ struct h2_android_platform {
   uint32_t brightness_percent;
 };
 
-static int android_audio_get_info(void *user, h2_audio_info_t *out_info) {
+static int android_audio_get_info(void* user, h2_audio_info_t* out_info) {
   if (user == NULL || out_info == NULL) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
@@ -79,15 +82,15 @@ static int android_audio_get_info(void *user, h2_audio_info_t *out_info) {
   return H2_PAL_OK;
 }
 
-static int android_audio_start_mic(void *user) {
-  h2_android_platform_t *host = user;
+static int android_audio_start_mic(void* user) {
+  h2_android_platform_t* host = user;
   if (host == NULL) return H2_AUDIO_ERR_INVALID_ARG;
   pthread_mutex_lock(&host->mutex);
   if (host->mic_stream != NULL) {
     pthread_mutex_unlock(&host->mutex);
     return H2_AUDIO_ERR_INVALID_STATE;
   }
-  AAudioStreamBuilder *builder = NULL;
+  AAudioStreamBuilder* builder = NULL;
   aaudio_result_t result = AAudio_createStreamBuilder(&builder);
   if (result != AAUDIO_OK || builder == NULL) {
     pthread_mutex_unlock(&host->mutex);
@@ -99,7 +102,7 @@ static int android_audio_start_mic(void *user) {
   AAudioStreamBuilder_setChannelCount(builder, 1);
   AAudioStreamBuilder_setFormat(builder, AAUDIO_FORMAT_PCM_I16);
   AAudioStreamBuilder_setPerformanceMode(builder, AAUDIO_PERFORMANCE_MODE_NONE);
-  AAudioStream *stream = NULL;
+  AAudioStream* stream = NULL;
   result = AAudioStreamBuilder_openStream(builder, &stream);
   (void)AAudioStreamBuilder_delete(builder);
   if (result != AAUDIO_OK || stream == NULL) {
@@ -124,11 +127,11 @@ static int android_audio_start_mic(void *user) {
   return H2_AUDIO_OK;
 }
 
-static int android_audio_stop_mic(void *user) {
-  h2_android_platform_t *host = user;
+static int android_audio_stop_mic(void* user) {
+  h2_android_platform_t* host = user;
   if (host == NULL) return H2_AUDIO_ERR_INVALID_ARG;
   pthread_mutex_lock(&host->mutex);
-  AAudioStream *stream = host->mic_stream;
+  AAudioStream* stream = host->mic_stream;
   host->mic_stream = NULL;
   int rc = H2_AUDIO_OK;
   if (stream != NULL) {
@@ -140,9 +143,9 @@ static int android_audio_stop_mic(void *user) {
   return rc;
 }
 
-static int android_audio_mic_read(void *user, h2_audio_frame_t *out_frame,
+static int android_audio_mic_read(void* user, h2_audio_frame_t* out_frame,
                                   uint32_t timeout_ms) {
-  h2_android_platform_t *host = user;
+  h2_android_platform_t* host = user;
   if (host == NULL || out_frame == NULL || out_frame->data == NULL ||
       out_frame->capacity < 320u * sizeof(int16_t) ||
       out_frame->sample_rate_hz != 16000u || out_frame->channels != 1u ||
@@ -154,14 +157,14 @@ static int android_audio_mic_read(void *user, h2_audio_frame_t *out_frame,
     return H2_AUDIO_ERR_INVALID_STATE;
   }
   const int64_t timeout_ns = (int64_t)timeout_ms * 1000000;
-  const aaudio_result_t read = AAudioStream_read(
-      host->mic_stream, out_frame->data, 320, timeout_ns);
+  const aaudio_result_t read =
+      AAudioStream_read(host->mic_stream, out_frame->data, 320, timeout_ns);
   if (read <= 0) {
     pthread_mutex_unlock(&host->mutex);
     return read == 0 ? H2_AUDIO_ERR_WOULD_BLOCK : H2_AUDIO_ERR_IO;
   }
   const uint32_t gain = host->mic_gain_percent;
-  int16_t *samples = out_frame->data;
+  int16_t* samples = out_frame->data;
   for (aaudio_result_t i = 0; i < read; ++i) {
     const int32_t scaled = (int32_t)samples[i] * (int32_t)gain / 100;
     samples[i] = (int16_t)scaled;
@@ -172,14 +175,14 @@ static int android_audio_mic_read(void *user, h2_audio_frame_t *out_frame,
   return H2_AUDIO_OK;
 }
 
-static int android_audio_start_speaker(void *user) {
-  h2_android_platform_t *host = user;
+static int android_audio_start_speaker(void* user) {
+  h2_android_platform_t* host = user;
   if (host == NULL) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
   pthread_mutex_lock(&host->mutex);
-  const int result = host->speaker_started ? H2_AUDIO_ERR_INVALID_STATE
-                                            : H2_PAL_OK;
+  const int result =
+      host->speaker_started ? H2_AUDIO_ERR_INVALID_STATE : H2_PAL_OK;
   if (result == H2_PAL_OK) {
     host->speaker_started = 1;
   }
@@ -187,8 +190,8 @@ static int android_audio_start_speaker(void *user) {
   return result;
 }
 
-static int android_audio_stop_speaker(void *user) {
-  h2_android_platform_t *host = user;
+static int android_audio_stop_speaker(void* user) {
+  h2_android_platform_t* host = user;
   if (host == NULL) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
@@ -203,7 +206,7 @@ static int android_audio_stop_speaker(void *user) {
   return result;
 }
 
-static int android_audio_track_flush_pending(h2_android_audio_track_t *track,
+static int android_audio_track_flush_pending(h2_android_audio_track_t* track,
                                              int64_t timeout_ns) {
   while (track->pending_frame_offset < track->pending_frame_count) {
     const aaudio_result_t result = AAudioStream_write(
@@ -213,10 +216,9 @@ static int android_audio_track_flush_pending(h2_android_audio_track_t *track,
         (int32_t)(track->pending_frame_count - track->pending_frame_offset),
         timeout_ns);
     if (result <= 0) {
-      return result == 0
-                 ? H2_AUDIO_ERR_WOULD_BLOCK
-                 : h2_android_audio_map_aaudio_write_result(
-                       result, AAUDIO_ERROR_TIMEOUT);
+      return result == 0 ? H2_AUDIO_ERR_WOULD_BLOCK
+                         : h2_android_audio_map_aaudio_write_result(
+                               result, AAUDIO_ERROR_TIMEOUT);
     }
     if ((uint32_t)result >
         track->pending_frame_count - track->pending_frame_offset) {
@@ -231,13 +233,12 @@ static int android_audio_track_flush_pending(h2_android_audio_track_t *track,
   return H2_PAL_OK;
 }
 
-static int android_audio_track_write(h2_pal_audio_track_t *base,
-                                     const h2_audio_frame_t *frame,
+static int android_audio_track_write(h2_pal_audio_track_t* base,
+                                     const h2_audio_frame_t* frame,
                                      uint32_t timeout_ms) {
-  h2_android_audio_track_t *track = (h2_android_audio_track_t *)base;
-  if (track == NULL ||
-      h2_android_audio_validate_playback_frame(&track->format, frame) !=
-          H2_PAL_OK) {
+  h2_android_audio_track_t* track = (h2_android_audio_track_t*)base;
+  if (track == NULL || h2_android_audio_validate_playback_frame(
+                           &track->format, frame) != H2_PAL_OK) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
   pthread_mutex_lock(&track->host->mutex);
@@ -252,11 +253,11 @@ static int android_audio_track_write(h2_pal_audio_track_t *base,
     return pending_result;
   }
 
-  int16_t *samples = android_track_alloc(track, frame->bytes);
+  int16_t* samples = android_track_alloc(track, frame->bytes);
   if (samples == NULL) {
     return H2_AUDIO_ERR_NO_MEMORY;
   }
-  const int16_t *source = frame->data;
+  const int16_t* source = frame->data;
   const size_t sample_count = frame->bytes / sizeof(int16_t);
   for (size_t i = 0u; i < sample_count; ++i) {
     int64_t value =
@@ -272,8 +273,7 @@ static int android_audio_track_write(h2_pal_audio_track_t *base,
   uint32_t written = 0u;
   while (written < frame->samples_per_channel) {
     const aaudio_result_t result = AAudioStream_write(
-        track->stream,
-        samples + (size_t)written * track->format.channels,
+        track->stream, samples + (size_t)written * track->format.channels,
         (int32_t)(frame->samples_per_channel - written), timeout_ns);
     if (result <= 0) {
       if (h2_android_audio_should_retain_partial_write(
@@ -284,10 +284,9 @@ static int android_audio_track_write(h2_pal_audio_track_t *base,
         return H2_PAL_OK;
       }
       android_track_free(track, samples);
-      return result == 0
-                 ? H2_AUDIO_ERR_WOULD_BLOCK
-                 : h2_android_audio_map_aaudio_write_result(
-                       result, AAUDIO_ERROR_TIMEOUT);
+      return result == 0 ? H2_AUDIO_ERR_WOULD_BLOCK
+                         : h2_android_audio_map_aaudio_write_result(
+                               result, AAUDIO_ERROR_TIMEOUT);
     }
     if ((uint32_t)result > frame->samples_per_channel - written) {
       android_track_free(track, samples);
@@ -299,9 +298,9 @@ static int android_audio_track_write(h2_pal_audio_track_t *base,
   return H2_PAL_OK;
 }
 
-static int android_audio_track_get_volume_factor(
-    h2_pal_audio_track_t *base, uint32_t *out_factor_milli) {
-  h2_android_audio_track_t *track = (h2_android_audio_track_t *)base;
+static int android_audio_track_get_volume_factor(h2_pal_audio_track_t* base,
+                                                 uint32_t* out_factor_milli) {
+  h2_android_audio_track_t* track = (h2_android_audio_track_t*)base;
   if (track == NULL || out_factor_milli == NULL) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
@@ -311,9 +310,9 @@ static int android_audio_track_get_volume_factor(
   return H2_PAL_OK;
 }
 
-static int android_audio_track_set_volume_factor(h2_pal_audio_track_t *base,
+static int android_audio_track_set_volume_factor(h2_pal_audio_track_t* base,
                                                  uint32_t factor_milli) {
-  h2_android_audio_track_t *track = (h2_android_audio_track_t *)base;
+  h2_android_audio_track_t* track = (h2_android_audio_track_t*)base;
   if (track == NULL || factor_milli > 1000u) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
@@ -323,9 +322,9 @@ static int android_audio_track_set_volume_factor(h2_pal_audio_track_t *base,
   return H2_PAL_OK;
 }
 
-static int android_audio_track_drain(h2_pal_audio_track_t *base,
+static int android_audio_track_drain(h2_pal_audio_track_t* base,
                                      uint32_t timeout_ms) {
-  h2_android_audio_track_t *track = (h2_android_audio_track_t *)base;
+  h2_android_audio_track_t* track = (h2_android_audio_track_t*)base;
   if (track == NULL) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
@@ -348,12 +347,12 @@ static int android_audio_track_drain(h2_pal_audio_track_t *base,
   return H2_PAL_OK;
 }
 
-static int android_audio_track_close(h2_pal_audio_track_t *base) {
-  h2_android_audio_track_t *track = (h2_android_audio_track_t *)base;
+static int android_audio_track_close(h2_pal_audio_track_t* base) {
+  h2_android_audio_track_t* track = (h2_android_audio_track_t*)base;
   if (track == NULL) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
-  h2_android_platform_t *host = track->host;
+  h2_android_platform_t* host = track->host;
   (void)AAudioStream_requestStop(track->stream);
   const aaudio_result_t close_result = AAudioStream_close(track->stream);
   android_track_free(track, track->pending_samples);
@@ -366,10 +365,10 @@ static int android_audio_track_close(h2_pal_audio_track_t *base) {
   return h2_android_audio_map_aaudio_io_result(close_result);
 }
 
-static int android_audio_create_track(void *user,
-                                      const h2_audio_track_config_t *config,
-                                      h2_pal_audio_track_t **out_track) {
-  h2_android_platform_t *host = user;
+static int android_audio_create_track(void* user,
+                                      const h2_audio_track_config_t* config,
+                                      h2_pal_audio_track_t** out_track) {
+  h2_android_platform_t* host = user;
   if (host == NULL || out_track == NULL ||
       h2_android_audio_validate_track_config(config) != H2_PAL_OK ||
       (config->allocator != NULL &&
@@ -385,8 +384,8 @@ static int android_audio_create_track(void *user,
     return H2_AUDIO_ERR_INVALID_STATE;
   }
 
-  AAudioStreamBuilder *builder = NULL;
-  AAudioStream *stream = NULL;
+  AAudioStreamBuilder* builder = NULL;
+  AAudioStream* stream = NULL;
   const int builder_result = h2_android_audio_map_aaudio_open_result(
       AAudio_createStreamBuilder(&builder));
   if (builder_result != H2_PAL_OK || builder == NULL) {
@@ -400,8 +399,7 @@ static int android_audio_create_track(void *user,
                                       (int32_t)config->format.channels);
   AAudioStreamBuilder_setFormat(builder, AAUDIO_FORMAT_PCM_I16);
   AAudioStreamBuilder_setSharingMode(builder, AAUDIO_SHARING_MODE_SHARED);
-  AAudioStreamBuilder_setPerformanceMode(builder,
-                                         AAUDIO_PERFORMANCE_MODE_NONE);
+  AAudioStreamBuilder_setPerformanceMode(builder, AAUDIO_PERFORMANCE_MODE_NONE);
   AAudioStreamBuilder_setUsage(builder, AAUDIO_USAGE_MEDIA);
   AAudioStreamBuilder_setBufferCapacityInFrames(
       builder, (int32_t)(config->buffer_frames *
@@ -422,9 +420,10 @@ static int android_audio_create_track(void *user,
     return mapped_open_result != H2_PAL_OK ? mapped_open_result
                                            : H2_AUDIO_ERR_UNSUPPORTED;
   }
-  h2_android_audio_track_t *track = config->allocator != NULL
-      ? h2_pal_mem_alloc(config->allocator, sizeof(*track))
-      : malloc(sizeof(*track));
+  h2_android_audio_track_t* track =
+      config->allocator != NULL
+          ? h2_pal_mem_alloc(config->allocator, sizeof(*track))
+          : malloc(sizeof(*track));
   if (track == NULL) {
     (void)AAudioStream_close(stream);
     return H2_AUDIO_ERR_NO_MEMORY;
@@ -448,15 +447,16 @@ static int android_audio_create_track(void *user,
    * with silence, so a single caller PCM frame can play and drain without
    * another caller write. Preserve the requested native buffer capacity. */
   const int32_t prime_frames = AAudioStream_getBufferSizeInFrames(stream);
-  if (prime_frames <= 0 || (size_t)prime_frames >
-      SIZE_MAX / (sizeof(int16_t) * config->format.channels)) {
+  if (prime_frames <= 0 ||
+      (size_t)prime_frames >
+          SIZE_MAX / (sizeof(int16_t) * config->format.channels)) {
     (void)AAudioStream_close(stream);
     android_track_free(track, track);
     return H2_AUDIO_ERR_IO;
   }
-  const size_t prime_bytes = (size_t)prime_frames *
-      config->format.channels * sizeof(int16_t);
-  int16_t *silence = android_track_alloc(track, prime_bytes);
+  const size_t prime_bytes =
+      (size_t)prime_frames * config->format.channels * sizeof(int16_t);
+  int16_t* silence = android_track_alloc(track, prime_bytes);
   if (silence == NULL) {
     (void)AAudioStream_close(stream);
     android_track_free(track, track);
@@ -470,9 +470,10 @@ static int android_audio_create_track(void *user,
         stream, silence + (size_t)primed * config->format.channels,
         prime_frames - primed, 0);
     if (written <= 0 || written > prime_frames - primed) {
-      prime_result = written == 0 ? H2_AUDIO_ERR_WOULD_BLOCK :
-          written < 0 ? h2_android_audio_map_aaudio_write_result(
-              written, AAUDIO_ERROR_TIMEOUT) : H2_AUDIO_ERR_IO;
+      prime_result = written == 0  ? H2_AUDIO_ERR_WOULD_BLOCK
+                     : written < 0 ? h2_android_audio_map_aaudio_write_result(
+                                         written, AAUDIO_ERROR_TIMEOUT)
+                                   : H2_AUDIO_ERR_IO;
       break;
     }
     primed += written;
@@ -483,8 +484,8 @@ static int android_audio_create_track(void *user,
     android_track_free(track, track);
     return prime_result;
   }
-  const int start_result = h2_android_audio_map_aaudio_io_result(
-      AAudioStream_requestStart(stream));
+  const int start_result =
+      h2_android_audio_map_aaudio_io_result(AAudioStream_requestStart(stream));
   if (start_result != H2_PAL_OK) {
     (void)AAudioStream_close(stream);
     android_track_free(track, track);
@@ -497,9 +498,8 @@ static int android_audio_create_track(void *user,
   return H2_PAL_OK;
 }
 
-static int android_audio_get_speaker_volume(void *user,
-                                            uint32_t *out_percent) {
-  h2_android_platform_t *host = user;
+static int android_audio_get_speaker_volume(void* user, uint32_t* out_percent) {
+  h2_android_platform_t* host = user;
   if (host == NULL || out_percent == NULL) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
@@ -509,8 +509,8 @@ static int android_audio_get_speaker_volume(void *user,
   return H2_PAL_OK;
 }
 
-static int android_audio_set_speaker_volume(void *user, uint32_t percent) {
-  h2_android_platform_t *host = user;
+static int android_audio_set_speaker_volume(void* user, uint32_t percent) {
+  h2_android_platform_t* host = user;
   if (host == NULL || percent > 100u) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
@@ -520,8 +520,8 @@ static int android_audio_set_speaker_volume(void *user, uint32_t percent) {
   return H2_PAL_OK;
 }
 
-static int android_audio_get_mic_gain(void *user, uint32_t *out_percent) {
-  h2_android_platform_t *host = user;
+static int android_audio_get_mic_gain(void* user, uint32_t* out_percent) {
+  h2_android_platform_t* host = user;
   if (host == NULL || out_percent == NULL) return H2_AUDIO_ERR_INVALID_ARG;
   pthread_mutex_lock(&host->mutex);
   *out_percent = host->mic_gain_percent;
@@ -529,8 +529,8 @@ static int android_audio_get_mic_gain(void *user, uint32_t *out_percent) {
   return H2_AUDIO_OK;
 }
 
-static int android_audio_set_mic_gain(void *user, uint32_t percent) {
-  h2_android_platform_t *host = user;
+static int android_audio_set_mic_gain(void* user, uint32_t percent) {
+  h2_android_platform_t* host = user;
   if (host == NULL || percent > 100u) return H2_AUDIO_ERR_INVALID_ARG;
   pthread_mutex_lock(&host->mutex);
   host->mic_gain_percent = percent;
@@ -538,11 +538,11 @@ static int android_audio_set_mic_gain(void *user, uint32_t percent) {
   return H2_AUDIO_OK;
 }
 
-static int audio_aec_diagnostics_unsupported(void *user,
-    const h2_audio_aec_observer_t *observer) {
-    (void)user;
-    (void)observer;
-    return H2_AUDIO_ERR_UNSUPPORTED;
+static int audio_aec_diagnostics_unsupported(
+    void* user, const h2_audio_aec_observer_t* observer) {
+  (void)user;
+  (void)observer;
+  return H2_AUDIO_ERR_UNSUPPORTED;
 }
 
 static const h2_pal_audio_vtable_t s_android_audio_vtable = {
@@ -560,8 +560,8 @@ static const h2_pal_audio_vtable_t s_android_audio_vtable = {
     .set_aec_observer = audio_aec_diagnostics_unsupported,
 };
 
-static int android_display_open(void *user) {
-  h2_android_platform_t *host = user;
+static int android_display_open(void* user) {
+  h2_android_platform_t* host = user;
   if (host == NULL) {
     return H2_DISPLAY_ERR_INVALID_ARG;
   }
@@ -575,43 +575,44 @@ static int android_display_open(void *user) {
   return host->opened ? H2_DISPLAY_OK : H2_DISPLAY_ERR_NO_MEMORY;
 }
 
-static int android_display_get_info(void *user, h2_display_info_t *out_info) {
+static int android_display_get_info(void* user, h2_display_info_t* out_info) {
   if (user == NULL || out_info == NULL) {
     return H2_DISPLAY_ERR_INVALID_ARG;
   }
-  if (!((h2_android_platform_t *)user)->opened) return H2_DISPLAY_ERR_INVALID_STATE;
+  if (!((h2_android_platform_t*)user)->opened)
+    return H2_DISPLAY_ERR_INVALID_STATE;
   *out_info = (h2_display_info_t){
-      .width = ((h2_android_platform_t *)user)->width,
-      .height = ((h2_android_platform_t *)user)->height,
+      .width = ((h2_android_platform_t*)user)->width,
+      .height = ((h2_android_platform_t*)user)->height,
       .native_format = H2_DISPLAY_PIXEL_RGB565,
   };
   return H2_DISPLAY_OK;
 }
 
-static int android_display_draw_bitmap(void *user,
-                                       const h2_display_rect_t *rect,
-                                       const void *pixels, size_t stride_bytes,
+static int android_display_draw_bitmap(void* user,
+                                       const h2_display_rect_t* rect,
+                                       const void* pixels, size_t stride_bytes,
                                        h2_display_pixel_format_t format) {
-  h2_android_platform_t *host = user;
+  h2_android_platform_t* host = user;
   if (host && !host->opened) return H2_DISPLAY_ERR_INVALID_STATE;
   if (format != H2_DISPLAY_PIXEL_RGB565) return H2_DISPLAY_ERR_UNSUPPORTED;
-  if (host == NULL || rect == NULL || pixels == NULL || rect->x < 0 || rect->y < 0 ||
-      rect->width <= 0 || rect->height <= 0 ||
+  if (host == NULL || rect == NULL || pixels == NULL || rect->x < 0 ||
+      rect->y < 0 || rect->width <= 0 || rect->height <= 0 ||
       (int64_t)rect->x + rect->width > host->width ||
       (int64_t)rect->y + rect->height > host->height ||
       stride_bytes < (size_t)rect->width * sizeof(uint16_t) ||
-      ((size_t)rect->height - 1u) > (SIZE_MAX - (size_t)rect->width*2u) / stride_bytes) {
+      ((size_t)rect->height - 1u) >
+          (SIZE_MAX - (size_t)rect->width * 2u) / stride_bytes) {
     return H2_DISPLAY_ERR_INVALID_ARG;
   }
   pthread_mutex_lock(&host->mutex);
   for (int y = 0; y < rect->height; ++y) {
-    const uint8_t *source =
-        (const uint8_t *)pixels + (size_t)y * stride_bytes;
-    uint32_t *destination =
+    const uint8_t* source = (const uint8_t*)pixels + (size_t)y * stride_bytes;
+    uint32_t* destination =
         host->rgba + (size_t)(rect->y + y) * host->width + rect->x;
     for (int x = 0; x < rect->width; ++x) {
       uint16_t pixel;
-      memcpy(&pixel, source + (size_t)x*2u, 2u);
+      memcpy(&pixel, source + (size_t)x * 2u, 2u);
       const uint32_t red = ((pixel >> 11u) & 0x1fu) * 255u / 31u;
       const uint32_t green = ((pixel >> 5u) & 0x3fu) * 255u / 63u;
       const uint32_t blue = (pixel & 0x1fu) * 255u / 31u;
@@ -622,15 +623,15 @@ static int android_display_draw_bitmap(void *user,
   return H2_DISPLAY_OK;
 }
 
-static int android_display_present(void *user) {
-  h2_android_platform_t *host = user;
+static int android_display_present(void* user) {
+  h2_android_platform_t* host = user;
   if (host == NULL || host->view == NULL) {
     return H2_DISPLAY_ERR_INVALID_ARG;
   }
   if (!host->opened) return H2_DISPLAY_ERR_INVALID_STATE;
-  JNIEnv *env = NULL;
+  JNIEnv* env = NULL;
   int attached = 0;
-  if ((*host->vm)->GetEnv(host->vm, (void **)&env, JNI_VERSION_1_6) != JNI_OK) {
+  if ((*host->vm)->GetEnv(host->vm, (void**)&env, JNI_VERSION_1_6) != JNI_OK) {
     if ((*host->vm)->AttachCurrentThread(host->vm, &env, NULL) != JNI_OK) {
       return H2_DISPLAY_ERR_IO;
     }
@@ -647,19 +648,20 @@ static int android_display_present(void *user) {
   return failed ? H2_DISPLAY_ERR_IO : H2_DISPLAY_OK;
 }
 
-static int android_display_set_brightness(void *user, uint32_t percent) {
-  h2_android_platform_t *host = user;
+static int android_display_set_brightness(void* user, uint32_t percent) {
+  h2_android_platform_t* host = user;
   if (!host) return H2_DISPLAY_ERR_INVALID_ARG;
   pthread_mutex_lock(&host->mutex);
-  int rc = !host->opened ? H2_DISPLAY_ERR_INVALID_STATE :
-      percent > 100u ? H2_DISPLAY_ERR_INVALID_ARG : H2_DISPLAY_OK;
+  int rc = !host->opened    ? H2_DISPLAY_ERR_INVALID_STATE
+           : percent > 100u ? H2_DISPLAY_ERR_INVALID_ARG
+                            : H2_DISPLAY_OK;
   if (!rc) host->brightness_percent = percent;
   pthread_mutex_unlock(&host->mutex);
   return rc ? rc : android_display_present(host);
 }
 
-static int android_display_close(void *user) {
-  h2_android_platform_t *host = user;
+static int android_display_close(void* user) {
+  h2_android_platform_t* host = user;
   if (host == NULL) {
     return H2_DISPLAY_ERR_INVALID_ARG;
   }
@@ -680,14 +682,13 @@ static const h2_pal_display_vtable_t s_android_display_vtable = {
     .close = android_display_close,
 };
 
-h2_android_platform_t *
-h2_android_platform_create(JNIEnv *env, jobject view,
-                           const h2_android_platform_config_t *config) {
+h2_android_platform_t* h2_android_platform_create(
+    JNIEnv* env, jobject view, const h2_android_platform_config_t* config) {
   if (env == NULL || view == NULL || config == NULL ||
       config->display_width <= 0 || config->display_height <= 0) {
     return NULL;
   }
-  h2_android_platform_t *host = calloc(1u, sizeof(*host));
+  h2_android_platform_t* host = calloc(1u, sizeof(*host));
   if (host == NULL || pthread_mutex_init(&host->mutex, NULL) != 0) {
     free(host);
     return NULL;
@@ -725,7 +726,7 @@ h2_android_platform_create(JNIEnv *env, jobject view,
   return host;
 }
 
-void h2_android_platform_destroy(h2_android_platform_t *host) {
+void h2_android_platform_destroy(h2_android_platform_t* host) {
   if (host == NULL) {
     return;
   }
@@ -734,9 +735,9 @@ void h2_android_platform_destroy(h2_android_platform_t *host) {
   }
   (void)android_audio_stop_mic(host);
   (void)android_display_close(host);
-  JNIEnv *env = NULL;
+  JNIEnv* env = NULL;
   int attached = 0;
-  if ((*host->vm)->GetEnv(host->vm, (void **)&env, JNI_VERSION_1_6) != JNI_OK &&
+  if ((*host->vm)->GetEnv(host->vm, (void**)&env, JNI_VERSION_1_6) != JNI_OK &&
       (*host->vm)->AttachCurrentThread(host->vm, &env, NULL) == JNI_OK) {
     attached = 1;
   }
@@ -750,7 +751,7 @@ void h2_android_platform_destroy(h2_android_platform_t *host) {
   free(host);
 }
 
-void h2_android_platform_update_pointer(h2_android_platform_t *host, int32_t x,
+void h2_android_platform_update_pointer(h2_android_platform_t* host, int32_t x,
                                         int32_t y, int pressed) {
   if (host == NULL) {
     return;
@@ -762,10 +763,10 @@ void h2_android_platform_update_pointer(h2_android_platform_t *host, int32_t x,
   pthread_mutex_unlock(&host->mutex);
 }
 
-h2_pal_result_t h2_android_platform_read_pointer(void *user, int32_t *out_x,
-                                                 int32_t *out_y,
-                                                 int *out_pressed) {
-  h2_android_platform_t *host = user;
+h2_pal_result_t h2_android_platform_read_pointer(void* user, int32_t* out_x,
+                                                 int32_t* out_y,
+                                                 int* out_pressed) {
+  h2_android_platform_t* host = user;
   if (host == NULL || out_x == NULL || out_y == NULL || out_pressed == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -777,10 +778,10 @@ h2_pal_result_t h2_android_platform_read_pointer(void *user, int32_t *out_x,
   return H2_PAL_OK;
 }
 
-int h2_android_platform_copy_frame(h2_android_platform_t *host, JNIEnv *env,
+int h2_android_platform_copy_frame(h2_android_platform_t* host, JNIEnv* env,
                                    jobject bitmap) {
   AndroidBitmapInfo info = {0};
-  void *pixels = NULL;
+  void* pixels = NULL;
   if (host == NULL || env == NULL || bitmap == NULL ||
       AndroidBitmap_getInfo(env, bitmap, &info) !=
           ANDROID_BITMAP_RESULT_SUCCESS ||
@@ -794,12 +795,14 @@ int h2_android_platform_copy_frame(h2_android_platform_t *host, JNIEnv *env,
   pthread_mutex_lock(&host->mutex);
   if (host->rgba != NULL) {
     for (uint32_t y = 0; y < info.height; ++y) {
-      uint8_t *row = (uint8_t *)pixels + (size_t)y * info.stride;
-      const uint8_t *source = (const uint8_t *)(host->rgba + (size_t)y*host->width);
-      for (uint32_t x=0; x<info.width; ++x) {
-        for (unsigned c=0; c<3; ++c)
-          row[x*4u+c] = (uint8_t)((uint32_t)source[x*4u+c] * host->brightness_percent / 100u);
-        row[x*4u+3u] = 255u;
+      uint8_t* row = (uint8_t*)pixels + (size_t)y * info.stride;
+      const uint8_t* source =
+          (const uint8_t*)(host->rgba + (size_t)y * host->width);
+      for (uint32_t x = 0; x < info.width; ++x) {
+        for (unsigned c = 0; c < 3; ++c)
+          row[x * 4u + c] = (uint8_t)((uint32_t)source[x * 4u + c] *
+                                      host->brightness_percent / 100u);
+        row[x * 4u + 3u] = 255u;
       }
     }
   }
@@ -808,12 +811,12 @@ int h2_android_platform_copy_frame(h2_android_platform_t *host, JNIEnv *env,
   return host->rgba != NULL;
 }
 
-const h2_pal_audio_api_t *
-h2_android_platform_audio_api(h2_android_platform_t *host) {
+const h2_pal_audio_api_t* h2_android_platform_audio_api(
+    h2_android_platform_t* host) {
   return host == NULL ? NULL : &host->audio;
 }
 
-const h2_pal_display_api_t *
-h2_android_platform_display_api(h2_android_platform_t *host) {
+const h2_pal_display_api_t* h2_android_platform_display_api(
+    h2_android_platform_t* host) {
   return host == NULL ? NULL : &host->display;
 }

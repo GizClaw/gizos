@@ -25,13 +25,13 @@ typedef struct fixture {
   h2_pal_log_api_t log;
 } fixture_t;
 
-static h2_pal_result_t monotonic_us(void *user, uint64_t *out_us) {
-  *out_us = ((fixture_t *)user)->now_us;
+static h2_pal_result_t monotonic_us(void* user, uint64_t* out_us) {
+  *out_us = ((fixture_t*)user)->now_us;
   return H2_PAL_OK;
 }
 
-static int capture_log(void *user, h2_pal_log_level_t level, const char *scope,
-                       const char *message) {
+static int capture_log(void* user, h2_pal_log_level_t level, const char* scope,
+                       const char* message) {
   (void)user;
   (void)level;
   (void)scope;
@@ -39,40 +39,37 @@ static int capture_log(void *user, h2_pal_log_level_t level, const char *scope,
   return H2_PAL_OK;
 }
 
-static void *allocate(void *user, size_t size) {
-  fixture_t *f = user;
+static void* allocate(void* user, size_t size) {
+  fixture_t* f = user;
   if (f->fail_next) {
     f->fail_next = 0;
     return NULL;
   }
-  void *p = malloc(size);
-  if (p != NULL)
-    ++f->allocations;
+  void* p = malloc(size);
+  if (p != NULL) ++f->allocations;
   return p;
 }
 
-static void deallocate(void *user, void *p) {
+static void deallocate(void* user, void* p) {
   if (p != NULL) {
-    ++((fixture_t *)user)->frees;
+    ++((fixture_t*)user)->frees;
     free(p);
   }
 }
 
-static h2_pal_result_t write_frame(void *user, const uint8_t *opus,
+static h2_pal_result_t write_frame(void* user, const uint8_t* opus,
                                    size_t len) {
-  fixture_t *f = user;
+  fixture_t* f = user;
   ++f->calls;
-  if (f->write_result != H2_PAL_OK)
-    return f->write_result;
+  if (f->write_result != H2_PAL_OK) return f->write_result;
   assert(len == 0u || len == 1u);
   assert(f->accepted < sizeof(f->values));
-  if (len == 0u)
-    assert(opus == NULL);
+  if (len == 0u) assert(opus == NULL);
   f->values[f->accepted++] = len == 0u ? 0xffu : opus[0];
   return H2_PAL_OK;
 }
 
-static void initialize(fixture_t *f) {
+static void initialize(fixture_t* f) {
   static const h2_pal_mem_vtable_t memory = {.alloc = allocate,
                                              .free = deallocate};
   static const h2_pal_webrtc_track_vtable_t track = {.write = write_frame};
@@ -95,9 +92,9 @@ static void initialize(fixture_t *f) {
   f->write_result = H2_PAL_ERR_WOULD_BLOCK;
 }
 
-static void cleanup(fixture_t *f);
+static void cleanup(fixture_t* f);
 
-static void cleanup(fixture_t *f) {
+static void cleanup(fixture_t* f) {
   h2_peer_webrtc_discard_media(&f->peer);
   assert(f->peer.media_receive_head == NULL &&
          f->peer.media_receive_tail == NULL);
@@ -172,7 +169,8 @@ static void failures(void) {
   const uint8_t packet = 0x42;
   f.fail_next = 1;
   h2_peer_webrtc_emit_opus_frame(&f.peer, &packet, 1u);
-  assert(h2_atomic_load(&f.peer.network_transport_result) == H2_PAL_ERR_NO_MEMORY);
+  assert(h2_atomic_load(&f.peer.network_transport_result) ==
+         H2_PAL_ERR_NO_MEMORY);
   assert(f.peer.media_receive_count == 0u);
   cleanup(&f);
 
@@ -188,7 +186,8 @@ static void failures(void) {
   initialize(&f);
   h2_peer_webrtc_emit_opus_frame(&f.peer, &packet,
                                  H2_PAL_WEBRTC_OPUS_MAX_PACKET_SIZE + 1u);
-  assert(h2_atomic_load(&f.peer.network_transport_result) == H2_PAL_ERR_FORMAT &&
+  assert(h2_atomic_load(&f.peer.network_transport_result) ==
+             H2_PAL_ERR_FORMAT &&
          f.calls == 0u);
   cleanup(&f);
 

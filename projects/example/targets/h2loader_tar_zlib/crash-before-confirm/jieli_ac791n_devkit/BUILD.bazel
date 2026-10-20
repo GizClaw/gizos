@@ -23,9 +23,9 @@ firmware_native_component(
     name = "crash_before_confirm_target",
     srcs = ["src/crash_before_confirm_target.c"],
     hdrs = ["//projects/example/apps/crash-before-confirm/app:include/h2_crash_before_confirm.h"],
+    component_name = "jieli_ac791n_devkit_crash_before_confirm_target",
     include_roots = ["projects/example/apps/crash-before-confirm/app/include"],
     native_srcs = ["//projects/example/apps/crash-before-confirm/app:app.c"],
-    component_name = "jieli_ac791n_devkit_crash_before_confirm_target",
     tags = ["manual"],
     target_compatible_with = AC791N_COMPATIBILITY,
     deps = [

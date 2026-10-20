@@ -12,18 +12,15 @@
 extern "C" {
 #endif
 
-typedef int (*h2_wolfssl_entropy_fn)(
-    void *user,
-    uint8_t *out,
-    size_t len);
+typedef int (*h2_wolfssl_entropy_fn)(void* user, uint8_t* out, size_t len);
 
 typedef struct h2_wolfssl_config {
-    /** Memory provider copied by value for the complete WolfSSL lifecycle. */
-    h2_pal_mem_api_t mem;
-    /** Opaque argument passed to entropy. */
-    void *entropy_user;
-    /** Entropy source required by Crypto and DTLS operations. */
-    h2_wolfssl_entropy_fn entropy;
+  /** Memory provider copied by value for the complete WolfSSL lifecycle. */
+  h2_pal_mem_api_t mem;
+  /** Opaque argument passed to entropy. */
+  void* entropy_user;
+  /** Entropy source required by Crypto and DTLS operations. */
+  h2_wolfssl_entropy_fn entropy;
 } h2_wolfssl_config_t;
 
 /**
@@ -32,7 +29,7 @@ typedef struct h2_wolfssl_config {
  * Repeated calls with the same Memory and entropy identity add owner
  * references. A different configuration is rejected until final deinit.
  */
-h2_pal_result_t h2_wolfssl_init(const h2_wolfssl_config_t *config);
+h2_pal_result_t h2_wolfssl_init(const h2_wolfssl_config_t* config);
 
 /**
  * Deinitializes the provider.
@@ -44,10 +41,10 @@ h2_pal_result_t h2_wolfssl_init(const h2_wolfssl_config_t *config);
 h2_pal_result_t h2_wolfssl_deinit(void);
 
 /** Returns the ready Crypto PAL provider or the unsupported provider. */
-const h2_pal_crypto_api_t *h2_wolfssl_crypto_api(void);
+const h2_pal_crypto_api_t* h2_wolfssl_crypto_api(void);
 
 /** Returns the ready DTLS PAL provider or the unsupported provider. */
-const h2_pal_dtls_api_t *h2_wolfssl_dtls_api(void);
+const h2_pal_dtls_api_t* h2_wolfssl_dtls_api(void);
 
 #ifdef __cplusplus
 }

@@ -12,19 +12,15 @@
 #define tskNO_AFFINITY (-1)
 
 typedef int BaseType_t;
-typedef void (*TaskFunction_t)(void *user);
+typedef void (*TaskFunction_t)(void* user);
 
-void *heap_caps_malloc(size_t size, uint32_t capabilities);
-void heap_caps_free(void *ptr);
-BaseType_t xTaskCreatePinnedToCoreWithCaps(
-    TaskFunction_t entry,
-    const char *name,
-    uint32_t stack_size,
-    void *user,
-    uint32_t priority,
-    void *out_task,
-    int core_id,
-    uint32_t capabilities);
-void vTaskDeleteWithCaps(void *task);
+void* heap_caps_malloc(size_t size, uint32_t capabilities);
+void heap_caps_free(void* ptr);
+BaseType_t xTaskCreatePinnedToCoreWithCaps(TaskFunction_t entry,
+                                           const char* name,
+                                           uint32_t stack_size, void* user,
+                                           uint32_t priority, void* out_task,
+                                           int core_id, uint32_t capabilities);
+void vTaskDeleteWithCaps(void* task);
 
 #endif

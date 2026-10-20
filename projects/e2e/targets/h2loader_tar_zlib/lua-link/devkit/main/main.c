@@ -16,10 +16,10 @@
 #define H2_LUA_LINK_E2E_ROUNDS 5u
 #define H2_LUA_LINK_E2E_ROLE "host"
 
-static const h2_pal_log_api_t *board_log;
+static const h2_pal_log_api_t* board_log;
 
-static int result_write(void *user, h2_pal_log_level_t level, const char *scope,
-                        const char *message) {
+static int result_write(void* user, h2_pal_log_level_t level, const char* scope,
+                        const char* message) {
   (void)user;
   if (level == H2_PAL_LOG_INFO && scope != NULL && message != NULL &&
       ((strcmp(scope, "lua") == 0 && strncmp(message, "LINK ", 5u) == 0) ||
@@ -42,7 +42,7 @@ static void hold(void) {
   }
 }
 
-static void fail(const char *stage, int rc, int commands_started) {
+static void fail(const char* stage, int rc, int commands_started) {
   printf("H2_LUA_LINK_E2E stage=%s status=ERROR rc=%d\n", stage, rc);
   fflush(stdout);
   if (!commands_started) {
@@ -51,9 +51,9 @@ static void fail(const char *stage, int rc, int commands_started) {
   hold();
 }
 
-static void image_entry(void *user) {
+static void image_entry(void* user) {
   h2_runtime_config_t config = {0};
-  h2_runtime_t *runtime = NULL;
+  h2_runtime_t* runtime = NULL;
   (void)user;
   int rc = h2_esp_board_runtime_config(&config);
   if (rc != H2_PAL_OK) {
@@ -106,12 +106,13 @@ static void image_entry(void *user) {
          runtime->board, H2_LUA_LINK_E2E_ROLE, passed, H2_LUA_LINK_E2E_ROUNDS);
   fflush(stdout);
   /* Final session stays up until the link drops (e.g. the peer resets). */
-  (void)h2_lua_link_e2e_run(runtime, &(h2_lua_link_e2e_config_t){
-                                         .role = H2_LUA_LINK_E2E_ROLE,
-                                         .adv_type = H2_PAL_BLE_ADV_TYPE_EXTENDED,
-                                         .scan_type = H2_PAL_BLE_SCAN_TYPE_EXTENDED,
-                                         .hold = 1,
-                                     });
+  (void)h2_lua_link_e2e_run(runtime,
+                            &(h2_lua_link_e2e_config_t){
+                                .role = H2_LUA_LINK_E2E_ROLE,
+                                .adv_type = H2_PAL_BLE_ADV_TYPE_EXTENDED,
+                                .scan_type = H2_PAL_BLE_SCAN_TYPE_EXTENDED,
+                                .hold = 1,
+                            });
   hold();
 }
 

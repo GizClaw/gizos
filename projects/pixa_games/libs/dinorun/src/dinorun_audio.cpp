@@ -10,7 +10,7 @@ constexpr h2_game_audio_step_t kGameOverSteps[] = {
     {130u, 180u, 220u, 110u, 260u, 500u, H2_GAME_AUDIO_WAVE_SAW},
 };
 
-} // namespace
+}  // namespace
 
 const h2_game_audio_recipe_t h2_dinorun_jump_recipe = {
     kJumpSteps,

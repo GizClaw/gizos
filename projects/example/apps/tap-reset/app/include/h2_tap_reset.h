@@ -17,16 +17,16 @@ typedef struct h2_tap_reset_pointer_state {
 } h2_tap_reset_pointer_state_t;
 
 typedef h2_pal_result_t (*h2_tap_reset_read_pointer_fn)(
-    void *user, h2_tap_reset_pointer_state_t *out_state);
+    void* user, h2_tap_reset_pointer_state_t* out_state);
 
 typedef struct h2_tap_reset_config {
-  const char *eyebrow;
-  const char *body;
-  const char *increment_label;
+  const char* eyebrow;
+  const char* body;
+  const char* increment_label;
   h2_tap_reset_read_pointer_fn read_pointer;
-  void *pointer_user;
-  int (*should_stop)(void *user);
-  void *stop_user;
+  void* pointer_user;
+  int (*should_stop)(void* user);
+  void* stop_user;
 } h2_tap_reset_config_t;
 
 /**
@@ -36,8 +36,8 @@ typedef struct h2_tap_reset_config {
  * for the duration of this blocking call. The caller owns platform lifecycle
  * and must invoke this entry on a thread dedicated to the portable App.
  */
-h2_pal_result_t h2_tap_reset_run(h2_runtime_t *runtime,
-                                 const h2_tap_reset_config_t *config);
+h2_pal_result_t h2_tap_reset_run(h2_runtime_t* runtime,
+                                 const h2_tap_reset_config_t* config);
 
 #ifdef __cplusplus
 }

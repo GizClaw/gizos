@@ -25,28 +25,28 @@ void h2_bk_pref_flash_read_end(void);
 extern struct fal_flash_dev g_flashdb0;
 
 #define FAL_FLASH_DEV_TABLE \
-    {                       \
-        &g_flashdb0,        \
-    }
+  {                         \
+      &g_flashdb0,          \
+  }
 
-#define FAL_PART_TABLE                                                \
-    {                                                                 \
-        {                                                             \
-            FAL_PART_MAGIC_WORD,                                      \
-            H2_BK_PREF_FLASHDB_PATH,                                  \
-            FLASHDB_DEV_NAME,                                         \
-            CONFIG_FLASHDB_KVDB_START_ADDR,                           \
-            CONFIG_FLASHDB_KVDB_SIZE,                                 \
-            0u,                                                       \
-        },                                                            \
-        {                                                             \
-            FAL_PART_MAGIC_WORD,                                      \
-            H2_BK_PREF_LARGE_FLASHDB_PATH,                            \
-            FLASHDB_DEV_NAME,                                         \
-            H2_BK_PREF_LARGE_OFFSET,                                  \
-            H2_BK_PREF_LARGE_SIZE,                                    \
-            0u,                                                       \
-        },                                                            \
-    }
+#define FAL_PART_TABLE                    \
+  {                                       \
+      {                                   \
+          FAL_PART_MAGIC_WORD,            \
+          H2_BK_PREF_FLASHDB_PATH,        \
+          FLASHDB_DEV_NAME,               \
+          CONFIG_FLASHDB_KVDB_START_ADDR, \
+          CONFIG_FLASHDB_KVDB_SIZE,       \
+          0u,                             \
+      },                                  \
+      {                                   \
+          FAL_PART_MAGIC_WORD,            \
+          H2_BK_PREF_LARGE_FLASHDB_PATH,  \
+          FLASHDB_DEV_NAME,               \
+          H2_BK_PREF_LARGE_OFFSET,        \
+          H2_BK_PREF_LARGE_SIZE,          \
+          0u,                             \
+      },                                  \
+  }
 
 #endif

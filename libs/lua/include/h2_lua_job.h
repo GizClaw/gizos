@@ -23,8 +23,8 @@ typedef enum h2_lua_job_state {
 #define H2_LUA_JOB_MESSAGE_MAX 192u
 
 typedef struct h2_lua_arg {
-  const char *name;
-  const char *value;
+  const char* name;
+  const char* value;
 } h2_lua_arg_t;
 
 typedef struct h2_lua_job_status {
@@ -41,17 +41,15 @@ typedef struct h2_lua_job_status {
  * app id share its files. NULL submits a job without storage identity, whose
  * `storage` calls report unavailable.
  */
-h2_pal_result_t
-h2_lua_job_submit_text(h2_lua_host_t *host, const char *app_id,
-                       const char *chunk_name, const uint8_t *source,
-                       size_t source_size, const h2_lua_arg_t *args,
-                       size_t arg_count, h2_lua_job_id_t *out_job_id);
+h2_pal_result_t h2_lua_job_submit_text(
+    h2_lua_host_t* host, const char* app_id, const char* chunk_name,
+    const uint8_t* source, size_t source_size, const h2_lua_arg_t* args,
+    size_t arg_count, h2_lua_job_id_t* out_job_id);
 
 /** Submits one immutable compiled text resource from Host configuration. */
-h2_pal_result_t
-h2_lua_job_submit_resource(h2_lua_host_t *host, const char *app_id,
-                           const char *resource_name, const h2_lua_arg_t *args,
-                           size_t arg_count, h2_lua_job_id_t *out_job_id);
+h2_pal_result_t h2_lua_job_submit_resource(
+    h2_lua_host_t* host, const char* app_id, const char* resource_name,
+    const h2_lua_arg_t* args, size_t arg_count, h2_lua_job_id_t* out_job_id);
 
 /**
  * Submits a text chunk Host reads through Runtime Filesystem at `path`, which
@@ -69,53 +67,52 @@ h2_lua_job_submit_resource(h2_lua_host_t *host, const char *app_id,
  * the source before publication. Close failure leaves `*out_job_id` as
  * `H2_LUA_JOB_ID_NONE`, and the chunk never runs.
  */
-h2_pal_result_t h2_lua_job_submit_path(h2_lua_host_t *host, const char *app_id,
-                                       const char *chunk_name,
-                                       const char *path,
-                                       const h2_lua_arg_t *args,
+h2_pal_result_t h2_lua_job_submit_path(h2_lua_host_t* host, const char* app_id,
+                                       const char* chunk_name, const char* path,
+                                       const h2_lua_arg_t* args,
                                        size_t arg_count,
-                                       h2_lua_job_id_t *out_job_id);
+                                       h2_lua_job_id_t* out_job_id);
 
 /** Loads and submits a confined relative text path through Runtime Filesystem,
  * streaming it the way `h2_lua_job_submit_path` does. */
-h2_pal_result_t h2_lua_job_submit_file(h2_lua_host_t *host, const char *app_id,
-                                       const char *relative_path,
-                                       const h2_lua_arg_t *args,
+h2_pal_result_t h2_lua_job_submit_file(h2_lua_host_t* host, const char* app_id,
+                                       const char* relative_path,
+                                       const h2_lua_arg_t* args,
                                        size_t arg_count,
-                                       h2_lua_job_id_t *out_job_id);
+                                       h2_lua_job_id_t* out_job_id);
 
-h2_pal_result_t h2_lua_job_cancel(h2_lua_host_t *host, h2_lua_job_id_t job_id);
+h2_pal_result_t h2_lua_job_cancel(h2_lua_host_t* host, h2_lua_job_id_t job_id);
 
-h2_pal_result_t h2_lua_job_get_status(const h2_lua_host_t *host,
+h2_pal_result_t h2_lua_job_get_status(const h2_lua_host_t* host,
                                       h2_lua_job_id_t job_id,
-                                      h2_lua_job_status_t *out_status);
+                                      h2_lua_job_status_t* out_status);
 
 /**
- * @brief Copies the main chunk's first return value using Lua string conversion.
- * Takes the job mutex (may block); does not allocate or execute Lua. The caller
- * must keep Host alive throughout the call. Release is serialized by this lock.
- * No return: *out_has_result = 0; nil: "nil"; empty string: present, size 0.
- * Tables use __tostring or Lua's default "table: ..." representation.
- * Result storage counts against VM memory and lives until job release.
- * Only SUCCEEDED is readable; other states return INVALID_STATE, unknown or
- * released ids NOT_FOUND (ID_NONE and invalid pointers return INVALID_ARG).
- * out_size is the byte length excluding the terminating NUL. Both output
- * pointers are required and reset to zero on errors, except NO_SPACE reports
- * presence and required length. NULL buffer with capacity 0 queries the size
- * and returns OK. Otherwise capacity must exceed out_size for a present result;
- * NO_SPACE leaves the buffer untouched. Embedded NUL bytes are preserved.
- * Output exceeding output_limit_bytes fails the job with
+ * @brief Copies the main chunk's first return value using Lua string
+ * conversion. Takes the job mutex (may block); does not allocate or execute
+ * Lua. The caller must keep Host alive throughout the call. Release is
+ * serialized by this lock. No return: *out_has_result = 0; nil: "nil"; empty
+ * string: present, size 0. Tables use __tostring or Lua's default "table: ..."
+ * representation. Result storage counts against VM memory and lives until job
+ * release. Only SUCCEEDED is readable; other states return INVALID_STATE,
+ * unknown or released ids NOT_FOUND (ID_NONE and invalid pointers return
+ * INVALID_ARG). out_size is the byte length excluding the terminating NUL. Both
+ * output pointers are required and reset to zero on errors, except NO_SPACE
+ * reports presence and required length. NULL buffer with capacity 0 queries the
+ * size and returns OK. Otherwise capacity must exceed out_size for a present
+ * result; NO_SPACE leaves the buffer untouched. Embedded NUL bytes are
+ * preserved. Output exceeding output_limit_bytes fails the job with
  * "H2_LUA_VM_OUTPUT_TOO_LARGE"; results are never silently truncated.
  */
-h2_pal_result_t h2_lua_job_get_result(const h2_lua_host_t *host,
-                                      h2_lua_job_id_t job_id, char *buffer,
-                                      size_t capacity, size_t *out_size,
-                                      int *out_has_result);
+h2_pal_result_t h2_lua_job_get_result(const h2_lua_host_t* host,
+                                      h2_lua_job_id_t job_id, char* buffer,
+                                      size_t capacity, size_t* out_size,
+                                      int* out_has_result);
 
 /** Release a terminal job. Display drain/close/join may return BUSY or
  * a latched error; the job, VM roots and borrowed Display remain owned until
  * success. Retrying BUSY does not submit another frame. */
-h2_pal_result_t h2_lua_job_release(h2_lua_host_t *host, h2_lua_job_id_t job_id);
+h2_pal_result_t h2_lua_job_release(h2_lua_host_t* host, h2_lua_job_id_t job_id);
 
 #ifdef __cplusplus
 }

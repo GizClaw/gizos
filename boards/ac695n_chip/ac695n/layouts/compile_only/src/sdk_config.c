@@ -20,7 +20,7 @@ const struct btif_item btif_table[] = {
     {0, 0},
 };
 
-#define H2_DISABLED_LOG_TAG(level, tag)                                        \
+#define H2_DISABLED_LOG_TAG(level, tag) \
   const char log_tag_const_##level##_##tag AT(.LOG_TAG_CONST) = 0
 
 H2_DISABLED_LOG_TAG(i, TMR);

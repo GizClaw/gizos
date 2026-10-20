@@ -31,8 +31,8 @@ cc_binary(
     ],
     target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
     deps = [
-        "//libs/pal/providers/web/pal_core",
         "//libs/atomic/providers/c11",
+        "//libs/pal/providers/web/pal_core",
         "//projects/e2e/apps/pal-webrtc/app:pal_webrtc_e2e",
     ],
 )
@@ -76,11 +76,11 @@ py_test(
     ],
     data = [
         ":pal_webrtc",
-        "//projects/e2e/apps/pal-webrtc/app:include/h2_pal_webrtc_cases.inc",
-        "//tools/webrtc-test-server:webrtc_test_server",
         "//libs/pal/providers/web/pal_core:tests/run_webrtc_browser.py",
+        "//projects/e2e/apps/pal-webrtc/app:include/h2_pal_webrtc_cases.inc",
         "//tools/bazel:web_archive_browser_test.py",
         "//tools/bazel:web_archive_server.py",
+        "//tools/webrtc-test-server:webrtc_test_server",
     ] + select({
         "//tools/bazel/platforms:host_linux_target_linux": ["@h2_playwright_chromium_linux_x86_64//:runtime"],
         "//tools/bazel/platforms:host_macos_target_macos": ["@h2_playwright_chromium_macos_arm64//:runtime"],

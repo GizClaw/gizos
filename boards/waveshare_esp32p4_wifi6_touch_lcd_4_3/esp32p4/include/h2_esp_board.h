@@ -7,9 +7,9 @@
 extern "C" {
 #endif
 
-typedef void (*h2_esp_board_entry_task_fn)(void *user);
+typedef void (*h2_esp_board_entry_task_fn)(void* user);
 
-h2_pal_result_t h2_esp_board_runtime_config(h2_runtime_config_t *out_config);
+h2_pal_result_t h2_esp_board_runtime_config(h2_runtime_config_t* out_config);
 
 /**
  * Tears down board-owned Runtime providers after h2_runtime_deinit().
@@ -22,7 +22,7 @@ h2_pal_result_t h2_esp_board_runtime_config(h2_runtime_config_t *out_config);
 h2_pal_result_t h2_esp_board_runtime_deinit(void);
 
 /** Board PSRAM allocator for large target-specific working sets. */
-h2_pal_mem_api_t *h2_esp_board_psram_allocator(void);
+h2_pal_mem_api_t* h2_esp_board_psram_allocator(void);
 
 /**
  * Starts the board image entry point on a detached PSRAM-backed task.
@@ -31,10 +31,9 @@ h2_pal_mem_api_t *h2_esp_board_psram_allocator(void);
  * function must release Runtime before returning; the task wrapper then calls
  * h2_esp_board_runtime_deinit() before deleting itself.
  */
-h2_pal_result_t h2_esp_board_start_entry_task(
-    const char *name,
-    h2_esp_board_entry_task_fn entry,
-    void *user);
+h2_pal_result_t h2_esp_board_start_entry_task(const char* name,
+                                              h2_esp_board_entry_task_fn entry,
+                                              void* user);
 
 #ifdef __cplusplus
 }

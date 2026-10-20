@@ -15,25 +15,17 @@ typedef struct h2_command h2_command_t;
 
 /** @brief Synchronous byte-stream operations borrowed by a command instance. */
 typedef struct h2_command_io_vtable {
-    h2_pal_result_t (*read)(
-        void *user,
-        void *buffer,
-        size_t len,
-        size_t *out_read,
-        uint32_t timeout_ms);
-    h2_pal_result_t (*write)(
-        void *user,
-        const void *buffer,
-        size_t len,
-        size_t *out_written,
-        uint32_t timeout_ms);
-    h2_pal_result_t (*flush)(void *user);
+  h2_pal_result_t (*read)(void* user, void* buffer, size_t len,
+                          size_t* out_read, uint32_t timeout_ms);
+  h2_pal_result_t (*write)(void* user, const void* buffer, size_t len,
+                           size_t* out_written, uint32_t timeout_ms);
+  h2_pal_result_t (*flush)(void* user);
 } h2_command_io_vtable_t;
 
 /** @brief Borrowed synchronous I/O backend used by one command stream. */
 typedef struct h2_command_io_api {
-    void *user;
-    const h2_command_io_vtable_t *vtable;
+  void* user;
+  const h2_command_io_vtable_t* vtable;
 } h2_command_io_api_t;
 
 /**
@@ -43,35 +35,35 @@ typedef struct h2_command_io_api {
  * call. A handler may synchronously read payload bytes and write its response
  * through the command helpers, but it must not retain any borrowed pointer.
  */
-typedef h2_pal_result_t (*h2_command_handler_fn)(
-    void *user,
-    h2_command_t *command,
-    size_t argc,
-    const char *const *argv);
+typedef h2_pal_result_t (*h2_command_handler_fn)(void* user,
+                                                 h2_command_t* command,
+                                                 size_t argc,
+                                                 const char* const* argv);
 
 /** @brief Registration copied into caller-provided definition storage. */
 typedef struct h2_command_definition {
-    const char *path;
-    const char *help;
-    h2_command_handler_fn handler;
-    void *user;
+  const char* path;
+  const char* help;
+  h2_command_handler_fn handler;
+  void* user;
 } h2_command_definition_t;
 
-/** @brief Caller-owned storage and borrowed I/O used to initialize a command. */
+/** @brief Caller-owned storage and borrowed I/O used to initialize a command.
+ */
 typedef struct h2_command_config {
-    h2_command_io_api_t io;
-    h2_command_definition_t *definitions;
-    size_t definition_capacity;
-    /** One route entry per definition, owned by the caller. */
-    h2_trie_route_t *routes;
-    /** Fixed trie storage, owned by the caller. */
-    h2_trie_node_t *route_nodes;
-    size_t route_node_capacity;
-    char *input_buffer;
-    size_t input_buffer_size;
-    const char **argv;
-    size_t argv_capacity;
-    uint32_t write_timeout_ms;
+  h2_command_io_api_t io;
+  h2_command_definition_t* definitions;
+  size_t definition_capacity;
+  /** One route entry per definition, owned by the caller. */
+  h2_trie_route_t* routes;
+  /** Fixed trie storage, owned by the caller. */
+  h2_trie_node_t* route_nodes;
+  size_t route_node_capacity;
+  char* input_buffer;
+  size_t input_buffer_size;
+  const char** argv;
+  size_t argv_capacity;
+  uint32_t write_timeout_ms;
 } h2_command_config_t;
 
 /**
@@ -81,34 +73,33 @@ typedef struct h2_command_config {
  * treat them as private and access the instance through this API.
  */
 struct h2_command {
-    h2_command_io_api_t io;
-    h2_command_definition_t *definitions;
-    size_t definition_count;
-    size_t definition_capacity;
-    h2_trie_t router;
-    h2_trie_route_t *routes;
-    h2_trie_node_t *route_nodes;
-    size_t route_node_capacity;
-    char *input_buffer;
-    size_t input_buffer_size;
-    size_t input_len;
-    size_t pending_offset;
-    const char **argv;
-    size_t argv_capacity;
-    uint32_t write_timeout_ms;
-    h2_pal_result_t response_result;
-    int initialized;
-    int running;
-    int executing;
+  h2_command_io_api_t io;
+  h2_command_definition_t* definitions;
+  size_t definition_count;
+  size_t definition_capacity;
+  h2_trie_t router;
+  h2_trie_route_t* routes;
+  h2_trie_node_t* route_nodes;
+  size_t route_node_capacity;
+  char* input_buffer;
+  size_t input_buffer_size;
+  size_t input_len;
+  size_t pending_offset;
+  const char** argv;
+  size_t argv_capacity;
+  uint32_t write_timeout_ms;
+  h2_pal_result_t response_result;
+  int initialized;
+  int running;
+  int executing;
 };
 
 /**
  * @brief Initialize or reset a caller-owned command instance.
  * @return H2_PAL_OK, or an invalid-argument result.
  */
-h2_pal_result_t h2_command_init(
-    h2_command_t *command,
-    const h2_command_config_t *config);
+h2_pal_result_t h2_command_init(h2_command_t* command,
+                                const h2_command_config_t* config);
 
 /**
  * @brief Register a borrowed path and handler before the first execution.
@@ -117,9 +108,8 @@ h2_pal_result_t h2_command_init(
  * h2_command_poll() call.
  * @return H2_PAL_OK, invalid argument/state, full, or duplicate format error.
  */
-h2_pal_result_t h2_command_register(
-    h2_command_t *command,
-    const h2_command_definition_t *definition);
+h2_pal_result_t h2_command_register(h2_command_t* command,
+                                    const h2_command_definition_t* definition);
 
 /**
  * @brief Synchronously execute one caller-tokenized command.
@@ -127,10 +117,8 @@ h2_pal_result_t h2_command_register(
  * The argv array and strings are borrowed for the duration of the call. This
  * entry preserves argument boundaries supplied by an existing command parser.
  */
-h2_pal_result_t h2_command_execute(
-    h2_command_t *command,
-    size_t argc,
-    const char *const *argv);
+h2_pal_result_t h2_command_execute(h2_command_t* command, size_t argc,
+                                   const char* const* argv);
 
 /**
  * @brief Read and synchronously execute at most one complete command.
@@ -143,33 +131,22 @@ h2_pal_result_t h2_command_execute(
  * precedence over response write errors, which take precedence over the final
  * flush result.
  */
-h2_pal_result_t h2_command_poll(
-    h2_command_t *command,
-    uint32_t timeout_ms);
+h2_pal_result_t h2_command_poll(h2_command_t* command, uint32_t timeout_ms);
 
 /** @brief Read up to len payload bytes from the current command stream. */
-h2_pal_result_t h2_command_read(
-    h2_command_t *command,
-    void *buffer,
-    size_t len,
-    size_t *out_read,
-    uint32_t timeout_ms);
+h2_pal_result_t h2_command_read(h2_command_t* command, void* buffer, size_t len,
+                                size_t* out_read, uint32_t timeout_ms);
 
 /** @brief Read exactly len payload bytes or return the first stream error. */
-h2_pal_result_t h2_command_read_exact(
-    h2_command_t *command,
-    void *buffer,
-    size_t len,
-    uint32_t timeout_ms);
+h2_pal_result_t h2_command_read_exact(h2_command_t* command, void* buffer,
+                                      size_t len, uint32_t timeout_ms);
 
 /** @brief Write all response bytes or return the first stream error. */
-h2_pal_result_t h2_command_write(
-    h2_command_t *command,
-    const void *buffer,
-    size_t len);
+h2_pal_result_t h2_command_write(h2_command_t* command, const void* buffer,
+                                 size_t len);
 
 /** @brief Flush response bytes through the bound stream backend. */
-h2_pal_result_t h2_command_flush(h2_command_t *command);
+h2_pal_result_t h2_command_flush(h2_command_t* command);
 
 #ifdef __cplusplus
 }

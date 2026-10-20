@@ -6,7 +6,7 @@
 
 /* Implementation-only sharing with the Lua Display adapter. The caller has
  * already validated storage and clipped the span. No checks or state here. */
-static inline void h2_raster2d_fill_span_unchecked(uint16_t *pixels,
+static inline void h2_raster2d_fill_span_unchecked(uint16_t* pixels,
                                                    size_t count,
                                                    uint16_t color) {
   /* Peel only long spans so the remaining uint16_t stores can use the

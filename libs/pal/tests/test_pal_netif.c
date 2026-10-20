@@ -3,145 +3,139 @@
 #include <assert.h>
 #include <string.h>
 
-static h2_pal_netif_ref_t name_ref(
-    const char *name,
-    h2_pal_netif_kind_t kind) {
-    h2_pal_netif_ref_t ref;
-    memset(&ref, 0, sizeof(ref));
-    ref.type = H2_PAL_NETIF_REF_NAME;
-    ref.kind = kind;
-    strncpy(ref.name, name, sizeof(ref.name) - 1u);
-    return ref;
+static h2_pal_netif_ref_t name_ref(const char* name, h2_pal_netif_kind_t kind) {
+  h2_pal_netif_ref_t ref;
+  memset(&ref, 0, sizeof(ref));
+  ref.type = H2_PAL_NETIF_REF_NAME;
+  ref.kind = kind;
+  strncpy(ref.name, name, sizeof(ref.name) - 1u);
+  return ref;
 }
 
-static h2_pal_netif_ref_t id_ref(
-    uint32_t id,
-    h2_pal_netif_kind_t kind) {
-    h2_pal_netif_ref_t ref;
-    memset(&ref, 0, sizeof(ref));
-    ref.type = H2_PAL_NETIF_REF_ID;
-    ref.kind = kind;
-    ref.id = id;
-    return ref;
+static h2_pal_netif_ref_t id_ref(uint32_t id, h2_pal_netif_kind_t kind) {
+  h2_pal_netif_ref_t ref;
+  memset(&ref, 0, sizeof(ref));
+  ref.type = H2_PAL_NETIF_REF_ID;
+  ref.kind = kind;
+  ref.id = id;
+  return ref;
 }
 
 static void test_concrete_refs(void) {
-    h2_pal_netif_ref_t wifi = name_ref("en0", H2_PAL_NETIF_KIND_WIFI_STA);
-    h2_pal_netif_ref_t wifi_unknown =
-        name_ref("en0", H2_PAL_NETIF_KIND_UNKNOWN);
-    h2_pal_netif_ref_t modem = id_ref(7u, H2_PAL_NETIF_KIND_MODEM_DATA);
-    assert(h2_pal_netif_ref_is_concrete(&wifi));
-    assert(h2_pal_netif_ref_is_concrete(&modem));
-    assert(h2_pal_netif_ref_equal(&wifi, &wifi_unknown));
-    assert(!h2_pal_netif_ref_equal(&wifi, &modem));
+  h2_pal_netif_ref_t wifi = name_ref("en0", H2_PAL_NETIF_KIND_WIFI_STA);
+  h2_pal_netif_ref_t wifi_unknown = name_ref("en0", H2_PAL_NETIF_KIND_UNKNOWN);
+  h2_pal_netif_ref_t modem = id_ref(7u, H2_PAL_NETIF_KIND_MODEM_DATA);
+  assert(h2_pal_netif_ref_is_concrete(&wifi));
+  assert(h2_pal_netif_ref_is_concrete(&modem));
+  assert(h2_pal_netif_ref_equal(&wifi, &wifi_unknown));
+  assert(!h2_pal_netif_ref_equal(&wifi, &modem));
 
-    h2_pal_netif_ref_t invalid = h2_pal_netif_default_ref();
-    assert(!h2_pal_netif_ref_is_concrete(&invalid));
-    invalid.type = H2_PAL_NETIF_REF_KIND;
-    invalid.kind = H2_PAL_NETIF_KIND_WIFI_STA;
-    assert(!h2_pal_netif_ref_is_concrete(&invalid));
-    invalid = name_ref("en0", H2_PAL_NETIF_KIND_WIFI_STA);
-    invalid.id = 1u;
-    assert(!h2_pal_netif_ref_is_concrete(&invalid));
-    memset(invalid.name, 'x', sizeof(invalid.name));
-    invalid.id = 0u;
-    assert(!h2_pal_netif_ref_is_concrete(&invalid));
-    invalid = id_ref(0u, H2_PAL_NETIF_KIND_MODEM_DATA);
-    assert(!h2_pal_netif_ref_is_concrete(&invalid));
-    invalid = id_ref(1u, H2_PAL_NETIF_KIND_MODEM_DATA);
-    invalid.name[0] = 'x';
-    assert(!h2_pal_netif_ref_is_concrete(&invalid));
-    invalid = name_ref("en0", (h2_pal_netif_kind_t)99);
-    assert(!h2_pal_netif_ref_is_concrete(&invalid));
+  h2_pal_netif_ref_t invalid = h2_pal_netif_default_ref();
+  assert(!h2_pal_netif_ref_is_concrete(&invalid));
+  invalid.type = H2_PAL_NETIF_REF_KIND;
+  invalid.kind = H2_PAL_NETIF_KIND_WIFI_STA;
+  assert(!h2_pal_netif_ref_is_concrete(&invalid));
+  invalid = name_ref("en0", H2_PAL_NETIF_KIND_WIFI_STA);
+  invalid.id = 1u;
+  assert(!h2_pal_netif_ref_is_concrete(&invalid));
+  memset(invalid.name, 'x', sizeof(invalid.name));
+  invalid.id = 0u;
+  assert(!h2_pal_netif_ref_is_concrete(&invalid));
+  invalid = id_ref(0u, H2_PAL_NETIF_KIND_MODEM_DATA);
+  assert(!h2_pal_netif_ref_is_concrete(&invalid));
+  invalid = id_ref(1u, H2_PAL_NETIF_KIND_MODEM_DATA);
+  invalid.name[0] = 'x';
+  assert(!h2_pal_netif_ref_is_concrete(&invalid));
+  invalid = name_ref("en0", (h2_pal_netif_kind_t)99);
+  assert(!h2_pal_netif_ref_is_concrete(&invalid));
 }
 
 static void test_default_changed_payload(void) {
-    h2_pal_netif_default_changed_t change;
-    memset(&change, 0, sizeof(change));
-    change.current = name_ref("en0", H2_PAL_NETIF_KIND_WIFI_STA);
-    change.current_valid = 1u;
-    assert(h2_pal_netif_default_changed_is_valid(&change));
+  h2_pal_netif_default_changed_t change;
+  memset(&change, 0, sizeof(change));
+  change.current = name_ref("en0", H2_PAL_NETIF_KIND_WIFI_STA);
+  change.current_valid = 1u;
+  assert(h2_pal_netif_default_changed_is_valid(&change));
 
-    change.previous = change.current;
-    change.previous_valid = 1u;
-    assert(!h2_pal_netif_default_changed_is_valid(&change));
+  change.previous = change.current;
+  change.previous_valid = 1u;
+  assert(!h2_pal_netif_default_changed_is_valid(&change));
 
-    change.current = id_ref(4u, H2_PAL_NETIF_KIND_MODEM_DATA);
-    assert(h2_pal_netif_default_changed_is_valid(&change));
+  change.current = id_ref(4u, H2_PAL_NETIF_KIND_MODEM_DATA);
+  assert(h2_pal_netif_default_changed_is_valid(&change));
 
-    change.current_valid = 0u;
-    assert(!h2_pal_netif_default_changed_is_valid(&change));
-    memset(&change.current, 0, sizeof(change.current));
-    assert(h2_pal_netif_default_changed_is_valid(&change));
+  change.current_valid = 0u;
+  assert(!h2_pal_netif_default_changed_is_valid(&change));
+  memset(&change.current, 0, sizeof(change.current));
+  assert(h2_pal_netif_default_changed_is_valid(&change));
 
-    change.current_valid = 2u;
-    assert(!h2_pal_netif_default_changed_is_valid(&change));
+  change.current_valid = 2u;
+  assert(!h2_pal_netif_default_changed_is_valid(&change));
 
-    memset(&change, 0, sizeof(change));
-    change.previous.id = 1u;
-    assert(!h2_pal_netif_default_changed_is_valid(&change));
-    memset(&change.previous, 0, sizeof(change.previous));
-    change.current.name[0] = 'x';
-    assert(!h2_pal_netif_default_changed_is_valid(&change));
+  memset(&change, 0, sizeof(change));
+  change.previous.id = 1u;
+  assert(!h2_pal_netif_default_changed_is_valid(&change));
+  memset(&change.previous, 0, sizeof(change.previous));
+  change.current.name[0] = 'x';
+  assert(!h2_pal_netif_default_changed_is_valid(&change));
 }
 
-static h2_pal_result_t record_default(void *user,
-                                      const h2_pal_netif_ref_t *ref) {
-    h2_pal_netif_ref_t *recorded = user;
-    *recorded = *ref;
-    return H2_PAL_OK;
+static h2_pal_result_t record_default(void* user,
+                                      const h2_pal_netif_ref_t* ref) {
+  h2_pal_netif_ref_t* recorded = user;
+  *recorded = *ref;
+  return H2_PAL_OK;
 }
 
 static void test_set_default_contract(void) {
-    h2_pal_netif_ref_t recorded = h2_pal_netif_default_ref();
-    const h2_pal_netif_vtable_t vtable = {.set_default = record_default};
-    const h2_pal_netif_api_t api = {.user = &recorded, .vtable = &vtable};
-    const h2_pal_netif_ref_t wifi =
-        name_ref("en0", H2_PAL_NETIF_KIND_WIFI_STA);
-    assert(h2_pal_netif_set_default(&api, &wifi) == H2_PAL_OK);
-    assert(h2_pal_netif_ref_equal(&recorded, &wifi));
-    const h2_pal_netif_ref_t default_ref = h2_pal_netif_default_ref();
-    assert(h2_pal_netif_set_default(&api, &default_ref) ==
-           H2_PAL_ERR_INVALID_ARG);
-    assert(h2_pal_netif_set_default(NULL, &wifi) == H2_PAL_ERR_UNSUPPORTED);
+  h2_pal_netif_ref_t recorded = h2_pal_netif_default_ref();
+  const h2_pal_netif_vtable_t vtable = {.set_default = record_default};
+  const h2_pal_netif_api_t api = {.user = &recorded, .vtable = &vtable};
+  const h2_pal_netif_ref_t wifi = name_ref("en0", H2_PAL_NETIF_KIND_WIFI_STA);
+  assert(h2_pal_netif_set_default(&api, &wifi) == H2_PAL_OK);
+  assert(h2_pal_netif_ref_equal(&recorded, &wifi));
+  const h2_pal_netif_ref_t default_ref = h2_pal_netif_default_ref();
+  assert(h2_pal_netif_set_default(&api, &default_ref) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_pal_netif_set_default(NULL, &wifi) == H2_PAL_ERR_UNSUPPORTED);
 }
 
 static void test_status_is_usable(void) {
-    h2_pal_netif_status_t status;
-    memset(&status, 0, sizeof(status));
-    assert(!h2_pal_netif_status_is_usable(NULL));
+  h2_pal_netif_status_t status;
+  memset(&status, 0, sizeof(status));
+  assert(!h2_pal_netif_status_is_usable(NULL));
 
-    status.kind = H2_PAL_NETIF_KIND_WIFI_STA;
-    status.flags = H2_PAL_NETIF_FLAG_UP | H2_PAL_NETIF_FLAG_LINK_UP;
-    assert(!h2_pal_netif_status_is_usable(&status));
-    status.flags |= H2_PAL_NETIF_FLAG_HAS_IPV4;
-    assert(h2_pal_netif_status_is_usable(&status));
-    status.flags &= ~(uint32_t)H2_PAL_NETIF_FLAG_LINK_UP;
-    assert(!h2_pal_netif_status_is_usable(&status));
+  status.kind = H2_PAL_NETIF_KIND_WIFI_STA;
+  status.flags = H2_PAL_NETIF_FLAG_UP | H2_PAL_NETIF_FLAG_LINK_UP;
+  assert(!h2_pal_netif_status_is_usable(&status));
+  status.flags |= H2_PAL_NETIF_FLAG_HAS_IPV4;
+  assert(h2_pal_netif_status_is_usable(&status));
+  status.flags &= ~(uint32_t)H2_PAL_NETIF_FLAG_LINK_UP;
+  assert(!h2_pal_netif_status_is_usable(&status));
 
-    status.kind = H2_PAL_NETIF_KIND_LOOPBACK;
-    status.flags = H2_PAL_NETIF_FLAG_UP | H2_PAL_NETIF_FLAG_LINK_UP |
-                   H2_PAL_NETIF_FLAG_HAS_IPV4;
-    assert(!h2_pal_netif_status_is_usable(&status));
+  status.kind = H2_PAL_NETIF_KIND_LOOPBACK;
+  status.flags = H2_PAL_NETIF_FLAG_UP | H2_PAL_NETIF_FLAG_LINK_UP |
+                 H2_PAL_NETIF_FLAG_HAS_IPV4;
+  assert(!h2_pal_netif_status_is_usable(&status));
 
-    /* A host-managed path carries no addresses of its own. */
-    status.kind = H2_PAL_NETIF_KIND_HOST;
-    status.flags = H2_PAL_NETIF_FLAG_UP | H2_PAL_NETIF_FLAG_LINK_UP |
-                   H2_PAL_NETIF_FLAG_DEFAULT_ROUTE;
-    assert(h2_pal_netif_status_is_usable(&status));
-    status.flags = H2_PAL_NETIF_FLAG_UP;
-    assert(!h2_pal_netif_status_is_usable(&status));
+  /* A host-managed path carries no addresses of its own. */
+  status.kind = H2_PAL_NETIF_KIND_HOST;
+  status.flags = H2_PAL_NETIF_FLAG_UP | H2_PAL_NETIF_FLAG_LINK_UP |
+                 H2_PAL_NETIF_FLAG_DEFAULT_ROUTE;
+  assert(h2_pal_netif_status_is_usable(&status));
+  status.flags = H2_PAL_NETIF_FLAG_UP;
+  assert(!h2_pal_netif_status_is_usable(&status));
 
-    h2_pal_netif_ref_t host = name_ref("browser", H2_PAL_NETIF_KIND_HOST);
-    assert(h2_pal_netif_ref_is_concrete(&host));
-    host.kind = (h2_pal_netif_kind_t)(H2_PAL_NETIF_KIND_HOST + 1);
-    assert(!h2_pal_netif_ref_is_concrete(&host));
+  h2_pal_netif_ref_t host = name_ref("browser", H2_PAL_NETIF_KIND_HOST);
+  assert(h2_pal_netif_ref_is_concrete(&host));
+  host.kind = (h2_pal_netif_kind_t)(H2_PAL_NETIF_KIND_HOST + 1);
+  assert(!h2_pal_netif_ref_is_concrete(&host));
 }
 
 int main(void) {
-    test_concrete_refs();
-    test_status_is_usable();
-    test_default_changed_payload();
-    test_set_default_contract();
-    return 0;
+  test_concrete_refs();
+  test_status_is_usable();
+  test_default_changed_payload();
+  test_set_default_contract();
+  return 0;
 }

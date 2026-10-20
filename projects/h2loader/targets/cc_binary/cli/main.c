@@ -16,181 +16,175 @@
 static volatile sig_atomic_t cancelled;
 
 static void handle_signal(int signal_number) {
-    (void)signal_number;
-    cancelled = 1;
+  (void)signal_number;
+  cancelled = 1;
 }
 
-static int is_cancelled(void *user) {
-    (void)user;
-    return cancelled != 0;
+static int is_cancelled(void* user) {
+  (void)user;
+  return cancelled != 0;
 }
 
-static h2_pal_result_t stdio_write(
-    void *user,
-    const void *buffer,
-    size_t len,
-    size_t *out_written,
-    uint32_t timeout_ms) {
-    FILE *stream = user;
-    (void)timeout_ms;
-    if (stream == NULL || out_written == NULL ||
-        (buffer == NULL && len != 0u)) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    *out_written = fwrite(buffer, 1u, len, stream);
-    return *out_written == len ? H2_PAL_OK : H2_PAL_ERR_IO;
+static h2_pal_result_t stdio_write(void* user, const void* buffer, size_t len,
+                                   size_t* out_written, uint32_t timeout_ms) {
+  FILE* stream = user;
+  (void)timeout_ms;
+  if (stream == NULL || out_written == NULL || (buffer == NULL && len != 0u)) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  *out_written = fwrite(buffer, 1u, len, stream);
+  return *out_written == len ? H2_PAL_OK : H2_PAL_ERR_IO;
 }
 
-static h2_pal_result_t stdio_flush(void *user) {
-    return user != NULL && fflush((FILE *)user) == 0
-        ? H2_PAL_OK
-        : H2_PAL_ERR_IO;
+static h2_pal_result_t stdio_flush(void* user) {
+  return user != NULL && fflush((FILE*)user) == 0 ? H2_PAL_OK : H2_PAL_ERR_IO;
 }
 
 /* Starting the BLE Host may trigger host Bluetooth permission enforcement
  * (macOS TCC aborts processes without an entitlement), so it stays deferred
  * until the App requests a BLE transport; serial-only runs never start it. */
-static const h2_pal_ble_host_api_t *started_ble;
+static const h2_pal_ble_host_api_t* started_ble;
 static int ble_start_attempted;
 
-static const h2_pal_ble_host_api_t *acquire_ble(void *user) {
-    const h2_pal_ble_host_api_t *ble = user;
-    if (!ble_start_attempted) {
-        ble_start_attempted = 1;
-        if (h2_pal_ble_start(ble) == H2_PAL_OK) started_ble = ble;
-    }
-    return started_ble;
+static const h2_pal_ble_host_api_t* acquire_ble(void* user) {
+  const h2_pal_ble_host_api_t* ble = user;
+  if (!ble_start_attempted) {
+    ble_start_attempted = 1;
+    if (h2_pal_ble_start(ble) == H2_PAL_OK) started_ble = ble;
+  }
+  return started_ble;
 }
 
 /* Options whose value is a host filesystem path typed by the user. */
-static int is_path_option(const char *arg) {
-    static const char *const options[] = {
-        "--file", "--out", "--output", "--app-bin", "--data-dir",
-    };
-    for (size_t i = 0u; i < sizeof(options) / sizeof(options[0]); ++i) {
-        if (strcmp(arg, options[i]) == 0) return 1;
-    }
-    return 0;
+static int is_path_option(const char* arg) {
+  static const char* const options[] = {
+      "--file", "--out", "--output", "--app-bin", "--data-dir",
+  };
+  for (size_t i = 0u; i < sizeof(options) / sizeof(options[0]); ++i) {
+    if (strcmp(arg, options[i]) == 0) return 1;
+  }
+  return 0;
 }
 
 /* Returns a copy of argv with path option values resolved into the PAL fs
  * namespace (relative to the invoking shell, symlinks followed). Values the
  * target cannot map are left untouched so the App reports the PAL error. */
-static const char *const *resolve_path_arguments(int argc, char **argv) {
-    char buffer[4096];
-    const char **args = calloc((size_t)argc + 1u, sizeof(*args));
-    if (args == NULL) return NULL;
-    for (int i = 0; i < argc; ++i) args[i] = argv[i];
-    for (int i = 1; i + 1 < argc; ++i) {
-        if (!is_path_option(argv[i])) continue;
-        if (h2_h2loader_cli_target_resolve_path(argv[i + 1], buffer, sizeof(buffer))) {
-            char *copy = malloc(strlen(buffer) + 1u);
-            if (copy != NULL) args[i + 1] = strcpy(copy, buffer);
-        }
-        ++i;
+static const char* const* resolve_path_arguments(int argc, char** argv) {
+  char buffer[4096];
+  const char** args = calloc((size_t)argc + 1u, sizeof(*args));
+  if (args == NULL) return NULL;
+  for (int i = 0; i < argc; ++i) args[i] = argv[i];
+  for (int i = 1; i + 1 < argc; ++i) {
+    if (!is_path_option(argv[i])) continue;
+    if (h2_h2loader_cli_target_resolve_path(argv[i + 1], buffer,
+                                            sizeof(buffer))) {
+      char* copy = malloc(strlen(buffer) + 1u);
+      if (copy != NULL) args[i + 1] = strcpy(copy, buffer);
     }
-    return args;
+    ++i;
+  }
+  return args;
 }
 
-static void release_path_arguments(
-    int argc, char **argv, const char *const *args) {
-    for (int i = 0; i < argc; ++i) {
-        if (args[i] != argv[i]) free((void *)args[i]);
-    }
-    free((void *)args);
+static void release_path_arguments(int argc, char** argv,
+                                   const char* const* args) {
+  for (int i = 0; i < argc; ++i) {
+    if (args[i] != argv[i]) free((void*)args[i]);
+  }
+  free((void*)args);
 }
 
-static int cli_main(int argc, char **argv) {
-    static const h2_command_io_vtable_t stdio_vtable = {
-        .write = stdio_write,
-        .flush = stdio_flush,
-    };
-    h2_command_io_api_t stdout_io = {.user = stdout, .vtable = &stdio_vtable};
-    h2_command_io_api_t stderr_io = {.user = stderr, .vtable = &stdio_vtable};
-    h2_pal_result_t startup = h2_h2loader_cli_target_start();
-    if (startup != H2_PAL_OK) {
-        fprintf(stderr, "h2loader: native platform initialization failed code=%d\n",
-                startup);
-        return H2_H2LOADER_CLI_EXIT_RUNTIME;
-    }
-    int kcp_result = h2_bleikcp_global_init();
-    if (kcp_result != H2_PAL_OK) {
-        fprintf(stderr, "h2loader: KCP initialization failed code=%d\n",
-                kcp_result);
-        h2_h2loader_cli_target_stop();
-        return H2_H2LOADER_CLI_EXIT_RUNTIME;
-    }
-    const char *const *args = resolve_path_arguments(argc, argv);
-    if (args == NULL) {
-        fprintf(stderr, "h2loader: cannot allocate command arguments\n");
-        (void)h2_bleikcp_global_shutdown();
-        h2_h2loader_cli_target_stop();
-        return H2_H2LOADER_CLI_EXIT_RUNTIME;
-    }
-    const h2_pal_mem_api_t *mem = h2_h2loader_cli_target_mem();
-    const h2_pal_ble_host_api_t *ble = h2_h2loader_cli_target_ble(mem);
-    h2_runtime_t runtime = {
-        .board = "host",
-        .target = "cli",
-        .chip = "native",
-        .mem = mem,
-        .ble_host = NULL,
-        .log = h2_h2loader_cli_target_log(),
-        .time = h2_h2loader_cli_target_time(),
-        .task = h2_h2loader_cli_target_task(),
-        .queue = h2_h2loader_cli_target_queue(),
-        .sync = h2_h2loader_cli_target_sync(),
-        .fs = h2_h2loader_cli_target_fs(),
-        .net = h2_h2loader_cli_target_net(),
-        .system_event = h2_h2loader_cli_target_system_event(),
-    };
-    h2_h2loader_cli_config_t config = {
-        .argc = argc,
-        .argv = args,
-        .serial = h2_h2loader_cli_target_serial(),
-        .stdout_io = &stdout_io,
-        .stderr_io = &stderr_io,
-        .is_cancelled = is_cancelled,
-        .acquire_ble = ble != NULL ? acquire_ble : NULL,
-        .ble_user = (void *)ble,
-    };
-    int result;
-    (void)signal(SIGINT, handle_signal);
-    (void)signal(SIGTERM, handle_signal);
-    result = h2_h2loader_cli_main(&runtime, &config);
-    if (started_ble != NULL) (void)h2_pal_ble_stop(started_ble);
+static int cli_main(int argc, char** argv) {
+  static const h2_command_io_vtable_t stdio_vtable = {
+      .write = stdio_write,
+      .flush = stdio_flush,
+  };
+  h2_command_io_api_t stdout_io = {.user = stdout, .vtable = &stdio_vtable};
+  h2_command_io_api_t stderr_io = {.user = stderr, .vtable = &stdio_vtable};
+  h2_pal_result_t startup = h2_h2loader_cli_target_start();
+  if (startup != H2_PAL_OK) {
+    fprintf(stderr, "h2loader: native platform initialization failed code=%d\n",
+            startup);
+    return H2_H2LOADER_CLI_EXIT_RUNTIME;
+  }
+  int kcp_result = h2_bleikcp_global_init();
+  if (kcp_result != H2_PAL_OK) {
+    fprintf(stderr, "h2loader: KCP initialization failed code=%d\n",
+            kcp_result);
+    h2_h2loader_cli_target_stop();
+    return H2_H2LOADER_CLI_EXIT_RUNTIME;
+  }
+  const char* const* args = resolve_path_arguments(argc, argv);
+  if (args == NULL) {
+    fprintf(stderr, "h2loader: cannot allocate command arguments\n");
     (void)h2_bleikcp_global_shutdown();
     h2_h2loader_cli_target_stop();
-    release_path_arguments(argc, argv, args);
-    return cancelled ? 130 : result;
+    return H2_H2LOADER_CLI_EXIT_RUNTIME;
+  }
+  const h2_pal_mem_api_t* mem = h2_h2loader_cli_target_mem();
+  const h2_pal_ble_host_api_t* ble = h2_h2loader_cli_target_ble(mem);
+  h2_runtime_t runtime = {
+      .board = "host",
+      .target = "cli",
+      .chip = "native",
+      .mem = mem,
+      .ble_host = NULL,
+      .log = h2_h2loader_cli_target_log(),
+      .time = h2_h2loader_cli_target_time(),
+      .task = h2_h2loader_cli_target_task(),
+      .queue = h2_h2loader_cli_target_queue(),
+      .sync = h2_h2loader_cli_target_sync(),
+      .fs = h2_h2loader_cli_target_fs(),
+      .net = h2_h2loader_cli_target_net(),
+      .system_event = h2_h2loader_cli_target_system_event(),
+  };
+  h2_h2loader_cli_config_t config = {
+      .argc = argc,
+      .argv = args,
+      .serial = h2_h2loader_cli_target_serial(),
+      .stdout_io = &stdout_io,
+      .stderr_io = &stderr_io,
+      .is_cancelled = is_cancelled,
+      .acquire_ble = ble != NULL ? acquire_ble : NULL,
+      .ble_user = (void*)ble,
+  };
+  int result;
+  (void)signal(SIGINT, handle_signal);
+  (void)signal(SIGTERM, handle_signal);
+  result = h2_h2loader_cli_main(&runtime, &config);
+  if (started_ble != NULL) (void)h2_pal_ble_stop(started_ble);
+  (void)h2_bleikcp_global_shutdown();
+  h2_h2loader_cli_target_stop();
+  release_path_arguments(argc, argv, args);
+  return cancelled ? 130 : result;
 }
 
 #ifndef _WIN32
-int main(int argc, char **argv) { return cli_main(argc, argv); }
+int main(int argc, char** argv) { return cli_main(argc, argv); }
 #else
 /* Decode the UTF-16 arguments supplied by Windows parents without the CRT's
  * ANSI main() conversion losing Unicode file paths. */
-int wmain(int argc, wchar_t **wide_argv) {
-    char **argv = calloc((size_t)argc + 1u, sizeof(*argv));
-    if (argv == NULL) {
-        fprintf(stderr, "h2loader: cannot allocate UTF-8 command arguments\n");
-        return H2_H2LOADER_CLI_EXIT_RUNTIME;
+int wmain(int argc, wchar_t** wide_argv) {
+  char** argv = calloc((size_t)argc + 1u, sizeof(*argv));
+  if (argv == NULL) {
+    fprintf(stderr, "h2loader: cannot allocate UTF-8 command arguments\n");
+    return H2_H2LOADER_CLI_EXIT_RUNTIME;
+  }
+  int result = H2_H2LOADER_CLI_EXIT_RUNTIME;
+  for (int i = 0; i < argc; ++i) {
+    int size = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide_argv[i],
+                                   -1, NULL, 0, NULL, NULL);
+    if (size <= 0 || (argv[i] = malloc((size_t)size)) == NULL ||
+        WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide_argv[i], -1,
+                            argv[i], size, NULL, NULL) != size) {
+      fprintf(stderr, "h2loader: cannot decode UTF-8 command arguments\n");
+      goto cleanup;
     }
-    int result = H2_H2LOADER_CLI_EXIT_RUNTIME;
-    for (int i = 0; i < argc; ++i) {
-        int size = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS,
-                                      wide_argv[i], -1, NULL, 0, NULL, NULL);
-        if (size <= 0 || (argv[i] = malloc((size_t)size)) == NULL ||
-            WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide_argv[i],
-                                -1, argv[i], size, NULL, NULL) != size) {
-            fprintf(stderr, "h2loader: cannot decode UTF-8 command arguments\n");
-            goto cleanup;
-        }
-    }
-    result = cli_main(argc, argv);
+  }
+  result = cli_main(argc, argv);
 cleanup:
-    for (int i = 0; i < argc; ++i) free(argv[i]);
-    free(argv);
-    return result;
+  for (int i = 0; i < argc; ++i) free(argv[i]);
+  free(argv);
+  return result;
 }
 #endif

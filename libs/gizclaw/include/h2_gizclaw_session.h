@@ -77,7 +77,8 @@ typedef struct h2_gizclaw_session_state {
   h2_gizclaw_session_blocker_t blocking_reason;
   h2_gizclaw_session_blocker_t error_stage;
   h2_pal_result_t last_error;
-  /** Original remote conversation error; empty for local failures or success. */
+  /** Original remote conversation error; empty for local failures or success.
+   */
   char error_code[65];
   bool retryable;
 } h2_gizclaw_session_state_t;
@@ -92,7 +93,8 @@ typedef struct h2_gizclaw_session_state {
  * is sent if refresh fails before BEGIN. COMMIT runs under the Session mutex
  * through state publication, so a sink must not reenter any Session API.
  * The sink keeps its prior publication until COMMIT succeeds and removes its
- * candidate on ABORT. Callbacks run synchronously on the refresh caller task. */
+ * candidate on ABORT. Callbacks run synchronously on the refresh caller task.
+ */
 typedef enum h2_gizclaw_catalog_event {
   H2_GIZCLAW_CATALOG_BEGIN,
   H2_GIZCLAW_CATALOG_PAGE,
@@ -100,9 +102,9 @@ typedef enum h2_gizclaw_catalog_event {
   H2_GIZCLAW_CATALOG_ABORT,
 } h2_gizclaw_catalog_event_t;
 typedef h2_pal_result_t (*h2_gizclaw_catalog_sink_fn)(
-    void *user, h2_gizclaw_catalog_event_t event,
-    const h2_gizclaw_workflow_page_t *page, const char *profile_name,
-    const char *profile_revision);
+    void* user, h2_gizclaw_catalog_event_t event,
+    const h2_gizclaw_workflow_page_t* page, const char* profile_name,
+    const char* profile_revision);
 
 /** Dependencies are borrowed until destroy. Initial tag spans and their text
  * are borrowed until refresh_with_tags replaces them or Session destroy. One
@@ -116,15 +118,15 @@ typedef h2_pal_result_t (*h2_gizclaw_catalog_sink_fn)(
  * persistence paths are built in.
  */
 typedef struct h2_gizclaw_session_config {
-  h2_gizclaw_service_t *service;
-  const h2_pal_mem_api_t *mem;
-  const h2_pal_sync_api_t *sync;
-  const h2_pal_time_api_t *time;
-  h2_runtime_t *runtime;
+  h2_gizclaw_service_t* service;
+  const h2_pal_mem_api_t* mem;
+  const h2_pal_sync_api_t* sync;
+  const h2_pal_time_api_t* time;
+  h2_runtime_t* runtime;
   /** Exact AND selector used for catalog pages. Zero tags lists all workflows.
    * This controls catalog filtering, not Workspace identity or authorization.
    */
-  const h2_gizclaw_str_t *tags;
+  const h2_gizclaw_str_t* tags;
   size_t tag_count;
   size_t max_workflows;
   /** Response storage for one page or one Workspace RPC. In streaming mode
@@ -134,7 +136,7 @@ typedef struct h2_gizclaw_session_config {
    * not retain a whole catalog. max_workflows and retained buffers are unused.
    * The callback and user context remain valid until destroy. */
   h2_gizclaw_catalog_sink_fn catalog_sink;
-  void *catalog_sink_user;
+  void* catalog_sink_user;
   /** Reserve two catalog_bytes buffers during create: one published
    * catalog and one scratch buffer shared by serialized refresh/select work.
    * Each buffer is allocated once and retained until destroy, including after
@@ -145,49 +147,48 @@ typedef struct h2_gizclaw_session_config {
    * Ignored when retain_catalog_buffer is false. Borrowed until successful
    * destroy; create rollback and destroy free through this same allocator.
    * Session state, synchronization and all other allocations still use mem. */
-  const h2_pal_mem_api_t *retained_allocator;
+  const h2_pal_mem_api_t* retained_allocator;
 } h2_gizclaw_session_config_t;
 
 /** Product-selected names; NULL workflow_name opens an existing workspace
  * without creating it. parameters == NULL preserves server input policy. */
 typedef struct h2_gizclaw_session_selection {
-  const char *workflow_name;
-  const char *workspace_name;
-  const h2_gizclaw_workspace_parameters_patch_t *parameters;
+  const char* workflow_name;
+  const char* workspace_name;
+  const h2_gizclaw_workspace_parameters_patch_t* parameters;
 } h2_gizclaw_session_selection_t;
 
 /** Creates a Session; failure leaves out_session NULL and releases all owned
  * allocations, including optional retained catalog buffers. */
-h2_pal_result_t
-h2_gizclaw_session_create(const h2_gizclaw_session_config_t *config,
-                          h2_gizclaw_session_t **out_session);
+h2_pal_result_t h2_gizclaw_session_create(
+    const h2_gizclaw_session_config_t* config,
+    h2_gizclaw_session_t** out_session);
 /** Requires all Session operations joined and conversation handles released.
  * Returns BUSY while owned operations remain. Does not destroy the Service. */
-h2_pal_result_t h2_gizclaw_session_destroy(h2_gizclaw_session_t **session);
+h2_pal_result_t h2_gizclaw_session_destroy(h2_gizclaw_session_t** session);
 /** Thread-safe copied reads; never perform RPC or expose mutable library
  * memory. Changes notify the configured Runtime; observers re-read the
  * snapshot. */
-h2_pal_result_t
-h2_gizclaw_session_snapshot(h2_gizclaw_session_t *session,
-                            h2_gizclaw_session_state_t *out_state);
+h2_pal_result_t h2_gizclaw_session_snapshot(
+    h2_gizclaw_session_t* session, h2_gizclaw_session_state_t* out_state);
 /** Copies the complete valid catalog and Profile identity into caller storage.
  * Unavailable in streaming mode; the sink owns the published catalog.
  * Failure clears out_catalog. Retained stale data is never returned as valid.
  */
-h2_pal_result_t
-h2_gizclaw_session_catalog_copy(h2_gizclaw_session_t *session,
-                                h2_gizclaw_resp_storage_t *storage,
-                                h2_gizclaw_workflow_page_t *out_catalog);
+h2_pal_result_t h2_gizclaw_session_catalog_copy(
+    h2_gizclaw_session_t* session, h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_workflow_page_t* out_catalog);
 /** Blocking operations belong on a caller task, never service_poll callbacks or
  * the Service worker. Preparations are serialized. Select/conversation requests
  * wait behind preparation within their deadline; register/refresh return BUSY.
  * timeout_ms is a total monotonic deadline, including every page and RPC.
- * Registration automatically refreshes the requested catalog. Catalog failure does
- * not undo successful registration; inspect both phases in the snapshot. */
-h2_pal_result_t h2_gizclaw_session_register(h2_gizclaw_session_t *session,
-                                            const char *token,
+ * Registration automatically refreshes the requested catalog. Catalog failure
+ * does not undo successful registration; inspect both phases in the snapshot.
+ */
+h2_pal_result_t h2_gizclaw_session_register(h2_gizclaw_session_t* session,
+                                            const char* token,
                                             uint32_t timeout_ms);
-h2_pal_result_t h2_gizclaw_session_refresh(h2_gizclaw_session_t *session,
+h2_pal_result_t h2_gizclaw_session_refresh(h2_gizclaw_session_t* session,
                                            uint32_t timeout_ms);
 /** Replace the catalog's exact AND selector and refresh it in one serialized
  * operation. Input tags are copied and may be released when this call returns;
@@ -200,10 +201,9 @@ h2_pal_result_t h2_gizclaw_session_refresh(h2_gizclaw_session_t *session,
  * never exposes the old catalog as READY. Must run on a caller task, never a
  * service_poll callback.
  */
-h2_pal_result_t
-h2_gizclaw_session_refresh_with_tags(h2_gizclaw_session_t *session,
-                                     const h2_gizclaw_str_t *tags,
-                                     size_t tag_count, uint32_t timeout_ms);
+h2_pal_result_t h2_gizclaw_session_refresh_with_tags(
+    h2_gizclaw_session_t* session, const h2_gizclaw_str_t* tags,
+    size_t tag_count, uint32_t timeout_ms);
 /** Prepares the named Workspace. Streaming selection uses the supplied names
  * directly and needs no in-memory catalog. Current changes
  * only after server confirmation; a failed switch cannot publish its target as
@@ -213,22 +213,21 @@ h2_gizclaw_session_refresh_with_tags(h2_gizclaw_session_t *session,
  * creates the same name only after NOT_FOUND. Unrelated errors fail directly;
  * cancel/close prevents further steps. A version mismatch permits one catalog
  * refresh and retry. */
-h2_pal_result_t
-h2_gizclaw_session_select(h2_gizclaw_session_t *session,
-                          const h2_gizclaw_session_selection_t *selection,
-                          uint32_t timeout_ms);
+h2_pal_result_t h2_gizclaw_session_select(
+    h2_gizclaw_session_t* session,
+    const h2_gizclaw_session_selection_t* selection, uint32_t timeout_ms);
 /** Close admission immediately and discard late preparation results. Call when
  * Service becomes terminal or before stopping it; Service stop interrupts RPC.
  * A Session is connection-scoped and cannot be reopened. */
-h2_pal_result_t h2_gizclaw_session_close(h2_gizclaw_session_t *session);
+h2_pal_result_t h2_gizclaw_session_close(h2_gizclaw_session_t* session);
 /** Prepare selection then configure the conversation route. Does not start the
  * microphone: service_audio_start remains the explicit audio boundary. */
 h2_pal_result_t h2_gizclaw_session_conversation_create(
-    h2_gizclaw_session_t *session,
-    const h2_gizclaw_session_selection_t *selection, uint32_t timeout_ms,
+    h2_gizclaw_session_t* session,
+    const h2_gizclaw_session_selection_t* selection, uint32_t timeout_ms,
     h2_gizclaw_conversation_callback_fn callback,
-    h2_gizclaw_conversation_completion_fn completion, void *user,
-    h2_gizclaw_conversation_t **out_conversation);
+    h2_gizclaw_conversation_completion_fn completion, void* user,
+    h2_gizclaw_conversation_t** out_conversation);
 /** Start/end input on the Session-owned conversation route and update the
  * public input state. Completion still comes through service_poll. Start
  * interrupts a previous generation still sending on the same route, waiting
@@ -238,25 +237,25 @@ h2_pal_result_t h2_gizclaw_session_conversation_create(
  * Repeated start while recording and end while idle are harmless. Call from a
  * control task; service_poll must continue on its owner while start waits.
  */
-h2_pal_result_t h2_gizclaw_session_audio_start(h2_gizclaw_session_t *session);
-h2_pal_result_t h2_gizclaw_session_audio_end(h2_gizclaw_session_t *session);
-/** Submit one complete UTF-8 user input (1..H2_GIZCLAW_CONVERSATION_TEXT_MAX_BYTES
- * bytes, no terminator required) on the Session-owned conversation route of
- * the current Workspace, without starting the microphone. The span is copied
- * before returning; no network I/O or application callback runs inline.
- * Accepted text publishes WAITING with conversation_input_open false. Like
- * audio_end, OK means admission only: the conversation completion runs once
- * from service_poll when the text is sent, fails or is canceled, and the Agent
- * reply plays through the existing downlink.
- * INVALID_ARG: NULL session/data, empty, oversized, embedded NUL or invalid
- * UTF-8 text. INVALID_STATE: Session closed or preparing, Workspace not READY,
- * no conversation route, or Service not started. CLOSED: Service stopping.
- * BUSY: audio input is open, or a previous input has not completed (never
- * interrupted). NO_MEMORY / WOULD_BLOCK: admission failed. While the text is
- * pending, conversation_release leaves the route in place; audio_start, a
- * Workspace switch or delete cancel it first, as for a previous audio input.
+h2_pal_result_t h2_gizclaw_session_audio_start(h2_gizclaw_session_t* session);
+h2_pal_result_t h2_gizclaw_session_audio_end(h2_gizclaw_session_t* session);
+/** Submit one complete UTF-8 user input
+ * (1..H2_GIZCLAW_CONVERSATION_TEXT_MAX_BYTES bytes, no terminator required) on
+ * the Session-owned conversation route of the current Workspace, without
+ * starting the microphone. The span is copied before returning; no network I/O
+ * or application callback runs inline. Accepted text publishes WAITING with
+ * conversation_input_open false. Like audio_end, OK means admission only: the
+ * conversation completion runs once from service_poll when the text is sent,
+ * fails or is canceled, and the Agent reply plays through the existing
+ * downlink. INVALID_ARG: NULL session/data, empty, oversized, embedded NUL or
+ * invalid UTF-8 text. INVALID_STATE: Session closed or preparing, Workspace not
+ * READY, no conversation route, or Service not started. CLOSED: Service
+ * stopping. BUSY: audio input is open, or a previous input has not completed
+ * (never interrupted). NO_MEMORY / WOULD_BLOCK: admission failed. While the
+ * text is pending, conversation_release leaves the route in place; audio_start,
+ * a Workspace switch or delete cancel it first, as for a previous audio input.
  */
-h2_pal_result_t h2_gizclaw_session_send_text(h2_gizclaw_session_t *session,
+h2_pal_result_t h2_gizclaw_session_send_text(h2_gizclaw_session_t* session,
                                              h2_gizclaw_str_t text);
 /** Stop the downstream audio now: drop what is buffered and every packet
  * that arrives until the server begins its next downstream audio stream
@@ -265,17 +264,17 @@ h2_pal_result_t h2_gizclaw_session_send_text(h2_gizclaw_session_t *session,
  * can only run later. It does not end input, cancel the conversation or
  * stop the server's run. Never blocks on network or RPC; safe from any task.
  * INVALID_ARG: NULL session. */
-h2_pal_result_t
-h2_gizclaw_session_interrupt_playback(h2_gizclaw_session_t *session);
+h2_pal_result_t h2_gizclaw_session_interrupt_playback(
+    h2_gizclaw_session_t* session);
 /** Discard an in-flight preparation result without closing the connection.
  * The currently executing RPC remains bounded by its deadline; subsequent
  * steps are skipped. Does not cancel an already-created conversation. */
-h2_pal_result_t
-h2_gizclaw_session_cancel_pending(h2_gizclaw_session_t *session);
+h2_pal_result_t h2_gizclaw_session_cancel_pending(
+    h2_gizclaw_session_t* session);
 /** Release only after idle/terminal, as required by Conversation. Use this
  * instead of raw conversation_release for Session-created conversations. */
 void h2_gizclaw_session_conversation_release(
-    h2_gizclaw_session_t *session, h2_gizclaw_conversation_t *conversation);
+    h2_gizclaw_session_t* session, h2_gizclaw_conversation_t* conversation);
 
 #ifdef __cplusplus
 }

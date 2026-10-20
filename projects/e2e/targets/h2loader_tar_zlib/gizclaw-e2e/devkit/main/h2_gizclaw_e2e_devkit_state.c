@@ -7,10 +7,10 @@ static bool deadline_expired(uint64_t now_ms, uint64_t deadline_ms) {
 }
 
 int h2_gizclaw_e2e_devkit_wifi_step(
-    const h2_pal_wifi_sta_api_t *wifi_sta,
-    const h2_pal_wifi_settings_api_t *wifi_settings,
+    const h2_pal_wifi_sta_api_t* wifi_sta,
+    const h2_pal_wifi_settings_api_t* wifi_settings,
     uint32_t connect_timeout_ms,
-    h2_gizclaw_e2e_devkit_wifi_result_t *out_result) {
+    h2_gizclaw_e2e_devkit_wifi_result_t* out_result) {
   h2_pal_wifi_sta_config_t saved = {0};
   h2_pal_wifi_sta_status_t status = {0};
   if (wifi_sta == NULL || wifi_settings == NULL || out_result == NULL ||
@@ -22,11 +22,10 @@ int h2_gizclaw_e2e_devkit_wifi_step(
       .rc = H2_PAL_OK,
   };
   int rc = h2_pal_wifi_sta_get_status(wifi_sta, &status);
-  if (rc == H2_PAL_OK &&
-      ((status.state == H2_PAL_WIFI_STA_STATE_GOT_IP &&
-        status.ip_valid != 0u) ||
-       status.state == H2_PAL_WIFI_STA_STATE_CONNECTING ||
-       status.state == H2_PAL_WIFI_STA_STATE_CONNECTED)) {
+  if (rc == H2_PAL_OK && ((status.state == H2_PAL_WIFI_STA_STATE_GOT_IP &&
+                           status.ip_valid != 0u) ||
+                          status.state == H2_PAL_WIFI_STA_STATE_CONNECTING ||
+                          status.state == H2_PAL_WIFI_STA_STATE_CONNECTED)) {
     return H2_PAL_OK;
   }
   rc = h2_pal_wifi_settings_get_saved_sta_config(wifi_settings, &saved);
@@ -39,15 +38,13 @@ int h2_gizclaw_e2e_devkit_wifi_step(
     return H2_PAL_OK;
   }
   rc = h2_pal_wifi_sta_connect(wifi_sta, &saved, connect_timeout_ms);
-  out_result->outcome = rc == H2_PAL_OK
-      ? H2_GIZCLAW_E2E_DEVKIT_WIFI_CONNECTED
-      : H2_GIZCLAW_E2E_DEVKIT_WIFI_RETRY;
+  out_result->outcome = rc == H2_PAL_OK ? H2_GIZCLAW_E2E_DEVKIT_WIFI_CONNECTED
+                                        : H2_GIZCLAW_E2E_DEVKIT_WIFI_RETRY;
   out_result->rc = rc;
   return H2_PAL_OK;
 }
 
-void h2_gizclaw_e2e_devkit_state_init(
-    h2_gizclaw_e2e_devkit_state_t *state) {
+void h2_gizclaw_e2e_devkit_state_init(h2_gizclaw_e2e_devkit_state_t* state) {
   if (state == NULL) {
     return;
   }
@@ -55,7 +52,7 @@ void h2_gizclaw_e2e_devkit_state_init(
 }
 
 bool h2_gizclaw_e2e_devkit_state_set_prerequisites(
-    h2_gizclaw_e2e_devkit_state_t *state, bool has_ip, bool clock_ready) {
+    h2_gizclaw_e2e_devkit_state_t* state, bool has_ip, bool clock_ready) {
   if (state == NULL) {
     return false;
   }
@@ -68,9 +65,9 @@ bool h2_gizclaw_e2e_devkit_state_set_prerequisites(
   return true;
 }
 
-void h2_gizclaw_e2e_devkit_state_complete(
-    h2_gizclaw_e2e_devkit_state_t *state, uint64_t now_ms,
-    uint32_t replay_interval_ms) {
+void h2_gizclaw_e2e_devkit_state_complete(h2_gizclaw_e2e_devkit_state_t* state,
+                                          uint64_t now_ms,
+                                          uint32_t replay_interval_ms) {
   if (state == NULL || !state->runner_started || state->runner_complete) {
     return;
   }
@@ -79,7 +76,7 @@ void h2_gizclaw_e2e_devkit_state_complete(
 }
 
 bool h2_gizclaw_e2e_devkit_state_take_summary_replay(
-    h2_gizclaw_e2e_devkit_state_t *state, uint64_t now_ms,
+    h2_gizclaw_e2e_devkit_state_t* state, uint64_t now_ms,
     uint32_t replay_interval_ms) {
   if (state == NULL || !state->runner_complete || replay_interval_ms == 0u ||
       !deadline_expired(now_ms, state->next_summary_replay_ms)) {

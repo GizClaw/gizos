@@ -11,8 +11,8 @@ extern "C" {
 
 /** @brief One board-selected attenuation relative to the maximum DAC gain. */
 typedef struct h2_es8311_volume_point {
-    uint8_t percent; /**< 1..100, strictly increasing. */
-    uint8_t attenuation_half_db; /**< Non-increasing, in 0.5 dB steps. */
+  uint8_t percent;             /**< 1..100, strictly increasing. */
+  uint8_t attenuation_half_db; /**< Non-increasing, in 0.5 dB steps. */
 } h2_es8311_volume_point_t;
 
 /**
@@ -27,15 +27,15 @@ typedef struct h2_es8311_volume_point {
  * Do not modify the initialized system's config while it is in use.
  */
 typedef struct h2_es8311_volume_config {
-    uint8_t point_count;
-    h2_es8311_volume_point_t points[H2_ES8311_VOLUME_MAX_POINTS];
+  uint8_t point_count;
+  h2_es8311_volume_point_t points[H2_ES8311_VOLUME_MAX_POINTS];
 } h2_es8311_volume_config_t;
 
-/** @brief Return 1 for a valid borrowed config and max_register (1..255), else 0.
- * Pure, nonblocking; NULL is invalid. No state is changed.
+/** @brief Return 1 for a valid borrowed config and max_register (1..255), else
+ * 0. Pure, nonblocking; NULL is invalid. No state is changed.
  */
-int h2_es8311_volume_is_valid(const h2_es8311_volume_config_t *config,
-                            uint8_t max_register);
+int h2_es8311_volume_is_valid(const h2_es8311_volume_config_t* config,
+                              uint8_t max_register);
 
 /** @brief Convert 0..100 percent to DAC register 0x32.
  * Pure, nonblocking; borrows config for this call. Invalid config returns zero.
@@ -46,8 +46,8 @@ int h2_es8311_volume_is_valid(const h2_es8311_volume_config_t *config,
  * max_register is the board's codec_volume_default: 0xBF = 0 dB,
  * one register step = 0.5 dB, range 1..255 (-95..+32 dB).
  */
-uint8_t h2_es8311_volume_from_percent(const h2_es8311_volume_config_t *config,
-                                    uint8_t max_register, uint32_t percent);
+uint8_t h2_es8311_volume_from_percent(const h2_es8311_volume_config_t* config,
+                                      uint8_t max_register, uint32_t percent);
 
 #ifdef __cplusplus
 }

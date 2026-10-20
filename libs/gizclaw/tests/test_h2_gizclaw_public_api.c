@@ -16,7 +16,6 @@ _Static_assert(sizeof(public_api) / sizeof(public_api[0]) == 248u,
 
 int main(void) {
   for (size_t i = 0u; i < sizeof(public_api) / sizeof(public_api[0]); ++i)
-    if (public_api[i] == NULL)
-      return 1;
+    if (public_api[i] == NULL) return 1;
   return 0;
 }

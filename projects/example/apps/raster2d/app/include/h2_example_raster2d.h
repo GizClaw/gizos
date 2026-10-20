@@ -5,7 +5,7 @@
 extern "C" {
 #endif
 /* Draw a fixed public pattern on a 240x240 Display; owns its acquisition. */
-h2_pal_result_t h2_example_raster2d_run(h2_runtime_t *runtime);
+h2_pal_result_t h2_example_raster2d_run(h2_runtime_t* runtime);
 #ifdef __cplusplus
 }
 #endif

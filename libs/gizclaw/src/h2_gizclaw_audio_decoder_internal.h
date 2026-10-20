@@ -25,14 +25,14 @@ typedef h2_ogg_opus_read_fn h2_gizclaw_audio_read_fn;
 typedef struct h2_gizclaw_audio_decoder h2_gizclaw_audio_decoder_t;
 
 h2_pal_result_t h2_gizclaw_audio_decoder_create(
-    const h2_pal_mem_api_t *allocator, h2_gizclaw_audio_read_fn read,
-    void *user, h2_gizclaw_audio_decoder_t **out);
-h2_pal_result_t h2_gizclaw_audio_decoder_next(h2_gizclaw_audio_decoder_t *d,
-                                              uint8_t *pcm, size_t capacity,
-                                              size_t *out_len);
+    const h2_pal_mem_api_t* allocator, h2_gizclaw_audio_read_fn read,
+    void* user, h2_gizclaw_audio_decoder_t** out);
+h2_pal_result_t h2_gizclaw_audio_decoder_next(h2_gizclaw_audio_decoder_t* d,
+                                              uint8_t* pcm, size_t capacity,
+                                              size_t* out_len);
 /* True from the moment the headers are parsed until the first audio is
  * read: the only window in which seek_offset() and seek() are accepted. */
-bool h2_gizclaw_audio_decoder_headers_done(const h2_gizclaw_audio_decoder_t *d);
+bool h2_gizclaw_audio_decoder_headers_done(const h2_gizclaw_audio_decoder_t* d);
 /* Where a ranged request should begin, in a file of `total` bytes, to start
  * output at target_ms. duration_ms is the length the product knows; only
  * Ogg/Opus needs it. Ogg/Opus estimates by byte rate 5 s early and lands on
@@ -43,8 +43,8 @@ bool h2_gizclaw_audio_decoder_headers_done(const h2_gizclaw_audio_decoder_t *d);
  * placed exactly (MP3 without an Info tag, whose frame boundaries are not
  * on a grid): the caller skips through the stream it has instead. */
 h2_pal_result_t h2_gizclaw_audio_decoder_seek_offset(
-    h2_gizclaw_audio_decoder_t *d, uint64_t target_ms, uint64_t duration_ms,
-    uint64_t total, uint64_t *offset);
+    h2_gizclaw_audio_decoder_t* d, uint64_t target_ms, uint64_t duration_ms,
+    uint64_t total, uint64_t* offset);
 /* Start output at target_ms. Without resync the current stream is read on
  * and skipped through (Ogg pages and MP3 frames are parsed, not decoded).
  * With resync the reader now delivers the file from `offset`, the value
@@ -53,7 +53,7 @@ h2_pal_result_t h2_gizclaw_audio_decoder_seek_offset(
  * the declared bitrate within a byte of the CBR grid (FORMAT otherwise), and
  * WAV continues at the exact frame. Output before the target is decoded as
  * pre-roll and dropped. INVALID_STATE outside headers_done(). */
-h2_pal_result_t h2_gizclaw_audio_decoder_seek(h2_gizclaw_audio_decoder_t *d,
+h2_pal_result_t h2_gizclaw_audio_decoder_seek(h2_gizclaw_audio_decoder_t* d,
                                               uint64_t target_ms, bool resync,
                                               uint64_t offset);
 /* Output-timeline index (16 kHz samples) of the first sample next() emits
@@ -61,9 +61,9 @@ h2_pal_result_t h2_gizclaw_audio_decoder_seek(h2_gizclaw_audio_decoder_t *d,
  * its first sample. A track that ends before the target reports its end.
  * Always exact: the Ogg granule, the WAV frame, or the MP3 frame count from
  * the first frame or from a verified CBR landing. */
-bool h2_gizclaw_audio_decoder_origin(const h2_gizclaw_audio_decoder_t *d,
-                                     uint64_t *samples);
-void h2_gizclaw_audio_decoder_destroy(h2_gizclaw_audio_decoder_t *d);
+bool h2_gizclaw_audio_decoder_origin(const h2_gizclaw_audio_decoder_t* d,
+                                     uint64_t* samples);
+void h2_gizclaw_audio_decoder_destroy(h2_gizclaw_audio_decoder_t* d);
 
 /* Below: the pieces the MP3 and WAV parsers share with the front end. */
 
@@ -72,7 +72,7 @@ void h2_gizclaw_audio_decoder_destroy(h2_gizclaw_audio_decoder_t *d);
 #define H2_GIZCLAW_AUDIO_INPUT_BYTES 4096u
 typedef struct h2_gizclaw_audio_input {
   h2_gizclaw_audio_read_fn read;
-  void *user;
+  void* user;
   uint64_t position;
   size_t offset, len; /* Unread bytes are data[offset, offset + len). */
   bool eof;
@@ -81,22 +81,21 @@ typedef struct h2_gizclaw_audio_input {
 
 /* OK once at least `need` (<= INPUT_BYTES) unread bytes are buffered; EXIT
  * when the stream ends first, with whatever arrived still readable. */
-h2_pal_result_t h2_gizclaw_audio_input_fill(h2_gizclaw_audio_input_t *in,
+h2_pal_result_t h2_gizclaw_audio_input_fill(h2_gizclaw_audio_input_t* in,
                                             size_t need);
-void h2_gizclaw_audio_input_consume(h2_gizclaw_audio_input_t *in,
-                                    size_t count);
+void h2_gizclaw_audio_input_consume(h2_gizclaw_audio_input_t* in, size_t count);
 /* Discard `count` bytes, reading through the stream; EXIT if it ends first. */
-h2_pal_result_t h2_gizclaw_audio_input_skip(h2_gizclaw_audio_input_t *in,
+h2_pal_result_t h2_gizclaw_audio_input_skip(h2_gizclaw_audio_input_t* in,
                                             uint64_t count);
 /* The reader now delivers the file from `position` on. */
-void h2_gizclaw_audio_input_restart(h2_gizclaw_audio_input_t *in,
+void h2_gizclaw_audio_input_restart(h2_gizclaw_audio_input_t* in,
                                     uint64_t position);
 
 /* Mono PCM16 at the source rate. start indexes samples[0] on the track's
  * own timeline (encoder delay removed); a chunk that does not continue the
  * previous one starts a new resampler run. */
 typedef struct h2_gizclaw_audio_chunk {
-  const int16_t *samples;
+  const int16_t* samples;
   size_t count;
   uint64_t start;
 } h2_gizclaw_audio_chunk_t;
@@ -111,45 +110,45 @@ typedef struct h2_gizclaw_audio_chunk {
  * end marker, so a truncated file ends at its last whole frame. */
 typedef struct h2_gizclaw_mp3 h2_gizclaw_mp3_t;
 bool h2_gizclaw_mp3_header_valid(const uint8_t header[4]);
-h2_pal_result_t h2_gizclaw_mp3_create(const h2_pal_mem_api_t *allocator,
-                                      h2_gizclaw_audio_input_t *input,
-                                      h2_gizclaw_mp3_t **out);
+h2_pal_result_t h2_gizclaw_mp3_create(const h2_pal_mem_api_t* allocator,
+                                      h2_gizclaw_audio_input_t* input,
+                                      h2_gizclaw_mp3_t** out);
 /* One frame per call. EXIT at the end, with *end the track length. Ranged
  * seeks need a LAME Info (CBR) tag; seek_offset() and a resync seek are
  * UNSUPPORTED otherwise. */
-h2_pal_result_t h2_gizclaw_mp3_next(h2_gizclaw_mp3_t *m,
-                                    h2_gizclaw_audio_chunk_t *chunk,
-                                    uint64_t *end);
-uint32_t h2_gizclaw_mp3_rate(const h2_gizclaw_mp3_t *m);
-bool h2_gizclaw_mp3_headers_done(const h2_gizclaw_mp3_t *m);
+h2_pal_result_t h2_gizclaw_mp3_next(h2_gizclaw_mp3_t* m,
+                                    h2_gizclaw_audio_chunk_t* chunk,
+                                    uint64_t* end);
+uint32_t h2_gizclaw_mp3_rate(const h2_gizclaw_mp3_t* m);
+bool h2_gizclaw_mp3_headers_done(const h2_gizclaw_mp3_t* m);
 /* target is a sample index on the track's timeline. */
-h2_pal_result_t h2_gizclaw_mp3_seek_offset(const h2_gizclaw_mp3_t *m,
+h2_pal_result_t h2_gizclaw_mp3_seek_offset(const h2_gizclaw_mp3_t* m,
                                            uint64_t target, uint64_t total,
-                                           uint64_t *offset);
-h2_pal_result_t h2_gizclaw_mp3_seek(h2_gizclaw_mp3_t *m, uint64_t target,
+                                           uint64_t* offset);
+h2_pal_result_t h2_gizclaw_mp3_seek(h2_gizclaw_mp3_t* m, uint64_t target,
                                     bool resync);
-void h2_gizclaw_mp3_destroy(h2_gizclaw_mp3_t *m);
+void h2_gizclaw_mp3_destroy(h2_gizclaw_mp3_t* m);
 
 /* RIFF/WAVE with integer PCM of 8, 16, 24 or 32 bits or 32-bit float
  * (plain or WAVE_FORMAT_EXTENSIBLE), 1..8 channels at 8..48 kHz; other
  * encodings are UNSUPPORTED. Chunks before "data" stream past; a data size
  * of 0 or 0xFFFFFFFF means "until the end of the stream". */
 typedef struct h2_gizclaw_wav h2_gizclaw_wav_t;
-h2_pal_result_t h2_gizclaw_wav_create(const h2_pal_mem_api_t *allocator,
-                                      h2_gizclaw_audio_input_t *input,
-                                      h2_gizclaw_wav_t **out);
+h2_pal_result_t h2_gizclaw_wav_create(const h2_pal_mem_api_t* allocator,
+                                      h2_gizclaw_audio_input_t* input,
+                                      h2_gizclaw_wav_t** out);
 /* At most max_samples frames per call. EXIT at the end, with *end the
  * track length. */
-h2_pal_result_t h2_gizclaw_wav_next(h2_gizclaw_wav_t *w, size_t max_samples,
-                                    h2_gizclaw_audio_chunk_t *chunk,
-                                    uint64_t *end);
-uint32_t h2_gizclaw_wav_rate(const h2_gizclaw_wav_t *w);
-bool h2_gizclaw_wav_headers_done(const h2_gizclaw_wav_t *w);
-h2_pal_result_t h2_gizclaw_wav_seek_offset(const h2_gizclaw_wav_t *w,
+h2_pal_result_t h2_gizclaw_wav_next(h2_gizclaw_wav_t* w, size_t max_samples,
+                                    h2_gizclaw_audio_chunk_t* chunk,
+                                    uint64_t* end);
+uint32_t h2_gizclaw_wav_rate(const h2_gizclaw_wav_t* w);
+bool h2_gizclaw_wav_headers_done(const h2_gizclaw_wav_t* w);
+h2_pal_result_t h2_gizclaw_wav_seek_offset(const h2_gizclaw_wav_t* w,
                                            uint64_t target, uint64_t total,
-                                           uint64_t *offset);
-h2_pal_result_t h2_gizclaw_wav_seek(h2_gizclaw_wav_t *w, uint64_t target,
+                                           uint64_t* offset);
+h2_pal_result_t h2_gizclaw_wav_seek(h2_gizclaw_wav_t* w, uint64_t target,
                                     bool resync);
-void h2_gizclaw_wav_destroy(h2_gizclaw_wav_t *w);
+void h2_gizclaw_wav_destroy(h2_gizclaw_wav_t* w);
 
 #endif

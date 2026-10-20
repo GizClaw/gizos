@@ -4,7 +4,7 @@
 #include <stdint.h>
 /* Windows derived from this image's partition table, or NULL when the board
  * layout is not a fixed Loader/App layout. */
-const h2_fixed_layout_t *h2_bk_fixed_layout(void);
+const h2_fixed_layout_t* h2_bk_fixed_layout(void);
 int h2_bk_fixed_layout_active(void);
 uint8_t h2_bk_fixed_current_slot(void);
 int h2_bk_fixed_select(uint32_t partition_id);

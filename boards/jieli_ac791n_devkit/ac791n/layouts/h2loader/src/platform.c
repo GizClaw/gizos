@@ -22,10 +22,11 @@ const struct wifi_calibration_param wifi_calibration_param = {
     .xosc_l = 0x0b,
     .xosc_r = 0x0b,
     .pa_trim_data = {1, 7, 4, 7, 11, 1, 7},
-    .mcs_dgain = {
-        45, 45, 45, 42, 60, 60, 75, 70, 62, 52,
-        50, 38, 62, 80, 70, 62, 50, 48, 40, 36,
-    },
+    .mcs_dgain =
+        {
+            45, 45, 45, 42, 60, 60, 75, 70, 62, 52,
+            50, 38, 62, 80, 70, 62, 50, 48, 40, 36,
+        },
 };
 
 /* The SDK's weak accessors prefer calibration values already stored in VM.
@@ -33,13 +34,13 @@ const struct wifi_calibration_param wifi_calibration_param = {
  * board's RF values even after this board definition is corrected.  This
  * target has a fixed, documented RF network, so make the board values the
  * source of truth for both Bluetooth and Wi-Fi initialization. */
-void wifi_get_xosc(u8 *xosc) {
+void wifi_get_xosc(u8* xosc) {
   if (xosc == NULL) return;
   xosc[0] = wifi_calibration_param.xosc_l;
   xosc[1] = wifi_calibration_param.xosc_r;
 }
 
-int wifi_get_pa_trim_data(u8 *pa_data) {
+int wifi_get_pa_trim_data(u8* pa_data) {
   if (pa_data == NULL) return 0;
   memcpy(pa_data, wifi_calibration_param.pa_trim_data,
          sizeof(wifi_calibration_param.pa_trim_data));
@@ -59,22 +60,19 @@ const struct irq_info irq_info_table[] = {
 /* UART1 owns PA6: do not also register UART0 on that receive pin. The SDK
  * buffered printf backend and Loader share this one bidirectional device. */
 UART1_PLATFORM_DATA_BEGIN(uart1_data).baudrate = H2_JIELI_CONSOLE_BAUD,
-    .disable_tx_irq = 1,
-    .port = PORT_REMAP, .output_channel = OUTPUT_CHANNEL0,
-    .input_channel = INPUT_CHANNEL0,
-    .tx_pin = IO_PORTB_03, .rx_pin = IO_PORTA_06,
-    .max_continue_recv_cnt = 1024, .idle_sys_clk_cnt = 500000,
-    .clk_src = PLL_48M, .flags = UART_RX_USE_DMA, UART1_PLATFORM_DATA_END();
+    .disable_tx_irq = 1, .port = PORT_REMAP, .output_channel = OUTPUT_CHANNEL0,
+    .input_channel = INPUT_CHANNEL0, .tx_pin = IO_PORTB_03,
+    .rx_pin = IO_PORTA_06, .max_continue_recv_cnt = 1024,
+    .idle_sys_clk_cnt = 500000, .clk_src = PLL_48M, .flags = UART_RX_USE_DMA,
+    UART1_PLATFORM_DATA_END();
 
 static const struct otg_dev_data otg_data = {
     /* Keep USB code linked for the vendor update library, but UART1 owns the
      * Loader transport and diagnostics.  Do not start the runtime OTG/SOF
      * machinery: the native USB download ROM remains available before this
      * firmware boots. */
-    .usb_dev_en = 0x00,
-    .slave_online_cnt = 10,
-    .slave_offline_cnt = 10,
-    .detect_mode = OTG_SLAVE_MODE,
+    .usb_dev_en = 0x00,         .slave_online_cnt = 10,
+    .slave_offline_cnt = 10,    .detect_mode = OTG_SLAVE_MODE,
     .detect_time_interval = 50,
 };
 
@@ -89,31 +87,26 @@ static const struct emi_platform_data emi_data = {
     .data_bit_en = 0,
 };
 
-SW_IIC_PLATFORM_DATA_BEGIN(sw_iic0_data)
-    .clk_pin = IO_PORTH_00,
-    .dat_pin = IO_PORTH_01,
-    .sw_iic_delay = 50,
-SW_IIC_PLATFORM_DATA_END()
+SW_IIC_PLATFORM_DATA_BEGIN(sw_iic0_data).clk_pin = IO_PORTH_00,
+    .dat_pin = IO_PORTH_01, .sw_iic_delay = 50,
+    SW_IIC_PLATFORM_DATA_END()
 
-SD0_PLATFORM_DATA_BEGIN(sd0_data)
-    .port = TCFG_SD_PORTS,
-    .priority = 3,
-    .data_width = TCFG_SD_DAT_WIDTH,
-    .speed = TCFG_SD_CLK,
-    .detect_mode = TCFG_SD_DET_MODE,
-    .detect_func = NULL,
-SD0_PLATFORM_DATA_END()
+        SD0_PLATFORM_DATA_BEGIN(sd0_data)
+            .port = TCFG_SD_PORTS,
+  .priority = 3, .data_width = TCFG_SD_DAT_WIDTH, .speed = TCFG_SD_CLK,
+  .detect_mode = TCFG_SD_DET_MODE, .detect_func = NULL,
+  SD0_PLATFORM_DATA_END()
 
-static const struct dac_platform_data dac_data = {
-    .sw_differ = 0,
-    .pa_auto_mute = 1,
-    .pa_mute_port = TCFG_DAC_MUTE_PORT,
-    .pa_mute_value = TCFG_DAC_MUTE_VALUE,
-    .differ_output = 0,
-    .hw_channel = 0x05,
-    .ch_num = 4,
-    .vcm_init_delay_ms = 1000,
-    .mute_delay_ms = 200,
+      static const struct dac_platform_data dac_data = {
+          .sw_differ = 0,
+          .pa_auto_mute = 1,
+          .pa_mute_port = TCFG_DAC_MUTE_PORT,
+          .pa_mute_value = TCFG_DAC_MUTE_VALUE,
+          .differ_output = 0,
+          .hw_channel = 0x05,
+          .ch_num = 4,
+          .vcm_init_delay_ms = 1000,
+          .mute_delay_ms = 200,
 };
 
 static const struct adc_platform_data adc_data = {
@@ -129,7 +122,7 @@ static const struct audio_pf_data audio_pf_data = {
 };
 
 static const struct audio_platform_data audio_data = {
-    .private_data = (void *)&audio_pf_data,
+    .private_data = (void*)&audio_pf_data,
 };
 
 static const struct low_power_param power_param = {
@@ -177,15 +170,15 @@ static const struct wakeup_param h2_rf_wakeup_param = {
 };
 
 REGISTER_DEVICES(device_table) = {
-    {"uart1", &uart_dev_ops, (void *)&uart1_data},
-    {"otg", &usb_dev_ops, (void *)&otg_data},
-    {"emi", &emi_dev_ops, (void *)&emi_data},
-    {"iic0", &iic_dev_ops, (void *)&sw_iic0_data},
-    {"sd0", &sd_dev_ops, (void *)&sd0_data},
+    {"uart1", &uart_dev_ops, (void*)&uart1_data},
+    {"otg", &usb_dev_ops, (void*)&otg_data},
+    {"emi", &emi_dev_ops, (void*)&emi_data},
+    {"iic0", &iic_dev_ops, (void*)&sw_iic0_data},
+    {"sd0", &sd_dev_ops, (void*)&sd0_data},
     /* Keep the SD device graph identical to H2Loader.  The partition wrapper
      * is used by the shared board filesystem implementation when the card has
      * a conventional MBR partition table. */
-    {"audio", &audio_dev_ops, (void *)&audio_data},
+    {"audio", &audio_dev_ops, (void*)&audio_data},
     {"rtc", &rtc_dev_ops, NULL},
 };
 
@@ -197,12 +190,10 @@ void debug_uart_init(void) {
 #endif
 
 void board_early_init(void) {
-  dac_early_init(
-      0,
-      dac_data.differ_output
-          ? (dac_data.ch_num > 1 ? 0x0f : 0x03)
-          : dac_data.hw_channel,
-      dac_data.vcm_init_delay_ms);
+  dac_early_init(0,
+                 dac_data.differ_output ? (dac_data.ch_num > 1 ? 0x0f : 0x03)
+                                        : dac_data.hw_channel,
+                 dac_data.vcm_init_delay_ms);
   devices_init();
   (void)h2_jieli_ac791n_devkit_console_start();
 }
@@ -218,10 +209,10 @@ void board_init(void) {
   cfg_file_parse();
 }
 
-void app_default_event_handler(struct sys_event *event) {
+void app_default_event_handler(struct sys_event* event) {
 #ifdef CONFIG_BT_ENABLE
-  extern int h2_jieli_ac791n_devkit_ble_bt_event_handler(
-      struct sys_event *event);
+  extern int h2_jieli_ac791n_devkit_ble_bt_event_handler(struct sys_event *
+                                                         event);
   if (event != NULL && event->type == SYS_BT_EVENT) {
     (void)h2_jieli_ac791n_devkit_ble_bt_event_handler(event);
   }

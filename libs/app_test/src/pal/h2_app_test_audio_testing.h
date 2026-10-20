@@ -14,8 +14,8 @@ extern "C" {
  * lock is already held. The caller owns a successful hold and must release it
  * before calling any decorator operation that should succeed; a failed test
  * assertion aborts the process, so no hold outlives its test. */
-bool h2_app_test_audio_test_hold_fixture_lock(h2_app_test_audio_t *audio);
-void h2_app_test_audio_test_release_fixture_lock(h2_app_test_audio_t *audio);
+bool h2_app_test_audio_test_hold_fixture_lock(h2_app_test_audio_t* audio);
+void h2_app_test_audio_test_release_fixture_lock(h2_app_test_audio_t* audio);
 
 #ifdef __cplusplus
 }

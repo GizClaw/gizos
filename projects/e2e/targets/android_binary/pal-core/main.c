@@ -15,8 +15,8 @@
 static pthread_mutex_t log_lock = PTHREAD_MUTEX_INITIALIZER;
 static int last_priority;
 static char last_tag[128], last_message[1024];
-static void (*logd_logger)(const struct __android_log_message *);
-static void observe_native_log(const struct __android_log_message *entry) {
+static void (*logd_logger)(const struct __android_log_message*);
+static void observe_native_log(const struct __android_log_message* entry) {
   pthread_mutex_lock(&log_lock);
   last_priority = entry->priority;
   snprintf(last_tag, sizeof(last_tag), "%s", entry->tag ? entry->tag : "");
@@ -25,8 +25,8 @@ static void observe_native_log(const struct __android_log_message *entry) {
   pthread_mutex_unlock(&log_lock);
   logd_logger(entry);
 }
-static h2_pal_result_t log_seen(void *user, h2_pal_log_level_t level,
-                                const char *scope, const char *message) {
+static h2_pal_result_t log_seen(void* user, h2_pal_log_level_t level,
+                                const char* scope, const char* message) {
   (void)user;
   static const int priorities[] = {ANDROID_LOG_DEBUG, ANDROID_LOG_INFO,
                                    ANDROID_LOG_WARN, ANDROID_LOG_ERROR};
@@ -38,12 +38,11 @@ static h2_pal_result_t log_seen(void *user, h2_pal_log_level_t level,
   pthread_mutex_unlock(&log_lock);
   return ok ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE;
 }
-static h2_pal_result_t resources(void *user, h2_pal_core_resources_t *out) {
+static h2_pal_result_t resources(void* user, h2_pal_core_resources_t* out) {
   (void)user;
   h2_android_platform_resource_stats_t v;
   int rc = h2_android_platform_get_resource_stats(&v);
-  if (rc)
-    return rc;
+  if (rc) return rc;
   *out = (h2_pal_core_resources_t){.tasks = v.tasks,
                                    .task_stack_bytes = v.task_stack_bytes,
                                    .queues = v.queues,
@@ -56,25 +55,24 @@ static h2_pal_result_t resources(void *user, h2_pal_core_resources_t *out) {
                                    .allocation_bytes = v.allocation_bytes};
   return H2_PAL_OK;
 }
-static h2_pal_result_t fault(void *user, int after) {
+static h2_pal_result_t fault(void* user, int after) {
   (void)user;
   return h2_android_platform_task_allocation_fault(after);
 }
 JNIEXPORT jint JNICALL
 Java_com_haivivi_gizos_e2e_palcore_MainActivity_nativeRun(
-    JNIEnv *env, jclass type, jstring report_path, jstring image_version) {
+    JNIEnv* env, jclass type, jstring report_path, jstring image_version) {
   (void)type;
-  void (*set_logger)(void (*)(const struct __android_log_message *)) =
+  void (*set_logger)(void (*)(const struct __android_log_message*)) =
       dlsym(RTLD_DEFAULT, "__android_log_set_logger");
   int32_t (*set_priority)(int32_t) =
       dlsym(RTLD_DEFAULT, "__android_log_set_minimum_priority");
   logd_logger = dlsym(RTLD_DEFAULT, "__android_log_logd_logger");
   if (!set_logger || !set_priority || !logd_logger)
     return H2_PAL_ERR_UNAVAILABLE;
-  const char *path = (*env)->GetStringUTFChars(env, report_path, NULL);
-  if (!path)
-    return H2_PAL_ERR_NO_MEMORY;
-  const char *version = (*env)->GetStringUTFChars(env, image_version, NULL);
+  const char* path = (*env)->GetStringUTFChars(env, report_path, NULL);
+  if (!path) return H2_PAL_ERR_NO_MEMORY;
+  const char* version = (*env)->GetStringUTFChars(env, image_version, NULL);
   if (!version) {
     (*env)->ReleaseStringUTFChars(env, report_path, path);
     return H2_PAL_ERR_NO_MEMORY;
@@ -106,10 +104,8 @@ Java_com_haivivi_gizos_e2e_palcore_MainActivity_nativeRun(
       fflush(stdout);
       dup2(saved_stdout, STDOUT_FILENO);
     }
-    if (saved_stdout >= 0)
-      close(saved_stdout);
-    if (output >= 0)
-      close(output);
+    if (saved_stdout >= 0) close(saved_stdout);
+    if (output >= 0) close(output);
     set_logger(logd_logger);
     set_priority(old_priority);
   }

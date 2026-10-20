@@ -30,12 +30,12 @@ typedef struct h2_peer h2_peer_t;
  */
 typedef struct h2_peer_config {
   /** Required borrowed allocator used for every package-owned allocation. */
-  const h2_pal_mem_api_t *mem;
+  const h2_pal_mem_api_t* mem;
   /**
    * Required borrowed logger used for all bounded H2Peer diagnostics. Its
    * API object and backend state must remain valid for the owner lifetime.
    */
-  const h2_pal_log_api_t *log;
+  const h2_pal_log_api_t* log;
   /**
    * Required borrowed socket capability used by ICE transport providers.
    * Production H2Peer requires UDP open/send/receive plus bounded active TCP
@@ -43,24 +43,24 @@ typedef struct h2_peer_config {
    * TCP is used only for RFC 6544 active-to-passive ICE candidates; TURN over
    * TCP/TLS and local passive listening are not supported.
    */
-  const h2_pal_net_api_t *net;
+  const h2_pal_net_api_t* net;
   /** Required borrowed bounded queue capability used by peer worker tasks. */
-  const h2_pal_queue_api_t *queue;
+  const h2_pal_queue_api_t* queue;
   /** Required borrowed synchronization capability used by protocol state. */
-  const h2_pal_sync_api_t *sync;
+  const h2_pal_sync_api_t* sync;
   /** Required borrowed task capability used by peer worker tasks. */
-  const h2_pal_task_api_t *task;
+  const h2_pal_task_api_t* task;
   /**
    * Required borrowed millisecond and microsecond monotonic clocks used by
    * bounded polling, timeouts, and protocol-owner performance telemetry.
    */
-  const h2_pal_time_api_t *time;
+  const h2_pal_time_api_t* time;
   /** Required borrowed entropy and cryptographic capability. */
-  const h2_pal_crypto_api_t *crypto;
+  const h2_pal_crypto_api_t* crypto;
   /** Required borrowed datagram TLS capability used by WebRTC transports. */
-  const h2_pal_dtls_api_t *dtls;
+  const h2_pal_dtls_api_t* dtls;
   /** Required borrowed SCTP capability used by WebRTC DataChannels. */
-  const h2_pal_sctp_api_t *sctp;
+  const h2_pal_sctp_api_t* sctp;
 } h2_peer_config_t;
 
 /**
@@ -78,8 +78,8 @@ typedef struct h2_peer_config {
  * @return H2_PAL_OK, H2_PAL_ERR_INVALID_ARG, H2_PAL_ERR_UNSUPPORTED, or
  *     H2_PAL_ERR_NO_MEMORY.
  */
-h2_pal_result_t h2_peer_create(const h2_peer_config_t *config,
-                               h2_peer_t **out_peer);
+h2_pal_result_t h2_peer_create(const h2_peer_config_t* config,
+                               h2_peer_t** out_peer);
 
 /**
  * Returns the WebRTC PAL view borrowed from an H2Peer instance.
@@ -103,7 +103,7 @@ h2_pal_result_t h2_peer_create(const h2_peer_config_t *config,
  * @param peer Required live H2Peer instance.
  * @return Borrowed WebRTC API view, or NULL for an invalid instance.
  */
-const h2_pal_webrtc_api_t *h2_peer_webrtc_api(h2_peer_t *peer);
+const h2_pal_webrtc_api_t* h2_peer_webrtc_api(h2_peer_t* peer);
 
 /**
  * Closes all live peers and channels and destroys an H2Peer instance.
@@ -118,7 +118,7 @@ const h2_pal_webrtc_api_t *h2_peer_webrtc_api(h2_peer_t *peer);
  *
  * @param peer Address of the owned instance pointer.
  */
-void h2_peer_destroy(h2_peer_t **peer);
+void h2_peer_destroy(h2_peer_t** peer);
 
 #ifdef __cplusplus
 }

@@ -21,7 +21,7 @@ extern "C" {
  * The descriptor and input arrays must not overlap framebuffer storage.
  */
 typedef struct h2_raster2d_surface {
-  uint16_t *pixels;
+  uint16_t* pixels;
   size_t capacity_pixels;
   size_t width;
   size_t height;
@@ -63,9 +63,9 @@ typedef struct h2_raster2d_clip {
  * Synchronous, no allocation or retained pointers, not ISR-safe. The caller
  * serializes mutations; all borrowed storage remains valid throughout the call.
  */
-h2_pal_result_t h2_raster2d_palette_blend(const uint16_t *a, const uint16_t *b,
+h2_pal_result_t h2_raster2d_palette_blend(const uint16_t* a, const uint16_t* b,
                                           size_t count, unsigned progress,
-                                          uint16_t *out, size_t out_capacity);
+                                          uint16_t* out, size_t out_capacity);
 
 /**
  * @brief Replay rectangles in order; later rectangles overwrite earlier ones.
@@ -88,12 +88,12 @@ h2_pal_result_t h2_raster2d_palette_blend(const uint16_t *a, const uint16_t *b,
  * inputs unchanged throughout the call; no input may overlap framebuffer
  * storage. Native RGB565 values are not a serialized byte stream. Not ISR-safe.
  */
-h2_pal_result_t h2_raster2d_draw_rects(const h2_raster2d_surface_t *surface,
-                                       const h2_raster2d_rect_t *rects,
+h2_pal_result_t h2_raster2d_draw_rects(const h2_raster2d_surface_t* surface,
+                                       const h2_raster2d_rect_t* rects,
                                        size_t rect_count,
-                                       const uint16_t *palette,
+                                       const uint16_t* palette,
                                        size_t palette_count,
-                                       const h2_raster2d_clip_t *clip);
+                                       const h2_raster2d_clip_t* clip);
 
 #ifdef __cplusplus
 }

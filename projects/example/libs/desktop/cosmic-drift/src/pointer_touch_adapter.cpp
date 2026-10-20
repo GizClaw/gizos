@@ -16,7 +16,7 @@ PointerTouchAdapter::PointerTouchAdapter(std::uint32_t width,
   api_.vtable = &vtable;
 }
 
-const h2_pal_touch_api_t *PointerTouchAdapter::api() const { return &api_; }
+const h2_pal_touch_api_t* PointerTouchAdapter::api() const { return &api_; }
 
 std::int32_t PointerTouchAdapter::clamp_x(std::int32_t x) const {
   return width_ == 0u
@@ -68,8 +68,8 @@ void PointerTouchAdapter::update(std::int32_t x, std::int32_t y, bool pressed) {
   pressed_ = pressed;
 }
 
-h2_pal_result_t PointerTouchAdapter::open(void *user) {
-  auto *adapter = static_cast<PointerTouchAdapter *>(user);
+h2_pal_result_t PointerTouchAdapter::open(void* user) {
+  auto* adapter = static_cast<PointerTouchAdapter*>(user);
   if (adapter == nullptr || adapter->width_ == 0u || adapter->height_ == 0u) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -80,9 +80,9 @@ h2_pal_result_t PointerTouchAdapter::open(void *user) {
   return H2_PAL_OK;
 }
 
-h2_pal_result_t PointerTouchAdapter::get_info(void *user,
-                                              h2_pal_touch_info_t *out_info) {
-  auto *adapter = static_cast<PointerTouchAdapter *>(user);
+h2_pal_result_t PointerTouchAdapter::get_info(void* user,
+                                              h2_pal_touch_info_t* out_info) {
+  auto* adapter = static_cast<PointerTouchAdapter*>(user);
   if (adapter == nullptr || out_info == nullptr) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -94,9 +94,9 @@ h2_pal_result_t PointerTouchAdapter::get_info(void *user,
   return H2_PAL_OK;
 }
 
-h2_pal_result_t
-PointerTouchAdapter::poll_event(void *user, h2_pal_touch_event_t *out_event) {
-  auto *adapter = static_cast<PointerTouchAdapter *>(user);
+h2_pal_result_t PointerTouchAdapter::poll_event(
+    void* user, h2_pal_touch_event_t* out_event) {
+  auto* adapter = static_cast<PointerTouchAdapter*>(user);
   if (adapter == nullptr || out_event == nullptr) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -113,8 +113,8 @@ PointerTouchAdapter::poll_event(void *user, h2_pal_touch_event_t *out_event) {
   return H2_PAL_OK;
 }
 
-h2_pal_result_t PointerTouchAdapter::close(void *user) {
-  auto *adapter = static_cast<PointerTouchAdapter *>(user);
+h2_pal_result_t PointerTouchAdapter::close(void* user) {
+  auto* adapter = static_cast<PointerTouchAdapter*>(user);
   if (adapter == nullptr) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -126,4 +126,4 @@ h2_pal_result_t PointerTouchAdapter::close(void *user) {
   return H2_PAL_OK;
 }
 
-} // namespace h2::cosmic_drift
+}  // namespace h2::cosmic_drift

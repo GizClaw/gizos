@@ -14,9 +14,9 @@
 static _Atomic size_t h2_web_allocations;
 static _Atomic size_t h2_web_allocation_bytes;
 
-static void *h2_web_alloc(void *user, size_t size) {
+static void* h2_web_alloc(void* user, size_t size) {
   (void)user;
-  void *memory = malloc(size);
+  void* memory = malloc(size);
   if (memory != NULL) {
     ++h2_web_allocations;
     h2_web_allocation_bytes += malloc_usable_size(memory);
@@ -24,9 +24,8 @@ static void *h2_web_alloc(void *user, size_t size) {
   return memory;
 }
 
-static void *h2_web_realloc(void *user, void *memory, size_t size) {
-  if (memory == NULL)
-    return h2_web_alloc(user, size);
+static void* h2_web_realloc(void* user, void* memory, size_t size) {
+  if (memory == NULL) return h2_web_alloc(user, size);
   const size_t old_size = malloc_usable_size(memory);
   if (size == 0u) {
     --h2_web_allocations;
@@ -34,16 +33,15 @@ static void *h2_web_realloc(void *user, void *memory, size_t size) {
     free(memory);
     return NULL;
   }
-  void *next = realloc(memory, size);
+  void* next = realloc(memory, size);
   if (next != NULL)
     h2_web_allocation_bytes += malloc_usable_size(next) - old_size;
   return next;
 }
 
-static void h2_web_free(void *user, void *memory) {
+static void h2_web_free(void* user, void* memory) {
   (void)user;
-  if (memory == NULL)
-    return;
+  if (memory == NULL) return;
   --h2_web_allocations;
   h2_web_allocation_bytes -= malloc_usable_size(memory);
   free(memory);
@@ -75,17 +73,16 @@ EM_JS(void, h2_web_console_write,
 });
 /* clang-format on */
 
-static int h2_web_log_write(void *user, h2_pal_log_level_t level,
-                            const char *scope, const char *message) {
+static int h2_web_log_write(void* user, h2_pal_log_level_t level,
+                            const char* scope, const char* message) {
   (void)user;
-  if (message == NULL || level < H2_PAL_LOG_DEBUG ||
-      level > H2_PAL_LOG_ERROR) {
+  if (message == NULL || level < H2_PAL_LOG_DEBUG || level > H2_PAL_LOG_ERROR) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  (void)h2_web_main_call(h2_web_console_write,
-                         (const void *[]){&(int){(int)level},
-                                          &(const char *){scope},
-                                          &(const char *){message}});
+  (void)h2_web_main_call(
+      h2_web_console_write,
+      (const void*[]){&(int){(int)level}, &(const char*){scope},
+                      &(const char*){message}});
   return H2_PAL_OK;
 }
 
@@ -106,26 +103,23 @@ EM_JS(void, h2_web_wall_now_ms,
 });
 /* clang-format on */
 
-static h2_pal_result_t h2_web_get_monotonic_us(void *user, uint64_t *out_us) {
+static h2_pal_result_t h2_web_get_monotonic_us(void* user, uint64_t* out_us) {
   (void)user;
-  if (out_us == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+  if (out_us == NULL) return H2_PAL_ERR_INVALID_ARG;
   *out_us = (uint64_t)(emscripten_get_now() * 1000.0);
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t h2_web_get_monotonic_ms(void *user, uint64_t *out_ms) {
+static h2_pal_result_t h2_web_get_monotonic_ms(void* user, uint64_t* out_ms) {
   (void)user;
-  if (out_ms == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+  if (out_ms == NULL) return H2_PAL_ERR_INVALID_ARG;
   *out_ms = (uint64_t)emscripten_get_now();
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t h2_web_get_wall_ms(void *user, uint64_t *out_ms) {
-  h2_web_platform_t *platform = user;
-  if (platform == NULL || out_ms == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+static h2_pal_result_t h2_web_get_wall_ms(void* user, uint64_t* out_ms) {
+  h2_web_platform_t* platform = user;
+  if (platform == NULL || out_ms == NULL) return H2_PAL_ERR_INVALID_ARG;
   *out_ms = 0u;
   const double value =
       ((double)h2_web_main_call(h2_web_wall_now_ms, NULL).f64) +
@@ -136,8 +130,8 @@ static h2_pal_result_t h2_web_get_wall_ms(void *user, uint64_t *out_ms) {
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t h2_web_set_wall_ms(void *user, uint64_t wall_ms) {
-  h2_web_platform_t *platform = user;
+static h2_pal_result_t h2_web_set_wall_ms(void* user, uint64_t wall_ms) {
+  h2_web_platform_t* platform = user;
   if (platform == NULL || wall_ms > UINT64_C(9007199254740991))
     return H2_PAL_ERR_INVALID_ARG;
   const double host = ((double)h2_web_main_call(h2_web_wall_now_ms, NULL).f64);
@@ -148,22 +142,21 @@ static h2_pal_result_t h2_web_set_wall_ms(void *user, uint64_t wall_ms) {
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t
-h2_web_get_wall_status(void *user, h2_pal_time_wall_status_t *out_status) {
-  if (out_status == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+static h2_pal_result_t h2_web_get_wall_status(
+    void* user, h2_pal_time_wall_status_t* out_status) {
+  if (out_status == NULL) return H2_PAL_ERR_INVALID_ARG;
   uint64_t wall_ms = 0u;
   h2_pal_result_t rc = h2_web_get_wall_ms(user, &wall_ms);
   *out_status = (h2_pal_time_wall_status_t){
       .valid = rc == H2_PAL_OK,
-      .source = ((h2_web_platform_t *)user)->wall_user_calibrated
+      .source = ((h2_web_platform_t*)user)->wall_user_calibrated
                     ? H2_PAL_TIME_WALL_SOURCE_USER
                     : H2_PAL_TIME_WALL_SOURCE_UNKNOWN,
   };
   return rc;
 }
 
-static h2_pal_result_t h2_web_sleep(void *user, uint32_t ms) {
+static h2_pal_result_t h2_web_sleep(void* user, uint32_t ms) {
   return h2_web_platform_sleep_ms(user, ms);
 }
 
@@ -176,16 +169,13 @@ static const h2_pal_time_vtable_t h2_web_clock_vtable = {
     .get_wall_status = h2_web_get_wall_status,
 };
 
-static h2_pal_result_t h2_web_firmware_current(void *user,
-                                               h2_pal_firmware_info_t *out) {
-  h2_web_platform_t *platform = user;
-  if (out == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+static h2_pal_result_t h2_web_firmware_current(void* user,
+                                               h2_pal_firmware_info_t* out) {
+  h2_web_platform_t* platform = user;
+  if (out == NULL) return H2_PAL_ERR_INVALID_ARG;
   memset(out, 0, sizeof(*out));
-  if (platform == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
-  if (platform->firmware_info.version[0] == '\0')
-    return H2_PAL_ERR_UNSUPPORTED;
+  if (platform == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (platform->firmware_info.version[0] == '\0') return H2_PAL_ERR_UNSUPPORTED;
   *out = platform->firmware_info;
   return H2_PAL_OK;
 }
@@ -193,14 +183,13 @@ static const h2_pal_firmware_info_vtable_t h2_web_firmware_vtable = {
     .get_current = h2_web_firmware_current,
 };
 
-static void *h2_web_pump_worker(void *argument) {
-  h2_web_platform_t *platform = argument;
+static void* h2_web_pump_worker(void* argument) {
+  h2_web_platform_t* platform = argument;
   pthread_mutex_lock(&platform->pump_mutex);
   while (!platform->pump_stop) {
     while (!platform->pump_scheduled && !platform->pump_stop)
       pthread_cond_wait(&platform->pump_changed, &platform->pump_mutex);
-    if (platform->pump_stop)
-      break;
+    if (platform->pump_stop) break;
     platform->pump_scheduled = false;
     pthread_mutex_unlock(&platform->pump_mutex);
     (void)h2_web_platform_pump(platform, 32u, NULL);
@@ -210,11 +199,10 @@ static void *h2_web_pump_worker(void *argument) {
   return NULL;
 }
 
-void h2_web_platform_request_pump(h2_web_platform_t *platform,
+void h2_web_platform_request_pump(h2_web_platform_t* platform,
                                   uint64_t deadline_ms) {
   (void)deadline_ms;
-  if (platform == NULL)
-    return;
+  if (platform == NULL) return;
   pthread_mutex_lock(&platform->pump_mutex);
   if (!platform->pump_stop) {
     platform->pump_scheduled = true;
@@ -223,17 +211,17 @@ void h2_web_platform_request_pump(h2_web_platform_t *platform,
   pthread_mutex_unlock(&platform->pump_mutex);
 }
 
-void h2_web_platform_schedule(h2_web_platform_t *platform) {
+void h2_web_platform_schedule(h2_web_platform_t* platform) {
   h2_web_platform_request_pump(platform, 0u);
 }
 
-h2_web_platform_t *
-h2_web_platform_create(const h2_web_platform_config_t *config) {
+h2_web_platform_t* h2_web_platform_create(
+    const h2_web_platform_config_t* config) {
   return h2_web_platform_create_with_task_allocator(config, NULL);
 }
 
-h2_web_platform_t *h2_web_platform_create_with_task_allocator(
-    const h2_web_platform_config_t *config, const h2_pal_mem_api_t *allocator) {
+h2_web_platform_t* h2_web_platform_create_with_task_allocator(
+    const h2_web_platform_config_t* config, const h2_pal_mem_api_t* allocator) {
   if (allocator != NULL &&
       (allocator->vtable == NULL || allocator->vtable->alloc == NULL ||
        allocator->vtable->free == NULL))
@@ -248,7 +236,7 @@ h2_web_platform_t *h2_web_platform_create_with_task_allocator(
       width * height > SIZE_MAX / sizeof(uint32_t)) {
     return NULL;
   }
-  h2_web_platform_t *platform = calloc(1u, sizeof(*platform));
+  h2_web_platform_t* platform = calloc(1u, sizeof(*platform));
   if (platform == NULL) {
     return NULL;
   }
@@ -256,9 +244,7 @@ h2_web_platform_t *h2_web_platform_create_with_task_allocator(
   platform->height = config->display_height;
   platform->task_allocator = allocator != NULL ? *allocator : h2_web_mem_api;
   platform->clock_api =
-      (h2_pal_time_api_t){
-      .user = platform,
-      .vtable = &h2_web_clock_vtable};
+      (h2_pal_time_api_t){.user = platform, .vtable = &h2_web_clock_vtable};
   platform->firmware_info_api = (h2_pal_firmware_info_api_t){
       .user = platform, .vtable = &h2_web_firmware_vtable};
   pthread_mutex_init(&platform->async_mutex, NULL);
@@ -318,7 +304,7 @@ h2_web_platform_t *h2_web_platform_create_with_task_allocator(
   return platform;
 }
 
-h2_pal_result_t h2_web_platform_destroy(h2_web_platform_t *platform) {
+h2_pal_result_t h2_web_platform_destroy(h2_web_platform_t* platform) {
   if (platform == NULL) {
     return H2_PAL_OK;
   }
@@ -340,8 +326,7 @@ h2_pal_result_t h2_web_platform_destroy(h2_web_platform_t *platform) {
             h2_web_platform_webrtc_busy(platform);
     int unused;
     h2_web_state_leave(&unused);
-    if (busy)
-      return H2_PAL_ERR_BUSY;
+    if (busy) return H2_PAL_ERR_BUSY;
     pthread_mutex_lock(&platform->pump_mutex);
     if (platform->pumping) {
       pthread_mutex_unlock(&platform->pump_mutex);
@@ -349,7 +334,7 @@ h2_pal_result_t h2_web_platform_destroy(h2_web_platform_t *platform) {
     }
     platform->shutting_down = true;
     if (h2_web_thread_core_destroy(&platform->executor) != H2_PAL_OK) {
-    platform->shutting_down = false;
+      platform->shutting_down = false;
       pthread_mutex_unlock(&platform->pump_mutex);
       return H2_PAL_ERR_BUSY;
     }
@@ -361,8 +346,7 @@ h2_pal_result_t h2_web_platform_destroy(h2_web_platform_t *platform) {
     int joined = emscripten_is_main_runtime_thread()
                      ? pthread_tryjoin_np(platform->pump_thread, NULL)
                      : pthread_join(platform->pump_thread, NULL);
-    if (joined != 0)
-      return H2_PAL_ERR_BUSY;
+    if (joined != 0) return H2_PAL_ERR_BUSY;
     platform->pump_thread = 0;
   }
   h2_web_platform_serial_deinit(platform);
@@ -382,9 +366,8 @@ h2_pal_result_t h2_web_platform_destroy(h2_web_platform_t *platform) {
   return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_web_platform_pump(h2_web_platform_t *platform,
-                                     size_t work_budget,
-                                     size_t *out_resumed) {
+h2_pal_result_t h2_web_platform_pump(h2_web_platform_t* platform,
+                                     size_t work_budget, size_t* out_resumed) {
   if (out_resumed != NULL) {
     *out_resumed = 0u;
   }
@@ -420,8 +403,8 @@ h2_pal_result_t h2_web_platform_pump(h2_web_platform_t *platform,
   return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_web_platform_task_cancel(h2_web_platform_t *platform,
-                                            h2_pal_task_t *task) {
+h2_pal_result_t h2_web_platform_task_cancel(h2_web_platform_t* platform,
+                                            h2_pal_task_t* task) {
   if (platform == NULL || platform->executor == NULL || task == NULL ||
       platform->shutting_down) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -429,15 +412,13 @@ h2_pal_result_t h2_web_platform_task_cancel(h2_web_platform_t *platform,
   return h2_web_thread_core_task_cancel(platform->executor, task);
 }
 
-const h2_pal_mem_api_t *h2_web_platform_mem_api(void) {
+const h2_pal_mem_api_t* h2_web_platform_mem_api(void) {
   return &h2_web_mem_api;
 }
 
-h2_pal_result_t
-h2_web_platform_get_resource_stats(h2_web_platform_t *platform,
-                                   h2_web_platform_resource_stats_t *out) {
-  if (out == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+h2_pal_result_t h2_web_platform_get_resource_stats(
+    h2_web_platform_t* platform, h2_web_platform_resource_stats_t* out) {
+  if (out == NULL) return H2_PAL_ERR_INVALID_ARG;
   memset(out, 0, sizeof(*out));
   if (platform == NULL || platform->shutting_down)
     return H2_PAL_ERR_INVALID_ARG;
@@ -461,9 +442,8 @@ h2_web_platform_get_resource_stats(h2_web_platform_t *platform,
   return H2_PAL_OK;
 }
 
-h2_pal_result_t
-h2_web_platform_configure_firmware_info(h2_web_platform_t *platform,
-                                        const char *version) {
+h2_pal_result_t h2_web_platform_configure_firmware_info(
+    h2_web_platform_t* platform, const char* version) {
   if (platform == NULL || version == NULL || version[0] == '\0')
     return H2_PAL_ERR_INVALID_ARG;
   if (platform->shutting_down || platform->firmware_info.version[0] != '\0')
@@ -471,93 +451,93 @@ h2_web_platform_configure_firmware_info(h2_web_platform_t *platform,
   size_t length = 0u;
   while (length < H2_PAL_FIRMWARE_VERSION_MAX && version[length] != '\0')
     ++length;
-  if (length == H2_PAL_FIRMWARE_VERSION_MAX)
-    return H2_PAL_ERR_TRUNCATED;
+  if (length == H2_PAL_FIRMWARE_VERSION_MAX) return H2_PAL_ERR_TRUNCATED;
   memcpy(platform->firmware_info.version, version, length + 1u);
   return H2_PAL_OK;
 }
 
-const h2_pal_firmware_info_api_t *
-h2_web_platform_firmware_info_api(h2_web_platform_t *platform) {
+const h2_pal_firmware_info_api_t* h2_web_platform_firmware_info_api(
+    h2_web_platform_t* platform) {
   return platform == NULL ? NULL : &platform->firmware_info_api;
 }
 
-const h2_pal_log_api_t *h2_web_platform_log_api(void) {
+const h2_pal_log_api_t* h2_web_platform_log_api(void) {
   return &h2_web_log_api;
 }
 
-const h2_pal_time_api_t *
-h2_web_platform_time_api(h2_web_platform_t *platform) {
+const h2_pal_time_api_t* h2_web_platform_time_api(h2_web_platform_t* platform) {
   return platform == NULL ? NULL : &platform->clock_api;
 }
 
-const h2_pal_task_api_t *
-h2_web_platform_task_api(h2_web_platform_t *platform) {
-  return platform == NULL ? NULL : h2_web_thread_core_task_api(platform->executor);
+const h2_pal_task_api_t* h2_web_platform_task_api(h2_web_platform_t* platform) {
+  return platform == NULL ? NULL
+                          : h2_web_thread_core_task_api(platform->executor);
 }
 
-const h2_pal_queue_api_t *
-h2_web_platform_queue_api(h2_web_platform_t *platform) {
-  return platform == NULL ? NULL : h2_web_thread_core_queue_api(platform->executor);
+const h2_pal_queue_api_t* h2_web_platform_queue_api(
+    h2_web_platform_t* platform) {
+  return platform == NULL ? NULL
+                          : h2_web_thread_core_queue_api(platform->executor);
 }
 
-const h2_pal_sync_api_t *
-h2_web_platform_sync_api(h2_web_platform_t *platform) {
-  return platform == NULL ? NULL : h2_web_thread_core_sync_api(platform->executor);
+const h2_pal_sync_api_t* h2_web_platform_sync_api(h2_web_platform_t* platform) {
+  return platform == NULL ? NULL
+                          : h2_web_thread_core_sync_api(platform->executor);
 }
 
-const h2_pal_pref_api_t *
-h2_web_platform_pref_api(h2_web_platform_t *platform) {
+const h2_pal_pref_api_t* h2_web_platform_pref_api(h2_web_platform_t* platform) {
   return platform == NULL ? NULL : &platform->pref_api;
 }
 
-const h2_pal_timer_api_t *
-h2_web_platform_timer_api(h2_web_platform_t *platform) {
-  return platform == NULL ? NULL : h2_web_thread_core_timer_api(platform->executor);
+const h2_pal_timer_api_t* h2_web_platform_timer_api(
+    h2_web_platform_t* platform) {
+  return platform == NULL ? NULL
+                          : h2_web_thread_core_timer_api(platform->executor);
 }
 
-const h2_pal_display_api_t *
-h2_web_platform_display_api(h2_web_platform_t *platform) {
+const h2_pal_display_api_t* h2_web_platform_display_api(
+    h2_web_platform_t* platform) {
   return platform == NULL ? NULL : &platform->display_api;
 }
 
-const h2_pal_audio_api_t *
-h2_web_platform_audio_api(h2_web_platform_t *platform) {
+const h2_pal_audio_api_t* h2_web_platform_audio_api(
+    h2_web_platform_t* platform) {
   return platform == NULL ? NULL : &platform->audio_api;
 }
 
-const h2_pal_video_decoder_api_t *
-h2_web_platform_video_decoder_api(h2_web_platform_t *platform) {
+const h2_pal_video_decoder_api_t* h2_web_platform_video_decoder_api(
+    h2_web_platform_t* platform) {
   return platform == NULL ? NULL : &platform->video_decoder_api;
 }
 
-const h2_pal_audio_decoder_api_t *
-h2_web_platform_audio_decoder_api(h2_web_platform_t *platform) {
+const h2_pal_audio_decoder_api_t* h2_web_platform_audio_decoder_api(
+    h2_web_platform_t* platform) {
   return platform == NULL ? NULL : &platform->audio_decoder_api;
 }
 
-const h2_pal_touch_api_t *
-h2_web_platform_touch_api(h2_web_platform_t *platform) {
+const h2_pal_touch_api_t* h2_web_platform_touch_api(
+    h2_web_platform_t* platform) {
   return platform == NULL ? NULL : &platform->touch_api;
 }
 
-const h2_pal_serial_host_api_t *
-h2_web_platform_serial_host_api(h2_web_platform_t *platform) {
+const h2_pal_serial_host_api_t* h2_web_platform_serial_host_api(
+    h2_web_platform_t* platform) {
   return platform == NULL ? NULL : &platform->serial_api;
 }
 
-const h2_pal_webrtc_api_t *
-h2_web_platform_webrtc_api(h2_web_platform_t *platform) {
+const h2_pal_webrtc_api_t* h2_web_platform_webrtc_api(
+    h2_web_platform_t* platform) {
   return platform == NULL ? NULL : &platform->webrtc_api;
 }
 
-const h2_pal_netif_api_t *
-h2_web_platform_netif_api(h2_web_platform_t *platform) {
+const h2_pal_netif_api_t* h2_web_platform_netif_api(
+    h2_web_platform_t* platform) {
   return platform == NULL ? NULL : &platform->netif_api;
 }
 
-const h2_pal_system_event_api_t *
-h2_web_platform_system_event_api(h2_web_platform_t *platform) {
+const h2_pal_system_event_api_t* h2_web_platform_system_event_api(
+    h2_web_platform_t* platform) {
   return platform == NULL || emscripten_is_main_runtime_thread()
-             ? NULL : &platform->system_event_api;
+             ? NULL
+             : &platform->system_event_api;
 }

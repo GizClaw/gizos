@@ -8,20 +8,19 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define TEST_RUNTIME_STATUS_CAPACITY \
-  (32768u - (6u * (256u - 1u) + 64u))
+#define TEST_RUNTIME_STATUS_CAPACITY (32768u - (6u * (256u - 1u) + 64u))
 
-static void *test_alloc(void *user, size_t len) {
+static void* test_alloc(void* user, size_t len) {
   (void)user;
   return malloc(len);
 }
 
-static void *test_realloc(void *user, void *pointer, size_t len) {
+static void* test_realloc(void* user, void* pointer, size_t len) {
   (void)user;
   return realloc(pointer, len);
 }
 
-static void test_free(void *user, void *pointer) {
+static void test_free(void* user, void* pointer) {
   (void)user;
   free(pointer);
 }
@@ -38,8 +37,8 @@ static const h2_pal_mem_api_t test_mem = {
 
 static h2_h2loader_host_status_t test_status(void) {
   h2_h2loader_host_status_t status = {
-      .capabilities = H2_H2LOADER_HOST_CAPABILITY_UART |
-                      H2_H2LOADER_HOST_CAPABILITY_BLE,
+      .capabilities =
+          H2_H2LOADER_HOST_CAPABILITY_UART | H2_H2LOADER_HOST_CAPABILITY_BLE,
       .active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER,
       .boot_intent = H2_H2LOADER_HOST_BOOT_INTENT_AUTO,
       .running_partition = 1u,
@@ -64,96 +63,93 @@ static h2_h2loader_host_status_t test_status(void) {
   return status;
 }
 
-static h2_pal_json_document_t *parse_json(
-    h2_yyjson_json_t *provider, const char *json, size_t size,
-    h2_pal_json_value_t **out_root) {
-  h2_pal_json_document_t *document = NULL;
-  assert(h2_pal_json_document_parse(
-             h2_yyjson_json_api(provider), (const uint8_t *)json, size, NULL,
-             &document) == H2_PAL_OK);
-  assert(h2_pal_json_document_root(
-             h2_yyjson_json_api(provider), document, out_root) == H2_PAL_OK);
+static h2_pal_json_document_t* parse_json(h2_yyjson_json_t* provider,
+                                          const char* json, size_t size,
+                                          h2_pal_json_value_t** out_root) {
+  h2_pal_json_document_t* document = NULL;
+  assert(h2_pal_json_document_parse(h2_yyjson_json_api(provider),
+                                    (const uint8_t*)json, size, NULL,
+                                    &document) == H2_PAL_OK);
+  assert(h2_pal_json_document_root(h2_yyjson_json_api(provider), document,
+                                   out_root) == H2_PAL_OK);
   h2_pal_json_type_t type = H2_PAL_JSON_TYPE_INVALID;
-  assert(h2_pal_json_value_type(
-             h2_yyjson_json_api(provider), *out_root, &type) == H2_PAL_OK);
+  assert(h2_pal_json_value_type(h2_yyjson_json_api(provider), *out_root,
+                                &type) == H2_PAL_OK);
   assert(type == H2_PAL_JSON_TYPE_OBJECT);
   return document;
 }
 
-static void assert_command_availability(
-    h2_yyjson_json_t *provider, const h2_h2loader_host_status_t *status,
-    int expected_present, uint32_t expected_value) {
+static void assert_command_availability(h2_yyjson_json_t* provider,
+                                        const h2_h2loader_host_status_t* status,
+                                        int expected_present,
+                                        uint32_t expected_value) {
   char json[TEST_RUNTIME_STATUS_CAPACITY];
   size_t size = 0u;
-  assert(h2_h2loader_web_status_json_write(
-             status, json, sizeof(json), &size) == H2_PAL_OK);
+  assert(h2_h2loader_web_status_json_write(status, json, sizeof(json), &size) ==
+         H2_PAL_OK);
   assert(size == strlen(json));
 
-  h2_pal_json_value_t *root = NULL;
-  h2_pal_json_document_t *document =
-      parse_json(provider, json, size, &root);
-  h2_pal_json_value_t *availability = NULL;
+  h2_pal_json_value_t* root = NULL;
+  h2_pal_json_document_t* document = parse_json(provider, json, size, &root);
+  h2_pal_json_value_t* availability = NULL;
   const h2_pal_result_t result = h2_pal_json_object_get(
       h2_yyjson_json_api(provider), root, "commandAvailability",
       strlen("commandAvailability"), &availability);
   (void)expected_present;
   assert(result == H2_PAL_OK);
   double value = 0.0;
-  assert(h2_pal_json_value_get_number(
-             h2_yyjson_json_api(provider), availability, &value) ==
-         H2_PAL_OK);
+  assert(h2_pal_json_value_get_number(h2_yyjson_json_api(provider),
+                                      availability, &value) == H2_PAL_OK);
   assert(value == (double)expected_value);
 
-  h2_pal_json_value_t *board = NULL;
+  h2_pal_json_value_t* board = NULL;
   assert(h2_pal_json_object_get(h2_yyjson_json_api(provider), root, "board",
                                 strlen("board"), &board) == H2_PAL_OK);
   h2_pal_json_string_view_t board_value = {0};
-  assert(h2_pal_json_value_get_string(
-             h2_yyjson_json_api(provider), board, &board_value) == H2_PAL_OK);
+  assert(h2_pal_json_value_get_string(h2_yyjson_json_api(provider), board,
+                                      &board_value) == H2_PAL_OK);
   assert(board_value.len == strlen(status->board));
   assert(memcmp(board_value.data, status->board, board_value.len) == 0);
-  h2_pal_json_value_t *device_uid = NULL;
-  assert(h2_pal_json_object_get(h2_yyjson_json_api(provider), root,
-                                "deviceUid", strlen("deviceUid"),
-                                &device_uid) == H2_PAL_OK);
+  h2_pal_json_value_t* device_uid = NULL;
+  assert(h2_pal_json_object_get(h2_yyjson_json_api(provider), root, "deviceUid",
+                                strlen("deviceUid"), &device_uid) == H2_PAL_OK);
   h2_pal_json_string_view_t device_uid_value = {0};
   assert(h2_pal_json_value_get_string(h2_yyjson_json_api(provider), device_uid,
                                       &device_uid_value) == H2_PAL_OK);
   assert(device_uid_value.len == strlen(status->device_uid));
   assert(memcmp(device_uid_value.data, status->device_uid,
                 device_uid_value.len) == 0);
-  h2_pal_json_value_t *active = NULL;
+  h2_pal_json_value_t* active = NULL;
   assert(h2_pal_json_object_get(h2_yyjson_json_api(provider), root, "active",
                                 strlen("active"), &active) == H2_PAL_OK);
-  h2_pal_json_value_t *active_image_size = NULL;
-  assert(h2_pal_json_object_get(
-             h2_yyjson_json_api(provider), active, "imageSize",
-             strlen("imageSize"), &active_image_size) == H2_PAL_OK);
+  h2_pal_json_value_t* active_image_size = NULL;
+  assert(h2_pal_json_object_get(h2_yyjson_json_api(provider), active,
+                                "imageSize", strlen("imageSize"),
+                                &active_image_size) == H2_PAL_OK);
   h2_pal_json_string_view_t active_image_size_value = {0};
-  assert(h2_pal_json_value_get_string(
-             h2_yyjson_json_api(provider), active_image_size,
-             &active_image_size_value) == H2_PAL_OK);
+  assert(h2_pal_json_value_get_string(h2_yyjson_json_api(provider),
+                                      active_image_size,
+                                      &active_image_size_value) == H2_PAL_OK);
   assert(active_image_size_value.len == strlen("18446744073709551615"));
   assert(memcmp(active_image_size_value.data, "18446744073709551615",
                 active_image_size_value.len) == 0);
-  h2_pal_json_value_t *stage = NULL;
+  h2_pal_json_value_t* stage = NULL;
   assert(h2_pal_json_object_get(h2_yyjson_json_api(provider), root, "stage",
                                 strlen("stage"), &stage) == H2_PAL_OK);
-  h2_pal_json_value_t *legacy_states = NULL;
-  assert(h2_pal_json_object_get(
-             h2_yyjson_json_api(provider), root, "states", strlen("states"),
-             &legacy_states) != H2_PAL_OK);
-  assert(h2_pal_json_document_destroy(
-             h2_yyjson_json_api(provider), &document) == H2_PAL_OK);
+  h2_pal_json_value_t* legacy_states = NULL;
+  assert(h2_pal_json_object_get(h2_yyjson_json_api(provider), root, "states",
+                                strlen("states"), &legacy_states) != H2_PAL_OK);
+  assert(h2_pal_json_document_destroy(h2_yyjson_json_api(provider),
+                                      &document) == H2_PAL_OK);
 }
 
-static void fill_string(char *value, size_t capacity, char byte) {
+static void fill_string(char* value, size_t capacity, char byte) {
   assert(capacity > 0u);
   memset(value, byte, capacity - 1u);
   value[capacity - 1u] = '\0';
 }
 
-static void test_maximum_projection_fits(h2_yyjson_json_t *provider) {
+static void test_maximum_projection_fits(h2_yyjson_json_t* provider) {
   h2_h2loader_host_status_t status = test_status();
   fill_string(status.board, sizeof(status.board), 0x1f);
   fill_string(status.target, sizeof(status.target), 0x1f);
@@ -161,8 +157,10 @@ static void test_maximum_projection_fits(h2_yyjson_json_t *provider) {
   fill_string(status.device_uid, sizeof(status.device_uid), 'd');
   fill_string(status.active_version, sizeof(status.active_version), 0x1f);
   fill_string(status.active_checksum, sizeof(status.active_checksum), 0x1f);
-  h2_h2loader_host_metadata_t *slots[] = {
-      &status.stage, &status.partition_1, &status.partition_2,
+  h2_h2loader_host_metadata_t* slots[] = {
+      &status.stage,
+      &status.partition_1,
+      &status.partition_2,
   };
   for (size_t index = 0u; index < sizeof(slots) / sizeof(slots[0]); ++index) {
     fill_string(slots[index]->package_checksum,
@@ -184,18 +182,18 @@ static void test_maximum_projection_fits(h2_yyjson_json_t *provider) {
                               H2_H2LOADER_HOST_COMMAND_AVAILABILITY_ALL);
 }
 
-static void assert_mfg_steps(h2_yyjson_json_t *provider,
-                             const h2_h2loader_host_status_t *status) {
+static void assert_mfg_steps(h2_yyjson_json_t* provider,
+                             const h2_h2loader_host_status_t* status) {
   char json[TEST_RUNTIME_STATUS_CAPACITY];
   size_t size = 0u;
-  assert(h2_h2loader_web_status_json_write(
-             status, json, sizeof(json), &size) == H2_PAL_OK);
-  h2_pal_json_value_t *root = NULL;
-  h2_pal_json_document_t *document = parse_json(provider, json, size, &root);
-  const h2_pal_json_api_t *api = h2_yyjson_json_api(provider);
-  h2_pal_json_value_t *mfg = NULL;
-  h2_pal_json_value_t *mode = NULL;
-  h2_pal_json_value_t *steps = NULL;
+  assert(h2_h2loader_web_status_json_write(status, json, sizeof(json), &size) ==
+         H2_PAL_OK);
+  h2_pal_json_value_t* root = NULL;
+  h2_pal_json_document_t* document = parse_json(provider, json, size, &root);
+  const h2_pal_json_api_t* api = h2_yyjson_json_api(provider);
+  h2_pal_json_value_t* mfg = NULL;
+  h2_pal_json_value_t* mode = NULL;
+  h2_pal_json_value_t* steps = NULL;
   assert(h2_pal_json_object_get(api, root, "mfg", strlen("mfg"), &mfg) ==
          H2_PAL_OK);
   assert(h2_pal_json_object_get(api, mfg, "mode", strlen("mode"), &mode) ==
@@ -209,7 +207,7 @@ static void assert_mfg_steps(h2_yyjson_json_t *provider,
   assert(h2_pal_json_array_size(api, steps, &count) == H2_PAL_OK);
   assert(count == status->mfg_step_total);
   for (size_t index = 0u; index < count; ++index) {
-    h2_pal_json_value_t *step = NULL;
+    h2_pal_json_value_t* step = NULL;
     assert(h2_pal_json_array_get(api, steps, index, &step) == H2_PAL_OK);
     assert(h2_pal_json_value_get_number(api, step, &number) == H2_PAL_OK);
     assert(number == (double)status->mfg_steps[index]);
@@ -217,7 +215,7 @@ static void assert_mfg_steps(h2_yyjson_json_t *provider,
   assert(h2_pal_json_document_destroy(api, &document) == H2_PAL_OK);
 }
 
-static void test_variable_mfg_steps(h2_yyjson_json_t *provider) {
+static void test_variable_mfg_steps(h2_yyjson_json_t* provider) {
   h2_h2loader_host_status_t status = test_status();
   assert_mfg_steps(provider, &status);
 
@@ -238,14 +236,14 @@ static void test_truncation(void) {
   char json[16];
   memset(json, 'x', sizeof(json));
   size_t size = 123u;
-  assert(h2_h2loader_web_status_json_write(
-             &status, json, sizeof(json), &size) == H2_PAL_ERR_NO_SPACE);
+  assert(h2_h2loader_web_status_json_write(&status, json, sizeof(json),
+                                           &size) == H2_PAL_ERR_NO_SPACE);
   assert(size == 0u);
   assert(json[0] == '\0');
 }
 
 int main(void) {
-  h2_yyjson_json_t *provider = NULL;
+  h2_yyjson_json_t* provider = NULL;
   assert(h2_yyjson_json_create(&test_mem, &provider) == H2_PAL_OK);
 
   h2_h2loader_host_status_t status = test_status();

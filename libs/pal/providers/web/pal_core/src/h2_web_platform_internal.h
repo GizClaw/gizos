@@ -17,12 +17,13 @@
 
 typedef struct h2_web_audio_track h2_web_audio_track_t;
 typedef struct h2_web_system_event_frame h2_web_system_event_frame_t;
-typedef struct h2_web_event_unsubscribe_request h2_web_event_unsubscribe_request_t;
+typedef struct h2_web_event_unsubscribe_request
+    h2_web_event_unsubscribe_request_t;
 
 /* A finished WebRTC media task waiting for the pump to join it. */
 typedef struct h2_web_webrtc_zombie {
-  struct h2_web_webrtc_zombie *next;
-  h2_pal_task_t *task;
+  struct h2_web_webrtc_zombie* next;
+  h2_pal_task_t* task;
 } h2_web_webrtc_zombie_t;
 
 /*
@@ -31,7 +32,7 @@ typedef struct h2_web_webrtc_zombie {
  * Module._h2_web_async_complete(platform, id, result); ended ids are ignored.
  */
 typedef struct h2_web_async {
-  struct h2_web_async *next;
+  struct h2_web_async* next;
   uint32_t id;
   int result;
   bool done;
@@ -40,14 +41,14 @@ typedef struct h2_web_async {
 struct h2_web_platform {
   int32_t width;
   int32_t height;
-  uint32_t *rgba;
+  uint32_t* rgba;
   int32_t pointer_x;
   int32_t pointer_y;
   int pointer_pressed;
   h2_pal_touch_event_t touch_events[H2_WEB_TOUCH_EVENT_CAPACITY];
   size_t touch_head;
   size_t touch_count;
-  h2_web_thread_core_t *executor;
+  h2_web_thread_core_t* executor;
   pthread_mutex_t async_mutex;
   pthread_cond_t async_changed;
   pthread_mutex_t event_mutex;
@@ -55,8 +56,8 @@ struct h2_web_platform {
   pthread_mutex_t pump_mutex;
   pthread_cond_t pump_changed;
   pthread_t pump_thread;
-  h2_web_event_unsubscribe_request_t *event_unsubscribe_head;
-  h2_web_event_unsubscribe_request_t *event_unsubscribe_tail;
+  h2_web_event_unsubscribe_request_t* event_unsubscribe_head;
+  h2_web_event_unsubscribe_request_t* event_unsubscribe_tail;
   bool pump_stop;
   h2_pal_mem_api_t task_allocator;
   h2_pal_time_api_t clock_api;
@@ -77,13 +78,13 @@ struct h2_web_platform {
   h2_pal_webrtc_api_t webrtc_api;
   h2_pal_netif_api_t netif_api;
   h2_pal_system_event_api_t system_event_api;
-  h2_pal_system_event_subscription_t *system_event_subscriptions;
+  h2_pal_system_event_subscription_t* system_event_subscriptions;
   size_t system_event_subscription_count;
   unsigned system_event_users;
   uint64_t system_event_next_generation;
   unsigned system_event_posts;
   unsigned system_event_unsubscribe_waiters;
-  h2_web_async_t *async_ops;
+  h2_web_async_t* async_ops;
   uint32_t async_next_id;
   unsigned async_waiters;
   unsigned open_filesystems;
@@ -92,10 +93,10 @@ struct h2_web_platform {
   bool netif_supported;
   bool netif_online;
   _Atomic bool netif_dirty;
-  void *serial_state;
-  void *fake_network;
-  h2_pal_webrtc_peer_t *webrtc_peers;
-  h2_web_webrtc_zombie_t *webrtc_zombies;
+  void* serial_state;
+  void* fake_network;
+  h2_pal_webrtc_peer_t* webrtc_peers;
+  h2_web_webrtc_zombie_t* webrtc_zombies;
   bool pointer_installed;
   bool crypto_ready;
   bool touch_opened;
@@ -103,7 +104,7 @@ struct h2_web_platform {
   unsigned mic_calls;
   bool mic_starting;
   bool mic_reading;
-  h2_web_audio_track_t *audio_tracks;
+  h2_web_audio_track_t* audio_tracks;
   bool speaker_started;
   bool speaker_stopped;
   uint32_t speaker_volume_percent;
@@ -114,53 +115,54 @@ struct h2_web_platform {
   bool pump_scheduled;
 };
 
-void h2_web_platform_display_init(h2_web_platform_t *platform);
-void h2_web_platform_display_deinit(h2_web_platform_t *platform);
+void h2_web_platform_display_init(h2_web_platform_t* platform);
+void h2_web_platform_display_deinit(h2_web_platform_t* platform);
 int h2_web_platform_mic_supported(void);
-int h2_web_platform_mic_start(void *user);
-int h2_web_platform_mic_stop(void *user);
-int h2_web_platform_mic_read(void *user, h2_audio_frame_t *frame, uint32_t timeout_ms);
-void h2_web_platform_audio_init(h2_web_platform_t *platform);
-void h2_web_platform_audio_deinit(h2_web_platform_t *platform);
-void h2_web_platform_audio_decoder_init(h2_web_platform_t *platform);
-void h2_web_platform_video_decoder_init(h2_web_platform_t *platform);
-int h2_web_platform_crypto_init(h2_web_platform_t *platform);
-void h2_web_platform_crypto_deinit(h2_web_platform_t *platform);
-void h2_web_platform_http_init(h2_web_platform_t *platform);
-void h2_web_platform_pref_init(h2_web_platform_t *platform);
-h2_pal_result_t h2_web_platform_serial_init(h2_web_platform_t *platform);
-void h2_web_platform_serial_deinit(h2_web_platform_t *platform);
-void h2_web_platform_request_pump(h2_web_platform_t *platform,
+int h2_web_platform_mic_start(void* user);
+int h2_web_platform_mic_stop(void* user);
+int h2_web_platform_mic_read(void* user, h2_audio_frame_t* frame,
+                             uint32_t timeout_ms);
+void h2_web_platform_audio_init(h2_web_platform_t* platform);
+void h2_web_platform_audio_deinit(h2_web_platform_t* platform);
+void h2_web_platform_audio_decoder_init(h2_web_platform_t* platform);
+void h2_web_platform_video_decoder_init(h2_web_platform_t* platform);
+int h2_web_platform_crypto_init(h2_web_platform_t* platform);
+void h2_web_platform_crypto_deinit(h2_web_platform_t* platform);
+void h2_web_platform_http_init(h2_web_platform_t* platform);
+void h2_web_platform_pref_init(h2_web_platform_t* platform);
+h2_pal_result_t h2_web_platform_serial_init(h2_web_platform_t* platform);
+void h2_web_platform_serial_deinit(h2_web_platform_t* platform);
+void h2_web_platform_request_pump(h2_web_platform_t* platform,
                                   uint64_t deadline_ms);
-void h2_web_async_begin(h2_web_platform_t *platform, h2_web_async_t *op);
+void h2_web_async_begin(h2_web_platform_t* platform, h2_web_async_t* op);
 /**
  * Wait until op completes, timeout_ms passes (TIMEOUT) or the calling task is
  * cancelled (CLOSED). Worker callers sleep on a pthread condition.
  * OK means op->result holds the completion result.
  */
-h2_pal_result_t h2_web_async_wait(h2_web_platform_t *platform,
-                                  h2_web_async_t *op, uint32_t timeout_ms);
-void h2_web_async_end(h2_web_platform_t *platform, h2_web_async_t *op);
+h2_pal_result_t h2_web_async_wait(h2_web_platform_t* platform,
+                                  h2_web_async_t* op, uint32_t timeout_ms);
+void h2_web_async_end(h2_web_platform_t* platform, h2_web_async_t* op);
 /** Wait forever for op when started is OK, then end it; returns the result. */
-int h2_web_async_finish(h2_web_platform_t *platform, h2_web_async_t *op,
-                         int started);
+int h2_web_async_finish(h2_web_platform_t* platform, h2_web_async_t* op,
+                        int started);
 /** Complete a registered op from C, e.g. from a browser event callback. */
-void h2_web_async_signal(h2_web_platform_t *platform, h2_web_async_t *op,
+void h2_web_async_signal(h2_web_platform_t* platform, h2_web_async_t* op,
                          int result);
 /** Interruptible Worker sleep; the browser UI must never block. */
-h2_pal_result_t h2_web_platform_sleep_ms(h2_web_platform_t *platform,
+h2_pal_result_t h2_web_platform_sleep_ms(h2_web_platform_t* platform,
                                          uint32_t duration_ms);
-void h2_web_platform_netif_init(h2_web_platform_t *platform);
-h2_pal_result_t h2_web_platform_fake_network_init(h2_web_platform_t *platform);
-void h2_web_platform_fake_network_deinit(h2_web_platform_t *platform);
-bool h2_web_platform_fake_network_available(h2_web_platform_t *platform);
-void h2_web_platform_netif_deinit(h2_web_platform_t *platform);
-void h2_web_platform_netif_poll(h2_web_platform_t *platform);
-void h2_web_platform_event_retire(h2_web_platform_t *platform);
-void h2_web_platform_webrtc_init(h2_web_platform_t *platform);
-void h2_web_platform_webrtc_deinit(h2_web_platform_t *platform);
-bool h2_web_platform_webrtc_busy(h2_web_platform_t *platform);
+void h2_web_platform_netif_init(h2_web_platform_t* platform);
+h2_pal_result_t h2_web_platform_fake_network_init(h2_web_platform_t* platform);
+void h2_web_platform_fake_network_deinit(h2_web_platform_t* platform);
+bool h2_web_platform_fake_network_available(h2_web_platform_t* platform);
+void h2_web_platform_netif_deinit(h2_web_platform_t* platform);
+void h2_web_platform_netif_poll(h2_web_platform_t* platform);
+void h2_web_platform_event_retire(h2_web_platform_t* platform);
+void h2_web_platform_webrtc_init(h2_web_platform_t* platform);
+void h2_web_platform_webrtc_deinit(h2_web_platform_t* platform);
+bool h2_web_platform_webrtc_busy(h2_web_platform_t* platform);
 /** Join finished media tasks; call from the root outside a scheduler turn. */
-void h2_web_platform_webrtc_reap(h2_web_platform_t *platform);
+void h2_web_platform_webrtc_reap(h2_web_platform_t* platform);
 
 #endif

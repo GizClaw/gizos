@@ -13,12 +13,11 @@ extern "C" {
 #define H2_PIXA_GAMES_TUXEMON_COMPONENT_RIGHT 4u
 
 typedef struct h2_pixa_games_tuxemon_config {
-    const char *player_pixa_path;
+  const char* player_pixa_path;
 } h2_pixa_games_tuxemon_config_t;
 
-int h2_pixa_games_tuxemon_run(
-    h2_runtime_t *runtime,
-    const h2_pixa_games_tuxemon_config_t *config);
+int h2_pixa_games_tuxemon_run(h2_runtime_t* runtime,
+                              const h2_pixa_games_tuxemon_config_t* config);
 
 #ifdef __cplusplus
 }

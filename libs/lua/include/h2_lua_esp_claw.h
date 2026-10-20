@@ -20,14 +20,14 @@ typedef enum h2_lua_esp_claw_module_status {
 } h2_lua_esp_claw_module_status_t;
 
 typedef struct h2_lua_esp_claw_module_info {
-  const char *id;
+  const char* id;
   h2_lua_esp_claw_module_status_t status;
 } h2_lua_esp_claw_module_info_t;
 
 size_t h2_lua_esp_claw_module_count(void);
-const h2_lua_esp_claw_module_info_t *h2_lua_esp_claw_module_at(size_t index);
+const h2_lua_esp_claw_module_info_t* h2_lua_esp_claw_module_at(size_t index);
 size_t h2_lua_extension_count(void);
-const char *h2_lua_extension_at(size_t index);
+const char* h2_lua_extension_at(size_t index);
 
 #ifdef __cplusplus
 }

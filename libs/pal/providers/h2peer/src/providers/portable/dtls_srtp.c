@@ -11,8 +11,9 @@ static void dtls_srtp_close_srtp(DtlsSrtp* dtls_srtp) {
   h2_libsrtp_session_destroy(&dtls_srtp->srtp_out);
 }
 
-static h2_pal_result_t dtls_srtp_send_datagram(
-    void* user, const uint8_t* datagram, size_t datagram_len) {
+static h2_pal_result_t dtls_srtp_send_datagram(void* user,
+                                               const uint8_t* datagram,
+                                               size_t datagram_len) {
   DtlsSrtp* dtls_srtp = (DtlsSrtp*)user;
   if (dtls_srtp == NULL || dtls_srtp->packet_send == NULL) {
     return H2_PAL_ERR_INVALID_STATE;
@@ -24,14 +25,13 @@ static h2_pal_result_t dtls_srtp_send_datagram(
   if (result == H2_PAL_ERR_CLOSED) {
     return H2_PAL_ERR_CLOSED;
   }
-  return result == H2_PAL_ERR_WOULD_BLOCK ||
-                 result == H2_PAL_ERR_TIMEOUT
+  return result == H2_PAL_ERR_WOULD_BLOCK || result == H2_PAL_ERR_TIMEOUT
              ? H2_PAL_ERR_WOULD_BLOCK
              : H2_PAL_ERR_IO;
 }
 
-static h2_pal_result_t dtls_srtp_plaintext(
-    void* user, const uint8_t* plaintext, size_t plaintext_len) {
+static h2_pal_result_t dtls_srtp_plaintext(void* user, const uint8_t* plaintext,
+                                           size_t plaintext_len) {
   DtlsSrtp* dtls_srtp = (DtlsSrtp*)user;
   if (dtls_srtp == NULL || dtls_srtp->plaintext_out == NULL) {
     return H2_PAL_ERR_INVALID_STATE;
@@ -75,8 +75,7 @@ static int dtls_srtp_hex_digit(char value) {
 }
 
 static int dtls_srtp_parse_fingerprint(
-    const char* text,
-    uint8_t out[H2_PAL_DTLS_SHA256_FINGERPRINT_SIZE]) {
+    const char* text, uint8_t out[H2_PAL_DTLS_SHA256_FINGERPRINT_SIZE]) {
   if (text == NULL) {
     return -1;
   }
@@ -94,11 +93,10 @@ static int dtls_srtp_parse_fingerprint(
   return *text == '\0' ? 0 : -1;
 }
 
-static int dtls_srtp_create_session(
-    const h2_pal_mem_api_t *allocator, h2_libsrtp_direction_t direction,
-    const uint8_t* key,
-    const uint8_t* salt,
-    h2_libsrtp_session_t** out_session) {
+static int dtls_srtp_create_session(const h2_pal_mem_api_t* allocator,
+                                    h2_libsrtp_direction_t direction,
+                                    const uint8_t* key, const uint8_t* salt,
+                                    h2_libsrtp_session_t** out_session) {
   const h2_libsrtp_session_config_t config = {
       .allocator = allocator,
       .profile = H2_LIBSRTP_PROFILE_AES128_CM_SHA1_80,
@@ -115,12 +113,12 @@ static int dtls_srtp_create_session(
 static int dtls_srtp_configure_srtp(DtlsSrtp* dtls_srtp) {
   uint8_t key_material[H2_PAL_DTLS_SRTP_KEYING_MATERIAL_SIZE];
   h2_pal_dtls_srtp_profile_t profile;
-  if (h2_pal_dtls_session_get_srtp_profile(
-          dtls_srtp->dtls, dtls_srtp->session, &profile) != H2_PAL_OK ||
+  if (h2_pal_dtls_session_get_srtp_profile(dtls_srtp->dtls, dtls_srtp->session,
+                                           &profile) != H2_PAL_OK ||
       profile != H2_PAL_DTLS_SRTP_PROFILE_AES128_CM_SHA1_80 ||
       h2_pal_dtls_session_export_srtp_keying_material(
-          dtls_srtp->dtls, dtls_srtp->session,
-          key_material, sizeof(key_material)) != H2_PAL_OK) {
+          dtls_srtp->dtls, dtls_srtp->session, key_material,
+          sizeof(key_material)) != H2_PAL_OK) {
     return -1;
   }
 
@@ -140,12 +138,12 @@ static int dtls_srtp_configure_srtp(DtlsSrtp* dtls_srtp) {
   }
 
   int result = dtls_srtp_create_session(
-      dtls_srtp->allocator, H2_LIBSRTP_DIRECTION_INBOUND, remote_key, remote_salt,
-      &dtls_srtp->srtp_in);
+      dtls_srtp->allocator, H2_LIBSRTP_DIRECTION_INBOUND, remote_key,
+      remote_salt, &dtls_srtp->srtp_in);
   if (result == 0) {
-    result = dtls_srtp_create_session(
-        dtls_srtp->allocator, H2_LIBSRTP_DIRECTION_OUTBOUND, local_key, local_salt,
-        &dtls_srtp->srtp_out);
+    result = dtls_srtp_create_session(dtls_srtp->allocator,
+                                      H2_LIBSRTP_DIRECTION_OUTBOUND, local_key,
+                                      local_salt, &dtls_srtp->srtp_out);
   }
   memset(key_material, 0, sizeof(key_material));
   if (result != 0) {
@@ -156,9 +154,9 @@ static int dtls_srtp_configure_srtp(DtlsSrtp* dtls_srtp) {
   return 0;
 }
 
-int dtls_srtp_init(DtlsSrtp *dtls_srtp, DtlsSrtpRole role, void *user_data,
-                   const h2_pal_log_api_t *log, const h2_pal_dtls_api_t *dtls,
-                   const h2_pal_time_api_t *time) {
+int dtls_srtp_init(DtlsSrtp* dtls_srtp, DtlsSrtpRole role, void* user_data,
+                   const h2_pal_log_api_t* log, const h2_pal_dtls_api_t* dtls,
+                   const h2_pal_time_api_t* time) {
   if (dtls_srtp == NULL || dtls == NULL || time == NULL) {
     return -1;
   }
@@ -171,7 +169,7 @@ int dtls_srtp_init(DtlsSrtp *dtls_srtp, DtlsSrtpRole role, void *user_data,
   dtls_srtp->user_data = user_data;
   const h2_pal_dtls_session_config_t config = {
       .role = role == DTLS_SRTP_ROLE_SERVER ? H2_PAL_DTLS_ROLE_SERVER
-                                           : H2_PAL_DTLS_ROLE_CLIENT,
+                                            : H2_PAL_DTLS_ROLE_CLIENT,
       .max_datagram_size = CONFIG_MTU,
       .max_plaintext_size = CONFIG_MTU,
       .max_pending_output_bytes = CONFIG_MTU * 4u,
@@ -184,8 +182,8 @@ int dtls_srtp_init(DtlsSrtp *dtls_srtp, DtlsSrtpRole role, void *user_data,
     return -1;
   }
   uint8_t local[H2_PAL_DTLS_SHA256_FINGERPRINT_SIZE];
-  if (h2_pal_dtls_session_get_local_fingerprint(
-          dtls, dtls_srtp->session, local) != H2_PAL_OK) {
+  if (h2_pal_dtls_session_get_local_fingerprint(dtls, dtls_srtp->session,
+                                                local) != H2_PAL_OK) {
     h2_pal_dtls_session_destroy(dtls, &dtls_srtp->session);
     return -1;
   }
@@ -216,8 +214,8 @@ void dtls_srtp_deinit(DtlsSrtp* dtls_srtp) {
 int dtls_srtp_set_remote_fingerprint(DtlsSrtp* dtls_srtp,
                                      const char* fingerprint) {
   if (dtls_srtp == NULL ||
-      dtls_srtp_parse_fingerprint(
-          fingerprint, dtls_srtp->remote_fingerprint) != 0) {
+      dtls_srtp_parse_fingerprint(fingerprint, dtls_srtp->remote_fingerprint) !=
+          0) {
     return -1;
   }
   dtls_srtp->remote_fingerprint_set = 1;
@@ -231,8 +229,8 @@ int dtls_srtp_set_remote_fingerprint(DtlsSrtp* dtls_srtp,
              : -1;
 }
 
-int dtls_srtp_handshake(
-    DtlsSrtp* dtls_srtp, const uint8_t* datagram, size_t datagram_len) {
+int dtls_srtp_handshake(DtlsSrtp* dtls_srtp, const uint8_t* datagram,
+                        size_t datagram_len) {
   if (dtls_srtp == NULL || dtls_srtp->session == NULL ||
       !dtls_srtp->remote_fingerprint_set) {
     return H2_PAL_ERR_INVALID_STATE;
@@ -250,19 +248,17 @@ int dtls_srtp_handshake(
   }
   int complete = 0;
   h2_pal_result_t result = h2_pal_dtls_session_handshake(
-      dtls_srtp->dtls, dtls_srtp->session,
-      datagram, datagram_len, now_ms,
+      dtls_srtp->dtls, dtls_srtp->session, datagram, datagram_len, now_ms,
       dtls_srtp->handshake_deadline_ms, &complete);
-  h2_pal_result_t flush_result = h2_pal_dtls_session_flush(
-      dtls_srtp->dtls, dtls_srtp->session);
+  h2_pal_result_t flush_result =
+      h2_pal_dtls_session_flush(dtls_srtp->dtls, dtls_srtp->session);
   /* Preserve the provider's authentication/timeout reason. A pending output
    * flush must never hide a terminal certificate verification failure. */
-  if (result != H2_PAL_OK && result != H2_PAL_ERR_WOULD_BLOCK)
-    return result;
+  if (result != H2_PAL_OK && result != H2_PAL_ERR_WOULD_BLOCK) return result;
   if (flush_result != H2_PAL_OK && flush_result != H2_PAL_ERR_WOULD_BLOCK)
     return flush_result;
-  if (result == H2_PAL_ERR_WOULD_BLOCK || flush_result == H2_PAL_ERR_WOULD_BLOCK ||
-      !complete)
+  if (result == H2_PAL_ERR_WOULD_BLOCK ||
+      flush_result == H2_PAL_ERR_WOULD_BLOCK || !complete)
     return 1;
   return dtls_srtp_configure_srtp(dtls_srtp) == 0 ? 0 : H2_PAL_ERR_IO;
 }
@@ -274,8 +270,8 @@ void dtls_srtp_reset_session(DtlsSrtp* dtls_srtp) {
   dtls_srtp_deinit(dtls_srtp);
 }
 
-h2_pal_result_t dtls_srtp_write(
-    DtlsSrtp* dtls_srtp, const uint8_t* buf, size_t len) {
+h2_pal_result_t dtls_srtp_write(DtlsSrtp* dtls_srtp, const uint8_t* buf,
+                                size_t len) {
   if (dtls_srtp == NULL || (buf == NULL && len != 0u) || len > INT_MAX) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -288,8 +284,7 @@ h2_pal_result_t dtls_srtp_write(
   if (result != H2_PAL_OK) {
     return result;
   }
-  result = h2_pal_dtls_session_flush(
-      dtls_srtp->dtls, dtls_srtp->session);
+  result = h2_pal_dtls_session_flush(dtls_srtp->dtls, dtls_srtp->session);
   if (result == H2_PAL_ERR_WOULD_BLOCK) {
     dtls_srtp->output_pending = 1;
     return H2_PAL_OK;
@@ -311,17 +306,16 @@ h2_pal_result_t dtls_srtp_flush_pending(DtlsSrtp* dtls_srtp) {
   if (!dtls_srtp->output_pending) {
     return H2_PAL_OK;
   }
-  h2_pal_result_t result = h2_pal_dtls_session_flush(
-      dtls_srtp->dtls, dtls_srtp->session);
+  h2_pal_result_t result =
+      h2_pal_dtls_session_flush(dtls_srtp->dtls, dtls_srtp->session);
   if (result == H2_PAL_OK) {
     dtls_srtp->output_pending = 0;
   }
   return result;
 }
 
-int dtls_srtp_read(DtlsSrtp* dtls_srtp,
-                   const uint8_t* datagram, size_t datagram_len,
-                   uint8_t* buf, size_t len) {
+int dtls_srtp_read(DtlsSrtp* dtls_srtp, const uint8_t* datagram,
+                   size_t datagram_len, uint8_t* buf, size_t len) {
   if (dtls_srtp == NULL || buf == NULL || len > INT_MAX) {
     return -1;
   }
@@ -352,8 +346,8 @@ void dtls_srtp_decrypt_rtp_packet(DtlsSrtp* dtls_srtp, uint8_t* packet,
     return;
   }
   size_t packet_len = (size_t)*bytes;
-  if (h2_libsrtp_unprotect_rtp(
-          dtls_srtp->srtp_in, packet, CONFIG_MTU, &packet_len) != H2_PAL_OK ||
+  if (h2_libsrtp_unprotect_rtp(dtls_srtp->srtp_in, packet, CONFIG_MTU,
+                               &packet_len) != H2_PAL_OK ||
       packet_len > INT_MAX) {
     *bytes = 0;
     return;
@@ -367,8 +361,8 @@ void dtls_srtp_decrypt_rtcp_packet(DtlsSrtp* dtls_srtp, uint8_t* packet,
     return;
   }
   size_t packet_len = (size_t)*bytes;
-  if (h2_libsrtp_unprotect_rtcp(
-          dtls_srtp->srtp_in, packet, CONFIG_MTU, &packet_len) != H2_PAL_OK ||
+  if (h2_libsrtp_unprotect_rtcp(dtls_srtp->srtp_in, packet, CONFIG_MTU,
+                                &packet_len) != H2_PAL_OK ||
       packet_len > INT_MAX) {
     *bytes = 0;
     return;
@@ -382,8 +376,8 @@ int dtls_srtp_encrypt_rtp_packet(DtlsSrtp* dtls_srtp, uint8_t* packet,
     return -1;
   }
   size_t packet_len = (size_t)*bytes;
-  if (h2_libsrtp_protect_rtp(
-          dtls_srtp->srtp_out, packet, CONFIG_MTU, &packet_len) != H2_PAL_OK ||
+  if (h2_libsrtp_protect_rtp(dtls_srtp->srtp_out, packet, CONFIG_MTU,
+                             &packet_len) != H2_PAL_OK ||
       packet_len > INT_MAX) {
     return -1;
   }
@@ -397,8 +391,8 @@ void dtls_srtp_encrypt_rctp_packet(DtlsSrtp* dtls_srtp, uint8_t* packet,
     return;
   }
   size_t packet_len = (size_t)*bytes;
-  if (h2_libsrtp_protect_rtcp(
-          dtls_srtp->srtp_out, packet, CONFIG_MTU, &packet_len) != H2_PAL_OK ||
+  if (h2_libsrtp_protect_rtcp(dtls_srtp->srtp_out, packet, CONFIG_MTU,
+                              &packet_len) != H2_PAL_OK ||
       packet_len > INT_MAX) {
     *bytes = 0;
     return;

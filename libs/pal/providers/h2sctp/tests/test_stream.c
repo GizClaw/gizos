@@ -9,91 +9,82 @@
 #include <assert.h>
 #include <string.h>
 
-static void fill_payload(uint8_t *data, size_t len, uint8_t seed) {
-    for (size_t index = 0u; index < len; ++index) {
-        data[index] = (uint8_t)(seed + index);
-    }
+static void fill_payload(uint8_t* data, size_t len, uint8_t seed) {
+  for (size_t index = 0u; index < len; ++index) {
+    data[index] = (uint8_t)(seed + index);
+  }
 }
 
-static void send_message(
-    h2_sctp_test_pair_t *pair,
-    uint16_t stream_id,
-    uint32_t ppid,
-    bool unordered,
-    const uint8_t *data,
-    size_t len) {
-    const h2_pal_sctp_message_t message = {
-        .data = data,
-        .len = len,
-        .stream_id = stream_id,
-        .ppid = ppid,
-        .unordered = unordered,
-        .reliability = H2_PAL_SCTP_RELIABILITY_RELIABLE,
-        .reliability_value = 0u,
-    };
-    assert(h2_pal_sctp_association_send_message(
-               pair->active.api,
-               pair->active.association,
-               &message,
-               pair->now_ms) == H2_PAL_OK);
+static void send_message(h2_sctp_test_pair_t* pair, uint16_t stream_id,
+                         uint32_t ppid, bool unordered, const uint8_t* data,
+                         size_t len) {
+  const h2_pal_sctp_message_t message = {
+      .data = data,
+      .len = len,
+      .stream_id = stream_id,
+      .ppid = ppid,
+      .unordered = unordered,
+      .reliability = H2_PAL_SCTP_RELIABILITY_RELIABLE,
+      .reliability_value = 0u,
+  };
+  assert(h2_pal_sctp_association_send_message(
+             pair->active.api, pair->active.association, &message,
+             pair->now_ms) == H2_PAL_OK);
 }
 
-static h2_sctp_stream_t *find_stream(
-    h2_pal_sctp_association_t *association,
-    uint16_t stream_id) {
-    for (h2_sctp_stream_t *stream = association->streams;
-         stream != NULL;
-         stream = stream->next) {
-        if (stream->id == stream_id) {
-            return stream;
-        }
+static h2_sctp_stream_t* find_stream(h2_pal_sctp_association_t* association,
+                                     uint16_t stream_id) {
+  for (h2_sctp_stream_t* stream = association->streams; stream != NULL;
+       stream = stream->next) {
+    if (stream->id == stream_id) {
+      return stream;
     }
-    return NULL;
+  }
+  return NULL;
 }
 
 static void assert_stale_forward_tsn_does_not_advance_stream(
-    h2_pal_sctp_association_t *association,
-    uint16_t stream_id,
+    h2_pal_sctp_association_t* association, uint16_t stream_id,
     uint64_t now_ms) {
-    h2_sctp_stream_t *const stream = find_stream(association, stream_id);
-    assert(stream != NULL);
-    const uint32_t cumulative = association->cumulative_received_tsn;
-    uint8_t data[12] = {0};
-    h2_sctp_wire_write_u32(data, cumulative);
-    h2_sctp_wire_write_u16(data + 4u, stream_id);
-    h2_sctp_chunk_view_t chunk = {
-        .data = data,
-    };
-    uint32_t sequence = 0u;
-    if (association->peer_interleaving) {
-        chunk.type = H2_SCTP_CHUNK_I_FORWARD_TSN;
-        chunk.len = sizeof(data);
-        sequence = stream->next_in_mid_ordered;
-        h2_sctp_wire_write_u32(data + 8u, sequence + 10u);
-    } else {
-        chunk.type = H2_SCTP_CHUNK_FORWARD_TSN;
-        chunk.len = 8u;
-        sequence = stream->next_in_ssn;
-        h2_sctp_wire_write_u16(data + 6u, (uint16_t)(sequence + 10u));
-    }
-    assert(h2_sctp_stream_handle_forward_tsn(
-               association, &chunk, now_ms) == H2_PAL_OK);
-    assert(association->cumulative_received_tsn == cumulative);
-    if (association->peer_interleaving) {
-        assert(stream->next_in_mid_ordered == sequence);
-    } else {
-        assert(stream->next_in_ssn == (uint16_t)sequence);
-    }
+  h2_sctp_stream_t* const stream = find_stream(association, stream_id);
+  assert(stream != NULL);
+  const uint32_t cumulative = association->cumulative_received_tsn;
+  uint8_t data[12] = {0};
+  h2_sctp_wire_write_u32(data, cumulative);
+  h2_sctp_wire_write_u16(data + 4u, stream_id);
+  h2_sctp_chunk_view_t chunk = {
+      .data = data,
+  };
+  uint32_t sequence = 0u;
+  if (association->peer_interleaving) {
+    chunk.type = H2_SCTP_CHUNK_I_FORWARD_TSN;
+    chunk.len = sizeof(data);
+    sequence = stream->next_in_mid_ordered;
+    h2_sctp_wire_write_u32(data + 8u, sequence + 10u);
+  } else {
+    chunk.type = H2_SCTP_CHUNK_FORWARD_TSN;
+    chunk.len = 8u;
+    sequence = stream->next_in_ssn;
+    h2_sctp_wire_write_u16(data + 6u, (uint16_t)(sequence + 10u));
+  }
+  assert(h2_sctp_stream_handle_forward_tsn(association, &chunk, now_ms) ==
+         H2_PAL_OK);
+  assert(association->cumulative_received_tsn == cumulative);
+  if (association->peer_interleaving) {
+    assert(stream->next_in_mid_ordered == sequence);
+  } else {
+    assert(stream->next_in_ssn == (uint16_t)sequence);
+  }
 }
 
 static void test_reset_in_progress(uint32_t success_code) {
   h2_sctp_test_pair_t pair;
   assert(h2_sctp_test_pair_init(&pair, 256u, 4096u) == H2_PAL_OK);
   assert(h2_sctp_test_connect(&pair));
-  h2_pal_sctp_association_t *association = pair.active.association;
+  h2_pal_sctp_association_t* association = pair.active.association;
   assert(h2_pal_sctp_association_reset_stream(pair.active.api, association, 2u,
                                               ++pair.now_ms) == H2_PAL_OK);
-  h2_sctp_stream_t *stream = find_stream(association, 2u);
+  h2_sctp_stream_t* stream = find_stream(association, 2u);
   assert(stream != NULL && stream->reset_pending);
   uint8_t response[12] = {0};
   h2_sctp_wire_write_u16(response, H2_SCTP_PARAM_RESET_RESPONSE);
@@ -136,7 +127,7 @@ static void test_reset_in_progress(uint32_t success_code) {
                                        ? old_rto * 2u
                                        : H2_SCTP_RTO_MAX_MS));
     unsigned resets = 0u;
-    for (h2_sctp_test_packet_t *packet = pair.active.packet_head;
+    for (h2_sctp_test_packet_t* packet = pair.active.packet_head;
          packet != NULL; packet = packet->next) {
       if (packet->len == saved_len &&
           memcmp(packet->data, saved_request, saved_len) == 0)
@@ -169,10 +160,10 @@ static void test_reset_in_progress_is_bounded(void) {
   h2_sctp_test_pair_t pair;
   assert(h2_sctp_test_pair_init(&pair, 256u, 4096u) == H2_PAL_OK);
   assert(h2_sctp_test_connect(&pair));
-  h2_pal_sctp_association_t *association = pair.active.association;
+  h2_pal_sctp_association_t* association = pair.active.association;
   assert(h2_pal_sctp_association_reset_stream(pair.active.api, association, 2u,
                                               ++pair.now_ms) == H2_PAL_OK);
-  h2_sctp_stream_t *stream = find_stream(association, 2u);
+  h2_sctp_stream_t* stream = find_stream(association, 2u);
   assert(stream != NULL && stream->reset_pending);
   uint8_t response[12] = {0};
   h2_sctp_wire_write_u16(response, H2_SCTP_PARAM_RESET_RESPONSE);
@@ -210,21 +201,21 @@ static void test_reset_waits_for_pending_output(void) {
   h2_sctp_test_pair_t pair;
   assert(h2_sctp_test_pair_init(&pair, 256u, 4096u) == H2_PAL_OK);
   assert(h2_sctp_test_connect(&pair));
-  h2_pal_sctp_association_t *association = pair.active.association;
+  h2_pal_sctp_association_t* association = pair.active.association;
   const uint8_t payload[] = {0x12u, 0x34u};
   pair.active.emit_would_block_count = 1u;
   send_message(&pair, 2u, 53u, false, payload, sizeof(payload));
   assert(association->pending_emit != NULL);
   const uint32_t sequence = association->next_reset_sequence;
   assert(h2_pal_sctp_association_reset_stream(pair.active.api, association, 2u,
-                                             ++pair.now_ms) ==
+                                              ++pair.now_ms) ==
          H2_PAL_ERR_WOULD_BLOCK);
   assert(association->next_reset_sequence == sequence);
   assert(!find_stream(association, 2u)->reset_pending);
   (void)h2_sctp_test_pump(&pair, 32u);
   assert(pair.passive.message_count == 1u);
   assert(h2_pal_sctp_association_reset_stream(pair.active.api, association, 2u,
-                                             ++pair.now_ms) == H2_PAL_OK);
+                                              ++pair.now_ms) == H2_PAL_OK);
   (void)h2_sctp_test_pump(&pair, 32u);
   assert(pair.active.outgoing_reset_events == 1u);
   assert(pair.passive.incoming_reset_events == 1u);
@@ -235,22 +226,23 @@ static void test_reset_retains_control_ownership(void) {
   h2_sctp_test_pair_t pair;
   assert(h2_sctp_test_pair_init(&pair, 256u, 4096u) == H2_PAL_OK);
   assert(h2_sctp_test_connect(&pair));
-  h2_pal_sctp_association_t *association = pair.active.association;
+  h2_pal_sctp_association_t* association = pair.active.association;
   pair.active.emit_would_block_count = 1u;
   assert(h2_pal_sctp_association_reset_stream(pair.active.api, association, 2u,
-                                             ++pair.now_ms) == H2_PAL_OK);
+                                              ++pair.now_ms) == H2_PAL_OK);
   assert(association->pending_emit != NULL);
   assert(association->control_packet != NULL);
   const uint32_t sequence = association->next_reset_sequence;
   assert(h2_pal_sctp_association_reset_stream(pair.active.api, association, 3u,
-                                             ++pair.now_ms) ==
+                                              ++pair.now_ms) ==
          H2_PAL_ERR_WOULD_BLOCK);
   assert(association->next_reset_sequence == sequence);
   assert(h2_sctp_retry_pending_emit(association) == H2_PAL_OK);
-  const uint8_t *control = association->control_packet;
+  const uint8_t* control = association->control_packet;
   const uint64_t deadline = association->control_deadline_ms;
   assert(h2_pal_sctp_association_reset_stream(pair.active.api, association, 3u,
-                                             ++pair.now_ms) == H2_PAL_ERR_BUSY);
+                                              ++pair.now_ms) ==
+         H2_PAL_ERR_BUSY);
   assert(association->next_reset_sequence == sequence);
   assert(association->control_packet == control);
   assert(association->control_deadline_ms == deadline);
@@ -258,14 +250,14 @@ static void test_reset_retains_control_ownership(void) {
   assert(pair.active.outgoing_reset_events == 1u);
   assert(pair.passive.incoming_reset_events == 1u);
   assert(h2_pal_sctp_association_reset_stream(pair.active.api, association, 3u,
-                                             ++pair.now_ms) == H2_PAL_OK);
+                                              ++pair.now_ms) == H2_PAL_OK);
   (void)h2_sctp_test_pump(&pair, 32u);
   assert(pair.active.outgoing_reset_events == 2u);
   assert(pair.passive.incoming_reset_events == 2u);
   h2_sctp_test_pair_deinit(&pair);
 }
 
-static void feed_data(h2_pal_sctp_association_t *association, uint32_t tsn,
+static void feed_data(h2_pal_sctp_association_t* association, uint32_t tsn,
                       uint16_t stream_id, uint32_t sequence, uint8_t seed,
                       uint64_t now_ms) {
   uint8_t data[24] = {0};
@@ -287,11 +279,10 @@ static void feed_data(h2_pal_sctp_association_t *association, uint32_t tsn,
       .data = data,
       .len = header + 4u,
   };
-  assert(h2_sctp_stream_handle_data(association, &chunk, now_ms) ==
-         H2_PAL_OK);
+  assert(h2_sctp_stream_handle_data(association, &chunk, now_ms) == H2_PAL_OK);
 }
 
-static void feed_outgoing_reset(h2_pal_sctp_association_t *association,
+static void feed_outgoing_reset(h2_pal_sctp_association_t* association,
                                 uint32_t sequence, uint32_t last_tsn,
                                 uint16_t stream_id, uint64_t now_ms) {
   uint8_t param[20] = {0};
@@ -309,12 +300,11 @@ static void feed_outgoing_reset(h2_pal_sctp_association_t *association,
          H2_PAL_OK);
 }
 
-static bool has_rx_tsn(const h2_pal_sctp_association_t *association,
+static bool has_rx_tsn(const h2_pal_sctp_association_t* association,
                        uint32_t tsn) {
-  for (const h2_sctp_rx_fragment_t *fragment = association->rx_fragments;
+  for (const h2_sctp_rx_fragment_t* fragment = association->rx_fragments;
        fragment != NULL; fragment = fragment->next) {
-    if (fragment->tsn == tsn)
-      return true;
+    if (fragment->tsn == tsn) return true;
   }
   return false;
 }
@@ -327,7 +317,7 @@ static void test_incoming_reset_waits_for_last_tsn(void) {
   h2_sctp_test_pair_t pair;
   assert(h2_sctp_test_pair_init(&pair, 256u, 4096u) == H2_PAL_OK);
   assert(h2_sctp_test_connect(&pair));
-  h2_pal_sctp_association_t *association = pair.passive.association;
+  h2_pal_sctp_association_t* association = pair.passive.association;
   const uint32_t base = association->cumulative_received_tsn;
   uint64_t now_ms = pair.now_ms;
   feed_data(association, base + 1u, 1u, 0u, 0x11u, ++now_ms);
@@ -369,7 +359,7 @@ static void test_incoming_reset_delivers_next_generation(void) {
   h2_sctp_test_pair_t pair;
   assert(h2_sctp_test_pair_init(&pair, 256u, 4096u) == H2_PAL_OK);
   assert(h2_sctp_test_connect(&pair));
-  h2_pal_sctp_association_t *association = pair.passive.association;
+  h2_pal_sctp_association_t* association = pair.passive.association;
   const uint32_t base = association->cumulative_received_tsn;
   uint64_t now_ms = pair.now_ms;
   feed_data(association, base + 1u, 1u, 0u, 0x11u, ++now_ms);
@@ -398,7 +388,7 @@ static void test_incoming_reset_waits_for_delivery(void) {
   h2_sctp_test_pair_t pair;
   assert(h2_sctp_test_pair_init(&pair, 256u, 4096u) == H2_PAL_OK);
   assert(h2_sctp_test_connect(&pair));
-  h2_pal_sctp_association_t *association = pair.passive.association;
+  h2_pal_sctp_association_t* association = pair.passive.association;
   const uint32_t base = association->cumulative_received_tsn;
   uint64_t now_ms = pair.now_ms;
   feed_data(association, base + 1u, 1u, 0u, 0x11u, ++now_ms);
@@ -437,7 +427,7 @@ static void test_incoming_reset_waits_for_output(void) {
   h2_sctp_test_pair_t pair;
   assert(h2_sctp_test_pair_init(&pair, 256u, 4096u) == H2_PAL_OK);
   assert(h2_sctp_test_connect(&pair));
-  h2_pal_sctp_association_t *association = pair.passive.association;
+  h2_pal_sctp_association_t* association = pair.passive.association;
   const uint32_t base = association->cumulative_received_tsn;
   uint64_t now_ms = pair.now_ms;
   feed_data(association, base + 1u, 1u, 0u, 0x11u, ++now_ms);

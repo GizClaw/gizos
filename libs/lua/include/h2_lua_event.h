@@ -13,7 +13,8 @@ extern "C" {
 /**
  * Copies one already-consumed Runtime event into the named live job.
  *
- * This function never calls h2_runtime_poll_event() or h2_runtime_wait_notify().
+ * This function never calls h2_runtime_poll_event() or
+ * h2_runtime_wait_notify().
  *
  * Returns H2_PAL_OK once the event is queued for the job,
  * H2_PAL_ERR_INVALID_ARG for a malformed event or one whose component kind
@@ -24,9 +25,9 @@ extern "C" {
  * error. A job can reach a terminal state between two events of one Runtime
  * batch, so CLOSED can follow OK for the same job without any other call.
  */
-h2_pal_result_t h2_lua_dispatch_runtime_event(h2_lua_host_t *host,
+h2_pal_result_t h2_lua_dispatch_runtime_event(h2_lua_host_t* host,
                                               h2_lua_job_id_t job_id,
-                                              const h2_runtime_event_t *event);
+                                              const h2_runtime_event_t* event);
 
 #ifdef __cplusplus
 }

@@ -3,11 +3,11 @@
 #include "h2_jieli_br35_sdk_port.h"
 
 struct h2_pal_mutex {
-  h2_jieli_sdk_mutex_t *native;
+  h2_jieli_sdk_mutex_t* native;
 };
 
 struct h2_pal_semaphore {
-  h2_jieli_sdk_sem_t *native;
+  h2_jieli_sdk_sem_t* native;
   /* os_sem has no ceiling, so the configured bound is tracked here; the
    * count is updated atomically because give/take may run from
    * different SDK tasks. */
@@ -22,10 +22,10 @@ static h2_pal_result_t map_wait(int rc) {
   return rc > 0 ? H2_PAL_ERR_TIMEOUT : H2_PAL_ERR_IO;
 }
 
-static h2_pal_result_t sync_create_mutex(void *user,
-                                         const h2_pal_mutex_config_t *config,
-                                         h2_pal_mutex_t **out_mutex) {
-  h2_pal_mutex_t *mutex;
+static h2_pal_result_t sync_create_mutex(void* user,
+                                         const h2_pal_mutex_config_t* config,
+                                         h2_pal_mutex_t** out_mutex) {
+  h2_pal_mutex_t* mutex;
   (void)user;
   if (config == NULL || out_mutex == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -35,7 +35,7 @@ static h2_pal_result_t sync_create_mutex(void *user,
     /* os_mutex is a plain FreeRTOS mutex; recursion is not provided. */
     return H2_PAL_ERR_UNSUPPORTED;
   }
-  mutex = (h2_pal_mutex_t *)h2_jieli_sdk_malloc(sizeof(*mutex));
+  mutex = (h2_pal_mutex_t*)h2_jieli_sdk_malloc(sizeof(*mutex));
   if (mutex == NULL) {
     return H2_PAL_ERR_NO_MEMORY;
   }
@@ -48,7 +48,7 @@ static h2_pal_result_t sync_create_mutex(void *user,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t sync_destroy_mutex(void *user, h2_pal_mutex_t *mutex) {
+static h2_pal_result_t sync_destroy_mutex(void* user, h2_pal_mutex_t* mutex) {
   (void)user;
   if (mutex == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -58,7 +58,7 @@ static h2_pal_result_t sync_destroy_mutex(void *user, h2_pal_mutex_t *mutex) {
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t sync_lock_mutex(void *user, h2_pal_mutex_t *mutex) {
+static h2_pal_result_t sync_lock_mutex(void* user, h2_pal_mutex_t* mutex) {
   (void)user;
   if (mutex == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -67,7 +67,7 @@ static h2_pal_result_t sync_lock_mutex(void *user, h2_pal_mutex_t *mutex) {
       h2_jieli_sdk_mutex_lock(mutex->native, H2_JIELI_SDK_WAIT_FOREVER));
 }
 
-static h2_pal_result_t sync_try_lock_mutex(void *user, h2_pal_mutex_t *mutex) {
+static h2_pal_result_t sync_try_lock_mutex(void* user, h2_pal_mutex_t* mutex) {
   int rc;
   (void)user;
   if (mutex == NULL) {
@@ -80,7 +80,7 @@ static h2_pal_result_t sync_try_lock_mutex(void *user, h2_pal_mutex_t *mutex) {
   return rc > 0 ? H2_PAL_ERR_WOULD_BLOCK : H2_PAL_ERR_IO;
 }
 
-static h2_pal_result_t sync_unlock_mutex(void *user, h2_pal_mutex_t *mutex) {
+static h2_pal_result_t sync_unlock_mutex(void* user, h2_pal_mutex_t* mutex) {
   (void)user;
   if (mutex == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -89,17 +89,17 @@ static h2_pal_result_t sync_unlock_mutex(void *user, h2_pal_mutex_t *mutex) {
                                                        : H2_PAL_ERR_IO;
 }
 
-static h2_pal_result_t
-sync_create_semaphore(void *user, const h2_pal_semaphore_config_t *config,
-                      h2_pal_semaphore_t **out_semaphore) {
-  h2_pal_semaphore_t *semaphore;
+static h2_pal_result_t sync_create_semaphore(
+    void* user, const h2_pal_semaphore_config_t* config,
+    h2_pal_semaphore_t** out_semaphore) {
+  h2_pal_semaphore_t* semaphore;
   (void)user;
   if (config == NULL || out_semaphore == NULL || config->max_count == 0u ||
       config->initial_count > config->max_count) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   *out_semaphore = NULL;
-  semaphore = (h2_pal_semaphore_t *)h2_jieli_sdk_malloc(sizeof(*semaphore));
+  semaphore = (h2_pal_semaphore_t*)h2_jieli_sdk_malloc(sizeof(*semaphore));
   if (semaphore == NULL) {
     return H2_PAL_ERR_NO_MEMORY;
   }
@@ -114,8 +114,8 @@ sync_create_semaphore(void *user, const h2_pal_semaphore_config_t *config,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t sync_destroy_semaphore(void *user,
-                                              h2_pal_semaphore_t *semaphore) {
+static h2_pal_result_t sync_destroy_semaphore(void* user,
+                                              h2_pal_semaphore_t* semaphore) {
   (void)user;
   if (semaphore == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -125,8 +125,8 @@ static h2_pal_result_t sync_destroy_semaphore(void *user,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t sync_take_semaphore(void *user,
-                                           h2_pal_semaphore_t *semaphore,
+static h2_pal_result_t sync_take_semaphore(void* user,
+                                           h2_pal_semaphore_t* semaphore,
                                            uint32_t timeout_ms) {
   h2_pal_result_t rc;
   (void)user;
@@ -140,8 +140,8 @@ static h2_pal_result_t sync_take_semaphore(void *user,
   return rc;
 }
 
-static h2_pal_result_t sync_give_semaphore(void *user,
-                                           h2_pal_semaphore_t *semaphore) {
+static h2_pal_result_t sync_give_semaphore(void* user,
+                                           h2_pal_semaphore_t* semaphore) {
   uint32_t count;
   (void)user;
   if (semaphore == NULL) {
@@ -166,24 +166,22 @@ static h2_pal_result_t sync_give_semaphore(void *user,
 }
 
 struct cond_waiter {
-  struct cond_waiter *next;
-  h2_jieli_sdk_sem_t *sem;
+  struct cond_waiter* next;
+  h2_jieli_sdk_sem_t* sem;
   int signaled;
 };
 struct h2_pal_cond {
-  h2_jieli_sdk_mutex_t *lock;
-  struct cond_waiter *waiters;
+  h2_jieli_sdk_mutex_t* lock;
+  struct cond_waiter* waiters;
 };
-static h2_pal_result_t sync_create_cond(void *user,
-                                        const h2_pal_cond_config_t *config,
-                                        h2_pal_cond_t **out) {
+static h2_pal_result_t sync_create_cond(void* user,
+                                        const h2_pal_cond_config_t* config,
+                                        h2_pal_cond_t** out) {
   (void)user;
-  if (!config || !out)
-    return H2_PAL_ERR_INVALID_ARG;
+  if (!config || !out) return H2_PAL_ERR_INVALID_ARG;
   *out = NULL;
-  h2_pal_cond_t *cond = h2_jieli_sdk_malloc(sizeof(*cond));
-  if (!cond)
-    return H2_PAL_ERR_NO_MEMORY;
+  h2_pal_cond_t* cond = h2_jieli_sdk_malloc(sizeof(*cond));
+  if (!cond) return H2_PAL_ERR_NO_MEMORY;
   cond->waiters = NULL;
   cond->lock = h2_jieli_sdk_mutex_create();
   if (!cond->lock) {
@@ -193,30 +191,26 @@ static h2_pal_result_t sync_create_cond(void *user,
   *out = cond;
   return H2_PAL_OK;
 }
-static h2_pal_result_t sync_destroy_cond(void *user, h2_pal_cond_t *cond) {
+static h2_pal_result_t sync_destroy_cond(void* user, h2_pal_cond_t* cond) {
   (void)user;
-  if (!cond)
-    return H2_PAL_ERR_INVALID_ARG;
+  if (!cond) return H2_PAL_ERR_INVALID_ARG;
   if (h2_jieli_sdk_mutex_lock(cond->lock, H2_JIELI_SDK_WAIT_FOREVER))
     return H2_PAL_ERR_IO;
   int busy = cond->waiters != NULL;
   h2_jieli_sdk_mutex_unlock(cond->lock);
-  if (busy)
-    return H2_PAL_ERR_BUSY;
+  if (busy) return H2_PAL_ERR_BUSY;
   h2_jieli_sdk_mutex_destroy(cond->lock);
   h2_jieli_sdk_free(cond);
   return H2_PAL_OK;
 }
-static h2_pal_result_t sync_wait_cond(void *user, h2_pal_cond_t *cond,
-                                      h2_pal_mutex_t *mutex,
+static h2_pal_result_t sync_wait_cond(void* user, h2_pal_cond_t* cond,
+                                      h2_pal_mutex_t* mutex,
                                       uint32_t timeout_ms) {
   (void)user;
-  if (!cond || !mutex)
-    return H2_PAL_ERR_INVALID_ARG;
+  if (!cond || !mutex) return H2_PAL_ERR_INVALID_ARG;
   struct cond_waiter waiter = {0};
   waiter.sem = h2_jieli_sdk_sem_create(0);
-  if (!waiter.sem)
-    return H2_PAL_ERR_NO_MEMORY;
+  if (!waiter.sem) return H2_PAL_ERR_NO_MEMORY;
   if (h2_jieli_sdk_mutex_lock(cond->lock, H2_JIELI_SDK_WAIT_FOREVER)) {
     h2_jieli_sdk_sem_destroy(waiter.sem);
     return H2_PAL_ERR_IO;
@@ -227,12 +221,10 @@ static h2_pal_result_t sync_wait_cond(void *user, h2_pal_cond_t *cond,
   h2_jieli_sdk_mutex_unlock(cond->lock);
   int rc = released ? h2_jieli_sdk_sem_take(waiter.sem, timeout_ms) : -1;
   h2_jieli_sdk_mutex_lock(cond->lock, H2_JIELI_SDK_WAIT_FOREVER);
-  struct cond_waiter **link = &cond->waiters;
-  while (*link != &waiter)
-    link = &(*link)->next;
+  struct cond_waiter** link = &cond->waiters;
+  while (*link != &waiter) link = &(*link)->next;
   *link = waiter.next;
-  if (waiter.signaled)
-    rc = 0;
+  if (waiter.signaled) rc = 0;
   h2_jieli_sdk_mutex_unlock(cond->lock);
   h2_jieli_sdk_sem_destroy(waiter.sem);
   if (released &&
@@ -240,31 +232,28 @@ static h2_pal_result_t sync_wait_cond(void *user, h2_pal_cond_t *cond,
     return H2_PAL_ERR_IO;
   return map_wait(rc);
 }
-static h2_pal_result_t cond_notify(h2_pal_cond_t *cond, int all) {
-  if (!cond)
-    return H2_PAL_ERR_INVALID_ARG;
+static h2_pal_result_t cond_notify(h2_pal_cond_t* cond, int all) {
+  if (!cond) return H2_PAL_ERR_INVALID_ARG;
   if (h2_jieli_sdk_mutex_lock(cond->lock, H2_JIELI_SDK_WAIT_FOREVER))
     return H2_PAL_ERR_IO;
   h2_pal_result_t rc = H2_PAL_OK;
-  for (struct cond_waiter *w = cond->waiters; w; w = w->next) {
-    if (w->signaled)
-      continue;
+  for (struct cond_waiter* w = cond->waiters; w; w = w->next) {
+    if (w->signaled) continue;
     if (h2_jieli_sdk_sem_give(w->sem)) {
       rc = H2_PAL_ERR_IO;
       break;
     }
     w->signaled = 1;
-    if (!all)
-      break;
+    if (!all) break;
   }
   h2_jieli_sdk_mutex_unlock(cond->lock);
   return rc;
 }
-static h2_pal_result_t sync_signal_cond(void *user, h2_pal_cond_t *cond) {
+static h2_pal_result_t sync_signal_cond(void* user, h2_pal_cond_t* cond) {
   (void)user;
   return cond_notify(cond, 0);
 }
-static h2_pal_result_t sync_broadcast_cond(void *user, h2_pal_cond_t *cond) {
+static h2_pal_result_t sync_broadcast_cond(void* user, h2_pal_cond_t* cond) {
   (void)user;
   return cond_notify(cond, 1);
 }
@@ -291,6 +280,6 @@ static const h2_pal_sync_api_t s_sync_api = {
     .vtable = &s_sync_vtable,
 };
 
-const h2_pal_sync_api_t *h2_jieli_br35_platform_sync_api(void) {
+const h2_pal_sync_api_t* h2_jieli_br35_platform_sync_api(void) {
   return &s_sync_api;
 }

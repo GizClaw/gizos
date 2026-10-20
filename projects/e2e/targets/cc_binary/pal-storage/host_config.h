@@ -4,7 +4,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-h2_runtime_config_t h2_storage_host_config(const h2_pal_mem_api_t *memory);
+h2_runtime_config_t h2_storage_host_config(const h2_pal_mem_api_t* memory);
 #ifdef __cplusplus
 }
 #endif

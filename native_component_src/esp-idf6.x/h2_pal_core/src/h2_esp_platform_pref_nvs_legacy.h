@@ -3,7 +3,7 @@
 
 #include "h2_esp_platform_pref_store.h"
 
-int h2_esp_pref_legacy_copy(h2_esp_pref_store_t *store);
+int h2_esp_pref_legacy_copy(h2_esp_pref_store_t* store);
 int h2_esp_pref_legacy_cleanup(void);
 
 #endif

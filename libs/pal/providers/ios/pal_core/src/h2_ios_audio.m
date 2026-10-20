@@ -10,8 +10,12 @@
 #include <string.h>
 #include <time.h>
 
-enum { H2_IOS_AUDIO_MIC_SAMPLES = 320, H2_IOS_AUDIO_PLAY_SAMPLES = 512,
-       H2_IOS_AUDIO_QUEUE_BUFFERS = 4, H2_IOS_AUDIO_MIC_FRAMES = 8 };
+enum {
+  H2_IOS_AUDIO_MIC_SAMPLES = 320,
+  H2_IOS_AUDIO_PLAY_SAMPLES = 512,
+  H2_IOS_AUDIO_QUEUE_BUFFERS = 4,
+  H2_IOS_AUDIO_MIC_FRAMES = 8
+};
 
 typedef struct h2_ios_audio_track {
   h2_pal_audio_track_t base;
@@ -23,8 +27,10 @@ typedef struct h2_ios_audio_track {
 static void release_track(h2_ios_audio_track_t *track) {
   if (track == NULL) return;
   const h2_pal_mem_api_t allocator = track->allocator;
-  if (allocator.vtable != NULL) h2_pal_mem_free(&allocator, track);
-  else free(track);
+  if (allocator.vtable != NULL)
+    h2_pal_mem_free(&allocator, track);
+  else
+    free(track);
 }
 
 struct h2_ios_audio {
@@ -59,15 +65,12 @@ static AudioStreamBasicDescription pcm_format(void) {
   return format;
 }
 
-static int wait_changed(h2_ios_audio_t *owner,
-                         const h2_ios_audio_wait_budget_t *budget) {
+static int wait_changed(h2_ios_audio_t *owner, const h2_ios_audio_wait_budget_t *budget) {
   return h2_ios_audio_wait_changed(&owner->changed, &owner->mutex, budget);
 }
 
-static void input_callback(void *user, AudioQueueRef queue,
-                           AudioQueueBufferRef buffer,
-                           const AudioTimeStamp *start_time,
-                           UInt32 packet_count,
+static void input_callback(void *user, AudioQueueRef queue, AudioQueueBufferRef buffer,
+                           const AudioTimeStamp *start_time, UInt32 packet_count,
                            const AudioStreamPacketDescription *packets) {
   (void)start_time;
   (void)packet_count;
@@ -89,8 +92,7 @@ static void input_callback(void *user, AudioQueueRef queue,
   pthread_mutex_unlock(&owner->mutex);
 }
 
-static void output_callback(void *user, AudioQueueRef queue,
-                            AudioQueueBufferRef buffer) {
+static void output_callback(void *user, AudioQueueRef queue, AudioQueueBufferRef buffer) {
   h2_ios_audio_t *owner = user;
   pthread_mutex_lock(&owner->mutex);
   if (owner->output_queue == queue) {
@@ -110,9 +112,9 @@ static int activate_session(void) {
   NSError *error = nil;
   AVAudioSession *session = AVAudioSession.sharedInstance;
   if (![session setCategory:AVAudioSessionCategoryPlayAndRecord
-                      mode:AVAudioSessionModeDefault
-                   options:AVAudioSessionCategoryOptionDefaultToSpeaker
-                     error:&error] ||
+                       mode:AVAudioSessionModeDefault
+                    options:AVAudioSessionCategoryOptionDefaultToSpeaker
+                      error:&error] ||
       ![session setPreferredSampleRate:16000.0 error:&error] ||
       ![session setActive:YES error:&error])
     return H2_AUDIO_ERR_UNAVAILABLE;
@@ -122,7 +124,9 @@ static int activate_session(void) {
 static int audio_get_info(void *user, h2_audio_info_t *info) {
   if (user == NULL || info == NULL) return H2_AUDIO_ERR_INVALID_ARG;
   *info = (h2_audio_info_t){
-      .available = 1, .mic_supported = 1, .playback_supported = 1,
+      .available = 1,
+      .mic_supported = 1,
+      .playback_supported = 1,
       .mic_format = {16000u, H2_IOS_AUDIO_MIC_SAMPLES, 1u, H2_AUDIO_SAMPLE_S16LE},
       .playback_format = {16000u, H2_IOS_AUDIO_PLAY_SAMPLES, 1u, H2_AUDIO_SAMPLE_S16LE},
       .mic_queue_frames = H2_IOS_AUDIO_MIC_FRAMES,
@@ -144,13 +148,13 @@ static int audio_start_mic(void *user) {
   if (rc != H2_AUDIO_OK) return rc;
   AudioQueueRef queue = NULL;
   AudioStreamBasicDescription format = pcm_format();
-  if (AudioQueueNewInput(&format, input_callback, owner, NULL, NULL, 0u,
-                         &queue) != noErr || queue == NULL)
+  if (AudioQueueNewInput(&format, input_callback, owner, NULL, NULL, 0u, &queue) != noErr ||
+      queue == NULL)
     return H2_AUDIO_ERR_UNAVAILABLE;
   for (unsigned i = 0u; i < H2_IOS_AUDIO_QUEUE_BUFFERS; ++i) {
     AudioQueueBufferRef buffer = NULL;
-    if (AudioQueueAllocateBuffer(queue, H2_IOS_AUDIO_MIC_SAMPLES * sizeof(int16_t),
-                                  &buffer) != noErr ||
+    if (AudioQueueAllocateBuffer(queue, H2_IOS_AUDIO_MIC_SAMPLES * sizeof(int16_t), &buffer) !=
+            noErr ||
         AudioQueueEnqueueBuffer(queue, buffer, 0u, NULL) != noErr) {
       (void)AudioQueueDispose(queue, true);
       return H2_AUDIO_ERR_IO;
@@ -201,13 +205,13 @@ static int audio_start_speaker(void *user) {
   if (rc != H2_AUDIO_OK) return rc;
   AudioStreamBasicDescription format = pcm_format();
   AudioQueueRef queue = NULL;
-  if (AudioQueueNewOutput(&format, output_callback, owner, NULL, NULL, 0u,
-                          &queue) != noErr || queue == NULL)
+  if (AudioQueueNewOutput(&format, output_callback, owner, NULL, NULL, 0u, &queue) != noErr ||
+      queue == NULL)
     return H2_AUDIO_ERR_UNAVAILABLE;
   AudioQueueBufferRef buffers[H2_IOS_AUDIO_QUEUE_BUFFERS] = {0};
   for (unsigned i = 0u; i < H2_IOS_AUDIO_QUEUE_BUFFERS; ++i) {
-    if (AudioQueueAllocateBuffer(queue, H2_IOS_AUDIO_PLAY_SAMPLES * sizeof(int16_t),
-                                  &buffers[i]) != noErr) {
+    if (AudioQueueAllocateBuffer(queue, H2_IOS_AUDIO_PLAY_SAMPLES * sizeof(int16_t), &buffers[i]) !=
+        noErr) {
       (void)AudioQueueDispose(queue, true);
       return H2_AUDIO_ERR_NO_MEMORY;
     }
@@ -281,8 +285,7 @@ static int audio_mic_read(void *user, h2_audio_frame_t *frame, uint32_t timeout_
   const int16_t *source = owner->mic_frames[owner->mic_head];
   int16_t *destination = frame->data;
   for (unsigned i = 0u; i < H2_IOS_AUDIO_MIC_SAMPLES; ++i)
-    destination[i] = (int16_t)((int32_t)source[i] *
-                              (int32_t)owner->mic_gain_percent / 100);
+    destination[i] = (int16_t)((int32_t)source[i] * (int32_t)owner->mic_gain_percent / 100);
   owner->mic_head = (owner->mic_head + 1u) % H2_IOS_AUDIO_MIC_FRAMES;
   --owner->mic_count;
   pthread_mutex_unlock(&owner->mutex);
@@ -363,8 +366,7 @@ static int track_write(h2_pal_audio_track_t *base, const h2_audio_frame_t *frame
 
 static int track_get_volume(h2_pal_audio_track_t *base, uint32_t *out) {
   h2_ios_audio_track_t *track = (h2_ios_audio_track_t *)base;
-  if (track == NULL || track->owner == NULL || out == NULL)
-    return H2_AUDIO_ERR_INVALID_ARG;
+  if (track == NULL || track->owner == NULL || out == NULL) return H2_AUDIO_ERR_INVALID_ARG;
   pthread_mutex_lock(&track->owner->mutex);
   *out = track->volume_factor_milli;
   pthread_mutex_unlock(&track->owner->mutex);
@@ -373,8 +375,7 @@ static int track_get_volume(h2_pal_audio_track_t *base, uint32_t *out) {
 
 static int track_set_volume(h2_pal_audio_track_t *base, uint32_t value) {
   h2_ios_audio_track_t *track = (h2_ios_audio_track_t *)base;
-  if (track == NULL || track->owner == NULL || value > 1000u)
-    return H2_AUDIO_ERR_INVALID_ARG;
+  if (track == NULL || track->owner == NULL || value > 1000u) return H2_AUDIO_ERR_INVALID_ARG;
   pthread_mutex_lock(&track->owner->mutex);
   track->volume_factor_milli = value;
   pthread_mutex_unlock(&track->owner->mutex);
@@ -401,15 +402,12 @@ static int track_close(h2_pal_audio_track_t *base) {
 static int audio_create_track(void *user, const h2_audio_track_config_t *config,
                               h2_pal_audio_track_t **out) {
   h2_ios_audio_t *owner = user;
-  if (owner == NULL || config == NULL || out == NULL ||
-      config->format.sample_rate_hz != 16000u ||
+  if (owner == NULL || config == NULL || out == NULL || config->format.sample_rate_hz != 16000u ||
       config->format.frame_samples_per_channel != H2_IOS_AUDIO_PLAY_SAMPLES ||
-      config->format.channels != 1u ||
-      config->format.sample_format != H2_AUDIO_SAMPLE_S16LE ||
+      config->format.channels != 1u || config->format.sample_format != H2_AUDIO_SAMPLE_S16LE ||
       config->volume_factor_milli > 1000u ||
       (config->allocator != NULL &&
-       (config->allocator->vtable == NULL ||
-        config->allocator->vtable->alloc == NULL ||
+       (config->allocator->vtable == NULL || config->allocator->vtable->alloc == NULL ||
         config->allocator->vtable->free == NULL)))
     return H2_AUDIO_ERR_INVALID_ARG;
   pthread_mutex_lock(&owner->mutex);
@@ -418,19 +416,21 @@ static int audio_create_track(void *user, const h2_audio_track_config_t *config,
     return H2_AUDIO_ERR_INVALID_STATE;
   }
   h2_ios_audio_track_t *track = config->allocator != NULL
-      ? h2_pal_mem_alloc(config->allocator, sizeof(*track))
-      : malloc(sizeof(*track));
+                                    ? h2_pal_mem_alloc(config->allocator, sizeof(*track))
+                                    : malloc(sizeof(*track));
   if (track == NULL) {
     pthread_mutex_unlock(&owner->mutex);
     return H2_AUDIO_ERR_NO_MEMORY;
   }
   memset(track, 0, sizeof(*track));
   if (config->allocator != NULL) track->allocator = *config->allocator;
-  track->base = (h2_pal_audio_track_t){
-      .user = track, .audio = &owner->api,
-      .write = track_write, .close = track_close,
-      .get_volume_factor = track_get_volume,
-      .set_volume_factor = track_set_volume, .drain = track_drain};
+  track->base = (h2_pal_audio_track_t){.user = track,
+                                       .audio = &owner->api,
+                                       .write = track_write,
+                                       .close = track_close,
+                                       .get_volume_factor = track_get_volume,
+                                       .set_volume_factor = track_set_volume,
+                                       .drain = track_drain};
   track->owner = owner;
   track->volume_factor_milli = config->volume_factor_milli;
   owner->track = track;
@@ -472,18 +472,20 @@ static int audio_set_mic_gain(void *user, uint32_t value) {
   return H2_AUDIO_OK;
 }
 
-static int audio_aec_diagnostics_unsupported(void *user,
-    const h2_audio_aec_observer_t *observer) {
-    (void)user;
-    (void)observer;
-    return H2_AUDIO_ERR_UNSUPPORTED;
+static int audio_aec_diagnostics_unsupported(void *user, const h2_audio_aec_observer_t *observer) {
+  (void)user;
+  (void)observer;
+  return H2_AUDIO_ERR_UNSUPPORTED;
 }
 
 static const h2_pal_audio_vtable_t audio_vtable = {
     .get_info = audio_get_info,
-    .start_mic = audio_start_mic, .stop_mic = audio_stop_mic,
-    .start_speaker = audio_start_speaker, .stop_speaker = audio_stop_speaker,
-    .mic_read = audio_mic_read, .create_track = audio_create_track,
+    .start_mic = audio_start_mic,
+    .stop_mic = audio_stop_mic,
+    .start_speaker = audio_start_speaker,
+    .stop_speaker = audio_stop_speaker,
+    .mic_read = audio_mic_read,
+    .create_track = audio_create_track,
     .get_speaker_volume_percent = audio_get_speaker_volume,
     .set_speaker_volume_percent = audio_set_speaker_volume,
     .get_mic_gain_percent = audio_get_mic_gain,

@@ -26,52 +26,59 @@ extern "C" {
 typedef struct h2_game_audio h2_game_audio_t;
 
 typedef enum h2_game_audio_wave {
-    H2_GAME_AUDIO_WAVE_PULSE = 0,
-    H2_GAME_AUDIO_WAVE_TRIANGLE = 1,
-    H2_GAME_AUDIO_WAVE_NOISE = 2,
-    H2_GAME_AUDIO_WAVE_SINE = 3,
-    H2_GAME_AUDIO_WAVE_SAW = 4,
+  H2_GAME_AUDIO_WAVE_PULSE = 0,
+  H2_GAME_AUDIO_WAVE_TRIANGLE = 1,
+  H2_GAME_AUDIO_WAVE_NOISE = 2,
+  H2_GAME_AUDIO_WAVE_SINE = 3,
+  H2_GAME_AUDIO_WAVE_SAW = 4,
 } h2_game_audio_wave_t;
 
-/** One sample-clock scheduled synthesized note. All values are integer and portable. */
+/** One sample-clock scheduled synthesized note. All values are integer and
+ * portable. */
 typedef struct h2_game_audio_step {
-    uint32_t start_ms;
-    uint32_t duration_ms;
-    uint16_t frequency_hz;
-    uint16_t end_frequency_hz;
-    uint16_t volume_permille;
-    uint16_t duty_permille;
-    h2_game_audio_wave_t wave;
+  uint32_t start_ms;
+  uint32_t duration_ms;
+  uint16_t frequency_hz;
+  uint16_t end_frequency_hz;
+  uint16_t volume_permille;
+  uint16_t duty_permille;
+  h2_game_audio_wave_t wave;
 } h2_game_audio_step_t;
 
 typedef struct h2_game_audio_recipe {
-    const h2_game_audio_step_t *steps;
-    size_t step_count;
-    uint32_t duration_ms;
+  const h2_game_audio_step_t* steps;
+  size_t step_count;
+  uint32_t duration_ms;
 } h2_game_audio_recipe_t;
 
 typedef struct h2_game_audio_config {
-    const h2_pal_audio_api_t *audio;
-    const h2_pal_task_api_t *task;
-    const h2_pal_queue_api_t *queue;
-    const h2_pal_mem_api_t *mem;
-    size_t command_capacity;
+  const h2_pal_audio_api_t* audio;
+  const h2_pal_task_api_t* task;
+  const h2_pal_queue_api_t* queue;
+  const h2_pal_mem_api_t* mem;
+  size_t command_capacity;
 } h2_game_audio_config_t;
 
 /**
  * Creates the PAL-backed PCM worker on an already-started speaker.
- * The PAL playback format must be 16 kHz mono S16LE; its frame size determines each generated write.
- * Config APIs remain borrowed.
+ * The PAL playback format must be 16 kHz mono S16LE; its frame size determines
+ * each generated write. Config APIs remain borrowed.
  */
-int h2_game_audio_create(const h2_game_audio_config_t *config, h2_game_audio_t **out_audio);
-/** Queues a borrowed recipe; steps must be ordered by nondecreasing start_ms, fit within duration, and outlive playback. */
-int h2_game_audio_play(h2_game_audio_t *audio, const h2_game_audio_recipe_t *recipe);
-/** Publishes a borrowed priority recipe with the same ordering and duration rules without depending on queue capacity. */
-int h2_game_audio_play_latest(h2_game_audio_t *audio, const h2_game_audio_recipe_t *recipe);
+int h2_game_audio_create(const h2_game_audio_config_t* config,
+                         h2_game_audio_t** out_audio);
+/** Queues a borrowed recipe; steps must be ordered by nondecreasing start_ms,
+ * fit within duration, and outlive playback. */
+int h2_game_audio_play(h2_game_audio_t* audio,
+                       const h2_game_audio_recipe_t* recipe);
+/** Publishes a borrowed priority recipe with the same ordering and duration
+ * rules without depending on queue capacity. */
+int h2_game_audio_play_latest(h2_game_audio_t* audio,
+                              const h2_game_audio_recipe_t* recipe);
 /** Stops and joins the PCM worker. */
-int h2_game_audio_stop(h2_game_audio_t *audio);
-/** Stops and destroys the worker. On join failure, ownership remains with the caller for retry. */
-int h2_game_audio_destroy(h2_game_audio_t *audio);
+int h2_game_audio_stop(h2_game_audio_t* audio);
+/** Stops and destroys the worker. On join failure, ownership remains with the
+ * caller for retry. */
+int h2_game_audio_destroy(h2_game_audio_t* audio);
 
 #ifdef __cplusplus
 }

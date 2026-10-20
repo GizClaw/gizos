@@ -11,7 +11,7 @@ extern "C" {
 /** Owned text in caller response storage. len preserves embedded NUL bytes;
  * data has an additional NUL terminator that is not included in len. */
 typedef struct h2_gizclaw_owned_text {
-  char *data;
+  char* data;
   size_t len;
 } h2_gizclaw_owned_text_t;
 
@@ -25,7 +25,7 @@ typedef struct h2_gizclaw_client h2_gizclaw_client_t;
  * No GizClaw deinit function is needed; the caller owns the buffer itself.
  * This object is not safe for concurrent parsing without caller locking. */
 typedef struct h2_gizclaw_resp_storage {
-  uint8_t *data;
+  uint8_t* data;
   size_t capacity;
   size_t used;
 } h2_gizclaw_resp_storage_t;

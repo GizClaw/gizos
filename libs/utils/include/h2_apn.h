@@ -5,7 +5,7 @@
 extern "C" {
 #endif
 
-const char *h2_apn_from_imsi(const char *imsi);
+const char* h2_apn_from_imsi(const char* imsi);
 
 #ifdef __cplusplus
 }

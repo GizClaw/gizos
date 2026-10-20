@@ -16,13 +16,13 @@ typedef struct h2_bloomspeaker_pairing_rank {
   uint64_t ticket;
 } h2_bloomspeaker_pairing_rank_t;
 
-static void write_little_endian(uint8_t *out, uint64_t value, size_t bytes) {
+static void write_little_endian(uint8_t* out, uint64_t value, size_t bytes) {
   for (size_t index = 0u; index < bytes; ++index) {
     out[index] = (uint8_t)(value >> (index * 8u));
   }
 }
 
-static uint64_t read_little_endian(const uint8_t *data, size_t bytes) {
+static uint64_t read_little_endian(const uint8_t* data, size_t bytes) {
   uint64_t value = 0u;
   for (size_t index = 0u; index < bytes; ++index) {
     value |= (uint64_t)data[index] << (index * 8u);
@@ -36,7 +36,7 @@ static bool beacon_state_valid(h2_bloomspeaker_pairing_beacon_state_t state) {
          state == H2_BLOOMSPEAKER_PAIRING_BEACON_LOCKED;
 }
 
-static bool beacon_valid(const h2_bloomspeaker_pairing_beacon_t *beacon) {
+static bool beacon_valid(const h2_bloomspeaker_pairing_beacon_t* beacon) {
   return beacon != NULL && beacon->device_tag != 0u &&
          beacon->device_tag <= H2_BLOOMSPEAKER_PAIRING_DEVICE_TAG_MASK &&
          beacon->claim_target <= H2_BLOOMSPEAKER_PAIRING_DEVICE_TAG_MASK &&
@@ -47,16 +47,15 @@ static bool beacon_valid(const h2_bloomspeaker_pairing_beacon_t *beacon) {
            beacon->claim_target != 0u));
 }
 
-static bool rank_before(const h2_bloomspeaker_pairing_rank_t *left,
-                        const h2_bloomspeaker_pairing_rank_t *right) {
-  return left->ticket < right->ticket ||
-         (left->ticket == right->ticket &&
-          left->device_tag < right->device_tag);
+static bool rank_before(const h2_bloomspeaker_pairing_rank_t* left,
+                        const h2_bloomspeaker_pairing_rank_t* right) {
+  return left->ticket < right->ticket || (left->ticket == right->ticket &&
+                                          left->device_tag < right->device_tag);
 }
 
 static bool candidate_eligible(
-    const h2_bloomspeaker_pairing_t *pairing,
-    const h2_bloomspeaker_pairing_candidate_t *candidate, uint64_t now_ms) {
+    const h2_bloomspeaker_pairing_t* pairing,
+    const h2_bloomspeaker_pairing_candidate_t* candidate, uint64_t now_ms) {
   return pairing != NULL && candidate != NULL && candidate->occupied &&
          candidate->seen_count >= 2u &&
          candidate->rssi >= pairing->minimum_rssi &&
@@ -66,21 +65,20 @@ static bool candidate_eligible(
          now_ms - candidate->last_seen_ms <= pairing->stale_after_ms;
 }
 
-static const h2_bloomspeaker_pairing_candidate_t *find_candidate(
-    const h2_bloomspeaker_pairing_t *pairing, uint64_t device_tag) {
-  for (size_t index = 0u;
-       index < H2_BLOOMSPEAKER_PAIRING_MAX_CANDIDATES; ++index) {
-    const h2_bloomspeaker_pairing_candidate_t *candidate =
+static const h2_bloomspeaker_pairing_candidate_t* find_candidate(
+    const h2_bloomspeaker_pairing_t* pairing, uint64_t device_tag) {
+  for (size_t index = 0u; index < H2_BLOOMSPEAKER_PAIRING_MAX_CANDIDATES;
+       ++index) {
+    const h2_bloomspeaker_pairing_candidate_t* candidate =
         &pairing->candidates[index];
-    if (candidate->occupied &&
-        candidate->beacon.device_tag == device_tag) {
+    if (candidate->occupied && candidate->beacon.device_tag == device_tag) {
       return candidate;
     }
   }
   return NULL;
 }
 
-void h2_bloomspeaker_pairing_init(h2_bloomspeaker_pairing_t *pairing,
+void h2_bloomspeaker_pairing_init(h2_bloomspeaker_pairing_t* pairing,
                                   uint64_t device_tag, uint64_t ticket,
                                   uint32_t epoch) {
   if (pairing == NULL) {
@@ -99,7 +97,7 @@ void h2_bloomspeaker_pairing_init(h2_bloomspeaker_pairing_t *pairing,
 }
 
 int h2_bloomspeaker_pairing_encode(
-    const h2_bloomspeaker_pairing_beacon_t *beacon,
+    const h2_bloomspeaker_pairing_beacon_t* beacon,
     uint8_t out[H2_BLOOMSPEAKER_PAIRING_BEACON_SIZE]) {
   if (!beacon_valid(beacon) || out == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -115,8 +113,8 @@ int h2_bloomspeaker_pairing_encode(
 }
 
 int h2_bloomspeaker_pairing_decode(
-    const uint8_t *data, size_t len,
-    h2_bloomspeaker_pairing_beacon_t *out_beacon) {
+    const uint8_t* data, size_t len,
+    h2_bloomspeaker_pairing_beacon_t* out_beacon) {
   if (data == NULL || out_beacon == NULL ||
       len != H2_BLOOMSPEAKER_PAIRING_BEACON_SIZE ||
       data[0] != H2_BLOOMSPEAKER_PAIRING_MAGIC ||
@@ -140,18 +138,17 @@ int h2_bloomspeaker_pairing_decode(
 }
 
 int h2_bloomspeaker_pairing_observe(
-    h2_bloomspeaker_pairing_t *pairing,
-    const h2_bloomspeaker_pairing_beacon_t *beacon, int rssi,
-    uint64_t now_ms) {
+    h2_bloomspeaker_pairing_t* pairing,
+    const h2_bloomspeaker_pairing_beacon_t* beacon, int rssi, uint64_t now_ms) {
   if (pairing == NULL || !beacon_valid(beacon) ||
       beacon->device_tag == pairing->local.device_tag) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  h2_bloomspeaker_pairing_candidate_t *free_candidate = NULL;
-  h2_bloomspeaker_pairing_candidate_t *oldest_candidate = NULL;
-  for (size_t index = 0u;
-       index < H2_BLOOMSPEAKER_PAIRING_MAX_CANDIDATES; ++index) {
-    h2_bloomspeaker_pairing_candidate_t *candidate =
+  h2_bloomspeaker_pairing_candidate_t* free_candidate = NULL;
+  h2_bloomspeaker_pairing_candidate_t* oldest_candidate = NULL;
+  for (size_t index = 0u; index < H2_BLOOMSPEAKER_PAIRING_MAX_CANDIDATES;
+       ++index) {
+    h2_bloomspeaker_pairing_candidate_t* candidate =
         &pairing->candidates[index];
     if (candidate->occupied &&
         candidate->beacon.device_tag == beacon->device_tag) {
@@ -176,7 +173,7 @@ int h2_bloomspeaker_pairing_observe(
       oldest_candidate = candidate;
     }
   }
-  h2_bloomspeaker_pairing_candidate_t *candidate =
+  h2_bloomspeaker_pairing_candidate_t* candidate =
       free_candidate != NULL ? free_candidate : oldest_candidate;
   if (candidate == NULL) {
     return H2_PAL_ERR_FULL;
@@ -193,7 +190,7 @@ int h2_bloomspeaker_pairing_observe(
 }
 
 uint64_t h2_bloomspeaker_pairing_select(
-    const h2_bloomspeaker_pairing_t *pairing, uint64_t now_ms) {
+    const h2_bloomspeaker_pairing_t* pairing, uint64_t now_ms) {
   if (pairing == NULL || pairing->local.device_tag == 0u) {
     return 0u;
   }
@@ -201,10 +198,10 @@ uint64_t h2_bloomspeaker_pairing_select(
       ranks[H2_BLOOMSPEAKER_PAIRING_MAX_CANDIDATES + 1u];
   size_t count = 1u;
   ranks[0] = (h2_bloomspeaker_pairing_rank_t){pairing->local.device_tag,
-                                               pairing->local.ticket};
-  for (size_t index = 0u;
-       index < H2_BLOOMSPEAKER_PAIRING_MAX_CANDIDATES; ++index) {
-    const h2_bloomspeaker_pairing_candidate_t *candidate =
+                                              pairing->local.ticket};
+  for (size_t index = 0u; index < H2_BLOOMSPEAKER_PAIRING_MAX_CANDIDATES;
+       ++index) {
+    const h2_bloomspeaker_pairing_candidate_t* candidate =
         &pairing->candidates[index];
     if (candidate_eligible(pairing, candidate, now_ms) &&
         candidate->beacon.state != H2_BLOOMSPEAKER_PAIRING_BEACON_LOCKED) {
@@ -233,19 +230,18 @@ uint64_t h2_bloomspeaker_pairing_select(
   return 0u;
 }
 
-void h2_bloomspeaker_pairing_set_claim(h2_bloomspeaker_pairing_t *pairing,
+void h2_bloomspeaker_pairing_set_claim(h2_bloomspeaker_pairing_t* pairing,
                                        uint64_t target) {
   if (pairing == NULL || target > H2_BLOOMSPEAKER_PAIRING_DEVICE_TAG_MASK ||
       target == pairing->local.device_tag) {
     return;
   }
   pairing->local.claim_target = target;
-  pairing->local.state = target == 0u
-                             ? H2_BLOOMSPEAKER_PAIRING_BEACON_PAIRABLE
-                             : H2_BLOOMSPEAKER_PAIRING_BEACON_CLAIMED;
+  pairing->local.state = target == 0u ? H2_BLOOMSPEAKER_PAIRING_BEACON_PAIRABLE
+                                      : H2_BLOOMSPEAKER_PAIRING_BEACON_CLAIMED;
 }
 
-bool h2_bloomspeaker_pairing_lock(h2_bloomspeaker_pairing_t *pairing,
+bool h2_bloomspeaker_pairing_lock(h2_bloomspeaker_pairing_t* pairing,
                                   uint64_t target) {
   if (pairing == NULL || target == 0u ||
       pairing->local.state != H2_BLOOMSPEAKER_PAIRING_BEACON_CLAIMED ||
@@ -257,8 +253,8 @@ bool h2_bloomspeaker_pairing_lock(h2_bloomspeaker_pairing_t *pairing,
 }
 
 bool h2_bloomspeaker_pairing_mutual_claim(
-    const h2_bloomspeaker_pairing_t *pairing, uint64_t now_ms,
-    uint64_t *out_peer) {
+    const h2_bloomspeaker_pairing_t* pairing, uint64_t now_ms,
+    uint64_t* out_peer) {
   if (out_peer != NULL) {
     *out_peer = 0u;
   }
@@ -266,7 +262,7 @@ bool h2_bloomspeaker_pairing_mutual_claim(
       pairing->local.state != H2_BLOOMSPEAKER_PAIRING_BEACON_CLAIMED) {
     return false;
   }
-  const h2_bloomspeaker_pairing_candidate_t *candidate =
+  const h2_bloomspeaker_pairing_candidate_t* candidate =
       find_candidate(pairing, pairing->local.claim_target);
   if (!candidate_eligible(pairing, candidate, now_ms) ||
       (candidate->beacon.state != H2_BLOOMSPEAKER_PAIRING_BEACON_CLAIMED &&
@@ -281,20 +277,19 @@ bool h2_bloomspeaker_pairing_mutual_claim(
 }
 
 h2_bloomspeaker_pairing_role_t h2_bloomspeaker_pairing_role(
-    const h2_bloomspeaker_pairing_t *pairing, uint64_t peer) {
+    const h2_bloomspeaker_pairing_t* pairing, uint64_t peer) {
   if (pairing == NULL || peer == 0u) {
     return H2_BLOOMSPEAKER_PAIRING_ROLE_NONE;
   }
-  const h2_bloomspeaker_pairing_candidate_t *candidate =
+  const h2_bloomspeaker_pairing_candidate_t* candidate =
       find_candidate(pairing, peer);
   if (candidate == NULL) {
     return H2_BLOOMSPEAKER_PAIRING_ROLE_NONE;
   }
-  const h2_bloomspeaker_pairing_rank_t local = {
-      pairing->local.device_tag, pairing->local.ticket};
-  const h2_bloomspeaker_pairing_rank_t remote = {
-      candidate->beacon.device_tag, candidate->beacon.ticket};
-  return rank_before(&local, &remote)
-             ? H2_BLOOMSPEAKER_PAIRING_ROLE_PERIPHERAL
-             : H2_BLOOMSPEAKER_PAIRING_ROLE_CENTRAL;
+  const h2_bloomspeaker_pairing_rank_t local = {pairing->local.device_tag,
+                                                pairing->local.ticket};
+  const h2_bloomspeaker_pairing_rank_t remote = {candidate->beacon.device_tag,
+                                                 candidate->beacon.ticket};
+  return rank_before(&local, &remote) ? H2_BLOOMSPEAKER_PAIRING_ROLE_PERIPHERAL
+                                      : H2_BLOOMSPEAKER_PAIRING_ROLE_CENTRAL;
 }

@@ -12,14 +12,13 @@ extern "C" {
 #endif
 
 typedef struct h2_atomic_e2e_backend {
-  const char *name;
-  int (*create)(const h2_pal_mem_api_t *mem, bool psram, void **out_state);
-  void (*destroy)(const h2_pal_mem_api_t *mem, bool psram, void *state);
-  unsigned (*work)(void *state, unsigned iterations);
-  unsigned (*incremented)(const void *state);
-  unsigned (*compared)(const void *state);
-  void (*addresses)(const void *state, uintptr_t *wrapper,
-                    uintptr_t *storage);
+  const char* name;
+  int (*create)(const h2_pal_mem_api_t* mem, bool psram, void** out_state);
+  void (*destroy)(const h2_pal_mem_api_t* mem, bool psram, void* state);
+  unsigned (*work)(void* state, unsigned iterations);
+  unsigned (*incremented)(const void* state);
+  unsigned (*compared)(const void* state);
+  void (*addresses)(const void* state, uintptr_t* wrapper, uintptr_t* storage);
 } h2_atomic_e2e_backend_t;
 
 typedef struct h2_atomic_e2e_result {
@@ -36,8 +35,8 @@ typedef struct h2_atomic_e2e_result {
 } h2_atomic_e2e_result_t;
 
 typedef int (*h2_atomic_e2e_placement_check_t)(uintptr_t wrapper,
-                                             uintptr_t storage,
-                                             bool static_value, void *user);
+                                               uintptr_t storage,
+                                               bool static_value, void* user);
 
 typedef struct h2_atomic_flag_e2e_result {
   uintptr_t static_wrapper[2];
@@ -67,33 +66,33 @@ typedef struct h2_atomic_flag_e2e_result {
  * @return H2_PAL_OK when both workers finish every operation without an
  * unexpected claim; otherwise a PAL argument, allocation, task or state error.
  */
-int h2_atomic_flag_e2e_run(const h2_pal_mem_api_t *mem,
-                           const h2_pal_task_api_t *task,
-                           const h2_pal_time_api_t *time,
-                           unsigned iterations, int (*current_core)(void *),
-                           void *core_user,
+int h2_atomic_flag_e2e_run(const h2_pal_mem_api_t* mem,
+                           const h2_pal_task_api_t* task,
+                           const h2_pal_time_api_t* time, unsigned iterations,
+                           int (*current_core)(void*), void* core_user,
                            h2_atomic_e2e_placement_check_t check_placement,
-                           void *placement_user,
-                           h2_atomic_flag_e2e_result_t *out_result);
+                           void* placement_user,
+                           h2_atomic_flag_e2e_result_t* out_result);
 
 enum { H2_ATOMIC_QUALIFICATION_CASE_COUNT = 28 };
 typedef struct h2_atomic_qualification_config {
-  const h2_pal_mem_api_t *mem;
-  const h2_pal_task_api_t *task;
-  const h2_pal_time_api_t *time;
-  void (*pump)(void *);
-  void *pump_user;
-  int (*current_core)(void *);
-  void *core_user;
-  /* -1 means no CPU pinning requirement. The callback still records identity. */
+  const h2_pal_mem_api_t* mem;
+  const h2_pal_task_api_t* task;
+  const h2_pal_time_api_t* time;
+  void (*pump)(void*);
+  void* pump_user;
+  int (*current_core)(void*);
+  void* core_user;
+  /* -1 means no CPU pinning requirement. The callback still records identity.
+   */
   int expected_core[2];
   bool require_distinct_workers;
   /* Board qualification checks every backing while it is still live. */
   h2_atomic_e2e_placement_check_t check_placement;
-  void *placement_user;
+  void* placement_user;
 } h2_atomic_qualification_config_t;
 typedef struct h2_atomic_qualification_case {
-  const char *id;
+  const char* id;
   int rc;
   unsigned status; /* 0 NOT_RUN, 1 PASS, 2 FAIL */
 } h2_atomic_qualification_case_t;
@@ -121,26 +120,24 @@ typedef struct h2_atomic_qualification_result {
  * allocation, task, timeout or invalid-state error. Unsupported init cannot
  * qualify. No diagnostics callback owns or frees backing storage.
  */
-int h2_atomic_e2e_qualify(const h2_atomic_qualification_config_t *config,
-                         h2_atomic_qualification_result_t *result);
+int h2_atomic_e2e_qualify(const h2_atomic_qualification_config_t* config,
+                          h2_atomic_qualification_result_t* result);
 /** @brief Emit the immutable caller-owned ledger to the launcher console. */
-void h2_atomic_e2e_print(const char *platform, const char *placement,
-                         const h2_atomic_qualification_result_t *result);
+void h2_atomic_e2e_print(const char* platform, const char* placement,
+                         const h2_atomic_qualification_result_t* result);
 
-const h2_atomic_e2e_backend_t *h2_atomic_e2e_h2_backend(void);
+const h2_atomic_e2e_backend_t* h2_atomic_e2e_h2_backend(void);
 /* Deliberate test-only direct C11 comparison, linked separately. */
-const h2_atomic_e2e_backend_t *h2_atomic_e2e_c11_backend(void);
+const h2_atomic_e2e_backend_t* h2_atomic_e2e_c11_backend(void);
 
-int h2_atomic_e2e_run(const h2_pal_mem_api_t *mem,
-                      const h2_pal_task_api_t *task,
-                      const h2_pal_time_api_t *time,
-                      const h2_atomic_e2e_backend_t *backend,
-                      unsigned iterations_per_worker,
-                      bool concurrent,
-                      bool psram,
-                      int (*current_core)(void *), void *core_user,
-                      void (*pump)(void *), void *pump_user,
-                      h2_atomic_e2e_result_t *out_result);
+int h2_atomic_e2e_run(const h2_pal_mem_api_t* mem,
+                      const h2_pal_task_api_t* task,
+                      const h2_pal_time_api_t* time,
+                      const h2_atomic_e2e_backend_t* backend,
+                      unsigned iterations_per_worker, bool concurrent,
+                      bool psram, int (*current_core)(void*), void* core_user,
+                      void (*pump)(void*), void* pump_user,
+                      h2_atomic_e2e_result_t* out_result);
 
 #ifdef __cplusplus
 }

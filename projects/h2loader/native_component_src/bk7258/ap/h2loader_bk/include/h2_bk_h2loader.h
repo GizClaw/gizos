@@ -30,70 +30,69 @@ extern "C" {
 #define H2_BK_H2LOADER_APP_COMMAND_STACK_SIZE (32u * 1024u)
 #define H2_BK_H2LOADER_LOADER_COMMAND_STACK_SIZE 49152u
 
-int h2_bk_h2loader_sd_fs_init(h2_pal_fs_api_t *fs);
+int h2_bk_h2loader_sd_fs_init(h2_pal_fs_api_t* fs);
 /** Read the controller's Bluetooth identity MAC as 12 lowercase hex digits.
  * Task context after bk_init(); synchronous, no allocation or retention.
  * capacity includes NUL and must be >=13. Output is empty on failure;
  * invalid arguments return INVALID_ARG, SDK read failure returns IO.
  * Loader/App UART and BLE must use this same UID source.
  */
-int h2_bk_h2loader_get_device_uid(char *out_uid, size_t capacity);
+int h2_bk_h2loader_get_device_uid(char* out_uid, size_t capacity);
 void h2_bk_h2loader_prepare_sd_storage(void);
 void h2_bk_h2loader_release_sd_storage(void);
-int h2_bk_h2loader_mount_file_point(void *user, const char *path);
-int h2_bk_h2loader_clear_data(void *user, const char *path);
-const h2_bundle_app_writer_t *h2_bk_h2loader_ota_app_writer(void);
-const h2_loader_image_reader_api_t *h2_bk_h2loader_image_reader(void);
-const h2_loader_image_writer_api_t *h2_bk_h2loader_image_writer(void);
-int h2_bk_h2loader_managed_app_image_size(uint64_t *out_size);
+int h2_bk_h2loader_mount_file_point(void* user, const char* path);
+int h2_bk_h2loader_clear_data(void* user, const char* path);
+const h2_bundle_app_writer_t* h2_bk_h2loader_ota_app_writer(void);
+const h2_loader_image_reader_api_t* h2_bk_h2loader_image_reader(void);
+const h2_loader_image_writer_api_t* h2_bk_h2loader_image_writer(void);
+int h2_bk_h2loader_managed_app_image_size(uint64_t* out_size);
 int h2_bk_h2loader_commit_staged_app_boot(void);
-const h2_pal_power_api_t *h2_bk_h2loader_power_api(void);
-int h2_bk_h2loader_start_app_iostreamikcp(h2_runtime_t *runtime,
-                                          const char *active_name);
+const h2_pal_power_api_t* h2_bk_h2loader_power_api(void);
+int h2_bk_h2loader_start_app_iostreamikcp(h2_runtime_t* runtime,
+                                          const char* active_name);
 int h2_bk_h2loader_start_app_iostreamikcp_with_capabilities(
-    h2_runtime_t *runtime,
-    const char *active_name,
+    h2_runtime_t* runtime, const char* active_name,
     uint32_t hardware_capabilities);
 int h2_bk_h2loader_stop_app_iostreamikcp(void);
 int h2_bk_h2loader_start_loader_iostreamikcp(
-    h2_runtime_t *runtime, h2_loader_command_t *command,
-    const h2_loader_command_config_t *command_config);
+    h2_runtime_t* runtime, h2_loader_command_t* command,
+    const h2_loader_command_config_t* command_config);
 int h2_bk_h2loader_stop_loader_iostreamikcp(void);
-int h2_bk_h2loader_start_app_ble(h2_runtime_t *runtime,
-                                 const char *active_name);
+int h2_bk_h2loader_start_app_ble(h2_runtime_t* runtime,
+                                 const char* active_name);
 int h2_bk_h2loader_start_app_ble_with_capabilities(
-    h2_runtime_t *runtime,
-    const char *active_name,
+    h2_runtime_t* runtime, const char* active_name,
     uint32_t hardware_capabilities);
-int h2_bk_h2loader_start_app_ble_extended(h2_runtime_t *runtime,
-                                          const char *active_name);
+int h2_bk_h2loader_start_app_ble_extended(h2_runtime_t* runtime,
+                                          const char* active_name);
 int h2_bk_h2loader_start_app_ble_extended_with_capabilities(
-    h2_runtime_t *runtime,
-    const char *active_name,
+    h2_runtime_t* runtime, const char* active_name,
     uint32_t hardware_capabilities);
 int h2_bk_h2loader_pause_app_ble_advertising(void);
 int h2_bk_h2loader_resume_app_ble_advertising(void);
 int h2_bk_h2loader_advertise_app_ble_service(
-    const h2_pal_ble_uuid_t *service_uuid);
+    const h2_pal_ble_uuid_t* service_uuid);
 /** Initialize the shared command lock before publishing App transports.
  * An App with asynchronous command services can hold this lock on its startup
  * task until confirmation finishes, then release it on that same task. */
-int h2_bk_h2loader_prepare_app_operation(h2_runtime_t *runtime);
+int h2_bk_h2loader_prepare_app_operation(h2_runtime_t* runtime);
 int h2_bk_h2loader_app_operation_lock(void);
 void h2_bk_h2loader_app_operation_unlock(void);
 int h2_bk_h2loader_reboot_to_loader(void);
-int h2_bk_h2loader_confirm_active_loader(void *user);
-int h2_bk_h2loader_confirm_current_app(h2_runtime_t *runtime);
+int h2_bk_h2loader_confirm_active_loader(void* user);
+int h2_bk_h2loader_confirm_current_app(h2_runtime_t* runtime);
 int h2_bk_h2loader_prepare_pending_app_restart(void);
 void h2_bk_h2loader_abort_for_crash_test(void);
 
 /** Copy the initialized App command configuration without starting a service.
- * Call after command-service startup, before publishing to other tasks. Pointers
- * remain borrowed for the service lifetime. The consumer must serialize ALL
- * Stage, digest and reboot operations with operation_sync/operation_mutex, and
- * release the mutex on the same task that acquired it. Clears output on error.
+ * Call after command-service startup, before publishing to other tasks.
+ * Pointers remain borrowed for the service lifetime. The consumer must
+ * serialize ALL Stage, digest and reboot operations with
+ * operation_sync/operation_mutex, and release the mutex on the same task that
+ * acquired it. Clears output on error.
  */
-int h2_bk_h2loader_app_commands_get_config(h2_loader_app_client_config_t *out_config);
+int h2_bk_h2loader_app_commands_get_config(
+    h2_loader_app_client_config_t* out_config);
 
 #ifdef __cplusplus
 }

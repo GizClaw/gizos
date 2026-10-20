@@ -56,7 +56,7 @@ bool validText(h2_game_text_span_t text) {
          h2_game_text_validate_utf8(text) == H2_GAME_TEXT_OK;
 }
 
-h2_game_text_surface_t textSurface(pixelroot32::graphics::Renderer &renderer) {
+h2_game_text_surface_t textSurface(pixelroot32::graphics::Renderer& renderer) {
   return {
       renderer.getDrawSurface().getPixelBuffer(),
       kScreenWidth,
@@ -66,7 +66,7 @@ h2_game_text_surface_t textSurface(pixelroot32::graphics::Renderer &renderer) {
   };
 }
 
-int measureText(const h2_dinorun *game, h2_game_text_span_t text,
+int measureText(const h2_dinorun* game, h2_game_text_span_t text,
                 uint16_t lineHeight) {
   h2_game_text_metrics_t metrics{};
   return h2_game_text_measure(game->config.text, text, lineHeight, &metrics) ==
@@ -75,7 +75,7 @@ int measureText(const h2_dinorun *game, h2_game_text_span_t text,
              : -1;
 }
 
-int textAdvance(const h2_dinorun *game, h2_game_text_span_t text,
+int textAdvance(const h2_dinorun* game, h2_game_text_span_t text,
                 uint16_t lineHeight) {
   h2_game_text_metrics_t metrics{};
   return h2_game_text_measure(game->config.text, text, lineHeight, &metrics) ==
@@ -84,7 +84,7 @@ int textAdvance(const h2_dinorun *game, h2_game_text_span_t text,
              : -1;
 }
 
-void drawText(const h2_dinorun *game, pixelroot32::graphics::Renderer &renderer,
+void drawText(const h2_dinorun* game, pixelroot32::graphics::Renderer& renderer,
               h2_game_text_span_t text, int x, int y, uint16_t lineHeight) {
   const h2_game_text_surface_t surface = textSurface(renderer);
   const uint16_t color = pixelroot32::graphics::resolveColor(
@@ -94,8 +94,8 @@ void drawText(const h2_dinorun *game, pixelroot32::graphics::Renderer &renderer,
                           {color, lineHeight});
 }
 
-void drawCenteredText(const h2_dinorun *game,
-                      pixelroot32::graphics::Renderer &renderer,
+void drawCenteredText(const h2_dinorun* game,
+                      pixelroot32::graphics::Renderer& renderer,
                       h2_game_text_span_t text, int y, uint16_t lineHeight) {
   const int width = measureText(game, text, lineHeight);
   if (width >= 0)
@@ -116,7 +116,7 @@ static_assert(sizeof(kGroundArgb4444) == 60u * 30u * 2u);
 static_assert(sizeof(kBlockArgb4444) == 32u * 32u * 2u);
 static_assert(sizeof(kSpikeArgb4444) == 40u * 11u * 2u);
 
-uint32_t nextRandom(h2_dinorun *game) {
+uint32_t nextRandom(h2_dinorun* game) {
   uint32_t value = game->randomState;
   value ^= value << 13;
   value ^= value >> 17;
@@ -125,9 +125,9 @@ uint32_t nextRandom(h2_dinorun *game) {
   return game->randomState;
 }
 
-void emit(h2_dinorun *game, h2_dinorun_event_t event) {
+void emit(h2_dinorun* game, h2_dinorun_event_t event) {
   if (game->config.audio != nullptr) {
-    const h2_game_audio_recipe_t *recipe = event == H2_DINORUN_EVENT_JUMP
+    const h2_game_audio_recipe_t* recipe = event == H2_DINORUN_EVENT_JUMP
                                                ? &h2_dinorun_jump_recipe
                                                : &h2_dinorun_game_over_recipe;
     const int rc = event == H2_DINORUN_EVENT_GAME_OVER
@@ -140,42 +140,40 @@ void emit(h2_dinorun *game, h2_dinorun_event_t event) {
   }
 }
 
-bool validClip(const pixa_asset_t *asset, const char *name) {
+bool validClip(const pixa_asset_t* asset, const char* name) {
   pixa_clip_t clip = {};
-  return pixa_find_clip(asset, name, &clip) == PIXA_OK &&
-         clip.frame_count > 0;
+  return pixa_find_clip(asset, name, &clip) == PIXA_OK && clip.frame_count > 0;
 }
 
-const h2_dinorun_player_clips_t *playerClips(const h2_dinorun *game) {
+const h2_dinorun_player_clips_t* playerClips(const h2_dinorun* game) {
   return game->config.player_clips != nullptr ? game->config.player_clips
                                               : &kDefaultPlayerClips;
 }
 
-const h2_dinorun_player_clips_t *
-playerClips(const h2_dinorun_config_t *config) {
+const h2_dinorun_player_clips_t* playerClips(
+    const h2_dinorun_config_t* config) {
   return config->player_clips != nullptr ? config->player_clips
                                          : &kDefaultPlayerClips;
 }
 
-bool validPlayerClips(const pixa_asset_t *asset,
-                      const h2_dinorun_player_clips_t *clips) {
+bool validPlayerClips(const pixa_asset_t* asset,
+                      const h2_dinorun_player_clips_t* clips) {
   return clips != nullptr && clips->run_right != nullptr &&
          clips->jump != nullptr && clips->game_over != nullptr &&
          validClip(asset, clips->run_right) && validClip(asset, clips->jump) &&
          validClip(asset, clips->game_over);
 }
 
-void setClip(h2_dinorun *game, const char *name) {
-  if (game->clipName == name)
-    return;
+void setClip(h2_dinorun* game, const char* name) {
+  if (game->clipName == name) return;
   game->clipName = name;
   game->clipStartUs = game->elapsedUs;
   game->decodedFrame = UINT32_MAX;
   game->decodedClip = nullptr;
 }
 
-void blitArgb4444(pixelroot32::graphics::Renderer &renderer,
-                  const uint8_t *pixels, uint16_t width, uint16_t height, int x,
+void blitArgb4444(pixelroot32::graphics::Renderer& renderer,
+                  const uint8_t* pixels, uint16_t width, uint16_t height, int x,
                   int y) {
   (void)pixa_blit_argb4444_to_rgb565(
       renderer.getDrawSurface().getPixelBuffer(), kScreenWidth, kScreenHeight,
@@ -183,27 +181,25 @@ void blitArgb4444(pixelroot32::graphics::Renderer &renderer,
       static_cast<int16_t>(y));
 }
 
-void drawPlayer(h2_dinorun *game, pixelroot32::graphics::Renderer &renderer) {
+void drawPlayer(h2_dinorun* game, pixelroot32::graphics::Renderer& renderer) {
   pixa_clip_t clip = {};
   uint32_t frame = 0;
-  if (pixa_find_clip(game->config.player, game->clipName, &clip) !=
-          PIXA_OK ||
+  if (pixa_find_clip(game->config.player, game->clipName, &clip) != PIXA_OK ||
       pixa_frame_index_at_ms(game->config.player, &clip,
-                                (game->elapsedUs - game->clipStartUs) / 1000u,
-                                &frame) != PIXA_OK) {
+                             (game->elapsedUs - game->clipStartUs) / 1000u,
+                             &frame) != PIXA_OK) {
     return;
   }
   if (game->decodedClip != game->clipName || game->decodedFrame != frame) {
-    const size_t bgraSize =
-        pixa_canvas_bgra_bytes(game->config.player->canvas);
+    const size_t bgraSize = pixa_canvas_bgra_bytes(game->config.player->canvas);
     const size_t argbSize =
         pixa_canvas_argb4444_bytes(game->config.player->canvas);
-    if (pixa_decode_clip_frame_bgra(game->config.player, game->clipName,
-                                       frame, game->playerBgra.get(),
-                                       bgraSize) != PIXA_OK ||
+    if (pixa_decode_clip_frame_bgra(game->config.player, game->clipName, frame,
+                                    game->playerBgra.get(),
+                                    bgraSize) != PIXA_OK ||
         pixa_bgra_to_argb4444(game->playerBgra.get(), bgraSize,
-                                 game->playerArgb4444.get(),
-                                 argbSize) != PIXA_OK) {
+                              game->playerArgb4444.get(),
+                              argbSize) != PIXA_OK) {
       return;
     }
     game->decodedClip = game->clipName;
@@ -230,7 +226,7 @@ void drawPlayer(h2_dinorun *game, pixelroot32::graphics::Renderer &renderer) {
       drawHeight);
 }
 
-void resetGame(h2_dinorun *game) {
+void resetGame(h2_dinorun* game) {
   game->randomState = game->initialSeed;
   game->accumulatorUs = 0;
   game->elapsedUs = 0;
@@ -258,7 +254,7 @@ void resetGame(h2_dinorun *game) {
   game->decodedClip = nullptr;
 }
 
-void finishGame(h2_dinorun *game) {
+void finishGame(h2_dinorun* game) {
   if (game->gameOver) {
     return;
   }
@@ -269,7 +265,7 @@ void finishGame(h2_dinorun *game) {
   emit(game, H2_DINORUN_EVENT_GAME_OVER);
 }
 
-bool overlapsObstacle(const h2_dinorun *game) {
+bool overlapsObstacle(const h2_dinorun* game) {
   const int playerTop = game->playerY + kPlayerHitboxTopOffset;
   const int playerBottom = game->playerY + kPlayerHitboxBottomOffset;
   if (game->obstacleKind == 1) {
@@ -285,9 +281,9 @@ bool overlapsObstacle(const h2_dinorun *game) {
   return false;
 }
 
-} // namespace
+}  // namespace
 
-const h2_dinorun_texts_t *h2_dinorun_english_texts(void) {
+const h2_dinorun_texts_t* h2_dinorun_english_texts(void) {
   return &kEnglishTexts;
 }
 
@@ -387,7 +383,7 @@ void DinoRunScene::stepFrame() {
   }
 }
 
-void DinoRunScene::draw(pixelroot32::graphics::Renderer &renderer) {
+void DinoRunScene::draw(pixelroot32::graphics::Renderer& renderer) {
   renderer.drawFilledRectangleW(0, 0, kScreenWidth, kScreenHeight,
                                 kBackgroundColor);
   for (int x = -owner->groundOffset; x < 240; x += 60) {
@@ -432,7 +428,7 @@ void DinoRunScene::draw(pixelroot32::graphics::Renderer &renderer) {
     const int overlayY =
         static_cast<int>((kScreenHeight * (kGameOverOverlaySlideUs - clamped)) /
                          kGameOverOverlaySlideUs);
-    uint16_t *pixels = renderer.getDrawSurface().getPixelBuffer();
+    uint16_t* pixels = renderer.getDrawSurface().getPixelBuffer();
     if (pixels != nullptr) {
       for (int y = overlayY; y < kScreenHeight; ++y) {
         for (int x = 0; x < kScreenWidth; ++x) {
@@ -482,8 +478,8 @@ void DinoRunScene::draw(pixelroot32::graphics::Renderer &renderer) {
   }
 }
 
-int h2_dinorun_create(const h2_dinorun_config_t *config,
-                      h2_dinorun_t **outGame) {
+int h2_dinorun_create(const h2_dinorun_config_t* config,
+                      h2_dinorun_t** outGame) {
   if (outGame == nullptr) {
     return H2_DINORUN_ERR_INVALID_ARG;
   }
@@ -501,7 +497,7 @@ int h2_dinorun_create(const h2_dinorun_config_t *config,
     return H2_DINORUN_ERR_ASSET;
   }
 
-  auto *game = new (std::nothrow) h2_dinorun(*config);
+  auto* game = new (std::nothrow) h2_dinorun(*config);
   if (game == nullptr) {
     return H2_DINORUN_ERR_NO_MEMORY;
   }
@@ -519,13 +515,13 @@ int h2_dinorun_create(const h2_dinorun_config_t *config,
   return H2_DINORUN_OK;
 }
 
-h2_game_scene_t *h2_dinorun_scene(h2_dinorun_t *game) {
+h2_game_scene_t* h2_dinorun_scene(h2_dinorun_t* game) {
   return game == nullptr ? nullptr
-                         : reinterpret_cast<h2_game_scene_t *>(&game->scene);
+                         : reinterpret_cast<h2_game_scene_t*>(&game->scene);
 }
 
-void h2_dinorun_handle_input(h2_dinorun_t *game,
-                             const h2_game_input_event_t *event) {
+void h2_dinorun_handle_input(h2_dinorun_t* game,
+                             const h2_game_input_event_t* event) {
   if (game == nullptr || event == nullptr ||
       event->button != H2_DINORUN_BUTTON_ACTION || game->gameOver) {
     return;
@@ -562,13 +558,13 @@ void h2_dinorun_handle_input(h2_dinorun_t *game,
   emit(game, H2_DINORUN_EVENT_JUMP);
 }
 
-void h2_dinorun_reset(h2_dinorun_t *game) {
+void h2_dinorun_reset(h2_dinorun_t* game) {
   if (game != nullptr) {
     resetGame(game);
   }
 }
 
-int h2_dinorun_set_game_over_status(h2_dinorun_t *game,
+int h2_dinorun_set_game_over_status(h2_dinorun_t* game,
                                     h2_game_text_span_t status) {
   if (game == nullptr || status.byte_len >= game->gameOverStatus.size() ||
       (status.byte_len != 0u &&
@@ -584,8 +580,8 @@ int h2_dinorun_set_game_over_status(h2_dinorun_t *game,
   return H2_DINORUN_OK;
 }
 
-int h2_dinorun_get_result(const h2_dinorun_t *game,
-                          h2_dinorun_result_t *outResult) {
+int h2_dinorun_get_result(const h2_dinorun_t* game,
+                          h2_dinorun_result_t* outResult) {
   if (game == nullptr || outResult == nullptr) {
     return H2_DINORUN_ERR_INVALID_ARG;
   }
@@ -593,7 +589,7 @@ int h2_dinorun_get_result(const h2_dinorun_t *game,
   return H2_DINORUN_OK;
 }
 
-void h2_dinorun_destroy(h2_dinorun_t *game) {
+void h2_dinorun_destroy(h2_dinorun_t* game) {
   if (game == nullptr) {
     return;
   }

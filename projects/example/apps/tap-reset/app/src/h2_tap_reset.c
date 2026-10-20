@@ -5,16 +5,16 @@
 #include <stdio.h>
 #include <string.h>
 
-#define H2_TAP_RESET_FRAME_BYTES                                               \
+#define H2_TAP_RESET_FRAME_BYTES \
   ((size_t)H2_TAP_RESET_WIDTH * H2_TAP_RESET_HEIGHT * sizeof(uint16_t))
 
 typedef struct h2_tap_reset_state {
-  h2_runtime_t *runtime;
-  const h2_tap_reset_config_t *config;
-  lv_display_t *display;
-  lv_indev_t *pointer;
-  lv_obj_t *count_label;
-  void *render_buffer;
+  h2_runtime_t* runtime;
+  const h2_tap_reset_config_t* config;
+  lv_display_t* display;
+  lv_indev_t* pointer;
+  lv_obj_t* count_label;
+  void* render_buffer;
   uint64_t last_tick_ms;
   uint32_t count;
   int display_opened;
@@ -22,9 +22,8 @@ typedef struct h2_tap_reset_state {
 } h2_tap_reset_state_t;
 
 static uint32_t tap_reset_tick_get(void) {
-  h2_tap_reset_state_t *state =
-      (h2_tap_reset_state_t *)lv_display_get_user_data(
-          lv_display_get_default());
+  h2_tap_reset_state_t* state =
+      (h2_tap_reset_state_t*)lv_display_get_user_data(lv_display_get_default());
   if (state == NULL || state->runtime == NULL) {
     return 0u;
   }
@@ -36,10 +35,10 @@ static uint32_t tap_reset_tick_get(void) {
   return (uint32_t)state->last_tick_ms;
 }
 
-static void tap_reset_flush(lv_display_t *display, const lv_area_t *area,
-                            uint8_t *pixels) {
-  h2_tap_reset_state_t *state =
-      (h2_tap_reset_state_t *)lv_display_get_user_data(display);
+static void tap_reset_flush(lv_display_t* display, const lv_area_t* area,
+                            uint8_t* pixels) {
+  h2_tap_reset_state_t* state =
+      (h2_tap_reset_state_t*)lv_display_get_user_data(display);
   const h2_display_rect_t rect = {
       .x = area->x1,
       .y = area->y1,
@@ -55,9 +54,9 @@ static void tap_reset_flush(lv_display_t *display, const lv_area_t *area,
   lv_display_flush_ready(display);
 }
 
-static void tap_reset_pointer_read(lv_indev_t *indev, lv_indev_data_t *data) {
-  h2_tap_reset_state_t *state =
-      (h2_tap_reset_state_t *)lv_indev_get_user_data(indev);
+static void tap_reset_pointer_read(lv_indev_t* indev, lv_indev_data_t* data) {
+  h2_tap_reset_state_t* state =
+      (h2_tap_reset_state_t*)lv_indev_get_user_data(indev);
   h2_tap_reset_pointer_state_t pointer = {0};
   if (state != NULL && state->config->read_pointer != NULL &&
       state->config->read_pointer(state->config->pointer_user, &pointer) ==
@@ -71,31 +70,31 @@ static void tap_reset_pointer_read(lv_indev_t *indev, lv_indev_data_t *data) {
   }
 }
 
-static void tap_reset_update_count(h2_tap_reset_state_t *state) {
+static void tap_reset_update_count(h2_tap_reset_state_t* state) {
   char text[32];
   (void)snprintf(text, sizeof(text), "%u taps", state->count);
   lv_label_set_text(state->count_label, text);
 }
 
-static void tap_reset_increment(lv_event_t *event) {
-  h2_tap_reset_state_t *state =
-      (h2_tap_reset_state_t *)lv_event_get_user_data(event);
+static void tap_reset_increment(lv_event_t* event) {
+  h2_tap_reset_state_t* state =
+      (h2_tap_reset_state_t*)lv_event_get_user_data(event);
   if (state != NULL) {
     ++state->count;
     tap_reset_update_count(state);
   }
 }
 
-static void tap_reset_reset(lv_event_t *event) {
-  h2_tap_reset_state_t *state =
-      (h2_tap_reset_state_t *)lv_event_get_user_data(event);
+static void tap_reset_reset(lv_event_t* event) {
+  h2_tap_reset_state_t* state =
+      (h2_tap_reset_state_t*)lv_event_get_user_data(event);
   if (state != NULL) {
     state->count = 0u;
     tap_reset_update_count(state);
   }
 }
 
-static void tap_reset_style_button(lv_obj_t *button, uint32_t color) {
+static void tap_reset_style_button(lv_obj_t* button, uint32_t color) {
   lv_obj_set_height(button, 58);
   lv_obj_set_style_radius(button, 18, LV_PART_MAIN);
   lv_obj_set_style_border_width(button, 0, LV_PART_MAIN);
@@ -103,12 +102,12 @@ static void tap_reset_style_button(lv_obj_t *button, uint32_t color) {
   lv_obj_set_style_bg_opa(button, LV_OPA_COVER, LV_PART_MAIN);
 }
 
-static int tap_reset_create_ui(h2_tap_reset_state_t *state) {
-  lv_obj_t *screen = lv_screen_active();
+static int tap_reset_create_ui(h2_tap_reset_state_t* state) {
+  lv_obj_t* screen = lv_screen_active();
   lv_obj_set_scrollable(screen, false);
   lv_obj_set_style_bg_color(screen, lv_color_hex(0x0b1020u), LV_PART_MAIN);
 
-  lv_obj_t *column = lv_obj_create(screen);
+  lv_obj_t* column = lv_obj_create(screen);
   if (column == NULL) {
     return 0;
   }
@@ -127,12 +126,12 @@ static int tap_reset_create_ui(h2_tap_reset_state_t *state) {
   lv_obj_set_style_bg_color(column, lv_color_hex(0x111a2fu), LV_PART_MAIN);
   lv_obj_set_style_bg_opa(column, LV_OPA_COVER, LV_PART_MAIN);
 
-  lv_obj_t *eyebrow = lv_label_create(column);
-  lv_obj_t *title = lv_label_create(column);
-  lv_obj_t *body = lv_label_create(column);
+  lv_obj_t* eyebrow = lv_label_create(column);
+  lv_obj_t* title = lv_label_create(column);
+  lv_obj_t* body = lv_label_create(column);
   state->count_label = lv_label_create(column);
-  lv_obj_t *increment = lv_button_create(column);
-  lv_obj_t *reset = lv_button_create(column);
+  lv_obj_t* increment = lv_button_create(column);
+  lv_obj_t* reset = lv_button_create(column);
   if (eyebrow == NULL || title == NULL || body == NULL ||
       state->count_label == NULL || increment == NULL || reset == NULL) {
     return 0;
@@ -157,20 +156,20 @@ static int tap_reset_create_ui(h2_tap_reset_state_t *state) {
   lv_obj_set_width(increment, LV_PCT(100));
   tap_reset_style_button(increment, 0x2563ebu);
   lv_obj_add_event_cb(increment, tap_reset_increment, LV_EVENT_CLICKED, state);
-  lv_obj_t *increment_label = lv_label_create(increment);
+  lv_obj_t* increment_label = lv_label_create(increment);
   lv_label_set_text(increment_label, state->config->increment_label);
   lv_obj_center(increment_label);
 
   lv_obj_set_width(reset, LV_PCT(100));
   tap_reset_style_button(reset, 0x334155u);
   lv_obj_add_event_cb(reset, tap_reset_reset, LV_EVENT_CLICKED, state);
-  lv_obj_t *reset_label = lv_label_create(reset);
+  lv_obj_t* reset_label = lv_label_create(reset);
   lv_label_set_text(reset_label, "Reset");
   lv_obj_center(reset_label);
   return 1;
 }
 
-static void tap_reset_deinit(h2_tap_reset_state_t *state) {
+static void tap_reset_deinit(h2_tap_reset_state_t* state) {
   if (state->pointer != NULL) {
     lv_indev_delete(state->pointer);
     state->pointer = NULL;
@@ -188,8 +187,8 @@ static void tap_reset_deinit(h2_tap_reset_state_t *state) {
   }
 }
 
-h2_pal_result_t h2_tap_reset_run(h2_runtime_t *runtime,
-                                 const h2_tap_reset_config_t *config) {
+h2_pal_result_t h2_tap_reset_run(h2_runtime_t* runtime,
+                                 const h2_tap_reset_config_t* config) {
   if (runtime == NULL || runtime->mem == NULL || runtime->display == NULL ||
       runtime->time == NULL || config == NULL || config->eyebrow == NULL ||
       config->body == NULL || config->increment_label == NULL ||

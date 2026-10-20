@@ -7,10 +7,10 @@
  * semaphores tracking filled and free slots so blocking send/recv honour
  * millisecond timeouts without spinning. close() wakes every waiter. */
 struct h2_pal_queue {
-  h2_jieli_sdk_mutex_t *lock;
-  h2_jieli_sdk_sem_t *items;
-  h2_jieli_sdk_sem_t *space;
-  uint8_t *storage;
+  h2_jieli_sdk_mutex_t* lock;
+  h2_jieli_sdk_sem_t* items;
+  h2_jieli_sdk_sem_t* space;
+  uint8_t* storage;
   size_t item_size;
   size_t capacity;
   size_t head;
@@ -18,7 +18,7 @@ struct h2_pal_queue {
   uint8_t closed;
 };
 
-static void queue_release(h2_pal_queue_t *queue) {
+static void queue_release(h2_pal_queue_t* queue) {
   if (queue->lock != NULL) {
     h2_jieli_sdk_mutex_destroy(queue->lock);
   }
@@ -34,9 +34,9 @@ static void queue_release(h2_pal_queue_t *queue) {
   h2_jieli_sdk_free(queue);
 }
 
-static int queue_create(void *user, const h2_pal_queue_config_t *config,
-                        h2_pal_queue_t **out_queue) {
-  h2_pal_queue_t *queue;
+static int queue_create(void* user, const h2_pal_queue_config_t* config,
+                        h2_pal_queue_t** out_queue) {
+  h2_pal_queue_t* queue;
   (void)user;
   if (config == NULL || out_queue == NULL || config->item_size == 0u ||
       config->item_count == 0u) {
@@ -46,7 +46,7 @@ static int queue_create(void *user, const h2_pal_queue_config_t *config,
   if (config->item_size > SIZE_MAX / config->item_count) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  queue = (h2_pal_queue_t *)h2_jieli_sdk_malloc(sizeof(*queue));
+  queue = (h2_pal_queue_t*)h2_jieli_sdk_malloc(sizeof(*queue));
   if (queue == NULL) {
     return H2_PAL_ERR_NO_MEMORY;
   }
@@ -54,7 +54,7 @@ static int queue_create(void *user, const h2_pal_queue_config_t *config,
   queue->item_size = config->item_size;
   queue->capacity = config->item_count;
   queue->storage =
-      (uint8_t *)h2_jieli_sdk_malloc(config->item_size * config->item_count);
+      (uint8_t*)h2_jieli_sdk_malloc(config->item_size * config->item_count);
   queue->lock = h2_jieli_sdk_mutex_create();
   queue->items = h2_jieli_sdk_sem_create(0u);
   queue->space = h2_jieli_sdk_sem_create((uint32_t)config->item_count);
@@ -67,18 +67,18 @@ static int queue_create(void *user, const h2_pal_queue_config_t *config,
   return H2_PAL_OK;
 }
 
-static void queue_destroy(void *user, h2_pal_queue_t *queue) {
+static void queue_destroy(void* user, h2_pal_queue_t* queue) {
   (void)user;
   if (queue != NULL) {
     queue_release(queue);
   }
 }
 
-static uint8_t *slot(h2_pal_queue_t *queue, size_t index) {
+static uint8_t* slot(h2_pal_queue_t* queue, size_t index) {
   return queue->storage + ((index % queue->capacity) * queue->item_size);
 }
 
-static int queue_send(void *user, h2_pal_queue_t *queue, const void *item,
+static int queue_send(void* user, h2_pal_queue_t* queue, const void* item,
                       uint32_t timeout_ms) {
   int rc;
   (void)user;
@@ -110,8 +110,8 @@ static int queue_send(void *user, h2_pal_queue_t *queue, const void *item,
   return H2_PAL_OK;
 }
 
-static int queue_send_latest(void *user, h2_pal_queue_t *queue,
-                             const void *item) {
+static int queue_send_latest(void* user, h2_pal_queue_t* queue,
+                             const void* item) {
   (void)user;
   if (queue == NULL || item == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -134,7 +134,7 @@ static int queue_send_latest(void *user, h2_pal_queue_t *queue,
   return queue_send(user, queue, item, 0u);
 }
 
-static int queue_recv(void *user, h2_pal_queue_t *queue, void *out_item,
+static int queue_recv(void* user, h2_pal_queue_t* queue, void* out_item,
                       uint32_t timeout_ms) {
   int rc;
   (void)user;
@@ -165,7 +165,7 @@ static int queue_recv(void *user, h2_pal_queue_t *queue, void *out_item,
   return H2_PAL_OK;
 }
 
-static int queue_reset(void *user, h2_pal_queue_t *queue) {
+static int queue_reset(void* user, h2_pal_queue_t* queue) {
   (void)user;
   if (queue == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -186,7 +186,7 @@ static int queue_reset(void *user, h2_pal_queue_t *queue) {
   return H2_PAL_OK;
 }
 
-static int queue_close(void *user, h2_pal_queue_t *queue) {
+static int queue_close(void* user, h2_pal_queue_t* queue) {
   (void)user;
   if (queue == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -218,6 +218,6 @@ static const h2_pal_queue_api_t s_queue_api = {
     .vtable = &s_queue_vtable,
 };
 
-const h2_pal_queue_api_t *h2_jieli_br35_platform_queue_api(void) {
+const h2_pal_queue_api_t* h2_jieli_br35_platform_queue_api(void) {
   return &s_queue_api;
 }

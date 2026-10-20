@@ -19,12 +19,12 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = ["include"],
+    visibility = ["//visibility:public"],
     deps = [
         ":tasks",
         "//libs/runtime",
         "//projects/e2e/apps/atomic/app:atomic_e2e",
     ],
-    visibility = ["//visibility:public"],
 )
 
 exports_files([

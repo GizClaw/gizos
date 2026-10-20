@@ -67,26 +67,23 @@ struct IceCandidatePair {
   uint64_t priority;
 };
 
-void ice_candidate_create(
-    IceCandidate* ice_candidate, int foundation, IceCandidateType type,
-    const h2_pal_net_addr_t* addr);
+void ice_candidate_create(IceCandidate* ice_candidate, int foundation,
+                          IceCandidateType type, const h2_pal_net_addr_t* addr);
 
-void ice_candidate_create_tcp_active(
-    IceCandidate* ice_candidate, int foundation,
-    const h2_pal_net_addr_t* source_addr);
+void ice_candidate_create_tcp_active(IceCandidate* ice_candidate,
+                                     int foundation,
+                                     const h2_pal_net_addr_t* source_addr);
 
-int ice_candidate_equal(
-    const IceCandidate* first, const IceCandidate* second);
+int ice_candidate_equal(const IceCandidate* first, const IceCandidate* second);
 
-int ice_candidate_pair_is_compatible(
-    const IceCandidate* local, const IceCandidate* remote);
+int ice_candidate_pair_is_compatible(const IceCandidate* local,
+                                     const IceCandidate* remote);
 
-void ice_candidate_to_description(IceCandidate* candidate, char* description, int length);
+void ice_candidate_to_description(IceCandidate* candidate, char* description,
+                                  int length);
 
 IceCandidateParseResult ice_candidate_from_description(
-    const h2_pal_net_api_t* net,
-    IceCandidate* candidate,
-    char* description,
+    const h2_pal_net_api_t* net, IceCandidate* candidate, char* description,
     char* end);
 
 #endif  // ICE_H_

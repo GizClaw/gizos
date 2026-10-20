@@ -10,10 +10,10 @@ extern "C" {
 #endif
 
 typedef struct h2_lvgl_button {
-    h2_runtime_t *runtime;
-    h2_pal_periph_id_t periph_id;
-    h2_pal_result_t last_result;
-    int pressed;
+  h2_runtime_t* runtime;
+  h2_pal_periph_id_t periph_id;
+  h2_pal_result_t last_result;
+  int pressed;
 } h2_lvgl_button_t;
 
 /**
@@ -26,11 +26,10 @@ typedef struct h2_lvgl_button {
  * may produce edges for a mapped periph; the same periph can be rebound after
  * its previous object is deleted.
  */
-h2_pal_result_t h2_lvgl_button_bind(
-    h2_lvgl_button_t *binding,
-    h2_runtime_t *runtime,
-    h2_runtime_component_id_t component_id,
-    lv_obj_t *object);
+h2_pal_result_t h2_lvgl_button_bind(h2_lvgl_button_t* binding,
+                                    h2_runtime_t* runtime,
+                                    h2_runtime_component_id_t component_id,
+                                    lv_obj_t* object);
 
 #ifdef __cplusplus
 }

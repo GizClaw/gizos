@@ -84,10 +84,9 @@ extern const uint8_t h2_ble_wifi_config_default_provision_uuid[16];
  * H2_PAL_ERR_UNSUPPORTED when a required capability is missing, or the
  * underlying PAL failure.
  */
-int h2_ble_wifi_config_open(
-    const h2_ble_wifi_config_api_t *api,
-    const h2_ble_wifi_config_config_t *config,
-    h2_ble_wifi_config_t **out_service);
+int h2_ble_wifi_config_open(const h2_ble_wifi_config_api_t* api,
+                            const h2_ble_wifi_config_config_t* config,
+                            h2_ble_wifi_config_t** out_service);
 
 /**
  * @brief Stop the worker task, release the GATT schema and free the service.
@@ -103,7 +102,7 @@ int h2_ble_wifi_config_open(
  * schema failed; the Host borrows that schema until it is released, so the
  * instance stays alive and the caller may retry.
  */
-int h2_ble_wifi_config_close(h2_ble_wifi_config_t *service);
+int h2_ble_wifi_config_close(h2_ble_wifi_config_t* service);
 
 /**
  * @brief Publish the advertising data and start the provisioning window.
@@ -118,10 +117,9 @@ int h2_ble_wifi_config_close(h2_ble_wifi_config_t *service);
  * @param params Borrowed advertising parameters, copied before returning.
  * @return H2_PAL_OK, H2_PAL_ERR_INVALID_ARG, or the underlying PAL failure.
  */
-int h2_ble_wifi_config_start_advertising(
-    h2_ble_wifi_config_t *service,
-    const h2_pal_ble_adv_data_t *data,
-    const h2_pal_ble_adv_params_t *params);
+int h2_ble_wifi_config_start_advertising(h2_ble_wifi_config_t* service,
+                                         const h2_pal_ble_adv_data_t* data,
+                                         const h2_pal_ble_adv_params_t* params);
 
 /**
  * @brief Close the provisioning window opened by this service.
@@ -132,7 +130,7 @@ int h2_ble_wifi_config_start_advertising(
  * @return H2_PAL_OK, H2_PAL_ERR_INVALID_ARG, or the underlying PAL failure.
  * Stopping advertising that was never started returns H2_PAL_OK.
  */
-int h2_ble_wifi_config_stop_advertising(h2_ble_wifi_config_t *service);
+int h2_ble_wifi_config_stop_advertising(h2_ble_wifi_config_t* service);
 
 /**
  * @brief Return the borrowed GATT service declaration.
@@ -146,8 +144,8 @@ int h2_ble_wifi_config_stop_advertising(h2_ble_wifi_config_t *service);
  * @param service Service that owns the declaration.
  * @return The borrowed declaration, or NULL when @p service is NULL.
  */
-const h2_pal_ble_gatt_service_t *h2_ble_wifi_config_gatt_service(
-    const h2_ble_wifi_config_t *service);
+const h2_pal_ble_gatt_service_t* h2_ble_wifi_config_gatt_service(
+    const h2_ble_wifi_config_t* service);
 
 /**
  * @brief Copy the current counters.
@@ -156,9 +154,8 @@ const h2_pal_ble_gatt_service_t *h2_ble_wifi_config_gatt_service(
  * @param out_stats Cleared first, then filled on success.
  * @return H2_PAL_OK or H2_PAL_ERR_INVALID_ARG.
  */
-int h2_ble_wifi_config_get_stats(
-    h2_ble_wifi_config_t *service,
-    h2_ble_wifi_config_stats_t *out_stats);
+int h2_ble_wifi_config_get_stats(h2_ble_wifi_config_t* service,
+                                 h2_ble_wifi_config_stats_t* out_stats);
 
 #ifdef __cplusplus
 }

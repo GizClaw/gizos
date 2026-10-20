@@ -20,8 +20,8 @@ typedef enum h2_gizclaw_e2e_case_status {
 } h2_gizclaw_e2e_case_status_t;
 
 typedef struct h2_gizclaw_e2e_case_result {
-  const char *id;
-  const char *blocked_by;
+  const char* id;
+  const char* blocked_by;
   h2_gizclaw_e2e_case_status_t status;
   int rc;
   unsigned terminal_records;
@@ -42,26 +42,26 @@ typedef struct h2_gizclaw_e2e_summary {
   size_t blocked;
   size_t cancelled;
   size_t terminal;
-  const char *first_failure_case;
+  const char* first_failure_case;
   int first_failure_rc;
   int cleanup_rc;
   bool complete;
 } h2_gizclaw_e2e_summary_t;
 
-void h2_gizclaw_e2e_report_init(h2_gizclaw_e2e_report_t *report);
-int h2_gizclaw_e2e_report_select(h2_gizclaw_e2e_report_t *report,
-                                 const char *case_id);
-int h2_gizclaw_e2e_report_terminal(h2_gizclaw_e2e_report_t *report,
-                                   const char *case_id,
+void h2_gizclaw_e2e_report_init(h2_gizclaw_e2e_report_t* report);
+int h2_gizclaw_e2e_report_select(h2_gizclaw_e2e_report_t* report,
+                                 const char* case_id);
+int h2_gizclaw_e2e_report_terminal(h2_gizclaw_e2e_report_t* report,
+                                   const char* case_id,
                                    h2_gizclaw_e2e_case_status_t status, int rc,
-                                   const char *blocked_by);
-void h2_gizclaw_e2e_report_cleanup(h2_gizclaw_e2e_report_t *report,
+                                   const char* blocked_by);
+void h2_gizclaw_e2e_report_cleanup(h2_gizclaw_e2e_report_t* report,
                                    int cleanup_rc);
-h2_gizclaw_e2e_summary_t
-h2_gizclaw_e2e_report_summarize(const h2_gizclaw_e2e_report_t *report);
-int h2_gizclaw_e2e_summary_exit_code(const h2_gizclaw_e2e_summary_t *summary);
-const char *
-h2_gizclaw_e2e_case_status_name(h2_gizclaw_e2e_case_status_t status);
+h2_gizclaw_e2e_summary_t h2_gizclaw_e2e_report_summarize(
+    const h2_gizclaw_e2e_report_t* report);
+int h2_gizclaw_e2e_summary_exit_code(const h2_gizclaw_e2e_summary_t* summary);
+const char* h2_gizclaw_e2e_case_status_name(
+    h2_gizclaw_e2e_case_status_t status);
 
 #ifdef __cplusplus
 }

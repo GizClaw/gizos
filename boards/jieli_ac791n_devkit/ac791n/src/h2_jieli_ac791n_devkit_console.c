@@ -14,7 +14,7 @@
 static unsigned char rx_ring[16 * 1024] __attribute__((aligned(32)));
 static unsigned char tx_chunk[512] __attribute__((aligned(32)));
 static OS_MUTEX tx_mutex;
-static void *console;
+static void* console;
 static int mutex_ready;
 static int tx_pending;
 
@@ -24,7 +24,7 @@ h2_pal_result_t h2_jieli_ac791n_devkit_console_start(void) {
     if (os_mutex_create(&tx_mutex) != OS_NO_ERR) return H2_PAL_ERR_IO;
     mutex_ready = 1;
   }
-  void *handle = dev_open("uart1", NULL);
+  void* handle = dev_open("uart1", NULL);
   if (handle == NULL) return H2_PAL_ERR_IO;
   if (dev_ioctl(handle, UART_SET_CIRCULAR_BUFF_ADDR, (u32)rx_ring) != 0 ||
       dev_ioctl(handle, UART_SET_CIRCULAR_BUFF_LENTH, sizeof(rx_ring)) != 0 ||
@@ -37,7 +37,7 @@ h2_pal_result_t h2_jieli_ac791n_devkit_console_start(void) {
   return H2_PAL_OK;
 }
 
-int h2_jieli_ac791n_devkit_console_read(void *buffer, size_t size) {
+int h2_jieli_ac791n_devkit_console_read(void* buffer, size_t size) {
   if (console == NULL) return H2_PAL_ERR_UNAVAILABLE;
   if (buffer == NULL || size == 0 || size > INT_MAX)
     return H2_PAL_ERR_INVALID_ARG;
@@ -71,8 +71,8 @@ static int console_deadline_wait(uint32_t started, uint32_t timeout_ms) {
   return 1;
 }
 
-int h2_jieli_ac791n_devkit_console_write(
-    const void *buffer, size_t size, uint32_t timeout_ms) {
+int h2_jieli_ac791n_devkit_console_write(const void* buffer, size_t size,
+                                         uint32_t timeout_ms) {
   if (console == NULL) return H2_PAL_ERR_UNAVAILABLE;
   if ((buffer == NULL && size != 0) || size > INT_MAX)
     return H2_PAL_ERR_INVALID_ARG;
@@ -104,7 +104,7 @@ int h2_jieli_ac791n_devkit_console_write(
     }
     size_t take = size - sent;
     if (take > sizeof(tx_chunk)) take = sizeof(tx_chunk);
-    memcpy(tx_chunk, (const unsigned char *)buffer + sent, take);
+    memcpy(tx_chunk, (const unsigned char*)buffer + sent, take);
     /* This is the sole uart1 writer. Platform TX IRQ is disabled and the
      * prior DMA is complete, so the SDK neither waits for old TX nor pends
      * its completion semaphore. Its internal writer mutex is uncontended. */
@@ -122,7 +122,7 @@ int h2_jieli_ac791n_devkit_console_write(
 
 /* Called by the SDK printf drain. Its task can run without any Loader/App
  * transport initialized, and cannot split a protocol write into two pieces. */
-u32 h2_jieli_uart1_debug_write(u8 *buffer, u32 size) {
+u32 h2_jieli_uart1_debug_write(u8* buffer, u32 size) {
   int count = h2_jieli_ac791n_devkit_console_write(buffer, size, 100);
   return count > 0 ? (u32)count : 0;
 }

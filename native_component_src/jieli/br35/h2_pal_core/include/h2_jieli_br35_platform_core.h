@@ -29,32 +29,37 @@ extern "C" {
 #define H2_JIELI_BR35_LOG_LINE_MAX 320u
 
 /** SDK heap allocator (malloc/realloc/free). */
-const h2_pal_mem_api_t *h2_jieli_br35_platform_mem_api(void);
+const h2_pal_mem_api_t* h2_jieli_br35_platform_mem_api(void);
 
 /** Debug UART text sink: `[LEVEL][scope] message\r\n`. */
-const h2_pal_log_api_t *h2_jieli_br35_platform_log_api(void);
+const h2_pal_log_api_t* h2_jieli_br35_platform_log_api(void);
 
 /**
  * Monotonic time from the SDK tick timer (32-bit wrap extended to 64 bits
  * while queried at least once per wrap), sleep via the OS delay. Wall time is
  * not supported on this target.
  */
-const h2_pal_time_api_t *h2_jieli_br35_platform_time_api(void);
+const h2_pal_time_api_t* h2_jieli_br35_platform_time_api(void);
 
-/** Mutex and counting semaphore on os_api; condition variables use per-waiter semaphores. */
-const h2_pal_sync_api_t *h2_jieli_br35_platform_sync_api(void);
+/** Mutex and counting semaphore on os_api; condition variables use per-waiter
+ * semaphores. */
+const h2_pal_sync_api_t* h2_jieli_br35_platform_sync_api(void);
 
-/** Bounded FIFO queue built from a heap ring buffer guarded by SDK mutex/semaphores. */
-const h2_pal_queue_api_t *h2_jieli_br35_platform_queue_api(void);
+/** Bounded FIFO queue built from a heap ring buffer guarded by SDK
+ * mutex/semaphores. */
+const h2_pal_queue_api_t* h2_jieli_br35_platform_queue_api(void);
 
-/** Task start on os_task_create; the creating task joins and deletes the parked worker. */
-const h2_pal_task_api_t *h2_jieli_br35_platform_task_api(void);
+/** Task start on os_task_create; the creating task joins and deletes the parked
+ * worker. */
+const h2_pal_task_api_t* h2_jieli_br35_platform_task_api(void);
 
 /** One-shot and periodic timers on the SDK sys timer service. */
-const h2_pal_timer_api_t *h2_jieli_br35_platform_timer_api(void);
+const h2_pal_timer_api_t* h2_jieli_br35_platform_timer_api(void);
 
-/** Reports the firmware version baked in at build time (H2_JIELI_FIRMWARE_VERSION). */
-const h2_pal_firmware_info_api_t *h2_jieli_br35_platform_firmware_info_api(void);
+/** Reports the firmware version baked in at build time
+ * (H2_JIELI_FIRMWARE_VERSION). */
+const h2_pal_firmware_info_api_t* h2_jieli_br35_platform_firmware_info_api(
+    void);
 
 #ifdef __cplusplus
 }

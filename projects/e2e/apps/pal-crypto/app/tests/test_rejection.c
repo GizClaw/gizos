@@ -1,7 +1,7 @@
 #include "h2_pal_crypto_e2e.h"
 #include <assert.h>
 #include <string.h>
-static h2_pal_result_t forbidden_random(void *user, uint8_t *out,
+static h2_pal_result_t forbidden_random(void* user, uint8_t* out,
                                         size_t length) {
   (void)user;
   (void)out;

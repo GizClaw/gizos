@@ -14,11 +14,11 @@
 #include <string.h>
 
 typedef struct progress_state {
-  h2_runtime_t *runtime;
+  h2_runtime_t* runtime;
   h2_gizclaw_e2e_progress_fn on_progress;
-  void *progress_user;
-  h2_pal_mutex_t *mutex;
-  const char *active_case;
+  void* progress_user;
+  h2_pal_mutex_t* mutex;
+  const char* active_case;
   uint64_t started_ms;
   uint32_t interval_ms;
   size_t selected;
@@ -31,15 +31,15 @@ typedef struct progress_state {
 } progress_state_t;
 
 typedef struct run_control {
-  h2_runtime_t *runtime;
-  const h2_gizclaw_e2e_config_t *config;
+  h2_runtime_t* runtime;
+  const h2_gizclaw_e2e_config_t* config;
   progress_state_t progress;
   h2_gizclaw_e2e_report_t report;
-  h2_pal_task_t *task;
+  h2_pal_task_t* task;
   int aggregate_cleanup_rc;
   size_t retained_resources;
   char runtime_profile_name[H2_GIZCLAW_REGISTRATION_NAME_CAPACITY];
-  h2_gizclaw_e2e_fixture_t *retained_fixture;
+  h2_gizclaw_e2e_fixture_t* retained_fixture;
   h2_atomic_bool_t exited;
 } run_control_t;
 
@@ -57,9 +57,9 @@ static uint32_t progress_interval(uint32_t configured_ms) {
   return configured_ms;
 }
 
-static bool config_valid(h2_runtime_t *runtime,
-                         const h2_gizclaw_e2e_config_t *config,
-                         h2_gizclaw_e2e_result_t *out_result) {
+static bool config_valid(h2_runtime_t* runtime,
+                         const h2_gizclaw_e2e_config_t* config,
+                         h2_gizclaw_e2e_result_t* out_result) {
   uint32_t supported_suites = 0u;
   for (size_t i = 0u; i < h2_gizclaw_e2e_case_count; ++i)
     supported_suites |= h2_gizclaw_e2e_cases[i].suite;
@@ -74,8 +74,7 @@ static bool config_valid(h2_runtime_t *runtime,
       config->registration_token.data == NULL ||
       config->registration_token.len == 0u ||
       config->registration_token.len > H2_GIZCLAW_E2E_REGISTRATION_TOKEN_MAX ||
-      config->suites == 0u ||
-      (config->suites & ~supported_suites) != 0u ||
+      config->suites == 0u || (config->suites & ~supported_suites) != 0u ||
       memchr(config->server_endpoint.data, '\0', config->server_endpoint.len) !=
           NULL ||
       memchr(config->registration_token.data, '\0',
@@ -87,7 +86,8 @@ static bool config_valid(h2_runtime_t *runtime,
        (H2_GIZCLAW_E2E_SUITE_RPC | H2_GIZCLAW_E2E_SUITE_VOICE)) != 0u;
   if ((config->suites & H2_GIZCLAW_E2E_SUITE_DEVICE) != 0u &&
       (config->device_api_url == NULL || config->device_api_url[0] == '\0' ||
-       config->device_audio_url == NULL || config->device_audio_url[0] == '\0' ||
+       config->device_audio_url == NULL ||
+       config->device_audio_url[0] == '\0' ||
        strncmp(config->device_api_url, "https://", 8u) != 0 ||
        strncmp(config->device_audio_url, "https://", 8u) != 0))
     return false;
@@ -100,9 +100,12 @@ static bool config_valid(h2_runtime_t *runtime,
   }
   if ((config->expected_runtime_profile &&
        (!config->expected_runtime_profile[0] ||
-        strlen(config->expected_runtime_profile) >= H2_GIZCLAW_REGISTRATION_NAME_CAPACITY)) ||
-      config->app_config_expected_value.len > H2_GIZCLAW_APP_CONFIG_VALUE_MAX_BYTES ||
-      (!config->app_config_expected_value.data && config->app_config_expected_value.len))
+        strlen(config->expected_runtime_profile) >=
+            H2_GIZCLAW_REGISTRATION_NAME_CAPACITY)) ||
+      config->app_config_expected_value.len >
+          H2_GIZCLAW_APP_CONFIG_VALUE_MAX_BYTES ||
+      (!config->app_config_expected_value.data &&
+       config->app_config_expected_value.len))
     return false;
   if (config->workflow_tag != NULL &&
       (config->workflow_tag[0] == '\0' ||
@@ -127,10 +130,10 @@ static bool config_valid(h2_runtime_t *runtime,
   return true;
 }
 
-static void progress_emit(progress_state_t *state,
+static void progress_emit(progress_state_t* state,
                           h2_gizclaw_e2e_progress_kind_t kind,
-                          const char *case_id, const char *status,
-                          const char *blocked_by, int rc, bool complete,
+                          const char* case_id, const char* status,
+                          const char* blocked_by, int rc, bool complete,
                           bool notify_observer) {
   h2_gizclaw_e2e_progress_t progress = {
       .kind = kind,
@@ -173,8 +176,8 @@ static void progress_emit(progress_state_t *state,
                          "gizclaw-e2e", message);
 }
 
-static int progress_init(progress_state_t *state, h2_runtime_t *runtime,
-                         const h2_gizclaw_e2e_config_t *config,
+static int progress_init(progress_state_t* state, h2_runtime_t* runtime,
+                         const h2_gizclaw_e2e_config_t* config,
                          size_t selected) {
   memset(state, 0, sizeof(*state));
   state->runtime = runtime;
@@ -198,9 +201,9 @@ static int progress_init(progress_state_t *state, h2_runtime_t *runtime,
   return rc;
 }
 
-static void copy_summary(const h2_gizclaw_e2e_summary_t *summary,
-                         const char *runtime_profile_name,
-                         h2_gizclaw_e2e_result_t *out_result) {
+static void copy_summary(const h2_gizclaw_e2e_summary_t* summary,
+                         const char* runtime_profile_name,
+                         h2_gizclaw_e2e_result_t* out_result) {
   out_result->selected = summary->selected;
   out_result->terminal = summary->terminal;
   out_result->passed = summary->pass;
@@ -224,8 +227,8 @@ static void copy_summary(const h2_gizclaw_e2e_summary_t *summary,
 }
 
 static h2_gizclaw_e2e_exit_t report_start_failure(
-    h2_runtime_t *runtime, const h2_gizclaw_e2e_config_t *config,
-    h2_gizclaw_e2e_result_t *out_result, int rc, size_t retained_resources) {
+    h2_runtime_t* runtime, const h2_gizclaw_e2e_config_t* config,
+    h2_gizclaw_e2e_result_t* out_result, int rc, size_t retained_resources) {
   h2_gizclaw_e2e_report_t report;
   h2_gizclaw_e2e_report_init(&report);
   for (size_t index = 0u; index < h2_gizclaw_e2e_case_count; ++index) {
@@ -264,17 +267,17 @@ static h2_gizclaw_e2e_exit_t report_start_failure(
   return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
 }
 
-static void run_cases_task(void *user) {
-  run_control_t *control = user;
-  h2_runtime_t *runtime = control->runtime;
-  const h2_gizclaw_e2e_config_t *config = control->config;
-  progress_state_t *progress = &control->progress;
-  h2_gizclaw_e2e_report_t *report = &control->report;
+static void run_cases_task(void* user) {
+  run_control_t* control = user;
+  h2_runtime_t* runtime = control->runtime;
+  const h2_gizclaw_e2e_config_t* config = control->config;
+  progress_state_t* progress = &control->progress;
+  h2_gizclaw_e2e_report_t* report = &control->report;
   int aggregate_cleanup_rc = H2_PAL_OK;
   size_t retained_resources = 0u;
 
   for (size_t index = 0u; index < h2_gizclaw_e2e_case_count; ++index) {
-    const e2e_case_t *test_case = &h2_gizclaw_e2e_cases[index];
+    const e2e_case_t* test_case = &h2_gizclaw_e2e_cases[index];
     if ((config->suites & test_case->suite) == 0u) {
       continue;
     }
@@ -287,9 +290,10 @@ static void run_cases_task(void *user) {
     (void)h2_pal_mutex_lock(runtime->sync, progress->mutex);
     progress->active_case = test_case->id;
     (void)h2_pal_mutex_unlock(runtime->sync, progress->mutex);
-    h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=coverage-begin case=%s\n", test_case->id);
+    h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=coverage-begin case=%s\n",
+                        test_case->id);
 
-    h2_gizclaw_e2e_fixture_t *fixture = NULL;
+    h2_gizclaw_e2e_fixture_t* fixture = NULL;
     bool fixture_initialized = false;
     if (!stopped) {
       if (control->retained_fixture != NULL) {
@@ -350,8 +354,7 @@ static void run_cases_task(void *user) {
         cleanup_rc = H2_PAL_ERR_INVALID_STATE;
       const int deinit_rc = h2_gizclaw_e2e_fixture_deinit(fixture);
       if (deinit_rc != H2_PAL_OK) {
-        if (cleanup_rc == H2_PAL_OK)
-          cleanup_rc = deinit_rc;
+        if (cleanup_rc == H2_PAL_OK) cleanup_rc = deinit_rc;
         /* A PAL join failure must never turn borrowed state into stack garbage.
          * Fail closed: retain the owner and do not start another case. */
         control->retained_fixture = fixture;
@@ -365,10 +368,11 @@ static void run_cases_task(void *user) {
     }
     (void)h2_gizclaw_e2e_report_terminal(report, test_case->id, status, case_rc,
                                          NULL);
-    h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=coverage-end case=%s status=%s rc=%d "
-           "cleanup_rc=%d\n",
-           test_case->id, h2_gizclaw_e2e_case_status_name(status), case_rc,
-           cleanup_rc);
+    h2_gizclaw_e2e_emit(
+        "H2_GIZCLAW_E2E stage=coverage-end case=%s status=%s rc=%d "
+        "cleanup_rc=%d\n",
+        test_case->id, h2_gizclaw_e2e_case_status_name(status), case_rc,
+        cleanup_rc);
 
     (void)h2_pal_mutex_lock(runtime->sync, progress->mutex);
     progress->active_case = NULL;
@@ -386,8 +390,8 @@ static void run_cases_task(void *user) {
   h2_atomic_store_explicit(&control->exited, true, H2_ATOMIC_RELEASE);
 }
 
-static int join_runner(run_control_t *control, uint32_t cleanup_timeout_ms,
-                       size_t *out_retained_resources) {
+static int join_runner(run_control_t* control, uint32_t cleanup_timeout_ms,
+                       size_t* out_retained_resources) {
   uint64_t attempts = ((uint64_t)cleanup_timeout_ms + 9u) / 10u;
   while (control->task != NULL && attempts > 0u) {
     const int rc = h2_pal_task_join(control->runtime->task, control->task);
@@ -419,9 +423,9 @@ static int join_runner(run_control_t *control, uint32_t cleanup_timeout_ms,
   return rc;
 }
 
-h2_gizclaw_e2e_exit_t h2_gizclaw_e2e_run(h2_runtime_t *runtime,
-                                         const h2_gizclaw_e2e_config_t *config,
-                                         h2_gizclaw_e2e_result_t *out_result) {
+h2_gizclaw_e2e_exit_t h2_gizclaw_e2e_run(h2_runtime_t* runtime,
+                                         const h2_gizclaw_e2e_config_t* config,
+                                         h2_gizclaw_e2e_result_t* out_result) {
   if (out_result != NULL) {
     memset(out_result, 0, sizeof(*out_result));
   }
@@ -429,9 +433,10 @@ h2_gizclaw_e2e_exit_t h2_gizclaw_e2e_run(h2_runtime_t *runtime,
       h2_atomic_flag_test_and_set(&s_run_active, H2_ATOMIC_ACQUIRE)) {
     return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
   }
-  h2_gizclaw_e2e_set_evidence_observer(config->on_evidence, config->evidence_user);
+  h2_gizclaw_e2e_set_evidence_observer(config->on_evidence,
+                                       config->evidence_user);
 
-  run_control_t *control = h2_pal_mem_alloc(runtime->mem, sizeof(*control));
+  run_control_t* control = h2_pal_mem_alloc(runtime->mem, sizeof(*control));
   if (control == NULL) {
     const h2_gizclaw_e2e_exit_t exit = report_start_failure(
         runtime, config, out_result, H2_PAL_ERR_NO_MEMORY, 0u);
@@ -500,7 +505,7 @@ h2_gizclaw_e2e_exit_t h2_gizclaw_e2e_run(h2_runtime_t *runtime,
   while (!h2_atomic_load_explicit(&control->exited, H2_ATOMIC_ACQUIRE)) {
     (void)h2_pal_time_sleep_ms(runtime->time, 250u);
     (void)h2_pal_mutex_lock(runtime->sync, control->progress.mutex);
-    const char *active_case = control->progress.active_case;
+    const char* active_case = control->progress.active_case;
     (void)h2_pal_mutex_unlock(runtime->sync, control->progress.mutex);
     uint64_t now_ms = last_emit_ms;
     if (active_case != NULL &&
@@ -532,7 +537,7 @@ h2_gizclaw_e2e_exit_t h2_gizclaw_e2e_run(h2_runtime_t *runtime,
   control->progress.blocked = 0u;
   control->progress.cancelled = 0u;
   for (size_t index = 0u; index < control->report.selected; ++index) {
-    const h2_gizclaw_e2e_case_result_t *case_result =
+    const h2_gizclaw_e2e_case_result_t* case_result =
         &control->report.cases[index];
     control->progress.terminal++;
     control->progress.passed += case_result->status == H2_GIZCLAW_E2E_CASE_PASS;
@@ -549,7 +554,7 @@ h2_gizclaw_e2e_exit_t h2_gizclaw_e2e_run(h2_runtime_t *runtime,
                   case_result->blocked_by, case_result->rc, false, true);
   }
 
-  progress_state_t *progress = &control->progress;
+  progress_state_t* progress = &control->progress;
   progress_emit(progress, H2_GIZCLAW_E2E_PROGRESS_CLEANUP, NULL,
                 control->aggregate_cleanup_rc == H2_PAL_OK ? "PASS" : "ERROR",
                 NULL, control->aggregate_cleanup_rc, false, true);

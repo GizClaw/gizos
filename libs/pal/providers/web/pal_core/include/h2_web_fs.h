@@ -46,17 +46,17 @@ extern "C" {
  * the provider, so one tab or worker of an origin owns a root at a time. Other
  * lock requests wait up to lock_timeout_ms; BUSY reports an expired grant
  * budget, including browser scheduling, and does not identify a lock holder.
- * A reload waits for the previous document to release the lock. Web Locks need a secure context
- * (HTTPS or localhost); without them open returns UNSUPPORTED rather than risk
- * two tabs overwriting each other's snapshot.
+ * A reload waits for the previous document to release the lock. Web Locks need
+ * a secure context (HTTPS or localhost); without them open returns UNSUPPORTED
+ * rather than risk two tabs overwriting each other's snapshot.
  */
 typedef struct h2_web_fs h2_web_fs_t;
 
 typedef struct h2_web_fs_config {
   /** Absolute writable directory, e.g. "/data/gizclaw"; created if absent. */
-  const char *persistent_root;
+  const char* persistent_root;
   /** Absolute directories already present in the Emscripten filesystem. */
-  const char *const *readonly_roots;
+  const char* const* readonly_roots;
   size_t readonly_root_count;
   /** Web Lock grant budget including browser scheduling; zero is 3000 ms. */
   uint32_t lock_timeout_ms;
@@ -85,21 +85,21 @@ typedef struct h2_web_fs_status {
  * NO_SPACE for quota; IO for other restore failures. Failures are logged with
  * the browser error.
  */
-h2_pal_result_t h2_web_fs_open(h2_web_platform_t *platform,
-                               const h2_web_fs_config_t *config,
-                               h2_web_fs_t **out_fs);
+h2_pal_result_t h2_web_fs_open(h2_web_platform_t* platform,
+                               const h2_web_fs_config_t* config,
+                               h2_web_fs_t** out_fs);
 
 /** Borrow the PAL Filesystem API; valid until h2_web_fs_close() succeeds. */
-const h2_pal_fs_api_t *h2_web_fs_api(h2_web_fs_t *fs);
+const h2_pal_fs_api_t* h2_web_fs_api(h2_web_fs_t* fs);
 
 /** Commit every change made so far; OK when nothing is pending. */
-h2_pal_result_t h2_web_fs_flush(h2_web_fs_t *fs);
+h2_pal_result_t h2_web_fs_flush(h2_web_fs_t* fs);
 
 /** Delete everything below the persistent root and commit the deletion. */
-h2_pal_result_t h2_web_fs_clear(h2_web_fs_t *fs);
+h2_pal_result_t h2_web_fs_clear(h2_web_fs_t* fs);
 
-h2_pal_result_t h2_web_fs_get_status(h2_web_fs_t *fs,
-                                     h2_web_fs_status_t *out_status);
+h2_pal_result_t h2_web_fs_get_status(h2_web_fs_t* fs,
+                                     h2_web_fs_status_t* out_status);
 
 /**
  * Commit pending changes, unmount the root and release its Web Lock.
@@ -110,7 +110,7 @@ h2_pal_result_t h2_web_fs_get_status(h2_web_fs_t *fs,
  * even when the final commit fails; that commit error is returned. NULL
  * returns OK.
  */
-h2_pal_result_t h2_web_fs_close(h2_web_fs_t *fs);
+h2_pal_result_t h2_web_fs_close(h2_web_fs_t* fs);
 
 #ifdef __cplusplus
 }

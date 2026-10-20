@@ -1,7 +1,8 @@
 #include "h2_web_main_thread.h"
 /*
- * Browser Promise waits must leave other pthread Workers runnable: while one task waits for
- * fetch, WebRTC or storage, another task keeps running. Node with fakes.
+ * Browser Promise waits must leave other pthread Workers runnable: while one
+ * task waits for fetch, WebRTC or storage, another task keeps running. Node
+ * with fakes.
  */
 #include "h2_web_fs.h"
 #include "h2_web_platform.h"
@@ -11,13 +12,13 @@
 #include <stdatomic.h>
 #include <string.h>
 
-#define CHECK(condition)                                                       \
-  do {                                                                         \
-    if (!(condition)) {                                                        \
-      fprintf(stderr, "Web async test failed at line %d: %s\n", __LINE__,     \
-              #condition);                                                     \
-      emscripten_force_exit(1);                                                \
-    }                                                                          \
+#define CHECK(condition)                                                  \
+  do {                                                                    \
+    if (!(condition)) {                                                   \
+      fprintf(stderr, "Web async test failed at line %d: %s\n", __LINE__, \
+              #condition);                                                \
+      emscripten_force_exit(1);                                           \
+    }                                                                     \
   } while (0)
 /* clang-format off */
 EM_JS(void, test_install_fetch,
@@ -74,47 +75,48 @@ EM_JS(void, test_hang_create_offer,
 /* clang-format on */
 
 typedef struct test_state {
-  h2_web_platform_t *platform;
+  h2_web_platform_t* platform;
   _Atomic int ticks;
   _Atomic int stop;
   _Atomic int done;
   h2_pal_result_t http_result;
-  h2_pal_webrtc_peer_t *offer_peer;
+  h2_pal_webrtc_peer_t* offer_peer;
   h2_pal_result_t offer_result;
   _Atomic int offer_done;
 } test_state_t;
 
 static test_state_t s_state;
 
-static void offer_task(void *user) {
-  test_state_t *state = user;
+static void offer_task(void* user) {
+  test_state_t* state = user;
   state->offer_result = h2_pal_webrtc_peer_start_offer(
       h2_web_platform_webrtc_api(state->platform), state->offer_peer);
   state->offer_done = 1;
 }
 
-static void ticker(void *user) {
-  test_state_t *state = user;
+static void ticker(void* user) {
+  test_state_t* state = user;
   while (!state->stop) {
     ++state->ticks;
     (void)h2_pal_time_sleep_ms(h2_web_platform_time_api(state->platform), 5u);
   }
 }
 
-static void run(void *user) {
-  test_state_t *state = user;
-  const h2_pal_http_api_t *http = h2_web_platform_http_api(state->platform);
+static void run(void* user) {
+  test_state_t* state = user;
+  const h2_pal_http_api_t* http = h2_web_platform_http_api(state->platform);
 
   const double ready_deadline = emscripten_get_now() + 3000.0;
-  while (atomic_load(&state->ticks) < 2 && emscripten_get_now() < ready_deadline)
+  while (atomic_load(&state->ticks) < 2 &&
+         emscripten_get_now() < ready_deadline)
     h2_web_worker_sleep(1);
   CHECK(atomic_load(&state->ticks) >= 2);
 
   // Complete the fetch after observing progress while it is pending. The
   // request timeout bounds a stalled ticker; a 4xx response keeps its body.
-  (void)h2_web_main_call(test_install_fetch,
-                         (const void *[]){&(int){100},
-                                          &(_Atomic int *){&state->ticks}});
+  (void)h2_web_main_call(
+      test_install_fetch,
+      (const void*[]){&(int){100}, &(_Atomic int*){&state->ticks}});
   const h2_pal_http_request_t request = {
       .method = H2_PAL_HTTP_GET,
       .url = {.data = "https://example.test/x", .len = 22u},
@@ -134,8 +136,7 @@ static void run(void *user) {
 
   // A timeout aborts the pending fetch without freezing the ticker.
   (void)h2_web_main_call(test_install_fetch,
-                         (const void *[]){&(int){10000},
-                                          &(_Atomic int *){NULL}});
+                         (const void*[]){&(int){10000}, &(_Atomic int*){NULL}});
   h2_pal_http_request_t slow = request;
   slow.timeout_ms = 300;
   ticks = state->ticks;
@@ -143,9 +144,9 @@ static void run(void *user) {
   CHECK(state->ticks > ticks);
 
   // WebRTC poll waits yield too and end with TIMEOUT.
-  const h2_pal_webrtc_api_t *webrtc =
+  const h2_pal_webrtc_api_t* webrtc =
       h2_web_platform_webrtc_api(state->platform);
-  h2_pal_webrtc_peer_t *peer = NULL;
+  h2_pal_webrtc_peer_t* peer = NULL;
   CHECK(h2_pal_webrtc_peer_create(webrtc, &peer) == H2_PAL_OK);
   h2_pal_webrtc_event_t event = {0};
   ticks = state->ticks;
@@ -155,9 +156,9 @@ static void run(void *user) {
   h2_pal_webrtc_peer_close(webrtc, peer);
 
   // Closing a peer ends an offer whose browser Promise will never settle.
-  (void)h2_web_main_call(test_hang_create_offer, (const void *[]){&(int){1}});
+  (void)h2_web_main_call(test_hang_create_offer, (const void*[]){&(int){1}});
   CHECK(h2_pal_webrtc_peer_create(webrtc, &state->offer_peer) == H2_PAL_OK);
-  h2_pal_task_t *offer = NULL;
+  h2_pal_task_t* offer = NULL;
   CHECK(h2_pal_task_start(h2_web_platform_task_api(state->platform), NULL,
                           offer_task, state, &offer) == H2_PAL_OK);
   (void)h2_pal_time_sleep_ms(h2_web_platform_time_api(state->platform), 20u);
@@ -166,42 +167,42 @@ static void run(void *user) {
   CHECK(h2_pal_task_join(h2_web_platform_task_api(state->platform), offer) ==
         H2_PAL_OK);
   CHECK(state->offer_done && state->offer_result == H2_PAL_ERR_CLOSED);
-  (void)h2_web_main_call(test_hang_create_offer, (const void *[]){&(int){0}});
+  (void)h2_web_main_call(test_hang_create_offer, (const void*[]){&(int){0}});
 
   // Persistent storage reports why it cannot open instead of pretending.
-  h2_web_fs_t *fs = NULL;
+  h2_web_fs_t* fs = NULL;
   const h2_web_fs_config_t config = {.persistent_root = "/persist"};
   (void)h2_web_main_call(test_set_storage,
-                         (const void *[]){&(int){0}, &(int){1}});
+                         (const void*[]){&(int){0}, &(int){1}});
   CHECK(h2_web_fs_open(state->platform, &config, &fs) ==
         H2_PAL_ERR_UNSUPPORTED);
   (void)h2_web_main_call(test_set_storage,
-                         (const void *[]){&(int){1}, &(int){0}});
+                         (const void*[]){&(int){1}, &(int){0}});
   CHECK(h2_web_fs_open(state->platform, &config, &fs) ==
         H2_PAL_ERR_UNSUPPORTED);
   CHECK(fs == NULL);
-  const char *const overlapping[] = {"/persist/assets"};
+  const char* const overlapping[] = {"/persist/assets"};
   const h2_web_fs_config_t invalid[] = {
       {.persistent_root = "relative"},
       {.persistent_root = "/"},
       {.persistent_root = "/persist/"},
       {.persistent_root = "/a/../b"},
-      {.persistent_root = "/persist", .readonly_roots = overlapping,
+      {.persistent_root = "/persist",
+       .readonly_roots = overlapping,
        .readonly_root_count = 1u},
   };
-  for (size_t index = 0u; index < sizeof(invalid) / sizeof(invalid[0]);
-       ++index)
+  for (size_t index = 0u; index < sizeof(invalid) / sizeof(invalid[0]); ++index)
     CHECK(h2_web_fs_open(state->platform, &invalid[index], &fs) ==
           H2_PAL_ERR_INVALID_ARG);
   CHECK(h2_web_fs_close(NULL) == H2_PAL_OK);
 
   // A speaker track pins the platform until it is closed.
-  const h2_pal_audio_api_t *audio = h2_web_platform_audio_api(state->platform);
+  const h2_pal_audio_api_t* audio = h2_web_platform_audio_api(state->platform);
   const h2_audio_track_config_t track_config = {
       .format = {16000u, 320u, 1u, H2_AUDIO_SAMPLE_S16LE},
       .volume_factor_milli = 1000u,
   };
-  h2_pal_audio_track_t *track = NULL;
+  h2_pal_audio_track_t* track = NULL;
   CHECK(h2_pal_audio_create_track(audio, &track_config, &track) == H2_PAL_OK);
   CHECK(h2_web_platform_destroy(state->platform) == H2_PAL_ERR_BUSY);
   CHECK(h2_pal_audio_track_close(track) == H2_PAL_OK);
@@ -215,9 +216,9 @@ int main(void) {
                                            .display_height = 1};
   s_state.platform = h2_web_platform_create(&config);
   CHECK(s_state.platform != NULL);
-  const h2_pal_task_api_t *tasks = h2_web_platform_task_api(s_state.platform);
-  h2_pal_task_t *ticker_task = NULL;
-  h2_pal_task_t *run_task = NULL;
+  const h2_pal_task_api_t* tasks = h2_web_platform_task_api(s_state.platform);
+  h2_pal_task_t* ticker_task = NULL;
+  h2_pal_task_t* run_task = NULL;
   CHECK(h2_pal_task_start(tasks, NULL, ticker, &s_state, &ticker_task) ==
         H2_PAL_OK);
   CHECK(h2_pal_task_start(tasks, NULL, run, &s_state, &run_task) == H2_PAL_OK);
@@ -227,7 +228,7 @@ int main(void) {
     CHECK(h2_web_platform_pump(s_state.platform, 16u, NULL) == H2_PAL_OK);
     h2_web_worker_sleep(1u);
   }
-  h2_pal_task_t *const joined[] = {ticker_task, run_task};
+  h2_pal_task_t* const joined[] = {ticker_task, run_task};
   for (size_t index = 0u; index < 2u; ++index) {
     while (h2_pal_task_join(tasks, joined[index]) == H2_PAL_ERR_BUSY) {
       CHECK(h2_web_platform_pump(s_state.platform, 16u, NULL) == H2_PAL_OK);

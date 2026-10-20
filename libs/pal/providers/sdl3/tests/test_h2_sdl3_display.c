@@ -12,7 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static void drain_host_events(h2_sdl3_t *provider) {
+static void drain_host_events(h2_sdl3_t* provider) {
   h2_sdl3_event_t event;
   while (h2_sdl3_poll_event(provider, &event) == H2_PAL_OK) {
   }
@@ -24,8 +24,8 @@ typedef struct capture_display {
   uint8_t brightness;
 } capture_display_t;
 
-static void capture_video(void *user, const h2_sdl3_capture_frame_t *frame) {
-  capture_display_t *state = user;
+static void capture_video(void* user, const h2_sdl3_capture_frame_t* frame) {
+  capture_display_t* state = user;
   assert(frame->width == 32u && frame->height == 24u);
   assert(frame->stride_bytes == 64u && frame->timestamp_us > 0u);
   ++state->count;
@@ -33,8 +33,8 @@ static void capture_video(void *user, const h2_sdl3_capture_frame_t *frame) {
   state->brightness = frame->brightness;
 }
 
-static void capture_render(void *user, const h2_sdl3_render_frame_t *frame) {
-  capture_display_t *state = user;
+static void capture_render(void* user, const h2_sdl3_render_frame_t* frame) {
+  capture_display_t* state = user;
   assert(frame->rgba != NULL && frame->width == 32u && frame->height == 24u);
   assert(frame->stride_bytes >= 128u);
   /* Actual composed renderer must apply texture brightness, not just report
@@ -52,14 +52,15 @@ static void test_lifecycle_and_events(void) {
       .width = 32,
       .height = 24,
   };
-  h2_sdl3_t *provider = NULL;
+  h2_sdl3_t* provider = NULL;
   assert(h2_sdl3_create(&config, &provider) == H2_DISPLAY_OK);
   assert(provider != NULL);
-  h2_sdl3_t *second = NULL;
+  h2_sdl3_t* second = NULL;
   assert(h2_sdl3_create(&config, &second) == H2_PAL_ERR_BUSY);
   assert(second == NULL);
-  h2_pal_display_t *display = h2_sdl3_display(provider);
-  assert(h2_pal_display_get_info(display, &(h2_display_info_t){0}) == H2_DISPLAY_ERR_INVALID_STATE);
+  h2_pal_display_t* display = h2_sdl3_display(provider);
+  assert(h2_pal_display_get_info(display, &(h2_display_info_t){0}) ==
+         H2_DISPLAY_ERR_INVALID_STATE);
   assert(h2_pal_display_open(display) == H2_DISPLAY_OK);
   assert(h2_pal_display_open(display) == H2_DISPLAY_OK);
   h2_display_info_t info = {0};
@@ -68,12 +69,13 @@ static void test_lifecycle_and_events(void) {
 
   drain_host_events(provider);
   capture_display_t captured = {0};
-  assert(h2_sdl3_set_frame_capture(provider, capture_video, &captured) == H2_PAL_OK);
-  assert(h2_sdl3_set_frame_capture(provider, capture_video, &captured) == H2_PAL_ERR_BUSY);
+  assert(h2_sdl3_set_frame_capture(provider, capture_video, &captured) ==
+         H2_PAL_OK);
+  assert(h2_sdl3_set_frame_capture(provider, capture_video, &captured) ==
+         H2_PAL_ERR_BUSY);
   drain_host_events(provider);
-  assert(captured.count == 0u); // registration itself must not present a frame
-  uint16_t pixels[8] = {0xffffu, 0xf800u, 0x07e0u, 0x001fu,
-                        0u,      1u,      2u,      3u};
+  assert(captured.count == 0u);  // registration itself must not present a frame
+  uint16_t pixels[8] = {0xffffu, 0xf800u, 0x07e0u, 0x001fu, 0u, 1u, 2u, 3u};
   const h2_display_rect_t rect = {.x = -1, .y = 0, .width = 4, .height = 2};
   assert(h2_pal_display_draw_bitmap(display, &rect, pixels,
                                     4u * sizeof(uint16_t),
@@ -83,8 +85,10 @@ static void test_lifecycle_and_events(void) {
   assert(captured.count != 0u && captured.first_pixel == 0xf800u);
   assert(captured.brightness == 255u);
   capture_display_t rendered = {.brightness = 128u};
-  assert(h2_sdl3_set_render_capture(provider, capture_render, &rendered) == H2_PAL_OK);
-  assert(h2_sdl3_set_render_capture(provider, capture_render, &rendered) == H2_PAL_ERR_BUSY);
+  assert(h2_sdl3_set_render_capture(provider, capture_render, &rendered) ==
+         H2_PAL_OK);
+  assert(h2_sdl3_set_render_capture(provider, capture_render, &rendered) ==
+         H2_PAL_ERR_BUSY);
   assert(h2_pal_display_set_brightness_percent(display, 50u) == H2_PAL_OK);
   drain_host_events(provider);
   assert(captured.brightness == 128u);
@@ -92,7 +96,8 @@ static void test_lifecycle_and_events(void) {
   assert(h2_sdl3_set_render_capture(provider, NULL, NULL) == H2_PAL_OK);
   const uint16_t rgb444 = 0x0f00u;
   const h2_display_rect_t single = {0, 0, 1, 1};
-  assert(h2_pal_display_draw_bitmap(display, &single, &rgb444, 2u, H2_DISPLAY_PIXEL_RGB444) == H2_DISPLAY_OK);
+  assert(h2_pal_display_draw_bitmap(display, &single, &rgb444, 2u,
+                                    H2_DISPLAY_PIXEL_RGB444) == H2_DISPLAY_OK);
   assert(h2_pal_display_present(display) == H2_DISPLAY_OK);
   drain_host_events(provider);
   assert(captured.first_pixel == 0xf800u);
@@ -102,7 +107,7 @@ static void test_lifecycle_and_events(void) {
   drain_host_events(provider);
   assert(captured.count == count);
 
-  const h2_pal_touch_api_t *touch = h2_sdl3_touch(provider);
+  const h2_pal_touch_api_t* touch = h2_sdl3_touch(provider);
   assert(h2_pal_touch_open(touch) == H2_PAL_OK);
   h2_pal_touch_info_t touch_info = {0};
   assert(h2_pal_touch_get_info(touch, &touch_info) == H2_PAL_OK);
@@ -131,7 +136,8 @@ static void test_lifecycle_and_events(void) {
 
   assert(h2_pal_touch_close(touch) == H2_PAL_OK);
   assert(h2_pal_display_close(display) == H2_DISPLAY_OK);
-  assert(h2_pal_display_get_info(display, &info) == H2_DISPLAY_ERR_INVALID_STATE);
+  assert(h2_pal_display_get_info(display, &info) ==
+         H2_DISPLAY_ERR_INVALID_STATE);
   assert(h2_sdl3_poll_event(provider, &projected) == H2_PAL_OK);
   assert(projected.kind == H2_SDL3_EVENT_CLOSE);
   h2_sdl3_destroy(provider);
@@ -143,7 +149,7 @@ static void test_invalid_pitch(void) {
       .width = INT_MAX,
       .height = 1,
   };
-  h2_sdl3_t *provider = NULL;
+  h2_sdl3_t* provider = NULL;
   assert(h2_sdl3_create(&config, &provider) == H2_DISPLAY_ERR_INVALID_ARG);
   assert(provider == NULL);
 }

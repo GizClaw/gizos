@@ -26,7 +26,7 @@ typedef struct fake_fs_entry {
 } fake_fs_entry_t;
 
 typedef struct fake_fs_file {
-  fake_fs_entry_t *entry;
+  fake_fs_entry_t* entry;
   size_t offset;
   int writable;
 } fake_fs_file_t;
@@ -43,7 +43,7 @@ typedef struct fake_fs {
 
 static fake_fs_t s_fs;
 
-static fake_fs_entry_t *fake_find(const char *path) {
+static fake_fs_entry_t* fake_find(const char* path) {
   for (size_t i = 0u; i < FAKE_FS_ENTRY_MAX; ++i) {
     if (s_fs.entries[i].used && strcmp(s_fs.entries[i].path, path) == 0) {
       return &s_fs.entries[i];
@@ -52,10 +52,10 @@ static fake_fs_entry_t *fake_find(const char *path) {
   return NULL;
 }
 
-static int fake_parent_exists(const char *path) {
+static int fake_parent_exists(const char* path) {
   char parent[FAKE_FS_PATH_MAX];
-  const char *slash = strrchr(path, '/');
-  fake_fs_entry_t *entry;
+  const char* slash = strrchr(path, '/');
+  fake_fs_entry_t* entry;
   if (slash == NULL || slash == path) {
     return 1;
   }
@@ -65,11 +65,11 @@ static int fake_parent_exists(const char *path) {
   return entry != NULL && entry->is_dir;
 }
 
-static fake_fs_entry_t *fake_create(const char *path, int is_dir) {
+static fake_fs_entry_t* fake_create(const char* path, int is_dir) {
   assert(strlen(path) < FAKE_FS_PATH_MAX);
   for (size_t i = 0u; i < FAKE_FS_ENTRY_MAX; ++i) {
     if (!s_fs.entries[i].used) {
-      fake_fs_entry_t *entry = &s_fs.entries[i];
+      fake_fs_entry_t* entry = &s_fs.entries[i];
       memset(entry, 0, sizeof(*entry));
       entry->used = 1;
       entry->is_dir = is_dir;
@@ -80,15 +80,15 @@ static fake_fs_entry_t *fake_create(const char *path, int is_dir) {
   return NULL;
 }
 
-static int fake_countdown(int *counter) {
+static int fake_countdown(int* counter) {
   if (*counter > 0 && --*counter == 0) {
     return 1;
   }
   return 0;
 }
 
-static int fake_mkdir(void *user, const char *path) {
-  fake_fs_entry_t *entry = fake_find(path);
+static int fake_mkdir(void* user, const char* path) {
+  fake_fs_entry_t* entry = fake_find(path);
   (void)user;
   if (entry != NULL) {
     return entry->is_dir ? H2_PAL_OK : H2_PAL_ERR_IO;
@@ -99,10 +99,10 @@ static int fake_mkdir(void *user, const char *path) {
   return fake_create(path, 1) != NULL ? H2_PAL_OK : H2_PAL_ERR_NO_SPACE;
 }
 
-static int fake_open(void *user, const char *path, h2_pal_fs_open_mode_t mode,
-                     h2_pal_fs_file_t **out_file) {
-  fake_fs_entry_t *entry = fake_find(path);
-  fake_fs_file_t *file = NULL;
+static int fake_open(void* user, const char* path, h2_pal_fs_open_mode_t mode,
+                     h2_pal_fs_file_t** out_file) {
+  fake_fs_entry_t* entry = fake_find(path);
+  fake_fs_file_t* file = NULL;
   (void)user;
   for (size_t i = 0u; i < 4u; ++i) {
     if (s_fs.files[i].entry == NULL) {
@@ -134,13 +134,13 @@ static int fake_open(void *user, const char *path, h2_pal_fs_open_mode_t mode,
       .entry = entry,
       .writable = mode == H2_PAL_FS_OPEN_WRITE_TRUNCATE,
   };
-  *out_file = (h2_pal_fs_file_t *)file;
+  *out_file = (h2_pal_fs_file_t*)file;
   return H2_PAL_OK;
 }
 
-static int fake_read(void *user, h2_pal_fs_file_t *handle, void *data,
-                     size_t length, size_t *out_read) {
-  fake_fs_file_t *file = (fake_fs_file_t *)handle;
+static int fake_read(void* user, h2_pal_fs_file_t* handle, void* data,
+                     size_t length, size_t* out_read) {
+  fake_fs_file_t* file = (fake_fs_file_t*)handle;
   size_t remaining = file->entry->size - file->offset;
   size_t count = length < remaining ? length : remaining;
   (void)user;
@@ -152,9 +152,9 @@ static int fake_read(void *user, h2_pal_fs_file_t *handle, void *data,
   return H2_PAL_OK;
 }
 
-static int fake_write(void *user, h2_pal_fs_file_t *handle, const void *data,
-                      size_t length, size_t *out_written) {
-  fake_fs_file_t *file = (fake_fs_file_t *)handle;
+static int fake_write(void* user, h2_pal_fs_file_t* handle, const void* data,
+                      size_t length, size_t* out_written) {
+  fake_fs_file_t* file = (fake_fs_file_t*)handle;
   size_t count = length > 5u ? 5u : length;
   (void)user;
   *out_written = 0u;
@@ -173,21 +173,21 @@ static int fake_write(void *user, h2_pal_fs_file_t *handle, const void *data,
   return H2_PAL_OK;
 }
 
-static int fake_sync(void *user, h2_pal_fs_file_t *handle) {
+static int fake_sync(void* user, h2_pal_fs_file_t* handle) {
   (void)user;
   (void)handle;
   return fake_countdown(&s_fs.fail_sync_in) ? H2_PAL_ERR_IO : H2_PAL_OK;
 }
 
-static int fake_close(void *user, h2_pal_fs_file_t *handle) {
-  fake_fs_file_t *file = (fake_fs_file_t *)handle;
+static int fake_close(void* user, h2_pal_fs_file_t* handle) {
+  fake_fs_file_t* file = (fake_fs_file_t*)handle;
   (void)user;
   file->entry = NULL;
   return H2_PAL_OK;
 }
 
-static int fake_stat(void *user, const char *path, h2_pal_fs_stat_t *out_stat) {
-  fake_fs_entry_t *entry = fake_find(path);
+static int fake_stat(void* user, const char* path, h2_pal_fs_stat_t* out_stat) {
+  fake_fs_entry_t* entry = fake_find(path);
   (void)user;
   if (entry == NULL) {
     return H2_PAL_ERR_NOT_FOUND;
@@ -196,8 +196,8 @@ static int fake_stat(void *user, const char *path, h2_pal_fs_stat_t *out_stat) {
   return H2_PAL_OK;
 }
 
-static int fake_remove(void *user, const char *path) {
-  fake_fs_entry_t *entry = fake_find(path);
+static int fake_remove(void* user, const char* path) {
+  fake_fs_entry_t* entry = fake_find(path);
   (void)user;
   if (entry == NULL) {
     return H2_PAL_ERR_NOT_FOUND;
@@ -206,9 +206,9 @@ static int fake_remove(void *user, const char *path) {
   return H2_PAL_OK;
 }
 
-static int fake_rename(void *user, const char *old_path, const char *new_path) {
-  fake_fs_entry_t *source = fake_find(old_path);
-  fake_fs_entry_t *target = fake_find(new_path);
+static int fake_rename(void* user, const char* old_path, const char* new_path) {
+  fake_fs_entry_t* source = fake_find(old_path);
+  fake_fs_entry_t* target = fake_find(new_path);
   (void)user;
   if (fake_countdown(&s_fs.fail_rename_in)) {
     return H2_PAL_ERR_IO;
@@ -247,8 +247,8 @@ static void fake_reset(void) {
   assert(fake_create("/data", 1) != NULL);
 }
 
-static void fake_put(const char *path, const char *text) {
-  fake_fs_entry_t *entry = fake_find(path);
+static void fake_put(const char* path, const char* text) {
+  fake_fs_entry_t* entry = fake_find(path);
   if (entry == NULL) {
     entry = fake_create(path, 0);
   }
@@ -257,17 +257,17 @@ static void fake_put(const char *path, const char *text) {
   entry->size = strlen(text);
 }
 
-static int fake_file_is(const char *path, const char *text) {
-  fake_fs_entry_t *entry = fake_find(path);
+static int fake_file_is(const char* path, const char* text) {
+  fake_fs_entry_t* entry = fake_find(path);
   return entry != NULL && !entry->is_dir && entry->size == strlen(text) &&
          memcmp(entry->data, text, entry->size) == 0;
 }
 
 /* Every path in the fs is the mount point or lies under the storage root. */
-static void assert_confined_to(const char *root) {
+static void assert_confined_to(const char* root) {
   size_t root_length = strlen(root);
   for (size_t i = 0u; i < FAKE_FS_ENTRY_MAX; ++i) {
-    const char *path = s_fs.entries[i].path;
+    const char* path = s_fs.entries[i].path;
     if (!s_fs.entries[i].used || strcmp(path, "/data") == 0) {
       continue;
     }
@@ -284,7 +284,7 @@ static void assert_no_temp_files(void) {
   }
 }
 
-static h2_runtime_t *create_runtime(void) {
+static h2_runtime_t* create_runtime(void) {
   h2_runtime_config_t config = {
       .board = "test",
       .target = "desktop",
@@ -331,13 +331,13 @@ static h2_runtime_t *create_runtime(void) {
       .system_event = h2_pal_unsupported_system_event_api(),
       .video_decoder = h2_pal_unsupported_video_decoder_api(),
   };
-  h2_runtime_t *runtime = NULL;
+  h2_runtime_t* runtime = NULL;
   assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
   return runtime;
 }
 
-static h2_lua_host_config_t host_config(h2_runtime_t *runtime,
-                                        const h2_pal_fs_api_t *fs) {
+static h2_lua_host_config_t host_config(h2_runtime_t* runtime,
+                                        const h2_pal_fs_api_t* fs) {
   return (h2_lua_host_config_t){
       .runtime = runtime,
       .worker_count = 1u,
@@ -353,22 +353,22 @@ static h2_lua_host_config_t host_config(h2_runtime_t *runtime,
   };
 }
 
-static h2_lua_host_t *create_host(h2_runtime_t *runtime,
-                                  const h2_pal_fs_api_t *fs) {
+static h2_lua_host_t* create_host(h2_runtime_t* runtime,
+                                  const h2_pal_fs_api_t* fs) {
   h2_lua_host_config_t config = host_config(runtime, fs);
-  h2_lua_host_t *host = NULL;
+  h2_lua_host_t* host = NULL;
   assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
   return host;
 }
 
 /* Runs one script to completion and returns its final status. */
-static h2_lua_job_status_t run(h2_lua_host_t *host, const char *app_id,
-                               const char *script) {
+static h2_lua_job_status_t run(h2_lua_host_t* host, const char* app_id,
+                               const char* script) {
   h2_lua_job_id_t job_id = H2_LUA_JOB_ID_NONE;
   h2_lua_job_status_t status;
   assert(h2_lua_job_submit_text(host, app_id, "@storage.lua",
-                                (const uint8_t *)script, strlen(script), NULL,
+                                (const uint8_t*)script, strlen(script), NULL,
                                 0u, &job_id) == H2_PAL_OK);
   for (size_t step = 0u; step < 5000u; ++step) {
     assert(h2_lua_job_get_status(host, job_id, &status) == H2_PAL_OK);
@@ -385,8 +385,8 @@ static h2_lua_job_status_t run(h2_lua_host_t *host, const char *app_id,
   return status;
 }
 
-static void expect_ok(h2_lua_host_t *host, const char *app_id,
-                      const char *script) {
+static void expect_ok(h2_lua_host_t* host, const char* app_id,
+                      const char* script) {
   h2_lua_job_status_t status = run(host, app_id, script);
   if (status.state != H2_LUA_JOB_SUCCEEDED ||
       strcmp(status.message, "ok") != 0) {
@@ -396,7 +396,7 @@ static void expect_ok(h2_lua_host_t *host, const char *app_id,
   }
 }
 
-static void test_unconfigured(h2_runtime_t *runtime) {
+static void test_unconfigured(h2_runtime_t* runtime) {
   static const char script[] =
       "local s=require('storage');"
       "local ok,err=s.write_file('score','1');"
@@ -408,7 +408,7 @@ static void test_unconfigured(h2_runtime_t *runtime) {
       "assert(s.get_free_space()==nil);"
       "assert(s.join_path('a','b')=='a/b');"
       "return 'ok'";
-  h2_lua_host_t *host = create_host(runtime, NULL);
+  h2_lua_host_t* host = create_host(runtime, NULL);
   expect_ok(host, "game", script);
   h2_lua_host_destroy(host);
 
@@ -420,8 +420,8 @@ static void test_unconfigured(h2_runtime_t *runtime) {
   assert(fake_find("/data/lua") == NULL);
 }
 
-static void test_round_trip(h2_runtime_t *runtime) {
-  h2_lua_host_t *host;
+static void test_round_trip(h2_runtime_t* runtime) {
+  h2_lua_host_t* host;
   fake_reset();
   host = create_host(runtime, &s_fake_fs_api);
   expect_ok(host, "game",
@@ -473,8 +473,8 @@ static void test_round_trip(h2_runtime_t *runtime) {
   h2_lua_host_destroy(host);
 }
 
-static void test_scoping(h2_runtime_t *runtime) {
-  h2_lua_host_t *host;
+static void test_scoping(h2_runtime_t* runtime) {
+  h2_lua_host_t* host;
   fake_reset();
   host = create_host(runtime, &s_fake_fs_api);
   expect_ok(host, "alpha",
@@ -498,8 +498,8 @@ static void test_scoping(h2_runtime_t *runtime) {
   h2_lua_host_destroy(host);
 }
 
-static void test_traversal(h2_runtime_t *runtime) {
-  h2_lua_host_t *host;
+static void test_traversal(h2_runtime_t* runtime) {
+  h2_lua_host_t* host;
   fake_reset();
   fake_put("/data/secret", "keep");
   host = create_host(runtime, &s_fake_fs_api);
@@ -530,7 +530,7 @@ static void test_traversal(h2_runtime_t *runtime) {
   /* The same rules apply to the app id the Host submits. */
   host = create_host(runtime, &s_fake_fs_api);
   {
-    static const char *const bad_ids[] = {
+    static const char* const bad_ids[] = {
         "",        ".",     "..",
         "../x",    "a/b",   "/abs",
         ".hidden", "Upper", "123456789012345678901234567890123",
@@ -547,8 +547,8 @@ static void test_traversal(h2_runtime_t *runtime) {
   h2_lua_host_destroy(host);
 }
 
-static void test_quota(h2_runtime_t *runtime) {
-  h2_lua_host_t *host;
+static void test_quota(h2_runtime_t* runtime) {
+  h2_lua_host_t* host;
   fake_reset();
   host = create_host(runtime, &s_fake_fs_api);
   expect_ok(host, "game",
@@ -582,7 +582,7 @@ static void test_quota(h2_runtime_t *runtime) {
   h2_lua_host_destroy(host);
 }
 
-static void test_atomic_write(h2_runtime_t *runtime) {
+static void test_atomic_write(h2_runtime_t* runtime) {
   static const char check_v1[] =
       "local s=require('storage');"
       "local ok,err=s.write_file('save','version-two-longer');"
@@ -590,7 +590,7 @@ static void test_atomic_write(h2_runtime_t *runtime) {
       "assert(s.read_file('save')=='version-one');"
       "assert(s.stat('save').size==11);"
       "return 'ok'";
-  h2_lua_host_t *host;
+  h2_lua_host_t* host;
   fake_reset();
   host = create_host(runtime, &s_fake_fs_api);
   expect_ok(host, "game",
@@ -635,8 +635,8 @@ static void test_atomic_write(h2_runtime_t *runtime) {
   h2_lua_host_destroy(host);
 }
 
-static void test_recovery(h2_runtime_t *runtime) {
-  h2_lua_host_t *host;
+static void test_recovery(h2_runtime_t* runtime) {
+  h2_lua_host_t* host;
   fake_reset();
   assert(fake_create("/data/lua", 1) != NULL);
   assert(fake_create("/data/lua/game", 1) != NULL);
@@ -659,18 +659,18 @@ static void test_recovery(h2_runtime_t *runtime) {
   h2_lua_host_destroy(host);
 }
 
-static int noop_module(void *lua_state, void *user) {
+static int noop_module(void* lua_state, void* user) {
   (void)lua_state;
   (void)user;
   return 0;
 }
 
-static void test_config(h2_runtime_t *runtime) {
+static void test_config(h2_runtime_t* runtime) {
   h2_pal_fs_vtable_t no_rename = s_fake_fs_vtable;
   h2_pal_fs_api_t no_rename_api = {.user = &s_fs, .vtable = &no_rename};
   char long_root[H2_LUA_STORAGE_ROOT_MAX + 2u];
   h2_lua_host_config_t config;
-  h2_lua_host_t *host = NULL;
+  h2_lua_host_t* host = NULL;
 
   config = host_config(runtime, &s_fake_fs_api);
   config.storage.root = NULL;
@@ -716,24 +716,25 @@ static void test_config(h2_runtime_t *runtime) {
   h2_lua_host_destroy(host);
 }
 
-static void test_kv_accounting(h2_runtime_t *runtime) {
+static void test_kv_accounting(h2_runtime_t* runtime) {
   fake_reset();
-  h2_lua_host_t *host = create_host(runtime, &s_fake_fs_api);
-  expect_ok(host, "game",
-            "local s=require('storage');local k=require('kv');"
-            "assert(k.set('x',true));assert(s.get_free_space().used==28);"
-            "assert(s.write_file('a',string.rep('a',36)));"
-            "assert(s.get_free_space().free==0);"
-            "local ok,e=s.write_file('b','x');assert(ok==nil and e=='storage: quota exceeded');"
-            "assert(s.rename('a','b'));assert(s.get_free_space().used==64);"
-            "assert(#s.listdir()==1 and s.listdir()[1].name=='b');"
-            "assert(s.remove('b'));assert(s.get_free_space().used==28);"
-            "assert(k.remove('x'));assert(s.get_free_space().used==0);return 'ok'");
+  h2_lua_host_t* host = create_host(runtime, &s_fake_fs_api);
+  expect_ok(
+      host, "game",
+      "local s=require('storage');local k=require('kv');"
+      "assert(k.set('x',true));assert(s.get_free_space().used==28);"
+      "assert(s.write_file('a',string.rep('a',36)));"
+      "assert(s.get_free_space().free==0);"
+      "local ok,e=s.write_file('b','x');assert(ok==nil and e=='storage: quota exceeded');"
+      "assert(s.rename('a','b'));assert(s.get_free_space().used==64);"
+      "assert(#s.listdir()==1 and s.listdir()[1].name=='b');"
+      "assert(s.remove('b'));assert(s.get_free_space().used==28);"
+      "assert(k.remove('x'));assert(s.get_free_space().used==0);return 'ok'");
   h2_lua_host_destroy(host);
 }
 
 int main(void) {
-  h2_runtime_t *runtime = create_runtime();
+  h2_runtime_t* runtime = create_runtime();
   test_unconfigured(runtime);
   test_round_trip(runtime);
   test_scoping(runtime);

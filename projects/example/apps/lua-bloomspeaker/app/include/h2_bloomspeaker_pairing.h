@@ -51,38 +51,37 @@ typedef struct h2_bloomspeaker_pairing {
   int minimum_rssi;
 } h2_bloomspeaker_pairing_t;
 
-void h2_bloomspeaker_pairing_init(h2_bloomspeaker_pairing_t *pairing,
+void h2_bloomspeaker_pairing_init(h2_bloomspeaker_pairing_t* pairing,
                                   uint64_t device_tag, uint64_t ticket,
                                   uint32_t epoch);
 
 int h2_bloomspeaker_pairing_encode(
-    const h2_bloomspeaker_pairing_beacon_t *beacon,
+    const h2_bloomspeaker_pairing_beacon_t* beacon,
     uint8_t out[H2_BLOOMSPEAKER_PAIRING_BEACON_SIZE]);
 
 int h2_bloomspeaker_pairing_decode(
-    const uint8_t *data, size_t len,
-    h2_bloomspeaker_pairing_beacon_t *out_beacon);
+    const uint8_t* data, size_t len,
+    h2_bloomspeaker_pairing_beacon_t* out_beacon);
 
 int h2_bloomspeaker_pairing_observe(
-    h2_bloomspeaker_pairing_t *pairing,
-    const h2_bloomspeaker_pairing_beacon_t *beacon, int rssi,
-    uint64_t now_ms);
+    h2_bloomspeaker_pairing_t* pairing,
+    const h2_bloomspeaker_pairing_beacon_t* beacon, int rssi, uint64_t now_ms);
 
 uint64_t h2_bloomspeaker_pairing_select(
-    const h2_bloomspeaker_pairing_t *pairing, uint64_t now_ms);
+    const h2_bloomspeaker_pairing_t* pairing, uint64_t now_ms);
 
-void h2_bloomspeaker_pairing_set_claim(
-    h2_bloomspeaker_pairing_t *pairing, uint64_t target);
+void h2_bloomspeaker_pairing_set_claim(h2_bloomspeaker_pairing_t* pairing,
+                                       uint64_t target);
 
-bool h2_bloomspeaker_pairing_lock(h2_bloomspeaker_pairing_t *pairing,
+bool h2_bloomspeaker_pairing_lock(h2_bloomspeaker_pairing_t* pairing,
                                   uint64_t target);
 
 bool h2_bloomspeaker_pairing_mutual_claim(
-    const h2_bloomspeaker_pairing_t *pairing, uint64_t now_ms,
-    uint64_t *out_peer);
+    const h2_bloomspeaker_pairing_t* pairing, uint64_t now_ms,
+    uint64_t* out_peer);
 
 h2_bloomspeaker_pairing_role_t h2_bloomspeaker_pairing_role(
-    const h2_bloomspeaker_pairing_t *pairing, uint64_t peer);
+    const h2_bloomspeaker_pairing_t* pairing, uint64_t peer);
 
 #ifdef __cplusplus
 }

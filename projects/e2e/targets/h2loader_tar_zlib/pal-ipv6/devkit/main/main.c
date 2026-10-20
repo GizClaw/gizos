@@ -14,18 +14,17 @@
 #define H2_PAL_IPV6_BOARD "devkit"
 #endif
 
-static h2_runtime_t *runtime;
+static h2_runtime_t* runtime;
 static h2_pal_ipv6_result_t result;
 static void hold(void) {
-  for (;;)
-    vTaskDelay(pdMS_TO_TICKS(1000u));
+  for (;;) vTaskDelay(pdMS_TO_TICKS(1000u));
 }
-static void fail(const char *stage, int rc) {
+static void fail(const char* stage, int rc) {
   printf("H2_PAL_IPV6_SETUP_FAIL stage=%s rc=%d\n", stage, rc);
   fflush(stdout);
   hold();
 }
-static void run(void *user) {
+static void run(void* user) {
   (void)user;
   vTaskDelay(pdMS_TO_TICKS(5000u));
   int rc;
@@ -41,8 +40,7 @@ static void run(void *user) {
   } else {
     rc = h2_runtime_wifi_connect_saved(runtime, 20000u);
   }
-  if (rc != H2_PAL_OK)
-    fail("saved_wifi", rc);
+  if (rc != H2_PAL_OK) fail("saved_wifi", rc);
   uint64_t start = 0u;
   if (h2_pal_time_get_monotonic_ms(runtime->time, &start) != H2_PAL_OK)
     fail("ipv6_clock", H2_PAL_ERR_IO);
@@ -88,23 +86,18 @@ static void run(void *user) {
 }
 void app_main(void) {
   int rc = h2_esp_target_task_policy_install();
-  if (rc != H2_PAL_OK)
-    fail("task_policy", rc);
+  if (rc != H2_PAL_OK) fail("task_policy", rc);
   h2_runtime_config_t config = {0};
   rc = h2_esp_board_runtime_config(&config);
-  if (rc != H2_PAL_OK)
-    fail("board", rc);
+  if (rc != H2_PAL_OK) fail("board", rc);
   rc = h2_esp_h2loader_app_commands_prepare_serial(&config, "pal-ipv6", 1u, 3u);
-  if (rc != H2_PAL_OK)
-    fail("command_prepare", rc);
+  if (rc != H2_PAL_OK) fail("command_prepare", rc);
   rc = h2_runtime_init(&config, &runtime);
-  if (rc != H2_PAL_OK)
-    fail("runtime", rc);
+  if (rc != H2_PAL_OK) fail("runtime", rc);
   printf("H2_PAL_IPV6_BOOT board=%s version=%s\n", H2_PAL_IPV6_BOARD,
          esp_app_get_description()->version);
   const h2_pal_task_options_t options = {.name = h2_pal_ipv6_device_task_name};
-  h2_pal_task_t *runner = NULL;
+  h2_pal_task_t* runner = NULL;
   rc = h2_pal_task_start(runtime->task, &options, run, NULL, &runner);
-  if (rc != H2_PAL_OK)
-    fail("runner", rc);
+  if (rc != H2_PAL_OK) fail("runner", rc);
 }

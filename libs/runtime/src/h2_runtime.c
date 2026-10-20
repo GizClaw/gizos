@@ -4,43 +4,43 @@
 #include <string.h>
 
 /* Runtime owns the forwarding vtable; the platform API stays user + vtable. */
-static const h2_pal_time_api_t *runtime_time_provider(void *user) {
-    return &((h2_runtime_t *)user)->private_state->time_provider;
+static const h2_pal_time_api_t* runtime_time_provider(void* user) {
+  return &((h2_runtime_t*)user)->private_state->time_provider;
 }
 
-static h2_pal_result_t runtime_time_monotonic_ms(void *user, uint64_t *out) {
-    return h2_pal_time_get_monotonic_ms(runtime_time_provider(user), out);
+static h2_pal_result_t runtime_time_monotonic_ms(void* user, uint64_t* out) {
+  return h2_pal_time_get_monotonic_ms(runtime_time_provider(user), out);
 }
-static h2_pal_result_t runtime_time_monotonic_us(void *user, uint64_t *out) {
-    return h2_pal_time_get_monotonic_us(runtime_time_provider(user), out);
+static h2_pal_result_t runtime_time_monotonic_us(void* user, uint64_t* out) {
+  return h2_pal_time_get_monotonic_us(runtime_time_provider(user), out);
 }
-static h2_pal_result_t runtime_time_wall_ms(void *user, uint64_t *out) {
-    const h2_pal_time_api_t *provider = runtime_time_provider(user);
-    if (provider->vtable == NULL || provider->vtable->get_wall_ms == NULL)
-        return H2_PAL_ERR_UNSUPPORTED;
-    /* The public Time PAL read checks the forwarded status before returning. */
-    return provider->vtable->get_wall_ms(provider->user, out);
+static h2_pal_result_t runtime_time_wall_ms(void* user, uint64_t* out) {
+  const h2_pal_time_api_t* provider = runtime_time_provider(user);
+  if (provider->vtable == NULL || provider->vtable->get_wall_ms == NULL)
+    return H2_PAL_ERR_UNSUPPORTED;
+  /* The public Time PAL read checks the forwarded status before returning. */
+  return provider->vtable->get_wall_ms(provider->user, out);
 }
-static h2_pal_result_t runtime_time_status(void *user,
-                                         h2_pal_time_wall_status_t *out) {
-    return h2_pal_time_get_wall_status(runtime_time_provider(user), out);
+static h2_pal_result_t runtime_time_status(void* user,
+                                           h2_pal_time_wall_status_t* out) {
+  return h2_pal_time_get_wall_status(runtime_time_provider(user), out);
 }
-static h2_pal_result_t runtime_time_sleep(void *user, uint32_t ms) {
-    return h2_pal_time_sleep_ms(runtime_time_provider(user), ms);
+static h2_pal_result_t runtime_time_sleep(void* user, uint32_t ms) {
+  return h2_pal_time_sleep_ms(runtime_time_provider(user), ms);
 }
-static h2_pal_result_t runtime_time_set(void *user, uint64_t wall_ms) {
-    h2_pal_result_t rc = h2_pal_time_set_wall_ms(runtime_time_provider(user), wall_ms);
-    if (rc != H2_PAL_OK)
-        return rc;
-    h2_runtime_t *runtime = user;
-    uint64_t now_ms = h2_runtime_now_ms(runtime->time);
-    const h2_runtime_system_event_time_adjusted_t payload = {.wall_ms = wall_ms};
-    /* Publication failure cannot undo a successful clock adjustment. */
-    (void)h2_runtime_emit_event(runtime,
-        H2_RUNTIME_SYSTEM_EVENT_TIME_ADJUSTED,
-        H2_RUNTIME_COMPONENT_SYSTEM_TIME, H2_RUNTIME_COMPONENT_ID_NONE,
-        h2_runtime_next_sequence(runtime), now_ms, &payload, sizeof(payload));
-    return H2_PAL_OK;
+static h2_pal_result_t runtime_time_set(void* user, uint64_t wall_ms) {
+  h2_pal_result_t rc =
+      h2_pal_time_set_wall_ms(runtime_time_provider(user), wall_ms);
+  if (rc != H2_PAL_OK) return rc;
+  h2_runtime_t* runtime = user;
+  uint64_t now_ms = h2_runtime_now_ms(runtime->time);
+  const h2_runtime_system_event_time_adjusted_t payload = {.wall_ms = wall_ms};
+  /* Publication failure cannot undo a successful clock adjustment. */
+  (void)h2_runtime_emit_event(
+      runtime, H2_RUNTIME_SYSTEM_EVENT_TIME_ADJUSTED,
+      H2_RUNTIME_COMPONENT_SYSTEM_TIME, H2_RUNTIME_COMPONENT_ID_NONE,
+      h2_runtime_next_sequence(runtime), now_ms, &payload, sizeof(payload));
+  return H2_PAL_OK;
 }
 static const h2_pal_time_vtable_t runtime_time_vtable = {
     .get_monotonic_ms = runtime_time_monotonic_ms,
@@ -52,630 +52,653 @@ static const h2_pal_time_vtable_t runtime_time_vtable = {
 };
 
 typedef struct h2_runtime_private_layout {
-    size_t allocation_size;
-    size_t component_mappings_offset;
-    size_t input_sources_offset;
-    size_t input_pending_events_offset;
-    size_t state_entries_offset[H2_RUNTIME_STATE_SLOT_COUNT];
-    size_t component_mapping_capacity;
-    size_t input_source_capacity;
-    size_t input_pending_event_capacity;
-    size_t event_payload_capacity;
+  size_t allocation_size;
+  size_t component_mappings_offset;
+  size_t input_sources_offset;
+  size_t input_pending_events_offset;
+  size_t state_entries_offset[H2_RUNTIME_STATE_SLOT_COUNT];
+  size_t component_mapping_capacity;
+  size_t input_source_capacity;
+  size_t input_pending_event_capacity;
+  size_t event_payload_capacity;
 } h2_runtime_private_layout_t;
 
-static int append_private_storage(
-    size_t item_count,
-    size_t item_size,
-    size_t item_alignment,
-    size_t *inout_size,
-    size_t *out_offset) {
-    size_t size = *inout_size;
-    size_t remainder = size % item_alignment;
-    size_t padding = remainder == 0u ? 0u : item_alignment - remainder;
-    if (size > SIZE_MAX - padding ||
-        item_count > (SIZE_MAX - size - padding) / item_size) {
-        return 0;
-    }
-    size += padding;
-    *out_offset = size;
-    *inout_size = size + item_count * item_size;
-    return 1;
+static int append_private_storage(size_t item_count, size_t item_size,
+                                  size_t item_alignment, size_t* inout_size,
+                                  size_t* out_offset) {
+  size_t size = *inout_size;
+  size_t remainder = size % item_alignment;
+  size_t padding = remainder == 0u ? 0u : item_alignment - remainder;
+  if (size > SIZE_MAX - padding ||
+      item_count > (SIZE_MAX - size - padding) / item_size) {
+    return 0;
+  }
+  size += padding;
+  *out_offset = size;
+  *inout_size = size + item_count * item_size;
+  return 1;
 }
 
-static int runtime_private_layout(
-    const h2_runtime_config_t *config,
-    h2_runtime_private_layout_t *out_layout) {
-    h2_runtime_private_layout_t layout = {
-        .allocation_size = sizeof(h2_runtime_private_t),
-        .component_mapping_capacity =
-            config->component_mapping_capacity == 0u
-                ? H2_RUNTIME_DEFAULT_COMPONENT_MAPPING_CAPACITY
-                : config->component_mapping_capacity,
-        .input_source_capacity =
-            config->input_source_capacity == 0u
-                ? H2_RUNTIME_DEFAULT_INPUT_SOURCE_CAPACITY
-                : config->input_source_capacity,
-        .event_payload_capacity =
-            config->event_payload_capacity == 0u
-                ? H2_RUNTIME_EVENT_PAYLOAD_MAX
-                : config->event_payload_capacity,
-    };
-    layout.input_pending_event_capacity =
-        layout.input_source_capacity <
-                H2_RUNTIME_RADIO_BUTTON_TRANSITION_EVENT_MAX
-            ? H2_RUNTIME_RADIO_BUTTON_TRANSITION_EVENT_MAX
-            : layout.input_source_capacity;
+static int runtime_private_layout(const h2_runtime_config_t* config,
+                                  h2_runtime_private_layout_t* out_layout) {
+  h2_runtime_private_layout_t layout = {
+      .allocation_size = sizeof(h2_runtime_private_t),
+      .component_mapping_capacity =
+          config->component_mapping_capacity == 0u
+              ? H2_RUNTIME_DEFAULT_COMPONENT_MAPPING_CAPACITY
+              : config->component_mapping_capacity,
+      .input_source_capacity = config->input_source_capacity == 0u
+                                   ? H2_RUNTIME_DEFAULT_INPUT_SOURCE_CAPACITY
+                                   : config->input_source_capacity,
+      .event_payload_capacity = config->event_payload_capacity == 0u
+                                    ? H2_RUNTIME_EVENT_PAYLOAD_MAX
+                                    : config->event_payload_capacity,
+  };
+  layout.input_pending_event_capacity =
+      layout.input_source_capacity <
+              H2_RUNTIME_RADIO_BUTTON_TRANSITION_EVENT_MAX
+          ? H2_RUNTIME_RADIO_BUTTON_TRANSITION_EVENT_MAX
+          : layout.input_source_capacity;
 
-    if (layout.input_source_capacity == 0u ||
-        layout.component_mapping_capacity == 0u ||
-        layout.event_payload_capacity > H2_RUNTIME_EVENT_PAYLOAD_MAX ||
-        layout.event_payload_capacity <
-            h2_runtime_system_event_payload_capacity_min() ||
-        !append_private_storage(
-            layout.component_mapping_capacity,
-            sizeof(h2_runtime_component_mapping_t),
-            _Alignof(h2_runtime_component_mapping_t),
-            &layout.allocation_size,
-            &layout.component_mappings_offset) ||
-        !append_private_storage(
-            layout.input_source_capacity,
-            sizeof(h2_runtime_input_source_t),
-            _Alignof(h2_runtime_input_source_t),
-            &layout.allocation_size,
-            &layout.input_sources_offset) ||
-        !append_private_storage(
-            layout.input_pending_event_capacity,
-            sizeof(h2_runtime_input_pending_event_t),
-            _Alignof(h2_runtime_input_pending_event_t),
-            &layout.allocation_size,
-            &layout.input_pending_events_offset) ||
-        !append_private_storage(
-            layout.input_source_capacity,
-            sizeof(h2_runtime_state_entry_t),
-            _Alignof(h2_runtime_state_entry_t),
-            &layout.allocation_size,
-            &layout.state_entries_offset[0]) ||
-        !append_private_storage(
-            layout.input_source_capacity,
-            sizeof(h2_runtime_state_entry_t),
-            _Alignof(h2_runtime_state_entry_t),
-            &layout.allocation_size,
-            &layout.state_entries_offset[1]) ||
-        !append_private_storage(
-            layout.input_source_capacity,
-            sizeof(h2_runtime_state_entry_t),
-            _Alignof(h2_runtime_state_entry_t),
-            &layout.allocation_size,
-            &layout.state_entries_offset[2])) {
-        return 0;
-    }
-    *out_layout = layout;
-    return 1;
+  if (layout.input_source_capacity == 0u ||
+      layout.component_mapping_capacity == 0u ||
+      layout.event_payload_capacity > H2_RUNTIME_EVENT_PAYLOAD_MAX ||
+      layout.event_payload_capacity <
+          h2_runtime_system_event_payload_capacity_min() ||
+      !append_private_storage(layout.component_mapping_capacity,
+                              sizeof(h2_runtime_component_mapping_t),
+                              _Alignof(h2_runtime_component_mapping_t),
+                              &layout.allocation_size,
+                              &layout.component_mappings_offset) ||
+      !append_private_storage(
+          layout.input_source_capacity, sizeof(h2_runtime_input_source_t),
+          _Alignof(h2_runtime_input_source_t), &layout.allocation_size,
+          &layout.input_sources_offset) ||
+      !append_private_storage(layout.input_pending_event_capacity,
+                              sizeof(h2_runtime_input_pending_event_t),
+                              _Alignof(h2_runtime_input_pending_event_t),
+                              &layout.allocation_size,
+                              &layout.input_pending_events_offset) ||
+      !append_private_storage(
+          layout.input_source_capacity, sizeof(h2_runtime_state_entry_t),
+          _Alignof(h2_runtime_state_entry_t), &layout.allocation_size,
+          &layout.state_entries_offset[0]) ||
+      !append_private_storage(
+          layout.input_source_capacity, sizeof(h2_runtime_state_entry_t),
+          _Alignof(h2_runtime_state_entry_t), &layout.allocation_size,
+          &layout.state_entries_offset[1]) ||
+      !append_private_storage(
+          layout.input_source_capacity, sizeof(h2_runtime_state_entry_t),
+          _Alignof(h2_runtime_state_entry_t), &layout.allocation_size,
+          &layout.state_entries_offset[2])) {
+    return 0;
+  }
+  *out_layout = layout;
+  return 1;
 }
 
-static void bind_private_storage(
-    h2_runtime_private_t *private_state,
-    const h2_runtime_private_layout_t *layout) {
-    uint8_t *storage = (uint8_t *)private_state;
-    private_state->allocation_size = layout->allocation_size;
-    private_state->component_mapping_capacity =
-        layout->component_mapping_capacity;
-    private_state->component_mappings =
-        (h2_runtime_component_mapping_t *)(storage +
-                                           layout->component_mappings_offset);
-    private_state->input_source_capacity = layout->input_source_capacity;
-    private_state->input_sources =
-        (h2_runtime_input_source_t *)(storage + layout->input_sources_offset);
-    private_state->input_pending_event_capacity =
-        layout->input_pending_event_capacity;
-    private_state->input_pending_events =
-        (h2_runtime_input_pending_event_t *)(
-            storage + layout->input_pending_events_offset);
-    private_state->event_payload_capacity = layout->event_payload_capacity;
-    for (size_t index = 0u;
-         index < H2_RUNTIME_STATE_SLOT_COUNT;
-         ++index) {
-        private_state->state_publication.banks[index].entries =
-            (h2_runtime_state_entry_t *)(
-                storage + layout->state_entries_offset[index]);
-        private_state->state_publication.banks[index].entry_capacity =
-            layout->input_source_capacity;
-    }
+static void bind_private_storage(h2_runtime_private_t* private_state,
+                                 const h2_runtime_private_layout_t* layout) {
+  uint8_t* storage = (uint8_t*)private_state;
+  private_state->allocation_size = layout->allocation_size;
+  private_state->component_mapping_capacity =
+      layout->component_mapping_capacity;
+  private_state->component_mappings =
+      (h2_runtime_component_mapping_t*)(storage +
+                                        layout->component_mappings_offset);
+  private_state->input_source_capacity = layout->input_source_capacity;
+  private_state->input_sources =
+      (h2_runtime_input_source_t*)(storage + layout->input_sources_offset);
+  private_state->input_pending_event_capacity =
+      layout->input_pending_event_capacity;
+  private_state->input_pending_events =
+      (h2_runtime_input_pending_event_t*)(storage +
+                                          layout->input_pending_events_offset);
+  private_state->event_payload_capacity = layout->event_payload_capacity;
+  for (size_t index = 0u; index < H2_RUNTIME_STATE_SLOT_COUNT; ++index) {
+    private_state->state_publication.banks[index].entries =
+        (h2_runtime_state_entry_t*)(storage +
+                                    layout->state_entries_offset[index]);
+    private_state->state_publication.banks[index].entry_capacity =
+        layout->input_source_capacity;
+  }
 }
 
 static int runtime_video_decoder_is_complete(
-    const h2_pal_video_decoder_api_t *decoder) {
-    return decoder != NULL && decoder->vtable != NULL &&
-        decoder->vtable->open != NULL && decoder->vtable->configure != NULL &&
-        decoder->vtable->submit_packet != NULL &&
-        decoder->vtable->acquire_frame != NULL &&
-        decoder->vtable->frame_get_info != NULL &&
-        decoder->vtable->release_frame != NULL && decoder->vtable->reset != NULL &&
-        decoder->vtable->close != NULL;
+    const h2_pal_video_decoder_api_t* decoder) {
+  return decoder != NULL && decoder->vtable != NULL &&
+         decoder->vtable->open != NULL && decoder->vtable->configure != NULL &&
+         decoder->vtable->submit_packet != NULL &&
+         decoder->vtable->acquire_frame != NULL &&
+         decoder->vtable->frame_get_info != NULL &&
+         decoder->vtable->release_frame != NULL &&
+         decoder->vtable->reset != NULL && decoder->vtable->close != NULL;
 }
 
 static int runtime_audio_decoder_is_complete(
-    const h2_pal_audio_decoder_api_t *decoder) {
-    return decoder != NULL && decoder->vtable != NULL &&
-        decoder->vtable->open != NULL && decoder->vtable->configure != NULL &&
-        decoder->vtable->submit_packet != NULL &&
-        decoder->vtable->acquire_frame != NULL &&
-        decoder->vtable->frame_get_info != NULL &&
-        decoder->vtable->release_frame != NULL && decoder->vtable->reset != NULL &&
-        decoder->vtable->close != NULL;
+    const h2_pal_audio_decoder_api_t* decoder) {
+  return decoder != NULL && decoder->vtable != NULL &&
+         decoder->vtable->open != NULL && decoder->vtable->configure != NULL &&
+         decoder->vtable->submit_packet != NULL &&
+         decoder->vtable->acquire_frame != NULL &&
+         decoder->vtable->frame_get_info != NULL &&
+         decoder->vtable->release_frame != NULL &&
+         decoder->vtable->reset != NULL && decoder->vtable->close != NULL;
 }
 
-h2_runtime_sequence_t h2_runtime_next_sequence(h2_runtime_t *runtime) {
-    if (!h2_runtime_ready(runtime)) {
-        return 0u;
-    }
-    h2_runtime_private_t *private_state = runtime->private_state;
-    h2_runtime_sequence_t sequence;
+h2_runtime_sequence_t h2_runtime_next_sequence(h2_runtime_t* runtime) {
+  if (!h2_runtime_ready(runtime)) {
+    return 0u;
+  }
+  h2_runtime_private_t* private_state = runtime->private_state;
+  h2_runtime_sequence_t sequence;
 #if H2_RUNTIME_ATOMIC_FETCH_ADD
-    sequence = h2_atomic_fetch_add_explicit(
-        &private_state->next_sequence, 1u, H2_ATOMIC_RELAXED);
-    if (sequence == 0u) {
-        /* Wrapped: 0 means "no sequence", take the next one. */
-        sequence = h2_atomic_fetch_add_explicit(
-            &private_state->next_sequence, 1u, H2_ATOMIC_RELAXED);
-    }
+  sequence = h2_atomic_fetch_add_explicit(&private_state->next_sequence, 1u,
+                                          H2_ATOMIC_RELAXED);
+  if (sequence == 0u) {
+    /* Wrapped: 0 means "no sequence", take the next one. */
+    sequence = h2_atomic_fetch_add_explicit(&private_state->next_sequence, 1u,
+                                            H2_ATOMIC_RELAXED);
+  }
 #else
-    h2_runtime_flag_lock(&private_state->sequence_lock);
-    sequence = h2_atomic_load_explicit(
-        &private_state->next_sequence, H2_ATOMIC_RELAXED);
-    if (sequence == 0u) {
-        sequence = 1u;
-    }
-    h2_atomic_store_explicit(
-        &private_state->next_sequence, sequence + 1u, H2_ATOMIC_RELAXED);
-    h2_runtime_flag_unlock(&private_state->sequence_lock);
+  h2_runtime_flag_lock(&private_state->sequence_lock);
+  sequence =
+      h2_atomic_load_explicit(&private_state->next_sequence, H2_ATOMIC_RELAXED);
+  if (sequence == 0u) {
+    sequence = 1u;
+  }
+  h2_atomic_store_explicit(&private_state->next_sequence, sequence + 1u,
+                           H2_ATOMIC_RELAXED);
+  h2_runtime_flag_unlock(&private_state->sequence_lock);
 #endif
-    return sequence;
+  return sequence;
 }
 
-static int runtime_config_is_valid(const h2_runtime_config_t *config) {
-    if (config == NULL || config->board == NULL || config->target == NULL ||
-        config->chip == NULL) {
-        return 0;
+static int runtime_config_is_valid(const h2_runtime_config_t* config) {
+  if (config == NULL || config->board == NULL || config->target == NULL ||
+      config->chip == NULL) {
+    return 0;
+  }
+  if (config->ble_local_name != NULL) {
+    if (config->ble_local_name[0] == '\0') return 0;
+    for (size_t i = 0u; config->ble_local_name[i] != '\0'; ++i) {
+      const unsigned char c = (unsigned char)config->ble_local_name[i];
+      if (i >= 29u || c < 0x20u || c > 0x7eu) return 0;
     }
-    if (config->ble_local_name != NULL) {
-        if (config->ble_local_name[0] == '\0') return 0;
-        for (size_t i = 0u; config->ble_local_name[i] != '\0'; ++i) {
-            const unsigned char c = (unsigned char)config->ble_local_name[i];
-            if (i >= 29u || c < 0x20u || c > 0x7eu) return 0;
-        }
-    }
-#define H2_RUNTIME_CONFIG_HAS_API(field) \
-    (config->field != NULL)
-    const int has_complete_surface =
-        H2_RUNTIME_CONFIG_HAS_API(firmware_info) &&
-        H2_RUNTIME_CONFIG_HAS_API(mem) && H2_RUNTIME_CONFIG_HAS_API(log) &&
-        H2_RUNTIME_CONFIG_HAS_API(time) && H2_RUNTIME_CONFIG_HAS_API(timer) &&
-        H2_RUNTIME_CONFIG_HAS_API(task) && H2_RUNTIME_CONFIG_HAS_API(queue) &&
-        H2_RUNTIME_CONFIG_HAS_API(sync) && H2_RUNTIME_CONFIG_HAS_API(fs) &&
-        H2_RUNTIME_CONFIG_HAS_API(disk) && H2_RUNTIME_CONFIG_HAS_API(pref) &&
-        H2_RUNTIME_CONFIG_HAS_API(crypto) && H2_RUNTIME_CONFIG_HAS_API(http) &&
-        H2_RUNTIME_CONFIG_HAS_API(net) && H2_RUNTIME_CONFIG_HAS_API(netif) &&
-        H2_RUNTIME_CONFIG_HAS_API(mqtt) && H2_RUNTIME_CONFIG_HAS_API(webrtc) &&
-        H2_RUNTIME_CONFIG_HAS_API(wifi_sta) && H2_RUNTIME_CONFIG_HAS_API(wifi_ap) &&
-        H2_RUNTIME_CONFIG_HAS_API(wifi_csi) &&
-        H2_RUNTIME_CONFIG_HAS_API(wifi_settings) && H2_RUNTIME_CONFIG_HAS_API(ble_host) &&
-        H2_RUNTIME_CONFIG_HAS_API(modem) && H2_RUNTIME_CONFIG_HAS_API(power) &&
-        H2_RUNTIME_CONFIG_HAS_API(display) && H2_RUNTIME_CONFIG_HAS_API(audio) &&
-        runtime_audio_decoder_is_complete(config->audio_decoder) &&
-        H2_RUNTIME_CONFIG_HAS_API(periph) && H2_RUNTIME_CONFIG_HAS_API(button) &&
-        H2_RUNTIME_CONFIG_HAS_API(touch) &&
-        H2_RUNTIME_CONFIG_HAS_API(buzzer) && H2_RUNTIME_CONFIG_HAS_API(nfc) &&
-        H2_RUNTIME_CONFIG_HAS_API(imu) &&
-        H2_RUNTIME_CONFIG_HAS_API(nfc_card_emulation) &&
-        H2_RUNTIME_CONFIG_HAS_API(gpio_irq) && H2_RUNTIME_CONFIG_HAS_API(led) &&
-        H2_RUNTIME_CONFIG_HAS_API(switch_api) && H2_RUNTIME_CONFIG_HAS_API(pwm_switch) &&
-        H2_RUNTIME_CONFIG_HAS_API(input) && H2_RUNTIME_CONFIG_HAS_API(system_event) &&
-        runtime_video_decoder_is_complete(config->video_decoder);
+  }
+#define H2_RUNTIME_CONFIG_HAS_API(field) (config->field != NULL)
+  const int has_complete_surface =
+      H2_RUNTIME_CONFIG_HAS_API(firmware_info) &&
+      H2_RUNTIME_CONFIG_HAS_API(mem) && H2_RUNTIME_CONFIG_HAS_API(log) &&
+      H2_RUNTIME_CONFIG_HAS_API(time) && H2_RUNTIME_CONFIG_HAS_API(timer) &&
+      H2_RUNTIME_CONFIG_HAS_API(task) && H2_RUNTIME_CONFIG_HAS_API(queue) &&
+      H2_RUNTIME_CONFIG_HAS_API(sync) && H2_RUNTIME_CONFIG_HAS_API(fs) &&
+      H2_RUNTIME_CONFIG_HAS_API(disk) && H2_RUNTIME_CONFIG_HAS_API(pref) &&
+      H2_RUNTIME_CONFIG_HAS_API(crypto) && H2_RUNTIME_CONFIG_HAS_API(http) &&
+      H2_RUNTIME_CONFIG_HAS_API(net) && H2_RUNTIME_CONFIG_HAS_API(netif) &&
+      H2_RUNTIME_CONFIG_HAS_API(mqtt) && H2_RUNTIME_CONFIG_HAS_API(webrtc) &&
+      H2_RUNTIME_CONFIG_HAS_API(wifi_sta) &&
+      H2_RUNTIME_CONFIG_HAS_API(wifi_ap) &&
+      H2_RUNTIME_CONFIG_HAS_API(wifi_csi) &&
+      H2_RUNTIME_CONFIG_HAS_API(wifi_settings) &&
+      H2_RUNTIME_CONFIG_HAS_API(ble_host) && H2_RUNTIME_CONFIG_HAS_API(modem) &&
+      H2_RUNTIME_CONFIG_HAS_API(power) && H2_RUNTIME_CONFIG_HAS_API(display) &&
+      H2_RUNTIME_CONFIG_HAS_API(audio) &&
+      runtime_audio_decoder_is_complete(config->audio_decoder) &&
+      H2_RUNTIME_CONFIG_HAS_API(periph) && H2_RUNTIME_CONFIG_HAS_API(button) &&
+      H2_RUNTIME_CONFIG_HAS_API(touch) && H2_RUNTIME_CONFIG_HAS_API(buzzer) &&
+      H2_RUNTIME_CONFIG_HAS_API(nfc) && H2_RUNTIME_CONFIG_HAS_API(imu) &&
+      H2_RUNTIME_CONFIG_HAS_API(nfc_card_emulation) &&
+      H2_RUNTIME_CONFIG_HAS_API(gpio_irq) && H2_RUNTIME_CONFIG_HAS_API(led) &&
+      H2_RUNTIME_CONFIG_HAS_API(switch_api) &&
+      H2_RUNTIME_CONFIG_HAS_API(pwm_switch) &&
+      H2_RUNTIME_CONFIG_HAS_API(input) &&
+      H2_RUNTIME_CONFIG_HAS_API(system_event) &&
+      runtime_video_decoder_is_complete(config->video_decoder);
 #undef H2_RUNTIME_CONFIG_HAS_API
-    return has_complete_surface;
+  return has_complete_surface;
 }
 
-static void runtime_atomic_destroy(h2_runtime_private_t *state) {
-    h2_atomic_flag_destroy(&state->wifi_busy);
-    h2_atomic_uint_destroy(&state->wifi_saved_revision);
-    h2_atomic_uint_destroy(&state->dropped_event_count);
-    h2_atomic_int_destroy(&state->last_dropped_kind);
-    h2_atomic_int_destroy(&state->last_dropped_component);
-    h2_atomic_uint_destroy(&state->last_dropped_component_id);
-    h2_atomic_flag_destroy(&state->drop_report_lock);
-    h2_atomic_int_destroy(&state->state_publication.ready);
-    h2_atomic_uint_destroy(&state->state_publication.active_index);
-    h2_atomic_flag_destroy(&state->state_publication.reader_lock);
-    h2_atomic_flag_destroy(&state->audio_state_busy);
+static void runtime_atomic_destroy(h2_runtime_private_t* state) {
+  h2_atomic_flag_destroy(&state->wifi_busy);
+  h2_atomic_uint_destroy(&state->wifi_saved_revision);
+  h2_atomic_uint_destroy(&state->dropped_event_count);
+  h2_atomic_int_destroy(&state->last_dropped_kind);
+  h2_atomic_int_destroy(&state->last_dropped_component);
+  h2_atomic_uint_destroy(&state->last_dropped_component_id);
+  h2_atomic_flag_destroy(&state->drop_report_lock);
+  h2_atomic_int_destroy(&state->state_publication.ready);
+  h2_atomic_uint_destroy(&state->state_publication.active_index);
+  h2_atomic_flag_destroy(&state->state_publication.reader_lock);
+  h2_atomic_flag_destroy(&state->audio_state_busy);
 #if !defined(H2_RUNTIME_AUDIO_LEVELS) || H2_RUNTIME_AUDIO_LEVELS
-    h2_atomic_uint_destroy(&state->audio_capture_level);
-    h2_atomic_uint_destroy(&state->audio_capture_level_ms);
-    h2_atomic_uint_destroy(&state->audio_playback_level);
-    h2_atomic_uint_destroy(&state->audio_playback_level_ms);
+  h2_atomic_uint_destroy(&state->audio_capture_level);
+  h2_atomic_uint_destroy(&state->audio_capture_level_ms);
+  h2_atomic_uint_destroy(&state->audio_playback_level);
+  h2_atomic_uint_destroy(&state->audio_playback_level_ms);
 #endif
-    h2_atomic_flag_destroy(&state->custom_event_lock);
-    h2_atomic_uint_destroy(&state->custom_event_in_flight);
-    h2_atomic_int_destroy(&state->custom_event_closed);
-    h2_atomic_flag_destroy(&state->sequence_lock);
-    h2_atomic_uint_destroy(&state->next_sequence);
-    h2_atomic_int_destroy(&state->system_event_active);
-    h2_atomic_int_destroy(&state->input_phase);
-    h2_atomic_int_destroy(&state->input_stop_requested);
-    h2_atomic_int_destroy(&state->input_worker_result);
-    for (size_t i = 0; i < H2_RUNTIME_STATE_SLOT_COUNT; ++i)
-        h2_atomic_uint_destroy(&state->state_publication.reader_count[i]);
+  h2_atomic_flag_destroy(&state->custom_event_lock);
+  h2_atomic_uint_destroy(&state->custom_event_in_flight);
+  h2_atomic_int_destroy(&state->custom_event_closed);
+  h2_atomic_flag_destroy(&state->sequence_lock);
+  h2_atomic_uint_destroy(&state->next_sequence);
+  h2_atomic_int_destroy(&state->system_event_active);
+  h2_atomic_int_destroy(&state->input_phase);
+  h2_atomic_int_destroy(&state->input_stop_requested);
+  h2_atomic_int_destroy(&state->input_worker_result);
+  for (size_t i = 0; i < H2_RUNTIME_STATE_SLOT_COUNT; ++i)
+    h2_atomic_uint_destroy(&state->state_publication.reader_count[i]);
 }
 
-static h2_pal_result_t runtime_atomic_init(h2_runtime_private_t *state) {
-    h2_atomic_result_t atomic_rc = H2_ATOMIC_OK;
-    if ((atomic_rc = h2_atomic_flag_init(&state->wifi_busy)) != H2_ATOMIC_OK) goto atomic_failure;
-    if ((atomic_rc = h2_atomic_uint_init(&state->wifi_saved_revision, 0u)) != H2_ATOMIC_OK) goto atomic_failure;
-    if ((atomic_rc = h2_atomic_uint_init(&state->dropped_event_count, 0u)) != H2_ATOMIC_OK) goto atomic_failure;
-    if ((atomic_rc = h2_atomic_int_init(&state->last_dropped_kind, H2_RUNTIME_EVENT_NONE)) != H2_ATOMIC_OK) goto atomic_failure;
-    if ((atomic_rc = h2_atomic_int_init(&state->last_dropped_component, H2_RUNTIME_COMPONENT_NONE)) != H2_ATOMIC_OK) goto atomic_failure;
-    if ((atomic_rc = h2_atomic_uint_init(&state->last_dropped_component_id, H2_RUNTIME_COMPONENT_ID_NONE)) != H2_ATOMIC_OK) goto atomic_failure;
-    if ((atomic_rc = h2_atomic_flag_init(&state->drop_report_lock)) != H2_ATOMIC_OK) goto atomic_failure;
-    if ((atomic_rc = h2_atomic_int_init(&state->state_publication.ready, 0)) != H2_ATOMIC_OK) goto atomic_failure;
-    if ((atomic_rc = h2_atomic_uint_init(&state->state_publication.active_index, 0u)) != H2_ATOMIC_OK) goto atomic_failure;
-    if ((atomic_rc = h2_atomic_flag_init(&state->state_publication.reader_lock)) != H2_ATOMIC_OK) goto atomic_failure;
-    if ((atomic_rc = h2_atomic_flag_init(&state->audio_state_busy)) != H2_ATOMIC_OK) goto atomic_failure;
+static h2_pal_result_t runtime_atomic_init(h2_runtime_private_t* state) {
+  h2_atomic_result_t atomic_rc = H2_ATOMIC_OK;
+  if ((atomic_rc = h2_atomic_flag_init(&state->wifi_busy)) != H2_ATOMIC_OK)
+    goto atomic_failure;
+  if ((atomic_rc = h2_atomic_uint_init(&state->wifi_saved_revision, 0u)) !=
+      H2_ATOMIC_OK)
+    goto atomic_failure;
+  if ((atomic_rc = h2_atomic_uint_init(&state->dropped_event_count, 0u)) !=
+      H2_ATOMIC_OK)
+    goto atomic_failure;
+  if ((atomic_rc = h2_atomic_int_init(&state->last_dropped_kind,
+                                      H2_RUNTIME_EVENT_NONE)) != H2_ATOMIC_OK)
+    goto atomic_failure;
+  if ((atomic_rc = h2_atomic_int_init(&state->last_dropped_component,
+                                      H2_RUNTIME_COMPONENT_NONE)) !=
+      H2_ATOMIC_OK)
+    goto atomic_failure;
+  if ((atomic_rc = h2_atomic_uint_init(&state->last_dropped_component_id,
+                                       H2_RUNTIME_COMPONENT_ID_NONE)) !=
+      H2_ATOMIC_OK)
+    goto atomic_failure;
+  if ((atomic_rc = h2_atomic_flag_init(&state->drop_report_lock)) !=
+      H2_ATOMIC_OK)
+    goto atomic_failure;
+  if ((atomic_rc = h2_atomic_int_init(&state->state_publication.ready, 0)) !=
+      H2_ATOMIC_OK)
+    goto atomic_failure;
+  if ((atomic_rc = h2_atomic_uint_init(&state->state_publication.active_index,
+                                       0u)) != H2_ATOMIC_OK)
+    goto atomic_failure;
+  if ((atomic_rc = h2_atomic_flag_init(
+           &state->state_publication.reader_lock)) != H2_ATOMIC_OK)
+    goto atomic_failure;
+  if ((atomic_rc = h2_atomic_flag_init(&state->audio_state_busy)) !=
+      H2_ATOMIC_OK)
+    goto atomic_failure;
 #if !defined(H2_RUNTIME_AUDIO_LEVELS) || H2_RUNTIME_AUDIO_LEVELS
-    if ((atomic_rc = h2_atomic_uint_init(&state->audio_capture_level, 0u)) != H2_ATOMIC_OK) goto atomic_failure;
-    if ((atomic_rc = h2_atomic_uint_init(&state->audio_capture_level_ms, 0u)) != H2_ATOMIC_OK) goto atomic_failure;
-    if ((atomic_rc = h2_atomic_uint_init(&state->audio_playback_level, 0u)) != H2_ATOMIC_OK) goto atomic_failure;
-    if ((atomic_rc = h2_atomic_uint_init(&state->audio_playback_level_ms, 0u)) != H2_ATOMIC_OK) goto atomic_failure;
+  if ((atomic_rc = h2_atomic_uint_init(&state->audio_capture_level, 0u)) !=
+      H2_ATOMIC_OK)
+    goto atomic_failure;
+  if ((atomic_rc = h2_atomic_uint_init(&state->audio_capture_level_ms, 0u)) !=
+      H2_ATOMIC_OK)
+    goto atomic_failure;
+  if ((atomic_rc = h2_atomic_uint_init(&state->audio_playback_level, 0u)) !=
+      H2_ATOMIC_OK)
+    goto atomic_failure;
+  if ((atomic_rc = h2_atomic_uint_init(&state->audio_playback_level_ms, 0u)) !=
+      H2_ATOMIC_OK)
+    goto atomic_failure;
 #endif
-    if ((atomic_rc = h2_atomic_flag_init(&state->custom_event_lock)) != H2_ATOMIC_OK) goto atomic_failure;
-    if ((atomic_rc = h2_atomic_uint_init(&state->custom_event_in_flight, 0u)) != H2_ATOMIC_OK) goto atomic_failure;
-    if ((atomic_rc = h2_atomic_int_init(&state->custom_event_closed, 0)) != H2_ATOMIC_OK) goto atomic_failure;
-    if ((atomic_rc = h2_atomic_flag_init(&state->sequence_lock)) != H2_ATOMIC_OK) goto atomic_failure;
-    if ((atomic_rc = h2_atomic_uint_init(&state->next_sequence, 1u)) != H2_ATOMIC_OK) goto atomic_failure;
-    if ((atomic_rc = h2_atomic_int_init(&state->system_event_active, 0)) != H2_ATOMIC_OK) goto atomic_failure;
-    if ((atomic_rc = h2_atomic_int_init(&state->input_phase, H2_RUNTIME_INPUT_PHASE_STOPPED)) != H2_ATOMIC_OK) goto atomic_failure;
-    if ((atomic_rc = h2_atomic_int_init(&state->input_stop_requested, 0)) != H2_ATOMIC_OK) goto atomic_failure;
-    if ((atomic_rc = h2_atomic_int_init(&state->input_worker_result, H2_PAL_OK)) != H2_ATOMIC_OK) goto atomic_failure;
-    for (size_t i = 0; i < H2_RUNTIME_STATE_SLOT_COUNT; ++i) {
-        if ((atomic_rc = h2_atomic_uint_init(&state->state_publication.reader_count[i], 0u)) != H2_ATOMIC_OK) goto atomic_failure;
-    }
-    return H2_PAL_OK;
+  if ((atomic_rc = h2_atomic_flag_init(&state->custom_event_lock)) !=
+      H2_ATOMIC_OK)
+    goto atomic_failure;
+  if ((atomic_rc = h2_atomic_uint_init(&state->custom_event_in_flight, 0u)) !=
+      H2_ATOMIC_OK)
+    goto atomic_failure;
+  if ((atomic_rc = h2_atomic_int_init(&state->custom_event_closed, 0)) !=
+      H2_ATOMIC_OK)
+    goto atomic_failure;
+  if ((atomic_rc = h2_atomic_flag_init(&state->sequence_lock)) != H2_ATOMIC_OK)
+    goto atomic_failure;
+  if ((atomic_rc = h2_atomic_uint_init(&state->next_sequence, 1u)) !=
+      H2_ATOMIC_OK)
+    goto atomic_failure;
+  if ((atomic_rc = h2_atomic_int_init(&state->system_event_active, 0)) !=
+      H2_ATOMIC_OK)
+    goto atomic_failure;
+  if ((atomic_rc = h2_atomic_int_init(&state->input_phase,
+                                      H2_RUNTIME_INPUT_PHASE_STOPPED)) !=
+      H2_ATOMIC_OK)
+    goto atomic_failure;
+  if ((atomic_rc = h2_atomic_int_init(&state->input_stop_requested, 0)) !=
+      H2_ATOMIC_OK)
+    goto atomic_failure;
+  if ((atomic_rc = h2_atomic_int_init(&state->input_worker_result,
+                                      H2_PAL_OK)) != H2_ATOMIC_OK)
+    goto atomic_failure;
+  for (size_t i = 0; i < H2_RUNTIME_STATE_SLOT_COUNT; ++i) {
+    if ((atomic_rc = h2_atomic_uint_init(
+             &state->state_publication.reader_count[i], 0u)) != H2_ATOMIC_OK)
+      goto atomic_failure;
+  }
+  return H2_PAL_OK;
 atomic_failure:
-    runtime_atomic_destroy(state);
-    return atomic_rc == H2_ATOMIC_UNSUPPORTED
-        ? H2_PAL_ERR_UNSUPPORTED : H2_PAL_ERR_NO_MEMORY;
+  runtime_atomic_destroy(state);
+  return atomic_rc == H2_ATOMIC_UNSUPPORTED ? H2_PAL_ERR_UNSUPPORTED
+                                            : H2_PAL_ERR_NO_MEMORY;
 }
 
-static h2_pal_result_t runtime_init_release(
-    const h2_runtime_config_t *config,
-    h2_runtime_t *runtime,
-    h2_pal_result_t result) {
-    if (runtime != NULL) {
-        h2_runtime_private_t *private_state = runtime->private_state;
-        if (private_state != NULL) {
-            /* Init never starts the poller, so only prepared state is here. */
-            h2_runtime_input_release(runtime);
-            h2_runtime_stop_system_events(runtime);
-            h2_runtime_system_state_release(runtime);
-            if (private_state->event_queue != NULL) {
-                h2_pal_queue_destroy(
-                    runtime->queue, private_state->event_queue);
-                private_state->event_queue = NULL;
-            }
-            if (private_state->wake_queue != NULL) {
-                h2_pal_queue_destroy(
-                    runtime->queue, private_state->wake_queue);
-                private_state->wake_queue = NULL;
-            }
-            if (private_state->input_push_edge_queue != NULL) {
-                h2_pal_queue_destroy(
-                    runtime->queue, private_state->input_push_edge_queue);
-                private_state->input_push_edge_queue = NULL;
-            }
-            if (private_state->input_nfc_result_queue != NULL) {
-                h2_pal_queue_destroy(
-                    runtime->queue, private_state->input_nfc_result_queue);
-                private_state->input_nfc_result_queue = NULL;
-            }
-            runtime_atomic_destroy(private_state);
-            size_t allocation_size = private_state->allocation_size;
-            memset(private_state, 0, allocation_size);
-            h2_pal_mem_free(config->mem, private_state);
-        }
-        memset(runtime, 0, sizeof(*runtime));
-        h2_pal_mem_free(config->mem, runtime);
-    }
-    return result;
-}
-
-h2_pal_result_t h2_runtime_init(
-    const h2_runtime_config_t *config,
-    h2_runtime_t **out_runtime) {
-    if (out_runtime == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    *out_runtime = NULL;
-
-    if (!runtime_config_is_valid(config)) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-
-    h2_runtime_private_layout_t private_layout;
-    if (!runtime_private_layout(config, &private_layout)) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-
-    h2_runtime_t *runtime =
-        (h2_runtime_t *)h2_pal_mem_alloc(config->mem, sizeof(*runtime));
-    if (runtime == NULL) {
-        return H2_PAL_ERR_NO_MEMORY;
+static h2_pal_result_t runtime_init_release(const h2_runtime_config_t* config,
+                                            h2_runtime_t* runtime,
+                                            h2_pal_result_t result) {
+  if (runtime != NULL) {
+    h2_runtime_private_t* private_state = runtime->private_state;
+    if (private_state != NULL) {
+      /* Init never starts the poller, so only prepared state is here. */
+      h2_runtime_input_release(runtime);
+      h2_runtime_stop_system_events(runtime);
+      h2_runtime_system_state_release(runtime);
+      if (private_state->event_queue != NULL) {
+        h2_pal_queue_destroy(runtime->queue, private_state->event_queue);
+        private_state->event_queue = NULL;
+      }
+      if (private_state->wake_queue != NULL) {
+        h2_pal_queue_destroy(runtime->queue, private_state->wake_queue);
+        private_state->wake_queue = NULL;
+      }
+      if (private_state->input_push_edge_queue != NULL) {
+        h2_pal_queue_destroy(runtime->queue,
+                             private_state->input_push_edge_queue);
+        private_state->input_push_edge_queue = NULL;
+      }
+      if (private_state->input_nfc_result_queue != NULL) {
+        h2_pal_queue_destroy(runtime->queue,
+                             private_state->input_nfc_result_queue);
+        private_state->input_nfc_result_queue = NULL;
+      }
+      runtime_atomic_destroy(private_state);
+      size_t allocation_size = private_state->allocation_size;
+      memset(private_state, 0, allocation_size);
+      h2_pal_mem_free(config->mem, private_state);
     }
     memset(runtime, 0, sizeof(*runtime));
+    h2_pal_mem_free(config->mem, runtime);
+  }
+  return result;
+}
 
-    h2_runtime_private_t *private_state =
-        (h2_runtime_private_t *)h2_pal_mem_alloc(
-            config->mem,
-            private_layout.allocation_size);
-    if (private_state == NULL) {
-        return runtime_init_release(
-            config, runtime, H2_PAL_ERR_NO_MEMORY);
-    }
-    memset(private_state, 0, private_layout.allocation_size);
-    bind_private_storage(private_state, &private_layout);
+h2_pal_result_t h2_runtime_init(const h2_runtime_config_t* config,
+                                h2_runtime_t** out_runtime) {
+  if (out_runtime == NULL) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  *out_runtime = NULL;
 
-    runtime->board = config->board;
-    runtime->target = config->target;
-    runtime->chip = config->chip;
-    runtime->ble_local_name = config->ble_local_name;
-    runtime->private_state = private_state;
-    h2_pal_result_t atomic_rc = runtime_atomic_init(private_state);
-    if (atomic_rc != H2_PAL_OK) {
-        h2_pal_mem_free(config->mem, private_state);
-        h2_pal_mem_free(config->mem, runtime);
-        return atomic_rc;
-    }
+  if (!runtime_config_is_valid(config)) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
 
-#define H2_RUNTIME_BIND_PROXY(field)                                                \
-    do {                                                                            \
-        if (config->field != NULL) {                                                 \
-            private_state->field##_proxy = *config->field;                           \
-            runtime->field = &private_state->field##_proxy;                          \
-        }                                                                            \
-    } while (0)
+  h2_runtime_private_layout_t private_layout;
+  if (!runtime_private_layout(config, &private_layout)) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
 
-    H2_RUNTIME_BIND_PROXY(firmware_info);
-    H2_RUNTIME_BIND_PROXY(mem);
-    H2_RUNTIME_BIND_PROXY(log);
-    private_state->time_provider = *config->time;
-    private_state->time_proxy = (h2_pal_time_api_t){
-        .user = runtime, .vtable = &runtime_time_vtable};
-    runtime->time = &private_state->time_proxy;
-    H2_RUNTIME_BIND_PROXY(timer);
-    H2_RUNTIME_BIND_PROXY(task);
-    H2_RUNTIME_BIND_PROXY(queue);
-    H2_RUNTIME_BIND_PROXY(sync);
-    H2_RUNTIME_BIND_PROXY(fs);
-    H2_RUNTIME_BIND_PROXY(disk);
-    H2_RUNTIME_BIND_PROXY(pref);
-    H2_RUNTIME_BIND_PROXY(crypto);
-    H2_RUNTIME_BIND_PROXY(http);
-    H2_RUNTIME_BIND_PROXY(net);
-    H2_RUNTIME_BIND_PROXY(netif);
-    H2_RUNTIME_BIND_PROXY(mqtt);
-    H2_RUNTIME_BIND_PROXY(webrtc);
-    runtime->webrtc_media_track = config->webrtc_media_track;
-    H2_RUNTIME_BIND_PROXY(wifi_sta);
-    H2_RUNTIME_BIND_PROXY(wifi_ap);
-    H2_RUNTIME_BIND_PROXY(wifi_csi);
-    H2_RUNTIME_BIND_PROXY(wifi_settings);
-    H2_RUNTIME_BIND_PROXY(ble_host);
-    H2_RUNTIME_BIND_PROXY(modem);
-    H2_RUNTIME_BIND_PROXY(power);
-    H2_RUNTIME_BIND_PROXY(display);
-    H2_RUNTIME_BIND_PROXY(audio);
-    h2_runtime_audio_bind(runtime);
-    H2_RUNTIME_BIND_PROXY(audio_decoder);
-    H2_RUNTIME_BIND_PROXY(periph);
-    H2_RUNTIME_BIND_PROXY(button);
-    H2_RUNTIME_BIND_PROXY(touch);
-    H2_RUNTIME_BIND_PROXY(buzzer);
-    H2_RUNTIME_BIND_PROXY(nfc);
-    H2_RUNTIME_BIND_PROXY(nfc_card_emulation);
-    H2_RUNTIME_BIND_PROXY(imu);
-    H2_RUNTIME_BIND_PROXY(gpio_irq);
-    H2_RUNTIME_BIND_PROXY(led);
-    H2_RUNTIME_BIND_PROXY(input);
-    H2_RUNTIME_BIND_PROXY(system_event);
-    H2_RUNTIME_BIND_PROXY(video_decoder);
-    if (config->switch_api != NULL) {
-        private_state->switch_proxy = *config->switch_api;
-        runtime->switch_api = &private_state->switch_proxy;
-    }
-    H2_RUNTIME_BIND_PROXY(pwm_switch);
+  h2_runtime_t* runtime =
+      (h2_runtime_t*)h2_pal_mem_alloc(config->mem, sizeof(*runtime));
+  if (runtime == NULL) {
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  memset(runtime, 0, sizeof(*runtime));
+
+  h2_runtime_private_t* private_state = (h2_runtime_private_t*)h2_pal_mem_alloc(
+      config->mem, private_layout.allocation_size);
+  if (private_state == NULL) {
+    return runtime_init_release(config, runtime, H2_PAL_ERR_NO_MEMORY);
+  }
+  memset(private_state, 0, private_layout.allocation_size);
+  bind_private_storage(private_state, &private_layout);
+
+  runtime->board = config->board;
+  runtime->target = config->target;
+  runtime->chip = config->chip;
+  runtime->ble_local_name = config->ble_local_name;
+  runtime->private_state = private_state;
+  h2_pal_result_t atomic_rc = runtime_atomic_init(private_state);
+  if (atomic_rc != H2_PAL_OK) {
+    h2_pal_mem_free(config->mem, private_state);
+    h2_pal_mem_free(config->mem, runtime);
+    return atomic_rc;
+  }
+
+#define H2_RUNTIME_BIND_PROXY(field)                  \
+  do {                                                \
+    if (config->field != NULL) {                      \
+      private_state->field##_proxy = *config->field;  \
+      runtime->field = &private_state->field##_proxy; \
+    }                                                 \
+  } while (0)
+
+  H2_RUNTIME_BIND_PROXY(firmware_info);
+  H2_RUNTIME_BIND_PROXY(mem);
+  H2_RUNTIME_BIND_PROXY(log);
+  private_state->time_provider = *config->time;
+  private_state->time_proxy =
+      (h2_pal_time_api_t){.user = runtime, .vtable = &runtime_time_vtable};
+  runtime->time = &private_state->time_proxy;
+  H2_RUNTIME_BIND_PROXY(timer);
+  H2_RUNTIME_BIND_PROXY(task);
+  H2_RUNTIME_BIND_PROXY(queue);
+  H2_RUNTIME_BIND_PROXY(sync);
+  H2_RUNTIME_BIND_PROXY(fs);
+  H2_RUNTIME_BIND_PROXY(disk);
+  H2_RUNTIME_BIND_PROXY(pref);
+  H2_RUNTIME_BIND_PROXY(crypto);
+  H2_RUNTIME_BIND_PROXY(http);
+  H2_RUNTIME_BIND_PROXY(net);
+  H2_RUNTIME_BIND_PROXY(netif);
+  H2_RUNTIME_BIND_PROXY(mqtt);
+  H2_RUNTIME_BIND_PROXY(webrtc);
+  runtime->webrtc_media_track = config->webrtc_media_track;
+  H2_RUNTIME_BIND_PROXY(wifi_sta);
+  H2_RUNTIME_BIND_PROXY(wifi_ap);
+  H2_RUNTIME_BIND_PROXY(wifi_csi);
+  H2_RUNTIME_BIND_PROXY(wifi_settings);
+  H2_RUNTIME_BIND_PROXY(ble_host);
+  H2_RUNTIME_BIND_PROXY(modem);
+  H2_RUNTIME_BIND_PROXY(power);
+  H2_RUNTIME_BIND_PROXY(display);
+  H2_RUNTIME_BIND_PROXY(audio);
+  h2_runtime_audio_bind(runtime);
+  H2_RUNTIME_BIND_PROXY(audio_decoder);
+  H2_RUNTIME_BIND_PROXY(periph);
+  H2_RUNTIME_BIND_PROXY(button);
+  H2_RUNTIME_BIND_PROXY(touch);
+  H2_RUNTIME_BIND_PROXY(buzzer);
+  H2_RUNTIME_BIND_PROXY(nfc);
+  H2_RUNTIME_BIND_PROXY(nfc_card_emulation);
+  H2_RUNTIME_BIND_PROXY(imu);
+  H2_RUNTIME_BIND_PROXY(gpio_irq);
+  H2_RUNTIME_BIND_PROXY(led);
+  H2_RUNTIME_BIND_PROXY(input);
+  H2_RUNTIME_BIND_PROXY(system_event);
+  H2_RUNTIME_BIND_PROXY(video_decoder);
+  if (config->switch_api != NULL) {
+    private_state->switch_proxy = *config->switch_api;
+    runtime->switch_api = &private_state->switch_proxy;
+  }
+  H2_RUNTIME_BIND_PROXY(pwm_switch);
 
 #undef H2_RUNTIME_BIND_PROXY
 
-    private_state->initialized = 1;
-    {
-        h2_pal_result_t state_rc = h2_runtime_system_state_init(runtime);
-        if (state_rc != H2_PAL_OK) {
-            return runtime_init_release(config, runtime, state_rc);
-        }
+  private_state->initialized = 1;
+  {
+    h2_pal_result_t state_rc = h2_runtime_system_state_init(runtime);
+    if (state_rc != H2_PAL_OK) {
+      return runtime_init_release(config, runtime, state_rc);
     }
-    private_state->input_sources_ready = 0;
+  }
+  private_state->input_sources_ready = 0;
 
-    size_t event_queue_capacity = config->event_queue_capacity;
-    if (event_queue_capacity == 0u) {
-        event_queue_capacity = H2_RUNTIME_DEFAULT_EVENT_QUEUE_CAPACITY;
+  size_t event_queue_capacity = config->event_queue_capacity;
+  if (event_queue_capacity == 0u) {
+    event_queue_capacity = H2_RUNTIME_DEFAULT_EVENT_QUEUE_CAPACITY;
+  }
+
+  const h2_pal_queue_config_t event_queue_config = {
+      .name = "h2-runtime-events",
+      .item_size = offsetof(h2_runtime_queued_event_t, payload) +
+                   private_state->event_payload_capacity,
+      .item_count = event_queue_capacity,
+      .allocator = config->mem,
+  };
+  h2_pal_result_t rc =
+      h2_pal_queue_create(runtime->queue, &event_queue_config,
+                          &runtime->private_state->event_queue);
+  if (rc != H2_PAL_OK) {
+    return runtime_init_release(config, runtime, rc);
+  }
+
+  const h2_pal_queue_config_t wake_queue_config = {
+      .name = "h2-runtime-wake",
+      .item_size = sizeof(uint8_t),
+      .item_count = 1u,
+      .allocator = config->mem,
+  };
+  rc = h2_pal_queue_create(runtime->queue, &wake_queue_config,
+                           &runtime->private_state->wake_queue);
+  if (rc != H2_PAL_OK) {
+    return runtime_init_release(config, runtime, rc);
+  }
+
+  const h2_pal_queue_config_t push_edge_queue_config = {
+      .name = "h2-runtime-button-push-edges",
+      .item_size = sizeof(h2_runtime_button_push_edge_t),
+      .item_count = H2_RUNTIME_BUTTON_PUSH_EDGE_QUEUE_CAPACITY,
+      .allocator = config->mem,
+  };
+  rc = h2_pal_queue_create(runtime->queue, &push_edge_queue_config,
+                           &runtime->private_state->input_push_edge_queue);
+  if (rc != H2_PAL_OK) {
+    return runtime_init_release(config, runtime, rc);
+  }
+
+  const h2_pal_queue_config_t nfc_result_queue_config = {
+      .name = "h2-runtime-nfc-results",
+      .item_size = sizeof(h2_runtime_input_nfc_result_t),
+      .item_count = private_state->input_source_capacity,
+      .allocator = config->mem,
+  };
+  rc = h2_pal_queue_create(runtime->queue, &nfc_result_queue_config,
+                           &runtime->private_state->input_nfc_result_queue);
+  if (rc != H2_PAL_OK) {
+    return runtime_init_release(config, runtime, rc);
+  }
+
+  rc = h2_runtime_start_system_events(runtime);
+  if (rc != H2_PAL_OK) {
+    return runtime_init_release(config, runtime, rc);
+  }
+
+  rc = h2_runtime_build_component_mappings(runtime, config->component_mapper);
+  if (rc != H2_PAL_OK) {
+    return runtime_init_release(config, runtime, rc);
+  }
+
+  h2_runtime_state_set_publish_interval(runtime,
+                                        config->state.publish_interval_ms);
+
+  /*
+   * Build the input writer mutex, the state publication and the input
+   * source table. All three are derived from data that is fixed for the
+   * life of the Runtime, so they are created once here and survive every
+   * poller start/stop cycle.
+   */
+  rc = h2_runtime_input_prepare(runtime);
+  if (rc != H2_PAL_OK) {
+    return runtime_init_release(config, runtime, rc);
+  }
+
+  /*
+   * The poller itself is not started here. h2_runtime_input_start() and
+   * h2_runtime_input_stop() are public and caller-owned: the launcher
+   * starts acquisition once component validation has passed, and may stop
+   * and start it again while the Runtime stays initialized.
+   */
+  *out_runtime = runtime;
+  return H2_PAL_OK;
+}
+
+h2_pal_result_t h2_runtime_periph_id(const h2_runtime_t* runtime,
+                                     h2_runtime_component_id_t component_id,
+                                     h2_pal_periph_id_t* out_periph_id) {
+  if (!h2_runtime_ready(runtime) ||
+      component_id == H2_RUNTIME_COMPONENT_ID_NONE || out_periph_id == NULL) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+
+  for (size_t i = 0u; i < runtime->private_state->component_mapping_count;
+       ++i) {
+    const h2_runtime_component_mapping_t* mapping =
+        &runtime->private_state->component_mappings[i];
+    if (mapping->component_id == component_id) {
+      if (mapping->periph_id == 0u) {
+        return H2_PAL_ERR_UNSUPPORTED;
+      }
+      *out_periph_id = mapping->periph_id;
+      return H2_PAL_OK;
     }
+  }
+  return H2_PAL_ERR_NOT_FOUND;
+}
 
-    const h2_pal_queue_config_t event_queue_config = {
-        .name = "h2-runtime-events",
-        .item_size = offsetof(h2_runtime_queued_event_t, payload) +
-            private_state->event_payload_capacity,
-        .item_count = event_queue_capacity,
-        .allocator = config->mem,
-    };
-    h2_pal_result_t rc =
-        h2_pal_queue_create(runtime->queue, &event_queue_config, &runtime->private_state->event_queue);
-    if (rc != H2_PAL_OK) {
-        return runtime_init_release(config, runtime, rc);
-    }
-
-    const h2_pal_queue_config_t wake_queue_config = {
-        .name = "h2-runtime-wake",
-        .item_size = sizeof(uint8_t),
-        .item_count = 1u,
-        .allocator = config->mem,
-    };
-    rc = h2_pal_queue_create(
-        runtime->queue, &wake_queue_config, &runtime->private_state->wake_queue);
-    if (rc != H2_PAL_OK) {
-        return runtime_init_release(config, runtime, rc);
-    }
-
-    const h2_pal_queue_config_t push_edge_queue_config = {
-        .name = "h2-runtime-button-push-edges",
-        .item_size = sizeof(h2_runtime_button_push_edge_t),
-        .item_count = H2_RUNTIME_BUTTON_PUSH_EDGE_QUEUE_CAPACITY,
-        .allocator = config->mem,
-    };
-    rc = h2_pal_queue_create(
-        runtime->queue,
-        &push_edge_queue_config,
-        &runtime->private_state->input_push_edge_queue);
-    if (rc != H2_PAL_OK) {
-        return runtime_init_release(config, runtime, rc);
-    }
-
-    const h2_pal_queue_config_t nfc_result_queue_config = {
-        .name = "h2-runtime-nfc-results",
-        .item_size = sizeof(h2_runtime_input_nfc_result_t),
-        .item_count = private_state->input_source_capacity,
-        .allocator = config->mem,
-    };
-    rc = h2_pal_queue_create(
-        runtime->queue,
-        &nfc_result_queue_config,
-        &runtime->private_state->input_nfc_result_queue);
-    if (rc != H2_PAL_OK) {
-        return runtime_init_release(config, runtime, rc);
-    }
-
-    rc = h2_runtime_start_system_events(runtime);
-    if (rc != H2_PAL_OK) {
-        return runtime_init_release(config, runtime, rc);
-    }
-
-    rc = h2_runtime_build_component_mappings(runtime, config->component_mapper);
-    if (rc != H2_PAL_OK) {
-        return runtime_init_release(config, runtime, rc);
-    }
-
-    h2_runtime_state_set_publish_interval(
-        runtime, config->state.publish_interval_ms);
-
-    /*
-     * Build the input writer mutex, the state publication and the input
-     * source table. All three are derived from data that is fixed for the
-     * life of the Runtime, so they are created once here and survive every
-     * poller start/stop cycle.
-     */
-    rc = h2_runtime_input_prepare(runtime);
-    if (rc != H2_PAL_OK) {
-        return runtime_init_release(config, runtime, rc);
-    }
-
-    /*
-     * The poller itself is not started here. h2_runtime_input_start() and
-     * h2_runtime_input_stop() are public and caller-owned: the launcher
-     * starts acquisition once component validation has passed, and may stop
-     * and start it again while the Runtime stays initialized.
-     */
-    *out_runtime = runtime;
+h2_pal_result_t h2_runtime_destroy(h2_runtime_t** pointer) {
+  if (pointer == NULL) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  h2_runtime_t* runtime = *pointer;
+  if (runtime == NULL) {
     return H2_PAL_OK;
-}
+  }
 
-h2_pal_result_t h2_runtime_periph_id(
-    const h2_runtime_t *runtime,
-    h2_runtime_component_id_t component_id,
-    h2_pal_periph_id_t *out_periph_id) {
-    if (!h2_runtime_ready(runtime) || component_id == H2_RUNTIME_COMPONENT_ID_NONE ||
-        out_periph_id == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
+  if (runtime->private_state->test_control != NULL) {
+    return H2_PAL_ERR_BUSY;
+  }
 
-    for (size_t i = 0u; i < runtime->private_state->component_mapping_count; ++i) {
-        const h2_runtime_component_mapping_t *mapping =
-            &runtime->private_state->component_mappings[i];
-        if (mapping->component_id == component_id) {
-            if (mapping->periph_id == 0u) {
-                return H2_PAL_ERR_UNSUPPORTED;
-            }
-            *out_periph_id = mapping->periph_id;
-            return H2_PAL_OK;
-        }
-    }
-    return H2_PAL_ERR_NOT_FOUND;
-}
-
-h2_pal_result_t h2_runtime_destroy(h2_runtime_t **pointer) {
-    if (pointer == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    h2_runtime_t *runtime = *pointer;
-    if (runtime == NULL) {
-        return H2_PAL_OK;
-    }
-
-    if (runtime->private_state->test_control != NULL) {
-        return H2_PAL_ERR_BUSY;
-    }
-
-    h2_pal_result_t input_stop_rc = h2_runtime_input_stop(runtime);
-    if (input_stop_rc != H2_PAL_OK &&
-        (runtime->private_state->input_task != NULL ||
-         runtime->private_state->input_nfc_task != NULL)) {
-        return input_stop_rc;
-    }
-    h2_runtime_input_release(runtime);
-    h2_runtime_stop_system_events(runtime);
-    /* After the ingest stops, so no publication can outlive the lock. */
-    h2_runtime_system_state_release(runtime);
-    /* Last producer to shut down: app tasks posting custom events. */
-    h2_runtime_custom_event_close(runtime);
-
-    if (runtime->private_state->event_queue != NULL) {
-        h2_pal_queue_destroy(runtime->queue, runtime->private_state->event_queue);
-        runtime->private_state->event_queue = NULL;
-    }
-    if (runtime->private_state->wake_queue != NULL) {
-        h2_pal_queue_destroy(runtime->queue, runtime->private_state->wake_queue);
-        runtime->private_state->wake_queue = NULL;
-    }
-    if (runtime->private_state->input_push_edge_queue != NULL) {
-        h2_pal_queue_destroy(
-            runtime->queue,
-            runtime->private_state->input_push_edge_queue);
-        runtime->private_state->input_push_edge_queue = NULL;
-    }
-    if (runtime->private_state->input_nfc_result_queue != NULL) {
-        h2_pal_queue_destroy(
-            runtime->queue, runtime->private_state->input_nfc_result_queue);
-        runtime->private_state->input_nfc_result_queue = NULL;
-    }
-
-    const h2_pal_mem_api_t mem = *runtime->mem;
-    h2_runtime_private_t *private_state = runtime->private_state;
-    runtime_atomic_destroy(private_state);
-    size_t allocation_size = private_state->allocation_size;
-    memset(private_state, 0, allocation_size);
-    h2_pal_mem_free(&mem, private_state);
-    memset(runtime, 0, sizeof(*runtime));
-    h2_pal_mem_free(&mem, runtime);
-    *pointer = NULL;
+  h2_pal_result_t input_stop_rc = h2_runtime_input_stop(runtime);
+  if (input_stop_rc != H2_PAL_OK &&
+      (runtime->private_state->input_task != NULL ||
+       runtime->private_state->input_nfc_task != NULL)) {
     return input_stop_rc;
+  }
+  h2_runtime_input_release(runtime);
+  h2_runtime_stop_system_events(runtime);
+  /* After the ingest stops, so no publication can outlive the lock. */
+  h2_runtime_system_state_release(runtime);
+  /* Last producer to shut down: app tasks posting custom events. */
+  h2_runtime_custom_event_close(runtime);
+
+  if (runtime->private_state->event_queue != NULL) {
+    h2_pal_queue_destroy(runtime->queue, runtime->private_state->event_queue);
+    runtime->private_state->event_queue = NULL;
+  }
+  if (runtime->private_state->wake_queue != NULL) {
+    h2_pal_queue_destroy(runtime->queue, runtime->private_state->wake_queue);
+    runtime->private_state->wake_queue = NULL;
+  }
+  if (runtime->private_state->input_push_edge_queue != NULL) {
+    h2_pal_queue_destroy(runtime->queue,
+                         runtime->private_state->input_push_edge_queue);
+    runtime->private_state->input_push_edge_queue = NULL;
+  }
+  if (runtime->private_state->input_nfc_result_queue != NULL) {
+    h2_pal_queue_destroy(runtime->queue,
+                         runtime->private_state->input_nfc_result_queue);
+    runtime->private_state->input_nfc_result_queue = NULL;
+  }
+
+  const h2_pal_mem_api_t mem = *runtime->mem;
+  h2_runtime_private_t* private_state = runtime->private_state;
+  runtime_atomic_destroy(private_state);
+  size_t allocation_size = private_state->allocation_size;
+  memset(private_state, 0, allocation_size);
+  h2_pal_mem_free(&mem, private_state);
+  memset(runtime, 0, sizeof(*runtime));
+  h2_pal_mem_free(&mem, runtime);
+  *pointer = NULL;
+  return input_stop_rc;
 }
 
-void h2_runtime_deinit(h2_runtime_t *runtime) {
-    (void)h2_runtime_destroy(&runtime);
+void h2_runtime_deinit(h2_runtime_t* runtime) {
+  (void)h2_runtime_destroy(&runtime);
 }

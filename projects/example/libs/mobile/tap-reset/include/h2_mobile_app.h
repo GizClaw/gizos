@@ -22,19 +22,19 @@ typedef struct h2_mobile_pointer_state {
 } h2_mobile_pointer_state_t;
 
 typedef h2_pal_result_t (*h2_mobile_read_pointer_fn)(
-    void *user, h2_mobile_pointer_state_t *out_state);
+    void* user, h2_mobile_pointer_state_t* out_state);
 
 typedef struct h2_mobile_app_config {
   h2_mobile_platform_t platform;
   h2_mobile_read_pointer_fn read_pointer;
-  void *pointer_user;
-  int (*should_stop)(void *user);
-  void *stop_user;
+  void* pointer_user;
+  int (*should_stop)(void* user);
+  void* stop_user;
 } h2_mobile_app_config_t;
 
 /** Run the mobile-selected portable App until should_stop returns nonzero. */
-h2_pal_result_t h2_mobile_app_run(h2_runtime_t *runtime,
-                                  const h2_mobile_app_config_t *config);
+h2_pal_result_t h2_mobile_app_run(h2_runtime_t* runtime,
+                                  const h2_mobile_app_config_t* config);
 
 #ifdef __cplusplus
 }

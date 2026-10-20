@@ -26,139 +26,145 @@ extern "C" {
 #define H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_MAX_MIC_CHANNELS 2u
 #define H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_ES7210_INPUT_COUNT 4u
 #define H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_MAX_RAW_SAMPLES \
-    (H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_MAX_FRAME_SAMPLES * H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_MAX_RAW_CHANNELS)
+  (H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_MAX_FRAME_SAMPLES *  \
+   H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_MAX_RAW_CHANNELS)
 
-typedef int (*h2_esp_es8311_es7210_set_pa_fn)(void *user, int enabled);
+typedef int (*h2_esp_es8311_es7210_set_pa_fn)(void* user, int enabled);
 
 typedef struct h2_esp_es8311_es7210_mic_queue_frame {
-    size_t bytes;
-    uint16_t samples_per_channel;
-    int16_t samples[H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_MAX_FRAME_SAMPLES];
+  size_t bytes;
+  uint16_t samples_per_channel;
+  int16_t samples[H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_MAX_FRAME_SAMPLES];
 } h2_esp_es8311_es7210_mic_queue_frame_t;
 
 typedef struct h2_esp_es8311_es7210_audio_system_config {
-    uint32_t sample_rate_hz;
-    uint16_t frame_samples_per_channel;
-    uint8_t raw_channels;
-    uint8_t processed_channels;
-    uint8_t mic_channel_count;
-    uint8_t mic_channel_indices[H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_MAX_MIC_CHANNELS];
-    uint8_t ref_channel_index;
-    uint8_t es7210_input_mask;
-    uint8_t es7210_ref_input_index;
-    uint32_t aec_reference_gain_milli;
-    int i2c_port;
-    int i2c_sda_gpio;
-    int i2c_scl_gpio;
-    uint32_t i2c_speed_hz;
-    i2c_master_bus_handle_t i2c_bus;
-    uint8_t es8311_i2c_addr;
-    uint8_t es7210_i2c_addr;
-    int i2s_port;
-    uint16_t mclk_multiple;
-    int mclk_gpio;
-    int bclk_gpio;
-    int ws_gpio;
-    int dout_gpio;
-    int din_gpio;
-    int pa_gpio;
-    h2_esp_es8311_es7210_set_pa_fn set_pa;
-    void *set_pa_user;
-    /** DAC 0x32 at 100%, 1..255; board maximum gain (0xBF = 0 dB). */
-    uint8_t codec_volume_default;
-    uint32_t mic_gain_db;
-    /** Board-owned linear PAL percent range in ES7210 PGA dB; max=0 uses 38. */
-    uint8_t mic_gain_min_db;
-    uint8_t mic_gain_max_db;
-    uint8_t es7210_input_gain_mask;
-    uint8_t es7210_input_gain_db[H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_ES7210_INPUT_COUNT];
-    uint8_t max_tracks;
-    uint8_t track_queue_frames;
-    uint8_t mic_queue_frames;
-    uint32_t mic_task_stack_size;
-    UBaseType_t mic_task_priority;
-    BaseType_t mic_task_core_id;
-    uint32_t speaker_task_stack_size;
-    UBaseType_t speaker_task_priority;
-    BaseType_t speaker_task_core_id;
-    const h2_pal_mem_api_t *allocator;
-    const h2_pal_queue_api_t *queue_api;
-    const h2_pal_sync_api_t *sync_api;
-    int enable_aec;
-    /** Zero preserves normal FD nonlinear processing. */
-    h2_esp_es8311_es7210_aec_nlp_level_t aec_nlp_level;
-    h2_esp_es8311_es7210_aec_observe_fn aec_observe;
-    h2_esp_es8311_es7210_aec_observe_enabled_fn aec_observe_enabled;
-    void *aec_observer_user;
-    /** Optional board curve; zero initialization preserves legacy mapping. */
-    h2_es8311_volume_config_t speaker_volume;
+  uint32_t sample_rate_hz;
+  uint16_t frame_samples_per_channel;
+  uint8_t raw_channels;
+  uint8_t processed_channels;
+  uint8_t mic_channel_count;
+  uint8_t
+      mic_channel_indices[H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_MAX_MIC_CHANNELS];
+  uint8_t ref_channel_index;
+  uint8_t es7210_input_mask;
+  uint8_t es7210_ref_input_index;
+  uint32_t aec_reference_gain_milli;
+  int i2c_port;
+  int i2c_sda_gpio;
+  int i2c_scl_gpio;
+  uint32_t i2c_speed_hz;
+  i2c_master_bus_handle_t i2c_bus;
+  uint8_t es8311_i2c_addr;
+  uint8_t es7210_i2c_addr;
+  int i2s_port;
+  uint16_t mclk_multiple;
+  int mclk_gpio;
+  int bclk_gpio;
+  int ws_gpio;
+  int dout_gpio;
+  int din_gpio;
+  int pa_gpio;
+  h2_esp_es8311_es7210_set_pa_fn set_pa;
+  void* set_pa_user;
+  /** DAC 0x32 at 100%, 1..255; board maximum gain (0xBF = 0 dB). */
+  uint8_t codec_volume_default;
+  uint32_t mic_gain_db;
+  /** Board-owned linear PAL percent range in ES7210 PGA dB; max=0 uses 38. */
+  uint8_t mic_gain_min_db;
+  uint8_t mic_gain_max_db;
+  uint8_t es7210_input_gain_mask;
+  uint8_t es7210_input_gain_db
+      [H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_ES7210_INPUT_COUNT];
+  uint8_t max_tracks;
+  uint8_t track_queue_frames;
+  uint8_t mic_queue_frames;
+  uint32_t mic_task_stack_size;
+  UBaseType_t mic_task_priority;
+  BaseType_t mic_task_core_id;
+  uint32_t speaker_task_stack_size;
+  UBaseType_t speaker_task_priority;
+  BaseType_t speaker_task_core_id;
+  const h2_pal_mem_api_t* allocator;
+  const h2_pal_queue_api_t* queue_api;
+  const h2_pal_sync_api_t* sync_api;
+  int enable_aec;
+  /** Zero preserves normal FD nonlinear processing. */
+  h2_esp_es8311_es7210_aec_nlp_level_t aec_nlp_level;
+  h2_esp_es8311_es7210_aec_observe_fn aec_observe;
+  h2_esp_es8311_es7210_aec_observe_enabled_fn aec_observe_enabled;
+  void* aec_observer_user;
+  /** Optional board curve; zero initialization preserves legacy mapping. */
+  h2_es8311_volume_config_t speaker_volume;
 } h2_esp_es8311_es7210_audio_system_config_t;
 
 typedef struct h2_esp_es8311_es7210_sr_state {
-    int initialized;
-    int available;
-    uint32_t sample_rate_hz;
-    size_t frame_samples;
-    uint8_t raw_channels;
-    uint8_t mic_channel_count;
-    uint8_t mic_channel_indices[H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_MAX_MIC_CHANNELS];
-    uint8_t ref_channel_index;
-    uint32_t reference_gain_milli;
-    void *aec_handle;
-    int16_t *mic_frame;
-    int16_t *ref_frame;
-    int16_t *out_frame;
-    uint32_t processed_frame_count;
-    h2_esp_es8311_es7210_aec_observe_fn observe;
-    h2_esp_es8311_es7210_aec_observe_enabled_fn observe_enabled;
-    void *observer_user;
+  int initialized;
+  int available;
+  uint32_t sample_rate_hz;
+  size_t frame_samples;
+  uint8_t raw_channels;
+  uint8_t mic_channel_count;
+  uint8_t
+      mic_channel_indices[H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_MAX_MIC_CHANNELS];
+  uint8_t ref_channel_index;
+  uint32_t reference_gain_milli;
+  void* aec_handle;
+  int16_t* mic_frame;
+  int16_t* ref_frame;
+  int16_t* out_frame;
+  uint32_t processed_frame_count;
+  h2_esp_es8311_es7210_aec_observe_fn observe;
+  h2_esp_es8311_es7210_aec_observe_enabled_fn observe_enabled;
+  void* observer_user;
 } h2_esp_es8311_es7210_sr_state_t;
 
 typedef struct h2_esp_es8311_es7210_audio_system {
-    h2_esp_es8311_es7210_audio_system_config_t config;
-    h2_esp_es8311_es7210_sr_state_t sr;
-    h2_audio_aec_observer_t aec_observer;
-    uint64_t aec_sequence;
-    int pa_initialized;
-    int opened;
-    /* 0: normal operation, 1: suspend requested, 2: suspend writes completed. */
-    int codec_shutdown_pending;
-    int sr_initialized;
-    volatile int mic_started;
-    int mic_task_started;
-    int mic_task_with_caps;
-    int mic_queue_initialized;
-    int playback_started;
-    int mixer_initialized;
-    int playback_task_started;
-    int playback_task_with_caps;
-    uint32_t speaker_volume_percent;
-    uint32_t mic_gain_percent;
-    uint32_t mic_gain_db_current;
-    /* A failed rollback may leave inputs at different gains. Getter reports
-     * IO until a complete setter retry reprograms every active input. */
-    int mic_gain_uncertain;
-    i2c_master_bus_handle_t i2c_bus;
-    i2c_master_dev_handle_t es8311;
-    i2c_master_dev_handle_t es7210;
-    int owns_i2c_bus;
-    i2s_chan_handle_t tx_chan;
-    i2s_chan_handle_t rx_chan;
-    SemaphoreHandle_t write_mutex;
-    TaskHandle_t mic_task;
-    TaskHandle_t playback_task;
-    h2_pal_queue_t *mic_queue;
-    h2_audio_mixer_t mixer;
-    int16_t mic_raw_scratch[H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_MAX_RAW_SAMPLES];
-    int16_t mic_processed_scratch[H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_MAX_FRAME_SAMPLES];
-    int16_t playback_scratch[H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_MAX_FRAME_SAMPLES];
-    int32_t stereo_scratch[H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_MAX_FRAME_SAMPLES * 2u];
-    h2_pal_audio_t audio;
+  h2_esp_es8311_es7210_audio_system_config_t config;
+  h2_esp_es8311_es7210_sr_state_t sr;
+  h2_audio_aec_observer_t aec_observer;
+  uint64_t aec_sequence;
+  int pa_initialized;
+  int opened;
+  /* 0: normal operation, 1: suspend requested, 2: suspend writes completed. */
+  int codec_shutdown_pending;
+  int sr_initialized;
+  volatile int mic_started;
+  int mic_task_started;
+  int mic_task_with_caps;
+  int mic_queue_initialized;
+  int playback_started;
+  int mixer_initialized;
+  int playback_task_started;
+  int playback_task_with_caps;
+  uint32_t speaker_volume_percent;
+  uint32_t mic_gain_percent;
+  uint32_t mic_gain_db_current;
+  /* A failed rollback may leave inputs at different gains. Getter reports
+   * IO until a complete setter retry reprograms every active input. */
+  int mic_gain_uncertain;
+  i2c_master_bus_handle_t i2c_bus;
+  i2c_master_dev_handle_t es8311;
+  i2c_master_dev_handle_t es7210;
+  int owns_i2c_bus;
+  i2s_chan_handle_t tx_chan;
+  i2s_chan_handle_t rx_chan;
+  SemaphoreHandle_t write_mutex;
+  TaskHandle_t mic_task;
+  TaskHandle_t playback_task;
+  h2_pal_queue_t* mic_queue;
+  h2_audio_mixer_t mixer;
+  int16_t mic_raw_scratch[H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_MAX_RAW_SAMPLES];
+  int16_t mic_processed_scratch
+      [H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_MAX_FRAME_SAMPLES];
+  int16_t playback_scratch[H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_MAX_FRAME_SAMPLES];
+  int32_t
+      stereo_scratch[H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_MAX_FRAME_SAMPLES * 2u];
+  h2_pal_audio_t audio;
 } h2_esp_es8311_es7210_audio_system_t;
 
 int h2_esp_es8311_es7210_audio_system_init(
-    h2_esp_es8311_es7210_audio_system_t *system,
-    const h2_esp_es8311_es7210_audio_system_config_t *config);
+    h2_esp_es8311_es7210_audio_system_t* system,
+    const h2_esp_es8311_es7210_audio_system_config_t* config);
 
 /**
  * Stop/join workers and release owned resources without requesting suspend.
@@ -167,45 +173,47 @@ int h2_esp_es8311_es7210_audio_system_init(
  * is completed before releasing codec handles.
  */
 int h2_esp_es8311_es7210_audio_system_deinit(
-    h2_esp_es8311_es7210_audio_system_t *system);
+    h2_esp_es8311_es7210_audio_system_t* system);
 
 /**
- * @brief Stop/join workers, disable PA, suspend both codecs, and release resources.
+ * @brief Stop/join workers, disable PA, suspend both codecs, and release
+ * resources.
  * @param system Caller-owned, initialized or zero-initialized storage.
  * @return H2_AUDIO_OK on success; H2_AUDIO_ERR_INVALID_ARG for NULL; otherwise
- * the first worker, PA or I2C error. Remaining resources are retained for retry.
+ * the first worker, PA or I2C error. Remaining resources are retained for
+ * retry.
  *
  * Blocking task-context call. Serialize against all Audio PAL/lifecycle calls;
  * stop consumers first and retain I2C/PA providers until success. Worker waits
- * use their existing bounded deadlines; each suspend write has a 100 ms timeout.
- * Success invalidates PAL/tracks. Repeated calls and never-opened storage do no
- * I/O. Call init then prepare/start to restore audio after success. After an
- * error, retry shutdown before re-init or sleep; start is rejected meanwhile.
- * Ordinary deinit does not request suspend. No physical supply switching.
+ * use their existing bounded deadlines; each suspend write has a 100 ms
+ * timeout. Success invalidates PAL/tracks. Repeated calls and never-opened
+ * storage do no I/O. Call init then prepare/start to restore audio after
+ * success. After an error, retry shutdown before re-init or sleep; start is
+ * rejected meanwhile. Ordinary deinit does not request suspend. No physical
+ * supply switching.
  */
 int h2_esp_es8311_es7210_audio_system_power_down(
-    h2_esp_es8311_es7210_audio_system_t *system);
+    h2_esp_es8311_es7210_audio_system_t* system);
 
-h2_pal_audio_t *h2_esp_es8311_es7210_audio_system_audio(h2_esp_es8311_es7210_audio_system_t *system);
+h2_pal_audio_t* h2_esp_es8311_es7210_audio_system_audio(
+    h2_esp_es8311_es7210_audio_system_t* system);
 
 int h2_esp_es8311_es7210_audio_system_process_mic(
-    h2_esp_es8311_es7210_audio_system_t *system,
-    const h2_audio_frame_t *raw_frame,
-    h2_audio_frame_t *out_frame,
+    h2_esp_es8311_es7210_audio_system_t* system,
+    const h2_audio_frame_t* raw_frame, h2_audio_frame_t* out_frame,
     uint32_t timeout_ms);
 
 int h2_esp_es8311_es7210_sr_init(
-    h2_esp_es8311_es7210_sr_state_t *state,
-    const h2_esp_es8311_es7210_audio_system_config_t *config);
+    h2_esp_es8311_es7210_sr_state_t* state,
+    const h2_esp_es8311_es7210_audio_system_config_t* config);
 
-int h2_esp_es8311_es7210_sr_process(
-    h2_esp_es8311_es7210_sr_state_t *state,
-    const h2_audio_frame_t *raw_frame,
-    h2_audio_frame_t *out_frame,
-    uint32_t timeout_ms);
+int h2_esp_es8311_es7210_sr_process(h2_esp_es8311_es7210_sr_state_t* state,
+                                    const h2_audio_frame_t* raw_frame,
+                                    h2_audio_frame_t* out_frame,
+                                    uint32_t timeout_ms);
 
-void h2_esp_es8311_es7210_sr_reset(h2_esp_es8311_es7210_sr_state_t *state);
-void h2_esp_es8311_es7210_sr_deinit(h2_esp_es8311_es7210_sr_state_t *state);
+void h2_esp_es8311_es7210_sr_reset(h2_esp_es8311_es7210_sr_state_t* state);
+void h2_esp_es8311_es7210_sr_deinit(h2_esp_es8311_es7210_sr_state_t* state);
 
 #ifdef __cplusplus
 }

@@ -36,148 +36,150 @@ extern "C" {
 typedef struct h2_runtime_private h2_runtime_private_t;
 
 typedef struct h2_runtime_config {
-    const char *board;
-    const char *target;
-    const char *chip;
-    /** Optional nonempty product BLE local name, NUL-terminated and at most
-     * 29 printable ASCII bytes; invalid names fail Runtime initialization.
-     * Borrowed through Runtime deinit. The product owns its spelling and stable
-     * device suffix; it is display metadata, never an authenticated identity. */
-    const char *ble_local_name;
+  const char* board;
+  const char* target;
+  const char* chip;
+  /** Optional nonempty product BLE local name, NUL-terminated and at most
+   * 29 printable ASCII bytes; invalid names fail Runtime initialization.
+   * Borrowed through Runtime deinit. The product owns its spelling and stable
+   * device suffix; it is display metadata, never an authenticated identity. */
+  const char* ble_local_name;
 
-    const h2_pal_firmware_info_api_t *firmware_info;
+  const h2_pal_firmware_info_api_t* firmware_info;
 
-    const h2_pal_mem_api_t *mem;
+  const h2_pal_mem_api_t* mem;
 
-    const h2_pal_log_api_t *log;
-    const h2_pal_time_api_t *time;
-    const h2_pal_timer_api_t *timer;
-    const h2_pal_task_api_t *task;
-    const h2_pal_queue_api_t *queue;
-    const h2_pal_sync_api_t *sync;
+  const h2_pal_log_api_t* log;
+  const h2_pal_time_api_t* time;
+  const h2_pal_timer_api_t* timer;
+  const h2_pal_task_api_t* task;
+  const h2_pal_queue_api_t* queue;
+  const h2_pal_sync_api_t* sync;
 
-    const h2_pal_fs_api_t *fs;
-    const h2_pal_disk_api_t *disk;
-    const h2_pal_pref_api_t *pref;
-    const h2_pal_crypto_api_t *crypto;
-    const h2_pal_http_api_t *http;
+  const h2_pal_fs_api_t* fs;
+  const h2_pal_disk_api_t* disk;
+  const h2_pal_pref_api_t* pref;
+  const h2_pal_crypto_api_t* crypto;
+  const h2_pal_http_api_t* http;
 
-    const h2_pal_net_api_t *net;
-    const h2_pal_netif_api_t *netif;
-    const h2_pal_mqtt_api_t *mqtt;
-    const h2_pal_webrtc_api_t *webrtc;
-    h2_pal_webrtc_track_t *webrtc_media_track;
-    const h2_pal_wifi_sta_api_t *wifi_sta;
-    const h2_pal_wifi_ap_api_t *wifi_ap;
-    const h2_pal_wifi_csi_api_t *wifi_csi;
-    const h2_pal_wifi_settings_api_t *wifi_settings;
-    const h2_pal_ble_host_api_t *ble_host;
-    const h2_pal_modem_api_t *modem;
+  const h2_pal_net_api_t* net;
+  const h2_pal_netif_api_t* netif;
+  const h2_pal_mqtt_api_t* mqtt;
+  const h2_pal_webrtc_api_t* webrtc;
+  h2_pal_webrtc_track_t* webrtc_media_track;
+  const h2_pal_wifi_sta_api_t* wifi_sta;
+  const h2_pal_wifi_ap_api_t* wifi_ap;
+  const h2_pal_wifi_csi_api_t* wifi_csi;
+  const h2_pal_wifi_settings_api_t* wifi_settings;
+  const h2_pal_ble_host_api_t* ble_host;
+  const h2_pal_modem_api_t* modem;
 
-    const h2_pal_power_api_t *power;
-    const h2_pal_display_api_t *display;
-    const h2_pal_audio_api_t *audio;
-    const h2_pal_audio_decoder_api_t *audio_decoder;
-    const h2_pal_periph_api_t *periph;
-    const h2_pal_button_api_t *button;
-    const h2_pal_touch_api_t *touch;
-    const h2_pal_buzzer_api_t *buzzer;
-    const h2_pal_nfc_api_t *nfc;
-    const h2_pal_nfc_card_emulation_api_t *nfc_card_emulation;
-    const h2_pal_imu_api_t *imu;
-    const h2_pal_gpio_irq_api_t *gpio_irq;
-    const h2_pal_led_api_t *led;
-    const h2_pal_switch_api_t *switch_api;
-    const h2_pal_pwm_switch_api_t *pwm_switch;
-    const h2_pal_input_api_t *input;
-    const h2_pal_system_event_api_t *system_event;
-    const h2_pal_video_decoder_api_t *video_decoder;
+  const h2_pal_power_api_t* power;
+  const h2_pal_display_api_t* display;
+  const h2_pal_audio_api_t* audio;
+  const h2_pal_audio_decoder_api_t* audio_decoder;
+  const h2_pal_periph_api_t* periph;
+  const h2_pal_button_api_t* button;
+  const h2_pal_touch_api_t* touch;
+  const h2_pal_buzzer_api_t* buzzer;
+  const h2_pal_nfc_api_t* nfc;
+  const h2_pal_nfc_card_emulation_api_t* nfc_card_emulation;
+  const h2_pal_imu_api_t* imu;
+  const h2_pal_gpio_irq_api_t* gpio_irq;
+  const h2_pal_led_api_t* led;
+  const h2_pal_switch_api_t* switch_api;
+  const h2_pal_pwm_switch_api_t* pwm_switch;
+  const h2_pal_input_api_t* input;
+  const h2_pal_system_event_api_t* system_event;
+  const h2_pal_video_decoder_api_t* video_decoder;
 
-    const h2_runtime_component_mapper_t *component_mapper;
-    /**
-     * Maximum mapped input sources owned by this Runtime instance.
-     * Zero selects H2_RUNTIME_DEFAULT_INPUT_SOURCE_CAPACITY.
-     */
-    size_t input_source_capacity;
-    /**
-     * Maximum component mappings accepted by this Runtime instance.
-     * Zero selects H2_RUNTIME_DEFAULT_COMPONENT_MAPPING_CAPACITY.
-     */
-    size_t component_mapping_capacity;
-    /**
-     * Maximum queued payload size for this Runtime instance. Zero selects
-     * H2_RUNTIME_EVENT_PAYLOAD_MAX. A nonzero value must fit every compiled
-     * Runtime system-event schema and must not exceed that public upper bound.
-     */
-    size_t event_payload_capacity;
-    size_t event_queue_capacity;
-    /** Target-owned policy for the Runtime state publication. */
-    h2_runtime_state_config_t state;
+  const h2_runtime_component_mapper_t* component_mapper;
+  /**
+   * Maximum mapped input sources owned by this Runtime instance.
+   * Zero selects H2_RUNTIME_DEFAULT_INPUT_SOURCE_CAPACITY.
+   */
+  size_t input_source_capacity;
+  /**
+   * Maximum component mappings accepted by this Runtime instance.
+   * Zero selects H2_RUNTIME_DEFAULT_COMPONENT_MAPPING_CAPACITY.
+   */
+  size_t component_mapping_capacity;
+  /**
+   * Maximum queued payload size for this Runtime instance. Zero selects
+   * H2_RUNTIME_EVENT_PAYLOAD_MAX. A nonzero value must fit every compiled
+   * Runtime system-event schema and must not exceed that public upper bound.
+   */
+  size_t event_payload_capacity;
+  size_t event_queue_capacity;
+  /** Target-owned policy for the Runtime state publication. */
+  h2_runtime_state_config_t state;
 } h2_runtime_config_t;
 
 struct h2_runtime {
-    const char *board;
-    const char *target;
-    const char *chip;
-    /** Borrowed product advertising name from the Runtime config, or NULL. */
-    const char *ble_local_name;
+  const char* board;
+  const char* target;
+  const char* chip;
+  /** Borrowed product advertising name from the Runtime config, or NULL. */
+  const char* ble_local_name;
 
-    const h2_pal_firmware_info_api_t *firmware_info;
+  const h2_pal_firmware_info_api_t* firmware_info;
 
-    const h2_pal_mem_api_t *mem;
+  const h2_pal_mem_api_t* mem;
 
-    const h2_pal_log_api_t *log;
-    /* Successful set_wall_ms publishes TIME_ADJUSTED; use this API in services. */
-    const h2_pal_time_api_t *time;
-    const h2_pal_timer_api_t *timer;
-    const h2_pal_task_api_t *task;
-    const h2_pal_queue_api_t *queue;
-    const h2_pal_sync_api_t *sync;
+  const h2_pal_log_api_t* log;
+  /* Successful set_wall_ms publishes TIME_ADJUSTED; use this API in services.
+   */
+  const h2_pal_time_api_t* time;
+  const h2_pal_timer_api_t* timer;
+  const h2_pal_task_api_t* task;
+  const h2_pal_queue_api_t* queue;
+  const h2_pal_sync_api_t* sync;
 
-    const h2_pal_fs_api_t *fs;
-    const h2_pal_disk_api_t *disk;
-    const h2_pal_pref_api_t *pref;
-    const h2_pal_crypto_api_t *crypto;
-    const h2_pal_http_api_t *http;
+  const h2_pal_fs_api_t* fs;
+  const h2_pal_disk_api_t* disk;
+  const h2_pal_pref_api_t* pref;
+  const h2_pal_crypto_api_t* crypto;
+  const h2_pal_http_api_t* http;
 
-    const h2_pal_net_api_t *net;
-    const h2_pal_netif_api_t *netif;
-    const h2_pal_mqtt_api_t *mqtt;
-    const h2_pal_webrtc_api_t *webrtc;
-    h2_pal_webrtc_track_t *webrtc_media_track;
-    /** Borrowed PAL provider exposed 1:1, including connect_and_save.
-     * connect never changes saved credentials; persistence must be explicit.
-     * Provider blocking, timeout and error semantics are unchanged. */
-    const h2_pal_wifi_sta_api_t *wifi_sta;
-    const h2_pal_wifi_ap_api_t *wifi_ap;
-    const h2_pal_wifi_csi_api_t *wifi_csi;
-    const h2_pal_wifi_settings_api_t *wifi_settings;
-    const h2_pal_ble_host_api_t *ble_host;
-    const h2_pal_modem_api_t *modem;
+  const h2_pal_net_api_t* net;
+  const h2_pal_netif_api_t* netif;
+  const h2_pal_mqtt_api_t* mqtt;
+  const h2_pal_webrtc_api_t* webrtc;
+  h2_pal_webrtc_track_t* webrtc_media_track;
+  /** Borrowed PAL provider exposed 1:1, including connect_and_save.
+   * connect never changes saved credentials; persistence must be explicit.
+   * Provider blocking, timeout and error semantics are unchanged. */
+  const h2_pal_wifi_sta_api_t* wifi_sta;
+  const h2_pal_wifi_ap_api_t* wifi_ap;
+  const h2_pal_wifi_csi_api_t* wifi_csi;
+  const h2_pal_wifi_settings_api_t* wifi_settings;
+  const h2_pal_ble_host_api_t* ble_host;
+  const h2_pal_modem_api_t* modem;
 
-    const h2_pal_power_api_t *power;
-    const h2_pal_display_api_t *display;
-    const h2_pal_audio_api_t *audio;
-    const h2_pal_audio_decoder_api_t *audio_decoder;
-    const h2_pal_periph_api_t *periph;
-    const h2_pal_button_api_t *button;
-    const h2_pal_touch_api_t *touch;
-    const h2_pal_buzzer_api_t *buzzer;
-    const h2_pal_nfc_api_t *nfc;
-    const h2_pal_nfc_card_emulation_api_t *nfc_card_emulation;
-    const h2_pal_imu_api_t *imu;
-    const h2_pal_gpio_irq_api_t *gpio_irq;
-    const h2_pal_led_api_t *led;
-    const h2_pal_switch_api_t *switch_api;
-    const h2_pal_pwm_switch_api_t *pwm_switch;
-    const h2_pal_input_api_t *input;
-    const h2_pal_system_event_api_t *system_event;
-    const h2_pal_video_decoder_api_t *video_decoder;
+  const h2_pal_power_api_t* power;
+  const h2_pal_display_api_t* display;
+  const h2_pal_audio_api_t* audio;
+  const h2_pal_audio_decoder_api_t* audio_decoder;
+  const h2_pal_periph_api_t* periph;
+  const h2_pal_button_api_t* button;
+  const h2_pal_touch_api_t* touch;
+  const h2_pal_buzzer_api_t* buzzer;
+  const h2_pal_nfc_api_t* nfc;
+  const h2_pal_nfc_card_emulation_api_t* nfc_card_emulation;
+  const h2_pal_imu_api_t* imu;
+  const h2_pal_gpio_irq_api_t* gpio_irq;
+  const h2_pal_led_api_t* led;
+  const h2_pal_switch_api_t* switch_api;
+  const h2_pal_pwm_switch_api_t* pwm_switch;
+  const h2_pal_input_api_t* input;
+  const h2_pal_system_event_api_t* system_event;
+  const h2_pal_video_decoder_api_t* video_decoder;
 
-    h2_runtime_private_t *private_state;
+  h2_runtime_private_t* private_state;
 };
 
-h2_pal_result_t h2_runtime_init(const h2_runtime_config_t *config, h2_runtime_t **out_runtime);
+h2_pal_result_t h2_runtime_init(const h2_runtime_config_t* config,
+                                h2_runtime_t** out_runtime);
 /**
  * @brief Destroy a Runtime with explicit cleanup evidence.
  * @param[in,out] runtime Runtime owner pointer. A NULL pointer is invalid;
@@ -191,9 +193,9 @@ h2_pal_result_t h2_runtime_init(const h2_runtime_config_t *config, h2_runtime_t 
  * *runtime to NULL even when returning a latched input-worker fault; NULL
  * proves that providers are no longer borrowed, not that cleanup returned OK.
  */
-h2_pal_result_t h2_runtime_destroy(h2_runtime_t **runtime);
+h2_pal_result_t h2_runtime_destroy(h2_runtime_t** runtime);
 /** Compatibility wrapper; callers needing cleanup evidence use destroy. */
-void h2_runtime_deinit(h2_runtime_t *runtime);
+void h2_runtime_deinit(h2_runtime_t* runtime);
 /**
  * Read saved credentials and call PAL connect without saving them again.
  * Blocks for association according to the provider; IP may arrive later.
@@ -202,51 +204,55 @@ void h2_runtime_deinit(h2_runtime_t *runtime);
  * performs no network connection. NOT_FOUND means no saved credentials.
  * The caller must finish this operation before Runtime deinit.
  */
-h2_pal_result_t h2_runtime_wifi_connect_saved(h2_runtime_t *runtime, uint32_t timeout_ms);
+h2_pal_result_t h2_runtime_wifi_connect_saved(h2_runtime_t* runtime,
+                                              uint32_t timeout_ms);
 #define H2_RUNTIME_WIFI_SAVED_MAX 8u
 
 typedef struct h2_runtime_wifi_saved_network {
-    h2_pal_wifi_sta_config_t config;
-    uint64_t last_connected_at_ms;
+  h2_pal_wifi_sta_config_t config;
+  uint64_t last_connected_at_ms;
 } h2_runtime_wifi_saved_network_t;
 
 /** Runtime-owned durable set, stored most recently connected first.
  * Concurrent Runtime Wi-Fi calls return BUSY while another call owns them;
- * finish every operation before deinit. Direct PAL calls remain caller-serialized.
- * List truncates to capacity and reports copied entries; NULL is allowed at
- * zero capacity. Missing storage is an empty list. When the key never existed,
- * import the PAL credential once; an explicit empty set prevents re-import.
- * Storage errors propagate. Listing can persist that import on a worker.
+ * finish every operation before deinit. Direct PAL calls remain
+ * caller-serialized. List truncates to capacity and reports copied entries;
+ * NULL is allowed at zero capacity. Missing storage is an empty list. When the
+ * key never existed, import the PAL credential once; an explicit empty set
+ * prevents re-import. Storage errors propagate. Listing can persist that import
+ * on a worker.
  */
-h2_pal_result_t h2_runtime_wifi_saved_list(h2_runtime_t *runtime,
-                                           h2_runtime_wifi_saved_network_t *out, size_t capacity,
-                                           size_t *out_count);
+h2_pal_result_t h2_runtime_wifi_saved_list(h2_runtime_t* runtime,
+                                           h2_runtime_wifi_saved_network_t* out,
+                                           size_t capacity, size_t* out_count);
 /** Replace by SSID, front the entry and evict the tail at capacity.
  * Wall time is informational (zero if unavailable); position defines recency.
  * One 920-byte pref blob is replaced atomically. PAL credentials are unchanged.
  */
-h2_pal_result_t h2_runtime_wifi_saved_save(h2_runtime_t *runtime,
-                                           const h2_pal_wifi_sta_config_t *config);
+h2_pal_result_t h2_runtime_wifi_saved_save(
+    h2_runtime_t* runtime, const h2_pal_wifi_sta_config_t* config);
 /** Remove exactly one SSID and its matching PAL credential; no disconnect.
  * Persist the set first, so even failed PAL cleanup cannot resurrect it.
  * Return NOT_FOUND if absent; other storage errors propagate. */
-h2_pal_result_t h2_runtime_wifi_saved_remove(h2_runtime_t *runtime, const char *ssid,
-                                             size_t ssid_len);
-/** Persist an empty set before clearing PAL; errors propagate. No disconnect. */
-h2_pal_result_t h2_runtime_wifi_saved_clear(h2_runtime_t *runtime);
+h2_pal_result_t h2_runtime_wifi_saved_remove(h2_runtime_t* runtime,
+                                             const char* ssid, size_t ssid_len);
+/** Persist an empty set before clearing PAL; errors propagate. No disconnect.
+ */
+h2_pal_result_t h2_runtime_wifi_saved_clear(h2_runtime_t* runtime);
 /** Copy the in-process saved-set change counter without storage I/O or waiting.
  * Poll from an observer, then reload the list on a worker when it changes.
  * Counter wraps as unsigned; it resets for a new Runtime. */
-h2_pal_result_t h2_runtime_wifi_saved_revision(h2_runtime_t *runtime, unsigned *out_revision);
+h2_pal_result_t h2_runtime_wifi_saved_revision(h2_runtime_t* runtime,
+                                               unsigned* out_revision);
 /** Provision through PAL, then record in the Runtime set only on success.
  * PAL timeout/IP semantics are unchanged; Runtime adds no IP wait. Returns the
  * PAL result: once PAL reports success the station is connected and the
  * platform credential is stored, so a failed set write is logged and still
  * returns OK rather than reporting a working connection as failed provisioning.
  */
-h2_pal_result_t h2_runtime_wifi_connect_and_save(h2_runtime_t *runtime,
-                                                 const h2_pal_wifi_sta_config_t *config,
-                                                 uint32_t timeout_ms);
+h2_pal_result_t h2_runtime_wifi_connect_and_save(
+    h2_runtime_t* runtime, const h2_pal_wifi_sta_config_t* config,
+    uint32_t timeout_ms);
 /** Scan and try visible saved networks by RSSI, then stored recency.
  * Pin each candidate to its strongest observed AP. Success fronts the entry
  * and refreshes wall time, without writing PAL credentials or waiting for IP.
@@ -254,9 +260,12 @@ h2_pal_result_t h2_runtime_wifi_connect_and_save(h2_runtime_t *runtime,
  * last connection error if all fail, NOT_FOUND for an empty/invisible set,
  * TIMEOUT before the next attempt, or the underlying storage/scan/clock error.
  */
-h2_pal_result_t h2_runtime_wifi_connect_best_saved(h2_runtime_t *runtime, uint32_t timeout_ms);
+h2_pal_result_t h2_runtime_wifi_connect_best_saved(h2_runtime_t* runtime,
+                                                   uint32_t timeout_ms);
 
-h2_pal_result_t h2_runtime_periph_id(const h2_runtime_t *runtime, h2_runtime_component_id_t component_id, h2_pal_periph_id_t *out_periph_id);
+h2_pal_result_t h2_runtime_periph_id(const h2_runtime_t* runtime,
+                                     h2_runtime_component_id_t component_id,
+                                     h2_pal_periph_id_t* out_periph_id);
 
 #ifdef __cplusplus
 }

@@ -11,9 +11,9 @@ typedef struct list_state {
   h2_pal_periph_type_t types[7];
 } list_state_t;
 
-static h2_pal_result_t collect_peripheral(void *user,
-                                          const h2_pal_periph_info_t *info) {
-  list_state_t *state = (list_state_t *)user;
+static h2_pal_result_t collect_peripheral(void* user,
+                                          const h2_pal_periph_info_t* info) {
+  list_state_t* state = (list_state_t*)user;
   assert(state != NULL);
   assert(info != NULL);
   assert(state->count < 7u);
@@ -23,15 +23,15 @@ static h2_pal_result_t collect_peripheral(void *user,
   return H2_PAL_OK;
 }
 
-static int collect_incoming_call(void *user,
-                                 const h2_pal_system_event_t *event) {
-  size_t *calls = (size_t *)user;
+static int collect_incoming_call(void* user,
+                                 const h2_pal_system_event_t* event) {
+  size_t* calls = (size_t*)user;
   assert(event != NULL);
   assert(event->type == H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_INCOMING);
   assert(event->source_id == 66u);
   assert(event->payload_size == sizeof(h2_pal_modem_call_event_t));
-  const h2_pal_modem_call_event_t *call =
-      (const h2_pal_modem_call_event_t *)event->payload;
+  const h2_pal_modem_call_event_t* call =
+      (const h2_pal_modem_call_event_t*)event->payload;
   assert(call->call.direction == H2_PAL_MODEM_CALL_DIRECTION_INCOMING);
   assert(call->call.state == H2_PAL_MODEM_CALL_STATE_INCOMING);
   assert(strcmp(call->call.number, "13800000000") == 0);
@@ -44,12 +44,11 @@ typedef struct call_event_state {
   h2_pal_modem_call_status_t last;
 } call_event_state_t;
 
-static int collect_call_event(void *user,
-                              const h2_pal_system_event_t *event) {
-  call_event_state_t *state = user;
+static int collect_call_event(void* user, const h2_pal_system_event_t* event) {
+  call_event_state_t* state = user;
   assert(state != NULL && event != NULL);
   assert(event->payload_size == sizeof(h2_pal_modem_call_event_t));
-  const h2_pal_modem_call_event_t *call = event->payload;
+  const h2_pal_modem_call_event_t* call = event->payload;
   state->last = call->call;
   state->count += 1u;
   return H2_PAL_OK;
@@ -60,9 +59,9 @@ typedef struct wifi_scan_state {
   char ssids[2][H2_PAL_WIFI_SSID_MAX + 1];
 } wifi_scan_state_t;
 
-static bool collect_wifi_scan(void *user,
-                              const h2_pal_wifi_scan_entry_t *entry) {
-  wifi_scan_state_t *state = (wifi_scan_state_t *)user;
+static bool collect_wifi_scan(void* user,
+                              const h2_pal_wifi_scan_entry_t* entry) {
+  wifi_scan_state_t* state = (wifi_scan_state_t*)user;
   assert(state != NULL && entry != NULL);
   assert(state->count < 2u);
   memcpy(state->ssids[state->count], entry->ssid, entry->ssid_len);
@@ -72,7 +71,7 @@ static bool collect_wifi_scan(void *user,
 }
 
 int main(void) {
-  const h2_pal_system_event_api_t *system_events =
+  const h2_pal_system_event_api_t* system_events =
       h2_desktop_test_system_event_api();
   const h2_pal_system_event_vtable_t incomplete_vtable = {0};
   const h2_pal_system_event_api_t incomplete_events = {
@@ -83,7 +82,7 @@ int main(void) {
   assert(h2_desktop_platform_modem(&incomplete_events) == NULL);
   assert(h2_desktop_test_system_event_init() == H2_PAL_OK);
   assert(h2_desktop_platform_modem(NULL) == NULL);
-  h2_pal_modem_t *modem = h2_desktop_platform_modem(system_events);
+  h2_pal_modem_t* modem = h2_desktop_platform_modem(system_events);
   assert(modem != NULL);
   assert(h2_desktop_platform_modem(system_events) == modem);
   assert(h2_desktop_platform_configure_peripherals(NULL, 0u) == H2_PAL_OK);
@@ -193,7 +192,7 @@ int main(void) {
          H2_PAL_OK);
   assert(info.payload_size == sizeof(h2_pal_periph_radio_button_payload_t));
   assert(
-      ((const h2_pal_periph_radio_button_payload_t *)info.payload)->group_id ==
+      ((const h2_pal_periph_radio_button_payload_t*)info.payload)->group_id ==
       UINT32_MAX);
 
   h2_pal_single_button_reading_t button;
@@ -241,8 +240,7 @@ int main(void) {
       .uid_len = 4u,
       .uid = {0x04u, 0x25u, 0x10u, 0x42u},
   };
-  assert(h2_desktop_platform_configure_nfc_fixture(&nfc_fixture) ==
-         H2_PAL_OK);
+  assert(h2_desktop_platform_configure_nfc_fixture(&nfc_fixture) == H2_PAL_OK);
   assert(h2_pal_nfc_scan_nfc_reader(h2_desktop_platform_nfc_api(), 22u,
                                     &scan) == H2_PAL_OK);
   assert(scan.id == 22u && scan.stage == H2_PAL_NFC_STAGE_ABSENT &&
@@ -252,8 +250,7 @@ int main(void) {
                                   H2_PAL_NFC_DATA_RAW,
                                   h2_desktop_platform_default_allocator(),
                                   &nfc_data) == H2_PAL_ERR_NOT_FOUND);
-  assert(h2_desktop_platform_handle_key(H2_DESKTOP_KEY_N, 1, 0) ==
-         H2_PAL_OK);
+  assert(h2_desktop_platform_handle_key(H2_DESKTOP_KEY_N, 1, 0) == H2_PAL_OK);
   assert(h2_pal_nfc_scan_nfc_reader(h2_desktop_platform_nfc_api(), 22u,
                                     &scan) == H2_PAL_OK);
   assert(scan.stage == H2_PAL_NFC_STAGE_DISCOVERED &&
@@ -261,13 +258,11 @@ int main(void) {
   assert(h2_pal_nfc_read_nfc_data(
              h2_desktop_platform_nfc_api(), 22u, nfc_fixture.uid,
              nfc_fixture.uid_len, H2_PAL_NFC_DATA_NTAG_PAGES,
-             h2_desktop_platform_default_allocator(), &nfc_data) ==
-         H2_PAL_OK);
+             h2_desktop_platform_default_allocator(), &nfc_data) == H2_PAL_OK);
   assert(nfc_data.len == sizeof(ntag_pages) &&
          memcmp(nfc_data.bytes, ntag_pages, sizeof(ntag_pages)) == 0);
   h2_pal_mem_free(h2_desktop_platform_default_allocator(), nfc_data.bytes);
-  assert(h2_desktop_platform_handle_key(H2_DESKTOP_KEY_N, 0, 0) ==
-         H2_PAL_OK);
+  assert(h2_desktop_platform_handle_key(H2_DESKTOP_KEY_N, 0, 0) == H2_PAL_OK);
   assert(h2_pal_nfc_scan_nfc_reader(h2_desktop_platform_nfc_api(), 999u,
                                     &scan) == H2_PAL_ERR_NOT_FOUND);
 
@@ -366,19 +361,28 @@ int main(void) {
   assert(wifi_status.state == H2_PAL_WIFI_STA_STATE_GOT_IP);
   assert(wifi_status.rssi == -51 && wifi_status.channel == 6u);
 
-  const h2_pal_wifi_settings_api_t *saved_api = h2_desktop_platform_wifi_settings();
+  const h2_pal_wifi_settings_api_t* saved_api =
+      h2_desktop_platform_wifi_settings();
   h2_pal_wifi_sta_config_t previous = {.ssid = "previous", .ssid_len = 8};
   h2_pal_wifi_sta_config_t saved_config = {0};
-  assert(h2_pal_wifi_settings_set_saved_sta_config(saved_api, &previous) == H2_PAL_OK);
-  assert(h2_pal_wifi_sta_connect(h2_desktop_platform_wifi_sta(), &connect_config, 0u) == H2_PAL_OK);
-  assert(h2_pal_wifi_settings_get_saved_sta_config(saved_api, &saved_config) == H2_PAL_OK);
+  assert(h2_pal_wifi_settings_set_saved_sta_config(saved_api, &previous) ==
+         H2_PAL_OK);
+  assert(h2_pal_wifi_sta_connect(h2_desktop_platform_wifi_sta(),
+                                 &connect_config, 0u) == H2_PAL_OK);
+  assert(h2_pal_wifi_settings_get_saved_sta_config(saved_api, &saved_config) ==
+         H2_PAL_OK);
   assert(!memcmp(&saved_config, &previous, sizeof(previous)));
-  assert(h2_pal_wifi_sta_connect_and_save(h2_desktop_platform_wifi_sta(), &connect_config, 100u) == H2_PAL_OK);
-  assert(h2_pal_wifi_settings_get_saved_sta_config(saved_api, &saved_config) == H2_PAL_OK);
+  assert(h2_pal_wifi_sta_connect_and_save(h2_desktop_platform_wifi_sta(),
+                                          &connect_config, 100u) == H2_PAL_OK);
+  assert(h2_pal_wifi_settings_get_saved_sta_config(saved_api, &saved_config) ==
+         H2_PAL_OK);
   assert(!memcmp(&saved_config, &connect_config, sizeof(connect_config)));
   connect_config.password[0] = 'X';
-  assert(h2_pal_wifi_sta_connect_and_save(h2_desktop_platform_wifi_sta(), &connect_config, 100u) == H2_PAL_ERR_IO);
-  assert(h2_pal_wifi_settings_get_saved_sta_config(saved_api, &saved_config) == H2_PAL_OK);
+  assert(h2_pal_wifi_sta_connect_and_save(h2_desktop_platform_wifi_sta(),
+                                          &connect_config,
+                                          100u) == H2_PAL_ERR_IO);
+  assert(h2_pal_wifi_settings_get_saved_sta_config(saved_api, &saved_config) ==
+         H2_PAL_OK);
   assert(saved_config.password[0] == 's');
 
   const h2_desktop_wifi_scan_entry_config_t duplicate_ssid_entries[] = {
@@ -491,25 +495,21 @@ int main(void) {
   assert(h2_desktop_platform_configure_modem(&modem_config) == H2_PAL_OK);
   modem_operator[0] = 'X';
   h2_pal_modem_status_t modem_status;
-  assert(h2_pal_modem_get_status(modem, &modem_status) ==
-         H2_PAL_OK);
+  assert(h2_pal_modem_get_status(modem, &modem_status) == H2_PAL_OK);
   assert(modem_status.sim == H2_PAL_MODEM_SIM_STATE_READY);
   assert(modem_status.registration == H2_PAL_MODEM_REGISTRATION_HOME);
   assert(modem_status.packet == H2_PAL_MODEM_PACKET_CONNECTED);
   assert(modem_status.rat == H2_PAL_MODEM_RAT_LTE);
   h2_pal_modem_operator_t operator_info;
-  assert(h2_pal_modem_get_operator(modem,
-                                   &operator_info) == H2_PAL_OK);
+  assert(h2_pal_modem_get_operator(modem, &operator_info) == H2_PAL_OK);
   assert(strcmp(operator_info.name, "Desktop Operator") == 0);
   h2_pal_modem_signal_t modem_signal;
-  assert(h2_pal_modem_get_signal(modem, &modem_signal) ==
-         H2_PAL_OK);
+  assert(h2_pal_modem_get_signal(modem, &modem_signal) == H2_PAL_OK);
   assert(modem_signal.rssi_valid == 1u && modem_signal.rsrp_valid == 0u);
   assert(modem_signal.rsrp_dbm == 0);
   assert(modem_signal.rssi_dbm == -82 &&
          modem_signal.rat == H2_PAL_MODEM_RAT_LTE);
-  assert(h2_pal_modem_data_close(modem, 1000u) ==
-         H2_PAL_OK);
+  assert(h2_pal_modem_data_close(modem, 1000u) == H2_PAL_OK);
   memset(&modem_signal, 0x7f, sizeof(modem_signal));
   assert(h2_pal_modem_get_signal(modem, &modem_signal) ==
          H2_PAL_ERR_UNAVAILABLE);
@@ -517,10 +517,8 @@ int main(void) {
   assert(modem_signal.rsrp_dbm == 0);
   assert(modem_signal.rssi_dbm == 0 && modem_signal.ber == 0 &&
          modem_signal.rat == H2_PAL_MODEM_RAT_UNKNOWN);
-  assert(h2_pal_modem_data_open(modem, 1000u) ==
-         H2_PAL_OK);
-  assert(h2_pal_modem_get_signal(modem, &modem_signal) ==
-         H2_PAL_OK);
+  assert(h2_pal_modem_data_open(modem, 1000u) == H2_PAL_OK);
+  assert(h2_pal_modem_get_signal(modem, &modem_signal) == H2_PAL_OK);
 
   uint16_t duty_x100 = 0u;
   assert(h2_pal_pwm_switch_get_duty(h2_desktop_platform_pwm_switch_api(), 55u,
@@ -573,7 +571,7 @@ int main(void) {
   assert(power.boot_info.boot_count == powered_off_boot_count + 1u);
 
   size_t incoming_calls = 0u;
-  h2_pal_system_event_subscription_t *subscription = NULL;
+  h2_pal_system_event_subscription_t* subscription = NULL;
   assert(h2_pal_system_event_subscribe(
              system_events, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_INCOMING,
              collect_incoming_call, &incoming_calls,
@@ -590,11 +588,9 @@ int main(void) {
       .number = "13900000000",
       .timeout_ms = 100u,
   };
-  assert(h2_pal_modem_call_dial(modem, &dial) ==
-         H2_PAL_OK);
+  assert(h2_pal_modem_call_dial(modem, &dial) == H2_PAL_OK);
   assert(changed_calls.count == 3u);
-  assert(changed_calls.last.direction ==
-         H2_PAL_MODEM_CALL_DIRECTION_OUTGOING);
+  assert(changed_calls.last.direction == H2_PAL_MODEM_CALL_DIRECTION_OUTGOING);
   assert(changed_calls.last.state == H2_PAL_MODEM_CALL_STATE_ACTIVE);
   assert(strcmp(changed_calls.last.number, "13900000000") == 0);
   h2_pal_system_event_unsubscribe(system_events, subscription);
@@ -603,29 +599,23 @@ int main(void) {
   assert(h2_pal_system_event_subscribe(
              system_events, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_ENDED,
              collect_call_event, &ended_calls, &subscription) == H2_PAL_OK);
-  assert(h2_pal_modem_call_hangup(modem, 100u) ==
-         H2_PAL_OK);
+  assert(h2_pal_modem_call_hangup(modem, 100u) == H2_PAL_OK);
   assert(ended_calls.count == 1u);
   assert(ended_calls.last.state == H2_PAL_MODEM_CALL_STATE_ENDED);
   h2_pal_system_event_unsubscribe(system_events, subscription);
 
   assert(h2_desktop_platform_inject_incoming_call_number(
              66u, "138-0000-0000") == H2_PAL_OK);
-  assert(h2_pal_modem_call_answer(modem, 100u) ==
-         H2_PAL_OK);
-  assert(h2_pal_modem_get_call_status(modem,
-                                      &ended_calls.last) == H2_PAL_OK);
+  assert(h2_pal_modem_call_answer(modem, 100u) == H2_PAL_OK);
+  assert(h2_pal_modem_get_call_status(modem, &ended_calls.last) == H2_PAL_OK);
   assert(ended_calls.last.state == H2_PAL_MODEM_CALL_STATE_ACTIVE);
-  assert(h2_pal_modem_call_hangup(modem, 100u) ==
-         H2_PAL_OK);
+  assert(h2_pal_modem_call_hangup(modem, 100u) == H2_PAL_OK);
 
   h2_desktop_modem_config_t failed_modem = modem_config;
   failed_modem.dial_result = H2_PAL_ERR_TIMEOUT;
   assert(h2_desktop_platform_configure_modem(&failed_modem) == H2_PAL_OK);
-  assert(h2_pal_modem_call_dial(modem, &dial) ==
-         H2_PAL_ERR_TIMEOUT);
-  assert(h2_pal_modem_get_call_status(modem,
-                                      &ended_calls.last) == H2_PAL_OK);
+  assert(h2_pal_modem_call_dial(modem, &dial) == H2_PAL_ERR_TIMEOUT);
+  assert(h2_pal_modem_get_call_status(modem, &ended_calls.last) == H2_PAL_OK);
   assert(ended_calls.last.state == H2_PAL_MODEM_CALL_STATE_IDLE);
   h2_desktop_test_system_event_deinit();
 

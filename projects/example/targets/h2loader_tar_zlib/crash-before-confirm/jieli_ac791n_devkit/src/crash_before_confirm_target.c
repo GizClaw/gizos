@@ -7,7 +7,7 @@
 
 extern void cpu_assert_debug(void);
 
-static void emit(const char *format, ...) {
+static void emit(const char* format, ...) {
   char line[160];
   va_list arguments;
   va_start(arguments, format);
@@ -20,17 +20,18 @@ static void emit(const char *format, ...) {
 
 /* Take the SDK ASSERT failure path: the board hook records the retained
  * crash, then the CPU resets with the unconfirmed App bank still selected. */
-static void crash_now(void *user) {
+static void crash_now(void* user) {
   (void)user;
   cpu_assert_debug();
 }
 
 /* The color-bar launcher runs this after the UART and BLE App command
  * services are live and before it confirms the trial image. */
-/* Runtime lives until the intentional reset; release it if the reset returns. */
+/* Runtime lives until the intentional reset; release it if the reset returns.
+ */
 int h2_jieli_target_application_run(void) {
   h2_runtime_config_t config;
-  h2_runtime_t *runtime = NULL;
+  h2_runtime_t* runtime = NULL;
   int result = h2_jieli_ac791n_devkit_runtime_config(&config);
   if (result == H2_PAL_OK) result = h2_runtime_init(&config, &runtime);
   if (result != H2_PAL_OK) {

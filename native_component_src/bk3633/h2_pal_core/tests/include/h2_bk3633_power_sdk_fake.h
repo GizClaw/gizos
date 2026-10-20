@@ -6,8 +6,8 @@
 #include <stdint.h>
 
 typedef struct rwip_time {
-    uint32_t hs;
-    uint16_t hus;
+  uint32_t hs;
+  uint16_t hus;
 } rwip_time_t;
 
 rwip_time_t rwip_time_get(void);
@@ -38,7 +38,7 @@ uint8_t h2_bk3633_power_sdk_fake_deep_sleep_wake_pin(void);
 void h2_bk3633_power_sdk_fake_adc_init(uint8_t channel, uint8_t mode);
 h2_pal_result_t h2_bk3633_power_sdk_fake_adc_start(uint8_t channel,
                                                    uint8_t mode);
-h2_pal_result_t h2_bk3633_power_sdk_fake_adc_take(uint16_t *out_raw);
+h2_pal_result_t h2_bk3633_power_sdk_fake_adc_take(uint16_t* out_raw);
 void h2_bk3633_power_sdk_fake_adc_abort(uint8_t channel);
 void h2_bk3633_power_sdk_fake_adc_deinit(uint8_t channel);
 uint8_t h2_bk3633_power_sdk_fake_gpio_read(uint8_t pin);

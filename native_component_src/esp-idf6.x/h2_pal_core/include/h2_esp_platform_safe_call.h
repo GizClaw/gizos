@@ -10,7 +10,7 @@
 extern "C" {
 #endif
 
-typedef void (*h2_esp_platform_safe_call_cb_t)(void *context);
+typedef void (*h2_esp_platform_safe_call_cb_t)(void* context);
 
 /**
  * Run a cache-sensitive ESP backend callback synchronously.
@@ -21,9 +21,7 @@ typedef void (*h2_esp_platform_safe_call_cb_t)(void *context);
  * per-call task, stack, task control block, or context allocation is performed.
  */
 h2_pal_result_t h2_esp_platform_safe_call(
-    h2_esp_platform_safe_call_cb_t callback,
-    void *context,
-    size_t context_size,
+    h2_esp_platform_safe_call_cb_t callback, void* context, size_t context_size,
     size_t stack_depth);
 
 /**
@@ -34,9 +32,8 @@ h2_pal_result_t h2_esp_platform_safe_call(
  * Callers must release it after all safe calls and caller-side copies using the
  * returned storage have completed.
  */
-h2_pal_result_t h2_esp_platform_safe_io_acquire(
-    uint8_t **out_buffer,
-    size_t *out_capacity);
+h2_pal_result_t h2_esp_platform_safe_io_acquire(uint8_t** out_buffer,
+                                                size_t* out_capacity);
 
 /**
  * Release the fixed safe-I/O scratch buffer.

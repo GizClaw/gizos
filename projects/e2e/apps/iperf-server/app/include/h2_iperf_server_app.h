@@ -58,23 +58,24 @@ typedef struct h2_iperf_server_app_snapshot {
 
 /** Borrowed network lifecycle hooks, called serially on the manager task.
  * start returns actual ready addresses on success. On error it may retain
- * partial ownership when cleanup fails; it must return without retrying forever.
- * stop runs after every start attempt and only after both server tasks have
- * joined. It must succeed when nothing is owned and tolerate cleanup retries.
- * Hooks must not change saved STA credentials and must not reenter this App.
+ * partial ownership when cleanup fails; it must return without retrying
+ * forever. stop runs after every start attempt and only after both server tasks
+ * have joined. It must succeed when nothing is owned and tolerate cleanup
+ * retries. Hooks must not change saved STA credentials and must not reenter
+ * this App.
  */
 typedef struct h2_iperf_server_app_config {
-  void *network_user;
-  h2_pal_result_t (*network_start)(void *user, h2_iperf_server_app_mode_t mode,
-                                   h2_iperf_server_app_network_t *out_network);
-  h2_pal_result_t (*network_stop)(void *user);
+  void* network_user;
+  h2_pal_result_t (*network_start)(void* user, h2_iperf_server_app_mode_t mode,
+                                   h2_iperf_server_app_network_t* out_network);
+  h2_pal_result_t (*network_stop)(void* user);
   /** Zero selects the standard iperf3 port 5201. */
   uint16_t port;
   /** Optional readiness hook after Touch opens and the first Display flush
    * completes. Called once on the UI task; an error unwinds the UI.
    */
-  h2_pal_result_t (*ui_ready)(void *user);
-  void *ui_user;
+  h2_pal_result_t (*ui_ready)(void* user);
+  void* ui_user;
 } h2_iperf_server_app_config_t;
 
 typedef struct h2_iperf_server_app h2_iperf_server_app_t;
@@ -82,10 +83,9 @@ typedef struct h2_iperf_server_app h2_iperf_server_app_t;
 /** Create a stopped App and its manager task. Borrow Runtime/hooks through
  * successful destroy. The controller uses Memory/Net/Time/Task/Sync PAL only.
  */
-h2_pal_result_t
-h2_iperf_server_app_create(h2_runtime_t *runtime,
-                           const h2_iperf_server_app_config_t *config,
-                           h2_iperf_server_app_t **out_app);
+h2_pal_result_t h2_iperf_server_app_create(
+    h2_runtime_t* runtime, const h2_iperf_server_app_config_t* config,
+    h2_iperf_server_app_t** out_app);
 /** Thread-safe nonblocking request. Mode changes require STOPPED or ERROR.
  * Stop cancels idle accepts, incomplete handshakes and active measurements.
  * A cleanup failure retains STOPPING and its error with live handles owned;
@@ -93,13 +93,12 @@ h2_iperf_server_app_create(h2_runtime_t *runtime,
  * cleanup succeeds. A fatal manager synchronization error closes requests;
  * destroy still retains/retries owned cleanup.
  */
-h2_pal_result_t h2_iperf_server_app_request(h2_iperf_server_app_t *app,
+h2_pal_result_t h2_iperf_server_app_request(h2_iperf_server_app_t* app,
                                             h2_iperf_server_app_mode_t mode,
                                             bool running);
 /** Thread-safe copy; does not expose worker-owned objects. */
-h2_pal_result_t
-h2_iperf_server_app_snapshot(h2_iperf_server_app_t *app,
-                             h2_iperf_server_app_snapshot_t *out_snapshot);
+h2_pal_result_t h2_iperf_server_app_snapshot(
+    h2_iperf_server_app_t* app, h2_iperf_server_app_snapshot_t* out_snapshot);
 /** Stop, join workers/manager and release storage. Blocks on the caller task.
  * On join/cleanup error retain the handle so the caller can retry.
  * The manager terminates after one cleanup attempt on shutdown; destroy
@@ -107,14 +106,14 @@ h2_iperf_server_app_snapshot(h2_iperf_server_app_t *app,
  * The borrowed task joins/network callbacks may themselves block.
  * The caller must quiesce concurrent request/snapshot calls before destroying.
  */
-h2_pal_result_t h2_iperf_server_app_destroy(h2_iperf_server_app_t **app);
+h2_pal_result_t h2_iperf_server_app_destroy(h2_iperf_server_app_t** app);
 /** Run the touch UI on the caller task until should_exit is true (NULL means
  * indefinitely). Borrows an existing controller; opens/closes Display/Touch
  * and owns the LVGL singleton for this call. Only this task calls LVGL.
  */
-h2_pal_result_t h2_iperf_server_app_run_ui(h2_iperf_server_app_t *app,
-                                           bool (*should_exit)(void *user),
-                                           void *user);
+h2_pal_result_t h2_iperf_server_app_run_ui(h2_iperf_server_app_t* app,
+                                           bool (*should_exit)(void* user),
+                                           void* user);
 
 #ifdef __cplusplus
 }

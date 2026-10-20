@@ -70,25 +70,22 @@ struct h2_gizclaw_req {
   int result;
 };
 
-static void *allocate(void *user, size_t size) {
+static void* allocate(void* user, size_t size) {
   (void)user;
-  void *p = h2_pal_mem_alloc(&allocator.api, size);
+  void* p = h2_pal_mem_alloc(&allocator.api, size);
   if (p) memset(p, 0, size);
   return p;
 }
-static void release(void *user, void *p) {
+static void release(void* user, void* p) {
   (void)user;
   h2_pal_mem_free(&allocator.api, p);
 }
 
-static void request_unref(h2_gizclaw_req_t *request) {
-  if (request != NULL && --request->refs == 0u)
-    release(NULL, request);
+static void request_unref(h2_gizclaw_req_t* request) {
+  if (request != NULL && --request->refs == 0u) release(NULL, request);
 }
 
-
-
-bool h2_gizclaw_e2e_fixture_has_time(const h2_gizclaw_e2e_fixture_t *fixture,
+bool h2_gizclaw_e2e_fixture_has_time(const h2_gizclaw_e2e_fixture_t* fixture,
                                      uint32_t ms) {
   assert(fixture != NULL);
   if (s_mode == INITIAL_BUDGET_ERROR ||
@@ -96,10 +93,11 @@ bool h2_gizclaw_e2e_fixture_has_time(const h2_gizclaw_e2e_fixture_t *fixture,
       (s_mode == WAIT_BUDGET_ERROR && s_dos != 0u) ||
       (s_mode == SECOND_WAIT_BUDGET_ERROR && s_waits != 0u))
     return false;
-  return clock.monotonic_ms <= s_deadline && ms <= s_deadline - clock.monotonic_ms;
+  return clock.monotonic_ms <= s_deadline &&
+         ms <= s_deadline - clock.monotonic_ms;
 }
 
-void h2_gizclaw_e2e_evidence(const char *symbol, const char *stage, int rc) {
+void h2_gizclaw_e2e_evidence(const char* symbol, const char* stage, int rc) {
   assert(symbol != NULL && stage != NULL);
   if (s_emit_evidence)
     printf("H2_GIZCLAW_E2E symbol=%s stage=%s result=%s rc=%d\n", symbol, stage,
@@ -110,44 +108,40 @@ void h2_gizclaw_e2e_fixture_reset_rpc_channel_observation(void) {
   s_open = s_maximum = s_unique = 0;
 }
 
-int h2_gizclaw_e2e_fixture_rpc_channel_observation(size_t *maximum,
-                                                   size_t *unique,
-                                                   size_t *open) {
+int h2_gizclaw_e2e_fixture_rpc_channel_observation(size_t* maximum,
+                                                   size_t* unique,
+                                                   size_t* open) {
   *maximum = s_maximum;
   *unique = s_unique;
   *open = s_open;
   return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_gizclaw_req_create_ping(h2_gizclaw_service_t *service,
+h2_pal_result_t h2_gizclaw_req_create_ping(h2_gizclaw_service_t* service,
                                            uint64_t identity, uint32_t timeout,
-                                           h2_gizclaw_req_t **out) {
-  assert(service == (h2_gizclaw_service_t *)&s_service && identity > 0u &&
+                                           h2_gizclaw_req_t** out) {
+  assert(service == (h2_gizclaw_service_t*)&s_service && identity > 0u &&
          timeout > 0u);
   *out = NULL;
-  if (s_mode == CREATE_ERROR)
-    return H2_PAL_ERR_NO_MEMORY;
+  if (s_mode == CREATE_ERROR) return H2_PAL_ERR_NO_MEMORY;
   *out = allocate(NULL, sizeof(**out));
-  if (*out == NULL)
-    return H2_PAL_ERR_NO_MEMORY;
+  if (*out == NULL) return H2_PAL_ERR_NO_MEMORY;
   (*out)->refs = 1u;
   return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_gizclaw_req_create_register(h2_gizclaw_service_t *service,
+h2_pal_result_t h2_gizclaw_req_create_register(h2_gizclaw_service_t* service,
                                                uint64_t identity,
-                                               const char *token,
+                                               const char* token,
                                                uint32_t timeout,
-                                               h2_gizclaw_req_t **out) {
+                                               h2_gizclaw_req_t** out) {
   assert(strcmp(token, "local-only-token") == 0);
   int rc = h2_gizclaw_req_create_ping(service, identity, timeout, out);
-  if (rc == H2_PAL_OK)
-    (*out)->registration = true;
+  if (rc == H2_PAL_OK) (*out)->registration = true;
   return rc;
 }
 
-h2_pal_result_t h2_gizclaw_req_do(h2_gizclaw_req_t *request,
-                                  void *user,
+h2_pal_result_t h2_gizclaw_req_do(h2_gizclaw_req_t* request, void* user,
                                   h2_gizclaw_req_input_read_fn input_read,
                                   h2_gizclaw_req_output_write_fn output_write,
                                   h2_gizclaw_req_complete_fn on_complete) {
@@ -167,13 +161,12 @@ h2_pal_result_t h2_gizclaw_req_do(h2_gizclaw_req_t *request,
   if (s_concurrency) {
     ++s_open;
     ++s_unique;
-    if (s_open > s_maximum)
-      s_maximum = s_open;
+    if (s_open > s_maximum) s_maximum = s_open;
   }
   return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_gizclaw_req_wait(h2_gizclaw_req_t *request,
+h2_pal_result_t h2_gizclaw_req_wait(h2_gizclaw_req_t* request,
                                     uint32_t timeout) {
   assert(timeout > 0u);
   if (!request->started) {
@@ -183,40 +176,36 @@ h2_pal_result_t h2_gizclaw_req_wait(h2_gizclaw_req_t *request,
                                        : H2_PAL_ERR_INVALID_STATE;
   }
   if (s_concurrency)
-    assert(s_accepted == (s_mode == SECOND_DO_ERROR ? 1u : (s_recovery + 1u) * 6u));
+    assert(s_accepted ==
+           (s_mode == SECOND_DO_ERROR ? 1u : (s_recovery + 1u) * 6u));
   ++s_waits;
   if (!s_concurrency && s_mode == REPEAT_WAIT_ERROR && s_waits == 2u)
     return H2_PAL_ERR_TIMEOUT;
   clock.monotonic_ms += 10;
-  if (s_mode == HOLD_CALLBACK)
-    s_deadline = clock.monotonic_ms + 5u;
-  if (!request->terminal && s_concurrency)
-    --s_open;
+  if (s_mode == HOLD_CALLBACK) s_deadline = clock.monotonic_ms + 5u;
+  if (!request->terminal && s_concurrency) --s_open;
   request->terminal = true;
   request->result = s_mode == WAIT_ERROR ? H2_PAL_ERR_TIMEOUT : H2_PAL_OK;
   return request->result;
 }
 
-
-h2_pal_result_t h2_gizclaw_req_cancel(h2_gizclaw_req_t *request) {
+h2_pal_result_t h2_gizclaw_req_cancel(h2_gizclaw_req_t* request) {
   ++s_cancels;
   if (!request->started) {
     if (s_mode == CANCEL_ERROR ||
         (s_mode == CANCEL_REPEAT_ERROR && s_cancels == 2u))
       return H2_PAL_ERR_IO;
-    if (s_mode == CANCEL_NO_EFFECT)
-      return H2_PAL_OK;
+    if (s_mode == CANCEL_NO_EFFECT) return H2_PAL_OK;
   }
   if (!request->terminal) {
-    if (s_concurrency)
-      --s_open;
+    if (s_concurrency) --s_open;
     request->terminal = true;
     request->result = H2_PAL_ERR_CLOSED;
   }
   return H2_PAL_OK;
 }
 
-void h2_gizclaw_req_release(h2_gizclaw_req_t *request) {
+void h2_gizclaw_req_release(h2_gizclaw_req_t* request) {
   if (request != NULL) {
     assert(!request->caller_released);
     request->caller_released = true;
@@ -224,16 +213,13 @@ void h2_gizclaw_req_release(h2_gizclaw_req_t *request) {
   request_unref(request);
 }
 
-h2_pal_result_t
-h2_gizclaw_resp_parse_register(const h2_gizclaw_req_t *request,
-                               h2_gizclaw_registration_result_t *out) {
+h2_pal_result_t h2_gizclaw_resp_parse_register(
+    const h2_gizclaw_req_t* request, h2_gizclaw_registration_result_t* out) {
   assert(request->registration && request->terminal);
   assert(!request->caller_released);
   memset(out, 0, sizeof(*out));
-  if (request->result != H2_PAL_OK)
-    return request->result;
-  if (s_mode == PARSE_ERROR)
-    return H2_PAL_ERR_FORMAT;
+  if (request->result != H2_PAL_OK) return request->result;
+  if (s_mode == PARSE_ERROR) return H2_PAL_ERR_FORMAT;
   if (s_mode == UNTERMINATED_PROFILE) {
     memset(out->runtime_profile_name, 'x', sizeof(out->runtime_profile_name));
     return H2_PAL_OK;
@@ -243,8 +229,8 @@ h2_gizclaw_resp_parse_register(const h2_gizclaw_req_t *request,
   return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_gizclaw_resp_parse_ping(const h2_gizclaw_req_t *request,
-                                           h2_gizclaw_ping_result_t *out) {
+h2_pal_result_t h2_gizclaw_resp_parse_ping(const h2_gizclaw_req_t* request,
+                                           h2_gizclaw_ping_result_t* out) {
   assert(!request->registration && request->terminal);
   if (!request->started) {
     memset(out, s_mode == CANCEL_DIRTY_OUTPUT ? 0xA5 : 0, sizeof(*out));
@@ -254,58 +240,68 @@ h2_pal_result_t h2_gizclaw_resp_parse_ping(const h2_gizclaw_req_t *request,
   return s_mode == PARSE_ERROR ? H2_PAL_ERR_FORMAT : request->result;
 }
 
-h2_pal_result_t h2_gizclaw_rpc_ping(h2_gizclaw_service_t *service,
+h2_pal_result_t h2_gizclaw_rpc_ping(h2_gizclaw_service_t* service,
                                     uint32_t timeout,
-                                    h2_gizclaw_ping_result_t *out) {
-  assert(service == (h2_gizclaw_service_t *)&s_service && timeout > 0u);
+                                    h2_gizclaw_ping_result_t* out) {
+  assert(service == (h2_gizclaw_service_t*)&s_service && timeout > 0u);
   assert(allocator.live_blocks == 0u);
   ++s_recovery;
   *out = (h2_gizclaw_ping_result_t){.round_trip_ms = 10, .server_time_ms = 100};
   return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_gizclaw_service_poll(h2_gizclaw_service_t *service,
-                                        size_t maximum, size_t *out_count) {
-  assert(service == (h2_gizclaw_service_t *)&s_service && maximum > 0u);
+h2_pal_result_t h2_gizclaw_service_poll(h2_gizclaw_service_t* service,
+                                        size_t maximum, size_t* out_count) {
+  assert(service == (h2_gizclaw_service_t*)&s_service && maximum > 0u);
   ++s_polls;
-  *out_count = s_mode == POLL_OVERCOUNT ? maximum + 1u
-               : s_mode == POLL_NEVER_EMPTY ? maximum : 0u;
-  if (s_mode == POLL_ERROR)
-    return H2_PAL_ERR_IO;
-  if (s_mode == HOLD_CALLBACK || s_mode == SLEEP_ERROR)
-    return H2_PAL_OK;
+  *out_count = s_mode == POLL_OVERCOUNT     ? maximum + 1u
+               : s_mode == POLL_NEVER_EMPTY ? maximum
+                                            : 0u;
+  if (s_mode == POLL_ERROR) return H2_PAL_ERR_IO;
+  if (s_mode == HOLD_CALLBACK || s_mode == SLEEP_ERROR) return H2_PAL_OK;
   return H2_PAL_OK;
 }
 
 h2_pal_result_t h2_gizclaw_service_get_time_sync_status(
-    h2_gizclaw_service_t *service, h2_gizclaw_time_sync_status_t *out) {
-  assert(service == (h2_gizclaw_service_t *)&s_service);
-  *out = (h2_gizclaw_time_sync_status_t){
-      .state = H2_GIZCLAW_TIME_SYNC_SUCCEEDED, .attempts = 1u,
-      .last_result = H2_PAL_OK};
+    h2_gizclaw_service_t* service, h2_gizclaw_time_sync_status_t* out) {
+  assert(service == (h2_gizclaw_service_t*)&s_service);
+  *out =
+      (h2_gizclaw_time_sync_status_t){.state = H2_GIZCLAW_TIME_SYNC_SUCCEEDED,
+                                      .attempts = 1u,
+                                      .last_result = H2_PAL_OK};
   switch (s_mode) {
-  case TIME_SYNC_ERROR: return H2_PAL_ERR_IO;
-  case TIME_SYNC_NO_ATTEMPT: out->attempts = 0u; break;
-  case TIME_SYNC_BAD_STATE: out->state = H2_GIZCLAW_TIME_SYNC_WAITING; break;
-  case TIME_SYNC_FALSE_SUCCESS: out->last_result = H2_PAL_ERR_IO; break;
-  case TIME_SYNC_FALSE_RETRY: out->state = H2_GIZCLAW_TIME_SYNC_RETRY; break;
-  case TIME_SYNC_UNSUPPORTED:
-    out->state = H2_GIZCLAW_TIME_SYNC_RETRY;
-    out->last_result = H2_PAL_ERR_UNSUPPORTED;
-    break;
-  case TIME_SYNC_RUNNING:
-    out->state = H2_GIZCLAW_TIME_SYNC_RUNNING;
-    out->last_result = H2_PAL_ERR_IO;
-    ++out->attempts;
-    break;
-  default: break;
+    case TIME_SYNC_ERROR:
+      return H2_PAL_ERR_IO;
+    case TIME_SYNC_NO_ATTEMPT:
+      out->attempts = 0u;
+      break;
+    case TIME_SYNC_BAD_STATE:
+      out->state = H2_GIZCLAW_TIME_SYNC_WAITING;
+      break;
+    case TIME_SYNC_FALSE_SUCCESS:
+      out->last_result = H2_PAL_ERR_IO;
+      break;
+    case TIME_SYNC_FALSE_RETRY:
+      out->state = H2_GIZCLAW_TIME_SYNC_RETRY;
+      break;
+    case TIME_SYNC_UNSUPPORTED:
+      out->state = H2_GIZCLAW_TIME_SYNC_RETRY;
+      out->last_result = H2_PAL_ERR_UNSUPPORTED;
+      break;
+    case TIME_SYNC_RUNNING:
+      out->state = H2_GIZCLAW_TIME_SYNC_RUNNING;
+      out->last_result = H2_PAL_ERR_IO;
+      ++out->attempts;
+      break;
+    default:
+      break;
   }
   return H2_PAL_OK;
 }
 
 h2_pal_result_t h2_gizclaw_service_audio_input_snapshot(
-    h2_gizclaw_service_t *service, h2_gizclaw_audio_input_state_t *out) {
-  assert(service == (h2_gizclaw_service_t *)&s_service);
+    h2_gizclaw_service_t* service, h2_gizclaw_audio_input_state_t* out) {
+  assert(service == (h2_gizclaw_service_t*)&s_service);
   *out = (h2_gizclaw_audio_input_state_t){.generation = 17u};
   if (s_mode == INPUT_SNAPSHOT_ERROR) {
     *out = (h2_gizclaw_audio_input_state_t){0};
@@ -322,22 +318,23 @@ static void reset(unsigned mode, bool concurrency) {
   h2_app_test_mem_init(&allocator, NULL);
   allocator.fail_at = mode == NO_MEMORY ? 1u : 0u;
   h2_app_test_time_init(&clock, 0u);
-  clock.sleep = (h2_app_test_fault_t){.result=H2_PAL_ERR_IO,
-      .remaining=mode == SLEEP_ERROR ? UINT32_MAX : 0u};
+  clock.sleep =
+      (h2_app_test_fault_t){.result = H2_PAL_ERR_IO,
+                            .remaining = mode == SLEEP_ERROR ? UINT32_MAX : 0u};
   s_concurrency = concurrency;
-  s_dos = s_accepted = s_waits = s_callbacks = s_polls =
-      s_cancels = s_recovery = 0;
+  s_dos = s_accepted = s_waits = s_callbacks = s_polls = s_cancels =
+      s_recovery = 0;
   clock.monotonic_ms = 0u;
   s_deadline = 60000u;
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   h2_gizclaw_e2e_fixture_t fixture = {
       .allocator = &allocator.api,
       .time = &clock.api,
       .registration_token = "local-only-token",
       .runtime_profile_name = "profile",
-      .actors = {{.service = (h2_gizclaw_service_t *)&s_service}},
+      .actors = {{.service = (h2_gizclaw_service_t*)&s_service}},
   };
   if (argc == 2 && strcmp(argv[1], "--emit-success-evidence") == 0) {
     reset(NORMAL, false);
@@ -345,25 +342,24 @@ int main(int argc, char **argv) {
     puts("H2_GIZCLAW_E2E stage=coverage-begin case=service");
     assert(h2_gizclaw_e2e_run_service(&fixture) == H2_PAL_OK);
     assert(allocator.live_blocks == 0u);
-    puts("H2_GIZCLAW_E2E stage=coverage-end case=service status=PASS rc=0 "
-         "cleanup_rc=0");
+    puts(
+        "H2_GIZCLAW_E2E stage=coverage-end case=service status=PASS rc=0 "
+        "cleanup_rc=0");
     return 0;
   }
-  for (unsigned mode = INPUT_SNAPSHOT_ERROR; mode <= INPUT_STALE_READY; ++mode) {
+  for (unsigned mode = INPUT_SNAPSHOT_ERROR; mode <= INPUT_STALE_READY;
+       ++mode) {
     reset(mode, false);
     const int rc = h2_gizclaw_e2e_run_service(&fixture);
     assert(rc == (mode == INPUT_SNAPSHOT_ERROR ? H2_PAL_ERR_IO
                                                : H2_PAL_ERR_INVALID_STATE));
     assert(allocator.live_blocks == 0u);
   }
-  static const unsigned base_modes[] = {NORMAL, BAD_PROFILE, CREATE_ERROR,
-                                        DO_ERROR, WAIT_ERROR, PARSE_ERROR};
-  static const int expected[] = {H2_PAL_OK,
-                                 H2_PAL_ERR_INVALID_STATE,
-                                 H2_PAL_ERR_NO_MEMORY,
-                                 H2_PAL_ERR_NO_SPACE,
-                                 H2_PAL_ERR_TIMEOUT,
-                                 H2_PAL_ERR_FORMAT};
+  static const unsigned base_modes[] = {NORMAL,   BAD_PROFILE, CREATE_ERROR,
+                                        DO_ERROR, WAIT_ERROR,  PARSE_ERROR};
+  static const int expected[] = {
+      H2_PAL_OK,           H2_PAL_ERR_INVALID_STATE, H2_PAL_ERR_NO_MEMORY,
+      H2_PAL_ERR_NO_SPACE, H2_PAL_ERR_TIMEOUT,       H2_PAL_ERR_FORMAT};
   for (unsigned index = 0u; index < sizeof(expected) / sizeof(expected[0]);
        ++index) {
     const unsigned mode = base_modes[index];
@@ -378,12 +374,13 @@ int main(int argc, char **argv) {
     assert(allocator.live_blocks == 0u);
   }
   const unsigned service_modes[] = {
-      REPEAT_WAIT_ERROR,     DUPLICATE_DO_ACCEPTED, UNTERMINATED_PROFILE,
-      CANCEL_ERROR,
-      CANCEL_REPEAT_ERROR,   CANCEL_NO_EFFECT,         CANCEL_WAIT_ERROR,
-      CANCEL_PARSE_ERROR,    CANCEL_DIRTY_OUTPUT,      CANCEL_RESTART_ACCEPTED,
-      INITIAL_BUDGET_ERROR,  WAIT_BUDGET_ERROR, SECOND_WAIT_BUDGET_ERROR,
-      NO_MEMORY};
+      REPEAT_WAIT_ERROR,        DUPLICATE_DO_ACCEPTED,
+      UNTERMINATED_PROFILE,     CANCEL_ERROR,
+      CANCEL_REPEAT_ERROR,      CANCEL_NO_EFFECT,
+      CANCEL_WAIT_ERROR,        CANCEL_PARSE_ERROR,
+      CANCEL_DIRTY_OUTPUT,      CANCEL_RESTART_ACCEPTED,
+      INITIAL_BUDGET_ERROR,     WAIT_BUDGET_ERROR,
+      SECOND_WAIT_BUDGET_ERROR, NO_MEMORY};
   const int service_results[] = {H2_PAL_ERR_TIMEOUT,
                                  H2_PAL_ERR_INVALID_STATE,
                                  H2_PAL_ERR_INVALID_STATE,
@@ -408,15 +405,28 @@ int main(int argc, char **argv) {
     assert(rc == service_results[i]);
     assert(allocator.live_blocks == 0u);
   }
-  const unsigned observation_modes[] = {
-      POLL_ERROR, POLL_OVERCOUNT, POLL_NEVER_EMPTY, TIME_SYNC_ERROR,
-      TIME_SYNC_NO_ATTEMPT, TIME_SYNC_BAD_STATE, TIME_SYNC_FALSE_SUCCESS,
-      TIME_SYNC_FALSE_RETRY, TIME_SYNC_UNSUPPORTED, TIME_SYNC_RUNNING};
-  const int observation_results[] = {
-      H2_PAL_ERR_IO, H2_PAL_ERR_INVALID_STATE, H2_PAL_ERR_TIMEOUT,
-      H2_PAL_ERR_IO, H2_PAL_ERR_INVALID_STATE, H2_PAL_ERR_INVALID_STATE,
-      H2_PAL_ERR_INVALID_STATE, H2_PAL_ERR_INVALID_STATE, H2_PAL_OK, H2_PAL_OK};
-  for (size_t i = 0; i < sizeof(observation_modes) / sizeof(observation_modes[0]); ++i) {
+  const unsigned observation_modes[] = {POLL_ERROR,
+                                        POLL_OVERCOUNT,
+                                        POLL_NEVER_EMPTY,
+                                        TIME_SYNC_ERROR,
+                                        TIME_SYNC_NO_ATTEMPT,
+                                        TIME_SYNC_BAD_STATE,
+                                        TIME_SYNC_FALSE_SUCCESS,
+                                        TIME_SYNC_FALSE_RETRY,
+                                        TIME_SYNC_UNSUPPORTED,
+                                        TIME_SYNC_RUNNING};
+  const int observation_results[] = {H2_PAL_ERR_IO,
+                                     H2_PAL_ERR_INVALID_STATE,
+                                     H2_PAL_ERR_TIMEOUT,
+                                     H2_PAL_ERR_IO,
+                                     H2_PAL_ERR_INVALID_STATE,
+                                     H2_PAL_ERR_INVALID_STATE,
+                                     H2_PAL_ERR_INVALID_STATE,
+                                     H2_PAL_ERR_INVALID_STATE,
+                                     H2_PAL_OK,
+                                     H2_PAL_OK};
+  for (size_t i = 0;
+       i < sizeof(observation_modes) / sizeof(observation_modes[0]); ++i) {
     reset(observation_modes[i], false);
     assert(h2_gizclaw_e2e_run_service(&fixture) == observation_results[i]);
     assert(s_polls == (s_mode == POLL_NEVER_EMPTY ? 32u : 1u));

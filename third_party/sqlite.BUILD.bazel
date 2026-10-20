@@ -9,6 +9,6 @@ cc_library(
         "src/sqlite3.h",
         "src/sqlite3ext.h",
     ],
-    local_defines = ["SQLITE_OMIT_LOAD_EXTENSION"],
     includes = ["src"],
+    local_defines = ["SQLITE_OMIT_LOAD_EXTENSION"],
 )

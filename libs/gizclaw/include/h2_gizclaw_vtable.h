@@ -43,25 +43,25 @@ typedef struct h2_gizclaw_device_facts {
  * methods run on the device task. No callback may destroy or stop the Service.
  * An absent method means unsupported, not successful execution. */
 typedef struct h2_gizclaw_vtable {
-  h2_pal_result_t (*get_facts)(void *user, h2_gizclaw_device_facts_t *out);
+  h2_pal_result_t (*get_facts)(void* user, h2_gizclaw_device_facts_t* out);
   /** Optional product sound catalog; return a bounded HTTPS URL of an
    * Ogg/Opus, MP3 or WAV file, the formats the player decodes.
    * Called on the device worker. Download/decode/play remain library-owned. */
-  h2_pal_result_t (*resolve_sound_url)(void *user, const char *name,
-                                       char *out_url, size_t capacity);
+  h2_pal_result_t (*resolve_sound_url)(void* user, const char* name,
+                                       char* out_url, size_t capacity);
   /** Stage backend must reserve an invalid staging area and persist update_id.
    * finish verifies size, SHA-256, board/target and package manifest before
    * publishing Stage. abort invalidates partial staging. */
-  h2_pal_result_t (*ota_begin)(void *user,
-                               const struct h2_gizclaw_firmware *firmware,
-                               const char *update_id);
-  h2_pal_result_t (*ota_write)(void *user, const uint8_t *data, size_t length);
-  h2_pal_result_t (*ota_finish)(void *user);
-  void (*ota_abort)(void *user);
+  h2_pal_result_t (*ota_begin)(void* user,
+                               const struct h2_gizclaw_firmware* firmware,
+                               const char* update_id);
+  h2_pal_result_t (*ota_write)(void* user, const uint8_t* data, size_t length);
+  h2_pal_result_t (*ota_finish)(void* user);
+  void (*ota_abort)(void* user);
   /** Schedule H2Loader upgrade on the product owner. This is not success:
    * the next firmware must verify its identity and send SUCCEEDED telemetry
    * using the saved update_id. */
-  h2_pal_result_t (*ota_activate)(void *user);
+  h2_pal_result_t (*ota_activate)(void* user);
   /** Optional non-blocking handoff for DEVICE_REBOOT. Called once on
    * the device worker after the RPC response was sent, with the requested
    * delay in milliseconds. The callback must only copy the request and post
@@ -71,7 +71,7 @@ typedef struct h2_gizclaw_vtable {
    * shutdown on its own owner and reboots. A returned error is logged as the
    * action result; the library never falls back to the power PAL. When unset
    * the library waits `delay_ms` on the worker and calls the power PAL. */
-  h2_pal_result_t (*request_reboot)(void *user, uint32_t delay_ms);
+  h2_pal_result_t (*request_reboot)(void* user, uint32_t delay_ms);
   /** Optional shared-speaker ownership for library playback (audio player
    * and SOUND_PLAY). Set both or neither; Service init rejects
    * a lone hook with H2_PAL_ERR_INVALID_ARG. When set, the device
@@ -82,8 +82,8 @@ typedef struct h2_gizclaw_vtable {
    * a speaker or PA shared with other audio must set them. Both run on the
    * device worker and must return promptly. When unset, the library calls
    * start_speaker before playback and leaves the speaker on afterwards. */
-  h2_pal_result_t (*speaker_acquire)(void *user);
-  h2_pal_result_t (*speaker_release)(void *user);
+  h2_pal_result_t (*speaker_acquire)(void* user);
+  h2_pal_result_t (*speaker_release)(void* user);
   /** Optional non-blocking handoff for DEVICE_FACTORY_RESET. Called once
    * on the device worker after the RPC response was sent, like request_reboot:
    * copy the request, post the erase to a product-owned execution context and
@@ -94,7 +94,7 @@ typedef struct h2_gizclaw_vtable {
    * product decision; unset answers UNIMPLEMENTED. A product that deletes its
    * own Peer during the reset invalidates every API key of that Peer, including
    * the caller's. */
-  h2_pal_result_t (*request_factory_reset)(void *user, bool keep_network);
+  h2_pal_result_t (*request_factory_reset)(void* user, bool keep_network);
   /** Optional non-blocking handoff for RUN_WORKSPACE_SET. Called once on
    * the device worker after the RPC response was sent, with a NUL-terminated
    * name in library storage that is valid only for the call. The library does
@@ -105,16 +105,16 @@ typedef struct h2_gizclaw_vtable {
    * ON_RELOAD in that selection's parameter patch. The response only means the
    * request was accepted; the committed Workspace is the one the Server
    * reports. Unset answers UNIMPLEMENTED. */
-  h2_pal_result_t (*request_run_workspace_set)(void *user,
-                                               const char *workspace_name,
+  h2_pal_result_t (*request_run_workspace_set)(void* user,
+                                               const char* workspace_name,
                                                bool kickoff);
   /** Reserve a bounded product-owner launch slot before responding. Copy all
    * borrowed request data and provide a completion that either publishes the
    * reserved launch after response success or releases it on response failure.
    * Returning BUSY/rejection sends an RPC error and does not launch. */
   h2_pal_result_t (*prepare_lua_app_run)(
-      void *user, const struct h2_gizclaw_lua_app_run *request,
-      struct h2_gizclaw_lua_app_handoff *out_handoff);
+      void* user, const struct h2_gizclaw_lua_app_run* request,
+      struct h2_gizclaw_lua_app_handoff* out_handoff);
 } h2_gizclaw_vtable_t;
 #ifdef __cplusplus
 }

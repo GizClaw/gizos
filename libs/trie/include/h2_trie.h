@@ -17,14 +17,14 @@ typedef struct h2_trie h2_trie_t;
 
 /** @brief Route match passed to a synchronous trie handler. */
 typedef struct h2_trie_match {
-  const char *path;
-  const char *remainder;
+  const char* path;
+  const char* remainder;
 } h2_trie_match_t;
 
 /** @brief Synchronous route handler. All pointers are borrowed for the call. */
-typedef h2_pal_result_t (*h2_trie_handler_fn)(const void *user,
-                                              const h2_trie_match_t *match,
-                                              void *response);
+typedef h2_pal_result_t (*h2_trie_handler_fn)(const void* user,
+                                              const h2_trie_match_t* match,
+                                              void* response);
 
 typedef enum h2_trie_route_mode {
   H2_TRIE_ROUTE_EXACT = 0,
@@ -34,10 +34,10 @@ typedef enum h2_trie_route_mode {
 
 /** @brief Immutable route definition consumed by h2_trie_build(). */
 typedef struct h2_trie_route {
-  const char *path;
+  const char* path;
   h2_trie_route_mode_t mode;
   h2_trie_handler_fn handler;
-  const void *user;
+  const void* user;
 } h2_trie_route_t;
 
 /** @brief One caller-owned trie node. Treat fields as private. */
@@ -51,10 +51,10 @@ typedef struct h2_trie_node {
 
 /** @brief Caller-owned trie state. Treat fields as private. */
 struct h2_trie {
-  h2_trie_node_t *nodes;
-  const h2_trie_route_t *routes;
+  h2_trie_node_t* nodes;
+  const h2_trie_route_t* routes;
   h2_trie_handler_fn fallback_handler;
-  const void *fallback_user;
+  const void* fallback_user;
   size_t node_count;
   size_t node_capacity;
   size_t route_count;
@@ -68,9 +68,9 @@ struct h2_trie {
  * character after the registered prefix. Duplicate route/mode pairs are
  * rejected. Route strings and handler users remain borrowed by the trie.
  */
-h2_pal_result_t h2_trie_build(h2_trie_t *trie, h2_trie_node_t *nodes,
+h2_pal_result_t h2_trie_build(h2_trie_t* trie, h2_trie_node_t* nodes,
                               size_t node_capacity,
-                              const h2_trie_route_t *routes,
+                              const h2_trie_route_t* routes,
                               size_t route_count);
 
 /**
@@ -80,9 +80,9 @@ h2_pal_result_t h2_trie_build(h2_trie_t *trie, h2_trie_node_t *nodes,
  * normalized to one logical separator. This is useful for command routers
  * that dispatch an already-tokenized argv without joining it into a buffer.
  */
-h2_pal_result_t h2_trie_build_tokens(h2_trie_t *trie, h2_trie_node_t *nodes,
+h2_pal_result_t h2_trie_build_tokens(h2_trie_t* trie, h2_trie_node_t* nodes,
                                      size_t node_capacity,
-                                     const h2_trie_route_t *routes,
+                                     const h2_trie_route_t* routes,
                                      size_t route_count);
 
 /**
@@ -92,9 +92,9 @@ h2_pal_result_t h2_trie_build_tokens(h2_trie_t *trie, h2_trie_node_t *nodes,
  * the complete input path and its remainder is also the complete input path.
  * Exact and prefix routes always take precedence.
  */
-h2_pal_result_t h2_trie_set_fallback(h2_trie_t *trie,
+h2_pal_result_t h2_trie_set_fallback(h2_trie_t* trie,
                                      h2_trie_handler_fn handler,
-                                     const void *user);
+                                     const void* user);
 
 /**
  * @brief Dispatch a path to the best route.
@@ -103,8 +103,8 @@ h2_pal_result_t h2_trie_set_fallback(h2_trie_t *trie,
  * matching prefix route is selected. If no route matches, the registered
  * fallback handler is selected. The handler executes synchronously.
  */
-h2_pal_result_t h2_trie_handle(const h2_trie_t *trie, const char *path,
-                               void *response);
+h2_pal_result_t h2_trie_handle(const h2_trie_t* trie, const char* path,
+                               void* response);
 
 /**
  * @brief Find the best route for a whitespace-tokenized path.
@@ -112,9 +112,9 @@ h2_pal_result_t h2_trie_handle(const h2_trie_t *trie, const char *path,
  * Exact full-path routes win. Otherwise the deepest prefix ending at a token
  * boundary is returned. No joined path or temporary allocation is required.
  */
-h2_pal_result_t h2_trie_find_tokens(const h2_trie_t *trie, size_t token_count,
-                                    const char *const *tokens,
-                                    const h2_trie_route_t **out_route);
+h2_pal_result_t h2_trie_find_tokens(const h2_trie_t* trie, size_t token_count,
+                                    const char* const* tokens,
+                                    const h2_trie_route_t** out_route);
 
 #ifdef __cplusplus
 }

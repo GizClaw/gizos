@@ -23,26 +23,25 @@
 #define H2_JIELI_SD_CACHE_COUNT 32
 #define H2_JIELI_SD_WRITE_TRACE_INTERVAL (16u * 1024u)
 #define H2_JIELI_SD_READY_TIMEOUT_MS 5000u
-extern void h2_jieli_sd_fs_trace_read(
-    const char *stage, const void *data, size_t length, int result)
+extern void h2_jieli_sd_fs_trace_read(const char* stage, const void* data,
+                                      size_t length, int result)
     __attribute__((weak));
-extern void h2_jieli_sd_fs_trace_write(
-    const char *stage, size_t offset, size_t length, int result)
+extern void h2_jieli_sd_fs_trace_write(const char* stage, size_t offset,
+                                       size_t length, int result)
     __attribute__((weak));
-extern void h2_jieli_sd_fs_trace_mkdir(
-    const char *path, int native_result, int lookup_result)
-    __attribute__((weak));
+extern void h2_jieli_sd_fs_trace_mkdir(const char* path, int native_result,
+                                       int lookup_result) __attribute__((weak));
 
 struct h2_pal_fs_file {
-  FILE *native;
+  FILE* native;
   size_t write_offset;
   size_t next_write_trace;
   char path[H2_JIELI_SD_PATH_MAX];
   h2_pal_fs_open_mode_t mode;
-  struct h2_pal_fs_file *next;
+  struct h2_pal_fs_file* next;
 };
 
-static h2_pal_fs_file_t *sd_open_files;
+static h2_pal_fs_file_t* sd_open_files;
 static uint32_t sd_files_gate;
 
 static void sd_files_lock(void) {
@@ -58,22 +57,25 @@ static void sd_files_unlock(void) {
 }
 
 /* Caller holds sd_files_gate; descendants match only at a separator. */
-static int sd_path_busy(
-    const char *path, int descendants, h2_pal_fs_open_mode_t mode) {
+static int sd_path_busy(const char* path, int descendants,
+                        h2_pal_fs_open_mode_t mode) {
   size_t length = strlen(path);
-  for (h2_pal_fs_file_t *file = sd_open_files; file != NULL; file = file->next) {
+  for (h2_pal_fs_file_t* file = sd_open_files; file != NULL;
+       file = file->next) {
     if (strcmp(file->path, path) != 0 &&
         !(descendants && strncmp(file->path, path, length) == 0 &&
-          file->path[length] == '/')) continue;
+          file->path[length] == '/'))
+      continue;
     if (mode != H2_PAL_FS_OPEN_READ ||
-        file->mode == H2_PAL_FS_OPEN_WRITE_TRUNCATE) return 1;
+        file->mode == H2_PAL_FS_OPEN_WRITE_TRUNCATE)
+      return 1;
   }
   return 0;
 }
 
 static int sd_mounted;
 static int sd_mount_owned;
-static const char *sd_last_stage = "idle";
+static const char* sd_last_stage = "idle";
 static uint32_t sd_capacity;
 static uint32_t sd_block_size;
 static int sd_sector0_read;
@@ -88,19 +90,19 @@ static int sd_fat2_read;
 static uint8_t sd_fat1[512];
 static uint8_t sd_fat2[512];
 
-extern int snprintf(char *buffer, size_t size, const char *format, ...);
+extern int snprintf(char* buffer, size_t size, const char* format, ...);
 
-static uint32_t read_le32(const uint8_t *data) {
+static uint32_t read_le32(const uint8_t* data) {
   return (uint32_t)data[0] | ((uint32_t)data[1] << 8u) |
          ((uint32_t)data[2] << 16u) | ((uint32_t)data[3] << 24u);
 }
 
-static uint16_t read_le16(const uint8_t *data) {
+static uint16_t read_le16(const uint8_t* data) {
   return (uint16_t)data[0] | ((uint16_t)data[1] << 8u);
 }
 
 static void capture_sd_diagnostic(void) {
-  void *device = dev_open("sd0", NULL);
+  void* device = dev_open("sd0", NULL);
   if (device == NULL) {
     sd_sector0_read = H2_PAL_ERR_UNAVAILABLE;
     return;
@@ -112,29 +114,25 @@ static void capture_sd_diagnostic(void) {
   (void)dev_ioctl(device, IOCTL_GET_BLOCK_SIZE, (uint32_t)&sd_block_size);
   sd_sector0_read = dev_bulk_read(device, sd_sector0, 0u, 1u);
   memset(sd_volume, 0, sizeof(sd_volume));
-  sd_volume_read = sd_sector0_read > 0
-                       ? dev_bulk_read(
-                             device, sd_volume,
-                             read_le32(&sd_sector0[454]), 1u)
-                       : sd_sector0_read;
-  uint32_t fat1_lba = read_le32(&sd_sector0[454]) +
-                      read_le16(&sd_volume[14]);
+  sd_volume_read =
+      sd_sector0_read > 0
+          ? dev_bulk_read(device, sd_volume, read_le32(&sd_sector0[454]), 1u)
+          : sd_sector0_read;
+  uint32_t fat1_lba = read_le32(&sd_sector0[454]) + read_le16(&sd_volume[14]);
   uint32_t fat_sectors = read_le16(&sd_volume[22]);
   sd_fat1_read = dev_bulk_read(device, sd_fat1, fat1_lba, 1u);
-  sd_fat2_read = dev_bulk_read(
-      device, sd_fat2, fat1_lba + fat_sectors, 1u);
+  sd_fat2_read = dev_bulk_read(device, sd_fat2, fat1_lba + fat_sectors, 1u);
   dev_close(device);
-  void *partition_device = dev_open("sd0.0", NULL);
+  void* partition_device = dev_open("sd0.0", NULL);
   sd_partition_device_open = partition_device != NULL;
   if (partition_device != NULL) dev_close(partition_device);
 }
 
-const char *h2_jieli_ac791n_devkit_sd_fs_last_stage(void) {
+const char* h2_jieli_ac791n_devkit_sd_fs_last_stage(void) {
   return sd_last_stage;
 }
 
-int h2_jieli_ac791n_devkit_sd_fs_diagnostic(
-    char *out, size_t out_size) {
+int h2_jieli_ac791n_devkit_sd_fs_diagnostic(char* out, size_t out_size) {
   if (out == NULL || out_size == 0u) return H2_PAL_ERR_INVALID_ARG;
   uint32_t bytes_per_sector = read_le16(&sd_volume[11]);
   uint32_t sectors_per_cluster = sd_volume[13];
@@ -144,38 +142,36 @@ int h2_jieli_ac791n_devkit_sd_fs_diagnostic(
   uint32_t total_sectors = read_le16(&sd_volume[19]);
   if (total_sectors == 0u) total_sectors = read_le32(&sd_volume[32]);
   uint32_t fat_sectors = read_le16(&sd_volume[22]);
-  uint32_t root_sectors = bytes_per_sector == 0u
-                              ? 0u
-                              : (root_entries * 32u + bytes_per_sector - 1u) /
-                                    bytes_per_sector;
+  uint32_t root_sectors =
+      bytes_per_sector == 0u
+          ? 0u
+          : (root_entries * 32u + bytes_per_sector - 1u) / bytes_per_sector;
   uint32_t overhead = reserved_sectors + fat_count * fat_sectors + root_sectors;
   uint32_t clusters = sectors_per_cluster == 0u || total_sectors < overhead
                           ? 0u
                           : (total_sectors - overhead) / sectors_per_cluster;
   return snprintf(
-      out, out_size,
-      "capacity=%u block=%u read0=%d sig=%02x%02x p0_type=%02x "
-      "p0_status=%02x p0_lba=%u p0_sectors=%u volread=%d volsig=%02x%02x "
-      "bps=%u spc=%u reserved=%u fats=%u root=%u fatsecs=%u media=%02x "
-      "hidden=%u total=%u clusters=%u heap16=%d heap32=%d subdev=%d "
-      "fatread=%d/%d fathead=%02x%02x%02x%02x/%02x%02x%02x%02x "
-      "fateq=%d fat54=%.5s",
-      (unsigned)sd_capacity, (unsigned)sd_block_size, sd_sector0_read,
-      sd_sector0[510], sd_sector0[511], sd_sector0[450], sd_sector0[446],
-      (unsigned)read_le32(&sd_sector0[454]),
-      (unsigned)read_le32(&sd_sector0[458]), sd_volume_read,
-      sd_volume[510], sd_volume[511],
-      (unsigned)bytes_per_sector, (unsigned)sectors_per_cluster,
-      (unsigned)reserved_sectors, (unsigned)fat_count,
-      (unsigned)root_entries, (unsigned)fat_sectors, sd_volume[21],
-      (unsigned)read_le32(&sd_volume[28]), (unsigned)total_sectors,
-      (unsigned)clusters, sd_heap_probe_16k, sd_heap_probe_32k,
-      sd_partition_device_open,
-      sd_fat1_read, sd_fat2_read,
-      sd_fat1[0], sd_fat1[1], sd_fat1[2], sd_fat1[3],
-      sd_fat2[0], sd_fat2[1], sd_fat2[2], sd_fat2[3],
-      memcmp(sd_fat1, sd_fat2, sizeof(sd_fat1)) == 0,
-      &sd_volume[54]) >= 0
+             out, out_size,
+             "capacity=%u block=%u read0=%d sig=%02x%02x p0_type=%02x "
+             "p0_status=%02x p0_lba=%u p0_sectors=%u volread=%d volsig=%02x%02x "
+             "bps=%u spc=%u reserved=%u fats=%u root=%u fatsecs=%u media=%02x "
+             "hidden=%u total=%u clusters=%u heap16=%d heap32=%d subdev=%d "
+             "fatread=%d/%d fathead=%02x%02x%02x%02x/%02x%02x%02x%02x "
+             "fateq=%d fat54=%.5s",
+             (unsigned)sd_capacity, (unsigned)sd_block_size, sd_sector0_read,
+             sd_sector0[510], sd_sector0[511], sd_sector0[450], sd_sector0[446],
+             (unsigned)read_le32(&sd_sector0[454]),
+             (unsigned)read_le32(&sd_sector0[458]), sd_volume_read,
+             sd_volume[510], sd_volume[511], (unsigned)bytes_per_sector,
+             (unsigned)sectors_per_cluster, (unsigned)reserved_sectors,
+             (unsigned)fat_count, (unsigned)root_entries, (unsigned)fat_sectors,
+             sd_volume[21], (unsigned)read_le32(&sd_volume[28]),
+             (unsigned)total_sectors, (unsigned)clusters, sd_heap_probe_16k,
+             sd_heap_probe_32k, sd_partition_device_open, sd_fat1_read,
+             sd_fat2_read, sd_fat1[0], sd_fat1[1], sd_fat1[2], sd_fat1[3],
+             sd_fat2[0], sd_fat2[1], sd_fat2[2], sd_fat2[3],
+             memcmp(sd_fat1, sd_fat2, sizeof(sd_fat1)) == 0,
+             &sd_volume[54]) >= 0
              ? H2_PAL_OK
              : H2_PAL_ERR_IO;
 }
@@ -184,16 +180,15 @@ static int map_error(int result) {
   return result == 0 ? H2_PAL_OK : H2_PAL_ERR_IO;
 }
 
-static int translate_path(
-    const char *path, char out[H2_JIELI_SD_PATH_MAX]) {
-  const char *suffix;
+static int translate_path(const char* path, char out[H2_JIELI_SD_PATH_MAX]) {
+  const char* suffix;
   if (path == NULL || out == NULL) return H2_PAL_ERR_INVALID_ARG;
   /* Validate public components before native FAT can interpret separators or
    * parent traversal. A leading dot in a normal filename remains valid. */
   if (path[0] != '/') return H2_PAL_ERR_INVALID_ARG;
-  const char *component = path + 1;
+  const char* component = path + 1;
   size_t component_units = 0u;
-  for (const char *cursor = component;; ++cursor) {
+  for (const char* cursor = component;; ++cursor) {
     if (*cursor == '\\') return H2_PAL_ERR_INVALID_ARG;
     if (*cursor != '/' && *cursor != '\0') {
       unsigned char byte = (unsigned char)*cursor;
@@ -204,8 +199,7 @@ static int translate_path(
       continue;
     }
     const size_t length = (size_t)(cursor - component);
-    if (length == 0u ||
-        (length == 1u && component[0] == '.') ||
+    if (length == 0u || (length == 1u && component[0] == '.') ||
         (length == 2u && component[0] == '.' && component[1] == '.')) {
       return H2_PAL_ERR_INVALID_ARG;
     }
@@ -257,18 +251,17 @@ static int translate_path(
 /* SDK fopen already encodes UTF-8 components for JLFAT. fopen_by_utf8 would
  * encode them again when /data or /dl is the first (short) component, losing
  * the remainder at an embedded UTF-16 NUL. Use fopen for every mapped path. */
-static int directory_status(const char *path) {
-  FILE *file = fopen(path, "r");
+static int directory_status(const char* path) {
+  FILE* file = fopen(path, "r");
   if (file == NULL) return H2_PAL_ERR_NOT_FOUND;
   int attributes = 0;
   int result = fget_attr(file, &attributes);
   int close_result = fclose(file);
   if (result != 0 || close_result != 0) return H2_PAL_ERR_IO;
-  return (attributes & F_ATTR_DIR) != 0
-      ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE;
+  return (attributes & F_ATTR_DIR) != 0 ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE;
 }
 
-static int create_directory_component(char *path) {
+static int create_directory_component(char* path) {
   int existing = directory_status(path);
   if (existing != H2_PAL_ERR_NOT_FOUND) return existing;
   size_t length = strlen(path);
@@ -277,7 +270,7 @@ static int create_directory_component(char *path) {
    * parser creates a directory when the component ends in a slash. */
   path[length] = '/';
   path[length + 1u] = '\0';
-  FILE *directory = fopen(path, "w+");
+  FILE* directory = fopen(path, "w+");
   path[length] = '\0';
   int native_result = directory == NULL ? H2_PAL_ERR_IO : H2_PAL_OK;
   if (directory != NULL) {
@@ -298,20 +291,21 @@ static int create_directory_component(char *path) {
   return created == H2_PAL_ERR_NOT_FOUND ? H2_PAL_ERR_IO : created;
 }
 
-static int ensure_directory(const char *path) {
+static int ensure_directory(const char* path) {
   /* Leave room for the native directory separator and its terminator. */
   char component[H2_JIELI_SD_PATH_MAX + 1u];
   size_t root_len = strlen(H2_JIELI_SD_ROOT);
   size_t length = strlen(path);
-  if (strncmp(path, H2_JIELI_SD_ROOT, root_len) != 0 ||
-      length <= root_len || length >= H2_JIELI_SD_PATH_MAX) {
+  if (strncmp(path, H2_JIELI_SD_ROOT, root_len) != 0 || length <= root_len ||
+      length >= H2_JIELI_SD_PATH_MAX) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   memcpy(component, path, length + 1u);
-  char *leaf = strrchr(component, '/');
+  char* leaf = strrchr(component, '/');
   /* PAL mkdir is single-level. SDK fopen can create intermediate directories,
    * so reject a missing or non-directory parent before invoking it. The SD
-   * volume root itself is established by mount, not a normal directory entry. */
+   * volume root itself is established by mount, not a normal directory entry.
+   */
   if ((size_t)(leaf - component) != root_len - 1u) {
     *leaf = '\0';
     int result = directory_status(component);
@@ -321,26 +315,24 @@ static int ensure_directory(const char *path) {
   return create_directory_component(component);
 }
 
-static int fs_mkdir(void *user, const char *path) {
+static int fs_mkdir(void* user, const char* path) {
   (void)user;
   char mapped[H2_JIELI_SD_PATH_MAX];
   int result = translate_path(path, mapped);
   return result == H2_PAL_OK ? ensure_directory(mapped) : result;
 }
 
-static int fs_open(
-    void *user, const char *path, h2_pal_fs_open_mode_t mode,
-    h2_pal_fs_file_t **out_file) {
+static int fs_open(void* user, const char* path, h2_pal_fs_open_mode_t mode,
+                   h2_pal_fs_file_t** out_file) {
   (void)user;
   char mapped[H2_JIELI_SD_PATH_MAX];
   if (out_file == NULL) return H2_PAL_ERR_INVALID_ARG;
   *out_file = NULL;
   int result = translate_path(path, mapped);
   if (result != H2_PAL_OK) return result;
-  const char *native_mode = mode == H2_PAL_FS_OPEN_READ
-                                ? "r"
-                                : mode == H2_PAL_FS_OPEN_WRITE_TRUNCATE ? "w+"
-                                                                        : NULL;
+  const char* native_mode = mode == H2_PAL_FS_OPEN_READ             ? "r"
+                            : mode == H2_PAL_FS_OPEN_WRITE_TRUNCATE ? "w+"
+                                                                    : NULL;
   if (native_mode == NULL) return H2_PAL_ERR_INVALID_ARG;
   sd_files_lock();
   if (sd_path_busy(mapped, 0, mode)) {
@@ -350,7 +342,7 @@ static int fs_open(
   /* JLFAT can open a directory for writing, exposing its data to writes.
    * Inspect an existing entry before allowing a native write open. */
   if (mode == H2_PAL_FS_OPEN_WRITE_TRUNCATE) {
-    FILE *existing = fopen(mapped, "r");
+    FILE* existing = fopen(mapped, "r");
     if (existing != NULL) {
       int attributes = 0;
       int attr_result = fget_attr(existing, &attributes);
@@ -358,28 +350,27 @@ static int fs_open(
       if (attr_result != 0 || close_result != 0 ||
           (attributes & F_ATTR_DIR) != 0) {
         sd_files_unlock();
-        return attr_result != 0 || close_result != 0
-            ? H2_PAL_ERR_IO : H2_PAL_ERR_INVALID_STATE;
+        return attr_result != 0 || close_result != 0 ? H2_PAL_ERR_IO
+                                                     : H2_PAL_ERR_INVALID_STATE;
       }
     }
   }
   sd_last_stage = "fopen-enter";
-  FILE *native = fopen(mapped, native_mode);
+  FILE* native = fopen(mapped, native_mode);
   sd_last_stage = "fopen-return";
   if (native == NULL) {
     sd_files_unlock();
-    return mode == H2_PAL_FS_OPEN_READ ? H2_PAL_ERR_NOT_FOUND
-                                       : H2_PAL_ERR_IO;
+    return mode == H2_PAL_FS_OPEN_READ ? H2_PAL_ERR_NOT_FOUND : H2_PAL_ERR_IO;
   }
   int attributes = 0;
   int attr_result = fget_attr(native, &attributes);
   if (attr_result != 0 || (attributes & F_ATTR_DIR) != 0) {
     int close_result = fclose(native);
     sd_files_unlock();
-    return attr_result != 0 || close_result != 0
-        ? H2_PAL_ERR_IO : H2_PAL_ERR_INVALID_STATE;
+    return attr_result != 0 || close_result != 0 ? H2_PAL_ERR_IO
+                                                 : H2_PAL_ERR_INVALID_STATE;
   }
-  h2_pal_fs_file_t *file = malloc(sizeof(*file));
+  h2_pal_fs_file_t* file = malloc(sizeof(*file));
   if (file == NULL) {
     (void)fclose(native);
     sd_files_unlock();
@@ -397,9 +388,8 @@ static int fs_open(
   return H2_PAL_OK;
 }
 
-static int fs_read(
-    void *user, h2_pal_fs_file_t *file, void *data, size_t length,
-    size_t *out_read) {
+static int fs_read(void* user, h2_pal_fs_file_t* file, void* data,
+                   size_t length, size_t* out_read) {
   (void)user;
   if (file == NULL || file->native == NULL || out_read == NULL ||
       (data == NULL && length != 0u) || length > UINT32_MAX) {
@@ -418,7 +408,7 @@ static int fs_read(
   return H2_PAL_OK;
 }
 
-static int fs_seek(void *user, h2_pal_fs_file_t *file, uint64_t position) {
+static int fs_seek(void* user, h2_pal_fs_file_t* file, uint64_t position) {
   (void)user;
   if (file == NULL || file->native == NULL || position > UINT32_MAX) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -426,9 +416,8 @@ static int fs_seek(void *user, h2_pal_fs_file_t *file, uint64_t position) {
   return map_error(fseek(file->native, (uint32_t)position, SEEK_SET));
 }
 
-static int fs_write(
-    void *user, h2_pal_fs_file_t *file, const void *data, size_t length,
-    size_t *out_written) {
+static int fs_write(void* user, h2_pal_fs_file_t* file, const void* data,
+                    size_t length, size_t* out_written) {
   (void)user;
   if (file == NULL || file->native == NULL || out_written == NULL ||
       (data == NULL && length != 0u) || length > UINT32_MAX) {
@@ -437,14 +426,13 @@ static int fs_write(
   const int trace = h2_jieli_sd_fs_trace_write != NULL &&
                     file->write_offset >= file->next_write_trace;
   if (trace) {
-    h2_jieli_sd_fs_trace_write(
-        "fwrite-enter", file->write_offset, length, 0);
+    h2_jieli_sd_fs_trace_write("fwrite-enter", file->write_offset, length, 0);
   }
-  int written = fwrite((void *)data, 1u, (uint32_t)length, file->native);
+  int written = fwrite((void*)data, 1u, (uint32_t)length, file->native);
   if (h2_jieli_sd_fs_trace_write != NULL &&
       (trace || written < 0 || (size_t)written != length)) {
-    h2_jieli_sd_fs_trace_write(
-        "fwrite-return", file->write_offset, length, written);
+    h2_jieli_sd_fs_trace_write("fwrite-return", file->write_offset, length,
+                               written);
   }
   if (written < 0) return H2_PAL_ERR_IO;
   *out_written = (size_t)written;
@@ -456,7 +444,7 @@ static int fs_write(
   return (size_t)written == length ? H2_PAL_OK : H2_PAL_ERR_NO_SPACE;
 }
 
-static int fs_sync(void *user, h2_pal_fs_file_t *file) {
+static int fs_sync(void* user, h2_pal_fs_file_t* file) {
   (void)user;
   if (file == NULL || file->native == NULL) return H2_PAL_ERR_INVALID_ARG;
   if (h2_jieli_sd_fs_trace_write != NULL) {
@@ -469,10 +457,11 @@ static int fs_sync(void *user, h2_pal_fs_file_t *file) {
   return map_error(result);
 }
 
-static int fs_close(void *user, h2_pal_fs_file_t *file) {
+static int fs_close(void* user, h2_pal_fs_file_t* file) {
   (void)user;
   if (file == NULL || file->native == NULL) return H2_PAL_ERR_INVALID_ARG;
-  const int trace = h2_jieli_sd_fs_trace_write != NULL && file->write_offset != 0u;
+  const int trace =
+      h2_jieli_sd_fs_trace_write != NULL && file->write_offset != 0u;
   if (trace) {
     h2_jieli_sd_fs_trace_write("close-enter", file->write_offset, 0u, 0);
   }
@@ -481,7 +470,7 @@ static int fs_close(void *user, h2_pal_fs_file_t *file) {
   if (trace) {
     h2_jieli_sd_fs_trace_write("close-return", file->write_offset, 0u, result);
   }
-  h2_pal_fs_file_t **link = &sd_open_files;
+  h2_pal_fs_file_t** link = &sd_open_files;
   while (*link != NULL && *link != file) link = &(*link)->next;
   if (*link == file) *link = file->next;
   file->native = NULL;
@@ -490,7 +479,7 @@ static int fs_close(void *user, h2_pal_fs_file_t *file) {
   return map_error(result);
 }
 
-static int fs_stat(void *user, const char *path, h2_pal_fs_stat_t *out_stat) {
+static int fs_stat(void* user, const char* path, h2_pal_fs_stat_t* out_stat) {
   (void)user;
   char mapped[H2_JIELI_SD_PATH_MAX];
   if (out_stat == NULL) return H2_PAL_ERR_INVALID_ARG;
@@ -498,7 +487,7 @@ static int fs_stat(void *user, const char *path, h2_pal_fs_stat_t *out_stat) {
   if (result != H2_PAL_OK) return result;
   /* SDK fdir_exist() tests fopen(path, "r"), which also succeeds for regular
    * files. Inspect the opened entry's FAT attributes instead. */
-  FILE *file = fopen(mapped, "r");
+  FILE* file = fopen(mapped, "r");
   if (file == NULL) return H2_PAL_ERR_NOT_FOUND;
   int attributes = 0;
   int attr_result = fget_attr(file, &attributes);
@@ -509,14 +498,15 @@ static int fs_stat(void *user, const char *path, h2_pal_fs_stat_t *out_stat) {
     long long size = flen_dir(mapped);
     /* Empty JLFAT directories can have a negative aggregate length even
      * though their directory entry exists. Do not report them missing. */
-    *out_stat = (h2_pal_fs_stat_t){.size = size < 0 ? 0u : (uint64_t)size, .is_dir = 1};
+    *out_stat =
+        (h2_pal_fs_stat_t){.size = size < 0 ? 0u : (uint64_t)size, .is_dir = 1};
     return H2_PAL_OK;
   }
   *out_stat = (h2_pal_fs_stat_t){.size = file_size, .is_dir = 0};
   return H2_PAL_OK;
 }
 
-static int fs_clear(void *user, const char *path) {
+static int fs_clear(void* user, const char* path) {
   (void)user;
   char mapped[H2_JIELI_SD_PATH_MAX];
   int result = translate_path(path, mapped);
@@ -532,7 +522,7 @@ static int fs_clear(void *user, const char *path) {
   return result;
 }
 
-static int fs_remove(void *user, const char *path) {
+static int fs_remove(void* user, const char* path) {
   (void)user;
   char mapped[H2_JIELI_SD_PATH_MAX];
   int result = translate_path(path, mapped);
@@ -542,7 +532,7 @@ static int fs_remove(void *user, const char *path) {
     sd_files_unlock();
     return H2_PAL_ERR_BUSY;
   }
-  FILE *file = fopen(mapped, "r");
+  FILE* file = fopen(mapped, "r");
   if (file == NULL) {
     sd_files_unlock();
     return H2_PAL_ERR_NOT_FOUND;
@@ -559,8 +549,7 @@ static int fs_remove(void *user, const char *path) {
   return map_error(result);
 }
 
-static int fs_rename(
-    void *user, const char *old_path, const char *new_path) {
+static int fs_rename(void* user, const char* old_path, const char* new_path) {
   (void)user;
   char old_mapped[H2_JIELI_SD_PATH_MAX];
   char new_mapped[H2_JIELI_SD_PATH_MAX];
@@ -568,8 +557,8 @@ static int fs_rename(
   if (result != H2_PAL_OK) return result;
   result = translate_path(new_path, new_mapped);
   if (result != H2_PAL_OK) return result;
-  const char *old_name = strrchr(old_mapped, '/');
-  const char *new_name = strrchr(new_mapped, '/');
+  const char* old_name = strrchr(old_mapped, '/');
+  const char* new_name = strrchr(new_mapped, '/');
   if (old_name == NULL || new_name == NULL ||
       (size_t)(old_name - old_mapped) != (size_t)(new_name - new_mapped) ||
       memcmp(old_mapped, new_mapped, (size_t)(old_name - old_mapped)) != 0) {
@@ -577,7 +566,7 @@ static int fs_rename(
   }
   sd_files_lock();
   if (strcmp(old_mapped, new_mapped) == 0) {
-    FILE *file = fopen(old_mapped, "r");
+    FILE* file = fopen(old_mapped, "r");
     result = file == NULL ? H2_PAL_ERR_NOT_FOUND : map_error(fclose(file));
     sd_files_unlock();
     return result;
@@ -589,12 +578,12 @@ static int fs_rename(
     sd_files_unlock();
     return H2_PAL_ERR_BUSY;
   }
-  FILE *file = fopen(old_mapped, "r");
+  FILE* file = fopen(old_mapped, "r");
   if (file == NULL) {
     sd_files_unlock();
     return H2_PAL_ERR_NOT_FOUND;
   }
-  FILE *destination = fopen(new_mapped, "r");
+  FILE* destination = fopen(new_mapped, "r");
   if (destination != NULL) {
     int attributes = 0;
     int attr_result = fget_attr(destination, &attributes);
@@ -603,7 +592,8 @@ static int fs_rename(
       int source_close = fclose(file);
       sd_files_unlock();
       return attr_result != 0 || destination_close != 0 || source_close != 0
-          ? H2_PAL_ERR_IO : H2_PAL_ERR_INVALID_STATE;
+                 ? H2_PAL_ERR_IO
+                 : H2_PAL_ERR_INVALID_STATE;
     }
     /* fdelete consumes the destination handle even when unlink fails. */
     if (fdelete(destination) != 0) {
@@ -638,7 +628,7 @@ static int wait_sd_online(void) {
   return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_jieli_ac791n_devkit_sd_fs_init(h2_pal_fs_api_t *out_api) {
+h2_pal_result_t h2_jieli_ac791n_devkit_sd_fs_init(h2_pal_fs_api_t* out_api) {
   static const h2_pal_fs_vtable_t vtable = {
       .mkdir = fs_mkdir,
       .open = fs_open,
@@ -659,7 +649,7 @@ h2_pal_result_t h2_jieli_ac791n_devkit_sd_fs_init(h2_pal_fs_api_t *out_api) {
     if (ready_result != H2_PAL_OK) return ready_result;
     sd_last_stage = "mount";
     if (!fmount_exist(H2_JIELI_SD_MOUNT)) {
-      void *heap_probe = malloc(32768u);
+      void* heap_probe = malloc(32768u);
       sd_heap_probe_32k = heap_probe != NULL;
       free(heap_probe);
       heap_probe = malloc(16384u);
@@ -668,9 +658,9 @@ h2_pal_result_t h2_jieli_ac791n_devkit_sd_fs_init(h2_pal_fs_api_t *out_api) {
       sd_last_stage = "mount";
       /* The SDK FAT mount runs mbr_scan and check_fs on each partition's
        * boot sector. Pass the whole sd0 disk, not an offset block wrapper. */
-      struct imount *mounted = mount(
-          "sd0", H2_JIELI_SD_MOUNT,
-          H2_JIELI_SD_FS_TYPE, H2_JIELI_SD_CACHE_COUNT, NULL);
+      struct imount* mounted =
+          mount("sd0", H2_JIELI_SD_MOUNT, H2_JIELI_SD_FS_TYPE,
+                H2_JIELI_SD_CACHE_COUNT, NULL);
       if (mounted == NULL) {
         capture_sd_diagnostic();
         return H2_PAL_ERR_IO;

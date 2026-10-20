@@ -35,13 +35,13 @@ typedef uint32_t h2_runtime_custom_event_id_t;
  * Builds an id from a 16-bit owner namespace and a 16-bit owner-local event
  * number so ids from different libraries and apps cannot collide.
  */
-#define H2_RUNTIME_CUSTOM_EVENT_ID(owner, event) \
-    ((h2_runtime_custom_event_id_t)((((uint32_t)(owner)) << 16u) | \
-                                    ((uint32_t)(event) & 0xffffu)))
+#define H2_RUNTIME_CUSTOM_EVENT_ID(owner, event)                 \
+  ((h2_runtime_custom_event_id_t)((((uint32_t)(owner)) << 16u) | \
+                                  ((uint32_t)(event) & 0xffffu)))
 #define H2_RUNTIME_CUSTOM_EVENT_ID_OWNER(id) \
-    ((uint16_t)(((h2_runtime_custom_event_id_t)(id)) >> 16u))
+  ((uint16_t)(((h2_runtime_custom_event_id_t)(id)) >> 16u))
 #define H2_RUNTIME_CUSTOM_EVENT_ID_EVENT(id) \
-    ((uint16_t)(((h2_runtime_custom_event_id_t)(id)) & 0xffffu))
+  ((uint16_t)(((h2_runtime_custom_event_id_t)(id)) & 0xffffu))
 
 /** Bytes reserved by the delivered payload header (id plus size). */
 #define H2_RUNTIME_CUSTOM_EVENT_HEADER_SIZE 8u
@@ -53,13 +53,13 @@ typedef uint32_t h2_runtime_custom_event_id_t;
  * h2_runtime_custom_event_payload_capacity().
  */
 #define H2_RUNTIME_CUSTOM_EVENT_PAYLOAD_MAX \
-    (H2_RUNTIME_EVENT_PAYLOAD_MAX - H2_RUNTIME_CUSTOM_EVENT_HEADER_SIZE)
+  (H2_RUNTIME_EVENT_PAYLOAD_MAX - H2_RUNTIME_CUSTOM_EVENT_HEADER_SIZE)
 
 /** What the poster hands to Runtime. `payload` is copied, never retained. */
 typedef struct h2_runtime_custom_event {
-    h2_runtime_custom_event_id_t id;
-    const void *payload;
-    size_t payload_size;
+  h2_runtime_custom_event_id_t id;
+  const void* payload;
+  size_t payload_size;
 } h2_runtime_custom_event_t;
 
 /**
@@ -68,9 +68,9 @@ typedef struct h2_runtime_custom_event {
  * rest is unspecified.
  */
 typedef struct h2_runtime_custom_event_payload {
-    h2_runtime_custom_event_id_t id;
-    uint32_t size;
-    unsigned char data[H2_RUNTIME_CUSTOM_EVENT_PAYLOAD_MAX];
+  h2_runtime_custom_event_id_t id;
+  uint32_t size;
+  unsigned char data[H2_RUNTIME_CUSTOM_EVENT_PAYLOAD_MAX];
 } h2_runtime_custom_event_payload_t;
 
 /**
@@ -79,8 +79,8 @@ typedef struct h2_runtime_custom_event_payload {
  * h2_runtime_custom_event_payload_t; this union guarantees both.
  */
 typedef union h2_runtime_event_payload_buffer {
-    unsigned char bytes[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_custom_event_payload_t custom;
+  unsigned char bytes[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_custom_event_payload_t custom;
 } h2_runtime_event_payload_buffer_t;
 
 /**
@@ -109,8 +109,7 @@ typedef union h2_runtime_event_payload_buffer {
  * because `runtime` itself is gone once it returns.
  */
 h2_pal_result_t h2_runtime_post_custom_event(
-    h2_runtime_t *runtime,
-    const h2_runtime_custom_event_t *event);
+    h2_runtime_t* runtime, const h2_runtime_custom_event_t* event);
 
 /**
  * Wakes a consumer blocked in h2_runtime_wait_notify()
@@ -120,7 +119,7 @@ h2_pal_result_t h2_runtime_post_custom_event(
  * with every other pending wake, so it cannot fail because the event queue
  * is full. Returns H2_PAL_ERR_INVALID_STATE once deinit has started.
  */
-h2_pal_result_t h2_runtime_notify(h2_runtime_t *runtime);
+h2_pal_result_t h2_runtime_notify(h2_runtime_t* runtime);
 
 /**
  * h2_runtime_post_custom_event() with a bounded wait for queue space.
@@ -130,14 +129,12 @@ h2_pal_result_t h2_runtime_notify(h2_runtime_t *runtime);
  * full for the whole budget.
  */
 h2_pal_result_t h2_runtime_post_custom_event_timeout(
-    h2_runtime_t *runtime,
-    const h2_runtime_custom_event_t *event,
+    h2_runtime_t* runtime, const h2_runtime_custom_event_t* event,
     uint32_t timeout_ms);
 
 /** Reports the largest custom payload this Runtime instance accepts. */
 h2_pal_result_t h2_runtime_custom_event_payload_capacity(
-    const h2_runtime_t *runtime,
-    size_t *out_capacity);
+    const h2_runtime_t* runtime, size_t* out_capacity);
 
 #ifdef __cplusplus
 }

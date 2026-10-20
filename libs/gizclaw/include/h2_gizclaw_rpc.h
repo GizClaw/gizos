@@ -103,7 +103,7 @@ enum {
 };
 
 typedef struct h2_gizclaw_rpc_bytes {
-  const uint8_t *data;
+  const uint8_t* data;
   size_t len;
 } h2_gizclaw_rpc_bytes_t;
 
@@ -121,7 +121,7 @@ typedef struct h2_gizclaw_rpc_bytes {
  * owner after the local caller copies/decodes and selects a delivery result.
  * Only enqueue owner-thread work here; do not block or reenter client APIs.
  */
-typedef void (*h2_gizclaw_rpc_response_complete_fn)(void *user, int result);
+typedef void (*h2_gizclaw_rpc_response_complete_fn)(void* user, int result);
 
 typedef struct h2_gizclaw_rpc_provider_response {
   h2_gizclaw_rpc_bytes_t payload;
@@ -129,7 +129,7 @@ typedef struct h2_gizclaw_rpc_provider_response {
   int error_code;
   h2_gizclaw_rpc_bytes_t error_message;
   h2_gizclaw_rpc_response_complete_fn on_complete;
-  void *complete_user;
+  void* complete_user;
 } h2_gizclaw_rpc_provider_response_t;
 
 #ifdef __cplusplus

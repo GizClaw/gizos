@@ -9,9 +9,8 @@
 
 /* Preserve the previous deadline rather than adding a sleep to encoding time.
  * An overrun resumes immediately, without a burst of missed-frame catch-up. */
-static inline h2_pal_result_t
-h2_gizclaw_audio_next_deadline(uint64_t deadline, uint64_t completed,
-                               uint64_t *out_deadline) {
+static inline h2_pal_result_t h2_gizclaw_audio_next_deadline(
+    uint64_t deadline, uint64_t completed, uint64_t* out_deadline) {
   if (out_deadline == NULL ||
       deadline > UINT64_MAX - H2_GIZCLAW_AUDIO_PERIOD_MS)
     return H2_PAL_ERR_INVALID_ARG;

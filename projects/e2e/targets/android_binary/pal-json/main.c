@@ -3,15 +3,14 @@
 #include "mobile_runner.h"
 #include <jni.h>
 JNIEXPORT jint JNICALL
-Java_com_haivivi_gizos_e2e_paljson_MainActivity_nativeRun(JNIEnv *env,
-                                                            jclass type,
-                                                            jstring report,
-                                                            jstring version) {
+Java_com_haivivi_gizos_e2e_paljson_MainActivity_nativeRun(JNIEnv* env,
+                                                          jclass type,
+                                                          jstring report,
+                                                          jstring version) {
   (void)type;
-  const char *path = (*env)->GetStringUTFChars(env, report, NULL);
-  if (!path)
-    return H2_PAL_ERR_NO_MEMORY;
-  const char *image = (*env)->GetStringUTFChars(env, version, NULL);
+  const char* path = (*env)->GetStringUTFChars(env, report, NULL);
+  if (!path) return H2_PAL_ERR_NO_MEMORY;
+  const char* image = (*env)->GetStringUTFChars(env, version, NULL);
   if (!image) {
     (*env)->ReleaseStringUTFChars(env, report, path);
     return H2_PAL_ERR_NO_MEMORY;
@@ -22,7 +21,8 @@ Java_com_haivivi_gizos_e2e_paljson_MainActivity_nativeRun(JNIEnv *env,
       .destroy = h2_android_json_provider_destroy};
   if (!rc)
     rc = h2_json_mobile_run(h2_mobile_e2e_runtime_config(), "android-emulator",
-                              image, path, &factory, h2_android_platform_core_shutdown);
+                            image, path, &factory,
+                            h2_android_platform_core_shutdown);
   (*env)->ReleaseStringUTFChars(env, version, image);
   (*env)->ReleaseStringUTFChars(env, report, path);
   return rc;

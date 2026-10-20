@@ -10,12 +10,21 @@
 #include "h2_jieli_wl82_atomic.h"
 
 enum WIFI_EVENT {
-  WIFI_EVENT_STA_START, WIFI_EVENT_STA_SCAN_COMPLETED, WIFI_EVENT_SMP_CFG_START,
-  WIFI_EVENT_STA_CONNECT_SUCC, WIFI_EVENT_STA_NETWORK_STACK_DHCP_SUCC,
-  WIFI_EVENT_STA_CONNECT_TIMEOUT_NOT_FOUND_SSID, WIFI_EVENT_STA_CONNECT_ASSOCIAT_FAIL,
-  WIFI_EVENT_STA_CONNECT_ASSOCIAT_TIMEOUT, WIFI_EVENT_STA_NETWORK_STACK_DHCP_TIMEOUT,
-  WIFI_EVENT_STA_DISCONNECT, WIFI_EVENT_STA_STOP, WIFI_EVENT_AP_START, WIFI_EVENT_AP_STOP,
-  WIFI_EVENT_AP_ON_ASSOC, WIFI_EVENT_AP_ON_DISCONNECTED
+  WIFI_EVENT_STA_START,
+  WIFI_EVENT_STA_SCAN_COMPLETED,
+  WIFI_EVENT_SMP_CFG_START,
+  WIFI_EVENT_STA_CONNECT_SUCC,
+  WIFI_EVENT_STA_NETWORK_STACK_DHCP_SUCC,
+  WIFI_EVENT_STA_CONNECT_TIMEOUT_NOT_FOUND_SSID,
+  WIFI_EVENT_STA_CONNECT_ASSOCIAT_FAIL,
+  WIFI_EVENT_STA_CONNECT_ASSOCIAT_TIMEOUT,
+  WIFI_EVENT_STA_NETWORK_STACK_DHCP_TIMEOUT,
+  WIFI_EVENT_STA_DISCONNECT,
+  WIFI_EVENT_STA_STOP,
+  WIFI_EVENT_AP_START,
+  WIFI_EVENT_AP_STOP,
+  WIFI_EVENT_AP_ON_ASSOC,
+  WIFI_EVENT_AP_ON_DISCONNECTED
 };
 enum { SCAN_IDLE, SCAN_PENDING, SCAN_ABANDONED };
 static unsigned scan_phase;
@@ -42,28 +51,36 @@ static void fake_sdk_refresh(void) {
   }
 }
 static void update_sta_snapshot(void) { fake_sdk_refresh(); }
-static void wifi_rxfilter_cfg(int value) { (void)value; assert_sdk_unlocked(); }
-static void post_system_event(h2_pal_system_event_type_t type, const void *payload, size_t size) {
+static void wifi_rxfilter_cfg(int value) {
+  (void)value;
+  assert_sdk_unlocked();
+}
+static void post_system_event(h2_pal_system_event_type_t type,
+                              const void* payload, size_t size) {
   assert_sdk_unlocked();
   assert(wifi_operation_begin() == H2_PAL_ERR_BUSY);
-  assert(type != H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_GOT_IP || !h2_atomic_load(&reject_got_ip));
+  assert(type != H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_GOT_IP ||
+         !h2_atomic_load(&reject_got_ip));
   if (type == H2_PAL_SYSTEM_EVENT_TYPE_WIFI_AP_CLIENT_JOINED ||
       type == H2_PAL_SYSTEM_EVENT_TYPE_WIFI_AP_CLIENT_LEFT) {
     assert(size == sizeof(h2_pal_wifi_ap_client_event_t));
-    last_client = ((const h2_pal_wifi_ap_client_event_t *)payload)->client;
-    if (type == H2_PAL_SYSTEM_EVENT_TYPE_WIFI_AP_CLIENT_JOINED) ++joined;
-    else ++left;
+    last_client = ((const h2_pal_wifi_ap_client_event_t*)payload)->client;
+    if (type == H2_PAL_SYSTEM_EVENT_TYPE_WIFI_AP_CLIENT_JOINED)
+      ++joined;
+    else
+      ++left;
   }
   if (hold_payload && type == H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTED) {
     assert(size == sizeof(h2_pal_wifi_sta_status_t));
-    const h2_pal_wifi_sta_status_t *status = payload;
+    const h2_pal_wifi_sta_status_t* status = payload;
     assert(status->state == H2_PAL_WIFI_STA_STATE_CONNECTED);
     h2_atomic_store(&entered, 1);
     while (!h2_atomic_load(&release_payload)) sched_yield();
     assert(status->state == H2_PAL_WIFI_STA_STATE_CONNECTED);
   }
 }
-int wifi_get_sta_entry_rssi(char station, char **rssi, uint8_t **evm, uint8_t **mac) {
+int wifi_get_sta_entry_rssi(char station, char** rssi, uint8_t** evm,
+                            uint8_t** mac) {
   (void)station;
   (void)rssi;
   (void)evm;
@@ -72,22 +89,20 @@ int wifi_get_sta_entry_rssi(char station, char **rssi, uint8_t **evm, uint8_t **
   return -1;
 }
 /* REAL_PROVIDER */
-static void assert_sdk_unlocked(void) {
-  /* SDK_GATE_CHECK */
-}
-static void *refresh_held(void *unused) {
+static void assert_sdk_unlocked(void) { /* SDK_GATE_CHECK */ }
+static void* refresh_held(void* unused) {
   (void)unused;
   hold_refresh = 1;
   assert(wifi_event(NULL, WIFI_EVENT_STA_NETWORK_STACK_DHCP_SUCC) == 0);
   return NULL;
 }
-static void *publish_held(void *unused) {
+static void* publish_held(void* unused) {
   (void)unused;
   hold_payload = 1;
   assert(wifi_event(NULL, WIFI_EVENT_STA_CONNECT_SUCC) == 0);
   return NULL;
 }
-static void *publish_many(void *unused) {
+static void* publish_many(void* unused) {
   (void)unused;
   while (!h2_atomic_load(&readers_ready)) sched_yield();
   for (int i = 0; i < 10000; ++i) {
@@ -103,17 +118,17 @@ static void *publish_many(void *unused) {
   return NULL;
 }
 static void h2_fixture_atomic_cleanup(void) {
-    h2_atomic_destroy(&entered);
-    h2_atomic_destroy(&release_payload);
-    h2_atomic_destroy(&readers_ready);
-    h2_atomic_destroy(&reject_got_ip);
+  h2_atomic_destroy(&entered);
+  h2_atomic_destroy(&release_payload);
+  h2_atomic_destroy(&readers_ready);
+  h2_atomic_destroy(&reject_got_ip);
 }
-int main(int argc, char **argv) {
-    assert(atexit(h2_fixture_atomic_cleanup) == 0);
-    assert(h2_atomic_init(&entered, 0) == H2_ATOMIC_OK);
-    assert(h2_atomic_init(&release_payload, 0) == H2_ATOMIC_OK);
-    assert(h2_atomic_init(&readers_ready, 0) == H2_ATOMIC_OK);
-    assert(h2_atomic_init(&reject_got_ip, 0) == H2_ATOMIC_OK);
+int main(int argc, char** argv) {
+  assert(atexit(h2_fixture_atomic_cleanup) == 0);
+  assert(h2_atomic_init(&entered, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_init(&release_payload, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_init(&readers_ready, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_init(&reject_got_ip, 0) == H2_ATOMIC_OK);
 
   assert(argc == 2);
   wifi_state.on = 1;
@@ -134,7 +149,8 @@ int main(int argc, char **argv) {
       assert(status.client_count == i + 1);
     }
     memset(clients, 0xa5, sizeof(clients));
-    assert(ap_get_clients(NULL, clients, SDK_AP_STATION_SLOTS + 1, &count) == H2_PAL_OK);
+    assert(ap_get_clients(NULL, clients, SDK_AP_STATION_SLOTS + 1, &count) ==
+           H2_PAL_OK);
     assert(count == SDK_AP_STATION_SLOTS);
     for (unsigned i = 0; i < SDK_AP_STATION_SLOTS; ++i) {
       mac[5] = (uint8_t)i;
@@ -148,7 +164,8 @@ int main(int argc, char **argv) {
     assert(ap_get_clients(NULL, NULL, 0, &count) == H2_PAL_OK && count == 0);
     assert(ap_get_status(NULL, &status) == H2_PAL_OK);
     assert(status.client_count == SDK_AP_STATION_SLOTS);
-    /* SDK drift: an uncached sixth station must leave all owned state intact. */
+    /* SDK drift: an uncached sixth station must leave all owned state intact.
+     */
     h2_jieli_wifi_state_t before_overflow;
     memcpy(&before_overflow, &wifi_state, sizeof(before_overflow));
     mac[5] = SDK_AP_STATION_SLOTS;
@@ -158,25 +175,30 @@ int main(int argc, char **argv) {
     assert(ap_get_status(NULL, &status) == H2_PAL_OK);
     assert(status.client_count == SDK_AP_STATION_SLOTS);
     memset(clients, 0xa5, sizeof(clients));
-    assert(ap_get_clients(NULL, clients, SDK_AP_STATION_SLOTS + 1, &count) == H2_PAL_OK);
+    assert(ap_get_clients(NULL, clients, SDK_AP_STATION_SLOTS + 1, &count) ==
+           H2_PAL_OK);
     assert(count == SDK_AP_STATION_SLOTS);
     assert(clients[SDK_AP_STATION_SLOTS].mac[0] == 0xa5);
-    assert(memcmp(clients, before_overflow.ap_clients, sizeof(before_overflow.ap_clients)) == 0);
+    assert(memcmp(clients, before_overflow.ap_clients,
+                  sizeof(before_overflow.ap_clients)) == 0);
     for (unsigned i = 0; i < SDK_AP_STATION_SLOTS; ++i) {
       mac[5] = (uint8_t)i;
       assert(wifi_event(mac, WIFI_EVENT_AP_ON_DISCONNECTED) == 0);
       assert(left == i + 1 && memcmp(last_client.mac, mac, 6) == 0);
       assert(ap_get_status(NULL, &status) == H2_PAL_OK);
       assert(status.client_count == SDK_AP_STATION_SLOTS - 1);
-      assert(ap_get_clients(NULL, clients, SDK_AP_STATION_SLOTS + 1, &count) == H2_PAL_OK);
+      assert(ap_get_clients(NULL, clients, SDK_AP_STATION_SLOTS + 1, &count) ==
+             H2_PAL_OK);
       assert(count == SDK_AP_STATION_SLOTS - 1);
-      for (size_t j = 0; j < count; ++j) assert(memcmp(clients[j].mac, mac, 6) != 0);
+      for (size_t j = 0; j < count; ++j)
+        assert(memcmp(clients[j].mac, mac, 6) != 0);
       assert(wifi_event(mac, WIFI_EVENT_AP_ON_ASSOC) == 0);
       assert(joined == SDK_AP_STATION_SLOTS + i + 1);
       assert(memcmp(last_client.mac, mac, 6) == 0);
       assert(ap_get_status(NULL, &status) == H2_PAL_OK);
       assert(status.client_count == SDK_AP_STATION_SLOTS);
-      assert(ap_get_clients(NULL, clients, SDK_AP_STATION_SLOTS + 1, &count) == H2_PAL_OK);
+      assert(ap_get_clients(NULL, clients, SDK_AP_STATION_SLOTS + 1, &count) ==
+             H2_PAL_OK);
       assert(count == SDK_AP_STATION_SLOTS);
       assert(memcmp(clients[count - 1].mac, mac, 6) == 0);
     }

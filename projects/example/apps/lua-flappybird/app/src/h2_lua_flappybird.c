@@ -23,10 +23,9 @@ static int supported_event(h2_runtime_event_kind_t kind) {
          kind == H2_RUNTIME_COMPONENT_EVENT_ERROR;
 }
 
-h2_pal_result_t
-h2_lua_flappybird_run(h2_runtime_t *runtime,
-                      const h2_lua_flappybird_config_t *config) {
-  h2_lua_host_t *host = NULL;
+h2_pal_result_t h2_lua_flappybird_run(
+    h2_runtime_t* runtime, const h2_lua_flappybird_config_t* config) {
+  h2_lua_host_t* host = NULL;
   h2_lua_job_id_t job_id = H2_LUA_JOB_ID_NONE;
   h2_lua_job_status_t status;
   h2_pal_result_t result;

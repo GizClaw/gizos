@@ -41,14 +41,21 @@ wasm_cc_binary(
     name = "pal_audio_wasm",
     cc_target = ":_wasm/index",
     exit_runtime = True,
-    outputs = ["index.html", "index.js", "index.wasm"],
+    outputs = [
+        "index.html",
+        "index.js",
+        "index.wasm",
+    ],
     target_compatible_with = _HOST,
     threads = "emscripten",
 )
 
 pkg_tar(
     name = "pal_audio",
-    srcs = ["_headers", ":pal_audio_wasm"],
+    srcs = [
+        "_headers",
+        ":pal_audio_wasm",
+    ],
     out = "pal-audio.web.tar",
     mode = "0644",
     portable_mtime = True,

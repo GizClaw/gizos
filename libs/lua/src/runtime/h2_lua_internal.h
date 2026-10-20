@@ -31,16 +31,16 @@ typedef enum h2_lua_task_state {
 } h2_lua_task_state_t;
 
 typedef struct h2_lua_execution_context {
-  struct h2_lua_job *job;
-  struct h2_lua_task *task;
+  struct h2_lua_job* job;
+  struct h2_lua_task* task;
 } h2_lua_execution_context_t;
 
 typedef struct h2_lua_task {
   h2_lua_execution_context_t context;
-  struct h2_lua_job *job;
+  struct h2_lua_job* job;
   uint32_t id;
   h2_lua_task_state_t state;
-  lua_State *thread;
+  lua_State* thread;
   int thread_ref;
   int resume_argument_count;
   uint64_t resume_started_ms;
@@ -80,7 +80,7 @@ typedef struct h2_lua_event_record {
 typedef struct h2_lua_module_entry {
   char name[H2_LUA_NAME_MAX];
   h2_lua_module_open_fn open_fn;
-  void *user;
+  void* user;
 } h2_lua_module_entry_t;
 
 typedef struct h2_lua_capability_entry {
@@ -88,7 +88,7 @@ typedef struct h2_lua_capability_entry {
   h2_lua_capability_call_fn call;
   h2_lua_capability_prefix_call_fn prefix_call;
   h2_lua_capability_cancel_fn cancel;
-  void *user;
+  void* user;
 } h2_lua_capability_entry_t;
 
 typedef enum h2_lua_capability_request_state {
@@ -107,32 +107,32 @@ typedef struct h2_lua_capability_request {
   h2_pal_result_t result;
   char output[H2_LUA_CAPABILITY_OUTPUT_MAX];
   char error[H2_LUA_MESSAGE_MAX];
-  const h2_lua_capability_entry_t *capability;
+  const h2_lua_capability_entry_t* capability;
 } h2_lua_capability_request_t;
 
 typedef struct h2_lua_audio_track_slot {
-  struct h2_lua_job *job;
-  h2_pal_audio_track_t *track;
+  struct h2_lua_job* job;
+  h2_pal_audio_track_t* track;
   h2_audio_pcm_format_t format;
   uint32_t generation;
   /* Carries the sub-frame tail of a write into the next one, so consecutive
    * writes form a gapless stream on Audio Systems with a fixed frame size.
    * Allocated lazily, holds fewer bytes than one device frame. */
-  uint8_t *carry;
+  uint8_t* carry;
   size_t carry_bytes;
 } h2_lua_audio_track_slot_t;
 
 typedef struct h2_lua_job {
   h2_lua_execution_context_t root_context;
-  struct h2_lua_host *host;
+  struct h2_lua_host* host;
   h2_lua_job_id_t id;
   uint32_t generation;
   size_t worker_index;
   h2_lua_job_state_t state;
-  h2_lua_vm_t *vm;
-  const char *result; /* Rooted on the main task stack; VM-accounted. */
+  h2_lua_vm_t* vm;
+  const char* result; /* Rooted on the main task stack; VM-accounted. */
   size_t result_size;
-  h2_lua_task_t *tasks;
+  h2_lua_task_t* tasks;
   size_t task_count;
   size_t next_task_index;
   uint32_t next_task_id;
@@ -140,13 +140,13 @@ typedef struct h2_lua_job {
   uint64_t resume_count;
   int cancel_requested;
   char message[H2_LUA_MESSAGE_MAX];
-  h2_lua_callback_t *callbacks;
+  h2_lua_callback_t* callbacks;
   size_t callback_count;
   uint32_t next_callback_token;
-  h2_lua_event_record_t *events;
+  h2_lua_event_record_t* events;
   size_t event_head;
   size_t event_count;
-  uint16_t *framebuffer;
+  uint16_t* framebuffer;
   h2_display_info_t display_info;
   int display_open;
   int frame_open;
@@ -156,17 +156,17 @@ typedef struct h2_lua_job {
   int dirty_max_x;
   int dirty_max_y;
   /* Cache storage is VM-owned; zero registry references mean detached state. */
-  void *display_background;
+  void* display_background;
   int display_background_ref;
   int display_background_valid;
-  void *display_presented;
+  void* display_presented;
   int display_presented_ref;
   int display_presented_valid;
-  void *display_smooth;
+  void* display_smooth;
   int display_smooth_ref;
   int display_shutting_down;
   int display_lease;
-  void *display_submission;
+  void* display_submission;
   int display_submission_ref;
   uint8_t display_fade_phase;
   int touch_open;
@@ -176,11 +176,11 @@ typedef struct h2_lua_job {
   int touch_y;
   uint64_t touch_press_started_ms;
   h2_runtime_component_id_t button_component_id;
-  h2_lua_audio_track_slot_t *audio_tracks;
+  h2_lua_audio_track_slot_t* audio_tracks;
   size_t active_audio_track_count;
   uint32_t next_audio_track_generation;
   int audio_speaker_acquired;
-  uint8_t *audio_mic_buffer;
+  uint8_t* audio_mic_buffer;
   size_t audio_mic_buffer_capacity;
   h2_audio_pcm_format_t audio_mic_format;
   uint32_t audio_mic_generation;
@@ -190,8 +190,9 @@ typedef struct h2_lua_job {
   char app_id[H2_LUA_STORAGE_APP_ID_MAX + 1u];
 } h2_lua_job_t;
 
-/* Detach Display storage before VM finalizers run; forbid reopening on teardown. */
-h2_pal_result_t h2_lua_job_close_display(h2_lua_job_t *job);
+/* Detach Display storage before VM finalizers run; forbid reopening on
+ * teardown. */
+h2_pal_result_t h2_lua_job_close_display(h2_lua_job_t* job);
 
 /*
  * Hooks installed by //libs/lua:lua_link before Host start. open_module adds
@@ -202,120 +203,119 @@ h2_pal_result_t h2_lua_job_close_display(h2_lua_job_t *job);
  * worker has been joined.
  */
 typedef struct h2_lua_link_hooks {
-  void (*open_module)(void *user, lua_State *state, struct h2_lua_job *job);
-  void (*deliver)(void *user, struct h2_lua_job *job);
-  void (*job_ended)(void *user, h2_lua_job_id_t job_id,
+  void (*open_module)(void* user, lua_State* state, struct h2_lua_job* job);
+  void (*deliver)(void* user, struct h2_lua_job* job);
+  void (*job_ended)(void* user, h2_lua_job_id_t job_id,
                     uint32_t job_generation);
-  void (*destroy)(void *user);
+  void (*destroy)(void* user);
 } h2_lua_link_hooks_t;
 
 typedef struct h2_lua_worker {
-  struct h2_lua_host *host;
+  struct h2_lua_host* host;
   size_t index;
-  h2_pal_task_t *task;
-  h2_pal_queue_t *wake_queue;
+  h2_pal_task_t* task;
+  h2_pal_queue_t* wake_queue;
 } h2_lua_worker_t;
 
 struct h2_lua_host {
   h2_lua_host_config_t config;
-  h2_lua_job_t *jobs;
+  h2_lua_job_t* jobs;
   h2_lua_job_id_t next_job_id;
   uint32_t next_job_generation;
   h2_atomic_int_t started;
   h2_atomic_int_t stopping;
   h2_atomic_int_t joined;
   h2_atomic_int_t display_active;
-  h2_lua_worker_t *workers;
-  h2_pal_mutex_t *jobs_mutex;
-  void *vm_heap;
-  void *vm_heap_chunks[H2_LUA_HEAP_MAX_CHUNKS];
+  h2_lua_worker_t* workers;
+  h2_pal_mutex_t* jobs_mutex;
+  void* vm_heap;
+  void* vm_heap_chunks[H2_LUA_HEAP_MAX_CHUNKS];
   size_t vm_heap_chunk_count;
   size_t vm_heap_reserved;
-  h2_pal_mutex_t *vm_heap_mutex;
+  h2_pal_mutex_t* vm_heap_mutex;
   h2_lua_module_entry_t modules[16];
   size_t module_count;
-  h2_lua_capability_entry_t *capabilities;
-  h2_trie_route_t *capability_routes;
-  h2_trie_node_t *capability_nodes;
+  h2_lua_capability_entry_t* capabilities;
+  h2_trie_route_t* capability_routes;
+  h2_trie_node_t* capability_nodes;
   h2_trie_t capability_trie;
   size_t capability_count;
-  h2_lua_capability_request_t *capability_requests;
+  h2_lua_capability_request_t* capability_requests;
   h2_lua_capability_request_id_t next_capability_request_id;
-  h2_pal_mutex_t *capability_mutex;
-  h2_pal_mutex_t *audio_mutex;
+  h2_pal_mutex_t* capability_mutex;
+  h2_pal_mutex_t* audio_mutex;
   size_t audio_speaker_users;
   size_t audio_mic_users;
   /* Copy of config.storage.root; the storage mutex serializes every storage
    * operation of every job, and guards the shared index scratch. */
   char storage_root[H2_LUA_STORAGE_ROOT_MAX + 1u];
-  h2_pal_mutex_t *storage_mutex;
-  struct h2_lua_storage_scratch *storage_scratch;
-  const h2_lua_link_hooks_t *link_hooks;
-  void *link_user;
+  h2_pal_mutex_t* storage_mutex;
+  struct h2_lua_storage_scratch* storage_scratch;
+  const h2_lua_link_hooks_t* link_hooks;
+  void* link_user;
   /* Slot i is locked through job_mutexes[i]. Kept outside h2_lua_job_t so
    * clearing a slot never writes the lock that workers take without holding
    * any other lock; written only by host create/destroy. */
-  h2_pal_mutex_t *job_mutexes[];
+  h2_pal_mutex_t* job_mutexes[];
 };
 
 /* The job must be live (job->host set); code that walks empty slots indexes
  * host->job_mutexes directly. */
-static inline h2_pal_mutex_t *h2_lua_job_mutex(const h2_lua_job_t *job) {
+static inline h2_pal_mutex_t* h2_lua_job_mutex(const h2_lua_job_t* job) {
   return job->host->job_mutexes[job - job->host->jobs];
 }
 
 int h2_lua_heap_size_valid(size_t bytes);
-h2_pal_result_t h2_lua_heap_init(h2_lua_host_t *host);
-void h2_lua_heap_deinit(h2_lua_host_t *host);
-void *h2_lua_heap_realloc(void *user, void *ptr, size_t old_size,
+h2_pal_result_t h2_lua_heap_init(h2_lua_host_t* host);
+void h2_lua_heap_deinit(h2_lua_host_t* host);
+void* h2_lua_heap_realloc(void* user, void* ptr, size_t old_size,
                           size_t new_size);
 
-void *h2_lua_runtime_realloc(void *user, void *ptr, size_t old_size,
+void* h2_lua_runtime_realloc(void* user, void* ptr, size_t old_size,
                              size_t new_size);
-h2_lua_job_t *h2_lua_find_job(h2_lua_host_t *host, h2_lua_job_id_t id);
-h2_pal_result_t h2_lua_lock_job(h2_lua_host_t *host, h2_lua_job_id_t id,
-                                h2_lua_job_t **out_job);
-void h2_lua_unlock_job(h2_lua_job_t *job);
-uint64_t h2_lua_now_ms(const h2_lua_host_t *host);
-void h2_lua_job_finish(h2_lua_job_t *job, h2_lua_job_state_t state,
-                       const char *message);
-h2_pal_result_t h2_lua_register_builtin_modules(h2_lua_job_t *job);
-int h2_lua_open_storage(lua_State *state);
-int h2_lua_open_kv(lua_State *state);
-int h2_lua_storage_name_is_valid(const char *name, size_t max_length);
-h2_pal_result_t h2_lua_storage_normalize(h2_lua_storage_config_t *config);
-h2_pal_result_t h2_lua_storage_host_init(h2_lua_host_t *host);
-void h2_lua_storage_host_deinit(h2_lua_host_t *host);
-void h2_lua_job_close_audio_tracks(h2_lua_job_t *job);
-void h2_lua_audio_track_slot_flush_carry(h2_lua_audio_track_slot_t *slot);
-void h2_lua_audio_track_slot_release_carry(h2_lua_audio_track_slot_t *slot,
-                                           const h2_pal_mem_api_t *mem);
-h2_pal_result_t h2_lua_job_acquire_audio_speaker(h2_lua_job_t *job);
-void h2_lua_job_release_audio_speaker(h2_lua_job_t *job);
-h2_pal_result_t h2_lua_job_acquire_audio_mic(h2_lua_job_t *job);
-void h2_lua_job_release_audio_mic(h2_lua_job_t *job);
-void h2_lua_deliver_events(h2_lua_job_t *job);
+h2_lua_job_t* h2_lua_find_job(h2_lua_host_t* host, h2_lua_job_id_t id);
+h2_pal_result_t h2_lua_lock_job(h2_lua_host_t* host, h2_lua_job_id_t id,
+                                h2_lua_job_t** out_job);
+void h2_lua_unlock_job(h2_lua_job_t* job);
+uint64_t h2_lua_now_ms(const h2_lua_host_t* host);
+void h2_lua_job_finish(h2_lua_job_t* job, h2_lua_job_state_t state,
+                       const char* message);
+h2_pal_result_t h2_lua_register_builtin_modules(h2_lua_job_t* job);
+int h2_lua_open_storage(lua_State* state);
+int h2_lua_open_kv(lua_State* state);
+int h2_lua_storage_name_is_valid(const char* name, size_t max_length);
+h2_pal_result_t h2_lua_storage_normalize(h2_lua_storage_config_t* config);
+h2_pal_result_t h2_lua_storage_host_init(h2_lua_host_t* host);
+void h2_lua_storage_host_deinit(h2_lua_host_t* host);
+void h2_lua_job_close_audio_tracks(h2_lua_job_t* job);
+void h2_lua_audio_track_slot_flush_carry(h2_lua_audio_track_slot_t* slot);
+void h2_lua_audio_track_slot_release_carry(h2_lua_audio_track_slot_t* slot,
+                                           const h2_pal_mem_api_t* mem);
+h2_pal_result_t h2_lua_job_acquire_audio_speaker(h2_lua_job_t* job);
+void h2_lua_job_release_audio_speaker(h2_lua_job_t* job);
+h2_pal_result_t h2_lua_job_acquire_audio_mic(h2_lua_job_t* job);
+void h2_lua_job_release_audio_mic(h2_lua_job_t* job);
+void h2_lua_deliver_events(h2_lua_job_t* job);
 /* Registers the function at function_index for (component_id, kind) and
  * pushes the handle; raises a Lua error when the table is full. */
-int h2_lua_push_callback_register(lua_State *state, h2_lua_job_t *job,
+int h2_lua_push_callback_register(lua_State* state, h2_lua_job_t* job,
                                   h2_runtime_component_id_t component_id,
                                   uint32_t kind, int function_index);
-void h2_lua_link_job_ended(h2_lua_host_t *host, h2_lua_job_id_t job_id,
+void h2_lua_link_job_ended(h2_lua_host_t* host, h2_lua_job_id_t job_id,
                            uint32_t job_generation);
-h2_lua_task_t *h2_lua_current_task(lua_State *state);
-h2_lua_task_t *h2_lua_find_task(h2_lua_job_t *job, uint32_t task_id);
-h2_pal_result_t h2_lua_spawn_task(h2_lua_job_t *job, lua_State *source_state,
+h2_lua_task_t* h2_lua_current_task(lua_State* state);
+h2_lua_task_t* h2_lua_find_task(h2_lua_job_t* job, uint32_t task_id);
+h2_pal_result_t h2_lua_spawn_task(h2_lua_job_t* job, lua_State* source_state,
                                   int function_index, int argument_count,
-                                  uint32_t *out_task_id);
-h2_lua_capability_request_t *
-h2_lua_find_capability_request(h2_lua_host_t *host,
-                               h2_lua_capability_request_id_t request_id);
-void h2_lua_cancel_job_capabilities(h2_lua_host_t *host, h2_lua_job_id_t job_id,
+                                  uint32_t* out_task_id);
+h2_lua_capability_request_t* h2_lua_find_capability_request(
+    h2_lua_host_t* host, h2_lua_capability_request_id_t request_id);
+void h2_lua_cancel_job_capabilities(h2_lua_host_t* host, h2_lua_job_id_t job_id,
                                     uint32_t job_generation);
-void h2_lua_release_job_capabilities(h2_lua_host_t *host,
+void h2_lua_release_job_capabilities(h2_lua_host_t* host,
                                      h2_lua_job_id_t job_id,
                                      uint32_t job_generation);
-void h2_lua_host_wake_job(h2_lua_job_t *job);
-h2_pal_result_t h2_lua_step_job(h2_lua_job_t *job);
+void h2_lua_host_wake_job(h2_lua_job_t* job);
+h2_pal_result_t h2_lua_step_job(h2_lua_job_t* job);
 
 #endif

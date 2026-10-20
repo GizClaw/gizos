@@ -28,7 +28,8 @@
 #endif
 
 /* 1 keeps the H2Loader App command service advertising over BLE, 0 pauses it
- * before the workload so BLE/Wi-Fi coexistence does not time-slice the radio. */
+ * before the workload so BLE/Wi-Fi coexistence does not time-slice the radio.
+ */
 #ifndef H2_IPERF_BLE_ADV
 #define H2_IPERF_BLE_ADV 1
 #endif
@@ -43,15 +44,15 @@
 #define H2_IPERF_DEVKIT_SCTP_UDP_PORT 9899u
 #define H2_IPERF_DEVKIT_CASE_MS 5000u
 
-static const h2_pal_log_api_t *board_log;
+static const h2_pal_log_api_t* board_log;
 
-static int result_write(void *user, h2_pal_log_level_t level, const char *scope,
-                        const char *message) {
+static int result_write(void* user, h2_pal_log_level_t level, const char* scope,
+                        const char* message) {
   (void)user;
   if (level == H2_PAL_LOG_INFO && scope != NULL && message != NULL &&
       strcmp(scope, "iperf_e2e") == 0) {
-    return printf("%s\n", message) < 0 || fflush(stdout) != 0
-               ? H2_PAL_ERR_IO : H2_PAL_OK;
+    return printf("%s\n", message) < 0 || fflush(stdout) != 0 ? H2_PAL_ERR_IO
+                                                              : H2_PAL_OK;
   }
   return h2_pal_log_write(board_log, level, scope, message);
 }
@@ -65,37 +66,37 @@ static void hold(void) {
   }
 }
 
-static void memory_checkpoint(const char *name) {
-  printf("H2_IPERF_E2E_MEMORY checkpoint=%s internal_free_kib=%u "
-         "internal_min_kib=%u dma_free_kib=%u dma_min_kib=%u "
-         "psram_free_kib=%u psram_min_kib=%u\n",
-         name,
-         (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL |
-                                            MALLOC_CAP_8BIT) /
-                    1024u),
-         (unsigned)(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL |
-                                                    MALLOC_CAP_8BIT) /
-                    1024u),
-         (unsigned)(heap_caps_get_free_size(MALLOC_CAP_DMA | MALLOC_CAP_8BIT) /
-                    1024u),
-         (unsigned)(heap_caps_get_minimum_free_size(MALLOC_CAP_DMA |
-                                                    MALLOC_CAP_8BIT) /
-                    1024u),
-         (unsigned)(heap_caps_get_free_size(MALLOC_CAP_SPIRAM |
-                                            MALLOC_CAP_8BIT) /
-                    1024u),
-         (unsigned)(heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM |
-                                                    MALLOC_CAP_8BIT) /
-                    1024u));
+static void memory_checkpoint(const char* name) {
+  printf(
+      "H2_IPERF_E2E_MEMORY checkpoint=%s internal_free_kib=%u "
+      "internal_min_kib=%u dma_free_kib=%u dma_min_kib=%u "
+      "psram_free_kib=%u psram_min_kib=%u\n",
+      name,
+      (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL |
+                                         MALLOC_CAP_8BIT) /
+                 1024u),
+      (unsigned)(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL |
+                                                 MALLOC_CAP_8BIT) /
+                 1024u),
+      (unsigned)(heap_caps_get_free_size(MALLOC_CAP_DMA | MALLOC_CAP_8BIT) /
+                 1024u),
+      (unsigned)(heap_caps_get_minimum_free_size(MALLOC_CAP_DMA |
+                                                 MALLOC_CAP_8BIT) /
+                 1024u),
+      (unsigned)(heap_caps_get_free_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) /
+                 1024u),
+      (unsigned)(heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM |
+                                                 MALLOC_CAP_8BIT) /
+                 1024u));
   fflush(stdout);
 }
 
-static void case_checkpoint(void *user, const char *name) {
+static void case_checkpoint(void* user, const char* name) {
   (void)user;
   memory_checkpoint(name);
 }
 
-static void fail(const char *stage, int rc, int commands_started) {
+static void fail(const char* stage, int rc, int commands_started) {
   printf("H2_IPERF_E2E_DEVKIT stage=%s status=ERROR rc=%d\n", stage, rc);
   fflush(stdout);
   if (!commands_started) {
@@ -106,9 +107,9 @@ static void fail(const char *stage, int rc, int commands_started) {
 
 /* Explicit native fixture input is borrowed for a non-saving connect; NULL
  * keeps the original Loader-saved STA configuration path. */
-static int load_wifi_config(h2_runtime_t *runtime,
-                            h2_pal_wifi_sta_config_t *out_config) {
-  const h2_pal_wifi_sta_config_t *fixture = h2_e2e_fixture_wifi();
+static int load_wifi_config(h2_runtime_t* runtime,
+                            h2_pal_wifi_sta_config_t* out_config) {
+  const h2_pal_wifi_sta_config_t* fixture = h2_e2e_fixture_wifi();
   if (fixture != NULL) {
     *out_config = *fixture;
     return H2_PAL_OK;
@@ -126,13 +127,12 @@ static int load_wifi_config(h2_runtime_t *runtime,
                                                    out_config);
 }
 
-static void wait_for_wifi(h2_runtime_t *runtime,
-                          const h2_pal_wifi_sta_config_t *wifi) {
+static void wait_for_wifi(h2_runtime_t* runtime,
+                          const h2_pal_wifi_sta_config_t* wifi) {
   for (;;) {
     const int rc = h2_pal_wifi_sta_connect(runtime->wifi_sta, wifi, 20000u);
     if (rc == H2_PAL_OK) {
-      const TickType_t deadline =
-          xTaskGetTickCount() + pdMS_TO_TICKS(20000u);
+      const TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(20000u);
       do {
         h2_pal_wifi_sta_status_t status = {0};
         const int status_rc =
@@ -142,10 +142,11 @@ static void wait_for_wifi(h2_runtime_t *runtime,
             status.ip.ip4 != 0u) {
           uint8_t ip[4];
           h2_pal_wifi_ip4_to_bytes(status.ip.ip4, ip);
-          printf("H2_IPERF_E2E_DEVKIT stage=wifi status=READY "
-                 "ip=%u.%u.%u.%u rssi=%d channel=%u\n",
-                 ip[0], ip[1], ip[2], ip[3], status.rssi,
-                 (unsigned)status.channel);
+          printf(
+              "H2_IPERF_E2E_DEVKIT stage=wifi status=READY "
+              "ip=%u.%u.%u.%u rssi=%d channel=%u\n",
+              ip[0], ip[1], ip[2], ip[3], status.rssi,
+              (unsigned)status.channel);
           fflush(stdout);
           return;
         }
@@ -166,30 +167,30 @@ static void wait_for_wifi(h2_runtime_t *runtime,
 
 /* The selected policy must be in effect before any measurement, otherwise
  * the summary would label results with a mode that was never applied. */
-static int apply_power_save(h2_runtime_t *runtime) {
+static int apply_power_save(h2_runtime_t* runtime) {
   const h2_pal_wifi_power_save_t mode =
       (h2_pal_wifi_power_save_t)H2_IPERF_POWER_SAVE;
   const int rc = h2_pal_wifi_sta_set_power_save(runtime->wifi_sta, mode);
-  printf("H2_IPERF_E2E_DEVKIT stage=power_save mode=%d rc=%d\n", (int)mode,
-         rc);
+  printf("H2_IPERF_E2E_DEVKIT stage=power_save mode=%d rc=%d\n", (int)mode, rc);
   fflush(stdout);
   return rc;
 }
 
-static void serve_forever(const h2_iperf_config_t *pal) {
+static void serve_forever(const h2_iperf_config_t* pal) {
   h2_iperf_server_params_t params;
   memset(&params, 0, sizeof(params));
   params.port = H2_IPERF_DEVKIT_PORT;
   params.sctp_udp_port = H2_IPERF_DEVKIT_SCTP_UDP_PORT;
-  h2_iperf_server_t *server = NULL;
+  h2_iperf_server_t* server = NULL;
   int rc = h2_iperf_server_create(pal, &params, &server);
   if (rc != H2_PAL_OK) {
     fail("server_create", rc, 1);
   }
-  printf("H2_IPERF_E2E_DEVKIT stage=server status=LISTENING port=%u "
-         "sctp_udp_port=%u\n",
-         (unsigned)h2_iperf_server_port(server),
-         (unsigned)h2_iperf_server_sctp_udp_port(server));
+  printf(
+      "H2_IPERF_E2E_DEVKIT stage=server status=LISTENING port=%u "
+      "sctp_udp_port=%u\n",
+      (unsigned)h2_iperf_server_port(server),
+      (unsigned)h2_iperf_server_sctp_udp_port(server));
   fflush(stdout);
   for (;;) {
     h2_iperf_result_t result;
@@ -200,20 +201,20 @@ static void serve_forever(const h2_iperf_config_t *pal) {
       continue;
     }
     memory_checkpoint("server_test_end");
-    const h2_iperf_stream_stats_t *receiver =
+    const h2_iperf_stream_stats_t* receiver =
         result.reverse ? &result.remote : &result.local;
-    printf("H2_IPERF_E2E_DEVKIT stage=server_test rc=%d protocol=%d "
-           "reverse=%d receiver_bps=%llu bytes=%llu packets=%llu lost=%lld "
-           "jitter_us=%u duration_ms=%u\n",
-           rc, (int)result.protocol, result.reverse ? 1 : 0,
-           (unsigned long long)h2_iperf_stats_bits_per_second(receiver),
-           (unsigned long long)receiver->bytes,
-           (unsigned long long)receiver->packets,
-           (long long)receiver->lost_packets,
-           (unsigned)(receiver->jitter_ms > 0.0
-                          ? receiver->jitter_ms * 1000.0
-                          : 0.0),
-           (unsigned)receiver->duration_ms);
+    printf(
+        "H2_IPERF_E2E_DEVKIT stage=server_test rc=%d protocol=%d "
+        "reverse=%d receiver_bps=%llu bytes=%llu packets=%llu lost=%lld "
+        "jitter_us=%u duration_ms=%u\n",
+        rc, (int)result.protocol, result.reverse ? 1 : 0,
+        (unsigned long long)h2_iperf_stats_bits_per_second(receiver),
+        (unsigned long long)receiver->bytes,
+        (unsigned long long)receiver->packets,
+        (long long)receiver->lost_packets,
+        (unsigned)(receiver->jitter_ms > 0.0 ? receiver->jitter_ms * 1000.0
+                                             : 0.0),
+        (unsigned)receiver->duration_ms);
     fflush(stdout);
   }
 }
@@ -224,10 +225,10 @@ static void serve_forever(const h2_iperf_config_t *pal) {
  * service (still below lwIP at 18 and Wi-Fi at 23). */
 #define H2_IPERF_ENTRY_TASK_PRIORITY (tskIDLE_PRIORITY + 9u)
 
-static void image_entry(void *user) {
+static void image_entry(void* user) {
   (void)user;
   h2_runtime_config_t runtime_config = {0};
-  h2_runtime_t *runtime = NULL;
+  h2_runtime_t* runtime = NULL;
   vTaskPrioritySet(NULL, H2_IPERF_ENTRY_TASK_PRIORITY);
   memory_checkpoint("entry");
   int rc = h2_esp_board_runtime_config(&runtime_config);
@@ -242,8 +243,8 @@ static void image_entry(void *user) {
     board_log = runtime_config.log;
     runtime_config.log = &result_log;
   }
-  rc = h2_esp_h2loader_app_commands_prepare_serial(&runtime_config, "iperf",
-                                                   1u, 3u);
+  rc = h2_esp_h2loader_app_commands_prepare_serial(&runtime_config, "iperf", 1u,
+                                                   3u);
   if (rc != H2_PAL_OK) {
     fail("command_prepare", rc, 0);
   }
@@ -279,11 +280,12 @@ static void image_entry(void *user) {
       fail("ble_adv", rc, 1);
     }
   }
-  printf("H2_IPERF_E2E_DEVKIT stage=ble_adv keep=%d rc=%d\n", (int)H2_IPERF_BLE_ADV, rc);
+  printf("H2_IPERF_E2E_DEVKIT stage=ble_adv keep=%d rc=%d\n",
+         (int)H2_IPERF_BLE_ADV, rc);
   fflush(stdout);
   memory_checkpoint("wifi_ready");
 
-  h2_sctp_t *sctp = NULL;
+  h2_sctp_t* sctp = NULL;
   const h2_sctp_config_t sctp_config = {
       .mem = runtime->mem,
       .crypto = runtime->crypto,
@@ -316,10 +318,11 @@ static void image_entry(void *user) {
   memory_checkpoint("matrix_start");
   rc = h2_iperf_e2e_run(&config, &report);
   memory_checkpoint("matrix_end");
-  printf("H2_IPERF_E2E_DEVKIT stage=summary status=%s rc=%d passed=%u "
-         "total=%u power_save=%d ble_adv=%d\n",
-         rc == H2_PAL_OK ? "PASS" : "FAIL", rc, report.passed, report.total,
-         (int)H2_IPERF_POWER_SAVE, (int)H2_IPERF_BLE_ADV);
+  printf(
+      "H2_IPERF_E2E_DEVKIT stage=summary status=%s rc=%d passed=%u "
+      "total=%u power_save=%d ble_adv=%d\n",
+      rc == H2_PAL_OK ? "PASS" : "FAIL", rc, report.passed, report.total,
+      (int)H2_IPERF_POWER_SAVE, (int)H2_IPERF_BLE_ADV);
   fflush(stdout);
   hold();
 }

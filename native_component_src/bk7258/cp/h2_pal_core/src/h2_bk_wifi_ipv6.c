@@ -17,8 +17,8 @@ static int registered;
 _Static_assert(sizeof(h2_bk_wifi_ipv6_snapshot_t) % sizeof(uint32_t) == 0u,
                "fixed snapshot word layout");
 
-static bk_err_t h2_bk_wifi_ipv6_association(void *arg, event_module_t module,
-                                            int event, void *data) {
+static bk_err_t h2_bk_wifi_ipv6_association(void* arg, event_module_t module,
+                                            int event, void* data) {
   (void)arg;
   (void)module;
   (void)data;
@@ -33,23 +33,20 @@ static bk_err_t h2_bk_wifi_ipv6_association(void *arg, event_module_t module,
 
 /* TCP/IP is the sole address-cache writer. CIF RPC never waits on TCP/IP:
  * DHCP/ND callbacks can themselves send CIF events, so such a wait cycles. */
-static void h2_bk_wifi_ipv6_refresh_cache(void *user) {
+static void h2_bk_wifi_ipv6_refresh_cache(void* user) {
   (void)user;
   h2_bk_wifi_ipv6_snapshot_t snapshot = {0};
   snapshot.generation = __atomic_load_n(&generation, __ATOMIC_ACQUIRE);
-  uint32_t associated =
-      __atomic_load_n(&associated_epoch, __ATOMIC_ACQUIRE);
+  uint32_t associated = __atomic_load_n(&associated_epoch, __ATOMIC_ACQUIRE);
   uint32_t ready = 0u;
 #if LWIP_IPV6
-  struct netif *sta = (struct netif *)net_get_sta_handle();
-  if (associated != 0u && associated == snapshot.generation &&
-      sta != NULL && netif_is_up(sta)) {
+  struct netif* sta = (struct netif*)net_get_sta_handle();
+  if (associated != 0u && associated == snapshot.generation && sta != NULL &&
+      netif_is_up(sta)) {
     for (unsigned i = 0u; i < LWIP_IPV6_NUM_ADDRESSES; ++i) {
-      if (!ip6_addr_ispreferred(netif_ip6_addr_state(sta, i)))
-        continue;
-      if (snapshot.count == H2_BK_WIFI_IPV6_MAX)
-        break;
-      h2_bk_wifi_ipv6_address_t *address =
+      if (!ip6_addr_ispreferred(netif_ip6_addr_state(sta, i))) continue;
+      if (snapshot.count == H2_BK_WIFI_IPV6_MAX) break;
+      h2_bk_wifi_ipv6_address_t* address =
           &snapshot.addresses[snapshot.count++];
       memcpy(address->address, netif_ip6_addr(sta, i)->addr, 16u);
       address->preferred = 1u;
@@ -77,20 +74,19 @@ static void h2_bk_wifi_ipv6_refresh_cache(void *user) {
   __atomic_store_n(&cache_guard, before + 2u, __ATOMIC_SEQ_CST);
   __atomic_store_n(&cache_valid, 1u, __ATOMIC_RELEASE);
   /* One word publishes validity and epoch together. Separate stores can pair
-   * a new empty epoch with the previous writer's ready bit. Zero is not ready. */
+   * a new empty epoch with the previous writer's ready bit. Zero is not ready.
+   */
   __atomic_store_n(&ready_epoch, ready ? snapshot.generation : 0u,
                    __ATOMIC_RELEASE);
   sys_timeout(250u, h2_bk_wifi_ipv6_refresh_cache, NULL);
 }
 
-static int h2_bk_wifi_ipv6_cache_read(h2_bk_wifi_ipv6_snapshot_t *out) {
-  if (!__atomic_load_n(&cache_valid, __ATOMIC_ACQUIRE))
-    return BK_ERR_BUSY;
+static int h2_bk_wifi_ipv6_cache_read(h2_bk_wifi_ipv6_snapshot_t* out) {
+  if (!__atomic_load_n(&cache_valid, __ATOMIC_ACQUIRE)) return BK_ERR_BUSY;
   uint32_t words[sizeof(cache_words) / sizeof(cache_words[0])];
   for (unsigned attempt = 0u; attempt < 3u; ++attempt) {
     uint32_t before = __atomic_load_n(&cache_guard, __ATOMIC_SEQ_CST);
-    if (before & 1u)
-      continue;
+    if (before & 1u) continue;
     for (unsigned i = 0u; i < sizeof(words) / sizeof(words[0]); ++i)
       words[i] = __atomic_load_n(&cache_words[i], __ATOMIC_SEQ_CST);
     uint32_t after = __atomic_load_n(&cache_guard, __ATOMIC_SEQ_CST);
@@ -102,26 +98,22 @@ static int h2_bk_wifi_ipv6_cache_read(h2_bk_wifi_ipv6_snapshot_t *out) {
   return BK_ERR_BUSY;
 }
 
-int h2_bk_wifi_ipv6_snapshot(h2_bk_wifi_ipv6_snapshot_t *out) {
-  if (out == NULL || out->size != sizeof(*out))
-    return BK_ERR_PARAM;
+int h2_bk_wifi_ipv6_snapshot(h2_bk_wifi_ipv6_snapshot_t* out) {
+  if (out == NULL || out->size != sizeof(*out)) return BK_ERR_PARAM;
   memset(out, 0, sizeof(*out));
   int start_cache = !registered;
   if (start_cache) {
     bk_err_t rc = bk_event_register_cb(EVENT_MOD_WIFI, EVENT_WIFI_STA_CONNECTED,
                                        h2_bk_wifi_ipv6_association, NULL);
-    if (rc != BK_OK && rc != BK_ERR_EVENT_CB_EXIST)
-      return rc;
+    if (rc != BK_OK && rc != BK_ERR_EVENT_CB_EXIST) return rc;
     rc = bk_event_register_cb(EVENT_MOD_WIFI, EVENT_WIFI_STA_DISCONNECTED,
                               h2_bk_wifi_ipv6_association, NULL);
-    if (rc != BK_OK && rc != BK_ERR_EVENT_CB_EXIST)
-      return rc;
+    if (rc != BK_OK && rc != BK_ERR_EVENT_CB_EXIST) return rc;
   }
   uint32_t before = __atomic_load_n(&generation, __ATOMIC_ACQUIRE);
   wifi_link_status_t link = {0};
   int rc = bk_wifi_sta_get_link_status(&link);
-  if (rc != BK_OK)
-    goto failure;
+  if (rc != BK_OK) goto failure;
   if (start_cache) {
     /* The first RPC may arrive after the radio already connected. Seed only
      * before any observed event; a stale link-status reply must never undo a
@@ -153,8 +145,7 @@ int h2_bk_wifi_ipv6_snapshot(h2_bk_wifi_ipv6_snapshot_t *out) {
     out->count = cached.count;
     memcpy(out->addresses, cached.addresses, sizeof(out->addresses));
     size_t length = 0u;
-    while (length < sizeof(out->ssid) && link.ssid[length] != '\0')
-      ++length;
+    while (length < sizeof(out->ssid) && link.ssid[length] != '\0') ++length;
     memcpy(out->ssid, link.ssid, length);
     out->ssid_len = (uint32_t)length;
     memcpy(out->bssid, link.bssid, sizeof(out->bssid));

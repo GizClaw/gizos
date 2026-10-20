@@ -6,18 +6,16 @@
 /* Known-answer fixtures: RFC 7748, RFC 5869, RFC 8439, SP800-38A,
  * AES-GCM empty-message vectors, RFC 1321 and RFC 2202. Expected bytes
  * are fixed independently of the provider under qualification. */
-#define VERIFY(expression)                                                     \
-  do {                                                                         \
-    if (!(expression))                                                         \
-      return H2_PAL_ERR_INVALID_STATE;                                         \
+#define VERIFY(expression)                              \
+  do {                                                  \
+    if (!(expression)) return H2_PAL_ERR_INVALID_STATE; \
   } while (0)
-#define CALL(expression)                                                       \
-  do {                                                                         \
-    h2_pal_result_t rc_ = (expression);                                        \
-    if (rc_ != H2_PAL_OK)                                                      \
-      return rc_;                                                              \
+#define CALL(expression)                \
+  do {                                  \
+    h2_pal_result_t rc_ = (expression); \
+    if (rc_ != H2_PAL_OK) return rc_;   \
   } while (0)
-static int test_direct_vtable_null_arguments(const h2_pal_crypto_api_t *api) {
+static int test_direct_vtable_null_arguments(const h2_pal_crypto_api_t* api) {
   uint8_t byte = 0u;
   h2_pal_x25519_private_key_t key = {0};
   h2_pal_x25519_public_key_t public_key = {0};
@@ -60,7 +58,7 @@ static int test_direct_vtable_null_arguments(const h2_pal_crypto_api_t *api) {
   return H2_PAL_OK;
 }
 
-static int test_x25519(const h2_pal_crypto_api_t *api) {
+static int test_x25519(const h2_pal_crypto_api_t* api) {
   static const uint8_t private_key[32] = {
       0x77, 0x07, 0x6d, 0x0a, 0x73, 0x18, 0xa5, 0x7d, 0x3c, 0x16, 0xc1,
       0x72, 0x51, 0xb2, 0x66, 0x45, 0xdf, 0x4c, 0x2f, 0x87, 0xeb, 0xc0,
@@ -113,7 +111,7 @@ static int test_x25519(const h2_pal_crypto_api_t *api) {
   return H2_PAL_OK;
 }
 
-static int test_hkdf(const h2_pal_crypto_api_t *api) {
+static int test_hkdf(const h2_pal_crypto_api_t* api) {
   static const uint8_t ikm[22] = {
       0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
       0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
@@ -142,7 +140,7 @@ static int test_hkdf(const h2_pal_crypto_api_t *api) {
   return H2_PAL_OK;
 }
 
-static int test_aes_empty_kat(const h2_pal_crypto_api_t *api,
+static int test_aes_empty_kat(const h2_pal_crypto_api_t* api,
                               h2_pal_crypto_aead_algorithm_t mode,
                               size_t key_len, const uint8_t expected_tag[16]) {
   uint8_t key[32] = {0};
@@ -165,7 +163,7 @@ static int test_aes_empty_kat(const h2_pal_crypto_api_t *api,
   return H2_PAL_OK;
 }
 
-static int test_chacha20_poly1305_kat(const h2_pal_crypto_api_t *api) {
+static int test_chacha20_poly1305_kat(const h2_pal_crypto_api_t* api) {
   static const uint8_t key[32] = {
       0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8a,
       0x8b, 0x8c, 0x8d, 0x8e, 0x8f, 0x90, 0x91, 0x92, 0x93, 0x94, 0x95,
@@ -208,7 +206,7 @@ static int test_chacha20_poly1305_kat(const h2_pal_crypto_api_t *api) {
   return H2_PAL_OK;
 }
 
-static int test_aead(const h2_pal_crypto_api_t *api,
+static int test_aead(const h2_pal_crypto_api_t* api,
                      h2_pal_crypto_aead_algorithm_t mode, size_t key_len) {
   const uint8_t plaintext[] = "wolfCrypt PAL";
   const uint8_t aad[] = {1u, 2u, 3u};
@@ -298,7 +296,7 @@ static int test_aead(const h2_pal_crypto_api_t *api,
   return H2_PAL_OK;
 }
 
-static int test_aes_ctr(const h2_pal_crypto_api_t *api) {
+static int test_aes_ctr(const h2_pal_crypto_api_t* api) {
   static const uint8_t counter[16] = {
       0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7,
       0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff,
@@ -363,7 +361,7 @@ static int test_aes_ctr(const h2_pal_crypto_api_t *api) {
   return H2_PAL_OK;
 }
 
-static int test_compatibility_hashes(const h2_pal_crypto_api_t *api) {
+static int test_compatibility_hashes(const h2_pal_crypto_api_t* api) {
   static const uint8_t md5_expected[16] = {
       0x90, 0x01, 0x50, 0x98, 0x3c, 0xd2, 0x4f, 0xb0,
       0xd6, 0x96, 0x3f, 0x7d, 0x28, 0xe1, 0x7f, 0x72,
@@ -385,7 +383,7 @@ static int test_compatibility_hashes(const h2_pal_crypto_api_t *api) {
   VERIFY(memcmp(digest, hmac_expected, sizeof(hmac_expected)) == 0);
   return H2_PAL_OK;
 }
-static int random_bounds(const h2_pal_crypto_api_t *api) {
+static int random_bounds(const h2_pal_crypto_api_t* api) {
   uint8_t data[259];
   memset(data, 0xa5, sizeof(data));
   CALL(h2_pal_crypto_random(api, NULL, 0));
@@ -396,7 +394,7 @@ static int random_bounds(const h2_pal_crypto_api_t *api) {
    * than its actual allocation merely to probe a backend-specific limit. */
   return H2_PAL_OK;
 }
-static int random_distinct(const h2_pal_crypto_api_t *api) {
+static int random_distinct(const h2_pal_crypto_api_t* api) {
   uint8_t a[32], b[32], zero[32] = {0};
   CALL(h2_pal_crypto_random(api, a, sizeof(a)));
   CALL(h2_pal_crypto_random(api, b, sizeof(b)));
@@ -404,7 +402,7 @@ static int random_distinct(const h2_pal_crypto_api_t *api) {
          memcmp(b, zero, sizeof(b)));
   return H2_PAL_OK;
 }
-static int x25519_exchange(const h2_pal_crypto_api_t *api) {
+static int x25519_exchange(const h2_pal_crypto_api_t* api) {
   h2_pal_x25519_keypair_t alice, bob;
   h2_pal_x25519_shared_secret_t a, b;
   CALL(h2_pal_crypto_x25519_keypair_generate(api, &alice));
@@ -417,7 +415,7 @@ static int x25519_exchange(const h2_pal_crypto_api_t *api) {
   VERIFY(memcmp(alice.public_key.bytes, bob.public_key.bytes, 32));
   return H2_PAL_OK;
 }
-static int hkdf_limits(const h2_pal_crypto_api_t *api) {
+static int hkdf_limits(const h2_pal_crypto_api_t* api) {
   uint8_t byte = 1, out[8161];
   VERIFY(h2_pal_crypto_hkdf_sha256(api, &byte, 1, NULL, 0, NULL, 0, out,
                                    8161) == H2_PAL_ERR_INVALID_ARG);
@@ -426,26 +424,26 @@ static int hkdf_limits(const h2_pal_crypto_api_t *api) {
   CALL(h2_pal_crypto_hkdf_sha256(api, NULL, 0, NULL, 0, NULL, 0, NULL, 0));
   return H2_PAL_OK;
 }
-static int gcm128_kat(const h2_pal_crypto_api_t *api) {
+static int gcm128_kat(const h2_pal_crypto_api_t* api) {
   const uint8_t tag[16] = {0x58, 0xe2, 0xfc, 0xce, 0xfa, 0x7e, 0x30, 0x61,
                            0x36, 0x7f, 0x1d, 0x57, 0xa4, 0xe7, 0x45, 0x5a};
   return test_aes_empty_kat(api, H2_PAL_CRYPTO_AEAD_AES_128_GCM, 16, tag);
 }
-static int gcm256_kat(const h2_pal_crypto_api_t *api) {
+static int gcm256_kat(const h2_pal_crypto_api_t* api) {
   const uint8_t tag[16] = {0x53, 0x0f, 0x8a, 0xfb, 0xc7, 0x45, 0x36, 0xb9,
                            0xa9, 0x63, 0xb4, 0xf1, 0xc4, 0xcb, 0x73, 0x8b};
   return test_aes_empty_kat(api, H2_PAL_CRYPTO_AEAD_AES_256_GCM, 32, tag);
 }
-static int gcm128_boundaries(const h2_pal_crypto_api_t *api) {
+static int gcm128_boundaries(const h2_pal_crypto_api_t* api) {
   return test_aead(api, H2_PAL_CRYPTO_AEAD_AES_128_GCM, 16);
 }
-static int gcm256_boundaries(const h2_pal_crypto_api_t *api) {
+static int gcm256_boundaries(const h2_pal_crypto_api_t* api) {
   return test_aead(api, H2_PAL_CRYPTO_AEAD_AES_256_GCM, 32);
 }
-static int chacha_boundaries(const h2_pal_crypto_api_t *api) {
+static int chacha_boundaries(const h2_pal_crypto_api_t* api) {
   return test_aead(api, H2_PAL_CRYPTO_AEAD_CHACHA20_POLY1305, 32);
 }
-static int aead_capacity(const h2_pal_crypto_api_t *api) {
+static int aead_capacity(const h2_pal_crypto_api_t* api) {
   const h2_pal_crypto_aead_algorithm_t modes[] = {
       H2_PAL_CRYPTO_AEAD_AES_128_GCM, H2_PAL_CRYPTO_AEAD_AES_256_GCM,
       H2_PAL_CRYPTO_AEAD_CHACHA20_POLY1305};
@@ -481,7 +479,7 @@ static const uint8_t p256_generator[33] = {
     0x03, 0x6b, 0x17, 0xd1, 0xf2, 0xe1, 0x2c, 0x42, 0x47, 0xf8, 0xbc,
     0xe6, 0xe5, 0x63, 0xa4, 0x40, 0xf2, 0x77, 0x03, 0x7d, 0x81, 0x2d,
     0xeb, 0x33, 0xa0, 0xf4, 0xa1, 0x39, 0x45, 0xd8, 0x98, 0xc2, 0x96};
-static int p256_derive(const h2_pal_crypto_api_t *api) {
+static int p256_derive(const h2_pal_crypto_api_t* api) {
   h2_pal_p256_private_key_t scalar = {0};
   scalar.bytes[31] = 1;
   h2_pal_p256_keypair_t pair = {0};
@@ -492,7 +490,7 @@ static int p256_derive(const h2_pal_crypto_api_t *api) {
   CALL(h2_pal_crypto_p256_public_key_validate(api, &pair.public_key));
   return H2_PAL_OK;
 }
-static int p256_generate(const h2_pal_crypto_api_t *api) {
+static int p256_generate(const h2_pal_crypto_api_t* api) {
   h2_pal_p256_keypair_t a, b, derived;
   CALL(h2_pal_crypto_p256_keypair_generate(api, &a));
   CALL(h2_pal_crypto_p256_keypair_generate(api, &b));
@@ -502,7 +500,7 @@ static int p256_generate(const h2_pal_crypto_api_t *api) {
   CALL(h2_pal_crypto_p256_public_key_validate(api, &b.public_key));
   return H2_PAL_OK;
 }
-static int p256_invalid(const h2_pal_crypto_api_t *api) {
+static int p256_invalid(const h2_pal_crypto_api_t* api) {
   const uint8_t order[32] = {0xff, 0xff, 0xff, 0xff, 0,    0,    0,    0,
                              0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
                              0xbc, 0xe6, 0xfa, 0xad, 0xa7, 0x17, 0x9e, 0x84,
@@ -524,7 +522,7 @@ static int p256_invalid(const h2_pal_crypto_api_t *api) {
          H2_PAL_ERR_FORMAT);
   return H2_PAL_OK;
 }
-static int p256_sign_verify(const h2_pal_crypto_api_t *api) {
+static int p256_sign_verify(const h2_pal_crypto_api_t* api) {
   const uint8_t message[] = "PAL Crypto E2E";
   h2_pal_p256_keypair_t pair;
   CALL(h2_pal_crypto_p256_keypair_generate(api, &pair));
@@ -549,7 +547,7 @@ static int p256_sign_verify(const h2_pal_crypto_api_t *api) {
          H2_PAL_ERR_FORMAT);
   return H2_PAL_OK;
 }
-static int p256_known_signature(const h2_pal_crypto_api_t *api) {
+static int p256_known_signature(const h2_pal_crypto_api_t* api) {
   /* Existing independent d=1, k=1 P-256 signature for "P-256 test" including
    * its NUL byte; verify fixed r||s, not a signature produced by this run. */
   const uint8_t sig[64] = {
@@ -567,7 +565,7 @@ static int p256_known_signature(const h2_pal_crypto_api_t *api) {
   return h2_pal_crypto_ecdsa_p256_sha256_verify(api, &key, message,
                                                 sizeof(message), &signature);
 }
-static int churn(const h2_pal_crypto_api_t *api) {
+static int churn(const h2_pal_crypto_api_t* api) {
   for (unsigned i = 0; i < 32; ++i) {
     CALL(test_hkdf(api));
     CALL(test_compatibility_hashes(api));
@@ -580,19 +578,18 @@ static int churn(const h2_pal_crypto_api_t *api) {
   return H2_PAL_OK;
 }
 static const struct {
-  const char *id;
-  int (*run)(const h2_pal_crypto_api_t *);
+  const char* id;
+  int (*run)(const h2_pal_crypto_api_t*);
 } registry[] = {
 #define H2_PAL_CRYPTO_CASE(id, function) {id, function},
 #include "h2_pal_crypto_cases.inc"
 #undef H2_PAL_CRYPTO_CASE
 };
-h2_pal_result_t h2_pal_crypto_e2e_run(h2_runtime_t *runtime,
-                                      h2_pal_crypto_e2e_result_t *out) {
-  if (!out)
-    return H2_PAL_ERR_INVALID_ARG;
+h2_pal_result_t h2_pal_crypto_e2e_run(h2_runtime_t* runtime,
+                                      h2_pal_crypto_e2e_result_t* out) {
+  if (!out) return H2_PAL_ERR_INVALID_ARG;
   memset(out, 0, sizeof(*out));
-  const h2_pal_crypto_api_t *api = runtime ? runtime->crypto : NULL;
+  const h2_pal_crypto_api_t* api = runtime ? runtime->crypto : NULL;
   for (size_t i = 0; i < H2_PAL_CRYPTO_E2E_CASE_COUNT; ++i) {
     out->cases[i].id = registry[i].id;
     if (!api || !api->vtable || api->vtable->random == NULL ||
@@ -613,7 +610,8 @@ h2_pal_result_t h2_pal_crypto_e2e_run(h2_runtime_t *runtime,
       continue;
     }
     /* A stuck or crashing backend still leaves a last-case diagnostic. */
-    (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-crypto", registry[i].id);
+    (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-crypto",
+                           registry[i].id);
     int rc = registry[i].run(api);
     out->cases[i].result = (h2_pal_result_t)rc;
     if (!rc) {

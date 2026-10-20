@@ -11,22 +11,22 @@
 namespace h2::cosmic_drift {
 
 class PointerTouchAdapter {
-public:
+ public:
   PointerTouchAdapter(std::uint32_t width, std::uint32_t height);
-  PointerTouchAdapter(const PointerTouchAdapter &) = delete;
-  PointerTouchAdapter &operator=(const PointerTouchAdapter &) = delete;
+  PointerTouchAdapter(const PointerTouchAdapter&) = delete;
+  PointerTouchAdapter& operator=(const PointerTouchAdapter&) = delete;
 
-  const h2_pal_touch_api_t *api() const;
+  const h2_pal_touch_api_t* api() const;
   void update(std::int32_t x, std::int32_t y, bool pressed);
 
-private:
+ private:
   static constexpr std::size_t kEventCapacity = 16u;
 
-  static h2_pal_result_t open(void *user);
-  static h2_pal_result_t get_info(void *user, h2_pal_touch_info_t *out_info);
-  static h2_pal_result_t poll_event(void *user,
-                                    h2_pal_touch_event_t *out_event);
-  static h2_pal_result_t close(void *user);
+  static h2_pal_result_t open(void* user);
+  static h2_pal_result_t get_info(void* user, h2_pal_touch_info_t* out_info);
+  static h2_pal_result_t poll_event(void* user,
+                                    h2_pal_touch_event_t* out_event);
+  static h2_pal_result_t close(void* user);
 
   void push_locked(h2_pal_touch_event_kind_t kind, std::int32_t x,
                    std::int32_t y);
@@ -46,6 +46,6 @@ private:
   bool pressed_ = false;
 };
 
-} // namespace h2::cosmic_drift
+}  // namespace h2::cosmic_drift
 
 #endif

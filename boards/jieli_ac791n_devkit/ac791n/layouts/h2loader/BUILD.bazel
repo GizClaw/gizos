@@ -17,15 +17,15 @@ firmware_native_component(
         "include/jieli_upgrade_io.h",
         "include/jieli_warm_boot.h",
     ],
-    include_roots = ["boards/jieli_ac791n_devkit/ac791n/layouts/h2loader/include"],
     component_name = "jieli_ac791n_devkit_h2loader_warm_boot",
-    deps = ["//boards/jieli_ac791n_devkit/ac791n"],
+    include_roots = ["boards/jieli_ac791n_devkit/ac791n/layouts/h2loader/include"],
     tags = ["manual"],
     target_compatible_with = select({
         "//tools/bazel/platforms:ci_graph": [],
         "//tools/bazel/platforms:is_ac791n": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    deps = ["//boards/jieli_ac791n_devkit/ac791n"],
 )
 
 exports_files([
@@ -52,8 +52,8 @@ firmware_native_component(
     name = "layout",
     srcs = [
         "src/coredump.c",
-        "src/watchdog.c",
         "src/platform.c",
+        "src/watchdog.c",
     ],
     hdrs = [
         "include/app_config.h",

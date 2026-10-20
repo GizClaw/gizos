@@ -18,7 +18,7 @@ enum {
 #undef H2_PAL_CRYPTO_CASE
 };
 typedef struct h2_pal_crypto_e2e_case {
-  const char *id;
+  const char* id;
   h2_pal_crypto_e2e_status_t status;
   h2_pal_result_t result;
 } h2_pal_crypto_e2e_case_t;
@@ -32,8 +32,8 @@ typedef struct h2_pal_crypto_e2e_result {
  * Each case owns its buffers; no private-key bytes are logged or returned.
  * Qualification is functional conformance, not an entropy/security certificate.
  * The launcher supplies an external watchdog for stuck provider operations. */
-h2_pal_result_t h2_pal_crypto_e2e_run(h2_runtime_t *runtime,
-                                      h2_pal_crypto_e2e_result_t *result);
+h2_pal_result_t h2_pal_crypto_e2e_run(h2_runtime_t* runtime,
+                                      h2_pal_crypto_e2e_result_t* result);
 #ifdef __cplusplus
 }
 #endif

@@ -3,109 +3,124 @@
 
 #include "h2_quectel_modem.h"
 
-static inline void h2_quectel_cpin_absent_store(h2_quectel_modem_t *modem, uint32_t seen) {
-    h2_atomic_u32_store(&modem->cpin_absent_seen, seen, H2_ATOMIC_RELAXED);
+static inline void h2_quectel_cpin_absent_store(h2_quectel_modem_t* modem,
+                                                uint32_t seen) {
+  h2_atomic_u32_store(&modem->cpin_absent_seen, seen, H2_ATOMIC_RELAXED);
 }
 
-static inline uint32_t h2_quectel_cpin_absent_load(const h2_quectel_modem_t *modem) {
-    return h2_atomic_u32_load(&modem->cpin_absent_seen, H2_ATOMIC_RELAXED);
+static inline uint32_t h2_quectel_cpin_absent_load(
+    const h2_quectel_modem_t* modem) {
+  return h2_atomic_u32_load(&modem->cpin_absent_seen, H2_ATOMIC_RELAXED);
 }
 
 static inline int h2_quectel_ascii_digit(unsigned char value) {
-    return value >= (unsigned char)'0' && value <= (unsigned char)'9';
+  return value >= (unsigned char)'0' && value <= (unsigned char)'9';
 }
 
 static inline int h2_quectel_ascii_space(unsigned char value) {
-    return value == (unsigned char)' ' || value == (unsigned char)'\t' ||
-        value == (unsigned char)'\n' || value == (unsigned char)'\r' ||
-        value == (unsigned char)'\f' || value == (unsigned char)'\v';
+  return value == (unsigned char)' ' || value == (unsigned char)'\t' ||
+         value == (unsigned char)'\n' || value == (unsigned char)'\r' ||
+         value == (unsigned char)'\f' || value == (unsigned char)'\v';
 }
 
-h2_quectel_modem_t *h2_quectel_from_platform(h2_pal_modem_t *platform);
-h2_pal_result_t h2_quectel_at_exchange(
-    h2_quectel_modem_t *modem,
-    const char *cmd,
-    h2_quectel_response_t *response,
-    int allow_connect);
+h2_quectel_modem_t* h2_quectel_from_platform(h2_pal_modem_t* platform);
+h2_pal_result_t h2_quectel_at_exchange(h2_quectel_modem_t* modem,
+                                       const char* cmd,
+                                       h2_quectel_response_t* response,
+                                       int allow_connect);
 /* Same exchange with a per-command timeout; `timeout_ms == 0` keeps the
  * configured command and I/O timeouts. */
-h2_pal_result_t h2_quectel_at_exchange_timeout(
-    h2_quectel_modem_t *modem,
-    const char *cmd,
-    h2_quectel_response_t *response,
-    int allow_connect,
-    uint32_t timeout_ms);
+h2_pal_result_t h2_quectel_at_exchange_timeout(h2_quectel_modem_t* modem,
+                                               const char* cmd,
+                                               h2_quectel_response_t* response,
+                                               int allow_connect,
+                                               uint32_t timeout_ms);
 /* A borrowed response line delivered under the state lock. The collector
  * cannot reenter the provider; it records parse errors while AT drains to the
- * terminal result. Long replies need not inflate every response's stack array. */
-typedef void (*h2_quectel_at_line_fn)(void *user, const char *line);
-h2_pal_result_t h2_quectel_at_collect(h2_quectel_modem_t *modem,
-    const char *cmd, h2_quectel_response_t *response, uint32_t timeout_ms,
-    h2_quectel_at_line_fn collect, void *collect_user);
-const char *h2_quectel_response_find(const h2_quectel_response_t *response, const char *prefix);
-int h2_quectel_parse_int_after(const char *text, const char *prefix, int *out_value);
-void h2_quectel_copy_token(char *dst, size_t dst_len, const char *src);
+ * terminal result. Long replies need not inflate every response's stack array.
+ */
+typedef void (*h2_quectel_at_line_fn)(void* user, const char* line);
+h2_pal_result_t h2_quectel_at_collect(
+    h2_quectel_modem_t* modem, const char* cmd, h2_quectel_response_t* response,
+    uint32_t timeout_ms, h2_quectel_at_line_fn collect, void* collect_user);
+const char* h2_quectel_response_find(const h2_quectel_response_t* response,
+                                     const char* prefix);
+int h2_quectel_parse_int_after(const char* text, const char* prefix,
+                               int* out_value);
+void h2_quectel_copy_token(char* dst, size_t dst_len, const char* src);
 h2_pal_modem_registration_state_t h2_quectel_parse_registration_stat(int stat);
-int h2_quectel_parse_clcc_line(const char *line, h2_pal_modem_call_status_t *out_status);
-void h2_quectel_call_watchdog(void *user);
-void h2_quectel_post_call_status(h2_quectel_modem_t *modem, h2_pal_system_event_type_t type, const h2_pal_modem_call_status_t *status);
-int32_t h2_quectel_incoming_call_begin(h2_quectel_modem_t *modem);
-int32_t h2_quectel_incoming_call_current(const h2_quectel_modem_t *modem);
-int32_t h2_quectel_incoming_call_end(h2_quectel_modem_t *modem);
-void h2_quectel_handle_urc_line(h2_quectel_modem_t *modem, const char *line);
-h2_pal_result_t h2_quectel_modem_prepare(h2_quectel_modem_t *modem);
-uint32_t h2_quectel_modem_capabilities(const h2_quectel_modem_t *modem);
-int h2_quectel_cell_locate_token_valid(const char *token);
+int h2_quectel_parse_clcc_line(const char* line,
+                               h2_pal_modem_call_status_t* out_status);
+void h2_quectel_call_watchdog(void* user);
+void h2_quectel_post_call_status(h2_quectel_modem_t* modem,
+                                 h2_pal_system_event_type_t type,
+                                 const h2_pal_modem_call_status_t* status);
+int32_t h2_quectel_incoming_call_begin(h2_quectel_modem_t* modem);
+int32_t h2_quectel_incoming_call_current(const h2_quectel_modem_t* modem);
+int32_t h2_quectel_incoming_call_end(h2_quectel_modem_t* modem);
+void h2_quectel_handle_urc_line(h2_quectel_modem_t* modem, const char* line);
+h2_pal_result_t h2_quectel_modem_prepare(h2_quectel_modem_t* modem);
+uint32_t h2_quectel_modem_capabilities(const h2_quectel_modem_t* modem);
+int h2_quectel_cell_locate_token_valid(const char* token);
 h2_pal_result_t h2_quectel_modem_cell_locate(
-    h2_pal_modem_t *platform,
-    uint32_t timeout_ms,
-    h2_pal_modem_cell_location_t *out_location);
-void h2_quectel_post_system_event(
-    h2_quectel_modem_t *modem,
-    h2_pal_system_event_type_t type,
-    const void *payload,
-    size_t payload_size);
+    h2_pal_modem_t* platform, uint32_t timeout_ms,
+    h2_pal_modem_cell_location_t* out_location);
+void h2_quectel_post_system_event(h2_quectel_modem_t* modem,
+                                  h2_pal_system_event_type_t type,
+                                  const void* payload, size_t payload_size);
 
-h2_pal_result_t h2_quectel_state_lock(h2_quectel_modem_t *modem);
-void h2_quectel_state_unlock(h2_quectel_modem_t *modem);
-h2_pal_result_t h2_quectel_power_reconcile(h2_quectel_modem_t *modem, h2_pal_result_t result);
-int h2_quectel_is_sim_absent_line(const char *line);
-int h2_quectel_is_urc(const char *line, const char *command);
-h2_pal_result_t h2_quectel_operation_begin(h2_quectel_modem_t *modem);
-h2_pal_result_t h2_quectel_operation_end(h2_quectel_modem_t *modem, h2_pal_result_t result);
-h2_pal_result_t h2_quectel_power_wake(h2_quectel_modem_t *modem);
-h2_pal_result_t h2_quectel_power_prepare(h2_quectel_modem_t *modem);
-h2_pal_result_t h2_quectel_set_power_policy(void *user, h2_pal_modem_power_policy_t policy);
-h2_pal_result_t h2_quectel_get_power_status(void *user, h2_pal_modem_power_status_t *out_status);
-void h2_quectel_sim_recover(void *user);
-void h2_quectel_cpin_response_locked(h2_quectel_modem_t *modem, const char *line,
-    uint32_t reset_generation, uint32_t sim_generation);
-void h2_quectel_reset_state(h2_quectel_modem_t *modem);
-void h2_quectel_sim_update(h2_quectel_modem_t *modem, h2_pal_modem_sim_state_t state);
-void h2_quectel_handle_urc_locked(h2_quectel_modem_t *modem, const char *line);
+h2_pal_result_t h2_quectel_state_lock(h2_quectel_modem_t* modem);
+void h2_quectel_state_unlock(h2_quectel_modem_t* modem);
+h2_pal_result_t h2_quectel_power_reconcile(h2_quectel_modem_t* modem,
+                                           h2_pal_result_t result);
+int h2_quectel_is_sim_absent_line(const char* line);
+int h2_quectel_is_urc(const char* line, const char* command);
+h2_pal_result_t h2_quectel_operation_begin(h2_quectel_modem_t* modem);
+h2_pal_result_t h2_quectel_operation_end(h2_quectel_modem_t* modem,
+                                         h2_pal_result_t result);
+h2_pal_result_t h2_quectel_power_wake(h2_quectel_modem_t* modem);
+h2_pal_result_t h2_quectel_power_prepare(h2_quectel_modem_t* modem);
+h2_pal_result_t h2_quectel_set_power_policy(void* user,
+                                            h2_pal_modem_power_policy_t policy);
+h2_pal_result_t h2_quectel_get_power_status(
+    void* user, h2_pal_modem_power_status_t* out_status);
+void h2_quectel_sim_recover(void* user);
+void h2_quectel_cpin_response_locked(h2_quectel_modem_t* modem,
+                                     const char* line,
+                                     uint32_t reset_generation,
+                                     uint32_t sim_generation);
+void h2_quectel_reset_state(h2_quectel_modem_t* modem);
+void h2_quectel_sim_update(h2_quectel_modem_t* modem,
+                           h2_pal_modem_sim_state_t state);
+void h2_quectel_handle_urc_locked(h2_quectel_modem_t* modem, const char* line);
 
-h2_pal_result_t h2_quectel_set_call_volume(void *user, uint32_t percent);
-h2_pal_result_t h2_quectel_get_call_volume(void *user, uint32_t *out_percent);
-h2_pal_result_t h2_quectel_get_emergency_numbers(void *user, uint32_t timeout_ms,
-    h2_pal_modem_emergency_number_t *out_numbers, size_t capacity,
-    size_t *out_count);
-h2_pal_result_t h2_quectel_resolve_model(h2_quectel_modem_t *modem);
-h2_pal_result_t h2_quectel_ec25_emergency_numbers(h2_quectel_modem_t *modem,
-    uint32_t timeout_ms, h2_pal_modem_emergency_number_t *out_numbers,
-    size_t capacity, size_t *out_count);
-h2_pal_result_t h2_quectel_ec800m_emergency_numbers(h2_quectel_modem_t *modem,
-    uint32_t timeout_ms, h2_pal_modem_emergency_number_t *out_numbers,
-    size_t capacity, size_t *out_count);
-h2_pal_result_t h2_quectel_ec800m_restore_phonebook(h2_quectel_modem_t *modem,
-    uint32_t timeout_ms);
-int h2_quectel_ec800m_parse_rsrp(const char *line, int32_t *out_rsrp);
+h2_pal_result_t h2_quectel_set_call_volume(void* user, uint32_t percent);
+h2_pal_result_t h2_quectel_get_call_volume(void* user, uint32_t* out_percent);
+h2_pal_result_t h2_quectel_get_emergency_numbers(
+    void* user, uint32_t timeout_ms,
+    h2_pal_modem_emergency_number_t* out_numbers, size_t capacity,
+    size_t* out_count);
+h2_pal_result_t h2_quectel_resolve_model(h2_quectel_modem_t* modem);
+h2_pal_result_t h2_quectel_ec25_emergency_numbers(
+    h2_quectel_modem_t* modem, uint32_t timeout_ms,
+    h2_pal_modem_emergency_number_t* out_numbers, size_t capacity,
+    size_t* out_count);
+h2_pal_result_t h2_quectel_ec800m_emergency_numbers(
+    h2_quectel_modem_t* modem, uint32_t timeout_ms,
+    h2_pal_modem_emergency_number_t* out_numbers, size_t capacity,
+    size_t* out_count);
+h2_pal_result_t h2_quectel_ec800m_restore_phonebook(h2_quectel_modem_t* modem,
+                                                    uint32_t timeout_ms);
+int h2_quectel_ec800m_parse_rsrp(const char* line, int32_t* out_rsrp);
 
-h2_pal_result_t h2_quectel_ota_start(void *user, const h2_pal_modem_ota_request_t *request);
-h2_pal_result_t h2_quectel_ota_get_status(void *user, uint32_t timeout_ms,
-    h2_pal_modem_ota_status_t *out_status);
-int h2_quectel_is_ota_urc(const char *line);
-void h2_quectel_ota_urc(h2_quectel_modem_t *modem, const char *line);
-h2_pal_result_t h2_quectel_read_revision(h2_quectel_modem_t *modem,
-    uint32_t timeout_ms, char *out_revision, size_t capacity);
+h2_pal_result_t h2_quectel_ota_start(void* user,
+                                     const h2_pal_modem_ota_request_t* request);
+h2_pal_result_t h2_quectel_ota_get_status(
+    void* user, uint32_t timeout_ms, h2_pal_modem_ota_status_t* out_status);
+int h2_quectel_is_ota_urc(const char* line);
+void h2_quectel_ota_urc(h2_quectel_modem_t* modem, const char* line);
+h2_pal_result_t h2_quectel_read_revision(h2_quectel_modem_t* modem,
+                                         uint32_t timeout_ms,
+                                         char* out_revision, size_t capacity);
 
 #endif

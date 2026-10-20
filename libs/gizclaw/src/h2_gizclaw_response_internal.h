@@ -9,14 +9,14 @@
 
 typedef struct h2_gizclaw_resp_arena {
   h2_pal_mem_api_t allocator;
-  h2_gizclaw_resp_storage_t *storage;
+  h2_gizclaw_resp_storage_t* storage;
   size_t checkpoint;
   bool exhausted;
 } h2_gizclaw_resp_arena_t;
 
-h2_pal_result_t h2_gizclaw_resp_arena_begin(h2_gizclaw_resp_storage_t *storage,
-                                            h2_gizclaw_resp_arena_t *arena);
-h2_pal_result_t h2_gizclaw_resp_arena_end(h2_gizclaw_resp_arena_t *arena,
+h2_pal_result_t h2_gizclaw_resp_arena_begin(h2_gizclaw_resp_storage_t* storage,
+                                            h2_gizclaw_resp_arena_t* arena);
+h2_pal_result_t h2_gizclaw_resp_arena_end(h2_gizclaw_resp_arena_t* arena,
                                           h2_pal_result_t result);
 
 #endif

@@ -7,9 +7,9 @@
 /* Shared command state (disk, digest and operation mutex) is borrowed from
  * the UART configuration. Each BLE connection owns only its console client. */
 static h2_loader_app_client_config_t ble_client_config;
-static h2_loader_ble_service_t *ble_service;
+static h2_loader_ble_service_t* ble_service;
 
-static int handle_session(void *user, h2_bleikcp_t *stream,
+static int handle_session(void* user, h2_bleikcp_t* stream,
                           uint16_t conn_handle) {
   (void)conn_handle;
   h2_loader_app_client_t client;
@@ -25,8 +25,7 @@ static int handle_session(void *user, h2_bleikcp_t *stream,
   return h2_loader_app_client_run_return_console(&console);
 }
 
-int h2_jieli_app_loader_ble_start(
-    const h2_loader_app_client_config_t *config) {
+int h2_jieli_app_loader_ble_start(const h2_loader_app_client_config_t* config) {
   if (config == NULL || config->operation_sync == NULL ||
       config->operation_mutex == NULL ||
       (config->hardware_capabilities & H2_LOADER_CAPABILITY_BLE) == 0u) {
@@ -35,14 +34,16 @@ int h2_jieli_app_loader_ble_start(
   if (ble_service != NULL) return H2_PAL_ERR_INVALID_STATE;
   ble_client_config = *config;
   const h2_loader_ble_service_config_t service = {
-      .api = {
-          .ble = h2_jieli_ac791n_devkit_ble_host_api(h2_jieli_wl82_platform_log_api()),
-          .task = h2_jieli_wl82_platform_task_api(),
-          .time = h2_jieli_wl82_platform_time_api(),
-          .sync = h2_jieli_wl82_platform_sync_api(),
-          .system_event = h2_jieli_wl82_platform_system_event_api(),
-          .allocator = h2_jieli_wl82_platform_mem_api(),
-      },
+      .api =
+          {
+              .ble = h2_jieli_ac791n_devkit_ble_host_api(
+                  h2_jieli_wl82_platform_log_api()),
+              .task = h2_jieli_wl82_platform_task_api(),
+              .time = h2_jieli_wl82_platform_time_api(),
+              .sync = h2_jieli_wl82_platform_sync_api(),
+              .system_event = h2_jieli_wl82_platform_system_event_api(),
+              .allocator = h2_jieli_wl82_platform_mem_api(),
+          },
       .log = h2_jieli_wl82_platform_log_api(),
       .board = config->board,
       .capabilities = config->hardware_capabilities,

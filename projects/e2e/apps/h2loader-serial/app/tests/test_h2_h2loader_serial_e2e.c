@@ -10,24 +10,24 @@ typedef struct fake_snapshot {
   int unused;
 } fake_snapshot_t;
 
-static h2_pal_result_t fake_scan(void *user,
-                                 h2_pal_serial_host_snapshot_t **out) {
+static h2_pal_result_t fake_scan(void* user,
+                                 h2_pal_serial_host_snapshot_t** out) {
   (void)user;
-  *out = (h2_pal_serial_host_snapshot_t *)calloc(1u, sizeof(fake_snapshot_t));
+  *out = (h2_pal_serial_host_snapshot_t*)calloc(1u, sizeof(fake_snapshot_t));
   return *out == NULL ? H2_PAL_ERR_NO_MEMORY : H2_PAL_OK;
 }
-static h2_pal_result_t fake_count(void *user,
-                                  const h2_pal_serial_host_snapshot_t *snapshot,
-                                  size_t *out_count) {
+static h2_pal_result_t fake_count(void* user,
+                                  const h2_pal_serial_host_snapshot_t* snapshot,
+                                  size_t* out_count) {
   (void)user;
   (void)snapshot;
   *out_count = 1u;
   return H2_PAL_OK;
 }
-static h2_pal_result_t fake_get(void *user,
-                                const h2_pal_serial_host_snapshot_t *snapshot,
+static h2_pal_result_t fake_get(void* user,
+                                const h2_pal_serial_host_snapshot_t* snapshot,
                                 size_t index,
-                                h2_pal_serial_host_port_info_t *out) {
+                                h2_pal_serial_host_port_info_t* out) {
   (void)user;
   (void)snapshot;
   if (index != 0u) return H2_PAL_ERR_NOT_FOUND;
@@ -35,20 +35,23 @@ static h2_pal_result_t fake_get(void *user,
   strcpy(out->endpoint, "test-port");
   return H2_PAL_OK;
 }
-static h2_pal_result_t fake_destroy(void *user,
-                                    h2_pal_serial_host_snapshot_t **snapshot) {
+static h2_pal_result_t fake_destroy(void* user,
+                                    h2_pal_serial_host_snapshot_t** snapshot) {
   (void)user;
   free(*snapshot);
   *snapshot = NULL;
   return H2_PAL_OK;
 }
 
-#define OLD_IMAGE "1111111111111111111111111111111111111111111111111111111111111111"
-#define NEW_IMAGE "2222222222222222222222222222222222222222222222222222222222222222"
-#define NEW_PACKAGE "3333333333333333333333333333333333333333333333333333333333333333"
+#define OLD_IMAGE \
+  "1111111111111111111111111111111111111111111111111111111111111111"
+#define NEW_IMAGE \
+  "2222222222222222222222222222222222222222222222222222222222222222"
+#define NEW_PACKAGE \
+  "3333333333333333333333333333333333333333333333333333333333333333"
 
-static void set_loader_metadata(h2_h2loader_host_metadata_t *metadata,
-                                const char *image, const char *version) {
+static void set_loader_metadata(h2_h2loader_host_metadata_t* metadata,
+                                const char* image, const char* version) {
   memset(metadata, 0, sizeof(*metadata));
   strcpy(metadata->image_checksum, image);
   strcpy(metadata->package_checksum, NEW_PACKAGE);
@@ -231,8 +234,8 @@ int main(void) {
   config.command = H2_H2LOADER_HOST_COMMAND_HELP;
   assert(h2_h2loader_serial_e2e_run(&runtime, &config, &result) ==
          H2_PAL_ERR_NOT_FOUND);
-  assert(result.selected == 2u && result.failed == 1u &&
-         result.skipped == 1u && result.case_count == 2u);
+  assert(result.selected == 2u && result.failed == 1u && result.skipped == 1u &&
+         result.case_count == 2u);
   assert(result.cases[1].case_id == H2_H2LOADER_SERIAL_E2E_CASE_COMMAND &&
          result.cases[1].result == H2_PAL_ERR_UNAVAILABLE);
   test_loader_update_ready();

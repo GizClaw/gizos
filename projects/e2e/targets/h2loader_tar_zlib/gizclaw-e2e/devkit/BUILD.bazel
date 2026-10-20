@@ -8,15 +8,18 @@ load("//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files([
-    "main/CMakeLists.txt",
-    "main/h2_gizclaw_e2e_devkit_config.c",
-    "main/h2_gizclaw_e2e_devkit_config.h",
-    "main/h2_gizclaw_e2e_devkit_state.c",
-    "main/h2_gizclaw_e2e_devkit_state.h",
-    "main/idf_component.yml",
-    "main/main.c",
-], visibility = ["//visibility:public"])
+exports_files(
+    [
+        "main/CMakeLists.txt",
+        "main/h2_gizclaw_e2e_devkit_config.c",
+        "main/h2_gizclaw_e2e_devkit_config.h",
+        "main/h2_gizclaw_e2e_devkit_state.c",
+        "main/h2_gizclaw_e2e_devkit_state.h",
+        "main/idf_component.yml",
+        "main/main.c",
+    ],
+    visibility = ["//visibility:public"],
+)
 
 esp_target_task_policy(
     default_policy = "4 any 4096 psram",
@@ -59,13 +62,13 @@ firmware_lib_component(
         "//libs/gizclaw",
         "//libs/iostreamikcp",
         "//libs/pal:unsupported",
-        "//libs/wifi_sta",
         "//libs/pal/providers/corehttp",
         "//libs/pal/providers/h2peer",
         "//libs/pal/providers/h2sctp",
         "//libs/pal/providers/libco",
         "//libs/pixa",
         "//libs/runtime",
+        "//libs/wifi_sta",
         "//projects/e2e/apps/gizclaw/app:gizclaw_e2e",
         "//projects/e2e/libs/gizclaw-device:ledger",
     ],

@@ -19,21 +19,22 @@ static h2_atomic_int_t s_marks[2];
 
 /* capability.call('mark', ...) lets a script tell the test it reached a
  * checkpoint without the test reading Lua state. */
-static h2_pal_result_t mark_call(void *user, h2_lua_capability_request_id_t id,
-                                 const char *input, const char *options,
-                                 char *output, size_t output_capacity,
-                                 const char **out_error) {
+static h2_pal_result_t mark_call(void* user, h2_lua_capability_request_id_t id,
+                                 const char* input, const char* options,
+                                 char* output, size_t output_capacity,
+                                 const char** out_error) {
   (void)id;
   (void)input;
   (void)options;
   (void)out_error;
-  h2_atomic_fetch_add((h2_atomic_int_t *)user, 1);
+  h2_atomic_fetch_add((h2_atomic_int_t*)user, 1);
   (void)snprintf(output, output_capacity, "ok");
   return H2_PAL_OK;
 }
 
-static h2_lua_host_t *create_host(h2_runtime_t *runtime, int enable_link,
-                                  h2_atomic_int_t *mark, const h2_pal_mem_api_t *allocator) {
+static h2_lua_host_t* create_host(h2_runtime_t* runtime, int enable_link,
+                                  h2_atomic_int_t* mark,
+                                  const h2_pal_mem_api_t* allocator) {
   const h2_lua_host_config_t config = {
       .runtime = runtime,
       .allocator = allocator,
@@ -45,14 +46,17 @@ static h2_lua_host_t *create_host(h2_runtime_t *runtime, int enable_link,
       .adv_type = H2_PAL_BLE_ADV_TYPE_LEGACY,
       .scan_type = H2_PAL_BLE_SCAN_TYPE_LEGACY,
   };
-  h2_lua_host_t *host = NULL;
+  h2_lua_host_t* host = NULL;
   assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
   if (enable_link) {
-    size_t before = allocator != NULL
-        ? h2_atomic_load(&((h2_test_allocator_t *)allocator->user)->calls) : 0u;
+    size_t before =
+        allocator != NULL
+            ? h2_atomic_load(&((h2_test_allocator_t*)allocator->user)->calls)
+            : 0u;
     assert(h2_lua_link_enable(host, &link_config) == H2_PAL_OK);
     if (allocator != NULL)
-      assert(h2_atomic_load(&((h2_test_allocator_t *)allocator->user)->calls) == before + 3u);
+      assert(h2_atomic_load(&((h2_test_allocator_t*)allocator->user)->calls) ==
+             before + 3u);
     assert(h2_lua_link_enable(host, &link_config) == H2_PAL_ERR_INVALID_STATE);
   }
   if (mark != NULL) {
@@ -63,11 +67,11 @@ static h2_lua_host_t *create_host(h2_runtime_t *runtime, int enable_link,
   return host;
 }
 
-static h2_lua_job_id_t submit(h2_lua_host_t *host, const char *name,
-                              const char *script, const char *tag) {
+static h2_lua_job_id_t submit(h2_lua_host_t* host, const char* name,
+                              const char* script, const char* tag) {
   const h2_lua_arg_t args[] = {{"tag", tag}};
   h2_lua_job_id_t job = H2_LUA_JOB_ID_NONE;
-  assert(h2_lua_job_submit_text(host, NULL, name, (const uint8_t *)script,
+  assert(h2_lua_job_submit_text(host, NULL, name, (const uint8_t*)script,
                                 strlen(script), args, 1u, &job) == H2_PAL_OK);
   return job;
 }
@@ -78,7 +82,7 @@ static int is_terminal(h2_lua_job_state_t state) {
          state == H2_LUA_JOB_STOPPED;
 }
 
-static h2_lua_job_status_t wait_job(h2_lua_host_t *host, h2_lua_job_id_t job) {
+static h2_lua_job_status_t wait_job(h2_lua_host_t* host, h2_lua_job_id_t job) {
   h2_lua_job_status_t status;
   for (int i = 0; i < 20000; ++i) {
     assert(h2_lua_job_get_status(host, job, &status) == H2_PAL_OK);
@@ -93,8 +97,8 @@ static h2_lua_job_status_t wait_job(h2_lua_host_t *host, h2_lua_job_id_t job) {
   return status;
 }
 
-static void expect_success(h2_lua_host_t *host, h2_lua_job_id_t job,
-                           const char *message) {
+static void expect_success(h2_lua_host_t* host, h2_lua_job_id_t job,
+                           const char* message) {
   const h2_lua_job_status_t status = wait_job(host, job);
   if (status.state != H2_LUA_JOB_SUCCEEDED ||
       strcmp(status.message, message) != 0) {
@@ -105,7 +109,7 @@ static void expect_success(h2_lua_host_t *host, h2_lua_job_id_t job,
   assert(h2_lua_job_release(host, job) == H2_PAL_OK);
 }
 
-static void wait_until(int (*predicate)(void *), void *user) {
+static void wait_until(int (*predicate)(void*), void* user) {
   for (int i = 0; i < 20000; ++i) {
     if (predicate(user)) {
       return;
@@ -115,20 +119,18 @@ static void wait_until(int (*predicate)(void *), void *user) {
   assert(!"condition not reached");
 }
 
-static int mark_reached(void *user) {
-  return h2_atomic_load((h2_atomic_int_t *)user) > 0;
+static int mark_reached(void* user) {
+  return h2_atomic_load((h2_atomic_int_t*)user) > 0;
 }
 
-static int device_advertising(void *user) {
+static int device_advertising(void* user) {
   const fake_snapshot_t value = fake_snapshot(user);
   return value.adv_running && value.registered;
 }
 
-static int device_released(void *user) {
-  return fake_is_released(user);
-}
+static int device_released(void* user) { return fake_is_released(user); }
 
-static void wait_released(fake_device_t *device) {
+static void wait_released(fake_device_t* device) {
   for (int i = 0; i < 20000 && !fake_is_released(device); ++i) {
     (void)h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u);
   }
@@ -145,26 +147,25 @@ static void wait_released(fake_device_t *device) {
 
 /* ---- Lua scripts ---- */
 
-#define LUA_PRELUDE                                                           \
-  "local link=require('link');local rt=require('runtime');"                   \
-  "local ev=rt.event;local s={msgs={}};"                                      \
-  "s.dgrams={};"                                                               \
-  "link.on(ev.LINK_CONNECTED,function(e) s.role=e.role;"                      \
-  "s.max_datagram=e.max_datagram end);"                                        \
-  "link.on(ev.LINK_MESSAGE,function(e) local q=e.reliable and s.msgs "        \
-  "or s.dgrams;q[#q+1]=e.data end);"                                          \
-  "link.on(ev.LINK_DISCONNECTED,function(e) s.disc=e.reason;"                 \
-  "s.disc_result=e.result end);"                                               \
-  "link.on(ev.LINK_ERROR,function(e) s.err=e.reason end);"                    \
-  "local function wait(f) for _=1,4000 do if f() then return end "            \
-  "rt.sleep(5) end error('wait timed out') end;"                              \
-  "local function mark() require('capability').call('mark','{}') end;"        \
-  "local function start(f,o) for _=1,600 do local ok,err=f(o);"               \
-  "if ok then return end;assert(err=='link: busy',err);rt.sleep(5) end "      \
+#define LUA_PRELUDE                                                      \
+  "local link=require('link');local rt=require('runtime');"              \
+  "local ev=rt.event;local s={msgs={}};"                                 \
+  "s.dgrams={};"                                                         \
+  "link.on(ev.LINK_CONNECTED,function(e) s.role=e.role;"                 \
+  "s.max_datagram=e.max_datagram end);"                                  \
+  "link.on(ev.LINK_MESSAGE,function(e) local q=e.reliable and s.msgs "   \
+  "or s.dgrams;q[#q+1]=e.data end);"                                     \
+  "link.on(ev.LINK_DISCONNECTED,function(e) s.disc=e.reason;"            \
+  "s.disc_result=e.result end);"                                         \
+  "link.on(ev.LINK_ERROR,function(e) s.err=e.reason end);"               \
+  "local function wait(f) for _=1,4000 do if f() then return end "       \
+  "rt.sleep(5) end error('wait timed out') end;"                         \
+  "local function mark() require('capability').call('mark','{}') end;"   \
+  "local function start(f,o) for _=1,600 do local ok,err=f(o);"          \
+  "if ok then return end;assert(err=='link: busy',err);rt.sleep(5) end " \
   "error('link stayed busy') end;"
 
-static const char s_host_round_trip[] =
-    LUA_PRELUDE
+static const char s_host_round_trip[] = LUA_PRELUDE
     "assert(link.available());"
     "local ok,err=link.send('early');assert(ok==nil and err=='link: not connected');"
     "assert(link.host({tag=args.tag}));"
@@ -181,8 +182,7 @@ static const char s_host_round_trip[] =
     "assert(link.state()=='idle');"
     "return 'host-ok'";
 
-static const char s_join_round_trip[] =
-    LUA_PRELUDE
+static const char s_join_round_trip[] = LUA_PRELUDE
     "assert(link.join({tag=args.tag,timeout_ms=5000}));"
     "wait(function() return s.role end);assert(s.role=='join');"
     "wait(function() return #s.msgs==4 end);"
@@ -194,8 +194,7 @@ static const char s_join_round_trip[] =
     "assert(link.close());assert(link.state()=='idle');"
     "return 'join-ok'";
 
-static const char s_host_burst[] =
-    LUA_PRELUDE
+static const char s_host_burst[] = LUA_PRELUDE
     "assert(link.host({tag=args.tag}));"
     "wait(function() return s.role end);"
     "local busy=0;local pad=string.rep('p',190);"
@@ -207,24 +206,21 @@ static const char s_host_burst[] =
     "wait(function() return s.disc end);assert(s.disc=='peer_closed',s.disc);"
     "return 'burst-ok'";
 
-static const char s_join_burst[] =
-    LUA_PRELUDE
+static const char s_join_burst[] = LUA_PRELUDE
     "assert(link.join({tag=args.tag,timeout_ms=5000}));"
     "wait(function() return #s.msgs==200 end);"
     "for i=1,200 do assert(s.msgs[i]:sub(1,4)==string.format('%04d',i),"
     "'out of order at '..i) end;"
     "return 'burst-ok'";
 
-static const char s_host_exit_on_first_message[] =
-    LUA_PRELUDE
+static const char s_host_exit_on_first_message[] = LUA_PRELUDE
     "assert(link.host({tag=args.tag}));"
     "wait(function() return #s.msgs>0 or s.disc or s.err end);"
     "assert(#s.msgs>0,'no message: disc='..tostring(s.disc)..' result='.."
     "tostring(s.disc_result)..' err='..tostring(s.err));"
     "return 'exit-ok'";
 
-static const char s_join_flood[] =
-    LUA_PRELUDE
+static const char s_join_flood[] = LUA_PRELUDE
     "assert(link.join({tag=args.tag,timeout_ms=5000}));"
     "wait(function() return s.role end);"
     "local i=0;"
@@ -234,16 +230,14 @@ static const char s_join_flood[] =
     "assert(s.disc=='peer_closed' or s.disc=='lost',s.disc);"
     "return 'flood-ok'";
 
-static const char s_reused_slot[] =
-    LUA_PRELUDE
+static const char s_reused_slot[] = LUA_PRELUDE
     "rt.sleep(30);"
     "assert(#s.msgs==0 and not s.role and not s.disc);"
     "assert(link.state()=='idle');"
     "return 'reuse-ok'";
 
 /* Reliable messages, unreliable datagrams and the byte stream over one link. */
-static const char s_host_transports[] =
-    LUA_PRELUDE
+static const char s_host_transports[] = LUA_PRELUDE
     "local ok,err=link.send_unreliable('x');assert(ok==nil and err=='link: not connected');\n"
     "ok,err=link.write('x');assert(ok==nil and err=='link: not connected');\n"
     "assert(link.host({tag=args.tag}));\n"
@@ -268,8 +262,7 @@ static const char s_host_transports[] =
     "local r,rerr=link.read(16,0);assert(r==nil and rerr=='link: closed',rerr);\n"
     "return 'transports-ok'";
 
-static const char s_join_transports[] =
-    LUA_PRELUDE
+static const char s_join_transports[] = LUA_PRELUDE
     "assert(link.join({tag=args.tag,timeout_ms=5000}));\n"
     "wait(function() return s.role end);\n"
     "local total=0;\n"
@@ -286,31 +279,27 @@ static const char s_join_transports[] =
     "rt.sleep(100);\n"
     "return 'transports-ok'";
 
-static const char s_wait_lost[] =
-    LUA_PRELUDE
+static const char s_wait_lost[] = LUA_PRELUDE
     "if args.tag=='lost-host' then assert(link.host({tag='lost'})) "
     "else assert(link.join({tag='lost',timeout_ms=5000})) end;"
     "wait(function() return s.role end);mark();"
     "wait(function() return s.disc end);assert(s.disc=='lost',s.disc);"
     "return 'lost-ok'";
 
-static const char s_connect_then_idle[] =
-    LUA_PRELUDE
+static const char s_connect_then_idle[] = LUA_PRELUDE
     "if args.tag=='host' then start(link.host,{tag='idle'}) "
     "else start(link.join,{tag='idle',timeout_ms=5000}) end;"
     "wait(function() return s.role end);mark();"
     "while true do rt.sleep(10) end";
 
-static const char s_wait_peer_closed[] =
-    LUA_PRELUDE
+static const char s_wait_peer_closed[] = LUA_PRELUDE
     "start(link.host,{tag='idle'});"
     "wait(function() return s.role end);mark();"
     "wait(function() return s.disc end);assert(s.disc=='peer_closed',s.disc);"
     "return 'peer-closed-ok'";
 
 /* host() straight from the LINK_DISCONNECTED callback must not see busy. */
-static const char s_rehost_from_callback[] =
-    LUA_PRELUDE
+static const char s_rehost_from_callback[] = LUA_PRELUDE
     "link.on(ev.LINK_DISCONNECTED,function(e) "
     "s.again={link.host({tag='again'})} end);"
     "start(link.host,{tag='idle'});"
@@ -320,20 +309,17 @@ static const char s_rehost_from_callback[] =
     "assert(link.state()=='hosting');assert(link.close());"
     "return 'rehost-ok'";
 
-static const char s_host_forever[] =
-    LUA_PRELUDE
+static const char s_host_forever[] = LUA_PRELUDE
     "assert(link.host({tag=args.tag}));mark();"
     "while true do rt.sleep(10) end";
 
-static const char s_join_expect_not_found[] =
-    LUA_PRELUDE
+static const char s_join_expect_not_found[] = LUA_PRELUDE
     "assert(link.join({tag=args.tag,timeout_ms=300}));"
     "wait(function() return s.err end);assert(s.err=='not_found',s.err);"
     "assert(link.state()=='idle');"
     "return 'not-found-ok'";
 
-static const char s_host_timeout[] =
-    LUA_PRELUDE
+static const char s_host_timeout[] = LUA_PRELUDE
     "assert(link.host({tag=args.tag,timeout_ms=200}));"
     "wait(function() return s.err end);assert(s.err=='timeout',s.err);"
     "return 'host-timeout-ok'";
@@ -367,27 +353,27 @@ static const char s_bad_options[] =
 
 typedef struct pair {
   fake_air_t air;
-  h2_runtime_t *runtime[2];
-  h2_lua_host_t *host[2];
+  h2_runtime_t* runtime[2];
+  h2_lua_host_t* host[2];
   h2_test_allocator_t arenas[2];
 } pair_t;
 
 static int s_count_pair;
 
-static void pair_open(pair_t *pair) {
+static void pair_open(pair_t* pair) {
   fake_air_init(&pair->air);
   for (int i = 0; i < 2; ++i) {
     h2_atomic_store(&s_marks[i], 0);
     pair->runtime[i] = fake_create_runtime(&pair->air.devices[i].ble,
-                                      &pair->air.devices[i].events);
+                                           &pair->air.devices[i].events);
     fake_set_baseline(&pair->air.devices[i]);
     h2_test_allocator_init(&pair->arenas[i]);
     pair->host[i] = create_host(pair->runtime[i], 1, &s_marks[i],
-        s_count_pair ? &pair->arenas[i].api : NULL);
+                                s_count_pair ? &pair->arenas[i].api : NULL);
   }
 }
 
-static void pair_close(pair_t *pair) {
+static void pair_close(pair_t* pair) {
   for (int i = 0; i < 2; ++i) {
     if (pair->host[i] != NULL) {
       h2_lua_host_destroy(pair->host[i]);
@@ -402,10 +388,10 @@ static void pair_close(pair_t *pair) {
 static void test_round_trip_and_peer_close(void) {
   pair_t pair;
   pair_open(&pair);
-  h2_lua_job_id_t host = submit(pair.host[0], "@host.lua", s_host_round_trip,
-                                "tetris-duel");
-  h2_lua_job_id_t join = submit(pair.host[1], "@join.lua", s_join_round_trip,
-                                "tetris-duel");
+  h2_lua_job_id_t host =
+      submit(pair.host[0], "@host.lua", s_host_round_trip, "tetris-duel");
+  h2_lua_job_id_t join =
+      submit(pair.host[1], "@join.lua", s_join_round_trip, "tetris-duel");
   expect_success(pair.host[1], join, "join-ok");
   expect_success(pair.host[0], host, "host-ok");
   wait_until(device_released, &pair.air.devices[0]);
@@ -434,8 +420,8 @@ static void test_three_transports(int hold_terminal) {
   if (host_status.state != H2_LUA_JOB_SUCCEEDED ||
       join_status.state != H2_LUA_JOB_SUCCEEDED) {
     fprintf(stderr, "transports host=%d %s; join=%d %s\n",
-            (int)host_status.state, host_status.message,
-            (int)join_status.state, join_status.message);
+            (int)host_status.state, host_status.message, (int)join_status.state,
+            join_status.message);
   }
   /* Release even on job failure, before release/destroy can join the task. */
   pthread_mutex_lock(&gate.mutex);
@@ -518,7 +504,8 @@ static void test_sequential_sessions_reuse_service(void) {
     h2_lua_job_id_t join =
         submit(pair.host[1 - h], "@idle.lua", s_connect_then_idle, "join");
     for (int i = 0; i < 10000 && !(h2_atomic_load(&s_marks[0]) &&
-                                   h2_atomic_load(&s_marks[1])); ++i) {
+                                   h2_atomic_load(&s_marks[1]));
+         ++i) {
       (void)h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u);
     }
     if (!(h2_atomic_load(&s_marks[0]) && h2_atomic_load(&s_marks[1]))) {
@@ -552,8 +539,8 @@ static void test_rehost_from_disconnect_callback(void) {
   for (int round = 0; round < 5; ++round) {
     h2_atomic_store(&s_marks[0], 0);
     h2_atomic_store(&s_marks[1], 0);
-    h2_lua_job_id_t host = submit(pair.host[0], "@rehost.lua",
-                                  s_rehost_from_callback, "host");
+    h2_lua_job_id_t host =
+        submit(pair.host[0], "@rehost.lua", s_rehost_from_callback, "host");
     h2_lua_job_id_t join =
         submit(pair.host[1], "@idle.lua", s_connect_then_idle, "join");
     wait_until(mark_reached, &s_marks[0]);
@@ -568,9 +555,7 @@ static void test_rehost_from_disconnect_callback(void) {
   pair_close(&pair);
 }
 
-static int device_scanning(void *user) {
-  return fake_snapshot(user).scanning;
-}
+static int device_scanning(void* user) { return fake_snapshot(user).scanning; }
 
 /* The joiner starts scanning first and sees the host's other advertisement,
  * which the duplicate filter then pins for that scan; restarting the scan
@@ -699,10 +684,10 @@ static void test_capability_off(void) {
   fake_air_init(&air);
 
   /* BLE present but the launcher did not enable the link. */
-  h2_runtime_t *runtime = fake_create_runtime(&air.devices[0].ble,
-                                         &air.devices[0].events);
+  h2_runtime_t* runtime =
+      fake_create_runtime(&air.devices[0].ble, &air.devices[0].events);
   fake_set_baseline(&air.devices[0]);
-  h2_lua_host_t *host = create_host(runtime, 0, NULL, NULL);
+  h2_lua_host_t* host = create_host(runtime, 0, NULL, NULL);
   expect_success(host, submit(host, "@off.lua", s_unavailable, "x"),
                  "unavailable-ok");
   assert(h2_lua_link_enable(host, &link_config) == H2_PAL_ERR_INVALID_STATE);
@@ -712,7 +697,7 @@ static void test_capability_off(void) {
 
   /* A board without BLE: enable reports UNSUPPORTED and link stays off. */
   runtime = fake_create_runtime(h2_pal_unsupported_ble_host_api(),
-                           h2_pal_unsupported_system_event_api());
+                                h2_pal_unsupported_system_event_api());
   const h2_lua_host_config_t config = {.runtime = runtime};
   assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
   assert(h2_lua_link_enable(host, NULL) == H2_PAL_ERR_INVALID_ARG);
@@ -728,7 +713,7 @@ static void test_capability_off(void) {
 
   /* BLE present but no system-event API. */
   runtime = fake_create_runtime(&air.devices[0].ble,
-                           h2_pal_unsupported_system_event_api());
+                                h2_pal_unsupported_system_event_api());
   const h2_lua_host_config_t no_events = {.runtime = runtime};
   assert(h2_lua_host_create(&no_events, &host) == H2_PAL_OK);
   assert(h2_lua_link_enable(host, &link_config) == H2_PAL_ERR_UNSUPPORTED);
@@ -770,8 +755,7 @@ int main(void) {
   fprintf(stderr, "== test_tag_mismatch_and_timeouts\n");
   test_tag_mismatch_and_timeouts();
   puts("lua link tests passed");
-  for (int i = 0; i < 2; ++i)
-    h2_atomic_int_destroy(&s_marks[i]);
+  for (int i = 0; i < 2; ++i) h2_atomic_int_destroy(&s_marks[i]);
   assert(h2_bleikcp_global_shutdown() == H2_PAL_OK);
   return 0;
 }

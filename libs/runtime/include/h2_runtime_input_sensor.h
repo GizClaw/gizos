@@ -12,15 +12,15 @@ extern "C" {
 #endif
 
 typedef struct h2_runtime_battery_state {
-    h2_pal_battery_reading_t reading;
-    h2_pal_result_t result;
-    h2_runtime_timestamp_ms_t updated_at_ms;
+  h2_pal_battery_reading_t reading;
+  h2_pal_result_t result;
+  h2_runtime_timestamp_ms_t updated_at_ms;
 } h2_runtime_battery_state_t;
 
 typedef struct h2_runtime_temperature_state {
-    h2_pal_temperature_reading_t reading;
-    h2_pal_result_t result;
-    h2_runtime_timestamp_ms_t updated_at_ms;
+  h2_pal_temperature_reading_t reading;
+  h2_pal_result_t result;
+  h2_runtime_timestamp_ms_t updated_at_ms;
 } h2_runtime_temperature_state_t;
 
 #ifdef __cplusplus

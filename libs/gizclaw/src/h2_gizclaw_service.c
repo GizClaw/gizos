@@ -16,11 +16,11 @@
 #define H2_GIZCLAW_EVENT_DRAIN_MAX 16u
 
 #ifdef H2_GIZCLAW_TESTING
-static const h2_gizclaw_service_client_ops_t *s_client_ops;
+static const h2_gizclaw_service_client_ops_t* s_client_ops;
 static h2_gizclaw_runtime_notify_test_fn s_runtime_notify;
 
 void h2_gizclaw_service_test_set_client_ops(
-    const h2_gizclaw_service_client_ops_t *ops) {
+    const h2_gizclaw_service_client_ops_t* ops) {
   s_client_ops = ops;
 }
 
@@ -30,9 +30,9 @@ void h2_gizclaw_service_test_set_runtime_notify(
 }
 #endif
 
-void h2_gizclaw_service_log_request(const h2_gizclaw_service_t *service,
+void h2_gizclaw_service_log_request(const h2_gizclaw_service_t* service,
                                     h2_pal_log_level_t level,
-                                    const char *request_kind, const char *stage,
+                                    const char* request_kind, const char* stage,
                                     uint64_t identity, h2_pal_result_t result,
                                     int detail_code, size_t frame_count,
                                     size_t byte_count) {
@@ -51,15 +51,15 @@ void h2_gizclaw_service_log_request(const h2_gizclaw_service_t *service,
 }
 
 void h2_gizclaw_service_flush_audio_log_internal(
-    const h2_gizclaw_service_t *service, const h2_gizclaw_audio_log_t *log) {
-  const h2_pal_log_api_t *api = service != NULL ? service->client_config.log : NULL;
-  if (api == NULL)
-    return;
+    const h2_gizclaw_service_t* service, const h2_gizclaw_audio_log_t* log) {
+  const h2_pal_log_api_t* api =
+      service != NULL ? service->client_config.log : NULL;
+  if (api == NULL) return;
   for (size_t i = 0u; i < log->count; ++i)
     (void)h2_pal_log_write(api, log->levels[i], "gizclaw", log->messages[i]);
 }
 
-static uint64_t service_monotonic_ms(const h2_gizclaw_service_t *service) {
+static uint64_t service_monotonic_ms(const h2_gizclaw_service_t* service) {
   uint64_t now_ms = 0u;
   if (service == NULL || service->config.client_config == NULL ||
       service->config.client_config->time == NULL ||
@@ -76,9 +76,9 @@ static uint64_t elapsed_ms(uint64_t started_ms, uint64_t completed_ms) {
              : 0u;
 }
 
-static void log_operation_trace(const h2_gizclaw_service_t *service,
-                                h2_pal_log_level_t level, const char *stage,
-                                const h2_gizclaw_operation_t *operation,
+static void log_operation_trace(const h2_gizclaw_service_t* service,
+                                h2_pal_log_level_t level, const char* stage,
+                                const h2_gizclaw_operation_t* operation,
                                 h2_pal_result_t result, int detail_code,
                                 uint64_t dispatch_ms) {
   if (service == NULL || service->config.client_config == NULL ||
@@ -106,9 +106,9 @@ static void log_operation_trace(const h2_gizclaw_service_t *service,
                          message);
 }
 
-static h2_pal_result_t client_init(const h2_gizclaw_config_t *config,
-                                   const gzc_rpc_stream_provider_t *provider,
-                                   h2_gizclaw_client_t **out_client) {
+static h2_pal_result_t client_init(const h2_gizclaw_config_t* config,
+                                   const gzc_rpc_stream_provider_t* provider,
+                                   h2_gizclaw_client_t** out_client) {
 #ifdef H2_GIZCLAW_TESTING
   if (s_client_ops != NULL && s_client_ops->init != NULL)
     return s_client_ops->init(config, out_client);
@@ -117,7 +117,7 @@ static h2_pal_result_t client_init(const h2_gizclaw_config_t *config,
       config, provider, out_client);
 }
 
-static h2_pal_result_t client_connect(h2_gizclaw_client_t *client) {
+static h2_pal_result_t client_connect(h2_gizclaw_client_t* client) {
 #ifdef H2_GIZCLAW_TESTING
   if (s_client_ops != NULL && s_client_ops->connect != NULL)
     return s_client_ops->connect(client);
@@ -125,7 +125,7 @@ static h2_pal_result_t client_connect(h2_gizclaw_client_t *client) {
   return (h2_pal_result_t)h2_gizclaw_client_connect(client);
 }
 
-static h2_pal_result_t client_poll(h2_gizclaw_client_t *client,
+static h2_pal_result_t client_poll(h2_gizclaw_client_t* client,
                                    int timeout_ms) {
 #ifdef H2_GIZCLAW_TESTING
   if (s_client_ops != NULL && s_client_ops->poll != NULL)
@@ -134,10 +134,9 @@ static h2_pal_result_t client_poll(h2_gizclaw_client_t *client,
   return (h2_pal_result_t)h2_gizclaw_client_poll(client, timeout_ms);
 }
 
-static h2_pal_result_t
-client_set_event_handler(h2_gizclaw_client_t *client,
-                         h2_gizclaw_client_event_sink_fn event,
-                         void *event_user) {
+static h2_pal_result_t client_set_event_handler(
+    h2_gizclaw_client_t* client, h2_gizclaw_client_event_sink_fn event,
+    void* event_user) {
 #ifdef H2_GIZCLAW_TESTING
   if (s_client_ops != NULL) {
     return s_client_ops->set_event_handler != NULL
@@ -149,24 +148,23 @@ client_set_event_handler(h2_gizclaw_client_t *client,
                                                               event_user);
 }
 
-static void service_downlink_stream(void *user, bool begin,
-                                    const char *stream_id) {
+static void service_downlink_stream(void* user, bool begin,
+                                    const char* stream_id) {
   if (begin)
     h2_gizclaw_conversation_downlink_bos_internal(user, stream_id);
   else
     h2_gizclaw_conversation_downlink_eos_internal(user, stream_id);
 }
 
-static void client_set_downlink_stream(h2_gizclaw_service_t *service) {
+static void client_set_downlink_stream(h2_gizclaw_service_t* service) {
 #ifdef H2_GIZCLAW_TESTING
-  if (s_client_ops != NULL && s_client_ops->init != NULL)
-    return;
+  if (s_client_ops != NULL && s_client_ops->init != NULL) return;
 #endif
   h2_gizclaw_client_set_downlink_stream_internal(
       service->client, service_downlink_stream, service);
 }
 
-static h2_pal_result_t client_dispatch_event(h2_gizclaw_client_t *client) {
+static h2_pal_result_t client_dispatch_event(h2_gizclaw_client_t* client) {
 #ifdef H2_GIZCLAW_TESTING
   if (s_client_ops != NULL) {
     return s_client_ops->dispatch_event != NULL
@@ -178,7 +176,7 @@ static h2_pal_result_t client_dispatch_event(h2_gizclaw_client_t *client) {
                                                            NULL);
 }
 
-static h2_pal_result_t client_close(h2_gizclaw_client_t *client) {
+static h2_pal_result_t client_close(h2_gizclaw_client_t* client) {
 #ifdef H2_GIZCLAW_TESTING
   if (s_client_ops != NULL && s_client_ops->close != NULL)
     return s_client_ops->close(client);
@@ -186,7 +184,7 @@ static h2_pal_result_t client_close(h2_gizclaw_client_t *client) {
   return (h2_pal_result_t)h2_gizclaw_client_close(client);
 }
 
-static void client_deinit(h2_gizclaw_client_t *client) {
+static void client_deinit(h2_gizclaw_client_t* client) {
 #ifdef H2_GIZCLAW_TESTING
   if (s_client_ops != NULL && s_client_ops->deinit != NULL) {
     s_client_ops->deinit(client);
@@ -196,16 +194,16 @@ static void client_deinit(h2_gizclaw_client_t *client) {
   h2_gizclaw_client_deinit(client);
 }
 
-static h2_pal_result_t lock_service(h2_gizclaw_service_t *service) {
+static h2_pal_result_t lock_service(h2_gizclaw_service_t* service) {
   return h2_pal_mutex_lock(service->config.sync, service->mutex);
 }
 
-static void unlock_service(h2_gizclaw_service_t *service) {
+static void unlock_service(h2_gizclaw_service_t* service) {
   (void)h2_pal_mutex_unlock(service->config.sync, service->mutex);
 }
 
-static bool dispatch_work_ready_locked(const h2_gizclaw_service_t *service) {
-  const h2_gizclaw_stream_ring_t *ring =
+static bool dispatch_work_ready_locked(const h2_gizclaw_service_t* service) {
+  const h2_gizclaw_stream_ring_t* ring =
       &service->stream_rings[H2_GIZCLAW_STREAM_DATA_DOWNLINK];
   return service->dispatch_item_count != 0u ||
          (service->data_downlink_stream != NULL && ring->dispatch_ready &&
@@ -214,9 +212,8 @@ static bool dispatch_work_ready_locked(const h2_gizclaw_service_t *service) {
           service->active_count == 0u && service->config.terminal != NULL);
 }
 
-void h2_gizclaw_service_wake_dispatch_internal(h2_gizclaw_service_t *service) {
-  if (service == NULL || service->config.runtime == NULL)
-    return;
+void h2_gizclaw_service_wake_dispatch_internal(h2_gizclaw_service_t* service) {
+  if (service == NULL || service->config.runtime == NULL) return;
   /* Level signal: the Runtime keeps at most one wake pending and the App
    * drains this service after every wake, so nothing here needs to
    * remember whether a wake is already in flight. */
@@ -229,10 +226,10 @@ void h2_gizclaw_service_wake_dispatch_internal(h2_gizclaw_service_t *service) {
   (void)h2_runtime_notify(service->config.runtime);
 }
 
-static bool service_cancel_requested(void *user) {
-  h2_gizclaw_service_t *service = user;
+static bool service_cancel_requested(void* user) {
+  h2_gizclaw_service_t* service = user;
   h2_gizclaw_cancel_fn original = NULL;
-  void *original_user = NULL;
+  void* original_user = NULL;
   bool canceled = true;
   if (service != NULL && lock_service(service) == H2_PAL_OK) {
     /* The SDK cancel hook describes the lifetime of the shared client/Peer.
@@ -248,14 +245,13 @@ static bool service_cancel_requested(void *user) {
 }
 
 bool h2_gizclaw_cancel_requested(
-    const h2_gizclaw_cancel_token_t *cancel_token) {
-  if (cancel_token == NULL || cancel_token->operation == NULL)
-    return true;
-  h2_gizclaw_operation_t *operation = cancel_token->operation;
-  h2_gizclaw_service_t *service = operation->service;
+    const h2_gizclaw_cancel_token_t* cancel_token) {
+  if (cancel_token == NULL || cancel_token->operation == NULL) return true;
+  h2_gizclaw_operation_t* operation = cancel_token->operation;
+  h2_gizclaw_service_t* service = operation->service;
   bool canceled = true;
   h2_gizclaw_cancel_fn original = NULL;
-  void *original_user = NULL;
+  void* original_user = NULL;
   if (service != NULL && lock_service(service) == H2_PAL_OK) {
     canceled = service->stopping || operation->cancel_requested;
     original = service->original_cancel;
@@ -265,9 +261,9 @@ bool h2_gizclaw_cancel_requested(
   return canceled || (original != NULL && original(original_user));
 }
 
-static bool original_cancel_requested(h2_gizclaw_service_t *service) {
+static bool original_cancel_requested(h2_gizclaw_service_t* service) {
   h2_gizclaw_cancel_fn original = NULL;
-  void *original_user = NULL;
+  void* original_user = NULL;
   if (service != NULL && lock_service(service) == H2_PAL_OK) {
     original = service->original_cancel;
     original_user = service->original_cancel_user;
@@ -276,7 +272,7 @@ static bool original_cancel_requested(h2_gizclaw_service_t *service) {
   return original != NULL && original(original_user);
 }
 
-static void free_operation_if_unreferenced(h2_gizclaw_operation_t *operation) {
+static void free_operation_if_unreferenced(h2_gizclaw_operation_t* operation) {
   if (!operation->caller_reference && !operation->internal_reference) {
     h2_atomic_bool_destroy(&operation->terminal);
     h2_pal_mem_free(operation->service->config.client_config->allocator,
@@ -285,7 +281,7 @@ static void free_operation_if_unreferenced(h2_gizclaw_operation_t *operation) {
 }
 
 static h2_pal_result_t enqueue_completion_locked(
-    h2_gizclaw_service_t *service, h2_gizclaw_operation_t *operation,
+    h2_gizclaw_service_t* service, h2_gizclaw_operation_t* operation,
     h2_gizclaw_operation_terminal_kind_t kind, h2_pal_result_t result) {
   operation->result.terminal_kind = kind;
   operation->result.result = result;
@@ -301,8 +297,7 @@ static h2_pal_result_t enqueue_completion_locked(
     h2_atomic_store_explicit(&operation->terminal, true, H2_ATOMIC_RELEASE);
     return H2_PAL_OK;
   }
-  if (operation->dispatch_queued)
-    return H2_PAL_OK;
+  if (operation->dispatch_queued) return H2_PAL_OK;
   const h2_gizclaw_dispatch_item_t item = {
       .kind = H2_GIZCLAW_DISPATCH_OPERATION,
       .operation = operation,
@@ -338,34 +333,28 @@ static h2_pal_result_t enqueue_completion_locked(
   return overflow;
 }
 
-static void retire_operation(h2_gizclaw_service_t *service,
-                             h2_gizclaw_operation_t *operation) {
+static void retire_operation(h2_gizclaw_service_t* service,
+                             h2_gizclaw_operation_t* operation) {
   /* The operation's internal reference protects it if this drops the last
    * request reference and releases its caller-owned operation handle. */
-  if (operation->release_user != NULL)
-    operation->release_user(operation->user);
-  if (lock_service(service) != H2_PAL_OK)
-    return;
+  if (operation->release_user != NULL) operation->release_user(operation->user);
+  if (lock_service(service) != H2_PAL_OK) return;
   operation->internal_reference = false;
-  if (operation->completion != NULL)
-    --service->active_count;
+  if (operation->completion != NULL) --service->active_count;
   const bool wake_terminal =
       service->active_count == 0u && service->terminal_pending &&
       !service->terminal_dispatched && service->config.terminal != NULL;
   free_operation_if_unreferenced(operation);
   unlock_service(service);
-  if (wake_terminal)
-    h2_gizclaw_service_wake_dispatch_internal(service);
+  if (wake_terminal) h2_gizclaw_service_wake_dispatch_internal(service);
 }
 
-h2_pal_result_t h2_gizclaw_service_post_internal(h2_gizclaw_service_t *service,
-                                                 void (*notify)(void *user),
-                                                 void *user) {
-  if (service == NULL || notify == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+h2_pal_result_t h2_gizclaw_service_post_internal(h2_gizclaw_service_t* service,
+                                                 void (*notify)(void* user),
+                                                 void* user) {
+  if (service == NULL || notify == NULL) return H2_PAL_ERR_INVALID_ARG;
   h2_pal_result_t rc = lock_service(service);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   if (!service->started || service->stopping || service->stopped) {
     rc = H2_PAL_ERR_CLOSED;
   } else if (service->queued_event_count >=
@@ -389,9 +378,8 @@ h2_pal_result_t h2_gizclaw_service_post_internal(h2_gizclaw_service_t *service,
   return rc;
 }
 
-static void close_client(h2_gizclaw_service_t *service) {
-  if (service->client == NULL)
-    return;
+static void close_client(h2_gizclaw_service_t* service) {
+  if (service->client == NULL) return;
   if (service->config.cleanup != NULL)
     service->config.cleanup(service->config.cleanup_user, service->client);
   (void)client_close(service->client);
@@ -399,28 +387,24 @@ static void close_client(h2_gizclaw_service_t *service) {
   service->client = NULL;
 }
 
-static void complete_queued_as_closed(h2_gizclaw_service_t *service) {
-  h2_gizclaw_operation_t *operation = NULL;
+static void complete_queued_as_closed(h2_gizclaw_service_t* service) {
+  h2_gizclaw_operation_t* operation = NULL;
   while (h2_pal_queue_recv(service->config.queue, service->request_queue,
                            &operation, H2_PAL_QUEUE_NO_WAIT) == H2_PAL_OK) {
-    if (operation->finish != NULL)
-      operation->finish(operation->user);
-    if (lock_service(service) != H2_PAL_OK)
-      return;
+    if (operation->finish != NULL) operation->finish(operation->user);
+    if (lock_service(service) != H2_PAL_OK) return;
     (void)enqueue_completion_locked(service, operation,
                                     H2_GIZCLAW_OPERATION_SERVICE_CLOSED,
                                     H2_PAL_ERR_CLOSED);
     const bool dispatch = operation->completion != NULL;
     unlock_service(service);
-    if (!dispatch)
-      retire_operation(service, operation);
+    if (!dispatch) retire_operation(service, operation);
   }
 }
 
-static void mark_terminal(h2_gizclaw_service_t *service,
+static void mark_terminal(h2_gizclaw_service_t* service,
                           h2_pal_result_t result) {
-  if (lock_service(service) != H2_PAL_OK)
-    return;
+  if (lock_service(service) != H2_PAL_OK) return;
   bool newly_terminal = false;
   size_t active_count = service->active_count;
   if (!service->stopping) {
@@ -440,17 +424,14 @@ static void mark_terminal(h2_gizclaw_service_t *service,
   complete_queued_as_closed(service);
 }
 
-static bool complete_operation(h2_gizclaw_service_t *service,
-                               h2_gizclaw_operation_t *operation,
+static bool complete_operation(h2_gizclaw_service_t* service,
+                               h2_gizclaw_operation_t* operation,
                                h2_pal_result_t operation_rc,
                                bool original_canceled) {
-  if (operation->finish != NULL)
-    operation->finish(operation->user);
+  if (operation->finish != NULL) operation->finish(operation->user);
   operation->completed_at_ms = service_monotonic_ms(service);
-  if (lock_service(service) != H2_PAL_OK)
-    return true;
-  if (service->current == operation)
-    service->current = NULL;
+  if (lock_service(service) != H2_PAL_OK) return true;
+  if (service->current == operation) service->current = NULL;
   /* CLOSED can describe a request/Track, not the Peer. Transport liveness
    * belongs to client_poll; only an explicit service-wide cancellation may
    * turn an operation result into a service terminal here. */
@@ -488,15 +469,14 @@ static bool complete_operation(h2_gizclaw_service_t *service,
           : (operation_rc == H2_PAL_OK ? "operation_completed"
                                        : "operation_completed_error"),
       &trace, operation_rc, close_detail, 0u);
-  if (!dispatch)
-    retire_operation(service, operation);
+  if (!dispatch) retire_operation(service, operation);
   return terminal_failure;
 }
 
-static bool poll_pending_operations(h2_gizclaw_service_t *service) {
-  h2_gizclaw_operation_t **cursor = &service->pending;
+static bool poll_pending_operations(h2_gizclaw_service_t* service) {
+  h2_gizclaw_operation_t** cursor = &service->pending;
   while (*cursor != NULL) {
-    h2_gizclaw_operation_t *operation = *cursor;
+    h2_gizclaw_operation_t* operation = *cursor;
     if (operation->notification_driven && !operation->ready &&
         !operation->cancel_requested) {
       cursor = &operation->next_pending;
@@ -520,11 +500,11 @@ static bool poll_pending_operations(h2_gizclaw_service_t *service) {
   return true;
 }
 
-static void complete_pending_as_closed(h2_gizclaw_service_t *service) {
-  h2_gizclaw_operation_t *operation = service->pending;
+static void complete_pending_as_closed(h2_gizclaw_service_t* service) {
+  h2_gizclaw_operation_t* operation = service->pending;
   service->pending = NULL;
   while (operation != NULL) {
-    h2_gizclaw_operation_t *next = operation->next_pending;
+    h2_gizclaw_operation_t* next = operation->next_pending;
     operation->next_pending = NULL;
     if (lock_service(service) == H2_PAL_OK) {
       operation->cancel_requested = true;
@@ -537,16 +517,15 @@ static void complete_pending_as_closed(h2_gizclaw_service_t *service) {
   }
 }
 
-static h2_pal_result_t
-queue_client_event(void *user, const h2_gizclaw_client_event_t *event) {
-  h2_gizclaw_service_t *service = user;
+static h2_pal_result_t queue_client_event(
+    void* user, const h2_gizclaw_client_event_t* event) {
+  h2_gizclaw_service_t* service = user;
   if (service == NULL || event == NULL ||
       (event->workspace_name.len > 0 && event->workspace_name.data == NULL) ||
       event->workspace_name.len == SIZE_MAX)
     return H2_PAL_ERR_INVALID_ARG;
   h2_pal_result_t rc = lock_service(service);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   if (service->stopping) {
     unlock_service(service);
     return H2_PAL_ERR_CLOSED;
@@ -583,15 +562,14 @@ queue_client_event(void *user, const h2_gizclaw_client_event_t *event) {
   return rc;
 }
 
-static void uplink_worker(void *ctx) {
-  h2_gizclaw_service_t *service = ctx;
+static void uplink_worker(void* ctx) {
+  h2_gizclaw_service_t* service = ctx;
   uint64_t deadline = 0u;
   uint64_t previous = 0u;
   bool pacing = false;
   h2_pal_result_t rc;
   for (;;) {
-    if (lock_service(service) != H2_PAL_OK)
-      return;
+    if (lock_service(service) != H2_PAL_OK) return;
     uint64_t started = previous;
     while (!service->stopping) {
       if (h2_atomic_load(&service->speech_request) == NULL &&
@@ -612,8 +590,7 @@ static void uplink_worker(void *ctx) {
         pacing = true;
       }
       previous = started;
-      if (started >= deadline)
-        break;
+      if (started >= deadline) break;
       /* Notifications may wake us for stop/route changes, but must not cause
        * a new PCM frame before its scheduled deadline. */
       (void)h2_pal_cond_wait(service->config.sync, service->progress_cond,
@@ -621,8 +598,7 @@ static void uplink_worker(void *ctx) {
     }
     const bool stopping = service->stopping;
     unlock_service(service);
-    if (stopping)
-      return;
+    if (stopping) return;
     h2_gizclaw_speech_uplink_step_internal(service);
     h2_gizclaw_conversation_uplink_step_internal(service);
     (void)h2_gizclaw_req_data_step_internal(service,
@@ -654,11 +630,10 @@ static void uplink_worker(void *ctx) {
   }
 }
 
-static void downlink_worker(void *ctx) {
-  h2_gizclaw_service_t *service = ctx;
+static void downlink_worker(void* ctx) {
+  h2_gizclaw_service_t* service = ctx;
   for (;;) {
-    if (lock_service(service) != H2_PAL_OK)
-      return;
+    if (lock_service(service) != H2_PAL_OK) return;
     if (service->stopping) {
       unlock_service(service);
       return;
@@ -668,8 +643,7 @@ static void downlink_worker(void *ctx) {
     h2_gizclaw_conversation_downlink_step_internal(service);
     (void)h2_gizclaw_req_data_step_internal(service,
                                             H2_GIZCLAW_STREAM_AUDIO_DOWNLINK);
-    if (lock_service(service) != H2_PAL_OK)
-      return;
+    if (lock_service(service) != H2_PAL_OK) return;
     /* Wake on progress, or after one audio period. The PCM Track drains one
      * chunk per period, so a 1 ms retry mostly re-locked the service to be
      * refused by a full Track, at the same priority and on the same core as
@@ -681,40 +655,37 @@ static void downlink_worker(void *ctx) {
   }
 }
 
-static void data_worker(h2_gizclaw_service_t *service,
+static void data_worker(h2_gizclaw_service_t* service,
                         h2_gizclaw_stream_lane_t lane) {
   for (;;) {
-    if (lock_service(service) != H2_PAL_OK)
-      return;
+    if (lock_service(service) != H2_PAL_OK) return;
     while (!service->stopping &&
            !h2_gizclaw_req_data_ready_internal(service, lane))
       (void)h2_pal_cond_wait(service->config.sync, service->progress_cond,
                              service->mutex, 1u);
     const bool stopping = service->stopping;
     unlock_service(service);
-    if (stopping)
-      return;
+    if (stopping) return;
     (void)h2_gizclaw_req_data_step_internal(service, lane);
   }
 }
 
-static void data_uplink_worker(void *ctx) {
+static void data_uplink_worker(void* ctx) {
   data_worker(ctx, H2_GIZCLAW_STREAM_DATA_UPLINK);
 }
 
-static void data_downlink_worker(void *ctx) {
+static void data_downlink_worker(void* ctx) {
   data_worker(ctx, H2_GIZCLAW_STREAM_DATA_DOWNLINK);
 }
 
-static void net_worker(void *ctx) {
-  h2_gizclaw_service_t *service = ctx;
+static void net_worker(void* ctx) {
+  h2_gizclaw_service_t* service = ctx;
   h2_pal_result_t rc = H2_PAL_OK;
   if (service->config.prepare != NULL) {
     rc = service->config.prepare(service->config.prepare_user,
                                  service_cancel_requested, service);
   }
-  if (rc == H2_PAL_OK)
-    rc = h2_gizclaw_time_prepare_connect_internal(service);
+  if (rc == H2_PAL_OK) rc = h2_gizclaw_time_prepare_connect_internal(service);
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_device_start_lua_stream_internal(service->device);
   if (rc == H2_PAL_OK)
@@ -722,7 +693,8 @@ static void net_worker(void *ctx) {
                      h2_gizclaw_device_lua_stream_internal(service->device),
                      &service->client);
   if (rc == H2_PAL_OK) {
-    if (service->local) h2_gizclaw_client_set_local_internal(service->client, service);
+    if (service->local)
+      h2_gizclaw_client_set_local_internal(service->client, service);
     client_set_downlink_stream(service);
     rc = client_connect(service->client);
   }
@@ -744,12 +716,10 @@ static void net_worker(void *ctx) {
   }
 
   for (;;) {
-    if (lock_service(service) != H2_PAL_OK)
-      break;
+    if (lock_service(service) != H2_PAL_OK) break;
     const bool stopping = service->stopping;
     unlock_service(service);
-    if (stopping)
-      break;
+    if (stopping) break;
 
     h2_gizclaw_time_sync_start_internal(service);
 
@@ -765,13 +735,12 @@ static void net_worker(void *ctx) {
       break;
     }
 
-    h2_gizclaw_operation_t *operation = NULL;
+    h2_gizclaw_operation_t* operation = NULL;
     rc = (h2_pal_result_t)h2_pal_queue_recv(service->config.queue,
                                             service->request_queue, &operation,
                                             H2_PAL_QUEUE_NO_WAIT);
     if (rc == H2_PAL_OK) {
-      if (lock_service(service) != H2_PAL_OK)
-        break;
+      if (lock_service(service) != H2_PAL_OK) break;
       service->current = operation;
       operation->state = H2_GIZCLAW_OPERATION_RUNNING;
       operation->started_at_ms = service_monotonic_ms(service);
@@ -786,8 +755,7 @@ static void net_worker(void *ctx) {
         operation_rc = operation->run(operation->user, service->client,
                                       &operation->cancel_token);
       if (operation->poll != NULL && operation_rc == H2_PAL_ERR_WOULD_BLOCK) {
-        if (lock_service(service) != H2_PAL_OK)
-          break;
+        if (lock_service(service) != H2_PAL_OK) break;
         service->current = NULL;
         operation->state = H2_GIZCLAW_OPERATION_PENDING;
         operation->next_pending = service->pending;
@@ -824,10 +792,10 @@ static void net_worker(void *ctx) {
   close_client(service);
 }
 
-static bool dispatch_terminal_if_ready(h2_gizclaw_service_t *service,
+static bool dispatch_terminal_if_ready(h2_gizclaw_service_t* service,
                                        bool callback_budget_available) {
   h2_gizclaw_service_terminal_fn terminal = NULL;
-  void *terminal_user = NULL;
+  void* terminal_user = NULL;
   h2_pal_result_t terminal_result = H2_PAL_OK;
   if (lock_service(service) == H2_PAL_OK) {
     if (service->terminal_pending && !service->terminal_dispatched &&
@@ -847,10 +815,9 @@ static bool dispatch_terminal_if_ready(h2_gizclaw_service_t *service,
   return false;
 }
 
-static void dispatch_operation(h2_gizclaw_service_t *service,
-                               h2_gizclaw_operation_t *operation) {
-  if (lock_service(service) != H2_PAL_OK)
-    return;
+static void dispatch_operation(h2_gizclaw_service_t* service,
+                               h2_gizclaw_operation_t* operation) {
+  if (lock_service(service) != H2_PAL_OK) return;
   operation->dispatch_queued = false;
   operation->state = H2_GIZCLAW_OPERATION_TERMINAL;
   unlock_service(service);
@@ -868,16 +835,13 @@ static void dispatch_operation(h2_gizclaw_service_t *service,
   retire_operation(service, operation);
 }
 
-h2_pal_result_t h2_gizclaw_service_poll(h2_gizclaw_service_t *service,
+h2_pal_result_t h2_gizclaw_service_poll(h2_gizclaw_service_t* service,
                                         size_t max_callbacks,
-                                        size_t *out_dispatched) {
-  if (out_dispatched != NULL)
-    *out_dispatched = 0u;
-  if (service == NULL || max_callbacks == 0u)
-    return H2_PAL_ERR_INVALID_ARG;
+                                        size_t* out_dispatched) {
+  if (out_dispatched != NULL) *out_dispatched = 0u;
+  if (service == NULL || max_callbacks == 0u) return H2_PAL_ERR_INVALID_ARG;
   h2_pal_result_t rc = lock_service(service);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   if (service->dispatching) {
     unlock_service(service);
     return H2_PAL_ERR_INVALID_STATE;
@@ -894,16 +858,14 @@ h2_pal_result_t h2_gizclaw_service_poll(h2_gizclaw_service_t *service,
     h2_gizclaw_dispatch_item_t item;
     memset(&item, 0, sizeof(item));
     rc = lock_service(service);
-    if (rc != H2_PAL_OK)
-      break;
+    if (rc != H2_PAL_OK) break;
     rc = (h2_pal_result_t)h2_pal_queue_recv(service->config.queue,
                                             service->dispatch_queue, &item,
                                             H2_PAL_QUEUE_NO_WAIT);
     if (rc == H2_PAL_OK && service->dispatch_item_count != 0u)
       --service->dispatch_item_count;
     unlock_service(service);
-    if (rc != H2_PAL_OK)
-      break;
+    if (rc != H2_PAL_OK) break;
     if (item.kind == H2_GIZCLAW_DISPATCH_OPERATION) {
       dispatch_operation(service, item.operation);
     } else if (item.kind == H2_GIZCLAW_DISPATCH_CLIENT_EVENT ||
@@ -926,20 +888,17 @@ h2_pal_result_t h2_gizclaw_service_poll(h2_gizclaw_service_t *service,
   }
   if (dispatch_terminal_if_ready(service, dispatched < max_callbacks))
     ++dispatched;
-  if (lock_service(service) != H2_PAL_OK)
-    return H2_PAL_ERR_INVALID_STATE;
+  if (lock_service(service) != H2_PAL_OK) return H2_PAL_ERR_INVALID_STATE;
   service->dispatching = false;
   const bool dispatch_ready = dispatch_work_ready_locked(service);
   unlock_service(service);
-  if (dispatch_ready)
-    h2_gizclaw_service_wake_dispatch_internal(service);
-  if (out_dispatched != NULL)
-    *out_dispatched = dispatched;
+  if (dispatch_ready) h2_gizclaw_service_wake_dispatch_internal(service);
+  if (out_dispatched != NULL) *out_dispatched = dispatched;
   return rc == H2_PAL_ERR_TIMEOUT || rc == H2_PAL_ERR_WOULD_BLOCK ? H2_PAL_OK
                                                                   : rc;
 }
 
-static bool valid_config(const h2_gizclaw_service_config_t *config) {
+static bool valid_config(const h2_gizclaw_service_config_t* config) {
   return config != NULL && config->client_config != NULL &&
          config->client_config->allocator != NULL && config->task != NULL &&
          config->client_config->time != NULL &&
@@ -952,29 +911,28 @@ static bool valid_config(const h2_gizclaw_service_config_t *config) {
          config->client_poll_timeout_ms > 0;
 }
 
-static h2_pal_result_t service_track_read_opus(void *user, uint8_t *opus,
+static h2_pal_result_t service_track_read_opus(void* user, uint8_t* opus,
                                                size_t capacity,
-                                               size_t *out_len) {
-  return h2_gizclaw_service_media_read_opus((h2_gizclaw_service_t *)user, opus,
+                                               size_t* out_len) {
+  return h2_gizclaw_service_media_read_opus((h2_gizclaw_service_t*)user, opus,
                                             capacity, out_len);
 }
 
-static h2_pal_result_t service_track_write_opus(void *user, const uint8_t *opus,
+static h2_pal_result_t service_track_write_opus(void* user, const uint8_t* opus,
                                                 size_t opus_len) {
-  return h2_gizclaw_service_media_write_opus((h2_gizclaw_service_t *)user, opus,
+  return h2_gizclaw_service_media_write_opus((h2_gizclaw_service_t*)user, opus,
                                              opus_len);
 }
 
-h2_pal_result_t
-h2_gizclaw_service_init(const h2_gizclaw_service_config_t *config,
-                        h2_gizclaw_service_t **out_service) {
+h2_pal_result_t h2_gizclaw_service_init(
+    const h2_gizclaw_service_config_t* config,
+    h2_gizclaw_service_t** out_service) {
   if (!valid_config(config) || out_service == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   *out_service = NULL;
-  h2_gizclaw_service_t *service =
+  h2_gizclaw_service_t* service =
       h2_pal_mem_alloc(config->client_config->allocator, sizeof(*service));
-  if (service == NULL)
-    return H2_PAL_ERR_NO_MEMORY;
+  if (service == NULL) return H2_PAL_ERR_NO_MEMORY;
   /* This also initializes the four Service-owned streaming rings. */
   memset(service, 0, sizeof(*service));
   service->config = *config;
@@ -1005,28 +963,24 @@ h2_gizclaw_service_init(const h2_gizclaw_service_config_t *config,
   const h2_pal_mutex_config_t mutex_config = {
       .name = "gizclaw-service", .allocator = config->client_config->allocator};
   rc = h2_pal_mutex_create(config->sync, &mutex_config, &service->mutex);
-  if (rc != H2_PAL_OK)
-    goto fail;
+  if (rc != H2_PAL_OK) goto fail;
   rc = h2_pal_mutex_create(config->sync, &mutex_config, &service->audio_mutex);
-  if (rc != H2_PAL_OK)
-    goto fail;
+  if (rc != H2_PAL_OK) goto fail;
   const h2_pal_cond_config_t cond_config = {
       .name = "gizclaw-progress",
       .allocator = config->client_config->allocator,
   };
   rc = h2_pal_cond_create(config->sync, &cond_config, &service->progress_cond);
-  if (rc != H2_PAL_OK)
-    goto fail;
+  if (rc != H2_PAL_OK) goto fail;
   const h2_pal_queue_config_t request_config = {
       .name = "gizclaw-request",
-      .item_size = sizeof(h2_gizclaw_operation_t *),
+      .item_size = sizeof(h2_gizclaw_operation_t*),
       .item_count = config->operation_capacity,
       .allocator = config->client_config->allocator,
   };
   rc = (h2_pal_result_t)h2_pal_queue_create(config->queue, &request_config,
                                             &service->request_queue);
-  if (rc != H2_PAL_OK)
-    goto fail;
+  if (rc != H2_PAL_OK) goto fail;
   const h2_pal_queue_config_t dispatch_config = {
       .name = "gizclaw-dispatch",
       .item_size = sizeof(h2_gizclaw_dispatch_item_t),
@@ -1035,11 +989,9 @@ h2_gizclaw_service_init(const h2_gizclaw_service_config_t *config,
   };
   rc = (h2_pal_result_t)h2_pal_queue_create(config->queue, &dispatch_config,
                                             &service->dispatch_queue);
-  if (rc != H2_PAL_OK)
-    goto fail;
+  if (rc != H2_PAL_OK) goto fail;
   rc = h2_gizclaw_device_init_internal(service);
-  if (rc != H2_PAL_OK)
-    goto fail;
+  if (rc != H2_PAL_OK) goto fail;
   *out_service = service;
   return H2_PAL_OK;
 
@@ -1063,12 +1015,10 @@ fail:
   return rc;
 }
 
-h2_pal_result_t h2_gizclaw_service_start(h2_gizclaw_service_t *service) {
-  if (service == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+h2_pal_result_t h2_gizclaw_service_start(h2_gizclaw_service_t* service) {
+  if (service == NULL) return H2_PAL_ERR_INVALID_ARG;
   h2_pal_result_t rc = lock_service(service);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   if (service->started || service->stopping || service->stopped) {
     unlock_service(service);
     return H2_PAL_ERR_INVALID_STATE;
@@ -1106,21 +1056,18 @@ h2_pal_result_t h2_gizclaw_service_start(h2_gizclaw_service_t *service) {
     rc = h2_pal_task_start(service->config.task, &options, data_downlink_worker,
                            service, &service->data_downlink_task);
   }
-  if (rc == H2_PAL_OK)
-    rc = h2_gizclaw_device_start_internal(service->device);
-  if (rc != H2_PAL_OK)
-    (void)h2_gizclaw_service_stop(service);
+  if (rc == H2_PAL_OK) rc = h2_gizclaw_device_start_internal(service->device);
+  if (rc != H2_PAL_OK) (void)h2_gizclaw_service_stop(service);
   return rc;
 }
 
-h2_pal_result_t h2_gizclaw_service_set_track(h2_gizclaw_service_t *service,
-                                             h2_gizclaw_track_t *track) {
+h2_pal_result_t h2_gizclaw_service_set_track(h2_gizclaw_service_t* service,
+                                             h2_gizclaw_track_t* track) {
   if (service == NULL || track == NULL || track->vtable == NULL ||
       (track->vtable->read == NULL && track->vtable->write == NULL))
     return H2_PAL_ERR_INVALID_ARG;
   h2_pal_result_t rc = lock_service(service);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   if (service->pcm_track_unsetting ||
       h2_atomic_load(&service->pcm_track) != NULL ||
       h2_atomic_load(&service->speech_request) != NULL ||
@@ -1129,20 +1076,17 @@ h2_pal_result_t h2_gizclaw_service_set_track(h2_gizclaw_service_t *service,
     rc = H2_PAL_ERR_INVALID_STATE;
   else {
     rc = h2_gizclaw_pcm_track_attach_internal(track);
-    if (rc == H2_PAL_OK)
-      h2_atomic_store(&service->pcm_track, track);
+    if (rc == H2_PAL_OK) h2_atomic_store(&service->pcm_track, track);
   }
   unlock_service(service);
   return rc;
 }
 
-h2_pal_result_t h2_gizclaw_service_unset_track(h2_gizclaw_service_t *service,
-                                               h2_gizclaw_track_t *track) {
-  if (service == NULL || track == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+h2_pal_result_t h2_gizclaw_service_unset_track(h2_gizclaw_service_t* service,
+                                               h2_gizclaw_track_t* track) {
+  if (service == NULL || track == NULL) return H2_PAL_ERR_INVALID_ARG;
   h2_pal_result_t rc = lock_service(service);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   if (service->pcm_track_unsetting ||
       h2_atomic_load(&service->pcm_track) != track) {
     unlock_service(service);
@@ -1161,18 +1105,16 @@ h2_pal_result_t h2_gizclaw_service_unset_track(h2_gizclaw_service_t *service,
   return rc;
 }
 
-static h2_gizclaw_track_t *pcm_track_acquire(h2_gizclaw_service_t *service) {
-  if (service == NULL || lock_service(service) != H2_PAL_OK)
-    return NULL;
-  h2_gizclaw_track_t *track =
+static h2_gizclaw_track_t* pcm_track_acquire(h2_gizclaw_service_t* service) {
+  if (service == NULL || lock_service(service) != H2_PAL_OK) return NULL;
+  h2_gizclaw_track_t* track =
       service->pcm_track_unsetting ? NULL : h2_atomic_load(&service->pcm_track);
-  if (track != NULL)
-    ++service->pcm_track_refs;
+  if (track != NULL) ++service->pcm_track_refs;
   unlock_service(service);
   return track;
 }
 
-static void pcm_track_release(h2_gizclaw_service_t *service) {
+static void pcm_track_release(h2_gizclaw_service_t* service) {
   (void)lock_service(service);
   --service->pcm_track_refs;
   if (service->pcm_track_refs == 0u)
@@ -1180,55 +1122,50 @@ static void pcm_track_release(h2_gizclaw_service_t *service) {
   unlock_service(service);
 }
 
-bool h2_gizclaw_service_pcm_readable_internal(h2_gizclaw_service_t *service) {
-  h2_gizclaw_track_t *track = pcm_track_acquire(service);
-  if (track == NULL)
-    return false;
+bool h2_gizclaw_service_pcm_readable_internal(h2_gizclaw_service_t* service) {
+  h2_gizclaw_track_t* track = pcm_track_acquire(service);
+  if (track == NULL) return false;
   bool readable = track->vtable->read != NULL;
   pcm_track_release(service);
   return readable;
 }
 
 h2_pal_result_t h2_gizclaw_service_pcm_input_internal(
-    h2_gizclaw_service_t *service, h2_gizclaw_pcm_input_t *input,
-    h2_gizclaw_pcm_input_action_t action, uint8_t *pcm, size_t len,
-    size_t *out_len) {
-  h2_gizclaw_track_t *track = pcm_track_acquire(service);
-  if (track == NULL)
-    return H2_PAL_ERR_CLOSED;
+    h2_gizclaw_service_t* service, h2_gizclaw_pcm_input_t* input,
+    h2_gizclaw_pcm_input_action_t action, uint8_t* pcm, size_t len,
+    size_t* out_len) {
+  h2_gizclaw_track_t* track = pcm_track_acquire(service);
+  if (track == NULL) return H2_PAL_ERR_CLOSED;
   h2_pal_result_t rc;
   switch (action) {
-  case H2_GIZCLAW_PCM_INPUT_START:
-    rc = h2_gizclaw_pcm_input_start(input, track,
-                                    service->client_config.allocator);
-    break;
-  case H2_GIZCLAW_PCM_INPUT_END:
-    rc = h2_gizclaw_pcm_input_end(input, track);
-    break;
-  case H2_GIZCLAW_PCM_INPUT_PREPARE:
-    rc = h2_gizclaw_pcm_input_prepare(input, track);
-    break;
-  case H2_GIZCLAW_PCM_INPUT_READ:
-    rc = h2_gizclaw_pcm_input_read(input, track, pcm, len, out_len);
-    break;
-  default:
-    rc = H2_PAL_ERR_INVALID_ARG;
+    case H2_GIZCLAW_PCM_INPUT_START:
+      rc = h2_gizclaw_pcm_input_start(input, track,
+                                      service->client_config.allocator);
+      break;
+    case H2_GIZCLAW_PCM_INPUT_END:
+      rc = h2_gizclaw_pcm_input_end(input, track);
+      break;
+    case H2_GIZCLAW_PCM_INPUT_PREPARE:
+      rc = h2_gizclaw_pcm_input_prepare(input, track);
+      break;
+    case H2_GIZCLAW_PCM_INPUT_READ:
+      rc = h2_gizclaw_pcm_input_read(input, track, pcm, len, out_len);
+      break;
+    default:
+      rc = H2_PAL_ERR_INVALID_ARG;
   }
   pcm_track_release(service);
   return rc;
 }
 
-h2_pal_result_t
-h2_gizclaw_service_pcm_read_internal(h2_gizclaw_service_t *service,
-                                     uint8_t *pcm, size_t capacity,
-                                     size_t *out_len) {
-  if (out_len != NULL)
-    *out_len = 0u;
+h2_pal_result_t h2_gizclaw_service_pcm_read_internal(
+    h2_gizclaw_service_t* service, uint8_t* pcm, size_t capacity,
+    size_t* out_len) {
+  if (out_len != NULL) *out_len = 0u;
   if (service == NULL || pcm == NULL || capacity == 0u || out_len == NULL)
     return H2_PAL_ERR_INVALID_ARG;
-  h2_gizclaw_track_t *track = pcm_track_acquire(service);
-  if (track == NULL)
-    return H2_PAL_ERR_CLOSED;
+  h2_gizclaw_track_t* track = pcm_track_acquire(service);
+  if (track == NULL) return H2_PAL_ERR_CLOSED;
   h2_pal_result_t rc =
       track->vtable->read == NULL
           ? H2_PAL_ERR_UNSUPPORTED
@@ -1236,21 +1173,18 @@ h2_gizclaw_service_pcm_read_internal(h2_gizclaw_service_t *service,
   if (rc == H2_PAL_OK && (*out_len == 0u || *out_len > capacity ||
                           *out_len % sizeof(int16_t) != 0u))
     rc = H2_PAL_ERR_FORMAT;
-  if (rc != H2_PAL_OK)
-    *out_len = 0u;
+  if (rc != H2_PAL_OK) *out_len = 0u;
   pcm_track_release(service);
   return rc;
 }
 
-h2_pal_result_t
-h2_gizclaw_service_pcm_write_internal(h2_gizclaw_service_t *service,
-                                      const uint8_t *pcm, size_t len) {
+h2_pal_result_t h2_gizclaw_service_pcm_write_internal(
+    h2_gizclaw_service_t* service, const uint8_t* pcm, size_t len) {
   if (service == NULL || pcm == NULL || len == 0u ||
       len % sizeof(int16_t) != 0u)
     return H2_PAL_ERR_INVALID_ARG;
-  h2_gizclaw_track_t *track = pcm_track_acquire(service);
-  if (track == NULL)
-    return H2_PAL_ERR_CLOSED;
+  h2_gizclaw_track_t* track = pcm_track_acquire(service);
+  if (track == NULL) return H2_PAL_ERR_CLOSED;
   h2_pal_result_t rc = track->vtable->write == NULL
                            ? H2_PAL_ERR_UNSUPPORTED
                            : track->vtable->write(track->user, pcm, len);
@@ -1259,31 +1193,29 @@ h2_gizclaw_service_pcm_write_internal(h2_gizclaw_service_t *service,
 }
 
 void h2_gizclaw_service_pcm_discard_downlink_internal(
-    h2_gizclaw_service_t *service) {
-  h2_gizclaw_track_t *track = pcm_track_acquire(service);
-  if (track == NULL)
-    return;
+    h2_gizclaw_service_t* service) {
+  h2_gizclaw_track_t* track = pcm_track_acquire(service);
+  if (track == NULL) return;
   h2_gizclaw_pcm_track_discard_downlink_internal(track);
   pcm_track_release(service);
 }
 
 static h2_pal_result_t submit_operation(
-    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_service_t* service, uint64_t identity,
     h2_gizclaw_operation_run_fn run, h2_gizclaw_operation_run_fn poll,
     h2_gizclaw_operation_completion_fn completion,
-    h2_gizclaw_operation_completion_fn settle, void (*release_user)(void *user),
-    void (*finish)(void *user), void *user, bool notification_driven,
-    h2_gizclaw_operation_t **out_operation) {
+    h2_gizclaw_operation_completion_fn settle, void (*release_user)(void* user),
+    void (*finish)(void* user), void* user, bool notification_driven,
+    h2_gizclaw_operation_t** out_operation) {
   if (service == NULL || run == NULL ||
       (completion == NULL && settle == NULL) || out_operation == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   *out_operation = NULL;
   h2_pal_result_t rc = lock_service(service);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   if (!service->started || service->stopping || service->stopped) {
     rc = service->stopping || service->stopped ? H2_PAL_ERR_CLOSED
-                                            : H2_PAL_ERR_INVALID_STATE;
+                                               : H2_PAL_ERR_INVALID_STATE;
     unlock_service(service);
     return rc;
   }
@@ -1291,7 +1223,7 @@ static h2_pal_result_t submit_operation(
     unlock_service(service);
     return H2_PAL_ERR_WOULD_BLOCK;
   }
-  h2_gizclaw_operation_t *operation = h2_pal_mem_alloc(
+  h2_gizclaw_operation_t* operation = h2_pal_mem_alloc(
       service->config.client_config->allocator, sizeof(*operation));
   if (operation == NULL) {
     unlock_service(service);
@@ -1342,37 +1274,34 @@ static h2_pal_result_t submit_operation(
 }
 
 h2_pal_result_t h2_gizclaw_service_submit_async_internal(
-    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_service_t* service, uint64_t identity,
     h2_gizclaw_operation_run_fn start, h2_gizclaw_operation_run_fn poll,
-    h2_gizclaw_operation_completion_fn completion, void *user,
-    h2_gizclaw_operation_t **out_operation) {
-  if (poll == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+    h2_gizclaw_operation_completion_fn completion, void* user,
+    h2_gizclaw_operation_t** out_operation) {
+  if (poll == NULL) return H2_PAL_ERR_INVALID_ARG;
   return submit_operation(service, identity, start, poll, completion, NULL,
                           NULL, NULL, user, false, out_operation);
 }
 
 h2_pal_result_t h2_gizclaw_service_submit_request_internal(
-    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_service_t* service, uint64_t identity,
     h2_gizclaw_operation_run_fn start, h2_gizclaw_operation_run_fn poll,
     h2_gizclaw_operation_completion_fn settle,
     h2_gizclaw_operation_completion_fn completion,
-    void (*release_user)(void *user), void (*finish)(void *user), void *user,
-    bool notification_driven, h2_gizclaw_operation_t **out_operation) {
-  if (settle == NULL || release_user == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+    void (*release_user)(void* user), void (*finish)(void* user), void* user,
+    bool notification_driven, h2_gizclaw_operation_t** out_operation) {
+  if (settle == NULL || release_user == NULL) return H2_PAL_ERR_INVALID_ARG;
   return submit_operation(service, identity, start, poll, completion, settle,
                           release_user, finish, user, notification_driven,
                           out_operation);
 }
 
-h2_pal_result_t h2_gizclaw_operation_cancel(h2_gizclaw_operation_t *operation) {
+h2_pal_result_t h2_gizclaw_operation_cancel(h2_gizclaw_operation_t* operation) {
   if (operation == NULL || operation->service == NULL)
     return H2_PAL_ERR_INVALID_ARG;
-  h2_gizclaw_service_t *service = operation->service;
+  h2_gizclaw_service_t* service = operation->service;
   h2_pal_result_t rc = lock_service(service);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   if (operation->state == H2_GIZCLAW_OPERATION_QUEUED ||
       operation->state == H2_GIZCLAW_OPERATION_RUNNING ||
       operation->state == H2_GIZCLAW_OPERATION_PENDING) {
@@ -1383,12 +1312,10 @@ h2_pal_result_t h2_gizclaw_operation_cancel(h2_gizclaw_operation_t *operation) {
   return H2_PAL_OK;
 }
 
-void h2_gizclaw_operation_release(h2_gizclaw_operation_t *operation) {
-  if (operation == NULL || operation->service == NULL)
-    return;
-  h2_gizclaw_service_t *service = operation->service;
-  if (lock_service(service) != H2_PAL_OK)
-    return;
+void h2_gizclaw_operation_release(h2_gizclaw_operation_t* operation) {
+  if (operation == NULL || operation->service == NULL) return;
+  h2_gizclaw_service_t* service = operation->service;
+  if (lock_service(service) != H2_PAL_OK) return;
   if (operation->caller_reference) {
     operation->caller_reference = false;
     --service->caller_reference_count;
@@ -1397,12 +1324,10 @@ void h2_gizclaw_operation_release(h2_gizclaw_operation_t *operation) {
   unlock_service(service);
 }
 
-h2_pal_result_t h2_gizclaw_service_stop(h2_gizclaw_service_t *service) {
-  if (service == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+h2_pal_result_t h2_gizclaw_service_stop(h2_gizclaw_service_t* service) {
+  if (service == NULL) return H2_PAL_ERR_INVALID_ARG;
   h2_pal_result_t rc = lock_service(service);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   if (service->stopped) {
     unlock_service(service);
     return H2_PAL_OK;
@@ -1414,7 +1339,8 @@ h2_pal_result_t h2_gizclaw_service_stop(h2_gizclaw_service_t *service) {
       h2_gizclaw_device_cancel_internal(service->device);
       h2_gizclaw_local_cancel_internal(service->local);
       rc = h2_gizclaw_local_stop_internal(service->local);
-      if (rc == H2_PAL_OK) rc = h2_gizclaw_device_stop_internal(service->device);
+      if (rc == H2_PAL_OK)
+        rc = h2_gizclaw_device_stop_internal(service->device);
       if (rc != H2_PAL_OK) return rc;
       rc = lock_service(service);
       if (rc != H2_PAL_OK) return rc;
@@ -1436,65 +1362,54 @@ h2_pal_result_t h2_gizclaw_service_stop(h2_gizclaw_service_t *service) {
    * owner only uses nonblocking receives, so it needs no close to wake it. */
   if (service->net_task != NULL) {
     rc = h2_pal_task_join(service->config.task, service->net_task);
-    if (rc != H2_PAL_OK)
-      return rc;
+    if (rc != H2_PAL_OK) return rc;
     service->net_task = NULL;
   }
   (void)h2_pal_queue_close(service->config.queue, service->request_queue);
   if (service->time_task != NULL) {
     rc = h2_pal_task_join(service->config.task, service->time_task);
-    if (rc != H2_PAL_OK)
-      return rc;
+    if (rc != H2_PAL_OK) return rc;
     service->time_task = NULL;
   }
   if (service->uplink_task != NULL) {
     rc = h2_pal_task_join(service->config.task, service->uplink_task);
-    if (rc != H2_PAL_OK)
-      return rc;
+    if (rc != H2_PAL_OK) return rc;
     service->uplink_task = NULL;
   }
   if (service->downlink_task != NULL) {
     rc = h2_pal_task_join(service->config.task, service->downlink_task);
-    if (rc != H2_PAL_OK)
-      return rc;
+    if (rc != H2_PAL_OK) return rc;
     service->downlink_task = NULL;
   }
   if (service->data_uplink_task != NULL) {
     rc = h2_pal_task_join(service->config.task, service->data_uplink_task);
-    if (rc != H2_PAL_OK)
-      return rc;
+    if (rc != H2_PAL_OK) return rc;
     service->data_uplink_task = NULL;
   }
   if (service->data_downlink_task != NULL) {
     rc = h2_pal_task_join(service->config.task, service->data_downlink_task);
-    if (rc != H2_PAL_OK)
-      return rc;
+    if (rc != H2_PAL_OK) return rc;
     service->data_downlink_task = NULL;
   }
   rc = h2_gizclaw_local_stop_internal(service->local);
   if (rc != H2_PAL_OK) return rc;
   rc = h2_gizclaw_device_stop_internal(service->device);
-  if (rc != H2_PAL_OK)
-    return rc;
-  if (lock_service(service) != H2_PAL_OK)
-    return H2_PAL_ERR_INVALID_STATE;
+  if (rc != H2_PAL_OK) return rc;
+  if (lock_service(service) != H2_PAL_OK) return H2_PAL_ERR_INVALID_STATE;
   service->stopped = true;
   unlock_service(service);
   return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_gizclaw_service_deinit(h2_gizclaw_service_t *service) {
-  if (service == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+h2_pal_result_t h2_gizclaw_service_deinit(h2_gizclaw_service_t* service) {
+  if (service == NULL) return H2_PAL_ERR_INVALID_ARG;
   h2_pal_result_t rc = lock_service(service);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   if (!service->stopped || service->dispatching ||
       service->active_count != 0u || service->caller_reference_count != 0u ||
       service->request_reference_count != 0u || service->pcm_track_refs != 0u ||
-      service->downlink_refs != 0u ||
-      service->pcm_track_unsetting || service->queued_event_count != 0u ||
-      service->dispatch_item_count != 0u ||
+      service->downlink_refs != 0u || service->pcm_track_unsetting ||
+      service->queued_event_count != 0u || service->dispatch_item_count != 0u ||
       (service->terminal_pending && !service->terminal_dispatched)) {
     /* The owner can only retry; name what still holds the Service so a leak
      * is traceable from one field log. Formatted under the lock, written
@@ -1510,30 +1425,30 @@ h2_pal_result_t h2_gizclaw_service_deinit(h2_gizclaw_service_t *service) {
         "terminal=%d/%d attached=%d/%d",
         service->stopped ? 1 : 0, service->dispatching ? 1 : 0,
         service->active_count, service->caller_reference_count,
-        service->request_reference_count,
-        service->pcm_track_refs, service->downlink_refs,
-        service->pcm_track_unsetting ? 1 : 0,
+        service->request_reference_count, service->pcm_track_refs,
+        service->downlink_refs, service->pcm_track_unsetting ? 1 : 0,
         service->queued_event_count, service->dispatch_item_count,
         service->terminal_pending ? 1 : 0, service->terminal_dispatched ? 1 : 0,
         service->audio_conversation != NULL ? 1 : 0,
         service->session != NULL ? 1 : 0);
     /* Owners retry every loop; log a refusal only when its state changes. */
     uint32_t signature = 2166136261u;
-    for (const char *c = message; *c != '\0'; ++c)
+    for (const char* c = message; *c != '\0'; ++c)
       signature = (signature ^ (uint8_t)*c) * 16777619u;
     const bool changed = signature != service->deinit_blocked_signature;
     service->deinit_blocked_signature = signature;
     unlock_service(service);
     if (changed)
       (void)h2_pal_log_write(service->config.client_config->log,
-                            H2_PAL_LOG_WARN, "gizclaw", message);
+                             H2_PAL_LOG_WARN, "gizclaw", message);
     return H2_PAL_ERR_INVALID_STATE;
   }
-  h2_gizclaw_track_t *track = h2_atomic_exchange(&service->pcm_track, NULL);
+  h2_gizclaw_track_t* track = h2_atomic_exchange(&service->pcm_track, NULL);
   h2_gizclaw_pcm_track_detach_internal(track);
   unlock_service(service);
   h2_gizclaw_conversation_downlink_destroy_internal(service);
-  if (!h2_gizclaw_local_quiescent_internal(service->local)) return H2_PAL_ERR_BUSY;
+  if (!h2_gizclaw_local_quiescent_internal(service->local))
+    return H2_PAL_ERR_BUSY;
   rc = h2_gizclaw_local_destroy_internal(&service->local);
   if (rc != H2_PAL_OK) return rc;
   h2_gizclaw_device_destroy_internal(service->device);
@@ -1551,12 +1466,10 @@ h2_pal_result_t h2_gizclaw_service_deinit(h2_gizclaw_service_t *service) {
   return H2_PAL_OK;
 }
 
-h2_pal_result_t
-h2_gizclaw_service_attach_session_internal(h2_gizclaw_service_t *service,
-                                           h2_gizclaw_session_t *session) {
+h2_pal_result_t h2_gizclaw_service_attach_session_internal(
+    h2_gizclaw_service_t* service, h2_gizclaw_session_t* session) {
   h2_pal_result_t rc = lock_service(service);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   if (service->session != NULL)
     rc = H2_PAL_ERR_BUSY;
   else {
@@ -1567,11 +1480,10 @@ h2_gizclaw_service_attach_session_internal(h2_gizclaw_service_t *service,
   return rc;
 }
 
-h2_pal_result_t
-h2_gizclaw_service_detach_session_internal(h2_gizclaw_service_t *service) {
+h2_pal_result_t h2_gizclaw_service_detach_session_internal(
+    h2_gizclaw_service_t* service) {
   h2_pal_result_t rc = lock_service(service);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   if (service->session_references != 0u) {
     rc = H2_PAL_ERR_BUSY;
   } else if (service->session != NULL) {
@@ -1582,24 +1494,20 @@ h2_gizclaw_service_detach_session_internal(h2_gizclaw_service_t *service) {
   return rc;
 }
 
-h2_pal_result_t
-h2_gizclaw_service_acquire_session_internal(h2_gizclaw_service_t *service,
-                                            h2_gizclaw_session_t **out) {
+h2_pal_result_t h2_gizclaw_service_acquire_session_internal(
+    h2_gizclaw_service_t* service, h2_gizclaw_session_t** out) {
   *out = NULL;
   h2_pal_result_t rc = lock_service(service);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   *out = service->session;
-  if (*out != NULL)
-    ++service->session_references;
+  if (*out != NULL) ++service->session_references;
   unlock_service(service);
   return H2_PAL_OK;
 }
 
 void h2_gizclaw_service_release_session_internal(
-    h2_gizclaw_service_t *service) {
-  if (lock_service(service) != H2_PAL_OK)
-    return;
+    h2_gizclaw_service_t* service) {
+  if (lock_service(service) != H2_PAL_OK) return;
   --service->session_references;
   unlock_service(service);
 }

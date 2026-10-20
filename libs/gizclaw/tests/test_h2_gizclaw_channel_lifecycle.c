@@ -32,15 +32,15 @@ static void stop_on_failure(int signal_number) {
 }
 
 typedef struct lifecycle {
-  const gzc_webrtc_vtable_t *api;
-  gzc_rtc_peer_t *peer;
+  const gzc_webrtc_vtable_t* api;
+  gzc_rtc_peer_t* peer;
   char offer[16384];
   size_t offer_len;
   unsigned opened, closed, remote, messages;
   unsigned reused_sids;
   bool seen_sids[300];
   h2_webrtc_pion_fixture_t fixture;
-  struct allocation_state *allocations;
+  struct allocation_state* allocations;
 } lifecycle_t;
 
 typedef struct allocation_state {
@@ -49,32 +49,29 @@ typedef struct allocation_state {
   uint32_t resize_delay_ms;
 } allocation_state_t;
 
-static void *allocate(void *user, size_t size) {
-  allocation_state_t *state = user;
-  if (h2_atomic_exchange(&state->fail_alloc, false))
-    return NULL;
-  void *p = malloc(size);
-  if (p != NULL)
-    h2_atomic_fetch_add(&state->live, 1);
+static void* allocate(void* user, size_t size) {
+  allocation_state_t* state = user;
+  if (h2_atomic_exchange(&state->fail_alloc, false)) return NULL;
+  void* p = malloc(size);
+  if (p != NULL) h2_atomic_fetch_add(&state->live, 1);
   return p;
 }
 
-static void *resize(void *user, void *p, size_t size) {
-  allocation_state_t *state = user;
+static void* resize(void* user, void* p, size_t size) {
+  allocation_state_t* state = user;
   bool fresh = p == NULL;
-  void *replacement = realloc(p, size);
+  void* replacement = realloc(p, size);
   /* Widen the old realloc/publication window for the concurrent owner lookup.
    * Stable registry nodes never move, even if a caller allocator yields. */
   if (!fresh)
     (void)h2_pal_time_sleep_ms(h2_desktop_platform_time_api(),
                                state->resize_delay_ms);
-  if (replacement != NULL && fresh)
-    h2_atomic_fetch_add(&state->live, 1);
+  if (replacement != NULL && fresh) h2_atomic_fetch_add(&state->live, 1);
   return replacement;
 }
 
-static void release(void *user, void *p) {
-  allocation_state_t *state = user;
+static void release(void* user, void* p) {
+  allocation_state_t* state = user;
   if (p != NULL) {
     h2_atomic_fetch_sub(&state->live, 1);
     free(p);
@@ -88,28 +85,27 @@ static uint64_t now_ms(void) {
   return value;
 }
 
-static void local_sdp(void *user, gzc_rtc_peer_t *peer, gzc_rtc_sdp_type_t type,
+static void local_sdp(void* user, gzc_rtc_peer_t* peer, gzc_rtc_sdp_type_t type,
                       gzc_str_t sdp) {
-  lifecycle_t *test = user;
+  lifecycle_t* test = user;
   assert(peer == test->peer && type == GZC_RTC_SDP_OFFER);
   assert(sdp.len < sizeof(test->offer));
   memcpy(test->offer, sdp.data, sdp.len);
   test->offer_len = sdp.len;
 }
 
-static void channel_state(void *user, gzc_rtc_peer_t *peer,
-                          gzc_rtc_channel_t *channel,
-                          const gzc_rtc_channel_info_t *info,
+static void channel_state(void* user, gzc_rtc_peer_t* peer,
+                          gzc_rtc_channel_t* channel,
+                          const gzc_rtc_channel_info_t* info,
                           gzc_rtc_channel_state_t state) {
-  lifecycle_t *test = user;
+  lifecycle_t* test = user;
   (void)channel;
   assert(peer == test->peer && info != NULL);
   if (state == GZC_RTC_CHANNEL_OPEN) {
     ++test->opened;
     assert(info->stream_id <
            sizeof(test->seen_sids) / sizeof(test->seen_sids[0]));
-    if (test->seen_sids[info->stream_id])
-      ++test->reused_sids;
+    if (test->seen_sids[info->stream_id]) ++test->reused_sids;
     test->seen_sids[info->stream_id] = true;
   } else {
     assert(state == GZC_RTC_CHANNEL_CLOSED);
@@ -117,21 +113,21 @@ static void channel_state(void *user, gzc_rtc_peer_t *peer,
   }
 }
 
-static void remote_channel(void *user, gzc_rtc_peer_t *peer,
-                           gzc_rtc_channel_t *channel,
-                           const gzc_rtc_channel_info_t *info) {
-  lifecycle_t *test = user;
+static void remote_channel(void* user, gzc_rtc_peer_t* peer,
+                           gzc_rtc_channel_t* channel,
+                           const gzc_rtc_channel_info_t* info) {
+  lifecycle_t* test = user;
   (void)peer;
   (void)channel;
   (void)info;
   ++test->remote;
 }
 
-static void channel_message(void *user, gzc_rtc_peer_t *peer,
-                            gzc_rtc_channel_t *channel,
-                            const gzc_rtc_channel_info_t *info,
-                            const uint8_t *data, size_t len, bool text) {
-  lifecycle_t *test = user;
+static void channel_message(void* user, gzc_rtc_peer_t* peer,
+                            gzc_rtc_channel_t* channel,
+                            const gzc_rtc_channel_info_t* info,
+                            const uint8_t* data, size_t len, bool text) {
+  lifecycle_t* test = user;
   (void)peer;
   (void)channel;
   (void)info;
@@ -141,27 +137,26 @@ static void channel_message(void *user, gzc_rtc_peer_t *peer,
   ++test->messages;
 }
 
-static int wait_count(lifecycle_t *test, const unsigned *count,
+static int wait_count(lifecycle_t* test, const unsigned* count,
                       unsigned expected, uint64_t timeout_ms) {
   uint64_t deadline = now_ms() + timeout_ms;
   while (*count < expected && now_ms() < deadline)
-    if (test->api->peer_poll(test->peer, 10) != GZC_OK)
-      return -1;
+    if (test->api->peer_poll(test->peer, 10) != GZC_OK) return -1;
   return *count >= expected ? 0 : -1;
 }
 
-static void *run_lifecycle(void *raw) {
-  lifecycle_t *test = raw;
+static void* run_lifecycle(void* raw) {
+  lifecycle_t* test = raw;
   const gzc_rtc_channel_config_t channel_config = {
       .label = {"giznet/v1/service/0", sizeof("giznet/v1/service/0") - 1},
       .ordered = true,
       .reliable = true};
-  gzc_rtc_channel_t *rejected = (void *)(uintptr_t)1;
+  gzc_rtc_channel_t* rejected = (void*)(uintptr_t)1;
   h2_atomic_store(&test->allocations->fail_alloc, true);
   assert(test->api->peer_create_data_channel(test->peer, &channel_config,
                                              &rejected) == GZC_ERR_NO_MEMORY);
   assert(rejected == NULL);
-  gzc_rtc_channel_t *held[HELD_CHANNELS] = {0};
+  gzc_rtc_channel_t* held[HELD_CHANNELS] = {0};
   for (unsigned i = 0; i < HELD_CHANNELS; ++i)
     assert(test->api->peer_create_data_channel(test->peer, &channel_config,
                                                &held[i]) == GZC_OK);
@@ -184,17 +179,16 @@ static void *run_lifecycle(void *raw) {
   unsigned completed = 0, failed_closes = 0, failed_sends = 0;
   int result = GZC_OK;
   for (; completed < SOAK_CYCLES; ++completed) {
-    gzc_rtc_channel_t *channel = NULL;
+    gzc_rtc_channel_t* channel = NULL;
     result = test->api->peer_create_data_channel(test->peer, &channel_config,
                                                  &channel);
-    if (result != GZC_OK)
-      break;
+    if (result != GZC_OK) break;
     if ((completed & 1u) == 0) {
       unsigned messages = test->messages;
       unsigned opened = test->opened;
       assert(wait_count(test, &test->opened, opened + 1, 10000) == 0);
       int send =
-          test->api->channel_send(channel, (const uint8_t *)"echo", 4, true);
+          test->api->channel_send(channel, (const uint8_t*)"echo", 4, true);
       if (send != GZC_OK)
         ++failed_sends;
       else
@@ -204,8 +198,7 @@ static void *run_lifecycle(void *raw) {
      * consumed alias must still close the PAL channel exactly once. */
     unsigned closed = test->closed;
     test->api->channel_close(channel);
-    if (wait_count(test, &test->closed, closed + 1, 250) != 0)
-      ++failed_closes;
+    if (wait_count(test, &test->closed, closed + 1, 250) != 0) ++failed_closes;
   }
   h2_webrtc_channel_stats_t stats = {0};
   deadline = now_ms() + 3000;
@@ -223,7 +216,7 @@ static void *run_lifecycle(void *raw) {
          failed_sends == 0 && test->remote == 0 &&
          stats.current == HELD_CHANNELS && test->reused_sids > 0);
   unsigned messages = test->messages;
-  assert(test->api->channel_send(held[0], (const uint8_t *)"echo", 4, true) ==
+  assert(test->api->channel_send(held[0], (const uint8_t*)"echo", 4, true) ==
          GZC_OK);
   assert(wait_count(test, &test->messages, messages + 1, 10000) == 0);
   for (unsigned i = 0; i < HELD_CHANNELS; ++i)
@@ -233,7 +226,7 @@ static void *run_lifecycle(void *raw) {
   return NULL;
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   assert(argc == 2);
   h2_webrtc_pion_fixture_t fixture = {0};
   assert(h2_webrtc_pion_fixture_start(&fixture, argv[1], "udp") == 0);
@@ -249,7 +242,7 @@ int main(int argc, char **argv) {
       .alloc = allocate, .realloc = resize, .free = release};
   allocation_state_t allocations[2] = {0};
   h2_pal_mem_api_t memory[2];
-  h2_gizclaw_client_t *clients[2] = {0};
+  h2_gizclaw_client_t* clients[2] = {0};
   lifecycle_t tests[2] = {0};
   pthread_t threads[2];
   /* Register clients/peers before their independent protocol owners run.
@@ -272,7 +265,7 @@ int main(int argc, char **argv) {
         .log = h2_desktop_platform_log_api(),
     };
     assert(h2_gizclaw_client_init(&config, &clients[i]) == H2_PAL_OK);
-    lifecycle_t *test = &tests[i];
+    lifecycle_t* test = &tests[i];
     test->api = h2_gizclaw_test_webrtc_api(clients[i]);
     test->fixture = fixture;
     test->allocations = &allocations[i];
@@ -288,8 +281,7 @@ int main(int argc, char **argv) {
   }
   for (unsigned i = 0; i < 2; ++i)
     assert(pthread_create(&threads[i], NULL, run_lifecycle, &tests[i]) == 0);
-  for (unsigned i = 0; i < 2; ++i)
-    assert(pthread_join(threads[i], NULL) == 0);
+  for (unsigned i = 0; i < 2; ++i) assert(pthread_join(threads[i], NULL) == 0);
   for (unsigned i = 0; i < 2; ++i) {
     tests[i].api->peer_close(tests[i].peer);
     h2_gizclaw_client_deinit(clients[i]);

@@ -17,8 +17,8 @@ extern "C" {
  * Fields are scenario controls/evidence; follow fault.h serialization rules. */
 typedef struct h2_app_test_pref {
   h2_pal_pref_api_t api;
-  const h2_pal_mem_api_t *mem;
-  void *implementation;
+  const h2_pal_mem_api_t* mem;
+  void* implementation;
   h2_app_test_fault_t open, read, write, commit;
   /** Empty filters match all commits; key filter matches a staged change. */
   char commit_namespace[H2_APP_TEST_PREF_NAME_MAX + 1u];
@@ -27,11 +27,11 @@ typedef struct h2_app_test_pref {
 } h2_app_test_pref_t;
 /** Initialize fresh caller storage, borrowing allocator until deinit. Returns
  * INVALID_ARG/NO_MEMORY. Do not reinitialize a live instance. */
-h2_pal_result_t h2_app_test_pref_init(h2_app_test_pref_t *pref,
-                                      const h2_pal_mem_api_t *mem);
+h2_pal_result_t h2_app_test_pref_init(h2_app_test_pref_t* pref,
+                                      const h2_pal_mem_api_t* mem);
 /** Release all data. Open handles return INVALID_STATE; NULL/repeated deinit
  * OK. */
-h2_pal_result_t h2_app_test_pref_deinit(h2_app_test_pref_t *pref);
+h2_pal_result_t h2_app_test_pref_deinit(h2_app_test_pref_t* pref);
 
 #ifdef __cplusplus
 }

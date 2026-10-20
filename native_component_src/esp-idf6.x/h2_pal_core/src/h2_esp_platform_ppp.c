@@ -12,20 +12,20 @@
 #include "netif/ppp/ppp.h"
 
 typedef struct h2_esp_ppp_quiesce {
-  esp_netif_t *netif;
+  esp_netif_t* netif;
   bool close_requested;
   bool dead;
 } h2_esp_ppp_quiesce_t;
 
-static esp_err_t ppp_quiesce_in_tcpip(void *user) {
-  h2_esp_ppp_quiesce_t *request = user;
+static esp_err_t ppp_quiesce_in_tcpip(void* user) {
+  h2_esp_ppp_quiesce_t* request = user;
   if ((esp_netif_get_flags(request->netif) & ESP_NETIF_FLAG_IS_PPP) == 0u)
     return ESP_ERR_INVALID_ARG;
-  struct netif *netif = esp_netif_get_netif_impl(request->netif);
+  struct netif* netif = esp_netif_get_netif_impl(request->netif);
   if (netif == NULL || netif->state == NULL) return ESP_ERR_INVALID_STATE;
   /* IDF 6.x's PPP netif state is the lwIP-owned control block. Keep that
    * SDK detail here; consumers neither inspect it nor call ppp_free(). */
-  ppp_pcb *pcb = netif->state;
+  ppp_pcb* pcb = netif->state;
   if (pcb->phase != PPP_PHASE_DEAD && !request->close_requested) {
     const err_t rc = ppp_close(pcb, 0);
     if (rc != ERR_OK && rc != ERR_INPROGRESS) return ESP_FAIL;
@@ -36,8 +36,8 @@ static esp_err_t ppp_quiesce_in_tcpip(void *user) {
 }
 #endif
 
-h2_pal_result_t h2_esp_platform_ppp_quiesce(void *netif_handle,
-                                          uint32_t timeout_ms) {
+h2_pal_result_t h2_esp_platform_ppp_quiesce(void* netif_handle,
+                                            uint32_t timeout_ms) {
   if (netif_handle == NULL) return H2_PAL_ERR_INVALID_ARG;
 #if CONFIG_PPP_SUPPORT
   h2_esp_ppp_quiesce_t request = {.netif = netif_handle};

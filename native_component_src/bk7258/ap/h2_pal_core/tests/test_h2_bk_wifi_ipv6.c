@@ -7,8 +7,8 @@
 
 const ip6_addr_t test_ip6_zero;
 static struct netif station;
-struct netif *netif_default;
-static struct netif *current = &station;
+struct netif* netif_default;
+static struct netif* current = &station;
 static wifi_link_status_t link;
 static test_event_callback_t connected_callback, disconnected_callback;
 static int link_error, tcpip_error, race, in_tcpip;
@@ -16,7 +16,7 @@ static unsigned cleanup_count, api_calls;
 static int capture_race;
 static int capture_disconnect, publish_disconnect;
 static int observe_no_ready;
-static void (*cache_tick)(void *);
+static void (*cache_tick)(void*);
 
 void test_after_atomic_store(void) {
   if (publish_disconnect) {
@@ -25,8 +25,7 @@ void test_after_atomic_store(void) {
                           NULL);
     observe_no_ready = 1;
   }
-  if (observe_no_ready)
-    assert(!h2_bk_wifi_ipv6_ready());
+  if (observe_no_ready) assert(!h2_bk_wifi_ipv6_ready());
 }
 
 void test_capture_edge(void) {
@@ -41,15 +40,15 @@ void test_capture_edge(void) {
     connected_callback(NULL, EVENT_MOD_WIFI, EVENT_WIFI_STA_CONNECTED, NULL);
   }
 }
-void *net_get_sta_handle(void) { return current; }
-int bk_wifi_sta_get_link_status(wifi_link_status_t *out) {
+void* net_get_sta_handle(void) { return current; }
+int bk_wifi_sta_get_link_status(wifi_link_status_t* out) {
   *out = link;
   if (race)
     connected_callback(NULL, EVENT_MOD_WIFI, EVENT_WIFI_STA_CONNECTED, NULL);
   return link_error;
 }
 int bk_event_register_cb(event_module_t module, int event,
-                         test_event_callback_t fn, void *user) {
+                         test_event_callback_t fn, void* user) {
   (void)module;
   (void)user;
   if (event == EVENT_WIFI_STA_CONNECTED)
@@ -58,11 +57,10 @@ int bk_event_register_cb(event_module_t module, int event,
     disconnected_callback = fn;
   return BK_OK;
 }
-err_t tcpip_api_call(err_t (*fn)(struct tcpip_api_call_data *),
-                     struct tcpip_api_call_data *data) {
+err_t tcpip_api_call(err_t (*fn)(struct tcpip_api_call_data*),
+                     struct tcpip_api_call_data* data) {
   ++api_calls;
-  if (tcpip_error)
-    return ERR_IF;
+  if (tcpip_error) return ERR_IF;
   in_tcpip = 1;
   err_t rc = fn(data);
   in_tcpip = 0;
@@ -70,55 +68,54 @@ err_t tcpip_api_call(err_t (*fn)(struct tcpip_api_call_data *),
     connected_callback(NULL, EVENT_MOD_WIFI, EVENT_WIFI_STA_CONNECTED, NULL);
   return rc;
 }
-void netif_ip6_addr_set_state(struct netif *n, int i, unsigned s) {
+void netif_ip6_addr_set_state(struct netif* n, int i, unsigned s) {
   assert(in_tcpip);
   n->state[i] = s;
 }
-void netif_ip6_addr_set(struct netif *n, int i, const ip6_addr_t *a) {
+void netif_ip6_addr_set(struct netif* n, int i, const ip6_addr_t* a) {
   assert(in_tcpip);
   n->ip6[i] = *a;
 }
-void netif_set_link_down(struct netif *n) {
+void netif_set_link_down(struct netif* n) {
   assert(in_tcpip);
   n->link = 0;
 }
-void netif_set_link_up(struct netif *n) {
+void netif_set_link_up(struct netif* n) {
   assert(in_tcpip);
   n->link = 1;
 }
-void netif_set_down(struct netif *n) {
+void netif_set_down(struct netif* n) {
   assert(in_tcpip);
   n->up = 0;
 }
-void netif_set_up(struct netif *n) {
+void netif_set_up(struct netif* n) {
   assert(in_tcpip);
   n->up = 1;
 }
-void netif_set_addr(struct netif *n, const ip4_addr_t *ip,
-                    const ip4_addr_t *mask, const ip4_addr_t *gw) {
+void netif_set_addr(struct netif* n, const ip4_addr_t* ip,
+                    const ip4_addr_t* mask, const ip4_addr_t* gw) {
   assert(in_tcpip);
   n->ip4 = *ip;
   n->mask = *mask;
   n->gw = *gw;
 }
-void netif_set_default(struct netif *n) {
+void netif_set_default(struct netif* n) {
   assert(in_tcpip);
   netif_default = n;
 }
-void nd6_cleanup_netif(struct netif *n) {
+void nd6_cleanup_netif(struct netif* n) {
   (void)n;
   assert(in_tcpip);
   ++cleanup_count;
 }
-err_t tcpip_callback(void (*fn)(void *), void *user) {
-  if (tcpip_error)
-    return ERR_IF;
+err_t tcpip_callback(void (*fn)(void*), void* user) {
+  if (tcpip_error) return ERR_IF;
   in_tcpip = 1;
   fn(user);
   in_tcpip = 0;
   return ERR_OK;
 }
-void sys_timeout(uint32_t delay, void (*fn)(void *), void *user) {
+void sys_timeout(uint32_t delay, void (*fn)(void*), void* user) {
   (void)user;
   assert(in_tcpip && delay == 250u);
   cache_tick = fn;
@@ -136,7 +133,7 @@ static h2_bk_wifi_ipv6_snapshot_t snapshot(void) {
   assert(h2_bk_wifi_ipv6_snapshot(&out) == BK_OK);
   return out;
 }
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   unsigned selected = 3u;
   if (argc == 2) {
     if (!strcmp(argv[1], "after-disconnect"))
@@ -168,8 +165,7 @@ int main(int argc, char **argv) {
   out = snapshot();
   assert(out.count == 2 && h2_bk_wifi_ipv6_ready());
   for (unsigned boundary = 0u; boundary < 3u; ++boundary) {
-    if (selected != 3u && selected != boundary)
-      continue;
+    if (selected != 3u && selected != boundary) continue;
     uint32_t previous_epoch = out.generation;
     if (boundary == 0u) {
       /* Radio disconnect precedes lwIP teardown and even a stale SDK status
@@ -201,8 +197,7 @@ int main(int argc, char **argv) {
     assert(station.up && station.state[1] == IP6_ADDR_PREFERRED);
     assert(link.state == WIFI_LINKSTATE_STA_GOT_IP);
     assert(out.generation != previous_epoch && !out.connected &&
-           out.count == 0u &&
-           !h2_bk_wifi_ipv6_ready());
+           out.count == 0u && !h2_bk_wifi_ipv6_ready());
     connected_callback(NULL, EVENT_MOD_WIFI, EVENT_WIFI_STA_CONNECTED, NULL);
     out = snapshot();
     assert(out.count == 2 && h2_bk_wifi_ipv6_ready());
@@ -310,8 +305,7 @@ int main(int argc, char **argv) {
          ERR_OK);
   in_tcpip = 0;
   assert(!station.up && !station.link && !netif_default);
-  for (unsigned i = 0; i < 3; i++)
-    assert(station.state[i] == IP6_ADDR_INVALID);
+  for (unsigned i = 0; i < 3; i++) assert(station.state[i] == IP6_ADDR_INVALID);
   link.state = WIFI_LINKSTATE_STA_GOT_IP;
   station.up = 1;
   station.state[1] = IP6_ADDR_PREFERRED;

@@ -10,20 +10,20 @@
 #define H2_LVGL_SMOKE_TICK_MS 16u
 
 typedef struct h2_lvgl_smoke_ui {
-  h2_runtime_t *runtime;
-  lv_display_t *display;
-  lv_obj_t *progress;
-  void *render_buffer;
+  h2_runtime_t* runtime;
+  lv_display_t* display;
+  lv_obj_t* progress;
+  void* render_buffer;
   h2_pal_result_t flush_result;
   int width;
   int height;
   int flushed;
 } h2_lvgl_smoke_ui_t;
 
-static void display_flush(lv_display_t *display, const lv_area_t *area,
-                          uint8_t *pixels) {
-  h2_lvgl_smoke_ui_t *ui =
-      (h2_lvgl_smoke_ui_t *)lv_display_get_user_data(display);
+static void display_flush(lv_display_t* display, const lv_area_t* area,
+                          uint8_t* pixels) {
+  h2_lvgl_smoke_ui_t* ui =
+      (h2_lvgl_smoke_ui_t*)lv_display_get_user_data(display);
   if (ui == NULL || area == NULL || pixels == NULL) {
     lv_display_flush_ready(display);
     return;
@@ -45,14 +45,14 @@ static void display_flush(lv_display_t *display, const lv_area_t *area,
   lv_display_flush_ready(display);
 }
 
-static h2_pal_result_t build_screen(h2_lvgl_smoke_ui_t *ui) {
-  lv_obj_t *screen = lv_screen_active();
+static h2_pal_result_t build_screen(h2_lvgl_smoke_ui_t* ui) {
+  lv_obj_t* screen = lv_screen_active();
   if (screen == NULL) {
     return H2_PAL_ERR_NO_MEMORY;
   }
   lv_obj_set_style_bg_color(screen, lv_color_hex(0x111827u), 0);
 
-  lv_obj_t *title = lv_label_create(screen);
+  lv_obj_t* title = lv_label_create(screen);
   if (title == NULL) {
     return H2_PAL_ERR_NO_MEMORY;
   }
@@ -60,7 +60,7 @@ static h2_pal_result_t build_screen(h2_lvgl_smoke_ui_t *ui) {
   lv_obj_set_style_text_color(title, lv_color_hex(0xffffffu), 0);
   lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 26);
 
-  lv_obj_t *card = lv_obj_create(screen);
+  lv_obj_t* card = lv_obj_create(screen);
   if (card == NULL) {
     return H2_PAL_ERR_NO_MEMORY;
   }
@@ -75,7 +75,7 @@ static h2_pal_result_t build_screen(h2_lvgl_smoke_ui_t *ui) {
       0xef4444u, 0xfacc15u, 0x22c55eu, 0x22d3eeu, 0x3b82f6u, 0xd946efu,
   };
   for (size_t i = 0u; i < sizeof(colors) / sizeof(colors[0]); ++i) {
-    lv_obj_t *dot = lv_obj_create(card);
+    lv_obj_t* dot = lv_obj_create(card);
     if (dot == NULL) {
       return H2_PAL_ERR_NO_MEMORY;
     }
@@ -105,7 +105,7 @@ static h2_pal_result_t build_screen(h2_lvgl_smoke_ui_t *ui) {
   lv_bar_set_range(ui->progress, 0, 100);
   lv_bar_set_value(ui->progress, 0, LV_ANIM_OFF);
 
-  lv_obj_t *detail = lv_label_create(screen);
+  lv_obj_t* detail = lv_label_create(screen);
   if (detail == NULL) {
     return H2_PAL_ERR_NO_MEMORY;
   }
@@ -115,7 +115,7 @@ static h2_pal_result_t build_screen(h2_lvgl_smoke_ui_t *ui) {
   return H2_PAL_OK;
 }
 
-static void deinit_ui(h2_lvgl_smoke_ui_t *ui, const h2_pal_mem_api_t *mem,
+static void deinit_ui(h2_lvgl_smoke_ui_t* ui, const h2_pal_mem_api_t* mem,
                       int lvgl_initialized, int platform_initialized) {
   if (ui->display != NULL) {
     lv_display_delete(ui->display);
@@ -132,14 +132,14 @@ static void deinit_ui(h2_lvgl_smoke_ui_t *ui, const h2_pal_mem_api_t *mem,
   }
 }
 
-h2_pal_result_t h2_lvgl_smoke_run(h2_runtime_t *runtime,
-                                  const h2_lvgl_smoke_config_t *config) {
+h2_pal_result_t h2_lvgl_smoke_run(h2_runtime_t* runtime,
+                                  const h2_lvgl_smoke_config_t* config) {
   if (runtime == NULL || config == NULL || runtime->display == NULL ||
       runtime->task == NULL || runtime->sync == NULL ||
       runtime->queue == NULL || runtime->time == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  const h2_pal_mem_api_t *mem =
+  const h2_pal_mem_api_t* mem =
       config->mem != NULL ? config->mem : runtime->mem;
   if (mem == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -196,8 +196,7 @@ h2_pal_result_t h2_lvgl_smoke_run(h2_runtime_t *runtime,
   lv_display_set_color_format(ui.display, LV_COLOR_FORMAT_RGB565);
   lv_display_set_flush_cb(ui.display, display_flush);
   lv_display_set_buffers(ui.display, ui.render_buffer, NULL,
-                         (uint32_t)render_bytes,
-                         LV_DISPLAY_RENDER_MODE_FULL);
+                         (uint32_t)render_bytes, LV_DISPLAY_RENDER_MODE_FULL);
 
   rc = build_screen(&ui);
   uint64_t last_ms = 0u;

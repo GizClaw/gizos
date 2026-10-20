@@ -26,36 +26,38 @@ typedef struct h2_web_platform_config {
  * @param config Borrowed dimensions copied before this call returns.
  * @return An owned platform, or NULL for invalid dimensions/allocation failure.
  */
-h2_web_platform_t *
-h2_web_platform_create(const h2_web_platform_config_t *config);
+h2_web_platform_t* h2_web_platform_create(
+    const h2_web_platform_config_t* config);
 
 /** Create a Web provider with a borrowed allocator for native Task stacks.
  * The API is copied; allocator user/vtable must live through platform destroy.
  * NULL selects the regular Web Memory provider. Other capability allocators
  * are unchanged. This permits target memory policy and allocation-failure
  * verification without replacing the real Task implementation. */
-h2_web_platform_t *h2_web_platform_create_with_task_allocator(
-    const h2_web_platform_config_t *config, const h2_pal_mem_api_t *allocator);
+h2_web_platform_t* h2_web_platform_create_with_task_allocator(
+    const h2_web_platform_config_t* config, const h2_pal_mem_api_t* allocator);
 
 typedef struct h2_web_platform_resource_stats {
   size_t live_tasks, task_stack_bytes;
   size_t live_queues, live_mutexes, live_semaphores, live_conditions;
   size_t live_timers, live_firmware_infos, live_event_subscriptions;
-  /** Process-wide Web Memory allocations and allocator-reported usable bytes. */
+  /** Process-wide Web Memory allocations and allocator-reported usable bytes.
+   */
   size_t allocations, allocation_bytes;
 } h2_web_platform_resource_stats_t;
 
-/** Read actual provider objects from its owning C main Worker or PAL Task Worker. */
+/** Read actual provider objects from its owning C main Worker or PAL Task
+ * Worker. */
 h2_pal_result_t h2_web_platform_get_resource_stats(
-    h2_web_platform_t *platform, h2_web_platform_resource_stats_t *out);
+    h2_web_platform_t* platform, h2_web_platform_resource_stats_t* out);
 
 /** Copy immutable version metadata embedded by the launcher before Runtime
  * assembly. Empty/oversized versions are rejected; a second configuration
  * returns INVALID_STATE. This does not fetch mutable remote metadata. */
 h2_pal_result_t h2_web_platform_configure_firmware_info(
-    h2_web_platform_t *platform, const char *embedded_version);
-const h2_pal_firmware_info_api_t *h2_web_platform_firmware_info_api(
-    h2_web_platform_t *platform);
+    h2_web_platform_t* platform, const char* embedded_version);
+const h2_pal_firmware_info_api_t* h2_web_platform_firmware_info_api(
+    h2_web_platform_t* platform);
 
 /**
  * Destroy an idle provider after target-owned Runtime/tasks are released.
@@ -63,10 +65,10 @@ const h2_pal_firmware_info_api_t *h2_web_platform_firmware_info_api(
  * Returns BUSY and leaves the platform intact while a task is alive, a PAL
  * call is suspended on a browser Promise (HTTP, WebRTC, decoder, microphone,
  * filesystem), an h2_web_fs is open or a speaker track is still open;
- * stop/cancel/close them and retry. NULL and success return OK. All borrowed accessor
- * results become invalid when destruction succeeds.
+ * stop/cancel/close them and retry. NULL and success return OK. All borrowed
+ * accessor results become invalid when destruction succeeds.
  */
-h2_pal_result_t h2_web_platform_destroy(h2_web_platform_t *platform);
+h2_pal_result_t h2_web_platform_destroy(h2_web_platform_t* platform);
 
 /**
  * Import pending browser events and reap finished media Tasks.
@@ -75,40 +77,35 @@ h2_pal_result_t h2_web_platform_destroy(h2_web_platform_t *platform);
  *
  * @param platform Borrowed live platform.
  * @param work_budget Reserved compatibility budget (currently ignored).
- * @param out_resumed Optional resumed count, always zero with pthread scheduling.
+ * @param out_resumed Optional resumed count, always zero with pthread
+ * scheduling.
  * @return OK or INVALID_STATE for a dead, reentrant, or shutting-down call.
  */
-h2_pal_result_t h2_web_platform_pump(h2_web_platform_t *platform,
-                                     size_t work_budget,
-                                     size_t *out_resumed);
+h2_pal_result_t h2_web_platform_pump(h2_web_platform_t* platform,
+                                     size_t work_budget, size_t* out_resumed);
 
 /** Wake the platform Worker to import browser events. */
-void h2_web_platform_schedule(h2_web_platform_t *platform);
+void h2_web_platform_schedule(h2_web_platform_t* platform);
 
 /** Request cooperative cancellation for one task owned by this platform. */
-h2_pal_result_t h2_web_platform_task_cancel(h2_web_platform_t *platform,
-                                            h2_pal_task_t *task);
+h2_pal_result_t h2_web_platform_task_cancel(h2_web_platform_t* platform,
+                                            h2_pal_task_t* task);
 
 /** Process-lifetime stateless Memory PAL provider. */
-const h2_pal_mem_api_t *h2_web_platform_mem_api(void);
+const h2_pal_mem_api_t* h2_web_platform_mem_api(void);
 /** Process-lifetime stateless console Log PAL provider. */
-const h2_pal_log_api_t *h2_web_platform_log_api(void);
+const h2_pal_log_api_t* h2_web_platform_log_api(void);
 /** Borrow real APIs owned by @p platform until successful platform destroy. */
-const h2_pal_time_api_t *
-h2_web_platform_time_api(h2_web_platform_t *platform);
-const h2_pal_timer_api_t *
-h2_web_platform_timer_api(h2_web_platform_t *platform);
-const h2_pal_task_api_t *
-h2_web_platform_task_api(h2_web_platform_t *platform);
-const h2_pal_queue_api_t *
-h2_web_platform_queue_api(h2_web_platform_t *platform);
-const h2_pal_sync_api_t *
-h2_web_platform_sync_api(h2_web_platform_t *platform);
-const h2_pal_pref_api_t *
-h2_web_platform_pref_api(h2_web_platform_t *platform);
+const h2_pal_time_api_t* h2_web_platform_time_api(h2_web_platform_t* platform);
+const h2_pal_timer_api_t* h2_web_platform_timer_api(
+    h2_web_platform_t* platform);
+const h2_pal_task_api_t* h2_web_platform_task_api(h2_web_platform_t* platform);
+const h2_pal_queue_api_t* h2_web_platform_queue_api(
+    h2_web_platform_t* platform);
+const h2_pal_sync_api_t* h2_web_platform_sync_api(h2_web_platform_t* platform);
+const h2_pal_pref_api_t* h2_web_platform_pref_api(h2_web_platform_t* platform);
 /** Browser Fetch HTTP provider. Requests remain subject to browser CORS. */
-const h2_pal_http_api_t *
-h2_web_platform_http_api(h2_web_platform_t *platform);
+const h2_pal_http_api_t* h2_web_platform_http_api(h2_web_platform_t* platform);
 /**
  * @brief Borrow opt-in simulated radio APIs until platform destruction.
  * Set Module.h2WebEnvironment (version 1) before platform creation; missing
@@ -120,14 +117,17 @@ h2_web_platform_http_api(h2_web_platform_t *platform);
  * use a C/PAL Worker task, not an ISR or browser callback. Unsupported modem
  * operations keep NULL vtable slots. See the Web guide for the JS contract.
  */
-const h2_pal_wifi_sta_api_t *h2_web_platform_fake_wifi_sta_api(h2_web_platform_t *platform);
-const h2_pal_wifi_settings_api_t *h2_web_platform_fake_wifi_settings_api(h2_web_platform_t *platform);
-const h2_pal_modem_api_t *h2_web_platform_fake_modem_api(h2_web_platform_t *platform);
+const h2_pal_wifi_sta_api_t* h2_web_platform_fake_wifi_sta_api(
+    h2_web_platform_t* platform);
+const h2_pal_wifi_settings_api_t* h2_web_platform_fake_wifi_settings_api(
+    h2_web_platform_t* platform);
+const h2_pal_modem_api_t* h2_web_platform_fake_modem_api(
+    h2_web_platform_t* platform);
 /** wolfCrypt provider seeded from browser cryptographic randomness. */
-const h2_pal_crypto_api_t *
-h2_web_platform_crypto_api(h2_web_platform_t *platform);
-const h2_pal_display_api_t *
-h2_web_platform_display_api(h2_web_platform_t *platform);
+const h2_pal_crypto_api_t* h2_web_platform_crypto_api(
+    h2_web_platform_t* platform);
+const h2_pal_display_api_t* h2_web_platform_display_api(
+    h2_web_platform_t* platform);
 /** Configure browser LED output from a board's borrowed Periph API before
  * Runtime start. Copies the API; its user/vtable/payloads must remain valid
  * until platform destroy. A second call returns INVALID_STATE. LED_STRIP
@@ -135,10 +135,10 @@ h2_web_platform_display_api(h2_web_platform_t *platform);
  * PAL writes synchronously publish Module.h2WebOutputs.leds on the UI thread,
  * including the board's id/name, raw pixels and independent brightness.
  * Use a C/PAL Worker, never an ISR. No product light policy is synthesized. */
-h2_pal_result_t h2_web_platform_configure_leds(h2_web_platform_t *platform,
-    const h2_pal_periph_api_t *periph);
+h2_pal_result_t h2_web_platform_configure_leds(
+    h2_web_platform_t* platform, const h2_pal_periph_api_t* periph);
 /** Borrow the configured LED API until successful platform destruction. */
-const h2_pal_led_api_t *h2_web_platform_led_api(h2_web_platform_t *platform);
+const h2_pal_led_api_t* h2_web_platform_led_api(h2_web_platform_t* platform);
 /**
  * Browser Web Audio playback and getUserMedia/AudioWorklet microphone provider.
  *
@@ -151,50 +151,51 @@ const h2_pal_led_api_t *h2_web_platform_led_api(h2_web_platform_t *platform);
  * Only one read may be pending (another returns BUSY). Blocking calls run on
  * Workers; browser API entries and Promise completion run on the UI thread.
  *
- * Start requires a user gesture, secure context and browser permission; it waits at most
- * 30 seconds. Missing APIs return UNSUPPORTED, denied/unavailable devices return
- * UNAVAILABLE, and browser processing failures return IO. A repeated start
- * returns INVALID_STATE. Stop is idempotent, clears queued PCM and makes pending
- * start/read calls return CLOSED. Late permission results are stopped rather
- * than attached. Device removal returns CLOSED. Stop/cancel outstanding calls
- * and let them return before destroying the platform.
+ * Start requires a user gesture, secure context and browser permission; it
+ * waits at most 30 seconds. Missing APIs return UNSUPPORTED, denied/unavailable
+ * devices return UNAVAILABLE, and browser processing failures return IO. A
+ * repeated start returns INVALID_STATE. Stop is idempotent, clears queued PCM
+ * and makes pending start/read calls return CLOSED. Late permission results are
+ * stopped rather than attached. Device removal returns CLOSED. Stop/cancel
+ * outstanding calls and let them return before destroying the platform.
  *
  * While started, Module.h2WebMicrophoneStreams.get(platform_address) exposes a
- * borrowed MediaStream for caller-owned WebRTC tracks. Unset those tracks before
- * stopping capture; PAL stop owns and stops this stream's native tracks.
+ * borrowed MediaStream for caller-owned WebRTC tracks. Unset those tracks
+ * before stopping capture; PAL stop owns and stops this stream's native tracks.
  * Hosting CSP must permit the microphone worklet's generated blob module.
  */
-const h2_pal_audio_api_t *
-h2_web_platform_audio_api(h2_web_platform_t *platform);
-/** Browser WebCodecs H.264 Annex-B decoder with allocator-backed RGB565 output. */
-const h2_pal_video_decoder_api_t *
-h2_web_platform_video_decoder_api(h2_web_platform_t *platform);
+const h2_pal_audio_api_t* h2_web_platform_audio_api(
+    h2_web_platform_t* platform);
+/** Browser WebCodecs H.264 Annex-B decoder with allocator-backed RGB565 output.
+ */
+const h2_pal_video_decoder_api_t* h2_web_platform_video_decoder_api(
+    h2_web_platform_t* platform);
 /** Browser WebCodecs AAC-LC decoder with allocator-backed S16LE output. */
-const h2_pal_audio_decoder_api_t *
-h2_web_platform_audio_decoder_api(h2_web_platform_t *platform);
-const h2_pal_touch_api_t *
-h2_web_platform_touch_api(h2_web_platform_t *platform);
-const h2_pal_serial_host_api_t *
-h2_web_platform_serial_host_api(h2_web_platform_t *platform);
-/** Browser RTCPeerConnection/DataChannel provider, with browser API calls proxied to the UI thread.
- * A Track with native_handle == NULL and a read/write vtable is an Opus
- * Track (the native-provider model): the provider sends a silent browser
- * track, replaces each outgoing encoded 20 ms payload with the next packet
- * (which must therefore carry 20 ms of audio) from
- * read() and hands every received payload to write() instead of the browser
- * decoder, using RTCRtpScriptTransform (worker; CSP must allow blob: workers)
- * or Chromium's createEncodedStreams. A platform-owned task calls read/write,
- * never a browser callback; the page must have unlocked Module.h2WebAudioContext
- * (or allow autoplay) for the silent source to run. Missing transform APIs
- * return UNSUPPORTED. unset returns once no Track callback is in flight
- * (BUSY from the root while one is); a new Track waits (BUSY) until the
- * previous media task has exited. Received packet loss is not reported.
- * Otherwise media is caller-owned: register {stream: MediaStream, audio:
- * HTMLMediaElement} in Module.h2WebRtcTracks (a Map keyed by a nonzero wasm32
- * integer token), then pass a caller-constructed h2_pal_webrtc_track_t with
- * native_handle equal to that token. Either stream or audio may be omitted, but
- * not both. Keep the objects, registry entry and C Track alive until unset
- * succeeds or peer closes. No automatic getUserMedia, Audio construction, or
+const h2_pal_audio_decoder_api_t* h2_web_platform_audio_decoder_api(
+    h2_web_platform_t* platform);
+const h2_pal_touch_api_t* h2_web_platform_touch_api(
+    h2_web_platform_t* platform);
+const h2_pal_serial_host_api_t* h2_web_platform_serial_host_api(
+    h2_web_platform_t* platform);
+/** Browser RTCPeerConnection/DataChannel provider, with browser API calls
+ * proxied to the UI thread. A Track with native_handle == NULL and a read/write
+ * vtable is an Opus Track (the native-provider model): the provider sends a
+ * silent browser track, replaces each outgoing encoded 20 ms payload with the
+ * next packet (which must therefore carry 20 ms of audio) from read() and hands
+ * every received payload to write() instead of the browser decoder, using
+ * RTCRtpScriptTransform (worker; CSP must allow blob: workers) or Chromium's
+ * createEncodedStreams. A platform-owned task calls read/write, never a browser
+ * callback; the page must have unlocked Module.h2WebAudioContext (or allow
+ * autoplay) for the silent source to run. Missing transform APIs return
+ * UNSUPPORTED. unset returns once no Track callback is in flight (BUSY from the
+ * root while one is); a new Track waits (BUSY) until the previous media task
+ * has exited. Received packet loss is not reported. Otherwise media is
+ * caller-owned: register {stream: MediaStream, audio: HTMLMediaElement} in
+ * Module.h2WebRtcTracks (a Map keyed by a nonzero wasm32 integer token), then
+ * pass a caller-constructed h2_pal_webrtc_track_t with native_handle equal to
+ * that token. Either stream or audio may be omitted, but not both. Keep the
+ * objects, registry entry and C Track alive until unset succeeds or peer
+ * closes. No automatic getUserMedia, Audio construction, or
  * MediaStreamTrack.stop. unset waits for replaceTrack(null) and clears remote
  * playback; it is valid after an offer. A token may be bound to only one peer
  * at a time. poll only consumes events; the browser drives transport and media.
@@ -207,8 +208,8 @@ h2_web_platform_serial_host_api(h2_web_platform_t *platform);
  * bufferedamountlow produces WRITABLE; a message larger than 1 MiB or the
  * negotiated limit returns NO_SPACE.
  */
-const h2_pal_webrtc_api_t *
-h2_web_platform_webrtc_api(h2_web_platform_t *platform);
+const h2_pal_webrtc_api_t* h2_web_platform_webrtc_api(
+    h2_web_platform_t* platform);
 
 /**
  * Browser default-network provider backed by navigator.onLine.
@@ -228,8 +229,8 @@ h2_web_platform_webrtc_api(h2_web_platform_t *platform);
  * can still be unreachable (captive portal, firewall, CORS, server down); only
  * the result of the real Fetch or WebRTC connection decides that.
  */
-const h2_pal_netif_api_t *
-h2_web_platform_netif_api(h2_web_platform_t *platform);
+const h2_pal_netif_api_t* h2_web_platform_netif_api(
+    h2_web_platform_t* platform);
 
 /**
  * Thread-safe System Event provider owned by @p platform.
@@ -246,8 +247,8 @@ h2_web_platform_netif_api(h2_web_platform_t *platform);
 /** Borrow the synchronous SystemEvent API on a C Worker; NULL on the browser
  * main thread. Its unsubscribe may block until other Worker callbacks return.
  * A borrowed API must not be used from the browser main thread. */
-const h2_pal_system_event_api_t *
-h2_web_platform_system_event_api(h2_web_platform_t *platform);
+const h2_pal_system_event_api_t* h2_web_platform_system_event_api(
+    h2_web_platform_t* platform);
 
 /** Retire a subscription without blocking the browser event loop.
  * On OK, admission is stopped immediately and ownership of the subscription
@@ -259,8 +260,9 @@ h2_web_platform_system_event_api(h2_web_platform_t *platform);
  * after returning to the event loop. Other failures do not invoke completed.
  */
 h2_pal_result_t h2_web_platform_system_event_unsubscribe_async(
-    h2_web_platform_t *platform, h2_pal_system_event_subscription_t *subscription,
-    void (*completed)(void *user), void *user);
+    h2_web_platform_t* platform,
+    h2_pal_system_event_subscription_t* subscription,
+    void (*completed)(void* user), void* user);
 
 /**
  * Start the Web Serial chooser; call only from a direct user gesture.
@@ -268,8 +270,8 @@ h2_pal_result_t h2_web_platform_system_event_unsubscribe_async(
  * Returns BUSY while another chooser is pending and UNSUPPORTED is reported
  * through the terminal authorization result when Web Serial is unavailable.
  */
-h2_pal_result_t
-h2_web_platform_serial_request_port(h2_web_platform_t *platform);
+h2_pal_result_t h2_web_platform_serial_request_port(
+    h2_web_platform_t* platform);
 
 /**
  * Read the retained terminal chooser result or WOULD_BLOCK while pending.
@@ -278,7 +280,7 @@ h2_web_platform_serial_request_port(h2_web_platform_t *platform);
  * terminal result remains readable until the next request.
  */
 h2_pal_result_t h2_web_platform_serial_authorization(
-    h2_web_platform_t *platform, char *out_port_id, size_t out_size);
+    h2_web_platform_t* platform, char* out_port_id, size_t out_size);
 
 /**
  * Revoke the browser authorization of one opaque port ID via
@@ -287,12 +289,12 @@ h2_pal_result_t h2_web_platform_serial_authorization(
  * h2_web_platform_serial_forget_result(): NOT_FOUND when the port is not
  * registered, UNSUPPORTED when the browser lacks forget(), IO on rejection.
  */
-h2_pal_result_t h2_web_platform_serial_forget_port(
-    h2_web_platform_t *platform, const char *port_id);
+h2_pal_result_t h2_web_platform_serial_forget_port(h2_web_platform_t* platform,
+                                                   const char* port_id);
 
 /** Read the retained terminal forget result or WOULD_BLOCK while pending. */
 h2_pal_result_t h2_web_platform_serial_forget_result(
-    h2_web_platform_t *platform);
+    h2_web_platform_t* platform);
 
 /**
  * Synchronously reject new serial work and terminate pending PAL operations.
@@ -305,14 +307,12 @@ h2_pal_result_t h2_web_platform_serial_forget_result(
  * this call initiates that best-effort browser cleanup but cannot claim it
  * completed before a page-lifecycle callback returns.
  */
-h2_pal_result_t
-h2_web_platform_serial_shutdown(h2_web_platform_t *platform);
+h2_pal_result_t h2_web_platform_serial_shutdown(h2_web_platform_t* platform);
 
 /** Legacy pointer snapshot used by the existing Tap Reset Web adapter. */
-h2_pal_result_t h2_web_platform_read_pointer(void *user, int32_t *out_x,
-                                             int32_t *out_y,
-                                             int *out_pressed);
-void h2_web_platform_install_pointer(h2_web_platform_t *platform);
+h2_pal_result_t h2_web_platform_read_pointer(void* user, int32_t* out_x,
+                                             int32_t* out_y, int* out_pressed);
+void h2_web_platform_install_pointer(h2_web_platform_t* platform);
 
 #ifdef __cplusplus
 }

@@ -35,8 +35,7 @@ static H2_COMPENSATED_INLINE precise_float pf_square(precise_float a) {
  * state remains double; for moderate magnitudes the seed's relative
  * error is squared (~1e-14). Extreme values retain the libm reference path. */
 static double refined_sqrt(double value) {
-  if (value < 1e-20 || value > 1e20)
-    return sqrt(value);
+  if (value < 1e-20 || value > 1e20) return sqrt(value);
   double root = (double)sqrtf((float)value);
   return .5 * (root + value / root);
 }

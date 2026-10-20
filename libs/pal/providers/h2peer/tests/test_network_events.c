@@ -14,13 +14,13 @@
 // Use the production constructor and real PAL tasks/queues. Inject only at the
 // protocol callback boundary; no offer or network connection is created here.
 typedef struct fixture {
-  h2_peer_t *owner;
-  h2_pal_webrtc_peer_t *peer;
-  const h2_pal_webrtc_api_t *api;
+  h2_peer_t* owner;
+  h2_pal_webrtc_peer_t* peer;
+  const h2_pal_webrtc_api_t* api;
   h2_pal_mem_api_t mem;
   h2_pal_queue_api_t queue;
   h2_pal_queue_vtable_t queue_vtable;
-  h2_pal_queue_t *events;
+  h2_pal_queue_t* events;
   size_t capacity;
   h2_atomic_int_t fail_allocations;
   h2_atomic_size_t allocations;
@@ -33,31 +33,31 @@ typedef struct fixture {
   unsigned writes;
 } fixture_t;
 
-static const h2_pal_queue_api_t *real_queue;
-static fixture_t *active;
+static const h2_pal_queue_api_t* real_queue;
+static fixture_t* active;
 
-static void *allocate(void *user, size_t size) {
-  fixture_t *f = user;
+static void* allocate(void* user, size_t size) {
+  fixture_t* f = user;
   int left = h2_atomic_load(&f->fail_allocations);
   while (left > 0) {
-    if (h2_atomic_compare_exchange_strong(&f->fail_allocations, &left, left - 1))
+    if (h2_atomic_compare_exchange_strong(&f->fail_allocations, &left,
+                                          left - 1))
       return NULL;
   }
-  void *p = malloc(size);
-  if (p != NULL)
-    h2_atomic_fetch_add(&f->allocations, 1u);
+  void* p = malloc(size);
+  if (p != NULL) h2_atomic_fetch_add(&f->allocations, 1u);
   return p;
 }
 
-static void deallocate(void *user, void *p) {
+static void deallocate(void* user, void* p) {
   if (p != NULL) {
-    h2_atomic_fetch_add(&((fixture_t *)user)->frees, 1u);
+    h2_atomic_fetch_add(&((fixture_t*)user)->frees, 1u);
     free(p);
   }
 }
 
-static int create_queue(void *user, const h2_pal_queue_config_t *config,
-                        h2_pal_queue_t **out) {
+static int create_queue(void* user, const h2_pal_queue_config_t* config,
+                        h2_pal_queue_t** out) {
   int result = real_queue->vtable->create(user, config, out);
   if (result == H2_PAL_OK && strcmp(config->name, "h2peer/net/events") == 0) {
     active->events = *out;
@@ -66,22 +66,22 @@ static int create_queue(void *user, const h2_pal_queue_config_t *config,
   return result;
 }
 
-static int receive(void *user, h2_pal_queue_t *queue, void *out,
+static int receive(void* user, h2_pal_queue_t* queue, void* out,
                    uint32_t timeout_ms) {
   if (queue == active->events && timeout_ms != H2_PAL_QUEUE_NO_WAIT)
     h2_atomic_store(&active->waiting, 1);
   return real_queue->vtable->recv(user, queue, out, timeout_ms);
 }
 
-static h2_pal_result_t write_frame(void *user, const uint8_t *data,
+static h2_pal_result_t write_frame(void* user, const uint8_t* data,
                                    size_t len) {
-  fixture_t *f = user;
+  fixture_t* f = user;
   assert(data != NULL && len == 1u);
   ++f->writes;
   return f->write_result;
 }
 
-static void initialize(fixture_t *f) {
+static void initialize(fixture_t* f) {
   static const h2_pal_mem_vtable_t memory = {.alloc = allocate,
                                              .free = deallocate};
   memset(f, 0, sizeof(*f));
@@ -115,7 +115,7 @@ static void initialize(fixture_t *f) {
   assert(f->capacity > 0u && f->capacity < 1024u);
 }
 
-static void destroy_fixture_atomics(fixture_t *f) {
+static void destroy_fixture_atomics(fixture_t* f) {
   h2_atomic_destroy(&f->fail_allocations);
   h2_atomic_destroy(&f->allocations);
   h2_atomic_destroy(&f->frees);
@@ -123,7 +123,7 @@ static void destroy_fixture_atomics(fixture_t *f) {
   h2_atomic_destroy(&f->done);
 }
 
-static void cleanup(fixture_t *f) {
+static void cleanup(fixture_t* f) {
   h2_pal_webrtc_peer_close(f->api, f->peer);
   h2_peer_destroy(&f->owner);
   assert(f->owner == NULL);
@@ -132,14 +132,14 @@ static void cleanup(fixture_t *f) {
   destroy_fixture_atomics(f);
 }
 
-static void emit_sdp(fixture_t *f, uint16_t sequence) {
+static void emit_sdp(fixture_t* f, uint16_t sequence) {
   char payload[2] = {(char)(sequence >> 8u), (char)sequence};
   h2_peer_webrtc_emit_local_sdp(
       f->peer, H2_PAL_WEBRTC_SDP_OFFER,
       (h2_pal_webrtc_str_t){payload, sizeof(payload)});
 }
 
-static void expect_sdp(fixture_t *f, uint16_t sequence) {
+static void expect_sdp(fixture_t* f, uint16_t sequence) {
   h2_pal_webrtc_event_t event = {0};
   assert(h2_pal_webrtc_peer_poll(f->api, f->peer, 0, &event) == H2_PAL_OK);
   assert(event.kind == H2_PAL_WEBRTC_EVENT_LOCAL_SDP && event.sdp.len == 2u);
@@ -148,7 +148,7 @@ static void expect_sdp(fixture_t *f, uint16_t sequence) {
   h2_pal_webrtc_event_release(&event);
 }
 
-static void expect_error(fixture_t *f, h2_pal_result_t error, int owned) {
+static void expect_error(fixture_t* f, h2_pal_result_t error, int owned) {
   h2_pal_webrtc_event_t event = {0};
   assert(h2_pal_webrtc_peer_poll(f->api, f->peer, 0, &event) == H2_PAL_OK);
   assert(event.kind == H2_PAL_WEBRTC_EVENT_ERROR && event.error == error);
@@ -170,7 +170,7 @@ static void error_fallbacks(void) {
   cleanup(&f);
 
   initialize(&f);
-  h2_pal_webrtc_channel_t *channel = NULL;
+  h2_pal_webrtc_channel_t* channel = NULL;
   const h2_pal_webrtc_channel_config_t channel_config = {
       .label = {"test", 4u},
       .ordered = 1,
@@ -178,8 +178,7 @@ static void error_fallbacks(void) {
   };
   assert(h2_pal_webrtc_peer_create_data_channel(f.api, f.peer, &channel_config,
                                                 &channel) == H2_PAL_OK);
-  for (size_t i = 0u; i < f.capacity; ++i)
-    emit_sdp(&f, (uint16_t)i);
+  for (size_t i = 0u; i < f.capacity; ++i) emit_sdp(&f, (uint16_t)i);
   assert(h2_atomic_load(&f.peer->network_transport_result) == H2_PAL_OK);
   const uint8_t message = 0x42;
   assert(h2_peer_webrtc_emit_channel_message(f.peer, channel, &message, 1u,
@@ -188,8 +187,7 @@ static void error_fallbacks(void) {
   expect_sdp(&f, 0u);
   assert(h2_peer_webrtc_emit_channel_message(f.peer, channel, &message, 1u,
                                              0) == H2_PAL_OK);
-  for (size_t i = 1u; i < f.capacity; ++i)
-    expect_sdp(&f, (uint16_t)i);
+  for (size_t i = 1u; i < f.capacity; ++i) expect_sdp(&f, (uint16_t)i);
   h2_pal_webrtc_event_t event = {0};
   assert(h2_pal_webrtc_peer_poll(f.api, f.peer, 0, &event) == H2_PAL_OK);
   assert(event.kind == H2_PAL_WEBRTC_EVENT_CHANNEL_MESSAGE);
@@ -198,24 +196,22 @@ static void error_fallbacks(void) {
   h2_pal_webrtc_event_release(&event);
   assert(h2_pal_webrtc_peer_poll(f.api, f.peer, 0, &event) ==
          H2_PAL_ERR_WOULD_BLOCK);
-  for (size_t i = 0u; i < f.capacity; ++i)
-    emit_sdp(&f, (uint16_t)i);
+  for (size_t i = 0u; i < f.capacity; ++i) emit_sdp(&f, (uint16_t)i);
   emit_sdp(&f, (uint16_t)f.capacity);
   h2_pal_result_t failure = h2_atomic_load(&f.peer->network_transport_result);
   assert(failure == H2_PAL_ERR_NO_SPACE);
-  for (size_t i = 0u; i < f.capacity; ++i)
-    expect_sdp(&f, (uint16_t)i);
+  for (size_t i = 0u; i < f.capacity; ++i) expect_sdp(&f, (uint16_t)i);
   expect_error(&f, failure, 0);
   cleanup(&f);
 }
 
-static void poll_waiter(void *user) {
-  fixture_t *f = user;
+static void poll_waiter(void* user) {
+  fixture_t* f = user;
   f->poll_result = h2_pal_webrtc_peer_poll(f->api, f->peer, 5000, &f->event);
   h2_atomic_store(&f->done, 1);
 }
 
-static void await_flag(h2_atomic_int_t *flag) {
+static void await_flag(h2_atomic_int_t* flag) {
   for (unsigned i = 0u; i < 1000u && !h2_atomic_load(flag); ++i)
     assert(h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u) ==
            H2_PAL_OK);
@@ -227,7 +223,7 @@ static void await_flag(h2_atomic_int_t *flag) {
 static void wake_and_unset(void) {
   fixture_t f;
   initialize(&f);
-  h2_pal_webrtc_channel_t *channel = NULL;
+  h2_pal_webrtc_channel_t* channel = NULL;
   const h2_pal_webrtc_channel_config_t channel_config = {
       .label = {"test", 4u},
       .ordered = 1,
@@ -250,7 +246,7 @@ static void wake_and_unset(void) {
   assert(f.peer->media_receive_count == 0u);
   assert(h2_pal_webrtc_peer_set_track(f.api, f.peer, &b) == H2_PAL_OK);
   f.write_result = H2_PAL_ERR_IO;
-  h2_pal_task_t *waiter = NULL;
+  h2_pal_task_t* waiter = NULL;
   const h2_pal_task_options_t options = {.name = "h2peer/test/poll"};
   assert(h2_pal_task_start(h2_desktop_platform_task_api(), &options,
                            poll_waiter, &f, &waiter) == H2_PAL_OK);
@@ -284,32 +280,34 @@ static void wake_and_unset(void) {
   destroy_fixture_atomics(&f);
 }
 
-static void release_on_worker(void *user) {
-  h2_pal_webrtc_event_release(user);
-}
+static void release_on_worker(void* user) { h2_pal_webrtc_event_release(user); }
 
 static void peer_allocators(void) {
   fixture_t f;
   initialize(&f);
   h2_pal_webrtc_peer_close(f.api, f.peer);
   h2_test_allocator_t arenas[2];
-  h2_pal_webrtc_peer_t *peers[2];
+  h2_pal_webrtc_peer_t* peers[2];
   h2_pal_webrtc_event_t events[2] = {0};
   size_t default_calls = h2_atomic_load(&f.allocations);
   for (size_t i = 0u; i < 2u; ++i) {
     h2_test_allocator_init(&arenas[i]);
     const h2_pal_webrtc_peer_config_t config = {.allocator = &arenas[i].api};
-    assert(h2_pal_webrtc_peer_create_with_config(f.api, &config, &peers[i]) == H2_PAL_OK);
-    h2_pal_webrtc_channel_t *channel = NULL;
+    assert(h2_pal_webrtc_peer_create_with_config(f.api, &config, &peers[i]) ==
+           H2_PAL_OK);
+    h2_pal_webrtc_channel_t* channel = NULL;
     const h2_pal_webrtc_channel_config_t channel_config = {
-        .label = {"arena", 5u}, .ordered = 1, .reliable = 1,
+        .label = {"arena", 5u},
+        .ordered = 1,
+        .reliable = 1,
     };
-    assert(h2_pal_webrtc_peer_create_data_channel(f.api, peers[i], &channel_config,
-                                                 &channel) == H2_PAL_OK);
+    assert(h2_pal_webrtc_peer_create_data_channel(
+               f.api, peers[i], &channel_config, &channel) == H2_PAL_OK);
     const uint8_t data[] = {1u, 2u, 3u};
     assert(h2_peer_webrtc_emit_channel_message(peers[i], channel, data,
                                                sizeof(data), 0) == H2_PAL_OK);
-    assert(h2_pal_webrtc_peer_poll(f.api, peers[i], 0, &events[i]) == H2_PAL_OK);
+    assert(h2_pal_webrtc_peer_poll(f.api, peers[i], 0, &events[i]) ==
+           H2_PAL_OK);
     assert(events[i].kind == H2_PAL_WEBRTC_EVENT_CHANNEL_MESSAGE);
     assert(events[i].data_len == sizeof(data));
     assert(h2_atomic_load(&arenas[i].calls) > 4u);
@@ -319,11 +317,13 @@ static void peer_allocators(void) {
   h2_peer_destroy(&f.owner);
   for (size_t i = 0u; i < 2u; ++i) {
     assert(h2_atomic_load(&arenas[i].live) > 0u);
-    h2_pal_task_t *worker = NULL;
+    h2_pal_task_t* worker = NULL;
     const h2_pal_task_options_t options = {.name = "peer-event-free"};
     assert(h2_pal_task_start(h2_desktop_platform_task_api(), &options,
-        release_on_worker, &events[i], &worker) == H2_PAL_OK);
-    assert(h2_pal_task_join(h2_desktop_platform_task_api(), worker) == H2_PAL_OK);
+                             release_on_worker, &events[i],
+                             &worker) == H2_PAL_OK);
+    assert(h2_pal_task_join(h2_desktop_platform_task_api(), worker) ==
+           H2_PAL_OK);
     assert(h2_atomic_load(&arenas[i].live) == 0u);
     h2_test_allocator_destroy(&arenas[i]);
   }

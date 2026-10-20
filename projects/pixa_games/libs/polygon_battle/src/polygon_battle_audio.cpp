@@ -23,11 +23,15 @@ constexpr h2_game_audio_step_t kPlayerHit[] = {
     {0u, 250u, 260u, 80u, 270u, 500u, H2_GAME_AUDIO_WAVE_NOISE},
 };
 
-} // namespace
+}  // namespace
 
 const h2_game_audio_recipe_t h2_polygon_battle_shot_recipe = {kShot, 1u, 45u};
 const h2_game_audio_recipe_t h2_polygon_battle_hit_recipe = {kHit, 1u, 38u};
-const h2_game_audio_recipe_t h2_polygon_battle_destroy_recipe = {kDestroy, 2u, 105u};
-const h2_game_audio_recipe_t h2_polygon_battle_pickup_recipe = {kPickup, 2u, 140u};
-const h2_game_audio_recipe_t h2_polygon_battle_shield_recipe = {kShield, 1u, 120u};
-const h2_game_audio_recipe_t h2_polygon_battle_player_hit_recipe = {kPlayerHit, 1u, 250u};
+const h2_game_audio_recipe_t h2_polygon_battle_destroy_recipe = {kDestroy, 2u,
+                                                                 105u};
+const h2_game_audio_recipe_t h2_polygon_battle_pickup_recipe = {kPickup, 2u,
+                                                                140u};
+const h2_game_audio_recipe_t h2_polygon_battle_shield_recipe = {kShield, 1u,
+                                                                120u};
+const h2_game_audio_recipe_t h2_polygon_battle_player_hit_recipe = {kPlayerHit,
+                                                                    1u, 250u};

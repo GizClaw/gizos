@@ -9,32 +9,31 @@
 #define REQUEST_TIMEOUT_MS 30000u
 
 enum method { PING, SPEED, REGISTER, DELETE };
-static const char *const creates[] = {
+static const char* const creates[] = {
     "h2_gizclaw_req_create_ping", "h2_gizclaw_req_create_speedtest",
     "h2_gizclaw_req_create_register", "h2_gizclaw_req_create_peer_delete"};
-static const char *const parses[] = {
+static const char* const parses[] = {
     "h2_gizclaw_resp_parse_ping", "h2_gizclaw_resp_parse_speedtest",
     "h2_gizclaw_resp_parse_register", "h2_gizclaw_resp_parse_peer_delete"};
-static const char *const rpcs[] = {
+static const char* const rpcs[] = {
     "h2_gizclaw_rpc_ping", "h2_gizclaw_rpc_speedtest",
     "h2_gizclaw_rpc_register", "h2_gizclaw_rpc_peer_delete"};
-static const char *const proofs[] = {"ping-assert", "speedtest-assert",
+static const char* const proofs[] = {"ping-assert", "speedtest-assert",
                                      "register-assert", "peer_delete-assert"};
 
-static int evidence(const char *symbol, const char *stage, int rc) {
+static int evidence(const char* symbol, const char* stage, int rc) {
   h2_gizclaw_e2e_evidence(symbol, stage, rc);
   return rc;
 }
 
-static h2_pal_result_t speed_input(void *user, uint8_t *buffer,
-                                   size_t capacity, size_t *out_read) {
-  h2_gizclaw_e2e_speed_hooks_t *hooks = user;
+static h2_pal_result_t speed_input(void* user, uint8_t* buffer, size_t capacity,
+                                   size_t* out_read) {
+  h2_gizclaw_e2e_speed_hooks_t* hooks = user;
   if (hooks == NULL || buffer == NULL || out_read == NULL ||
       hooks->bytes > hooks->expected_bytes)
     return H2_PAL_ERR_INVALID_ARG;
   size_t count = hooks->expected_bytes - hooks->bytes;
-  if (count > capacity)
-    count = capacity;
+  if (count > capacity) count = capacity;
   hooks->bytes += count;
   ++hooks->chunks;
   *out_read = count;
@@ -43,9 +42,9 @@ static h2_pal_result_t speed_input(void *user, uint8_t *buffer,
 
 /* Download direction: the Service hands every received chunk to this writer
  * on the app task; the byte count is what the result assertion checks. */
-static h2_pal_result_t speed_output(void *user, const uint8_t *data,
-                                    size_t length, size_t *out_written) {
-  h2_gizclaw_e2e_speed_hooks_t *hooks = user;
+static h2_pal_result_t speed_output(void* user, const uint8_t* data,
+                                    size_t length, size_t* out_written) {
+  h2_gizclaw_e2e_speed_hooks_t* hooks = user;
   if (hooks == NULL || (data == NULL && length != 0u) || out_written == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   if (length > hooks->expected_bytes - hooks->bytes)
@@ -56,26 +55,22 @@ static h2_pal_result_t speed_output(void *user, const uint8_t *data,
   return H2_PAL_OK;
 }
 
-static int drain_speed_hooks(h2_gizclaw_e2e_fixture_t *fixture,
-                             h2_gizclaw_service_t *service,
-                             h2_gizclaw_e2e_speed_hooks_t *hooks) {
+static int drain_speed_hooks(h2_gizclaw_e2e_fixture_t* fixture,
+                             h2_gizclaw_service_t* service,
+                             h2_gizclaw_e2e_speed_hooks_t* hooks) {
   uint64_t started = 0u;
   int rc = h2_pal_time_get_monotonic_ms(fixture->time, &started);
   while (rc == H2_PAL_OK) {
     size_t dispatched = 0u;
     rc = h2_gizclaw_service_poll(service, 8u, &dispatched);
-    if (rc == H2_PAL_OK)
-      rc = hooks->error;
-    if (rc != H2_PAL_OK)
-      break;
+    if (rc == H2_PAL_OK) rc = hooks->error;
+    if (rc != H2_PAL_OK) break;
     rc = h2_gizclaw_req_wait(hooks->request, 1u);
-    if (rc != H2_PAL_ERR_TIMEOUT)
-      break;
+    if (rc != H2_PAL_ERR_TIMEOUT) break;
     rc = H2_PAL_OK;
     uint64_t now = 0u;
     rc = h2_pal_time_get_monotonic_ms(fixture->time, &now);
-    if (rc == H2_PAL_OK && now < started)
-      rc = H2_PAL_ERR_INVALID_STATE;
+    if (rc == H2_PAL_OK && now < started) rc = H2_PAL_ERR_INVALID_STATE;
     if (rc == H2_PAL_OK &&
         (now - started >= REQUEST_TIMEOUT_MS || now >= fixture->deadline_ms))
       rc = H2_PAL_ERR_TIMEOUT;
@@ -85,7 +80,7 @@ static int drain_speed_hooks(h2_gizclaw_e2e_fixture_t *fixture,
   return rc;
 }
 
-static const char *platform_name(void) {
+static const char* platform_name(void) {
 #if defined(__EMSCRIPTEN__)
   return "wasm";
 #elif defined(__ANDROID__)
@@ -104,70 +99,67 @@ static const char *platform_name(void) {
 }
 
 typedef struct speed_sync_job {
-  h2_gizclaw_service_t *service;
+  h2_gizclaw_service_t* service;
   size_t upload, download;
-  h2_gizclaw_speedtest_result_t *speed;
+  h2_gizclaw_speedtest_result_t* speed;
 } speed_sync_job_t;
 
 /* Runs on the fixture job task; the case task keeps polling meanwhile. */
-static int speed_sync_run(void *ctx) {
-  speed_sync_job_t *job = ctx;
+static int speed_sync_run(void* ctx) {
+  speed_sync_job_t* job = ctx;
   return h2_gizclaw_rpc_speedtest(job->service, job->upload, job->download,
                                   REQUEST_TIMEOUT_MS, job->speed);
 }
 
-static int call(h2_gizclaw_e2e_fixture_t *fixture, unsigned api,
+static int call(h2_gizclaw_e2e_fixture_t* fixture, unsigned api,
                 enum method method, uint64_t identity, size_t upload,
-                size_t download, h2_gizclaw_speedtest_result_t *speed) {
+                size_t download, h2_gizclaw_speedtest_result_t* speed) {
   if (!h2_gizclaw_e2e_fixture_has_time(fixture, REQUEST_TIMEOUT_MS))
     return H2_PAL_ERR_TIMEOUT;
   /* Both speed APIs use OWNER. The second isolated actor is only needed to
    * exercise the second delete API after all measurements have finished. */
-  h2_gizclaw_e2e_actor_t *actor =
+  h2_gizclaw_e2e_actor_t* actor =
       &fixture->actors[method == DELETE && api == 1u ? H2_GIZCLAW_E2E_FRIEND
                                                      : H2_GIZCLAW_E2E_OWNER];
-  h2_gizclaw_service_t *service = actor->service;
+  h2_gizclaw_service_t* service = actor->service;
   h2_gizclaw_ping_result_t ping = {0};
   h2_gizclaw_registration_result_t registration = {0};
   int rc = H2_PAL_ERR_INVALID_STATE;
   if (api == 0u) {
-    h2_gizclaw_req_t *request = NULL;
-    h2_gizclaw_e2e_speed_hooks_t *hooks = NULL;
+    h2_gizclaw_req_t* request = NULL;
+    h2_gizclaw_e2e_speed_hooks_t* hooks = NULL;
     if (method == SPEED) {
-      if (identity < 11u || identity > 16u)
-        return H2_PAL_ERR_INVALID_ARG;
+      if (identity < 11u || identity > 16u) return H2_PAL_ERR_INVALID_ARG;
       hooks = &fixture->speed_hooks[identity - 11u];
-      if (hooks->request != NULL)
-        return H2_PAL_ERR_INVALID_STATE;
+      if (hooks->request != NULL) return H2_PAL_ERR_INVALID_STATE;
       hooks->expected_bytes = upload != 0u ? upload : download;
     }
     switch (method) {
-    case PING:
-      rc = h2_gizclaw_req_create_ping(service, identity, REQUEST_TIMEOUT_MS,
-                                      &request);
-      break;
-    case SPEED:
-      rc = h2_gizclaw_req_create_speedtest(service, identity, upload, download,
-                                           REQUEST_TIMEOUT_MS, &request);
-      break;
-    case REGISTER:
-      rc = h2_gizclaw_req_create_register(service, identity,
-                                          fixture->registration_token,
-                                          REQUEST_TIMEOUT_MS, &request);
-      break;
-    case DELETE:
-      rc = h2_gizclaw_req_create_peer_delete(service, identity,
-                                             REQUEST_TIMEOUT_MS, &request);
-      break;
+      case PING:
+        rc = h2_gizclaw_req_create_ping(service, identity, REQUEST_TIMEOUT_MS,
+                                        &request);
+        break;
+      case SPEED:
+        rc = h2_gizclaw_req_create_speedtest(
+            service, identity, upload, download, REQUEST_TIMEOUT_MS, &request);
+        break;
+      case REGISTER:
+        rc = h2_gizclaw_req_create_register(service, identity,
+                                            fixture->registration_token,
+                                            REQUEST_TIMEOUT_MS, &request);
+        break;
+      case DELETE:
+        rc = h2_gizclaw_req_create_peer_delete(service, identity,
+                                               REQUEST_TIMEOUT_MS, &request);
+        break;
     }
     evidence(creates[method], "connectivity-req", rc);
-    if (hooks != NULL)
-      hooks->request = request;
+    if (hooks != NULL) hooks->request = request;
     if (rc == H2_PAL_OK)
-      rc = evidence("h2_gizclaw_req_do", "connectivity-req",
-                    h2_gizclaw_req_do(
-                        request, hooks, upload != 0u ? speed_input : NULL,
-                        download != 0u ? speed_output : NULL, NULL));
+      rc = evidence(
+          "h2_gizclaw_req_do", "connectivity-req",
+          h2_gizclaw_req_do(request, hooks, upload != 0u ? speed_input : NULL,
+                            download != 0u ? speed_output : NULL, NULL));
     if (rc == H2_PAL_OK && hooks != NULL) {
       rc = drain_speed_hooks(fixture, service, hooks);
       /* Both directions must have moved exactly the requested bytes through
@@ -176,29 +168,30 @@ static int call(h2_gizclaw_e2e_fixture_t *fixture, unsigned api,
         rc = H2_PAL_ERR_INVALID_STATE;
       evidence("h2_gizclaw_service_poll", "connectivity-chunks", rc);
       evidence("h2_gizclaw_service_poll", "speedtest-chunks-assert", rc);
-      h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=speedtest-hooks request=%" PRIu64
-             " direction=%s bytes=%zu chunks=%zu "
-             "result=%s rc=%d\n",
-             identity, upload ? "upload" : "download", hooks->bytes,
-             hooks->chunks, rc == H2_PAL_OK ? "PASS" : "FAIL", rc);
+      h2_gizclaw_e2e_emit(
+          "H2_GIZCLAW_E2E stage=speedtest-hooks request=%" PRIu64
+          " direction=%s bytes=%zu chunks=%zu "
+          "result=%s rc=%d\n",
+          identity, upload ? "upload" : "download", hooks->bytes, hooks->chunks,
+          rc == H2_PAL_OK ? "PASS" : "FAIL", rc);
     }
     if (rc == H2_PAL_OK)
       rc = evidence("h2_gizclaw_req_wait", "connectivity-req",
                     h2_gizclaw_req_wait(request, REQUEST_TIMEOUT_MS));
     if (rc == H2_PAL_OK) {
       switch (method) {
-      case PING:
-        rc = h2_gizclaw_resp_parse_ping(request, &ping);
-        break;
-      case SPEED:
-        rc = h2_gizclaw_resp_parse_speedtest(request, speed);
-        break;
-      case REGISTER:
-        rc = h2_gizclaw_resp_parse_register(request, &registration);
-        break;
-      case DELETE:
-        rc = h2_gizclaw_resp_parse_peer_delete(request);
-        break;
+        case PING:
+          rc = h2_gizclaw_resp_parse_ping(request, &ping);
+          break;
+        case SPEED:
+          rc = h2_gizclaw_resp_parse_speedtest(request, speed);
+          break;
+        case REGISTER:
+          rc = h2_gizclaw_resp_parse_register(request, &registration);
+          break;
+        case DELETE:
+          rc = h2_gizclaw_resp_parse_peer_delete(request);
+          break;
       }
       evidence(parses[method], "connectivity-req", rc);
     }
@@ -207,24 +200,25 @@ static int call(h2_gizclaw_e2e_fixture_t *fixture, unsigned api,
     h2_gizclaw_req_release(request);
   } else {
     switch (method) {
-    case PING:
-      rc = h2_gizclaw_rpc_ping(service, REQUEST_TIMEOUT_MS, &ping);
-      break;
-    case SPEED: {
-      speed_sync_job_t job = {
-          .service = service, .upload = upload, .download = download,
-          .speed = speed};
-      rc = h2_gizclaw_e2e_fixture_call_sync(fixture, service, speed_sync_run,
-                                            &job);
-      break;
-    }
-    case REGISTER:
-      rc = h2_gizclaw_rpc_register(service, fixture->registration_token,
-                                   REQUEST_TIMEOUT_MS, &registration);
-      break;
-    case DELETE:
-      rc = h2_gizclaw_rpc_peer_delete(service, REQUEST_TIMEOUT_MS);
-      break;
+      case PING:
+        rc = h2_gizclaw_rpc_ping(service, REQUEST_TIMEOUT_MS, &ping);
+        break;
+      case SPEED: {
+        speed_sync_job_t job = {.service = service,
+                                .upload = upload,
+                                .download = download,
+                                .speed = speed};
+        rc = h2_gizclaw_e2e_fixture_call_sync(fixture, service, speed_sync_run,
+                                              &job);
+        break;
+      }
+      case REGISTER:
+        rc = h2_gizclaw_rpc_register(service, fixture->registration_token,
+                                     REQUEST_TIMEOUT_MS, &registration);
+        break;
+      case DELETE:
+        rc = h2_gizclaw_rpc_peer_delete(service, REQUEST_TIMEOUT_MS);
+        break;
     }
     evidence(rpcs[method], "connectivity-rpc", rc);
   }
@@ -248,7 +242,7 @@ static int call(h2_gizclaw_e2e_fixture_t *fixture, unsigned api,
   return rc;
 }
 
-int h2_gizclaw_e2e_run_connectivity(h2_gizclaw_e2e_fixture_t *fixture) {
+int h2_gizclaw_e2e_run_connectivity(h2_gizclaw_e2e_fixture_t* fixture) {
   if (fixture == NULL || fixture->time == NULL ||
       fixture->registration_token == NULL ||
       fixture->registration_token[0] == '\0' ||
@@ -265,10 +259,8 @@ int h2_gizclaw_e2e_run_connectivity(h2_gizclaw_e2e_fixture_t *fixture) {
     return H2_PAL_ERR_INVALID_STATE;
   for (unsigned api = 0u; api < 2u; ++api) {
     int rc = call(fixture, api, REGISTER, 1u + api, 0u, 0u, NULL);
-    if (rc == H2_PAL_OK)
-      rc = call(fixture, api, PING, 3u + api, 0u, 0u, NULL);
-    if (rc != H2_PAL_OK)
-      return rc;
+    if (rc == H2_PAL_OK) rc = call(fixture, api, PING, 3u + api, 0u, 0u, NULL);
+    if (rc != H2_PAL_OK) return rc;
   }
   int result = H2_PAL_OK;
   for (unsigned api = 0u; api < 2u; ++api) {
@@ -285,8 +277,7 @@ int h2_gizclaw_e2e_run_connectivity(h2_gizclaw_e2e_fixture_t *fixture) {
                     download, &speed);
         const int clock_rc =
             h2_pal_time_get_monotonic_ms(fixture->time, &completed);
-        if (rc == H2_PAL_OK)
-          rc = clock_rc;
+        if (rc == H2_PAL_OK) rc = clock_rc;
         const uint64_t bytes =
             direction == 0u ? speed.upload_bytes : speed.download_bytes;
         const uint64_t elapsed =
@@ -314,8 +305,7 @@ int h2_gizclaw_e2e_run_connectivity(h2_gizclaw_e2e_fixture_t *fixture) {
             : direction == 0u ? "length-ack-only"
                               : "callback-length-verified",
             rc == H2_PAL_OK ? "PASS" : "FAIL", rc);
-        if (result == H2_PAL_OK)
-          result = rc;
+        if (result == H2_PAL_OK) result = rc;
       }
     }
   }

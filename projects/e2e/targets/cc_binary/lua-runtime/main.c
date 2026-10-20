@@ -53,7 +53,7 @@ int main(void) {
       .video_decoder = h2_pal_unsupported_video_decoder_api(),
       .component_mapper = h2_lua_runtime_e2e_component_mapper(),
   };
-  h2_runtime_t *runtime = NULL;
+  h2_runtime_t* runtime = NULL;
   h2_lua_runtime_e2e_report_t report = {0};
   h2_pal_result_t result = h2_runtime_init(&config, &runtime);
   size_t i;
@@ -65,8 +65,7 @@ int main(void) {
                                     },
                                     &report);
   }
-  if (runtime != NULL)
-    h2_runtime_deinit(runtime);
+  if (runtime != NULL) h2_runtime_deinit(runtime);
   if (result != H2_PAL_OK && report.case_count == 0u) {
     fprintf(stderr, "H2_LUA_E2E result=FAIL rc=%d\n", result);
     return 1;

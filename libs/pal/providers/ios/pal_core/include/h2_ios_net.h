@@ -9,11 +9,11 @@ extern "C" {
  * quiesce callers first. The owner does not change default AppHost assembly.
  * Default/required verification never falls back to insecure mode. */
 typedef struct h2_ios_net h2_ios_net_t;
-h2_pal_result_t h2_ios_net_create(h2_ios_net_t **out);
-const h2_pal_net_api_t *h2_ios_net_api(h2_ios_net_t *owner);
+h2_pal_result_t h2_ios_net_create(h2_ios_net_t** out);
+const h2_pal_net_api_t* h2_ios_net_api(h2_ios_net_t* owner);
 /** Clears owner only after successful TLS reference release; NULL is allowed.
  */
-h2_pal_result_t h2_ios_net_destroy(h2_ios_net_t **owner);
+h2_pal_result_t h2_ios_net_destroy(h2_ios_net_t** owner);
 #ifdef __cplusplus
 }
 #endif

@@ -6,8 +6,8 @@
  *
  * Submission prototype (owning VM worker only):
  * - submit(options=nil) returns sequence, planned_pixels, planned_rectangles.
- *   Supports retained (default true), bounds, tiles and merge_gap as present does.
- *   tiles=true explicitly skips fine span planning and compares 16x16 tiles
+ *   Supports retained (default true), bounds, tiles and merge_gap as present
+ * does. tiles=true explicitly skips fine span planning and compares 16x16 tiles
  *   before the existing merge_gap/guard rules; omitted/false keeps the default.
  *   This trades planning CPU for potentially more submitted pixels. bounds=true
  *   still forces its tile-aligned union box. tiles is per-call and only affects
@@ -25,7 +25,8 @@
  *   completed attempt, usable only when clock_valid is true. pixels/rects
  *   count successful draw calls in that attempt. error latches the first
  *   fault; busy and closing describe the acquisition. completion_kind is
- *   transport on every target; it does not prove scanout. No-change submits do not increment changed_frames.
+ *   transport on every target; it does not prove scanout. No-change submits do
+ * not increment changed_frames.
  * - Every target, including Web, starts a Display worker on acquisition.
  *   All PAL Display calls execute there; borrowed Display skips open/close.
  *   Only one Job per Host may acquire Display at a time; another acquisition
@@ -43,9 +44,9 @@
  *   copy the full frame; unchanged frames copy no pixels. No third full-frame
  *   snapshot or completion copy is allocated. After full transport succeeds,
  *   B is the retained baseline; faults invalidate it and stop new submissions.
- *   The complete tile map is replayed for copy and transport without truncation.
- *   B, mailbox and bounded plan/tile scratch use VM quota. OOM raises a Lua
- *   error before publishing a new frame. First-use allocation is guarded:
+ *   The complete tile map is replayed for copy and transport without
+ * truncation. B, mailbox and bounded plan/tile scratch use VM quota. OOM raises
+ * a Lua error before publishing a new frame. First-use allocation is guarded:
  *   finalizer reentry into submit returns BUSY without allocating another B,
  *   and the guard is cleared on OOM. Drawing from a finalizer is included in
  *   the outer submission; closed acquisitions return an error. A wake or
@@ -119,12 +120,13 @@
  *   (a*(256-progress)+b*progress+128)>>8; endpoints are exact. Output can be
  *   either input. It returns no values, allocates nothing on success and does
  *   not require a live Display or change palette length.
- * - display.draw_rects(batch,palette[,left,top,right,bottom]) returns no values.
- *   Supply all four integer half-open clip bounds or omit all four for the full
- *   surface. Bounds must lie inside the framebuffer. Draw requires a live
- *   acquisition and validates every index, including clipped/empty rectangles,
- *   before writing. Later rectangles overwrite earlier ones. Successful calls
- *   allocate nothing, mark existing dirty/background damage and do not present.
+ * - display.draw_rects(batch,palette[,left,top,right,bottom]) returns no
+ * values. Supply all four integer half-open clip bounds or omit all four for
+ * the full surface. Bounds must lie inside the framebuffer. Draw requires a
+ * live acquisition and validates every index, including clipped/empty
+ * rectangles, before writing. Later rectangles overwrite earlier ones.
+ * Successful calls allocate nothing, mark existing dirty/background damage and
+ * do not present.
  *
  * Quad strip batches (owning VM worker only):
  * - display.compile_quad_batch(entries) copies 0..256 dense records
@@ -169,27 +171,29 @@
  *   capacity is an integer 0..256. Initially empty and bound. No Display
  *   acquisition is required by construction, load or bind on an existing proxy.
  * - strip:load(first_xy_f64,last_xy_f64,station_count) copies two interleaved
- *   screen-space XY rails from existing vmath f64 buffers (capacity >= 2*count).
- *   Count is 0 or 2..face_capacity+1. Coordinates are finite +/-100000.
+ *   screen-space XY rails from existing vmath f64 buffers (capacity >=
+ * 2*count). Count is 0 or 2..face_capacity+1. Coordinates are finite +/-100000.
  *   Count N defines N-1 consecutive faces; closure requires an explicit final
- *   station. No topology, projection, interval or visibility policy is inferred.
- *   Each stored delta is last-first, rounded to binary64. Same-count load keeps
- *   bindings; a count change releases all bindings and requires bind for a
- *   nonempty strip. Failed load preserves the previous geometry and bindings.
+ *   station. No topology, projection, interval or visibility policy is
+ * inferred. Each stored delta is last-first, rounded to binary64. Same-count
+ * load keeps bindings; a count change releases all bindings and requires bind
+ * for a nonempty strip. Failed load preserves the previous geometry and
+ * bindings.
  * - strip:bind(materials,palettes[,line_color_indices]) takes raw dense arrays
  *   with exactly one entry per active face. Materials are compile_quad_material
- *   handles; palettes are compile_palette handles covering every material index.
- *   Optional line indices are integers 0 (disabled) or 1..that palette's length;
- *   omission disables all lines. No color tables/getters are accepted. Complete
- *   validation precedes replacement. Strong userdata references retain handles
- *   and original fallback batches; the input arrays are not retained.
+ *   handles; palettes are compile_palette handles covering every material
+ * index. Optional line indices are integers 0 (disabled) or 1..that palette's
+ * length; omission disables all lines. No color tables/getters are accepted.
+ * Complete validation precedes replacement. Strong userdata references retain
+ * handles and original fallback batches; the input arrays are not retained.
  * - display.draw_material_strip(strip,a,b,u_first,u_last,ratio,
- *   line_t=nil,clip_top=0,clip_bottom=height) returns (fast_faces,fallback_faces).
- *   a,b are finite [0,1], including reversed/equal intervals. Source U bounds
- *   satisfy 0<=first<=last<=1; ratio is finite and positive. Optional line_t is
- *   finite and between min(a,b) and max(a,b). Clip selects integer half-open
- *   rows inside the acquired framebuffer. Nil clip bounds use the defaults.
- *   Empty geometry/source/clip still validates inputs, binding and acquisition.
+ *   line_t=nil,clip_top=0,clip_bottom=height) returns
+ * (fast_faces,fallback_faces). a,b are finite [0,1], including reversed/equal
+ * intervals. Source U bounds satisfy 0<=first<=last<=1; ratio is finite and
+ * positive. Optional line_t is finite and between min(a,b) and max(a,b). Clip
+ * selects integer half-open rows inside the acquired framebuffer. Nil clip
+ * bounds use the defaults. Empty geometry/source/clip still validates inputs,
+ * binding and acquisition.
  * - Station evaluation is origin + delta*t, with each multiplication/addition
  *   rounded separately to binary64, even at t=1. Face i uses station i at a,b,
  *   then station i+1 at b,a. Each face draws its material followed immediately
@@ -204,17 +208,19 @@
  * - Each palette is read synchronously at draw time. Aliased mutable handles
  *   show the same current values in every referencing face: distinct colors in
  *   one strip draw need distinct handles. A palette may be blended/reused after
- *   the draw returns. No deferred commands, palette snapshots or registry roots.
+ *   the draw returns. No deferred commands, palette snapshots or registry
+ * roots.
  * - Successful load, bind and draw have no heap allocation or Lua callbacks
  *   after stack capacity is secured. Stack growth may run ordinary finalizers
- *   before mutable state/acquisition is read. Every generated corner and enabled
- *   line endpoint is validated before any framebuffer write; errors preserve
- *   pixels except ordinary finalizer side effects. Scratch is instance-owned;
- *   no allocation/reentry occurs during drawing. OOM construction publishes no
- *   partial object and is retryable. Storage is VM-charged, fixed at construction
- *   and reclaimed by GC/VM teardown, including bound handles when unreferenced.
- *   Draw uses existing dirty/background tracking and does not present. This is
- *   a CPU batching candidate, not an asynchronous submission or raster cache.
+ *   before mutable state/acquisition is read. Every generated corner and
+ * enabled line endpoint is validated before any framebuffer write; errors
+ * preserve pixels except ordinary finalizer side effects. Scratch is
+ * instance-owned; no allocation/reentry occurs during drawing. OOM construction
+ * publishes no partial object and is retryable. Storage is VM-charged, fixed at
+ * construction and reclaimed by GC/VM teardown, including bound handles when
+ * unreferenced. Draw uses existing dirty/background tracking and does not
+ * present. This is a CPU batching candidate, not an asynchronous submission or
+ * raster cache.
  *
  * Quad materials (opt-in parameter-space coverage, owning VM worker only):
  * - display.compile_quad_material(batch) precomposes an immutable quad batch
@@ -299,11 +305,12 @@
  *   not a key. Changed values replace the entry; releasing widths permits GC.
  *   fast has no effect in smooth mode and does not invalidate coverage.
  * - Payload is sizeof(private header)+(3*n-1)*sizeof(double)+coverage_pixels,
- *   capped at 16 KiB per owner, excluding Lua overhead and existing job scratch.
- *   Both entry and scratch count toward VM quota. Multicolor, tolerance>0,
- *   oversized or empty bounds use the uncached path, report no hit, and keep
- *   any prior entry. Per-owner entries survive deinit while their owner lives;
- *   drawing requires reacquisition and revalidates the viewport and full key.
+ *   capped at 16 KiB per owner, excluding Lua overhead and existing job
+ * scratch. Both entry and scratch count toward VM quota. Multicolor,
+ * tolerance>0, oversized or empty bounds use the uncached path, report no hit,
+ * and keep any prior entry. Per-owner entries survive deinit while their owner
+ * lives; drawing requires reacquisition and revalidates the viewport and full
+ * key.
  * - Warm hits allocate nothing and return (true,0). Cold/fallback draws return
  *   (false,0). Invalid input or allocation failure does not draw or replace a
  *   complete entry. Allocation-driven Lua finalizers may reenter or close the
@@ -313,23 +320,24 @@
  *
  * Mesh draw extension (standard Host, owning VM worker only):
  * - display.draw_mesh(mesh,{transform={x=...,y=...,scale=...,angle=...},
- *   grid=...}) raw-reads named fields, exclusive with an explicit matrix. Require
- *   all four finite fields, x/y/angle in +/-100000, 0<scale<=100 and explicit
- *   integer grid in 1..16. Keep source order (x+(vx*cos-vy*sin)*scale)/grid
- *   and the y counterpart. Use the original conservative binary32 half-grid
- *   predicate (64*FLT_EPSILON bound), otherwise the original double expression;
- *   vertices outside +/-100000 use the double fallback. Round floor(q+.5)*grid.
- *   Final coordinates remain finite +/-16000000. Existing matrix arithmetic,
- *   raster, clipping, offset, color and explicit-present contracts remain.
+ *   grid=...}) raw-reads named fields, exclusive with an explicit matrix.
+ * Require all four finite fields, x/y/angle in +/-100000, 0<scale<=100 and
+ * explicit integer grid in 1..16. Keep source order
+ * (x+(vx*cos-vy*sin)*scale)/grid and the y counterpart. Use the original
+ * conservative binary32 half-grid predicate (64*FLT_EPSILON bound), otherwise
+ * the original double expression; vertices outside +/-100000 use the double
+ * fallback. Round floor(q+.5)*grid. Final coordinates remain finite
+ * +/-16000000. Existing matrix arithmetic, raster, clipping, offset, color and
+ * explicit-present contracts remain.
  * - Successful updates revalidate derived data but retain the last valid span
  *   candidate. Reuse requires equal active counts, primitive kind/range/color,
  *   final coordinates, clip/viewport/offset/recolor and a valid complete cache.
  *   Different source/transform values may produce equal final coordinates.
  *   Failed operations preserve prior candidates; all final values validate
- *   before publishing derived results or pixels. Warm drawing allocates nothing.
- *   Cold retained identity drawing estimates 16..512 span records from clipped
- *   polygon row bounds and edge counts (one record per line), inspecting at
- *   most 128 polygon vertices. Larger/complex or transformed draws start at
+ *   before publishing derived results or pixels. Warm drawing allocates
+ * nothing. Cold retained identity drawing estimates 16..512 span records from
+ * clipped polygon row bounds and edge counts (one record per line), inspecting
+ * at most 128 polygon vertices. Larger/complex or transformed draws start at
  *   512. Each cache also owns one vertex/primitive snapshot at the declared
  *   mesh capacities, alignment and fixed metadata. Overflow draws completely
  *   without publishing partial spans; subsequent draws grow fourfold up to
@@ -345,7 +353,8 @@
  *   Larger active meshes keep the original validation/transform passes; the
  *   public 65536-vertex limit is unchanged. No source, committed positions or
  *   complete span snapshot is borrowed as scratch. Reentrant allocation is
- *   followed by a fresh mesh/Display view, with no callbacks during publication.
+ *   followed by a fresh mesh/Display view, with no callbacks during
+ * publication.
  *
  * Prepared geometry Lua API (standard Host, owning VM worker only):
  * - display.draw_pose(pose,colors,origin_x,offset_x,offset_y,layer,scale,
@@ -408,7 +417,8 @@
  * ordinary Lua behavior. GC/job/Host teardown reclaims userdata. Objects must
  * not cross VMs. No new caches, public pointers or close methods are exposed.
  * Existing commands retain their contract. Standalone C applications
- * use h2_raster2d.h without a VM; its implementation-only span helper is not API.
+ * use h2_raster2d.h without a VM; its implementation-only span helper is not
+ * API.
  */
 #include "h2/pal/core/h2_pal_errors.h"
 #include <stddef.h>
@@ -437,7 +447,8 @@ typedef enum h2_lua_display_primitive_kind {
  */
 typedef struct h2_lua_display_primitive {
   h2_lua_display_primitive_kind_t kind;
-  size_t first; /**< Zero-based first vertex (Lua primitive tables are one-based). */
+  size_t first; /**< Zero-based first vertex (Lua primitive tables are
+                   one-based). */
   size_t count;
   uint16_t color; /**< Native RGB565 value, not a serialized byte stream. */
 } h2_lua_display_primitive_t;
@@ -447,9 +458,9 @@ typedef struct h2_lua_display_primitive {
  * Arrays must not point into a retained batch's private storage.
  */
 typedef struct h2_lua_display_mesh_data {
-  const h2_lua_display_vertex_t *vertices;
+  const h2_lua_display_vertex_t* vertices;
   size_t vertex_count;
-  const h2_lua_display_primitive_t *primitives;
+  const h2_lua_display_primitive_t* primitives;
   size_t primitive_count;
 } h2_lua_display_mesh_data_t;
 
@@ -464,7 +475,8 @@ typedef struct h2_lua_display_mesh_config {
 
 /**
  * @brief Copy initial data and push one typed, VM-owned mesh userdata.
- * @param lua_state Current Lua state, borrowed within its owning native callback.
+ * @param lua_state Current Lua state, borrowed within its owning native
+ * callback.
  * @param config Borrowed configuration; no pointers are retained.
  * @return OK pushes exactly one userdata. INVALID_ARG rejects malformed inputs;
  * NO_MEMORY reports protected allocation/stack-reservation failure;
@@ -475,10 +487,11 @@ typedef struct h2_lua_display_mesh_config {
  * across the caller's resource ownership. Geometry and transformed-coordinate
  * storage count toward VM memory and are reclaimed with the userdata/VM.
  * Neither this operation nor update opens, draws or presents the Display.
- * Keep the userdata referenced in Lua; never retain its internal native address.
+ * Keep the userdata referenced in Lua; never retain its internal native
+ * address.
  */
 h2_pal_result_t h2_lua_display_mesh_push(
-    void *lua_state, const h2_lua_display_mesh_config_t *config);
+    void* lua_state, const h2_lua_display_mesh_config_t* config);
 
 /**
  * @brief Transactionally replace active vertices, topology and colors.
@@ -486,9 +499,10 @@ h2_pal_result_t h2_lua_display_mesh_push(
  * @param stack_index Positive or relative stack index of a retained mesh;
  * zero, pseudo-indices and other userdata are rejected.
  * @param data Borrowed replacement arrays, copied only after full validation.
- * @return OK atomically replaces data and requires derived-coordinate revalidation.
- * Verified equivalent draw results may reuse prior span caches. INVALID_ARG
- * leaves all prior data/cache state unchanged. Stack is unchanged on both paths.
+ * @return OK atomically replaces data and requires derived-coordinate
+ * revalidation. Verified equivalent draw results may reuse prior span caches.
+ * INVALID_ARG leaves all prior data/cache state unchanged. Stack is unchanged
+ * on both paths.
  *
  * No allocation, stack growth, Lua callback or framebuffer access. Caller must
  * provide two unused stack slots (reserve with lua_checkstack before entering
@@ -496,7 +510,7 @@ h2_pal_result_t h2_lua_display_mesh_push(
  * Changes to active lengths, including empty, must fit the original capacities.
  */
 h2_pal_result_t h2_lua_display_mesh_update(
-    void *lua_state, int stack_index, const h2_lua_display_mesh_data_t *data);
+    void* lua_state, int stack_index, const h2_lua_display_mesh_data_t* data);
 
 #ifdef __cplusplus
 }

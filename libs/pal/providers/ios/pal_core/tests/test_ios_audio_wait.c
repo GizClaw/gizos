@@ -21,8 +21,8 @@ static uint64_t now_ns(void) {
   return (uint64_t)now.tv_sec * UINT64_C(1000000000) + (uint64_t)now.tv_nsec;
 }
 
-static void *unrelated_callbacks(void *user) {
-  noise_t *noise = user;
+static void* unrelated_callbacks(void* user) {
+  noise_t* noise = user;
   /* Stop after one second even with the old resetting timeout. A broken
    * waiter then returns late and fails the elapsed-budget assertion. */
   for (unsigned i = 0u; i < 500u; ++i) {
@@ -66,7 +66,8 @@ int main(void) {
   assert(pthread_join(callbacks, NULL) == 0);
   assert(pthread_cond_destroy(&noise.changed) == 0);
   assert(pthread_mutex_destroy(&noise.mutex) == 0);
-  printf("IOS_AUDIO_WAIT budget_ms=80 elapsed_ms=%llu unrelated_wakes=%u PASS\n",
-         (unsigned long long)elapsed_ms, noise.wakes);
+  printf(
+      "IOS_AUDIO_WAIT budget_ms=80 elapsed_ms=%llu unrelated_wakes=%u PASS\n",
+      (unsigned long long)elapsed_ms, noise.wakes);
   return 0;
 }

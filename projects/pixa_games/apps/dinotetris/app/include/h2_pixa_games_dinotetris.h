@@ -14,12 +14,11 @@ extern "C" {
 #define H2_PIXA_GAMES_DINOTETRIS_COMPONENT_RECORD 3u
 
 typedef struct h2_pixa_games_dinotetris_config {
-    uint32_t random_seed;
+  uint32_t random_seed;
 } h2_pixa_games_dinotetris_config_t;
 
 int h2_pixa_games_dinotetris_run(
-    h2_runtime_t *runtime,
-    const h2_pixa_games_dinotetris_config_t *config);
+    h2_runtime_t* runtime, const h2_pixa_games_dinotetris_config_t* config);
 
 #ifdef __cplusplus
 }

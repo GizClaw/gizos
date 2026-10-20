@@ -28,8 +28,8 @@ static const h2_bk3633_platform_buzzer_config_t s_config = {
     .volume_inverted = 1u,
 };
 
-static h2_bk3633_platform_buzzer_t *create_buzzer(void) {
-  h2_bk3633_platform_buzzer_t *buzzer = NULL;
+static h2_bk3633_platform_buzzer_t* create_buzzer(void) {
+  h2_bk3633_platform_buzzer_t* buzzer = NULL;
   assert(h2_bk3633_platform_buzzer_init(&s_config, h2_bk3633_platform_mem_api(),
                                         &buzzer) == H2_PAL_OK);
   assert(buzzer != NULL);
@@ -39,7 +39,7 @@ static h2_bk3633_platform_buzzer_t *create_buzzer(void) {
 static void assert_call(size_t index, uint8_t block, uint8_t channel,
                         bool initialize, bool continuous_mode,
                         uint32_t end_value, uint32_t duty_cycle) {
-  const h2_bk3633_interaction_pwm_call_t *call =
+  const h2_bk3633_interaction_pwm_call_t* call =
       h2_bk3633_interaction_sdk_fake_pwm_call(index);
   assert(call != NULL);
   assert(call->block == block);
@@ -52,8 +52,8 @@ static void assert_call(size_t index, uint8_t block, uint8_t channel,
 
 static void test_info_start_replace_and_stop(void) {
   h2_bk3633_interaction_sdk_fake_reset();
-  h2_bk3633_platform_buzzer_t *buzzer = create_buzzer();
-  const h2_pal_buzzer_api_t *api = h2_bk3633_platform_buzzer_api(buzzer);
+  h2_bk3633_platform_buzzer_t* buzzer = create_buzzer();
+  const h2_pal_buzzer_api_t* api = h2_bk3633_platform_buzzer_api(buzzer);
   h2_pal_buzzer_info_t info;
 
   assert(h2_pal_buzzer_get_info(api, BUZZER_ID, &info) == H2_PAL_OK);
@@ -81,8 +81,8 @@ static void test_info_start_replace_and_stop(void) {
 
 static void test_validation_and_zero_volume(void) {
   h2_bk3633_interaction_sdk_fake_reset();
-  h2_bk3633_platform_buzzer_t *buzzer = create_buzzer();
-  const h2_pal_buzzer_api_t *api = h2_bk3633_platform_buzzer_api(buzzer);
+  h2_bk3633_platform_buzzer_t* buzzer = create_buzzer();
+  const h2_pal_buzzer_api_t* api = h2_bk3633_platform_buzzer_api(buzzer);
 
   assert(h2_pal_buzzer_start(api, BUZZER_ID, 99u, 50u) ==
          H2_PAL_ERR_INVALID_ARG);
@@ -98,7 +98,7 @@ static void test_validation_and_zero_volume(void) {
 
 static void test_noninverted_safe_volume(void) {
   h2_bk3633_platform_buzzer_config_t config = s_config;
-  h2_bk3633_platform_buzzer_t *buzzer = NULL;
+  h2_bk3633_platform_buzzer_t* buzzer = NULL;
 
   config.volume_inverted = 0u;
   h2_bk3633_interaction_sdk_fake_reset();
@@ -119,8 +119,8 @@ static void test_noninverted_safe_volume(void) {
 
 static void test_partial_failure_silences_both_channels(void) {
   h2_bk3633_interaction_sdk_fake_reset();
-  h2_bk3633_platform_buzzer_t *buzzer = create_buzzer();
-  const h2_pal_buzzer_api_t *api = h2_bk3633_platform_buzzer_api(buzzer);
+  h2_bk3633_platform_buzzer_t* buzzer = create_buzzer();
+  const h2_pal_buzzer_api_t* api = h2_bk3633_platform_buzzer_api(buzzer);
 
   h2_bk3633_interaction_sdk_fake_fail_pwm_call(3u, H2_PAL_ERR_IO);
   assert(h2_pal_buzzer_start(api, BUZZER_ID, 1000u, 50u) == H2_PAL_ERR_IO);
@@ -142,7 +142,7 @@ static void test_partial_failure_silences_both_channels(void) {
 
   h2_bk3633_interaction_sdk_fake_reset();
   h2_bk3633_interaction_sdk_fake_fail_pwm_call(1u, H2_PAL_ERR_IO);
-  buzzer = (h2_bk3633_platform_buzzer_t *)(uintptr_t)1u;
+  buzzer = (h2_bk3633_platform_buzzer_t*)(uintptr_t)1u;
   assert(h2_bk3633_platform_buzzer_init(&s_config, h2_bk3633_platform_mem_api(),
                                         &buzzer) == H2_PAL_ERR_IO);
   assert(buzzer == NULL);
@@ -160,8 +160,8 @@ static void test_partial_failure_silences_both_channels(void) {
 
 static void test_stop_failure_attempts_both_safe_outputs(void) {
   h2_bk3633_interaction_sdk_fake_reset();
-  h2_bk3633_platform_buzzer_t *buzzer = create_buzzer();
-  const h2_pal_buzzer_api_t *api = h2_bk3633_platform_buzzer_api(buzzer);
+  h2_bk3633_platform_buzzer_t* buzzer = create_buzzer();
+  const h2_pal_buzzer_api_t* api = h2_bk3633_platform_buzzer_api(buzzer);
 
   h2_bk3633_interaction_sdk_fake_fail_pwm_call(3u, H2_PAL_ERR_IO);
   assert(h2_pal_buzzer_stop(api, BUZZER_ID) == H2_PAL_ERR_IO);
@@ -181,7 +181,7 @@ static void test_stop_failure_attempts_both_safe_outputs(void) {
 
 static void test_rejects_wrong_fixed_pin_mapping(void) {
   h2_bk3633_platform_buzzer_config_t invalid = s_config;
-  h2_bk3633_platform_buzzer_t *buzzer = NULL;
+  h2_bk3633_platform_buzzer_t* buzzer = NULL;
 
   h2_bk3633_interaction_sdk_fake_reset();
   invalid.frequency.gpio_pin = 0x11u;

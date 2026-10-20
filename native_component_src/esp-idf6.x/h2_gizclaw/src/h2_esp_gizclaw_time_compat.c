@@ -6,9 +6,9 @@
  * implementation takes precedence without changing the GizClaw SDK source.
  * TODO(#430): Remove this shim after Firmwares consumes the upstream fix.
  */
-__attribute__((weak)) int timespec_get(struct timespec *time_point, int base) {
-    if (time_point == NULL || base != TIME_UTC) {
-        return 0;
-    }
-    return clock_gettime(CLOCK_REALTIME, time_point) == 0 ? TIME_UTC : 0;
+__attribute__((weak)) int timespec_get(struct timespec* time_point, int base) {
+  if (time_point == NULL || base != TIME_UTC) {
+    return 0;
+  }
+  return clock_gettime(CLOCK_REALTIME, time_point) == 0 ? TIME_UTC : 0;
 }

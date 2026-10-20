@@ -5,5 +5,6 @@
  * this phase. teardown runs after clean Runtime shutdown; failed close retains
  * ownership until the isolated App process is terminated by the driver. */
 int h2_storage_mobile_phase(h2_runtime_config_t config, unsigned phase,
-    uint32_t nonce, const char *report_path, int (*teardown)(void *), void *owner);
+                            uint32_t nonce, const char* report_path,
+                            int (*teardown)(void*), void* owner);
 #endif

@@ -30,7 +30,7 @@ static const uint8_t rx_uuid_bytes[16] = {
     0x8d, 0x5b, 0xf2, 0x05, 0x15, 0xad, 0x62, 0x8f,
 };
 
-static const h2_pal_ble_host_api_t *ble;
+static const h2_pal_ble_host_api_t* ble;
 static uint16_t service_handle;
 static uint16_t tx_value_handle;
 static uint16_t tx_cccd_handle;
@@ -41,44 +41,48 @@ static h2_loader_app_client_t loader_client;
 static h2_pal_fs_api_t loader_fs;
 static uint32_t next_partition = H2_JIELI_PARTITION_APP;
 
-static int get_running(void *user, h2_pal_power_boot_partition_t *out) {
+static int get_running(void* user, h2_pal_power_boot_partition_t* out) {
   (void)user;
   if (out == NULL) return H2_PAL_ERR_INVALID_ARG;
   memset(out, 0, sizeof(*out));
   out->id = H2_JIELI_PARTITION_APP;
   out->flags = H2_PAL_POWER_BOOT_PARTITION_FLAG_BOOTABLE |
-      H2_PAL_POWER_BOOT_PARTITION_FLAG_RUNNING | H2_PAL_POWER_BOOT_PARTITION_FLAG_APP;
+               H2_PAL_POWER_BOOT_PARTITION_FLAG_RUNNING |
+               H2_PAL_POWER_BOOT_PARTITION_FLAG_APP;
   memcpy(out->name, "app", 4u);
   return H2_PAL_OK;
 }
 
-static int get_next(void *user, h2_pal_power_boot_partition_t *out) {
+static int get_next(void* user, h2_pal_power_boot_partition_t* out) {
   int rc = get_running(user, out);
   if (rc != H2_PAL_OK) return rc;
   out->id = next_partition;
   out->flags = H2_PAL_POWER_BOOT_PARTITION_FLAG_BOOTABLE |
-      H2_PAL_POWER_BOOT_PARTITION_FLAG_NEXT |
-      (next_partition == H2_JIELI_PARTITION_LOADER ?
-       H2_PAL_POWER_BOOT_PARTITION_FLAG_RECOVERY : H2_PAL_POWER_BOOT_PARTITION_FLAG_APP);
+               H2_PAL_POWER_BOOT_PARTITION_FLAG_NEXT |
+               (next_partition == H2_JIELI_PARTITION_LOADER
+                    ? H2_PAL_POWER_BOOT_PARTITION_FLAG_RECOVERY
+                    : H2_PAL_POWER_BOOT_PARTITION_FLAG_APP);
   snprintf(out->name, sizeof(out->name), "%s",
            next_partition == H2_JIELI_PARTITION_LOADER ? "h2loader" : "app");
   return H2_PAL_OK;
 }
 
-static int set_next(void *user, uint32_t partition) {
+static int set_next(void* user, uint32_t partition) {
   (void)user;
   if (partition != H2_JIELI_PARTITION_LOADER) return H2_PAL_ERR_UNSUPPORTED;
   next_partition = partition;
   return H2_PAL_OK;
 }
 
-static int reboot(void *user, uint32_t reason) {
+static int reboot(void* user, uint32_t reason) {
   (void)user;
-  printf("H2_JIELI_PAL_BLE_REBOOT reason=%u next=%u\r\n", reason, next_partition);
+  printf("H2_JIELI_PAL_BLE_REBOOT reason=%u next=%u\r\n", reason,
+         next_partition);
   os_time_dly(10u);
-  if (next_partition != H2_JIELI_PARTITION_LOADER) return H2_PAL_ERR_UNSUPPORTED;
-  int result = h2_jieli_app_loader_prepare_reboot(
-      &loader_client.config, next_partition);
+  if (next_partition != H2_JIELI_PARTITION_LOADER)
+    return H2_PAL_ERR_UNSUPPORTED;
+  int result =
+      h2_jieli_app_loader_prepare_reboot(&loader_client.config, next_partition);
   if (result != H2_PAL_OK) return result;
   system_reset();
   return H2_PAL_OK;
@@ -95,16 +99,19 @@ static int start_commands(void) {
   static h2_loader_app_client_config_t config;
   for (unsigned i = 0; !dev_online("sd0") && i < 500u; ++i) os_time_dly(1u);
   int rc = h2_jieli_ac791n_devkit_sd_fs_init(&loader_fs);
-  if (rc == H2_PAL_OK) rc = h2_jieli_app_loader_config_init(
-      &config, &loader_fs, &power, (h2_loader_memory_stats_api_t){0},
-      H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_BLE);
+  if (rc == H2_PAL_OK)
+    rc = h2_jieli_app_loader_config_init(
+        &config, &loader_fs, &power, (h2_loader_memory_stats_api_t){0},
+        H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_BLE);
   if (rc == H2_PAL_OK) rc = h2_loader_app_client_init(&loader_client, &config);
-  if (rc == H2_PAL_OK) rc = h2_jieli_app_iostreamikcp_start(
-      &loader_client, h2_jieli_wl82_platform_task_api(), h2_jieli_wl82_platform_mem_api());
+  if (rc == H2_PAL_OK)
+    rc = h2_jieli_app_iostreamikcp_start(&loader_client,
+                                         h2_jieli_wl82_platform_task_api(),
+                                         h2_jieli_wl82_platform_mem_api());
   return rc;
 }
 
-static void heartbeat_task(void *user) {
+static void heartbeat_task(void* user) {
   (void)user;
   for (unsigned heartbeat = 1u;; ++heartbeat) {
     os_time_dly(100u);
@@ -114,7 +121,7 @@ static void heartbeat_task(void *user) {
   }
 }
 
-static void return_to_loader(void *user) {
+static void return_to_loader(void* user) {
   (void)user;
   /* Unconfirmed diagnostics return through Loader's trial reconciliation. */
   system_reset();
@@ -130,17 +137,17 @@ int h2_jieli_ac791n_devkit_early_app_boot(void) {
   return 0;
 }
 
-static h2_pal_result_t on_write(
-    void *user, const h2_pal_ble_gatt_access_t *access,
-    const uint8_t *data, size_t len) {
+static h2_pal_result_t on_write(void* user,
+                                const h2_pal_ble_gatt_access_t* access,
+                                const uint8_t* data, size_t len) {
   (void)user;
-  unsigned count = h2_atomic_fetch_add_explicit(
-      &write_count, 1u, H2_ATOMIC_RELAXED) + 1u;
-  printf("H2_JIELI_PAL_BLE_WRITE count=%u conn=%u attr=%u bytes=%u\r\n",
-         count, (unsigned)access->conn_handle,
-         (unsigned)access->attr_handle, (unsigned)len);
-  h2_pal_result_t result = h2_pal_ble_notify(
-      ble, access->conn_handle, tx_value_handle, data, len);
+  unsigned count =
+      h2_atomic_fetch_add_explicit(&write_count, 1u, H2_ATOMIC_RELAXED) + 1u;
+  printf("H2_JIELI_PAL_BLE_WRITE count=%u conn=%u attr=%u bytes=%u\r\n", count,
+         (unsigned)access->conn_handle, (unsigned)access->attr_handle,
+         (unsigned)len);
+  h2_pal_result_t result =
+      h2_pal_ble_notify(ble, access->conn_handle, tx_value_handle, data, len);
   printf("H2_JIELI_PAL_BLE_ECHO result=%d\r\n", result);
   return H2_PAL_OK;
 }
@@ -151,23 +158,28 @@ void app_main(void) {
     return;
   }
   int command_result = start_commands();
-  printf("H2_JIELI_PAL_BLE_COMMANDS result=%d build=controlled-central-v1\r\n", command_result);
-  if (command_result != H2_PAL_OK) { return_to_loader(NULL); return; }
+  printf("H2_JIELI_PAL_BLE_COMMANDS result=%d build=controlled-central-v1\r\n",
+         command_result);
+  if (command_result != H2_PAL_OK) {
+    return_to_loader(NULL);
+    return;
+  }
   static h2_pal_ble_gatt_characteristic_t characteristics[2];
   static h2_pal_ble_gatt_service_t service;
   static const uint8_t diagnostic_marker[] = {
       'H', '2', 'P', 'A', 'L', '1', 0x01u,
   };
-  const h2_pal_ble_uuid_t service_uuid = {
-      .data = service_uuid_bytes, .len = sizeof(service_uuid_bytes)};
+  const h2_pal_ble_uuid_t service_uuid = {.data = service_uuid_bytes,
+                                          .len = sizeof(service_uuid_bytes)};
   const h2_pal_ble_adv_data_t adv_data = {
       .local_name = "H2PAL",
       .service_uuids = &service_uuid,
       .service_uuid_count = 1u,
-      .manufacturer_data = {
-          .data = diagnostic_marker,
-          .len = sizeof(diagnostic_marker),
-      },
+      .manufacturer_data =
+          {
+              .data = diagnostic_marker,
+              .len = sizeof(diagnostic_marker),
+          },
   };
   const h2_pal_ble_adv_params_t adv_params = {
       .mode = H2_PAL_BLE_ADV_MODE_CONNECTABLE,
@@ -203,12 +215,15 @@ void app_main(void) {
       .out_service_handle = &service_handle,
   };
 
-  int result = h2_pal_system_event_init(h2_jieli_wl82_platform_system_event_api());
+  int result =
+      h2_pal_system_event_init(h2_jieli_wl82_platform_system_event_api());
   printf("H2_JIELI_PAL_BLE step=system-event-init result=%d\r\n", result);
-  if (result == H2_PAL_OK) result = h2_pal_ble_register_gatt_services(ble, &service, 1u);
-  printf("H2_JIELI_PAL_BLE step=gatt result=%d service=%u tx=%u cccd=%u rx=%u\r\n",
-         result, (unsigned)service_handle, (unsigned)tx_value_handle,
-         (unsigned)tx_cccd_handle, (unsigned)rx_value_handle);
+  if (result == H2_PAL_OK)
+    result = h2_pal_ble_register_gatt_services(ble, &service, 1u);
+  printf(
+      "H2_JIELI_PAL_BLE step=gatt result=%d service=%u tx=%u cccd=%u rx=%u\r\n",
+      result, (unsigned)service_handle, (unsigned)tx_value_handle,
+      (unsigned)tx_cccd_handle, (unsigned)rx_value_handle);
   if (result == H2_PAL_OK) result = h2_pal_ble_start(ble);
   printf("H2_JIELI_PAL_BLE step=start result=%d\r\n", result);
   if (result == H2_PAL_OK) result = h2_pal_ble_set_adv_data(ble, &adv_data);

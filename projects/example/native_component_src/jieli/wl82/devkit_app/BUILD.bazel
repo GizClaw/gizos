@@ -31,10 +31,10 @@ firmware_native_component(
     }),
     deps = [
         ":tasks",
+        "//boards/ac791n_chip/ac791n",
+        "//boards/jieli_ac791n_devkit/ac791n",
         "//projects/h2loader/native_component_src/jieli/wl82/h2loader_app:app_ble",
         "//projects/h2loader/native_component_src/jieli/wl82/h2loader_app:app_transport",
         "//projects/h2loader/native_component_src/jieli/wl82/h2loader_app:h2loader_app_client",
-        "//boards/ac791n_chip/ac791n",
-        "//boards/jieli_ac791n_devkit/ac791n",
     ],
 )

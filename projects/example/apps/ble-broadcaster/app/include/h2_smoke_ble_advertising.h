@@ -8,7 +8,7 @@ extern "C" {
 #endif
 
 /** Run the portable legacy and Extended Advertising smoke sequence. */
-int h2_smoke_ble_advertising_run(h2_runtime_t *runtime);
+int h2_smoke_ble_advertising_run(h2_runtime_t* runtime);
 
 #ifdef __cplusplus
 }

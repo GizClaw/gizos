@@ -25,8 +25,7 @@ typedef struct h2_runtime_test_control h2_runtime_test_control_t;
  * deinitialization.
  */
 h2_pal_result_t h2_runtime_test_control_open(
-    h2_runtime_t *runtime,
-    h2_runtime_test_control_t **out_control);
+    h2_runtime_t* runtime, h2_runtime_test_control_t** out_control);
 
 /**
  * Copies one validated public Runtime event into the production event queue.
@@ -36,12 +35,9 @@ h2_pal_result_t h2_runtime_test_control_open(
  * must change consistently.
  */
 h2_pal_result_t h2_runtime_test_emit_event(
-    h2_runtime_test_control_t *control,
-    h2_runtime_event_kind_t kind,
-    h2_runtime_component_t component,
-    h2_runtime_component_id_t component_id,
-    h2_runtime_timestamp_ms_t timestamp_ms,
-    const void *payload,
+    h2_runtime_test_control_t* control, h2_runtime_event_kind_t kind,
+    h2_runtime_component_t component, h2_runtime_component_id_t component_id,
+    h2_runtime_timestamp_ms_t timestamp_ms, const void* payload,
     size_t payload_size);
 
 /**
@@ -57,39 +53,32 @@ h2_pal_result_t h2_runtime_test_emit_event(
  * radio to produce them, so this drives the same publication a reader polls.
  */
 h2_pal_result_t h2_runtime_test_set_system_wifi_sta_state(
-    h2_runtime_t *runtime,
-    const h2_runtime_system_wifi_sta_state_t *state);
+    h2_runtime_t* runtime, const h2_runtime_system_wifi_sta_state_t* state);
 
 /** Replaces the modem snapshot, which a Runtime otherwise builds from modem
  * system events; for tests of its readers. */
 h2_pal_result_t h2_runtime_test_set_system_modem_state(
-    h2_runtime_t *runtime,
-    const h2_runtime_system_modem_state_t *state);
+    h2_runtime_t* runtime, const h2_runtime_system_modem_state_t* state);
 
 h2_pal_result_t h2_runtime_test_set_component_state(
-    h2_runtime_test_control_t *control,
-    h2_runtime_component_id_t component_id,
-    const void *state,
-    size_t state_size);
+    h2_runtime_test_control_t* control, h2_runtime_component_id_t component_id,
+    const void* state, size_t state_size);
 
 /** Refreshes non-event Battery and Temperature snapshots from their PAL. */
-h2_pal_result_t h2_runtime_test_poll_sensors(h2_runtime_t *runtime);
+h2_pal_result_t h2_runtime_test_poll_sensors(h2_runtime_t* runtime);
 
 h2_pal_result_t h2_runtime_test_button_down(
-    h2_runtime_test_control_t *control,
-    h2_runtime_component_id_t component_id,
+    h2_runtime_test_control_t* control, h2_runtime_component_id_t component_id,
     h2_runtime_timestamp_ms_t pressed_at_ms);
 
 h2_pal_result_t h2_runtime_test_button_up(
-    h2_runtime_test_control_t *control,
-    h2_runtime_component_id_t component_id,
+    h2_runtime_test_control_t* control, h2_runtime_component_id_t component_id,
     h2_runtime_timestamp_ms_t pressed_at_ms,
     h2_runtime_timestamp_ms_t released_at_ms);
 
 /** Injects one two-timestamp Button Action observed at `observed_at_ms`. */
 h2_pal_result_t h2_runtime_test_button_action(
-    h2_runtime_test_control_t *control,
-    h2_runtime_component_id_t component_id,
+    h2_runtime_test_control_t* control, h2_runtime_component_id_t component_id,
     h2_runtime_timestamp_ms_t pressed_at_ms,
     h2_runtime_timestamp_ms_t released_at_ms,
     h2_runtime_timestamp_ms_t observed_at_ms);
@@ -99,7 +88,7 @@ h2_pal_result_t h2_runtime_test_button_action(
  *
  * The next Runtime input tick lazily discovers the physical sources again.
  */
-void h2_runtime_test_control_close(h2_runtime_test_control_t *control);
+void h2_runtime_test_control_close(h2_runtime_test_control_t* control);
 
 #ifdef __cplusplus
 }

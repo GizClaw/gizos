@@ -14,10 +14,10 @@
 #define H2_ESP_NETIF_REGISTRY_MAX 8u
 #define H2_ESP_NETIF_SNAPSHOT_MAX 16u
 
-static const char *TAG = "h2_esp_netif";
+static const char* TAG = "h2_esp_netif";
 
 typedef struct h2_esp_netif_registration {
-  esp_netif_t *netif;
+  esp_netif_t* netif;
   h2_pal_netif_kind_t kind;
 } h2_esp_netif_registration_t;
 
@@ -44,11 +44,11 @@ static int s_default_known;
 static int s_default_valid;
 /* Only touched on the TCP/IP thread: the esp_netif whose DNS servers the lwIP
  * resolver last used and whose answers its cache holds. */
-static esp_netif_t *s_dns_netif;
+static esp_netif_t* s_dns_netif;
 static ip_addr_t s_dns_servers[DNS_MAX_SERVERS];
 static int s_dns_servers_known;
 
-static esp_err_t reset_dns_in_tcpip(void *ctx) {
+static esp_err_t reset_dns_in_tcpip(void* ctx) {
   (void)ctx;
   s_dns_netif = NULL;
   s_dns_servers_known = 0;
@@ -68,8 +68,7 @@ static SemaphoreHandle_t netif_init_mutex(void) {
 
 h2_pal_result_t h2_esp_platform_netif_init_once(void) {
   SemaphoreHandle_t mutex = netif_init_mutex();
-  if (mutex == NULL)
-    return H2_PAL_ERR_NO_MEMORY;
+  if (mutex == NULL) return H2_PAL_ERR_NO_MEMORY;
   if (xSemaphoreTake(mutex, portMAX_DELAY) != pdTRUE) {
     return H2_PAL_ERR_TIMEOUT;
   }
@@ -78,14 +77,12 @@ h2_pal_result_t h2_esp_platform_netif_init_once(void) {
     err = esp_event_loop_create_default();
   }
   (void)xSemaphoreGive(mutex);
-  if (err == ESP_OK || err == ESP_ERR_INVALID_STATE)
-    return H2_PAL_OK;
-  if (err == ESP_ERR_NO_MEM)
-    return H2_PAL_ERR_NO_MEMORY;
+  if (err == ESP_OK || err == ESP_ERR_INVALID_STATE) return H2_PAL_OK;
+  if (err == ESP_ERR_NO_MEM) return H2_PAL_ERR_NO_MEMORY;
   return H2_PAL_ERR_IO;
 }
 
-static h2_pal_netif_kind_t netif_kind(esp_netif_t *netif, const char *key) {
+static h2_pal_netif_kind_t netif_kind(esp_netif_t* netif, const char* key) {
   h2_pal_netif_kind_t registered = H2_PAL_NETIF_KIND_UNKNOWN;
   portENTER_CRITICAL(&s_netif_lock);
   for (size_t i = 0u; i < H2_ESP_NETIF_REGISTRY_MAX; ++i) {
@@ -95,28 +92,21 @@ static h2_pal_netif_kind_t netif_kind(esp_netif_t *netif, const char *key) {
     }
   }
   portEXIT_CRITICAL(&s_netif_lock);
-  if (registered != H2_PAL_NETIF_KIND_UNKNOWN)
-    return registered;
-  if (key == NULL)
-    return H2_PAL_NETIF_KIND_UNKNOWN;
-  if (strstr(key, "STA") != NULL)
-    return H2_PAL_NETIF_KIND_WIFI_STA;
-  if (strstr(key, "AP") != NULL)
-    return H2_PAL_NETIF_KIND_WIFI_AP;
-  if (strstr(key, "PPP") != NULL)
-    return H2_PAL_NETIF_KIND_MODEM_DATA;
-  if (strstr(key, "ETH") != NULL)
-    return H2_PAL_NETIF_KIND_ETHERNET;
-  if (strstr(key, "LO") != NULL)
-    return H2_PAL_NETIF_KIND_LOOPBACK;
+  if (registered != H2_PAL_NETIF_KIND_UNKNOWN) return registered;
+  if (key == NULL) return H2_PAL_NETIF_KIND_UNKNOWN;
+  if (strstr(key, "STA") != NULL) return H2_PAL_NETIF_KIND_WIFI_STA;
+  if (strstr(key, "AP") != NULL) return H2_PAL_NETIF_KIND_WIFI_AP;
+  if (strstr(key, "PPP") != NULL) return H2_PAL_NETIF_KIND_MODEM_DATA;
+  if (strstr(key, "ETH") != NULL) return H2_PAL_NETIF_KIND_ETHERNET;
+  if (strstr(key, "LO") != NULL) return H2_PAL_NETIF_KIND_LOOPBACK;
   return H2_PAL_NETIF_KIND_UNKNOWN;
 }
 
-static h2_pal_result_t netif_ref(esp_netif_t *netif,
-                                 h2_pal_netif_ref_t *out_ref) {
+static h2_pal_result_t netif_ref(esp_netif_t* netif,
+                                 h2_pal_netif_ref_t* out_ref) {
   memset(out_ref, 0, sizeof(*out_ref));
   int index = esp_netif_get_netif_impl_index(netif);
-  const char *key = esp_netif_get_ifkey(netif);
+  const char* key = esp_netif_get_ifkey(netif);
   out_ref->kind = netif_kind(netif, key);
   if (index > 0) {
     out_ref->type = H2_PAL_NETIF_REF_ID;
@@ -132,7 +122,7 @@ static h2_pal_result_t netif_ref(esp_netif_t *netif,
   return H2_PAL_OK;
 }
 
-static void set_ipv4(h2_pal_net_addr_t *out, uint32_t network_order) {
+static void set_ipv4(h2_pal_net_addr_t* out, uint32_t network_order) {
   uint32_t host = lwip_ntohl(network_order);
   out->family = H2_PAL_NET_FAMILY_IPV4;
   out->ip[0] = (uint8_t)(host >> 24u);
@@ -141,12 +131,11 @@ static void set_ipv4(h2_pal_net_addr_t *out, uint32_t network_order) {
   out->ip[3] = (uint8_t)host;
 }
 
-static h2_pal_result_t netif_status(esp_netif_t *netif,
-                                    h2_pal_netif_status_t *out_status) {
+static h2_pal_result_t netif_status(esp_netif_t* netif,
+                                    h2_pal_netif_status_t* out_status) {
   memset(out_status, 0, sizeof(*out_status));
   h2_pal_result_t rc = netif_ref(netif, &out_status->ref);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   out_status->kind = out_status->ref.kind;
   if (out_status->kind == H2_PAL_NETIF_KIND_MODEM_DATA) {
     out_status->flags |= H2_PAL_NETIF_FLAG_POINT_TO_POINT;
@@ -172,8 +161,10 @@ static h2_pal_result_t netif_status(esp_netif_t *netif,
     out_status->ipv6.family = H2_PAL_NET_FAMILY_IPV6;
     memcpy(out_status->ipv6.ip, addresses[i].addr, 16u);
     out_status->ipv6.scope_id = 0u;
-    if (out_status->ipv6.ip[0] == 0xfeu && (out_status->ipv6.ip[1] & 0xc0u) == 0x80u) {
-      out_status->ipv6.scope_id = (uint32_t)esp_netif_get_netif_impl_index(netif);
+    if (out_status->ipv6.ip[0] == 0xfeu &&
+        (out_status->ipv6.ip[1] & 0xc0u) == 0x80u) {
+      out_status->ipv6.scope_id =
+          (uint32_t)esp_netif_get_netif_impl_index(netif);
     }
     out_status->flags |= H2_PAL_NETIF_FLAG_HAS_IPV6;
     if (out_status->ipv6.scope_id == 0u) {
@@ -194,8 +185,7 @@ static h2_pal_result_t netif_status(esp_netif_t *netif,
        ++i) {
     esp_netif_dns_info_t dns;
     memset(&dns, 0, sizeof(dns));
-    if (esp_netif_get_dns_info(netif, dns_types[i], &dns) != ESP_OK)
-      continue;
+    if (esp_netif_get_dns_info(netif, dns_types[i], &dns) != ESP_OK) continue;
     if (IP_IS_V4(&dns.ip) && ip_2_ip4(&dns.ip)->addr != 0u) {
       set_ipv4(&out_status->dns[out_status->dns_count].addr,
                ip_2_ip4(&dns.ip)->addr);
@@ -203,7 +193,7 @@ static h2_pal_result_t netif_status(esp_netif_t *netif,
     }
 #if LWIP_IPV6
     else if (IP_IS_V6(&dns.ip) && !ip6_addr_isany(ip_2_ip6(&dns.ip))) {
-      h2_pal_net_addr_t *address = &out_status->dns[out_status->dns_count].addr;
+      h2_pal_net_addr_t* address = &out_status->dns[out_status->dns_count].addr;
       address->family = H2_PAL_NET_FAMILY_IPV6;
       memcpy(address->ip, ip_2_ip6(&dns.ip)->addr, 16u);
       if (address->ip[0] == 0xfeu && (address->ip[1] & 0xc0u) == 0x80u)
@@ -215,19 +205,18 @@ static h2_pal_result_t netif_status(esp_netif_t *netif,
   return H2_PAL_OK;
 }
 
-static esp_err_t capture_snapshot(void *ctx) {
-  h2_esp_netif_snapshot_t *snapshot = ctx;
-  esp_netif_t *netif = NULL;
+static esp_err_t capture_snapshot(void* ctx) {
+  h2_esp_netif_snapshot_t* snapshot = ctx;
+  esp_netif_t* netif = NULL;
   while ((netif = esp_netif_next_unsafe(netif)) != NULL) {
     if (snapshot->count >= H2_ESP_NETIF_SNAPSHOT_MAX) {
       snapshot->truncated = 1;
       break;
     }
-    h2_esp_netif_snapshot_entry_t *entry = &snapshot->entries[snapshot->count];
+    h2_esp_netif_snapshot_entry_t* entry = &snapshot->entries[snapshot->count];
     h2_pal_result_t rc = netif_status(netif, &entry->status);
-    if (rc != H2_PAL_OK)
-      continue;
-    const char *key = esp_netif_get_ifkey(netif);
+    if (rc != H2_PAL_OK) continue;
+    const char* key = esp_netif_get_ifkey(netif);
     size_t key_len = key == NULL ? 0u : strnlen(key, sizeof(entry->key));
     if (key_len > 0u && key_len < sizeof(entry->key)) {
       memcpy(entry->key, key, key_len + 1u);
@@ -237,31 +226,28 @@ static esp_err_t capture_snapshot(void *ctx) {
   return ESP_OK;
 }
 
-static h2_pal_result_t take_snapshot(h2_esp_netif_snapshot_t *snapshot) {
+static h2_pal_result_t take_snapshot(h2_esp_netif_snapshot_t* snapshot) {
   memset(snapshot, 0, sizeof(*snapshot));
   esp_err_t rc = esp_netif_tcpip_exec(capture_snapshot, snapshot);
-  if (rc != ESP_OK)
-    return H2_PAL_ERR_IO;
+  if (rc != ESP_OK) return H2_PAL_ERR_IO;
   return snapshot->truncated == 0 ? H2_PAL_OK : H2_PAL_ERR_FULL;
 }
 
-static int matches_filter(const h2_esp_netif_snapshot_entry_t *entry,
-                          const h2_pal_netif_filter_t *filter) {
-  if (filter == NULL)
-    return 1;
+static int matches_filter(const h2_esp_netif_snapshot_entry_t* entry,
+                          const h2_pal_netif_filter_t* filter) {
+  if (filter == NULL) return 1;
   if (filter->kind != H2_PAL_NETIF_KIND_UNKNOWN &&
       filter->kind != entry->status.kind)
     return 0;
-  if (filter->id != 0u && filter->id != entry->status.ref.id)
-    return 0;
+  if (filter->id != 0u && filter->id != entry->status.ref.id) return 0;
   if (filter->name != NULL && filter->name[0] != '\0' &&
       strncmp(filter->name, entry->key, H2_PAL_NETIF_NAME_MAX) != 0)
     return 0;
   return 1;
 }
 
-static int matches_ref(const h2_esp_netif_snapshot_entry_t *entry,
-                       const h2_pal_netif_ref_t *ref) {
+static int matches_ref(const h2_esp_netif_snapshot_entry_t* entry,
+                       const h2_pal_netif_ref_t* ref) {
   if (h2_pal_netif_ref_is_default(ref)) {
     return (entry->status.flags & H2_PAL_NETIF_FLAG_DEFAULT_ROUTE) != 0u;
   }
@@ -274,18 +260,16 @@ static int matches_ref(const h2_esp_netif_snapshot_entry_t *entry,
   return ref->type == H2_PAL_NETIF_REF_KIND && ref->kind == entry->status.kind;
 }
 
-static h2_pal_result_t esp_netif_list(void *user,
-                                      const h2_pal_netif_filter_t *filter,
+static h2_pal_result_t esp_netif_list(void* user,
+                                      const h2_pal_netif_filter_t* filter,
                                       h2_pal_netif_list_fn on_netif,
-                                      void *callback_user) {
+                                      void* callback_user) {
   (void)user;
   h2_esp_netif_snapshot_t snapshot;
   h2_pal_result_t rc = take_snapshot(&snapshot);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   for (size_t i = 0u; i < snapshot.count; ++i) {
-    if (!matches_filter(&snapshot.entries[i], filter))
-      continue;
+    if (!matches_filter(&snapshot.entries[i], filter)) continue;
     if (on_netif(callback_user, &snapshot.entries[i].status.ref,
                  &snapshot.entries[i].status) != 0) {
       return H2_PAL_EXIT;
@@ -294,14 +278,13 @@ static h2_pal_result_t esp_netif_list(void *user,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t esp_netif_find(void *user,
-                                      const h2_pal_netif_filter_t *filter,
-                                      h2_pal_netif_ref_t *out_ref) {
+static h2_pal_result_t esp_netif_find(void* user,
+                                      const h2_pal_netif_filter_t* filter,
+                                      h2_pal_netif_ref_t* out_ref) {
   (void)user;
   h2_esp_netif_snapshot_t snapshot;
   h2_pal_result_t rc = take_snapshot(&snapshot);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   for (size_t i = 0u; i < snapshot.count; ++i) {
     if (matches_filter(&snapshot.entries[i], filter)) {
       *out_ref = snapshot.entries[i].status.ref;
@@ -311,14 +294,13 @@ static h2_pal_result_t esp_netif_find(void *user,
   return H2_PAL_ERR_NOT_FOUND;
 }
 
-static h2_pal_result_t esp_netif_get_status(void *user,
-                                            const h2_pal_netif_ref_t *ref,
-                                            h2_pal_netif_status_t *out_status) {
+static h2_pal_result_t esp_netif_get_status(void* user,
+                                            const h2_pal_netif_ref_t* ref,
+                                            h2_pal_netif_status_t* out_status) {
   (void)user;
   h2_esp_netif_snapshot_t snapshot;
   h2_pal_result_t rc = take_snapshot(&snapshot);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   for (size_t i = 0u; i < snapshot.count; ++i) {
     if (matches_ref(&snapshot.entries[i], ref)) {
       *out_status = snapshot.entries[i].status;
@@ -328,16 +310,15 @@ static h2_pal_result_t esp_netif_get_status(void *user,
   return H2_PAL_ERR_NOT_FOUND;
 }
 
-static h2_pal_result_t
-esp_netif_get_dns_servers(void *user, const h2_pal_netif_ref_t *ref,
-                          h2_pal_netif_dns_server_t *out_servers,
-                          size_t max_servers, size_t *out_count) {
+static h2_pal_result_t esp_netif_get_dns_servers(
+    void* user, const h2_pal_netif_ref_t* ref,
+    h2_pal_netif_dns_server_t* out_servers, size_t max_servers,
+    size_t* out_count) {
   (void)user;
   *out_count = 0u;
   h2_esp_netif_snapshot_t snapshot;
   h2_pal_result_t rc = take_snapshot(&snapshot);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   for (size_t i = 0u; i < snapshot.count; ++i) {
     if (matches_ref(&snapshot.entries[i], ref)) {
       size_t count = snapshot.entries[i].status.dns_count < max_servers
@@ -355,13 +336,13 @@ esp_netif_get_dns_servers(void *user, const h2_pal_netif_ref_t *ref,
 }
 
 typedef struct h2_esp_default_select {
-  const h2_pal_netif_ref_t *ref;
-  esp_netif_t *netif;
+  const h2_pal_netif_ref_t* ref;
+  esp_netif_t* netif;
 } h2_esp_default_select_t;
 
-static esp_err_t resolve_default_in_tcpip(void *ctx) {
-  h2_esp_default_select_t *select = ctx;
-  esp_netif_t *netif = NULL;
+static esp_err_t resolve_default_in_tcpip(void* ctx) {
+  h2_esp_default_select_t* select = ctx;
+  esp_netif_t* netif = NULL;
   while ((netif = esp_netif_next_unsafe(netif)) != NULL) {
     h2_pal_netif_ref_t candidate;
     if (netif_ref(netif, &candidate) == H2_PAL_OK &&
@@ -373,8 +354,8 @@ static esp_err_t resolve_default_in_tcpip(void *ctx) {
   return ESP_OK;
 }
 
-static h2_pal_result_t esp_netif_set_default(void *user,
-                                             const h2_pal_netif_ref_t *ref) {
+static h2_pal_result_t esp_netif_set_default(void* user,
+                                             const h2_pal_netif_ref_t* ref) {
   (void)user;
   h2_esp_default_select_t select = {.ref = ref, .netif = NULL};
   if (esp_netif_tcpip_exec(resolve_default_in_tcpip, &select) != ESP_OK) {
@@ -395,22 +376,20 @@ typedef struct h2_esp_default_read {
   int valid;
 } h2_esp_default_read_t;
 
-static esp_err_t read_default_in_tcpip(void *ctx) {
-  h2_esp_default_read_t *read = ctx;
-  esp_netif_t *netif = esp_netif_get_default_netif();
+static esp_err_t read_default_in_tcpip(void* ctx) {
+  h2_esp_default_read_t* read = ctx;
+  esp_netif_t* netif = esp_netif_get_default_netif();
   memset(&read->ref, 0, sizeof(read->ref));
   read->valid = 0;
   read->result = H2_PAL_OK;
-  if (netif == NULL)
-    return ESP_OK;
+  if (netif == NULL) return ESP_OK;
   read->result = netif_ref(netif, &read->ref);
-  if (read->result == H2_PAL_OK)
-    read->valid = 1;
+  if (read->result == H2_PAL_OK) read->valid = 1;
   return ESP_OK;
 }
 
-static h2_pal_result_t read_default(h2_pal_netif_ref_t *out_ref,
-                                    int *out_valid) {
+static h2_pal_result_t read_default(h2_pal_netif_ref_t* out_ref,
+                                    int* out_valid) {
   h2_esp_default_read_t read;
   memset(&read, 0, sizeof(read));
   if (esp_netif_tcpip_exec(read_default_in_tcpip, &read) != ESP_OK) {
@@ -439,14 +418,13 @@ typedef struct h2_esp_dns_sync {
  * default change, so names resolved through the previous interface keep
  * answering from that interface's DNS for up to DNS_MAX_TTL. Re-copy the
  * default interface's servers and drop the cache whenever either changes. */
-static esp_err_t sync_default_dns_in_tcpip(void *ctx) {
-  h2_esp_dns_sync_t *sync = ctx;
+static esp_err_t sync_default_dns_in_tcpip(void* ctx) {
+  h2_esp_dns_sync_t* sync = ctx;
   (void)read_default_in_tcpip(&sync->read);
-  if (sync->read.result != H2_PAL_OK)
-    return ESP_OK;
-  esp_netif_t *netif = esp_netif_get_default_netif();
+  if (sync->read.result != H2_PAL_OK) return ESP_OK;
+  esp_netif_t* netif = esp_netif_get_default_netif();
   if (netif != NULL) {
-    const char *key = esp_netif_get_ifkey(netif);
+    const char* key = esp_netif_get_ifkey(netif);
     if (key != NULL) {
       strlcpy(sync->key, key, sizeof(sync->key));
     }
@@ -456,15 +434,15 @@ static esp_err_t sync_default_dns_in_tcpip(void *ctx) {
   }
 #if CONFIG_ESP_NETIF_SET_DNS_PER_DEFAULT_NETIF
   /* Read the entire configuration before writing or committing a baseline.
-   * A failed slot must not look like a removed server or a valid partial set. */
+   * A failed slot must not look like a removed server or a valid partial set.
+   */
   for (u8_t i = 0u;
        netif != NULL && i < DNS_MAX_SERVERS && i < ESP_NETIF_DNS_MAX; ++i) {
     esp_netif_dns_info_t dns;
     memset(&dns, 0, sizeof(dns));
     sync->dns_result =
         esp_netif_get_dns_info(netif, (esp_netif_dns_type_t)i, &dns);
-    if (sync->dns_result != ESP_OK)
-      return ESP_OK;
+    if (sync->dns_result != ESP_OK) return ESP_OK;
     ip_addr_t wanted;
 #if LWIP_IPV4 && LWIP_IPV6
     if (dns.ip.type != ESP_IPADDR_TYPE_V4 &&
@@ -514,8 +492,7 @@ static esp_err_t sync_default_dns_in_tcpip(void *ctx) {
 h2_pal_result_t h2_esp_platform_netif_monitor_init(void) {
   if (s_reconcile_mutex == NULL) {
     s_reconcile_mutex = xSemaphoreCreateMutexStatic(&s_reconcile_mutex_storage);
-    if (s_reconcile_mutex == NULL)
-      return H2_PAL_ERR_NO_MEMORY;
+    if (s_reconcile_mutex == NULL) return H2_PAL_ERR_NO_MEMORY;
   }
   if (xSemaphoreTake(s_reconcile_mutex, portMAX_DELAY) != pdTRUE) {
     return H2_PAL_ERR_TIMEOUT;
@@ -541,11 +518,10 @@ h2_pal_result_t h2_esp_platform_netif_monitor_init(void) {
   return rc;
 }
 
-void h2_esp_platform_netif_register(void *netif_handle,
+void h2_esp_platform_netif_register(void* netif_handle,
                                     h2_pal_netif_kind_t kind) {
-  esp_netif_t *netif = netif_handle;
-  if (netif == NULL || !h2_pal_netif_kind_is_valid(kind))
-    return;
+  esp_netif_t* netif = netif_handle;
+  if (netif == NULL || !h2_pal_netif_kind_is_valid(kind)) return;
   portENTER_CRITICAL(&s_netif_lock);
   for (size_t i = 0u; i < H2_ESP_NETIF_REGISTRY_MAX; ++i) {
     if (s_netif_registry[i].netif == netif ||
@@ -558,7 +534,7 @@ void h2_esp_platform_netif_register(void *netif_handle,
   portEXIT_CRITICAL(&s_netif_lock);
 }
 
-void h2_esp_platform_netif_unregister(void *netif_handle) {
+void h2_esp_platform_netif_unregister(void* netif_handle) {
   portENTER_CRITICAL(&s_netif_lock);
   for (size_t i = 0u; i < H2_ESP_NETIF_REGISTRY_MAX; ++i) {
     if (s_netif_registry[i].netif == netif_handle) {
@@ -587,17 +563,16 @@ void h2_esp_platform_netif_monitor_deinit(void) {
 }
 
 h2_pal_result_t h2_esp_platform_netif_reconcile_default(void) {
-  if (s_reconcile_mutex == NULL)
-    return H2_PAL_ERR_INVALID_STATE;
+  if (s_reconcile_mutex == NULL) return H2_PAL_ERR_INVALID_STATE;
   if (xSemaphoreTake(s_reconcile_mutex, portMAX_DELAY) != pdTRUE) {
     return H2_PAL_ERR_TIMEOUT;
   }
   h2_esp_dns_sync_t sync;
   memset(&sync, 0, sizeof(sync));
-  h2_pal_result_t rc = esp_netif_tcpip_exec(sync_default_dns_in_tcpip,
-                                            &sync) == ESP_OK
-                           ? sync.read.result
-                           : H2_PAL_ERR_IO;
+  h2_pal_result_t rc =
+      esp_netif_tcpip_exec(sync_default_dns_in_tcpip, &sync) == ESP_OK
+          ? sync.read.result
+          : H2_PAL_ERR_IO;
   if (rc != H2_PAL_OK) {
     ESP_LOGW(TAG, "default route query failed rc=%d", rc);
     xSemaphoreGive(s_reconcile_mutex);
@@ -632,10 +607,8 @@ h2_pal_result_t h2_esp_platform_netif_reconcile_default(void) {
     changed = 1;
     change.previous_valid = (uint8_t)s_default_valid;
     change.current_valid = (uint8_t)next_valid;
-    if (s_default_valid != 0)
-      change.previous = s_default_ref;
-    if (next_valid != 0)
-      change.current = next;
+    if (s_default_valid != 0) change.previous = s_default_ref;
+    if (next_valid != 0) change.current = next;
     s_default_ref = next;
     s_default_valid = next_valid;
   }
@@ -656,7 +629,7 @@ h2_pal_result_t h2_esp_platform_netif_reconcile_default(void) {
   return rc;
 }
 
-const h2_pal_netif_api_t *h2_esp_platform_netif_api(void) {
+const h2_pal_netif_api_t* h2_esp_platform_netif_api(void) {
   static const h2_pal_netif_vtable_t vtable = {
       .list = esp_netif_list,
       .find = esp_netif_find,

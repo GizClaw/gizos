@@ -14,15 +14,15 @@
 #include <stdlib.h>
 #include <string.h>
 
-static void *allocate(void *user, size_t size) {
+static void* allocate(void* user, size_t size) {
   (void)user;
   return malloc(size);
 }
-static void *resize(void *user, void *ptr, size_t size) {
+static void* resize(void* user, void* ptr, size_t size) {
   (void)user;
   return realloc(ptr, size);
 }
-static void release(void *user, void *ptr) {
+static void release(void* user, void* ptr) {
   (void)user;
   free(ptr);
 }
@@ -30,10 +30,10 @@ static const h2_pal_mem_vtable_t mem_vtable = {allocate, resize, release};
 static const h2_pal_mem_api_t mem = {.vtable = &mem_vtable};
 static h2_atomic_bool_t gate_enabled, gate_entered, gate_released;
 static unsigned yields;
-static int (*base_write)(void *, h2_pal_fs_file_t *, const void *, size_t,
-                         size_t *);
-static int gated_write(void *user, h2_pal_fs_file_t *file, const void *bytes,
-                       size_t size, size_t *written) {
+static int (*base_write)(void*, h2_pal_fs_file_t*, const void*, size_t,
+                         size_t*);
+static int gated_write(void* user, h2_pal_fs_file_t* file, const void* bytes,
+                       size_t size, size_t* written) {
   if (h2_atomic_load(&gate_enabled)) {
     h2_atomic_store(&gate_entered, true);
     while (!h2_atomic_load(&gate_released))
@@ -41,7 +41,7 @@ static int gated_write(void *user, h2_pal_fs_file_t *file, const void *bytes,
   }
   return base_write(user, file, bytes, size, written);
 }
-static int yield_to_worker(void *user, uint32_t ms) {
+static int yield_to_worker(void* user, uint32_t ms) {
   (void)user;
   assert(ms == 1u);
   ++yields;
@@ -56,16 +56,16 @@ static const h2_pal_time_api_t progress_time = {.vtable =
 static void pause_worker(void) {
   assert(h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u) == 0);
 }
-static void put(const h2_pal_fs_api_t *fs, const char *path, const void *data,
+static void put(const h2_pal_fs_api_t* fs, const char* path, const void* data,
                 size_t size) {
-  h2_pal_fs_file_t *file = NULL;
+  h2_pal_fs_file_t* file = NULL;
   size_t written = 0;
   assert(h2_pal_fs_open(fs, path, H2_PAL_FS_OPEN_WRITE_TRUNCATE, &file) == 0);
   assert(h2_pal_fs_write(fs, file, data, size, &written) == 0 &&
          written == size);
   assert(h2_pal_fs_close(fs, file) == 0);
 }
-static void wait_version(h2_lua_apps_t *apps, const char *version) {
+static void wait_version(h2_lua_apps_t* apps, const char* version) {
   h2_lua_app_info_t info;
   for (unsigned i = 0; i < 5000; ++i) {
     int rc = h2_lua_apps_get(apps, "demo", &info);
@@ -78,8 +78,8 @@ static void wait_version(h2_lua_apps_t *apps, const char *version) {
   }
   assert(false);
 }
-static void *open_stream(const gzc_rpc_stream_provider_t *provider, size_t size,
-                         const char *sha256) {
+static void* open_stream(const gzc_rpc_stream_provider_t* provider, size_t size,
+                         const char* sha256) {
   gizclaw_rpc_v1_ClientLuaAppInstallStreamRequest metadata = {.content_length =
                                                                   size};
   strcpy(metadata.sha256, sha256);
@@ -89,11 +89,10 @@ static void *open_stream(const gzc_rpc_stream_provider_t *provider, size_t size,
                    gizclaw_rpc_v1_ClientLuaAppInstallStreamRequest_fields,
                    &metadata));
   for (unsigned i = 0; i < 5000; ++i) {
-    void *session = NULL;
+    void* session = NULL;
     int rc = provider->begin(
         provider->userdata, 0,
-        gzc_str_from_parts((const char *)bytes, output.bytes_written),
-        &session);
+        gzc_str_from_parts((const char*)bytes, output.bytes_written), &session);
     if (rc == GZC_OK) {
       assert(session);
       return session;
@@ -109,8 +108,8 @@ typedef struct reply {
   bool error;
   int code;
 } reply_t;
-static int respond(void *user, const gzc_rpc_provider_response_t *response) {
-  reply_t *reply = user;
+static int respond(void* user, const gzc_rpc_provider_response_t* response) {
+  reply_t* reply = user;
   ++reply->count;
   reply->error = response->has_error;
   reply->code = response->error_code;
@@ -125,20 +124,18 @@ static int respond(void *user, const gzc_rpc_provider_response_t *response) {
   }
   return GZC_OK;
 }
-static reply_t upload(const gzc_rpc_stream_provider_t *provider, void *session,
-                      const uint8_t *archive, size_t size) {
+static reply_t upload(const gzc_rpc_stream_provider_t* provider, void* session,
+                      const uint8_t* archive, size_t size) {
   uint8_t bytes[32768];
   for (size_t at = 0; at < size;) {
     size_t take = size - at;
-    if (take > sizeof(bytes))
-      take = sizeof(bytes);
+    if (take > sizeof(bytes)) take = sizeof(bytes);
     memcpy(bytes, archive + at, take);
     int rc = GZC_ERR_WOULD_BLOCK;
     for (unsigned retry = 0; retry < 5000 && rc == GZC_ERR_WOULD_BLOCK;
          ++retry) {
       rc = provider->write(session, bytes, take);
-      if (rc == GZC_ERR_WOULD_BLOCK)
-        pause_worker();
+      if (rc == GZC_ERR_WOULD_BLOCK) pause_worker();
     }
     assert(rc == GZC_OK);
     memset(bytes, 0xff,
@@ -149,21 +146,20 @@ static reply_t upload(const gzc_rpc_stream_provider_t *provider, void *session,
   int rc = GZC_ERR_WOULD_BLOCK;
   for (unsigned retry = 0; retry < 5000 && rc == GZC_ERR_WOULD_BLOCK; ++retry) {
     rc = provider->finish(session, respond, &reply);
-    if (rc == GZC_ERR_WOULD_BLOCK)
-      pause_worker();
+    if (rc == GZC_ERR_WOULD_BLOCK) pause_worker();
   }
   assert(rc == GZC_OK && reply.count == 1);
   provider->close(session, GZC_OK);
   return reply;
 }
 static bool fail_join;
-static int start(void *user, const h2_pal_task_options_t *options,
-                 h2_pal_task_entry_t entry, void *ctx, h2_pal_task_t **out) {
+static int start(void* user, const h2_pal_task_options_t* options,
+                 h2_pal_task_entry_t entry, void* ctx, h2_pal_task_t** out) {
   (void)user;
   return h2_pal_task_start(h2_desktop_platform_task_api(), options, entry, ctx,
                            out);
 }
-static int join(void *user, h2_pal_task_t *task) {
+static int join(void* user, h2_pal_task_t* task) {
   (void)user;
   if (fail_join) {
     fail_join = false;
@@ -174,17 +170,16 @@ static int join(void *user, h2_pal_task_t *task) {
 typedef struct launch {
   bool reserved, launched;
 } launch_t;
-static void completed(void *user, int result) {
-  launch_t *launch = user;
+static void completed(void* user, int result) {
+  launch_t* launch = user;
   assert(launch->reserved);
   launch->reserved = false;
   launch->launched = result == H2_PAL_OK;
 }
-static h2_pal_result_t prepare(void *user, const h2_gizclaw_lua_app_run_t *run,
-                               h2_gizclaw_lua_app_handoff_t *out) {
-  launch_t *launch = user;
-  if (launch->reserved)
-    return H2_PAL_ERR_BUSY;
+static h2_pal_result_t prepare(void* user, const h2_gizclaw_lua_app_run_t* run,
+                               h2_gizclaw_lua_app_handoff_t* out) {
+  launch_t* launch = user;
+  if (launch->reserved) return H2_PAL_ERR_BUSY;
   assert(!strcmp(run->app.app_id, "demo") &&
          !strcmp(run->app.version, "1.0.0"));
   launch->reserved = true;
@@ -202,13 +197,13 @@ int main(void) {
       sizeof(initial_source) - 1u);
   put(&fs.api, "/preinstalled/index.json", fixture_preinstalled_index,
       sizeof(fixture_preinstalled_index));
-  h2_lua_apps_config_t directory = {.allocator = &mem,
-                                    .fs = &fs.api,
-                                    .sync = h2_desktop_platform_sync_api(),
-                                    .preinstalled_index =
-                                        "/preinstalled/index.json",
-                                    .install_root = "/apps"};
-  h2_lua_apps_t *apps = NULL;
+  h2_lua_apps_config_t directory = {
+      .allocator = &mem,
+      .fs = &fs.api,
+      .sync = h2_desktop_platform_sync_api(),
+      .preinstalled_index = "/preinstalled/index.json",
+      .install_root = "/apps"};
+  h2_lua_apps_t* apps = NULL;
   assert(h2_lua_apps_create(&directory, &apps) == 0);
   h2_pal_fs_vtable_t fs_vtable = *fs.api.vtable;
   base_write = fs_vtable.write;
@@ -220,17 +215,17 @@ int main(void) {
   launch_t launch = {0};
   h2_gizclaw_config_t config = {
       .allocator = &mem, .lua_apps = apps, .vtable = &vtable, .user = &launch};
-  h2_gizclaw_lua_stream_t *stream = NULL;
+  h2_gizclaw_lua_stream_t* stream = NULL;
   config.time = &progress_time;
   assert(h2_gizclaw_lua_stream_create_internal(&config, &task, directory.sync,
                                                &stream) == 0);
   assert(h2_gizclaw_lua_stream_start_internal(stream) == 0);
-  const gzc_rpc_stream_provider_t *provider =
+  const gzc_rpc_stream_provider_t* provider =
       h2_gizclaw_lua_stream_provider_internal(stream);
   assert(provider && sizeof(fixture_stream) > 65535u);
   /* Progress requires the poll owner's WOULD_BLOCK path to yield. */
   h2_atomic_store(&gate_enabled, true);
-  void *session =
+  void* session =
       open_stream(provider, sizeof(fixture_stream), fixture_stream_sha256);
   assert(provider->write(session, fixture_stream, 32768u) == GZC_OK);
   for (unsigned retry = 0; retry < 5000 && !h2_atomic_load(&gate_entered);
@@ -258,7 +253,7 @@ int main(void) {
   reply = upload(provider, session, fixture_valid, sizeof(fixture_valid));
   assert(reply.error && reply.code == H2_GIZCLAW_RPC_ERROR_INVALID_ARGUMENT);
   wait_version(apps, "1.0.0");
-  h2_gizclaw_lua_apps_t *rpc = NULL;
+  h2_gizclaw_lua_apps_t* rpc = NULL;
   assert(h2_gizclaw_lua_apps_create_internal(&config, &rpc) == 0);
   const uint8_t run[] = {0x0a, 4, 'd', 'e', 'm', 'o'};
   h2_gizclaw_rpc_provider_response_t response = {0};

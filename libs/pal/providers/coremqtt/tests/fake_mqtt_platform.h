@@ -9,44 +9,47 @@
 #include <stdint.h>
 
 typedef struct fake_mqtt_platform {
-    h2_pal_mem_api_t allocator;
-    h2_pal_net_api_t net;
-    h2_pal_time_api_t time;
-    uint8_t rx[2048];
-    size_t rx_pos;
-    size_t rx_len;
-    uint8_t tx[2048];
-    size_t tx_len;
-    size_t tx_scan_pos;
-    uint64_t now_ms;
-    int socket_open;
-    int close_count;
-    int fail_connect;
-    int timeout_connect;
-    int resolver_answers;
-    int resolver_active;
-    uint32_t ipv6_connect_remaining_ms;
-    int fail_ipv6_connect;
-    h2_pal_net_family_t connected_family;
-    int tls_supported;
-    int tls_verify_fail;
-    int tls_called;
-    int auto_respond;
-    uint32_t send_delay_ms;
-    size_t send_limit;
-    unsigned send_calls;
-    unsigned send_error_after;
-    int send_error;
-    int send_error_once;
-    uint32_t send_timeouts[128];
-    unsigned send_timeout_calls;
-    unsigned legacy_send_calls;
-    size_t live_allocations;
-    uint32_t recv_timeout_ms;
+  h2_pal_mem_api_t allocator;
+  h2_pal_net_api_t net;
+  h2_pal_time_api_t time;
+  uint8_t rx[2048];
+  size_t rx_pos;
+  size_t rx_len;
+  uint8_t tx[2048];
+  size_t tx_len;
+  size_t tx_scan_pos;
+  uint64_t now_ms;
+  int socket_open;
+  int close_count;
+  int fail_connect;
+  int timeout_connect;
+  int resolver_answers;
+  int resolver_active;
+  uint32_t ipv6_connect_remaining_ms;
+  int fail_ipv6_connect;
+  h2_pal_net_family_t connected_family;
+  int tls_supported;
+  int tls_verify_fail;
+  int tls_called;
+  int auto_respond;
+  uint32_t send_delay_ms;
+  size_t send_limit;
+  unsigned send_calls;
+  unsigned send_error_after;
+  int send_error;
+  int send_error_once;
+  uint32_t send_timeouts[128];
+  unsigned send_timeout_calls;
+  unsigned legacy_send_calls;
+  size_t live_allocations;
+  uint32_t recv_timeout_ms;
 } fake_mqtt_platform_t;
 
-void fake_mqtt_platform_init(fake_mqtt_platform_t *fake);
-void fake_mqtt_platform_push_rx(fake_mqtt_platform_t *fake, const uint8_t *data, size_t len);
-void fake_mqtt_platform_push_publish(fake_mqtt_platform_t *fake, const char *topic, const uint8_t *payload, size_t payload_len);
+void fake_mqtt_platform_init(fake_mqtt_platform_t* fake);
+void fake_mqtt_platform_push_rx(fake_mqtt_platform_t* fake, const uint8_t* data,
+                                size_t len);
+void fake_mqtt_platform_push_publish(fake_mqtt_platform_t* fake,
+                                     const char* topic, const uint8_t* payload,
+                                     size_t payload_len);
 
 #endif

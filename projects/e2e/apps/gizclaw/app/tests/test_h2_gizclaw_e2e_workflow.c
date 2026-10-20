@@ -20,58 +20,58 @@ static struct {
   unsigned calls[6];
 } state;
 
-static const char *expected_tag = "assistants";
+static const char* expected_tag = "assistants";
 
 static int step(void) {
   return ++state.step == state.fail_at ? H2_PAL_ERR_IO : H2_PAL_OK;
 }
 
-h2_gizclaw_str_t h2_gizclaw_e2e_str(const char *s) {
+h2_gizclaw_str_t h2_gizclaw_e2e_str(const char* s) {
   return (h2_gizclaw_str_t){s, strlen(s)};
 }
-bool h2_gizclaw_e2e_fixture_has_time(const h2_gizclaw_e2e_fixture_t *fixture,
+bool h2_gizclaw_e2e_fixture_has_time(const h2_gizclaw_e2e_fixture_t* fixture,
                                      uint32_t ms) {
   assert(fixture != NULL && ms == 30000u);
   return ++state.deadlines != state.expire_at;
 }
-void h2_gizclaw_e2e_evidence(const char *symbol, const char *stage, int rc) {
+void h2_gizclaw_e2e_evidence(const char* symbol, const char* stage, int rc) {
   assert(symbol != NULL && stage != NULL);
   assert(rc == H2_PAL_OK || rc == H2_PAL_ERR_IO ||
          rc == H2_PAL_ERR_INVALID_STATE);
 }
 
-static char *save(h2_gizclaw_resp_storage_t *storage, const char *s) {
+static char* save(h2_gizclaw_resp_storage_t* storage, const char* s) {
   const size_t len = strlen(s) + 1u;
   assert(storage->used + len <= storage->capacity);
-  char *out = (char *)storage->data + storage->used;
+  char* out = (char*)storage->data + storage->used;
   memcpy(out, s, len);
   storage->used += len;
   return out;
 }
 
-static void save_tag(h2_gizclaw_resp_storage_t *storage,
-                     h2_gizclaw_workflow_t *workflow, const char *tag) {
-  const size_t alignment = _Alignof(char *);
+static void save_tag(h2_gizclaw_resp_storage_t* storage,
+                     h2_gizclaw_workflow_t* workflow, const char* tag) {
+  const size_t alignment = _Alignof(char*);
   storage->used = (storage->used + alignment - 1u) & ~(alignment - 1u);
-  assert(storage->used + sizeof(char *) <= storage->capacity);
-  workflow->tags = (char **)((char *)storage->data + storage->used);
-  storage->used += sizeof(char *);
+  assert(storage->used + sizeof(char*) <= storage->capacity);
+  workflow->tags = (char**)((char*)storage->data + storage->used);
+  storage->used += sizeof(char*);
   workflow->tag_count = 1u;
   workflow->tags[0] = save(storage, tag);
 }
 
-static unsigned begin_reply(h2_gizclaw_resp_storage_t *storage) {
+static unsigned begin_reply(h2_gizclaw_resp_storage_t* storage) {
   assert(storage != NULL && storage->used == 0u && storage->capacity >= 1024u);
   // Invalidate prior list strings. The following get must own its alias copy.
   memset(storage->data, 0xa5, storage->capacity);
   return ++state.replies == state.fault_at ? state.fault : 0u;
 }
 
-static void list_reply(h2_gizclaw_resp_storage_t *storage,
-                       h2_gizclaw_workflow_page_t *out) {
+static void list_reply(h2_gizclaw_resp_storage_t* storage,
+                       h2_gizclaw_workflow_page_t* out) {
   const unsigned fault = begin_reply(storage);
   memset(out, 0, sizeof(*out));
-  out->items = (h2_gizclaw_workflow_t *)storage->data;
+  out->items = (h2_gizclaw_workflow_t*)storage->data;
   storage->used = 2u * sizeof(*out->items);
   memset(out->items, 0, storage->used);
   out->count = 2u;
@@ -84,7 +84,7 @@ static void list_reply(h2_gizclaw_resp_storage_t *storage,
   const size_t alignment = _Alignof(h2_gizclaw_safety_fence_option_t);
   storage->used = (storage->used + alignment - 1u) & ~(alignment - 1u);
   assert(storage->used + sizeof(*out->safety_fences) <= storage->capacity);
-  out->safety_fences = (void *)(storage->data + storage->used);
+  out->safety_fences = (void*)(storage->data + storage->used);
   storage->used += sizeof(*out->safety_fences);
   memset(out->safety_fences, 0, sizeof(*out->safety_fences));
   out->safety_fence_count = 1u;
@@ -96,51 +96,51 @@ static void list_reply(h2_gizclaw_resp_storage_t *storage,
     out->next_cursor = save(storage, "next-page");
   }
   switch (fault) {
-  case 1:
-    out->runtime_profile_name = NULL;
-    break;
-  case 2:
-    out->runtime_profile_name = save(storage, "other");
-    break;
-  case 3:
-    out->runtime_profile_revision = NULL;
-    break;
-  case 4:
-    out->runtime_profile_revision = save(storage, "");
-    break;
-  case 5:
-    out->count = 0u;
-    break;
-  case 6:
-    out->count = 33u;
-    break;
-  case 7:
-    out->items = NULL;
-    break;
-  case 8:
-    out->items[0].name = NULL;
-    break;
-  case 9:
-    out->items[0].name = save(storage, "");
-    break;
-  case 10:
-    out->items[0].tags = NULL;
-    break;
-  case 11:
-    out->items[0].tags[0] = save(storage, "other");
-    break;
-  case 12:
-    out->has_next = true;
-    break;
-  case 13:
-    out->has_next = true;
-    out->next_cursor = save(storage, "");
-    break;
+    case 1:
+      out->runtime_profile_name = NULL;
+      break;
+    case 2:
+      out->runtime_profile_name = save(storage, "other");
+      break;
+    case 3:
+      out->runtime_profile_revision = NULL;
+      break;
+    case 4:
+      out->runtime_profile_revision = save(storage, "");
+      break;
+    case 5:
+      out->count = 0u;
+      break;
+    case 6:
+      out->count = 33u;
+      break;
+    case 7:
+      out->items = NULL;
+      break;
+    case 8:
+      out->items[0].name = NULL;
+      break;
+    case 9:
+      out->items[0].name = save(storage, "");
+      break;
+    case 10:
+      out->items[0].tags = NULL;
+      break;
+    case 11:
+      out->items[0].tags[0] = save(storage, "other");
+      break;
+    case 12:
+      out->has_next = true;
+      break;
+    case 13:
+      out->has_next = true;
+      out->next_cursor = save(storage, "");
+      break;
   }
 }
 
-static void get_reply(h2_gizclaw_resp_storage_t *storage,
-                      h2_gizclaw_workflow_get_result_t *out) {
+static void get_reply(h2_gizclaw_resp_storage_t* storage,
+                      h2_gizclaw_workflow_get_result_t* out) {
   const unsigned fault = begin_reply(storage);
   memset(out, 0, sizeof(*out));
   out->workflow.name = save(storage, "alpha-model");
@@ -148,38 +148,38 @@ static void get_reply(h2_gizclaw_resp_storage_t *storage,
   out->runtime_profile_name = save(storage, "default");
   out->runtime_profile_revision = save(storage, "revision");
   switch (fault) {
-  case 1:
-    out->runtime_profile_name = NULL;
-    break;
-  case 2:
-    out->runtime_profile_name = save(storage, "other");
-    break;
-  case 3:
-    out->runtime_profile_revision = NULL;
-    break;
-  case 4:
-    out->runtime_profile_revision = save(storage, "");
-    break;
-  case 5:
-    out->workflow.name = NULL;
-    break;
-  case 6:
-    out->workflow.name = save(storage, "wrong-model");
-    break;
-  case 7:
-    out->workflow.tags = NULL;
-    break;
-  case 9:
-    out->workflow.tags = NULL;
-    out->workflow.tag_count = 0;
-    break;
-  case 8:
-    out->workflow.tags[0] = save(storage, "");
-    break;
+    case 1:
+      out->runtime_profile_name = NULL;
+      break;
+    case 2:
+      out->runtime_profile_name = save(storage, "other");
+      break;
+    case 3:
+      out->runtime_profile_revision = NULL;
+      break;
+    case 4:
+      out->runtime_profile_revision = save(storage, "");
+      break;
+    case 5:
+      out->workflow.name = NULL;
+      break;
+    case 6:
+      out->workflow.name = save(storage, "wrong-model");
+      break;
+    case 7:
+      out->workflow.tags = NULL;
+      break;
+    case 9:
+      out->workflow.tags = NULL;
+      out->workflow.tag_count = 0;
+      break;
+    case 8:
+      out->workflow.tags[0] = save(storage, "");
+      break;
   }
 }
 
-static void check_list(const h2_gizclaw_str_t *tags, size_t tag_count,
+static void check_list(const h2_gizclaw_str_t* tags, size_t tag_count,
                        h2_gizclaw_str_t cursor, size_t limit) {
   assert(tag_count == 1u && tags && tags[0].len == strlen(expected_tag) &&
          memcmp(tags[0].data, expected_tag, tags[0].len) == 0);
@@ -191,38 +191,35 @@ static void check_name(h2_gizclaw_str_t name) {
 }
 
 h2_pal_result_t h2_gizclaw_rpc_workflow_list(
-    h2_gizclaw_service_t *service, const h2_gizclaw_str_t *tags,
+    h2_gizclaw_service_t* service, const h2_gizclaw_str_t* tags,
     size_t tag_count, h2_gizclaw_str_t cursor, size_t limit, uint32_t ms,
-    h2_gizclaw_resp_storage_t *storage, h2_gizclaw_workflow_page_t *out) {
+    h2_gizclaw_resp_storage_t* storage, h2_gizclaw_workflow_page_t* out) {
   assert(service != NULL && ms == 30000u && !state.alive);
   check_list(tags, tag_count, cursor, limit);
   ++state.calls[0];
   int rc = step();
-  if (rc == H2_PAL_OK)
-    list_reply(storage, out);
+  if (rc == H2_PAL_OK) list_reply(storage, out);
   return rc;
 }
 h2_pal_result_t h2_gizclaw_rpc_workflow_get(
-    h2_gizclaw_service_t *service, h2_gizclaw_str_t name, uint32_t ms,
-    h2_gizclaw_resp_storage_t *storage, h2_gizclaw_workflow_get_result_t *out) {
+    h2_gizclaw_service_t* service, h2_gizclaw_str_t name, uint32_t ms,
+    h2_gizclaw_resp_storage_t* storage, h2_gizclaw_workflow_get_result_t* out) {
   assert(service != NULL && ms == 30000u && !state.alive);
   check_name(name);
   ++state.calls[1];
   int rc = step();
-  if (rc == H2_PAL_OK)
-    get_reply(storage, out);
+  if (rc == H2_PAL_OK) get_reply(storage, out);
   return rc;
 }
 
-static int create(h2_gizclaw_service_t *service, uint64_t id, bool get,
-                  uint32_t ms, h2_gizclaw_req_t **out) {
+static int create(h2_gizclaw_service_t* service, uint64_t id, bool get,
+                  uint32_t ms, h2_gizclaw_req_t** out) {
   assert(service != NULL && ms == 30000u && !state.alive);
   assert(id == (get ? 22u : 21u));
   ++state.calls[get ? 3 : 2];
   *out = NULL;
   int rc = step();
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   memset(&state.req, 0, sizeof(state.req));
   state.req.get = get;
   state.alive = true;
@@ -231,16 +228,15 @@ static int create(h2_gizclaw_service_t *service, uint64_t id, bool get,
   return rc;
 }
 h2_pal_result_t h2_gizclaw_req_create_workflow_list(
-    h2_gizclaw_service_t *service, uint64_t id, const h2_gizclaw_str_t *tags,
+    h2_gizclaw_service_t* service, uint64_t id, const h2_gizclaw_str_t* tags,
     size_t tag_count, h2_gizclaw_str_t cursor, size_t limit, uint32_t ms,
-    h2_gizclaw_req_t **out) {
+    h2_gizclaw_req_t** out) {
   check_list(tags, tag_count, cursor, limit);
   return create(service, id, false, ms, out);
 }
-h2_pal_result_t
-h2_gizclaw_req_create_workflow_get(h2_gizclaw_service_t *service, uint64_t id,
-                                   h2_gizclaw_str_t name, uint32_t ms,
-                                   h2_gizclaw_req_t **out) {
+h2_pal_result_t h2_gizclaw_req_create_workflow_get(
+    h2_gizclaw_service_t* service, uint64_t id, h2_gizclaw_str_t name,
+    uint32_t ms, h2_gizclaw_req_t** out) {
   check_name(name);
   int rc = create(service, id, true, ms, out);
   if (rc == H2_PAL_OK) {
@@ -249,8 +245,7 @@ h2_gizclaw_req_create_workflow_get(h2_gizclaw_service_t *service, uint64_t id,
   }
   return rc;
 }
-h2_pal_result_t h2_gizclaw_req_do(h2_gizclaw_req_t *request,
-                                  void *user,
+h2_pal_result_t h2_gizclaw_req_do(h2_gizclaw_req_t* request, void* user,
                                   h2_gizclaw_req_input_read_fn input_read,
                                   h2_gizclaw_req_output_write_fn output_write,
                                   h2_gizclaw_req_complete_fn on_complete) {
@@ -258,51 +253,44 @@ h2_pal_result_t h2_gizclaw_req_do(h2_gizclaw_req_t *request,
   assert(state.alive && request == &state.req && !request->submitted);
   assert(user == NULL && input_read == NULL && output_write == NULL);
   int rc = step();
-  if (rc == H2_PAL_OK)
-    request->submitted = true;
+  if (rc == H2_PAL_OK) request->submitted = true;
   return rc;
 }
-h2_pal_result_t h2_gizclaw_req_wait(h2_gizclaw_req_t *request, uint32_t ms) {
+h2_pal_result_t h2_gizclaw_req_wait(h2_gizclaw_req_t* request, uint32_t ms) {
   assert(state.alive && request == &state.req && request->submitted &&
          ms == 30000u);
   int rc = step();
-  if (rc == H2_PAL_OK)
-    request->complete = true;
+  if (rc == H2_PAL_OK) request->complete = true;
   return rc;
 }
-h2_pal_result_t
-h2_gizclaw_resp_parse_workflow_list(const h2_gizclaw_req_t *request,
-                                    h2_gizclaw_resp_storage_t *storage,
-                                    h2_gizclaw_workflow_page_t *out) {
+h2_pal_result_t h2_gizclaw_resp_parse_workflow_list(
+    const h2_gizclaw_req_t* request, h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_workflow_page_t* out) {
   assert(state.alive && request == &state.req && request->complete &&
          !request->get);
   ++state.calls[4];
   int rc = step();
-  if (rc == H2_PAL_OK)
-    list_reply(storage, out);
+  if (rc == H2_PAL_OK) list_reply(storage, out);
   return rc;
 }
-h2_pal_result_t
-h2_gizclaw_resp_parse_workflow_get(const h2_gizclaw_req_t *request,
-                                   h2_gizclaw_resp_storage_t *storage,
-                                   h2_gizclaw_workflow_get_result_t *out) {
+h2_pal_result_t h2_gizclaw_resp_parse_workflow_get(
+    const h2_gizclaw_req_t* request, h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_workflow_get_result_t* out) {
   assert(state.alive && request == &state.req && request->complete &&
          request->get);
   assert(strcmp(request->name, "alpha-model") == 0);
   ++state.calls[5];
   int rc = step();
-  if (rc == H2_PAL_OK)
-    get_reply(storage, out);
+  if (rc == H2_PAL_OK) get_reply(storage, out);
   return rc;
 }
-h2_pal_result_t h2_gizclaw_req_cancel(h2_gizclaw_req_t *request) {
+h2_pal_result_t h2_gizclaw_req_cancel(h2_gizclaw_req_t* request) {
   assert(state.alive && request == &state.req);
   ++state.cancels;
   return H2_PAL_OK;
 }
-void h2_gizclaw_req_release(h2_gizclaw_req_t *request) {
-  if (request == NULL)
-    return;
+void h2_gizclaw_req_release(h2_gizclaw_req_t* request) {
+  if (request == NULL) return;
   assert(state.alive && request == &state.req);
   ++state.releases;
   state.alive = false;
@@ -311,7 +299,7 @@ void h2_gizclaw_req_release(h2_gizclaw_req_t *request) {
 
 int main(void) {
   h2_gizclaw_e2e_fixture_t fixture = {0};
-  fixture.actors[0].service = (void *)(uintptr_t)1u;
+  fixture.actors[0].service = (void*)(uintptr_t)1u;
   strcpy(fixture.runtime_profile_name, "default");
   union {
     max_align_t alignment;
@@ -323,8 +311,7 @@ int main(void) {
   assert(strcmp(fixture.safety_fence_level, "safe") == 0);
   assert(state.replies == 4u && state.step == 10u && state.deadlines == 4u);
   assert(state.creates == 2u && state.releases == 2u && state.cancels == 0u);
-  for (unsigned i = 0u; i < 6u; ++i)
-    assert(state.calls[i] == 1u);
+  for (unsigned i = 0u; i < 6u; ++i) assert(state.calls[i] == 1u);
   assert(storage.used == 0u && !state.alive);
   /* Both API families and membership checks use the explicit fixture tag. */
   h2_gizclaw_e2e_config_t tagged = {.workflow_tag = "category:assistants"};
@@ -332,8 +319,7 @@ int main(void) {
   expected_tag = "category:assistants";
   memset(&state, 0, sizeof(state));
   assert(h2_gizclaw_e2e_run_workflow(&fixture, &storage) == H2_PAL_OK);
-  for (unsigned i = 0u; i < 6u; ++i)
-    assert(state.calls[i] == 1u);
+  for (unsigned i = 0u; i < 6u; ++i) assert(state.calls[i] == 1u);
   memset(&state, 0, sizeof(state));
   state.fault_at = 1u;
   state.fault = 11u; /* A nonmatching tag still rejects the real list. */

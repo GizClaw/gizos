@@ -7,11 +7,11 @@ static uint8_t data[9];
 static int fail, missing;
 static uint8_t running;
 static bk_logic_partition_t control = {123};
-const bk_logic_partition_t *bk_flash_partition_get_info(int x) {
+const bk_logic_partition_t* bk_flash_partition_get_info(int x) {
   (void)x;
   return missing ? NULL : &control;
 }
-int bk_flash_read_bytes(uint32_t addr, uint8_t *out, size_t n) {
+int bk_flash_read_bytes(uint32_t addr, uint8_t* out, size_t n) {
   assert(addr == 123 && n == 9);
   memcpy(out, data, n);
   return fail ? -1 : 0;
@@ -26,13 +26,13 @@ int h2_bk_h2loader_select_confirmed_boot_partition(uint32_t id) {
   data[8] = id + 2;
   return 0;
 }
-static h2_pal_result_t collect_app(void *user,
-                                 const h2_pal_power_boot_partition_t *partition) {
-  if (partition->id == 2u) *(uint32_t *)user = partition->flags;
+static h2_pal_result_t collect_app(
+    void* user, const h2_pal_power_boot_partition_t* partition) {
+  if (partition->id == 2u) *(uint32_t*)user = partition->flags;
   return H2_PAL_OK;
 }
 
-static void test_rollback_bootability(const h2_pal_power_api_t *api) {
+static void test_rollback_bootability(const h2_pal_power_api_t* api) {
   uint32_t flags = 0u;
   running = EXEX_A_PART;
   data[0] = EXEX_A_PART;
@@ -59,7 +59,8 @@ static void test_rollback_bootability(const h2_pal_power_api_t *api) {
   assert(h2_pal_power_list_boot_partitions(api, collect_app, &flags) == 0);
   assert(flags & H2_PAL_POWER_BOOT_PARTITION_FLAG_BOOTABLE);
   fail = 1;
-  assert(h2_pal_power_list_boot_partitions(api, collect_app, &flags) == H2_PAL_ERR_IO);
+  assert(h2_pal_power_list_boot_partitions(api, collect_app, &flags) ==
+         H2_PAL_ERR_IO);
   fail = 0;
 }
 
@@ -69,7 +70,8 @@ uint8_t g_fixed_slot;
 /* Fixed layout: a trial App that never confirmed, or a candidate Loader the
  * ROM bootloader rolled back from native B, leaves Partition 2 not bootable
  * while Loader runs, which stops the Loader relaunching it. */
-static void test_fixed_layout_rollback_bootability(const h2_pal_power_api_t *api) {
+static void test_fixed_layout_rollback_bootability(
+    const h2_pal_power_api_t* api) {
   uint32_t flags = 0u;
   memset(data, 255, sizeof(data));
   g_fixed_active = 1;
@@ -94,7 +96,7 @@ static void test_fixed_layout_rollback_bootability(const h2_pal_power_api_t *api
 }
 
 int main(void) {
-  const h2_pal_power_api_t *api = h2_bk_h2loader_power_api();
+  const h2_pal_power_api_t* api = h2_bk_h2loader_power_api();
   test_rollback_bootability(api);
   test_fixed_layout_rollback_bootability(api);
   h2_pal_power_boot_partition_t out;

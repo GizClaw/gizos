@@ -58,7 +58,10 @@ cc_test(
         "-Dh2_sctp_create=h2_test_sctp_create",
         "-Dh2_sctp_destroy=h2_test_sctp_destroy",
     ],
-    includes = ["include", "tests"],
+    includes = [
+        "include",
+        "tests",
+    ],
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],

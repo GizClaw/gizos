@@ -13,55 +13,59 @@
 
 #include <string.h>
 
-static int matches_filter(
-    const h2_pal_netif_filter_t *filter, h2_pal_netif_kind_t kind) {
+static int matches_filter(const h2_pal_netif_filter_t* filter,
+                          h2_pal_netif_kind_t kind) {
   if (filter == NULL) return 1;
-  if (filter->kind != H2_PAL_NETIF_KIND_UNKNOWN && filter->kind != kind) return 0;
+  if (filter->kind != H2_PAL_NETIF_KIND_UNKNOWN && filter->kind != kind)
+    return 0;
   if (filter->name != NULL && strcmp(filter->name, "wl0") != 0) return 0;
   if (filter->id != 0u && filter->id != WIFI_NETIF) return 0;
   return 1;
 }
 
-static void set_ipv4(h2_pal_net_addr_t *out, uint32_t address) {
+static void set_ipv4(h2_pal_net_addr_t* out, uint32_t address) {
   memset(out, 0, sizeof(*out));
   out->family = H2_PAL_NET_FAMILY_IPV4;
   memcpy(out->ip, &address, 4u);
 }
 
-static void capture_ip_on_tcpip(void *context) {
-  h2_pal_netif_status_t *status = context;
+static void capture_ip_on_tcpip(void* context) {
+  h2_pal_netif_status_t* status = context;
   struct netif_info info = {0};
   lwip_get_netif_info(WIFI_NETIF, &info);
   set_ipv4(&status->ipv4, info.ip);
   set_ipv4(&status->netmask4, info.netmask);
   set_ipv4(&status->gateway4, info.gw);
-  status->flags &= ~(H2_PAL_NETIF_FLAG_HAS_IPV4 | H2_PAL_NETIF_FLAG_DEFAULT_ROUTE);
+  status->flags &=
+      ~(H2_PAL_NETIF_FLAG_HAS_IPV4 | H2_PAL_NETIF_FLAG_DEFAULT_ROUTE);
   if (info.ip != 0u) {
-    status->flags |= H2_PAL_NETIF_FLAG_HAS_IPV4 | H2_PAL_NETIF_FLAG_DEFAULT_ROUTE;
+    status->flags |=
+        H2_PAL_NETIF_FLAG_HAS_IPV4 | H2_PAL_NETIF_FLAG_DEFAULT_ROUTE;
   }
   status->dns_count = 0u;
   for (size_t index = 0u;
        index < H2_PAL_NETIF_DNS_MAX && index < DNS_MAX_SERVERS; ++index) {
-    const ip_addr_t *server = dns_getserver((u8_t)index);
+    const ip_addr_t* server = dns_getserver((u8_t)index);
     if (server == NULL || !IP_IS_V4(server) || ip_addr_isany(server)) continue;
     set_ipv4(&status->dns[status->dns_count].addr, ip_2_ip4(server)->addr);
     ++status->dns_count;
   }
 }
 
-int h2_jieli_netif_capture_ip(h2_pal_netif_status_t *status) {
+int h2_jieli_netif_capture_ip(h2_pal_netif_status_t* status) {
   /* callback_wait waits for completion, unlike callback_with_block's queue
    * admission flag. Never enqueue and wait on the TCP/IP thread itself. */
-  const char *task = os_current_task();
+  const char* task = os_current_task();
   if (task != NULL && strcmp(task, "tcpip_thread") == 0) {
     capture_ip_on_tcpip(status);
     return H2_PAL_OK;
   }
   return tcpip_callback_wait(capture_ip_on_tcpip, status) == ERR_OK
-      ? H2_PAL_OK : H2_PAL_ERR_IO;
+             ? H2_PAL_OK
+             : H2_PAL_ERR_IO;
 }
 
-static h2_pal_result_t status_for_wifi(h2_pal_netif_status_t *out_status) {
+static h2_pal_result_t status_for_wifi(h2_pal_netif_status_t* out_status) {
   if (out_status == NULL) return H2_PAL_ERR_INVALID_ARG;
   h2_pal_netif_status_t status;
   uint32_t generation;
@@ -80,9 +84,10 @@ static h2_pal_result_t status_for_wifi(h2_pal_netif_status_t *out_status) {
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t h2_jieli_netif_list(
-    void *user, const h2_pal_netif_filter_t *filter,
-    h2_pal_netif_list_fn on_netif, void *callback_user) {
+static h2_pal_result_t h2_jieli_netif_list(void* user,
+                                           const h2_pal_netif_filter_t* filter,
+                                           h2_pal_netif_list_fn on_netif,
+                                           void* callback_user) {
   (void)user;
   if (on_netif == NULL) return H2_PAL_ERR_INVALID_ARG;
   h2_pal_netif_status_t status;
@@ -92,9 +97,9 @@ static h2_pal_result_t h2_jieli_netif_list(
   return on_netif(callback_user, &status.ref, &status);
 }
 
-static h2_pal_result_t h2_jieli_netif_find(
-    void *user, const h2_pal_netif_filter_t *filter,
-    h2_pal_netif_ref_t *out_ref) {
+static h2_pal_result_t h2_jieli_netif_find(void* user,
+                                           const h2_pal_netif_filter_t* filter,
+                                           h2_pal_netif_ref_t* out_ref) {
   (void)user;
   if (filter == NULL || out_ref == NULL) return H2_PAL_ERR_INVALID_ARG;
   h2_pal_netif_status_t status;
@@ -106,8 +111,8 @@ static h2_pal_result_t h2_jieli_netif_find(
 }
 
 static h2_pal_result_t h2_jieli_netif_get_status(
-    void *user, const h2_pal_netif_ref_t *ref,
-    h2_pal_netif_status_t *out_status) {
+    void* user, const h2_pal_netif_ref_t* ref,
+    h2_pal_netif_status_t* out_status) {
   (void)user;
   if (ref != NULL) {
     if (!h2_pal_netif_kind_is_valid(ref->kind) ||
@@ -129,9 +134,9 @@ static h2_pal_result_t h2_jieli_netif_get_status(
 }
 
 static h2_pal_result_t h2_jieli_netif_get_dns(
-    void *user, const h2_pal_netif_ref_t *ref,
-    h2_pal_netif_dns_server_t *out_servers, size_t max_servers,
-    size_t *out_count) {
+    void* user, const h2_pal_netif_ref_t* ref,
+    h2_pal_netif_dns_server_t* out_servers, size_t max_servers,
+    size_t* out_count) {
   (void)user;
   if (out_count == NULL || (out_servers == NULL && max_servers != 0u)) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -147,13 +152,13 @@ static h2_pal_result_t h2_jieli_netif_get_dns(
 }
 
 static h2_pal_result_t h2_jieli_netif_set_default(
-    void *user, const h2_pal_netif_ref_t *ref) {
+    void* user, const h2_pal_netif_ref_t* ref) {
   (void)user;
   (void)ref;
   return H2_PAL_ERR_UNSUPPORTED;
 }
 
-const h2_pal_netif_api_t *h2_jieli_ac791n_devkit_netif_api(void) {
+const h2_pal_netif_api_t* h2_jieli_ac791n_devkit_netif_api(void) {
   static const h2_pal_netif_vtable_t vtable = {
       .list = h2_jieli_netif_list,
       .find = h2_jieli_netif_find,
@@ -167,7 +172,7 @@ const h2_pal_netif_api_t *h2_jieli_ac791n_devkit_netif_api(void) {
 
 #else
 
-const h2_pal_netif_api_t *h2_jieli_ac791n_devkit_netif_api(void) {
+const h2_pal_netif_api_t* h2_jieli_ac791n_devkit_netif_api(void) {
   return NULL;
 }
 

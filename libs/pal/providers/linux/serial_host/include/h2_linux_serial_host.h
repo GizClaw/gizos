@@ -8,7 +8,7 @@ extern "C" {
 #endif
 
 /** Return the Linux Host Serial provider. */
-const h2_pal_serial_host_api_t *h2_linux_serial_host_api(void);
+const h2_pal_serial_host_api_t* h2_linux_serial_host_api(void);
 
 #ifdef __cplusplus
 }

@@ -30,13 +30,13 @@ typedef struct h2_web_lua_app_extension {
   /** Called once after Host create and before Host start, to register native
    * modules or capabilities. A non-OK result skips start and job submission;
    * the Host is destroyed and the App ends with that result (FAIL). */
-  h2_pal_result_t (*register_host)(h2_lua_host_t *host);
+  h2_pal_result_t (*register_host)(h2_lua_host_t* host);
   /** Decides cancellation for every Runtime event of the exit Button (Down,
    * Up and each Action) while the job runs; these events never reach the
    * script. True cancels the job once and no further events are offered;
    * false keeps it running. It replaces the default rule, which cancels on
    * the Action that reports the release. */
-  bool (*exit_requested)(const h2_runtime_event_t *event);
+  bool (*exit_requested)(const h2_runtime_event_t* event);
 } h2_web_lua_app_extension_t;
 
 /** Defined by the extension library passed to h2_lua_web_app(). */

@@ -51,46 +51,47 @@ typedef struct h2_bloomspeaker_hold_tracker {
 } h2_bloomspeaker_hold_tracker_t;
 
 bool h2_bloomspeaker_hold_tracker_update(
-    h2_bloomspeaker_hold_tracker_t *tracker, bool pressed, uint64_t now_ms,
+    h2_bloomspeaker_hold_tracker_t* tracker, bool pressed, uint64_t now_ms,
     uint32_t hold_ms);
 
-bool h2_bloomspeaker_controller_init(h2_bloomspeaker_controller_t *controller,
+bool h2_bloomspeaker_controller_init(h2_bloomspeaker_controller_t* controller,
                                      uint64_t now_ms);
-void h2_bloomspeaker_controller_destroy(h2_bloomspeaker_controller_t *controller);
+void h2_bloomspeaker_controller_destroy(
+    h2_bloomspeaker_controller_t* controller);
 
 void h2_bloomspeaker_controller_long_press(
-    h2_bloomspeaker_controller_t *controller, uint64_t now_ms);
+    h2_bloomspeaker_controller_t* controller, uint64_t now_ms);
 
 void h2_bloomspeaker_controller_hold_release(
-    h2_bloomspeaker_controller_t *controller, uint64_t now_ms);
+    h2_bloomspeaker_controller_t* controller, uint64_t now_ms);
 
 void h2_bloomspeaker_controller_set_state(
-    h2_bloomspeaker_controller_t *controller, h2_bloomspeaker_state_t state,
+    h2_bloomspeaker_controller_t* controller, h2_bloomspeaker_state_t state,
     uint64_t now_ms, uint64_t peer_tag, int error);
 
 bool h2_bloomspeaker_controller_transition(
-    h2_bloomspeaker_controller_t *controller,
-    h2_bloomspeaker_state_t expected, h2_bloomspeaker_state_t next,
-    uint64_t now_ms, uint64_t peer_tag, int error);
+    h2_bloomspeaker_controller_t* controller, h2_bloomspeaker_state_t expected,
+    h2_bloomspeaker_state_t next, uint64_t now_ms, uint64_t peer_tag,
+    int error);
 
 void h2_bloomspeaker_controller_set_levels(
-    h2_bloomspeaker_controller_t *controller, float local_level,
+    h2_bloomspeaker_controller_t* controller, float local_level,
     float local_peak, float remote_level, float remote_peak);
 
 void h2_bloomspeaker_controller_set_local_levels(
-    h2_bloomspeaker_controller_t *controller, float level, float peak);
+    h2_bloomspeaker_controller_t* controller, float level, float peak);
 
 void h2_bloomspeaker_controller_set_remote_levels(
-    h2_bloomspeaker_controller_t *controller, float level, float peak);
+    h2_bloomspeaker_controller_t* controller, float level, float peak);
 
 void h2_bloomspeaker_controller_set_native_audio(
-    h2_bloomspeaker_controller_t *controller, bool enabled);
+    h2_bloomspeaker_controller_t* controller, bool enabled);
 
 void h2_bloomspeaker_controller_snapshot(
-    h2_bloomspeaker_controller_t *controller,
-    h2_bloomspeaker_snapshot_t *out_snapshot);
+    h2_bloomspeaker_controller_t* controller,
+    h2_bloomspeaker_snapshot_t* out_snapshot);
 
-const char *h2_bloomspeaker_state_name(h2_bloomspeaker_state_t state);
+const char* h2_bloomspeaker_state_name(h2_bloomspeaker_state_t state);
 
 #ifdef __cplusplus
 }

@@ -20,7 +20,7 @@ static bool s_tcpip;
 static bool s_dispatch_fail;
 static err_t s_close_result;
 
-esp_err_t esp_netif_tcpip_exec(esp_err_t (*callback)(void *), void *user) {
+esp_err_t esp_netif_tcpip_exec(esp_err_t (*callback)(void*), void* user) {
   assert(!s_tcpip);
   ++s_dispatches;
   if (s_dispatch_fail) return ESP_FAIL;
@@ -29,15 +29,15 @@ esp_err_t esp_netif_tcpip_exec(esp_err_t (*callback)(void *), void *user) {
   s_tcpip = false;
   return rc;
 }
-esp_netif_flags_t esp_netif_get_flags(esp_netif_t *netif) {
+esp_netif_flags_t esp_netif_get_flags(esp_netif_t* netif) {
   assert(s_tcpip);
   return netif->flags;
 }
-void *esp_netif_get_netif_impl(esp_netif_t *netif) {
+void* esp_netif_get_netif_impl(esp_netif_t* netif) {
   assert(s_tcpip);
   return netif->impl;
 }
-err_t ppp_close(ppp_pcb *pcb, uint8_t nocarrier) {
+err_t ppp_close(ppp_pcb* pcb, uint8_t nocarrier) {
   assert(s_tcpip && pcb == &s_pcb && nocarrier == 0u);
   ++s_close_calls;
   if (s_close_result == ERR_OK) pcb->phase = PPP_PHASE_TERMINATE;
@@ -107,10 +107,12 @@ int main(void) {
   assert(h2_esp_platform_ppp_quiesce(&s_netif, 20u) == H2_PAL_ERR_INVALID_ARG);
   reset();
   s_netif.impl = NULL;
-  assert(h2_esp_platform_ppp_quiesce(&s_netif, 20u) == H2_PAL_ERR_INVALID_STATE);
+  assert(h2_esp_platform_ppp_quiesce(&s_netif, 20u) ==
+         H2_PAL_ERR_INVALID_STATE);
   reset();
   s_impl.state = NULL;
-  assert(h2_esp_platform_ppp_quiesce(&s_netif, 20u) == H2_PAL_ERR_INVALID_STATE);
+  assert(h2_esp_platform_ppp_quiesce(&s_netif, 20u) ==
+         H2_PAL_ERR_INVALID_STATE);
 #else
   assert(h2_esp_platform_ppp_quiesce(&s_netif, 20u) == H2_PAL_ERR_UNSUPPORTED);
   assert(s_dispatches == 0u && s_close_calls == 0u && s_delays == 0u);

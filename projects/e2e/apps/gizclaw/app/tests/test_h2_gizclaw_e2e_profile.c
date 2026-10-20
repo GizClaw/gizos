@@ -21,8 +21,7 @@ static struct {
   struct h2_gizclaw_req request;
   unsigned step, fail_at, snapshots, corrupt_at, deadline_checks, expire_at;
   unsigned updates, drop_update;
-  unsigned creates[3], parses[3], rpc[3], dos, waits, cancels,
-      releases;
+  unsigned creates[3], parses[3], rpc[3], dos, waits, cancels, releases;
   bool alive;
 } state;
 
@@ -30,13 +29,13 @@ static int step(void) {
   return ++state.step == state.fail_at ? H2_PAL_ERR_IO : H2_PAL_OK;
 }
 
-static void copy_value(char *out, size_t cap, h2_gizclaw_str_t value) {
+static void copy_value(char* out, size_t cap, h2_gizclaw_str_t value) {
   assert(value.data != NULL && value.len < cap);
   memcpy(out, value.data, value.len);
   out[value.len] = '\0';
 }
 
-static void snapshot(h2_gizclaw_profile_t *out) {
+static void snapshot(h2_gizclaw_profile_t* out) {
   *out = state.profile;
   if (++state.snapshots == state.corrupt_at) {
     out->has_name = false;
@@ -44,30 +43,29 @@ static void snapshot(h2_gizclaw_profile_t *out) {
   }
 }
 
-h2_gizclaw_str_t h2_gizclaw_e2e_str(const char *value) {
+h2_gizclaw_str_t h2_gizclaw_e2e_str(const char* value) {
   return (h2_gizclaw_str_t){value, strlen(value)};
 }
 
-bool h2_gizclaw_e2e_fixture_has_time(const h2_gizclaw_e2e_fixture_t *f,
+bool h2_gizclaw_e2e_fixture_has_time(const h2_gizclaw_e2e_fixture_t* f,
                                      uint32_t required) {
   assert(f != NULL && required == 30000u);
   return ++state.deadline_checks != state.expire_at;
 }
 
-void h2_gizclaw_e2e_evidence(const char *symbol, const char *stage, int rc) {
+void h2_gizclaw_e2e_evidence(const char* symbol, const char* stage, int rc) {
   assert(symbol != NULL && stage != NULL);
   assert(rc == H2_PAL_OK || rc == H2_PAL_ERR_IO ||
          rc == H2_PAL_ERR_INVALID_STATE);
 }
 
-static int create(h2_gizclaw_service_t *service, unsigned method,
+static int create(h2_gizclaw_service_t* service, unsigned method,
                   uint64_t identity, h2_gizclaw_str_t value, uint32_t timeout,
-                  h2_gizclaw_req_t **out) {
+                  h2_gizclaw_req_t** out) {
   assert(service != NULL && timeout == 30000u && !state.alive);
   *out = NULL;
   int rc = step();
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   assert(identity == 11u + state.releases);
   memset(&state.request, 0, sizeof(state.request));
   state.request.method = method;
@@ -80,24 +78,23 @@ static int create(h2_gizclaw_service_t *service, unsigned method,
   return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_gizclaw_req_create_profile_get(h2_gizclaw_service_t *service,
+h2_pal_result_t h2_gizclaw_req_create_profile_get(h2_gizclaw_service_t* service,
                                                   uint64_t id, uint32_t timeout,
-                                                  h2_gizclaw_req_t **out) {
+                                                  h2_gizclaw_req_t** out) {
   return create(service, 0u, id, (h2_gizclaw_str_t){0}, timeout, out);
 }
 h2_pal_result_t h2_gizclaw_req_create_profile_put_name(
-    h2_gizclaw_service_t *service, uint64_t id, h2_gizclaw_str_t value,
-    uint32_t timeout, h2_gizclaw_req_t **out) {
+    h2_gizclaw_service_t* service, uint64_t id, h2_gizclaw_str_t value,
+    uint32_t timeout, h2_gizclaw_req_t** out) {
   return create(service, 1u, id, value, timeout, out);
 }
 h2_pal_result_t h2_gizclaw_req_create_profile_put_emoji(
-    h2_gizclaw_service_t *service, uint64_t id, h2_gizclaw_str_t value,
-    uint32_t timeout, h2_gizclaw_req_t **out) {
+    h2_gizclaw_service_t* service, uint64_t id, h2_gizclaw_str_t value,
+    uint32_t timeout, h2_gizclaw_req_t** out) {
   return create(service, 2u, id, value, timeout, out);
 }
 
-h2_pal_result_t h2_gizclaw_req_do(h2_gizclaw_req_t *req,
-                                  void *user,
+h2_pal_result_t h2_gizclaw_req_do(h2_gizclaw_req_t* req, void* user,
                                   h2_gizclaw_req_input_read_fn input_read,
                                   h2_gizclaw_req_output_write_fn output_write,
                                   h2_gizclaw_req_complete_fn on_complete) {
@@ -112,8 +109,7 @@ h2_pal_result_t h2_gizclaw_req_do(h2_gizclaw_req_t *req,
   return rc;
 }
 
-
-h2_pal_result_t h2_gizclaw_req_wait(h2_gizclaw_req_t *req, uint32_t timeout) {
+h2_pal_result_t h2_gizclaw_req_wait(h2_gizclaw_req_t* req, uint32_t timeout) {
   assert(state.alive && req == &state.request && req->submitted &&
          timeout == 30000u);
   int rc = step();
@@ -137,8 +133,8 @@ h2_pal_result_t h2_gizclaw_req_wait(h2_gizclaw_req_t *req, uint32_t timeout) {
   return rc;
 }
 
-static int parse(const h2_gizclaw_req_t *req, unsigned method,
-                 h2_gizclaw_profile_t *out) {
+static int parse(const h2_gizclaw_req_t* req, unsigned method,
+                 h2_gizclaw_profile_t* out) {
   assert(state.alive && req == &state.request && req->completed &&
          req->method == method);
   int rc = step();
@@ -152,41 +148,37 @@ static int parse(const h2_gizclaw_req_t *req, unsigned method,
   return rc;
 }
 
-h2_pal_result_t h2_gizclaw_resp_parse_profile_get(const h2_gizclaw_req_t *req,
-                                                  h2_gizclaw_profile_t *out) {
+h2_pal_result_t h2_gizclaw_resp_parse_profile_get(const h2_gizclaw_req_t* req,
+                                                  h2_gizclaw_profile_t* out) {
   return parse(req, 0u, out);
 }
-h2_pal_result_t
-h2_gizclaw_resp_parse_profile_put_name(const h2_gizclaw_req_t *req,
-                                       h2_gizclaw_profile_t *out) {
+h2_pal_result_t h2_gizclaw_resp_parse_profile_put_name(
+    const h2_gizclaw_req_t* req, h2_gizclaw_profile_t* out) {
   return parse(req, 1u, out);
 }
-h2_pal_result_t
-h2_gizclaw_resp_parse_profile_put_emoji(const h2_gizclaw_req_t *req,
-                                        h2_gizclaw_profile_t *out) {
+h2_pal_result_t h2_gizclaw_resp_parse_profile_put_emoji(
+    const h2_gizclaw_req_t* req, h2_gizclaw_profile_t* out) {
   return parse(req, 2u, out);
 }
 
-h2_pal_result_t h2_gizclaw_req_cancel(h2_gizclaw_req_t *req) {
+h2_pal_result_t h2_gizclaw_req_cancel(h2_gizclaw_req_t* req) {
   assert(state.alive && req == &state.request);
   ++state.cancels;
   return H2_PAL_OK;
 }
-void h2_gizclaw_req_release(h2_gizclaw_req_t *req) {
-  if (req == NULL)
-    return;
+void h2_gizclaw_req_release(h2_gizclaw_req_t* req) {
+  if (req == NULL) return;
   assert(state.alive && req == &state.request);
   state.alive = false;
   ++state.releases;
 }
 
-static int rpc(h2_gizclaw_service_t *service, unsigned method,
+static int rpc(h2_gizclaw_service_t* service, unsigned method,
                h2_gizclaw_str_t value, uint32_t timeout,
-               h2_gizclaw_profile_t *out) {
+               h2_gizclaw_profile_t* out) {
   assert(service != NULL && timeout == 30000u && !state.alive);
   int rc = step();
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   ++state.rpc[method];
   if (method != 0u) {
     state.prior_profile = state.profile;
@@ -204,27 +196,27 @@ static int rpc(h2_gizclaw_service_t *service, unsigned method,
     state.profile = state.prior_profile;
   return H2_PAL_OK;
 }
-h2_pal_result_t h2_gizclaw_rpc_profile_get(h2_gizclaw_service_t *service,
+h2_pal_result_t h2_gizclaw_rpc_profile_get(h2_gizclaw_service_t* service,
                                            uint32_t timeout,
-                                           h2_gizclaw_profile_t *out) {
+                                           h2_gizclaw_profile_t* out) {
   return rpc(service, 0u, (h2_gizclaw_str_t){0}, timeout, out);
 }
-h2_pal_result_t h2_gizclaw_rpc_profile_put_name(h2_gizclaw_service_t *service,
+h2_pal_result_t h2_gizclaw_rpc_profile_put_name(h2_gizclaw_service_t* service,
                                                 h2_gizclaw_str_t value,
                                                 uint32_t timeout,
-                                                h2_gizclaw_profile_t *out) {
+                                                h2_gizclaw_profile_t* out) {
   return rpc(service, 1u, value, timeout, out);
 }
-h2_pal_result_t h2_gizclaw_rpc_profile_put_emoji(h2_gizclaw_service_t *service,
+h2_pal_result_t h2_gizclaw_rpc_profile_put_emoji(h2_gizclaw_service_t* service,
                                                  h2_gizclaw_str_t value,
                                                  uint32_t timeout,
-                                                 h2_gizclaw_profile_t *out) {
+                                                 h2_gizclaw_profile_t* out) {
   return rpc(service, 2u, value, timeout, out);
 }
 
 int main(void) {
   h2_gizclaw_e2e_fixture_t fixture = {0};
-  fixture.actors[0].service = (void *)(uintptr_t)1u;
+  fixture.actors[0].service = (void*)(uintptr_t)1u;
   strcpy(fixture.run_prefix, "isolated-profile");
   assert(h2_gizclaw_e2e_run_profile(&fixture, NULL) == H2_PAL_OK);
   assert(!state.alive && state.releases == 4u && state.dos == 4u &&

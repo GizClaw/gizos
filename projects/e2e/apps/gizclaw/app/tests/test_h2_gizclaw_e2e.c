@@ -26,8 +26,8 @@ typedef struct test_state {
   bool stop;
 } test_state_t;
 
-static int test_log(void *user, h2_pal_log_level_t level, const char *scope,
-                    const char *message) {
+static int test_log(void* user, h2_pal_log_level_t level, const char* scope,
+                    const char* message) {
   (void)user;
   (void)level;
   (void)scope;
@@ -35,20 +35,20 @@ static int test_log(void *user, h2_pal_log_level_t level, const char *scope,
   return H2_PAL_OK;
 }
 
-static bool test_should_stop(void *user) {
-  const test_state_t *state = user;
+static bool test_should_stop(void* user) {
+  const test_state_t* state = user;
   return state->stop;
 }
 
-static void test_progress(void *user,
-                          const h2_gizclaw_e2e_progress_t *progress) {
-  test_state_t *state = user;
+static void test_progress(void* user,
+                          const h2_gizclaw_e2e_progress_t* progress) {
+  test_state_t* state = user;
   assert(progress != NULL);
   assert(!state->task.running);
   state->progress_records++;
 }
 
-static h2_runtime_t test_runtime(test_state_t *state) {
+static h2_runtime_t test_runtime(test_state_t* state) {
   h2_app_test_mem_init(&state->mem, NULL);
   h2_app_test_time_init(&state->clock, 0u);
   state->clock.advance_per_read_ms = 1u;
@@ -91,7 +91,7 @@ static h2_runtime_t test_runtime(test_state_t *state) {
   };
 }
 
-static h2_gizclaw_e2e_config_t test_config(test_state_t *state, uint8_t *pcm,
+static h2_gizclaw_e2e_config_t test_config(test_state_t* state, uint8_t* pcm,
                                            size_t pcm_len) {
   static const char endpoint[] = "e2e.gizclaw.com:9821";
   static const char token[] = "test-registration-token";
@@ -260,7 +260,8 @@ int main(void) {
 
   state.stop = false;
   state.progress_records = 0u;
-  state.task.start = (h2_app_test_fault_t){.result=H2_PAL_ERR_TASK, .remaining=1u};
+  state.task.start =
+      (h2_app_test_fault_t){.result = H2_PAL_ERR_TASK, .remaining = 1u};
   assert(h2_gizclaw_e2e_run(&runtime, &config, &result) ==
          H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR);
   assert(result.selected == 8u);

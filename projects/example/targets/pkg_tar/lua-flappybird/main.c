@@ -8,7 +8,7 @@
 #include <stdatomic.h>
 #include <stdio.h>
 
-static h2_runtime_t *s_runtime;
+static h2_runtime_t* s_runtime;
 
 /* clang-format off */
 EM_JS(void, web_prepare_headless_canvas,
@@ -66,36 +66,32 @@ static const h2_pal_periph_single_button_payload_t s_back_payload = {
     .delivery = H2_PAL_BUTTON_DELIVERY_PUSH_EDGE,
 };
 
-static h2_pal_result_t
-list_components(void *user, h2_runtime_component_t filter,
-                h2_runtime_component_mapping_cb_t callback,
-                void *callback_user) {
+static h2_pal_result_t list_components(
+    void* user, h2_runtime_component_t filter,
+    h2_runtime_component_mapping_cb_t callback, void* callback_user) {
   h2_runtime_component_mapping_entry_t entry;
   (void)user;
-  if (callback == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
-  if (filter != H2_RUNTIME_COMPONENT_BUTTON)
-    return H2_PAL_OK;
+  if (callback == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (filter != H2_RUNTIME_COMPONENT_BUTTON) return H2_PAL_OK;
   entry = (h2_runtime_component_mapping_entry_t){
       H2_LUA_FLAPPYBIRD_COMPONENT_BACK, 1u};
   return callback(callback_user, &entry);
 }
 
-static h2_pal_result_t get_periph_id(void *user,
+static h2_pal_result_t get_periph_id(void* user,
                                      h2_runtime_component_id_t component_id,
-                                     h2_pal_periph_id_t *out_periph_id) {
+                                     h2_pal_periph_id_t* out_periph_id) {
   (void)user;
-  if (out_periph_id == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+  if (out_periph_id == NULL) return H2_PAL_ERR_INVALID_ARG;
   if (component_id != H2_LUA_FLAPPYBIRD_COMPONENT_BACK)
     return H2_PAL_ERR_NOT_FOUND;
   *out_periph_id = 1u;
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t list_peripherals(void *user, h2_pal_periph_type_t filter,
+static h2_pal_result_t list_peripherals(void* user, h2_pal_periph_type_t filter,
                                         h2_pal_periph_cb_t callback,
-                                        void *callback_user) {
+                                        void* callback_user) {
   const h2_pal_periph_info_t info = {
       .id = 1u,
       .type = H2_PAL_PERIPH_TYPE_SINGLE_BUTTON,
@@ -104,21 +100,18 @@ static h2_pal_result_t list_peripherals(void *user, h2_pal_periph_type_t filter,
       .payload_size = sizeof(s_back_payload),
   };
   (void)user;
-  if (callback == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+  if (callback == NULL) return H2_PAL_ERR_INVALID_ARG;
   if (filter != H2_PAL_PERIPH_TYPE_ANY &&
       filter != H2_PAL_PERIPH_TYPE_SINGLE_BUTTON)
     return H2_PAL_OK;
   return callback(callback_user, &info);
 }
 
-static h2_pal_result_t get_peripheral(void *user, h2_pal_periph_id_t id,
-                                      h2_pal_periph_info_t *out_info) {
+static h2_pal_result_t get_peripheral(void* user, h2_pal_periph_id_t id,
+                                      h2_pal_periph_info_t* out_info) {
   (void)user;
-  if (out_info == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
-  if (id != 1u)
-    return H2_PAL_ERR_NOT_FOUND;
+  if (out_info == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (id != 1u) return H2_PAL_ERR_NOT_FOUND;
   *out_info = (h2_pal_periph_info_t){
       .id = 1u,
       .type = H2_PAL_PERIPH_TYPE_SINGLE_BUTTON,
@@ -149,8 +142,7 @@ static const h2_pal_periph_api_t s_periph = {
 
 EMSCRIPTEN_KEEPALIVE int h2_web_flappybird_back(void) {
   h2_pal_result_t result;
-  if (s_runtime == NULL)
-    return H2_PAL_ERR_UNAVAILABLE;
+  if (s_runtime == NULL) return H2_PAL_ERR_UNAVAILABLE;
   result =
       h2_runtime_button_push_edge(s_runtime, 1u, H2_RUNTIME_BUTTON_EDGE_DOWN);
   if (result == H2_PAL_OK) {
@@ -160,25 +152,27 @@ EMSCRIPTEN_KEEPALIVE int h2_web_flappybird_back(void) {
   return result;
 }
 
-static int never_stop(void *user) {
+static int never_stop(void* user) {
   (void)user;
   return 0;
 }
 
-static h2_pal_result_t stop_headless_app(void *user) {
+static h2_pal_result_t stop_headless_app(void* user) {
   (void)user;
-  return ((int)h2_web_main_call(web_is_headless, NULL).i32) ? h2_web_flappybird_back() : H2_PAL_OK;
+  return ((int)h2_web_main_call(web_is_headless, NULL).i32)
+             ? h2_web_flappybird_back()
+             : H2_PAL_OK;
 }
 
 typedef struct web_app_context {
-  h2_web_platform_t *platform;
+  h2_web_platform_t* platform;
   h2_pal_result_t result;
   _Atomic int done;
 } web_app_context_t;
 
-static void run_app(void *user) {
-  web_app_context_t *context = user;
-  h2_runtime_t *runtime = NULL;
+static void run_app(void* user) {
+  web_app_context_t* context = user;
+  h2_runtime_t* runtime = NULL;
   h2_runtime_config_t config = h2_smoke_host_runtime_config(
       "browser", "webassembly", "wasm32", h2_web_platform_mem_api(),
       h2_web_platform_time_api(context->platform),
@@ -197,23 +191,25 @@ static void run_app(void *user) {
     printf("H2_LUA_FLAPPYBIRD runtime_init=%d\n", context->result);
     (void)h2_web_main_call(
         web_set_status,
-        (const void *[]){&(const char *){"Runtime initialization failed"}});
+        (const void*[]){&(const char*){"Runtime initialization failed"}});
     context->done = 1;
     return;
   }
   context->result = h2_runtime_input_start(runtime, NULL);
   if (context->result != H2_PAL_OK) {
     printf("H2_LUA_FLAPPYBIRD runtime_input=%d\n", context->result);
-    (void)h2_web_main_call(web_set_status, (const void *[]){&(const char *){
-                                               "Runtime input start failed"}});
+    (void)h2_web_main_call(
+        web_set_status,
+        (const void*[]){&(const char*){"Runtime input start failed"}});
     h2_runtime_deinit(runtime);
     context->done = 1;
     return;
   }
   h2_web_platform_install_pointer(context->platform);
   s_runtime = runtime;
-  (void)h2_web_main_call(web_set_status, (const void *[]){&(const char *){
-                                             "Running Lua Flappy Bird"}});
+  (void)h2_web_main_call(
+      web_set_status,
+      (const void*[]){&(const char*){"Running Lua Flappy Bird"}});
   const h2_lua_flappybird_config_t app_config = {
       .button_component_id = H2_RUNTIME_COMPONENT_ID_NONE,
       .back_component_id = H2_LUA_FLAPPYBIRD_COMPONENT_BACK,
@@ -227,7 +223,7 @@ static void run_app(void *user) {
   h2_runtime_deinit(runtime);
   (void)h2_web_main_call(
       web_set_status,
-      (const void *[]){&(const char *){
+      (const void*[]){&(const char*){
           context->result == H2_PAL_OK ? "Stopped" : "Lua App failed"}});
   context->done = 1;
 }
@@ -237,16 +233,17 @@ int main(void) {
       .display_width = 368,
       .display_height = 448,
   };
-  h2_web_platform_t *platform = h2_web_platform_create(&platform_config);
+  h2_web_platform_t* platform = h2_web_platform_create(&platform_config);
   web_app_context_t context = {
       .platform = platform,
   };
-  h2_pal_task_t *app_task = NULL;
+  h2_pal_task_t* app_task = NULL;
   h2_pal_result_t result;
   (void)h2_web_main_call(web_prepare_headless_canvas, NULL);
   if (platform == NULL) {
-    (void)h2_web_main_call(web_set_status, (const void *[]){&(const char *){
-                                               "Host allocation failed"}});
+    (void)h2_web_main_call(
+        web_set_status,
+        (const void*[]){&(const char*){"Host allocation failed"}});
     return 1;
   }
   const h2_pal_task_options_t task_options = {
@@ -256,14 +253,12 @@ int main(void) {
                              run_app, &context, &app_task);
   while (result == H2_PAL_OK && !context.done) {
     result = h2_web_platform_pump(platform, 64u, NULL);
-    if (result == H2_PAL_OK)
-      h2_web_worker_sleep(1u);
+    if (result == H2_PAL_OK) h2_web_worker_sleep(1u);
   }
   if (result == H2_PAL_OK) {
     result = h2_pal_task_join(h2_web_platform_task_api(platform), app_task);
   }
-  if (result == H2_PAL_OK)
-    result = context.result;
+  if (result == H2_PAL_OK) result = context.result;
   h2_web_platform_destroy(platform);
   // A live browser runtime may retain preloaded Workers: returning alone may
   // leave the Node harness successful. Headless runs must report their real

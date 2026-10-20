@@ -55,8 +55,8 @@ static inline int64_t h2_lua_display_q24(double value) {
       unsigned exponent = (unsigned)(bits >> 52) & 0x7ffu;
       /* Includes signed zero and subnormals, all below half a Q24 unit. */
       if (exponent < 998u) return 0;
-      uint64_t mantissa = (bits & UINT64_C(0x000fffffffffffff)) |
-                          UINT64_C(0x0010000000000000);
+      uint64_t mantissa =
+          (bits & UINT64_C(0x000fffffffffffff)) | UINT64_C(0x0010000000000000);
       int shift = 1051 - (int)exponent;
       uint64_t magnitude;
       if (shift > 0)
@@ -70,6 +70,6 @@ static inline int64_t h2_lua_display_q24(double value) {
   return (int64_t)llround(value * 16777216.0);
 }
 
-int h2_lua_push_display_proxy(lua_State *state, h2_lua_job_t *job);
+int h2_lua_push_display_proxy(lua_State* state, h2_lua_job_t* job);
 
 #endif

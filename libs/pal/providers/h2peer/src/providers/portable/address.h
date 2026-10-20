@@ -10,7 +10,7 @@
 
 int h2_peer_net_addr_family_is_valid(h2_pal_net_family_t family);
 
-int h2_peer_net_addr_format(
-    const h2_pal_net_addr_t* addr, char* buf, size_t len);
+int h2_peer_net_addr_format(const h2_pal_net_addr_t* addr, char* buf,
+                            size_t len);
 
 #endif  // ADDRESS_H_

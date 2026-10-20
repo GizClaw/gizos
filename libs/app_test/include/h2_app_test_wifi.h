@@ -7,9 +7,10 @@
 extern "C" {
 #endif
 /** Scripted station and saved settings. scan entries/status are test inputs.
- * connect records the request and applies an explicitly scripted connect_status;
- * it never invents a GOT_IP completion. Inject Runtime events explicitly. Disconnect
- * success clears status to IDLE. No passwords are logged by this provider. */
+ * connect records the request and applies an explicitly scripted
+ * connect_status; it never invents a GOT_IP completion. Inject Runtime events
+ * explicitly. Disconnect success clears status to IDLE. No passwords are logged
+ * by this provider. */
 typedef struct h2_app_test_wifi {
   h2_pal_wifi_sta_api_t api;
   h2_pal_wifi_settings_api_t settings;
@@ -29,7 +30,7 @@ typedef struct h2_app_test_wifi {
 } h2_app_test_wifi_t;
 /** Initialize caller-owned storage, default status IDLE and no saved network.
  */
-void h2_app_test_wifi_init(h2_app_test_wifi_t *wifi);
+void h2_app_test_wifi_init(h2_app_test_wifi_t* wifi);
 
 #ifdef __cplusplus
 }

@@ -13,20 +13,20 @@ struct h2_pal_system_event_subscription {
   uint64_t generation;
   h2_pal_system_event_type_t type;
   h2_pal_system_event_handler_t handler;
-  void *handler_user;
+  void* handler_user;
 };
 
 typedef struct h2_posix_system_event_dispatch {
-  h2_pal_system_event_subscription_t *subscription;
+  h2_pal_system_event_subscription_t* subscription;
   uint64_t generation;
 } h2_posix_system_event_dispatch_t;
 
 typedef struct h2_posix_system_event_frame {
-  h2_pal_system_event_subscription_t *subscription;
-  struct h2_posix_system_event_frame *previous;
+  h2_pal_system_event_subscription_t* subscription;
+  struct h2_posix_system_event_frame* previous;
 } h2_posix_system_event_frame_t;
 
-static _Thread_local h2_posix_system_event_frame_t *s_dispatch_frame;
+static _Thread_local h2_posix_system_event_frame_t* s_dispatch_frame;
 
 static h2_pal_system_event_subscription_t
     s_subscriptions[H2_POSIX_SYSTEM_EVENT_MAX_SUBSCRIPTIONS];
@@ -39,7 +39,7 @@ static uint64_t s_next_generation;
  * wake and finish; otherwise a new subscriber could be cleared by an old
  * unsubscribe returning from its condition wait. */
 static void h2_posix_system_event_reclaim(
-    h2_pal_system_event_subscription_t *subscription) {
+    h2_pal_system_event_subscription_t* subscription) {
   if (!subscription->active && subscription->in_flight == 0u &&
       subscription->unsubscribe_waiters == 0u) {
     memset(subscription, 0, sizeof(*subscription));
@@ -47,16 +47,15 @@ static void h2_posix_system_event_reclaim(
 }
 
 static int h2_posix_system_event_is_self(
-    h2_pal_system_event_subscription_t *subscription) {
-  for (h2_posix_system_event_frame_t *frame = s_dispatch_frame; frame != NULL;
+    h2_pal_system_event_subscription_t* subscription) {
+  for (h2_posix_system_event_frame_t* frame = s_dispatch_frame; frame != NULL;
        frame = frame->previous) {
-    if (frame->subscription == subscription)
-      return 1;
+    if (frame->subscription == subscription) return 1;
   }
   return 0;
 }
 
-static int h2_posix_system_event_init(void *user) {
+static int h2_posix_system_event_init(void* user) {
   (void)user;
   pthread_mutex_lock(&s_mutex);
   if (s_initialized != 0) {
@@ -68,7 +67,7 @@ static int h2_posix_system_event_init(void *user) {
   return H2_PAL_OK;
 }
 
-static void h2_posix_system_event_deinit(void *user) {
+static void h2_posix_system_event_deinit(void* user) {
   (void)user;
   pthread_mutex_lock(&s_mutex);
   s_initialized = 0;
@@ -82,8 +81,8 @@ static void h2_posix_system_event_deinit(void *user) {
   pthread_mutex_unlock(&s_mutex);
 }
 
-static int h2_posix_system_event_post(void *user,
-                                      const h2_pal_system_event_t *event,
+static int h2_posix_system_event_post(void* user,
+                                      const h2_pal_system_event_t* event,
                                       uint32_t timeout_ms) {
   (void)user;
   (void)timeout_ms;
@@ -100,7 +99,7 @@ static int h2_posix_system_event_post(void *user,
     return H2_PAL_ERR_INVALID_STATE;
   }
   for (size_t i = 0u; i < H2_POSIX_SYSTEM_EVENT_MAX_SUBSCRIPTIONS; ++i) {
-    h2_pal_system_event_subscription_t *subscription = &s_subscriptions[i];
+    h2_pal_system_event_subscription_t* subscription = &s_subscriptions[i];
     if (subscription->active != 0 && subscription->type == event->type &&
         subscription->handler != NULL) {
       dispatches[count++] = (h2_posix_system_event_dispatch_t){
@@ -113,7 +112,7 @@ static int h2_posix_system_event_post(void *user,
 
   int result = H2_PAL_OK;
   for (size_t i = 0u; i < count; ++i) {
-    h2_pal_system_event_subscription_t *subscription =
+    h2_pal_system_event_subscription_t* subscription =
         dispatches[i].subscription;
     pthread_mutex_lock(&s_mutex);
     /* Admit immediately before invocation. A callback can unsubscribe a
@@ -127,7 +126,7 @@ static int h2_posix_system_event_post(void *user,
     }
     ++subscription->in_flight;
     h2_pal_system_event_handler_t handler = subscription->handler;
-    void *handler_user = subscription->handler_user;
+    void* handler_user = subscription->handler_user;
     pthread_mutex_unlock(&s_mutex);
     h2_posix_system_event_frame_t frame = {.subscription = subscription,
                                            .previous = s_dispatch_frame};
@@ -147,9 +146,9 @@ static int h2_posix_system_event_post(void *user,
 }
 
 static int h2_posix_system_event_subscribe(
-    void *user, h2_pal_system_event_type_t type,
-    h2_pal_system_event_handler_t handler, void *handler_user,
-    h2_pal_system_event_subscription_t **out_subscription) {
+    void* user, h2_pal_system_event_type_t type,
+    h2_pal_system_event_handler_t handler, void* handler_user,
+    h2_pal_system_event_subscription_t** out_subscription) {
   (void)user;
   if (type <= H2_PAL_SYSTEM_EVENT_TYPE_NONE ||
       type >= H2_PAL_SYSTEM_EVENT_TYPE_COUNT || handler == NULL ||
@@ -163,11 +162,10 @@ static int h2_posix_system_event_subscribe(
     return H2_PAL_ERR_INVALID_STATE;
   }
   for (size_t i = 0u; i < H2_POSIX_SYSTEM_EVENT_MAX_SUBSCRIPTIONS; ++i) {
-    h2_pal_system_event_subscription_t *subscription = &s_subscriptions[i];
+    h2_pal_system_event_subscription_t* subscription = &s_subscriptions[i];
     if (subscription->active == 0 && subscription->in_flight == 0u &&
         subscription->unsubscribe_waiters == 0u) {
-      if (++s_next_generation == 0u)
-        ++s_next_generation;
+      if (++s_next_generation == 0u) ++s_next_generation;
       subscription->generation = s_next_generation;
       subscription->active = 1;
       subscription->type = type;
@@ -183,7 +181,7 @@ static int h2_posix_system_event_subscribe(
 }
 
 static void h2_posix_system_event_unsubscribe(
-    void *user, h2_pal_system_event_subscription_t *subscription) {
+    void* user, h2_pal_system_event_subscription_t* subscription) {
   (void)user;
   if (subscription == NULL) {
     return;
@@ -218,6 +216,6 @@ static const h2_pal_system_event_api_t s_api = {
     .vtable = &s_vtable,
 };
 
-const h2_pal_system_event_api_t *h2_posix_system_event_api(void) {
+const h2_pal_system_event_api_t* h2_posix_system_event_api(void) {
   return &s_api;
 }

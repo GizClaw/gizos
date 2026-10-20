@@ -21,7 +21,7 @@ static const char s_session_task_name[] = "$lua/link";
 #define H2_LUA_LINK_FRAME_MESSAGE 3u
 #define H2_LUA_LINK_FRAME_STREAM 4u
 #define H2_LUA_LINK_STREAM_CHUNK 512u
-#define H2_LUA_LINK_FRAME_MAX                                                  \
+#define H2_LUA_LINK_FRAME_MAX \
   (H2_LUA_LINK_FRAME_HEADER + H2_LUA_LINK_STREAM_CHUNK)
 #define H2_LUA_LINK_HELLO_TIMEOUT_MS 5000u
 #define H2_LUA_LINK_BYE_FLUSH_MS 400u
@@ -64,9 +64,9 @@ _Static_assert(H2_LUA_LINK_STREAM_BUFFER_SIZE >= H2_LUA_LINK_STREAM_CHUNK,
  *   KCP RX   0685b803-18da-449c-88a2-66c491b17772 (write, bleikcp)
  *   datagram 0685b804-18da-449c-88a2-66c491b17772 (write-no-rsp, notify)
  */
-#define H2_LUA_LINK_GATT_UUID(n)                                               \
-  {0x72u, 0x77u, 0xb1u, 0x91u, 0xc4u, 0x66u, 0xa2u, 0x88u,                       \
-   0x9cu, 0x44u, 0xdau, 0x18u, (n), 0xb8u, 0x85u, 0x06u}
+#define H2_LUA_LINK_GATT_UUID(n)                           \
+  {0x72u, 0x77u, 0xb1u, 0x91u, 0xc4u, 0x66u, 0xa2u, 0x88u, \
+   0x9cu, 0x44u, 0xdau, 0x18u, (n),   0xb8u, 0x85u, 0x06u}
 static const uint8_t s_service_uuid[H2_LUA_LINK_UUID_LEN] =
     H2_LUA_LINK_GATT_UUID(0x01u);
 static const uint8_t s_tx_uuid[H2_LUA_LINK_UUID_LEN] =
@@ -111,7 +111,7 @@ typedef struct h2_lua_link_event {
   uint64_t sequence;
   uint64_t timestamp_ms;
   h2_lua_link_role_t role;
-  const char *reason;
+  const char* reason;
   int result;
   int reliable;
   size_t max_datagram;
@@ -125,11 +125,11 @@ typedef struct h2_lua_link_reader {
 } h2_lua_link_reader_t;
 
 typedef struct h2_lua_link {
-  h2_runtime_t *runtime;
-  const h2_pal_mem_api_t *allocator;
+  h2_runtime_t* runtime;
+  const h2_pal_mem_api_t* allocator;
   h2_lua_link_config_t config;
-  h2_pal_mutex_t *mutex;
-  h2_pal_cond_t *cond;
+  h2_pal_mutex_t* mutex;
+  h2_pal_cond_t* cond;
 
   /* Session slot: in_use from a successful host/join until the next
    * host/join or destroy joins the finished task. */
@@ -138,8 +138,8 @@ typedef struct h2_lua_link {
   /* The session queued its final DISCONNECTED or ERROR event; only
    * bookkeeping remains before task_done. */
   int ended;
-  h2_pal_task_t *task;
-  h2_lua_job_t *job;
+  h2_pal_task_t* task;
+  h2_lua_job_t* job;
   h2_lua_job_id_t job_id;
   uint32_t job_generation;
   h2_lua_link_role_t role;
@@ -152,7 +152,7 @@ typedef struct h2_lua_link {
   uint8_t adv_uuid[H2_LUA_LINK_UUID_LEN];
   /* Published for send()/write() while connected; cleared under mutex before
    * the owning reader releases the stream. */
-  h2_bleikcp_t *stream;
+  h2_bleikcp_t* stream;
   /* Datagram path of the connected peer: the host notifies its own value
    * handle, the joiner writes the peer's. Valid while CONNECTED. */
   uint16_t conn_handle;
@@ -164,7 +164,7 @@ typedef struct h2_lua_link {
   uint16_t datagram_value_handle;
   uint16_t datagram_cccd_handle;
   uint8_t early_datagrams[H2_LUA_LINK_EARLY_DATAGRAMS]
-                        [H2_LUA_LINK_UNRELIABLE_MAX];
+                         [H2_LUA_LINK_UNRELIABLE_MAX];
   size_t early_datagram_len[H2_LUA_LINK_EARLY_DATAGRAMS];
   size_t early_datagram_count;
   /* Stream bytes received in STREAM frames and not yet read by Lua. */
@@ -185,30 +185,30 @@ typedef struct h2_lua_link {
   uint64_t next_sequence;
 } h2_lua_link_t;
 
-static uint64_t link_now_ms(const h2_lua_link_t *link) {
+static uint64_t link_now_ms(const h2_lua_link_t* link) {
   uint64_t now = 0u;
   (void)h2_pal_time_get_monotonic_ms(link->runtime->time, &now);
   return now;
 }
 
-static void link_lock(h2_lua_link_t *link) {
+static void link_lock(h2_lua_link_t* link) {
   (void)h2_pal_mutex_lock(link->runtime->sync, link->mutex);
 }
 
-static void link_unlock(h2_lua_link_t *link) {
+static void link_unlock(h2_lua_link_t* link) {
   (void)h2_pal_mutex_unlock(link->runtime->sync, link->mutex);
 }
 
-static void link_wait(h2_lua_link_t *link, uint32_t timeout_ms) {
+static void link_wait(h2_lua_link_t* link, uint32_t timeout_ms) {
   (void)h2_pal_cond_wait(link->runtime->sync, link->cond, link->mutex,
                          timeout_ms);
 }
 
-static void link_broadcast(h2_lua_link_t *link) {
+static void link_broadcast(h2_lua_link_t* link) {
   (void)h2_pal_cond_broadcast(link->runtime->sync, link->cond);
 }
 
-static h2_bleikcp_api_t link_bleikcp_api(const h2_lua_link_t *link) {
+static h2_bleikcp_api_t link_bleikcp_api(const h2_lua_link_t* link) {
   return (h2_bleikcp_api_t){
       .ble = link->runtime->ble_host,
       .task = link->runtime->task,
@@ -219,7 +219,7 @@ static h2_bleikcp_api_t link_bleikcp_api(const h2_lua_link_t *link) {
   };
 }
 
-static h2_bleikcp_config_t link_bleikcp_config(const h2_lua_link_t *link) {
+static h2_bleikcp_config_t link_bleikcp_config(const h2_lua_link_t* link) {
   return (h2_bleikcp_config_t){
       .service_uuid = {s_service_uuid, sizeof(s_service_uuid)},
       .tx_char_uuid = {s_tx_uuid, sizeof(s_tx_uuid)},
@@ -244,7 +244,7 @@ static h2_bleikcp_config_t link_bleikcp_config(const h2_lua_link_t *link) {
   };
 }
 
-static void link_make_adv_uuid(const uint8_t *tag, size_t tag_len,
+static void link_make_adv_uuid(const uint8_t* tag, size_t tag_len,
                                uint8_t out[H2_LUA_LINK_UUID_LEN]) {
   uint32_t hash = 2166136261u;
   for (size_t i = 0u; i < tag_len; ++i) {
@@ -258,7 +258,7 @@ static void link_make_adv_uuid(const uint8_t *tag, size_t tag_len,
   out[3] = (uint8_t)(hash >> 24u);
 }
 
-static int link_session_owned_by(const h2_lua_link_t *link,
+static int link_session_owned_by(const h2_lua_link_t* link,
                                  h2_lua_job_id_t job_id,
                                  uint32_t job_generation) {
   return link->in_use && link->job_id == job_id &&
@@ -267,9 +267,9 @@ static int link_session_owned_by(const h2_lua_link_t *link,
 
 /* Appends one event with the common fields filled; NULL when the ring is
  * full. Called with the link mutex held. */
-static h2_lua_link_event_t *link_push_locked(h2_lua_link_t *link,
+static h2_lua_link_event_t* link_push_locked(h2_lua_link_t* link,
                                              uint32_t kind) {
-  h2_lua_link_event_t *event;
+  h2_lua_link_event_t* event;
   if (link->event_count == H2_LUA_LINK_EVENT_CAPACITY) {
     return NULL;
   }
@@ -287,9 +287,9 @@ static h2_lua_link_event_t *link_push_locked(h2_lua_link_t *link,
 
 /* Queues one event for the owning job. Blocks while the ring is full so a
  * slow Lua consumer back-pressures the peer through the KCP window. */
-static int link_post(h2_lua_link_t *link, uint32_t kind, const char *reason,
-                     int result, const uint8_t *data, size_t len) {
-  h2_lua_link_event_t *event;
+static int link_post(h2_lua_link_t* link, uint32_t kind, const char* reason,
+                     int result, const uint8_t* data, size_t len) {
+  h2_lua_link_event_t* event;
   link_lock(link);
   while (!link->closing && link->event_count == H2_LUA_LINK_EVENT_CAPACITY) {
     link_wait(link, H2_LUA_LINK_SLICE_MS);
@@ -317,40 +317,40 @@ static int link_post(h2_lua_link_t *link, uint32_t kind, const char *reason,
   return H2_PAL_OK;
 }
 
-static void link_post_outcome(h2_lua_link_t *link,
+static void link_post_outcome(h2_lua_link_t* link,
                               h2_lua_link_outcome_t outcome, int result) {
   switch (outcome) {
-  case H2_LUA_LINK_OUTCOME_SETUP_FAILED:
-    (void)link_post(link, H2_LUA_LINK_EVENT_ERROR, "ble", result, NULL, 0u);
-    break;
-  case H2_LUA_LINK_OUTCOME_SETUP_TIMEOUT:
-    (void)link_post(link, H2_LUA_LINK_EVENT_ERROR, "timeout",
-                    H2_PAL_ERR_TIMEOUT, NULL, 0u);
-    break;
-  case H2_LUA_LINK_OUTCOME_MISMATCH:
-    (void)link_post(link, H2_LUA_LINK_EVENT_ERROR, "mismatch",
-                    H2_PAL_ERR_FORMAT, NULL, 0u);
-    break;
-  case H2_LUA_LINK_OUTCOME_PEER_CLOSED:
-    (void)link_post(link, H2_LUA_LINK_EVENT_DISCONNECTED, "peer_closed",
-                    H2_PAL_ERR_CLOSED, NULL, 0u);
-    break;
-  case H2_LUA_LINK_OUTCOME_LOST:
-    (void)link_post(link, H2_LUA_LINK_EVENT_DISCONNECTED, "lost", result,
-                    NULL, 0u);
-    break;
-  case H2_LUA_LINK_OUTCOME_LOCAL:
-  default:
-    break;
+    case H2_LUA_LINK_OUTCOME_SETUP_FAILED:
+      (void)link_post(link, H2_LUA_LINK_EVENT_ERROR, "ble", result, NULL, 0u);
+      break;
+    case H2_LUA_LINK_OUTCOME_SETUP_TIMEOUT:
+      (void)link_post(link, H2_LUA_LINK_EVENT_ERROR, "timeout",
+                      H2_PAL_ERR_TIMEOUT, NULL, 0u);
+      break;
+    case H2_LUA_LINK_OUTCOME_MISMATCH:
+      (void)link_post(link, H2_LUA_LINK_EVENT_ERROR, "mismatch",
+                      H2_PAL_ERR_FORMAT, NULL, 0u);
+      break;
+    case H2_LUA_LINK_OUTCOME_PEER_CLOSED:
+      (void)link_post(link, H2_LUA_LINK_EVENT_DISCONNECTED, "peer_closed",
+                      H2_PAL_ERR_CLOSED, NULL, 0u);
+      break;
+    case H2_LUA_LINK_OUTCOME_LOST:
+      (void)link_post(link, H2_LUA_LINK_EVENT_DISCONNECTED, "lost", result,
+                      NULL, 0u);
+      break;
+    case H2_LUA_LINK_OUTCOME_LOCAL:
+    default:
+      break;
   }
 }
 
 /* Unreliable input from a GATT callback or system event: never blocks the
  * BLE Host, drops when the session is not connected or the ring is full. */
-static void link_datagram_input(h2_lua_link_t *link, uint16_t conn_handle,
-                                uint16_t attr_handle, const uint8_t *data,
+static void link_datagram_input(h2_lua_link_t* link, uint16_t conn_handle,
+                                uint16_t attr_handle, const uint8_t* data,
                                 size_t len) {
-  h2_lua_link_event_t *event = NULL;
+  h2_lua_link_event_t* event = NULL;
   link_lock(link);
   if (link->closing || conn_handle != link->conn_handle ||
       attr_handle != link->datagram_handle ||
@@ -376,9 +376,9 @@ static void link_datagram_input(h2_lua_link_t *link, uint16_t conn_handle,
 }
 
 static h2_pal_result_t link_datagram_server_write(
-    void *user, const h2_pal_ble_gatt_access_t *access, const uint8_t *data,
+    void* user, const h2_pal_ble_gatt_access_t* access, const uint8_t* data,
     size_t len) {
-  h2_lua_link_t *link = user;
+  h2_lua_link_t* link = user;
   if (access == NULL || (len != 0u && data == NULL)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -387,10 +387,10 @@ static h2_pal_result_t link_datagram_server_write(
   return H2_PAL_OK;
 }
 
-static int link_datagram_client_event(void *user,
-                                      const h2_pal_system_event_t *event) {
-  h2_lua_link_t *link = user;
-  const h2_pal_ble_gatt_client_value_t *value;
+static int link_datagram_client_event(void* user,
+                                      const h2_pal_system_event_t* event) {
+  h2_lua_link_t* link = user;
+  const h2_pal_ble_gatt_client_value_t* value;
   if (event == NULL ||
       event->type != H2_PAL_SYSTEM_EVENT_TYPE_BLE_GATT_CLIENT_NOTIFICATION ||
       event->payload_size != sizeof(h2_pal_ble_gatt_client_value_t)) {
@@ -406,7 +406,7 @@ static int link_datagram_client_event(void *user,
 
 /* Moves one STREAM frame into the Lua read buffer, waiting for space so an
  * unread stream back-pressures the peer through the KCP window. */
-static int link_stream_input(h2_lua_link_t *link, const uint8_t *data,
+static int link_stream_input(h2_lua_link_t* link, const uint8_t* data,
                              size_t len) {
   link_lock(link);
   while (!link->closing &&
@@ -427,7 +427,7 @@ static int link_stream_input(h2_lua_link_t *link, const uint8_t *data,
   return H2_PAL_OK;
 }
 
-static void link_reset_buffers_locked(h2_lua_link_t *link) {
+static void link_reset_buffers_locked(h2_lua_link_t* link) {
   link->early_datagram_count = 0u;
   link->event_head = 0u;
   link->event_count = 0u;
@@ -436,7 +436,7 @@ static void link_reset_buffers_locked(h2_lua_link_t *link) {
   link->stream_rx_len = 0u;
 }
 
-static int link_is_closing(h2_lua_link_t *link) {
+static int link_is_closing(h2_lua_link_t* link) {
   int closing;
   link_lock(link);
   closing = link->closing;
@@ -444,9 +444,9 @@ static int link_is_closing(h2_lua_link_t *link) {
   return closing;
 }
 
-static int link_write_frame(h2_bleikcp_t *stream, uint8_t type,
-                            const uint8_t *prefix, size_t prefix_len,
-                            const uint8_t *payload, size_t payload_len,
+static int link_write_frame(h2_bleikcp_t* stream, uint8_t type,
+                            const uint8_t* prefix, size_t prefix_len,
+                            const uint8_t* payload, size_t payload_len,
                             uint32_t timeout_ms) {
   uint8_t frame[H2_LUA_LINK_FRAME_MAX];
   size_t len = prefix_len + payload_len;
@@ -460,8 +460,7 @@ static int link_write_frame(h2_bleikcp_t *stream, uint8_t type,
     memcpy(frame + H2_LUA_LINK_FRAME_HEADER, prefix, prefix_len);
   }
   if (payload_len != 0u) {
-    memcpy(frame + H2_LUA_LINK_FRAME_HEADER + prefix_len, payload,
-           payload_len);
+    memcpy(frame + H2_LUA_LINK_FRAME_HEADER + prefix_len, payload, payload_len);
   }
   return h2_bleikcp_write(stream, frame, H2_LUA_LINK_FRAME_HEADER + len,
                           timeout_ms);
@@ -469,8 +468,8 @@ static int link_write_frame(h2_bleikcp_t *stream, uint8_t type,
 
 /* Returns 1 and the frame when one complete frame is buffered, 0 when more
  * bytes are needed, and -1 for a frame this protocol cannot carry. */
-static int link_reader_take(h2_lua_link_reader_t *reader, uint8_t *out_type,
-                            uint8_t *out_payload, size_t *out_len) {
+static int link_reader_take(h2_lua_link_reader_t* reader, uint8_t* out_type,
+                            uint8_t* out_payload, size_t* out_len) {
   size_t len;
   if (reader->len < H2_LUA_LINK_FRAME_HEADER) {
     return 0;
@@ -493,7 +492,7 @@ static int link_reader_take(h2_lua_link_reader_t *reader, uint8_t *out_type,
   return 1;
 }
 
-static void link_send_bye(h2_bleikcp_t *stream) {
+static void link_send_bye(h2_bleikcp_t* stream) {
   if (link_write_frame(stream, H2_LUA_LINK_FRAME_BYE, NULL, 0u, NULL, 0u,
                        H2_LUA_LINK_BYE_FLUSH_MS) == H2_PAL_OK) {
     (void)h2_bleikcp_flush(stream, H2_LUA_LINK_BYE_FLUSH_MS);
@@ -505,10 +504,10 @@ static void link_send_bye(h2_bleikcp_t *stream) {
  * Owns the stream until it returns; the stream is published for send() only
  * between a validated HELLO and the return.
  */
-static h2_lua_link_outcome_t link_run_stream(h2_lua_link_t *link,
-                                             h2_bleikcp_t *stream,
+static h2_lua_link_outcome_t link_run_stream(h2_lua_link_t* link,
+                                             h2_bleikcp_t* stream,
                                              uint64_t setup_deadline_ms,
-                                             int *out_result) {
+                                             int* out_result) {
   h2_lua_link_reader_t reader = {.len = 0u};
   uint8_t payload[H2_LUA_LINK_STREAM_CHUNK];
   const uint8_t version = H2_LUA_LINK_PROTOCOL_VERSION;
@@ -559,8 +558,8 @@ static h2_lua_link_outcome_t link_run_stream(h2_lua_link_t *link,
            (len == 0u || len > H2_LUA_LINK_MESSAGE_MAX)) ||
           (type == H2_LUA_LINK_FRAME_STREAM && len == 0u)) {
         *out_result = H2_PAL_ERR_FORMAT;
-        outcome = connected ? H2_LUA_LINK_OUTCOME_LOST
-                            : H2_LUA_LINK_OUTCOME_MISMATCH;
+        outcome =
+            connected ? H2_LUA_LINK_OUTCOME_LOST : H2_LUA_LINK_OUTCOME_MISMATCH;
         goto done;
       }
       if (type == H2_LUA_LINK_FRAME_HELLO) {
@@ -575,10 +574,9 @@ static h2_lua_link_outcome_t link_run_stream(h2_lua_link_t *link,
         if (!link->closing) {
           link->stream = stream;
           link->state = H2_LUA_LINK_CONNECTED;
-          link->max_datagram =
-              stats.att_mtu > H2_PAL_BLE_ATT_HEADER_LEN
-                  ? stats.att_mtu - H2_PAL_BLE_ATT_HEADER_LEN
-                  : 0u;
+          link->max_datagram = stats.att_mtu > H2_PAL_BLE_ATT_HEADER_LEN
+                                   ? stats.att_mtu - H2_PAL_BLE_ATT_HEADER_LEN
+                                   : 0u;
           if (link->max_datagram > H2_LUA_LINK_UNRELIABLE_MAX) {
             link->max_datagram = H2_LUA_LINK_UNRELIABLE_MAX;
           }
@@ -586,7 +584,7 @@ static h2_lua_link_outcome_t link_run_stream(h2_lua_link_t *link,
            * early datagrams (at most 1 + 4 events) always fit. */
           (void)link_push_locked(link, H2_LUA_LINK_EVENT_CONNECTED);
           for (size_t i = 0u; i < link->early_datagram_count; ++i) {
-            h2_lua_link_event_t *early =
+            h2_lua_link_event_t* early =
                 link_push_locked(link, H2_LUA_LINK_EVENT_MESSAGE);
             early->len = link->early_datagram_len[i];
             memcpy(early->data, link->early_datagrams[i], early->len);
@@ -617,9 +615,9 @@ done:
   return outcome;
 }
 
-static int link_server_handler(void *user, h2_bleikcp_t *stream,
+static int link_server_handler(void* user, h2_bleikcp_t* stream,
                                uint16_t conn_handle) {
-  h2_lua_link_t *link = user;
+  h2_lua_link_t* link = user;
   h2_lua_link_outcome_t outcome;
   int result = H2_PAL_OK;
   link_lock(link);
@@ -643,9 +641,9 @@ static int link_server_handler(void *user, h2_bleikcp_t *stream,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t link_start_advertising(h2_lua_link_t *link,
-                                              h2_pal_ble_adv_set_t **out_set) {
-  const h2_pal_ble_host_api_t *ble = link->runtime->ble_host;
+static h2_pal_result_t link_start_advertising(h2_lua_link_t* link,
+                                              h2_pal_ble_adv_set_t** out_set) {
+  const h2_pal_ble_host_api_t* ble = link->runtime->ble_host;
   const h2_pal_ble_uuid_t uuid = {link->adv_uuid, H2_LUA_LINK_UUID_LEN};
   const int extended = link->config.adv_type == H2_PAL_BLE_ADV_TYPE_EXTENDED;
   const h2_pal_ble_adv_params_t params = {
@@ -676,8 +674,8 @@ static h2_pal_result_t link_start_advertising(h2_lua_link_t *link,
   return rc;
 }
 
-static void link_stop_advertising(h2_lua_link_t *link,
-                                  h2_pal_ble_adv_set_t **set) {
+static void link_stop_advertising(h2_lua_link_t* link,
+                                  h2_pal_ble_adv_set_t** set) {
   if (*set != NULL) {
     (void)h2_pal_ble_adv_set_stop(link->runtime->ble_host, *set);
     (void)h2_pal_ble_adv_set_destroy(link->runtime->ble_host, *set);
@@ -685,15 +683,15 @@ static void link_stop_advertising(h2_lua_link_t *link,
   }
 }
 
-static void link_run_host(h2_lua_link_t *link) {
+static void link_run_host(h2_lua_link_t* link) {
   const h2_bleikcp_api_t api = link_bleikcp_api(link);
   const h2_bleikcp_config_t config = link_bleikcp_config(link);
-  h2_bleikcp_server_t *server = NULL;
-  h2_pal_ble_adv_set_t *adv_set = NULL;
+  h2_bleikcp_server_t* server = NULL;
+  h2_pal_ble_adv_set_t* adv_set = NULL;
   h2_lua_link_outcome_t outcome = H2_LUA_LINK_OUTCOME_LOCAL;
   int result = H2_PAL_OK;
-  int rc = h2_bleikcp_server_open(&api, &config, link_server_handler, link,
-                                  &server);
+  int rc =
+      h2_bleikcp_server_open(&api, &config, link_server_handler, link, &server);
   /* The datagram characteristic stays borrowed until server close. */
   if (rc == H2_PAL_OK) {
     rc = link_start_advertising(link, &adv_set);
@@ -745,16 +743,16 @@ static void link_run_host(h2_lua_link_t *link) {
   link_post_outcome(link, outcome, result);
 }
 
-static bool link_scan_result(void *user,
-                             const h2_pal_ble_scan_result_t *result) {
-  h2_lua_link_t *link = user;
+static bool link_scan_result(void* user,
+                             const h2_pal_ble_scan_result_t* result) {
+  h2_lua_link_t* link = user;
   int match = 0;
   if (result == NULL || !result->connectable ||
       result->data_status != H2_PAL_BLE_ADV_DATA_COMPLETE) {
     return false;
   }
   for (size_t i = 0u; i < result->service_uuid_count; ++i) {
-    const h2_pal_ble_uuid_t *uuid = &result->service_uuids[i];
+    const h2_pal_ble_uuid_t* uuid = &result->service_uuids[i];
     if (uuid->data != NULL && uuid->len == H2_LUA_LINK_UUID_LEN &&
         memcmp(uuid->data, link->adv_uuid, H2_LUA_LINK_UUID_LEN) == 0) {
       match = 1;
@@ -774,16 +772,16 @@ static bool link_scan_result(void *user,
   return true;
 }
 
-static uint32_t link_remaining_ms(h2_lua_link_t *link, uint64_t deadline_ms) {
+static uint32_t link_remaining_ms(h2_lua_link_t* link, uint64_t deadline_ms) {
   const uint64_t now = link_now_ms(link);
   return now >= deadline_ms ? 0u : (uint32_t)(deadline_ms - now);
 }
 
-static int link_discover_one(h2_lua_link_t *link, uint16_t conn_handle,
+static int link_discover_one(h2_lua_link_t* link, uint16_t conn_handle,
                              h2_pal_ble_gatt_discovery_kind_t kind,
-                             const uint8_t *uuid, size_t uuid_len,
+                             const uint8_t* uuid, size_t uuid_len,
                              uint16_t start_handle, uint16_t end_handle,
-                             h2_pal_ble_gatt_discovery_entry_t *out) {
+                             h2_pal_ble_gatt_discovery_entry_t* out) {
   h2_pal_ble_gatt_discovery_entry_t entries[8];
   size_t count = 0u;
   const h2_pal_ble_gatt_discovery_request_t request = {
@@ -809,21 +807,19 @@ static int link_discover_one(h2_lua_link_t *link, uint16_t conn_handle,
 }
 
 /* Finds the peer's datagram characteristic and enables its notifications. */
-static int link_join_datagram(h2_lua_link_t *link, uint16_t conn_handle,
-                              h2_pal_system_event_subscription_t **out_sub) {
+static int link_join_datagram(h2_lua_link_t* link, uint16_t conn_handle,
+                              h2_pal_system_event_subscription_t** out_sub) {
   h2_pal_ble_gatt_discovery_entry_t service = {0};
   h2_pal_ble_gatt_discovery_entry_t datagram = {0};
   h2_pal_ble_gatt_discovery_entry_t cccd = {0};
   int rc = link_discover_one(link, conn_handle,
-                             H2_PAL_BLE_GATT_DISCOVERY_SERVICE,
-                             s_service_uuid, sizeof(s_service_uuid), 1u,
-                             UINT16_MAX, &service);
+                             H2_PAL_BLE_GATT_DISCOVERY_SERVICE, s_service_uuid,
+                             sizeof(s_service_uuid), 1u, UINT16_MAX, &service);
   if (rc == H2_PAL_OK) {
     rc = link_discover_one(link, conn_handle,
                            H2_PAL_BLE_GATT_DISCOVERY_CHARACTERISTIC,
                            s_datagram_uuid, sizeof(s_datagram_uuid),
-                           service.start_handle, service.end_handle,
-                           &datagram);
+                           service.start_handle, service.end_handle, &datagram);
   }
   if (rc == H2_PAL_OK &&
       ((datagram.properties & H2_PAL_BLE_GATT_PROPERTY_WRITE_NO_RSP) == 0u ||
@@ -831,11 +827,10 @@ static int link_join_datagram(h2_lua_link_t *link, uint16_t conn_handle,
     rc = H2_PAL_ERR_UNSUPPORTED;
   }
   if (rc == H2_PAL_OK) {
-    rc = link_discover_one(link, conn_handle,
-                           H2_PAL_BLE_GATT_DISCOVERY_DESCRIPTOR, s_cccd_uuid,
-                           sizeof(s_cccd_uuid),
-                           (uint16_t)(datagram.value_handle + 1u),
-                           service.end_handle, &cccd);
+    rc = link_discover_one(
+        link, conn_handle, H2_PAL_BLE_GATT_DISCOVERY_DESCRIPTOR, s_cccd_uuid,
+        sizeof(s_cccd_uuid), (uint16_t)(datagram.value_handle + 1u),
+        service.end_handle, &cccd);
   }
   if (rc == H2_PAL_OK) {
     rc = h2_pal_system_event_subscribe(
@@ -851,8 +846,7 @@ static int link_join_datagram(h2_lua_link_t *link, uint16_t conn_handle,
         .enable = true,
     };
     rc = h2_pal_ble_gatt_subscribe(link->runtime->ble_host, conn_handle,
-                                   &subscribe,
-                                   H2_LUA_LINK_CONNECT_TIMEOUT_MS);
+                                   &subscribe, H2_LUA_LINK_CONNECT_TIMEOUT_MS);
   }
   if (rc == H2_PAL_OK) {
     link_lock(link);
@@ -863,8 +857,8 @@ static int link_join_datagram(h2_lua_link_t *link, uint16_t conn_handle,
   return rc;
 }
 
-static void link_run_join(h2_lua_link_t *link) {
-  const h2_pal_ble_host_api_t *ble = link->runtime->ble_host;
+static void link_run_join(h2_lua_link_t* link) {
+  const h2_pal_ble_host_api_t* ble = link->runtime->ble_host;
   const h2_bleikcp_api_t api = link_bleikcp_api(link);
   const h2_bleikcp_config_t config = link_bleikcp_config(link);
   const uint64_t deadline_ms = link->started_ms + link->timeout_ms;
@@ -878,8 +872,8 @@ static void link_run_join(h2_lua_link_t *link) {
   h2_pal_ble_addr_t addr = {0};
   uint16_t conn_handle = H2_PAL_BLE_INVALID_CONN_HANDLE;
   uint16_t mtu = 0u;
-  h2_bleikcp_t *stream = NULL;
-  h2_pal_system_event_subscription_t *datagram_sub = NULL;
+  h2_bleikcp_t* stream = NULL;
+  h2_pal_system_event_subscription_t* datagram_sub = NULL;
   h2_lua_link_outcome_t outcome = H2_LUA_LINK_OUTCOME_LOCAL;
   int result = H2_PAL_OK;
   int found = 0;
@@ -889,7 +883,8 @@ static void link_run_join(h2_lua_link_t *link) {
    * from the same address before it starts hosting would stay hidden, so
    * the scan restarts every window to reset that filter. */
   for (;;) {
-    const uint64_t window_end_ms = link_now_ms(link) + H2_LUA_LINK_SCAN_WINDOW_MS;
+    const uint64_t window_end_ms =
+        link_now_ms(link) + H2_LUA_LINK_SCAN_WINDOW_MS;
     rc = h2_pal_ble_start_scan(ble, &scan, link_scan_result, link);
     if (rc != H2_PAL_OK) {
       link_post_outcome(link, H2_LUA_LINK_OUTCOME_SETUP_FAILED, rc);
@@ -949,15 +944,15 @@ static void link_run_join(h2_lua_link_t *link) {
     outcome = H2_LUA_LINK_OUTCOME_SETUP_FAILED;
     result = rc;
   } else {
-    uint64_t hello_deadline_ms = link_now_ms(link) + H2_LUA_LINK_HELLO_TIMEOUT_MS;
+    uint64_t hello_deadline_ms =
+        link_now_ms(link) + H2_LUA_LINK_HELLO_TIMEOUT_MS;
     if (hello_deadline_ms > deadline_ms) {
       hello_deadline_ms = deadline_ms;
     }
     outcome = link_run_stream(link, stream, hello_deadline_ms, &result);
   }
   if (datagram_sub != NULL) {
-    h2_pal_system_event_unsubscribe(link->runtime->system_event,
-                                    datagram_sub);
+    h2_pal_system_event_unsubscribe(link->runtime->system_event, datagram_sub);
   }
   if (stream != NULL) {
     (void)h2_bleikcp_close(stream);
@@ -968,8 +963,8 @@ static void link_run_join(h2_lua_link_t *link) {
   link_post_outcome(link, outcome, result);
 }
 
-static void link_session_entry(void *context) {
-  h2_lua_link_t *link = context;
+static void link_session_entry(void* context) {
+  h2_lua_link_t* link = context;
   if (link->role == H2_LUA_LINK_ROLE_HOST) {
     link_run_host(link);
   } else {
@@ -987,7 +982,7 @@ static void link_session_entry(void *context) {
 
 /* Joins a finished session task so the slot can be reused. Called with the
  * link mutex held; the task no longer takes it once task_done is set. */
-static int link_reclaim_locked(h2_lua_link_t *link) {
+static int link_reclaim_locked(h2_lua_link_t* link) {
   if (!link->in_use) {
     return 1;
   }
@@ -1010,18 +1005,18 @@ static int link_reclaim_locked(h2_lua_link_t *link) {
   return 1;
 }
 
-static h2_lua_link_t *link_from_upvalue(lua_State *state) {
+static h2_lua_link_t* link_from_upvalue(lua_State* state) {
   return lua_touserdata(state, lua_upvalueindex(2));
 }
 
-static h2_lua_job_t *job_from_upvalue(lua_State *state) {
+static h2_lua_job_t* job_from_upvalue(lua_State* state) {
   return lua_touserdata(state, lua_upvalueindex(1));
 }
 
-static int link_start(lua_State *state, h2_lua_link_role_t role) {
-  h2_lua_job_t *job = job_from_upvalue(state);
-  h2_lua_link_t *link = link_from_upvalue(state);
-  const char *tag;
+static int link_start(lua_State* state, h2_lua_link_role_t role) {
+  h2_lua_job_t* job = job_from_upvalue(state);
+  h2_lua_link_t* link = link_from_upvalue(state);
+  const char* tag;
   size_t tag_len = 0u;
   lua_Integer timeout_ms;
   h2_pal_result_t rc;
@@ -1056,8 +1051,8 @@ static int link_start(lua_State *state, h2_lua_link_role_t role) {
   link->job_id = job->id;
   link->job_generation = job->generation;
   link->role = role;
-  link->state = role == H2_LUA_LINK_ROLE_HOST ? H2_LUA_LINK_HOSTING
-                                              : H2_LUA_LINK_JOINING;
+  link->state =
+      role == H2_LUA_LINK_ROLE_HOST ? H2_LUA_LINK_HOSTING : H2_LUA_LINK_JOINING;
   link->closing = 0;
   link->task_done = 0;
   link->ended = 0;
@@ -1110,26 +1105,26 @@ static int link_start(lua_State *state, h2_lua_link_role_t role) {
   return 1;
 }
 
-static int lua_link_host(lua_State *state) {
+static int lua_link_host(lua_State* state) {
   return link_start(state, H2_LUA_LINK_ROLE_HOST);
 }
 
-static int lua_link_join(lua_State *state) {
+static int lua_link_join(lua_State* state) {
   return link_start(state, H2_LUA_LINK_ROLE_JOIN);
 }
 
-static int link_connected_for(const h2_lua_link_t *link,
-                              const h2_lua_job_t *job) {
+static int link_connected_for(const h2_lua_link_t* link,
+                              const h2_lua_job_t* job) {
   return link_session_owned_by(link, job->id, job->generation) &&
          !link->closing && link->state == H2_LUA_LINK_CONNECTED &&
          link->stream != NULL;
 }
 
-static int lua_link_send(lua_State *state) {
-  h2_lua_job_t *job = job_from_upvalue(state);
-  h2_lua_link_t *link = link_from_upvalue(state);
+static int lua_link_send(lua_State* state) {
+  h2_lua_job_t* job = job_from_upvalue(state);
+  h2_lua_link_t* link = link_from_upvalue(state);
   size_t len = 0u;
-  const char *data = luaL_checklstring(state, 1, &len);
+  const char* data = luaL_checklstring(state, 1, &len);
   int rc;
   if (len == 0u || len > H2_LUA_LINK_MESSAGE_MAX) {
     return luaL_argerror(state, 1, "message must be 1..256 bytes");
@@ -1142,7 +1137,7 @@ static int lua_link_send(lua_State *state) {
     return 2;
   }
   rc = link_write_frame(link->stream, H2_LUA_LINK_FRAME_MESSAGE, NULL, 0u,
-                        (const uint8_t *)data, len, 0u);
+                        (const uint8_t*)data, len, 0u);
   link_unlock(link);
   if (rc == H2_PAL_OK) {
     lua_pushboolean(state, 1);
@@ -1157,11 +1152,11 @@ static int lua_link_send(lua_State *state) {
   return 2;
 }
 
-static int lua_link_send_unreliable(lua_State *state) {
-  h2_lua_job_t *job = job_from_upvalue(state);
-  h2_lua_link_t *link = link_from_upvalue(state);
+static int lua_link_send_unreliable(lua_State* state) {
+  h2_lua_job_t* job = job_from_upvalue(state);
+  h2_lua_link_t* link = link_from_upvalue(state);
   size_t len = 0u;
-  const char *data = luaL_checklstring(state, 1, &len);
+  const char* data = luaL_checklstring(state, 1, &len);
   h2_lua_link_role_t role;
   uint16_t conn_handle;
   uint16_t attr_handle;
@@ -1190,11 +1185,11 @@ static int lua_link_send_unreliable(lua_State *state) {
   /* Outside the link mutex: the Host may deliver synchronously. */
   if (role == H2_LUA_LINK_ROLE_HOST) {
     rc = h2_pal_ble_notify(link->runtime->ble_host, conn_handle, attr_handle,
-                           (const uint8_t *)data, len);
+                           (const uint8_t*)data, len);
   } else {
-    rc = h2_pal_ble_gatt_write(link->runtime->ble_host, conn_handle,
-                               attr_handle, (const uint8_t *)data, len, false,
-                               0u);
+    rc =
+        h2_pal_ble_gatt_write(link->runtime->ble_host, conn_handle, attr_handle,
+                              (const uint8_t*)data, len, false, 0u);
   }
   if (rc == H2_PAL_OK) {
     lua_pushboolean(state, 1);
@@ -1205,11 +1200,11 @@ static int lua_link_send_unreliable(lua_State *state) {
   return 2;
 }
 
-static int lua_link_write(lua_State *state) {
-  h2_lua_job_t *job = job_from_upvalue(state);
-  h2_lua_link_t *link = link_from_upvalue(state);
+static int lua_link_write(lua_State* state) {
+  h2_lua_job_t* job = job_from_upvalue(state);
+  h2_lua_link_t* link = link_from_upvalue(state);
   size_t len = 0u;
-  const uint8_t *data = (const uint8_t *)luaL_checklstring(state, 1, &len);
+  const uint8_t* data = (const uint8_t*)luaL_checklstring(state, 1, &len);
   size_t written = 0u;
   int rc = H2_PAL_OK;
   link_lock(link);
@@ -1243,18 +1238,18 @@ static int lua_link_write(lua_State *state) {
 }
 
 /* Stack while waiting: [1] max bytes, [2] deadline in monotonic ms. */
-static int link_read_step(lua_State *state);
+static int link_read_step(lua_State* state);
 
-static int link_read_continue(lua_State *state, int status,
+static int link_read_continue(lua_State* state, int status,
                               lua_KContext context) {
   (void)status;
   (void)context;
   return link_read_step(state);
 }
 
-static int link_read_step(lua_State *state) {
-  h2_lua_job_t *job = job_from_upvalue(state);
-  h2_lua_link_t *link = link_from_upvalue(state);
+static int link_read_step(lua_State* state) {
+  h2_lua_job_t* job = job_from_upvalue(state);
+  h2_lua_link_t* link = link_from_upvalue(state);
   uint8_t out[H2_LUA_LINK_STREAM_BUFFER_SIZE];
   const size_t max = (size_t)lua_tointeger(state, 1);
   const uint64_t deadline_ms = (uint64_t)lua_tointeger(state, 2);
@@ -1262,7 +1257,7 @@ static int link_read_step(lua_State *state) {
   int connected;
   int ended;
   uint64_t now;
-  h2_lua_task_t *task;
+  h2_lua_task_t* task;
   link_lock(link);
   if (!link_session_owned_by(link, job->id, job->generation)) {
     link_unlock(link);
@@ -1288,7 +1283,7 @@ static int link_read_step(lua_State *state) {
   }
   link_unlock(link);
   if (len != 0u) {
-    lua_pushlstring(state, (const char *)out, len);
+    lua_pushlstring(state, (const char*)out, len);
     return 1;
   }
   if (!connected) {
@@ -1316,8 +1311,8 @@ static int link_read_step(lua_State *state) {
   return lua_yieldk(state, 0, 0, link_read_continue);
 }
 
-static int lua_link_read(lua_State *state) {
-  h2_lua_link_t *link = link_from_upvalue(state);
+static int lua_link_read(lua_State* state) {
+  h2_lua_link_t* link = link_from_upvalue(state);
   lua_Integer max = luaL_optinteger(state, 1, H2_LUA_LINK_STREAM_BUFFER_SIZE);
   lua_Integer timeout_ms = luaL_optinteger(state, 2, 0);
   if (max < 1 || max > H2_LUA_LINK_STREAM_BUFFER_SIZE) {
@@ -1333,9 +1328,9 @@ static int lua_link_read(lua_State *state) {
   return link_read_step(state);
 }
 
-static int lua_link_close(lua_State *state) {
-  h2_lua_job_t *job = job_from_upvalue(state);
-  h2_lua_link_t *link = link_from_upvalue(state);
+static int lua_link_close(lua_State* state) {
+  h2_lua_job_t* job = job_from_upvalue(state);
+  h2_lua_link_t* link = link_from_upvalue(state);
   link_lock(link);
   if (link_session_owned_by(link, job->id, job->generation)) {
     link->closing = 1;
@@ -1347,15 +1342,15 @@ static int lua_link_close(lua_State *state) {
   return 1;
 }
 
-static int lua_link_state(lua_State *state) {
-  static const char *const names[] = {"idle", "hosting", "joining",
+static int lua_link_state(lua_State* state) {
+  static const char* const names[] = {"idle", "hosting", "joining",
                                       "connected"};
-  h2_lua_job_t *job = job_from_upvalue(state);
-  h2_lua_link_t *link = link_from_upvalue(state);
+  h2_lua_job_t* job = job_from_upvalue(state);
+  h2_lua_link_t* link = link_from_upvalue(state);
   h2_lua_link_state_t value = H2_LUA_LINK_IDLE;
   link_lock(link);
-  if (link_session_owned_by(link, job->id, job->generation) &&
-      !link->closing && !link->task_done && !link->ended) {
+  if (link_session_owned_by(link, job->id, job->generation) && !link->closing &&
+      !link->task_done && !link->ended) {
     value = link->state;
   }
   link_unlock(link);
@@ -1363,17 +1358,17 @@ static int lua_link_state(lua_State *state) {
   return 1;
 }
 
-static void link_set_function(lua_State *state, const char *name,
-                              lua_CFunction function, h2_lua_job_t *job,
-                              h2_lua_link_t *link) {
+static void link_set_function(lua_State* state, const char* name,
+                              lua_CFunction function, h2_lua_job_t* job,
+                              h2_lua_link_t* link) {
   lua_pushlightuserdata(state, job);
   lua_pushlightuserdata(state, link);
   lua_pushcclosure(state, function, 2);
   lua_setfield(state, -2, name);
 }
 
-static void link_open_module(void *user, lua_State *state, h2_lua_job_t *job) {
-  h2_lua_link_t *link = user;
+static void link_open_module(void* user, lua_State* state, h2_lua_job_t* job) {
+  h2_lua_link_t* link = user;
   link_set_function(state, "host", lua_link_host, job, link);
   link_set_function(state, "join", lua_link_join, job, link);
   link_set_function(state, "send", lua_link_send, job, link);
@@ -1385,8 +1380,8 @@ static void link_open_module(void *user, lua_State *state, h2_lua_job_t *job) {
   link_set_function(state, "state", lua_link_state, job, link);
 }
 
-static void link_push_event(lua_State *state,
-                            const h2_lua_link_event_t *event) {
+static void link_push_event(lua_State* state,
+                            const h2_lua_link_event_t* event) {
   lua_createtable(state, 0, 8);
   lua_pushinteger(state, 0);
   lua_setfield(state, -2, "component_id");
@@ -1399,36 +1394,35 @@ static void link_push_event(lua_State *state,
   lua_pushinteger(state, (lua_Integer)event->timestamp_ms);
   lua_setfield(state, -2, "timestamp_ms");
   switch (event->kind) {
-  case H2_LUA_LINK_EVENT_CONNECTED:
-    lua_pushstring(state,
-                   event->role == H2_LUA_LINK_ROLE_HOST ? "host" : "join");
-    lua_setfield(state, -2, "role");
-    lua_pushinteger(state, (lua_Integer)event->max_datagram);
-    lua_setfield(state, -2, "max_datagram");
-    break;
-  case H2_LUA_LINK_EVENT_MESSAGE:
-    lua_pushlstring(state, (const char *)event->data, event->len);
-    lua_setfield(state, -2, "data");
-    lua_pushboolean(state, event->reliable);
-    lua_setfield(state, -2, "reliable");
-    break;
-  default:
-    lua_pushstring(state, event->reason == NULL ? "" : event->reason);
-    lua_setfield(state, -2, "reason");
-    lua_pushinteger(state, event->result);
-    lua_setfield(state, -2, "result");
-    break;
+    case H2_LUA_LINK_EVENT_CONNECTED:
+      lua_pushstring(state,
+                     event->role == H2_LUA_LINK_ROLE_HOST ? "host" : "join");
+      lua_setfield(state, -2, "role");
+      lua_pushinteger(state, (lua_Integer)event->max_datagram);
+      lua_setfield(state, -2, "max_datagram");
+      break;
+    case H2_LUA_LINK_EVENT_MESSAGE:
+      lua_pushlstring(state, (const char*)event->data, event->len);
+      lua_setfield(state, -2, "data");
+      lua_pushboolean(state, event->reliable);
+      lua_setfield(state, -2, "reliable");
+      break;
+    default:
+      lua_pushstring(state, event->reason == NULL ? "" : event->reason);
+      lua_setfield(state, -2, "reason");
+      lua_pushinteger(state, event->result);
+      lua_setfield(state, -2, "result");
+      break;
   }
 }
 
-static int link_callback_in_flight(const h2_lua_job_t *job) {
+static int link_callback_in_flight(const h2_lua_job_t* job) {
   for (size_t i = 0u; i < job->host->config.max_coroutines_per_vm; ++i) {
-    const h2_lua_task_t *task = &job->tasks[i];
-    if (task->ordered_callback &&
-        (task->state == H2_LUA_TASK_READY ||
-         task->state == H2_LUA_TASK_SLEEPING ||
-         task->state == H2_LUA_TASK_JOINING ||
-         task->state == H2_LUA_TASK_CAPABILITY)) {
+    const h2_lua_task_t* task = &job->tasks[i];
+    if (task->ordered_callback && (task->state == H2_LUA_TASK_READY ||
+                                   task->state == H2_LUA_TASK_SLEEPING ||
+                                   task->state == H2_LUA_TASK_JOINING ||
+                                   task->state == H2_LUA_TASK_CAPABILITY)) {
       return 1;
     }
   }
@@ -1438,8 +1432,8 @@ static int link_callback_in_flight(const h2_lua_job_t *job) {
 /* Runs on the owning worker with the job mutex held. Scheduler tasks do not
  * run in spawn order, so one event's callbacks must finish before the next
  * event is dispatched; this keeps LINK_MESSAGE in arrival order. */
-static void link_deliver(void *user, h2_lua_job_t *job) {
-  h2_lua_link_t *link = user;
+static void link_deliver(void* user, h2_lua_job_t* job) {
+  h2_lua_link_t* link = user;
   int popped = 0;
   link_lock(link);
   if (!link_session_owned_by(link, job->id, job->generation)) {
@@ -1447,9 +1441,9 @@ static void link_deliver(void *user, h2_lua_job_t *job) {
     return;
   }
   while (link->event_count != 0u && !link_callback_in_flight(job)) {
-    const h2_lua_link_event_t *event = &link->events[link->event_head];
+    const h2_lua_link_event_t* event = &link->events[link->event_head];
     for (size_t i = link->next_callback_index; i < job->callback_count; ++i) {
-      h2_lua_callback_t *callback = &job->callbacks[i];
+      h2_lua_callback_t* callback = &job->callbacks[i];
       uint32_t task_id = 0u;
       if (!callback->active ||
           callback->component_id != H2_RUNTIME_COMPONENT_ID_NONE ||
@@ -1465,7 +1459,7 @@ static void link_deliver(void *user, h2_lua_job_t *job) {
         link->next_callback_index = i;
         goto out;
       }
-      h2_lua_task_t *task = h2_lua_find_task(job, task_id);
+      h2_lua_task_t* task = h2_lua_find_task(job, task_id);
       task->release_when_done = 1;
       task->ordered_callback = 1;
       lua_pop(job->vm->state, 2);
@@ -1483,9 +1477,9 @@ out:
   link_unlock(link);
 }
 
-static void link_job_ended(void *user, h2_lua_job_id_t job_id,
+static void link_job_ended(void* user, h2_lua_job_id_t job_id,
                            uint32_t job_generation) {
-  h2_lua_link_t *link = user;
+  h2_lua_link_t* link = user;
   link_lock(link);
   if (link_session_owned_by(link, job_id, job_generation)) {
     link->closing = 1;
@@ -1495,9 +1489,9 @@ static void link_job_ended(void *user, h2_lua_job_id_t job_id,
   link_unlock(link);
 }
 
-static void link_destroy(void *user) {
-  h2_lua_link_t *link = user;
-  h2_pal_task_t *task;
+static void link_destroy(void* user) {
+  h2_lua_link_t* link = user;
+  h2_pal_task_t* task;
   link_lock(link);
   link->closing = 1;
   link_broadcast(link);
@@ -1520,30 +1514,29 @@ static const h2_lua_link_hooks_t s_link_hooks = {
 
 /* A board without BLE wires the canonical unsupported object, whose
  * operations exist but always fail; treat it like a missing BLE Host. */
-static int link_ble_is_usable(const h2_pal_ble_host_api_t *ble) {
-  const h2_pal_ble_vtable_t *v = ble == NULL ? NULL : ble->vtable;
+static int link_ble_is_usable(const h2_pal_ble_host_api_t* ble) {
+  const h2_pal_ble_vtable_t* v = ble == NULL ? NULL : ble->vtable;
   return v != NULL && v != h2_pal_unsupported_ble_host_api()->vtable &&
-         v->adv_set_create != NULL &&
-         v->adv_set_set_data != NULL && v->adv_set_start != NULL &&
-         v->adv_set_stop != NULL && v->adv_set_destroy != NULL &&
-         v->start_scan != NULL && v->stop_scan != NULL &&
-         v->register_gatt_services != NULL &&
+         v->adv_set_create != NULL && v->adv_set_set_data != NULL &&
+         v->adv_set_start != NULL && v->adv_set_stop != NULL &&
+         v->adv_set_destroy != NULL && v->start_scan != NULL &&
+         v->stop_scan != NULL && v->register_gatt_services != NULL &&
          v->unregister_gatt_services != NULL && v->notify != NULL &&
          v->connect != NULL && v->disconnect != NULL &&
          v->exchange_mtu != NULL && v->gatt_discover != NULL &&
          v->gatt_write != NULL && v->gatt_subscribe != NULL;
 }
 
-static int link_system_event_is_usable(const h2_pal_system_event_api_t *api) {
+static int link_system_event_is_usable(const h2_pal_system_event_api_t* api) {
   return api != NULL && api->vtable != NULL &&
          api->vtable != h2_pal_unsupported_system_event_api()->vtable &&
          api->vtable->subscribe != NULL && api->vtable->unsubscribe != NULL;
 }
 
-h2_pal_result_t h2_lua_link_enable(h2_lua_host_t *host,
-                                   const h2_lua_link_config_t *config) {
-  h2_runtime_t *runtime;
-  h2_lua_link_t *link;
+h2_pal_result_t h2_lua_link_enable(h2_lua_host_t* host,
+                                   const h2_lua_link_config_t* config) {
+  h2_runtime_t* runtime;
+  h2_lua_link_t* link;
   h2_pal_result_t rc;
   if (host == NULL || config == NULL ||
       (config->adv_type != H2_PAL_BLE_ADV_TYPE_LEGACY &&

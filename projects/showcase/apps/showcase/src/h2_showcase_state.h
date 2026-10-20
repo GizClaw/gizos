@@ -18,12 +18,12 @@ typedef struct h2_showcase_state {
   int pressed;
 } h2_showcase_state_t;
 
-void h2_showcase_state_init(h2_showcase_state_t *state);
-void h2_showcase_state_button_down(h2_showcase_state_t *state,
+void h2_showcase_state_init(h2_showcase_state_t* state);
+void h2_showcase_state_button_down(h2_showcase_state_t* state,
                                    uint64_t timestamp_ms);
-void h2_showcase_state_button_up(h2_showcase_state_t *state,
+void h2_showcase_state_button_up(h2_showcase_state_t* state,
                                  uint64_t timestamp_ms);
-void h2_showcase_state_tick(h2_showcase_state_t *state, uint64_t timestamp_ms);
-void h2_showcase_state_close_console(h2_showcase_state_t *state);
+void h2_showcase_state_tick(h2_showcase_state_t* state, uint64_t timestamp_ms);
+void h2_showcase_state_close_console(h2_showcase_state_t* state);
 
 #endif

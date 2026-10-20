@@ -33,27 +33,24 @@ typedef struct pcm_stage {
 } pcm_stage_t;
 
 struct h2_gizclaw_audio_decoder {
-  const h2_pal_mem_api_t *allocator;
+  const h2_pal_mem_api_t* allocator;
   audio_format_t format;
   h2_pal_result_t error;
-  h2_ogg_opus_t *ogg;
-  h2_gizclaw_mp3_t *mp3;
-  h2_gizclaw_wav_t *wav;
-  pcm_stage_t *stage;
+  h2_ogg_opus_t* ogg;
+  h2_gizclaw_mp3_t* mp3;
+  h2_gizclaw_wav_t* wav;
+  pcm_stage_t* stage;
   /* Bytes handed to the Ogg/Opus decoder: its headers' length once they are
    * parsed, which places a byte-rate estimate. */
   uint64_t delivered;
   h2_gizclaw_audio_input_t input;
 };
 
-h2_pal_result_t h2_gizclaw_audio_input_fill(h2_gizclaw_audio_input_t *in,
+h2_pal_result_t h2_gizclaw_audio_input_fill(h2_gizclaw_audio_input_t* in,
                                             size_t need) {
-  if (need > H2_GIZCLAW_AUDIO_INPUT_BYTES)
-    return H2_PAL_ERR_INVALID_ARG;
-  if (in->len >= need)
-    return H2_PAL_OK;
-  if (in->eof)
-    return H2_PAL_EXIT;
+  if (need > H2_GIZCLAW_AUDIO_INPUT_BYTES) return H2_PAL_ERR_INVALID_ARG;
+  if (in->len >= need) return H2_PAL_OK;
+  if (in->eof) return H2_PAL_EXIT;
   if (in->offset) {
     memmove(in->data, in->data + in->offset, in->len);
     in->offset = 0;
@@ -67,29 +64,26 @@ h2_pal_result_t h2_gizclaw_audio_input_fill(h2_gizclaw_audio_input_t *in,
       in->eof = true;
       return H2_PAL_EXIT;
     }
-    if (rc != H2_PAL_OK)
-      return rc;
-    if (!count || count > room)
-      return H2_PAL_ERR_FORMAT;
+    if (rc != H2_PAL_OK) return rc;
+    if (!count || count > room) return H2_PAL_ERR_FORMAT;
     in->len += count;
   }
   return H2_PAL_OK;
 }
 
-void h2_gizclaw_audio_input_consume(h2_gizclaw_audio_input_t *in,
+void h2_gizclaw_audio_input_consume(h2_gizclaw_audio_input_t* in,
                                     size_t count) {
   in->offset += count;
   in->len -= count;
   in->position += count;
 }
 
-h2_pal_result_t h2_gizclaw_audio_input_skip(h2_gizclaw_audio_input_t *in,
+h2_pal_result_t h2_gizclaw_audio_input_skip(h2_gizclaw_audio_input_t* in,
                                             uint64_t count) {
   while (count) {
     if (!in->len) {
       const h2_pal_result_t rc = h2_gizclaw_audio_input_fill(in, 1);
-      if (rc != H2_PAL_OK)
-        return rc;
+      if (rc != H2_PAL_OK) return rc;
     }
     const size_t take = count < in->len ? (size_t)count : in->len;
     h2_gizclaw_audio_input_consume(in, take);
@@ -98,7 +92,7 @@ h2_pal_result_t h2_gizclaw_audio_input_skip(h2_gizclaw_audio_input_t *in,
   return H2_PAL_OK;
 }
 
-void h2_gizclaw_audio_input_restart(h2_gizclaw_audio_input_t *in,
+void h2_gizclaw_audio_input_restart(h2_gizclaw_audio_input_t* in,
                                     uint64_t position) {
   in->offset = in->len = 0;
   in->eof = false;
@@ -106,14 +100,13 @@ void h2_gizclaw_audio_input_restart(h2_gizclaw_audio_input_t *in,
 }
 
 /* The Ogg/Opus decoder reads through the sniffed bytes first. */
-static h2_pal_result_t ogg_read(void *user, uint8_t *out, size_t capacity,
-                                size_t *out_len) {
-  h2_gizclaw_audio_decoder_t *d = user;
-  h2_gizclaw_audio_input_t *in = &d->input;
+static h2_pal_result_t ogg_read(void* user, uint8_t* out, size_t capacity,
+                                size_t* out_len) {
+  h2_gizclaw_audio_decoder_t* d = user;
+  h2_gizclaw_audio_input_t* in = &d->input;
   *out_len = 0;
   if (!in->len) {
-    if (in->eof)
-      return H2_PAL_EXIT;
+    if (in->eof) return H2_PAL_EXIT;
     const h2_pal_result_t rc = in->read(in->user, out, capacity, out_len);
     if (rc == H2_PAL_OK) {
       in->position += *out_len;
@@ -129,17 +122,15 @@ static h2_pal_result_t ogg_read(void *user, uint8_t *out, size_t capacity,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t sniff(h2_gizclaw_audio_decoder_t *d) {
-  h2_gizclaw_audio_input_t *in = &d->input;
+static h2_pal_result_t sniff(h2_gizclaw_audio_decoder_t* d) {
+  h2_gizclaw_audio_input_t* in = &d->input;
   h2_pal_result_t rc = h2_gizclaw_audio_input_fill(in, 12);
-  if (rc != H2_PAL_OK && rc != H2_PAL_EXIT)
-    return rc;
-  const uint8_t *p = in->data + in->offset;
+  if (rc != H2_PAL_OK && rc != H2_PAL_EXIT) return rc;
+  const uint8_t* p = in->data + in->offset;
   const size_t n = in->len;
   if (n >= 4u && !memcmp(p, "OggS", 4)) {
     d->format = FORMAT_OGG;
-    return h2_ogg_opus_create_reader(d->allocator, ogg_read, d,
-                                             &d->ogg);
+    return h2_ogg_opus_create_reader(d->allocator, ogg_read, d, &d->ogg);
   }
   if (n >= 12u && !memcmp(p, "RIFF", 4) && !memcmp(p + 8, "WAVE", 4))
     d->format = FORMAT_WAV;
@@ -149,30 +140,29 @@ static h2_pal_result_t sniff(h2_gizclaw_audio_decoder_t *d) {
   else
     return n ? H2_PAL_ERR_UNSUPPORTED : H2_PAL_ERR_FORMAT;
   d->stage = h2_pal_mem_alloc(d->allocator, sizeof(*d->stage));
-  if (d->stage == NULL)
-    return H2_PAL_ERR_NO_MEMORY;
+  if (d->stage == NULL) return H2_PAL_ERR_NO_MEMORY;
   memset(d->stage, 0, sizeof(*d->stage));
   return d->format == FORMAT_MP3
              ? h2_gizclaw_mp3_create(d->allocator, in, &d->mp3)
              : h2_gizclaw_wav_create(d->allocator, in, &d->wav);
 }
 
-static uint32_t source_rate(const h2_gizclaw_audio_decoder_t *d) {
+static uint32_t source_rate(const h2_gizclaw_audio_decoder_t* d) {
   return d->format == FORMAT_MP3 ? h2_gizclaw_mp3_rate(d->mp3)
                                  : h2_gizclaw_wav_rate(d->wav);
 }
 
 /* Largest source run whose output fits one next(). */
-static size_t source_limit(const pcm_stage_t *s) {
+static size_t source_limit(const pcm_stage_t* s) {
   size_t count = H2_GIZCLAW_RESAMPLE_INPUT_MAX;
-  while (count > 1u && h2_gizclaw_resample_capacity(&s->resample, count) >
-                           OUTPUT_SAMPLES)
+  while (count > 1u &&
+         h2_gizclaw_resample_capacity(&s->resample, count) > OUTPUT_SAMPLES)
     count -= 64u < count ? 64u : count - 1u;
   return count;
 }
 
 /* Keep what lies at or after the target and write it as PCM16LE. */
-static void emit(pcm_stage_t *s, size_t count, uint8_t *pcm, size_t *out_len) {
+static void emit(pcm_stage_t* s, size_t count, uint8_t* pcm, size_t* out_len) {
   size_t first = 0;
   if (s->seeking) {
     if (s->next16 + count <= s->target16)
@@ -191,11 +181,10 @@ static void emit(pcm_stage_t *s, size_t count, uint8_t *pcm, size_t *out_len) {
   }
 }
 
-static h2_pal_result_t pcm_next(h2_gizclaw_audio_decoder_t *d, uint8_t *pcm,
-                                size_t *out_len) {
-  pcm_stage_t *s = d->stage;
-  if (s->flushed)
-    return H2_PAL_EXIT;
+static h2_pal_result_t pcm_next(h2_gizclaw_audio_decoder_t* d, uint8_t* pcm,
+                                size_t* out_len) {
+  pcm_stage_t* s = d->stage;
+  if (s->flushed) return H2_PAL_EXIT;
   if (!s->rate && source_rate(d)) {
     s->rate = source_rate(d);
     /* Sized before the first run: the window depends only on the rate. */
@@ -216,13 +205,12 @@ static h2_pal_result_t pcm_next(h2_gizclaw_audio_decoder_t *d, uint8_t *pcm,
     if (s->seeking) {
       /* The track ended before the target: it is over there. */
       s->seeking = false;
-      s->origin16 = s->running ? s->next16
-                               : (end * OUTPUT_RATE + s->rate - 1u) / s->rate;
+      s->origin16 =
+          s->running ? s->next16 : (end * OUTPUT_RATE + s->rate - 1u) / s->rate;
     }
     return *out_len ? H2_PAL_OK : H2_PAL_EXIT;
   }
-  if (rc != H2_PAL_OK || !chunk.count)
-    return rc;
+  if (rc != H2_PAL_OK || !chunk.count) return rc;
   if (!s->running || chunk.start != s->expected) {
     /* A new run: its first output is the first 16 kHz grid point at or
      * after the chunk's first sample. Sources only jump at a seek, before
@@ -244,57 +232,50 @@ static h2_pal_result_t pcm_next(h2_gizclaw_audio_decoder_t *d, uint8_t *pcm,
   return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_gizclaw_audio_decoder_next(h2_gizclaw_audio_decoder_t *d,
-                                              uint8_t *pcm, size_t capacity,
-                                              size_t *out_len) {
-  if (out_len != NULL)
-    *out_len = 0;
+h2_pal_result_t h2_gizclaw_audio_decoder_next(h2_gizclaw_audio_decoder_t* d,
+                                              uint8_t* pcm, size_t capacity,
+                                              size_t* out_len) {
+  if (out_len != NULL) *out_len = 0;
   if (d == NULL || pcm == NULL || out_len == NULL ||
       capacity < H2_GIZCLAW_AUDIO_PCM_BYTES)
     return H2_PAL_ERR_INVALID_ARG;
-  if (d->error != H2_PAL_OK)
-    return d->error;
+  if (d->error != H2_PAL_OK) return d->error;
   h2_pal_result_t rc = H2_PAL_OK;
-  if (d->format == FORMAT_UNKNOWN)
-    rc = sniff(d);
+  if (d->format == FORMAT_UNKNOWN) rc = sniff(d);
   if (rc == H2_PAL_OK)
     rc = d->format == FORMAT_OGG
              ? h2_ogg_opus_next(d->ogg, pcm, capacity, out_len)
              : pcm_next(d, pcm, out_len);
-  if (rc != H2_PAL_OK && rc != H2_PAL_EXIT)
-    d->error = rc;
+  if (rc != H2_PAL_OK && rc != H2_PAL_EXIT) d->error = rc;
   return rc;
 }
 
 bool h2_gizclaw_audio_decoder_headers_done(
-    const h2_gizclaw_audio_decoder_t *d) {
-  if (d == NULL || d->error != H2_PAL_OK)
-    return false;
+    const h2_gizclaw_audio_decoder_t* d) {
+  if (d == NULL || d->error != H2_PAL_OK) return false;
   switch (d->format) {
-  case FORMAT_OGG:
-    return h2_ogg_opus_headers_done(d->ogg);
-  case FORMAT_MP3:
-    return h2_gizclaw_mp3_headers_done(d->mp3);
-  case FORMAT_WAV:
-    return h2_gizclaw_wav_headers_done(d->wav);
-  default:
-    return false;
+    case FORMAT_OGG:
+      return h2_ogg_opus_headers_done(d->ogg);
+    case FORMAT_MP3:
+      return h2_gizclaw_mp3_headers_done(d->mp3);
+    case FORMAT_WAV:
+      return h2_gizclaw_wav_headers_done(d->wav);
+    default:
+      return false;
   }
 }
 
 h2_pal_result_t h2_gizclaw_audio_decoder_seek_offset(
-    h2_gizclaw_audio_decoder_t *d, uint64_t target_ms, uint64_t duration_ms,
-    uint64_t total, uint64_t *offset) {
+    h2_gizclaw_audio_decoder_t* d, uint64_t target_ms, uint64_t duration_ms,
+    uint64_t total, uint64_t* offset) {
   if (d == NULL || offset == NULL || target_ms > UINT64_MAX / 48000u)
     return H2_PAL_ERR_INVALID_ARG;
   if (!h2_gizclaw_audio_decoder_headers_done(d))
     return H2_PAL_ERR_INVALID_STATE;
   if (d->format == FORMAT_OGG) {
-    if (!duration_ms)
-      return H2_PAL_ERR_INVALID_ARG;
+    if (!duration_ms) return H2_PAL_ERR_INVALID_ARG;
     const uint64_t header = d->delivered;
-    if (header >= total)
-      return H2_PAL_ERR_FORMAT;
+    if (header >= total) return H2_PAL_ERR_FORMAT;
     const uint64_t aim =
         target_ms > OGG_SEEK_BACKOFF_MS ? target_ms - OGG_SEEK_BACKOFF_MS : 0;
     *offset = header + (uint64_t)((double)(total - header) * (double)aim /
@@ -307,7 +288,7 @@ h2_pal_result_t h2_gizclaw_audio_decoder_seek_offset(
              : h2_gizclaw_wav_seek_offset(d->wav, target, total, offset);
 }
 
-h2_pal_result_t h2_gizclaw_audio_decoder_seek(h2_gizclaw_audio_decoder_t *d,
+h2_pal_result_t h2_gizclaw_audio_decoder_seek(h2_gizclaw_audio_decoder_t* d,
                                               uint64_t target_ms, bool resync,
                                               uint64_t offset) {
   if (d == NULL || target_ms > UINT64_MAX / 48000u)
@@ -315,14 +296,13 @@ h2_pal_result_t h2_gizclaw_audio_decoder_seek(h2_gizclaw_audio_decoder_t *d,
   if (!h2_gizclaw_audio_decoder_headers_done(d) ||
       (d->stage != NULL && d->stage->seeking))
     return H2_PAL_ERR_INVALID_STATE;
-  if (resync)
-    h2_gizclaw_audio_input_restart(&d->input, offset);
+  if (resync) h2_gizclaw_audio_input_restart(&d->input, offset);
   if (d->format == FORMAT_OGG)
     return h2_ogg_opus_seek(d->ogg, target_ms, resync);
   const uint64_t target = target_ms * source_rate(d) / 1000u;
-  const h2_pal_result_t rc =
-      d->format == FORMAT_MP3 ? h2_gizclaw_mp3_seek(d->mp3, target, resync)
-                              : h2_gizclaw_wav_seek(d->wav, target, resync);
+  const h2_pal_result_t rc = d->format == FORMAT_MP3
+                                 ? h2_gizclaw_mp3_seek(d->mp3, target, resync)
+                                 : h2_gizclaw_wav_seek(d->wav, target, resync);
   if (rc == H2_PAL_OK) {
     d->stage->seeking = true;
     d->stage->target16 = target_ms * (OUTPUT_RATE / 1000u);
@@ -330,30 +310,25 @@ h2_pal_result_t h2_gizclaw_audio_decoder_seek(h2_gizclaw_audio_decoder_t *d,
   return rc;
 }
 
-bool h2_gizclaw_audio_decoder_origin(const h2_gizclaw_audio_decoder_t *d,
-                                     uint64_t *samples) {
-  if (d == NULL || samples == NULL)
-    return false;
-  if (d->format == FORMAT_OGG)
-    return h2_ogg_opus_origin(d->ogg, samples);
-  if (d->stage != NULL && d->stage->seeking)
-    return false;
+bool h2_gizclaw_audio_decoder_origin(const h2_gizclaw_audio_decoder_t* d,
+                                     uint64_t* samples) {
+  if (d == NULL || samples == NULL) return false;
+  if (d->format == FORMAT_OGG) return h2_ogg_opus_origin(d->ogg, samples);
+  if (d->stage != NULL && d->stage->seeking) return false;
   *samples = d->stage != NULL ? d->stage->origin16 : 0u;
   return true;
 }
 
 h2_pal_result_t h2_gizclaw_audio_decoder_create(
-    const h2_pal_mem_api_t *allocator, h2_gizclaw_audio_read_fn read,
-    void *user, h2_gizclaw_audio_decoder_t **out) {
-  if (out != NULL)
-    *out = NULL;
+    const h2_pal_mem_api_t* allocator, h2_gizclaw_audio_read_fn read,
+    void* user, h2_gizclaw_audio_decoder_t** out) {
+  if (out != NULL) *out = NULL;
   if (out == NULL || read == NULL || allocator == NULL ||
       allocator->vtable == NULL || allocator->vtable->alloc == NULL ||
       allocator->vtable->free == NULL)
     return H2_PAL_ERR_INVALID_ARG;
-  h2_gizclaw_audio_decoder_t *d = h2_pal_mem_alloc(allocator, sizeof(*d));
-  if (d == NULL)
-    return H2_PAL_ERR_NO_MEMORY;
+  h2_gizclaw_audio_decoder_t* d = h2_pal_mem_alloc(allocator, sizeof(*d));
+  if (d == NULL) return H2_PAL_ERR_NO_MEMORY;
   memset(d, 0, sizeof(*d));
   d->allocator = allocator;
   d->input.read = read;
@@ -362,9 +337,8 @@ h2_pal_result_t h2_gizclaw_audio_decoder_create(
   return H2_PAL_OK;
 }
 
-void h2_gizclaw_audio_decoder_destroy(h2_gizclaw_audio_decoder_t *d) {
-  if (d == NULL)
-    return;
+void h2_gizclaw_audio_decoder_destroy(h2_gizclaw_audio_decoder_t* d) {
+  if (d == NULL) return;
   h2_ogg_opus_destroy(d->ogg);
   h2_gizclaw_mp3_destroy(d->mp3);
   h2_gizclaw_wav_destroy(d->wav);

@@ -15,18 +15,16 @@ typedef struct memory {
   size_t live, calls, fail_at;
 } memory_t;
 
-static void *allocate(void *ctx, size_t len) {
-  memory_t *m = ctx;
-  if (++m->calls == m->fail_at)
-    return NULL;
-  void *p = malloc(len);
-  if (p != NULL)
-    ++m->live;
+static void* allocate(void* ctx, size_t len) {
+  memory_t* m = ctx;
+  if (++m->calls == m->fail_at) return NULL;
+  void* p = malloc(len);
+  if (p != NULL) ++m->live;
   return p;
 }
 
-static void release(void *ctx, void *p) {
-  memory_t *m = ctx;
+static void release(void* ctx, void* p) {
+  memory_t* m = ctx;
   if (p != NULL) {
     assert(m->live > 0);
     --m->live;
@@ -40,11 +38,12 @@ static const h2_pal_mem_vtable_t memory_vtable = {.alloc = allocate,
 #include "ogg_opus_fixture.h"
 
 typedef struct stream_input {
-  const uint8_t *data;
+  const uint8_t* data;
   size_t length, offset;
 } stream_input_t;
-static h2_pal_result_t stream_read(void *user, uint8_t *out, size_t capacity, size_t *length) {
-  stream_input_t *input = user;
+static h2_pal_result_t stream_read(void* user, uint8_t* out, size_t capacity,
+                                   size_t* length) {
+  stream_input_t* input = user;
   *length = input->length - input->offset;
   if (*length > capacity) *length = capacity;
   if (*length > 7) *length = 7; /* Split headers, laces and packet bodies. */
@@ -52,15 +51,16 @@ static h2_pal_result_t stream_read(void *user, uint8_t *out, size_t capacity, si
   input->offset += *length;
   return *length ? H2_PAL_OK : H2_PAL_EXIT;
 }
-static size_t decode_mode(fixture_t *f, h2_pal_result_t expected, size_t fail_at,
-                           bool streaming) {
+static size_t decode_mode(fixture_t* f, h2_pal_result_t expected,
+                          size_t fail_at, bool streaming) {
   memory_t mem = {.fail_at = fail_at};
   h2_pal_mem_api_t allocator = {.user = &mem, .vtable = &memory_vtable};
-  h2_ogg_opus_t *decoder = NULL;
+  h2_ogg_opus_t* decoder = NULL;
   stream_input_t input = {.data = f->bytes, .length = f->len};
-  h2_pal_result_t rc = streaming ?
-      h2_ogg_opus_create_reader(&allocator, stream_read, &input, &decoder) :
-      h2_ogg_opus_create(&allocator, f->bytes, f->len, &decoder);
+  h2_pal_result_t rc =
+      streaming
+          ? h2_ogg_opus_create_reader(&allocator, stream_read, &input, &decoder)
+          : h2_ogg_opus_create(&allocator, f->bytes, f->len, &decoder);
   uint8_t pcm[H2_OGG_OPUS_PCM_BYTES];
   size_t total = 0, nonzero = 0, steps = 0;
   while (rc == H2_PAL_OK) {
@@ -68,15 +68,13 @@ static size_t decode_mode(fixture_t *f, h2_pal_result_t expected, size_t fail_at
     rc = h2_ogg_opus_next(decoder, pcm, sizeof(pcm), &len);
     assert(++steps < 1000);
     total += len;
-    for (size_t i = 0; i < len; ++i)
-      nonzero += pcm[i] != 0;
+    for (size_t i = 0; i < len; ++i) nonzero += pcm[i] != 0;
   }
   if (rc != expected)
     fprintf(stderr, "decode rc=%d expected=%d len=%zu output=%zu\n", rc,
             expected, f->len, total);
   assert(rc == expected);
-  if (total > 0)
-    assert(nonzero > 0);
+  if (total > 0) assert(nonzero > 0);
   if (decoder) {
     size_t len = SIZE_MAX;
     assert(h2_ogg_opus_next(decoder, pcm, sizeof(pcm), &len) == rc);
@@ -87,10 +85,9 @@ static size_t decode_mode(fixture_t *f, h2_pal_result_t expected, size_t fail_at
   return total;
 }
 
-static size_t decode(fixture_t *f, h2_pal_result_t expected, size_t fail_at) {
+static size_t decode(fixture_t* f, h2_pal_result_t expected, size_t fail_at) {
   size_t bytes = decode_mode(f, expected, fail_at, false);
-  if (!fail_at && f->len)
-    assert(decode_mode(f, expected, 0, true) == bytes);
+  if (!fail_at && f->len) assert(decode_mode(f, expected, 0, true) == bytes);
   return bytes;
 }
 
@@ -180,60 +177,60 @@ static void test_invalid(void) {
     headers(&f, 123, 1, mode == 10 ? 1000 : 0, 0);
     size_t audio = packet_page(&f, 4, 960, 123, 2, f.packet, f.packet_len);
     switch (mode) {
-    case 0:
-      --f.len;
-      break; /* Truncated body. */
-    case 1:
-      f.bytes[f.len - 1] ^= 1;
-      break; /* CRC. */
-    case 2:
-      f.bytes[audio + 5] = 0;
-      break; /* No EOS. */
-    case 3:
-      put32(f.bytes + audio + 18, 4);
-      break; /* Sequence gap. */
-    case 4:
-      put32(f.bytes + audio + 14, 124);
-      break; /* Multiplexed stream. */
-    case 5:
-      f.bytes[audio + 5] = 5;
-      break; /* Spurious continuation. */
-    case 6:
-      /* A non-final first audio page may not timestamp before its samples. */
-      f.bytes[audio + 5] = 0;
-      put64(f.bytes + audio + 6, 959);
-      break;
-    case 7:
-      put64(f.bytes + audio + 6, UINT64_MAX);
-      break;
-    case 8:
-      f.bytes[audio + 5] = 6;
-      break; /* Repeated BOS. */
-    case 9:
-      f.len = audio;
-      break; /* Header-only file. */
-    case 10:
-      break; /* EOS smaller than pre-skip. */
-    case 11:
-      f.bytes[audio + 4] = 1;
-      break;
-    case 12:
-      f.bytes[audio + 5] = 12;
-      break;
-    case 13:
-      f.bytes[audio + 27] = 0;
-      break; /* Zero-byte Opus packet. */
-    case 14:
-      put64(f.bytes + audio + 6, (uint64_t)INT64_MAX + 1);
-      break;
-    case 15:
-      f.bytes[0] = 'X';
-      break;
-    case 16: /* Header-only EOS followed by valid audio is not a stream. */
-      f.bytes[5] = 6;
-      memset(f.bytes + 22, 0, 4);
-      put32(f.bytes + 22, checksum(f.bytes, 47));
-      break;
+      case 0:
+        --f.len;
+        break; /* Truncated body. */
+      case 1:
+        f.bytes[f.len - 1] ^= 1;
+        break; /* CRC. */
+      case 2:
+        f.bytes[audio + 5] = 0;
+        break; /* No EOS. */
+      case 3:
+        put32(f.bytes + audio + 18, 4);
+        break; /* Sequence gap. */
+      case 4:
+        put32(f.bytes + audio + 14, 124);
+        break; /* Multiplexed stream. */
+      case 5:
+        f.bytes[audio + 5] = 5;
+        break; /* Spurious continuation. */
+      case 6:
+        /* A non-final first audio page may not timestamp before its samples. */
+        f.bytes[audio + 5] = 0;
+        put64(f.bytes + audio + 6, 959);
+        break;
+      case 7:
+        put64(f.bytes + audio + 6, UINT64_MAX);
+        break;
+      case 8:
+        f.bytes[audio + 5] = 6;
+        break; /* Repeated BOS. */
+      case 9:
+        f.len = audio;
+        break; /* Header-only file. */
+      case 10:
+        break; /* EOS smaller than pre-skip. */
+      case 11:
+        f.bytes[audio + 4] = 1;
+        break;
+      case 12:
+        f.bytes[audio + 5] = 12;
+        break;
+      case 13:
+        f.bytes[audio + 27] = 0;
+        break; /* Zero-byte Opus packet. */
+      case 14:
+        put64(f.bytes + audio + 6, (uint64_t)INT64_MAX + 1);
+        break;
+      case 15:
+        f.bytes[0] = 'X';
+        break;
+      case 16: /* Header-only EOS followed by valid audio is not a stream. */
+        f.bytes[5] = 6;
+        memset(f.bytes + 22, 0, 4);
+        put32(f.bytes + 22, checksum(f.bytes, 47));
+        break;
     }
     if (mode != 0 && mode != 1 && mode != 9) {
       memset(f.bytes + audio + 22, 0, 4);
@@ -250,10 +247,10 @@ typedef struct seek_input {
   size_t file_len, range_len, offset;
   bool switched;
 } seek_input_t;
-static h2_pal_result_t seek_read(void *user, uint8_t *out, size_t capacity,
-                                 size_t *length) {
-  seek_input_t *input = user;
-  const uint8_t *data = input->switched ? input->range : input->file;
+static h2_pal_result_t seek_read(void* user, uint8_t* out, size_t capacity,
+                                 size_t* length) {
+  seek_input_t* input = user;
+  const uint8_t* data = input->switched ? input->range : input->file;
   const size_t len = input->switched ? input->range_len : input->file_len;
   *length = len - input->offset;
   if (*length > capacity) *length = capacity;
@@ -268,16 +265,18 @@ typedef struct seek_result {
 } seek_result_t;
 /* Decode headers from the file, then seek. With a range the decoder resyncs
  * on it; without one it keeps reading the file sequentially. */
-static seek_result_t seek_decode(const fixture_t *f, size_t header_len,
-                                 const uint8_t *range, size_t range_len,
+static seek_result_t seek_decode(const fixture_t* f, size_t header_len,
+                                 const uint8_t* range, size_t range_len,
                                  uint64_t target_ms) {
   memory_t mem = {0};
   h2_pal_mem_api_t allocator = {.user = &mem, .vtable = &memory_vtable};
-  seek_input_t input = {.file = f->bytes, .file_len = f->len,
-                        .range = range, .range_len = range_len};
-  h2_ogg_opus_t *decoder = NULL;
-  assert(h2_ogg_opus_create_reader(&allocator, seek_read, &input,
-                                           &decoder) == H2_PAL_OK);
+  seek_input_t input = {.file = f->bytes,
+                        .file_len = f->len,
+                        .range = range,
+                        .range_len = range_len};
+  h2_ogg_opus_t* decoder = NULL;
+  assert(h2_ogg_opus_create_reader(&allocator, seek_read, &input, &decoder) ==
+         H2_PAL_OK);
   uint8_t pcm[H2_OGG_OPUS_PCM_BYTES];
   size_t len = 0;
   uint64_t origin = 0;
@@ -319,7 +318,7 @@ static seek_result_t seek_decode(const fixture_t *f, size_t header_len,
 }
 /* 50 × 20 ms, pre-skip 312, 100 samples of end trim: 16 kHz output is
  * (48000 - 100 - 312) / 3 rounded as the decoder rounds. */
-static size_t seek_fixture(fixture_t *f, size_t page_body) {
+static size_t seek_fixture(fixture_t* f, size_t page_body) {
   memset(f, 0, sizeof(*f));
   make_packet(f, 1);
   headers(f, 77, 1, 312, 0);
@@ -346,11 +345,12 @@ static void test_seek_sequential(void) {
   assert(split_header == header_len);
   assert(decode(&f, H2_PAL_EXIT, 0) / 2 == plain);
   r = seek_decode(&f, header_len, NULL, 0, 500);
-  assert(r.rc == H2_PAL_EXIT && r.origin == 8000 && r.origin + r.emitted == plain);
+  assert(r.rc == H2_PAL_EXIT && r.origin == 8000 &&
+         r.origin + r.emitted == plain);
   /* Only a reader decoder can resync; memory decoders seek sequentially. */
   memory_t mem = {0};
   h2_pal_mem_api_t allocator = {.user = &mem, .vtable = &memory_vtable};
-  h2_ogg_opus_t *decoder = NULL;
+  h2_ogg_opus_t* decoder = NULL;
   assert(h2_ogg_opus_create(&allocator, f.bytes, f.len, &decoder) == H2_PAL_OK);
   uint8_t pcm[H2_OGG_OPUS_PCM_BYTES];
   size_t len;
@@ -366,7 +366,7 @@ static void test_seek_sequential(void) {
 }
 
 /* Page start offsets and the granule at each page's first packet start. */
-static size_t page_offsets(const fixture_t *f, size_t from, size_t *out,
+static size_t page_offsets(const fixture_t* f, size_t from, size_t* out,
                            size_t capacity) {
   size_t count = 0;
   for (size_t at = from; at < f->len && count < capacity; ++count) {
@@ -393,17 +393,19 @@ static void test_seek_resync_every_offset(void) {
      * with FORMAT. */
     size_t landed = 0, failed = 0;
     for (size_t from = header_len; from < f.len;
-         from += (from >= pages[20] && from < pages[23]) ||
-                         from >= pages[count - 3] ? 1 : 7) {
-      seek_result_t r = seek_decode(&f, header_len, f.bytes + from, f.len - from, 0);
+         from +=
+         (from >= pages[20] && from < pages[23]) || from >= pages[count - 3]
+             ? 1
+             : 7) {
+      seek_result_t r =
+          seek_decode(&f, header_len, f.bytes + from, f.len - from, 0);
       if (r.rc == H2_PAL_ERR_FORMAT) {
         /* Variant 0: page count - 2 is the last non-EOS page. */
         assert(from > pages[count - (variant ? 3 : 2)]);
         ++failed;
         continue;
       }
-      if (!variant)
-        assert(from <= pages[count - 2]);
+      if (!variant) assert(from <= pages[count - 2]);
       assert(r.rc == H2_PAL_EXIT);
       assert(r.origin + r.emitted == plain);
       size_t page = 0;
@@ -428,8 +430,8 @@ static void test_seek_resync_every_offset(void) {
   const size_t header_len = seek_fixture(&f, 0);
   size_t pages[64];
   page_offsets(&f, header_len, pages, 64);
-  seek_result_t r = seek_decode(&f, header_len, f.bytes + pages[20],
-                                f.len - pages[20], 0);
+  seek_result_t r =
+      seek_decode(&f, header_len, f.bytes + pages[20], f.len - pages[20], 0);
   assert(r.rc == H2_PAL_EXIT);
   assert(r.origin == (960u * 20u) / 3u - (312u + 2u) / 3u + 1280u);
   /* A later target is decoded and discarded up to exactly the target. */
@@ -450,7 +452,7 @@ static void test_seek_resync_rejects_fake_pages(void) {
     size_t len = 0;
     memcpy(range, "xOgOggOgg", 9);
     len = 9;
-    uint8_t *fake = range + len;
+    uint8_t* fake = range + len;
     memcpy(fake, f.bytes + pages[3], pages[4] - pages[3]);
     size_t fake_len = pages[4] - pages[3];
     if (mode == 0) {
@@ -490,21 +492,20 @@ static void test_seek_resync_rejects_fake_pages(void) {
 }
 
 /* Host-only interoperability oracle: decode an external fixture to raw PCM. */
-static int decode_file(const char *source, const char *target) {
-  FILE *in = fopen(source, "rb");
+static int decode_file(const char* source, const char* target) {
+  FILE* in = fopen(source, "rb");
   assert(in && fseek(in, 0, SEEK_END) == 0);
   long length = ftell(in);
   assert(length > 0 && fseek(in, 0, SEEK_SET) == 0);
-  uint8_t *data = malloc((size_t)length);
+  uint8_t* data = malloc((size_t)length);
   assert(data && fread(data, 1, (size_t)length, in) == (size_t)length);
   fclose(in);
-  FILE *out = fopen(target, "wb");
+  FILE* out = fopen(target, "wb");
   assert(out);
   memory_t mem = {0};
   h2_pal_mem_api_t allocator = {.user = &mem, .vtable = &memory_vtable};
-  h2_ogg_opus_t *d;
-  assert(h2_ogg_opus_create(&allocator, data, (size_t)length, &d) ==
-         H2_PAL_OK);
+  h2_ogg_opus_t* d;
+  assert(h2_ogg_opus_create(&allocator, data, (size_t)length, &d) == H2_PAL_OK);
   uint8_t pcm[H2_OGG_OPUS_PCM_BYTES];
   h2_pal_result_t rc;
   size_t total = 0;
@@ -556,7 +557,8 @@ static void test_oversized_tags(void) {
     const uint64_t plain = decode(&f, H2_PAL_EXIT, 0) / 2u;
     assert(plain == (19200u - 312u) / 3u);
     seek_result_t r = seek_decode(&f, header_len, NULL, 0, 200);
-    assert(r.rc == H2_PAL_EXIT && r.origin == 3200u && r.origin + r.emitted == plain);
+    assert(r.rc == H2_PAL_EXIT && r.origin == 3200u &&
+           r.origin + r.emitted == plain);
   }
 }
 
@@ -566,21 +568,23 @@ static void test_oversized_tags(void) {
  * up to the whole-file decode, and output that lines up best at shift 0 with
  * that decode at the origin. */
 typedef struct sweep_file {
-  uint8_t *data;
+  uint8_t* data;
   size_t len, header_len;
-  int16_t *plain;
+  int16_t* plain;
   size_t plain_samples;
 } sweep_file_t;
-static seek_result_t sweep_one(const sweep_file_t *file, bool resync,
-                               size_t from, uint64_t target_ms, int16_t *out,
+static seek_result_t sweep_one(const sweep_file_t* file, bool resync,
+                               size_t from, uint64_t target_ms, int16_t* out,
                                size_t out_cap) {
   memory_t mem = {0};
   h2_pal_mem_api_t allocator = {.user = &mem, .vtable = &memory_vtable};
-  seek_input_t input = {.file = file->data, .file_len = file->len,
-                        .range = file->data + from, .range_len = file->len - from};
-  h2_ogg_opus_t *decoder = NULL;
-  assert(h2_ogg_opus_create_reader(&allocator, seek_read, &input,
-                                           &decoder) == H2_PAL_OK);
+  seek_input_t input = {.file = file->data,
+                        .file_len = file->len,
+                        .range = file->data + from,
+                        .range_len = file->len - from};
+  h2_ogg_opus_t* decoder = NULL;
+  assert(h2_ogg_opus_create_reader(&allocator, seek_read, &input, &decoder) ==
+         H2_PAL_OK);
   uint8_t pcm[H2_OGG_OPUS_PCM_BYTES];
   size_t len = 0;
   seek_result_t result = {.rc = H2_PAL_OK};
@@ -612,21 +616,21 @@ static seek_result_t sweep_one(const sweep_file_t *file, bool resync,
 }
 /* Signal-to-noise power ratio (not dB, so no libm) of `got` against the
  * plain decode at `origin + shift` over n samples. */
-static double sweep_snr(const sweep_file_t *file, const int16_t *got, size_t n,
+static double sweep_snr(const sweep_file_t* file, const int16_t* got, size_t n,
                         uint64_t origin, int shift) {
   double signal = 0, noise = 0;
   for (size_t i = 0; i < n; ++i) {
-    const double a = file->plain[(int64_t)origin + shift + (int64_t)i], b = got[i];
+    const double a = file->plain[(int64_t)origin + shift + (int64_t)i],
+                 b = got[i];
     signal += a * a;
     noise += (a - b) * (a - b);
   }
-  if (noise == 0)
-    return 1e20;
+  if (noise == 0) return 1e20;
   return signal / noise;
 }
-static int seek_sweep(const char *path) {
+static int seek_sweep(const char* path) {
   sweep_file_t file = {0};
-  FILE *in = fopen(path, "rb");
+  FILE* in = fopen(path, "rb");
   assert(in && fseek(in, 0, SEEK_END) == 0);
   file.len = (size_t)ftell(in);
   assert(file.len > 0 && fseek(in, 0, SEEK_SET) == 0);
@@ -637,9 +641,9 @@ static int seek_sweep(const char *path) {
   memory_t mem = {0};
   h2_pal_mem_api_t allocator = {.user = &mem, .vtable = &memory_vtable};
   seek_input_t input = {.file = file.data, .file_len = file.len};
-  h2_ogg_opus_t *decoder = NULL;
-  assert(h2_ogg_opus_create_reader(&allocator, seek_read, &input,
-                                           &decoder) == H2_PAL_OK);
+  h2_ogg_opus_t* decoder = NULL;
+  assert(h2_ogg_opus_create_reader(&allocator, seek_read, &input, &decoder) ==
+         H2_PAL_OK);
   uint8_t pcm[H2_OGG_OPUS_PCM_BYTES];
   size_t len = 0, cap = file.len * 64u + 16000u;
   file.plain = malloc(cap * 2u);
@@ -660,28 +664,32 @@ static int seek_sweep(const char *path) {
     printf("SWEEP UNSUPPORTED plain decode rc=%d\n", rc);
     return 2;
   }
-  int16_t *out = malloc(file.plain_samples * 2u + 4096u);
+  int16_t* out = malloc(file.plain_samples * 2u + 4096u);
   assert(out);
   unsigned landed = 0, format = 0, bad = 0;
   double worst = 1e30;
   /* 97 resync offsets across the audio, then 41 sequential targets. */
   for (unsigned k = 0; k < 97u + 41u; ++k) {
     const bool resync = k < 97u;
-    const size_t from = resync ? file.header_len +
-        (size_t)((double)(file.len - file.header_len) * k / 97.0) : 0;
-    const uint64_t target = resync ? 0 :
-        (uint64_t)((double)file.plain_samples / 16.0 * (k - 97u) / 41.0);
-    seek_result_t r = sweep_one(&file, resync, from, target, out,
-                                file.plain_samples + 2048u);
+    const size_t from =
+        resync ? file.header_len +
+                     (size_t)((double)(file.len - file.header_len) * k / 97.0)
+               : 0;
+    const uint64_t target =
+        resync
+            ? 0
+            : (uint64_t)((double)file.plain_samples / 16.0 * (k - 97u) / 41.0);
+    seek_result_t r =
+        sweep_one(&file, resync, from, target, out, file.plain_samples + 2048u);
     if (r.rc == H2_PAL_ERR_FORMAT && resync) {
       ++format; /* Past the last page that can anchor. */
       continue;
     }
     bool ok = r.rc == H2_PAL_EXIT && r.origin + r.emitted == file.plain_samples;
     if (!resync)
-      ok = ok && (target * 16u >= file.plain_samples
-                      ? r.origin == file.plain_samples
-                      : r.origin == target * 16u);
+      ok = ok &&
+           (target * 16u >= file.plain_samples ? r.origin == file.plain_samples
+                                               : r.origin == target * 16u);
     const size_t n = r.emitted < 16000u ? r.emitted : 16000u;
     if (ok && n >= 1600u) {
       /* Exact alignment: shift 0 beats every other shift within 20 ms. */
@@ -691,21 +699,20 @@ static int seek_sweep(const char *path) {
             r.origin + (uint64_t)shift + n <= file.plain_samples &&
             sweep_snr(&file, out, n, r.origin, shift) >= at)
           ok = false;
-      if (at < worst)
-        worst = at;
+      if (at < worst) worst = at;
     }
-    if (resync && ok)
-      ++landed;
+    if (resync && ok) ++landed;
     if (!ok) {
       ++bad;
       printf("BAD %s from=%zu target=%llu rc=%d origin=%llu emitted=%llu\n",
-             resync ? "resync" : "sequential", from,
-             (unsigned long long)target, r.rc, (unsigned long long)r.origin,
-             (unsigned long long)r.emitted);
+             resync ? "resync" : "sequential", from, (unsigned long long)target,
+             r.rc, (unsigned long long)r.origin, (unsigned long long)r.emitted);
     }
   }
-  printf("resync landed=%u format_at_tail=%u sequential=41 bad=%u "
-         "worst_snr_ratio=%.1f\n", landed, format, bad, worst);
+  printf(
+      "resync landed=%u format_at_tail=%u sequential=41 bad=%u "
+      "worst_snr_ratio=%.1f\n",
+      landed, format, bad, worst);
   printf("%s\n", bad ? "SWEEP FAIL" : "SWEEP PASS");
   free(out);
   free(file.plain);
@@ -713,11 +720,10 @@ static int seek_sweep(const char *path) {
   return bad ? 1 : 0;
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   if (argc == 3 && strcmp(argv[1], "--seek-sweep") == 0)
     return seek_sweep(argv[2]);
-  if (argc == 3)
-    return decode_file(argv[1], argv[2]);
+  if (argc == 3) return decode_file(argv[1], argv[2]);
   assert(argc == 1);
   test_valid();
   test_continued();

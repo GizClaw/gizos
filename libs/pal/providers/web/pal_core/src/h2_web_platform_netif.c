@@ -16,10 +16,10 @@
  */
 
 struct h2_pal_system_event_subscription {
-  h2_pal_system_event_subscription_t *next;
+  h2_pal_system_event_subscription_t* next;
   h2_pal_system_event_type_t type;
   h2_pal_system_event_handler_t handler;
-  void *handler_user;
+  void* handler_user;
   uint64_t generation;
   size_t in_flight;
   size_t waiters;
@@ -27,33 +27,29 @@ struct h2_pal_system_event_subscription {
 };
 
 struct h2_web_system_event_frame {
-  h2_web_system_event_frame_t *next;
-  h2_pal_system_event_subscription_t *subscription;
-  h2_web_platform_t *platform;
+  h2_web_system_event_frame_t* next;
+  h2_pal_system_event_subscription_t* subscription;
+  h2_web_platform_t* platform;
 };
 
-static void
-h2_web_system_event_reclaim(h2_web_platform_t *platform,
-                            h2_pal_system_event_subscription_t *target) {
+static void h2_web_system_event_reclaim(
+    h2_web_platform_t* platform, h2_pal_system_event_subscription_t* target) {
   if (target->active || target->in_flight != 0u || target->waiters != 0u)
     return;
-  h2_pal_system_event_subscription_t **cursor =
+  h2_pal_system_event_subscription_t** cursor =
       &platform->system_event_subscriptions;
-  while (*cursor != NULL && *cursor != target)
-    cursor = &(*cursor)->next;
-  if (*cursor == NULL)
-    return;
+  while (*cursor != NULL && *cursor != target) cursor = &(*cursor)->next;
+  if (*cursor == NULL) return;
   *cursor = target->next;
   --platform->system_event_subscription_count;
   free(target);
 }
 
-static _Thread_local h2_web_system_event_frame_t *dispatch_stack;
+static _Thread_local h2_web_system_event_frame_t* dispatch_stack;
 
-static bool
-h2_web_system_event_self(h2_web_platform_t *platform,
-                         h2_pal_system_event_subscription_t *target) {
-  for (h2_web_system_event_frame_t *frame = dispatch_stack; frame != NULL;
+static bool h2_web_system_event_self(
+    h2_web_platform_t* platform, h2_pal_system_event_subscription_t* target) {
+  for (h2_web_system_event_frame_t* frame = dispatch_stack; frame != NULL;
        frame = frame->next)
     if (frame->subscription == target && frame->platform == platform)
       return true;
@@ -112,8 +108,9 @@ EM_JS(void, h2_web_netif_online_js,
 });
 /* clang-format on */
 
-static bool h2_web_netif_online(h2_web_platform_t *platform) {
-  return platform->netif_supported && h2_web_platform_fake_network_available(platform) &&
+static bool h2_web_netif_online(h2_web_platform_t* platform) {
+  return platform->netif_supported &&
+         h2_web_platform_fake_network_available(platform) &&
          ((int)h2_web_main_call(h2_web_netif_online_js, NULL).i32) != 0;
 }
 
@@ -127,7 +124,7 @@ static h2_pal_netif_ref_t h2_web_netif_ref(void) {
 }
 
 static void h2_web_netif_fill_status(bool online,
-                                     h2_pal_netif_status_t *out_status) {
+                                     h2_pal_netif_status_t* out_status) {
   memset(out_status, 0, sizeof(*out_status));
   out_status->ref = h2_web_netif_ref();
   out_status->kind = H2_PAL_NETIF_KIND_HOST;
@@ -139,24 +136,22 @@ static void h2_web_netif_fill_status(bool online,
   }
 }
 
-static bool h2_web_netif_filter_matches(const h2_pal_netif_filter_t *filter) {
-  return filter == NULL ||
-         ((filter->kind == H2_PAL_NETIF_KIND_UNKNOWN ||
-           filter->kind == H2_PAL_NETIF_KIND_HOST) &&
-          (filter->name == NULL || filter->name[0] == '\0' ||
-           strncmp(filter->name, H2_WEB_NETIF_NAME, H2_PAL_NETIF_NAME_MAX) ==
-               0) &&
-          filter->id == 0u);
+static bool h2_web_netif_filter_matches(const h2_pal_netif_filter_t* filter) {
+  return filter == NULL || ((filter->kind == H2_PAL_NETIF_KIND_UNKNOWN ||
+                             filter->kind == H2_PAL_NETIF_KIND_HOST) &&
+                            (filter->name == NULL || filter->name[0] == '\0' ||
+                             strncmp(filter->name, H2_WEB_NETIF_NAME,
+                                     H2_PAL_NETIF_NAME_MAX) == 0) &&
+                            filter->id == 0u);
 }
 
 /* Resolve a ref to the browser path; DEFAULT resolves only while online. */
-static h2_pal_result_t h2_web_netif_resolve(h2_web_platform_t *platform,
-                                            const h2_pal_netif_ref_t *ref,
-                                            bool *out_online) {
+static h2_pal_result_t h2_web_netif_resolve(h2_web_platform_t* platform,
+                                            const h2_pal_netif_ref_t* ref,
+                                            bool* out_online) {
   if (platform == NULL || platform->shutting_down)
     return H2_PAL_ERR_INVALID_STATE;
-  if (!platform->netif_supported)
-    return H2_PAL_ERR_UNSUPPORTED;
+  if (!platform->netif_supported) return H2_PAL_ERR_UNSUPPORTED;
   const bool online = h2_web_netif_online(platform);
   *out_online = online;
   if (h2_pal_netif_ref_is_default(ref))
@@ -170,58 +165,52 @@ static h2_pal_result_t h2_web_netif_resolve(h2_web_platform_t *platform,
   if (ref->type == H2_PAL_NETIF_REF_KIND)
     return ref->kind == H2_PAL_NETIF_KIND_HOST ? H2_PAL_OK
                                                : H2_PAL_ERR_NOT_FOUND;
-  if (ref->type == H2_PAL_NETIF_REF_ID)
-    return H2_PAL_ERR_NOT_FOUND;
+  if (ref->type == H2_PAL_NETIF_REF_ID) return H2_PAL_ERR_NOT_FOUND;
   return H2_PAL_ERR_INVALID_ARG;
 }
 
-static h2_pal_result_t h2_web_netif_list(void *user,
-                                         const h2_pal_netif_filter_t *filter,
+static h2_pal_result_t h2_web_netif_list(void* user,
+                                         const h2_pal_netif_filter_t* filter,
                                          h2_pal_netif_list_fn on_netif,
-                                         void *callback_user) {
-  h2_web_platform_t *platform = user;
+                                         void* callback_user) {
+  h2_web_platform_t* platform = user;
   if (platform == NULL || platform->shutting_down)
     return H2_PAL_ERR_INVALID_STATE;
-  if (!platform->netif_supported)
-    return H2_PAL_ERR_UNSUPPORTED;
-  if (!h2_web_netif_filter_matches(filter))
-    return H2_PAL_OK;
+  if (!platform->netif_supported) return H2_PAL_ERR_UNSUPPORTED;
+  if (!h2_web_netif_filter_matches(filter)) return H2_PAL_OK;
   h2_pal_netif_status_t status;
   h2_web_netif_fill_status(h2_web_netif_online(platform), &status);
   return on_netif(callback_user, &status.ref, &status) != 0 ? H2_PAL_EXIT
                                                             : H2_PAL_OK;
 }
 
-static h2_pal_result_t h2_web_netif_find(void *user,
-                                         const h2_pal_netif_filter_t *filter,
-                                         h2_pal_netif_ref_t *out_ref) {
-  h2_web_platform_t *platform = user;
+static h2_pal_result_t h2_web_netif_find(void* user,
+                                         const h2_pal_netif_filter_t* filter,
+                                         h2_pal_netif_ref_t* out_ref) {
+  h2_web_platform_t* platform = user;
   if (platform == NULL || platform->shutting_down)
     return H2_PAL_ERR_INVALID_STATE;
-  if (!platform->netif_supported)
-    return H2_PAL_ERR_UNSUPPORTED;
-  if (!h2_web_netif_filter_matches(filter))
-    return H2_PAL_ERR_NOT_FOUND;
+  if (!platform->netif_supported) return H2_PAL_ERR_UNSUPPORTED;
+  if (!h2_web_netif_filter_matches(filter)) return H2_PAL_ERR_NOT_FOUND;
   *out_ref = h2_web_netif_ref();
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t
-h2_web_netif_get_status(void *user, const h2_pal_netif_ref_t *ref,
-                        h2_pal_netif_status_t *out_status) {
+static h2_pal_result_t h2_web_netif_get_status(
+    void* user, const h2_pal_netif_ref_t* ref,
+    h2_pal_netif_status_t* out_status) {
   memset(out_status, 0, sizeof(*out_status));
   bool online = false;
   const h2_pal_result_t result = h2_web_netif_resolve(user, ref, &online);
-  if (result != H2_PAL_OK)
-    return result;
+  if (result != H2_PAL_OK) return result;
   h2_web_netif_fill_status(online, out_status);
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t
-h2_web_netif_get_dns_servers(void *user, const h2_pal_netif_ref_t *ref,
-                             h2_pal_netif_dns_server_t *out_servers,
-                             size_t max_servers, size_t *out_count) {
+static h2_pal_result_t h2_web_netif_get_dns_servers(
+    void* user, const h2_pal_netif_ref_t* ref,
+    h2_pal_netif_dns_server_t* out_servers, size_t max_servers,
+    size_t* out_count) {
   (void)out_servers;
   (void)max_servers;
   *out_count = 0u;
@@ -231,8 +220,8 @@ h2_web_netif_get_dns_servers(void *user, const h2_pal_netif_ref_t *ref,
   return result == H2_PAL_OK ? H2_PAL_ERR_UNSUPPORTED : result;
 }
 
-static h2_pal_result_t h2_web_netif_set_default(void *user,
-                                                const h2_pal_netif_ref_t *ref) {
+static h2_pal_result_t h2_web_netif_set_default(void* user,
+                                                const h2_pal_netif_ref_t* ref) {
   bool online = false;
   const h2_pal_result_t result = h2_web_netif_resolve(user, ref, &online);
   // The browser owns routing; there is no other path to select.
@@ -247,8 +236,8 @@ static const h2_pal_netif_vtable_t h2_web_netif_vtable = {
     .set_default = h2_web_netif_set_default,
 };
 
-static int h2_web_system_event_init(void *user) {
-  h2_web_platform_t *platform = user;
+static int h2_web_system_event_init(void* user) {
+  h2_web_platform_t* platform = user;
   if (platform == NULL || platform->shutting_down)
     return H2_PAL_ERR_INVALID_STATE;
   const bool online = h2_web_netif_online(platform);
@@ -261,35 +250,32 @@ static int h2_web_system_event_init(void *user) {
   return H2_PAL_OK;
 }
 
-static void h2_web_system_event_deinit(void *user) {
-  h2_web_platform_t *platform = user;
-  if (platform == NULL)
-    return;
+static void h2_web_system_event_deinit(void* user) {
+  h2_web_platform_t* platform = user;
+  if (platform == NULL) return;
   pthread_mutex_lock(&platform->event_mutex);
-  if (platform->system_event_users != 0u)
-    --platform->system_event_users;
+  if (platform->system_event_users != 0u) --platform->system_event_users;
   pthread_mutex_unlock(&platform->event_mutex);
 }
 
-static int h2_web_system_event_post(void *user,
-                                    const h2_pal_system_event_t *event,
+static int h2_web_system_event_post(void* user,
+                                    const h2_pal_system_event_t* event,
                                     uint32_t timeout_ms) {
   (void)timeout_ms;
-  h2_web_platform_t *platform = user;
+  h2_web_platform_t* platform = user;
   if (platform == NULL || platform->shutting_down)
     return H2_PAL_ERR_INVALID_STATE;
   const int validation = h2_pal_system_event_validate(event);
-  if (validation != H2_PAL_OK)
-    return validation;
+  if (validation != H2_PAL_OK) return validation;
   // Snapshot identities, not callbacks: retiring/reusing a slot must not admit
   // a newly registered subscriber into a post that preceded its registration.
   struct {
-    h2_pal_system_event_subscription_t *subscription;
+    h2_pal_system_event_subscription_t* subscription;
     uint64_t generation;
   } matches[H2_WEB_SYSTEM_EVENT_SUBSCRIPTION_MAX];
   pthread_mutex_lock(&platform->event_mutex);
   size_t count = 0u;
-  for (h2_pal_system_event_subscription_t *subscription =
+  for (h2_pal_system_event_subscription_t* subscription =
            platform->system_event_subscriptions;
        subscription != NULL && count < H2_WEB_SYSTEM_EVENT_SUBSCRIPTION_MAX;
        subscription = subscription->next) {
@@ -301,15 +287,15 @@ static int h2_web_system_event_post(void *user,
   ++platform->system_event_posts;
   int result = H2_PAL_OK;
   for (size_t index = 0u; index < count; ++index) {
-    h2_pal_system_event_subscription_t *live = NULL;
-    for (h2_pal_system_event_subscription_t *subscription =
+    h2_pal_system_event_subscription_t* live = NULL;
+    for (h2_pal_system_event_subscription_t* subscription =
              platform->system_event_subscriptions;
-         subscription != NULL && live == NULL; subscription = subscription->next)
+         subscription != NULL && live == NULL;
+         subscription = subscription->next)
       if (subscription == matches[index].subscription && subscription->active &&
           subscription->generation == matches[index].generation)
         live = subscription;
-    if (live == NULL)
-      continue;
+    if (live == NULL) continue;
     ++live->in_flight;
     h2_web_system_event_frame_t frame = {
         .next = dispatch_stack, .subscription = live, .platform = platform};
@@ -331,10 +317,10 @@ static int h2_web_system_event_post(void *user,
 }
 
 static int h2_web_system_event_subscribe(
-    void *user, h2_pal_system_event_type_t type,
-    h2_pal_system_event_handler_t handler, void *handler_user,
-    h2_pal_system_event_subscription_t **out_subscription) {
-  h2_web_platform_t *platform = user;
+    void* user, h2_pal_system_event_type_t type,
+    h2_pal_system_event_handler_t handler, void* handler_user,
+    h2_pal_system_event_subscription_t** out_subscription) {
+  h2_web_platform_t* platform = user;
   if (platform == NULL || platform->shutting_down)
     return H2_PAL_ERR_INVALID_STATE;
   if (handler == NULL || out_subscription == NULL)
@@ -345,7 +331,7 @@ static int h2_web_system_event_subscribe(
     pthread_mutex_unlock(&platform->event_mutex);
     return H2_PAL_ERR_NO_SPACE;
   }
-  h2_pal_system_event_subscription_t *subscription =
+  h2_pal_system_event_subscription_t* subscription =
       calloc(1u, sizeof(*subscription));
   if (subscription == NULL) {
     pthread_mutex_unlock(&platform->event_mutex);
@@ -366,23 +352,21 @@ static int h2_web_system_event_subscribe(
   return H2_PAL_OK;
 }
 
-static void
-h2_web_system_event_unsubscribe(void *user,
-                                h2_pal_system_event_subscription_t *target) {
-  h2_web_platform_t *platform = user;
-  if (platform == NULL)
-    return;
+static void h2_web_system_event_unsubscribe(
+    void* user, h2_pal_system_event_subscription_t* target) {
+  h2_web_platform_t* platform = user;
+  if (platform == NULL) return;
   // A synchronous PAL void-returning unsubscribe cannot report WOULD_BLOCK.
   // Its borrowed API is Worker-only; UI callers use the asynchronous entry.
   if (emscripten_is_main_runtime_thread()) {
-    emscripten_err("SystemEvent unsubscribe requires a Worker; use unsubscribe_async on the browser main thread");
+    emscripten_err(
+        "SystemEvent unsubscribe requires a Worker; use unsubscribe_async on the browser main thread");
     abort();
   }
   pthread_mutex_lock(&platform->event_mutex);
-  h2_pal_system_event_subscription_t **cursor =
+  h2_pal_system_event_subscription_t** cursor =
       &platform->system_event_subscriptions;
-  while (*cursor != NULL && *cursor != target)
-    cursor = &(*cursor)->next;
+  while (*cursor != NULL && *cursor != target) cursor = &(*cursor)->next;
   if (*cursor == NULL) {
     pthread_mutex_unlock(&platform->event_mutex);
     return;
@@ -403,18 +387,18 @@ h2_web_system_event_unsubscribe(void *user,
 }
 
 struct h2_web_event_unsubscribe_request {
-  h2_web_event_unsubscribe_request_t *next;
-  h2_pal_system_event_subscription_t *subscription;
-  void (*completed)(void *);
-  void *user;
+  h2_web_event_unsubscribe_request_t* next;
+  h2_pal_system_event_subscription_t* subscription;
+  void (*completed)(void*);
+  void* user;
 };
 
 h2_pal_result_t h2_web_platform_system_event_unsubscribe_async(
-    h2_web_platform_t *platform, h2_pal_system_event_subscription_t *target,
-    void (*completed)(void *), void *user) {
+    h2_web_platform_t* platform, h2_pal_system_event_subscription_t* target,
+    void (*completed)(void*), void* user) {
   if (platform == NULL || target == NULL || completed == NULL)
     return H2_PAL_ERR_INVALID_ARG;
-  h2_web_event_unsubscribe_request_t *request = calloc(1u, sizeof(*request));
+  h2_web_event_unsubscribe_request_t* request = calloc(1u, sizeof(*request));
   if (request == NULL) return H2_PAL_ERR_NO_MEMORY;
   // Neither admission lock may block the browser. Holding both short-lived
   // locks pins the subscription identity before it can be retired or reused.
@@ -428,7 +412,8 @@ h2_pal_result_t h2_web_platform_system_event_unsubscribe_async(
     return H2_PAL_ERR_BUSY;
   }
   h2_pal_result_t rc = H2_PAL_OK;
-  h2_pal_system_event_subscription_t *live = platform->system_event_subscriptions;
+  h2_pal_system_event_subscription_t* live =
+      platform->system_event_subscriptions;
   while (live != NULL && live != target) live = live->next;
   if (platform->shutting_down || platform->pump_stop)
     rc = H2_PAL_ERR_INVALID_STATE;
@@ -457,10 +442,11 @@ h2_pal_result_t h2_web_platform_system_event_unsubscribe_async(
   return rc;
 }
 
-void h2_web_platform_event_retire(h2_web_platform_t *platform) {
+void h2_web_platform_event_retire(h2_web_platform_t* platform) {
   for (;;) {
     pthread_mutex_lock(&platform->pump_mutex);
-    h2_web_event_unsubscribe_request_t *request = platform->event_unsubscribe_head;
+    h2_web_event_unsubscribe_request_t* request =
+        platform->event_unsubscribe_head;
     if (request != NULL) {
       platform->event_unsubscribe_head = request->next;
       if (platform->event_unsubscribe_head == NULL)
@@ -483,7 +469,7 @@ void h2_web_platform_event_retire(h2_web_platform_t *platform) {
       return;
     }
     pthread_mutex_lock(&platform->event_mutex);
-    h2_pal_system_event_subscription_t *target = request->subscription;
+    h2_pal_system_event_subscription_t* target = request->subscription;
     while (target->in_flight != 0u)
       pthread_cond_wait(&platform->event_changed, &platform->event_mutex);
     --target->waiters;
@@ -505,17 +491,15 @@ static const h2_pal_system_event_vtable_t h2_web_system_event_vtable = {
 };
 
 EMSCRIPTEN_KEEPALIVE void h2_web_netif_changed(uintptr_t platform_address) {
-  h2_web_platform_t *platform = (h2_web_platform_t *)platform_address;
-  if (platform == NULL || platform->shutting_down)
-    return;
+  h2_web_platform_t* platform = (h2_web_platform_t*)platform_address;
+  if (platform == NULL || platform->shutting_down) return;
   // Browser callbacks only record the wake; the pump publishes the event.
   platform->netif_dirty = true;
   h2_web_platform_request_pump(platform, 0u);
 }
 
-void h2_web_platform_netif_poll(h2_web_platform_t *platform) {
-  if (!atomic_exchange(&platform->netif_dirty, false))
-    return;
+void h2_web_platform_netif_poll(h2_web_platform_t* platform) {
+  if (!atomic_exchange(&platform->netif_dirty, false)) return;
   const bool online = h2_web_netif_online(platform);
   pthread_mutex_lock(&platform->event_mutex);
   if (platform->system_event_users == 0u || online == platform->netif_online) {
@@ -541,8 +525,7 @@ void h2_web_platform_netif_poll(h2_web_platform_t *platform) {
       .payload = &change,
       .payload_size = sizeof(change),
   };
-  const int result =
-      h2_web_system_event_post(platform, &event, 0u);
+  const int result = h2_web_system_event_post(platform, &event, 0u);
   if (result != H2_PAL_OK) {
     char message[96];
     (void)snprintf(message, sizeof(message),
@@ -552,7 +535,7 @@ void h2_web_platform_netif_poll(h2_web_platform_t *platform) {
   }
 }
 
-void h2_web_platform_netif_init(h2_web_platform_t *platform) {
+void h2_web_platform_netif_init(h2_web_platform_t* platform) {
   platform->netif_api = (h2_pal_netif_api_t){
       .user = platform,
       .vtable = &h2_web_netif_vtable,
@@ -562,18 +545,17 @@ void h2_web_platform_netif_init(h2_web_platform_t *platform) {
       .vtable = &h2_web_system_event_vtable,
   };
   platform->netif_supported =
-      ((int)h2_web_main_call(
-           h2_web_netif_install_js,
-           (const void *[]){&(uintptr_t){(uintptr_t)platform}})
+      ((int)h2_web_main_call(h2_web_netif_install_js,
+                             (const void*[]){&(uintptr_t){(uintptr_t)platform}})
            .i32) != 0;
   platform->netif_online = h2_web_netif_online(platform);
 }
 
-void h2_web_platform_netif_deinit(h2_web_platform_t *platform) {
+void h2_web_platform_netif_deinit(h2_web_platform_t* platform) {
   (void)h2_web_main_call(h2_web_netif_uninstall_js,
-                         (const void *[]){&(uintptr_t){(uintptr_t)platform}});
+                         (const void*[]){&(uintptr_t){(uintptr_t)platform}});
   while (platform->system_event_subscriptions != NULL) {
-    h2_pal_system_event_subscription_t *subscription =
+    h2_pal_system_event_subscription_t* subscription =
         platform->system_event_subscriptions;
     platform->system_event_subscriptions = subscription->next;
     free(subscription);

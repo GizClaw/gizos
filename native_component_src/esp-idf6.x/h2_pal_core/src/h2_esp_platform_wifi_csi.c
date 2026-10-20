@@ -13,7 +13,7 @@
 typedef struct h2_esp_wifi_csi_state {
   portMUX_TYPE lock;
   h2_pal_wifi_csi_frame_fn frame_cb;
-  void *frame_user;
+  void* frame_user;
   uint32_t min_delivery_interval_ms;
   int64_t last_delivery_us;
   uint32_t callback_in_flight;
@@ -56,10 +56,10 @@ static h2_pal_wifi_csi_phy_t h2_esp_wifi_csi_phy(unsigned int sig_mode) {
   return H2_PAL_WIFI_CSI_PHY_UNKNOWN;
 }
 
-static void h2_esp_wifi_csi_receive(void *context, wifi_csi_info_t *data) {
-  h2_esp_wifi_csi_state_t *state = context;
+static void h2_esp_wifi_csi_receive(void* context, wifi_csi_info_t* data) {
+  h2_esp_wifi_csi_state_t* state = context;
   h2_pal_wifi_csi_frame_fn frame_cb;
-  void *frame_user;
+  void* frame_user;
   uint32_t min_delivery_interval_ms;
   int64_t now_us;
   size_t offset;
@@ -127,8 +127,7 @@ static void h2_esp_wifi_csi_receive(void *context, wifi_csi_info_t *data) {
   portEXIT_CRITICAL(&state->lock);
 }
 
-static void h2_esp_wifi_csi_wait_for_callbacks(
-    h2_esp_wifi_csi_state_t *state) {
+static void h2_esp_wifi_csi_wait_for_callbacks(h2_esp_wifi_csi_state_t* state) {
   for (;;) {
     uint32_t callback_in_flight;
 
@@ -143,17 +142,17 @@ static void h2_esp_wifi_csi_wait_for_callbacks(
 }
 
 static h2_pal_result_t h2_esp_wifi_csi_get_capabilities(
-    void *user, h2_pal_wifi_csi_capabilities_t *out_capabilities) {
+    void* user, h2_pal_wifi_csi_capabilities_t* out_capabilities) {
   (void)user;
   out_capabilities->provider = H2_PAL_WIFI_CSI_PROVIDER_ESP_IDF;
   out_capabilities->max_sample_count = H2_ESP_WIFI_CSI_MAX_SAMPLES;
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t
-h2_esp_wifi_csi_start(void *user, const h2_pal_wifi_csi_config_t *config,
-                      h2_pal_wifi_csi_frame_fn frame_cb, void *frame_user) {
-  h2_esp_wifi_csi_state_t *state = user;
+static h2_pal_result_t h2_esp_wifi_csi_start(
+    void* user, const h2_pal_wifi_csi_config_t* config,
+    h2_pal_wifi_csi_frame_fn frame_cb, void* frame_user) {
+  h2_esp_wifi_csi_state_t* state = user;
   wifi_ap_record_t ap_info;
   wifi_csi_config_t esp_config = {
       .lltf_en = true,
@@ -219,8 +218,8 @@ h2_esp_wifi_csi_start(void *user, const h2_pal_wifi_csi_config_t *config,
   return rc;
 }
 
-static h2_pal_result_t h2_esp_wifi_csi_stop(void *user) {
-  h2_esp_wifi_csi_state_t *state = user;
+static h2_pal_result_t h2_esp_wifi_csi_stop(void* user) {
+  h2_esp_wifi_csi_state_t* state = user;
   h2_pal_result_t rc;
   int was_active;
 
@@ -255,6 +254,6 @@ static const h2_pal_wifi_csi_api_t s_h2_esp_wifi_csi_api = {
     .vtable = &s_h2_esp_wifi_csi_vtable,
 };
 
-const h2_pal_wifi_csi_api_t *h2_esp_platform_wifi_csi(void) {
+const h2_pal_wifi_csi_api_t* h2_esp_platform_wifi_csi(void) {
   return &s_h2_esp_wifi_csi_api;
 }

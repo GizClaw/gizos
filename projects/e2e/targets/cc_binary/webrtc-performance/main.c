@@ -6,14 +6,14 @@
 #include <stdio.h>
 #include <string.h>
 
-static int exchange_offer(void *user, h2_pal_webrtc_str_t offer, char *answer,
-                          size_t answer_capacity, size_t *answer_len) {
+static int exchange_offer(void* user, h2_pal_webrtc_str_t offer, char* answer,
+                          size_t answer_capacity, size_t* answer_len) {
   return h2_webrtc_pion_fixture_exchange_performance(
       user, offer, answer, answer_capacity, answer_len);
 }
 
-int main(int argc, char **argv) {
-  const char *profile = "smoke";
+int main(int argc, char** argv) {
+  const char* profile = "smoke";
   unsigned requested_runs = 0u;
   size_t requested_transfer_bytes = 0u;
   if (argc < 2) {
@@ -27,8 +27,8 @@ int main(int argc, char **argv) {
     int consumed = 0;
     if (strncmp(argv[index], "--profile=", 10u) == 0) {
       profile = argv[index] + 10u;
-    } else if (sscanf(argv[index], "--runs=%u%n", &requested_runs,
-                      &consumed) == 1 &&
+    } else if (sscanf(argv[index], "--runs=%u%n", &requested_runs, &consumed) ==
+                   1 &&
                argv[index][consumed] == '\0') {
       continue;
     } else if (sscanf(argv[index], "--transfer-bytes=%zu%n",
@@ -40,10 +40,9 @@ int main(int argc, char **argv) {
       return 2;
     }
   }
-  const unsigned profile_runs = strcmp(profile, "smoke") == 0
-                                    ? 1u
-                                    : strcmp(profile, "benchmark") == 0 ? 10u
-                                                                          : 0u;
+  const unsigned profile_runs = strcmp(profile, "smoke") == 0       ? 1u
+                                : strcmp(profile, "benchmark") == 0 ? 10u
+                                                                    : 0u;
   if (profile_runs == 0u ||
       (requested_runs != 0u && requested_runs != profile_runs) ||
       (requested_transfer_bytes != 0u &&

@@ -14,10 +14,10 @@ static void request_stop(int signal_number) {
   s_stop_requested = 1;
 }
 
-static h2_pal_result_t mapper_list(void *user,
+static h2_pal_result_t mapper_list(void* user,
                                    h2_runtime_component_t component_filter,
                                    h2_runtime_component_mapping_cb_t callback,
-                                   void *callback_user) {
+                                   void* callback_user) {
   (void)user;
   if (callback == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -33,9 +33,9 @@ static h2_pal_result_t mapper_list(void *user,
   return callback(callback_user, &entry);
 }
 
-static h2_pal_result_t mapper_get(void *user,
+static h2_pal_result_t mapper_get(void* user,
                                   h2_runtime_component_id_t component_id,
-                                  h2_pal_periph_id_t *out_periph_id) {
+                                  h2_pal_periph_id_t* out_periph_id) {
   (void)user;
   if (out_periph_id == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -58,10 +58,9 @@ static const h2_runtime_component_mapper_t s_mapper = {
 };
 
 static h2_pal_result_t wait_for_released_baseline(
-    const h2_runtime_config_t *config) {
+    const h2_runtime_config_t* config) {
   unsigned int stable_samples = 0u;
-  for (unsigned int sample = 0u; sample < 250u && !s_stop_requested;
-       ++sample) {
+  for (unsigned int sample = 0u; sample < 250u && !s_stop_requested; ++sample) {
     h2_pal_single_button_reading_t reading = {0};
     h2_pal_result_t result = h2_pal_button_read_single_button(
         config->button, H2_KICKPI_K4B_PERIPH_ACTION_BUTTON, &reading);
@@ -74,8 +73,8 @@ static h2_pal_result_t wait_for_released_baseline(
     if (stable_samples >= 10u) {
       return H2_PAL_OK;
     }
-    result = h2_pal_time_sleep_ms(config->time,
-                                  H2_RUNTIME_BUTTON_POLL_INTERVAL_MS);
+    result =
+        h2_pal_time_sleep_ms(config->time, H2_RUNTIME_BUTTON_POLL_INTERVAL_MS);
     if (result != H2_PAL_OK) {
       return result;
     }
@@ -83,16 +82,16 @@ static h2_pal_result_t wait_for_released_baseline(
   return s_stop_requested ? H2_PAL_EXIT : H2_PAL_ERR_TIMEOUT;
 }
 
-static const char *event_name(h2_runtime_event_kind_t kind) {
+static const char* event_name(h2_runtime_event_kind_t kind) {
   switch (kind) {
-  case H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN:
-    return "DOWN";
-  case H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP:
-    return "UP";
-  case H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION:
-    return "ACTION";
-  default:
-    return NULL;
+    case H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN:
+      return "DOWN";
+    case H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP:
+      return "UP";
+    case H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION:
+      return "ACTION";
+    default:
+      return NULL;
   }
 }
 
@@ -113,7 +112,7 @@ int main(void) {
       .video_decoder = h2_pal_unsupported_video_decoder_api(),
   };
   h2_runtime_config_t config = {0};
-  h2_runtime_t *runtime = NULL;
+  h2_runtime_t* runtime = NULL;
   h2_pal_result_t result =
       h2_kickpi_k4b_board_runtime_config(&config, &providers);
   config.component_mapper = &s_mapper;
@@ -153,20 +152,18 @@ int main(void) {
     };
     /* Drain before waiting: a half-drained queue has no pending wake. */
     h2_pal_result_t event_result = H2_PAL_OK;
-    while (!saw_action &&
-           h2_runtime_poll_event(runtime, &event) == H2_PAL_OK) {
+    while (!saw_action && h2_runtime_poll_event(runtime, &event) == H2_PAL_OK) {
       if (event.kind == H2_RUNTIME_COMPONENT_EVENT_ERROR) {
         h2_pal_result_t input_error = H2_PAL_ERR_INVALID_STATE;
         if (event.payload_size == sizeof(input_error)) {
           memcpy(&input_error, event.payload, sizeof(input_error));
         }
-        fprintf(stderr,
-                "H2_BUTTON_RUNTIME_INPUT_ERROR component=%u rc=%d\n",
+        fprintf(stderr, "H2_BUTTON_RUNTIME_INPUT_ERROR component=%u rc=%d\n",
                 (unsigned int)event.component_id, input_error);
         result = input_error;
         break;
       }
-      const char *name = event_name(event.kind);
+      const char* name = event_name(event.kind);
       if (name != NULL) {
         fprintf(stderr,
                 "H2_BUTTON_RUNTIME_EVENT kind=%s component=%u sequence=%llu\n",

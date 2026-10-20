@@ -1,6 +1,7 @@
 /**
  * @file h2_jieli_wl82_sdk_port_fake.h
- * @brief Deterministic single-threaded fake of the wl82 SDK port for host tests.
+ * @brief Deterministic single-threaded fake of the wl82 SDK port for host
+ * tests.
  */
 
 #ifndef H2_JIELI_WL82_SDK_PORT_FAKE_H
@@ -22,7 +23,7 @@ extern "C" {
 void h2_jieli_fake_reset(void);
 
 /** Captured debug UART bytes (NUL-terminated) and their length. */
-const char *h2_jieli_fake_log_output(void);
+const char* h2_jieli_fake_log_output(void);
 size_t h2_jieli_fake_log_length(void);
 
 /** Advances the fake millisecond clock; sleeps also advance it. */
@@ -49,14 +50,14 @@ void h2_jieli_fake_set_sem_timeout_hook(void (*hook)(void));
 void h2_jieli_fake_set_sem_give_hook(void (*hook)(void));
 
 /** Handle reported by h2_jieli_sdk_task_current(); defaults to a fixed one. */
-void h2_jieli_fake_set_current_task(const void *handle);
+void h2_jieli_fake_set_current_task(const void* handle);
 /** Fail the next service dispatch before the operation executes. */
 void h2_jieli_fake_fail_next_timer_call(void);
 
 /** Records the last task creation request. */
 int h2_jieli_fake_task_create_calls(void);
-const char *h2_jieli_fake_last_task_name(void);
-const char *h2_jieli_fake_last_task_policy_name(void);
+const char* h2_jieli_fake_last_task_name(void);
+const char* h2_jieli_fake_last_task_policy_name(void);
 size_t h2_jieli_fake_last_task_stack_bytes(void);
 /** Runs the last created task entry synchronously (for trampoline tests). */
 void h2_jieli_fake_run_last_task_once(void);

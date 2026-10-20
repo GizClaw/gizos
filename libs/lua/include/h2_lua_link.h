@@ -39,8 +39,8 @@ typedef struct h2_lua_link_config {
  * API or the BLE Host lacks an operation the link needs.
  * h2_lua_host_destroy() joins the provider's tasks and frees it.
  */
-h2_pal_result_t h2_lua_link_enable(h2_lua_host_t *host,
-                                   const h2_lua_link_config_t *config);
+h2_pal_result_t h2_lua_link_enable(h2_lua_host_t* host,
+                                   const h2_lua_link_config_t* config);
 
 #ifdef __cplusplus
 }

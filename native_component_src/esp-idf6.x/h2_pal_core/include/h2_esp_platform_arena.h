@@ -12,14 +12,14 @@ extern "C" {
 typedef struct h2_esp_platform_arena h2_esp_platform_arena_t;
 
 typedef struct h2_esp_platform_arena_config {
-    size_t reserved_bytes;
-    size_t small_request_max;
-    size_t small_pool_bytes;
-    /** Optional borrowed diagnostic name; must outlive the arena. */
-    const char *name;
-    /** Opt in to the shared system PSRAM heap on exhaustion of both pools.
-     * Defaults to false: allocation failure returns NULL to the consumer. */
-    bool spill_to_system;
+  size_t reserved_bytes;
+  size_t small_request_max;
+  size_t small_pool_bytes;
+  /** Optional borrowed diagnostic name; must outlive the arena. */
+  const char* name;
+  /** Opt in to the shared system PSRAM heap on exhaustion of both pools.
+   * Defaults to false: allocation failure returns NULL to the consumer. */
+  bool spill_to_system;
 } h2_esp_platform_arena_config_t;
 
 /** Core pool statistics, sampled under the ESP mutex. */
@@ -35,25 +35,24 @@ typedef h2_mem_arena_stats_t h2_esp_platform_arena_stats_t;
  * migrate both ways; failure preserves the original allocation. Zero size frees
  * and returns NULL.
  */
-h2_pal_result_t
-h2_esp_platform_arena_create(const h2_esp_platform_arena_config_t *config,
-                             h2_esp_platform_arena_t **out_arena);
+h2_pal_result_t h2_esp_platform_arena_create(
+    const h2_esp_platform_arena_config_t* config,
+    h2_esp_platform_arena_t** out_arena);
 
 /** Borrow the allocator until destroy. NULL arena returns NULL. Its user
  * pointer is the ESP arena, not the portable core. Failed nonzero alloc and
  * realloc requests emit rate-limited ESP-only refusal diagnostics. */
-const h2_pal_mem_api_t *
-h2_esp_platform_arena_mem(h2_esp_platform_arena_t *arena);
+const h2_pal_mem_api_t* h2_esp_platform_arena_mem(
+    h2_esp_platform_arena_t* arena);
 
 /** Borrow the portable core for block inspection until destroy. NULL arena
  * returns NULL; the allocator's user pointer is not the core. */
-h2_mem_arena_t *h2_esp_platform_arena_core(h2_esp_platform_arena_t *arena);
+h2_mem_arena_t* h2_esp_platform_arena_core(h2_esp_platform_arena_t* arena);
 
 /** Copy a mutex-protected snapshot; NULL arena returns INVALID_STATE and zeros.
  * Logging is caller-owned and must happen after this call returns. */
-h2_pal_result_t
-h2_esp_platform_arena_stats(h2_esp_platform_arena_t *arena,
-                            h2_esp_platform_arena_stats_t *out_stats);
+h2_pal_result_t h2_esp_platform_arena_stats(
+    h2_esp_platform_arena_t* arena, h2_esp_platform_arena_stats_t* out_stats);
 
 /** @brief Log live system spills grouped by captured caller frames.
  * Borrows arena and optional phase for this call; NULL arena is a no-op.
@@ -69,15 +68,15 @@ h2_esp_platform_arena_stats(h2_esp_platform_arena_t *arena,
  * Host builds compile out the registry, backtrace and logging. Destroy must
  * wait for this call, just as it waits for other borrowers.
  */
-void h2_esp_platform_arena_log_spills(h2_esp_platform_arena_t *arena,
-                                      const char *phase, bool force);
+void h2_esp_platform_arena_log_spills(h2_esp_platform_arena_t* arena,
+                                      const char* phase, bool force);
 
 /**
  * Destroy after all borrowers/tasks have stopped using the API. Refuses live
  * arena OR fallback allocations with INVALID_STATE and preserves the instance.
  * NULL is OK; a successfully destroyed non-NULL handle must not be reused.
  */
-h2_pal_result_t h2_esp_platform_arena_destroy(h2_esp_platform_arena_t *arena);
+h2_pal_result_t h2_esp_platform_arena_destroy(h2_esp_platform_arena_t* arena);
 
 #ifdef __cplusplus
 }

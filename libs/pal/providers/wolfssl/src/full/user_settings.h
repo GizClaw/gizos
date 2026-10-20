@@ -81,10 +81,10 @@
 #define NO_PSK
 #define NO_PWDBASED
 
-int h2_wolfssl_strcasecmp(const char *first, const char *second);
+int h2_wolfssl_strcasecmp(const char* first, const char* second);
 #define XSTRCASECMP(first, second) h2_wolfssl_strcasecmp((first), (second))
 
-int h2_wolfssl_generate_seed(unsigned char *out, unsigned int len);
+int h2_wolfssl_generate_seed(unsigned char* out, unsigned int len);
 #define CUSTOM_RAND_GENERATE_SEED h2_wolfssl_generate_seed
 
 #endif

@@ -13,13 +13,13 @@ extern "C" {
 /** @brief Immutable Mobile MP4 Player input borrowed for the blocking call. */
 typedef struct h2_mobile_mp4_player_config {
   /** Complete MP4 asset retained by the caller during playback. */
-  const uint8_t *media;
+  const uint8_t* media;
   /** Size of media in bytes; must be nonzero. */
   size_t media_size;
   /** Optional cooperative lifecycle callback polled during playback. */
-  int (*should_stop)(void *user);
+  int (*should_stop)(void* user);
   /** Borrowed callback context retained for the blocking call. */
-  void *stop_user;
+  void* stop_user;
 } h2_mobile_mp4_player_config_t;
 
 /**
@@ -30,7 +30,7 @@ typedef struct h2_mobile_mp4_player_config {
  * @return H2_PAL_OK after cooperative stop, otherwise the playback failure.
  */
 h2_pal_result_t h2_mobile_mp4_player_run(
-    h2_runtime_t *runtime, const h2_mobile_mp4_player_config_t *config);
+    h2_runtime_t* runtime, const h2_mobile_mp4_player_config_t* config);
 
 #ifdef __cplusplus
 }

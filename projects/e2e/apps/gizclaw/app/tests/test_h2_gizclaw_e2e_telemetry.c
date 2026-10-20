@@ -28,13 +28,13 @@ static int step(void) {
 
 static h2_app_test_time_t clock;
 
-bool h2_gizclaw_e2e_fixture_has_time(const h2_gizclaw_e2e_fixture_t *fixture,
-                                    uint32_t ms) {
+bool h2_gizclaw_e2e_fixture_has_time(const h2_gizclaw_e2e_fixture_t* fixture,
+                                     uint32_t ms) {
   assert(fixture != NULL && ms == 30000u && !state.alive);
   return ++state.deadlines != state.expire_at;
 }
 
-void h2_gizclaw_e2e_evidence(const char *symbol, const char *stage, int rc) {
+void h2_gizclaw_e2e_evidence(const char* symbol, const char* stage, int rc) {
   assert(symbol != NULL && stage != NULL);
   if (strcmp(stage, "telemetry_send-assert") == 0) {
     assert(!state.alive);
@@ -44,17 +44,18 @@ void h2_gizclaw_e2e_evidence(const char *symbol, const char *stage, int rc) {
       ++state.failed_proofs;
   }
   if (state.emit)
-    printf("H2_GIZCLAW_E2E symbol=%s stage=%s result=%s rc=%d\n", symbol,
-           stage, rc == H2_PAL_OK ? "PASS" : "FAIL", rc);
+    printf("H2_GIZCLAW_E2E symbol=%s stage=%s result=%s rc=%d\n", symbol, stage,
+           rc == H2_PAL_OK ? "PASS" : "FAIL", rc);
 }
 
-static void check_frame(const h2_gizclaw_telemetry_frame_t *frame,
-                         unsigned sequence) {
+static void check_frame(const h2_gizclaw_telemetry_frame_t* frame,
+                        unsigned sequence) {
   assert(frame != NULL && frame->sequence == sequence);
-  assert(frame->observed_at_unix_ms == (int64_t)(sequence == 1u ? clock.wall_ms : state.rpc_timestamp));
+  assert(frame->observed_at_unix_ms ==
+         (int64_t)(sequence == 1u ? clock.wall_ms : state.rpc_timestamp));
   assert(frame->observation_count == 2u && frame->observations != NULL);
-  const h2_gizclaw_telemetry_observation_t *battery = &frame->observations[0];
-  const h2_gizclaw_telemetry_observation_t *system = &frame->observations[1];
+  const h2_gizclaw_telemetry_observation_t* battery = &frame->observations[0];
+  const h2_gizclaw_telemetry_observation_t* system = &frame->observations[1];
   assert(battery->kind == H2_GIZCLAW_TELEMETRY_BATTERY);
   assert(battery->value.battery.has_percent &&
          battery->value.battery.percent == 64.4);
@@ -63,14 +64,15 @@ static void check_frame(const h2_gizclaw_telemetry_frame_t *frame,
   assert(system->kind == H2_GIZCLAW_TELEMETRY_SYSTEM);
   assert(system->value.system.has_software_version);
   assert(system->value.system.software_version.len == 11u);
-  assert(memcmp(system->value.system.software_version.data, "e2e-fixture", 11u) == 0);
+  assert(memcmp(system->value.system.software_version.data, "e2e-fixture",
+                11u) == 0);
   assert(!system->value.system.has_uptime_seconds);
 }
 
 h2_pal_result_t h2_gizclaw_req_create_telemetry_send(
-    h2_gizclaw_service_t *service, uint64_t identity,
-    const h2_gizclaw_telemetry_frame_t *frame, uint32_t ms,
-    h2_gizclaw_req_t **out) {
+    h2_gizclaw_service_t* service, uint64_t identity,
+    const h2_gizclaw_telemetry_frame_t* frame, uint32_t ms,
+    h2_gizclaw_req_t** out) {
   assert(service != NULL && identity == 10u && ms == 30000u);
   assert(out != NULL && *out == NULL && !state.alive);
   check_frame(frame, 1u);
@@ -82,10 +84,9 @@ h2_pal_result_t h2_gizclaw_req_create_telemetry_send(
   }
   return rc;
 }
-h2_pal_result_t h2_gizclaw_req_do(h2_gizclaw_req_t *request,
-                                 void *user,
-                                 h2_gizclaw_req_input_read_fn input_read,
-                                 h2_gizclaw_req_output_write_fn output_write,
+h2_pal_result_t h2_gizclaw_req_do(h2_gizclaw_req_t* request, void* user,
+                                  h2_gizclaw_req_input_read_fn input_read,
+                                  h2_gizclaw_req_output_write_fn output_write,
                                   h2_gizclaw_req_complete_fn on_complete) {
   (void)on_complete;
   assert(state.alive && request == &state.request);
@@ -95,7 +96,7 @@ h2_pal_result_t h2_gizclaw_req_do(h2_gizclaw_req_t *request,
   request->submitted = rc == H2_PAL_OK;
   return rc;
 }
-h2_pal_result_t h2_gizclaw_req_wait(h2_gizclaw_req_t *request, uint32_t ms) {
+h2_pal_result_t h2_gizclaw_req_wait(h2_gizclaw_req_t* request, uint32_t ms) {
   assert(state.alive && request == &state.request);
   assert(request->submitted && ms == 30000u && !request->complete);
   int rc = step();
@@ -103,23 +104,23 @@ h2_pal_result_t h2_gizclaw_req_wait(h2_gizclaw_req_t *request, uint32_t ms) {
   return rc;
 }
 h2_pal_result_t h2_gizclaw_resp_parse_telemetry_send(
-    const h2_gizclaw_req_t *request) {
+    const h2_gizclaw_req_t* request) {
   assert(state.alive && request == &state.request && request->complete);
   return step();
 }
-h2_pal_result_t h2_gizclaw_req_cancel(h2_gizclaw_req_t *request) {
+h2_pal_result_t h2_gizclaw_req_cancel(h2_gizclaw_req_t* request) {
   assert(state.alive && request == &state.request);
   ++state.cancels;
   return state.cancel_rc;
 }
-void h2_gizclaw_req_release(h2_gizclaw_req_t *request) {
+void h2_gizclaw_req_release(h2_gizclaw_req_t* request) {
   assert(state.alive && request == &state.request);
   ++state.releases;
   state.alive = false;
   memset(request, 0xa5, sizeof(*request));
 }
 h2_pal_result_t h2_gizclaw_rpc_telemetry_send(
-    h2_gizclaw_service_t *service, const h2_gizclaw_telemetry_frame_t *frame,
+    h2_gizclaw_service_t* service, const h2_gizclaw_telemetry_frame_t* frame,
     uint32_t ms) {
   assert(service != NULL && ms == 30000u && !state.alive);
   if (state.rpc_calls == 0u) state.rpc_timestamp = clock.wall_ms;
@@ -135,14 +136,15 @@ h2_pal_result_t h2_gizclaw_rpc_telemetry_send(
 static h2_gizclaw_e2e_fixture_t fixture(void) {
   memset(&state, 0, sizeof(state));
   h2_app_test_time_init(&clock, 0u);
-  assert(h2_pal_time_set_wall_ms(&clock.api, UINT64_C(1800000000000)) == H2_PAL_OK);
+  assert(h2_pal_time_set_wall_ms(&clock.api, UINT64_C(1800000000000)) ==
+         H2_PAL_OK);
   h2_gizclaw_e2e_fixture_t result = {0};
   result.time = &clock.api;
-  result.actors[H2_GIZCLAW_E2E_OWNER].service = (void *)&state;
+  result.actors[H2_GIZCLAW_E2E_OWNER].service = (void*)&state;
   return result;
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   (void)argv;
   h2_gizclaw_e2e_fixture_t f = fixture();
   state.emit = argc > 1;
@@ -155,8 +157,10 @@ int main(int argc, char **argv) {
   assert(state.deadlines == 2u && clock.read.calls == 2u);
   assert(state.creates == 1u && state.releases == 1u && state.cancels == 0u);
   if (state.emit) {
-    puts("H2_GIZCLAW_E2E stage=coverage-end case=rpc/telemetry status=PASS rc=0 cleanup_rc=0");
-    puts("H2_GIZCLAW_E2E stage=coverage-end case=rpc status=PASS rc=0 cleanup_rc=0");
+    puts(
+        "H2_GIZCLAW_E2E stage=coverage-end case=rpc/telemetry status=PASS rc=0 cleanup_rc=0");
+    puts(
+        "H2_GIZCLAW_E2E stage=coverage-end case=rpc status=PASS rc=0 cleanup_rc=0");
     return 0;
   }
   f = fixture();
@@ -168,7 +172,8 @@ int main(int argc, char **argv) {
   for (unsigned failure = 1u; failure <= 5u; ++failure) {
     f = fixture();
     state.fail_at = failure;
-    state.cancel_rc = H2_PAL_ERR_CLOSED; // Cleanup must not replace first error.
+    state.cancel_rc =
+        H2_PAL_ERR_CLOSED;  // Cleanup must not replace first error.
     assert(h2_gizclaw_e2e_run_telemetry(&f, NULL) == H2_PAL_ERR_IO);
     assert(state.step == failure && !state.alive);
     assert(state.creates == state.releases);
@@ -183,12 +188,14 @@ int main(int argc, char **argv) {
     assert(clock.read.calls == at - 1u && !state.alive);
     assert(state.proofs == at - 1u);
     f = fixture();
-    clock.read = (h2_app_test_fault_t){.result=H2_PAL_ERR_IO, .remaining=1u, .skip=at-1u};
+    clock.read = (h2_app_test_fault_t){
+        .result = H2_PAL_ERR_IO, .remaining = 1u, .skip = at - 1u};
     assert(h2_gizclaw_e2e_run_telemetry(&f, NULL) == H2_PAL_ERR_IO);
     assert(clock.read.calls == at && !state.alive && state.proofs == at - 1u);
   }
   const uint64_t invalid_times[] = {0u, (uint64_t)INT64_MAX + 1u, UINT64_MAX};
-  for (unsigned i = 0u; i < sizeof(invalid_times) / sizeof(invalid_times[0]); ++i) {
+  for (unsigned i = 0u; i < sizeof(invalid_times) / sizeof(invalid_times[0]);
+       ++i) {
     f = fixture();
     clock.wall_ms = invalid_times[i];
     assert(h2_gizclaw_e2e_run_telemetry(&f, NULL) == H2_PAL_ERR_INVALID_STATE);

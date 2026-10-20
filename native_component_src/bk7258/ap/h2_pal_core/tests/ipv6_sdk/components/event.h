@@ -11,6 +11,6 @@ typedef int event_module_t;
 #define EVENT_MOD_WIFI 1
 #define EVENT_WIFI_STA_CONNECTED 1
 #define EVENT_WIFI_STA_DISCONNECTED 2
-typedef bk_err_t (*test_event_callback_t)(void *, event_module_t, int, void *);
-int bk_event_register_cb(event_module_t, int, test_event_callback_t, void *);
+typedef bk_err_t (*test_event_callback_t)(void*, event_module_t, int, void*);
+int bk_event_register_cb(event_module_t, int, test_event_callback_t, void*);
 #endif

@@ -36,5 +36,8 @@ cc_test(
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":c11", "//libs/atomic"],
+    deps = [
+        ":c11",
+        "//libs/atomic",
+    ],
 )

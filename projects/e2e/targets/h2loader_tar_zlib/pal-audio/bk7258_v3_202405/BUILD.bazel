@@ -78,7 +78,11 @@ firmware_native_component(
 
 h2loader_bk7258_firmware(
     name = "firmware",
-    srcs = ["CMakeLists.txt", "ap/CMakeLists.txt", "ap/ap_main.c"],
+    srcs = [
+        "CMakeLists.txt",
+        "ap/CMakeLists.txt",
+        "ap/ap_main.c",
+    ],
     ap_task_policy = ":ap_task_policy",
     board = "bk7258_v3_202405",
     cp_task_policy = ":cp_task_policy",

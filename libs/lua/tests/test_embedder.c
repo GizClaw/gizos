@@ -16,17 +16,16 @@
 
 /* This test owns its OS services: no GizOS platform provider is linked. */
 static atomic_int fail_next_alloc;
-static void *mem_alloc(void *user, size_t size) {
-  if (atomic_exchange(&fail_next_alloc, 0))
-    return NULL;
+static void* mem_alloc(void* user, size_t size) {
+  if (atomic_exchange(&fail_next_alloc, 0)) return NULL;
   (void)user;
   return malloc(size);
 }
-static void *mem_realloc(void *user, void *ptr, size_t size) {
+static void* mem_realloc(void* user, void* ptr, size_t size) {
   (void)user;
   return realloc(ptr, size);
 }
-static void mem_free(void *user, void *ptr) {
+static void mem_free(void* user, void* ptr) {
   (void)user;
   free(ptr);
 }
@@ -34,23 +33,22 @@ static const h2_pal_mem_vtable_t mem_vtable = {mem_alloc, mem_realloc,
                                                mem_free};
 static const h2_pal_mem_api_t mem_api = {.vtable = &mem_vtable};
 
-static h2_pal_result_t monotonic_us(void *user, uint64_t *out) {
+static h2_pal_result_t monotonic_us(void* user, uint64_t* out) {
   struct timespec now;
   (void)user;
   assert(clock_gettime(CLOCK_MONOTONIC, &now) == 0);
   *out = (uint64_t)now.tv_sec * 1000000u + (uint64_t)now.tv_nsec / 1000u;
   return H2_PAL_OK;
 }
-static h2_pal_result_t monotonic_ms(void *user, uint64_t *out) {
+static h2_pal_result_t monotonic_ms(void* user, uint64_t* out) {
   monotonic_us(user, out);
   *out /= 1000u;
   return H2_PAL_OK;
 }
-static h2_pal_result_t sleep_ms(void *user, uint32_t ms) {
+static h2_pal_result_t sleep_ms(void* user, uint32_t ms) {
   (void)user;
   struct timespec delay = {ms / 1000u, (long)(ms % 1000u) * 1000000L};
-  while (nanosleep(&delay, &delay) != 0)
-    assert(errno == EINTR);
+  while (nanosleep(&delay, &delay) != 0) assert(errno == EINTR);
   return H2_PAL_OK;
 }
 static const h2_pal_time_vtable_t time_vtable = {
@@ -62,16 +60,16 @@ static const h2_pal_time_api_t time_api = {.vtable = &time_vtable};
 struct h2_pal_task {
   pthread_t thread;
   h2_pal_task_entry_t entry;
-  void *ctx;
+  void* ctx;
 };
-static void *task_entry(void *arg) {
-  h2_pal_task_t *task = arg;
+static void* task_entry(void* arg) {
+  h2_pal_task_t* task = arg;
   task->entry(task->ctx);
   return NULL;
 }
-static int task_start(void *user, const h2_pal_task_options_t *options,
-                      h2_pal_task_entry_t entry, void *ctx,
-                      h2_pal_task_t **out) {
+static int task_start(void* user, const h2_pal_task_options_t* options,
+                      h2_pal_task_entry_t entry, void* ctx,
+                      h2_pal_task_t** out) {
   (void)user;
   (void)options;
   *out = calloc(1, sizeof(**out));
@@ -81,7 +79,7 @@ static int task_start(void *user, const h2_pal_task_options_t *options,
   assert(pthread_create(&(*out)->thread, NULL, task_entry, *out) == 0);
   return H2_PAL_OK;
 }
-static int task_join(void *user, h2_pal_task_t *task) {
+static int task_join(void* user, h2_pal_task_t* task) {
   (void)user;
   assert(pthread_join(task->thread, NULL) == 0);
   free(task);
@@ -93,9 +91,9 @@ static const h2_pal_task_api_t task_api = {.vtable = &task_vtable};
 struct h2_pal_mutex {
   pthread_mutex_t mutex;
 };
-static h2_pal_result_t mutex_create(void *user,
-                                    const h2_pal_mutex_config_t *cfg,
-                                    h2_pal_mutex_t **out) {
+static h2_pal_result_t mutex_create(void* user,
+                                    const h2_pal_mutex_config_t* cfg,
+                                    h2_pal_mutex_t** out) {
   (void)user;
   pthread_mutexattr_t attr;
   assert(pthread_mutexattr_init(&attr) == 0);
@@ -107,18 +105,18 @@ static h2_pal_result_t mutex_create(void *user,
   assert(pthread_mutexattr_destroy(&attr) == 0);
   return H2_PAL_OK;
 }
-static h2_pal_result_t mutex_destroy(void *user, h2_pal_mutex_t *mutex) {
+static h2_pal_result_t mutex_destroy(void* user, h2_pal_mutex_t* mutex) {
   (void)user;
   assert(pthread_mutex_destroy(&mutex->mutex) == 0);
   free(mutex);
   return H2_PAL_OK;
 }
-static h2_pal_result_t mutex_lock(void *user, h2_pal_mutex_t *mutex) {
+static h2_pal_result_t mutex_lock(void* user, h2_pal_mutex_t* mutex) {
   (void)user;
   assert(pthread_mutex_lock(&mutex->mutex) == 0);
   return H2_PAL_OK;
 }
-static h2_pal_result_t mutex_unlock(void *user, h2_pal_mutex_t *mutex) {
+static h2_pal_result_t mutex_unlock(void* user, h2_pal_mutex_t* mutex) {
   (void)user;
   assert(pthread_mutex_unlock(&mutex->mutex) == 0);
   return H2_PAL_OK;
@@ -129,8 +127,9 @@ struct h2_pal_semaphore {
   pthread_cond_t changed;
   uint32_t count, max_count;
 };
-static h2_pal_result_t semaphore_create(void *user,
-    const h2_pal_semaphore_config_t *config, h2_pal_semaphore_t **out) {
+static h2_pal_result_t semaphore_create(void* user,
+                                        const h2_pal_semaphore_config_t* config,
+                                        h2_pal_semaphore_t** out) {
   (void)user;
   *out = calloc(1, sizeof(**out));
   assert(*out != NULL);
@@ -140,31 +139,35 @@ static h2_pal_result_t semaphore_create(void *user,
   assert(pthread_cond_init(&(*out)->changed, NULL) == 0);
   return H2_PAL_OK;
 }
-static h2_pal_result_t semaphore_destroy(void *user, h2_pal_semaphore_t *sem) {
+static h2_pal_result_t semaphore_destroy(void* user, h2_pal_semaphore_t* sem) {
   (void)user;
   assert(pthread_cond_destroy(&sem->changed) == 0);
   assert(pthread_mutex_destroy(&sem->mutex) == 0);
   free(sem);
   return H2_PAL_OK;
 }
-static h2_pal_result_t semaphore_take(void *user, h2_pal_semaphore_t *sem,
+static h2_pal_result_t semaphore_take(void* user, h2_pal_semaphore_t* sem,
                                       uint32_t ms) {
   (void)user;
   struct timespec end = deadline(ms);
   h2_pal_result_t result = H2_PAL_OK;
   assert(pthread_mutex_lock(&sem->mutex) == 0);
   while (sem->count == 0) {
-    int rc = ms == 0 ? ETIMEDOUT : ms == H2_PAL_SYNC_WAIT_FOREVER
-        ? pthread_cond_wait(&sem->changed, &sem->mutex)
-        : pthread_cond_timedwait(&sem->changed, &sem->mutex, &end);
-    if (rc == ETIMEDOUT) { result = H2_PAL_ERR_TIMEOUT; break; }
+    int rc = ms == 0 ? ETIMEDOUT
+             : ms == H2_PAL_SYNC_WAIT_FOREVER
+                 ? pthread_cond_wait(&sem->changed, &sem->mutex)
+                 : pthread_cond_timedwait(&sem->changed, &sem->mutex, &end);
+    if (rc == ETIMEDOUT) {
+      result = H2_PAL_ERR_TIMEOUT;
+      break;
+    }
     assert(rc == 0);
   }
   if (result == H2_PAL_OK) --sem->count;
   assert(pthread_mutex_unlock(&sem->mutex) == 0);
   return result;
 }
-static h2_pal_result_t semaphore_give(void *user, h2_pal_semaphore_t *sem) {
+static h2_pal_result_t semaphore_give(void* user, h2_pal_semaphore_t* sem) {
   (void)user;
   assert(pthread_mutex_lock(&sem->mutex) == 0);
   h2_pal_result_t result = H2_PAL_ERR_NO_SPACE;
@@ -177,10 +180,14 @@ static h2_pal_result_t semaphore_give(void *user, h2_pal_semaphore_t *sem) {
   return result;
 }
 static const h2_pal_sync_vtable_t sync_vtable = {
-    .create_mutex = mutex_create, .destroy_mutex = mutex_destroy,
-    .lock_mutex = mutex_lock, .unlock_mutex = mutex_unlock,
-    .create_semaphore = semaphore_create, .destroy_semaphore = semaphore_destroy,
-    .take_semaphore = semaphore_take, .give_semaphore = semaphore_give};
+    .create_mutex = mutex_create,
+    .destroy_mutex = mutex_destroy,
+    .lock_mutex = mutex_lock,
+    .unlock_mutex = mutex_unlock,
+    .create_semaphore = semaphore_create,
+    .destroy_semaphore = semaphore_destroy,
+    .take_semaphore = semaphore_take,
+    .give_semaphore = semaphore_give};
 static const h2_pal_sync_api_t sync_api = {.vtable = &sync_vtable};
 
 struct h2_pal_queue {
@@ -190,8 +197,8 @@ struct h2_pal_queue {
   int closed;
   unsigned char data[];
 };
-static int queue_create(void *user, const h2_pal_queue_config_t *cfg,
-                        h2_pal_queue_t **out) {
+static int queue_create(void* user, const h2_pal_queue_config_t* cfg,
+                        h2_pal_queue_t** out) {
   (void)user;
   *out = calloc(1, sizeof(**out) + cfg->item_size * cfg->item_count);
   assert(*out != NULL);
@@ -201,7 +208,7 @@ static int queue_create(void *user, const h2_pal_queue_config_t *cfg,
   assert(pthread_cond_init(&(*out)->changed, NULL) == 0);
   return H2_PAL_OK;
 }
-static void queue_destroy(void *user, h2_pal_queue_t *q) {
+static void queue_destroy(void* user, h2_pal_queue_t* q) {
   (void)user;
   assert(pthread_cond_destroy(&q->changed) == 0);
   assert(pthread_mutex_destroy(&q->mutex) == 0);
@@ -217,7 +224,7 @@ static struct timespec deadline(uint32_t ms) {
   end.tv_nsec %= 1000000000L;
   return end;
 }
-static int queue_transfer(h2_pal_queue_t *q, void *item, uint32_t ms, int send,
+static int queue_transfer(h2_pal_queue_t* q, void* item, uint32_t ms, int send,
                           int latest) {
   struct timespec end = deadline(ms);
   int result = H2_PAL_OK;
@@ -240,8 +247,7 @@ static int queue_transfer(h2_pal_queue_t *q, void *item, uint32_t ms, int send,
     }
     assert(rc == 0);
   }
-  if (q->closed)
-    result = H2_PAL_ERR_CLOSED;
+  if (q->closed) result = H2_PAL_ERR_CLOSED;
   if (result == H2_PAL_OK) {
     if (send) {
       memcpy(q->data + ((q->head + q->count) % q->capacity) * q->size, item,
@@ -257,20 +263,20 @@ static int queue_transfer(h2_pal_queue_t *q, void *item, uint32_t ms, int send,
   assert(pthread_mutex_unlock(&q->mutex) == 0);
   return result;
 }
-static int queue_send(void *user, h2_pal_queue_t *q, const void *item,
+static int queue_send(void* user, h2_pal_queue_t* q, const void* item,
                       uint32_t ms) {
   (void)user;
-  return queue_transfer(q, (void *)item, ms, 1, 0);
+  return queue_transfer(q, (void*)item, ms, 1, 0);
 }
-static int queue_latest(void *user, h2_pal_queue_t *q, const void *item) {
+static int queue_latest(void* user, h2_pal_queue_t* q, const void* item) {
   (void)user;
-  return queue_transfer(q, (void *)item, 0, 1, 1);
+  return queue_transfer(q, (void*)item, 0, 1, 1);
 }
-static int queue_recv(void *user, h2_pal_queue_t *q, void *item, uint32_t ms) {
+static int queue_recv(void* user, h2_pal_queue_t* q, void* item, uint32_t ms) {
   (void)user;
   return queue_transfer(q, item, ms, 0, 0);
 }
-static int queue_close(void *user, h2_pal_queue_t *q) {
+static int queue_close(void* user, h2_pal_queue_t* q) {
   (void)user;
   assert(pthread_mutex_lock(&q->mutex) == 0);
   q->closed = 1;
@@ -291,17 +297,17 @@ static struct {
   h2_display_rect_t rect;
   unsigned draws, presents;
 } display;
-static int display_open(void *user) {
+static int display_open(void* user) {
   assert(user == &display);
   return H2_PAL_OK;
 }
-static int display_info(void *user, h2_display_info_t *info) {
+static int display_info(void* user, h2_display_info_t* info) {
   assert(user == &display);
   *info = (h2_display_info_t){240, 240, H2_DISPLAY_PIXEL_RGB565};
   return H2_PAL_OK;
 }
-static int display_draw(void *user, const h2_display_rect_t *rect,
-                        const void *pixels, size_t stride,
+static int display_draw(void* user, const h2_display_rect_t* rect,
+                        const void* pixels, size_t stride,
                         h2_display_pixel_format_t format) {
   assert(user == &display);
   assert(format == H2_DISPLAY_PIXEL_RGB565);
@@ -311,11 +317,11 @@ static int display_draw(void *user, const h2_display_rect_t *rect,
   ++display.draws;
   for (int y = 0; y < rect->height; ++y)
     memcpy(&display.pixels[(rect->y + y) * 240 + rect->x],
-           (const unsigned char *)pixels + (size_t)y * stride,
+           (const unsigned char*)pixels + (size_t)y * stride,
            (size_t)rect->width * 2u);
   return H2_PAL_OK;
 }
-static int display_present(void *user) {
+static int display_present(void* user) {
   assert(user == &display);
   ++display.presents;
   return H2_PAL_OK;
@@ -327,16 +333,16 @@ static const h2_pal_display_vtable_t display_vtable = {
     .present = display_present,
     .close = display_open};
 static const h2_pal_display_api_t display_api = {&display, &display_vtable};
-static h2_pal_result_t touch_open(void *user) {
+static h2_pal_result_t touch_open(void* user) {
   (void)user;
   return H2_PAL_OK;
 }
-static h2_pal_result_t touch_info(void *user, h2_pal_touch_info_t *out) {
+static h2_pal_result_t touch_info(void* user, h2_pal_touch_info_t* out) {
   (void)user;
   *out = (h2_pal_touch_info_t){240, 240};
   return H2_PAL_OK;
 }
-static h2_pal_result_t touch_poll(void *user, h2_pal_touch_event_t *out) {
+static h2_pal_result_t touch_poll(void* user, h2_pal_touch_event_t* out) {
   (void)user;
   (void)out;
   return H2_PAL_ERR_WOULD_BLOCK;
@@ -357,58 +363,51 @@ static const h2_pal_periph_info_t buttons[] = {
      .name = "back",
      .payload = &button_payload,
      .payload_size = sizeof(button_payload)}};
-static h2_pal_result_t periph_list(void *user, h2_pal_periph_type_t filter,
-                                   h2_pal_periph_cb_t cb, void *ctx) {
+static h2_pal_result_t periph_list(void* user, h2_pal_periph_type_t filter,
+                                   h2_pal_periph_cb_t cb, void* ctx) {
   (void)user;
   for (size_t i = 0; i < 2; ++i) {
-    if (filter != H2_PAL_PERIPH_TYPE_ANY && filter != buttons[i].type)
-      continue;
+    if (filter != H2_PAL_PERIPH_TYPE_ANY && filter != buttons[i].type) continue;
     h2_pal_result_t rc = cb(ctx, &buttons[i]);
-    if (rc != H2_PAL_OK)
-      return rc;
+    if (rc != H2_PAL_OK) return rc;
   }
   return H2_PAL_OK;
 }
-static h2_pal_result_t periph_get(void *user, h2_pal_periph_id_t id,
-                                  h2_pal_periph_info_t *out) {
+static h2_pal_result_t periph_get(void* user, h2_pal_periph_id_t id,
+                                  h2_pal_periph_info_t* out) {
   (void)user;
-  if (id < 1 || id > 2)
-    return H2_PAL_ERR_NOT_FOUND;
+  if (id < 1 || id > 2) return H2_PAL_ERR_NOT_FOUND;
   *out = buttons[id - 1];
   return H2_PAL_OK;
 }
 static const h2_pal_periph_vtable_t periph_vtable = {periph_list, periph_get};
 static const h2_pal_periph_api_t periph_api = {.vtable = &periph_vtable};
-static h2_pal_result_t button_read(void *user, h2_pal_periph_id_t id,
-                                   h2_pal_single_button_reading_t *out) {
+static h2_pal_result_t button_read(void* user, h2_pal_periph_id_t id,
+                                   h2_pal_single_button_reading_t* out) {
   (void)user;
-  if (id < 1 || id > 2)
-    return H2_PAL_ERR_NOT_FOUND;
+  if (id < 1 || id > 2) return H2_PAL_ERR_NOT_FOUND;
   *out = (h2_pal_single_button_reading_t){id, H2_PAL_BUTTON_STATE_RELEASED};
   return H2_PAL_OK;
 }
 static const h2_pal_button_vtable_t button_vtable = {.read_single_button =
                                                          button_read};
 static const h2_pal_button_api_t button_api = {.vtable = &button_vtable};
-static h2_pal_result_t map_list(void *user, h2_runtime_component_t filter,
+static h2_pal_result_t map_list(void* user, h2_runtime_component_t filter,
                                 h2_runtime_component_mapping_cb_t cb,
-                                void *ctx) {
+                                void* ctx) {
   (void)user;
-  if (filter != H2_RUNTIME_COMPONENT_BUTTON)
-    return H2_PAL_OK;
+  if (filter != H2_RUNTIME_COMPONENT_BUTTON) return H2_PAL_OK;
   for (uint32_t id = 1; id <= 2; ++id) {
     const h2_runtime_component_mapping_entry_t entry = {id, id};
     h2_pal_result_t rc = cb(ctx, &entry);
-    if (rc != H2_PAL_OK)
-      return rc;
+    if (rc != H2_PAL_OK) return rc;
   }
   return H2_PAL_OK;
 }
-static h2_pal_result_t map_get(void *user, h2_runtime_component_id_t id,
-                               h2_pal_periph_id_t *out) {
+static h2_pal_result_t map_get(void* user, h2_runtime_component_id_t id,
+                               h2_pal_periph_id_t* out) {
   (void)user;
-  if (id < 1 || id > 2)
-    return H2_PAL_ERR_NOT_FOUND;
+  if (id < 1 || id > 2) return H2_PAL_ERR_NOT_FOUND;
   *out = id;
   return H2_PAL_OK;
 }
@@ -416,7 +415,7 @@ static const h2_runtime_component_mapper_vtable_t mapper_vtable = {map_list,
                                                                    map_get};
 static const h2_runtime_component_mapper_t mapper = {.vtable = &mapper_vtable};
 
-static h2_runtime_t *create_runtime(void) {
+static h2_runtime_t* create_runtime(void) {
   h2_runtime_config_t cfg = {
       .board = "embedder-240",
       .target = "host",
@@ -464,7 +463,7 @@ static h2_runtime_t *create_runtime(void) {
       .audio = h2_pal_unsupported_audio_api(),
       .log = h2_pal_unsupported_log_api(),
   };
-  h2_runtime_t *runtime = NULL;
+  h2_runtime_t* runtime = NULL;
   assert(h2_runtime_init(&cfg, &runtime) == H2_PAL_OK);
   assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_OK);
   return runtime;
@@ -477,32 +476,32 @@ typedef struct pending_call {
   char input[128];
 } pending_call_t;
 
-static uint64_t pending_id(pending_call_t *pending) {
+static uint64_t pending_id(pending_call_t* pending) {
   assert(pthread_mutex_lock(&pending->mutex) == 0);
   const uint64_t id = pending->id;
   assert(pthread_mutex_unlock(&pending->mutex) == 0);
   return id;
 }
 
-static unsigned pending_cancels(pending_call_t *pending) {
+static unsigned pending_cancels(pending_call_t* pending) {
   assert(pthread_mutex_lock(&pending->mutex) == 0);
   const unsigned cancels = pending->cancels;
   assert(pthread_mutex_unlock(&pending->mutex) == 0);
   return cancels;
 }
 
-static void pending_set_id(pending_call_t *pending, uint64_t id) {
+static void pending_set_id(pending_call_t* pending, uint64_t id) {
   assert(pthread_mutex_lock(&pending->mutex) == 0);
   pending->id = id;
   assert(pthread_mutex_unlock(&pending->mutex) == 0);
 }
 
-static h2_pal_result_t capability_call(void *user,
+static h2_pal_result_t capability_call(void* user,
                                        h2_lua_capability_request_id_t id,
-                                       const char *input, const char *options,
-                                       char *output, size_t capacity,
-                                       const char **error) {
-  pending_call_t *pending = user;
+                                       const char* input, const char* options,
+                                       char* output, size_t capacity,
+                                       const char** error) {
+  pending_call_t* pending = user;
   (void)options;
   (void)output;
   (void)capacity;
@@ -514,67 +513,66 @@ static h2_pal_result_t capability_call(void *user,
   assert(pthread_mutex_unlock(&pending->mutex) == 0);
   return H2_PAL_ERR_WOULD_BLOCK;
 }
-static h2_pal_result_t pending_prefix(void *user,
+static h2_pal_result_t pending_prefix(void* user,
                                       h2_lua_capability_request_id_t id,
-                                      const char *name, const char *input,
-                                      const char *options, char *output,
-                                      size_t capacity, const char **error) {
+                                      const char* name, const char* input,
+                                      const char* options, char* output,
+                                      size_t capacity, const char** error) {
   assert(strcmp(name, "test.echo") == 0 || strcmp(name, "test.slow") == 0);
   return capability_call(user, id, input, options, output, capacity, error);
 }
 
-static h2_pal_result_t immediate_call(void *user,
+static h2_pal_result_t immediate_call(void* user,
                                       h2_lua_capability_request_id_t id,
-                                      const char *input, const char *options,
-                                      char *output, size_t capacity,
-                                      const char **error) {
+                                      const char* input, const char* options,
+                                      char* output, size_t capacity,
+                                      const char** error) {
   (void)id;
   (void)input;
   (void)options;
   (void)error;
-  snprintf(output, capacity, "%s", (const char *)user);
+  snprintf(output, capacity, "%s", (const char*)user);
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t immediate_prefix(void *user,
+static h2_pal_result_t immediate_prefix(void* user,
                                         h2_lua_capability_request_id_t id,
-                                        const char *name, const char *input,
-                                        const char *options, char *output,
-                                        size_t capacity, const char **error) {
+                                        const char* name, const char* input,
+                                        const char* options, char* output,
+                                        size_t capacity, const char** error) {
   (void)user;
   (void)id;
   (void)input;
   (void)options;
   (void)error;
-  snprintf(output, capacity, "%s:%s", (const char *)user, name);
+  snprintf(output, capacity, "%s:%s", (const char*)user, name);
   return H2_PAL_OK;
 }
 
-static void capability_cancel(void *user, h2_lua_capability_request_id_t id) {
-  pending_call_t *pending = user;
+static void capability_cancel(void* user, h2_lua_capability_request_id_t id) {
+  pending_call_t* pending = user;
   assert(pthread_mutex_lock(&pending->mutex) == 0);
   assert(pending->id == id);
   ++pending->cancels;
   assert(pthread_mutex_unlock(&pending->mutex) == 0);
 }
-static h2_lua_job_id_t submit(h2_lua_host_t *host, const char *script) {
+static h2_lua_job_id_t submit(h2_lua_host_t* host, const char* script) {
   h2_lua_job_id_t id;
   assert(h2_lua_job_submit_text(host, NULL, "@embedder.lua",
-                                (const uint8_t *)script, strlen(script), NULL,
-                                0, &id) == H2_PAL_OK);
+                                (const uint8_t*)script, strlen(script), NULL, 0,
+                                &id) == H2_PAL_OK);
   return id;
 }
-static h2_lua_job_status_t status(h2_lua_host_t *host, h2_lua_job_id_t id) {
+static h2_lua_job_status_t status(h2_lua_host_t* host, h2_lua_job_id_t id) {
   h2_lua_job_status_t out;
   assert(h2_lua_job_get_status(host, id, &out) == H2_PAL_OK);
   return out;
 }
-static void wait_state(h2_lua_host_t *host, h2_lua_job_id_t id,
+static void wait_state(h2_lua_host_t* host, h2_lua_job_id_t id,
                        h2_lua_job_state_t wanted) {
   for (unsigned i = 0; i < 5000; ++i) {
     h2_lua_job_status_t out = status(host, id);
-    if (out.state == wanted)
-      return;
+    if (out.state == wanted) return;
     if (out.state >= H2_LUA_JOB_SUCCEEDED) {
       fprintf(stderr, "unexpected job state %d: %s\n", out.state, out.message);
       abort();
@@ -583,11 +581,10 @@ static void wait_state(h2_lua_host_t *host, h2_lua_job_id_t id,
   }
   assert(!"job deadline exceeded");
 }
-static uint64_t wait_request(pending_call_t *pending) {
+static uint64_t wait_request(pending_call_t* pending) {
   for (unsigned i = 0; i < 5000; ++i) {
     uint64_t id = pending_id(pending);
-    if (id)
-      return id;
+    if (id) return id;
     sleep_ms(NULL, 1);
   }
   assert(!"capability deadline exceeded");
@@ -598,7 +595,7 @@ static uint64_t wait_request(pending_call_t *pending) {
  * is already terminal when the rest arrive, so CLOSED is the contract result
  * for those, and only for a job that SUCCEEDED. A full delivery queue is
  * retried so no event is dropped. Anything else fails with its result code. */
-static void dispatch(h2_runtime_t *runtime, h2_lua_host_t *host,
+static void dispatch(h2_runtime_t* runtime, h2_lua_host_t* host,
                      h2_lua_job_id_t job) {
   unsigned char payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
   h2_runtime_event_t event = {.payload = payload,
@@ -613,38 +610,48 @@ static void dispatch(h2_runtime_t *runtime, h2_lua_host_t *host,
     if (result == H2_PAL_OK ||
         (result == H2_PAL_ERR_CLOSED && state == H2_LUA_JOB_SUCCEEDED))
       continue;
-    fprintf(stderr, "dispatch result %d for event kind %d component %u in job "
-            "state %d\n", (int)result, (int)event.kind,
-            (unsigned)event.component_id, (int)state);
+    fprintf(stderr,
+            "dispatch result %d for event kind %d component %u in job "
+            "state %d\n",
+            (int)result, (int)event.kind, (unsigned)event.component_id,
+            (int)state);
     abort();
   }
 }
-static void test_job_results(h2_lua_host_t *host) {
+static void test_job_results(h2_lua_host_t* host) {
   size_t invalid_size = 99;
   int invalid_present = 1;
-  assert(h2_lua_job_get_result(host, H2_LUA_JOB_ID_NONE, NULL, 0,
-      &invalid_size, &invalid_present) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_lua_job_get_result(host, H2_LUA_JOB_ID_NONE, NULL, 0, &invalid_size,
+                               &invalid_present) == H2_PAL_ERR_INVALID_ARG);
   assert(invalid_size == 0 && invalid_present == 0);
-  assert(h2_lua_job_get_result(host, UINT32_MAX, NULL, 0,
-      &invalid_size, &invalid_present) == H2_PAL_ERR_NOT_FOUND);
-  assert(h2_lua_job_get_result(NULL, 1, NULL, 0,
-      &invalid_size, &invalid_present) == H2_PAL_ERR_INVALID_ARG);
-  const char *scripts[] = {"return 'first', 'last'", "return 42", "return nil",
-      "return", "return ''", "return {}", "return true",
+  assert(h2_lua_job_get_result(host, UINT32_MAX, NULL, 0, &invalid_size,
+                               &invalid_present) == H2_PAL_ERR_NOT_FOUND);
+  assert(h2_lua_job_get_result(NULL, 1, NULL, 0, &invalid_size,
+                               &invalid_present) == H2_PAL_ERR_INVALID_ARG);
+  const char* scripts[] = {
+      "return 'first', 'last'",
+      "return 42",
+      "return nil",
+      "return",
+      "return ''",
+      "return {}",
+      "return true",
       "return setmetatable({}, {__tostring=function() return 'custom' end})",
       "return 'a'..string.char(0)..'b'"};
-  const char *expected[] = {"first", "42", "nil", "", "", "table: ", "true",
-                            "custom", "a\0b"};
+  const char* expected[] = {"first",   "42",   "nil",    "",    "",
+                            "table: ", "true", "custom", "a\0b"};
   for (size_t i = 0; i < sizeof(scripts) / sizeof(scripts[0]); ++i) {
     h2_lua_job_id_t id;
-    assert(h2_lua_job_submit_text(host, NULL, "@result.lua",
-        (const uint8_t *)scripts[i], strlen(scripts[i]), NULL, 0, &id) == H2_PAL_OK);
+    assert(h2_lua_job_submit_text(
+               host, NULL, "@result.lua", (const uint8_t*)scripts[i],
+               strlen(scripts[i]), NULL, 0, &id) == H2_PAL_OK);
     wait_state(host, id, H2_LUA_JOB_SUCCEEDED);
     assert(status(host, id).state == H2_LUA_JOB_SUCCEEDED);
     char buffer[128] = "untouched";
     size_t size = 999;
     int present = -1;
-    assert(h2_lua_job_get_result(host, id, NULL, 0, &size, &present) == H2_PAL_OK);
+    assert(h2_lua_job_get_result(host, id, NULL, 0, &size, &present) ==
+           H2_PAL_OK);
     assert(present == (i != 3));
     if (present) {
       assert(h2_lua_job_get_result(host, id, buffer, size, &size, &present) ==
@@ -652,7 +659,7 @@ static void test_job_results(h2_lua_host_t *host) {
       assert(strcmp(buffer, "untouched") == 0);
     }
     assert(h2_lua_job_get_result(host, id, buffer, sizeof(buffer), &size,
-                               &present) == H2_PAL_OK);
+                                 &present) == H2_PAL_OK);
     if (i == 5) {
       assert(size > 7 && strncmp(buffer, expected[i], 7) == 0);
     } else {
@@ -663,14 +670,14 @@ static void test_job_results(h2_lua_host_t *host) {
     assert(status(host, id).memory_used > size);
     assert(h2_lua_job_release(host, id) == H2_PAL_OK);
     assert(h2_lua_job_get_result(host, id, buffer, sizeof(buffer), &size,
-                               &present) == H2_PAL_ERR_NOT_FOUND);
+                                 &present) == H2_PAL_ERR_NOT_FOUND);
     assert(size == 0 && present == 0);
   }
 }
 
-static void test_registry(h2_runtime_t *runtime) {
+static void test_registry(h2_runtime_t* runtime) {
   h2_lua_host_config_t cfg = {.runtime = runtime};
-  h2_lua_host_t *host = NULL;
+  h2_lua_host_t* host = NULL;
   const size_t capacities[] = {0u, 1u, 200u, H2_LUA_CAPABILITY_CAPACITY_MAX};
   for (size_t c = 0u; c < sizeof(capacities) / sizeof(capacities[0]); ++c) {
     cfg.capability_capacity = capacities[c];
@@ -763,9 +770,9 @@ static void test_registry(h2_runtime_t *runtime) {
 }
 
 int main(void) {
-  h2_runtime_t *runtime = create_runtime();
+  h2_runtime_t* runtime = create_runtime();
   test_registry(runtime);
-  h2_lua_host_t *host = NULL;
+  h2_lua_host_t* host = NULL;
   pending_call_t echo = {0}, slow = {0};
   assert(pthread_mutex_init(&echo.mutex, NULL) == 0);
   assert(pthread_mutex_init(&slow.mutex, NULL) == 0);
@@ -784,13 +791,15 @@ int main(void) {
                                            &slow) == H2_PAL_OK);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
   test_job_results(host);
-  const char *failures[] = {"return string.rep('x',257)", "error('failed')",
+  const char* failures[] = {
+      "return string.rep('x',257)", "error('failed')",
       "return setmetatable({}, {__tostring=function() error('conversion') end})"};
   for (size_t i = 0; i < 3; ++i) {
     h2_lua_job_id_t id = submit(host, failures[i]);
     wait_state(host, id, H2_LUA_JOB_FAILED);
-    if (i == 0) assert(strcmp(status(host, id).message,
-                              "H2_LUA_VM_OUTPUT_TOO_LARGE") == 0);
+    if (i == 0)
+      assert(strcmp(status(host, id).message, "H2_LUA_VM_OUTPUT_TOO_LARGE") ==
+             0);
     size_t size = 99;
     int present = 1;
     assert(h2_lua_job_get_result(host, id, NULL, 0, &size, &present) ==
@@ -804,7 +813,8 @@ int main(void) {
   size_t result_size;
   int has_result;
   assert(h2_lua_job_get_result(host, boundary, result_buffer,
-      sizeof(result_buffer), &result_size, &has_result) == H2_PAL_OK);
+                               sizeof(result_buffer), &result_size,
+                               &has_result) == H2_PAL_OK);
   assert(result_size == 256 && has_result);
   for (size_t i = 0; i < result_size; ++i) assert(result_buffer[i] == 'x');
   assert(result_buffer[result_size] == 0);
@@ -812,9 +822,10 @@ int main(void) {
   assert(h2_lua_register_capability(host, "late", capability_call, NULL,
                                     &echo) == H2_PAL_ERR_INVALID_STATE);
 
-  h2_lua_job_id_t job = submit(
-      host, "local ok,out,err=require('capability').call('test.echo','hello');"
-            "assert(ok and out=='hello' and err==nil)");
+  h2_lua_job_id_t job =
+      submit(host,
+             "local ok,out,err=require('capability').call('test.echo','hello');"
+             "assert(ok and out=='hello' and err==nil)");
   uint64_t request = wait_request(&echo);
   wait_state(host, job, H2_LUA_JOB_WAITING);
   assert(strcmp(echo.input, "hello") == 0);
@@ -827,9 +838,10 @@ int main(void) {
 
   uint64_t previous_request = request;
   pending_set_id(&echo, 0);
-  job = submit(
-      host, "local ok,out,err=require('capability').call('test.echo','error');"
-            "assert(ok==false and out==nil and err=='host error')");
+  job =
+      submit(host,
+             "local ok,out,err=require('capability').call('test.echo','error');"
+             "assert(ok==false and out==nil and err=='host error')");
   request = wait_request(&echo);
   wait_state(host, job, H2_LUA_JOB_WAITING);
   assert(h2_lua_capability_complete(host, previous_request, H2_PAL_OK, "stale",
@@ -839,15 +851,17 @@ int main(void) {
   wait_state(host, job, H2_LUA_JOB_SUCCEEDED);
   assert(h2_lua_job_release(host, job) == H2_PAL_OK);
 
-  job = submit(host, "local d=require('display');d.present();"
-                     "local a=d.compile_palette({'red'});local b=d.compile_palette({'blue'});"
-                     "d.blend_palette(b,a,b,0);"
-                     "local r=d.compile_rects({{x=3,y=5,width=7,height=9,color_index=1}});"
-                     "d.draw_rects(r,b);"
-                     "local q=d.compile_quad_batch({{0,1,1}});"
-                     "d.draw_quad_batch(q,b,3,5,9,5,9,14,3,14,nil,8);"
-                     "d.draw_quad_batch(q,b,3,5,9,5,9,14,3,14,8);d.present();"
-                     "local t=require('lcd_touch');t.poll()");
+  job = submit(
+      host,
+      "local d=require('display');d.present();"
+      "local a=d.compile_palette({'red'});local b=d.compile_palette({'blue'});"
+      "d.blend_palette(b,a,b,0);"
+      "local r=d.compile_rects({{x=3,y=5,width=7,height=9,color_index=1}});"
+      "d.draw_rects(r,b);"
+      "local q=d.compile_quad_batch({{0,1,1}});"
+      "d.draw_quad_batch(q,b,3,5,9,5,9,14,3,14,nil,8);"
+      "d.draw_quad_batch(q,b,3,5,9,5,9,14,3,14,8);d.present();"
+      "local t=require('lcd_touch');t.poll()");
   wait_state(host, job, H2_LUA_JOB_SUCCEEDED);
   assert(display.draws == 2 && display.presents == 2);
   assert(display.rect.x == 3 && display.rect.y == 5);
@@ -951,7 +965,8 @@ int main(void) {
   h2_runtime_deinit(runtime);
   assert(pthread_mutex_destroy(&echo.mutex) == 0);
   assert(pthread_mutex_destroy(&slow.mutex) == 0);
-  puts("PASS: PAL embedding, async echo, display, ok/back input, cancellation, "
-       "frozen registry, job results");
+  puts(
+      "PASS: PAL embedding, async echo, display, ok/back input, cancellation, "
+      "frozen registry, job results");
   return 0;
 }

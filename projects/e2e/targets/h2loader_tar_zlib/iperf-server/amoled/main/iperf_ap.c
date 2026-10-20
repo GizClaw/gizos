@@ -10,9 +10,9 @@
 #include <string.h>
 
 /* On-link ULA only: router lifetime zero provides no Internet/default route. */
-static void advertise(void *user) {
-  h2_iperf_amoled_ap_t *state = user;
-  struct netif *netif = esp_netif_get_netif_impl(state->ap);
+static void advertise(void* user) {
+  h2_iperf_amoled_ap_t* state = user;
+  struct netif* netif = esp_netif_get_netif_impl(state->ap);
   uint8_t packet[56] = {134, 0, 0, 0, 64};
   packet[16] = 1;
   packet[17] = 1;
@@ -28,7 +28,7 @@ static void advertise(void *user) {
   ip6_addr_t prefix;
   ip6addr_aton("fd53:697a:6f73:626::", &prefix);
   memcpy(packet + 40, prefix.addr, 16);
-  struct pbuf *buffer = pbuf_alloc(PBUF_IP, sizeof(packet), PBUF_RAM);
+  struct pbuf* buffer = pbuf_alloc(PBUF_IP, sizeof(packet), PBUF_RAM);
   if (buffer != NULL) {
     ip_addr_t destination, source;
     IP_SET_TYPE_VAL(destination, IPADDR_TYPE_V6);
@@ -43,9 +43,9 @@ static void advertise(void *user) {
   }
   sys_timeout(3000, advertise, state);
 }
-static void start_advertiser(void *user) {
-  h2_iperf_amoled_ap_t *state = user;
-  struct netif *netif = esp_netif_get_netif_impl(state->ap);
+static void start_advertiser(void* user) {
+  h2_iperf_amoled_ap_t* state = user;
+  struct netif* netif = esp_netif_get_netif_impl(state->ap);
   state->advertiser = raw_new_ip_type(IPADDR_TYPE_V6, IP6_NEXTH_ICMP6);
   if (state->advertiser == NULL) {
     state->callback_result = H2_PAL_ERR_NO_MEMORY;
@@ -59,20 +59,18 @@ static void start_advertiser(void *user) {
   advertise(state);
   state->callback_result = H2_PAL_OK;
 }
-static void stop_advertiser(void *user) {
-  h2_iperf_amoled_ap_t *state = user;
+static void stop_advertiser(void* user) {
+  h2_iperf_amoled_ap_t* state = user;
   sys_untimeout(advertise, state);
   if (state->advertiser != NULL) {
     raw_remove(state->advertiser);
     state->advertiser = NULL;
   }
 }
-int h2_iperf_amoled_ap_stop(void *user) {
-  h2_iperf_amoled_ap_t *state = user;
-  if (state == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
-  if (!state->active)
-    return H2_PAL_OK;
+int h2_iperf_amoled_ap_stop(void* user) {
+  h2_iperf_amoled_ap_t* state = user;
+  if (state == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (!state->active) return H2_PAL_OK;
   /* Wait for timer/PCB removal before the Wi-Fi provider destroys its netif. */
   if (state->advertiser != NULL &&
       tcpip_callback_wait(stop_advertiser, state) != ERR_OK)
@@ -84,9 +82,9 @@ int h2_iperf_amoled_ap_stop(void *user) {
   }
   return rc;
 }
-int h2_iperf_amoled_ap_start(void *user, h2_iperf_server_app_mode_t mode,
-                             h2_iperf_server_app_network_t *out_network) {
-  h2_iperf_amoled_ap_t *state = user;
+int h2_iperf_amoled_ap_start(void* user, h2_iperf_server_app_mode_t mode,
+                             h2_iperf_server_app_network_t* out_network) {
+  h2_iperf_amoled_ap_t* state = user;
   if (state == NULL || out_network == NULL || state->active ||
       (mode != H2_IPERF_SERVER_APP_MODE_IPV4 &&
        mode != H2_IPERF_SERVER_APP_MODE_IPV6 &&
@@ -102,11 +100,9 @@ int h2_iperf_amoled_ap_start(void *user, h2_iperf_server_app_mode_t mode,
       .max_clients = 4,
       .security = H2_PAL_WIFI_SECURITY_WPA2};
   int rc = h2_pal_wifi_sta_disconnect(state->runtime->wifi_sta);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   rc = h2_pal_wifi_ap_start(state->runtime->wifi_ap, &config, 5000u);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   state->active = true;
   state->ap = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
   if (state->ap == NULL) {
@@ -170,8 +166,7 @@ int h2_iperf_amoled_ap_start(void *user, h2_iperf_server_app_mode_t mode,
       goto failed;
     }
     rc = state->callback_result;
-    if (rc != H2_PAL_OK)
-      goto failed;
+    if (rc != H2_PAL_OK) goto failed;
     out_network->ipv6.family = H2_PAL_NET_FAMILY_IPV6;
     memcpy(out_network->ipv6.ip, parsed.addr, 16);
     memcpy(out_network->ipv6_text, H2_IPERF_SERVER_APP_IPV6_TEXT,

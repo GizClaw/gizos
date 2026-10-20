@@ -28,20 +28,27 @@ HOST_ONLY = select({
 [
     build_setting_header(
         name = "header_" + name,
+        out = name + "/h2_fixture_cycles.h",
         flag = ":flag_" + name,
         macro = "H2_FIXTURE_CYCLES",
         maximum = 1000,
         minimum = 1,
-        out = name + "/h2_fixture_cycles.h",
         tags = ["manual"],
     )
-    for name in ["default", "zero", "octal", "words", "signed", "over"]
+    for name in [
+        "default",
+        "zero",
+        "octal",
+        "words",
+        "signed",
+        "over",
+    ]
 ]
 
 header_success_test(
     name = "default_test",
-    target_under_test = ":header_default",
     target_compatible_with = HOST_ONLY,
+    target_under_test = ":header_default",
 )
 
 py_test(
@@ -58,8 +65,8 @@ py_test(
     header_failure_test(
         name = name + "_test",
         expected_message = message,
-        target_under_test = ":header_" + name,
         target_compatible_with = HOST_ONLY,
+        target_under_test = ":header_" + name,
     )
     for name, message in [
         ("zero", "must be in [1, 1000], got 0"),

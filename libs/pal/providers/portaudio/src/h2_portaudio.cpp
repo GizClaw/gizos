@@ -30,13 +30,13 @@ constexpr uint8_t kMicQueueFrames = 4u;
 constexpr size_t kEchoReferenceFrames = 16u;
 constexpr auto kPlaybackPollInterval = std::chrono::milliseconds(1);
 
-int portaudio_default_output_device(void *) {
+int portaudio_default_output_device(void*) {
   return static_cast<int>(Pa_GetDefaultOutputDevice());
 }
 
-int portaudio_default_high_output_latency(void *, int device,
-                                          double *out_latency) {
-  const PaDeviceInfo *device_info =
+int portaudio_default_high_output_latency(void*, int device,
+                                          double* out_latency) {
+  const PaDeviceInfo* device_info =
       Pa_GetDeviceInfo(static_cast<PaDeviceIndex>(device));
   if (device_info == nullptr) {
     return paInternalError;
@@ -45,8 +45,8 @@ int portaudio_default_high_output_latency(void *, int device,
   return paNoError;
 }
 
-int portaudio_open_output_device(void *, int device, double suggested_latency,
-                                 void **out_stream) {
+int portaudio_open_output_device(void*, int device, double suggested_latency,
+                                 void** out_stream) {
   const PaStreamParameters output_parameters = {
       static_cast<PaDeviceIndex>(device),
       kChannels,
@@ -54,10 +54,10 @@ int portaudio_open_output_device(void *, int device, double suggested_latency,
       suggested_latency,
       nullptr,
   };
-  PaStream *stream = nullptr;
-  const PaError error = Pa_OpenStream(
-      &stream, nullptr, &output_parameters, kSampleRate, kFrameSamples,
-      paNoFlag, nullptr, nullptr);
+  PaStream* stream = nullptr;
+  const PaError error =
+      Pa_OpenStream(&stream, nullptr, &output_parameters, kSampleRate,
+                    kFrameSamples, paNoFlag, nullptr, nullptr);
   *out_stream = stream;
   return error;
 }
@@ -69,8 +69,8 @@ const h2_portaudio_device_ops_t kPortAudioDeviceOps = {
     portaudio_open_output_device,
 };
 
-int open_default_output(const h2_portaudio_device_ops_t *ops,
-                        void **out_stream) {
+int open_default_output(const h2_portaudio_device_ops_t* ops,
+                        void** out_stream) {
   const int device = ops->default_output_device(ops->user);
   if (device == paNoDevice) {
     *out_stream = nullptr;
@@ -86,36 +86,36 @@ int open_default_output(const h2_portaudio_device_ops_t *ops,
   return ops->open_output(ops->user, device, suggested_latency, out_stream);
 }
 
-int portaudio_output_open(void *, void **out_stream) {
+int portaudio_output_open(void*, void** out_stream) {
   return open_default_output(&kPortAudioDeviceOps, out_stream);
 }
 
-int portaudio_output_start(void *, void *stream) {
-  return Pa_StartStream(static_cast<PaStream *>(stream));
+int portaudio_output_start(void*, void* stream) {
+  return Pa_StartStream(static_cast<PaStream*>(stream));
 }
 
-long portaudio_output_write_available(void *, void *stream) {
-  return Pa_GetStreamWriteAvailable(static_cast<PaStream *>(stream));
+long portaudio_output_write_available(void*, void* stream) {
+  return Pa_GetStreamWriteAvailable(static_cast<PaStream*>(stream));
 }
 
-int portaudio_output_write(void *, void *stream, const void *samples,
+int portaudio_output_write(void*, void* stream, const void* samples,
                            unsigned long frames) {
-  return Pa_WriteStream(static_cast<PaStream *>(stream), samples, frames);
+  return Pa_WriteStream(static_cast<PaStream*>(stream), samples, frames);
 }
 
-int portaudio_output_stop(void *, void *stream) {
-  return Pa_StopStream(static_cast<PaStream *>(stream));
+int portaudio_output_stop(void*, void* stream) {
+  return Pa_StopStream(static_cast<PaStream*>(stream));
 }
 
-int portaudio_output_abort(void *, void *stream) {
-  return Pa_AbortStream(static_cast<PaStream *>(stream));
+int portaudio_output_abort(void*, void* stream) {
+  return Pa_AbortStream(static_cast<PaStream*>(stream));
 }
 
-int portaudio_output_close(void *, void *stream) {
-  return Pa_CloseStream(static_cast<PaStream *>(stream));
+int portaudio_output_close(void*, void* stream) {
+  return Pa_CloseStream(static_cast<PaStream*>(stream));
 }
 
-const char *portaudio_output_error_text(void *, int error) {
+const char* portaudio_output_error_text(void*, int error) {
   return Pa_GetErrorText(static_cast<PaError>(error));
 }
 
@@ -141,9 +141,9 @@ struct MicQueueFrame {
 };
 
 struct AudioState {
-  const h2_pal_mem_api_t *allocator = nullptr;
-  const h2_pal_queue_api_t *queue = nullptr;
-  const h2_pal_sync_api_t *sync = nullptr;
+  const h2_pal_mem_api_t* allocator = nullptr;
+  const h2_pal_queue_api_t* queue = nullptr;
+  const h2_pal_sync_api_t* sync = nullptr;
   std::mutex control_mutex;
   std::mutex capture_mutex;
   h2_portaudio_capture_hooks_t capture = {};
@@ -169,15 +169,15 @@ struct AudioState {
   h2_atomic_u32_t speaker_volume_percent = {};
   h2_atomic_u32_t mic_gain_percent = {};
   uint32_t mic_counter = 0u;
-  h2_pal_queue_t *mic_queue = nullptr;
-  PaStream *input_stream = nullptr;
-  PaStream *output_stream = nullptr;
+  h2_pal_queue_t* mic_queue = nullptr;
+  PaStream* input_stream = nullptr;
+  PaStream* output_stream = nullptr;
   h2_portaudio_output_test_ops_t output_ops = kPortAudioOutputOps;
   bool output_ops_overridden = false;
   h2_portaudio_echo_test_ops_t echo_test_ops = {};
   bool echo_test_ops_overridden = false;
   h2_audio_mixer_t mixer = {};
-  SpeexEchoState *echo_state = nullptr;
+  SpeexEchoState* echo_state = nullptr;
   h2_pal_audio_t audio = {};
   std::array<int16_t, kFrameValues> mic_scratch = {};
   std::array<int16_t, kFrameValues> playback_scratch = {};
@@ -189,12 +189,12 @@ struct AudioState {
   std::array<int16_t, kFrameValues> cleaned_scratch = {};
 };
 
-uint64_t load_underflow_count(AudioState *state) {
+uint64_t load_underflow_count(AudioState* state) {
   std::lock_guard<std::mutex> lock(state->output_underflow_mutex);
   return state->output_underflow_count;
 }
 
-} // namespace
+}  // namespace
 
 struct h2_portaudio {
   AudioState state;
@@ -206,7 +206,7 @@ h2_audio_pcm_format_t desktop_format() {
   return {kSampleRate, kFrameSamples, kChannels, H2_AUDIO_SAMPLE_S16LE};
 }
 
-h2_audio_frame_t frame_for_buffer(int16_t *buffer, size_t capacity) {
+h2_audio_frame_t frame_for_buffer(int16_t* buffer, size_t capacity) {
   const h2_audio_pcm_format_t format = desktop_format();
   return {buffer,
           capacity,
@@ -217,7 +217,7 @@ h2_audio_frame_t frame_for_buffer(int16_t *buffer, size_t capacity) {
           format.sample_format};
 }
 
-int init_portaudio(AudioState *state) {
+int init_portaudio(AudioState* state) {
   if (state->portaudio_initialized || !state->portaudio_enabled) {
     return H2_AUDIO_OK;
   }
@@ -239,7 +239,7 @@ int init_portaudio(AudioState *state) {
   return H2_AUDIO_OK;
 }
 
-int init_audio(AudioState *state) {
+int init_audio(AudioState* state) {
   std::lock_guard<std::mutex> lock(state->control_mutex);
   if (!state->portaudio_initialized && !state->portaudio_enabled) {
     state->portaudio_enabled = true;
@@ -259,13 +259,8 @@ int init_audio(AudioState *state) {
   }
   if (!state->mixer_initialized) {
     const h2_audio_mixer_config_t config = {
-        desktop_format(),
-        kMaxTracks,
-        kTrackQueueFrames,
-        0u,
-        state->allocator,
-        state->queue,
-        state->sync,
+        desktop_format(), kMaxTracks,   kTrackQueueFrames, 0u,
+        state->allocator, state->queue, state->sync,
     };
     const int result = h2_audio_mixer_init(&state->mixer, &config);
     if (result != H2_AUDIO_OK) {
@@ -276,7 +271,7 @@ int init_audio(AudioState *state) {
   return H2_AUDIO_OK;
 }
 
-int ensure_mic_queue(AudioState *state) {
+int ensure_mic_queue(AudioState* state) {
   if (state->mic_queue != nullptr) {
     return H2_AUDIO_OK;
   }
@@ -286,21 +281,21 @@ int ensure_mic_queue(AudioState *state) {
       kMicQueueFrames,
       state->allocator,
   };
-  const int result = h2_pal_queue_create(state->queue,
-                                         &config, &state->mic_queue);
+  const int result =
+      h2_pal_queue_create(state->queue, &config, &state->mic_queue);
   switch (result) {
-  case H2_PAL_QUEUE_OK:
-    return H2_AUDIO_OK;
-  case H2_PAL_QUEUE_ERR_NO_MEMORY:
-    return H2_AUDIO_ERR_NO_MEMORY;
-  case H2_PAL_QUEUE_ERR_INVALID_ARG:
-    return H2_AUDIO_ERR_INVALID_ARG;
-  default:
-    return H2_AUDIO_ERR_IO;
+    case H2_PAL_QUEUE_OK:
+      return H2_AUDIO_OK;
+    case H2_PAL_QUEUE_ERR_NO_MEMORY:
+      return H2_AUDIO_ERR_NO_MEMORY;
+    case H2_PAL_QUEUE_ERR_INVALID_ARG:
+      return H2_AUDIO_ERR_INVALID_ARG;
+    default:
+      return H2_AUDIO_ERR_IO;
   }
 }
 
-int open_input(AudioState *state) {
+int open_input(AudioState* state) {
   const int init_result = init_audio(state);
   if (init_result != H2_AUDIO_OK || state->input_stream != nullptr) {
     return init_result;
@@ -310,7 +305,7 @@ int open_input(AudioState *state) {
     return state->require_real_devices ? H2_AUDIO_ERR_UNAVAILABLE : H2_AUDIO_OK;
   }
   state->input_channels = kChannels;
-  const PaDeviceInfo *device = Pa_GetDeviceInfo(Pa_GetDefaultInputDevice());
+  const PaDeviceInfo* device = Pa_GetDeviceInfo(Pa_GetDefaultInputDevice());
   if (device != nullptr && device->maxInputChannels > 0 &&
       device->maxInputChannels < state->input_channels) {
     state->input_channels = device->maxInputChannels;
@@ -337,7 +332,7 @@ int open_input(AudioState *state) {
   return H2_AUDIO_OK;
 }
 
-int open_output(AudioState *state) {
+int open_output(AudioState* state) {
   const int init_result = init_audio(state);
   if (init_result != H2_AUDIO_OK || state->output_stream != nullptr) {
     return init_result;
@@ -348,7 +343,7 @@ int open_output(AudioState *state) {
        Pa_GetDefaultOutputDevice() == paNoDevice)) {
     return state->require_real_devices ? H2_AUDIO_ERR_UNAVAILABLE : H2_AUDIO_OK;
   }
-  void *stream = nullptr;
+  void* stream = nullptr;
   int error = state->output_ops.open(state->output_ops.user, &stream);
   if (error != paNoError) {
     std::fprintf(stderr, "desktop audio: output stream open failed: %s\n",
@@ -356,7 +351,7 @@ int open_output(AudioState *state) {
     state->output_stream = nullptr;
     return state->require_real_devices ? H2_AUDIO_ERR_UNAVAILABLE : H2_AUDIO_OK;
   }
-  state->output_stream = static_cast<PaStream *>(stream);
+  state->output_stream = static_cast<PaStream*>(stream);
   error = state->output_ops.start(state->output_ops.user, stream);
   if (error != paNoError) {
     std::fprintf(stderr, "desktop audio: output stream start failed: %s\n",
@@ -380,7 +375,7 @@ int16_t apply_volume(int16_t sample, uint32_t percent) {
       std::min<int64_t>(std::numeric_limits<int16_t>::max(), scaled)));
 }
 
-void abort_stream(PaStream *stream, const char *kind) {
+void abort_stream(PaStream* stream, const char* kind) {
   if (stream == nullptr) {
     return;
   }
@@ -391,12 +386,12 @@ void abort_stream(PaStream *stream, const char *kind) {
   }
 }
 
-int close_output_stream(AudioState *state, bool abort) {
+int close_output_stream(AudioState* state, bool abort) {
   std::lock_guard<std::mutex> lock(state->control_mutex);
   if (state->output_stream == nullptr) {
     return H2_AUDIO_OK;
   }
-  void *stream = state->output_stream;
+  void* stream = state->output_stream;
   int result = H2_AUDIO_OK;
   const int stop_error =
       abort ? state->output_ops.abort(state->output_ops.user, stream)
@@ -416,14 +411,13 @@ int close_output_stream(AudioState *state, bool abort) {
         state->output_ops.error_text(state->output_ops.user, close_error));
     result = H2_AUDIO_ERR_IO;
   }
-  std::fprintf(
-      stderr, "desktop audio: output underflow count=%llu\n",
-      static_cast<unsigned long long>(load_underflow_count(state)));
+  std::fprintf(stderr, "desktop audio: output underflow count=%llu\n",
+               static_cast<unsigned long long>(load_underflow_count(state)));
   state->output_stream = nullptr;
   return result;
 }
 
-void reset_echo_reference(AudioState *state) {
+void reset_echo_reference(AudioState* state) {
   std::lock_guard<std::mutex> lock(state->echo_mutex);
   state->echo_reference_head = 0u;
   state->echo_reference_count = 0u;
@@ -435,7 +429,7 @@ void reset_echo_reference(AudioState *state) {
   }
 }
 
-void queue_echo_reference(AudioState *state) {
+void queue_echo_reference(AudioState* state) {
   if (state->echo_state == nullptr) {
     return;
   }
@@ -454,9 +448,9 @@ void queue_echo_reference(AudioState *state) {
         (state->echo_reference_head + 1u) % kEchoReferenceFrames;
     --state->echo_reference_count;
   }
-  const size_t tail = (state->echo_reference_head +
-                       state->echo_reference_count) %
-                      kEchoReferenceFrames;
+  const size_t tail =
+      (state->echo_reference_head + state->echo_reference_count) %
+      kEchoReferenceFrames;
   state->echo_reference_queue[tail] = state->reference_scratch;
   ++state->echo_reference_count;
   if (state->echo_test_ops_overridden) {
@@ -464,8 +458,9 @@ void queue_echo_reference(AudioState *state) {
   }
 }
 
-bool clean_echo_capture(AudioState *state, MicQueueFrame *item) {
-  if (state->echo_state == nullptr || !h2_atomic_bool_load(&state->playback_running, H2_ATOMIC_SEQ_CST) ||
+bool clean_echo_capture(AudioState* state, MicQueueFrame* item) {
+  if (state->echo_state == nullptr ||
+      !h2_atomic_bool_load(&state->playback_running, H2_ATOMIC_SEQ_CST) ||
       item->bytes != sizeof(state->cleaned_scratch)) {
     return false;
   }
@@ -473,7 +468,7 @@ bool clean_echo_capture(AudioState *state, MicQueueFrame *item) {
   if (state->echo_reference_count == 0u) {
     return false;
   }
-  const std::array<int16_t, kFrameValues> &reference =
+  const std::array<int16_t, kFrameValues>& reference =
       state->echo_reference_queue[state->echo_reference_head];
   state->echo_reference_head =
       (state->echo_reference_head + 1u) % kEchoReferenceFrames;
@@ -492,7 +487,7 @@ bool clean_echo_capture(AudioState *state, MicQueueFrame *item) {
   return true;
 }
 
-void playback_main(AudioState *state) {
+void playback_main(AudioState* state) {
   size_t pending_frames = 0u;
   size_t pending_offset = 0u;
   bool pending_echo_reference = false;
@@ -509,7 +504,8 @@ void playback_main(AudioState *state) {
         continue;
       }
       const size_t sample_count = frame.bytes / sizeof(int16_t);
-      const uint32_t volume = h2_atomic_u32_load(&state->speaker_volume_percent, H2_ATOMIC_SEQ_CST);
+      const uint32_t volume =
+          h2_atomic_u32_load(&state->speaker_volume_percent, H2_ATOMIC_SEQ_CST);
       for (size_t index = 0; index < sample_count; ++index) {
         state->playback_scratch[index] =
             apply_volume(state->playback_scratch[index], volume);
@@ -522,7 +518,7 @@ void playback_main(AudioState *state) {
       pending_echo_reference = reference.bytes == frame.bytes;
     }
 
-    PaStream *stream = nullptr;
+    PaStream* stream = nullptr;
     {
       std::lock_guard<std::mutex> lock(state->control_mutex);
       stream = state->output_stream;
@@ -541,7 +537,8 @@ void playback_main(AudioState *state) {
       std::fprintf(stderr, "desktop audio: output availability failed: %s\n",
                    state->output_ops.error_text(state->output_ops.user,
                                                 static_cast<int>(available)));
-      h2_atomic_int_store(&state->playback_result, H2_AUDIO_ERR_IO, H2_ATOMIC_SEQ_CST);
+      h2_atomic_int_store(&state->playback_result, H2_AUDIO_ERR_IO,
+                          H2_ATOMIC_SEQ_CST);
       break;
     }
     if (available == 0) {
@@ -549,15 +546,16 @@ void playback_main(AudioState *state) {
       continue;
     }
 
-    const size_t frames_to_write =
-        std::min(pending_frames,
-                 std::min(static_cast<size_t>(available),
-                          static_cast<size_t>(
-                              std::numeric_limits<unsigned long>::max())));
-    const int16_t *samples =
+    const size_t frames_to_write = std::min(
+        pending_frames,
+        std::min(
+            static_cast<size_t>(available),
+            static_cast<size_t>(std::numeric_limits<unsigned long>::max())));
+    const int16_t* samples =
         state->playback_scratch.data() + pending_offset * kChannels;
     // The blocking API has no DAC callback timestamp. Use the reported output
-    // latency and one monotonic sample clock, rebased after a real underrun/gap.
+    // latency and one monotonic sample clock, rebased after a real
+    // underrun/gap.
     uint64_t capture_latency = 0u;
     uint64_t capture_generation = 0u;
     {
@@ -565,9 +563,10 @@ void playback_main(AudioState *state) {
       if (state->capture.on_speaker != nullptr) {
         capture_generation = state->capture_generation;
         if (!state->output_ops_overridden) {
-          const PaStreamInfo *info = Pa_GetStreamInfo(stream);
+          const PaStreamInfo* info = Pa_GetStreamInfo(stream);
           if (info != nullptr && info->outputLatency > 0.0) {
-            capture_latency = static_cast<uint64_t>(info->outputLatency * 1000000.0);
+            capture_latency =
+                static_cast<uint64_t>(info->outputLatency * 1000000.0);
           }
         }
       }
@@ -579,7 +578,8 @@ void playback_main(AudioState *state) {
     // at its return so a stalled submission cannot keep the pre-write time.
     const uint64_t capture_now = static_cast<uint64_t>(
         std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()).count());
+            std::chrono::steady_clock::now().time_since_epoch())
+            .count());
     if (error == paOutputUnderflowed) {
       {
         std::lock_guard<std::mutex> lock(state->output_underflow_mutex);
@@ -589,7 +589,8 @@ void playback_main(AudioState *state) {
     if (error != paNoError && error != paOutputUnderflowed) {
       std::fprintf(stderr, "desktop audio: output write failed: %s\n",
                    state->output_ops.error_text(state->output_ops.user, error));
-      h2_atomic_int_store(&state->playback_result, H2_AUDIO_ERR_IO, H2_ATOMIC_SEQ_CST);
+      h2_atomic_int_store(&state->playback_result, H2_AUDIO_ERR_IO,
+                          H2_ATOMIC_SEQ_CST);
       break;
     }
     {
@@ -602,12 +603,12 @@ void playback_main(AudioState *state) {
           state->capture_next_us = estimated;
           state->capture_time_remainder = 0u;
         }
-        const h2_portaudio_capture_frame_t captured = {
-            samples, frames_to_write, kSampleRate, kChannels,
-            state->capture_next_us};
+        const h2_portaudio_capture_frame_t captured = {samples, frames_to_write,
+                                                       kSampleRate, kChannels,
+                                                       state->capture_next_us};
         state->capture.on_speaker(state->capture.user, &captured);
-        const uint64_t duration = frames_to_write * 1000000u +
-                                  state->capture_time_remainder;
+        const uint64_t duration =
+            frames_to_write * 1000000u + state->capture_time_remainder;
         state->capture_next_us += duration / kSampleRate;
         state->capture_time_remainder = duration % kSampleRate;
       }
@@ -623,8 +624,9 @@ void playback_main(AudioState *state) {
   h2_atomic_bool_store(&state->playback_running, false, H2_ATOMIC_SEQ_CST);
 }
 
-int reap_stopped_playback_thread(AudioState *state) {
-  if (!state->playback_thread_started || h2_atomic_bool_load(&state->playback_running, H2_ATOMIC_SEQ_CST)) {
+int reap_stopped_playback_thread(AudioState* state) {
+  if (!state->playback_thread_started ||
+      h2_atomic_bool_load(&state->playback_running, H2_ATOMIC_SEQ_CST)) {
     return H2_AUDIO_OK;
   }
   state->playback_thread.join();
@@ -632,13 +634,13 @@ int reap_stopped_playback_thread(AudioState *state) {
   return close_output_stream(state, true);
 }
 
-int capture_mic_frame(AudioState *state, MicQueueFrame *item) {
+int capture_mic_frame(AudioState* state, MicQueueFrame* item) {
   {
     std::lock_guard<std::mutex> lock(state->capture_mutex);
     item->hook_generation = state->capture_generation;
   }
   bool used_device = false;
-  PaStream *stream = nullptr;
+  PaStream* stream = nullptr;
   {
     std::lock_guard<std::mutex> lock(state->control_mutex);
     stream = state->input_stream;
@@ -670,7 +672,7 @@ int capture_mic_frame(AudioState *state, MicQueueFrame *item) {
     if (state->require_real_devices) {
       return -1;
     }
-    for (int16_t &sample : state->mic_scratch) {
+    for (int16_t& sample : state->mic_scratch) {
       sample = static_cast<int16_t>(
           static_cast<int32_t>(state->mic_counter & 0x3fu) - 32);
       ++state->mic_counter;
@@ -679,7 +681,8 @@ int capture_mic_frame(AudioState *state, MicQueueFrame *item) {
   }
   const uint64_t now_us = static_cast<uint64_t>(
       std::chrono::duration_cast<std::chrono::microseconds>(
-          std::chrono::steady_clock::now().time_since_epoch()).count());
+          std::chrono::steady_clock::now().time_since_epoch())
+          .count());
   const uint64_t duration_us = kFrameSamples * 1000000u / kSampleRate;
   item->real_device = used_device;
   item->timestamp_us = now_us >= duration_us ? now_us - duration_us : 0u;
@@ -689,7 +692,7 @@ int capture_mic_frame(AudioState *state, MicQueueFrame *item) {
   return 1;
 }
 
-void notify_mic_capture(AudioState *state, const MicQueueFrame *item) {
+void notify_mic_capture(AudioState* state, const MicQueueFrame* item) {
   if (!item->real_device) {
     return;
   }
@@ -703,7 +706,7 @@ void notify_mic_capture(AudioState *state, const MicQueueFrame *item) {
   }
 }
 
-void mic_main(AudioState *state) {
+void mic_main(AudioState* state) {
   while (h2_atomic_bool_load(&state->mic_running, H2_ATOMIC_SEQ_CST)) {
     if (state->mic_queue == nullptr) {
       std::this_thread::sleep_for(std::chrono::milliseconds(20));
@@ -713,8 +716,7 @@ void mic_main(AudioState *state) {
     const int capture_result = capture_mic_frame(state, &item);
     if (capture_result < 0) {
       h2_atomic_bool_store(&state->mic_running, false, H2_ATOMIC_SEQ_CST);
-      (void)h2_pal_queue_close(state->queue,
-                               state->mic_queue);
+      (void)h2_pal_queue_close(state->queue, state->mic_queue);
       break;
     }
     if (capture_result == 0) {
@@ -722,13 +724,13 @@ void mic_main(AudioState *state) {
     }
     (void)clean_echo_capture(state, &item);
     notify_mic_capture(state, &item);
-    (void)h2_pal_queue_send_latest(state->queue,
-                                   state->mic_queue, &item);
+    (void)h2_pal_queue_send_latest(state->queue, state->mic_queue, &item);
   }
 }
 
-void reap_stopped_mic_thread(AudioState *state) {
-  if (!state->mic_thread_started || h2_atomic_bool_load(&state->mic_running, H2_ATOMIC_SEQ_CST)) {
+void reap_stopped_mic_thread(AudioState* state) {
+  if (!state->mic_thread_started ||
+      h2_atomic_bool_load(&state->mic_running, H2_ATOMIC_SEQ_CST)) {
     return;
   }
   state->mic_thread.join();
@@ -743,11 +745,11 @@ void reap_stopped_mic_thread(AudioState *state) {
   }
 }
 
-int audio_get_info(void *user, h2_audio_info_t *info) {
+int audio_get_info(void* user, h2_audio_info_t* info) {
   if (user == nullptr || info == nullptr) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
-  AudioState *state = static_cast<AudioState *>(user);
+  AudioState* state = static_cast<AudioState*>(user);
   const int result = init_audio(state);
   if (result != H2_AUDIO_OK) {
     return result;
@@ -769,11 +771,11 @@ int audio_get_info(void *user, h2_audio_info_t *info) {
   return H2_AUDIO_OK;
 }
 
-int audio_start_mic(void *user) {
+int audio_start_mic(void* user) {
   if (user == nullptr) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
-  AudioState *state = static_cast<AudioState *>(user);
+  AudioState* state = static_cast<AudioState*>(user);
   int result = ensure_mic_queue(state);
   if (result != H2_AUDIO_OK) {
     return result;
@@ -805,16 +807,17 @@ int audio_start_mic(void *user) {
   return H2_AUDIO_OK;
 }
 
-int audio_stop_mic(void *user) {
+int audio_stop_mic(void* user) {
   if (user == nullptr) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
-  AudioState *state = static_cast<AudioState *>(user);
-  const bool was_running = h2_atomic_bool_exchange(&state->mic_running, false, H2_ATOMIC_SEQ_CST);
+  AudioState* state = static_cast<AudioState*>(user);
+  const bool was_running =
+      h2_atomic_bool_exchange(&state->mic_running, false, H2_ATOMIC_SEQ_CST);
   if (state->mic_queue != nullptr) {
     (void)h2_pal_queue_close(state->queue, state->mic_queue);
   }
-  PaStream *stream = nullptr;
+  PaStream* stream = nullptr;
   {
     std::lock_guard<std::mutex> lock(state->control_mutex);
     stream = state->input_stream;
@@ -844,12 +847,13 @@ int audio_stop_mic(void *user) {
   return H2_AUDIO_OK;
 }
 
-int audio_start_speaker(void *user) {
+int audio_start_speaker(void* user) {
   if (user == nullptr) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
-  AudioState *state = static_cast<AudioState *>(user);
-  if (state->playback_thread_started && h2_atomic_bool_load(&state->playback_running, H2_ATOMIC_SEQ_CST)) {
+  AudioState* state = static_cast<AudioState*>(user);
+  if (state->playback_thread_started &&
+      h2_atomic_bool_load(&state->playback_running, H2_ATOMIC_SEQ_CST)) {
     return H2_AUDIO_OK;
   }
   int result = reap_stopped_playback_thread(state);
@@ -873,19 +877,20 @@ int audio_start_speaker(void *user) {
   return H2_AUDIO_OK;
 }
 
-int audio_stop_speaker(void *user) {
+int audio_stop_speaker(void* user) {
   if (user == nullptr) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
-  AudioState *state = static_cast<AudioState *>(user);
+  AudioState* state = static_cast<AudioState*>(user);
   h2_atomic_bool_store(&state->playback_running, false, H2_ATOMIC_SEQ_CST);
   if (state->playback_thread_started) {
     state->playback_thread.join();
     state->playback_thread_started = false;
   }
-  const int playback_result = h2_atomic_int_exchange(&state->playback_result, H2_AUDIO_OK, H2_ATOMIC_SEQ_CST);
-  const int cleanup_result = close_output_stream(
-      state, playback_result != H2_AUDIO_OK);
+  const int playback_result = h2_atomic_int_exchange(
+      &state->playback_result, H2_AUDIO_OK, H2_ATOMIC_SEQ_CST);
+  const int cleanup_result =
+      close_output_stream(state, playback_result != H2_AUDIO_OK);
   if (playback_result != H2_AUDIO_OK) {
     return playback_result;
   }
@@ -894,27 +899,28 @@ int audio_stop_speaker(void *user) {
 
 int map_queue_receive(int result) {
   switch (result) {
-  case H2_PAL_QUEUE_OK:
-    return H2_AUDIO_OK;
-  case H2_PAL_QUEUE_ERR_TIMEOUT:
-    return H2_AUDIO_ERR_WOULD_BLOCK;
-  case H2_PAL_QUEUE_ERR_CLOSED:
-    return H2_AUDIO_ERR_INVALID_STATE;
-  case H2_PAL_QUEUE_ERR_INVALID_ARG:
-    return H2_AUDIO_ERR_INVALID_ARG;
-  default:
-    return H2_AUDIO_ERR_IO;
+    case H2_PAL_QUEUE_OK:
+      return H2_AUDIO_OK;
+    case H2_PAL_QUEUE_ERR_TIMEOUT:
+      return H2_AUDIO_ERR_WOULD_BLOCK;
+    case H2_PAL_QUEUE_ERR_CLOSED:
+      return H2_AUDIO_ERR_INVALID_STATE;
+    case H2_PAL_QUEUE_ERR_INVALID_ARG:
+      return H2_AUDIO_ERR_INVALID_ARG;
+    default:
+      return H2_AUDIO_ERR_IO;
   }
 }
 
-int audio_mic_read(void *user, h2_audio_frame_t *out_frame,
+int audio_mic_read(void* user, h2_audio_frame_t* out_frame,
                    uint32_t timeout_ms) {
   if (user == nullptr || out_frame == nullptr) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
-  AudioState *state = static_cast<AudioState *>(user);
+  AudioState* state = static_cast<AudioState*>(user);
   std::lock_guard<std::mutex> read_lock(state->mic_read_mutex);
-  if (!h2_atomic_bool_load(&state->mic_running, H2_ATOMIC_SEQ_CST) || state->mic_queue == nullptr) {
+  if (!h2_atomic_bool_load(&state->mic_running, H2_ATOMIC_SEQ_CST) ||
+      state->mic_queue == nullptr) {
     return H2_AUDIO_ERR_INVALID_STATE;
   }
   const h2_audio_pcm_format_t format = desktop_format();
@@ -927,20 +933,20 @@ int audio_mic_read(void *user, h2_audio_frame_t *out_frame,
     return H2_AUDIO_ERR_INVALID_ARG;
   }
   MicQueueFrame item;
-  const int result = h2_pal_queue_recv(state->queue,
-                                       state->mic_queue, &item, timeout_ms);
+  const int result =
+      h2_pal_queue_recv(state->queue, state->mic_queue, &item, timeout_ms);
   if (result != H2_PAL_QUEUE_OK) {
     return map_queue_receive(result);
   }
   std::memcpy(out_frame->data, item.samples.data(), item.bytes);
-  const uint32_t gain = h2_atomic_u32_load(
-      &state->mic_gain_percent, H2_ATOMIC_ACQUIRE);
-  auto *samples = static_cast<uint8_t *>(out_frame->data);
+  const uint32_t gain =
+      h2_atomic_u32_load(&state->mic_gain_percent, H2_ATOMIC_ACQUIRE);
+  auto* samples = static_cast<uint8_t*>(out_frame->data);
   for (size_t offset = 0u; offset < item.bytes; offset += sizeof(int16_t)) {
     int16_t sample = 0;
     std::memcpy(&sample, samples + offset, sizeof(sample));
-    sample = static_cast<int16_t>(
-        static_cast<int32_t>(sample) * static_cast<int32_t>(gain) / 100);
+    sample = static_cast<int16_t>(static_cast<int32_t>(sample) *
+                                  static_cast<int32_t>(gain) / 100);
     std::memcpy(samples + offset, &sample, sizeof(sample));
   }
   out_frame->bytes = item.bytes;
@@ -948,12 +954,12 @@ int audio_mic_read(void *user, h2_audio_frame_t *out_frame,
   return H2_AUDIO_OK;
 }
 
-int audio_create_track(void *user, const h2_audio_track_config_t *config,
-                       h2_pal_audio_track_t **out_track) {
+int audio_create_track(void* user, const h2_audio_track_config_t* config,
+                       h2_pal_audio_track_t** out_track) {
   if (user == nullptr || config == nullptr || out_track == nullptr) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
-  AudioState *state = static_cast<AudioState *>(user);
+  AudioState* state = static_cast<AudioState*>(user);
   const int result = init_audio(state);
   if (result != H2_AUDIO_OK) {
     return result;
@@ -962,43 +968,42 @@ int audio_create_track(void *user, const h2_audio_track_config_t *config,
                                      out_track);
 }
 
-int audio_get_volume(void *user, uint32_t *out_percent) {
+int audio_get_volume(void* user, uint32_t* out_percent) {
   if (user == nullptr || out_percent == nullptr) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
   *out_percent = h2_atomic_u32_load(
-      &static_cast<AudioState *>(user)->speaker_volume_percent,
+      &static_cast<AudioState*>(user)->speaker_volume_percent,
       H2_ATOMIC_SEQ_CST);
   return H2_AUDIO_OK;
 }
 
-int audio_set_volume(void *user, uint32_t percent) {
+int audio_set_volume(void* user, uint32_t percent) {
   if (user == nullptr || percent > 100u) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
-  h2_atomic_u32_store(&static_cast<AudioState *>(user)->speaker_volume_percent,
+  h2_atomic_u32_store(&static_cast<AudioState*>(user)->speaker_volume_percent,
                       percent, H2_ATOMIC_SEQ_CST);
   return H2_AUDIO_OK;
 }
 
-int audio_get_mic_gain(void *user, uint32_t *out_percent) {
+int audio_get_mic_gain(void* user, uint32_t* out_percent) {
   if (user == nullptr || out_percent == nullptr)
     return H2_AUDIO_ERR_INVALID_ARG;
   *out_percent = h2_atomic_u32_load(
-      &static_cast<AudioState *>(user)->mic_gain_percent, H2_ATOMIC_ACQUIRE);
+      &static_cast<AudioState*>(user)->mic_gain_percent, H2_ATOMIC_ACQUIRE);
   return H2_AUDIO_OK;
 }
 
-int audio_set_mic_gain(void *user, uint32_t percent) {
-  if (user == nullptr || percent > 100u)
-    return H2_AUDIO_ERR_INVALID_ARG;
-  h2_atomic_u32_store(&static_cast<AudioState *>(user)->mic_gain_percent,
+int audio_set_mic_gain(void* user, uint32_t percent) {
+  if (user == nullptr || percent > 100u) return H2_AUDIO_ERR_INVALID_ARG;
+  h2_atomic_u32_store(&static_cast<AudioState*>(user)->mic_gain_percent,
                       percent, H2_ATOMIC_RELEASE);
   return H2_AUDIO_OK;
 }
 
-static int audio_aec_diagnostics_unsupported(void *user,
-    const h2_audio_aec_observer_t *observer) {
+static int audio_aec_diagnostics_unsupported(
+    void* user, const h2_audio_aec_observer_t* observer) {
   (void)user;
   (void)observer;
   return H2_AUDIO_ERR_UNSUPPORTED;
@@ -1008,17 +1013,19 @@ const h2_pal_audio_vtable_t audio_vtable = {
     audio_get_info,      audio_start_mic,    audio_stop_mic,
     audio_start_speaker, audio_stop_speaker, audio_mic_read,
     audio_create_track,  audio_get_volume,   audio_set_volume,
-    audio_get_mic_gain, audio_set_mic_gain, audio_aec_diagnostics_unsupported,
+    audio_get_mic_gain,  audio_set_mic_gain, audio_aec_diagnostics_unsupported,
 };
-static bool init_state_atomics(AudioState *state) {
+static bool init_state_atomics(AudioState* state) {
   return h2_atomic_bool_init(&state->mic_running, false) == H2_ATOMIC_OK &&
          h2_atomic_bool_init(&state->playback_running, false) == H2_ATOMIC_OK &&
-         h2_atomic_int_init(&state->playback_result, H2_AUDIO_OK) == H2_ATOMIC_OK &&
-         h2_atomic_u32_init(&state->speaker_volume_percent, 100u) == H2_ATOMIC_OK &&
+         h2_atomic_int_init(&state->playback_result, H2_AUDIO_OK) ==
+             H2_ATOMIC_OK &&
+         h2_atomic_u32_init(&state->speaker_volume_percent, 100u) ==
+             H2_ATOMIC_OK &&
          h2_atomic_u32_init(&state->mic_gain_percent, 100u) == H2_ATOMIC_OK;
 }
 
-static void destroy_state_atomics(AudioState *state) {
+static void destroy_state_atomics(AudioState* state) {
   h2_atomic_bool_destroy(&state->mic_running);
   h2_atomic_bool_destroy(&state->playback_running);
   h2_atomic_int_destroy(&state->playback_result);
@@ -1026,19 +1033,19 @@ static void destroy_state_atomics(AudioState *state) {
   h2_atomic_u32_destroy(&state->mic_gain_percent);
 }
 
-} // namespace
+}  // namespace
 
 extern "C" {
 
 h2_pal_result_t h2_portaudio_set_capture_hooks(
-    h2_portaudio_t *provider, const h2_portaudio_capture_hooks_t *hooks) {
+    h2_portaudio_t* provider, const h2_portaudio_capture_hooks_t* hooks) {
   if (provider == nullptr) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  auto *state = &provider->state;
+  auto* state = &provider->state;
   std::lock_guard<std::mutex> lock(state->capture_mutex);
-  const bool registering = hooks != nullptr &&
-      (hooks->on_mic != nullptr || hooks->on_speaker != nullptr);
+  const bool registering = hooks != nullptr && (hooks->on_mic != nullptr ||
+                                                hooks->on_speaker != nullptr);
   if (registering && (state->capture.on_mic != nullptr ||
                       state->capture.on_speaker != nullptr)) {
     return H2_PAL_ERR_BUSY;
@@ -1050,9 +1057,9 @@ h2_pal_result_t h2_portaudio_set_capture_hooks(
   return H2_PAL_OK;
 }
 
-void h2_portaudio_publish_mic_for_test(h2_portaudio_t *provider,
-                                      const int16_t *samples, size_t frames,
-                                      uint64_t timestamp_us, int real_device) {
+void h2_portaudio_publish_mic_for_test(h2_portaudio_t* provider,
+                                       const int16_t* samples, size_t frames,
+                                       uint64_t timestamp_us, int real_device) {
   if (provider == nullptr || samples == nullptr || frames > kFrameSamples) {
     return;
   }
@@ -1069,16 +1076,15 @@ void h2_portaudio_publish_mic_for_test(h2_portaudio_t *provider,
   notify_mic_capture(&provider->state, &item);
 }
 
-
-int h2_portaudio_create(const h2_portaudio_config_t *config,
-                        h2_portaudio_t **out_provider) {
+int h2_portaudio_create(const h2_portaudio_config_t* config,
+                        h2_portaudio_t** out_provider) {
   if (config == nullptr || out_provider == nullptr ||
       config->allocator == nullptr || config->queue == nullptr ||
       config->sync == nullptr) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
   *out_provider = nullptr;
-  h2_portaudio_t *provider = new (std::nothrow) h2_portaudio_t();
+  h2_portaudio_t* provider = new (std::nothrow) h2_portaudio_t();
   if (provider == nullptr) {
     return H2_AUDIO_ERR_NO_MEMORY;
   }
@@ -1098,16 +1104,14 @@ int h2_portaudio_create(const h2_portaudio_config_t *config,
 }
 
 int h2_portaudio_set_output_test_ops(
-    h2_portaudio_t *provider,
-    const h2_portaudio_output_test_ops_t *ops) {
+    h2_portaudio_t* provider, const h2_portaudio_output_test_ops_t* ops) {
   if (provider == nullptr || ops == nullptr || ops->open == nullptr ||
-      ops->start == nullptr ||
-      ops->write_available == nullptr || ops->write == nullptr ||
-      ops->stop == nullptr || ops->abort == nullptr || ops->close == nullptr ||
-      ops->error_text == nullptr) {
+      ops->start == nullptr || ops->write_available == nullptr ||
+      ops->write == nullptr || ops->stop == nullptr || ops->abort == nullptr ||
+      ops->close == nullptr || ops->error_text == nullptr) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
-  AudioState *state = &provider->state;
+  AudioState* state = &provider->state;
   if (state->output_stream != nullptr || state->playback_thread_started) {
     return H2_AUDIO_ERR_INVALID_STATE;
   }
@@ -1129,7 +1133,7 @@ int h2_portaudio_internal_error_for_test(void) { return paInternalError; }
 int h2_portaudio_no_device_for_test(void) { return paNoDevice; }
 
 int h2_portaudio_open_default_output_for_test(
-    const h2_portaudio_device_ops_t *ops, void **out_stream) {
+    const h2_portaudio_device_ops_t* ops, void** out_stream) {
   if (ops == nullptr || out_stream == nullptr ||
       ops->default_output_device == nullptr ||
       ops->default_high_output_latency == nullptr ||
@@ -1139,20 +1143,20 @@ int h2_portaudio_open_default_output_for_test(
   return open_default_output(ops, out_stream);
 }
 
-uint64_t
-h2_portaudio_output_underflow_count_for_test(h2_portaudio_t *provider) {
+uint64_t h2_portaudio_output_underflow_count_for_test(
+    h2_portaudio_t* provider) {
   if (provider == nullptr) {
     return 0u;
   }
   return load_underflow_count(&provider->state);
 }
 
-int h2_portaudio_set_require_real_devices_for_test(h2_portaudio_t *provider,
+int h2_portaudio_set_require_real_devices_for_test(h2_portaudio_t* provider,
                                                    int require_real_devices) {
   if (provider == nullptr) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
-  AudioState *state = &provider->state;
+  AudioState* state = &provider->state;
   if (state->output_stream != nullptr || state->playback_thread_started) {
     return H2_AUDIO_ERR_INVALID_STATE;
   }
@@ -1160,16 +1164,17 @@ int h2_portaudio_set_require_real_devices_for_test(h2_portaudio_t *provider,
   return H2_AUDIO_OK;
 }
 
-int h2_portaudio_set_echo_test_ops(
-    h2_portaudio_t *provider, const h2_portaudio_echo_test_ops_t *ops) {
+int h2_portaudio_set_echo_test_ops(h2_portaudio_t* provider,
+                                   const h2_portaudio_echo_test_ops_t* ops) {
   if (provider == nullptr || ops == nullptr || ops->reset == nullptr ||
       ops->before_enqueue == nullptr || ops->enqueue_result == nullptr ||
       ops->playback == nullptr || ops->capture == nullptr) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
-  AudioState *state = &provider->state;
+  AudioState* state = &provider->state;
   std::lock_guard<std::mutex> lock(state->control_mutex);
-  if (h2_atomic_bool_load(&state->mic_running, H2_ATOMIC_SEQ_CST) || h2_atomic_bool_load(&state->playback_running, H2_ATOMIC_SEQ_CST)) {
+  if (h2_atomic_bool_load(&state->mic_running, H2_ATOMIC_SEQ_CST) ||
+      h2_atomic_bool_load(&state->playback_running, H2_ATOMIC_SEQ_CST)) {
     return H2_AUDIO_ERR_INVALID_STATE;
   }
   state->echo_test_ops = *ops;
@@ -1177,11 +1182,11 @@ int h2_portaudio_set_echo_test_ops(
   return H2_AUDIO_OK;
 }
 
-void h2_portaudio_destroy(h2_portaudio_t *provider) {
+void h2_portaudio_destroy(h2_portaudio_t* provider) {
   if (provider == nullptr) {
     return;
   }
-  AudioState *state = &provider->state;
+  AudioState* state = &provider->state;
   (void)audio_stop_mic(state);
   (void)audio_stop_speaker(state);
   if (state->mixer_initialized) {
@@ -1200,8 +1205,8 @@ void h2_portaudio_destroy(h2_portaudio_t *provider) {
   delete provider;
 }
 
-h2_pal_audio_t *h2_portaudio_audio(h2_portaudio_t *provider) {
+h2_pal_audio_t* h2_portaudio_audio(h2_portaudio_t* provider) {
   return provider == nullptr ? nullptr : &provider->state.audio;
 }
 
-} // extern "C"
+}  // extern "C"

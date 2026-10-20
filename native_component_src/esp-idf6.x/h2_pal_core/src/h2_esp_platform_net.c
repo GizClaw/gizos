@@ -38,340 +38,328 @@
 #define H2_ESP_NET_RESOLVER_MAX 8u
 
 typedef enum esp_net_tls_socket_state {
-    ESP_NET_TLS_SOCKET_FREE = 0,
-    ESP_NET_TLS_SOCKET_ACTIVE,
-    ESP_NET_TLS_SOCKET_CONFIGURING,
-    ESP_NET_TLS_SOCKET_CLOSING,
+  ESP_NET_TLS_SOCKET_FREE = 0,
+  ESP_NET_TLS_SOCKET_ACTIVE,
+  ESP_NET_TLS_SOCKET_CONFIGURING,
+  ESP_NET_TLS_SOCKET_CLOSING,
 } esp_net_tls_socket_state_t;
 
 typedef struct esp_net_tls_socket {
-    esp_net_tls_socket_state_t state;
-    h2_pal_net_socket_t fd;
-    mbedtls_ssl_context ssl;
-    mbedtls_ssl_config config;
-    mbedtls_x509_crt ca;
-    h2_esp_net_tls_verify_t verify;
-    char alpn_storage[H2_ESP_NET_TLS_ALPN_MAX][H2_ESP_NET_TLS_ALPN_LEN];
-    const char *alpn[H2_ESP_NET_TLS_ALPN_MAX + 1u];
+  esp_net_tls_socket_state_t state;
+  h2_pal_net_socket_t fd;
+  mbedtls_ssl_context ssl;
+  mbedtls_ssl_config config;
+  mbedtls_x509_crt ca;
+  h2_esp_net_tls_verify_t verify;
+  char alpn_storage[H2_ESP_NET_TLS_ALPN_MAX][H2_ESP_NET_TLS_ALPN_LEN];
+  const char* alpn[H2_ESP_NET_TLS_ALPN_MAX + 1u];
 #if defined(H2_ESP_NET_IO_TRACE)
-    uint64_t trace_read_calls, trace_read_bytes, trace_read_timeouts;
-    uint64_t trace_read_ms, trace_max_read_ms, trace_last_ms;
-    uint64_t trace_raw_calls, trace_raw_bytes, trace_raw_waits;
-    int trace_raw_result, trace_raw_errno, trace_ssl_result;
+  uint64_t trace_read_calls, trace_read_bytes, trace_read_timeouts;
+  uint64_t trace_read_ms, trace_max_read_ms, trace_last_ms;
+  uint64_t trace_raw_calls, trace_raw_bytes, trace_raw_waits;
+  int trace_raw_result, trace_raw_errno, trace_ssl_result;
 #endif
 } esp_net_tls_socket_t;
 
 typedef struct esp_net_tls_sync {
-    SemaphoreHandle_t registry_mutex;
-    SemaphoreHandle_t io_mutexes[H2_ESP_NET_TLS_SOCKET_MAX];
-    uint32_t generations[H2_ESP_NET_TLS_SOCKET_MAX];
-    esp_net_tls_socket_t sockets[H2_ESP_NET_TLS_SOCKET_MAX];
+  SemaphoreHandle_t registry_mutex;
+  SemaphoreHandle_t io_mutexes[H2_ESP_NET_TLS_SOCKET_MAX];
+  uint32_t generations[H2_ESP_NET_TLS_SOCKET_MAX];
+  esp_net_tls_socket_t sockets[H2_ESP_NET_TLS_SOCKET_MAX];
 } esp_net_tls_sync_t;
 
 typedef struct esp_net_resolver {
-    SemaphoreHandle_t lock;
-    SemaphoreHandle_t done;
-    int completed;
-    int closed;
-    h2_pal_result_t result;
-    h2_pal_net_addr_list_t addrs;
-    h2_pal_net_family_t family;
-    char host[];
+  SemaphoreHandle_t lock;
+  SemaphoreHandle_t done;
+  int completed;
+  int closed;
+  h2_pal_result_t result;
+  h2_pal_net_addr_list_t addrs;
+  h2_pal_net_family_t family;
+  char host[];
 } esp_net_resolver_t;
 
 static StaticSemaphore_t s_esp_tls_mutex_storage;
-static esp_net_tls_sync_t *s_esp_tls_sync;
-static esp_net_tls_socket_t *s_esp_tls_sockets;
+static esp_net_tls_sync_t* s_esp_tls_sync;
+static esp_net_tls_socket_t* s_esp_tls_sockets;
 static size_t s_esp_resolver_count;
 
 static uint64_t esp_net_now_ms(void);
 static uint32_t esp_net_timeout_remaining_ms(uint64_t deadline_ms);
 
 static void esp_net_tls_init(void) {
-    if (s_esp_tls_sync == NULL) {
-        esp_net_tls_sync_t *sync = h2_pal_mem_alloc(
-            h2_esp_platform_default_allocator(), sizeof(*sync));
-        if (sync == NULL) {
-            return;
-        }
-        memset(sync, 0, sizeof(*sync));
-        sync->registry_mutex =
-            xSemaphoreCreateMutexStatic(&s_esp_tls_mutex_storage);
-        int ready = sync->registry_mutex != NULL;
-        for (size_t index = 0u; index < H2_ESP_NET_TLS_SOCKET_MAX; ++index) {
-            sync->sockets[index].fd = -1;
-            sync->io_mutexes[index] = xSemaphoreCreateMutex();
-            ready = ready && sync->io_mutexes[index] != NULL;
-        }
-        if (!ready) {
-            for (size_t index = 0u; index < H2_ESP_NET_TLS_SOCKET_MAX; ++index) {
-                if (sync->io_mutexes[index] != NULL) {
-                    vSemaphoreDelete(sync->io_mutexes[index]);
-                }
-            }
-            if (sync->registry_mutex != NULL) {
-                vSemaphoreDelete(sync->registry_mutex);
-            }
-            h2_pal_mem_free(h2_esp_platform_default_allocator(), sync);
-            return;
-        }
-        s_esp_tls_sockets = sync->sockets;
-        s_esp_tls_sync = sync;
+  if (s_esp_tls_sync == NULL) {
+    esp_net_tls_sync_t* sync =
+        h2_pal_mem_alloc(h2_esp_platform_default_allocator(), sizeof(*sync));
+    if (sync == NULL) {
+      return;
     }
+    memset(sync, 0, sizeof(*sync));
+    sync->registry_mutex =
+        xSemaphoreCreateMutexStatic(&s_esp_tls_mutex_storage);
+    int ready = sync->registry_mutex != NULL;
+    for (size_t index = 0u; index < H2_ESP_NET_TLS_SOCKET_MAX; ++index) {
+      sync->sockets[index].fd = -1;
+      sync->io_mutexes[index] = xSemaphoreCreateMutex();
+      ready = ready && sync->io_mutexes[index] != NULL;
+    }
+    if (!ready) {
+      for (size_t index = 0u; index < H2_ESP_NET_TLS_SOCKET_MAX; ++index) {
+        if (sync->io_mutexes[index] != NULL) {
+          vSemaphoreDelete(sync->io_mutexes[index]);
+        }
+      }
+      if (sync->registry_mutex != NULL) {
+        vSemaphoreDelete(sync->registry_mutex);
+      }
+      h2_pal_mem_free(h2_esp_platform_default_allocator(), sync);
+      return;
+    }
+    s_esp_tls_sockets = sync->sockets;
+    s_esp_tls_sync = sync;
+  }
 }
 
 static int esp_net_tls_find(h2_pal_net_socket_t fd) {
-    for (size_t index = 0u; index < H2_ESP_NET_TLS_SOCKET_MAX; ++index) {
-        if (s_esp_tls_sockets[index].state != ESP_NET_TLS_SOCKET_FREE &&
-            s_esp_tls_sockets[index].fd == fd) {
-            return (int)index;
-        }
+  for (size_t index = 0u; index < H2_ESP_NET_TLS_SOCKET_MAX; ++index) {
+    if (s_esp_tls_sockets[index].state != ESP_NET_TLS_SOCKET_FREE &&
+        s_esp_tls_sockets[index].fd == fd) {
+      return (int)index;
     }
-    return -1;
+  }
+  return -1;
 }
 
 static int esp_net_tls_find_free(void) {
-    for (size_t index = 0u; index < H2_ESP_NET_TLS_SOCKET_MAX; ++index) {
-        if (s_esp_tls_sockets[index].state == ESP_NET_TLS_SOCKET_FREE) {
-            return (int)index;
-        }
+  for (size_t index = 0u; index < H2_ESP_NET_TLS_SOCKET_MAX; ++index) {
+    if (s_esp_tls_sockets[index].state == ESP_NET_TLS_SOCKET_FREE) {
+      return (int)index;
     }
-    return -1;
+  }
+  return -1;
 }
 
 static TickType_t esp_net_tls_timeout_ticks(uint32_t timeout_ms) {
-    TickType_t ticks = pdMS_TO_TICKS(timeout_ms);
-    return timeout_ms != 0u && ticks == 0u ? 1u : ticks;
+  TickType_t ticks = pdMS_TO_TICKS(timeout_ms);
+  return timeout_ms != 0u && ticks == 0u ? 1u : ticks;
 }
 
-static int esp_net_tls_take_mutex(
-    SemaphoreHandle_t mutex,
-    int bounded,
-    uint32_t timeout_ms,
-    uint64_t deadline_ms) {
-    if (mutex == NULL) {
-        return H2_PAL_ERR_UNAVAILABLE;
+static int esp_net_tls_take_mutex(SemaphoreHandle_t mutex, int bounded,
+                                  uint32_t timeout_ms, uint64_t deadline_ms) {
+  if (mutex == NULL) {
+    return H2_PAL_ERR_UNAVAILABLE;
+  }
+  TickType_t ticks = portMAX_DELAY;
+  if (bounded) {
+    uint32_t remaining_ms =
+        timeout_ms == 0u ? 0u : esp_net_timeout_remaining_ms(deadline_ms);
+    if (timeout_ms != 0u && remaining_ms == 0u) {
+      return H2_PAL_ERR_TIMEOUT;
     }
-    TickType_t ticks = portMAX_DELAY;
-    if (bounded) {
-        uint32_t remaining_ms = timeout_ms == 0u
-            ? 0u
-            : esp_net_timeout_remaining_ms(deadline_ms);
-        if (timeout_ms != 0u && remaining_ms == 0u) {
-            return H2_PAL_ERR_TIMEOUT;
-        }
-        ticks = esp_net_tls_timeout_ticks(remaining_ms);
-    }
-    if (xSemaphoreTake(mutex, ticks) == pdTRUE) {
-        return H2_PAL_OK;
-    }
-    return bounded && timeout_ms == 0u
-        ? H2_PAL_ERR_WOULD_BLOCK
-        : H2_PAL_ERR_TIMEOUT;
+    ticks = esp_net_tls_timeout_ticks(remaining_ms);
+  }
+  if (xSemaphoreTake(mutex, ticks) == pdTRUE) {
+    return H2_PAL_OK;
+  }
+  return bounded && timeout_ms == 0u ? H2_PAL_ERR_WOULD_BLOCK
+                                     : H2_PAL_ERR_TIMEOUT;
 }
 
-static int esp_net_tls_acquire(
-    h2_pal_net_socket_t fd,
-    int bounded,
-    uint32_t timeout_ms,
-    uint64_t deadline_ms,
-    esp_net_tls_socket_t **out_socket,
-    size_t *out_index) {
-    if (s_esp_tls_sync == NULL) {
-        return 0;
-    }
-    int rc = esp_net_tls_take_mutex(
-        s_esp_tls_sync->registry_mutex, bounded, timeout_ms, deadline_ms);
-    if (rc != H2_PAL_OK) {
-        return rc;
-    }
-    int slot_index = esp_net_tls_find(fd);
-    if (slot_index < 0) {
-        (void)xSemaphoreGive(s_esp_tls_sync->registry_mutex);
-        return 0;
-    }
-    esp_net_tls_socket_t *slot = &s_esp_tls_sockets[slot_index];
-    if (slot->state != ESP_NET_TLS_SOCKET_ACTIVE) {
-        (void)xSemaphoreGive(s_esp_tls_sync->registry_mutex);
-        return H2_PAL_ERR_CLOSED;
-    }
-    uint32_t generation = s_esp_tls_sync->generations[slot_index];
+static int esp_net_tls_acquire(h2_pal_net_socket_t fd, int bounded,
+                               uint32_t timeout_ms, uint64_t deadline_ms,
+                               esp_net_tls_socket_t** out_socket,
+                               size_t* out_index) {
+  if (s_esp_tls_sync == NULL) {
+    return 0;
+  }
+  int rc = esp_net_tls_take_mutex(s_esp_tls_sync->registry_mutex, bounded,
+                                  timeout_ms, deadline_ms);
+  if (rc != H2_PAL_OK) {
+    return rc;
+  }
+  int slot_index = esp_net_tls_find(fd);
+  if (slot_index < 0) {
     (void)xSemaphoreGive(s_esp_tls_sync->registry_mutex);
+    return 0;
+  }
+  esp_net_tls_socket_t* slot = &s_esp_tls_sockets[slot_index];
+  if (slot->state != ESP_NET_TLS_SOCKET_ACTIVE) {
+    (void)xSemaphoreGive(s_esp_tls_sync->registry_mutex);
+    return H2_PAL_ERR_CLOSED;
+  }
+  uint32_t generation = s_esp_tls_sync->generations[slot_index];
+  (void)xSemaphoreGive(s_esp_tls_sync->registry_mutex);
 
-    rc = esp_net_tls_take_mutex(
-        s_esp_tls_sync->io_mutexes[slot_index], bounded,
-        timeout_ms, deadline_ms);
-    if (rc != H2_PAL_OK) {
-        return rc;
-    }
-    rc = esp_net_tls_take_mutex(
-        s_esp_tls_sync->registry_mutex, bounded, timeout_ms, deadline_ms);
-    if (rc != H2_PAL_OK) {
-        (void)xSemaphoreGive(s_esp_tls_sync->io_mutexes[slot_index]);
-        return rc;
-    }
-    if (slot->state != ESP_NET_TLS_SOCKET_ACTIVE || slot->fd != fd ||
-        s_esp_tls_sync->generations[slot_index] != generation) {
-        (void)xSemaphoreGive(s_esp_tls_sync->registry_mutex);
-        (void)xSemaphoreGive(s_esp_tls_sync->io_mutexes[slot_index]);
-        return H2_PAL_ERR_CLOSED;
-    }
+  rc = esp_net_tls_take_mutex(s_esp_tls_sync->io_mutexes[slot_index], bounded,
+                              timeout_ms, deadline_ms);
+  if (rc != H2_PAL_OK) {
+    return rc;
+  }
+  rc = esp_net_tls_take_mutex(s_esp_tls_sync->registry_mutex, bounded,
+                              timeout_ms, deadline_ms);
+  if (rc != H2_PAL_OK) {
+    (void)xSemaphoreGive(s_esp_tls_sync->io_mutexes[slot_index]);
+    return rc;
+  }
+  if (slot->state != ESP_NET_TLS_SOCKET_ACTIVE || slot->fd != fd ||
+      s_esp_tls_sync->generations[slot_index] != generation) {
     (void)xSemaphoreGive(s_esp_tls_sync->registry_mutex);
-    *out_socket = slot;
-    *out_index = (size_t)slot_index;
-    return 1;
+    (void)xSemaphoreGive(s_esp_tls_sync->io_mutexes[slot_index]);
+    return H2_PAL_ERR_CLOSED;
+  }
+  (void)xSemaphoreGive(s_esp_tls_sync->registry_mutex);
+  *out_socket = slot;
+  *out_index = (size_t)slot_index;
+  return 1;
 }
 
 static void esp_net_tls_release(size_t slot_index) {
-    (void)xSemaphoreGive(s_esp_tls_sync->io_mutexes[slot_index]);
+  (void)xSemaphoreGive(s_esp_tls_sync->io_mutexes[slot_index]);
 }
 
-static int esp_net_tls_recv_finish(esp_net_tls_socket_t *socket,
-                                  size_t slot_index, uint64_t started_ms,
-                                  int result) {
+static int esp_net_tls_recv_finish(esp_net_tls_socket_t* socket,
+                                   size_t slot_index, uint64_t started_ms,
+                                   int result) {
 #if defined(H2_ESP_NET_IO_TRACE)
-    uint64_t now_ms = esp_net_now_ms();
-    uint64_t elapsed_ms = now_ms >= started_ms ? now_ms - started_ms : 0u;
-    ++socket->trace_read_calls;
-    if (result > 0) socket->trace_read_bytes += (uint64_t)result;
-    if (result == H2_PAL_ERR_TIMEOUT) ++socket->trace_read_timeouts;
-    socket->trace_read_ms += elapsed_ms;
-    if (elapsed_ms > socket->trace_max_read_ms)
-        socket->trace_max_read_ms = elapsed_ms;
-    /* The diagnostic contains only counters, never TLS bytes or credentials.
-     * Preserve the real result and cap UART traffic to one record per 5s. */
-    if (now_ms - socket->trace_last_ms >= 5000u) {
-        ESP_LOGI("h2_net", "stage=tls_read fd=%d rc=%d calls=%" PRIu64
-                 " bytes=%" PRIu64 " timeouts=%" PRIu64 " io_ms=%" PRIu64
-                 " max_io_ms=%" PRIu64 " raw_calls=%" PRIu64
-                 " raw_bytes=%" PRIu64 " raw_waits=%" PRIu64
-                 " raw_rc=%d raw_errno=%d ssl_rc=%d in_left=%zu",
-                 socket->fd, result, socket->trace_read_calls,
-                 socket->trace_read_bytes, socket->trace_read_timeouts,
-                 socket->trace_read_ms, socket->trace_max_read_ms,
-                 socket->trace_raw_calls, socket->trace_raw_bytes,
-                 socket->trace_raw_waits, socket->trace_raw_result,
-                 socket->trace_raw_errno, socket->trace_ssl_result,
-                 socket->ssl.MBEDTLS_PRIVATE(in_left));
-        socket->trace_last_ms = now_ms;
-    }
+  uint64_t now_ms = esp_net_now_ms();
+  uint64_t elapsed_ms = now_ms >= started_ms ? now_ms - started_ms : 0u;
+  ++socket->trace_read_calls;
+  if (result > 0) socket->trace_read_bytes += (uint64_t)result;
+  if (result == H2_PAL_ERR_TIMEOUT) ++socket->trace_read_timeouts;
+  socket->trace_read_ms += elapsed_ms;
+  if (elapsed_ms > socket->trace_max_read_ms)
+    socket->trace_max_read_ms = elapsed_ms;
+  /* The diagnostic contains only counters, never TLS bytes or credentials.
+   * Preserve the real result and cap UART traffic to one record per 5s. */
+  if (now_ms - socket->trace_last_ms >= 5000u) {
+    ESP_LOGI("h2_net",
+             "stage=tls_read fd=%d rc=%d calls=%" PRIu64 " bytes=%" PRIu64
+             " timeouts=%" PRIu64 " io_ms=%" PRIu64 " max_io_ms=%" PRIu64
+             " raw_calls=%" PRIu64 " raw_bytes=%" PRIu64 " raw_waits=%" PRIu64
+             " raw_rc=%d raw_errno=%d ssl_rc=%d in_left=%zu",
+             socket->fd, result, socket->trace_read_calls,
+             socket->trace_read_bytes, socket->trace_read_timeouts,
+             socket->trace_read_ms, socket->trace_max_read_ms,
+             socket->trace_raw_calls, socket->trace_raw_bytes,
+             socket->trace_raw_waits, socket->trace_raw_result,
+             socket->trace_raw_errno, socket->trace_ssl_result,
+             socket->ssl.MBEDTLS_PRIVATE(in_left));
+    socket->trace_last_ms = now_ms;
+  }
 #else
-    (void)socket;
-    (void)started_ms;
+  (void)socket;
+  (void)started_ms;
 #endif
-    esp_net_tls_release(slot_index);
-    return result;
+  esp_net_tls_release(slot_index);
+  return result;
 }
 
 #if MBEDTLS_VERSION_MAJOR < 4
-static int esp_net_tls_random(void *user, unsigned char *out, size_t len) {
-    (void)user;
-    return h2_pal_crypto_random(h2_esp_platform_crypto_api(), out, len) ==
-            H2_PAL_OK
-        ? 0
-        : -1;
+static int esp_net_tls_random(void* user, unsigned char* out, size_t len) {
+  (void)user;
+  return h2_pal_crypto_random(h2_esp_platform_crypto_api(), out, len) ==
+                 H2_PAL_OK
+             ? 0
+             : -1;
 }
 #endif
 
-static int esp_net_tls_send_raw(
-    void *user, const unsigned char *data, size_t len) {
-    esp_net_tls_socket_t *socket = (esp_net_tls_socket_t *)user;
-    int sent = send(socket->fd, data, len, MSG_DONTWAIT);
-    if (sent >= 0) {
-        return sent;
-    }
-    return errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR
-        ? MBEDTLS_ERR_SSL_WANT_WRITE
-        : MBEDTLS_ERR_NET_SEND_FAILED;
+static int esp_net_tls_send_raw(void* user, const unsigned char* data,
+                                size_t len) {
+  esp_net_tls_socket_t* socket = (esp_net_tls_socket_t*)user;
+  int sent = send(socket->fd, data, len, MSG_DONTWAIT);
+  if (sent >= 0) {
+    return sent;
+  }
+  return errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR
+             ? MBEDTLS_ERR_SSL_WANT_WRITE
+             : MBEDTLS_ERR_NET_SEND_FAILED;
 }
 
-static int esp_net_tls_recv_raw(
-    void *user, unsigned char *data, size_t len) {
-    esp_net_tls_socket_t *socket = (esp_net_tls_socket_t *)user;
-    int received = recv(socket->fd, data, len, MSG_DONTWAIT);
+static int esp_net_tls_recv_raw(void* user, unsigned char* data, size_t len) {
+  esp_net_tls_socket_t* socket = (esp_net_tls_socket_t*)user;
+  int received = recv(socket->fd, data, len, MSG_DONTWAIT);
 #if defined(H2_ESP_NET_IO_TRACE)
-    ++socket->trace_raw_calls;
-    socket->trace_raw_result = received;
-    socket->trace_raw_errno = received < 0 ? errno : 0;
-    if (received > 0) socket->trace_raw_bytes += (uint64_t)received;
-    if (received < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
-        ++socket->trace_raw_waits;
+  ++socket->trace_raw_calls;
+  socket->trace_raw_result = received;
+  socket->trace_raw_errno = received < 0 ? errno : 0;
+  if (received > 0) socket->trace_raw_bytes += (uint64_t)received;
+  if (received < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+    ++socket->trace_raw_waits;
 #endif
-    if (received >= 0) {
-        return received;
-    }
-    return errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR
-        ? MBEDTLS_ERR_SSL_WANT_READ
-        : MBEDTLS_ERR_NET_RECV_FAILED;
+  if (received >= 0) {
+    return received;
+  }
+  return errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR
+             ? MBEDTLS_ERR_SSL_WANT_READ
+             : MBEDTLS_ERR_NET_RECV_FAILED;
 }
 
-static void esp_net_tls_free(esp_net_tls_socket_t *socket) {
-    if (socket == NULL || socket->state == ESP_NET_TLS_SOCKET_FREE) {
-        return;
-    }
-    mbedtls_ssl_free(&socket->ssl);
-    mbedtls_ssl_config_free(&socket->config);
-    mbedtls_x509_crt_free(&socket->ca);
-    memset(socket, 0, sizeof(*socket));
-    socket->fd = -1;
+static void esp_net_tls_free(esp_net_tls_socket_t* socket) {
+  if (socket == NULL || socket->state == ESP_NET_TLS_SOCKET_FREE) {
+    return;
+  }
+  mbedtls_ssl_free(&socket->ssl);
+  mbedtls_ssl_config_free(&socket->config);
+  mbedtls_x509_crt_free(&socket->ca);
+  memset(socket, 0, sizeof(*socket));
+  socket->fd = -1;
 }
 
-static int esp_net_tls_wait(
-    esp_net_tls_socket_t *socket, int result, uint32_t timeout_ms) {
-    if (result == MBEDTLS_ERR_SSL_WANT_READ) {
-        return h2_esp_net_wait_fd(socket->fd, 0, timeout_ms);
-    }
-    if (result == MBEDTLS_ERR_SSL_WANT_WRITE) {
-        return h2_esp_net_wait_fd(socket->fd, 1, timeout_ms);
-    }
-    return H2_PAL_ERR_IO;
+static int esp_net_tls_wait(esp_net_tls_socket_t* socket, int result,
+                            uint32_t timeout_ms) {
+  if (result == MBEDTLS_ERR_SSL_WANT_READ) {
+    return h2_esp_net_wait_fd(socket->fd, 0, timeout_ms);
+  }
+  if (result == MBEDTLS_ERR_SSL_WANT_WRITE) {
+    return h2_esp_net_wait_fd(socket->fd, 1, timeout_ms);
+  }
+  return H2_PAL_ERR_IO;
 }
 
 static h2_pal_result_t esp_net_tls_copy_alpn(
-    esp_net_tls_socket_t *socket,
-    const h2_pal_net_tls_config_t *config) {
-    if (config->alpn == NULL || config->alpn[0] == '\0') {
-        return H2_PAL_OK;
-    }
-    if (strlen(config->alpn) >= H2_ESP_NET_TLS_ALPN_LEN) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    (void)strcpy(socket->alpn_storage[0], config->alpn);
-    socket->alpn[0] = socket->alpn_storage[0];
+    esp_net_tls_socket_t* socket, const h2_pal_net_tls_config_t* config) {
+  if (config->alpn == NULL || config->alpn[0] == '\0') {
     return H2_PAL_OK;
+  }
+  if (strlen(config->alpn) >= H2_ESP_NET_TLS_ALPN_LEN) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  (void)strcpy(socket->alpn_storage[0], config->alpn);
+  socket->alpn[0] = socket->alpn_storage[0];
+  return H2_PAL_OK;
 }
 
 static h2_pal_result_t esp_net_tls_load_ca(
-    esp_net_tls_socket_t *socket,
-    const h2_pal_net_tls_config_t *config) {
-    if (config->verify == H2_PAL_NET_TLS_VERIFY_INSECURE_TEST_ONLY) {
-        mbedtls_ssl_conf_authmode(&socket->config, MBEDTLS_SSL_VERIFY_NONE);
-        return H2_PAL_OK;
-    }
-    mbedtls_ssl_conf_authmode(&socket->config, MBEDTLS_SSL_VERIFY_REQUIRED);
-    if (config->root_ca_pem == NULL || config->root_ca_pem_len == 0u) {
-        return esp_crt_bundle_attach(&socket->config) == ESP_OK
-            ? H2_PAL_OK
-            : H2_PAL_ERR_UNAVAILABLE;
-    }
-    if (config->root_ca_pem_len == SIZE_MAX) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    uint8_t *pem = h2_pal_mem_alloc(
-        h2_esp_platform_default_allocator(), config->root_ca_pem_len + 1u);
-    if (pem == NULL) {
-        return H2_PAL_ERR_NO_MEMORY;
-    }
-    memcpy(pem, config->root_ca_pem, config->root_ca_pem_len);
-    pem[config->root_ca_pem_len] = '\0';
-    int result = mbedtls_x509_crt_parse(
-        &socket->ca, pem, config->root_ca_pem_len + 1u);
-    h2_pal_mem_free(h2_esp_platform_default_allocator(), pem);
-    if (result != 0) {
-        return H2_PAL_ERR_FORMAT;
-    }
-    mbedtls_ssl_conf_ca_chain(&socket->config, &socket->ca, NULL);
+    esp_net_tls_socket_t* socket, const h2_pal_net_tls_config_t* config) {
+  if (config->verify == H2_PAL_NET_TLS_VERIFY_INSECURE_TEST_ONLY) {
+    mbedtls_ssl_conf_authmode(&socket->config, MBEDTLS_SSL_VERIFY_NONE);
     return H2_PAL_OK;
+  }
+  mbedtls_ssl_conf_authmode(&socket->config, MBEDTLS_SSL_VERIFY_REQUIRED);
+  if (config->root_ca_pem == NULL || config->root_ca_pem_len == 0u) {
+    return esp_crt_bundle_attach(&socket->config) == ESP_OK
+               ? H2_PAL_OK
+               : H2_PAL_ERR_UNAVAILABLE;
+  }
+  if (config->root_ca_pem_len == SIZE_MAX) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  uint8_t* pem = h2_pal_mem_alloc(h2_esp_platform_default_allocator(),
+                                  config->root_ca_pem_len + 1u);
+  if (pem == NULL) {
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  memcpy(pem, config->root_ca_pem, config->root_ca_pem_len);
+  pem[config->root_ca_pem_len] = '\0';
+  int result =
+      mbedtls_x509_crt_parse(&socket->ca, pem, config->root_ca_pem_len + 1u);
+  h2_pal_mem_free(h2_esp_platform_default_allocator(), pem);
+  if (result != 0) {
+    return H2_PAL_ERR_FORMAT;
+  }
+  mbedtls_ssl_conf_ca_chain(&socket->config, &socket->ca, NULL);
+  return H2_PAL_OK;
 }
 
 /* Certificate retention and built-in date checks are optional in board SDKs.
@@ -379,1566 +367,1505 @@ static h2_pal_result_t esp_net_tls_load_ca(
  * the handshake; never accept an expired or future peer because those SDK
  * options were disabled to save RAM. Preserve the ESP bundle's trust callback:
  * its generated root has only a subject/public key, not a validity window. */
-static int esp_net_tls_verify_dates(
-    void *user, mbedtls_x509_crt *cert, int depth, uint32_t *flags) {
-    esp_net_tls_socket_t *socket = user;
-    uint64_t wall_ms = 0u;
-    if (h2_pal_time_get_wall_ms(h2_esp_platform_time_api(), &wall_ms) != H2_PAL_OK) {
-        *flags |= MBEDTLS_X509_BADCERT_OTHER;
-        ESP_LOGE("h2_net", "stage=tls_cert_time clock_unavailable");
-        return h2_esp_net_tls_verify_certificate(
-            &socket->verify, cert, depth, flags, NULL);
-    }
-    time_t seconds = (time_t)(wall_ms / 1000u);
-    struct tm utc;
-    if (seconds < 0 || (uint64_t)seconds != wall_ms / 1000u ||
-        gmtime_r(&seconds, &utc) == NULL) {
-        *flags |= MBEDTLS_X509_BADCERT_OTHER;
-        ESP_LOGE("h2_net", "stage=tls_cert_time clock_unavailable");
-        return h2_esp_net_tls_verify_certificate(
-            &socket->verify, cert, depth, flags, NULL);
-    }
-    mbedtls_x509_time now = {
-        .year = utc.tm_year + 1900, .mon = utc.tm_mon + 1,
-        .day = utc.tm_mday, .hour = utc.tm_hour,
-        .min = utc.tm_min, .sec = utc.tm_sec,
-    };
-    const int rc = h2_esp_net_tls_verify_certificate(
-        &socket->verify, cert, depth, flags, &now);
-    if ((*flags & (MBEDTLS_X509_BADCERT_FUTURE |
-                   MBEDTLS_X509_BADCERT_EXPIRED)) != 0u) {
-        ESP_LOGE("h2_net", "stage=tls_cert_time from=%d-%02d-%02d to=%d-%02d-%02d now=%d-%02d-%02d flags=0x%x",
-            cert->valid_from.year, cert->valid_from.mon, cert->valid_from.day,
-            cert->valid_to.year, cert->valid_to.mon, cert->valid_to.day,
-            now.year, now.mon, now.day, (unsigned)*flags);
-    }
-    return rc;
+static int esp_net_tls_verify_dates(void* user, mbedtls_x509_crt* cert,
+                                    int depth, uint32_t* flags) {
+  esp_net_tls_socket_t* socket = user;
+  uint64_t wall_ms = 0u;
+  if (h2_pal_time_get_wall_ms(h2_esp_platform_time_api(), &wall_ms) !=
+      H2_PAL_OK) {
+    *flags |= MBEDTLS_X509_BADCERT_OTHER;
+    ESP_LOGE("h2_net", "stage=tls_cert_time clock_unavailable");
+    return h2_esp_net_tls_verify_certificate(&socket->verify, cert, depth,
+                                             flags, NULL);
+  }
+  time_t seconds = (time_t)(wall_ms / 1000u);
+  struct tm utc;
+  if (seconds < 0 || (uint64_t)seconds != wall_ms / 1000u ||
+      gmtime_r(&seconds, &utc) == NULL) {
+    *flags |= MBEDTLS_X509_BADCERT_OTHER;
+    ESP_LOGE("h2_net", "stage=tls_cert_time clock_unavailable");
+    return h2_esp_net_tls_verify_certificate(&socket->verify, cert, depth,
+                                             flags, NULL);
+  }
+  mbedtls_x509_time now = {
+      .year = utc.tm_year + 1900,
+      .mon = utc.tm_mon + 1,
+      .day = utc.tm_mday,
+      .hour = utc.tm_hour,
+      .min = utc.tm_min,
+      .sec = utc.tm_sec,
+  };
+  const int rc = h2_esp_net_tls_verify_certificate(&socket->verify, cert, depth,
+                                                   flags, &now);
+  if ((*flags & (MBEDTLS_X509_BADCERT_FUTURE | MBEDTLS_X509_BADCERT_EXPIRED)) !=
+      0u) {
+    ESP_LOGE(
+        "h2_net",
+        "stage=tls_cert_time from=%d-%02d-%02d to=%d-%02d-%02d now=%d-%02d-%02d flags=0x%x",
+        cert->valid_from.year, cert->valid_from.mon, cert->valid_from.day,
+        cert->valid_to.year, cert->valid_to.mon, cert->valid_to.day, now.year,
+        now.mon, now.day, (unsigned)*flags);
+  }
+  return rc;
 }
 
 static h2_pal_result_t esp_net_tls_handshake(
-    esp_net_tls_socket_t *socket, uint32_t timeout_ms,
+    esp_net_tls_socket_t* socket, uint32_t timeout_ms,
     h2_pal_net_tls_verify_t verify_mode) {
-    uint64_t deadline = esp_net_now_ms() + timeout_ms;
-    for (;;) {
-        int result = mbedtls_ssl_handshake(&socket->ssl);
-        if (result == 0) {
-            if (verify_mode == H2_PAL_NET_TLS_VERIFY_INSECURE_TEST_ONLY) {
-                return H2_PAL_OK;
-            }
-            if (mbedtls_ssl_get_verify_result(&socket->ssl) != 0u) {
-                return H2_PAL_ERR_TLS_VERIFY;
-            }
-            return H2_PAL_OK;
-        }
-        if (result != MBEDTLS_ERR_SSL_WANT_READ &&
-            result != MBEDTLS_ERR_SSL_WANT_WRITE) {
-            ESP_LOGE("h2_net", "stage=tls_handshake mbedtls_rc=%d", result);
-            return result == MBEDTLS_ERR_X509_CERT_VERIFY_FAILED
-                ? H2_PAL_ERR_TLS_VERIFY
-                : H2_PAL_ERR_IO;
-        }
-        uint32_t remaining = esp_net_timeout_remaining_ms(deadline);
-        if (remaining == 0u) {
-            return H2_PAL_ERR_TIMEOUT;
-        }
-        int wait_result = esp_net_tls_wait(socket, result, remaining);
-        if (wait_result != H2_PAL_OK && wait_result != H2_PAL_ERR_WOULD_BLOCK) {
-            return wait_result;
-        }
+  uint64_t deadline = esp_net_now_ms() + timeout_ms;
+  for (;;) {
+    int result = mbedtls_ssl_handshake(&socket->ssl);
+    if (result == 0) {
+      if (verify_mode == H2_PAL_NET_TLS_VERIFY_INSECURE_TEST_ONLY) {
+        return H2_PAL_OK;
+      }
+      if (mbedtls_ssl_get_verify_result(&socket->ssl) != 0u) {
+        return H2_PAL_ERR_TLS_VERIFY;
+      }
+      return H2_PAL_OK;
     }
+    if (result != MBEDTLS_ERR_SSL_WANT_READ &&
+        result != MBEDTLS_ERR_SSL_WANT_WRITE) {
+      ESP_LOGE("h2_net", "stage=tls_handshake mbedtls_rc=%d", result);
+      return result == MBEDTLS_ERR_X509_CERT_VERIFY_FAILED
+                 ? H2_PAL_ERR_TLS_VERIFY
+                 : H2_PAL_ERR_IO;
+    }
+    uint32_t remaining = esp_net_timeout_remaining_ms(deadline);
+    if (remaining == 0u) {
+      return H2_PAL_ERR_TIMEOUT;
+    }
+    int wait_result = esp_net_tls_wait(socket, result, remaining);
+    if (wait_result != H2_PAL_OK && wait_result != H2_PAL_ERR_WOULD_BLOCK) {
+      return wait_result;
+    }
+  }
 }
 
 static int family_to_lwip(h2_pal_net_family_t family) {
-    return family == H2_PAL_NET_FAMILY_IPV6 ? AF_INET6 :
-        family == H2_PAL_NET_FAMILY_IPV4 ? AF_INET : -1;
+  return family == H2_PAL_NET_FAMILY_IPV6   ? AF_INET6
+         : family == H2_PAL_NET_FAMILY_IPV4 ? AF_INET
+                                            : -1;
 }
 
-static int addr_to_sockaddr(
-    const h2_pal_net_addr_t *addr,
-    struct sockaddr_storage *storage,
-    socklen_t *out_len) {
-    if (addr == NULL || storage == NULL || out_len == NULL ||
-        family_to_lwip(addr->family) < 0 ||
-        (addr->family == H2_PAL_NET_FAMILY_IPV4 && addr->scope_id != 0u) ||
-        (addr->family == H2_PAL_NET_FAMILY_IPV6 && addr->ip[0] == 0xfeu &&
-         (addr->ip[1] & 0xc0u) == 0x80u && addr->scope_id == 0u)) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    memset(storage, 0, sizeof(*storage));
-    if (addr->family == H2_PAL_NET_FAMILY_IPV6) {
-        struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)storage;
-        sin6->sin6_family = AF_INET6;
-        sin6->sin6_port = htons(addr->port);
-        sin6->sin6_scope_id = addr->scope_id;
-        memcpy(&sin6->sin6_addr, addr->ip, 16u);
-        *out_len = sizeof(*sin6);
-    } else {
-        struct sockaddr_in *sin = (struct sockaddr_in *)storage;
-        sin->sin_family = AF_INET;
-        sin->sin_port = htons(addr->port);
-        memcpy(&sin->sin_addr, addr->ip, 4u);
-        *out_len = sizeof(*sin);
-    }
+static int addr_to_sockaddr(const h2_pal_net_addr_t* addr,
+                            struct sockaddr_storage* storage,
+                            socklen_t* out_len) {
+  if (addr == NULL || storage == NULL || out_len == NULL ||
+      family_to_lwip(addr->family) < 0 ||
+      (addr->family == H2_PAL_NET_FAMILY_IPV4 && addr->scope_id != 0u) ||
+      (addr->family == H2_PAL_NET_FAMILY_IPV6 && addr->ip[0] == 0xfeu &&
+       (addr->ip[1] & 0xc0u) == 0x80u && addr->scope_id == 0u)) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  memset(storage, 0, sizeof(*storage));
+  if (addr->family == H2_PAL_NET_FAMILY_IPV6) {
+    struct sockaddr_in6* sin6 = (struct sockaddr_in6*)storage;
+    sin6->sin6_family = AF_INET6;
+    sin6->sin6_port = htons(addr->port);
+    sin6->sin6_scope_id = addr->scope_id;
+    memcpy(&sin6->sin6_addr, addr->ip, 16u);
+    *out_len = sizeof(*sin6);
+  } else {
+    struct sockaddr_in* sin = (struct sockaddr_in*)storage;
+    sin->sin_family = AF_INET;
+    sin->sin_port = htons(addr->port);
+    memcpy(&sin->sin_addr, addr->ip, 4u);
+    *out_len = sizeof(*sin);
+  }
+  return H2_PAL_OK;
+}
+
+static int sockaddr_to_addr(const struct sockaddr* sockaddr,
+                            h2_pal_net_addr_t* out_addr) {
+  if (sockaddr == NULL || out_addr == NULL) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  memset(out_addr, 0, sizeof(*out_addr));
+  if (sockaddr->sa_family == AF_INET6) {
+    const struct sockaddr_in6* sin6 = (const struct sockaddr_in6*)sockaddr;
+    out_addr->family = H2_PAL_NET_FAMILY_IPV6;
+    out_addr->port = ntohs(sin6->sin6_port);
+    out_addr->scope_id = sin6->sin6_scope_id;
+    memcpy(out_addr->ip, &sin6->sin6_addr, 16u);
     return H2_PAL_OK;
-}
-
-static int sockaddr_to_addr(const struct sockaddr *sockaddr, h2_pal_net_addr_t *out_addr) {
-    if (sockaddr == NULL || out_addr == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    memset(out_addr, 0, sizeof(*out_addr));
-    if (sockaddr->sa_family == AF_INET6) {
-        const struct sockaddr_in6 *sin6 = (const struct sockaddr_in6 *)sockaddr;
-        out_addr->family = H2_PAL_NET_FAMILY_IPV6;
-        out_addr->port = ntohs(sin6->sin6_port);
-        out_addr->scope_id = sin6->sin6_scope_id;
-        memcpy(out_addr->ip, &sin6->sin6_addr, 16u);
-        return H2_PAL_OK;
-    }
-    if (sockaddr->sa_family == AF_INET) {
-        const struct sockaddr_in *sin = (const struct sockaddr_in *)sockaddr;
-        out_addr->family = H2_PAL_NET_FAMILY_IPV4;
-        out_addr->port = ntohs(sin->sin_port);
-        memcpy(out_addr->ip, &sin->sin_addr, 4u);
-        return H2_PAL_OK;
-    }
-    return H2_PAL_ERR_UNSUPPORTED;
+  }
+  if (sockaddr->sa_family == AF_INET) {
+    const struct sockaddr_in* sin = (const struct sockaddr_in*)sockaddr;
+    out_addr->family = H2_PAL_NET_FAMILY_IPV4;
+    out_addr->port = ntohs(sin->sin_port);
+    memcpy(out_addr->ip, &sin->sin_addr, 4u);
+    return H2_PAL_OK;
+  }
+  return H2_PAL_ERR_UNSUPPORTED;
 }
 
 static int esp_net_socket_error(void) {
-    return errno == EPIPE || errno == ECONNRESET || errno == ENOTCONN
-        ? H2_PAL_ERR_CLOSED
-        : H2_PAL_ERR_IO;
+  return errno == EPIPE || errno == ECONNRESET || errno == ENOTCONN
+             ? H2_PAL_ERR_CLOSED
+             : H2_PAL_ERR_IO;
 }
 
 static uint64_t esp_net_now_ms(void) {
-    struct timeval now;
-    return gettimeofday(&now, NULL) == 0
-        ? (uint64_t)now.tv_sec * 1000u + (uint64_t)now.tv_usec / 1000u
-        : 0u;
+  struct timeval now;
+  return gettimeofday(&now, NULL) == 0
+             ? (uint64_t)now.tv_sec * 1000u + (uint64_t)now.tv_usec / 1000u
+             : 0u;
 }
 
 static uint32_t esp_net_timeout_remaining_ms(uint64_t deadline_ms) {
-    uint64_t now_ms = esp_net_now_ms();
-    return now_ms >= deadline_ms
-        ? 0u
-        : (uint32_t)(deadline_ms - now_ms);
+  uint64_t now_ms = esp_net_now_ms();
+  return now_ms >= deadline_ms ? 0u : (uint32_t)(deadline_ms - now_ms);
 }
 
-static int net_has_reserved_suffix(const char *host, const char *name) {
-    size_t length = strlen(host);
-    if (length != 0u && host[length - 1u] == '.')
-        --length;
-    const size_t local_length = strlen(name);
-    if (length < local_length)
-        return 0;
-    size_t start = length - local_length;
-    if (start != 0u && host[start - 1u] != '.')
-        return 0;
-    for (size_t i = 0u; i < local_length; ++i) {
-        char c = host[start + i];
-        if (c >= 'A' && c <= 'Z')
-            c = (char)(c + ('a' - 'A'));
-        if (c != name[i])
-            return 0;
-    }
-    return 1;
+static int net_has_reserved_suffix(const char* host, const char* name) {
+  size_t length = strlen(host);
+  if (length != 0u && host[length - 1u] == '.') --length;
+  const size_t local_length = strlen(name);
+  if (length < local_length) return 0;
+  size_t start = length - local_length;
+  if (start != 0u && host[start - 1u] != '.') return 0;
+  for (size_t i = 0u; i < local_length; ++i) {
+    char c = host[start + i];
+    if (c >= 'A' && c <= 'Z') c = (char)(c + ('a' - 'A'));
+    if (c != name[i]) return 0;
+  }
+  return 1;
 }
 
-static h2_pal_result_t esp_net_resolve_all(
-    void *user, const char *host, h2_pal_net_family_t family,
-    h2_pal_net_addr_list_t *out_addrs) {
-    (void)user;
-    if (host == NULL || host[0] == '\0' || out_addrs == NULL ||
-        (family != H2_PAL_NET_FAMILY_ANY && family_to_lwip(family) < 0)) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    memset(out_addrs, 0, sizeof(*out_addrs));
-    if (net_has_reserved_suffix(host, "invalid"))
-        return H2_PAL_ERR_NOT_FOUND;
-    if (net_has_reserved_suffix(host, "localhost")) {
+static h2_pal_result_t esp_net_resolve_all(void* user, const char* host,
+                                           h2_pal_net_family_t family,
+                                           h2_pal_net_addr_list_t* out_addrs) {
+  (void)user;
+  if (host == NULL || host[0] == '\0' || out_addrs == NULL ||
+      (family != H2_PAL_NET_FAMILY_ANY && family_to_lwip(family) < 0)) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  memset(out_addrs, 0, sizeof(*out_addrs));
+  if (net_has_reserved_suffix(host, "invalid")) return H2_PAL_ERR_NOT_FOUND;
+  if (net_has_reserved_suffix(host, "localhost")) {
 #if LWIP_IPV6
-        if (family != H2_PAL_NET_FAMILY_IPV4) {
-            h2_pal_net_addr_t *loopback = &out_addrs->addrs[out_addrs->count++];
-            loopback->family = H2_PAL_NET_FAMILY_IPV6;
-            loopback->ip[15] = 1u;
-        }
+    if (family != H2_PAL_NET_FAMILY_IPV4) {
+      h2_pal_net_addr_t* loopback = &out_addrs->addrs[out_addrs->count++];
+      loopback->family = H2_PAL_NET_FAMILY_IPV6;
+      loopback->ip[15] = 1u;
+    }
 #else
-        if (family == H2_PAL_NET_FAMILY_IPV6)
-            return H2_PAL_ERR_UNSUPPORTED;
+    if (family == H2_PAL_NET_FAMILY_IPV6) return H2_PAL_ERR_UNSUPPORTED;
 #endif
-        if (family != H2_PAL_NET_FAMILY_IPV6) {
-            h2_pal_net_addr_t *loopback = &out_addrs->addrs[out_addrs->count++];
-            loopback->family = H2_PAL_NET_FAMILY_IPV4;
-            loopback->ip[0] = 127u;
-            loopback->ip[3] = 1u;
-        }
-        return H2_PAL_OK;
+    if (family != H2_PAL_NET_FAMILY_IPV6) {
+      h2_pal_net_addr_t* loopback = &out_addrs->addrs[out_addrs->count++];
+      loopback->family = H2_PAL_NET_FAMILY_IPV4;
+      loopback->ip[0] = 127u;
+      loopback->ip[3] = 1u;
     }
-    char literal[64];
-    const char *numeric = host;
-    const char *zone = strchr(host, '%');
-    uint32_t scope = 0u;
-    if (zone != NULL) {
-        size_t length = (size_t)(zone - host);
-        if (length == 0u || length >= sizeof(literal) || zone[1] == '\0')
-            return H2_PAL_ERR_INVALID_ARG;
-        memcpy(literal, host, length);
-        literal[length] = '\0';
-        numeric = literal;
-        for (const char *digit = zone + 1; *digit; ++digit) {
-            if (*digit < '0' || *digit > '9' || scope > (UINT32_MAX - 9u) / 10u)
-                return H2_PAL_ERR_INVALID_ARG;
-            scope = scope * 10u + (uint32_t)(*digit - '0');
-        }
-        if (!scope)
-            return H2_PAL_ERR_INVALID_ARG;
-    }
-    h2_pal_net_addr_t address = {0};
-    if (inet_pton(AF_INET6, numeric, address.ip) == 1) {
-        if (family == H2_PAL_NET_FAMILY_IPV4)
-            return H2_PAL_ERR_NOT_FOUND;
-#if !LWIP_IPV6
-        return H2_PAL_ERR_UNSUPPORTED;
-#endif
-        address.family = H2_PAL_NET_FAMILY_IPV6;
-        address.scope_id = scope;
-        out_addrs->addrs[0] = address;
-        out_addrs->count = 1u;
-        return H2_PAL_OK;
-    }
-    if (zone != NULL)
+    return H2_PAL_OK;
+  }
+  char literal[64];
+  const char* numeric = host;
+  const char* zone = strchr(host, '%');
+  uint32_t scope = 0u;
+  if (zone != NULL) {
+    size_t length = (size_t)(zone - host);
+    if (length == 0u || length >= sizeof(literal) || zone[1] == '\0')
+      return H2_PAL_ERR_INVALID_ARG;
+    memcpy(literal, host, length);
+    literal[length] = '\0';
+    numeric = literal;
+    for (const char* digit = zone + 1; *digit; ++digit) {
+      if (*digit < '0' || *digit > '9' || scope > (UINT32_MAX - 9u) / 10u)
         return H2_PAL_ERR_INVALID_ARG;
-    if (inet_pton(AF_INET, numeric, address.ip) == 1) {
-        if (family == H2_PAL_NET_FAMILY_IPV6)
-            return H2_PAL_ERR_NOT_FOUND;
-        address.family = H2_PAL_NET_FAMILY_IPV4;
-        out_addrs->addrs[0] = address;
-        out_addrs->count = 1u;
-        return H2_PAL_OK;
+      scope = scope * 10u + (uint32_t)(*digit - '0');
     }
-    const h2_pal_net_family_t families[] = {H2_PAL_NET_FAMILY_IPV6, H2_PAL_NET_FAMILY_IPV4};
-    h2_pal_result_t failure = H2_PAL_ERR_NOT_FOUND;
-    for (size_t query = 0u; query < 2u; ++query) {
-        if (family != H2_PAL_NET_FAMILY_ANY && family != families[query]) {
-            continue;
-        }
+    if (!scope) return H2_PAL_ERR_INVALID_ARG;
+  }
+  h2_pal_net_addr_t address = {0};
+  if (inet_pton(AF_INET6, numeric, address.ip) == 1) {
+    if (family == H2_PAL_NET_FAMILY_IPV4) return H2_PAL_ERR_NOT_FOUND;
 #if !LWIP_IPV6
-        if (families[query] == H2_PAL_NET_FAMILY_IPV6) {
-            if (family == H2_PAL_NET_FAMILY_IPV6) {
-                return H2_PAL_ERR_UNSUPPORTED;
-            }
-            continue;
-        }
+    return H2_PAL_ERR_UNSUPPORTED;
+#endif
+    address.family = H2_PAL_NET_FAMILY_IPV6;
+    address.scope_id = scope;
+    out_addrs->addrs[0] = address;
+    out_addrs->count = 1u;
+    return H2_PAL_OK;
+  }
+  if (zone != NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (inet_pton(AF_INET, numeric, address.ip) == 1) {
+    if (family == H2_PAL_NET_FAMILY_IPV6) return H2_PAL_ERR_NOT_FOUND;
+    address.family = H2_PAL_NET_FAMILY_IPV4;
+    out_addrs->addrs[0] = address;
+    out_addrs->count = 1u;
+    return H2_PAL_OK;
+  }
+  const h2_pal_net_family_t families[] = {H2_PAL_NET_FAMILY_IPV6,
+                                          H2_PAL_NET_FAMILY_IPV4};
+  h2_pal_result_t failure = H2_PAL_ERR_NOT_FOUND;
+  for (size_t query = 0u; query < 2u; ++query) {
+    if (family != H2_PAL_NET_FAMILY_ANY && family != families[query]) {
+      continue;
+    }
+#if !LWIP_IPV6
+    if (families[query] == H2_PAL_NET_FAMILY_IPV6) {
+      if (family == H2_PAL_NET_FAMILY_IPV6) {
+        return H2_PAL_ERR_UNSUPPORTED;
+      }
+      continue;
+    }
 #endif
     struct addrinfo hints;
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = family_to_lwip(families[query]);
     hints.ai_socktype = SOCK_STREAM;
-    struct addrinfo *res = NULL;
+    struct addrinfo* res = NULL;
     int rc = getaddrinfo(host, NULL, &hints, &res);
     if (rc != 0) {
-        if (rc == EAI_MEMORY) {
-            memset(out_addrs, 0, sizeof(*out_addrs));
-            return H2_PAL_ERR_NO_MEMORY;
-        }
-        if (rc != EAI_NONAME) {
-            failure = H2_PAL_ERR_IO;
-        }
-        continue;
+      if (rc == EAI_MEMORY) {
+        memset(out_addrs, 0, sizeof(*out_addrs));
+        return H2_PAL_ERR_NO_MEMORY;
+      }
+      if (rc != EAI_NONAME) {
+        failure = H2_PAL_ERR_IO;
+      }
+      continue;
     }
-    for (const struct addrinfo *it = res; it != NULL; it = it->ai_next) {
-        if (it->ai_family != AF_INET && it->ai_family != AF_INET6) {
-            continue;
+    for (const struct addrinfo* it = res; it != NULL; it = it->ai_next) {
+      if (it->ai_family != AF_INET && it->ai_family != AF_INET6) {
+        continue;
+      }
+      h2_pal_net_addr_t addr;
+      if (sockaddr_to_addr(it->ai_addr, &addr) != H2_PAL_OK) {
+        continue;
+      }
+      if (family != H2_PAL_NET_FAMILY_ANY && addr.family != family) continue;
+      size_t i = 0u;
+      for (; i < out_addrs->count; ++i) {
+        const h2_pal_net_addr_t* previous = &out_addrs->addrs[i];
+        if (previous->family == addr.family &&
+            previous->scope_id == addr.scope_id &&
+            memcmp(previous->ip, addr.ip,
+                   addr.family == H2_PAL_NET_FAMILY_IPV4 ? 4u : 16u) == 0) {
+          break;
         }
-        h2_pal_net_addr_t addr;
-        if (sockaddr_to_addr(it->ai_addr, &addr) != H2_PAL_OK) {
-            continue;
-        }
-        if (family != H2_PAL_NET_FAMILY_ANY && addr.family != family)
-            continue;
-        size_t i = 0u;
-        for (; i < out_addrs->count; ++i) {
-            const h2_pal_net_addr_t *previous = &out_addrs->addrs[i];
-            if (previous->family == addr.family && previous->scope_id == addr.scope_id &&
-                memcmp(previous->ip, addr.ip, addr.family == H2_PAL_NET_FAMILY_IPV4 ? 4u : 16u) == 0) {
-                break;
-            }
-        }
-        if (i != out_addrs->count) {
-            continue;
-        }
-        if (out_addrs->count == H2_PAL_NET_ADDR_MAX) {
-            out_addrs->truncated = 1u;
-            int family_present = 0;
-            for (size_t kept = 0u; kept < out_addrs->count; ++kept)
-                family_present |= out_addrs->addrs[kept].family == addr.family;
-            /* Keep one answer of each family even when one DNS RRset fills
-             * the bounded list. Relative resolver order of retained answers
-             * is preserved, and truncation remains explicit. */
-            if (!family_present && family == H2_PAL_NET_FAMILY_ANY)
-                out_addrs->addrs[H2_PAL_NET_ADDR_MAX - 1u] = addr;
-            continue;
-        }
-        out_addrs->addrs[out_addrs->count++] = addr;
+      }
+      if (i != out_addrs->count) {
+        continue;
+      }
+      if (out_addrs->count == H2_PAL_NET_ADDR_MAX) {
+        out_addrs->truncated = 1u;
+        int family_present = 0;
+        for (size_t kept = 0u; kept < out_addrs->count; ++kept)
+          family_present |= out_addrs->addrs[kept].family == addr.family;
+        /* Keep one answer of each family even when one DNS RRset fills
+         * the bounded list. Relative resolver order of retained answers
+         * is preserved, and truncation remains explicit. */
+        if (!family_present && family == H2_PAL_NET_FAMILY_ANY)
+          out_addrs->addrs[H2_PAL_NET_ADDR_MAX - 1u] = addr;
+        continue;
+      }
+      out_addrs->addrs[out_addrs->count++] = addr;
     }
     freeaddrinfo(res);
-    }
-    return out_addrs->count != 0u ? H2_PAL_OK : failure;
+  }
+  return out_addrs->count != 0u ? H2_PAL_OK : failure;
 }
 
 /* Preserve the legacy IPv4 preference while accepting AAAA-only hosts. */
-static h2_pal_net_addr_t esp_net_first_addr(const h2_pal_net_addr_list_t *addrs) {
-    for (size_t i = 0u; i < addrs->count; ++i) {
-        if (addrs->addrs[i].family == H2_PAL_NET_FAMILY_IPV4) {
-            return addrs->addrs[i];
-        }
+static h2_pal_net_addr_t esp_net_first_addr(
+    const h2_pal_net_addr_list_t* addrs) {
+  for (size_t i = 0u; i < addrs->count; ++i) {
+    if (addrs->addrs[i].family == H2_PAL_NET_FAMILY_IPV4) {
+      return addrs->addrs[i];
     }
-    return addrs->addrs[0];
+  }
+  return addrs->addrs[0];
 }
 
-static int esp_net_resolve_addr(void *user, const char *host, h2_pal_net_addr_t *out_addr) {
-    if (out_addr == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    memset(out_addr, 0, sizeof(*out_addr));
-    h2_pal_net_addr_list_t addrs;
-    h2_pal_result_t result = esp_net_resolve_all(user, host, H2_PAL_NET_FAMILY_ANY, &addrs);
-    if (result == H2_PAL_OK) {
-        *out_addr = esp_net_first_addr(&addrs);
-    }
-    return result;
+static int esp_net_resolve_addr(void* user, const char* host,
+                                h2_pal_net_addr_t* out_addr) {
+  if (out_addr == NULL) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  memset(out_addr, 0, sizeof(*out_addr));
+  h2_pal_net_addr_list_t addrs;
+  h2_pal_result_t result =
+      esp_net_resolve_all(user, host, H2_PAL_NET_FAMILY_ANY, &addrs);
+  if (result == H2_PAL_OK) {
+    *out_addr = esp_net_first_addr(&addrs);
+  }
+  return result;
 }
 
 static h2_pal_result_t esp_net_resolver_reserve(void) {
-    if (s_esp_tls_sync == NULL ||
-        xSemaphoreTake(
-            s_esp_tls_sync->registry_mutex, portMAX_DELAY) != pdTRUE) {
-        return H2_PAL_ERR_UNAVAILABLE;
-    }
-    h2_pal_result_t result =
-        s_esp_resolver_count < H2_ESP_NET_RESOLVER_MAX
-            ? H2_PAL_OK
-            : H2_PAL_ERR_NO_SPACE;
-    if (result == H2_PAL_OK) {
-        s_esp_resolver_count += 1u;
-    }
-    (void)xSemaphoreGive(s_esp_tls_sync->registry_mutex);
-    return result;
+  if (s_esp_tls_sync == NULL ||
+      xSemaphoreTake(s_esp_tls_sync->registry_mutex, portMAX_DELAY) != pdTRUE) {
+    return H2_PAL_ERR_UNAVAILABLE;
+  }
+  h2_pal_result_t result = s_esp_resolver_count < H2_ESP_NET_RESOLVER_MAX
+                               ? H2_PAL_OK
+                               : H2_PAL_ERR_NO_SPACE;
+  if (result == H2_PAL_OK) {
+    s_esp_resolver_count += 1u;
+  }
+  (void)xSemaphoreGive(s_esp_tls_sync->registry_mutex);
+  return result;
 }
 
 static void esp_net_resolver_release(void) {
-    if (s_esp_tls_sync == NULL ||
-        xSemaphoreTake(
-            s_esp_tls_sync->registry_mutex, portMAX_DELAY) != pdTRUE) {
-        return;
-    }
-    if (s_esp_resolver_count > 0u) {
-        s_esp_resolver_count -= 1u;
-    }
-    (void)xSemaphoreGive(s_esp_tls_sync->registry_mutex);
+  if (s_esp_tls_sync == NULL ||
+      xSemaphoreTake(s_esp_tls_sync->registry_mutex, portMAX_DELAY) != pdTRUE) {
+    return;
+  }
+  if (s_esp_resolver_count > 0u) {
+    s_esp_resolver_count -= 1u;
+  }
+  (void)xSemaphoreGive(s_esp_tls_sync->registry_mutex);
 }
 
-static void esp_net_resolver_destroy(esp_net_resolver_t *resolver) {
-    if (resolver == NULL) {
-        return;
-    }
-    if (resolver->done != NULL) {
-        vSemaphoreDelete(resolver->done);
-    }
-    if (resolver->lock != NULL) {
-        vSemaphoreDelete(resolver->lock);
-    }
-    h2_pal_mem_free(h2_esp_platform_default_allocator(), resolver);
-    esp_net_resolver_release();
+static void esp_net_resolver_destroy(esp_net_resolver_t* resolver) {
+  if (resolver == NULL) {
+    return;
+  }
+  if (resolver->done != NULL) {
+    vSemaphoreDelete(resolver->done);
+  }
+  if (resolver->lock != NULL) {
+    vSemaphoreDelete(resolver->lock);
+  }
+  h2_pal_mem_free(h2_esp_platform_default_allocator(), resolver);
+  esp_net_resolver_release();
 }
 
-static void esp_net_resolver_worker(void *raw) {
-    esp_net_resolver_t *resolver = (esp_net_resolver_t *)raw;
-    h2_pal_net_addr_list_t addrs;
-    h2_pal_result_t result = esp_net_resolve_all(NULL, resolver->host, resolver->family, &addrs);
-    (void)xSemaphoreTake(resolver->lock, portMAX_DELAY);
-    resolver->result = result;
-    if (result == H2_PAL_OK) {
-        resolver->addrs = addrs;
-    }
-    resolver->completed = 1;
-    int closed = resolver->closed;
-    if (!closed) {
-        (void)xSemaphoreGive(resolver->done);
-    }
-    (void)xSemaphoreGive(resolver->lock);
-    if (closed) {
-        esp_net_resolver_destroy(resolver);
-    }
-    vTaskDelete(NULL);
+static void esp_net_resolver_worker(void* raw) {
+  esp_net_resolver_t* resolver = (esp_net_resolver_t*)raw;
+  h2_pal_net_addr_list_t addrs;
+  h2_pal_result_t result =
+      esp_net_resolve_all(NULL, resolver->host, resolver->family, &addrs);
+  (void)xSemaphoreTake(resolver->lock, portMAX_DELAY);
+  resolver->result = result;
+  if (result == H2_PAL_OK) {
+    resolver->addrs = addrs;
+  }
+  resolver->completed = 1;
+  int closed = resolver->closed;
+  if (!closed) {
+    (void)xSemaphoreGive(resolver->done);
+  }
+  (void)xSemaphoreGive(resolver->lock);
+  if (closed) {
+    esp_net_resolver_destroy(resolver);
+  }
+  vTaskDelete(NULL);
 }
 
 static h2_pal_result_t esp_net_resolve_start_family(
-    void *user,
-    const char *host,
-    h2_pal_net_family_t family,
-    h2_pal_net_resolver_t **out_resolver) {
-    (void)user;
-    if (host == NULL || host[0] == '\0' || out_resolver == NULL ||
-        (family != H2_PAL_NET_FAMILY_ANY && family_to_lwip(family) < 0)) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    *out_resolver = NULL;
-    h2_pal_result_t reserve_result = esp_net_resolver_reserve();
-    if (reserve_result != H2_PAL_OK) {
-        return reserve_result;
-    }
-    size_t host_len = strlen(host);
-    if (host_len >= SIZE_MAX - sizeof(esp_net_resolver_t)) {
-        esp_net_resolver_release();
-        return H2_PAL_ERR_NO_MEMORY;
-    }
-    esp_net_resolver_t *resolver = (esp_net_resolver_t *)h2_pal_mem_alloc(
-        h2_esp_platform_default_allocator(),
-        sizeof(*resolver) + host_len + 1u);
-    if (resolver == NULL) {
-        esp_net_resolver_release();
-        return H2_PAL_ERR_NO_MEMORY;
-    }
-    memset(resolver, 0, sizeof(*resolver));
-    resolver->family = family;
-    memcpy(resolver->host, host, host_len + 1u);
-    resolver->lock = xSemaphoreCreateMutex();
-    resolver->done = xSemaphoreCreateBinary();
-    if (resolver->lock == NULL || resolver->done == NULL) {
-        esp_net_resolver_destroy(resolver);
-        return H2_PAL_ERR_NO_MEMORY;
-    }
-    if (xTaskCreate(
-            esp_net_resolver_worker, "h2_dns", 4096u, resolver,
-            tskIDLE_PRIORITY + 1u, NULL) != pdPASS) {
-        esp_net_resolver_destroy(resolver);
-        return H2_PAL_ERR_NO_MEMORY;
-    }
-    *out_resolver = (h2_pal_net_resolver_t *)resolver;
-    return H2_PAL_OK;
+    void* user, const char* host, h2_pal_net_family_t family,
+    h2_pal_net_resolver_t** out_resolver) {
+  (void)user;
+  if (host == NULL || host[0] == '\0' || out_resolver == NULL ||
+      (family != H2_PAL_NET_FAMILY_ANY && family_to_lwip(family) < 0)) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  *out_resolver = NULL;
+  h2_pal_result_t reserve_result = esp_net_resolver_reserve();
+  if (reserve_result != H2_PAL_OK) {
+    return reserve_result;
+  }
+  size_t host_len = strlen(host);
+  if (host_len >= SIZE_MAX - sizeof(esp_net_resolver_t)) {
+    esp_net_resolver_release();
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  esp_net_resolver_t* resolver = (esp_net_resolver_t*)h2_pal_mem_alloc(
+      h2_esp_platform_default_allocator(), sizeof(*resolver) + host_len + 1u);
+  if (resolver == NULL) {
+    esp_net_resolver_release();
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  memset(resolver, 0, sizeof(*resolver));
+  resolver->family = family;
+  memcpy(resolver->host, host, host_len + 1u);
+  resolver->lock = xSemaphoreCreateMutex();
+  resolver->done = xSemaphoreCreateBinary();
+  if (resolver->lock == NULL || resolver->done == NULL) {
+    esp_net_resolver_destroy(resolver);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  if (xTaskCreate(esp_net_resolver_worker, "h2_dns", 4096u, resolver,
+                  tskIDLE_PRIORITY + 1u, NULL) != pdPASS) {
+    esp_net_resolver_destroy(resolver);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  *out_resolver = (h2_pal_net_resolver_t*)resolver;
+  return H2_PAL_OK;
 }
 
 static h2_pal_result_t esp_net_resolve_poll_all(
-    void *user,
-    h2_pal_net_resolver_t *resolver_handle,
-    h2_pal_net_addr_list_t *out_addrs,
-    uint32_t timeout_ms) {
-    (void)user;
-    esp_net_resolver_t *resolver = (esp_net_resolver_t *)resolver_handle;
-    if (resolver == NULL || out_addrs == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    memset(out_addrs, 0, sizeof(*out_addrs));
-    (void)xSemaphoreTake(resolver->lock, portMAX_DELAY);
-    if (resolver->closed) {
-        (void)xSemaphoreGive(resolver->lock);
-        return H2_PAL_ERR_INVALID_STATE;
-    }
-    if (resolver->completed) {
-        h2_pal_result_t result = resolver->result;
-        if (result == H2_PAL_OK) {
-            *out_addrs = resolver->addrs;
-        }
-        (void)xSemaphoreGive(resolver->lock);
-        return result;
-    }
+    void* user, h2_pal_net_resolver_t* resolver_handle,
+    h2_pal_net_addr_list_t* out_addrs, uint32_t timeout_ms) {
+  (void)user;
+  esp_net_resolver_t* resolver = (esp_net_resolver_t*)resolver_handle;
+  if (resolver == NULL || out_addrs == NULL) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  memset(out_addrs, 0, sizeof(*out_addrs));
+  (void)xSemaphoreTake(resolver->lock, portMAX_DELAY);
+  if (resolver->closed) {
     (void)xSemaphoreGive(resolver->lock);
-
-    TickType_t ticks = timeout_ms == 0u
-        ? 0u
-        : esp_net_tls_timeout_ticks(timeout_ms);
-    BaseType_t wait_result = xSemaphoreTake(resolver->done, ticks);
-    (void)xSemaphoreTake(resolver->lock, portMAX_DELAY);
-    if (!resolver->completed) {
-        (void)xSemaphoreGive(resolver->lock);
-        return timeout_ms == 0u || wait_result == pdTRUE
-            ? H2_PAL_ERR_WOULD_BLOCK
-            : H2_PAL_ERR_TIMEOUT;
-    }
+    return H2_PAL_ERR_INVALID_STATE;
+  }
+  if (resolver->completed) {
     h2_pal_result_t result = resolver->result;
     if (result == H2_PAL_OK) {
-        *out_addrs = resolver->addrs;
+      *out_addrs = resolver->addrs;
     }
     (void)xSemaphoreGive(resolver->lock);
     return result;
-}
+  }
+  (void)xSemaphoreGive(resolver->lock);
 
-static h2_pal_result_t esp_net_resolve_start(void *user, const char *host,
-    h2_pal_net_resolver_t **out_resolver) {
-    return esp_net_resolve_start_family(user, host, H2_PAL_NET_FAMILY_ANY, out_resolver);
-}
-
-static h2_pal_result_t esp_net_resolve_poll(void *user, h2_pal_net_resolver_t *resolver,
-    h2_pal_net_addr_t *out_addr, uint32_t timeout_ms) {
-    if (out_addr == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    memset(out_addr, 0, sizeof(*out_addr));
-    h2_pal_net_addr_list_t addrs;
-    h2_pal_result_t result = esp_net_resolve_poll_all(user, resolver, &addrs, timeout_ms);
-    if (result == H2_PAL_OK) {
-        *out_addr = esp_net_first_addr(&addrs);
-    }
-    return result;
-}
-
-static void esp_net_resolve_close(
-    void *user,
-    h2_pal_net_resolver_t *resolver_handle) {
-    (void)user;
-    esp_net_resolver_t *resolver = (esp_net_resolver_t *)resolver_handle;
-    if (resolver == NULL) {
-        return;
-    }
-    (void)xSemaphoreTake(resolver->lock, portMAX_DELAY);
-    resolver->closed = 1;
-    int completed = resolver->completed;
+  TickType_t ticks =
+      timeout_ms == 0u ? 0u : esp_net_tls_timeout_ticks(timeout_ms);
+  BaseType_t wait_result = xSemaphoreTake(resolver->done, ticks);
+  (void)xSemaphoreTake(resolver->lock, portMAX_DELAY);
+  if (!resolver->completed) {
     (void)xSemaphoreGive(resolver->lock);
-    if (completed) {
-        esp_net_resolver_destroy(resolver);
-    }
+    return timeout_ms == 0u || wait_result == pdTRUE ? H2_PAL_ERR_WOULD_BLOCK
+                                                     : H2_PAL_ERR_TIMEOUT;
+  }
+  h2_pal_result_t result = resolver->result;
+  if (result == H2_PAL_OK) {
+    *out_addrs = resolver->addrs;
+  }
+  (void)xSemaphoreGive(resolver->lock);
+  return result;
+}
+
+static h2_pal_result_t esp_net_resolve_start(
+    void* user, const char* host, h2_pal_net_resolver_t** out_resolver) {
+  return esp_net_resolve_start_family(user, host, H2_PAL_NET_FAMILY_ANY,
+                                      out_resolver);
+}
+
+static h2_pal_result_t esp_net_resolve_poll(void* user,
+                                            h2_pal_net_resolver_t* resolver,
+                                            h2_pal_net_addr_t* out_addr,
+                                            uint32_t timeout_ms) {
+  if (out_addr == NULL) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  memset(out_addr, 0, sizeof(*out_addr));
+  h2_pal_net_addr_list_t addrs;
+  h2_pal_result_t result =
+      esp_net_resolve_poll_all(user, resolver, &addrs, timeout_ms);
+  if (result == H2_PAL_OK) {
+    *out_addr = esp_net_first_addr(&addrs);
+  }
+  return result;
+}
+
+static void esp_net_resolve_close(void* user,
+                                  h2_pal_net_resolver_t* resolver_handle) {
+  (void)user;
+  esp_net_resolver_t* resolver = (esp_net_resolver_t*)resolver_handle;
+  if (resolver == NULL) {
+    return;
+  }
+  (void)xSemaphoreTake(resolver->lock, portMAX_DELAY);
+  resolver->closed = 1;
+  int completed = resolver->completed;
+  (void)xSemaphoreGive(resolver->lock);
+  if (completed) {
+    esp_net_resolver_destroy(resolver);
+  }
 }
 
 typedef struct esp_net_host_addr_context {
-    const char *iface_prefix;
-    h2_pal_net_family_t family;
-    h2_pal_net_addr_t addr;
-    h2_pal_result_t result;
+  const char* iface_prefix;
+  h2_pal_net_family_t family;
+  h2_pal_net_addr_t addr;
+  h2_pal_result_t result;
 } esp_net_host_addr_context_t;
 
-static int esp_net_iface_matches_prefix(
-    esp_netif_t *netif,
-    const char *prefix) {
-    if (netif == NULL) {
-        return 0;
-    }
-    if (prefix == NULL || prefix[0] == '\0') {
-        return 1;
-    }
-    const size_t prefix_len = strlen(prefix);
-    char impl_name[7] = {0};
-    if (prefix_len < sizeof(impl_name) &&
-        esp_netif_get_netif_impl_name(netif, impl_name) == ESP_OK &&
-        strncmp(impl_name, prefix, prefix_len) == 0) {
-        return 1;
-    }
-    const char *ifkey = esp_netif_get_ifkey(netif);
-    if (ifkey != NULL && strncmp(ifkey, prefix, prefix_len) == 0) {
-        return 1;
-    }
-    const char *description = esp_netif_get_desc(netif);
-    return description != NULL &&
-           strncmp(description, prefix, prefix_len) == 0;
-}
-
-static int esp_net_read_ipv4(
-    esp_netif_t *netif,
-    h2_pal_net_addr_t *out_addr) {
-    esp_netif_ip_info_t info;
-    memset(&info, 0, sizeof(info));
-    if (netif == NULL || !esp_netif_is_netif_up(netif) ||
-        esp_netif_get_ip_info(netif, &info) != ESP_OK ||
-        info.ip.addr == 0u) {
-        return 0;
-    }
-    memset(out_addr, 0, sizeof(*out_addr));
-    out_addr->family = H2_PAL_NET_FAMILY_IPV4;
-    memcpy(out_addr->ip, &info.ip.addr, 4u);
-    return 1;
-}
-
-static int esp_net_read_host(esp_netif_t *netif, h2_pal_net_family_t family,
-    h2_pal_net_addr_t *out_addr) {
-    if (family == H2_PAL_NET_FAMILY_IPV4) {
-        return esp_net_read_ipv4(netif, out_addr);
-    }
-#if LWIP_IPV6
-    if (netif != NULL && esp_netif_is_netif_up(netif)) {
-        esp_ip6_addr_t addresses[CONFIG_LWIP_IPV6_NUM_ADDRESSES];
-        int count = esp_netif_get_all_preferred_ip6(netif, addresses);
-        for (int i = 0; i < count; ++i) {
-            memset(out_addr, 0, sizeof(*out_addr));
-            out_addr->family = H2_PAL_NET_FAMILY_IPV6;
-            memcpy(out_addr->ip, addresses[i].addr, 16u);
-            if (out_addr->ip[0] == 0xfeu && (out_addr->ip[1] & 0xc0u) == 0x80u) {
-                out_addr->scope_id = (uint32_t)esp_netif_get_netif_impl_index(netif);
-            }
-            /* Prefer a routable address over link-local when both exist. */
-            if (out_addr->scope_id == 0u || i == count - 1) {
-                return 1;
-            }
-        }
-    }
-#endif
+static int esp_net_iface_matches_prefix(esp_netif_t* netif,
+                                        const char* prefix) {
+  if (netif == NULL) {
     return 0;
+  }
+  if (prefix == NULL || prefix[0] == '\0') {
+    return 1;
+  }
+  const size_t prefix_len = strlen(prefix);
+  char impl_name[7] = {0};
+  if (prefix_len < sizeof(impl_name) &&
+      esp_netif_get_netif_impl_name(netif, impl_name) == ESP_OK &&
+      strncmp(impl_name, prefix, prefix_len) == 0) {
+    return 1;
+  }
+  const char* ifkey = esp_netif_get_ifkey(netif);
+  if (ifkey != NULL && strncmp(ifkey, prefix, prefix_len) == 0) {
+    return 1;
+  }
+  const char* description = esp_netif_get_desc(netif);
+  return description != NULL && strncmp(description, prefix, prefix_len) == 0;
 }
 
-static esp_err_t esp_net_get_host_addr_in_tcpip(void *user) {
-    esp_net_host_addr_context_t *context =
-        (esp_net_host_addr_context_t *)user;
-    esp_netif_t *default_netif = esp_netif_get_default_netif();
-    if (esp_net_iface_matches_prefix(
-            default_netif, context->iface_prefix) &&
-        esp_net_read_host(default_netif, context->family, &context->addr)) {
-        context->result = H2_PAL_OK;
-        return ESP_OK;
-    }
+static int esp_net_read_ipv4(esp_netif_t* netif, h2_pal_net_addr_t* out_addr) {
+  esp_netif_ip_info_t info;
+  memset(&info, 0, sizeof(info));
+  if (netif == NULL || !esp_netif_is_netif_up(netif) ||
+      esp_netif_get_ip_info(netif, &info) != ESP_OK || info.ip.addr == 0u) {
+    return 0;
+  }
+  memset(out_addr, 0, sizeof(*out_addr));
+  out_addr->family = H2_PAL_NET_FAMILY_IPV4;
+  memcpy(out_addr->ip, &info.ip.addr, 4u);
+  return 1;
+}
 
-    esp_netif_t *netif = NULL;
-    while ((netif = esp_netif_next_unsafe(netif)) != NULL) {
-        if (netif != default_netif &&
-            esp_net_iface_matches_prefix(netif, context->iface_prefix) &&
-            esp_net_read_host(netif, context->family, &context->addr)) {
-            context->result = H2_PAL_OK;
-            return ESP_OK;
-        }
+static int esp_net_read_host(esp_netif_t* netif, h2_pal_net_family_t family,
+                             h2_pal_net_addr_t* out_addr) {
+  if (family == H2_PAL_NET_FAMILY_IPV4) {
+    return esp_net_read_ipv4(netif, out_addr);
+  }
+#if LWIP_IPV6
+  if (netif != NULL && esp_netif_is_netif_up(netif)) {
+    esp_ip6_addr_t addresses[CONFIG_LWIP_IPV6_NUM_ADDRESSES];
+    int count = esp_netif_get_all_preferred_ip6(netif, addresses);
+    for (int i = 0; i < count; ++i) {
+      memset(out_addr, 0, sizeof(*out_addr));
+      out_addr->family = H2_PAL_NET_FAMILY_IPV6;
+      memcpy(out_addr->ip, addresses[i].addr, 16u);
+      if (out_addr->ip[0] == 0xfeu && (out_addr->ip[1] & 0xc0u) == 0x80u) {
+        out_addr->scope_id = (uint32_t)esp_netif_get_netif_impl_index(netif);
+      }
+      /* Prefer a routable address over link-local when both exist. */
+      if (out_addr->scope_id == 0u || i == count - 1) {
+        return 1;
+      }
     }
-    context->result = H2_PAL_ERR_UNAVAILABLE;
+  }
+#endif
+  return 0;
+}
+
+static esp_err_t esp_net_get_host_addr_in_tcpip(void* user) {
+  esp_net_host_addr_context_t* context = (esp_net_host_addr_context_t*)user;
+  esp_netif_t* default_netif = esp_netif_get_default_netif();
+  if (esp_net_iface_matches_prefix(default_netif, context->iface_prefix) &&
+      esp_net_read_host(default_netif, context->family, &context->addr)) {
+    context->result = H2_PAL_OK;
     return ESP_OK;
+  }
+
+  esp_netif_t* netif = NULL;
+  while ((netif = esp_netif_next_unsafe(netif)) != NULL) {
+    if (netif != default_netif &&
+        esp_net_iface_matches_prefix(netif, context->iface_prefix) &&
+        esp_net_read_host(netif, context->family, &context->addr)) {
+      context->result = H2_PAL_OK;
+      return ESP_OK;
+    }
+  }
+  context->result = H2_PAL_ERR_UNAVAILABLE;
+  return ESP_OK;
 }
 
-static int esp_net_get_host_addr_family(
-    void *user,
-    const char *iface_prefix,
-    h2_pal_net_family_t family,
-    h2_pal_net_addr_t *out_addr) {
-    (void)user;
-    if (out_addr == NULL || family_to_lwip(family) < 0) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    memset(out_addr, 0, sizeof(*out_addr));
-    esp_net_host_addr_context_t context = {
-        .iface_prefix = iface_prefix,
-        .family = family,
-        .result = H2_PAL_ERR_UNAVAILABLE,
-    };
-    if (esp_netif_tcpip_exec(
-            esp_net_get_host_addr_in_tcpip, &context) != ESP_OK) {
-        return H2_PAL_ERR_IO;
-    }
-    if (context.result == H2_PAL_OK) {
-        *out_addr = context.addr;
-    }
-    return context.result;
+static int esp_net_get_host_addr_family(void* user, const char* iface_prefix,
+                                        h2_pal_net_family_t family,
+                                        h2_pal_net_addr_t* out_addr) {
+  (void)user;
+  if (out_addr == NULL || family_to_lwip(family) < 0) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  memset(out_addr, 0, sizeof(*out_addr));
+  esp_net_host_addr_context_t context = {
+      .iface_prefix = iface_prefix,
+      .family = family,
+      .result = H2_PAL_ERR_UNAVAILABLE,
+  };
+  if (esp_netif_tcpip_exec(esp_net_get_host_addr_in_tcpip, &context) !=
+      ESP_OK) {
+    return H2_PAL_ERR_IO;
+  }
+  if (context.result == H2_PAL_OK) {
+    *out_addr = context.addr;
+  }
+  return context.result;
 }
 
-static int esp_net_get_host_addr(void *user, const char *iface_prefix, h2_pal_net_addr_t *out_addr) {
-    return esp_net_get_host_addr_family(user, iface_prefix, H2_PAL_NET_FAMILY_IPV4, out_addr);
+static int esp_net_get_host_addr(void* user, const char* iface_prefix,
+                                 h2_pal_net_addr_t* out_addr) {
+  return esp_net_get_host_addr_family(user, iface_prefix,
+                                      H2_PAL_NET_FAMILY_IPV4, out_addr);
 }
 
 static int esp_net_open_socket(h2_pal_net_family_t family, int type) {
-    if (family_to_lwip(family) < 0) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
+  if (family_to_lwip(family) < 0) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
 #if !LWIP_IPV6
-    if (family == H2_PAL_NET_FAMILY_IPV6) {
-        return H2_PAL_ERR_UNSUPPORTED;
-    }
+  if (family == H2_PAL_NET_FAMILY_IPV6) {
+    return H2_PAL_ERR_UNSUPPORTED;
+  }
 #endif
-    int fd = socket(family_to_lwip(family), type, 0);
-    if (fd < 0) {
-        return errno == EAFNOSUPPORT ? H2_PAL_ERR_UNSUPPORTED : H2_PAL_ERR_IO;
-    }
+  int fd = socket(family_to_lwip(family), type, 0);
+  if (fd < 0) {
+    return errno == EAFNOSUPPORT ? H2_PAL_ERR_UNSUPPORTED : H2_PAL_ERR_IO;
+  }
 #if LWIP_IPV6
-    if (family == H2_PAL_NET_FAMILY_IPV6) {
-        int only = 1;
-        if (setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &only, sizeof(only)) != 0) {
-            close(fd);
-            return H2_PAL_ERR_IO;
-        }
+  if (family == H2_PAL_NET_FAMILY_IPV6) {
+    int only = 1;
+    if (setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &only, sizeof(only)) != 0) {
+      close(fd);
+      return H2_PAL_ERR_IO;
     }
+  }
 #endif
-    return fd;
+  return fd;
 }
 
 typedef struct esp_net_bound_if {
-    uint32_t index;
-    struct ifreq request;
-    h2_pal_result_t result;
+  uint32_t index;
+  struct ifreq request;
+  h2_pal_result_t result;
 } esp_net_bound_if_t;
-static esp_err_t esp_net_interface_name(void *user) {
-    esp_net_bound_if_t *context = user;
-    context->result = context->index != 0u && context->index <= UINT8_MAX &&
-        netif_index_to_name((uint8_t)context->index, context->request.ifr_name) != NULL
-        ? H2_PAL_OK : H2_PAL_ERR_NOT_FOUND;
-    return ESP_OK;
+static esp_err_t esp_net_interface_name(void* user) {
+  esp_net_bound_if_t* context = user;
+  context->result =
+      context->index != 0u && context->index <= UINT8_MAX &&
+              netif_index_to_name((uint8_t)context->index,
+                                  context->request.ifr_name) != NULL
+          ? H2_PAL_OK
+          : H2_PAL_ERR_NOT_FOUND;
+  return ESP_OK;
 }
-static int esp_net_bind_interface(int fd, const h2_pal_netif_ref_t *ref) {
-    if (ref == NULL)
-        return H2_PAL_ERR_INVALID_ARG;
-    esp_net_bound_if_t context = {0};
-    if (ref->type == H2_PAL_NETIF_REF_ID) {
-        context.index = ref->id;
-    } else {
-        h2_pal_netif_status_t status;
-        int rc = h2_pal_netif_get_status(h2_esp_platform_netif_api(), ref, &status);
-        if (rc != H2_PAL_OK)
-            return rc;
-        context.index = status.ref.id;
-    }
-    if (esp_netif_tcpip_exec(esp_net_interface_name, &context) != ESP_OK)
-        return H2_PAL_ERR_IO;
-    if (context.result != H2_PAL_OK)
-        return context.result;
-    return setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, &context.request, sizeof(context.request)) == 0
-        ? H2_PAL_OK : H2_PAL_ERR_IO;
-}
-
-static int esp_net_udp_open(
-    void *user,
-    h2_pal_net_family_t family,
-    uint16_t port,
-    h2_pal_net_socket_t *out_socket,
-    h2_pal_net_addr_t *out_bind_addr) {
-    (void)user;
-    if (out_socket == NULL || out_bind_addr == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    *out_socket = -1;
-    int fd = esp_net_open_socket(family, SOCK_DGRAM);
-    if (fd < 0) {
-        return fd;
-    }
-    int reuse = 1;
-    (void)setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
-
-    h2_pal_net_addr_t bind_addr;
-    memset(&bind_addr, 0, sizeof(bind_addr));
-    bind_addr.family = family;
-    bind_addr.port = port;
-    struct sockaddr_storage storage;
-    socklen_t sock_len = 0;
-    int rc = addr_to_sockaddr(&bind_addr, &storage, &sock_len);
-    if (rc != H2_PAL_OK || bind(fd, (struct sockaddr *)&storage, sock_len) < 0) {
-        close(fd);
-        return rc == H2_PAL_OK ? H2_PAL_ERR_IO : rc;
-    }
-    if (getsockname(fd, (struct sockaddr *)&storage, &sock_len) < 0) {
-        close(fd);
-        return H2_PAL_ERR_IO;
-    }
-    (void)sockaddr_to_addr((const struct sockaddr *)&storage, out_bind_addr);
-    *out_socket = fd;
-    return H2_PAL_OK;
+static int esp_net_bind_interface(int fd, const h2_pal_netif_ref_t* ref) {
+  if (ref == NULL) return H2_PAL_ERR_INVALID_ARG;
+  esp_net_bound_if_t context = {0};
+  if (ref->type == H2_PAL_NETIF_REF_ID) {
+    context.index = ref->id;
+  } else {
+    h2_pal_netif_status_t status;
+    int rc = h2_pal_netif_get_status(h2_esp_platform_netif_api(), ref, &status);
+    if (rc != H2_PAL_OK) return rc;
+    context.index = status.ref.id;
+  }
+  if (esp_netif_tcpip_exec(esp_net_interface_name, &context) != ESP_OK)
+    return H2_PAL_ERR_IO;
+  if (context.result != H2_PAL_OK) return context.result;
+  return setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, &context.request,
+                    sizeof(context.request)) == 0
+             ? H2_PAL_OK
+             : H2_PAL_ERR_IO;
 }
 
-static int esp_net_udp_open_bound(
-    void *user,
-    h2_pal_net_family_t family,
-    uint16_t port,
-    const h2_pal_net_bind_t *bind_config,
-    h2_pal_net_socket_t *out_socket,
-    h2_pal_net_addr_t *out_bind_addr) {
-    if (out_socket == NULL || out_bind_addr == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    *out_socket = -1;
-    memset(out_bind_addr, 0, sizeof(*out_bind_addr));
-    if (bind_config == NULL || bind_config->type == H2_PAL_NET_BIND_DEFAULT) {
-        return esp_net_udp_open(user, family, port, out_socket, out_bind_addr);
-    }
-    if (bind_config->type == H2_PAL_NET_BIND_NETIF) {
-        if (bind_config->netif == NULL)
-            return H2_PAL_ERR_INVALID_ARG;
-        int result = esp_net_udp_open(user, family, port, out_socket, out_bind_addr);
-        if (result == H2_PAL_OK) {
-            result = esp_net_bind_interface(*out_socket, bind_config->netif);
-            if (result != H2_PAL_OK) {
-                close(*out_socket);
-                *out_socket = -1;
-                memset(out_bind_addr, 0, sizeof(*out_bind_addr));
-            }
-        }
-        return result;
-    }
-    if (bind_config->type != H2_PAL_NET_BIND_SOURCE_ADDR) {
-        return H2_PAL_ERR_UNSUPPORTED;
-    }
-    if (bind_config->source_addr.family != family) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    int native_family = family_to_lwip(family);
-    if (native_family < 0) {
-        return H2_PAL_ERR_UNSUPPORTED;
-    }
-    int fd = esp_net_open_socket(family, SOCK_DGRAM);
-    if (fd < 0) {
-        return fd;
-    }
-    int reuse = 1;
-    (void)setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
-    h2_pal_net_addr_t source = bind_config->source_addr;
-    source.port = port;
-    struct sockaddr_storage storage;
-    socklen_t size = 0;
-    int rc = addr_to_sockaddr(&source, &storage, &size);
-    if (rc != H2_PAL_OK || bind(fd, (struct sockaddr *)&storage, size) < 0) {
-        close(fd);
-        return rc == H2_PAL_OK ? H2_PAL_ERR_IO : rc;
-    }
-    if (getsockname(fd, (struct sockaddr *)&storage, &size) < 0) {
-        close(fd);
-        return H2_PAL_ERR_IO;
-    }
-    rc = sockaddr_to_addr((const struct sockaddr *)&storage, out_bind_addr);
-    if (rc != H2_PAL_OK) {
-        close(fd);
-        return rc;
-    }
-    *out_socket = fd;
-    return H2_PAL_OK;
+static int esp_net_udp_open(void* user, h2_pal_net_family_t family,
+                            uint16_t port, h2_pal_net_socket_t* out_socket,
+                            h2_pal_net_addr_t* out_bind_addr) {
+  (void)user;
+  if (out_socket == NULL || out_bind_addr == NULL) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  *out_socket = -1;
+  int fd = esp_net_open_socket(family, SOCK_DGRAM);
+  if (fd < 0) {
+    return fd;
+  }
+  int reuse = 1;
+  (void)setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+
+  h2_pal_net_addr_t bind_addr;
+  memset(&bind_addr, 0, sizeof(bind_addr));
+  bind_addr.family = family;
+  bind_addr.port = port;
+  struct sockaddr_storage storage;
+  socklen_t sock_len = 0;
+  int rc = addr_to_sockaddr(&bind_addr, &storage, &sock_len);
+  if (rc != H2_PAL_OK || bind(fd, (struct sockaddr*)&storage, sock_len) < 0) {
+    close(fd);
+    return rc == H2_PAL_OK ? H2_PAL_ERR_IO : rc;
+  }
+  if (getsockname(fd, (struct sockaddr*)&storage, &sock_len) < 0) {
+    close(fd);
+    return H2_PAL_ERR_IO;
+  }
+  (void)sockaddr_to_addr((const struct sockaddr*)&storage, out_bind_addr);
+  *out_socket = fd;
+  return H2_PAL_OK;
 }
 
-static int esp_net_udp_sendto(
-    void *user,
-    h2_pal_net_socket_t socket_fd,
-    const h2_pal_net_addr_t *addr,
-    const uint8_t *data,
-    size_t len) {
-    (void)user;
-    if (socket_fd < 0 || addr == NULL || (data == NULL && len != 0u)) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    struct sockaddr_storage storage;
-    socklen_t sock_len = 0;
-    int rc = addr_to_sockaddr(addr, &storage, &sock_len);
-    if (rc != H2_PAL_OK) {
-        return rc;
-    }
-    int sent = sendto(socket_fd, data, (int)len, 0, (struct sockaddr *)&storage, sock_len);
-    return h2_esp_net_udp_send_result(sent, errno);
-}
-
-static int esp_net_udp_recvfrom(
-    void *user,
-    h2_pal_net_socket_t socket_fd,
-    h2_pal_net_addr_t *out_addr,
-    uint8_t *data,
-    size_t len,
-    uint32_t timeout_ms) {
-    (void)user;
-    if (socket_fd < 0 || data == NULL || len == 0u) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    struct sockaddr_storage storage;
-    socklen_t sock_len = sizeof(storage);
-    int got = h2_esp_net_datagram_recv(
-        socket_fd, data, len, timeout_ms, (struct sockaddr *)&storage, &sock_len);
-    if (got < 0) {
-        return got;
-    }
-    if (out_addr != NULL) {
-        (void)sockaddr_to_addr((const struct sockaddr *)&storage, out_addr);
-    }
-    return got;
-}
-
-static int esp_net_tcp_open(
-    void *user,
-    h2_pal_net_family_t family,
-    h2_pal_net_socket_t *out_socket) {
-    (void)user;
-    if (out_socket == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    *out_socket = -1;
-    int fd = esp_net_open_socket(family, SOCK_STREAM);
-    if (fd < 0) {
-        ESP_LOGE("h2_net", "stage=tcp_open result=%d", fd);
-        return fd;
-    }
-    *out_socket = fd;
-    return H2_PAL_OK;
-}
-
-static int esp_net_tcp_open_bound(
-    void *user,
-    h2_pal_net_family_t family,
-    const h2_pal_net_bind_t *bind_config,
-    h2_pal_net_socket_t *out_socket) {
-    if (bind_config == NULL || bind_config->type == H2_PAL_NET_BIND_DEFAULT) {
-        return esp_net_tcp_open(user, family, out_socket);
-    }
-    if (bind_config->type == H2_PAL_NET_BIND_NETIF) {
-        if (bind_config->netif == NULL)
-            return H2_PAL_ERR_INVALID_ARG;
-        int result = esp_net_tcp_open(user, family, out_socket);
-        if (result == H2_PAL_OK) {
-            result = esp_net_bind_interface(*out_socket, bind_config->netif);
-            if (result != H2_PAL_OK) {
-                close(*out_socket);
-                *out_socket = -1;
-            }
-        }
-        return result;
-    }
-    if (bind_config->type != H2_PAL_NET_BIND_SOURCE_ADDR ||
-        bind_config->source_addr.family != family) {
-        return H2_PAL_ERR_UNSUPPORTED;
-    }
-    int result = esp_net_tcp_open(user, family, out_socket);
-    if (result != H2_PAL_OK) {
-        return result;
-    }
-    h2_pal_net_addr_t bind_addr = bind_config->source_addr;
-    bind_addr.port = 0u;
-    struct sockaddr_storage storage;
-    socklen_t sock_len = 0;
-    result = addr_to_sockaddr(&bind_addr, &storage, &sock_len);
-    if (result != H2_PAL_OK ||
-        bind(*out_socket, (struct sockaddr *)&storage, sock_len) < 0) {
+static int esp_net_udp_open_bound(void* user, h2_pal_net_family_t family,
+                                  uint16_t port,
+                                  const h2_pal_net_bind_t* bind_config,
+                                  h2_pal_net_socket_t* out_socket,
+                                  h2_pal_net_addr_t* out_bind_addr) {
+  if (out_socket == NULL || out_bind_addr == NULL) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  *out_socket = -1;
+  memset(out_bind_addr, 0, sizeof(*out_bind_addr));
+  if (bind_config == NULL || bind_config->type == H2_PAL_NET_BIND_DEFAULT) {
+    return esp_net_udp_open(user, family, port, out_socket, out_bind_addr);
+  }
+  if (bind_config->type == H2_PAL_NET_BIND_NETIF) {
+    if (bind_config->netif == NULL) return H2_PAL_ERR_INVALID_ARG;
+    int result =
+        esp_net_udp_open(user, family, port, out_socket, out_bind_addr);
+    if (result == H2_PAL_OK) {
+      result = esp_net_bind_interface(*out_socket, bind_config->netif);
+      if (result != H2_PAL_OK) {
         close(*out_socket);
         *out_socket = -1;
-        return result == H2_PAL_OK ? H2_PAL_ERR_IO : result;
+        memset(out_bind_addr, 0, sizeof(*out_bind_addr));
+      }
     }
-    return H2_PAL_OK;
-}
-
-static h2_pal_result_t esp_net_tcp_connect(
-    void *user,
-    h2_pal_net_socket_t socket_fd,
-    const h2_pal_net_addr_t *addr,
-    uint32_t timeout_ms) {
-    (void)user;
-    if (socket_fd < 0 || addr == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    struct sockaddr_storage storage;
-    socklen_t sock_len = 0;
-    int result = addr_to_sockaddr(addr, &storage, &sock_len);
-    if (result != H2_PAL_OK) {
-        return result;
-    }
-    int flags = fcntl(socket_fd, F_GETFL, 0);
-    if (flags < 0 || fcntl(socket_fd, F_SETFL, flags | O_NONBLOCK) < 0) {
-        ESP_LOGE("h2_net", "stage=tcp_flags errno=%d", errno);
-        return H2_PAL_ERR_IO;
-    }
-    if (connect(socket_fd, (struct sockaddr *)&storage, sock_len) == 0 ||
-        errno == EISCONN) {
-        (void)fcntl(socket_fd, F_SETFL, flags & ~O_NONBLOCK);
-        return H2_PAL_OK;
-    }
-    if (errno != EINPROGRESS && errno != EALREADY && errno != EINTR) {
-        int error = errno;
-        ESP_LOGE("h2_net", "stage=tcp_connect errno=%d", error);
-        errno = error;
-        (void)fcntl(socket_fd, F_SETFL, flags);
-        return H2_PAL_ERR_IO;
-    }
-    result = h2_esp_net_wait_fd(socket_fd, 1, timeout_ms);
-    if (result != H2_PAL_OK) {
-        if (result != H2_PAL_ERR_TIMEOUT &&
-            result != H2_PAL_ERR_WOULD_BLOCK) {
-            (void)fcntl(socket_fd, F_SETFL, flags);
-        }
-        return result;
-    }
-    int socket_error = 0;
-    socklen_t error_len = sizeof(socket_error);
-    int socket_rc = getsockopt(
-        socket_fd, SOL_SOCKET, SO_ERROR, &socket_error, &error_len);
-    if (socket_rc < 0 || socket_error != 0) {
-        ESP_LOGE("h2_net", "stage=tcp_connect so_error=%d errno=%d",
-                 socket_error, socket_rc < 0 ? errno : 0);
-        (void)fcntl(socket_fd, F_SETFL, flags);
-        errno = socket_error;
-        return H2_PAL_ERR_IO;
-    }
-    return fcntl(socket_fd, F_SETFL, flags & ~O_NONBLOCK) == 0
-        ? H2_PAL_OK
-        : H2_PAL_ERR_IO;
-}
-
-static int esp_net_tcp_listen(
-    void *user,
-    h2_pal_net_family_t family,
-    uint16_t port,
-    const h2_pal_net_bind_t *bind_config,
-    h2_pal_net_socket_t *out_socket,
-    h2_pal_net_addr_t *out_bind_addr) {
-    (void)user;
-    if (out_socket == NULL || out_bind_addr == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    *out_socket = -1;
-    h2_pal_net_addr_t bind_addr;
-    memset(&bind_addr, 0, sizeof(bind_addr));
-    bind_addr.family = family;
-    if (bind_config != NULL && bind_config->type != H2_PAL_NET_BIND_DEFAULT) {
-        if (bind_config->type != H2_PAL_NET_BIND_SOURCE_ADDR && bind_config->type != H2_PAL_NET_BIND_NETIF) {
-            return H2_PAL_ERR_UNSUPPORTED;
-        }
-        if (bind_config->type == H2_PAL_NET_BIND_SOURCE_ADDR && bind_config->source_addr.family != family) {
-            return H2_PAL_ERR_INVALID_ARG;
-        }
-        if (bind_config->type == H2_PAL_NET_BIND_SOURCE_ADDR) {
-            bind_addr = bind_config->source_addr;
-        }
-    }
-    bind_addr.port = port;
-    int fd = esp_net_open_socket(family, SOCK_STREAM);
-    if (fd < 0) {
-        return fd;
-    }
-    if (bind_config != NULL && bind_config->type == H2_PAL_NET_BIND_NETIF) {
-        int result = esp_net_bind_interface(fd, bind_config->netif);
-        if (result != H2_PAL_OK) {
-            close(fd);
-            return result;
-        }
-    }
-    int reuse = 1;
-    (void)setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
-    struct sockaddr_storage storage;
-    socklen_t sock_len = 0;
-    int rc = addr_to_sockaddr(&bind_addr, &storage, &sock_len);
-    if (rc != H2_PAL_OK) {
-        close(fd);
-        return rc;
-    }
-    if (bind(fd, (struct sockaddr *)&storage, sock_len) < 0 ||
-        listen(fd, 4) < 0) {
-        close(fd);
-        return H2_PAL_ERR_IO;
-    }
-    if (getsockname(fd, (struct sockaddr *)&storage, &sock_len) < 0) {
-        close(fd);
-        return H2_PAL_ERR_IO;
-    }
-    (void)sockaddr_to_addr((const struct sockaddr *)&storage, out_bind_addr);
-    *out_socket = fd;
-    return H2_PAL_OK;
-}
-
-static h2_pal_result_t esp_net_tcp_accept(
-    void *user,
-    h2_pal_net_socket_t listen_fd,
-    h2_pal_net_socket_t *out_socket,
-    h2_pal_net_addr_t *out_peer_addr,
-    uint32_t timeout_ms) {
-    (void)user;
-    if (listen_fd < 0 || out_socket == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    *out_socket = -1;
-    int ready = h2_esp_net_wait_fd(listen_fd, 0, timeout_ms);
-    if (ready != H2_PAL_OK) {
-        return (h2_pal_result_t)ready;
-    }
-    struct sockaddr_storage storage;
-    socklen_t sock_len = sizeof(storage);
-    int fd = accept(listen_fd, (struct sockaddr *)&storage, &sock_len);
-    if (fd < 0) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
-            return H2_PAL_ERR_WOULD_BLOCK;
-        }
-        return H2_PAL_ERR_IO;
-    }
-    if (out_peer_addr != NULL) {
-        (void)sockaddr_to_addr((const struct sockaddr *)&storage, out_peer_addr);
-    }
-    *out_socket = fd;
-    return H2_PAL_OK;
-}
-
-static int esp_net_tcp_send(
-    void *user,
-    h2_pal_net_socket_t socket_fd,
-    const uint8_t *data,
-    size_t len) {
-    (void)user;
-    if (socket_fd < 0 || (data == NULL && len != 0u) ||
-        len > (size_t)INT_MAX) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    esp_net_tls_socket_t *tls_socket = NULL;
-    size_t tls_slot = 0u;
-    int tls_result = esp_net_tls_acquire(
-        socket_fd, 0, 0u, 0u, &tls_socket, &tls_slot);
-    if (tls_result < 0) {
-        return tls_result;
-    }
-    if (tls_result > 0) {
-        int result = mbedtls_ssl_write(&tls_socket->ssl, data, len);
-        esp_net_tls_release(tls_slot);
-        if (result > 0) {
-            return result;
-        }
-        if (result == MBEDTLS_ERR_SSL_WANT_READ ||
-            result == MBEDTLS_ERR_SSL_WANT_WRITE) {
-            return H2_PAL_ERR_WOULD_BLOCK;
-        }
-        return result == 0 ? H2_PAL_ERR_CLOSED : H2_PAL_ERR_IO;
-    }
-    int sent = send(socket_fd, data, (int)len, 0);
-    if (sent == 0) {
-        return H2_PAL_ERR_CLOSED;
-    }
-    if (sent < 0) {
-        int error = errno;
-        ESP_LOGE("h2_net", "stage=tcp_send errno=%d", error);
-        errno = error;
-    }
-    return sent < 0 ? esp_net_socket_error() : sent;
-}
-
-static int esp_net_tcp_send_timeout(
-    void *user,
-    h2_pal_net_socket_t socket_fd,
-    const uint8_t *data,
-    size_t len,
-    uint32_t timeout_ms) {
-    (void)user;
-    if (socket_fd < 0 || (data == NULL && len != 0u) ||
-        len > (size_t)INT_MAX) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    if (len == 0u) {
-        return 0;
-    }
-    uint64_t deadline_ms = esp_net_now_ms() + timeout_ms;
-    esp_net_tls_socket_t *tls_socket = NULL;
-    size_t tls_slot = 0u;
-    int tls_result = esp_net_tls_acquire(
-        socket_fd, 1, timeout_ms, deadline_ms, &tls_socket, &tls_slot);
-    if (tls_result < 0) {
-        return tls_result;
-    }
-    if (tls_result > 0) {
-        for (;;) {
-            int result = mbedtls_ssl_write(&tls_socket->ssl, data, len);
-            if (result > 0) {
-                esp_net_tls_release(tls_slot);
-                return result;
-            }
-            if (result != MBEDTLS_ERR_SSL_WANT_READ &&
-                result != MBEDTLS_ERR_SSL_WANT_WRITE) {
-                esp_net_tls_release(tls_slot);
-                return result == 0 ? H2_PAL_ERR_CLOSED : H2_PAL_ERR_IO;
-            }
-            uint32_t remaining = timeout_ms == 0u
-                ? 0u
-                : esp_net_timeout_remaining_ms(deadline_ms);
-            int wait_result = esp_net_tls_wait(tls_socket, result, remaining);
-            if (wait_result == H2_PAL_ERR_TIMEOUT) {
-                wait_result = timeout_ms == 0u ? H2_PAL_ERR_WOULD_BLOCK
-                                               : H2_PAL_ERR_TIMEOUT;
-            }
-            if (wait_result != H2_PAL_OK &&
-                wait_result != H2_PAL_ERR_WOULD_BLOCK) {
-                esp_net_tls_release(tls_slot);
-                return wait_result;
-            }
-            if (wait_result == H2_PAL_ERR_WOULD_BLOCK && timeout_ms == 0u) {
-                esp_net_tls_release(tls_slot);
-                return H2_PAL_ERR_WOULD_BLOCK;
-            }
-        }
-    }
-    for (;;) {
-        uint32_t remaining_ms = timeout_ms == 0u
-            ? 0u
-            : esp_net_timeout_remaining_ms(deadline_ms);
-        int ready = h2_esp_net_wait_fd(socket_fd, 1, remaining_ms);
-        if (ready != H2_PAL_OK) {
-            if (ready == H2_PAL_ERR_TIMEOUT) {
-                return timeout_ms == 0u ? H2_PAL_ERR_WOULD_BLOCK
-                                        : H2_PAL_ERR_TIMEOUT;
-            }
-            if (ready == H2_PAL_ERR_WOULD_BLOCK && timeout_ms != 0u &&
-                remaining_ms != 0u) {
-                continue;
-            }
-            return ready;
-        }
-        int sent = send(socket_fd, data, (int)len, MSG_DONTWAIT);
-        if (sent > 0) {
-            return sent;
-        }
-        if (sent == 0) {
-            return H2_PAL_ERR_CLOSED;
-        }
-        if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
-            int error = errno;
-            ESP_LOGE("h2_net", "stage=tcp_send errno=%d", error);
-            errno = error;
-            return esp_net_socket_error();
-        }
-        if (timeout_ms == 0u) {
-            return H2_PAL_ERR_WOULD_BLOCK;
-        }
-        if (esp_net_timeout_remaining_ms(deadline_ms) == 0u) {
-            return H2_PAL_ERR_TIMEOUT;
-        }
-    }
-}
-
-static int esp_net_tcp_recv(
-    void *user,
-    h2_pal_net_socket_t socket_fd,
-    uint8_t *data,
-    size_t len,
-    uint32_t timeout_ms) {
-    (void)user;
-    if (socket_fd < 0 || data == NULL || len == 0u ||
-        len > (size_t)INT_MAX) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    uint64_t deadline_ms = esp_net_now_ms() + timeout_ms;
-    uint64_t started_ms = deadline_ms - timeout_ms;
-    esp_net_tls_socket_t *tls_socket = NULL;
-    size_t tls_slot = 0u;
-    int tls_result = esp_net_tls_acquire(
-        socket_fd, 1, timeout_ms, deadline_ms, &tls_socket, &tls_slot);
-    if (tls_result < 0) {
-        return tls_result;
-    }
-    if (tls_result > 0) {
-        for (;;) {
-            int result = mbedtls_ssl_read(&tls_socket->ssl, data, len);
-#if defined(H2_ESP_NET_IO_TRACE)
-            tls_socket->trace_ssl_result = result;
-#endif
-            if (result > 0) {
-                return esp_net_tls_recv_finish(
-                    tls_socket, tls_slot, started_ms, result);
-            }
-            if (result == 0 || result == MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY) {
-                return esp_net_tls_recv_finish(
-                    tls_socket, tls_slot, started_ms, H2_PAL_ERR_CLOSED);
-            }
-            if (result != MBEDTLS_ERR_SSL_WANT_READ &&
-                result != MBEDTLS_ERR_SSL_WANT_WRITE) {
-                return esp_net_tls_recv_finish(
-                    tls_socket, tls_slot, started_ms, H2_PAL_ERR_IO);
-            }
-            uint32_t remaining = timeout_ms == 0u
-                ? 0u
-                : esp_net_timeout_remaining_ms(deadline_ms);
-            int wait_result = esp_net_tls_wait(tls_socket, result, remaining);
-            if (wait_result == H2_PAL_ERR_TIMEOUT) {
-                wait_result = timeout_ms == 0u ? H2_PAL_ERR_WOULD_BLOCK
-                                               : H2_PAL_ERR_TIMEOUT;
-            }
-            if (wait_result != H2_PAL_OK &&
-                wait_result != H2_PAL_ERR_WOULD_BLOCK) {
-                return esp_net_tls_recv_finish(
-                    tls_socket, tls_slot, started_ms, wait_result);
-            }
-            if (wait_result == H2_PAL_ERR_WOULD_BLOCK && timeout_ms == 0u) {
-                return esp_net_tls_recv_finish(
-                    tls_socket, tls_slot, started_ms, H2_PAL_ERR_WOULD_BLOCK);
-            }
-        }
-    }
-    return h2_esp_net_stream_recv(socket_fd, data, len, timeout_ms);
-}
-
-static void esp_net_close(void *user, h2_pal_net_socket_t socket_fd) {
-    (void)user;
-    if (socket_fd >= 0) {
-        if (s_esp_tls_sync != NULL &&
-            xSemaphoreTake(
-                s_esp_tls_sync->registry_mutex, portMAX_DELAY) == pdTRUE) {
-            int slot_index = esp_net_tls_find(socket_fd);
-            if (slot_index >= 0) {
-                esp_net_tls_socket_t *slot = &s_esp_tls_sockets[slot_index];
-                uint32_t generation =
-                    s_esp_tls_sync->generations[slot_index];
-                slot->state = ESP_NET_TLS_SOCKET_CLOSING;
-                (void)xSemaphoreGive(s_esp_tls_sync->registry_mutex);
-                if (xSemaphoreTake(
-                        s_esp_tls_sync->io_mutexes[slot_index],
-                        portMAX_DELAY) ==
-                    pdTRUE) {
-                    if (xSemaphoreTake(
-                            s_esp_tls_sync->registry_mutex,
-                            portMAX_DELAY) == pdTRUE) {
-                        if (slot->state == ESP_NET_TLS_SOCKET_CLOSING &&
-                            slot->fd == socket_fd &&
-                            s_esp_tls_sync->generations[slot_index] ==
-                                generation) {
-                            esp_net_tls_free(slot);
-                            s_esp_tls_sync->generations[slot_index] += 1u;
-                        }
-                        (void)xSemaphoreGive(
-                            s_esp_tls_sync->registry_mutex);
-                    }
-                    esp_net_tls_release((size_t)slot_index);
-                }
-            } else {
-                (void)xSemaphoreGive(s_esp_tls_sync->registry_mutex);
-            }
-        }
-        close(socket_fd);
-    }
-}
-
-static h2_pal_result_t esp_net_tls_wrap(
-    void *user,
-    h2_pal_net_socket_t socket_fd,
-    const h2_pal_net_tls_config_t *config,
-    uint32_t timeout_ms,
-    h2_pal_net_socket_t *out_socket) {
-    (void)user;
-    if (socket_fd < 0 || config == NULL || out_socket == NULL ||
-        config->server_name == NULL || config->server_name[0] == '\0' ||
-        timeout_ms == 0u ||
-        (config->root_ca_pem == NULL && config->root_ca_pem_len != 0u)) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    *out_socket = -1;
-    if (config->verify != H2_PAL_NET_TLS_VERIFY_DEFAULT &&
-        config->verify != H2_PAL_NET_TLS_VERIFY_REQUIRED &&
-        config->verify != H2_PAL_NET_TLS_VERIFY_INSECURE_TEST_ONLY) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    esp_net_tls_init();
-    uint64_t deadline_ms = esp_net_now_ms() + timeout_ms;
-    int lock_result = esp_net_tls_take_mutex(
-        s_esp_tls_sync == NULL ? NULL : s_esp_tls_sync->registry_mutex,
-        1, timeout_ms, deadline_ms);
-    if (lock_result != H2_PAL_OK) {
-        return lock_result;
-    }
-    if (esp_net_tls_find(socket_fd) >= 0) {
-        (void)xSemaphoreGive(s_esp_tls_sync->registry_mutex);
-        return H2_PAL_ERR_INVALID_STATE;
-    }
-    int slot_index = esp_net_tls_find_free();
-    if (slot_index < 0) {
-        (void)xSemaphoreGive(s_esp_tls_sync->registry_mutex);
-        return H2_PAL_ERR_NO_MEMORY;
-    }
-    esp_net_tls_socket_t *slot = &s_esp_tls_sockets[slot_index];
-    if (xSemaphoreTake(s_esp_tls_sync->io_mutexes[slot_index], 0u) != pdTRUE) {
-        (void)xSemaphoreGive(s_esp_tls_sync->registry_mutex);
-        return H2_PAL_ERR_UNAVAILABLE;
-    }
-    memset(slot, 0, sizeof(*slot));
-    slot->state = ESP_NET_TLS_SOCKET_CONFIGURING;
-    slot->fd = socket_fd;
-    s_esp_tls_sync->generations[slot_index] += 1u;
-    uint32_t generation = s_esp_tls_sync->generations[slot_index];
-    (void)xSemaphoreGive(s_esp_tls_sync->registry_mutex);
-    mbedtls_ssl_init(&slot->ssl);
-    mbedtls_ssl_config_init(&slot->config);
-    mbedtls_x509_crt_init(&slot->ca);
-    h2_pal_result_t rc = esp_net_tls_copy_alpn(slot, config);
-    int result = rc == H2_PAL_OK
-        ? mbedtls_ssl_config_defaults(
-              &slot->config, MBEDTLS_SSL_IS_CLIENT,
-              MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT)
-        : -1;
-    if (result == 0) {
-#if MBEDTLS_VERSION_MAJOR < 4
-        mbedtls_ssl_conf_rng(&slot->config, esp_net_tls_random, slot);
-#else
-        if (psa_crypto_init() != PSA_SUCCESS) {
-            rc = H2_PAL_ERR_IO;
-        }
-#endif
-    }
-    if (result == 0 && rc == H2_PAL_OK) {
-        rc = esp_net_tls_load_ca(slot, config);
-        if (rc == H2_PAL_OK &&
-            config->verify != H2_PAL_NET_TLS_VERIFY_INSECURE_TEST_ONLY) {
-            slot->verify = (h2_esp_net_tls_verify_t){
-                .delegate = slot->config.MBEDTLS_PRIVATE(f_vrfy),
-                .delegate_user = slot->config.MBEDTLS_PRIVATE(p_vrfy),
-                .certificate_bundle = config->root_ca_pem == NULL ||
-                                      config->root_ca_pem_len == 0u,
-            };
-            mbedtls_ssl_conf_verify(&slot->config,
-                esp_net_tls_verify_dates, slot);
-        }
-    } else if (rc == H2_PAL_OK) {
-        rc = H2_PAL_ERR_IO;
-    }
-    if (rc == H2_PAL_OK && config->alpn != NULL && config->alpn[0] != '\0' &&
-        mbedtls_ssl_conf_alpn_protocols(&slot->config, slot->alpn) != 0) {
-        rc = H2_PAL_ERR_IO;
-    }
-    if (rc == H2_PAL_OK && mbedtls_ssl_setup(&slot->ssl, &slot->config) != 0) {
-        rc = H2_PAL_ERR_IO;
-    }
-    if (rc == H2_PAL_OK &&
-        mbedtls_ssl_set_hostname(&slot->ssl, config->server_name) != 0) {
-        rc = H2_PAL_ERR_INVALID_ARG;
-    }
-    if (rc == H2_PAL_OK) {
-#if defined(H2_ESP_NET_IO_TRACE)
-        ESP_LOGI("h2_net", "stage=tcp_profile fd=%d window=%u mailbox=%u mss=%u ooseq_max=%u rx_buffers=%u sack=%u",
-                 socket_fd, (unsigned)TCP_WND,
-                 (unsigned)DEFAULT_TCP_RECVMBOX_SIZE, (unsigned)TCP_MSS,
-                 (unsigned)TCP_OOSEQ_MAX_PBUFS,
-                 (unsigned)CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM,
-                 (unsigned)LWIP_TCP_SACK_OUT);
-#endif
-        mbedtls_ssl_set_bio(
-            &slot->ssl, slot, esp_net_tls_send_raw, esp_net_tls_recv_raw, NULL);
-        uint32_t remaining_ms = esp_net_timeout_remaining_ms(deadline_ms);
-        rc = remaining_ms == 0u
-            ? H2_PAL_ERR_TIMEOUT
-            : esp_net_tls_handshake(slot, remaining_ms, config->verify);
-    }
-    if (xSemaphoreTake(
-            s_esp_tls_sync->registry_mutex, portMAX_DELAY) == pdTRUE) {
-        if (slot->state == ESP_NET_TLS_SOCKET_CONFIGURING &&
-            slot->fd == socket_fd &&
-            s_esp_tls_sync->generations[slot_index] == generation) {
-            if (rc != H2_PAL_OK) {
-                esp_net_tls_free(slot);
-                s_esp_tls_sync->generations[slot_index] += 1u;
-            } else {
-                slot->state = ESP_NET_TLS_SOCKET_ACTIVE;
-                *out_socket = socket_fd;
-            }
-        } else {
-            rc = H2_PAL_ERR_CLOSED;
-        }
-        (void)xSemaphoreGive(s_esp_tls_sync->registry_mutex);
-    } else {
-        rc = H2_PAL_ERR_UNAVAILABLE;
-    }
-    esp_net_tls_release((size_t)slot_index);
+    return result;
+  }
+  if (bind_config->type != H2_PAL_NET_BIND_SOURCE_ADDR) {
+    return H2_PAL_ERR_UNSUPPORTED;
+  }
+  if (bind_config->source_addr.family != family) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  int native_family = family_to_lwip(family);
+  if (native_family < 0) {
+    return H2_PAL_ERR_UNSUPPORTED;
+  }
+  int fd = esp_net_open_socket(family, SOCK_DGRAM);
+  if (fd < 0) {
+    return fd;
+  }
+  int reuse = 1;
+  (void)setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+  h2_pal_net_addr_t source = bind_config->source_addr;
+  source.port = port;
+  struct sockaddr_storage storage;
+  socklen_t size = 0;
+  int rc = addr_to_sockaddr(&source, &storage, &size);
+  if (rc != H2_PAL_OK || bind(fd, (struct sockaddr*)&storage, size) < 0) {
+    close(fd);
+    return rc == H2_PAL_OK ? H2_PAL_ERR_IO : rc;
+  }
+  if (getsockname(fd, (struct sockaddr*)&storage, &size) < 0) {
+    close(fd);
+    return H2_PAL_ERR_IO;
+  }
+  rc = sockaddr_to_addr((const struct sockaddr*)&storage, out_bind_addr);
+  if (rc != H2_PAL_OK) {
+    close(fd);
     return rc;
+  }
+  *out_socket = fd;
+  return H2_PAL_OK;
+}
+
+static int esp_net_udp_sendto(void* user, h2_pal_net_socket_t socket_fd,
+                              const h2_pal_net_addr_t* addr,
+                              const uint8_t* data, size_t len) {
+  (void)user;
+  if (socket_fd < 0 || addr == NULL || (data == NULL && len != 0u)) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  struct sockaddr_storage storage;
+  socklen_t sock_len = 0;
+  int rc = addr_to_sockaddr(addr, &storage, &sock_len);
+  if (rc != H2_PAL_OK) {
+    return rc;
+  }
+  int sent = sendto(socket_fd, data, (int)len, 0, (struct sockaddr*)&storage,
+                    sock_len);
+  return h2_esp_net_udp_send_result(sent, errno);
+}
+
+static int esp_net_udp_recvfrom(void* user, h2_pal_net_socket_t socket_fd,
+                                h2_pal_net_addr_t* out_addr, uint8_t* data,
+                                size_t len, uint32_t timeout_ms) {
+  (void)user;
+  if (socket_fd < 0 || data == NULL || len == 0u) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  struct sockaddr_storage storage;
+  socklen_t sock_len = sizeof(storage);
+  int got = h2_esp_net_datagram_recv(socket_fd, data, len, timeout_ms,
+                                     (struct sockaddr*)&storage, &sock_len);
+  if (got < 0) {
+    return got;
+  }
+  if (out_addr != NULL) {
+    (void)sockaddr_to_addr((const struct sockaddr*)&storage, out_addr);
+  }
+  return got;
+}
+
+static int esp_net_tcp_open(void* user, h2_pal_net_family_t family,
+                            h2_pal_net_socket_t* out_socket) {
+  (void)user;
+  if (out_socket == NULL) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  *out_socket = -1;
+  int fd = esp_net_open_socket(family, SOCK_STREAM);
+  if (fd < 0) {
+    ESP_LOGE("h2_net", "stage=tcp_open result=%d", fd);
+    return fd;
+  }
+  *out_socket = fd;
+  return H2_PAL_OK;
+}
+
+static int esp_net_tcp_open_bound(void* user, h2_pal_net_family_t family,
+                                  const h2_pal_net_bind_t* bind_config,
+                                  h2_pal_net_socket_t* out_socket) {
+  if (bind_config == NULL || bind_config->type == H2_PAL_NET_BIND_DEFAULT) {
+    return esp_net_tcp_open(user, family, out_socket);
+  }
+  if (bind_config->type == H2_PAL_NET_BIND_NETIF) {
+    if (bind_config->netif == NULL) return H2_PAL_ERR_INVALID_ARG;
+    int result = esp_net_tcp_open(user, family, out_socket);
+    if (result == H2_PAL_OK) {
+      result = esp_net_bind_interface(*out_socket, bind_config->netif);
+      if (result != H2_PAL_OK) {
+        close(*out_socket);
+        *out_socket = -1;
+      }
+    }
+    return result;
+  }
+  if (bind_config->type != H2_PAL_NET_BIND_SOURCE_ADDR ||
+      bind_config->source_addr.family != family) {
+    return H2_PAL_ERR_UNSUPPORTED;
+  }
+  int result = esp_net_tcp_open(user, family, out_socket);
+  if (result != H2_PAL_OK) {
+    return result;
+  }
+  h2_pal_net_addr_t bind_addr = bind_config->source_addr;
+  bind_addr.port = 0u;
+  struct sockaddr_storage storage;
+  socklen_t sock_len = 0;
+  result = addr_to_sockaddr(&bind_addr, &storage, &sock_len);
+  if (result != H2_PAL_OK ||
+      bind(*out_socket, (struct sockaddr*)&storage, sock_len) < 0) {
+    close(*out_socket);
+    *out_socket = -1;
+    return result == H2_PAL_OK ? H2_PAL_ERR_IO : result;
+  }
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t esp_net_tcp_connect(void* user,
+                                           h2_pal_net_socket_t socket_fd,
+                                           const h2_pal_net_addr_t* addr,
+                                           uint32_t timeout_ms) {
+  (void)user;
+  if (socket_fd < 0 || addr == NULL) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  struct sockaddr_storage storage;
+  socklen_t sock_len = 0;
+  int result = addr_to_sockaddr(addr, &storage, &sock_len);
+  if (result != H2_PAL_OK) {
+    return result;
+  }
+  int flags = fcntl(socket_fd, F_GETFL, 0);
+  if (flags < 0 || fcntl(socket_fd, F_SETFL, flags | O_NONBLOCK) < 0) {
+    ESP_LOGE("h2_net", "stage=tcp_flags errno=%d", errno);
+    return H2_PAL_ERR_IO;
+  }
+  if (connect(socket_fd, (struct sockaddr*)&storage, sock_len) == 0 ||
+      errno == EISCONN) {
+    (void)fcntl(socket_fd, F_SETFL, flags & ~O_NONBLOCK);
+    return H2_PAL_OK;
+  }
+  if (errno != EINPROGRESS && errno != EALREADY && errno != EINTR) {
+    int error = errno;
+    ESP_LOGE("h2_net", "stage=tcp_connect errno=%d", error);
+    errno = error;
+    (void)fcntl(socket_fd, F_SETFL, flags);
+    return H2_PAL_ERR_IO;
+  }
+  result = h2_esp_net_wait_fd(socket_fd, 1, timeout_ms);
+  if (result != H2_PAL_OK) {
+    if (result != H2_PAL_ERR_TIMEOUT && result != H2_PAL_ERR_WOULD_BLOCK) {
+      (void)fcntl(socket_fd, F_SETFL, flags);
+    }
+    return result;
+  }
+  int socket_error = 0;
+  socklen_t error_len = sizeof(socket_error);
+  int socket_rc =
+      getsockopt(socket_fd, SOL_SOCKET, SO_ERROR, &socket_error, &error_len);
+  if (socket_rc < 0 || socket_error != 0) {
+    ESP_LOGE("h2_net", "stage=tcp_connect so_error=%d errno=%d", socket_error,
+             socket_rc < 0 ? errno : 0);
+    (void)fcntl(socket_fd, F_SETFL, flags);
+    errno = socket_error;
+    return H2_PAL_ERR_IO;
+  }
+  return fcntl(socket_fd, F_SETFL, flags & ~O_NONBLOCK) == 0 ? H2_PAL_OK
+                                                             : H2_PAL_ERR_IO;
+}
+
+static int esp_net_tcp_listen(void* user, h2_pal_net_family_t family,
+                              uint16_t port,
+                              const h2_pal_net_bind_t* bind_config,
+                              h2_pal_net_socket_t* out_socket,
+                              h2_pal_net_addr_t* out_bind_addr) {
+  (void)user;
+  if (out_socket == NULL || out_bind_addr == NULL) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  *out_socket = -1;
+  h2_pal_net_addr_t bind_addr;
+  memset(&bind_addr, 0, sizeof(bind_addr));
+  bind_addr.family = family;
+  if (bind_config != NULL && bind_config->type != H2_PAL_NET_BIND_DEFAULT) {
+    if (bind_config->type != H2_PAL_NET_BIND_SOURCE_ADDR &&
+        bind_config->type != H2_PAL_NET_BIND_NETIF) {
+      return H2_PAL_ERR_UNSUPPORTED;
+    }
+    if (bind_config->type == H2_PAL_NET_BIND_SOURCE_ADDR &&
+        bind_config->source_addr.family != family) {
+      return H2_PAL_ERR_INVALID_ARG;
+    }
+    if (bind_config->type == H2_PAL_NET_BIND_SOURCE_ADDR) {
+      bind_addr = bind_config->source_addr;
+    }
+  }
+  bind_addr.port = port;
+  int fd = esp_net_open_socket(family, SOCK_STREAM);
+  if (fd < 0) {
+    return fd;
+  }
+  if (bind_config != NULL && bind_config->type == H2_PAL_NET_BIND_NETIF) {
+    int result = esp_net_bind_interface(fd, bind_config->netif);
+    if (result != H2_PAL_OK) {
+      close(fd);
+      return result;
+    }
+  }
+  int reuse = 1;
+  (void)setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+  struct sockaddr_storage storage;
+  socklen_t sock_len = 0;
+  int rc = addr_to_sockaddr(&bind_addr, &storage, &sock_len);
+  if (rc != H2_PAL_OK) {
+    close(fd);
+    return rc;
+  }
+  if (bind(fd, (struct sockaddr*)&storage, sock_len) < 0 || listen(fd, 4) < 0) {
+    close(fd);
+    return H2_PAL_ERR_IO;
+  }
+  if (getsockname(fd, (struct sockaddr*)&storage, &sock_len) < 0) {
+    close(fd);
+    return H2_PAL_ERR_IO;
+  }
+  (void)sockaddr_to_addr((const struct sockaddr*)&storage, out_bind_addr);
+  *out_socket = fd;
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t esp_net_tcp_accept(void* user,
+                                          h2_pal_net_socket_t listen_fd,
+                                          h2_pal_net_socket_t* out_socket,
+                                          h2_pal_net_addr_t* out_peer_addr,
+                                          uint32_t timeout_ms) {
+  (void)user;
+  if (listen_fd < 0 || out_socket == NULL) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  *out_socket = -1;
+  int ready = h2_esp_net_wait_fd(listen_fd, 0, timeout_ms);
+  if (ready != H2_PAL_OK) {
+    return (h2_pal_result_t)ready;
+  }
+  struct sockaddr_storage storage;
+  socklen_t sock_len = sizeof(storage);
+  int fd = accept(listen_fd, (struct sockaddr*)&storage, &sock_len);
+  if (fd < 0) {
+    if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
+      return H2_PAL_ERR_WOULD_BLOCK;
+    }
+    return H2_PAL_ERR_IO;
+  }
+  if (out_peer_addr != NULL) {
+    (void)sockaddr_to_addr((const struct sockaddr*)&storage, out_peer_addr);
+  }
+  *out_socket = fd;
+  return H2_PAL_OK;
+}
+
+static int esp_net_tcp_send(void* user, h2_pal_net_socket_t socket_fd,
+                            const uint8_t* data, size_t len) {
+  (void)user;
+  if (socket_fd < 0 || (data == NULL && len != 0u) || len > (size_t)INT_MAX) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  esp_net_tls_socket_t* tls_socket = NULL;
+  size_t tls_slot = 0u;
+  int tls_result =
+      esp_net_tls_acquire(socket_fd, 0, 0u, 0u, &tls_socket, &tls_slot);
+  if (tls_result < 0) {
+    return tls_result;
+  }
+  if (tls_result > 0) {
+    int result = mbedtls_ssl_write(&tls_socket->ssl, data, len);
+    esp_net_tls_release(tls_slot);
+    if (result > 0) {
+      return result;
+    }
+    if (result == MBEDTLS_ERR_SSL_WANT_READ ||
+        result == MBEDTLS_ERR_SSL_WANT_WRITE) {
+      return H2_PAL_ERR_WOULD_BLOCK;
+    }
+    return result == 0 ? H2_PAL_ERR_CLOSED : H2_PAL_ERR_IO;
+  }
+  int sent = send(socket_fd, data, (int)len, 0);
+  if (sent == 0) {
+    return H2_PAL_ERR_CLOSED;
+  }
+  if (sent < 0) {
+    int error = errno;
+    ESP_LOGE("h2_net", "stage=tcp_send errno=%d", error);
+    errno = error;
+  }
+  return sent < 0 ? esp_net_socket_error() : sent;
+}
+
+static int esp_net_tcp_send_timeout(void* user, h2_pal_net_socket_t socket_fd,
+                                    const uint8_t* data, size_t len,
+                                    uint32_t timeout_ms) {
+  (void)user;
+  if (socket_fd < 0 || (data == NULL && len != 0u) || len > (size_t)INT_MAX) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  if (len == 0u) {
+    return 0;
+  }
+  uint64_t deadline_ms = esp_net_now_ms() + timeout_ms;
+  esp_net_tls_socket_t* tls_socket = NULL;
+  size_t tls_slot = 0u;
+  int tls_result = esp_net_tls_acquire(socket_fd, 1, timeout_ms, deadline_ms,
+                                       &tls_socket, &tls_slot);
+  if (tls_result < 0) {
+    return tls_result;
+  }
+  if (tls_result > 0) {
+    for (;;) {
+      int result = mbedtls_ssl_write(&tls_socket->ssl, data, len);
+      if (result > 0) {
+        esp_net_tls_release(tls_slot);
+        return result;
+      }
+      if (result != MBEDTLS_ERR_SSL_WANT_READ &&
+          result != MBEDTLS_ERR_SSL_WANT_WRITE) {
+        esp_net_tls_release(tls_slot);
+        return result == 0 ? H2_PAL_ERR_CLOSED : H2_PAL_ERR_IO;
+      }
+      uint32_t remaining =
+          timeout_ms == 0u ? 0u : esp_net_timeout_remaining_ms(deadline_ms);
+      int wait_result = esp_net_tls_wait(tls_socket, result, remaining);
+      if (wait_result == H2_PAL_ERR_TIMEOUT) {
+        wait_result =
+            timeout_ms == 0u ? H2_PAL_ERR_WOULD_BLOCK : H2_PAL_ERR_TIMEOUT;
+      }
+      if (wait_result != H2_PAL_OK && wait_result != H2_PAL_ERR_WOULD_BLOCK) {
+        esp_net_tls_release(tls_slot);
+        return wait_result;
+      }
+      if (wait_result == H2_PAL_ERR_WOULD_BLOCK && timeout_ms == 0u) {
+        esp_net_tls_release(tls_slot);
+        return H2_PAL_ERR_WOULD_BLOCK;
+      }
+    }
+  }
+  for (;;) {
+    uint32_t remaining_ms =
+        timeout_ms == 0u ? 0u : esp_net_timeout_remaining_ms(deadline_ms);
+    int ready = h2_esp_net_wait_fd(socket_fd, 1, remaining_ms);
+    if (ready != H2_PAL_OK) {
+      if (ready == H2_PAL_ERR_TIMEOUT) {
+        return timeout_ms == 0u ? H2_PAL_ERR_WOULD_BLOCK : H2_PAL_ERR_TIMEOUT;
+      }
+      if (ready == H2_PAL_ERR_WOULD_BLOCK && timeout_ms != 0u &&
+          remaining_ms != 0u) {
+        continue;
+      }
+      return ready;
+    }
+    int sent = send(socket_fd, data, (int)len, MSG_DONTWAIT);
+    if (sent > 0) {
+      return sent;
+    }
+    if (sent == 0) {
+      return H2_PAL_ERR_CLOSED;
+    }
+    if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
+      int error = errno;
+      ESP_LOGE("h2_net", "stage=tcp_send errno=%d", error);
+      errno = error;
+      return esp_net_socket_error();
+    }
+    if (timeout_ms == 0u) {
+      return H2_PAL_ERR_WOULD_BLOCK;
+    }
+    if (esp_net_timeout_remaining_ms(deadline_ms) == 0u) {
+      return H2_PAL_ERR_TIMEOUT;
+    }
+  }
+}
+
+static int esp_net_tcp_recv(void* user, h2_pal_net_socket_t socket_fd,
+                            uint8_t* data, size_t len, uint32_t timeout_ms) {
+  (void)user;
+  if (socket_fd < 0 || data == NULL || len == 0u || len > (size_t)INT_MAX) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  uint64_t deadline_ms = esp_net_now_ms() + timeout_ms;
+  uint64_t started_ms = deadline_ms - timeout_ms;
+  esp_net_tls_socket_t* tls_socket = NULL;
+  size_t tls_slot = 0u;
+  int tls_result = esp_net_tls_acquire(socket_fd, 1, timeout_ms, deadline_ms,
+                                       &tls_socket, &tls_slot);
+  if (tls_result < 0) {
+    return tls_result;
+  }
+  if (tls_result > 0) {
+    for (;;) {
+      int result = mbedtls_ssl_read(&tls_socket->ssl, data, len);
+#if defined(H2_ESP_NET_IO_TRACE)
+      tls_socket->trace_ssl_result = result;
+#endif
+      if (result > 0) {
+        return esp_net_tls_recv_finish(tls_socket, tls_slot, started_ms,
+                                       result);
+      }
+      if (result == 0 || result == MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY) {
+        return esp_net_tls_recv_finish(tls_socket, tls_slot, started_ms,
+                                       H2_PAL_ERR_CLOSED);
+      }
+      if (result != MBEDTLS_ERR_SSL_WANT_READ &&
+          result != MBEDTLS_ERR_SSL_WANT_WRITE) {
+        return esp_net_tls_recv_finish(tls_socket, tls_slot, started_ms,
+                                       H2_PAL_ERR_IO);
+      }
+      uint32_t remaining =
+          timeout_ms == 0u ? 0u : esp_net_timeout_remaining_ms(deadline_ms);
+      int wait_result = esp_net_tls_wait(tls_socket, result, remaining);
+      if (wait_result == H2_PAL_ERR_TIMEOUT) {
+        wait_result =
+            timeout_ms == 0u ? H2_PAL_ERR_WOULD_BLOCK : H2_PAL_ERR_TIMEOUT;
+      }
+      if (wait_result != H2_PAL_OK && wait_result != H2_PAL_ERR_WOULD_BLOCK) {
+        return esp_net_tls_recv_finish(tls_socket, tls_slot, started_ms,
+                                       wait_result);
+      }
+      if (wait_result == H2_PAL_ERR_WOULD_BLOCK && timeout_ms == 0u) {
+        return esp_net_tls_recv_finish(tls_socket, tls_slot, started_ms,
+                                       H2_PAL_ERR_WOULD_BLOCK);
+      }
+    }
+  }
+  return h2_esp_net_stream_recv(socket_fd, data, len, timeout_ms);
+}
+
+static void esp_net_close(void* user, h2_pal_net_socket_t socket_fd) {
+  (void)user;
+  if (socket_fd >= 0) {
+    if (s_esp_tls_sync != NULL && xSemaphoreTake(s_esp_tls_sync->registry_mutex,
+                                                 portMAX_DELAY) == pdTRUE) {
+      int slot_index = esp_net_tls_find(socket_fd);
+      if (slot_index >= 0) {
+        esp_net_tls_socket_t* slot = &s_esp_tls_sockets[slot_index];
+        uint32_t generation = s_esp_tls_sync->generations[slot_index];
+        slot->state = ESP_NET_TLS_SOCKET_CLOSING;
+        (void)xSemaphoreGive(s_esp_tls_sync->registry_mutex);
+        if (xSemaphoreTake(s_esp_tls_sync->io_mutexes[slot_index],
+                           portMAX_DELAY) == pdTRUE) {
+          if (xSemaphoreTake(s_esp_tls_sync->registry_mutex, portMAX_DELAY) ==
+              pdTRUE) {
+            if (slot->state == ESP_NET_TLS_SOCKET_CLOSING &&
+                slot->fd == socket_fd &&
+                s_esp_tls_sync->generations[slot_index] == generation) {
+              esp_net_tls_free(slot);
+              s_esp_tls_sync->generations[slot_index] += 1u;
+            }
+            (void)xSemaphoreGive(s_esp_tls_sync->registry_mutex);
+          }
+          esp_net_tls_release((size_t)slot_index);
+        }
+      } else {
+        (void)xSemaphoreGive(s_esp_tls_sync->registry_mutex);
+      }
+    }
+    close(socket_fd);
+  }
+}
+
+static h2_pal_result_t esp_net_tls_wrap(void* user,
+                                        h2_pal_net_socket_t socket_fd,
+                                        const h2_pal_net_tls_config_t* config,
+                                        uint32_t timeout_ms,
+                                        h2_pal_net_socket_t* out_socket) {
+  (void)user;
+  if (socket_fd < 0 || config == NULL || out_socket == NULL ||
+      config->server_name == NULL || config->server_name[0] == '\0' ||
+      timeout_ms == 0u ||
+      (config->root_ca_pem == NULL && config->root_ca_pem_len != 0u)) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  *out_socket = -1;
+  if (config->verify != H2_PAL_NET_TLS_VERIFY_DEFAULT &&
+      config->verify != H2_PAL_NET_TLS_VERIFY_REQUIRED &&
+      config->verify != H2_PAL_NET_TLS_VERIFY_INSECURE_TEST_ONLY) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  esp_net_tls_init();
+  uint64_t deadline_ms = esp_net_now_ms() + timeout_ms;
+  int lock_result = esp_net_tls_take_mutex(
+      s_esp_tls_sync == NULL ? NULL : s_esp_tls_sync->registry_mutex, 1,
+      timeout_ms, deadline_ms);
+  if (lock_result != H2_PAL_OK) {
+    return lock_result;
+  }
+  if (esp_net_tls_find(socket_fd) >= 0) {
+    (void)xSemaphoreGive(s_esp_tls_sync->registry_mutex);
+    return H2_PAL_ERR_INVALID_STATE;
+  }
+  int slot_index = esp_net_tls_find_free();
+  if (slot_index < 0) {
+    (void)xSemaphoreGive(s_esp_tls_sync->registry_mutex);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  esp_net_tls_socket_t* slot = &s_esp_tls_sockets[slot_index];
+  if (xSemaphoreTake(s_esp_tls_sync->io_mutexes[slot_index], 0u) != pdTRUE) {
+    (void)xSemaphoreGive(s_esp_tls_sync->registry_mutex);
+    return H2_PAL_ERR_UNAVAILABLE;
+  }
+  memset(slot, 0, sizeof(*slot));
+  slot->state = ESP_NET_TLS_SOCKET_CONFIGURING;
+  slot->fd = socket_fd;
+  s_esp_tls_sync->generations[slot_index] += 1u;
+  uint32_t generation = s_esp_tls_sync->generations[slot_index];
+  (void)xSemaphoreGive(s_esp_tls_sync->registry_mutex);
+  mbedtls_ssl_init(&slot->ssl);
+  mbedtls_ssl_config_init(&slot->config);
+  mbedtls_x509_crt_init(&slot->ca);
+  h2_pal_result_t rc = esp_net_tls_copy_alpn(slot, config);
+  int result = rc == H2_PAL_OK ? mbedtls_ssl_config_defaults(
+                                     &slot->config, MBEDTLS_SSL_IS_CLIENT,
+                                     MBEDTLS_SSL_TRANSPORT_STREAM,
+                                     MBEDTLS_SSL_PRESET_DEFAULT)
+                               : -1;
+  if (result == 0) {
+#if MBEDTLS_VERSION_MAJOR < 4
+    mbedtls_ssl_conf_rng(&slot->config, esp_net_tls_random, slot);
+#else
+    if (psa_crypto_init() != PSA_SUCCESS) {
+      rc = H2_PAL_ERR_IO;
+    }
+#endif
+  }
+  if (result == 0 && rc == H2_PAL_OK) {
+    rc = esp_net_tls_load_ca(slot, config);
+    if (rc == H2_PAL_OK &&
+        config->verify != H2_PAL_NET_TLS_VERIFY_INSECURE_TEST_ONLY) {
+      slot->verify = (h2_esp_net_tls_verify_t){
+          .delegate = slot->config.MBEDTLS_PRIVATE(f_vrfy),
+          .delegate_user = slot->config.MBEDTLS_PRIVATE(p_vrfy),
+          .certificate_bundle =
+              config->root_ca_pem == NULL || config->root_ca_pem_len == 0u,
+      };
+      mbedtls_ssl_conf_verify(&slot->config, esp_net_tls_verify_dates, slot);
+    }
+  } else if (rc == H2_PAL_OK) {
+    rc = H2_PAL_ERR_IO;
+  }
+  if (rc == H2_PAL_OK && config->alpn != NULL && config->alpn[0] != '\0' &&
+      mbedtls_ssl_conf_alpn_protocols(&slot->config, slot->alpn) != 0) {
+    rc = H2_PAL_ERR_IO;
+  }
+  if (rc == H2_PAL_OK && mbedtls_ssl_setup(&slot->ssl, &slot->config) != 0) {
+    rc = H2_PAL_ERR_IO;
+  }
+  if (rc == H2_PAL_OK &&
+      mbedtls_ssl_set_hostname(&slot->ssl, config->server_name) != 0) {
+    rc = H2_PAL_ERR_INVALID_ARG;
+  }
+  if (rc == H2_PAL_OK) {
+#if defined(H2_ESP_NET_IO_TRACE)
+    ESP_LOGI(
+        "h2_net",
+        "stage=tcp_profile fd=%d window=%u mailbox=%u mss=%u ooseq_max=%u rx_buffers=%u sack=%u",
+        socket_fd, (unsigned)TCP_WND, (unsigned)DEFAULT_TCP_RECVMBOX_SIZE,
+        (unsigned)TCP_MSS, (unsigned)TCP_OOSEQ_MAX_PBUFS,
+        (unsigned)CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM,
+        (unsigned)LWIP_TCP_SACK_OUT);
+#endif
+    mbedtls_ssl_set_bio(&slot->ssl, slot, esp_net_tls_send_raw,
+                        esp_net_tls_recv_raw, NULL);
+    uint32_t remaining_ms = esp_net_timeout_remaining_ms(deadline_ms);
+    rc = remaining_ms == 0u
+             ? H2_PAL_ERR_TIMEOUT
+             : esp_net_tls_handshake(slot, remaining_ms, config->verify);
+  }
+  if (xSemaphoreTake(s_esp_tls_sync->registry_mutex, portMAX_DELAY) == pdTRUE) {
+    if (slot->state == ESP_NET_TLS_SOCKET_CONFIGURING &&
+        slot->fd == socket_fd &&
+        s_esp_tls_sync->generations[slot_index] == generation) {
+      if (rc != H2_PAL_OK) {
+        esp_net_tls_free(slot);
+        s_esp_tls_sync->generations[slot_index] += 1u;
+      } else {
+        slot->state = ESP_NET_TLS_SOCKET_ACTIVE;
+        *out_socket = socket_fd;
+      }
+    } else {
+      rc = H2_PAL_ERR_CLOSED;
+    }
+    (void)xSemaphoreGive(s_esp_tls_sync->registry_mutex);
+  } else {
+    rc = H2_PAL_ERR_UNAVAILABLE;
+  }
+  esp_net_tls_release((size_t)slot_index);
+  return rc;
 }
 
 typedef struct esp_net_ping_context {
-    SemaphoreHandle_t done;
-    h2_pal_net_icmp_echo_result_t result;
+  SemaphoreHandle_t done;
+  h2_pal_net_icmp_echo_result_t result;
 } esp_net_ping_context_t;
 
-static void esp_net_ping_record(esp_ping_handle_t handle, void *args) {
-    esp_net_ping_context_t *context = (esp_net_ping_context_t *)args;
-    uint32_t elapsed_ms = 0u;
-    uint32_t transmitted = 0u;
-    uint32_t received = 0u;
-    (void)esp_ping_get_profile(handle, ESP_PING_PROF_TIMEGAP, &elapsed_ms, sizeof(elapsed_ms));
-    (void)esp_ping_get_profile(handle, ESP_PING_PROF_REQUEST, &transmitted, sizeof(transmitted));
-    (void)esp_ping_get_profile(handle, ESP_PING_PROF_REPLY, &received, sizeof(received));
-    context->result.elapsed_ms = elapsed_ms;
-    context->result.transmitted = transmitted;
-    context->result.received = received;
+static void esp_net_ping_record(esp_ping_handle_t handle, void* args) {
+  esp_net_ping_context_t* context = (esp_net_ping_context_t*)args;
+  uint32_t elapsed_ms = 0u;
+  uint32_t transmitted = 0u;
+  uint32_t received = 0u;
+  (void)esp_ping_get_profile(handle, ESP_PING_PROF_TIMEGAP, &elapsed_ms,
+                             sizeof(elapsed_ms));
+  (void)esp_ping_get_profile(handle, ESP_PING_PROF_REQUEST, &transmitted,
+                             sizeof(transmitted));
+  (void)esp_ping_get_profile(handle, ESP_PING_PROF_REPLY, &received,
+                             sizeof(received));
+  context->result.elapsed_ms = elapsed_ms;
+  context->result.transmitted = transmitted;
+  context->result.received = received;
 }
 
-static void esp_net_ping_success(esp_ping_handle_t handle, void *args) {
-    esp_net_ping_record(handle, args);
+static void esp_net_ping_success(esp_ping_handle_t handle, void* args) {
+  esp_net_ping_record(handle, args);
 }
 
-static void esp_net_ping_timeout(esp_ping_handle_t handle, void *args) {
-    esp_net_ping_record(handle, args);
+static void esp_net_ping_timeout(esp_ping_handle_t handle, void* args) {
+  esp_net_ping_record(handle, args);
 }
 
-static void esp_net_ping_end(esp_ping_handle_t handle, void *args) {
-    (void)handle;
-    esp_net_ping_context_t *context = (esp_net_ping_context_t *)args;
-    (void)xSemaphoreGive(context->done);
+static void esp_net_ping_end(esp_ping_handle_t handle, void* args) {
+  (void)handle;
+  esp_net_ping_context_t* context = (esp_net_ping_context_t*)args;
+  (void)xSemaphoreGive(context->done);
 }
 
 static h2_pal_result_t esp_net_icmp_echo(
-    void *user,
-    const h2_pal_net_addr_t *addr,
-    const h2_pal_net_bind_t *bind,
-    uint32_t timeout_ms,
-    h2_pal_net_icmp_echo_result_t *out_result) {
-    (void)user;
-    if (addr == NULL || addr->family != H2_PAL_NET_FAMILY_IPV4 ||
-        timeout_ms == 0u || out_result == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    if (bind != NULL && bind->type != H2_PAL_NET_BIND_DEFAULT) {
-        return H2_PAL_ERR_UNSUPPORTED;
-    }
+    void* user, const h2_pal_net_addr_t* addr, const h2_pal_net_bind_t* bind,
+    uint32_t timeout_ms, h2_pal_net_icmp_echo_result_t* out_result) {
+  (void)user;
+  if (addr == NULL || addr->family != H2_PAL_NET_FAMILY_IPV4 ||
+      timeout_ms == 0u || out_result == NULL) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  if (bind != NULL && bind->type != H2_PAL_NET_BIND_DEFAULT) {
+    return H2_PAL_ERR_UNSUPPORTED;
+  }
 
-    memset(out_result, 0, sizeof(*out_result));
-    esp_net_ping_context_t context = {
-        .done = xSemaphoreCreateBinary(),
-    };
-    if (context.done == NULL) {
-        return H2_PAL_ERR_NO_MEMORY;
-    }
+  memset(out_result, 0, sizeof(*out_result));
+  esp_net_ping_context_t context = {
+      .done = xSemaphoreCreateBinary(),
+  };
+  if (context.done == NULL) {
+    return H2_PAL_ERR_NO_MEMORY;
+  }
 
-    esp_ping_config_t config = ESP_PING_DEFAULT_CONFIG();
-    config.count = 1u;
-    config.timeout_ms = timeout_ms;
-    config.interval_ms = 0u;
-    config.target_addr.type = IPADDR_TYPE_V4;
-    memcpy(&config.target_addr.u_addr.ip4.addr, addr->ip, 4u);
-    const esp_ping_callbacks_t callbacks = {
-        .on_ping_success = esp_net_ping_success,
-        .on_ping_timeout = esp_net_ping_timeout,
-        .on_ping_end = esp_net_ping_end,
-        .cb_args = &context,
-    };
-    esp_ping_handle_t handle = NULL;
-    esp_err_t err = esp_ping_new_session(&config, &callbacks, &handle);
-    if (err == ESP_OK) {
-        err = esp_ping_start(handle);
-    }
-    h2_pal_result_t rc = H2_PAL_ERR_IO;
-    if (err == ESP_OK) {
-        const TickType_t grace_ticks = pdMS_TO_TICKS(250u);
-        const uint64_t timeout_ticks =
-            ((uint64_t)timeout_ms * (uint64_t)configTICK_RATE_HZ + 999u) / 1000u;
-        TickType_t wait_ticks = timeout_ticks > (uint64_t)(portMAX_DELAY - grace_ticks)
+  esp_ping_config_t config = ESP_PING_DEFAULT_CONFIG();
+  config.count = 1u;
+  config.timeout_ms = timeout_ms;
+  config.interval_ms = 0u;
+  config.target_addr.type = IPADDR_TYPE_V4;
+  memcpy(&config.target_addr.u_addr.ip4.addr, addr->ip, 4u);
+  const esp_ping_callbacks_t callbacks = {
+      .on_ping_success = esp_net_ping_success,
+      .on_ping_timeout = esp_net_ping_timeout,
+      .on_ping_end = esp_net_ping_end,
+      .cb_args = &context,
+  };
+  esp_ping_handle_t handle = NULL;
+  esp_err_t err = esp_ping_new_session(&config, &callbacks, &handle);
+  if (err == ESP_OK) {
+    err = esp_ping_start(handle);
+  }
+  h2_pal_result_t rc = H2_PAL_ERR_IO;
+  if (err == ESP_OK) {
+    const TickType_t grace_ticks = pdMS_TO_TICKS(250u);
+    const uint64_t timeout_ticks =
+        ((uint64_t)timeout_ms * (uint64_t)configTICK_RATE_HZ + 999u) / 1000u;
+    TickType_t wait_ticks =
+        timeout_ticks > (uint64_t)(portMAX_DELAY - grace_ticks)
             ? portMAX_DELAY
             : (TickType_t)timeout_ticks + grace_ticks;
-        if (xSemaphoreTake(context.done, wait_ticks) == pdTRUE) {
-            *out_result = context.result;
-            rc = context.result.received > 0u ? H2_PAL_OK : H2_PAL_ERR_TIMEOUT;
-        } else {
-            /* The ping task owns the callbacks until on_ping_end runs. Stop the
-             * session and wait for that callback before releasing its context. */
-            (void)esp_ping_stop(handle);
-            (void)xSemaphoreTake(context.done, portMAX_DELAY);
-            *out_result = context.result;
-            rc = H2_PAL_ERR_TIMEOUT;
-        }
+    if (xSemaphoreTake(context.done, wait_ticks) == pdTRUE) {
+      *out_result = context.result;
+      rc = context.result.received > 0u ? H2_PAL_OK : H2_PAL_ERR_TIMEOUT;
+    } else {
+      /* The ping task owns the callbacks until on_ping_end runs. Stop the
+       * session and wait for that callback before releasing its context. */
+      (void)esp_ping_stop(handle);
+      (void)xSemaphoreTake(context.done, portMAX_DELAY);
+      *out_result = context.result;
+      rc = H2_PAL_ERR_TIMEOUT;
     }
-    if (handle != NULL) {
-        (void)esp_ping_stop(handle);
-        (void)esp_ping_delete_session(handle);
-    }
-    vSemaphoreDelete(context.done);
-    return rc;
+  }
+  if (handle != NULL) {
+    (void)esp_ping_stop(handle);
+    (void)esp_ping_delete_session(handle);
+  }
+  vSemaphoreDelete(context.done);
+  return rc;
 }
 
-const h2_pal_net_api_t *h2_esp_platform_net_api(void) {
-    esp_net_tls_init();
-    static const h2_pal_net_vtable_t vtable = {
-        .resolve_all = esp_net_resolve_all,
-        .resolve_start_family = esp_net_resolve_start_family,
-        .resolve_poll_all = esp_net_resolve_poll_all,
-        .get_host_addr_family = esp_net_get_host_addr_family,
-        .resolve_addr = esp_net_resolve_addr,
-        .resolve_start = esp_net_resolve_start,
-        .resolve_poll = esp_net_resolve_poll,
-        .resolve_close = esp_net_resolve_close,
-        .get_host_addr = esp_net_get_host_addr,
-        .udp_open = esp_net_udp_open,
-        .udp_open_bound = esp_net_udp_open_bound,
-        .udp_sendto = esp_net_udp_sendto,
-        .udp_recvfrom = esp_net_udp_recvfrom,
-        .tcp_open = esp_net_tcp_open,
-        .tcp_open_bound = esp_net_tcp_open_bound,
-        .tcp_connect = esp_net_tcp_connect,
-        .tcp_send = esp_net_tcp_send,
-        .tcp_send_timeout = esp_net_tcp_send_timeout,
-        .tcp_recv = esp_net_tcp_recv,
-        .tls_wrap = esp_net_tls_wrap,
-        .icmp_echo = esp_net_icmp_echo,
-        .close = esp_net_close,
-        .tcp_listen = esp_net_tcp_listen,
-        .tcp_accept = esp_net_tcp_accept,
-    };
-    static const h2_pal_net_api_t api = {
-        .user = NULL,
-        .vtable = &vtable,
-    };
-    return &api;
+const h2_pal_net_api_t* h2_esp_platform_net_api(void) {
+  esp_net_tls_init();
+  static const h2_pal_net_vtable_t vtable = {
+      .resolve_all = esp_net_resolve_all,
+      .resolve_start_family = esp_net_resolve_start_family,
+      .resolve_poll_all = esp_net_resolve_poll_all,
+      .get_host_addr_family = esp_net_get_host_addr_family,
+      .resolve_addr = esp_net_resolve_addr,
+      .resolve_start = esp_net_resolve_start,
+      .resolve_poll = esp_net_resolve_poll,
+      .resolve_close = esp_net_resolve_close,
+      .get_host_addr = esp_net_get_host_addr,
+      .udp_open = esp_net_udp_open,
+      .udp_open_bound = esp_net_udp_open_bound,
+      .udp_sendto = esp_net_udp_sendto,
+      .udp_recvfrom = esp_net_udp_recvfrom,
+      .tcp_open = esp_net_tcp_open,
+      .tcp_open_bound = esp_net_tcp_open_bound,
+      .tcp_connect = esp_net_tcp_connect,
+      .tcp_send = esp_net_tcp_send,
+      .tcp_send_timeout = esp_net_tcp_send_timeout,
+      .tcp_recv = esp_net_tcp_recv,
+      .tls_wrap = esp_net_tls_wrap,
+      .icmp_echo = esp_net_icmp_echo,
+      .close = esp_net_close,
+      .tcp_listen = esp_net_tcp_listen,
+      .tcp_accept = esp_net_tcp_accept,
+  };
+  static const h2_pal_net_api_t api = {
+      .user = NULL,
+      .vtable = &vtable,
+  };
+  return &api;
 }

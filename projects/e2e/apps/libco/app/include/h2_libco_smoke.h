@@ -35,8 +35,8 @@ typedef struct h2_libco_smoke_config {
  * defaults.
  * @return H2_PAL_OK after PASS, otherwise a nonzero PAL/libco error.
  */
-int h2_libco_smoke_run(h2_runtime_t *runtime,
-                       const h2_libco_smoke_config_t *config);
+int h2_libco_smoke_run(h2_runtime_t* runtime,
+                       const h2_libco_smoke_config_t* config);
 
 #ifdef __cplusplus
 }

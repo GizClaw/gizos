@@ -10,8 +10,8 @@
 enum { H2_BUTTON_SMOKE_MAX_BUTTONS = 16 };
 
 typedef struct h2_button_smoke_item {
-  lv_obj_t *object;
-  lv_obj_t *label;
+  lv_obj_t* object;
+  lv_obj_t* label;
   uint32_t down_count;
   uint32_t up_count;
   uint32_t action_count;
@@ -20,11 +20,11 @@ typedef struct h2_button_smoke_item {
 } h2_button_smoke_item_t;
 
 typedef struct h2_button_smoke_state {
-  h2_runtime_t *runtime;
-  const h2_button_smoke_config_t *config;
-  void *render_buffer;
-  lv_display_t *display;
-  lv_obj_t *summary_label;
+  h2_runtime_t* runtime;
+  const h2_button_smoke_config_t* config;
+  void* render_buffer;
+  lv_display_t* display;
+  lv_obj_t* summary_label;
   h2_button_smoke_item_t items[H2_BUTTON_SMOKE_MAX_BUTTONS];
   h2_pal_result_t flush_result;
   uint64_t last_tick_ms;
@@ -34,9 +34,9 @@ typedef struct h2_button_smoke_state {
   int lvgl_initialized;
 } h2_button_smoke_state_t;
 
-static void button_smoke_flush(lv_display_t *display, const lv_area_t *area,
-                               uint8_t *pixels) {
-  h2_button_smoke_state_t *state = lv_display_get_user_data(display);
+static void button_smoke_flush(lv_display_t* display, const lv_area_t* area,
+                               uint8_t* pixels) {
+  h2_button_smoke_state_t* state = lv_display_get_user_data(display);
   h2_pal_result_t result = H2_PAL_ERR_INVALID_STATE;
   if (state != NULL && area != NULL && pixels != NULL) {
     const h2_display_rect_t rect = {
@@ -49,8 +49,7 @@ static void button_smoke_flush(lv_display_t *display, const lv_area_t *area,
         state->runtime->display, &rect, pixels,
         (size_t)rect.width * sizeof(uint16_t), H2_DISPLAY_PIXEL_RGB565);
     if (result == H2_PAL_OK) {
-      result =
-          (h2_pal_result_t)h2_pal_display_present(state->runtime->display);
+      result = (h2_pal_result_t)h2_pal_display_present(state->runtime->display);
     }
     if (state->flush_result == H2_PAL_OK && result != H2_PAL_OK) {
       state->flush_result = result;
@@ -59,15 +58,15 @@ static void button_smoke_flush(lv_display_t *display, const lv_area_t *area,
   lv_display_flush_ready(display);
 }
 
-static void update_summary(h2_button_smoke_state_t *state) {
+static void update_summary(h2_button_smoke_state_t* state) {
   char text[96];
   (void)snprintf(text, sizeof(text), "Runtime Button events: %u",
                  state->total_events);
   lv_label_set_text(state->summary_label, text);
 }
 
-static void update_item(h2_button_smoke_state_t *state, size_t index) {
-  h2_button_smoke_item_t *item = &state->items[index];
+static void update_item(h2_button_smoke_state_t* state, size_t index) {
+  h2_button_smoke_item_t* item = &state->items[index];
   char text[96];
   if (!item->supported) {
     (void)snprintf(text, sizeof(text), "%s\nN/A",
@@ -80,15 +79,14 @@ static void update_item(h2_button_smoke_state_t *state, size_t index) {
                    item->pressed ? "DOWN" : "ready", item->down_count,
                    item->up_count, item->action_count);
     lv_obj_set_style_bg_color(
-        item->object,
-        lv_color_hex(item->pressed ? 0x16a34au : 0x2563ebu), LV_PART_MAIN);
+        item->object, lv_color_hex(item->pressed ? 0x16a34au : 0x2563ebu),
+        LV_PART_MAIN);
   }
   lv_label_set_text(item->label, text);
 }
 
-static h2_button_smoke_item_t *find_item(
-    h2_button_smoke_state_t *state,
-    h2_runtime_component_id_t component_id) {
+static h2_button_smoke_item_t* find_item(
+    h2_button_smoke_state_t* state, h2_runtime_component_id_t component_id) {
   for (size_t i = 0u; i < state->config->button_count; ++i) {
     if (state->config->buttons[i].component_id == component_id) {
       return &state->items[i];
@@ -97,16 +95,16 @@ static h2_button_smoke_item_t *find_item(
   return NULL;
 }
 
-static void process_events(h2_button_smoke_state_t *state) {
+static void process_events(h2_button_smoke_state_t* state) {
   uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
   h2_runtime_event_t event = {
       .payload = payload,
       .payload_capacity = sizeof(payload),
   };
   while (h2_runtime_poll_event(state->runtime, &event) == H2_PAL_OK) {
-    h2_button_smoke_item_t *item = find_item(state, event.component_id);
+    h2_button_smoke_item_t* item = find_item(state, event.component_id);
     if (item == NULL) continue;
-    const char *kind = NULL;
+    const char* kind = NULL;
     if (event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN) {
       item->pressed = 1;
       ++item->down_count;
@@ -130,26 +128,26 @@ static void process_events(h2_button_smoke_state_t *state) {
                    state->config->buttons[index].name,
                    (unsigned)event.component_id, kind, item->down_count,
                    item->up_count, item->action_count);
-    (void)h2_pal_log_write(state->runtime->log, H2_PAL_LOG_INFO,
-                           "button-smoke", message);
+    (void)h2_pal_log_write(state->runtime->log, H2_PAL_LOG_INFO, "button-smoke",
+                           message);
   }
 }
 
-static h2_pal_result_t ui_init(h2_button_smoke_state_t *state) {
+static h2_pal_result_t ui_init(h2_button_smoke_state_t* state) {
   h2_pal_result_t result =
       (h2_pal_result_t)h2_pal_display_open(state->runtime->display);
   if (result != H2_PAL_OK) return result;
   state->display_opened = 1;
   h2_display_info_t info = {0};
-  result = (h2_pal_result_t)h2_pal_display_get_info(
-      state->runtime->display, &info);
+  result =
+      (h2_pal_result_t)h2_pal_display_get_info(state->runtime->display, &info);
   if (result != H2_PAL_OK) return result;
   if (info.width != (int)state->config->width ||
       info.height != (int)state->config->height) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  const size_t frame_bytes = (size_t)state->config->width *
-                             state->config->height * sizeof(uint16_t);
+  const size_t frame_bytes =
+      (size_t)state->config->width * state->config->height * sizeof(uint16_t);
   state->render_buffer = h2_pal_mem_alloc(state->runtime->mem, frame_bytes);
   if (state->render_buffer == NULL) return H2_PAL_ERR_NO_MEMORY;
   const h2_lvgl_platform_config_t platform = {
@@ -175,9 +173,9 @@ static h2_pal_result_t ui_init(h2_button_smoke_state_t *state) {
   lv_display_set_buffers(state->display, state->render_buffer, NULL,
                          (uint32_t)frame_bytes, LV_DISPLAY_RENDER_MODE_FULL);
 
-  lv_obj_t *screen = lv_screen_active();
+  lv_obj_t* screen = lv_screen_active();
   lv_obj_set_style_bg_color(screen, lv_color_hex(0x0f172au), LV_PART_MAIN);
-  lv_obj_t *title = lv_label_create(screen);
+  lv_obj_t* title = lv_label_create(screen);
   state->summary_label = lv_label_create(screen);
   if (title == NULL || state->summary_label == NULL) {
     return H2_PAL_ERR_NO_MEMORY;
@@ -200,9 +198,9 @@ static h2_pal_result_t ui_init(h2_button_smoke_state_t *state) {
   for (size_t i = 0u; i < state->config->button_count; ++i) {
     h2_runtime_component_info_t component = {0};
     state->items[i].supported =
-        h2_runtime_component_get(
-            state->runtime, state->config->buttons[i].component_id,
-            &component) == H2_PAL_OK &&
+        h2_runtime_component_get(state->runtime,
+                                 state->config->buttons[i].component_id,
+                                 &component) == H2_PAL_OK &&
         component.kind == H2_RUNTIME_COMPONENT_BUTTON;
     state->items[i].object = lv_obj_create(screen);
     if (state->items[i].object == NULL) return H2_PAL_ERR_NO_MEMORY;
@@ -219,7 +217,7 @@ static h2_pal_result_t ui_init(h2_button_smoke_state_t *state) {
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t ui_deinit(h2_button_smoke_state_t *state) {
+static h2_pal_result_t ui_deinit(h2_button_smoke_state_t* state) {
   if (state->display != NULL) lv_display_delete(state->display);
   if (state->lvgl_initialized) lv_deinit();
   if (state->platform_initialized) h2_lvgl_platform_deinit();
@@ -230,24 +228,22 @@ static h2_pal_result_t ui_deinit(h2_button_smoke_state_t *state) {
   return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_button_smoke_run(
-    h2_runtime_t *runtime, const h2_button_smoke_config_t *config) {
+h2_pal_result_t h2_button_smoke_run(h2_runtime_t* runtime,
+                                    const h2_button_smoke_config_t* config) {
   if (runtime == NULL || config == NULL || config->width == 0u ||
       config->height == 0u || config->buttons == NULL ||
       config->button_count == 0u ||
       config->button_count > H2_BUTTON_SMOKE_MAX_BUTTONS ||
       config->should_stop == NULL || runtime->mem == NULL ||
       runtime->log == NULL || runtime->display == NULL ||
-      runtime->time == NULL || runtime->task == NULL ||
-      runtime->sync == NULL || runtime->queue == NULL) {
+      runtime->time == NULL || runtime->task == NULL || runtime->sync == NULL ||
+      runtime->queue == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  if (config->width > (uint32_t)INT_MAX ||
-      config->height > (uint32_t)INT_MAX ||
+  if (config->width > (uint32_t)INT_MAX || config->height > (uint32_t)INT_MAX ||
       (size_t)config->width > SIZE_MAX / config->height ||
       (size_t)config->width * config->height > SIZE_MAX / sizeof(uint16_t) ||
-      (size_t)config->width * config->height * sizeof(uint16_t) >
-          UINT32_MAX) {
+      (size_t)config->width * config->height * sizeof(uint16_t) > UINT32_MAX) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   for (size_t i = 0u; i < config->button_count; ++i) {

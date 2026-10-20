@@ -9,27 +9,27 @@
 #include <stdlib.h>
 
 typedef struct h2_mobile_android_mp4_context {
-  h2_android_platform_t *host;
-  h2_runtime_t *runtime;
-  uint8_t *media;
+  h2_android_platform_t* host;
+  h2_runtime_t* runtime;
+  uint8_t* media;
   size_t media_size;
   h2_atomic_bool_t stop;
   pthread_t thread;
   int thread_started;
 } h2_mobile_android_mp4_context_t;
 
-static h2_mobile_android_mp4_context_t *context_from_handle(jlong handle) {
-  return (h2_mobile_android_mp4_context_t *)(uintptr_t)handle;
+static h2_mobile_android_mp4_context_t* context_from_handle(jlong handle) {
+  return (h2_mobile_android_mp4_context_t*)(uintptr_t)handle;
 }
 
-static int android_mp4_should_stop(void *user) {
-  h2_mobile_android_mp4_context_t *context = user;
+static int android_mp4_should_stop(void* user) {
+  h2_mobile_android_mp4_context_t* context = user;
   return context == NULL ||
          h2_atomic_load_explicit(&context->stop, H2_ATOMIC_ACQUIRE);
 }
 
-static void *android_mp4_app_thread(void *user) {
-  h2_mobile_android_mp4_context_t *context = user;
+static void* android_mp4_app_thread(void* user) {
+  h2_mobile_android_mp4_context_t* context = user;
   const h2_mobile_mp4_player_config_t config = {
       .media = context->media,
       .media_size = context->media_size,
@@ -42,7 +42,7 @@ static void *android_mp4_app_thread(void *user) {
 
 JNIEXPORT jlong JNICALL
 Java_com_haivivi_firmwares_smokeapps_mp4player_MainActivity_nativeCreate(
-    JNIEnv *env, jclass clazz, jobject view, jbyteArray media,
+    JNIEnv* env, jclass clazz, jobject view, jbyteArray media,
     jint display_width, jint display_height) {
   (void)clazz;
   if (media == NULL || display_width <= 0 || display_height <= 0) {
@@ -52,7 +52,7 @@ Java_com_haivivi_firmwares_smokeapps_mp4player_MainActivity_nativeCreate(
   if (media_size <= 0) {
     return 0;
   }
-  h2_mobile_android_mp4_context_t *context = calloc(1u, sizeof(*context));
+  h2_mobile_android_mp4_context_t* context = calloc(1u, sizeof(*context));
   if (context == NULL) {
     return 0;
   }
@@ -61,8 +61,7 @@ Java_com_haivivi_firmwares_smokeapps_mp4player_MainActivity_nativeCreate(
     free(context);
     return 0;
   }
-  (*env)->GetByteArrayRegion(env, media, 0, media_size,
-                             (jbyte *)context->media);
+  (*env)->GetByteArrayRegion(env, media, 0, media_size, (jbyte*)context->media);
   if ((*env)->ExceptionCheck(env)) {
     free(context->media);
     free(context);
@@ -90,10 +89,10 @@ Java_com_haivivi_firmwares_smokeapps_mp4player_MainActivity_nativeCreate(
 
 JNIEXPORT jboolean JNICALL
 Java_com_haivivi_firmwares_smokeapps_mp4player_MainActivity_nativeStart(
-    JNIEnv *env, jclass clazz, jlong handle) {
+    JNIEnv* env, jclass clazz, jlong handle) {
   (void)env;
   (void)clazz;
-  h2_mobile_android_mp4_context_t *context = context_from_handle(handle);
+  h2_mobile_android_mp4_context_t* context = context_from_handle(handle);
   if (context == NULL || context->thread_started) {
     return JNI_FALSE;
   }
@@ -121,9 +120,9 @@ Java_com_haivivi_firmwares_smokeapps_mp4player_MainActivity_nativeStart(
 
 JNIEXPORT void JNICALL
 Java_com_haivivi_firmwares_smokeapps_mp4player_MainActivity_nativeRender(
-    JNIEnv *env, jclass clazz, jlong handle, jobject bitmap) {
+    JNIEnv* env, jclass clazz, jlong handle, jobject bitmap) {
   (void)clazz;
-  h2_mobile_android_mp4_context_t *context = context_from_handle(handle);
+  h2_mobile_android_mp4_context_t* context = context_from_handle(handle);
   if (context != NULL) {
     (void)h2_android_platform_copy_frame(context->host, env, bitmap);
   }
@@ -131,10 +130,10 @@ Java_com_haivivi_firmwares_smokeapps_mp4player_MainActivity_nativeRender(
 
 JNIEXPORT void JNICALL
 Java_com_haivivi_firmwares_smokeapps_mp4player_MainActivity_nativeStop(
-    JNIEnv *env, jclass clazz, jlong handle) {
+    JNIEnv* env, jclass clazz, jlong handle) {
   (void)env;
   (void)clazz;
-  h2_mobile_android_mp4_context_t *context = context_from_handle(handle);
+  h2_mobile_android_mp4_context_t* context = context_from_handle(handle);
   if (context == NULL) {
     return;
   }

@@ -1,91 +1,85 @@
 #include "h2_app_test_power.h"
 #include <string.h>
-static h2_pal_result_t caps(void *u, h2_pal_power_capabilities_t *o) {
-  *o = ((h2_app_test_power_t *)u)->capabilities;
+static h2_pal_result_t caps(void* u, h2_pal_power_capabilities_t* o) {
+  *o = ((h2_app_test_power_t*)u)->capabilities;
   return 0;
 }
-static h2_pal_result_t boot(void *u, h2_pal_power_boot_info_t *o) {
-  *o = ((h2_app_test_power_t *)u)->boot_info;
+static h2_pal_result_t boot(void* u, h2_pal_power_boot_info_t* o) {
+  *o = ((h2_app_test_power_t*)u)->boot_info;
   return 0;
 }
-static h2_pal_result_t state(void *u, h2_pal_power_state_t *o) {
-  *o = ((h2_app_test_power_t *)u)->state;
+static h2_pal_result_t state(void* u, h2_pal_power_state_t* o) {
+  *o = ((h2_app_test_power_t*)u)->state;
   return 0;
 }
-static h2_pal_result_t hold(void *u, int enabled) {
-  h2_app_test_power_t *p = u;
+static h2_pal_result_t hold(void* u, int enabled) {
+  h2_app_test_power_t* p = u;
   if (!(p->capabilities.flags & H2_PAL_POWER_CAPABILITY_HOLD))
     return H2_PAL_ERR_UNSUPPORTED;
   int rc = h2_app_test_fault_take(&p->hold);
-  if (!rc)
-    p->hold_enabled = !!enabled;
+  if (!rc) p->hold_enabled = !!enabled;
   return rc;
 }
-static h2_pal_result_t get_hold(void *u, h2_pal_power_hold_state_t *o) {
-  o->enabled = ((h2_app_test_power_t *)u)->hold_enabled;
+static h2_pal_result_t get_hold(void* u, h2_pal_power_hold_state_t* o) {
+  o->enabled = ((h2_app_test_power_t*)u)->hold_enabled;
   return 0;
 }
-static h2_pal_result_t reboot(void *u, uint32_t reason) {
-  h2_app_test_power_t *p = u;
+static h2_pal_result_t reboot(void* u, uint32_t reason) {
+  h2_app_test_power_t* p = u;
   if (!(p->capabilities.flags & H2_PAL_POWER_CAPABILITY_REBOOT))
     return H2_PAL_ERR_UNSUPPORTED;
   p->last_reason = reason;
   int rc = h2_app_test_fault_take(&p->reboot);
-  if (!rc)
-    p->state = H2_PAL_POWER_STATE_REBOOTING;
+  if (!rc) p->state = H2_PAL_POWER_STATE_REBOOTING;
   return rc;
 }
-static h2_pal_result_t shutdown(void *u, uint32_t reason) {
-  h2_app_test_power_t *p = u;
+static h2_pal_result_t shutdown(void* u, uint32_t reason) {
+  h2_app_test_power_t* p = u;
   if (!(p->capabilities.flags & H2_PAL_POWER_CAPABILITY_SHUTDOWN))
     return H2_PAL_ERR_UNSUPPORTED;
   p->last_reason = reason;
   int rc = h2_app_test_fault_take(&p->shutdown);
-  if (!rc)
-    p->state = H2_PAL_POWER_STATE_OFF;
+  if (!rc) p->state = H2_PAL_POWER_STATE_OFF;
   return rc;
 }
-static h2_pal_result_t sleep(void *u, uint32_t reason) {
-  h2_app_test_power_t *p = u;
+static h2_pal_result_t sleep(void* u, uint32_t reason) {
+  h2_app_test_power_t* p = u;
   if (!(p->capabilities.flags & H2_PAL_POWER_CAPABILITY_SLEEP))
     return H2_PAL_ERR_UNSUPPORTED;
   p->last_reason = reason;
   int rc = h2_app_test_fault_take(&p->sleep);
-  if (!rc)
-    p->state = H2_PAL_POWER_STATE_SLEEPING;
+  if (!rc) p->state = H2_PAL_POWER_STATE_SLEEPING;
   return rc;
 }
-static h2_pal_result_t deep_sleep(void *u, uint32_t reason) {
-  h2_app_test_power_t *p = u;
+static h2_pal_result_t deep_sleep(void* u, uint32_t reason) {
+  h2_app_test_power_t* p = u;
   if (!(p->capabilities.flags & H2_PAL_POWER_CAPABILITY_DEEP_SLEEP))
     return H2_PAL_ERR_UNSUPPORTED;
   p->last_reason = reason;
   int rc = h2_app_test_fault_take(&p->deep_sleep);
-  if (!rc)
-    p->state = H2_PAL_POWER_STATE_DEEP_SLEEPING;
+  if (!rc) p->state = H2_PAL_POWER_STATE_DEEP_SLEEPING;
   return rc;
 }
-static h2_pal_result_t wake_timer(void *u, uint32_t delay_ms) {
-  h2_app_test_power_t *p = u;
+static h2_pal_result_t wake_timer(void* u, uint32_t delay_ms) {
+  h2_app_test_power_t* p = u;
   if (!(p->capabilities.flags & H2_PAL_POWER_CAPABILITY_DEEP_SLEEP_WAKE_TIMER))
     return H2_PAL_ERR_UNSUPPORTED;
   p->deep_sleep_wake_timer_ms = delay_ms;
   return 0;
 }
-static const h2_pal_power_vtable_t vtable = {.get_capabilities = caps,
-                                             .get_boot_info = boot,
-                                             .get_state = state,
-                                             .set_hold = hold,
-                                             .get_hold = get_hold,
-                                             .reboot = reboot,
-                                             .shutdown = shutdown,
-                                             .sleep = sleep,
-                                             .deep_sleep = deep_sleep,
-                                             .set_deep_sleep_wake_timer =
-                                                 wake_timer};
-void h2_app_test_power_init(h2_app_test_power_t *p) {
-  if (!p)
-    return;
+static const h2_pal_power_vtable_t vtable = {
+    .get_capabilities = caps,
+    .get_boot_info = boot,
+    .get_state = state,
+    .set_hold = hold,
+    .get_hold = get_hold,
+    .reboot = reboot,
+    .shutdown = shutdown,
+    .sleep = sleep,
+    .deep_sleep = deep_sleep,
+    .set_deep_sleep_wake_timer = wake_timer};
+void h2_app_test_power_init(h2_app_test_power_t* p) {
+  if (!p) return;
   memset(p, 0, sizeof(*p));
   p->api = (h2_pal_power_api_t){p, &vtable};
   p->state = H2_PAL_POWER_STATE_RUNNING;

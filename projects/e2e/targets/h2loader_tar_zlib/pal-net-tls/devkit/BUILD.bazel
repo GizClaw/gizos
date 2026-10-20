@@ -6,10 +6,13 @@ load("//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files([
-    "main/CMakeLists.txt",
-    "main/idf_component.yml",
-], visibility = ["//visibility:public"])
+exports_files(
+    [
+        "main/CMakeLists.txt",
+        "main/idf_component.yml",
+    ],
+    visibility = ["//visibility:public"],
+)
 
 # Shared ESP launcher accepts the consuming entry's H2_PAL_NET_TLS_BOARD.
 exports_files(["main/main.c"])
@@ -61,9 +64,9 @@ firmware_native_component(
     component_directory = "projects/e2e/targets/h2loader_tar_zlib/pal-net-tls/devkit/main",
     component_name = "main",
     data = [
-        "//projects/e2e/targets/h2loader_tar_zlib/fixture-wifi:fixture_wifi.cmake",
         "main/CMakeLists.txt",
         "main/idf_component.yml",
+        "//projects/e2e/targets/h2loader_tar_zlib/fixture-wifi:fixture_wifi.cmake",
     ],
     tags = ["manual"],
     deps = [

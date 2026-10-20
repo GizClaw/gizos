@@ -42,11 +42,11 @@ void bk_delay_us(uint32_t us);
 #endif
 
 class H2PixelRootSerial {
-public:
-    void begin(unsigned long) {}
-    void print(const char *) {}
-    void println(const char *) {}
-    void printf(const char *, ...) {}
+ public:
+  void begin(unsigned long) {}
+  void print(const char*) {}
+  void println(const char*) {}
+  void printf(const char*, ...) {}
 };
 
 inline H2PixelRootSerial Serial;
@@ -58,57 +58,59 @@ inline int analogRead(uint8_t) { return 0; }
 
 inline uint32_t millis() {
 #if defined(ESP_PLATFORM)
-    return static_cast<uint32_t>(esp_timer_get_time() / 1000);
+  return static_cast<uint32_t>(esp_timer_get_time() / 1000);
 #elif defined(BEKEN_PLATFORM)
-    return rtos_get_time();
+  return rtos_get_time();
 #else
-    static const auto start = std::chrono::steady_clock::now();
-    const auto now = std::chrono::steady_clock::now();
-    return static_cast<uint32_t>(
-        std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count());
+  static const auto start = std::chrono::steady_clock::now();
+  const auto now = std::chrono::steady_clock::now();
+  return static_cast<uint32_t>(
+      std::chrono::duration_cast<std::chrono::milliseconds>(now - start)
+          .count());
 #endif
 }
 
 inline uint32_t micros() {
 #if defined(ESP_PLATFORM)
-    return static_cast<uint32_t>(esp_timer_get_time());
+  return static_cast<uint32_t>(esp_timer_get_time());
 #elif defined(BEKEN_PLATFORM)
-    return rtos_get_time() * 1000;
+  return rtos_get_time() * 1000;
 #else
-    static const auto start = std::chrono::steady_clock::now();
-    const auto now = std::chrono::steady_clock::now();
-    return static_cast<uint32_t>(
-        std::chrono::duration_cast<std::chrono::microseconds>(now - start).count());
+  static const auto start = std::chrono::steady_clock::now();
+  const auto now = std::chrono::steady_clock::now();
+  return static_cast<uint32_t>(
+      std::chrono::duration_cast<std::chrono::microseconds>(now - start)
+          .count());
 #endif
 }
 
 inline void delay(uint32_t ms) {
 #if defined(ESP_PLATFORM)
-    vTaskDelay(pdMS_TO_TICKS(ms));
+  vTaskDelay(pdMS_TO_TICKS(ms));
 #elif defined(BEKEN_PLATFORM)
-    (void)rtos_delay_milliseconds(ms);
+  (void)rtos_delay_milliseconds(ms);
 #else
-    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+  std::this_thread::sleep_for(std::chrono::milliseconds(ms));
 #endif
 }
 
 inline void delayMicroseconds(uint32_t us) {
 #if defined(ESP_PLATFORM)
-    esp_rom_delay_us(us);
+  esp_rom_delay_us(us);
 #elif defined(BEKEN_PLATFORM)
-    bk_delay_us(us);
+  bk_delay_us(us);
 #else
-    std::this_thread::sleep_for(std::chrono::microseconds(us));
+  std::this_thread::sleep_for(std::chrono::microseconds(us));
 #endif
 }
 
 inline void yield() {
 #if defined(ESP_PLATFORM)
-    vTaskDelay(1);
+  vTaskDelay(1);
 #elif defined(BEKEN_PLATFORM)
-    (void)rtos_delay_milliseconds(1);
+  (void)rtos_delay_milliseconds(1);
 #else
-    std::this_thread::yield();
+  std::this_thread::yield();
 #endif
 }
 

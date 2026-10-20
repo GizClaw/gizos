@@ -28,8 +28,8 @@ typedef enum mp3_state {
 } mp3_state_t;
 
 struct h2_gizclaw_mp3 {
-  const h2_pal_mem_api_t *allocator;
-  h2_gizclaw_audio_input_t *in;
+  const h2_pal_mem_api_t* allocator;
+  h2_gizclaw_audio_input_t* in;
   mp3_state_t state;
   h2_pal_result_t error;
   /* The first frame's header: every later frame must share its version,
@@ -56,19 +56,18 @@ struct h2_gizclaw_mp3 {
   int16_t pcm[1152u * 2u];
 };
 
-static uint32_t be32(const uint8_t *p) {
+static uint32_t be32(const uint8_t* p) {
   return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
          ((uint32_t)p[2] << 8) | (uint32_t)p[3];
 }
 
-static bool parse(const uint8_t *h, frame_t *f) {
+static bool parse(const uint8_t* h, frame_t* f) {
   static const uint16_t kbps1[16] = {0,   32,  40,  48,  56,  64,  80,  96,
                                      112, 128, 160, 192, 224, 256, 320, 0};
   static const uint16_t kbps2[16] = {0,  8,  16, 24,  32,  40,  48,  56,
                                      64, 80, 96, 112, 128, 144, 160, 0};
   static const uint16_t rates[3] = {44100, 48000, 32000};
-  if (h[0] != 0xFFu || (h[1] & 0xE0u) != 0xE0u)
-    return false;
+  if (h[0] != 0xFFu || (h[1] & 0xE0u) != 0xE0u) return false;
   const unsigned version = (h[1] >> 3) & 3u; /* 3 MPEG-1, 2 MPEG-2, 0 2.5 */
   const unsigned bitrate = h[2] >> 4, rate = (h[2] >> 2) & 3u;
   if (version == 1u || ((h[1] >> 1) & 3u) != 1u || bitrate == 0u ||
@@ -93,36 +92,34 @@ bool h2_gizclaw_mp3_header_valid(const uint8_t header[4]) {
   return header != NULL && parse(header, &f);
 }
 
-static bool same_stream(const uint8_t *a, const uint8_t *b) {
+static bool same_stream(const uint8_t* a, const uint8_t* b) {
   return ((a[1] ^ b[1]) & 0xFEu) == 0 && ((a[2] ^ b[2]) & 0x0Cu) == 0 &&
          ((a[3] >> 6) == 3u) == ((b[3] >> 6) == 3u);
 }
 
-static const uint8_t *head_at(const h2_gizclaw_mp3_t *m) {
+static const uint8_t* head_at(const h2_gizclaw_mp3_t* m) {
   return m->in->data + m->in->offset;
 }
 
 /* Advance to a frame of this stream whose next header, or the end of the
  * stream, confirms it. EXIT when the stream ends first, FORMAT past limit
  * dropped bytes. */
-static h2_pal_result_t scan(h2_gizclaw_mp3_t *m, frame_t *f, uint64_t limit) {
-  h2_gizclaw_audio_input_t *in = m->in;
+static h2_pal_result_t scan(h2_gizclaw_mp3_t* m, frame_t* f, uint64_t limit) {
+  h2_gizclaw_audio_input_t* in = m->in;
   const bool have_ref = m->state != MP3_HEAD;
   for (uint64_t dropped = 0;; ++dropped) {
-    if (dropped > limit)
-      return H2_PAL_ERR_FORMAT;
+    if (dropped > limit) return H2_PAL_ERR_FORMAT;
     h2_pal_result_t rc = h2_gizclaw_audio_input_fill(in, 4);
-    if (rc != H2_PAL_OK)
-      return rc;
-    if (parse(head_at(m), f) && (!have_ref || same_stream(m->ref, head_at(m)))) {
+    if (rc != H2_PAL_OK) return rc;
+    if (parse(head_at(m), f) &&
+        (!have_ref || same_stream(m->ref, head_at(m)))) {
       rc = h2_gizclaw_audio_input_fill(in, f->len + 4u);
-      if (rc != H2_PAL_OK && rc != H2_PAL_EXIT)
-        return rc;
-      const uint8_t *p = head_at(m);
+      if (rc != H2_PAL_OK && rc != H2_PAL_EXIT) return rc;
+      const uint8_t* p = head_at(m);
       frame_t next = {0};
-      if (rc == H2_PAL_EXIT ? in->len >= f->len
-                            : parse(p + f->len, &next) &&
-                                  same_stream(p, p + f->len))
+      if (rc == H2_PAL_EXIT
+              ? in->len >= f->len
+              : parse(p + f->len, &next) && same_stream(p, p + f->len))
         return H2_PAL_OK;
     }
     h2_gizclaw_audio_input_consume(in, 1);
@@ -132,7 +129,7 @@ static h2_pal_result_t scan(h2_gizclaw_mp3_t *m, frame_t *f, uint64_t limit) {
 /* The first frame may be metadata: a Xing (VBR) or Info (CBR) frame after
  * the side information, or a VBRI frame 32 bytes in. Only the frame count
  * and the LAME delay and padding are used. */
-static bool parse_tag(h2_gizclaw_mp3_t *m, const uint8_t *p, const frame_t *f) {
+static bool parse_tag(h2_gizclaw_mp3_t* m, const uint8_t* p, const frame_t* f) {
   size_t at = 4u + f->side;
   uint32_t frames = 0;
   if (f->len >= at + 8u &&
@@ -149,21 +146,19 @@ static bool parse_tag(h2_gizclaw_mp3_t *m, const uint8_t *p, const frame_t *f) {
     /* LAME extension: 12-bit encoder delay and padding 21 bytes in. */
     uint32_t padding = 0;
     if (at + 24u <= f->len && p[at] != 0) {
-      const uint8_t *lame = p + at + 21u;
-      m->delay = (((uint32_t)lame[0] << 4) | ((uint32_t)lame[1] >> 4)) +
-                 DECODER_DELAY;
+      const uint8_t* lame = p + at + 21u;
+      m->delay =
+          (((uint32_t)lame[0] << 4) | ((uint32_t)lame[1] >> 4)) + DECODER_DELAY;
       padding = (((uint32_t)lame[1] & 0xFu) << 8) | (uint32_t)lame[2];
       padding = padding > DECODER_DELAY ? padding - DECODER_DELAY : 0u;
     }
     const uint64_t raw = (uint64_t)frames * f->spf;
-    if (raw > (uint64_t)m->delay + padding)
-      m->total = raw - m->delay - padding;
+    if (raw > (uint64_t)m->delay + padding) m->total = raw - m->delay - padding;
     return true;
   }
   if (f->len >= 36u + 18u && !memcmp(p + 36, "VBRI", 4)) {
     frames = be32(p + 36u + 14u);
-    if (frames)
-      m->total = (uint64_t)frames * f->spf;
+    if (frames) m->total = (uint64_t)frames * f->spf;
     return true;
   }
   return false;
@@ -172,39 +167,32 @@ static bool parse_tag(h2_gizclaw_mp3_t *m, const uint8_t *p, const frame_t *f) {
 /* A CBR stream's frames sit on a byte grid: frame `index` starts within a
  * byte of first + index * spf / 8 * bitrate / rate, the padding bits keeping
  * the running length on that line. */
-static uint64_t cbr_bytes(const h2_gizclaw_mp3_t *m) {
+static uint64_t cbr_bytes(const h2_gizclaw_mp3_t* m) {
   return (uint64_t)(m->spf / 8u) * m->kbps * 1000u;
 }
 
 /* ID3v2 tags (any number, any size), then the first frame. */
-static h2_pal_result_t head(h2_gizclaw_mp3_t *m) {
-  h2_gizclaw_audio_input_t *in = m->in;
+static h2_pal_result_t head(h2_gizclaw_mp3_t* m) {
+  h2_gizclaw_audio_input_t* in = m->in;
   for (;;) {
     h2_pal_result_t rc = h2_gizclaw_audio_input_fill(in, 10);
-    if (rc == H2_PAL_EXIT)
-      break;
-    if (rc != H2_PAL_OK)
-      return rc;
-    const uint8_t *p = head_at(m);
+    if (rc == H2_PAL_EXIT) break;
+    if (rc != H2_PAL_OK) return rc;
+    const uint8_t* p = head_at(m);
     if (memcmp(p, "ID3", 3) != 0 || p[3] == 0xFFu || p[4] == 0xFFu ||
         ((p[6] | p[7] | p[8] | p[9]) & 0x80u))
       break;
     uint64_t size = ((uint64_t)p[6] << 21) | ((uint64_t)p[7] << 14) |
                     ((uint64_t)p[8] << 7) | (uint64_t)p[9];
-    if (p[5] & 0x10u)
-      size += 10u; /* Footer. */
+    if (p[5] & 0x10u) size += 10u; /* Footer. */
     rc = h2_gizclaw_audio_input_skip(in, 10u + size);
-    if (rc == H2_PAL_EXIT)
-      return H2_PAL_ERR_FORMAT;
-    if (rc != H2_PAL_OK)
-      return rc;
+    if (rc == H2_PAL_EXIT) return H2_PAL_ERR_FORMAT;
+    if (rc != H2_PAL_OK) return rc;
   }
   frame_t f = {0};
   h2_pal_result_t rc = scan(m, &f, SCAN_LIMIT);
-  if (rc == H2_PAL_EXIT)
-    return H2_PAL_ERR_FORMAT; /* No audio frame at all. */
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc == H2_PAL_EXIT) return H2_PAL_ERR_FORMAT; /* No audio frame at all. */
+  if (rc != H2_PAL_OK) return rc;
   memcpy(m->ref, head_at(m), sizeof(m->ref));
   m->rate = f.rate;
   m->spf = f.spf;
@@ -214,8 +202,7 @@ static h2_pal_result_t head(h2_gizclaw_mp3_t *m) {
     /* A CBR estimate uses the first audio frame's own bitrate. */
     frame_t audio = {0};
     rc = h2_gizclaw_audio_input_fill(in, 4);
-    if (rc != H2_PAL_OK && rc != H2_PAL_EXIT)
-      return rc;
+    if (rc != H2_PAL_OK && rc != H2_PAL_EXIT) return rc;
     if (in->len >= 4u && parse(head_at(m), &audio) &&
         same_stream(m->ref, head_at(m)))
       m->kbps = audio.kbps;
@@ -231,76 +218,65 @@ static h2_pal_result_t head(h2_gizclaw_mp3_t *m) {
   return H2_PAL_OK;
 }
 
-static uint64_t offset_of(const h2_gizclaw_mp3_t *m, uint64_t index) {
+static uint64_t offset_of(const h2_gizclaw_mp3_t* m, uint64_t index) {
   return m->first + index * cbr_bytes(m) / m->rate;
 }
 
 /* Whether frame `index` found at `offset` is where the declared CBR stream
  * puts it: the declared bitrate, within a byte of the grid. */
-static bool on_grid(const h2_gizclaw_mp3_t *m, const frame_t *f,
+static bool on_grid(const h2_gizclaw_mp3_t* m, const frame_t* f,
                     uint64_t offset, uint64_t index) {
   const uint64_t grid = offset_of(m, index);
   return f->kbps == m->kbps && offset + 1u >= grid && offset <= grid + 1u;
 }
 
-static h2_pal_result_t finish(h2_gizclaw_mp3_t *m, uint64_t *end) {
+static h2_pal_result_t finish(h2_gizclaw_mp3_t* m, uint64_t* end) {
   const uint64_t raw = m->frame * m->spf;
   uint64_t length = raw > m->delay ? raw - m->delay : 0u;
-  if (length > m->total)
-    length = m->total;
+  if (length > m->total) length = m->total;
   m->state = MP3_END;
   *end = length;
   return H2_PAL_EXIT;
 }
 
-static h2_pal_result_t step(h2_gizclaw_mp3_t *m, h2_gizclaw_audio_chunk_t *chunk,
-                            uint64_t *end) {
-  h2_gizclaw_audio_input_t *in = m->in;
-  if (m->state == MP3_HEAD)
-    return head(m);
-  if (m->state == MP3_END)
-    return finish(m, end);
+static h2_pal_result_t step(h2_gizclaw_mp3_t* m,
+                            h2_gizclaw_audio_chunk_t* chunk, uint64_t* end) {
+  h2_gizclaw_audio_input_t* in = m->in;
+  if (m->state == MP3_HEAD) return head(m);
+  if (m->state == MP3_END) return finish(m, end);
   m->state = MP3_PLAY;
   frame_t f = {0};
   h2_pal_result_t rc;
   if (m->landing) {
     if (in->position < m->first) {
       rc = h2_gizclaw_audio_input_skip(in, m->first - in->position);
-      if (rc != H2_PAL_OK)
-        return rc == H2_PAL_EXIT ? H2_PAL_ERR_FORMAT : rc;
+      if (rc != H2_PAL_OK) return rc == H2_PAL_EXIT ? H2_PAL_ERR_FORMAT : rc;
     }
     rc = scan(m, &f, SCAN_LIMIT);
     if (rc == H2_PAL_EXIT)
       return H2_PAL_ERR_FORMAT; /* Nothing to land on before the end. */
-    if (rc != H2_PAL_OK)
-      return rc;
-    if (in->position < m->first)
-      return H2_PAL_ERR_FORMAT;
+    if (rc != H2_PAL_OK) return rc;
+    if (in->position < m->first) return H2_PAL_ERR_FORMAT;
     const uint64_t per = cbr_bytes(m);
     m->frame = ((in->position - m->first) * m->rate + per / 2u) / per;
     m->landing = false;
     m->reset = true;
   } else {
     rc = h2_gizclaw_audio_input_fill(in, 4);
-    if (rc == H2_PAL_EXIT)
-      return finish(m, end);
-    if (rc != H2_PAL_OK)
-      return rc;
+    if (rc == H2_PAL_EXIT) return finish(m, end);
+    if (rc != H2_PAL_OK) return rc;
     if (!parse(head_at(m), &f) || !same_stream(m->ref, head_at(m))) {
       /* Lost sync: the next confirmed frame goes on, or the track ends. */
       rc = scan(m, &f, UINT64_MAX);
-      if (rc == H2_PAL_EXIT)
-        return finish(m, end);
-      if (rc != H2_PAL_OK)
-        return rc;
+      if (rc == H2_PAL_EXIT) return finish(m, end);
+      if (rc != H2_PAL_OK) return rc;
       m->reset = true;
     }
   }
   rc = h2_gizclaw_audio_input_fill(in, f.len);
   if (rc == H2_PAL_EXIT)
     return finish(m, end); /* A partial last frame is not audio. */
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   const uint64_t index = m->frame++;
   /* After a landing every frame up to the target must sit where the Info
    * tag's CBR promise puts it, or nothing can be placed: a mislabelled or
@@ -326,58 +302,51 @@ static h2_pal_result_t step(h2_gizclaw_mp3_t *m, h2_gizclaw_audio_chunk_t *chunk
    * place on the timeline, as silence. */
   if (decoded == (int)f.spf && info.channels == 2) {
     for (uint32_t i = 0; i < f.spf; ++i)
-      m->pcm[i] = (int16_t)(((int32_t)m->pcm[2u * i] + m->pcm[2u * i + 1u]) / 2);
+      m->pcm[i] =
+          (int16_t)(((int32_t)m->pcm[2u * i] + m->pcm[2u * i + 1u]) / 2);
   } else if (decoded != (int)f.spf || info.channels != 1) {
     memset(m->pcm, 0, f.spf * sizeof(m->pcm[0]));
   }
   /* Raw samples [raw, raw + spf) are [raw - delay, ...) on the timeline;
    * the part before 0 is the delay and the part past total the padding. */
   const uint64_t raw = index * f.spf;
-  if (raw + f.spf <= m->delay)
-    return H2_PAL_OK;
+  if (raw + f.spf <= m->delay) return H2_PAL_OK;
   const uint64_t lead = raw < m->delay ? m->delay - raw : 0u;
   const uint64_t start = raw + lead - m->delay;
   uint64_t count = f.spf - lead;
-  if (start >= m->total)
-    return H2_PAL_OK;
-  if (count > m->total - start)
-    count = m->total - start;
+  if (start >= m->total) return H2_PAL_OK;
+  if (count > m->total - start) count = m->total - start;
   *chunk = (h2_gizclaw_audio_chunk_t){
       .samples = m->pcm + lead, .count = (size_t)count, .start = start};
   return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_gizclaw_mp3_next(h2_gizclaw_mp3_t *m,
-                                    h2_gizclaw_audio_chunk_t *chunk,
-                                    uint64_t *end) {
-  if (m == NULL || chunk == NULL || end == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+h2_pal_result_t h2_gizclaw_mp3_next(h2_gizclaw_mp3_t* m,
+                                    h2_gizclaw_audio_chunk_t* chunk,
+                                    uint64_t* end) {
+  if (m == NULL || chunk == NULL || end == NULL) return H2_PAL_ERR_INVALID_ARG;
   *chunk = (h2_gizclaw_audio_chunk_t){0};
-  if (m->error != H2_PAL_OK)
-    return m->error;
+  if (m->error != H2_PAL_OK) return m->error;
   const h2_pal_result_t rc = step(m, chunk, end);
-  if (rc != H2_PAL_OK && rc != H2_PAL_EXIT)
-    m->error = rc;
+  if (rc != H2_PAL_OK && rc != H2_PAL_EXIT) m->error = rc;
   return rc;
 }
 
-uint32_t h2_gizclaw_mp3_rate(const h2_gizclaw_mp3_t *m) {
+uint32_t h2_gizclaw_mp3_rate(const h2_gizclaw_mp3_t* m) {
   return m != NULL && m->state != MP3_HEAD ? m->rate : 0u;
 }
 
-bool h2_gizclaw_mp3_headers_done(const h2_gizclaw_mp3_t *m) {
+bool h2_gizclaw_mp3_headers_done(const h2_gizclaw_mp3_t* m) {
   return m != NULL && m->error == H2_PAL_OK && m->state == MP3_READY;
 }
 
-h2_pal_result_t h2_gizclaw_mp3_seek_offset(const h2_gizclaw_mp3_t *m,
+h2_pal_result_t h2_gizclaw_mp3_seek_offset(const h2_gizclaw_mp3_t* m,
                                            uint64_t target, uint64_t total,
-                                           uint64_t *offset) {
+                                           uint64_t* offset) {
   if (m == NULL || offset == NULL || target > UINT64_MAX / 2u)
     return H2_PAL_ERR_INVALID_ARG;
-  if (!h2_gizclaw_mp3_headers_done(m))
-    return H2_PAL_ERR_INVALID_STATE;
-  if (!m->cbr)
-    return H2_PAL_ERR_UNSUPPORTED;
+  if (!h2_gizclaw_mp3_headers_done(m)) return H2_PAL_ERR_INVALID_STATE;
+  if (!m->cbr) return H2_PAL_ERR_UNSUPPORTED;
   uint64_t index = (target + m->delay) / m->spf;
   const uint64_t back = (uint64_t)m->fill_frames + DECODED_PRE_ROLL;
   index = index > back ? index - back : 0u;
@@ -385,14 +354,11 @@ h2_pal_result_t h2_gizclaw_mp3_seek_offset(const h2_gizclaw_mp3_t *m,
   return *offset < total ? H2_PAL_OK : H2_PAL_ERR_FORMAT;
 }
 
-h2_pal_result_t h2_gizclaw_mp3_seek(h2_gizclaw_mp3_t *m, uint64_t target,
+h2_pal_result_t h2_gizclaw_mp3_seek(h2_gizclaw_mp3_t* m, uint64_t target,
                                     bool resync) {
-  if (m == NULL || target > UINT64_MAX / 2u)
-    return H2_PAL_ERR_INVALID_ARG;
-  if (!h2_gizclaw_mp3_headers_done(m))
-    return H2_PAL_ERR_INVALID_STATE;
-  if (resync && !m->cbr)
-    return H2_PAL_ERR_UNSUPPORTED;
+  if (m == NULL || target > UINT64_MAX / 2u) return H2_PAL_ERR_INVALID_ARG;
+  if (!h2_gizclaw_mp3_headers_done(m)) return H2_PAL_ERR_INVALID_STATE;
+  if (resync && !m->cbr) return H2_PAL_ERR_UNSUPPORTED;
   const uint64_t index = (target + m->delay) / m->spf;
   m->skip_until = index > DECODED_PRE_ROLL ? index - DECODED_PRE_ROLL : 0u;
   /* Skipping reads on from the first frame, reservoir intact; a landing
@@ -402,16 +368,14 @@ h2_pal_result_t h2_gizclaw_mp3_seek(h2_gizclaw_mp3_t *m, uint64_t target,
   return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_gizclaw_mp3_create(const h2_pal_mem_api_t *allocator,
-                                      h2_gizclaw_audio_input_t *input,
-                                      h2_gizclaw_mp3_t **out) {
-  if (out != NULL)
-    *out = NULL;
+h2_pal_result_t h2_gizclaw_mp3_create(const h2_pal_mem_api_t* allocator,
+                                      h2_gizclaw_audio_input_t* input,
+                                      h2_gizclaw_mp3_t** out) {
+  if (out != NULL) *out = NULL;
   if (out == NULL || input == NULL || allocator == NULL)
     return H2_PAL_ERR_INVALID_ARG;
-  h2_gizclaw_mp3_t *m = h2_pal_mem_alloc(allocator, sizeof(*m));
-  if (m == NULL)
-    return H2_PAL_ERR_NO_MEMORY;
+  h2_gizclaw_mp3_t* m = h2_pal_mem_alloc(allocator, sizeof(*m));
+  if (m == NULL) return H2_PAL_ERR_NO_MEMORY;
   memset(m, 0, sizeof(*m));
   m->allocator = allocator;
   m->in = input;
@@ -421,7 +385,6 @@ h2_pal_result_t h2_gizclaw_mp3_create(const h2_pal_mem_api_t *allocator,
   return H2_PAL_OK;
 }
 
-void h2_gizclaw_mp3_destroy(h2_gizclaw_mp3_t *m) {
-  if (m != NULL)
-    h2_pal_mem_free(m->allocator, m);
+void h2_gizclaw_mp3_destroy(h2_gizclaw_mp3_t* m) {
+  if (m != NULL) h2_pal_mem_free(m->allocator, m);
 }

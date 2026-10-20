@@ -6,8 +6,9 @@ extern "C" {
 #endif
 /* Called once per boot. This fixture owns h2storectl, h2storea, h2storeb and
  * the supplied test directory. Stage is tied to the actual image version. */
-int h2_storage_device_run(h2_runtime_t *runtime,const char *directory,const char *version);
-void h2_storage_device_replay(h2_runtime_t *runtime);
+int h2_storage_device_run(h2_runtime_t* runtime, const char* directory,
+                          const char* version);
+void h2_storage_device_replay(h2_runtime_t* runtime);
 #ifdef __cplusplus
 }
 #endif

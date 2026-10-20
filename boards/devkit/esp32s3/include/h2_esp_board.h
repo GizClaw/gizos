@@ -7,9 +7,9 @@
 extern "C" {
 #endif
 
-typedef void (*h2_esp_board_entry_task_fn)(void *user);
+typedef void (*h2_esp_board_entry_task_fn)(void* user);
 
-h2_pal_result_t h2_esp_board_runtime_config(h2_runtime_config_t *out_config);
+h2_pal_result_t h2_esp_board_runtime_config(h2_runtime_config_t* out_config);
 
 /**
  * Tears down board-owned Runtime providers after h2_runtime_deinit().
@@ -29,10 +29,9 @@ h2_pal_result_t h2_esp_board_runtime_deinit(void);
  * The entry function must release Runtime before returning; the task wrapper
  * then calls h2_esp_board_runtime_deinit() before deleting itself.
  */
-h2_pal_result_t h2_esp_board_start_entry_task(
-    const char *name,
-    h2_esp_board_entry_task_fn entry,
-    void *user);
+h2_pal_result_t h2_esp_board_start_entry_task(const char* name,
+                                              h2_esp_board_entry_task_fn entry,
+                                              void* user);
 
 #ifdef __cplusplus
 }

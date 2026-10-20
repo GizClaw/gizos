@@ -49,9 +49,9 @@ typedef enum h2_gizclaw_conversation_event_kind {
 typedef struct h2_gizclaw_conversation_event {
   h2_gizclaw_conversation_event_kind_t kind;
   uint64_t generation;
-  const char *text;
+  const char* text;
   size_t text_len;
-  const char *error_code;
+  const char* error_code;
   bool retryable;
 } h2_gizclaw_conversation_event_t;
 
@@ -59,12 +59,12 @@ typedef struct h2_gizclaw_conversation_event {
  * this generation. This is an observation hook, not a retryable audio sink.
  * Network I/O and other requests continue while the hook runs. */
 typedef h2_pal_result_t (*h2_gizclaw_conversation_callback_fn)(
-    void *user, h2_gizclaw_conversation_t *conversation,
-    const h2_gizclaw_conversation_event_t *event);
+    void* user, h2_gizclaw_conversation_t* conversation,
+    const h2_gizclaw_conversation_event_t* event);
 
 typedef void (*h2_gizclaw_conversation_completion_fn)(
-    void *user, h2_gizclaw_conversation_t *conversation,
-    const h2_gizclaw_operation_result_t *result);
+    void* user, h2_gizclaw_conversation_t* conversation,
+    const h2_gizclaw_operation_result_t* result);
 
 /** Configure the Service's conversation route without starting recording.
  * One configured Conversation per Service; another create returns BUSY.
@@ -76,19 +76,19 @@ typedef void (*h2_gizclaw_conversation_completion_fn)(
  * conversation_cancel to hang up. Speech may use the same Service while
  * this Conversation is idle. */
 h2_pal_result_t h2_gizclaw_conversation_create(
-    h2_gizclaw_service_t *service, h2_gizclaw_str_t workspace,
+    h2_gizclaw_service_t* service, h2_gizclaw_str_t workspace,
     h2_gizclaw_conversation_callback_fn callback,
-    h2_gizclaw_conversation_completion_fn completion, void *user,
-    h2_gizclaw_conversation_t **out_conversation);
+    h2_gizclaw_conversation_completion_fn completion, void* user,
+    h2_gizclaw_conversation_t** out_conversation);
 
 /** Cancel the active generation (hang up a Realtime call), without closing
  * the Service or Peer, and stop buffered downstream audio. Completion is
  * still delivered by poll. */
-h2_pal_result_t
-h2_gizclaw_conversation_cancel(h2_gizclaw_conversation_t *conversation);
+h2_pal_result_t h2_gizclaw_conversation_cancel(
+    h2_gizclaw_conversation_t* conversation);
 
 /** Release an idle conversation. Active audio must first reach terminal. */
-void h2_gizclaw_conversation_release(h2_gizclaw_conversation_t *conversation);
+void h2_gizclaw_conversation_release(h2_gizclaw_conversation_t* conversation);
 
 #ifdef __cplusplus
 }

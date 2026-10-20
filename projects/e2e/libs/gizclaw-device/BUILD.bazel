@@ -12,8 +12,8 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = ["."],
-    deps = ["//libs/pal"],
     visibility = ["//visibility:public"],
+    deps = ["//libs/pal"],
 )
 
 cc_test(
@@ -33,17 +33,20 @@ cc_test(
 py_binary(
     name = "verify_device",
     srcs = ["verify_device.py"],
-    main = "verify_device.py",
     legacy_create_init = 0,
+    main = "verify_device.py",
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
     deps = ["//projects/e2e/apps/gizclaw:coverage_library"],
 )
 
 py_test(
     name = "verify_device_test",
-    srcs = ["test_verify_device.py", "verify_device.py"],
-    main = "test_verify_device.py",
-    legacy_create_init = 0,
+    srcs = [
+        "test_verify_device.py",
+        "verify_device.py",
+    ],
     imports = ["."],
+    legacy_create_init = 0,
+    main = "test_verify_device.py",
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
 )

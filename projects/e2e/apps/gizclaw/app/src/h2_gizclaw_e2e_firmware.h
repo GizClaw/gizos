@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-int h2_gizclaw_e2e_run_firmware(h2_gizclaw_e2e_fixture_t *fixture);
+int h2_gizclaw_e2e_run_firmware(h2_gizclaw_e2e_fixture_t* fixture);
 
 #ifdef __cplusplus
 }

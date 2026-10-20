@@ -8,10 +8,10 @@
 #endif
 #include H2_DISPLAY_CAPTURE_HEADER
 #ifndef H2_DISPLAY_CAPTURE_CONFIGURE
-#define H2_DISPLAY_CAPTURE_CONFIGURE(fn, user) \
+#define H2_DISPLAY_CAPTURE_CONFIGURE(fn, user)           \
   (h2_amoled_display_set_transfer_capture((fn), (user)), \
-   (h2_display_info_t){.width = 368, .height = 448, \
-                        .native_format = H2_DISPLAY_PIXEL_RGB565})
+   (h2_display_info_t){                                  \
+       .width = 368, .height = 448, .native_format = H2_DISPLAY_PIXEL_RGB565})
 #endif
 #include "h2_esp_board.h"
 #include "h2_esp_h2loader_ble.h"
@@ -20,13 +20,13 @@
 #include "h2_esp_target_task_policy.h"
 #include <stdio.h>
 #include <string.h>
-static h2_runtime_t *runtime;
+static h2_runtime_t* runtime;
 static esp_timer_handle_t watchdog;
-static uint16_t *transferred;
+static uint16_t* transferred;
 static size_t transfer_count;
 static int capture_width, capture_height, capture_error;
-static void capture(void *user, const h2_display_rect_t *rect,
-                    const uint16_t *pixels) {
+static void capture(void* user, const h2_display_rect_t* rect,
+                    const uint16_t* pixels) {
   (void)user;
   if (!transferred || !rect || !pixels || rect->x < 0 || rect->y < 0 ||
       rect->x >= capture_width || rect->y >= capture_height ||
@@ -36,7 +36,7 @@ static void capture(void *user, const h2_display_rect_t *rect,
     capture_error = H2_DISPLAY_ERR_IO;
     return;
   }
-  const uint8_t *bytes = (const uint8_t *)pixels;
+  const uint8_t* bytes = (const uint8_t*)pixels;
   for (int y = 0; y < rect->height; ++y)
     for (int x = 0; x < rect->width; ++x) {
       size_t offset = ((size_t)y * rect->width + x) * 2u;
@@ -45,40 +45,39 @@ static void capture(void *user, const h2_display_rect_t *rect,
     }
   ++transfer_count;
 }
-static int observe(void *user, const uint16_t *pixels, int width, int height,
-                   uint32_t brightness, const char *id) {
+static int observe(void* user, const uint16_t* pixels, int width, int height,
+                   uint32_t brightness, const char* id) {
   (void)user;
   (void)brightness;
-  if (width != capture_width || height != capture_height ||
-      capture_error || !transfer_count)
+  if (width != capture_width || height != capture_height || capture_error ||
+      !transfer_count)
     return H2_DISPLAY_ERR_IO;
   int rc = memcmp(pixels, transferred, (size_t)width * height * 2)
                ? H2_DISPLAY_ERR_IO
                : 0;
-  printf("H2_DISPLAY_OBSERVATION case=%s source=completed-SPI-DMA chunks=%zu "
-         "optical_verified=0 brightness_command=%u rc=%d\n",
-         id, transfer_count, (unsigned)brightness, rc);
+  printf(
+      "H2_DISPLAY_OBSERVATION case=%s source=completed-SPI-DMA chunks=%zu "
+      "optical_verified=0 brightness_command=%u rc=%d\n",
+      id, transfer_count, (unsigned)brightness, rc);
   return rc;
 }
-static void fail(const char *stage, int rc) {
+static void fail(const char* stage, int rc) {
   printf("H2_DISPLAY_LAUNCHER_FAIL stage=%s rc=%d\n", stage, rc);
   fflush(stdout);
-  for (;;)
-    vTaskDelay(pdMS_TO_TICKS(1000));
+  for (;;) vTaskDelay(pdMS_TO_TICKS(1000));
 }
-static void deadline(void *unused) {
+static void deadline(void* unused) {
   (void)unused;
   puts("H2_DISPLAY_WATCHDOG timeout=120s");
   fflush(stdout);
 }
-static void run(void *unused) {
+static void run(void* unused) {
   (void)unused;
   vTaskDelay(pdMS_TO_TICKS(5000));
   /* Query fixture caps without opening Display before the original cases. */
   h2_display_info_t info = H2_DISPLAY_CAPTURE_CONFIGURE(NULL, NULL);
-  if (info.width < 16 || info.height < 16 ||
-      info.width > 4096 || info.height > 4096 ||
-      info.native_format != H2_DISPLAY_PIXEL_RGB565)
+  if (info.width < 16 || info.height < 16 || info.width > 4096 ||
+      info.height > 4096 || info.native_format != H2_DISPLAY_PIXEL_RGB565)
     fail("capture-info", H2_DISPLAY_ERR_IO);
   capture_width = info.width;
   capture_height = info.height;
@@ -86,8 +85,7 @@ static void run(void *unused) {
   transfer_count = 0;
   size_t capture_bytes = (size_t)capture_width * capture_height * 2u;
   transferred = h2_pal_mem_alloc(runtime->mem, capture_bytes);
-  if (!transferred)
-    fail("capture-allocation", H2_DISPLAY_ERR_NO_MEMORY);
+  if (!transferred) fail("capture-allocation", H2_DISPLAY_ERR_NO_MEMORY);
   memset(transferred, 0, capture_bytes);
   (void)H2_DISPLAY_CAPTURE_CONFIGURE(capture, NULL);
   int rc = h2_display_device_run(runtime, esp_app_get_description()->version,
@@ -102,15 +100,12 @@ static void run(void *unused) {
     fail("qualification", rc);
   }
   int confirm = h2_esp_h2loader_app_confirm(runtime);
-  if (confirm != H2_PAL_OK)
-    fail("confirm", confirm);
+  if (confirm != H2_PAL_OK) fail("confirm", confirm);
   printf("H2_DISPLAY_READY rc=%d confirm=%d\n", rc, confirm);
   int visual = h2_display_device_demo(runtime);
-  if (visual)
-    fail("visual-demo", visual);
+  if (visual) fail("visual-demo", visual);
   visual = h2_display_device_show_pattern(runtime);
-  if (visual)
-    fail("stable-pattern", visual);
+  if (visual) fail("stable-pattern", visual);
   printf("H2_DISPLAY_STABLE brightness=100 rc=%d optical_verified=0\n", visual);
   for (;;) {
     h2_display_device_replay(runtime);
@@ -119,12 +114,10 @@ static void run(void *unused) {
 }
 void app_main(void) {
   int rc = h2_esp_target_task_policy_install();
-  if (rc)
-    fail("task-policy", rc);
+  if (rc) fail("task-policy", rc);
   h2_runtime_config_t config = {0};
   rc = h2_esp_board_runtime_config(&config);
-  if (rc)
-    fail("board", rc);
+  if (rc) fail("board", rc);
   config.system_event = h2_pal_unsupported_system_event_api();
   const h2_esp_h2loader_app_commands_config_t commands = {
       .active_name = "pal-display",
@@ -133,11 +126,9 @@ void app_main(void) {
       .coredump_partition_id = 3};
   rc = h2_esp_h2loader_app_commands_prepare_serial_with_config(&config,
                                                                &commands);
-  if (rc)
-    fail("commands", rc);
+  if (rc) fail("commands", rc);
   rc = h2_runtime_init(&config, &runtime);
-  if (rc)
-    fail("runtime", rc);
+  if (rc) fail("runtime", rc);
   const esp_timer_create_args_t timer = {.callback = deadline,
                                          .name = "display-watchdog"};
   if (esp_timer_create(&timer, &watchdog) != ESP_OK ||
@@ -145,8 +136,7 @@ void app_main(void) {
     fail("watchdog", -4);
   const h2_pal_task_options_t options = {.name = "pal-display/e2e/runner",
                                          .min_stack_size = 65536};
-  h2_pal_task_t *task = NULL;
+  h2_pal_task_t* task = NULL;
   rc = h2_pal_task_start(runtime->task, &options, run, NULL, &task);
-  if (rc)
-    fail("runner", rc);
+  if (rc) fail("runner", rc);
 }

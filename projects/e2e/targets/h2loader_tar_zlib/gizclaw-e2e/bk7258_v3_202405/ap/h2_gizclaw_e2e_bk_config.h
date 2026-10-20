@@ -13,6 +13,6 @@ typedef struct h2_gizclaw_e2e_bk_config {
   uint32_t summary_replay_interval_ms;
 } h2_gizclaw_e2e_bk_config_t;
 
-const h2_gizclaw_e2e_bk_config_t *h2_gizclaw_e2e_bk_config(void);
+const h2_gizclaw_e2e_bk_config_t* h2_gizclaw_e2e_bk_config(void);
 
 #endif

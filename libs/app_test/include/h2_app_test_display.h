@@ -20,7 +20,7 @@ typedef struct h2_app_test_display {
   h2_app_test_fault_t open, close, brightness;
 } h2_app_test_display_t;
 /** Initialize caller storage; NULL is a no-op. Call PAL open before use. */
-void h2_app_test_display_init(h2_app_test_display_t *display);
+void h2_app_test_display_init(h2_app_test_display_t* display);
 
 #ifdef __cplusplus
 }

@@ -1,9 +1,9 @@
 load("@rules_apple//apple:apple.bzl", "apple_static_xcframework")
-load("//tools/bazel:mobile_package.bzl", "h2_swift_package", "h2_mobile_archive_import")
 load("@rules_apple//apple:ios.bzl", "ios_unit_test")
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("@rules_cc//cc:objc_library.bzl", "objc_library")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:mobile_package.bzl", "h2_mobile_archive_import", "h2_swift_package")
 load("//tools/bazel/platforms:compatibility.bzl", "IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY")
 
 package(default_visibility = ["//visibility:public"])
@@ -15,7 +15,10 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = ["include"],
-    linkopts = ["-framework", "AudioToolbox"],
+    linkopts = [
+        "-framework",
+        "AudioToolbox",
+    ],
     target_compatible_with = select({
         "@platforms//os:ios": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],
@@ -57,7 +60,11 @@ cc_test(
 
 objc_library(
     name = "platform",
-    srcs = ["src/h2_ios_platform.m", "src/h2_ios_core.m", "src/h2_ios_audio.m"],
+    srcs = [
+        "src/h2_ios_audio.m",
+        "src/h2_ios_core.m",
+        "src/h2_ios_platform.m",
+    ],
     hdrs = ["include/h2_ios_platform.h"],
     copts = [
         "-fobjc-arc",
@@ -74,7 +81,13 @@ objc_library(
         "UIKit",
     ],
     target_compatible_with = ["@platforms//os:ios"],
-    deps = [":audio_wait", ":audio_decoder", ":crypto", "//libs/pal", "//libs/pal/providers/posix/pal_core:mobile_core"],
+    deps = [
+        ":audio_decoder",
+        ":audio_wait",
+        ":crypto",
+        "//libs/pal",
+        "//libs/pal/providers/posix/pal_core:mobile_core",
+    ],
 )
 
 cc_library(
@@ -118,25 +131,29 @@ objc_library(
     deps = [
         ":corebluetooth_uuid",
         ":system_event",
-        "//libs/pal/providers/yyjson:yyjson",
         "//libs/pal",
+        "//libs/pal/providers/yyjson",
     ],
 )
 
 cc_library(
     name = "pal_core",
-    hdrs = ["include/h2_ios_platform.h", "include/h2_ios_net.h", "include/h2_ios_mqtt.h"],
+    hdrs = [
+        "include/h2_ios_mqtt.h",
+        "include/h2_ios_net.h",
+        "include/h2_ios_platform.h",
+    ],
     includes = ["include"],
     target_compatible_with = ["@platforms//os:ios"],
     deps = [
         ":corebluetooth",
         ":http",
-        ":net",
         ":mqtt",
-        ":webrtc",
+        ":net",
         ":platform",
         ":storage",
         ":system_event",
+        ":webrtc",
     ],
 )
 
@@ -167,31 +184,62 @@ ios_unit_test(
     deps = [":pal_tests_lib"],
 )
 
-
 apple_static_xcframework(
     name = "xcframework",
-    target_compatible_with = IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY,
     bundle_name = "H2PALCore",
-    ios = {"device": ["arm64"], "simulator": ["arm64"]},
+    ios = {
+        "device": ["arm64"],
+        "simulator": ["arm64"],
+    },
     minimum_os_versions = {"ios": "16.0"},
+    target_compatible_with = IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY,
     deps = [":pal_core"],
 )
+
 h2_swift_package(
     name = "swift_package",
-    xcframework = ":xcframework",
-    headers = ["include/h2_ios_platform.h", "include/h2_ios_net.h", "include/h2_ios_mqtt.h", "//libs/pal:pal_header_files", "//libs/pal/providers/yyjson:include/h2_yyjson_json.h"],
+    headers = [
+        "include/h2_ios_platform.h",
+        "include/h2_ios_net.h",
+        "include/h2_ios_mqtt.h",
+        "//libs/pal:pal_header_files",
+        "//libs/pal/providers/yyjson:include/h2_yyjson_json.h",
+    ],
     module_name = "H2PALCore",
-    version = "2.0.0",
     target_compatible_with = IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY,
+    version = "2.0.0",
+    xcframework = ":xcframework",
 )
-filegroup(name = "swift_archive", srcs = [":swift_package"], output_group = "artifact")
+
+filegroup(
+    name = "swift_archive",
+    srcs = [":swift_package"],
+    output_group = "artifact",
+)
+
 h2_mobile_archive_import(
     name = "packaged",
     archive = ":swift_archive",
-    member = "H2PALCore.xcframework/ios-arm64-simulator/H2PALCore.framework/H2PALCore",
-    header_prefix = "H2PALCore.xcframework/ios-arm64-simulator/H2PALCore.framework/Headers/",
     binary_name = "libH2PALCore.a",
-    linkopts = ["-framework", "UIKit", "-framework", "Foundation", "-framework", "CoreGraphics", "-framework", "CoreBluetooth", "-framework", "Security", "-framework", "AudioToolbox", "-framework", "AVFoundation", "-lc++"],
+    header_prefix = "H2PALCore.xcframework/ios-arm64-simulator/H2PALCore.framework/Headers/",
+    linkopts = [
+        "-framework",
+        "UIKit",
+        "-framework",
+        "Foundation",
+        "-framework",
+        "CoreGraphics",
+        "-framework",
+        "CoreBluetooth",
+        "-framework",
+        "Security",
+        "-framework",
+        "AudioToolbox",
+        "-framework",
+        "AVFoundation",
+        "-lc++",
+    ],
+    member = "H2PALCore.xcframework/ios-arm64-simulator/H2PALCore.framework/H2PALCore",
     target_compatible_with = IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY,
 )
 
@@ -199,23 +247,37 @@ cc_library(
     name = "storage",
     srcs = ["src/h2_ios_storage.c"],
     hdrs = ["include/h2_ios_platform.h"],
-    includes = ["include"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
+    includes = ["include"],
     target_compatible_with = ["@platforms//os:ios"],
-    deps = ["//libs/pal", "//libs/pal/providers/posix/pal_core:host_fs", "//libs/pal/providers/sqlite"],
+    deps = [
+        "//libs/pal",
+        "//libs/pal/providers/posix/pal_core:host_fs",
+        "//libs/pal/providers/sqlite",
+    ],
 )
 
 cc_library(
     name = "crypto",
-    srcs = ["src/h2_ios_crypto.c", "src/h2_ios_tls_internal.h"],
+    srcs = [
+        "src/h2_ios_crypto.c",
+        "src/h2_ios_tls_internal.h",
+    ],
     hdrs = ["include/h2_ios_platform.h"],
-    includes = ["include"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
-    linkopts = ["-framework", "Security"],
+    includes = ["include"],
+    linkopts = [
+        "-framework",
+        "Security",
+    ],
     target_compatible_with = ["@platforms//os:ios"],
-    deps = ["//libs/pal", "//libs/pal:unsupported", "//libs/pal/providers/wolfssl"],
+    deps = [
+        "//libs/pal",
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/wolfssl",
+    ],
 )
 
 cc_library(
@@ -238,7 +300,10 @@ cc_library(
 
 cc_library(
     name = "webrtc",
-    srcs = ["src/h2_ios_webrtc.c", "src/h2_ios_tls_internal.h"],
+    srcs = [
+        "src/h2_ios_tls_internal.h",
+        "src/h2_ios_webrtc.c",
+    ],
     hdrs = ["include/h2_ios_platform.h"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
@@ -246,22 +311,32 @@ cc_library(
     target_compatible_with = ["@platforms//os:ios"],
     deps = [
         ":crypto",
-        "//libs/pal/providers/posix/pal_core:net",
+        "//libs/atomic/providers/pthread",
         "//libs/pal/providers/h2peer",
         "//libs/pal/providers/h2sctp",
-        "//libs/atomic/providers/pthread",
+        "//libs/pal/providers/posix/pal_core:net",
     ],
 )
 
 cc_library(
     name = "net",
-    srcs = ["src/h2_ios_net.c", "src/h2_ios_tls_internal.h"],
-    hdrs = ["include/h2_ios_net.h", "include/h2_ios_platform.h"],
+    srcs = [
+        "src/h2_ios_net.c",
+        "src/h2_ios_tls_internal.h",
+    ],
+    hdrs = [
+        "include/h2_ios_net.h",
+        "include/h2_ios_platform.h",
+    ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = ["include"],
     target_compatible_with = ["@platforms//os:ios"],
-    deps = [":crypto", "//libs/pal:unsupported", "//libs/pal/providers/posix/pal_core:net"],
+    deps = [
+        ":crypto",
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/posix/pal_core:net",
+    ],
 )
 
 cc_library(
@@ -272,19 +347,32 @@ cc_library(
     copts = H2_WARNING_COPTS,
     includes = ["include"],
     target_compatible_with = ["@platforms//os:ios"],
-    deps = [":net", "//libs/pal:unsupported", "//libs/pal/providers/coremqtt"],
+    deps = [
+        ":net",
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/coremqtt",
+    ],
 )
 
 cc_test(
     name = "mqtt_owner_lifetime_test",
-    srcs = ["src/h2_ios_mqtt.c", "tests/test_mqtt_owner.c", "include/h2_ios_mqtt.h", "include/h2_ios_net.h", "include/h2_ios_platform.h"],
-    includes = ["include"],
+    srcs = [
+        "include/h2_ios_mqtt.h",
+        "include/h2_ios_net.h",
+        "include/h2_ios_platform.h",
+        "src/h2_ios_mqtt.c",
+        "tests/test_mqtt_owner.c",
+    ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
+    includes = ["include"],
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = ["//libs/pal:unsupported", "//libs/pal/providers/coremqtt"],
+    deps = [
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/coremqtt",
+    ],
 )

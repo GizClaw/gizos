@@ -24,18 +24,21 @@ static int header_erased(uint32_t address) {
  * This component is never part of the production Loader graph. */
 void h2_jieli_wl82_boot_probe(uint32_t stage) {
   if (stage != 105u ||
-      boot_info_get_sfc_base_addr() != H2_JIELI_BANK_2_SFC_BASE) return;
+      boot_info_get_sfc_base_addr() != H2_JIELI_BANK_2_SFC_BASE)
+    return;
   pause_on_erase = header_erased(H2_JIELI_BANK_1_SFC_BASE - 32u) == 0;
 }
 
 void h2_jieli_upgrade_erase_observer(uint32_t address) {
   if (!pause_on_erase || address != H2_JIELI_BANK_1_SFC_BASE - 32u ||
-      boot_info_get_sfc_base_addr() != H2_JIELI_BANK_2_SFC_BASE) return;
+      boot_info_get_sfc_base_addr() != H2_JIELI_BANK_2_SFC_BASE)
+    return;
   /* Do not request a power cut unless physical readback proves P1's header
    * erased and P2's recovery header published. Ordinary code still controls
    * publication and erasure ordering; the fixture only pauses afterward. */
   if (header_erased(address) != 1 ||
-      header_erased(H2_JIELI_BANK_2_SFC_BASE - 32u) != 0) return;
+      header_erased(H2_JIELI_BANK_2_SFC_BASE - 32u) != 0)
+    return;
   pause_on_erase = 0;
   wdt_close(); /* Hold this diagnostic boundary until physical power removal. */
   for (;;) {

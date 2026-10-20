@@ -58,7 +58,8 @@ enum {
 };
 
 h2_pal_result_t peer_connection_selected_pair(PeerConnection* pc,
-    h2_pal_net_addr_t* local, h2_pal_net_addr_t* remote) {
+                                              h2_pal_net_addr_t* local,
+                                              h2_pal_net_addr_t* remote) {
   if (local != NULL) memset(local, 0, sizeof(*local));
   if (remote != NULL) memset(remote, 0, sizeof(*remote));
   if (pc == NULL || local == NULL || remote == NULL)
@@ -96,9 +97,10 @@ int peer_connection_rtp_send_or_queue(
   return result;
 }
 
-h2_pal_result_t peer_connection_rtp_flush(
-    uint8_t* pending_packet, size_t* pending_len, PeerConnectionRtpSendFn send,
-    void* send_user) {
+h2_pal_result_t peer_connection_rtp_flush(uint8_t* pending_packet,
+                                          size_t* pending_len,
+                                          PeerConnectionRtpSendFn send,
+                                          void* send_user) {
   if (pending_packet == NULL || pending_len == NULL || send == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -119,18 +121,18 @@ h2_pal_result_t peer_connection_rtp_flush(
   return H2_PAL_OK;
 }
 
-static int peer_connection_rtp_protect(
-    void* user, uint8_t* packet, int* packet_len) {
+static int peer_connection_rtp_protect(void* user, uint8_t* packet,
+                                       int* packet_len) {
   return dtls_srtp_encrypt_rtp_packet((DtlsSrtp*)user, packet, packet_len);
 }
 
-static int peer_connection_rtp_send(
-    void* user, const uint8_t* packet, int packet_len) {
+static int peer_connection_rtp_send(void* user, const uint8_t* packet,
+                                    int packet_len) {
   return agent_send((Agent*)user, packet, packet_len);
 }
 
-static int peer_connection_outgoing_rtp_packet(
-    uint8_t* data, size_t size, void* user_data) {
+static int peer_connection_outgoing_rtp_packet(uint8_t* data, size_t size,
+                                               void* user_data) {
   PeerConnection* pc = (PeerConnection*)user_data;
   return peer_connection_rtp_send_or_queue(
       pc->pending_rtp, sizeof(pc->pending_rtp), &pc->pending_rtp_len, data,
@@ -138,22 +140,21 @@ static int peer_connection_outgoing_rtp_packet(
       peer_connection_rtp_send, &pc->agent);
 }
 
-static h2_pal_result_t peer_connection_flush_pending_rtp(
-    PeerConnection* pc) {
+static h2_pal_result_t peer_connection_flush_pending_rtp(PeerConnection* pc) {
   return peer_connection_rtp_flush(pc->pending_rtp, &pc->pending_rtp_len,
                                    peer_connection_rtp_send, &pc->agent);
 }
 
-static int peer_connection_dtls_srtp_send(
-    void* ctx, const uint8_t* buf, size_t len) {
+static int peer_connection_dtls_srtp_send(void* ctx, const uint8_t* buf,
+                                          size_t len) {
   DtlsSrtp* dtls_srtp = (DtlsSrtp*)ctx;
   PeerConnection* pc = (PeerConnection*)dtls_srtp->user_data;
 
   return agent_send(&pc->agent, buf, len);
 }
 
-static void peer_connection_incoming_rtcp(
-    PeerConnection* pc, uint8_t* buf, size_t len) {
+static void peer_connection_incoming_rtcp(PeerConnection* pc, uint8_t* buf,
+                                          size_t len) {
   size_t pos = 0;
 
   while (pos < len) {
@@ -163,20 +164,20 @@ static void peer_connection_incoming_rtcp(
     }
 
     switch (rtcp_header.type) {
-    case RTCP_RR:
-      H2_PEER_LOGD(pc->config.log, "RTCP_PR");
-      break;
-    case RTCP_PSFB: {
-      int fmt = rtcp_header.rc;
-      H2_PEER_LOGD(pc->config.log, "RTCP_PSFB %d", fmt);
-      // PLI and FIR
-      if ((fmt == 1 || fmt == 4) && pc->config.on_request_keyframe) {
-        pc->config.on_request_keyframe(pc->config.user_data);
+      case RTCP_RR:
+        H2_PEER_LOGD(pc->config.log, "RTCP_PR");
+        break;
+      case RTCP_PSFB: {
+        int fmt = rtcp_header.rc;
+        H2_PEER_LOGD(pc->config.log, "RTCP_PSFB %d", fmt);
+        // PLI and FIR
+        if ((fmt == 1 || fmt == 4) && pc->config.on_request_keyframe) {
+          pc->config.on_request_keyframe(pc->config.user_data);
+        }
       }
-    }
       default:
         break;
-      }
+    }
 
     pos += ((size_t)rtcp_header.length + 1u) * 4u;
   }
@@ -229,8 +230,9 @@ static h2_pal_result_t peer_connection_service_audio_reorder(
   return H2_PAL_OK;
 }
 
-static int peer_connection_process_completed_packet(
-    PeerConnection* pc, uint8_t* packet, int packet_len) {
+static int peer_connection_process_completed_packet(PeerConnection* pc,
+                                                    uint8_t* packet,
+                                                    int packet_len) {
   if (rtcp_probe(packet, packet_len)) {
     H2_PEER_LOGD(pc->config.log, "Got RTCP packet");
     dtls_srtp_decrypt_rtcp_packet(&pc->dtls_srtp, packet, &packet_len);
@@ -255,9 +257,8 @@ static int peer_connection_process_completed_packet(
     if (h2_pal_time_get_monotonic_ms(pc->config.time, &now_ms) != H2_PAL_OK) {
       return H2_PAL_ERR_IO;
     }
-    (void)rtp_decoders_decode_at(
-        &pc->artp_decoder, &pc->vrtp_decoder, packet, (size_t)packet_len,
-        now_ms);
+    (void)rtp_decoders_decode_at(&pc->artp_decoder, &pc->vrtp_decoder, packet,
+                                 (size_t)packet_len, now_ms);
     peer_connection_log_audio_rtp_event(pc);
     return packet_len;
   }
@@ -265,8 +266,7 @@ static int peer_connection_process_completed_packet(
   return packet_len;
 }
 
-const char* peer_connection_state_to_string(
-    PeerConnectionState state) {
+const char* peer_connection_state_to_string(PeerConnectionState state) {
   switch (state) {
     case PEER_CONNECTION_NEW:
       return "new";
@@ -287,8 +287,7 @@ const char* peer_connection_state_to_string(
   }
 }
 
-PeerConnectionState peer_connection_get_state(
-    PeerConnection* pc) {
+PeerConnectionState peer_connection_get_state(PeerConnection* pc) {
   return pc->state;
 }
 
@@ -304,8 +303,7 @@ h2_pal_result_t peer_connection_classify_dtls_handshake_result(
   return H2_PAL_OK;
 }
 
-h2_pal_result_t peer_connection_state_poll_result(
-    PeerConnectionState state) {
+h2_pal_result_t peer_connection_state_poll_result(PeerConnectionState state) {
   if (state == PEER_CONNECTION_FAILED) {
     return H2_PAL_ERR_IO;
   }
@@ -316,13 +314,10 @@ h2_pal_result_t peer_connection_state_poll_result(
   return H2_PAL_OK;
 }
 
-void* peer_connection_get_sctp(
-    PeerConnection* pc) {
-  return &pc->sctp;
-}
+void* peer_connection_get_sctp(PeerConnection* pc) { return &pc->sctp; }
 
 h2_pal_result_t peer_connection_sctp_is_writable(PeerConnection* pc,
-                                                  bool* out_writable) {
+                                                 bool* out_writable) {
   if (out_writable == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -333,14 +328,13 @@ h2_pal_result_t peer_connection_sctp_is_writable(PeerConnection* pc,
   return sctp_is_writable(&pc->sctp, out_writable);
 }
 
-PeerConnection* peer_connection_create(
-    PeerConfiguration* config) {
+PeerConnection* peer_connection_create(PeerConfiguration* config) {
   if (config == NULL || config->log == NULL || config->mem == NULL ||
       config->net == NULL || config->time == NULL || config->crypto == NULL ||
       config->dtls == NULL || config->sctp == NULL) {
     return NULL;
   }
-  PeerConnection *pc = h2_pal_mem_alloc(config->mem, sizeof(PeerConnection));
+  PeerConnection* pc = h2_pal_mem_alloc(config->mem, sizeof(PeerConnection));
   if (!pc) {
     return NULL;
   }
@@ -387,8 +381,7 @@ PeerConnection* peer_connection_create(
   return pc;
 }
 
-void peer_connection_destroy(
-    PeerConnection* pc) {
+void peer_connection_destroy(PeerConnection* pc) {
   if (pc) {
     sctp_destroy_association(&pc->sctp);
     dtls_srtp_deinit(&pc->dtls_srtp);
@@ -398,13 +391,12 @@ void peer_connection_destroy(
   }
 }
 
-void peer_connection_close(
-    PeerConnection* pc) {
+void peer_connection_close(PeerConnection* pc) {
   pc->state = PEER_CONNECTION_CLOSED;
 }
 
-int peer_connection_send_audio(
-    PeerConnection* pc, const uint8_t* buf, size_t len) {
+int peer_connection_send_audio(PeerConnection* pc, const uint8_t* buf,
+                               size_t len) {
   if (pc->state != PEER_CONNECTION_COMPLETED) {
     return -1;
   }
@@ -415,8 +407,8 @@ int peer_connection_send_audio(
   return rtp_encoder_encode(&pc->artp_encoder, buf, len);
 }
 
-int peer_connection_send_video(
-    PeerConnection* pc, const uint8_t* buf, size_t len) {
+int peer_connection_send_video(PeerConnection* pc, const uint8_t* buf,
+                               size_t len) {
   if (pc->state != PEER_CONNECTION_COMPLETED) {
     return -1;
   }
@@ -427,13 +419,13 @@ int peer_connection_send_video(
   return rtp_encoder_encode(&pc->vrtp_encoder, buf, len);
 }
 
-int peer_connection_datachannel_send(
-    PeerConnection* pc, char* message, size_t len) {
+int peer_connection_datachannel_send(PeerConnection* pc, char* message,
+                                     size_t len) {
   return peer_connection_datachannel_send_sid(pc, message, len, 0);
 }
 
-int peer_connection_datachannel_send_sid(
-    PeerConnection* pc, char* message, size_t len, uint16_t sid) {
+int peer_connection_datachannel_send_sid(PeerConnection* pc, char* message,
+                                         size_t len, uint16_t sid) {
   if (!sctp_is_connected(&pc->sctp)) {
     H2_PEER_LOGE(pc->config.log, "sctp not connected");
     return -1;
@@ -444,20 +436,21 @@ int peer_connection_datachannel_send_sid(
     return sctp_outgoing_data(&pc->sctp, message, len, PPID_BINARY, sid);
 }
 
-h2_pal_result_t peer_connection_datachannel_close_sid(
-    PeerConnection* pc, uint16_t sid) {
+h2_pal_result_t peer_connection_datachannel_close_sid(PeerConnection* pc,
+                                                      uint16_t sid) {
   return pc == NULL ? H2_PAL_ERR_INVALID_ARG
                     : sctp_close_stream(&pc->sctp, sid);
 }
 
-int peer_connection_datachannel_forget_sid(
-    PeerConnection* pc, uint16_t sid) {
+int peer_connection_datachannel_forget_sid(PeerConnection* pc, uint16_t sid) {
   return pc == NULL ? -1 : sctp_unregister_data_channel(&pc->sctp, sid);
 }
 
-int peer_connection_create_datachannel(
-    PeerConnection* pc, DecpChannelType channel_type, uint16_t priority,
-    uint32_t reliability_parameter, char* label, char* protocol) {
+int peer_connection_create_datachannel(PeerConnection* pc,
+                                       DecpChannelType channel_type,
+                                       uint16_t priority,
+                                       uint32_t reliability_parameter,
+                                       char* label, char* protocol) {
   return peer_connection_create_datachannel_sid(
       pc, channel_type, priority, reliability_parameter, label, protocol, 0);
 }
@@ -499,11 +492,15 @@ int peer_connection_encode_datachannel_open(
   return 0;
 }
 
-int peer_connection_register_negotiated_channel(
-    PeerConnection* pc, DecpChannelType channel_type,
-    uint32_t reliability_parameter, const char* label, uint16_t sid) {
-  return pc == NULL ? -1 : sctp_register_negotiated_channel(
-      &pc->sctp, label, sid, (uint8_t)channel_type, reliability_parameter);
+int peer_connection_register_negotiated_channel(PeerConnection* pc,
+                                                DecpChannelType channel_type,
+                                                uint32_t reliability_parameter,
+                                                const char* label,
+                                                uint16_t sid) {
+  return pc == NULL ? -1
+                    : sctp_register_negotiated_channel(&pc->sctp, label, sid,
+                                                       (uint8_t)channel_type,
+                                                       reliability_parameter);
 }
 
 int peer_connection_create_datachannel_sid(
@@ -554,8 +551,8 @@ int peer_connection_create_datachannel_sid(
   if (peer_connection_encode_datachannel_open(
           msg, msg_size, channel_type, priority, reliability_parameter, label,
           protocol, &encoded_len) == 0) {
-    rtrn = sctp_outgoing_data(
-        &pc->sctp, (char*)msg, encoded_len, PPID_CONTROL, sid);
+    rtrn = sctp_outgoing_data(&pc->sctp, (char*)msg, encoded_len, PPID_CONTROL,
+                              sid);
   }
   h2_pal_mem_free(pc->config.mem, msg);
   if (rtrn < 0) {
@@ -564,13 +561,13 @@ int peer_connection_create_datachannel_sid(
   return rtrn;
 }
 
-static char* peer_connection_dtls_role_setup_value(
-    DtlsSrtpRole d) {
+static char* peer_connection_dtls_role_setup_value(DtlsSrtpRole d) {
   return d == DTLS_SRTP_ROLE_SERVER ? "a=setup:passive" : "a=setup:active";
 }
 
-static h2_pal_result_t peer_connection_loop_internal(
-    PeerConnection* pc, uint32_t timeout_ms, int receive_completed) {
+static h2_pal_result_t peer_connection_loop_internal(PeerConnection* pc,
+                                                     uint32_t timeout_ms,
+                                                     int receive_completed) {
   h2_pal_result_t state_result = peer_connection_state_poll_result(pc->state);
   if (state_result != H2_PAL_OK) {
     return state_result;
@@ -609,8 +606,8 @@ static h2_pal_result_t peer_connection_loop_internal(
       break;
 
     case PEER_CONNECTION_CONNECTED:
-      pc->agent_ret = agent_recv(
-          &pc->agent, pc->agent_buf, sizeof(pc->agent_buf), timeout_ms);
+      pc->agent_ret = agent_recv(&pc->agent, pc->agent_buf,
+                                 sizeof(pc->agent_buf), timeout_ms);
       if (pc->agent_ret < 0) {
         PeerConnectionState error_state = pc->agent_ret == H2_PAL_ERR_CLOSED
                                               ? PEER_CONNECTION_DISCONNECTED
@@ -623,8 +620,8 @@ static h2_pal_result_t peer_connection_loop_internal(
           pc->agent_ret > 0 ? (size_t)pc->agent_ret : 0u);
       PeerConnectionState terminal_state = pc->state;
       h2_pal_result_t handshake_status =
-          peer_connection_classify_dtls_handshake_result(
-              handshake_result, &terminal_state);
+          peer_connection_classify_dtls_handshake_result(handshake_result,
+                                                         &terminal_state);
       if (handshake_status != H2_PAL_OK) {
         STATE_CHANGED(pc, terminal_state);
         return handshake_status;
@@ -667,8 +664,8 @@ static h2_pal_result_t peer_connection_loop_internal(
             timeout_ms < H2_PEER_COMPLETED_RECEIVE_TIMEOUT_MS
                 ? timeout_ms
                 : H2_PEER_COMPLETED_RECEIVE_TIMEOUT_MS;
-        pc->agent_ret = agent_recv(
-            &pc->agent, pc->agent_buf, sizeof(pc->agent_buf), receive_timeout);
+        pc->agent_ret = agent_recv(&pc->agent, pc->agent_buf,
+                                   sizeof(pc->agent_buf), receive_timeout);
         if (pc->agent_ret > 0) {
           H2_PEER_LOGD(pc->config.log, "agent_recv %d", pc->agent_ret);
           pc->agent_ret = peer_connection_process_completed_packet(
@@ -676,8 +673,8 @@ static h2_pal_result_t peer_connection_loop_internal(
         }
         if (pc->agent_ret < 0) {
           PeerConnectionState error_state = pc->agent_ret == H2_PAL_ERR_CLOSED
-                                              ? PEER_CONNECTION_DISCONNECTED
-                                              : PEER_CONNECTION_FAILED;
+                                                ? PEER_CONNECTION_DISCONNECTED
+                                                : PEER_CONNECTION_FAILED;
           STATE_CHANGED(pc, error_state);
           return (h2_pal_result_t)pc->agent_ret;
         }
@@ -706,14 +703,13 @@ static h2_pal_result_t peer_connection_loop_internal(
   return 0;
 }
 
-h2_pal_result_t peer_connection_loop(
-    PeerConnection* pc, uint32_t timeout_ms) {
+h2_pal_result_t peer_connection_loop(PeerConnection* pc, uint32_t timeout_ms) {
   return peer_connection_loop_internal(pc, timeout_ms, 1);
 }
 
-int peer_connection_receive_datagram(
-    PeerConnection* pc, h2_pal_net_addr_t* addr, uint8_t* packet,
-    size_t packet_cap, uint32_t timeout_ms) {
+int peer_connection_receive_datagram(PeerConnection* pc,
+                                     h2_pal_net_addr_t* addr, uint8_t* packet,
+                                     size_t packet_cap, uint32_t timeout_ms) {
   if (pc == NULL || addr == NULL || packet == NULL || packet_cap == 0u ||
       packet_cap > (size_t)INT_MAX || pc->state != PEER_CONNECTION_COMPLETED) {
     return H2_PAL_ERR_INVALID_STATE;
@@ -721,15 +717,15 @@ int peer_connection_receive_datagram(
   return agent_recv_raw(&pc->agent, addr, packet, (int)packet_cap, timeout_ms);
 }
 
-int peer_connection_async_receive_supported(
-    PeerConnection* pc) {
+int peer_connection_async_receive_supported(PeerConnection* pc) {
   return pc != NULL && pc->state == PEER_CONNECTION_COMPLETED &&
          agent_async_receive_supported(&pc->agent);
 }
 
-h2_pal_result_t peer_connection_service_datagram(
-    PeerConnection* pc, h2_pal_net_addr_t* addr, uint8_t* packet,
-    size_t packet_len) {
+h2_pal_result_t peer_connection_service_datagram(PeerConnection* pc,
+                                                 h2_pal_net_addr_t* addr,
+                                                 uint8_t* packet,
+                                                 size_t packet_len) {
   if (pc == NULL || (packet == NULL && packet_len != 0u) ||
       (addr == NULL && packet_len != 0u) ||
       packet_len > sizeof(pc->agent_buf) ||
@@ -756,8 +752,8 @@ h2_pal_result_t peer_connection_service_datagram(
   return H2_PAL_OK;
 }
 
-int peer_connection_set_remote_description(
-    PeerConnection* pc, const char* sdp, SdpType type) {
+int peer_connection_set_remote_description(PeerConnection* pc, const char* sdp,
+                                           SdpType type) {
   if (pc == NULL || sdp == NULL) {
     return -1;
   }
@@ -827,8 +823,8 @@ int peer_connection_set_remote_description(
   return 0;
 }
 
-static const char* peer_connection_create_sdp(
-    PeerConnection* pc, SdpType sdp_type) {
+static const char* peer_connection_create_sdp(PeerConnection* pc,
+                                              SdpType sdp_type) {
   char* description = (char*)pc->temp_buf;
 
   memset(pc->temp_buf, 0, sizeof(pc->temp_buf));
@@ -851,9 +847,8 @@ static const char* peer_connection_create_sdp(
   }
 
   dtls_srtp_reset_session(&pc->dtls_srtp);
-  if (dtls_srtp_init(
-          &pc->dtls_srtp, role, pc, pc->config.log, pc->config.dtls,
-          pc->config.time) != 0) {
+  if (dtls_srtp_init(&pc->dtls_srtp, role, pc, pc->config.log, pc->config.dtls,
+                     pc->config.time) != 0) {
     return NULL;
   }
   pc->dtls_srtp.packet_send = peer_connection_dtls_srtp_send;
@@ -866,8 +861,8 @@ static const char* peer_connection_create_sdp(
   agent_create_ice_credential(&pc->agent);
   sdp_append(pc->sdp, "a=ice-ufrag:%s", pc->agent.local_ufrag);
   sdp_append(pc->sdp, "a=ice-pwd:%s", pc->agent.local_upwd);
-  sdp_append(
-      pc->sdp, "a=fingerprint:sha-256 %s", pc->dtls_srtp.local_fingerprint);
+  sdp_append(pc->sdp, "a=fingerprint:sha-256 %s",
+             pc->dtls_srtp.local_fingerprint);
   sdp_append(pc->sdp, peer_connection_dtls_role_setup_value(role));
 
   if (pc->config.video_codec == CODEC_H264) {
@@ -925,13 +920,11 @@ static const char* peer_connection_create_sdp(
   return pc->sdp;
 }
 
-const char* peer_connection_create_offer(
-    PeerConnection* pc) {
+const char* peer_connection_create_offer(PeerConnection* pc) {
   return peer_connection_create_sdp(pc, SDP_TYPE_OFFER);
 }
 
-const char* peer_connection_create_answer(
-    PeerConnection* pc) {
+const char* peer_connection_create_answer(PeerConnection* pc) {
   const char* sdp = peer_connection_create_sdp(pc, SDP_TYPE_ANSWER);
   if (sdp == NULL) {
     return NULL;
@@ -940,8 +933,7 @@ const char* peer_connection_create_answer(
   return sdp;
 }
 
-int peer_connection_send_rtcp_pil(
-    PeerConnection* pc, uint32_t ssrc) {
+int peer_connection_send_rtcp_pil(PeerConnection* pc, uint32_t ssrc) {
   int ret = -1;
   uint8_t plibuf[128];
   rtcp_get_pli(plibuf, 12, ssrc);
@@ -956,8 +948,8 @@ int peer_connection_send_rtcp_pil(
 }
 
 // callbacks
-void peer_connection_on_connected(
-    PeerConnection* pc, void (*on_connected)(void* userdata)) {
+void peer_connection_on_connected(PeerConnection* pc,
+                                  void (*on_connected)(void* userdata)) {
   pc->on_connected = on_connected;
 }
 
@@ -968,8 +960,9 @@ void peer_connection_on_receiver_packet_loss(
   pc->on_receiver_packet_loss = on_receiver_packet_loss;
 }
 
-void peer_connection_onicecandidate(
-    PeerConnection* pc, void (*onicecandidate)(char* sdp, void* userdata)) {
+void peer_connection_onicecandidate(PeerConnection* pc,
+                                    void (*onicecandidate)(char* sdp,
+                                                           void* userdata)) {
   pc->onicecandidate = onicecandidate;
 }
 
@@ -1017,8 +1010,8 @@ void peer_connection_onremotechannel(
   }
 }
 
-int peer_connection_lookup_sid(
-    PeerConnection* pc, const char* label, uint16_t* sid) {
+int peer_connection_lookup_sid(PeerConnection* pc, const char* label,
+                               uint16_t* sid) {
   for (size_t i = 0u; i < pc->sctp.stream_count; i++) {
     if (strncmp(pc->sctp.stream_table[i].label, label,
                 sizeof(pc->sctp.stream_table[i].label)) == 0) {
@@ -1029,8 +1022,7 @@ int peer_connection_lookup_sid(
   return -1;  // Not found
 }
 
-char* peer_connection_lookup_sid_label(
-    PeerConnection* pc, uint16_t sid) {
+char* peer_connection_lookup_sid_label(PeerConnection* pc, uint16_t sid) {
   for (size_t i = 0u; i < pc->sctp.stream_count; i++) {
     if (pc->sctp.stream_table[i].sid == sid) {
       return pc->sctp.stream_table[i].label;
@@ -1039,8 +1031,7 @@ char* peer_connection_lookup_sid_label(
   return NULL;  // Not found
 }
 
-int peer_connection_add_ice_candidate(
-    PeerConnection* pc, char* candidate) {
+int peer_connection_add_ice_candidate(PeerConnection* pc, char* candidate) {
   Agent* agent = &pc->agent;
   IceCandidate parsed;
   IceCandidateParseResult parse_result = ice_candidate_from_description(

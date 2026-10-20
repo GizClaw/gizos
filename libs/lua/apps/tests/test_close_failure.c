@@ -9,15 +9,15 @@
 #include <stdlib.h>
 #include <string.h>
 
-static void *allocate(void *user, size_t size) {
+static void* allocate(void* user, size_t size) {
   (void)user;
   return malloc(size);
 }
-static void *resize(void *user, void *ptr, size_t size) {
+static void* resize(void* user, void* ptr, size_t size) {
   (void)user;
   return realloc(ptr, size);
 }
-static void release(void *user, void *ptr) {
+static void release(void* user, void* ptr) {
   (void)user;
   free(ptr);
 }
@@ -31,9 +31,9 @@ int main(void) {
                                  .fs = &fs.api,
                                  .sync = h2_desktop_platform_sync_api(),
                                  .install_root = "/apps"};
-  h2_lua_apps_t *apps = NULL;
+  h2_lua_apps_t* apps = NULL;
   assert(h2_lua_apps_create(&config, &apps) == H2_PAL_OK);
-  h2_lua_app_install_t *install = NULL;
+  h2_lua_app_install_t* install = NULL;
   h2_lua_app_info_t info;
   assert(h2_lua_app_install_begin(apps, sizeof(fixture_valid),
                                   fixture_valid_sha256, NULL, NULL,

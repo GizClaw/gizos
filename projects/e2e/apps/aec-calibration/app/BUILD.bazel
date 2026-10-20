@@ -8,7 +8,10 @@ exports_files(["tests/test_calibration.c"])
 
 cc_library(
     name = "aec_calibration",
-    srcs = ["src/h2_aec_calibration.c", "src/h2_aec_calibration_report.c"],
+    srcs = [
+        "src/h2_aec_calibration.c",
+        "src/h2_aec_calibration_report.c",
+    ],
     hdrs = ["include/h2_aec_calibration.h"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
@@ -22,5 +25,8 @@ cc_test(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
-    deps = [":aec_calibration", "//libs/pal:unsupported"],
+    deps = [
+        ":aec_calibration",
+        "//libs/pal:unsupported",
+    ],
 )

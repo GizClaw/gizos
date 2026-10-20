@@ -10,13 +10,13 @@
 #include <string.h>
 
 typedef struct server {
-  h2_iperf_server_t *handle;
+  h2_iperf_server_t* handle;
   unsigned expected;
   unsigned completed;
 } server_t;
 
-static void *serve(void *user) {
-  server_t *server = user;
+static void* serve(void* user) {
+  server_t* server = user;
   for (unsigned i = 0; i < server->expected; ++i) {
     h2_iperf_result_t result = {0};
     assert(h2_iperf_server_run_once(server->handle, 10000u, &result) ==
@@ -27,7 +27,7 @@ static void *serve(void *user) {
   return NULL;
 }
 static unsigned checkpoints;
-static void checkpoint(void *user, const char *name) {
+static void checkpoint(void* user, const char* name) {
   assert(user == &checkpoints);
   assert(strcmp(name, "case_start") == 0 || strcmp(name, "case_end") == 0);
   ++checkpoints;

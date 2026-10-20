@@ -5,9 +5,8 @@
 #include <assert.h>
 #include <string.h>
 
-static h2_bloomspeaker_pairing_beacon_t beacon(uint64_t device,
-                                                uint64_t ticket,
-                                                uint32_t epoch) {
+static h2_bloomspeaker_pairing_beacon_t beacon(uint64_t device, uint64_t ticket,
+                                               uint32_t epoch) {
   return (h2_bloomspeaker_pairing_beacon_t){
       .device_tag = device,
       .ticket = ticket,
@@ -16,8 +15,8 @@ static h2_bloomspeaker_pairing_beacon_t beacon(uint64_t device,
   };
 }
 
-static void observe_twice(h2_bloomspeaker_pairing_t *pairing,
-                          const h2_bloomspeaker_pairing_beacon_t *remote) {
+static void observe_twice(h2_bloomspeaker_pairing_t* pairing,
+                          const h2_bloomspeaker_pairing_beacon_t* remote) {
   assert(h2_bloomspeaker_pairing_observe(pairing, remote, -50, 100u) ==
          H2_PAL_OK);
   assert(h2_bloomspeaker_pairing_observe(pairing, remote, -49, 800u) ==
@@ -25,9 +24,8 @@ static void observe_twice(h2_bloomspeaker_pairing_t *pairing,
 }
 
 static void test_beacon_round_trip(void) {
-  h2_bloomspeaker_pairing_beacon_t input = beacon(0x0102030405u,
-                                                   UINT64_C(0x8877665544332211),
-                                                   0xaabbccddu);
+  h2_bloomspeaker_pairing_beacon_t input =
+      beacon(0x0102030405u, UINT64_C(0x8877665544332211), 0xaabbccddu);
   input.state = H2_BLOOMSPEAKER_PAIRING_BEACON_CLAIMED;
   input.claim_target = 0x0a0b0c0d0eu;
   uint8_t data[H2_BLOOMSPEAKER_PAIRING_BEACON_SIZE];
@@ -100,9 +98,9 @@ static void test_three_devices_create_one_pair(void) {
   for (size_t local = 0u; local < 3u; ++local) {
     for (size_t remote = 0u; remote < 3u; ++remote) {
       if (local != remote) {
-        assert(h2_bloomspeaker_pairing_observe(
-                   &nodes[local], &nodes[remote].local, -45, 900u) ==
-               H2_PAL_OK);
+        assert(h2_bloomspeaker_pairing_observe(&nodes[local],
+                                               &nodes[remote].local, -45,
+                                               900u) == H2_PAL_OK);
       }
     }
   }

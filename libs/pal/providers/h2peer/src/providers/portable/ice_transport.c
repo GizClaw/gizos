@@ -8,9 +8,8 @@ static void ice_transport_reset_receive(IceTransport* transport) {
   transport->receive_expected = 0u;
 }
 
-void ice_transport_init_udp(
-    IceTransport* transport, UdpSocket* socket,
-    const h2_pal_net_addr_t* remote_addr) {
+void ice_transport_init_udp(IceTransport* transport, UdpSocket* socket,
+                            const h2_pal_net_addr_t* remote_addr) {
   memset(transport, 0, sizeof(*transport));
   transport->protocol = ICE_TRANSPORT_UDP;
   transport->udp_socket = socket;
@@ -18,10 +17,10 @@ void ice_transport_init_udp(
   transport->remote_addr = *remote_addr;
 }
 
-int ice_transport_init_tcp(
-    IceTransport* transport, const h2_pal_net_api_t* net,
-    const h2_pal_net_addr_t* source_addr,
-    const h2_pal_net_addr_t* remote_addr, uint32_t timeout_ms) {
+int ice_transport_init_tcp(IceTransport* transport, const h2_pal_net_api_t* net,
+                           const h2_pal_net_addr_t* source_addr,
+                           const h2_pal_net_addr_t* remote_addr,
+                           uint32_t timeout_ms) {
   if (transport == NULL || net == NULL || source_addr == NULL ||
       remote_addr == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -31,14 +30,14 @@ int ice_transport_init_tcp(
   transport->tcp_socket.fd = -1;
   transport->source_addr = *source_addr;
   transport->remote_addr = *remote_addr;
-  int result = tcp_socket_connect(
-      &transport->tcp_socket, net, source_addr, remote_addr, timeout_ms);
+  int result = tcp_socket_connect(&transport->tcp_socket, net, source_addr,
+                                  remote_addr, timeout_ms);
   transport->tcp_connected = result == H2_PAL_OK;
   return result;
 }
 
-int ice_transport_progress_tcp_connect(
-    IceTransport* transport, uint32_t timeout_ms) {
+int ice_transport_progress_tcp_connect(IceTransport* transport,
+                                       uint32_t timeout_ms) {
   if (transport == NULL || transport->protocol != ICE_TRANSPORT_TCP ||
       transport->tcp_socket.fd < 0) {
     return H2_PAL_ERR_INVALID_STATE;
@@ -48,8 +47,7 @@ int ice_transport_progress_tcp_connect(
   }
   int result = tcp_socket_connect(
       &transport->tcp_socket, transport->tcp_socket.net,
-      &transport->source_addr,
-      &transport->remote_addr, timeout_ms);
+      &transport->source_addr, &transport->remote_addr, timeout_ms);
   transport->tcp_connected = result == H2_PAL_OK;
   return result;
 }
@@ -70,8 +68,7 @@ int ice_transport_flush(IceTransport* transport, uint32_t timeout_ms) {
   size_t remaining = transport->pending_len - transport->pending_offset;
   int sent = tcp_socket_send_timeout(
       &transport->tcp_socket,
-      transport->pending_frame + transport->pending_offset,
-      (int)remaining,
+      transport->pending_frame + transport->pending_offset, (int)remaining,
       timeout_ms);
   if (sent > 0) {
     transport->pending_offset += (size_t)sent;
@@ -85,17 +82,15 @@ int ice_transport_flush(IceTransport* transport, uint32_t timeout_ms) {
   return sent;
 }
 
-int ice_transport_send_packet(
-    IceTransport* transport, const uint8_t* packet, size_t packet_len,
-    uint32_t timeout_ms) {
+int ice_transport_send_packet(IceTransport* transport, const uint8_t* packet,
+                              size_t packet_len, uint32_t timeout_ms) {
   if (transport == NULL || (packet == NULL && packet_len != 0u) ||
       packet_len > CONFIG_MTU || packet_len > UINT16_MAX) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   if (transport->protocol == ICE_TRANSPORT_UDP) {
-    return udp_socket_sendto(
-        transport->udp_socket, &transport->remote_addr,
-        packet, (int)packet_len);
+    return udp_socket_sendto(transport->udp_socket, &transport->remote_addr,
+                             packet, (int)packet_len);
   }
   if (!transport->tcp_connected) {
     return H2_PAL_ERR_WOULD_BLOCK;
@@ -118,9 +113,9 @@ int ice_transport_send_packet(
   return result;
 }
 
-static int ice_transport_tcp_receive(
-    IceTransport* transport, uint8_t* out_packet, size_t out_cap,
-    uint32_t timeout_ms) {
+static int ice_transport_tcp_receive(IceTransport* transport,
+                                     uint8_t* out_packet, size_t out_cap,
+                                     uint32_t timeout_ms) {
   int used_wait_budget = 0;
   for (;;) {
     if (transport->receive_prefix_len < 2u) {
@@ -176,9 +171,10 @@ static int ice_transport_tcp_receive(
   }
 }
 
-int ice_transport_receive_packet(
-    IceTransport* transport, h2_pal_net_addr_t* out_addr,
-    uint8_t* out_packet, size_t out_cap, uint32_t timeout_ms) {
+int ice_transport_receive_packet(IceTransport* transport,
+                                 h2_pal_net_addr_t* out_addr,
+                                 uint8_t* out_packet, size_t out_cap,
+                                 uint32_t timeout_ms) {
   if (transport == NULL || out_packet == NULL || out_cap == 0u) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -186,15 +182,13 @@ int ice_transport_receive_packet(
     *out_addr = transport->remote_addr;
   }
   if (transport->protocol == ICE_TRANSPORT_UDP) {
-    return udp_socket_recvfrom(
-        transport->udp_socket, out_addr, out_packet, (int)out_cap,
-        timeout_ms);
+    return udp_socket_recvfrom(transport->udp_socket, out_addr, out_packet,
+                               (int)out_cap, timeout_ms);
   }
   if (!transport->tcp_connected) {
     return H2_PAL_ERR_WOULD_BLOCK;
   }
-  return ice_transport_tcp_receive(
-      transport, out_packet, out_cap, timeout_ms);
+  return ice_transport_tcp_receive(transport, out_packet, out_cap, timeout_ms);
 }
 
 void ice_transport_close(IceTransport* transport) {

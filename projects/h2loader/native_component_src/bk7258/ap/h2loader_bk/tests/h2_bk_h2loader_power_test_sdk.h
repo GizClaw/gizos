@@ -12,13 +12,13 @@ enum { CONFIRM_EXEC_A = 3, CONFIRM_EXEC_B = 4 };
 typedef struct {
   uint32_t partition_start_addr;
 } bk_logic_partition_t;
-const bk_logic_partition_t *bk_flash_partition_get_info(int);
-int bk_flash_read_bytes(uint32_t, uint8_t *, size_t);
+const bk_logic_partition_t* bk_flash_partition_get_info(int);
+int bk_flash_read_bytes(uint32_t, uint8_t*, size_t);
 uint8_t bk_ota_get_current_partition(void);
 void bk_wdt_force_reboot(void);
 int h2_bk_h2loader_commit_staged_app_boot(void);
 int h2_bk_h2loader_select_confirmed_boot_partition(uint32_t);
-const h2_pal_power_api_t *h2_bk_h2loader_power_api(void);
+const h2_pal_power_api_t* h2_bk_h2loader_power_api(void);
 
 /* Fixed-layout doubles; the legacy-bank fixtures leave them all zero. */
 extern int g_fixed_active, g_fixed_app_failed, g_fixed_relay_failed;
@@ -28,6 +28,11 @@ static inline uint8_t h2_bk_fixed_current_slot(void) {
   return g_fixed_active ? g_fixed_slot : bk_ota_get_current_partition();
 }
 static inline int h2_bk_fixed_app_failed(void) { return g_fixed_app_failed; }
-static inline int h2_bk_fixed_relay_failed(void) { return g_fixed_relay_failed; }
+static inline int h2_bk_fixed_relay_failed(void) {
+  return g_fixed_relay_failed;
+}
 static inline int h2_bk_fixed_next_app(void) { return 0; }
-static inline int h2_bk_fixed_select(uint32_t id) { (void)id; return H2_PAL_ERR_UNSUPPORTED; }
+static inline int h2_bk_fixed_select(uint32_t id) {
+  (void)id;
+  return H2_PAL_ERR_UNSUPPORTED;
+}

@@ -4,8 +4,7 @@
 
 int ports_get_host_addr(const h2_pal_net_api_t* net, h2_pal_net_addr_t* addr,
                         const char* iface_prefix) {
-  if (addr == NULL ||
-      !h2_peer_net_addr_family_is_valid(addr->family)) {
+  if (addr == NULL || !h2_peer_net_addr_family_is_valid(addr->family)) {
     return 0;
   }
   h2_pal_net_addr_t host;

@@ -7,7 +7,7 @@
 
 #include <stdint.h>
 
-extern int printf(const char *format, ...);
+extern int printf(const char* format, ...);
 
 enum {
   kSampleRate = 16000,
@@ -16,18 +16,18 @@ enum {
 
 static int16_t pcm[kFrameSamples];
 
-static void stage(const char *name, int result) {
+static void stage(const char* name, int result) {
   printf("H2_JIELI_SPEAKER stage=%s rc=%d\r\n", name, result);
 }
 
-static void speaker_smoke_task(void *user) {
+static void speaker_smoke_task(void* user) {
   (void)user;
   /* A stalled audio-server call must remain observable over USB instead of
    * turning into an uninformative watchdog-reset loop. */
   wdt_close();
   stage("boot", 0);
 
-  const h2_pal_audio_api_t *audio = h2_jieli_ac791n_devkit_audio_api();
+  const h2_pal_audio_api_t* audio = h2_jieli_ac791n_devkit_audio_api();
   h2_audio_info_t info = {0};
   int result = h2_pal_audio_get_info(audio, &info);
   stage("get-info", result);
@@ -43,7 +43,7 @@ static void speaker_smoke_task(void *user) {
       .volume_factor_milli = 500u,
       .buffer_frames = 8u,
   };
-  h2_pal_audio_track_t *track = NULL;
+  h2_pal_audio_track_t* track = NULL;
   result = h2_pal_audio_create_track(audio, &config, &track);
   stage("create-track", result);
   if (result != H2_AUDIO_OK) goto idle;
@@ -62,15 +62,14 @@ static void speaker_smoke_task(void *user) {
 
 idle:
   for (unsigned heartbeat = 0u;; ++heartbeat) {
-    printf("H2_JIELI_SPEAKER heartbeat=%u last_rc=%d\r\n", heartbeat,
-           result);
+    printf("H2_JIELI_SPEAKER heartbeat=%u last_rc=%d\r\n", heartbeat, result);
     os_time_dly(100u);
   }
 }
 
 /* Return to the SDK app_core event loop while the diagnostic task runs. */
 void app_main(void) {
-  int result = os_task_create(
-      speaker_smoke_task, NULL, 10, 4096, 128, "speaker_smoke");
+  int result =
+      os_task_create(speaker_smoke_task, NULL, 10, 4096, 128, "speaker_smoke");
   stage("task-create", result);
 }

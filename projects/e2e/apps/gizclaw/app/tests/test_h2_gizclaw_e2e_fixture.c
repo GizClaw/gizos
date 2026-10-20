@@ -18,15 +18,15 @@ static h2_app_test_mem_t allocator;
 static unsigned s_starts, s_stops, s_registers, s_deletes, s_polls;
 static int s_start_rc, s_register_rc, s_delete_rc, s_stop_rc, s_deinit_rc;
 static unsigned s_closed_deletes_remaining;
-static const char *s_profile = "runtime-profile-from-server";
+static const char* s_profile = "runtime-profile-from-server";
 static bool s_unterminated_profile;
 static bool s_null_service;
 static unsigned s_live_services;
 static unsigned s_poll_fault;
 static bool s_user_stop;
-static const h2_gizclaw_e2e_actor_t *s_tag_actor;
+static const h2_gizclaw_e2e_actor_t* s_tag_actor;
 
-static bool user_stop(void *user) {
+static bool user_stop(void* user) {
   (void)user;
   return s_user_stop;
 }
@@ -54,58 +54,60 @@ struct h2_gizclaw_service {
 static unsigned s_case_cleanups;
 static int s_case_cleanup_rc;
 static bool s_case_expect_stopped;
-static int cleanup_case(h2_gizclaw_e2e_fixture_t *fixture) {
+static int cleanup_case(h2_gizclaw_e2e_fixture_t* fixture) {
   assert(fixture->case_state == &s_case_cleanups);
   assert(fixture->actors[0].service != NULL);
   assert(fixture->actors[0].service->stopped == s_case_expect_stopped);
   assert(fixture->registration_token != NULL &&
          fixture->actors[0].private_key[0]);
   ++s_case_cleanups;
-  if (s_case_cleanup_rc != H2_PAL_OK)
-    return s_case_cleanup_rc;
+  if (s_case_cleanup_rc != H2_PAL_OK) return s_case_cleanup_rc;
   fixture->case_state = NULL;
   fixture->case_cleanup = NULL;
   return H2_PAL_OK;
 }
 
-h2_pal_result_t
-h2_gizclaw_service_init(const h2_gizclaw_service_config_t *config,
-                        h2_gizclaw_service_t **out_service) {
+h2_pal_result_t h2_gizclaw_service_init(
+    const h2_gizclaw_service_config_t* config,
+    h2_gizclaw_service_t** out_service) {
   assert(config->task != NULL && config->queue != NULL && config->sync != NULL);
   assert(config->client_poll_timeout_ms == 1);
   assert(config->operation_capacity >= 3u);
   assert(config->client_config->tool_handlers != NULL);
   bool social_registered = false;
   for (size_t i = 0u; i < config->client_config->tool_handler_count; ++i) {
-    const h2_gizclaw_tool_handler_t *handler = &config->client_config->tool_handlers[i];
+    const h2_gizclaw_tool_handler_t* handler =
+        &config->client_config->tool_handlers[i];
     assert(handler->invoke != NULL);
-    social_registered = social_registered || handler->tool == H2_GIZCLAW_TOOL_SOCIAL_PING;
+    social_registered =
+        social_registered || handler->tool == H2_GIZCLAW_TOOL_SOCIAL_PING;
   }
   assert(social_registered);
   assert(config->client_config->tool_handler_count ==
-         ((config->client_config->audio || config->client_config->vtable) ? 1u : 3u));
+         ((config->client_config->audio || config->client_config->vtable)
+              ? 1u
+              : 3u));
   if (s_null_service) {
     *out_service = NULL;
     return H2_PAL_OK;
   }
   *out_service =
       h2_pal_mem_alloc(config->client_config->allocator, sizeof(**out_service));
-  if (*out_service == NULL)
-    return H2_PAL_ERR_NO_MEMORY;
+  if (*out_service == NULL) return H2_PAL_ERR_NO_MEMORY;
   memset(*out_service, 0, sizeof(**out_service));
   (*out_service)->config = *config;
   ++s_live_services;
   return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_gizclaw_service_start(h2_gizclaw_service_t *service) {
+h2_pal_result_t h2_gizclaw_service_start(h2_gizclaw_service_t* service) {
   ++s_starts;
   service->started = s_start_rc == H2_PAL_OK;
   return s_start_rc;
 }
 
-h2_pal_result_t h2_gizclaw_service_poll(h2_gizclaw_service_t *service,
-                                        size_t maximum, size_t *out_count) {
+h2_pal_result_t h2_gizclaw_service_poll(h2_gizclaw_service_t* service,
+                                        size_t maximum, size_t* out_count) {
   assert(service != NULL && maximum > 0u);
   ++s_polls;
   *out_count = s_poll_fault == 1u   ? maximum + 1u
@@ -118,7 +120,7 @@ h2_pal_result_t h2_gizclaw_service_poll(h2_gizclaw_service_t *service,
   return s_poll_fault == 3u ? H2_PAL_ERR_IO : H2_PAL_OK;
 }
 
-h2_pal_result_t h2_gizclaw_service_stop(h2_gizclaw_service_t *service) {
+h2_pal_result_t h2_gizclaw_service_stop(h2_gizclaw_service_t* service) {
   ++s_stops;
   service->stopped = s_stop_rc == H2_PAL_OK;
   /* Stop cancels the job's request, so its wait returns. */
@@ -126,7 +128,7 @@ h2_pal_result_t h2_gizclaw_service_stop(h2_gizclaw_service_t *service) {
   return s_stop_rc;
 }
 
-h2_pal_result_t h2_gizclaw_service_deinit(h2_gizclaw_service_t *service) {
+h2_pal_result_t h2_gizclaw_service_deinit(h2_gizclaw_service_t* service) {
   assert(service->stopped);
   assert(service->config.client_config->private_key.len != 0u);
   if (s_deinit_rc == H2_PAL_OK) {
@@ -136,10 +138,9 @@ h2_pal_result_t h2_gizclaw_service_deinit(h2_gizclaw_service_t *service) {
   return s_deinit_rc;
 }
 
-h2_pal_result_t
-h2_gizclaw_rpc_register(h2_gizclaw_service_t *service, const char *token,
-                        uint32_t timeout_ms,
-                        h2_gizclaw_registration_result_t *out_result) {
+h2_pal_result_t h2_gizclaw_rpc_register(
+    h2_gizclaw_service_t* service, const char* token, uint32_t timeout_ms,
+    h2_gizclaw_registration_result_t* out_result) {
   assert(service->started && !service->stopped);
   assert(strcmp(token, "borrowed-token") == 0 && timeout_ms > 0u);
   ++s_registers;
@@ -151,7 +152,7 @@ h2_gizclaw_rpc_register(h2_gizclaw_service_t *service, const char *token,
   return s_register_rc;
 }
 
-h2_pal_result_t h2_gizclaw_rpc_peer_delete(h2_gizclaw_service_t *service,
+h2_pal_result_t h2_gizclaw_rpc_peer_delete(h2_gizclaw_service_t* service,
                                            uint32_t timeout_ms) {
   assert(service->started && !service->stopped && timeout_ms > 0u);
   assert(!service->config.client_config->cancel_requested(
@@ -167,7 +168,7 @@ h2_pal_result_t h2_gizclaw_rpc_peer_delete(h2_gizclaw_service_t *service,
 /* Fail closed unless the test explicitly grants the exact business scope. */
 enum { CONTACT = 1u, FRIEND = 2u, GROUP = 4u, WORKSPACE = 16u };
 static unsigned s_business_allowed, s_business_failed, s_business_seen;
-static h2_gizclaw_e2e_fixture_t *s_business_fixture;
+static h2_gizclaw_e2e_fixture_t* s_business_fixture;
 static bool s_lookup_friend;
 static int s_lookup_rc;
 enum {
@@ -196,19 +197,19 @@ static unsigned s_workspace_mode, s_workspace_role = H2_GIZCLAW_E2E_FRIEND;
 static unsigned s_workspace_deletes, s_workspace_gets;
 static bool s_member_cleanup;
 static unsigned s_member_mode, s_member_lists, s_member_deletes;
-#define BUSINESS_DELETE(name, type, bit, field, role)                          \
-  h2_pal_result_t h2_gizclaw_rpc_##name(                                       \
-      h2_gizclaw_service_t *service, h2_gizclaw_str_t id, uint32_t timeout,    \
-      h2_gizclaw_resp_storage_t *storage, type *out) {                         \
-    assert((s_business_allowed & bit) != 0u && s_business_fixture != NULL);    \
-    assert(service == s_business_fixture->actors[role].service);               \
-    assert(id.len == strlen(s_business_fixture->field) && id.len > 0u);        \
-    assert(memcmp(id.data, s_business_fixture->field, id.len) == 0);           \
-    assert(timeout == 15000u && storage != NULL && out != NULL);               \
-    s_business_seen |= bit;                                                    \
-    if (bit == GROUP && s_member_cleanup)                                      \
-      assert(!s_business_fixture->friend_group_member_joined);                 \
-    return (s_business_failed & bit) ? H2_PAL_ERR_IO : H2_PAL_OK;              \
+#define BUSINESS_DELETE(name, type, bit, field, role)                       \
+  h2_pal_result_t h2_gizclaw_rpc_##name(                                    \
+      h2_gizclaw_service_t* service, h2_gizclaw_str_t id, uint32_t timeout, \
+      h2_gizclaw_resp_storage_t* storage, type* out) {                      \
+    assert((s_business_allowed & bit) != 0u && s_business_fixture != NULL); \
+    assert(service == s_business_fixture->actors[role].service);            \
+    assert(id.len == strlen(s_business_fixture->field) && id.len > 0u);     \
+    assert(memcmp(id.data, s_business_fixture->field, id.len) == 0);        \
+    assert(timeout == 15000u && storage != NULL && out != NULL);            \
+    s_business_seen |= bit;                                                 \
+    if (bit == GROUP && s_member_cleanup)                                   \
+      assert(!s_business_fixture->friend_group_member_joined);              \
+    return (s_business_failed & bit) ? H2_PAL_ERR_IO : H2_PAL_OK;           \
   }
 BUSINESS_DELETE(contact_delete, h2_gizclaw_contact_t, CONTACT, contact_name,
                 H2_GIZCLAW_E2E_FRIEND)
@@ -217,19 +218,19 @@ BUSINESS_DELETE(friend_group_delete, h2_gizclaw_friend_group_t, GROUP,
                 (s_owner_group ? H2_GIZCLAW_E2E_OWNER : H2_GIZCLAW_E2E_FRIEND))
 #undef BUSINESS_DELETE
 
-static char *cleanup_save(h2_gizclaw_resp_storage_t *storage,
-                          const char *text) {
+static char* cleanup_save(h2_gizclaw_resp_storage_t* storage,
+                          const char* text) {
   size_t size = strlen(text) + 1u;
   assert(storage->used + size <= storage->capacity);
-  char *out = (char *)storage->data + storage->used;
+  char* out = (char*)storage->data + storage->used;
   memcpy(out, text, size);
   storage->used += size;
   return out;
 }
 
-static void workspace_call(h2_gizclaw_service_t *service, h2_gizclaw_str_t name,
+static void workspace_call(h2_gizclaw_service_t* service, h2_gizclaw_str_t name,
                            uint32_t timeout,
-                           h2_gizclaw_resp_storage_t *storage) {
+                           h2_gizclaw_resp_storage_t* storage) {
   assert(s_business_fixture && (s_business_allowed & WORKSPACE));
   assert(service == s_business_fixture->actors[s_workspace_role].service);
   assert(name.len == strlen(s_business_fixture->workspace_name) &&
@@ -240,118 +241,101 @@ static void workspace_call(h2_gizclaw_service_t *service, h2_gizclaw_str_t name,
 }
 
 h2_pal_result_t h2_gizclaw_rpc_workspace_delete(
-    h2_gizclaw_service_t *service, h2_gizclaw_str_t name, uint32_t timeout,
-    h2_gizclaw_resp_storage_t *storage, h2_gizclaw_workspace_t *out) {
+    h2_gizclaw_service_t* service, h2_gizclaw_str_t name, uint32_t timeout,
+    h2_gizclaw_resp_storage_t* storage, h2_gizclaw_workspace_t* out) {
   workspace_call(service, name, timeout, storage);
   ++s_workspace_deletes;
-  if (s_business_failed & WORKSPACE)
-    return H2_PAL_ERR_IO;
+  if (s_business_failed & WORKSPACE) return H2_PAL_ERR_IO;
   *out = (h2_gizclaw_workspace_t){
       .name = cleanup_save(storage, s_business_fixture->workspace_name)};
   if (s_workspace_mode == 1u)
     out->name = cleanup_save(storage, "wrong-workspace");
-  if (s_workspace_mode == 2u)
-    out->name = NULL;
-  if (s_workspace_mode == 3u)
-    out->name = "unowned";
-  if (s_workspace_mode == 4u)
-    out->name[0] = '\0';
-  if (s_workspace_mode == 5u)
-    memset(storage->data, 'x', storage->used);
-  if (s_workspace_mode == 6u)
-    out->system = true;
-  if (s_workspace_mode == 7u)
-    storage->used = storage->capacity + 1u;
-  if (s_workspace_mode == 8u)
-    return H2_PAL_ERR_NOT_FOUND;
-  if (s_workspace_mode == 9u)
-    return H2_PAL_ERR_IO;
-  if (s_workspace_mode == 10u)
-    clock.monotonic_ms += 45000u;
+  if (s_workspace_mode == 2u) out->name = NULL;
+  if (s_workspace_mode == 3u) out->name = "unowned";
+  if (s_workspace_mode == 4u) out->name[0] = '\0';
+  if (s_workspace_mode == 5u) memset(storage->data, 'x', storage->used);
+  if (s_workspace_mode == 6u) out->system = true;
+  if (s_workspace_mode == 7u) storage->used = storage->capacity + 1u;
+  if (s_workspace_mode == 8u) return H2_PAL_ERR_NOT_FOUND;
+  if (s_workspace_mode == 9u) return H2_PAL_ERR_IO;
+  if (s_workspace_mode == 10u) clock.monotonic_ms += 45000u;
   return H2_PAL_OK;
 }
 
-h2_pal_result_t
-h2_gizclaw_rpc_workspace_get(h2_gizclaw_service_t *service,
-                             h2_gizclaw_str_t name, uint32_t timeout,
-                             h2_gizclaw_resp_storage_t *storage,
-                             h2_gizclaw_workspace_get_result_t *out) {
+h2_pal_result_t h2_gizclaw_rpc_workspace_get(
+    h2_gizclaw_service_t* service, h2_gizclaw_str_t name, uint32_t timeout,
+    h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_workspace_get_result_t* out) {
   workspace_call(service, name, timeout, storage);
   ++s_workspace_gets;
-  if (s_workspace_mode == 11u)
-    return H2_PAL_ERR_IO;
+  if (s_workspace_mode == 11u) return H2_PAL_ERR_IO;
   if (s_workspace_mode >= 12u && s_workspace_mode <= 15u) {
     *out = (h2_gizclaw_workspace_get_result_t){0};
     out->workspace.name =
         cleanup_save(storage, s_business_fixture->workspace_name);
     if (s_workspace_mode == 13u)
       out->workspace.name = cleanup_save(storage, "wrong-workspace");
-    if (s_workspace_mode == 14u)
-      out->workspace.name = "unowned";
-    if (s_workspace_mode == 15u)
-      storage->used = storage->capacity + 1u;
+    if (s_workspace_mode == 14u) out->workspace.name = "unowned";
+    if (s_workspace_mode == 15u) storage->used = storage->capacity + 1u;
     return H2_PAL_OK;
   }
   return H2_PAL_ERR_NOT_FOUND;
 }
 
-h2_pal_result_t h2_gizclaw_rpc_friend_delete(h2_gizclaw_service_t *service,
+h2_pal_result_t h2_gizclaw_rpc_friend_delete(h2_gizclaw_service_t* service,
                                              h2_gizclaw_str_t id,
                                              uint32_t timeout,
-                                             h2_gizclaw_resp_storage_t *storage,
-                                             h2_gizclaw_friend_t *out) {
+                                             h2_gizclaw_resp_storage_t* storage,
+                                             h2_gizclaw_friend_t* out) {
   assert((s_business_allowed & FRIEND) && s_business_fixture != NULL);
   assert(service == s_business_fixture->actors[0].service && timeout == 15000u);
   assert(id.len == strlen(s_business_fixture->friend_id) && id.len > 0u);
   assert(memcmp(id.data, s_business_fixture->friend_id, id.len) == 0);
   assert(storage->used == 0u);
   s_business_seen |= FRIEND;
-  if (s_business_failed & FRIEND)
-    return H2_PAL_ERR_IO;
+  if (s_business_failed & FRIEND) return H2_PAL_ERR_IO;
   *out = (h2_gizclaw_friend_t){
       .id = cleanup_save(storage, s_business_fixture->friend_id),
       .peer_public_key =
           cleanup_save(storage, s_business_fixture->actors[1].public_key)};
   switch (s_friend_delete_mode) {
-  case 1:
-    out->id = cleanup_save(storage, "wrong-id");
-    break;
-  case 2:
-    out->peer_public_key = NULL;
-    break;
-  case 3:
-    out->id = "not-in-response-storage";
-    break;
-  case 4:
-    memset(storage->data, 'x', storage->used);
-    break;
-  case 5:
-    out->id[0] = '\0';
-    break;
-  case 6:
-    out->peer_public_key = cleanup_save(storage, "wrong-peer");
-    break;
-  default:
-    break;
+    case 1:
+      out->id = cleanup_save(storage, "wrong-id");
+      break;
+    case 2:
+      out->peer_public_key = NULL;
+      break;
+    case 3:
+      out->id = "not-in-response-storage";
+      break;
+    case 4:
+      memset(storage->data, 'x', storage->used);
+      break;
+    case 5:
+      out->id[0] = '\0';
+      break;
+    case 6:
+      out->peer_public_key = cleanup_save(storage, "wrong-peer");
+      break;
+    default:
+      break;
   }
   return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_gizclaw_rpc_friend_list(h2_gizclaw_service_t *service,
+h2_pal_result_t h2_gizclaw_rpc_friend_list(h2_gizclaw_service_t* service,
                                            h2_gizclaw_str_t cursor,
                                            size_t limit, uint32_t timeout,
-                                           h2_gizclaw_resp_storage_t *storage,
-                                           h2_gizclaw_friend_page_t *out) {
+                                           h2_gizclaw_resp_storage_t* storage,
+                                           h2_gizclaw_friend_page_t* out) {
   assert(s_lookup_friend && service == s_business_fixture->actors[0].service);
   assert(limit == 64u && timeout == 15000u && storage != NULL &&
          storage->used == 0u);
   char input[256] = {0};
   assert(cursor.len < sizeof(input));
-  if (cursor.len != 0u)
-    memcpy(input, cursor.data, cursor.len);
+  if (cursor.len != 0u) memcpy(input, cursor.data, cursor.len);
   ++s_lookup_calls;
-  if (s_lookup_rc != H2_PAL_OK)
-    return s_lookup_rc;
+  if (s_lookup_rc != H2_PAL_OK) return s_lookup_rc;
   if (s_lookup_mode == LOOKUP_SECOND_ERROR && s_lookup_calls == 2u)
     return H2_PAL_ERR_IO;
   memset(storage->data, 0xA5, storage->capacity);
@@ -364,17 +348,15 @@ h2_pal_result_t h2_gizclaw_rpc_friend_list(h2_gizclaw_service_t *service,
                                     s_lookup_mode == LOOKUP_LATE_TIMEOUT));
   if (page_only) {
     out->has_next = true;
-    out->next_cursor = cleanup_save(storage, s_lookup_mode == LOOKUP_CYCLE &&
-                                                     strcmp(input, "next") == 0
-                                                 ? "other"
-                                                 : "next");
-    if (s_lookup_mode == LOOKUP_LATE_TIMEOUT)
-      clock.monotonic_ms += 45000u;
+    out->next_cursor = cleanup_save(
+        storage, s_lookup_mode == LOOKUP_CYCLE && strcmp(input, "next") == 0
+                     ? "other"
+                     : "next");
+    if (s_lookup_mode == LOOKUP_LATE_TIMEOUT) clock.monotonic_ms += 45000u;
     return H2_PAL_OK;
   }
-  if (s_lookup_mode == LOOKUP_ABSENT)
-    return H2_PAL_OK;
-  out->items = (h2_gizclaw_friend_t *)storage->data;
+  if (s_lookup_mode == LOOKUP_ABSENT) return H2_PAL_OK;
+  out->items = (h2_gizclaw_friend_t*)storage->data;
   storage->used = sizeof(*out->items);
   *out->items = (h2_gizclaw_friend_t){
       .id = cleanup_save(storage, s_business_fixture->actors[1].public_key),
@@ -382,54 +364,53 @@ h2_pal_result_t h2_gizclaw_rpc_friend_list(h2_gizclaw_service_t *service,
           cleanup_save(storage, s_business_fixture->actors[1].public_key)};
   out->count = 1u;
   switch (s_lookup_mode) {
-  case LOOKUP_DUPLICATE:
-    if (first) {
+    case LOOKUP_DUPLICATE:
+      if (first) {
+        out->has_next = true;
+        out->next_cursor = cleanup_save(storage, "next");
+      }
+      break;
+    case LOOKUP_BAD_ID:
+      out->items[0].id = cleanup_save(storage, "unrelated-peer");
+      break;
+    case LOOKUP_NULL_ITEMS:
+      out->items = NULL;
+      break;
+    case LOOKUP_TOO_MANY:
+      out->count = 65u;
+      break;
+    case LOOKUP_NULL_KEY:
+      out->items[0].peer_public_key = NULL;
+      break;
+    case LOOKUP_UNTERMINATED:
+      out->items[0].id = (char*)storage->data + storage->used;
+      storage->data[storage->used++] = 'x';
+      break;
+    case LOOKUP_UNOWNED_ITEMS:
+      out->items = (h2_gizclaw_friend_t*)&s_lookup_mode;
+      break;
+    case LOOKUP_UNALIGNED_ITEMS:
+      out->items = (h2_gizclaw_friend_t*)(storage->data + 1u);
+      break;
+    case LOOKUP_BAD_CURSOR:
       out->has_next = true;
-      out->next_cursor = cleanup_save(storage, "next");
-    }
-    break;
-  case LOOKUP_BAD_ID:
-    out->items[0].id = cleanup_save(storage, "unrelated-peer");
-    break;
-  case LOOKUP_NULL_ITEMS:
-    out->items = NULL;
-    break;
-  case LOOKUP_TOO_MANY:
-    out->count = 65u;
-    break;
-  case LOOKUP_NULL_KEY:
-    out->items[0].peer_public_key = NULL;
-    break;
-  case LOOKUP_UNTERMINATED:
-    out->items[0].id = (char *)storage->data + storage->used;
-    storage->data[storage->used++] = 'x';
-    break;
-  case LOOKUP_UNOWNED_ITEMS:
-    out->items = (h2_gizclaw_friend_t *)&s_lookup_mode;
-    break;
-  case LOOKUP_UNALIGNED_ITEMS:
-    out->items = (h2_gizclaw_friend_t *)(storage->data + 1u);
-    break;
-  case LOOKUP_BAD_CURSOR:
-    out->has_next = true;
-    out->next_cursor = "not-owned";
-    break;
-  case LOOKUP_LONG_CURSOR:
-    out->has_next = true;
-    out->next_cursor = (char *)storage->data + storage->used;
-    memset(out->next_cursor, 'x', 256u);
-    out->next_cursor[256] = '\0';
-    storage->used += 257u;
-    break;
-  default:
-    break;
+      out->next_cursor = "not-owned";
+      break;
+    case LOOKUP_LONG_CURSOR:
+      out->has_next = true;
+      out->next_cursor = (char*)storage->data + storage->used;
+      memset(out->next_cursor, 'x', 256u);
+      out->next_cursor[256] = '\0';
+      storage->used += 257u;
+      break;
+    default:
+      break;
   }
   return H2_PAL_OK;
 }
 
-h2_pal_result_t
-h2_gizclaw_rpc_friend_invite_token_clear(h2_gizclaw_service_t *service,
-                                         uint32_t timeout) {
+h2_pal_result_t h2_gizclaw_rpc_friend_invite_token_clear(
+    h2_gizclaw_service_t* service, uint32_t timeout) {
   (void)service;
   (void)timeout;
   assert(false);
@@ -437,7 +418,7 @@ h2_gizclaw_rpc_friend_invite_token_clear(h2_gizclaw_service_t *service,
 }
 
 h2_pal_result_t h2_gizclaw_rpc_friend_group_invite_token_clear(
-    h2_gizclaw_service_t *service, h2_gizclaw_str_t group, uint32_t timeout) {
+    h2_gizclaw_service_t* service, h2_gizclaw_str_t group, uint32_t timeout) {
   assert(s_owner_group && service == s_business_fixture->actors[0].service);
   assert(timeout == 15000u &&
          group.len == strlen(s_business_fixture->friend_group_name));
@@ -447,9 +428,9 @@ h2_pal_result_t h2_gizclaw_rpc_friend_group_invite_token_clear(
 }
 
 h2_pal_result_t h2_gizclaw_rpc_friend_group_member_delete(
-    h2_gizclaw_service_t *service, h2_gizclaw_str_t group,
+    h2_gizclaw_service_t* service, h2_gizclaw_str_t group,
     h2_gizclaw_str_t member, uint32_t timeout,
-    h2_gizclaw_resp_storage_t *storage, h2_gizclaw_friend_group_member_t *out) {
+    h2_gizclaw_resp_storage_t* storage, h2_gizclaw_friend_group_member_t* out) {
   assert(s_member_cleanup && service == s_business_fixture->actors[0].service);
   assert(group.len == strlen(s_business_fixture->friend_group_name));
   assert(!memcmp(group.data, s_business_fixture->friend_group_name, group.len));
@@ -457,36 +438,30 @@ h2_pal_result_t h2_gizclaw_rpc_friend_group_member_delete(
          !memcmp(member.data, "membership-id", member.len));
   assert(timeout == 15000u && storage->used == 0u);
   ++s_member_deletes;
-  if (s_member_mode == 27u)
-    return H2_PAL_ERR_IO;
-  if (s_member_mode == 28u)
-    return H2_PAL_ERR_NOT_FOUND;
+  if (s_member_mode == 27u) return H2_PAL_ERR_IO;
+  if (s_member_mode == 28u) return H2_PAL_ERR_NOT_FOUND;
   *out = (h2_gizclaw_friend_group_member_t){
       .id = cleanup_save(storage, "membership-id"),
       .friend_group_name =
           cleanup_save(storage, s_business_fixture->friend_group_name),
       .peer_public_key =
           cleanup_save(storage, s_business_fixture->actors[2].public_key)};
-  if (s_member_mode == 21u)
-    out->id = cleanup_save(storage, "wrong-id");
+  if (s_member_mode == 21u) out->id = cleanup_save(storage, "wrong-id");
   if (s_member_mode == 22u)
     out->friend_group_name = cleanup_save(storage, "wrong-group");
   if (s_member_mode == 23u)
     out->peer_public_key = cleanup_save(storage, "wrong-peer");
-  if (s_member_mode == 24u)
-    out->id = "unowned";
-  if (s_member_mode == 25u)
-    out->id = NULL;
-  if (s_member_mode == 26u)
-    storage->used = storage->capacity + 1u;
+  if (s_member_mode == 24u) out->id = "unowned";
+  if (s_member_mode == 25u) out->id = NULL;
+  if (s_member_mode == 26u) storage->used = storage->capacity + 1u;
   return H2_PAL_OK;
 }
 
 h2_pal_result_t h2_gizclaw_rpc_friend_group_member_list(
-    h2_gizclaw_service_t *service, h2_gizclaw_str_t group,
+    h2_gizclaw_service_t* service, h2_gizclaw_str_t group,
     h2_gizclaw_str_t cursor, size_t limit, uint32_t timeout,
-    h2_gizclaw_resp_storage_t *storage,
-    h2_gizclaw_friend_group_member_page_t *out) {
+    h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_friend_group_member_page_t* out) {
   assert(s_member_cleanup && service == s_business_fixture->actors[0].service);
   assert(group.len == strlen(s_business_fixture->friend_group_name));
   assert(!memcmp(group.data, s_business_fixture->friend_group_name, group.len));
@@ -496,7 +471,7 @@ h2_pal_result_t h2_gizclaw_rpc_friend_group_member_list(
   if (s_member_mode == 16u || (s_member_mode == 17u && !first))
     return H2_PAL_ERR_IO;
   memset(out, 0, sizeof(*out));
-  out->items = (void *)storage->data;
+  out->items = (void*)storage->data;
   storage->used = 2u * sizeof(*out->items);
   memset(out->items, 0, storage->used);
   bool next = ((s_member_mode == 1u || s_member_mode == 4u ||
@@ -526,24 +501,19 @@ h2_pal_result_t h2_gizclaw_rpc_friend_group_member_list(
     out->count = 2u;
     out->items[1] = out->items[0];
   }
-  if (s_member_mode == 5u)
-    out->items = NULL;
-  if (s_member_mode == 6u)
-    out->count = 65u;
-  if (s_member_mode == 7u)
-    out->items = (void *)(storage->data + 1u);
-  if (s_member_mode == 8u)
-    out->items = (void *)&s_member_mode;
+  if (s_member_mode == 5u) out->items = NULL;
+  if (s_member_mode == 6u) out->count = 65u;
+  if (s_member_mode == 7u) out->items = (void*)(storage->data + 1u);
+  if (s_member_mode == 8u) out->items = (void*)&s_member_mode;
   if (s_member_mode == 9u)
     out->items[0].friend_group_name = cleanup_save(storage, "wrong");
-  if (s_member_mode == 10u)
-    out->items[0].peer_public_key = NULL;
+  if (s_member_mode == 10u) out->items[0].peer_public_key = NULL;
   if (s_member_mode == 11u) {
-    out->items[0].id = (char *)storage->data + storage->used;
+    out->items[0].id = (char*)storage->data + storage->used;
     storage->data[storage->used++] = 'x';
   }
   if (s_member_mode == 12u) {
-    out->items[0].id = (char *)storage->data + storage->used;
+    out->items[0].id = (char*)storage->data + storage->used;
     memset(out->items[0].id, 'x',
            sizeof(s_business_fixture->friend_group_member_id));
     storage->used += sizeof(s_business_fixture->friend_group_member_id);
@@ -558,16 +528,8 @@ h2_pal_result_t h2_gizclaw_rpc_friend_group_member_list(
   return H2_PAL_OK;
 }
 
-
-
-
-
-
-
-
-
-static int test_log(void *user, h2_pal_log_level_t level, const char *scope,
-                    const char *message) {
+static int test_log(void* user, h2_pal_log_level_t level, const char* scope,
+                    const char* message) {
   (void)user;
   (void)level;
   (void)scope;
@@ -576,15 +538,15 @@ static int test_log(void *user, h2_pal_log_level_t level, const char *scope,
 }
 
 static int s_job_rc;
-static int sync_job_body(void *ctx) {
-  ++*(unsigned *)ctx;
+static int sync_job_body(void* ctx) {
+  ++*(unsigned*)ctx;
   return s_job_rc;
 }
 
-static void test_call_sync(h2_runtime_t *runtime,
-                           const h2_gizclaw_e2e_config_t *config) {
+static void test_call_sync(h2_runtime_t* runtime,
+                           const h2_gizclaw_e2e_config_t* config) {
   h2_app_test_task_init(&job_task);
-  const h2_pal_task_api_t *saved_task = runtime->task;
+  const h2_pal_task_api_t* saved_task = runtime->task;
   runtime->task = &job_task.api;
   h2_gizclaw_e2e_fixture_t fixture;
   assert(h2_gizclaw_e2e_fixture_init(&fixture, runtime, config, 600000u) ==
@@ -610,41 +572,42 @@ static void test_call_sync(h2_runtime_t *runtime,
     runs = 0u;
     int expected = H2_PAL_OK;
     switch (mode) {
-    case 0: /* task start failure: nothing runs, nothing polls */
-      job_task.start = (h2_app_test_fault_t){.result=H2_PAL_ERR_IO, .remaining=1u};
-      expected = H2_PAL_ERR_IO;
-      break;
-    case 1: /* success: the job returns after the third App poll */
-      break;
-    case 2: /* job failure propagates */
-      s_job_rc = H2_PAL_ERR_FORMAT;
-      expected = H2_PAL_ERR_FORMAT;
-      break;
-    case 3: /* poll failure is reported once but dispatch continues */
-      s_poll_fault = 3u;
-      expected = H2_PAL_ERR_IO;
-      break;
-    case 4: /* deadline: the Service is stopped, cancelling the job */
-      s_job_after_polls = 0u;
-      assert(h2_gizclaw_e2e_fixture_set_deadline(&fixture, 5u) == H2_PAL_OK);
-      expected = H2_PAL_ERR_TIMEOUT;
-      break;
-    case 5: /* transient join failures are retried */
-      job_task.join.remaining = 2u;
-      break;
-    case 6: /* a join that never succeeds retains the task */
-      job_task.join.remaining = 1000u;
-      expected = H2_PAL_ERR_BUSY;
-      break;
+      case 0: /* task start failure: nothing runs, nothing polls */
+        job_task.start =
+            (h2_app_test_fault_t){.result = H2_PAL_ERR_IO, .remaining = 1u};
+        expected = H2_PAL_ERR_IO;
+        break;
+      case 1: /* success: the job returns after the third App poll */
+        break;
+      case 2: /* job failure propagates */
+        s_job_rc = H2_PAL_ERR_FORMAT;
+        expected = H2_PAL_ERR_FORMAT;
+        break;
+      case 3: /* poll failure is reported once but dispatch continues */
+        s_poll_fault = 3u;
+        expected = H2_PAL_ERR_IO;
+        break;
+      case 4: /* deadline: the Service is stopped, cancelling the job */
+        s_job_after_polls = 0u;
+        assert(h2_gizclaw_e2e_fixture_set_deadline(&fixture, 5u) == H2_PAL_OK);
+        expected = H2_PAL_ERR_TIMEOUT;
+        break;
+      case 5: /* transient join failures are retried */
+        job_task.join.remaining = 2u;
+        break;
+      case 6: /* a join that never succeeds retains the task */
+        job_task.join.remaining = 1000u;
+        expected = H2_PAL_ERR_BUSY;
+        break;
     }
-    const int rc =
-        h2_gizclaw_e2e_fixture_call_sync(&fixture, &service, sync_job_body,
-                                         &runs);
+    const int rc = h2_gizclaw_e2e_fixture_call_sync(&fixture, &service,
+                                                    sync_job_body, &runs);
     assert(rc == expected);
     assert(job_task.start.calls == 1u);
     assert(job_task.entry == NULL);
     if (mode == 0u) {
-      assert(runs == 0u && s_polls == polls_before && job_task.join.calls == 0u);
+      assert(runs == 0u && s_polls == polls_before &&
+             job_task.join.calls == 0u);
       continue;
     }
     assert(runs == 1u);
@@ -664,9 +627,8 @@ static void test_call_sync(h2_runtime_t *runtime,
   assert(h2_gizclaw_e2e_fixture_emit_recovery_ledger(&fixture) == 1u);
   runs = 0u;
   job_task.start.calls = 0u;
-  const int busy =
-      h2_gizclaw_e2e_fixture_call_sync(&fixture, &service, sync_job_body,
-                                       &runs);
+  const int busy = h2_gizclaw_e2e_fixture_call_sync(&fixture, &service,
+                                                    sync_job_body, &runs);
   assert(busy == H2_PAL_ERR_BUSY && runs == 0u && job_task.start.calls == 0u);
   assert(h2_gizclaw_e2e_fixture_emit_recovery_ledger(&fixture) == 1u);
   /* Deinit must not free the fixture while the handle cannot be joined. */
@@ -684,11 +646,13 @@ static void test_call_sync(h2_runtime_t *runtime,
 
 /* These fixture tests never create API key state; keep the Service mock
  * isolated from the real state implementation's Service dependencies. */
-h2_pal_result_t h2_gizclaw_api_key_state_close(h2_gizclaw_api_key_state_t *state) {
+h2_pal_result_t h2_gizclaw_api_key_state_close(
+    h2_gizclaw_api_key_state_t* state) {
   assert(state == NULL);
   return H2_PAL_OK;
 }
-h2_pal_result_t h2_gizclaw_api_key_state_destroy(h2_gizclaw_api_key_state_t **state) {
+h2_pal_result_t h2_gizclaw_api_key_state_destroy(
+    h2_gizclaw_api_key_state_t** state) {
   assert(state != NULL && *state == NULL);
   return H2_PAL_OK;
 }
@@ -696,84 +660,116 @@ h2_pal_result_t h2_gizclaw_api_key_state_destroy(h2_gizclaw_api_key_state_t **st
 static int observer_peer_token, observer_channel_tokens[3];
 static unsigned observer_created, observer_pending;
 static h2_pal_webrtc_channel_state_t observer_state;
-static int observer_peer_create(void *user, h2_pal_webrtc_peer_t **out) {
-  (void)user; *out = (h2_pal_webrtc_peer_t *)&observer_peer_token; return H2_PAL_OK;
-}
-static int observer_channel_create(h2_pal_webrtc_peer_t *p,
-    const h2_pal_webrtc_channel_config_t *cfg, h2_pal_webrtc_channel_t **out) {
-  assert(p && cfg && observer_created < 2u);
-  *out = (h2_pal_webrtc_channel_t *)&observer_channel_tokens[observer_created++]; return H2_PAL_OK;
-}
-static int observer_poll(h2_pal_webrtc_peer_t *p, int timeout, h2_pal_webrtc_event_t *out) {
-  (void)timeout;
-  *out = (h2_pal_webrtc_event_t){.kind=H2_PAL_WEBRTC_EVENT_CHANNEL_STATE,
-      .peer=p,.channel=(h2_pal_webrtc_channel_t *)&observer_channel_tokens[observer_pending],
-      .channel_state=observer_state,
-      .channel_info={.label={"giznet/v1/service/0",sizeof("giznet/v1/service/0")-1u},.stream_id=7,.has_stream_id=1}};
+static int observer_peer_create(void* user, h2_pal_webrtc_peer_t** out) {
+  (void)user;
+  *out = (h2_pal_webrtc_peer_t*)&observer_peer_token;
   return H2_PAL_OK;
 }
-static void observer_close(h2_pal_webrtc_peer_t *p) { assert(p); }
-static void observe_channel_lifetimes(h2_runtime_t *runtime,
-                                     const h2_gizclaw_e2e_config_t *config) {
-  static const h2_pal_webrtc_vtable_t vt = {.peer_create=observer_peer_create,
-      .peer_create_data_channel=observer_channel_create,.peer_poll=observer_poll,.peer_close=observer_close};
-  const h2_pal_webrtc_api_t api = {.vtable=&vt};
-  const h2_pal_webrtc_api_t *saved = runtime->webrtc;
+static int observer_channel_create(h2_pal_webrtc_peer_t* p,
+                                   const h2_pal_webrtc_channel_config_t* cfg,
+                                   h2_pal_webrtc_channel_t** out) {
+  assert(p && cfg && observer_created < 2u);
+  *out = (h2_pal_webrtc_channel_t*)&observer_channel_tokens[observer_created++];
+  return H2_PAL_OK;
+}
+static int observer_poll(h2_pal_webrtc_peer_t* p, int timeout,
+                         h2_pal_webrtc_event_t* out) {
+  (void)timeout;
+  *out = (h2_pal_webrtc_event_t){
+      .kind = H2_PAL_WEBRTC_EVENT_CHANNEL_STATE,
+      .peer = p,
+      .channel =
+          (h2_pal_webrtc_channel_t*)&observer_channel_tokens[observer_pending],
+      .channel_state = observer_state,
+      .channel_info = {
+          .label = {"giznet/v1/service/0", sizeof("giznet/v1/service/0") - 1u},
+          .stream_id = 7,
+          .has_stream_id = 1}};
+  return H2_PAL_OK;
+}
+static void observer_close(h2_pal_webrtc_peer_t* p) { assert(p); }
+static void observe_channel_lifetimes(h2_runtime_t* runtime,
+                                      const h2_gizclaw_e2e_config_t* config) {
+  static const h2_pal_webrtc_vtable_t vt = {
+      .peer_create = observer_peer_create,
+      .peer_create_data_channel = observer_channel_create,
+      .peer_poll = observer_poll,
+      .peer_close = observer_close};
+  const h2_pal_webrtc_api_t api = {.vtable = &vt};
+  const h2_pal_webrtc_api_t* saved = runtime->webrtc;
   runtime->webrtc = &api;
-  for (unsigned mode=0u;mode<3u;++mode) {
+  for (unsigned mode = 0u; mode < 3u; ++mode) {
     h2_gizclaw_e2e_fixture_t f;
-    observer_created=0u;
-    assert(h2_gizclaw_e2e_fixture_init(&f,runtime,config,1000u)==H2_PAL_OK);
-    h2_pal_webrtc_peer_t *peer=NULL;
-    assert(h2_pal_webrtc_peer_create(f.webrtc,&peer)==H2_PAL_OK);
-    h2_pal_webrtc_channel_config_t cfg={.label={"giznet/v1/service/0",sizeof("giznet/v1/service/0")-1u}};
-    for(unsigned i=0u;i<2u;++i) {
-      h2_pal_webrtc_channel_t *channel=NULL;
-      assert(h2_pal_webrtc_peer_create_data_channel(f.webrtc,peer,&cfg,&channel)==H2_PAL_OK);
+    observer_created = 0u;
+    assert(h2_gizclaw_e2e_fixture_init(&f, runtime, config, 1000u) ==
+           H2_PAL_OK);
+    h2_pal_webrtc_peer_t* peer = NULL;
+    assert(h2_pal_webrtc_peer_create(f.webrtc, &peer) == H2_PAL_OK);
+    h2_pal_webrtc_channel_config_t cfg = {
+        .label = {"giznet/v1/service/0", sizeof("giznet/v1/service/0") - 1u}};
+    for (unsigned i = 0u; i < 2u; ++i) {
+      h2_pal_webrtc_channel_t* channel = NULL;
+      assert(h2_pal_webrtc_peer_create_data_channel(f.webrtc, peer, &cfg,
+                                                    &channel) == H2_PAL_OK);
     }
     h2_gizclaw_e2e_fixture_reset_rpc_channel_observation();
-    for(unsigned i=0u;i<2u;++i) {
-      observer_pending=mode==2u ? 2u : i;
-      observer_state=H2_PAL_WEBRTC_CHANNEL_OPEN;
-      h2_pal_webrtc_event_t event={0};
-      assert(h2_pal_webrtc_peer_poll(f.webrtc,peer,1,&event)==H2_PAL_OK);
+    for (unsigned i = 0u; i < 2u; ++i) {
+      observer_pending = mode == 2u ? 2u : i;
+      observer_state = H2_PAL_WEBRTC_CHANNEL_OPEN;
+      h2_pal_webrtc_event_t event = {0};
+      assert(h2_pal_webrtc_peer_poll(f.webrtc, peer, 1, &event) == H2_PAL_OK);
       h2_pal_webrtc_event_release(&event);
-      if(mode!=1u) {
-        observer_state=H2_PAL_WEBRTC_CHANNEL_CLOSED;
-        assert(h2_pal_webrtc_peer_poll(f.webrtc,peer,1,&event)==H2_PAL_OK);
+      if (mode != 1u) {
+        observer_state = H2_PAL_WEBRTC_CHANNEL_CLOSED;
+        assert(h2_pal_webrtc_peer_poll(f.webrtc, peer, 1, &event) == H2_PAL_OK);
         h2_pal_webrtc_event_release(&event);
       }
     }
-    size_t maximum=0u,opened=0u,active=0u;
-    int rc=h2_gizclaw_e2e_fixture_rpc_channel_observation(&maximum,&opened,&active);
-    if(mode==0u) assert(rc==H2_PAL_OK && maximum==1u && opened==2u && active==0u);
-    else if(mode==1u) assert(rc==H2_PAL_ERR_INVALID_STATE && active==2u);
-    else assert(rc==H2_PAL_OK && maximum==0u && opened==0u && active==0u);
-    h2_pal_webrtc_peer_close(f.webrtc,peer);
-    assert(h2_gizclaw_e2e_fixture_deinit(&f)==H2_PAL_OK);
+    size_t maximum = 0u, opened = 0u, active = 0u;
+    int rc = h2_gizclaw_e2e_fixture_rpc_channel_observation(&maximum, &opened,
+                                                            &active);
+    if (mode == 0u)
+      assert(rc == H2_PAL_OK && maximum == 1u && opened == 2u && active == 0u);
+    else if (mode == 1u)
+      assert(rc == H2_PAL_ERR_INVALID_STATE && active == 2u);
+    else
+      assert(rc == H2_PAL_OK && maximum == 0u && opened == 0u && active == 0u);
+    h2_pal_webrtc_peer_close(f.webrtc, peer);
+    assert(h2_gizclaw_e2e_fixture_deinit(&f) == H2_PAL_OK);
   }
-  runtime->webrtc=saved;
+  runtime->webrtc = saved;
 }
 
 static void social_payload_boundaries(void) {
   const uint8_t good[] = {10, 4, 'p', 'e', 'e', 'r', 18, 1, 'n', 26, 1, 'g'};
   h2_gizclaw_e2e_social_observation_t value;
-  assert(h2_gizclaw_e2e_decode_social_ping((h2_gizclaw_rpc_bytes_t){good, sizeof(good)}, &value) == 0);
+  assert(h2_gizclaw_e2e_decode_social_ping(
+             (h2_gizclaw_rpc_bytes_t){good, sizeof(good)}, &value) == 0);
   assert(!strcmp(value.sender, "peer") && !strcmp(value.group, "g"));
-  assert(h2_gizclaw_e2e_decode_social_ping((h2_gizclaw_rpc_bytes_t){good, 6}, &value) == 0);
+  assert(h2_gizclaw_e2e_decode_social_ping((h2_gizclaw_rpc_bytes_t){good, 6},
+                                           &value) == 0);
   assert(!strcmp(value.sender, "peer") && !value.group[0]);
-  const uint8_t bad[][8] = {
-      {10, 7, 'p'}, {8, 1}, {10, 0}, {10, 1, 0}, {18, 1, 'x'},
-      {10, 1, 'p', 10, 1, 'q'}, {10, 128, 128, 128, 128, 1}};
+  const uint8_t bad[][8] = {{10, 7, 'p'},
+                            {8, 1},
+                            {10, 0},
+                            {10, 1, 0},
+                            {18, 1, 'x'},
+                            {10, 1, 'p', 10, 1, 'q'},
+                            {10, 128, 128, 128, 128, 1}};
   const size_t lengths[] = {3, 2, 2, 3, 3, 6, 6};
   for (unsigned i = 0; i < sizeof(lengths) / sizeof(lengths[0]); ++i)
-    assert(h2_gizclaw_e2e_decode_social_ping((h2_gizclaw_rpc_bytes_t){bad[i], lengths[i]}, &value) != 0);
-  uint8_t long_sender[67]; memset(long_sender, 'a', sizeof(long_sender));
-  long_sender[0] = 10; long_sender[1] = 65;
-  assert(h2_gizclaw_e2e_decode_social_ping((h2_gizclaw_rpc_bytes_t){long_sender, sizeof(long_sender)}, &value) != 0);
+    assert(h2_gizclaw_e2e_decode_social_ping(
+               (h2_gizclaw_rpc_bytes_t){bad[i], lengths[i]}, &value) != 0);
+  uint8_t long_sender[67];
+  memset(long_sender, 'a', sizeof(long_sender));
+  long_sender[0] = 10;
+  long_sender[1] = 65;
+  assert(h2_gizclaw_e2e_decode_social_ping(
+             (h2_gizclaw_rpc_bytes_t){long_sender, sizeof(long_sender)},
+             &value) != 0);
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   social_payload_boundaries();
   const h2_gizclaw_str_t empty = h2_gizclaw_e2e_str(NULL);
   assert(empty.data == NULL && empty.len == 0u);
@@ -786,10 +782,13 @@ int main(int argc, char **argv) {
   h2_app_test_crypto_init(&crypto);
   uint8_t entropy[16384];
   memset(entropy, 0x6b, sizeof(entropy));
-  crypto.random_bytes = entropy; crypto.random_size = sizeof(entropy);
+  crypto.random_bytes = entropy;
+  crypto.random_size = sizeof(entropy);
   crypto.keypair_ready = true;
-  memset(crypto.keypair.private_key.bytes, 0x11, sizeof(crypto.keypair.private_key.bytes));
-  memset(crypto.keypair.public_key.bytes, 0x22, sizeof(crypto.keypair.public_key.bytes));
+  memset(crypto.keypair.private_key.bytes, 0x11,
+         sizeof(crypto.keypair.private_key.bytes));
+  memset(crypto.keypair.public_key.bytes, 0x22,
+         sizeof(crypto.keypair.public_key.bytes));
   static const h2_pal_http_vtable_t http_vtable = {0};
   static const h2_pal_http_api_t http = {.vtable = &http_vtable};
   static const h2_pal_log_vtable_t log_vtable = {.write = test_log};
@@ -829,10 +828,8 @@ int main(int argc, char **argv) {
     s_unterminated_profile = mode == 1;
     s_null_service = mode == 9;
     s_start_rc = mode == 10 ? H2_PAL_ERR_IO : H2_PAL_OK;
-    if (mode == 2)
-      s_profile = "";
-    if (mode == 3)
-      s_register_rc = H2_PAL_ERR_TIMEOUT;
+    if (mode == 2) s_profile = "";
+    if (mode == 3) s_register_rc = H2_PAL_ERR_TIMEOUT;
     int rc = h2_gizclaw_e2e_fixture_connect_actors(&fixture, 1u);
     const int expected_connect = mode == 1 || mode == 2 ? H2_PAL_ERR_FORMAT
                                  : mode == 3            ? H2_PAL_ERR_TIMEOUT
@@ -841,8 +838,7 @@ int main(int argc, char **argv) {
                                               : H2_PAL_OK;
     assert(rc == expected_connect);
     assert(fixture.actors[0].registered == (rc == H2_PAL_OK));
-    if (rc != H2_PAL_OK)
-      assert(fixture.runtime_profile_name[0] == '\0');
+    if (rc != H2_PAL_OK) assert(fixture.runtime_profile_name[0] == '\0');
     assert(fixture.actors[0].peer_delete_required == (mode != 9));
     /* A valid retry is required for cleanup after a rejected registration. */
     s_unterminated_profile = false;
@@ -869,10 +865,11 @@ int main(int argc, char **argv) {
       assert(s_live_services == 0u && fixture.actors[0].service == NULL);
       assert(fixture.registration_token == NULL);
     }
-    printf("H2_GIZCLAW_E2E stage=coverage-end case=service status=%s rc=%d "
-           "cleanup_rc=%d\n",
-           rc == H2_PAL_OK && cleanup_rc == H2_PAL_OK ? "PASS" : "FAIL", rc,
-           cleanup_rc);
+    printf(
+        "H2_GIZCLAW_E2E stage=coverage-end case=service status=%s rc=%d "
+        "cleanup_rc=%d\n",
+        rc == H2_PAL_OK && cleanup_rc == H2_PAL_OK ? "PASS" : "FAIL", rc,
+        cleanup_rc);
     s_stop_rc = s_deinit_rc = H2_PAL_OK;
     s_poll_fault = 0u;
     /* Retry only after the failed evidence span has closed; recovery must not
@@ -895,7 +892,7 @@ int main(int argc, char **argv) {
   assert(h2_gizclaw_e2e_fixture_emit_recovery_ledger(&fixture) == 0u);
   assert(h2_gizclaw_e2e_fixture_connect_actors(&fixture, 1u) == H2_PAL_OK);
   assert(s_starts == 1u && s_registers == 1u);
-  h2_gizclaw_service_t *original_service = fixture.actors[0].service;
+  h2_gizclaw_service_t* original_service = fixture.actors[0].service;
   assert(h2_gizclaw_e2e_fixture_init(&fixture, &runtime, &config, 1000u) ==
          H2_PAL_ERR_INVALID_STATE);
   assert(fixture.actors[0].service == original_service);
@@ -1057,8 +1054,7 @@ int main(int argc, char **argv) {
       assert(rc != H2_PAL_OK && fixture.friendship_created &&
              fixture.friend_id[0] == '\0');
       assert(s_business_seen == 0u && s_deletes == before);
-      if (mode == LOOKUP_ABSENT)
-        assert(rc == H2_PAL_ERR_NOT_FOUND);
+      if (mode == LOOKUP_ABSENT) assert(rc == H2_PAL_ERR_NOT_FOUND);
       if (mode == LOOKUP_CYCLE)
         assert(rc == H2_PAL_ERR_NO_SPACE && s_lookup_calls == 32u);
       if (mode == LOOKUP_SECOND_ERROR)
@@ -1178,9 +1174,9 @@ int main(int argc, char **argv) {
       assert(h2_gizclaw_e2e_fixture_init(&fixture, &runtime, &config, 45000u) ==
              H2_PAL_OK);
       assert(h2_gizclaw_e2e_fixture_connect_actors(&fixture, 2u) == H2_PAL_OK);
-      bool *pending = role ? &fixture.isolation_workspace_pending
+      bool* pending = role ? &fixture.isolation_workspace_pending
                            : &fixture.workspace_created;
-      bool *ack = role ? &fixture.isolation_workspace_delete_acknowledged
+      bool* ack = role ? &fixture.isolation_workspace_delete_acknowledged
                        : &fixture.workspace_delete_acknowledged;
       *pending = true;
       *ack = mode == 17u;
@@ -1233,8 +1229,7 @@ int main(int argc, char **argv) {
     fixture.friend_group_created = fixture.friend_group_member_joined = true;
     strcpy(fixture.friend_group_name, "test-group");
     fixture.friend_group_member_id[0] = '\0';
-    if (mode == 20u)
-      strcpy(fixture.friend_group_member_id, "membership-id");
+    if (mode == 20u) strcpy(fixture.friend_group_member_id, "membership-id");
     s_business_fixture = &fixture;
     s_business_allowed = GROUP;
     s_business_failed = s_business_seen = 0u;
@@ -1261,10 +1256,8 @@ int main(int argc, char **argv) {
              (mode == 18u || mode == 29u ? 5u : 4u));
       assert((fixture.friend_group_member_id[0] != '\0') == (mode >= 21u));
       assert(s_member_lists <= 32u);
-      if (mode == 15u)
-        assert(s_member_lists == 32u);
-      if (mode == 29u)
-        assert(s_member_deletes == 0u);
+      if (mode == 15u) assert(s_member_lists == 32u);
+      if (mode == 29u) assert(s_member_deletes == 0u);
       s_member_mode = 0u;
       assert(h2_gizclaw_e2e_fixture_set_deadline(&fixture, 45000u) ==
              H2_PAL_OK);
@@ -1288,12 +1281,13 @@ int main(int argc, char **argv) {
   s_poll_fault = 0u;
   const unsigned deletes_before = s_deletes, registers_before = s_registers;
   assert(h2_gizclaw_e2e_fixture_init(&fixture, &runtime, &wrong_profile,
-                                   600000u) == H2_PAL_OK);
+                                     600000u) == H2_PAL_OK);
   assert(h2_gizclaw_e2e_fixture_connect_actors(&fixture, 1u) ==
          H2_PAL_ERR_INVALID_STATE);
   assert(fixture.actors[0].registered && !fixture.runtime_profile_name[0]);
   assert(h2_gizclaw_e2e_fixture_cleanup(&fixture) == H2_PAL_OK);
-  assert(s_deletes == deletes_before + 1u && s_registers == registers_before + 1u);
+  assert(s_deletes == deletes_before + 1u &&
+         s_registers == registers_before + 1u);
   assert(h2_gizclaw_e2e_fixture_deinit(&fixture) == H2_PAL_OK);
 
   /* Peer-only cleanup must work without allocating another response arena. */
@@ -1403,7 +1397,8 @@ int main(int argc, char **argv) {
 
 /* Only inspect Session's borrowed configuration here; its orchestration is
  * exercised with the real Session in the Voice test. */
-h2_pal_result_t h2_gizclaw_session_create(const h2_gizclaw_session_config_t *config, h2_gizclaw_session_t **out) {
+h2_pal_result_t h2_gizclaw_session_create(
+    const h2_gizclaw_session_config_t* config, h2_gizclaw_session_t** out) {
   assert(s_tag_actor != NULL && config->tags == &s_tag_actor->workflow_tag &&
          config->tag_count == 1u &&
          config->tags[0].len == strlen("category:assistants") &&
@@ -1412,15 +1407,29 @@ h2_pal_result_t h2_gizclaw_session_create(const h2_gizclaw_session_config_t *con
   *out = NULL;
   return H2_PAL_ERR_UNSUPPORTED;
 }
-h2_pal_result_t h2_gizclaw_session_register(h2_gizclaw_session_t *session, const char *token, uint32_t timeout) {
-  (void)session; (void)token; (void)timeout; assert(false); return H2_PAL_ERR_UNSUPPORTED;
+h2_pal_result_t h2_gizclaw_session_register(h2_gizclaw_session_t* session,
+                                            const char* token,
+                                            uint32_t timeout) {
+  (void)session;
+  (void)token;
+  (void)timeout;
+  assert(false);
+  return H2_PAL_ERR_UNSUPPORTED;
 }
-h2_pal_result_t h2_gizclaw_session_snapshot(h2_gizclaw_session_t *session, h2_gizclaw_session_state_t *out) {
-  (void)session; (void)out; assert(false); return H2_PAL_ERR_UNSUPPORTED;
+h2_pal_result_t h2_gizclaw_session_snapshot(h2_gizclaw_session_t* session,
+                                            h2_gizclaw_session_state_t* out) {
+  (void)session;
+  (void)out;
+  assert(false);
+  return H2_PAL_ERR_UNSUPPORTED;
 }
-h2_pal_result_t h2_gizclaw_session_close(h2_gizclaw_session_t *session) {
-  (void)session; assert(false); return H2_PAL_ERR_UNSUPPORTED;
+h2_pal_result_t h2_gizclaw_session_close(h2_gizclaw_session_t* session) {
+  (void)session;
+  assert(false);
+  return H2_PAL_ERR_UNSUPPORTED;
 }
-h2_pal_result_t h2_gizclaw_session_destroy(h2_gizclaw_session_t **session) {
-  (void)session; assert(false); return H2_PAL_ERR_UNSUPPORTED;
+h2_pal_result_t h2_gizclaw_session_destroy(h2_gizclaw_session_t** session) {
+  (void)session;
+  assert(false);
+  return H2_PAL_ERR_UNSUPPORTED;
 }

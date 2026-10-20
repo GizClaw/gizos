@@ -114,15 +114,15 @@ static const char s_script[] =
 
 /* Appends text to a bounded line without stdio, which the firmware archive
  * ABI check keeps out of portable App archives. */
-static void line_append(char *line, size_t capacity, size_t *len,
-                        const char *text) {
+static void line_append(char* line, size_t capacity, size_t* len,
+                        const char* text) {
   while (text != NULL && *text != '\0' && *len + 1u < capacity) {
     line[(*len)++] = *text++;
   }
   line[*len] = '\0';
 }
 
-static void line_append_int(char *line, size_t capacity, size_t *len,
+static void line_append_int(char* line, size_t capacity, size_t* len,
                             long value) {
   char digits[24];
   size_t count = 0u;
@@ -142,8 +142,8 @@ static void line_append_int(char *line, size_t capacity, size_t *len,
 }
 
 /* The one result marker every run ends with, success or failure. */
-static void log_result(h2_runtime_t *runtime, const char *role,
-                       h2_pal_result_t rc, const h2_lua_job_status_t *status) {
+static void log_result(h2_runtime_t* runtime, const char* role,
+                       h2_pal_result_t rc, const h2_lua_job_status_t* status) {
   char line[H2_PAL_LOG_MESSAGE_MAX];
   size_t len = 0u;
   line[0] = '\0';
@@ -160,13 +160,14 @@ static void log_result(h2_runtime_t *runtime, const char *role,
   (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "lua-link-e2e", line);
 }
 
-static int role_is_valid(const char *role) {
-  return role != NULL && (strcmp(role, "host") == 0 || strcmp(role, "join") == 0);
+static int role_is_valid(const char* role) {
+  return role != NULL &&
+         (strcmp(role, "host") == 0 || strcmp(role, "join") == 0);
 }
 
-h2_pal_result_t h2_lua_link_e2e_run(h2_runtime_t *runtime,
-                                    const h2_lua_link_e2e_config_t *config) {
-  h2_lua_host_t *host = NULL;
+h2_pal_result_t h2_lua_link_e2e_run(h2_runtime_t* runtime,
+                                    const h2_lua_link_e2e_config_t* config) {
+  h2_lua_host_t* host = NULL;
   h2_lua_job_id_t job = H2_LUA_JOB_ID_NONE;
   h2_lua_job_status_t status = {0};
   h2_pal_result_t rc;
@@ -208,7 +209,7 @@ h2_pal_result_t h2_lua_link_e2e_run(h2_runtime_t *runtime,
     }
     if (rc == H2_PAL_OK) {
       rc = h2_lua_job_submit_text(host, NULL, "@lua_link_e2e.lua",
-                                  (const uint8_t *)s_script,
+                                  (const uint8_t*)s_script,
                                   sizeof(s_script) - 1u, args, 2u, &job);
     }
   }

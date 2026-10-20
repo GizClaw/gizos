@@ -10,9 +10,9 @@ extern "C" {
 
 /** Borrowed provider dependencies, valid for the complete synchronous call. */
 typedef struct h2_wifi_sta_dependencies {
-    const h2_pal_wifi_sta_api_t *sta;
-    const h2_pal_wifi_settings_api_t *settings;
-    const h2_pal_time_api_t *time;
+  const h2_pal_wifi_sta_api_t* sta;
+  const h2_pal_wifi_settings_api_t* settings;
+  const h2_pal_time_api_t* time;
 } h2_wifi_sta_dependencies_t;
 
 /**
@@ -25,9 +25,9 @@ typedef struct h2_wifi_sta_dependencies {
  * supply raw operations that do not reacquire that admission gate. No task,
  * allocation or global state is created. Settings replacement must be atomic.
  */
-int h2_wifi_sta_connect_and_save(const h2_wifi_sta_dependencies_t *deps,
-                                const h2_pal_wifi_sta_config_t *config,
-                                uint32_t timeout_ms);
+int h2_wifi_sta_connect_and_save(const h2_wifi_sta_dependencies_t* deps,
+                                 const h2_pal_wifi_sta_config_t* config,
+                                 uint32_t timeout_ms);
 
 #ifdef __cplusplus
 }

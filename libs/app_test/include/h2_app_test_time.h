@@ -20,15 +20,15 @@ typedef struct h2_app_test_time {
   /** Optional deterministic progress after a successful monotonic read. */
   uint32_t advance_per_read_ms;
   /** Optional borrowed observer, invoked after a successful sleep advance. */
-  void (*on_sleep)(void *user, uint32_t ms);
-  void *sleep_user;
+  void (*on_sleep)(void* user, uint32_t ms);
+  void* sleep_user;
 } h2_app_test_time_t;
 /** Initialize caller storage; NULL is a no-op. No allocation or destroy needed.
  */
-void h2_app_test_time_init(h2_app_test_time_t *clock, uint64_t initial_ms);
+void h2_app_test_time_init(h2_app_test_time_t* clock, uint64_t initial_ms);
 /** Advance both clocks atomically; overflow returns NO_SPACE without mutation.
  */
-h2_pal_result_t h2_app_test_time_advance(h2_app_test_time_t *clock,
+h2_pal_result_t h2_app_test_time_advance(h2_app_test_time_t* clock,
                                          uint64_t delta_ms);
 
 #ifdef __cplusplus

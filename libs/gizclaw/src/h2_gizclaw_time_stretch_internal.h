@@ -14,7 +14,7 @@ extern "C" {
 #define H2_GIZCLAW_STRETCH_SEQUENCE 640u /* 40 ms */
 #define H2_GIZCLAW_STRETCH_OVERLAP 128u  /* 8 ms */
 #define H2_GIZCLAW_STRETCH_SEEK 240u     /* 15 ms */
-#define H2_GIZCLAW_STRETCH_STEP                                                \
+#define H2_GIZCLAW_STRETCH_STEP \
   (H2_GIZCLAW_STRETCH_SEQUENCE - H2_GIZCLAW_STRETCH_OVERLAP)
 #define H2_GIZCLAW_STRETCH_INPUT 2048u
 #define H2_GIZCLAW_STRETCH_RATE_MIN 500u
@@ -37,22 +37,22 @@ typedef struct h2_gizclaw_stretch {
   uint64_t pushed, reported;
 } h2_gizclaw_stretch_t;
 
-void h2_gizclaw_stretch_reset(h2_gizclaw_stretch_t *s);
+void h2_gizclaw_stretch_reset(h2_gizclaw_stretch_t* s);
 /* Buffers up to n samples; returns how many were taken (0 when full). */
-size_t h2_gizclaw_stretch_push(h2_gizclaw_stretch_t *s, const int16_t *in,
+size_t h2_gizclaw_stretch_push(h2_gizclaw_stretch_t* s, const int16_t* in,
                                size_t n);
 /* One step at rate_permille (clamped to MIN..MAX) when enough input is
  * buffered. On true, *out points at *out_count samples valid until the next
  * call and *source is how many source samples they stand for. */
-bool h2_gizclaw_stretch_step(h2_gizclaw_stretch_t *s, uint32_t rate_permille,
-                             const int16_t **out, size_t *out_count,
-                             uint64_t *source);
+bool h2_gizclaw_stretch_step(h2_gizclaw_stretch_t* s, uint32_t rate_permille,
+                             const int16_t** out, size_t* out_count,
+                             uint64_t* source);
 /* Ends stretching: the carried overlap, then the buffered source after it,
  * unchanged, so playback continues seamlessly at the recorded speed. *source
  * settles every pushed sample not yet reported. Leaves s reset; *out stays
  * valid until the next push. */
-void h2_gizclaw_stretch_flush(h2_gizclaw_stretch_t *s, const int16_t **out,
-                              size_t *out_count, uint64_t *source);
+void h2_gizclaw_stretch_flush(h2_gizclaw_stretch_t* s, const int16_t** out,
+                              size_t* out_count, uint64_t* source);
 #ifdef __cplusplus
 }
 #endif

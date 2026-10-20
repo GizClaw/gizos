@@ -37,8 +37,8 @@ int udp_socket_sendto(UdpSocket* udp_socket, const h2_pal_net_addr_t* address,
       !h2_peer_net_addr_family_is_valid(address->family)) {
     return -1;
   }
-  return h2_pal_net_udp_sendto(udp_socket->net, udp_socket->fd,
-                               address, buf, (size_t)len);
+  return h2_pal_net_udp_sendto(udp_socket->net, udp_socket->fd, address, buf,
+                               (size_t)len);
 }
 
 int udp_socket_recvfrom(UdpSocket* udp_socket, h2_pal_net_addr_t* address,
@@ -51,9 +51,9 @@ int udp_socket_recvfrom(UdpSocket* udp_socket, h2_pal_net_addr_t* address,
   }
   h2_pal_net_addr_t received_address;
   memset(&received_address, 0, sizeof(received_address));
-  int result = h2_pal_net_udp_recvfrom(
-      udp_socket->net, udp_socket->fd, &received_address, buf, (size_t)len,
-      timeout_ms);
+  int result =
+      h2_pal_net_udp_recvfrom(udp_socket->net, udp_socket->fd,
+                              &received_address, buf, (size_t)len, timeout_ms);
   if (result == H2_PAL_ERR_TIMEOUT || result == H2_PAL_ERR_WOULD_BLOCK) {
     return 0;
   }
@@ -69,10 +69,10 @@ int udp_socket_recvfrom(UdpSocket* udp_socket, h2_pal_net_addr_t* address,
   return result;
 }
 
-int tcp_socket_connect(
-    TcpSocket* tcp_socket, const h2_pal_net_api_t* net,
-    const h2_pal_net_addr_t* source_addr,
-    const h2_pal_net_addr_t* remote_addr, uint32_t timeout_ms) {
+int tcp_socket_connect(TcpSocket* tcp_socket, const h2_pal_net_api_t* net,
+                       const h2_pal_net_addr_t* source_addr,
+                       const h2_pal_net_addr_t* remote_addr,
+                       uint32_t timeout_ms) {
   if (tcp_socket == NULL || net == NULL || source_addr == NULL ||
       remote_addr == NULL || source_addr->family != remote_addr->family ||
       !h2_peer_net_addr_family_is_valid(source_addr->family)) {
@@ -85,15 +85,15 @@ int tcp_socket_connect(
     bind_config.type = H2_PAL_NET_BIND_SOURCE_ADDR;
     bind_config.source_addr = *source_addr;
     bind_config.source_addr.port = 0u;
-    int open_result = h2_pal_net_tcp_open_bound(
-        net, source_addr->family, &bind_config, &tcp_socket->fd);
+    int open_result = h2_pal_net_tcp_open_bound(net, source_addr->family,
+                                                &bind_config, &tcp_socket->fd);
     if (open_result != H2_PAL_OK) {
       tcp_socket->fd = -1;
       return open_result;
     }
   }
-  int result = h2_pal_net_tcp_connect(
-      net, tcp_socket->fd, remote_addr, timeout_ms);
+  int result =
+      h2_pal_net_tcp_connect(net, tcp_socket->fd, remote_addr, timeout_ms);
   if (result != H2_PAL_OK && result != H2_PAL_ERR_TIMEOUT &&
       result != H2_PAL_ERR_WOULD_BLOCK) {
     tcp_socket_close(tcp_socket);
@@ -101,24 +101,23 @@ int tcp_socket_connect(
   return result;
 }
 
-int tcp_socket_send_timeout(
-    TcpSocket* tcp_socket, const uint8_t* buf, int len,
-    uint32_t timeout_ms) {
+int tcp_socket_send_timeout(TcpSocket* tcp_socket, const uint8_t* buf, int len,
+                            uint32_t timeout_ms) {
   if (tcp_socket == NULL || tcp_socket->fd < 0 || len < 0 ||
       (buf == NULL && len != 0)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  return h2_pal_net_tcp_send_timeout(
-      tcp_socket->net, tcp_socket->fd, buf, (size_t)len, timeout_ms);
+  return h2_pal_net_tcp_send_timeout(tcp_socket->net, tcp_socket->fd, buf,
+                                     (size_t)len, timeout_ms);
 }
 
-int tcp_socket_recv(
-    TcpSocket* tcp_socket, uint8_t* buf, int len, uint32_t timeout_ms) {
+int tcp_socket_recv(TcpSocket* tcp_socket, uint8_t* buf, int len,
+                    uint32_t timeout_ms) {
   if (tcp_socket == NULL || tcp_socket->fd < 0 || buf == NULL || len <= 0) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  return h2_pal_net_tcp_recv(
-      tcp_socket->net, tcp_socket->fd, buf, (size_t)len, timeout_ms);
+  return h2_pal_net_tcp_recv(tcp_socket->net, tcp_socket->fd, buf, (size_t)len,
+                             timeout_ms);
 }
 
 void tcp_socket_close(TcpSocket* tcp_socket) {

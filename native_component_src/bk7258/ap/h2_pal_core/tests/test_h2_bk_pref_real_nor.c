@@ -15,7 +15,7 @@
 #define DB_START 0x780000u
 #define DB_END 0x7a0000u
 static unsigned char flash[FLASH_SIZE];
-static const char *image_path;
+static const char* image_path;
 static unsigned erase_count, write_count;
 static uint64_t hardware_reads, hardware_read_bytes;
 static uint32_t last_hardware_read_end;
@@ -26,7 +26,7 @@ static unsigned hardware_after_fault;
 static int erase_fault_mode, read_fault_once;
 static flash_protect_type_t protection = FLASH_PROTECT_ALL;
 static void persist(void) {
-  FILE *f = fopen(image_path, "wb");
+  FILE* f = fopen(image_path, "wb");
   assert(f);
   assert(fwrite(flash, 1, sizeof(flash), f) == sizeof(flash));
   assert(!fclose(f));
@@ -34,7 +34,7 @@ static void persist(void) {
 static void bounds(uint32_t address, uint32_t size) {
   assert(address >= DB_START && address <= DB_END && size <= DB_END - address);
 }
-bk_err_t bk_flash_read_bytes(uint32_t address, uint8_t *data, uint32_t size) {
+bk_err_t bk_flash_read_bytes(uint32_t address, uint8_t* data, uint32_t size) {
   bounds(address, size);
   ++hardware_reads;
   hardware_read_bytes += size;
@@ -47,16 +47,15 @@ bk_err_t bk_flash_read_bytes(uint32_t address, uint8_t *data, uint32_t size) {
   memcpy(data, flash + address, size);
   return BK_OK;
 }
-bk_err_t bk_flash_write_bytes(uint32_t address, const uint8_t *data,
+bk_err_t bk_flash_write_bytes(uint32_t address, const uint8_t* data,
                               uint32_t size) {
   bounds(address, size);
-  if (fault_reached)
-    ++hardware_after_fault;
+  if (fault_reached) ++hardware_after_fault;
   int numbered_fault = fault_nth > 0 && --fault_nth == 0;
   if (getenv("H2_PREF_NOR_TRACE"))
     fprintf(stderr, "NOR write at=%x size=%u nth=%d fail=%d\n", address, size,
             fault_nth, numbered_fault);
-  const unsigned char *bytes = data;
+  const unsigned char* bytes = data;
   uint32_t count = size;
   int failed =
       numbered_fault ||
@@ -74,7 +73,7 @@ bk_err_t bk_flash_write_bytes(uint32_t address, const uint8_t *data,
   if (fail_manifest_commit && size == LARGE_MANIFEST_SIZE &&
       !memcmp(bytes, "H2LGKV1", 8))
     manifest_commit_status =
-        address - 28u - (uint32_t)strlen((const char *)bytes + 8) + 1u;
+        address - 28u - (uint32_t)strlen((const char*)bytes + 8) + 1u;
   if (fail_manifest_commit && manifest_commit_status &&
       address == manifest_commit_status && size == 1u && bytes[0] == 0u) {
     fail_manifest_commit = 0;
@@ -86,8 +85,7 @@ bk_err_t bk_flash_write_bytes(uint32_t address, const uint8_t *data,
 bk_err_t bk_flash_erase_sector(uint32_t address) {
   bounds(address, 4096u);
   assert(address % 4096u == 0u);
-  if (fault_reached)
-    ++hardware_after_fault;
+  if (fault_reached) ++hardware_after_fault;
   assert(protection == FLASH_PROTECT_NONE);
   int injected = erase_fault_mode && address >= H2_BK_PREF_LARGE_OFFSET;
   if (injected && erase_fault_mode == 1) {
@@ -106,55 +104,54 @@ bk_err_t bk_flash_erase_sector(uint32_t address) {
 }
 flash_protect_type_t bk_flash_get_protect_type(void) { return protection; }
 void bk_flash_set_protect_type(flash_protect_type_t mode) { protection = mode; }
-const bk_logic_partition_t *bk_flash_partition_get_info(int id) {
+const bk_logic_partition_t* bk_flash_partition_get_info(int id) {
   static const bk_logic_partition_t partition = {DB_START, DB_END - DB_START};
   assert(id == BK_PARTITION_FLASHDB);
   return &partition;
 }
-int rtos_init_mutex(beken_mutex_t *mutex) {
+int rtos_init_mutex(beken_mutex_t* mutex) {
   *mutex = calloc(1, sizeof(unsigned));
   return *mutex ? 0 : -1;
 }
-int rtos_deinit_mutex(beken_mutex_t *mutex) {
+int rtos_deinit_mutex(beken_mutex_t* mutex) {
   free(*mutex);
   *mutex = NULL;
   return 0;
 }
-int rtos_lock_mutex(beken_mutex_t *mutex) {
-  unsigned *p = *mutex;
+int rtos_lock_mutex(beken_mutex_t* mutex) {
+  unsigned* p = *mutex;
   assert(p && !*p);
   *p = 1;
   return 0;
 }
-int rtos_unlock_mutex(beken_mutex_t *mutex) {
-  unsigned *p = *mutex;
+int rtos_unlock_mutex(beken_mutex_t* mutex) {
+  unsigned* p = *mutex;
   assert(p && *p);
   *p = 0;
   return 0;
 }
-void *os_malloc(size_t size) { return malloc(size); }
-void *os_zalloc(size_t size) { return calloc(1, size); }
-void *os_realloc(void *p, size_t size) { return realloc(p, size); }
-void os_free(void *p) { free(p); }
+void* os_malloc(size_t size) { return malloc(size); }
+void* os_zalloc(size_t size) { return calloc(1, size); }
+void* os_realloc(void* p, size_t size) { return realloc(p, size); }
+void os_free(void* p) { free(p); }
 int easyflash_init(void) { return 0; }
-size_t ef_get_env_blob(const char *key, void *data, size_t size,
-                       size_t *saved) {
+size_t ef_get_env_blob(const char* key, void* data, size_t size,
+                       size_t* saved) {
   (void)key;
   (void)data;
   (void)size;
-  if (saved)
-    *saved = 0;
+  if (saved) *saved = 0;
   return 0;
 }
-int ef_del_env(const char *key) {
+int ef_del_env(const char* key) {
   (void)key;
   return 0;
 }
-static void *allocate(void *user, size_t size) {
+static void* allocate(void* user, size_t size) {
   (void)user;
   return malloc(size);
 }
-static void release(void *user, void *p) {
+static void release(void* user, void* p) {
   (void)user;
   free(p);
 }
@@ -163,22 +160,21 @@ static const h2_pal_mem_vtable_t memory_methods = {.alloc = allocate,
 static const h2_pal_mem_api_t memory = {.vtable = &memory_methods};
 static unsigned char value[16384], other[16384];
 static char text[4096];
-static void pattern(unsigned char *bytes, size_t size, unsigned seed) {
+static void pattern(unsigned char* bytes, size_t size, unsigned seed) {
   for (size_t i = 0; i < size; ++i)
     bytes[i] = (unsigned char)(i * 17u + (i >> 8) * 31u + seed);
 }
-static h2_pal_pref_namespace_t *open_ns(const char *name) {
-  h2_pal_pref_namespace_t *ns = NULL;
+static h2_pal_pref_namespace_t* open_ns(const char* name) {
+  h2_pal_pref_namespace_t* ns = NULL;
   int rc = h2_pal_pref_open(h2_bk_platform_pref_api(), name,
                             H2_PAL_PREF_OPEN_READ_WRITE, &ns);
-  if (rc)
-    fprintf(stderr, "open %s failed rc=%d\n", name, rc);
+  if (rc) fprintf(stderr, "open %s failed rc=%d\n", name, rc);
   assert(!rc && ns);
   return ns;
 }
-static void expect_blob(h2_pal_pref_namespace_t *ns, const char *key,
-                        const void *bytes, size_t size) {
-  void *out = NULL;
+static void expect_blob(h2_pal_pref_namespace_t* ns, const char* key,
+                        const void* bytes, size_t size) {
+  void* out = NULL;
   size_t length = 0;
   int rc = ns->get_blob(ns, &memory, key, &out, &length);
   if (rc) {
@@ -208,8 +204,8 @@ static void expect_blob(h2_pal_pref_namespace_t *ns, const char *key,
   assert(!rc && length == size && !memcmp(out, bytes, size));
   free(out);
 }
-static size_t count(h2_pal_pref_namespace_t *ns) {
-  h2_pal_pref_cursor_t *cursor = NULL;
+static size_t count(h2_pal_pref_namespace_t* ns) {
+  h2_pal_pref_cursor_t* cursor = NULL;
   h2_pal_pref_entry_t entry;
   size_t n = 0;
   int rc;
@@ -250,26 +246,25 @@ static void legacy_loader(int seed) {
 typedef struct old_entry {
   char key[64];
   size_t length;
-  void *data;
+  void* data;
 } old_entry_t;
-static int old_compare(const void *a, const void *b) {
-  return strcmp(((const old_entry_t *)a)->key, ((const old_entry_t *)b)->key);
+static int old_compare(const void* a, const void* b) {
+  return strcmp(((const old_entry_t*)a)->key, ((const old_entry_t*)b)->key);
 }
-static old_entry_t *old_snapshot(size_t *count_out, const char *export_path) {
+static old_entry_t* old_snapshot(size_t* count_out, const char* export_path) {
   struct fdb_kvdb old = {0};
   assert(!fdb_kvdb_init(&old, "old_p1", H2_BK_PREF_FLASHDB_PATH, NULL, NULL));
-  old_entry_t *entries = NULL;
+  old_entry_t* entries = NULL;
   size_t n = 0;
   struct fdb_kv_iterator iterator;
   fdb_kv_iterator_init(&iterator);
   while (fdb_kv_iterate(&old, &iterator)) {
-    struct fdb_kv *kv = &iterator.curr_kv;
-    if (!strcmp(kv->name, H2_BK_PREF_LARGE_OWNER_KEY))
-      continue;
+    struct fdb_kv* kv = &iterator.curr_kv;
+    if (!strcmp(kv->name, H2_BK_PREF_LARGE_OWNER_KEY)) continue;
     assert(kv->crc_is_ok && kv->value_len < 4096u);
     entries = realloc(entries, (n + 1u) * sizeof(*entries));
     assert(entries);
-    old_entry_t *entry = &entries[n++];
+    old_entry_t* entry = &entries[n++];
     memcpy(entry->key, kv->name, strlen(kv->name) + 1u);
     entry->length = kv->value_len;
     entry->data = malloc(entry->length ? entry->length : 1u);
@@ -282,7 +277,7 @@ static old_entry_t *old_snapshot(size_t *count_out, const char *export_path) {
   assert(!fdb_kvdb_deinit(&old));
   qsort(entries, n, sizeof(*entries), old_compare);
   if (export_path) {
-    FILE *out = fopen(export_path, "wb");
+    FILE* out = fopen(export_path, "wb");
     assert(out);
     for (size_t i = 0; i < n; ++i) {
       uint8_t sizes[16];
@@ -299,14 +294,13 @@ static old_entry_t *old_snapshot(size_t *count_out, const char *export_path) {
   *count_out = n;
   return entries;
 }
-static void old_release(old_entry_t *entries, size_t n) {
-  for (size_t i = 0; i < n; ++i)
-    free(entries[i].data);
+static void old_release(old_entry_t* entries, size_t n) {
+  for (size_t i = 0; i < n; ++i) free(entries[i].data);
   free(entries);
 }
-static void old_expect(const old_entry_t *entries, size_t n) {
+static void old_expect(const old_entry_t* entries, size_t n) {
   size_t actual_count = 0;
-  old_entry_t *actual = old_snapshot(&actual_count, NULL);
+  old_entry_t* actual = old_snapshot(&actual_count, NULL);
   assert(actual_count == n);
   for (size_t i = 0; i < n; ++i)
     assert(!strcmp(actual[i].key, entries[i].key) &&
@@ -314,22 +308,22 @@ static void old_expect(const old_entry_t *entries, size_t n) {
            !memcmp(actual[i].data, entries[i].data, entries[i].length));
   old_release(actual, actual_count);
 }
-static void compatibility(const char *phase, const char *canonical) {
+static void compatibility(const char* phase, const char* canonical) {
   size_t n = 0;
-  old_entry_t *entries = old_snapshot(&n, canonical);
+  old_entry_t* entries = old_snapshot(&n, canonical);
   assert(n > 0);
-  h2_pal_pref_namespace_t *probe = open_ns("h2compatprobe");
+  h2_pal_pref_namespace_t* probe = open_ns("h2compatprobe");
   old_expect(entries,
              n); /* tail initialization did not change old logical data */
   assert(!probe->close(probe));
   if (!strcmp(phase, "compat")) {
     /* Use a real pre-existing blob/unknown-type key, in a private image copy.
      */
-    h2_pal_pref_namespace_t *ns = NULL;
-    const char *key = NULL;
+    h2_pal_pref_namespace_t* ns = NULL;
+    const char* key = NULL;
     size_t chosen = n;
     for (size_t i = 0; i < n; ++i) {
-      const char *dot = strchr(entries[i].key, '.');
+      const char* dot = strchr(entries[i].key, '.');
       if (!dot || dot == entries[i].key ||
           (size_t)(dot - entries[i].key) > 15u ||
           !strncmp(entries[i].key, "$h2t", 4))
@@ -338,7 +332,7 @@ static void compatibility(const char *phase, const char *canonical) {
       memcpy(name, entries[i].key, (size_t)(dot - entries[i].key));
       ns = open_ns(name);
       key = dot + 1;
-      void *read = NULL;
+      void* read = NULL;
       size_t length = 0;
       int rc = ns->get_blob(ns, &memory, key, &read, &length);
       if (rc == H2_PAL_ERR_INVALID_STATE) {
@@ -355,7 +349,7 @@ static void compatibility(const char *phase, const char *canonical) {
     assert(ns && chosen < n);
     assert(!ns->set_blob(ns, key, value, sizeof(value)));
     assert(!ns->commit(ns));
-    void *read = NULL;
+    void* read = NULL;
     size_t length = 0;
     assert(!ns->get_blob(ns, &memory, key, &read, &length) &&
            length == sizeof(value) && !memcmp(read, value, length));
@@ -397,12 +391,12 @@ static void compatibility(const char *phase, const char *canonical) {
   old_release(entries, n);
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   assert(argc == 3 || argc == 4);
   image_path = argv[1];
-  const char *phase = argv[2];
+  const char* phase = argv[2];
   memset(flash, 0xff, sizeof(flash));
-  FILE *f = fopen(image_path, "rb");
+  FILE* f = fopen(image_path, "rb");
   if (f) {
     assert(fread(flash, 1, sizeof(flash), f) == sizeof(flash));
     fclose(f);
@@ -410,8 +404,7 @@ int main(int argc, char **argv) {
   assert(!atexit(persist));
   pattern(value, sizeof(value), 5);
   pattern(other, sizeof(other), 77);
-  for (unsigned i = 0; i < 4095; ++i)
-    text[i] = (char)('a' + i % 23);
+  for (unsigned i = 0; i < 4095; ++i) text[i] = (char)('a' + i % 23);
   text[4095] = 0;
   if (!strcmp(phase, "compat") || !strcmp(phase, "compat-verify")) {
     assert(argc == 4);
@@ -424,7 +417,7 @@ int main(int argc, char **argv) {
     flash[H2_BK_PREF_LARGE_OFFSET + 4096] = 0x33;
     unsigned char tail[DB_END - DB_START];
     memcpy(tail, flash + DB_START, sizeof(tail));
-    h2_pal_pref_namespace_t *ns = NULL;
+    h2_pal_pref_namespace_t* ns = NULL;
     assert(h2_pal_pref_open(h2_bk_platform_pref_api(), "nor",
                             H2_PAL_PREF_OPEN_READ_WRITE, &ns) == H2_PAL_ERR_IO);
     assert(!ns && !memcmp(tail, flash + DB_START, sizeof(tail)));
@@ -445,8 +438,7 @@ int main(int argc, char **argv) {
     for (unsigned i = 0; i < 8u; ++i) {
       assert(g_flashdb0.ops.read(address + i * 32u, out, sizeof(out)) ==
              (int)sizeof(out));
-      for (size_t j = 0; j < sizeof(out); ++j)
-        assert(out[j] == 0xffu);
+      for (size_t j = 0; j < sizeof(out); ++j) assert(out[j] == 0xffu);
     }
     assert(hardware_reads == start_reads + 1u);
     assert(g_flashdb0.ops.write(address, &changed, 1u) == 1);
@@ -463,8 +455,9 @@ int main(int argc, char **argv) {
     assert(g_flashdb0.ops.read(DB_END - 8u, out, 8u) == 8);
     assert(last_hardware_read_end == DB_END);
     h2_bk_pref_flash_read_end();
-    puts("PASS bounded 512 read-ahead/begin/end/write/erase and both partition "
-         "ends");
+    puts(
+        "PASS bounded 512 read-ahead/begin/end/write/erase and both partition "
+        "ends");
   } else
 #endif
       if (!strcmp(phase, "profile")) {
@@ -473,13 +466,13 @@ int main(int argc, char **argv) {
     uint32_t actual = 0;
     assert(!ns->get_u32(ns, "counter", &actual) && actual == 1u);
     uint64_t reads_before = hardware_reads, bytes_before = hardware_read_bytes;
-    for (uint32_t i = 0; i < 200u; ++i)
-      assert(!ns->set_u32(ns, "counter", i));
-    printf("NOR_PROFILE "
-           "{\"overwrites\":200,\"hardware_reads\":%llu,\"hardware_bytes\":%"
-           "llu}\n",
-           (unsigned long long)(hardware_reads - reads_before),
-           (unsigned long long)(hardware_read_bytes - bytes_before));
+    for (uint32_t i = 0; i < 200u; ++i) assert(!ns->set_u32(ns, "counter", i));
+    printf(
+        "NOR_PROFILE "
+        "{\"overwrites\":200,\"hardware_reads\":%llu,\"hardware_bytes\":%"
+        "llu}\n",
+        (unsigned long long)(hardware_reads - reads_before),
+        (unsigned long long)(hardware_read_bytes - bytes_before));
     assert(!ns->get_u32(ns, "counter", &actual) && actual == 199u);
     expect_blob(ns, "resident", value, sizeof(value));
     assert(!ns->clear(ns));
@@ -502,7 +495,7 @@ int main(int argc, char **argv) {
     printf("PASS real SDK small remove/iterator prefetch reads=%llu\n",
            (unsigned long long)reads);
   } else if (!strcmp(phase, "cache")) {
-    void *out = NULL;
+    void* out = NULL;
     size_t length = 0;
     assert(ns->get_blob(ns, &memory, "route", &out, &length) ==
                H2_PAL_ERR_NOT_FOUND &&
@@ -535,8 +528,9 @@ int main(int argc, char **argv) {
                H2_PAL_ERR_NOT_FOUND &&
            !out && !length);
     assert(!isolated->clear(isolated));
-    puts("PASS cached miss/create/overwrite/remove/clear and "
-         "failure-after-manifest-commit route recovery");
+    puts(
+        "PASS cached miss/create/overwrite/remove/clear and "
+        "failure-after-manifest-commit route recovery");
   } else if (!strcmp(phase, "seed")) {
     assert(!ns->set_u32(ns, "number", 123));
     assert(!ns->set_blob(ns, "blob", value, sizeof(value)));
@@ -560,8 +554,7 @@ int main(int argc, char **argv) {
       expect_blob(isolated, "blob", other, sizeof(other));
     }
     assert(erase_count > before_gc); /* actual real engine GC happened */
-    for (uint32_t i = 0; i < 1000u; ++i)
-      assert(!ns->set_u32(ns, "number", i));
+    for (uint32_t i = 0; i < 1000u; ++i) assert(!ns->set_u32(ns, "number", i));
     assert(!ns->commit(ns));
     assert(!isolated->commit(isolated));
     assert(count(ns) == 3 && count(isolated) == 1);
@@ -569,7 +562,7 @@ int main(int argc, char **argv) {
     puts("PASS real 4 KiB limit reproduced; 16 KiB/4095/1000/large GC/old P1");
   } else if (!strcmp(phase, "verify")) {
     expect_blob(ns, "blob", value, sizeof(value));
-    char *out = NULL;
+    char* out = NULL;
     assert(!ns->get_string(ns, &memory, "string", &out) && !strcmp(out, text));
     free(out);
     uint32_t number = 0;
@@ -586,7 +579,7 @@ int main(int argc, char **argv) {
     assert(!isolated->commit(isolated));
     puts("PASS remove/clear+commit");
   } else if (!strcmp(phase, "clean")) {
-    void *out = NULL;
+    void* out = NULL;
     size_t n = 0;
     assert(ns->get_blob(ns, &memory, "blob", &out, &n) ==
                H2_PAL_ERR_NOT_FOUND &&
@@ -616,11 +609,12 @@ int main(int argc, char **argv) {
     assert(!ns->set_blob(ns, "blob", other, sizeof(other)));
     expect_blob(ns, "blob", other, sizeof(other));
     assert(!ns->clear(ns));
-    puts("PASS real engine reboot recovery retained old bytes/type and "
-         "retry/cleanup");
+    puts(
+        "PASS real engine reboot recovery retained old bytes/type and "
+        "retry/cleanup");
   } else if (!strcmp(phase, "fault-read")) {
     read_fault_once = 1;
-    void *out = NULL;
+    void* out = NULL;
     size_t length = 0;
     assert(ns->get_blob(ns, &memory, "blob", &out, &length) == H2_PAL_ERR_IO &&
            !out && !length);
@@ -652,7 +646,7 @@ int main(int argc, char **argv) {
            !hardware_after_fault);
     puts("PASS erase error before/after physical erase returned IO");
   } else if (!strcmp(phase, "fault-type-verify")) {
-    void *out = NULL;
+    void* out = NULL;
     size_t length = 0;
     int rc = ns->get_blob(ns, &memory, "blob", &out, &length);
     if (!rc) {
@@ -660,7 +654,7 @@ int main(int argc, char **argv) {
       free(out);
     } else {
       assert(rc == H2_PAL_ERR_INVALID_STATE);
-      char *string = NULL;
+      char* string = NULL;
       assert(!ns->get_string(ns, &memory, "blob", &string) &&
              !strcmp(string, text));
       free(string);
@@ -668,8 +662,9 @@ int main(int argc, char **argv) {
     expect_blob(isolated, "blob", other, sizeof(other));
     assert(!ns->clear(ns));
     assert(!isolated->clear(isolated));
-    puts("PASS real failure/reboot preserves selected payload and matching "
-         "type");
+    puts(
+        "PASS real failure/reboot preserves selected payload and matching "
+        "type");
   } else if (!strncmp(phase, "fault-type-", 11)) {
     fault_nth = atoi(phase + 11);
     assert(fault_nth > 0);
@@ -687,13 +682,13 @@ int main(int argc, char **argv) {
     assert(!hardware_after_fault);
     printf("PASS numbered flash fault reached=%d rc=%d\n", fault_reached, rc);
   } else if (!strcmp(phase, "fault-any-verify")) {
-    void *out = NULL;
+    void* out = NULL;
     size_t n = 0;
     assert(!ns->get_blob(ns, &memory, "blob", &out, &n) && n == sizeof(value));
     assert(!memcmp(out, value, n) || !memcmp(out, other, n));
     free(out);
     expect_blob(isolated, "blob", other, sizeof(other));
-    char *out_text = NULL;
+    char* out_text = NULL;
     assert(!ns->get_string(ns, &memory, "string", &out_text) &&
            !strcmp(out_text, text));
     free(out_text);

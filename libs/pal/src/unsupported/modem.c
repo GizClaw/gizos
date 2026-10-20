@@ -2,172 +2,187 @@
 #include <stddef.h>
 #include <string.h>
 
-static h2_pal_result_t unsupported_modem_open(void *p0, uint32_t p1) {
-    (void)p0;
-    (void)p1;
-    return H2_PAL_ERR_UNSUPPORTED;
+static h2_pal_result_t unsupported_modem_open(void* p0, uint32_t p1) {
+  (void)p0;
+  (void)p1;
+  return H2_PAL_ERR_UNSUPPORTED;
 }
 
-static h2_pal_result_t unsupported_modem_close(void *p0, uint32_t p1) {
-    (void)p0;
-    (void)p1;
-    return H2_PAL_ERR_UNSUPPORTED;
+static h2_pal_result_t unsupported_modem_close(void* p0, uint32_t p1) {
+  (void)p0;
+  (void)p1;
+  return H2_PAL_ERR_UNSUPPORTED;
 }
 
-static h2_pal_result_t unsupported_modem_get_capabilities(void *p0, uint32_t *p1) {
-    (void)p0;
-    (void)p1;
-    return H2_PAL_ERR_UNSUPPORTED;
+static h2_pal_result_t unsupported_modem_get_capabilities(void* p0,
+                                                          uint32_t* p1) {
+  (void)p0;
+  (void)p1;
+  return H2_PAL_ERR_UNSUPPORTED;
 }
 
-static h2_pal_result_t unsupported_modem_get_status(void *p0, h2_pal_modem_status_t *p1) {
-    (void)p0;
-    (void)p1;
-    return H2_PAL_ERR_UNSUPPORTED;
+static h2_pal_result_t unsupported_modem_get_status(void* p0,
+                                                    h2_pal_modem_status_t* p1) {
+  (void)p0;
+  (void)p1;
+  return H2_PAL_ERR_UNSUPPORTED;
 }
 
-static h2_pal_result_t unsupported_modem_get_identity(void *p0, h2_pal_modem_identity_t *p1) {
-    (void)p0;
-    (void)p1;
-    return H2_PAL_ERR_UNSUPPORTED;
+static h2_pal_result_t unsupported_modem_get_identity(
+    void* p0, h2_pal_modem_identity_t* p1) {
+  (void)p0;
+  (void)p1;
+  return H2_PAL_ERR_UNSUPPORTED;
 }
 
-static h2_pal_result_t unsupported_modem_get_operator(void *p0, h2_pal_modem_operator_t *p1) {
-    (void)p0;
-    (void)p1;
-    return H2_PAL_ERR_UNSUPPORTED;
+static h2_pal_result_t unsupported_modem_get_operator(
+    void* p0, h2_pal_modem_operator_t* p1) {
+  (void)p0;
+  (void)p1;
+  return H2_PAL_ERR_UNSUPPORTED;
 }
 
-static h2_pal_result_t unsupported_modem_set_apn(void *p0, const h2_pal_modem_apn_config_t *p1) {
-    (void)p0;
-    (void)p1;
-    return H2_PAL_ERR_UNSUPPORTED;
+static h2_pal_result_t unsupported_modem_set_apn(
+    void* p0, const h2_pal_modem_apn_config_t* p1) {
+  (void)p0;
+  (void)p1;
+  return H2_PAL_ERR_UNSUPPORTED;
 }
 
-static h2_pal_result_t unsupported_modem_data_open(void *p0, uint32_t p1) {
-    (void)p0;
-    (void)p1;
-    return H2_PAL_ERR_UNSUPPORTED;
+static h2_pal_result_t unsupported_modem_data_open(void* p0, uint32_t p1) {
+  (void)p0;
+  (void)p1;
+  return H2_PAL_ERR_UNSUPPORTED;
 }
 
-static h2_pal_result_t unsupported_modem_data_close(void *p0, uint32_t p1) {
-    (void)p0;
-    (void)p1;
-    return H2_PAL_ERR_UNSUPPORTED;
+static h2_pal_result_t unsupported_modem_data_close(void* p0, uint32_t p1) {
+  (void)p0;
+  (void)p1;
+  return H2_PAL_ERR_UNSUPPORTED;
 }
 
-static h2_pal_result_t unsupported_modem_get_data_status(void *p0, h2_pal_modem_data_status_t *p1) {
-    (void)p0;
-    (void)p1;
-    return H2_PAL_ERR_UNSUPPORTED;
+static h2_pal_result_t unsupported_modem_get_data_status(
+    void* p0, h2_pal_modem_data_status_t* p1) {
+  (void)p0;
+  (void)p1;
+  return H2_PAL_ERR_UNSUPPORTED;
 }
 
-static h2_pal_result_t unsupported_modem_get_signal(void *p0, h2_pal_modem_signal_t *p1) {
-    (void)p0;
-    if (p1 != NULL) {
-        memset(p1, 0, sizeof(*p1));
-    }
-    return H2_PAL_ERR_UNSUPPORTED;
+static h2_pal_result_t unsupported_modem_get_signal(void* p0,
+                                                    h2_pal_modem_signal_t* p1) {
+  (void)p0;
+  if (p1 != NULL) {
+    memset(p1, 0, sizeof(*p1));
+  }
+  return H2_PAL_ERR_UNSUPPORTED;
 }
 
-static h2_pal_result_t unsupported_modem_call_dial(void *p0, const h2_pal_modem_call_request_t *p1) {
-    (void)p0;
-    (void)p1;
-    return H2_PAL_ERR_UNSUPPORTED;
+static h2_pal_result_t unsupported_modem_call_dial(
+    void* p0, const h2_pal_modem_call_request_t* p1) {
+  (void)p0;
+  (void)p1;
+  return H2_PAL_ERR_UNSUPPORTED;
 }
 
-static h2_pal_result_t unsupported_modem_call_answer(void *p0, uint32_t p1) {
-    (void)p0;
-    (void)p1;
-    return H2_PAL_ERR_UNSUPPORTED;
+static h2_pal_result_t unsupported_modem_call_answer(void* p0, uint32_t p1) {
+  (void)p0;
+  (void)p1;
+  return H2_PAL_ERR_UNSUPPORTED;
 }
 
-static h2_pal_result_t unsupported_modem_call_hangup(void *p0, uint32_t p1) {
-    (void)p0;
-    (void)p1;
-    return H2_PAL_ERR_UNSUPPORTED;
+static h2_pal_result_t unsupported_modem_call_hangup(void* p0, uint32_t p1) {
+  (void)p0;
+  (void)p1;
+  return H2_PAL_ERR_UNSUPPORTED;
 }
 
-static h2_pal_result_t unsupported_modem_get_call_status(void *p0, h2_pal_modem_call_status_t *p1) {
-    (void)p0;
-    (void)p1;
-    return H2_PAL_ERR_UNSUPPORTED;
+static h2_pal_result_t unsupported_modem_get_call_status(
+    void* p0, h2_pal_modem_call_status_t* p1) {
+  (void)p0;
+  (void)p1;
+  return H2_PAL_ERR_UNSUPPORTED;
 }
 
-static h2_pal_result_t unsupported_modem_set_call_volume(void *user, uint32_t percent) {
-    (void)user;
-    (void)percent;
-    return H2_PAL_ERR_UNSUPPORTED;
+static h2_pal_result_t unsupported_modem_set_call_volume(void* user,
+                                                         uint32_t percent) {
+  (void)user;
+  (void)percent;
+  return H2_PAL_ERR_UNSUPPORTED;
 }
 
-static h2_pal_result_t unsupported_modem_get_call_volume(void *user, uint32_t *out_percent) {
-    (void)user;
-    (void)out_percent;
-    return H2_PAL_ERR_UNSUPPORTED;
+static h2_pal_result_t unsupported_modem_get_call_volume(
+    void* user, uint32_t* out_percent) {
+  (void)user;
+  (void)out_percent;
+  return H2_PAL_ERR_UNSUPPORTED;
 }
 
-static h2_pal_result_t unsupported_modem_gnss_start(void *p0, uint32_t p1) {
-    (void)p0;
-    (void)p1;
-    return H2_PAL_ERR_UNSUPPORTED;
+static h2_pal_result_t unsupported_modem_gnss_start(void* p0, uint32_t p1) {
+  (void)p0;
+  (void)p1;
+  return H2_PAL_ERR_UNSUPPORTED;
 }
 
-static h2_pal_result_t unsupported_modem_gnss_stop(void *p0, uint32_t p1) {
-    (void)p0;
-    (void)p1;
-    return H2_PAL_ERR_UNSUPPORTED;
+static h2_pal_result_t unsupported_modem_gnss_stop(void* p0, uint32_t p1) {
+  (void)p0;
+  (void)p1;
+  return H2_PAL_ERR_UNSUPPORTED;
 }
 
-static h2_pal_result_t unsupported_modem_get_gnss_state(void *p0, h2_pal_modem_gnss_state_t *p1) {
-    (void)p0;
-    (void)p1;
-    return H2_PAL_ERR_UNSUPPORTED;
+static h2_pal_result_t unsupported_modem_get_gnss_state(
+    void* p0, h2_pal_modem_gnss_state_t* p1) {
+  (void)p0;
+  (void)p1;
+  return H2_PAL_ERR_UNSUPPORTED;
 }
 
-static h2_pal_result_t unsupported_modem_get_gnss_fix(void *p0, h2_pal_modem_gnss_fix_t *p1) {
-    (void)p0;
-    (void)p1;
-    return H2_PAL_ERR_UNSUPPORTED;
+static h2_pal_result_t unsupported_modem_get_gnss_fix(
+    void* p0, h2_pal_modem_gnss_fix_t* p1) {
+  (void)p0;
+  (void)p1;
+  return H2_PAL_ERR_UNSUPPORTED;
 }
 
-static h2_pal_result_t unsupported_modem_set_power_policy(void *user, h2_pal_modem_power_policy_t policy) {
-    (void)user;
-    (void)policy;
-    return H2_PAL_ERR_UNSUPPORTED;
+static h2_pal_result_t unsupported_modem_set_power_policy(
+    void* user, h2_pal_modem_power_policy_t policy) {
+  (void)user;
+  (void)policy;
+  return H2_PAL_ERR_UNSUPPORTED;
 }
 
-static h2_pal_result_t unsupported_modem_get_power_status(void *user, h2_pal_modem_power_status_t *out_status) {
-    (void)user;
-    out_status->policy = H2_PAL_MODEM_POWER_POLICY_ACTIVE;
-    out_status->state = H2_PAL_MODEM_POWER_STATE_UNKNOWN;
-    return H2_PAL_ERR_UNSUPPORTED;
+static h2_pal_result_t unsupported_modem_get_power_status(
+    void* user, h2_pal_modem_power_status_t* out_status) {
+  (void)user;
+  out_status->policy = H2_PAL_MODEM_POWER_POLICY_ACTIVE;
+  out_status->state = H2_PAL_MODEM_POWER_STATE_UNKNOWN;
+  return H2_PAL_ERR_UNSUPPORTED;
 }
 
 static h2_pal_result_t unsupported_modem_get_emergency_numbers(
-    void *user, uint32_t timeout_ms,
-    h2_pal_modem_emergency_number_t *out_numbers, size_t capacity,
-    size_t *out_count) {
-    (void)user;
-    (void)timeout_ms;
-    (void)out_numbers;
-    (void)capacity;
-    *out_count = 0u;
-    return H2_PAL_ERR_UNSUPPORTED;
+    void* user, uint32_t timeout_ms,
+    h2_pal_modem_emergency_number_t* out_numbers, size_t capacity,
+    size_t* out_count) {
+  (void)user;
+  (void)timeout_ms;
+  (void)out_numbers;
+  (void)capacity;
+  *out_count = 0u;
+  return H2_PAL_ERR_UNSUPPORTED;
 }
 
-static h2_pal_result_t unsupported_modem_ota_start(void *user,
-    const h2_pal_modem_ota_request_t *request) {
-    (void)user;
-    (void)request;
-    return H2_PAL_ERR_UNSUPPORTED;
+static h2_pal_result_t unsupported_modem_ota_start(
+    void* user, const h2_pal_modem_ota_request_t* request) {
+  (void)user;
+  (void)request;
+  return H2_PAL_ERR_UNSUPPORTED;
 }
 
-static h2_pal_result_t unsupported_modem_ota_get_status(void *user, uint32_t timeout_ms,
-    h2_pal_modem_ota_status_t *out_status) {
-    (void)user;
-    (void)timeout_ms;
-    memset(out_status, 0, sizeof(*out_status));
-    return H2_PAL_ERR_UNSUPPORTED;
+static h2_pal_result_t unsupported_modem_ota_get_status(
+    void* user, uint32_t timeout_ms, h2_pal_modem_ota_status_t* out_status) {
+  (void)user;
+  (void)timeout_ms;
+  memset(out_status, 0, sizeof(*out_status));
+  return H2_PAL_ERR_UNSUPPORTED;
 }
 
 static const h2_pal_modem_vtable_t unsupported_modem_vtable = {
@@ -198,5 +213,8 @@ static const h2_pal_modem_vtable_t unsupported_modem_vtable = {
     .get_gnss_state = unsupported_modem_get_gnss_state,
     .get_gnss_fix = unsupported_modem_get_gnss_fix,
 };
-static const h2_pal_modem_api_t unsupported_modem_api = { .user = NULL, .vtable = &unsupported_modem_vtable };
-const h2_pal_modem_api_t *h2_pal_unsupported_modem_api(void) { return &unsupported_modem_api; }
+static const h2_pal_modem_api_t unsupported_modem_api = {
+    .user = NULL, .vtable = &unsupported_modem_vtable};
+const h2_pal_modem_api_t* h2_pal_unsupported_modem_api(void) {
+  return &unsupported_modem_api;
+}

@@ -18,40 +18,41 @@ extern "C" {
 typedef struct h2_libsrtp_session h2_libsrtp_session_t;
 
 typedef enum h2_libsrtp_profile {
-    H2_LIBSRTP_PROFILE_AES128_CM_SHA1_80 = 1,
-    H2_LIBSRTP_PROFILE_AEAD_AES_128_GCM = 2,
+  H2_LIBSRTP_PROFILE_AES128_CM_SHA1_80 = 1,
+  H2_LIBSRTP_PROFILE_AEAD_AES_128_GCM = 2,
 } h2_libsrtp_profile_t;
 
 typedef enum h2_libsrtp_direction {
-    H2_LIBSRTP_DIRECTION_INBOUND = 0,
-    H2_LIBSRTP_DIRECTION_OUTBOUND = 1,
+  H2_LIBSRTP_DIRECTION_INBOUND = 0,
+  H2_LIBSRTP_DIRECTION_OUTBOUND = 1,
 } h2_libsrtp_direction_t;
 
 typedef enum h2_libsrtp_ssrc_policy {
-    H2_LIBSRTP_SSRC_SPECIFIC = 0,
-    H2_LIBSRTP_SSRC_ANY = 1,
+  H2_LIBSRTP_SSRC_SPECIFIC = 0,
+  H2_LIBSRTP_SSRC_ANY = 1,
 } h2_libsrtp_ssrc_policy_t;
 
 typedef struct h2_libsrtp_config {
-    /** Default memory provider, copied by value; also owns the global kernel. */
-    h2_pal_mem_api_t mem;
-    /** Crypto provider copied by value and used by every SRTP primitive. */
-    h2_pal_crypto_api_t crypto;
-    /** Maximum plaintext or protected packet size accepted by a session. */
-    size_t max_packet_size;
+  /** Default memory provider, copied by value; also owns the global kernel. */
+  h2_pal_mem_api_t mem;
+  /** Crypto provider copied by value and used by every SRTP primitive. */
+  h2_pal_crypto_api_t crypto;
+  /** Maximum plaintext or protected packet size accepted by a session. */
+  size_t max_packet_size;
 } h2_libsrtp_config_t;
 
 typedef struct h2_libsrtp_session_config {
-    h2_libsrtp_profile_t profile;
-    h2_libsrtp_direction_t direction;
-    h2_libsrtp_ssrc_policy_t ssrc_policy;
-    uint32_t ssrc;
-    const uint8_t *master_key;
-    size_t master_key_len;
-    const uint8_t *master_salt;
-    size_t master_salt_len;
-    /** Optional session allocator, copied by value. NULL uses the init default. */
-    const h2_pal_mem_api_t *allocator;
+  h2_libsrtp_profile_t profile;
+  h2_libsrtp_direction_t direction;
+  h2_libsrtp_ssrc_policy_t ssrc_policy;
+  uint32_t ssrc;
+  const uint8_t* master_key;
+  size_t master_key_len;
+  const uint8_t* master_salt;
+  size_t master_salt_len;
+  /** Optional session allocator, copied by value. NULL uses the init default.
+   */
+  const h2_pal_mem_api_t* allocator;
 } h2_libsrtp_session_config_t;
 
 /**
@@ -62,7 +63,7 @@ typedef struct h2_libsrtp_session_config {
  * and each session can supply its own allocator. The first Memory provider
  * must remain valid until the final deinit.
  */
-h2_pal_result_t h2_libsrtp_init(const h2_libsrtp_config_t *config);
+h2_pal_result_t h2_libsrtp_init(const h2_libsrtp_config_t* config);
 
 /** Releases one owner reference; final release requires no live sessions. */
 h2_pal_result_t h2_libsrtp_deinit(void);
@@ -76,39 +77,34 @@ h2_pal_result_t h2_libsrtp_deinit(void);
  * The caller retains ownership of config.
  */
 h2_pal_result_t h2_libsrtp_session_create(
-    const h2_libsrtp_session_config_t *config,
-    h2_libsrtp_session_t **out_session);
+    const h2_libsrtp_session_config_t* config,
+    h2_libsrtp_session_t** out_session);
 
-/** Destroys a session, clears its key material, and sets the pointer to NULL. */
-void h2_libsrtp_session_destroy(h2_libsrtp_session_t **session);
+/** Destroys a session, clears its key material, and sets the pointer to NULL.
+ */
+void h2_libsrtp_session_destroy(h2_libsrtp_session_t** session);
 
-/** Protects one RTP packet in place and commits packet and length on success. */
-h2_pal_result_t h2_libsrtp_protect_rtp(
-    h2_libsrtp_session_t *session,
-    uint8_t *packet,
-    size_t capacity,
-    size_t *inout_len);
+/** Protects one RTP packet in place and commits packet and length on success.
+ */
+h2_pal_result_t h2_libsrtp_protect_rtp(h2_libsrtp_session_t* session,
+                                       uint8_t* packet, size_t capacity,
+                                       size_t* inout_len);
 
 /** Authenticates and decrypts one RTP packet in place. */
-h2_pal_result_t h2_libsrtp_unprotect_rtp(
-    h2_libsrtp_session_t *session,
-    uint8_t *packet,
-    size_t capacity,
-    size_t *inout_len);
+h2_pal_result_t h2_libsrtp_unprotect_rtp(h2_libsrtp_session_t* session,
+                                         uint8_t* packet, size_t capacity,
+                                         size_t* inout_len);
 
-/** Protects one RTCP packet in place and commits packet and length on success. */
-h2_pal_result_t h2_libsrtp_protect_rtcp(
-    h2_libsrtp_session_t *session,
-    uint8_t *packet,
-    size_t capacity,
-    size_t *inout_len);
+/** Protects one RTCP packet in place and commits packet and length on success.
+ */
+h2_pal_result_t h2_libsrtp_protect_rtcp(h2_libsrtp_session_t* session,
+                                        uint8_t* packet, size_t capacity,
+                                        size_t* inout_len);
 
 /** Authenticates and decrypts one RTCP packet in place. */
-h2_pal_result_t h2_libsrtp_unprotect_rtcp(
-    h2_libsrtp_session_t *session,
-    uint8_t *packet,
-    size_t capacity,
-    size_t *inout_len);
+h2_pal_result_t h2_libsrtp_unprotect_rtcp(h2_libsrtp_session_t* session,
+                                          uint8_t* packet, size_t capacity,
+                                          size_t* inout_len);
 
 #ifdef __cplusplus
 }

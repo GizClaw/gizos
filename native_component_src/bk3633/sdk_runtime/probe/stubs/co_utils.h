@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 struct bd_addr {
-    uint8_t addr[6];
+  uint8_t addr[6];
 };
 
 extern struct bd_addr co_default_bdaddr;

@@ -4,17 +4,17 @@
 #include "h2_iperf_server_app.h"
 
 typedef struct h2_iperf_server_app_worker {
-  h2_iperf_server_app_t *app;
+  h2_iperf_server_app_t* app;
   unsigned index;
-  h2_iperf_server_t *server;
-  h2_pal_task_t *task;
+  h2_iperf_server_t* server;
+  h2_pal_task_t* task;
 } h2_iperf_server_app_worker_t;
 
 struct h2_iperf_server_app {
-  h2_runtime_t *runtime;
+  h2_runtime_t* runtime;
   h2_iperf_server_app_config_t config;
-  h2_pal_mutex_t *mutex;
-  h2_pal_task_t *manager;
+  h2_pal_mutex_t* mutex;
+  h2_pal_task_t* manager;
   h2_atomic_bool_t stop;
   h2_atomic_bool_t shutdown;
   bool requested;

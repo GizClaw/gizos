@@ -10,15 +10,15 @@
 #include <string.h>
 
 typedef struct h2_touch_smoke_state {
-  h2_runtime_t *runtime;
-  const h2_touch_smoke_config_t *config;
-  void *render_buffer;
-  lv_display_t *display;
-  h2_lvgl_touch_t *touch;
+  h2_runtime_t* runtime;
+  const h2_touch_smoke_config_t* config;
+  void* render_buffer;
+  lv_display_t* display;
+  h2_lvgl_touch_t* touch;
   h2_lvgl_button_t button;
-  lv_obj_t *status_label;
-  lv_obj_t *position_label;
-  lv_obj_t *touch_marker;
+  lv_obj_t* status_label;
+  lv_obj_t* position_label;
+  lv_obj_t* touch_marker;
   h2_pal_result_t flush_result;
   uint32_t down_count;
   uint32_t up_count;
@@ -29,9 +29,9 @@ typedef struct h2_touch_smoke_state {
   int lvgl_initialized;
 } h2_touch_smoke_state_t;
 
-static void touch_smoke_flush(lv_display_t *display, const lv_area_t *area,
-                              uint8_t *pixels) {
-  h2_touch_smoke_state_t *state = lv_display_get_user_data(display);
+static void touch_smoke_flush(lv_display_t* display, const lv_area_t* area,
+                              uint8_t* pixels) {
+  h2_touch_smoke_state_t* state = lv_display_get_user_data(display);
   h2_pal_result_t flush_result = H2_PAL_ERR_INVALID_STATE;
   if (state != NULL && area != NULL && pixels != NULL) {
     const h2_display_rect_t rect = {
@@ -54,32 +54,31 @@ static void touch_smoke_flush(lv_display_t *display, const lv_area_t *area,
   lv_display_flush_ready(display);
 }
 
-static void touch_smoke_update_status(h2_touch_smoke_state_t *state) {
+static void touch_smoke_update_status(h2_touch_smoke_state_t* state) {
   char text[160];
   (void)snprintf(text, sizeof(text),
-                 "Runtime events  down=%u  up=%u  action=%u",
-                 state->down_count, state->up_count, state->action_count);
+                 "Runtime events  down=%u  up=%u  action=%u", state->down_count,
+                 state->up_count, state->action_count);
   lv_label_set_text(state->status_label, text);
 }
 
-static void touch_smoke_log_event(h2_touch_smoke_state_t *state,
-                                  const char *kind) {
+static void touch_smoke_log_event(h2_touch_smoke_state_t* state,
+                                  const char* kind) {
   char message[160];
-  (void)snprintf(message, sizeof(message),
-                 "event=%s down=%u up=%u action=%u", kind,
-                 state->down_count, state->up_count, state->action_count);
-  (void)h2_pal_log_write(state->runtime->log, H2_PAL_LOG_INFO,
-                         "touch-smoke", message);
+  (void)snprintf(message, sizeof(message), "event=%s down=%u up=%u action=%u",
+                 kind, state->down_count, state->up_count, state->action_count);
+  (void)h2_pal_log_write(state->runtime->log, H2_PAL_LOG_INFO, "touch-smoke",
+                         message);
 }
 
-static void touch_smoke_pointer_event(lv_event_t *event) {
+static void touch_smoke_pointer_event(lv_event_t* event) {
   const lv_event_code_t code = lv_event_get_code(event);
   if (code != LV_EVENT_PRESSED && code != LV_EVENT_PRESSING &&
       code != LV_EVENT_RELEASED) {
     return;
   }
-  h2_touch_smoke_state_t *state = lv_event_get_user_data(event);
-  lv_indev_t *indev = lv_event_get_indev(event);
+  h2_touch_smoke_state_t* state = lv_event_get_user_data(event);
+  lv_indev_t* indev = lv_event_get_indev(event);
   if (state == NULL || indev == NULL) {
     return;
   }
@@ -89,17 +88,17 @@ static void touch_smoke_pointer_event(lv_event_t *event) {
   lv_obj_set_hidden(state->touch_marker, false);
 
   char text[80];
-  const char *kind = code == LV_EVENT_RELEASED ? "up" : "down";
-  (void)snprintf(text, sizeof(text), "Touch %s  x=%d  y=%d", kind,
-                 (int)point.x, (int)point.y);
+  const char* kind = code == LV_EVENT_RELEASED ? "up" : "down";
+  (void)snprintf(text, sizeof(text), "Touch %s  x=%d  y=%d", kind, (int)point.x,
+                 (int)point.y);
   lv_label_set_text(state->position_label, text);
   if (code == LV_EVENT_PRESSED || code == LV_EVENT_RELEASED) {
-    (void)h2_pal_log_write(state->runtime->log, H2_PAL_LOG_INFO,
-                           "touch-smoke", text);
+    (void)h2_pal_log_write(state->runtime->log, H2_PAL_LOG_INFO, "touch-smoke",
+                           text);
   }
 }
 
-static void touch_smoke_process_events(h2_touch_smoke_state_t *state) {
+static void touch_smoke_process_events(h2_touch_smoke_state_t* state) {
   uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
   h2_runtime_event_t event = {
       .payload = payload,
@@ -132,7 +131,7 @@ static void touch_smoke_process_events(h2_touch_smoke_state_t *state) {
   }
 }
 
-static h2_pal_result_t touch_smoke_ui_init(h2_touch_smoke_state_t *state) {
+static h2_pal_result_t touch_smoke_ui_init(h2_touch_smoke_state_t* state) {
   if (h2_pal_display_open(state->runtime->display) != H2_DISPLAY_OK) {
     return H2_PAL_ERR_UNAVAILABLE;
   }
@@ -144,8 +143,8 @@ static h2_pal_result_t touch_smoke_ui_init(h2_touch_smoke_state_t *state) {
       display_info.height != (int)state->config->height) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  const size_t frame_bytes = (size_t)state->config->width *
-                             state->config->height * sizeof(uint16_t);
+  const size_t frame_bytes =
+      (size_t)state->config->width * state->config->height * sizeof(uint16_t);
   state->render_buffer = h2_pal_mem_alloc(state->runtime->mem, frame_bytes);
   if (state->render_buffer == NULL) {
     return H2_PAL_ERR_NO_MEMORY;
@@ -163,9 +162,8 @@ static h2_pal_result_t touch_smoke_ui_init(h2_touch_smoke_state_t *state) {
   state->platform_initialized = 1;
   lv_init();
   state->lvgl_initialized = 1;
-  state->display =
-      lv_display_create((int32_t)state->config->width,
-                        (int32_t)state->config->height);
+  state->display = lv_display_create((int32_t)state->config->width,
+                                     (int32_t)state->config->height);
   if (state->display == NULL) {
     return H2_PAL_ERR_NO_MEMORY;
   }
@@ -176,14 +174,14 @@ static h2_pal_result_t touch_smoke_ui_init(h2_touch_smoke_state_t *state) {
   lv_display_set_buffers(state->display, state->render_buffer, NULL,
                          (uint32_t)frame_bytes, LV_DISPLAY_RENDER_MODE_FULL);
 
-  lv_obj_t *screen = lv_screen_active();
+  lv_obj_t* screen = lv_screen_active();
   lv_obj_set_style_bg_color(screen, lv_color_hex(0x0f172au), LV_PART_MAIN);
   lv_obj_set_clickable(screen, true);
   lv_obj_add_event_cb(screen, touch_smoke_pointer_event, LV_EVENT_ALL, state);
-  lv_obj_t *title = lv_label_create(screen);
+  lv_obj_t* title = lv_label_create(screen);
   state->status_label = lv_label_create(screen);
   state->position_label = lv_label_create(screen);
-  lv_obj_t *button = lv_button_create(screen);
+  lv_obj_t* button = lv_button_create(screen);
   state->touch_marker = lv_obj_create(screen);
   if (title == NULL || state->status_label == NULL ||
       state->position_label == NULL || button == NULL ||
@@ -207,15 +205,15 @@ static h2_pal_result_t touch_smoke_ui_init(h2_touch_smoke_state_t *state) {
   lv_obj_set_style_border_width(state->touch_marker, 0, LV_PART_MAIN);
   lv_obj_set_clickable(state->touch_marker, false);
   lv_obj_set_hidden(state->touch_marker, true);
-  lv_obj_t *button_label = lv_label_create(button);
+  lv_obj_t* button_label = lv_label_create(button);
   if (button_label == NULL) {
     return H2_PAL_ERR_NO_MEMORY;
   }
   lv_label_set_text(button_label, "Push Runtime button");
   lv_obj_center(button_label);
-  h2_pal_result_t result = h2_lvgl_button_bind(
-      &state->button, state->runtime,
-      H2_TOUCH_SMOKE_COMPONENT_ACTION_BUTTON, button);
+  h2_pal_result_t result =
+      h2_lvgl_button_bind(&state->button, state->runtime,
+                          H2_TOUCH_SMOKE_COMPONENT_ACTION_BUTTON, button);
   if (result != H2_PAL_OK) {
     return result;
   }
@@ -227,7 +225,7 @@ static h2_pal_result_t touch_smoke_ui_init(h2_touch_smoke_state_t *state) {
   return h2_lvgl_touch_create(&touch_config, &state->touch);
 }
 
-static void touch_smoke_ui_deinit(h2_touch_smoke_state_t *state) {
+static void touch_smoke_ui_deinit(h2_touch_smoke_state_t* state) {
   if (state->touch != NULL) {
     h2_lvgl_touch_destroy(state->touch);
     state->touch = NULL;
@@ -249,24 +247,20 @@ static void touch_smoke_ui_deinit(h2_touch_smoke_state_t *state) {
   }
 }
 
-h2_pal_result_t h2_touch_smoke_run(
-    h2_runtime_t *runtime,
-    const h2_touch_smoke_config_t *config) {
+h2_pal_result_t h2_touch_smoke_run(h2_runtime_t* runtime,
+                                   const h2_touch_smoke_config_t* config) {
   if (runtime == NULL || config == NULL || config->width == 0u ||
-      config->height == 0u ||
-      config->should_stop == NULL || runtime->mem == NULL ||
-      runtime->log == NULL || runtime->display == NULL ||
-      runtime->touch == NULL ||
-      runtime->time == NULL || runtime->task == NULL ||
-      runtime->sync == NULL || runtime->queue == NULL) {
+      config->height == 0u || config->should_stop == NULL ||
+      runtime->mem == NULL || runtime->log == NULL ||
+      runtime->display == NULL || runtime->touch == NULL ||
+      runtime->time == NULL || runtime->task == NULL || runtime->sync == NULL ||
+      runtime->queue == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  if (config->width > (uint32_t)INT_MAX ||
-      config->height > (uint32_t)INT_MAX ||
+  if (config->width > (uint32_t)INT_MAX || config->height > (uint32_t)INT_MAX ||
       (size_t)config->width > SIZE_MAX / config->height ||
       (size_t)config->width * config->height > SIZE_MAX / sizeof(uint16_t) ||
-      (size_t)config->width * config->height * sizeof(uint16_t) >
-          UINT32_MAX) {
+      (size_t)config->width * config->height * sizeof(uint16_t) > UINT32_MAX) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   h2_touch_smoke_state_t state;
@@ -289,9 +283,8 @@ h2_pal_result_t h2_touch_smoke_run(
     if (result != H2_PAL_OK) {
       break;
     }
-    uint64_t elapsed_ms = now_ms >= state.last_tick_ms
-                              ? now_ms - state.last_tick_ms
-                              : 0u;
+    uint64_t elapsed_ms =
+        now_ms >= state.last_tick_ms ? now_ms - state.last_tick_ms : 0u;
     if (elapsed_ms > UINT32_MAX) {
       elapsed_ms = UINT32_MAX;
     }

@@ -72,12 +72,13 @@ typedef struct opus_track {
 } opus_track_t;
 
 static opus_track_t s_track;
-static const h2_pal_webrtc_api_t *s_api;
-static h2_pal_webrtc_peer_t *s_peer;
-static h2_pal_webrtc_track_t *s_binding;
+static const h2_pal_webrtc_api_t* s_api;
+static h2_pal_webrtc_peer_t* s_peer;
+static h2_pal_webrtc_track_t* s_binding;
 
 /* Called while the media worker is paused in its main-thread bridge, before
- * it can borrow the Track again. This makes the detach overlap deterministic. */
+ * it can borrow the Track again. This makes the detach overlap deterministic.
+ */
 EMSCRIPTEN_KEEPALIVE int web_test_opus_unset_in_bridge(void) {
   int rc = h2_pal_webrtc_peer_unset_track(s_api, s_peer, s_binding);
   if (rc == H2_PAL_OK) s_track.unset = 1;
@@ -106,15 +107,13 @@ EM_JS(void, arm_bridge_unset,
 });
 /* clang-format on */
 
-static h2_pal_result_t track_read(void *user, uint8_t *opus, size_t capacity,
-                                  size_t *out_len) {
-  opus_track_t *track = user;
-  if (track->unset)
-    ++track->calls_after_unset;
+static h2_pal_result_t track_read(void* user, uint8_t* opus, size_t capacity,
+                                  size_t* out_len) {
+  opus_track_t* track = user;
+  if (track->unset) ++track->calls_after_unset;
   // A CELT fullband 20 ms TOC byte followed by a recognizable tag.
   static const uint8_t tag[] = {0xf8u, 'H', '2', 'W', 'E', 'B'};
-  if (capacity < sizeof(tag) + 2u)
-    return H2_PAL_ERR_NO_SPACE;
+  if (capacity < sizeof(tag) + 2u) return H2_PAL_ERR_NO_SPACE;
   memcpy(opus, tag, sizeof(tag));
   opus[sizeof(tag)] = (uint8_t)track->sent;
   opus[sizeof(tag) + 1u] = (uint8_t)(track->sent >> 8u);
@@ -123,11 +122,10 @@ static h2_pal_result_t track_read(void *user, uint8_t *opus, size_t capacity,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t track_write(void *user, const uint8_t *opus,
+static h2_pal_result_t track_write(void* user, const uint8_t* opus,
                                    size_t opus_len) {
-  opus_track_t *track = user;
-  if (track->unset)
-    ++track->calls_after_unset;
+  opus_track_t* track = user;
+  if (track->unset) ++track->calls_after_unset;
   if (opus_len == 8u && opus[0] == 0xf8u && memcmp(opus + 1, "H2WEB", 5u) == 0)
     ++track->echoed;
   else
@@ -140,8 +138,8 @@ static const h2_pal_webrtc_track_vtable_t s_vtable = {
     .write = track_write,
 };
 
-static void pump_for(h2_web_platform_t *platform,
-                     const h2_pal_webrtc_api_t *api, h2_pal_webrtc_peer_t *peer,
+static void pump_for(h2_web_platform_t* platform,
+                     const h2_pal_webrtc_api_t* api, h2_pal_webrtc_peer_t* peer,
                      double duration_ms, int (*done)(void)) {
   const double deadline = emscripten_get_now() + duration_ms;
   while (emscripten_get_now() < deadline && (done == NULL || !done())) {
@@ -165,12 +163,12 @@ static int run(int rx_overlap) {
   s_track.calls_after_unset = s_track.unset = 0;
   const h2_web_platform_config_t config = {.display_width = 1,
                                            .display_height = 1};
-  h2_web_platform_t *platform = h2_web_platform_create(&config);
+  h2_web_platform_t* platform = h2_web_platform_create(&config);
   assert(platform != NULL);
-  const h2_pal_webrtc_api_t *api = h2_web_platform_webrtc_api(platform);
-  h2_pal_webrtc_peer_t *peer = NULL;
+  const h2_pal_webrtc_api_t* api = h2_web_platform_webrtc_api(platform);
+  h2_pal_webrtc_peer_t* peer = NULL;
   assert(h2_pal_webrtc_peer_create(api, &peer) == H2_PAL_OK);
-  char *url = ((char *)h2_web_main_call(ice_url, NULL).ptr);
+  char* url = ((char*)h2_web_main_call(ice_url, NULL).ptr);
   const h2_pal_webrtc_ice_server_t ice = {
       .url = {.data = url, .len = strlen(url)}};
   assert(h2_pal_webrtc_peer_add_ice_server(api, peer, &ice) == H2_PAL_OK);
@@ -192,10 +190,10 @@ static int run(int rx_overlap) {
     const h2_pal_result_t rc = h2_pal_webrtc_peer_poll(api, peer, 100, &event);
     assert(rc == H2_PAL_OK || rc == H2_PAL_ERR_TIMEOUT);
   }
-  char *answer =
-      ((char *)h2_web_main_call(
-           answer_offer, (const void *[]){&(const char *){event.sdp.data},
-                                          &(size_t){event.sdp.len}})
+  char* answer =
+      ((char*)h2_web_main_call(answer_offer,
+                               (const void*[]){&(const char*){event.sdp.data},
+                                               &(size_t){event.sdp.len}})
            .ptr);
   h2_pal_webrtc_event_release(&event);
   assert(h2_pal_webrtc_peer_set_remote_sdp(
@@ -206,8 +204,10 @@ static int run(int rx_overlap) {
 
   pump_for(platform, api, peer, 15000.0, echoed_enough);
   printf("WEB_OPUS transform=%s sent=%u echoed=%u foreign=%u\n",
-         ((int)h2_web_main_call(transform_kind, NULL).i32) == 2 ? "script" : "encoded-streams", s_track.sent,
-         s_track.echoed, s_track.foreign);
+         ((int)h2_web_main_call(transform_kind, NULL).i32) == 2
+             ? "script"
+             : "encoded-streams",
+         s_track.sent, s_track.echoed, s_track.foreign);
   assert(s_track.echoed >= 25u);
   // The legacy run hides RTCRtpScriptTransform to force createEncodedStreams.
   assert(!((int)h2_web_main_call(legacy_mode, NULL).i32) ||
@@ -217,8 +217,9 @@ static int run(int rx_overlap) {
   s_api = api;
   s_peer = peer;
   s_binding = &track;
-  (void)h2_web_main_call(arm_bridge_unset,
-      (const void *[]){&(uintptr_t){(uintptr_t)peer}, &rx_overlap});
+  (void)h2_web_main_call(
+      arm_bridge_unset,
+      (const void*[]){&(uintptr_t){(uintptr_t)peer}, &rx_overlap});
   pump_for(platform, api, peer, 5000.0, unset_done);
   assert(s_track.unset);
   pump_for(platform, api, peer, 300.0, NULL);
@@ -246,6 +247,6 @@ int main(void) {
   // Report now: browser timers may keep the runtime alive after main.
   /* clang-format off */
 MAIN_THREAD_EM_ASM({ report(0); });
-/* clang-format on */
+  /* clang-format on */
   return 0;
 }

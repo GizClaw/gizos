@@ -21,13 +21,12 @@ static int supported_event(h2_runtime_event_kind_t kind) {
          kind == H2_RUNTIME_COMPONENT_EVENT_ERROR;
 }
 
-h2_pal_result_t
-h2_lua_cosmic_drift_run(h2_runtime_t *runtime,
-                        const h2_lua_cosmic_drift_config_t *config) {
-  h2_lua_host_t *host = NULL;
+h2_pal_result_t h2_lua_cosmic_drift_run(
+    h2_runtime_t* runtime, const h2_lua_cosmic_drift_config_t* config) {
+  h2_lua_host_t* host = NULL;
   h2_lua_job_id_t job_id = H2_LUA_JOB_ID_NONE;
   h2_lua_job_status_t status;
-  const char *hover_control =
+  const char* hover_control =
       config != NULL && config->hover_control != 0 ? "true" : "false";
   const h2_lua_arg_t args[] = {
       {.name = "hover_control", .value = hover_control},
@@ -135,9 +134,8 @@ h2_lua_cosmic_drift_run(h2_runtime_t *runtime,
     }
     /* Cancellation may complete asynchronously after an entrypoint callback
      * failed. Cleanup status must not replace that original failure. */
-    if (result == H2_PAL_OK &&
-        (status.state == H2_LUA_JOB_FAILED ||
-         status.state == H2_LUA_JOB_TIMED_OUT)) {
+    if (result == H2_PAL_OK && (status.state == H2_LUA_JOB_FAILED ||
+                                status.state == H2_LUA_JOB_TIMED_OUT)) {
       result = H2_PAL_ERR_INVALID_STATE;
     }
     if (terminal(status.state)) {

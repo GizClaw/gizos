@@ -10,84 +10,78 @@
 #include <stdlib.h>
 #include <string.h>
 
-static h2_pal_sctp_message_t make_message(
-    const uint8_t *data,
-    size_t len,
-    uint16_t stream,
-    h2_pal_sctp_reliability_t reliability,
-    uint32_t value) {
-    const h2_pal_sctp_message_t message = {
-        .data = data,
-        .len = len,
-        .stream_id = stream,
-        .ppid = 53u,
-        .reliability = reliability,
-        .reliability_value = value,
-    };
-    return message;
+static h2_pal_sctp_message_t make_message(const uint8_t* data, size_t len,
+                                          uint16_t stream,
+                                          h2_pal_sctp_reliability_t reliability,
+                                          uint32_t value) {
+  const h2_pal_sctp_message_t message = {
+      .data = data,
+      .len = len,
+      .stream_id = stream,
+      .ppid = 53u,
+      .reliability = reliability,
+      .reliability_value = value,
+  };
+  return message;
 }
 
 static void assert_sack_rejected_without_mutation(
-    h2_pal_sctp_association_t *association,
-    uint8_t *data,
-    size_t len) {
-    const size_t send_used = association->send_used;
-    const size_t flight_size = association->flight_size;
-    const uint32_t peer_cumulative = association->peer_cumulative_tsn;
-    const uint32_t peer_window = association->peer_receive_window;
-    const uint64_t rto = association->rto_ms;
-    const bool rtt_pending = association->rtt_sample_pending;
-    h2_sctp_tx_fragment_t *const fragment = association->tx_fragments;
-    uint8_t *const fragment_data = fragment->data;
-    const h2_sctp_chunk_view_t sack = {
-        .type = H2_SCTP_CHUNK_SACK,
-        .data = data,
-        .len = len,
-    };
-    assert(h2_sctp_reliability_handle_sack(
-               association, &sack, 1u) == H2_PAL_ERR_FORMAT);
-    assert(association->send_used == send_used);
-    assert(association->flight_size == flight_size);
-    assert(association->peer_cumulative_tsn == peer_cumulative);
-    assert(association->peer_receive_window == peer_window);
-    assert(association->rto_ms == rto);
-    assert(association->rtt_sample_pending == rtt_pending);
-    assert(association->tx_fragments == fragment);
-    assert(fragment->data == fragment_data);
-    assert(!fragment->acknowledged);
+    h2_pal_sctp_association_t* association, uint8_t* data, size_t len) {
+  const size_t send_used = association->send_used;
+  const size_t flight_size = association->flight_size;
+  const uint32_t peer_cumulative = association->peer_cumulative_tsn;
+  const uint32_t peer_window = association->peer_receive_window;
+  const uint64_t rto = association->rto_ms;
+  const bool rtt_pending = association->rtt_sample_pending;
+  h2_sctp_tx_fragment_t* const fragment = association->tx_fragments;
+  uint8_t* const fragment_data = fragment->data;
+  const h2_sctp_chunk_view_t sack = {
+      .type = H2_SCTP_CHUNK_SACK,
+      .data = data,
+      .len = len,
+  };
+  assert(h2_sctp_reliability_handle_sack(association, &sack, 1u) ==
+         H2_PAL_ERR_FORMAT);
+  assert(association->send_used == send_used);
+  assert(association->flight_size == flight_size);
+  assert(association->peer_cumulative_tsn == peer_cumulative);
+  assert(association->peer_receive_window == peer_window);
+  assert(association->rto_ms == rto);
+  assert(association->rtt_sample_pending == rtt_pending);
+  assert(association->tx_fragments == fragment);
+  assert(fragment->data == fragment_data);
+  assert(!fragment->acknowledged);
 }
 
-static h2_pal_result_t transfer_one(
-    h2_sctp_test_endpoint_t *from,
-    h2_sctp_test_endpoint_t *to,
-    uint64_t now_ms) {
-    assert(from->packet_head != NULL);
-    h2_sctp_test_packet_t *packet = from->packet_head;
-    const h2_pal_result_t result = h2_pal_sctp_association_input_packet(
-        to->api, to->association, packet->data, packet->len, now_ms);
-    if (result == H2_PAL_OK) {
-        from->packet_head = packet->next;
-        if (from->packet_head == NULL) {
-            from->packet_tail = NULL;
-        }
-        free(packet->data);
-        free(packet);
+static h2_pal_result_t transfer_one(h2_sctp_test_endpoint_t* from,
+                                    h2_sctp_test_endpoint_t* to,
+                                    uint64_t now_ms) {
+  assert(from->packet_head != NULL);
+  h2_sctp_test_packet_t* packet = from->packet_head;
+  const h2_pal_result_t result = h2_pal_sctp_association_input_packet(
+      to->api, to->association, packet->data, packet->len, now_ms);
+  if (result == H2_PAL_OK) {
+    from->packet_head = packet->next;
+    if (from->packet_head == NULL) {
+      from->packet_tail = NULL;
     }
-    return result;
+    free(packet->data);
+    free(packet);
+  }
+  return result;
 }
 
 static size_t receive_fragment_count(
-    const h2_pal_sctp_association_t *association) {
-    size_t count = 0u;
-    for (const h2_sctp_rx_fragment_t *fragment = association->rx_fragments;
-         fragment != NULL;
-         fragment = fragment->next) {
-        count++;
-    }
-    return count;
+    const h2_pal_sctp_association_t* association) {
+  size_t count = 0u;
+  for (const h2_sctp_rx_fragment_t* fragment = association->rx_fragments;
+       fragment != NULL; fragment = fragment->next) {
+    count++;
+  }
+  return count;
 }
 
-static void acknowledge_at(h2_pal_sctp_association_t *association, uint32_t tsn,
+static void acknowledge_at(h2_pal_sctp_association_t* association, uint32_t tsn,
                            uint64_t now_ms) {
   uint8_t body[12] = {0};
   h2_sctp_wire_write_u32(body, tsn);
@@ -101,7 +95,7 @@ static void acknowledge_at(h2_pal_sctp_association_t *association, uint32_t tsn,
          H2_PAL_OK);
 }
 
-static uint32_t send_sample(h2_sctp_test_pair_t *pair, uint64_t now_ms) {
+static uint32_t send_sample(h2_sctp_test_pair_t* pair, uint64_t now_ms) {
   const uint8_t byte = 42u;
   const h2_pal_sctp_message_t message =
       make_message(&byte, 1u, 1u, H2_PAL_SCTP_RELIABILITY_RELIABLE, 0u);
@@ -116,7 +110,7 @@ static void test_rto_recovers_after_loss(void) {
   h2_sctp_test_pair_t pair;
   assert(h2_sctp_test_pair_init(&pair, 256u, 1024u) == H2_PAL_OK);
   assert(h2_sctp_test_connect(&pair));
-  h2_pal_sctp_association_t *association = pair.active.association;
+  h2_pal_sctp_association_t* association = pair.active.association;
   assert(association->rto_ms == H2_SCTP_RTO_INITIAL_MS);
   uint32_t tsn = send_sample(&pair, 100u);
   acknowledge_at(association, tsn, 200u);
@@ -146,7 +140,7 @@ static void test_rtt_sample_lifetime(bool wrap_tsn) {
   h2_sctp_test_pair_t pair;
   assert(h2_sctp_test_pair_init(&pair, 256u, 1024u) == H2_PAL_OK);
   assert(h2_sctp_test_connect(&pair));
-  h2_pal_sctp_association_t *association = pair.active.association;
+  h2_pal_sctp_association_t* association = pair.active.association;
   if (wrap_tsn) {
     association->next_tsn = UINT32_MAX;
     association->peer_cumulative_tsn = UINT32_MAX - 1u;
@@ -181,7 +175,7 @@ static void test_rtt_one_sample_per_flight(void) {
   h2_sctp_test_pair_t pair;
   assert(h2_sctp_test_pair_init(&pair, 256u, 1024u) == H2_PAL_OK);
   assert(h2_sctp_test_connect(&pair));
-  h2_pal_sctp_association_t *association = pair.active.association;
+  h2_pal_sctp_association_t* association = pair.active.association;
   const uint32_t first = send_sample(&pair, 100u);
   const uint32_t second = send_sample(&pair, 110u);
   acknowledge_at(association, first, 200u);
@@ -219,7 +213,7 @@ static void test_rtt_bounds_and_abandon(void) {
     h2_sctp_test_pair_t pair;
     assert(h2_sctp_test_pair_init(&pair, 256u, 1024u) == H2_PAL_OK);
     assert(h2_sctp_test_connect(&pair));
-    h2_pal_sctp_association_t *association = pair.active.association;
+    h2_pal_sctp_association_t* association = pair.active.association;
     const uint32_t tsn = send_sample(&pair, 100u);
     acknowledge_at(association, tsn, 100u + samples[index]);
     assert(association->rto_ms ==
@@ -236,7 +230,7 @@ static void test_rtt_bounds_and_abandon(void) {
   h2_sctp_test_pair_t pair;
   assert(h2_sctp_test_pair_init(&pair, 256u, 1024u) == H2_PAL_OK);
   assert(h2_sctp_test_connect(&pair));
-  h2_pal_sctp_association_t *association = pair.active.association;
+  h2_pal_sctp_association_t* association = pair.active.association;
   uint32_t tsn = send_sample(&pair, 100u);
   acknowledge_at(association, tsn, 99u);
   assert(!association->rtt_initialized);
@@ -260,7 +254,7 @@ static void test_rtt_skips_local_backpressure(void) {
   h2_sctp_test_pair_t pair;
   assert(h2_sctp_test_pair_init(&pair, 256u, 1024u) == H2_PAL_OK);
   assert(h2_sctp_test_connect(&pair));
-  h2_pal_sctp_association_t *association = pair.active.association;
+  h2_pal_sctp_association_t* association = pair.active.association;
   pair.active.emit_would_block_count = 1u;
   uint32_t tsn = send_sample(&pair, 100u);
   assert(association->pending_emit != NULL);
@@ -275,7 +269,7 @@ static void test_rtt_skips_local_backpressure(void) {
   h2_sctp_test_pair_deinit(&pair);
 }
 
-static void acknowledge_gap_at(h2_pal_sctp_association_t *association,
+static void acknowledge_gap_at(h2_pal_sctp_association_t* association,
                                uint32_t cumulative, uint16_t start,
                                uint16_t end, uint64_t now_ms) {
   uint8_t body[16] = {0};
@@ -297,7 +291,7 @@ static void test_sack_counts_only_new_ack_evidence(bool wrap_tsn) {
   h2_sctp_test_pair_t pair;
   assert(h2_sctp_test_pair_init(&pair, 256u, 1024u) == H2_PAL_OK);
   assert(h2_sctp_test_connect(&pair));
-  h2_pal_sctp_association_t *association = pair.active.association;
+  h2_pal_sctp_association_t* association = pair.active.association;
   if (wrap_tsn) {
     association->next_tsn = UINT32_MAX - 2u;
     association->peer_cumulative_tsn = UINT32_MAX - 3u;
@@ -307,9 +301,9 @@ static void test_sack_counts_only_new_ack_evidence(bool wrap_tsn) {
   for (unsigned index = 0u; index < 5u; ++index) {
     (void)send_sample(&pair, 1000u + index);
   }
-  h2_sctp_tx_fragment_t *first = association->tx_fragments;
-  h2_sctp_tx_fragment_t *second = first->next;
-  h2_sctp_tx_fragment_t *fourth = second->next->next;
+  h2_sctp_tx_fragment_t* first = association->tx_fragments;
+  h2_sctp_tx_fragment_t* second = first->next;
+  h2_sctp_tx_fragment_t* fourth = second->next->next;
   acknowledge_gap_at(association, cumulative, 3u, 3u, 1100u);
   assert(first->miss_reports == 1u);
   assert(second->miss_reports == 1u);
@@ -348,15 +342,15 @@ static void test_repeated_gap_ack_does_not_reuse_acked_tsn_as_htna(void) {
   h2_sctp_test_pair_t pair;
   assert(h2_sctp_test_pair_init(&pair, 256u, 1024u) == H2_PAL_OK);
   assert(h2_sctp_test_connect(&pair));
-  h2_pal_sctp_association_t *association = pair.active.association;
+  h2_pal_sctp_association_t* association = pair.active.association;
   const uint32_t cumulative = association->peer_cumulative_tsn;
   for (unsigned index = 0u; index < 5u; ++index) {
     (void)send_sample(&pair, 1000u + index);
   }
-  h2_sctp_tx_fragment_t *first = association->tx_fragments;
-  h2_sctp_tx_fragment_t *second = first->next;
-  h2_sctp_tx_fragment_t *third = second->next;
-  h2_sctp_tx_fragment_t *fourth = third->next;
+  h2_sctp_tx_fragment_t* first = association->tx_fragments;
+  h2_sctp_tx_fragment_t* second = first->next;
+  h2_sctp_tx_fragment_t* third = second->next;
+  h2_sctp_tx_fragment_t* fourth = third->next;
 
   /* Acknowledge only TSN cumulative+4, leaving three holes beneath it. */
   acknowledge_gap_at(association, cumulative, 4u, 4u, 1100u);
@@ -387,12 +381,12 @@ static void test_fast_retransmit_halves_window_without_rto_backoff(void) {
   h2_sctp_test_pair_t pair;
   assert(h2_sctp_test_pair_init(&pair, 256u, 1024u) == H2_PAL_OK);
   assert(h2_sctp_test_connect(&pair));
-  h2_pal_sctp_association_t *association = pair.active.association;
+  h2_pal_sctp_association_t* association = pair.active.association;
   const uint32_t cumulative = association->peer_cumulative_tsn;
   for (unsigned index = 0u; index < 5u; ++index) {
     (void)send_sample(&pair, 1000u + index);
   }
-  h2_sctp_tx_fragment_t *hole = association->tx_fragments;
+  h2_sctp_tx_fragment_t* hole = association->tx_fragments;
   assert(hole->tsn == cumulative + 1u);
 
   /* Two miss reports are not yet loss evidence. */
@@ -425,12 +419,12 @@ static void test_fast_retransmit_reduces_once_per_round_trip(void) {
   h2_sctp_test_pair_t pair;
   assert(h2_sctp_test_pair_init(&pair, 256u, 1024u) == H2_PAL_OK);
   assert(h2_sctp_test_connect(&pair));
-  h2_pal_sctp_association_t *association = pair.active.association;
+  h2_pal_sctp_association_t* association = pair.active.association;
   const uint32_t cumulative = association->peer_cumulative_tsn;
   for (unsigned index = 0u; index < 9u; ++index) {
     (void)send_sample(&pair, 1000u + index);
   }
-  h2_sctp_tx_fragment_t *hole = association->tx_fragments;
+  h2_sctp_tx_fragment_t* hole = association->tx_fragments;
   assert(hole->tsn == cumulative + 1u);
 
   acknowledge_gap_at(association, cumulative, 2u, 2u, 1100u);
@@ -477,20 +471,20 @@ static void test_deferred_fast_retransmit_skips_timer_response(void) {
   h2_sctp_test_pair_t pair;
   assert(h2_sctp_test_pair_init(&pair, 256u, 1024u) == H2_PAL_OK);
   assert(h2_sctp_test_connect(&pair));
-  h2_pal_sctp_association_t *association = pair.active.association;
+  h2_pal_sctp_association_t* association = pair.active.association;
   const uint32_t cumulative = association->peer_cumulative_tsn;
   /* Four fragments, so the three gap ACKs below leave the hole as the only
    * outstanding TSN and no other fragment can time out during the retry. */
   for (unsigned index = 0u; index < 4u; ++index) {
     (void)send_sample(&pair, 1000u + index);
   }
-  h2_sctp_tx_fragment_t *hole = association->tx_fragments;
+  h2_sctp_tx_fragment_t* hole = association->tx_fragments;
   assert(hole->tsn == cumulative + 1u);
 
   acknowledge_gap_at(association, cumulative, 2u, 2u, 1100u);
   acknowledge_gap_at(association, cumulative, 2u, 3u, 1110u);
   association->cwnd = 8192u;
-  uint8_t *held[H2_SCTP_DEFAULT_PACKET_POOL_SIZE];
+  uint8_t* held[H2_SCTP_DEFAULT_PACKET_POOL_SIZE];
   for (size_t index = 0u; index < H2_SCTP_DEFAULT_PACKET_POOL_SIZE; ++index) {
     held[index] = h2_sctp_packet_acquire(association);
     assert(held[index] != NULL);
@@ -524,7 +518,7 @@ static void test_retransmission_timeout_applies_once_per_burst(void) {
   h2_sctp_test_pair_t pair;
   assert(h2_sctp_test_pair_init(&pair, 256u, 1024u) == H2_PAL_OK);
   assert(h2_sctp_test_connect(&pair));
-  h2_pal_sctp_association_t *association = pair.active.association;
+  h2_pal_sctp_association_t* association = pair.active.association;
   for (unsigned index = 0u; index < 4u; ++index) {
     (void)send_sample(&pair, 1000u);
   }
@@ -533,7 +527,7 @@ static void test_retransmission_timeout_applies_once_per_burst(void) {
   assert(h2_sctp_reliability_service(
              association, 1000u + H2_SCTP_RTO_INITIAL_MS, NULL) == H2_PAL_OK);
   unsigned retransmitted = 0u;
-  for (const h2_sctp_tx_fragment_t *fragment = association->tx_fragments;
+  for (const h2_sctp_tx_fragment_t* fragment = association->tx_fragments;
        fragment != NULL; fragment = fragment->next) {
     assert(fragment->retransmits == 1u);
     retransmitted++;
@@ -550,7 +544,7 @@ static void test_sack_htna_with_interleaved_streams(void) {
   h2_sctp_test_pair_t pair;
   assert(h2_sctp_test_pair_init(&pair, 256u, 1024u) == H2_PAL_OK);
   assert(h2_sctp_test_connect(&pair));
-  h2_pal_sctp_association_t *association = pair.active.association;
+  h2_pal_sctp_association_t* association = pair.active.association;
   const uint32_t cumulative = association->peer_cumulative_tsn;
   association->peer_receive_window = 0u;
   const uint8_t byte = 42u;
@@ -563,8 +557,8 @@ static void test_sack_htna_with_interleaved_streams(void) {
   assert(association->flight_size == 0u);
   association->peer_receive_window = 65536u;
   assert(h2_sctp_reliability_send_pending(association, 1001u) == H2_PAL_OK);
-  h2_sctp_tx_fragment_t *fragments[5] = {0};
-  for (h2_sctp_tx_fragment_t *fragment = association->tx_fragments;
+  h2_sctp_tx_fragment_t* fragments[5] = {0};
+  for (h2_sctp_tx_fragment_t* fragment = association->tx_fragments;
        fragment != NULL; fragment = fragment->next) {
     const uint32_t offset = fragment->tsn - cumulative - 1u;
     assert(offset < 5u);

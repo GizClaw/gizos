@@ -39,7 +39,7 @@ static const h2_lua_esp_claw_module_info_t s_modules[] = {
     {"vision", H2_LUA_ESP_CLAW_MODULE_UNAVAILABLE},
 };
 
-static const char *const s_extensions[] = {
+static const char* const s_extensions[] = {
     "runtime",
 };
 
@@ -47,7 +47,7 @@ size_t h2_lua_esp_claw_module_count(void) {
   return sizeof(s_modules) / sizeof(s_modules[0]);
 }
 
-const h2_lua_esp_claw_module_info_t *h2_lua_esp_claw_module_at(size_t index) {
+const h2_lua_esp_claw_module_info_t* h2_lua_esp_claw_module_at(size_t index) {
   if (index >= h2_lua_esp_claw_module_count()) {
     return NULL;
   }
@@ -58,6 +58,6 @@ size_t h2_lua_extension_count(void) {
   return sizeof(s_extensions) / sizeof(s_extensions[0]);
 }
 
-const char *h2_lua_extension_at(size_t index) {
+const char* h2_lua_extension_at(size_t index) {
   return index < h2_lua_extension_count() ? s_extensions[index] : NULL;
 }

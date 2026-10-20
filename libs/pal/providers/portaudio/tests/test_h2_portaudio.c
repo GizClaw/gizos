@@ -66,7 +66,7 @@ typedef struct fake_device {
 } fake_device_t;
 
 typedef struct mic_reader {
-  h2_pal_audio_t *audio;
+  h2_pal_audio_t* audio;
   h2_audio_frame_t frame;
   int16_t samples[320];
   h2_atomic_bool_t entered;
@@ -86,7 +86,7 @@ typedef struct echo_order {
   h2_atomic_bool_t enqueue_release;
 } echo_order_t;
 
-static h2_audio_frame_t mic_frame(int16_t *samples) {
+static h2_audio_frame_t mic_frame(int16_t* samples) {
   return (h2_audio_frame_t){
       .data = samples,
       .capacity = 320u * sizeof(*samples),
@@ -105,8 +105,9 @@ static void sleep_ms(long milliseconds) {
   assert(nanosleep(&delay, NULL) == 0);
 }
 
-static void fake_output_init(fake_output_t *output) {
-  assert(h2_atomic_init(&output->mode, FAKE_OUTPUT_ZERO_CAPACITY) == H2_ATOMIC_OK);
+static void fake_output_init(fake_output_t* output) {
+  assert(h2_atomic_init(&output->mode, FAKE_OUTPUT_ZERO_CAPACITY) ==
+         H2_ATOMIC_OK);
   assert(h2_atomic_init(&output->open_result, 0) == H2_ATOMIC_OK);
   assert(h2_atomic_init(&output->open_count, 0) == H2_ATOMIC_OK);
   assert(h2_atomic_init(&output->start_count, 0) == H2_ATOMIC_OK);
@@ -122,7 +123,7 @@ static void fake_output_init(fake_output_t *output) {
   memset(output->samples, 0, sizeof(output->samples));
 }
 
-static void fake_output_destroy(fake_output_t *output) {
+static void fake_output_destroy(fake_output_t* output) {
   h2_atomic_destroy(&output->mode);
   h2_atomic_destroy(&output->open_result);
   h2_atomic_destroy(&output->open_count);
@@ -138,7 +139,7 @@ static void fake_output_destroy(fake_output_t *output) {
   h2_atomic_destroy(&output->sample_count);
 }
 
-static void fake_output_reset(fake_output_t *output,
+static void fake_output_reset(fake_output_t* output,
                               enum fake_output_mode mode) {
   h2_atomic_store(&output->mode, mode);
   h2_atomic_store(&output->open_result, 0);
@@ -156,8 +157,8 @@ static void fake_output_reset(fake_output_t *output,
   memset(output->samples, 0, sizeof(output->samples));
 }
 
-static int fake_output_open(void *user, void **out_stream) {
-  fake_output_t *output = user;
+static int fake_output_open(void* user, void** out_stream) {
+  fake_output_t* output = user;
   h2_atomic_fetch_add(&output->open_count, 1);
   const int result = h2_atomic_load(&output->open_result);
   if (result != 0) {
@@ -168,15 +169,15 @@ static int fake_output_open(void *user, void **out_stream) {
   return 0;
 }
 
-static int fake_default_output_device(void *user) {
-  fake_device_t *device = user;
+static int fake_default_output_device(void* user) {
+  fake_device_t* device = user;
   return device->mode == FAKE_DEVICE_MISSING ? device->no_device
-                                              : device->device;
+                                             : device->device;
 }
 
-static int fake_default_high_output_latency(void *user, int device,
-                                            double *out_latency) {
-  fake_device_t *fake = user;
+static int fake_default_high_output_latency(void* user, int device,
+                                            double* out_latency) {
+  fake_device_t* fake = user;
   assert(device == fake->device);
   ++fake->info_count;
   if (fake->mode == FAKE_DEVICE_INFO_MISSING)
@@ -185,10 +186,10 @@ static int fake_default_high_output_latency(void *user, int device,
   return 0;
 }
 
-static int fake_open_output_device(void *user, int device,
+static int fake_open_output_device(void* user, int device,
                                    double suggested_latency,
-                                   void **out_stream) {
-  fake_device_t *fake = user;
+                                   void** out_stream) {
+  fake_device_t* fake = user;
   ++fake->open_count;
   fake->observed_device = device;
   fake->observed_latency = suggested_latency;
@@ -196,44 +197,44 @@ static int fake_open_output_device(void *user, int device,
   return 0;
 }
 
-static int fake_output_start(void *user, void *stream) {
-  fake_output_t *output = user;
+static int fake_output_start(void* user, void* stream) {
+  fake_output_t* output = user;
   assert(stream == output);
   h2_atomic_fetch_add(&output->start_count, 1);
   return 0;
 }
 
-static long fake_output_write_available(void *user, void *stream) {
-  fake_output_t *output = user;
+static long fake_output_write_available(void* user, void* stream) {
+  fake_output_t* output = user;
   assert(stream == output);
   h2_atomic_fetch_add(&output->availability_count, 1);
   switch ((enum fake_output_mode)h2_atomic_load(&output->mode)) {
-  case FAKE_OUTPUT_ZERO_CAPACITY:
-    return 0;
-  case FAKE_OUTPUT_PARTIAL_CAPACITY:
-  case FAKE_OUTPUT_DELAYED_PARTIAL_CAPACITY:
-    return h2_atomic_load_explicit(&output->sample_count, H2_ATOMIC_ACQUIRE) <
-                   FAKE_OUTPUT_FRAME_SAMPLES
-               ? FAKE_OUTPUT_PARTIAL_SAMPLES
-               : 0;
-  case FAKE_OUTPUT_UNDERFLOW:
-    return h2_atomic_load_explicit(&output->sample_count, H2_ATOMIC_ACQUIRE) <
-                   FAKE_OUTPUT_FRAME_SAMPLES
-               ? FAKE_OUTPUT_FRAME_SAMPLES
-               : 0;
-  case FAKE_OUTPUT_SLOW_WRITE:
-  case FAKE_OUTPUT_WRITE_ERROR:
-    return FAKE_OUTPUT_FRAME_SAMPLES;
-  case FAKE_OUTPUT_AVAILABILITY_ERROR:
-    h2_atomic_store(&output->failure_observed, true);
-    return FAKE_OUTPUT_ERROR;
+    case FAKE_OUTPUT_ZERO_CAPACITY:
+      return 0;
+    case FAKE_OUTPUT_PARTIAL_CAPACITY:
+    case FAKE_OUTPUT_DELAYED_PARTIAL_CAPACITY:
+      return h2_atomic_load_explicit(&output->sample_count, H2_ATOMIC_ACQUIRE) <
+                     FAKE_OUTPUT_FRAME_SAMPLES
+                 ? FAKE_OUTPUT_PARTIAL_SAMPLES
+                 : 0;
+    case FAKE_OUTPUT_UNDERFLOW:
+      return h2_atomic_load_explicit(&output->sample_count, H2_ATOMIC_ACQUIRE) <
+                     FAKE_OUTPUT_FRAME_SAMPLES
+                 ? FAKE_OUTPUT_FRAME_SAMPLES
+                 : 0;
+    case FAKE_OUTPUT_SLOW_WRITE:
+    case FAKE_OUTPUT_WRITE_ERROR:
+      return FAKE_OUTPUT_FRAME_SAMPLES;
+    case FAKE_OUTPUT_AVAILABILITY_ERROR:
+      h2_atomic_store(&output->failure_observed, true);
+      return FAKE_OUTPUT_ERROR;
   }
   return FAKE_OUTPUT_ERROR;
 }
 
-static int fake_output_write(void *user, void *stream, const void *samples,
+static int fake_output_write(void* user, void* stream, const void* samples,
                              unsigned long frames) {
-  fake_output_t *output = user;
+  fake_output_t* output = user;
   assert(stream == output);
   h2_atomic_fetch_add(&output->write_count, 1);
   h2_atomic_store_explicit(&output->write_active, true, H2_ATOMIC_RELEASE);
@@ -253,67 +254,65 @@ static int fake_output_write(void *user, void *stream, const void *samples,
   assert(frames <= FAKE_OUTPUT_FRAME_SAMPLES - offset);
   memcpy(output->samples + offset, samples, frames * sizeof(int16_t));
   h2_atomic_store_explicit(&output->sample_count, offset + frames,
-                        H2_ATOMIC_RELEASE);
+                           H2_ATOMIC_RELEASE);
   h2_atomic_store_explicit(&output->write_active, false, H2_ATOMIC_RELEASE);
   if (mode == FAKE_OUTPUT_UNDERFLOW)
     return h2_portaudio_output_underflow_error_for_test();
   return 0;
 }
 
-static void fake_output_check_control(fake_output_t *output) {
+static void fake_output_check_control(fake_output_t* output) {
   if (h2_atomic_load_explicit(&output->write_active, H2_ATOMIC_ACQUIRE))
     h2_atomic_store(&output->control_during_write, true);
 }
 
-static int fake_output_abort(void *user, void *stream) {
-  fake_output_t *output = user;
+static int fake_output_abort(void* user, void* stream) {
+  fake_output_t* output = user;
   assert(stream == output);
   fake_output_check_control(output);
   h2_atomic_fetch_add(&output->abort_count, 1);
   return 0;
 }
 
-static int fake_output_stop(void *user, void *stream) {
-  fake_output_t *output = user;
+static int fake_output_stop(void* user, void* stream) {
+  fake_output_t* output = user;
   assert(stream == output);
   fake_output_check_control(output);
   h2_atomic_fetch_add(&output->stop_count, 1);
   return 0;
 }
 
-static int fake_output_close(void *user, void *stream) {
-  fake_output_t *output = user;
+static int fake_output_close(void* user, void* stream) {
+  fake_output_t* output = user;
   assert(stream == output);
   fake_output_check_control(output);
   h2_atomic_fetch_add(&output->close_count, 1);
   return 0;
 }
 
-static const char *fake_output_error_text(void *user, int error) {
+static const char* fake_output_error_text(void* user, int error) {
   assert(user != NULL);
   assert(error != 0);
   return "fake output error";
 }
 
-static void wait_for_int_at_least(h2_atomic_int_t *value, int target) {
+static void wait_for_int_at_least(h2_atomic_int_t* value, int target) {
   for (int elapsed_ms = 0; elapsed_ms < 1000; ++elapsed_ms) {
-    if (h2_atomic_load_explicit(value, H2_ATOMIC_ACQUIRE) >= target)
-      return;
+    if (h2_atomic_load_explicit(value, H2_ATOMIC_ACQUIRE) >= target) return;
     sleep_ms(1L);
   }
   _Exit(EXIT_FAILURE);
 }
 
-static void wait_for_size_at_least(h2_atomic_size_t *value, size_t target) {
+static void wait_for_size_at_least(h2_atomic_size_t* value, size_t target) {
   for (int elapsed_ms = 0; elapsed_ms < 1000; ++elapsed_ms) {
-    if (h2_atomic_load_explicit(value, H2_ATOMIC_ACQUIRE) >= target)
-      return;
+    if (h2_atomic_load_explicit(value, H2_ATOMIC_ACQUIRE) >= target) return;
     sleep_ms(1L);
   }
   _Exit(EXIT_FAILURE);
 }
 
-static void wait_for_underflow_count(h2_portaudio_t *provider,
+static void wait_for_underflow_count(h2_portaudio_t* provider,
                                      uint64_t target) {
   for (int elapsed_ms = 0; elapsed_ms < 1000; ++elapsed_ms) {
     if (h2_portaudio_output_underflow_count_for_test(provider) >= target)
@@ -323,28 +322,27 @@ static void wait_for_underflow_count(h2_portaudio_t *provider,
   _Exit(EXIT_FAILURE);
 }
 
-static void wait_for_bool(h2_atomic_bool_t *value) {
+static void wait_for_bool(h2_atomic_bool_t* value) {
   for (int elapsed_ms = 0; elapsed_ms < 1000; ++elapsed_ms) {
-    if (h2_atomic_load_explicit(value, H2_ATOMIC_ACQUIRE))
-      return;
+    if (h2_atomic_load_explicit(value, H2_ATOMIC_ACQUIRE)) return;
     sleep_ms(1L);
   }
   _Exit(EXIT_FAILURE);
 }
 
-static void fake_echo_playback(void *user, const int16_t *reference) {
-  echo_order_t *order = user;
+static void fake_echo_playback(void* user, const int16_t* reference) {
+  echo_order_t* order = user;
   assert(reference != NULL);
   h2_atomic_fetch_add_explicit(&order->playback_count, 1, H2_ATOMIC_RELEASE);
 }
 
-static void fake_echo_reset(void *user) {
-  echo_order_t *order = user;
+static void fake_echo_reset(void* user) {
+  echo_order_t* order = user;
   h2_atomic_fetch_add_explicit(&order->reset_count, 1, H2_ATOMIC_RELEASE);
 }
 
-static void fake_echo_before_enqueue(void *user) {
-  echo_order_t *order = user;
+static void fake_echo_before_enqueue(void* user) {
+  echo_order_t* order = user;
   if (!h2_atomic_load_explicit(&order->block_enqueue, H2_ATOMIC_ACQUIRE))
     return;
   h2_atomic_store_explicit(&order->enqueue_entered, true, H2_ATOMIC_RELEASE);
@@ -352,19 +350,19 @@ static void fake_echo_before_enqueue(void *user) {
     sleep_ms(1L);
 }
 
-static void fake_echo_enqueue_result(void *user, int queued) {
-  echo_order_t *order = user;
+static void fake_echo_enqueue_result(void* user, int queued) {
+  echo_order_t* order = user;
   if (queued) {
     h2_atomic_fetch_add_explicit(&order->enqueue_count, 1, H2_ATOMIC_RELEASE);
   } else {
     h2_atomic_fetch_add_explicit(&order->rejected_enqueue_count, 1,
-                              H2_ATOMIC_RELEASE);
+                                 H2_ATOMIC_RELEASE);
   }
 }
 
-static void fake_echo_capture(void *user, const int16_t *microphone,
-                              int16_t *cleaned) {
-  echo_order_t *order = user;
+static void fake_echo_capture(void* user, const int16_t* microphone,
+                              int16_t* cleaned) {
+  echo_order_t* order = user;
   assert(microphone != NULL);
   assert(cleaned != NULL);
   const int capture_count =
@@ -377,14 +375,14 @@ static void fake_echo_capture(void *user, const int16_t *microphone,
   h2_atomic_fetch_add_explicit(&order->capture_count, 1, H2_ATOMIC_RELEASE);
 }
 
-static long elapsed_ms(const struct timespec *start,
-                       const struct timespec *end) {
+static long elapsed_ms(const struct timespec* start,
+                       const struct timespec* end) {
   return (end->tv_sec - start->tv_sec) * 1000L +
          (end->tv_nsec - start->tv_nsec) / 1000000L;
 }
 
-static void *read_mic_forever(void *user) {
-  mic_reader_t *reader = user;
+static void* read_mic_forever(void* user) {
+  mic_reader_t* reader = user;
   h2_atomic_store(&reader->entered, true);
   reader->result = h2_pal_audio_mic_read(reader->audio, &reader->frame,
                                          H2_PAL_QUEUE_WAIT_FOREVER);
@@ -392,7 +390,7 @@ static void *read_mic_forever(void *user) {
   return NULL;
 }
 
-static void drain_mic_queue(h2_pal_audio_t *audio) {
+static void drain_mic_queue(h2_pal_audio_t* audio) {
   int16_t samples[320];
   h2_audio_frame_t frame = mic_frame(samples);
   int result;
@@ -402,7 +400,7 @@ static void drain_mic_queue(h2_pal_audio_t *audio) {
   assert(result == H2_AUDIO_ERR_WOULD_BLOCK);
 }
 
-static bool stop_wakes_blocked_reader(h2_pal_audio_t *audio) {
+static bool stop_wakes_blocked_reader(h2_pal_audio_t* audio) {
   mic_reader_t reader = {
       .audio = audio,
       .result = H2_AUDIO_OK,
@@ -434,8 +432,8 @@ static bool stop_wakes_blocked_reader(h2_pal_audio_t *audio) {
   return reader.result == H2_AUDIO_ERR_INVALID_STATE;
 }
 
-static h2_pal_audio_track_t *write_test_frame(h2_pal_audio_t *audio,
-                                              int16_t *samples) {
+static h2_pal_audio_track_t* write_test_frame(h2_pal_audio_t* audio,
+                                              int16_t* samples) {
   h2_audio_info_t info = {0};
   assert(h2_pal_audio_get_info(audio, &info) == H2_AUDIO_OK);
   const h2_audio_track_config_t config = {
@@ -444,7 +442,7 @@ static h2_pal_audio_track_t *write_test_frame(h2_pal_audio_t *audio,
       .volume_factor_milli = 1000u,
       .buffer_frames = 2u,
   };
-  h2_pal_audio_track_t *track = NULL;
+  h2_pal_audio_track_t* track = NULL;
   assert(h2_pal_audio_create_track(audio, &config, &track) == H2_AUDIO_OK);
   assert(track != NULL);
   h2_audio_frame_t frame = mic_frame(samples);
@@ -466,7 +464,7 @@ static void test_default_output_device_selection(void) {
       .default_high_output_latency = fake_default_high_output_latency,
       .open_output = fake_open_output_device,
   };
-  void *stream = NULL;
+  void* stream = NULL;
   assert(h2_portaudio_open_default_output_for_test(&ops, &stream) == 0);
   assert(stream == &device);
   assert(device.info_count == 1);
@@ -493,9 +491,9 @@ static void test_default_output_device_selection(void) {
   assert(device.open_count == 0);
 }
 
-static void test_output_open_error_policy(h2_portaudio_t *provider,
-                                          h2_pal_audio_t *audio,
-                                          fake_output_t *output) {
+static void test_output_open_error_policy(h2_portaudio_t* provider,
+                                          h2_pal_audio_t* audio,
+                                          fake_output_t* output) {
   const int errors[] = {
       h2_portaudio_device_unavailable_error_for_test(),
       h2_portaudio_internal_error_for_test(),
@@ -522,13 +520,13 @@ static void test_output_open_error_policy(h2_portaudio_t *provider,
          H2_AUDIO_OK);
 }
 
-static void test_zero_capacity_stop(h2_pal_audio_t *audio,
-                                    fake_output_t *output) {
+static void test_zero_capacity_stop(h2_pal_audio_t* audio,
+                                    fake_output_t* output) {
   fake_output_reset(output, FAKE_OUTPUT_ZERO_CAPACITY);
   int16_t samples[FAKE_OUTPUT_FRAME_SAMPLES];
   for (size_t i = 0u; i < FAKE_OUTPUT_FRAME_SAMPLES; ++i)
     samples[i] = (int16_t)i;
-  h2_pal_audio_track_t *track = write_test_frame(audio, samples);
+  h2_pal_audio_track_t* track = write_test_frame(audio, samples);
   assert(h2_pal_audio_start_speaker(audio) == H2_AUDIO_OK);
   wait_for_int_at_least(&output->availability_count, 1);
   assert(h2_pal_audio_track_close(track) == H2_AUDIO_OK);
@@ -557,13 +555,12 @@ typedef struct capture_output {
   uint64_t first_us;
 } capture_output_t;
 
-static void capture_output_audio(void *user,
-                                 const h2_portaudio_capture_frame_t *frame) {
-  capture_output_t *capture = user;
+static void capture_output_audio(void* user,
+                                 const h2_portaudio_capture_frame_t* frame) {
+  capture_output_t* capture = user;
   assert(frame->sample_rate == 16000u && frame->channels == 1u);
   assert(frame->timestamp_us >= capture->last_us);
-  if (capture->count == 0u)
-    capture->first_us = frame->timestamp_us;
+  if (capture->count == 0u) capture->first_us = frame->timestamp_us;
   assert(frame->timestamp_us - capture->first_us ==
          capture->count * UINT64_C(1000000) / 16000u);
   assert(capture->count + frame->frames <= FAKE_OUTPUT_FRAME_SAMPLES);
@@ -573,17 +570,18 @@ static void capture_output_audio(void *user,
   capture->last_us = frame->timestamp_us;
 }
 
-static void test_partial_frame(h2_portaudio_t *provider, h2_pal_audio_t *audio,
-                               fake_output_t *output) {
+static void test_partial_frame(h2_portaudio_t* provider, h2_pal_audio_t* audio,
+                               fake_output_t* output) {
   capture_output_t capture = {0};
-  const h2_portaudio_capture_hooks_t hooks = {&capture, NULL, capture_output_audio};
+  const h2_portaudio_capture_hooks_t hooks = {&capture, NULL,
+                                              capture_output_audio};
   assert(h2_portaudio_set_capture_hooks(provider, &hooks) == H2_PAL_OK);
   assert(h2_portaudio_set_capture_hooks(provider, &hooks) == H2_PAL_ERR_BUSY);
   fake_output_reset(output, FAKE_OUTPUT_PARTIAL_CAPACITY);
   int16_t samples[FAKE_OUTPUT_FRAME_SAMPLES];
   for (size_t i = 0u; i < FAKE_OUTPUT_FRAME_SAMPLES; ++i)
     samples[i] = (int16_t)(1000 + i);
-  h2_pal_audio_track_t *track = write_test_frame(audio, samples);
+  h2_pal_audio_track_t* track = write_test_frame(audio, samples);
   assert(h2_pal_audio_start_speaker(audio) == H2_AUDIO_OK);
   wait_for_size_at_least(&output->sample_count, FAKE_OUTPUT_FRAME_SAMPLES);
   assert(h2_pal_audio_track_close(track) == H2_AUDIO_OK);
@@ -598,8 +596,8 @@ static void test_partial_frame(h2_portaudio_t *provider, h2_pal_audio_t *audio,
 }
 
 static void capture_delayed_output_audio(
-    void *user, const h2_portaudio_capture_frame_t *frame) {
-  capture_output_t *capture = user;
+    void* user, const h2_portaudio_capture_frame_t* frame) {
+  capture_output_t* capture = user;
   assert(frame->sample_rate == 16000u && frame->channels == 1u);
   if (capture->count != 0u) {
     // Every write after the first waits 50 ms. Neither a pre-write estimate
@@ -613,18 +611,18 @@ static void capture_delayed_output_audio(
   capture->last_us = frame->timestamp_us;
 }
 
-static void test_delayed_write_capture(h2_portaudio_t *provider,
-                                       h2_pal_audio_t *audio,
-                                       fake_output_t *output) {
+static void test_delayed_write_capture(h2_portaudio_t* provider,
+                                       h2_pal_audio_t* audio,
+                                       fake_output_t* output) {
   fake_output_reset(output, FAKE_OUTPUT_DELAYED_PARTIAL_CAPACITY);
   capture_output_t capture = {0};
-  const h2_portaudio_capture_hooks_t hooks = {
-      &capture, NULL, capture_delayed_output_audio};
+  const h2_portaudio_capture_hooks_t hooks = {&capture, NULL,
+                                              capture_delayed_output_audio};
   assert(h2_portaudio_set_capture_hooks(provider, &hooks) == H2_PAL_OK);
   int16_t samples[FAKE_OUTPUT_FRAME_SAMPLES];
   for (size_t i = 0u; i < FAKE_OUTPUT_FRAME_SAMPLES; ++i)
     samples[i] = (int16_t)(1000 + i);
-  h2_pal_audio_track_t *track = write_test_frame(audio, samples);
+  h2_pal_audio_track_t* track = write_test_frame(audio, samples);
   assert(h2_pal_audio_start_speaker(audio) == H2_AUDIO_OK);
   wait_for_size_at_least(&output->sample_count, FAKE_OUTPUT_FRAME_SAMPLES);
   assert(h2_pal_audio_track_close(track) == H2_AUDIO_OK);
@@ -636,11 +634,11 @@ static void test_delayed_write_capture(h2_portaudio_t *provider,
   assert(memcmp(output->samples, samples, sizeof(samples)) == 0);
 }
 
-static void test_stop_waits_for_active_write(h2_pal_audio_t *audio,
-                                             fake_output_t *output) {
+static void test_stop_waits_for_active_write(h2_pal_audio_t* audio,
+                                             fake_output_t* output) {
   fake_output_reset(output, FAKE_OUTPUT_SLOW_WRITE);
   int16_t samples[FAKE_OUTPUT_FRAME_SAMPLES] = {0};
-  h2_pal_audio_track_t *track = write_test_frame(audio, samples);
+  h2_pal_audio_track_t* track = write_test_frame(audio, samples);
   assert(h2_pal_audio_start_speaker(audio) == H2_AUDIO_OK);
   wait_for_bool(&output->write_active);
   assert(h2_pal_audio_stop_speaker(audio) == H2_AUDIO_OK);
@@ -651,12 +649,12 @@ static void test_stop_waits_for_active_write(h2_pal_audio_t *audio,
   assert(!h2_atomic_load(&output->control_during_write));
 }
 
-static void test_output_underflow_is_recoverable(h2_portaudio_t *provider,
-                                                 h2_pal_audio_t *audio,
-                                                 fake_output_t *output) {
+static void test_output_underflow_is_recoverable(h2_portaudio_t* provider,
+                                                 h2_pal_audio_t* audio,
+                                                 fake_output_t* output) {
   fake_output_reset(output, FAKE_OUTPUT_UNDERFLOW);
   int16_t samples[FAKE_OUTPUT_FRAME_SAMPLES] = {0};
-  h2_pal_audio_track_t *track = write_test_frame(audio, samples);
+  h2_pal_audio_track_t* track = write_test_frame(audio, samples);
   assert(h2_pal_audio_start_speaker(audio) == H2_AUDIO_OK);
   wait_for_underflow_count(provider, 1u);
   assert(h2_pal_audio_track_close(track) == H2_AUDIO_OK);
@@ -676,24 +674,23 @@ static void test_output_underflow_is_recoverable(h2_portaudio_t *provider,
   assert(h2_pal_audio_stop_speaker(audio) == H2_AUDIO_OK);
 }
 
-static void test_worker_failure_restart(h2_pal_audio_t *audio,
-                                        fake_output_t *output,
+static void test_worker_failure_restart(h2_pal_audio_t* audio,
+                                        fake_output_t* output,
                                         enum fake_output_mode failure_mode) {
   fake_output_reset(output, failure_mode);
   int16_t samples[FAKE_OUTPUT_FRAME_SAMPLES] = {0};
-  h2_pal_audio_track_t *track = write_test_frame(audio, samples);
+  h2_pal_audio_track_t* track = write_test_frame(audio, samples);
   assert(h2_pal_audio_start_speaker(audio) == H2_AUDIO_OK);
   wait_for_bool(&output->failure_observed);
   assert(h2_pal_audio_track_close(track) == H2_AUDIO_OK);
 
   h2_atomic_store(&output->mode, FAKE_OUTPUT_ZERO_CAPACITY);
-  h2_pal_audio_track_t *restart_track = write_test_frame(audio, samples);
+  h2_pal_audio_track_t* restart_track = write_test_frame(audio, samples);
   for (int elapsed_ms = 0;
        elapsed_ms < 1000 && h2_atomic_load(&output->open_count) < 2;
        ++elapsed_ms) {
     assert(h2_pal_audio_start_speaker(audio) == H2_AUDIO_OK);
-    if (h2_atomic_load(&output->open_count) < 2)
-      sleep_ms(1L);
+    if (h2_atomic_load(&output->open_count) < 2) sleep_ms(1L);
   }
   assert(h2_atomic_load(&output->open_count) == 2);
   assert(h2_atomic_load(&output->abort_count) == 1);
@@ -707,9 +704,9 @@ static void test_worker_failure_restart(h2_pal_audio_t *audio,
   assert(!h2_atomic_load(&output->control_during_write));
 }
 
-static void test_echo_reference_precedes_capture(h2_portaudio_t *provider,
-                                                 h2_pal_audio_t *audio,
-                                                 fake_output_t *output) {
+static void test_echo_reference_precedes_capture(h2_portaudio_t* provider,
+                                                 h2_pal_audio_t* audio,
+                                                 fake_output_t* output) {
   echo_order_t order = {0};
   assert(h2_atomic_init(&order.reset_count, 0) == H2_ATOMIC_OK);
   assert(h2_atomic_init(&order.enqueue_count, 0) == H2_ATOMIC_OK);
@@ -741,7 +738,7 @@ static void test_echo_reference_precedes_capture(h2_portaudio_t *provider,
   assert(h2_atomic_load(&order.capture_count) == 0);
 
   assert(h2_pal_audio_start_speaker(audio) == H2_AUDIO_OK);
-  h2_pal_audio_track_t *track = write_test_frame(audio, samples);
+  h2_pal_audio_track_t* track = write_test_frame(audio, samples);
   wait_for_int_at_least(&order.capture_count, 1);
   assert(h2_pal_audio_track_close(track) == H2_AUDIO_OK);
   assert(h2_pal_audio_stop_speaker(audio) == H2_AUDIO_OK);
@@ -780,7 +777,6 @@ static void test_echo_reference_precedes_capture(h2_portaudio_t *provider,
   h2_atomic_destroy(&order.block_enqueue);
   h2_atomic_destroy(&order.enqueue_entered);
   h2_atomic_destroy(&order.enqueue_release);
-
 }
 
 int main(void) {
@@ -791,7 +787,7 @@ int main(void) {
       .sync = h2_desktop_platform_sync_api(),
       .require_real_devices = 0,
   };
-  h2_portaudio_t *provider = NULL;
+  h2_portaudio_t* provider = NULL;
   h2_portaudio_config_t missing_sync = config;
   missing_sync.sync = NULL;
   assert(h2_portaudio_create(&missing_sync, &provider) ==
@@ -813,7 +809,7 @@ int main(void) {
   };
   assert(h2_portaudio_set_output_test_ops(provider, &output_ops) ==
          H2_AUDIO_OK);
-  h2_pal_audio_t *audio = h2_portaudio_audio(provider);
+  h2_pal_audio_t* audio = h2_portaudio_audio(provider);
   uint32_t mic_gain = 0u;
   assert(h2_pal_audio_get_mic_gain_percent(audio, &mic_gain) == H2_AUDIO_OK);
   assert(mic_gain == 100u);
@@ -836,8 +832,7 @@ int main(void) {
   assert(h2_pal_audio_set_mic_gain_percent(audio, 0u) == H2_AUDIO_OK);
   frame = mic_frame(samples);
   assert(h2_pal_audio_mic_read(audio, &frame, 1000u) == H2_AUDIO_OK);
-  for (size_t index = 0u; index < 320u; ++index)
-    assert(samples[index] == 0);
+  for (size_t index = 0u; index < 320u; ++index) assert(samples[index] == 0);
   assert(h2_pal_audio_get_mic_gain_percent(audio, &mic_gain) == H2_AUDIO_OK);
   assert(mic_gain == 0u);
   assert(h2_pal_audio_set_mic_gain_percent(audio, 100u) == H2_AUDIO_OK);

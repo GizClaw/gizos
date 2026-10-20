@@ -1,7 +1,8 @@
 #ifndef H2_JIELI_AC791N_DEVKIT_SDK_CONFIG_H
 #define H2_JIELI_AC791N_DEVKIT_SDK_CONFIG_H
 
-/* Physical board and boot/update configuration shared by every firmware role. */
+/* Physical board and boot/update configuration shared by every firmware role.
+ */
 #define __FLASH_SIZE__ (8 * 1024 * 1024)
 
 #define TCFG_LOWPOWER_BTOSC_DISABLE 0

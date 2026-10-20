@@ -22,11 +22,10 @@ extern "C" {
  * @param stack_size Server task minimum stack size in bytes.
  * @return H2_PAL_OK when the task starts, otherwise a startup error.
  */
-int h2_esp_h2loader_app_iostreamikcp_start(
-    h2_loader_app_client_t *client,
-    const h2_pal_task_api_t *task,
-    const h2_pal_mem_api_t *allocator,
-    size_t stack_size);
+int h2_esp_h2loader_app_iostreamikcp_start(h2_loader_app_client_t* client,
+                                           const h2_pal_task_api_t* task,
+                                           const h2_pal_mem_api_t* allocator,
+                                           size_t stack_size);
 
 #ifdef __cplusplus
 }

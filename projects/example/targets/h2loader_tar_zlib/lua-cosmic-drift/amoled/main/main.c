@@ -13,16 +13,15 @@
 
 #include <stdio.h>
 
-static int never_stop(void *user) {
+static int never_stop(void* user) {
   (void)user;
   return 0;
 }
 
-static h2_pal_result_t confirm_ready(void *user) {
-  h2_runtime_t *runtime = user;
+static h2_pal_result_t confirm_ready(void* user) {
+  h2_runtime_t* runtime = user;
   h2_pal_result_t result = h2_esp_platform_confirm_running_app();
-  if (result == H2_PAL_OK)
-    result = h2_esp_h2loader_app_confirm(runtime);
+  if (result == H2_PAL_OK) result = h2_esp_h2loader_app_confirm(runtime);
   if (result == H2_PAL_OK) {
     printf(
         "H2_LUA_COSMIC_DRIFT_READY display=368x448 touch=ft3168 button=boot\n");
@@ -31,13 +30,12 @@ static h2_pal_result_t confirm_ready(void *user) {
 }
 
 static void hold_for_recovery(void) {
-  for (;;)
-    vTaskDelay(pdMS_TO_TICKS(1000u));
+  for (;;) vTaskDelay(pdMS_TO_TICKS(1000u));
 }
 
-static void image_entry(void *user) {
+static void image_entry(void* user) {
   h2_runtime_config_t config = {0};
-  h2_runtime_t *runtime = NULL;
+  h2_runtime_t* runtime = NULL;
   h2_pal_result_t result;
   (void)user;
   result = h2_lua_cosmic_drift_amoled_runtime_config(&config);
@@ -45,8 +43,7 @@ static void image_entry(void *user) {
     result = h2_esp_h2loader_app_commands_prepare_serial(
         &config, "lua-cosmic-drift", 1u, 3u);
   }
-  if (result == H2_PAL_OK)
-    result = h2_runtime_init(&config, &runtime);
+  if (result == H2_PAL_OK) result = h2_runtime_init(&config, &runtime);
   if (result == H2_PAL_OK) {
     result =
         h2_esp_h2loader_app_commands_start(runtime, "lua-cosmic-drift", 1u, 3u);

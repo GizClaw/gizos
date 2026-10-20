@@ -15,9 +15,9 @@
 #include <thread>
 
 namespace {
-const h2_pal_sync_api_t *real_sync;
-const h2_pal_task_api_t *real_task;
-h2_pal_mutex_t *request_mutex;
+const h2_pal_sync_api_t* real_sync;
+const h2_pal_task_api_t* real_task;
+h2_pal_mutex_t* request_mutex;
 std::mutex gate_mutex;
 std::condition_variable gate_changed;
 bool parked = false;
@@ -26,15 +26,15 @@ thread_local bool park_before_lock = false;
 h2_atomic_uint_t started{}, joined{};
 bool fail_start = false;
 
-h2_pal_result_t create_mutex(void *user, const h2_pal_mutex_config_t *config,
-                             h2_pal_mutex_t **out) {
+h2_pal_result_t create_mutex(void* user, const h2_pal_mutex_config_t* config,
+                             h2_pal_mutex_t** out) {
   const auto rc = real_sync->vtable->create_mutex(user, config, out);
   if (rc == H2_PAL_OK && std::strcmp(config->name, "h2peer/net/request") == 0)
     request_mutex = *out;
   return rc;
 }
 
-h2_pal_result_t lock_mutex(void *user, h2_pal_mutex_t *mutex) {
+h2_pal_result_t lock_mutex(void* user, h2_pal_mutex_t* mutex) {
   if (park_before_lock && mutex == request_mutex) {
     std::unique_lock<std::mutex> lock(gate_mutex);
     parked = true;
@@ -45,8 +45,8 @@ h2_pal_result_t lock_mutex(void *user, h2_pal_mutex_t *mutex) {
   return real_sync->vtable->lock_mutex(user, mutex);
 }
 
-int start_task(void *user, const h2_pal_task_options_t *options,
-               h2_pal_task_entry_t entry, void *context, h2_pal_task_t **out) {
+int start_task(void* user, const h2_pal_task_options_t* options,
+               h2_pal_task_entry_t entry, void* context, h2_pal_task_t** out) {
   if (fail_start) {
     *out = nullptr;
     return H2_PAL_ERR_UNSUPPORTED;
@@ -57,19 +57,19 @@ int start_task(void *user, const h2_pal_task_options_t *options,
   return rc;
 }
 
-int join_task(void *user, h2_pal_task_t *task) {
+int join_task(void* user, h2_pal_task_t* task) {
   const auto rc = real_task->vtable->join(user, task);
   if (rc == H2_PAL_OK)
     (void)h2_atomic_uint_fetch_add(&joined, 1u, H2_ATOMIC_SEQ_CST);
   return rc;
 }
 
-h2_pal_result_t read_track(void *, uint8_t *, size_t, size_t *) {
+h2_pal_result_t read_track(void*, uint8_t*, size_t, size_t*) {
   // No offer/connection in this control-only test. No media may be consumed.
   assert(false);
   return H2_PAL_ERR_UNSUPPORTED;
 }
-} // namespace
+}  // namespace
 
 int main() {
   assert(h2_atomic_uint_init(&started, 0u) == H2_ATOMIC_OK);
@@ -95,15 +95,16 @@ int main() {
   config.crypto = h2_pal_unsupported_crypto_api();
   config.dtls = h2_pal_unsupported_dtls_api();
   config.sctp = h2_pal_unsupported_sctp_api();
-  h2_peer_t *owner = nullptr;
+  h2_peer_t* owner = nullptr;
   // Public constructor with the real task and command queue.
   // Transport is deliberately unavailable: this test must not contact a server.
   assert(h2_peer_create(&config, &owner) == H2_PAL_OK);
-  const auto *api = h2_peer_webrtc_api(owner);
-  h2_pal_webrtc_peer_t *peer = nullptr;
+  const auto* api = h2_peer_webrtc_api(owner);
+  h2_pal_webrtc_peer_t* peer = nullptr;
   fail_start = true;
   assert(h2_pal_webrtc_peer_create(api, &peer) == H2_PAL_ERR_UNSUPPORTED);
-  assert(peer == nullptr && h2_atomic_uint_load(&started, H2_ATOMIC_SEQ_CST) == 0u);
+  assert(peer == nullptr &&
+         h2_atomic_uint_load(&started, H2_ATOMIC_SEQ_CST) == 0u);
   fail_start = false;
   assert(h2_pal_webrtc_peer_create(api, &peer) == H2_PAL_OK);
   assert(h2_atomic_uint_load(&started, H2_ATOMIC_SEQ_CST) == 1u);
@@ -159,7 +160,8 @@ int main() {
       h2_atomic_bool_store(&blocked_entered, true, H2_ATOMIC_SEQ_CST);
       rc = h2_pal_webrtc_peer_poll(api, peer, 5000, &blocked_event);
     }
-    h2_atomic_int_store(&blocked_kind, static_cast<int>(blocked_event.kind), H2_ATOMIC_SEQ_CST);
+    h2_atomic_int_store(&blocked_kind, static_cast<int>(blocked_event.kind),
+                        H2_ATOMIC_SEQ_CST);
     h2_atomic_int_store(&blocked_result, rc, H2_ATOMIC_SEQ_CST);
     h2_pal_webrtc_event_release(&blocked_event);
   });
@@ -171,8 +173,7 @@ int main() {
       std::chrono::steady_clock::now() + std::chrono::seconds(5);
   do {
     busy_result = h2_pal_webrtc_peer_poll(api, peer, 0, &busy_event);
-    if (busy_result == H2_PAL_OK)
-      h2_pal_webrtc_event_release(&busy_event);
+    if (busy_result == H2_PAL_OK) h2_pal_webrtc_event_release(&busy_event);
     if (busy_result != H2_PAL_ERR_BUSY)
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
   } while (busy_result != H2_PAL_ERR_BUSY &&
@@ -183,11 +184,15 @@ int main() {
   // a freed queue: either the terminal peer-state event or CLOSED.
   h2_pal_webrtc_peer_close(api, peer);
   blocked_poll.join();
-  assert(h2_atomic_int_load(&blocked_result, H2_ATOMIC_SEQ_CST) == H2_PAL_ERR_CLOSED ||
+  assert(h2_atomic_int_load(&blocked_result, H2_ATOMIC_SEQ_CST) ==
+             H2_PAL_ERR_CLOSED ||
          (h2_atomic_int_load(&blocked_result, H2_ATOMIC_SEQ_CST) == H2_PAL_OK &&
-          h2_atomic_int_load(&blocked_kind, H2_ATOMIC_SEQ_CST) == H2_PAL_WEBRTC_EVENT_PEER_STATE));
+          h2_atomic_int_load(&blocked_kind, H2_ATOMIC_SEQ_CST) ==
+              H2_PAL_WEBRTC_EVENT_PEER_STATE));
   h2_peer_destroy(&owner);
-  assert(owner == nullptr && h2_atomic_uint_load(&started, H2_ATOMIC_SEQ_CST) == 1u && h2_atomic_uint_load(&joined, H2_ATOMIC_SEQ_CST) == 1u);
+  assert(owner == nullptr &&
+         h2_atomic_uint_load(&started, H2_ATOMIC_SEQ_CST) == 1u &&
+         h2_atomic_uint_load(&joined, H2_ATOMIC_SEQ_CST) == 1u);
   h2_atomic_int_destroy(&blocked_result);
   h2_atomic_bool_destroy(&blocked_entered);
   h2_atomic_int_destroy(&blocked_kind);

@@ -8,19 +8,19 @@
 #include <memory>
 
 class DinoRunScene final : public pixelroot32::core::Scene {
-public:
-  explicit DinoRunScene(h2_dinorun *owner) : owner(owner) {}
+ public:
+  explicit DinoRunScene(h2_dinorun* owner) : owner(owner) {}
   void init() override;
   void update(unsigned long deltaMs) override;
-  void draw(pixelroot32::graphics::Renderer &renderer) override;
+  void draw(pixelroot32::graphics::Renderer& renderer) override;
 
-private:
+ private:
   void stepFrame();
-  h2_dinorun *owner;
+  h2_dinorun* owner;
 };
 
 struct h2_dinorun {
-  explicit h2_dinorun(const h2_dinorun_config_t &value)
+  explicit h2_dinorun(const h2_dinorun_config_t& value)
       : config(value), scene(this) {}
 
   h2_dinorun_config_t config;
@@ -48,9 +48,9 @@ struct h2_dinorun {
   bool gameOver = false;
   std::array<char, 64> gameOverStatus{};
   size_t gameOverStatusLen = 0;
-  const char *clipName = nullptr;
+  const char* clipName = nullptr;
   uint32_t decodedFrame = UINT32_MAX;
-  const char *decodedClip = nullptr;
+  const char* decodedClip = nullptr;
   std::unique_ptr<uint8_t[]> playerBgra;
   std::unique_ptr<uint8_t[]> playerArgb4444;
 };

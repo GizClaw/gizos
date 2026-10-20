@@ -5,7 +5,4 @@
 #include "ke_mem.h"
 #include "rwip.h"
 
-int main(void)
-{
-    return (CFG_ROLE == 4) ? 0 : 1;
-}
+int main(void) { return (CFG_ROLE == 4) ? 0 : 1; }

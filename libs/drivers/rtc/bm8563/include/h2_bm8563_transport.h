@@ -18,19 +18,15 @@ extern "C" {
  * within one second so the RTC's coherent-access guarantee remains valid.
  */
 typedef struct h2_bm8563_transport_vtable {
-    h2_pal_result_t (*read_registers)(void *user,
-                                      uint8_t start_register,
-                                      uint8_t *out_data,
-                                      size_t data_length);
-    h2_pal_result_t (*write_registers)(void *user,
-                                       uint8_t start_register,
-                                       const uint8_t *data,
-                                       size_t data_length);
+  h2_pal_result_t (*read_registers)(void* user, uint8_t start_register,
+                                    uint8_t* out_data, size_t data_length);
+  h2_pal_result_t (*write_registers)(void* user, uint8_t start_register,
+                                     const uint8_t* data, size_t data_length);
 } h2_bm8563_transport_vtable_t;
 
 typedef struct h2_bm8563_transport {
-    void *user;
-    const h2_bm8563_transport_vtable_t *vtable;
+  void* user;
+  const h2_bm8563_transport_vtable_t* vtable;
 } h2_bm8563_transport_t;
 
 #ifdef __cplusplus

@@ -28,7 +28,7 @@ typedef struct h2_bk_wifi_ipv6_snapshot {
 } h2_bk_wifi_ipv6_snapshot_t;
 
 /* CP copies a coherent current-association snapshot. Caller provides size. */
-int h2_bk_wifi_ipv6_snapshot(h2_bk_wifi_ipv6_snapshot_t *out);
+int h2_bk_wifi_ipv6_snapshot(h2_bk_wifi_ipv6_snapshot_t* out);
 /* Preserve a working IPv6 association when DHCPv4 times out. */
 int h2_bk_wifi_ipv6_ready(void);
 

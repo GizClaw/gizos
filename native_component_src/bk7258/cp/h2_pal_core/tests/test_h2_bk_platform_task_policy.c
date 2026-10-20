@@ -8,53 +8,52 @@ static struct {
   int fail_alloc, fail_sem, fail_create, fail_join, creates, deinits;
   uint8_t priority;
   uint32_t stack;
-  const char *name;
-  const char *resolver_name;
+  const char* name;
+  const char* resolver_name;
 } s;
-void *os_malloc(size_t n) { return s.fail_alloc ? NULL : malloc(n); }
-void os_free(void *p) { free(p); }
-void *os_memset(void *p, int v, size_t n) { return memset(p, v, n); }
-int rtos_init_semaphore(beken_semaphore_t *x, int n) {
+void* os_malloc(size_t n) { return s.fail_alloc ? NULL : malloc(n); }
+void os_free(void* p) { free(p); }
+void* os_memset(void* p, int v, size_t n) { return memset(p, v, n); }
+int rtos_init_semaphore(beken_semaphore_t* x, int n) {
   (void)n;
-  if (s.fail_sem)
-    return -1;
-  *x = (void *)1;
+  if (s.fail_sem) return -1;
+  *x = (void*)1;
   return 0;
 }
-int rtos_set_semaphore(beken_semaphore_t *x) {
+int rtos_set_semaphore(beken_semaphore_t* x) {
   (void)x;
   return 0;
 }
-int rtos_get_semaphore(beken_semaphore_t *x, uint32_t t) {
+int rtos_get_semaphore(beken_semaphore_t* x, uint32_t t) {
   (void)x;
   (void)t;
   return s.fail_join ? -1 : 0;
 }
-void rtos_deinit_semaphore(beken_semaphore_t *x) {
+void rtos_deinit_semaphore(beken_semaphore_t* x) {
   (void)x;
   s.deinits++;
 }
-static int create(beken_thread_t *out, uint8_t p, const char *n,
-                  beken_thread_function_t e, uint32_t st, void *c) {
+static int create(beken_thread_t* out, uint8_t p, const char* n,
+                  beken_thread_function_t e, uint32_t st, void* c) {
   assert(e && c);
   s.creates++;
   s.priority = p;
   s.name = n;
   s.stack = st;
-  *out = (void *)1;
+  *out = (void*)1;
   return s.fail_create ? -1 : 0;
 }
-int rtos_create_thread(beken_thread_t *a, uint8_t b, const char *c,
-                       beken_thread_function_t d, uint32_t e, void *f) {
+int rtos_create_thread(beken_thread_t* a, uint8_t b, const char* c,
+                       beken_thread_function_t d, uint32_t e, void* f) {
   return create(a, b, c, d, e, f);
 }
-int rtos_create_psram_thread(beken_thread_t *a, uint8_t b, const char *c,
-                             beken_thread_function_t d, uint32_t e, void *f) {
+int rtos_create_psram_thread(beken_thread_t* a, uint8_t b, const char* c,
+                             beken_thread_function_t d, uint32_t e, void* f) {
   return create(a, b, c, d, e, f);
 }
-void rtos_delete_thread(beken_thread_t *x) { assert(x == NULL); }
-static h2_pal_result_t resolve(void *u, const char *n,
-                               h2_bk_task_policy_t *out) {
+void rtos_delete_thread(beken_thread_t* x) { assert(x == NULL); }
+static h2_pal_result_t resolve(void* u, const char* n,
+                               h2_bk_task_policy_t* out) {
   assert(u == &s);
   s.resolver_name = n;
   if (n && strcmp(n, "known") == 0) {
@@ -70,8 +69,7 @@ static h2_pal_result_t resolve(void *u, const char *n,
                                  .stack_region = H2_BK_TASK_STACK_DEFAULT};
     return H2_PAL_OK;
   }
-  if (n && strcmp(n, "resolver-error") == 0)
-    return H2_PAL_ERR_INVALID_STATE;
+  if (n && strcmp(n, "resolver-error") == 0) return H2_PAL_ERR_INVALID_STATE;
   if (n && strcmp(n, "dynamic-high") == 0) {
     *out = (h2_bk_task_policy_t){.sdk_name = "dynamic-sdk",
                                  .priority = 8,
@@ -84,15 +82,15 @@ static h2_pal_result_t resolve(void *u, const char *n,
 static h2_bk_task_policy_config_t cfg(void) {
   return (h2_bk_task_policy_config_t){.resolver = resolve, .resolver_user = &s};
 }
-static void entry(void *u) { (void)u; }
+static void entry(void* u) { (void)u; }
 static void reset(void) {
   h2_bk_platform_task_test_reset();
   memset(&s, 0, sizeof(s));
 }
 int main(void) {
-  const h2_pal_task_api_t *api = h2_bk_platform_task_api();
+  const h2_pal_task_api_t* api = h2_bk_platform_task_api();
   h2_pal_task_options_t o = {.name = "known", .min_stack_size = 1};
-  h2_pal_task_t *t = NULL;
+  h2_pal_task_t* t = NULL;
   reset();
   assert(api->vtable->start(NULL, &o, entry, NULL, &t) ==
          H2_PAL_ERR_INVALID_STATE);

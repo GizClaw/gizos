@@ -1,1 +1,1 @@
-return 'existing installer fixture'
+return "existing installer fixture"

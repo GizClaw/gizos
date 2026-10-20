@@ -12,7 +12,8 @@
 extern "C" {
 #endif
 
-extern const char h2_gizclaw_audio_download_task_name[sizeof(H2_GIZCLAW_AUDIO_DOWNLOAD_TASK_NAME_VALUE)];
+extern const char h2_gizclaw_audio_download_task_name[sizeof(
+    H2_GIZCLAW_AUDIO_DOWNLOAD_TASK_NAME_VALUE)];
 extern const char
     h2_gizclaw_device_task_name[sizeof(H2_GIZCLAW_DEVICE_TASK_NAME_VALUE)];
 extern const char

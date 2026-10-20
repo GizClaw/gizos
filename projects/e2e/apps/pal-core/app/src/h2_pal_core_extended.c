@@ -6,21 +6,19 @@
 
 #define WORKERS 8u
 #define CYCLES 100u
-#define CHECK(x)                                                               \
-  do {                                                                         \
-    if (!(x))                                                                  \
-      return H2_PAL_ERR_INVALID_STATE;                                         \
+#define CHECK(x)                               \
+  do {                                         \
+    if (!(x)) return H2_PAL_ERR_INVALID_STATE; \
   } while (0)
-#define CALL(x)                                                                \
-  do {                                                                         \
-    h2_pal_result_t call_rc = (h2_pal_result_t)(x);                            \
-    if (call_rc != H2_PAL_OK)                                                  \
-      return call_rc;                                                          \
+#define CALL(x)                                     \
+  do {                                              \
+    h2_pal_result_t call_rc = (h2_pal_result_t)(x); \
+    if (call_rc != H2_PAL_OK) return call_rc;       \
   } while (0)
 
 typedef struct h2_pal_core_extended state_t;
 typedef struct work {
-  state_t *state;
+  state_t* state;
   unsigned index, mode, calls, output;
   size_t requested_stack, observed_stack;
   h2_pal_result_t result;
@@ -38,50 +36,50 @@ enum {
   UNSUBSCRIBE
 };
 typedef struct timer_context {
-  state_t *state;
+  state_t* state;
   int value;
 } timer_context_t;
 
 struct h2_pal_core_extended {
-  h2_runtime_t *r;
-  const h2_pal_core_e2e_config_t *cfg;
+  h2_runtime_t* r;
+  const h2_pal_core_e2e_config_t* cfg;
   uint32_t timeout;
-  h2_pal_task_t *tasks[WORKERS];
+  h2_pal_task_t* tasks[WORKERS];
   work_t work[WORKERS];
-  h2_pal_mutex_t *mutex;
-  h2_pal_cond_t *condition;
+  h2_pal_mutex_t* mutex;
+  h2_pal_cond_t* condition;
   h2_pal_semaphore_t *gate, *ready, *finished, *unsubscribe_done;
-  h2_pal_queue_t *queue;
+  h2_pal_queue_t* queue;
   int queue_closed, fault_active, event_initialized, self_unsubscribe;
   unsigned generation, waiting, counter, rounds;
   unsigned cleanup_gate_signals, cleanup_ready_signals;
   int stopping;
-  h2_pal_system_event_subscription_t *subscription;
+  h2_pal_system_event_subscription_t* subscription;
   h2_pal_netif_default_changed_t event_payload;
   h2_pal_system_event_t event;
-  h2_pal_timer_t *timers[2];
+  h2_pal_timer_t* timers[2];
   timer_context_t timer_contexts[2];
 };
 
-static h2_pal_result_t now(state_t *s, uint64_t *us) {
+static h2_pal_result_t now(state_t* s, uint64_t* us) {
   return s->cfg->observe_monotonic_us == NULL
              ? H2_PAL_ERR_UNAVAILABLE
              : s->cfg->observe_monotonic_us(s->cfg->observer_user, us);
 }
-static h2_pal_result_t resources(state_t *s, h2_pal_core_resources_t *out) {
+static h2_pal_result_t resources(state_t* s, h2_pal_core_resources_t* out) {
   memset(out, 0, sizeof(*out));
   return s->cfg->observe_resources == NULL
              ? H2_PAL_ERR_UNAVAILABLE
              : s->cfg->observe_resources(s->cfg->observer_user, out);
 }
-static h2_pal_result_t balanced(state_t *s,
-                                const h2_pal_core_resources_t *before) {
+static h2_pal_result_t balanced(state_t* s,
+                                const h2_pal_core_resources_t* before) {
   h2_pal_core_resources_t after;
   CALL(resources(s, &after));
   CHECK(memcmp(before, &after, sizeof(after)) == 0);
   return H2_PAL_OK;
 }
-static h2_pal_result_t setup(state_t *s) {
+static h2_pal_result_t setup(state_t* s) {
   const h2_pal_mutex_config_t m = {.name = "pal-core-contract",
                                    .allocator = s->r->mem};
   CALL(h2_pal_mutex_create(s->r->sync, &m, &s->mutex));
@@ -91,26 +89,25 @@ static h2_pal_result_t setup(state_t *s) {
   CALL(h2_pal_semaphore_create(s->r->sync, &sem, &s->gate));
   return h2_pal_semaphore_create(s->r->sync, &sem, &s->finished);
 }
-static h2_pal_result_t queue_create(state_t *s, size_t count) {
+static h2_pal_result_t queue_create(state_t* s, size_t count) {
   const h2_pal_queue_config_t q = {.name = "pal-core-contract",
                                    .item_size = sizeof(int),
                                    .item_count = count,
                                    .allocator = s->r->mem};
   return (h2_pal_result_t)h2_pal_queue_create(s->r->queue, &q, &s->queue);
 }
-static h2_pal_result_t wait_ready(state_t *s, unsigned count) {
+static h2_pal_result_t wait_ready(state_t* s, unsigned count) {
   for (unsigned i = 0; i < count; ++i)
     CALL(h2_pal_semaphore_take(s->r->sync, s->ready, s->timeout));
   return H2_PAL_OK;
 }
-static h2_pal_result_t release_gate(state_t *s, unsigned count) {
+static h2_pal_result_t release_gate(state_t* s, unsigned count) {
   for (unsigned i = 0; i < count; ++i)
     CALL(h2_pal_semaphore_give(s->r->sync, s->gate));
   return H2_PAL_OK;
 }
-static h2_pal_result_t join_one(state_t *s, unsigned i) {
-  if (s->tasks[i] == NULL)
-    return H2_PAL_OK;
+static h2_pal_result_t join_one(state_t* s, unsigned i) {
+  if (s->tasks[i] == NULL) return H2_PAL_OK;
   uint64_t begin, current;
   CALL(now(s, &begin));
   for (uint32_t attempt = 0; attempt <= s->timeout; ++attempt) {
@@ -119,8 +116,7 @@ static h2_pal_result_t join_one(state_t *s, unsigned i) {
       s->tasks[i] = NULL;
       return rc;
     }
-    if (rc != H2_PAL_ERR_BUSY)
-      return rc;
+    if (rc != H2_PAL_ERR_BUSY) return rc;
     CALL(now(s, &current));
     if (current - begin >= (uint64_t)s->timeout * 1000u)
       return H2_PAL_ERR_TIMEOUT;
@@ -129,8 +125,8 @@ static h2_pal_result_t join_one(state_t *s, unsigned i) {
   return H2_PAL_ERR_TIMEOUT;
 }
 
-static h2_pal_result_t do_work(work_t *w) {
-  state_t *s = w->state;
+static h2_pal_result_t do_work(work_t* w) {
+  state_t* s = w->state;
   if (w->mode == TRY_MUTEX) {
     ++w->calls;
     h2_pal_result_t rc = h2_pal_mutex_try_lock(s->r->sync, s->mutex);
@@ -144,72 +140,70 @@ static h2_pal_result_t do_work(work_t *w) {
   ++w->calls;
   CALL(h2_pal_mutex_unlock(s->r->sync, s->mutex));
   if (w->requested_stack != 0u) {
-    if (s->cfg->observe_task_stack == NULL)
-      return H2_PAL_ERR_UNAVAILABLE;
+    if (s->cfg->observe_task_stack == NULL) return H2_PAL_ERR_UNAVAILABLE;
     CALL(s->cfg->observe_task_stack(s->cfg->observer_user, &w->observed_stack));
     CHECK(w->observed_stack >= w->requested_stack);
   }
   switch (w->mode) {
-  case GATED:
-  case COUNTER:
-  case SEM_WAITER:
-    CALL(h2_pal_semaphore_give(s->r->sync, s->ready));
-    CALL(h2_pal_semaphore_take(s->r->sync, s->gate, s->timeout));
-    if (w->mode == COUNTER)
-      for (unsigned n = 0; n < 1000u; ++n) {
-        CALL(h2_pal_mutex_lock(s->r->sync, s->mutex));
-        ++s->counter;
-        CALL(h2_pal_mutex_unlock(s->r->sync, s->mutex));
-      }
-    break;
-  case RELEASER:
-    CALL(wait_ready(s, 1u));
-    CALL(h2_pal_time_sleep_ms(s->r->time, 20u));
-    CALL(release_gate(s, 1u));
-    break;
-  case SENDER: {
-    int value = 113;
-    CALL(h2_pal_semaphore_give(s->r->sync, s->ready));
-    return (h2_pal_result_t)h2_pal_queue_send(s->r->queue, s->queue, &value,
-                                              s->timeout);
-  }
-  case CONDITION: {
-    CALL(h2_pal_mutex_lock(s->r->sync, s->mutex));
-    h2_pal_result_t rc = H2_PAL_OK;
-    for (unsigned round = 1;
-         round <= s->rounds && !s->stopping && rc == H2_PAL_OK; ++round) {
-      ++s->waiting;
-      while (s->generation < round && !s->stopping && rc == H2_PAL_OK) {
-        rc = h2_pal_cond_wait(s->r->sync, s->condition, s->mutex, s->timeout);
-      }
-      if (rc == H2_PAL_OK && !s->stopping)
-        ++s->counter;
+    case GATED:
+    case COUNTER:
+    case SEM_WAITER:
+      CALL(h2_pal_semaphore_give(s->r->sync, s->ready));
+      CALL(h2_pal_semaphore_take(s->r->sync, s->gate, s->timeout));
+      if (w->mode == COUNTER)
+        for (unsigned n = 0; n < 1000u; ++n) {
+          CALL(h2_pal_mutex_lock(s->r->sync, s->mutex));
+          ++s->counter;
+          CALL(h2_pal_mutex_unlock(s->r->sync, s->mutex));
+        }
+      break;
+    case RELEASER:
+      CALL(wait_ready(s, 1u));
+      CALL(h2_pal_time_sleep_ms(s->r->time, 20u));
+      CALL(release_gate(s, 1u));
+      break;
+    case SENDER: {
+      int value = 113;
+      CALL(h2_pal_semaphore_give(s->r->sync, s->ready));
+      return (h2_pal_result_t)h2_pal_queue_send(s->r->queue, s->queue, &value,
+                                                s->timeout);
     }
-    h2_pal_result_t unlock = h2_pal_mutex_unlock(s->r->sync, s->mutex);
-    return rc == H2_PAL_OK ? unlock : rc;
-  }
-  case POST_EVENT:
-    return (h2_pal_result_t)h2_pal_system_event_post(s->cfg->event_fixture,
-                                                     &s->event, s->timeout);
-  case UNSUBSCRIBE:
-    CALL(h2_pal_semaphore_give(s->r->sync, s->ready));
-    h2_pal_system_event_unsubscribe(s->cfg->event_fixture, s->subscription);
-    s->subscription = NULL;
-    break;
-  default:
-    break;
+    case CONDITION: {
+      CALL(h2_pal_mutex_lock(s->r->sync, s->mutex));
+      h2_pal_result_t rc = H2_PAL_OK;
+      for (unsigned round = 1;
+           round <= s->rounds && !s->stopping && rc == H2_PAL_OK; ++round) {
+        ++s->waiting;
+        while (s->generation < round && !s->stopping && rc == H2_PAL_OK) {
+          rc = h2_pal_cond_wait(s->r->sync, s->condition, s->mutex, s->timeout);
+        }
+        if (rc == H2_PAL_OK && !s->stopping) ++s->counter;
+      }
+      h2_pal_result_t unlock = h2_pal_mutex_unlock(s->r->sync, s->mutex);
+      return rc == H2_PAL_OK ? unlock : rc;
+    }
+    case POST_EVENT:
+      return (h2_pal_result_t)h2_pal_system_event_post(s->cfg->event_fixture,
+                                                       &s->event, s->timeout);
+    case UNSUBSCRIBE:
+      CALL(h2_pal_semaphore_give(s->r->sync, s->ready));
+      h2_pal_system_event_unsubscribe(s->cfg->event_fixture, s->subscription);
+      s->subscription = NULL;
+      break;
+    default:
+      break;
   }
   w->output = (w->index + 1u) * 7919u;
   return H2_PAL_OK;
 }
-static void entry(void *user) {
-  work_t *w = user;
+static void entry(void* user) {
+  work_t* w = user;
   w->result = do_work(w);
   if (w->mode == UNSUBSCRIBE && w->state->unsubscribe_done != NULL)
     (void)h2_pal_semaphore_give(w->state->r->sync, w->state->unsubscribe_done);
   (void)h2_pal_semaphore_give(w->state->r->sync, w->state->finished);
 }
-static h2_pal_result_t start(state_t *s, unsigned i, unsigned mode,
+static h2_pal_result_t start(state_t* s, unsigned i, unsigned mode,
                              size_t stack) {
   s->work[i] = (work_t){.state = s,
                         .index = i,
@@ -220,7 +214,7 @@ static h2_pal_result_t start(state_t *s, unsigned i, unsigned mode,
                                      .min_stack_size = stack};
   return h2_pal_task_start(s->r->task, &opt, entry, &s->work[i], &s->tasks[i]);
 }
-static h2_pal_result_t check_workers(state_t *s, unsigned count, int reverse) {
+static h2_pal_result_t check_workers(state_t* s, unsigned count, int reverse) {
   for (unsigned n = 0; n < count; ++n) {
     unsigned i = reverse ? count - n - 1u : n;
     CALL(join_one(s, i));
@@ -229,17 +223,17 @@ static h2_pal_result_t check_workers(state_t *s, unsigned count, int reverse) {
   }
   return H2_PAL_OK;
 }
-static void noop(void *user) { (void)user; }
+static void noop(void* user) { (void)user; }
 
-static h2_pal_result_t arguments(state_t *s) {
-  h2_runtime_t *r = s->r;
-  h2_pal_task_t *task = NULL;
-  h2_pal_timer_t *timer = NULL;
-  h2_pal_queue_t *queue = NULL;
-  h2_pal_mutex_t *mutex = NULL;
-  h2_pal_semaphore_t *sem = NULL;
-  h2_pal_cond_t *cond = NULL;
-  h2_pal_system_event_subscription_t *sub = NULL;
+static h2_pal_result_t arguments(state_t* s) {
+  h2_runtime_t* r = s->r;
+  h2_pal_task_t* task = NULL;
+  h2_pal_timer_t* timer = NULL;
+  h2_pal_queue_t* queue = NULL;
+  h2_pal_mutex_t* mutex = NULL;
+  h2_pal_semaphore_t* sem = NULL;
+  h2_pal_cond_t* cond = NULL;
+  h2_pal_system_event_subscription_t* sub = NULL;
   CHECK(h2_pal_mem_alloc(NULL, 8) == NULL &&
         h2_pal_mem_realloc(NULL, NULL, 8) == NULL);
   h2_pal_mem_free(NULL, NULL);
@@ -308,7 +302,7 @@ static size_t required_memory_alignment(void) {
   typedef union h2_pal_core_max_align {
     long double floating;
     long long integer;
-    void *pointer;
+    void* pointer;
   } h2_pal_core_max_align_t;
   return _Alignof(h2_pal_core_max_align_t);
 #else
@@ -316,31 +310,29 @@ static size_t required_memory_alignment(void) {
 #endif
 }
 
-static h2_pal_result_t memory_churn(state_t *s) {
+static h2_pal_result_t memory_churn(state_t* s) {
   h2_pal_core_resources_t before;
   CALL(resources(s, &before));
   for (unsigned n = 0; n < CYCLES; ++n) {
     size_t len = 1u + n * 17u;
-    unsigned char *p = h2_pal_mem_alloc(s->r->mem, len);
-    if (p == NULL)
-      return H2_PAL_ERR_NO_MEMORY;
+    unsigned char* p = h2_pal_mem_alloc(s->r->mem, len);
+    if (p == NULL) return H2_PAL_ERR_NO_MEMORY;
     int valid = (uintptr_t)p % required_memory_alignment() == 0;
     memset(p, (int)(n & 255u), len);
-    unsigned char *next = h2_pal_mem_realloc(s->r->mem, p, len + 31u);
+    unsigned char* next = h2_pal_mem_realloc(s->r->mem, p, len + 31u);
     if (next == NULL) {
       h2_pal_mem_free(s->r->mem, p);
       return H2_PAL_ERR_NO_MEMORY;
     }
     valid = valid && (uintptr_t)next % required_memory_alignment() == 0;
     for (size_t k = 0; k < len; ++k)
-      if (next[k] != (unsigned char)n)
-        valid = 0;
+      if (next[k] != (unsigned char)n) valid = 0;
     h2_pal_mem_free(s->r->mem, next);
     CHECK(valid);
   }
   return balanced(s, &before);
 }
-static h2_pal_result_t task_case(state_t *s, unsigned which) {
+static h2_pal_result_t task_case(state_t* s, unsigned which) {
   if (which == 7u && s->cfg->observe_task_stack == NULL)
     return H2_PAL_ERR_UNAVAILABLE;
   if ((which == 8u || which == 9u) && s->cfg->task_allocation_fault == NULL)
@@ -349,11 +341,9 @@ static h2_pal_result_t task_case(state_t *s, unsigned which) {
   h2_pal_core_resources_t before = {0};
   const int measure_resources =
       which >= 5u || s->cfg->observe_resources != NULL;
-  if (measure_resources)
-    CALL(resources(s, &before));
+  if (measure_resources) CALL(resources(s, &before));
   if (which == 2u) {
-    for (unsigned i = 0; i < WORKERS; ++i)
-      CALL(start(s, i, GATED, 0));
+    for (unsigned i = 0; i < WORKERS; ++i) CALL(start(s, i, GATED, 0));
     CALL(wait_ready(s, WORKERS));
     CALL(release_gate(s, WORKERS));
     CALL(check_workers(s, WORKERS, 1));
@@ -369,8 +359,7 @@ static h2_pal_result_t task_case(state_t *s, unsigned which) {
     unsigned batch = which == 5u ? 1u : WORKERS;
     unsigned cycles = which == 5u ? CYCLES : 16u;
     for (unsigned n = 0; n < cycles; ++n) {
-      for (unsigned i = 0; i < batch; ++i)
-        CALL(start(s, i, ONCE, 0));
+      for (unsigned i = 0; i < batch; ++i) CALL(start(s, i, ONCE, 0));
       CALL(check_workers(s, batch, n % 2u));
       CALL(balanced(s, &before));
     }
@@ -389,8 +378,7 @@ static h2_pal_result_t task_case(state_t *s, unsigned which) {
     unsigned success = which == 8u ? 0u : 2u;
     CALL(s->cfg->task_allocation_fault(s->cfg->observer_user, (int)success));
     s->fault_active = 1;
-    for (unsigned i = 0; i < success; ++i)
-      CALL(start(s, i, GATED, 4096u));
+    for (unsigned i = 0; i < success; ++i) CALL(start(s, i, GATED, 4096u));
     h2_pal_result_t rc = start(s, success, ONCE, 4096u);
     CHECK(rc == H2_PAL_ERR_NO_MEMORY && s->tasks[success] == NULL &&
           s->work[success].calls == 0u);
@@ -405,7 +393,7 @@ static h2_pal_result_t task_case(state_t *s, unsigned which) {
   }
   return measure_resources ? balanced(s, &before) : H2_PAL_OK;
 }
-static h2_pal_result_t queue_case(state_t *s, unsigned which) {
+static h2_pal_result_t queue_case(state_t* s, unsigned which) {
   CALL(setup(s));
   CALL(queue_create(s, 1));
   int value = 71, received = 0;
@@ -438,30 +426,25 @@ static h2_pal_result_t queue_case(state_t *s, unsigned which) {
   }
   return H2_PAL_OK;
 }
-static h2_pal_result_t mutex_contention(state_t *s) {
+static h2_pal_result_t mutex_contention(state_t* s) {
   CALL(setup(s));
   CALL(h2_pal_mutex_lock(s->r->sync, s->mutex));
   h2_pal_result_t probe = start(s, 0, TRY_MUTEX, 0);
-  if (probe == H2_PAL_OK)
-    probe = join_one(s, 0);
+  if (probe == H2_PAL_OK) probe = join_one(s, 0);
   h2_pal_result_t unlock = h2_pal_mutex_unlock(s->r->sync, s->mutex);
-  if (probe != H2_PAL_OK)
-    return probe;
-  if (unlock != H2_PAL_OK)
-    return unlock;
+  if (probe != H2_PAL_OK) return probe;
+  if (unlock != H2_PAL_OK) return unlock;
   CHECK(s->work[0].calls == 1u && s->work[0].result == H2_PAL_OK);
-  for (unsigned i = 0; i < WORKERS; ++i)
-    CALL(start(s, i, COUNTER, 0));
+  for (unsigned i = 0; i < WORKERS; ++i) CALL(start(s, i, COUNTER, 0));
   CALL(wait_ready(s, WORKERS));
   CALL(release_gate(s, WORKERS));
   CALL(check_workers(s, WORKERS, 1));
   CHECK(s->counter == WORKERS * 1000u);
   return H2_PAL_OK;
 }
-static h2_pal_result_t semaphore_waiters(state_t *s) {
+static h2_pal_result_t semaphore_waiters(state_t* s) {
   CALL(setup(s));
-  for (unsigned i = 0; i < WORKERS; ++i)
-    CALL(start(s, i, SEM_WAITER, 0));
+  for (unsigned i = 0; i < WORKERS; ++i) CALL(start(s, i, SEM_WAITER, 0));
   CALL(wait_ready(s, WORKERS));
   CHECK(h2_pal_semaphore_take(s->r->sync, s->finished, 10u) ==
         H2_PAL_ERR_TIMEOUT);
@@ -470,14 +453,13 @@ static h2_pal_result_t semaphore_waiters(state_t *s) {
   CHECK(h2_pal_semaphore_take(s->r->sync, s->gate, 0) == H2_PAL_ERR_TIMEOUT);
   return H2_PAL_OK;
 }
-static h2_pal_result_t condition_rounds(state_t *s, unsigned rounds) {
+static h2_pal_result_t condition_rounds(state_t* s, unsigned rounds) {
   CALL(setup(s));
   const h2_pal_cond_config_t cfg = {.name = "pal-core-generations",
                                     .allocator = s->r->mem};
   CALL(h2_pal_cond_create(s->r->sync, &cfg, &s->condition));
   s->rounds = rounds;
-  for (unsigned i = 0; i < WORKERS; ++i)
-    CALL(start(s, i, CONDITION, 0));
+  for (unsigned i = 0; i < WORKERS; ++i) CALL(start(s, i, CONDITION, 0));
   for (unsigned generation = 1; generation <= rounds; ++generation) {
     uint64_t begin, current;
     CALL(now(s, &begin));
@@ -487,10 +469,8 @@ static h2_pal_result_t condition_rounds(state_t *s, unsigned rounds) {
         s->generation = generation;
         h2_pal_result_t rc = h2_pal_cond_broadcast(s->r->sync, s->condition);
         h2_pal_result_t unlock = h2_pal_mutex_unlock(s->r->sync, s->mutex);
-        if (rc != H2_PAL_OK)
-          return rc;
-        if (unlock != H2_PAL_OK)
-          return unlock;
+        if (rc != H2_PAL_OK) return rc;
+        if (unlock != H2_PAL_OK) return unlock;
         break;
       }
       CALL(h2_pal_mutex_unlock(s->r->sync, s->mutex));
@@ -507,13 +487,13 @@ static h2_pal_result_t condition_rounds(state_t *s, unsigned rounds) {
   CHECK(s->counter == rounds * WORKERS);
   return H2_PAL_OK;
 }
-static int event_handler(void *user, const h2_pal_system_event_t *event) {
-  state_t *s = user;
+static int event_handler(void* user, const h2_pal_system_event_t* event) {
+  state_t* s = user;
   if (event->source_id != 0x50414c2u ||
       event->payload_size != sizeof(s->event_payload))
     return H2_PAL_ERR_INVALID_STATE;
   if (s->self_unsubscribe) {
-    h2_pal_system_event_subscription_t *sub = s->subscription;
+    h2_pal_system_event_subscription_t* sub = s->subscription;
     s->subscription = NULL;
     h2_pal_system_event_unsubscribe(s->cfg->event_fixture, sub);
     return h2_pal_semaphore_give(s->r->sync, s->ready);
@@ -523,9 +503,8 @@ static int event_handler(void *user, const h2_pal_system_event_t *event) {
              ? h2_pal_semaphore_take(s->r->sync, s->gate, s->timeout)
              : rc;
 }
-static h2_pal_result_t event_case(state_t *s, int self) {
-  if (s->cfg->event_fixture == NULL)
-    return H2_PAL_ERR_UNAVAILABLE;
+static h2_pal_result_t event_case(state_t* s, int self) {
+  if (s->cfg->event_fixture == NULL) return H2_PAL_ERR_UNAVAILABLE;
   CALL(setup(s));
   CALL(h2_pal_system_event_init(s->cfg->event_fixture));
   s->event_initialized = 1;
@@ -548,8 +527,9 @@ static h2_pal_result_t event_case(state_t *s, int self) {
     CHECK(h2_pal_semaphore_take(s->r->sync, s->ready, 20u) ==
           H2_PAL_ERR_TIMEOUT);
   } else {
-    const h2_pal_semaphore_config_t done = {
-        .name = "pal-core-unsubscribe", .allocator = s->r->mem, .max_count = 1u};
+    const h2_pal_semaphore_config_t done = {.name = "pal-core-unsubscribe",
+                                            .allocator = s->r->mem,
+                                            .max_count = 1u};
     CALL(h2_pal_semaphore_create(s->r->sync, &done, &s->unsubscribe_done));
     CALL(start(s, 1, UNSUBSCRIBE, 0));
     CALL(wait_ready(s, 1));
@@ -569,13 +549,13 @@ static h2_pal_result_t event_case(state_t *s, int self) {
   }
   return H2_PAL_OK;
 }
-static void timer_callback(void *user, h2_pal_timer_t *timer) {
+static void timer_callback(void* user, h2_pal_timer_t* timer) {
   (void)timer;
-  timer_context_t *ctx = user;
+  timer_context_t* ctx = user;
   (void)h2_pal_queue_send(ctx->state->r->queue, ctx->state->queue, &ctx->value,
                           0);
 }
-static h2_pal_result_t timer_create(state_t *s, unsigned slot, int value,
+static h2_pal_result_t timer_create(state_t* s, unsigned slot, int value,
                                     unsigned flags) {
   s->timer_contexts[slot] = (timer_context_t){.state = s, .value = value};
   const h2_pal_timer_config_t cfg = {.name = "pal-core-timer-contract",
@@ -585,11 +565,10 @@ static h2_pal_result_t timer_create(state_t *s, unsigned slot, int value,
                                      .cb_user = &s->timer_contexts[slot]};
   return h2_pal_timer_create(s->r->timer, &cfg, &s->timers[slot]);
 }
-static h2_pal_result_t timer_case(state_t *s, int churn) {
+static h2_pal_result_t timer_case(state_t* s, int churn) {
   CALL(queue_create(s, 64u));
   h2_pal_core_resources_t before = {0};
-  if (churn || s->cfg->observe_resources != NULL)
-    CALL(resources(s, &before));
+  if (churn || s->cfg->observe_resources != NULL) CALL(resources(s, &before));
   int value = 0;
   if (churn) {
     for (unsigned n = 0; n < CYCLES; ++n) {
@@ -624,10 +603,9 @@ static h2_pal_result_t timer_case(state_t *s, int churn) {
   return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_pal_core_extended_cleanup(state_t **owner) {
-  state_t *s = *owner;
-  if (s == NULL)
-    return H2_PAL_OK;
+h2_pal_result_t h2_pal_core_extended_cleanup(state_t** owner) {
+  state_t* s = *owner;
+  if (s == NULL) return H2_PAL_OK;
   if (s->fault_active) {
     CALL(s->cfg->task_allocation_fault(s->cfg->observer_user, -1));
     s->fault_active = 0;
@@ -637,10 +615,8 @@ h2_pal_result_t h2_pal_core_extended_cleanup(state_t **owner) {
     s->stopping = 1;
     h2_pal_result_t rc = h2_pal_cond_broadcast(s->r->sync, s->condition);
     h2_pal_result_t unlock = h2_pal_mutex_unlock(s->r->sync, s->mutex);
-    if (rc != H2_PAL_OK)
-      return rc;
-    if (unlock != H2_PAL_OK)
-      return unlock;
+    if (rc != H2_PAL_OK) return rc;
+    if (unlock != H2_PAL_OK) return unlock;
   }
   if (s->gate != NULL)
     while (s->cleanup_gate_signals < WORKERS) {
@@ -656,8 +632,7 @@ h2_pal_result_t h2_pal_core_extended_cleanup(state_t **owner) {
     CALL(h2_pal_queue_close(s->r->queue, s->queue));
     s->queue_closed = 1;
   }
-  for (unsigned i = 0; i < WORKERS; ++i)
-    CALL(join_one(s, i));
+  for (unsigned i = 0; i < WORKERS; ++i) CALL(join_one(s, i));
   for (unsigned i = 0; i < 2u; ++i)
     if (s->timers[i] != NULL) {
       CALL(h2_pal_timer_destroy(s->r->timer, s->timers[i]));
@@ -701,14 +676,12 @@ h2_pal_result_t h2_pal_core_extended_cleanup(state_t **owner) {
   *owner = NULL;
   return H2_PAL_OK;
 }
-h2_pal_result_t h2_pal_core_extended_run(h2_runtime_t *r,
-                                         const h2_pal_core_e2e_config_t *cfg,
-                                         size_t index, state_t **owner) {
-  if (cfg->observe_monotonic_us == NULL)
-    return H2_PAL_ERR_UNAVAILABLE;
-  state_t *s = h2_pal_mem_alloc(r->mem, sizeof(*s));
-  if (s == NULL)
-    return H2_PAL_ERR_NO_MEMORY;
+h2_pal_result_t h2_pal_core_extended_run(h2_runtime_t* r,
+                                         const h2_pal_core_e2e_config_t* cfg,
+                                         size_t index, state_t** owner) {
+  if (cfg->observe_monotonic_us == NULL) return H2_PAL_ERR_UNAVAILABLE;
+  state_t* s = h2_pal_mem_alloc(r->mem, sizeof(*s));
+  if (s == NULL) return H2_PAL_ERR_NO_MEMORY;
   memset(s, 0, sizeof(*s));
   s->r = r;
   s->cfg = cfg;
@@ -716,21 +689,14 @@ h2_pal_result_t h2_pal_core_extended_run(h2_runtime_t *r,
   *owner = s;
   if (index == 0u)
     return cfg->event_fixture == NULL ? H2_PAL_ERR_UNAVAILABLE : arguments(s);
-  if (index == 1u)
-    return memory_churn(s);
-  if (index <= 9u)
-    return task_case(s, (unsigned)index);
-  if (index <= 12u)
-    return queue_case(s, (unsigned)index);
-  if (index == 13u)
-    return mutex_contention(s);
-  if (index == 14u)
-    return semaphore_waiters(s);
+  if (index == 1u) return memory_churn(s);
+  if (index <= 9u) return task_case(s, (unsigned)index);
+  if (index <= 12u) return queue_case(s, (unsigned)index);
+  if (index == 13u) return mutex_contention(s);
+  if (index == 14u) return semaphore_waiters(s);
   if (index == 15u || index == 16u)
     return condition_rounds(s, index == 15u ? 1u : 20u);
-  if (index == 17u || index == 18u)
-    return event_case(s, index == 18u);
-  if (index == 19u || index == 20u)
-    return timer_case(s, index == 20u);
+  if (index == 17u || index == 18u) return event_case(s, index == 18u);
+  if (index == 19u || index == 20u) return timer_case(s, index == 20u);
   return H2_PAL_ERR_INVALID_ARG;
 }

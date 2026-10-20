@@ -13,29 +13,29 @@
 #define H2_PAL_NET_TLS_BOARD "devkit"
 #endif
 
-static h2_runtime_t *runtime;
+static h2_runtime_t* runtime;
 static h2_net_tls_result_t result;
 static void hold(void) {
-  for (;;)
-    vTaskDelay(pdMS_TO_TICKS(1000u));
+  for (;;) vTaskDelay(pdMS_TO_TICKS(1000u));
 }
-static void fail(const char *stage, int rc) {
+static void fail(const char* stage, int rc) {
   printf("H2_PAL_NET_TLS_SETUP_FAIL stage=%s rc=%d\n", stage, rc);
   fflush(stdout);
   hold();
 }
-static void run(void *user) {
+static void run(void* user) {
   (void)user;
   vTaskDelay(pdMS_TO_TICKS(5000u));
-  printf("H2_PAL_NET_TLS_BOOT board=%s version=%s\n",
-         H2_PAL_NET_TLS_BOARD, esp_app_get_description()->version);
+  printf("H2_PAL_NET_TLS_BOOT board=%s version=%s\n", H2_PAL_NET_TLS_BOARD,
+         esp_app_get_description()->version);
   fflush(stdout);
   int rc;
   uint64_t setup_start = 0u;
   if (h2_pal_time_get_monotonic_ms(runtime->time, &setup_start) != H2_PAL_OK)
     fail("clock", H2_PAL_ERR_IO);
   for (;;) {
-    rc = h2_pal_net_tls_device_run_with_wifi(runtime, h2_e2e_fixture_wifi(), &result);
+    rc = h2_pal_net_tls_device_run_with_wifi(runtime, h2_e2e_fixture_wifi(),
+                                             &result);
     if (result.passed + result.failed + result.blocked + result.unsupported +
             result.not_assessed !=
         0u)
@@ -69,23 +69,18 @@ static void run(void *user) {
 }
 void app_main(void) {
   int rc = h2_esp_target_task_policy_install();
-  if (rc != H2_PAL_OK)
-    fail("task_policy", rc);
+  if (rc != H2_PAL_OK) fail("task_policy", rc);
   h2_runtime_config_t config = {0};
   rc = h2_esp_board_runtime_config(&config);
-  if (rc != H2_PAL_OK)
-    fail("board", rc);
+  if (rc != H2_PAL_OK) fail("board", rc);
   rc = h2_esp_h2loader_app_commands_prepare_serial(&config, "pal-net-tls", 1u,
                                                    3u);
-  if (rc != H2_PAL_OK)
-    fail("command_prepare", rc);
+  if (rc != H2_PAL_OK) fail("command_prepare", rc);
   rc = h2_runtime_init(&config, &runtime);
-  if (rc != H2_PAL_OK)
-    fail("runtime", rc);
+  if (rc != H2_PAL_OK) fail("runtime", rc);
   const h2_pal_task_options_t options = {
       .name = h2_pal_net_tls_device_runner_task_name};
-  h2_pal_task_t *runner = NULL;
+  h2_pal_task_t* runner = NULL;
   rc = h2_pal_task_start(runtime->task, &options, run, NULL, &runner);
-  if (rc != H2_PAL_OK)
-    fail("runner", rc);
+  if (rc != H2_PAL_OK) fail("runner", rc);
 }

@@ -12,19 +12,21 @@
 #ifndef H2_GIZCLAW_E2E_DEVICE_AUDIO_DURATION_MS
 #define H2_GIZCLAW_E2E_DEVICE_AUDIO_DURATION_MS 32000u
 #endif
-#if H2_GIZCLAW_E2E_DEVICE_AUDIO_DURATION_MS <= 1000 ||                         \
+#if H2_GIZCLAW_E2E_DEVICE_AUDIO_DURATION_MS <= 1000 || \
     H2_GIZCLAW_E2E_DEVICE_AUDIO_DURATION_MS > UINT32_MAX
 #error "fixture audio duration must be in 1001..UINT32_MAX ms"
 #endif
 
 /* OTA rejection is a GizClaw case policy; Audio support belongs to app_test. */
 static h2_atomic_size_t stage_bytes;
-static h2_app_test_audio_evidence_t device_evidence(h2_gizclaw_e2e_fixture_t *fixture) {
+static h2_app_test_audio_evidence_t device_evidence(
+    h2_gizclaw_e2e_fixture_t* fixture) {
   h2_app_test_audio_evidence_t evidence = {0};
-  (void)h2_app_test_audio_copy_evidence(fixture->device_audio_wrapper, &evidence);
+  (void)h2_app_test_audio_copy_evidence(fixture->device_audio_wrapper,
+                                        &evidence);
   return evidence;
 }
-static int dispose_device_audio(h2_gizclaw_e2e_fixture_t *fixture) {
+static int dispose_device_audio(h2_gizclaw_e2e_fixture_t* fixture) {
   if (fixture->device_audio_wrapper) {
     if (device_evidence(fixture).speaker_active) {
       int rc = h2_pal_audio_stop_speaker(fixture->device_audio);
@@ -42,16 +44,16 @@ static int dispose_device_audio(h2_gizclaw_e2e_fixture_t *fixture) {
   }
   return rc;
 }
-static h2_pal_result_t stage_begin(void *user,
-                                   const struct h2_gizclaw_firmware *firmware,
-                                   const char *update_id) {
+static h2_pal_result_t stage_begin(void* user,
+                                   const struct h2_gizclaw_firmware* firmware,
+                                   const char* update_id) {
   (void)user;
   (void)firmware;
   (void)update_id;
   h2_atomic_store(&stage_bytes, 0u);
   return H2_PAL_OK;
 }
-static h2_pal_result_t stage_write(void *user, const uint8_t *data,
+static h2_pal_result_t stage_write(void* user, const uint8_t* data,
                                    size_t length) {
   (void)user;
   (void)data;
@@ -60,48 +62,45 @@ static h2_pal_result_t stage_write(void *user, const uint8_t *data,
    * Never interpret a transport timeout as this controlled delegate result. */
   return H2_PAL_ERR_FORMAT;
 }
-static h2_pal_result_t stage_finish(void *user) {
+static h2_pal_result_t stage_finish(void* user) {
   (void)user;
   return H2_PAL_ERR_FORMAT;
 }
-static void stage_abort(void *user) { (void)user; }
-static h2_pal_result_t stage_activate(void *user) {
+static void stage_abort(void* user) { (void)user; }
+static h2_pal_result_t stage_activate(void* user) {
   (void)user;
   return H2_PAL_ERR_INVALID_STATE;
 }
-static const h2_gizclaw_vtable_t device_vtable = {.ota_begin = stage_begin,
-                                                  .ota_write = stage_write,
-                                                  .ota_finish = stage_finish,
-                                                  .ota_abort = stage_abort,
-                                                  .ota_activate =
-                                                      stage_activate};
+static const h2_gizclaw_vtable_t device_vtable = {
+    .ota_begin = stage_begin,
+    .ota_write = stage_write,
+    .ota_finish = stage_finish,
+    .ota_abort = stage_abort,
+    .ota_activate = stage_activate};
 
-int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
+int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t* fixture) {
   if (!fixture->config->device_api_url || !fixture->config->device_audio_url ||
       strncmp(fixture->config->device_api_url, "https://", 8) ||
       strncmp(fixture->config->device_audio_url, "https://", 8))
     return H2_PAL_ERR_INVALID_ARG;
   h2_gizclaw_e2e_api_t test = {.fixture = fixture};
   int rc = h2_yyjson_json_create(fixture->allocator, &test.provider);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   test.json = h2_yyjson_json_api(test.provider);
 
-  h2_gizclaw_service_t *service = fixture->actors[H2_GIZCLAW_E2E_OWNER].service;
+  h2_gizclaw_service_t* service = fixture->actors[H2_GIZCLAW_E2E_OWNER].service;
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_rpc_api_key_create(service,
                                        h2_gizclaw_e2e_str("gizos-device-e2e"),
                                        false, 15000, &test.key);
   h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=device-api-key-create rc=%d\n", rc);
-#define CHECK(call)                                                            \
-  do {                                                                         \
-    if (rc == H2_PAL_OK)                                                       \
-      rc = (call);                                                             \
+#define CHECK(call)                   \
+  do {                                \
+    if (rc == H2_PAL_OK) rc = (call); \
   } while (0)
-#define ASSERT(condition)                                                      \
-  do {                                                                         \
-    if (rc == H2_PAL_OK && !(condition))                                       \
-      rc = H2_PAL_ERR_INVALID_STATE;                                           \
+#define ASSERT(condition)                                               \
+  do {                                                                  \
+    if (rc == H2_PAL_OK && !(condition)) rc = H2_PAL_ERR_INVALID_STATE; \
   } while (0)
   CHECK(h2_gizclaw_e2e_run_debug(fixture));
   uint64_t player_started_at = 0;
@@ -153,10 +152,11 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
                                     NULL, 200));
       if (h2_gizclaw_e2e_api_text_is(&test, "audioplayer.state", "playing")) {
         local_played = true;
-        h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=player-cadence position_ms=%llu "
-               "elapsed_ms=%llu\n",
-               (unsigned long long)local.position_ms,
-               (unsigned long long)(now - first_playing_at));
+        h2_gizclaw_e2e_emit(
+            "H2_GIZCLAW_E2E stage=player-cadence position_ms=%llu "
+            "elapsed_ms=%llu\n",
+            (unsigned long long)local.position_ms,
+            (unsigned long long)(now - first_playing_at));
         if (fixture->config->device_real_audio)
           ASSERT(first_playing_at && now - first_playing_at <= 27000u);
         else
@@ -168,15 +168,16 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
       ASSERT(local_played && local.has_duration_ms &&
              local.duration_ms == local.position_ms && local.position_ms > 0 &&
              now - first_playing_at <= local.position_ms + 10000u);
-      h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=player-ended position_ms=%llu "
-             "elapsed_ms=%llu\n",
-             (unsigned long long)local.position_ms,
-             (unsigned long long)(now - first_playing_at));
+      h2_gizclaw_e2e_emit(
+          "H2_GIZCLAW_E2E stage=player-ended position_ms=%llu "
+          "elapsed_ms=%llu\n",
+          (unsigned long long)local.position_ms,
+          (unsigned long long)(now - first_playing_at));
       break;
     }
     if (!strcmp(local.state, "error")) {
       h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=local-player-error code=%s\n",
-             local.error_code);
+                          local.error_code);
       rc = H2_PAL_ERR_IO;
       break;
     }
@@ -198,8 +199,8 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
   CHECK(h2_pal_time_sleep_ms(fixture->time, 500));
   CHECK(h2_gizclaw_player_get_status(service, &local));
   ASSERT(local.rate_permille == 800u &&
-         (!strcmp(local.state, "playing") || !strcmp(local.state, "buffering") ||
-          !strcmp(local.state, "ended")));
+         (!strcmp(local.state, "playing") ||
+          !strcmp(local.state, "buffering") || !strcmp(local.state, "ended")));
   CHECK(h2_gizclaw_player_rate_set(service, H2_GIZCLAW_PLAYER_RATE_NORMAL));
   CHECK(h2_gizclaw_player_get_status(service, &local));
   ASSERT(local.rate_permille == H2_GIZCLAW_PLAYER_RATE_NORMAL);
@@ -221,7 +222,8 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
   h2_gizclaw_e2e_evidence("h2_gizclaw_player_playlist_snapshot",
                           "local-playlist", rc);
   uint32_t stale_revision = queue.playlist_revision;
-  h2_gizclaw_str_t track = h2_gizclaw_e2e_str(fixture->config->device_audio_url);
+  h2_gizclaw_str_t track =
+      h2_gizclaw_e2e_str(fixture->config->device_audio_url);
   h2_gizclaw_str_t album_ref = h2_gizclaw_e2e_str("gizos-e2e-album");
   const h2_gizclaw_player_playlist_entry_t album[] = {
       {track, h2_gizclaw_e2e_str("gizos-e2e-track-1"), album_ref, 0u},
@@ -281,10 +283,11 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
   CHECK(h2_gizclaw_player_repeat_set(service, h2_gizclaw_e2e_str("off")));
   for (unsigned selected = 1u; rc == H2_PAL_OK && selected <= 2u; ++selected) {
     const uint64_t before_bytes = device_evidence(fixture).playback_bytes;
-    const char *symbol = selected == 1u ? "h2_gizclaw_player_play_index"
-                                       : "h2_gizclaw_player_play_index_at";
-    rc = selected == 1u ? h2_gizclaw_player_play_index(service, selected)
-                       : h2_gizclaw_player_play_index_at(service, selected, 1000u);
+    const char* symbol = selected == 1u ? "h2_gizclaw_player_play_index"
+                                        : "h2_gizclaw_player_play_index_at";
+    rc = selected == 1u
+             ? h2_gizclaw_player_play_index(service, selected)
+             : h2_gizclaw_player_play_index_at(service, selected, 1000u);
     h2_gizclaw_e2e_evidence(symbol, "local-playlist", rc);
     bool played = false;
     for (unsigned poll = 0u; rc == H2_PAL_OK && poll < 120u; ++poll) {
@@ -308,8 +311,10 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
     ASSERT(bad_index == H2_PAL_ERR_INVALID_ARG);
     CHECK(h2_gizclaw_player_get_status(service, &local));
     ASSERT(local.has_current_index && local.current_index == selected);
-    h2_gizclaw_e2e_evidence(symbol, selected == 1u ? "player_play_index-assert"
-                                                 : "player_play_index_at-assert", rc);
+    h2_gizclaw_e2e_evidence(symbol,
+                            selected == 1u ? "player_play_index-assert"
+                                           : "player_play_index_at-assert",
+                            rc);
     CHECK(h2_gizclaw_player_stop(service));
   }
   CHECK(h2_gizclaw_ota_start(service, H2_GIZCLAW_FIRMWARE_CHANNEL_DEVELOP,
@@ -339,13 +344,13 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
   }
   ASSERT(local_failed && h2_atomic_load(&stage_bytes) > 0 &&
          ota_status.result == H2_PAL_ERR_FORMAT);
-  h2_gizclaw_e2e_evidence("h2_gizclaw_ota_get_status", "ota_get_status-assert", rc);
+  h2_gizclaw_e2e_evidence("h2_gizclaw_ota_get_status", "ota_get_status-assert",
+                          rc);
   h2_gizclaw_e2e_evidence("h2_gizclaw_ota_start", "ota_start-assert", rc);
   int first_failure = rc;
   /* Exercise independent reverse-RPC scenarios even if another scenario fails;
    * keep the first failure so partial success cannot make this lane green. */
-  if (test.key.name[0])
-    rc = H2_PAL_OK;
+  if (test.key.name[0]) rc = H2_PAL_OK;
   CHECK(h2_gizclaw_e2e_api_call(
       &test, H2_PAL_HTTP_POST, "/device/mhs/v0/write",
       "{\"id\":\"speaker.main\",\"hwd\":\"speaker\","
@@ -359,12 +364,11 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
                                 200));
   ASSERT(h2_gizclaw_e2e_api_number_is(&test, "value.volume_percent", 37));
   uint32_t volume = 0u;
-  CHECK(h2_pal_audio_get_speaker_volume_percent(fixture->device_audio, &volume));
+  CHECK(
+      h2_pal_audio_get_speaker_volume_percent(fixture->device_audio, &volume));
   ASSERT(volume == 37u);
-  if (first_failure == H2_PAL_OK)
-    first_failure = rc;
-  if (test.key.name[0])
-    rc = H2_PAL_OK;
+  if (first_failure == H2_PAL_OK) first_failure = rc;
+  if (test.key.name[0]) rc = H2_PAL_OK;
   CHECK(h2_gizclaw_e2e_tool_call(
       &test, "audioplayer.playlist.set",
       "{\"items\":[{\"url\":\"http://invalid.test/music.ogg\"}]}", 400));
@@ -398,10 +402,8 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
   ASSERT(played);
   CHECK(h2_gizclaw_e2e_tool_call(&test, "audioplayer.stop", NULL, 200));
   ASSERT(h2_gizclaw_e2e_api_text_is(&test, "result.state", "stopped"));
-  if (first_failure == H2_PAL_OK)
-    first_failure = rc;
-  if (test.key.name[0])
-    rc = H2_PAL_OK;
+  if (first_failure == H2_PAL_OK) first_failure = rc;
+  if (test.key.name[0]) rc = H2_PAL_OK;
   CHECK(h2_gizclaw_e2e_tool_call(&test, "firmware.update",
                                  "{\"channel\":\"develop\"}", 200));
   bool failed = false;
@@ -416,24 +418,25 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
     }
   }
   char expected_error[32];
-  (void)snprintf(expected_error, sizeof(expected_error), "pal:%d", H2_PAL_ERR_FORMAT);
+  (void)snprintf(expected_error, sizeof(expected_error), "pal:%d",
+                 H2_PAL_ERR_FORMAT);
   ASSERT(failed && h2_atomic_load(&stage_bytes) > 0 &&
          h2_gizclaw_e2e_api_text_is(&test, "ota.error_code", expected_error));
-  if (first_failure == H2_PAL_OK)
-    first_failure = rc;
+  if (first_failure == H2_PAL_OK) first_failure = rc;
   rc = first_failure;
-  h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=device-api-assert pcm_bytes=%llu "
-         "stage_bytes=%llu result=%s rc=%d\n",
-         (unsigned long long)device_evidence(fixture).playback_bytes,
-         (unsigned long long)h2_atomic_load(&stage_bytes),
-         rc == H2_PAL_OK ? "PASS" : "FAIL", rc);
+  h2_gizclaw_e2e_emit(
+      "H2_GIZCLAW_E2E stage=device-api-assert pcm_bytes=%llu "
+      "stage_bytes=%llu result=%s rc=%d\n",
+      (unsigned long long)device_evidence(fixture).playback_bytes,
+      (unsigned long long)h2_atomic_load(&stage_bytes),
+      rc == H2_PAL_OK ? "PASS" : "FAIL", rc);
   if (test.key.name[0]) {
     (void)h2_gizclaw_player_stop(service);
     int cleanup = h2_gizclaw_rpc_api_key_revoke(
         service, h2_gizclaw_e2e_str(test.key.name), 15000);
-    h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=device-api-key-revoke rc=%d\n", cleanup);
-    if (rc == H2_PAL_OK)
-      rc = cleanup;
+    h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=device-api-key-revoke rc=%d\n",
+                        cleanup);
+    if (rc == H2_PAL_OK) rc = cleanup;
   }
   memset(&test.key, 0, sizeof(test.key));
   (void)h2_pal_json_document_destroy(test.json, &test.document);
@@ -442,23 +445,24 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
 #undef CHECK
 #undef ASSERT
 }
-int h2_gizclaw_e2e_prepare_device(h2_gizclaw_e2e_fixture_t *fixture) {
-  const h2_pal_audio_api_t *delegate = fixture->runtime->audio;
+int h2_gizclaw_e2e_prepare_device(h2_gizclaw_e2e_fixture_t* fixture) {
+  const h2_pal_audio_api_t* delegate = fixture->runtime->audio;
   int rc = H2_PAL_OK;
   fixture->device_cleanup = dispose_device_audio;
   if (!fixture->config->device_real_audio) {
-    rc = h2_app_test_audio_fake_init(&fixture->device_audio_fake, fixture->allocator);
+    rc = h2_app_test_audio_fake_init(&fixture->device_audio_fake,
+                                     fixture->allocator);
     if (rc != H2_PAL_OK) return rc;
     fixture->device_audio_fake.playback_time = fixture->time;
     delegate = &fixture->device_audio_fake.api;
   }
   if (!delegate) return H2_PAL_ERR_UNSUPPORTED;
   rc = h2_app_test_audio_create(fixture->allocator, fixture->time, delegate,
-                               NULL, &fixture->device_audio_wrapper);
+                                NULL, &fixture->device_audio_wrapper);
   if (rc != H2_PAL_OK) return rc;
   fixture->device_audio = h2_app_test_audio_api(fixture->device_audio_wrapper);
-  rc = h2_pal_audio_set_speaker_volume_percent(fixture->device_audio,
-      fixture->config->device_real_audio ? 100u : 50u);
+  rc = h2_pal_audio_set_speaker_volume_percent(
+      fixture->device_audio, fixture->config->device_real_audio ? 100u : 50u);
   if (rc != H2_PAL_OK) return rc;
   if (h2_atomic_init(&stage_bytes, 0u) != H2_ATOMIC_OK)
     return H2_PAL_ERR_NO_MEMORY;

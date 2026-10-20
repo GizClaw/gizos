@@ -23,18 +23,15 @@ int h2_esp_net_set_recv_timeout(int fd, uint32_t timeout_ms);
  * an orderly peer close reports H2_PAL_ERR_CLOSED, other failures
  * H2_PAL_ERR_CLOSED (reset) or H2_PAL_ERR_IO. Success returns bytes read.
  */
-int h2_esp_net_stream_recv(int fd, uint8_t *data, size_t len, uint32_t timeout_ms);
+int h2_esp_net_stream_recv(int fd, uint8_t* data, size_t len,
+                           uint32_t timeout_ms);
 
 /**
  * Receive one datagram with the same timeout semantics as
  * h2_esp_net_stream_recv(); `addr`/`addr_len` may be NULL.
  */
-int h2_esp_net_datagram_recv(
-    int fd,
-    uint8_t *data,
-    size_t len,
-    uint32_t timeout_ms,
-    struct sockaddr *addr,
-    socklen_t *addr_len);
+int h2_esp_net_datagram_recv(int fd, uint8_t* data, size_t len,
+                             uint32_t timeout_ms, struct sockaddr* addr,
+                             socklen_t* addr_len);
 
 #endif

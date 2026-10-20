@@ -19,8 +19,7 @@ static void rtcp_write_be32(uint8_t* data, uint32_t value) {
   data[3] = (uint8_t)value;
 }
 
-int rtcp_parse_header(
-    const uint8_t* packet, size_t size, RtcpHeader* header) {
+int rtcp_parse_header(const uint8_t* packet, size_t size, RtcpHeader* header) {
   if (packet == NULL || header == NULL || size < 4u) {
     return -1;
   }
@@ -30,21 +29,18 @@ int rtcp_parse_header(
   header->type = packet[1];
   header->length = rtcp_read_be16(&packet[2]);
   size_t packet_size = ((size_t)header->length + 1u) * 4u;
-  return header->version == 2u && packet_size >= 4u && packet_size <= size
-             ? 0
-             : -1;
+  return header->version == 2u && packet_size >= 4u && packet_size <= size ? 0
+                                                                           : -1;
 }
 
 int rtcp_probe(uint8_t* packet, size_t size) {
   RtcpHeader header;
-  if (size < 8u || rtcp_parse_header(packet, size, &header) != 0)
-    return 0;
+  if (size < 8u || rtcp_parse_header(packet, size, &header) != 0) return 0;
   return header.type >= RTCP_SR && header.type <= 223u;
 }
 
 int rtcp_get_pli(uint8_t* packet, int len, uint32_t ssrc) {
-  if (packet == NULL || len != 12)
-    return -1;
+  if (packet == NULL || len != 12) return -1;
 
   memset(packet, 0, len);
   packet[0] = 0x81u;
@@ -56,13 +52,11 @@ int rtcp_get_pli(uint8_t* packet, int len, uint32_t ssrc) {
 }
 
 int rtcp_get_fir(uint8_t* packet, int len, int* seqnr) {
-  if (packet == NULL || len != 20 || seqnr == NULL)
-    return -1;
+  if (packet == NULL || len != 20 || seqnr == NULL) return -1;
 
   memset(packet, 0, len);
   *seqnr = *seqnr + 1;
-  if (*seqnr < 0 || *seqnr >= 256)
-    *seqnr = 0;
+  if (*seqnr < 0 || *seqnr >= 256) *seqnr = 0;
 
   packet[0] = 0x84u;
   packet[1] = RTCP_PSFB;
