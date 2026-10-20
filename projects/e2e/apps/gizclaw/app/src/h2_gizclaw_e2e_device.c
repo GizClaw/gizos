@@ -95,6 +95,10 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
       rc = H2_PAL_ERR_INVALID_STATE;                                           \
   } while (0)
   CHECK(h2_gizclaw_e2e_run_debug(fixture));
+  uint64_t player_started_at = 0;
+  const bool player_clock_valid =
+      rc == H2_PAL_OK && h2_pal_time_get_monotonic_ms(
+                             fixture->time, &player_started_at) == H2_PAL_OK;
   CHECK(h2_gizclaw_player_play(
       service, h2_gizclaw_e2e_str(fixture->config->device_audio_url)));
   h2_gizclaw_e2e_evidence("h2_gizclaw_player_play", "local-player", rc);
@@ -110,12 +114,25 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
     h2_gizclaw_e2e_evidence("h2_gizclaw_player_get_status", "local-player", rc);
     uint64_t now = 0;
     CHECK(h2_pal_time_get_monotonic_ms(fixture->time, &now));
-    if (i % 4u == 0)
-      h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=player-status state=%s position_ms=%llu "
-             "pcm_bytes=%llu peak=%u\n",
-             local.state, (unsigned long long)local.position_ms,
-             (unsigned long long)device_evidence(fixture).playback_bytes,
-             (unsigned)device_evidence(fixture).playback_peak);
+    if (i % 4u == 0) {
+      const h2_app_test_audio_evidence_t audio = device_evidence(fixture);
+      const bool elapsed_valid =
+          player_clock_valid && rc == H2_PAL_OK && now >= player_started_at;
+      h2_gizclaw_e2e_emit(
+          "H2_GIZCLAW_E2E stage=player-status state=%s position_ms=%llu "
+          "pcm_bytes=%llu peak=%u elapsed_ms=%llu elapsed_valid=%u "
+          "speaker_start_count=%llu track_create_count=%llu "
+          "track_write_count=%llu active_track_count=%u\n",
+          local.state, (unsigned long long)local.position_ms,
+          (unsigned long long)audio.playback_bytes,
+          (unsigned)audio.playback_peak,
+          (unsigned long long)(elapsed_valid ? now - player_started_at : 0u),
+          (unsigned)elapsed_valid,
+          (unsigned long long)audio.speaker_start_count,
+          (unsigned long long)audio.track_create_count,
+          (unsigned long long)audio.track_write_count,
+          (unsigned)audio.active_track_count);
+    }
     if (!first_playing_at && !strcmp(local.state, "playing") &&
         local.position_ms)
       first_playing_at = now;
