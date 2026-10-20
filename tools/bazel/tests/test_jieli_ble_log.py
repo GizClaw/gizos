@@ -1,5 +1,6 @@
 """Exercise the BLE provider's borrowed PAL diagnostic sink."""
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import unittest
@@ -10,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[3]
 class BleLogTest(unittest.TestCase):
     def test_log_binding_framing_and_bounds(self):
         source = (ROOT / "boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_ble.c").read_text()
-        begin = source.index("static const h2_pal_log_api_t *h2_ble_log_api;")
+        begin = re.search(r"\bstatic\s+const\s+h2_pal_log_api_t\s*\*\s*h2_ble_log_api\s*;", source).start()
         end = source.index("/* Required by JieLi", begin)
         fixture = r'''
 #include <assert.h>

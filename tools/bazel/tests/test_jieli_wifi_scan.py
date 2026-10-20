@@ -1,6 +1,7 @@
 """Exercise timeout ownership and late Wi-Fi scan result cleanup."""
 from pathlib import Path
 import os
+import re
 import shlex
 import subprocess
 import tempfile
@@ -123,7 +124,7 @@ int main(void) {
     def test_timeout_is_cleaned_only_after_completion(self):
         source = (ROOT / "boards/jieli_ac791n_devkit/ac791n/src/"
                   "h2_jieli_ac791n_devkit_wifi.c").read_text()
-        state = source[source.index("enum { SCAN_IDLE"):
+        state = source[re.search(r"\benum\s*\{\s*SCAN_IDLE\b", source).start():
                        source.index("static void post_system_event")]
         if "static void scan_reap_completed(void)" not in state:
             state += "\nstatic void scan_reap_completed(void) {}\n"

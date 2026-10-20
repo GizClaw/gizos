@@ -1,5 +1,6 @@
 """Exercise track capacity preflight before the real provider allocates a slot."""
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import unittest
@@ -11,7 +12,7 @@ class AudioCapacityTest(unittest.TestCase):
     def test_capacity_fits_native_pcm_buffer(self):
         source = (ROOT / 'boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_audio.c').read_text()
         begin = source.index('static int audio_create_track(')
-        end = source.index('  jieli_audio_track_t *track = NULL;', begin)
+        end = begin + re.search(r'\bjieli_audio_track_t\s*\*\s*track\s*=\s*NULL\s*;', source[begin:]).start()
         stub = r'''
 #include <assert.h>
 #include <stdint.h>

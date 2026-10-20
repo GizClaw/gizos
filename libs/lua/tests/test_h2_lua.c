@@ -2241,7 +2241,7 @@ static void test_display_raster2d(int benchmark, const char *path) {
       .max_jobs = 1,
       .instruction_quantum = 1000000000,
       .execution_timeout_ms = 20000,
-      .source_limit_bytes = 16384,
+      .source_limit_bytes = 65536,
       .vm_memory_limit_bytes = benchmark == 2 ? 2u * 1024u * 1024u :
           benchmark ? 8u * 1024u * 1024u : 256u * 1024u};
   assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
@@ -2250,7 +2250,7 @@ static void test_display_raster2d(int benchmark, const char *path) {
   assert(h2_lua_host_start(host) == H2_PAL_OK);
   FILE *file = fopen(path, "rb");
   assert(file != NULL);
-  uint8_t script[16384];
+  uint8_t script[65536];
   size_t size = fread(script, 1, sizeof(script), file);
   assert(!ferror(file) && size < sizeof(script));
   assert(fclose(file) == 0);

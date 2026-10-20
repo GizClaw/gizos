@@ -1,5 +1,6 @@
 """Execute the DevKit entry's initialization chain before its BLE scan loop."""
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import unittest
@@ -43,7 +44,7 @@ int main(void) {
 class StartupTest(unittest.TestCase):
     def test_start_before_confirmation_and_propagate_failure(self):
         source = (ROOT / SOURCE).read_text()
-        entry = source[source.index('static void image_entry('):source.index('    for (unsigned attempt')]
+        entry = source[source.index('static void image_entry('):re.search(r'\bfor\s*\(\s*unsigned\s+attempt\b', source).start()]
         entry = entry.replace('static void image_entry(', 'static int image_entry(')
         entry += '    return rc;\n}\n'
         with tempfile.TemporaryDirectory() as directory:

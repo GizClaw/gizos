@@ -1,5 +1,6 @@
 """Exercise the real serial handshake, frame demux and CLI reconnect owners."""
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import unittest
@@ -11,7 +12,7 @@ class SerialHandoff(unittest.TestCase):
         serial = (ROOT/'libs/h2loader_host/src/h2_h2loader_host_serial.c').read_text()
         prefix = serial[:serial.index('static h2_pal_result_t serial_pump(')]
         prefix = prefix.replace('#include "h2_h2loader_host_internal.h"', '')
-        prefix = prefix.replace('static h2_pal_result_t serial_finish_command_response(void *transport);', '')
+        prefix = re.sub(r'\bstatic\s+h2_pal_result_t\s+serial_finish_command_response\s*\(\s*void\s*\*\s*transport\s*\)\s*;', '', prefix)
         # Stop before the monitor-only decoded-log drain: this fixture exercises
         # the handshake handoff and never calls it, so pulling it in would trip
         # -Wunused-function.

@@ -1,6 +1,7 @@
 """Radio operations cannot invalidate an active or abandoned scan."""
 from pathlib import Path
 import os
+import re
 import shlex
 import subprocess
 import tempfile
@@ -14,7 +15,7 @@ class WifiOperationsTest(unittest.TestCase):
         source = (ROOT / "boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_wifi.c").read_text()
         begin = source.index("static unsigned wifi_operation_busy;")
         guard = source[begin:source.index("static int sta_connect_and_save(", begin)]
-        state = source[source.index("enum { SCAN_IDLE"):
+        state = source[re.search(r"\benum\s*\{\s*SCAN_IDLE\b", source).start():
                        source.index("static void post_system_event")]
         stop = source[source.index("static int wifi_stop(void)"):
                       source.index("static int sta_disconnect(")]

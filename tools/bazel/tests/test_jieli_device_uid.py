@@ -1,5 +1,6 @@
 """Verify Loader identity uses the controller address in display byte order."""
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import unittest
@@ -11,7 +12,7 @@ class DeviceUidTest(unittest.TestCase):
     def test_controller_identity(self):
         source = (ROOT / "boards/jieli_ac791n_devkit/ac791n/src/"
                   "h2_jieli_ac791n_devkit_ble.c").read_text()
-        start = source.index("const char *h2_jieli_ac791n_devkit_device_uid(void)")
+        start = re.search(r"\bconst\s+char\s*\*\s*h2_jieli_ac791n_devkit_device_uid\s*\(\s*void\s*\)", source).start()
         end = source.index("static int h2_uuid_equal", start)
         stub = r'''
 #include <assert.h>

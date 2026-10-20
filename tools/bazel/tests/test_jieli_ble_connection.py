@@ -1,5 +1,6 @@
 """Execute the board's connection-complete path with ATT failures injected."""
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import unittest
@@ -140,8 +141,8 @@ int main(void) {
 
     def test_att_failure_does_not_publish_connected(self):
         source = SOURCE.read_text()
-        begin = source.index("        uint16_t handle = subevent ==")
-        end = source.index("      } else if (subevent == HCI_SUBEVENT_LE_CONNECTION_UPDATE_COMPLETE)", begin)
+        begin = re.search(r"\buint16_t\s+handle\s*=\s*subevent\s*==", source).start()
+        end = begin + re.search(r"\}\s*else\s+if\s*\(\s*subevent\s*==\s*HCI_SUBEVENT_LE_CONNECTION_UPDATE_COMPLETE\s*\)", source[begin:]).start()
         branch = source[begin:end]
         stub = r'''
 #include <assert.h>

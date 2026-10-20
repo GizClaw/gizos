@@ -84,9 +84,9 @@ class PublicationTest(unittest.TestCase):
                           if baseline else (ROOT / path).read_text())
                 callback = source[source.index('static const' if board == 'devkit' else 'typedef struct scan_state'):
                                   source.index('static void image_entry')]
-                wait = re.search(r'rc == H2_PAL_OK && (.*?) &&\s*elapsed <', source).group(1)
+                wait = re.search(r'\brc\s*==\s*H2_PAL_OK\s*&&\s*([^;]*?)\s*&&\s*elapsed\s*<', source).group(1)
                 if 'const h2_pal_ble_addr_t peer_addr' in source:
-                    snapshot = re.search(r'const h2_pal_ble_addr_t peer_addr = .*?;\s*const int peer_rssi = .*?;', source).group(0)
+                    snapshot = re.search(r'const h2_pal_ble_addr_t peer_addr = .*?;\s*const int peer_rssi = .*?;', source, re.S).group(0)
                 else:
                     # Historical consumer read these expressions directly at log/connect.
                     addr = re.search(r'runtime->ble_host, &(scan.addr),', source).group(1)

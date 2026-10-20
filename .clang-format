@@ -3,4 +3,6 @@
 ---
 BasedOnStyle: Google
 SortIncludes: Never
+# Avoid -Wstring-concatenation from wrapping array string literals.
+BreakStringLiterals: false
 ...

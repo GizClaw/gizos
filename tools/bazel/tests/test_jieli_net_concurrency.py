@@ -1,6 +1,7 @@
 """Threaded socket contract against extracted real provider functions."""
 from pathlib import Path
 import os
+import re
 import shlex
 import subprocess
 import tempfile
@@ -230,7 +231,12 @@ int main(void) {
 
 def functions(source):
     def section(begin, end):
-        return source[source.index(begin):source.index(end, source.index(begin))]
+        def pattern(fragment):
+            tokens = re.findall(r'\w+|[^\w\s]', fragment)
+            return r'\s*'.join(r'\b' + re.escape(token) + r'\b' if re.fullmatch(r'\w+', token) else re.escape(token) for token in tokens)
+        start = re.search(pattern(begin), source).start()
+        stop = start + re.search(pattern(end), source[start:]).start()
+        return source[start:stop]
     gate = section('static uint32_t stack_gate;', 'static h2_pal_result_t map_socket_error(') if 'static uint32_t stack_gate;' in source else 'void h2_jieli_net_stack_started(void) {}\nvoid h2_jieli_net_stack_stopping(void) {}\n'
     return (gate + section('static h2_pal_result_t map_socket_error(', 'static int resolve_addr(')
             + section('static int bind_socket(', 'static h2_pal_result_t tls_wrap(')
