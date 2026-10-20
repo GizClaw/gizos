@@ -84,10 +84,10 @@ application, or packaging. Issue #835 owns Windows PAL integration.
 
 ## ESP-IDF external builds
 
-Source `.env/devenv` before requesting an ESP build. The sibling
-`firmware-devenv` provider exports `IDF_PATH` and
-`IDF_TOOLS_PATH` for Bazel. The tools repository derives the unique
-`python_env/idf6.0_py*_env` installation from that tools root, validates it
+Source `.env/devenv` for native tools, then select a clean ESP-IDF 6.2
+checkout matching `native_versions/esp_idf_commit.txt` and its GCC 16.1 tools.
+Override an older provider with `IDF_PATH` and `IDF_TOOLS_PATH`. The tools
+repository derives the unique `python_env/idf6.2_py*_env` installation and validates it
 against the pinned ESP-IDF constraints, and materializes versioned SDK/tool
 locators. The native action receives those locator files instead of the
 machine paths or caller `PATH`.
@@ -96,6 +96,8 @@ machine paths or caller `PATH`.
 REPO_ROOT=$PWD
 export REPO_ROOT
 . .env/devenv
+export IDF_PATH=/path/to/pinned-esp-idf-6.2
+export IDF_TOOLS_PATH=/path/to/esp-idf-6.2-tools
 bazel build --config=esp32s3  //projects/example/targets/h2loader_tar_zlib/ble-broadcaster/devkit:package
 bazel build --config=esp32p4  //projects/example/targets/h2loader_tar_zlib/display/waveshare_esp32p4_wifi6_touch_lcd_4_3:package
 ```

@@ -71,6 +71,7 @@ set(H2_ESP_PLATFORM_CORE_REQUIRES
   bt
   esp_event
   esp_netif
+  esp_psram
   esp_timer
   esp_wifi
   app_update

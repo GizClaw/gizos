@@ -31,7 +31,7 @@ from tools.bazel.native_runtime import (
 H2LOADER_WIFI_CREDENTIALS = "H2LOADER_WIFI_CREDENTIALS"
 NATIVE_BUILD_JOBS = "H2_NATIVE_BUILD_JOBS"
 GIZOS_ROOT = Path(__file__).resolve().parents[2]
-EXPECTED_IDF_VERSION = "6.0"
+EXPECTED_IDF_VERSION = "6.2"
 TARGET_COMPILERS = {
     "esp32c5": "riscv32-esp-elf-gcc",
     "esp32p4": "riscv32-esp-elf-gcc",
@@ -260,7 +260,7 @@ def validate_tool_versions(
             f"Ninja version mismatch: expected {expected['ninja']}, "
             f"found {ninja_version}"
         )
-    if expected["python"] != "esp-idf-v6.0-constraints":
+    if expected["python"] != "esp-idf-v6.2-constraints":
         raise RunnerError(f"unsupported ESP-IDF Python identity: {expected['python']}")
     idf_tools = idf_path / "tools" / "idf_tools.py"
     for operation in ("check", "check-python-dependencies"):
@@ -821,7 +821,7 @@ def run(arguments: argparse.Namespace) -> None:
         subprocess_environment["PATH"] = (
             f"{wrapper_directory}{os.pathsep}{environment['PATH']}"
         )
-        # ESP-IDF 6.0 constrains idf-component-manager to 3.0.x. Its
+        # ESP-IDF 6.2 constrains idf-component-manager to 3.0.x. Its
         # ComponentManagerSettings uses the IDF_COMPONENT_ prefix with the
         # CACHE_PATH field, which maps to IDF_COMPONENT_CACHE_PATH.
         subprocess_environment["IDF_COMPONENT_CACHE_PATH"] = str(

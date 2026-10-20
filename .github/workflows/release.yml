@@ -70,9 +70,17 @@ jobs:
           submodules: false
           token: ${{ steps.app-token.outputs.token }}
 
-      - name: Check out ESP-IDF from Firmwares devenv
+      - name: Check out pinned ESP-IDF 6.2
         shell: bash
-        run: git -C firmware-devenv submodule update --init --depth 1 third_party/esp_idf_6.0
+        run: |
+          sdk_root="$RUNNER_TEMP/esp-idf-6.2"
+          sdk_commit="$(cat tools/bazel/native_versions/esp_idf_commit.txt)"
+          git init "$sdk_root"
+          git -C "$sdk_root" remote add origin https://github.com/espressif/esp-idf.git
+          git -C "$sdk_root" fetch --depth 1 origin "$sdk_commit"
+          git -C "$sdk_root" checkout --detach FETCH_HEAD
+          git -C "$sdk_root" submodule update --init --recursive --depth 1
+          printf 'H2_ESP_IDF_SDK_ROOT=%s\n' "$sdk_root" >> "$GITHUB_ENV"
 
       - name: Restore ESP-IDF tool cache
         id: esp-idf-cache
@@ -80,13 +88,14 @@ jobs:
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: firmware-devenv/.tools/esp-idf
-          key: esp-idf-v2-${{ runner.os }}-${{ hashFiles('tools/bazel/native_versions/esp_idf_commit.txt') }}-esp32s3-esp32p4-esp32c5
+          key: esp-idf-v3-${{ runner.os }}-${{ hashFiles('tools/bazel/native_versions/esp_idf_commit.txt', 'tools/bazel/native_versions/esp_idf_tool_versions.txt') }}-esp32s3-esp32p4-esp32c5
 
-      - name: Install ESP-IDF tools
+      - name: Install ESP-IDF 6.2 tools
         shell: bash
         run: |
-          export IDF_TOOLS_PATH="$GITHUB_WORKSPACE/firmware-devenv/.tools/esp-idf"
-          firmware-devenv/third_party/esp_idf_6.0/install.sh esp32s3,esp32p4,esp32c5
+          tools_root="$GITHUB_WORKSPACE/firmware-devenv/.tools/esp-idf"
+          IDF_TOOLS_PATH="$tools_root" "$H2_ESP_IDF_SDK_ROOT/install.sh" esp32s3,esp32p4,esp32c5
+          printf 'H2_ESP_IDF_TOOLS_ROOT=%s\n' "$tools_root" >> "$GITHUB_ENV"
 
       - name: Validate Bazel remote cache variables
         env:
@@ -150,6 +159,8 @@ jobs:
       - name: Build catalog slice
         run: |
           . firmware-devenv/export.sh
+          export IDF_PATH="$H2_ESP_IDF_SDK_ROOT"
+          export IDF_TOOLS_PATH="$H2_ESP_IDF_TOOLS_ROOT"
           make bazel-release BAZEL_BIN="$RUNNER_TEMP/bazel" RELEASE_SLICE=catalog RELEASE_BATCH="${{ steps.batch.outputs.value }}" RELEASE_STAGING_DIR=build/release/catalog
 
       - name: Build Lua runtime source slice
@@ -262,9 +273,17 @@ jobs:
           submodules: false
           token: ${{ steps.app-token.outputs.token }}
 
-      - name: Check out ESP-IDF from Firmwares devenv
+      - name: Check out pinned ESP-IDF 6.2
         shell: bash
-        run: git -C firmware-devenv submodule update --init --depth 1 third_party/esp_idf_6.0
+        run: |
+          sdk_root="$RUNNER_TEMP/esp-idf-6.2"
+          sdk_commit="$(cat tools/bazel/native_versions/esp_idf_commit.txt)"
+          git init "$sdk_root"
+          git -C "$sdk_root" remote add origin https://github.com/espressif/esp-idf.git
+          git -C "$sdk_root" fetch --depth 1 origin "$sdk_commit"
+          git -C "$sdk_root" checkout --detach FETCH_HEAD
+          git -C "$sdk_root" submodule update --init --recursive --depth 1
+          printf 'H2_ESP_IDF_SDK_ROOT=%s\n' "$sdk_root" >> "$GITHUB_ENV"
 
       - name: Authenticate read-write Bazel remote cache
         if: vars.BAZEL_REMOTE_CACHE_URL != ''
@@ -287,13 +306,14 @@ jobs:
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: firmware-devenv/.tools/esp-idf
-          key: esp-idf-v2-${{ runner.os }}-${{ hashFiles('tools/bazel/native_versions/esp_idf_commit.txt') }}-esp32s3-esp32p4-esp32c5
+          key: esp-idf-v3-${{ runner.os }}-${{ hashFiles('tools/bazel/native_versions/esp_idf_commit.txt', 'tools/bazel/native_versions/esp_idf_tool_versions.txt') }}-esp32s3-esp32p4-esp32c5
 
-      - name: Install ESP-IDF tools
+      - name: Install ESP-IDF 6.2 tools
         shell: bash
         run: |
-          export IDF_TOOLS_PATH="$GITHUB_WORKSPACE/firmware-devenv/.tools/esp-idf"
-          firmware-devenv/third_party/esp_idf_6.0/install.sh esp32s3,esp32p4,esp32c5
+          tools_root="$GITHUB_WORKSPACE/firmware-devenv/.tools/esp-idf"
+          IDF_TOOLS_PATH="$tools_root" "$H2_ESP_IDF_SDK_ROOT/install.sh" esp32s3,esp32p4,esp32c5
+          printf 'H2_ESP_IDF_TOOLS_ROOT=%s\n' "$tools_root" >> "$GITHUB_ENV"
 
       - name: Install native compiler cache and Bazel
         run: |
@@ -346,6 +366,8 @@ jobs:
           WIFI_PASSWORD: ${{ secrets.H2LOADER_WIFI_PASSWORD }}
         run: |
           . firmware-devenv/export.sh
+          export IDF_PATH="$H2_ESP_IDF_SDK_ROOT"
+          export IDF_TOOLS_PATH="$H2_ESP_IDF_TOOLS_ROOT"
           credentials="$(python3 -c 'import json, os; print(json.dumps({"ssid":"HAIVIVI-MFG","password":os.environ["WIFI_PASSWORD"]}, separators=(",", ":")))')"
           export H2LOADER_WIFI_CREDENTIALS="$credentials"
           make bazel-release BAZEL_BIN="$RUNNER_TEMP/bazel" RELEASE_SLICE="${{ matrix.slice }}" RELEASE_BATCH="${{ needs.catalog.outputs.batch }}" RELEASE_INPUT_DIR=build/release/input RELEASE_STAGING_DIR="build/release/${{ matrix.slice }}"
