@@ -42,6 +42,7 @@ static h2_pal_result_t sctp_emit(
     }
     int sent = h2_pal_net_udp_sendto(
         stream->config->net, stream->sock, &stream->peer, packet, packet_len);
+    stream->emit_would_block = sent == H2_PAL_ERR_WOULD_BLOCK;
     if (sent >= 0) {
         stream->emit_failures = 0u;
         return H2_PAL_OK;
@@ -455,6 +456,7 @@ h2_pal_result_t h2_iperf_stream_sctp_pump(
         return H2_PAL_ERR_INVALID_STATE;
     }
     uint64_t now = h2_iperf_now_ms(config);
+    stream->emit_would_block = false;
     h2_pal_result_t result = h2_pal_sctp_association_service(
         config->sctp, stream->assoc, now, &stream->next_deadline_ms);
     if (result != H2_PAL_OK && result != H2_PAL_ERR_WOULD_BLOCK) {
@@ -472,6 +474,11 @@ h2_pal_result_t h2_iperf_stream_sctp_pump(
         if (until_deadline < wait) {
             wait = until_deadline;
         }
+    }
+    if (stream->emit_would_block && wait == 0u && timeout_ms != 0u) {
+      /* Yield outside the SCTP callback. An unavailable sleep keeps the
+       * original bounded retry path; never busy-wait for this backoff. */
+      (void)h2_pal_time_sleep_ms(config->time, 1u);
     }
     for (unsigned drained = 0u; drained < H2_IPERF_SCTP_DRAIN_PACKETS; ++drained) {
         h2_pal_net_addr_t from;

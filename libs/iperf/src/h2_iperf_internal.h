@@ -193,6 +193,7 @@ typedef struct h2_iperf_stream {
     bool capture_active;
     bool capture_done;
     unsigned emit_failures;
+    bool emit_would_block;
 
     /* UDP receive accounting (iperf_udp_recv semantics). */
     bool counters_64bit;
