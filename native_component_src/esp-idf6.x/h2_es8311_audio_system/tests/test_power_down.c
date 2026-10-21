@@ -416,6 +416,7 @@ int main(void) {
     assert(removed == 0 && disabled == 0);
     assert(s.codec && s.codec_shutdown_pending);
     assert(es8311_audio_open(&s) == H2_AUDIO_ERR_INVALID_STATE);
+    assert(es8311_audio_start_mic(&s) == H2_AUDIO_ERR_INVALID_STATE);
     fail_write = -1;
     write_count = 0;
     assert(h2_esp_es8311_audio_system_power_down(&s) == H2_AUDIO_OK);

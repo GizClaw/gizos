@@ -925,6 +925,9 @@ static int es8311_audio_start_mic(void* user) {
   if (rc != H2_AUDIO_OK) {
     return rc;
   }
+  if (state->mic_started) {
+    return H2_AUDIO_OK;
+  }
   if (state->rx_chan == NULL) {
     return H2_AUDIO_ERR_INVALID_STATE;
   }
@@ -941,8 +944,8 @@ static int es8311_audio_start_mic(void* user) {
     return rc;
   }
   (void)h2_pal_queue_reset(state->config.queue_api, state->mic_queue);
-  state->mic_started = 1;
   h2_esp_es8311_sr_reset(&state->sr);
+  state->mic_started = 1;
   rc = es8311_audio_start_mic_task(state);
   if (rc != H2_AUDIO_OK) {
     es8311_audio_abort_mic_start(state);

@@ -1,0 +1,13 @@
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+firmware_native_component(
+    name = "probe",
+    srcs = ["h2_es8311_aec_e2e.c"],
+    hdrs = ["h2_es8311_aec_e2e.h"],
+    component_name = "h2_es8311_aec_e2e",
+    data = ["CMakeLists.txt"],
+    deps = ["//native_component_src/esp-idf6.x/h2_es8311_audio_system"],
+    tags = ["manual"],
+)

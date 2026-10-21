@@ -427,6 +427,12 @@ AP stop 先请求 SDK 切回 STA mode；转换失败时保留 active、netif、c
 
 ## ESP32-C3 无 PSRAM 音频
 
-C3 使用现有 `h2_es8311_audio_system`，不安装 ESP-SR；`enable_aec = false` 使用普通采集/播放，当前 codec clock 配置为 16 kHz、`mclk_multiple = 384`；显式启用 AEC 返回 UNSUPPORTED。未启用 PSRAM 的构建为 mic/playback worker 使用 Internal RAM，任务 core 必须由 BSP 配为 0 或 any。Codec 在产品请求时才初始化；平台接入不启动常驻语音服务。显示、音频与网络同时启用的 heap 峰值、I2S DMA 和真实采集/播放仍需产品设备验证。
+C3 使用现有 `h2_es8311_audio_system`；只有 C3 固定依赖 ESP-SR 2.6.0，以使用 `aec_create_from_config` ABI，其他芯片保留原版本。`enable_aec = false` 使用普通采集/播放；启用 AEC 时使用 16 kHz、单 mic 加独立 reference、VOIP_LOW_COST、filter length 4，算法和 16-byte 对齐工作缓冲均使用 Internal RAM。实际 chunk 由 SDK 查询，最大 512 samples；PAL 帧与 chunk 不等时用固定三个工作缓冲逐样本拼接，增加一个算法 chunk 的延迟，初始输出为静音，处理路径不分配内存、不回退原始 PCM。相等帧长保持直接处理。Reset 清空待处理 PCM，滤波历史只在 deinit 时释放。当前 codec clock 配置为 16 kHz、`mclk_multiple = 384`。未启用 PSRAM 的构建为 mic/playback worker 使用 Internal RAM，任务 core 必须由 BSP 配为 0 或 any。Codec 在产品请求时才初始化；平台接入不启动常驻语音服务。显示、音频与网络同时启用的 heap 峰值、I2S DMA 和真实采集/播放仍需产品设备验证。
 
 C3 的 SDK 不提供外部任务栈配置时，PAL 将其视为不可用；内部栈任务仍可创建，PSRAM 栈请求返回任务错误。C3 复用现有 RV32 协程 backend，不引入其他芯片的 coprocessor 栈保护组件。
+
+C3 chip fixture 在 `sdkconfig.defaults` 显式选择 `CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_160=y`。产品 launcher 使用自己的 SDK defaults 时也应明确选择主频；启用动态调频的产品需要另行管理运行期频率。组件不会修改全局时钟策略。
+
+`//native_component_src/esp-idf6.x/h2_es8311_audio_system:sr_test` 验证不等帧拼接、lane mapping、输入边界和部分分配失败回滚；`tests/e2e:probe` 为调用方提供原生算法和真实 codec/PAL 生命周期诊断，产品引脚与 H2Loader 安装布局由 consumer 提供。算法诊断使用确定性合成 mic/reference，实时链路诊断只证明处理和启停，不能替代腔体声学资格。运行任务至少使用 16 KiB 内部栈；CPU 统计需开启 FreeRTOS trace/runtime stats，且选择 ESP timer 微秒计数源。
+
+C3 明确选择 VOIP_LOW_COST；其他 target 保留 FD_LOW_COST。FD 模式在 C3 上需要更大的内部工作集和更长处理时间，不作为此 provider 的 C3 实时配置。模式诊断应在其他服务启动前运行，实际产品预算则以管理服务和音频 worker 同时运行的测量为准。
