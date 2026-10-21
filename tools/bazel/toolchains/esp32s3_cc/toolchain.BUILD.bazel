@@ -56,6 +56,8 @@ filegroup(
 esp32s3_cc_toolchain_config(
     name = "config",
     builtin_include_directories = {BUILTIN_INCLUDE_DIRECTORIES},
+    c_include_directories = {C_INCLUDE_DIRECTORIES},
+    cxx_include_directories = {CXX_INCLUDE_DIRECTORIES},
     system_include_directories = {SYSTEM_INCLUDE_DIRECTORIES},
 )
 
@@ -69,7 +71,7 @@ cc_toolchain(
     objcopy_files = ":tools",
     strip_files = ":tools",
     toolchain_config = ":config",
-    toolchain_identifier = "esp32s3-local-esp-15.2.0",
+    toolchain_identifier = "esp32s3-local-esp-16.1.0",
 )
 
 toolchain(

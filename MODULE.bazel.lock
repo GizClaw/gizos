@@ -587,7 +587,7 @@
     },
     "//tools/bazel:release_inputs.bzl%release_inputs": {
       "general": {
-        "bzlTransitiveDigest": "m11Se3m2zPsZf0fswmtL9YRcx0RlJefRFZCF6Qn4Ul4=",
+        "bzlTransitiveDigest": "HpWKT6TGVXgw7/VRIDg7T0dfKEMZb0Z0qD6JxXV47F0=",
         "usagesDigest": "LIU8ZIfQBba0JNPFSj8BHKpvx7evMVMuDQWtrT5q+kY=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
@@ -803,7 +803,7 @@
     },
     "//tools/bazel/toolchains/esp32s3_cc:repositories.bzl%esp32s3_cc_toolchain": {
       "general": {
-        "bzlTransitiveDigest": "IL4PfzpXp+dGnFjjsGdXiNSJ0VMLlCFq8AUEmWKXAXM=",
+        "bzlTransitiveDigest": "+8dl1evxyfsss+aymhtn8DGqTs5eR8rn0Bk6Zd8Uob4=",
         "usagesDigest": "ThNWcQs68cS58YVY8fxEeAgWxkPnQNftCcSnKccvnDE=",
         "recordedInputs": [],
         "generatedRepoSpecs": {

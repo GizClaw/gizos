@@ -44,3 +44,14 @@ embedded_include_paths_check(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
 )
+
+# The dedicated Xtensa toolchain must also remain relocatable across SDK roots.
+embedded_include_paths_check(
+    name = "esp32s3_cc",
+    c_src = "probe.c",
+    cxx_src = "probe.cc",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:is_esp32s3": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
