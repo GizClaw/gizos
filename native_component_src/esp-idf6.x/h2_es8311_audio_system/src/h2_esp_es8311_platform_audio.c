@@ -985,6 +985,9 @@ static int es8311_audio_start_mic(void* user) {
   if (rc != H2_AUDIO_OK) {
     return rc;
   }
+  if (state->mic_started) {
+    return H2_AUDIO_OK;
+  }
   if (state->rx_chan == NULL) {
     return H2_AUDIO_ERR_INVALID_STATE;
   }
