@@ -70,7 +70,7 @@ static h2_esp_es8311_audio_system_config_t config(void) {
                                                .enable_aec = 1};
 }
 int main(void) {
-  const int inputs[] = {320, 512};
+  const int inputs[] = {128, 256, 320, 512};
   const int chunks[] = {128, 256, 320, 512};
   for (unsigned input = 0; input < sizeof(inputs) / sizeof(inputs[0]);
        ++input) {
@@ -81,7 +81,13 @@ int main(void) {
       h2_esp_es8311_audio_system_config_t cfg = config();
       cfg.frame_samples_per_channel = (uint16_t)frame_samples;
       h2_esp_es8311_sr_state_t state = {0};
-      assert(h2_esp_es8311_sr_init(&state, &cfg) == 0);
+      if (chunk != frame_samples) {
+        assert(h2_esp_es8311_sr_init(&state, &cfg) == H2_AUDIO_ERR_UNSUPPORTED);
+        assert(!state.available && !live && !buffers && allocations == 1);
+        h2_esp_es8311_sr_deinit(&state);
+        continue;
+      }
+      assert(h2_esp_es8311_sr_init(&state, &cfg) == H2_AUDIO_OK);
       int16_t raw[1024], output[512];
       h2_audio_pcm_format_t rf = {
           .sample_rate_hz = 16000,
@@ -105,12 +111,15 @@ int main(void) {
         assert(out.bytes == (size_t)frame_samples * sizeof(int16_t) &&
                out.samples_per_channel == frame_samples);
         for (int i = 0; i < frame_samples; ++i) {
-          int sample =
-              f * frame_samples + i - (chunk == frame_samples ? 0 : chunk);
-          assert(output[i] == (sample < 0 ? 0 : sample + 1));
+          assert(output[i] == f * frame_samples + i + 1);
         }
       }
-      assert(call_count == 20 * frame_samples / chunk && allocations == 4);
+      assert(call_count == 20 && allocations == 4);
+      in.samples_per_channel = (uint16_t)(frame_samples - 1);
+      assert(h2_esp_es8311_sr_process(&state, &in, &out, 0) ==
+                 H2_AUDIO_ERR_UNSUPPORTED &&
+             out.bytes == 0 && call_count == 20);
+      in.samples_per_channel = (uint16_t)frame_samples;
       in.channels = 1;
       assert(h2_esp_es8311_sr_process(&state, &in, &out, 0) != 0 &&
              out.bytes == 0);
@@ -120,7 +129,6 @@ int main(void) {
              out.bytes == 0);
       in.bytes = (size_t)frame_samples * 2 * sizeof(int16_t);
       h2_esp_es8311_sr_reset(&state);
-      assert(state.pending_samples == 0);
       for (int i = 0; i < chunk; ++i) assert(state.out_frame[i] == 0);
       h2_esp_es8311_sr_deinit(&state);
       h2_esp_es8311_sr_deinit(&state);
@@ -129,7 +137,7 @@ int main(void) {
   }
   for (fail_at = 1; fail_at <= 4; ++fail_at) {
     allocations = 0;
-    chunk = 256;
+    chunk = 320;
     h2_esp_es8311_sr_state_t state = {0};
     h2_esp_es8311_audio_system_config_t cfg = config();
     assert(h2_esp_es8311_sr_init(&state, &cfg) == H2_AUDIO_ERR_NO_MEMORY);

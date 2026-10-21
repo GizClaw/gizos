@@ -427,7 +427,7 @@ AP stop 先请求 SDK 切回 STA mode；转换失败时保留 active、netif、c
 
 ## ESP32-C3 无 PSRAM 音频
 
-C3 使用现有 `h2_es8311_audio_system`；只有 C3 固定依赖 ESP-SR 2.6.0，以使用 `aec_create_from_config` ABI，其他芯片保留原版本。`enable_aec = false` 使用普通采集/播放；启用 AEC 时使用 16 kHz、单 mic 加独立 reference、VOIP_LOW_COST、filter length 4，算法和 16-byte 对齐工作缓冲均使用 Internal RAM。实际 chunk 由 SDK 查询，最大 512 samples；PAL 帧与 chunk 不等时用固定三个工作缓冲逐样本拼接，增加一个算法 chunk 的延迟，初始输出为静音，处理路径不分配内存、不回退原始 PCM。相等帧长保持直接处理。Reset 清空待处理 PCM，滤波历史只在 deinit 时释放。当前 codec clock 配置为 16 kHz、`mclk_multiple = 384`。未启用 PSRAM 的构建为 mic/playback worker 使用 Internal RAM，任务 core 必须由 BSP 配为 0 或 any。Codec 在产品请求时才初始化；平台接入不启动常驻语音服务。显示、音频与网络同时启用的 heap 峰值、I2S DMA 和真实采集/播放仍需产品设备验证。
+C3 使用现有 `h2_es8311_audio_system`；只有 C3 固定依赖 ESP-SR 2.6.0，以使用 `aec_create_from_config` ABI，其他芯片保留原版本。`enable_aec = false` 使用普通采集/播放；启用 AEC 时使用 16 kHz、单 mic 加独立 reference、VOIP_LOW_COST、filter length 4，算法和 16-byte 对齐工作缓冲均使用 Internal RAM。实际 chunk 由 SDK 查询，最大 512 samples；产品必须将采集、处理与播放帧长统一配置为该 chunk，初始化时帧长不匹配返回 `H2_AUDIO_ERR_UNSUPPORTED` 并释放已创建的算法。当前 C3 ESP-SR 2.6.0 VOIP_LOW_COST 使用 512 samples（16 kHz 下为 32 ms）；现有 AMOLED/S3 也使用 512 samples。每次直接处理一整块，不跨帧拼接、不引入适配层缓存延迟，处理路径不分配内存、不回退原始 PCM。Reset 清空 PCM 工作缓冲，滤波历史只在 deinit 时释放。当前 codec clock 配置为 16 kHz、`mclk_multiple = 384`。未启用 PSRAM 的构建为 mic/playback worker 使用 Internal RAM，任务 core 必须由 BSP 配为 0 或 any。Codec 在产品请求时才初始化；平台接入不启动常驻语音服务。显示、音频与网络同时启用的 heap 峰值、I2S DMA 和真实采集/播放仍需产品设备验证。
 
 C3 的 SDK 不提供外部任务栈配置时，PAL 将其视为不可用；内部栈任务仍可创建，PSRAM 栈请求返回任务错误。C3 复用现有 RV32 协程 backend，不引入其他芯片的 coprocessor 栈保护组件。
 

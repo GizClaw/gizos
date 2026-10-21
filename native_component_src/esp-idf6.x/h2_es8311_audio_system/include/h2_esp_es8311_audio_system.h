@@ -93,8 +93,6 @@ typedef struct h2_esp_es8311_sr_state {
   int initialized;
   int available;
   size_t frame_samples;
-  size_t input_samples;
-  size_t pending_samples;
   int linear_only;
   uint8_t raw_channels;
   uint8_t mic_channel_index;
@@ -197,8 +195,9 @@ int h2_esp_es8311_audio_system_process_mic(h2_esp_es8311_audio_system_t* system,
  * and algorithm use internal RAM on C3. Initialization failure owns no
  * resources. Serialize all SR calls in task context; processing is synchronous
  * (timeout is ignored). Input/output buffers are borrowed only during process.
- * Unequal PAL/AEC frame sizes use a bounded adapter with one AEC chunk of
- * latency and initial silence; equal sizes retain direct processing.
+ * The configured frame size must equal the SDK AEC chunk size (at most 512
+ * samples); a mismatch returns H2_AUDIO_ERR_UNSUPPORTED. Each process call
+ * consumes and produces one complete chunk without cross-frame buffering.
  */
 int h2_esp_es8311_sr_init(h2_esp_es8311_sr_state_t* state,
                           const h2_esp_es8311_audio_system_config_t* config);
@@ -207,7 +206,7 @@ int h2_esp_es8311_sr_process(h2_esp_es8311_sr_state_t* state,
                              const h2_audio_frame_t* raw_frame,
                              h2_audio_frame_t* out_frame, uint32_t timeout_ms);
 
-/** Discard pending PCM; adaptive filter history remains until deinit. */
+/** Clear PCM work buffers; adaptive filter history remains until deinit. */
 void h2_esp_es8311_sr_reset(h2_esp_es8311_sr_state_t* state);
 
 void h2_esp_es8311_sr_deinit(h2_esp_es8311_sr_state_t* state);
