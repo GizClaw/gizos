@@ -84,12 +84,14 @@ application, or packaging. Issue #835 owns Windows PAL integration.
 
 ## ESP-IDF external builds
 
-The sibling `firmware-devenv` provides the pinned ESP-IDF 6.2 checkout and
-GCC 16.1 tools. Select it with `FIRMWARE_DEVENV_IDF_VERSION=6.2` for both
-`make idf-tools` in the provider and environment activation. Its 6.0 default
-remains available for older Firmwares consumers. Its tool root stays at
-`.tools/esp-idf`; 6.2 uses `.tools/esp-idf-6.2` so GCC 15/16 never share a compiler
-namespace. The tools repository derives
+The sibling `firmware-devenv` provides one pinned ESP-IDF 6.2 checkout and
+GCC 16.1 tools for all ESP targets. Install with `make idf-tools` and source
+its `export.sh`; both use the baseline fixed by that devenv revision.
+Consumers choose another SDK baseline by pinning another devenv commit.
+CI and Release pin the same compatible provider revision and verify its SDK
+gitlink against the GizOS version manifest. The tool root is
+`.tools/esp-idf-6.2`, keeping old compiler installations out of the current
+compiler namespace. The tools repository derives
 the unique `python_env/idf6.2_py*_env` installation and validates it
 against the pinned ESP-IDF constraints, and materializes versioned SDK/tool
 locators. The native action receives those locator files instead of the
@@ -98,7 +100,6 @@ machine paths or caller `PATH`.
 ```sh
 REPO_ROOT=$PWD
 export REPO_ROOT
-export FIRMWARE_DEVENV_IDF_VERSION=6.2
 make -C ../firmwares-devenv idf-tools IDF_TARGETS=esp32s3,esp32p4,esp32c5
 . ../firmwares-devenv/export.sh
 bazel build --config=esp32s3  //projects/example/targets/h2loader_tar_zlib/ble-broadcaster/devkit:package
