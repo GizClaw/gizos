@@ -10,12 +10,12 @@ firmware_native_component(
     hdrs = ["include/h2_chip_board.h"],
     component_directory = "boards/esp32c3_chip/esp32c3",
     component_name = "h2_chip_board",
-    deps = [
-        "//libs/runtime",
-        "//native_component_src/esp-idf6.x/h2_pal_core",
-    ],
     data = [
         "CMakeLists.txt",
         "sdkconfig.defaults",
+    ],
+    deps = [
+        "//libs/runtime",
+        "//native_component_src/esp-idf6.x/h2_pal_core",
     ],
 )

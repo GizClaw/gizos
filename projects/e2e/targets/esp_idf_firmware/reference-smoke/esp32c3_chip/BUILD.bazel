@@ -7,15 +7,15 @@ package(default_visibility = ["//visibility:public"])
 firmware_lib_component(
     name = "firmware_lib",
     deps = [
-        "//projects/e2e/libs/reference_smoke",
-        "//libs/runtime",
         "//libs/mem_arena",
-        "//libs/pal/providers/libco",
+        "//libs/pal:unsupported",
         "//libs/pal/providers/corehttp",
         "//libs/pal/providers/h2peer",
         "//libs/pal/providers/h2sctp",
+        "//libs/pal/providers/libco",
+        "//libs/runtime",
         "//libs/wifi_sta",
-        "//libs/pal:unsupported",
+        "//projects/e2e/libs/reference_smoke",
     ],
 )
 
