@@ -279,7 +279,15 @@ int h2_es8311_aec_live_e2e(const h2_esp_es8311_audio_system_config_t* config) {
     int cleanup = h2_esp_es8311_audio_system_power_down(system);
     if (cleanup) {
       ++failures;
-      return failures;
+      printf("AEC_LIVE cleanup_pending cycle=%d rc=%d; retaining ownership\n",
+             cycle, cleanup);
+      /* Workers/codec may still borrow the caller's providers. Keep this call
+       * and its owner alive until teardown succeeds, even on a permanent fault.
+       */
+      do {
+        vTaskDelay(pdMS_TO_TICKS(100));
+        cleanup = h2_esp_es8311_audio_system_power_down(system);
+      } while (cleanup);
     }
     if (h2_esp_es8311_audio_system_power_down(system)) ++failures;
     free(system);

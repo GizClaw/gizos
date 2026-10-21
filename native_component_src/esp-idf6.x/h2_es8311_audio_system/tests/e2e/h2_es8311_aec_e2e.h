@@ -13,8 +13,11 @@ int h2_es8311_aec_e2e(void);
 /**
  * @brief Exercise a borrowed C3 config synchronously with exclusive hardware
  * access.
- * @param config Borrowed for the call; 16 kHz, 320-sample PAL frames, two raw
+ * @param config Borrowed for the call; 16 kHz, 512-sample PAL frames, two raw
  * lanes with distinct mic/reference indices, mono output and AEC enabled.
+ * @note Cleanup retries until power-down succeeds so retained workers cannot
+ * outlive the borrowed providers. A permanent teardown fault blocks this manual
+ * diagnostic; reset the device to recover instead of releasing those providers.
  * @return Number of failed capture, lifecycle and resource checks.
  */
 int h2_es8311_aec_live_e2e(const h2_esp_es8311_audio_system_config_t* config);
