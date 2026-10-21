@@ -4,6 +4,14 @@
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined(CONFIG_IDF_TARGET_ESP32C3)
+#define EXPECTED_CAPS (MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)
+#define EXPECTED_MODE AEC_MODE_VOIP_LOW_COST
+#else
+#define EXPECTED_CAPS (MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
+#define EXPECTED_MODE AEC_MODE_FD_LOW_COST
+#endif
+
 struct aec_handle {
   int unused;
 };
@@ -15,7 +23,7 @@ static void* try_alloc(size_t size) {
 }
 void* heap_caps_aligned_calloc(size_t alignment, size_t count, size_t size,
                                unsigned caps) {
-  assert(alignment == 16 && caps == (MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+  assert(alignment == 16 && caps == EXPECTED_CAPS);
   void* p = try_alloc(count * size);
   if (p) ++buffers;
   return p;
@@ -27,9 +35,9 @@ void heap_caps_free(void* p) {
   }
 }
 aec_handle_t* aec_create_from_config(aec_config_t* c) {
-  assert(!live && c->caps == (MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+  assert(!live && c->caps == EXPECTED_CAPS);
   assert(c->sample_rate == 16000 && c->filter_length == 4 &&
-         c->mode == AEC_MODE_VOIP_LOW_COST);
+         c->mode == EXPECTED_MODE);
   if (++allocations == fail_at) return NULL;
   live = 1;
   return &handle;
@@ -62,52 +70,61 @@ static h2_esp_es8311_audio_system_config_t config(void) {
                                                .enable_aec = 1};
 }
 int main(void) {
+  const int inputs[] = {320, 512};
   const int chunks[] = {128, 256, 320, 512};
-  for (unsigned c = 0; c < sizeof(chunks) / sizeof(chunks[0]); ++c) {
-    chunk = chunks[c];
-    allocations = call_count = 0;
-    h2_esp_es8311_audio_system_config_t cfg = config();
-    h2_esp_es8311_sr_state_t state = {0};
-    assert(h2_esp_es8311_sr_init(&state, &cfg) == 0);
-    int16_t raw[640], output[320];
-    h2_audio_pcm_format_t rf = {.sample_rate_hz = 16000,
-                                .channels = 2,
-                                .sample_format = H2_AUDIO_SAMPLE_S16LE,
-                                .frame_samples_per_channel = 320};
-    h2_audio_pcm_format_t of = rf;
-    of.channels = 1;
-    h2_audio_frame_t in = h2_audio_frame_for_buffer(raw, sizeof(raw), rf);
-    h2_audio_frame_t out =
-        h2_audio_frame_for_buffer(output, sizeof(output), of);
-    in.bytes = sizeof(raw);
-    in.samples_per_channel = 320;
-    for (int f = 0; f < 20; ++f) {
-      for (int i = 0; i < 320; ++i) {
-        raw[2 * i] = 7;
-        raw[2 * i + 1] = f * 320 + i + 8;
+  for (unsigned input = 0; input < sizeof(inputs) / sizeof(inputs[0]);
+       ++input) {
+    const int frame_samples = inputs[input];
+    for (unsigned c = 0; c < sizeof(chunks) / sizeof(chunks[0]); ++c) {
+      chunk = chunks[c];
+      allocations = call_count = 0;
+      h2_esp_es8311_audio_system_config_t cfg = config();
+      cfg.frame_samples_per_channel = (uint16_t)frame_samples;
+      h2_esp_es8311_sr_state_t state = {0};
+      assert(h2_esp_es8311_sr_init(&state, &cfg) == 0);
+      int16_t raw[1024], output[512];
+      h2_audio_pcm_format_t rf = {
+          .sample_rate_hz = 16000,
+          .channels = 2,
+          .sample_format = H2_AUDIO_SAMPLE_S16LE,
+          .frame_samples_per_channel = (uint16_t)frame_samples};
+      h2_audio_pcm_format_t of = rf;
+      of.channels = 1;
+      h2_audio_frame_t in = h2_audio_frame_for_buffer(raw, sizeof(raw), rf);
+      h2_audio_frame_t out =
+          h2_audio_frame_for_buffer(output, sizeof(output), of);
+      in.bytes = (size_t)frame_samples * 2 * sizeof(int16_t);
+      in.samples_per_channel = (uint16_t)frame_samples;
+      for (int f = 0; f < 20; ++f) {
+        for (int i = 0; i < frame_samples; ++i) {
+          raw[2 * i] = 7;
+          raw[2 * i + 1] = f * frame_samples + i + 8;
+        }
+        assert(h2_esp_es8311_sr_process(&state, &in, &out, 0) == 0);
+        assert(out.bytes == (size_t)frame_samples * sizeof(int16_t) &&
+               out.samples_per_channel == frame_samples);
+        for (int i = 0; i < frame_samples; ++i) {
+          int sample =
+              f * frame_samples + i - (chunk == frame_samples ? 0 : chunk);
+          assert(output[i] == (sample < 0 ? 0 : sample + 1));
+        }
       }
-      assert(h2_esp_es8311_sr_process(&state, &in, &out, 0) == 0);
-      assert(out.bytes == sizeof(output) && out.samples_per_channel == 320);
-      for (int i = 0; i < 320; ++i) {
-        int sample = f * 320 + i - (chunk == 320 ? 0 : chunk);
-        assert(output[i] == (sample < 0 ? 0 : sample + 1));
-      }
+      assert(call_count == 20 * frame_samples / chunk && allocations == 4);
+      in.channels = 1;
+      assert(h2_esp_es8311_sr_process(&state, &in, &out, 0) != 0 &&
+             out.bytes == 0);
+      in.channels = 2;
+      in.bytes = 1;
+      assert(h2_esp_es8311_sr_process(&state, &in, &out, 0) != 0 &&
+             out.bytes == 0);
+      in.bytes = (size_t)frame_samples * 2 * sizeof(int16_t);
+      h2_esp_es8311_sr_reset(&state);
+      assert(state.pending_samples == 0);
+      for (int i = 0; i < chunk; ++i) assert(state.out_frame[i] == 0);
+      h2_esp_es8311_sr_deinit(&state);
+      h2_esp_es8311_sr_deinit(&state);
+      assert(!live && !buffers);
     }
-    assert(call_count == 6400 / chunk && allocations == 4);
-    in.channels = 1;
-    assert(h2_esp_es8311_sr_process(&state, &in, &out, 0) != 0 &&
-           out.bytes == 0);
-    in.channels = 2;
-    in.bytes = 1;
-    assert(h2_esp_es8311_sr_process(&state, &in, &out, 0) != 0 &&
-           out.bytes == 0);
-    in.bytes = sizeof(raw);
-    h2_esp_es8311_sr_reset(&state);
-    assert(state.pending_samples == 0);
-    for (int i = 0; i < chunk; ++i) assert(state.out_frame[i] == 0);
-    h2_esp_es8311_sr_deinit(&state);
-    h2_esp_es8311_sr_deinit(&state);
-    assert(!live && !buffers);
   }
   for (fail_at = 1; fail_at <= 4; ++fail_at) {
     allocations = 0;
