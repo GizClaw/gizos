@@ -87,7 +87,9 @@ application, or packaging. Issue #835 owns Windows PAL integration.
 The sibling `firmware-devenv` provides the pinned ESP-IDF 6.2 checkout and
 GCC 16.1 tools. Select it with `FIRMWARE_DEVENV_IDF_VERSION=6.2` for both
 `make idf-tools` in the provider and environment activation. Its 6.0 default
-remains available for older Firmwares consumers. The tools repository derives
+remains available for older Firmwares consumers. Its tool root stays at
+`.tools/esp-idf`; 6.2 uses `.tools/esp-idf-6.2` so GCC 15/16 never share a compiler
+namespace. The tools repository derives
 the unique `python_env/idf6.2_py*_env` installation and validates it
 against the pinned ESP-IDF constraints, and materializes versioned SDK/tool
 locators. The native action receives those locator files instead of the
