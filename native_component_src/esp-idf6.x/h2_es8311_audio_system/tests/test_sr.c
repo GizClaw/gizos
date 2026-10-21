@@ -98,7 +98,8 @@ int main(void) {
       for (int f = 0; f < 20; ++f) {
         for (int i = 0; i < frame_samples; ++i) {
           raw[2 * i] = 7;
-          raw[2 * i + 1] = f * frame_samples + i + 8;
+          /* Twenty frames of at most 512 samples stay below INT16_MAX. */
+          raw[2 * i + 1] = (int16_t)(f * frame_samples + i + 8);
         }
         assert(h2_esp_es8311_sr_process(&state, &in, &out, 0) == 0);
         assert(out.bytes == (size_t)frame_samples * sizeof(int16_t) &&
