@@ -187,7 +187,11 @@ BaseType_t xTaskCreatePinnedToCoreWithCaps(void (*fn)(void*), const char* name,
                                            UBaseType_t priority,
                                            TaskHandle_t* out, BaseType_t core,
                                            uint32_t caps) {
+#if defined(CONFIG_SPIRAM) && CONFIG_SPIRAM
+  assert(caps == (MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+#else
   assert(caps == (MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+#endif
   return xTaskCreatePinnedToCore(fn, name, stack, ctx, priority, out, core);
 }
 int h2_audio_mixer_init(h2_audio_mixer_t* m, const h2_audio_mixer_config_t* c) {
