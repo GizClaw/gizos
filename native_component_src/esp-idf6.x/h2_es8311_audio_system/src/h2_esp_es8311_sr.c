@@ -114,14 +114,15 @@ int h2_esp_es8311_sr_init(h2_esp_es8311_sr_state_t* state,
 
   int chunk_samples = aec_get_chunksize(aec_handle);
   if (chunk_samples <= 0 ||
-      (unsigned)chunk_samples > H2_ESP_ES8311_AUDIO_SYSTEM_MAX_FRAME_SAMPLES) {
-    ESP_LOGE(TAG, "aec chunk unsupported chunk=%d maximum=%u", chunk_samples,
+      (unsigned)chunk_samples > H2_ESP_ES8311_AUDIO_SYSTEM_MAX_FRAME_SAMPLES ||
+      (unsigned)chunk_samples != config->frame_samples_per_channel) {
+    ESP_LOGE(TAG, "aec frame mismatch chunk=%d configured=%u maximum=%u",
+             chunk_samples, (unsigned)config->frame_samples_per_channel,
              H2_ESP_ES8311_AUDIO_SYSTEM_MAX_FRAME_SAMPLES);
     sr_free_buffers(state);
     return H2_AUDIO_ERR_UNSUPPORTED;
   }
   state->frame_samples = (size_t)chunk_samples;
-  state->input_samples = config->frame_samples_per_channel;
   state->linear_only = 0;
   state->raw_channels = config->raw_channels;
   state->mic_channel_index = config->mic_channel_index;
@@ -175,60 +176,37 @@ int h2_esp_es8311_sr_process(h2_esp_es8311_sr_state_t* state,
       raw_frame->sample_rate_hz != H2_ESP_ES8311_AEC_SAMPLE_RATE ||
       out_frame->sample_rate_hz != H2_ESP_ES8311_AEC_SAMPLE_RATE ||
       out_frame->channels != 1u || raw_frame->channels != state->raw_channels ||
-      raw_frame->samples_per_channel != state->input_samples ||
-      out_frame->capacity < state->input_samples * sizeof(int16_t)) {
+      raw_frame->samples_per_channel != state->frame_samples ||
+      out_frame->capacity < state->frame_samples * sizeof(int16_t)) {
     return H2_AUDIO_ERR_UNSUPPORTED;
   }
 
 #if H2_ESP_ES8311_HAVE_DIRECT_AEC
   const size_t raw_frame_bytes = h2_audio_frame_frame_bytes(raw_frame);
   if (raw_frame_bytes == 0u ||
-      raw_frame->bytes < state->input_samples * raw_frame_bytes ||
+      raw_frame->bytes < state->frame_samples * raw_frame_bytes ||
       raw_frame->capacity < raw_frame->bytes) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
 
   const int16_t* raw = (const int16_t*)raw_frame->data;
   int16_t* out = (int16_t*)out_frame->data;
-  if (state->input_samples == state->frame_samples) {
-    for (size_t i = 0u; i < state->frame_samples; ++i) {
-      state->mic_frame[i] =
-          raw[i * state->raw_channels + state->mic_channel_index];
-      state->ref_frame[i] =
-          raw[i * state->raw_channels + state->ref_channel_index];
-    }
-    if (state->linear_only) {
-      aec_linear_process(state->aec_handle, state->mic_frame, state->ref_frame,
-                         state->out_frame);
-    } else {
-      aec_process(state->aec_handle, state->mic_frame, state->ref_frame,
-                  state->out_frame);
-    }
-    memcpy(out, state->out_frame, state->input_samples * sizeof(int16_t));
-  } else {
-    /* Consume the previous chunk while collecting the next. This keeps
-     * latency constant, never drops samples and allocates nothing here. */
-    for (size_t i = 0u; i < state->input_samples; ++i) {
-      size_t at = state->pending_samples;
-      state->mic_frame[at] =
-          raw[i * state->raw_channels + state->mic_channel_index];
-      state->ref_frame[at] =
-          raw[i * state->raw_channels + state->ref_channel_index];
-      out[i] = state->out_frame[at];
-      if (++state->pending_samples == state->frame_samples) {
-        if (state->linear_only) {
-          aec_linear_process(state->aec_handle, state->mic_frame,
-                             state->ref_frame, state->out_frame);
-        } else {
-          aec_process(state->aec_handle, state->mic_frame, state->ref_frame,
-                      state->out_frame);
-        }
-        state->pending_samples = 0u;
-      }
-    }
+  for (size_t i = 0u; i < state->frame_samples; ++i) {
+    state->mic_frame[i] =
+        raw[i * state->raw_channels + state->mic_channel_index];
+    state->ref_frame[i] =
+        raw[i * state->raw_channels + state->ref_channel_index];
   }
-  out_frame->bytes = state->input_samples * sizeof(int16_t);
-  out_frame->samples_per_channel = (uint16_t)state->input_samples;
+  if (state->linear_only) {
+    aec_linear_process(state->aec_handle, state->mic_frame, state->ref_frame,
+                       state->out_frame);
+  } else {
+    aec_process(state->aec_handle, state->mic_frame, state->ref_frame,
+                state->out_frame);
+  }
+  memcpy(out, state->out_frame, state->frame_samples * sizeof(int16_t));
+  out_frame->bytes = state->frame_samples * sizeof(int16_t);
+  out_frame->samples_per_channel = (uint16_t)state->frame_samples;
   return H2_AUDIO_OK;
 #else
   return H2_AUDIO_ERR_UNSUPPORTED;
@@ -239,7 +217,6 @@ void h2_esp_es8311_sr_reset(h2_esp_es8311_sr_state_t* state) {
   if (state == NULL || !state->available || state->frame_samples == 0u) {
     return;
   }
-  state->pending_samples = 0u;
   if (state->mic_frame != NULL) {
     memset(state->mic_frame, 0, state->frame_samples * sizeof(int16_t));
   }

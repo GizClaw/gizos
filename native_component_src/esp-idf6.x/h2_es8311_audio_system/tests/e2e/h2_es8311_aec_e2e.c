@@ -12,7 +12,8 @@
 #include <string.h>
 
 #define CAPS (MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)
-#define N 320
+#define N 512
+#define FRAME_BUDGET_US (N * 1000000LL / 16000)
 static int16_t raw[N * 2];
 static int16_t output[N];
 static int16_t delay_line[32];
@@ -86,7 +87,7 @@ int h2_es8311_aec_e2e(void) {
         int64_t elapsed = esp_timer_get_time() - start;
         total_us += elapsed;
         if (elapsed > max_us) max_us = elapsed;
-        if (elapsed > 20000) ++over_budget;
+        if (elapsed > FRAME_BUDGET_US) ++over_budget;
         if (rc || out.bytes != sizeof(output) || out.samples_per_channel != N) {
           ++failures;
           break;
@@ -107,7 +108,7 @@ int h2_es8311_aec_e2e(void) {
         vTaskDelay(pdMS_TO_TICKS(1));
       }
       double ratio = out_energy / (in_energy + 1);
-      /* Magnitude is insensitive to the adapter/algorithm's fixed delay. */
+      /* Magnitude is insensitive to the algorithm's fixed delay. */
       double near_gain =
           measured_samples
               ? 2 * sqrt(near_sin * near_sin + near_cos * near_cos) /
@@ -116,10 +117,11 @@ int h2_es8311_aec_e2e(void) {
       int signal_ok =
           phase == 0 ? ratio < 0.25 : near_gain > 0.1 && near_gain < 2;
       int pass = rc == 0 && processed_frames == 250 && changed != 0 &&
-                 signal_ok && total_us < (int64_t)processed_frames * 20000;
+                 signal_ok &&
+                 total_us < (int64_t)processed_frames * FRAME_BUDGET_US;
       if (!pass) ++failures;
       printf(
-          "AEC_E2E PHASE cycle=%d phase=%d result=%s rc=%d ratio=%.6f near_gain=%.6f avg_us=%lld max_us=%lld over_20ms=%u changed=%u free=%u minimum=%u largest=%u stack_free=%u\n",
+          "AEC_E2E PHASE cycle=%d phase=%d result=%s rc=%d ratio=%.6f near_gain=%.6f avg_us=%lld max_us=%lld over_frame_budget=%u changed=%u free=%u minimum=%u largest=%u stack_free=%u\n",
           cycle, phase, pass ? "PASS" : "FAIL", rc, ratio, near_gain,
           (long long)(processed_frames ? total_us / processed_frames : 0),
           (long long)max_us, over_budget, changed,
@@ -229,7 +231,7 @@ int h2_es8311_aec_live_e2e(const h2_esp_es8311_audio_system_config_t* config) {
         (unsigned)heap_caps_get_free_size(CAPS),
         (unsigned)heap_caps_get_largest_free_block(CAPS));
     if (rc || frames != 100 || ref_energy == 0 || mic_energy == 0 ||
-        processed_energy == 0 || total >= (int64_t)frames * 20000)
+        processed_energy == 0 || total >= (int64_t)frames * FRAME_BUDGET_US)
       ++failures;
     for (int session = 0; !rc && session < 2; ++session) {
       rc = h2_pal_audio_start_mic(audio);
