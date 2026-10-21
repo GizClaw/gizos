@@ -829,7 +829,7 @@
     },
     "//tools/bazel/toolchains/local_embedded_cc:repositories.bzl%local_embedded_cc_toolchains": {
       "general": {
-        "bzlTransitiveDigest": "YH531ketz9cZjROmJUaiH3Ce0uA8mg5JNFWtywy/cVw=",
+        "bzlTransitiveDigest": "ppk5PM7AnNkmWCxoeeWfnCFLPNVPqK3BplQcVpy27Bs=",
         "usagesDigest": "B/O908nh4na4DNodhC/G5N8iv+2coljLauBD/qYw1+8=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
@@ -894,7 +894,7 @@
             "attributes": {
               "compile_flags": [
                 "-Os",
-                "-march=rv32imac_zicsr_zifencei",
+                "-march=rv32imc_zicsr_zifencei",
                 "-mabi=ilp32",
                 "-ffunction-sections",
                 "-fdata-sections",

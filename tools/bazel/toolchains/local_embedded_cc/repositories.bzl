@@ -353,7 +353,7 @@ def _extension_impl(_module_ctx):
         name = "gizos_esp32c3_cc_toolchain",
         compile_flags = [
             "-Os",
-            "-march=rv32imac_zicsr_zifencei",
+            "-march=rv32imc_zicsr_zifencei",
             "-mabi=ilp32",
             "-ffunction-sections",
             "-fdata-sections",
