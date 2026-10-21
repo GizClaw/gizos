@@ -352,7 +352,7 @@ make bazel-release RELEASE_SLICE=lua-runtime RELEASE_BATCH=20260925-120000 RELEA
 
 ## ESP32-C3
 
-`--config=esp32c3` 选择 RV32IMAC、`ilp32` ABI，使用相同固定 IDF 6.2 checkout 和 GCC 16.1。C3 编译器 repository 只暴露工具及镜像 header，版本输入也 materialize 到该 repository 内；C3 的平台约束与工具链注册归 first-party package。下游 root 注册 `@gizos//tools/bazel/toolchains/local_embedded_cc/esp32c3:toolchain`，不注册生成 repository 的 `:toolchain`；直接消费 compiler repository 时才需要额外导入 `gizos_esp32c3_cc_toolchain`。以 `@gizos//tools/bazel/platforms:esp32c3` 和 `--define=h2_firmware_target=esp32c3` 选择完整 graph。SDK locator 使用显式 `IDF_PATH`、`IDF_TOOLS_PATH`。
+`--config=esp32c3` 选择 RV32IMC（`-march=rv32imc_zicsr_zifencei`）、`ilp32` ABI，使用相同固定 IDF 6.2 checkout 和 GCC 16.1。C3 编译器 repository 只暴露工具及镜像 header，版本输入也 materialize 到该 repository 内；C3 的平台约束与工具链注册归 first-party package。下游 root 注册 `@gizos//tools/bazel/toolchains/local_embedded_cc/esp32c3:toolchain`，不注册生成 repository 的 `:toolchain`；直接消费 compiler repository 时才需要额外导入 `gizos_esp32c3_cc_toolchain`。以 `@gizos//tools/bazel/platforms:esp32c3` 和 `--define=h2_firmware_target=esp32c3` 选择完整 graph。SDK locator 使用显式 `IDF_PATH`、`IDF_TOOLS_PATH`。
 
 C3 无 PSRAM、只有 core 0；具体 image 的 `esp_target_task_policy` 必须选择 `internal` 和 `0`/`any`。`//projects/e2e/targets/native_firmware/lua-platform-smoke/esp32c3_chip:firmware` 编译公共 PAL、ADC、Runtime 和 Lua Host，使用 OS-only chip BSP；它不提供产品显示、按键或音频 wiring。构建不证明设备执行。
 
