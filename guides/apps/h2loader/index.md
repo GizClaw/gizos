@@ -194,6 +194,8 @@ Repository CLI 提供 H2Loader management BLE provider，并与 serial 复用同
 
 App return-console 区分 peer 会话结束和设备管理服务结束。ESP/BK 的 UART peer 在响应期间断开或被新 session 替换时，旧 command 的 I/O 可以返回 `CLOSED`；完成旧 command 清理后重置 parser，管理 task 继续接受新的 session，不重放失败 command。只有 read callback 明确返回 `SESSION_CLOSED` 或 launcher 显式停止 task 才结束该服务。回归在首个 status 的响应正文或行尾 flush 中注入 `CLOSED`，覆盖有无后续 `SESSION_RESET` 的路径，验证同一 console 只处理新 session 的 status，最后以永久关闭 marker 正常退出。
 
+ESP 的 UART／USB iKCP 会话激活失败（包括内存分配或 ACK 发送失败）会释放候选 stream、清除旧会话状态并消费当前 OPEN；管理 task 阻塞一个 poll interval（至少一个 tick），随后重新读取物理通道，等待 peer 重发 OPEN。失败不能保留 pending OPEN 并立即循环分配，否则较高优先级的管理 task 会阻止持有临时内存的低优先级任务继续执行。成功激活和正常数据读取不增加退避；该策略由 ESP native transport 统一提供给 Loader 和 App。Host 故障注入测试覆盖 OOM、ACK 失败、重复 OPEN、恢复重连和低 tick rate；真实调度与产品并发仍需对应固件的硬件验证。
+
 BLE command service 的诊断由 composition root 显式借用 Log PAL，与 command response 分离，不直接写 `stdout` 或 `stderr`。日志接口和其 `user` 必须覆盖 service 生命周期，支持并发 task 调用，且不得从日志回调重入 service。诊断为 optional：缺少可用接口时不输出，写入失败不覆盖通信操作的原始返回值。每条记录遵守 PAL message 容量；会话统计拆成带 connection handle 的多条记录，保留所有计数与 high-water 信息，底层日志 provider 决定实际 UART、USB 或其它输出位置。
 
 ## Image 生命周期
