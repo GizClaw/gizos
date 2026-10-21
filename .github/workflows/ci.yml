@@ -580,7 +580,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: h2vivi/firmware-devenv
-          ref: bac39a075bca02106e5dfb7b077b299ad9e0f7d2 # Pinned IDF 6.2 provider
+          ref: e1f952f19f35d31ffce5ae65aee3d6f11a7105dc # Pinned IDF 6.2 provider
           path: firmware-devenv
           fetch-depth: 1
           persist-credentials: false
@@ -766,7 +766,6 @@ jobs:
           BAZEL_NATIVE_BUILD_JOBS: ${{ matrix.native_build_jobs }}
         run: |
           export FIRMWARE_DEVENV_ROOT="$GITHUB_WORKSPACE/firmware-devenv"
-          export FIRMWARE_DEVENV_IDF_VERSION=6.2
           . firmware-devenv/export.sh
           test "$IDF_PATH" = "$H2_ESP_IDF_SDK_ROOT"
           test "$H2LOADER_IDF_PATH" = "$IDF_PATH"
