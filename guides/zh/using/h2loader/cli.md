@@ -51,15 +51,17 @@ export H2LOADER_WIFI_SSID="private-network"
 export H2LOADER_WIFI_PASSWORD="private-password"
 ```
 
-基础工具与 BK SDK 由同级 `firmwares-devenv` checkout 提供。ESP 构建须在加载 provider 后显式选择 GizOS 版本清单固定的 IDF 6.2 checkout 与匹配工具；这些外部 SDK 都不是 GizOS 仓库的 submodule。首次使用先初始化基础环境：
+基础工具与 SDK 由同级 `firmwares-devenv` checkout 提供。ESP 构建设置 `FIRMWARE_DEVENV_IDF_VERSION=6.2`，使安装和 provider export 都选择 GizOS 版本清单固定的 IDF 6.2 checkout、GCC 16.1 与 Python 环境；这些外部 SDK 都不是 GizOS 仓库的 submodule。Provider 默认仍为 6.0，以兼容旧 Firmwares consumer。首次使用：
 
 ```sh
 git clone --recurse-submodules git@github.com:h2vivi/firmware-devenv.git ../firmwares-devenv
+export FIRMWARE_DEVENV_IDF_VERSION=6.2
 make -C ../firmwares-devenv
+. ../firmwares-devenv/export.sh
 make cfg-doctor
 ```
 
-加载 `firmwares-devenv/export.sh` 并覆盖旧 ESP SDK 路径后，环境须满足下列可执行 contract；本表是 provider variable、
+设置 `FIRMWARE_DEVENV_IDF_VERSION=6.2` 后加载 `firmwares-devenv/export.sh`，环境须满足下列可执行 contract；本表是 provider variable、
 真实 consumer、路径含义和 host state 的 source of truth。某个 optional target
 缺失不会清除其它已经可用的 target：
 
