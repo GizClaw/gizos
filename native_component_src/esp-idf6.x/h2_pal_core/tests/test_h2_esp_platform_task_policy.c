@@ -379,7 +379,7 @@ int main(void) {
     h2_esp_task_policy_config_t cfg = config();
     assert(h2_esp_platform_task_configure(&cfg) == H2_PAL_OK);
     h2_pal_task_options_t options = {.name = "dynamic-high"};
-    h2_pal_task_t *task = NULL;
+    h2_pal_task_t* task = NULL;
     assert(h2_pal_task_start(h2_esp_platform_task_api(), &options, entry, NULL,
                              &task) == H2_PAL_ERR_TASK);
     assert(task == NULL && s.creates == 0);

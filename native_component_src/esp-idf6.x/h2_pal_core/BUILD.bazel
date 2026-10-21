@@ -198,7 +198,10 @@ cc_test(
         "src/h2_esp_resource_stats_internal.h",
         "tests/test_h2_esp_platform_task_policy.c",
     ] + glob(["tests/sdk/**/*.h"]),
-    conlyopts = H2_C11_OPTS + ["-DH2_TASK_POLICY_TEST=1", "-DH2_TASK_POLICY_TEST_NO_PSRAM=1"],
+    conlyopts = H2_C11_OPTS + [
+        "-DH2_TASK_POLICY_TEST=1",
+        "-DH2_TASK_POLICY_TEST_NO_PSRAM=1",
+    ],
     copts = H2_WARNING_COPTS,
     includes = [
         "include",

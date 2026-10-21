@@ -8,6 +8,6 @@ firmware_native_component(
     hdrs = ["h2_es8311_aec_e2e.h"],
     component_name = "h2_es8311_aec_e2e",
     data = ["CMakeLists.txt"],
-    deps = ["//native_component_src/esp-idf6.x/h2_es8311_audio_system"],
     tags = ["manual"],
+    deps = ["//native_component_src/esp-idf6.x/h2_es8311_audio_system"],
 )
