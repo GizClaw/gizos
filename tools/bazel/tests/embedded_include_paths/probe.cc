@@ -2,8 +2,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// C++ library headers exist only where the toolchain ships them.
-#if defined(__has_include)
+// ESP32-S3 ships the C++ headers; other toolchains may omit them.
+#if defined(__XTENSA__)
+#include <cstddef>
+#elif defined(__has_include)
 #if __has_include(<cstddef>)
 #include <cstddef>
 #endif

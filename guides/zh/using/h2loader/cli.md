@@ -51,21 +51,23 @@ export H2LOADER_WIFI_SSID="private-network"
 export H2LOADER_WIFI_PASSWORD="private-password"
 ```
 
-ESP-IDF 和 BK SDK 由同级 `firmwares-devenv` checkout 提供，不是 GizOS 仓库的 submodule。首次使用先初始化该 checkout：
+基础工具与 SDK 由同级 `firmwares-devenv` checkout 提供。ESP 构建设置 `FIRMWARE_DEVENV_IDF_VERSION=6.2`，使安装和 provider export 都选择 GizOS 版本清单固定的 IDF 6.2 checkout、GCC 16.1 与 Python 环境；这些外部 SDK 都不是 GizOS 仓库的 submodule。Provider 默认仍为 6.0，以兼容旧 Firmwares consumer。首次使用：
 
 ```sh
 git clone --recurse-submodules git@github.com:h2vivi/firmware-devenv.git ../firmwares-devenv
+export FIRMWARE_DEVENV_IDF_VERSION=6.2
 make -C ../firmwares-devenv
+. ../firmwares-devenv/export.sh
 make cfg-doctor
 ```
 
-`firmwares-devenv/export.sh` 提供下列可执行 contract；本表是 provider variable、
+设置 `FIRMWARE_DEVENV_IDF_VERSION=6.2` 后加载 `firmwares-devenv/export.sh`，环境须满足下列可执行 contract；本表是 provider variable、
 真实 consumer、路径含义和 host state 的 source of truth。某个 optional target
 缺失不会清除其它已经可用的 target：
 
 | Target | Provider variables and exact layout | GizOS consumers | Ready evidence and host state |
 | --- | --- | --- | --- |
-| ESP-IDF 6.0 | `H2LOADER_IDF_PATH`/`IDF_PATH` 是同一个 checkout root；`IDF_PYTHON_ENV_PATH` 是其已安装 tools Python root；`IDF_TOOLS_PATH` 是 provider tools root | H2Loader CLI build/flash operation 和 ESP launcher | checkout version 为 6.0，PATH 中 `idf.py` 正是该 checkout 的 `tools/idf.py`，tools Python executable 可用；未安装为 unprovisioned，配置错误为 invalid |
+| ESP-IDF 6.2 | `H2LOADER_IDF_PATH`/`IDF_PATH` 是同一个 checkout root；`IDF_PYTHON_ENV_PATH` 是其已安装 tools Python root；`IDF_TOOLS_PATH` 是 provider tools root | H2Loader CLI build/flash operation 和 ESP launcher | 构建使用版本清单固定的 IDF 6.2 commit 与 GCC 16.1 工具，PATH 中 `idf.py` 正是该 checkout 的 `tools/idf.py`，tools Python executable 可用；未安装为 unprovisioned，配置错误为 invalid |
 | BK7258 | `BK7258_PATH` 是 pinned AVDK checkout root；`BK_LOADER_BIN` 是单个 host executable | `bk7258_firmware` Bazel rule、BK launcher、H2Loader flash/erase | SDK commit 固定；Arm GNU 10.3.1 由 Bazel repository 下载并校验，不是 operator environment capability；loader 未配置且不是 macOS arm64 时为 `SKIP` |
 | BK3633 | `BK3633_PATH` 是锁定的 BK3633 Git checkout 根目录；SDK 位于其 `SDK/` 子目录 | 三个 canonical `bk3633_firmware` label | checkout 为固定 commit，包含 required SDK source、allroles BIM project 和 Stack BIN/ELF；Arm GNU 10.3.1 由 Bazel repository 管理；BinConvert 由 Bazel 作为 exec tool 注入 |
 | K4B | `K4B_CEDARX_INCLUDE_DIR` 是直接含 `vdecoder.h`/`memoryAdapter.h` 的 flat include root；`K4B_CEDARX_LIB_DIR` 是直接含 `libvdecoder.so`/`libMemAdapter.so` 的 ARM hard-float library root | K4B Bazel CedarX repository 与 MP4 Player launcher | include/library layout 完整；compiler/sysroot 由 Bazel 固定下载，不消费 provider toolchain path |

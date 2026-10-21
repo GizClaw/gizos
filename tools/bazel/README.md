@@ -84,10 +84,13 @@ application, or packaging. Issue #835 owns Windows PAL integration.
 
 ## ESP-IDF external builds
 
-Source `.env/devenv` before requesting an ESP build. The sibling
-`firmware-devenv` provider exports `IDF_PATH` and
-`IDF_TOOLS_PATH` for Bazel. The tools repository derives the unique
-`python_env/idf6.0_py*_env` installation from that tools root, validates it
+The sibling `firmware-devenv` provides the pinned ESP-IDF 6.2 checkout and
+GCC 16.1 tools. Select it with `FIRMWARE_DEVENV_IDF_VERSION=6.2` for both
+`make idf-tools` in the provider and environment activation. Its 6.0 default
+remains available for older Firmwares consumers. Its tool root stays at
+`.tools/esp-idf`; 6.2 uses `.tools/esp-idf-6.2` so GCC 15/16 never share a compiler
+namespace. The tools repository derives
+the unique `python_env/idf6.2_py*_env` installation and validates it
 against the pinned ESP-IDF constraints, and materializes versioned SDK/tool
 locators. The native action receives those locator files instead of the
 machine paths or caller `PATH`.
@@ -95,7 +98,9 @@ machine paths or caller `PATH`.
 ```sh
 REPO_ROOT=$PWD
 export REPO_ROOT
-. .env/devenv
+export FIRMWARE_DEVENV_IDF_VERSION=6.2
+make -C ../firmwares-devenv idf-tools IDF_TARGETS=esp32s3,esp32p4,esp32c5
+. ../firmwares-devenv/export.sh
 bazel build --config=esp32s3  //projects/example/targets/h2loader_tar_zlib/ble-broadcaster/devkit:package
 bazel build --config=esp32p4  //projects/example/targets/h2loader_tar_zlib/display/waveshare_esp32p4_wifi6_touch_lcd_4_3:package
 ```

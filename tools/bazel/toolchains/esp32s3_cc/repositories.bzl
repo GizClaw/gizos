@@ -125,7 +125,7 @@ def _dynamic_config(repository_ctx, root):
         fail("ESP32-S3 Xtensa configuration is unavailable: %s" % dynamic_config)
     return dynamic_config
 
-def _builtin_include_directories(repository_ctx, root, dynamic_config):
+def _builtin_include_directories(repository_ctx, root, dynamic_config, language):
     if not root:
         return []
     compiler = root.get_child("bin").get_child(_TOOLS["gcc"])
@@ -133,7 +133,7 @@ def _builtin_include_directories(repository_ctx, root, dynamic_config):
         compiler,
         "-E",
         "-x",
-        "c",
+        language,
         "/dev/null",
         "-v",
     ], environment = {
@@ -150,10 +150,27 @@ def _builtin_include_directories(repository_ctx, root, dynamic_config):
         elif line == "End of search list.":
             break
         elif recording and line and not line.startswith("("):
-            directories.append(line)
+            directories.append(str(repository_ctx.path(line).realpath))
     if not directories:
-        fail("ESP32-S3 compiler reported no builtin include directories")
+        fail("ESP32-S3 compiler reported no builtin %s include directories" % language)
     return directories
+
+def _include_roots(directories):
+    roots = []
+    for directory in directories:
+        if directory in roots:
+            continue
+        if not any([directory.startswith(other + "/") for other in directories]):
+            roots.append(directory)
+    return roots
+
+def _mirrored_include(roots, directory):
+    for index, root in enumerate(roots):
+        if directory == root:
+            return "inputs/compiler/include/%d" % index
+        if directory.startswith(root + "/"):
+            return "inputs/compiler/include/%d/%s" % (index, directory[len(root) + 1:])
+    fail("ESP32-S3 include directory is outside every mirrored root: %s" % directory)
 
 def _idf_builtin_include_directories(repository_ctx):
     locator = json.decode(repository_ctx.read(repository_ctx.attr.sdk_locator))
@@ -190,14 +207,15 @@ def _declare_action_inputs(repository_ctx, root, dynamic_config, builtin_include
         root.get_child("bin").get_child("xtensa-esp-elf-as"),
         "inputs/compiler/bin/as",
     )
-    cc1 = repository_ctx.execute([compiler, "-print-prog-name=cc1"], quiet = True)
-    if cc1.return_code or not cc1.stdout.strip():
-        fail("failed to resolve the ESP32-S3 cc1 executable: %s" % cc1.stderr)
-    _mirror_file(
-        repository_ctx,
-        repository_ctx.path(cc1.stdout.strip()),
-        "inputs/compiler/libexec/cc1",
-    )
+    for frontend in ["cc1", "cc1plus"]:
+        result = repository_ctx.execute([compiler, "-print-prog-name=" + frontend], quiet = True)
+        if result.return_code or not result.stdout.strip():
+            fail("failed to resolve the ESP32-S3 %s executable: %s" % (frontend, result.stderr))
+        _mirror_file(
+            repository_ctx,
+            repository_ctx.path(result.stdout.strip()),
+            "inputs/compiler/libexec/" + frontend,
+        )
     _mirror_file(
         repository_ctx,
         root.get_child("bin").get_child(_TOOLS["ar"]),
@@ -252,17 +270,22 @@ toolchain(
         )
         return
     dynamic_config = _dynamic_config(repository_ctx, root)
-    builtin_include_directories = _builtin_include_directories(
-        repository_ctx,
-        root,
-        dynamic_config,
-    )
+    c_includes = _builtin_include_directories(repository_ctx, root, dynamic_config, "c")
+    cxx_includes = _builtin_include_directories(repository_ctx, root, dynamic_config, "c++")
+    include_roots = _include_roots(c_includes + cxx_includes)
+    c_directories = [_mirrored_include(include_roots, directory) for directory in c_includes]
+    cxx_directories = [_mirrored_include(include_roots, directory) for directory in cxx_includes]
+    builtin_include_directories = []
+    for directory in c_directories + cxx_directories:
+        if directory not in builtin_include_directories:
+            builtin_include_directories.append(directory)
     idf_include_directories = _idf_builtin_include_directories(repository_ctx)
+    sdk_directories = ["inputs/sdk/include/%d" % index for index in range(len(idf_include_directories))]
     _declare_action_inputs(
         repository_ctx,
         root,
         dynamic_config,
-        builtin_include_directories,
+        include_roots,
         idf_include_directories,
     )
     for name, executable in _TOOLS.items():
@@ -282,10 +305,12 @@ toolchain(
         substitutions = {
             "{BUILTIN_INCLUDE_DIRECTORIES}": repr(
                 builtin_include_directories +
-                idf_include_directories,
+                sdk_directories,
             ),
+            "{C_INCLUDE_DIRECTORIES}": repr(c_directories),
+            "{CXX_INCLUDE_DIRECTORIES}": repr(cxx_directories),
             "{EXEC_CONSTRAINTS}": repr(exec_constraints),
-            "{SYSTEM_INCLUDE_DIRECTORIES}": repr(idf_include_directories),
+            "{SYSTEM_INCLUDE_DIRECTORIES}": repr(sdk_directories),
         },
     )
     repository_ctx.file(
