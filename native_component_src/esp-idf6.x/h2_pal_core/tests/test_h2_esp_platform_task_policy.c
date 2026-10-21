@@ -296,6 +296,7 @@ static void test_completion(const char* name, int join_on_give) {
   }
 }
 
+#if !defined(H2_TASK_POLICY_TEST_NO_PSRAM)
 static void stack_free(void* user, void* ptr) {
   if (ptr != NULL) {
     assert(s.fail_create || s.fail_tcb || s.static_deletes == 1);
@@ -370,6 +371,8 @@ static void test_psram_stack_allocator(void) {
   }
 }
 
+#endif
+
 int main(void) {
 #if defined(H2_TASK_POLICY_TEST_NO_PSRAM)
   {
@@ -383,9 +386,8 @@ int main(void) {
     assert(h2_pal_task_start(h2_esp_platform_task_api(), &options, entry, NULL,
                              &task) == H2_PAL_ERR_TASK);
     assert(task == NULL && s.creates == 0);
-    return 0;
   }
-#endif
+#else
   test_psram_stack_allocator();
   const h2_pal_task_api_t* api = h2_esp_platform_task_api();
   h2_pal_task_t* task = (h2_pal_task_t*)(uintptr_t)7u;
@@ -490,5 +492,6 @@ int main(void) {
   test_completion("known", 1);
   test_completion("dynamic-high", 0);
   test_completion("dynamic-high", 1);
+#endif
   return 0;
 }
