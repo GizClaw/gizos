@@ -30,6 +30,7 @@ esp_target_task_policy(
 # This validates their C3 compile/link ABI; the entry starts only Runtime/Lua.
 firmware_lib_component(
     name = "firmware_lib",
+    target_compatible_with = ["//tools/bazel/platforms:target_esp32c3"],
     deps = [
         "//libs/audio_mixer",
         "//libs/drivers/audio/es8311",
