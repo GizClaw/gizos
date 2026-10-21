@@ -28,6 +28,8 @@ h2_command_io_api_t h2_esp_h2loader_command_transport_io(
     h2_esp_h2loader_command_transport_t* transport);
 h2_pal_result_t h2_esp_h2loader_command_transport_poll_session(
     h2_esp_h2loader_command_transport_t* transport, uint32_t timeout_ms);
+/* Task context only. Consumes one OPEN; failure closes the candidate and
+ * blocks for one poll interval (at least one tick) before a peer may retry. */
 h2_pal_result_t h2_esp_h2loader_command_transport_activate_pending(
     h2_esp_h2loader_command_transport_t* transport);
 int h2_esp_h2loader_command_transport_has_session(
